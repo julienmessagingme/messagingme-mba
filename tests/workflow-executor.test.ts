@@ -5,7 +5,7 @@ import { RetraitDeLaListeRefuse } from '../src/mba/liste';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
-import type { EvalContext } from '../src/workflow/conditions';
+import type { BesoinsContexte, EvalContext } from '../src/workflow/conditions';
 import type { WorkflowRunRow, RunState } from '../src/workflow/run-store.pg';
 import type { AgentTurnJob } from '../src/agent/turn-job';
 
@@ -484,7 +484,7 @@ describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par 
    * sont distantes de quelques millisecondes ; dans un test à date figée, sans ce paramètre, l'échéance serait
    * calculée depuis 2026 et posée depuis aujourd'hui.
    */
-  function makeEval(graph: WorkflowGraph, ctx: EvalContext | null, surBesoins?: (b?: { derniereSaisie: boolean }) => void, now?: () => number) {
+  function makeEval(graph: WorkflowGraph, ctx: EvalContext | null, surBesoins?: (b?: BesoinsContexte) => void, now?: () => number) {
     const runs = new FakeRuns();
     const calls: string[] = [];
     const ex = new WorkflowExecutor({
@@ -571,6 +571,55 @@ describe('WorkflowExecutor : blocs condition & field NOW (contexte injecté par 
       expect(besoins[0]?.derniereSaisie, attendu ? 'réclamée' : 'pas réclamée').toBe(attendu);
     }
   });
+  /**
+   * 🔴 LES CHAMPS SYSTÈME (RC5) NE SONT DEMANDÉS QUE SI UNE CONDITION LES TESTE, sur le modèle de la dernière
+   * saisie : chacun coûte une requête, et l'immense majorité des scénarios à condition n'y touche pas. Le câblage
+   * (`tests/condition-contexte-systeme.test.ts`) montre ensuite qu'une demande à `false` ne lit rien.
+   */
+  it('🔴 dernier message reçu et langue détectée ne sont réclamés que par une Condition qui les teste, dans n’importe quelle famille', async () => {
+    const condition = (familles: unknown): WorkflowGraph => ({ nodes: [n('c', 'condition', { familles })], edges: [] });
+    const cas: Array<[string, WorkflowGraph, Partial<BesoinsContexte>]> = [
+      ['condition ordinaire', condGraph, { dernierMessageRecu: false, langueDetectee: false }],
+      ['dernier message dans la 2e famille', condition([
+        { code: 'true', nom: 'VIP', groupe: { match: 'all', clauses: [{ kind: 'tag', op: 'has', tag: 'vip' }] } },
+        { code: 'k2', nom: 'Endormi', groupe: { match: 'all', clauses: [{ kind: 'dernier_message_recu', op: 'older_than', amount: 7, unit: 'days' }] } },
+      ]), { dernierMessageRecu: true, langueDetectee: false }],
+      ['langue (ancienne forme du bloc)', { nodes: [n('c', 'condition', { match: 'all', clauses: [{ kind: 'langue_detectee', op: 'is', value: 'en' }] })], edges: [] }, { dernierMessageRecu: false, langueDetectee: true }],
+      ['pays : aucune requête, le numéro est déjà là', { nodes: [n('c', 'condition', { match: 'all', clauses: [{ kind: 'pays', op: 'is_one_of', values: ['FR'] }] })], edges: [] }, { dernierMessageRecu: false, langueDetectee: false }],
+    ];
+    for (const [nom, g, attendu] of cas) {
+      const besoins: Array<BesoinsContexte | undefined> = [];
+      const { ex } = makeEval(g, baseCtx(), (b) => besoins.push(b));
+      await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+      expect(besoins, nom).toHaveLength(1);
+      expect(besoins[0], nom).toMatchObject(attendu);
+    }
+  });
+
+  it('start : une Condition à familles route sur la PREMIÈRE vraie, champs système compris', async () => {
+    const g: WorkflowGraph = {
+      nodes: [
+        n('c', 'condition', { familles: [
+          { code: 'true', nom: 'France', groupe: { match: 'all', clauses: [{ kind: 'pays', op: 'is_one_of', values: ['FR'] }] } },
+          { code: 'k2', nom: 'Anglais', groupe: { match: 'all', clauses: [{ kind: 'langue_detectee', op: 'is', value: 'en' }] } },
+          { code: 'k3', nom: 'Endormi', groupe: { match: 'all', clauses: [{ kind: 'dernier_message_recu', op: 'older_than', amount: 7, unit: 'days' }] } },
+        ] }),
+        n('fr', 'tag', { tag: 'fr' }), n('en', 'tag', { tag: 'en' }), n('dort', 'tag', { tag: 'dort' }), n('s', 'tag', { tag: 'sinon' }),
+      ],
+      edges: [eh('e1', 'c', 'fr', 'true'), eh('e2', 'c', 'en', 'famille:k2'), eh('e3', 'c', 'dort', 'famille:k3'), eh('e4', 'c', 's', 'false')],
+    };
+    const jouer = async (over: Partial<EvalContext>) => {
+      const { ex, calls } = makeEval(g, baseCtx(over));
+      await ex.demarrer('campagne_scenario', 't1', 'wf1', g, { waId: '33600', contactId: 'c1' });
+      return calls;
+    };
+    // baseCtx().now = 2026-08-02T14:30:00Z
+    expect(await jouer({ phone: '+33612345678', langueDetectee: 'en' })).toEqual(['tag:fr']); // la première gagne
+    expect(await jouer({ phone: '+447400123456', langueDetectee: 'en' })).toEqual(['tag:en']);
+    expect(await jouer({ phone: '+447400123456', dernierMessageRecu: '2026-07-01T10:00:00.000Z' })).toEqual(['tag:dort']);
+    expect(await jouer({ phone: '+447400123456' })).toEqual(['tag:sinon']); // rien de connu : « Sinon »
+  });
+
   it('evalContext renvoie null (contact introuvable) -> branche false déterministe', async () => {
     const { ex, calls } = makeEval(condGraph, null);
     await ex.demarrer('campagne_scenario', 't1', 'wf1', condGraph, { waId: '33600', contactId: 'c1' });

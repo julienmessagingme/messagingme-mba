@@ -1,5 +1,5 @@
 import type { WorkflowGraph, WorkflowNode } from './graph';
-import { evaluateConditionGroup, coerceConditionGroup, parseInstant } from './conditions';
+import { parseInstant, sortieDeCondition, sortiesDeCondition, SORTIE_SINON } from './conditions';
 import type { EvalContext } from './conditions';
 // « Quand est le prochain créneau ouvert ? » vit à un seul endroit : le bloc Attente, l'envoi de campagne et
 // sa reprise après la fermeture doivent avoir la même réponse.
@@ -111,7 +111,8 @@ export interface OpeningScan {
 
 /**
  * Explore, depuis l'entrée, tout ce qui est atteignable avant le premier envoi. Les blocs synchrones sont
- * traversés, un bloc `condition` explore ses deux sorties, `template` et `inbox` arrêtent leur branche.
+ * traversés, un bloc `condition` explore toutes ses sorties (`sortiesDeCondition`), `template` et `inbox` arrêtent
+ * leur branche.
  *
  * En largeur (file, pas pile) : « le premier template » doit être le plus proche de l'entrée, sinon le
  * mapping de variables d'une campagne viserait un template arbitraire selon l'ordre d'insertion des blocs.
@@ -184,10 +185,12 @@ export function scanOpening(graph: WorkflowGraph, depuis?: string): OpeningScan 
     }
     if (node.type === 'wait') out.waitBeforeTemplate = true; // traversé, mais rien ne partira au lancement
     if (node.type === 'condition') {
-      const t = nextNodeByHandle(graph, id, 'true');
-      const f = nextNodeByHandle(graph, id, 'false') ?? nextNode(graph, id);
-      if (t) queue.push(t);
-      if (f) queue.push(f);
+      // Chaque famille dans son ordre, puis « Sinon », qui retombe sur la 1re arête quand il n'est pas relié (le
+      // repli d'avant les familles, inchangé). Un bloc d'avant RC5 rend `true` puis `false` : même parcours qu'avant.
+      for (const h of sortiesDeCondition(node)) {
+        const c = nextNodeByHandle(graph, id, h) ?? (h === SORTIE_SINON ? nextNode(graph, id) : null);
+        if (c) queue.push(c);
+      }
       continue;
     }
     // tag / field / action / wait : bloc synchrone -> explorer la suite
@@ -333,12 +336,14 @@ export function waitBeforeSessionMessage(graph: WorkflowGraph): WaitThenSession 
         ? { cumul: Math.min(cumul + Math.max(PAS_MIN_MS, waitEstimationMs(node)), FENETRE_SERVICE_MS), dernierWait: waitEstimationMs(node) > 0 ? id : dernierWait }
         : { cumul, dernierWait };
     if (node.type === 'condition') {
-      for (const h of ['true', 'false'] as const) {
+      // Toutes les sorties (familles puis « Sinon »), et la 1re arête seulement si aucune n'est reliée.
+      const sorties = sortiesDeCondition(node);
+      for (const h of sorties) {
         const cible = nextNodeByHandle(graph, id, h);
         if (cible) pile.push({ id: cible, ...suivant });
       }
       const repli = nextNode(graph, id);
-      if (repli && !graph.edges.some((e) => e.source === id && (e.sourceHandle === 'true' || e.sourceHandle === 'false'))) {
+      if (repli && !graph.edges.some((e) => e.source === id && e.sourceHandle !== undefined && sorties.includes(e.sourceHandle))) {
         pile.push({ id: repli, ...suivant });
       }
       continue;
@@ -784,14 +789,16 @@ export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContex
       return { actions, rest: { status: 'inbox', assigneA: a === '' ? null : a } };
     }
     if (node.type === 'condition') {
-      // Bloc synchrone sans action : évalue la condition (copie de travail) et suit 'true' (« Si réunie ») ou
-      // 'false' (« Sinon »). Sans contexte (analyse de graphe pure) -> 'false', déterministe.
+      // Bloc synchrone sans action : évalue ses familles dans l'ordre (copie de travail) et suit la PREMIÈRE vraie,
+      // sinon « Sinon » (`false`). Un bloc d'avant les familles en a une seule, de poignée `true` (« Si réunie »).
+      // Sans contexte (analyse de graphe pure) -> « Sinon », déterministe.
       const here: string = current;
-      const passed = work ? evaluateConditionGroup(coerceConditionGroup(node.data), work) : false;
-      // Sorties typées : si la branche évaluée n'est pas câblée alors qu'une sortie typée existe -> cul-de-sac
-      // (done), jamais l'arête de l'autre branche. Repli sur la 1re arête seulement pour un node sans sortie typée.
-      const hasTypedEdge = graph.edges.some((e) => e.source === here && (e.sourceHandle === 'true' || e.sourceHandle === 'false'));
-      current = nextNodeByHandle(graph, here, passed ? 'true' : 'false') ?? (hasTypedEdge ? null : nextNode(graph, here));
+      const sorties = sortiesDeCondition(node);
+      const choisie = work ? sortieDeCondition(node.data, work) : SORTIE_SINON;
+      // Sorties typées : si la branche choisie n'est pas câblée alors qu'une sortie typée existe -> cul-de-sac
+      // (done), jamais l'arête d'une autre branche. Repli sur la 1re arête seulement pour un node sans sortie typée.
+      const hasTypedEdge = graph.edges.some((e) => e.source === here && e.sourceHandle !== undefined && sorties.includes(e.sourceHandle));
+      current = nextNodeByHandle(graph, here, choisie) ?? (hasTypedEdge ? null : nextNode(graph, here));
       continue;
     }
     if (node.type === 'rcs_message') {

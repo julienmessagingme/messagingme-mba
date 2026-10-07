@@ -14,4 +14,13 @@ describe('summarize (Contenu > Blocs)', () => {
   it('un bloc agent sans label rend une chaîne vide, jamais un throw', () => {
     expect(summarize('agent', {})).toBe('');
   });
+
+  it('un bloc Condition d’avant les familles garde son résumé ; un bloc à familles nomme ses familles (RC5)', () => {
+    expect(summarize('condition', { match: 'any', clauses: [{}, {}] })).toBe('Si au moins une de 2 conditions');
+    expect(summarize('condition', { familles: [
+      { code: 'true', nom: 'France', groupe: { match: 'all', clauses: [] } },
+      { code: 'k2', nom: '', groupe: { match: 'all', clauses: [] } },
+    ] })).toBe('2 familles : France, famille 2');
+    expect(summarize('condition', { familles: [] })).toBe('Sinon seulement');
+  });
 });

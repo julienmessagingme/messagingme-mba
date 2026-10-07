@@ -1,5 +1,5 @@
-import { evaluateConditionGroup } from '../workflow/conditions';
-import type { EvalContext } from '../workflow/conditions';
+import { besoinsDesClauses, evaluateConditionGroup } from '../workflow/conditions';
+import type { BesoinsContexte, EvalContext } from '../workflow/conditions';
 import { matchesTrigger, isInCooldown, typeDeLancementDe, antiRebondParDefaut } from './match';
 import type { AutomationRow, AutomationEvent, AutomationTriggerKind } from './match';
 import type { DemandeAutomatisme } from '../workflow/lancements';
@@ -44,9 +44,10 @@ export interface AutomationRunnerDeps {
   /**
    * État du contact pour évaluer un `conditionGroup`. null = contact introuvable : les automations à condition
    * sont ignorées (on ne déclenche pas sur un filtre non vérifié). Non appelé si aucune candidate n'a de
-   * condition.
+   * condition. `besoins` : les champs système qu'une condition teste (dernier message reçu, langue détectée), lus
+   * seulement si l'une des candidates en porte une, comme pour un bloc Condition de scénario.
    */
-  evalContext(tenantId: string, waId: string): Promise<EvalContext | null>;
+  evalContext(tenantId: string, waId: string, besoins?: BesoinsContexte): Promise<EvalContext | null>;
   /**
    * Démarre le scénario. `true` = parti ; `false` ou une chaîne (la raison du refus) = pas parti (fil détenu,
    * bloc absent, scénario supprimé).
@@ -141,7 +142,15 @@ export async function runAutomations(
       }
 
       if (a.conditionGroup) {
-        if (!ctxLoaded) { ctx = await deps.evalContext(tenantId, ev.waId); ctxLoaded = true; }
+        if (!ctxLoaded) {
+          // Construit une fois pour toutes les candidates : il charge ce que l'UNE d'elles demande.
+          const besoins: BesoinsContexte = {
+            derniereSaisie: false,
+            ...besoinsDesClauses(candidates.flatMap((x) => x.conditionGroup?.clauses ?? [])),
+          };
+          ctx = await deps.evalContext(tenantId, ev.waId, besoins);
+          ctxLoaded = true;
+        }
         // Contact introuvable : on ne peut pas vérifier le filtre, donc on ne déclenche pas.
         if (!ctx || !evaluateConditionGroup(a.conditionGroup, ctx)) continue;
       }

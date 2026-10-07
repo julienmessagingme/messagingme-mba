@@ -431,6 +431,38 @@ négation) se séparent, et c'est exactement celui qu'on n'écrit pas parce qu'i
 numérotation : filtrer avant renuméroterait, et le contact partirait dans la mauvaise branche. Supprimer une
 ligne depuis le panneau passe par un événement que le BUILDER traite, parce que lui seul voit les arêtes.
 
+🔴 **Le bloc Condition a des FAMILLES** (RC5, `src/workflow/conditions.ts`). `data.familles` : 10 au plus, chacune
+`{ code, nom, groupe }`, son groupe de clauses en ET ou en OU. Le moteur les teste dans l'ordre et suit la PREMIÈRE
+vraie, sinon « Sinon » (`sortieDeCondition`). Une famille sort par une poignée tirée de son CODE, jamais de sa place
+(`poigneeDeFamille`) : `true` pour la famille d'origine, `famille:<code>` pour une famille ajoutée, `false` pour
+« Sinon ». Réordonner ou retirer une famille ne décale donc aucune arête, contrairement aux lignes de menu ci-dessus ;
+le retrait passe par l'événement `wf-condition-familles` (même contrat que `wf-agent-change`), qui retire SON arête et
+aucune autre. Une famille vraie mais non reliée arrête le parcours, comme une branche non reliée avant elle.
+- **Compatibilité sans migration** : un bloc SANS `familles` (tous ceux d'avant) se lit comme UNE famille de code `true`
+  portant son `match` / `clauses`. Ses sorties restent `true` / `false`, et ni le graphe publié ni ses arêtes ne bougent.
+  L'écran garde cette forme tant qu'il n'y a qu'une famille d'origine sans nom (`ecrireFamilles`) ; dès qu'il y en a
+  deux, ou un nom, `familles` fait foi et l'ancienne forme est effacée. `tests/condition-familles.test.ts` fait
+  passer des graphes d'avant par le moteur neuf contre le pas « condition » d'avant, recopié mot pour mot.
+- 🔴 **`sortiesDeCondition(node)` est le SEUL endroit qui nomme ces sorties** (familles puis « Sinon »), côté serveur et
+  dans son miroir console (`web/lib/condition-familles.ts`, parité tenue par `tests/web-condition-familles-parity.test.ts`).
+  `true` et `false` étaient écrits en dur à sept endroits (`walk`, `scanOpening`, `waitBeforeSessionMessage`, leurs
+  deux miroirs, les mesures d'un scénario, les flèches du canevas d'Analytics) : un lecteur qui les nommerait encore
+  ne verrait pas une famille neuve, sans aucune erreur. L'aperçu de première réponse, lui, ne lit aucune sortie : une
+  Condition y reste indécidable, familles ou pas.
+- **Bornées au moteur, pas à la publication** : `parseGraph` ne lit pas `data`, et une publication ne valide rien de
+  `data` aujourd'hui. Au-delà de dix, le surplus est ignoré ; un code invalide, en double ou égal à `false` écarte sa
+  famille (`famillesDeCondition`). Même doctrine que `MAX_DESTINATAIRES_EMAIL` : un refus à l'enregistrement
+  automatique bloquerait tout le scénario pour un bloc, et l'écran ne produit ni l'un ni l'autre.
+- **Les champs SYSTÈME** : trois clauses que la plateforme sait sans saisie. `dernier_message_recu` (les opérateurs
+  d'une date, sur le dernier message ENTRANT, tous canaux, réaction exclue : `PgInboxStore.dateDernierMessageRecu`),
+  `langue_detectee` (`contacts.langue_detectee`, comparée sur la langue principale sans casse :
+  `PgContactStore.langueDetecteeParWaId`), `pays` (« est l'un de », déduit du numéro par `paysDuNumero`,
+  `src/crm/phone.ts`). Les deux premières coûtent une requête chacune, faite SEULEMENT si un bloc (ou la condition
+  d'une automation) les teste, sur le modèle de la dernière saisie (`BesoinsContexte`, `besoinsDesClauses`) ; le pays
+  se lit sur le numéro déjà dans le contexte. Absent veut dire VIDE, jamais une valeur inventée : un contact qui n'a
+  jamais écrit n'est ni « plus vieux » ni « plus récent » que sept jours, une langue jamais apprise n'est pas
+  « français », un contact sans numéro n'a aucun pays.
+
 ### 4.4 Un agent IA répond
 
 ```
@@ -3233,6 +3265,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/api/modele-envoi.ts` | ce qu'un envoi de l'API sait d'un template : `modeleLuDe` (la construction de la lecture partagée `templateVarInfo` ET du catalogue `/v1/templates`), `raisonNonEnvoyable` (ce qu'aucun envoi ne peut faire partir) et `verdictModele`. Le catalogue n'annonce que ce que l'envoi accepte |
 | `src/server.ts` -> `modulesDeRoutes` | 🔴 le point de passage OBLIGÉ pour monter un module de routes. Chaque entrée déclare sa `ClasseDAcces` (six valeurs, pas deux), et la couverture du garde-fou d'authentification s'en DÉRIVE au lieu d'être recopiée, comme l'étape d'espace (posée par `entree` sur les seuls modules `tenant`). Monter une route ailleurs la sort du garde-fou et de l'étape : si elle lit l'espace par `espaceVerifie`, elle rend un 500 au lieu de servir, sinon aucune erreur ne le dit |
 | `src/crm/contact-store.pg.ts` -> `MATCH_BY_WAID_SQL` | résoudre un contact par `wa_id` (E.164 exact, chiffres nus, BSUID) |
+| `src/workflow/conditions.ts` -> `sortiesDeCondition`, `famillesDeCondition` | 🔴 les sorties d'un bloc Condition (une par famille, puis « Sinon ») et la lecture de ses familles, compatibilité des blocs d'avant comprise. Aucun lecteur du graphe n'écrit `true` / `false` : voir § 4.3 |
 | `src/crm/identity.ts` -> `waIdOfTarget` | la règle wa_id pour une cible d'envoi |
 | `src/api/fiche.ts` -> `resoudreFiche` | 🔴 trouver la fiche d'une personne à partir des clés reçues par l'API publique. Une seconde résolution divergerait sur la règle multi-clés, et une personne aurait deux fiches |
 | `src/api/consentement.ts` -> `appliquerConsentement` | le consentement écrit par une machine, et sa ligne d'audit |
@@ -3334,6 +3367,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `web/lib/libelles-mba.ts` -> `LIBELLES` | le seul lien entre une clé de tâche de complétion (serveur) et un onglet de l'écran, plus le libellé de repli quand le serveur ne joint pas de raison |
 | `web/lib/logos-llm.ts` | le logo d'un modèle, dérivé du PRÉFIXE de son identifiant, et la pastille de repli. 🔴 L'`alt` est VIDE délibérément : il entrerait dans le nom accessible du bouton qui porte l'image, que deux suites ciblent par ce nom |
 | `web/lib/campaign-eligibility.ts` | 🔴 le MIROIR de l'analyse d'ouverture serveur, tenu par un test de parité |
+| `web/lib/condition-familles.ts` | 🔴 le MIROIR des familles d'un bloc Condition (`sortiesDeCondition`), plus ce que seul l'écran fait : leur nom affiché, la forme écrite (`ecrireFamilles`), un code neuf. Lu par la carte, le panneau, le constructeur, l'éligibilité, les mesures et le canevas d'Analytics ; parité tenue par `tests/web-condition-familles-parity.test.ts` |
 | `web/lib/api-exemples.ts` | les exemples (corps et réponses), les codes d'erreur et les bornes des pages de la documentation API (`FICHIERS_DOC`). 🔴 Aucun fichier de la doc n'écrit de JSON à la main : `tests/api-exemples.test.ts` passe chaque corps aux règles de sa route (schéma zod, règles de cible), type chaque réponse par ce que sa route rend, tient la table des codes égale à `CodeApi` (au typecheck), vérifie que les exemples se répondent (l'appel de scénario décrit les variables du template d'ouverture montré) et refuse tout nom d'outil tiers. ⚠️ Aucun import : il est lu par la console ET par la suite racine |
 | `web/lib/doc-api-pages.ts` | la carte de la documentation publique : ses pages (adresse, fichier, groupe, titre, ancres) et la liste FERMÉE de ses fichiers (`FICHIERS_DOC`). 🔴 Les gardes de source (`tests/api-exemples.test.ts`, `tests/web-signaux-parite.test.ts`, `tests/web-risque-parite.test.ts`, `web/lib/api-base.test.ts`) lisent cette liste, jamais tout `web/`, et chacune exige d'y trouver ce qu'elle cherche. Une page posée sous `web/app/developers/api/` sans y figurer fait tomber la suite. L'e2e ouvre chaque page (console, sans compte, anglais, mobile) et vérifie chaque ancre. ⚠️ Aucun import de valeur ; plus `ANCRES_DEPLACEES` (anciennes ancres, et la page de départ vers la nouvelle adresse) et `LIENS_NAV` (entrées de navigation qui ne sont pas des pages) ; la liste fermée couvre aussi `web/components/doc-api/` et les modules de texte |
 | `web/lib/api-champs.ts` | les tableaux de champs de chaque corps de requête, les cibles d'un envoi et les sources de `params`. 🔴 `tests/api-champs-parite.test.ts` les tient égaux aux schémas zod des routes, dans les deux sens : clés, obligation dérivée du schéma, type, valeurs d'énumération, clés refusées, et sort d'une clé inconnue. `params` est éprouvé par `validateParamMapping`. ⚠️ Aucun code d'erreur dans ses textes : un code se cite par `<Code>` |

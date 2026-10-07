@@ -330,3 +330,74 @@ describe('clause field sur la dernière analyse', () => {
     expect(si({ kind: 'field', key: 'ville', op: 'in', value: 'Paris' }, { fields: { ville: 'Paris' } })).toBe(false);
   });
 });
+
+/**
+ * LES CHAMPS SYSTÈME (RC5) : ce que la plateforme sait du contact sans qu'il l'ait saisi. Chaque clause est testée
+ * valeur PRÉSENTE et valeur ABSENTE : absente (jamais chargée, jamais apprise, pas de numéro) veut dire vide, et une
+ * condition ne doit jamais inventer une valeur à sa place.
+ */
+describe('champs système : dernier message reçu, langue détectée, pays de l’indicatif', () => {
+  const si = (c: Clause, over: Partial<EvalContext> = {}) => evaluateConditionGroup(grp([c]), ctx(over));
+  // ctx().now = 2026-08-03T12:00:00Z
+  const ilYA = (jours: number) => new Date(Date.parse('2026-08-03T12:00:00Z') - jours * 86_400_000).toISOString();
+
+  it('dernier message reçu : plus vieux / plus récent qu’une durée, avant / après une date', () => {
+    const vieux = { dernierMessageRecu: ilYA(10) };
+    expect(si({ kind: 'dernier_message_recu', op: 'older_than', amount: 7, unit: 'days' }, vieux)).toBe(true);
+    expect(si({ kind: 'dernier_message_recu', op: 'newer_than', amount: 7, unit: 'days' }, vieux)).toBe(false);
+    expect(si({ kind: 'dernier_message_recu', op: 'newer_than', amount: 7, unit: 'days' }, { dernierMessageRecu: ilYA(2) })).toBe(true);
+    expect(si({ kind: 'dernier_message_recu', op: 'before', value: '2026-08-01' }, vieux)).toBe(true);
+    expect(si({ kind: 'dernier_message_recu', op: 'after', value: '2026-08-01' }, vieux)).toBe(false);
+    expect(si({ kind: 'dernier_message_recu', op: 'not_empty' }, vieux)).toBe(true);
+  });
+
+  it('🔴 dernier message reçu ABSENT (jamais écrit, ou non chargé) : vide, et aucune comparaison de date ne passe', () => {
+    for (const absent of [{}, { dernierMessageRecu: null }]) {
+      expect(si({ kind: 'dernier_message_recu', op: 'empty' }, absent)).toBe(true);
+      expect(si({ kind: 'dernier_message_recu', op: 'not_empty' }, absent)).toBe(false);
+      // « plus vieux que 7 jours » ne doit PAS être vrai pour quelqu'un dont on ne connaît aucun message.
+      expect(si({ kind: 'dernier_message_recu', op: 'older_than', amount: 7, unit: 'days' }, absent)).toBe(false);
+      expect(si({ kind: 'dernier_message_recu', op: 'newer_than', amount: 7, unit: 'days' }, absent)).toBe(false);
+    }
+  });
+
+  it('langue détectée : comparée sur la langue principale, sans casse', () => {
+    expect(si({ kind: 'langue_detectee', op: 'is', value: 'en' }, { langueDetectee: 'en' })).toBe(true);
+    expect(si({ kind: 'langue_detectee', op: 'is', value: 'en' }, { langueDetectee: 'EN-us' })).toBe(true);
+    expect(si({ kind: 'langue_detectee', op: 'is', value: 'en' }, { langueDetectee: 'es' })).toBe(false);
+    expect(si({ kind: 'langue_detectee', op: 'is_not', value: 'fr' }, { langueDetectee: 'es' })).toBe(true);
+    expect(si({ kind: 'langue_detectee', op: 'is_not', value: 'fr' }, { langueDetectee: 'fr_FR' })).toBe(false);
+    expect(si({ kind: 'langue_detectee', op: 'not_empty' }, { langueDetectee: 'es' })).toBe(true);
+    // 🔴 Une cible vide (champ effacé à l'écran) ne contraint rien, dans les deux sens : elle ne retient pas d'office
+    // tous les contacts sans langue apprise.
+    expect(si({ kind: 'langue_detectee', op: 'is', value: '' }, { langueDetectee: null })).toBe(true);
+    expect(si({ kind: 'langue_detectee', op: 'is', value: '  ' }, { langueDetectee: 'en' })).toBe(true);
+    expect(si({ kind: 'langue_detectee', op: 'is_not', value: '' }, { langueDetectee: null })).toBe(true);
+  });
+
+  it('🔴 langue JAMAIS apprise : vide, jamais « français » par défaut', () => {
+    for (const absent of [{}, { langueDetectee: null }, { langueDetectee: '  ' }]) {
+      expect(si({ kind: 'langue_detectee', op: 'empty' }, absent)).toBe(true);
+      expect(si({ kind: 'langue_detectee', op: 'is', value: 'fr' }, absent)).toBe(false);
+      // Ce qu'on ne sait pas n'est pas l'anglais : « n'est pas l'anglais » est vrai.
+      expect(si({ kind: 'langue_detectee', op: 'is_not', value: 'en' }, absent)).toBe(true);
+    }
+  });
+
+  it('pays de l’indicatif : déduit du numéro de la fiche, comparé à une liste', () => {
+    expect(si({ kind: 'pays', op: 'is_one_of', values: ['FR'] }, { phone: '+33612345678' })).toBe(true);
+    expect(si({ kind: 'pays', op: 'is_one_of', values: ['BE', 'ch'] }, { phone: '+41791234567' })).toBe(true);
+    expect(si({ kind: 'pays', op: 'is_one_of', values: ['FR'] }, { phone: '+32470123456' })).toBe(false);
+    // Un indicatif partagé se départage par les chiffres suivants : +1 613 est le Canada, pas les États-Unis.
+    expect(si({ kind: 'pays', op: 'is_one_of', values: ['US'] }, { phone: '+16135550123' })).toBe(false);
+    expect(si({ kind: 'pays', op: 'is_one_of', values: ['CA'] }, { phone: '+16135550123' })).toBe(true);
+  });
+
+  it('🔴 pays ABSENT (aucun numéro, contact BSUID seul, plage inconnue) : aucun pays, la clause ne retient pas', () => {
+    for (const phone of [null, '', '+1', '+999123']) {
+      expect(si({ kind: 'pays', op: 'is_one_of', values: ['FR', 'US'] }, { phone, bsuid: 'B1' })).toBe(false);
+    }
+    // Une liste vide ne retient personne, comme « est un de ces jours » sans jour coché.
+    expect(si({ kind: 'pays', op: 'is_one_of', values: [] }, { phone: '+33612345678' })).toBe(false);
+  });
+});

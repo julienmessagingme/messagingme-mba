@@ -5,7 +5,7 @@ import type { WorkflowAction, WalkRest, WorkflowButton, SendEmailAction, Questio
 import type { WorkflowGraph, WorkflowNode, WorkflowNodeType } from './graph';
 import { CHAMP_MAINTENANT } from './fonction-js';
 import { renderText } from '../crm/render';
-import type { EvalContext } from './conditions';
+import { besoinsDesClauses, clausesDuBloc, type BesoinsContexte, type EvalContext } from './conditions';
 import type { RunState, WorkflowRunRow, RunChannel, RunStatus } from './run-store.pg';
 import type { RcsSender } from '../rcs/sender';
 import type { RcsOutbound, RcsSuggestion } from '../rcs/types';
@@ -262,9 +262,10 @@ export interface WorkflowExecutorDeps {
    * Construit le contexte d'évaluation d'un contact (fields/tags/opt-in/attributs, fuseau et horaires du
    * tenant, `now`) pour les conditions et les valeurs dynamiques. null si le contact est introuvable : les
    * conditions prennent 'false' et une valeur dynamique est vide (fixtures : `contexteIntrouvable`).
-   * `besoins` : la dernière saisie coûte une requête, lue seulement si le graphe la réclame.
+   * `besoins` : la dernière saisie, la date du dernier message reçu et la langue détectée coûtent chacune une
+   * requête, lue seulement si le graphe la réclame.
    */
-  evalContext(tenantId: string, waId: string, besoins?: { derniereSaisie: boolean }): Promise<EvalContext | null>;
+  evalContext(tenantId: string, waId: string, besoins?: BesoinsContexte): Promise<EvalContext | null>;
   /**
    * Remonte la conversation à un humain (`control_owner = app_human`), sinon le bloc inbox serait un arrêt
    * silencieux. `assigneA` : le membre désigné par le bloc, `null` = au pot commun. Fixtures :
@@ -442,10 +443,14 @@ export class WorkflowExecutor {
     const needsCtx = graph.nodes.some((n) => n.type === 'condition' || valeurDynamique(n) !== null
       || (n.type === 'wait' && waitMode(n) !== 'delai'));
     if (!needsCtx) return undefined;
-    // Une requête de plus seulement si un bloc réclame la dernière saisie.
-    const derniereSaisie = graph.nodes.some((n) => valeurDynamique(n) === 'derniere_saisie');
+    // Une requête de plus seulement si un bloc réclame la dernière saisie, ou si une Condition teste le dernier
+    // message reçu ou la langue détectée (champs système, RC5), dans n'importe laquelle de ses familles.
+    const besoins: BesoinsContexte = {
+      derniereSaisie: graph.nodes.some((n) => valeurDynamique(n) === 'derniere_saisie'),
+      ...besoinsDesClauses(graph.nodes.filter((n) => n.type === 'condition').flatMap((n) => clausesDuBloc(n.data))),
+    };
     try {
-      return (await this.deps.evalContext(tenantId, waId, { derniereSaisie })) ?? undefined;
+      return (await this.deps.evalContext(tenantId, waId, besoins)) ?? undefined;
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(`workflow: evalContext a échoué pour ${waId}, conditions -> 'false' (fail-closed)`, err);

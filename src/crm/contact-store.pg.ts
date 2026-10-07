@@ -655,6 +655,19 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
+   * La langue APPRISE du contact (`langue_detectee`, migration 0137), ou `null` : le champ système « langue détectée »
+   * du bloc Condition (RC5). Lue à part, et seulement quand un bloc la teste, plutôt qu'ajoutée à
+   * `getContactStateByWaId` : le même contact (même prédicat, sans filtre sur `deleted_at`, comme lui).
+   */
+  async langueDetecteeParWaId(tenantId: string, waId: string): Promise<string | null> {
+    const res = await this.pool.query<{ langue_detectee: string | null }>(
+      `select langue_detectee from contacts where tenant_id = $1 ${MATCH_BY_WAID_SQL}`,
+      [tenantId, waId],
+    );
+    return res.rows[0]?.langue_detectee ?? null;
+  }
+
+  /**
    * 🔴 Ce contact a-t-il demandé à ne plus être contacté ? Méthode la plus étroite possible, sur le chemin de
    * chaque envoi automatique (ne pas ramener le jsonb des champs pour lire un mot). Un contact inconnu n'est pas
    * désabonné : c'est le cas ordinaire d'un premier contact.

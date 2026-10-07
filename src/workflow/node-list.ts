@@ -1,5 +1,6 @@
 import type { WorkflowNodeType } from './graph';
 import type { WorkflowRow } from './store.pg';
+import { famillesDeCondition } from './conditions';
 
 /**
  * Un node aplati depuis les graphes de workflows, pour l'affichage « Contenu > Blocs ».
@@ -64,6 +65,12 @@ export function summarize(type: WorkflowNodeType, data: Record<string, unknown>)
       break;
     }
     case 'condition': {
+      // Un bloc à familles (RC5) se résume par leurs noms ; un bloc d'avant, par son groupe unique, comme avant.
+      if (Array.isArray(data.familles)) {
+        const noms = famillesDeCondition(data).map((f, i) => f.nom || `famille ${i + 1}`);
+        out = noms.length === 0 ? 'Sinon seulement' : `${noms.length} famille${noms.length > 1 ? 's' : ''} : ${noms.join(', ')}`;
+        break;
+      }
       const clauses = Array.isArray(data.clauses) ? data.clauses.length : 0;
       const combineur = data.match === 'any' ? 'au moins une' : 'toutes';
       out = clauses === 0 ? 'Condition' : `Si ${combineur} de ${clauses} condition${clauses > 1 ? 's' : ''}`;

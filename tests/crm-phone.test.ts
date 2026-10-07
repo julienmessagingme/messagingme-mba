@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { e164DepuisSaisie, normalizePhone } from '../src/crm/phone';
+import { e164DepuisSaisie, normalizePhone, paysDuNumero } from '../src/crm/phone';
 
 describe('normalizePhone (FR par défaut)', () => {
   it('06 national -> E.164', () => {
@@ -40,5 +40,22 @@ describe('e164DepuisSaisie : le numéro tel qu’un appelant le donne', () => {
     expect(e164DepuisSaisie('pas un numero')).toBeNull();
     expect(e164DepuisSaisie('   ')).toBeNull();
     expect(e164DepuisSaisie('123')).toBeNull();
+  });
+});
+
+describe('paysDuNumero : le pays de l’indicatif (champ système du bloc Condition)', () => {
+  it('le pays d’un E.164, ou d’un identifiant WhatsApp (sans « + »)', () => {
+    expect(paysDuNumero('+33612345678')).toBe('FR');
+    expect(paysDuNumero('33612345678')).toBe('FR');
+    expect(paysDuNumero('+32470123456')).toBe('BE');
+  });
+  it('🔴 un indicatif partagé se départage par les chiffres suivants, jamais deviné sur l’indicatif seul', () => {
+    expect(paysDuNumero('+14155552671')).toBe('US');
+    expect(paysDuNumero('+16135550123')).toBe('CA');
+    expect(paysDuNumero('+447400123456')).toBe('GB');
+    expect(paysDuNumero('+262692123456')).toBe('RE'); // un département d'outre-mer a son propre code
+  });
+  it('rien à déduire : `null`', () => {
+    for (const v of [null, undefined, '', '  ', '+1', '+999123', 'pas un numéro']) expect(paysDuNumero(v)).toBeNull();
   });
 });

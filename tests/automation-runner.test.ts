@@ -206,6 +206,27 @@ describe('runAutomations', () => {
       expect(await runAutomations('t1', MSG, deps)).toBe(2);
       expect(calls).toBe(1); // 2 automations conditionnées, 1 seule requête de contexte
     });
+
+    /**
+     * Les champs SYSTÈME (RC5) se lisent dans la condition d'une automation comme dans un bloc Condition : même
+     * contexte, même sémantique. Le contexte est construit UNE fois pour toutes les candidates, donc il charge ce
+     * que l'une d'elles demande, et rien de plus quand aucune ne le demande.
+     */
+    it('🔴 le dernier message reçu n’est demandé que si une candidate le teste, et il départage bien', async () => {
+      const recu = { match: 'all' as const, clauses: [{ kind: 'dernier_message_recu' as const, op: 'older_than' as const, amount: 7, unit: 'days' as const }] };
+      const besoins: unknown[] = [];
+      const { deps, trace } = make([withTag, auto({ id: 'a2', conditionGroup: recu })], {
+        evalContext: async (_t, _w, b) => { besoins.push(b); return ctx({ tags: [], dernierMessageRecu: '2026-07-01T00:00:00.000Z' }); },
+      });
+      expect(await runAutomations('t1', MSG, deps)).toBe(1);
+      expect(trace.started).toHaveLength(1);
+      expect(besoins).toEqual([{ derniereSaisie: false, dernierMessageRecu: true, langueDetectee: false }]);
+
+      const sans: unknown[] = [];
+      const ordinaire = make([withTag], { evalContext: async (_t, _w, b) => { sans.push(b); return ctx({ tags: ['vip'] }); } });
+      await runAutomations('t1', MSG, ordinaire.deps);
+      expect(sans).toEqual([{ derniereSaisie: false, dernierMessageRecu: false, langueDetectee: false }]);
+    });
   });
 
   it('le tir est marqué AVANT le démarrage : un scénario qui échoue ne reboucle pas', async () => {

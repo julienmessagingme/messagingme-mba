@@ -17,6 +17,21 @@ export function normalizePhone(raw: string, defaultCountry: CountryCode = 'FR'):
 }
 
 /**
+ * Le PAYS d'un numéro (code ISO 3166 à deux lettres, `FR`), déduit de son indicatif et de ses premiers chiffres,
+ * ou `null`. Sert le champ système « pays de l'indicatif » du bloc Condition (RC5).
+ *
+ * ⚠️ Un indicatif partagé se départage par les chiffres qui suivent : `+44 7911` est un mobile de Guernesey (`GG`),
+ * `+44 7400` du Royaume-Uni (`GB`), `+1 613` le Canada. Un numéro que la bibliothèque ne sait rattacher à aucun pays
+ * (plage inconnue) rend `null`, jamais un pays deviné sur l'indicatif seul.
+ */
+export function paysDuNumero(numero: string | null | undefined): string | null {
+  const brut = typeof numero === 'string' ? numero.trim() : '';
+  if (brut === '') return null;
+  // Le E.164 de la fiche porte son « + » ; un identifiant WhatsApp (l'indicatif sans « + ») le reçoit ici.
+  return parsePhoneNumberFromString(brut.startsWith('+') ? brut : `+${brut}`)?.country ?? null;
+}
+
+/**
  * Un numéro tel qu'un APPELANT le donne, vers le E.164 de la fiche, ou `null`. Trois formes arrivent : un identifiant
  * WhatsApp (l'indicatif, sans « + » : `33612345678`, c'est ce que le relais de l'agent de Meta pose depuis la
  * conversation), un E.164, ou un numéro national (`06 12 34 56 78`, pays par défaut).

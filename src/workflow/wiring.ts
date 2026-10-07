@@ -43,6 +43,7 @@ import type { EmailAccountResolver } from '../email/resolver';
 import { sendSmtpEmail } from '../email/smtp';
 import { renderText, contactVars } from '../crm/render';
 import { adressesDestinataires, type SendEmailAction } from './engine';
+import type { BesoinsContexte, EvalContext } from './conditions';
 import type { ControleDuFil } from '../inbox/fil';
 import { creerTransmettreHorsParcours } from '../mba/transmettre-hors-parcours';
 import { cacheCourt } from '../lib/cache-court';
@@ -237,16 +238,25 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
 
   // Contexte d'évaluation du contact (état CRM + fuseau/horaires du tenant). Partagé par les blocs `condition`
   // d'un scénario et le filtre `conditionGroup` d'une automation : une seule définition, même sémantique.
-  const buildEvalContext = async (tenant: string, waId: string, besoins?: { derniereSaisie: boolean }) => {
+  const buildEvalContext = async (tenant: string, waId: string, besoins?: BesoinsContexte): Promise<EvalContext | null> => {
     const state = await contactStore.getContactStateByWaId(tenant, waId);
     if (!state) return null;
     const settings = await settingsStore.get(tenant);
-    // Lue seulement si un bloc la réclame. Un échec ne coule pas le contexte : le bloc pose une valeur vide,
-    // jamais une valeur inventée.
+    // Chacune lue seulement si un bloc la réclame. Un échec ne coule pas le contexte : le bloc pose une valeur vide,
+    // et une condition lit un champ vide, jamais une valeur inventée.
     const derniereSaisie = besoins?.derniereSaisie
       ? await inboxStore.derniereSaisieDuContact(tenant, waId).catch(() => null)
       : null;
-    return { ...state, now: new Date(), timeZone: settings.timezone, businessHours: settings.businessHours, derniereSaisie };
+    const dernierRecu = besoins?.dernierMessageRecu
+      ? await inboxStore.dateDernierMessageRecu(tenant, waId).catch(() => null)
+      : null;
+    const langueDetectee = besoins?.langueDetectee
+      ? await contactStore.langueDetecteeParWaId(tenant, waId).catch(() => null)
+      : null;
+    return {
+      ...state, now: new Date(), timeZone: settings.timezone, businessHours: settings.businessHours, derniereSaisie,
+      dernierMessageRecu: dernierRecu ? dernierRecu.toISOString() : null, langueDetectee,
+    };
   };
 
   /**

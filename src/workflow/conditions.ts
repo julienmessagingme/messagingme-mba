@@ -1,11 +1,13 @@
 // Évaluation d'une condition de scénario (node « Si »). Module pur (aucune IO, aucun import qui tire pg) :
-// `evaluateConditionGroup(group, ctx)` renvoie la sortie « Si réunie » ou « Sinon ». Les opérateurs texte
-// reproduisent la sémantique SQL de `buildContactWhere` (mini-CRM) : voir `matchStringOp` et son test de parité.
+// `evaluateConditionGroup(group, ctx)` dit si un groupe de clauses est vrai, `sortieDeCondition(data, ctx)` choisit
+// la sortie du bloc (sa première famille vraie, sinon « Sinon »). Les opérateurs texte reproduisent la sémantique
+// SQL de `buildContactWhere` (mini-CRM) : voir `matchStringOp` et son test de parité.
 
 import type { ContactFieldOp } from '../crm/contact-store.pg';
 import type { AnalyseDeFiche } from '../analysis/fiche';
 import { estCleFiltrable, evaluerFiltreFiche, texteDeLaCopie, type OperateurFicheSeul } from '../crm/filtre-fiche';
 import { champFiche } from '../crm/champs-fiche';
+import { paysDuNumero } from '../crm/phone';
 
 /** 0 = dimanche … 6 = samedi (convention getUTCDay / Intl). */
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -17,6 +19,7 @@ export type StringOp = ContactFieldOp; // 'eq' | 'contains' | 'not_contains' | '
 export type NumberOp = 'eq' | 'neq' | 'lt' | 'lte' | 'gt' | 'gte' | 'empty' | 'not_empty';
 export type BoolOp = 'is_true' | 'is_false';
 export type DateTimeOp = 'before' | 'after' | 'older_than' | 'newer_than' | 'empty' | 'not_empty';
+export type LangueOp = 'is' | 'is_not' | 'empty' | 'not_empty';
 
 export type Clause =
   | { kind: 'tag'; op: 'has' | 'not_has'; tag: string }
@@ -26,7 +29,15 @@ export type Clause =
   | { kind: 'weekday'; op: 'is_weekday' | 'is_weekend' | 'is_one_of'; days?: Weekday[] }
   | { kind: 'business_hours'; op: 'within' | 'outside' }
   | { kind: 'time_of_day'; op: 'before' | 'after'; time: string } // 'HH:MM'
-  | { kind: 'identity'; op: 'has_phone' | 'has_bsuid' | 'has_email' };
+  | { kind: 'identity'; op: 'has_phone' | 'has_bsuid' | 'has_email' }
+  /**
+   * Les champs SYSTÈME (RC5) : ce que la plateforme sait du contact sans qu'il l'ait saisi. Les deux premiers coûtent
+   * une lecture, faite seulement si un bloc les teste (`besoinsDesClauses`) ; absents, ils valent VIDE, jamais une
+   * valeur inventée. Le pays se déduit du numéro déjà dans le contexte, sans lecture.
+   */
+  | { kind: 'dernier_message_recu'; op: DateTimeOp; value?: string; amount?: number; unit?: TimeUnit }
+  | { kind: 'langue_detectee'; op: LangueOp; value?: string }
+  | { kind: 'pays'; op: 'is_one_of'; values: string[] };
 
 export interface ConditionGroup { match: 'all' | 'any'; clauses: Clause[] }
 
@@ -51,6 +62,16 @@ export interface EvalContext {
    * valeur inventée.
    */
   derniereSaisie?: string | null;
+  /**
+   * Date (ISO 8601) du dernier message REÇU du contact, tous canaux, réaction exclue : le champ système « dernier
+   * message reçu ». Chargée seulement si un bloc la teste, sur le modèle de `derniereSaisie` ; absente = vide.
+   */
+  dernierMessageRecu?: string | null;
+  /**
+   * `contacts.langue_detectee` (ISO 639-1, APPRISE par la traduction, migration 0137) : le champ système « langue
+   * détectée ». Chargée seulement si un bloc la teste ; absente ou jamais apprise = vide, jamais « français ».
+   */
+  langueDetectee?: string | null;
   /**
    * La dernière analyse de la fiche (colonnes `analyse_*`, migration 0196), `null` si elle n'a jamais été analysée.
    * 🔴 Un membre SÉPARÉ de `fields`, jamais fusionné dedans : la fonction JS d'un scénario reçoit `fields`, et
@@ -84,6 +105,92 @@ export function coerceConditionGroup(data: unknown): ConditionGroup {
   };
 }
 
+// --- Les familles d'un bloc Condition (RC5) ---
+
+/** Nombre maximal de familles d'un bloc. ⚠️ Miroir : `web/lib/condition-familles.ts`, parité tenue par un test. */
+export const MAX_FAMILLES_CONDITION = 10;
+/** La sortie « Sinon » : aucune famille n'est vraie. Le code d'avant les familles, inchangé. */
+export const SORTIE_SINON = 'false';
+/** Le code (et la poignée) de la famille d'un bloc d'avant les familles : sa sortie « Si réunie », inchangée. */
+export const CODE_PREMIERE_FAMILLE = 'true';
+/** Un code de famille : court, sans « : » (il entre dans une poignée), jamais celui de « Sinon ». */
+const CODE_FAMILLE_RE = /^[A-Za-z0-9_-]{1,40}$/;
+
+/** Une famille : un nom (affiché sur sa sortie), son propre groupe de clauses en ET ou en OU, un code STABLE. */
+export interface FamilleDeCondition { code: string; nom: string; groupe: ConditionGroup }
+
+/**
+ * Les familles d'un bloc Condition, dans l'ordre où elles se testent, lues défensivement (`data` est opaque :
+ * `parseGraph` ne le regarde pas).
+ *
+ * 🔴 COMPATIBILITÉ SANS MIGRATION : un bloc SANS `familles` (tous ceux d'avant RC5) se lit comme UNE famille de code
+ * `true`, portant son `match` / `clauses` d'origine. Sa sortie reste donc `true`, « Sinon » reste `false`, et ni le
+ * graphe publié ni ses arêtes ne bougent d'un octet. Dès que `familles` est un tableau, il fait foi, même vide.
+ *
+ * Bornée ICI et pas à la publication, comme les destinataires d'un mail (`MAX_DESTINATAIRES_EMAIL`) : au-delà de
+ * dix, le surplus est ignoré ; un code invalide ou déjà vu dans le bloc écarte sa famille. L'écran ne produit ni
+ * l'un ni l'autre ; c'est la ceinture d'un graphe posé par l'API.
+ */
+export function famillesDeCondition(data: unknown): FamilleDeCondition[] {
+  const d = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+  if (!Array.isArray(d.familles)) return [{ code: CODE_PREMIERE_FAMILLE, nom: '', groupe: coerceConditionGroup(d) }];
+  const vus = new Set<string>();
+  const out: FamilleDeCondition[] = [];
+  for (const brut of d.familles) {
+    if (out.length === MAX_FAMILLES_CONDITION) break;
+    const f = brut && typeof brut === 'object' && !Array.isArray(brut) ? (brut as Record<string, unknown>) : {};
+    const code = typeof f.code === 'string' ? f.code.trim() : '';
+    if (!CODE_FAMILLE_RE.test(code) || code === SORTIE_SINON || vus.has(code)) continue;
+    vus.add(code);
+    out.push({ code, nom: typeof f.nom === 'string' ? f.nom.trim() : '', groupe: coerceConditionGroup(f.groupe) });
+  }
+  return out;
+}
+
+/** La poignée (le `sourceHandle` des arêtes) d'une famille : `true` pour la première d'origine, `famille:<code>` sinon. */
+export function poigneeDeFamille(code: string): string {
+  return code === CODE_PREMIERE_FAMILLE ? CODE_PREMIERE_FAMILLE : `famille:${code}`;
+}
+
+/**
+ * TOUTES les sorties d'un bloc Condition, dans l'ordre : une par famille, puis « Sinon ». Le seul endroit qui les
+ * nomme : chaque lecteur du graphe (le moteur, l'analyse de fenêtre, l'éligibilité de campagne, et leurs miroirs
+ * console) l'appelle au lieu d'écrire `true` / `false`. Un lecteur qui l'oublierait ne verrait pas une famille neuve,
+ * sans aucune erreur. Un bloc d'avant les familles rend `['true', 'false']`, exactement ce qui était écrit en dur.
+ */
+export function sortiesDeCondition(node: { data: Record<string, unknown> }): string[] {
+  return [...famillesDeCondition(node.data).map((f) => poigneeDeFamille(f.code)), SORTIE_SINON];
+}
+
+/** La sortie que prend le contact : la PREMIÈRE famille vraie, de haut en bas ; aucune vraie, « Sinon ». */
+export function sortieDeCondition(data: unknown, ctx: EvalContext): string {
+  for (const f of famillesDeCondition(data)) {
+    if (evaluateConditionGroup(f.groupe, ctx)) return poigneeDeFamille(f.code);
+  }
+  return SORTIE_SINON;
+}
+
+/** Toutes les clauses d'un bloc Condition, familles confondues : de quoi savoir ce que son contexte doit charger. */
+export function clausesDuBloc(data: unknown): Clause[] {
+  return famillesDeCondition(data).flatMap((f) => f.groupe.clauses);
+}
+
+/**
+ * Ce que le contexte d'un contact doit charger EN PLUS de la fiche, chacun au prix d'une requête. Un scénario ou une
+ * automation ne le paie que si l'un de ses blocs (ou sa condition) le demande.
+ */
+export interface BesoinsContexte {
+  derniereSaisie: boolean;
+  dernierMessageRecu: boolean;
+  langueDetectee: boolean;
+}
+
+/** Les champs système que ces clauses lisent. Lecture défensive : une clause est du JSON libre, `null` compris. */
+export function besoinsDesClauses(clauses: readonly unknown[]): Pick<BesoinsContexte, 'dernierMessageRecu' | 'langueDetectee'> {
+  const kinds = new Set(clauses.map((c) => (c && typeof c === 'object' ? (c as { kind?: unknown }).kind : undefined)));
+  return { dernierMessageRecu: kinds.has('dernier_message_recu'), langueDetectee: kinds.has('langue_detectee') };
+}
+
 function evaluateClause(c: Clause, ctx: EvalContext): boolean {
   switch (c.kind) {
     case 'tag': {
@@ -105,19 +212,29 @@ function evaluateClause(c: Clause, ctx: EvalContext): boolean {
       if (isStringOp(c.op)) return matchStringOp(v, c.op, c.value ?? '');
       return false; // op non reconnu pour un champ -> clause non satisfaite (défensif)
     }
-    case 'datetime': {
-      const raw = attributeOrField(ctx, c.key);
-      if (c.op === 'empty') return raw === null || raw.trim() === '';
-      if (c.op === 'not_empty') return raw !== null && raw.trim() !== '';
-      const inst = raw === null ? null : parseInstant(raw, ctx.timeZone);
-      if (inst === null || Number.isNaN(inst.getTime())) return false;
-      const nowMs = ctx.now.getTime();
-      if (c.op === 'older_than') return inst.getTime() < nowMs - relMs(c.amount, c.unit);
-      if (c.op === 'newer_than') return inst.getTime() > nowMs - relMs(c.amount, c.unit);
-      // before / after vs une base : 'now' (dynamique) ou une date/heure fixe.
-      const base = c.value === 'now' || !c.value ? ctx.now : parseInstant(c.value, ctx.timeZone);
-      if (Number.isNaN(base.getTime())) return false;
-      return c.op === 'before' ? inst.getTime() < base.getTime() : inst.getTime() > base.getTime();
+    case 'datetime':
+      return comparerInstant(attributeOrField(ctx, c.key), c, ctx);
+    // Les opérateurs d'un champ date, sur la date du dernier message reçu. Jamais chargée = vide.
+    case 'dernier_message_recu':
+      return comparerInstant(strOrNull(ctx.dernierMessageRecu), c, ctx);
+    case 'langue_detectee': {
+      // Comparée sur la langue PRINCIPALE, sans casse : le modèle qui l'apprend peut écrire `EN` ou `en-US`.
+      // Une langue jamais apprise vaut vide : « n'est pas l'anglais » est alors vrai, « est l'anglais » faux.
+      const langue = langueDe(ctx.langueDetectee);
+      if (c.op === 'empty') return langue === '';
+      if (c.op === 'not_empty') return langue !== '';
+      // Une cible vide ne contraint rien (doctrine de `matchStringOp`) : sinon « est » vide retiendrait tous les contacts
+      // dont la langue n'a jamais été apprise, c'est-à-dire presque tous (relecture de RC5).
+      const cible = langueDe(c.value);
+      if (cible === '') return true;
+      return c.op === 'is_not' ? langue !== cible : langue === cible;
+    }
+    case 'pays': {
+      // Déduit du numéro de la fiche (`paysDuNumero`) ; sans numéro, ou d'une plage inconnue, aucun pays. Une liste
+      // vide ne retient personne, comme « est un de ces jours » sans jour coché.
+      const pays = paysDuNumero(ctx.phone);
+      const liste = Array.isArray(c.values) ? c.values.map((v) => String(v ?? '').trim().toUpperCase()) : [];
+      return pays !== null && liste.includes(pays);
     }
     case 'optin':
       return ctx.optIn === c.value;
@@ -142,6 +259,30 @@ function evaluateClause(c: Clause, ctx: EvalContext): boolean {
       if (c.op === 'has_bsuid') return !!(ctx.bsuid && ctx.bsuid.trim() !== '');
       return !!strOrNull(ctx.fields.email);
   }
+}
+
+/**
+ * Les opérateurs d'une date : vide / renseignée, plus vieille ou plus récente qu'une durée, avant ou après une base
+ * (`now` ou une date fixe). Partagé par un champ date de la fiche et par la date du dernier message reçu, pour qu'un
+ * « remonte à plus de 7 jours » veuille dire la même chose sur les deux.
+ */
+function comparerInstant(raw: string | null, c: { op: DateTimeOp; value?: string; amount?: number; unit?: TimeUnit }, ctx: EvalContext): boolean {
+  if (c.op === 'empty') return raw === null || raw.trim() === '';
+  if (c.op === 'not_empty') return raw !== null && raw.trim() !== '';
+  const inst = raw === null ? null : parseInstant(raw, ctx.timeZone);
+  if (inst === null || Number.isNaN(inst.getTime())) return false;
+  const nowMs = ctx.now.getTime();
+  if (c.op === 'older_than') return inst.getTime() < nowMs - relMs(c.amount, c.unit);
+  if (c.op === 'newer_than') return inst.getTime() > nowMs - relMs(c.amount, c.unit);
+  // before / after vs une base : 'now' (dynamique) ou une date/heure fixe.
+  const base = c.value === 'now' || !c.value ? ctx.now : parseInstant(c.value, ctx.timeZone);
+  if (Number.isNaN(base.getTime())) return false;
+  return c.op === 'before' ? inst.getTime() < base.getTime() : inst.getTime() > base.getTime();
+}
+
+/** La langue principale d'un code (`en-US` -> `en`), en minuscules ; vide si absente. */
+function langueDe(v: unknown): string {
+  return String(v ?? '').trim().toLowerCase().split(/[-_]/)[0] ?? '';
 }
 
 // --- Accès aux valeurs ---

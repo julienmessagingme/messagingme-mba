@@ -1824,6 +1824,24 @@ export class PgInboxStore implements InboxStore {
   }
 
   /**
+   * La date du dernier message REÇU du contact, tous canaux, ou `null` s'il n'a jamais écrit : le champ système
+   * « dernier message reçu » du bloc Condition (RC5), lu seulement quand un bloc le teste. Une réaction n'en est pas
+   * un, comme pour `dernierMessageDuClient` : un pouce levé ne dit pas que le contact est revenu.
+   */
+  async dateDernierMessageRecu(tenantId: string, waId: string): Promise<Date | null> {
+    const res = await this.pool.query<{ created_at: Date }>(
+      `select m.created_at
+         from conversation_messages m
+         join conversations c on c.id = m.conversation_id
+        where c.tenant_id = $1 and c.wa_id = $2 and m.direction = 'in' and m.type is distinct from 'reaction'
+        order by m.created_at desc, m.id desc
+        limit 1`,
+      [tenantId, waId],
+    );
+    return res.rows[0]?.created_at ?? null;
+  }
+
+  /**
    * Journalise une réponse sortante (texte libre ou template). Pour un template, `templateCategory` et
    * `templateName` alimentent les stats. `senderUserId` = auteur, pastille dans l'inbox (null pour les réponses
    * auto). `channel` : c'est la bulle qui porte le tuyau, absent -> WhatsApp.
