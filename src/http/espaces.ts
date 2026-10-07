@@ -65,7 +65,8 @@ export function registerEspaces(app: FastifyInstance, deps: EspacesRouteDeps, ga
     if (!etat) return { email: moi.email, comptes: actifs };
     const ouverts = await Promise.all(actifs.map(async (c) => {
       const e = await etat(c.id, c.tenantId);
-      return e !== null && !e.disabled && e.tenantStatus !== 'locked';
+      // Un membre en trop (lot 6, B2a) y serait refusé en 402 dès son premier appel, et enfermé sur la page suspendue.
+      return e !== null && !e.disabled && e.tenantStatus !== 'locked' && !e.horsOffre;
     }));
     return { email: moi.email, comptes: actifs.filter((_c, i) => ouverts[i]) };
   }

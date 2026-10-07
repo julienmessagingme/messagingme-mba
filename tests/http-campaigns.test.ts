@@ -10,6 +10,7 @@ import { PLAFOND_DESTINATAIRES_DEFAUT } from '../src/campaign/plafond';
 import type { WorkflowGraph } from '../src/workflow/graph';
 import type { CampaignRouteDeps } from '../src/http/campaigns';
 import { campagnesInertes, campagnesRepoInerte } from './routes-inertes';
+import { DROITS, type Offre } from '../src/offres/offres';
 
 const SECRET = 'test-secret';
 let token = '';
@@ -108,6 +109,8 @@ interface Deps {
   sansCompteur?: boolean;
   /** Les modèles du mois au lancement (lot 6). Absent : sans limite, comme un espace Pro. */
   modeles?: { max: number; reste: number; demandes: number } | null;
+  /** L'offre de l'espace (lot 6, B2a) : Entreprise par défaut. */
+  offre?: Offre;
 }
 function appWith(repo: FakeRepo, d: Deps = {}) {
   return buildServer({
@@ -149,6 +152,7 @@ function appWith(repo: FakeRepo, d: Deps = {}) {
       }),
       queue: d.queue ?? new FakeQueue(),
       modelesDuLancement: async () => d.modeles ?? null,
+      ...(d.offre ? { offres: { offreDe: async () => ({ offre: d.offre!, droits: DROITS[d.offre!], retourEnBaseLe: null }) } } : {}),
       // Dépendance OPTIONNELLE côté serveur : absente, les routes de brouillon ne sont pas montées du tout.
       ...(d.drafts ? { drafts: d.drafts } : {}),
       ...(d.sansCible ? {} : {
@@ -263,6 +267,17 @@ describe('POST /tenants/:tenantId/campaigns', () => {
     const app = appWith(repo, { ownsWorkflow: true });
     const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, templateName: '', templateLanguage: '', workflowId: 'wf1' } });
     expect(res.statusCode).toBe(201);
+    await app.close();
+  });
+
+  it('🔴 en Base (lot 6, B2a) : une campagne WORKFLOW est refusée en 402, rien n’est créé ; la campagne par modèle passe', async () => {
+    const repo = new FakeRepo(contacts);
+    const app = appWith(repo, { ownsWorkflow: true, offre: 'base' });
+    const res = await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: { ...validBody, templateName: '', templateLanguage: '', workflowId: 'wf1' } });
+    expect(res.statusCode).toBe(402);
+    expect(res.json()).toMatchObject({ code: 'plan_feature_unavailable', fonction: 'scenarios' });
+    expect(repo.created).toHaveLength(0);
+    expect((await app.inject({ method: 'POST', url: '/tenants/t1/campaigns', ...auth(), payload: validBody })).statusCode).toBe(201);
     await app.close();
   });
 

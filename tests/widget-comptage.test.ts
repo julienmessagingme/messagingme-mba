@@ -6,6 +6,7 @@ import { MOTIF_JETON } from '../src/channels-me/jeton';
 import { gestionDesWidgetsEnBase } from '../src/widgets/gestion';
 import { MOTIF_ETIQUETTE_WIDGET, PREFIXE_ETIQUETTE_WIDGET, etiquetteDuWidget } from '../src/widgets/arrivee';
 import { newTrackingCode } from '../src/ids/code';
+import { offresToutOuvert } from './gardes';
 
 /**
  * LE COMPTAGE DES MESSAGES REÇUS QUI CONTIENNENT DÉJÀ UNE PHRASE, côté widget (jaune 1 de la relecture du lot 4,
@@ -37,7 +38,7 @@ function fauxPool(n = 0) {
 describe('qui demande quoi', () => {
   it('🔴 la garde d’un WIDGET écarte les arrivées par un widget', async () => {
     const { pool, requetes } = fauxPool(4);
-    expect(await gestionDesWidgetsEnBase(pool).messagesContenantLaPhrase('t1', 'Je viens du blog')).toBe(4);
+    expect(await gestionDesWidgetsEnBase(pool, offresToutOuvert).messagesContenantLaPhrase('t1', 'Je viens du blog')).toBe(4);
     expect(requetes).toHaveLength(1);
     expect(requetes[0]!.params).toEqual([
       't1', 'Je viens du blog', expect.any(Number), MOTIF_JETON, true, MOTIF_ETIQUETTE_WIDGET, PREFIXE_ETIQUETTE_WIDGET,

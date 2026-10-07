@@ -63,6 +63,12 @@ export function refusFonction(fonction: Fonction): Refus {
   return refus(STATUT_REFUS_OFFRE, c.error, { code: c.code, fonction: c.fonction, upgradeUrl: c.upgradeUrl });
 }
 
+/**
+ * Ce qu'un AGENT lit quand un outil est refusé hors offre (lot 6, B2a) : l'agent de Meta comme un agent IA peuvent redire
+ * leur raison au contact final, qui n'a pas à apprendre l'abonnement de la marque. Ni offre, ni prix, ni lien.
+ */
+export const INDISPONIBLE_POUR_LE_MODELE = 'ce contenu n’est pas disponible en ce moment : continue la conversation sans lui';
+
 export function corpsRefusLimite(e: LimiteOffreError): { error: string; code: 'plan_limit_reached'; limite: NomLimite; max: number; upgradeUrl: string } {
   return { error: e.message, code: 'plan_limit_reached', limite: e.limite, max: e.max, upgradeUrl: adresseOffre() };
 }

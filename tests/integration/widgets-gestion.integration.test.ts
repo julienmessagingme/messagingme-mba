@@ -10,6 +10,7 @@ import { conflitDansLEspace } from '../../src/widgets/phrases';
 import { PgWidgetStore, type WidgetInput } from '../../src/widgets/store.pg';
 import { PgChannelsMeLinkStore } from '../../src/channels-me/link-store.pg';
 import { nouveauJeton } from '../../src/channels-me/jeton';
+import { offresToutOuvert } from '../gardes';
 
 // Ne PAS lancer ce fichier en local : le DATABASE_URL du .env local pointe sur la base de PRODUCTION (cf. CLAUDE.md du
 // repo), et ce fichier crée puis supprime des espaces. La CI monte un Postgres jetable pour ça (job `integration`).
@@ -62,7 +63,7 @@ describe.skipIf(!url)('la gestion des widgets (Postgres réel)', () => {
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: url, ssl: pgSsl(), max: 4 });
-    deps = gestionDesWidgetsEnBase(pool);
+    deps = gestionDesWidgetsEnBase(pool, offresToutOuvert);
     store = new PgWidgetStore(pool);
     tenantA = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-widgets-gestion-a') returning id`)).rows[0]!.id;
     tenantB = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-widgets-gestion-b') returning id`)).rows[0]!.id;

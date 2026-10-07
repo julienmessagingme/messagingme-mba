@@ -528,7 +528,7 @@ async function main(): Promise<void> {
    * seule adresse de script (sur l'API, comme celle d'un webhook entrant).
    */
   const widgetsDeLaConsole: DepsWidgets = {
-    gestion: gestionDesWidgetsEnBase(pool),
+    gestion: gestionDesWidgetsEnBase(pool, offres),
     numero: (tenant) => phoneStatusStore.getPhoneNumber(tenant),
     baseApi: adressesApi.avecPrefixe,
   };
@@ -906,9 +906,10 @@ async function main(): Promise<void> {
       // Re-vérif par requête : compte révoqué/supprimé -> 401 immédiat, rôle frais depuis la base.
       // Un rappel et non une tranche : c'est `makeRequireAuth` (`src/server.ts`) qui le consomme.
       // 🔴 Le gel des membres en trop (lot 6, B2a) : la garde refuse en 402 un membre au-delà des limites de l'offre.
+      // Les deux lectures en parallèle : la base est loin, et l'Inbox relit toutes les 4 s.
       getUserState: async (userId, tenant) => {
-        const s = await userStore.getAuthState(userId);
-        return s && { ...s, horsOffre: await gelMembres.horsOffre(tenant, userId) };
+        const [s, horsOffre] = await Promise.all([userStore.getAuthState(userId), gelMembres.horsOffre(tenant, userId)]);
+        return s && { ...s, horsOffre };
       },
       // Inscription libre, reset et changement de mot de passe, liaison Google par adresse.
       comptes: userStore,
@@ -936,6 +937,8 @@ async function main(): Promise<void> {
       drafts: campaignDraftStore,
       // Les modèles du mois (lot 6) : une campagne qui ne tient pas dans ce qu'il reste est refusée au lancement.
       modelesDuLancement: creerModelesDuLancement(quotaModeles, (campagne, tenant) => repo.modelesEnAttente(campagne, tenant)),
+      // L'offre (lot 6, B2a) : hors `scenarios`, une campagne ou un étage à scénario est refusé à la création.
+      offres,
       // Palier d'envoi du numéro, pour avertir avant un lancement plus gros que ce que Meta laissera passer
       // en 24 h. Lecture du relevé déjà persisté, aucun appel Graph sur ce chemin.
       getMessagingLimitTier: async (tenant) => (await phoneStatusStore.getPhoneNumber(tenant))?.messagingLimitTier ?? null,
@@ -2547,6 +2550,7 @@ async function main(): Promise<void> {
               journal: (ligne) => console.log(ligne),
             }),
             inbox: inboxStore,
+            offres,
           }),
         },
       },
@@ -2601,6 +2605,8 @@ async function main(): Promise<void> {
         numerosSuspendus: gardeNumeroSuspendu,
         // Les modèles du mois (lot 6) : un envoi qui ouvre par un modèle et ne tient pas dans ce qu'il reste est refusé.
         modelesDuMois: quotaModeles,
+        // L'offre (lot 6, B2a) : hors `scenarios`, une cible scénario ou bloc est refusée tout de suite.
+        offres,
         // La résolution de fiche et l'écriture du consentement, sur les mêmes dépendances que `/v1/contacts`
         // (le dépôt des contacts et `depsConsentementDe`). Les quatre paramètres de chaque flèche sont gardés
         // par `tests/v1-cablage.test.ts`.

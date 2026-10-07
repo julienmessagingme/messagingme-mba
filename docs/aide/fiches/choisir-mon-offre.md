@@ -1,7 +1,7 @@
 ---
 ecran: offre
 source_section: Offres (menu « Paramètres » > Offre)
-source_empreinte: ce13ca
+source_empreinte: 51ba7f
 ---
 # Choisir mon offre
 
@@ -26,9 +26,10 @@ la page Offre. Si une action est refusée parce qu'une limite est atteinte, un m
 « Voir les offres ».
 
 **Si votre espace revient en Base.** Rien n'est effacé, et tout revient quand vous reprenez le Pro. En attendant,
-seules vos 10 automations les plus anciennes lancent encore leurs scénarios, l'agent de Meta ne prend plus de
-nouvelles conversations, et les membres au-delà de la limite de la Base voient leur accès suspendu (l'administrateur
-le plus ancien garde le sien).
+seules vos 10 automations les plus anciennes lancent encore leurs scénarios (vos widgets ne démarrent plus le leur),
+l'agent de Meta ne prend plus de nouvelles conversations, et les membres au-delà de la limite de la Base voient leur
+accès suspendu (l'administrateur le plus ancien garde le sien) : dès que l'espace repasse en Pro, « Réessayer » leur
+rend la console.
 
 **Passer en Pro.** Sur la page Offre, choisissez « Mensuel » ou « Annuel » : vous payez sur la page sécurisée de
 Stripe, où un code promo se saisit, et votre espace passe en Pro dès que le paiement est confirmé, en général dans

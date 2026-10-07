@@ -159,9 +159,11 @@ export const agentsInertes: Pick<AgentsRouteDeps, 'credits' | 'sessions' | 'etat
 export const campagnesInertes: Pick<CampaignRouteDeps,
   'getMessagingLimitTier' | 'drafts' | 'contacts' | 'identifiantsDeTousLesContacts' | 'plafondDestinataires'
   | 'rcs' | 'emailTemplateBelongsToTenant' | 'webhookUsableByTenant' | 'defaultRatePerMinute' | 'plafondLePlusBas'
-  | 'modelesDuLancement'> = {
+  | 'modelesDuLancement' | 'offres'> = {
   // Absent : aucun palier connu, donc aucun avertissement.
   getMessagingLimitTier: async () => null,
+  // Tout ouvert : une campagne à scénario est permise (lot 6, B2a).
+  offres: offresToutOuvert,
   drafts: {
     list: async () => [],
     create: neDevraitPasEtreAppelee('drafts.create'),
@@ -498,6 +500,7 @@ export const mcpWidgetsInertes: Pick<DepsMcp, 'widgets' | 'scenarios'> = {
       phrasesDesLiens: async () => [],
       messagesContenantLaPhrase: async () => 0,
       scenarioEtat: async () => 'inconnu',
+offres: offresToutOuvert,
     },
     numero: async () => null,
     baseApi: 'https://api.inerte.test',

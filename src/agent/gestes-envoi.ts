@@ -3,6 +3,8 @@ import type { WorkflowGraph } from '../workflow/graph';
 import type { StartOutcome } from '../workflow/executor';
 import { MOTIF_SCENARIO_LANCE } from '../workflow/lancements';
 import type { AgentSessionStore } from './session-store';
+import type { SourceOffres } from '../offres/offre.pg';
+import { INDISPONIBLE_POUR_LE_MODELE } from '../offres/refus';
 
 /**
  * Les deux outils d'un agent IA qui envoient au contact sur une CIBLE FIXÉE (RC4) : « Envoyer un bloc » et « Lancer un
@@ -26,6 +28,11 @@ export interface DepsGestesEnvoiAgent {
   fenetreOuverte(tenantId: string, waId: string): Promise<boolean>;
   /** 🔴 Le contact a-t-il demandé à ne plus rien recevoir ? Requise, comme partout où l'on écrit à un contact. */
   estDesabonne(tenantId: string, waId: string): Promise<boolean>;
+  /**
+   * L'offre de l'espace (lot 6, B2a, décision de Julien) : sans `scenarios`, les deux outils refusent avant tout geste,
+   * comme leurs pendants de l'agent de Meta. Le répondeur agent IA, lui, continue de répondre.
+   */
+  offres: SourceOffres;
   sessions: Pick<AgentSessionStore, 'clore'>;
   /**
    * Clôt le parcours de l'agent s'il vit encore (`setStateSiVivant` à `done`). `false` = déjà clos, le cas normal : le
@@ -41,6 +48,7 @@ export function creerGestesEnvoiAgent(deps: DepsGestesEnvoiAgent): {
   envoyerBloc(input: { tenantId: string; waId: string; runId: string; workflowId: string; code: string }): Promise<{ ok: boolean; raison?: string }>;
   lancerScenario(input: { tenantId: string; waId: string; runId: string; sessionId: string; workflowId: string }): Promise<{ ok: boolean; raison?: string }>;
 } {
+  const scenariosOuverts = async (tenantId: string) => (await deps.offres.offreDe(tenantId)).droits.fonctions.has('scenarios');
   return {
     /**
      * Le bloc fixé, revérifié à chaque appel sur le graphe PUBLIÉ (le scénario a pu changer depuis la pose de l'outil),
@@ -48,6 +56,7 @@ export function creerGestesEnvoiAgent(deps: DepsGestesEnvoiAgent): {
      * ou part en RCS est refusé avec sa raison, avant tout envoi.
      */
     async envoyerBloc({ tenantId, waId, runId, workflowId, code }) {
+      if (!(await scenariosOuverts(tenantId))) return { ok: false, raison: INDISPONIBLE_POUR_LE_MODELE };
       const graphe = await deps.graphePublie(tenantId, workflowId);
       if (!graphe) return { ok: false, raison: 'le scénario de ce bloc n’existe plus' };
       const seul = blocSeul(graphe, code);
@@ -63,6 +72,7 @@ export function creerGestesEnvoiAgent(deps: DepsGestesEnvoiAgent): {
      * le modèle lit la raison.
      */
     async lancerScenario({ tenantId, waId, runId, sessionId, workflowId }) {
+      if (!(await scenariosOuverts(tenantId))) return { ok: false, raison: INDISPONIBLE_POUR_LE_MODELE };
       if (await deps.estDesabonne(tenantId, waId)) return { ok: false, raison: CONTACT_DESABONNE };
       const fenetreOuverte = await deps.fenetreOuverte(tenantId, waId);
       const issue = await deps.lancer({ type: 'agent_ia_scenario', tenantId, workflowId, waId, fenetreOuverte });

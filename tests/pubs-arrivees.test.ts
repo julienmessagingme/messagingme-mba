@@ -3,6 +3,7 @@ import { arriveeDepuisMessage, processArriveesPub, type ArriveePub, type IssueAr
 import { handleWebhookJob } from '../src/webhooks/handler';
 import { agentEteintALArrivee, aucunSignalReponse, aucunNumeroDelie, aucuneCorrectionDuDetenteur, entrantsDe } from './webhook-fixtures';
 import { aucunStop } from './consentement';
+import { offresToutOuvert } from './gardes';
 
 const referral = {
   source_url: 'https://fb.me/x', source_id: '120212345678901234', source_type: 'ad',
@@ -121,6 +122,7 @@ describe('handleWebhookJob : l’arrivée publicitaire', () => {
         publiciteDeLaCampagne: async () => null,
         contactBloque: async () => false,
         estDesabonne: async () => false,
+        offres: offresToutOuvert,
         reprendreLeFil: async () => true,
         rendreLeFil: async () => {},
         noterIssue: async () => {},

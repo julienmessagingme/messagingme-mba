@@ -18,6 +18,7 @@ import { contactsV1Muets } from './aide/contacts-v1';
 import { jamaisDesabonne } from './consentement';
 import { mcpAgentInerte, mcpNumeroInerte, mcpOffreInerte, mcpInerte } from './routes-inertes';
 import { bornesDesChamps, champsDe, muettes as bornesMuettes } from './aide/bornes-zod';
+import { offresToutOuvert } from './gardes';
 
 /**
  * Les outils MCP des widgets WhatsApp (lot 5 de docs/superpowers/plans/2026-10-02-widget-whatsapp.md), montés par
@@ -92,6 +93,7 @@ function monter(o: { widgets?: WidgetRow[]; liens?: string[]; scenarios?: Array<
     },
     phrasesDesLiens: async () => o.liens ?? [],
     messagesContenantLaPhrase: async () => 0,
+    offres: offresToutOuvert,
     scenarioEtat: async (t, id) => {
       if ((t === 't1' && id === WF_T1) || (t === 't2' && id === WF_T2)) return 'ok';
       return t === 't1' && id === WF_T1_NON_PUBLIE ? 'vide' : 'inconnu';

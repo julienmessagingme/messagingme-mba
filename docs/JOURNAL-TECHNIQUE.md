@@ -5,6 +5,25 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-07 : les jaunes de la relecture de B2a (lot 6)
+
+**Trois décisions de Julien** : un widget au devenir « scénario » est gelé en Base comme tout démarrage d'un scénario
+du client ; « Envoyer un bloc » d'un agent IA est gelé comme celui de l'agent de Meta ; la suspension des membres ne
+vaut qu'en Base et en Pro (en Entreprise, une limite tapée dans `/ops` ne coupe personne).
+
+**Ce qui contournait le gel, fermé** : le routage d'une publicité reprenait le fil chez Meta avant que le déclencheur
+ne se taise (la pub se lit désormais absente sans `publicites`) ; les outils d'envoi de l'agent de Meta refusaient
+APRÈS l'attente de fin de tour (jusqu'à 15 s, quand Meta coupe un outil vers 3 s), et les deux agents pouvaient redire
+au contact une phrase qui parlait d'offre (une phrase neutre, `INDISPONIBLE_POUR_LE_MODELE`) ; `/v1/sends` et la
+campagne de la console acceptaient un scénario puis échouaient destinataire par destinataire (402 à la création) ; le
+lien de connexion du numéro et le changement d'espace ignoraient la suspension ; l'ancienne forme du réglage du
+répondeur rendait un 402 « mba » à un espace qui voulait seulement retirer son agent IA. Plus : l'état du compte et le
+gel lus en parallèle, les instructions du serveur MCP valables pour toute offre, le 402 du jeton de Claude au corps
+commun, le journal du gel en une ligne par événement, et « Réessayer » sur la page suspendue.
+
+**Chaque correctif a son test, vu rouge puis vert.** Ces jaunes ne se font pas relire seuls : ils le seront avec le lot
+suivant.
+
 ## 2026-10-07 : au retour en Base, on gèle sans rien effacer (lot 6, livraison B2a)
 
 **Ce qui part** : `ac36a394` (80 fichiers, aucune migration), construit par-dessus la livraison A des messages

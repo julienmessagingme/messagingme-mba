@@ -21,6 +21,8 @@ import type { WorkflowGraph, WorkflowNode } from '../src/workflow/graph';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { MESSAGE_NUMERO_DELIE, MESSAGE_NUMERO_SUSPENDU } from '../src/meta/numero-delie';
+import { offresToutOuvert } from './gardes';
+import { DROITS } from '../src/offres/offres';
 
 /**
  * `POST /v1/sends` ET `GET /v1/sends/{sendId}` (spec 2026-09-24, § 3 et § 9).
@@ -182,6 +184,7 @@ function app(over: Surcharges = {}, monde: Partial<Monde> = {}) {
     numerosSuspendus: { estSuspendu: async () => false },
     // Les modèles du mois sans limite (lot 6) : un espace Pro, l'hypothèse des cas qui ne parlent pas d'offre.
     modelesDuMois: { etatDuMois: async () => null },
+    offres: offresToutOuvert,
     /** Double de la résolution du lot 1 : par contactId, numéro ou BSUID ; crée sur un numéro si on le demande. */
     resoudreFiche: async (tenant, cles, o) => {
       cap.resolutions.push({ cles, creer: o.creer });
@@ -1176,6 +1179,22 @@ describe('POST /v1/sends : forme, numéro, débit, droits', () => {
     const res = await envoyer(server, { ...TPL, recipients: [{ contactId: C1 }, { contactId: C2 }] }, 'i-tient');
     expect(res.statusCode).toBe(201);
     expect(cap.sends).toHaveLength(1);
+    await server.close();
+  });
+
+  it('🔴 en Base (lot 6, B2a) : un scénario ou un bloc est refusé TOUT DE SUITE en 402, avant le compteur et la clé ; un modèle passe', async () => {
+    const base = { offreDe: async () => ({ offre: 'base' as const, droits: DROITS.base, retourEnBaseLe: null }) };
+    const { server, cap, idem } = app({ offres: base });
+    for (const [corps, cle] of [[SCN('scn_template'), 'i-base-scn'], [NODE('nod_tpl'), 'i-base-nod']] as const) {
+      const res = await envoyer(server, { ...corps, recipients: [{ contactId: C1 }] }, cle);
+      expect(res.statusCode).toBe(402);
+      expect(res.json()).toMatchObject({ code: 'plan_feature_unavailable', fonction: 'scenarios' });
+      expect(res.json().upgradeUrl).toMatch(/\/offre$/);
+      expect(idem.has(cle)).toBe(false);
+    }
+    expect(cap.resolutions).toEqual([]);
+    expect(cap.sends).toEqual([]);
+    expect((await envoyer(server, { ...TPL, recipients: [{ contactId: C1 }] }, 'i-base-tpl')).statusCode).toBe(201);
     await server.close();
   });
 

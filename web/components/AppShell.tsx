@@ -188,14 +188,25 @@ export function AppShell({ active, fullBleed = false, fonction, children }: {
               'The workspace plan no longer has a seat for you. Nothing was deleted: an administrator who moves the workspace to Pro gives you access back.',
             )}
           </p>
-          <button
-            type="button"
-            onClick={logout}
-            data-testid="acces-suspendu-deconnecter"
-            className="mt-4 rounded-controle bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors duration-150 hover:bg-brand-700"
-          >
-            {t('Se déconnecter', 'Sign out')}
-          </button>
+          <div className="mt-4 flex gap-2">
+            {/* L'espace repassé en Pro rend l'accès : recharger relance les requêtes, sans se reconnecter. */}
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              data-testid="acces-suspendu-reessayer"
+              className="rounded-controle bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors duration-150 hover:bg-brand-700"
+            >
+              {t('Réessayer', 'Try again')}
+            </button>
+            <button
+              type="button"
+              onClick={logout}
+              data-testid="acces-suspendu-deconnecter"
+              className="rounded-controle border border-ink-200 bg-white px-3 py-1.5 text-xs font-semibold text-ink-700 transition-colors duration-150 hover:bg-ink-50"
+            >
+              {t('Se déconnecter', 'Sign out')}
+            </button>
+          </div>
         </div>
       </div>
     );

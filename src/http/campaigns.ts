@@ -19,7 +19,8 @@ import { normaliserChaine, problemeDeChaine, RANG_INITIAL, type DevenirEtage, ty
 // comme une action en masse, et deux analyseurs finiraient par ne plus viser la même chose.
 import { parseBulkTarget } from './contacts';
 import type { BulkTarget } from '../crm/contact-store.pg';
-import { LimiteOffreError, STATUT_REFUS_OFFRE, corpsRefusLimite } from '../offres/refus';
+import { LimiteOffreError, STATUT_REFUS_OFFRE, corpsRefusFonction, corpsRefusLimite } from '../offres/refus';
+import type { SourceOffres } from '../offres/offre.pg';
 
 /**
  * Ce que les routes lisent et écrivent des campagnes, en plus de ce que la création en a besoin
@@ -117,6 +118,11 @@ export interface CampaignRouteDeps {
    * bloc d'entrée est bien un envoi de template.
    */
   getWorkflowGraph(workflowId: string, tenantId: string): Promise<WorkflowGraph | null>;
+  /**
+   * L'offre de l'espace (lot 6, B2a) : sans `scenarios`, une campagne (ou un étage) qui démarre un scénario est refusée
+   * à la création (402) ; sinon elle partirait, et chaque destinataire finirait « Scénario non démarré ».
+   */
+  offres: SourceOffres;
   /** Débit par défaut (msg/min, 0 = opt-out) des campagnes sans ratePerMinute. Doit être le même que celui
   *  injecté au worker (config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE), pour que l'estimation d'expiration et le
   *  throttle réel voient le même débit. */
@@ -307,7 +313,9 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     // Une campagne envoie soit un template soit un workflow (exactement un des deux). Sur RCS, ni l'un ni
     // l'autre : le message est porté par la campagne elle-même.
     const isWorkflow = nonEmpty(b.workflowId);
+    const scenariosOuverts = async () => (await deps.offres.offreDe(effectiveTenant)).droits.fonctions.has('scenarios');
     if (isWorkflow) {
+      if (!(await scenariosOuverts())) return reply.code(STATUT_REFUS_OFFRE).send(corpsRefusFonction('scenarios'));
       const graph = await deps.getWorkflowGraph(b.workflowId as string, effectiveTenant);
       if (!graph) {
         return reply.code(400).send({ error: 'workflowId inconnu pour ce tenant' });
@@ -486,6 +494,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
         // 🔴 Même garde que `workflowId` sur la campagne : sans elle, un identifiant recopié démarrerait le scénario
         // d'un autre espace. `getWorkflowGraph` est scopée, elle rend null hors espace.
         if (e.workflowId !== undefined) {
+          if (!(await scenariosOuverts())) return reply.code(STATUT_REFUS_OFFRE).send(corpsRefusFonction('scenarios'));
           if (!estUuid(e.workflowId) || !(await deps.getWorkflowGraph(e.workflowId, effectiveTenant))) {
             return reply.code(422).send({ error: `L'étage ${e.rang} vise un scénario inconnu de cet espace.` });
           }

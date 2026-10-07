@@ -51,7 +51,7 @@ describe('le gel des automations (lot 6, B2a)', () => {
     expect(m.lectures).toEqual([{ tenantId: 't1', n: DROITS.base.limites.automations }]);
   });
 
-  it('🔴 en Base, la chaîne et la publicité se taisent (fonctions fermées), le widget continue, sans compter dans les 10', async () => {
+  it('🔴 en Base, la chaîne, la publicité et le widget à scénario se taisent (décision de Julien : le widget suit les scénarios)', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const rows = [
       auto('chaine', { possedePar: POSSESSEUR_LIEN_CHAINE }),
@@ -59,10 +59,17 @@ describe('le gel des automations (lot 6, B2a)', () => {
       auto('widget', { possedePar: POSSESSEUR_WIDGET }),
     ];
     const m = monter(rows, 'base', []);
-    expect(await runAutomations('t1', MSG, m.deps)).toBe(1);
-    expect(m.demarrees).toEqual(['wf-widget']);
+    expect(await runAutomations('t1', MSG, m.deps)).toBe(0);
+    expect(m.demarrees).toEqual([]);
+    expect(m.marquees).toEqual([]);
     // Aucune automation du client parmi les candidates : la liste des plus anciennes n'est pas lue.
     expect(m.lectures).toEqual([]);
+  });
+
+  it('en Pro, le widget à scénario tire, sans compter dans les automations du client', async () => {
+    const m = monter([auto('widget', { possedePar: POSSESSEUR_WIDGET })], 'pro', []);
+    expect(await runAutomations('t1', MSG, m.deps)).toBe(1);
+    expect(m.demarrees).toEqual(['wf-widget']);
   });
 
   it('en Pro, rien n’est gelé, et la liste des plus anciennes n’est jamais lue', async () => {

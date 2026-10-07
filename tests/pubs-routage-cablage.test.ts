@@ -8,6 +8,7 @@ import { POLITIQUE_DE_LANCEMENT, type DemandeAutomatisme } from '../src/workflow
 import type { IssueRoutage, PubDuLead } from '../src/pubs/routage';
 import { entrantsDe } from './webhook-fixtures';
 import { offresToutOuvert, plusAnciennesJamaisLues } from './gardes';
+import { DROITS } from '../src/offres/offres';
 
 /**
  * LE ROUTAGE D'UN LEAD PUBLICITAIRE, CÂBLÉ, ET CE QUI EN SORT.
@@ -49,6 +50,7 @@ function monter(over: Partial<RoutagePubDeps> & { pub?: PubDuLead | null } = {})
     estDesabonne: async () => false,
     reprendreLeFil: async (_t, waId) => { reprises.push(waId); return true; },
     rendreLeFil: async (_t, waId) => { rendus.push(waId); },
+    offres: offresToutOuvert,
     noterIssue: async (_t, messageId, v) => {
       notes.push({ messageId, campagneId: v.campagneId, issue: v.issue, avecHeure: v.repriseLe !== null });
     },
@@ -73,6 +75,15 @@ describe('processRoutagePub : ce qui part, et ce qui s’inscrit sur l’arrivé
     expect(reprises).toEqual(['33611223344']);
     expect(notes).toEqual([{ messageId: 'wamid.2', campagneId: 'camp-1', issue: 'reprise_reussie', avecHeure: true }]);
     expect(routes.get('wamid.2')?.restriction).toEqual({ sorte: 'seule', automationId: 'auto-pub' });
+  });
+
+  it('🔴 en Base (publicités fermées, lot 6, B2a) : la pub se lit absente, rien n’est repris chez Meta, le message suit le chemin ordinaire', async () => {
+    const { deps, reprises, notes } = monter({ offres: { offreDe: async () => ({ offre: 'base', droits: DROITS.base, retourEnBaseLe: null }) } });
+    const routes = await processRoutagePub(await entrantsDe(payload([message('wamid.b', referral())], 'standby')), deps);
+    // « Ceux qu'il tient finissent avec lui ; rien n'est écrit chez Meta » (décision de Julien).
+    expect(reprises).toEqual([]);
+    expect(notes).toEqual([{ messageId: 'wamid.b', campagneId: 'camp-1', issue: 'inchange', avecHeure: false }]);
+    expect(routes.get('wamid.b')?.restriction).toEqual({ sorte: 'tous' });
   });
 
   it('🔴 reprise REFUSÉE par Meta : issue `reprise_refusee`, AUCUNE heure, et plus aucun déclencheur', async () => {

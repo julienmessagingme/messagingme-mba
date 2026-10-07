@@ -9,7 +9,7 @@ import { espaceVerifie, estUuid } from './scope';
 import type { ConsommationAgent } from '../agent/session-store';
 import type { LigneHistorique } from '../agent/credits';
 import {
-  choisirRepondeur, choixDeLAncienneForme, lireRepondeur, type ChoixRepondeur, type DepsReglageRepondeur,
+  choisirRepondeur, choixDeLAncienneFormeSousLOffre, lireRepondeur, type ChoixRepondeur, type DepsReglageRepondeur,
 } from '../repondeur/reglage';
 
 /**
@@ -63,7 +63,7 @@ export interface AgentsRouteDeps extends DepsGestionAgents {
 
 /**
  * Le corps de l'ANCIENNE `PUT .../agents/repondeur` (lot 5) : un agent, ou `null` pour n'en désigner aucun. Gardée pour
- * la console d'avant RC6 (elle est publiée APRÈS l'API) ; elle passe par `choixDeLAncienneForme`.
+ * la console d'avant RC6 (elle est publiée APRÈS l'API) ; elle passe par `choixDeLAncienneFormeSousLOffre`.
  */
 const corpsRepondeur = z.object({ agentId: z.string().max(100).nullable() });
 
@@ -179,16 +179,15 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
 
   /**
    * L'ANCIENNE porte du lot 5 : un agent IA (`agentId`), ou `null` (« aucun agent IA » : l'agent de Meta s'il est
-   * allumé, sinon l'équipe, `choixDeLAncienneForme`). Gardée pour la console d'avant RC6, publiée après l'API ; elle ne
+   * allumé, sinon l'équipe, `choixDeLAncienneFormeSousLOffre`, sous l'offre). Gardée pour la console d'avant RC6, publiée après l'API ; elle ne
    * répond plus « agent de Meta éteint », puisque désigner un agent ne l'éteint plus. Sa réponse garde sa forme.
    */
   app.put('/tenants/:tenantId/agents/repondeur', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const lu = corpsRepondeur.safeParse(req.body ?? {});
     if (!lu.success) return reply.code(400).send({ error: 'agentId requis : l’identifiant d’un agent actif, ou null' });
-    const avant = await deps.repondeur.reglages.get(tenant);
-    const r = await choisirRepondeur(deps.repondeur, tenant, choixDeLAncienneForme(lu.data.agentId, avant.mbaEnabled),
-      { userId: req.auth?.userId ?? null, origine: 'formulaire' });
+    const choix = await choixDeLAncienneFormeSousLOffre(deps.repondeur, tenant, lu.data.agentId);
+    const r = await choisirRepondeur(deps.repondeur, tenant, choix, { userId: req.auth?.userId ?? null, origine: 'formulaire' });
     if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
     return reply.code(200).send({ repondeurAgentId: r.valeur.agentId, agentDeMetaEteint: false, liste: r.valeur.liste });
   });

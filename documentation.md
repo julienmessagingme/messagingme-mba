@@ -2192,18 +2192,31 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
     refus (`REFUS_SCENARIOS_HORS_OFFRE`) de tout démarrage d'un scénario du client, sauf les automations, le répondeur
     agent IA et les sauts « Aller à » d'un parcours en cours ;
   - le déclencheur (`runAutomations`, `permisesParLOffre`) : sous une limite d'automations, seules les plus anciennes du
-    client tirent (`PgAutomationStore.plusAnciennes`, la population de `verifierPlaceAutomation`) ; chaîne et publicité
-    selon leur fonction, widget toujours ;
+    client tirent (`PgAutomationStore.plusAnciennes`, la population de `verifierPlaceAutomation`) ; chaîne, publicité
+    et widget selon leur fonction (`chaines`, `publicites`, et `scenarios` pour le widget, qui démarre un scénario du
+    client) ;
   - qui répond (`sousLOffre`, `src/repondeur/mode.ts`) : sans `agent_meta` l'agent de Meta se lit éteint, sans
     `scenarios` le scénario répondeur se lit absent ; lu par le contrôle du fil (sa seule lecture des réglages,
     `reglagesDe`), `mbaActifPour`, `modesParTenant` (l'offre dans la même requête) et `lireRepondeur` ;
     `choisirRepondeur` refuse ces deux modes hors offre (402, `refusFonction`) ;
-  - les membres en trop (`creerGelMembres`, `limiteDepassee`, `PgUserStore.rangMembre`) : administrateurs d'abord, du
-    plus ancien au plus récent, puis les autres ; `requireAuth` refuse en 402 `plan_limit_reached` avec
-    `acces: 'suspendu'` sur TOUTE requête (la console affiche alors une page), et la garde des jetons de Claude en 402
-    (`AccesOauthResolu.horsOffre`), jamais en 401 qui relancerait la connexion ;
+  - les membres en trop (`creerGelMembres`, `limiteDepassee`, `PgUserStore.rangMembre`), en Base et en Pro SEULEMENT
+    (en Entreprise, une limite posée depuis `/ops` ne bloque que les invitations) : administrateurs d'abord, du plus
+    ancien au plus récent, puis les autres ; `requireAuth` refuse en 402 `plan_limit_reached` avec `acces: 'suspendu'`
+    sur TOUTE requête (la console affiche alors une page, avec « Réessayer »), comme la garde des jetons de Claude
+    (`AccesOauthResolu.horsOffre`, jamais un 401 qui relancerait la connexion) et celle du lien de connexion du numéro
+    (`makeRequireAdminOuLien`) ; le changement d'espace ne propose pas un espace où le compte est en trop ;
   - les outils de Claude (`OutilMcp.fonction`, requise) : hors offre, l'outil reste listé et `traiterMessage` refuse avec
     la phrase et le lien de l'offre avant de l'exécuter.
+
+  Autour de ces cinq points, ce qui ne doit pas les contourner : le routage d'une publicité lit la pub absente sans
+  `publicites` (`processRoutagePub` : aucune reprise du fil chez Meta) ; les outils « Envoyer un bloc » et « Lancer un
+  scénario » des deux agents (`src/agent/gestes-envoi.ts`, `src/mba/gestes-envoi.ts`) refusent sans `scenarios` avant
+  tout geste, et avant l'attente de fin de tour de l'agent de Meta, avec `INDISPONIBLE_POUR_LE_MODELE` (une phrase
+  qu'un agent peut redire au contact : ni offre, ni prix) ; et ce qui CHOISIRAIT un scénario hors offre est refusé à
+  la création en 402 `plan_feature_unavailable` : un widget au devenir « scénario » (`src/widgets/gestion.ts`, un widget
+  d'avant reste modifiable), une campagne ou un étage à scénario, un `POST /v1/sends` vers un scénario ou un bloc
+  (avant le compteur d'usage et la clé d'idempotence). L'ancienne forme du réglage du répondeur passe par
+  `choixDeLAncienneFormeSousLOffre`.
 
 🔴 **LE RÔLE ADMIN SE POSE AU MONTAGE, ET `forbidNonAdmin` NE VIT QUE LÀ OÙ UN AGENT PASSE LA GARDE** (lot 3 de
 l'audit ponytail, 2026-09-26). Un module monté sur `g.admin` (`[requireAuth, makeRequireRole(['admin'])]`)
@@ -2265,7 +2278,7 @@ passe ouvrait tous ses espaces (fermé le 2026-09-26).
 2026-10-06, `src/http/espaces.ts`, monté avec `/me` sur la garde `g.auth`). `GET /tenants/:tenantId/espaces` rend les
 comptes de l'identité de la SESSION (son adresse par `getSessionUser`, puis `getByEmail`, sans les comptes révoqués
 comme `/auth/google`), moins ceux que `makeRequireAuth` refuserait (relus par le même `getUserState` : compte révoqué,
-espace suspendu), chacun avec `actuel`. `POST /tenants/:tenantId/changer-espace` `{ tenantId }` signe une session pour
+espace suspendu, membre en trop de l'offre), chacun avec `actuel`. `POST /tenants/:tenantId/changer-espace` `{ tenantId }` signe une session pour
 le compte de l'identité dans la cible, avec SON rôle, et rend la forme de `suiteDeConnexion`. Trois règles la tiennent :
 une cible hors de cette liste rend **404, jamais 403** (qui confirmerait qu'un espace existe) ; la session neuve garde
 **l'échéance (`exp`) du jeton présenté** (`echeanceSession`, puis `signSession` avec un instant absolu), sinon deux

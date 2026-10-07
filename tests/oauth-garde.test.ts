@@ -133,7 +133,9 @@ describe('la garde : un jeton mbo_', () => {
     const { reply, etat } = fauxReply();
     await garde(requete(JETON.brut), reply);
     expect(etat.statusCode).toBe(402);
-    expect(etat.body).toMatchObject({ code: 'plan_limit_reached' });
+    // Le corps de tous les refus d'offre (spec § 8) : la limite, son maximum et le lien, comme la session de la console.
+    expect(etat.body).toMatchObject({ code: 'plan_limit_reached', limite: 'admins', max: 1, acces: 'suspendu' });
+    expect(JSON.stringify(etat.body)).toMatch(/upgradeUrl/);
     expect(JSON.stringify(etat.body)).toMatch(/1 administrateur/);
   });
 

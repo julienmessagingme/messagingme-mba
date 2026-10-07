@@ -3,6 +3,8 @@ import { FIL_CHANGE_PENDANT_ATTENTE, aChangeDeMain, creerGestesEnvoi, type DepsG
 import type { EmpreinteDuFil } from '../src/inbox/store.pg';
 import { CONTACT_BLOQUE } from '../src/mba/executer-maison';
 import type { WorkflowGraph } from '../src/workflow/graph';
+import { DROITS, type Offre } from '../src/offres/offres';
+import { INDISPONIBLE_POUR_LE_MODELE } from '../src/offres/refus';
 
 /**
  * Les deux gestes qui ENVOIENT au client depuis le relais de l'agent de Meta (spec 2026-09-21-outils-maison-mba).
@@ -23,13 +25,17 @@ function faux(o: {
   envoi?: () => Promise<true | string>; scenario?: () => Promise<true | string | null>; rendreKo?: boolean;
   /** L'empreinte lue AVANT l'attente de fin de tour, puis APRÈS (par défaut, la même). */
   empreinteAvant?: EmpreinteDuFil; empreinteApres?: EmpreinteDuFil; bloqueApres?: boolean;
+  /** L'offre de l'espace (lot 6, B2a) : Entreprise par défaut, tout ouvert. */
+  offre?: Offre;
 } = {}) {
   const gestes: string[] = [];
+  const lectures: string[] = [];
   // Selon le MOMENT, pas selon l'ordre des appels : relire « avant » après l'attente doit se voir.
   let attendu = false;
   const base: EmpreinteDuFil = { detenteur: 'app_workflow', changeLe: '2026-09-22T10:00:00.000Z', dernierEnvoi: 'm1' };
   const deps: DepsGestesEnvoi = {
-    graphePublie: async () => (o.graphe === undefined ? GRAPHE : o.graphe),
+    graphePublie: async () => { lectures.push('graphe'); return o.graphe === undefined ? GRAPHE : o.graphe; },
+    offres: { offreDe: async () => ({ offre: o.offre ?? 'entreprise', droits: DROITS[o.offre ?? 'entreprise'], retourEnBaseLe: null }) },
     fenetreOuverte: async () => o.ouverte ?? true,
     contacts: {
       findIdByWaId: async () => 'c1',
@@ -54,8 +60,19 @@ function faux(o: {
       empreinteDuFil: async () => (attendu ? (o.empreinteApres ?? o.empreinteAvant ?? base) : (o.empreinteAvant ?? base)),
     },
   };
-  return { g: creerGestesEnvoi(deps), gestes };
+  return { g: creerGestesEnvoi(deps), gestes, lectures };
 }
+
+describe('hors offre (lot 6, B2a)', () => {
+  it('🔴 en Base, les deux gestes refusent AVANT l’attente de fin de tour (Meta coupe un outil vers 3 s), avec une phrase neutre', async () => {
+    const { g, gestes, lectures } = faux({ offre: 'base' });
+    expect(await g.envoyerBloc('t1', 'w1', { workflowId: WF, code: CODE })).toBe(INDISPONIBLE_POUR_LE_MODELE);
+    expect(await g.lancerScenario('t1', 'w1', WF)).toBe(INDISPONIBLE_POUR_LE_MODELE);
+    // Rien lu, rien attendu, rien pris : le fil reste à l'agent de Meta, qui continue.
+    expect(gestes).toEqual([]);
+    expect(lectures).toEqual([]);
+  });
+});
 
 describe('envoyer un bloc', () => {
   it('🔴 envoie le bloc SEUL (graphe réduit), et ne rend pas le fil sur un succès : l’accusé s’en charge', async () => {

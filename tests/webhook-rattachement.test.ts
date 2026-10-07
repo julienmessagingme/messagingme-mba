@@ -3,6 +3,7 @@ import { handleWebhookJob, type WebhookJobDeps } from '../src/webhooks/handler';
 import type { InboundMessage } from '../src/webhooks/inbound';
 import { agentEteintALArrivee, aucunNumeroDelie, aucuneArriveePub, aucunRoutagePub, aucunSignalReponse, aucuneCorrectionDuDetenteur } from './webhook-fixtures';
 import { aucunStop, jamaisDesabonne } from './consentement';
+import { offresToutOuvert } from './gardes';
 
 /**
  * LA RÉCEPTION RATTACHE L'ESPACE UNE SEULE FOIS.
@@ -73,6 +74,7 @@ function toutesLesEtapes(inbox: ReturnType<typeof inboxQuiCompte>['inbox'], vus:
       publiciteDeLaCampagne: async () => null,
       contactBloque: async () => false,
       estDesabonne: jamaisDesabonne,
+      offres: offresToutOuvert,
       reprendreLeFil: async () => true,
       rendreLeFil: async () => {},
       noterIssue: async () => {},

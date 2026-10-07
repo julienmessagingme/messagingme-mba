@@ -10,6 +10,8 @@ import type { WorkflowRunRow } from '../src/workflow/run-store.pg';
 import type { AgentSessionStore } from '../src/agent/session-store';
 import { grapheDuRepondeur } from '../src/repondeur/graphe';
 import { offresToutOuvert } from './gardes';
+import { DROITS } from '../src/offres/offres';
+import { INDISPONIBLE_POUR_LE_MODELE } from '../src/offres/refus';
 
 /**
  * LES DEUX OUTILS D'UN AGENT IA QUI ENVOIENT SUR UNE CIBLE FIXÉE (RC4) : « Envoyer un bloc » et « Lancer un scénario ».
@@ -40,6 +42,7 @@ function composition(over: Partial<DepsGestesEnvoiAgent> = {}) {
     lancer: async (d) => { journal.push(`lancer:${d.type}:${d.workflowId}:${d.waId}:${d.fenetreOuverte}`); return true; },
     fenetreOuverte: async () => true,
     estDesabonne: jamaisDesabonne,
+    offres: offresToutOuvert,
     sessions: { clore: async (_t, id, statut, sortie) => { journal.push(`session:${id}:${statut}:${sortie ?? ''}`); } },
     parcours: { clore: async (_t, runId) => { journal.push(`parcours:${runId}`); return false; } },
     ...over,
@@ -48,6 +51,19 @@ function composition(over: Partial<DepsGestesEnvoiAgent> = {}) {
 }
 
 const LANCER = { tenantId: ESPACE, waId: WA, runId: 'r-agent', sessionId: 's-agent', workflowId: WF_B };
+
+describe('hors offre (lot 6, B2a, décision de Julien : « Envoyer un bloc » gelé comme chez l’agent de Meta)', () => {
+  it('🔴 en Base, les deux outils refusent AVANT tout geste, avec une phrase neutre que le modèle peut redire au contact', async () => {
+    const base = { offreDe: async () => ({ offre: 'base' as const, droits: DROITS.base, retourEnBaseLe: null }) };
+    const { gestes, journal } = composition({ offres: base, estDesabonne: async () => { throw new Error('rien ne doit être lu'); } });
+    expect(await gestes.envoyerBloc({ tenantId: ESPACE, waId: WA, runId: 'r-agent', workflowId: WF_B, code: CODE }))
+      .toEqual({ ok: false, raison: INDISPONIBLE_POUR_LE_MODELE });
+    expect(await gestes.lancerScenario(LANCER)).toEqual({ ok: false, raison: INDISPONIBLE_POUR_LE_MODELE });
+    expect(journal).toEqual([]);
+    // Ni offre, ni Base, ni Pro : le contact final n'a pas à apprendre l'abonnement de la marque.
+    expect(INDISPONIBLE_POUR_LE_MODELE).not.toMatch(/offre|base|pro/i);
+  });
+});
 
 describe('envoyer le bloc fixé', () => {
   it('🔴 le bloc part SEUL, pris dans le graphe PUBLIÉ de son scénario : ce qui le suit ne part pas', async () => {
@@ -190,6 +206,7 @@ function monde(parcoursAgent: { workflowId: string; graphe: WorkflowGraph; fige:
     lancer: (d) => lancements.lancer(d),
     fenetreOuverte: async () => true,
     estDesabonne: jamaisDesabonne,
+    offres: offresToutOuvert,
     sessions: agentSessions,
     parcours: { clore: (t, runId) => deps.runs.setStateSiVivant(t, runId, { currentNode: null, status: 'done' }) },
   });
@@ -243,6 +260,7 @@ describe('lancer le scénario fixé, sur le vrai exécuteur', () => {
       lancer: (d) => lancements.lancer(d),
       fenetreOuverte: async () => true,
       estDesabonne: jamaisDesabonne,
+      offres: offresToutOuvert,
       sessions: { clore: async (_t, id, statut, sortie) => { sessions.push(`${id}:${statut}:${sortie ?? ''}`); } },
       parcours: {
         clore: async (_t, runId) => {

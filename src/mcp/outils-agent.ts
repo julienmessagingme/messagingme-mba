@@ -23,7 +23,7 @@ import { ouvrirPaiement, type DepsPaiement } from '../stripe/paiement';
 import { OFFRES_RECHARGE, definitionOffre } from '../stripe/offres';
 import { LIGNES_HISTORIQUE } from '../http/agents';
 import { estUuid } from '../http/scope';
-import { choisirRepondeur, choixDeLAncienneForme, type ChoixRepondeur, type DepsReglageRepondeur } from '../repondeur/reglage';
+import { choisirRepondeur, choixDeLAncienneFormeSousLOffre, type ChoixRepondeur, type DepsReglageRepondeur } from '../repondeur/reglage';
 import {
   DELAI_SCENARIO_HEURES_DEFAUT, DELAI_SCENARIO_HEURES_MAX, DELAI_SCENARIO_HEURES_MIN, MODES_REPONDEUR, estModeRepondeur, modeEffectif,
 } from '../repondeur/mode';
@@ -393,7 +393,8 @@ export const OUTILS_AGENT: OutilMcp[] = [
       + 'acceptée : { agent_id } seul (un identifiant = mode « agent » ; null = « mba » si l’agent de Meta est allumé, '
       + 'sinon « equipe »). Réponse : mode, agent_id, workflow_id, delai_heures, agent_de_meta_allume (ce geste l’a '
       + 'allumé), liste_meta ({ retires, refuses }), et repondeur_agent_id (l’agent IA répondeur, ou null). list_agents '
-      + 'dit quel agent IA est le répondeur.',
+      + 'dit quel agent IA est le répondeur. Les modes « mba » et « scenario » demandent une offre qui les comprend (le '
+      + 'Pro) : hors offre, refusés avec le lien de l’offre, et rien n’est écrit.',
     scope: 'mcp:write',
     exigePersonne: true,
     // Destructrice et ouverte : elle peut allumer l'agent de Meta chez Meta, ou le faire taire pour tous ses contacts.
@@ -431,7 +432,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
         if (brut !== null && (typeof brut !== 'string' || brut.trim() === '' || brut.length > 100)) {
           throw new RefusOutil('paramètre « mode » requis (« mba », « agent », « scenario » ou « equipe »), ou l’ancienne forme : « agent_id » (un agent actif, ou null)');
         }
-        choix = choixDeLAncienneForme(brut === null ? null : brut.trim(), (await reglage.reglages.get(tenantId)).mbaEnabled);
+        choix = await choixDeLAncienneFormeSousLOffre(reglage, tenantId, brut === null ? null : brut.trim());
       } else if (!estModeRepondeur(args.mode)) {
         throw new RefusOutil('paramètre « mode » invalide : « mba », « agent », « scenario » ou « equipe »');
       } else if (args.mode === 'agent') {

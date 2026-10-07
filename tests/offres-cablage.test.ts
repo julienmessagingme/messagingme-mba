@@ -69,7 +69,8 @@ describe('le câblage de l’offre', () => {
     // Les types exigent `horsOffre` ; seul ce texte dit qu'il vient du gel et pas d'un `null` posé en dur.
     const api = lire('index.ts');
     expect(api).toMatch(/const gelMembres = creerGelMembres\(\{ offres, rang: \(tenant, user\) => userStore\.rangMembre\(tenant, user\) \}\);/);
-    expect(api).toMatch(/return s && \{ \.\.\.s, horsOffre: await gelMembres\.horsOffre\(tenant, userId\) \};/);
+    // En parallèle de l'état du compte : chaque requête d'un espace limité n'attend pas un aller-retour de plus.
+    expect(api).toMatch(/const \[s, horsOffre\] = await Promise\.all\(\[userStore\.getAuthState\(userId\), gelMembres\.horsOffre\(tenant, userId\)\]\);\s*return s && \{ \.\.\.s, horsOffre \};/);
     expect(api).toMatch(/return a && \{ \.\.\.a, horsOffre: a\.valide \? await gelMembres\.horsOffre\(a\.tenantId, a\.userId\) : null \};/);
   });
 

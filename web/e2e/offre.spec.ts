@@ -36,6 +36,8 @@ type Reponse = { status: number; corps: unknown };
 async function monter(page: Page, offre: unknown, o: { paiement?: Reponse; suspendu?: boolean } = {}) {
   const appels: string[] = [];
   const paiements: unknown[] = [];
+  // Un membre en trop dont l'administrateur reprend le Pro : `reprendre` lève la suspension pour les requêtes suivantes.
+  let suspendu = o.suspendu === true;
   // Les pages de Stripe ne sont jamais jointes : une page factice suffit à prouver la redirection.
   await page.route(/^https:\/\/(checkout|billing)\.stripe\.com\//, (route) => route.fulfill({ contentType: 'text/html', body: '<h1>Stripe</h1>' }));
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
@@ -45,7 +47,7 @@ async function monter(page: Page, offre: unknown, o: { paiement?: Reponse; suspe
     appels.push(`${req.method()} ${chemin}`);
     const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
     // Un membre en trop (lot 6, B2a) : la garde refuse CHAQUE requête, lecture comprise.
-    if (o.suspendu) {
+    if (suspendu) {
       return json({ error: 'Limite de votre offre atteinte : 1 utilisateur. Passez en Pro pour la lever : https://console.e2e.test/offre', code: 'plan_limit_reached', limite: 'utilisateurs', max: 1, acces: 'suspendu', upgradeUrl: 'https://console.e2e.test/offre' }, 402);
     }
     if (req.method() === 'POST' && chemin.endsWith('/offre/paiement')) {
@@ -64,7 +66,7 @@ async function monter(page: Page, offre: unknown, o: { paiement?: Reponse; suspe
     if (chemin.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     return json({});
   });
-  return { appels, paiements };
+  return { appels, paiements, reprendre: () => { suspendu = false; } };
 }
 
 test.describe('une Base', () => {
@@ -189,6 +191,16 @@ test.describe('un membre en trop (livraison B2a)', () => {
     await expect(page.getByTestId('refus-offre')).toHaveCount(0);
     await page.getByTestId('acces-suspendu-deconnecter').click();
     await expect(page).toHaveURL(/\/login/);
+  });
+
+  test('l’accès rendu (l’espace repassé en Pro) : « Réessayer » rouvre la console, sans se reconnecter', async ({ page }) => {
+    const { reprendre } = await monter(page, vue('base'), { suspendu: true });
+    await page.goto('/contacts');
+    await expect(page.getByTestId('acces-suspendu')).toBeVisible();
+    reprendre();
+    await page.getByTestId('acces-suspendu-reessayer').click();
+    await expect(page.getByTestId('acces-suspendu')).toHaveCount(0);
+    await expect(page).toHaveURL(/\/contacts/);
   });
 });
 

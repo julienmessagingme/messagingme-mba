@@ -417,6 +417,7 @@ async function main(): Promise<void> {
           return campagneId;
         },
         publiciteDeLaCampagne: (t, campagneId) => publicites.pubDeLaCampagne(t, campagneId),
+        offres,
         contactBloque: (t, waId) => contactStore.isBlockedByWaId(t, waId),
         // La même lecture que l'exécuteur de scénario et que l'agent, sur le même dépôt.
         estDesabonne: (t, waId) => contactStore.estDesabonneParWaId(t, waId),
@@ -1604,6 +1605,7 @@ async function main(): Promise<void> {
       lancer: (demande) => lancements.lancer(demande),
       fenetreOuverte: async (t, waId) => (await inboxStore.getWindowOpenByWaIds(t, [waId])).get(waId) === true,
       estDesabonne: (t, waId) => contactStore.estDesabonneParWaId(t, waId),
+      offres,
       sessions: agentSessions,
       parcours: { clore: (t, runId) => runStore.setStateSiVivant(t, runId, { currentNode: null, status: 'done' }) },
     });

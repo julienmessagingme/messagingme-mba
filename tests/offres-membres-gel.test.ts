@@ -48,6 +48,17 @@ describe('creerGelMembres', () => {
     expect(lus).toEqual(['u2']);
   });
 
+  it('🔴 en Entreprise, une limite posée depuis /ops ne suspend personne : elle ne bloque que les invitations (décision de Julien)', async () => {
+    const lus: string[] = [];
+    const limitee = { ...DROITS.entreprise, limites: { ...DROITS.entreprise.limites, utilisateurs: 2 } };
+    const gel = creerGelMembres({
+      offres: { offreDe: async () => ({ offre: 'entreprise', droits: limitee, retourEnBaseLe: null }) },
+      rang: async (_t, u) => { lus.push(u); return rang({ estAdmin: false, autresAvant: 5, admins: 1 }); },
+    });
+    expect(await gel.horsOffre('t1', 'u7')).toBeNull();
+    expect(lus).toEqual([]);
+  });
+
   it('un membre introuvable (supprimé entre-temps) n’est pas gelé ici : la garde le refuse déjà en 401', async () => {
     const gel = creerGelMembres({ offres: { offreDe: async () => ({ offre: 'base', droits: DROITS.base, retourEnBaseLe: null }) }, rang: async () => null });
     expect(await gel.horsOffre('t1', 'u9')).toBeNull();

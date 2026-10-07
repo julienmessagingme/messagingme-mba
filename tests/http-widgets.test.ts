@@ -17,6 +17,7 @@ import {
 import type { NumeroDuWidget } from '../src/widgets/adresses';
 import type { WidgetInput, WidgetRow } from '../src/widgets/store.pg';
 import type { PhoneNumberRecord } from '../src/account/types';
+import { DROITS, type Offre } from '../src/offres/offres';
 
 /**
  * Les routes des widgets côté console (lot 4 de docs/superpowers/plans/2026-10-02-widget-whatsapp.md), montées par
@@ -82,6 +83,8 @@ function monter(o: {
   dejaVus?: number;
   creer?: DepsGestionWidgets['widgets']['creer'];
   numero?: NumeroDuWidget | null;
+  /** L'offre de l'espace (lot 6, B2a) : Entreprise par défaut, tout ouvert. */
+  offre?: Offre;
 } = {}) {
   const lignes = [...(o.widgets ?? [])];
   const cap = {
@@ -114,6 +117,7 @@ function monter(o: {
         return true;
       },
     },
+    offres: { offreDe: async () => ({ offre: o.offre ?? 'entreprise', droits: DROITS[o.offre ?? 'entreprise'], retourEnBaseLe: null }) },
     phrasesDesLiens: async () => o.liens ?? [],
     messagesContenantLaPhrase: async (_t, phrase) => { cap.comptages.push(phrase); return o.dejaVus ?? 0; },
     // Comme `etatDuScenario` sur `getById(id, tenant)` : un scénario d'un autre espace est un inconnu.
@@ -252,6 +256,28 @@ describe('créer', () => {
     expect(erreur(res)).toBe(SCENARIO_NON_PUBLIE);
     expect(erreur(res)).toContain('publiez-le');
     expect(cap.creations).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 en Base, CHOISIR le devenir « scénario » est refusé (402, décision de Julien) ; le réglage de l’espace passe', async () => {
+    const { server, cap } = monter({ offre: 'base' });
+    const res = await creer(server, { nom: 'Blog', phrase: 'Je viens du blog', devenir: 'scenario', workflowId: WF_T1 });
+    expect(res.statusCode).toBe(402);
+    expect(res.json()).toMatchObject({ code: 'plan_feature_unavailable', fonction: 'scenarios' });
+    expect(cap.creations).toEqual([]);
+    // Le pendant : sans scénario, la Base garde ses widgets.
+    expect((await creer(server, { nom: 'Blog', phrase: 'Je viens du blog' })).statusCode).toBe(201);
+    await server.close();
+  });
+
+  it('en Base, un widget à scénario d’avant reste modifiable (l’éteindre, sa couleur) ; le rechoisir est refusé', async () => {
+    const w = ligne({ devenir: 'scenario', workflowId: WF_T1 });
+    const { server, cap } = monter({ widgets: [w], offre: 'base' });
+    const patch = (payload: Record<string, unknown>) => server.inject({ method: 'PATCH', url: `${URL_WIDGETS}/${w.id}`, ...h(adminTok), payload });
+    expect((await patch({ workflowId: WF_T1 })).statusCode).toBe(402);
+    expect(cap.modifications).toEqual([]);
+    expect((await patch({ actif: false })).statusCode).toBe(200);
+    expect((await patch({ devenir: null })).statusCode).toBe(200);
     await server.close();
   });
 
@@ -548,7 +574,7 @@ describe('le câblage', () => {
 
   it('les widgets de la console sont câblés sur l’assemblage de production et la base des routes d’API', () => {
     const b = bloc('\n  const widgetsDeLaConsole: DepsWidgets = {');
-    expect(b).toContain('gestion: gestionDesWidgetsEnBase(pool)');
+    expect(b).toContain('gestion: gestionDesWidgetsEnBase(pool, offres)');
     // La même base que l'adresse d'un webhook entrant : la route vit sur l'API.
     expect(b).toContain('baseApi: adressesApi.avecPrefixe');
     // Le même numéro que le script public, donc le même lien que la bulle ouvrira.

@@ -4,6 +4,7 @@ import {
   creerWidget, listerEnVue, miseEnVue, modifierWidget, supprimerWidget, type DepsWidgets,
 } from '../widgets/gestion';
 import { espaceVerifie } from './scope';
+import { corpsDuRefus } from '../lib/issue';
 
 /**
  * Les widgets WhatsApp d'un espace, côté console (lot 4 de docs/superpowers/plans/2026-10-02-widget-whatsapp.md).
@@ -28,7 +29,7 @@ export function registerWidgets(app: FastifyInstance, deps: WidgetsRouteDeps, ga
     const tenant = espaceVerifie(req);
     const vue = await miseEnVue(deps, tenant);
     const r = await creerWidget(deps.gestion, tenant, req.body);
-    if (!r.ok) return reply.code(r.statut).send({ error: r.erreur });
+    if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
     return reply.code(201).send({ widget: vue(r.valeur) });
   });
 
@@ -36,7 +37,7 @@ export function registerWidgets(app: FastifyInstance, deps: WidgetsRouteDeps, ga
     const tenant = espaceVerifie(req);
     const vue = await miseEnVue(deps, tenant);
     const r = await modifierWidget(deps.gestion, tenant, req.params.id, req.body);
-    if (!r.ok) return reply.code(r.statut).send({ error: r.erreur });
+    if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
     return reply.code(200).send({ widget: vue(r.valeur) });
   });
 
@@ -47,7 +48,7 @@ export function registerWidgets(app: FastifyInstance, deps: WidgetsRouteDeps, ga
   app.delete<{ Params: { id: string } }>(`${base}/:id`, opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const r = await supprimerWidget(deps.gestion, tenant, req.params.id);
-    if (!r.ok) return reply.code(r.statut).send({ error: r.erreur });
+    if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
     return reply.code(200).send({ ok: true });
   });
 }

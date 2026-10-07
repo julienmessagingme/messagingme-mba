@@ -112,10 +112,12 @@ function kindsFor(ev: AutomationEvent): AutomationTriggerKind[] {
 
 /**
  * 🔴 LE GEL AU RETOUR EN BASE (lot 6, livraison B2a, spec § 7, décision de Julien du 2026-10-07) : ce que l'offre laisse
- * encore tirer. Une chaîne et une publicité se taisent quand leur fonction est fermée ; un widget continue (la Base en a) ;
- * une automation du client tire si l'offre n'a pas de limite, sinon seulement parmi les plus anciennes, dans la limite.
+ * encore tirer. Une chaîne et une publicité se taisent quand leur fonction est fermée ; un widget (qui démarre un scénario
+ * du client) se tait sans `scenarios`, comme tout autre démarrage d'un scénario du client (décision de Julien) ; une
+ * automation du client tire si l'offre n'a pas de limite, sinon seulement parmi les plus anciennes, dans la limite.
  * Rien n'est éteint en base : au réabonnement, tout retire. La liste des plus anciennes n'est lue que pour un espace
- * limité qui a une candidate du client ; un propriétaire inconnu demain se range avec le client, donc sous la limite.
+ * limité qui a une candidate du client. ⚠️ Un propriétaire inconnu demain se range avec le client, mais la liste des
+ * plus anciennes ne compte que les automations SANS propriétaire : sous une limite, il ne tirerait jamais. À déclarer ici.
  */
 async function permisesParLOffre(tenantId: string, candidates: AutomationRow[], deps: AutomationRunnerDeps): Promise<AutomationRow[]> {
   const { droits } = await deps.offres.offreDe(tenantId);
@@ -123,19 +125,23 @@ async function permisesParLOffre(tenantId: string, candidates: AutomationRow[], 
   const duClient = (a: AutomationRow) => a.possedePar !== POSSESSEUR_LIEN_CHAINE && a.possedePar !== POSSESSEUR_PUBLICITE
     && a.possedePar !== POSSESSEUR_WIDGET;
   const anciennes = limite !== null && candidates.some(duClient) ? await deps.automations.plusAnciennes(tenantId, limite) : null;
-  return candidates.filter((a) => {
+  const enPause: string[] = [];
+  const permises = candidates.filter((a) => {
     let permise: boolean;
     if (a.possedePar === POSSESSEUR_LIEN_CHAINE) permise = droits.fonctions.has('chaines');
     else if (a.possedePar === POSSESSEUR_PUBLICITE) permise = droits.fonctions.has('publicites');
-    else if (a.possedePar === POSSESSEUR_WIDGET) permise = true;
+    else if (a.possedePar === POSSESSEUR_WIDGET) permise = droits.fonctions.has('scenarios');
     else permise = limite === null || (anciennes?.has(a.id) ?? false);
-    if (!permise) {
-      // Une automation n'a aucun écran pour ce refus : ce journal est le seul endroit où il se lit.
-      // eslint-disable-next-line no-console
-      console.log(`automation ${a.id} : en pause, hors de l'offre de l'espace ${tenantId}`);
-    }
+    if (!permise) enPause.push(a.id);
     return permise;
   });
+  if (enPause.length > 0) {
+    // Une automation n'a aucun écran pour ce refus : ce journal est le seul endroit où il se lit. Une ligne par
+    // événement, pas une par automation : un espace qui en a beaucoup en pause écrirait sinon à chaque message.
+    // eslint-disable-next-line no-console
+    console.log(`automations en pause, hors de l'offre de l'espace ${tenantId} : ${enPause.join(', ')}`);
+  }
+  return permises;
 }
 
 /**

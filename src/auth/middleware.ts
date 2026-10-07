@@ -198,7 +198,8 @@ export function makeRequireAuth(secret: string, loadState?: UserStateLoader, lim
  * `admin` (la même chaîne, appelée telle quelle), OU le jeton du lien que donne Claude Code (`verifyLienNumero`).
  * Pour le jeton, à chaque appel :
  *  - le plafond par utilisateur, sur celui qui a demandé le lien, comme pour une session ;
- *  - 🔴 l'utilisateur relu en base : révoqué, supprimé ou rétrogradé, le lien ne sert plus ; l'espace suspendu non plus ;
+ *  - 🔴 l'utilisateur relu en base : révoqué, supprimé ou rétrogradé, le lien ne sert plus ; l'espace suspendu non plus,
+ *    ni un membre en trop de l'offre (lot 6, B2a : le même 402 que sa session) ;
  *  - 🔴 une écriture refusée (409 `lien_termine`) dès que l'espace a un numéro connecté ET activé : c'est ce qui fait
  *    mourir le lien. Un numéro relié que Meta n'a pas encore activé le laisse vivre (l'activation reste à faire), et
  *    `ecrituresApresConnexion` nomme les routes qui jugent elles-mêmes (« Abandonner » le numéro fourni quand c'est un
@@ -243,6 +244,12 @@ export function makeRequireAdminOuLien(o: {
     }
     if (etat.tenantStatus === 'locked') {
       await reply.code(403).send({ error: 'espace suspendu', code: 'tenant_locked' });
+      return;
+    }
+    // Le membre en trop (lot 6, B2a) : le lien ne vaut pas mieux que sa session, refusée de la même façon.
+    if (etat.horsOffre) {
+      const e = new LimiteOffreError(lien.tenantId, etat.horsOffre.limite, etat.horsOffre.max);
+      await reply.code(STATUT_REFUS_OFFRE).send({ ...corpsRefusLimite(e), acces: 'suspendu' });
       return;
     }
     if (etat.role !== 'admin') {

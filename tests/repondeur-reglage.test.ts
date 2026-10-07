@@ -4,7 +4,7 @@ import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { EmailIdentity, UserAuthStore } from '../src/auth/store';
 import type { AgentsRouteDeps } from '../src/http/agents';
-import { choisirRepondeur, choixDeLAncienneForme, lireRepondeur, type ChoixRepondeur, type DepsReglageRepondeur } from '../src/repondeur/reglage';
+import { choisirRepondeur, choixDeLAncienneForme, choixDeLAncienneFormeSousLOffre, lireRepondeur, type ChoixRepondeur, type DepsReglageRepondeur } from '../src/repondeur/reglage';
 import { DROITS, type Offre } from '../src/offres/offres';
 import { creerListeDeLAgent, PAQUET_LISTE } from '../src/mba/liste';
 import { modifierAgent } from '../src/agent/gestion';
@@ -282,6 +282,15 @@ describe('l’ancienne forme (lot 5 : un agent, ou null), gardée pour l’outil
     expect(choixDeLAncienneForme(AG, false)).toEqual({ mode: 'agent', agentId: AG });
     expect(choixDeLAncienneForme(null, true)).toEqual({ mode: 'mba' });
     expect(choixDeLAncienneForme(null, false)).toEqual({ mode: 'equipe' });
+  });
+
+  it('🔴 lue sous l’offre (lot 6, B2a) : en Base, null avec l’agent de Meta allumé vaut l’équipe, pas un refus 402', async () => {
+    // Sans ça, un espace revenu en Base ne pouvait plus retirer son agent IA répondeur par cette forme.
+    const base = monter({ offre: 'base', etat: { mbaEnabled: true } });
+    expect(await choixDeLAncienneFormeSousLOffre(base.deps, T, null)).toEqual({ mode: 'equipe' });
+    expect(await choixDeLAncienneFormeSousLOffre(base.deps, T, AG)).toEqual({ mode: 'agent', agentId: AG });
+    const entreprise = monter({ etat: { mbaEnabled: true } });
+    expect(await choixDeLAncienneFormeSousLOffre(entreprise.deps, T, null)).toEqual({ mode: 'mba' });
   });
 });
 

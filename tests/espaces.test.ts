@@ -28,6 +28,8 @@ const COMPTES: Record<string, Compte[]> = {
     { id: 'u3', tenantId: 't3', tenantName: 'Gamma', role: 'admin', disabled: false },
     // Compte révoqué dans cet espace.
     { id: 'u4', tenantId: 't4', tenantName: 'Delta', role: 'admin', disabled: true },
+    // Membre en trop d'un espace revenu en Base (lot 6, B2a) : la garde le refuserait en 402, toute session dessus.
+    { id: 'u5', tenantId: 't5', tenantName: 'Epsilon', role: 'agent', disabled: false },
   ],
   // Une autre identité : son espace ne doit jamais apparaître ni s'ouvrir.
   'autre@exemple.fr': [{ id: 'u9', tenantId: 't9', tenantName: 'Étranger', role: 'admin', disabled: false }],
@@ -58,7 +60,7 @@ function app(over: { lus?: string[]; connexions?: string[] } = {}) {
       comptes,
       getUserState: async (userId) => {
         const c = tous().find((x) => x.id === userId);
-        return c ? { role: c.role, disabled: c.disabled, tenantStatus: c.tenantId === 't3' ? 'locked' : 'active', horsOffre: null } : null;
+        return c ? { role: c.role, disabled: c.disabled, tenantStatus: c.tenantId === 't3' ? 'locked' : 'active', horsOffre: c.tenantId === 't5' ? { limite: 'utilisateurs' as const, max: 1 } : null } : null;
       },
     },
     me: { getById: async () => null },
@@ -73,7 +75,7 @@ beforeAll(async () => {
 });
 
 describe('GET /tenants/:tenantId/espaces', () => {
-  it('rend les espaces de l’identité de la session, marque l’actuel, sans espace suspendu, révoqué ni étranger', async () => {
+  it('rend les espaces de l’identité de la session, marque l’actuel, sans espace suspendu, révoqué, étranger, ni où le compte est en trop', async () => {
     const a = app();
     const r = await a.inject({ method: 'GET', url: '/tenants/t1/espaces', ...h(adminT1) });
     expect(r.statusCode).toBe(200);
@@ -138,7 +140,7 @@ describe('POST /tenants/:tenantId/changer-espace', () => {
   it('🔴 vers un espace étranger, suspendu, révoqué ou inexistant : 404, jamais 403, et aucune session', async () => {
     const connexions: string[] = [];
     const a = app({ connexions });
-    for (const cible of ['t9', 't3', 't4', 'inconnu']) {
+    for (const cible of ['t9', 't3', 't4', 't5', 'inconnu']) {
       const r = await basculer(a, adminT1, cible);
       expect(r.statusCode, cible).toBe(404);
       expect(r.json(), cible).toEqual({ error: 'espace introuvable' });

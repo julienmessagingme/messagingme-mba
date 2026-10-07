@@ -11,7 +11,7 @@ import { signSession, signLienNumero } from '../src/auth/token';
  * (`tests/scope-tenant.test.ts` le prouve sur le serveur construit).
  */
 const SECRET = 'secret-de-test';
-type Etat = { role: string; disabled: boolean; tenantStatus?: string } | null;
+type Etat = { role: string; disabled: boolean; tenantStatus?: string; horsOffre?: { limite: 'utilisateurs' | 'admins'; max: number } } | null;
 
 describe('la garde adminOuLien', () => {
   let app: FastifyInstance;
@@ -19,7 +19,7 @@ describe('la garde adminOuLien', () => {
   const connectes = new Set<string>();
   const aActiver = new Set<string>();
   const lectures: string[] = [];
-  const loadState: UserStateLoader = async (userId, tenantId) => { lectures.push(`${userId}@${tenantId}`); const e = etats.get(userId) ?? null; return e && { ...e, horsOffre: null }; };
+  const loadState: UserStateLoader = async (userId, tenantId) => { lectures.push(`${userId}@${tenantId}`); const e = etats.get(userId) ?? null; return e && { ...e, horsOffre: e.horsOffre ?? null }; };
 
   beforeAll(async () => {
     const requireAuth = makeRequireAuth(SECRET, loadState);
@@ -70,6 +70,13 @@ describe('la garde adminOuLien', () => {
     expect(r.statusCode).toBe(200);
     expect(r.json().auth).toEqual({ userId: 'u-admin', tenantId: 't-1', role: 'admin', viaLien: true });
     expect(lectures).toEqual(['u-admin@t-1']);
+  });
+
+  it('🔴 un administrateur en trop d’un espace revenu en Base (lot 6, B2a) : le lien est refusé comme sa session, en 402 suspendu', async () => {
+    etats.set('u-en-trop', { role: 'admin', disabled: false, horsOffre: { limite: 'admins', max: 1 } });
+    const r = await appeler('GET', await lien('u-en-trop'));
+    expect(r.statusCode).toBe(402);
+    expect(r.json()).toMatchObject({ code: 'plan_limit_reached', limite: 'admins', max: 1, acces: 'suspendu' });
   });
 
   it('🔴 l’utilisateur qui a demandé le lien est relu : révoqué, supprimé ou rétrogradé, le lien ne sert plus', async () => {

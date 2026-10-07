@@ -3377,13 +3377,16 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   ⚠️ Jusqu'à la livraison B2, le numéro reste facturé à part, par son propre abonnement.
 - ✅ **Au retour en Base, on gèle, on n'efface rien** (livraison B2a) : un espace qui revient en Base (fin du Pro) garde
   toutes ses données, et tout revient au réabonnement. Ses scénarios ne démarrent plus que par ses automations, les 10
-  plus anciennes seulement (celles au-delà, et celles des chaînes et des publicités, se taisent ; celles des widgets
-  continuent) ; plus de lancement depuis l'Inbox, par l'agent de Meta, par l'outil d'un agent IA, par une campagne
-  à scénario ou un lien de test. Les parcours déjà en cours finissent. L'agent de Meta ne reçoit plus aucun contact
+  plus anciennes seulement (celles au-delà, et celles des chaînes, des publicités et des widgets à scénario, se taisent) ;
+  plus de lancement depuis l'Inbox, par l'agent de Meta, par les outils d'un agent IA (lancer un scénario, envoyer un
+  bloc), par une campagne à scénario, par l'API vers un scénario ou un bloc, ni par un lien de test. Une campagne, un
+  envoi par l'API ou un widget qui choisirait un scénario est refusé dès sa création, avec le lien de l'offre ; un
+  widget d'avant reste modifiable. Les parcours déjà en cours finissent. L'agent de Meta ne reçoit plus aucun contact
   neuf et le scénario répondeur ne part plus : ces deux modes se comportent comme « Équipe », et ne peuvent plus être
   choisis ; l'agent IA répondeur continue. Les membres au-delà des limites perdent l'accès (le plus ancien
-  administrateur garde le sien) : la console leur montre une page « accès suspendu », et Claude leur répond par le même
-  refus.
+  administrateur garde le sien) : la console leur montre une page « accès suspendu », avec « Réessayer » pour revenir
+  dès que l'espace repasse en Pro, et Claude leur répond par le même refus. Cette suspension ne vaut qu'en Base et en
+  Pro : en Entreprise, une limite de membres ne bloque que les nouvelles invitations.
 - ✅ **Par l'API et Claude** : un refus rend le statut **402** avec un code, `plan_feature_unavailable` (fonction
   absente de l'offre) ou `plan_limit_reached` (limite atteinte), et le lien `upgradeUrl`. L'outil MCP `get_plan`
   rend l'offre, ses limites, ce qui est consommé et la grille. Les outils de l'Inbox restent listés en Base et refusent

@@ -9,6 +9,8 @@ import { PgWorkflowStore, etatDuScenario, type EtatScenario } from '../workflow/
 import { PgWidgetStore, type DevenirWidget, type PositionWidget, type WidgetInput, type WidgetRow } from './store.pg';
 import { enConflitAvec, phrasesEnConflit } from './phrases';
 import { adresseDuScript, baliseDuScript, lienDuWidget, type NumeroDuWidget } from './adresses';
+import { refusFonction } from '../offres/refus';
+import type { SourceOffres } from '../offres/offre.pg';
 
 /**
  * LA GESTION DES WIDGETS : lister, créer, modifier, supprimer (lot 4 de
@@ -30,7 +32,9 @@ import { adresseDuScript, baliseDuScript, lienDuWidget, type NumeroDuWidget } fr
  *    scénario, le lot 3 le traite comme `null`, et l'accepter ici laisserait le MCP poser un choix inerte ;
  *  - la phrase : réduite à rien par `normalizeText`, en conflit avec un autre widget ou un lien de chaîne
  *    (`./phrases`), ou déjà présente dans la conversation ordinaire ;
- *  - cinq widgets au plus par espace (décision de Julien du 2026-10-02).
+ *  - cinq widgets au plus par espace (décision de Julien du 2026-10-02) ;
+ *  - 🔴 le devenir « scénario » CHOISI exige la fonction `scenarios` (lot 6, B2a, décision de Julien du 2026-10-07) : en
+ *    Base, un widget ne démarre plus de scénario du client. Un widget d'avant reste modifiable et éteignable.
  */
 
 /** Cinq widgets au plus par espace : un site vitrine, un blog, une page tarifs, et de la marge. */
@@ -158,13 +162,15 @@ export interface DepsGestionWidgets {
    * 'inconnu', comme un identifiant qui n'existe pas.
    */
   scenarioEtat(tenantId: string, workflowId: string): Promise<EtatScenario>;
+  /** L'offre de l'espace (lot 6, B2a) : le devenir « scénario » suit la fonction `scenarios`. */
+  offres: SourceOffres;
 }
 
 /**
  * L'assemblage de production, appelé par le câblage de l'API (`src/index.ts`) et par le test d'intégration, qui
  * éprouve ainsi les VRAIES requêtes, dont celle qui dit à quel espace appartient un scénario.
  */
-export function gestionDesWidgetsEnBase(pool: Pool): DepsGestionWidgets {
+export function gestionDesWidgetsEnBase(pool: Pool, offres: SourceOffres): DepsGestionWidgets {
   const liens = new PgChannelsMeLinkStore(pool);
   const scenarios = new PgWorkflowStore(pool);
   return {
@@ -178,6 +184,7 @@ export function gestionDesWidgetsEnBase(pool: Pool): DepsGestionWidgets {
     // `getById` filtre sur `id` ET `tenant_id` : un scénario d'un autre espace y est introuvable. La lecture est
     // celle du bouton d'un lien de chaîne (`etatDuScenario`), câblée pour lui dans `src/index.ts`.
     scenarioEtat: async (tenantId, workflowId) => etatDuScenario(await scenarios.getById(workflowId, tenantId)),
+    offres,
   };
 }
 
@@ -206,6 +213,10 @@ async function preparer(
     // supprimé après coup, `on delete set null`) reste ainsi modifiable, sa couleur par exemple : l'écran dit qu'il
     // ne démarre plus rien et invite à choisir un autre scénario, sans l'exiger pour toucher au reste.
     if (workflowId === null && choisitLeScenario) return refus(400, SCENARIO_A_CHOISIR);
+    // Hors offre, seulement quand la requête CHOISIT le scénario : un widget d'avant reste modifiable, comme un inerte.
+    if (choisitLeScenario && !(await deps.offres.offreDe(tenantId)).droits.fonctions.has('scenarios')) {
+      return refusFonction('scenarios');
+    }
   } else if (s.workflowId !== undefined && s.workflowId !== null) {
     // Sinon la base refuserait (`widgets_scenario_sans_devenir_chk`), en 500.
     return refus(400, SCENARIO_SANS_DEVENIR);

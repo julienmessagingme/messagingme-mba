@@ -239,6 +239,16 @@ describe('serveur MCP : protocole', () => {
     await server.close();
   });
 
+  it('les instructions valent pour toute offre (lot 6, B2a) : elles n’imposent pas un outil de l’Inbox, et disent le refus hors offre', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: rpc('initialize', { protocolVersion: '2025-03-26' }) });
+    const instructions = res.json<{ result: { instructions: string } }>().result.instructions;
+    // En Base, list_conversations refuse : « commence par » enverrait chaque session vers un refus.
+    expect(instructions).not.toMatch(/Commence par list_conversations/);
+    expect(instructions).toMatch(/offre/);
+    await server.close();
+  });
+
   it('une NOTIFICATION (sans id) ne reçoit pas de corps : 202', async () => {
     // `notifications/initialized` est envoyée par tout client MCP juste après l'initialisation. Répondre
     // un corps JSON-RPC à une notification est une faute de protocole, et certains clients s'en plaignent.

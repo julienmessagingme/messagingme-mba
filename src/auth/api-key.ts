@@ -9,7 +9,7 @@ import { refuser } from '../api/erreurs';
 import { DROIT_RELAIS } from '../mba/cle-relais';
 import type { AccesOauthLookup } from '../oauth/store.pg';
 import { formeDeJeton, PREFIXE_ACCES } from '../oauth/jetons';
-import { STATUT_REFUS_OFFRE, phraseLimite } from '../offres/refus';
+import { LimiteOffreError, STATUT_REFUS_OFFRE, corpsRefusLimite } from '../offres/refus';
 import type { HorsOffreMembre } from '../offres/membres';
 
 /**
@@ -194,7 +194,9 @@ export function makeRequireApiKey(
      * 402 et non 401 : un 401 ferait relancer la connexion OAuth à Claude, en boucle.
      */
     if (found.horsOffre) {
-      await refuser(reply, STATUT_REFUS_OFFRE, 'plan_limit_reached', phraseLimite(found.horsOffre.limite, found.horsOffre.max));
+      // Le corps de la session de la console (`requireAuth`) : la limite, son maximum et le lien de l'offre.
+      const e = new LimiteOffreError(found.tenantId, found.horsOffre.limite, found.horsOffre.max);
+      await reply.code(STATUT_REFUS_OFFRE).send({ ...corpsRefusLimite(e), acces: 'suspendu' });
       return;
     }
     // Date de dernier usage d'une clé : best-effort, ne doit jamais faire échouer la requête. Celle d'un jeton

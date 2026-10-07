@@ -3,6 +3,8 @@ import { CONTACT_BLOQUE } from './executer-maison';
 import type { EmpreinteDuFil } from '../inbox/store.pg';
 import type { WorkflowGraph } from '../workflow/graph';
 import type { StartOutcome } from '../workflow/executor';
+import type { SourceOffres } from '../offres/offre.pg';
+import { INDISPONIBLE_POUR_LE_MODELE } from '../offres/refus';
 
 /**
  * Les deux gestes qui envoient au client depuis le relais de l'agent de Meta : « Envoyer un bloc » et « Lancer
@@ -35,6 +37,11 @@ export interface DepsGestesEnvoi {
   attendreFinDuTour(tenantId: string, waId: string): Promise<unknown>;
   /** L'empreinte du fil, relue avant et après l'attente. */
   inbox: { empreinteDuFil(tenantId: string, waId: string): Promise<EmpreinteDuFil | null> };
+  /**
+   * L'offre de l'espace (lot 6, B2a) : sans `scenarios`, les deux gestes refusent tout de suite, AVANT l'attente de fin
+   * de tour (jusqu'à 15 s, quand Meta coupe un outil vers 3 s), avec une phrase que l'agent peut redire au contact.
+   */
+  offres: SourceOffres;
 }
 
 /**
@@ -90,8 +97,11 @@ export function creerGestesEnvoi(deps: DepsGestesEnvoi): {
     return null;
   };
 
+  const scenariosOuverts = async (tenantId: string) => (await deps.offres.offreDe(tenantId)).droits.fonctions.has('scenarios');
+
   return {
     async envoyerBloc(tenantId, waId, { workflowId, code }) {
+      if (!(await scenariosOuverts(tenantId))) return INDISPONIBLE_POUR_LE_MODELE;
       const graphe = await deps.graphePublie(tenantId, workflowId);
       if (!graphe) return 'le scénario de ce bloc n’existe plus';
       // Revérifié à chaque appel : le scénario a pu changer depuis la création de l'outil.
@@ -109,6 +119,7 @@ export function creerGestesEnvoi(deps: DepsGestesEnvoi): {
         'le bloc n’a pas pu partir');
     },
     async lancerScenario(tenantId, waId, workflowId) {
+      if (!(await scenariosOuverts(tenantId))) return INDISPONIBLE_POUR_LE_MODELE;
       const ouverte = await deps.fenetreOuverte(tenantId, waId);
       const refus = await attendreEtRevérifier(tenantId, waId);
       if (refus !== null) return refus;

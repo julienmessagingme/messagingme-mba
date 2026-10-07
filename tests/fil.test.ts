@@ -670,6 +670,7 @@ describe('décision 5 : un lead ne prend pas la main à un opérateur', () => {
       publiciteDeLaCampagne: async () => ({ campagneId: 'camp-1', destination: 'scenario', automationId: 'auto-pub' }),
       contactBloque: async () => false,
       estDesabonne: jamaisDesabonne,
+      offres: offresToutOuvert,
       reprendreLeFil: (t, w) => b.fil.reprendrePourLApp(t, w, { saufOperateur: true }),
       // Le même câblage que `src/worker.ts` : le routage vient de reprendre le fil, rien n'est à rouvrir.
       rendreLeFil: (t, w, contenu) => b.fil.remettreSiPersonneNeSuit(t, w, contenu, { rouverte: false }),

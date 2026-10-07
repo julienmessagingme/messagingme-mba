@@ -122,7 +122,8 @@ export function demarrageParLeRunner(
       ...runner,
       automations: {
         listEnabled: async () => [automationDuWidget(tenantId, widget, workflowId)], ...tirsPour(tenantId),
-        // Jamais lue : l'automation d'un widget n'est pas du client, le gel la laisse tirer (lot 6, B2a).
+        // Jamais lue : l'automation d'un widget ne compte pas parmi celles du client ; sans `scenarios`, le gel la tait
+        // (lot 6, B2a, `permisesParLOffre`).
         plusAnciennes: async () => new Set<string>(),
       },
     },

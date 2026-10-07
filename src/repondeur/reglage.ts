@@ -170,6 +170,18 @@ export function choixDeLAncienneForme(agentId: string | null, mbaAllume: boolean
   return mbaAllume ? { mode: 'mba' } : { mode: 'equipe' };
 }
 
+/**
+ * L'ancienne forme, lue SOUS L'OFFRE (lot 6, B2a) : son seul point d'entrée pour la route d'avant RC6 et l'outil MCP.
+ * Sans `agent_meta`, l'agent de Meta se lit éteint (`sousLOffre`), donc `null` vaut l'équipe : sinon un espace revenu
+ * en Base, l'agent de Meta allumé, prenait un 402 « mba » en voulant seulement retirer son agent IA répondeur.
+ */
+export async function choixDeLAncienneFormeSousLOffre(
+  deps: Pick<DepsReglageRepondeur, 'reglages' | 'offres'>, tenantId: string, agentId: string | null,
+): Promise<ChoixRepondeur> {
+  const [r, o] = await Promise.all([deps.reglages.get(tenantId), deps.offres.offreDe(tenantId)]);
+  return choixDeLAncienneForme(agentId, sousLOffre(r, o.droits.fonctions).mbaEnabled);
+}
+
 /** L'erreur Postgres d'une contrainte, lue sans `as` sur sa forme. */
 function codeSql(err: unknown): string | null {
   if (err === null || typeof err !== 'object') return null;

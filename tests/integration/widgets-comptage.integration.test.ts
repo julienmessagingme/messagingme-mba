@@ -8,6 +8,7 @@ import { creerWidget, gestionDesWidgetsEnBase, modifierWidget } from '../../src/
 import { etiquetteDuWidget } from '../../src/widgets/arrivee';
 import { PgWidgetStore, type WidgetInput } from '../../src/widgets/store.pg';
 import { newTrackingCode } from '../../src/ids/code';
+import { offresToutOuvert } from '../gardes';
 
 // Ne PAS lancer ce fichier en local : le DATABASE_URL du .env local pointe sur la base de PRODUCTION (cf. CLAUDE.md du
 // repo), et ce fichier crée puis supprime des espaces. La CI monte un Postgres jetable pour ça (job `integration`).
@@ -144,7 +145,7 @@ describe.skipIf(!url)('le comptage des messages reçus, hors arrivées par un wi
   describe('🔴 les trois refus du lot 4 que ce comptage causait, par l’assemblage de production', () => {
     it('recréer un widget avec la phrase d’un widget supprimé', async () => {
       const t = await espace();
-      const deps = gestionDesWidgetsEnBase(pool);
+      const deps = gestionDesWidgetsEnBase(pool, offresToutOuvert);
       const p = phrase();
       const ancien = await widgets.creer(t, brut(p));
       await contactQuiEcrit(t, [etiquetteDuWidget(ancien.code)], [p]);
@@ -154,7 +155,7 @@ describe.skipIf(!url)('le comptage des messages reçus, hors arrivées par un wi
 
     it('raccourcir une phrase qui a servi, et retirer sa ponctuation finale', async () => {
       const t = await espace();
-      const deps = gestionDesWidgetsEnBase(pool);
+      const deps = gestionDesWidgetsEnBase(pool, offresToutOuvert);
       const p = phrase();
       const w = await widgets.creer(t, brut(`${p} du site !`));
       await contactQuiEcrit(t, [etiquetteDuWidget(w.code)], [`${p} du site !`]);
@@ -166,7 +167,7 @@ describe.skipIf(!url)('le comptage des messages reçus, hors arrivées par un wi
 
     it('le pendant : une phrase présente dans la conversation ordinaire reste refusée (409)', async () => {
       const t = await espace();
-      const deps = gestionDesWidgetsEnBase(pool);
+      const deps = gestionDesWidgetsEnBase(pool, offresToutOuvert);
       const p = phrase();
       await contactQuiEcrit(t, [], [`Bonjour, ${p} svp`]);
       expect(await creerWidget(deps, t, { nom: 'itest', phrase: p })).toMatchObject({ ok: false, statut: 409 });

@@ -11,6 +11,7 @@ import type { DepsMcp } from '../src/mcp/outils';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { exploitationInerte, opsInerte } from './routes-inertes';
 import { accesOps } from './acces-ops';
+import { offresToutOuvert } from './gardes';
 
 /**
  * L'OBSERVATION DE L'USAGE : ce que les routes publiques comptent, et ce qu'elles ne refusent PAS.
@@ -61,6 +62,7 @@ const sendsMuets: Omit<V1SendsRouteDeps, 'usage'> = {
   numerosSuspendus: { estSuspendu: async () => false },
   // Les modèles du mois sans limite (lot 6) : ce test ne porte pas sur l'offre.
   modelesDuMois: { etatDuMois: async () => null },
+  offres: offresToutOuvert,
   resoudreFiche: async () => ({ ok: false, code: 'unknown_contact' }),
   appliquerConsentement: async () => 'inchange',
   enqueue: async () => { /* rien */ },

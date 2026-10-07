@@ -27,7 +27,8 @@ import { PREFIXE_ENVOI_API, resoudreCibleRcs, schemaCibleRcs, type DepsCibleRcs 
 import { destinataireAvecVariablesInterdites, schemaVariables } from '../api/variables';
 import { MESSAGE_NUMERO_DELIE, MESSAGE_NUMERO_SUSPENDU } from '../meta/numero-delie';
 import { messageDe } from '../lib/erreur';
-import { LimiteOffreError, STATUT_REFUS_OFFRE, corpsRefusLimite } from '../offres/refus';
+import { LimiteOffreError, STATUT_REFUS_OFFRE, corpsRefusFonction, corpsRefusLimite } from '../offres/refus';
+import type { SourceOffres } from '../offres/offre.pg';
 
 export interface V1SendCreateInput {
   tenantId: string;
@@ -91,6 +92,11 @@ export interface V1SendsRouteDeps {
    * fixtures disent leur hypothèse (sans limite).
    */
   modelesDuMois: { etatDuMois(tenantId: string): Promise<{ max: number; reste: number } | null> };
+  /**
+   * L'offre de l'espace (lot 6, B2a) : sans `scenarios`, une cible scénario ou bloc démarrerait un parcours que le gel
+   * refuse ensuite destinataire par destinataire ; elle est refusée tout de suite (402 `plan_feature_unavailable`).
+   */
+  offres: SourceOffres;
   /** La résolution de fiche partagée (`resoudreFiche`), liée à ses dépendances par le câblage. */
   resoudreFiche(tenantId: string, cles: ClesFiche, opts: { creer: ModeCreation }): Promise<ResolutionFiche>;
   /**
@@ -432,6 +438,11 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
     const fautif = destinataireAvecVariablesInterdites(demandee.kind, corps.recipients);
     if (fautif !== null) {
       return refuser(reply, 400, 'invalid_body', `recipients.${fautif}.variables : un scénario ou un bloc n’a aucun endroit où ranger des variables par destinataire`);
+    }
+    // Hors offre (lot 6, B2a) : un scénario ou un bloc ne démarre plus de parcours. Refusé avant le compteur et la clé,
+    // comme les variables : sinon l'envoi serait accepté (202), puis chaque destinataire finirait « non démarré ».
+    if ((demandee.kind === 'scenario' || demandee.kind === 'node') && !(await deps.offres.offreDe(tenantId)).droits.fonctions.has('scenarios')) {
+      return reply.code(STATUT_REFUS_OFFRE).send(corpsRefusFonction('scenarios'));
     }
 
     /**

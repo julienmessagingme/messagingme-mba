@@ -3,6 +3,7 @@ import type { EntrantRattache } from './rattachement';
 import { routerLeLead, restrictionDuRoutage } from '../pubs/routage';
 import type { IssueRoutage, PubDuLead, RoutageDuMessage } from '../pubs/routage';
 import { messageDe } from '../lib/erreur';
+import type { SourceOffres } from '../offres/offre.pg';
 
 /**
  * Le routage d'un lead publicitaire, câblé ; la règle, pure, vit dans `src/pubs/routage.ts`. Ce fichier
@@ -33,6 +34,12 @@ export interface RoutagePubDeps {
    * (`tests/consentement.ts`).
    */
   estDesabonne(tenantId: string, waId: string): Promise<boolean>;
+  /**
+   * 🔴 L'offre de l'espace (lot 6, B2a) : sans `publicites`, la pub se lit absente (`inchange`). Sans ça, un lead en
+   * `standby` d'une pub publiée du temps du Pro serait repris à l'agent de Meta (une écriture chez Meta) avant que le
+   * déclencheur ne se taise : le contact quitterait l'agent pour l'équipe.
+   */
+  offres: SourceOffres;
   /**
    * Reprend le fil à l'agent de Meta (le contact quitte sa liste) et pose le contrôle local à `app_workflow` ;
    * `false` = Meta a refusé, `'operateur'` = un opérateur tient la conversation et un lead ne la lui prend pas.
@@ -86,7 +93,9 @@ export async function processRoutagePub(
     if (!a || !tenantId) continue;
     try {
       const campagneId = await campagneDuLead(tenantId, a.adId, a.sourceType, deps);
-      const pub = campagneId === null ? null : await deps.publiciteDeLaCampagne(tenantId, campagneId);
+      const pub = campagneId === null || !(await deps.offres.offreDe(tenantId)).droits.fonctions.has('publicites')
+        ? null
+        : await deps.publiciteDeLaCampagne(tenantId, campagneId);
 
       /**
        * Les deux états du contact ne se lisent que quand ils peuvent changer quelque chose (une pub qui nous confie
