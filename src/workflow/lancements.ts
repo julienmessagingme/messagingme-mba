@@ -51,6 +51,11 @@ export const TYPES_DE_LANCEMENT = [
    */
   'repondeur',
   /**
+   * Le scénario répondeur de l'espace (RC6, mode `scenario`, `src/repondeur/scenario.ts`) : le scénario publié choisi
+   * sur l'Accueil prend le message que personne ne tient, au plus une fois par délai pour un même contact.
+   */
+  'repondeur_scenario',
+  /**
    * Un bloc « Aller à » (RC5) mène à un bloc d'un AUTRE scénario : le parcours d'origine est clos et un parcours du
    * scénario visé démarre SUR le bloc visé. Lancé par l'exécuteur lui-même (`WorkflowExecutor.sauter`), jamais par un
    * câblage : il n'a donc pas de demande dans `DemandeDeLancement`. Depuis un chemin UNITAIRE (une réponse, un réveil,
@@ -163,6 +168,14 @@ export const POLITIQUE_DE_LANCEMENT = {
    */
   repondeur: { reprise: 'sauf_operateur', publieLesEtiquettes: true, graphe: 'fourni_fige', fenetre: 'selon_preuve', sessionRemplacee: 'interrompue' },
   /**
+   * Le scénario répondeur (RC6, plan `docs/superpowers/plans/2026-10-06-rc6-qui-repond.md`) : la politique de l'agent IA
+   * répondeur, sur le graphe PUBLIÉ du scénario choisi (un contact réel ne tombe jamais dans un brouillon, et rien n'est
+   * à figer : la ligne de scénario est la vraie). `sessionRemplacee: 'interrompue'` : la remise ne démarre rien quand un
+   * parcours attend ce contact, donc ce qu'il remplacerait (un parcours endormi et sa session) vient d'ailleurs, et
+   * s'interrompt comme pour tout démarrage.
+   */
+  repondeur_scenario: { reprise: 'sauf_operateur', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'selon_preuve', sessionRemplacee: 'interrompue' },
+  /**
    * « Aller à » vers un autre scénario (RC5, plan `docs/superpowers/plans/2026-10-06-rc5-blocs-condition-aller-a.md`) :
    * - `reprise: 'oui'` (décision du plan) : le saut CONTINUE un parcours qui avait déjà le droit d'écrire, à l'instant
    *   même ; il n'a personne à qui demander la permission, et un refus laisserait le contact sans suite.
@@ -268,6 +281,11 @@ export interface DemandeAutomatisme extends DemandeDeBase {
  */
 export type DemandeDeLancement =
   | (DemandeDeBase & { type: 'inbox' | 'agent_meta_scenario' | 'agent_ia_scenario'; waId: string; fenetreOuverte: boolean })
+  /**
+   * Le scénario répondeur (RC6) : seul un message entrant le démarre, la fenêtre est donc toujours prouvée.
+   * `messageDeclencheur` : le dernier message du contact, inscrit comme déjà reçu ; `null` = inconnu.
+   */
+  | (DemandeDeBase & { type: 'repondeur_scenario'; waId: string; fenetreOuverte: true; messageDeclencheur: string | null })
   | DemandeEnvoiDeBloc
   | DemandeAutomatisme
   /** `blocDuJeton` : le suffixe du jeton, tel que le testeur l'a écrit (casse tolérée par `blocDesigne`), ou `null`. */
@@ -304,6 +322,11 @@ function departDe(demande: Exclude<DemandeDeLancement, DemandeEnvoiDeBloc | Dema
     case 'agent_meta_scenario':
     case 'agent_ia_scenario':
       return { depuis: 'entree', fenetreOuverte: demande.fenetreOuverte };
+    case 'repondeur_scenario':
+      return {
+        depuis: 'entree', fenetreOuverte: demande.fenetreOuverte,
+        ...(demande.messageDeclencheur !== null ? { messageDeclencheur: demande.messageDeclencheur } : {}),
+      };
     case 'automatisme_ordinaire':
     case 'automatisme_chaine':
     case 'automatisme_publicite_ou_widget':

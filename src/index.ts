@@ -80,7 +80,6 @@ import { RateLimiter } from './auth/rate-limit';
 import { resolveTenantCode } from './ids/tenant-code';
 import { MetaEmbeddedSignupClient } from './meta/embedded-signup';
 import { setTimeout as dormir } from 'node:timers/promises';
-import { appliquerActivation } from './mba/activation';
 import { activationPour } from './http/mba';
 import type { DepsReglageRepondeur } from './repondeur/reglage';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -533,18 +532,17 @@ async function main(): Promise<void> {
   };
 
   /**
-   * Le répondeur de l'espace (lot 5, `src/repondeur/reglage.ts`), pour ses DEUX portes : la route de la console et
-   * l'outil MCP `set_default_responder`. Il éteint l'agent de Meta par le chemin de l'Accueil (`activationPour`, la
+   * « Qui répond au client » (lot 5, RC6, `src/repondeur/reglage.ts`), pour ses DEUX portes : la carte de l'Accueil et
+   * l'outil MCP `set_default_responder`. Il allume l'agent de Meta par le chemin de l'Accueil (`activationPour`, la
    * même construction que `PUT .../mba-activation`) et retire ses contacts de sa liste par le seul module qui la touche.
    * Le modèle est disponible quand la clé du Gateway est posée : la condition à laquelle le worker consomme les tours.
    */
   const repondeurDeLaConsole: DepsReglageRepondeur = {
     agents: agentStore,
+    scenarios: workflowStore,
     reglages: settingsStore,
     gatewayDisponible: config.AI_GATEWAY_API_KEY !== '',
-    eteindreAgentDeMeta: (tenant) => appliquerActivation(
-      activationPour({ repo, meta: metaFactory, reglages: settingsStore, attendre: (ms) => dormir(ms) }), tenant, false,
-    ),
+    activation: activationPour({ repo, meta: metaFactory, reglages: settingsStore, attendre: (ms) => dormir(ms) }),
     liste: listeDeLAgent,
     historique: historiqueStore,
     fils: fil,

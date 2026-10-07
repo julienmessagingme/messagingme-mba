@@ -119,7 +119,9 @@ const TABLE: Cas[] = [
   // 🔴 Relecture du 2026-09-30 : un « STOP » que personne ne prenait partait chez l'agent, avec l'ordre de répondre.
   { nom: '6. personne ne suit, le contact a dit STOP : ni liste, ni release, ni événement', depart: { owner: 'app_workflow' }, banc: { desabonnes: ['w'] }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', 'STOP', { rouverte: false }), meta: [], arrivee: { owner: 'app_workflow', surLaListe: false } },
   { nom: '6. personne ne suit, le contact est bloqué : ni liste, ni release, ni événement', depart: { owner: 'app_workflow' }, banc: { bloques: ['w'] }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: [], arrivee: { owner: 'app_workflow', surLaListe: false } },
-  { nom: '6. personne ne suit, agent éteint : rien', depart: { owner: 'app_workflow' }, banc: { mbaEnabled: false }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: [], arrivee: { owner: 'app_workflow' } },
+  // RC6 : agent de Meta éteint et aucun agent IA = le mode « Équipe ». Avant, rien : la conversation restait hors
+  // d'« À traiter » sans personne pour lui répondre. Elle passe à l'équipe, avec la marque, et sans un appel à Meta.
+  { nom: '6. personne ne suit, agent éteint (mode Équipe) : à l’équipe, marquée, sans Meta', depart: { owner: 'app_workflow' }, banc: { mbaEnabled: false }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: [], arrivee: { owner: 'app_human', escaladee: true, surLaListe: false } },
   { nom: '6. personne ne suit, un parcours attend : rien', depart: { owner: 'app_workflow' }, banc: { enAttente: true }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: [], arrivee: { owner: 'app_workflow' } },
   { nom: '6. personne ne suit, aucun numéro : rien d’écrit', depart: { owner: 'app_workflow' }, banc: { numero: null }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: [], arrivee: { owner: 'app_workflow' } },
   { nom: '6. personne ne suit, numéro bloqué (suspendu faute de paiement, lot 4) : ni liste, ni release, rien d’écrit', depart: { owner: 'app_workflow' }, banc: { numeroBloque: true }, geste: (f) => f.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false }), meta: [], arrivee: { owner: 'app_workflow', surLaListe: false } },
@@ -307,7 +309,7 @@ describe('décision 1 : l’escalade ne survit pas à un robot qui reprend le fi
           lastMessageAt: new Date(MAINTENANT - 3600_000), escaladee: l.escaladeeLe !== null,
         })),
       },
-      reglages: { mbaActifParTenant: async () => new Set(['t1']) },
+      reglages: { modesParTenant: async () => new Map([['t1', 'mba' as const]]) },
       timeouts: { app_human: 2 * 3600_000, mba: 24 * 3600_000 },
       fil: b.fil,
       now: () => MAINTENANT,
@@ -411,7 +413,7 @@ describe('relecture du lot 4 : une réponse de campagne « Inbox » ne prend le 
       remiseMbaEntrant: { remettre: b.fil.remettreSiPersonneNeSuit },
       detenteur: b.fil,
       // La vraie liste du banc : un `standby` d'un contact qui y est reste un `standby`.
-      listeALArrivee: { agentAllume: async () => true, presents: (t, w) => b.liste.presents(t, w) },
+      listeALArrivee: { standbyPourNous: async () => true, presents: (t, w) => b.liste.presents(t, w) },
     };
     return { deps, prises };
   }

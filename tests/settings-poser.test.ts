@@ -37,7 +37,6 @@ describe('PgTenantSettingsStore : un setter écrit SA colonne, et seulement elle
     ['agent_transfert_mode', (s) => s.setAgentTransfertMode(T, 'always'), upsert('agent_transfert_mode'), 'always'],
     ['timezone', (s) => s.setTimezone(T, 'Europe/Paris'), upsert('timezone'), 'Europe/Paris'],
     ['business_hours', (s) => s.setBusinessHours(T, DEFAULT_BUSINESS_HOURS), upsert('business_hours', '$2::jsonb'), JSON.stringify(DEFAULT_BUSINESS_HOURS)],
-    ['repondeur_agent_id', (s) => s.setRepondeur(T, 'ag-1'), upsert('repondeur_agent_id'), 'ag-1'],
     ['control_handback_seconds', (s) => s.setControlHandbackSeconds(T, 0), upsert('control_handback_seconds'), 0],
     ['hubspot_lists_enabled', (s) => s.setHubspotListsEnabled(T, true), upsert('hubspot_lists_enabled'), true],
   ];
@@ -49,18 +48,41 @@ describe('PgTenantSettingsStore : un setter écrit SA colonne, et seulement elle
   });
 
   /**
-   * 🔴 LA SEULE EXCEPTION, ET ELLE EST DÉCIDÉE (lot 5, migration 0209) : `mba_enabled` écrit AUSSI le répondeur, dans
-   * la même instruction. Allumer l'agent de Meta retire l'agent IA répondeur ; deux écritures laisseraient le CHECK
-   * d'une seule voix voir deux répondeurs, et l'interrupteur répondrait 500.
+   * 🔴 DEUX EXCEPTIONS, ET ELLES SONT DÉCIDÉES (RC6, migration 0217). `mba_enabled` écrit AUSSI le mode du répondeur,
+   * dans la même instruction : allumer quand personne ne répond passe en `mba`, éteindre en `mba` passe en `equipe`.
+   * Et il ne touche PLUS l'agent IA répondeur : allumé, l'agent de Meta est en veille, il ne le remplace pas.
+   * Ce que la base en fait vraiment : `tests/integration/repondeur.integration.test.ts`, en CI.
    */
-  it('mba_enabled : sa colonne, et le répondeur remis à nul quand il s’allume, dans la même instruction', async () => {
+  it('mba_enabled : sa colonne et la règle du mode, jamais l’agent IA répondeur', async () => {
     const { pool, appels } = fauxPool();
     await new PgTenantSettingsStore(pool).setMbaEnabled(T, true);
-    expect(appels).toEqual([{
-      sql: 'insert into tenant_settings (tenant_id, mba_enabled, updated_at) values ($1, $2, now()) '
-        + 'on conflict (tenant_id) do update set mba_enabled = excluded.mba_enabled, '
-        + 'repondeur_agent_id = case when excluded.mba_enabled then null else tenant_settings.repondeur_agent_id end, updated_at = now()',
-      params: [T, true],
-    }]);
+    expect(appels).toHaveLength(1);
+    const [a] = appels;
+    expect(a?.params).toEqual([T, true]);
+    expect(a?.sql).toContain('mba_enabled = excluded.mba_enabled');
+    expect(a?.sql).toContain("when not excluded.mba_enabled and tenant_settings.repondeur_mode = 'mba' then 'equipe'");
+    expect(a?.sql).toContain("when excluded.mba_enabled and (tenant_settings.repondeur_mode = 'equipe'");
+    // 🔴 Avant RC6 : `repondeur_agent_id = case when excluded.mba_enabled then null ...`. Revenu, il éteindrait l'agent
+    // IA répondeur chaque fois que quelqu'un rallume l'agent de Meta.
+    expect(a?.sql).not.toContain('repondeur_agent_id =');
+  });
+
+  it('setRepondeur : le mode et sa cible d’un seul coup, les cibles des autres modes remises à nul', async () => {
+    const { pool, appels } = fauxPool();
+    const s = new PgTenantSettingsStore(pool);
+    await s.setRepondeur(T, { mode: 'agent', agentId: 'ag-1' });
+    await s.setRepondeur(T, { mode: 'scenario', workflowId: 'wf-1', delaiS: 7200 });
+    await s.setRepondeur(T, { mode: 'equipe' });
+    expect(appels.map((x) => x.params)).toEqual([
+      [T, 'agent', 'ag-1', null, null],
+      [T, 'scenario', null, 'wf-1', 7200],
+      [T, 'equipe', null, null, null],
+    ]);
+    // Un seul `update` par choix, qui écrit les quatre colonnes ; le délai garde sa valeur hors du mode scénario.
+    for (const x of appels) {
+      expect(x.sql).toContain('repondeur_agent_id = excluded.repondeur_agent_id');
+      expect(x.sql).toContain('repondeur_workflow_id = excluded.repondeur_workflow_id');
+      expect(x.sql).toContain('repondeur_delai_scenario_s = coalesce($5::integer, tenant_settings.repondeur_delai_scenario_s)');
+    }
   });
 });

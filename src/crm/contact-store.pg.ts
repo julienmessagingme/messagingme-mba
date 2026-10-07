@@ -745,6 +745,24 @@ export class PgContactStore implements ContactStore {
     return res.rows[0]?.bloque === true;
   }
 
+  /**
+   * La réclamation du départ du scénario répondeur pour ce contact (RC6, `src/repondeur/scenario.ts`) : pose
+   * `repondeur_scenario_le` à maintenant SI le dernier départ date d'au moins `delaiS` secondes (ou n'a jamais eu lieu),
+   * et dit si elle l'a fait. 🔴 UNE seule instruction gardée, et c'est toute la garde de la course : deux entrants
+   * simultanés écrivent la même ligne, le second attend le verrou de ligne du premier, puis relit la ligne neuve (Read
+   * Committed) et n'y trouve plus un départ assez vieux. Un seul départ. Scopée espace ; contact inconnu : `false`.
+   */
+  async reclamerDepartRepondeur(tenantId: string, waId: string, delaiS: number): Promise<boolean> {
+    const res = await this.pool.query(
+      `update contacts set repondeur_scenario_le = now()
+        where tenant_id = $1
+          and id = (select id from contacts where tenant_id = $1 and deleted_at is null ${MATCH_BY_WAID_SQL})
+          and (repondeur_scenario_le is null or repondeur_scenario_le <= now() - make_interval(secs => $3::integer))`,
+      [tenantId, waId, delaiS],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
   /** Contacts bloqués du tenant, du plus récemment bloqué au plus ancien (écran des paramètres). */
   async listBlocked(tenantId: string): Promise<Array<{ id: string; profileName: string | null; phoneE164: string | null; blockedAt: string }>> {
     const res = await this.pool.query<{ id: string; profile_name: string | null; phone_e164: string | null; blocked_at: Date }>(

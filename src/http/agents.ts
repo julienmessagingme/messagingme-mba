@@ -8,7 +8,9 @@ import { corpsDuRefus } from '../lib/issue';
 import { espaceVerifie, estUuid } from './scope';
 import type { ConsommationAgent } from '../agent/session-store';
 import type { LigneHistorique } from '../agent/credits';
-import { choisirRepondeur, type DepsReglageRepondeur } from '../repondeur/reglage';
+import {
+  choisirRepondeur, choixDeLAncienneForme, lireRepondeur, type ChoixRepondeur, type DepsReglageRepondeur,
+} from '../repondeur/reglage';
 
 /**
  * La fenêtre du suivi de consommation : trente jours, assez pour voir une tendance, assez court pour que
@@ -59,8 +61,22 @@ export interface AgentsRouteDeps extends DepsGestionAgents {
   repondeur: DepsReglageRepondeur;
 }
 
-/** Le corps de `PUT .../agents/repondeur` : un agent, ou `null` pour n'en désigner aucun. */
+/**
+ * Le corps de l'ANCIENNE `PUT .../agents/repondeur` (lot 5) : un agent, ou `null` pour n'en désigner aucun. Gardée pour
+ * la console d'avant RC6 (elle est publiée APRÈS l'API) ; elle passe par `choixDeLAncienneForme`.
+ */
 const corpsRepondeur = z.object({ agentId: z.string().max(100).nullable() });
+
+/**
+ * Le corps de `PUT /tenants/:tenantId/repondeur` (RC6) : un mode et sa cible. Le délai est en heures, comme à l'écran,
+ * et ses bornes sont dans `choisirRepondeur` (une seule règle pour la console et l'outil MCP).
+ */
+const corpsQuiRepond = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('mba') }),
+  z.object({ mode: z.literal('equipe') }),
+  z.object({ mode: z.literal('agent'), agentId: z.string().max(100) }),
+  z.object({ mode: z.literal('scenario'), workflowId: z.string().max(100), delaiHeures: z.number().int().optional() }),
+]);
 
 /**
  * Les agents IA d'un espace, réservés aux administrateurs (comme le builder qu'ils servent). Création et
@@ -132,17 +148,49 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
   });
 
   /**
-   * Désigne l'agent IA répondeur de l'espace, ou n'en désigne aucun (`agentId: null`). Admins seulement (la garde du
-   * module). Désigner un agent alors que l'agent de Meta est allumé L'ÉTEINT pour tous les contacts de l'espace : la
-   * réponse le dit (`agentDeMetaEteint`), et la console le confirme avant. L'auteur vient de la session.
+   * « Qui répond au client » (RC6), ce que la carte de l'Accueil lit en un appel : le mode écrit et celui qui
+   * s'applique, sa cible, le délai du scénario, l'agent de Meta (allumé, configurable), les agents actifs et les
+   * scénarios publiés. Admins seulement (la garde du module).
+   */
+  app.get('/tenants/:tenantId/repondeur', opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    return reply.code(200).send(await lireRepondeur(deps.repondeur, tenant, (t) => deps.agents.listActifs(t)));
+  });
+
+  /**
+   * Règle qui répond au client : `{ mode: 'mba' | 'equipe' }`, `{ mode: 'agent', agentId }`, `{ mode: 'scenario',
+   * workflowId, delaiHeures? }`. Admins seulement. Quitter le mode « MBA » retire ses contacts de la liste de l'agent de
+   * Meta (la console le confirme avant) ; choisir « MBA » l'allume s'il est éteint. L'auteur vient de la session.
+   */
+  app.put('/tenants/:tenantId/repondeur', opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const lu = corpsQuiRepond.safeParse(req.body ?? {});
+    if (!lu.success) {
+      return reply.code(400).send({ error: 'mode requis : « mba », « equipe », « agent » avec agentId, ou « scenario » avec workflowId (et delaiHeures)' });
+    }
+    const c = lu.data;
+    const choix: ChoixRepondeur = c.mode === 'scenario'
+      ? { mode: 'scenario', workflowId: c.workflowId, ...(c.delaiHeures !== undefined ? { delaiS: c.delaiHeures * 3600 } : {}) }
+      : c;
+    const r = await choisirRepondeur(deps.repondeur, tenant, choix, { userId: req.auth?.userId ?? null, origine: 'formulaire' });
+    if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
+    return reply.code(200).send(r.valeur);
+  });
+
+  /**
+   * L'ANCIENNE porte du lot 5 : un agent IA (`agentId`), ou `null` (« aucun agent IA » : l'agent de Meta s'il est
+   * allumé, sinon l'équipe, `choixDeLAncienneForme`). Gardée pour la console d'avant RC6, publiée après l'API ; elle ne
+   * répond plus « agent de Meta éteint », puisque désigner un agent ne l'éteint plus. Sa réponse garde sa forme.
    */
   app.put('/tenants/:tenantId/agents/repondeur', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const lu = corpsRepondeur.safeParse(req.body ?? {});
     if (!lu.success) return reply.code(400).send({ error: 'agentId requis : l’identifiant d’un agent actif, ou null' });
-    const r = await choisirRepondeur(deps.repondeur, tenant, lu.data.agentId, { userId: req.auth?.userId ?? null, origine: 'formulaire' });
+    const avant = await deps.repondeur.reglages.get(tenant);
+    const r = await choisirRepondeur(deps.repondeur, tenant, choixDeLAncienneForme(lu.data.agentId, avant.mbaEnabled),
+      { userId: req.auth?.userId ?? null, origine: 'formulaire' });
     if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
-    return reply.code(200).send(r.valeur);
+    return reply.code(200).send({ repondeurAgentId: r.valeur.agentId, agentDeMetaEteint: false, liste: r.valeur.liste });
   });
 
   app.get('/tenants/:tenantId/agents/:agentId', opts, async (req, reply) => {

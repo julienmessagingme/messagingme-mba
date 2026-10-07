@@ -27,6 +27,7 @@ import { saisieDePaiement, type DepsPaiement } from '../src/stripe/paiement';
 import type { ReponseStripe, TransportStripe } from '../src/stripe/client';
 import type { OutilComplet } from '../src/agent/catalog';
 import type { LigneHistorique } from '../src/reglages/historique';
+import type { ModeRepondeur } from '../src/repondeur/mode';
 import type { FicheAEcrire, FicheConnaissance, SourceFiche } from '../src/agent/knowledge';
 import type { ContexteAgentComplet, GatewayBrainDeps } from '../src/agent/brain.gateway';
 import { creerResolveurSimulation } from '../src/agent/resolvers/simulation';
@@ -56,6 +57,8 @@ import { AUCUN_GESTE, GESTE_MUET } from './gestes';
  */
 const AG = '11111111-1111-4111-8111-111111111111';
 const AG_NEUF = '33333333-3333-4333-8333-333333333333';
+/** Le scénario publié que le mode « scenario » de set_default_responder désigne (RC6). */
+const WF_MCP = '55555555-5555-4555-8555-555555555555';
 const PERSONNE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const SECRET = 'secret-de-test-mcp-agent';
 
@@ -170,13 +173,21 @@ function monter(o: Options = {}) {
     payeurs: [] as string[],
     modes: [] as Array<{ tenant: string; mode: ModeTransfert }>,
     oublis: [] as string[],
-    extinctions: [] as string[],
+    allumages: [] as string[],
     vidages: [] as string[],
-    repondeurs: [] as Array<string | null>,
+    /** Chaque réglage écrit : l'agent pour le mode `agent`, le scénario et son délai pour `scenario`, le mode sinon. */
+    repondeurs: [] as string[],
   };
   const poses = [...(o.outilsPoses ?? [])];
   /** Les réglages de l'espace qui portent le répondeur : un seul objet, que les deux portes lisent et écrivent. */
-  const reglagesRepondeur = { mbaEnabled: o.mbaAllume === true, repondeurAgentId: o.repondeurAgentId ?? null };
+  const reglagesRepondeur: {
+    mbaEnabled: boolean; repondeurMode: ModeRepondeur; repondeurAgentId: string | null; repondeurWorkflowId: string | null;
+    repondeurDelaiScenarioS: number;
+  } = {
+    mbaEnabled: o.mbaAllume === true,
+    repondeurMode: o.repondeurAgentId ? 'agent' : (o.mbaAllume === true ? 'mba' : 'equipe'),
+    repondeurAgentId: o.repondeurAgentId ?? null, repondeurWorkflowId: null, repondeurDelaiScenarioS: 86400,
+  };
 
   const gestion: DepsAgentMcp['gestion'] = {
     agents: {
@@ -305,15 +316,25 @@ function monter(o: Options = {}) {
     },
     repondeur: {
       agents: { complet: (t, id) => gestion.agents.complet(t, id) },
+      scenarios: {
+        getById: async (id, t) => (t === 't1' && id === WF_MCP ? { id: WF_MCP, name: 'Bienvenue', graph: { nodes: [{ id: 'n', type: 'tag', position: { x: 0, y: 0 }, data: {} }], edges: [] } } : null),
+        listResume: async () => [],
+      },
       reglages: {
         get: async () => ({ ...reglagesRepondeur }),
-        setRepondeur: async (_t, id) => { cap.repondeurs.push(id); reglagesRepondeur.repondeurAgentId = id; },
+        setRepondeur: async (_t, c) => {
+          cap.repondeurs.push(c.mode === 'agent' ? c.agentId : c.mode === 'scenario' ? `${c.workflowId}/${c.delaiS}` : c.mode);
+          reglagesRepondeur.repondeurMode = c.mode;
+          reglagesRepondeur.repondeurAgentId = c.mode === 'agent' ? c.agentId : null;
+          reglagesRepondeur.repondeurWorkflowId = c.mode === 'scenario' ? c.workflowId : null;
+        },
       },
       gatewayDisponible: true,
-      eteindreAgentDeMeta: async (t) => {
-        cap.extinctions.push(t);
-        reglagesRepondeur.mbaEnabled = false;
-        return { enabled: false, chezMeta: 'applique', phoneNumberId: 'pn1' };
+      activation: {
+        numeroDuTenant: async () => 'pn1',
+        eligible: async () => true,
+        ecrireChezMeta: async (t) => { cap.allumages.push(t); },
+        ecrireDrapeau: async (_t, enabled) => { reglagesRepondeur.mbaEnabled = enabled; },
       },
       liste: { toutRetirer: async (t) => { cap.vidages.push(t); return { retires: 2, refuses: 0 }; } },
       historique: { ecrire: async (_t, l) => { cap.historique.push(l); } },
@@ -708,14 +729,17 @@ describe('les outils de l’agent appellent les fonctions de la console, dans l�
   });
 });
 
-describe('🔴 le répondeur de l’espace (lot 5) : set_default_responder et list_agents, par la fonction de la console', () => {
-  it('désigne un agent ACTIF, éteint l’agent de Meta allumé, vide sa liste, et signe la ligne d’historique « mcp »', async () => {
+describe('🔴 qui répond au client (lot 5, RC6) : set_default_responder et list_agents, par la fonction de la console', () => {
+  it('l’ANCIENNE forme { agent_id } désigne un agent ACTIF ; l’agent de Meta n’est plus éteint, mais quitte le rôle (sa liste vidée)', async () => {
     const { server, cap } = monter({ statut: 'active', mbaAllume: true });
     const r = await appeler(server, JETON.brut, 'set_default_responder', { agent_id: AG });
     expect(r.isError, r.texte).toBe(false);
-    expect(r.json()).toEqual({ repondeur_agent_id: AG, agent_de_meta_eteint: true, liste_meta: { retires: 2, refuses: 0 } });
-    // L'ordre de la fonction : Meta éteint, sa liste vidée, PUIS le réglage (le CHECK d'une seule voix).
-    expect(cap.extinctions).toEqual(['t1']);
+    expect(r.json()).toEqual({
+      mode: 'agent', agent_id: AG, workflow_id: null, delai_heures: 24, agent_de_meta_allume: false,
+      liste_meta: { retires: 2, refuses: 0 }, repondeur_agent_id: AG,
+    });
+    // Aucun appel chez Meta : allumé, l'agent de Meta reste disponible, en veille.
+    expect(cap.allumages).toEqual([]);
     expect(cap.vidages).toEqual(['t1']);
     expect(cap.repondeurs).toEqual([AG]);
     expect(cap.historique).toMatchObject([{ element: 'repondeur', origine: 'mcp', acteurId: PERSONNE, surfaceId: AG }]);
@@ -730,18 +754,42 @@ describe('🔴 le répondeur de l’espace (lot 5) : set_default_responder et li
     const { server, cap } = monter({ statut: 'draft', mbaAllume: true });
     const r = await appeler(server, JETON.brut, 'set_default_responder', { agent_id: AG });
     expect(r.isError).toBe(true);
-    expect(r.texte).toMatch(/seul un agent actif peut être le répondeur/);
-    expect([cap.extinctions, cap.vidages, cap.repondeurs]).toEqual([[], [], []]);
+    expect(r.texte).toMatch(/seul un agent actif peut répondre au client/);
+    expect([cap.allumages, cap.vidages, cap.repondeurs]).toEqual([[], [], []]);
     await server.close();
   });
 
-  it('null retire le répondeur ; un agent d’un autre espace est inconnu ; agent_id manquant est refusé', async () => {
+  it('ancienne forme : null = l’équipe quand l’agent de Meta est éteint ; un agent d’un autre espace est inconnu ; rien = refusé', async () => {
     const { server, cap } = monter({ statut: 'active', repondeurAgentId: AG });
-    expect((await appeler(server, JETON.brut, 'set_default_responder', { agent_id: null })).json().repondeur_agent_id).toBeNull();
-    expect(cap.repondeurs).toEqual([null]);
+    const r = await appeler(server, JETON.brut, 'set_default_responder', { agent_id: null });
+    expect(r.json()).toMatchObject({ mode: 'equipe', repondeur_agent_id: null });
+    expect(cap.repondeurs).toEqual(['equipe']);
     expect((await appeler(server, JETON_T2.brut, 'set_default_responder', { agent_id: AG })).texte).toBe('agent introuvable');
     expect((await appeler(server, JETON.brut, 'set_default_responder', {})).isError).toBe(true);
-    expect(cap.repondeurs).toEqual([null]);
+    expect(cap.repondeurs).toEqual(['equipe']);
+    await server.close();
+  });
+
+  it('ancienne forme : null = l’agent de Meta quand il est allumé (en veille derrière l’agent IA)', async () => {
+    const { server, cap } = monter({ statut: 'active', repondeurAgentId: AG, mbaAllume: true });
+    expect((await appeler(server, JETON.brut, 'set_default_responder', { agent_id: null })).json()).toMatchObject({ mode: 'mba', agent_de_meta_allume: false });
+    expect(cap.repondeurs).toEqual(['mba']);
+    await server.close();
+  });
+
+  it('🔴 les quatre positions : un scénario publié et son délai en heures, l’agent de Meta allumé par le geste, l’équipe ; un mode inconnu est refusé', async () => {
+    const { server, cap } = monter({ statut: 'active' });
+    const s = await appeler(server, JETON.brut, 'set_default_responder', { mode: 'scenario', workflow_id: WF_MCP, delai_heures: 6 });
+    expect(s.isError, s.texte).toBe(false);
+    expect(s.json()).toMatchObject({ mode: 'scenario', workflow_id: WF_MCP, delai_heures: 6, repondeur_agent_id: null });
+    const m = await appeler(server, JETON.brut, 'set_default_responder', { mode: 'mba' });
+    expect(m.json()).toMatchObject({ mode: 'mba', agent_de_meta_allume: true });
+    expect(cap.allumages).toEqual(['t1']);
+    expect((await appeler(server, JETON.brut, 'set_default_responder', { mode: 'equipe' })).json()).toMatchObject({ mode: 'equipe', liste_meta: { retires: 2, refuses: 0 } });
+    expect((await appeler(server, JETON.brut, 'set_default_responder', { mode: 'robot' })).isError).toBe(true);
+    expect((await appeler(server, JETON.brut, 'set_default_responder', { mode: 'scenario' })).isError).toBe(true);
+    expect((await appeler(server, JETON_T2.brut, 'set_default_responder', { mode: 'scenario', workflow_id: WF_MCP })).texte).toBe('scénario introuvable');
+    expect(cap.repondeurs).toEqual([`${WF_MCP}/21600`, 'mba', 'equipe']);
     await server.close();
   });
 

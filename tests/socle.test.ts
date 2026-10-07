@@ -109,6 +109,25 @@ describe('le socle commun aux deux processus', () => {
     const bascule = requetes.find((q) => /update conversations/.test(q) && /'app_human'|\$3/.test(q));
     expect(bascule, 'la conversation passe à l’équipe').toBeDefined();
   });
+
+  it('🔴 RC6 : le socle BRANCHE aussi le démarreur du scénario répondeur : un message d’un espace en mode « Scénario » l’atteint', async () => {
+    const requetes: string[] = [];
+    const pool = {
+      query: async (sql: string) => {
+        requetes.push(sql);
+        if (/from tenant_settings where tenant_id = \$1/.test(sql)) {
+          return { rows: [{ mba_enabled: false, repondeur_mode: 'scenario', repondeur_workflow_id: '33333333-3333-4333-8333-333333333333', repondeur_delai_scenario_s: 86400, control_handback_seconds: null }] };
+        }
+        if (/from phone_numbers where tenant_id = \$1/.test(sql)) return { rows: [{ id: 'pn1' }] };
+        return { rows: [] };
+      },
+    } as unknown as Pool;
+    const socle = construireSocle({ pool, queue: { enqueue: async () => {} }, config: configuration });
+    await expect(socle.fil.remettreSiPersonneNeSuit(TENANT, WA_ID, 'Bonjour', { rouverte: false })).resolves.toBeUndefined();
+    // Le démarreur a lu le scénario (introuvable ici : `indisponible`), donc il était branché ; l'équipe prend la suite.
+    expect(requetes.some((q) => /from workflows where id = \$1/.test(q)), 'le scénario a été lu').toBe(true);
+    expect(requetes.some((q) => /update conversations/.test(q)), 'la conversation passe à l’équipe').toBe(true);
+  });
 });
 
 /** Les fichiers de `src/`, sans leurs commentaires : une explication qui cite le code ne compte pas. */

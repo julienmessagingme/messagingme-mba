@@ -469,7 +469,7 @@ export class PgInboxStore implements InboxStore {
 
   /**
    * Les contacts dont notre colonne dit le fil tenu par l'agent de Meta, par `wa_id` croissant, strictement après
-   * `apres` (`ControleDuFil.reprendreLesFilsDeMeta`, quand le répondeur IA remplace l'agent de Meta).
+   * `apres` (`ControleDuFil.reprendreLesFilsDeMeta`, quand l'espace quitte le mode `mba`, RC6).
    */
   async filsDeLAgentDeMeta(tenantId: string, apres: string | null, limite: number): Promise<string[]> {
     const res = await this.pool.query<{ wa_id: string }>(
@@ -553,6 +553,22 @@ export class PgInboxStore implements InboxStore {
     await this.pool.query(
       `insert into conversation_evenements (tenant_id, conversation_id, type, cause)
        select $1, c.id, 'sortie_agent', $3::text
+         from conversations c
+        where c.tenant_id = $1 and c.wa_id = $2`,
+      [tenantId, waId, auteur.cause],
+    );
+  }
+
+  /**
+   * Note dans la frise que le bloc « Envoyer au MBA » a trouvé l'agent de Meta éteint (`mba_indisponible`, migration
+   * 0217, RC6) : la conversation va à l'équipe, et le panneau Détail dit pourquoi. `cause` : le scénario
+   * (« automatique : scénario Bienvenue »). Un événement seul, comme `noterSortieAgent`. 🔴 Scopé espace.
+   */
+  async noterMbaIndisponible(tenantId: string, waId: string, cause: string): Promise<void> {
+    const auteur = colonnesAuteur({ cause });
+    await this.pool.query(
+      `insert into conversation_evenements (tenant_id, conversation_id, type, cause)
+       select $1, c.id, 'mba_indisponible', $3::text
          from conversations c
         where c.tenant_id = $1 and c.wa_id = $2`,
       [tenantId, waId, auteur.cause],

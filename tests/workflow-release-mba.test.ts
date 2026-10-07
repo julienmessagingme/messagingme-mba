@@ -114,7 +114,7 @@ describe('release : la minuterie de reprise après un humain', () => {
         ],
       },
       reglages: {
-        mbaActifParTenant: async () => new Set(avecMba),
+        modesParTenant: async () => new Map(avecMba.map((t) => [t, 'mba' as const])),
       },
       // Le vrai geste de remise (`src/inbox/fil.ts`), sur un dépôt qui note ce qu'on écrit et un Meta qui accepte
       // ou refuse l'ajout à la liste (un 5xx, rejouable ailleurs, n'est jamais rejoué par une remise). Un `release`

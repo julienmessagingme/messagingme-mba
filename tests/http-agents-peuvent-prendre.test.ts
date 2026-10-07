@@ -38,7 +38,7 @@ function app(o: { cable?: boolean } = {}) {
     reglages: {
       ...reglagesDepInertes,
       get: async () => ({
-        mbaEnabled: false, repondeurAgentId: null, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
+        mbaEnabled: false, repondeurMode: 'equipe', repondeurAgentId: null, repondeurWorkflowId: null, repondeurDelaiScenarioS: 86400, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
         controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: courant, hubspotActif: false,
         optoutRequestId: null, mentionIaFrequence: null, timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT,
       }),

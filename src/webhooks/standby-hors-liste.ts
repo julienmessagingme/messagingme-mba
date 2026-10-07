@@ -13,19 +13,18 @@ import { journaliser } from '../lib/journal';
  * l'avance d'un scénario (texte et boutons), les automations, la remise à l'agent quand personne ne suit, le routage
  * publicitaire, l'arrivée publicitaire, et la correction du détenteur, qui n'écrit plus `mba` pour ce message.
  *
- * Contact présent sur la liste : rien ne change, l'agent parle. Espace sans répondeur : rien ne change non plus,
- * un `standby` y veut dire qu'une autre application tient le fil. Le champ reçu reste lisible (`fieldRecu`).
+ * Contact présent sur la liste : rien ne change, l'agent parle. Le champ reçu reste lisible (`fieldRecu`).
  *
- * Avec un agent IA répondeur (lot 5), l'agent de Meta est éteint mais Meta peut croire encore tenir le fil d'un
- * contact qu'il servait avant la désignation : son message arrive en `standby`, et c'est le répondeur IA qui lui doit
- * la réponse. Sinon il serait perdu, puisque toutes nos étapes ignorent un `standby`.
+ * 🔴 LE MODE DÉCIDE, PAS LA PRÉSENCE D'UN AGENT (RC6, `standbyPourNous`, `src/repondeur/mode.ts`). Dans les quatre
+ * modes, un contact absent de la liste est pour nous : l'agent de Meta répondeur ne parle qu'à sa liste ; en veille
+ * (allumé, mode agent, scénario ou équipe), il ne répond à personne qu'un bloc ne lui a pas confié ; éteint, Meta peut
+ * croire encore tenir le fil d'un contact qu'il servait avant (lot 5). Sinon le message serait perdu, puisque toutes nos
+ * étapes ignorent un `standby`, et l'équipe ne le verrait pas dans « À traiter ». Avant RC6, un espace sans répondeur
+ * ne requalifiait rien (« une autre application tient le fil ») : ces espaces sont en mode `equipe`.
  */
 export interface ListeALArrivee {
-  /**
-   * Un répondeur tient-il les messages de cet espace : l'agent de Meta allumé, ou un agent IA désigné
-   * (`unRepondeurRepond`, `src/inbox/fil.ts`) ?
-   */
-  agentAllume(tenantId: string): Promise<boolean>;
+  /** Le mode de cet espace veut-il qu'un `standby` d'un contact hors liste lui revienne (`standbyPourNous`) ? */
+  standbyPourNous(tenantId: string): Promise<boolean>;
   /** Les contacts de `waIds` présents sur la liste de l'agent, en une lecture (`ListeDeLAgent.presents`). */
   presents(tenantId: string, waIds: readonly string[]): Promise<Set<string>>;
 }
@@ -50,7 +49,7 @@ export async function requalifierLesStandby(
 
   const horsListe = new Map<string, Set<string>>();
   for (const [tenantId, waIds] of enStandby) {
-    if (!(await liste.agentAllume(tenantId))) continue;
+    if (!(await liste.standbyPourNous(tenantId))) continue;
     const presents = await liste.presents(tenantId, [...waIds]);
     horsListe.set(tenantId, new Set([...waIds].filter((w) => !presents.has(w))));
   }

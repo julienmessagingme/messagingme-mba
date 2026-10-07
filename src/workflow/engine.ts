@@ -156,7 +156,7 @@ export function scanOpening(graph: WorkflowGraph, depuis?: string): OpeningScan 
     seen.add(id);
     const node = byId.get(id);
     if (!node) continue;
-    if (node.type === 'inbox') continue; // terminal
+    if (node.type === 'inbox' || node.type === 'vers_mba') continue; // terminal, comme dans `walk`
     if (node.type === 'template') {
       // Ouverture légale et bloquante : on ne va pas au-delà. Deux branches qui ouvrent sur des templates de
       // noms différents rendent l'ouverture ambiguë (quel template la campagne devrait-elle paramétrer ?).
@@ -355,7 +355,7 @@ function explorerLesAttentes(graph: WorkflowGraph): { premierMontage: WaitThenSe
     meilleur.set(id, cumul);
     const node = byId.get(id);
     if (!node) continue;
-    if (node.type === 'inbox') continue;
+    if (node.type === 'inbox' || node.type === 'vers_mba') continue;
     if (node.type === 'aller_a') {
       // Un saut vers un bloc de CE graphe se suit comme une flèche, attente cumulée comprise : « attente de deux jours,
       // Aller à la question du menu » est le même montage mort-né qu'une flèche vers elle. Ailleurs, il est relevé.
@@ -453,6 +453,12 @@ export type WalkRest =
    * la suit dans le même enchaînement.
    */
   | { status: 'aller_a'; nodeId: string; cible: string }
+  /**
+   * Bloc « Envoyer au MBA » (RC6) : terminal, comme `done`, mais l'exécuteur confie le contact à l'agent de Meta au lieu
+   * de rendre la main au répondeur du mode (`WorkflowExecutorDeps.confierAuMbaParLeBloc`). Les actions accumulées
+   * partent d'abord.
+   */
+  | { status: 'vers_mba'; nodeId: string }
   | { status: 'done' }; // fin de chaîne (plus d'arête sortante)
 
 /** Unités proposées par le bloc Attente. */
@@ -848,9 +854,9 @@ function applyToWork(work: EvalContext, a: WorkflowAction): void {
 
 export interface WalkOptions {
   /**
-   * L'agent de Meta est-il allumé sur le numéro de ce tenant ? Avec lui, une étape qui n'offre aucun choix
-   * cesse de bloquer le parcours : l'agent reprend la parole et les actions du scénario continuent. Sans lui,
-   * un template attend la réponse, comme toujours.
+   * L'agent de Meta est-il le RÉPONDEUR de ce tenant (mode `mba`, RC6 ; allumé en veille, non) ? Avec lui, une étape
+   * qui n'offre aucun choix cesse de bloquer le parcours : l'agent reprend la parole et les actions du scénario
+   * continuent. Sans lui, un template attend la réponse, comme toujours.
    */
   mbaActif?: boolean;
 }
@@ -874,6 +880,8 @@ export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContex
       const a = typeof node.data.assigneA === 'string' ? node.data.assigneA.trim() : '';
       return { actions, rest: { status: 'inbox', assigneA: a === '' ? null : a } };
     }
+    // « Envoyer au MBA » (RC6) : terminal, l'exécuteur fait l'IO (la liste de l'agent de Meta, `release`, l'événement).
+    if (node.type === 'vers_mba') return { actions, rest: { status: 'vers_mba', nodeId: current } };
     if (node.type === 'condition') {
       // Bloc synchrone sans action : évalue ses familles dans l'ordre (copie de travail) et suit la PREMIÈRE vraie,
       // sinon « Sinon » (`false`). Un bloc d'avant les familles en a une seule, de poignée `true` (« Si réunie »).

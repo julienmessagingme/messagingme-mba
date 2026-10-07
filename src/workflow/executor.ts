@@ -317,10 +317,19 @@ export interface WorkflowExecutorDeps {
    */
   enqueueAgentTurn(job: AgentTurnJob): Promise<void>;
   /**
-   * L'agent de Meta est-il allumé sur le numéro de ce tenant ? Il décide qu'une étape sans choix cesse de
-   * bloquer le parcours, et qu'on rende le fil à Meta en fin de chaîne. Fixtures : `agentDeMetaEteint`.
+   * L'agent de Meta est-il le RÉPONDEUR de ce tenant (mode `mba`, `leMbaRepond`, RC6) ? Il décide qu'une étape sans
+   * choix cesse de bloquer le parcours, et qu'on rende le fil à Meta en fin de chaîne. 🔴 Allumé en veille (un autre
+   * mode), il vaut `false` : aucune fin de parcours ne lui confie un contact, seul le bloc « Envoyer au MBA » le fait
+   * (`confierAuMbaParLeBloc`). Fixtures : `agentDeMetaEteint`.
    */
   mbaActifPour(tenantId: string): Promise<boolean>;
+  /**
+   * Le bloc « Envoyer au MBA » (RC6, `vers_mba`) : le parcours vient de finir, et l'agent de Meta prend le contact dans
+   * TOUS les modes (`ControleDuFil.envoyerAuMba`), avec le dernier message du contact pour y répondre tout de suite ;
+   * éteint, la conversation va à l'équipe et la frise le dit. `workflowId` : le scénario, que la frise et le journal des
+   * échecs nomment. Requise ; fixtures : `aucunEnvoiAuMba`.
+   */
+  confierAuMbaParLeBloc(tenantId: string, waId: string, workflowId: string): Promise<void>;
   /**
    * Rend le fil à l'agent de Meta (le contact sur sa liste, puis `release`) quand le parcours se termine sans
    * attendre de choix : chaîne finie, ou réponse à côté des boutons attendus.
@@ -427,6 +436,8 @@ export function restToState(rest: WalkRest, now: number): RunState {
   // « Aller à » vers un autre scénario : CE parcours est fini, la suite est un autre parcours (`sauter`), démarré APRÈS
   // cette écriture. Cas explicite pour qu'un statut ajouté demain ne tombe pas ici par défaut sans qu'on l'ait voulu.
   if (rest.status === 'aller_a') return { currentNode: null, status: 'done' };
+  // « Envoyer au MBA » (RC6) : CE parcours est fini, l'agent de Meta prend le contact APRÈS cette écriture.
+  if (rest.status === 'vers_mba') return { currentNode: null, status: 'done' };
   return { currentNode: null, status: 'done' };
 }
 
@@ -883,6 +894,8 @@ export class WorkflowExecutor {
       await this.deps.escalateToHuman(tenantId, waId, rest.assigneA ?? null, true, run.workflowId);
     }
     if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, waId);
+    // « Envoyer au MBA » au réveil, après l'écriture qui a clos ce parcours : jamais de second rendu.
+    if (rest.status === 'vers_mba') await this.envoyerAuMba(tenantId, waId, run.workflowId);
     // Bloc agent atteint au réveil : ouvrir la session et enfiler le premier tour, après les sorties anticipées
     // ci-dessus, sinon on créerait une session vivante sur un run déjà clos.
     if (rest.status === 'agent_turn') {
@@ -977,8 +990,9 @@ export class WorkflowExecutor {
    */
   private async rendreLaMainAMba(tenantId: string, waId: string, opts: { transmettre?: string } = {}): Promise<void> {
     if (!(await this.mbaActif(tenantId))) {
-      // Aucun appel Meta si l'agent n'est pas allumé. Le message « à côté », lui, va au répondeur IA s'il y en a un
-      // (lot 5) ; sans message, le fil reste aux robots, et c'est le prochain message du contact qui relance l'agent.
+      // Aucun appel Meta si l'agent n'est pas le répondeur (éteint, ou en veille, RC6). Le message « à côté », lui, va au
+      // répondeur du mode (lot 5, RC6) ; sans message, le fil reste aux robots, et c'est le prochain message du contact
+      // qui relance le répondeur.
       if (opts.transmettre !== undefined) {
         try {
           await this.deps.confierAuRepondeur(tenantId, waId, opts.transmettre);
@@ -998,6 +1012,19 @@ export class WorkflowExecutor {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(`release vers MBA ignoré pour ${waId}:`, messageDe(err));
+    }
+  }
+
+  /**
+   * Le bloc « Envoyer au MBA » (RC6), sans jamais faire échouer le parcours qui l'appelle : il est déjà clos, et ses
+   * envois déjà partis. Un échec est journalisé ; la conversation reste où le contrôle du fil l'a laissée.
+   */
+  private async envoyerAuMba(tenantId: string, waId: string, workflowId: string): Promise<void> {
+    try {
+      await this.deps.confierAuMbaParLeBloc(tenantId, waId, workflowId);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`bloc « Envoyer au MBA » en échec pour ${waId} (${workflowId}):`, messageDe(err));
     }
   }
 
@@ -1271,7 +1298,9 @@ export class WorkflowExecutor {
     // Un « Aller à » vers un autre scénario remplace aussi, même sans rien avoir envoyé : la conversation CONTINUE
     // ailleurs, et c'est CE démarrage, avec sa politique, qui dit comment se clôt la session qu'il remplace (un agent IA
     // qui lance un scénario commençant par un saut se retire, il n'est pas interrompu).
-    if (partis > 0 || state.status !== 'done' || rest.status === 'aller_a') {
+    // « Envoyer au MBA » aussi (RC6) : l'agent de Meta prend la conversation, un parcours laissé en cours avancerait
+    // par-dessus lui au message suivant.
+    if (partis > 0 || state.status !== 'done' || rest.status === 'aller_a' || rest.status === 'vers_mba') {
       const closPrecedent = await this.deps.runs.closeActiveByWaId(tenantId, contact.waId);
       // La session d'agent suit son parcours : sinon elle reste `en_cours` avec un tour jamais commencé,
       // invisible de la reprise des tours bloqués. Close comme une panne, sauf quand c'est l'agent lui-même qui a lancé
@@ -1302,6 +1331,8 @@ export class WorkflowExecutor {
       await this.deps.escalateToHuman(tenantId, contact.waId, rest.assigneA ?? null, partis > 0, workflowId);
     }
     if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, contact.waId);
+    // « Envoyer au MBA » dès le démarrage : aucun parcours n'est créé (`done`), le contact va à l'agent de Meta.
+    if (rest.status === 'vers_mba') await this.envoyerAuMba(tenantId, contact.waId, workflowId);
     // Bloc agent en ouverture : la session naît maintenant, le run existe enfin.
     if (rest.status === 'agent_turn' && cree) {
       await this.demarrerTourAgent(tenantId, contact.waId, { id: cree.id, workflowId }, graph, rest.nodeId);
@@ -1456,6 +1487,8 @@ export class WorkflowExecutor {
       rcs_send: 'ce bloc envoie en RCS, non disponible depuis un outil',
       // Un saut démarrerait un autre parcours, qui remplacerait celui de l'agent (ceinture : `blocSeul` l'écarte déjà).
       aller_a: 'ce bloc saute vers un autre bloc, non disponible depuis un outil',
+      // Confier le contact à l'agent de Meta retirerait la conversation à l'agent qui appelle (RC6).
+      vers_mba: 'ce bloc confie la conversation a l agent de Meta, non disponible depuis un outil',
     };
     const refuse = refusDeRepos[rest.status];
     if (refuse) return { ok: false, raison: refuse };
@@ -1742,6 +1775,9 @@ export class WorkflowExecutor {
         { workflowId: run.workflowId, graph, noeudId: rest.nodeId, runId: run.id }, rest.cible,
         { fenetreOuverte: prouvee || await this.deps.isWindowOpen(tenantId, waId), sauts: 1, messageDeclencheur: messageId });
     }
+    // « Envoyer au MBA » (RC6), après l'écriture qui a clos CE parcours, et seulement si elle a réussi : perdue, un autre
+    // traitement tient le parcours. Le message que le contact vient d'écrire est le dernier : l'agent de Meta y répond.
+    if (rest.status === 'vers_mba' && ecrit) await this.envoyerAuMba(tenantId, waId, run.workflowId);
     // Chaîne terminée sans attendre de choix : l'agent reprend (`waiting` garde la main, `inbox` la donne à un
     // humain). Si le client a écrit et que la chaîne n'a rien envoyé en retour, son message part chez l'agent,
     // sinon celui-ci reprendrait sans savoir que le client vient d'écrire. Si la chaîne a répondu, l'agent

@@ -83,7 +83,7 @@ describe('les phrases de la frise', () => {
     const en = (_f: string, e?: string): string => e ?? '';
     for (const type of ['assignee', 'desassignee', 'prise_mba', 'rendue_mba', 'passee_par_mba', 'traitee', 'non_traitee',
       'archivee', 'desarchivee', 'signalee', 'designalee', 'rouverte', 'escaladee', 'rendue_scenario', 'sortie_agent',
-      'urgente', 'urgence_levee'] as const) {
+      'urgente', 'urgence_levee', 'mba_indisponible'] as const) {
       expect(libelleEvenement(ev({ type }), fr), type).not.toBe('');
       expect(libelleEvenement(ev({ type }), en), type).not.toBe('');
     }

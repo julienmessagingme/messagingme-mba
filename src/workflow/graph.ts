@@ -24,7 +24,11 @@
 // `aller_a` = « Aller à » (RC5) : `data.cible` porte le code public (`nod_…`) d'un bloc de n'importe quel scénario de
 // l'espace, et le parcours continue LÀ. Aucune sortie. Même scénario : `walk` suit le saut dans le même enchaînement.
 // Autre scénario : l'exécuteur clôt le parcours et en démarre un sur le bloc visé (`src/workflow/aller-a.ts`).
-export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'question', 'tag', 'field', 'condition', 'action', 'wait', 'mba_handoff', 'mba_disable', 'rcs_message', 'email', 'agent', 'http', 'js', 'aller_a'] as const;
+// `vers_mba` = « Envoyer au MBA » (RC6) : le parcours s'arrête et l'agent de Meta prend le contact, dans tous les modes du
+// répondeur, et répond tout de suite au dernier message du client ; éteint, la conversation va à l'équipe. Aucune
+// sortie. 🔴 Un type NEUF, et pas `mba_handoff` réveillé : des scénarios publiés en contiennent peut-être encore, et
+// leur comportement (passe-plat) changerait en silence.
+export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'question', 'tag', 'field', 'condition', 'action', 'wait', 'mba_handoff', 'mba_disable', 'rcs_message', 'email', 'agent', 'http', 'js', 'aller_a', 'vers_mba'] as const;
 export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number];
 export function isWorkflowNodeType(t: unknown): t is WorkflowNodeType {
   return typeof t === 'string' && (WORKFLOW_NODE_TYPES as readonly string[]).includes(t);

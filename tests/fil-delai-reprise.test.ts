@@ -219,7 +219,7 @@ describe('du webhook à la demande, sur le vrai job', () => {
       numerosDelies: aucunNumeroDelie,
       inboundOptOut: aucunStop,
       detenteur: b.fil,
-      listeALArrivee: { agentAllume: async () => true, presents: (t, w) => b.liste.presents(t, w) },
+      listeALArrivee: { standbyPourNous: async () => true, presents: (t, w) => b.liste.presents(t, w) },
       remiseMbaEntrant: { remettre: b.fil.remettreSiPersonneNeSuit },
     };
     return { b, deps };

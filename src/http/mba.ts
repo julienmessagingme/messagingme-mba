@@ -55,9 +55,9 @@ export interface MbaRouteDeps {
   };
   reglages: {
     /**
-     * Écrit notre drapeau `tenant_settings.mba_enabled`, que toute la mécanique de la liste lit (la remise à l'agent,
-     * la requalification d'un `standby`). Les deux interrupteurs l'écrivent après Meta : `mba-activation` (l'Accueil)
-     * et `rollout` (l'onglet Aperçu).
+     * Écrit notre drapeau `tenant_settings.mba_enabled` (l'agent de Meta disponible ; RC6 : il ne répond au client qu'en
+     * mode `mba`, que ce même écrivain pose ou retire selon sa règle, `PgTenantSettingsStore.setMbaEnabled`). Les deux
+     * interrupteurs l'écrivent après Meta : `mba-activation` (l'Accueil) et `rollout` (l'onglet Aperçu).
      */
     setMbaEnabled(tenantId: string, enabled: boolean): Promise<void>;
   };
@@ -272,8 +272,8 @@ async function extraire(
 
 /**
  * Ce que l'allumage et l'extinction de l'agent de Meta demandent (`appliquerActivation`), construit UNE fois pour ses
- * deux appelants : l'interrupteur de l'Accueil (`PUT .../mba-activation`, plus bas) et la désignation d'un agent IA
- * répondeur, qui éteint l'agent de Meta par ce même chemin (`src/repondeur/reglage.ts`, câblé dans `src/index.ts`).
+ * deux appelants : l'interrupteur de l'Accueil (`PUT .../mba-activation`, plus bas) et « Qui répond au client » (RC6),
+ * qui allume l'agent de Meta par ce même chemin quand on le choisit (`src/repondeur/reglage.ts`, câblé dans `src/index.ts`).
  * Une seconde construction écrirait un jour chez Meta autrement que l'Accueil.
  */
 export function activationPour(deps: Pick<MbaRouteDeps, 'repo' | 'meta' | 'reglages' | 'attendre'>): ActivationDeps {

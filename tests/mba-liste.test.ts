@@ -310,7 +310,7 @@ describe('confier et reprendre, dans l’ordre (`src/inbox/fil.ts` sur `src/mba/
         ...memoire.depot,
         setControlOwner: async (t, w, owner, opts) => { journal.push(`colonne:${owner}`); return memoire.depot.setControlOwner(t, w, owner, opts); },
       },
-      reglages: { get: async () => ({ mbaEnabled: true, repondeurAgentId: null, controlHandbackSeconds: null }) },
+      reglages: { get: async () => ({ mbaEnabled: true, repondeurMode: 'mba', repondeurAgentId: null, repondeurWorkflowId: null, repondeurDelaiScenarioS: 86400, controlHandbackSeconds: null }) },
       repondeur: aucunRepondeur,
       delaiRepriseParDefautMs: DELAI_REPRISE_DEFAUT_MS,
       parcours: { findWaitingByWaId: async () => null },

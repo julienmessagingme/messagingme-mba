@@ -8,15 +8,17 @@ import { PgWorkflowRunStore } from '../../src/workflow/run-store.pg';
 import { PgInboxStore } from '../../src/inbox/store.pg';
 import { PgListeStore } from '../../src/mba/liste.pg';
 import { PgAlertesCreditStore } from '../../src/repondeur/alerte-credit';
+import { PgContactStore } from '../../src/crm/contact-store.pg';
 
 const url = process.env.DATABASE_URL ?? '';
 
 /**
- * LE RÉPONDEUR EN BASE (lot 5, migration 0209) : ce que les tests unitaires ne peuvent qu'affirmer, la base le fait.
+ * LE RÉPONDEUR EN BASE (lot 5, migration 0209 ; RC6, migration 0217) : ce que les tests unitaires ne peuvent
+ * qu'affirmer, la base le fait.
  *
- *  - 🔴 une seule voix : le CHECK refuse les DEUX ordres (répondeur posé sur un agent de Meta allumé, agent de Meta
- *    allumé sur un répondeur posé), et le seul écrivain de `mba_enabled` l'allume sans 500 ;
- *  - la clé étrangère remet le réglage à nul quand l'agent est supprimé ;
+ *  - 🔴 qui répond au client (0217) : la contrainte d'une seule voix est partie, les CHECK à sens unique refusent une
+ *    cible hors de son mode SANS empêcher la suppression d'un agent ou d'un scénario (la cible tombe à nul, le mode se
+ *    lit « Équipe »), la règle de mode de `setMbaEnabled`, et la réclamation atomique du scénario répondeur ;
  *  - le scénario système : une ligne par espace même sous deux démarrages simultanés, invisible de toutes les lectures
  *    publiques, et sans gêner un scénario du client qui porterait le même nom ;
  *  - 🔴 l'alerte de crédit : une insertion par espace et par jour, quel que soit le nombre de copies (cas 5 de la revue) ;
@@ -33,6 +35,9 @@ describe.skipIf(!url)('le répondeur par défaut (Postgres)', () => {
   let autreAgentId: string;
   const reglages = () => new PgTenantSettingsStore(pool);
   const WA = '33600000777';
+  /** Des numéros à part pour les cas de RC6 : les cas qui suivent créent leur propre conversation sur `WA`. */
+  const WA_SCENARIO = '33600000778';
+  const WA_FRISE = '33600000779';
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: url, ssl: pgSsl(), max: 4 });
@@ -52,40 +57,102 @@ describe.skipIf(!url)('le répondeur par défaut (Postgres)', () => {
     await pool.end();
   });
 
-  describe('une seule voix', () => {
-    it('🔴 le CHECK refuse un répondeur posé sur un agent de Meta allumé', async () => {
+  describe('qui répond au client (RC6, migration 0217)', () => {
+    it('🔴 la fin d’une seule voix : un agent IA répondeur et l’agent de Meta allumé coexistent, l’agent en veille', async () => {
+      await reglages().setMbaEnabled(tenantId, false);
+      await reglages().setRepondeur(tenantId, { mode: 'agent', agentId });
+      // L'ancienne contrainte aurait levé ici : elle est partie.
       await reglages().setMbaEnabled(tenantId, true);
-      await expect(reglages().setRepondeur(tenantId, agentId)).rejects.toMatchObject({ code: '23514', constraint: 'tenant_settings_repondeur_une_voix_chk' });
-      expect((await reglages().get(tenantId)).repondeurAgentId).toBeNull();
+      expect(await reglages().get(tenantId)).toMatchObject({ mbaEnabled: true, repondeurMode: 'agent', repondeurAgentId: agentId });
+      const contrainte = await pool.query(`select 1 from pg_constraint where conname = 'tenant_settings_repondeur_une_voix_chk'`);
+      expect(contrainte.rowCount).toBe(0);
     });
 
-    it('🔴 et l’agent de Meta allumé sur un répondeur posé, par une écriture qui ne passerait pas par l’écrivain unique', async () => {
+    it('🔴 la règle de l’écrivain unique de `mba_enabled` : allumer quand personne ne répond passe en `mba`, éteindre en `mba` passe en `equipe`', async () => {
       await reglages().setMbaEnabled(tenantId, false);
-      await reglages().setRepondeur(tenantId, agentId);
-      await expect(pool.query('update tenant_settings set mba_enabled = true where tenant_id = $1', [tenantId]))
-        .rejects.toMatchObject({ code: '23514' });
-    });
-
-    it('🔴 l’écrivain unique allume l’agent de Meta SANS 500 : le répondeur retombe à nul dans la même instruction', async () => {
-      await reglages().setRepondeur(tenantId, agentId);
+      await reglages().setRepondeur(tenantId, { mode: 'equipe' });
       await reglages().setMbaEnabled(tenantId, true);
-      expect(await reglages().get(tenantId)).toMatchObject({ mbaEnabled: true, repondeurAgentId: null });
-      // Éteindre ne touche pas au répondeur.
+      expect((await reglages().get(tenantId)).repondeurMode).toBe('mba');
       await reglages().setMbaEnabled(tenantId, false);
-      await reglages().setRepondeur(tenantId, agentId);
-      await reglages().setMbaEnabled(tenantId, false);
-      expect((await reglages().get(tenantId)).repondeurAgentId).toBe(agentId);
+      expect((await reglages().get(tenantId)).repondeurMode).toBe('equipe');
+      // Un espace sans ligne naît dans le mode que son drapeau dit.
+      await reglages().setMbaEnabled(autreTenantId, true);
+      expect(await reglages().get(autreTenantId)).toMatchObject({ mbaEnabled: true, repondeurMode: 'mba' });
+      await pool.query('delete from tenant_settings where tenant_id = $1', [autreTenantId]);
     });
 
-    it('oublierRepondeurSi : seulement l’agent désigné, et la suppression de l’agent remet le réglage à nul', async () => {
-      await reglages().setRepondeur(tenantId, agentId);
-      expect(await reglages().oublierRepondeurSi(tenantId, autreAgentId)).toBe(false);
+    it('🔴 les CHECK À SENS UNIQUE : une cible n’existe que dans son mode, sous leur nom', async () => {
+      await reglages().setRepondeur(tenantId, { mode: 'equipe' });
+      await expect(pool.query(`update tenant_settings set repondeur_agent_id = $2 where tenant_id = $1`, [tenantId, agentId]))
+        .rejects.toMatchObject({ code: '23514', constraint: 'tenant_settings_repondeur_agent_chk' });
+      const wf = (await new PgWorkflowStore(pool).insert(tenantId, 'itest-repondeur-chk', { nodes: [], edges: [] })).id;
+      await reglages().setRepondeur(tenantId, { mode: 'agent', agentId });
+      await expect(pool.query(`update tenant_settings set repondeur_workflow_id = $2 where tenant_id = $1`, [tenantId, wf]))
+        .rejects.toMatchObject({ code: '23514', constraint: 'tenant_settings_repondeur_scenario_chk' });
+      await expect(pool.query(`update tenant_settings set repondeur_mode = 'robot' where tenant_id = $1`, [tenantId]))
+        .rejects.toMatchObject({ code: '23514', constraint: 'tenant_settings_repondeur_mode_chk' });
+      for (const s of [3599, 2_592_001]) {
+        await expect(pool.query(`update tenant_settings set repondeur_delai_scenario_s = $2 where tenant_id = $1`, [tenantId, s]))
+          .rejects.toMatchObject({ code: '23514', constraint: 'tenant_settings_repondeur_delai_chk' });
+      }
+    });
+
+    it('🔴 supprimer l’agent ou le scénario répondeur NE lève PAS : la cible tombe à nul, le mode reste, et se lit « Équipe »', async () => {
+      await reglages().setRepondeur(tenantId, { mode: 'agent', agentId: autreAgentId });
+      await pool.query('delete from agents where id = $1 and tenant_id = $2', [autreAgentId, tenantId]);
+      expect(await reglages().get(tenantId)).toMatchObject({ repondeurMode: 'agent', repondeurAgentId: null });
+      const wf = (await new PgWorkflowStore(pool).insert(tenantId, 'itest-repondeur-sc', { nodes: [], edges: [] })).id;
+      await reglages().setRepondeur(tenantId, { mode: 'scenario', workflowId: wf, delaiS: 7200 });
+      expect(await reglages().get(tenantId)).toMatchObject({ repondeurMode: 'scenario', repondeurWorkflowId: wf, repondeurDelaiScenarioS: 7200 });
+      await pool.query('delete from workflows where id = $1 and tenant_id = $2', [wf, tenantId]);
+      expect(await reglages().get(tenantId)).toMatchObject({ repondeurMode: 'scenario', repondeurWorkflowId: null });
+      expect((await reglages().modesParTenant([tenantId])).get(tenantId)).toBe('equipe');
+    });
+
+    it('oublierRepondeurSi : seulement l’agent désigné ; le mode reste `agent`, sans agent', async () => {
+      await reglages().setRepondeur(tenantId, { mode: 'agent', agentId });
+      expect(await reglages().oublierRepondeurSi(tenantId, '00000000-0000-4000-8000-000000000000')).toBe(false);
       expect((await reglages().get(tenantId)).repondeurAgentId).toBe(agentId);
       expect(await reglages().oublierRepondeurSi(tenantId, agentId)).toBe(true);
-      expect((await reglages().get(tenantId)).repondeurAgentId).toBeNull();
-      await reglages().setRepondeur(tenantId, autreAgentId);
-      await pool.query('delete from agents where id = $1 and tenant_id = $2', [autreAgentId, tenantId]);
-      expect((await reglages().get(tenantId)).repondeurAgentId, 'on delete set null').toBeNull();
+      expect(await reglages().get(tenantId)).toMatchObject({ repondeurMode: 'agent', repondeurAgentId: null });
+    });
+
+    it('modesParTenant : le mode qui s’APPLIQUE, en une lecture ; un espace sans ligne est absent', async () => {
+      await reglages().setMbaEnabled(tenantId, true);
+      await reglages().setRepondeur(tenantId, { mode: 'mba' });
+      const modes = await reglages().modesParTenant([tenantId, autreTenantId]);
+      expect(modes.get(tenantId)).toBe('mba');
+      expect(modes.has(autreTenantId)).toBe(false);
+      await reglages().setMbaEnabled(tenantId, false);
+      expect((await reglages().modesParTenant([tenantId])).get(tenantId)).toBe('equipe');
+    });
+
+    it('🔴 la réclamation du scénario répondeur : deux entrants SIMULTANÉS, UN départ ; le délai écoulé, un nouveau', async () => {
+      const contacts = new PgContactStore(pool);
+      await pool.query(`insert into contacts (tenant_id, phone_e164) values ($1, $2)`, [tenantId, `+${WA_SCENARIO}`]);
+      const [a, b] = await Promise.all([
+        contacts.reclamerDepartRepondeur(tenantId, WA_SCENARIO, 3600),
+        contacts.reclamerDepartRepondeur(tenantId, WA_SCENARIO, 3600),
+      ]);
+      expect([a, b].filter(Boolean)).toHaveLength(1);
+      expect(await contacts.reclamerDepartRepondeur(tenantId, WA_SCENARIO, 3600), 'dans le délai').toBe(false);
+      // Le lendemain : le dernier départ date de plus que le délai.
+      await pool.query(`update contacts set repondeur_scenario_le = now() - interval '2 hours' where tenant_id = $1`, [tenantId]);
+      expect(await contacts.reclamerDepartRepondeur(tenantId, WA_SCENARIO, 3600)).toBe(true);
+      // Scopée espace : le même numéro dans un autre espace n'existe pas ici.
+      expect(await contacts.reclamerDepartRepondeur(autreTenantId, WA_SCENARIO, 3600)).toBe(false);
+    });
+
+    it('la frise : `mba_indisponible` s’écrit sous le CHECK élargi, avec sa cause, dans le bon espace', async () => {
+      const inbox = new PgInboxStore(pool);
+      await pool.query(`insert into conversations (tenant_id, wa_id) values ($1, $2)`, [tenantId, WA_FRISE]);
+      await inbox.noterMbaIndisponible(tenantId, WA_FRISE, 'automatique : bloc « Envoyer au MBA », scénario Bienvenue');
+      await inbox.noterMbaIndisponible(autreTenantId, WA_FRISE, 'ne doit rien écrire');
+      const ev = await pool.query<{ cause: string }>(
+        `select e.cause from conversation_evenements e join conversations c on c.id = e.conversation_id
+          where c.tenant_id = $1 and c.wa_id = $2 and e.type = 'mba_indisponible'`, [tenantId, WA_FRISE],
+      );
+      expect(ev.rows.map((r) => r.cause)).toEqual(['automatique : bloc « Envoyer au MBA », scénario Bienvenue']);
     });
   });
 

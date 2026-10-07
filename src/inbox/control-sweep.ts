@@ -2,6 +2,7 @@ import type { ControlOwner } from './store.pg';
 import type { ControleDuFil } from './fil';
 import { FENETRE_SERVICE_MS } from '../workflow/engine';
 import { repriseDue } from './delai-reprise';
+import type { ModeRepondeur } from '../repondeur/mode';
 
 /**
  * La fenêtre de service client de Meta : 24 h depuis le dernier message entrant. Au-delà, aucun échange sans
@@ -36,10 +37,12 @@ export interface ControlSweepDeps {
      */
     handbackMsByTenant?(tenantIds: readonly string[]): Promise<Map<string, number>>;
     /**
-     * L'agent de Meta est-il allumé chez ce client ? Décide de la destination d'un fil rendu : l'agent quand il
-     * est là, le scénario sinon. Absent -> aucun tenant n'a MBA.
+     * Qui répond au client chez chacun de ces espaces (le mode qui s'applique, `modeEffectif`) ? Décide de la
+     * destination d'un fil rendu : l'agent de Meta en mode `mba` SEULEMENT (RC6 : allumé en veille, il ne reçoit rien
+     * du balayage), `app_workflow` sinon, et c'est le message suivant du contact qui relance le répondeur du mode. Un
+     * espace absent de la Map, ou une dépendance absente : aucun n'a l'agent de Meta pour répondeur.
      */
-    mbaActifParTenant?(tenantIds: readonly string[]): Promise<Set<string>>;
+    modesParTenant?(tenantIds: readonly string[]): Promise<Map<string, ModeRepondeur>>;
   };
   /**
    * Le geste qui rend un fil (`src/inbox/fil.ts`) : vers `mba`, Meta d'abord (le contact sur la liste de l'agent,
@@ -70,8 +73,8 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
   const parTenant = deps.reglages?.handbackMsByTenant
     ? await deps.reglages.handbackMsByTenant(tenantIds)
     : new Map<string, number>();
-  // Un seul aller-retour aussi pour savoir qui a l'agent de Meta allumé.
-  const avecMba = deps.reglages?.mbaActifParTenant ? await deps.reglages.mbaActifParTenant(tenantIds) : new Set<string>();
+  // Un seul aller-retour aussi pour savoir qui a l'agent de Meta pour répondeur.
+  const modes = deps.reglages?.modesParTenant ? await deps.reglages.modesParTenant(tenantIds) : new Map<string, ModeRepondeur>();
 
   let rendues = 0;
   for (const c of held) {
@@ -82,12 +85,12 @@ export async function runControlSweep(deps: ControlSweepDeps): Promise<number> {
     // revient pas à l'agent (le client attend un humain), un délai absent ou nul garde la main, et un fil non daté
     // est éligible.
     if (!repriseDue({ owner: c.owner, depuisMs: c.changedAt === null ? null : now() - c.changedAt.getTime(), escaladee: c.escaladee }, ms)) continue;
-    // Destination : l'agent de Meta s'il est allumé chez ce client, le scénario sinon (`app_workflow` rend aussi
+    // Destination : l'agent de Meta s'il est le répondeur de ce client, le scénario sinon (`app_workflow` rend aussi
     // la main, puisqu'un parcours reprend le fil pour de vrai). On ne passe pas la main sur une fenêtre fermée : l'agent
     // ne prendrait rien et personne ne répondrait. On saute, sans replier sur `app_workflow` que « À traiter »
     // exclut. `lastMessageAt` prouve une fenêtre fermée, pas une fenêtre ouverte.
     const fenetreOuverte = c.lastMessageAt !== null && now() - c.lastMessageAt.getTime() < FENETRE_META_MS;
-    const versMba = (c.owner === 'app_human' || c.owner === 'app_workflow') && avecMba.has(c.tenantId);
+    const versMba = (c.owner === 'app_human' || c.owner === 'app_workflow') && modes.get(c.tenantId) === 'mba';
     // La garde ne porte que sur `versMba` : une transition qui ne parle pas à Meta n'a rien à faire d'une fenêtre.
     if (versMba && !fenetreOuverte) continue;
     /**

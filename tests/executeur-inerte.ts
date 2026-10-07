@@ -57,6 +57,8 @@ export const aucunRepondeurHorsParcours = async (): Promise<void> => {};
 export const aucunBlocAilleurs = async (): Promise<null> => null;
 /** `journaliserEchecSaut` (RC5) : aucun saut manqué n'est écrit. */
 export const aucunEchecJournalise = async (): Promise<void> => {};
+/** `confierAuMbaParLeBloc` (RC6) : avant lui, aucun bloc ne confiait un contact à l'agent de Meta. */
+export const aucunEnvoiAuMba = async (): Promise<void> => {};
 /** `rcs.recordOutbound` absent : l'envoi RCS n'était pas écrit dans le fil. */
 export const filRcsNonJournalise = async (): Promise<void> => {};
 /** `rcs.jetonPour` absent : les liens partaient tracés mais anonymes. */
@@ -155,5 +157,6 @@ export const depsInertes = {
   confierAuRepondeur: aucunRepondeurHorsParcours,
   resoudreBloc: aucunBlocAilleurs,
   journaliserEchecSaut: aucunEchecJournalise,
+  confierAuMbaParLeBloc: aucunEnvoiAuMba,
   rcs: rcsSansAgent,
 } satisfies Partial<WorkflowExecutorDeps>;

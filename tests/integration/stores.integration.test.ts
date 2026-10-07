@@ -2069,6 +2069,9 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     hubspotActif: false,
     // Meme piege pour le repondeur de l espace (migration 0209) : `null` par defaut, aucun agent IA ne repond seul.
     repondeurAgentId: null,
+    // Meme piege pour « qui repond au client » (migration 0217) : un espace neuf est en mode `equipe`, sans scenario,
+    // et le delai du scenario vaut 24 h.
+    repondeurMode: 'equipe', repondeurWorkflowId: null, repondeurDelaiScenarioS: 86400,
     businessHours: DEFAULT_BUSINESS_HOURS, optoutRequestId: null, mentionIaFrequence: null,
     // ⚠️ `prix` A QUITTE CETTE FIXTURE avec la migration 0168 : la grille n appartient plus a un espace,
     // elle est unique et se regle dans /ops. La laisser ici aurait fait croire l inverse au prochain lecteur.
@@ -2133,10 +2136,10 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       expect(await store.get(t)).toEqual(settingsShape()); // défauts
       await store.setMbaEnabled(t, true);
       await store.setHubspotListsEnabled(t, true);
-      expect(await store.get(t)).toEqual(settingsShape({ mbaEnabled: true, hubspotListsEnabled: true }));
+      expect(await store.get(t)).toEqual(settingsShape({ mbaEnabled: true, repondeurMode: 'mba', hubspotListsEnabled: true }));
       // Le toggle listes n'écrase PAS mba_enabled (upsert ciblé par colonne).
       await store.setHubspotListsEnabled(t, false);
-      expect(await store.get(t)).toEqual(settingsShape({ mbaEnabled: true }));
+      expect(await store.get(t)).toEqual(settingsShape({ mbaEnabled: true, repondeurMode: 'mba' }));
     } finally {
       await pool.query('delete from tenants where id = $1', [t]);
     }
@@ -2175,7 +2178,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       await store.setMbaEnabled(a, true);
       await store.setControlHandbackSeconds(a, 900);
       // Le réglage du délai n'écrase PAS les autres toggles (upsert ciblé par colonne).
-      expect(await store.get(a)).toEqual(settingsShape({ mbaEnabled: true, controlHandbackSeconds: 900 }));
+      expect(await store.get(a)).toEqual(settingsShape({ mbaEnabled: true, repondeurMode: 'mba', controlHandbackSeconds: 900 }));
 
       // 0 = jamais de reprise automatique. Doit être conservé tel quel, PAS confondu avec « pas réglé ».
       await store.setControlHandbackSeconds(a, 0);

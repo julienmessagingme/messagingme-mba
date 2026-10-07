@@ -51,7 +51,7 @@ function monterLeJob(o: { depart?: ControlOwner; banc?: Omit<OptionsBanc, 'conve
     numerosDelies: aucunNumeroDelie,
     inboundOptOut: aucunStop,
     detenteur: b.fil,
-    listeALArrivee: { agentAllume: async () => o.banc?.mbaEnabled ?? true, presents: (t, w) => b.liste.presents(t, w) },
+    listeALArrivee: { standbyPourNous: async () => o.banc?.mbaEnabled ?? true, presents: (t, w) => b.liste.presents(t, w) },
     triggers: { run: async (_t, ev) => { if (ev.kind === 'message') declencheurs.push(ev.body ?? ''); return 0; } },
     workflowAdvance: { advance: async (_t, _w, m, bp) => { avances.push({ m, bp }); return o.parcoursRecoit === true; } },
     remiseMbaEntrant: { remettre: b.fil.remettreSiPersonneNeSuit },

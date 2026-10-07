@@ -4,6 +4,8 @@ import type { EvenementAgent } from '../src/mba/evenement';
 import type { ControlOwner } from '../src/inbox/store.pg';
 import { MetaApiError } from '../src/meta/errors';
 import type { IssueRepondeur } from '../src/repondeur/demarrer';
+import type { IssueLancementScenario, IssueReclamation } from '../src/repondeur/scenario';
+import type { ModeRepondeur } from '../src/repondeur/mode';
 
 /**
  * LE BANC DU CONTRÔLE DU FIL : le VRAI module (`src/inbox/fil.ts`) et la VRAIE liste de l'agent de Meta
@@ -52,6 +54,8 @@ export function depotEnMemoire(initial: Record<string, Partial<EtatDuFil>> = {})
   const ecritures: Array<{ waId: string; owner: ControlOwner; opts: EcritureDuFil | undefined }> = [];
   /** Les demandes ouvertes sans bascule (`ouvrirUneDemande`), par `waId`, avec leur cause. */
   const demandes: Array<{ waId: string; cause: string }> = [];
+  /** Les lignes `mba_indisponible` de la frise (`noterMbaIndisponible`, RC6), par `waId`, avec leur cause. */
+  const indisponibles: Array<{ waId: string; cause: string }> = [];
   const depot: DepsControleDuFil['depot'] = {
     getControlOwner: async (_t, waId) => lignes.get(waId)?.owner ?? 'app_workflow',
     setControlOwner: async (_t, waId, owner, opts) => {
@@ -107,8 +111,10 @@ export function depotEnMemoire(initial: Record<string, Partial<EtatDuFil>> = {})
     filsDeLAgentDeMeta: async (_t, apres, limite) => [...lignes]
       .filter(([waId, l]) => l.owner === 'mba' && (apres === null || waId > apres))
       .map(([waId]) => waId).sort().slice(0, limite),
+    // Fidèle à `PgInboxStore.noterMbaIndisponible` : rien sans conversation.
+    noterMbaIndisponible: async (_t, waId, cause) => { if (lignes.has(waId)) indisponibles.push({ waId, cause }); },
   };
-  return { depot, lignes, ecritures, demandes, etat: (waId: string): EtatDuFil | undefined => lignes.get(waId) };
+  return { depot, lignes, ecritures, demandes, indisponibles, etat: (waId: string): EtatDuFil | undefined => lignes.get(waId) };
 }
 
 /**
@@ -117,6 +123,8 @@ export function depotEnMemoire(initial: Record<string, Partial<EtatDuFil>> = {})
  */
 export const aucunRepondeur: DepsControleDuFil['repondeur'] = {
   demarrer: async () => { throw new Error('aucunRepondeur : le démarreur du répondeur ne devrait pas être appelé'); },
+  reclamerScenario: async () => { throw new Error('aucunRepondeur : le scénario répondeur ne devrait pas être réclamé'); },
+  lancerScenario: async () => { throw new Error('aucunRepondeur : le scénario répondeur ne devrait pas être lancé'); },
 };
 
 /** L'identifiant que le faux Meta donne à l'entrée d'un contact : on retrouve le contact en le lisant. */
@@ -217,10 +225,20 @@ export interface OptionsBanc {
   /** L'agent de Meta est-il allumé ? Défaut : oui. */
   mbaEnabled?: boolean;
   /**
-   * L'agent IA répondeur de l'espace (lot 5) ; `null` = aucun. Défaut : aucun. 🔴 Le banc ne tient pas le CHECK d'une
-   * seule voix : un test du répondeur pose aussi `mbaEnabled: false`, comme la base l'impose.
+   * Qui répond au client (RC6). Défaut : la règle de la reprise de 0217, `agent` si un agent est désigné, sinon `mba`
+   * si l'agent de Meta est allumé, sinon `equipe`. Le MBA allumé en veille se monte en posant le mode ET `mbaEnabled`.
    */
+  mode?: ModeRepondeur;
+  /** L'agent IA répondeur de l'espace (lot 5) ; `null` = aucun. Défaut : aucun. */
   repondeurAgentId?: string | null;
+  /** Le scénario répondeur (RC6) ; `null` = aucun. Défaut : aucun. */
+  repondeurWorkflowId?: string | null;
+  /** Le délai du scénario répondeur, en secondes. Défaut : 24 h. */
+  delaiScenarioS?: number;
+  /** Ce que rend la réclamation du scénario répondeur. Défaut : `reclame`. Ses appels sont notés dans `reclamations`. */
+  reclamation?: IssueReclamation | Error;
+  /** Ce que rend le lancement du scénario répondeur. Défaut : `parti`. Ses appels sont notés dans `lancementsScenario`. */
+  lancementScenario?: IssueLancementScenario | Error;
   /** Ce que rend le démarreur du répondeur. Défaut : `parti`. Ses appels sont notés dans `demarrages`. */
   demarrage?: IssueRepondeur | Error;
   /** Remplace le démarreur factice (un vrai démarreur, branché par liaison tardive dans le test). */
@@ -271,6 +289,11 @@ export function bancDuFil(o: OptionsBanc = {}): {
   client: ReturnType<typeof metaFactice>['client'];
   /** Les démarrages demandés au répondeur IA, dans l'ordre. */
   demarrages: Array<{ waId: string; agentId: string; messageDeclencheur: string | null }>;
+  /** Les réclamations du scénario répondeur, puis ses lancements, dans l'ordre (RC6). */
+  reclamations: Array<{ waId: string; workflowId: string; delaiS: number }>;
+  lancementsScenario: Array<{ waId: string; workflowId: string; messageDeclencheur: string | null }>;
+  /** Les lignes `mba_indisponible` de la frise (RC6). */
+  indisponibles: Array<{ waId: string; cause: string }>;
 } {
   const memoire = depotEnMemoire(o.conversations);
   const table = listeEnMemoire(o.surLaListe, { poserEchoue: o.poserEchoue === true });
@@ -288,9 +311,19 @@ export function bancDuFil(o: OptionsBanc = {}): {
     attendre: async (ms) => { attentes.push(ms); },
   });
   const demarrages: Array<{ waId: string; agentId: string; messageDeclencheur: string | null }> = [];
+  const reclamations: Array<{ waId: string; workflowId: string; delaiS: number }> = [];
+  const lancementsScenario: Array<{ waId: string; workflowId: string; messageDeclencheur: string | null }> = [];
+  const mbaEnabled = o.mbaEnabled ?? true;
+  const repondeurAgentId = o.repondeurAgentId ?? null;
+  const mode: ModeRepondeur = o.mode ?? (repondeurAgentId !== null ? 'agent' : (mbaEnabled ? 'mba' : 'equipe'));
   const fil = creerControleDuFil({
     depot: { ...memoire.depot, ...o.depot },
-    reglages: { get: async () => ({ mbaEnabled: o.mbaEnabled ?? true, repondeurAgentId: o.repondeurAgentId ?? null, controlHandbackSeconds: o.delaiRepriseSecondes ?? null }) },
+    reglages: {
+      get: async () => ({
+        mbaEnabled, repondeurMode: mode, repondeurAgentId, repondeurWorkflowId: o.repondeurWorkflowId ?? null,
+        repondeurDelaiScenarioS: o.delaiScenarioS ?? 86400, controlHandbackSeconds: o.delaiRepriseSecondes ?? null,
+      }),
+    },
     delaiRepriseParDefautMs: DELAI_REPRISE_DEFAUT_MS,
     parcours: o.parcours ?? { findWaitingByWaId: async () => (o.enAttente ? { id: 'run-1' } : null) },
     numeros: {
@@ -310,10 +343,23 @@ export function bancDuFil(o: OptionsBanc = {}): {
         if (o.demarrage instanceof Error) throw o.demarrage;
         return o.demarrage ?? 'parti';
       },
+      reclamerScenario: async (t, waId, d) => {
+        reclamations.push({ waId, workflowId: d.workflowId, delaiS: d.delaiS });
+        if (o.repondeur) return o.repondeur.reclamerScenario(t, waId, d);
+        if (o.reclamation instanceof Error) throw o.reclamation;
+        return o.reclamation ?? 'reclame';
+      },
+      lancerScenario: async (t, waId, d) => {
+        lancementsScenario.push({ waId, workflowId: d.workflowId, messageDeclencheur: d.messageDeclencheur });
+        if (o.repondeur) return o.repondeur.lancerScenario(t, waId, d);
+        if (o.lancementScenario instanceof Error) throw o.lancementScenario;
+        return o.lancementScenario ?? 'parti';
+      },
     },
   });
   return {
     fil, liste, etat: memoire.etat, lignes: memoire.lignes, table: table.lignes, ecritures: memoire.ecritures, demandes: memoire.demandes,
     appels: faux.appels, evenements: faux.evenements, attentes, client: faux.client, demarrages,
+    reclamations, lancementsScenario, indisponibles: memoire.indisponibles,
   };
 }

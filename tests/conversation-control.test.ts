@@ -224,7 +224,7 @@ describe('durée du gel réglable PAR CLIENT', () => {
       deps: {
         inbox: {
           // Un dernier message RECENT : ces tests ne portent pas sur la fenetre de Meta, et aucun de leurs
-          // clients n a l agent allume (pas de mbaActifParTenant), donc la garde de fenetre ne s y applique pas.
+          // clients n a l agent pour repondeur (pas de modesParTenant), donc la garde de fenetre ne s y applique pas.
           listHeldControl: async () => stale.map((c) => ({ escaladee: false, ...c, lastMessageAt: new Date(T0 - 1 * H) })),
         },
         fil: filQuiEcrit(async (_t, waId) => { rendues.push(waId); return true; }),

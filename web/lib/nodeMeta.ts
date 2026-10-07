@@ -28,6 +28,10 @@ export const NODE_META: Record<WorkflowNodeType, { icone: NomIcone; label: [stri
   js: { icone: 'fonction', label: ['Fonction JS', 'JS function'] },
   // RC5 : le parcours continue sur un bloc de n'importe quel scénario de l'espace. Aucune sortie : la suite est là-bas.
   aller_a: { icone: 'saut', label: ['Aller à', 'Go to'] },
+  // RC6 : l'agent de Meta prend le contact et répond tout de suite à son dernier message, quel que soit le répondeur de
+  // l'espace. Aucune sortie. Agent de Meta éteint : la conversation va à l'équipe (le panneau du bloc l'avertit). 🔴 Un
+  // type NEUF : les anciens `mba_handoff` restent des passe-plats, en dessous.
+  vers_mba: { icone: 'ia', label: ['Envoyer au MBA', 'Send to MBA'] },
   // Blocs RETIRÉS du produit. Ces entrées ne servent plus qu'à RENDRE lisiblement un ancien scénario qui en
   // contient encore : ils ne sont plus dans la palette, et le moteur les traverse sans rien faire.
   mba_handoff: { icone: 'supprimer', label: ['Bloc MBA (retiré)', 'MBA block (removed)'] },

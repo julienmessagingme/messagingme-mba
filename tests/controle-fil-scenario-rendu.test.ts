@@ -72,7 +72,7 @@ function deps(
     }).fil,
     timeouts: { app_human: 2 * HEURE, mba: 24 * HEURE, app_workflow: 24 * HEURE },
     reglages: {
-      mbaActifParTenant: async () => new Set(['t1']),
+      modesParTenant: async () => new Map([['t1', 'mba' as const]]),
     },
     now: () => MAINTENANT,
     ...reste,
@@ -138,7 +138,7 @@ describe('un fil pris par un SCÉNARIO revient à l’agent de Meta', () => {
   it('sans agent de Meta chez ce client, un fil de scénario n’est pas touché', async () => {
     // La destination vaudrait `app_workflow`, c'est-à-dire la valeur déjà portée : l'écriture ne prend pas.
     const d = deps([{ owner: 'app_workflow', changedAt: new Date(MAINTENANT - 25 * HEURE) }],
-      { reglages: { mbaActifParTenant: async () => new Set<string>() } });
+      { reglages: { modesParTenant: async () => new Map() } });
     expect(await runControlSweep(d)).toBe(0);
     expect(d.ecrits).toEqual([]);
   });
@@ -234,7 +234,7 @@ describe('la fenêtre de Meta, ajoutée le 2026-09-15', () => {
      * faire. L'appliquer à tout le monde aurait gelé le balayage historique sans que rien ne le signale.
      */
     const d = deps([{ owner: 'app_human', changedAt: new Date(MAINTENANT - 3 * HEURE), lastMessageAt: new Date(MAINTENANT - 200 * HEURE) }],
-      { reglages: { mbaActifParTenant: async () => new Set<string>() } });
+      { reglages: { modesParTenant: async () => new Map() } });
     expect(await runControlSweep(d)).toBe(1);
     expect(d.ecrits).toEqual([{ owner: 'app_workflow' }]);
   });

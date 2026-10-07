@@ -54,6 +54,25 @@ export interface ActivationDeps {
 }
 
 /**
+ * L'agent de Meta peut-il être allumé sur cet espace : un numéro relié, et Meta a ouvert son agent dessus ? La question
+ * de la carte « Qui répond au client » (RC6, position « MBA » grisée sinon) et du choix du mode `mba`
+ * (`src/repondeur/reglage.ts`). Les deux mêmes lectures que `appliquerActivation`, dans le même ordre ; lève
+ * `EtatMetaIllisible` si la question n'a pas pu être posée (« an error is not a negative answer »).
+ */
+export async function agentDeMetaConfigurable(
+  deps: Pick<ActivationDeps, 'numeroDuTenant' | 'eligible'>,
+  tenantId: string,
+): Promise<boolean> {
+  const phoneNumberId = await deps.numeroDuTenant(tenantId);
+  if (!phoneNumberId) return false;
+  try {
+    return await deps.eligible(tenantId, phoneNumberId);
+  } catch (err) {
+    throw new EtatMetaIllisible(err);
+  }
+}
+
+/**
  * Applique la décision : Meta d'abord, nous ensuite. Dans l'autre ordre, l'écran afficherait un temps un état
  * que Meta n'a pas, et un échec obligerait à « défaire » ; ainsi, un échec ne change simplement rien.
  */

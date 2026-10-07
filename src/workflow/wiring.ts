@@ -45,6 +45,7 @@ import { renderText, contactVars } from '../crm/render';
 import { adressesDestinataires, type SendEmailAction } from './engine';
 import type { BesoinsContexte, EvalContext } from './conditions';
 import type { ControleDuFil } from '../inbox/fil';
+import { leMbaRepond } from '../repondeur/mode';
 import { creerTransmettreHorsParcours } from '../mba/transmettre-hors-parcours';
 import { cacheCourt } from '../lib/cache-court';
 import type { MetaClient } from '../meta/client';
@@ -374,17 +375,37 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
      * `ControleDuFil.reprendrePourLApp`.
      */
     reclaimControl: fil.reprendrePourLApp,
-    // L'agent de Meta est-il allumé chez ce client ? Décide qu'une étape sans choix cesse de bloquer le
-    // parcours, et qu'on rende le fil à Meta en fin de chaîne.
-    mbaActifPour: async (tenant) => (await settingsStore.get(tenant)).mbaEnabled,
+    // L'agent de Meta est-il le RÉPONDEUR de ce client (mode `mba`, RC6) ? Décide qu'une étape sans choix cesse de
+    // bloquer le parcours, et qu'on rende le fil à Meta en fin de chaîne. Allumé en veille : non.
+    mbaActifPour: async (tenant) => leMbaRepond(await settingsStore.get(tenant)),
+    /**
+     * Le bloc « Envoyer au MBA » (RC6) : le contrôle du fil confie le contact à l'agent de Meta, avec son dernier
+     * message (`derniereSaisieDuContact`, le texte que le client vient d'écrire), ou le passe à l'équipe quand l'agent
+     * est éteint. La frise et le journal des échecs nomment le scénario, comme pour une escalade
+     * (`designation`, qui lit aussi le scénario système). Un contact qui n'a pas été confié laisse sa ligne dans le
+     * journal des échecs de scénario : un bloc qui ne fait pas ce qu'il annonce doit se voir.
+     */
+    confierAuMbaParLeBloc: async (tenant, waId, workflowId) => {
+      const designe = await workflowStore.designation(workflowId, tenant).catch(() => null);
+      const nom = designationDuScenario(designe, workflowId);
+      const contenu = (await inboxStore.derniereSaisieDuContact(tenant, waId).catch(() => null)) ?? '';
+      const issue = await fil.envoyerAuMba(tenant, waId, { contenu, cause: automatique(`bloc « Envoyer au MBA », ${nom}`) });
+      if (issue === 'confie') return;
+      await echecsDeScenario.enregistrerEchecAvance({
+        tenantId: tenant, waId, workflowId, runId: null, messageId: null, canal: null,
+        erreur: issue === 'mba_eteint'
+          ? 'bloc « Envoyer au MBA » : l’agent de Meta est éteint, la conversation est passée à l’équipe'
+          : 'bloc « Envoyer au MBA » : le contact n’a pas pu être confié à l’agent de Meta (contact désabonné ou bloqué, aucun numéro, ou refus de Meta), la conversation est passée à l’équipe',
+      }).catch(() => {});
+    },
     /**
      * Fin de parcours : le fil est rendu à l'agent de Meta à l'accusé de notre dernier envoi (envoyer prend le fil
      * chez Meta, un release émis juste après serait annulé), ou tout de suite si rien n'est en vol.
      */
     releaseToMba: fil.rendreApresParcours,
     transmettreHorsParcours,
-    // Agent de Meta éteint : le message « à côté » va au répondeur IA de l'espace, par la remise et ses gardes (lot 5).
-    // Le dernier message nommé : son parcours naît en l'ayant reçu.
+    // L'agent de Meta n'est pas le répondeur : le message « à côté » va au répondeur du mode (agent IA, scénario, équipe),
+    // par la remise et ses gardes (lot 5, RC6). Le dernier message nommé : son parcours naît en l'ayant reçu.
     confierAuRepondeur: (tenant, waId, messageId) => fil.remettreSiPersonneNeSuit(tenant, waId, '', { rouverte: false, messageDeclencheur: messageId }),
     // Contexte d'évaluation des conditions et des valeurs dynamiques. Contact introuvable -> null -> le
     // moteur prend la branche 'false'.

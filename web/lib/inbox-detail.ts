@@ -8,17 +8,17 @@
 export type TypeEvenement =
   | 'assignee' | 'desassignee' | 'prise_mba' | 'rendue_mba' | 'passee_par_mba'
   | 'traitee' | 'non_traitee' | 'archivee' | 'desarchivee' | 'signalee' | 'designalee' | 'rouverte'
-  | 'escaladee' | 'rendue_scenario' | 'sortie_agent' | 'urgente' | 'urgence_levee';
+  | 'escaladee' | 'rendue_scenario' | 'sortie_agent' | 'urgente' | 'urgence_levee' | 'mba_indisponible';
 
 /**
  * ⚠️ Un type que l'API écrit doit être ICI avant qu'elle ne l'écrive (ceux de 0194, `sortie_agent` de 0209, puis
- * `urgente` et `urgence_levee` de 0216) : un type inconnu de l'écran est écarté par `lireDetail`, et la frise perdrait
+ * `urgente` et `urgence_levee` de 0216, `mba_indisponible` de 0217) : un type inconnu de l'écran est écarté par `lireDetail`, et la frise perdrait
  * la ligne sans rien dire.
  */
 export const TYPES_EVENEMENT: readonly TypeEvenement[] = [
   'assignee', 'desassignee', 'prise_mba', 'rendue_mba', 'passee_par_mba',
   'traitee', 'non_traitee', 'archivee', 'desarchivee', 'signalee', 'designalee', 'rouverte',
-  'escaladee', 'rendue_scenario', 'sortie_agent', 'urgente', 'urgence_levee',
+  'escaladee', 'rendue_scenario', 'sortie_agent', 'urgente', 'urgence_levee', 'mba_indisponible',
 ];
 
 /** Un collaborateur, un collaborateur supprimé depuis, ou personne (un changement automatique porte sa cause). */
@@ -172,6 +172,10 @@ export function libelleEvenement(e: EvenementConversation, t: T): string {
       return t('Marquée urgente', 'Marked as urgent');
     case 'urgence_levee':
       return t('Urgence levée', 'No longer urgent');
+    // RC6 : le bloc « Envoyer au MBA » a trouvé l'agent de Meta éteint ; la cause nomme le scénario, la bascule vers
+    // l'équipe suit sur sa propre ligne.
+    case 'mba_indisponible':
+      return t('Agent de Meta éteint : la conversation va à l’équipe', 'Meta’s agent is off: the conversation goes to the team');
   }
 }
 

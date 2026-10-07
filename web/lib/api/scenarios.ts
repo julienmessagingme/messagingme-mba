@@ -135,7 +135,7 @@ export function refreshFlows(tenantId: string): Promise<FlowRefreshReport> {
 /** Résultat d'un essai de « Fonction JS » : ce que le bac à sable a produit, ou la faute du client. */
 export interface EssaiJs { ok: boolean; valeur: string; erreur?: string }
 
-export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'question' | 'tag' | 'field' | 'condition' | 'action' | 'wait' | 'mba_handoff' | 'mba_disable' | 'rcs_message' | 'email' | 'agent' | 'http' | 'js' | 'aller_a';
+export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'question' | 'tag' | 'field' | 'condition' | 'action' | 'wait' | 'mba_handoff' | 'mba_disable' | 'rcs_message' | 'email' | 'agent' | 'http' | 'js' | 'aller_a' | 'vers_mba';
 export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType;

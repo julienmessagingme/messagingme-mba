@@ -23,7 +23,10 @@ import { ouvrirPaiement, type DepsPaiement } from '../stripe/paiement';
 import { OFFRES_RECHARGE, definitionOffre } from '../stripe/offres';
 import { LIGNES_HISTORIQUE } from '../http/agents';
 import { estUuid } from '../http/scope';
-import { choisirRepondeur, type DepsReglageRepondeur } from '../repondeur/reglage';
+import { choisirRepondeur, choixDeLAncienneForme, type ChoixRepondeur, type DepsReglageRepondeur } from '../repondeur/reglage';
+import {
+  DELAI_SCENARIO_HEURES_DEFAUT, DELAI_SCENARIO_HEURES_MAX, DELAI_SCENARIO_HEURES_MIN, MODES_REPONDEUR, estModeRepondeur, modeEffectif,
+} from '../repondeur/mode';
 
 /**
  * LES OUTILS MCP DE L'AGENT IA ET DU CRÉDIT (lot 8a, `docs/superpowers/specs/2026-10-03-mcp-agent-ia-design.md`).
@@ -149,7 +152,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
     description:
       'Les agents IA de l’espace, brouillons, actifs et désactivés : identifiant (id), libellé, statut, le nombre '
       + 'de manques qui bloquent encore leur activation (get_agent en donne la liste), et repondeur = true sur celui '
-      + 'qui répond à tous les messages de l’espace (set_default_responder). ' + SANS_SCENARIO_MUET,
+      + 'qui répond au client quand l’espace a choisi un agent IA (set_default_responder, mode « agent »). ' + SANS_SCENARIO_MUET,
     scope: 'mcp:read',
     annotations: lecture('Lister les agents IA'),
     entree: { type: 'object', properties: {} },
@@ -161,7 +164,8 @@ export const OUTILS_AGENT: OutilMcp[] = [
       return {
         agents: agents.map((a, i) => ({
           id: a.id, label: a.label, status: a.status, nb_manques: manques[i]?.manques.length ?? null,
-          repondeur: a.id === reglages.repondeurAgentId,
+          // L'agent IA qui répond au client : le mode `agent` effectif et cet agent (RC6).
+          repondeur: modeEffectif(reglages) === 'agent' && a.id === reglages.repondeurAgentId,
         })),
       };
     },
@@ -368,33 +372,80 @@ export const OUTILS_AGENT: OutilMcp[] = [
   {
     nom: 'set_default_responder',
     description:
-      'Fait d’un agent IA ACTIF le répondeur de l’espace : il répond à tout message entrant que ni un scénario, ni un '
-      + 'mot-clé, ni un humain ne tient, sans scénario à construire. agent_id null : plus aucun agent IA ne répond par '
-      + 'défaut. Si l’agent de Meta est allumé, ce geste l’ÉTEINT pour tous les contacts de l’espace (une seule voix '
-      + 'répond, agent_de_meta_eteint le dit) : le dire à la personne et ne le faire que sur sa demande explicite. '
-      + 'Refusé pour un agent en brouillon ou désactivé (activate_agent d’abord). list_agents dit lequel est le répondeur.',
+      'Choisit QUI RÉPOND AU CLIENT dans l’espace : à un nouveau contact, et à tout message entrant que ni un scénario, '
+      + 'ni un mot-clé, ni un humain ne tient. mode « agent » (avec agent_id) : un agent IA ACTIF répond (refusé pour un '
+      + 'brouillon ou un agent désactivé : activate_agent d’abord). mode « scenario » (avec workflow_id) : un scénario '
+      + 'PUBLIÉ de l’espace démarre (list_scenarios, publie = true), au plus une fois toutes les delai_heures pour un '
+      + `même contact (${DELAI_SCENARIO_HEURES_DEFAUT} par défaut, de ${DELAI_SCENARIO_HEURES_MIN} à ${DELAI_SCENARIO_HEURES_MAX}) ; entre-temps, `
+      + 'l’équipe. mode « mba » : l’agent de Meta, ALLUMÉ par ce geste s’il ne l’est pas (refusé s’il n’est pas '
+      + 'configuré : un numéro relié et l’agent ouvert par Meta). mode « equipe » : personne ne répond automatiquement, '
+      + 'la conversation entre dans « À traiter ». Hors du mode « mba », l’agent de Meta allumé reste disponible mais '
+      + 'ne reçoit rien tout seul (seul le bloc « Envoyer au MBA » d’un scénario lui confie un contact). 🔴 Quitter le '
+      + 'mode « mba » retire de la liste de l’agent de Meta tous les contacts qu’il tient (liste_meta le compte) : il '
+      + 'cesse de leur répondre. Le dire à la personne et ne le faire que sur sa demande explicite. Ancienne forme '
+      + 'acceptée : { agent_id } seul (un identifiant = mode « agent » ; null = « mba » si l’agent de Meta est allumé, '
+      + 'sinon « equipe »). Réponse : mode, agent_id, workflow_id, delai_heures, agent_de_meta_allume (ce geste l’a '
+      + 'allumé), liste_meta ({ retires, refuses }), et repondeur_agent_id (l’agent IA répondeur, ou null). list_agents '
+      + 'dit quel agent IA est le répondeur.',
     scope: 'mcp:write',
     exigePersonne: true,
-    // Destructrice et ouverte : elle peut éteindre l'agent de Meta chez Meta, pour tous les contacts.
-    annotations: ecriture('Choisir le répondeur de l’espace', true, true, true),
+    // Destructrice et ouverte : elle peut allumer l'agent de Meta chez Meta, ou le faire taire pour tous ses contacts.
+    annotations: ecriture('Choisir qui répond au client', true, true, true),
     entree: {
       type: 'object',
       properties: {
+        mode: {
+          type: 'string', enum: [...MODES_REPONDEUR],
+          description: 'Qui répond : « mba », « agent », « scenario » ou « equipe ». Absent : l’ancienne forme, agent_id seul.',
+        },
         agent_id: {
-          type: ['string', 'null'], format: 'uuid', maxLength: 100,
-          description: 'L’identifiant (id) d’un agent actif, rendu par list_agents ; null pour n’en désigner aucun.',
+          type: ['string', 'null'], format: 'uuid', minLength: 1, maxLength: 100,
+          description: 'Avec le mode « agent » :l’identifiant (id) d’un agent actif, rendu par list_agents. Sans mode : '
+            + 'l’ancienne forme (null = aucun agent IA).',
+        },
+        workflow_id: {
+          type: 'string', format: 'uuid', minLength: 1, maxLength: 100,
+          description: 'Avec le mode « scenario » : l’identifiant d’un scénario publié de l’espace (list_scenarios).',
+        },
+        delai_heures: {
+          type: 'integer', minimum: DELAI_SCENARIO_HEURES_MIN, maximum: DELAI_SCENARIO_HEURES_MAX,
+          description: 'Avec le mode « scenario » : le scénario repart au plus une fois par ce délai pour un même contact. '
+            + 'Absent : le délai déjà réglé.',
         },
       },
-      required: ['agent_id'],
     },
     async executer(deps, tenantId, args, personne) {
-      const brut = args.agent_id;
-      if (brut !== null && (typeof brut !== 'string' || brut.trim() === '' || brut.length > 100)) {
-        throw new RefusOutil('paramètre « agent_id » requis : l’identifiant d’un agent actif, ou null');
-      }
       const auteur = { userId: signataire(personne), origine: 'mcp' as const };
-      const r = valeurOuRefus(await choisirRepondeur(deps.agentIa.repondeur, tenantId, brut === null ? null : brut.trim(), auteur));
-      return { repondeur_agent_id: r.repondeurAgentId, agent_de_meta_eteint: r.agentDeMetaEteint, liste_meta: r.liste };
+      const reglage = deps.agentIa.repondeur;
+      let choix: ChoixRepondeur;
+      if (args.mode === undefined) {
+        // L'ancienne forme (lot 5) : `agent_id` seul, requis.
+        const brut = args.agent_id;
+        if (brut !== null && (typeof brut !== 'string' || brut.trim() === '' || brut.length > 100)) {
+          throw new RefusOutil('paramètre « mode » requis (« mba », « agent », « scenario » ou « equipe »), ou l’ancienne forme : « agent_id » (un agent actif, ou null)');
+        }
+        choix = choixDeLAncienneForme(brut === null ? null : brut.trim(), (await reglage.reglages.get(tenantId)).mbaEnabled);
+      } else if (!estModeRepondeur(args.mode)) {
+        throw new RefusOutil('paramètre « mode » invalide : « mba », « agent », « scenario » ou « equipe »');
+      } else if (args.mode === 'agent') {
+        choix = { mode: 'agent', agentId: texteObligatoire(args, 'agent_id', 100) };
+      } else if (args.mode === 'scenario') {
+        const workflowId = texteObligatoire(args, 'workflow_id', 100);
+        // Hors bornes : ramené dedans, comme tout entier d'outil (`entierBorne`, schéma annoncé ci-dessus).
+        const heures = args.delai_heures === undefined || args.delai_heures === null
+          ? undefined
+          // En chiffres : le test des bornes annoncées lit cet appel dans la source (`tests/mcp-serveur.test.ts`) et les
+          // compare au schéma, qui les tient de `src/repondeur/mode.ts` ; une constante qui bouge le fait échouer.
+          : entierBorne(args, 'delai_heures', 24, 1, 720);
+        choix = { mode: 'scenario', workflowId, ...(heures !== undefined ? { delaiS: heures * 3600 } : {}) };
+      } else {
+        choix = { mode: args.mode };
+      }
+      const r = valeurOuRefus(await choisirRepondeur(reglage, tenantId, choix, auteur));
+      return {
+        mode: r.mode, agent_id: r.agentId, workflow_id: r.workflowId, delai_heures: r.delaiS / 3600,
+        agent_de_meta_allume: r.agentDeMetaAllume, liste_meta: r.liste, repondeur_agent_id: r.agentId,
+      };
     },
   },
   {

@@ -111,15 +111,24 @@ export const essaiAgentInerte: Pick<AgentTestRouteDeps, 'essais' | 'credits' | '
 };
 
 /**
- * Le répondeur de l'espace (lot 5), pour les montages qui n'en parlent pas : aucun répondeur désigné, agent de Meta
- * éteint (la lecture de `GET /agents`), et toute ÉCRITURE lève. Ses portes ont leurs propres cas,
- * `tests/repondeur-reglage.test.ts`.
+ * Le répondeur de l'espace (lot 5, RC6), pour les montages qui n'en parlent pas : mode « Équipe », aucun agent ni
+ * scénario, agent de Meta éteint (la lecture de `GET /agents`), et toute ÉCRITURE lève. Ses portes ont leurs propres
+ * cas, `tests/repondeur-reglage.test.ts`.
  */
 export const repondeurInerte: DepsReglageRepondeur = {
   agents: { complet: async () => null },
-  reglages: { get: async () => ({ mbaEnabled: false, repondeurAgentId: null }), setRepondeur: neDevraitPasEtreAppelee('setRepondeur') },
+  scenarios: { getById: async () => null, listResume: async () => [] },
+  reglages: {
+    get: async () => ({ mbaEnabled: false, repondeurMode: 'equipe', repondeurAgentId: null, repondeurWorkflowId: null, repondeurDelaiScenarioS: 86400 }),
+    setRepondeur: neDevraitPasEtreAppelee('setRepondeur'),
+  },
   gatewayDisponible: false,
-  eteindreAgentDeMeta: neDevraitPasEtreAppelee('eteindreAgentDeMeta'),
+  activation: {
+    numeroDuTenant: async () => null,
+    eligible: neDevraitPasEtreAppelee('eligible'),
+    ecrireChezMeta: neDevraitPasEtreAppelee('ecrireChezMeta'),
+    ecrireDrapeau: neDevraitPasEtreAppelee('ecrireDrapeau'),
+  },
   liste: { toutRetirer: neDevraitPasEtreAppelee('toutRetirer') },
   historique: { ecrire: neDevraitPasEtreAppelee('historique.ecrire') },
   fils: { reprendreLesFilsDeMeta: neDevraitPasEtreAppelee('reprendreLesFilsDeMeta') },

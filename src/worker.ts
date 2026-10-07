@@ -75,7 +75,7 @@ import { creerResolveurMba } from './agent/resolvers/mba';
 import { creerGestesEnvoiAgent } from './agent/gestes-envoi';
 import { creerEscaladeVersHumain } from './agent/escalade';
 import { automatique } from './inbox/evenements';
-import { unRepondeurRepond } from './inbox/fil';
+import { modeEffectif, standbyPourNous } from './repondeur/mode';
 import { PgConversationAnalysisStore } from './analysis/store.pg';
 import { analyzeConversationJob } from './analysis/job';
 import { analyseDeLaConversation } from './analysis/fiche';
@@ -470,9 +470,9 @@ async function main(): Promise<void> {
        * tout le reste (`src/webhooks/standby-hors-liste.ts`). La liste, et les réglages de l'espace sans cache.
        */
       listeALArrivee: {
-        // Un répondeur, l'agent de Meta ou l'agent IA qui l'a remplacé : après la désignation, un contact que Meta
-        // croit encore tenir arrive en `standby`, et c'est le répondeur IA qui lui doit la réponse (lot 5).
-        agentAllume: async (t) => unRepondeurRepond(await settingsStore.get(t)),
+        // Le mode de l'espace dit si un `standby` d'un contact hors liste est pour nous (RC6, `standbyPourNous`) : dans
+        // les quatre modes, oui, et c'est la remise qui le donne ensuite au répondeur du mode.
+        standbyPourNous: async (t) => standbyPourNous(modeEffectif(await settingsStore.get(t))),
         presents: (t, waIds) => listeDeLAgent.presents(t, waIds),
       },
       // Bascules de contrôle et messages de l'agent de Meta.
@@ -1100,7 +1100,7 @@ async function main(): Promise<void> {
       // Défauts du serveur, appliqués aux clients qui n'ont rien réglé.
       timeouts: { app_human: config.CONTROL_HUMAN_TIMEOUT_MS, mba: config.CONTROL_MBA_TIMEOUT_MS, app_workflow: config.CONTROL_WORKFLOW_TIMEOUT_MS },
       // Le réglage par client du gel humain (combien de temps on laisse un opérateur travailler tranquille), et
-      // la destination : l'agent de Meta chez les clients qui l'ont allumé, le scénario chez les autres.
+      // la destination : l'agent de Meta chez les clients dont il est le répondeur (mode `mba`), le scénario ailleurs.
       reglages: settingsStore,
       // Le geste qui rend le fil : Meta d'abord, et un refus, une absence de numéro ou un fil de test n'écrivent
       // rien (la conversation reste visible dans « À traiter », et le balayage repasse).

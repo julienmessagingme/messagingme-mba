@@ -42,7 +42,7 @@ describe('migration 0216', () => {
     expect(lire('../src/inbox/store.pg.ts')).toContain("'c.urgente_le is not null'");
   });
 
-  it('🔴 le CHECK des types est EXACTEMENT la liste du code, sous le nom que 0192 a posé', () => {
+  it('🔴 le CHECK des types est la liste du code moins ce que 0217 a ajouté, sous le nom que 0192 a posé', () => {
     // Un type que le code écrit et que la base refuse fait échouer l'écriture qui le porte, en 23514 : ici « Traité »
     // et l'archivage eux-mêmes, qui lèvent l'urgence dans leur propre requête.
     const i = instructions.indexOf('alter table conversation_evenements drop constraint if exists conversation_evenements_type_check');
@@ -50,7 +50,7 @@ describe('migration 0216', () => {
     const pose = instructions[i + 1] ?? '';
     expect(pose).toMatch(/^alter table conversation_evenements add constraint conversation_evenements_type_check check \(type in \(/);
     const types = [...pose.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
-    expect(types).toEqual([...TYPES_EVENEMENT]);
+    expect(types).toEqual(TYPES_EVENEMENT.filter((t) => t !== 'mba_indisponible'));
     // Et 0209 en reste le préfixe : rien n'a été retiré.
     expect(types.slice(-2)).toEqual(['urgente', 'urgence_levee']);
   });

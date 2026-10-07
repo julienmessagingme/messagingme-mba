@@ -68,6 +68,7 @@ import { PgListeStore } from './mba/liste.pg';
 import { PgVerrousCourts } from './db/verrous-courts.pg';
 import { PgCompteurDebit } from './db/debit.pg';
 import { creerDemarreurRepondeur, type DemarreurRepondeur } from './repondeur/demarrer';
+import { creerDemarreurScenario, type DemarreurScenario } from './repondeur/scenario';
 import { PgAlertesCreditStore, creerAlerteCreditEpuise } from './repondeur/alerte-credit';
 import { ResendClient } from './support/resend';
 
@@ -349,6 +350,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
    * message, et `tests/socle.test.ts` vérifie que le socle la branche.
    */
   let demarreurRepondeur: DemarreurRepondeur | null = null;
+  let demarreurScenario: DemarreurScenario | null = null;
 
   /**
    * Le contrôle du fil (`src/inbox/fil.ts`) : le seul endroit qui confie une conversation à l'agent de Meta ou la
@@ -373,6 +375,15 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
       demarrer: (t, waId, o) => {
         if (!demarreurRepondeur) throw new Error('répondeur : le démarreur n’est pas branché (src/socle.ts)');
         return demarreurRepondeur.demarrer(t, waId, o);
+      },
+      // Le scénario répondeur (RC6), même liaison tardive : il lance par les lancements de l'exécuteur.
+      reclamerScenario: (t, waId, o) => {
+        if (!demarreurScenario) throw new Error('répondeur : le démarreur du scénario n’est pas branché (src/socle.ts)');
+        return demarreurScenario.reclamerScenario(t, waId, o);
+      },
+      lancerScenario: (t, waId, o) => {
+        if (!demarreurScenario) throw new Error('répondeur : le démarreur du scénario n’est pas branché (src/socle.ts)');
+        return demarreurScenario.lancerScenario(t, waId, o);
       },
     },
   });
@@ -399,6 +410,11 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     lancements: workflowRuntime.lancements,
     gatewayDisponible: config.AI_GATEWAY_API_KEY !== '',
     alerteCredit,
+  });
+  demarreurScenario = creerDemarreurScenario({
+    scenarios: workflowStore,
+    contacts: contactStore,
+    lancements: workflowRuntime.lancements,
   });
 
   /**

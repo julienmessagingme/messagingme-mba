@@ -73,6 +73,9 @@ const ATTENDU: Record<TypeDeLancement, { reprise: Reprise; publie: boolean; grap
   // clic sur une publicité : jamais à un opérateur ; le graphe vient de l'appelant et SE FIGE (la ligne de scénario
   // n'est qu'une ancre) ; la fenêtre est prouvée par l'entrant.
   repondeur: { reprise: 'reprend_sauf_operateur', publie: true, graphe: 'fourni_fige', fenetre: 'selon_preuve' },
+  // RC6 : le scénario répondeur (mode « Scénario »). La politique de l'agent répondeur, sur le graphe PUBLIÉ du scénario
+  // choisi : un contact réel ne joue jamais un brouillon, et la ligne de scénario est la vraie, rien à figer.
+  repondeur_scenario: { reprise: 'reprend_sauf_operateur', publie: true, graphe: 'publie', fenetre: 'selon_preuve' },
   // RC5 : le saut d'un « Aller à » vers un autre scénario. Le plan fixe reprise, graphe et fenêtre ; la seconde ligne
   // existe pour la seule publication des étiquettes : un saut franchi pendant le démarrage d'une campagne ne publie pas.
   aller_a: { reprise: 'reprend', publie: true, graphe: 'publie', fenetre: 'selon_preuve' },
@@ -113,6 +116,8 @@ function demandeDe(type: Exclude<TypeDeLancement, TypeDuSaut>, v: Variante): Dem
     case 'repondeur':
       // Toujours démarré par un message entrant : la preuve de fenêtre n'est pas un choix de l'appelant.
       return { ...base, type, waId: WA, graphe: FOURNI[v.workflowId] ?? session, fenetreOuverte: true, messageDeclencheur: null };
+    case 'repondeur_scenario':
+      return { ...base, type, waId: WA, fenetreOuverte: true, messageDeclencheur: null };
   }
 }
 
@@ -347,6 +352,7 @@ describe('la garde de fenêtre de 24 h', () => {
     campagne_scenario: [{ workflowId: 'wf-session' }],
     campagne_bloc: [{ workflowId: 'wf-session', auBloc: true }],
     repondeur: [{ workflowId: 'wf-session', fenetreOuverte: true }],
+    repondeur_scenario: [{ workflowId: 'wf-session', fenetreOuverte: true }],
     // RC5 : la preuve voyage avec le saut, au bloc visé (le départ `saut`, distinct de `bloc`, qui n'en porte aucune).
     aller_a: [{ workflowId: 'wf-session', auSaut: true, fenetreOuverte: false }, { workflowId: 'wf-session', auSaut: true, fenetreOuverte: true }],
     aller_a_masse: [{ workflowId: 'wf-session', auSaut: true, fenetreOuverte: false }, { workflowId: 'wf-session', auSaut: true, fenetreOuverte: true }],

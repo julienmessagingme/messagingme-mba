@@ -30,7 +30,7 @@ export const aucuneArriveePub: ArriveesPubDeps = { enregistrer: async () => 'ecr
  * (`bancDuFil(...).liste`, `tests/banc-du-fil.ts`).
  */
 export const agentEteintALArrivee: ListeALArrivee = {
-  agentAllume: async () => false,
+  standbyPourNous: async () => false,
   presents: () => { throw new Error('agentEteintALArrivee : la liste ne se lit pas quand l’agent est éteint'); },
 };
 

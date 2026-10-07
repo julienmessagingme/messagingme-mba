@@ -5,6 +5,9 @@ import type { ListeDeLAgent } from '../mba/liste';
 import { delaiHumainMs, repriseDue } from './delai-reprise';
 import { destinataireAgentEvent, evenementMessageSansSuite, traceReponse, type EvenementAgent } from '../mba/evenement';
 import type { DemarreurRepondeur } from '../repondeur/demarrer';
+import type { DemarreurScenario } from '../repondeur/scenario';
+import { leMbaRepond, modeEffectif, type ReglageDuRepondeur } from '../repondeur/mode';
+import { journaliser } from '../lib/journal';
 
 /**
  * Le contrôle du fil : qui répond au client, l'agent de Meta (`mba`), un scénario ou un agent IA (`app_workflow`),
@@ -45,14 +48,19 @@ import type { DemarreurRepondeur } from '../repondeur/demarrer';
  *     nomme pour un geste de la console, une cause écrite ici (`CAUSES`) pour tout le reste. Le dépôt en fait,
  *     dans la même requête, l'événement que raconte le panneau Détail de l'Inbox (migration 0192).
  *
- * LE RÉPONDEUR IA (lot 5, `src/repondeur/`). Un espace peut désigner un agent IA à la place de l'agent de Meta (jamais
- * les deux : CHECK de 0209). Le seul geste qui change est la remise « personne ne suit » : avec les mêmes gardes,
- * dans le même ordre, elle démarre l'agent IA (`DepsControleDuFil.repondeur`) au lieu de confier à Meta. Tous les
- * autres gestes lisent `mbaEnabled`, faux par construction : « Rendre la main », la fin de parcours et le balayage
- * laissent le fil à `app_workflow`, et c'est le prochain message du client qui relance l'agent, exactement comme
- * l'agent de Meta répond au prochain message. Une exception, le pendant de la transmission à l'agent de Meta : le
- * message « à côté » d'un parcours qui finit, que l'exécuteur confie au répondeur par cette même remise
- * (`WorkflowExecutorDeps.confierAuRepondeur`).
+ * QUI RÉPOND AU CLIENT (RC6, `src/repondeur/mode.ts`). Un réglage de l'espace, le MODE, décide qui reçoit un contact
+ * que personne ne tient : l'agent de Meta (`mba`), un agent IA (`agent`, lot 5), un scénario (`scenario`), ou l'équipe
+ * (`equipe`). La remise « personne ne suit » garde ses gardes, dans le même ordre, puis suit le mode
+ * (`remettreSiPersonneNeSuit`). 🔴 L'agent de Meta ALLUMÉ n'est répondeur qu'en mode `mba` (`leMbaRepond`) : en veille,
+ * ni la remise, ni « Rendre la main », ni la fin de parcours (l'exécuteur, `mbaActifPour`), ni le balayage
+ * (`src/inbox/control-sweep.ts`) ne lui confient rien, et seul le bloc « Envoyer au MBA » d'un scénario le fait
+ * (`envoyerAuMba`). Hors du mode `mba`, la fin de parcours et le balayage laissent le fil à `app_workflow`, et c'est
+ * le prochain message du client qui relance le répondeur du mode, exactement comme l'agent de Meta répond au prochain
+ * message. Une exception, le pendant de la transmission à l'agent de Meta : le message « à côté » d'un parcours qui
+ * finit, que l'exécuteur confie au répondeur par cette même remise (`WorkflowExecutorDeps.confierAuRepondeur`).
+ * ⚠️ `confier` ne lit que l'allumage (le bloc confie en veille) : la question « est-il le répondeur ? » appartient à
+ * chaque appelant, et la fin d'un geste de l'agent de Meta lui-même (`src/mba/gestes-envoi.ts`) lui rend toujours
+ * le fil.
  *
  * Deux courses sont assumées entre la lecture du détenteur et l'appel à Meta (balayage, client que personne ne
  * suit, lead publicitaire) : un « Reprendre la main » cliqué pendant l'appel, que répare un second clic ; et, sur un
@@ -139,12 +147,20 @@ export interface DepsControleDuFil {
     relancerLeDelai(tenantId: string, waId: string): Promise<void>;
     /** Les contacts dont notre colonne dit le fil tenu par l'agent de Meta, par `wa_id` croissant, après `apres`. */
     filsDeLAgentDeMeta(tenantId: string, apres: string | null, limite: number): Promise<string[]>;
+    /**
+     * Note dans la frise que le bloc « Envoyer au MBA » a trouvé l'agent de Meta éteint (`mba_indisponible`, 0217).
+     * `cause` : le scénario, tel que la frise le dit. Aucune conversation : rien.
+     */
+    noterMbaIndisponible(tenantId: string, waId: string, cause: string): Promise<void>;
   };
   /**
-   * Les réglages de l'espace : l'agent de Meta allumé, l'agent IA répondeur (`null` = aucun), et le délai de reprise
-   * de l'équipe (secondes ; `null` = le défaut du serveur, 0 = jamais).
+   * Les réglages de l'espace : qui répond au client (le mode, sa cible, l'agent de Meta allumé, `src/repondeur/mode.ts`),
+   * le délai du mode Scénario (secondes), et le délai de reprise de l'équipe (secondes ; `null` = le défaut du serveur,
+   * 0 = jamais).
    */
-  reglages: { get(tenantId: string): Promise<{ mbaEnabled: boolean; repondeurAgentId: string | null; controlHandbackSeconds: number | null }> };
+  reglages: {
+    get(tenantId: string): Promise<ReglageDuRepondeur & { repondeurDelaiScenarioS: number; controlHandbackSeconds: number | null }>;
+  };
   /**
    * Le délai de reprise de l'équipe quand l'espace n'en a pas réglé (`CONTROL_HUMAN_TIMEOUT_MS`), le même que celui
    * du balayage. Requis : sans lui, la remise « personne ne suit » et le balayage ne compteraient pas le même délai.
@@ -182,12 +198,12 @@ export interface DepsControleDuFil {
     }>;
   };
   /**
-   * Le démarreur de l'agent IA répondeur (`src/repondeur/demarrer.ts`). 🔴 REQUIS : optionnel, un câblage qui
-   * l'oublierait compilerait, et chaque message d'un espace à répondeur IA resterait sans réponse, hors d'« À
-   * traiter ». Le fil est construit AVANT l'exécuteur dont le démarreur dépend : le socle le branche par une liaison
-   * tardive qui lève si on l'appelle avant (`src/socle.ts`).
+   * Les démarreurs du répondeur : l'agent IA (`src/repondeur/demarrer.ts`) et le scénario (`src/repondeur/scenario.ts`,
+   * RC6). 🔴 REQUIS : optionnels, un câblage qui les oublierait compilerait, et chaque message d'un espace à répondeur
+   * resterait sans réponse, hors d'« À traiter ». Le fil est construit AVANT l'exécuteur dont les démarreurs dépendent :
+   * le socle les branche par une liaison tardive qui lève si on l'appelle avant (`src/socle.ts`).
    */
-  repondeur: Pick<DemarreurRepondeur, 'demarrer'>;
+  repondeur: Pick<DemarreurRepondeur, 'demarrer'> & DemarreurScenario;
 }
 
 /**
@@ -206,19 +222,15 @@ export interface EntreeDuContact {
   reactionsSeules?: boolean;
 }
 
-/**
- * Un répondeur répond-il aux messages que personne ne tient dans cet espace : l'agent de Meta allumé, ou un agent IA
- * désigné (jamais les deux, CHECK de 0209) ? La question de la remise « personne ne suit » (ici) et de la
- * requalification d'un `standby` (`src/webhooks/standby-hors-liste.ts`, câblée dans `src/worker.ts`) : sans répondeur,
- * un `standby` veut dire qu'une autre application tient le fil ; avec un agent IA désigné, c'est un contact que Meta
- * croit encore confié à son agent, éteint depuis, et c'est l'agent IA qui lui doit la réponse.
- */
-export function unRepondeurRepond(r: { mbaEnabled: boolean; repondeurAgentId: string | null }): boolean {
-  return r.mbaEnabled || r.repondeurAgentId !== null;
-}
-
 /** Ce que « Rendre la main » a fait : le nouveau détenteur, ou rien faute de numéro (règle 3). */
 export type IssueRendreLaMain = 'app_workflow' | 'mba' | 'aucun_numero';
+
+/**
+ * Ce que le bloc « Envoyer au MBA » a fait. `confie` : l'agent de Meta tient le contact et a été prévenu ;
+ * `mba_eteint` : la frise le dit et l'équipe le tient ; `non_confie` : contact muet, fil de test, aucun numéro, ou
+ * Meta a refusé l'ajout, et l'équipe le tient.
+ */
+export type IssueEnvoiAuMba = 'confie' | 'mba_eteint' | 'non_confie';
 
 /**
  * Ce qu'une reprise pour un scénario a donné. `false` = Meta a refusé de céder le fil ; `'operateur'` = un
@@ -241,8 +253,9 @@ export interface ControleDuFil {
   reprendreLaMain(tenantId: string, waId: string, par: AuteurDuChangement): Promise<'pris' | 'refuse'>;
   /**
    * « Rendre la main » / « Passer à l'agent Meta ». Sur un fil que notre colonne donne déjà à l'agent, on ne rouvre
-   * que notre côté (`release` sans tenir le fil est hors contrat) ; agent éteint : `app_workflow` ; sinon on confie
-   * (liste, puis `release`) et on écrit `mba`. Aucun événement : l'agent parle au prochain message du client. Lève si
+   * que notre côté (`release` sans tenir le fil est hors contrat) ; l'agent de Meta n'est pas le répondeur (éteint, ou
+   * en veille hors du mode `mba`) : `app_workflow`, et le prochain message relance le répondeur du mode ; sinon on
+   * confie (liste, puis `release`) et on écrit `mba`. Aucun événement : l'agent parle au prochain message du client. Lève si
    * Meta refuse l'ajout à la liste (un `release` refusé n'en est pas un, `confier`). Efface l'escalade. Seul geste
    * qui confie un fil de test.
    */
@@ -257,12 +270,20 @@ export interface ControleDuFil {
   /** L'accusé d'un de nos envois est arrivé : si un fil l'attendait, il est rendu à l'agent maintenant. */
   remettreSurAccuse(messageId: string): Promise<void>;
   /**
-   * Le client écrit et personne ne suit. Avec un agent IA répondeur (lot 5), mêmes gardes dans le même ordre, puis
-   * l'agent IA démarre (`DepsControleDuFil.repondeur`) ; s'il ne le peut pas (crédit épuisé, modèle absent, agent
-   * inactif, lancement refusé), la conversation passe à l'équipe avec une demande. `entree.messageDeclencheur` : le
-   * dernier message du contact, que le parcours naît en ayant reçu ; `entree.redelivre` : tous ses messages étaient
-   * déjà connus (redélivrance de Meta), rien ne démarre ; `entree.reactionsSeules` : rien que des réactions, rien ne
-   * démarre non plus. Le reste de ce commentaire est le chemin de l'agent de Meta.
+   * Le client écrit et personne ne suit : le MODE de l'espace décide (RC6, `src/repondeur/mode.ts`), après les mêmes
+   * gardes, dans le même ordre, pour tous (fil de l'équipe dans son délai, parcours en attente, numéro bloqué).
+   *  - `equipe` : le fil passe à l'équipe (`app_human`, pot commun) avec une demande et la marque d'escalade, pour qu'il
+   *    entre dans « À traiter » et que le balayage ne l'en sorte pas avant qu'on lui ait répondu. Un fil que l'équipe
+   *    tient lui reste, délai écoulé ou non : il n'y a aucun robot à qui le rendre.
+   *  - `agent` (lot 5) : l'agent IA démarre (`DepsControleDuFil.repondeur`) ; s'il ne le peut pas (crédit épuisé, modèle
+   *    absent, agent inactif, lancement refusé), la conversation passe à l'équipe avec une demande.
+   *  - `scenario` : le scénario démarre, au plus une fois par délai pour ce contact (la réclamation est atomique : deux
+   *    entrants simultanés, un seul départ) ; entre-temps, à l'équipe comme en `equipe` ; s'il ne peut pas partir, à
+   *    l'équipe comme l'agent IA.
+   *  - `mba` : le reste de ce commentaire.
+   * `entree.messageDeclencheur` : le dernier message du contact, que le parcours naît en ayant reçu ;
+   * `entree.redelivre` : tous ses messages étaient déjà connus (redélivrance de Meta), rien ne démarre ;
+   * `entree.reactionsSeules` : rien que des réactions, rien ne démarre non plus.
    *
    * La conversation est confiée à l'agent, qui y répond tout de suite
    * (événement `message_sans_suite`, avec `contenu`, le texte du ou des messages reçus). Gardes : agent allumé,
@@ -326,7 +347,16 @@ export interface ControleDuFil {
   /** Un scénario ou un agent IA peut-il écrire dans ce fil ? Seulement s'il est `app_workflow`. */
   peutAgir(tenantId: string, waId: string): Promise<boolean>;
   /**
-   * L'agent de Meta vient d'être remplacé par le répondeur IA (`src/repondeur/reglage.ts`) : chaque fil que notre
+   * Le bloc « Envoyer au MBA » d'un scénario (RC6, type `vers_mba`), dans TOUS les modes : le seul chemin qui confie un
+   * contact à l'agent de Meta en veille. Allumé : il confie (liste, `release`), écrit `mba`, puis le prévient avec
+   * `contenu`, le dernier message du contact, pour qu'il y réponde tout de suite. Éteint : la frise le dit
+   * (`mba_indisponible`) et le fil passe à l'équipe avec une demande. Contact muet, fil de test, aucun numéro, ou un
+   * ajout que Meta refuse : à l'équipe aussi. `cause` : le scénario, tel que la frise le dit. Ne lève que si la base
+   * lève (un refus de Meta est rattrapé ici) : l'exécuteur, dont le parcours a déjà fini, l'isole.
+   */
+  envoyerAuMba(tenantId: string, waId: string, o: { contenu: string; cause: string }): Promise<IssueEnvoiAuMba>;
+  /**
+   * L'agent de Meta vient de cesser d'être le répondeur (`src/repondeur/reglage.ts`) : chaque fil que notre
    * colonne lui donnait revient aux robots (`app_workflow`), un événement `prise_mba` chacun. Laissé `mba`, le fil
    * n'est plus tenu par personne : un parcours qui attend ce contact gèle (« le fil ne nous appartient pas ») et
    * la remise refuse de lui donner l'agent IA, donc le client n'a plus aucune réponse (essai réel du 2026-10-05).
@@ -353,7 +383,9 @@ const CAUSES = {
   inactivite: parCause('délai de reprise écoulé'),
   creditEpuise: parCause('crédit IA épuisé, le répondeur automatique ne peut pas répondre'),
   repondeurIndisponible: parCause('le répondeur automatique ne peut pas répondre'),
-  agentDeMetaRemplace: parCause('l’agent de Meta est éteint, le répondeur automatique prend la suite'),
+  agentDeMetaRemplace: parCause('l’agent de Meta n’est plus le répondeur de l’espace'),
+  equipe: parCause('le contact écrit, l’équipe répond'),
+  scenarioDejaParti: parCause('le scénario répondeur est déjà parti pour ce contact, l’équipe prend la suite'),
 } satisfies Record<string, AuteurDuChangement>;
 const CAUSE_PASSATION = automatique('agent de Meta');
 /** La taille d'un paquet de `reprendreLesFilsDeMeta` : une lecture par paquet, une écriture gardée par fil. */
@@ -466,7 +498,8 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
         await depot.setControlOwner(tenantId, waId, 'app_workflow', { par, effacerEscalade: true, rendAgentDeMeta: true });
         return 'app_workflow';
       }
-      if (!(await mbaAllume(tenantId))) {
+      // Éteint, ou allumé en veille (RC6) : le fil revient aux robots, et le prochain message relance le répondeur du mode.
+      if (!leMbaRepond(await deps.reglages.get(tenantId))) {
         await depot.setControlOwner(tenantId, waId, 'app_workflow', { par, effacerEscalade: true });
         return 'app_workflow';
       }
@@ -494,10 +527,7 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
 
     async remettreSiPersonneNeSuit(tenantId, waId, contenu, entree) {
       const reglages = await deps.reglages.get(tenantId);
-      const repondeurIa = reglages.repondeurAgentId;
-      const unRobotRepond = unRepondeurRepond(reglages);
-      // Sans répondeur, seule une réouverture reste à décider : un espace sans répondeur garde une lecture par message.
-      if (!unRobotRepond && !entree.rouverte) return;
+      const mode = modeEffectif(reglages);
       const fil = await depot.etatDuFil(tenantId, waId);
       const tenuParLEquipe = fil.owner === 'app_human';
       /**
@@ -508,52 +538,114 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
       const laisserALEquipe = async (): Promise<void> => {
         if (tenuParLEquipe && entree.rouverte) await depot.ouvrirUneDemande(tenantId, waId, CAUSE_REOUVERTURE);
       };
-      if (!unRobotRepond) return laisserALEquipe();
-      // Un fil de l'équipe ne lui est repris qu'une fois son délai écoulé : la règle même du balayage.
+      // Un fil de l'équipe ne lui est repris qu'une fois son délai écoulé : la règle même du balayage. En mode `equipe`,
+      // jamais : il n'y a aucun robot à qui le rendre.
       const delai = delaiHumainMs(reglages.controlHandbackSeconds, deps.delaiRepriseParDefautMs);
-      if (tenuParLEquipe && !repriseDue(fil, delai)) return laisserALEquipe();
+      if (tenuParLEquipe && (mode === 'equipe' || !repriseDue(fil, delai))) return laisserALEquipe();
       // Donner à l'agent un fil qu'un parcours attend serait bien pire que le silence qu'on répare.
       if (await deps.parcours.findWaitingByWaId(tenantId, waId)) return laisserALEquipe();
       // 🔴 Le numéro bloqué (lot 4 : suspendu faute de paiement) : ni le répondeur, qui ne pourrait pas répondre et dont
       // le tour serait payé, ni l'agent de Meta, qui répondrait par Meta sur un numéro impayé. Comme sans numéro : rien
       // n'est écrit, le message reste dans l'Inbox.
       if (await deps.numeros.numeroBloque(tenantId)) return laisserALEquipe();
-      if (repondeurIa !== null) {
-        // 🔴 Le répondeur IA, après les MÊMES gardes que l'agent de Meta : celles qui précèdent, puis celles de
-        // `confier` sur un chemin automatique, dans leur ordre.
-        // Redélivré par Meta : le premier passage a démarré l'agent, ou passé la main à l'équipe.
-        if (entree.redelivre === true) return;
+      /**
+       * Un client que personne ne prendra attend l'équipe : `app_human` et une demande, comme un client que l'agent de
+       * Meta n'a pas pu prendre. `only` exclut `app_human` : un opérateur qui a pris le fil entre-temps le garde, sans
+       * seconde demande. `escalade` : la marque collante, quand c'est le MODE qui donne le fil à l'équipe (`equipe`, ou
+       * le scénario déjà parti) ; le balayage ne le rendra pas aux robots avant qu'on ait répondu au client.
+       */
+      const aLEquipe = (par: AuteurDuChangement, escalade = false): Promise<boolean> =>
+        depot.setControlOwner(tenantId, waId, 'app_human', { par, only: ['app_workflow', 'mba'], ouvreUneDemande: true, escalade });
+      const muet = async (): Promise<boolean> =>
+        (await deps.consentement.estDesabonne(tenantId, waId)) || (await deps.consentement.estBloque(tenantId, waId));
+      /**
+       * 🔴 Les gardes d'un robot de la console (agent IA, scénario), les MÊMES que vers l'agent de Meta : celles qui
+       * précèdent, puis celles de `confier` sur un chemin automatique, dans leur ordre. `false` : le robot ne part pas,
+       * et le fil reste où il est (une demande s'ouvre seulement sur une réouverture d'un fil de l'équipe).
+       */
+      const unRobotPeutPartir = async (): Promise<boolean> => {
+        // Redélivré par Meta : le premier passage a démarré le robot, ou passé la main à l'équipe.
+        if (entree.redelivre === true) return false;
         // Un pouce levé sur « votre rendez-vous est confirmé », ou son retrait, n'appelle pas de réponse : l'agent de
-        // Meta, prévenu d'un texte vide, se tait (`prevenir`). Le répondeur IA aussi, sans parcours ni tour facturé.
-        if (entree.reactionsSeules === true) return;
-        if (await depot.estConversationDeTest(tenantId, waId)) return laisserALEquipe();
-        // Un contact désabonné ou bloqué n'est jamais confié à une machine : l'agent lui parlerait.
-        if ((await deps.consentement.estDesabonne(tenantId, waId)) || (await deps.consentement.estBloque(tenantId, waId))) {
-          return laisserALEquipe();
+        // Meta, prévenu d'un texte vide, se tait (`prevenir`). Les robots de la console aussi, sans parcours ni tour.
+        if (entree.reactionsSeules === true) return false;
+        if (await depot.estConversationDeTest(tenantId, waId)) { await laisserALEquipe(); return false; }
+        // Un contact désabonné ou bloqué n'est jamais confié à une machine : elle lui parlerait.
+        if (await muet()) { await laisserALEquipe(); return false; }
+        if (!(await deps.numeros.getTenantPhoneNumberId(tenantId))) { await laisserALEquipe(); return false; }
+        return true;
+      };
+      /**
+       * Le délai de l'équipe est écoulé : le fil revient aux robots d'abord, sinon le lancement (`sauf_operateur`) le
+       * laisserait à l'équipe. Même garde que vers l'agent de Meta : pas si une escalade est venue entre-temps.
+       */
+      const reprendreALEquipe = async (): Promise<boolean> => !tenuParLEquipe || depot.setControlOwner(tenantId, waId, 'app_workflow', {
+        par: CAUSES.apresLeDelai, only: ['app_human'], saufEscalade: true, effacerEscalade: true,
+      });
+
+      // 🔴 Un `switch` sans `default` : un mode ajouté demain (« mon application répond ») ne compile pas sans sa branche.
+      switch (mode) {
+        case 'equipe': {
+          // Rien pour une redélivrance, une réaction, ou un contact muet : un « STOP » n'ouvre pas de demande.
+          if (entree.redelivre === true || entree.reactionsSeules === true || await muet()) return;
+          // Une conversation de test n'entre pas dans « À traiter » : les autres modes l'écartent aussi (relecture de RC6).
+          if (await depot.estConversationDeTest(tenantId, waId)) return;
+          await aLEquipe(CAUSES.equipe, true);
+          return;
         }
-        if (!(await deps.numeros.getTenantPhoneNumberId(tenantId))) return laisserALEquipe();
-        // Le délai de l'équipe est écoulé : le fil revient aux robots d'abord, sinon le lancement (`sauf_operateur`)
-        // le laisserait à l'équipe. Même garde que vers l'agent de Meta : pas si une escalade est venue entre-temps.
-        if (tenuParLEquipe && !(await depot.setControlOwner(tenantId, waId, 'app_workflow', {
-          par: CAUSES.apresLeDelai, only: ['app_human'], saufEscalade: true, effacerEscalade: true,
-        }))) return laisserALEquipe();
-        /**
-         * Un client que le répondeur ne prendra pas attend l'équipe : `app_human` et une demande, comme un client que
-         * l'agent de Meta n'a pas pu prendre. `only` exclut `app_human` : un opérateur qui a pris le fil entre-temps
-         * le garde, sans seconde demande.
-         */
-        const aLEquipe = (par: AuteurDuChangement): Promise<boolean> =>
-          depot.setControlOwner(tenantId, waId, 'app_human', { par, only: ['app_workflow', 'mba'], ouvreUneDemande: true });
-        let demarrage: Awaited<ReturnType<DepsControleDuFil['repondeur']['demarrer']>>;
-        try {
-          demarrage = await deps.repondeur.demarrer(tenantId, waId, { agentId: repondeurIa, messageDeclencheur: entree.messageDeclencheur ?? null });
-        } catch (err) {
-          await aLEquipe(CAUSES.repondeurIndisponible);
-          throw err;
+        case 'agent': {
+          const agentId = reglages.repondeurAgentId;
+          // Inatteignable (`modeEffectif` lit `equipe` un mode `agent` sans agent) : la ceinture du typage.
+          if (agentId === null) return;
+          if (!(await unRobotPeutPartir())) return;
+          if (!(await reprendreALEquipe())) return laisserALEquipe();
+          let demarrage: Awaited<ReturnType<DepsControleDuFil['repondeur']['demarrer']>>;
+          try {
+            demarrage = await deps.repondeur.demarrer(tenantId, waId, { agentId, messageDeclencheur: entree.messageDeclencheur ?? null });
+          } catch (err) {
+            await aLEquipe(CAUSES.repondeurIndisponible);
+            throw err;
+          }
+          if (demarrage === 'parti') return;
+          await aLEquipe(demarrage === 'credit_epuise' ? CAUSES.creditEpuise : CAUSES.repondeurIndisponible);
+          return;
         }
-        if (demarrage === 'parti') return;
-        await aLEquipe(demarrage === 'credit_epuise' ? CAUSES.creditEpuise : CAUSES.repondeurIndisponible);
-        return;
+        case 'scenario': {
+          const workflowId = reglages.repondeurWorkflowId;
+          if (workflowId === null) return;
+          if (!(await unRobotPeutPartir())) return;
+          /**
+           * La réclamation AVANT la reprise du fil : dans le délai, le fil reste (ou va) à l'équipe sans avoir été
+           * rendu aux robots un instant. Elle est atomique (`contacts.repondeur_scenario_le`, une instruction gardée) :
+           * deux entrants simultanés, un seul départ. Un lancement refusé ensuite la consomme quand même : le contact
+           * attend l'équipe jusqu'à la fin du délai, plutôt qu'une tentative ratée à chaque message.
+           */
+          let reclame: Awaited<ReturnType<DepsControleDuFil['repondeur']['reclamerScenario']>>;
+          try {
+            reclame = await deps.repondeur.reclamerScenario(tenantId, waId, { workflowId, delaiS: reglages.repondeurDelaiScenarioS });
+          } catch (err) {
+            await aLEquipe(CAUSES.repondeurIndisponible);
+            throw err;
+          }
+          if (reclame !== 'reclame') {
+            // Le fil de l'équipe lui reste ; sinon il lui va, avec la marque quand c'est le délai qui le veut.
+            if (tenuParLEquipe) return laisserALEquipe();
+            await aLEquipe(reclame === 'deja_parti' ? CAUSES.scenarioDejaParti : CAUSES.repondeurIndisponible, reclame === 'deja_parti');
+            return;
+          }
+          if (!(await reprendreALEquipe())) return laisserALEquipe();
+          let lance: Awaited<ReturnType<DepsControleDuFil['repondeur']['lancerScenario']>>;
+          try {
+            lance = await deps.repondeur.lancerScenario(tenantId, waId, { workflowId, messageDeclencheur: entree.messageDeclencheur ?? null });
+          } catch (err) {
+            await aLEquipe(CAUSES.repondeurIndisponible);
+            throw err;
+          }
+          if (lance !== 'parti') await aLEquipe(CAUSES.repondeurIndisponible);
+          return;
+        }
+        case 'mba':
+          break;
       }
       let issue: IssueConfier;
       try {
@@ -646,6 +738,36 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
 
     async peutAgir(tenantId, waId) {
       return (await depot.getControlOwner(tenantId, waId)) === 'app_workflow';
+    },
+
+    async envoyerAuMba(tenantId, waId, { contenu, cause }) {
+      const par: AuteurDuChangement = { cause };
+      // Le fil va à l'équipe : le parcours vient de finir (`app_workflow`), et un opérateur qui l'aurait pris le garde.
+      // 🔴 AVEC la marque d'escalade : le scénario vient d'écrire (« je vous passe à notre assistant »), donc le dernier
+      // message est SORTANT, et sans la marque la conversation n'entrerait pas dans « À traiter » (relecture de RC6).
+      const aLEquipe = (): Promise<boolean> =>
+        depot.setControlOwner(tenantId, waId, 'app_human', { par, only: ['app_workflow', 'mba'], ouvreUneDemande: true, escalade: true });
+      let issue: IssueConfier;
+      try {
+        issue = await confier(tenantId, waId, { automatique: true });
+      } catch (err) {
+        journaliser('error', 'vers_mba_non_confie', { err, tenantId, waId });
+        await aLEquipe();
+        return 'non_confie';
+      }
+      if (issue.sorte === 'agent_eteint') {
+        await depot.noterMbaIndisponible(tenantId, waId, cause);
+        await aLEquipe();
+        return 'mba_eteint';
+      }
+      if (issue.sorte !== 'confie') {
+        await aLEquipe();
+        return 'non_confie';
+      }
+      await depot.setControlOwner(tenantId, waId, 'mba', { par, only: ['app_workflow', 'mba'], effacerEscalade: true });
+      // Le dernier message du contact, pour que l'agent y réponde tout de suite : c'est la promesse du bloc.
+      await prevenir(tenantId, issue.numero, waId, contenu);
+      return 'confie';
     },
 
     async reprendreLesFilsDeMeta(tenantId) {

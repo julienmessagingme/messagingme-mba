@@ -117,7 +117,7 @@ function app(over: { stats?: Partial<Omit<StatsRouteDeps, 'stats' | 'conversatio
     ...over.settings,
     reglages: {
       ...reglagesDepInertes,
-      get: async () => ({ mbaEnabled: false, repondeurAgentId: null, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, hubspotActif: false, optoutRequestId: null, mentionIaFrequence: null, timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT }),
+      get: async () => ({ mbaEnabled: false, repondeurMode: 'equipe', repondeurAgentId: null, repondeurWorkflowId: null, repondeurDelaiScenarioS: 86400, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, hubspotActif: false, optoutRequestId: null, mentionIaFrequence: null, timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT }),
       setMbaEnabled: async () => {},
       setHubspotListsEnabled: async () => {},
       setMbaHandoffMode: async () => {},
@@ -602,7 +602,7 @@ describe('stats route', () => {
 
 describe('settings route', () => {
   it('GET /settings admin -> mbaEnabled', async () => {
-    const a = app({ settings: { reglages: { get: async () => ({ mbaEnabled: true, repondeurAgentId: null, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, hubspotActif: false, optoutRequestId: null, mentionIaFrequence: null, timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT }) } } });
+    const a = app({ settings: { reglages: { get: async () => ({ mbaEnabled: true, repondeurMode: 'mba', repondeurAgentId: null, repondeurWorkflowId: null, repondeurDelaiScenarioS: 86400, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, hubspotActif: false, optoutRequestId: null, mentionIaFrequence: null, timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT }) } } });
     const res = await a.inject({ method: 'GET', url: '/tenants/t1/settings', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ mbaEnabled: boolean }>().mbaEnabled).toBe(true);
@@ -792,7 +792,7 @@ describe('PATCH /settings/mba-handoff', () => {
       hubspotPortalConnecte: sansPortailHubspot,
     }, {
       get: async () => ({
-        mbaEnabled: true, repondeurAgentId: null, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
+        mbaEnabled: true, repondeurMode: 'mba', repondeurAgentId: null, repondeurWorkflowId: null, repondeurDelaiScenarioS: 86400, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
         controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, timezone: 'Europe/Paris', businessHours: tousFermes,
       }),
     });

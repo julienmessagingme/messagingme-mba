@@ -19,7 +19,8 @@ import { processRemiseMbaEntrant } from '../src/webhooks/remise-mba-entrant';
 import { processWorkflowAdvance } from '../src/webhooks/workflow-advance';
 import { requalifierLesStandby } from '../src/webhooks/standby-hors-liste';
 import { runControlSweep } from '../src/inbox/control-sweep';
-import { unRepondeurRepond } from '../src/inbox/fil';
+import { modeEffectif, standbyPourNous } from '../src/repondeur/mode';
+import { aucunRepondeur } from './banc-du-fil';
 
 /**
  * LE RÉPONDEUR DÉMARRE SUR LE MESSAGE QUE PERSONNE NE TIENT (lot 5, A5, spec
@@ -326,7 +327,7 @@ function bout() {
   const b = repondeur({
     conversations: { [WA]: { owner: 'app_workflow' } },
     parcours: { findWaitingByWaId: (t, w) => mo.runs.findWaitingByWaId(t, w) },
-    repondeur: { demarrer: (t, w, o) => { if (!branche) throw new Error('non branché'); return branche.demarrer(t, w, o); } },
+    repondeur: { ...aucunRepondeur, demarrer: (t, w, o) => { if (!branche) throw new Error('non branché'); return branche.demarrer(t, w, o); } },
   });
   const deps: WorkflowExecutorDeps = {
     ...depsInertes,
@@ -611,7 +612,7 @@ describe('les autres gestes, agent de Meta éteint par le CHECK : le fil reste a
     const rendues = await runControlSweep({
       inbox: { listHeldControl: async () => [{ tenantId: ESPACE, waId: 'w', owner: 'app_workflow', changedAt: null, escaladee: false, lastMessageAt: new Date() }] },
       fil: b.fil,
-      reglages: { mbaActifParTenant: async () => new Set<string>() },
+      reglages: { modesParTenant: async () => new Map() },
       timeouts: { app_human: 7_200_000, mba: 86_400_000, app_workflow: 86_400_000 },
     });
     expect(rendues).toBe(0);
@@ -623,8 +624,8 @@ describe('les autres gestes, agent de Meta éteint par le CHECK : le fil reste a
 /**
  * 🔴 CAS 2 DE LA REVUE, la moitié de la réception. Après la désignation, Meta peut croire encore tenir le fil d'un
  * contact qu'il servait : son message arrive en `standby`, que toutes nos étapes ignorent. Retiré de la liste par la
- * bascule, il est requalifié en `messages`, et le répondeur IA lui répond. Sans répondeur, un `standby` reste ce qu'il
- * est : une autre application tient le fil.
+ * bascule, il est requalifié en `messages`, et le répondeur IA lui répond. Depuis RC6, le mode décide
+ * (`standbyPourNous`) : en mode « Équipe » aussi, le message est pour nous, et l'équipe le voit dans « À traiter ».
  */
 describe('un `standby` arrivé après la bascule n’est pas perdu', () => {
   const STANDBY = {
@@ -636,20 +637,23 @@ describe('un `standby` arrivé après la bascule n’est pas perdu', () => {
   };
 
   it('🔴 répondeur IA désigné, contact absent de la liste : le `standby` devient un `messages`', async () => {
-    const liste = { agentAllume: async () => unRepondeurRepond({ mbaEnabled: false, repondeurAgentId: AGENT }), presents: async () => new Set<string>() };
+    const mode = modeEffectif({ mbaEnabled: false, repondeurMode: 'agent', repondeurAgentId: AGENT, repondeurWorkflowId: null });
+    const liste = { standbyPourNous: async () => standbyPourNous(mode), presents: async () => new Set<string>() };
     const [e] = await requalifierLesStandby(await entrantsDe(STANDBY), liste);
     expect(e?.message.field).toBe('messages');
   });
 
-  it('aucun répondeur : le `standby` reste un `standby`', async () => {
-    const liste = { agentAllume: async () => unRepondeurRepond({ mbaEnabled: false, repondeurAgentId: null }), presents: async () => new Set<string>() };
+  it('🔴 RC6 : en mode « Équipe » (aucun robot), le `standby` devient aussi un `messages` : l’équipe doit le voir', async () => {
+    // Avant RC6 il restait un `standby` (« une autre application tient le fil ») et disparaissait hors d'« À traiter ».
+    const mode = modeEffectif({ mbaEnabled: false, repondeurMode: 'equipe', repondeurAgentId: null, repondeurWorkflowId: null });
+    const liste = { standbyPourNous: async () => standbyPourNous(mode), presents: async () => new Set<string>() };
     const [e] = await requalifierLesStandby(await entrantsDe(STANDBY), liste);
-    expect(e?.message.field).toBe('standby');
+    expect(e?.message.field).toBe('messages');
   });
 
-  it('🔴 et le worker câble la requalification sur cette question, pas sur le seul agent de Meta', () => {
+  it('🔴 et le worker câble la requalification sur le MODE, pas sur la présence d’un agent', () => {
     // `src/worker.ts` démarre un processus quand on l'importe : son câblage se lit dans sa source.
     const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
-    expect(worker).toContain('agentAllume: async (t) => unRepondeurRepond(await settingsStore.get(t)),');
+    expect(worker).toContain('standbyPourNous: async (t) => standbyPourNous(modeEffectif(await settingsStore.get(t))),');
   });
 });

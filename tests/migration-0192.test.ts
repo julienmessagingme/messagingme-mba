@@ -25,13 +25,13 @@ describe('migration 0192', () => {
     expect(code).toContain('cible_id uuid references users (id) on delete set null');
   });
 
-  it('🔴 le CHECK des types est la liste du code, dans le même ordre, moins ce que 0194, 0209 et 0216 ont ajouté', () => {
+  it('🔴 le CHECK des types est la liste du code, dans le même ordre, moins ce que 0194, 0209, 0216 et 0217 ont ajouté', () => {
     // Le CHECK EN VIGUEUR est celui de 0216, qui reprend ceux de 0194 et 0209 et l'élargit : sa parité exacte avec le
     // code est tenue par `tests/migration-0216.test.ts`. Ici, que 0192 en reste le préfixe (rien n'a été retiré).
     const m = /check \(type in \(([^)]*)\)\)/.exec(code);
     expect(m, 'le CHECK des types est introuvable').not.toBeNull();
     const types = [...(m?.[1] ?? '').matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
-    expect(types).toEqual(TYPES_EVENEMENT.filter((t) => !['escaladee', 'rendue_scenario', 'sortie_agent', 'urgente', 'urgence_levee'].includes(t)));
+    expect(types).toEqual(TYPES_EVENEMENT.filter((t) => !['escaladee', 'rendue_scenario', 'sortie_agent', 'urgente', 'urgence_levee', 'mba_indisponible'].includes(t)));
   });
 
   it('l’index sert la seule lecture : une conversation, du plus récent au plus ancien', () => {

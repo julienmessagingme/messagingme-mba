@@ -200,7 +200,7 @@ describe('processWorkflowAdvance : un `standby` d’un contact absent de la list
   const bouton = enStandby({ id: 'mb', from: '33600', type: 'button', button: { text: 'En savoir plus', payload: 'btn:0' } });
   const texte = enStandby({ id: 'mt', from: '33600', type: 'text', text: { body: 'Je préfère être rappelé' } });
   const liste = (o: { allume: boolean; presents: string[] }): ListeALArrivee => ({
-    agentAllume: async () => o.allume,
+    standbyPourNous: async () => o.allume,
     presents: async (_t, waIds) => new Set(waIds.filter((w) => o.presents.includes(w))),
   });
   async function avancer(payload: unknown, l: ListeALArrivee) {

@@ -3,6 +3,7 @@ import type { BusinessHours } from '../workflow/conditions';
 import { estFrequenceMention, type FrequenceMentionIa } from '../agent/agent-store';
 import { estModeTransfert, type ModeTransfert } from '../agent/disponibilite-equipe';
 import type { GrillePrix } from '../stats/prix';
+import { DELAI_SCENARIO_DEFAUT_S, estModeRepondeur, modeEffectif, type ModeRepondeur } from '../repondeur/mode';
 
 /** Fuseau par défaut si le tenant n'a rien réglé (marché principal FR). */
 export const DEFAULT_TIMEZONE = 'Europe/Paris';
@@ -18,14 +19,26 @@ export const DEFAULT_BUSINESS_HOURS: BusinessHours = {
 };
 
 export interface TenantSettings {
+  /**
+   * L'agent de Meta est ALLUMÉ, donc DISPONIBLE (RC6). Il n'est le répondeur de l'espace qu'en mode `mba`
+   * (`leMbaRepond`, `src/repondeur/mode.ts`) ; dans les autres modes il est en veille, et seul le bloc « Envoyer au
+   * MBA » lui confie un contact.
+   */
   mbaEnabled: boolean;
   /**
-   * L'agent IA répondeur de l'espace (migration 0209) : il répond à tout message que ni un scénario, ni un mot-clé,
-   * ni un humain ne tient (`src/repondeur/`). `null` = le comportement d'avant : l'agent de Meta s'il est allumé,
-   * sinon personne. 🔴 Exclusif de `mbaEnabled`, tenu par la base (`tenant_settings_repondeur_une_voix_chk`) : deux
-   * répondeurs ne coexistent jamais.
+   * Qui répond au client (0217, `src/repondeur/mode.ts`) : `mba`, `agent`, `scenario` ou `equipe`. Le mode ÉCRIT : celui
+   * qui s'applique se lit par `modeEffectif`, qui ramène à `equipe` un mode dont la cible a disparu.
+   */
+  repondeurMode: ModeRepondeur;
+  /**
+   * L'agent IA du mode `agent` (0209). Une cible n'existe que dans son mode (CHECK à sens unique de 0217) ; `null` en
+   * mode `agent` = l'agent a été supprimé après coup, le mode se lit `equipe`.
    */
   repondeurAgentId: string | null;
+  /** Le scénario du mode `scenario` (0217). Même règle que l'agent. */
+  repondeurWorkflowId: string | null;
+  /** Le délai du mode `scenario`, en secondes : au plus un départ du scénario par contact et par délai (0217). */
+  repondeurDelaiScenarioS: number;
   /** Fuseau IANA du tenant (ex. 'Europe/Paris'). Défaut serveur si non réglé. Base de NOW / weekday / horaires. */
   timezone: string;
   /** Heures d'ouverture par jour ('0'..'6', 0 = dimanche). Défaut serveur si non réglé. */
@@ -105,7 +118,27 @@ export type MbaHandoffMode = 'always' | 'business_hours' | 'never';
 type ColonneReglage =
   | 'hubspot_actif' | 'salesforce_actif' | 'mba_relais_cle_id' | 'agents_peuvent_prendre' | 'mention_ia_frequence'
   | 'optout_request_id' | 'mba_handoff_mode' | 'agent_transfert_mode' | 'timezone' | 'business_hours'
-  | 'control_handback_seconds' | 'hubspot_lists_enabled' | 'repondeur_agent_id';
+  | 'control_handback_seconds' | 'hubspot_lists_enabled';
+
+/**
+ * Le choix de « Qui répond au client », tel que `PgTenantSettingsStore.setRepondeur` l'écrit : une cible par mode, et
+ * aucune hors de son mode (le CHECK à sens unique de 0217 refuserait l'écriture).
+ */
+export type ChoixRepondeurEcrit =
+  | { mode: 'mba' | 'equipe' }
+  | { mode: 'agent'; agentId: string }
+  | { mode: 'scenario'; workflowId: string; delaiS: number };
+
+/**
+ * Le mode d'une ligne de réglages. 🔴 Une base en retard sur 0217 ne rend pas la colonne (`select *`) : on retombe sur
+ * la règle même de sa reprise (agent si un agent est désigné, sinon l'agent de Meta s'il est allumé, sinon l'équipe),
+ * donc un déploiement avant `migrate` se comporte comme la base migrée. Une valeur inconnue, idem.
+ */
+function modeDeLaLigne(r: Record<string, unknown> | undefined): ModeRepondeur {
+  if (estModeRepondeur(r?.repondeur_mode)) return r.repondeur_mode;
+  if (typeof r?.repondeur_agent_id === 'string') return 'agent';
+  return r?.mba_enabled === true ? 'mba' : 'equipe';
+}
 
 /** Réglages par espace, un upsert ciblé par réglage. */
 export class PgTenantSettingsStore {
@@ -134,8 +167,11 @@ export class PgTenantSettingsStore {
     const r = res.rows[0];
     return {
       mbaEnabled: r?.mba_enabled ?? false,
-      // Une base en retard ne rend pas la colonne (`select *`) : personne n'est répondeur, le comportement d'avant.
+      repondeurMode: modeDeLaLigne(r),
+      // Une base en retard ne rend pas la colonne (`select *`) : aucune cible, le mode se lit alors `equipe`.
       repondeurAgentId: typeof r?.repondeur_agent_id === 'string' ? r.repondeur_agent_id : null,
+      repondeurWorkflowId: typeof r?.repondeur_workflow_id === 'string' ? r.repondeur_workflow_id : null,
+      repondeurDelaiScenarioS: typeof r?.repondeur_delai_scenario_s === 'number' ? r.repondeur_delai_scenario_s : DELAI_SCENARIO_DEFAUT_S,
       hubspotListsEnabled: r?.hubspot_lists_enabled ?? false,
       campaignsPaused: r?.campaigns_paused ?? false,
       autoRetryEnabled: r?.auto_retry_enabled ?? false,
@@ -250,34 +286,62 @@ export class PgTenantSettingsStore {
 
   /**
    * 🔴 LE SEUL ÉCRIVAIN DE `mba_enabled` (ses appelants : les deux interrupteurs de `src/http/mba.ts`, les réglages,
-   * l'assistant de l'agent de Meta). Allumer remet le répondeur IA à `null` DANS LA MÊME INSTRUCTION : le geste qui
-   * allume l'un éteint l'autre, et le CHECK d'une seule voix (0209) ne voit jamais deux répondeurs, donc jamais de
-   * 500. Éteindre ne touche pas au répondeur. Hors de `poser`, qui n'écrit qu'une colonne.
+   * l'assistant de l'agent de Meta, le réglage du répondeur). Allumer ne touche PLUS au répondeur IA (RC6 : allumé =
+   * disponible, en veille hors du mode `mba`). Deux règles, dans la même instruction que le drapeau :
+   *  - allumer quand personne ne répond (mode `equipe`, ou un mode dont la cible a disparu) passe le mode à `mba` :
+   *    c'est la continuité d'avant RC6, où allumer l'agent de Meta le faisait répondre ;
+   *  - éteindre en mode `mba` passe le mode à `equipe` : un répondeur éteint ne répondrait à personne. La console le
+   *    confirme avant.
+   * Un espace sans ligne naît dans le mode que son drapeau dit. Hors de `poser`, qui n'écrit qu'une colonne.
    */
   async setMbaEnabled(tenantId: string, enabled: boolean): Promise<void> {
     await this.pool.query(
-      `insert into tenant_settings (tenant_id, mba_enabled, updated_at) values ($1, $2, now())
+      `insert into tenant_settings (tenant_id, mba_enabled, repondeur_mode, updated_at)
+       values ($1, $2, case when $2::boolean then 'mba' else 'equipe' end, now())
        on conflict (tenant_id) do update set
          mba_enabled = excluded.mba_enabled,
-         repondeur_agent_id = case when excluded.mba_enabled then null else tenant_settings.repondeur_agent_id end,
+         repondeur_mode = case
+           when excluded.mba_enabled and (tenant_settings.repondeur_mode = 'equipe'
+             or (tenant_settings.repondeur_mode = 'agent' and tenant_settings.repondeur_agent_id is null)
+             or (tenant_settings.repondeur_mode = 'scenario' and tenant_settings.repondeur_workflow_id is null)) then 'mba'
+           when not excluded.mba_enabled and tenant_settings.repondeur_mode = 'mba' then 'equipe'
+           else tenant_settings.repondeur_mode end,
          updated_at = now()`,
       [tenantId, enabled],
     );
   }
 
   /**
-   * Désigne (ou retire, avec `null`) l'agent IA répondeur. 🔴 La route vérifie que l'agent est de cet espace et actif,
-   * et éteint l'agent de Meta AVANT (`src/repondeur/reglage.ts`) : la clé étrangère ne refuse qu'un agent inexistant,
-   * et le CHECK d'une seule voix lève 23514 si l'agent de Meta est allumé.
+   * Écrit « Qui répond au client » d'un seul coup : le mode, sa cible, et la cible des autres modes remise à nul (le
+   * CHECK à sens unique de 0217 refuserait sinon). Le délai du scénario n'est écrit qu'avec le mode `scenario`, et
+   * survit aux autres : le client qui y revient retrouve le sien. 🔴 Les vérifications (agent actif de cet espace,
+   * scénario publié de cet espace, agent de Meta allumé) sont dans `choisirRepondeur` (`src/repondeur/reglage.ts`) : la
+   * clé étrangère ne refuse qu'une cible inexistante, pas celle d'un autre espace.
    */
-  async setRepondeur(tenantId: string, agentId: string | null): Promise<void> {
-    await this.poser(tenantId, 'repondeur_agent_id', agentId);
+  async setRepondeur(tenantId: string, choix: ChoixRepondeurEcrit): Promise<void> {
+    const agentId = choix.mode === 'agent' ? choix.agentId : null;
+    const workflowId = choix.mode === 'scenario' ? choix.workflowId : null;
+    const delaiS = choix.mode === 'scenario' ? choix.delaiS : null;
+    await this.pool.query(
+      `insert into tenant_settings (tenant_id, repondeur_mode, repondeur_agent_id, repondeur_workflow_id,
+                                    repondeur_delai_scenario_s, updated_at)
+       values ($1, $2, $3, $4, coalesce($5::integer, ${DELAI_SCENARIO_DEFAUT_S}), now())
+       on conflict (tenant_id) do update set
+         repondeur_mode = excluded.repondeur_mode,
+         repondeur_agent_id = excluded.repondeur_agent_id,
+         repondeur_workflow_id = excluded.repondeur_workflow_id,
+         repondeur_delai_scenario_s = coalesce($5::integer, tenant_settings.repondeur_delai_scenario_s),
+         updated_at = now()`,
+      [tenantId, choix.mode, agentId, workflowId, delaiS],
+    );
   }
 
   /**
-   * Retire le répondeur SI c'est cet agent : il vient de quitter le statut actif (`modifierAgent`). Une seule
-   * instruction gardée : un autre agent désigné entre-temps n'est pas touché. Rend `true` si l'espace a perdu son
-   * répondeur.
+   * L'agent répondeur vient de quitter le statut actif (`modifierAgent`) : il cesse de répondre, SI c'est cet agent.
+   * Le mode reste `agent`, sans agent, que `modeEffectif` lit `equipe` : exactement l'état d'un agent supprimé (la clé
+   * étrangère), et c'est ce qui permet à l'Accueil de dire « l'agent choisi a été désactivé, vos messages vont à
+   * l'équipe » au lieu d'un « Équipe » muet. Une seule instruction gardée : un autre agent désigné entre-temps n'est
+   * pas touché. Rend `true` si l'espace a perdu son répondeur.
    */
   async oublierRepondeurSi(tenantId: string, agentId: string): Promise<boolean> {
     const res = await this.pool.query(
@@ -325,16 +389,23 @@ export class PgTenantSettingsStore {
   }
 
   /**
-   * Quels tenants de ce lot ont l'agent de Meta allumé ? Un seul aller-retour : le balayage traite un lot de
-   * conversations, une requête par tenant le rendrait quadratique.
+   * Le mode qui s'applique (`modeEffectif`) de chaque espace de ce lot. Un seul aller-retour : le balayage traite un
+   * lot de conversations, une requête par espace le rendrait quadratique. Un espace sans ligne est absent de la Map :
+   * l'appelant le lit `equipe`, comme `get`.
    */
-  async mbaActifParTenant(tenantIds: readonly string[]): Promise<Set<string>> {
-    if (tenantIds.length === 0) return new Set();
-    const res = await this.pool.query<{ tenant_id: string }>(
-      `select tenant_id from tenant_settings where tenant_id = any($1::uuid[]) and mba_enabled = true`,
+  async modesParTenant(tenantIds: readonly string[]): Promise<Map<string, ModeRepondeur>> {
+    if (tenantIds.length === 0) return new Map();
+    const res = await this.pool.query<Record<string, unknown> & { tenant_id: string }>(
+      // `select *`, même raison que `get` : une base en retard ne casse pas le balayage.
+      `select * from tenant_settings where tenant_id = any($1::uuid[])`,
       [tenantIds],
     );
-    return new Set(res.rows.map((r) => r.tenant_id));
+    return new Map(res.rows.map((r) => [r.tenant_id, modeEffectif({
+      mbaEnabled: r.mba_enabled === true,
+      repondeurMode: modeDeLaLigne(r),
+      repondeurAgentId: typeof r.repondeur_agent_id === 'string' ? r.repondeur_agent_id : null,
+      repondeurWorkflowId: typeof r.repondeur_workflow_id === 'string' ? r.repondeur_workflow_id : null,
+    })]));
   }
 
   /**

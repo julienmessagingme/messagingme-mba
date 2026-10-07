@@ -383,7 +383,7 @@ describe.skipIf(!url)('les demandes du Quantitatif > Performance', () => {
     const faux = metaFactice();
     const fil = () => creerControleDuFil({
       depot: inbox,
-      reglages: { get: async () => ({ mbaEnabled: true, repondeurAgentId: null, controlHandbackSeconds: null }) },
+      reglages: { get: async () => ({ mbaEnabled: true, repondeurMode: 'mba', repondeurAgentId: null, repondeurWorkflowId: null, repondeurDelaiScenarioS: 86400, controlHandbackSeconds: null }) },
       repondeur: aucunRepondeur,
       delaiRepriseParDefautMs: DELAI_REPRISE_DEFAUT_MS,
       parcours: { findWaitingByWaId: async () => null },

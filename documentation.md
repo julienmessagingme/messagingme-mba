@@ -224,11 +224,14 @@ ABSENT de la liste de l'agent (`requalifierLesStandby`, `src/webhooks/standby-ho
 réglages et une de la liste par espace et par lot, qui lève en échec et fait rejouer le job). L'avance (texte et
 bouton), les automations, la remise « personne ne suit », le routage et l'arrivée publicitaires le traitent
 comme un message ordinaire, et la correction du détenteur n'écrit pas `mba`. Le champ reçu reste sur l'entrant
-(`fieldRecu`) et au journal (`standby_hors_liste`). Contact PRÉSENT sur la liste, ou espace sans répondeur (ni
-agent de Meta allumé, ni agent IA désigné, `unRepondeurRepond`, `src/inbox/fil.ts`) : le `standby` reste un
+(`fieldRecu`) et au journal (`standby_hors_liste`). Contact PRÉSENT sur la liste : le `standby` reste un
 `standby`, et la garde `field !== 'messages'` (automations, avance, jeton de test) le fait taire, l'agent lui
-parlant. Avec un agent IA répondeur, l'agent de Meta est éteint, mais Meta peut croire encore tenir le fil d'un
-contact qu'il servait : son `standby` est requalifié comme les autres, et c'est le répondeur IA qui lui répond.
+parlant. 🔴 C'est le MODE de l'espace qui décide si un `standby` d'un contact absent est pour nous
+(`standbyPourNous`, `src/repondeur/mode.ts`, RC6), et dans les quatre modes il l'est : l'agent de Meta répondeur ne
+parle qu'à sa liste, en veille il ne répond qu'aux contacts qu'un bloc lui a confiés, éteint Meta peut croire encore
+tenir le fil d'un contact qu'il servait, et en mode « Équipe » l'équipe doit voir le message dans « À traiter ».
+⚠️ Avant RC6, un espace sans répondeur ne requalifiait rien (« une autre application tient le fil ») ; le `switch` sur
+le mode attend le futur mode « mon application répond », qui dira si un `standby` est pour lui.
 `WebhookJobDeps` rend `listeALArrivee` obligatoire avec `inbox`.
 
 ⚠️ **ET ON N'EN DÉDUIT PLUS LE DÉTENTEUR** (2026-09-15). `accorderLeDetenteur` écrivait `app_workflow` sur
@@ -268,8 +271,8 @@ Meta -> POST /webhooks/meta (mba-api)
              et le routage publicitaire peut n'en autoriser QU'UNE, ou aucune
           4. rendu des fils pris pour rien (le routage a pris le fil, rien n'a démarré)
           5. avance de scénario     (le contact a répondu, sur ce qui reste)
-          6. remise au répondeur de l'espace quand personne ne suit : l'agent de Meta
-             (règle 2 du mode liste), ou l'agent IA désigné (§ 4.4)
+          6. remise au répondeur de l'espace quand personne ne suit, selon son MODE (§ 4.4) :
+             l'agent de Meta (règle 2 du mode liste), un agent IA, un scénario, ou l'équipe
 ```
 
 🔴 **LE ROUTAGE PUBLICITAIRE EST ENCADRÉ PAR SES DEUX VOISINS, ET C'EST LA MOITIÉ DE SON COMPORTEMENT.**
@@ -382,6 +385,7 @@ repos ; `executor` fait l'IO et persiste.
 | `agent_turn` | main rendue : `walk` ne peut pas savoir ce que le modèle décidera | l'executor, après le tour |
 | `aller_a` + `cible` | main rendue : un « Aller à » vise un bloc d'un AUTRE scénario (ou aucun), que `walk` ne lit pas | l'executor, qui clôt le parcours puis saute (`sauter`) |
 | `inbox` | terminal, la conversation remonte à un humain | |
+| `vers_mba` | terminal, bloc « Envoyer au MBA » (RC6) : l'agent de Meta prend la conversation | l'executor, qui confie APRÈS avoir clos le parcours (`confierAuMbaParLeBloc`), sans second rendu |
 | `done` | fin de chaîne | |
 
 🔴 **Le bloc Question est le seul à attendre la réponse ET le temps.** Il reste `waiting` et porte EN PLUS un
@@ -404,7 +408,7 @@ un message rapide, une question ou un formulaire seront refusés. Cette règle a
 
 🔴 **Un démarrage de parcours a un TYPE, et le type décide de tous ses réglages** (`src/workflow/lancements.ts`).
 `TypeDeLancement` est une liste fermée : Inbox, agent de Meta (scénario, bloc), agent IA (scénario), automatisme
-(ordinaire, chaîne, publicité ou widget), lien de test, campagne (scénario, bloc), répondeur, et le saut d'un « Aller
+(ordinaire, chaîne, publicité ou widget), lien de test, campagne (scénario, bloc), répondeur (agent IA, scénario), et le saut d'un « Aller
 à » (`aller_a`, `aller_a_masse`), le seul que l'exécuteur lance lui-même, sans demande à l'entrée de lancement. `POLITIQUE_DE_LANCEMENT` donne pour chacun
 la reprise du fil (`non` : arrêté par un fil tenu ; `oui` : repris même à un opérateur ; `sauf_operateur` : repris à
 l'agent de Meta seulement), la publication des étiquettes posées (jamais sur un chemin de masse), le graphe joué
@@ -545,21 +549,59 @@ le lire. Chaque entrée porte son instant (`at`) : l'annonce d'IA « une fois pa
 datées de l'ouverture de la session ou après (`dejaAnnonce`, `src/agent/brain.gateway.ts` ; le tour passe
 `sessionOuverteLe`), sinon un modèle de campagne de la veille la ferait taire.
 
-🔴 **LE RÉPONDEUR DE L'ESPACE** (`src/repondeur/`, spec `docs/superpowers/specs/2026-10-04-repondeur-par-defaut-design.md`) :
-un agent IA désigné répond à tout message entrant que ni un scénario, ni un mot-clé, ni un humain ne tient, sans
-scénario construit par le client. Les invariants :
-- **Une seule voix** (`tenant_settings.repondeur_agent_id`, CHECK d'exclusion avec `mba_enabled`). Le geste
-  (`choisirRepondeur`, `src/repondeur/reglage.ts`, partagé par `PUT /tenants/:tenantId/agents/repondeur`, admins
-  seulement, et l'outil MCP `set_default_responder`, qui exige une personne) refuse un agent absent ou inactif et une
-  instance sans modèle ; agent de Meta allumé, il l'éteint par le chemin de l'Accueil (`activationPour`,
-  `src/http/mba.ts`), puis retire de sa liste TOUS les contacts (`ListeDeLAgent.toutRetirer`, par paquets, un refus
-  compté sans arrêter les autres), PUIS écrit le réglage, puis rend aux robots (`app_workflow`) les fils que notre
-  colonne donnait encore à l'agent de Meta (`ControleDuFil.reprendreLesFilsDeMeta`, un `prise_mba` chacun dans la
-  frise) : laissés `mba`, plus personne ne les tenait, un parcours en attente gelait et la remise refusait l'agent IA.
-  Cette reprise est au mieux : un échec ne défait pas le geste (`fils: null` dans sa ligne). Le geste laisse sa ligne
-  `repondeur` dans l'historique des réglages. Un agent qui quitte le statut actif cesse d'être le répondeur
-  (`modifierAgent`, `oublierRepondeur`).
-  `GET /agents` et `list_agents` disent lequel l'est.
+🔴 **QUI RÉPOND AU CLIENT** (`src/repondeur/`, RC6, plan `docs/superpowers/plans/2026-10-06-rc6-qui-repond.md` ; le
+lot 5 en posait la moitié agent IA, spec `docs/superpowers/specs/2026-10-04-repondeur-par-defaut-design.md`) : un seul
+réglage de l'espace, le MODE (`tenant_settings.repondeur_mode`, 0217, `MODES_REPONDEUR` dans `src/repondeur/mode.ts`),
+décide qui répond à un nouveau contact ou à un message que ni un scénario, ni un mot-clé, ni un humain ne tient :
+`mba` (l'agent de Meta), `agent` (un agent IA, `repondeur_agent_id`), `scenario` (un scénario publié,
+`repondeur_workflow_id`, au plus une fois par `repondeur_delai_scenario_s` pour un même contact) ou `equipe`
+(personne : la conversation entre dans « À traiter »). Les invariants :
+- 🔴 **ALLUMÉ N'EST PLUS RÉPONDEUR.** `mba_enabled` dit l'agent de Meta DISPONIBLE ; il n'est le répondeur qu'en mode
+  `mba` (`leMbaRepond`). Hors de ce mode il est en VEILLE : ni la remise « personne ne suit », ni « Rendre la main »,
+  ni la fin de parcours (`mbaActifPour` de l'exécuteur, câblé sur `leMbaRepond`), ni le balayage
+  (`modesParTenant`) ne lui confient un contact. Seul le bloc « Envoyer au MBA » le fait. Meta ne répond jamais de
+  lui-même : son agent est en `ALLOWLISTED_ONLY` et ne parle qu'aux contacts de `mba_liste`, ce qui rend la veille sûre.
+  La contrainte « une seule voix » de 0209 est supprimée (0217).
+- **Le mode qui s'applique** (`modeEffectif`) : un mode dont la cible a disparu (agent supprimé ou désactivé,
+  scénario supprimé, agent de Meta éteint) se lit `equipe`, et la carte de l'Accueil le dit. 🔴 Les CHECK de 0217 sont
+  À SENS UNIQUE (une cible n'existe que dans son mode, jamais l'inverse) : refuser un mode `agent` sans agent ferait
+  échouer la suppression d'un agent (leçon de 0144). Désactiver l'agent répondeur remet sa cible à nul et garde le
+  mode (`oublierRepondeurSi`), d'où l'avertissement.
+- **Le seul écrivain du réglage** : `choisirRepondeur` (`src/repondeur/reglage.ts`), partagé par
+  `PUT /tenants/:tenantId/repondeur` (et l'ANCIENNE `PUT .../agents/repondeur`, `{ agentId }`, gardée pour la console
+  d'avant RC6), admins seulement, et l'outil MCP `set_default_responder` (qui exige une personne et accepte encore
+  l'ancienne forme `{ agent_id }` : un agent = `agent`, `null` = `mba` si l'agent de Meta est allumé, sinon `equipe`).
+  `agent` exige un agent actif et le modèle sur l'instance ; `scenario` un scénario publié de l'espace (le magasin
+  cache le scénario système) et un délai de 1 h à 30 jours ; `mba` un agent de Meta configurable (un numéro, et Meta
+  l'a ouvert) et l'ALLUME s'il est éteint, par le chemin de l'Accueil (`activationPour`, `src/http/mba.ts`). Le
+  réglage s'écrit AVANT tout effet ; puis, si l'espace QUITTE le mode `mba`, les contacts de l'agent de Meta sont
+  retirés de sa liste (`ListeDeLAgent.toutRetirer`, par paquets, un refus compté sans arrêter les autres) et ses fils
+  rendus aux robots (`ControleDuFil.reprendreLesFilsDeMeta`, un `prise_mba` chacun, au mieux : un échec ne défait pas
+  le geste). Dans l'ordre inverse, une remise passée entre les deux lirait encore `mba` et remettrait le contact sur
+  la liste. Le geste laisse sa ligne `repondeur` dans l'historique des réglages. `GET /tenants/:tenantId/repondeur`
+  rend ce que la carte lit en un appel (mode écrit et effectif, cibles, agent de Meta allumé et configurable, agents
+  actifs, scénarios publiés). `GET /agents` et `list_agents` disent quel agent IA répond.
+- **L'interrupteur de l'agent de Meta suit deux règles, dans la même instruction que le drapeau**
+  (`PgTenantSettingsStore.setMbaEnabled`) : allumer quand personne ne répond (mode `equipe`, ou une cible disparue)
+  passe le mode à `mba`, la continuité d'avant RC6 ; éteindre en mode `mba` le passe à `equipe` (la console le fait
+  confirmer). Allumer en mode `agent` ou `scenario` laisse le mode : l'agent de Meta est en veille.
+- **Le mode Scénario** (`src/repondeur/scenario.ts`) : la remise RÉCLAME le départ avant de reprendre le fil à
+  l'équipe, par UNE instruction gardée sur `contacts.repondeur_scenario_le` (`PgContactStore.reclamerDepartRepondeur`) :
+  deux entrants simultanés, un seul départ, l'autre à l'équipe. Une colonne plutôt qu'une lecture de `workflow_runs`,
+  que la rétention purge et qu'aucun index ne sert par contact. Dans le délai, la conversation va à l'équipe, avec la
+  marque d'escalade ; un lancement refusé consomme quand même le délai. Type de lancement `repondeur_scenario` : jamais
+  à un opérateur, étiquettes publiées, graphe publié, fenêtre prouvée par l'entrant.
+- **Le mode Équipe** : la remise passe le fil à l'équipe (`app_human`, pot commun) avec une demande ET la marque
+  d'escalade, que la première réponse d'un humain efface : sans elle, le balayage rendrait aux robots, au bout du délai
+  de reprise, une conversation à laquelle personne n'a répondu, et elle sortirait d'« À traiter ». Un fil que l'équipe
+  tient lui reste, délai écoulé ou non. Rien pour une redélivrance, une réaction seule, un contact muet.
+- **Le bloc « Envoyer au MBA »** (type `vers_mba`, terminal, sans sortie ; 🔴 un type NEUF, `mba_handoff` reste un
+  passe-plat) : dans tous les modes, `ControleDuFil.envoyerAuMba` confie le contact (liste, `release`, fil `mba`) et
+  prévient l'agent avec le dernier message du contact (`derniereSaisieDuContact`) pour qu'il y réponde tout de suite ;
+  le parcours se termine SANS second rendu, et remplace un parcours en cours. Agent de Meta éteint : la frise le dit
+  (`mba_indisponible`, 0217), le fil passe à l'équipe avec une demande, et une ligne entre au journal des échecs de
+  scénario. ⚠️ Si le scénario vient d'envoyer un message, le `release` peut être annulé par Meta (l'envoi prend le
+  fil) ; c'est la liste qui décide si l'agent parle.
 - **Un scénario système caché par espace pour ancre** (§ 5), et un graphe construit à CHAQUE démarrage depuis la
   fiche de l'agent (`grapheDuRepondeur`, `src/repondeur/graphe.ts`), figé dans le parcours (type de lancement
   `repondeur`, `fourni_fige`). Ses règles d'arrêt, `humain` et `timeout` mènent à une fin silencieuse ; `echec`,
@@ -1298,7 +1340,8 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 - 🔴 **LE JOURNAL DES ÉVÉNEMENTS D'UNE CONVERSATION** (`conversation_evenements`, `src/inbox/evenements.ts`) :
   assignée, désassignée, prise à l'agent de Meta, rendue à l'agent, passée à l'équipe par l'agent, traitée,
   archivée, signalée, urgente et leurs inverses, rouverte par un message du contact, et terminée par un agent IA
-  (`sortie_agent`, sa règle d'arrêt dans la cause, écrit par `sortirDuBlocAgent`). Lu par
+  (`sortie_agent`, sa règle d'arrêt dans la cause, écrit par `sortirDuBlocAgent`), et le bloc « Envoyer au MBA »
+  qui a trouvé l'agent de Meta éteint (`mba_indisponible`, 0217, `noterMbaIndisponible`, le scénario dans la cause). Lu par
   `GET /tenants/:tenantId/conversations/:conversationId/detail` (`PgInboxStore.detailConversation`), les 50
   derniers, sous la visibilité de `src/inbox/assignment.ts` (`visibiliteSql`) : un agent ne lit que les siennes
   et le pot commun, sinon 404. Deux règles d'écriture, tenues par `PgInboxStore` et par lui seul :
@@ -1520,18 +1563,18 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   inverse, une première réponse de campagne « Inbox » arrivée en `standby` était prise pour l'équipe, puis réécrite
   `mba` par ce même `standby`, alors que Meta venait de nous céder le fil ; la prise n'ayant lieu qu'une fois, rien
   ne la refaisait.
-- 🔴 **LE RÉPONDEUR IA PASSE PAR LA MÊME REMISE QUE L'AGENT DE META.** Avec un agent IA désigné, la remise
-  « personne ne suit » garde les mêmes gardes, dans le même ordre (délai de l'équipe, parcours en attente, fil de
-  test, contact désabonné ou bloqué, numéro), puis démarre l'agent IA (`DepsControleDuFil.repondeur`, REQUIS) au
-  lieu de confier à Meta. Un fil de l'équipe dont le délai est écoulé revient d'abord à `app_workflow` (le
-  lancement du répondeur ne le prend jamais à un opérateur). Un message redélivré par Meta ne démarre rien, une
-  RÉACTION non plus (un emoji, ou son retrait : `reactionsSeules`, lu sur le TYPE par la remise, jamais sur un texte
-  vide, puisque le message « à côté » confié plus bas arrive sans texte). Si
-  l'agent ne peut pas répondre (crédit épuisé, modèle absent, agent inactif, lancement refusé), la conversation
-  passe à l'équipe avec une demande. Les autres gestes ne changent pas : `mba_enabled` est faux par construction,
-  donc « Rendre la main », la fin de parcours et le balayage laissent le fil à `app_workflow`, et le prochain
-  message relance l'agent. Seul le message « à côté » d'un parcours qui finit, que la fin de parcours transmettait à
-  l'agent de Meta, va au répondeur IA (`WorkflowExecutorDeps.confierAuRepondeur`, par cette même remise).
+- 🔴 **LA REMISE « PERSONNE NE SUIT » SUIT LE MODE** (RC6, `remettreSiPersonneNeSuit`, un `switch` sans `default` :
+  un mode ajouté ne compile pas sans sa branche). Mêmes gardes, dans le même ordre, pour tous (délai de l'équipe,
+  parcours en attente, numéro bloqué), puis : `mba` confie à Meta ; `agent` et `scenario` passent les gardes d'un
+  robot (redélivrance, réaction seule, fil de test, contact désabonné ou bloqué, numéro) et démarrent l'agent IA ou
+  le scénario (`DepsControleDuFil.repondeur`, REQUIS, liaison tardive du socle) ; `equipe` passe le fil à l'équipe.
+  Un fil de l'équipe dont le délai est écoulé revient d'abord à `app_workflow` pour un robot (son lancement ne le
+  prend jamais à un opérateur). Une RÉACTION ne démarre rien (`reactionsSeules`, lu sur le TYPE par la remise, jamais
+  sur un texte vide, puisque le message « à côté » confié plus bas arrive sans texte). Si le robot ne peut pas
+  répondre (crédit épuisé, modèle absent, agent inactif, scénario injouable, lancement refusé), la conversation passe
+  à l'équipe avec une demande. Hors du mode `mba`, « Rendre la main », la fin de parcours et le balayage laissent le
+  fil à `app_workflow`, et le prochain message relance le répondeur du mode ; le message « à côté » d'un parcours qui
+  finit va à ce répondeur (`WorkflowExecutorDeps.confierAuRepondeur`, par cette même remise).
 - 🔴 **L'AGENT DE META EST TOUJOURS EN MODE LISTE, ET C'EST LA PLATEFORME QUI TIENT LA LISTE** (mesuré le
   2026-09-29). Un contact absent de la liste n'entend jamais l'agent, même quand Meta lui a rendu le fil : c'est
   le seul interrupteur par contact que Meta nous donne. L'action `take` de `thread_control` ne nous rendait rien
@@ -1631,7 +1674,9 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 | Colonne | Ce qu'elle gouverne |
 |---|---|
 | `mba_enabled` | l'agent Meta Business Agent est actif sur cet espace |
-| `repondeur_agent_id` | l'agent IA répondeur de l'espace (§ 4.4), `null` = aucun. 🔴 Exclusif de `mba_enabled`, par le CHECK `tenant_settings_repondeur_une_voix_chk` ; le seul écrivain de `mba_enabled` (`setMbaEnabled`) le remet à `null` en allumant, dans la même instruction. Clé étrangère en `on delete set null` : supprimer l'agent laisse l'espace sans répondeur |
+| `repondeur_mode` | qui répond au client (§ 4.4, 0217) : `mba`, `agent`, `scenario` ou `equipe` (défaut). Le seul écrivain est `choisirRepondeur` ; `setMbaEnabled` le change aussi, dans la même instruction que le drapeau (allumer quand personne ne répond passe en `mba`, éteindre en `mba` passe en `equipe`) |
+| `repondeur_agent_id` | l'agent IA du mode `agent` (0209). CHECK à sens unique `tenant_settings_repondeur_agent_chk` : non nul seulement en mode `agent`. Clé étrangère en `on delete set null` : supprimer l'agent laisse le mode `agent` sans agent, lu `equipe` |
+| `repondeur_workflow_id` et `repondeur_delai_scenario_s` | le scénario du mode `scenario` et son délai (1 h à 30 jours, 24 h par défaut), même règle à sens unique (`tenant_settings_repondeur_scenario_chk`), clé étrangère en `on delete set null` vers `workflows` |
 | `hubspot_lists_enabled` | l'import de contacts HubSpot (pas les étapes de deal) |
 | `hubspot_actif` | l'interrupteur HubSpot de l'espace (0179, Paramètres > Intégrations) : allumé, le bloc HubSpot de l'Accueil s'affiche, numéro ou pas. `false` par défaut ; la reprise de 0179 l'a allumé pour les espaces reliés à un portail (`mmhs.tenant_portals` joint à `mmhs.portals`, la lecture de `getHubspotPortal`), gardée par `to_regclass` parce qu'une base sans connecteur n'a pas ce schéma. 🔴 **On ne l'éteint pas tant qu'un portail est relié** : `PATCH /settings/hubspot-actif` rend 409, sinon les analyses continueraient de partir vers HubSpot depuis un espace où il paraît éteint. 🔴 Et une lecture du portail en ÉCHEC refuse l'extinction (503, « réessayez »), elle ne vaut jamais « pas relié » ici : seul un schéma du connecteur absent (`42P01`) rend `false` dans le câblage (`src/index.ts`), toute autre erreur remonte, et seul l'affichage (`GET /settings`) la rattrape en « pas relié ». On délie d'abord (« Déconnexion complète »), et un espace SANS numéro le fait par `POST /hubspot/deconnexion`, la même fonction que la porte d'un numéro. ⚠️ Il ne gouverne PAS le masquage des fonctions HubSpot des campagnes et des automations, qui suit le portail relié (`hubspotPortalConnecte`). ⚠️ Côté console, `undefined` (API plus ancienne) n'est pas `false` : `affichageHubspotAccueil` (`web/lib/hubspot-actif.ts`) garde alors l'ancien comportement |
 | `campaigns_paused` | coupe-circuit d'envoi pour tout l'espace |
@@ -2242,7 +2287,8 @@ l'activer, et d'ouvrir une recharge du crédit.
 - **Les bornes de chaque saisie de la console sont annoncées dans le schéma de l'outil**, lues dans son Zod : l'extracteur
   partagé `tests/aide/bornes-zod.ts`, appliqué par `tests/mcp-agent.test.ts` (et par `tests/mcp-widgets.test.ts`).
 - ⚠️ Un agent créé et activé par Claude ne répond à aucun client tant qu'un scénario publié ne le contient pas, ou
-  qu'il n'est pas désigné répondeur de l'espace (`set_default_responder`) : les descriptions des outils le disent.
+  qu'il n'est pas choisi pour répondre au client (`set_default_responder`, mode `agent`) : les descriptions des outils
+  le disent.
 
 🔴 **LE CORS EST EN LISTE BLANCHE ET SANS `credentials`, et les deux comptent.** `CORS_ORIGINS` refuse `*` AU
 CHARGEMENT de la configuration. Jamais `credentials: true` : la session voyage dans un en-tête
@@ -3379,7 +3425,8 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/pubs/publicites.pg.ts` -> `coutParPub` | 🔴 le coût par engagé des publicités sur une PÉRIODE (carte Coûts) : la dépense des jours de la période (`pubs_depense_jour`, 0198) et les PERSONNES arrivées par la campagne dans la période. Un engagé a cliqué PUIS écrit, ce n'est pas un prospect qualifié. Les jours sont ceux du compte publicitaire, les arrivées bornées à l'heure de Paris |
 | `src/crm/transition-consentement.ts` | 🔴 LA transition du consentement WhatsApp d'une fiche : qui lève un STOP (`LEVE_UN_STOP`, par autorité typée), ce que deviennent statut, `opt_out_at` et `opt_in_source`, et qui est passé à `opted_out` (à annoncer). Les six écritures de `PgContactStore` la composent (`affectationsDUpsert`, `ecritureDuConsentement`) ; une septième copie divergerait, comme deux l'ont fait (738a7c3d) |
 | `src/crm/contact-store.pg.ts` -> `projectionPourTiers` | 🔴 la fiche projetée pour tout ce qui sort vers un tiers (connecteur, opt-out poussé, relais de l'agent de Meta, `mba_lire_contact`) : nom, tags, champs, JAMAIS le numéro, le BSUID ni l'opt-in |
-| `src/repondeur/reglage.ts` -> `choisirRepondeur` | 🔴 le seul geste qui désigne ou retire le répondeur de l'espace, pour la console et le MCP : agent actif et modèle exigés, agent de Meta éteint puis sa liste vidée AVANT d'écrire le réglage, ses fils `mba` rendus aux robots APRÈS, ligne d'historique |
+| `src/repondeur/mode.ts` -> `MODES_REPONDEUR`, `modeEffectif`, `leMbaRepond`, `standbyPourNous` | 🔴 la liste des modes (miroir du CHECK de 0217 et de `web/lib/repondeur.ts`) et les trois questions qu'on lui pose : le mode qui s'applique, « le MBA est-il le répondeur ? », « un standby hors liste est-il pour nous ? ». Des `switch` sans `default` |
+| `src/repondeur/reglage.ts` -> `choisirRepondeur` | 🔴 le seul geste qui règle qui répond au client, pour la console et le MCP : cible vérifiée (agent actif et modèle, scénario publié, agent de Meta configurable et allumé au besoin), réglage écrit AVANT tout effet, puis, en quittant le mode `mba`, sa liste vidée et ses fils `mba` rendus aux robots, ligne d'historique |
 | `src/workflow/lancements.ts` -> `creerLancements`, `POLITIQUE_DE_LANCEMENT` | 🔴 le seul chemin pour démarrer un parcours : un TYPE de lancement (liste fermée) et sa politique (reprise du fil, publication des étiquettes, graphe joué, garde de fenêtre), lue par `WorkflowExecutor.demarrer`. Un câblage choisit un type, jamais un réglage ; `tests/workflow-lancements.test.ts` exécute la table |
 | `src/workflow/engine.ts` -> `FENETRE_SERVICE_MS` | la fenêtre de service de Meta (24 h), pour le balayage de contrôle et la fenêtre ouverte de l'Inbox |
 | `src/crm/render.ts` -> `escapeHtml` | l'échappement HTML du dépôt (gabarits d'e-mail, pages d'erreur des liens tracés) |
