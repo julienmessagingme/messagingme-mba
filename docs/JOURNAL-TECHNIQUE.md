@@ -59,6 +59,12 @@ changement d'offre (une purge irréversible à la clé). Les autres jaunes sont 
 **Mesures** : racine 10 744 tests verts (deux inventaires `git grep` rouges hors dépôt, verts en CI), console 929
 unitaires et 1 421 e2e, auto-attaque 1 537 sondes sans trouvaille, CI verte job par job sur les deux commits.
 
+**Essai réel** (11 h 49 à 11 h 51 UTC) : « Espace de dumas family » ramené en Base par l'écriture de `/ops`
+(conservation inchangée, trace `ops_offre`), relu par le code (Base, aucune fonction, 1 fiche sur 100, 1 membre sur
+1) ; Julien a vu dans la console l'Inbox, le Performance Lab et les menus payants grisés ; l'espace est remis en
+Entreprise juste après. ⚠️ La bascule par script depuis cette session a d'abord été refusée par le mode automatique
+(écriture distante en production) : elle est passée une fois Julien en mode « accepter les modifications ».
+
 ## 2026-10-06 : le numéro fourni libéré à J+7, « Abandonner » et les e-mails (lot 4, livraison B)
 
 **Ce qui part** (`40f8322e`, test `a2bf45c7`, console `7fe7c7e7`, aucune migration) : 7 jours après la fin d'un
