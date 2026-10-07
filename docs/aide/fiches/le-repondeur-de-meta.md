@@ -1,7 +1,7 @@
 ---
 ecran: mba-settings
 source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA)
-source_empreinte: 2a380f
+source_empreinte: bca5a2
 ---
 # Le répondeur de Meta : à quoi il sert, et comment le régler
 
@@ -23,10 +23,12 @@ lui confie la conversation, et il répond au message suivant du client ; « Repr
 contact de la liste. Une conversation que l'agent n'a pas pu prendre (un client qui n'a pas partagé son numéro,
 par exemple) passe à votre équipe, dans « À traiter ».
 
-**Un agent IA peut le remplacer.** Un espace n'a qu'un répondeur : l'agent de Meta, ou un agent IA que vous
-choisissez comme répondeur de l'espace (menu AI Agent > Other AI agent), et choisir un agent IA éteint l'agent de
-Meta. À l'inverse, **allumer l'agent de Meta retire l'agent IA de ce rôle** : l'interrupteur de l'Accueil et celui
-des paramètres vous le disent avant, en le nommant, et l'assistant le précise sur la ligne de mise en service.
+**Allumé, il est disponible ; il ne répond que si vous l'avez choisi.** Qui répond au client se règle sur
+l'Accueil, dans « Qui répond au client » : l'agent de Meta, un agent IA, un scénario, ou votre équipe. Quand ce
+n'est pas lui, l'agent de Meta allumé reste **en veille** : il ne prend que les contacts qu'un bloc « Envoyer au
+MBA » d'un scénario lui envoie, et il y répond tout de suite. L'allumer quand c'est votre équipe qui répond en fait
+le répondeur ; l'éteindre quand c'est lui qui répond vous est demandé en confirmation, et les messages vont alors à
+votre équipe. Les paramètres et l'assistant vous disent, avant de l'allumer, s'il restera en veille.
 
 Sous le menu AI Agent, l'entrée **MBA** ouvre ses **paramètres**, qui le règlent pour de vrai.
 

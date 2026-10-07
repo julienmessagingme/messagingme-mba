@@ -36,14 +36,14 @@ test.describe('MBA Paramètres : vue d’ensemble', () => {
   });
 
   /**
-   * 🔴 LOT 5, RELECTURE DE LA LIVRAISON A (J7), TENU DEPUIS LA RELECTURE DE B (JB3 b) : allumer l'agent de Meta retire
-   * l'agent IA répondeur de ce rôle, et la confirmation de CET interrupteur le dit en le nommant, comme l'Accueil.
+   * 🔴 RC6 (le lot 5, J7, disait l'inverse) : avec un agent IA qui répond au client, allumer l'agent de Meta le laisse en
+   * VEILLE, et la confirmation de cet interrupteur le dit en nommant qui répond, au lieu de promettre qu'il répondra.
    */
-  test('🔴 J7 : avec un agent IA répondeur, la confirmation d’allumage le nomme, et un refus n’envoie rien', async ({ page }) => {
+  test('🔴 RC6 : avec un agent IA qui répond, la confirmation d’allumage dit la veille, et un refus n’envoie rien', async ({ page }) => {
     const calls = await mockMba(page, { custom: repondeurIa() });
     await page.goto('/mba/parametres');
     await page.getByTestId('mba-rollout-toggle').click();
-    await repondre(page, false, /L’agent IA « Léa » est aujourd’hui le répondeur de l’espace. Allumer l’agent de Meta le retire de ce rôle/);
+    await repondre(page, false, /L’agent IA « Léa » répond aujourd’hui au client .*restera en veille/);
     await expect.poll(() => appelsMba(calls, 'PUT', '/rollout').length).toBe(0);
   });
 

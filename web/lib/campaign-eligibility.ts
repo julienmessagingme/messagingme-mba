@@ -137,7 +137,7 @@ export function scanOpening(graph: GraphLike): OpeningScan {
     seen.add(id);
     const node = byId.get(id);
     if (!node) continue;
-    if (node.type === 'inbox') continue;
+    if (node.type === 'inbox' || node.type === 'vers_mba') continue;
     if (node.type === 'template') {
       const nom = String(node.data.templateName ?? '').trim();
       if (nom !== '') noms.add(nom);
@@ -322,7 +322,7 @@ export function waitBeforeSessionMessage(graph: GraphLike): WaitThenSession | nu
     meilleur.set(id, cumul);
     const node = byId.get(id);
     if (!node) continue;
-    if (node.type === 'inbox') continue;
+    if (node.type === 'inbox' || node.type === 'vers_mba') continue;
     if (node.type === 'aller_a') {
       // Miroir du serveur : un saut vers un bloc de CE graphe se suit, attente cumulée comprise. Vers un autre scénario,
       // l'écran ne voit pas la suite : c'est la publication qui la vérifie, et la refuse si elle ne partira pas.

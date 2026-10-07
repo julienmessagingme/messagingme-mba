@@ -43,7 +43,9 @@ export const NODE_META: Record<WorkflowNodeType, { icone: NomIcone; label: [stri
 // part sur le numero WhatsApp deja rattache. Une liste de plus aurait demande de mettre a jour ses TROIS
 // lecteurs (palette, menu du fil, puces de Contenu > Blocs), la derive exacte du commit c1b8441.
 // `aller_a` aussi : il ne dépend d'aucun branchement, seulement d'un autre bloc de l'espace.
-export const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'question', 'flow', 'action', 'condition', 'wait', 'inbox', 'aller_a', 'js'];
+// `vers_mba` aussi, et délibérément pas grisé quand l'agent de Meta est éteint : on prépare un scénario avant d'allumer
+// l'agent, et éteint au moment où le contact y arrive, le bloc passe la conversation à l'équipe (son panneau le dit).
+export const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'question', 'flow', 'action', 'condition', 'wait', 'inbox', 'vers_mba', 'aller_a', 'js'];
 
 // Bloc RCS : présenté à part et GRISÉ tant que le tenant n'a pas d'agent RCS rattaché. Même doctrine que les
 // blocs MBA. Le canal est construit de bout en bout, mais un agent doit être déposé et approuvé par Google et

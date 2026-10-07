@@ -55,6 +55,14 @@ export async function mockAccueil(
      * que ce support ne connaît pas, donc aucun répondeur IA.
      */
     repondeurIa?: { id: string; label: string };
+    /**
+     * « Qui répond au client » (RC6), rendu par `GET /repondeur` et TENU par le mock : un `PUT` le change, comme le
+     * serveur (le mode et sa cible, et l'agent de Meta allumé par le mode « mba »). Absent : `{}`, comme toute route que
+     * ce support ne connaît pas, donc la carte ne s'affiche pas (le cas d'une API d'avant RC6).
+     */
+    quiRepond?: Record<string, unknown>;
+    /** Rempli par le mock : le corps de chaque `PUT /repondeur` reçu. */
+    reglagesRepondeur?: unknown[];
     /** Fait échouer `POST /numero/code` en 422 avec ce message (refus de Meta, quota, numéro déjà vérifié). */
     codeNumeroRefus?: string;
     /** Fait échouer `POST /numero/activer` en 422 avec ce message (code faux, register refusé). */
@@ -100,7 +108,9 @@ export async function mockAccueil(
   }, SESSION);
 
   const account = { ...defaultAccount, ...over.account };
-  const settings = over.settings ?? defaultSettings;
+  const settings = over.settings ?? { ...defaultSettings };
+  // Copie : le mock la fait vivre (un `PUT /repondeur` la change), sans toucher l'objet du test.
+  const quiRepond = over.quiRepond ? { ...over.quiRepond } : undefined;
   // Liste des numéros (pour l'avertissement multi-numéros du dialogue de déconnexion). Défaut : 1 numéro.
   const phoneNumbers = Array.from({ length: over.numbersCount ?? 1 }, (_v, i) => ({ id: `PN${i + 1}`, displayPhoneNumber: '+33 5 25 68 02 50' }));
   // L'état VIVANT des services du bloc « Canaux et services », que leurs gestes font changer.
@@ -207,6 +217,13 @@ export async function mockAccueil(
       }
       const b = (route.request().postDataJSON() ?? {}) as { enabled?: boolean };
       over.activations?.push(b.enabled === true);
+      // La règle de mode du serveur (`setMbaEnabled`, RC6) : allumer en « Équipe » passe en « MBA », éteindre en « MBA »
+      // passe en « Équipe ».
+      if (quiRepond) {
+        quiRepond.mbaAllume = b.enabled === true;
+        if (b.enabled === true && quiRepond.modeEffectif === 'equipe') { quiRepond.mode = 'mba'; quiRepond.modeEffectif = 'mba'; }
+        if (b.enabled !== true && quiRepond.mode === 'mba') { quiRepond.mode = 'equipe'; quiRepond.modeEffectif = 'equipe'; }
+      }
       return json({ enabled: b.enabled === true, chezMeta: 'applique', phoneNumberId: 'PN1' });
     }
     // « Activer le numéro » (2026-09-22). Le mock fait l'ÉCHO du canal reçu, il ne le devine pas : c'est ce
@@ -219,6 +236,20 @@ export async function mockAccueil(
     if (url.endsWith('/numero/activer')) {
       if (over.activerNumeroRefus) return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: over.activerNumeroRefus }) });
       return json({ actif: true });
+    }
+    if (quiRepond && new URL(url).pathname.endsWith('/repondeur')) {
+      if (route.request().method() === 'PUT') {
+        const b = (route.request().postDataJSON() ?? {}) as Record<string, unknown>;
+        over.reglagesRepondeur?.push(b);
+        quiRepond.mode = b.mode;
+        quiRepond.modeEffectif = b.mode;
+        quiRepond.agentId = b.mode === 'agent' ? b.agentId : null;
+        quiRepond.workflowId = b.mode === 'scenario' ? b.workflowId : null;
+        if (b.mode === 'scenario' && typeof b.delaiHeures === 'number') quiRepond.delaiS = b.delaiHeures * 3600;
+        if (b.mode === 'mba') { quiRepond.mbaAllume = true; settings.mbaEnabled = true; }
+        return json({ mode: b.mode });
+      }
+      return json(quiRepond);
     }
     if (over.repondeurIa && new URL(url).pathname.endsWith('/agents')) {
       const r = over.repondeurIa;

@@ -71,6 +71,7 @@ import { useConfirmation } from '@/components/Confirmation';
 import { Modale } from '@/components/Modale';
 import { Squelette } from '@/components/Squelette';
 import { InboxDetail } from '@/components/InboxDetail';
+import { modeEffectifDesReglages } from '@/lib/repondeur';
 
 export default function InboxPage() {
   // Suspense : useSearchParams (deep-link ?c=) exige une frontière Suspense au build (Next 15).
@@ -1326,7 +1327,9 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
   useEffect(() => {
     void getSettings(session.tenantId).then((s) => {
       setRcsEnabled(s.rcsEnabled === true);
-      setMbaActif(s.mbaEnabled === true);
+      // RC6 : « Passer à l'agent Meta » n'a de sens que s'il est le RÉPONDEUR (mode « MBA ») ; allumé en veille, le
+      // serveur laisserait le fil aux robots, et le bouton mentirait. Une API d'avant RC6 : la règle de la reprise.
+      setMbaActif(modeEffectifDesReglages(s) === 'mba');
     }).catch(() => {});
   }, [session.tenantId]);
   const bottomRef = useRef<HTMLDivElement>(null);

@@ -144,6 +144,20 @@ le serveur, et la CI ne tourne que sur `main`. La fenêtre où la console conna�
 enregistrement de scénario qui en contient un serait refusé) a été dite et réduite : déploiement de l'API dans la
 foulée de la CI.
 
+**RC6, qui répond au client** (serveur `035ebf83` et son correctif de test `5227d20c`, migration 0217 à 9 h 11 UTC
+avant le `up` ; console ensuite) : quatre modes (MBA, agent IA, scénario, équipe), le MBA allumé n'est répondeur qu'en
+mode MBA et sinon en veille, le bloc « Envoyer au MBA ». Mesuré avant : `tenant_settings` n'avait que deux lignes (un
+agent IA, un MBA), et 7 espaces sans ligne passent en Équipe, dont 5 avec des conversations sur 30 jours : leurs
+messages sans suite entrent désormais dans « À traiter ». Relu : zéro rouge ; trois jaunes corrigés avant la
+production (le bloc vers un MBA éteint ne mettait pas la conversation dans « À traiter », une conversation de test y
+entrait en mode Équipe, la colonne de `contacts` verrouillait la table plus longtemps que nécessaire), vérifiés dans
+les deux sens. ⚠️ Le job `integration` de `035ebf83` était ROUGE sur deux assertions du test lui-même (un mode inconnu
+posé avec un agent viole aussi le CHECK de l'agent, que Postgres signale en premier ; un scénario de test qui survivait
+et polluait le test suivant) : corrigé dans `5227d20c`, aucun code de production touché, et la migration n'a été
+appliquée qu'après la CI verte. ⚠️ Incident de session, sans dégât : une commande de vérification a lancé le test
+d'intégration en local ; il s'est sauté tout seul (`DATABASE_URL` absent de l'environnement du shell, `vitest` ne
+charge pas `.env`), et aucun espace `itest-` n'existe en production.
+
 ## 2026-10-06 : le numéro branché depuis Claude Code, et son abonnement (lot 3c, livraisons A et B)
 
 **A, le lien et l'attente** (`d20dea6b`, jaunes `f8708b65`, console `b4f81ec4`) : `start_whatsapp_connection` donne

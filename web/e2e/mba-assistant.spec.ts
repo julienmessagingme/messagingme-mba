@@ -81,11 +81,11 @@ test.describe('MBA Assistant : ce que l ecran propose', () => {
   });
 
   /**
-   * 🔴 LOT 5, RELECTURE DE LA LIVRAISON A (J7), TENU DEPUIS LA RELECTURE DE B (JB3 c) : la mise en service que
-   * l'assistant propose allume l'agent de Meta, donc retire l'agent IA répondeur de ce rôle. Sa ligne du diff le dit,
-   * en le nommant ; pas de seconde confirmation (décision de Julien du 2026-09-14), c'est le diff qui protège.
+   * 🔴 RC6 (le lot 5, J7, disait l'inverse) : la mise en service que l'assistant propose allume l'agent de Meta, mais un
+   * agent IA qui répond au client le reste ; l'agent de Meta est alors en VEILLE. Sa ligne du diff le dit, en nommant qui
+   * répond ; pas de seconde confirmation (décision de Julien du 2026-09-14), c'est le diff qui protège.
    */
-  test('🔴 J7 : la ligne « mise en service » du diff dit que l’agent IA répondeur quitte ce rôle', async ({ page }) => {
+  test('🔴 RC6 : la ligne « mise en service » du diff dit que l’agent de Meta restera en veille', async ({ page }) => {
     const repondeur = repondeurIa();
     await mockMba(page, {
       custom: async (route, method, url, body) => {
@@ -106,8 +106,8 @@ test.describe('MBA Assistant : ce que l ecran propose', () => {
     await page.getByTestId('mba-assistant-saisie').fill('Mets l’agent en service');
     await page.getByTestId('mba-assistant-envoyer').click();
     await expect(page.getByTestId('mba-assistant-diff')).toContainText('Mettre l’agent en service');
-    await expect(page.getByTestId('mba-assistant-repondeur-retire'))
-      .toContainText('L’agent IA « Léa » est aujourd’hui le répondeur de l’espace. Allumer l’agent de Meta le retire de ce rôle');
+    await expect(page.getByTestId('mba-assistant-veille'))
+      .toContainText('L’agent IA « Léa » répond aujourd’hui au client (Accueil, « Qui répond au client »). Allumé, l’agent de Meta restera en veille');
   });
 
   test('🔴 une etape FACULTATIVE a faire ne se dit jamais « obligatoire »', async ({ page }) => {

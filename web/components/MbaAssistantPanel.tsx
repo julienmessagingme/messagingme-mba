@@ -12,7 +12,7 @@ import { Bouton } from '@/components/Bouton';
 import { Icone } from '@/components/Icone';
 import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
-import { lireRepondeurIa } from '@/lib/api-agent';
+import { lireQuiRepond } from '@/lib/api-agent';
 import { avertissementAllumageMeta } from '@/lib/repondeur';
 
 /** L'opération qui allume l'agent de Meta (`activation.mettreEnService`, `src/mba/assistant/proposition.ts`). */
@@ -72,19 +72,20 @@ export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
   const [erreur, setErreur] = useState<string | null>(null);
   const [budgetEpuise, setBudgetEpuise] = useState(false);
   /**
-   * Ce que la mise en service proposée retire, lu seulement quand le diff la porte (lot 5 ; relecture de la livraison
-   * A, J7) : allumer l'agent de Meta retire l'agent IA répondeur de ce rôle. Le diff NOMME ce qu'il va faire, c'est sa
-   * seule protection (pas de seconde confirmation, décision de Julien du 2026-09-14) : il doit donc le dire aussi.
+   * Ce que la mise en service proposée change, lu seulement quand le diff la porte (RC6 ; le lot 5 disait ici qu'elle
+   * retirait l'agent IA répondeur, ce qui n'est plus vrai) : en mode agent IA ou scénario, l'agent de Meta allumé reste
+   * en VEILLE. Le diff NOMME ce qu'il va faire, c'est sa seule protection (pas de seconde confirmation, décision de
+   * Julien du 2026-09-14) : il doit donc le dire aussi.
    */
-  const [miseEnServiceRetire, setMiseEnServiceRetire] = useState<string | null>(null);
+  const [miseEnServiceVeille, setMiseEnServiceVeille] = useState<string | null>(null);
   const finDuFil = useRef<HTMLDivElement>(null);
   const metEnService = diff.some((o) => o.type === OPERATION_MISE_EN_SERVICE);
   useEffect(() => {
-    if (!metEnService) { setMiseEnServiceRetire(null); return; }
+    if (!metEnService) { setMiseEnServiceVeille(null); return; }
     let vivant = true;
-    void lireRepondeurIa(tenantId)
-      .then((r) => { if (vivant) setMiseEnServiceRetire(avertissementAllumageMeta(r, t)); })
-      .catch(() => { if (vivant) setMiseEnServiceRetire(null); });
+    void lireQuiRepond(tenantId)
+      .then((e) => { if (vivant) setMiseEnServiceVeille(avertissementAllumageMeta(e, t)); })
+      .catch(() => { if (vivant) setMiseEnServiceVeille(null); });
     return () => { vivant = false; };
   }, [metEnService, tenantId, t]);
 
@@ -284,7 +285,7 @@ export function MbaAssistantPanel({ tenantId, etapesRestantes = null }: {
         <div ref={finDuFil} />
       </div>
 
-      {diff.length > 0 && <Diff operations={diff} busy={busy} miseEnServiceRetire={miseEnServiceRetire} onAppliquer={() => { void appliquer(); }} />}
+      {diff.length > 0 && <Diff operations={diff} busy={busy} miseEnServiceVeille={miseEnServiceVeille} onAppliquer={() => { void appliquer(); }} />}
       {resultat && <Resultat resultat={resultat} />}
 
       {/*
@@ -347,11 +348,11 @@ function Bulle({ role, children }: { role: 'user' | 'assistant'; children: React
  * chaque ligne NOMME ce qu'elle va faire. Une suppression est signalée à part, parce qu'elle est la seule
  * chose qu'on ne peut pas défaire : Meta n'a pas de corbeille.
  */
-function Diff({ operations, busy, miseEnServiceRetire, onAppliquer }: {
+function Diff({ operations, busy, miseEnServiceVeille, onAppliquer }: {
   operations: OperationAssistantMba[];
   busy: boolean;
   /** Ce que la mise en service retire (l'agent IA répondeur), dit sur sa ligne ; `null` = rien à dire. */
-  miseEnServiceRetire: string | null;
+  miseEnServiceVeille: string | null;
   onAppliquer: () => void;
 }) {
   const t = useT();
@@ -370,9 +371,9 @@ function Diff({ operations, busy, miseEnServiceRetire, onAppliquer }: {
                   {t('(définitif : Meta ne garde pas de copie)', '(permanent: Meta keeps no copy)')}
                 </span>
               )}
-              {o.type === OPERATION_MISE_EN_SERVICE && miseEnServiceRetire !== null && (
-                <span className="mt-0.5 block text-xs text-alerte-800" data-testid="mba-assistant-repondeur-retire">
-                  {miseEnServiceRetire}
+              {o.type === OPERATION_MISE_EN_SERVICE && miseEnServiceVeille !== null && (
+                <span className="mt-0.5 block text-xs text-alerte-800" data-testid="mba-assistant-veille">
+                  {miseEnServiceVeille}
                 </span>
               )}
             </li>

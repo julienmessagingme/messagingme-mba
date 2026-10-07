@@ -108,6 +108,8 @@ function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) =
     const cible = String(data.cible ?? '').trim();
     return libelle !== '' ? `→ ${libelle}` : cible !== '' ? `→ ${cible}` : t('choisir le bloc où aller…', 'choose the block to go to…');
   }
+  // RC6 : l'agent de Meta prend le contact et répond à son dernier message ; le parcours s'arrête là.
+  if (wfType === 'vers_mba') return t('l’agent de Meta prend la conversation', 'Meta’s agent takes the conversation');
   // MBA : pré-câblage inerte, le sous-titre le rappelle (le bloc ne fait rien tant que MBA n'est pas actif).
   return t('la conversation arrive en inbox', 'the conversation lands in the inbox');
 }
@@ -247,8 +249,9 @@ function WFNode({ id, data, selected }: NodeProps) {
   const isRcs = wfType === 'rcs_message';
   const isQuestion = wfType === 'question';
   const isAgent = wfType === 'agent';
-  // « Aller à » (RC5) : aucune sortie, la suite est là où il mène.
-  const isAllerA = wfType === 'aller_a';
+  // « Aller à » (RC5) : aucune sortie, la suite est là où il mène. « Envoyer au MBA » (RC6) non plus : le parcours finit,
+  // l'agent de Meta prend la conversation, et le moteur ne suivrait aucune flèche tirée d'ici.
+  const isAllerA = wfType === 'aller_a' || wfType === 'vers_mba';
   const codeDuBloc = typeof data.code === 'string' && CODE_BLOC_RE.test(data.code) ? data.code : '';
   // Les règles d'arrêt COPIÉES de la fiche au moment du choix de l'agent. Le bloc est ainsi auto-suffisant :
   // le graphe se lit et se route sans aller relire la table des agents.

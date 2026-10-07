@@ -258,17 +258,25 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
 }
 
 /**
- * Un espace dont l'agent IA « Léa » est le répondeur (lot 5) : la liste des agents le dit, comme la lit `lireRepondeurIa`
- * au moment d'allumer l'agent de Meta (J7). À passer en `custom`. `tenue` : la liste ne répond qu'une fois la promesse
- * résolue, pour voir l'écran PENDANT la lecture.
+ * Un espace dont l'agent IA « Léa » répond au client (lot 5, RC6) : « Qui répond au client » le dit
+ * (`GET /repondeur`, lu par `lireQuiRepond` au moment d'allumer l'agent de Meta, qui reste alors en veille), et la liste
+ * des agents aussi. À passer en `custom`. `tenue` : la réponse n'arrive qu'une fois la promesse résolue, pour voir
+ * l'écran PENDANT la lecture.
  */
 export function repondeurIa(tenue?: Promise<void>): NonNullable<MbaFixtures['custom']> {
   return async (route, method, url) => {
-    if (method !== 'GET' || !new URL(url).pathname.endsWith('/agents')) return false;
+    const chemin = new URL(url).pathname;
+    if (method !== 'GET' || !(chemin.endsWith('/agents') || chemin.endsWith('/repondeur'))) return false;
     if (tenue) await tenue;
     await route.fulfill({
       status: 200, contentType: 'application/json',
-      body: JSON.stringify({ agents: [{ id: 'ag-lea', label: 'Léa', status: 'active', sorties: [], modele: 'm' }], repondeurAgentId: 'ag-lea' }),
+      body: JSON.stringify(chemin.endsWith('/repondeur')
+        ? {
+          mode: 'agent', modeEffectif: 'agent', agentId: 'ag-lea', workflowId: null, delaiS: 86400,
+          mbaAllume: false, mbaConfigurable: true, modeleDisponible: true,
+          agentsActifs: [{ id: 'ag-lea', label: 'Léa' }], scenariosPublies: [],
+        }
+        : { agents: [{ id: 'ag-lea', label: 'Léa', status: 'active', sorties: [], modele: 'm' }], repondeurAgentId: 'ag-lea' }),
     });
     return true;
   };

@@ -2,6 +2,13 @@ import { test, expect } from '@playwright/test';
 import { mockAccueil } from './support/accueil';
 import { repondre } from './aide/confirmation';
 
+/** « Qui répond au client » (RC6), tel que `GET /repondeur` le rend : un agent IA actif, un scénario publié. */
+const QUI_REPOND = {
+  mode: 'equipe', modeEffectif: 'equipe', agentId: null, workflowId: null, delaiS: 86400,
+  mbaAllume: false, mbaConfigurable: true, modeleDisponible: true,
+  agentsActifs: [{ id: 'ag-lea', label: 'Léa' }], scenariosPublies: [{ id: 'wf-1', name: 'Bienvenue' }],
+};
+
 /**
  * F1 : la carte Meta Business Agent est remontée en tête. La reprise après opérateur, elle, a quitté cet
  * écran pour MBA > Paramètres > Activation, où elle vit avec le passage de main.
@@ -76,23 +83,44 @@ test.describe('Accueil : carte MBA + reprise opérateur (F1)', () => {
   });
 
   /**
-   * 🔴 LOT 5, RELECTURE DE LA LIVRAISON A (J7) : ALLUMER L'AGENT DE META RETIRE L'AGENT IA RÉPONDEUR DE CE RÔLE. Une
-   * seule voix : le serveur remet le répondeur IA à nul dans l'instruction même qui allume. L'écran le dit AVANT, en
-   * nommant l'agent ; refusé, rien ne part. Sans répondeur IA, le geste reste sans question (le cas du dessus).
+   * 🔴 RC6 : ALLUMÉ N'EST PLUS RÉPONDEUR (le lot 5, J7, faisait confirmer ici que l'agent IA répondeur perdait son rôle).
+   * Allumer l'agent de Meta avec un agent IA qui répond au client ne pose plus de question : il reste en veille, et
+   * « Qui répond au client » ne bouge pas.
    */
-  test('🔴 J7 : avec un agent IA répondeur, allumer l’agent de Meta le dit avant, et un refus n’envoie rien', async ({ page }) => {
+  test('🔴 RC6 : avec un agent IA qui répond, allumer l’agent de Meta part sans question, et le répondeur ne bouge pas', async ({ page }) => {
     const activations: boolean[] = [];
-    await mockAccueil(page, { repondeurIa: { id: 'ag-lea', label: 'Léa' }, activations });
+    await mockAccueil(page, { quiRepond: { ...QUI_REPOND, mode: 'agent', modeEffectif: 'agent', agentId: 'ag-lea' }, activations });
     const toggle = page.getByTestId('mba-toggle');
-    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByTestId('qui-repond')).toBeVisible();
     await toggle.click();
-    await repondre(page, false, /« Léa » est aujourd’hui le répondeur de l’espace/);
-    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
-    expect(activations).toEqual([]);
-    await toggle.click();
-    await repondre(page, true, /Allumer l’agent de Meta le retire de ce rôle/);
     await expect(toggle).toHaveAttribute('aria-pressed', 'true');
     expect(activations).toEqual([true]);
+    await expect(page.getByTestId('qui-repond').getByRole('radio', { name: 'Un agent IA' })).toBeChecked();
+  });
+
+  /**
+   * 🔴 RC6 : éteindre l'agent de Meta QUAND C'EST LUI QUI RÉPOND se confirme : ses conversations s'arrêtent, et les
+   * messages iront à l'équipe. Refusé, rien ne part ; accepté, la carte « Qui répond » passe à « L'équipe ».
+   */
+  test('🔴 RC6 : éteindre l’agent de Meta en mode « MBA » se confirme, et la carte passe à l’équipe', async ({ page }) => {
+    const activations: boolean[] = [];
+    await mockAccueil(page, {
+      settings: { controlHandbackSeconds: null, mbaEnabled: true, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false },
+      quiRepond: { ...QUI_REPOND, mode: 'mba', modeEffectif: 'mba', mbaAllume: true },
+      activations,
+    });
+    const toggle = page.getByTestId('mba-toggle');
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('qui-repond').getByRole('radio', { name: 'L’agent de Meta (MBA)' })).toBeChecked();
+    await toggle.click();
+    await repondre(page, false, /C’est lui qui répond aujourd’hui au client/);
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    expect(activations).toEqual([]);
+    await toggle.click();
+    await repondre(page, true, /vos messages sans suite iront à l’équipe/);
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(activations).toEqual([false]);
+    await expect(page.getByTestId('qui-repond').getByRole('radio', { name: 'L’équipe' })).toBeChecked();
   });
 
   test('🔴 un refus du serveur ne bascule RIEN, et il le DIT', async ({ page }) => {

@@ -1,7 +1,7 @@
 ---
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
-source_empreinte: 2be0bd
+source_empreinte: e37142
 ---
 # Connecter mon numéro WhatsApp, et lire son état
 
@@ -89,5 +89,5 @@ dit ce qui s'arrête. Éteindre le numéro le **délie** de l'espace : plus aucu
 qui ont un étage WhatsApp (repli compris) passent en pause, un scénario s'arrête à son premier envoi WhatsApp, et
 les messages reçus ne sont plus enregistrés ; les campagnes uniquement RCS et les scénarios sans WhatsApp (e-mail ou
 RCS seuls) continuent. Le numéro se relie d'un clic. Rien ne change chez Meta : si l'agent de Meta est allumé, il
-continue de répondre à vos clients. Éteindre la chaîne oublie ses identifiants, mais les publications déjà parues
+continue de répondre aux clients qu'il tient. Éteindre la chaîne oublie ses identifiants, mais les publications déjà parues
 restent en ligne. Ces interrupteurs sont réservés aux administrateurs.

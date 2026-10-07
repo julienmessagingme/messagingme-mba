@@ -783,6 +783,13 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   scénario), ou si un saut placé après une attente de 24 h ou plus mène à un message hors modèle, qui ne partirait
   jamais. Une campagne ne peut pas ouvrir sur un saut vers un autre scénario : il faut choisir directement le scénario
   d'arrivée.
+- ✅ **Bloc « Envoyer au MBA »** (RC6) : le parcours s'arrête et **l'agent de Meta prend la conversation**, quel que
+  soit le répondeur choisi pour l'espace (voir l'Accueil, « Qui répond au client »). Il répond **tout de suite au
+  dernier message du contact**, puis garde ce contact tant qu'un scénario ou un membre de l'équipe ne le reprend pas.
+  Le bloc n'a pas de sortie. Il reste dans la palette même quand l'agent de Meta est éteint (on prépare un scénario
+  avant de l'allumer) : son panneau prévient alors que, tant qu'il l'est, **la conversation passe à l'équipe**, dans
+  « À traiter », et l'historique de la conversation le dit (« Agent de Meta éteint : la conversation va à l'équipe »).
+  ⚠️ Ce n'est pas l'ancien bloc MBA retiré : un ancien scénario qui en contient un continue de le traverser sans agir.
 - ✅ **Copier le code d'un bloc** (2026-10-07) : sur chaque bloc, un bouton en haut à gauche copie son **code**
   (`nod_…`), celui qu'on colle dans un « Aller à », dans l'API (`/v1/sends`) ou dans l'outil « Envoyer un bloc ». Il est
   grisé tant que le bloc n'est pas enregistré ; l'enregistrement automatique lui donne son code une seconde après.
@@ -996,10 +1003,10 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   et dont le repli envoie un message simple, les contacts joints par le repli répondent sans qu'aucun
   scénario ne les prenne, et il faut bien dire où va leur conversation.
 - ✅ **« Le répondeur automatique prend la main »** (2026-10-05, ex-« L'agent de Meta prend la main ») : à la
-  question « Que se passe-t-il quand le contact répond ? », ce choix laisse la réponse au répondeur de l'espace,
-  l'agent de Meta ou l'agent IA désigné répondeur (voir « Agent IA », « Le répondeur de l'espace »). Il est grisé,
-  avec sa raison, quand l'espace n'a ni l'un ni l'autre, et l'Inbox est alors choisie par défaut. Le détail d'une
-  campagne lancée dit de même « le répondeur automatique répond ».
+  question « Que se passe-t-il quand le contact répond ? », ce choix laisse la réponse à celui que l'espace a choisi
+  sur l'Accueil, dans « Qui répond au client » : l'agent de Meta, un agent IA ou un scénario. Il est grisé, avec sa
+  raison, quand c'est l'équipe qui répond, et l'Inbox est alors choisie par défaut. Le détail d'une campagne lancée
+  dit de même « le répondeur automatique répond ».
 - ✅ **Réessayer les envois qui échouent : sur un canal seul uniquement** (2026-09-13). Avec une chaîne
   de repli, la question ne se pose plus : **le repli EST le rattrapage**, et le premier échec bascule
   déjà vers le canal suivant. Réessayer en plus, ce serait repartir sur le tuyau dont on sait qu'il ne
@@ -1844,6 +1851,28 @@ scénario, comment importer des contacts.
   couleur**, le **cap d'envoi sur 24 h** (« 1 000 clients / 24 h » selon le palier Meta, « Pas encore évalué par
   Meta » tant qu'il n'y en a pas ; le débit brut en messages par seconde, identique pour tous, n'est plus affiché),
   le **nom d'affichage** et la **santé du compte**, et la carte **MBA actif/inactif** (déplacée hors du Dashboard).
+- ✅ **« Qui répond au client »** (RC6, admins) : UN réglage décide qui répond à un nouveau contact, et à tout message
+  que ni un scénario, ni un mot-clé, ni un membre de l'équipe ne tient. Quatre positions :
+  - **L'agent de Meta (MBA)** : il répond, et lui seul reçoit ces contacts. Le choisir l'allume s'il est éteint.
+  - **Un agent IA** (on choisit lequel parmi les agents actifs) : il répond comme le ferait l'agent de Meta.
+  - **Un scénario** (on choisit un scénario publié, et un délai en heures, 24 h par défaut, de 1 h à 30 jours) : il
+    démarre au premier message, puis **au plus une fois par délai pour un même contact** ; entre-temps, les messages
+    vont à l'équipe. Deux messages envoyés au même instant ne le font partir qu'une fois.
+  - **L'équipe** : personne ne répond automatiquement, le message arrive dans « À traiter » et y reste tant que
+    personne ne lui a répondu.
+  Une position qui ne peut pas répondre est **grisée, avec le lien qui la configure** (agent de Meta pas encore
+  ouvert sur le numéro, aucun agent IA actif, aucun scénario publié). Rien ne change tant qu'on n'a pas cliqué sur
+  **Enregistrer**. Si l'agent ou le scénario choisi a été désactivé ou supprimé depuis, la carte le dit (« vos
+  messages vont à l'équipe »). Quitter « MBA » demande confirmation : l'agent de Meta cesse de répondre aux
+  conversations qu'il tient. Une automation « un nouveau contact écrit pour la première fois » garde la priorité, pour
+  qui veut un accueil distinct.
+  🔴 **Allumé n'est plus répondeur.** L'interrupteur de la carte de l'agent de Meta dit qu'il est **disponible** ; hors
+  de la position « MBA », il est **en veille** et ne prend un contact que par le bloc « Envoyer au MBA » d'un
+  scénario. L'allumer quand c'est l'équipe qui répond le fait passer répondeur (comme avant) ; l'éteindre quand c'est
+  lui qui répond se confirme, et les messages vont alors à l'équipe. Le lien de sa carte mène à ses réglages propres
+  (passage de main à un humain, reprise par un opérateur). ⚠️ À la mise en service, les espaces qui n'avaient ni
+  l'agent de Meta allumé ni un agent IA répondeur sont passés sur « L'équipe » : leurs messages sans suite, qui
+  n'allaient nulle part, entrent désormais dans « À traiter ».
 - ✅ **Panneau « Compte WhatsApp Business »** (sous le numéro) : **API MM Lite**, **revue du compte** par Meta,
   **vérification d'entreprise** et **business propriétaire**, chacun avec sa pastille (vert quand c'est bon, ambre
   quand ça traîne, gris quand Meta ne dit rien). Le **moyen de paiement n'est pas lisible** par l'API WhatsApp : la
@@ -2682,10 +2711,10 @@ boîte par sous-menu.
 ## Agent IA (menu « AI Agent » > Other AI agent)
 
 Un répondeur intelligent que le client construit lui-même et qu'il **pose là où il en a besoin** : dans le
-bloc « Agent IA » d'un scénario, ou, depuis le 2026-10-05, **comme répondeur de l'espace**, à la place de l'agent
-de Meta, pour répondre à tout message que personne ne tient (voir « Le répondeur de l'espace » plus bas). Hors de
-ces deux places, un agent ne parle pas. Un espace a UN répondeur au plus : l'agent de Meta (menu MBA, juste
-au-dessus) ou un agent IA, jamais les deux.
+bloc « Agent IA » d'un scénario, ou, depuis le 2026-10-05, **pour répondre au client**, à tout message que personne
+ne tient (choisi sur l'Accueil, dans « Qui répond au client », voir « L'agent IA qui répond au client » plus bas).
+Hors de ces deux places, un agent ne parle pas. Depuis RC6, l'agent de Meta allumé n'est plus forcément celui qui
+répond : quand c'est un agent IA, il reste en veille.
 
 ✅ **Livré et déployé** (2026-08-28) : la fiche, la base de connaissance, les outils, la construction en
 parlant, le bac à sable, le tour de production et le solde prépayé.
@@ -2726,25 +2755,16 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   message rapide et le formulaire. Et un bloc agent placé après une attente de 24 h ou plus est signalé dans
   l'éditeur, en nommant les deux blocs concernés : rien ne partirait.
 
-### Le répondeur de l'espace : répondre à tout message que personne ne tient (2026-10-05)
+### L'agent IA qui répond au client : répondre à tout message que personne ne tient (2026-10-05, RC6)
 
-- ✅ **Un agent IA peut répondre comme l'agent de Meta, sans scénario à construire.** Au-dessus de la liste des
-  agents, le bloc **« Répondeur de l'espace »** propose « Aucun » ou un des agents **actifs** (un brouillon ou un
-  agent désactivé n'y figure pas). L'agent choisi répond à tout message entrant que ni un scénario, ni un mot-clé,
-  ni un membre de l'équipe ne tient, en tenant compte de ce que le contact vient d'écrire. Réservé aux
-  administrateurs, comme le reste de la page. Claude peut le régler aussi (outil `set_default_responder`).
-- ✅ **Le choix part au bouton « Enregistrer »**, jamais à la seule sélection : parcourir la liste, au clavier
-  comme à la souris, ne change rien tant qu'on n'a pas enregistré. Le bouton dit « Enregistrement… » pendant que le
-  serveur bascule.
-- 🔴 **Une seule voix.** Si l'agent de Meta est allumé, le bloc le dit, avec un lien vers son écran, et choisir un
-  agent IA demande confirmation : **l'agent de Meta sera éteint pour tous vos contacts de cet espace**,
-  conversations en cours comprises, et les contacts qu'il tenait sont retirés de sa liste. Son état est relu au
-  moment d'enregistrer : rallumé ailleurs depuis l'ouverture de la page, il est quand même annoncé, et s'il n'a pas
-  pu être lu, la question est posée au conditionnel. Après une erreur, le bloc relit le réglage et l'état de l'agent
-  de Meta. Si Meta refuse d'en retirer certains, l'écran le dit avec leur nombre : ceux-là n'ont plus de réponse
-  automatique, et leurs messages restent visibles dans l'Inbox. Revenir à « Aucun » demande aussi confirmation :
-  plus aucun agent IA ne répondra aux messages que personne ne tient. À l'inverse, **allumer l'agent de Meta retire
-  l'agent IA de ce rôle**, et l'écran le dit avant (voir « MBA, le répondeur de Meta »).
+- ✅ **Un agent IA peut répondre comme l'agent de Meta, sans scénario à construire.** Il se choisit sur l'Accueil,
+  dans **« Qui répond au client »** (position « Un agent IA », parmi les agents **actifs**) ; la page des agents y
+  renvoie par un lien. L'agent choisi répond à tout message entrant que ni un scénario, ni un mot-clé, ni un membre
+  de l'équipe ne tient, en tenant compte de ce que le contact vient d'écrire. Réservé aux administrateurs. Claude
+  peut le régler aussi (outil `set_default_responder`).
+- 🔴 **L'agent de Meta n'est plus éteint** (RC6, il l'était depuis le 2026-10-05) : allumé, il reste disponible, en
+  veille, et ne prend un contact que par le bloc « Envoyer au MBA » d'un scénario. Si c'était lui qui répondait, les
+  contacts qu'il tenait sont retirés de sa liste (la carte le fait confirmer), et l'agent IA prend la suite.
 - ✅ **Ses sorties ferment sa conversation, et le message suivant le relance.** Sans scénario derrière, une de vos
   règles d'arrêt, ou « Pas de réponse », termine la conversation de l'agent ; « Transfert à un humain », « Aucune
   source », « Plafond atteint » et « Échec technique » la passent à votre équipe, dans « À traiter ». Le panneau
@@ -2757,11 +2777,10 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   un scénario aussi, et le premier tour lit le message qui l'a déclenché.
 - 🔴 **Crédit IA épuisé : la conversation passe à votre équipe**, dans « À traiter », sans réponse automatique, et
   les administrateurs de l'espace reçoivent une alerte par e-mail, une par jour au plus, avec le lien de recharge.
-  Le bloc du répondeur le rappelle tant que le crédit est à zéro.
-- ⚠️ **Désactiver ou supprimer l'agent répondeur le retire de ce rôle** : plus aucun agent IA ne répond alors aux
-  messages que personne ne tient. La fiche le fait confirmer avant de le désactiver.
-- ✅ **Les choix « le répondeur automatique prend la main »** des campagnes, des widgets et des publicités mènent au
-  répondeur de l'espace, quel qu'il soit : l'agent de Meta, ou l'agent IA choisi ici.
+- ⚠️ **Désactiver ou supprimer l'agent qui répond le retire de ce rôle** : les messages que personne ne tient vont
+  alors à l'équipe, et la carte « Qui répond au client » le dit. La fiche le fait confirmer avant de le désactiver.
+- ✅ **Les choix « le répondeur automatique prend la main »** des campagnes, des widgets et des publicités mènent à
+  celui qui répond au client, quel qu'il soit : l'agent de Meta, un agent IA ou un scénario.
 - ⚠️ **WhatsApp seulement** : le répondeur ne répond pas aux messages RCS.
 
 ### Créer un agent, et ce que « activé » veut dire
@@ -2771,15 +2790,15 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   du modèle qui le fait parler, puis sa pastille : **Brouillon**, **Actif** ou **Désactivé**.
 - ✅ **Un agent naît en brouillon** : il n'apparaît dans le constructeur de scénario qu'une fois **activé**,
   quand vous avez relu ce qu'il dira. Ici, « activé » ne veut pas dire « il répond à tout », mais « il est
-  proposable dans un scénario, ou comme répondeur de l'espace ». Répondre à tout est un second choix, fait
-  au-dessus de la liste (« Le répondeur de l'espace »).
+  proposable dans un scénario, ou pour répondre au client ». Répondre à tout est un second choix, fait sur
+  l'Accueil (« Qui répond au client »).
 - ✅ **L'activation refuse un agent incomplet, et dit quoi faire.** Au lieu de « agent incomplet », l'écran
   liste ce qui manque, et **chaque ligne est un lien vers l'onglet où ça se corrige** : objectif vide, aucune
   règle de transfert, aucune règle d'arrêt, base de connaissance vide, aucun outil actif. Le blocage porte sur
   des champs vides, jamais sur la qualité de ce qui est écrit.
 - ✅ **Supprimer un agent** emporte ses conversations, ses outils et sa base de connaissance, et les blocs de
   scénario qui l'utilisent cessent de répondre. La confirmation le dit avant le clic, et dit aussi, si c'est
-  le répondeur de l'espace, que plus aucun agent IA ne répondra aux messages que personne ne tient. Le bouton est **sur
+  l'agent qui répond au client, que les messages que personne ne tient iront à l'équipe. Le bouton est **sur
   chaque ligne de la liste** (2026-08-31) autant que dans la fiche : jeter un agent d'essai n'oblige plus à
   entrer dedans d'abord.
 
@@ -3167,7 +3186,7 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
   commission comprise** (2026-09-28 ; avant, au coût brut).
 - ✅ **Trois états, et ils préviennent avant la panne** : le solde en clair, un avertissement sous **0,50 €**
   (« c'est bas, au bout vos agents cesseront de répondre »), et un bandeau rouge à zéro (« vos agents ne
-  répondent plus et sortent par Plafond atteint »). Le répondeur de l'espace, lui, laisse alors chaque message à
+  répondent plus et sortent par Plafond atteint »). L'agent IA qui répond au client, lui, laisse alors chaque message à
   l'équipe (voir plus haut).
 - ✅ **Un admin le recharge lui-même, en payant** (2026-09-29) : **Paramètres > Crédit IA**, 50 € ou 100 € HT,
   sur la page de paiement de Stripe (voir « Crédit IA »). Un client ne s'écrit jamais de crédit : seul le paiement
@@ -3327,11 +3346,13 @@ Crédit jusqu'au 2026-09-29 ; l'ancienne adresse y mène toujours.
   numéro (identifiant WhatsApp seul) ne peut pas y entrer : l'agent ne lui parle pas, et sa conversation passe à
   l'équipe, dans « À traiter », comme toute conversation que l'agent n'a pas pu prendre.
 
-- ✅ **Un agent IA peut le remplacer comme répondeur de l'espace** (2026-10-05, voir « Agent IA », « Le répondeur
-  de l'espace ») : le choisir éteint l'agent de Meta. Un espace n'a qu'un répondeur. 🔴 **Allumer l'agent de Meta
-  retire donc l'agent IA de ce rôle**, et l'écran le dit avant, en le nommant : l'interrupteur de l'Accueil et celui
-  des paramètres de l'agent de Meta demandent confirmation, et la mise en service proposée par son assistant le
-  précise sur sa ligne.
+- ✅ **Allumé, il est disponible ; il ne répond au client que si l'espace l'a choisi** (RC6, sur l'Accueil, « Qui
+  répond au client », position « MBA »). Quand c'est un agent IA, un scénario ou l'équipe qui répond, il est **en
+  veille** : aucune remise, aucune fin de scénario, aucune reprise automatique ne lui confie un contact, et il ne
+  prend que ceux qu'un bloc « Envoyer au MBA » lui envoie. L'allumer ne retire donc plus personne (le 2026-10-05, il
+  retirait l'agent IA de ce rôle) : l'interrupteur de ses paramètres et la mise en service proposée par son
+  assistant disent qu'il restera en veille, en nommant qui répond. L'allumer quand c'est l'équipe qui répond le fait
+  répondeur ; l'éteindre quand c'est lui qui répond se confirme, et les messages vont alors à l'équipe.
 
 - 🗑️ **LA PAGE DE GUIDAGE `/mba` A ÉTÉ RETIRÉE LE 2026-09-29** (décision de Julien) : le menu « AI Agent » >
   MBA mène droit aux paramètres, et l'adresse `/mba` y renvoie. Ce qu'elle disait de juste sur l'éligibilité est
@@ -3709,8 +3730,8 @@ Page pas choisis, accès refusé par Meta, ou compte sans moyen de paiement. Ce 
 trompeur : la publicité se créerait, se publierait, et ne partirait jamais.
 
 **Qui répond aux prospects** : chaque publicité choisit, **un scénario** ou **le répondeur automatique** (appelé
-« l'agent de Meta » jusqu'au 2026-10-05). Le répondeur automatique est celui de l'espace : l'agent de Meta allumé,
-ou l'agent IA désigné répondeur (voir « Agent IA »). Ce choix n'est proposé que si l'espace en a un (la conversation
+« l'agent de Meta » jusqu'au 2026-10-05). Le répondeur automatique est celui que l'espace a choisi sur l'Accueil,
+dans « Qui répond au client » : l'agent de Meta, un agent IA ou un scénario. Ce choix n'est proposé que si l'espace en a un (la conversation
 d'un prospect lui est alors confiée à son premier message, personne d'autre ne lui répondant), et l'écran rappelle
 que ses réponses restent facturées même pendant les 72 heures gratuites : au jeton pour l'agent de Meta, sur le
 crédit IA pour un agent IA. Sur un scénario, Messaging Me **reprend la conversation au répondeur automatique** à
@@ -3739,8 +3760,8 @@ publicitaire est choisi. Il compte : nous n'affichons
 qu'UNE raison quand Meta en rend plusieurs, et c'est le seul chemin vers la liste complète, comme vers ce que
 cet écran ne montre pas (ciblage retenu par Advantage+, placements, historique de diffusion).
 
-🔴 **Une publicité confiée au répondeur automatique le dit si l'espace n'en a plus** (ni l'agent de Meta, ni un
-agent IA répondeur). Le choix n'est proposé à la création que si un répondeur répond, mais il peut s'éteindre
+🔴 **Une publicité confiée au répondeur automatique le dit si l'espace n'en a plus** (c'est l'équipe qui répond,
+dans « Qui répond au client »). Le choix n'est proposé à la création que si un répondeur répond, mais il peut s'éteindre
 ensuite : plus personne ne répond aux prospects, aucun scénario ne prend le relais, et ces prospects-là ne comptent
 PAS parmi les non pris en charge (l'entonnoir suppose qu'un agent répond). Sans ce bandeau, l'écran montrerait une publicité qui marche alors que ses
 prospects n'ont personne en face. ⚠️ **Ce bandeau ne paraît que si le réglage a été LU à « éteint ».** Tant
@@ -3805,15 +3826,15 @@ l'enregistrement :
 
 **Qui répond, widget par widget.**
 - **Comme les autres conversations** (par défaut) : le réglage de l'espace décide, rien ne change.
-- **Le répondeur automatique** (appelé « L'agent de Meta » jusqu'au 2026-10-05) : le répondeur de l'espace répond,
-  l'agent de Meta s'il est allumé ou l'agent IA désigné répondeur (voir « Agent IA »).
+- **Le répondeur automatique** (appelé « L'agent de Meta » jusqu'au 2026-10-05) : celui que l'espace a choisi sur
+  l'Accueil, dans « Qui répond au client » (l'agent de Meta, un agent IA, un scénario, ou l'équipe).
 - **Un scénario** : il démarre à l'arrivée du message, avec les gardes d'une automation (contact bloqué ou
   désabonné, anti-rebond, plafond horaire). Il reprend la main à l'agent de Meta, mais laisse la conversation à un
   membre de l'équipe qui est déjà en train de répondre. Un plafond horaire propre au widget est réglable : le message
   est public, n'importe qui peut l'envoyer en rafale. **Seul un scénario publié se choisit** : un scénario sans
   version publiée est refusé, avec l'invitation à le publier d'abord, puisqu'il ne démarrerait rien.
 - **Un agent IA précis** : le choix grisé « à venir » a disparu de l'écran le 2026-10-05. Un agent IA répond aux
-  conversations d'un widget en étant le répondeur de l'espace ; l'API refuse toujours de confier un widget à un
+  conversations d'un widget en étant celui qui répond au client ; l'API refuse toujours de confier un widget à un
   agent désigné.
 
 ⚠️ **Un scénario supprimé rend son widget inerte**, sans le détruire : la bulle reste sur le site, l'étiquette se
@@ -3971,8 +3992,9 @@ fonctions de la console, avec les mêmes contrôles : l'agent se retrouve à l'i
   fiche du contact, passer la main à un humain.
 - **L'essayer** dans le bac à sable, et chaque essai est débité du crédit, comme depuis l'onglet Tester.
 - **L'activer**, ou le désactiver. Un agent incomplet est refusé, et Claude reçoit la liste de ce qui manque.
-- **En faire le répondeur de l'espace**, ou n'en désigner aucun, sur votre demande explicite : si l'agent de Meta est
-  allumé, ce geste l'éteint pour tous vos contacts, et Claude doit vous le dire avant.
+- **Choisir qui répond au client** (RC6), sur votre demande explicite : l'agent de Meta, un agent IA actif, un
+  scénario publié (avec son délai en heures), ou l'équipe. Quitter l'agent de Meta retire de sa liste les contacts
+  qu'il tient, et Claude doit vous le dire avant ; choisir l'agent de Meta l'allume s'il est éteint.
 - **Régler ce que les agents promettent** de la disponibilité de l'équipe (toujours, aux heures d'ouverture, jamais).
 - **Ouvrir une recharge** du crédit : Claude donne l'adresse de la page de paiement de Stripe, avec le montant hors
   taxe ; la taxe est calculée sur cette page, et c'est la personne qui paie.
@@ -3988,8 +4010,8 @@ fonctions de la console, avec les mêmes contrôles : l'agent se retrouve à l'i
 - ✅ **Ce que Claude ne règle pas** : les plafonds de coût d'un agent, sa mention d'IA, l'autonomie sur une action
   irréversible, l'envoi d'un bloc, les connecteurs. Ils restent des gestes de la console.
 - ⚠️ **Activer un agent ne le fait pas répondre** : il parle dans le bloc Agent IA d'un scénario publié, à construire
-  dans la console, ou une fois désigné répondeur de l'espace (par Claude, ou par le bloc « Répondeur de l'espace » de
-  la console) : il répond alors à tout message que personne ne tient, et l'agent de Meta est éteint.
+  dans la console, ou une fois choisi pour répondre au client (par Claude, ou sur l'Accueil, dans « Qui répond au
+  client ») : il répond alors à tout message que personne ne tient, et l'agent de Meta, s'il est allumé, reste en veille.
   Les descriptions des outils le disent à Claude, qui n'annoncera pas en service un agent qui n'est ni l'un ni l'autre.
 
 ## Plafonds d'usage (visible seulement si on force)

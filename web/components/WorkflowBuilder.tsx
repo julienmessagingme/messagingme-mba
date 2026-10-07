@@ -773,7 +773,7 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
           {!selected ? (
             <p className="text-sm text-ink-500">{t('Cliquez sur un bloc pour le configurer. Tirez une flèche depuis le point d’un bloc : lâchez-la sur un autre bloc pour les relier, ou dans le vide pour créer un bloc. Le ✕ en coin d’un bloc le supprime.', "Click a block to configure it. Drag an arrow from a block's dot: drop it on another block to connect, or in empty space to create a new block. The ✕ in a block's corner deletes it.")}</p>
           ) : (
-            <ConfigPanel node={selected} tenantId={tenantId} workflowId={workflowId} blocsDuScenario={nodes} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} usageChamps={usageChamps} emailAccounts={emailAccounts} emailTemplates={emailTemplates} rcsMessages={rcsMessages} agents={agents} membres={membres} requetes={requetes} onCommitTag={commitTag} onCreerChamp={creerChamp} />
+            <ConfigPanel node={selected} tenantId={tenantId} workflowId={workflowId} blocsDuScenario={nodes} isRoot={selected.id === rootNodeId} campaignEligible={campaignEligible} onPatch={patchSelected} onDelete={deleteSelected} templates={templates} flows={flows} tags={tags} fields={fields} usageChamps={usageChamps} emailAccounts={emailAccounts} emailTemplates={emailTemplates} rcsMessages={rcsMessages} agents={agents} membres={membres} requetes={requetes} onCommitTag={commitTag} onCreerChamp={creerChamp} mbaEnabled={mbaEnabled} />
           )}
         </div>
       </div>

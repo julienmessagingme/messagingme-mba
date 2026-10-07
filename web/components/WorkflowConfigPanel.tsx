@@ -150,7 +150,7 @@ function FieldValueEditor({ d, fields, onPatch, avecValeur }: {
 }
 
 export function ConfigPanel({
-  node, tenantId, workflowId, blocsDuScenario = [], isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, usageChamps, emailAccounts, emailTemplates, rcsMessages, agents, membres, requetes, onCommitTag, onCreerChamp,
+  node, tenantId, workflowId, blocsDuScenario = [], isRoot, campaignEligible, onPatch, onDelete, templates, flows, tags, fields, usageChamps, emailAccounts, emailTemplates, rcsMessages, agents, membres, requetes, onCommitTag, onCreerChamp, mbaEnabled,
 }: {
   node: RFNode;
   /** Workspace courant : le champ visuel du bloc RCS téléverse dans SA médiathèque. */
@@ -178,6 +178,8 @@ export function ConfigPanel({
   /** Appels déclarés dans Tools > Connecteurs API, pour le bloc « Appel API ». `null` = pas encore chargés. */
   requetes?: Array<{ id: string; label: string; methode: string; chemin: string }> | null;
   onCommitTag: (tag: string) => void;
+  /** L'agent de Meta est-il allumé ? Le bloc « Envoyer au MBA » l'avertit sinon (RC6). `undefined` = non lu : rien n'est dit. */
+  mbaEnabled?: boolean;
 }) {
   const t = useT();
   const d = node.data as Record<string, unknown>;
@@ -745,6 +747,24 @@ export function ConfigPanel({
               {t(
                 `« ${String(d.assigneNom ?? d.assigneA)} » n’est plus un membre actif : la conversation ira au pot commun.`,
                 `“${String(d.assigneNom ?? d.assigneA)}” is no longer an active member: the conversation will go to the shared pool.`,
+              )}
+            </p>
+          )}
+        </div>
+      )}
+      {wfType === 'vers_mba' && (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs leading-relaxed text-ink-500">
+            {t(
+              'Le parcours s’arrête ici, et l’agent de Meta prend la conversation : il répond tout de suite au dernier message du contact, quel que soit le répondeur de l’espace. Il garde ce contact tant qu’un scénario ou un membre de l’équipe ne le reprend pas.',
+              'The journey stops here, and Meta’s agent takes the conversation: it answers the contact’s last message right away, whoever answers the workspace. It keeps this contact until a scenario or a team member takes it back.',
+            )}
+          </p>
+          {mbaEnabled === false && (
+            <p className="rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte-700" data-testid="vers-mba-eteint">
+              {t(
+                'L’agent de Meta est éteint : tant qu’il l’est, ce bloc passe la conversation à l’équipe, dans « À traiter ».',
+                'Meta’s agent is off: as long as it is, this block hands the conversation to the team, in “To handle”.',
               )}
             </p>
           )}

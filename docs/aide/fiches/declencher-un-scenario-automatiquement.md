@@ -1,7 +1,7 @@
 ---
 ecran: automations
 source_section: Automation (menu « Automation ») | Rappels avant ou après une date (menu Automation) | Automatisations (menu « Scénario », ex-« Flow »)
-source_empreinte: eda598 | 08adbf | 446e15
+source_empreinte: eda598 | 08adbf | 5653a5
 ---
 # Lancer un scénario tout seul, sans campagne
 
@@ -54,7 +54,7 @@ seul déclencheur qui vous laisse ouvrir librement.
 
 Il y a une seconde chose à savoir, et elle compte si vous créez vos publicités ici. **Une publicité pilotée
 depuis l'écran Publicités choisit elle-même qui répond à ses prospects** : le scénario que vous lui avez
-désigné, ou l'agent de Meta. Pour ces prospects-là, aucune autre automation ne part, ni « toute personne
+désigné, ou le répondeur automatique. Pour ces prospects-là, aucune autre automation ne part, ni « toute personne
 arrivant par une publicité », ni « un nouveau contact écrit pour la première fois ». C'est ce qui garantit
 qu'un clic que vous avez payé reçoit la réponse que vous aviez prévue, et une seule. Les publicités que vous
 continuez de gérer dans le Gestionnaire de Meta, elles, ne changent pas : leurs prospects passent par les

@@ -1,6 +1,6 @@
 import { request } from './http';
 import { lireMessagesTenus, type MessagesTenus } from './chiffres-canaux';
-import { lireReglageRepondeur, lireRepondeurAgentId, type ReglageRepondeur } from './repondeur';
+import { lireEtatRepondeur, lireRepondeurAgentId, type EtatRepondeur } from './repondeur';
 
 /** Une règle d'arrêt déclarée sur la fiche d'un agent. Son `code` devient le handle `sortie:<code>` du bloc. */
 export interface SortieAgent {
@@ -93,26 +93,27 @@ export async function listAgentsEtRepondeur(
 }
 
 /**
- * Désigne l'agent IA répondeur de l'espace, ou n'en désigne aucun (`null`). 🔴 Si l'agent de Meta est allumé, le
- * serveur L'ÉTEINT pour tous les contacts de l'espace (une seule voix) : l'écran le fait confirmer avant. `null` en
- * retour = une réponse illisible, l'écran relit la liste.
+ * « Qui répond au client » (RC6, `GET /tenants/:tenantId/repondeur`) : ce que la carte de l'Accueil lit en un appel.
+ * `null` = illisible, ou une API d'avant RC6 (404) : la carte ne s'affiche pas plutôt que d'annoncer un réglage
+ * qu'elle n'a pas lu.
  */
-export async function choisirRepondeur(tenantId: string, agentId: string | null): Promise<ReglageRepondeur | null> {
-  const r = await request<unknown>(`/tenants/${tenantId}/agents/repondeur`, {
-    method: 'PUT',
-    body: JSON.stringify({ agentId }),
-  });
-  return lireReglageRepondeur(r);
+export async function lireQuiRepond(tenantId: string): Promise<EtatRepondeur | null> {
+  return lireEtatRepondeur(await request<unknown>(`/tenants/${tenantId}/repondeur`));
 }
 
+/** Le choix de la carte, tel que `PUT /tenants/:tenantId/repondeur` l'attend (le délai en heures, comme à l'écran). */
+export type ChoixQuiRepond =
+  | { mode: 'mba' } | { mode: 'equipe' }
+  | { mode: 'agent'; agentId: string }
+  | { mode: 'scenario'; workflowId: string; delaiHeures: number };
+
 /**
- * L'agent IA répondeur de l'espace, avec son nom, ou `null` s'il n'y en a pas. Lu au moment d'allumer l'agent de Meta,
- * qui le retire de ce rôle (J7) : par la liste des agents ACTIFS, puisque seul un actif peut l'être.
+ * Règle qui répond au client. Le serveur vérifie tout (agent actif, scénario publié, agent de Meta configurable) et
+ * refuse lisiblement ; quitter le mode « MBA » retire ses contacts de sa liste, ce que la carte fait confirmer avant.
+ * La carte relit l'état ensuite plutôt que de le supposer.
  */
-export async function lireRepondeurIa(tenantId: string): Promise<{ id: string; label: string } | null> {
-  const { agents, repondeurAgentId } = await listAgentsEtRepondeur(tenantId);
-  if (typeof repondeurAgentId !== 'string') return null;
-  return { id: repondeurAgentId, label: agents.find((a) => a.id === repondeurAgentId)?.label ?? '' };
+export async function reglerQuiRepond(tenantId: string, choix: ChoixQuiRepond): Promise<void> {
+  await request<unknown>(`/tenants/${tenantId}/repondeur`, { method: 'PUT', body: JSON.stringify(choix) });
 }
 
 /**

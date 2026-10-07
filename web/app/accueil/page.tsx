@@ -20,8 +20,9 @@ import {
 import { DOT_HEX } from '@/lib/ui';
 import { PastilleNumero } from '@/components/PastilleNumero';
 import { getMbaStatus, getMbaMessages, putMbaActivation, type MbaStatus } from '@/lib/api-mba';
-import { lireRepondeurIa } from '@/lib/api-agent';
-import { avertissementAllumageMeta } from '@/lib/repondeur';
+import { lireQuiRepond } from '@/lib/api-agent';
+import { confirmationEteindreMba } from '@/lib/repondeur';
+import { QuiRepond } from '@/components/QuiRepond';
 import { useConfirmation } from '@/components/Confirmation';
 import { ChiffreMessagesTenus } from '@/components/EnteteAgent';
 import { agentMetaRepond, lireMessagesMba, type MessagesEcritsMba } from '@/lib/chiffres-canaux';
@@ -85,6 +86,8 @@ function AccueilInner({ session }: { session: Session }) {
    * l'agent). `null` = pas encore lu, ou lecture impossible.
    */
   const [mbaReel, setMbaReel] = useState<MbaStatus | null>(null);
+  /** Incrémentée à chaque bascule de l'agent de Meta : la carte « Qui répond au client » se relit (RC6). */
+  const [versionRepondeur, setVersionRepondeur] = useState(0);
   const [savingMba, setSavingMba] = useState(false);
   const [erreurMba, setErreurMba] = useState<string | null>(null);
   const [savingHubspot, setSavingHubspot] = useState(false);
@@ -250,16 +253,14 @@ function AccueilInner({ session }: { session: Session }) {
     setSavingMba(true);
     setErreurMba(null);
     /**
-     * 🔴 ALLUMER L'AGENT DE META RETIRE L'AGENT IA RÉPONDEUR DE CE RÔLE (lot 5 ; relecture de la livraison A, J7) : une
-     * seule voix, le serveur le remet à nul dans l'instruction même qui allume (`setMbaEnabled`). On le dit avant, en le
-     * nommant. Lu au moment du geste, pas au chargement : c'est l'état d'à présent qui compte. Une lecture ratée (compte
-     * non administrateur, route absente) n'empêche rien : le geste reste celui d'avant le lot.
+     * 🔴 RC6 : ALLUMÉ N'EST PLUS RÉPONDEUR. Allumer ne retire plus personne : en mode agent IA ou scénario, l'agent de
+     * Meta reste en veille ; en mode « Équipe », il devient le répondeur (la carte « Qui répond au client » est relue
+     * juste après). Éteindre, en revanche, se confirme quand c'est LUI qui répond : les messages iront à l'équipe. Lu au
+     * moment du geste ; une lecture ratée (API d'avant RC6) n'ajoute pas de question, le geste reste celui d'avant.
      */
-    if (!mbaEnabled) {
-      const avertissement = avertissementAllumageMeta(await lireRepondeurIa(session.tenantId).catch(() => null), t);
-      if (avertissement !== null && !(await confirmer({
-        titre: t('Allumer l’agent de Meta', 'Turn Meta’s agent on'), message: avertissement, confirmer: t('Allumer', 'Turn on'),
-      }))) {
+    if (mbaEnabled) {
+      const etat = await lireQuiRepond(session.tenantId).catch(() => null);
+      if (etat?.modeEffectif === 'mba' && !(await confirmer(confirmationEteindreMba(t)))) {
         setSavingMba(false);
         return;
       }
@@ -267,6 +268,8 @@ function AccueilInner({ session }: { session: Session }) {
     try {
       const r = await putMbaActivation(session.tenantId, !mbaEnabled);
       setMbaEnabled(r.enabled);
+      // Allumer en mode « Équipe » passe en « MBA », éteindre en « MBA » passe en « Équipe » : la carte se relit.
+      setVersionRepondeur((v) => v + 1);
       // Relire l'état chez Meta pour que la phrase de la carte dise la vérité tout de suite. Best-effort :
       // l'action a déjà abouti, un échec de relecture ne doit pas la faire passer pour ratée.
       if (r.phoneNumberId) {
@@ -435,6 +438,10 @@ function AccueilInner({ session }: { session: Session }) {
         />
       )}
 
+      {/* « Qui répond au client » (RC6) : admins seulement, comme le serveur. Le choisir peut allumer l'agent de Meta :
+          l'interrupteur de sa carte suit l'état relu. */}
+      {isAdmin && <QuiRepond tenantId={session.tenantId} version={versionRepondeur} onChange={(e) => setMbaEnabled(e.mbaAllume)} />}
+
       {loading ? (
         <Squelette forme="carte" />
       ) : (
@@ -486,13 +493,15 @@ function AccueilInner({ session }: { session: Session }) {
                 au client », et les séparer obligeait à comprendre deux écrans pour régler une seule chose. */}
             {account?.hasNumber && (
               <div className="mt-4 border-t border-ink-100 pt-3">
+                {/* RC6 : ce lien ne règle plus « qui répond » (la carte « Qui répond au client » le fait), seulement ce
+                    que fait l'agent de Meta quand il tient une conversation. */}
                 <Link href="/mba/parametres?tab=activation" className="text-sm font-medium text-brand-600 underline" data-testid="lien-activation">
-                  {t('Régler qui répond au client', 'Set who answers the customer')}
+                  {t('Passage de main et reprise par un opérateur', 'Handover and operator takeover')}
                 </Link>
                 <p className="mt-0.5 text-xs text-ink-500">
                   {t(
-                    'Le passage de main vers un humain, et combien de temps un opérateur garde la conversation.',
-                    'Handover to a human, and how long an operator keeps the conversation.',
+                    'Quand l’agent de Meta passe la main à un humain, et combien de temps un opérateur garde la conversation.',
+                    'When Meta’s agent hands over to a human, and how long an operator keeps the conversation.',
                   )}
                 </p>
               </div>

@@ -14,7 +14,6 @@ import {
   createAgent, deleteAgent, getAgent, getSoldeAgent, listAgentsEtRepondeur, patchAgent,
   type AgentComplet, type AgentResume, type PatchAgent, type SortieAgent,
 } from '@/lib/api-agent';
-import { RepondeurEspace } from '@/components/RepondeurEspace';
 import { eurosDepuisMicro, SOLDE_BAS_MICRO_EUR } from '@/lib/agent-solde';
 import { CodeSortieInput } from '@/components/AgentSorties';
 import { AgentConnaissance } from '@/components/AgentConnaissance';
@@ -56,20 +55,20 @@ function libellePrix(m: ModeleProposable, locale: Locale, t: (fr: string, en?: s
  * Écran de réglage d'un agent IA, calqué sur celui de l'agent Meta : une liste, puis une fiche à onglets.
  *
  * 🔴 CE QUE « ACTIVÉ » VEUT DIRE ICI, et ce n'est pas ce qu'on croit. Un agent actif n'est pas un agent qui
- * « répond à tout » : c'est un agent PROPOSABLE dans un scénario, ou comme répondeur de l'espace. Il ne parle que là
- * où le client a posé un bloc agent et l'y a désigné, ou partout si le client en a fait le répondeur de l'espace
- * (`RepondeurEspace`, lot 5), un choix UNIQUE par espace, comme l'agent de Meta qu'il remplace alors. C'est pour ça
- * que l'activation vit sur la fiche, agent par agent, et le répondeur au-dessus de la liste.
+ * « répond à tout » : c'est un agent PROPOSABLE dans un scénario, ou pour répondre au client. Il ne parle que là où le
+ * client a posé un bloc agent et l'y a désigné, ou partout si l'espace l'a choisi dans « Qui répond au client » (RC6,
+ * sur l'Accueil, à côté de l'agent de Meta, d'un scénario et de l'équipe). C'est pour ça que l'activation vit sur la
+ * fiche, agent par agent, et le choix du répondeur sur l'Accueil.
  */
 
 /**
  * Ce que perd l'espace quand son agent RÉPONDEUR est supprimé : le serveur le retire de ce rôle (la clé étrangère, en
- * `on delete set null`), et plus aucun agent IA ne répond aux messages que personne ne tient. Dit AVANT le geste (revue
- * du plan du lot 5, cas 3), comme sa désactivation (`changerStatut`).
+ * `on delete set null`), et ses messages vont à l'équipe. Dit AVANT le geste (revue du plan du lot 5, cas 3), comme sa
+ * désactivation (`changerStatut`).
  */
 const QUITTE_LE_ROLE = (t: (fr: string, en?: string) => string): string => t(
-  'Il est aussi le répondeur de l’espace : plus aucun agent IA ne répondra aux messages que personne ne tient.',
-  'It is also the workspace responder: no AI agent will answer the messages nobody handles anymore.',
+  'C’est lui qui répond au client : les messages que personne ne tient iront à l’équipe.',
+  'It is the one answering the customer: the messages nobody handles will go to the team.',
 );
 
 type Onglet = 'construction' | 'identite' | 'objectif' | 'connaissance' | 'outils' | 'perimetre' | 'modele'
@@ -345,8 +344,8 @@ function Ecran({ tenantId }: { tenantId: string }) {
     if (status !== 'active' && ouvert.id === repondeurAgentId && !(await confirmer({
       titre: t('Désactiver l’agent', 'Deactivate the agent'),
       message: t(
-        `« ${ouvert.label} » est le répondeur de l’espace : le désactiver le retire de ce rôle, et plus aucun agent IA ne répondra aux messages que personne ne tient.`,
-        `“${ouvert.label}” is the workspace responder: deactivating it removes it from that role, and no AI agent will answer the messages nobody handles anymore.`,
+        `« ${ouvert.label} » répond au client : le désactiver le retire de ce rôle, et les messages que personne ne tient iront à l’équipe.`,
+        `“${ouvert.label}” answers the customer: deactivating it removes it from that role, and the messages nobody handles will go to the team.`,
       ),
       confirmer: t('Désactiver', 'Deactivate'),
     }))) return;
@@ -512,28 +511,21 @@ function Ecran({ tenantId }: { tenantId: string }) {
         <TitrePage>{t('Vos agents', 'Your agents')}</TitrePage>
         <IntroPage>
           {t(
-            'Un agent répond là où vous posez un bloc « Agent IA » dans un scénario, et à tout message que personne ne tient si vous en faites le répondeur de l’espace.',
-            'An agent answers where you place an “AI agent” block in a scenario, and every message nobody handles if you make it the workspace responder.',
+            'Un agent répond là où vous posez un bloc « Agent IA » dans un scénario, et à tout message que personne ne tient si vous le choisissez pour répondre au client.',
+            'An agent answers where you place an “AI agent” block in a scenario, and every message nobody handles if you choose it to answer the customer.',
           )}
         </IntroPage>
       </div>
       {erreur && <MbaNotice kind="error" testid="agent-erreur">{erreur}</MbaNotice>}
-      {/* Le répondeur, une fois la liste lue : il propose les agents actifs de CETTE liste, et ne s'affiche pas tant qu'on
-          ne sait pas lequel l'est (`undefined`), plutôt que d'annoncer « Aucun » sur un réglage qu'on n'a pas lu. */}
-      {agents !== null && repondeurAgentId !== undefined && (
-        <RepondeurEspace
-          tenantId={tenantId}
-          agents={agents}
-          repondeurAgentId={repondeurAgentId}
-          soldeEpuise={solde !== null && solde <= 0}
-          onChange={(r) => {
-            // Une réponse illisible, ou une erreur : on relit, on ne suppose pas. L'état de l'agent de Meta, le bloc le
-            // relit lui-même (au geste, après une erreur, et à chaque réussite).
-            if (r === null) { void charger(); return; }
-            setRepondeurAgentId(r.repondeurAgentId);
-          }}
-        />
-      )}
+      {/* RC6 : qui répond au client (l'agent de Meta, un agent IA, un scénario ou l'équipe) se règle à UN endroit, sur
+          l'Accueil. Le bloc « Répondeur de l'espace » vivait ici : un second réglage du même rôle aurait dit l'inverse
+          du premier dès qu'on choisit un scénario ou l'équipe. */}
+      <p data-testid="agents-qui-repond" className="text-sm text-ink-700">
+        {t('Pour qu’un agent IA réponde à tout message que personne ne tient, choisissez-le dans', 'To have an AI agent answer every message nobody handles, choose it in')}{' '}
+        <Link href="/accueil" className="font-medium text-brand-600 underline" data-testid="agents-lien-qui-repond">
+          {t('Accueil, « Qui répond au client »', 'Home, “Who answers the customer”')}
+        </Link>.
+      </p>
       <div className={`${cardCls} flex flex-col gap-3`}>
         <label className="text-sm font-medium text-ink-900">{t('Créer un agent', 'Create an agent')}</label>
         <div className="flex flex-wrap gap-2">

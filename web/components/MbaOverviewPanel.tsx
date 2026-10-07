@@ -8,7 +8,7 @@ import { MbaNotice } from './MbaNotice';
 import { patchMbaSettings, putMbaRollout, type MbaStatus, type MbaSettings, type SelectionMessagePassage } from '@/lib/api-mba';
 import { Bouton } from '@/components/Bouton';
 import { useConfirmation } from '@/components/Confirmation';
-import { lireRepondeurIa } from '@/lib/api-agent';
+import { lireQuiRepond } from '@/lib/api-agent';
 import { avertissementAllumageMeta } from '@/lib/repondeur';
 
 /**
@@ -100,23 +100,25 @@ export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: 
   async function basculerAllumage(): Promise<void> {
     if (busy) return;
     /**
-     * 🔴 ALLUMER RETIRE L'AGENT IA RÉPONDEUR DE CE RÔLE (lot 5 ; relecture de la livraison A, J7) : une seule voix, le
-     * serveur le remet à nul dans l'instruction même qui allume (`setMbaEnabled`, appelée par la route `rollout`). La
-     * confirmation le dit en le nommant, lu au moment du geste ; une lecture ratée n'ajoute rien et n'empêche rien.
-     * Occupé dès la lecture, comme l'Accueil (relecture de la livraison B, JB8) : un double clic ouvrirait sinon deux
-     * confirmations, donc deux bascules.
+     * 🔴 RC6 : ALLUMÉ N'EST PLUS RÉPONDEUR. Allumer ne retire plus personne (le lot 5 le disait ici) : en mode agent IA ou
+     * scénario, l'agent de Meta reste en VEILLE, et la confirmation le dit à la place de la phrase « il répondra aux
+     * nouvelles conversations », alors fausse. Lu au moment du geste ; une lecture ratée garde la phrase d'avant.
+     * Occupé dès la lecture, comme l'Accueil (relecture de la livraison B du lot 5, JB8) : un double clic ouvrirait
+     * sinon deux confirmations, donc deux bascules.
      */
     setBusy(true);
-    const repondeurRetire = allume ? null : avertissementAllumageMeta(await lireRepondeurIa(tenantId).catch(() => null), t);
+    const veille = allume ? null : avertissementAllumageMeta(await lireQuiRepond(tenantId).catch(() => null), t);
     const message = allume
       ? t(
           'Éteindre l’agent arrête ses réponses sur toutes les conversations, y compris celles en cours. En le rallumant, il ne reprendra que les nouvelles conversations : les fils coupés resteront à traiter par un humain. Continuer ?',
           'Turning the agent off stops its replies on all conversations, including ongoing ones. When you turn it back on, it only picks up new conversations: the interrupted threads will need a human. Continue?',
         )
-      : `${repondeurRetire !== null ? `${repondeurRetire} ` : ''}${t(
+      : veille !== null
+        ? `${veille} ${t('Continuer ?', 'Continue?')}`
+        : t(
           'Allumer l’agent : il répondra aux nouvelles conversations que la plateforme lui confie, quand un client écrit sans qu’un scénario ni un membre de l’équipe ne lui réponde. Continuer ?',
           'Turn the agent on: it will answer the new conversations the platform hands over to it, when a customer writes and no scenario or team member answers. Continue?',
-        )}`;
+        );
     if (!(await confirmer({ titre: allume ? t('Éteindre l’agent', 'Turn the agent off') : t('Allumer l’agent', 'Turn the agent on'), message: message, confirmer: allume ? t('Éteindre', 'Turn off') : t('Allumer', 'Turn on') }))) {
       setBusy(false);
       return;

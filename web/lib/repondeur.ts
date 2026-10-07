@@ -1,50 +1,95 @@
 /**
- * LE RÉPONDEUR DE L'ESPACE, CÔTÉ CONSOLE (lot 5, livraison B ; spec
- * `docs/superpowers/specs/2026-10-04-repondeur-par-defaut-design.md`, § 3) : l'agent IA qui répond à tout message que
- * ni un scénario, ni un mot-clé, ni un membre de l'équipe ne tient. Le serveur tient la règle (une seule voix, un agent
- * ACTIF, `src/repondeur/reglage.ts`) ; ce module ne fait que lire ses réponses et dire ce qu'un geste va changer.
- * Fonctions pures, testées dans `repondeur.test.ts`.
+ * QUI RÉPOND AU CLIENT, CÔTÉ CONSOLE (RC6, plan `docs/superpowers/plans/2026-10-06-rc6-qui-repond.md`, livraison B ; le
+ * lot 5 en posait la moitié agent IA). Un seul réglage de l'espace, sur l'Accueil : l'agent de Meta, un agent IA, un
+ * scénario, ou l'équipe. Le serveur tient les règles (`src/repondeur/reglage.ts`) ; ce module lit ses réponses, sans
+ * les caster, et dit ce qu'un geste va changer. Fonctions pures, testées dans `repondeur.test.ts`.
+ *
+ * 🔴 ALLUMÉ N'EST PLUS RÉPONDEUR. L'agent de Meta allumé est DISPONIBLE ; hors du mode « MBA », il est en veille et ne
+ * prend un contact que par le bloc « Envoyer au MBA » d'un scénario.
  */
-
-/** Ce que rend `PUT /tenants/:tenantId/agents/repondeur` (`ReglageRepondeur` côté serveur). */
-export interface ReglageRepondeur {
-  repondeurAgentId: string | null;
-  /** L'agent de Meta était allumé, et ce geste vient de l'éteindre pour tous les contacts de l'espace. */
-  agentDeMetaEteint: boolean;
-  /** Les contacts retirés de la liste de l'agent de Meta, et ceux que Meta a refusé de retirer (ils y restent). */
-  liste: { retires: number; refuses: number };
-}
-
-const estObjet = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-const entier = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.floor(v) : 0);
 
 /**
- * La réponse du geste, vérifiée et non castée : elle vient du réseau. `null` quand l'agent désigné n'y est pas lisible,
- * et l'écran relit alors la liste plutôt que d'afficher un état qu'il a supposé. 🔴 Un compte de refus illisible vaut
- * zéro : l'écran ne doit pas inventer des contacts muets, et le serveur journalise de toute façon chaque refus.
+ * ⚠️ MIROIR de `MODES_REPONDEUR` (`src/repondeur/mode.ts`), recopié pour ne pas tirer du code serveur dans le bundle
+ * client ; `tests/web-repondeur-modes-parity.test.ts` casse dès qu'ils divergent.
  */
-export function lireReglageRepondeur(brut: unknown): ReglageRepondeur | null {
-  if (!estObjet(brut)) return null;
-  const id = brut.repondeurAgentId;
-  if (id !== null && typeof id !== 'string') return null;
-  const liste = estObjet(brut.liste) ? brut.liste : {};
+export const MODES_REPONDEUR = ['mba', 'agent', 'scenario', 'equipe'] as const;
+export type ModeRepondeur = (typeof MODES_REPONDEUR)[number];
+
+/** Les bornes du délai du mode « Scénario », en heures (1 h à 30 jours, 24 h par défaut), miroir du même fichier. */
+export const DELAI_HEURES_MIN = 1;
+export const DELAI_HEURES_MAX = 720;
+export const DELAI_HEURES_DEFAUT = 24;
+
+const estObjet = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const estMode = (v: unknown): v is ModeRepondeur => typeof v === 'string' && (MODES_REPONDEUR as readonly string[]).includes(v);
+const texteOuNull = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
+
+/** Ce que rend `GET /tenants/:tenantId/repondeur` (`EtatRepondeur` côté serveur). */
+export interface EtatRepondeur {
+  /** Le mode ÉCRIT. */
+  mode: ModeRepondeur;
+  /** Le mode qui s'APPLIQUE : différent du mode écrit quand sa cible a disparu (`cibleDisparue`). */
+  modeEffectif: ModeRepondeur;
+  agentId: string | null;
+  workflowId: string | null;
+  delaiS: number;
+  mbaAllume: boolean;
+  mbaConfigurable: boolean;
+  modeleDisponible: boolean;
+  agentsActifs: Array<{ id: string; label: string }>;
+  scenariosPublies: Array<{ id: string; name: string }>;
+}
+
+const liste = <T>(v: unknown, lire: (x: Record<string, unknown>) => T | null): T[] =>
+  Array.isArray(v) ? v.flatMap((x) => { const r = estObjet(x) ? lire(x) : null; return r === null ? [] : [r]; }) : [];
+
+/**
+ * L'état lu, vérifié et non casté : il vient du réseau. `null` quand il n'est pas lisible (une API d'avant RC6 rend un
+ * 404, et le mock d'un test rend `{}`) : la carte ne s'affiche pas plutôt que d'annoncer un réglage qu'elle n'a pas lu.
+ */
+export function lireEtatRepondeur(brut: unknown): EtatRepondeur | null {
+  if (!estObjet(brut) || !estMode(brut.mode) || !estMode(brut.modeEffectif)) return null;
   return {
-    repondeurAgentId: id,
-    agentDeMetaEteint: brut.agentDeMetaEteint === true,
-    liste: { retires: entier(liste.retires), refuses: entier(liste.refuses) },
+    mode: brut.mode,
+    modeEffectif: brut.modeEffectif,
+    agentId: texteOuNull(brut.agentId),
+    workflowId: texteOuNull(brut.workflowId),
+    delaiS: typeof brut.delaiS === 'number' && Number.isFinite(brut.delaiS) && brut.delaiS > 0 ? brut.delaiS : DELAI_HEURES_DEFAUT * 3600,
+    mbaAllume: brut.mbaAllume === true,
+    mbaConfigurable: brut.mbaConfigurable === true,
+    modeleDisponible: brut.modeleDisponible === true,
+    agentsActifs: liste(brut.agentsActifs, (x) => (typeof x.id === 'string' && typeof x.label === 'string' ? { id: x.id, label: x.label } : null)),
+    scenariosPublies: liste(brut.scenariosPublies, (x) => (typeof x.id === 'string' && typeof x.name === 'string' ? { id: x.id, name: x.name } : null)),
   };
 }
 
 /**
- * Un répondeur automatique répond-il dans cet espace aux messages que personne ne tient : l'agent de Meta allumé, ou un
- * agent IA désigné (jamais les deux) ? Miroir de `unRepondeurRepond` (`src/inbox/fil.ts`). C'est la question des choix
- * « le répondeur automatique prend la main » des campagnes et des publicités : sans répondeur, la réponse n'irait à
- * personne. `null` = on ne sait pas (réglages illisibles, ou sans `mbaEnabled`). `repondeurAgentId` absent (API plus
- * ancienne) vaut « aucun agent IA » : le comportement d'avant.
+ * Le mode qui s'applique, lu dans `GET /settings` (qui étale les réglages de l'espace). Miroir de `modeEffectif`
+ * (`src/repondeur/mode.ts`). `null` = illisible (sans `mbaEnabled`). 🔴 Une API d'avant RC6 ne rend pas `repondeurMode` :
+ * on retombe sur la règle de la reprise de 0217 (un agent IA désigné, sinon l'agent de Meta allumé, sinon l'équipe),
+ * c'est-à-dire exactement ce que cette API faisait.
  */
-export function repondeurAutomatique(s: { mbaEnabled?: unknown; repondeurAgentId?: unknown } | null): boolean | null {
+export function modeEffectifDesReglages(s: { mbaEnabled?: unknown; repondeurMode?: unknown; repondeurAgentId?: unknown; repondeurWorkflowId?: unknown } | null): ModeRepondeur | null {
   if (s === null || typeof s.mbaEnabled !== 'boolean') return null;
-  return s.mbaEnabled || typeof s.repondeurAgentId === 'string';
+  const agent = typeof s.repondeurAgentId === 'string';
+  const mode: ModeRepondeur = estMode(s.repondeurMode) ? s.repondeurMode : agent ? 'agent' : s.mbaEnabled ? 'mba' : 'equipe';
+  switch (mode) {
+    case 'mba': return s.mbaEnabled ? 'mba' : 'equipe';
+    case 'agent': return agent ? 'agent' : 'equipe';
+    case 'scenario': return typeof s.repondeurWorkflowId === 'string' ? 'scenario' : 'equipe';
+    case 'equipe': return 'equipe';
+  }
+}
+
+/**
+ * Un répondeur AUTOMATIQUE répond-il dans cet espace aux messages que personne ne tient : l'agent de Meta, un agent IA
+ * ou un scénario (tout sauf « Équipe ») ? C'est la question des choix « le répondeur automatique prend la main » des
+ * campagnes et des publicités : en mode « Équipe », la réponse irait à l'équipe, ce que dit déjà l'autre choix. `null`
+ * = on ne sait pas (réglages illisibles).
+ */
+export function repondeurAutomatique(s: { mbaEnabled?: unknown; repondeurMode?: unknown; repondeurAgentId?: unknown; repondeurWorkflowId?: unknown } | null): boolean | null {
+  const mode = modeEffectifDesReglages(s);
+  return mode === null ? null : mode !== 'equipe';
 }
 
 /** Le champ `repondeurAgentId` de `GET /agents`. `undefined` = absent (API plus ancienne) : on ne sait pas. */
@@ -53,93 +98,110 @@ export function lireRepondeurAgentId(v: unknown): string | null | undefined {
   return undefined;
 }
 
-/**
- * Les agents qu'on peut désigner : les ACTIFS seulement, comme le serveur l'exige (un brouillon n'a pas été relu, un
- * agent désactivé a été coupé exprès). Le répondeur actuel reste dans la liste même s'il n'y figure plus (une liste
- * relue avant sa désactivation) : sinon le choix afficherait « Aucun » sur un réglage qui ne l'est pas.
- */
-export function agentsProposables<A extends { id: string; status: string }>(agents: readonly A[], repondeurAgentId: string | null): A[] {
-  return agents.filter((a) => a.status === 'active' || a.id === repondeurAgentId);
-}
-
 type T = (fr: string, en?: string) => string;
 
-/**
- * La phrase des contacts que Meta a refusé de retirer de la liste de son agent (relecture de la livraison A, J6). Ils y
- * restent : leurs messages arrivent chez nous en `standby`, et l'agent de Meta est éteint, donc personne ne leur
- * répond automatiquement. `null` quand il n'y en a pas.
- */
-export function phraseContactsNonRetires(refuses: number, t: T): string | null {
-  if (refuses <= 0) return null;
-  const qui = refuses === 1
-    ? t('1 contact n’a pas pu être retiré', '1 contact could not be removed')
-    : t(`${refuses} contacts n’ont pas pu être retirés`, `${refuses} contacts could not be removed`);
-  return t(
-    `${qui} de la liste de l’agent de Meta : leurs messages n’auront pas de réponse automatique. Vous les retrouverez dans l’Inbox ; pour réessayer, choisissez « Aucun », puis de nouveau cet agent.`,
-    `${qui} from Meta’s agent list: their messages will get no automatic answer. You will find them in the Inbox; to try again, choose “None”, then this agent again.`,
-  );
-}
-
-/** L'état de l'agent de Meta dans `GET /settings` : `null` = illisible (réglages absents, ou sans `mbaEnabled`). */
-export function lireMbaAllume(s: { mbaEnabled?: unknown } | null): boolean | null {
-  return s !== null && typeof s.mbaEnabled === 'boolean' ? s.mbaEnabled : null;
-}
-
-/**
- * La question à poser avant d'enregistrer le répondeur, ou `null` quand le geste ne coupe personne (relecture de la
- * livraison B, JB3 et JB5). `vers` : le nom de l'agent choisi, `null` pour « Aucun » ; `depuis` : celui du répondeur
- * actuel. `mbaAllume` est lu AU MOMENT du geste, jamais au chargement : rallumé ailleurs entre-temps, il serait éteint
- * sans question.
- * - « Aucun » : plus aucun agent IA ne répond aux messages que personne ne tient, l'effet même de la désactivation de
- *   l'agent répondeur, que sa fiche fait confirmer.
- * - Un agent IA : l'agent de Meta est éteint pour tous les contacts s'il est allumé. 🔴 Un état ILLISIBLE fait
- *   confirmer, au conditionnel : seul un agent de Meta LU éteint dispense de la question.
- */
-export function confirmationRepondeur(
-  geste: { vers: string | null; depuis: string | null }, mbaAllume: boolean | null, t: T,
-): { titre: string; message: string; confirmer: string } | null {
-  if (geste.vers === null) {
-    const qui = geste.depuis !== null ? t(`« ${geste.depuis} » ne sera plus`, `“${geste.depuis}” will no longer be`) : t('Aucun agent ne sera', 'No agent will be');
-    return {
-      titre: t('Retirer le répondeur', 'Remove the responder'),
-      message: t(
-        `${qui} le répondeur de l’espace : plus aucun agent IA ne répondra aux messages que personne ne tient.`,
-        `${qui} the workspace responder: no AI agent will answer the messages nobody handles anymore.`,
-      ),
-      confirmer: t('Retirer', 'Remove'),
-    };
+/** Le nom d'un mode, tel que la carte et les phrases le disent. */
+export function nomDuMode(mode: ModeRepondeur, t: T): string {
+  switch (mode) {
+    case 'mba': return t('L’agent de Meta (MBA)', 'Meta’s agent (MBA)');
+    case 'agent': return t('Un agent IA', 'An AI agent');
+    case 'scenario': return t('Un scénario', 'A scenario');
+    case 'equipe': return t('L’équipe', 'The team');
   }
-  if (mbaAllume === false) return null;
+}
+
+/**
+ * Ce que la carte dit quand le mode écrit n'est plus celui qui s'applique : sa cible a disparu, et les messages vont à
+ * l'équipe. `null` quand tout va bien.
+ */
+export function cibleDisparue(etat: Pick<EtatRepondeur, 'mode' | 'modeEffectif'>, t: T): string | null {
+  if (etat.mode === etat.modeEffectif) return null;
+  switch (etat.mode) {
+    case 'agent': return t('L’agent IA choisi a été désactivé ou supprimé : vos messages vont à l’équipe.', 'The chosen AI agent was disabled or deleted: your messages go to the team.');
+    case 'scenario': return t('Le scénario choisi a été supprimé : vos messages vont à l’équipe.', 'The chosen scenario was deleted: your messages go to the team.');
+    case 'mba': return t('L’agent de Meta est éteint : vos messages vont à l’équipe.', 'Meta’s agent is off: your messages go to the team.');
+    case 'equipe': return null;
+  }
+}
+
+/**
+ * Pourquoi une position est grisée, ou `null` si elle se choisit. Le lien dit où la configurer.
+ * - MBA : l'agent de Meta ne peut pas être allumé (aucun numéro, ou Meta ne l'a pas ouvert sur ce numéro).
+ * - Agent IA : aucun agent actif, ou aucun modèle sur l'instance.
+ * - Scénario : aucun scénario publié.
+ */
+export function positionGrisee(mode: ModeRepondeur, etat: EtatRepondeur, t: T): { raison: string; lien: string; libelleLien: string } | null {
+  switch (mode) {
+    case 'mba':
+      return etat.mbaConfigurable ? null : {
+        raison: t('L’agent de Meta n’est pas encore configuré sur ce numéro.', 'Meta’s agent is not set up on this number yet.'),
+        lien: '/mba/parametres', libelleLien: t('Configurer l’agent de Meta', 'Set up Meta’s agent'),
+      };
+    case 'agent':
+      if (!etat.modeleDisponible) {
+        return { raison: t('Les agents IA ne peuvent pas répondre sur cette instance.', 'AI agents cannot answer on this instance.'), lien: '/agents', libelleLien: t('Vos agents', 'Your agents') };
+      }
+      return etat.agentsActifs.length > 0 ? null : {
+        raison: t('Aucun agent IA n’est actif.', 'No AI agent is active.'), lien: '/agents', libelleLien: t('Activer un agent', 'Activate an agent'),
+      };
+    case 'scenario':
+      return etat.scenariosPublies.length > 0 ? null : {
+        raison: t('Aucun scénario n’est publié.', 'No scenario is published.'), lien: '/workflows', libelleLien: t('Publier un scénario', 'Publish a scenario'),
+      };
+    case 'equipe':
+      return null;
+  }
+}
+
+/** La question posée avant de QUITTER le mode « MBA » : l'agent de Meta cessera de répondre aux contacts qu'il tient. */
+export function confirmationQuitterMba(t: T): { titre: string; message: string; confirmer: string } {
   return {
-    titre: t('Changer de répondeur', 'Change responder'),
-    // Au conditionnel quand on n'a pas pu lire l'état de l'agent de Meta : on ne déclare pas allumé ce qu'on n'a pas lu.
-    message: mbaAllume === true
-      ? t(
-        `« ${geste.vers} » deviendra le répondeur de l’espace, et l’agent de Meta sera éteint pour tous vos contacts de cet espace, conversations en cours comprises.`,
-        `“${geste.vers}” will become the workspace responder, and Meta’s agent will be turned off for all your contacts in this workspace, ongoing conversations included.`,
-      )
-      : t(
-        `« ${geste.vers} » deviendra le répondeur de l’espace. Si l’agent de Meta est allumé, il sera éteint pour tous vos contacts de cet espace, conversations en cours comprises.`,
-        `“${geste.vers}” will become the workspace responder. If Meta’s agent is on, it will be turned off for all your contacts in this workspace, ongoing conversations included.`,
-      ),
+    titre: t('Changer qui répond au client', 'Change who answers the customer'),
+    message: t(
+      'L’agent de Meta cessera de répondre aux conversations qu’il tient : ses contacts sont retirés de sa liste. Allumé, il reste disponible pour le bloc « Envoyer au MBA » de vos scénarios.',
+      'Meta’s agent will stop answering the conversations it holds: its contacts are removed from its list. While on, it stays available for the “Send to MBA” block of your scenarios.',
+    ),
     confirmer: t('Confirmer', 'Confirm'),
   };
 }
 
+/** La question posée avant d'ÉTEINDRE l'agent de Meta quand c'est lui qui répond : les messages iront à l'équipe. */
+export function confirmationEteindreMba(t: T): { titre: string; message: string; confirmer: string } {
+  return {
+    titre: t('Éteindre l’agent de Meta', 'Turn Meta’s agent off'),
+    message: t(
+      'C’est lui qui répond aujourd’hui au client. Éteint, il ne répondra plus, conversations en cours comprises, et vos messages sans suite iront à l’équipe, dans « À traiter ».',
+      'It is the one answering the customer today. Once off, it will stop answering, ongoing conversations included, and your unanswered messages will go to the team, in “To handle”.',
+    ),
+    confirmer: t('Éteindre', 'Turn off'),
+  };
+}
+
 /**
- * Ce qu'allumer l'agent de Meta retire, dit AVANT le geste (relecture de la livraison A, J7). Le serveur remet le
- * répondeur IA à nul dans l'instruction même qui allume l'agent de Meta (`setMbaEnabled`) : une seule voix. `null`
- * quand aucun agent IA n'est répondeur, et rien n'est à dire.
+ * Ce qu'allumer l'agent de Meta change, dit AVANT le geste dans les écrans de l'agent de Meta (l'Aperçu, l'assistant).
+ * En mode agent IA ou scénario, il reste en VEILLE : le répondeur ne change pas. `null` dans les autres cas : en mode
+ * « Équipe », l'allumer en fait le répondeur (ce que ces écrans disent déjà) ; en mode « MBA », il l'est déjà.
  */
-export function avertissementAllumageMeta(repondeur: { label: string } | null, t: T): string | null {
-  if (repondeur === null) return null;
-  const nom = repondeur.label.trim();
-  // Un nom illisible (agent absent de la liste relue) ne bloque rien : la phrase le dit sans lui.
-  const qui = nom !== ''
-    ? t(`L’agent IA « ${nom} » est`, `The AI agent “${nom}” is`)
-    : t('Un agent IA est', 'An AI agent is');
+export function avertissementAllumageMeta(etat: Pick<EtatRepondeur, 'modeEffectif' | 'agentId' | 'workflowId' | 'agentsActifs' | 'scenariosPublies'> | null, t: T): string | null {
+  if (etat === null) return null;
+  let qui: string;
+  if (etat.modeEffectif === 'agent') {
+    const nom = etat.agentsActifs.find((a) => a.id === etat.agentId)?.label.trim() ?? '';
+    qui = nom !== '' ? t(`L’agent IA « ${nom} »`, `The AI agent “${nom}”`) : t('Un agent IA', 'An AI agent');
+  } else if (etat.modeEffectif === 'scenario') {
+    const nom = etat.scenariosPublies.find((s) => s.id === etat.workflowId)?.name.trim() ?? '';
+    qui = nom !== '' ? t(`Le scénario « ${nom} »`, `The scenario “${nom}”`) : t('Un scénario', 'A scenario');
+  } else {
+    return null;
+  }
   return t(
-    `${qui} aujourd’hui le répondeur de l’espace. Allumer l’agent de Meta le retire de ce rôle : c’est l’agent de Meta qui répondra aux messages que personne ne tient.`,
-    `${qui} currently the workspace responder. Turning Meta’s agent on removes it from that role: Meta’s agent will answer the messages nobody handles.`,
+    `${qui} répond aujourd’hui au client (Accueil, « Qui répond au client »). Allumé, l’agent de Meta restera en veille : il ne prendra que les contacts qu’un bloc « Envoyer au MBA » lui confie.`,
+    `${qui} answers the customer today (Home, “Who answers the customer”). Once on, Meta’s agent will stay on standby: it will only take the contacts a “Send to MBA” block hands over.`,
   );
+}
+
+/** Le délai lu en heures, ramené dans ses bornes : la saisie de la carte. */
+export function delaiHeuresDe(delaiS: number): number {
+  const h = Math.round(delaiS / 3600);
+  return Math.min(Math.max(h, DELAI_HEURES_MIN), DELAI_HEURES_MAX);
 }

@@ -1,7 +1,7 @@
 ---
 ecran: widgets
 source_section: Widget WhatsApp (menu Tools > Widget WhatsApp)
-source_empreinte: db8712
+source_empreinte: e470df
 ---
 # Poser une bulle WhatsApp sur mon site
 
@@ -25,10 +25,9 @@ la ponctuation finale ne distinguent pas deux messages. Enfin, le message ne peu
 désabonné.
 
 **Qui répond.** Par défaut, comme les autres conversations. Vous pouvez aussi confier les conversations du
-widget au répondeur automatique (l'agent de Meta s'il est allumé, ou l'agent IA que vous avez choisi comme
-répondeur de l'espace), ou démarrer un scénario, à condition qu'il soit publié : un scénario jamais publié ne
-démarrerait rien, publiez-le d'abord. Pour qu'un agent IA réponde aux visiteurs du widget, faites-en le
-répondeur de l'espace (menu AI Agent > Other AI agent). Si le scénario choisi est supprimé, le widget ne démarre
+widget au répondeur automatique (celui que vous avez choisi sur l'Accueil, dans « Qui répond au client »), ou
+démarrer un scénario, à condition qu'il soit publié : un scénario jamais publié ne démarrerait rien, publiez-le
+d'abord. Pour qu'un agent IA réponde aux visiteurs du widget, choisissez-le dans « Qui répond au client ». Si le scénario choisi est supprimé, le widget ne démarre
 plus rien : sa fiche le signale, choisissez-en un autre.
 
 **Éteindre ou supprimer.** Éteint, la bulle disparaît mais la balise peut rester sur votre site ; vous le
