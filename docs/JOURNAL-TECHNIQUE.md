@@ -5,6 +5,39 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-07 : les offres et leurs limites (lot 6, livraison A)
+
+**Ce qui part** : la migration 0218 seule (`45ad6976`, appliquée à 10 h 34 UTC avant le code, relue en base : les 9
+espaces en Entreprise), puis le serveur et la console ensemble (`07d0170b`, 108 fichiers). API et deux workers
+relancés en deux temps à 10 h 50 UTC, `mba-web` non touché, 28 fiches d'aide chargées, portes publiques à 200, les
+deux routes neuves à 401. La vue de l'offre, calculée par le code déployé, rend Entreprise sans limite pour chaque
+espace.
+
+**Pourquoi le serveur et la console dans le même commit** : des tests de la racine lisent `web/lib` (la carte de
+l'aide, la parité des noms de l'offre, les exemples d'API) ; un commit serveur seul aurait mis la CI au rouge. Publier
+la console avant l'API était sans risque : elle lit l'offre et la tient pour inconnue (donc tout ouvert) sur un 404,
+ce que tient un e2e.
+
+**Ce que la construction a trouvé** :
+- Le partage des statistiques de la tâche 3 fermait à la Base l'accueil et la page Campagnes (elles lisent `/stats`,
+  `/stats/templates`, `/stats/cost`, `/stats/cost/campaigns`), et rangeait `/stats/performance` (Quantitatif >
+  Performance) en Entreprise en le prenant pour la Synthèse. Refait route par route d'après l'écran qui la lit.
+- Un inventaire des écrans ouverts à la Base a trouvé 13 lectures de fond vers des modules gardés (canal RCS, chaîne,
+  publicités, état de l'agent de Meta, Batch, Salesforce, assistant de construction, pastille des non-lus toutes les
+  30 s) : elles attendent désormais l'offre et disent « Inclus dans l'offre » ; le bandeau d'un refus ne part que sur
+  un geste.
+- L'e2e a montré que le bandeau d'un refus restait SOUS la fenêtre d'où partait le geste : il est devenu un avis fixe
+  au-dessus des fenêtres.
+
+**La relecture indépendante** (un relecteur, 0 rouge, 13 jaunes) : corrigés avant de pousser, la lecture des modèles
+du mois (comparée au `now()` de la base, elle rendait 0 dès que la base était en avance d'une milliseconde sur la
+copie), `/v1/sends` qui créait les fiches avant de refuser un mois épuisé, une offre illisible qui rendait 500
+partout, la conservation affichée d'une Entreprise, et `PUT /ops/offre` qui réécrivait la conservation à chaque
+changement d'offre (une purge irréversible à la clé). Les autres jaunes sont dans `todo.md`.
+
+**Mesures** : racine 10 744 tests verts (deux inventaires `git grep` rouges hors dépôt, verts en CI), console 929
+unitaires et 1 421 e2e, auto-attaque 1 537 sondes sans trouvaille, CI verte job par job sur les deux commits.
+
 ## 2026-10-06 : le numéro fourni libéré à J+7, « Abandonner » et les e-mails (lot 4, livraison B)
 
 **Ce qui part** (`40f8322e`, test `a2bf45c7`, console `7fe7c7e7`, aucune migration) : 7 jours après la fin d'un
