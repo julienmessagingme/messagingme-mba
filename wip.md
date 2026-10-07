@@ -19,16 +19,18 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
-## LOT 6 : LES OFFRES ET LEURS LIMITES, A EN PRODUCTION, B1 EN LIVRAISON (2026-10-07), B2 ET C ENSUITE
+## LOT 6 : LES OFFRES ET LEURS LIMITES, A ET B1 EN PRODUCTION (2026-10-07), B2 ET C ENSUITE
 
 Spec `docs/superpowers/specs/2026-10-07-offres-et-limites-design.md`, plan `docs/superpowers/plans/2026-10-07-offres-et-limites.md`.
 La livraison A est en production et son essai réel est fait (2026-10-07, « Espace de dumas family » ramené en Base,
 Inbox et menus payants grisés vus par Julien, puis remis en Entreprise).
 
-La livraison B1 (le Pro payable chez Stripe, le numéro fourni protégé par un Pro) est écrite, sans migration. Avant
-qu'elle serve, Julien crée chez Stripe le produit « Messaging Me Pro » et ses deux prix (49 € HT par mois, 490 € HT
-par an), pose `STRIPE_PRIX_PRO_MOIS` et `STRIPE_PRIX_PRO_AN` dans `.env.prod` (puis `--force-recreate` de l'API et
-des workers), règle le portail (mensuel et annuel, résiliation en fin de période) et vérifie que le webhook reçoit
+La livraison B1 (le Pro payable chez Stripe, le numéro fourni protégé par un Pro) est en production (`4220dc42`, sans
+migration). Avant qu'elle serve, 🔴 Julien restreint chez Stripe chaque code promo à ses produits (ENGAGE100,
+GMC100 et VERIF100 sont actifs sans plafond, les deux derniers sans restriction de produit : ils s'appliqueraient au
+Pro et s'appliquent déjà à la recharge, qui crédite avant remise), crée le produit « Messaging Me Pro » et ses deux
+prix (49 € HT par mois, 490 € HT par an, taxe EN SUS), pose `STRIPE_PRIX_PRO_MOIS` et `STRIPE_PRIX_PRO_AN` dans `.env.prod` (puis `--force-recreate` de l'API et
+des workers), règle le portail (le SEUL produit Pro dans le changement de formule, mensuel et annuel, résiliation en fin de période) et vérifie que le webhook reçoit
 `customer.subscription.updated` et `.deleted`. Sans les prix, la page Offre renvoie au Support comme avant.
 ⏳ **Essai réel de B1** : un Pro pris avec un code promo à 100 %, l'espace passé en Pro dans la minute, puis résilié
 au portail. Restent B2 (le numéro inclus dans le Pro, le gel au retour en Base, `set_default_responder` et les outils

@@ -123,6 +123,8 @@ test.describe('payer le Pro (livraison B1)', () => {
     await expect(page.getByTestId('offre-payer-mois')).toContainText('49 € HT');
     await expect(page.getByTestId('offre-payer-an')).toContainText('490 € HT');
     await expect(page.getByTestId('offre-passer-pro')).toHaveCount(0);
+    // Jusqu'à B2, le numéro fourni reste facturé à part : la page où l'on paie le dit.
+    await expect(page.getByTestId('offre-numero-a-part')).toBeVisible();
     await page.getByTestId('offre-payer-an').click();
     await expect(page).toHaveURL(CHECKOUT);
     expect(paiements).toEqual([{ periodicite: 'an' }]);
@@ -156,9 +158,20 @@ test.describe('payer le Pro (livraison B1)', () => {
     await monter(page, { ...vue('base'), prixPro: PRIX_PRO });
     await page.goto('/offre?pro=recu');
     await expect(page.getByTestId('offre-paiement-recu')).toBeVisible();
+    // 🟡 Le webhook peut ne pas être encore arrivé : pas de bouton pour payer une seconde fois (jaune 8 de la relecture).
+    await expect(page.getByTestId('offre-payer-mois')).toHaveCount(0);
+    await expect(page.getByTestId('offre-passer-pro')).toHaveCount(0);
     await page.goto('/offre?pro=abandon');
     await expect(page.getByTestId('offre-paiement-abandon')).toBeVisible();
     await expect(page.getByTestId('offre-paiement-recu')).toHaveCount(0);
+    await expect(page.getByTestId('offre-payer-mois')).toBeVisible();
+  });
+
+  test('🟡 le Pro pas encore en vente (prixPro nul) : le Support tout de suite, sans bouton qui échoue', async ({ page }) => {
+    await monter(page, { ...vue('base'), prixPro: null });
+    await page.goto('/offre');
+    await expect(page.getByTestId('offre-passer-pro')).toHaveAttribute('href', '/support?sujet=pro');
+    await expect(page.getByTestId('offre-payer-mois')).toHaveCount(0);
   });
 });
 

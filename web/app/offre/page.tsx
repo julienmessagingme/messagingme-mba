@@ -26,8 +26,9 @@ import {
  * 🔴 LA GRILLE N'EST PAS RECOPIÉE ICI : elle arrive avec la vue de l'offre (`GET /tenants/:tenantId/offre`), lue dans la
  * seule définition du serveur (`src/offres/offres.ts`).
  *
- * ⚠️ JUSQU'À LA LIVRAISON B (le Pro chez Stripe), « Passer en Pro » mène au Support, sujet prérempli : l'exploitation
- * ouvre le Pro à la main. Aucun prix n'est affiché d'ici là, il arrivera avec le paiement.
+ * Le Pro se paie sur la page de Stripe (livraison B1) : « Mensuel » ou « Annuel », aux prix que porte la vue. Tant qu'il
+ * n'est pas en vente (`prixPro` nul : prix Stripe pas posés, ou API plus ancienne), « Passer en Pro » mène au Support,
+ * sujet prérempli. Un Pro gère son abonnement au portail de Stripe.
  */
 export default function OffrePage() {
   return <AppShell active="offre">{(session) => <OffreInner session={session} />}</AppShell>;
@@ -204,9 +205,10 @@ function OffreInner({ session }: { session: Session }) {
               : t('L’Entreprise ajoute le RCS, les connecteurs CRM, le Performance Lab et une équipe à votre mesure, sur devis.',
                 'Enterprise adds RCS, CRM connectors, the Performance Lab and a team sized for you, on quote.')}
           </p>
-          {suivante === 'pro' && vue.prixPro && !proIndisponible ? (
+          {suivante === 'pro' && retour === 'recu' ? null : suivante === 'pro' && vue.prixPro && !proIndisponible ? (
             // Le Pro se paie sur la page de Stripe (lot 6, B1) ; le webhook signé, et lui seul, ouvre les fonctions.
-            <div className="flex flex-wrap gap-2">
+            <>
+            <div className="flex flex-wrap items-center gap-2">
               <Bouton onClick={() => void ouvrirStripe('mois')} enCours={paiement === 'mois'} disabled={paiement !== null} data-testid="offre-payer-mois">
                 {t(`Mensuel, ${euros(vue.prixPro.moisCentimes)} HT`, `Monthly, ${euros(vue.prixPro.moisCentimes)} excl. VAT`)}
               </Bouton>
@@ -214,6 +216,12 @@ function OffreInner({ session }: { session: Session }) {
                 {t(`Annuel, ${euros(vue.prixPro.anCentimes)} HT`, `Yearly, ${euros(vue.prixPro.anCentimes)} excl. VAT`)}
               </Bouton>
             </div>
+            {/* Jusqu'à la livraison B2, le numéro fourni garde son propre abonnement : la grille l'annonce inclus. */}
+            <p className="w-full text-xs text-ink-500" data-testid="offre-numero-a-part">
+              {t('Le numéro WhatsApp que nous vous fournissons reste facturé à part, par son propre abonnement, pour l’instant.',
+                'The WhatsApp number we provide is still billed separately, by its own subscription, for now.')}
+            </p>
+            </>
           ) : (
             // Pas encore en vente (API plus ancienne, prix pas posés), ou l'Entreprise : le Support, sujet prérempli.
             <Link href={`/support?sujet=${suivante}`} className={classesBouton('principal')} data-testid={`offre-passer-${suivante}`}>

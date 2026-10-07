@@ -32,7 +32,7 @@ const AN = { id: 'price_pro_an', unit_amount: 49000, currency: 'eur', recurring:
 const SESSION = { status: 200, json: { id: 'cs_test_pro', url: 'https://checkout.stripe.com/c/pay/cs_test_pro' } };
 const PORTAIL = { status: 200, json: { id: 'bps_1', url: 'https://billing.stripe.com/p/session/pro' } };
 
-function deps(o: { prix?: Record<string, unknown>; reponses?: ReponseStripe[]; client?: string | null; autorise?: boolean; vivant?: boolean; prixVides?: boolean } = {}) {
+function deps(o: { prix?: Record<string, unknown>; reponses?: ReponseStripe[]; client?: string | null; autorise?: boolean; vivant?: boolean; prixVides?: boolean; offre?: 'base' | 'pro' | 'entreprise' } = {}) {
   const transport = new FauxStripe(o.prix ?? { price_pro_mois: MOIS, price_pro_an: AN }, o.reponses ?? [{ status: 200, json: { id: 'cus_A' } }, SESSION]);
   const d: DepsPro = {
     stripe: { cle: 'rk_test_fausse', livemode: false, prix: { refill_50: '', refill_100: '' }, transport, pageCredit: 'https://x' },
@@ -42,11 +42,23 @@ function deps(o: { prix?: Record<string, unknown>; reponses?: ReponseStripe[]; c
     clients: { clientDe: async () => o.client ?? null, retenirClient: async (_t, _l, c) => c },
     payeurAutorise: async () => o.autorise ?? true,
     proVivant: async () => o.vivant ?? false,
+    offreDe: async () => o.offre ?? 'base',
   };
   return { d, transport };
 }
 
 describe('ouvrirPro', () => {
+  it('🟡 une Entreprise sans Pro : 409, rien n’est créé chez Stripe (le Pro ne lui ajouterait rien)', async () => {
+    const { d, transport } = deps({ offre: 'entreprise' });
+    expect(await ouvrirPro(d, T1, 'mois', 'u1')).toMatchObject({ ok: false, statut: 409, details: { code: 'deja_entreprise' } });
+    expect([transport.posts, transport.lus]).toEqual([[], []]);
+  });
+
+  it('une Entreprise qui a encore un Pro vivant garde le portail, pour le résilier', async () => {
+    const { d } = deps({ offre: 'entreprise', vivant: true, client: 'cus_A', reponses: [PORTAIL] });
+    expect(await ouvrirPro(d, T1, 'an', 'u1')).toEqual({ ok: true, valeur: { url: 'https://billing.stripe.com/p/session/pro', portail: true } });
+  });
+
   it('🔴 le mensuel : le prix du mois relu, une session d’abonnement Pro, retour sur la page de l’offre', async () => {
     const { d, transport } = deps();
     expect(await ouvrirPro(d, T1, 'mois', 'u1')).toEqual({ ok: true, valeur: { url: 'https://checkout.stripe.com/c/pay/cs_test_pro', portail: false } });
@@ -105,5 +117,11 @@ describe('ouvrirPortailPro', () => {
     expect(transport.posts[0]!.corps.get('return_url')).toBe('https://console.exemple/offre');
     const sans = deps({ client: null });
     expect(await ouvrirPortailPro(sans.d, T1, 'u1')).toMatchObject({ ok: false, statut: 409 });
+  });
+
+  it('🟡 Stripe pas câblé, ou un payeur non autorisé : le refus du PRO, pas celui du numéro (jaune 10 de la relecture)', async () => {
+    const { d } = deps({ autorise: false });
+    expect(await ouvrirPortailPro(d, T1, 'u1')).toEqual(PRO_INDISPONIBLE);
+    expect(await ouvrirPortailPro({ ...d, stripe: null }, T1, 'u1')).toEqual(PRO_INDISPONIBLE);
   });
 });

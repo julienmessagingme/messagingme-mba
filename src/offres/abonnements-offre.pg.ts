@@ -56,24 +56,41 @@ export class PgAbonnementsOffreStore {
    * d'être créée (l'alerte « nouveau Pro » ne part qu'une fois).
    */
   async enregistrer(a: { tenantId: string; abonnementId: string; periodicite: PeriodiciteOffre; livemode: boolean; periodeFin: Date | null }): Promise<IssueEnregistrementPro> {
-    try {
-      const res = await this.pool.query<{ tenant_id: string; fini_le: Date | null; nouveau: boolean }>(
-        `insert into abonnements_offre (stripe_subscription_id, tenant_id, periodicite, livemode, statut, periode_fin)
-         values ($1, $2, $3, $4, 'actif', $5)
-         on conflict (stripe_subscription_id) do update
-           set periode_fin = greatest(abonnements_offre.periode_fin, excluded.periode_fin), maj_le = now()
-         returning tenant_id, fini_le, (xmax = 0) as nouveau`,
-        [a.abonnementId, a.tenantId, a.periodicite, a.livemode, a.periodeFin],
-      );
-      const l = res.rows[0]!;
-      if (l.fini_le !== null) return { etat: 'fini' };
-      // L'espace de la ligne, jamais celui de l'événement rejoué : un abonnement appartient à son premier espace.
-      return { etat: 'enregistre', tenantId: l.tenant_id, nouveau: l.nouveau };
-    } catch (err) {
-      const e = err as { code?: unknown; constraint?: unknown };
-      if (e.code === '23505' && e.constraint === 'abonnements_offre_un_vivant_par_espace') return { etat: 'doublon' };
-      throw err;
+    for (let essai = 0; ; essai += 1) {
+      try {
+        return await this.enregistrerUneFois(a);
+      } catch (err) {
+        const e = err as { code?: unknown; constraint?: unknown };
+        if (e.code !== '23505' || e.constraint !== 'abonnements_offre_un_vivant_par_espace') throw err;
+        // 🟡 La session et la première facture du MÊME abonnement arrivent ensemble (jaune 1 de la relecture de B1, comme
+        // le jaune 4 du numéro) : l'index d'espace, qui n'arbitre pas le `on conflict`, peut refuser la seconde avant que
+        // la clé primaire ne la voie. Si la ligne de CET abonnement existe, ce n'est pas un doublon : un seul nouvel
+        // essai, qui passe par la mise à jour. Sinon, un AUTRE Pro vivant tient l'espace.
+        if (essai > 0 || !(await this.existe(a.abonnementId))) return { etat: 'doublon' };
+      }
     }
+  }
+
+  private async existe(abonnementId: string): Promise<boolean> {
+    const res = await this.pool.query(`select 1 from abonnements_offre where stripe_subscription_id = $1`, [abonnementId]);
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  private async enregistrerUneFois(
+    a: { tenantId: string; abonnementId: string; periodicite: PeriodiciteOffre; livemode: boolean; periodeFin: Date | null },
+  ): Promise<IssueEnregistrementPro> {
+    const res = await this.pool.query<{ tenant_id: string; fini_le: Date | null; nouveau: boolean }>(
+      `insert into abonnements_offre (stripe_subscription_id, tenant_id, periodicite, livemode, statut, periode_fin)
+       values ($1, $2, $3, $4, 'actif', $5)
+       on conflict (stripe_subscription_id) do update
+         set periode_fin = greatest(abonnements_offre.periode_fin, excluded.periode_fin), maj_le = now()
+       returning tenant_id, fini_le, (xmax = 0) as nouveau`,
+      [a.abonnementId, a.tenantId, a.periodicite, a.livemode, a.periodeFin],
+    );
+    const l = res.rows[0]!;
+    if (l.fini_le !== null) return { etat: 'fini' };
+    // L'espace de la ligne, jamais celui de l'événement rejoué : un abonnement appartient à son premier espace.
+    return { etat: 'enregistre', tenantId: l.tenant_id, nouveau: l.nouveau };
   }
 
   /**
@@ -112,17 +129,21 @@ export class PgAbonnementsOffreStore {
 
   /**
    * La fin effective (`customer.subscription.deleted`) : l'espace revient en Base. Datée et raisonnée UNE fois : un rejeu
-   * ne déplace ni la date ni la raison. Rend l'abonnement, `null` s'il est inconnu.
+   * ne déplace ni la date ni la raison. Rend l'abonnement, `null` s'il est inconnu. `premiereFin` dit si CET appel l'a
+   * fini (jaune 11 de la relecture de B1) : un rejeu de `customer.subscription.deleted` ne réalerte pas. Lue sur l'état
+   * d'avant, verrouillé, pour que deux fins concurrentes ne se croient pas toutes deux premières.
    */
-  async finir(abonnementId: string, raison: RaisonFinOffre, finiLe: Date): Promise<AbonnementOffre | null> {
-    const res = await this.pool.query<Ligne>(
-      `update abonnements_offre
+  async finir(abonnementId: string, raison: RaisonFinOffre, finiLe: Date): Promise<(AbonnementOffre & { premiereFin: boolean }) | null> {
+    const res = await this.pool.query<Ligne & { premiere_fin: boolean }>(
+      `with avant as (select fini_le as fini_avant from abonnements_offre where stripe_subscription_id = $1 for update)
+       update abonnements_offre
           set statut = 'resilie', fini_le = coalesce(fini_le, $3), fin_raison = coalesce(fin_raison, $2), maj_le = now()
         where stripe_subscription_id = $1
-        returning ${COLONNES}`,
+        returning ${COLONNES}, (select fini_avant from avant) is null as premiere_fin`,
       [abonnementId, raison, finiLe],
     );
-    return res.rows[0] ? versAbonnement(res.rows[0]) : null;
+    const l = res.rows[0];
+    return l ? { ...versAbonnement(l), premiereFin: l.premiere_fin } : null;
   }
 
   /** L'espace a-t-il un Pro vivant ? (le paiement le renvoie alors au portail). */

@@ -25,8 +25,11 @@ export interface VueOffre {
    * jamais la recopier. Les limites de l'Entreprise y sont celles du devis par défaut (`null` = sans limite).
    */
   grille: Record<Offre, { fonctions: Fonction[]; limites: Limites }>;
-  /** Les prix HT du Pro, en centimes (`PRIX_PRO_HT_CENTIMES`) : la page de l'offre les affiche, Claude les lit. */
-  prixPro: { moisCentimes: number; anCentimes: number };
+  /**
+   * Les prix HT du Pro, en centimes (`PRIX_PRO_HT_CENTIMES`) : la page de l'offre les affiche, Claude les lit. `null` tant
+   * que le Pro n'est pas en vente (ses prix Stripe pas posés) : la console renvoie alors au Support sans faire cliquer.
+   */
+  prixPro: { moisCentimes: number; anCentimes: number } | null;
   upgradeUrl: string;
 }
 
@@ -36,6 +39,8 @@ export interface DepsVueOffre {
   usage(tenantId: string): Promise<Omit<UsageOffre, 'envoisModelesMois'>>;
   /** Les modèles du mois (`QuotaModeles.etatDuMois`) : `null` sans limite. */
   modelesDuMois: { etatDuMois(tenantId: string): Promise<{ max: number; reste: number } | null> };
+  /** Le Pro se paie-t-il en ligne ? (Stripe câblé et `STRIPE_PRIX_PRO_MOIS` et `_AN` posés). */
+  proEnVente: boolean;
 }
 
 /** Une copie neuve à chaque appel : la modifier ne touche pas `DROITS`. */
@@ -55,7 +60,7 @@ export function creerVueOffre(d: DepsVueOffre): (tenantId: string) => Promise<Vu
       limites: { ...droits.limites },
       usage: { envoisModelesMois: mois === null ? null : mois.max - mois.reste, ...usage },
       grille: grilleDesOffres(),
-      prixPro: { moisCentimes: PRIX_PRO_HT_CENTIMES.mois, anCentimes: PRIX_PRO_HT_CENTIMES.an },
+      prixPro: d.proEnVente ? { moisCentimes: PRIX_PRO_HT_CENTIMES.mois, anCentimes: PRIX_PRO_HT_CENTIMES.an } : null,
       upgradeUrl: adresseOffre(),
     };
   };

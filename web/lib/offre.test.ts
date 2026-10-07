@@ -91,6 +91,8 @@ describe('les prix du Pro dans la vue (lot 6, B1)', () => {
 
   it('🔴 une API qui ne les porte pas encore : la vue reste lisible, prix inconnus (null)', () => {
     expect(lireVueOffre(BASE)!.prixPro).toBeNull();
+    // Le Pro pas encore en vente : le serveur rend `null` (jaune 10 de la relecture de B1).
+    expect(lireVueOffre({ ...BASE, prixPro: null })!.prixPro).toBeNull();
     expect(lireVueOffre({ ...BASE, prixPro: { moisCentimes: -1 } })!.prixPro).toBeNull();
   });
 });

@@ -49,6 +49,29 @@ et chaque envoi sans son jeton ; une création refusée parce que le nom existe 
 template en service. La création et l'édition remettent désormais les liens d'avant en l'état sur un refus, et
 déconfirment ceux qui ne sont plus dans le template sur un succès (`soumettreAvecLiens`).
 
+## 2026-10-07 : le Pro payable chez Stripe (lot 6, livraison B1)
+
+**Ce qui part** : `4220dc42` (42 fichiers, aucune migration), CI verte job par job, puis l'API, le worker principal et
+`mba-web` relancés, le worker d'analyse ensuite, le proxy rechargé après le `healthy`. Portes publiques à 200,
+`/offre/paiement` et `/offre/portail` à 401 sans session. Le Pro n'est pas en vente tant que les deux prix Stripe ne
+sont pas posés dans `.env.prod`.
+
+**Le trou trouvé en écrivant le manuel** : la couverture du numéro par le Pro vivait dans `etatDeLEspace`, que le
+balayage lit AVANT la transaction de libération ; la transaction, elle, relisait le réabonnement du numéro et pas le
+Pro. Un Pro payé entre les deux laissait résilier le numéro chez DIDWW. Elle relit désormais le Pro, avec la même
+grâce de 7 jours (test unitaire rouge puis vert, cas ajouté à l'intégration).
+
+**Sonde SQL en lecture seule avant le push** : les quatre écritures du magasin du Pro expliquées (`EXPLAIN` sans
+exécution), les trois lectures exécutées sur les 9 espaces ; aucun Pro en base, donc la couverture ne change rien.
+
+**Relecture** : aucun rouge de code. Un rouge CONDITIONNEL chez Stripe, vérifié en lecture seule : quatre codes promo
+actifs sans plafond d'utilisation, dont ENGAGE100 (100 %, restreint aux deux recharges, nommé dans le dépôt public),
+GMC100 (100 % pour toujours) et VERIF100 (100 %), ces deux-là sans restriction de produit. Or la recharge crédite le
+montant AVANT remise : n'importe quel compte pouvait se créditer 100 € par code, sur le plafond d'équipe Vercel qui
+coupe tous les bots clients. Personne ne l'a fait (ENGAGE100 n'a servi qu'à l'essai du 29 septembre). Signalé à
+Julien. Onze jaunes : sept corrigés dans le lot qui suit, trois reportés à B2 (le numéro y devient inclus), le réglage
+du portail chez Julien.
+
 ## 2026-10-07 : les offres et leurs limites (lot 6, livraison A)
 
 **Ce qui part** : la migration 0218 seule (`45ad6976`, appliquée à 10 h 34 UTC avant le code, relue en base : les 9

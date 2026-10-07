@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { creerSessionAbonnement, lirePrixStripe, StripeError } from './client';
 import { clientDeLEspace, ouvrirPortail, page, refusDeStripe, type DepsPortail } from './abonnement';
-import { PRIX_PRO_HT_CENTIMES } from '../offres/offres';
+import { PRIX_PRO_HT_CENTIMES, type Offre } from '../offres/offres';
 import { journaliser } from '../lib/journal';
 import { refus, type Issue } from '../lib/issue';
 
@@ -18,6 +18,8 @@ export interface DepsPro extends DepsPortail {
   prixProAn: string;
   /** L'espace a-t-il déjà un Pro vivant (`abonnements_offre`) ? Il va alors au portail, jamais à un second paiement. */
   proVivant(tenantId: string): Promise<boolean>;
+  /** L'offre calculée de l'espace : une Entreprise ne paie pas le Pro, qui ne lui ajouterait rien (jaune 4 de la relecture). */
+  offreDe(tenantId: string): Promise<Offre>;
 }
 
 export const PRO_INDISPONIBLE = refus(503, 'le Pro n’est pas encore en vente', { code: 'pro_indisponible' });
@@ -40,6 +42,9 @@ export async function ouvrirPro(
   if (await d.proVivant(tenantId)) {
     const portail = await ouvrirPortail(d, tenantId, 'offre', payeur);
     return portail.ok ? { ok: true, valeur: { url: portail.valeur.url, portail: true } } : portail;
+  }
+  if ((await d.offreDe(tenantId)) === 'entreprise') {
+    return refus(409, 'Votre espace est en offre Entreprise : le Pro ne lui ajouterait rien.', { code: 'deja_entreprise' });
   }
   try {
     const prix = await lirePrixStripe(s.transport, { cle: s.cle, prix: prixId });
@@ -71,7 +76,11 @@ export async function ouvrirPro(
   }
 }
 
-/** Le portail de Stripe de l'espace (carte, factures, périodicité, résiliation), retour sur la page de l'offre. */
-export function ouvrirPortailPro(d: DepsPro, tenantId: string, payeur: string): Promise<Issue<{ url: string }>> {
+/**
+ * Le portail de Stripe de l'espace (carte, factures, périodicité, résiliation), retour sur la page de l'offre. Stripe pas
+ * câblé ou payeur refusé : le refus du Pro, jamais celui du numéro que rendrait `ouvrirPortail` (jaune 10 de la relecture).
+ */
+export async function ouvrirPortailPro(d: DepsPro, tenantId: string, payeur: string): Promise<Issue<{ url: string }>> {
+  if (d.stripe === null || !(await d.payeurAutorise(payeur))) return PRO_INDISPONIBLE;
   return ouvrirPortail(d, tenantId, 'offre', payeur);
 }

@@ -50,7 +50,19 @@
   `email`), et une clé inconnue tapée à la main n'est refusée qu'au serveur.
 
 
-## 🟡 Lot 6 : ce que la livraison A laisse pour plus tard (2026-10-07)
+## 🟡 Lot 6 : ce que les livraisons A et B1 laissent pour plus tard (2026-10-07)
+
+- **Jaunes de la relecture de B1, reportés à B2** (le numéro y devient inclus, ce qui leur donne leur poids) :
+  sérialiser la libération du numéro et l'enregistrement d'un Pro par espace (`pg_advisory_xact_lock`, la relecture
+  du Pro dans la transaction n'est pas verrouillée) ; effacer les avis `suspension_*` et le rappel du numéro quand la
+  couverture du Pro commence (sinon la fin d'un Pro libère sans nouvel e-mail) ; lever les pauses `numero_suspendu`
+  au paiement du Pro, sans attendre le balayage (15 minutes).
+- **Un abonnement Pro rebasculé sur un autre prix au portail resterait Pro** : la configuration du portail ne doit
+  lister que le produit Pro (geste de Julien) ; côté code, alerter si `items.data[].price.id` n'est ni
+  `STRIPE_PRIX_PRO_MOIS` ni `_AN`. Et `/ops` qui passe en Entreprise un espace au Pro vivant devrait le dire (Stripe
+  continue de facturer).
+- **La recharge crédite le montant AVANT remise, et le compte Stripe est partagé** : tout code promo sans restriction
+  de produit donne du crédit gratuit. Décision à prendre : recharge sans code promo, ou crédit du montant payé.
 
 - **En Base, trois écrans ouverts lisent encore une fonction fermée, en silence** (inventaire du 2026-10-07) : la
   création de campagne laisse vides ses sélecteurs e-mail et RCS, la fiche d'un agent ne lit pas ses suggestions de

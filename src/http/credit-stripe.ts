@@ -232,10 +232,12 @@ const metaNumeroSchema = z.object({ tenant_id: z.uuid(), produit: z.literal('num
  * périodicité y est recopiée à la création (le portail la change ensuite, relue sur le prix de l'abonnement).
  */
 const metaProSchema = z.object({ tenant_id: z.uuid(), produit: z.literal('pro'), periodicite: z.enum(['mois', 'an']).optional() });
-const estPro = (metadata: unknown): boolean => {
-  const m = metadata as { produit?: unknown } | null | undefined;
-  return typeof m === 'object' && m !== null && m.produit === 'pro';
-};
+/**
+ * L'aiguillage : un objet porte-t-il la marque du Pro ? Par `safeParse`, jamais par `as` sur un corps externe (jaune 7 de
+ * la relecture de B1). La facture la porte sur son abonnement (`parent.subscription_details.metadata`).
+ */
+const marqueProSchema = z.object({ metadata: z.object({ produit: z.literal('pro') }) });
+const factureMarqueeProSchema = z.object({ parent: z.object({ subscription_details: marqueProSchema }) });
 const sessionProSchema = z.object({
   id: z.string().min(1),
   mode: z.literal('subscription'),
@@ -371,7 +373,8 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
         const a = await deps.pro.finir(lu.data.id, raison, fin);
         if (a) {
           deps.pro.invalider(a.tenantId);
-          await deps.pro.alerter(`Pro terminé (${raison === 'impaye' ? 'impayé' : 'résiliation'}) : espace ${a.tenantId} (${a.abonnementId}). L'espace revient en Base.`);
+          // Un rejeu de la fin (Stripe rejoue tout événement non acquitté) ne réalerte pas.
+          if (a.premiereFin) await deps.pro.alerter(`Pro terminé (${raison === 'impaye' ? 'impayé' : 'résiliation'}) : espace ${a.tenantId} (${a.abonnementId}). L'espace revient en Base.`);
         }
         return ok();
       }
@@ -410,10 +413,7 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
 
   /** L'objet porte-t-il nos métadonnées du Pro ? (une session, un abonnement, ou une facture d'abonnement). */
   function objetDuPro(type: string, objet: unknown): boolean {
-    const o = objet as { metadata?: unknown; parent?: { subscription_details?: { metadata?: unknown } | null } | null } | null;
-    if (typeof o !== 'object' || o === null) return false;
-    if (type.startsWith('invoice.')) return estPro(o.parent?.subscription_details?.metadata);
-    return estPro(o.metadata);
+    return (type.startsWith('invoice.') ? factureMarqueeProSchema : marqueProSchema).safeParse(objet).success;
   }
 
   async function traiterAbonnement(evenement: string, type: string, livemode: boolean, objet: unknown, reply: FastifyReply) {

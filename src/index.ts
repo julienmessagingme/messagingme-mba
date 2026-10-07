@@ -750,8 +750,12 @@ async function main(): Promise<void> {
     prixProMois: config.STRIPE_PRIX_PRO_MOIS,
     prixProAn: config.STRIPE_PRIX_PRO_AN,
     proVivant: (tenant) => abonnementsOffre.vivant(tenant),
+    offreDe: async (tenant) => (await offres.offreDe(tenant)).offre,
   };
-  const vueOffre = creerVueOffre({ offres, usage: (tenant) => offresStore.usage(tenant), modelesDuMois: quotaModeles });
+  const vueOffre = creerVueOffre({
+    offres, usage: (tenant) => offresStore.usage(tenant), modelesDuMois: quotaModeles,
+    proEnVente: proDeLaConsole.stripe !== null && proDeLaConsole.prixProMois !== '' && proDeLaConsole.prixProAn !== '',
+  });
 
   /**
    * LA SUPPRESSION D'UN ESPACE DEPUIS /ops (RC8, `src/ops/suppression-espace.ts`). Chaque geste chez un tiers reprend le

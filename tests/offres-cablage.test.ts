@@ -46,7 +46,9 @@ describe('le câblage de l’offre', () => {
   it('🔴 la console, Claude, l’exploitation et le badge lisent la MÊME offre en cache', () => {
     const api = lire('index.ts');
     // Une seule vue, calculée sur l'offre en cache, pour la route de la console ET l'outil `get_plan`.
-    expect(api).toMatch(/const vueOffre = creerVueOffre\(\{ offres, usage: \(tenant\) => offresStore\.usage\(tenant\), modelesDuMois: quotaModeles \}\);/);
+    expect(api).toMatch(/const vueOffre = creerVueOffre\(\{\s+offres, usage: \(tenant\) => offresStore\.usage\(tenant\), modelesDuMois: quotaModeles,/);
+    // Le prix du Pro ne s'affiche que s'il se paie : Stripe câblé ET les deux prix posés (jaune 10 de la relecture de B1).
+    expect(api).toMatch(/proEnVente: proDeLaConsole\.stripe !== null && proDeLaConsole\.prixProMois !== '' && proDeLaConsole\.prixProAn !== '',/);
     expect(api.match(/^\s+offre: \{ vue: vueOffre \},$/gm)).toHaveLength(2);
     // L'exploitation vide le cache de CE process : sans quoi un espace ramené en Base garderait l'Entreprise 30 s.
     expect(api).toMatch(/opsOffre: \{ store: offresStore, invalider: \(tenant\) => offres\.invalider\(tenant\) \},/);

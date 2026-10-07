@@ -6,11 +6,12 @@ import { DROITS, FONCTIONS, PRIX_PRO_HT_CENTIMES, type Offre } from '../src/offr
  * LA VUE DE L'OFFRE (lot 6, tâche 6) : la même pour la console et pour Claude. Les fonctions dans l'ordre de la grille,
  * les limites telles quelles, l'usage, et le lien vers l'offre.
  */
-function vue(offre: Offre, mois: { max: number; reste: number } | null) {
+function vue(offre: Offre, mois: { max: number; reste: number } | null, proEnVente = true) {
   return creerVueOffre({
     offres: { offreDe: async () => ({ offre, droits: DROITS[offre], retourEnBaseLe: null }) },
     usage: async () => ({ contacts: 42, automations: 3, membres: 1 }),
     modelesDuMois: { etatDuMois: async () => mois },
+    proEnVente,
   });
 }
 
@@ -46,6 +47,10 @@ describe('creerVueOffre', () => {
     const v = await vue('base', null)('t1');
     expect(v.prixPro).toEqual({ moisCentimes: 4900, anCentimes: 49000 });
     expect(v.prixPro).toEqual({ moisCentimes: PRIX_PRO_HT_CENTIMES.mois, anCentimes: PRIX_PRO_HT_CENTIMES.an });
+  });
+
+  it('🟡 le Pro pas encore en vente (prix Stripe pas posés) : aucun prix, la console renvoie au Support sans faire cliquer', async () => {
+    expect((await vue('base', null, false)('t1')).prixPro).toBeNull();
   });
 
   it('les limites rendues sont une copie : la modifier ne touche pas la grille', async () => {

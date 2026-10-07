@@ -2128,15 +2128,22 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
 - 🔴 **Le Pro se paie chez Stripe, et seul le webhook signé l'ouvre** (livraison B1). `POST /tenants/:tenantId/offre/paiement`
   (`{periodicite}`, admin, plafond coûteux, SANS garde d'offre puisque c'est une Base qui paie, `src/http/offre-paiement.ts`)
   ouvre une session Checkout en mode abonnement (`ouvrirPro`, `src/stripe/pro.ts`) sur `STRIPE_PRIX_PRO_MOIS` ou
-  `STRIPE_PRIX_PRO_AN` (posés ensemble ou aucun ; absents, 503 `pro_indisponible` et la console renvoie au Support). Le
-  prix est relu chez Stripe et recoupé avec `PRIX_PRO_HT_CENTIMES` (sinon 422 `prix_incoherent`) ; la métadonnée
-  `produit: pro` est posée sur la session ET sur l'abonnement, et le code promo est ouvert. Un espace déjà Pro reçoit le
-  portail (`portail: true`), que `POST .../offre/portail` ouvre aussi. Le webhook Stripe aiguille sur `produit: pro` AVANT
-  le chemin du numéro et écrit `abonnements_offre` par `PgAbonnementsOffreStore` (`src/offres/abonnements-offre.pg.ts`),
-  son seul écrivain : rejouer ne duplique rien, la fin de période ne recule jamais, un abonnement fini le reste, et un
-  second Pro vivant pour un espace bute sur `abonnements_offre_un_vivant_par_espace` et prévient Julien. Une session
+  `STRIPE_PRIX_PRO_AN` (posés ensemble ou aucun ; absents, 503 `pro_indisponible`, et la vue de l'offre rend `prixPro`
+  nul, donc la console montre le Support au lieu des boutons). Le prix est relu chez Stripe et recoupé avec
+  `PRIX_PRO_HT_CENTIMES` (sinon 422 `prix_incoherent`) ; la métadonnée `produit: pro` est posée sur la session ET sur
+  l'abonnement, et le code promo est ouvert. Un espace déjà Pro reçoit le portail (`portail: true`), que
+  `POST .../offre/portail` ouvre aussi ; une Entreprise sans Pro vivant est refusée (409 `deja_entreprise`). Le webhook
+  Stripe aiguille sur `produit: pro` (par `safeParse`) AVANT le chemin du numéro et écrit `abonnements_offre` par
+  `PgAbonnementsOffreStore` (`src/offres/abonnements-offre.pg.ts`), son seul écrivain : rejouer ne duplique rien, la fin
+  de période ne recule jamais, un abonnement fini le reste, et un second Pro vivant pour un espace bute sur
+  `abonnements_offre_un_vivant_par_espace` et prévient Julien (la session et la facture du MÊME abonnement arrivées
+  ensemble heurtent aussi cet index : un nouvel essai quand la ligne de CET abonnement existe). Une session
   `no_payment_required` (code promo à 100 %) ouvre le Pro comme un paiement ; `en_retard` reste Pro, seul `fini_le`
-  (`customer.subscription.deleted`, raison `impaye` si Stripe dit `payment_failed` ou `payment_disputed`) le termine.
+  (`customer.subscription.deleted`, raison `impaye` si Stripe dit `payment_failed` ou `payment_disputed`) le termine, et
+  `finir` dit si c'est la première fin (un rejeu ne réalerte pas).
+  ⚠️ **Le compte Stripe est partagé avec d'autres activités** : tout code promo actif sans restriction de produit
+  s'applique au Pro, et à la recharge, qui crédite le montant AVANT remise. Restreindre chaque code à ses produits se
+  fait chez Stripe.
   🔴 Chaque écriture vide le cache de l'offre de la copie qui reçoit ; les autres copies suivent en 30 s au plus.
 - 🔴 **Une offre illisible laisse tout passer** : `OffresEnCache` rend alors les droits de l'Entreprise, sans les
   garder, et journalise `offre_illisible`. Une panne de la lecture ne coupe ni l'Inbox ni les envois d'un client.

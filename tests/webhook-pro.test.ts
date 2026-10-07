@@ -32,6 +32,7 @@ function monter(o: { connus?: string[]; issue?: IssueEnregistrementPro; panne?: 
     credits: 0,
   };
   const connus = new Set(o.connus ?? []);
+  const finis = new Set<string>();
   const deps: StripeWebhookRouteDeps = {
     secret: SECRET_WEBHOOK,
     livemode: true,
@@ -45,7 +46,13 @@ function monter(o: { connus?: string[]; issue?: IssueEnregistrementPro; panne?: 
         return connus.has(abonnementId) ? ligne(abonnementId, { statut }) : null;
       },
       modifier: async (abonnementId, m) => { cap.modifs.push({ abonnementId, ...m }); return connus.has(abonnementId) ? ligne(abonnementId, m.periodicite ? { periodicite: m.periodicite } : {}) : null; },
-      finir: async (abonnementId, raison, finiLe) => { cap.fins.push({ abonnementId, raison, finiLe }); return connus.has(abonnementId) ? ligne(abonnementId, { statut: 'resilie', finiLe, finRaison: raison }) : null; },
+      finir: async (abonnementId, raison, finiLe) => {
+        cap.fins.push({ abonnementId, raison, finiLe });
+        if (!connus.has(abonnementId)) return null;
+        const premiereFin = !finis.has(abonnementId);
+        finis.add(abonnementId);
+        return { ...ligne(abonnementId, { statut: 'resilie', finiLe, finRaison: raison }), premiereFin };
+      },
       invalider: (t) => { cap.invalides.push(t); },
       alerter: async (texte) => { cap.alertes.push(texte); },
     },
@@ -164,6 +171,15 @@ describe('le webhook Stripe et le Pro', () => {
     const r3 = monter({ connus: ['sub_pro'] });
     await envoyer(r3.srv, evenement(abonnementPro({ cancellation_details: null }), 'customer.subscription.deleted'));
     expect(r3.cap.fins).toEqual([{ abonnementId: 'sub_pro', raison: 'resiliation', finiLe: new Date(NOW) }]);
+  });
+
+  it('🟡 un rejeu de la fin ne réalerte pas (Stripe rejoue un événement non acquitté)', async () => {
+    const { srv, cap } = monter({ connus: ['sub_pro'] });
+    const fin = evenement(abonnementPro({ ended_at: FIN, cancellation_details: { reason: 'cancellation_requested' } }), 'customer.subscription.deleted');
+    await envoyer(srv, fin);
+    await envoyer(srv, fin);
+    expect(cap.fins).toHaveLength(2);
+    expect(cap.alertes).toHaveLength(1);
   });
 
   it('🔴 un abonnement sans notre métadonnée n’est pas le Pro : il va au chemin du numéro, jamais au Pro', async () => {
