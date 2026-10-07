@@ -192,7 +192,8 @@
 ## Lot 4 : ce qui reste après les livraisons A et B (2026-10-06)
 
 Les deux livraisons sont en production (la suspension, puis la libération, « Abandonner » et les e-mails). La première
-libération réelle est celle de l'espace de l'essai, le 13 octobre vers 15 h 14 UTC (rappel aux admins le 11) : à
+libération réelle est celle de l'espace de l'essai, le 14 octobre vers 15 h 50 UTC (rappel aux admins le 12, décalée
+d'un jour par l'essai réel de B1 sur le même espace) : à
 regarder ce jour-là (numéro résilié chez DIDWW, ligne retirée de l'espace, alerte, e-mail).
 
 - **Un fil déjà tenu par l'agent de Meta lui reste pendant une suspension** : rien ne change chez Meta, donc s'il est

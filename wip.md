@@ -33,8 +33,9 @@ portail est déjà réglé comme il faut : résiliation en fin de période, chan
 mensuel à l'annuel, mais aucun basculement vers un autre produit). 🔴 Restent chez Julien : désactiver ENGAGE100
 (recharges, nommé dans le dépôt public), recréer GMC100 et VERIF100 restreints à leurs produits ; ENGAGEME (essai
 réel, une utilisation) n'est restreint à aucun produit, d'où l'essai à faire vite.
-⏳ **Essai réel de B1** : un Pro pris avec un code promo à 100 %, l'espace passé en Pro dans la minute, puis résilié
-au portail. Restent B2 (le numéro inclus dans le Pro, le gel au retour en Base, `set_default_responder` et les outils
+✅ **Essai réel de B1 fait le 2026-10-07** (Julien, « Espace de dumas family » mis en Base pour l'occasion) : « Mensuel »
+payé avec ENGAGEME à 100 %, l'abonnement enregistré et l'espace en Pro dans la minute, puis l'abonnement annulé
+immédiatement chez Stripe : fin datée, raison « résiliation », espace revenu en Base, remis en Entreprise ensuite. Restent B2 (le numéro inclus dans le Pro, le gel au retour en Base, `set_default_responder` et les outils
 MCP qui déclarent leur fonction ; Julien ajoute « Abonnements : écriture » à la clé restreinte avant) et C (les coûts
 selon l'offre).
 
@@ -137,7 +138,9 @@ cycle : c'est l'essai réel.
   inexistant : 404, pas 403). La clé DIDWW du worker est valide (lue, 200).
 - ✅ Dès le déploiement, l'e-mail de suspension est parti à l'admin de l'espace de l'essai (20 h 36 UTC), l'alerte
   Telegram n'est pas repartie (déjà notée par A).
-- 🔜 **La première libération réelle** : l'espace de l'essai, le 13 octobre vers 15 h 14 UTC (rappel le 11). Julien a
+- 🔜 **La première libération réelle** : l'espace de l'essai, le **14 octobre vers 15 h 50 UTC** (rappel le 12), décalée
+  d'un jour par l'essai réel de B1 sur le même espace (un Pro pris puis annulé le 7 : sa fin est devenue celle du
+  numéro, calculée par le code déployé). Julien a
   accepté d'y perdre +44 1259 797311. Puis les jaunes de B.
 
 ## LOT 3c DE « MESSAGING ME POUR CLAUDE CODE » : LE NUMÉRO BRANCHÉ DEPUIS CLAUDE CODE, EN PRODUCTION, ESSAI RÉEL FAIT

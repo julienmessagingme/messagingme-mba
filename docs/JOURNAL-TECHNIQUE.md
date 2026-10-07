@@ -99,6 +99,15 @@ coupe tous les bots clients. Personne ne l'a fait (ENGAGE100 n'a servi qu'à l'e
 Julien. Onze jaunes : sept corrigés dans le lot qui suit, trois reportés à B2 (le numéro y devient inclus), le réglage
 du portail chez Julien.
 
+**Mise en vente et essai réel, le même jour** : Julien a créé « Messaging Me Pro » (deux prix, taxe en sus, lus en
+lecture seule avant d'être posés), les deux identifiants posés dans `.env.prod`, API et workers recréés. Le portail
+client était déjà réglé sans changement de formule (aucun basculement vers un autre produit, mais pas de passage du
+mensuel à l'annuel non plus : les textes qui le promettaient sont corrigés). Essai sur « Espace de dumas family » mis
+en Base : « Mensuel » payé avec un code à 100 %, abonnement enregistré et espace en Pro dans la minute, puis annulé
+immédiatement chez Stripe, fin datée et espace revenu en Base, remis en Entreprise. ⚠️ Cet espace est aussi celui de
+l'essai du lot 4 : le Pro a couvert son numéro résilié, et sa fin est devenue celle du numéro, ce qui décale la
+première libération réelle au 14 octobre vers 15 h 50 UTC.
+
 ## 2026-10-07 : les offres et leurs limites (lot 6, livraison A)
 
 **Ce qui part** : la migration 0218 seule (`45ad6976`, appliquée à 10 h 34 UTC avant le code, relue en base : les 9
