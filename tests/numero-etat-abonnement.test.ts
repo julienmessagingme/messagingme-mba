@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { etatAbonnement, liberationPrevue, DELAI_COUPURE_IMPAYE_MS, DELAI_LIBERATION_MS, type LigneEtat } from '../src/stripe/etat-abonnement';
+import { couvertureParLePro, etatAbonnement, liberationPrevue, DELAI_COUPURE_IMPAYE_MS, DELAI_LIBERATION_MS, type LigneEtat } from '../src/stripe/etat-abonnement';
 
 /**
  * L'ÉTAT DE L'ABONNEMENT DU NUMÉRO, CALCULÉ SUR DES DATES (lot 4, spec docs/superpowers/specs/2026-10-06-numero-impaye-design.md).
@@ -76,5 +76,44 @@ describe('liberationPrevue', () => {
   it('7 jours après la fin ; aucune date sans fin', () => {
     expect(liberationPrevue({ finiLe: new Date('2026-10-06T15:14:51Z') })).toEqual(new Date('2026-10-13T15:14:51Z'));
     expect(liberationPrevue(base)).toBeNull();
+  });
+});
+
+/**
+ * LA COUVERTURE PAR LE PRO (lot 6, livraison B1, vigilance 4). Un numéro fourni est couvert si son abonnement est actif
+ * OU si le Pro de l'espace l'est. Sans elle, le balayage du lot 4 suspendrait puis LIBÉRERAIT le numéro d'un client Pro
+ * dont l'abonnement du numéro seul est fini : un geste irréversible.
+ */
+describe('couvertureParLePro', () => {
+  const finiIlYa = (ms: number): Partial<LigneEtat> => ({ statut: 'resilie', finiLe: il_y_a(ms) });
+
+  it('🔴 un Pro vivant couvre : actif, sans fin, sans libération, même abonnement du numéro fini depuis longtemps', () => {
+    const l = couvertureParLePro({ ...base, ...finiIlYa(30 * JOUR), premierEchecLe: il_y_a(40 * JOUR) }, { vivant: true, dernierFini: null });
+    expect(etatAbonnement(l, { maintenant: MAINTENANT, numeroAttribue: true, numeroApporte: false })).toBe('actif');
+    expect(liberationPrevue(l)).toBeNull();
+  });
+
+  it('🔴 un Pro fini APRÈS la fin du numéro : la fin effective est celle du Pro, donc 7 jours de grâce à partir d’elle', () => {
+    const finPro = il_y_a(2 * JOUR);
+    const l = couvertureParLePro({ ...base, ...finiIlYa(60 * JOUR) }, { vivant: false, dernierFini: finPro });
+    expect(l.finiLe).toEqual(finPro);
+    expect(liberationPrevue(l)).toEqual(new Date(finPro.getTime() + DELAI_LIBERATION_MS));
+    expect(etatAbonnement(l, { maintenant: MAINTENANT, numeroAttribue: true, numeroApporte: false })).toBe('suspendu');
+  });
+
+  it('un Pro fini AVANT la fin du numéro ne change rien : la fin du numéro fait foi', () => {
+    const l = couvertureParLePro({ ...base, ...finiIlYa(2 * JOUR) }, { vivant: false, dernierFini: il_y_a(60 * JOUR) });
+    expect(l.finiLe).toEqual(il_y_a(2 * JOUR));
+  });
+
+  it('sans Pro, ou un numéro vivant après un Pro fini : rien ne change', () => {
+    const vivant = { ...base, finPrevueLe: il_y_a(-3 * JOUR) };
+    expect(couvertureParLePro(vivant, { vivant: false, dernierFini: null })).toEqual(vivant);
+    expect(couvertureParLePro(vivant, { vivant: false, dernierFini: il_y_a(JOUR) })).toEqual(vivant);
+  });
+
+  it('un numéro déjà libéré le reste, Pro ou non', () => {
+    const l = couvertureParLePro({ ...base, ...finiIlYa(20 * JOUR), libereLe: il_y_a(13 * JOUR) }, { vivant: true, dernierFini: null });
+    expect(etatAbonnement(l, { maintenant: MAINTENANT, numeroAttribue: false, numeroApporte: false })).toBe('libere');
   });
 });

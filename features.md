@@ -3327,7 +3327,7 @@ Crédit jusqu'au 2026-09-29 ; l'ancienne adresse y mène toujours.
 Chaque espace a une offre : **Base** (gratuite), **Pro** (abonnement mensuel ou annuel) ou **Entreprise** (sur
 devis). L'offre décide de deux choses : les **fonctions** ouvertes, et les **limites** de ce qu'on peut créer ou
 envoyer. Les chiffres exacts vivent à un seul endroit (`src/offres/offres.ts`) et s'affichent sur la page Offre :
-cette section n'en recopie aucun. Livraison A du lot 6 (2026-10-07).
+cette section n'en recopie aucun. Lot 6, livraisons A et B1 (2026-10-07).
 
 - ✅ **La Base** donne le numéro, l'API, Claude (le serveur MCP), les contacts, les campagnes de modèles, les
   automations et l'agent IA, avec des plafonds : contacts créés, modèles envoyés par mois civil, automations
@@ -3348,8 +3348,17 @@ cette section n'en recopie aucun. Livraison A du lot 6 (2026-10-07).
   refusé (une fiche au-delà de la limite, par exemple) affiche la raison et un bouton « Voir les offres », au-dessus de la fenêtre
   ouverte.
 - ✅ **La page Offre** (admins) : l'offre de l'espace, ce qu'il consomme de chaque limite (avec une jauge), la
-  grille des trois offres, et « Passer en Pro ». ⚠️ Tant que le paiement du Pro n'est pas en ligne (livraison B),
-  ce bouton ouvre le Support avec le sujet prérempli : nous ouvrons le Pro à la main.
+  grille des trois offres, et le passage en Pro.
+- ✅ **Le Pro se paie en ligne** (livraison B1) : une Base choisit « Mensuel » ou « Annuel » sur la page Offre et
+  paie sur la page de Stripe, code promo accepté. L'espace passe en Pro dès que Stripe confirme le paiement (dans la
+  minute), et la page Offre le dit au retour. Un Pro y trouve « Gérer mon abonnement », le portail de Stripe : carte,
+  passage du mensuel à l'annuel, factures, résiliation. Une résiliation prend effet à la fin de la période payée,
+  et l'espace revient alors en Base ; un renouvellement refusé le laisse en Pro pendant les relances de Stripe.
+  ⚠️ Tant que le Pro n'est pas en vente (prix pas posés), le bouton « Passer en Pro » ouvre le Support, sujet
+  prérempli.
+- ✅ **Un Pro protège le numéro fourni** : tant qu'il est actif, le numéro n'est ni suspendu ni libéré, même si son
+  propre abonnement est en retard ou terminé ; quand le Pro finit, le numéro garde sept jours avant d'être libéré.
+  ⚠️ Jusqu'à la livraison B2, le numéro reste facturé à part, par son propre abonnement.
 - ✅ **Par l'API et Claude** : un refus rend le statut **402** avec un code, `plan_feature_unavailable` (fonction
   absente de l'offre) ou `plan_limit_reached` (limite atteinte), et le lien `upgradeUrl`. L'outil MCP `get_plan`
   rend l'offre, ses limites, ce qui est consommé et la grille.
@@ -3357,7 +3366,7 @@ cette section n'en recopie aucun. Livraison A du lot 6 (2026-10-07).
   avec sa limite d'utilisateurs (10 proposés, vide = sans limite) et, si on la donne, la durée de conservation des
   conversations (absente, elle reste telle quelle : changer d'offre ne déclenche jamais de purge). La même route ramène
   un espace en Base. Les espaces qui existaient avant le lot 6 sont tous en Entreprise, sans aucune limite.
-- ⏳ **À venir** : le paiement du Pro par Stripe et le numéro inclus (livraison B), les coûts qui suivent l'offre
+- ⏳ **À venir** : le numéro inclus dans le Pro (livraison B2), les coûts qui suivent l'offre
   (commission sur le crédit IA, analyse des conversations, conservation : livraison C).
 
 ## MBA, le répondeur de Meta (menu « AI Agent » > MBA)

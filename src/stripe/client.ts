@@ -241,6 +241,10 @@ export interface DemandeAbonnement {
   urlAbandon: string;
   /** Une clé par geste : elle protège d'un rejeu du même appel, pas de deux paiements voulus. */
   idempotence: string;
+  /** Ce qui est vendu (lot 6, B1) : le numéro fourni, ou le Pro. Le webhook route l'abonnement sur cette métadonnée. */
+  produit: 'numero' | 'pro';
+  /** Le Pro seulement : sa périodicité, recopiée en métadonnée (le webhook la relit à la création). */
+  periodicite?: 'mois' | 'an';
 }
 
 /**
@@ -264,9 +268,15 @@ export async function creerSessionAbonnement(transport: TransportStripe, d: Dema
     'customer_update[address]': 'auto',
     billing_address_collection: 'required',
     'metadata[tenant_id]': d.tenantId,
-    'metadata[produit]': 'numero',
+    'metadata[produit]': d.produit,
     'subscription_data[metadata][tenant_id]': d.tenantId,
-    'subscription_data[metadata][produit]': 'numero',
+    'subscription_data[metadata][produit]': d.produit,
+    // Le Pro (lot 6, B1) : sa périodicité, et le code promo ouvert (l'essai réel se paie par un code à 100 % que Julien
+    // crée ; un code ne se crée que dans le tableau de bord, donc par nous seuls). Le numéro n'en a toujours pas.
+    ...(d.produit === 'pro' ? {
+      allow_promotion_codes: 'true',
+      ...(d.periodicite ? { 'metadata[periodicite]': d.periodicite, 'subscription_data[metadata][periodicite]': d.periodicite } : {}),
+    } : {}),
     client_reference_id: d.tenantId,
     success_url: d.urlSucces,
     cancel_url: d.urlAbandon,

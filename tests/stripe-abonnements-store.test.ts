@@ -62,3 +62,40 @@ describe('PgAbonnementsNumeroStore.enregistrer', () => {
     expect(b.requetes.filter((q) => /insert into abonnements_numero/i.test(q))).toHaveLength(2);
   });
 });
+
+/**
+ * L'ÉTAT DE L'ESPACE LIT LA COUVERTURE PAR LE PRO (lot 6, livraison B1, vigilance 4) : c'est la seule lecture de l'état,
+ * celle du balayage qui suspend puis libère. La vérité en base est tenue par `tests/integration/offres.integration.test.ts`.
+ */
+describe('PgAbonnementsNumeroStore.etatDeLEspace, couvert par le Pro', () => {
+  const JOUR = 24 * 3_600_000;
+  const MAINTENANT = new Date('2026-11-20T12:00:00Z');
+  function baseEtat(pro: { vivant: boolean | null; dernier_fini: Date | null }) {
+    const query = async (sql: string) => {
+      if (/from abonnements_offre/i.test(sql)) return { rows: [pro], rowCount: 1 };
+      if (/from abonnements_numero/i.test(sql)) {
+        return { rows: [{ stripe_subscription_id: 'sub_n', tenant_id: T1, livemode: true, statut: 'resilie', periode_fin: null,
+          premier_echec_le: null, fin_prevue_le: null, fini_le: new Date(MAINTENANT.getTime() - 30 * JOUR), libere_le: null }], rowCount: 1 };
+      }
+      if (/as fourni/i.test(sql)) return { rows: [{ fourni: '441235619343', relie: '441235619343' }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    };
+    return { query, connect: async () => ({ query, release: () => {} }) } as unknown as Pool;
+  }
+
+  it('🔴 un Pro vivant : actif, sans fin ni libération, alors que l’abonnement du numéro est fini depuis 30 jours', async () => {
+    const e = await new PgAbonnementsNumeroStore(baseEtat({ vivant: true, dernier_fini: null })).etatDeLEspace(T1, MAINTENANT);
+    expect(e).toMatchObject({ etat: 'actif', finiLe: null, liberationLe: null, coupureLe: null });
+  });
+
+  it('🔴 un Pro fini il y a 2 jours : suspendu, libération 7 jours après la fin du PRO (et non dans le passé)', async () => {
+    const finPro = new Date(MAINTENANT.getTime() - 2 * JOUR);
+    const e = await new PgAbonnementsNumeroStore(baseEtat({ vivant: false, dernier_fini: finPro })).etatDeLEspace(T1, MAINTENANT);
+    expect(e).toMatchObject({ etat: 'suspendu', finiLe: finPro, liberationLe: new Date(finPro.getTime() + 7 * JOUR) });
+  });
+
+  it('sans Pro : l’état du lot 4, inchangé', async () => {
+    const e = await new PgAbonnementsNumeroStore(baseEtat({ vivant: null, dernier_fini: null })).etatDeLEspace(T1, MAINTENANT);
+    expect(e).toMatchObject({ etat: 'suspendu', liberationLe: new Date(MAINTENANT.getTime() - 23 * JOUR) });
+  });
+});

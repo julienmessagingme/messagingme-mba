@@ -181,7 +181,7 @@ describe('l’abonnement du numéro fourni (lot 3c, livraison B)', () => {
   const demandeAbonnement = {
     cle: CLE, tenantId: TENANT, prix: 'price_numero', customerId: 'cus_A',
     urlSucces: 'https://console.exemple/brancher?abonnement=recu', urlAbandon: 'https://console.exemple/brancher?abonnement=abandon',
-    idempotence: 'abonnement-cle-1',
+    idempotence: 'abonnement-cle-1', produit: 'numero' as const,
   };
 
   it('🔴 un prix récurrent se lit avec sa récurrence', async () => {
@@ -216,6 +216,19 @@ describe('l’abonnement du numéro fourni (lot 3c, livraison B)', () => {
     });
     // Une facture est émise par l'abonnement lui-même : `invoice_creation` est refusé par Stripe en mode abonnement.
     expect(a.corps.has('invoice_creation[enabled]')).toBe(false);
+    // Le numéro n'a pas de code promo : rien n'a été décidé pour lui.
+    expect(a.corps.has('allow_promotion_codes')).toBe(false);
+  });
+
+  it('🔴 la session du Pro (lot 6, B1) : produit pro et sa périodicité, sur la session ET l’abonnement, code promo ouvert', async () => {
+    const t = new FauxTransport([ABONNEMENT_OK]);
+    await creerSessionAbonnement(t, { ...demandeAbonnement, prix: 'price_pro_an', produit: 'pro', periodicite: 'an' });
+    const c = Object.fromEntries(t.appels[0]!.corps);
+    expect(c).toMatchObject({
+      mode: 'subscription', 'line_items[0][price]': 'price_pro_an', 'metadata[produit]': 'pro', 'metadata[periodicite]': 'an',
+      'subscription_data[metadata][produit]': 'pro', 'subscription_data[metadata][periodicite]': 'an',
+      'subscription_data[metadata][tenant_id]': TENANT, allow_promotion_codes: 'true', 'automatic_tax[enabled]': 'true',
+    });
   });
 
   it('le portail client : une session sur le client de l’espace, avec l’adresse de retour', async () => {

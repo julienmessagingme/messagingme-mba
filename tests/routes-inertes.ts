@@ -31,6 +31,7 @@ import { PLAFOND_DESTINATAIRES_DEFAUT } from '../src/campaign/plafond';
 import { creerTravauxEnVol } from '../src/lib/en-vol';
 import { DROITS, FONCTIONS } from '../src/offres/offres';
 import { grilleDesOffres } from '../src/offres/vue';
+import type { StripeWebhookRouteDeps } from '../src/http/credit-stripe';
 
 /**
  * LES DÉPENDANCES DE ROUTES DEVENUES REQUISES, EN VALEURS INERTES NOMMÉES (lot 3 de l'audit ponytail, 2026-09-26).
@@ -528,7 +529,7 @@ export const mcpOffreInerte: Pick<DepsMcp, 'offre'> = {
   offre: {
     vue: async () => ({
       offre: 'entreprise', fonctions: [...FONCTIONS], limites: { ...DROITS.entreprise.limites },
-      usage: { envoisModelesMois: null, contacts: 0, automations: 0, membres: 0 }, grille: grilleDesOffres(),
+      usage: { envoisModelesMois: null, contacts: 0, automations: 0, membres: 0 }, grille: grilleDesOffres(), prixPro: { moisCentimes: 4900, anCentimes: 49000 },
       upgradeUrl: 'https://console.inerte.test/offre',
     }),
   },
@@ -582,4 +583,26 @@ export const mcpAgentInerte: Pick<DepsMcp, 'agentIa'> = {
     },
     repondeur: repondeurInerte,
   },
+};
+
+/**
+ * L'abonnement du numéro pour un webhook Stripe qui n'en reçoit pas (lot 6, B1) : un événement d'un autre produit qui y
+ * tomberait le trouve inconnu (`null`), jamais enregistré ni réabonné.
+ */
+export const stripeNumeroInerte: StripeWebhookRouteDeps['numero'] = {
+  enregistrer: neDevraitPasEtreAppelee('stripe.numero.enregistrer'),
+  majStatut: async () => null,
+  noterFinPrevue: async () => false,
+  alerter: async () => {},
+  reprendreCampagnes: neDevraitPasEtreAppelee('stripe.numero.reprendreCampagnes'),
+};
+
+/** Le Pro pour un webhook Stripe qui ne vend que le numéro et la recharge (lot 6, B1) : un événement du Pro y lèverait. */
+export const stripeProInerte: StripeWebhookRouteDeps['pro'] = {
+  enregistrer: neDevraitPasEtreAppelee('stripe.pro.enregistrer'),
+  majStatut: neDevraitPasEtreAppelee('stripe.pro.majStatut'),
+  modifier: neDevraitPasEtreAppelee('stripe.pro.modifier'),
+  finir: neDevraitPasEtreAppelee('stripe.pro.finir'),
+  invalider: neDevraitPasEtreAppelee('stripe.pro.invalider'),
+  alerter: async () => {},
 };

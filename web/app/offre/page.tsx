@@ -6,10 +6,12 @@ import { AppShell } from '@/components/AppShell';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
 import { Squelette } from '@/components/Squelette';
 import { Icone } from '@/components/Icone';
-import { classesBouton } from '@/components/Bouton';
+import { Bouton, classesBouton } from '@/components/Bouton';
 import type { Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
-import { useOffre } from '@/lib/use-offre';
+import { oublierOffre, useOffre } from '@/lib/use-offre';
+import { payerPro, portailPro } from '@/lib/api/offre';
+import { ApiError, erreurDeChargement } from '@/lib/http';
 import {
   FONCTIONS_OFFRE, NOMS_OFFRES, libelleFonction, nomDeLOffre, offreQuiOuvre,
   type FonctionOffre, type LimitesOffre, type NomOffre,
@@ -48,10 +50,48 @@ const LIGNES_LIMITES = [
   'numeroInclus', 'badge',
 ] as const satisfies ReadonlyArray<keyof LimitesOffre>;
 
+/**
+ * Le retour de la page de Stripe (`/offre?pro=recu` ou `?pro=abandon`). Un paiement reçu oublie l'offre gardée par la
+ * console : le webhook la fait passer en Pro, et la page doit la relire au lieu de servir la Base d'il y a une minute.
+ */
+function retourDeStripe(): 'recu' | 'abandon' | null {
+  if (typeof window === 'undefined') return null;
+  const r = new URLSearchParams(window.location.search).get('pro');
+  if (r === 'recu') oublierOffre();
+  return r === 'recu' || r === 'abandon' ? r : null;
+}
+
+/** Un prix en euros, sans centimes quand il n'en a pas (« 49 € », « 490 € »). */
+const euros = (centimes: number): string => `${(centimes / 100).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} €`;
+
 function OffreInner({ session }: { session: Session }) {
   const t = useT();
+  // Avant `useOffre` : le retour d'un paiement oublie l'offre gardée, que la lecture qui suit refait donc.
+  const [retour] = useState(retourDeStripe);
   const vue = useOffre(session.tenantId);
   const [demandee] = useState(fonctionDemandee);
+  const [paiement, setPaiement] = useState<'mois' | 'an' | 'portail' | null>(null);
+  const [erreurPaiement, setErreurPaiement] = useState<string | null>(null);
+  const [proIndisponible, setProIndisponible] = useState(false);
+
+  /** Le paiement ou le portail : la console redirige vers l'adresse de Stripe que l'API rend. */
+  async function ouvrirStripe(geste: 'mois' | 'an' | 'portail'): Promise<void> {
+    setPaiement(geste);
+    setErreurPaiement(null);
+    try {
+      const r = geste === 'portail' ? await portailPro(session.tenantId) : await payerPro(session.tenantId, geste);
+      window.location.assign(r.url);
+    } catch (err) {
+      setPaiement(null);
+      // Une API qui n'a pas encore la route (404), ou un Pro pas encore en vente (503) : le Support, comme avant. Le portail
+      // n'a pas de repli, son refus se dit.
+      if (geste !== 'portail' && err instanceof ApiError && (err.status === 404 || err.status === 503)) {
+        setProIndisponible(true);
+        return;
+      }
+      setErreurPaiement(erreurDeChargement(err, t));
+    }
+  }
 
   const libelleLimite = (k: (typeof LIGNES_LIMITES)[number]): string => ({
     utilisateurs: t('Utilisateurs', 'Users'),
@@ -108,6 +148,17 @@ function OffreInner({ session }: { session: Session }) {
           <strong className="font-semibold text-ink-900" data-testid="offre-actuelle">{nomDeLOffre(vue.offre, t)}</strong>
           {t('.', ' plan.')}
         </IntroPage>
+        {retour === 'recu' && (
+          <p className="mt-3 rounded-carte border border-succes-200 bg-succes-50 px-4 py-3 text-sm text-succes-700" data-testid="offre-paiement-recu">
+            {t('Paiement reçu : votre espace passe en Pro dans quelques instants. Rechargez la page si la grille ne l’indique pas encore.',
+              'Payment received: your workspace moves to Pro in a few moments. Reload the page if the grid does not show it yet.')}
+          </p>
+        )}
+        {retour === 'abandon' && (
+          <p className="mt-3 text-sm text-ink-500" data-testid="offre-paiement-abandon">
+            {t('Paiement abandonné : rien n’a été débité.', 'Payment cancelled: nothing was charged.')}
+          </p>
+        )}
       </div>
 
       {demandee && offreDemandee && offreDemandee !== vue.offre && (
@@ -153,9 +204,36 @@ function OffreInner({ session }: { session: Session }) {
               : t('L’Entreprise ajoute le RCS, les connecteurs CRM, le Performance Lab et une équipe à votre mesure, sur devis.',
                 'Enterprise adds RCS, CRM connectors, the Performance Lab and a team sized for you, on quote.')}
           </p>
-          <Link href={`/support?sujet=${suivante}`} className={classesBouton('principal')} data-testid={`offre-passer-${suivante}`}>
-            {suivante === 'pro' ? t('Passer en Pro', 'Upgrade to Pro') : t('Nous contacter', 'Contact us')}
-          </Link>
+          {suivante === 'pro' && vue.prixPro && !proIndisponible ? (
+            // Le Pro se paie sur la page de Stripe (lot 6, B1) ; le webhook signé, et lui seul, ouvre les fonctions.
+            <div className="flex flex-wrap gap-2">
+              <Bouton onClick={() => void ouvrirStripe('mois')} enCours={paiement === 'mois'} disabled={paiement !== null} data-testid="offre-payer-mois">
+                {t(`Mensuel, ${euros(vue.prixPro.moisCentimes)} HT`, `Monthly, ${euros(vue.prixPro.moisCentimes)} excl. VAT`)}
+              </Bouton>
+              <Bouton variante="secondaire" onClick={() => void ouvrirStripe('an')} enCours={paiement === 'an'} disabled={paiement !== null} data-testid="offre-payer-an">
+                {t(`Annuel, ${euros(vue.prixPro.anCentimes)} HT`, `Yearly, ${euros(vue.prixPro.anCentimes)} excl. VAT`)}
+              </Bouton>
+            </div>
+          ) : (
+            // Pas encore en vente (API plus ancienne, prix pas posés), ou l'Entreprise : le Support, sujet prérempli.
+            <Link href={`/support?sujet=${suivante}`} className={classesBouton('principal')} data-testid={`offre-passer-${suivante}`}>
+              {suivante === 'pro' ? t('Passer en Pro', 'Upgrade to Pro') : t('Nous contacter', 'Contact us')}
+            </Link>
+          )}
+          {erreurPaiement && vue.offre !== 'pro' && <p className="w-full text-sm text-danger" data-testid="offre-paiement-erreur">{erreurPaiement}</p>}
+        </section>
+      )}
+
+      {vue.offre === 'pro' && (
+        <section className="flex flex-wrap items-center gap-3 rounded-carte border border-ink-200 bg-white p-5" data-testid="offre-abonnement">
+          <p className="min-w-0 flex-1 text-sm text-ink-500">
+            {t('Changer de carte, passer du mensuel à l’annuel, retrouver vos factures ou résilier : tout se fait sur la page de Stripe.',
+              'Change your card, switch between monthly and yearly, find your invoices or cancel: it all happens on the Stripe page.')}
+          </p>
+          <Bouton variante="secondaire" onClick={() => void ouvrirStripe('portail')} enCours={paiement === 'portail'} disabled={paiement !== null} data-testid="offre-portail">
+            {t('Gérer mon abonnement', 'Manage my subscription')}
+          </Bouton>
+          {erreurPaiement && <p className="w-full text-sm text-danger" data-testid="offre-paiement-erreur">{erreurPaiement}</p>}
         </section>
       )}
 

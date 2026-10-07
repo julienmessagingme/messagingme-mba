@@ -8,6 +8,8 @@ import { PgAutomationStore, type AutomationInput } from '../../src/automation/st
 import { PgUserStore } from '../../src/user/store.pg';
 import { PgCompteurDebit } from '../../src/db/debit.pg';
 import { QuotaModeles } from '../../src/offres/compteurs';
+import { PgAbonnementsNumeroStore } from '../../src/stripe/abonnements.pg';
+import { PgAbonnementsOffreStore } from '../../src/offres/abonnements-offre.pg';
 
 /**
  * L'OFFRE CALCULÉE (migration 0218, lot 6 livraison A), sur une vraie base.
@@ -173,6 +175,73 @@ describe.skipIf(!url)('l’offre calculée (0218)', () => {
     expect(await offres.ecrireEntreprise(t, { entreprise: true, utilisateurs: null, conservationJours: 0 })).toBe(true);
     expect(await offres.ecrireEntreprise(t, { entreprise: false, utilisateurs: null })).toBe(true);
     expect(await offres.lireEntreprise(t)).toEqual({ entreprise: false, utilisateurs: null, conservationJours: 0 });
+  });
+
+  it('🔴 un Pro vivant couvre le numéro dans etatDeLEspace, sur le vrai SQL : ni fin ni libération (lot 6, B1, vigilance 4)', async () => {
+    const t = await espace('itest-offre-couverture');
+    await pool.query(
+      "insert into abonnements_numero (stripe_subscription_id, tenant_id, livemode, statut, fini_le) values ('sub_itestcouvnum', $1, true, 'resilie', now() - interval '30 days')",
+      [t],
+    );
+    const numeros = new PgAbonnementsNumeroStore(pool);
+    // Sans Pro : la libération est déjà passée (fin il y a 30 jours).
+    expect((await numeros.etatDeLEspace(t))?.liberationLe?.getTime()).toBeLessThan(Date.now());
+    await pro(t, 'sub_itestcouvpro', null);
+    expect(await numeros.etatDeLEspace(t)).toMatchObject({ etat: 'actif', finiLe: null, liberationLe: null });
+  });
+
+  describe('le magasin du Pro, écrit par le webhook (lot 6, B1, tâche 11)', () => {
+    const D = (s: string) => new Date(s);
+    it('🔴 enregistrer : l’espace passe en Pro ; rejoué, rien ne double, la fin de période ne recule pas', async () => {
+      const t = await espace('itest-pro-enreg');
+      const pros = new PgAbonnementsOffreStore(pool);
+      expect(await pros.enregistrer({ tenantId: t, abonnementId: 'sub_itestproa', periodicite: 'mois', livemode: true, periodeFin: D('2026-11-07T00:00:00Z') }))
+        .toEqual({ etat: 'enregistre', tenantId: t, nouveau: true });
+      expect((await offres.offreDe(t)).offre).toBe('pro');
+      expect(await pros.enregistrer({ tenantId: t, abonnementId: 'sub_itestproa', periodicite: 'mois', livemode: true, periodeFin: D('2026-10-07T00:00:00Z') }))
+        .toEqual({ etat: 'enregistre', tenantId: t, nouveau: false });
+      expect((await pros.deLEspace(t))?.periodeFin).toEqual(D('2026-11-07T00:00:00Z'));
+      expect(await pros.vivant(t)).toBe(true);
+    });
+
+    it('🔴 un second Pro vivant sur le même espace : doublon, rien d’écrit', async () => {
+      const t = await espace('itest-pro-doublon');
+      const pros = new PgAbonnementsOffreStore(pool);
+      await pros.enregistrer({ tenantId: t, abonnementId: 'sub_itestprob1', periodicite: 'mois', livemode: true, periodeFin: null });
+      expect(await pros.enregistrer({ tenantId: t, abonnementId: 'sub_itestprob2', periodicite: 'an', livemode: true, periodeFin: null })).toEqual({ etat: 'doublon' });
+    });
+
+    it('🔴 un échec rejoué APRÈS le paiement de la même période ne repose rien ; un vrai échec passe en retard, toujours Pro', async () => {
+      const t = await espace('itest-pro-retard');
+      const pros = new PgAbonnementsOffreStore(pool);
+      await pros.enregistrer({ tenantId: t, abonnementId: 'sub_itestproc', periodicite: 'mois', livemode: true, periodeFin: D('2026-11-07T00:00:00Z') });
+      expect(await pros.majStatut('sub_itestproc', 'en_retard', null, D('2026-11-07T00:00:00Z'))).toBeNull();
+      expect((await pros.majStatut('sub_itestproc', 'en_retard', null, D('2026-12-07T00:00:00Z')))?.statut).toBe('en_retard');
+      expect((await offres.offreDe(t)).offre).toBe('pro');
+      expect((await pros.majStatut('sub_itestproc', 'actif', D('2026-12-07T00:00:00Z')))?.statut).toBe('actif');
+    });
+
+    it('la résiliation programmée posée puis retirée, et la périodicité changée au portail', async () => {
+      const t = await espace('itest-pro-modif');
+      const pros = new PgAbonnementsOffreStore(pool);
+      await pros.enregistrer({ tenantId: t, abonnementId: 'sub_itestprod', periodicite: 'mois', livemode: true, periodeFin: null });
+      expect(await pros.modifier('sub_itestprod', { finPrevueLe: D('2026-11-07T00:00:00Z'), periodicite: 'an' })).toMatchObject({ finPrevueLe: D('2026-11-07T00:00:00Z'), periodicite: 'an' });
+      expect(await pros.modifier('sub_itestprod', { finPrevueLe: null, periodicite: null })).toMatchObject({ finPrevueLe: null, periodicite: 'an' });
+    });
+
+    it('🔴 la fin : datée et raisonnée une fois ; l’espace revient en Base ; rien ne le ressuscite', async () => {
+      const t = await espace('itest-pro-fin');
+      const pros = new PgAbonnementsOffreStore(pool);
+      await pros.enregistrer({ tenantId: t, abonnementId: 'sub_itestproe', periodicite: 'mois', livemode: true, periodeFin: null });
+      expect(await pros.finir('sub_itestproe', 'impaye', D('2026-11-01T00:00:00Z'))).toMatchObject({ statut: 'resilie', finRaison: 'impaye', finiLe: D('2026-11-01T00:00:00Z') });
+      expect(await pros.finir('sub_itestproe', 'resiliation', D('2026-11-05T00:00:00Z'))).toMatchObject({ finRaison: 'impaye', finiLe: D('2026-11-01T00:00:00Z') });
+      expect((await offres.offreDe(t)).offre).toBe('base');
+      expect(await pros.enregistrer({ tenantId: t, abonnementId: 'sub_itestproe', periodicite: 'mois', livemode: true, periodeFin: null })).toEqual({ etat: 'fini' });
+      expect(await pros.majStatut('sub_itestproe', 'actif', D('2026-12-01T00:00:00Z'))).toBeNull();
+      expect(await pros.modifier('sub_itestproe', { finPrevueLe: null, periodicite: 'an' })).toBeNull();
+      expect((await offres.offreDe(t)).offre).toBe('base');
+      expect(await pros.vivant(t)).toBe(false);
+    });
   });
 
   it('un espace inconnu : rien à lire, rien d’écrit', async () => {

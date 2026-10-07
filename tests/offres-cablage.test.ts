@@ -53,6 +53,16 @@ describe('le câblage de l’offre', () => {
     expect(api).toMatch(/badgeDeLOffre: async \(tenant\) => \(await offres\.offreDe\(tenant\)\)\.droits\.limites\.badge,/);
   });
 
+  it('🔴 le webhook du Pro vide le cache de l’offre de la copie qui reçoit, et le paiement connaît le Pro vivant (lot 6, B1)', () => {
+    const api = lire('index.ts');
+    const webhookPro = api.slice(api.indexOf('stripeWebhook: {'));
+    const blocPro = webhookPro.slice(webhookPro.indexOf('pro: {'), webhookPro.indexOf('pro: {') + 900);
+    expect(blocPro).toMatch(/invalider: \(tenant\) => offres\.invalider\(tenant\),/);
+    expect(blocPro).toMatch(/enregistrer: \(a\) => abonnementsOffre\.enregistrer\(a\),/);
+    expect(api).toMatch(/proVivant: \(tenant\) => abonnementsOffre\.vivant\(tenant\),/);
+    expect(api).toMatch(/ouvrir: \(tenant, periodicite, payeur\) => ouvrirPro\(proDeLaConsole, tenant, periodicite, payeur\),/);
+  });
+
   it('🔴 l’API passe cette offre au serveur', () => {
     const api = lire('index.ts');
     const appel = api.slice(api.indexOf('buildServer({'));

@@ -26,22 +26,25 @@ export interface DepsAbonnement extends DepsPaiement {
  * D'où l'on vient, donc où Stripe renvoie : la page du lien de Claude Code, celle de la console, ou (lot 4, un
  * réabonnement demandé à Claude) une page publique qui dit « paiement reçu, retournez dans Claude ».
  */
-export type RetourAbonnement = 'brancher' | 'console' | 'claude';
-const PAGE: Readonly<Record<RetourAbonnement, string>> = { brancher: '/brancher', console: '/connecter-whatsapp', claude: '/paiement-recu' };
+export type RetourAbonnement = 'brancher' | 'console' | 'claude' | 'offre';
+const PAGE: Readonly<Record<RetourAbonnement, string>> = { brancher: '/brancher', console: '/connecter-whatsapp', claude: '/paiement-recu', offre: '/offre' };
+
+/** Ce que le portail et le client de l'espace lisent : le numéro (`DepsAbonnement`) et le Pro (`DepsPro`) le partagent. */
+export type DepsPortail = Pick<DepsAbonnement, 'stripe' | 'clients' | 'payeurAutorise' | 'urlConsole'>;
 
 export const ABONNEMENT_INDISPONIBLE = refus(503, 'abonnement du numéro pas encore disponible', { code: 'abonnement_indisponible' });
 
-const page = (d: DepsAbonnement, retour: RetourAbonnement): string => `${d.urlConsole.trim().replace(/\/+$/, '')}${PAGE[retour]}`;
+export const page = (d: DepsPortail, retour: RetourAbonnement): string => `${d.urlConsole.trim().replace(/\/+$/, '')}${PAGE[retour]}`;
 
 /** Le client Stripe de l'espace, créé à la première fois (le même que celui de la recharge, gardé par mode). */
-async function clientDeLEspace(d: DepsAbonnement, s: StripeConfigure, tenantId: string): Promise<string> {
+export async function clientDeLEspace(d: DepsPortail, s: StripeConfigure, tenantId: string): Promise<string> {
   const existant = await d.clients.clientDe(tenantId, s.livemode);
   if (existant !== null) return existant;
   return d.clients.retenirClient(tenantId, s.livemode, await creerClientStripe(s.transport, { cle: s.cle, tenantId }));
 }
 
 /** Un refus de Stripe : son message au journal (il parle de NOTRE compte), un 422 lisible à l'appelant, jamais un 5xx. */
-function refusDeStripe(err: StripeError, tenantId: string, geste: string) {
+export function refusDeStripe(err: StripeError, tenantId: string, geste: string) {
   journaliser('error', 'stripe_abonnement_impossible', {
     tenantId, geste, operation: err.operation, status: err.status, type: err.type, code: err.code, err: err.message,
   });
@@ -80,6 +83,7 @@ export async function ouvrirAbonnement(
       urlSucces: `${page(d, retour)}?abonnement=recu`,
       urlAbandon: `${page(d, retour)}?abonnement=abandon`,
       idempotence: `abonnement-${tenantId}-${randomUUID()}`,
+      produit: 'numero',
     });
     return { ok: true, valeur: { url: session.url } };
   } catch (err) {
@@ -90,7 +94,7 @@ export async function ouvrirAbonnement(
 
 /** Le portail client de Stripe pour l'espace (carte, factures, résiliation). Sans client Stripe : rien à gérer. */
 export async function ouvrirPortail(
-  d: DepsAbonnement, tenantId: string, retour: RetourAbonnement, payeur: string,
+  d: DepsPortail, tenantId: string, retour: RetourAbonnement, payeur: string,
 ): Promise<Issue<{ url: string }>> {
   const s = d.stripe;
   if (s === null) return ABONNEMENT_INDISPONIBLE;

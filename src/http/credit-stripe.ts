@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { PgAbonnementsNumeroStore } from '../stripe/abonnements.pg';
+import type { PgAbonnementsOffreStore, PeriodiciteOffre, RaisonFinOffre } from '../offres/abonnements-offre.pg';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
 import { espaceVerifie } from './scope';
@@ -154,6 +155,16 @@ export interface StripeWebhookRouteDeps {
     alerter(texte: string): Promise<void>;
     reprendreCampagnes(tenantId: string): Promise<void>;
   };
+  /**
+   * Le Pro (lot 6, livraison B1, tâche 11) : les objets marqués `produit: pro` écrivent `abonnements_offre`
+   * (`PgAbonnementsOffreStore`). `invalider` vide le cache de l'offre de CETTE copie après chaque écriture (vigilance 3 :
+   * l'espace qui vient de payer est en Pro tout de suite ici, en moins de 30 s ailleurs) ; `alerter` prévient Julien.
+   * Requis : un câblage qui l'oublierait laisserait payer le Pro sans jamais l'ouvrir.
+   */
+  pro: Pick<PgAbonnementsOffreStore, 'enregistrer' | 'majStatut' | 'modifier' | 'finir'> & {
+    invalider(tenantId: string): void;
+    alerter(texte: string): Promise<void>;
+  };
   now?: () => number;
 }
 
@@ -204,6 +215,42 @@ const abonnementModifieSchema = z.object({
   metadata: z.record(z.string(), z.string()).nullable().optional(),
 });
 const metaNumeroSchema = z.object({ tenant_id: z.uuid(), produit: z.literal('numero') });
+
+/**
+ * LE PRO (lot 6, B1). Nos métadonnées (`creerSessionAbonnement`, `produit: pro`) font d'un objet un objet du Pro ; sa
+ * périodicité y est recopiée à la création (le portail la change ensuite, relue sur le prix de l'abonnement).
+ */
+const metaProSchema = z.object({ tenant_id: z.uuid(), produit: z.literal('pro'), periodicite: z.enum(['mois', 'an']).optional() });
+const estPro = (metadata: unknown): boolean => {
+  const m = metadata as { produit?: unknown } | null | undefined;
+  return typeof m === 'object' && m !== null && m.produit === 'pro';
+};
+const sessionProSchema = z.object({
+  id: z.string().min(1),
+  mode: z.literal('subscription'),
+  payment_status: z.string(),
+  subscription: z.union([z.string().startsWith('sub_'), z.object({ id: z.string().startsWith('sub_') })]),
+  metadata: metaProSchema,
+});
+/** Un abonnement du Pro, modifié ou fini : la périodicité sur le prix, la raison de la fin chez Stripe. */
+const abonnementProSchema = z.object({
+  id: z.string().startsWith('sub_'),
+  metadata: metaProSchema,
+  cancel_at: z.number().int().nullable().optional(),
+  cancel_at_period_end: z.boolean().optional(),
+  ended_at: z.number().int().nullable().optional(),
+  cancellation_details: z.object({ reason: z.string().nullable().optional() }).nullable().optional(),
+  items: z.object({
+    data: z.array(z.object({
+      current_period_end: z.number().int().optional(),
+      price: z.object({ recurring: z.object({ interval: z.string() }).nullable().optional() }).optional(),
+    })),
+  }).optional(),
+});
+const PERIODICITE_DE_STRIPE: Readonly<Record<string, PeriodiciteOffre>> = { month: 'mois', year: 'an' };
+/** Un impayé (ou un litige) chez Stripe ; toute autre fin est une résiliation. */
+const raisonDeLaFin = (reason: string | null | undefined): RaisonFinOffre =>
+  (reason === 'payment_failed' || reason === 'payment_disputed' ? 'impaye' : 'resiliation');
 const idDe = (v: string | { id: string }): string => (typeof v === 'string' ? v : v.id);
 
 const evenementSchema = z.object({
@@ -254,7 +301,91 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
     // `resilie` : un événement en retard pour un abonnement déjà résilié (jaune 3 de la relecture de la livraison B).
   };
 
+  /**
+   * LE PRO (lot 6, livraison B1, tâche 11). Mêmes événements que le numéro, autre magasin : l'offre de l'espace se calcule
+   * sur `abonnements_offre`, et chaque écriture vide le cache de l'offre de cette copie (vigilance 3). Une session réglée à
+   * zéro par un code promo à 100 % (`no_payment_required`) fait le Pro, comme un paiement : c'est l'essai réel.
+   */
+  async function traiterPro(evenement: string, type: string, livemode: boolean, objet: unknown, reply: FastifyReply) {
+    const illisible = () => {
+      journaliser('error', 'stripe_pro_illisible', { evenement, type });
+      return reply.code(422).send({ error: 'événement illisible' });
+    };
+    const ok = () => reply.code(200).send({ recu: true });
+    const enregistrer = async (a: { tenantId: string; abonnementId: string; periodicite: PeriodiciteOffre; periodeFin: Date | null }) => {
+      const issue = await deps.pro.enregistrer({ ...a, livemode });
+      if (issue.etat === 'enregistre') {
+        deps.pro.invalider(issue.tenantId);
+        if (issue.nouveau) await deps.pro.alerter(`Nouveau Pro : espace ${issue.tenantId} (${a.abonnementId}, ${a.periodicite === 'an' ? 'annuel' : 'mensuel'}).`);
+      } else if (issue.etat === 'doublon') {
+        await deps.pro.alerter(`Pro en double : ${a.abonnementId} pour l'espace ${a.tenantId}, qui a déjà un Pro vivant. À annuler et rembourser chez Stripe.`);
+      }
+    };
+    if (type === 'checkout.session.completed') {
+      const lu = sessionProSchema.safeParse(objet);
+      if (!lu.success) return illisible();
+      if (lu.data.payment_status !== 'paid' && lu.data.payment_status !== 'no_payment_required') return ok();
+      await enregistrer({ tenantId: lu.data.metadata.tenant_id, abonnementId: idDe(lu.data.subscription), periodicite: lu.data.metadata.periodicite ?? 'mois', periodeFin: null });
+      return ok();
+    }
+    if (type === 'customer.subscription.updated' || type === 'customer.subscription.deleted') {
+      const lu = abonnementProSchema.safeParse(objet);
+      if (!lu.success) return illisible();
+      const lignes = lu.data.items?.data ?? [];
+      if (type === 'customer.subscription.deleted') {
+        const fin = lu.data.ended_at ? new Date(lu.data.ended_at * 1000) : new Date(maintenant());
+        const raison = raisonDeLaFin(lu.data.cancellation_details?.reason);
+        const a = await deps.pro.finir(lu.data.id, raison, fin);
+        if (a) {
+          deps.pro.invalider(a.tenantId);
+          await deps.pro.alerter(`Pro terminé (${raison === 'impaye' ? 'impayé' : 'résiliation'}) : espace ${a.tenantId} (${a.abonnementId}). L'espace revient en Base.`);
+        }
+        return ok();
+      }
+      const fins = lignes.map((l) => l.current_period_end).filter((v): v is number => typeof v === 'number');
+      const finDePeriode = fins.length > 0 ? Math.max(...fins) : null;
+      const finPrevue = lu.data.cancel_at ?? (lu.data.cancel_at_period_end === true ? finDePeriode : null);
+      const intervalle = lignes.map((l) => l.price?.recurring?.interval).find((v): v is string => typeof v === 'string');
+      const a = await deps.pro.modifier(lu.data.id, {
+        finPrevueLe: finPrevue === null ? null : new Date(finPrevue * 1000),
+        periodicite: intervalle ? (PERIODICITE_DE_STRIPE[intervalle] ?? null) : null,
+      });
+      if (a) deps.pro.invalider(a.tenantId);
+      return ok();
+    }
+    const lu = factureSchema.safeParse(objet);
+    const details = lu.success ? lu.data.parent?.subscription_details : null;
+    const meta = metaProSchema.safeParse(details?.metadata ?? {});
+    if (!lu.success || !details || !meta.success) return illisible();
+    const abonnementId = idDe(details.subscription);
+    const finsFacture = (lu.data.lines?.data ?? []).map((l) => l.period?.end).filter((v): v is number => typeof v === 'number');
+    const finFacture = finsFacture.length > 0 ? new Date(Math.max(...finsFacture) * 1000) : null;
+    if (type === 'invoice.payment_failed') {
+      const a = await deps.pro.majStatut(abonnementId, 'en_retard', null, finFacture);
+      if (a) {
+        deps.pro.invalider(a.tenantId);
+        await deps.pro.alerter(`Renouvellement du Pro échoué : espace ${a.tenantId} (${a.abonnementId}). Stripe réessaie ; sans paiement, l'espace reviendra en Base.`);
+      }
+      return ok();
+    }
+    // invoice.paid : la période payée avance ; une facture arrivée avant la session enregistre le Pro.
+    const paye = await deps.pro.majStatut(abonnementId, 'actif', finFacture);
+    if (paye) deps.pro.invalider(paye.tenantId);
+    else await enregistrer({ tenantId: meta.data.tenant_id, abonnementId, periodicite: meta.data.periodicite ?? 'mois', periodeFin: finFacture });
+    return ok();
+  }
+
+  /** L'objet porte-t-il nos métadonnées du Pro ? (une session, un abonnement, ou une facture d'abonnement). */
+  function objetDuPro(type: string, objet: unknown): boolean {
+    const o = objet as { metadata?: unknown; parent?: { subscription_details?: { metadata?: unknown } | null } | null } | null;
+    if (typeof o !== 'object' || o === null) return false;
+    if (type.startsWith('invoice.')) return estPro(o.parent?.subscription_details?.metadata);
+    return estPro(o.metadata);
+  }
+
   async function traiterAbonnement(evenement: string, type: string, livemode: boolean, objet: unknown, reply: FastifyReply) {
+    // Le Pro d'abord : ses objets ne vont jamais au chemin du numéro (lot 6, B1).
+    if (objetDuPro(type, objet)) return traiterPro(evenement, type, livemode, objet, reply);
     const illisible = () => {
       journaliser('error', 'stripe_abonnement_illisible', { evenement, type });
       return reply.code(422).send({ error: 'événement illisible' });
@@ -331,7 +462,8 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
       return reply.code(400).send({ error: 'événement illisible' });
     }
     const abonnement = EVENEMENTS_ABONNEMENT.has(ev.data.type)
-      || (ev.data.type === 'checkout.session.completed' && sessionAbonnementSchema.safeParse(ev.data.data.object).success);
+      || (ev.data.type === 'checkout.session.completed'
+        && (sessionAbonnementSchema.safeParse(ev.data.data.object).success || objetDuPro(ev.data.type, ev.data.data.object)));
     if (!EVENEMENTS_CREDITANTS.has(ev.data.type) && !abonnement) return reply.code(200).send({ recu: true });
 
     // 2 bis. 🔴 Le mode de l'événement doit être celui de la clé configurée (relecture du 2026-09-29). Rejouer n'y

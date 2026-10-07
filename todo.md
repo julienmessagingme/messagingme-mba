@@ -36,10 +36,10 @@
   le tunnel de la Base (lot 19), en masquant ces choix quand l'offre les ferme.
 - **La phrase d'un refus d'offre est en français**, comme toutes les phrases du serveur : la console en anglais
   l'affiche telle quelle (limite connue, la même que les autres erreurs).
-- 🔴 **Les outils MCP ne déclarent pas encore leur fonction** (reporté en B, décidé au plan) : ils appellent les
+- 🔴 **Les outils MCP ne déclarent pas encore leur fonction** (reporté en B2, décidé au plan) : ils appellent les
   magasins directement, pas les routes gardées, donc une Base garde par Claude les outils d'une fonction fermée,
   l'Inbox en tête (`list_conversations`, `get_messages`, `reply_in_open_window`). Les LIMITES, elles, tiennent par
-  Claude (la fiche, l'envoi de modèle et l'automation se comptent dans les magasins). À fermer en B avant d'ouvrir
+  Claude (la fiche, l'envoi de modèle et l'automation se comptent dans les magasins). À fermer en B2 avant d'ouvrir
   le site à la Base.
 
 ## 🟡 RC6, qui répond au client : ce qui reste (2026-10-07)

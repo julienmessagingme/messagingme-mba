@@ -46,6 +46,8 @@ export interface VueOffre {
   limites: LimitesOffre;
   usage: UsageOffre;
   grille: Record<NomOffre, { fonctions: ReadonlySet<FonctionOffre>; limites: LimitesOffre }>;
+  /** Les prix HT du Pro, en centimes (lot 6, B1). `null` : une API plus ancienne qui ne les porte pas encore. */
+  prixPro: { moisCentimes: number; anCentimes: number } | null;
   upgradeUrl: string;
 }
 
@@ -99,8 +101,15 @@ export function lireVueOffre(brut: unknown): VueOffre | null {
     offre: brut.offre, fonctions, limites,
     usage: { envoisModelesMois: u.envoisModelesMois, contacts: u.contacts, automations: u.automations, membres: u.membres },
     grille: grille as VueOffre['grille'],
+    prixPro: lirePrixPro(brut.prixPro),
     upgradeUrl: brut.upgradeUrl,
   };
+}
+
+/** Des prix illisibles ou absents ne rendent pas la vue illisible : ils sont inconnus. */
+function lirePrixPro(v: unknown): VueOffre['prixPro'] {
+  if (!estObjet(v) || !entier(v.moisCentimes) || !entier(v.anCentimes)) return null;
+  return { moisCentimes: v.moisCentimes, anCentimes: v.anCentimes };
 }
 
 /** L'offre la moins chère de la grille qui ouvre cette fonction (« Pro » ou « Entreprise »), `null` si aucune. */

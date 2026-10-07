@@ -83,6 +83,13 @@ export const DROITS: Readonly<Record<Offre, Droits>> = {
   },
 };
 
+/**
+ * Les prix HT du Pro, en centimes (lot 6, livraison B1, décision de Julien du 2026-10-07) : 49 € par mois, 490 € par an,
+ * taxe en sus. La route de paiement les recoupe avec le prix posé chez Stripe AVANT d'ouvrir un paiement, et la vue de
+ * l'offre les montre à la console : jamais recopiés ailleurs.
+ */
+export const PRIX_PRO_HT_CENTIMES: Readonly<{ mois: number; an: number }> = { mois: 4900, an: 49000 };
+
 /** Les droits d'un espace : ceux de son offre, et pour l'Entreprise la surcharge de l'exploitation. Copie neuve. */
 export function droitsDe(offre: Offre, surcharge: SurchargeEntreprise | null): Droits {
   const d = DROITS[offre];

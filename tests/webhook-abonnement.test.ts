@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createHmac, randomBytes } from 'node:crypto';
 import { buildServer } from '../src/server';
+import { stripeProInerte } from './routes-inertes';
 import { FakeQueue } from './fake-queue';
 import type { StripeWebhookRouteDeps } from '../src/http/credit-stripe';
 import type { AbonnementNumero, IssueEnregistrement, StatutAbonnement } from '../src/stripe/abonnements.pg';
@@ -44,6 +45,8 @@ function monter(o: { connus?: string[]; issue?: IssueEnregistrement; livemode?: 
       noterFinPrevue: async (abonnementId, fin) => { cap.finsPrevues.push({ abonnementId, fin }); return connus.has(abonnementId); },
       reprendreCampagnes: async (tenantId) => { cap.reprises.push(tenantId); },
     },
+    // Les événements du numéro ne touchent jamais le Pro (lot 6, B1) : ses dépendances lèvent si on les appelle.
+    pro: stripeProInerte,
     now: () => NOW,
   };
   return { srv: buildServer({ queue: new FakeQueue(), stripeWebhook: deps }), cap };

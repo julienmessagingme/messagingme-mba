@@ -65,6 +65,15 @@ export class PgLiberationStore {
         `select 1 from abonnements_numero where tenant_id = $1 and statut <> 'resilie' limit 1`, [tenantId],
       );
       if ((vivant.rowCount ?? 0) > 0) return { fait: 'rien' } as const;
+      // 🔴 Un Pro payé entre-temps couvre le numéro (lot 6, B1, vigilance 4), avec la même grâce de 7 jours après sa fin
+      // que `couvertureParLePro` : le balayage a lu l'état AVANT cette transaction, et la résiliation chez DIDWW est
+      // irréversible.
+      const pro = await client.query(
+        `select 1 from abonnements_offre
+          where tenant_id = $1 and (fini_le is null or fini_le > $2::timestamptz - interval '7 days') limit 1`,
+        [tenantId, maintenant],
+      );
+      if ((pro.rowCount ?? 0) > 0) return { fait: 'rien' } as const;
       const poserLaDate = () => client.query(
         `update abonnements_numero set libere_le = now(), maj_le = now() where stripe_subscription_id = $1 and tenant_id = $2`,
         [abonnementId, tenantId],

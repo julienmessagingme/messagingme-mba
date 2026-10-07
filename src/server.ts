@@ -102,6 +102,7 @@ import { RateLimiter } from './auth/rate-limit';
 import { PlafondEspace, ReglagesPlafondEnCache, SANS_REGLAGE, type PlafondApiStore, type PlafondsParDefaut } from './auth/plafond-espace';
 import { registerOpsPlafondApi } from './http/ops-plafond-api';
 import { registerOffre, type OffreRouteDeps } from './http/offre';
+import { registerOffrePaiement, type OffrePaiementRouteDeps } from './http/offre-paiement';
 import { registerOpsOffre, type OpsOffreDeps } from './http/ops-offre';
 import { registerOpsNumeros, type OpsNumerosDeps } from './http/ops-numeros';
 import { registerOtpPont, type OtpPontRouteDeps } from './http/otp-pont';
@@ -417,6 +418,8 @@ export interface ServerDeps {
   offre?: OffreRouteDeps;
   /** L'Entreprise posée par l'exploitation (lot 6, `/ops/offre/:tenantId`). */
   opsOffre?: OpsOffreDeps;
+  /** Payer le Pro (lot 6, livraison B1) : admin, plafond coûteux, aucune garde d'offre (une Base doit pouvoir payer). */
+  offrePaiement?: OffrePaiementRouteDeps;
 }
 
 /**
@@ -722,6 +725,7 @@ export function modulesDeRoutes(
     entree('abonnementNumero', 'tenant', deps.abonnementNumero, (app, d, g) => registerAbonnementNumero(app, d, g.auth)),
     // L'offre de l'espace (lot 6) : tout membre la lit, la console grise ses menus d'après elle.
     entree('offre', 'tenant', deps.offre, (app, d, g) => registerOffre(app, d, g.auth)),
+    entree('offrePaiement', 'tenant', deps.offrePaiement, (app, d, g) => registerOffrePaiement(app, d, g.admin, g.limiteCouteuse ?? SANS_PLAFOND)),
     entree('hubspotImport', 'tenant', deps.hubspotImport, (app, d, g) => registerHubspotImport(app, d, g.admin), toutes('crm')),
     entree('hubspotInstall', 'tenant', deps.hubspotInstall, (app, d, g) => registerHubspotInstall(app, d, g.admin), toutes('crm')),
     entree('hubspotPipelines', 'tenant', deps.hubspotPipelines, (app, d, g) => registerHubspotPipelines(app, d, g.admin), toutes('crm')),

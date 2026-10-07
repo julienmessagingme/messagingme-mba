@@ -34,6 +34,8 @@ import { PgOauthStore } from './oauth/store.pg';
 import { PgPlafondEspaceStore } from './auth/plafond-espace.pg';
 import { QuotaSuppressions, creerModelesDuLancement } from './offres/compteurs';
 import { PgOffresStore } from './offres/offre.pg';
+import { PgAbonnementsOffreStore } from './offres/abonnements-offre.pg';
+import { ouvrirPro, ouvrirPortailPro, type DepsPro } from './stripe/pro';
 import { creerVueOffre } from './offres/vue';
 import { upsertContactsFromApi } from './api/contacts-upsert';
 import { creerServiceContactsV1 } from './api/contacts-v1';
@@ -727,6 +729,18 @@ async function main(): Promise<void> {
 
   // L'offre (lot 6) : la vue que lisent la console et l'outil MCP `get_plan`, et le magasin des réglages de `/ops`.
   const offresStore = new PgOffresStore(pool);
+  // Le Pro (lot 6, livraison B1) : son abonnement chez Stripe, écrit par le seul webhook, et l'ouverture de son paiement,
+  // avec le MÊME Stripe, les MÊMES clients et la MÊME règle du mode test que la recharge et le numéro.
+  const abonnementsOffre = new PgAbonnementsOffreStore(pool);
+  const proDeLaConsole: DepsPro = {
+    stripe: paiementDeLaConsole.stripe,
+    clients: paiementDeLaConsole.clients,
+    payeurAutorise: paiementDeLaConsole.payeurAutorise,
+    urlConsole: config.APP_URL,
+    prixProMois: config.STRIPE_PRIX_PRO_MOIS,
+    prixProAn: config.STRIPE_PRIX_PRO_AN,
+    proVivant: (tenant) => abonnementsOffre.vivant(tenant),
+  };
   const vueOffre = creerVueOffre({ offres, usage: (tenant) => offresStore.usage(tenant), modelesDuMois: quotaModeles });
 
   const app = buildServer({
@@ -741,6 +755,10 @@ async function main(): Promise<void> {
     // La vue de l'offre pour la console, et l'Entreprise posée par l'exploitation (lot 6).
     offre: { vue: vueOffre },
     opsOffre: { store: offresStore, invalider: (tenant) => offres.invalider(tenant) },
+    offrePaiement: {
+      ouvrir: (tenant, periodicite, payeur) => ouvrirPro(proDeLaConsole, tenant, periodicite, payeur),
+      portail: (tenant, payeur) => ouvrirPortailPro(proDeLaConsole, tenant, payeur),
+    },
     /**
      * L'alerte d'exploitation : les quotas quotidiens de l'API publique la lèvent quand leur compteur ne répond pas (les
      * appels passent alors, les quotas ne sont plus tenus). Absente, elle partirait seulement dans le journal.
@@ -1092,6 +1110,16 @@ async function main(): Promise<void> {
           // Lot 4 : la résiliation programmée, et les campagnes en pause sur la suspension reprises au paiement.
           noterFinPrevue: (abonnementId, fin) => abonnementsNumero.noterFinPrevue(abonnementId, fin),
           reprendreCampagnes: async (tenant) => { await numeroDelieStore.leverPausesSuspension(tenant); },
+          alerter: async (texte) => { await sendTelegram(`[mba-${NOM_API}] ${texte}`); },
+        },
+        // Le Pro (lot 6, livraison B1) : son magasin, le cache de l'offre de CETTE copie vidé à chaque écriture (les autres
+        // copies et le worker le relisent en moins de 30 s), Julien prévenu sur Telegram.
+        pro: {
+          enregistrer: (a) => abonnementsOffre.enregistrer(a),
+          majStatut: (abonnementId, statut, periodeFin, finFactureEchouee) => abonnementsOffre.majStatut(abonnementId, statut, periodeFin, finFactureEchouee),
+          modifier: (abonnementId, m) => abonnementsOffre.modifier(abonnementId, m),
+          finir: (abonnementId, raison, finiLe) => abonnementsOffre.finir(abonnementId, raison, finiLe),
+          invalider: (tenant) => offres.invalider(tenant),
           alerter: async (texte) => { await sendTelegram(`[mba-${NOM_API}] ${texte}`); },
         },
       },

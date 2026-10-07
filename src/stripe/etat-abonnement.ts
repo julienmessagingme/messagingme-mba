@@ -49,6 +49,32 @@ export function etatAbonnement(
   return l.finPrevueLe !== null ? 'fin_prevue' : 'actif';
 }
 
+/** Le Pro de l'espace, tel que la couverture du numéro le lit (`abonnements_offre`, lot 6). */
+export interface CouverturePro {
+  /** Un abonnement Pro sans fin effective (en retard compris : Stripe relance jusqu'à la fin). */
+  vivant: boolean;
+  /** La fin effective du dernier Pro fini, `null` s'il n'y en a jamais eu. */
+  dernierFini: Date | null;
+}
+
+/**
+ * 🔴 LA COUVERTURE DU NUMÉRO PAR LE PRO (lot 6, livraison B1, vigilance 4) : un numéro fourni est couvert si son
+ * abonnement est actif OU si le Pro de l'espace l'est. Appliquée à la ligne AVANT `etatAbonnement`, dans
+ * `etatDeLEspace`, la seule lecture de l'état : sans elle, le balayage suspendrait puis libérerait le numéro d'un client
+ * Pro dont l'abonnement du numéro seul est fini.
+ *  - Pro vivant : la ligne se lit active, sans échec, sans fin prévue ni effective, donc ni coupure ni libération.
+ *  - Pro fini APRÈS la fin du numéro : la fin effective est celle du Pro. Sinon un client qui a résilié le numéro seul
+ *    pendant son Pro verrait son numéro libéré au balayage suivant la fin du Pro, sans les 7 jours de grâce.
+ *  - Un numéro déjà libéré le reste.
+ */
+export function couvertureParLePro(l: LigneEtat, pro: CouverturePro): LigneEtat {
+  if (l.libereLe !== null) return l;
+  if (pro.vivant) return { ...l, statut: 'actif', premierEchecLe: null, finPrevueLe: null, finiLe: null };
+  const fini = l.finiLe !== null || l.statut === 'resilie';
+  if (fini && pro.dernierFini !== null && (l.finiLe === null || pro.dernierFini > l.finiLe)) return { ...l, finiLe: pro.dernierFini };
+  return l;
+}
+
 /** La date de libération : 7 jours après la fin effective, `null` tant que l'abonnement n'est pas fini. */
 export function liberationPrevue(l: Pick<LigneEtat, 'finiLe'>): Date | null {
   return l.finiLe === null ? null : new Date(l.finiLe.getTime() + DELAI_LIBERATION_MS);

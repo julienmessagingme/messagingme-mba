@@ -1,4 +1,4 @@
-import { DROITS, FONCTIONS, type Fonction, type Limites, type Offre } from './offres';
+import { DROITS, FONCTIONS, PRIX_PRO_HT_CENTIMES, type Fonction, type Limites, type Offre } from './offres';
 import type { SourceOffres } from './offre.pg';
 import { adresseOffre } from './refus';
 
@@ -25,6 +25,8 @@ export interface VueOffre {
    * jamais la recopier. Les limites de l'Entreprise y sont celles du devis par défaut (`null` = sans limite).
    */
   grille: Record<Offre, { fonctions: Fonction[]; limites: Limites }>;
+  /** Les prix HT du Pro, en centimes (`PRIX_PRO_HT_CENTIMES`) : la page de l'offre les affiche, Claude les lit. */
+  prixPro: { moisCentimes: number; anCentimes: number };
   upgradeUrl: string;
 }
 
@@ -53,6 +55,7 @@ export function creerVueOffre(d: DepsVueOffre): (tenantId: string) => Promise<Vu
       limites: { ...droits.limites },
       usage: { envoisModelesMois: mois === null ? null : mois.max - mois.reste, ...usage },
       grille: grilleDesOffres(),
+      prixPro: { moisCentimes: PRIX_PRO_HT_CENTIMES.mois, anCentimes: PRIX_PRO_HT_CENTIMES.an },
       upgradeUrl: adresseOffre(),
     };
   };

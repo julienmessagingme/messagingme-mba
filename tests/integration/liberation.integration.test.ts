@@ -51,6 +51,7 @@ describe.skipIf(!url)('la libération d’un numéro fourni (lot 4, B)', () => {
 
   beforeEach(async () => {
     await pool.query('delete from abonnements_numero where tenant_id = $1', [t]);
+    await pool.query('delete from abonnements_offre where tenant_id = $1', [t]);
     await pool.query('delete from campaigns where tenant_id = $1', [t]);
     await pool.query('delete from phone_numbers where tenant_id = $1', [t]);
     await pool.query(`delete from numeros_fournis where numero = $1`, [N]);
@@ -168,6 +169,25 @@ describe.skipIf(!url)('la libération d’un numéro fourni (lot 4, B)', () => {
     );
     expect(await liberation.liberer(t, 'sub_libh', async () => { throw new Error('jamais'); }, MAINTENANT)).toEqual({ fait: 'rien' });
     expect(await reserve()).toEqual({ statut: 'attribue', tenant_id: t });
+  });
+
+  it('🔴 un Pro vivant, ou fini depuis moins de 7 jours, retient la libération dans la transaction (lot 6, B1)', async () => {
+    await fini('sub_libpro', IL_Y_A_8_JOURS);
+    const pro = (finiLe: Date | null) => pool.query(
+      `insert into abonnements_offre (stripe_subscription_id, tenant_id, periodicite, livemode, statut, fini_le)
+       values ('sub_itestlibpro', $1, 'mois', false, $2, $3)
+       on conflict (stripe_subscription_id) do update set statut = excluded.statut, fini_le = excluded.fini_le`,
+      [t, finiLe === null ? 'actif' : 'resilie', finiLe],
+    );
+    await pro(null);
+    expect(await liberation.liberer(t, 'sub_libpro', async () => { throw new Error('jamais'); }, MAINTENANT)).toEqual({ fait: 'rien' });
+    await pro(IL_Y_A_6_JOURS);
+    expect(await liberation.liberer(t, 'sub_libpro', async () => { throw new Error('jamais'); }, MAINTENANT)).toEqual({ fait: 'rien' });
+    expect(await reserve()).toEqual({ statut: 'attribue', tenant_id: t });
+    expect(await liberee('sub_libpro')).toBeNull();
+    // Fini depuis 8 jours : la grâce du Pro est passée, la libération reprend son cours.
+    await pro(IL_Y_A_8_JOURS);
+    expect(await liberation.liberer(t, 'sub_libpro', async () => {}, MAINTENANT)).not.toEqual({ fait: 'rien' });
   });
 
   it('fini sans numéro attribué (rendu par « Abandonner ») : seule la date se pose', async () => {

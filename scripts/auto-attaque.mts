@@ -270,6 +270,11 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
       enregistrer: async () => ({ etat: 'doublon' as const }), majStatut: async () => null, alerter: async () => undefined,
       noterFinPrevue: async () => false, reprendreCampagnes: async () => undefined,
     },
+    // Le Pro (lot 6, B1) : aucun abonnement ne se résout, et un enregistrement est un doublon (rien d'écrit).
+    pro: {
+      enregistrer: async () => ({ etat: 'doublon' as const }), majStatut: async () => null, modifier: async () => null,
+      finir: async () => null, invalider: () => undefined, alerter: async () => undefined,
+    },
   } satisfies StripeWebhookRouteDeps,
   // Le pont du code (lot 3a) : un VRAI secret aussi, et une réserve vide. Une signature fausse ou absente doit tomber
   // avant la réserve (sonde 12).

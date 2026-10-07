@@ -16,3 +16,16 @@ export async function lireOffre(tenantId: string): Promise<VueOffre | null> {
     throw err;
   }
 }
+
+/**
+ * Ouvre le paiement du Pro (lot 6, B1) et rend l'adresse de Stripe où la console redirige ; `portail: true` pour un espace
+ * déjà Pro (l'adresse est alors celle du portail). Le corps ne porte que la périodicité, jamais un prix.
+ */
+export function payerPro(tenantId: string, periodicite: 'mois' | 'an'): Promise<{ url: string; portail: boolean }> {
+  return request(`/tenants/${tenantId}/offre/paiement`, { method: 'POST', body: JSON.stringify({ periodicite }) });
+}
+
+/** Le portail de Stripe de l'espace : carte, factures, passage du mensuel à l'annuel, résiliation. */
+export function portailPro(tenantId: string): Promise<{ url: string }> {
+  return request(`/tenants/${tenantId}/offre/portail`, { method: 'POST', body: '{}' });
+}

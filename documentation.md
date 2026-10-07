@@ -187,7 +187,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **Serveur MCP et son OAuth** | Claude (Claude Code, claude.ai) lit et agit dans un espace, par une clé d'API ou un jeton OAuth (§ 7) | `src/mcp/`, `src/http/mcp.ts`, `src/oauth/`, `src/http/oauth.ts`, `src/http/oauth-consentement.ts` | `/developers/mcp` | `oauth_autorisations`, `oauth_codes` | `retention-oauth` |
 | **Exploitation** | vue cross-tenant, recharge de crédit, alertes | `src/ops/` | `/ops` | `worker_heartbeat`, `audit_log` | `dlq-sweep` |
 | **Numéros fournis** | la réserve de numéros DIDWW, et le pont qui lit le code que Meta dicte en appelant (lot 3a) | `src/otp/`, `src/didww/`, `src/http/otp-pont.ts`, `src/http/ops-numeros.ts`, `ops/otp-asterisk/` | `/ops` | `numeros_fournis`, `codes_verification` | purge du balayage de rétention |
-| **Offres** | l'offre d'un espace (Base, Pro, Entreprise), ses fonctions, ses limites, le refus 402 (§ 7) | `src/offres/`, `src/http/offre.ts`, `src/http/ops-offre.ts` | `/offre`, la barre (`web/lib/nav.ts`) | `abonnements_offre`, `tenants` (`offre_entreprise`), `contacts` (`ne_entrant`), `compteurs_debit` | aucune : une étape au montage, des compteurs |
+| **Offres** | l'offre d'un espace (Base, Pro, Entreprise), ses fonctions, ses limites, le refus 402 (§ 7), le paiement du Pro | `src/offres/`, `src/http/offre.ts`, `src/http/ops-offre.ts`, `src/http/offre-paiement.ts`, `src/stripe/pro.ts` | `/offre`, la barre (`web/lib/nav.ts`) | `abonnements_offre`, `tenants` (`offre_entreprise`), `contacts` (`ne_entrant`), `compteurs_debit` | aucune : une étape au montage, des compteurs |
 | **Auth et comptes** | connexion, invitations, rôles, multi-espace | `src/auth/`, `src/user/` | `/login`, `/admin` | `users`, `identities`, `auth_tokens` | |
 
 ---
@@ -2123,6 +2123,19 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
 - **L'Entreprise se pose dans `/ops`** (`PUT /ops/offre/:tenantId`, note obligatoire, trace `ops_offre` signée de son
   auteur), avec sa limite d'utilisateurs et `tenant_settings.conversation_retention_days`. 🔴 La conservation ABSENTE
   du corps reste telle quelle : changer d'offre ne déclenche jamais la purge (irréversible) des conversations.
+- 🔴 **Le Pro se paie chez Stripe, et seul le webhook signé l'ouvre** (livraison B1). `POST /tenants/:tenantId/offre/paiement`
+  (`{periodicite}`, admin, plafond coûteux, SANS garde d'offre puisque c'est une Base qui paie, `src/http/offre-paiement.ts`)
+  ouvre une session Checkout en mode abonnement (`ouvrirPro`, `src/stripe/pro.ts`) sur `STRIPE_PRIX_PRO_MOIS` ou
+  `STRIPE_PRIX_PRO_AN` (posés ensemble ou aucun ; absents, 503 `pro_indisponible` et la console renvoie au Support). Le
+  prix est relu chez Stripe et recoupé avec `PRIX_PRO_HT_CENTIMES` (sinon 422 `prix_incoherent`) ; la métadonnée
+  `produit: pro` est posée sur la session ET sur l'abonnement, et le code promo est ouvert. Un espace déjà Pro reçoit le
+  portail (`portail: true`), que `POST .../offre/portail` ouvre aussi. Le webhook Stripe aiguille sur `produit: pro` AVANT
+  le chemin du numéro et écrit `abonnements_offre` par `PgAbonnementsOffreStore` (`src/offres/abonnements-offre.pg.ts`),
+  son seul écrivain : rejouer ne duplique rien, la fin de période ne recule jamais, un abonnement fini le reste, et un
+  second Pro vivant pour un espace bute sur `abonnements_offre_un_vivant_par_espace` et prévient Julien. Une session
+  `no_payment_required` (code promo à 100 %) ouvre le Pro comme un paiement ; `en_retard` reste Pro, seul `fini_le`
+  (`customer.subscription.deleted`, raison `impaye` si Stripe dit `payment_failed` ou `payment_disputed`) le termine.
+  🔴 Chaque écriture vide le cache de l'offre de la copie qui reçoit ; les autres copies suivent en 30 s au plus.
 - 🔴 **Une offre illisible laisse tout passer** : `OffresEnCache` rend alors les droits de l'Entreprise, sans les
   garder, et journalise `offre_illisible`. Une panne de la lecture ne coupe ni l'Inbox ni les envois d'un client.
 
@@ -2817,6 +2830,11 @@ l'Asterisk du VPS (`ops/otp-asterisk/`) décroche, enregistre, puis poste l'enre
   depuis `DELAI_COUPURE_IMPAYE_MS`, 7 jours), `en_retard`, `fin_prevue` ou `actif` ; un abonnement fini dont
   aucun numéro n'est attribué est `libere`. La date de libération vaut `fini_le` plus `DELAI_LIBERATION_MS`
   (7 jours). Une seule lecture fait foi pour la console, le MCP et la garde d'envoi : `etatDeLEspace(tenantId)`.
+  🔴 Elle applique la couverture du Pro (`couvertureParLePro`, lot 6 B1) : un Pro vivant (`abonnements_offre`, `fini_le`
+  nul) rend l'abonnement `actif`, sans fin ni libération ; un Pro fini APRÈS la fin de l'abonnement du numéro y
+  substitue sa propre fin, donc sept jours de plus avant la libération. Seul un Pro payé chez Stripe couvre, jamais
+  l'Entreprise posée par nous. `PgLiberationStore.liberer` relit ce Pro dans sa transaction, avec la même grâce : le
+  balayage a lu l'état AVANT elle, et la résiliation chez DIDWW est irréversible.
   `GET /tenants/:tenantId/abonnement-numero` (tout membre, `src/http/abonnement-numero.ts`) la rend pour le bandeau
   de la console (`web/components/BandeauAbonnement.tsx`, dans `AppShell`, aucun bandeau si la route manque). Côté
   MCP, `rappelDeLAbonnement` ajoute un second bloc de texte à CHAQUE réponse d'outil, refus compris, tant que

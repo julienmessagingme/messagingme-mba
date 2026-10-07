@@ -1,7 +1,7 @@
 ---
 ecran: offre
 source_section: Offres (menu « Paramètres » > Offre)
-source_empreinte: c8521e
+source_empreinte: f1d632
 ---
 # Choisir mon offre
 
@@ -25,5 +25,14 @@ comptée non plus.
 la page Offre. Si une action est refusée parce qu'une limite est atteinte, un message vous le dit, avec un bouton
 « Voir les offres ».
 
-**Passer en Pro.** Le bouton « Passer en Pro » de la page Offre ouvre le Support avec le sujet déjà rempli :
-écrivez-nous, et nous ouvrons le Pro sur votre espace. L'offre Entreprise se demande de la même façon.
+**Passer en Pro.** Sur la page Offre, choisissez « Mensuel » ou « Annuel » : vous payez sur la page sécurisée de
+Stripe, où un code promo se saisit, et votre espace passe en Pro dès que le paiement est confirmé, en général dans
+la minute. Si ces boutons n'apparaissent pas, « Passer en Pro » ouvre le Support avec le sujet déjà rempli.
+L'offre Entreprise se demande au Support.
+
+**Gérer mon abonnement.** En Pro, le bouton « Gérer mon abonnement » de la page Offre ouvre le portail de Stripe :
+changer de carte, passer du mensuel à l'annuel, retrouver vos factures ou résilier. Une résiliation prend effet à
+la fin de la période payée ; votre espace revient alors en Base.
+
+**Votre numéro fourni.** Tant que votre espace est en Pro, le numéro que nous vous avons fourni n'est jamais
+suspendu. Il reste pour l'instant facturé à part, par son propre abonnement.

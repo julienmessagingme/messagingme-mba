@@ -83,3 +83,14 @@ describe('phraseInclusDans', () => {
     expect(phraseInclusDans(v, 'crm', t)).toBe('Inclus dans l’offre Entreprise.');
   });
 });
+
+describe('les prix du Pro dans la vue (lot 6, B1)', () => {
+  it('lus quand l’API les porte, en centimes HT', () => {
+    expect(lireVueOffre({ ...BASE, prixPro: { moisCentimes: 4900, anCentimes: 49000 } })!.prixPro).toEqual({ moisCentimes: 4900, anCentimes: 49000 });
+  });
+
+  it('🔴 une API qui ne les porte pas encore : la vue reste lisible, prix inconnus (null)', () => {
+    expect(lireVueOffre(BASE)!.prixPro).toBeNull();
+    expect(lireVueOffre({ ...BASE, prixPro: { moisCentimes: -1 } })!.prixPro).toBeNull();
+  });
+});

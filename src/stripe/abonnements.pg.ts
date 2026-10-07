@@ -1,7 +1,7 @@
 import type { Pool } from 'pg';
 import { enTransaction } from '../db/transaction';
 import { attribuerAvec } from '../otp/store.pg';
-import { etatAbonnement, liberationPrevue, DELAI_COUPURE_IMPAYE_MS, type EtatAbonnementNumero } from './etat-abonnement';
+import { couvertureParLePro, etatAbonnement, liberationPrevue, DELAI_COUPURE_IMPAYE_MS, type EtatAbonnementNumero } from './etat-abonnement';
 
 /**
  * L'ABONNEMENT DU NUMÉRO FOURNI (lot 3c, livraison B, migration 0214). Un numéro fourni se paie 3,50 € HT par mois en
@@ -219,8 +219,16 @@ export class PgAbonnementsNumeroStore {
    * d'envoi, la route de l'état, les outils MCP et le balayage passent par elle.
    */
   async etatDeLEspace(tenantId: string, maintenant: Date = new Date()): Promise<EtatDeLEspace | null> {
-    const a = await this.deLEspace(tenantId);
-    if (a === null) return null;
+    const ligne = await this.deLEspace(tenantId);
+    if (ligne === null) return null;
+    // 🔴 Le Pro de l'espace couvre le numéro (lot 6, livraison B1, vigilance 4) : appliqué ICI, la seule lecture de l'état,
+    // donc à la garde d'envoi, au balayage qui suspend puis libère, au MCP et à la console (`couvertureParLePro`).
+    const pro = await this.pool.query<{ vivant: boolean | null; dernier_fini: Date | null }>(
+      `select bool_or(fini_le is null) as vivant, max(fini_le) as dernier_fini from abonnements_offre where tenant_id = $1`,
+      [tenantId],
+    );
+    const p = pro.rows[0];
+    const a = { ...ligne, ...couvertureParLePro(ligne, { vivant: p?.vivant === true, dernierFini: p?.dernier_fini ?? null }) };
     // Le numéro fourni attribué et le numéro WhatsApp relié, en chiffres. Des chiffres inconnus (affichage vide, Meta pas
     // lu à la liaison) sont ceux du numéro fourni, comme pour « Abandonner » et la garde d'envoi (jaune 3).
     const n = await this.pool.query<{ fourni: string | null; relie: string | null }>(
