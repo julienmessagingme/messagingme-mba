@@ -61,6 +61,11 @@
   lister que le produit Pro (geste de Julien) ; côté code, alerter si `items.data[].price.id` n'est ni
   `STRIPE_PRIX_PRO_MOIS` ni `_AN`. Et `/ops` qui passe en Entreprise un espace au Pro vivant devrait le dire (Stripe
   continue de facturer).
+- **La course de la suggestion d'adresse n'est pas fermée** (`web/components/AgentConnaissance.tsx`, e2e
+  `agents-connaissance.spec.ts` « une adresse déjà saisie n'est JAMAIS écrasée ») : la CI front de `d8cf836d` est
+  tombée dessus au passage et à sa nouvelle tentative, puis est passée à la relance ; la mesure locale donne 1 échec sur 40 (4 sur 40 le 2026-09-22, avant la garde du
+  focus). La saisie se colle DERRIÈRE la suggestion. Code et test identiques depuis `4220dc42`, vert : défaut antérieur,
+  à corriger dans le composant, jamais en affaiblissant le test.
 - **La recharge crédite le montant AVANT remise, et le compte Stripe est partagé** : tout code promo sans restriction
   de produit donne du crédit gratuit. Décision à prendre : recharge sans code promo, ou crédit du montant payé.
 

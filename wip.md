@@ -25,8 +25,8 @@ Spec `docs/superpowers/specs/2026-10-07-offres-et-limites-design.md`, plan `docs
 La livraison A est en production et son essai réel est fait (2026-10-07, « Espace de dumas family » ramené en Base,
 Inbox et menus payants grisés vus par Julien, puis remis en Entreprise).
 
-La livraison B1 (le Pro payable chez Stripe, le numéro fourni protégé par un Pro) est en production (`4220dc42`, sans
-migration). Avant qu'elle serve, 🔴 Julien restreint chez Stripe chaque code promo à ses produits (ENGAGE100,
+La livraison B1 (le Pro payable chez Stripe, le numéro fourni protégé par un Pro) est en production (`4220dc42`, puis les
+jaunes de sa relecture `d8cf836d`, sans migration ; sans les prix, la page Offre montre le Support). Avant qu'elle serve, 🔴 Julien restreint chez Stripe chaque code promo à ses produits (ENGAGE100,
 GMC100 et VERIF100 sont actifs sans plafond, les deux derniers sans restriction de produit : ils s'appliqueraient au
 Pro et s'appliquent déjà à la recharge, qui crédite avant remise), crée le produit « Messaging Me Pro » et ses deux
 prix (49 € HT par mois, 490 € HT par an, taxe EN SUS), pose `STRIPE_PRIX_PRO_MOIS` et `STRIPE_PRIX_PRO_AN` dans `.env.prod` (puis `--force-recreate` de l'API et
