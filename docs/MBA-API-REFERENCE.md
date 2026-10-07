@@ -73,9 +73,9 @@ sur notre numéro de test (cf `documentation.md` §Journal des lots livrés). `e
 Donc `false` produit le pire cas : le client lit « un conseiller arrive » et **personne n'est prévenu**, le
 fil restant à MBA.
 
-⚠️ **Aucune de nos routes ne sait écrire `handoff`** : `PATCH /mba/:pn/settings` n'accepte que `aiAudience`,
-`neverSay` et `followupEnabled` (`src/http/mba.ts`). C'est le manque le plus concret pour brancher le
-transfert vers un humain.
+✅ **Notre route sait écrire `handoff`** (relevé du 2026-10-07) : `PATCH /mba/:pn/settings` accepte
+`handoffEnabled`, `handoffMessage` et `handoffMessageSelection` (`src/http/mba.ts`). Cette ligne a dit le contraire
+jusqu'au 2026-10-07.
 
 Reste inconnu : **sur quel webhook arrive la suite de la conversation** après libération, et la forme réelle
 du payload `messaging_handovers`. Le protocole de test décrit plus bas reste donc à jouer.
@@ -396,6 +396,84 @@ puis `rollout.enabled`, et il refuse d'allumer si la relecture ne rend pas `ALLO
 4. **Une empreinte doit ignorer ce qui n'est pas de la doc.** Les classes CSS de Meta étaient dans le corpus de
    toutes les pages ; leur renumérotation du 2026-08-20 a produit 20 fausses alertes d'un coup, à longueur de
    corpus rigoureusement identique, et a effacé la vraie date de dernier changement de 19 pages.
+
+## ⚠️ Relevé du 2026-10-07 : la doc relue à la source, et les messages interactifs mesurés
+
+Fait pour le lot « messages interactifs » (`docs/superpowers/specs/2026-10-07-messages-interactifs-design.md`).
+Rien n'avait été relu chez Meta depuis le 26 août : les ajouts de ce document depuis sont nos propres mesures.
+
+### Comment la doc se lit
+
+- **Seulement en local.** La session cloud ne joint pas `developers.facebook.com` (politique réseau), ni ses miroirs.
+- **Chaque page de doc existe en Markdown** en ajoutant `.md` à son adresse ; l'index est
+  `.../meta-business-agent/llms.txt` (35 pages ce jour). ⚠️ **L'index est incomplet** : il ne liste pas les guides
+  annoncés par le changelog les 22 septembre et 1er octobre (OTP, connexion, panier, statut de commande, catalogue).
+- **Le changelog ne se lit que rendu par un navigateur** (27 entrées ce jour) : son `.md` et son HTML brut ne sont
+  qu'une coquille. Une empreinte de la veille sur cette page ne voit donc rien changer.
+
+### Ce que le changelog a ajouté depuis le 26 août, et qui nous concerne
+
+- 🔴 **2026-09-18, la liste de l'agent est plafonnée à 20 contacts par numéro** ; un ajout sur une liste pleine
+  rend 400, le maximum courant dans le détail de l'erreur ; ajout, lecture et retrait limités à 1 000 requêtes par
+  heure par app. Notre plateforme inscrit chaque contact confié à l'agent (`src/inbox/fil.ts`, `confier`) et ne l'en
+  retire qu'à une reprise, avant un modèle, à la purge ou au changement de répondeur : la liste ne fait que
+  grossir. Mesuré : 7 contacts sur l'espace de test à 14 h, 5 à 16 h. Traité dans une tâche à part.
+- **2026-09-23, `agent_event` nomme la cause d'un échec** : `consumer_not_in_agent_audience`, `agent_not_enabled`,
+  `thread_not_owned_by_agent`, `event_content_rejected`, `billing_not_configured`,
+  `agent_temporarily_unavailable`, sinon `internal_server_error`. Deux questions de « Ce que la doc ne dit pas » ont
+  leur réponse : un événement envoyé quand NOUS tenons le fil échoue (`thread_not_owned_by_agent`), il ne fait pas
+  parler l'agent par-dessus nous ; un contact hors liste en `ALLOWLISTED_ONLY` échoue
+  (`consumer_not_in_agent_audience`).
+- **2026-09-10, renommage sans changement d'API** : les *skills* s'appellent *agent instructions*, les *UI skills*
+  *interactive messages*. Notre console suit avec « Consignes » et « Messages interactifs ».
+- **2026-09-02, statut de revue des consignes** : `active`, `pending_review` ou `blocked` (une consigne qui demande
+  ou cite une donnée personnelle sensible est enregistrée mais jamais appliquée) ; la liste rend désormais les
+  bloquées.
+- **2026-09-30 et 2026-10-05, Agent Configuration Versions** : l'historique des configurations d'un numéro, le
+  déploiement, le retour arrière et la copie depuis un autre numéro du même WABA par une seule requête, et des
+  changements « retenus pour approbation » (`review_id`). Un `409` sur les écritures concurrentes des consignes.
+  Rien de cela n'est branché chez nous.
+- **2026-09-28, Usage Insights** : messages facturables, jetons facturés et coûts par heure, jour ou mois.
+- **2026-09-25** : la réponse de `thread_control` porte un `request_id`, à joindre à une demande au support.
+- **2026-09-18** : `agent_test` est limité à 500 requêtes par heure par numéro et 10 000 par app.
+- **2026-09-08** : `catalog_id` à l'onboarding s'ouvre à WhatsApp ; `X-API-Version: 2.0.0` est requis sur chaque
+  requête ; une page dédiée au jeton d'API.
+- **2026-09-03** : la macro `WHATSAPP_PHONE_NUMBER_NATIONAL` (le numéro sans indicatif, préfixe national gardé).
+- **2026-10-01** : les identifiants (`connector_id`, `skill_id`, `entry_id`...) se repassent tels que l'API les rend ;
+  un `skill_id` n'est pas un UUID.
+- Une entrée datée du **1er décembre 2026**, dans le futur au jour du relevé (coquille probable de Meta) : un objet
+  `agent_event` dans chaque tour de Conversation Turns lancé par un événement.
+- **Hors changelog** : les connecteurs MCP sont dans la référence (`connector_protocol` `HTTP` ou `MCP`, fixé à la
+  création ; `POST /{connector_id}/refreshMCPTools` ; `mcp_tool_sync` en `READY`, `PENDING` ou `ERROR`). Notre client
+  le savait (`src/mba/client.ts`, `listConnectors`) mais n'envoie pas le protocole. La FAQ de 360dialog qui le disait
+  « prévu, pas livré » est périmée.
+- **Paiement** : hors Brésil et Inde, aucun paiement dans la conversation ; le guide de réservation prescrit un
+  bouton lien vers le paiement, puis une confirmation par un outil de statut.
+- **Non confirmé chez Meta** : « l'agent perd le contexte quand il passe la main » (FAQ de 360dialog) n'apparaît
+  dans aucune page. À mesurer avant de s'en servir.
+
+### Les messages interactifs (UI Skills), mesurés sur le numéro de test
+
+Contrat : `/{numéro}/agent-ui-skills`, `X-API-Version: 2.0.0`, sans `agent_id`. Neuf messages créés, déclenchés
+depuis un vrai téléphone, lus dans `webhook_events`, puis supprimés.
+
+| Point | Mesure |
+| --- | --- |
+| `title` | 64 au plus (`title must not exceed 64 characters`) |
+| `instruction` | 20 000 au plus, **comptés en octets UTF-8** : 20 000 caractères dont 10 accentués sont refusés comme « 20010 » |
+| Formulaire en brouillon créé `enabled` | 400 : « A flow must be published before an enabled flow UI component can be created for it » ; créé `disabled`, il passe |
+| `flow` sans `flow_id` / `flow_id` sur un autre type | 400 : « A flow_id is required when component_type is flow » / « A flow_id is only supported when component_type is flow » |
+| `flow_id` en chaîne | accepté ; rendu en nombre à la lecture |
+| Type inconnu | 400, erreur de schéma JSON qui liste les neuf valeurs |
+| `PUT` avec `component_type` | **200 et ignoré en silence** : le type ne change pas |
+| Pagination | `paging.cursors.after` tant qu'il reste des éléments ; la dernière page ne porte que `before` ; **jamais de `next`** |
+| `agent_test` | ne rend jamais le composant, seulement la phrase d'accompagnement (« Veuillez consulter les détails ci-dessous ») |
+| Image et carrousels | refusés (« Je ne peux pas vous aider avec cela ») avec deux petits logos PNG de 3 Ko ; envoyés avec deux JPEG de la vitrine d'environ 100 Ko. Cause non isolée (format, taille ou logo) |
+| Échos | la forme d'ENVOI de la Cloud API, données relevées et anonymisées dans `tests/echos-mba-fixtures.ts` ; formulaire en `galaxy_message`, demande de position en `location_request_message` |
+| Phrase d'accompagnement | chaque composant est précédé d'un écho texte, parfois en anglais (« See the details below. ») |
+| Clics | bouton `button_reply` (identifiant fabriqué par Meta, `biz_ai_qr_0`), ligne `list_reply` (`biz_ai_list_` + notre identifiant), formulaire `nfm_reply`, carte d'un carrousel à réponses en `type: 'button'` |
+| Partage de position | non observé (aucun message de position reçu pendant l'essai) |
+| Notre Inbox | 🔴 n'enregistre QUE la phrase d'accompagnement, jamais le composant : un opérateur lit « See the details below. » puis « 10 h » sans voir la liste. C'est la tâche T4 du plan |
 
 ## Pourquoi ce document existe
 

@@ -49,26 +49,30 @@ devient un texte lisible dans l'Inbox ; l'assistant gagne trois opérations et a
 
 ---
 
-## T0. Mesurer avant d'écrire (livraison 0)
+## T0. Mesurer avant d'écrire (livraison 0), FAITE le 2026-10-07
 
-**Fichiers :** un script jetable dans le scratchpad (jamais dans le dépôt), `tests/fixtures/echos-mba/*.json`,
+**Fichiers :** un script jetable dans le scratchpad (jamais dans le dépôt), `tests/echos-mba-fixtures.ts` (le dépôt
+range ses données de test en modules, comme `tests/webhook-fixtures.ts`),
 `docs/MBA-API-REFERENCE.md`, `ops/mba-docs-watch.mjs`.
 
-- [ ] Sur le numéro de test, avec un contact sur la liste, créer par appel direct un message interactif de chaque
+- [x] Sur le numéro de test, avec un contact sur la liste, créer par appel direct un message interactif de chaque
   type, puis les déclencher dans une vraie conversation depuis le téléphone.
-- [ ] Lire les échos dans `webhook_events` (rétention 30 jours) ; enregistrer un payload par type, anonymisé (numéros
-  remplacés), dans `tests/fixtures/echos-mba/`.
-- [ ] Mesurer : longueur maximale acceptée de `title` et d'`instruction` ; l'erreur d'un `flow_id` en brouillon créé
+- [x] Lire les échos dans `webhook_events` (rétention 30 jours) ; enregistrer un payload par type, anonymisé (numéros,
+  `wamid` qui encodent le numéro, réponse au formulaire), dans `tests/echos-mba-fixtures.ts`.
+- [x] Mesurer : longueur maximale acceptée de `title` et d'`instruction` ; l'erreur d'un `flow_id` en brouillon créé
   `enabled` ; l'erreur d'un `flow_id` sur un autre type ; ce que rend `agent_test` quand un message interactif devrait
   partir ; la pagination de `GET /` (forme de `paging`).
-- [ ] Supprimer les messages interactifs d'essai.
-- [ ] Écrire dans `docs/MBA-API-REFERENCE.md` un relevé daté du 2026-10-07 : la doc de Meta relue à la source (le
+- [x] Supprimer les messages interactifs d'essai.
+- [x] Écrire dans `docs/MBA-API-REFERENCE.md` un relevé daté du 2026-10-07 : la doc de Meta relue à la source (le
   changelog depuis le 26 août, dont le plafond de 20 contacts de la liste, les causes d'échec d'`agent_event`, les
   connecteurs MCP), puis les mesures ci-dessus. Corriger la ligne 76 (la route sait écrire `handoff` depuis).
-- [ ] Ajouter à la veille (`ops/mba-docs-watch.mjs`) les pages de l'index de Meta qu'elle ne connaît pas.
+- [x] Ajouter à la veille (`ops/mba-docs-watch.mjs`) les pages de l'index de Meta qu'elle ne connaît pas.
 
-**Sortie :** les bornes `TITRE_MAX` et `CONSIGNE_MAX` (mesurées ; à défaut de refus jusqu'à 4 000, consigne 4 000 et
-titre 200), les fixtures d'échos, les messages d'erreur de Meta à traduire.
+**Sortie, mesurée** (détail : `docs/MBA-API-REFERENCE.md`, relevé du 2026-10-07) : `TITRE_MAX` = 64 et `CONSIGNE_MAX` =
+20 000, **en octets UTF-8** ; un `PUT` qui change le type rend 200 et l'ignore ; la pagination suit `cursors.after`,
+jamais de `next` ; `flow_id` accepté en chaîne ; `agent_test` ne montre que la phrase d'accompagnement ; image et
+carrousels refusés avec de petits logos PNG, envoyés avec des JPEG d'environ 100 Ko ; les échos et les clics de
+chaque type dans `tests/echos-mba-fixtures.ts` ; l'Inbox n'enregistre aujourd'hui que la phrase d'accompagnement.
 
 ## T1. Le client Meta et la validation
 
@@ -81,14 +85,16 @@ titre 200), les fixtures d'échos, les messages d'erreur de Meta à traduire.
   formulaireId: string | null; creeLe: number; modifieLe: number }`.
 - `validerCreation(entree: { titre; type; consigne; formulaireId?: string | null }) : { ok: true; valeur } | { ok: false;
   erreur: string }` et `validerModification(entree: { titre?; consigne?; actif? })`, mêmes formes.
-- `TITRE_MAX`, `CONSIGNE_MAX` (valeurs de T0).
-- `MbaClient` : `listMessagesInteractifs(pn): Promise<MessageInteractif[]>` (suit `after` jusqu'à l'absence de `next`,
-  10 pages au plus), `creerMessageInteractif(pn, v)`, `modifierMessageInteractif(pn, id, v)`,
+- `TITRE_MAX` = 64, `CONSIGNE_MAX` = 20 000, comptés en octets UTF-8 (`Buffer.byteLength(v, 'utf8')`), jamais en
+  `.length`.
+- `MbaClient` : `listMessagesInteractifs(pn): Promise<MessageInteractif[]>` (suit `paging.cursors.after` tant qu'il est
+  présent, 10 pages au plus ; `flow_id` relu en nombre, rendu en chaîne), `creerMessageInteractif(pn, v)`, `modifierMessageInteractif(pn, id, v)`,
   `supprimerMessageInteractif(pn, id)`. Chemin `${pn}/agent-ui-skills`, en-tête `X-API-Version: 2.0.0`, sans
   `agent_id`. Traduction `actif` vers `status: 'enabled' | 'disabled'`.
 
 **Tests attendus :** chemins, verbes, en-tête ; réponse lue par `safeParse` (une réponse illisible lève une erreur
-nommée, jamais un objet à moitié rempli) ; pagination sur deux pages ; `flow_id` requis pour `flow`, refusé ailleurs ;
+nommée, jamais un objet à moitié rempli) ; pagination sur deux pages, arrêt sur une page sans `after` ; une
+consigne de 20 000 caractères dont un accentué refusée (octets) ; `flow_id` requis pour `flow`, refusé ailleurs ;
 type hors des neuf refusé ; titre ou consigne vide ou trop long refusé ; la modification n'envoie jamais
 `component_type` ni `flow_id`.
 
@@ -137,6 +143,10 @@ suppression comme aujourd'hui.
 test existant de la réception).
 
 **Interfaces :**
+- Les formes mesurées (`tests/echos-mba-fixtures.ts`) : `interactive.type` vaut `button`, `list`, `cta_url`,
+  `galaxy_message` (le formulaire, jamais `flow`), `location_request_message` ou `carousel` (cartes sous
+  `action.cards`, chacune `cta_url` ou `button`) ; `image` et `location` sont à plat, coordonnées en chaînes. Chaque
+  composant suit un écho texte d'accompagnement, déjà enregistré aujourd'hui, et qui le reste.
 - `texteDeLEcho(message: Record<string, unknown>): string | null` : le texte de la table du §6 de la spec ; `null`
   seulement pour un écho sans rien d'affichable (alors journalisé, rien enregistré, comme aujourd'hui).
 - `processHandovers` prend `text.body` d'abord, puis `texteDeLEcho(contenu)` ; un type non reconnu donne
@@ -146,7 +156,8 @@ test existant de la réception).
 pour `type = 'mba'` (aperçu de l'Inbox, historique lu par l'agent IA dans `src/agent/brain.gateway.ts`, analyse des
 conversations, traduction, export). Le texte rendu est du texte, aucun ne doit le prendre pour un message du client.
 
-**Tests attendus :** un cas par type sur les fixtures de T0 ; type inconnu ; écho texte inchangé (non-régression) ; un
+**Tests attendus :** un cas par type sur `ECHOS_MBA` (`tests/echos-mba-fixtures.ts`), et les quatre clics de
+`CLICS_MBA` lus par `contentOf` comme aujourd'hui (le clic sur une carte arrive en `type: 'button'`) ; type inconnu ; écho texte inchangé (non-régression) ; un
 écho illisible au milieu d'un lot n'empêche pas l'enregistrement des suivants ; un `button_reply` en `standby` dont le
 libellé égale le mot-clé d'une automation active ne démarre ni automation ni scénario.
 
@@ -179,30 +190,42 @@ opérations `competence.*`) se relit à l'identique.
 
 **Fichiers :** `web/lib/messages-interactifs.ts` (nouveau, pur : noms des types, canevas), `web/lib/api-mba.ts`,
 `web/components/MbaMessagesInteractifsPanel.tsx` (nouveau, sur le modèle de `MbaSkillsPanel.tsx`),
+`web/components/mba-messages/ChoixMessageInteractif.tsx` (nouveau, la grille, sur le modèle exact de
+`web/components/mba-outils/ChoixTypeOutil.tsx`), `web/components/Icone.tsx` (trois dessins neufs),
 `web/app/mba/parametres/page.tsx`, `web/lib/libelles-mba.ts`, `web/components/MbaSkillsPanel.tsx`,
 `web/components/MbaOverviewPanel.tsx`, le panneau du banc « Tester », le diff de `MbaAssistantPanel`,
 `web/e2e/mba-messages-interactifs.spec.ts` (nouveau), `web/e2e/mba-skills.spec.ts`,
 `web/e2e/mba-parametres-overview.spec.ts`, `web/e2e/support/mba.ts`, `tests/web-messages-interactifs.test.ts`.
 
 **Interfaces :**
-- `NOMS_TYPES: Record<TypeMessageInteractif, { fr: string; en: string }>`, `canevas(type): string` (les neuf textes du
-  §8 de la spec).
+- `NOMS_TYPES: Record<TypeMessageInteractif, { fr: string; en: string; aide: readonly [string, string]; icone: NomIcone }>`
+  (`Record` exhaustif : un type sans icône ne compile pas), `canevas(type): string` (les neuf textes du §8 de la spec,
+  sans leur ligne « Quand : »), `composerConsigne(quand, contenu): string` et
+  `separerConsigne(consigne): { quand: string; contenu: string }` (une consigne qui ne commence pas par `Quand : `
+  va entière dans `contenu`).
+- Trois noms neufs dans `Icone.tsx` : `liste` (`ListBulletsIcon`), `localiser` (`GpsFixIcon`), `carrousel`
+  (`CardsThreeIcon`) ; les six autres existent (`reponse`, `lien`, `formulaire`, `image`, `position`).
 - `listMbaMessagesInteractifs`, `createMbaMessageInteractif`, `updateMbaMessageInteractif`,
   `deleteMbaMessageInteractif` dans `web/lib/api-mba.ts` ; les formulaires publiés par `listFlows` filtré sur
   `PUBLISHED`.
 - Onglet `messages_interactifs`, libellé « Messages interactifs » / « Interactive messages », juste après
   « Consignes ».
 
-**Ce que fait l'écran :** la ligne d'introduction (l'agent garde la conversation ; « Envoyer un bloc » et « Lancer un
-scénario » la passent à un scénario) ; la liste (nom du type, titre, interrupteur, modifier, supprimer) ; l'éditeur
-(type choisi à la création puis en lecture seule avec la phrase « Pour changer de type ou de formulaire, supprimez ce
-message et recréez-le », sélecteur des formulaires publiés ou lien vers `/flows`, canevas pré-rempli tant que le champ
-est vide) ; l'état d'attente identique à « Consignes » tant que l'agent n'existe pas ; sur « Tester », la phrase « Les
+**Ce que fait l'écran** (demande de Julien du 2026-10-07 : « comme l'ajout d'outil ») : la ligne d'introduction
+(l'agent garde la conversation ; « Envoyer un bloc » et « Lancer un scénario » la passent à un scénario) ; la liste
+(icône et nom du type, titre, interrupteur, modifier, supprimer) ; le bouton « + Ajouter un message interactif » qui
+ouvre la grille des neuf cartes (icône et nom sur une ligne, une phrase d'aide dessous ; « Formulaire » grisée avec un
+lien vers `/flows` sans formulaire publié, « Lecture impossible : réessayer » si la lecture rate) ; la fiche ouverte
+après le choix (« Quand l'envoyer » d'abord, puis le contenu pré-rempli du canevas, le titre, le sélecteur des
+formulaires publiés ; type en lecture seule à la modification, avec la phrase « Pour changer de type ou de formulaire,
+supprimez ce message et recréez-le ») ; l'état d'attente identique à « Consignes » tant que l'agent n'existe pas ; sur « Tester », la phrase « Les
 messages interactifs ne s'affichent pas ici : essayez-les sur WhatsApp avec un numéro de la liste » (ajustée à la
 mesure de T0) ; le diff de l'assistant montre type, formulaire et consigne en entier. Renommage : chaque libellé
 « Compétence(s) » / « Skill(s) » des fichiers ci-dessus.
 
-**Tests attendus :** un canevas par type (pur) ; e2e : créer, basculer, modifier, supprimer un message, type en lecture
+**Tests attendus :** un canevas par type (pur) ; `composerConsigne` puis `separerConsigne` rendent les deux champs à
+l'identique, une consigne sans `Quand : ` va entière dans le contenu ; `tests/web-icones.test.ts` reste vert ; e2e :
+ouvrir la grille, choisir une carte, remplir « Quand l'envoyer », créer, basculer, modifier, supprimer un message, type en lecture
 seule à la modification, formulaire proposé seulement s'il est publié ; e2e existants mis à jour sur les nouveaux
 libellés (chercher d'abord dans `web/e2e` tout ce qui trouve ces éléments par texte ou par rôle) et lancés en local,
 serveur démarré soi-même (CLAUDE.md, défauts de l'e2e).

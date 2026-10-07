@@ -83,6 +83,18 @@ const PAGES = [
   ['agent-budget', `${BASE}/reference/configure/agent-budget`],
   ['conversation-turns', `${BASE}/reference/insights/conversation-turns`],
   ['troubleshooting', `${BASE}/troubleshooting`],
+  // Ajoutees le 2026-10-07 : presentes dans l'index de Meta (`llms.txt`), absentes d'ici. ⚠️ L'index lui-meme est
+  // incomplet (il ne liste pas les guides annonces par le changelog les 22 septembre et 1er octobre), et le
+  // changelog ne se lit que rendu par un navigateur : son empreinte ici ne voit qu'une coquille.
+  ['quickstart', `${BASE}/quickstart`],
+  ['get-api-key', `${BASE}/get-api-key`],
+  ['guide-support', `${BASE}/usage-guides/customer-support-agent`],
+  ['guide-leads', `${BASE}/usage-guides/lead-generation-agent`],
+  ['guide-achat', `${BASE}/usage-guides/single-item-purchase-agent`],
+  ['guide-apres-achat', `${BASE}/usage-guides/post-purchase-support-agent`],
+  ['agent-event-insights', `${BASE}/reference/insights/agent-event-insights`],
+  ['conversation-insights', `${BASE}/reference/insights/conversation-insights`],
+  ['tool-call-insights', `${BASE}/reference/insights/tool-call-insights`],
 ];
 
 /** Les chemins connus, pour confronter la liste ci-dessus a la nav de Meta. */

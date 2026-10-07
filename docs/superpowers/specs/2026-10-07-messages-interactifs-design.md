@@ -91,14 +91,15 @@ d'un contenu que Meta ne garde pas.
 
 ## 5. Serveur
 
-**Le client Meta** (`src/mba/client.ts`) : `listMessagesInteractifs` (suit le curseur `after` jusqu'à l'absence de
-`next`, plafonné à 10 pages), `creerMessageInteractif`, `modifierMessageInteractif`, `supprimerMessageInteractif`.
+**Le client Meta** (`src/mba/client.ts`) : `listMessagesInteractifs` (suit `paging.cursors.after` tant qu'il est
+présent, plafonné à 10 pages : mesuré le 2026-10-07, Meta ne rend jamais `next`), `creerMessageInteractif`, `modifierMessageInteractif`, `supprimerMessageInteractif`.
 La réponse est lue par `safeParse` (`id`, `title`, `component_type`, `status`, `instruction`, `flow_id` facultatif),
 jamais par `as`. Le chemin ne porte pas d'`agent_id` : la référence n'en mentionne aucun, contrairement aux consignes.
 
 **La validation avant l'appel**, dans un module pur partagé par la route et l'assistant
 (`src/mba/messages-interactifs.ts`) : le type dans l'énumération fermée des neuf, `flow_id` présent si et seulement si
-le type est `flow`, titre et consigne non vides et bornés (voir §11 pour les bornes mesurées).
+le type est `flow`, titre et consigne non vides et bornés : titre 64, consigne 20 000, **comptés en octets UTF-8** comme le fait Meta
+(mesuré le 2026-10-07 : une consigne de 20 000 caractères dont 10 accentués est refusée comme « 20010 »).
 
 **Les routes**, dans `registerMba` (`src/http/mba.ts`, module `mba` de classe `tenant`, donc la garde et l'étape
 d'espace posées au montage, rien à déclarer dans `FAUSSES_AUTORITES`) :
@@ -182,11 +183,35 @@ d'union discriminée.
 
 - Une ligne d'introduction : l'agent garde la conversation et compose lui-même le message ; « Envoyer un bloc » et
   « Lancer un scénario » (onglet Outils) font passer la main à un scénario. Ce n'est pas le même outil.
-- La liste : nom du type, titre, interrupteur actif ou inactif (un `PUT` du seul statut), modifier, supprimer.
-- L'éditeur : le type se choisit à la création puis s'affiche en lecture seule, avec la phrase « Pour changer de type
-  ou de formulaire, supprimez ce message et recréez-le ». Pour un formulaire, un sélecteur des formulaires publiés de
-  l'espace, et un lien vers la page des formulaires (`/flows`) quand il n'y en a aucun. Le champ texte se pré-remplit du canevas du
-  type tant qu'il est vide.
+- La liste : l'icône et le nom du type, le titre, interrupteur actif ou inactif (un `PUT` du seul statut), modifier,
+  supprimer.
+- **L'ajout se fait comme l'ajout d'un outil** (demande de Julien du 2026-10-07) : un bouton « + Ajouter un message
+  interactif » ouvre une grille de neuf cartes, sur le modèle exact de « Quel outil ajouter ? »
+  (`web/components/mba-outils/ChoixTypeOutil.tsx`) : l'icône et le nom sur la même ligne, une phrase d'aide dessous,
+  et la même paire icône et nom dans la liste des messages en place. La carte « Formulaire » est grisée, pas cachée,
+  avec un lien vers `/flows`, quand l'espace n'a aucun formulaire publié ; une lecture ratée le dit et propose de
+  relire, comme la grille d'outils.
+- **La fiche** qui s'ouvre après le choix : « Quand l'envoyer » d'abord (la situation, en une phrase : « quand le
+  client demande à réserver »), puis le contenu pré-rempli du canevas du type, le titre, et pour un formulaire le
+  sélecteur des formulaires publiés de l'espace. Les deux champs forment la consigne envoyée à Meta,
+  `Quand : <quand>` sur la première ligne puis le contenu ; à la relecture, une consigne qui commence par `Quand : `
+  se sépare sur sa première ligne, une autre (écrite par l'assistant ou ailleurs) va entière dans le contenu, avec
+  « Quand l'envoyer » vide et l'invite à le préciser. La fiche d'un message existant montre le type en lecture
+  seule, avec la phrase « Pour changer de type ou de formulaire, supprimez ce message et recréez-le » (Meta ignore en
+  silence un changement de type, mesuré le 2026-10-07).
+
+Les icônes, toutes de la famille de la console (`web/components/Icone.tsx`, seul importeur de Phosphor) :
+
+| Type | Icône |
+| --- | --- |
+| Boutons de réponse | `reponse` (existante) |
+| Liste de choix | `liste`, neuve (`ListBulletsIcon`) |
+| Bouton lien | `lien` (existante) |
+| Formulaire | `formulaire` (existante) |
+| Image | `image` (existante) |
+| Lieu | `position` (existante) |
+| Demande de position | `localiser`, neuve (`GpsFixIcon`) |
+| Carrousel à liens, carrousel à réponses | `carrousel`, neuve (`CardsThreeIcon`) |
 - Les écritures sont réservées aux administrateurs, comme sur les autres onglets.
 
 **Les canevas**, un par type, dans `web/lib/messages-interactifs.ts` (pur, testé) :
@@ -260,7 +285,8 @@ Cartes (2 à 10) : pour chacune, une image (adresse), un texte (1 à 160 caract�
 (1 à 20 caractères)
 ```
 
-Les limites des canevas sont celles du guide de Meta ; elles ne sont pas contrôlées au caractère près (le contenu
+La ligne « Quand : » de chaque canevas est le champ « Quand l'envoyer » de la fiche ; le reste pré-remplit le
+contenu. Les limites des canevas sont celles du guide de Meta ; elles ne sont pas contrôlées au caractère près (le contenu
 peut venir d'un outil), elles guident la rédaction. Le contenu dynamique s'écrit en clair : « une ligne par créneau
 rendu par l'outil `creneaux_libres` ».
 
