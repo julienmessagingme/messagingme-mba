@@ -4,13 +4,16 @@ import { useCallback, useEffect, useState } from 'react';
 import { DailyChart } from '@/components/DailyChart';
 import { getOpsOverview, getOpsStockage, observerTenant, lireGrillePrixOps, ecrireGrillePrixOps, loginOps, loginOpsGoogle, estEtapeSecondFacteur, type OpsOverview,
   lireNumerosFournis, declarerNumeroFourni, type ReserveNumerosOps,
+  lireSuppressionOps, supprimerEspaceOps, type BilanSuppressionOps, type EtapePrevueOps, type SuppressionEspaceOps, type EtapeSuppressionNom,
   type TenantOverviewRow, type QueueLoadRow, type QueueGroupLoadRow, type QueueLatenceRow, type LatenceHttpRow, type WorkerHeartbeat, type PoolInstantane,
   type PoolAttentePoint, type GrillePrix, type EtapeSecondFacteur, type SessionOpsOuverte, type TacheFondRow, type MesureStockage } from '@/lib/api';
 import { ApiError } from '@/lib/http';
 import { GrillePrixChamps } from '@/components/GrillePrixChamps';
 import { enChamps, depuisChamps } from '@/lib/grille-saisie';
 import { formatDate } from '@/lib/day';
-import { fmtNum } from '@/lib/format';
+import { fmtCost, fmtNum } from '@/lib/format';
+import { eurosDepuisMicro } from '@/lib/agent-solde';
+import { Modale } from '@/components/Modale';
 import { ordonnerLatences, enAlerte, SEUIL_P95_MS, EFFECTIF_MIN, CODE_ABANDON } from '@/lib/latence-http';
 import { tacheEnAlerte, fichiersEnBase, fmtOctets, SEUIL_TACHE_LENTE_MS, SEUIL_FICHIERS_EN_BASE_OCTETS } from '@/lib/ops-mesures';
 import { useLocale, useT } from '@/lib/i18n';
@@ -43,6 +46,8 @@ export default function OpsPage() {
   const [data, setData] = useState<OpsOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  /** L'espace dont on ouvre le bilan de suppression (RC8). */
+  const [aSupprimer, setASupprimer] = useState<{ id: string; nom: string } | null>(null);
 
   useEffect(() => {
     // Relue ici et pas au rendu : le stockage du navigateur n'existe pas côté serveur. `getSessionOps` efface au
@@ -185,9 +190,25 @@ export default function OpsPage() {
 
             <NumerosFournisCard token={session.token} />
 
-            <TenantTable onObserver={(id, nom) => { void observer(id, nom); }} tenants={data.tenants} />
+            <TenantTable
+              onObserver={(id, nom) => { void observer(id, nom); }}
+              onSupprimer={(id, nom) => setASupprimer({ id, nom })}
+              tenants={data.tenants}
+            />
           </>
         ) : null}
+        {aSupprimer && (
+          <SuppressionEspace
+            jeton={session.token}
+            tenantId={aSupprimer.id}
+            nom={aSupprimer.nom}
+            onPerdue={perdue}
+            onFermer={(supprime) => {
+              setASupprimer(null);
+              if (supprime) void load(session.token);
+            }}
+          />
+        )}
       </div>
     </main>
   );
@@ -1028,6 +1049,178 @@ function NumerosFournisCard({ token }: { token: string }) {
   );
 }
 
+/**
+ * SUPPRIMER UN ESPACE, DÉFINITIVEMENT (RC8, `src/ops/suppression-espace.ts`). Le bilan d'abord (ce qui part, ce que
+ * Stripe facture encore, les adresses effacées et gardées, les étapes sautées), la saisie exacte du nom, puis le
+ * déroulé tel que le serveur l'a joué. 🔴 C'est le SERVEUR qui revérifie le nom et décide de chaque étape : l'écran
+ * ne fait que présenter, et n'affiche rien comme fait avant sa réponse.
+ */
+function SuppressionEspace({ jeton, tenantId, nom, onFermer, onPerdue }: {
+  jeton: string;
+  tenantId: string;
+  nom: string;
+  onFermer: (supprime: boolean) => void;
+  onPerdue: () => void;
+}) {
+  const t = useT();
+  const { locale } = useLocale();
+  const [lu, setLu] = useState<{ bilan: BilanSuppressionOps; etapes: EtapePrevueOps[] } | null>(null);
+  const [saisie, setSaisie] = useState('');
+  const [enCours, setEnCours] = useState(false);
+  const [resultat, setResultat] = useState<SuppressionEspaceOps | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  useEffect(() => {
+    let vivant = true;
+    lireSuppressionOps(jeton, tenantId)
+      .then((r) => { if (vivant) setLu(r); })
+      .catch((e: unknown) => {
+        if (!vivant) return;
+        if (e instanceof ApiError && e.status === 401) onPerdue();
+        else setErreur(e instanceof Error ? e.message : t('Bilan illisible', 'Unreadable summary'));
+      });
+    return () => { vivant = false; };
+  }, [jeton, tenantId, t, onPerdue]);
+
+  const nomOk = lu !== null && saisie.trim() !== '' && saisie.trim() === lu.bilan.nom.trim();
+
+  async function supprimer(): Promise<void> {
+    if (!nomOk || enCours) return;
+    setEnCours(true);
+    setErreur(null);
+    try {
+      setResultat(await supprimerEspaceOps(jeton, tenantId, saisie));
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) onPerdue();
+      else setErreur(e instanceof Error ? e.message : t('Suppression impossible', 'Deletion failed'));
+    } finally {
+      setEnCours(false);
+    }
+  }
+
+  const libelle: Record<EtapeSuppressionNom, string> = {
+    verrou: t('Verrou de l’espace', 'Workspace lock'),
+    cle_vercel: t('Clé Vercel', 'Vercel key'),
+    mba_eteint: t('Agent de Meta éteint', 'Meta agent off'),
+    mba_liste: t('Liste de l’agent de Meta', 'Meta agent list'),
+    waba_desabonne: t('Compte WhatsApp désabonné', 'WhatsApp account unsubscribed'),
+    salesforce: 'Salesforce',
+    hubspot: 'HubSpot',
+    numero_fourni: t('Numéro fourni', 'Provided number'),
+    purge: t('Purge', 'Purge'),
+  };
+  const etat: Record<string, { texte: string; cls: string }> = {
+    a_faire: { texte: t('à faire', 'to do'), cls: 'text-ink-900' },
+    fait: { texte: t('fait', 'done'), cls: 'text-succes-700' },
+    sautee: { texte: t('sautée', 'skipped'), cls: 'text-ink-500' },
+    impossible: { texte: t('impossible', 'impossible'), cls: 'text-danger-700' },
+    echec: { texte: t('échec', 'failed'), cls: 'text-danger-700' },
+  };
+  const stripe = resultat?.stripe ?? lu?.bilan.stripe ?? null;
+  const etapes: Array<{ etape: EtapeSuppressionNom; etat: string; detail: string | null }> = resultat?.etapes ?? lu?.etapes ?? [];
+
+  return (
+    <Modale
+      titre={t('Supprimer l’espace', 'Delete the workspace')}
+      sousTitre={nom}
+      testId="suppression-modale"
+      fermeture={enCours ? 'boutons' : 'partout'}
+      onClose={() => { if (!enCours) onFermer(resultat?.supprime === true); }}
+      pied={resultat ? (
+        <Bouton type="button" variante="secondaire" onClick={() => onFermer(resultat.supprime)}>{t('Fermer', 'Close')}</Bouton>
+      ) : (
+        <>
+          <Bouton type="button" variante="secondaire" disabled={enCours} onClick={() => onFermer(false)}>{t('Annuler', 'Cancel')}</Bouton>
+          <Bouton type="button" data-testid="suppression-confirmer" disabled={!nomOk || enCours} enCours={enCours} onClick={() => { void supprimer(); }}>
+            {enCours ? t('Suppression…', 'Deleting…') : t('Supprimer définitivement', 'Delete permanently')}
+          </Bouton>
+        </>
+      )}
+    >
+      <div className="space-y-4 text-sm">
+        {erreur && <p className="rounded-controle bg-danger-50 px-3 py-2 text-danger-700" data-testid="suppression-erreur">{erreur}</p>}
+        {!lu && !erreur && <Squelette forme="carte" />}
+
+        {resultat && (
+          <p className={`rounded-controle px-3 py-2 font-medium ${resultat.supprime ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`} data-testid="suppression-issue">
+            {resultat.supprime ? t('Espace supprimé.', 'Workspace deleted.') : t('Espace NON supprimé : voir les étapes.', 'Workspace NOT deleted: see the steps.')}
+          </p>
+        )}
+
+        {stripe && (stripe.abonnements.length > 0 || stripe.clients.length > 0) && (
+          <div className="rounded-controle border border-alerte-300 bg-alerte-50 px-3 py-2" data-testid="suppression-stripe">
+            <p className="font-medium text-alerte-900">
+              {stripe.abonnements.some((a) => a.vivant) ? t('Stripe : à résilier à la main', 'Stripe: cancel by hand') : 'Stripe'}
+            </p>
+            <ul className="mt-1 space-y-0.5 text-xs">
+              {stripe.abonnements.map((a) => (
+                <li key={a.id}>
+                  {a.produit === 'numero' ? t('Abonnement du numéro', 'Number subscription') : t('Abonnement Pro', 'Pro subscription')}
+                  {' '}({a.statut}{a.livemode ? '' : ', test'}) :{' '}
+                  <a href={a.lien} target="_blank" rel="noreferrer" className="font-mono text-brand-600 underline">{a.id}</a>
+                </li>
+              ))}
+              {stripe.clients.map((c) => (
+                <li key={c.customerId}>
+                  {t('Client', 'Customer')}{c.livemode ? '' : ' (test)'} :{' '}
+                  <a href={c.lien} target="_blank" rel="noreferrer" className="font-mono text-brand-600 underline">{c.customerId}</a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {lu && !resultat && (
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs" data-testid="suppression-bilan">
+            <dt className="text-ink-500">{t('Créé le', 'Created on')}</dt>
+            <dd className="text-ink-900">{formatDate(lu.bilan.creeLe, locale, { day: '2-digit', month: '2-digit', year: '2-digit' })}</dd>
+            <dt className="text-ink-500">{t('Utilisateurs, contacts', 'Users, contacts')}</dt>
+            <dd className="text-ink-900">{fmtNum(lu.bilan.comptes.utilisateurs, locale)}, {fmtNum(lu.bilan.comptes.contacts, locale)}</dd>
+            <dt className="text-ink-500">{t('Conversations, scénarios', 'Conversations, scenarios')}</dt>
+            <dd className="text-ink-900">{fmtNum(lu.bilan.comptes.conversations, locale)}, {fmtNum(lu.bilan.comptes.scenarios, locale)}</dd>
+            <dt className="text-ink-500">{t('Crédit restant', 'Remaining credit')}</dt>
+            <dd className="text-ink-900">{fmtCost(eurosDepuisMicro(lu.bilan.soldeMicroEur), locale, 'EUR')}</dd>
+            <dt className="text-ink-500">{t('Adresses effacées', 'Addresses erased')}</dt>
+            <dd className="break-all text-ink-900">{lu.bilan.adresses.effacees.join(', ') || <Nd />}</dd>
+            <dt className="text-ink-500">{t('Adresses gardées', 'Addresses kept')}</dt>
+            <dd className="break-all text-ink-900">{lu.bilan.adresses.gardees.join(', ') || <Nd />}</dd>
+          </dl>
+        )}
+
+        {etapes.length > 0 && (
+          <ol className="space-y-1 text-xs" data-testid={resultat ? 'suppression-deroule' : 'suppression-etapes'}>
+            {etapes.map((e) => (
+              <li key={e.etape} data-testid={`etape-${e.etape}`}>
+                <span className="text-ink-900">{libelle[e.etape]}</span>
+                {' : '}
+                <span className={`font-medium ${etat[e.etat]?.cls ?? 'text-ink-900'}`}>{etat[e.etat]?.texte ?? e.etat}</span>
+                {e.detail && <span className="text-ink-500"> ({e.detail})</span>}
+              </li>
+            ))}
+          </ol>
+        )}
+
+        {lu && !resultat && (
+          <div>
+            <label htmlFor="suppression-nom" className="mb-1 block text-xs font-medium text-ink-900">
+              {t('Tapez le nom de l’espace', 'Type the workspace name')}
+            </label>
+            <input
+              id="suppression-nom"
+              data-testid="suppression-nom"
+              value={saisie}
+              onChange={(e) => setSaisie(e.target.value)}
+              disabled={enCours}
+              autoComplete="off"
+              className={inputCls}
+            />
+          </div>
+        )}
+      </div>
+    </Modale>
+  );
+}
+
 /** Millisecondes lisibles : « 320 ms », « 1,2 s ». */
 function fmtMs(ms: number | null): string {
   if (ms === null) return '-';
@@ -1042,7 +1235,11 @@ function fmtSecondes(s: number): string {
   return `${Math.round(s / 60)} min`;
 }
 
-function TenantTable({ tenants, onObserver }: { tenants: TenantOverviewRow[]; onObserver: (id: string, nom: string) => void }) {
+function TenantTable({ tenants, onObserver, onSupprimer }: {
+  tenants: TenantOverviewRow[];
+  onObserver: (id: string, nom: string) => void;
+  onSupprimer: (id: string, nom: string) => void;
+}) {
   const t = useT();
   const { locale } = useLocale();
   const dot = (q: string | null) => (q === 'GREEN' ? succes[400] : q === 'YELLOW' ? alerte[500] : q === 'RED' ? danger[500] : ink[300]);
@@ -1076,6 +1273,14 @@ function TenantTable({ tenants, onObserver }: { tenants: TenantOverviewRow[]; on
                   className="mt-1 text-xs font-medium text-brand-600 underline decoration-dotted hover:text-brand-700"
                 >
                   {t('observer cet espace', 'observe this workspace')}
+                </button>
+                {/* Ouvre le bilan : rien n'est supprimé avant la saisie du nom. */}
+                <button
+                  onClick={() => onSupprimer(tn.id, tn.name)}
+                  data-testid={`supprimer-${tn.id}`}
+                  className="ml-3 mt-1 text-xs font-medium text-danger-700 underline decoration-dotted hover:text-danger-600"
+                >
+                  {t('supprimer', 'delete')}
                 </button>
               </td>
               <td className="px-3 py-2.5">

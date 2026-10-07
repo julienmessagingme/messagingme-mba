@@ -35,7 +35,7 @@ au portail. Restent B2 (le numéro inclus dans le Pro, le gel au retour en Base,
 MCP qui déclarent leur fonction ; Julien ajoute « Abonnements : écriture » à la clé restreinte avant) et C (les coûts
 selon l'offre).
 
-## RETOURS CONSOLE DU 6 OCTOBRE (RC1 À RC8) : RC1 À RC7 EN PRODUCTION (ESSAIS RÉELS DUS), RC8 ENSUITE
+## RETOURS CONSOLE DU 6 OCTOBRE (RC1 À RC8) : LES HUIT LOTS EN PRODUCTION, ESSAIS RÉELS DUS
 
 ⏳ **Essai réel de RC1, par Julien** : ouvrir un scénario, vérifier que les textes listés ont disparu des cinq blocs,
 taper une réponse rapide et voir `0/20` se remplir, trouver « Widget WhatsApp » sous Tools.
@@ -76,6 +76,13 @@ en mode « Équipe » fait passer en mode « MBA » (`todo.md`).
 approuvé par Meta, envoyé par une campagne à deux vrais numéros dont les fiches portent deux numéros de commande
 différents, et depuis l'Inbox à l'un d'eux ; un clic sur chaque téléphone arrive sur SA page, et les clics sont comptés
 dans les mesures de la campagne. À faire aussi : rééditer `lancement_napo_date_finale` (`todo.md`).
+
+⏳ **Essai réel de RC8, par Julien** : créer un espace d'essai depuis une adresse jetable, avec son propre compte
+WhatsApp (pas le jeton global, sinon les étapes chez Meta sont sautées), un agent IA (donc une clé Vercel) et quelques
+contacts ; le supprimer depuis /ops (« supprimer » sur sa ligne, le bilan, la saisie du nom) ; puis vérifier : la clé
+n'existe plus chez Vercel, le compte WhatsApp n'est plus abonné à notre app, l'espace et ses données ont disparu,
+l'adresse ne se connecte plus, la ligne de `espaces_supprimes` est là, et la file des jobs morts de /ops ne porte aucun
+échec lié à cet espace dans l'heure qui suit.
 
 Douze demandes de Julien regroupées en huit lots, cadrées le 2026-10-06 par une série de questions ; les décisions sont
 écrites dans chaque plan (`docs/superpowers/plans/2026-10-06-rc*.md`). Ordre retenu : du plus petit au plus structurel.

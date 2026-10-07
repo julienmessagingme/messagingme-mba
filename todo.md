@@ -1,5 +1,27 @@
 # todo.md : backlog
 
+## 🟡 RC8, supprimer un espace depuis /ops : ce qui reste (2026-10-07)
+
+- **Une clé Vercel déjà disparue chez Vercel rend l'espace insupprimable** : `supprimerCleGateway` ne tient que 2xx
+  pour une confirmation, donc un 404 (clé supprimée à la main, ou Vercel a confirmé puis `oublier` a échoué) fait
+  échouer l'étape `cle_vercel` à chaque essai. Vérifier ce que Vercel rend, puis tenir 404 pour confirmé.
+- **Le verrou part avant toute certitude d'aller au bout** : si la clé Vercel échoue (ou si Vercel n'est pas configuré
+  sur l'instance, cas que le bilan connaît), l'espace reste verrouillé, donc coupé de la console. Refuser (409) avant
+  le verrou dans le cas `impossible`, et dire dans la réponse « l'espace reste verrouillé ».
+- **Le bail de 10 minutes** du verrou de suppression peut expirer pendant un `toutRetirer` long (un appel Meta par
+  contact de la liste), et Cloudflare coupe la réponse vers 100 s côté navigateur sans arrêter le serveur.
+- **Fenêtre de coût** : entre la révocation de la clé et la purge (la durée des étapes chez Meta), le worker fait
+  retomber les tours d'agent de l'espace sur notre clé maison. Le verrou n'arrête pas le worker.
+- **Un compte dont le jeton ne se déchiffre pas rend l'espace insupprimable** depuis l'écran : `contexte` relance toute
+  erreur autre que `TokenInvalidError`, et le bilan comme la suppression rendent 422.
+- **Restes sans clé** : `salesforce.orgs` reste rattachée à un espace disparu si son étape échoue (inoffensif, rien
+  ne le rattrape) ; `mmhs.conversations` n'est jamais purgée (à faire côté connecteur, dans `/service/unlink`). Un
+  abonné « en attente de numéro » qui reçoit un numéro entre l'étape `numero_fourni` et la purge le perd en `bloque`.
+- **La trace** (`espaces_supprimes.etapes`) peut porter jusqu'à 300 caractères de message d'erreur d'un tiers, alors
+  que la migration promet « aucune donnée client » : à vérifier sur la première vraie suppression.
+- **`DELETE /{waba}/subscribed_apps`** (le désabonnement du compte WhatsApp de notre app) n'a jamais été essayé chez
+  Meta : à constater à l'essai réel.
+
 ## 🟡 RC7, un champ du contact dans le lien d'un bouton : ce qui reste (2026-10-07)
 
 - **À faire par Julien, une fois RC7 en ligne : rééditer le modèle `lancement_napo_date_finale`** (espace de démo) dans
@@ -490,8 +512,8 @@ en production.
 - 🟡 **Une traduction coupée par le délai n'est pas débitée** (`src/traduction/traduire.ts`) alors que Vercel l'a
   peut-être facturée : la commission de 10 % absorbe l'écart tant que c'est rare.
 - 🟡 **La révocation d'une clé (`DELETE /ops/cle-modele/:tenantId`) est défaite par la traduction suivante**, qui
-  rouvre une clé si l'espace a du crédit. Aucun chemin ne supprime un espace aujourd'hui ; à fermer le jour où il
-  existera (révoquer ET empêcher la réouverture).
+  rouvre une clé si l'espace a du crédit. ⚠️ Fermé pour la SUPPRESSION d'un espace (RC8, 2026-10-07 : l'espace est
+  verrouillé et une clé ne s'ouvre plus pour un espace verrouillé), pas pour une révocation seule d'un espace actif.
 - 🟡 **Mode test Stripe** (produits, clé restreinte, destination webhook en test) : facultatif, l'essai final a
   été fait en live avec un code promo à 100 %.
 

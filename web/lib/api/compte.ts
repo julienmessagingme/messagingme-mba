@@ -429,6 +429,52 @@ export function declarerNumeroFourni(sessionOps: string, numero: string, note: s
   return appelOps(sessionOps, '/ops/numeros-fournis', { method: 'POST', corps: { numero, note } });
 }
 
+/** Les étapes de la suppression d'un espace (RC8), dans l'ordre où le serveur les joue. */
+export type EtapeSuppressionNom =
+  | 'verrou' | 'cle_vercel' | 'mba_eteint' | 'mba_liste' | 'waba_desabonne' | 'salesforce' | 'hubspot' | 'numero_fourni' | 'purge';
+
+/** Un objet Stripe, avec le lien du tableau de bord (dans le bon mode) : Julien y résilie à la main. */
+export interface AbonnementStripeOps { id: string; produit: 'numero' | 'offre'; statut: string; livemode: boolean; vivant: boolean; lien: string }
+export interface ClientStripeOps { customerId: string; livemode: boolean; lien: string }
+
+/** Ce que la cascade emportera, lu AVANT la suppression (`GET /ops/espaces/:tenantId/suppression`). */
+export interface BilanSuppressionOps {
+  tenantId: string;
+  nom: string;
+  creeLe: string;
+  statut: string;
+  comptes: { utilisateurs: number; contacts: number; conversations: number; scenarios: number };
+  soldeMicroEur: number;
+  stripe: { clients: ClientStripeOps[]; abonnements: AbonnementStripeOps[] };
+  numeroFourni: { numero: string; vuDeMeta: boolean } | null;
+  meta: { phoneNumberId: string | null; wabaId: string | null; partage: boolean; mbaAllume: boolean; contactsSurLaListe: number };
+  salesforce: boolean;
+  cleVercel: boolean;
+  adresses: { effacees: string[]; gardees: string[] };
+}
+
+export interface EtapePrevueOps { etape: EtapeSuppressionNom; etat: 'a_faire' | 'sautee' | 'impossible'; detail: string | null }
+export interface EtapeJoueeOps { etape: EtapeSuppressionNom; etat: 'fait' | 'sautee' | 'echec'; detail: string | null }
+
+/** Ce que rend la suppression : son déroulé, qu'elle ait abouti ou qu'une étape l'ait arrêtée, et les liens Stripe. */
+export interface SuppressionEspaceOps {
+  tenantId: string;
+  nom: string;
+  supprime: boolean;
+  etapes: EtapeJoueeOps[];
+  comptes: Record<string, number> | null;
+  stripe: BilanSuppressionOps['stripe'];
+}
+
+export function lireSuppressionOps(sessionOps: string, tenantId: string): Promise<{ bilan: BilanSuppressionOps; etapes: EtapePrevueOps[] }> {
+  return appelOps(sessionOps, `/ops/espaces/${encodeURIComponent(tenantId)}/suppression`);
+}
+
+/** Définitif. Le serveur refuse si `nom` n'est pas exactement celui de l'espace. */
+export function supprimerEspaceOps(sessionOps: string, tenantId: string, nom: string): Promise<SuppressionEspaceOps> {
+  return appelOps(sessionOps, `/ops/espaces/${encodeURIComponent(tenantId)}`, { method: 'DELETE', corps: { nom } });
+}
+
 // --- Support (formulaire de contact -> email Resend) ---
 
 /** Le reply-to n'est PAS envoye par le client : le serveur le resout depuis le compte authentifie. */
