@@ -5,6 +5,33 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-07 : RC7 et RC8 en production, et la fin du chantier « Retours console du 6 octobre »
+
+**RC7, le champ du contact dans le lien d'un bouton** : serveur `b92c63dd` (API et deux workers, aucune migration),
+console `37450e44` poussée après le `up`, CI verte job par job sur les deux. Mesuré avant le déploiement, en lecture
+seule : 0 destination sur 22 dans `tracked_links` ne porte d'accolade, donc aucun lien déjà envoyé ne change de
+comportement ; deux liens réels (`/r/<code>` et `/r/<code>/anon`) relus depuis l'extérieur avant et après le `up`,
+identiques. Et, par le vrai code dans le conteneur, les boutons des 33 modèles chez Meta comparés aux 18 liens
+confirmés : UN écart, `lancement_napo_date_finale`, que l'ancien PATCH avait renvoyé à Meta avec l'adresse brute
+pendant que `tracked_links` le disait tracé à jeton. Campagnes et scénarios l'envoyaient déjà avec un composant en
+trop ; l'Inbox, corrigée, fera de même. Laissé tel quel (le déconfirmer cacherait ses clics passés), à rééditer par
+Julien (`todo.md`). Relecture : aucun rouge ; un jaune corrigé avant de pousser (un remplissage de champ qui lève sur
+un demi-substitut isolé rendait 500 sur la route publique, test vérifié dans les deux sens).
+
+**RC8, supprimer un espace depuis /ops** : serveur et migration `2e082268`, posés sur la livraison B1 du lot 6
+(`4220dc42`, une autre session) qui touchait six des mêmes fichiers, dont le webhook Stripe ; le chemin du Pro y a
+reçu la même garde que le numéro (23503 sur `pro.enregistrer` : 200 et alerte). 0219 appliquée à 14 h 08 UTC AVANT le
+`up`, relue en base, puis le bilan exécuté par le vrai code déployé, en lecture seule, sur l'espace d'essai « nouveau
+test » (un compte, son adresse gardée parce qu'elle a d'autres espaces). Console `2cd0d9a4`. Mesuré avant d'écrire le
+plan : aucun compte WhatsApp croisé entre espaces, deux espaces sur le jeton global (pour eux, les étapes chez Meta
+seront sautées). Relecture : aucun rouge ; un jaune corrigé (la prise du verrou de suppression hors du `try`, un 500
+illisible si la base ne répond pas).
+
+**Coordination** : les deux sessions ont alterné sur le VPS (B1 déployé entre le push de RC8 et son `up`, RC8 poussé
+seulement après le « fini et contrôlé » de l'autre, faute de quoi son build aurait embarqué un code dont la migration
+n'était pas appliquée). La CI de la console RC8 a été annulée par le push suivant (`d8cf836d`) : son verdict se lit
+sur ce descendant, qui la contient.
+
 ## 2026-10-07 : supprimer un espace depuis /ops (RC8), écrit, pas encore déployé
 
 **Ce qui est écrit** (plan `docs/superpowers/plans/2026-10-06-rc8-supprimer-un-espace.md`, migration 0219

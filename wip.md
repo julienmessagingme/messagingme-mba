@@ -86,19 +86,8 @@ n'existe plus chez Vercel, le compte WhatsApp n'est plus abonné à notre app, l
 l'adresse ne se connecte plus, la ligne de `espaces_supprimes` est là, et la file des jobs morts de /ops ne porte aucun
 échec lié à cet espace dans l'heure qui suit.
 
-Douze demandes de Julien regroupées en huit lots, cadrées le 2026-10-06 par une série de questions ; les décisions sont
-écrites dans chaque plan (`docs/superpowers/plans/2026-10-06-rc*.md`). Ordre retenu : du plus petit au plus structurel.
-
-| Lot | Contenu | Méthode |
-|---|---|---|
-| RC1 | Textes d'aide retirés (la liste de Julien), compteurs 0/20 et 0/24, Widget WhatsApp sous Tools | En direct |
-| RC2 | Statut « urgent » (dossier, pastille, en tête de « À traiter »), outil de l'agent IA | Revue du diff |
-| RC3 | Changer d'espace depuis le menu du compte | Revue du diff |
-| RC4 | Outils de l'agent IA présentés comme ceux du MBA, « Lancer un scénario », cibles fixes | Revue du diff |
-| RC5 | Condition à familles nommées, champs système, bloc « Aller à », bouton « copier le code » | Revue du diff |
-| RC6 | Qui répond : MBA, agent IA, scénario ou équipe ; MBA en veille ; bloc « Envoyer au MBA » | Revue du diff |
-| RC7 | Champ du contact dans l'URL d'un bouton de template, rempli au clic | Revue du diff |
-| RC8 | Supprimer un espace depuis /ops, ménage chez les tiers, liens Stripe | Revue du diff |
+Les décisions de chaque lot sont dans son plan (`docs/superpowers/plans/2026-10-06-rc*.md`), ce qui reste dans
+`todo.md` (une section par lot), et le récit des livraisons dans `docs/JOURNAL-TECHNIQUE.md`.
 
 ## UN AGENT NE VOIT JAMAIS DEUX OUTILS DU MÊME NOM (0211, 0213) : LES DEUX LOTS EN PRODUCTION, ESSAIS D'ÉCRAN DUS
 

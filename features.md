@@ -2695,6 +2695,16 @@ boîte par sous-menu.
   ce numéro pour le vérifier, le code qu'il dicte est capté automatiquement et s'affiche en face du numéro, avec ce qui
   a été entendu. La carte compte les numéros encore libres. Un numéro attribué à un espace (page « Connecter WhatsApp »,
   lot 3b) y apparaît « attribué » avec son espace ; un numéro que Meta a refusé, « bloqué », à résilier ou à garder.
+- ✅ **Supprimer un espace, définitivement** (2026-10-07) : un lien « supprimer » sur la ligne de l'espace ouvre
+  d'abord un bilan (ce qui part avec lui, son crédit restant, les liens Stripe de son client et de ses abonnements
+  encore actifs, les adresses qui seront effacées et celles qui seront gardées parce qu'elles ont d'autres espaces, et
+  les étapes qui seront sautées). On tape le nom exact de l'espace pour confirmer. La suppression verrouille l'espace,
+  révoque sa clé de modèle chez Vercel (si cela échoue, rien n'est supprimé), puis, au mieux, éteint l'agent de Meta
+  et vide sa liste, désabonne le compte WhatsApp de notre app (sauté si ce compte sert à un autre espace ou s'il passe
+  par notre propre jeton), délie Salesforce et HubSpot, et sort le numéro fourni ; enfin elle efface l'espace et ses
+  données, et laisse une trace sans donnée client. Elle ne résilie RIEN chez Stripe : les liens sont affichés pour le
+  faire à la main, et une facture qui arrive ensuite pour un espace disparu prévient l'exploitation au lieu de
+  boucler.
 - ✅ **La latence HTTP par route** (2026-10-03) : pour chaque route de l'API (sous sa forme générique, jamais une
   adresse réelle) et chaque code de retour, le nombre de requêtes, la médiane, le 95e centile et le pire cas des
   dernières 24 heures, toutes copies de l'API confondues, y compris les requêtes que le client a abandonnées avant
