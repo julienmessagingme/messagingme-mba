@@ -55,7 +55,7 @@ export function espaceVerifie(req: object): string {
 }
 
 /** L'état du poseur, un par instance Fastify : un seul hook `onRoute`, allumé le temps d'un montage. */
-const poseurs = new WeakMap<FastifyInstance, { actif: boolean }>();
+const poseurs = new WeakMap<FastifyInstance, { actif: boolean; apres: EtapeApresEspace | null }>();
 
 /**
  * Monte des routes en posant `etapeEspace` à la fin de la chaîne de chaque route dont l'adresse porte
@@ -68,25 +68,36 @@ const poseurs = new WeakMap<FastifyInstance, { actif: boolean }>();
  * `onRoute` est synchrone, d'où le drapeau allumé autour de `monter` : une route enregistrée plus tard (dans un
  * `app.register`) n'aurait pas l'étape et échouerait fermé. La route HEAD engendrée par un GET reçoit l'étape
  * une seule fois.
+ *
+ * `apres` (lot 6) : l'étape posée JUSTE APRÈS `etapeEspace`, route par route : l'étape d'offre d'un module dont l'entrée
+ * du registre déclare une fonction. Elle reçoit la méthode et le chemin de la route, et rend l'étape à poser ou `null`
+ * (une route que l'offre ne garde pas : la lecture de la liste des scénarios, l'accueil des statistiques).
  */
-export function monterAvecEtapeEspace(app: FastifyInstance, monter: () => void): void {
+export type EtapeApresEspace = (route: { methodes: readonly string[]; chemin: string }) =>
+  ((req: FastifyRequest, reply: FastifyReply) => Promise<void>) | null;
+
+export function monterAvecEtapeEspace(app: FastifyInstance, monter: () => void, apres: EtapeApresEspace | null = null): void {
   let etat = poseurs.get(app);
   if (etat === undefined) {
-    const nouveau = { actif: false };
+    const nouveau: { actif: boolean; apres: EtapeApresEspace | null } = { actif: false, apres: null };
     app.addHook('onRoute', (r) => {
       if (!nouveau.actif || !r.path.includes(':tenantId')) return;
       const chaine = r.preHandler === undefined ? [] : Array.isArray(r.preHandler) ? r.preHandler : [r.preHandler];
-      r.preHandler = [...chaine, etapeEspace];
+      const methodes: string[] = Array.isArray(r.method) ? r.method : [r.method];
+      const etape = nouveau.apres === null ? null : nouveau.apres({ methodes, chemin: r.path });
+      r.preHandler = [...chaine, etapeEspace, ...(etape === null ? [] : [etape])];
     });
     poseurs.set(app, nouveau);
     etat = nouveau;
   }
-  const avant = etat.actif;
+  const avant = { actif: etat.actif, apres: etat.apres };
   etat.actif = true;
+  etat.apres = apres;
   try {
     monter();
   } finally {
-    etat.actif = avant;
+    etat.actif = avant.actif;
+    etat.apres = avant.apres;
   }
 }
 

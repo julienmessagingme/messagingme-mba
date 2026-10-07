@@ -3310,6 +3310,44 @@ Crédit jusqu'au 2026-09-29 ; l'ancienne adresse y mène toujours.
   « Agent IA », le crédit et les plafonds).
 - ⛔ Hors périmètre : recharge automatique, montant libre, abonnement, e-mail de solde bas, remboursement en ligne.
 
+## Offres (menu « Paramètres » > Offre)
+
+Chaque espace a une offre : **Base** (gratuite), **Pro** (abonnement mensuel ou annuel) ou **Entreprise** (sur
+devis). L'offre décide de deux choses : les **fonctions** ouvertes, et les **limites** de ce qu'on peut créer ou
+envoyer. Les chiffres exacts vivent à un seul endroit (`src/offres/offres.ts`) et s'affichent sur la page Offre :
+cette section n'en recopie aucun. Livraison A du lot 6 (2026-10-07).
+
+- ✅ **La Base** donne le numéro, l'API, Claude (le serveur MCP), les contacts, les campagnes de modèles, les
+  automations et l'agent IA, avec des plafonds : contacts créés, modèles envoyés par mois civil, automations
+  allumées, suppressions de contacts par jour, un seul utilisateur. Elle n'ouvre ni l'Inbox, ni les scénarios, ni
+  les statistiques, ni l'agent de Meta, ni les assistants, ni les publicités, l'e-mail ou les chaînes.
+- ✅ **Le Pro** ouvre ces fonctions, lève les plafonds de contacts, d'envois et d'automations, et donne trois
+  utilisateurs. **L'Entreprise** ajoute le RCS, les connecteurs CRM (Batch, HubSpot, Salesforce) et le Performance
+  Lab complet, avec une équipe à sa mesure. Côté statistiques : l'accueil, les coûts de chaque campagne et le
+  journal des erreurs restent ouverts à tous ; le Quantitatif est au Pro ; la Synthèse, l'analyse des
+  conversations et « Mes tableaux » sont à l'Entreprise.
+- ✅ **Ce qui n'est jamais compté** : un contact qui écrit le premier (il n'entre pas dans la limite de contacts,
+  même complété ensuite), et une réponse dans les 24 h qui suivent un message du client (seuls les modèles
+  comptent).
+- ✅ **Dans la console** : les menus et les onglets d'une fonction fermée restent visibles, grisés, avec un cadenas
+  et l'offre qui l'ouvre ; ils mènent à la page Offre. Ouvrir l'adresse d'un écran fermé montre « Cet écran fait
+  partie de l'offre Pro » au lieu de l'écran. Sur l'Accueil et dans Paramètres, les cartes d'une fonction fermée
+  (RCS, chaîne, publicités, agent de Meta, Batch) disent « Inclus dans l'offre Pro » ou « Entreprise ». Un geste
+  refusé (une fiche au-delà de la limite, par exemple) affiche la raison et un bouton « Voir les offres », au-dessus de la fenêtre
+  ouverte.
+- ✅ **La page Offre** (admins) : l'offre de l'espace, ce qu'il consomme de chaque limite (avec une jauge), la
+  grille des trois offres, et « Passer en Pro ». ⚠️ Tant que le paiement du Pro n'est pas en ligne (livraison B),
+  ce bouton ouvre le Support avec le sujet prérempli : nous ouvrons le Pro à la main.
+- ✅ **Par l'API et Claude** : un refus rend le statut **402** avec un code, `plan_feature_unavailable` (fonction
+  absente de l'offre) ou `plan_limit_reached` (limite atteinte), et le lien `upgradeUrl`. L'outil MCP `get_plan`
+  rend l'offre, ses limites, ce qui est consommé et la grille.
+- ✅ **L'Entreprise se pose par nous**, par une route de l'exploitation (`PUT /ops/offre/:tenantId`, pas encore d'écran),
+  avec sa limite d'utilisateurs (10 proposés, vide = sans limite) et, si on la donne, la durée de conservation des
+  conversations (absente, elle reste telle quelle : changer d'offre ne déclenche jamais de purge). La même route ramène
+  un espace en Base. Les espaces qui existaient avant le lot 6 sont tous en Entreprise, sans aucune limite.
+- ⏳ **À venir** : le paiement du Pro par Stripe et le numéro inclus (livraison B), les coûts qui suivent l'offre
+  (commission sur le crédit IA, analyse des conversations, conservation : livraison C).
+
 ## MBA, le répondeur de Meta (menu « AI Agent » > MBA)
 
 - ✅ **Il répond quand un client revient après un silence** (2026-09-16), même trois mois plus tard, et même

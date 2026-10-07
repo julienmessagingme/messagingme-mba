@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import { enTransaction } from '../db/transaction';
 import { makeCode, deriveTenantCode } from '../ids/code';
 import { resolveTenantCode } from '../ids/tenant-code';
+import { verifierPlaceMembre, type LimitesMembres } from '../offres/membres';
 
 export interface UserRow {
   id: string;
@@ -42,7 +43,14 @@ export class DuplicateEmailError extends Error {
  * modifie que les comptes de son espace. On ne renvoie jamais le password_hash.
  */
 export class PgUserStore {
-  constructor(private readonly pool: Pool) {}
+  /**
+   * @param limitesMembres les limites de membres de l'offre de l'espace (lot 6), vérifiées à l'invitation, au passage en
+   *   administrateur et à la réactivation (`src/offres/membres.ts`). Absentes : sans limite (scripts et tests).
+   */
+  constructor(
+    private readonly pool: Pool,
+    private readonly limitesMembres?: (tenantId: string) => Promise<LimitesMembres>,
+  ) {}
 
   /**
    * État d'auth courant d'un compte, relu à chaque requête par requireAuth : rôle frais et révocation. null = compte
@@ -189,6 +197,7 @@ export class PgUserStore {
   /** Crée un compte en attente (invitation), sans mot de passe : connexion impossible avant l'acceptation.
    *  DuplicateEmailError (409) si l'email est déjà pris. */
   async createPending(tenantId: string, email: string, role: string, name?: string): Promise<UserRow> {
+    if (this.limitesMembres) await verifierPlaceMembre(this.pool, tenantId, await this.limitesMembres(tenantId), role, null);
     const code = makeCode('usr', await resolveTenantCode(this.pool, tenantId));
     try {
       // Identité créée si l'adresse est nouvelle, réutilisée sinon : l'invité garde le mot de passe qu'il connaît.
@@ -280,6 +289,10 @@ export class PgUserStore {
    * Course théorique : deux rétrogradations croisées simultanées pourraient toutes deux voir count > 1.
    */
   async setRole(tenantId: string, userId: string, role: string): Promise<UserMutation> {
+    // Passer administrateur compte dans la limite des administrateurs de l'offre (lot 6) ; le compte ne se compte pas.
+    if (role === 'admin' && this.limitesMembres) {
+      await verifierPlaceMembre(this.pool, tenantId, { utilisateurs: null, admins: (await this.limitesMembres(tenantId)).admins }, role, userId);
+    }
     const upd = await this.pool.query(
       // `role <> 'admin'` et non `role = 'agent'` : un compte non admin peut changer de rôle sans toucher au nombre
       // d'admins, quel que soit son rôle actuel.
@@ -300,6 +313,11 @@ export class PgUserStore {
    * réactiver est toujours permis. Même course théorique que setRole.
    */
   async setDisabled(tenantId: string, userId: string, disabled: boolean): Promise<UserMutation> {
+    // Réactiver un compte lui rend sa place : elle compte dans les limites de l'offre (lot 6), avec son rôle actuel.
+    if (!disabled && this.limitesMembres) {
+      const role = (await this.pool.query<{ role: string }>(`select role from users where id = $1 and tenant_id = $2`, [userId, tenantId])).rows[0]?.role;
+      if (role !== undefined) await verifierPlaceMembre(this.pool, tenantId, await this.limitesMembres(tenantId), role, userId);
+    }
     if (!disabled) {
       const upd = await this.pool.query(`update users set disabled_at = null where id = $1 and tenant_id = $2`, [userId, tenantId]);
       return (upd.rowCount ?? 0) > 0 ? 'ok' : 'not_found';

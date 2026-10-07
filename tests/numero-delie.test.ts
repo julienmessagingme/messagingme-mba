@@ -57,6 +57,8 @@ function fabrique(delies: ReadonlySet<string>, transport: Transport, resolutions
     numerosSuspendus: { estSuspendu: async () => false },
     // Aucun contact sur la liste de l'agent de Meta : ces tests ne portent pas sur elle, et le DISENT.
     listeDeLAgent: { retirerAvantUnModele: async () => {} },
+    // Les modèles du mois sans limite (lot 6) : ces tests ne portent pas sur l'offre, et le DISENT.
+    quotaModeles: { consommer: async () => ({ ok: true }) },
   });
 }
 

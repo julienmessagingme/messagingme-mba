@@ -12,6 +12,8 @@ import type { ArbitreDeDebit } from './arbitre-debit';
 import { NumeroDelieError, NumeroSuspenduError } from './numero-delie';
 import type { MarketingParams, TemplateSpec } from './types';
 import type { ListeDeLAgent } from '../mba/liste';
+import { LimiteOffreError } from '../offres/refus';
+import type { VerdictModeles } from '../offres/compteurs';
 
 /**
  * Fabrique de clients Meta par tenant. Elle résout le token du tenant (repli sur le token global quand le WABA
@@ -54,6 +56,14 @@ export interface MetaClientFactoryOpts {
    * (`listeToujoursVide`, `tests/meta-factory.test.ts`).
    */
   listeDeLAgent: Pick<ListeDeLAgent, 'retirerAvantUnModele'>;
+  /**
+   * Les modèles du mois de l'offre (lot 6, `QuotaModeles` dans `src/offres/compteurs.ts`) : le client d'envoi en
+   * consomme une unité avant CHAQUE modèle, et seulement avant un modèle (un message dans la fenêtre de 24 h ne compte
+   * jamais). Limite atteinte : `LimiteOffreError`, et rien ne part. 🔴 Requise, pour la même raison que
+   * `numerosDelies` : une garde optionnelle oubliée par un câblage laisserait la Base envoyer sans limite. Les fixtures
+   * disent leur hypothèse (`modelesIllimites`).
+   */
+  quotaModeles: { consommer(tenantId: string): Promise<VerdictModeles> };
 }
 
 export class MetaClientFactory {
@@ -139,16 +149,24 @@ export class MetaClientFactory {
    */
   private avantUnModele(client: MetaClient, tenantId: string): MetaClient {
     const liste = this.o.listeDeLAgent;
+    const quota = this.o.quotaModeles;
+    // La limite du mois passe AVANT le retrait de la liste : une limite atteinte ne doit coûter aucun appel à Meta.
+    const consommer = async (): Promise<void> => {
+      const v = await quota.consommer(tenantId);
+      if (!v.ok) throw new LimiteOffreError(tenantId, 'envoisModelesMois', v.max);
+    };
     return new Proxy(client, {
       get(obj, prop, receiver) {
         if (prop === 'sendTemplate') {
           return async (to: string, tpl: TemplateSpec) => {
+            await consommer();
             await liste.retirerAvantUnModele(tenantId, to);
             return obj.sendTemplate(to, tpl);
           };
         }
         if (prop === 'sendMarketing') {
           return async (params: MarketingParams) => {
+            await consommer();
             // `to` prime sur `recipient`, comme chez Meta : c'est ce destinataire-là qui recevra le modèle.
             await liste.retirerAvantUnModele(tenantId, params.to ?? params.recipient ?? '');
             return obj.sendMarketing(params);

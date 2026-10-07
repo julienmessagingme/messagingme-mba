@@ -13,9 +13,21 @@ export default function SupportPage() {
   return <AppShell active="support">{(session) => <SupportInner session={session} />}</AppShell>;
 }
 
+/**
+ * L'objet prérempli quand on arrive de la page de l'offre (lot 6) : `/support?sujet=pro` ou `?sujet=entreprise`. Lu dans
+ * l'adresse après le montage de la coquille (la page n'est jamais rendue côté serveur avant la session).
+ */
+function sujetDemande(t: (fr: string, en: string) => string): string {
+  if (typeof window === 'undefined') return '';
+  const sujet = new URLSearchParams(window.location.search).get('sujet');
+  if (sujet === 'pro') return t('Passer en Pro', 'Upgrade to Pro');
+  if (sujet === 'entreprise') return t('Passer en Entreprise', 'Upgrade to Enterprise');
+  return '';
+}
+
 function SupportInner({ session }: { session: Session }) {
   const t = useT();
-  const [subject, setSubject] = useState('');
+  const [subject, setSubject] = useState(() => sujetDemande(t));
   const [message, setMessage] = useState('');
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -52,7 +64,7 @@ function SupportInner({ session }: { session: Session }) {
         <form onSubmit={submit} className="space-y-4 rounded-carte border border-ink-200 bg-white p-5">
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-500">{t('Sujet', 'Subject')}</label>
-            <input required maxLength={200} value={subject} onChange={(e) => setSubject(e.target.value)} className={inputCls} placeholder={t("Ex. Problème d’envoi de campagne", 'E.g. Campaign sending issue')} />
+            <input required maxLength={200} value={subject} onChange={(e) => setSubject(e.target.value)} data-testid="support-sujet" className={inputCls} placeholder={t("Ex. Problème d’envoi de campagne", 'E.g. Campaign sending issue')} />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-500">{t('Message', 'Message')}</label>

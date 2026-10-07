@@ -26,7 +26,8 @@ import { lienEtape, lireRefusConnexion, phraseEtatOrg, type IntegrationSalesforc
  */
 export default function SalesforcePage() {
   return (
-    <AppShell active="parametres">
+    // La connexion Salesforce est un connecteur CRM (lot 6) : la coquille montre l'offre à sa place quand elle ne l'ouvre pas.
+    <AppShell active="parametres" fonction="crm">
       {(session) => (session.role === 'admin'
         ? <ConnexionSalesforce tenantId={session.tenantId} />
         : <PageReservee />)}

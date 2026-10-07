@@ -13,7 +13,7 @@ import * as catalogue from '../src/mcp/outils';
 import { VALID_API_SCOPES } from '../src/http/api-keys';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE, NumeroSuspenduError, MESSAGE_NUMERO_SUSPENDU } from '../src/meta/numero-delie';
-import { mcpAgentInerte, mcpNumeroInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpAgentInerte, mcpNumeroInerte, mcpOffreInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { creerPoseEtiquette, LONGUEUR_MAX_ETIQUETTE } from '../src/crm/poser-etiquette';
 
 /**
@@ -111,6 +111,7 @@ function app(
     ...mcpWidgetsInertes,
     ...mcpAgentInerte,
     ...mcpNumeroInerte,
+    ...mcpOffreInerte,
     ...reste,
   };
   const keys = new FakeApiKeys()

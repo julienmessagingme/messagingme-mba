@@ -8,6 +8,7 @@ import type { OrigineMessage } from '../inbox/origine';
 import type { SendResult, TemplateSpec, MarketingParams } from '../meta/types';
 import { MetaApiError, raisonDePause } from '../meta/errors';
 import { NumeroBloqueError, type MotifBlocage } from '../meta/numero-delie';
+import { LimiteOffreError } from '../offres/refus';
 import { instantDeReprise, messageDePause } from './pause';
 import type { MotifDePause } from './pause';
 import { withinBusinessHours } from '../workflow/conditions';
@@ -384,6 +385,11 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   const now = deps.now ?? (() => Date.now());
   const t = deps.thresholds ?? DEFAULT_THRESHOLDS;
   const report: RunReport = { sent: 0, skipped: 0, failed: 0, paused: false };
+  /**
+   * La limite des modèles du mois de l'offre (lot 6), apprise d'un premier refus de la fabrique : les destinataires
+   * suivants sont écartés avec la même raison, sans rappeler la fabrique, qui refuserait tout le mois.
+   */
+  let limiteDuMois: LimiteOffreError | null = null;
 
   await deps.campaigns.setStatus(campaign.id, 'running');
   const pending = await deps.recipients.listPending(campaign.id);
@@ -662,6 +668,13 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       continue;
     }
 
+    // Les modèles du mois sont épuisés (lot 6) : écarté avec la raison, jamais en échec, rien ne part.
+    if (limiteDuMois !== null) {
+      await resoudre(r, { status: 'skipped', error: limiteDuMois.message });
+      report.skipped += 1;
+      continue;
+    }
+
     // Refus si l'étage n'est pas servable : après le claim (il faut avoir réservé pour marquer), avant le frein
     // (un refus n'occupe aucun créneau).
     if (etageDuTour.refus !== null || !servi) {
@@ -776,6 +789,14 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
             : await deps.sender.sendTemplate(r.toE164, tpl);
       }
     } catch (err) {
+      // La limite des modèles du mois (lot 6) : la fabrique a refusé AVANT tout appel à Meta. Écarté, jamais en échec
+      // (la porte de qualité ne le compte pas) ; les suivants le seront sans rappeler la fabrique.
+      if (err instanceof LimiteOffreError) {
+        limiteDuMois = err;
+        await resoudre(r, { status: 'skipped', error: err.message });
+        report.skipped += 1;
+        continue;
+      }
       // Numéro délié, levé par un scénario démarré pour ce destinataire : le refus vise le numéro, et un `failed`
       // ne serait pas repris par « Relier ». On le rend à la file et on s'arrête (`runFrom` vérifie le numéro
       // avant tout effet ; limite : la garde est en cache 5 s).

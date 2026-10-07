@@ -46,6 +46,10 @@ export const STATUT_PAR_CODE = {
   // Le quota QUOTIDIEN de l'espace (envois ou fiches, `src/api/quotas.ts`) : distinct de `rate_limited`, parce que
   // l'intégrateur ne réessaie pas dans une minute mais au minuit suivant (heure de Paris), que dit `retry-after`.
   quota_exceeded: 429,
+  // L'OFFRE de l'espace (lot 6, `src/offres/refus.ts`) : 402, distinct du 403 d'un droit de clé manquant, qui ne se
+  // règle pas en payant. Le corps porte en plus `upgradeUrl`, la page de l'offre.
+  plan_feature_unavailable: 402,
+  plan_limit_reached: 402,
 } as const satisfies Record<string, number | null>;
 
 export type CodeApi = keyof typeof STATUT_PAR_CODE;

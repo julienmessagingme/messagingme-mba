@@ -3,11 +3,17 @@ import { importContacts } from '../src/crm/import';
 import type { ContactStore, ContactUpsert, LotContacts } from '../src/crm/import';
 import type { UserFieldStore } from '../src/crm/fields';
 import type { UserFieldDef, ColumnMapping } from '../src/crm/types';
+import { LimiteOffreError } from '../src/offres/refus';
 
 class FakeContactStore implements ContactStore {
   readonly byPhone = new Map<string, ContactUpsert>();
   /** Nombre d'ALLERS-RETOURS (un par lot), ce que R9 cherche justement à faire tomber. */
   lots = 0;
+  /** La limite de contacts de l'offre (lot 6) : sans limite ici, sauf si le test la pose. */
+  refuserPlace = false;
+  async verifierPlaceContacts(tenantId: string): Promise<void> {
+    if (this.refuserPlace) throw new LimiteOffreError(tenantId, 'contacts', 100);
+  }
   async upsertManyByPhone(lot: LotContacts): Promise<Array<'created' | 'updated'>> {
     this.lots += 1;
     return lot.contacts.map((c) => {
@@ -63,6 +69,16 @@ describe('importContacts', () => {
     expect(julie?.fields).toEqual({ ville: 'Lyon' }); // 'interne' ignoré
     expect(julie?.optInStatus).toBe('opted_in');
     expect(userFields.defs.map((d) => d.key)).toContain('ville'); // user field créé
+  });
+
+  it('🔴 la limite de contacts de l’offre : un fichier qui ne tient pas est refusé AVANT le premier lot, rien n’est écrit', async () => {
+    const contacts = new FakeContactStore();
+    contacts.refuserPlace = true;
+    const rows = [{ tel: '0612345678', nom: 'Julie', ville: 'Lyon', interne: 'x' }];
+    await expect(importContacts({ rows, mapping, tenantId: 't1', optIn: true, autorite: 'import' }, { contacts, userFields: new FakeFieldStore() }))
+      .rejects.toBeInstanceOf(LimiteOffreError);
+    expect(contacts.lots).toBe(0);
+    expect(contacts.byPhone.size).toBe(0);
   });
 
   it('🔴 une colonne qui prendrait la clé d’un champ FIXE de la fiche est écartée, et le rapport le dit', async () => {

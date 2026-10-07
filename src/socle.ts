@@ -71,6 +71,9 @@ import { creerDemarreurRepondeur, type DemarreurRepondeur } from './repondeur/de
 import { creerDemarreurScenario, type DemarreurScenario } from './repondeur/scenario';
 import { PgAlertesCreditStore, creerAlerteCreditEpuise } from './repondeur/alerte-credit';
 import { ResendClient } from './support/resend';
+import { PgOffresStore } from './offres/offre.pg';
+import { OffresEnCache } from './offres/cache';
+import { QuotaModeles } from './offres/compteurs';
 
 /**
  * Ce que le socle lit de la configuration qu'on lui passe. Les autres réglages restent aux racines qui les consomment ;
@@ -149,6 +152,12 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
    * important, celui où la personne elle-même refuse, serait muet. Elle n'appelle rien, elle enfile ; l'appel au
    * connecteur vit dans le worker. Gardé par `tests/socle.test.ts`, qui écrit un opt-out par ce dépôt.
    */
+  /**
+   * L'offre de chaque espace (lot 6) : la seule définition (`offre_de_l_espace`, migration 0218), en cache court par
+   * processus. L'API la passe au serveur (l'étape d'offre des modules gardés) ; la fabrique y lit la limite des modèles
+   * du mois, le magasin des contacts celle des fiches créées. Le webhook du Pro et l'exploitation invalident CETTE instance.
+   */
+  const offres = new OffresEnCache(new PgOffresStore(pool));
   const contactStore = new PgContactStore(
     pool,
     annoncerAussiAuxSignaux(
@@ -159,6 +168,8 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
       }),
       emetteur,
     ),
+    // La limite de contacts de l'offre (lot 6) : vérifiée par les trois chemins de création, jamais par l'entrant.
+    async (tenant) => (await offres.offreDe(tenant)).droits.limites.contacts,
   );
   // Les définitions de champs : l'API les écrit (import, API publique), le worker déclare les champs « Pub » la
   // première fois qu'un contact arrive par une publicité (sans définition, la valeur serait invisible du CRM).
@@ -181,7 +192,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const mesuresTachesStore = new PgMesuresTachesStore(pool);
   const nodeEventStore = new PgWorkflowNodeEventStore(pool);
   const trackedLinkStore = new PgTrackedLinkStore(pool);
-  const webhookStore = new PgWebhookStore(pool);
+  const webhookStore = new PgWebhookStore(pool, async (tenant) => (await offres.offreDe(tenant)).droits.limites.automations);
   /**
    * Les verrous courts (`src/db/verrous-courts.ts`) : ce qui ne doit arriver qu'une fois pour toutes les copies de
    * l'API (anti-rejeu des envois de l'agent de Meta, publication du relais). L'API les prend, le worker purge les
@@ -199,7 +210,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const opsStore = new PgOpsStore(pool, config.PGBOSS_SCHEMA);
   const heartbeatStore = new PgWorkerHeartbeatStore(pool);
   const workflowStore = new PgWorkflowStore(pool);
-  const automationStore = new PgAutomationStore(pool);
+  const automationStore = new PgAutomationStore(pool, async (tenant) => (await offres.offreDe(tenant)).droits.limites.automations);
 
   // Les dépôts des agents. Le worker ne s'en sert que si la clé du Gateway est posée, l'API sans condition : ce ne
   // sont que des enveloppes autour du pool, les construire ne coûte rien.
@@ -283,6 +294,8 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     clientMba: (t) => metaFactory.mbaClientForTenant(t),
     attendre: (ms) => dormir(ms),
   });
+  /** Les modèles du mois de l'offre (lot 6), sur le compteur partagé des copies : la fabrique les consomme avant chaque modèle. */
+  const quotaModeles = new QuotaModeles({ offres, compteur: compteurDebit });
   const metaFactory = new MetaClientFactory({
     resolver: metaCredentials,
     transport,
@@ -299,6 +312,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     numerosDelies: gardeNumeroDelie,
     numerosSuspendus: gardeNumeroSuspendu,
     listeDeLAgent,
+    quotaModeles,
   });
 
   /**
@@ -436,7 +450,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels,
     credits, agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver,
     wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, numeroBloqueDeLEspace, esCredentialsStore, metaCredentials, metaFactory, listeDeLAgent,
-    connexionsPub, publicites, clientPubs, clientCreationPubs, workflowRuntime, fil, alerteCredit,
+    connexionsPub, publicites, clientPubs, clientCreationPubs, workflowRuntime, fil, alerteCredit, offres, quotaModeles,
   };
 }
 

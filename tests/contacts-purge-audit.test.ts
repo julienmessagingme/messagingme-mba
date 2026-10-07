@@ -85,6 +85,8 @@ function app(over: Partial<Omit<ContactsRouteDeps, 'contacts'>> & { contacts?: P
     },
     // Le vrai registre : le retrait d'après la réponse y est suivi, et un test l'attend.
     enVol,
+    // Les suppressions du jour sans limite (lot 6), sauf si le cas la pose.
+    suppressionsDuJour: { consommer: async () => ({ ok: true }) },
     ...reste,
   } as unknown as ContactsRouteDeps;
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, contacts: deps }), journal, purges, editsRecus, filtresAudit, filtresErreurs, limitesSysteme, ordre, oubliees, enVol };
@@ -101,6 +103,17 @@ describe('suppression d’un contact (la seule, et elle efface)', () => {
     expect(res.statusCode).toBe(400);
     expect(res.json<{ error: string }>().error).toContain('SUPPRIMER');
     expect(purges).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 les suppressions du jour de l’offre (lot 6) : une purge qui dépasse est refusée en 402, RIEN n’est effacé', async () => {
+    const demandes: number[] = [];
+    const { server, purges } = app({ suppressionsDuJour: { consommer: async (_t: string, n: number) => { demandes.push(n); return { ok: false, max: 10 }; } } });
+    const res = await server.inject({ method: 'POST', url, ...h(adminTok), payload: { target: { ids: ['c1', 'c2'] }, confirm: 'SUPPRIMER' } });
+    expect(res.statusCode).toBe(402);
+    expect(res.json()).toMatchObject({ code: 'plan_limit_reached', limite: 'suppressionsJour', max: 10 });
+    expect(purges).toEqual([]);
+    expect(demandes).toEqual([2]);
     await server.close();
   });
 

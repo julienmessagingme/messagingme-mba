@@ -5,6 +5,7 @@ import type { HttpTransport, HttpResponse } from '../src/meta/http';
 import type { ContactStore, ContactUpsert, LotContacts } from '../src/crm/import';
 import type { UserFieldStore } from '../src/crm/fields';
 import type { UserFieldDef } from '../src/crm/types';
+import { LimiteOffreError } from '../src/offres/refus';
 
 const SECRET = 'svc-secret';
 
@@ -20,6 +21,11 @@ class FakeContactStore implements ContactStore {
   readonly upserts: ContactUpsert[] = [];
   /** L'autorité de chaque lot reçu : c'est elle qui décide si un STOP se lève. */
   readonly autorites: Array<LotContacts['autorite']> = [];
+  /** La limite de contacts de l'offre (lot 6) : sans limite ici, sauf si le test la pose. */
+  refuserPlace = false;
+  async verifierPlaceContacts(tenantId: string): Promise<void> {
+    if (this.refuserPlace) throw new LimiteOffreError(tenantId, 'contacts', 100);
+  }
   async upsertManyByPhone(lot: LotContacts): Promise<Array<'created' | 'updated'>> {
     this.autorites.push(lot.autorite);
     // Le lot est re-deplie en upserts unitaires : c'est cette forme que les tests inspectent.

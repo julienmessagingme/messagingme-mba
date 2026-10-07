@@ -15,6 +15,7 @@ import type { AuditEntry } from '../audit/store.pg';
 import { messageDe } from '../lib/erreur';
 import type { ListeDeLAgent, LigneDeLaListe } from '../mba/liste';
 import type { TravauxEnVol } from '../lib/en-vol';
+import { LimiteOffreError, STATUT_REFUS_OFFRE, corpsRefusLimite } from '../offres/refus';
 
 /** Ce que les routes lisent et écrivent des fiches de contact. */
 export interface ContactsDep {
@@ -67,6 +68,11 @@ export interface ContactsDep {
 export interface ContactsRouteDeps {
   contacts: ContactsDep;
   /**
+   * Les suppressions de contacts du jour de l'offre (lot 6, `QuotaSuppressions`) : une purge qui ferait dépasser la
+   * limite est refusée en entier (402), avant toute écriture. Requise : les fixtures disent leur hypothèse (sans limite).
+   */
+  suppressionsDuJour: { consommer(tenantId: string, n: number): Promise<{ ok: true } | { ok: false; max: number }> };
+  /**
    * Journal d'audit (les fixtures qui ne l'observent pas passent `journalMuet`). Au mieux à l'appel : un journal
    * en échec ne fait jamais échouer l'action métier qu'il observe.
    */
@@ -104,7 +110,7 @@ export interface ContactsRouteDeps {
   createOneContact(
     tenantId: string,
     input: { phone: string; name?: string; fields?: Record<string, string>; tags?: string[]; optIn?: boolean; bsuid?: string },
-  ): Promise<{ status: 'created' | 'updated' | 'error'; contactId?: string; reason?: string }>;
+  ): Promise<{ status: 'created' | 'updated' | 'error'; contactId?: string; reason?: string; limite?: number }>;
   contactHistory: {
     /** Envois reçus + conversations tenues par ce contact. null si le contact n'est pas dans le tenant. */
     getContactHistory(tenantId: string, contactId: string): Promise<ContactHistory | null>;
@@ -436,6 +442,10 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
       // Facultatif, et surtout pas une seconde identité obligatoire : le numéro reste la clé de ce chemin.
       ...(typeof b.bsuid === 'string' && b.bsuid.trim() !== '' ? { bsuid: b.bsuid.trim().slice(0, 200) } : {}),
     });
+    // La limite de contacts de l'offre (lot 6) : 402, la phrase et le lien vers l'offre, jamais un 400 de saisie.
+    if (res.status === 'error' && res.limite !== undefined) {
+      return reply.code(STATUT_REFUS_OFFRE).send(corpsRefusLimite(new LimiteOffreError(tenant, 'contacts', res.limite)));
+    }
     if (res.status === 'error') return reply.code(400).send({ error: res.reason ?? 'contact invalide' });
     // Le détail dit `updated` quand le numéro était déjà connu : sans ça, l'historique laisserait croire à une
     // création alors que la fiche existait. L'opt-in figure ici plutôt que sur une ligne `contact.optin` à part,
@@ -558,6 +568,9 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     if (target === null) return reply.code(400).send({ error: 'cible invalide (target: { ids } ou { filters, excludeIds })' });
     const ids = await deps.contacts.contactIdsForTarget(tenant, target);
     if (ids.length === 0) return reply.code(200).send({ purges: 0, conversations: 0, messages: 0, analyses: 0 });
+    // Les suppressions du jour de l'offre (lot 6) : tout ou rien, avant la moindre écriture.
+    const quota = await deps.suppressionsDuJour.consommer(tenant, ids.length);
+    if (!quota.ok) return reply.code(STATUT_REFUS_OFFRE).send(corpsRefusLimite(new LimiteOffreError(tenant, 'suppressionsJour', quota.max)));
     const { listeAgent, ...res } = await deps.contacts.purgeMany(tenant, ids);
     for (const id of ids) await journal(tenant, req, 'contact.purged', { kind: 'contact', id }, { lot: ids.length });
     /**

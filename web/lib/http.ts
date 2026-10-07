@@ -11,6 +11,7 @@
 import { getSession, clearSession } from './session';
 import { LOCALE_STORAGE_KEY, type Locale } from './locale';
 import { estCorpsCodeRefuse } from './second-facteur';
+import { OFFRE_REFUSEE_EVENT, lireRefusOffre } from './offre';
 
 /**
  * OÙ VIT L'API, VUE DU NAVIGATEUR. Exporté pour `/ops`, qui appelle avec sa propre session (autorité séparée).
@@ -188,8 +189,23 @@ async function attempt<T>(path: string, init: RequestInit, refus401: Refus401): 
     throw new ApiError(401, langue() === 'en' ? 'Session expired, sign in again.' : 'Session expirée, reconnectez-vous.');
   }
   const body = (await res.json().catch(() => null)) as unknown;
+  if (res.status === 402 && !RETRYABLE_METHODS.has((init.method ?? 'GET').toUpperCase())) signalerRefusOffre(body);
   if (!res.ok) throw new ApiError(res.status, messageDErreur(res.status, body, langue()), body);
   return body as T;
+}
+
+/**
+ * UN REFUS DE L'OFFRE SUR UN GESTE (402, lot 6) prévient la coquille, qui affiche la phrase du serveur avec un lien vers
+ * `/offre`. L'écran garde son encart d'erreur habituel (la même phrase) ; le bandeau ajoute le lien, sans retoucher chaque
+ * écran. Même canal que la session expirée.
+ *
+ * 🔴 UNE LECTURE REFUSÉE (GET) NE PRÉVIENT PERSONNE : des écrans ouverts à la Base lisent au chargement l'état d'une
+ * fonction qu'elle n'a pas (le canal RCS de l'accueil, par exemple) et se dégradent seuls. Le bandeau y apparaîtrait à
+ * chaque visite, sans que la personne ait rien demandé.
+ */
+function signalerRefusOffre(corps: unknown): void {
+  const refus = lireRefusOffre(corps);
+  if (refus && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(OFFRE_REFUSEE_EVENT, { detail: refus }));
 }
 
 /**

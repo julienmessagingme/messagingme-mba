@@ -32,6 +32,11 @@ export interface WidgetPublicRouteDeps {
    * désactive par la configuration (0), pas en oubliant une dépendance.
    */
   budgetInconnus: RateLimiter;
+  /**
+   * Le badge de l'offre de l'espace (lot 6, `droits.limites.badge`) : « Propulsé par Messaging Me » n'est affiché que si
+   * le widget le porte ET que l'offre l'impose (la Base). Requise : les fixtures disent leur hypothèse.
+   */
+  badgeDeLOffre(tenantId: string): Promise<boolean>;
 }
 
 /** Un code est 12 caractères base32 minuscules (`newTrackingCode`). Tout le reste est refusé sans toucher la base. */
@@ -63,6 +68,18 @@ function repondre(reply: FastifyReply, script: string, cache: string): FastifyRe
 }
 
 export function registerWidgetPublic(app: FastifyInstance, deps: WidgetPublicRouteDeps): void {
+  /**
+   * Une dépendance qui lève garde le badge : l'afficher à tort coûte moins que le retirer à tort. ⚠️ Une panne de la LECTURE
+   * de l'offre n'arrive plus jusqu'ici : le cache la rend ouverte (`OffresEnCache`), donc sans badge le temps de la panne.
+   */
+  const badgeDeLOffre = async (tenantId: string): Promise<boolean> => {
+    try {
+      return await deps.badgeDeLOffre(tenantId);
+    } catch (err) {
+      journaliser('error', 'widget_offre_illisible', { err, tenantId });
+      return true;
+    }
+  };
   // Les codes déjà résolus par ce process échappent au budget des codes jamais vus (`ClesResolues`), comme
   // `/w/:code`. Un widget ÉTEINT y entre aussi : son code existe, et la balise d'un widget éteint reste posée sur un
   // site qui peut être très fréquenté ; chacune de ses vues aurait sinon entamé le budget de tous les autres.
@@ -129,7 +146,7 @@ export function registerWidgetPublic(app: FastifyInstance, deps: WidgetPublicRou
         position: widget.position,
         libelle: widget.libelle,
         avatarUrl: widget.avatarUrl,
-        badge: widget.badge,
+        badge: widget.badge && await badgeDeLOffre(widget.tenantId),
       };
     }
     return construireScript(config);

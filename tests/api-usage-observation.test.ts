@@ -59,6 +59,8 @@ const sendsMuets: Omit<V1SendsRouteDeps, 'usage'> = {
     estDelie: async () => false,
   },
   numerosSuspendus: { estSuspendu: async () => false },
+  // Les modèles du mois sans limite (lot 6) : ce test ne porte pas sur l'offre.
+  modelesDuMois: { etatDuMois: async () => null },
   resoudreFiche: async () => ({ ok: false, code: 'unknown_contact' }),
   appliquerConsentement: async () => 'inchange',
   enqueue: async () => { /* rien */ },

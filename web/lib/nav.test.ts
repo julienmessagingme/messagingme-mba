@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFile } from 'node:fs/promises';
-import { accesAutorise, arbresNav, cheminDeNav, contientLaCle, groupesAOuvrir, navPourRole, ongletDeLaPage, ONGLETS, type NavEntree, type Onglet } from './nav';
+import { accesAutorise, arbresNav, cheminDeNav, contientLaCle, fonctionDeLaPage, groupesAOuvrir, navPourOffre, navPourRole, ongletDeLaPage, premiereDestination, ONGLETS, type NavEntree, type Onglet } from './nav';
 
 /**
  * La chaîne d'ancêtres d'une page dans la barre de navigation.
@@ -104,12 +104,14 @@ describe('le rangement du 2026-09-29', () => {
     ]);
   });
 
-  it('🔴 « Paramètres » est un GROUPE du bloc bas : Général et Crédit IA', () => {
+  // L'Offre (lot 6, 2026-10-07) s'y ajoute après le Crédit IA : c'est aussi un réglage de l'ESPACE.
+  it('🔴 « Paramètres » est un GROUPE du bloc bas : Général, Crédit IA et Offre', () => {
     const groupe = arbresNav(t).adminBas.find((e) => e.label === 'Paramètres');
     expect(groupe?.href).toBeUndefined();
     expect((groupe?.children ?? []).map(feuille)).toEqual([
       { key: 'parametres', href: '/parametres', label: 'Général', enfants: 0 },
       { key: 'parametres-credit', href: '/parametres/credit', label: 'Crédit IA', enfants: 0 },
+      { key: 'offre', href: '/offre', label: 'Offre', enfants: 0 },
     ]);
   });
 
@@ -121,7 +123,7 @@ describe('le rangement du 2026-09-29', () => {
     expect(tous).not.toContain('/agents/credit');
   });
 
-  it('un manager garde le groupe Paramètres avec sa SEULE page, sans le Crédit IA', () => {
+  it('un manager garde le groupe Paramètres avec sa SEULE page, sans le Crédit IA ni l’Offre', () => {
     const groupe = navPourRole(arbresNav(t).adminBas, 'manager').find((e) => e.label === 'Paramètres');
     expect((groupe?.children ?? []).map((e) => e.key)).toEqual(['parametres']);
   });
@@ -346,5 +348,63 @@ describe('groupesAOuvrir', () => {
     const { adminBas } = arbresNav((fr) => fr);
     expect(groupesAOuvrir(adminBas, 'securite')).toEqual(['securite']);
     expect(groupesAOuvrir(adminBas, 'securite-audit')).toEqual(['securite']);
+  });
+});
+
+/**
+ * L'OFFRE DANS LA BARRE (lot 6, tâche 7). Chaque écran d'une fonction gardée par le serveur déclare SA fonction sur
+ * son entrée de la carte ; la barre grise ce que l'offre n'ouvre pas, et la coquille remplace l'écran par l'encart de
+ * l'offre. `null` = offre inconnue (API plus ancienne) : rien n'est grisé.
+ */
+describe('la barre selon l’offre', () => {
+  const t = (fr: string) => fr;
+  const arbres = () => {
+    const a = arbresNav(t);
+    return { console: [...a.console, ...a.adminBas], inbox: a.inbox, perf: a.perf };
+  };
+  const toutes = () => [...arbres().console, ...arbres().inbox, ...arbres().perf];
+  const verrouillees = (items: NavEntree[]): string[] =>
+    items.flatMap((i) => (i.children ? verrouillees(i.children) : i.verrouillee ? [i.key] : []));
+
+  it('🔴 chaque écran d’une fonction gardée par le serveur déclare sa fonction', () => {
+    const attendu: Record<string, string> = {
+      inbox: 'inbox', workflows: 'scenarios', flows: 'scenarios', 'mba-settings': 'agent_meta', publicites: 'publicites',
+      'email-templates': 'email', 'email-accounts': 'email', chaine: 'chaines', 'rcs-messages': 'rcs',
+      'quanti-messages': 'statistiques', 'quanti-couts': 'statistiques', 'quanti-funnel': 'statistiques', 'quanti-performance': 'statistiques',
+      'perf-synthese': 'performance_lab', 'dashboard-quali': 'performance_lab', 'dashboard-tableaux': 'performance_lab',
+    };
+    for (const [cle, f] of Object.entries(attendu)) expect(fonctionDeLaPage(toutes(), cle), cle).toBe(f);
+    for (const cle of ['accueil', 'contacts', 'campagnes', 'automations', 'agents', 'templates', 'widgets', 'offre', 'support', 'inconnue']) {
+      expect(fonctionDeLaPage(toutes(), cle), cle).toBeNull();
+    }
+  });
+
+  it('🔴 offre inconnue (null) : rien n’est grisé', () => {
+    expect(verrouillees(navPourOffre(toutes(), null))).toEqual([]);
+  });
+
+  it('🔴 une Base : tous les écrans des fonctions gardées sont grisés, et eux seuls', () => {
+    const grises = verrouillees(navPourOffre(toutes(), new Set()));
+    expect(grises.sort()).toEqual(['chaine', 'dashboard-quali', 'dashboard-tableaux', 'email-templates', 'flows', 'inbox', 'mba-settings',
+      'perf-synthese', 'publicites', 'quanti-couts', 'quanti-funnel', 'quanti-messages', 'quanti-performance', 'rcs-messages', 'workflows'].sort());
+  });
+
+  it('un Pro : le quantitatif s’ouvre, la Synthèse, l’analyse, Mes tableaux et le RCS restent grisés', () => {
+    const pro = new Set(['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines'] as const);
+    expect(verrouillees(navPourOffre(toutes(), pro)).sort()).toEqual(['dashboard-quali', 'dashboard-tableaux', 'perf-synthese', 'rcs-messages']);
+  });
+
+  it('la première destination ouverte d’un onglet : la Synthèse en Entreprise, le quantitatif en Pro, aucune en Base', () => {
+    const perf = arbres().perf;
+    expect(premiereDestination(navPourOffre(perf, null))).toBe('/performance');
+    expect(premiereDestination(navPourOffre(perf, new Set(['statistiques'] as const)))).toBe('/dashboard');
+    expect(premiereDestination(navPourOffre(perf, new Set()))).toBeNull();
+  });
+
+  it('la page de l’offre est sous Paramètres, réservée aux administrateurs comme le reste du groupe', () => {
+    const groupe = arbresNav(t).adminBas.find((e) => e.key === 'parametres-groupe');
+    expect(groupe?.children?.map((c) => c.key)).toContain('offre');
+    expect(accesAutorise('offre', 'admin')).toBe(true);
+    for (const role of ['manager', 'agent']) expect(accesAutorise('offre', role)).toBe(false);
   });
 });

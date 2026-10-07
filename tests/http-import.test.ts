@@ -9,6 +9,7 @@ import type { UserFieldDef } from '../src/crm/types';
 import type { ContactFilters } from '../src/crm/contact-store.pg';
 import { journalMuet } from './routes-inertes';
 import { csvLent, retardPendant } from './boucle';
+import { LimiteOffreError } from '../src/offres/refus';
 
 const SECRET = 'test-secret';
 let token = '';
@@ -27,6 +28,11 @@ class FakeContacts implements ContactStore {
   lots = 0;
   /** L'autorité de chaque lot reçu. */
   readonly autorites: Array<LotContacts['autorite']> = [];
+  /** La limite de contacts de l'offre (lot 6) : sans limite ici, sauf si le test la pose. */
+  refuserPlace = false;
+  async verifierPlaceContacts(tenantId: string): Promise<void> {
+    if (this.refuserPlace) throw new LimiteOffreError(tenantId, 'contacts', 100);
+  }
   async upsertManyByPhone(lot: LotContacts): Promise<Array<'created' | 'updated'>> {
     this.lots += 1;
     this.autorites.push(lot.autorite);
@@ -101,6 +107,23 @@ describe('POST /tenants/:tenantId/contacts/import', { timeout: 30_000 }, () => {
     expect(contacts.upserts[0]?.phoneE164).toBe('+33611111111');
     expect(contacts.upserts[1]?.phoneE164).toBe('+33622222222'); // normalisé FR
     expect(contacts.upserts[0]?.fields).toMatchObject({ ville: 'Lyon' }); // colonne custom
+    await app.close();
+  });
+
+  it('🔴 la limite de contacts de l’offre : 402 plan_limit_reached, le lien vers l’offre, rien n’est écrit', async () => {
+    const contacts = new FakeContacts();
+    contacts.refuserPlace = true;
+    const app = inject(contacts, new FakeFields());
+    const res = await app.inject({
+      method: 'POST',
+      url: '/tenants/t1/contacts/import',
+      ...auth(),
+      payload: { csv: 'Nom,Téléphone\nJulie,+33611111111', optIn: true },
+    });
+    expect(res.statusCode).toBe(402);
+    expect(res.json()).toMatchObject({ code: 'plan_limit_reached', limite: 'contacts', max: 100 });
+    expect(res.json().upgradeUrl).toMatch(/\/offre$/);
+    expect(contacts.upserts).toEqual([]);
     await app.close();
   });
 

@@ -10,6 +10,7 @@ import type { SendResult, MarketingParams, TemplateSpec } from '../src/meta/type
 import { MetaApiError } from '../src/meta/errors';
 import { RetraitDeLaListeRefuse } from '../src/mba/liste';
 import type { MotifDePause } from '../src/campaign/pause';
+import { LimiteOffreError } from '../src/offres/refus';
 
 class FakeSender implements MessageSender {
   readonly calls: string[] = [];
@@ -153,6 +154,28 @@ describe('runCampaign', () => {
     expect(campaigns.statuses).toEqual(['running', 'completed']);
     // Le motif du STOP est CELUI du scénario : l'opérateur lit le même refus d'où qu'il vienne.
     expect(MOTIF_ECART_A_L_ENVOI.desabonne).toMatch(/^contact désabonné/);
+  });
+
+  /**
+   * LA LIMITE DES MODÈLES DU MOIS (lot 6, tâche 4) : la fabrique refuse le modèle (`LimiteOffreError`) avant tout appel à
+   * Meta. Le destinataire est ÉCARTÉ avec la raison, jamais en échec ; les suivants le sont sans même rappeler le
+   * compteur (il refuserait tout le mois), et la campagne se termine.
+   */
+  it('🔴 limite du mois atteinte en cours : ce destinataire et les suivants écartés avec la raison, jamais en échec', async () => {
+    const limite = new LimiteOffreError('t1', 'envoisModelesMois', 1000);
+    let essais = 0;
+    const sender: MessageSender = {
+      sendMarketing: async (p) => { essais += 1; if (essais > 1) throw limite; return { messageId: `m-${p.to ?? ''}` }; },
+      sendTemplate: async () => { throw new Error('jamais : campagne marketing'); },
+    };
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622'), rec('r3', '+33633')]);
+    const campaigns = new FakeCampaigns();
+    const report = await lancerCampagne(campaign, deps({ recipients, sender, campaigns }));
+    expect(report).toMatchObject({ sent: 1, skipped: 2, failed: 0, paused: false });
+    expect(recipients.results.get('r2')).toEqual({ status: 'skipped', error: limite.message });
+    expect(recipients.results.get('r3')).toEqual({ status: 'skipped', error: limite.message });
+    expect(essais, 'le troisième n’a pas rappelé la fabrique').toBe(2);
+    expect(campaigns.statuses).toEqual(['running', 'completed']);
   });
 
   it('🔴 même sur une campagne de SCÉNARIO : le parcours ne démarre pas pour un STOP relu à la réclamation', async () => {

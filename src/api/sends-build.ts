@@ -11,7 +11,7 @@ import type { CodeApi } from './erreurs';
  */
 export const CODES_ECART = [
   'invalid_recipient', 'invalid_phone', 'unknown_contact', 'duplicate', 'identity_conflict', 'blocked_contact',
-  'opted_out', 'no_consent', 'window_closed', 'missing_variable', 'no_phone',
+  'opted_out', 'no_consent', 'window_closed', 'missing_variable', 'no_phone', 'plan_limit_reached',
 ] as const satisfies readonly CodeApi[];
 export type CodeEcart = (typeof CODES_ECART)[number];
 

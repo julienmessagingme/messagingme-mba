@@ -12,6 +12,7 @@ import type { CountryCode } from 'libphonenumber-js';
 import { MAX_EXTERNAL_ID } from './fiche';
 import { estCleReservee } from '../crm/champs-fiche';
 import { nettoyerEtiquettes } from '../crm/poser-etiquette';
+import { LimiteOffreError } from '../offres/refus';
 
 /**
  * Les bornes de forme d'un contact poussé par l'API : champs et étiquettes par fiche, 20 à l'unité, 10 dans
@@ -125,6 +126,8 @@ export interface ApiUpsertOutcome {
   status: 'created' | 'updated' | 'error';
   contactId?: string;
   reason?: string;
+  /** La limite de contacts de l'offre atteinte (lot 6) : sa valeur, pour un refus 402 qui la dit. */
+  limite?: number;
 }
 
 /** Les étiquettes d'une fiche reçue par l'API, nettoyées comme toute pose (`nettoyerEtiquettes`) et bornées à 50. */
@@ -262,6 +265,8 @@ export async function upsertContactsFromApi(
         const res = await deps.contacts.upsertByPhoneReturningId(upsert);
         return { index, status: res.created ? 'created' : 'updated', contactId: res.id };
       } catch (err) {
+        // La limite de contacts de l'offre (lot 6) : refusée à SA ligne, avec la phrase et la limite ; les autres passent.
+        if (err instanceof LimiteOffreError) return { index, status: 'error', reason: err.message, limite: err.max };
         // `contacts_tenant_bsuid_uidx` rend le BSUID unique par espace : le violer est une erreur de saisie, pas une
         // panne. En 500, Cloudflare remplacerait le corps par sa page, et l'opérateur ne verrait pas la raison.
         if ((err as { code?: string }).code === '23505') {

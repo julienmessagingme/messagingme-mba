@@ -27,6 +27,7 @@ export const CARTE_CONSOLE: EcranAide[] = [
   {"cle":"mba-settings","href":"/mba/parametres","fr":"MBA","en":"MBA","acces":"admin","chemin":["AI Agent"]},
   {"cle":"mcp","href":"/developers/mcp","fr":"Serveur MCP","en":"MCP server","acces":"admin","chemin":["Developers"]},
   {"cle":"nodes","href":"/nodes","fr":"Blocs","en":"Blocks","acces":"admin","chemin":["Contenu","Bibliothèque"]},
+  {"cle":"offre","href":"/offre","fr":"Offre","en":"Plan","acces":"admin","chemin":["Paramètres"]},
   {"cle":"parametres","href":"/parametres","fr":"Général","en":"General","acces":"encadrement","chemin":["Paramètres"]},
   {"cle":"parametres-credit","href":"/parametres/credit","fr":"Crédit IA","en":"AI credit","acces":"admin","chemin":["Paramètres"]},
   {"cle":"perf-synthese","href":"/performance","fr":"Synthèse","en":"Summary","acces":"admin","chemin":[]},

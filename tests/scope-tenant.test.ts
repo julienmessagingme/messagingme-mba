@@ -307,14 +307,19 @@ describe('🔴 sur le serveur construit : chaque route :tenantId refuse une sess
     expect(attendus.filter((n) => !couverts.has(n))).toEqual([]);
   });
 
-  it('🔴 la chaîne FINALE : l’étape une fois, EN DERNIER, derrière au moins une garde ; nulle part ailleurs', () => {
+  it('🔴 la chaîne FINALE : l’étape une fois, EN DERNIER (ou suivie de la seule étape d’offre), derrière au moins une garde ; nulle part ailleurs', () => {
     const enChaine = (ph: unknown): unknown[] => (ph === undefined ? [] : Array.isArray(ph) ? ph : [ph]);
+    // Lot 6 : l'étape d'offre d'un module gardé se pose JUSTE APRÈS l'étape d'espace, par le même poseur, et nulle part
+    // ailleurs. L'isolation reste donc décidée avant l'offre, et l'offre jamais lue pour un espace étranger.
+    const estEtapeOffre = (f: unknown): boolean => typeof f === 'function' && f.name === 'etapeOffreDuModule';
     const fautes: string[] = [];
     for (const r of s.routes) {
       const chaine = enChaine(r.options.preHandler);
       const n = chaine.filter((f) => f === etapeEspace).length;
+      const offres = chaine.filter(estEtapeOffre).length;
       const attendue = r.acces === 'tenant' && porteUnEspace(r);
-      const juste = attendue ? n === 1 && chaine.at(-1) === etapeEspace && chaine.length >= 2 : n === 0;
+      const enDernier = chaine.at(-1) === etapeEspace || (chaine.at(-2) === etapeEspace && estEtapeOffre(chaine.at(-1)) && offres === 1);
+      const juste = attendue ? n === 1 && enDernier && chaine.length >= 2 : n === 0 && offres === 0;
       if (!juste) fautes.push(`${r.module} (${r.acces}) ${r.methode} ${r.chemin} : ${chaine.length} maillon(s), étape x${n}`);
     }
     expect(fautes, `chaînes fautives : ${fautes.join(' ; ')}`).toEqual([]);

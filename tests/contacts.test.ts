@@ -596,6 +596,15 @@ describe('POST /tenants/:t/contacts (ajout a la main)', () => {
     await s2.close();
   });
 
+  it('🔴 la limite de contacts de l’offre (lot 6) : 402 plan_limit_reached avec le lien, jamais un 400 de saisie', async () => {
+    const { server } = avecCreation({ createOneContact: async () => ({ status: 'error', reason: 'limite', limite: 100 }) });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/contacts', ...h(adminTok), payload: JSON.stringify({ phone: '+33612345678' }) });
+    expect(res.statusCode).toBe(402);
+    expect(res.json()).toMatchObject({ code: 'plan_limit_reached', limite: 'contacts', max: 100 });
+    expect(res.json().upgradeUrl).toMatch(/\/offre$/);
+    await server.close();
+  });
+
   it('🔴 un champ INCONNU est refuse : une saisie a la main ne doit pas inventer un champ pour tout l’espace', async () => {
     // L'upsert partagé auto-crée toute clé inconnue (c'est voulu pour l'API et l'import). Ici on valide AVANT,
     // sinon une faute de frappe dans l'écran créerait un champ fantôme visible par tous.

@@ -187,6 +187,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **Serveur MCP et son OAuth** | Claude (Claude Code, claude.ai) lit et agit dans un espace, par une clé d'API ou un jeton OAuth (§ 7) | `src/mcp/`, `src/http/mcp.ts`, `src/oauth/`, `src/http/oauth.ts`, `src/http/oauth-consentement.ts` | `/developers/mcp` | `oauth_autorisations`, `oauth_codes` | `retention-oauth` |
 | **Exploitation** | vue cross-tenant, recharge de crédit, alertes | `src/ops/` | `/ops` | `worker_heartbeat`, `audit_log` | `dlq-sweep` |
 | **Numéros fournis** | la réserve de numéros DIDWW, et le pont qui lit le code que Meta dicte en appelant (lot 3a) | `src/otp/`, `src/didww/`, `src/http/otp-pont.ts`, `src/http/ops-numeros.ts`, `ops/otp-asterisk/` | `/ops` | `numeros_fournis`, `codes_verification` | purge du balayage de rétention |
+| **Offres** | l'offre d'un espace (Base, Pro, Entreprise), ses fonctions, ses limites, le refus 402 (§ 7) | `src/offres/`, `src/http/offre.ts`, `src/http/ops-offre.ts` | `/offre`, la barre (`web/lib/nav.ts`) | `abonnements_offre`, `tenants` (`offre_entreprise`), `contacts` (`ne_entrant`), `compteurs_debit` | aucune : une étape au montage, des compteurs |
 | **Auth et comptes** | connexion, invitations, rôles, multi-espace | `src/auth/`, `src/user/` | `/login`, `/admin` | `users`, `identities`, `auth_tokens` | |
 
 ---
@@ -2086,6 +2087,43 @@ par défaut, `mmhs` TOUJOURS qualifié) et que toutes ses transactions passent p
 | `lireCorpsBorne` | toute réponse distante | l'épuisement mémoire par un corps géant |
 | Signature `ftyp`, bornes du morceau (`src/pubs/video.ts`), parseur d'octets muet | dépôt d'une vidéo publicitaire | autre chose qu'une vidéo envoyé chez Meta sous l'identité du client, et un corps tamponné avant l'authentification |
 | En-têtes de sécurité | toute réponse de l'API et de la console | ce qu'une faille future pourrait faire depuis le navigateur |
+| Étape d'offre (`etapeOffre`, `src/offres/etape.ts`), posée au montage juste après `etapeEspace` | les routes des modules dont l'entrée du registre déclare une fonction | l'usage d'une fonction que l'offre de l'espace n'ouvre pas (402 `plan_feature_unavailable`) |
+
+### L'offre d'un espace (lot 6)
+
+Responsabilité : dire quelles fonctions un espace a, et borner ce qu'il crée ou envoie. Ce n'est PAS une garde de
+sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit aucune donnée d'un autre espace.
+
+- 🔴 **UNE SEULE DÉFINITION DE L'OFFRE, EN SQL** : `offre_de_l_espace(tenant_id)` (migration 0218), Entreprise si
+  `tenants.offre_entreprise`, sinon Pro si un `abonnements_offre` vivant (`fini_le` nul), sinon Base. Le code la lit
+  par `PgOffresStore.offreDe`, derrière `OffresEnCache` (30 s, vidé par l'exploitation sur sa copie) ; les balayages
+  qui en dépendront l'appelleront dans leur requête. Les VALEURS (fonctions, limites) vivent une fois, dans
+  `DROITS` (`src/offres/offres.ts`) ; la console et `get_plan` les lisent dans la vue de l'offre (`grille`), jamais
+  recopiées.
+- **Les fonctions se gardent au montage, route par route.** L'entrée d'un module dans `modulesDeRoutes` déclare
+  une `FonctionDeRoute` (`toutes`, `ecritures`, ou `fonctionDesStatistiques`) ; `monterAvecEtapeEspace` pose
+  `etapeOffre` derrière `etapeEspace`. 🔴 Le module des statistiques se partage d'après l'ÉCRAN qui lit chaque route :
+  une route lue aussi par un écran ouvert à la Base (l'accueil, la page Campagnes) reste ouverte, et c'est la
+  console qui grise l'écran payant ; la table complète est tenue par `tests/offres-fonctions.test.ts`, qui lit
+  `src/http/stats.ts`.
+- **Les limites se comptent là où l'on crée** : contacts dans `PgContactStore` (les trois insertions ; une fiche
+  `ne_entrant` ne compte jamais, et la mise à jour ne touche pas ce drapeau), automations allumées sans propriétaire
+  (`src/offres/automations.ts`, webhooks entrants compris), membres actifs et invitations (`src/offres/membres.ts`),
+  modèles du mois civil de Paris au point d'envoi unique (`QuotaModeles`, `src/meta/factory.ts`, tout ou rien sur
+  `compteurs_debit`), suppressions du jour dans la route de purge. Une réponse dans la fenêtre de 24 h n'est jamais
+  comptée. Un compteur qui ne répond pas laisse passer l'action et journalise l'incident.
+- **Le refus** : `LimiteOffreError`, traduite en 402 `plan_limit_reached` par le gestionnaire central de
+  `buildServer` ; les deux corps (`corpsRefusFonction`, `corpsRefusLimite`) portent `upgradeUrl` (`APP_URL` + `/offre`).
+- **La console** lit `GET /tenants/:tenantId/offre` (`web/lib/use-offre.ts`, gardée une minute) : la barre marque
+  les écrans dont la fonction est fermée (`navPourOffre`, la fonction est déclarée sur l'entrée de `web/lib/nav.ts`),
+  la coquille remplace l'écran fermé par `EncartOffre`, et un 402 sur un GESTE (pas sur une lecture) affiche un avis
+  au-dessus des fenêtres. Un écran ouvert qui lit au chargement une fonction gardée attend `useFermeture` et dit
+  « Inclus dans l'offre ». 🔴 Une offre illisible ou une route absente (404) veut dire « inconnue », donc tout ouvert.
+- **L'Entreprise se pose dans `/ops`** (`PUT /ops/offre/:tenantId`, note obligatoire, trace `ops_offre` signée de son
+  auteur), avec sa limite d'utilisateurs et `tenant_settings.conversation_retention_days`. 🔴 La conservation ABSENTE
+  du corps reste telle quelle : changer d'offre ne déclenche jamais la purge (irréversible) des conversations.
+- 🔴 **Une offre illisible laisse tout passer** : `OffresEnCache` rend alors les droits de l'Entreprise, sans les
+  garder, et journalise `offre_illisible`. Une panne de la lecture ne coupe ni l'Inbox ni les envois d'un client.
 
 🔴 **LE RÔLE ADMIN SE POSE AU MONTAGE, ET `forbidNonAdmin` NE VIT QUE LÀ OÙ UN AGENT PASSE LA GARDE** (lot 3 de
 l'audit ponytail, 2026-09-26). Un module monté sur `g.admin` (`[requireAuth, makeRequireRole(['admin'])]`)

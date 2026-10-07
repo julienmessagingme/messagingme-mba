@@ -22,6 +22,8 @@ import {
 import { Bouton } from '@/components/Bouton';
 import { Modale } from '@/components/Modale';
 import { Icone } from '@/components/Icone';
+import { useFermeture } from '@/lib/use-offre';
+import { phraseInclusDans, type FonctionOffre, type VueOffre } from '@/lib/offre';
 
 /**
  * LE BLOC « CANAUX ET SERVICES » DE L'ACCUEIL (plan du 2026-09-25, design validé par Julien).
@@ -71,6 +73,9 @@ export function CanauxServices(p: {
   const [enCours, setEnCours] = useState<Service | null>(null);
   const [erreurs, setErreurs] = useState<Partial<Record<Service, string>>>({});
   const [info, setInfo] = useState<string | null>(null);
+  // L'offre de l'espace (lot 6) : une fonction qu'elle ferme n'est pas lue, sa carte dit dans quelle offre elle est.
+  const fermeChaine = useFermeture(p.tenantId, 'chaines');
+  const fermePubs = useFermeture(p.tenantId, 'publicites');
 
   /** Chaîne : l'état, puis le nombre de publications, seulement si elle est branchée (plan : `/connection`, `/posts`). */
   const chargerChaine = useCallback(async () => {
@@ -110,7 +115,10 @@ export function CanauxServices(p: {
     }
   }, [p.tenantId]);
 
-  useEffect(() => { void chargerChaine(); void chargerPubs(); void chargerVolumes(); }, [chargerChaine, chargerPubs, chargerVolumes]);
+  useEffect(() => { void chargerVolumes(); }, [chargerVolumes]);
+  // 🔴 La chaîne et les publicités attendent l'offre, et ne sont pas lues quand elle les ferme : leurs routes sont gardées.
+  useEffect(() => { if (fermeChaine === null) void chargerChaine(); }, [fermeChaine, chargerChaine]);
+  useEffect(() => { if (fermePubs === null) void chargerPubs(); }, [fermePubs, chargerPubs]);
 
   const lignes: Record<Service, Ligne> = {
     numero: ligneNumero({ compte: p.compte, connexionDisponible: p.connexionNumero.cfg?.enabled === true }),
@@ -269,6 +277,14 @@ export function CanauxServices(p: {
   // `publications` ne se lit que sur une chaîne branchée (`chargerChaine`) : `null` partout ailleurs.
   const textePublications = phrasePublications(publications, locale);
 
+  /** Une carte que l'offre ferme : sa phrase dit l'offre qui l'ouvre, son lien mène à l'offre. */
+  const horsOffre = (vue: VueOffre | null | undefined, f: FonctionOffre) => (vue
+    ? { phrase: phraseInclusDans(vue, f, t), lien: { href: `/offre?fonction=${f}`, texte: t('Voir les offres', 'See plans') } }
+    : null);
+  const rcsHorsOffre = horsOffre(p.rcs.horsOffre, 'rcs');
+  const chaineHorsOffre = horsOffre(fermeChaine, 'chaines');
+  const pubsHorsOffre = horsOffre(fermePubs, 'publicites');
+
   // ⚠️ « Voir le numéro » et « Voir le canal » sont partis le 2026-09-25 : le détail des deux est juste en
   // dessous, sur l'Accueil même. Leurs cartes portent désormais leur chiffre à la place.
   const rangees: Array<{
@@ -284,16 +300,21 @@ export function CanauxServices(p: {
       aTerminer: numeroASurveiller(p.compte),
     },
     {
-      service: 'rcs', titre: t('Canal RCS', 'RCS channel'), phrase: phraseRcs(),
+      service: 'rcs', titre: t('Canal RCS', 'RCS channel'), phrase: rcsHorsOffre?.phrase ?? phraseRcs(),
+      ...(rcsHorsOffre ? { lien: rcsHorsOffre.lien } : {}),
       chiffre: chiffreVolume(volumes?.rcs),
       Logo: LogoGoogleMessages,
     },
     {
-      service: 'chaine', titre: t('Chaîne', 'Channel'), phrase: phraseChaine(), lien: { href: '/chaine', texte: t('Ouvrir l’écran Chaîne', 'Open the Channel screen') },
+      service: 'chaine', titre: t('Chaîne', 'Channel'), phrase: chaineHorsOffre?.phrase ?? phraseChaine(),
+      lien: chaineHorsOffre?.lien ?? { href: '/chaine', texte: t('Ouvrir l’écran Chaîne', 'Open the Channel screen') },
       chiffre: textePublications === null ? null : { texte: textePublications, aide: t('Toutes les publications faites depuis la console.', 'Every post published from the console.') },
       Logo: LogoChaineWhatsApp,
     },
-    { service: 'publicites', titre: t('Compte publicitaire', 'Ad account'), phrase: phrasePubs(), lien: { href: '/publicites', texte: t('Ouvrir l’écran Publicités', 'Open the Ads screen') }, chiffre: null, Logo: LogoMeta, aTerminer: pubsATerminer },
+    {
+      service: 'publicites', titre: t('Compte publicitaire', 'Ad account'), phrase: pubsHorsOffre?.phrase ?? phrasePubs(),
+      lien: pubsHorsOffre?.lien ?? { href: '/publicites', texte: t('Ouvrir l’écran Publicités', 'Open the Ads screen') }, chiffre: null, Logo: LogoMeta, aTerminer: pubsATerminer,
+    },
     { service: 'hubspot', titre: 'HubSpot', phrase: phraseHubspot(), lien: { href: '/parametres#integration-hubspot', texte: t('Ouvrir le réglage', 'Open the setting') }, chiffre: null, Logo: LogoHubSpot },
   ];
 

@@ -4,6 +4,7 @@ import { sha256Hex } from '../lib/signature';
 import { newWebhookCode } from '../ids/code';
 import { coerceMapping } from './mapping';
 import type { RegleMapping } from './mapping';
+import { verifierPlaceAutomation } from '../offres/automations';
 
 /**
  * Webhooks entrants. 🔴 `tenant_id` sur chaque requête, sauf `getByCode` : là, le code est la preuve
@@ -111,7 +112,14 @@ export function toRow(r: RawAdmin): WebhookRow {
 }
 
 export class PgWebhookStore {
-  constructor(private readonly pool: Pool) {}
+  /**
+   * @param limiteAutomations la limite d'automations allumées de l'offre (lot 6, `null` = sans limite) : l'automation
+   *   compagnon d'un webhook allumé y compte, c'est l'usage même de la Base. Absente : sans limite (scripts et tests).
+   */
+  constructor(
+    private readonly pool: Pool,
+    private readonly limiteAutomations?: (tenantId: string) => Promise<number | null>,
+  ) {}
 
   /**
    * Chemin public : retrouve un webhook par son code. L'espace vient d'ici, jamais du corps de la requête.
@@ -248,6 +256,10 @@ export class PgWebhookStore {
     // Le nom porte celui du webhook, pour dire d'où vient cette ligne sans requête supplémentaire.
     const nom = `Webhook : ${input.name}`.slice(0, 200);
     const cfg = JSON.stringify({ webhookId });
+    // Allumée, l'automation compagnon compte dans la limite de l'offre (lot 6) ; elle ne se compte pas elle-même.
+    if (input.enabled && this.limiteAutomations) {
+      await verifierPlaceAutomation(client, tenantId, await this.limiteAutomations(tenantId), automationId);
+    }
 
     if (automationId !== null) {
       const maj = await client.query(

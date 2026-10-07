@@ -78,6 +78,7 @@ export const NOMS_ICONES = [
   'fin',
   'saut',
   'copier',
+  'cadenas',
 ] as const;
 
 export type NomIcone = (typeof NOMS_ICONES)[number];

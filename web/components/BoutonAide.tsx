@@ -6,6 +6,8 @@ import { useT, useLocale } from '@/lib/i18n';
 import { Logo } from '@/components/Logo';
 import { inputCls } from '@/lib/ui';
 import { demanderAide, demanderRecap } from '@/lib/api-aide';
+import { HorsOffre } from './HorsOffre';
+import { useFermeture } from '@/lib/use-offre';
 import { lireFil, ecrireFil, MAX_ECHANGES_GARDES, type EchangeAide } from '@/lib/aide-fil';
 import { Bouton } from '@/components/Bouton';
 import { Icone } from '@/components/Icone';
@@ -59,6 +61,9 @@ export function BoutonAide({ tenantId, ecranCourant, role, dansEntete = false }:
   // pourrait arriver après la nouvelle et s'afficher à sa place.
   const enCours = useRef<AbortController | null>(null);
   const basDuFil = useRef<HTMLDivElement | null>(null);
+  // L'offre de l'espace (lot 6) : l'assistant d'aide est une fonction payante. Fermé, le panneau dit dans quelle offre il
+  // est et garde le recours au Support, au lieu d'un champ dont chaque question serait refusée.
+  const ferme = useFermeture(tenantId, 'aide');
 
   // Le fil est relu au MONTAGE, pas à l'ouverture du panneau : la coquille est remontée à chaque changement
   // d'écran, et c'est précisément là qu'il faut le retrouver intact.
@@ -167,6 +172,13 @@ export function BoutonAide({ tenantId, ecranCourant, role, dansEntete = false }:
             <button type="button" onClick={() => setOuvert(false)} className="text-ink-400 hover:text-ink-900" aria-label={t('Fermer', 'Close')}><Icone nom="fermer" taille="petite" /></button>
           </div>
 
+          {ferme ? (
+            <div className="flex-1 space-y-3 px-4 py-6" data-testid="aide-hors-offre">
+              <HorsOffre fonction="aide" vue={ferme} />
+              {recours}
+            </div>
+          ) : (
+          <>
           <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3" data-testid="aide-fil">
             {/**
               * 🔴 UNE INVITATION, PAS UNE CONSIGNE (demande de Julien, 2026-09-11 : « là c'est hyper triste
@@ -292,6 +304,8 @@ export function BoutonAide({ tenantId, ecranCourant, role, dansEntete = false }:
               {t('Demander', 'Ask')}
             </Bouton>
           </form>
+          </>
+          )}
         </div>
       )}
     </>

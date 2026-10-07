@@ -11,6 +11,7 @@ import { espaceVerifie } from './scope';
 import { buildContactFilters, normalizeFieldFilters } from '../crm/contact-filters';
 import { nettoyerEtiquettes } from '../crm/poser-etiquette';
 import { makeJournal, type AuditSink } from '../audit/journal';
+import { LimiteOffreError, STATUT_REFUS_OFFRE, corpsRefusLimite } from '../offres/refus';
 
 /** Ce que les routes de liste lisent du dépôt des contacts, en plus de ce que l'import y écrit. */
 export interface ContactsListeDep extends ContactStore {
@@ -179,10 +180,17 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, gard
     const mapping = body.mapping ?? mappingFromHeaders(parsed.headers);
     // 🔴 La case cochée réabonne aussi qui a dit STOP : c'est le seul import qui le peut, parce que l'opérateur le
     // demande. HubSpot, le webhook entrant et la création à la main gardent le STOP.
-    const report = await importContacts(
-      { rows: parsed.rows, mapping, tenantId: effectiveTenant, optIn, tags, autorite: optIn ? 'import_csv_coche' : 'import' },
-      deps,
-    );
+    let report: Awaited<ReturnType<typeof importContacts>>;
+    try {
+      report = await importContacts(
+        { rows: parsed.rows, mapping, tenantId: effectiveTenant, optIn, tags, autorite: optIn ? 'import_csv_coche' : 'import' },
+        deps,
+      );
+    } catch (err) {
+      // La limite de contacts de l'offre (lot 6) : le fichier entier est refusé, rien n'est écrit.
+      if (err instanceof LimiteOffreError) return reply.code(STATUT_REFUS_OFFRE).send(corpsRefusLimite(err));
+      throw err;
+    }
     // Une ligne par lot, pas par contact : un import de 50 000 lignes noierait l'historique. L'opt-in est consigné
     // parce qu'il autorise les envois marketing derrière : c'est la case que l'opérateur a cochée, et elle engage.
     await journal(effectiveTenant, req, 'contact.imported', { kind: 'contact', id: 'lot' }, {

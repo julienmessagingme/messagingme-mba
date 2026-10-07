@@ -27,6 +27,7 @@ import { PREFIXE_ENVOI_API, resoudreCibleRcs, schemaCibleRcs, type DepsCibleRcs 
 import { destinataireAvecVariablesInterdites, schemaVariables } from '../api/variables';
 import { MESSAGE_NUMERO_DELIE, MESSAGE_NUMERO_SUSPENDU } from '../meta/numero-delie';
 import { messageDe } from '../lib/erreur';
+import { LimiteOffreError, STATUT_REFUS_OFFRE, corpsRefusLimite } from '../offres/refus';
 
 export interface V1SendCreateInput {
   tenantId: string;
@@ -84,6 +85,12 @@ export interface V1SendsRouteDeps {
   numerosDelies: { estDelie(phoneNumberId: string): Promise<boolean> };
   /** Le numéro est-il suspendu (lot 4, l'abonnement du numéro fourni) ? La garde du point d'envoi. Requise aussi. */
   numerosSuspendus: { estSuspendu(phoneNumberId: string): Promise<boolean> };
+  /**
+   * Les modèles du mois de l'offre (lot 6, `QuotaModeles`) : un envoi qui ouvre par un modèle et ne tient pas dans ce
+   * qu'il reste est refusé en entier (402). Une ESTIMATION pour refuser tôt : la fabrique décide à l'envoi. Requise : les
+   * fixtures disent leur hypothèse (sans limite).
+   */
+  modelesDuMois: { etatDuMois(tenantId: string): Promise<{ max: number; reste: number } | null> };
   /** La résolution de fiche partagée (`resoudreFiche`), liée à ses dépendances par le câblage. */
   resoudreFiche(tenantId: string, cles: ClesFiche, opts: { creer: ModeCreation }): Promise<ResolutionFiche>;
   /**
@@ -484,6 +491,18 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
       if (cible.ouverture !== 'rcs' && await deps.numerosSuspendus.estSuspendu(numero.phoneNumberId)) {
         return await libererEtRefuser({ statut: 409, code: 'number_suspended', message: MESSAGE_NUMERO_SUSPENDU });
       }
+      /**
+       * Les modèles du mois (lot 6), lus UNE fois, seulement quand l'envoi ouvre par un modèle WhatsApp (un template, ou un
+       * scénario qui commence par un template). 🔴 Épuisés : refusé AVANT de résoudre les destinataires, qui créerait les
+       * fiches inconnues (et entamerait la limite de contacts) pour un envoi qui ne partira pas (relecture finale du lot 6).
+       */
+      const etatDuMois = cible.ouverture === 'whatsapp_template' ? await deps.modelesDuMois.etatDuMois(tenantId) : null;
+      const refuserLeMois = async (etat: { max: number; reste: number }, demandes: number) => {
+        await deps.idempotence.release(tenantId, idem.cle, jeton);
+        const refus = corpsRefusLimite(new LimiteOffreError(tenantId, 'envoisModelesMois', etat.max));
+        return reply.code(STATUT_REFUS_OFFRE).send({ ...refus, reste: etat.reste, demandes });
+      };
+      if (etatDuMois !== null && etatDuMois.reste === 0) return await refuserLeMois(etatDuMois, corps.recipients.length);
       const { resolus, created, matched } = await resoudreDestinataires(
         deps, tenantId, corps.recipients, cible.ouverture === 'whatsapp_session' ? 'jamais' : 'phone',
       );
@@ -510,6 +529,9 @@ export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, ga
         ...(fenetre ? { fenetreOuverteParContact: fenetre } : {}),
       });
       const { recipients, ecarts } = construireDestinataires(cible.category, params, tri, new Date(), cible.rcs ? 'rcs' : 'whatsapp');
+      // Le refus exact, sur les destinataires réels (doublons et écarts retirés) : refusé en entier, avant toute campagne,
+      // et la clé rendue : le même appel repartira le mois prochain ou après le passage en Pro.
+      if (etatDuMois !== null && recipients.length > etatDuMois.reste) return await refuserLeMois(etatDuMois, recipients.length);
       report = {
         sendId: '',
         opening: cible.ouverture,

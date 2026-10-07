@@ -7,6 +7,8 @@ import { formatDate, hourMin } from '@/lib/day';
 import { cardCls, inputCls } from '@/lib/ui';
 import { Bouton } from '@/components/Bouton';
 import { useConfirmation } from '@/components/Confirmation';
+import { HorsOffre } from '@/components/HorsOffre';
+import { useFermeture } from '@/lib/use-offre';
 
 /**
  * PARAMÈTRES > INTÉGRATIONS > BATCH (lot 6 de l'API publique, spec 2026-09-24, § 8) : les clés de l'outil qui
@@ -48,7 +50,10 @@ export function ReglageIntegrationBatch({ tenantId }: { tenantId: string }) {
     setResume(propre.envoyerResume === true);
   }, []);
 
+  // L'offre d'abord (lot 6) : Batch est un connecteur CRM ; fermé, il n'est pas lu (la route est gardée).
+  const ferme = useFermeture(tenantId, 'crm');
   useEffect(() => {
+    if (ferme !== null) return;
     let vivant = true;
     lireIntegrationBatch(tenantId)
       .then((r) => { if (vivant) appliquer(r); })
@@ -56,7 +61,7 @@ export function ReglageIntegrationBatch({ tenantId }: { tenantId: string }) {
         if (vivant) setErreur(e instanceof Error ? e.message : t('Lecture impossible', 'Unable to read'));
       });
     return () => { vivant = false; };
-  }, [tenantId, appliquer, t]);
+  }, [tenantId, appliquer, t, ferme]);
 
   const branche = etat?.branche === true;
   const clesSaisies = cleRest.trim() !== '' && cleProjet.trim() !== '';
@@ -92,17 +97,33 @@ export function ReglageIntegrationBatch({ tenantId }: { tenantId: string }) {
   const perdus = etat?.sansIdentifiant ?? 0;
   const dernier = etat?.sansIdentifiantLe ? date(etat.sansIdentifiantLe) : null;
 
+  const entete = (
+    <header className="space-y-1">
+      <span className="text-xs font-medium text-ink-500">{t('Intégrations', 'Integrations')}</span>
+      <p className="text-sm text-ink-500">
+        {t(
+          'L’outil qui reçoit les signaux de la console (livraisons, réponses, clics, désabonnements, conversations analysées) sur les profils qu’il connaît.',
+          'The tool that receives the console’s signals (deliveries, replies, clicks, unsubscribes, analysed conversations) on the profiles it knows.',
+        )}
+      </p>
+    </header>
+  );
+
+  if (ferme) {
+    return (
+      <section className="space-y-3" data-testid="integrations">
+        {entete}
+        <div className={cardCls} data-testid="integration-batch">
+          <h3 className="text-sm font-semibold text-ink-900">Batch</h3>
+          <HorsOffre fonction="crm" vue={ferme} className="mt-1" />
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="space-y-3" data-testid="integrations">
-      <header className="space-y-1">
-        <span className="text-xs font-medium text-ink-500">{t('Intégrations', 'Integrations')}</span>
-        <p className="text-sm text-ink-500">
-          {t(
-            'L’outil qui reçoit les signaux de la console (livraisons, réponses, clics, désabonnements, conversations analysées) sur les profils qu’il connaît.',
-            'The tool that receives the console’s signals (deliveries, replies, clicks, unsubscribes, analysed conversations) on the profiles it knows.',
-          )}
-        </p>
-      </header>
+      {entete}
 
       <div className={cardCls} data-testid="integration-batch">
         <div className="flex items-start justify-between gap-3">

@@ -127,6 +127,8 @@ function fabrique(o: { delies?: string[]; suspendus?: string[] }, transport: Tra
     numerosDelies: { estDelie: async (pn) => (o.delies ?? []).includes(pn) },
     numerosSuspendus: { estSuspendu: async (pn) => (o.suspendus ?? []).includes(pn) },
     listeDeLAgent: { retirerAvantUnModele: async () => {} },
+    // Les modèles du mois sans limite (lot 6) : ces tests ne portent pas sur l'offre.
+    quotaModeles: { consommer: async () => ({ ok: true }) },
   });
 }
 

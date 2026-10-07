@@ -8,6 +8,7 @@ import type { LienTrace } from '../src/links/tracked-links.pg';
 import { SUFFIXE_ANONYME } from '../src/campaign/engine';
 import type { TemplateSummary } from '../src/meta/templates';
 import type { OutboundCarouselCard } from '../src/meta/template-components';
+import { LimiteOffreError } from '../src/offres/refus';
 
 /**
  * LES QUATRE ENVOIS D'UN BLOC DE SCÉNARIO, EXÉCUTÉS (`src/workflow/envois-bloc.ts`).
@@ -154,6 +155,34 @@ const BRANCHES: Array<{ branche: string; params: string[] | undefined }> = [
   { branche: 'variables déjà résolues', params: [] },
   { branche: 'indications', params: undefined },
 ];
+
+/**
+ * LA LIMITE DES MODÈLES DU MOIS (lot 6, tâche 4) : la fabrique lève `LimiteOffreError` avant tout appel à Meta. Le bloc
+ * « modèle » d'un scénario (et donc d'une automation) s'arrête alors avant effet, avec la raison, comme pour un template
+ * introuvable : un refus rendu, jamais une exception qui ferait passer le parcours pour une panne.
+ */
+describe('sendTemplate : la limite des modèles du mois atteinte', () => {
+  let erreurs: MockInstance;
+  beforeEach(() => { erreurs = vi.spyOn(console, 'error').mockImplementation(() => {}); });
+  afterEach(() => { erreurs.mockRestore(); });
+
+  for (const [branche, variables] of [['variables déjà résolues', [] as string[]], ['indications', undefined]] as const) {
+    it(`🔴 branche ${branche} : le refus nomme la limite, rien n’est journalisé dans le fil`, async () => {
+      const client: ClientDesEnvois = { ...fauxClient([]), sendTemplate: async () => { throw new LimiteOffreError(T, 'envoisModelesMois', 1000); } };
+      const { envois, journal } = monter({ clientWhatsApp: vi.fn(async () => client) });
+      const r = await envois.sendTemplate(T, W, NOM, LANGUE, [], variables);
+      expect(r).toBe(`template « ${NOM} » : ${new LimiteOffreError(T, 'envoisModelesMois', 1000).message}`);
+      expect(journal).toEqual([]);
+      expect(erreurs).toHaveBeenCalled();
+    });
+  }
+
+  it('une autre erreur de Meta remonte telle quelle : seule la limite devient un refus', async () => {
+    const client: ClientDesEnvois = { ...fauxClient([]), sendTemplate: async () => { throw new Error('panne réseau'); } };
+    const { envois } = monter({ clientWhatsApp: vi.fn(async () => client) });
+    await expect(envois.sendTemplate(T, W, NOM, LANGUE, [], [])).rejects.toThrow('panne réseau');
+  });
+});
 
 describe('sendTemplate, branche « variables déjà résolues » (campagne de scénario)', () => {
   it('construit les composants avec les valeurs reçues, sans lire les indications ni la fiche', async () => {

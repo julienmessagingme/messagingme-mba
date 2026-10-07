@@ -8,6 +8,7 @@ import { Toggle } from '@/components/Toggle';
 import { routeInconnue } from '@/lib/canaux-services';
 import { lireIntegration, setSalesforceActif } from '@/lib/api-salesforce';
 import { etatCarteSalesforce, phraseEtatOrg, type IntegrationSalesforceVue } from '@/lib/salesforce';
+import { useFermeture } from '@/lib/use-offre';
 
 /**
  * PARAMÈTRES > INTÉGRATIONS > SALESFORCE : l'interrupteur de l'espace et l'état de l'org (plan 2026-09-26, lot L1).
@@ -29,7 +30,10 @@ export function ReglageSalesforce({ tenantId }: { tenantId: string }) {
   const [statut, setStatut] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [erreur, setErreur] = useState<string | null>(null);
 
+  // L'offre d'abord (lot 6) : Salesforce est un connecteur CRM ; fermé, il n'est pas lu (la route est gardée).
+  const ferme = useFermeture(tenantId, 'crm');
   useEffect(() => {
+    if (ferme !== null) return;
     let vivant = true;
     lireIntegration(tenantId)
       .then((v) => {
@@ -39,7 +43,7 @@ export function ReglageSalesforce({ tenantId }: { tenantId: string }) {
       })
       .catch((e: unknown) => { if (vivant) setLecture(routeInconnue(e) ? 'absente' : 'echec'); });
     return () => { vivant = false; };
-  }, [tenantId]);
+  }, [tenantId, ferme]);
 
   useEffect(() => {
     if (lecture === 'ok' && window.location.hash === '#integration-salesforce') document.getElementById('integration-salesforce')?.scrollIntoView();
@@ -59,6 +63,10 @@ export function ReglageSalesforce({ tenantId }: { tenantId: string }) {
         setErreur(e instanceof Error ? e.message : t('Enregistrement impossible', 'Unable to save'));
       });
   }, [vue, tenantId, t]);
+
+  // ⚠️ CACHÉE, ET NON « INCLUS DANS L'OFFRE ENTREPRISE », quand l'offre ferme le CRM : cette carte se cache déjà quand
+  // l'instance n'a pas Salesforce (route 404), et l'annoncer à une Base promettrait peut-être un connecteur absent.
+  if (ferme) return null;
 
   // Route absente (API pas encore déployée) ou réponse illisible : une intégration neuve ne s'affiche pas.
   if (lecture === 'absente' || lecture === 'en_cours' || lecture === 'illisible') return null;

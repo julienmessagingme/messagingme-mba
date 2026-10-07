@@ -180,6 +180,8 @@ function app(over: Surcharges = {}, monde: Partial<Monde> = {}) {
       estDelie: async () => false,
     },
     numerosSuspendus: { estSuspendu: async () => false },
+    // Les modèles du mois sans limite (lot 6) : un espace Pro, l'hypothèse des cas qui ne parlent pas d'offre.
+    modelesDuMois: { etatDuMois: async () => null },
     /** Double de la résolution du lot 1 : par contactId, numéro ou BSUID ; crée sur un numéro si on le demande. */
     resoudreFiche: async (tenant, cles, o) => {
       cap.resolutions.push({ cles, creer: o.creer });
@@ -1137,6 +1139,51 @@ describe('POST /v1/sends : forme, numéro, débit, droits', () => {
     expect(cap.sends).toEqual([]);
     expect(cap.resolutions).toEqual([]);
     expect(idem.has('i-suspendu')).toBe(false);
+    await server.close();
+  });
+
+  /**
+   * LES MODÈLES DU MOIS (lot 6, tâche 4) : un envoi qui ouvre par un modèle et ne tient pas dans ce qu'il reste ce mois-ci
+   * est refusé en entier, avant toute campagne, et la clé est rendue. La décision qui fait foi reste à l'envoi.
+   */
+  it('🔴 cible template, plus de destinataires que de modèles restants : 402 plan_limit_reached, rien n’est créé, la clé est LIBÉRÉE', async () => {
+    const { server, cap, idem } = app({ modelesDuMois: { etatDuMois: async () => ({ max: 1000, reste: 1 }) } });
+    const res = await envoyer(server, { ...TPL, recipients: [{ contactId: C1 }, { contactId: C2 }] }, 'i-limite');
+    expect(res.statusCode).toBe(402);
+    expect(res.json()).toMatchObject({ code: 'plan_limit_reached', limite: 'envoisModelesMois', max: 1000, reste: 1, demandes: 2 });
+    expect(res.json().upgradeUrl).toMatch(/\/offre$/);
+    expect(cap.sends).toEqual([]);
+    expect(cap.enqueued).toEqual([]);
+    expect(idem.has('i-limite')).toBe(false);
+    await server.close();
+  });
+
+  it('🔴 mois épuisé : 402 AVANT de résoudre les destinataires, donc aucune fiche créée pour un envoi qui ne partira pas', async () => {
+    // Relecture finale du lot 6 : la résolution crée les fiches inconnues, qui entament la limite de contacts de la Base,
+    // puis l'envoi était refusé en entier.
+    const { server, cap, idem } = app({ modelesDuMois: { etatDuMois: async () => ({ max: 1000, reste: 0 }) } });
+    const res = await envoyer(server, { ...TPL, recipients: [{ phone: '+33612345099' }, { contactId: C1 }] }, 'i-epuise');
+    expect(res.statusCode).toBe(402);
+    expect(res.json()).toMatchObject({ code: 'plan_limit_reached', limite: 'envoisModelesMois', reste: 0, demandes: 2 });
+    expect(cap.resolutions).toEqual([]);
+    expect(cap.sends).toEqual([]);
+    expect(idem.has('i-epuise')).toBe(false);
+    await server.close();
+  });
+
+  it('cible template qui tient dans le reste du mois : l’envoi est créé', async () => {
+    const { server, cap } = app({ modelesDuMois: { etatDuMois: async () => ({ max: 1000, reste: 2 }) } });
+    const res = await envoyer(server, { ...TPL, recipients: [{ contactId: C1 }, { contactId: C2 }] }, 'i-tient');
+    expect(res.statusCode).toBe(201);
+    expect(cap.sends).toHaveLength(1);
+    await server.close();
+  });
+
+  it('🔴 une cible qui ouvre EN RCS ne compte aucun modèle, même limite épuisée', async () => {
+    const { server, cap } = app({ modelesDuMois: { etatDuMois: async () => ({ max: 1000, reste: 0 }) } });
+    const res = await envoyer(server, { ...SCN('scn_rcs'), recipients: [{ contactId: C1 }] }, 'i-rcs-limite');
+    expect(res.statusCode).toBe(201);
+    expect(cap.sends).toHaveLength(1);
     await server.close();
   });
 

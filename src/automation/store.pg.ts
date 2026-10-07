@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import { coerceConditionGroup } from '../workflow/conditions';
 import { isAutomationTriggerKind } from './match';
 import type { AutomationRow, AutomationTriggerKind } from './match';
+import { verifierPlaceAutomation } from '../offres/automations';
 
 /** Ce qu'une route peut créer ou modifier. `enabled` par défaut false : une automation ne part jamais sans un
  *  oui explicite. */
@@ -84,7 +85,15 @@ const HORS_WEBHOOK = "and trigger_kind <> 'webhook' and possede_par is null";
 
 /** Automations d'un tenant et garde-fou anti-rebond. 🔴 Toute requête sur un espace filtre par `tenant_id`. */
 export class PgAutomationStore {
-  constructor(private readonly pool: Pool) {}
+  /**
+   * @param limiteAutomations la limite d'automations allumées de l'offre de l'espace (lot 6, `null` = sans limite),
+   *   vérifiée à la création d'une automation allumée et au rallumage (`src/offres/automations.ts`). Absente : sans
+   *   limite (scripts et tests).
+   */
+  constructor(
+    private readonly pool: Pool,
+    private readonly limiteAutomations?: (tenantId: string) => Promise<number | null>,
+  ) {}
 
   /**
    * Automations du tenant (écran Automation), les plus récentes d'abord. Celles possédées par un webhook, un
@@ -125,6 +134,10 @@ export class PgAutomationStore {
   }
 
   async create(tenantId: string, input: AutomationInput): Promise<{ id: string }> {
+    // Une automation possédée (lien, publicité, widget) ne compte pas dans la limite de l'offre ; une éteinte non plus.
+    if (input.enabled && !input.possedePar && this.limiteAutomations) {
+      await verifierPlaceAutomation(this.pool, tenantId, await this.limiteAutomations(tenantId), null);
+    }
     const res = await this.pool.query<{ id: string }>(
       `insert into automations (tenant_id, name, enabled, trigger_kind, trigger_config, condition_group, workflow_id, start_node_id, cooldown_seconds, possede_par, max_fires_per_hour)
        values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10, $11) returning id`,
@@ -141,6 +154,10 @@ export class PgAutomationStore {
 
   /** Mise à jour partielle (l'écran ne bascule souvent que `enabled`). false si l'id n'est pas au tenant. */
   async update(id: string, tenantId: string, patch: Partial<AutomationInput>): Promise<boolean> {
+    // Rallumer compte dans la limite de l'offre (l'écran ne touche que les automations du client : `HORS_WEBHOOK`).
+    if (patch.enabled === true && this.limiteAutomations) {
+      await verifierPlaceAutomation(this.pool, tenantId, await this.limiteAutomations(tenantId), id);
+    }
     const sets: string[] = [];
     const vals: unknown[] = [id, tenantId];
     const push = (sql: string, v: unknown) => { vals.push(v); sets.push(`${sql} = $${vals.length}`); };

@@ -165,6 +165,7 @@ describe('lister, et ce qu’il faut pour poser la bulle', () => {
       numero: async () => NUMERO_COMPLET,
       qrSvg: async () => '<svg/>',
       budgetInconnus: new RateLimiter(0, 60_000),
+      badgeDeLOffre: async () => true,
     });
     const res = await publique.inject({ method: 'GET', url: new URL(vue.adresseScript).pathname });
     expect(res.statusCode).toBe(200);

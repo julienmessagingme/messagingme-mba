@@ -1,5 +1,19 @@
 # todo.md : backlog
 
+## 🟡 Lot 6 : ce que la livraison A laisse pour plus tard (2026-10-07)
+
+- **En Base, trois écrans ouverts lisent encore une fonction fermée, en silence** (inventaire du 2026-10-07) : la
+  création de campagne laisse vides ses sélecteurs e-mail et RCS, la fiche d'un agent ne lit pas ses suggestions de
+  site, et « Connecter HubSpot » ouvre une alerte générique (plus l'avis du refus). Rien ne casse ; à reprendre avec
+  le tunnel de la Base (lot 19), en masquant ces choix quand l'offre les ferme.
+- **La phrase d'un refus d'offre est en français**, comme toutes les phrases du serveur : la console en anglais
+  l'affiche telle quelle (limite connue, la même que les autres erreurs).
+- 🔴 **Les outils MCP ne déclarent pas encore leur fonction** (reporté en B, décidé au plan) : ils appellent les
+  magasins directement, pas les routes gardées, donc une Base garde par Claude les outils d'une fonction fermée,
+  l'Inbox en tête (`list_conversations`, `get_messages`, `reply_in_open_window`). Les LIMITES, elles, tiennent par
+  Claude (la fiche, l'envoi de modèle et l'automation se comptent dans les magasins). À fermer en B avant d'ouvrir
+  le site à la Base.
+
 ## 🟡 RC6, qui répond au client : ce qui reste (2026-10-07)
 
 - **À relire par Julien : allumer le MBA en mode « Équipe » le fait passer en mode « MBA »** (règle par défaut du plan,

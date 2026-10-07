@@ -3,6 +3,7 @@ import type { CountryCode } from 'libphonenumber-js';
 import { normalizePhone } from '../crm/phone';
 import { estUuid } from '../http/scope';
 import type { ClesNormalisees, FicheIdentite, PgContactStore } from '../crm/contact-store.pg';
+import { LimiteOffreError, adresseOffre } from '../offres/refus';
 
 /**
  * Trouver la fiche d'une personne à partir de ce que l'intégrateur a. Une seule fonction pour toute l'API
@@ -45,7 +46,7 @@ export interface ClesFiche {
 }
 
 export type ModeCreation = 'jamais' | 'phone' | 'phone_ou_bsuid';
-export type CodeResolution = 'invalid_recipient' | 'invalid_phone' | 'unknown_contact' | 'identity_conflict';
+export type CodeResolution = 'invalid_recipient' | 'invalid_phone' | 'unknown_contact' | 'identity_conflict' | 'plan_limit_reached';
 export type ResolutionFiche = { ok: true; contactId: string; cree: boolean } | { ok: false; code: CodeResolution };
 export type DepsFiche = Pick<PgContactStore, 'chercherParCles' | 'creerFicheApi' | 'rattacherCles'>;
 
@@ -54,6 +55,8 @@ export const MESSAGE_RESOLUTION: Record<CodeResolution, string> = {
   invalid_phone: '« phone » : numéro de téléphone illisible',
   unknown_contact: 'aucune fiche ne correspond à ces clés',
   identity_conflict: 'ces clés désignent des fiches différentes, ou une clé que la fiche porte déjà avec une autre valeur : rien n’a été écrit',
+  // Lot 6 : la fiche serait une création au-delà de la limite de contacts de l'offre.
+  plan_limit_reached: `limite de contacts de votre offre atteinte, aucune fiche n’a été créée : passez en Pro (${adresseOffre()})`,
 };
 
 /** Rogne les clés, écarte les vides, normalise le numéro. */
@@ -155,11 +158,18 @@ export async function resoudreFiche(
       return { ok: false, code: 'identity_conflict' };
     }
     if (!peutCreer(c, opts.creer)) return { ok: false, code: 'unknown_contact' };
-    const creation = await deps.creerFicheApi(tenantId, {
-      ...(c.phoneE164 ? { phoneE164: c.phoneE164 } : {}),
-      ...(c.bsuid ? { bsuid: c.bsuid } : {}),
-      ...(c.externalId ? { externalId: c.externalId } : {}),
-    });
+    let creation: Awaited<ReturnType<DepsFiche['creerFicheApi']>>;
+    try {
+      creation = await deps.creerFicheApi(tenantId, {
+        ...(c.phoneE164 ? { phoneE164: c.phoneE164 } : {}),
+        ...(c.bsuid ? { bsuid: c.bsuid } : {}),
+        ...(c.externalId ? { externalId: c.externalId } : {}),
+      });
+    } catch (err) {
+      // La limite de contacts de l'offre (lot 6) : un refus de la ligne, jamais une panne de la requête.
+      if (err instanceof LimiteOffreError) return { ok: false, code: 'plan_limit_reached' };
+      throw err;
+    }
     if (creation === 'conflit') continue;
     const tient = (voulu: string | undefined, porte: string | null): boolean => voulu === undefined || voulu === porte;
     if (!tient(c.externalId, creation.externalId) || !tient(c.bsuid, creation.bsuid) || !tient(c.phoneE164, creation.phoneE164)) {

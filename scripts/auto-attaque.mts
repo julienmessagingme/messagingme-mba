@@ -67,7 +67,7 @@ import type { StripeWebhookRouteDeps } from '../src/http/credit-stripe';
 import type { OtpPontRouteDeps } from '../src/http/otp-pont';
 import type { ContactVitrineDeps } from '../src/http/contact-vitrine';
 import type { FastifyInstance } from 'fastify';
-import { plafondCoupe } from '../tests/gardes';
+import { plafondCoupe, offresToutOuvert } from '../tests/gardes';
 import { OUTILS } from '../src/mcp/outils';
 
 // ---------------------------------------------------------------------------------------------------------
@@ -240,6 +240,8 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
   ops: inconnu('ops'),
   // Le réglage du plafond de l'API d'un espace : même session, module à part (migration 0181). Aucun espace n'existe.
   plafondApi: inconnu('plafondApi'),
+  // L'offre d'un espace posée par l'exploitation (lot 6) : même session, module à part. Aucun espace n'existe.
+  opsOffre: inconnu('opsOffre'),
   // Code dans l'adresse : aucun code ne se résout.
   links: inconnu('links'),
   webhookEntrant: inconnuSaufLimiteurs('webhookEntrant', ['limiter', 'budgetInconnus']),
@@ -408,7 +410,7 @@ function dependancesDuRegistre(): Record<string, unknown> {
  */
 async function classesDesRoutes(deps: Record<string, unknown>): Promise<Map<string, { classe: ClasseDAcces; module: string }>> {
   const passe: PreHandler = async () => undefined;
-  const gardes: Gardes = { auth: passe, admin: [passe], encadrement: [passe], adminOuLien: [passe], ops: passe, plafondCouteux: plafondCoupe };
+  const gardes: Gardes = { auth: passe, admin: [passe], encadrement: [passe], adminOuLien: [passe], ops: passe, plafondCouteux: plafondCoupe, offres: offresToutOuvert };
   const classes = new Map<string, { classe: ClasseDAcces; module: string }>();
   for (const m of modulesDeRoutes(deps as unknown as ServerDeps, bidon(), undefined, BASE_OAUTH)) {
     const seul = Fastify({ logger: false });

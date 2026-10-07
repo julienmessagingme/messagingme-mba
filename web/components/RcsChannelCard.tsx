@@ -7,6 +7,9 @@ import { inputCls } from '@/lib/ui';
 import { Bouton } from '@/components/Bouton';
 import { Icone } from '@/components/Icone';
 import { Nd } from '@/components/Nd';
+import { HorsOffre } from '@/components/HorsOffre';
+import { useFermeture } from '@/lib/use-offre';
+import type { VueOffre } from '@/lib/offre';
 
 /**
  * L'état du canal RCS et ses deux gestes, partagés par la carte ci-dessous et par l'interrupteur « Canal RCS »
@@ -28,6 +31,11 @@ export interface CanalRcs {
    * L'Accueil en fait désormais une carte sans interrupteur ni pastille, qui dit « État inconnu ».
    */
   etat: RcsChannelState | 'echec' | null;
+  /**
+   * L'offre de l'espace quand elle FERME le RCS (lot 6) : rien n'est lu, la carte et la ligne de l'Accueil disent
+   * « Inclus dans l'offre Entreprise ». `null` sinon (ouvert, ou offre inconnue).
+   */
+  horsOffre: VueOffre | null;
   /** Le formulaire de la clé est-il ouvert ? */
   ouvert: boolean;
   /** Ouvre l'activation actuelle (la clé du canal) et amène la carte à l'écran. */
@@ -64,7 +72,9 @@ export function useCanalRcs(tenantId: string): CanalRcs {
     }
   }, [tenantId]);
 
-  useEffect(() => { void recharger(); }, [recharger]);
+  // 🔴 Pas de lecture tant que l'offre n'est pas connue, ni quand elle ferme le RCS (lot 6) : la route est gardée.
+  const fermeture = useFermeture(tenantId, 'rcs');
+  useEffect(() => { if (fermeture === null) void recharger(); }, [fermeture, recharger]);
 
   async function activer() {
     if (cle.trim() === '') return;
@@ -99,6 +109,7 @@ export function useCanalRcs(tenantId: string): CanalRcs {
 
   return {
     etat, ouvert, cle, setCle, busy, erreur, droits, activer, couper,
+    horsOffre: fermeture ?? null,
     ouvrirActivation: () => {
       setOuvert(true);
       setErreur(null);
@@ -125,6 +136,18 @@ export function RcsChannelCard({ rcs, isAdmin }: { rcs: CanalRcs; isAdmin: boole
   const inconnu = rcs.etat === 'echec';
   const etat = rcs.etat === 'echec' ? null : rcs.etat;
   const actif = etat?.active === true;
+
+  if (rcs.horsOffre) {
+    return (
+      <div id={ANCRE_CANAL_RCS} data-testid="rcs-channel-card" className="flex flex-col rounded-carte border border-ink-200 bg-white p-5">
+        <div className="mb-3 flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-controle bg-navy-50 text-navy-600"><Icone nom="mobile" taille="grande" /></div>
+          <div className="min-w-0 flex-1 text-sm font-semibold text-ink-900">{t('Canal RCS', 'RCS channel')}</div>
+        </div>
+        <HorsOffre fonction="rcs" vue={rcs.horsOffre} />
+      </div>
+    );
+  }
 
   return (
     <div id={ANCRE_CANAL_RCS} data-testid="rcs-channel-card" className="flex flex-col rounded-carte border border-ink-200 bg-white p-5">

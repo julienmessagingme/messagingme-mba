@@ -11,6 +11,7 @@
  */
 
 import type { NomIcone } from './icones';
+import type { FonctionOffre } from './offre';
 
 export interface NavEntree {
   key: string;
@@ -21,6 +22,13 @@ export interface NavEntree {
   icone?: NomIcone;
   children?: NavEntree[];
   badge?: number;
+  /**
+   * La fonction de l'offre qu'exige cet écran (lot 6), celle que le serveur garde sur ses routes. Absente = écran ouvert
+   * à toutes les offres. Posée sur la FEUILLE, là où l'écran vit.
+   */
+  fonction?: FonctionOffre;
+  /** Posé par `navPourOffre` : l'offre de l'espace n'ouvre pas cette fonction, la barre la grise et mène à `/offre`. */
+  verrouillee?: boolean;
 }
 
 /**
@@ -167,6 +175,53 @@ export function navPourRole(items: NavEntree[], role: string): NavEntree[] {
 }
 
 /**
+ * LES ÉCRANS HORS DE LA BARRE QUI DÉPENDENT D'UNE FONCTION (lot 6) : atteints par le menu du compte, ils n'ont pas
+ * d'entrée où porter leur fonction. Les boîtes e-mail vivent dans le module que le serveur garde par `email`.
+ */
+const FONCTION_HORS_BARRE: Readonly<Record<string, FonctionOffre>> = { 'email-accounts': 'email' };
+
+function entreeDe(items: NavEntree[], key: string): NavEntree | null {
+  for (const item of items) {
+    if (item.key === key) return item;
+    const dessous = item.children ? entreeDe(item.children, key) : null;
+    if (dessous) return dessous;
+  }
+  return null;
+}
+
+/** La fonction qu'exige la page `key` (lot 6), `null` pour une page ouverte à toutes les offres ou inconnue. */
+export function fonctionDeLaPage(items: NavEntree[], key: string): FonctionOffre | null {
+  const entree = entreeDe(items, key);
+  return entree ? (entree.fonction ?? null) : (FONCTION_HORS_BARRE[key] ?? null);
+}
+
+/**
+ * L'arbre marqué selon l'offre (lot 6) : une feuille dont la fonction n'est pas ouverte porte `verrouillee`, et la barre
+ * la grise au lieu de la cacher (on voit ce que le Pro ajoute). 🔴 `null` = offre inconnue (API plus ancienne, panne de
+ * la lecture) : rien n'est marqué, le serveur reste la barrière.
+ */
+export function navPourOffre(items: NavEntree[], ouvertes: ReadonlySet<FonctionOffre> | null): NavEntree[] {
+  if (ouvertes === null) return items;
+  return items.map((item) => {
+    if (item.children) return { ...item, children: navPourOffre(item.children, ouvertes) };
+    return item.fonction && !ouvertes.has(item.fonction) ? { ...item, verrouillee: true } : item;
+  });
+}
+
+/** La première adresse ouverte d'un arbre, dans l'ordre de la barre : la destination d'un onglet. `null` si aucune. */
+export function premiereDestination(items: NavEntree[]): string | null {
+  for (const item of items) {
+    if (item.children) {
+      const dessous = premiereDestination(item.children);
+      if (dessous) return dessous;
+    } else if (!item.verrouillee && item.href) {
+      return item.href;
+    }
+  }
+  return null;
+}
+
+/**
  * Le traducteur de la console, tel que la barre l'utilise.
  *
  * ⚠️ `en` est OBLIGATOIRE ICI, alors que `useT()` le déclare facultatif, et ce n'est pas un oubli à
@@ -261,10 +316,10 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
     { key: 'contacts', href: '/contacts', label: t('mini-CRM', 'mini-CRM'), icone: icons.contacts },
     { key: 'campagnes', href: '/campaigns', label: t('Campagnes', 'Campaigns'), icone: icons.campaign },
     // Juste apres Campagnes : les deux repondent a « comment je parle a plusieurs personnes a la fois ».
-    { key: 'chaine', href: '/chaine', label: t('Chaîne', 'Channel'), icone: icons.chaine },
+    { key: 'chaine', href: '/chaine', label: t('Chaîne', 'Channel'), icone: icons.chaine, fonction: 'chaines' },
     // Juste apres Chaine : les trois entrees repondent a « comment j'atteins des gens ». La publicite est
     // la seule des trois qui va chercher quelqu'un qui ne nous connait pas encore.
-    { key: 'publicites', href: '/publicites', label: t('Publicités', 'Ads'), icone: icons.pubs },
+    { key: 'publicites', href: '/publicites', label: t('Publicités', 'Ads'), icone: icons.pubs, fonction: 'publicites' },
     { key: 'automations', href: '/automations', label: t('Automation', 'Automation'), icone: icons.automation },
     /**
      * Les DEUX répondeurs que le client peut faire parler : l'agent de Meta (MBA) et le nôtre. Deux FEUILLES
@@ -275,7 +330,7 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
      * ⚠️ Les CLÉS ne changent pas (`mba-settings`, `agents`) : les pages et les fiches d'aide les nomment.
      */
     { key: 'ia', label: t('AI Agent', 'AI Agent'), icone: icons.mba, children: [
-      { key: 'mba-settings', href: '/mba/parametres', label: t('MBA', 'MBA') },
+      { key: 'mba-settings', href: '/mba/parametres', label: t('MBA', 'MBA'), fonction: 'agent_meta' },
       { key: 'agents', href: '/agents', label: t('Other AI agent', 'Other AI agent') },
     ] },
     // Contenu, rangé PAR CANAL. Les sept entrées étaient à plat et l'oeil devait relire les libellés pour
@@ -289,13 +344,13 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
     { key: 'contenu', label: t('Contenu', 'Content'), icone: icons.content, children: [
       { key: 'contenu-whatsapp', label: t('WhatsApp', 'WhatsApp'), children: [
         { key: 'templates', href: '/templates', label: t('Templates', 'Templates') },
-        { key: 'flows', href: '/flows', label: t('Formulaires', 'Forms') },
+        { key: 'flows', href: '/flows', label: t('Formulaires', 'Forms'), fonction: 'scenarios' },
       ] },
       { key: 'contenu-rcs', label: t('RCS', 'RCS'), children: [
-        { key: 'rcs-messages', href: '/rcs-messages', label: t('Messages', 'Messages') },
+        { key: 'rcs-messages', href: '/rcs-messages', label: t('Messages', 'Messages'), fonction: 'rcs' },
       ] },
       { key: 'contenu-email', label: t('Email', 'Email'), children: [
-        { key: 'email-templates', href: '/email-templates', label: t('Modèles', 'Templates') },
+        { key: 'email-templates', href: '/email-templates', label: t('Modèles', 'Templates'), fonction: 'email' },
       ] },
       /**
        * 🔴 « SCÉNARIO » EST ICI DEPUIS LE 2026-09-13 (demande de Julien), ET IL EST LE SEUL ENFANT DE
@@ -310,7 +365,7 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
        */
       // ⚠️ SANS ICÔNE, demandé par Julien le 2026-09-14 (« enlever la petite icône devant scénario dans la
       // sidebar »). `d` est optionnel dans `NavEntree` : le rendu s'en passe sans réserver la place.
-      { key: 'workflows', href: '/workflows', label: t('Scénario', 'Scenario') },
+      { key: 'workflows', href: '/workflows', label: t('Scénario', 'Scenario'), fonction: 'scenarios' },
       // « Bibliothèque » : ce qui se RÉUTILISE, sans appartenir à un canal.
       // ⚠️ Le groupe reste bancal, et le nom n'y peut rien : « Blocs » est du contenu, « Étiquettes » et
       // « Champs » sont de la donnée de CONTACT. Ils sont ici par héritage, leur place logique serait le
@@ -365,6 +420,8 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
     { key: 'parametres-groupe', label: t('Paramètres', 'Settings'), icone: icons.settings, children: [
       { key: 'parametres', href: '/parametres', label: t('Général', 'General') },
       { key: 'parametres-credit', href: '/parametres/credit', label: t('Crédit IA', 'AI credit') },
+      // L'offre de l'espace (lot 6) : la grille, ce qui est consommé, et « Passer en Pro ».
+      { key: 'offre', href: '/offre', label: t('Offre', 'Plan') },
     ] },
     { key: 'support', href: '/support', label: t('Support', 'Support'), icone: icons.support },
     /**
@@ -396,7 +453,7 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
    * Le menu de dossiers (Tout, À traiter, Traité, Signalé, Archivé, et l'affectation) vit DANS l'écran,
    * pas dans la barre. Sa liste fait foi dans `web/components/InboxDossiers.tsx`, pas ici.
    */
-  const NAV_INBOX: NavEntree[] = [{ key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), icone: icons.inbox, badge: badgeInbox }];
+  const NAV_INBOX: NavEntree[] = [{ key: 'inbox', href: '/inbox', label: t('Inbox', 'Inbox'), icone: icons.inbox, badge: badgeInbox, fonction: 'inbox' }];
 
   /**
    * Les enfants de l'ancien groupe « Analytics », remontés d'un cran : dans cet onglet, ils SONT le menu.
@@ -415,17 +472,19 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
      * prendra sa propre adresse »). Elle ne fait pas d aiguillage : elle porte ce que les sous-onglets ne
      * montrent nulle part, donc elle n ajoute un clic a personne.
      */
-    { key: 'perf-synthese', href: '/performance', label: t('Synthèse', 'Summary') },
+    // Le partage de l'onglet entre les offres (décision de Julien du 2026-10-07) : le Quantitatif au Pro, le reste à
+    // l'Entreprise. Le serveur garde les mêmes écrans route par route (`fonctionDesStatistiques`, `src/offres/etape.ts`).
+    { key: 'perf-synthese', href: '/performance', label: t('Synthèse', 'Summary'), fonction: 'performance_lab' },
     { key: 'quantitatif', label: t('Quantitatif', 'Quantitative'), children: [
-      { key: 'quanti-messages', href: '/dashboard', label: t('Messages & contacts', 'Messages & contacts') },
-      { key: 'quanti-couts', href: '/dashboard/couts', label: t('Coûts', 'Costs') },
-      { key: 'quanti-funnel', href: '/dashboard/funnel', label: t('Funnel', 'Funnel') },
+      { key: 'quanti-messages', href: '/dashboard', label: t('Messages & contacts', 'Messages & contacts'), fonction: 'statistiques' },
+      { key: 'quanti-couts', href: '/dashboard/couts', label: t('Coûts', 'Costs'), fonction: 'statistiques' },
+      { key: 'quanti-funnel', href: '/dashboard/funnel', label: t('Funnel', 'Funnel'), fonction: 'statistiques' },
       /**
        * Le temps de réponse et de résolution de l'équipe (cadrage du 2026-09-29). ⚠️ À ne pas confondre avec
        * l'ONGLET Performance (`perf`) ni avec sa Synthèse (`/performance`) : cette page vit sous Quantitatif,
        * à `/dashboard/performance`, comme ses voisines.
        */
-      { key: 'quanti-performance', href: '/dashboard/performance', label: t('Performance', 'Performance') },
+      { key: 'quanti-performance', href: '/dashboard/performance', label: t('Performance', 'Performance'), fonction: 'statistiques' },
       /**
        * ⚠️ IL Y AVAIT UNE AUTRE ENTRÉE ICI, « Erreurs », ET ELLE EST PARTIE DANS LE CENTRE DE SÉCURITÉ
        * le 2026-09-17 (Julien : « l'onglet erreur dans quantitatif n'a plus rien à faire là »). Sa carte
@@ -441,8 +500,8 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
      * cette adresse. Le dépôt vit déjà avec un nom technique qui ne colle plus au produit, il s'appelle
      * `messagingme-mba` et le produit s'appelle Messaging Me.
      */
-    { key: 'dashboard-quali', href: '/dashboard/quali', label: t('Analyse des conversations', 'Conversation analysis') },
-    { key: 'dashboard-tableaux', href: '/dashboard/tableaux', label: t('Mes tableaux', 'My reports') },
+    { key: 'dashboard-quali', href: '/dashboard/quali', label: t('Analyse des conversations', 'Conversation analysis'), fonction: 'performance_lab' },
+    { key: 'dashboard-tableaux', href: '/dashboard/tableaux', label: t('Mes tableaux', 'My reports'), fonction: 'performance_lab' },
   ];
 
   // ⚠️ IL N'Y A PLUS DE NAV PROPRE A L'AGENT depuis le 2026-09-08, et ce n'est pas un oubli : un compte

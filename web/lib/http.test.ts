@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { ApiError, messageDErreur, request } from './http';
+import { OFFRE_REFUSEE_EVENT } from './offre';
 
 /**
  * LE TEXTE QU'UN ÉCRAN AFFICHE QUAND L'API ÉCHOUE (2026-09-22).
@@ -44,5 +45,43 @@ describe('request', () => {
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(500);
     expect((err as ApiError).message).toBe('Incident de notre côté (erreur 500). Réessayez dans un instant.');
+  });
+});
+
+/**
+ * LE REFUS DE L'OFFRE (402, lot 6) : la coquille en est prévenue pour afficher le lien vers `/offre`, et l'écran garde
+ * la phrase du serveur dans son erreur habituelle.
+ */
+describe('un 402 de l’offre', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  async function appeler(status: number, corps: unknown, methode = 'POST'): Promise<{ err: unknown; recus: unknown[] }> {
+    const fenetre = Object.assign(new EventTarget(), { localStorage: { getItem: () => null } });
+    vi.stubGlobal('window', fenetre);
+    vi.stubGlobal('localStorage', fenetre.localStorage);
+    const recus: unknown[] = [];
+    fenetre.addEventListener(OFFRE_REFUSEE_EVENT, (e) => recus.push((e as CustomEvent).detail));
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(corps), { status, headers: { 'content-type': 'application/json' } })));
+    const err = await request('/tenants/t1/contacts', methode === 'GET' ? {} : { method: methode, body: '{}' }).catch((e: unknown) => e);
+    return { err, recus };
+  }
+
+  it('🔴 prévient la coquille avec la phrase du serveur, et l’écran reçoit la même phrase', async () => {
+    const phrase = 'Limite de votre offre atteinte : 100 contacts. Passez en Pro pour la lever : https://console.test/offre';
+    const { err, recus } = await appeler(402, { error: phrase, code: 'plan_limit_reached', limite: 'contacts', max: 100, upgradeUrl: 'u' });
+    expect(recus).toEqual([{ code: 'plan_limit_reached', phrase }]);
+    expect((err as ApiError).status).toBe(402);
+    expect((err as ApiError).message).toBe(phrase);
+  });
+
+  it('🔴 une LECTURE refusée ne prévient personne : l’écran se dégrade seul, sans bandeau à chaque visite', async () => {
+    const { err, recus } = await appeler(402, { error: 'Votre offre ne comprend pas le RCS.', code: 'plan_feature_unavailable' }, 'GET');
+    expect(recus).toEqual([]);
+    expect((err as ApiError).status).toBe(402);
+  });
+
+  it('un autre refus ne prévient personne (un 402 sans code d’offre, un 403)', async () => {
+    expect((await appeler(402, { error: 'autre chose' })).recus).toEqual([]);
+    expect((await appeler(403, { error: 'interdit', code: 'plan_feature_unavailable' })).recus).toEqual([]);
   });
 });

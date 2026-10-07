@@ -56,6 +56,11 @@ export interface ContactStore {
    * par contact donné, dans l'ordre reçu, pour un rapport juste même si un numéro apparaît plusieurs fois.
    */
   upsertManyByPhone(lot: LotContacts): Promise<Array<'created' | 'updated'>>;
+  /**
+   * La limite de contacts de l'offre (lot 6) : refuse (`LimiteOffreError`) si ces numéros feraient dépasser la limite.
+   * L'import la vérifie sur TOUT le fichier avant son premier lot : un fichier qui ne tient pas n'est pas écrit à moitié.
+   */
+  verifierPlaceContacts(tenantId: string, numeros: readonly string[]): Promise<void>;
 }
 
 /**
@@ -188,6 +193,8 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
     ...(input.tags && input.tags.length > 0 ? { tags: input.tags } : {}),
     autorite: input.autorite,
   };
+  // La limite de contacts de l'offre (lot 6), sur tout le fichier et avant le premier lot : refusé en entier.
+  await deps.contacts.verifierPlaceContacts(input.tenantId, aEcrire.map((c) => c.phoneE164));
   for (let d = 0; d < aEcrire.length; d += TAILLE_LOT) {
     const res = await deps.contacts.upsertManyByPhone({ ...commun, contacts: aEcrire.slice(d, d + TAILLE_LOT) });
     for (const r of res) {

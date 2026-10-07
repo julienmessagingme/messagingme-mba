@@ -36,6 +36,8 @@ import { Icone } from '@/components/Icone';
 import { Modale } from '@/components/Modale';
 import { Squelette } from '@/components/Squelette';
 import { Nd } from '@/components/Nd';
+import { HorsOffre } from '@/components/HorsOffre';
+import { useFermeture } from '@/lib/use-offre';
 
 export default function AccueilPage() {
   return <AppShell active="accueil">{(session) => <AccueilInner session={session} />}</AppShell>;
@@ -204,15 +206,18 @@ function AccueilInner({ session }: { session: Session }) {
    * Best-effort : cet appel depend d'un jeton valide et d'un aller-retour chez Meta. Un echec laisse
    * `null`, et la carte dit « non lu » plutot que d'inventer un etat.
    */
+  // 🔴 L'offre d'abord (lot 6) : quand elle ferme l'agent de Meta, son état n'est pas lu (la route est gardée), et la
+  // carte le dit au lieu d'afficher « non lu ».
+  const fermeMba = useFermeture(session.tenantId, 'agent_meta');
   useEffect(() => {
     const pn = account?.phoneNumberId;
-    if (!pn) { setMbaReel(null); return; }
+    if (!pn || fermeMba !== null) { setMbaReel(null); return; }
     let vivant = true;
     getMbaStatus(session.tenantId, pn)
       .then((s) => { if (vivant) setMbaReel(s); })
       .catch(() => { if (vivant) setMbaReel(null); });
     return () => { vivant = false; };
-  }, [session.tenantId, account?.phoneNumberId]);
+  }, [session.tenantId, account?.phoneNumberId, fermeMba]);
 
   /**
    * Les messages ÉCRITS par l'agent de Meta, depuis toujours, dans son cadre (Julien, 2026-09-25). LA MÊME mesure
@@ -463,10 +468,13 @@ function AccueilInner({ session }: { session: Session }) {
                     ⚠️ Quand l'agent est allumé, aucune phrase (Julien, 2026-09-25) : l'interrupteur et le chiffre
                     le disent déjà. Il n'a plus d'audience à nommer : il ne répond qu'aux contacts que la
                     plateforme met sur sa liste. */}
-                {etatMbaReel !== null && <p className="mt-0.5 text-xs text-ink-500" data-testid="mba-etat-reel">{etatMbaReel}</p>}
+                {fermeMba
+                  ? <HorsOffre fonction="agent_meta" vue={fermeMba} className="mt-0.5" />
+                  : etatMbaReel !== null && <p className="mt-0.5 text-xs text-ink-500" data-testid="mba-etat-reel">{etatMbaReel}</p>}
                 {erreurMba && <p className="mt-1 text-xs text-danger" data-testid="mba-erreur">{erreurMba}</p>}
               </div>
             </div>
+            {!fermeMba && (
             <div className="flex items-center gap-3 pt-2">
               <Toggle
                 testid="mba-toggle"
@@ -482,6 +490,7 @@ function AccueilInner({ session }: { session: Session }) {
                 <span className="text-xs text-ink-500">{t('(côté Messaging Me seulement)', '(Messaging Me side only)')}</span>
               )}
             </div>
+            )}
             {/* 🔴 `messagesMba !== null`, JAMAIS `?? 0` : un zéro dirait que l'agent n'a parlé à personne. */}
             {messagesMba !== null && (
               <div data-testid="mba-messages" className="mt-4 border-t border-ink-100 pt-3">
@@ -491,7 +500,7 @@ function AccueilInner({ session }: { session: Session }) {
             {/* La reprise après intervention d'un opérateur vivait ICI. Elle a rejoint MBA > Paramètres >
                 Activation, avec le passage de main : ce sont les deux faces d'une même question, « qui parle
                 au client », et les séparer obligeait à comprendre deux écrans pour régler une seule chose. */}
-            {account?.hasNumber && (
+            {account?.hasNumber && !fermeMba && (
               <div className="mt-4 border-t border-ink-100 pt-3">
                 {/* RC6 : ce lien ne règle plus « qui répond » (la carte « Qui répond au client » le fait), seulement ce
                     que fait l'agent de Meta quand il tient une conversation. */}

@@ -18,7 +18,8 @@ de l'offre (en SQL) ; une fiche née d'un message entrant ne compte jamais ; un 
 face au balayage du lot 4 ; le gel ne coupe jamais le répondeur. Aucun workflow multi-agents pour coder.
 
 **L'essai réel qui clôt chaque livraison** : A, un espace d'essai ramené en Base dans `/ops` : la 101e fiche refusée
-par l'API et par le MCP avec le lien, l'Inbox grisée, la 11e automation refusée ; B, Julien prend le Pro sur cet espace
+par l'API avec le lien (aucun outil MCP ne crée de fiche : `get_plan` dit l'offre), l'Inbox grisée, la 11e automation
+refusée ; B, Julien prend le Pro sur cet espace
 avec un code promo à 100 % : les fonctions s'ouvrent, le numéro fourni reste couvert, puis une résiliation immédiate
 depuis le tableau de bord de Stripe : le gel s'applique et l'abonnement du numéro seul démarre ; C, le prix d'un tour lu
 dans le journal du crédit en Base puis en Pro, et une conversation de l'espace Base qui reste non analysée.
@@ -67,7 +68,8 @@ dans le journal du crédit en Base puis en Pro, et une conversation de l'espace 
   suppressionsJour, adressesWebhook, journalWebhooksJours, conservationJours: number | null ; commissionPct: number ;
   badge: boolean ; numeroInclus: boolean }` ; `DROITS: Record<Offre, { fonctions: ReadonlySet<Fonction>; limites:
   Limites }>` ; `droitsDe(offre, surcharge: SurchargeEntreprise | null): Droits` (`SurchargeEntreprise = {
-  utilisateurs: number | null }`, la conservation de l'Entreprise vient de `conversation_retention_days`).
+  utilisateurs: number | null }`, `null` = sans limite ; la conservation de l'Entreprise vient de
+  `conversation_retention_days`).
 - Tests : chaque case de la grille de la spec, offre par offre (le tableau du test EST la grille) ; `null` = sans
   limite ; la surcharge ne touche que l'Entreprise.
 
@@ -77,10 +79,11 @@ dans le journal du crédit en Base puis en Pro, et une conversation de l'espace 
   statut, periode_fin, fin_prevue_le, fini_le, fin_raison in ('resiliation','impaye'), cree_le)`, CHECK
   `^sub_[A-Za-z0-9]+$`, cascade sur l'espace, index unique partiel « un abonnement vivant par espace et par mode » ;
   `tenant_settings.offre_entreprise boolean not null default false` et `.entreprise_utilisateurs integer` (nullable,
-  `> 0`) ; `contacts.ne_entrant boolean not null default false` ; `conversations.analysis_status` élargi à
+  `> 0`, `null` = sans limite) ; `contacts.ne_entrant boolean not null default false` ; `conversations.analysis_status` élargi à
   `hors_offre` (même nom de CHECK, lu en base avant d'écrire le `drop`) ; la fonction SQL `offre_de_l_espace(uuid)`
   (Entreprise si la surcharge, sinon Pro si un abonnement vivant du mode de l'instance, sinon Base) ; la reprise : tous
-  les espaces existants en Entreprise.
+  les espaces existants en Entreprise, SANS limite d'utilisateurs (décision de Julien du 2026-10-07 : ce sont des
+  espaces de test, rien ne doit les contraindre).
 - `OffreEspace = { offre: Offre; droits: Droits; retourEnBaseLe: Date | null }` ; `PgOffresStore.offreDe(tenantId)` ;
   `OffresEnCache` (30 s par espace, `invalider(tenantId)`).
 - Tests d'intégration : Base, Pro vivant, Pro fini, Pro de l'autre mode (`livemode`), Entreprise, Entreprise et Pro ;
@@ -99,7 +102,8 @@ dans le journal du crédit en Base puis en Pro, et une conversation de l'espace 
   campagnes, contacts, import, agents, connaissance, outils d'agent, widgets, automations, webhooks entrants, numéro,
   crédit, clés, compte).
 - MCP : `OutilMcp.fonction?: Fonction` ; l'outil hors offre RESTE listé et refuse (`RefusOutil`) avec la phrase et le
-  lien ; `set_default_responder` vers l'agent de Meta exige `agent_meta`.
+  lien. Le choix de l'agent de Meta dans `set_default_responder` (`src/mcp/outils-agent.ts`, touché par RC6) se garde
+  APRÈS le déploiement de RC6, dans la livraison B.
 - Erreurs : `plan_feature_unavailable` et `plan_limit_reached` (402) avec `upgradeUrl`, dans la table et dans la doc
   publique de l'API (`tests/api-exemples.test.ts`).
 - Tests : comme `tests/scope-tenant.test.ts`, chaque route d'un module gardé refuse un espace Base (402) et passe pour un
@@ -140,7 +144,8 @@ dans le journal du crédit en Base puis en Pro, et une conversation de l'espace 
 - `GET /tenants/:tenantId/offre` (tout membre) : `{ offre, fonctions, limites, usage: { envoisModelesMois, contacts,
   automations, membres } }` ; l'outil `get_plan` (lecture, clé ou OAuth) rend la même chose ; le badge du widget est
   `droits.limites.badge`.
-- `/ops` : poser ou retirer l'Entreprise d'un espace, avec sa limite d'utilisateurs et sa conservation
+- `/ops` : poser ou retirer l'Entreprise d'un espace, avec sa limite d'utilisateurs (10 proposés, vide = sans limite)
+  et sa conservation
   (`conversation_retention_days`, qu'aucune route n'écrit aujourd'hui) ; trace signée de son auteur (`par`), cache de
   l'offre invalidé.
 - Tests : la route refuse un autre espace (`tests/scope-tenant.test.ts`) ; l'usage exact ; le badge par offre ; la route
@@ -194,7 +199,9 @@ dans le journal du crédit en Base puis en Pro, et une conversation de l'espace 
   anciennes ne se déclenchent plus ; l'agent de Meta ne reçoit plus la main ; un membre au-delà de la limite (le plus
   ancien admin reste) reçoit `plan_limit_reached` à chaque requête ; rien n'est effacé. ⚠️ `fil.ts` et
   `mba/activation.ts` sont touchés par RC6 : écrire après son déploiement, et l'annoncer.
-- Tests : vigilance 5 ; chaque gel, puis tout revient au réabonnement.
+- Le choix de l'agent de Meta dans `set_default_responder` exige `agent_meta` (reporté de la tâche 3).
+- Tests : vigilance 5 ; chaque gel, puis tout revient au réabonnement ; `set_default_responder` vers l'agent de Meta
+  refusé en Base.
 
 **Tâche 14. La console de B** (`web/app/offre/page.tsx`, `web/components/BandeauAbonnement.tsx`)
 - « Passer en Pro » (mensuel ou annuel) et le portail ; l'annonce de la suite du numéro à la fin prévue du Pro.

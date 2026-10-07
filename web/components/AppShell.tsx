@@ -9,12 +9,15 @@ import { Logo, LogoComplet } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { BoutonAide } from './BoutonAide';
 import { BandeauAbonnement } from './BandeauAbonnement';
+import { EncartOffre } from './EncartOffre';
 import { Icone } from './Icone';
 import { useT } from '@/lib/i18n';
 import { repeterAvecGigue } from '@/lib/poll';
-import { arbresNav, groupesAOuvrir, ongletDeLaPage, accesAutorise, navPourRole, type NavEntree, type Onglet } from '@/lib/nav';
+import { arbresNav, groupesAOuvrir, ongletDeLaPage, accesAutorise, navPourRole, navPourOffre, fonctionDeLaPage, premiereDestination, type NavEntree, type Onglet } from '@/lib/nav';
+import { useOffre } from '@/lib/use-offre';
+import { OFFRE_REFUSEE_EVENT, phraseInclusDans, phraseSansAdresse, type FonctionOffre, type RefusOffre } from '@/lib/offre';
 
-type Tab = 'accueil' | 'perf-synthese' | 'quanti-messages' | 'quanti-couts' | 'quanti-funnel' | 'quanti-performance' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'publicites' | 'widgets' | 'workflows' | 'automations' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'connecteurs-mcp' | 'parametres' | 'parametres-credit' | 'securite' | 'securite-consentement' | 'securite-ia' | 'securite-audit' | 'securite-erreurs' | 'compte';
+type Tab = 'accueil' | 'perf-synthese' | 'quanti-messages' | 'quanti-couts' | 'quanti-funnel' | 'quanti-performance' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'publicites' | 'widgets' | 'workflows' | 'automations' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'connecteurs-mcp' | 'parametres' | 'parametres-credit' | 'securite' | 'securite-consentement' | 'securite-ia' | 'securite-audit' | 'securite-erreurs' | 'compte' | 'offre';
 
 // Le modèle d'entrée, le calcul de la chaîne d'ancêtres ET LES QUATRE LISTES vivent dans `lib/nav.ts` : le
 // modèle est récursif depuis que la barre a trois niveaux, et les listes ont suivi le 2026-09-11 parce que
@@ -35,7 +38,16 @@ export const UNREAD_CHANGED_EVENT = 'mba:unread-changed';
  * + contenu pleine largeur. RBAC : seule l'inbox est ouverte à l'agent ; tout le reste exige admin (la
  * vraie autorité reste le serveur, on évite juste d'afficher une page interdite).
  */
-export function AppShell({ active, fullBleed = false, children }: { active: Tab; fullBleed?: boolean; children: (session: Session) => React.ReactNode }) {
+export function AppShell({ active, fullBleed = false, fonction, children }: {
+  active: Tab;
+  fullBleed?: boolean;
+  /**
+   * La fonction de l'offre qu'exige cette page quand sa clé de menu ne la porte pas (lot 6) : une sous-page qui partage
+   * la clé d'un écran ouvert, comme la connexion Salesforce sous Paramètres. Sinon, la carte de la barre la donne.
+   */
+  fonction?: FonctionOffre;
+  children: (session: Session) => React.ReactNode;
+}) {
   const router = useRouter();
   const t = useT();
   const [session, setSession] = useState<Session | null>(null);
@@ -43,6 +55,16 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   const [unread, setUnread] = useState(0);
   // Session tombée : on l'apprend par l'événement émis au premier 401 (cf. `lib/api.ts`).
   const [sessionExpiree, setSessionExpiree] = useState(false);
+  // Le dernier refus de l'offre (402, lot 6) : la phrase du serveur, affichée en bandeau avec le lien vers `/offre`.
+  const [refusOffre, setRefusOffre] = useState<RefusOffre | null>(null);
+  /**
+   * L'OFFRE DE L'ESPACE (lot 6) : `undefined` tant qu'elle n'est pas lue, `null` si elle est inconnue (API plus ancienne,
+   * panne), et alors RIEN n'est grisé. Elle ne fait qu'éviter d'ouvrir un écran dont chaque geste serait refusé : la
+   * barrière est le 402 du serveur.
+   */
+  const vueOffre = useOffre(session?.tenantId ?? null);
+  const ouvertes: ReadonlySet<FonctionOffre> | null = vueOffre ? vueOffre.fonctions : null;
+  const fonctionOuverte = (f: FonctionOffre): boolean => ouvertes === null || ouvertes.has(f);
 
   // Les quatre listes de la barre vivent dans `lib/nav.ts` depuis le 2026-09-11 : elles sont la CARTE
   // de la console, et un composant ne se lit pas de l’extérieur. Le compte de non-lus leur est passé
@@ -103,8 +125,11 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
 
   // Pastille de non-lus : relevée à l'arrivée puis toutes les 30 s. Échec silencieux (0) : une pastille est
   // une information d'appoint, elle ne doit jamais faire apparaître une erreur en travers du menu.
+  // 🔴 PAS AVANT D'AVOIR LU L'OFFRE, ET JAMAIS QUAND ELLE FERME L'INBOX (lot 6) : la route des non-lus vit dans le module
+  // de l'Inbox, une Base y prendrait un 402 toutes les 30 s, et le bandeau du refus sur chaque page.
+  const inboxLisible = vueOffre !== undefined && fonctionOuverte('inbox');
   useEffect(() => {
-    if (!session) return;
+    if (!session || !inboxLisible) return;
     let alive = true;
     const lire = () => {
       countUnreadConversations(session.tenantId)
@@ -115,7 +140,13 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
     const arreter = repeterAvecGigue(lire, UNREAD_POLL_MS);
     window.addEventListener(UNREAD_CHANGED_EVENT, lire);
     return () => { alive = false; arreter(); window.removeEventListener(UNREAD_CHANGED_EVENT, lire); };
-  }, [session]);
+  }, [session, inboxLisible]);
+
+  useEffect(() => {
+    const refuse = (e: Event): void => setRefusOffre((e as CustomEvent<RefusOffre>).detail);
+    window.addEventListener(OFFRE_REFUSEE_EVENT, refuse);
+    return () => window.removeEventListener(OFFRE_REFUSEE_EVENT, refuse);
+  }, []);
 
   useEffect(() => {
     const tombee = (): void => setSessionExpiree(true);
@@ -145,8 +176,12 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
   const NAV_DU_CORPS: Record<Onglet, NavEntree[]> = { console: NAV_CONSOLE, inbox: NAV_INBOX, perf: NAV_PERF };
   // 🔴 FILTRÉ PAR RÔLE, PAR LA MÊME FONCTION QUE LA GARDE. Un manager ne doit pas voir une liste de dossiers
   // qui le renverraient tous à l'inbox : une porte annoncée et fermée est pire qu'une porte absente.
-  const nav = navPourRole(NAV_DU_CORPS[onglet], session.role);
-  const navBas = navPourRole(NAV_ADMIN_BAS, session.role);
+  // Puis MARQUÉ PAR L'OFFRE (lot 6) : un écran que l'offre n'ouvre pas reste dans la barre, grisé, et mène à `/offre`.
+  const nav = navPourOffre(navPourRole(NAV_DU_CORPS[onglet], session.role), ouvertes);
+  const navBas = navPourOffre(navPourRole(NAV_ADMIN_BAS, session.role), ouvertes);
+  /** La raison d'un écran grisé : l'offre qui l'ouvre, d'après la grille du serveur. */
+  const raisonVerrou = (f: FonctionOffre | undefined): string =>
+    vueOffre && f ? phraseInclusDans(vueOffre, f, t) : t('Pas dans votre offre.', 'Not in your plan.');
 
   const itemCls = (on: boolean) =>
     `flex items-center gap-2.5 rounded-controle px-3 py-2 text-sm transition-colors duration-150 ${on ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100 hover:text-ink-900'}`;
@@ -188,6 +223,20 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
               </div>
             )}
           </div>
+        ) : item.verrouillee ? (
+          // Grisé, avec sa raison, et il mène à l'offre : on voit ce que le Pro ajoute au lieu de ne rien voir.
+          <Link
+            key={item.key}
+            href={`/offre?fonction=${item.fonction}`}
+            onClick={() => setDrawerOpen(false)}
+            title={raisonVerrou(item.fonction)}
+            data-testid={`nav-verrou-${item.key}`}
+            className={`flex items-center rounded-controle text-sm text-ink-400 transition-colors duration-150 hover:bg-ink-100 ${niveau === 1 ? 'gap-2.5 px-3 py-2' : 'gap-2 px-3 py-1.5'}`}
+          >
+            {item.icone && <Icone nom={item.icone} taille="nav" />}
+            {item.label}
+            <Icone nom="cadenas" taille="petite" className="ml-auto" />
+          </Link>
         ) : (
           <Link
             key={item.key}
@@ -225,7 +274,10 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
    * refusé de créer l'adresse tant qu'elle n'aurait rien à montrer. `/dashboard` n'a pas bougé et reste la
    * première entrée du bloc Quantitatif.
    */
-  const ONGLETS_UI: Array<{ cle: Onglet; label: string; href: string; badge?: number }> = [
+  // La destination du Performance Lab suit l'offre (lot 6) : la première entrée qu'elle ouvre, la Synthèse en Entreprise,
+  // le Quantitatif en Pro. Aucune en Base : l'onglet est grisé et mène à l'offre.
+  const destinationPerf = premiereDestination(navPourOffre(NAV_PERF, ouvertes));
+  const ONGLETS_UI: Array<{ cle: Onglet; label: string; href: string; badge?: number; verrouille?: FonctionOffre }> = [
     { cle: 'console', label: t('Console', 'Console'), href: '/accueil' },
     /**
      * 🔴 LA PASTILLE DE NON-LUS SUIT L'INBOX ICI, et l'oublier était une régression que l'E2E a attrapée.
@@ -236,8 +288,12 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
      * l'était que dans la barre. Un opérateur qui lit ses chiffres dans le Performance Lab voit qu'on lui
      * écrit, ce qui n'était pas le cas avant.
      */
-    { cle: 'inbox', label: t('Inbox', 'Inbox'), href: '/inbox', badge: unread },
-    { cle: 'perf', label: t('Performance Lab', 'Performance Lab'), href: '/performance' },
+    fonctionOuverte('inbox')
+      ? { cle: 'inbox', label: t('Inbox', 'Inbox'), href: '/inbox', badge: unread }
+      : { cle: 'inbox', label: t('Inbox', 'Inbox'), href: '/offre?fonction=inbox', verrouille: 'inbox' },
+    destinationPerf
+      ? { cle: 'perf', label: t('Performance Lab', 'Performance Lab'), href: destinationPerf }
+      : { cle: 'perf', label: t('Performance Lab', 'Performance Lab'), href: '/offre?fonction=statistiques', verrouille: 'statistiques' },
   ];
   /**
    * 🔴 ON NE MONTRE QU'UNE PORTE QU'ON PEUT OUVRIR. Un compte `agent` n'a que l'inbox : lui montrer trois
@@ -258,6 +314,16 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
    * Une colonne vide y prendrait 15 rem de large pour ne rien montrer.
    */
   const avecBarreLaterale = onglet !== 'inbox';
+
+  /**
+   * 🔴 L'ÉCRAN D'UNE FONCTION FERMÉE N'EST PAS MONTÉ (lot 6) : on y arrive par un favori, un lien partagé ou le menu grisé,
+   * et chacun de ses appels prendrait un 402. L'encart de l'offre le remplace. Tant que l'offre n'est pas lue, un écran
+   * PAYANT attend (un instant, la lecture est gardée une minute) ; un écran ouvert à toutes les offres s'affiche tout de
+   * suite.
+   */
+  const fonctionDeCettePage = fonction ?? fonctionDeLaPage([...ARBRES.console, ...ARBRES.inbox, ...ARBRES.perf], active);
+  const pageEnAttente = fonctionDeCettePage !== null && vueOffre === undefined;
+  const pageFermee = fonctionDeCettePage !== null && vueOffre ? !vueOffre.fonctions.has(fonctionDeCettePage) : false;
 
   const SidebarInner = (
     // Colonne pleine hauteur : c'est elle qui permet au bloc bas de descendre. Le `flex-1` du corps ci-dessous
@@ -350,14 +416,17 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
               key={o.cle}
               href={o.href}
               data-testid={`onglet-${o.cle}`}
+              data-verrouille={o.verrouille ? 'oui' : undefined}
+              title={o.verrouille ? raisonVerrou(o.verrouille) : undefined}
               aria-current={onglet === o.cle ? 'page' : undefined}
               className={`whitespace-nowrap rounded-controle px-3 py-1.5 text-sm font-medium transition-colors duration-150 ${
                 onglet === o.cle
                   ? 'bg-brand-50 text-brand-700'
-                  : 'text-ink-500 hover:bg-ink-100 hover:text-ink-900'
+                  : o.verrouille ? 'text-ink-400 hover:bg-ink-100' : 'text-ink-500 hover:bg-ink-100 hover:text-ink-900'
               }`}
             >
               {o.label}
+              {o.verrouille && <Icone nom="cadenas" taille="petite" className="ml-1.5 inline" />}
               {o.badge !== undefined && o.badge > 0 && (
                 <span
                   data-testid={`nav-badge-${o.cle}`}
@@ -420,6 +489,27 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
             </div>
           </div>
         )}
+        {/* Un refus de l'offre (402, lot 6) : la phrase du serveur et le chemin vers l'offre.
+            🔴 FIXE ET AU-DESSUS DES FENÊTRES (`z-[70]`, les modales sont à `z-[60]`) : la plupart des gestes refusés partent
+            d'une fenêtre (ajouter un contact, inviter un membre), et un bandeau dans le flux de la page restait dessous,
+            inaccessible tant qu'elle était ouverte (vu par l'e2e de l'offre). */}
+        {refusOffre && (
+          <div role="alert" className="fixed inset-x-4 top-16 z-[70] mx-auto max-w-liste rounded-carte border border-brand-200 bg-brand-50 px-4 py-2 shadow-lg" data-testid="refus-offre">
+            <div className="flex flex-wrap items-center gap-3 text-sm text-brand-700">
+              <span data-testid="refus-offre-phrase">{phraseSansAdresse(refusOffre.phrase)}</span>
+              <Link
+                href="/offre"
+                data-testid="refus-offre-lien"
+                className="ml-auto rounded-controle bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors duration-150 hover:bg-brand-700"
+              >
+                {t('Voir les offres', 'See plans')}
+              </Link>
+              <button type="button" onClick={() => setRefusOffre(null)} data-testid="refus-offre-fermer" className="rounded-controle p-1 text-brand-700 hover:bg-brand-100">
+                <Icone nom="fermer" taille="petite" titre={t('Fermer', 'Close')} />
+              </button>
+            </div>
+          </div>
+        )}
         {/* OBSERVATION d'un espace client depuis l'exploitation. Bandeau PERMANENT et non un simple badge :
             sans lui on oublie qu'on regarde chez quelqu'un d'autre, et on prend ses chiffres pour les siens.
             La lecture seule est imposée par le SERVEUR ; ce bandeau ne protège rien, il informe. */}
@@ -446,7 +536,9 @@ export function AppShell({ active, fullBleed = false, children }: { active: Tab;
         {/* L'abonnement du numéro fourni (lot 4) : en retard, suspendu ou fin prévue, sur toutes les pages, pour tous les
             membres (la suspension coupe aussi les réponses de l'Inbox). */}
         <BandeauAbonnement tenantId={session.tenantId} admin={session.role === 'admin'} />
-        <main className={fullBleed ? 'w-full flex-1 lg:flex lg:min-h-0 lg:flex-col' : 'mx-auto w-full max-w-liste flex-1 px-4 py-8 sm:px-6'}>{children(session)}</main>
+        <main className={fullBleed ? 'w-full flex-1 lg:flex lg:min-h-0 lg:flex-col' : 'mx-auto w-full max-w-liste flex-1 px-4 py-8 sm:px-6'}>
+          {pageEnAttente ? null : pageFermee && vueOffre && fonctionDeCettePage ? <EncartOffre fonction={fonctionDeCettePage} vue={vueOffre} /> : children(session)}
+        </main>
       </div>
       </div>
       {/* 🔴 POSÉ UNE SEULE FOIS, ICI. Le bouton d'aide doit être sur les 36 écrans authentifiés ; le mettre

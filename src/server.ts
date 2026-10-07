@@ -93,10 +93,16 @@ import { registerAuth } from './auth/routes';
 import { makeRequireAuth, makeRequireRole, makeLimiteParTenant, makeRequireOps, makeRequireAdminOuLien } from './auth/middleware';
 import type { Guard, PreHandler } from './auth/middleware';
 import { monterAvecEtapeEspace } from './http/scope';
+import { etapeOffre, toutes, ecritures, fonctionDesStatistiques, type FonctionDeRoute } from './offres/etape';
+import { DROITS } from './offres/offres';
+import type { SourceOffres } from './offres/offre.pg';
+import { LimiteOffreError, STATUT_REFUS_OFFRE, corpsRefusLimite } from './offres/refus';
 import { makeRequireApiKey, requireScope } from './auth/api-key';
 import { RateLimiter } from './auth/rate-limit';
 import { PlafondEspace, ReglagesPlafondEnCache, SANS_REGLAGE, type PlafondApiStore, type PlafondsParDefaut } from './auth/plafond-espace';
 import { registerOpsPlafondApi } from './http/ops-plafond-api';
+import { registerOffre, type OffreRouteDeps } from './http/offre';
+import { registerOpsOffre, type OpsOffreDeps } from './http/ops-offre';
 import { registerOpsNumeros, type OpsNumerosDeps } from './http/ops-numeros';
 import { registerOtpPont, type OtpPontRouteDeps } from './http/otp-pont';
 import { MetaApiError } from './meta/errors';
@@ -400,6 +406,17 @@ export interface ServerDeps {
   /** Chaîne WhatsApp (Channels Me) : lecture ouverte aux comptes authentifiés, écritures admin-only (garde
    *  dans la route). */
   channelsMe?: ChannelsMeRouteDeps;
+  /**
+   * L'offre de chaque espace (lot 6, `OffresEnCache` sur `PgOffresStore`), lue par l'étape d'offre des modules gardés.
+   * ⚠️ Absente, chaque espace est traité en Entreprise (tout ouvert) : c'est le défaut des tests qui montent un module
+   * sans parler d'offre. La production la câble (`src/index.ts`, tenu par `tests/offres-cablage.test.ts`) ; l'oublier
+   * ouvrirait les fonctions du Pro à la Base, une perte commerciale et non une faille (l'isolation ne passe pas par là).
+   */
+  offres?: SourceOffres;
+  /** La vue de l'offre de l'espace, pour la console (lot 6, `GET /tenants/:tenantId/offre`). */
+  offre?: OffreRouteDeps;
+  /** L'Entreprise posée par l'exploitation (lot 6, `/ops/offre/:tenantId`). */
+  opsOffre?: OpsOffreDeps;
 }
 
 /**
@@ -462,6 +479,8 @@ export interface Gardes {
   readonly ops: PreHandler;
   /** Le second plafond de débit, composé route par route sur les seules routes coûteuses. */
   readonly limiteCouteuse?: PreHandler;
+  /** L'offre de chaque espace, pour l'étape d'offre que `entree` pose sur les modules gardés (lot 6). */
+  readonly offres: SourceOffres;
   /**
    * Le compteur derrière `limiteCouteuse`, pour qui le consomme hors d'une route : les outils MCP coûteux (lot 8a).
    * La MÊME instance et la même clé (l'espace) : un import de site par Claude et un import depuis l'onglet comptent
@@ -477,12 +496,17 @@ export interface Gardes {
  */
 const SANS_PLAFOND: PreHandler = async () => {};
 
+/** Sans offre câblée (`ServerDeps.offres` absente), chaque espace est en Entreprise : voir la note de `ServerDeps`. */
+const toutOuvert: SourceOffres = { offreDe: async () => ({ offre: 'entreprise', droits: DROITS.entreprise, retourEnBaseLe: null }) };
+
 /** Une entrée du registre, une fois son type de dépendances effacé (voir `entree`). */
 export interface ModuleMonte {
   readonly nom: string;
   readonly acces: ClasseDAcces;
   /** Ses dépendances ont-elles été fournies ? C'est ce qui décide s'il se monte. */
   readonly fourni: boolean;
+  /** Ce que l'offre garde sur chacune de ses routes (lot 6), `null` pour un module ouvert à toutes les offres. */
+  readonly garde: FonctionDeRoute | null;
   readonly monte: (app: FastifyInstance, gardes: Gardes) => void;
 }
 
@@ -505,15 +529,28 @@ function entree<D>(
   acces: ClasseDAcces,
   deps: D | undefined,
   monter: (app: FastifyInstance, deps: D, gardes: Gardes) => void,
+  /**
+   * Lot 6 : ce que l'offre garde, route par route (`toutes`, `ecritures`, `fonctionDesStatistiques`). L'étape d'offre
+   * se pose JUSTE APRÈS `etapeEspace`, par le même poseur : le module ne la voit pas et ne peut pas l'oublier.
+   * 🔴 Réservé aux modules `tenant` : ailleurs, aucune session d'espace ne dit de quelle offre il s'agit.
+   */
+  garde: FonctionDeRoute | null = null,
 ): ModuleMonte {
+  if (garde !== null && acces !== 'tenant') throw new Error(`le module ${nom} déclare une garde d'offre sans être « tenant »`);
   return {
     nom,
     acces,
     fourni: deps !== undefined,
+    garde,
     monte: (app, gardes) => {
       if (deps === undefined) return;
-      if (acces === 'tenant') monterAvecEtapeEspace(app, () => monter(app, deps, gardes));
-      else monter(app, deps, gardes);
+      if (acces === 'tenant') {
+        const apres = garde === null ? null : (r: { methodes: readonly string[]; chemin: string }) => {
+          const f = garde(r);
+          return f === null ? null : etapeOffre(f, gardes.offres);
+        };
+        monterAvecEtapeEspace(app, () => monter(app, deps, gardes), apres);
+      } else monter(app, deps, gardes);
     },
   };
 }
@@ -588,6 +625,8 @@ export function modulesDeRoutes(
     entree('plafondApi', 'session-ops', deps.plafondApi, (app, d, g) => registerOpsPlafondApi(
       app, { store: d, reglages: reglagesPlafond, defauts: defautsPlafond() }, g.ops,
     )),
+    // L'Entreprise d'un espace (lot 6) : sur devis, posée par l'exploitation, dans un module à part.
+    entree('opsOffre', 'session-ops', deps.opsOffre, (app, d, g) => registerOpsOffre(app, d, g.ops)),
     // La réserve de numéros fournis (lot 3a) : même autorité que `/ops`, dans un module à part.
     entree('opsNumeros', 'session-ops', deps.opsNumeros, (app, d, g) => registerOpsNumeros(app, d, g.ops)),
     // Redirection des liens tracés : publique (un destinataire clique depuis WhatsApp, sans session), montée
@@ -614,43 +653,43 @@ export function modulesDeRoutes(
     entree('campaigns', 'tenant', deps.campaigns, (app, d, g) => registerCampaigns(app, d, g.admin, g.limiteCouteuse)),
     // Bibliothèque RCS : montée avec `auth` et non `admin`, car la liste doit être lisible par un agent (bloc
     // de scénario, assistant de campagne). Les écritures sont gardées dans les handlers par `forbidNonAdmin`.
-    entree('rcsMessages', 'tenant', deps.rcsMessages, (app, d, g) => registerRcsMessages(app, d, g.auth)),
-    entree('rcsChannel', 'tenant', deps.rcsChannel, (app, d, g) => registerRcsChannel(app, d, g.auth)),
-    entree('integrationBatch', 'tenant', deps.integrationBatch, (app, d, g) => registerIntegrationBatch(app, d, g.admin)),
-    entree('salesforce', 'tenant', deps.salesforce, (app, d, g) => registerSalesforce(app, d, g.admin, g.limiteCouteuse)),
+    entree('rcsMessages', 'tenant', deps.rcsMessages, (app, d, g) => registerRcsMessages(app, d, g.auth), toutes('rcs')),
+    entree('rcsChannel', 'tenant', deps.rcsChannel, (app, d, g) => registerRcsChannel(app, d, g.auth), toutes('rcs')),
+    entree('integrationBatch', 'tenant', deps.integrationBatch, (app, d, g) => registerIntegrationBatch(app, d, g.admin), toutes('crm')),
+    entree('salesforce', 'tenant', deps.salesforce, (app, d, g) => registerSalesforce(app, d, g.admin, g.limiteCouteuse), toutes('crm')),
     // Visuels RCS : monté avec `auth` alors qu'il porte aussi une route publique `/m/<code>.<ext>`. Les gardes
     // sont posées par route (`preHandler`), donc la lecture reste ouverte : l'opérateur télécom télécharge
     // l'image sans session.
-    entree('rcsMedia', 'tenant', deps.rcsMedia, (app, d, g) => registerRcsMedia(app, d, g.auth)),
+    entree('rcsMedia', 'tenant', deps.rcsMedia, (app, d, g) => registerRcsMedia(app, d, g.auth), toutes('rcs')),
     // Templates : la liste (GET) reste lisible par l'agent, l'inbox en a besoin pour envoyer un template hors
     // fenêtre 24 h. La création (POST) reste admin-only via `forbidNonAdmin` dans le handler.
     entree('templates', 'tenant', deps.templates, (app, d, g) => registerTemplates(app, d, g.auth)),
     // Deux gardes : l'inbox est ouverte a tout compte authentifie, mais l'effacement du contenu d'une
     // conversation est reserve aux administrateurs. Un operateur repond aux clients, il n'efface pas des traces.
-    entree('inbox', 'tenant', deps.inbox, (app, d, g) => registerInbox(app, d, g.auth, g.admin, g.limiteCouteuse)),
+    entree('inbox', 'tenant', deps.inbox, (app, d, g) => registerInbox(app, d, g.auth, g.admin, g.limiteCouteuse), toutes('inbox')),
     entree('hubspotEvents', 'signature-service', deps.hubspotEvents, (app, d) => registerHubspotEvents(app, d)),
     // Le webhook de Stripe : autorité = la signature du corps brut, vérifiée dans le module avant toute lecture.
     entree('stripeWebhook', 'signature-service', deps.stripeWebhook, (app, d) => registerStripeWebhook(app, d)),
     // Le pont du code (lot 3a) : l'Asterisk du VPS y poste chaque enregistrement, signé avec `OTP_PONT_SECRET`.
     entree('otpPont', 'signature-service', deps.otpPont, (app, d) => registerOtpPont(app, d)),
-    entree('stats', 'tenant', deps.stats, (app, d, g) => registerStats(app, d, g.admin)),
+    entree('stats', 'tenant', deps.stats, (app, d, g) => registerStats(app, d, g.admin), fonctionDesStatistiques),
     entree('settings', 'tenant', deps.settings, (app, d, g) => registerSettings(app, d, g.admin, g.encadrement)),
     entree('admin', 'tenant', deps.admin, (app, d, g) => registerUsers(app, d, g.admin)),
-    entree('flows', 'tenant', deps.flows, (app, d, g) => registerFlows(app, d, g.admin)),
+    entree('flows', 'tenant', deps.flows, (app, d, g) => registerFlows(app, d, g.admin), ecritures('scenarios')),
     entree('agents', 'tenant', deps.agents, (app, d, g) => registerAgents(app, d, g.admin)),
     // Admin comme le solde qu'elle recharge, et plafond coûteux : chaque clic crée des objets chez Stripe.
     entree('creditPaiement', 'tenant', deps.creditPaiement, (app, d, g) => registerCreditPaiement(app, d, g.admin, g.limiteCouteuse ?? SANS_PLAFOND)),
     entree('agentKnowledge', 'tenant', deps.agentKnowledge, (app, d, g) => registerAgentKnowledge(app, d, g.admin, g.limiteCouteuse)),
     entree('agentTools', 'tenant', deps.agentTools, (app, d, g) => registerAgentTools(app, d, g.admin)),
     entree('agentCatalogue', 'tenant', deps.agentCatalogue, (app, d, g) => registerAgentCatalogue(app, d, g.admin)),
-    entree('mbaPublication', 'tenant', deps.mbaPublication, (app, d, g) => registerMbaPublication(app, d, g.admin)),
-    entree('mbaOutils', 'tenant', deps.mbaOutils, (app, d, g) => registerMbaOutils(app, d, g.admin)),
+    entree('mbaPublication', 'tenant', deps.mbaPublication, (app, d, g) => registerMbaPublication(app, d, g.admin), toutes('agent_meta')),
+    entree('mbaOutils', 'tenant', deps.mbaOutils, (app, d, g) => registerMbaOutils(app, d, g.admin), toutes('agent_meta')),
     // Publicités : sous `g.auth` et non `g.admin`, car la lecture de l'état est ouverte à tout membre (aucun
     // secret) ; les trois écritures sont gardées dans les handlers par `forbidNonAdmin`.
-    entree('pubs', 'tenant', deps.pubs, (app, d, g) => registerPubs(app, d, g.auth, g.limiteCouteuse ?? SANS_PLAFOND)),
+    entree('pubs', 'tenant', deps.pubs, (app, d, g) => registerPubs(app, d, g.auth, g.limiteCouteuse ?? SANS_PLAFOND), toutes('publicites')),
     // `g.admin` comme les écritures MBA : la conversation ne doit pas être un chemin plus permissif que le
     // formulaire. La route repose aussi `forbidNonAdmin` : celle-ci monte, celle-là explique.
-    entree('mbaAssistant', 'tenant', deps.mbaAssistant, (app, d, g) => registerMbaAssistant(app, d, g.admin)),
+    entree('mbaAssistant', 'tenant', deps.mbaAssistant, (app, d, g) => registerMbaAssistant(app, d, g.admin), toutes('assistants')),
     // Admin comme ce qu'il journalise : ce journal porte le contenu des éléments supprimés.
     entree('historique', 'tenant', deps.historique, (app, d, g) => registerHistorique(app, d, g.admin)),
     entree('agentSources', 'tenant', deps.agentSources, (app, d, g) => registerAgentSources(app, d, g.admin)),
@@ -658,20 +697,20 @@ export function modulesDeRoutes(
     // Réservées aux admins comme les sources : décrire une requête, c'est décider ce qu'on envoie au système
     // d'un client, et le bouton Test rend la réponse entière.
     entree('agentRequetes', 'tenant', deps.agentRequetes, (app, d, g) => registerAgentRequetes(app, d, g.admin)),
-    entree('agentSetup', 'tenant', deps.agentSetup, (app, d, g) => registerAgentSetup(app, d, g.admin)),
+    entree('agentSetup', 'tenant', deps.agentSetup, (app, d, g) => registerAgentSetup(app, d, g.admin), toutes('assistants')),
     entree('agentTest', 'tenant', deps.agentTest, (app, d, g) => registerAgentTest(app, d, g.admin)),
     entree('media', 'tenant', deps.media, (app, d, g) => registerMedia(app, d, g.admin)),
     entree('tags', 'tenant', deps.tags, (app, d, g) => registerTags(app, d, g.admin)),
     entree('fields', 'tenant', deps.fields, (app, d, g) => registerFields(app, d, g.admin)),
     entree('support', 'tenant', deps.support, (app, d, g) => registerSupport(app, d, g.auth)),
-    entree('aide', 'tenant', deps.aide, (app, d, g) => registerAide(app, d, g.auth)),
+    entree('aide', 'tenant', deps.aide, (app, d, g) => registerAide(app, d, g.auth), toutes('aide')),
     entree('contacts', 'tenant', deps.contacts, (app, d, g) => registerContacts(app, d, g.admin, g.encadrement, g.limiteCouteuse)),
-    entree('workflows', 'tenant', deps.workflows, (app, d, g) => registerWorkflows(app, d, g.admin)),
-    entree('workflowReports', 'tenant', deps.workflowReports, (app, d, g) => registerWorkflowReports(app, d, g.admin)),
+    entree('workflows', 'tenant', deps.workflows, (app, d, g) => registerWorkflows(app, d, g.admin), ecritures('scenarios')),
+    entree('workflowReports', 'tenant', deps.workflowReports, (app, d, g) => registerWorkflowReports(app, d, g.admin), toutes('performance_lab')),
     entree('automations', 'tenant', deps.automations, (app, d, g) => registerAutomations(app, d, g.auth)),
     // `auth` et non `admin` : les écrans de la chaîne se lisent avec un compte agent, et les six
     // ecritures sont fermees dans la route par `forbidNonAdmin`.
-    entree('channelsMe', 'tenant', deps.channelsMe, (app, d, g) => registerChannelsMeRoutes(app, d, g.auth)),
+    entree('channelsMe', 'tenant', deps.channelsMe, (app, d, g) => registerChannelsMeRoutes(app, d, g.auth), toutes('chaines')),
     // `admin`, lecture comprise : l'écran n'est ouvert qu'aux administrateurs, et poser une bulle sur le site d'un
     // client décide qui répond à ses visiteurs.
     entree('widgets', 'tenant', deps.widgets, (app, d, g) => registerWidgets(app, d, g.admin)),
@@ -681,11 +720,13 @@ export function modulesDeRoutes(
     entree('numeroFourni', 'tenant', deps.numeroFourni, (app, d, g) => registerNumeroFourni(app, d, g.adminOuLien, g.admin, g.limiteCouteuse)),
     // `auth` et non `admin` : un agent de l'Inbox doit savoir pourquoi ses réponses ne partent plus (lot 4).
     entree('abonnementNumero', 'tenant', deps.abonnementNumero, (app, d, g) => registerAbonnementNumero(app, d, g.auth)),
-    entree('hubspotImport', 'tenant', deps.hubspotImport, (app, d, g) => registerHubspotImport(app, d, g.admin)),
-    entree('hubspotInstall', 'tenant', deps.hubspotInstall, (app, d, g) => registerHubspotInstall(app, d, g.admin)),
-    entree('hubspotPipelines', 'tenant', deps.hubspotPipelines, (app, d, g) => registerHubspotPipelines(app, d, g.admin)),
-    entree('mba', 'tenant', deps.mba, (app, d, g) => registerMba(app, d, g.admin)),
-    entree('email', 'tenant', deps.email, (app, d, g) => registerEmailRoutes(app, d, g.admin)),
+    // L'offre de l'espace (lot 6) : tout membre la lit, la console grise ses menus d'après elle.
+    entree('offre', 'tenant', deps.offre, (app, d, g) => registerOffre(app, d, g.auth)),
+    entree('hubspotImport', 'tenant', deps.hubspotImport, (app, d, g) => registerHubspotImport(app, d, g.admin), toutes('crm')),
+    entree('hubspotInstall', 'tenant', deps.hubspotInstall, (app, d, g) => registerHubspotInstall(app, d, g.admin), toutes('crm')),
+    entree('hubspotPipelines', 'tenant', deps.hubspotPipelines, (app, d, g) => registerHubspotPipelines(app, d, g.admin), toutes('crm')),
+    entree('mba', 'tenant', deps.mba, (app, d, g) => registerMba(app, d, g.admin), toutes('agent_meta')),
+    entree('email', 'tenant', deps.email, (app, d, g) => registerEmailRoutes(app, d, g.admin), toutes('email')),
     entree('apiKeys', 'tenant', deps.apiKeys, (app, d, g) => registerApiKeys(app, d, g.admin)),
     // `admin` comme les clés d'API : seul un admin autorise Claude (décision du 2026-10-03), et la liste dit qui a
     // ouvert l'espace.
@@ -877,6 +918,11 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       const detail = friendly.replace(/\s+/g, ' ').trim().slice(0, 200);
       return reply.code(422).send({ error: `Meta: ${detail}` });
     }
+    // Une limite de l'offre atteinte (lot 6) : 402, la phrase et le lien vers l'offre, sur TOUTE route, d'où qu'elle
+    // vienne (un magasin, la fabrique). Jamais un 500 : ce n'est pas une panne, et Cloudflare masquerait le corps.
+    if (err instanceof LimiteOffreError) {
+      return reply.code(STATUT_REFUS_OFFRE).send(corpsRefusLimite(err));
+    }
     // flow_json refusé par Meta à la création : 422 + les erreurs de validation (pas un 500 opaque).
     if (err instanceof FlowJsonInvalidError) {
       return reply.code(422).send({ error: err.message.slice(0, 200) });
@@ -988,6 +1034,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     ops: makeRequireOps(deps.auth, deps.surveillanceOps),
     limiteCouteuse,
     plafondCouteux,
+    offres: deps.offres ?? toutOuvert,
   };
   for (const m of registre) m.monte(app, gardes);
 

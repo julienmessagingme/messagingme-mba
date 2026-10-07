@@ -19,6 +19,7 @@ import { normaliserChaine, problemeDeChaine, RANG_INITIAL, type DevenirEtage, ty
 // comme une action en masse, et deux analyseurs finiraient par ne plus viser la même chose.
 import { parseBulkTarget } from './contacts';
 import type { BulkTarget } from '../crm/contact-store.pg';
+import { LimiteOffreError, STATUT_REFUS_OFFRE, corpsRefusLimite } from '../offres/refus';
 
 /**
  * Ce que les routes lisent et écrivent des campagnes, en plus de ce que la création en a besoin
@@ -123,6 +124,13 @@ export interface CampaignRouteDeps {
   /** Le plus bas des plafonds de canal, pour estimer une durée sans connaître le canal (`plafondLePlusBas`).
   *  Le frein réel est posé par `run-job`, qui lit le canal. */
   plafondLePlusBas: number;
+  /**
+   * Les modèles du mois au lancement (lot 6) : la limite de l'offre, ce qu'il en reste, et combien de modèles la campagne
+   * enverrait (ses destinataires en attente sur un étage WhatsApp à modèle, hors scénario). `null` = sans limite. Une
+   * ESTIMATION pour refuser tôt : la décision qui fait foi reste à l'envoi (`src/meta/factory.ts`). Requise : les
+   * fixtures disent leur hypothèse (`campagnesInertes` : sans limite).
+   */
+  modelesDuLancement(tenantId: string, campaignId: string): Promise<{ max: number; reste: number; demandes: number } | null>;
 }
 
 const CATEGORIES = new Set<CampaignCategory>(['marketing', 'utility']);
@@ -581,6 +589,15 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
       const ok = await deps.repo.scheduleCampaign(campaignId, authTenant, when);
       if (!ok) return reply.code(409).send({ error: 'campagne non programmable (déjà en cours/terminée)' });
       return reply.code(202).send({ scheduled: true, campaignId, scheduledAt: when.toISOString() });
+    }
+
+    // Les modèles du mois (lot 6) : une campagne qui ne tient pas dans ce qu'il reste est refusée d'emblée, avant toute
+    // levée de pause, plutôt que de s'arrêter au milieu. Seul le lancement immédiat : une campagne programmée part un
+    // autre jour, peut-être un autre mois, et la fabrique décide alors.
+    const modeles = await deps.modelesDuLancement(authTenant, campaignId);
+    if (modeles !== null && modeles.demandes > modeles.reste) {
+      const refus = corpsRefusLimite(new LimiteOffreError(authTenant, 'envoisModelesMois', modeles.max));
+      return reply.code(STATUT_REFUS_OFFRE).send({ ...refus, reste: modeles.reste, demandes: modeles.demandes });
     }
 
     // Lancement immédiat, l'expiration dimensionnée sur le travail réel (`expirationDuRun`).

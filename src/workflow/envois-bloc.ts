@@ -1,4 +1,5 @@
 import type { WorkflowExecutorDeps } from './executor';
+import { LimiteOffreError } from '../offres/refus';
 import { problemeLienBouton } from './engine';
 import { buildWorkflowTemplateComponents } from './template-send';
 import type { MetaClient } from '../meta/client';
@@ -89,6 +90,22 @@ export interface DepsEnvoisDeBloc {
   inboxStore: OutboundLogger;
 }
 
+/**
+ * L'envoi d'un modèle, ou le refus de la limite des modèles du mois (lot 6) : la fabrique lève `LimiteOffreError` avant
+ * tout appel à Meta, et le bloc s'arrête alors avant effet, avec la raison, comme pour un template introuvable. Toute
+ * autre erreur remonte telle quelle.
+ */
+async function modeleOuLimite<T>(name: string, waId: string, envoyer: () => Promise<T>): Promise<T | string> {
+  try {
+    return await envoyer();
+  } catch (err) {
+    if (!(err instanceof LimiteOffreError)) throw err;
+    // eslint-disable-next-line no-console
+    console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : ${err.message}`);
+    return `template « ${name} » : ${err.message}`;
+  }
+}
+
 export function creerEnvoisDeBloc(deps: DepsEnvoisDeBloc): EnvoisDeBloc {
   const { dryRun, clientWhatsApp, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, trackedLinks, hintStore, contactStore, varsDuContact, inboxStore } = deps;
 
@@ -161,7 +178,8 @@ export function creerEnvoisDeBloc(deps: DepsEnvoisDeBloc): EnvoisDeBloc {
           console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : variable(s) manquante(s) position(s) ${missing.join(',')}`);
           return `template « ${name} » : valeur manquante pour la ou les variables ${missing.map((p) => `{{${p}}}`).join(', ')}`;
         }
-        const res = await client.sendTemplate(waId, { name, language, ...(components.length > 0 ? { components } : {}) });
+        const res = await modeleOuLimite(name, waId, () => client.sendTemplate(waId, { name, language, ...(components.length > 0 ? { components } : {}) }));
+        if (typeof res === 'string') return res;
         // 🔴 La catégorie vient de `luCampagne`, la lecture de cette branche : les deux branches doivent journaliser
         // la même chose. `luCampagne` null -> pas de catégorie, jamais une catégorie inventée, qui se facturerait au
         // mauvais tarif.
@@ -213,7 +231,8 @@ export function creerEnvoisDeBloc(deps: DepsEnvoisDeBloc): EnvoisDeBloc {
         console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : variable(s) manquante(s) position(s) ${missing.join(',')}`);
         return `template « ${name} » : ce contact n'a pas de valeur pour la ou les variables ${missing.map((p) => `{{${p}}}`).join(', ')}`;
       }
-      const res = await client.sendTemplate(waId, { name, language, ...(components.length > 0 ? { components } : {}) });
+      const res = await modeleOuLimite(name, waId, () => client.sendTemplate(waId, { name, language, ...(components.length > 0 ? { components } : {}) }));
+      if (typeof res === 'string') return res;
       // Journalise le template dans le fil (best-effort), avec sa catégorie lue dans `info` : sans elle, l'envoi
       // compterait en volume mais pas dans le coût.
       await logTemplateSent(inboxStore, tenant, waId, name, res.messageId, { templateCategory: info.category ?? null });

@@ -106,6 +106,8 @@ interface Deps {
   plafond?: number;
   /** Ne câble PAS la résolution « tous les contacts » : instance où ce chemin n'est pas plafonné. */
   sansCompteur?: boolean;
+  /** Les modèles du mois au lancement (lot 6). Absent : sans limite, comme un espace Pro. */
+  modeles?: { max: number; reste: number; demandes: number } | null;
 }
 function appWith(repo: FakeRepo, d: Deps = {}) {
   return buildServer({
@@ -146,6 +148,7 @@ function appWith(repo: FakeRepo, d: Deps = {}) {
         listPhoneNumbers: async () => [{ id: 'pn1', displayPhoneNumber: '+33600000000', verifiedName: 'Demo' }],
       }),
       queue: d.queue ?? new FakeQueue(),
+      modelesDuLancement: async () => d.modeles ?? null,
       // Dépendance OPTIONNELLE côté serveur : absente, les routes de brouillon ne sont pas montées du tout.
       ...(d.drafts ? { drafts: d.drafts } : {}),
       ...(d.sansCible ? {} : {
@@ -437,6 +440,33 @@ describe('POST /campaigns/:campaignId/run', () => {
     // campaignJobExpireSeconds(1000, 1) = max(900, ceil(1000/1*60*1.5)+600) = 90600 s brut, plafonné à
     // 82800 (23 h) : au-delà, pg-boss REFUSE l'enfilement et la campagne ne partirait jamais.
     expect(q.enqueued[0]?.opts?.expireInSeconds).toBe(82_800);
+    await app.close();
+  });
+
+  /**
+   * LES MODÈLES DU MOIS (lot 6, tâche 4) : une campagne qui ne tient pas dans ce qu'il reste ce mois-ci est refusée
+   * d'emblée, avant toute levée de pause et tout enfilement. La décision qui fait foi reste à l'envoi (la fabrique) :
+   * ce refus évite seulement de lancer une campagne qui s'arrêterait au milieu.
+   */
+  it('🔴 plus de destinataires que de modèles restants ce mois-ci : 402, rien n’est enfilé ni repris', async () => {
+    const q = new FakeQueue();
+    const pauseCalls: string[] = [];
+    const app = appWith(new FakeRepo(contacts), { queue: q, pauseCalls, modeles: { max: 1000, reste: 100, demandes: 120 } });
+    const res = await app.inject({ method: 'POST', url: '/campaigns/known/run', ...auth() });
+    expect(res.statusCode).toBe(402);
+    expect(res.json()).toMatchObject({ code: 'plan_limit_reached', limite: 'envoisModelesMois', max: 1000, reste: 100, demandes: 120 });
+    expect(res.json().upgradeUrl).toMatch(/\/offre$/);
+    expect(q.enqueued).toEqual([]);
+    expect(pauseCalls).toEqual([]);
+    await app.close();
+  });
+
+  it('autant de destinataires que de modèles restants : la campagne part', async () => {
+    const q = new FakeQueue();
+    const app = appWith(new FakeRepo(contacts), { queue: q, modeles: { max: 1000, reste: 100, demandes: 100 } });
+    const res = await app.inject({ method: 'POST', url: '/campaigns/known/run', ...auth() });
+    expect(res.statusCode).toBe(202);
+    expect(q.enqueued).toHaveLength(1);
     await app.close();
   });
 

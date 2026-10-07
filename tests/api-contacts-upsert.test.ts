@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { upsertContactsFromApi } from '../src/api/contacts-upsert';
+import { LimiteOffreError } from '../src/offres/refus';
 import type { PgContactStore } from '../src/crm/contact-store.pg';
 import type { PgUserFieldStore } from '../src/crm/field-store.pg';
 import type { UserFieldDef } from '../src/crm/types';
@@ -116,5 +117,27 @@ describe('upsert API : écritures par vagues', () => {
     });
     expect(res.map((r) => r.index)).toEqual([0, 1, 2, 3]);
     expect(res.map((r) => r.status)).toEqual(['error', 'created', 'error', 'created']);
+  });
+});
+
+/**
+ * LA LIMITE DE CONTACTS DE L'OFFRE (lot 6) : le magasin refuse une création au-delà de la limite. L'upsert partagé (webhook
+ * entrant, création à la main) en fait un refus de SA ligne, avec la phrase et la limite ; les autres lignes passent.
+ */
+describe('upsert API : la limite de contacts de l’offre', () => {
+  it('🔴 la ligne refusée porte la limite, les autres passent', async () => {
+    const contacts = {
+      upsertByPhoneReturningId: async (u: { tenantId: string; phoneE164: string }) => {
+        if (u.phoneE164.endsWith('2')) throw new LimiteOffreError(u.tenantId, 'contacts', 100);
+        return { id: `id-${u.phoneE164}`, created: true };
+      },
+    };
+    const out = await upsertContactsFromApi('t1', [{ phone: '+33600000001' }, { phone: '+33600000002' }], {
+      contacts: contacts as never,
+      fields: { list: async () => [] } as never,
+    });
+    expect(out[0]).toMatchObject({ status: 'created' });
+    expect(out[1]).toMatchObject({ status: 'error', limite: 100 });
+    expect(out[1]?.reason).toMatch(/Limite de votre offre atteinte : 100 contacts/);
   });
 });

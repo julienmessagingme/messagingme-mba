@@ -9,6 +9,7 @@ import type { LigneDeLaListe } from '../mba/liste';
 import type { CleFicheFixe } from './champs-fiche';
 import { clauseFiltreFiche, estCleFiltrable, estOperateurFicheSeul, type OperateurFicheSeul } from './filtre-fiche';
 import { COLONNES_ANALYSE_FICHE, analyseDeLaLigne, type AnalyseDeFiche, type LigneAnalyseFiche } from '../analysis/fiche';
+import { LimiteOffreError } from '../offres/refus';
 import {
   affectationsDUpsert, ecritureDuConsentement, type AutoriteParWaId, type CompteDeLEcriture, type FicheDeLEcriture,
 } from './transition-consentement';
@@ -238,7 +239,37 @@ export class PgContactStore implements ContactStore {
   constructor(
     private readonly pool: Pool,
     private readonly annoncerDesabonnement?: (tenantId: string, waIds: string[], messageDuStop?: string) => Promise<void>,
+    /**
+     * La limite de contacts de l'offre de l'espace (lot 6, `droits.limites.contacts`), `null` = sans limite. Comptées : les
+     * fiches actives qui ne sont pas nées d'un message entrant (`ne_entrant`, migration 0218). Les trois chemins de
+     * création (`upsertByPhoneReturningId`, `upsertManyByPhone`, `creerFicheApi`) la vérifient, donc la console, le
+     * webhook entrant, l'API, l'import et le scénario aussi ; l'entrant n'est jamais refusé. Absente : sans limite
+     * (scripts et tests).
+     */
+    private readonly limiteContacts?: (tenantId: string) => Promise<number | null>,
   ) {}
+
+  /**
+   * Refuse (`LimiteOffreError`) si ces numéros, plus `sansNumero` fiches à créer sans numéro, feraient dépasser la limite
+   * de contacts de l'offre. Un numéro déjà porté par une fiche active n'est pas une création. Sans limite : rien n'est lu.
+   * ⚠️ Lecture puis écriture, sans verrou : deux créations simultanées à la dernière place peuvent passer toutes les
+   * deux. Une limite commerciale tolère ce dépassement d'une ou deux fiches.
+   */
+  async verifierPlaceContacts(tenantId: string, numeros: readonly string[], sansNumero = 0): Promise<void> {
+    if (!this.limiteContacts) return;
+    const limite = await this.limiteContacts(tenantId);
+    if (limite === null) return;
+    const r = await this.pool.query<{ crees: number; nouveaux: number }>(
+      `select (select count(*) from contacts x
+                where x.tenant_id = $1 and not x.ne_entrant and x.deleted_at is null and x.anonymized_at is null)::int as crees,
+              (select count(*) from unnest($2::text[]) as p(numero)
+                where not exists (select 1 from contacts x
+                                  where x.tenant_id = $1 and x.phone_e164 = p.numero and x.deleted_at is null and x.anonymized_at is null))::int as nouveaux`,
+      [tenantId, [...new Set(numeros)]],
+    );
+    const { crees, nouveaux } = r.rows[0] ?? { crees: 0, nouveaux: 0 };
+    if (nouveaux + sansNumero > 0 && crees + nouveaux + sansNumero > limite) throw new LimiteOffreError(tenantId, 'contacts', limite);
+  }
 
   /**
    * Annonce sans jamais lever : le refus est déjà enregistré, et une exception ferait rendre 500 à la route qui
@@ -261,6 +292,7 @@ export class PgContactStore implements ContactStore {
    * L'API publique passe par `resoudreFiche` et `creerFicheApi`.
    */
   async upsertByPhoneReturningId(c: ContactUpsert): Promise<{ id: string; created: boolean }> {
+    await this.verifierPlaceContacts(c.tenantId, [c.phoneE164]);
     // Index unique partiel contacts_tenant_phone_uidx (where phone_e164 is not null) : le ON CONFLICT doit répéter
     // le prédicat pour cibler cet index.
     const res = await this.pool.query<{ id: string; created: boolean }>(
@@ -311,6 +343,8 @@ export class PgContactStore implements ContactStore {
    */
   async upsertManyByPhone(lot: LotContacts): Promise<Array<'created' | 'updated'>> {
     if (lot.contacts.length === 0) return [];
+    // Le filet du lot ; l'import vérifie TOUT le fichier avant son premier lot (`importContacts`).
+    await this.verifierPlaceContacts(lot.tenantId, lot.contacts.map((c) => c.phoneE164));
 
     const fusion = new Map<string, ContactDeLot>();
     const premiereApparition = new Map<string, number>();
@@ -551,8 +585,8 @@ export class PgContactStore implements ContactStore {
       ? 'on conflict (tenant_id, phone_e164) where phone_e164 is not null'
       : 'on conflict (tenant_id, bsuid) where bsuid is not null';
     const res = await this.pool.query<{ created: boolean }>(
-      `insert into contacts (tenant_id, phone_e164, bsuid, profile_name, opt_in_status, opt_in_source)
-       values ($1, $2, $3, $4, 'unknown', 'inbound')
+      `insert into contacts (tenant_id, phone_e164, bsuid, profile_name, opt_in_status, opt_in_source, ne_entrant)
+       values ($1, $2, $3, $4, 'unknown', 'inbound', true)
        ${conflict}
        do update set profile_name = coalesce(excluded.profile_name, contacts.profile_name), updated_at = now()
        returning (xmax = 0) as created`,
@@ -907,6 +941,9 @@ export class PgContactStore implements ContactStore {
    */
   async creerFicheApi(tenantId: string, cles: { phoneE164?: string; bsuid?: string; externalId?: string }): Promise<CreationFiche> {
     if (!cles.phoneE164 && !cles.bsuid) throw new Error('creerFicheApi : un numéro ou un BSUID est requis');
+    // Sans numéro (un BSUID seul), la fiche compte comme une création : `resoudreFiche` n'appelle ceci qu'après n'avoir
+    // trouvé aucune fiche.
+    await this.verifierPlaceContacts(tenantId, cles.phoneE164 ? [cles.phoneE164] : [], cles.phoneE164 ? 0 : 1);
     const conflit = cles.phoneE164
       ? 'on conflict (tenant_id, phone_e164) where phone_e164 is not null'
       : 'on conflict (tenant_id, bsuid) where bsuid is not null';

@@ -29,6 +29,8 @@ import { MODELES_CHOISIS } from '../src/agent/modeles';
 import { SANS_PLAFOND } from '../src/campaign/pacing';
 import { PLAFOND_DESTINATAIRES_DEFAUT } from '../src/campaign/plafond';
 import { creerTravauxEnVol } from '../src/lib/en-vol';
+import { DROITS, FONCTIONS } from '../src/offres/offres';
+import { grilleDesOffres } from '../src/offres/vue';
 
 /**
  * LES DÉPENDANCES DE ROUTES DEVENUES REQUISES, EN VALEURS INERTES NOMMÉES (lot 3 de l'audit ponytail, 2026-09-26).
@@ -153,7 +155,8 @@ export const agentsInertes: Pick<AgentsRouteDeps, 'credits' | 'sessions' | 'etat
 
 export const campagnesInertes: Pick<CampaignRouteDeps,
   'getMessagingLimitTier' | 'drafts' | 'contacts' | 'identifiantsDeTousLesContacts' | 'plafondDestinataires'
-  | 'rcs' | 'emailTemplateBelongsToTenant' | 'webhookUsableByTenant' | 'defaultRatePerMinute' | 'plafondLePlusBas'> = {
+  | 'rcs' | 'emailTemplateBelongsToTenant' | 'webhookUsableByTenant' | 'defaultRatePerMinute' | 'plafondLePlusBas'
+  | 'modelesDuLancement'> = {
   // Absent : aucun palier connu, donc aucun avertissement.
   getMessagingLimitTier: async () => null,
   drafts: {
@@ -173,6 +176,8 @@ export const campagnesInertes: Pick<CampaignRouteDeps,
   webhookUsableByTenant: async () => false,
   defaultRatePerMinute: 0,
   plafondLePlusBas: SANS_PLAFOND,
+  // Les modèles du mois sans limite (lot 6) : un espace Pro, l'hypothèse des tests qui ne parlent pas d'offre.
+  modelesDuLancement: async () => null,
 };
 
 export const campagnesRepoInerte: Pick<CampagnesDep, 'stopWebhookCampaign' | 'pauseCampaign' | 'resumeCampaign'> = {
@@ -190,7 +195,8 @@ export const creationInerte: CampaignRepoLike = {
 };
 
 export const contactsInertes: Pick<ContactsRouteDeps,
-  'audit' | 'journal' | 'erreurs' | 'ensureSocleField' | 'createOneContact' | 'getBilanContact' | 'etiquettes' | 'listeDeLAgent' | 'enVol'> = {
+  'audit' | 'journal' | 'erreurs' | 'ensureSocleField' | 'createOneContact' | 'getBilanContact' | 'etiquettes' | 'listeDeLAgent' | 'enVol'
+  | 'suppressionsDuJour'> = {
   audit: journalMuet,
   journal: { list: async () => [] },
   erreurs: { lister: async () => [], listerEchecsSysteme: async () => [] },
@@ -204,6 +210,8 @@ export const contactsInertes: Pick<ContactsRouteDeps,
   listeDeLAgent: { oublierChezMeta: async () => {} },
   // Un vrai registre : le retrait d'après la purge y est suivi, et rien ne l'attend dans ces tests.
   enVol: creerTravauxEnVol(),
+  // Les suppressions du jour sans limite (lot 6) : un espace Pro, l'hypothèse des tests qui ne parlent pas d'offre.
+  suppressionsDuJour: { consommer: async () => ({ ok: true }) },
 };
 
 export const contactsDepInerte: Pick<ContactsDep,
@@ -507,6 +515,17 @@ export const mcpNumeroInerte: Pick<DepsMcp, 'numero'> = {
     // Lot 4 : aucun abonnement, donc aucun rappel dans les réponses d'outil.
     abonnement: async () => null,
     ouvrirAbonnement: neDevraitPasEtreAppelee('numero.ouvrirAbonnement'),
+  },
+};
+
+/** L'offre du MCP (lot 6), pour les montages qui n'en parlent pas : un espace Entreprise, sans limite. */
+export const mcpOffreInerte: Pick<DepsMcp, 'offre'> = {
+  offre: {
+    vue: async () => ({
+      offre: 'entreprise', fonctions: [...FONCTIONS], limites: { ...DROITS.entreprise.limites },
+      usage: { envoisModelesMois: null, contacts: 0, automations: 0, membres: 0 }, grille: grilleDesOffres(),
+      upgradeUrl: 'https://console.inerte.test/offre',
+    }),
   },
 };
 

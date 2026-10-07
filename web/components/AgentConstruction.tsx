@@ -13,6 +13,8 @@ import { Bouton } from '@/components/Bouton';
 import { Icone } from '@/components/Icone';
 import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
+import { HorsOffre } from '@/components/HorsOffre';
+import { useFermeture } from '@/lib/use-offre';
 
 /**
  * L'onglet CONSTRUCTION : l'assistant qui règle l'agent en discutant.
@@ -29,12 +31,32 @@ import { Squelette } from '@/components/Squelette';
  * Cet écran ne fait qu'envoyer un message et afficher ce qui revient. Tout ce que la conversation produit
  * atterrit dans les autres onglets, éditable champ par champ.
  */
-export function AgentConstruction({ tenantId, agentId, onApplique }: {
+interface ProprietesConstruction {
   tenantId: string;
   agentId: string;
   /** Applique la proposition. Rendu par l'écran parent : c'est LUI qui porte le verrou de version. */
   onApplique: (p: PropositionConstruction) => Promise<void>;
-}) {
+}
+
+/**
+ * L'ASSISTANT DE CONSTRUCTION, SELON L'OFFRE (lot 6) : il fait partie des assistants de configuration. Fermé, l'onglet
+ * dit dans quelle offre il est, au lieu d'un fil vierge dont chaque message serait refusé. Tant que l'offre n'est pas
+ * lue, rien ne part (l'entretien est sur une route gardée).
+ */
+export function AgentConstruction(p: ProprietesConstruction) {
+  const ferme = useFermeture(p.tenantId, 'assistants');
+  if (ferme === undefined) return <Squelette forme="carte" />;
+  if (ferme) {
+    return (
+      <div className={cardCls} data-testid="construction-hors-offre">
+        <HorsOffre fonction="assistants" vue={ferme} />
+      </div>
+    );
+  }
+  return <AgentConstructionOuverte {...p} />;
+}
+
+function AgentConstructionOuverte({ tenantId, agentId, onApplique }: ProprietesConstruction) {
   const t = useT();
   const confirmer = useConfirmation();
   const [tours, setTours] = useState<TourConstruction[]>([]);

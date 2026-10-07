@@ -324,6 +324,8 @@ export const CODES_DOCUMENTES = [
   { code: 'idempotency_key_reused', statut: 422, ecart: false, quoi: ['Cette clé a déjà servi pour un autre corps.', 'This key was already used for a different body.'] },
   { code: 'rate_limited', statut: 429, ecart: false, quoi: ['Débit dépassé : attendez la durée de retry-after.', 'Rate limit exceeded: wait for retry-after.'] },
   { code: 'quota_exceeded', statut: 429, ecart: false, quoi: ['Quota quotidien de l’espace atteint (envois ou fiches écrites), ou dépassé par ce lot : retry-after donne l’attente jusqu’à minuit, heure de Paris. Un lot plus petit peut encore passer.', 'Daily workspace quota reached (sends or written contacts), or exceeded by this request: retry-after gives the wait until midnight, Paris time. A smaller request may still go through.'] },
+  { code: 'plan_feature_unavailable', statut: 402, ecart: false, quoi: ['Cette fonction n’est pas comprise dans l’offre de l’espace : upgradeUrl mène à la page de l’offre.', 'This feature is not included in the workspace plan: upgradeUrl leads to the plan page.'] },
+  { code: 'plan_limit_reached', statut: 402, ecart: true, quoi: ['Une limite de l’offre de l’espace est atteinte (contacts créés, modèles du mois…) : upgradeUrl mène à la page de l’offre. Les réponses dans la fenêtre de 24 h ne sont jamais concernées.', 'A workspace plan limit is reached (contacts created, templates this month…): upgradeUrl leads to the plan page. Replies within the 24-hour window are never affected.'] },
 ] as const satisfies readonly CodeDocumente[];
 
 export type NomDeCode = (typeof CODES_DOCUMENTES)[number]['code'];

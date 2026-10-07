@@ -1,7 +1,8 @@
 // tests/api-fiche.test.ts
 import { describe, it, expect } from 'vitest';
-import { resoudreFiche, schemaClesFiche, normaliserCles } from '../src/api/fiche';
+import { resoudreFiche, schemaClesFiche, normaliserCles, MESSAGE_RESOLUTION } from '../src/api/fiche';
 import { FichesMemoire } from './aide/fiches-memoire';
+import { LimiteOffreError } from '../src/offres/refus';
 
 /**
  * TROUVER LA FICHE D'UNE PERSONNE (spec de l'API publique, § 1 et § 13 « Identité »).
@@ -119,6 +120,16 @@ describe('resoudreFiche : rattacher et créer', () => {
     };
     expect(await resoudreFiche(r, T, { phone: '+33612345678', externalId: 'crm-course' }, { creer: 'phone_ou_bsuid' })).toEqual({ ok: false, code: 'identity_conflict' });
     expect(r.fiches).toHaveLength(1);
+  });
+
+  it('🔴 la limite de contacts de l’offre (lot 6) : la création refusée devient le code de la ligne, jamais une panne', async () => {
+    const r = new FichesMemoire();
+    r.creerFicheApi = async (t) => { throw new LimiteOffreError(t, 'contacts', 100); };
+    expect(await resoudreFiche(r, T, { phone: '+33612345678' }, { creer: 'phone_ou_bsuid' })).toEqual({ ok: false, code: 'plan_limit_reached' });
+    expect(MESSAGE_RESOLUTION.plan_limit_reached).toMatch(/\/offre\)$/);
+    // Une fiche EXISTANTE se retrouve sans rien créer : la limite ne la concerne pas.
+    r.ajouter(T, { phoneE164: '+33611111111' });
+    expect(await resoudreFiche(r, T, { phone: '+33611111111' }, { creer: 'phone_ou_bsuid' })).toMatchObject({ ok: true, cree: false });
   });
 
   it('le numéro d’une fiche supprimée la ressuscite (comportement de l’upsert d’avant, gardé)', async () => {

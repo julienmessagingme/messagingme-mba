@@ -5,7 +5,7 @@ import {
   CaretLeftIcon, CaretRightIcon, ChartBarIcon, ChatCircleDotsIcon, ChatCircleIcon, CheckCircleIcon,
   ClipboardTextIcon, CodeIcon, CopyIcon, CursorClickIcon, DeviceMobileIcon, EnvelopeSimpleIcon, EyeIcon, FileArrowUpIcon, FlagIcon,
   FileTextIcon, FlowArrowIcon, FunctionIcon, GearIcon, GitBranchIcon, HeadsetIcon, HourglassMediumIcon, HouseIcon,
-  ImageIcon, LightbulbIcon, LightningIcon, LinkIcon, ListIcon, MagicWandIcon, MagnifyingGlassIcon, MapPinIcon, MapTrifoldIcon, MegaphoneIcon,
+  ImageIcon, LightbulbIcon, LightningIcon, LinkIcon, ListIcon, LockIcon, MagicWandIcon, MagnifyingGlassIcon, MapPinIcon, MapTrifoldIcon, MegaphoneIcon,
   MicrophoneIcon, MinusIcon, PaperPlaneTiltIcon, PaperclipIcon, PencilSimpleIcon, PhoneIcon, PlayIcon, PlugIcon, PlusIcon,
   ProhibitIcon, PuzzlePieceIcon, QuestionIcon, RobotIcon, ShieldCheckIcon, SmileyIcon, SparkleIcon,
   SquaresFourIcon, TagIcon, TargetIcon, TimerIcon, TrashIcon, TrayIcon, TrendDownIcon, TrendUpIcon,
@@ -112,6 +112,8 @@ const ICONES = {
   // Le bloc « Aller à » (RC5), et le bouton qui copie le code d'un bloc.
   saut: ArrowBendDownRightIcon,
   copier: CopyIcon,
+  // Un écran que l'offre de l'espace n'ouvre pas (lot 6) : la barre le grise et y pose ce cadenas.
+  cadenas: LockIcon,
   // Outils d'un agent (`components/IconeOutil.tsx`).
   rechercher: MagnifyingGlassIcon,
   contact: UserIcon,

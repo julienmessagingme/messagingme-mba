@@ -19,6 +19,17 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
+## LOT 6 : LES OFFRES ET LEURS LIMITES, LIVRAISON A EN COURS (2026-10-07)
+
+Spec `docs/superpowers/specs/2026-10-07-offres-et-limites-design.md`, plan `docs/superpowers/plans/2026-10-07-offres-et-limites.md`.
+La livraison A (l'offre calculée, les fonctions gardées, les compteurs, la console, migration 0218) est écrite et
+testée ; reste sa relecture indépendante, la migration poussée seule et appliquée AVANT le `up`, le déploiement de
+l'API puis de la console, et l'essai réel : un espace d'essai ramené en Base dans `/ops`, la fiche au-delà de la
+limite refusée par l'API avec le lien (aucun outil de Claude ne crée de fiche : `get_plan` dit l'offre et l'usage),
+l'Inbox grisée, l'automation au-delà de la limite refusée.
+Ensuite B (le Pro chez Stripe, le numéro inclus, le gel) et C (les coûts selon l'offre). ⚠️ Un espace créé entre A
+et B est en Base sans moyen de payer : B suit A de près.
+
 ## RETOURS CONSOLE DU 6 OCTOBRE (RC1 À RC8) : RC1 À RC6 EN PRODUCTION (ESSAIS RÉELS DUS), RC7 ENSUITE
 
 ⏳ **Essai réel de RC1, par Julien** : ouvrir un scénario, vérifier que les textes listés ont disparu des cinq blocs,

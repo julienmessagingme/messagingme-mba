@@ -80,6 +80,8 @@ async function monter(options: {
   numero?: WidgetPublicRouteDeps['numero'];
   qr?: WidgetPublicRouteDeps['qrSvg'];
   budget?: RateLimiter;
+  /** Le badge de l'offre de l'espace (lot 6). Absent : une Base, qui l'affiche. */
+  badgeOffre?: WidgetPublicRouteDeps['badgeDeLOffre'];
 } = {}): Promise<Montage> {
   const widget = options.widget === undefined ? widgetComplet() : options.widget;
   const parCode = vi.fn(options.parCode ?? (async () => widget));
@@ -91,6 +93,7 @@ async function monter(options: {
     qrSvg: qr,
     // Désactivé par défaut : seul le cas du budget le règle.
     budgetInconnus: options.budget ?? new RateLimiter(0, 60_000),
+    badgeDeLOffre: options.badgeOffre ?? (async () => true),
   });
   await app.ready();
   return { app, parCode, qr };
@@ -162,6 +165,22 @@ describe('🔴 des valeurs hostiles ressortent sérialisées et inertes', () => 
     expect(d.avatar).toBe(avatarUrl);
     // Compilé sans être exécuté : un séparateur ou un guillemet mal échappé casserait la syntaxe ici.
     expect(() => new Function(script)).not.toThrow();
+    await app.close();
+  });
+
+  it('🔴 le badge suit l’offre : affiché en Base, retiré en Pro, même si le widget le porte en base', async () => {
+    for (const [offre, attendu] of [[true, true], [false, false]] as const) {
+      const vus: string[] = [];
+      const { app } = await monter({ badgeOffre: async (t) => { vus.push(t); return offre; } });
+      expect(donnees((await charger(app)).body).badge).toBe(attendu);
+      expect(vus).toEqual([widgetComplet().tenantId]);
+      await app.close();
+    }
+  });
+
+  it('🔴 un widget dont la colonne dit « sans badge » reste sans badge, même en Base', async () => {
+    const { app } = await monter({ widget: { ...widgetComplet(), badge: false }, badgeOffre: async () => true });
+    expect(donnees((await charger(app)).body).badge).toBe(false);
     await app.close();
   });
 
@@ -360,7 +379,7 @@ describe('🔴 le chemin exact /widget/<code>.js', () => {
     app.addHook('onRoute', (r) => { chemins.push(r.url); });
     const parCode = vi.fn(async () => widgetComplet());
     registerWidgetPublic(app, {
-      widgets: { parCode }, numero: async () => NUMERO_SAIN, qrSvg, budgetInconnus: new RateLimiter(0, 60_000),
+      widgets: { parCode }, numero: async () => NUMERO_SAIN, qrSvg, budgetInconnus: new RateLimiter(0, 60_000), badgeDeLOffre: async () => true,
     });
     await app.ready();
     expect(chemins).toContain('/widget/:code.js');

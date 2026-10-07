@@ -2,6 +2,8 @@ import type { PreHandler } from '../src/auth/middleware';
 import type { Gardes } from '../src/server';
 import { PlafondPartage } from '../src/auth/plafond-partage';
 import { CompteurDebitMemoire } from '../src/db/debit.memoire';
+import { DROITS } from '../src/offres/offres';
+import type { SourceOffres } from '../src/offres/offre.pg';
 
 /**
  * LA GARDE QUI LAISSE PASSER, ET ELLE A UN NOM (lot 2 du plan 2026-09-14).
@@ -23,6 +25,14 @@ export const plafondCoupe = new PlafondPartage(new CompteurDebitMemoire(), {
   nom: 'couteux', max: 0, dureeMs: 60_000, siLaBaseEchoue: 'laisser-passer',
 });
 
+/**
+ * L'offre de chaque espace, TOUT OUVERTE : chaque espace est en Entreprise (lot 6). L'hypothèse des tests qui montent un
+ * module sans parler d'offre ; un test de l'offre construit sa propre source.
+ */
+export const offresToutOuvert: SourceOffres = {
+  offreDe: async () => ({ offre: 'entreprise', droits: DROITS.entreprise, retourEnBaseLe: null }),
+};
+
 /** Les quatre gardes d'un `buildServer`, toutes ouvertes, et son plafond coûteux coupé. Pour les tests qui montent un
  *  module à la main. */
 export const gardesOuvertes: Gardes = {
@@ -32,4 +42,5 @@ export const gardesOuvertes: Gardes = {
   adminOuLien: gardeOuverte,
   ops: gardeOuverte,
   plafondCouteux: plafondCoupe,
+  offres: offresToutOuvert,
 };

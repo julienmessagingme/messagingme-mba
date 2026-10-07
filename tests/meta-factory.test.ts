@@ -5,6 +5,7 @@ import type { HttpTransport, HttpResponse } from '../src/meta/http';
 import { MetaApiError, estPlafondNumero } from '../src/meta/errors';
 import { creerListeDeLAgent, RetraitDeLaListeRefuse, type ListeDeLAgent } from '../src/mba/liste';
 import { listeEnMemoire } from './banc-du-fil';
+import { LimiteOffreError } from '../src/offres/refus';
 
 /** Aucun numéro délié (migration 0180) : ces tests ne portent pas sur le geste de l'Accueil, et le DISENT. */
 const jamaisDelie = async (): Promise<boolean> => false;
@@ -15,6 +16,8 @@ const jamaisSuspendu = async (): Promise<boolean> => false;
  * Ces tests ne portent pas sur la liste, et le DISENT.
  */
 const listeToujoursVide: Pick<ListeDeLAgent, 'retirerAvantUnModele'> = { retirerAvantUnModele: async () => {} };
+/** Les modèles du mois sans limite (lot 6) : l'hypothèse des cas qui ne parlent pas d'offre. */
+const modelesIllimites = { consommer: async () => ({ ok: true as const }) };
 
 // Transport factice : capture le header Authorization de chaque envoi, réponse programmable (pour simuler une 401).
 class FakeTransport implements HttpTransport {
@@ -46,7 +49,7 @@ function resolver(over: {
 }
 
 function factory(r: MetaCredentialsResolver, transport: HttpTransport) {
-  return new MetaClientFactory({ resolver: r, transport, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide });
+  return new MetaClientFactory({ resolver: r, transport, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide, quotaModeles: modelesIllimites });
 }
 
 describe('MetaClientFactory (B1 : câblage par tenant)', () => {
@@ -135,7 +138,7 @@ describe('MetaClientFactory : le frein par numéro est réellement câblé', () 
     const t = new FakeTransport();
     const { resolver: r } = resolver({ tenants: { t1: 'w1' }, creds: { w1: { businessTokenEnc: 'enc:TOK', tokenStatus: 'active' } } });
     const espion = arbitreEspion();
-    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: false, arbitreDebit: espion.arbitre, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide });
+    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: false, arbitreDebit: espion.arbitre, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide, quotaModeles: modelesIllimites });
 
     const client = await f.clientForTenant('t1', 'pn-42');
     await client.sendText('33600000001', 'bonjour');
@@ -149,7 +152,7 @@ describe('MetaClientFactory : le frein par numéro est réellement câblé', () 
     const t = new FakeTransport();
     const { resolver: r } = resolver({ tenants: { t1: 'w1' }, creds: { w1: { businessTokenEnc: 'enc:TOK', tokenStatus: 'active' } } });
     const espion = arbitreEspion();
-    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: false, arbitreDebit: espion.arbitre, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide });
+    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: false, arbitreDebit: espion.arbitre, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide, quotaModeles: modelesIllimites });
 
     // Deux constructions distinctes, comme le font le moteur de campagne et la route d'inbox.
     const campagne = await f.senderForTenant('t1', 'pn-42');
@@ -182,7 +185,7 @@ describe('MetaClientFactory : le destinataire quitte la liste de l’agent avant
   afterEach(() => { vi.restoreAllMocks(); });
 
   /** La vraie liste, sur une table en mémoire, et un faux client MBA qui écrit dans le même journal que l'envoi. */
-  function monter(o: { surLaListe?: string[]; retrait?: 'accepte' | 'refuse' } = {}) {
+  function monter(o: { surLaListe?: string[]; retrait?: 'accepte' | 'refuse'; quota?: { consommer: (t: string) => Promise<{ ok: true } | { ok: false; max: number }> } } = {}) {
     const journal: string[] = [];
     const transport: HttpTransport = {
       post: async (_url, body) => {
@@ -205,7 +208,7 @@ describe('MetaClientFactory : le destinataire quitte la liste de l’agent avant
       attendre: async () => {},
     });
     const { resolver: r } = resolver({ tenants: { t1: 'w1' }, creds: { w1: { businessTokenEnc: 'enc:TOK', tokenStatus: 'active' } } });
-    const f = new MetaClientFactory({ resolver: r, transport, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: liste });
+    const f = new MetaClientFactory({ resolver: r, transport, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: liste, quotaModeles: o.quota ?? modelesIllimites });
     return { f, journal, table: table.lignes };
   }
   const MODELE = { name: 'promo', language: 'fr' };
@@ -264,13 +267,51 @@ describe('MetaClientFactory : le destinataire quitte la liste de l’agent avant
     expect(m.table.has('13491208655')).toBe(true);
   });
 
+  /**
+   * LES MODÈLES DU MOIS (lot 6, tâche 4) : la fabrique consomme la limite de l'offre avant CHAQUE modèle, par
+   * `sendTemplate` comme par `sendMarketing`, et seulement avant un modèle : c'est le seul point par lequel passent la
+   * console, l'API, le MCP, les automations et les scénarios.
+   */
+  it('🔴 la limite du mois atteinte : aucun modèle ne part, ni retrait de la liste, et l’erreur le dit', async () => {
+    const consommes: string[] = [];
+    const m = monter({ surLaListe: ['33600000001'], quota: { consommer: async (t) => { consommes.push(t); return { ok: false, max: 1000 }; } } });
+    const client = await m.f.clientForTenant('t1', 'pn1');
+    const err = await client.sendTemplate('+33600000001', MODELE).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(LimiteOffreError);
+    expect(err).toMatchObject({ tenantId: 't1', limite: 'envoisModelesMois', max: 1000 });
+    await expect(client.sendMarketing({ to: '33600000001', template: MODELE })).rejects.toBeInstanceOf(LimiteOffreError);
+    expect(m.journal).toEqual([]);
+    expect(consommes).toEqual(['t1', 't1']);
+  });
+
+  it('🔴 sous la limite, le modèle consomme une unité de SON espace, puis part', async () => {
+    const consommes: string[] = [];
+    const m = monter({ quota: { consommer: async (t) => { consommes.push(t); return { ok: true }; } } });
+    await (await m.f.senderForTenant('t1', 'pn1')).sendTemplate('33600000001', MODELE);
+    expect(consommes).toEqual(['t1']);
+    expect(m.journal).toEqual(['envoi:template:33600000001']);
+  });
+
+  it('🔴 un message libre ne consomme jamais rien, même limite atteinte : les réponses dans les 24 h ne sont jamais bloquées', async () => {
+    const consommes: string[] = [];
+    const m = monter({ quota: { consommer: async (t) => { consommes.push(t); return { ok: false, max: 1000 }; } } });
+    const client = await m.f.clientForTenant('t1', 'pn1');
+    await client.sendText('33600000001', 'bonjour');
+    await client.sendInteractive('33600000001', 'Oui ou non ?', [{ text: 'Oui' }]);
+    expect(consommes).toEqual([]);
+    expect(m.journal).toEqual(['envoi:text:33600000001', 'envoi:interactive:33600000001']);
+  });
+
   it('🔴 la liste est REQUISE par le type de la fabrique', () => {
     const { resolver: r } = resolver();
     // @ts-expect-error `listeDeLAgent` manque : un câblage qui l'oublierait laisserait partir le modèle.
-    const sansListe = new MetaClientFactory({ resolver: r, transport: { post: async () => ({ status: 200, json: {} }) }, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu } });
+    const sansListe = new MetaClientFactory({ resolver: r, transport: { post: async () => ({ status: 200, json: {} }) }, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, quotaModeles: modelesIllimites });
     expect(sansListe).toBeInstanceOf(MetaClientFactory);
     // @ts-expect-error `numerosSuspendus` manque : un câblage qui l'oublierait enverrait depuis un numéro impayé (lot 4).
-    const sansSuspension = new MetaClientFactory({ resolver: r, transport: { post: async () => ({ status: 200, json: {} }) }, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, listeDeLAgent: listeToujoursVide });
+    const sansSuspension = new MetaClientFactory({ resolver: r, transport: { post: async () => ({ status: 200, json: {} }) }, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, listeDeLAgent: listeToujoursVide, quotaModeles: modelesIllimites });
     expect(sansSuspension).toBeInstanceOf(MetaClientFactory);
+    // @ts-expect-error `quotaModeles` manque : un câblage qui l'oublierait laisserait la Base envoyer sans limite (lot 6).
+    const sansQuota = new MetaClientFactory({ resolver: r, transport: { post: async () => ({ status: 200, json: {} }) }, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide });
+    expect(sansQuota).toBeInstanceOf(MetaClientFactory);
   });
 });

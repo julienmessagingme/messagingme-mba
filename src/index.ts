@@ -32,6 +32,9 @@ import { verifyGoogleIdToken } from './auth/google';
 import { PgApiKeyStore } from './auth/api-key-store.pg';
 import { PgOauthStore } from './oauth/store.pg';
 import { PgPlafondEspaceStore } from './auth/plafond-espace.pg';
+import { QuotaSuppressions, creerModelesDuLancement } from './offres/compteurs';
+import { PgOffresStore } from './offres/offre.pg';
+import { creerVueOffre } from './offres/vue';
 import { upsertContactsFromApi } from './api/contacts-upsert';
 import { creerServiceContactsV1 } from './api/contacts-v1';
 import { PgReachabilityStore } from './rcs/reachability.pg';
@@ -203,7 +206,7 @@ async function main(): Promise<void> {
     automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels, credits,
     agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
     numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, publicites,
-    clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent,
+    clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, offres, quotaModeles,
   } = construireSocle({ pool, queue, config });
 
   const campaignDraftStore = new PgCampaignDraftStore(pool);
@@ -217,7 +220,11 @@ async function main(): Promise<void> {
   // annonce le nombre réellement appliqué. Hors du socle : le worker construit le sien pour écrire les agrégats,
   // avec `enabled` à `true`, que seul l'affichage lit.
   const conversationStatsStore = new PgConversationStatsStore(pool, config.CONVERSATION_ANALYSIS_ENABLED === 'true', config.CONVERSATION_RETENTION_DAYS);
-  const userStore = new PgUserStore(pool);
+  // Les limites de membres de l'offre (lot 6) : à l'invitation, au passage en administrateur, à la réactivation.
+  const userStore = new PgUserStore(pool, async (tenant) => {
+    const { limites } = (await offres.offreDe(tenant)).droits;
+    return { utilisateurs: limites.utilisateurs, admins: limites.admins };
+  });
   const authTokenStore = new PgAuthTokenStore(pool);
   const apiKeyStore = new PgApiKeyStore(pool);
   const oauthStore = new PgOauthStore(pool);
@@ -717,6 +724,10 @@ async function main(): Promise<void> {
   // La durée de chaque requête, par route normalisée : mesurée par le serveur, vidée en base avec l'attente du pool.
   const mesureLatence = new MesureLatenceHttp();
 
+  // L'offre (lot 6) : la vue que lisent la console et l'outil MCP `get_plan`, et le magasin des réglages de `/ops`.
+  const offresStore = new PgOffresStore(pool);
+  const vueOffre = creerVueOffre({ offres, usage: (tenant) => offresStore.usage(tenant), modelesDuMois: quotaModeles });
+
   const app = buildServer({
     /**
      * 🔴 Le compteur des plafonds de débit, PARTAGÉ par toutes les copies de l'API (migration 0186). Oublié,
@@ -724,6 +735,11 @@ async function main(): Promise<void> {
      * seule, sans erreur. `tests/debit-cablage.test.ts` tient cette ligne.
      */
     debit: compteurDebit,
+    /** L'offre de chaque espace (lot 6) : l'étape d'offre des modules gardés. Absente, tout serait ouvert. */
+    offres,
+    // La vue de l'offre pour la console, et l'Entreprise posée par l'exploitation (lot 6).
+    offre: { vue: vueOffre },
+    opsOffre: { store: offresStore, invalider: (tenant) => offres.invalider(tenant) },
     /**
      * L'alerte d'exploitation : les quotas quotidiens de l'API publique la lèvent quand leur compteur ne répond pas (les
      * appels passent alors, les quotas ne sont plus tenus). Absente, elle partirait seulement dans le journal.
@@ -787,6 +803,8 @@ async function main(): Promise<void> {
       repo,
       queue,
       drafts: campaignDraftStore,
+      // Les modèles du mois (lot 6) : une campagne qui ne tient pas dans ce qu'il reste est refusée au lancement.
+      modelesDuLancement: creerModelesDuLancement(quotaModeles, (campagne, tenant) => repo.modelesEnAttente(campagne, tenant)),
       // Palier d'envoi du numéro, pour avertir avant un lancement plus gros que ce que Meta laissera passer
       // en 24 h. Lecture du relevé déjà persisté, aucun appel Graph sur ce chemin.
       getMessagingLimitTier: async (tenant) => (await phoneStatusStore.getPhoneNumber(tenant))?.messagingLimitTier ?? null,
@@ -828,6 +846,8 @@ async function main(): Promise<void> {
       numero: (tenant) => phoneStatusStore.getPhoneNumber(tenant),
       qrSvg,
       budgetInconnus: new RateLimiter(config.CODES_INCONNUS_PAR_MINUTE, 60_000),
+      // Le badge suit l'offre (lot 6) : affiché en Base, retiré en Pro et en Entreprise.
+      badgeDeLOffre: async (tenant) => (await offres.offreDe(tenant)).droits.limites.badge,
     },
     // Les mêmes widgets, côté console : l'objet que les outils MCP reçoivent aussi (`v1.mcp`).
     widgets: widgetsDeLaConsole,
@@ -1568,9 +1588,13 @@ async function main(): Promise<void> {
       // « Prénom » alors que l'écran le propose.
       ensureSocleField: async (tenant, key, label, type) => { await ensureFieldByKey(fieldStore, tenant, key, label, type); },
       // Création à la main : même upsert que le webhook entrant, avec le pays par défaut du tenant.
+      // Les suppressions de contacts du jour de l'offre (lot 6), sur le compteur partagé des copies.
+      suppressionsDuJour: new QuotaSuppressions({ offres, compteur: compteurDebit }),
       createOneContact: async (tenant, input) => {
         const [r] = await upsertContactsFromApi(tenant, [input], { contacts: contactStore, fields: fieldStore, defaultCountry: config.DEFAULT_COUNTRY as CountryCode });
-        return r ? { status: r.status, ...(r.contactId ? { contactId: r.contactId } : {}), ...(r.reason ? { reason: r.reason } : {}) } : { status: 'error', reason: 'aucun résultat' };
+        return r
+          ? { status: r.status, ...(r.contactId ? { contactId: r.contactId } : {}), ...(r.reason ? { reason: r.reason } : {}), ...(r.limite !== undefined ? { limite: r.limite } : {}) }
+          : { status: 'error', reason: 'aucun résultat' };
       },
       contactHistory: contactHistoryStore,
       // Le coût d'un contact, aux mêmes tarifs que la fiche de campagne : `src/stats/chiffrage.ts`.
@@ -2420,6 +2444,8 @@ async function main(): Promise<void> {
         // La garde de ce process, celle dont « Délier » et « Relier » vident le cache.
         numerosDelies: gardeNumeroDelie,
         numerosSuspendus: gardeNumeroSuspendu,
+        // Les modèles du mois (lot 6) : un envoi qui ouvre par un modèle et ne tient pas dans ce qu'il reste est refusé.
+        modelesDuMois: quotaModeles,
         // La résolution de fiche et l'écriture du consentement, sur les mêmes dépendances que `/v1/contacts`
         // (le dépôt des contacts et `depsConsentementDe`). Les quatre paramètres de chaque flèche sont gardés
         // par `tests/v1-cablage.test.ts`.
@@ -2469,6 +2495,8 @@ async function main(): Promise<void> {
        * pour les deux d'un coup.
        */
       mcp: {
+        // L'offre de l'espace (lot 6) : la même vue que la console, pour l'outil `get_plan`.
+        offre: { vue: vueOffre },
         ...depsRepondre,
         contacts: contactStore,
         // La pose d'étiquettes de `tag_conversation` : le MÊME module que la fiche et l'agent, appelé SANS publier.

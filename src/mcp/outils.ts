@@ -16,6 +16,7 @@ import type { PlafondPartage } from '../auth/plafond-partage';
 import { RefusOutil, entierBorne, texteObligatoire, valeurOuRefus } from './saisie';
 import { OUTILS_AGENT, type DepsAgentMcp } from './outils-agent';
 import { OUTILS_NUMERO, type DepsNumeroMcp } from './outils-numero';
+import type { VueOffre } from '../offres/vue';
 
 export { RefusOutil } from './saisie';
 
@@ -73,6 +74,8 @@ export interface DepsMcp extends DepsRepondre {
   agentIa: DepsAgentMcp;
   /** La connexion du numéro depuis Claude Code (lot 3c) : le lien signé et l'état, la MÊME lecture que la page. */
   numero: DepsNumeroMcp;
+  /** L'offre de l'espace (lot 6) : la MÊME vue que la console (`GET /tenants/:tenantId/offre`), pour `get_plan`. */
+  offre: { vue(tenantId: string): Promise<VueOffre> };
   /**
    * 🔴 Le plafond des opérations coûteuses de la console, la MÊME instance que celle des routes, comptée par espace
    * sous la même clé : sans lui, le serveur MCP serait la porte qui contourne les dix opérations lourdes par minute
@@ -675,6 +678,20 @@ export const OUTILS: OutilMcp[] = [
       const corps = Object.fromEntries(Object.entries(args).filter(([cle]) => cle !== 'widget_id'));
       const vue = await miseEnVue(deps.widgets, tenantId);
       return { widget: vue(valeurOuRefus(await modifierWidget(deps.widgets.gestion, tenantId, id, corps))) };
+    },
+  },
+  {
+    nom: 'get_plan',
+    description:
+      'L’offre de l’espace (base, pro ou entreprise) : les fonctions qu’elle ouvre, ses limites (null = sans limite) et '
+      + 'ce qui en est consommé (contacts créés, automations allumées, membres, modèles envoyés ce mois-ci), plus le lien '
+      + 'upgradeUrl pour passer en Pro. À lire quand un geste est refusé avec plan_limit_reached ou '
+      + 'plan_feature_unavailable : les réponses dans la fenêtre de 24 h ne sont jamais limitées.',
+    scope: 'mcp:read',
+    annotations: lecture('Lire l’offre'),
+    entree: { type: 'object', properties: {} },
+    async executer(deps, tenantId) {
+      return deps.offre.vue(tenantId);
     },
   },
   // L'agent IA, sa connaissance et le crédit (lot 8a) : leur fichier, `src/mcp/outils-agent.ts`.

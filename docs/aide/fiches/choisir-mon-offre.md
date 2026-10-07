@@ -1,0 +1,29 @@
+---
+ecran: offre
+source_section: Offres (menu « Paramètres » > Offre)
+source_empreinte: c8521e
+---
+# Choisir mon offre
+
+Votre espace a une offre : **Base** (gratuite), **Pro** (un abonnement, au mois ou à l'année) ou **Entreprise**
+(sur devis). Elle décide des fonctions ouvertes, et des limites de ce que vous pouvez créer ou envoyer.
+
+**Voir où vous en êtes.** Le menu Paramètres > Offre montre votre offre, ce que votre espace consomme de chaque
+limite (contacts créés, modèles envoyés ce mois-ci, automations allumées, utilisateurs), et la grille des trois
+offres côte à côte.
+
+**Ce que la Base comprend.** Votre numéro WhatsApp, l'API, la connexion à Claude, les contacts, les campagnes de
+modèles, les automations et l'agent IA, avec des plafonds. L'Inbox, les scénarios, les statistiques, l'agent de
+Meta, les assistants, les publicités, l'e-mail et les chaînes demandent le Pro. Le RCS, les connecteurs CRM et le
+Performance Lab complet demandent l'Entreprise.
+
+**Ce qui n'est jamais compté.** Un contact qui vous écrit le premier n'entre pas dans votre limite de contacts. Une
+réponse envoyée dans les 24 heures qui suivent un message du client n'est pas un envoi de modèle : elle n'est pas
+comptée non plus.
+
+**Quand quelque chose n'est pas dans votre offre.** Le menu reste visible, grisé, avec un cadenas : il vous mène à
+la page Offre. Si une action est refusée parce qu'une limite est atteinte, un message vous le dit, avec un bouton
+« Voir les offres ».
+
+**Passer en Pro.** Le bouton « Passer en Pro » de la page Offre ouvre le Support avec le sujet déjà rempli :
+écrivez-nous, et nous ouvrons le Pro sur votre espace. L'offre Entreprise se demande de la même façon.

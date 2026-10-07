@@ -439,6 +439,24 @@ export class PgCampaignRepo {
     return (res.rowCount ?? 0) > 0;
   }
 
+  /**
+   * Combien de MODÈLES la campagne enverrait si on la lançait maintenant (lot 6, les modèles du mois) : ses destinataires
+   * en attente dont l'étage courant est WhatsApp, à modèle, sans scénario. Un étage RCS ou e-mail ne coûte aucun modèle ;
+   * un scénario peut ouvrir par un message de session, et sa limite se décide à l'envoi. Scopée sur l'espace.
+   */
+  async modelesEnAttente(campaignId: string, tenantId: string): Promise<number> {
+    const res = await this.pool.query<{ n: number }>(
+      `select count(*)::int as n
+       from campaign_recipients r
+       join campaigns c on c.id = r.campaign_id
+       join campaign_etages e on e.campaign_id = r.campaign_id and e.rang = r.etage_courant
+       where r.campaign_id = $1 and c.tenant_id = $2 and r.status = 'pending'
+         and e.canal = 'whatsapp' and e.template_name is not null and e.workflow_id is null`,
+      [campaignId, tenantId],
+    );
+    return res.rows[0]?.n ?? 0;
+  }
+
   /** Débit choisi + nb de destinataires en attente : dimensionne le timeout du job de run (pacing.ts). */
   async getRunSizing(campaignId: string): Promise<{ tenantId: string; ratePerMinute: number | null; pendingCount: number } | null> {
     // `tenant_id` est rendu ici parce que tout enfilement de run en a besoin : c'est le groupe de la file, sur
