@@ -1,7 +1,7 @@
 ---
 ecran: offre
 source_section: Offres (menu « Paramètres » > Offre)
-source_empreinte: f1d632
+source_empreinte: 62a10e
 ---
 # Choisir mon offre
 
@@ -31,7 +31,7 @@ la minute. Si ces boutons n'apparaissent pas, « Passer en Pro » ouvre le Suppo
 L'offre Entreprise se demande au Support.
 
 **Gérer mon abonnement.** En Pro, le bouton « Gérer mon abonnement » de la page Offre ouvre le portail de Stripe :
-changer de carte, passer du mensuel à l'annuel, retrouver vos factures ou résilier. Une résiliation prend effet à
+changer de carte, retrouver vos factures ou résilier. Pour passer du mensuel à l'annuel, écrivez-nous au Support. Une résiliation prend effet à
 la fin de la période payée ; votre espace revient alors en Base.
 
 **Votre numéro fourni.** Tant que votre espace est en Pro, le numéro que nous vous avons fourni n'est jamais

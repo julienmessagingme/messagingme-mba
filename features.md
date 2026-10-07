@@ -3362,7 +3362,7 @@ cette section n'en recopie aucun. Lot 6, livraisons A et B1 (2026-10-07).
 - ✅ **Le Pro se paie en ligne** (livraison B1) : une Base choisit « Mensuel » ou « Annuel » sur la page Offre et
   paie sur la page de Stripe, code promo accepté. L'espace passe en Pro dès que Stripe confirme le paiement (dans la
   minute), et la page Offre le dit au retour. Un Pro y trouve « Gérer mon abonnement », le portail de Stripe : carte,
-  passage du mensuel à l'annuel, factures, résiliation. Une résiliation prend effet à la fin de la période payée,
+  factures, résiliation. Passer du mensuel à l'annuel n'y est pas ouvert (réglage du portail). Une résiliation prend effet à la fin de la période payée,
   et l'espace revient alors en Base ; un renouvellement refusé le laisse en Pro pendant les relances de Stripe.
   ⚠️ Tant que le Pro n'est pas en vente (prix pas posés), le bouton « Passer en Pro » ouvre le Support, sujet
   prérempli.

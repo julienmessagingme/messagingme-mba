@@ -26,12 +26,13 @@ La livraison A est en production et son essai réel est fait (2026-10-07, « Esp
 Inbox et menus payants grisés vus par Julien, puis remis en Entreprise).
 
 La livraison B1 (le Pro payable chez Stripe, le numéro fourni protégé par un Pro) est en production (`4220dc42`, puis les
-jaunes de sa relecture `d8cf836d`, sans migration ; sans les prix, la page Offre montre le Support). Avant qu'elle serve, 🔴 Julien restreint chez Stripe chaque code promo à ses produits (ENGAGE100,
-GMC100 et VERIF100 sont actifs sans plafond, les deux derniers sans restriction de produit : ils s'appliqueraient au
-Pro et s'appliquent déjà à la recharge, qui crédite avant remise), crée le produit « Messaging Me Pro » et ses deux
-prix (49 € HT par mois, 490 € HT par an, taxe EN SUS), pose `STRIPE_PRIX_PRO_MOIS` et `STRIPE_PRIX_PRO_AN` dans `.env.prod` (puis `--force-recreate` de l'API et
-des workers), règle le portail (le SEUL produit Pro dans le changement de formule, mensuel et annuel, résiliation en fin de période) et vérifie que le webhook reçoit
-`customer.subscription.updated` et `.deleted`. Sans les prix, la page Offre renvoie au Support comme avant.
+jaunes de sa relecture `d8cf836d`, sans migration), et **le Pro est EN VENTE depuis le 2026-10-07** : produit
+« Messaging Me Pro » créé par Julien (49 € HT par mois, 490 € HT par an, taxe en sus, deux produits du même nom),
+`STRIPE_PRIX_PRO_MOIS` et `_AN` posés dans `.env.prod`, API et workers recréés, prix lus par les trois conteneurs. Le
+portail est déjà réglé comme il faut : résiliation en fin de période, changement de formule FERMÉ (pas de passage du
+mensuel à l'annuel, mais aucun basculement vers un autre produit). 🔴 Restent chez Julien : désactiver ENGAGE100
+(recharges, nommé dans le dépôt public), recréer GMC100 et VERIF100 restreints à leurs produits ; ENGAGEME (essai
+réel, une utilisation) n'est restreint à aucun produit, d'où l'essai à faire vite.
 ⏳ **Essai réel de B1** : un Pro pris avec un code promo à 100 %, l'espace passé en Pro dans la minute, puis résilié
 au portail. Restent B2 (le numéro inclus dans le Pro, le gel au retour en Base, `set_default_responder` et les outils
 MCP qui déclarent leur fonction ; Julien ajoute « Abonnements : écriture » à la clé restreinte avant) et C (les coûts

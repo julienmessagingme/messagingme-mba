@@ -114,7 +114,8 @@ export class PgAbonnementsOffreStore {
 
   /**
    * Une modification (`customer.subscription.updated`) : la résiliation programmée posée ou retirée, et la périodicité
-   * (le portail permet de passer du mensuel à l'annuel). Un abonnement fini ne change plus.
+   * (relue sur le prix, si le portail ouvre un jour le changement de formule, fermé aujourd'hui). Un abonnement fini ne
+   * change plus.
    */
   async modifier(abonnementId: string, m: { finPrevueLe: Date | null; periodicite: PeriodiciteOffre | null }): Promise<AbonnementOffre | null> {
     const res = await this.pool.query<Ligne>(

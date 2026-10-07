@@ -235,8 +235,8 @@ function OffreInner({ session }: { session: Session }) {
       {vue.offre === 'pro' && (
         <section className="flex flex-wrap items-center gap-3 rounded-carte border border-ink-200 bg-white p-5" data-testid="offre-abonnement">
           <p className="min-w-0 flex-1 text-sm text-ink-500">
-            {t('Changer de carte, passer du mensuel à l’annuel, retrouver vos factures ou résilier : tout se fait sur la page de Stripe.',
-              'Change your card, switch between monthly and yearly, find your invoices or cancel: it all happens on the Stripe page.')}
+            {t('Changer de carte, retrouver vos factures ou résilier : tout se fait sur la page de Stripe.',
+              'Change your card, find your invoices or cancel: it all happens on the Stripe page.')}
           </p>
           <Bouton variante="secondaire" onClick={() => void ouvrirStripe('portail')} enCours={paiement === 'portail'} disabled={paiement !== null} data-testid="offre-portail">
             {t('Gérer mon abonnement', 'Manage my subscription')}
