@@ -33,6 +33,14 @@ export const offresToutOuvert: SourceOffres = {
   offreDe: async () => ({ offre: 'entreprise', droits: DROITS.entreprise, retourEnBaseLe: null }),
 };
 
+/**
+ * La liste des automations les plus anciennes (le gel au retour en Base, lot 6, B2a), JAMAIS lue sous une offre ouverte :
+ * l'hypothèse des tests du déclencheur qui ne parlent pas d'offre. La lire lève, pour qu'un test qui la sollicite le dise.
+ */
+export const plusAnciennesJamaisLues = async (): Promise<ReadonlySet<string>> => {
+  throw new Error('plusAnciennes ne doit pas être lue : l’offre de ce test est ouverte');
+};
+
 /** Les quatre gardes d'un `buildServer`, toutes ouvertes, et son plafond coûteux coupé. Pour les tests qui montent un
  *  module à la main. */
 export const gardesOuvertes: Gardes = {

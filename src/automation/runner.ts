@@ -1,6 +1,7 @@
 import { besoinsDesClauses, evaluateConditionGroup } from '../workflow/conditions';
 import type { BesoinsContexte, EvalContext } from '../workflow/conditions';
-import { matchesTrigger, isInCooldown, typeDeLancementDe, antiRebondParDefaut } from './match';
+import { matchesTrigger, isInCooldown, typeDeLancementDe, antiRebondParDefaut, POSSESSEUR_LIEN_CHAINE, POSSESSEUR_PUBLICITE, POSSESSEUR_WIDGET } from './match';
+import type { SourceOffres } from '../offres/offre.pg';
 import type { AutomationRow, AutomationEvent, AutomationTriggerKind } from './match';
 import type { DemandeAutomatisme } from '../workflow/lancements';
 import { NumeroBloqueError } from '../meta/numero-delie';
@@ -40,7 +41,17 @@ export interface AutomationRunnerDeps {
     clearFired(automationId: string, waId: string): Promise<void>;
     /** Déclenchements de cette automation depuis `since`, pour le plafond horaire. Absent : aucun plafond. */
     firedSince?(automationId: string, since: Date): Promise<number>;
+    /**
+     * Les `n` automations du client les plus anciennes (allumées, sans propriétaire, la population que compte la limite
+     * de l'offre) : sous une limite, seules elles tirent encore (le gel, lot 6, B2a). Lue seulement pour un espace limité.
+     */
+    plusAnciennes(tenantId: string, n: number): Promise<ReadonlySet<string>>;
   };
+  /**
+   * L'offre de l'espace (`OffresEnCache`, lot 6) : le gel au retour en Base. Une offre illisible se lit Entreprise, donc
+   * ne gèle rien.
+   */
+  offres: SourceOffres;
   /**
    * État du contact pour évaluer un `conditionGroup`. null = contact introuvable : les automations à condition
    * sont ignorées (on ne déclenche pas sur un filtre non vérifié). Non appelé si aucune candidate n'a de
@@ -100,6 +111,34 @@ function kindsFor(ev: AutomationEvent): AutomationTriggerKind[] {
 }
 
 /**
+ * 🔴 LE GEL AU RETOUR EN BASE (lot 6, livraison B2a, spec § 7, décision de Julien du 2026-10-07) : ce que l'offre laisse
+ * encore tirer. Une chaîne et une publicité se taisent quand leur fonction est fermée ; un widget continue (la Base en a) ;
+ * une automation du client tire si l'offre n'a pas de limite, sinon seulement parmi les plus anciennes, dans la limite.
+ * Rien n'est éteint en base : au réabonnement, tout retire. La liste des plus anciennes n'est lue que pour un espace
+ * limité qui a une candidate du client ; un propriétaire inconnu demain se range avec le client, donc sous la limite.
+ */
+async function permisesParLOffre(tenantId: string, candidates: AutomationRow[], deps: AutomationRunnerDeps): Promise<AutomationRow[]> {
+  const { droits } = await deps.offres.offreDe(tenantId);
+  const limite = droits.limites.automations;
+  const duClient = (a: AutomationRow) => a.possedePar !== POSSESSEUR_LIEN_CHAINE && a.possedePar !== POSSESSEUR_PUBLICITE
+    && a.possedePar !== POSSESSEUR_WIDGET;
+  const anciennes = limite !== null && candidates.some(duClient) ? await deps.automations.plusAnciennes(tenantId, limite) : null;
+  return candidates.filter((a) => {
+    let permise: boolean;
+    if (a.possedePar === POSSESSEUR_LIEN_CHAINE) permise = droits.fonctions.has('chaines');
+    else if (a.possedePar === POSSESSEUR_PUBLICITE) permise = droits.fonctions.has('publicites');
+    else if (a.possedePar === POSSESSEUR_WIDGET) permise = true;
+    else permise = limite === null || (anciennes?.has(a.id) ?? false);
+    if (!permise) {
+      // Une automation n'a aucun écran pour ce refus : ce journal est le seul endroit où il se lit.
+      // eslint-disable-next-line no-console
+      console.log(`automation ${a.id} : en pause, hors de l'offre de l'espace ${tenantId}`);
+    }
+    return permise;
+  });
+}
+
+/**
  * Évalue les automations d'un tenant contre un événement et démarre celles qui passent les trois filtres ;
  * renvoie le nombre de scénarios démarrés. Isolation par automation : une automation qui échoue ne doit ni
  * empêcher les autres, ni faire échouer l'appelant (le job webhook est partagé).
@@ -120,6 +159,8 @@ export async function runAutomations(
     .filter((a) => opts.seuleAutomation === null || a.id === opts.seuleAutomation)
     .filter((a) => a.enabled && matchesTrigger(a, ev));
   if (candidates.length === 0) return 0;
+  const permises = await permisesParLOffre(tenantId, candidates, deps);
+  if (permises.length === 0) return 0;
 
   // Contexte contact construit une seule fois, et seulement si une candidate porte une condition.
   let ctx: EvalContext | null = null;
@@ -131,7 +172,7 @@ export async function runAutomations(
   const windowOpen = ev.kind === 'message' && ev.channel === 'whatsapp';
 
   let started = 0;
-  for (const a of candidates) {
+  for (const a of permises) {
     try {
       // Pas d'anti-rebond pour `avant_date` : l'unicité y est tenue par le marqueur d'occurrence, et l'anti-rebond
       // empêcherait un rendez-vous reporté à l'intérieur du délai de redonner son rappel.
@@ -146,7 +187,7 @@ export async function runAutomations(
           // Construit une fois pour toutes les candidates : il charge ce que l'UNE d'elles demande.
           const besoins: BesoinsContexte = {
             derniereSaisie: false,
-            ...besoinsDesClauses(candidates.flatMap((x) => x.conditionGroup?.clauses ?? [])),
+            ...besoinsDesClauses(permises.flatMap((x) => x.conditionGroup?.clauses ?? [])),
           };
           ctx = await deps.evalContext(tenantId, ev.waId, besoins);
           ctxLoaded = true;

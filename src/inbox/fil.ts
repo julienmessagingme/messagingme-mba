@@ -6,7 +6,8 @@ import { delaiHumainMs, repriseDue } from './delai-reprise';
 import { destinataireAgentEvent, evenementMessageSansSuite, traceReponse, type EvenementAgent } from '../mba/evenement';
 import type { DemarreurRepondeur } from '../repondeur/demarrer';
 import type { DemarreurScenario } from '../repondeur/scenario';
-import { leMbaRepond, modeEffectif, type ReglageDuRepondeur } from '../repondeur/mode';
+import { leMbaRepond, modeEffectif, sousLOffre, type ReglageDuRepondeur } from '../repondeur/mode';
+import type { SourceOffres } from '../offres/offre.pg';
 import { journaliser } from '../lib/journal';
 
 /**
@@ -161,6 +162,12 @@ export interface DepsControleDuFil {
   reglages: {
     get(tenantId: string): Promise<ReglageDuRepondeur & { repondeurDelaiScenarioS: number; controlHandbackSeconds: number | null }>;
   };
+  /**
+   * L'offre de l'espace (`OffresEnCache`, lot 6, B2a) : les réglages se lisent TOUJOURS sous elle (`sousLOffre`), donc
+   * en Base l'agent de Meta ne reçoit plus rien et le scénario répondeur ne part plus. Une offre illisible se lit
+   * Entreprise : une panne de lecture ne gèle rien.
+   */
+  offres: SourceOffres;
   /**
    * Le délai de reprise de l'équipe quand l'espace n'en a pas réglé (`CONTROL_HUMAN_TIMEOUT_MS`), le même que celui
    * du balayage. Requis : sans lui, la remise « personne ne suit » et le balayage ne compteraient pas le même délai.
@@ -405,7 +412,12 @@ type IssueConfier =
 export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
   const { depot } = deps;
 
-  const mbaAllume = async (tenantId: string): Promise<boolean> => (await deps.reglages.get(tenantId)).mbaEnabled;
+  /** Les réglages de l'espace SOUS SON OFFRE (`sousLOffre`) : la seule lecture des réglages de ce module. */
+  const reglagesDe = async (tenantId: string) => {
+    const [r, o] = await Promise.all([deps.reglages.get(tenantId), deps.offres.offreDe(tenantId)]);
+    return sousLOffre(r, o.droits.fonctions);
+  };
+  const mbaAllume = async (tenantId: string): Promise<boolean> => (await reglagesDe(tenantId)).mbaEnabled;
 
   /**
    * Confier la conversation à l'agent : le contact sur sa liste, puis `release`, dans cet ordre (rendu sans être sur
@@ -499,7 +511,7 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
         return 'app_workflow';
       }
       // Éteint, ou allumé en veille (RC6) : le fil revient aux robots, et le prochain message relance le répondeur du mode.
-      if (!leMbaRepond(await deps.reglages.get(tenantId))) {
+      if (!leMbaRepond(await reglagesDe(tenantId))) {
         await depot.setControlOwner(tenantId, waId, 'app_workflow', { par, effacerEscalade: true });
         return 'app_workflow';
       }
@@ -526,7 +538,7 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
     },
 
     async remettreSiPersonneNeSuit(tenantId, waId, contenu, entree) {
-      const reglages = await deps.reglages.get(tenantId);
+      const reglages = await reglagesDe(tenantId);
       const mode = modeEffectif(reglages);
       const fil = await depot.etatDuFil(tenantId, waId);
       const tenuParLEquipe = fil.owner === 'app_human';

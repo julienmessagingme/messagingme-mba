@@ -8,6 +8,7 @@ import { PgErreursLivraisonStore } from '../../src/ops/erreurs-livraison.pg';
 import { buildWorkflowRuntime } from '../../src/workflow/wiring';
 import type { WorkflowExecutorDeps } from '../../src/workflow/executor';
 import type { WorkflowGraph } from '../../src/workflow/graph';
+import { offresToutOuvert } from '../gardes';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -41,6 +42,7 @@ describe.skipIf(!url)('« Aller à » (Postgres)', () => {
       pool, queue: { enqueue: async () => {} }, dryRun: true, repo: inerte, contactStore: inerte, inboxStore: inerte,
       settingsStore: inerte, workflowStore: wfStore(), metaCredentials: inerte, metaFactory: inerte, rcsProvider: 'fake',
       emailTemplates: inerte, emailResolver: inerte, numeroDeLEspace: async () => null, runStore: new PgWorkflowRunStore(pool), fil: inerte,
+      offres: offresToutOuvert,
     });
     deps = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
   });

@@ -65,6 +65,14 @@ describe('le câblage de l’offre', () => {
     expect(api).toMatch(/ouvrir: \(tenant, periodicite, payeur\) => ouvrirPro\(proDeLaConsole, tenant, periodicite, payeur\),/);
   });
 
+  it('🔴 le gel des membres en trop (lot 6, B2a) : la session de la console ET le jeton de Claude le lisent', () => {
+    // Les types exigent `horsOffre` ; seul ce texte dit qu'il vient du gel et pas d'un `null` posé en dur.
+    const api = lire('index.ts');
+    expect(api).toMatch(/const gelMembres = creerGelMembres\(\{ offres, rang: \(tenant, user\) => userStore\.rangMembre\(tenant, user\) \}\);/);
+    expect(api).toMatch(/return s && \{ \.\.\.s, horsOffre: await gelMembres\.horsOffre\(tenant, userId\) \};/);
+    expect(api).toMatch(/return a && \{ \.\.\.a, horsOffre: a\.valide \? await gelMembres\.horsOffre\(a\.tenantId, a\.userId\) : null \};/);
+  });
+
   it('🔴 l’API passe cette offre au serveur', () => {
     const api = lire('index.ts');
     const appel = api.slice(api.indexOf('buildServer({'));

@@ -111,7 +111,7 @@ describe('GET /tenants/:tenantId/connexion-numero', () => {
         programmerFin: async () => ({ ok: true as const, valeur: true as const }),
       },
     };
-    return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET, getUserState: async (userId) => ({ role: userId === 'u2' ? 'agent' : 'admin', disabled: false }) }, numeroFourni: deps });
+    return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET, getUserState: async (userId) => ({ role: userId === 'u2' ? 'agent' : 'admin', disabled: false, horsOffre: null }) }, numeroFourni: deps });
   };
   const lire = (server: ReturnType<typeof monter>, tenant: string, jeton: string) =>
     server.inject({ method: 'GET', url: `/tenants/${tenant}/connexion-numero`, headers: { authorization: `Bearer ${jeton}` } });

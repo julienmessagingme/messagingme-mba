@@ -5,6 +5,8 @@ import type { MfaStore } from './mfa-store.pg';
 import { ipIndicative, type SurveillanceOps } from '../ops/tentatives';
 import { consommerAvecEntetes, type RateLimiter } from './rate-limit';
 import { consommerPartageAvecEntetes, type PlafondPartage } from './plafond-partage';
+import { LimiteOffreError, STATUT_REFUS_OFFRE, corpsRefusLimite } from '../offres/refus';
+import type { HorsOffreMembre } from '../offres/membres';
 
 /** L'exploitant d'une requête `/ops`, tel que la garde l'a revérifié en base. */
 export interface ExploitantVerifie {
@@ -28,7 +30,11 @@ export type Guard = PreHandler | PreHandler[];
 
 /** Relit l'état d'auth courant du compte en base. null = compte supprimé. `tenantStatus` (optionnel) porte le
  *  statut de l'espace pour le crochet de barrage (locked -> accès coupé). */
-export type UserStateLoader = (userId: string, tenantId: string) => Promise<{ role: string; disabled: boolean; tenantStatus?: string } | null>;
+/**
+ * L'état d'un compte relu à chaque requête. `horsOffre` (lot 6, B2a) : le membre dépasse les limites de l'offre de son
+ * espace (`GelMembres`), `null` s'il y tient. REQUIS : un chargeur qui l'oublierait laisserait passer les membres en trop.
+ */
+export type UserStateLoader = (userId: string, tenantId: string) => Promise<{ role: string; disabled: boolean; tenantStatus?: string; horsOffre: HorsOffreMembre | null } | null>;
 
 /**
  * Garde de rôle à utiliser dans un handler déjà authentifié : rend true (et répond 403) si l'appelant n'est
@@ -169,6 +175,16 @@ export function makeRequireAuth(secret: string, loadState?: UserStateLoader, lim
       // 'locked' explicite.
       if (state.tenantStatus === 'locked') {
         await reply.code(403).send({ error: 'espace suspendu', code: 'tenant_locked' });
+        return;
+      }
+      /**
+       * 🔴 Le gel des membres au retour en Base (lot 6, B2a, spec § 7) : au-delà des limites de l'offre, 402 à CHAQUE
+       * requête, lecture comprise. `acces: 'suspendu'` distingue ce refus de celui d'une invitation au-delà de la limite
+       * (même code) : la console affiche alors une page, pas un bandeau. Rien n'est effacé, l'accès revient au réabonnement.
+       */
+      if (state.horsOffre) {
+        const e = new LimiteOffreError(session.tenantId, state.horsOffre.limite, state.horsOffre.max);
+        await reply.code(STATUT_REFUS_OFFRE).send({ ...corpsRefusLimite(e), acces: 'suspendu' });
         return;
       }
       session.role = state.role; // rôle frais : les changements de rôle sont immédiats

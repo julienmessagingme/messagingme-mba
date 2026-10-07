@@ -10,7 +10,7 @@
  */
 
 /** Les statuts qu'un refus explicable peut prendre. Jamais un 5xx autre que 503 : Cloudflare en remplacerait le corps. */
-export type StatutRefus = 400 | 403 | 404 | 409 | 413 | 415 | 422 | 503;
+export type StatutRefus = 400 | 402 | 403 | 404 | 409 | 413 | 415 | 422 | 503;
 
 /**
  * Un refus explicable. `details` porte ce que la route ajoute au corps à côté de `error` (la liste des manques d'un

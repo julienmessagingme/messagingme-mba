@@ -9,6 +9,11 @@
  */
 export type Offre = 'base' | 'pro' | 'entreprise';
 
+/** Une valeur lue en base (le résultat d'`offre_de_l_espace`) est-elle une offre connue ? */
+export function estOffre(v: unknown): v is Offre {
+  return v === 'base' || v === 'pro' || v === 'entreprise';
+}
+
 /** Les fonctions qu'une offre ouvre ou ferme. Tout ce qui n'est pas nommé ici est ouvert à toutes les offres. */
 export const FONCTIONS = [
   'inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines',

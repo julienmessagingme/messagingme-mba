@@ -21,6 +21,7 @@ import { requalifierLesStandby } from '../src/webhooks/standby-hors-liste';
 import { runControlSweep } from '../src/inbox/control-sweep';
 import { modeEffectif, standbyPourNous } from '../src/repondeur/mode';
 import { aucunRepondeur } from './banc-du-fil';
+import { offresToutOuvert } from './gardes';
 
 /**
  * LE RÉPONDEUR DÉMARRE SUR LE MESSAGE QUE PERSONNE NE TIENT (lot 5, A5, spec
@@ -345,7 +346,7 @@ function bout() {
     confierAuRepondeur: (t, w, id) => b.fil.remettreSiPersonneNeSuit(t, w, '', { rouverte: false, messageDeclencheur: id }),
   };
   const executor = new WorkflowExecutor(deps);
-  const lancements = creerLancements({ executor, scenarios: { getById: async () => null }, contacts: { findIdByWaId: async () => 'c-1' } });
+  const lancements = creerLancements({ executor, scenarios: { getById: async () => null }, contacts: { findIdByWaId: async () => 'c-1' }, offres: offresToutOuvert });
   branche = creerDemarreurRepondeur({
     agents: { complet: async () => agentActif() },
     credits: { solde: async () => 1_000_000 },

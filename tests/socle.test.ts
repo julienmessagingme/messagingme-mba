@@ -119,6 +119,8 @@ describe('le socle commun aux deux processus', () => {
           return { rows: [{ mba_enabled: false, repondeur_mode: 'scenario', repondeur_workflow_id: '33333333-3333-4333-8333-333333333333', repondeur_delai_scenario_s: 86400, control_handback_seconds: null }] };
         }
         if (/from phone_numbers where tenant_id = \$1/.test(sql)) return { rows: [{ id: 'pn1' }] };
+        // L'espace est en Entreprise : en Base, le scénario répondeur est gelé (lot 6, B2a), et rien ne le lirait.
+        if (/offre_de_l_espace\(\$1::uuid\) as offre/.test(sql)) return { rows: [{ offre: 'entreprise', entreprise_utilisateurs: null, conservation: null, dernier_fini: null }] };
         return { rows: [] };
       },
     } as unknown as Pool;

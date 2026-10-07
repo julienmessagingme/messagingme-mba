@@ -19,7 +19,7 @@ describe('la garde adminOuLien', () => {
   const connectes = new Set<string>();
   const aActiver = new Set<string>();
   const lectures: string[] = [];
-  const loadState: UserStateLoader = async (userId, tenantId) => { lectures.push(`${userId}@${tenantId}`); return etats.get(userId) ?? null; };
+  const loadState: UserStateLoader = async (userId, tenantId) => { lectures.push(`${userId}@${tenantId}`); const e = etats.get(userId) ?? null; return e && { ...e, horsOffre: null }; };
 
   beforeAll(async () => {
     const requireAuth = makeRequireAuth(SECRET, loadState);

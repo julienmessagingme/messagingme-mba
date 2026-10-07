@@ -3337,7 +3337,7 @@ Crédit jusqu'au 2026-09-29 ; l'ancienne adresse y mène toujours.
 Chaque espace a une offre : **Base** (gratuite), **Pro** (abonnement mensuel ou annuel) ou **Entreprise** (sur
 devis). L'offre décide de deux choses : les **fonctions** ouvertes, et les **limites** de ce qu'on peut créer ou
 envoyer. Les chiffres exacts vivent à un seul endroit (`src/offres/offres.ts`) et s'affichent sur la page Offre :
-cette section n'en recopie aucun. Lot 6, livraisons A et B1 (2026-10-07).
+cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
 
 - ✅ **La Base** donne le numéro, l'API, Claude (le serveur MCP), les contacts, les campagnes de modèles, les
   automations et l'agent IA, avec des plafonds : contacts créés, modèles envoyés par mois civil, automations
@@ -3369,9 +3369,19 @@ cette section n'en recopie aucun. Lot 6, livraisons A et B1 (2026-10-07).
 - ✅ **Un Pro protège le numéro fourni** : tant qu'il est actif, le numéro n'est ni suspendu ni libéré, même si son
   propre abonnement est en retard ou terminé ; quand le Pro finit, le numéro garde sept jours avant d'être libéré.
   ⚠️ Jusqu'à la livraison B2, le numéro reste facturé à part, par son propre abonnement.
+- ✅ **Au retour en Base, on gèle, on n'efface rien** (livraison B2a) : un espace qui revient en Base (fin du Pro) garde
+  toutes ses données, et tout revient au réabonnement. Ses scénarios ne démarrent plus que par ses automations, les 10
+  plus anciennes seulement (celles au-delà, et celles des chaînes et des publicités, se taisent ; celles des widgets
+  continuent) ; plus de lancement depuis l'Inbox, par l'agent de Meta, par l'outil d'un agent IA, par une campagne
+  à scénario ou un lien de test. Les parcours déjà en cours finissent. L'agent de Meta ne reçoit plus aucun contact
+  neuf et le scénario répondeur ne part plus : ces deux modes se comportent comme « Équipe », et ne peuvent plus être
+  choisis ; l'agent IA répondeur continue. Les membres au-delà des limites perdent l'accès (le plus ancien
+  administrateur garde le sien) : la console leur montre une page « accès suspendu », et Claude leur répond par le même
+  refus.
 - ✅ **Par l'API et Claude** : un refus rend le statut **402** avec un code, `plan_feature_unavailable` (fonction
   absente de l'offre) ou `plan_limit_reached` (limite atteinte), et le lien `upgradeUrl`. L'outil MCP `get_plan`
-  rend l'offre, ses limites, ce qui est consommé et la grille.
+  rend l'offre, ses limites, ce qui est consommé et la grille. Les outils de l'Inbox restent listés en Base et refusent
+  avec le lien de l'offre.
 - ✅ **L'Entreprise se pose par nous**, par une route de l'exploitation (`PUT /ops/offre/:tenantId`, pas encore d'écran),
   avec sa limite d'utilisateurs (10 proposés, vide = sans limite) et, si on la donne, la durée de conservation des
   conversations (absente, elle reste telle quelle : changer d'offre ne déclenche jamais de purge). La même route ramène

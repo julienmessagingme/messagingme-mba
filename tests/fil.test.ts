@@ -19,6 +19,8 @@ import { bancDuFil, type EtatDuFil, type OptionsBanc } from './banc-du-fil';
 import { agentEteintALArrivee, aucunNumeroDelie, aucunRoutagePub, aucunSignalReponse, aucuneArriveePub, entrantsDe } from './webhook-fixtures';
 import { aucunStop, jamaisDesabonne } from './consentement';
 import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
+import { offresToutOuvert } from './gardes';
+import { plusAnciennesJamaisLues } from './gardes';
 
 /**
  * LA TABLE DU CONTRÔLE DU FIL, EXÉCUTÉE (`src/inbox/fil.ts`).
@@ -605,13 +607,15 @@ describe('décision 5 : un lead ne prend pas la main à un opérateur', () => {
       executor: ex,
       scenarios: { getById: async () => ({ graph: graphe }) },
       contacts: { findIdByWaId: async () => null },
+      offres: offresToutOuvert,
     });
     const runner: AutomationRunnerDeps = {
-      automations: { listEnabled: async () => rows, lastFiredAt: async () => null, markFired: async () => true, clearFired: async () => {} },
+      automations: { listEnabled: async () => rows, lastFiredAt: async () => null, markFired: async () => true, clearFired: async () => {}, plusAnciennes: plusAnciennesJamaisLues },
       evalContext: async () => null,
       // Le MÊME câblage que `src/worker.ts`.
       startWorkflow: async (demande) => (await lancements.lancer(demande)) ?? false,
       defaultCooldownSeconds: 0,
+      offres: offresToutOuvert,
     };
     return { b, lancements, envois, runner };
   }

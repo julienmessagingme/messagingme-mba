@@ -58,7 +58,7 @@ function app(over: { lus?: string[]; connexions?: string[] } = {}) {
       comptes,
       getUserState: async (userId) => {
         const c = tous().find((x) => x.id === userId);
-        return c ? { role: c.role, disabled: c.disabled, tenantStatus: c.tenantId === 't3' ? 'locked' : 'active' } : null;
+        return c ? { role: c.role, disabled: c.disabled, tenantStatus: c.tenantId === 't3' ? 'locked' : 'active', horsOffre: null } : null;
       },
     },
     me: { getById: async () => null },

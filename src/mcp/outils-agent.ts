@@ -149,6 +149,7 @@ const OFFRES_EN_CLAIR = OFFRES_RECHARGE.map((o) => `${o} (${definitionOffre(o).h
 export const OUTILS_AGENT: OutilMcp[] = [
   {
     nom: 'list_agents',
+    fonction: null,
     description:
       'Les agents IA de l’espace, brouillons, actifs et désactivés : identifiant (id), libellé, statut, le nombre '
       + 'de manques qui bloquent encore leur activation (get_agent en donne la liste), et repondeur = true sur celui '
@@ -172,6 +173,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
   },
   {
     nom: 'get_agent',
+    fonction: null,
     description:
       'Un agent IA : sa fiche (objectif, ton, personnalité, règles de transfert, règles d’arrêt), son modèle et la '
       + 'version de sa fiche (fiche_version, à rendre à update_agent), ce que les agents de l’espace peuvent promettre '
@@ -208,6 +210,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
   },
   {
     nom: 'create_agent',
+    fonction: null,
     description:
       'Crée un agent IA en brouillon, par la fonction de la console. Seul le libellé se choisit ici : le modèle est '
       + 'Claude Haiku 4.5 (update_agent peut en choisir un autre) et la fiche est vide (update_agent la remplit, set_agent_tools lui donne ses outils, la '
@@ -237,6 +240,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
   },
   {
     nom: 'update_agent',
+    fonction: null,
     description:
       'Modifie la fiche d’un agent IA : objectif, ton, personnalité, règles de transfert (quand passer la main à un '
       + 'humain), règles d’arrêt (sorties) et modèle (liste fermée, prix dans get_agent). Seuls les champs fournis '
@@ -315,6 +319,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
   },
   {
     nom: 'set_agent_tools',
+    fonction: null,
     description:
       'Ajoute à un agent IA et active, à votre nom, des outils maison parmi : '
       + `${OUTILS_SURS.map((c) => `${c} (${outilMaison(c)?.titre.fr ?? c})`).join(', ')}. Un outil déjà posé n’est pas `
@@ -344,6 +349,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
   },
   {
     nom: 'activate_agent',
+    fonction: null,
     description:
       'Active un agent IA (active = true) ou le désactive (false). L’activation contrôle que l’agent est complet '
       + '(objectif, règles de transfert, une règle d’arrêt, des fiches de connaissance, un outil actif, et '
@@ -371,6 +377,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
   },
   {
     nom: 'set_default_responder',
+    fonction: null,
     description:
       'Choisit QUI RÉPOND AU CLIENT dans l’espace : à un nouveau contact, et à tout message entrant que ni un scénario, '
       + 'ni un mot-clé, ni un humain ne tient. mode « agent » (avec agent_id) : un agent IA ACTIF répond (refusé pour un '
@@ -450,6 +457,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
   },
   {
     nom: 'test_agent',
+    fonction: null,
     description:
       `Bac à sable : envoie une conversation fictive (1 à ${MAX_MESSAGES_ESSAI} messages, role « user » pour le client et `
       + '« assistant » pour l’agent, le dernier venant du client) et rend la réponse de l’agent, sa sortie et la trace '
@@ -490,6 +498,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
   },
   {
     nom: 'list_knowledge',
+    fonction: null,
     description:
       'Les fiches de connaissance d’un agent IA, par titre : identifiant (pour delete_knowledge), titre, le début du '
       + 'corps (extrait) et sa longueur, et leur provenance (source : page d’un site, document, ou écrite à la main), '
@@ -523,6 +532,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
   },
   {
     nom: 'add_knowledge',
+    fonction: null,
     description:
       `Ajoute à un agent IA des fiches de connaissance écrites (1 à ${MAX_FICHES_PAR_AJOUT} par appel ; titre de `
       + `${MAX_TITRE} caractères au plus, corps de ${MAX_CORPS}). Une fiche par sujet : c’est l’unité que l’agent `
@@ -560,6 +570,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
   },
   {
     nom: 'delete_knowledge',
+    fonction: null,
     description:
       `Supprime des fiches de connaissance d’un agent IA (1 à ${MAX_SUPPRESSIONS} identifiants, rendus par `
       + 'list_knowledge). Il n’y a pas de corbeille : le contenu de chaque fiche supprimée est gardé dans l’historique '
@@ -587,6 +598,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
   },
   {
     nom: 'preview_site',
+    fonction: null,
     description:
       'Lit un site DEPUIS LE SERVEUR et rend ce qu’import_site en ferait, page par page (nombre de fiches et de '
       + `caractères), sans rien écrire : les pages écartées avec leur raison, plafondAtteint (${PAGES_MAX} pages au plus) `
@@ -614,6 +626,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
   },
   {
     nom: 'import_site',
+    fonction: null,
     description:
       'Importe des pages d’un site en fiches de connaissance d’un agent IA, après preview_site. pages : les adresses '
       + 'retenues dans l’aperçu, toutes de la même origine que url (sans pages, url seule). Chaque page REMPLACE les '
@@ -644,6 +657,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
   },
   {
     nom: 'import_document_text',
+    fonction: null,
     description:
       'Donne à un agent IA le TEXTE d’un document (PDF, Word, tableur, page de notes), extrait sur votre poste, sous '
       + 'son nom de fichier : il est découpé et rangé exactement comme le même document déposé dans la console, avec '
@@ -671,6 +685,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
   },
   {
     nom: 'set_transfer_mode',
+    fonction: null,
     description:
       'Ce que les agents IA de l’espace peuvent promettre quand ils passent la main à l’équipe : always (un conseiller '
       + 'tout de suite), business_hours (aux heures d’ouverture de l’espace, sinon l’heure de reprise), never (aucune '
@@ -690,6 +705,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
   },
   {
     nom: 'get_credit',
+    fonction: null,
     description:
       'Le crédit IA de l’espace : son solde en euros (solde_eur, qui peut finir légèrement négatif) et ses '
       + `${LIGNES_HISTORIQUE} derniers mouvements, du plus récent au plus ancien : achats, crédit offert, recharges, `
@@ -709,6 +725,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
   },
   {
     nom: 'buy_credit',
+    fonction: null,
     description:
       'Ouvre le paiement d’une recharge du crédit IA et rend l’adresse de la page de paiement Stripe, à donner à la '
       + 'personne : le paiement reste un geste humain, et le crédit arrive quand Stripe l’a confirmé (get_credit). '

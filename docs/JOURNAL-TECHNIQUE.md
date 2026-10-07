@@ -5,6 +5,34 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-07 : au retour en Base, on gèle sans rien effacer (lot 6, livraison B2a)
+
+**Ce qui part** : 80 fichiers, aucune migration. B2 a été découpé par Julien en deux : B2a le gel, B2b le numéro
+inclus dans le Pro (qui, lui, demande une migration).
+
+**Les décisions de Julien** : en Base, les scénarios lancés par les 10 automations les plus anciennes du client
+continuent, tout autre démarrage d'un scénario du client s'arrête (Inbox, agent de Meta, outil d'un agent IA,
+campagne à scénario, lien de test, scénario répondeur) ; le répondeur agent IA et les parcours en cours continuent.
+L'agent de Meta ne reçoit plus aucun contact neuf, ceux qu'il tient finissent avec lui, rien n'est écrit chez Meta.
+
+**Un point de passage par gel, et rien d'écrit** : les démarrages (`creerLancements`), les automations
+(`runAutomations` et `plusAnciennes`), qui répond (`sousLOffre`, appliqué au fil, à `mbaActifPour` et à
+`modesParTenant`), les membres en trop (`requireAuth` et la garde des jetons de Claude, 402 avec l'accès suspendu,
+les administrateurs les plus anciens d'abord), les outils MCP (chacun déclare sa fonction, celle-ci est requise). Une
+offre illisible se lit Entreprise. Les fixtures disent leur hypothèse (`offresToutOuvert`, et `plusAnciennesJamaisLues`
+qui lève si on la lit).
+
+**Rayon de souffle mesuré avant la relecture** : deux tests seulement lisaient la vraie offre, et l'offre par défaut
+d'un espace neuf est Base. Le test d'intégration du répondeur a été posé en Entreprise (cas Base ajouté), et la base
+factice du socle répond Entreprise. Suite serveur, auto-attaque (1555 sondes), console et e2e complet (1433) verts.
+
+**Relecture** : aucun rouge. Les 9 espaces sont en Entreprise sans limite de membres, donc rien ne gèle au
+déploiement, et une panne de lecture laisse tout passer. Un jaune certain corrigé avant le push : le test
+d'intégration du rang créait un 4e membre sous la limite de 3 de son propre magasin, la CI aurait été rouge sans
+jamais exécuter le SQL du rang. Onze autres jaunes, reportés au lot suivant, dont trois à trancher par Julien (les
+widgets à scénario créés en Base, « Envoyer un bloc » de l'agent IA non gelé, une limite de membres posée en
+Entreprise qui suspend tout de suite).
+
 ## 2026-10-07 : RC7 et RC8 en production, et la fin du chantier « Retours console du 6 octobre »
 
 **RC7, le champ du contact dans le lien d'un bouton** : serveur `b92c63dd` (API et deux workers, aucune migration),

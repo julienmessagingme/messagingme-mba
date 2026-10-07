@@ -12,8 +12,10 @@ import { estUuid } from '../http/scope';
 import { refus, type Issue } from '../lib/issue';
 import { journaliser } from '../lib/journal';
 import {
-  DELAI_SCENARIO_MAX_S, DELAI_SCENARIO_MIN_S, modeEffectif, type ModeRepondeur, type ReglageDuRepondeur,
+  DELAI_SCENARIO_MAX_S, DELAI_SCENARIO_MIN_S, modeEffectif, sousLOffre, type ModeRepondeur, type ReglageDuRepondeur,
 } from './mode';
+import type { SourceOffres } from '../offres/offre.pg';
+import { refusFonction } from '../offres/refus';
 
 /**
  * LE RÉGLAGE « QUI RÉPOND AU CLIENT » (RC6, plan `docs/superpowers/plans/2026-10-06-rc6-qui-repond.md`, A2 ; le lot 5
@@ -73,6 +75,11 @@ export interface DepsReglageRepondeur {
   historique: Pick<HistoriqueStore, 'ecrire'>;
   /** Le contrôle du fil (`src/inbox/fil.ts`), le seul qui écrit le détenteur d'une conversation. */
   fils: Pick<ControleDuFil, 'reprendreLesFilsDeMeta'>;
+  /**
+   * L'offre de l'espace (lot 6, B2a) : en Base, l'agent de Meta et le scénario répondeur sont gelés. Le choix les refuse
+   * (402), la lecture les montre sous l'offre (`sousLOffre`).
+   */
+  offres: SourceOffres;
 }
 
 /** Ce que le geste a fait, rendu tel quel à l'écran et à l'outil MCP. */
@@ -122,30 +129,34 @@ export interface EtatRepondeur {
 }
 
 export async function lireRepondeur(
-  deps: Pick<DepsReglageRepondeur, 'reglages' | 'activation' | 'scenarios' | 'gatewayDisponible'>,
+  deps: Pick<DepsReglageRepondeur, 'reglages' | 'activation' | 'scenarios' | 'gatewayDisponible' | 'offres'>,
   tenantId: string,
   agentsActifs: (tenantId: string) => Promise<Array<{ id: string; label: string }>>,
 ): Promise<EtatRepondeur> {
-  const [r, configurable, agents, scenarios] = await Promise.all([
+  const [r, configurable, agents, scenarios, offre] = await Promise.all([
     deps.reglages.get(tenantId),
     // Une panne de lecture chez Meta grise la position : c'est un affichage, l'écran ne doit pas tomber pour lui.
     // Le choix lui-même, s'il est tenté, redemande et refuse lisiblement.
     agentDeMetaConfigurable(deps.activation, tenantId).catch(() => false),
     agentsActifs(tenantId),
     deps.scenarios.listResume(tenantId),
+    deps.offres.offreDe(tenantId),
   ]);
+  const { fonctions } = offre.droits;
   return {
     mode: r.repondeurMode,
-    modeEffectif: modeEffectif(r),
+    // Le mode qui s'applique SOUS L'OFFRE (lot 6, B2a) : en Base, « MBA » et « Scénario » se lisent « Équipe ».
+    modeEffectif: modeEffectif(sousLOffre(r, fonctions)),
     agentId: r.repondeurAgentId,
     workflowId: r.repondeurWorkflowId,
     delaiS: r.repondeurDelaiScenarioS,
     mbaAllume: r.mbaEnabled,
     // Allumé, il l'est forcément : la lecture de Meta ne grise pas une position déjà en service.
-    mbaConfigurable: r.mbaEnabled || configurable,
+    // Hors offre, la position est grisée, comme un agent de Meta que Meta n'a pas ouvert sur ce numéro.
+    mbaConfigurable: fonctions.has('agent_meta') && (r.mbaEnabled || configurable),
     modeleDisponible: deps.gatewayDisponible,
     agentsActifs: agents.map((a) => ({ id: a.id, label: a.label })),
-    scenariosPublies: scenarios.filter((s) => s.nodeCount > 0).map((s) => ({ id: s.id, name: s.name })),
+    scenariosPublies: fonctions.has('scenarios') ? scenarios.filter((s) => s.nodeCount > 0).map((s) => ({ id: s.id, name: s.name })) : [],
   };
 }
 
@@ -174,6 +185,11 @@ function codeSql(err: unknown): string | null {
 export async function choisirRepondeur(
   deps: DepsReglageRepondeur, tenantId: string, choix: ChoixRepondeur, auteur: AuteurModification,
 ): Promise<Issue<ReglageRepondeur>> {
+  // Le gel au retour en Base (lot 6, B2a) : refusé AVANT toute lecture ou écriture, ni chez Meta ni chez nous.
+  if (choix.mode === 'mba' || choix.mode === 'scenario') {
+    const fonction = choix.mode === 'mba' ? 'agent_meta' : 'scenarios';
+    if (!(await deps.offres.offreDe(tenantId)).droits.fonctions.has(fonction)) return refusFonction(fonction);
+  }
   const avant = await deps.reglages.get(tenantId);
   let ecrit: ChoixRepondeurEcrit;
   let libelle: string;

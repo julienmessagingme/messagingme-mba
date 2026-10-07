@@ -104,6 +104,7 @@ function vueEtat(e: EtatConnexion): Record<string, unknown> {
 export const OUTILS_NUMERO: OutilMcp[] = [
   {
     nom: 'get_number_subscription',
+    fonction: null,
     description:
       'L’abonnement du numéro WhatsApp fourni (3,50 € HT par mois) : son statut (actif, en_retard après un paiement échoué, '
       + 'resilie), la fin de la période payée, et le numéro. `abonnement: null` : l’espace n’a pas de numéro fourni payé.',
@@ -128,6 +129,7 @@ export const OUTILS_NUMERO: OutilMcp[] = [
   },
   {
     nom: 'manage_number_subscription',
+    fonction: null,
     description:
       'Rend l’adresse du portail client de Stripe pour l’abonnement du numéro : changer de carte, lire les factures, '
       + 'résilier. À donner à la personne : le geste reste le sien. Compte dans les opérations lourdes de l’espace.',
@@ -145,6 +147,7 @@ export const OUTILS_NUMERO: OutilMcp[] = [
   },
   {
     nom: 'resubscribe_number',
+    fonction: null,
     description:
       'Renouvelle l’abonnement du numéro WhatsApp fourni quand il est impayé ou terminé, et rend l’adresse à donner à la '
       + 'personne. Impayé (en retard, ou suspendu faute de paiement) : le portail de Stripe, pour payer la facture ouverte '
@@ -182,6 +185,7 @@ export const OUTILS_NUMERO: OutilMcp[] = [
   },
   {
     nom: 'start_whatsapp_connection',
+    fonction: null,
     description:
       'Rend le lien qui ouvre la page de connexion du numéro WhatsApp de l’espace, sans passer par la console, valable '
       + 'une heure : la personne y fait la fenêtre de Meta. `fourni` : on lui fournit un numéro dédié (3,50 € HT par mois, '
@@ -221,6 +225,7 @@ export const OUTILS_NUMERO: OutilMcp[] = [
   },
   {
     nom: 'watch_whatsapp_connection',
+    fonction: null,
     description:
       `Attend le prochain changement de la connexion du numéro (numéro attribué, code de vérification reçu, numéro `
       + `connecté) et rend l’état, au plus tard au bout de ${DELAI_ATTENTE_MS / 1000} secondes. Passe l’empreinte rendue `

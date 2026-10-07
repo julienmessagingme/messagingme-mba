@@ -4,7 +4,7 @@ import { buildServer } from '../src/server';
 import { signSession, verifyDemandeOauth } from '../src/auth/token';
 import { metadonneesRessource, metadonneesServeur } from '../src/oauth/metadonnees';
 import { nouveauJeton, PREFIXE_CODE } from '../src/oauth/jetons';
-import type { AccesOauth, CodeConsomme, NouveauxJetons, NouvelleAutorisation, AutorisationListee } from '../src/oauth/store.pg';
+import type { AccesOauthResolu, CodeConsomme, NouveauxJetons, NouvelleAutorisation, AutorisationListee } from '../src/oauth/store.pg';
 import type { OauthRouteDeps } from '../src/http/oauth';
 import type { OauthConsentementRouteDeps } from '../src/http/oauth-consentement';
 import type { GoogleIdentity } from '../src/auth/google';
@@ -111,10 +111,10 @@ class FauxMagasin {
     }
     return 'inconnu';
   }
-  async resoudreAcces(empreinte: string): Promise<AccesOauth | null> {
+  async resoudreAcces(empreinte: string): Promise<AccesOauthResolu | null> {
     const a = [...this.lignes.values()].find((l) => l.acces === empreinte);
     if (!a) return null;
-    return { autorisationId: a.id, tenantId: a.tenantId, userId: a.userId, scopes: a.scopes, tenantStatus: 'active', valide: !a.revoque && this.admin(a) };
+    return { autorisationId: a.id, tenantId: a.tenantId, userId: a.userId, scopes: a.scopes, tenantStatus: 'active', valide: !a.revoque && this.admin(a), horsOffre: null };
   }
   async revoquerParJeton(empreinte: string): Promise<boolean> {
     const a = [...this.lignes.values()].find((l) => !l.revoque && (l.acces === empreinte || l.refresh === empreinte));
@@ -200,7 +200,7 @@ function monter(o: { publicApiUrl?: string } = {}) {
       secret: SECRET,
       getUserState: async (userId) => {
         const c = compteDe(userId);
-        return c ? { role: c.role, disabled: c.disabled, tenantStatus: 'active' } : null;
+        return c ? { role: c.role, disabled: c.disabled, tenantStatus: 'active', horsOffre: null } : null;
       },
     },
     oauth: deps,

@@ -32,6 +32,7 @@ import { creerTravauxEnVol } from '../src/lib/en-vol';
 import { DROITS, FONCTIONS } from '../src/offres/offres';
 import { grilleDesOffres } from '../src/offres/vue';
 import type { StripeWebhookRouteDeps } from '../src/http/credit-stripe';
+import { offresToutOuvert } from './gardes';
 
 /**
  * LES DÉPENDANCES DE ROUTES DEVENUES REQUISES, EN VALEURS INERTES NOMMÉES (lot 3 de l'audit ponytail, 2026-09-26).
@@ -135,6 +136,7 @@ export const repondeurInerte: DepsReglageRepondeur = {
   liste: { toutRetirer: neDevraitPasEtreAppelee('toutRetirer') },
   historique: { ecrire: neDevraitPasEtreAppelee('historique.ecrire') },
   fils: { reprendreLesFilsDeMeta: neDevraitPasEtreAppelee('reprendreLesFilsDeMeta') },
+  offres: offresToutOuvert,
 };
 
 export const agentsInertes: Pick<AgentsRouteDeps, 'credits' | 'sessions' | 'etatPourLint' | 'modelesProposes' | 'historique' | 'oublierRepondeur' | 'repondeur'> = {
@@ -526,7 +528,8 @@ export const mcpNumeroInerte: Pick<DepsMcp, 'numero'> = {
 };
 
 /** L'offre du MCP (lot 6), pour les montages qui n'en parlent pas : un espace Entreprise, sans limite. */
-export const mcpOffreInerte: Pick<DepsMcp, 'offre'> = {
+export const mcpOffreInerte: Pick<DepsMcp, 'offre' | 'offres'> = {
+  offres: offresToutOuvert,
   offre: {
     vue: async () => ({
       offre: 'entreprise', fonctions: [...FONCTIONS], limites: { ...DROITS.entreprise.limites },

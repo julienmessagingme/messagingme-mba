@@ -11,6 +11,7 @@ import type { AgentSession, AgentSessionStatus, AgentSessionStore } from '../src
 import type { AgentTurnJob } from '../src/agent/turn-job';
 import { creerEscaladeVersHumain } from '../src/agent/escalade';
 import { BLOC_AGENT_REPONDEUR, grapheDuRepondeur } from '../src/repondeur/graphe';
+import { offresToutOuvert } from './gardes';
 
 /**
  * LE GRAPHE DU RÉPONDEUR ET SON PARCOURS (lot 5, A4), sur le VRAI exécuteur, les VRAIS lancements et le VRAI contrôle
@@ -99,6 +100,7 @@ function banc() {
     executor,
     scenarios: { getById: async () => { throw new Error('le répondeur ne lit jamais sa ligne de scénario'); } },
     contacts: { findIdByWaId: async () => 'c-1' },
+    offres: offresToutOuvert,
   });
   const demarrer = (messageDeclencheur: string | null = 'wamid.1') => lancements.lancer({
     type: 'repondeur', tenantId: ESPACE, workflowId: 'w-sys', waId: WA,

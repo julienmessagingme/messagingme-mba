@@ -4,7 +4,8 @@ import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { EmailIdentity, UserAuthStore } from '../src/auth/store';
 import type { AgentsRouteDeps } from '../src/http/agents';
-import { choisirRepondeur, choixDeLAncienneForme, type ChoixRepondeur, type DepsReglageRepondeur } from '../src/repondeur/reglage';
+import { choisirRepondeur, choixDeLAncienneForme, lireRepondeur, type ChoixRepondeur, type DepsReglageRepondeur } from '../src/repondeur/reglage';
+import { DROITS, type Offre } from '../src/offres/offres';
 import { creerListeDeLAgent, PAQUET_LISTE } from '../src/mba/liste';
 import { modifierAgent } from '../src/agent/gestion';
 import type { AgentComplet, PatchAgent } from '../src/agent/agent-store';
@@ -47,7 +48,7 @@ interface EtatReglage {
 /** Le réglage et ses dépendances en mémoire, chaque geste noté dans l'ordre. */
 function monter(o: {
   etat?: Partial<EtatReglage>; statut?: AgentComplet['status'] | null; gateway?: boolean;
-  numero?: string | null; eligible?: boolean | Error; chezMeta?: Error; ecriture?: Error; reprise?: Error;
+  numero?: string | null; eligible?: boolean | Error; chezMeta?: Error; ecriture?: Error; reprise?: Error; offre?: Offre;
 } = {}) {
   const etat: EtatReglage = {
     mbaEnabled: false, repondeurMode: 'equipe', repondeurAgentId: null, repondeurWorkflowId: null, repondeurDelaiScenarioS: 86400,
@@ -75,6 +76,7 @@ function monter(o: {
       },
     },
     gatewayDisponible: o.gateway ?? true,
+    offres: { offreDe: async () => ({ offre: o.offre ?? 'entreprise', droits: DROITS[o.offre ?? 'entreprise'], retourEnBaseLe: null }) },
     // Le chemin de l'Accueil, en faux : le numéro, l'éligibilité, Meta, puis le drapeau, qui suit la règle de
     // `setMbaEnabled` (allumer quand personne ne répond passe en `mba`).
     activation: {
@@ -108,6 +110,29 @@ function monter(o: {
 }
 
 const choisir = (m: ReturnType<typeof monter>, c: ChoixRepondeur) => choisirRepondeur(m.deps, T, c, AUTEUR);
+
+describe('le réglage du répondeur en Base (lot 6, B2a)', () => {
+  it('🔴 « MBA » et « Scénario » sont refusés (402, le lien de l’offre), sans RIEN écrire, ni chez Meta ni chez nous', async () => {
+    const m = monter({ offre: 'base' });
+    expect(await choisir(m, { mode: 'mba' })).toMatchObject({ ok: false, statut: 402, details: { code: 'plan_feature_unavailable', fonction: 'agent_meta' } });
+    expect(await choisir(m, { mode: 'scenario', workflowId: WF })).toMatchObject({ ok: false, statut: 402, details: { code: 'plan_feature_unavailable', fonction: 'scenarios' } });
+    expect([m.journal, m.lignes]).toEqual([[], []]);
+  });
+
+  it('« Agent IA » et « Équipe » restent permis', async () => {
+    const m = monter({ offre: 'base' });
+    expect(await choisir(m, { mode: 'agent', agentId: AG })).toMatchObject({ ok: true });
+    expect(await choisir(m, { mode: 'equipe' })).toMatchObject({ ok: true });
+  });
+
+  it('🔴 la lecture dit la vérité sous l’offre : « MBA » écrit se lit « Équipe », la position MBA est grisée, aucun scénario proposé', async () => {
+    const m = monter({ offre: 'base', etat: { mbaEnabled: true, repondeurMode: 'mba' } });
+    const e = await lireRepondeur(m.deps, T, async () => []);
+    expect(e).toMatchObject({ mode: 'mba', modeEffectif: 'equipe', mbaConfigurable: false, scenariosPublies: [] });
+    const pro = await lireRepondeur(monter({ offre: 'pro', etat: { mbaEnabled: true, repondeurMode: 'mba' } }).deps, T, async () => []);
+    expect(pro).toMatchObject({ modeEffectif: 'mba', mbaConfigurable: true, scenariosPublies: [{ id: WF, name: 'Bienvenue' }] });
+  });
+});
 
 describe('choisirRepondeur : chaque passage de mode, dans les deux sens', () => {
   it('🔴 équipe → agent IA : AUCUN appel chez Meta, le réglage seul, et sa ligne d’historique sur l’agent', async () => {

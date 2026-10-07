@@ -1,5 +1,6 @@
 import { config } from '../config';
 import type { Fonction, Limites } from './offres';
+import { refus, type Refus } from '../lib/issue';
 
 /**
  * LES REFUS DE L'OFFRE (lot 6, spec § 8). Statut 402 pour les deux : il ne se confond pas avec le 403 d'un droit de clé
@@ -51,6 +52,15 @@ export function corpsRefusFonction(fonction: Fonction): { error: string; code: '
     fonction,
     upgradeUrl: adresseOffre(),
   };
+}
+
+/**
+ * Le même refus, en `Refus` d'une fonction partagée entre la route et l'outil MCP (`src/lib/issue.ts`) : la route le
+ * traduit en 402 avec le corps de `corpsRefusFonction`, l'outil en refus lisible avec la même phrase (lot 6, B2a).
+ */
+export function refusFonction(fonction: Fonction): Refus {
+  const c = corpsRefusFonction(fonction);
+  return refus(STATUT_REFUS_OFFRE, c.error, { code: c.code, fonction: c.fonction, upgradeUrl: c.upgradeUrl });
 }
 
 export function corpsRefusLimite(e: LimiteOffreError): { error: string; code: 'plan_limit_reached'; limite: NomLimite; max: number; upgradeUrl: string } {

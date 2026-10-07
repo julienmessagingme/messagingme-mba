@@ -33,7 +33,7 @@ const CHECKOUT = 'https://checkout.stripe.com/c/pay/cs_e2e';
 const PORTAIL = 'https://billing.stripe.com/p/session/e2e';
 
 type Reponse = { status: number; corps: unknown };
-async function monter(page: Page, offre: unknown, o: { paiement?: Reponse } = {}) {
+async function monter(page: Page, offre: unknown, o: { paiement?: Reponse; suspendu?: boolean } = {}) {
   const appels: string[] = [];
   const paiements: unknown[] = [];
   // Les pages de Stripe ne sont jamais jointes : une page factice suffit à prouver la redirection.
@@ -44,6 +44,10 @@ async function monter(page: Page, offre: unknown, o: { paiement?: Reponse } = {}
     const chemin = new URL(req.url()).pathname;
     appels.push(`${req.method()} ${chemin}`);
     const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
+    // Un membre en trop (lot 6, B2a) : la garde refuse CHAQUE requête, lecture comprise.
+    if (o.suspendu) {
+      return json({ error: 'Limite de votre offre atteinte : 1 utilisateur. Passez en Pro pour la lever : https://console.e2e.test/offre', code: 'plan_limit_reached', limite: 'utilisateurs', max: 1, acces: 'suspendu', upgradeUrl: 'https://console.e2e.test/offre' }, 402);
+    }
     if (req.method() === 'POST' && chemin.endsWith('/offre/paiement')) {
       paiements.push(req.postDataJSON());
       return o.paiement ? json(o.paiement.corps, o.paiement.status) : json({ url: CHECKOUT, portail: false });
@@ -172,6 +176,19 @@ test.describe('payer le Pro (livraison B1)', () => {
     await page.goto('/offre');
     await expect(page.getByTestId('offre-passer-pro')).toHaveAttribute('href', '/support?sujet=pro');
     await expect(page.getByTestId('offre-payer-mois')).toHaveCount(0);
+  });
+});
+
+test.describe('un membre en trop (livraison B2a)', () => {
+  test('🔴 chaque requête refusée : la page entière le dit, et on peut se déconnecter', async ({ page }) => {
+    await monter(page, vue('base'), { suspendu: true });
+    await page.goto('/contacts');
+    await expect(page.getByTestId('acces-suspendu')).toBeVisible();
+    await expect(page.getByTestId('acces-suspendu-phrase')).toHaveText('Limite de votre offre atteinte : 1 utilisateur. Passez en Pro pour la lever.');
+    // La page remplace l'écran : aucun bandeau de refus par-dessus.
+    await expect(page.getByTestId('refus-offre')).toHaveCount(0);
+    await page.getByTestId('acces-suspendu-deconnecter').click();
+    await expect(page).toHaveURL(/\/login/);
   });
 });
 

@@ -15,6 +15,7 @@ import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE, NumeroSuspenduError, MESSAGE_NUMERO_SUSPENDU } from '../src/meta/numero-delie';
 import { mcpAgentInerte, mcpNumeroInerte, mcpOffreInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { creerPoseEtiquette, LONGUEUR_MAX_ETIQUETTE } from '../src/crm/poser-etiquette';
+import { DROITS } from '../src/offres/offres';
 
 /**
  * Le serveur MCP : `POST /mcp`, du JSON-RPC 2.0 sans état, autorisé par une clé d'API.
@@ -772,5 +773,41 @@ describe('🔴 get_contact cherche la fiche au format de la fiche (essai réel d
     expect(contenu(res).isError).toBe(true);
     expect(contenu(res).texte).toContain('+33612345678');
     expect(cherches).toEqual([]);
+  });
+});
+
+/**
+ * 🔴 LES OUTILS ET L'OFFRE (lot 6, livraison B2a, spec § 4 et § 8) : chaque outil déclare la fonction qu'il exige. Hors
+ * offre, il RESTE listé (à la différence des droits d'une clé) et refuse avec la phrase et le lien de l'offre : l'assistant
+ * peut alors l'expliquer. Écrit ici, pas dérivé du catalogue : le comparer à lui-même ne prouverait rien.
+ */
+const FONCTION_DES_OUTILS: Readonly<Record<string, string>> = {
+  list_conversations: 'inbox', get_conversation: 'inbox', get_messages: 'inbox',
+  reply_in_open_window: 'inbox', tag_conversation: 'inbox', assign_conversation: 'inbox',
+};
+
+describe('serveur MCP : les outils et l’offre (lot 6, B2a)', () => {
+  const base = { offreDe: async () => ({ offre: 'base' as const, droits: DROITS.base, retourEnBaseLe: null }) };
+
+  it('🔴 chaque outil déclare sa fonction : les six de l’Inbox, aucune pour les autres', () => {
+    for (const o of OUTILS) expect([o.nom, o.fonction]).toEqual([o.nom, FONCTION_DES_OUTILS[o.nom] ?? null]);
+  });
+
+  it('🔴 en Base, un outil de l’Inbox RESTE listé et refuse avec le lien de l’offre ; rien n’est lu', async () => {
+    const { server, traces } = app({ offres: base });
+    const liste = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: rpc('tools/list') });
+    expect(liste.json<{ result: { tools: Array<{ name: string }> } }>().result.tools.map((t) => t.name)).toContain('list_conversations');
+    const c = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('list_conversations') }));
+    expect(c.isError).toBe(true);
+    expect(c.texte).toMatch(/Inbox/);
+    expect(c.texte).toMatch(/\/offre/);
+    expect(traces.listes).toEqual([]);
+    await server.close();
+  });
+
+  it('en Base, un outil ouvert à toutes les offres répond comme avant', async () => {
+    const { server } = app({ offres: base });
+    expect(contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('list_members') })).isError).toBe(false);
+    await server.close();
   });
 });

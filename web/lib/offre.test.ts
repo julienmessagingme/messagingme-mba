@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { lireRefusOffre, lireVueOffre, offreQuiOuvre, phraseInclusDans, phraseSansAdresse, FONCTIONS_OFFRE } from './offre';
+import { estAccesSuspendu, lireRefusOffre, lireVueOffre, offreQuiOuvre, phraseInclusDans, phraseSansAdresse, FONCTIONS_OFFRE } from './offre';
 
 /**
  * L'OFFRE CÔTÉ CONSOLE (lot 6, tâche 7) : la réponse du serveur vérifiée, et la règle qui protège un client d'une panne :
@@ -59,6 +59,17 @@ describe('lireRefusOffre', () => {
     expect(lireRefusOffre({ error: 'Trop de requêtes', code: 'rate_limited' })).toBeNull();
     expect(lireRefusOffre({ code: 'plan_limit_reached' })).toBeNull();
     expect(lireRefusOffre(null)).toBeNull();
+  });
+});
+
+describe('estAccesSuspendu (lot 6, B2a)', () => {
+  it('🔴 le refus de la garde à un membre en trop : la page entière, pas un bandeau', () => {
+    expect(estAccesSuspendu({ error: 'Limite de votre offre atteinte : 1 utilisateur.', code: 'plan_limit_reached', limite: 'utilisateurs', max: 1, acces: 'suspendu', upgradeUrl: 'u' }))
+      .toEqual({ code: 'plan_limit_reached', phrase: 'Limite de votre offre atteinte : 1 utilisateur.' });
+  });
+  it('une invitation au-delà de la limite (même code, sans acces) n’est PAS une suspension', () => {
+    expect(estAccesSuspendu({ error: 'Limite', code: 'plan_limit_reached', limite: 'utilisateurs', max: 1, upgradeUrl: 'u' })).toBeNull();
+    expect(estAccesSuspendu(null)).toBeNull();
   });
 });
 

@@ -57,6 +57,21 @@ describe.skipIf(!url)('la limite d’automations de l’offre', () => {
     await expect(automations.update(eteinte.id, t, { enabled: true })).rejects.toBeInstanceOf(LimiteOffreError);
   });
 
+  it('🔴 les plus anciennes (le gel, lot 6, B2a) : la même population que la limite, par date de création, dans la limite', async () => {
+    const sansLimite = new PgAutomationStore(pool, async () => null);
+    const a1 = await sansLimite.create(t, entree(true));
+    const a2 = await sansLimite.create(t, entree(true));
+    const a3 = await sansLimite.create(t, entree(true));
+    await sansLimite.create(t, entree(false));
+    await sansLimite.create(t, entree(true, 'channelsme_link'));
+    // Des dates de création distinctes et connues : l'ordre ne dépend pas de la vitesse des insertions.
+    await pool.query(`update automations set created_at = now() - interval '3 days' where id = $1`, [a3.id]);
+    await pool.query(`update automations set created_at = now() - interval '2 days' where id = $1`, [a1.id]);
+    await pool.query(`update automations set created_at = now() - interval '1 day' where id = $1`, [a2.id]);
+    expect([...await sansLimite.plusAnciennes(t, 2)].sort()).toEqual([a3.id, a1.id].sort());
+    expect((await sansLimite.plusAnciennes(t, 10)).size).toBe(3);
+  });
+
   it('🔴 l’automation d’un webhook entrant allumé compte dans la même limite', async () => {
     await automations.create(t, entree(true));
     await automations.create(t, entree(true));

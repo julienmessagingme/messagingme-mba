@@ -7,6 +7,7 @@ import type { AutomationEvent, AutomationRow } from '../src/automation/match';
 import { POLITIQUE_DE_LANCEMENT, type DemandeAutomatisme } from '../src/workflow/lancements';
 import type { IssueRoutage, PubDuLead } from '../src/pubs/routage';
 import { entrantsDe } from './webhook-fixtures';
+import { offresToutOuvert, plusAnciennesJamaisLues } from './gardes';
 
 /**
  * LE ROUTAGE D'UN LEAD PUBLICITAIRE, CÂBLÉ, ET CE QUI EN SORT.
@@ -294,7 +295,9 @@ describe('la restriction écarte réellement les autres automations', () => {
           lastFiredAt: async () => null,
           markFired: async () => true,
           clearFired: async () => {},
+          plusAnciennes: plusAnciennesJamaisLues,
         },
+        offres: offresToutOuvert,
         evalContext: async () => null,
         // La reprise que le type de la demande vaut (`POLITIQUE_DE_LANCEMENT`), lue là où elle se décide.
         startWorkflow: async (d: DemandeAutomatisme) => {

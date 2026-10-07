@@ -10,6 +10,7 @@ import { CAUSE_REOUVERTURE, creerControleDuFil } from '../../src/inbox/fil';
 import { creerListeDeLAgent } from '../../src/mba/liste';
 import { DELAI_REPRISE_DEFAUT_MS, aucunRepondeur, listeEnMemoire, metaFactice } from '../banc-du-fil';
 import { jamaisBloque, jamaisDesabonne, numeroJamaisBloque } from '../consentement';
+import { offresToutOuvert } from '../gardes';
 
 /**
  * QUANTITATIF > PERFORMANCE : ce que la base rend comme DEMANDES (migration 0194, `PgPerformanceStore.lire`).
@@ -391,6 +392,7 @@ describe.skipIf(!url)('les demandes du Quantitatif > Performance', () => {
       liste: creerListeDeLAgent({ store: listeEnMemoire().store, clientMba: async () => faux.client, attendre: async () => {} }),
       consentement: { estDesabonne: jamaisDesabonne, estBloque: jamaisBloque },
       meta: faux.meta,
+      offres: offresToutOuvert,
     });
     /** Le contact réécrit, puis la remise « personne ne suit » décide, dans l'ordre du job webhook. */
     const reecrit = async (waId: string): Promise<boolean> => {

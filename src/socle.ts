@@ -375,6 +375,8 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const fil = creerControleDuFil({
     depot: inboxStore,
     reglages: settingsStore,
+    // Les réglages s'y lisent sous l'offre (lot 6, B2a) : le gel de l'agent de Meta et du scénario répondeur.
+    offres,
     // Le délai de reprise de l'équipe quand l'espace n'en a pas réglé : le même que celui du balayage (`src/worker.ts`).
     delaiRepriseParDefautMs: config.CONTROL_HUMAN_TIMEOUT_MS,
     parcours: runStore,
@@ -409,7 +411,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const workflowRuntime = buildWorkflowRuntime({
     pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
     rcsProvider: config.RCS_PROVIDER,
-    emailTemplates, emailResolver, numeroDeLEspace, runStore, fil,
+    emailTemplates, emailResolver, numeroDeLEspace, runStore, fil, offres,
   });
 
   /**

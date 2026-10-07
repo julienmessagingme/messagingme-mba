@@ -171,6 +171,21 @@ export function phraseSansAdresse(phrase: string): string {
   return phrase.replace(/\s*:\s*https?:\/\/\S+\s*$/, '.');
 }
 
+/**
+ * L'ACCÈS SUSPENDU D'UN MEMBRE EN TROP (lot 6, B2a) : la garde du serveur refuse CHAQUE requête d'un membre au-delà des
+ * limites de l'offre (402 `plan_limit_reached` avec `acces: 'suspendu'`). Émis par `lib/http.ts` sur toute requête,
+ * lecture comprise, et écouté par `AppShell`, qui remplace la page entière : un bandeau sur un écran dont chaque lecture
+ * échoue ne dirait rien d'utile.
+ */
+export const ACCES_SUSPENDU_EVENT = 'mba:acces-suspendu';
+
+/** Le refus de la garde à un membre en trop ; `null` pour tout autre corps, une invitation refusée comprise. */
+export function estAccesSuspendu(corps: unknown): RefusOffre | null {
+  if (!estObjet(corps) || corps.acces !== 'suspendu') return null;
+  const refus = lireRefusOffre(corps);
+  return refus?.code === 'plan_limit_reached' ? refus : null;
+}
+
 /** Le corps d'un 402 d'offre, vérifié ; `null` pour tout autre corps. */
 export function lireRefusOffre(corps: unknown): RefusOffre | null {
   if (!estObjet(corps) || typeof corps.error !== 'string') return null;

@@ -79,11 +79,11 @@
   le tunnel de la Base (lot 19), en masquant ces choix quand l'offre les ferme.
 - **La phrase d'un refus d'offre est en français**, comme toutes les phrases du serveur : la console en anglais
   l'affiche telle quelle (limite connue, la même que les autres erreurs).
-- 🔴 **Les outils MCP ne déclarent pas encore leur fonction** (reporté en B2, décidé au plan) : ils appellent les
-  magasins directement, pas les routes gardées, donc une Base garde par Claude les outils d'une fonction fermée,
-  l'Inbox en tête (`list_conversations`, `get_messages`, `reply_in_open_window`). Les LIMITES, elles, tiennent par
-  Claude (la fiche, l'envoi de modèle et l'automation se comptent dans les magasins). À fermer en B2 avant d'ouvrir
-  le site à la Base.
+- **Le gel au retour en Base ne met pas en pause les adresses de webhook au-delà de la première** (spec § 7) : c'est
+  le lot des webhooks sortants. Et la conservation à 30 jours qui ne s'applique qu'un mois après le retour en Base
+  vient avec la livraison C.
+- **La console ne montre pas qu'une automation est en pause par l'offre** : en Base, celles au-delà des 10 plus
+  anciennes restent « allumées » à l'écran et ne tirent pas (le journal le dit). À ajouter au tunnel de la Base (lot 19).
 
 ## 🟡 RC6, qui répond au client : ce qui reste (2026-10-07)
 

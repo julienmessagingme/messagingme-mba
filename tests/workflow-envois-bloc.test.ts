@@ -9,6 +9,7 @@ import { SUFFIXE_ANONYME } from '../src/campaign/engine';
 import type { TemplateSummary } from '../src/meta/templates';
 import type { OutboundCarouselCard } from '../src/meta/template-components';
 import { LimiteOffreError } from '../src/offres/refus';
+import { offresToutOuvert } from './gardes';
 
 /**
  * LES QUATRE ENVOIS D'UN BLOC DE SCÉNARIO, EXÉCUTÉS (`src/workflow/envois-bloc.ts`).
@@ -597,6 +598,7 @@ function cablage(opts: { dryRun?: boolean; numero?: string | null; templates?: T
     } as never,
     rcsProvider: 'fake', emailTemplates: inerte, emailResolver: inerte,
     numeroDeLEspace: async () => (opts.numero === undefined ? 'pn-1' : opts.numero), runStore: inerte, fil: inerte,
+    offres: offresToutOuvert,
   });
   // `deps` est privé à l'exécuteur : on lit les dépendances que le câblage lui a données.
   const deps = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;

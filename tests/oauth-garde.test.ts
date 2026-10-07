@@ -6,7 +6,7 @@ import { buildServer } from '../src/server';
 import { sha256Hex } from '../src/lib/signature';
 import { nouveauJeton, PREFIXE_ACCES } from '../src/oauth/jetons';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
-import type { AccesOauth, AccesOauthLookup } from '../src/oauth/store.pg';
+import type { AccesOauthLookup, AccesOauthResolu } from '../src/oauth/store.pg';
 import type { ApiUsageGuard, DemandeUsage } from '../src/api/usage-guard';
 import type { MbaRelaisDeps } from '../src/http/mba-relais';
 import { DROIT_RELAIS } from '../src/mba/cle-relais';
@@ -33,10 +33,11 @@ class FaussesCles implements ApiKeyLookup {
 
 class FauxJetons implements AccesOauthLookup {
   lectures = 0;
-  private readonly parEmpreinte = new Map<string, AccesOauth>();
-  ajouter(empreinte: string, a: Partial<AccesOauth> = {}): this {
+  private readonly parEmpreinte = new Map<string, AccesOauthResolu>();
+  ajouter(empreinte: string, a: Partial<AccesOauthResolu> = {}): this {
     this.parEmpreinte.set(empreinte, {
       autorisationId: 'a1', tenantId: 't1', userId: 'u-admin', scopes: ['mcp:read', 'mcp:write'], tenantStatus: 'active', valide: true,
+      horsOffre: null,
       ...a,
     });
     return this;
@@ -124,6 +125,16 @@ describe('la garde : un jeton mbo_', () => {
     await garde(requete(JETON.brut), reply);
     expect(etat.statusCode).toBe(403);
     expect(etat.body).toMatchObject({ code: 'tenant_locked' });
+  });
+
+  it('🔴 la personne du jeton est au-delà de l’offre (lot 6, B2a) : 402 plan_limit_reached, pas un 401 qui relancerait la connexion', async () => {
+    const jetons = new FauxJetons().ajouter(JETON.empreinte, { horsOffre: { limite: 'admins', max: 1 } });
+    const garde = makeRequireApiKey(new FaussesCles(), plafondsDeTest(), large(), jetons);
+    const { reply, etat } = fauxReply();
+    await garde(requete(JETON.brut), reply);
+    expect(etat.statusCode).toBe(402);
+    expect(etat.body).toMatchObject({ code: 'plan_limit_reached' });
+    expect(JSON.stringify(etat.body)).toMatch(/1 administrateur/);
   });
 
   it('🔴 le budget des empreintes inconnues freine aussi les jetons inventés', async () => {

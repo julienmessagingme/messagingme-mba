@@ -19,6 +19,8 @@ import { creerLancements, type TypeDeLancementAutomatisme } from '../src/workflo
 import type { WorkflowGraph } from '../src/workflow/graph';
 import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { aucunStop } from './consentement';
+import { offresToutOuvert } from './gardes';
+import { plusAnciennesJamaisLues } from './gardes';
 import {
   agentEteintALArrivee, aucuneArriveePub, aucuneCorrectionDuDetenteur, aucunNumeroDelie, aucunRoutagePub,
   aucunSignalReponse, entrantsDe,
@@ -134,6 +136,7 @@ function banc(o: {
     executor: ex,
     scenarios: { getById: async () => ({ graph: graphe }) },
     contacts: { findIdByWaId: async () => null },
+    offres: offresToutOuvert,
   });
 
   /** Les dépendances des automations du worker, telles que `src/worker.ts` les câble. */
@@ -146,6 +149,7 @@ function banc(o: {
       lastFiredAt: async () => { throw new Error('le widget a lu les tirs des automations'); },
       markFired: async () => { throw new Error('le widget a écrit dans les tirs des automations'); },
       clearFired: async () => { throw new Error('le widget a effacé un tir d’automation'); },
+      plusAnciennes: plusAnciennesJamaisLues,
     },
     evalContext: async () => null,
     // Le MÊME câblage que `src/worker.ts` : la demande du runner (type de lancement et preuve de fenêtre compris) est
@@ -157,6 +161,7 @@ function banc(o: {
     defaultCooldownSeconds: 3600,
     maxFiresPerHour: o.plafondInstance ?? 200,
     now: () => horloge,
+    offres: offresToutOuvert,
   };
 
   const tirsPour = (tenantId: string): TirsDuWidget => ({
@@ -639,10 +644,12 @@ describe('🔴 l’émission d’événements d’automation est décidée par l
     const runner: AutomationRunnerDeps = {
       automations: {
         listEnabled: async () => [], lastFiredAt: async () => null, markFired: async () => true, clearFired: async () => {},
+        plusAnciennes: plusAnciennesJamaisLues,
       },
       evalContext: async () => null,
       startWorkflow,
       defaultCooldownSeconds: 0,
+      offres: offresToutOuvert,
     };
     const tirs: TirsDuWidget = { lastFiredAt: async () => null, markFired: async () => true, clearFired: async () => {}, firedSince: async () => 0 };
     const m: InboundMessage = { phoneNumberId: 'pn1', waId: '33611', messageId: 'wamid.1', type: 'text', body: PHRASE, buttonPayload: null, profileName: null, field: 'messages' };
@@ -695,11 +702,13 @@ describe('l’assemblage de production (`arriveeParWidget`), sur un faux pool', 
         automations: {
           listEnabled: async () => { throw new Error('lu les automations'); },
           lastFiredAt: async () => null, markFired: async () => true, clearFired: async () => {},
+          plusAnciennes: plusAnciennesJamaisLues,
         },
         evalContext: async () => null,
         startWorkflow,
         defaultCooldownSeconds: 3600,
         maxFiresPerHour: 200,
+        offres: offresToutOuvert,
       },
     });
     const m: InboundMessage = { phoneNumberId: 'pn1', waId: '33611', messageId: 'wamid.1', type: 'text', body: PHRASE, buttonPayload: null, profileName: null, field: 'messages' };

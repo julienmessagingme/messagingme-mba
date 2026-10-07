@@ -122,13 +122,30 @@ describe.skipIf(!url)('le répondeur par défaut (Postgres)', () => {
     });
 
     it('modesParTenant : le mode qui s’APPLIQUE, en une lecture ; un espace sans ligne est absent', async () => {
+      // En Entreprise : un espace neuf est en Base, où l'agent de Meta est gelé (lot 6, B2a, cas suivant).
+      await pool.query('update tenants set offre_entreprise = true where id = $1', [tenantId]);
+      try {
+        await reglages().setMbaEnabled(tenantId, true);
+        await reglages().setRepondeur(tenantId, { mode: 'mba' });
+        const modes = await reglages().modesParTenant([tenantId, autreTenantId]);
+        expect(modes.get(tenantId)).toBe('mba');
+        expect(modes.has(autreTenantId)).toBe(false);
+        await reglages().setMbaEnabled(tenantId, false);
+        expect((await reglages().modesParTenant([tenantId])).get(tenantId)).toBe('equipe');
+      } finally {
+        await pool.query('update tenants set offre_entreprise = false where id = $1', [tenantId]);
+      }
+    });
+
+    it('🔴 modesParTenant sous l’offre (lot 6, B2a) : en Base, « MBA » allumé et « Scénario » se lisent « Équipe »', async () => {
       await reglages().setMbaEnabled(tenantId, true);
       await reglages().setRepondeur(tenantId, { mode: 'mba' });
-      const modes = await reglages().modesParTenant([tenantId, autreTenantId]);
-      expect(modes.get(tenantId)).toBe('mba');
-      expect(modes.has(autreTenantId)).toBe(false);
-      await reglages().setMbaEnabled(tenantId, false);
       expect((await reglages().modesParTenant([tenantId])).get(tenantId)).toBe('equipe');
+      const wf = (await new PgWorkflowStore(pool).insert(tenantId, 'itest-repondeur-gel', { nodes: [], edges: [] })).id;
+      await reglages().setRepondeur(tenantId, { mode: 'scenario', workflowId: wf, delaiS: 7200 });
+      expect((await reglages().modesParTenant([tenantId])).get(tenantId)).toBe('equipe');
+      await pool.query('delete from workflows where id = $1 and tenant_id = $2', [wf, tenantId]);
+      await reglages().setMbaEnabled(tenantId, false);
     });
 
     it('🔴 la réclamation du scénario répondeur : deux entrants SIMULTANÉS, UN départ ; le délai écoulé, un nouveau', async () => {

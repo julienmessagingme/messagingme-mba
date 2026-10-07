@@ -3,7 +3,7 @@ import { buildServer } from '../src/server';
 import { sha256Hex } from '../src/lib/signature';
 import { nouveauJeton, PREFIXE_ACCES } from '../src/oauth/jetons';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
-import type { AccesOauth, AccesOauthLookup } from '../src/oauth/store.pg';
+import type { AccesOauthResolu, AccesOauthLookup } from '../src/oauth/store.pg';
 import type { CablageMcp } from '../src/mcp/outils';
 import type { AuteurDuChangement } from '../src/inbox/evenements';
 import { FakeQueue } from './fake-queue';
@@ -36,8 +36,8 @@ class FaussesCles implements ApiKeyLookup {
 }
 
 class FauxJetons implements AccesOauthLookup {
-  async resoudreAcces(empreinte: string): Promise<AccesOauth | null> {
-    const base = { autorisationId: 'a1', tenantId: 't1', userId: 'u-admin', scopes: ['mcp:read', 'mcp:write'], valide: true };
+  async resoudreAcces(empreinte: string): Promise<AccesOauthResolu | null> {
+    const base = { autorisationId: 'a1', tenantId: 't1', userId: 'u-admin', scopes: ['mcp:read', 'mcp:write'], valide: true, horsOffre: null };
     if (empreinte === JETON.empreinte) return { ...base, tenantStatus: 'active' };
     if (empreinte === JETON_SUSPENDU.empreinte) return { ...base, tenantStatus: 'locked' };
     return null;

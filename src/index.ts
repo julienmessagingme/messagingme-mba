@@ -178,6 +178,7 @@ import type { AgentKnowledgeRouteDeps } from './http/agent-knowledge';
 import type { DepsConnaissance } from './agent/connaissance';
 import type { Origine } from './reglages/historique';
 import { creerOffreDeBienvenue } from './account/offre-bienvenue';
+import { creerGelMembres } from './offres/membres';
 
 /** Le nom de cette copie de l'API dans `/ops` et dans ses alertes : `api` seule, `api-<copie>` à plusieurs (`API_COPIE`). */
 const NOM_API = config.API_COPIE === '' ? 'api' : `api-${config.API_COPIE}`;
@@ -234,6 +235,11 @@ async function main(): Promise<void> {
     const { limites } = (await offres.offreDe(tenant)).droits;
     return { utilisateurs: limites.utilisateurs, admins: limites.admins };
   });
+  /**
+   * Le gel des membres en trop (lot 6, B2a, spec § 7) : la même question pour la garde des sessions de la console et pour
+   * celle des jetons de Claude, qui portent une personne. Le rang n'est lu que pour un espace limité.
+   */
+  const gelMembres = creerGelMembres({ offres, rang: (tenant, user) => userStore.rangMembre(tenant, user) });
   const authTokenStore = new PgAuthTokenStore(pool);
   const apiKeyStore = new PgApiKeyStore(pool);
   const oauthStore = new PgOauthStore(pool);
@@ -567,6 +573,7 @@ async function main(): Promise<void> {
     liste: listeDeLAgent,
     historique: historiqueStore,
     fils: fil,
+    offres,
   };
 
   /**
@@ -898,7 +905,11 @@ async function main(): Promise<void> {
       secret: config.AUTH_SECRET,
       // Re-vérif par requête : compte révoqué/supprimé -> 401 immédiat, rôle frais depuis la base.
       // Un rappel et non une tranche : c'est `makeRequireAuth` (`src/server.ts`) qui le consomme.
-      getUserState: (userId) => userStore.getAuthState(userId),
+      // 🔴 Le gel des membres en trop (lot 6, B2a) : la garde refuse en 402 un membre au-delà des limites de l'offre.
+      getUserState: async (userId, tenant) => {
+        const s = await userStore.getAuthState(userId);
+        return s && { ...s, horsOffre: await gelMembres.horsOffre(tenant, userId) };
+      },
       // Inscription libre, reset et changement de mot de passe, liaison Google par adresse.
       comptes: userStore,
       tokens: authTokenStore,
@@ -2438,7 +2449,16 @@ async function main(): Promise<void> {
     oauthConsentement: { store: oauthStore, comptes: userStore, secret: config.AUTH_SECRET, audit: auditSink },
     v1: {
       apiKeys: apiKeyStore,
-      oauth: oauthStore,
+      /**
+       * Le jeton de Claude, résolu par le magasin puis gelé si sa personne dépasse les limites de l'offre (lot 6, B2a) :
+       * la garde refuse alors en 402. Le rang n'est lu que pour un accès valide d'un espace limité.
+       */
+      oauth: {
+        resoudreAcces: async (empreinte) => {
+          const a = await oauthStore.resoudreAcces(empreinte);
+          return a && { ...a, horsOffre: a.valide ? await gelMembres.horsOffre(a.tenantId, a.userId) : null };
+        },
+      },
       /**
        * Les catalogues de l'API publique. Ce bloc ne fait que brancher : le tri vit dans
        * `src/http/v1-catalogues.ts`, testé. `templates` passe par `catalogueTemplatesCache` (une minute) : un
@@ -2632,6 +2652,8 @@ async function main(): Promise<void> {
       mcp: {
         // L'offre de l'espace (lot 6) : la même vue que la console, pour l'outil `get_plan`.
         offre: { vue: vueOffre },
+        // La fonction de chaque outil se vérifie sur la même offre en cache (lot 6, B2a).
+        offres,
         ...depsRepondre,
         contacts: contactStore,
         // La pose d'étiquettes de `tag_conversation` : le MÊME module que la fiche et l'agent, appelé SANS publier.

@@ -182,7 +182,7 @@ async function main(): Promise<void> {
     poolAttentesStore, httpLatencesStore, mesuresTachesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, numeroDelieStore, opsStore,
     heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
     journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub,
-    publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, alerteCredit, numeroBloqueDeLEspace,
+    publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, alerteCredit, numeroBloqueDeLEspace, offres,
   } = construireSocle({ pool, queue, config });
   // Les appels captés par le pont du code (lot 3a) : le worker ne fait que les purger (balayage de rétention).
   const numerosFournisStore = new PgNumerosFournisStore(pool);
@@ -302,6 +302,8 @@ async function main(): Promise<void> {
     // Contact bloqué : son message est enregistré et lisible, mais il ne déclenche plus aucun scénario.
     contacts: contactStore,
     automations: automationStore,
+    // L'offre de l'espace (le cache du socle) : le gel des automations au retour en Base (lot 6, B2a).
+    offres,
     maxFiresPerHour: config.AUTOMATION_MAX_FIRES_PER_HOUR,
     evalContext: buildEvalContext,
     // La demande arrive du runner TELLE QUELLE, type de lancement compris (`typeDeLancementDe` : seuls le bouton de

@@ -1,3 +1,4 @@
+import type { Fonction } from '../offres/offres';
 /**
  * QUI RÉPOND AU CLIENT (RC6, plan `docs/superpowers/plans/2026-10-06-rc6-qui-repond.md`) : le réglage unique de
  * l'Accueil qui décide qui répond à un nouveau contact, ou à un message que personne ne tient.
@@ -58,6 +59,22 @@ export function modeEffectif(r: ReglageDuRepondeur): ModeRepondeur {
     case 'scenario': return r.repondeurWorkflowId !== null ? 'scenario' : 'equipe';
     case 'equipe': return 'equipe';
   }
+}
+
+/**
+ * 🔴 LES RÉGLAGES TELS QUE L'OFFRE LES LAISSE JOUER (lot 6, livraison B2a, spec § 7, décision de Julien du 2026-10-07) :
+ * le gel au retour en Base. Sans `agent_meta`, l'agent de Meta se lit éteint (il ne reçoit plus aucun contact neuf, et le
+ * mode « MBA » se lit « Équipe ») ; sans `scenarios`, le scénario répondeur se lit absent (le mode « Scénario » se lit
+ * « Équipe »). Rien n'est écrit : les réglages de l'espace restent tels quels, et tout revient au réabonnement.
+ * Le seul calcul du dépôt : chaque endroit qui confie un contact (le contrôle du fil, la fin d'un parcours, le balayage des
+ * fils) lit `modeEffectif` ou `leMbaRepond` sur CE résultat, ce qui évite une seconde règle à tenir alignée.
+ */
+export function sousLOffre<T extends ReglageDuRepondeur>(r: T, fonctions: ReadonlySet<Fonction>): T {
+  return {
+    ...r,
+    mbaEnabled: r.mbaEnabled && fonctions.has('agent_meta'),
+    repondeurWorkflowId: fonctions.has('scenarios') ? r.repondeurWorkflowId : null,
+  };
 }
 
 /**

@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { DUREE_CODE_S } from './jetons';
+import type { HorsOffreMembre } from '../offres/membres';
 
 /**
  * Les autorisations OAuth et leurs codes (migration 0204).
@@ -24,9 +25,16 @@ export interface AccesOauth {
   valide: boolean;
 }
 
+/**
+ * Un accès résolu, avec le gel des membres (lot 6, B2a) : `horsOffre` dit si la personne du jeton dépasse les limites de
+ * l'offre de son espace. Le magasin ne le sait pas (il faut l'offre) : l'API l'enveloppe (`src/index.ts`), et le
+ * compilateur refuse de monter la garde sur le magasin seul.
+ */
+export type AccesOauthResolu = AccesOauth & { horsOffre: HorsOffreMembre | null };
+
 /** L'interface étroite de la garde (`makeRequireApiKey`), comme `ApiKeyLookup` pour les clés. */
 export interface AccesOauthLookup {
-  resoudreAcces(empreinte: string): Promise<AccesOauth | null>;
+  resoudreAcces(empreinte: string): Promise<AccesOauthResolu | null>;
 }
 
 export interface NouvelleAutorisation {
@@ -77,7 +85,7 @@ const PAQUET_PURGE = 1000;
  */
 const FIN_DE_VIE = `coalesce(revoque_le, least(refresh_expire_le, refresh_max_le), cree_le)`;
 
-export class PgOauthStore implements AccesOauthLookup {
+export class PgOauthStore {
   constructor(private readonly pool: Pool) {}
 
   /** L'autorisation et son code, ensemble ou pas du tout : un code sans autorisation, ou l'inverse, ne sert à rien. */

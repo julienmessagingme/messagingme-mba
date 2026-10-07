@@ -50,6 +50,27 @@ describe.skipIf(!url)('la limite de membres de l’offre', () => {
     await expect(users.setRole(t, agent.id, 'admin')).rejects.toBeInstanceOf(LimiteOffreError);
   });
 
+  it('🔴 le rang d’un membre (le gel, lot 6, B2a) : administrateurs et autres comptés à part, par date de création, comptes révoqués exclus', async () => {
+    // Sans limite : quatre membres dépassent le Pro du magasin de ce fichier, et c'est l'espace revenu en Base qu'on décrit.
+    const users = new PgUserStore(pool);
+    const a1 = await users.createPending(t, mail(1), 'admin');
+    const g1 = await users.createPending(t, mail(2), 'agent');
+    const a2 = await users.createPending(t, mail(3), 'admin');
+    const g2 = await users.createPending(t, mail(4), 'agent');
+    // Des dates distinctes et connues : l'ordre ne dépend pas de la vitesse des insertions.
+    for (const [id, j] of [[a1.id, 4], [g1.id, 3], [a2.id, 2], [g2.id, 1]] as const) {
+      await pool.query(`update users set created_at = now() - make_interval(days => $2) where id = $1`, [id, j]);
+    }
+    expect(await users.rangMembre(t, a1.id)).toEqual({ estAdmin: true, adminsAvant: 0, autresAvant: 0, admins: 2 });
+    expect(await users.rangMembre(t, a2.id)).toEqual({ estAdmin: true, adminsAvant: 1, autresAvant: 1, admins: 2 });
+    expect(await users.rangMembre(t, g2.id)).toEqual({ estAdmin: false, adminsAvant: 2, autresAvant: 1, admins: 2 });
+    expect(await users.setDisabled(t, g1.id, true)).toBe('ok');
+    expect(await users.rangMembre(t, g2.id)).toMatchObject({ autresAvant: 0 });
+    // Un compte révoqué, ou d'un autre espace : inconnu ici.
+    expect(await users.rangMembre(t, g1.id)).toBeNull();
+    expect(await users.rangMembre('00000000-0000-4000-8000-000000000000', a1.id)).toBeNull();
+  });
+
   it('réactiver un compte quand la place est prise est refusé', async () => {
     await users.createPending(t, mail(1), 'admin');
     const b = await users.createPending(t, mail(2), 'agent');

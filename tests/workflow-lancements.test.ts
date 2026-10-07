@@ -6,13 +6,15 @@ import { WorkflowExecutor } from '../src/workflow/executor';
 import type { StartOutcome, WorkflowExecutorDeps } from '../src/workflow/executor';
 import { buildWorkflowRuntime } from '../src/workflow/wiring';
 import {
-  POLITIQUE_DE_LANCEMENT, TYPES_DE_LANCEMENT, creerLancements,
+  POLITIQUE_DE_LANCEMENT, REFUS_SCENARIOS_HORS_OFFRE, TYPES_DE_LANCEMENT, creerLancements,
   type DemandeDeLancement, type TypeDeLancement,
 } from '../src/workflow/lancements';
 import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
 import type { WorkflowRow } from '../src/workflow/store.pg';
 import type { ControlOwner } from '../src/inbox/store.pg';
 import { AUTOMATION_EVENT_QUEUE } from '../src/automation/event-job';
+import { DROITS, type Offre } from '../src/offres/offres';
+import { offresToutOuvert } from './gardes';
 
 /**
  * LES LANCEMENTS DE SCÉNARIO, EXÉCUTÉS TYPE PAR TYPE (plan `docs/superpowers/plans/2026-10-04-lancements-de-scenario.md`).
@@ -127,7 +129,7 @@ function demandeDe(type: Exclude<TypeDeLancement, TypeDuSaut>, v: Variante): Dem
  * l'agent de Meta, une reprise l'en retire, et c'est l'appel qu'on observe. `surcharges` remplace des dépendances de
  * l'exécuteur, par exemple celles que donne le VRAI câblage.
  */
-function banc(detenteur: ControlOwner = 'app_workflow', surcharges: Partial<WorkflowExecutorDeps> = {}) {
+function banc(detenteur: ControlOwner = 'app_workflow', surcharges: Partial<WorkflowExecutorDeps> = {}, offre: Offre = 'entreprise') {
   const b = bancDuFil({ surLaListe: [WA], conversations: { [WA]: { owner: detenteur } } });
   const envois: string[] = [];
   const emis: string[] = [];
@@ -167,6 +169,7 @@ function banc(detenteur: ControlOwner = 'app_workflow', surcharges: Partial<Work
     executor,
     scenarios: { getById: async (id, t) => { lectures.push(`${t}/${id}`); return SCENARIOS[id] ?? null; } },
     contacts: { findIdByWaId: async (t, waId) => { recherches.push(`${t}/${waId}`); return 'c-fiche'; } },
+    offres: { offreDe: async () => ({ offre, droits: DROITS[offre], retourEnBaseLe: null }) },
   });
   return { b, lancements, executor, envois, emis, crees, lectures, recherches };
 }
@@ -280,6 +283,7 @@ function poseDuCablage() {
     inboxStore: inerte, settingsStore: inerte, workflowStore: inerte, metaCredentials: inerte, metaFactory: inerte,
     rcsProvider: 'fake', emailTemplates: inerte, emailResolver: inerte, numeroDeLEspace: async () => null, runStore: inerte,
     fil: inerte,
+    offres: offresToutOuvert,
   });
   // `deps` est privé à l'exécuteur : on lit les dépendances que le câblage lui a données.
   const { applyTag, emitTagAdded } = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
@@ -519,10 +523,58 @@ describe('buildWorkflowRuntime rend des lancements construits sur son propre ex�
       workflowStore: { getById: async (id: string, t: string) => { lus.push(`scenario:${t}/${id}`); return SCENARIOS[id] ?? null; } } as never,
       metaCredentials: inerte, metaFactory: inerte, rcsProvider: 'fake', emailTemplates: inerte, emailResolver: inerte,
       numeroDeLEspace: async () => null, runStore: inerte, fil: inerte,
+      offres: offresToutOuvert,
     });
     const demarrer = vi.spyOn(executor, 'demarrer').mockResolvedValue(true);
     expect(await lancements.lancer({ type: 'inbox', tenantId: 't9', workflowId: 'wf-modele', waId: WA, fenetreOuverte: true })).toBe(true);
     expect(lus).toEqual(['scenario:t9/wf-modele', `fiche:t9/${WA}`]);
     expect(demarrer).toHaveBeenCalledWith('inbox', 't9', 'wf-modele', modele('publie'), { waId: WA, contactId: 'c-9' }, { depuis: 'entree', fenetreOuverte: true });
+  });
+});
+
+/**
+ * 🔴 LE GEL AU RETOUR EN BASE (lot 6, livraison B2a, décision de Julien du 2026-10-07). Hors de la fonction `scenarios`,
+ * seuls les scénarios des automations (filtrées en amont, les 10 plus anciennes) démarrent encore, avec le répondeur
+ * agent IA et les sauts d'un parcours en cours ; tout autre démarrage d'un scénario du client est refusé AVANT même de
+ * lire le scénario. Écrit ici, pas dérivé de la politique : la comparer à elle-même ne prouverait rien.
+ */
+const GELE_EN_BASE: Record<Exclude<TypeDeLancement, TypeDuSaut>, boolean> = {
+  inbox: true, agent_meta_scenario: true, agent_ia_scenario: true, agent_meta_bloc: true,
+  automatisme_ordinaire: false, automatisme_chaine: false, automatisme_publicite_ou_widget: false,
+  lien_de_test: true, campagne_scenario: true, campagne_bloc: true,
+  repondeur: false, repondeur_scenario: true,
+};
+
+describe('le gel au retour en Base (lot 6, B2a)', () => {
+  for (const type of TYPES_DE_LANCEMENT) {
+    if (estUnSaut(type)) {
+      it(`${type} en Base : un saut CONTINUE un parcours en cours, il démarre`, async () => {
+        silence();
+        expect(await lancerLeType(banc('app_workflow', {}, 'base'), type, { workflowId: 'wf-modele', fenetreOuverte: true })).toBe(true);
+      });
+      continue;
+    }
+    const gele = GELE_EN_BASE[type];
+    it(`${type} en Base : ${gele ? 'refusé avant de lire le scénario, rien ne part' : 'démarre comme avant'}`, async () => {
+      silence();
+      const m = banc('app_workflow', {}, 'base');
+      const r = await lancerLeType(m, type, { workflowId: 'wf-modele', fenetreOuverte: true });
+      if (gele) {
+        expect(r).toBe(REFUS_SCENARIOS_HORS_OFFRE);
+        expect([m.lectures, m.crees, m.envois]).toEqual([[], [], []]);
+      } else {
+        expect(r).toBe(true);
+      }
+    });
+  }
+
+  it('la même table que la politique : chaque type a sa ligne', () => {
+    const geles = TYPES_DE_LANCEMENT.filter((t) => POLITIQUE_DE_LANCEMENT[t].horsOffre === 'gele');
+    expect(geles.sort()).toEqual(Object.entries(GELE_EN_BASE).filter(([, g]) => g).map(([t]) => t).sort());
+  });
+
+  it('en Pro, un type gelé en Base démarre comme avant', async () => {
+    silence();
+    expect(await lancerLeType(banc('app_workflow', {}, 'pro'), 'inbox', { workflowId: 'wf-modele', fenetreOuverte: true })).toBe(true);
   });
 });

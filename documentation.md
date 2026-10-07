@@ -2182,6 +2182,24 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
   🔴 Chaque écriture vide le cache de l'offre de la copie qui reçoit ; les autres copies suivent en 30 s au plus.
 - 🔴 **Une offre illisible laisse tout passer** : `OffresEnCache` rend alors les droits de l'Entreprise, sans les
   garder, et journalise `offre_illisible`. Une panne de la lecture ne coupe ni l'Inbox ni les envois d'un client.
+- 🔴 **Le gel au retour en Base se pose aux points d'exécution, et n'écrit rien** (livraison B2a, spec § 7) : tout revient
+  au réabonnement. Cinq points, chacun unique dans le dépôt :
+  - les démarrages de parcours (`creerLancements`, colonne `horsOffre` de `POLITIQUE_DE_LANCEMENT`) : sans `scenarios`,
+    refus (`REFUS_SCENARIOS_HORS_OFFRE`) de tout démarrage d'un scénario du client, sauf les automations, le répondeur
+    agent IA et les sauts « Aller à » d'un parcours en cours ;
+  - le déclencheur (`runAutomations`, `permisesParLOffre`) : sous une limite d'automations, seules les plus anciennes du
+    client tirent (`PgAutomationStore.plusAnciennes`, la population de `verifierPlaceAutomation`) ; chaîne et publicité
+    selon leur fonction, widget toujours ;
+  - qui répond (`sousLOffre`, `src/repondeur/mode.ts`) : sans `agent_meta` l'agent de Meta se lit éteint, sans
+    `scenarios` le scénario répondeur se lit absent ; lu par le contrôle du fil (sa seule lecture des réglages,
+    `reglagesDe`), `mbaActifPour`, `modesParTenant` (l'offre dans la même requête) et `lireRepondeur` ;
+    `choisirRepondeur` refuse ces deux modes hors offre (402, `refusFonction`) ;
+  - les membres en trop (`creerGelMembres`, `limiteDepassee`, `PgUserStore.rangMembre`) : administrateurs d'abord, du
+    plus ancien au plus récent, puis les autres ; `requireAuth` refuse en 402 `plan_limit_reached` avec
+    `acces: 'suspendu'` sur TOUTE requête (la console affiche alors une page), et la garde des jetons de Claude en 402
+    (`AccesOauthResolu.horsOffre`), jamais en 401 qui relancerait la connexion ;
+  - les outils de Claude (`OutilMcp.fonction`, requise) : hors offre, l'outil reste listé et `traiterMessage` refuse avec
+    la phrase et le lien de l'offre avant de l'exécuter.
 
 🔴 **LE RÔLE ADMIN SE POSE AU MONTAGE, ET `forbidNonAdmin` NE VIT QUE LÀ OÙ UN AGENT PASSE LA GARDE** (lot 3 de
 l'audit ponytail, 2026-09-26). Un module monté sur `g.admin` (`[requireAuth, makeRequireRole(['admin'])]`)

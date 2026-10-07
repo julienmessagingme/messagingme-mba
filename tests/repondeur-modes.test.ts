@@ -255,9 +255,12 @@ describe('🔴 A3 : la fin d’un parcours ne rend au MBA qu’en mode `mba`', (
   it('🔴 et le câblage pose la question du MODE, pas celle de l’allumage', () => {
     // `src/workflow/wiring.ts` construit l'exécuteur de production ; revenu à `.mbaEnabled`, il ferait rendre au MBA en
     // veille chaque parcours fini, et chaque étape sans choix cesserait de bloquer.
+    // Depuis le lot 6 (B2a), la question se pose SOUS L'OFFRE : en Base, l'agent de Meta n'est jamais le répondeur.
     const source = readFileSync(new URL('../src/workflow/wiring.ts', import.meta.url), 'utf8');
-    expect(source).toContain('mbaActifPour: async (tenant) => leMbaRepond(await settingsStore.get(tenant)),');
-    expect(source).not.toMatch(/mbaActifPour: async \(tenant\) => \(await settingsStore\.get\(tenant\)\)\.mbaEnabled/);
+    const cablage = source.slice(source.indexOf('mbaActifPour: async (tenant) => {'), source.indexOf('mbaActifPour: async (tenant) => {') + 250);
+    expect(cablage).toContain('const [r, o] = await Promise.all([settingsStore.get(tenant), offres.offreDe(tenant)]);');
+    expect(cablage).toContain('return leMbaRepond(sousLOffre(r, o.droits.fonctions));');
+    expect(source).not.toMatch(/mbaActifPour:[^\n]*\.mbaEnabled/);
   });
 });
 

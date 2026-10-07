@@ -9,6 +9,8 @@ import { refuser } from '../api/erreurs';
 import { DROIT_RELAIS } from '../mba/cle-relais';
 import type { AccesOauthLookup } from '../oauth/store.pg';
 import { formeDeJeton, PREFIXE_ACCES } from '../oauth/jetons';
+import { STATUT_REFUS_OFFRE, phraseLimite } from '../offres/refus';
+import type { HorsOffreMembre } from '../offres/membres';
 
 /**
  * Les deux plafonds d'une clé résolue ; une clé n'est comptée que par l'un des deux. Deux champs requis :
@@ -52,6 +54,8 @@ interface Porteur {
   readonly scopes: string[];
   readonly acces: { type: 'cle' | 'oauth'; id: string };
   readonly personne: { userId: string } | null;
+  /** La personne d'un jeton au-delà de l'offre (lot 6, B2a) ; toujours `null` pour une clé, qui n'a pas de personne. */
+  readonly horsOffre: HorsOffreMembre | null;
 }
 
 /**
@@ -114,11 +118,11 @@ export function makeRequireApiKey(
     if (jeton) {
       const a = await oauth.resoudreAcces(empreinte);
       if (!a?.valide) return null;
-      return { tenantId: a.tenantId, tenantStatus: a.tenantStatus, scopes: a.scopes, acces: { type: 'oauth', id: a.autorisationId }, personne: { userId: a.userId } };
+      return { tenantId: a.tenantId, tenantStatus: a.tenantStatus, scopes: a.scopes, acces: { type: 'oauth', id: a.autorisationId }, personne: { userId: a.userId }, horsOffre: a.horsOffre };
     }
     const k = await store.findActiveByHash(empreinte);
     if (!k) return null;
-    return { tenantId: k.tenantId, tenantStatus: k.tenantStatus, scopes: k.scopes, acces: { type: 'cle', id: k.id }, personne: null };
+    return { tenantId: k.tenantId, tenantStatus: k.tenantStatus, scopes: k.scopes, acces: { type: 'cle', id: k.id }, personne: null, horsOffre: null };
   };
   return async function requireApiKey(req: FastifyRequest, reply: FastifyReply): Promise<void> {
     const header = req.headers.authorization;
@@ -183,6 +187,14 @@ export function makeRequireApiKey(
      */
     if (found.tenantStatus === 'locked') {
       await refuser(reply, 403, 'tenant_locked', 'espace suspendu');
+      return;
+    }
+    /**
+     * 🔴 Le gel des membres en trop (lot 6, B2a) : la personne d'un jeton au-delà de l'offre perd `/mcp` comme la console.
+     * 402 et non 401 : un 401 ferait relancer la connexion OAuth à Claude, en boucle.
+     */
+    if (found.horsOffre) {
+      await refuser(reply, STATUT_REFUS_OFFRE, 'plan_limit_reached', phraseLimite(found.horsOffre.limite, found.horsOffre.max));
       return;
     }
     // Date de dernier usage d'une clé : best-effort, ne doit jamais faire échouer la requête. Celle d'un jeton

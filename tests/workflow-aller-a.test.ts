@@ -13,6 +13,7 @@ import { buildWorkflowRuntime } from '../src/workflow/wiring';
 import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
 import type { RunState, WorkflowRunRow } from '../src/workflow/run-store.pg';
 import type { EvalContext } from '../src/workflow/conditions';
+import { offresToutOuvert } from './gardes';
 
 /**
  * LE BLOC « ALLER À » (RC5, livraison B, plan `docs/superpowers/plans/2026-10-06-rc5-blocs-condition-aller-a.md`).
@@ -401,6 +402,7 @@ describe('le vrai câblage', () => {
       workflowStore: { list: async (t: string) => { lus.push(t); return t === 't1' ? [{ id: 'wf-1', name: 'Un', code: null, graph }] : []; } } as never,
       metaCredentials: inerte, metaFactory: inerte, rcsProvider: 'fake', emailTemplates: inerte, emailResolver: inerte,
       numeroDeLEspace: async () => null, runStore: inerte, fil: inerte,
+      offres: offresToutOuvert,
     });
     const deps = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
     expect(await deps.resoudreBloc('t2', code(130))).toBeNull();

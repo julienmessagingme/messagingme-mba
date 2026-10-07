@@ -15,7 +15,7 @@ import { useT } from '@/lib/i18n';
 import { repeterAvecGigue } from '@/lib/poll';
 import { arbresNav, groupesAOuvrir, ongletDeLaPage, accesAutorise, navPourRole, navPourOffre, fonctionDeLaPage, premiereDestination, type NavEntree, type Onglet } from '@/lib/nav';
 import { useOffre } from '@/lib/use-offre';
-import { OFFRE_REFUSEE_EVENT, phraseInclusDans, phraseSansAdresse, type FonctionOffre, type RefusOffre } from '@/lib/offre';
+import { ACCES_SUSPENDU_EVENT, OFFRE_REFUSEE_EVENT, phraseInclusDans, phraseSansAdresse, type FonctionOffre, type RefusOffre } from '@/lib/offre';
 
 type Tab = 'accueil' | 'perf-synthese' | 'quanti-messages' | 'quanti-couts' | 'quanti-funnel' | 'quanti-performance' | 'dashboard-quali' | 'dashboard-tableaux' | 'contacts' | 'campagnes' | 'chaine' | 'publicites' | 'widgets' | 'workflows' | 'automations' | 'mba-settings' | 'agents' | 'templates' | 'flows' | 'tags' | 'fields' | 'nodes' | 'email-templates' | 'rcs-messages' | 'inbox' | 'admin' | 'email-accounts' | 'support' | 'api-docs' | 'api-keys' | 'mcp' | 'webhooks' | 'connecteurs' | 'connecteurs-mcp' | 'parametres' | 'parametres-credit' | 'securite' | 'securite-consentement' | 'securite-ia' | 'securite-audit' | 'securite-erreurs' | 'compte' | 'offre';
 
@@ -57,6 +57,8 @@ export function AppShell({ active, fullBleed = false, fonction, children }: {
   const [sessionExpiree, setSessionExpiree] = useState(false);
   // Le dernier refus de l'offre (402, lot 6) : la phrase du serveur, affichée en bandeau avec le lien vers `/offre`.
   const [refusOffre, setRefusOffre] = useState<RefusOffre | null>(null);
+  /** Un membre en trop (lot 6, B2a) : la garde refuse chacune de ses requêtes ; la page entière le dit. */
+  const [accesSuspendu, setAccesSuspendu] = useState<RefusOffre | null>(null);
   /**
    * L'OFFRE DE L'ESPACE (lot 6) : `undefined` tant qu'elle n'est pas lue, `null` si elle est inconnue (API plus ancienne,
    * panne), et alors RIEN n'est grisé. Elle ne fait qu'éviter d'ouvrir un écran dont chaque geste serait refusé : la
@@ -149,6 +151,12 @@ export function AppShell({ active, fullBleed = false, fonction, children }: {
   }, []);
 
   useEffect(() => {
+    const suspendu = (e: Event): void => setAccesSuspendu((e as CustomEvent<RefusOffre>).detail);
+    window.addEventListener(ACCES_SUSPENDU_EVENT, suspendu);
+    return () => window.removeEventListener(ACCES_SUSPENDU_EVENT, suspendu);
+  }, []);
+
+  useEffect(() => {
     const tombee = (): void => setSessionExpiree(true);
     window.addEventListener(SESSION_EXPIRED_EVENT, tombee);
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, tombee);
@@ -162,6 +170,35 @@ export function AppShell({ active, fullBleed = false, fonction, children }: {
   function logout() {
     clearSession();
     router.replace('/login');
+  }
+
+  /**
+   * Un membre en trop (lot 6, B2a, spec § 7) : l'offre de l'espace ne compte plus assez de places, et la garde refuse
+   * chacune de ses requêtes. Rien n'est effacé : un administrateur qui reprend le Pro lui rend l'accès.
+   */
+  if (accesSuspendu) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-ink-50 px-4" data-testid="acces-suspendu">
+        <div className="w-full max-w-md rounded-carte border border-ink-200 bg-white p-6 text-sm text-ink-700">
+          <h1 className="text-base font-semibold text-ink-900">{t('Votre accès à cet espace est suspendu', 'Your access to this workspace is suspended')}</h1>
+          <p className="mt-2" data-testid="acces-suspendu-phrase">{phraseSansAdresse(accesSuspendu.phrase)}</p>
+          <p className="mt-2 text-ink-500">
+            {t(
+              'L’offre de l’espace ne compte plus de place pour vous. Rien n’a été effacé : un administrateur qui passe l’espace en Pro vous rend l’accès.',
+              'The workspace plan no longer has a seat for you. Nothing was deleted: an administrator who moves the workspace to Pro gives you access back.',
+            )}
+          </p>
+          <button
+            type="button"
+            onClick={logout}
+            data-testid="acces-suspendu-deconnecter"
+            className="mt-4 rounded-controle bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors duration-150 hover:bg-brand-700"
+          >
+            {t('Se déconnecter', 'Sign out')}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   /**

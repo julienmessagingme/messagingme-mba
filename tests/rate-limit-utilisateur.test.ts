@@ -136,9 +136,9 @@ describe('plafond général par utilisateur, dans makeRequireAuth', () => {
 
   it('le plafond se prend AVANT la relecture d’état en base, pour ne pas offrir une requête SQL par appel', async () => {
     let relectures = 0;
-    const loadState = async (): Promise<{ role: string; disabled: boolean }> => {
+    const loadState = async (): Promise<{ role: string; disabled: boolean; horsOffre: null }> => {
       relectures += 1;
-      return { role: 'admin', disabled: false };
+      return { role: 'admin', disabled: false, horsOffre: null };
     };
     const garde = makeRequireAuth(SECRET, loadState, new RateLimiter(1, 60_000));
     await garde(fakeReq(jetonU1), fakeReply().reply);

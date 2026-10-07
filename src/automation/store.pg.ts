@@ -123,6 +123,20 @@ export class PgAutomationStore {
     return res.rows.map(toRow).filter((a): a is AutomationRow => a !== null);
   }
 
+  /**
+   * Les `n` automations du client les plus anciennes (lot 6, B2a) : la population que compte la limite de l'offre
+   * (`verifierPlaceAutomation` : allumées, sans propriétaire, webhooks entrants compris), par date de création puis
+   * identifiant. Sous une limite, seules elles tirent encore (le gel au retour en Base, `runAutomations`).
+   */
+  async plusAnciennes(tenantId: string, n: number): Promise<ReadonlySet<string>> {
+    const res = await this.pool.query<{ id: string }>(
+      `select id from automations where tenant_id = $1 and enabled and possede_par is null
+        order by created_at, id limit $2`,
+      [tenantId, n],
+    );
+    return new Set(res.rows.map((r) => r.id));
+  }
+
   /** Une automation par id, scopée tenant. */
   async getById(id: string, tenantId: string): Promise<AutomationRow | null> {
     const res = await this.pool.query<Raw>(

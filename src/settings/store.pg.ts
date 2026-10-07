@@ -3,7 +3,8 @@ import type { BusinessHours } from '../workflow/conditions';
 import { estFrequenceMention, type FrequenceMentionIa } from '../agent/agent-store';
 import { estModeTransfert, type ModeTransfert } from '../agent/disponibilite-equipe';
 import type { GrillePrix } from '../stats/prix';
-import { DELAI_SCENARIO_DEFAUT_S, estModeRepondeur, modeEffectif, type ModeRepondeur } from '../repondeur/mode';
+import { DELAI_SCENARIO_DEFAUT_S, estModeRepondeur, modeEffectif, sousLOffre, type ModeRepondeur } from '../repondeur/mode';
+import { DROITS, estOffre } from '../offres/offres';
 
 /** Fuseau par défaut si le tenant n'a rien réglé (marché principal FR). */
 export const DEFAULT_TIMEZONE = 'Europe/Paris';
@@ -396,16 +397,18 @@ export class PgTenantSettingsStore {
   async modesParTenant(tenantIds: readonly string[]): Promise<Map<string, ModeRepondeur>> {
     if (tenantIds.length === 0) return new Map();
     const res = await this.pool.query<Record<string, unknown> & { tenant_id: string }>(
-      // `select *`, même raison que `get` : une base en retard ne casse pas le balayage.
-      `select * from tenant_settings where tenant_id = any($1::uuid[])`,
+      // `select *`, même raison que `get` : une base en retard ne casse pas le balayage. 🔴 L'offre, par la SEULE
+      // définition (`offre_de_l_espace`, 0218), dans le même aller-retour : le mode se lit sous elle (lot 6, B2a).
+      `select *, offre_de_l_espace(tenant_id) as offre_calculee from tenant_settings where tenant_id = any($1::uuid[])`,
       [tenantIds],
     );
-    return new Map(res.rows.map((r) => [r.tenant_id, modeEffectif({
+    return new Map(res.rows.map((r) => [r.tenant_id, modeEffectif(sousLOffre({
       mbaEnabled: r.mba_enabled === true,
       repondeurMode: modeDeLaLigne(r),
       repondeurAgentId: typeof r.repondeur_agent_id === 'string' ? r.repondeur_agent_id : null,
       repondeurWorkflowId: typeof r.repondeur_workflow_id === 'string' ? r.repondeur_workflow_id : null,
-    })]));
+      // Une offre illisible se lit Entreprise, comme `OffresEnCache` : une panne ne gèle rien.
+    }, DROITS[estOffre(r.offre_calculee) ? r.offre_calculee : 'entreprise'].fonctions))]));
   }
 
   /**

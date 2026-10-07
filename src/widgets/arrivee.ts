@@ -120,7 +120,11 @@ export function demarrageParLeRunner(
     { kind: 'message', waId: m.waId, body: m.body, isNewContact: false, channel: 'whatsapp' },
     {
       ...runner,
-      automations: { listEnabled: async () => [automationDuWidget(tenantId, widget, workflowId)], ...tirsPour(tenantId) },
+      automations: {
+        listEnabled: async () => [automationDuWidget(tenantId, widget, workflowId)], ...tirsPour(tenantId),
+        // Jamais lue : l'automation d'un widget n'est pas du client, le gel la laisse tirer (lot 6, B2a).
+        plusAnciennes: async () => new Set<string>(),
+      },
     },
   );
 }

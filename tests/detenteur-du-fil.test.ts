@@ -7,6 +7,7 @@ import { creerListeDeLAgent } from '../src/mba/liste';
 import { DELAI_REPRISE_DEFAUT_MS, aucunRepondeur, bancDuFil, depotEnMemoire, entreeDe, listeEnMemoire } from './banc-du-fil';
 import { aucuneCorrectionDuDetenteur, entrantsDe } from './webhook-fixtures';
 import { aucunStop, jamaisBloque, jamaisDesabonne, numeroJamaisBloque } from './consentement';
+import { offresToutOuvert } from './gardes';
 
 /**
  * Qui détient le fil d'une conversation, et comment on l'apprend.
@@ -176,6 +177,7 @@ function monterBouton(o: {
     liste,
     consentement: { estDesabonne: jamaisDesabonne, estBloque: jamaisBloque },
     meta: { mbaClientForTenant: async () => { clientDemande = true; return client; } },
+    offres: offresToutOuvert,
   });
   return { fil, appels, clientDemande: () => clientDemande, etat: memoire.etat, table: table.lignes };
 }

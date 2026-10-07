@@ -5,7 +5,7 @@ import { sha256Hex } from '../src/lib/signature';
 import { nouveauJeton, PREFIXE_ACCES } from '../src/oauth/jetons';
 import { signSession } from '../src/auth/token';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
-import type { AccesOauth, AccesOauthLookup } from '../src/oauth/store.pg';
+import type { AccesOauthResolu, AccesOauthLookup } from '../src/oauth/store.pg';
 import type { EmailIdentity, UserAuthStore } from '../src/auth/store';
 import { OUTILS, type CablageMcp } from '../src/mcp/outils';
 import { OUTILS_NUMERO } from '../src/mcp/outils-numero';
@@ -38,6 +38,7 @@ import { jamaisDesabonne } from './consentement';
 import { mcpNumeroInerte, mcpOffreInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { SANS_MCP } from './outils-mcp';
 import { AUCUN_GESTE, GESTE_MUET } from './gestes';
+import { offresToutOuvert } from './gardes';
 
 /**
  * LES OUTILS MCP DE L'AGENT IA ET DU CRÉDIT (lot 8a, livraison B), montés par `buildServer` derrière la vraie garde
@@ -76,8 +77,8 @@ class FaussesCles implements ApiKeyLookup {
 
 /** Trois jetons : l'admin de t1 en lecture et écriture, le même en lecture seule, et l'admin d'un autre espace. */
 class FauxJetons implements AccesOauthLookup {
-  async resoudreAcces(empreinte: string): Promise<AccesOauth | null> {
-    const base = { autorisationId: 'a1', userId: PERSONNE, valide: true, tenantStatus: 'active' };
+  async resoudreAcces(empreinte: string): Promise<AccesOauthResolu | null> {
+    const base = { autorisationId: 'a1', userId: PERSONNE, valide: true, tenantStatus: 'active', horsOffre: null };
     if (empreinte === JETON.empreinte) return { ...base, tenantId: 't1', scopes: ['mcp:read', 'mcp:write'] };
     if (empreinte === JETON_LECTURE.empreinte) return { ...base, tenantId: 't1', scopes: ['mcp:read'] };
     if (empreinte === JETON_T2.empreinte) return { ...base, tenantId: 't2', scopes: ['mcp:read', 'mcp:write'] };
@@ -339,6 +340,7 @@ function monter(o: Options = {}) {
       liste: { toutRetirer: async (t) => { cap.vidages.push(t); return { retires: 2, refuses: 0 }; } },
       historique: { ecrire: async (_t, l) => { cap.historique.push(l); } },
       fils: { reprendreLesFilsDeMeta: async () => 0 },
+      offres: offresToutOuvert,
     },
   };
 

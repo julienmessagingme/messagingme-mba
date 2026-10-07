@@ -9,6 +9,7 @@ import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
 import type { WorkflowRunRow } from '../src/workflow/run-store.pg';
 import type { AgentSessionStore } from '../src/agent/session-store';
 import { grapheDuRepondeur } from '../src/repondeur/graphe';
+import { offresToutOuvert } from './gardes';
 
 /**
  * LES DEUX OUTILS D'UN AGENT IA QUI ENVOIENT SUR UNE CIBLE FIXÉE (RC4) : « Envoyer un bloc » et « Lancer un scénario ».
@@ -181,6 +182,7 @@ function monde(parcoursAgent: { workflowId: string; graphe: WorkflowGraph; fige:
     executor,
     scenarios: { getById: async (id) => (id === WF_B ? { graph: scenarioB, draftGraph: null } : null) },
     contacts: { findIdByWaId: async () => 'c1' },
+    offres: offresToutOuvert,
   });
   const gestes = creerGestesEnvoiAgent({
     graphePublie: async () => null,
@@ -232,6 +234,7 @@ describe('lancer le scénario fixé, sur le vrai exécuteur', () => {
       executor: m.executor,
       scenarios: { getById: async () => ({ graph: muet, draftGraph: null }) },
       contacts: { findIdByWaId: async () => 'c1' },
+      offres: offresToutOuvert,
     });
     const sessions: string[] = [];
     const gestes = creerGestesEnvoiAgent({

@@ -2,6 +2,7 @@ import type { WorkflowGraph } from './graph';
 import type { StartOutcome, WorkflowExecutor } from './executor';
 import { grapheEditable, type WorkflowRow } from './store.pg';
 import { blocDesigne } from './test-token';
+import type { SourceOffres } from '../offres/offre.pg';
 
 /**
  * UN POINT D'ENTRÉE PAR TYPE DE LANCEMENT DE SCÉNARIO (piste 4 du rapport d'architecture du 2026-10-02, plan
@@ -128,7 +129,22 @@ export interface PolitiqueDeLancement {
    * Aucune sortie du bloc agent n'est empruntée dans les deux cas : le parcours remplacé est clos, pas avancé.
    */
   sessionRemplacee: 'interrompue' | 'retiree';
+  /**
+   * Le gel au retour en Base (lot 6, livraison B2a, spec § 7, décision de Julien du 2026-10-07) : un espace dont l'offre
+   * n'ouvre pas la fonction `scenarios` ne démarre plus de scénario du client par ce chemin.
+   * - `gele` : refusé (`REFUS_SCENARIOS_HORS_OFFRE`) avant même de lire le scénario.
+   * - `continue` : démarre comme avant. Les automations (le déclencheur ne laisse tirer que les plus anciennes dans la
+   *   limite de l'offre, `src/automation/runner.ts`), le répondeur agent IA (un scénario système), et les sauts « Aller
+   *   à », qui CONTINUENT un parcours en cours (ceux-là finissent, dit la spec).
+   */
+  horsOffre: 'gele' | 'continue';
 }
+
+/**
+ * La raison d'un démarrage refusé par le gel : la chaîne remonte telle quelle à l'appelant (l'outil d'un agent IA, le
+ * destinataire d'une campagne, le scénario répondeur qui retombe sur l'équipe).
+ */
+export const REFUS_SCENARIOS_HORS_OFFRE = 'offre Base : les scénarios du client ne démarrent plus (offre Pro requise)';
 
 /**
  * Le motif d'une session d'agent IA close parce que l'agent a lancé un scénario (RC4). Écrit dans
@@ -143,8 +159,8 @@ export const MOTIF_SCENARIO_LANCE = 'scenario_lance';
  * exécuteur. Changer une valeur change le comportement de chaque scénario lancé par ce chemin en production.
  */
 export const POLITIQUE_DE_LANCEMENT = {
-  inbox: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'selon_preuve', sessionRemplacee: 'interrompue' },
-  agent_meta_scenario: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'selon_preuve', sessionRemplacee: 'interrompue' },
+  inbox: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'selon_preuve', sessionRemplacee: 'interrompue', horsOffre: 'gele' },
+  agent_meta_scenario: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'selon_preuve', sessionRemplacee: 'interrompue', horsOffre: 'gele' },
   /**
    * L'outil « Lancer un scénario » d'un agent IA (RC4) : calqué sur celui de l'agent de Meta (un contact ici et
    * maintenant, le publié, la fenêtre prouvée par la conversation en cours), et la session de l'agent qu'il remplace se
@@ -153,20 +169,20 @@ export const POLITIQUE_DE_LANCEMENT = {
    * fenêtre que `run-turn` ferme en `main_perdue` pour un message écrit ; le lancement la ferme de la même façon que le
    * répondeur.
    */
-  agent_ia_scenario: { reprise: 'sauf_operateur', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'selon_preuve', sessionRemplacee: 'retiree' },
-  agent_meta_bloc: { reprise: 'oui', publieLesEtiquettes: false, graphe: 'fourni', fenetre: 'levee', sessionRemplacee: 'interrompue' },
-  automatisme_ordinaire: { reprise: 'non', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'bloc_ou_preuve', sessionRemplacee: 'interrompue' },
-  automatisme_chaine: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'bloc_ou_preuve', sessionRemplacee: 'interrompue' },
-  automatisme_publicite_ou_widget: { reprise: 'sauf_operateur', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'bloc_ou_preuve', sessionRemplacee: 'interrompue' },
-  lien_de_test: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'brouillon_fige', fenetre: 'levee', sessionRemplacee: 'interrompue' },
-  campagne_scenario: { reprise: 'oui', publieLesEtiquettes: false, graphe: 'publie', fenetre: 'gardee', sessionRemplacee: 'interrompue' },
-  campagne_bloc: { reprise: 'oui', publieLesEtiquettes: false, graphe: 'publie', fenetre: 'levee', sessionRemplacee: 'interrompue' },
+  agent_ia_scenario: { reprise: 'sauf_operateur', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'selon_preuve', sessionRemplacee: 'retiree', horsOffre: 'gele' },
+  agent_meta_bloc: { reprise: 'oui', publieLesEtiquettes: false, graphe: 'fourni', fenetre: 'levee', sessionRemplacee: 'interrompue', horsOffre: 'gele' },
+  automatisme_ordinaire: { reprise: 'non', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'bloc_ou_preuve', sessionRemplacee: 'interrompue', horsOffre: 'continue' },
+  automatisme_chaine: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'bloc_ou_preuve', sessionRemplacee: 'interrompue', horsOffre: 'continue' },
+  automatisme_publicite_ou_widget: { reprise: 'sauf_operateur', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'bloc_ou_preuve', sessionRemplacee: 'interrompue', horsOffre: 'continue' },
+  lien_de_test: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'brouillon_fige', fenetre: 'levee', sessionRemplacee: 'interrompue', horsOffre: 'gele' },
+  campagne_scenario: { reprise: 'oui', publieLesEtiquettes: false, graphe: 'publie', fenetre: 'gardee', sessionRemplacee: 'interrompue', horsOffre: 'gele' },
+  campagne_bloc: { reprise: 'oui', publieLesEtiquettes: false, graphe: 'publie', fenetre: 'levee', sessionRemplacee: 'interrompue', horsOffre: 'gele' },
   /**
    * Le répondeur (lot 5, spec `docs/superpowers/specs/2026-10-04-repondeur-par-defaut-design.md`) : jamais à un
    * opérateur qui tient le fil (c'est le client qui écrit, comme un clic sur une publicité) ; ses étiquettes publient
    * (un contact, ici et maintenant) ; la fenêtre est prouvée par l'entrant qui le démarre.
    */
-  repondeur: { reprise: 'sauf_operateur', publieLesEtiquettes: true, graphe: 'fourni_fige', fenetre: 'selon_preuve', sessionRemplacee: 'interrompue' },
+  repondeur: { reprise: 'sauf_operateur', publieLesEtiquettes: true, graphe: 'fourni_fige', fenetre: 'selon_preuve', sessionRemplacee: 'interrompue', horsOffre: 'continue' },
   /**
    * Le scénario répondeur (RC6, plan `docs/superpowers/plans/2026-10-06-rc6-qui-repond.md`) : la politique de l'agent IA
    * répondeur, sur le graphe PUBLIÉ du scénario choisi (un contact réel ne tombe jamais dans un brouillon, et rien n'est
@@ -174,7 +190,7 @@ export const POLITIQUE_DE_LANCEMENT = {
    * parcours attend ce contact, donc ce qu'il remplacerait (un parcours endormi et sa session) vient d'ailleurs, et
    * s'interrompt comme pour tout démarrage.
    */
-  repondeur_scenario: { reprise: 'sauf_operateur', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'selon_preuve', sessionRemplacee: 'interrompue' },
+  repondeur_scenario: { reprise: 'sauf_operateur', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'selon_preuve', sessionRemplacee: 'interrompue', horsOffre: 'gele' },
   /**
    * « Aller à » vers un autre scénario (RC5, plan `docs/superpowers/plans/2026-10-06-rc5-blocs-condition-aller-a.md`) :
    * - `reprise: 'oui'` (décision du plan) : le saut CONTINUE un parcours qui avait déjà le droit d'écrire, à l'instant
@@ -187,8 +203,8 @@ export const POLITIQUE_DE_LANCEMENT = {
    *   démarrage a déjà remplacé le parcours en cours), donc le saut ne remplace jamais une session d'agent vivante qui
    *   serait la sienne. Ce qu'il remplacerait encore viendrait d'ailleurs : une interruption, comme pour tout démarrage.
    */
-  aller_a: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'selon_preuve', sessionRemplacee: 'interrompue' },
-  aller_a_masse: { reprise: 'oui', publieLesEtiquettes: false, graphe: 'publie', fenetre: 'selon_preuve', sessionRemplacee: 'interrompue' },
+  aller_a: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'publie', fenetre: 'selon_preuve', sessionRemplacee: 'interrompue', horsOffre: 'continue' },
+  aller_a_masse: { reprise: 'oui', publieLesEtiquettes: false, graphe: 'publie', fenetre: 'selon_preuve', sessionRemplacee: 'interrompue', horsOffre: 'continue' },
 } as const satisfies Record<TypeDeLancement, PolitiqueDeLancement>;
 
 /**
@@ -302,6 +318,11 @@ export interface DepsLancements {
   scenarios: { getById(workflowId: string, tenantId: string): Promise<Pick<WorkflowRow, 'graph' | 'draftGraph'> | null> };
   /** La fiche du contact, pour relier le parcours à elle. Le contact existe déjà (l'entrant ou l'Inbox l'a créé). */
   contacts: { findIdByWaId(tenantId: string, waId: string): Promise<string | null> };
+  /**
+   * L'offre de l'espace (`OffresEnCache`, lot 6) : le gel au retour en Base (`horsOffre`). Une offre illisible se lit
+   * Entreprise, donc ne gèle rien : une panne de lecture ne coupe aucun scénario.
+   */
+  offres: SourceOffres;
 }
 
 export interface Lancements {
@@ -357,6 +378,10 @@ export function creerLancements(deps: DepsLancements): Lancements {
   function lancer(demande: DemandeEnvoiDeBloc | DemandeRepondeur): Promise<StartOutcome>;
   function lancer(demande: DemandeDeLancement): Promise<StartOutcome | null>;
   async function lancer(demande: DemandeDeLancement): Promise<StartOutcome | null> {
+    if (POLITIQUE_DE_LANCEMENT[demande.type].horsOffre === 'gele'
+      && !(await deps.offres.offreDe(demande.tenantId)).droits.fonctions.has('scenarios')) {
+      return REFUS_SCENARIOS_HORS_OFFRE;
+    }
     if (demande.type === 'agent_meta_bloc') {
       return deps.executor.demarrer(demande.type, demande.tenantId, demande.workflowId, demande.graphe, demande.contact,
         { depuis: 'bloc', noeudId: demande.noeudId });

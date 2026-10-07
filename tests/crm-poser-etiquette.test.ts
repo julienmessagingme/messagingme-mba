@@ -5,6 +5,7 @@ import {
 import { buildWorkflowRuntime } from '../src/workflow/wiring';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import { AUTOMATION_EVENT_QUEUE } from '../src/automation/event-job';
+import { offresToutOuvert } from './gardes';
 
 /**
  * POSER UNE ÉTIQUETTE SUR UN CONTACT, le geste commun des cinq portes unitaires (plan
@@ -199,6 +200,7 @@ function socle(deja: string[] = []) {
     inboxStore: inerte, settingsStore: inerte, workflowStore: inerte, metaCredentials: inerte, metaFactory: inerte,
     rcsProvider: 'fake', emailTemplates: inerte, emailResolver: inerte, numeroDeLEspace: async () => null, runStore: inerte,
     fil: inerte,
+    offres: offresToutOuvert,
   });
   const publiees = () => file.map((j) => {
     expect(j.name).toBe(AUTOMATION_EVENT_QUEUE);

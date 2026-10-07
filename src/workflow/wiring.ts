@@ -45,12 +45,13 @@ import { renderText, contactVars } from '../crm/render';
 import { adressesDestinataires, type SendEmailAction } from './engine';
 import type { BesoinsContexte, EvalContext } from './conditions';
 import type { ControleDuFil } from '../inbox/fil';
-import { leMbaRepond } from '../repondeur/mode';
+import { leMbaRepond, sousLOffre } from '../repondeur/mode';
 import { creerTransmettreHorsParcours } from '../mba/transmettre-hors-parcours';
 import { cacheCourt } from '../lib/cache-court';
 import type { MetaClient } from '../meta/client';
 import { resolveNode } from '../ids/resolve';
 import { PgErreursLivraisonStore } from '../ops/erreurs-livraison.pg';
+import type { SourceOffres } from '../offres/offre.pg';
 
 /**
  * Câblage de l'exécuteur de scénarios : ses dépendances IO (contacts, tags, envois Meta, caches de
@@ -103,11 +104,13 @@ export interface WorkflowRuntimeDeps {
    * a le droit d'écrire. Aucune de ces transitions ne s'écrit ici.
    */
   fil: ControleDuFil;
+  /** L'offre de l'espace (`OffresEnCache` du socle) : le gel des démarrages au retour en Base (lot 6, B2a). */
+  offres: SourceOffres;
 }
 
 /** `buildWorkflowRuntime` construit l'exécuteur et ce qui l'accompagne, une fois par process (les caches vivent dedans). */
 export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
-  const { pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory, rcsProvider, emailTemplates, emailResolver, numeroDeLEspace, runStore, fil } = deps;
+  const { pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory, rcsProvider, emailTemplates, emailResolver, numeroDeLEspace, runStore, fil, offres } = deps;
   /**
    * Le client Meta de l'espace pour un envoi WhatsApp, ou le refus (une chaîne, comme tout `SendRefusal`)
    * quand aucun numéro n'est rattaché. `dryRun` reste chez l'appelant : certains envois refusent un bloc vide
@@ -377,7 +380,11 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     reclaimControl: fil.reprendrePourLApp,
     // L'agent de Meta est-il le RÉPONDEUR de ce client (mode `mba`, RC6) ? Décide qu'une étape sans choix cesse de
     // bloquer le parcours, et qu'on rende le fil à Meta en fin de chaîne. Allumé en veille : non.
-    mbaActifPour: async (tenant) => leMbaRepond(await settingsStore.get(tenant)),
+    // Sous l'offre (lot 6, B2a) : en Base, l'agent de Meta n'est jamais le répondeur.
+    mbaActifPour: async (tenant) => {
+      const [r, o] = await Promise.all([settingsStore.get(tenant), offres.offreDe(tenant)]);
+      return leMbaRepond(sousLOffre(r, o.droits.fonctions));
+    },
     /**
      * Le bloc « Envoyer au MBA » (RC6) : le contrôle du fil confie le contact à l'agent de Meta, avec son dernier
      * message (`derniereSaisieDuContact`, le texte que le client vient d'écrire), ou le passe à l'équipe quand l'agent
@@ -529,7 +536,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
    * aucun câblage ne pose plus de réglage de démarrage. Tenu par `tests/workflow-lancements.test.ts`, qui monte ce
    * câblage.
    */
-  const lancements = creerLancements({ executor: workflowExecutor, scenarios: workflowStore, contacts: contactStore });
+  const lancements = creerLancements({ executor: workflowExecutor, scenarios: workflowStore, contacts: contactStore, offres });
 
   return { executor: workflowExecutor, lancements, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack, agentSessions, envoyerTexteAgent, poserTagDepuisAgent, etiquettes };
 }

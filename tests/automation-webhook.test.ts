@@ -4,6 +4,8 @@ import type { AutomationRow, AutomationEvent } from '../src/automation/match';
 import { parseAutomationEventJob } from '../src/automation/event-job';
 import { runAutomations } from '../src/automation/runner';
 import type { AutomationRunnerDeps } from '../src/automation/runner';
+import { plusAnciennesJamaisLues } from './gardes';
+import { offresToutOuvert } from './gardes';
 
 /**
  * Le déclencheur `webhook` : un outil tiers a posté sur l'URL d'un webhook entrant.
@@ -84,11 +86,13 @@ describe('déclencheur webhook : le démarrage', () => {
         lastFiredAt: async () => null,
         markFired: async () => true,
         clearFired: async () => {},
+        plusAnciennes: plusAnciennesJamaisLues,
       },
       evalContext: async () => null,
       startWorkflow: async (d) => { trace.started.push({ windowOpen: d.fenetreOuverte }); return true; },
       defaultCooldownSeconds: 3600,
       now: () => T,
+      offres: offresToutOuvert,
     };
     return { deps, trace };
   }

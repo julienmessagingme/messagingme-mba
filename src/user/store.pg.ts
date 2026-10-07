@@ -2,7 +2,7 @@ import type { Pool } from 'pg';
 import { enTransaction } from '../db/transaction';
 import { makeCode, deriveTenantCode } from '../ids/code';
 import { resolveTenantCode } from '../ids/tenant-code';
-import { verifierPlaceMembre, type LimitesMembres } from '../offres/membres';
+import { verifierPlaceMembre, type LimitesMembres, type RangMembre } from '../offres/membres';
 
 export interface UserRow {
   id: string;
@@ -51,6 +51,28 @@ export class PgUserStore {
     private readonly pool: Pool,
     private readonly limitesMembres?: (tenantId: string) => Promise<LimitesMembres>,
   ) {}
+
+  /**
+   * Le rang d'un membre actif dans son espace (lot 6, B2a, `limiteDepassee`) : les membres actifs du même genre créés
+   * avant lui (date de création puis identifiant), et les administrateurs actifs. La même population que la limite de
+   * membres (`verifierPlaceMembre` : comptes actifs, invitations en attente comprises). `null` = inconnu dans cet espace.
+   * Lu seulement pour un espace dont l'offre limite les membres (`creerGelMembres`).
+   */
+  async rangMembre(tenantId: string, userId: string): Promise<RangMembre | null> {
+    const res = await this.pool.query<{ est_admin: boolean; admins_avant: number; autres_avant: number; admins: number }>(
+      `select u.role = 'admin' as est_admin,
+              (select count(*) from users v where v.tenant_id = u.tenant_id and v.disabled_at is null and v.role = 'admin'
+                  and (v.created_at, v.id) < (u.created_at, u.id))::int as admins_avant,
+              (select count(*) from users v where v.tenant_id = u.tenant_id and v.disabled_at is null and v.role <> 'admin'
+                  and (v.created_at, v.id) < (u.created_at, u.id))::int as autres_avant,
+              (select count(*) from users v where v.tenant_id = u.tenant_id and v.disabled_at is null and v.role = 'admin')::int as admins
+         from users u
+        where u.id = $2 and u.tenant_id = $1 and u.disabled_at is null`,
+      [tenantId, userId],
+    );
+    const r = res.rows[0];
+    return r ? { estAdmin: r.est_admin, adminsAvant: r.admins_avant, autresAvant: r.autres_avant, admins: r.admins } : null;
+  }
 
   /**
    * État d'auth courant d'un compte, relu à chaque requête par requireAuth : rôle frais et révocation. null = compte

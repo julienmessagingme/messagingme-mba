@@ -1,6 +1,7 @@
 import { outilsPour, RefusOutil, type DepsMcp, type OutilMcp, type PersonneMcp } from './outils';
 import { messageDe } from '../lib/erreur';
 import { rappelDeLAbonnement } from './outils-numero';
+import { corpsRefusFonction } from '../offres/refus';
 
 /**
  * Le transport MCP : du JSON-RPC 2.0 sur un seul POST, sans état.
@@ -113,6 +114,10 @@ export async function traiterMessage(deps: DepsMcp, ctx: ContexteMcp, message: u
       // `then` laisserait passer (jaune 7 de la relecture de la livraison A).
       const rappel = await deps.numero.abonnement(ctx.tenantId).then(rappelDeLAbonnement).catch(() => null);
       const blocs = (texte: string) => [{ type: 'text', text: texte }, ...(rappel !== null ? [{ type: 'text', text: rappel }] : [])];
+      // Le gel de l'offre (lot 6, B2a) : l'outil reste listé, et refuse avec la phrase et le lien de l'offre.
+      if (outil.fonction !== null && !(await deps.offres.offreDe(ctx.tenantId)).droits.fonctions.has(outil.fonction)) {
+        return ok(id, { content: blocs(corpsRefusFonction(outil.fonction).error), isError: true });
+      }
       try {
         const resultat = await outil.executer(deps, ctx.tenantId, args, ctx.personne);
         return ok(id, { content: blocs(JSON.stringify(resultat, null, 2)), isError: false });

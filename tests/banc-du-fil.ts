@@ -6,6 +6,7 @@ import { MetaApiError } from '../src/meta/errors';
 import type { IssueRepondeur } from '../src/repondeur/demarrer';
 import type { IssueLancementScenario, IssueReclamation } from '../src/repondeur/scenario';
 import type { ModeRepondeur } from '../src/repondeur/mode';
+import { DROITS, type Offre } from '../src/offres/offres';
 
 /**
  * LE BANC DU CONTRÔLE DU FIL : le VRAI module (`src/inbox/fil.ts`) et la VRAIE liste de l'agent de Meta
@@ -233,6 +234,8 @@ export interface OptionsBanc {
   repondeurAgentId?: string | null;
   /** Le scénario répondeur (RC6) ; `null` = aucun. Défaut : aucun. */
   repondeurWorkflowId?: string | null;
+  /** L'offre de l'espace (lot 6, B2a : le gel de l'agent de Meta et du scénario répondeur). Défaut : Entreprise. */
+  offre?: Offre;
   /** Le délai du scénario répondeur, en secondes. Défaut : 24 h. */
   delaiScenarioS?: number;
   /** Ce que rend la réclamation du scénario répondeur. Défaut : `reclame`. Ses appels sont notés dans `reclamations`. */
@@ -324,6 +327,7 @@ export function bancDuFil(o: OptionsBanc = {}): {
         repondeurDelaiScenarioS: o.delaiScenarioS ?? 86400, controlHandbackSeconds: o.delaiRepriseSecondes ?? null,
       }),
     },
+    offres: { offreDe: async () => ({ offre: o.offre ?? 'entreprise', droits: DROITS[o.offre ?? 'entreprise'], retourEnBaseLe: null }) },
     delaiRepriseParDefautMs: DELAI_REPRISE_DEFAUT_MS,
     parcours: o.parcours ?? { findWaitingByWaId: async () => (o.enAttente ? { id: 'run-1' } : null) },
     numeros: {

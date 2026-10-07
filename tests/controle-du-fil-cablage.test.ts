@@ -7,6 +7,7 @@ import { runControlSweep } from '../src/inbox/control-sweep';
 import { buildWorkflowRuntime } from '../src/workflow/wiring';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import { bancDuFil, type ReponseMeta } from './banc-du-fil';
+import { offresToutOuvert } from './gardes';
 
 /**
  * LE CÂBLAGE DE LA SOUPAPE DE CONTRÔLE DU FIL.
@@ -89,6 +90,7 @@ function cablageDuScenario(
     metaCredentials: inerte, metaFactory: inerte, rcsProvider: 'fake', emailTemplates: inerte, emailResolver: inerte,
     numeroDeLEspace: async () => null, runStore: inerte,
     fil: { passerAUnHumain: async (...a: unknown[]) => { appels.push(['passer', ...a]); return true; } } as never,
+    offres: offresToutOuvert,
   });
   // `deps` est privé à l'exécuteur : on lit la dépendance que le câblage lui a donnée, sans monter un parcours entier.
   const { escalateToHuman } = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
@@ -154,6 +156,7 @@ describe('le câblage d’un scénario confie le message « à côté » au rép
       metaCredentials: inerte, metaFactory: inerte, rcsProvider: 'fake', emailTemplates: inerte, emailResolver: inerte,
       numeroDeLEspace: async () => null, runStore: inerte,
       fil: { remettreSiPersonneNeSuit: async (...a: unknown[]) => { appels.push(a); } } as never,
+      offres: offresToutOuvert,
     });
     const { confierAuRepondeur } = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
     await confierAuRepondeur('t1', '33600000001', 'wamid.C');

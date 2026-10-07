@@ -17,6 +17,8 @@ import { RefusOutil, entierBorne, texteObligatoire, valeurOuRefus } from './sais
 import { OUTILS_AGENT, type DepsAgentMcp } from './outils-agent';
 import { OUTILS_NUMERO, type DepsNumeroMcp } from './outils-numero';
 import type { VueOffre } from '../offres/vue';
+import type { SourceOffres } from '../offres/offre.pg';
+import type { Fonction } from '../offres/offres';
 
 export { RefusOutil } from './saisie';
 
@@ -38,6 +40,8 @@ export { RefusOutil } from './saisie';
 export type ScopeMcp = 'mcp:read' | 'mcp:write';
 
 export interface DepsMcp extends DepsRepondre {
+  /** L'offre de l'espace (`OffresEnCache`, lot 6, B2a) : la fonction de chaque outil s'y vérifie avant de l'exécuter. */
+  offres: SourceOffres;
   inbox: ConversationsRepondre & {
     listConversations(tenantId: string, opts?: ListConversationsOptions): Promise<ConversationSummary[]>;
     /** Les `n` plus récents, dans l'ordre chronologique : le MCP ne lit jamais le DÉBUT d'un fil. */
@@ -140,6 +144,12 @@ export interface PersonneMcp {
 
 export interface OutilMcp {
   nom: string;
+  /**
+   * La fonction de l'offre que l'outil exige (lot 6, B2a, spec § 4) ; `null` = ouvert à toutes les offres. REQUISE : un
+   * outil ajouté demain doit dire s'il est payant. Hors offre, il RESTE listé et refuse avec la phrase et le lien de
+   * l'offre (`traiterMessage`) : à la différence d'un droit de clé, l'assistant peut l'expliquer.
+   */
+  fonction: Fonction | null;
   description: string;
   scope: ScopeMcp;
   annotations: AnnotationsMcp;
@@ -284,6 +294,7 @@ const lecture = (title: string): AnnotationsMcp => ({ title, readOnlyHint: true,
 export const OUTILS: OutilMcp[] = [
   {
     nom: 'list_conversations',
+    fonction: 'inbox',
     /**
      * Les conversations archivées sont exclues, comme dans l'Inbox, et la description le dit : sinon un agent
      * conclurait qu'une conversation rangée n'existe pas.
@@ -325,6 +336,7 @@ export const OUTILS: OutilMcp[] = [
   },
   {
     nom: 'get_conversation',
+    fonction: 'inbox',
     description:
       'Détail d’une conversation : le contact, qui la tient, à qui elle est confiée, et surtout si la '
       + 'fenêtre de service de 24 h est OUVERTE. Hors de cette fenêtre, WhatsApp interdit tout message libre : '
@@ -355,6 +367,7 @@ export const OUTILS: OutilMcp[] = [
   },
   {
     nom: 'get_messages',
+    fonction: 'inbox',
     description:
       `Les messages les plus RÉCENTS d’une conversation, ${MAX_MESSAGES_MCP} au plus, rendus du plus ancien au plus `
       + `récent. tronque = vrai : le fil a des messages plus anciens que ceux rendus ; au-delà des ${MAX_MESSAGES_MCP} `
@@ -392,6 +405,7 @@ export const OUTILS: OutilMcp[] = [
   },
   {
     nom: 'search_contacts',
+    fonction: null,
     description:
       'Cherche des contacts par nom ou par numéro. Une requête composée de chiffres est comprise comme une '
       + 'recherche de numéro, sinon comme une recherche de nom. Chaque contact porte sa dernière analyse '
@@ -422,6 +436,7 @@ export const OUTILS: OutilMcp[] = [
   },
   {
     nom: 'get_contact',
+    fonction: null,
     description: 'La fiche d’un contact à partir de son numéro : international avec ou sans « + » (+33612345678, 33612345678), ou national (06 12 34 56 78). '
       + 'Elle porte la dernière analyse de ses conversations et son résumé (last_analysis, null s’il n’a jamais été analysé).',
     scope: 'mcp:read',
@@ -443,6 +458,7 @@ export const OUTILS: OutilMcp[] = [
   },
   {
     nom: 'list_members',
+    fonction: null,
     description:
       'Les membres de l’espace, avec leur identifiant. À appeler avant assign_conversation, qui a besoin de '
       + 'cet identifiant et non du nom.',
@@ -466,6 +482,7 @@ export const OUTILS: OutilMcp[] = [
   },
   {
     nom: 'reply_in_open_window',
+    fonction: 'inbox',
     description:
       'Envoie un message texte dans une conversation, UNIQUEMENT si la fenêtre de service de 24 h est '
       + 'ouverte (le contact a écrit récemment). Hors fenêtre, l’appel est refusé : WhatsApp exige alors un '
@@ -519,6 +536,7 @@ export const OUTILS: OutilMcp[] = [
   },
   {
     nom: 'tag_conversation',
+    fonction: 'inbox',
     description:
       'Pose un ou plusieurs tags sur le contact d’une conversation, et les ajoute à la liste des tags de l’espace. '
       + '⚠️ Les automations qui écoutent la pose de tag ne sont PAS déclenchées par cet outil : un tag posé ici '
@@ -552,6 +570,7 @@ export const OUTILS: OutilMcp[] = [
   },
   {
     nom: 'assign_conversation',
+    fonction: 'inbox',
     description:
       'Confie une conversation à un membre de l’espace, ou la libère avec member_id = null. L’identifiant '
       + 'de membre vient de list_members.',
@@ -593,6 +612,7 @@ export const OUTILS: OutilMcp[] = [
    */
   {
     nom: 'list_widgets',
+    fonction: null,
     description:
       `Les widgets WhatsApp de l’espace (${LIMITE_WIDGETS_PAR_ESPACE} au plus) : des bulles posées sur un site, qui `
       + 'ouvrent WhatsApp avec un message pré-rempli. Chacun porte son identifiant (id, pour update_widget), son nom, '
@@ -609,6 +629,7 @@ export const OUTILS: OutilMcp[] = [
   },
   {
     nom: 'list_scenarios',
+    fonction: null,
     description:
       'Les scénarios de l’espace, le plus récent en premier : identifiant (id), nom, et publie (vrai = il a une '
       + 'version publiée, donc il peut démarrer). Un widget au devenir « scenario » ne peut désigner qu’un scénario '
@@ -632,6 +653,7 @@ export const OUTILS: OutilMcp[] = [
   },
   {
     nom: 'create_widget',
+    fonction: null,
     description:
       'Crée un widget WhatsApp : une bulle à poser sur un site, qui ouvre WhatsApp avec la phrase déjà écrite. Le '
       + 'visiteur clique, puis ENVOIE lui-même la phrase : c’est lui qui ouvre la conversation, sans modèle approuvé, '
@@ -653,6 +675,7 @@ export const OUTILS: OutilMcp[] = [
   },
   {
     nom: 'update_widget',
+    fonction: null,
     description:
       'Modifie un widget : seuls les champs fournis changent, null efface un champ facultatif. Son code, donc la '
       + 'balise déjà posée sur le site, ne change jamais. Les contrôles sont ceux de la création. Un widget dont le '
@@ -682,6 +705,7 @@ export const OUTILS: OutilMcp[] = [
   },
   {
     nom: 'get_plan',
+    fonction: null,
     description:
       'L’offre de l’espace (base, pro ou entreprise) : les fonctions qu’elle ouvre, ses limites (null = sans limite) et '
       + 'ce qui en est consommé (contacts créés, automations allumées, membres, modèles envoyés ce mois-ci), plus le lien '

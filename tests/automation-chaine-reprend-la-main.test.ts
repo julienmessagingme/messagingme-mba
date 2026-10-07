@@ -11,6 +11,8 @@ import { WorkflowExecutor } from '../src/workflow/executor';
 import { creerLancements } from '../src/workflow/lancements';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph } from '../src/workflow/graph';
+import { offresToutOuvert } from './gardes';
+import { plusAnciennesJamaisLues } from './gardes';
 
 /**
  * UN BOUTON DE CHAÎNE REPREND LA MAIN SUR LE FIL. UNE AUTOMATION ORDINAIRE, NON.
@@ -86,6 +88,7 @@ function monter(rows: AutomationRow[]) {
     executor: ex,
     scenarios: { getById: async () => ({ graph: graphe }) },
     contacts: { findIdByWaId: async () => null },
+    offres: offresToutOuvert,
   });
   const deps: AutomationRunnerDeps = {
     automations: {
@@ -93,11 +96,13 @@ function monter(rows: AutomationRow[]) {
       lastFiredAt: async () => null,
       markFired: async () => true,
       clearFired: async () => {},
+      plusAnciennes: plusAnciennesJamaisLues,
     },
     evalContext: async () => null,
     // Le MÊME câblage que `src/worker.ts` : la demande vient du runner, rien n'est choisi ici.
     startWorkflow: async (demande) => (await lancements.lancer(demande)) ?? false,
     defaultCooldownSeconds: 0,
+    offres: offresToutOuvert,
   };
   return { deps, envois, reprises };
 }

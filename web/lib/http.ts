@@ -11,7 +11,7 @@
 import { getSession, clearSession } from './session';
 import { LOCALE_STORAGE_KEY, type Locale } from './locale';
 import { estCorpsCodeRefuse } from './second-facteur';
-import { OFFRE_REFUSEE_EVENT, lireRefusOffre } from './offre';
+import { ACCES_SUSPENDU_EVENT, OFFRE_REFUSEE_EVENT, estAccesSuspendu, lireRefusOffre } from './offre';
 
 /**
  * OÙ VIT L'API, VUE DU NAVIGATEUR. Exporté pour `/ops`, qui appelle avec sa propre session (autorité séparée).
@@ -189,7 +189,12 @@ async function attempt<T>(path: string, init: RequestInit, refus401: Refus401): 
     throw new ApiError(401, langue() === 'en' ? 'Session expired, sign in again.' : 'Session expirée, reconnectez-vous.');
   }
   const body = (await res.json().catch(() => null)) as unknown;
-  if (res.status === 402 && !RETRYABLE_METHODS.has((init.method ?? 'GET').toUpperCase())) signalerRefusOffre(body);
+  if (res.status === 402) {
+    // Un membre en trop (lot 6, B2a) : CHAQUE requête est refusée, lecture comprise ; la coquille remplace la page.
+    const suspendu = estAccesSuspendu(body);
+    if (suspendu && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(ACCES_SUSPENDU_EVENT, { detail: suspendu }));
+    else if (!RETRYABLE_METHODS.has((init.method ?? 'GET').toUpperCase())) signalerRefusOffre(body);
+  }
   if (!res.ok) throw new ApiError(res.status, messageDErreur(res.status, body, langue()), body);
   return body as T;
 }

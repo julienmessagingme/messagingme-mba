@@ -14,6 +14,8 @@ import type { Campaign, Recipient } from '../src/campaign/types';
 import { runAutomations, type AutomationRunnerDeps } from '../src/automation/runner';
 import { runDateSweep } from '../src/automation/date-sweep';
 import type { AutomationRow, AutomationEvent } from '../src/automation/match';
+import { offresToutOuvert } from './gardes';
+import { plusAnciennesJamaisLues } from './gardes';
 
 /**
  * LE NUMÉRO DÉLIÉ ET CE QUE LE PARCOURS FAIT AVANT L'ENVOI REFUSÉ (relecture du 2026-09-25), avec le VRAI
@@ -84,6 +86,7 @@ function monde(graph: WorkflowGraph, o: { avecVerification?: boolean } = {}) {
     executor,
     scenarios: { getById: async () => ({ graph }) },
     contacts: { findIdByWaId: async () => null },
+    offres: offresToutOuvert,
   });
   return { executor, lancements, delie, effets, runs };
 }
@@ -236,6 +239,7 @@ function runner(rows: AutomationRow[], m: ReturnType<typeof monde>, registre: Re
       lastFiredAt: registre.lastFiredAt,
       markFired: registre.markFired,
       clearFired: registre.clearFired,
+      plusAnciennes: plusAnciennesJamaisLues,
     },
     evalContext: async () => null,
     // Le câblage du worker : la demande du runner transmise telle quelle (un tag posé ne prouve pas la fenêtre).
@@ -243,6 +247,7 @@ function runner(rows: AutomationRow[], m: ReturnType<typeof monde>, registre: Re
     // Un anti-rebond COURT : c'est le cas où l'effacement du tir rend la main au prochain événement.
     defaultCooldownSeconds: 60,
     now: () => T,
+    offres: offresToutOuvert,
   };
 }
 

@@ -5,6 +5,7 @@ import type { AutomationRow, AutomationEvent } from '../src/automation/match';
 import type { EvalContext } from '../src/workflow/conditions';
 import type { TypeDeLancementAutomatisme } from '../src/workflow/lancements';
 import { NumeroDelieError, NumeroSuspenduError } from '../src/meta/numero-delie';
+import { offresToutOuvert, plusAnciennesJamaisLues } from './gardes';
 
 /**
  * Orchestration d'un déclenchement (IO injectée).
@@ -49,8 +50,10 @@ function make(rows: AutomationRow[], over: Surcharges = {}): { deps: AutomationR
       lastFiredAt: async () => null,
       markFired: async (id) => { trace.fired.push(id); return true; },
       clearFired: async (id) => { trace.cleared.push(id); },
+      plusAnciennes: plusAnciennesJamaisLues,
       ...surAutomations,
     },
+    offres: offresToutOuvert,
     evalContext: async () => { trace.ctxCalls += 1; return ctx(); },
     startWorkflow: async (d) => {
       trace.started.push({ workflowId: d.workflowId, startNodeId: d.blocDeDepart, windowOpen: d.fenetreOuverte, type: d.type });
