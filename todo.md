@@ -66,8 +66,12 @@
   tombée dessus au passage et à sa nouvelle tentative, puis est passée à la relance ; la mesure locale donne 1 échec sur 40 (4 sur 40 le 2026-09-22, avant la garde du
   focus). La saisie se colle DERRIÈRE la suggestion. Code et test identiques depuis `4220dc42`, vert : défaut antérieur,
   à corriger dans le composant, jamais en affaiblissant le test.
-- **La recharge crédite le montant AVANT remise, et le compte Stripe est partagé** : tout code promo sans restriction
-  de produit donne du crédit gratuit. Décision à prendre : recharge sans code promo, ou crédit du montant payé.
+- 🔴 **Julien : restreindre chaque code promo Stripe à ses produits** (décidé le 2026-10-07 : le code reste ouvert
+  aux codes, sur la recharge comme sur le Pro). Le compte Stripe est partagé avec d'autres activités, et la recharge
+  crédite le montant AVANT remise : un code sans restriction de produit donne du crédit gratuit, et le Pro gratuit.
+  À faire avant de poser les prix du Pro : désactiver ENGAGE100 (nommé dans le dépôt public), recréer GMC100 et
+  VERIF100 restreints aux produits de leurs activités, et le code de l'essai réel restreint au seul produit Pro, une
+  utilisation. Règle durable : tout code créé sur ce compte porte une restriction de produit.
 
 - **En Base, trois écrans ouverts lisent encore une fonction fermée, en silence** (inventaire du 2026-10-07) : la
   création de campagne laisse vides ses sélecteurs e-mail et RCS, la fiche d'un agent ne lit pas ses suggestions de
