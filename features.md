@@ -2548,7 +2548,7 @@ côté » s'y ajoutent le 2026-09-22** (lots 3 et 4) ; leur essai réel en conve
 - ✅ **Le formulaire dit qui fournit chaque valeur** : « Messaging Me remplit lui-même : … » et « L'agent de
   Meta les obtient du client : … », dérivés de ce que l'appel déclare.
 - ⚠️ **Écrivez « Quand l'appeler » comme une CONSIGNE, pas comme un constat.** C'est cette phrase qui décide
-  si l'agent de Meta appelle l'outil, et ses compétences (par exemple « passe la main si tu n'as pas de
+  si l'agent de Meta appelle l'outil, et ses consignes (par exemple « passe la main si tu n'as pas de
   réponse fiable ») peuvent l'emporter sur une description vague. Mesuré le 2026-09-21 : « Le client demande
   à rajouter une étiquette » n'a jamais déclenché l'outil ; « Appelle cet outil dès que le client demande
   qu'on lui ajoute une étiquette. Il sait déjà qui est le client et quelle étiquette poser. Confirme-lui que
@@ -3451,13 +3451,18 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   services matrimoniaux. Une liste d'EXCLUSION, pas une file d'attente, donc la page faisait patienter des
   prospects éligibles et entretenait l'espoir de ceux qui ne le seront jamais.
 - ✅ **Page « Paramètres de l'agent »** (LIVE depuis le 2026-08-18) : l'écran de réglage de
-  l'agent MBA, en **onze onglets**, branché pour de vrai sur la configuration Meta du numéro.
+  l'agent MBA, en **douze onglets**, branché pour de vrai sur la configuration Meta du numéro.
   **Vue d'ensemble** (l'état de l'agent), **Assistant** (régler l'agent en lui parlant, cf. ci-dessous),
   **Activation** (qui parle au client, cf. ci-dessous),
   **Business** (les informations de l'entreprise), **FAQ** (saisie question par question **et
   import en masse** depuis un CSV, un Excel, un PDF ou une URL, avec aperçu avant écriture et
-  sans jamais dupliquer une question déjà posée), **Compétences** (le ton, les procédures et les
-  interdits, par exemple « ne jamais inventer un horaire »), **Outils** (ce que l'agent a le droit
+  sans jamais dupliquer une question déjà posée), **Consignes** (le ton, les procédures et les
+  interdits, par exemple « ne jamais inventer un horaire » ; l'onglet s'appelait « Compétences » jusqu'au
+  2026-10-07), **Messages interactifs** (les boutons de réponse, listes de choix, boutons lien, formulaires,
+  carrousels, images, lieux et demandes de position que l'agent envoie LUI-MÊME quand la situation décrite se
+  présente, en gardant la conversation : on choisit le composant dans une grille, puis on dit quand l'envoyer et ce
+  qu'il contient ; un formulaire n'ouvre qu'un formulaire publié, et le type ne se change plus ensuite),
+  **Outils** (ce que l'agent a le droit
   de FAIRE : poser une étiquette, enregistrer une information, envoyer un bloc, lancer un scénario,
   appeler un système que vous avez connecté), **Fichiers** (jusqu'à 100 Mo de
   documents de connaissance : PDF, Word, CSV, Excel), **Sites web** (les pages que l'agent va
@@ -3539,7 +3544,7 @@ FAQ sur les livraisons du dimanche »), et l'assistant propose. Il ne fait rien 
 qu'il va faire, une ligne par modification**, et rien ne part chez Meta tant qu'on n'a pas cliqué sur
 **Appliquer**.
 
-- ✅ **Il connaît l'état réel de l'agent** : il lit chez Meta ce qui existe déjà (FAQ, compétences, sites,
+- ✅ **Il connaît l'état réel de l'agent** : il lit chez Meta ce qui existe déjà (FAQ, consignes, messages interactifs, sites,
   documents, fiche d'activité) avant de proposer, et il relit juste avant d'appliquer. Les autres onglets
   restent donc utilisables pendant la conversation.
 - ✅ **Le fil ne se perd pas.** On peut fermer la page et reprendre la conversation plus tard, au même endroit.
@@ -3560,7 +3565,7 @@ qu'il va faire, une ligne par modification**, et rien ne part chez Meta tant qu'
 
 ### Onglet « Historique » : ce qui a changé, et ce qui a été effacé (2026-09-15)
 
-**À quoi ça sert.** Meta n'a pas de corbeille. Une FAQ, une compétence ou un document supprimé est perdu chez
+**À quoi ça sert.** Meta n'a pas de corbeille. Une FAQ, une consigne, un message interactif ou un document supprimé est perdu chez
 lui : cette page en garde **le seul exemplaire**.
 
 - ✅ **Ce que l'assistant a appliqué y figure en entier**, et **ce qui a été SUPPRIMÉ depuis les onglets**.

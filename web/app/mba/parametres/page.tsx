@@ -24,6 +24,7 @@ import { MbaActivationPanel } from '@/components/MbaActivationPanel';
 import { MbaBusinessInfoPanel } from '@/components/MbaBusinessInfoPanel';
 import { MbaFaqPanel } from '@/components/MbaFaqPanel';
 import { MbaSkillsPanel } from '@/components/MbaSkillsPanel';
+import { MbaMessagesInteractifsPanel } from '@/components/MbaMessagesInteractifsPanel';
 import { MbaWebsitesPanel } from '@/components/MbaWebsitesPanel';
 import { MbaFilesPanel } from '@/components/MbaFilesPanel';
 import { MbaTestPanel } from '@/components/MbaTestPanel';
@@ -49,9 +50,10 @@ export default function MbaSettingsPage() {
 
 // ⚠️ « assistant » EN DEUXIÈME, après l'aperçu : un onglet parmi les autres (décision de Julien), pas la
 // porte d'entrée. En faire le premier déplacerait les repères de ceux qui utilisent déjà l'écran.
-// ⚠️ « outils » APRÈS « competences », et le voisinage est le bon : une compétence dit QUOI FAIRE en
-// langage naturel, un outil est ce que l'agent peut APPELER. Les deux répondent à « de quoi il est capable ».
-const ONGLETS = ['apercu', 'assistant', 'activation', 'business', 'faq', 'competences', 'outils', 'fichiers', 'sites', 'historique', 'test'] as const;
+// ⚠️ « messages_interactifs » puis « outils » APRÈS « competences » (les Consignes), et le voisinage est le bon : une
+// consigne dit QUOI FAIRE en langage naturel, un message interactif ce que l'agent peut ENVOYER, un outil ce qu'il
+// peut APPELER. Les trois répondent à « de quoi il est capable ».
+const ONGLETS = ['apercu', 'assistant', 'activation', 'business', 'faq', 'competences', 'messages_interactifs', 'outils', 'fichiers', 'sites', 'historique', 'test'] as const;
 type Onglet = (typeof ONGLETS)[number];
 
 function lireOnglet(v: string | null): Onglet {
@@ -251,7 +253,8 @@ function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean
             { key: 'activation', label: t('Activation', 'Activation') },
             { key: 'business', label: t('Informations', 'Business info') },
             { key: 'faq', label: t('FAQ', 'FAQ') },
-            { key: 'competences', label: t('Compétences', 'Skills') },
+            { key: 'competences', label: t('Consignes', 'Instructions') },
+            { key: 'messages_interactifs', label: t('Messages interactifs', 'Interactive messages') },
             { key: 'outils', label: t('Outils', 'Tools') },
             { key: 'fichiers', label: t('Fichiers', 'Files') },
             { key: 'sites', label: t('Sites web', 'Websites') },
@@ -278,6 +281,7 @@ function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean
         {onglet === 'business' && <MbaBusinessInfoPanel {...props} />}
         {onglet === 'faq' && <MbaFaqPanel {...props} />}
         {onglet === 'competences' && <MbaSkillsPanel {...props} />}
+        {onglet === 'messages_interactifs' && <MbaMessagesInteractifsPanel {...props} status={status} isAdmin={isAdmin} />}
         {/* 🔴 LES OUTILS DE L'AGENT DE META, ET EUX SEULS (spec 2026-09-21-outils-maison-mba, § 9). L'ancien
             écran mélangeait la bibliothèque de l'espace et ce que Meta peut appeler, et Julien l'a trouvé
             illisible : on y décide désormais seulement ce que fait l'agent de Meta, et enregistrer envoie chez

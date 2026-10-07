@@ -24,7 +24,7 @@ import type { TacheMba } from './api-mba';
 export const LIBELLES: Record<TacheMba['cle'], { fr: string; en: string; onglet?: string }> = {
   business_info: { fr: 'Informations', en: 'Business info', onglet: 'business' },
   faq: { fr: 'FAQ', en: 'FAQs', onglet: 'faq' },
-  competences: { fr: 'Compétences', en: 'Skills', onglet: 'competences' },
+  competences: { fr: 'Consignes', en: 'Instructions', onglet: 'competences' },
   activation: { fr: 'Activation', en: 'Activation', onglet: 'activation' },
   fichiers: { fr: 'Fichiers', en: 'Files', onglet: 'fichiers' },
   sites: { fr: 'Sites web', en: 'Websites', onglet: 'sites' },

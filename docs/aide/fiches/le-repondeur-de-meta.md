@@ -1,7 +1,7 @@
 ---
 ecran: mba-settings
 source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA)
-source_empreinte: bca5a2
+source_empreinte: 1fde5a
 ---
 # Le répondeur de Meta : à quoi il sert, et comment le régler
 
@@ -51,11 +51,13 @@ Performance Lab, qui eux écartent les modèles envoyés. Les conversations d'es
 ce nombre n'est pas connu, rien ne s'affiche. Sur un numéro que Meta n'a pas encore ouvert, ni les étapes, ni
 les lignes grises, ni ce nombre ne s'affichent : ils mèneraient vers un écran bloqué.
 
-**Les paramètres, en onze onglets** : Vue d'ensemble (l'état de l'agent), Assistant (le régler en lui parlant),
+**Les paramètres, en douze onglets** : Vue d'ensemble (l'état de l'agent), Assistant (le régler en lui parlant),
 Activation (qui parle au client), Business (les informations de votre entreprise), FAQ (question par
 question, ou en masse depuis un fichier ou une adresse, avec aperçu avant écriture et sans jamais dupliquer
-une question existante), Compétences (le ton, les procédures, les interdits, par exemple « ne jamais
-inventer un horaire »), Outils (ce que l'agent a le droit de faire : poser une étiquette, enregistrer une
+une question existante), Consignes (le ton, les procédures, les interdits, par exemple « ne jamais
+inventer un horaire » ; l'onglet s'appelait « Compétences »), Messages interactifs (les boutons, listes, liens,
+formulaires et carrousels que l'agent envoie lui-même quand la situation que vous décrivez se présente, en gardant
+la conversation), Outils (ce que l'agent a le droit de faire : poser une étiquette, enregistrer une
 information, envoyer un bloc, lancer un scénario, appeler un système que vous avez connecté), Fichiers
 (jusqu'à 100 Mo de documents de connaissance), Sites web (les pages qu'il va lire), Historique et Tester (un
 bac à sable où vous lui parlez sans consommer de conversation facturée).
@@ -105,7 +107,7 @@ liste et une question, jamais une purge. Il ne retirera jamais l'agent du servic
 connecteur, et tout ce qu'il fait reste faisable à la main dans les autres onglets. Il n'ajoute pas de
 document : un document se dépose par l'onglet Fichiers.
 
-**L'onglet Historique** existe pour la même raison : Meta n'a pas de corbeille. Une FAQ, une compétence ou
+**L'onglet Historique** existe pour la même raison : Meta n'a pas de corbeille. Une FAQ, une consigne, un message interactif ou
 un document supprimé est perdu chez lui, et cette page en garde le seul exemplaire. « Voir le contenu
 effacé » vous le rouvre. Le remettre le **recrée**, cela ne le ressuscite pas : vous recopiez le contenu et
 obtenez un élément neuf. Rien n'y est purgé.

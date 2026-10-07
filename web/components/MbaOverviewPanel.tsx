@@ -153,8 +153,8 @@ export function MbaOverviewPanel({ tenantId, phoneNumberId, status, onChange }: 
         {!status.onboarded && (
           <p className="mt-3 text-xs leading-relaxed text-ink-500">
             {t(
-              'Vous pouvez déjà remplir les informations, la FAQ, les fichiers et les sites : ils n’attendent pas la création de l’agent. Seules les compétences l’exigent.',
-              'You can already fill in the business info, FAQ, files and websites: they don’t wait for the agent to be created. Only skills require it.',
+              'Vous pouvez déjà remplir les informations, la FAQ, les fichiers et les sites : ils n’attendent pas la création de l’agent. Seuls les consignes et les messages interactifs l’exigent.',
+              'You can already fill in the business info, FAQ, files and websites: they don’t wait for the agent to be created. Only instructions and interactive messages require it.',
             )}
           </p>
         )}

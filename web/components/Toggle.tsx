@@ -6,10 +6,12 @@
  * Le markup était recopié quatre fois dans le même écran : quatre pastilles à garder alignées au premier
  * ajustement de style. Les seules différences réelles sont l'état, le gestionnaire et la raison de blocage.
  */
-export function Toggle({ checked, onChange, disabled = false, title, testid }: {
+export function Toggle({ checked, onChange, disabled = false, title, testid, libelle }: {
   checked: boolean;
   onChange: () => void;
   disabled?: boolean;
+  /** Le nom accessible, quand l'interrupteur est seul sur sa ligne : ce qu'il allume, pas son état (`aria-pressed` le dit). */
+  libelle?: string;
   /** Info-bulle expliquant pourquoi l'interrupteur est bloqué (ex. « Réservé aux admins »). */
   title?: string;
   testid?: string;
@@ -21,6 +23,7 @@ export function Toggle({ checked, onChange, disabled = false, title, testid }: {
       aria-pressed={checked}
       {...(title ? { title } : {})}
       {...(testid ? { 'data-testid': testid } : {})}
+      {...(libelle ? { 'aria-label': libelle } : {})}
       className={`relative h-7 w-12 shrink-0 rounded-full transition-colors duration-150 ${checked ? 'bg-brand-500' : 'bg-ink-300'} ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
     >
       <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow-mm-sm transition-all duration-150 ${checked ? 'left-[22px]' : 'left-0.5'}`} />

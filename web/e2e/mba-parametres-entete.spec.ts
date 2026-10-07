@@ -53,7 +53,7 @@ test.describe('MBA Paramètres : en-tête et menu en colonne', () => {
     await expect(page.getByTestId('mba-tab-apercu')).toHaveCount(1);
 
     // 🔴 C'EST LA BARRE D'ONGLETS QUI DÉFILE, PAS LA PAGE. Un élément de grille a `min-width: auto` : sans
-    // `min-w-0` sur la colonne du menu, la grille prend la largeur des onze onglets et c'est la page
+    // `min-w-0` sur la colonne du menu, la grille prend la largeur des douze onglets et c'est la page
     // ENTIÈRE qui défile de travers sur un téléphone. Mesuré avant le correctif : 1029 px pour 390.
     const debordement = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth);

@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  AddressBookIcon, ArrowBendDownRightIcon, ArrowBendUpLeftIcon, BookOpenIcon, BuildingsIcon, CalendarBlankIcon, CaretDownIcon,
+  AddressBookIcon, ArrowBendDownRightIcon, CardsThreeIcon, GpsFixIcon, ListBulletsIcon, ArrowBendUpLeftIcon, BookOpenIcon, BuildingsIcon, CalendarBlankIcon, CaretDownIcon,
   CaretLeftIcon, CaretRightIcon, ChartBarIcon, ChatCircleDotsIcon, ChatCircleIcon, CheckCircleIcon,
   ClipboardTextIcon, CodeIcon, CopyIcon, CursorClickIcon, DeviceMobileIcon, EnvelopeSimpleIcon, EyeIcon, FileArrowUpIcon, FlagIcon,
   FileTextIcon, FlowArrowIcon, FunctionIcon, GearIcon, GitBranchIcon, HeadsetIcon, HourglassMediumIcon, HouseIcon,
@@ -94,6 +94,9 @@ const ICONES = {
   calendrier: CalendarBlankIcon,
   carte: MapTrifoldIcon,
   position: MapPinIcon,
+  liste: ListBulletsIcon,
+  localiser: GpsFixIcon,
+  carrousel: CardsThreeIcon,
   carnet: AddressBookIcon,
   fichier: FileArrowUpIcon,
   webhook: WebhooksLogoIcon,

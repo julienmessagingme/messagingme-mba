@@ -1,6 +1,7 @@
 'use client';
 
 import { request } from './http';
+import type { TypeMessageInteractif } from './messages-interactifs';
 
 /**
  * Appels de configuration de l'agent Meta Business Agent, tous indexés PAR NUMÉRO (c'est ainsi que Meta
@@ -279,6 +280,42 @@ export function updateMbaSkill(tenantId: string, phoneNumberId: string, skillId:
 
 export function deleteMbaSkill(tenantId: string, phoneNumberId: string, skillId: string): Promise<{ deleted: string }> {
   return request(`${base(tenantId, phoneNumberId)}/skills/${skillId}`, { method: 'DELETE' });
+}
+
+// --- Messages interactifs (les « UI skills » de Meta) ---------------------------------------------
+
+/** Un message interactif, tel que notre API le rend (`src/mba/messages-interactifs.ts`). */
+export interface MbaMessageInteractif {
+  id: string;
+  titre: string;
+  type: TypeMessageInteractif;
+  actif: boolean;
+  consigne: string;
+  formulaireId: string | null;
+  creeLe: number;
+  modifieLe: number;
+}
+
+export function listMbaMessagesInteractifs(tenantId: string, phoneNumberId: string): Promise<{ messages: MbaMessageInteractif[] }> {
+  return request(`${base(tenantId, phoneNumberId)}/messages-interactifs`);
+}
+
+export function createMbaMessageInteractif(
+  tenantId: string, phoneNumberId: string,
+  corps: { titre: string; type: TypeMessageInteractif; consigne: string; formulaireId?: string },
+): Promise<MbaMessageInteractif> {
+  return request(`${base(tenantId, phoneNumberId)}/messages-interactifs`, { method: 'POST', body: JSON.stringify(corps) });
+}
+
+/** Le titre, la consigne ou l'état : jamais le type ni le formulaire, que Meta ignorerait en silence. */
+export function updateMbaMessageInteractif(
+  tenantId: string, phoneNumberId: string, id: string, corps: { titre?: string; consigne?: string; actif?: boolean },
+): Promise<MbaMessageInteractif> {
+  return request(`${base(tenantId, phoneNumberId)}/messages-interactifs/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(corps) });
+}
+
+export function deleteMbaMessageInteractif(tenantId: string, phoneNumberId: string, id: string): Promise<{ deleted: string }> {
+  return request(`${base(tenantId, phoneNumberId)}/messages-interactifs/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
 // --- Sites web ------------------------------------------------------------------------------------

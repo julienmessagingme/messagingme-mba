@@ -32,6 +32,10 @@ export interface MbaFixtures {
   faqs?: Array<Record<string, unknown>>;
   skills?: Array<Record<string, unknown>>;
   agentId?: string | null;
+  /** Les messages interactifs de l'agent (`.../mba/:pn/messages-interactifs`), mutables comme les autres collections. */
+  messagesInteractifs?: Array<Record<string, unknown>>;
+  /** Les formulaires de l'espace (`GET /tenants/:t/flows`), dont les publiés que le message de type formulaire propose. */
+  flows?: Array<Record<string, unknown>>;
   websites?: Array<Record<string, unknown>>;
   files?: Array<Record<string, unknown>>;
   /**
@@ -88,6 +92,7 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
   const collections: Record<string, Array<Record<string, unknown>>> = {
     faq: [...(f.faqs ?? [])],
     skills: [...(f.skills ?? [])],
+    messagesInteractifs: [...(f.messagesInteractifs ?? [])],
     websites: [...(f.websites ?? [])],
     files: [...(f.files ?? [])],
   };
@@ -192,6 +197,15 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
           budgetEpuise: a.budgetEpuise ?? false,
         });
       }
+      // 🔴 AVANT `/messages`, qui le contient : sans cet ordre, la liste des messages interactifs recevrait le
+      // compteur `{ messages: 412 }` et l'écran planterait sur un nombre au lieu d'un tableau.
+      if (url.includes('/messages-interactifs')) {
+        if (method === 'GET') return json({ messages: collections.messagesInteractifs });
+        // Les valeurs par défaut ne valent que pour une CRÉATION : sur un PUT, elles écraseraient `actif` et le formulaire.
+        return json(ecrire('messagesInteractifs', method, url, method === 'POST'
+          ? { id: 'm-neuf', actif: true, formulaireId: null, creeLe: 1, modifieLe: 1, ...(body ?? {}) }
+          : { ...(body ?? {}) }), method === 'POST' ? 201 : 200);
+      }
       if (url.includes('/messages')) return json({ messages: 412 });
       if (url.includes('/completion')) {
         if (f.completion !== undefined) return json(f.completion);
@@ -234,6 +248,9 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
       }
       if (url.includes('/test')) return json(f.testReply ?? { agent_response: 'Bonjour, comment puis-je aider ?', conversation_id: 'conv-1' });
     }
+
+    // Les formulaires de l'espace : le message interactif de type formulaire ne propose que les publiés.
+    if (url.match(/\/tenants\/[^/]+\/flows(\?|$)/) && method === 'GET') return json({ flows: f.flows ?? [] });
 
     // Réglages TENANT (hors surface MBA). L'écran Activation les lit ET les écrit : ils sont donc mutables
     // ici aussi, sinon un écran qui n'affiche jamais ce qu'il vient d'enregistrer passerait le test.

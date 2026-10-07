@@ -27,7 +27,7 @@ test.describe('MBA Paramètres : blocages', () => {
   test('numéro ouvert : les onglets de configuration sont là, et PAS d’onglet pour les numéros de test', async ({ page }) => {
     await mockMba(page);
     await page.goto('/mba/parametres');
-    for (const cle of ['apercu', 'business', 'faq', 'competences', 'outils', 'fichiers', 'sites', 'test']) {
+    for (const cle of ['apercu', 'business', 'faq', 'competences', 'messages_interactifs', 'outils', 'fichiers', 'sites', 'test']) {
       await expect(page.getByTestId(`mba-tab-${cle}`), cle).toBeVisible();
     }
     // La liste d'autorisation n'est PAS une étape de configuration : elle vit dans la vue d'ensemble, sous le

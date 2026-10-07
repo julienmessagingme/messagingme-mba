@@ -58,6 +58,14 @@ export function MbaTestPanel({ tenantId, phoneNumberId }: { tenantId: string; ph
   return (
     <div className="space-y-5">
       {err !== '' && <MbaNotice kind="error" testid="mba-test-error">{err}</MbaNotice>}
+      {/* Mesuré le 2026-10-07 : quand un message interactif devrait partir, Meta ne rend ici que sa phrase
+          d'accompagnement (« Veuillez consulter les détails ci-dessous »). Le dire, sinon on croirait qu'il ne marche pas. */}
+      <p className="text-xs text-ink-500" data-testid="mba-test-messages-interactifs">
+        {t(
+          'Les messages interactifs (boutons, liste, formulaire…) ne s’affichent pas ici : seule leur phrase d’accompagnement apparaît. Essayez-les sur WhatsApp, depuis un numéro de la liste de l’agent.',
+          'Interactive messages (buttons, list, form…) are not shown here: only their accompanying sentence appears. Try them on WhatsApp, from a number on the agent’s list.',
+        )}
+      </p>
 
       <section className={cardCls}>
         <div className="flex items-start justify-between gap-4">

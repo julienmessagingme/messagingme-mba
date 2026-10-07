@@ -12,10 +12,11 @@ import { Modale } from '@/components/Modale';
 import { Squelette } from '@/components/Squelette';
 
 /**
- * Les compétences : la personnalité et les procédures de l'agent, en langage naturel.
+ * Les consignes (les « agent instructions » de Meta, renommées ainsi dans la console le 2026-10-07 pour ne plus se
+ * confondre avec les messages interactifs) : la personnalité et les procédures de l'agent, en langage naturel.
  *
  * Ce ne sont PAS des outils appelables (ça, ce sont les connecteurs, non branchés ici). `description` dit
- * QUAND appliquer la compétence, `skill` dit QUOI faire.
+ * QUAND appliquer la consigne, `skill` dit QUOI faire. Les `data-testid` gardent leur nom `mba-skill-*`.
  */
 export function MbaSkillsPanel({ tenantId, phoneNumberId }: { tenantId: string; phoneNumberId: string }) {
   const t = useT();
@@ -56,13 +57,13 @@ export function MbaSkillsPanel({ tenantId, phoneNumberId }: { tenantId: string; 
 
   if (chargement) return <Squelette forme="lignes" />;
 
-  // Seules les compétences exigent un agent créé chez Meta : les autres ressources n'en dépendent pas.
+  // Seules les consignes (et les messages interactifs) exigent un agent créé chez Meta : les autres ressources n'en dépendent pas.
   if (agentId === null) {
     return (
       <MbaNotice kind="warning" testid="mba-skills-no-agent">
         {t(
-          'Les compétences attendent que Meta ait créé la configuration de votre agent. Les informations business, la FAQ, les fichiers et les sites sont déjà modifiables en attendant.',
-          'Skills wait for Meta to create your agent configuration. Business info, FAQ, files and websites can already be edited in the meantime.',
+          'Les consignes attendent que Meta ait créé la configuration de votre agent. Les informations business, la FAQ, les fichiers et les sites sont déjà modifiables en attendant.',
+          'Instructions wait for Meta to create your agent configuration. Business info, FAQ, files and websites can already be edited in the meantime.',
         )}
       </MbaNotice>
     );
@@ -81,7 +82,7 @@ export function MbaSkillsPanel({ tenantId, phoneNumberId }: { tenantId: string; 
         data-testid="mba-skill-new"
         onClick={() => setEdition({ title: '', description: '', skill: '' })}
       >
-        {t('Ajouter une compétence', 'Add a skill')}
+        {t('Ajouter une consigne', 'Add an instruction')}
       </Bouton>
 
       <ul className="space-y-2" data-testid="mba-skills-list">
@@ -110,12 +111,12 @@ export function MbaSkillsPanel({ tenantId, phoneNumberId }: { tenantId: string; 
             </div>
           </li>
         ))}
-        {skills.length === 0 && <li className="text-sm text-ink-500">{t('Aucune compétence pour l’instant.', 'No skills yet.')}</li>}
+        {skills.length === 0 && <li className="text-sm text-ink-500">{t('Aucune consigne pour l’instant.', 'No instructions yet.')}</li>}
       </ul>
 
       {edition !== null && (
         <Modale
-          titre={edition.id === undefined ? t('Nouvelle compétence', 'New skill') : t('Modifier la compétence', 'Edit skill')}
+          titre={edition.id === undefined ? t('Nouvelle consigne', 'New instruction') : t('Modifier la consigne', 'Edit instruction')}
           fermeture="boutons"
           onClose={() => setEdition(null)}
         >

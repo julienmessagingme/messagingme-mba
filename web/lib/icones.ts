@@ -59,6 +59,10 @@ export const NOMS_ICONES = [
   'calendrier',
   'carte',
   'position',
+  // Les messages interactifs de l'agent de Meta (lot du 2026-10-07).
+  'liste',
+  'localiser',
+  'carrousel',
   'carnet',
   'fichier',
   'webhook',

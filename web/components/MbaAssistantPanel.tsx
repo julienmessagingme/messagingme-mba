@@ -14,6 +14,7 @@ import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
 import { lireQuiRepond } from '@/lib/api-agent';
 import { avertissementAllumageMeta } from '@/lib/repondeur';
+import { TYPES, estTypeMessageInteractif } from '@/lib/messages-interactifs';
 
 /** L'opération qui allume l'agent de Meta (`activation.mettreEnService`, `src/mba/assistant/proposition.ts`). */
 const OPERATION_MISE_EN_SERVICE = 'activation.mettreEnService';
@@ -371,6 +372,7 @@ function Diff({ operations, busy, miseEnServiceVeille, onAppliquer }: {
                   {t('(définitif : Meta ne garde pas de copie)', '(permanent: Meta keeps no copy)')}
                 </span>
               )}
+              {o.type.startsWith('message_interactif.') && !suppression && <DetailMessageInteractif o={o} />}
               {o.type === OPERATION_MISE_EN_SERVICE && miseEnServiceVeille !== null && (
                 <span className="mt-0.5 block text-xs text-alerte-800" data-testid="mba-assistant-veille">
                   {miseEnServiceVeille}
@@ -389,6 +391,22 @@ function Diff({ operations, busy, miseEnServiceVeille, onAppliquer }: {
         {t('Appliquer', 'Apply')}
       </Bouton>
     </div>
+  );
+}
+
+/**
+ * Ce qu'un message interactif proposé contient, LU AVANT d'appliquer : le titre seul laisserait approuver une consigne
+ * (une adresse, une promesse) sans l'avoir lue (relecture de la livraison A, point 4).
+ */
+function DetailMessageInteractif({ o }: { o: OperationAssistantMba }) {
+  const t = useT();
+  const composant = estTypeMessageInteractif(o.composant) ? TYPES[o.composant] : null;
+  return (
+    <span className="mt-0.5 block text-xs text-ink-500" data-testid="mba-assistant-detail-message">
+      {composant !== null && <span className="block">{t(composant.nom[0], composant.nom[1])}</span>}
+      {typeof o.formulaire === 'string' && <span className="block">{t('Formulaire : ', 'Form: ')}{o.formulaire}</span>}
+      {typeof o.consigne === 'string' && <span className="mt-0.5 block whitespace-pre-wrap font-mono">{o.consigne}</span>}
+    </span>
   );
 }
 
