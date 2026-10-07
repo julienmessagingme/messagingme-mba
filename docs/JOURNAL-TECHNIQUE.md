@@ -7,8 +7,16 @@
 
 ## 2026-10-07 : au retour en Base, on gèle sans rien effacer (lot 6, livraison B2a)
 
-**Ce qui part** : 80 fichiers, aucune migration. B2 a été découpé par Julien en deux : B2a le gel, B2b le numéro
-inclus dans le Pro (qui, lui, demande une migration).
+**Ce qui part** : `ac36a394` (80 fichiers, aucune migration), construit par-dessus la livraison A des messages
+interactifs d'une session voisine (`282a7a6b`, déployée juste avant à son SHA précis), l'arbre fusionné revérifié
+(typage, suite, auto-attaque). CI verte job par job, puis l'API, le worker principal et `mba-web` relancés, le worker
+d'analyse ensuite, le proxy rechargé après le `healthy`. Portes publiques à 200, `/mcp` à 401, journaux propres. B2 a
+été découpé par Julien en deux : B2a le gel, B2b le numéro inclus dans le Pro (qui, lui, demande une migration).
+
+**Essai réel, le même soir** : une sonde en lecture seule a d'abord montré que « Espace de dumas family » n'a ni
+automation, ni scénario, ni réglage de réponse, et un seul membre. Passé en Base : dans « Qui répond », « Agent de
+Meta » et « Scénario » grisés, vu par Julien dans la console. Remis en Entreprise. Le gel des démarrages et celui des
+membres n'ont pas pu y être vus en vrai (rien à geler) : ils restent prouvés par les tests et l'intégration.
 
 **Les décisions de Julien** : en Base, les scénarios lancés par les 10 automations les plus anciennes du client
 continuent, tout autre démarrage d'un scénario du client s'arrête (Inbox, agent de Meta, outil d'un agent IA,

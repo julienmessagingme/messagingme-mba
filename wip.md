@@ -19,7 +19,7 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
-## LOT 6 : LES OFFRES ET LEURS LIMITES, A ET B1 EN PRODUCTION, B2a EN LIVRAISON (2026-10-07), B2b ET C ENSUITE
+## LOT 6 : LES OFFRES ET LEURS LIMITES, A, B1 ET B2a EN PRODUCTION (2026-10-07), LES JAUNES DE B2a, PUIS B2b ET C
 
 Spec `docs/superpowers/specs/2026-10-07-offres-et-limites-design.md`, plan `docs/superpowers/plans/2026-10-07-offres-et-limites.md`.
 La livraison A est en production et son essai réel est fait (2026-10-07, « Espace de dumas family » ramené en Base,
@@ -39,11 +39,15 @@ immédiatement chez Stripe : fin datée, raison « résiliation », espace reven
 
 B2 est découpée (décision de Julien) : **B2a, le gel au retour en Base** (les démarrages de scénario, les automations
 au-delà des 10 plus anciennes, l'agent de Meta et le scénario répondeur, les membres en trop, les outils de Claude
-par fonction, `set_default_responder`), écrite, sans migration ni Stripe ; puis **B2b, le numéro inclus dans le Pro**
-(arrêt du numéro seul avec avoir au passage en Pro, reprise à la fin du Pro, « rendre le numéro » à la FIN du Pro, une
-migration ; Julien ajoute « Abonnements : écriture » à la clé restreinte avant son déploiement). Puis C (les coûts
-selon l'offre). ⏳ **Essai réel de B2a** : un espace d'essai mis en Base, et voir ses scénarios ne plus démarrer hors
-des 10 plus anciennes automations, l'agent de Meta ne plus recevoir de contact, un second membre voir « accès suspendu ».
+par fonction, `set_default_responder`) est EN PRODUCTION (`ac36a394`, sans migration). ✅ Essai réel fait le soir même
+sur « Espace de dumas family » mis en Base : « Agent de Meta » et « Scénario » grisés dans « Qui répond », vus par
+Julien, puis remis en Entreprise (l'espace n'a ni automation, ni scénario, ni second membre : le reste est prouvé par
+les tests). ⏳ **Les jaunes de sa relecture, en cours**, avec trois décisions de Julien : un widget à devenir
+« scénario » est gelé en Base (refusé à la création, un clic ne démarre rien) ; « Envoyer un bloc » d'un agent IA est
+gelé comme celui de l'agent de Meta ; la suspension des membres ne vaut qu'en Base et en Pro (en Entreprise, la limite
+ne bloque que les invitations). Puis **B2b, le numéro inclus dans le Pro** (arrêt du numéro seul avec avoir au passage
+en Pro, reprise à la fin du Pro, « rendre le numéro » à la FIN du Pro, une migration ; Julien ajoute « Abonnements :
+écriture » à la clé restreinte avant son déploiement). Puis C (les coûts selon l'offre).
 
 ## RETOURS CONSOLE DU 6 OCTOBRE (RC1 À RC8) : LES HUIT LOTS EN PRODUCTION, ESSAIS RÉELS DUS
 
