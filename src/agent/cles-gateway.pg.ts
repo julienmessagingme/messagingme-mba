@@ -76,6 +76,16 @@ export class PgCleGatewayStore {
   }
 
   /**
+   * L'identifiant Vercel de la clé de cet espace, SANS déchiffrer le secret (il est en clair dans sa colonne), ou `null`
+   * s'il n'en a pas. 🔴 C'est ce que lit la révocation : une clé illisible (clé de chiffrement changée, ligne abîmée)
+   * se révoque quand même, sinon la suppression d'un espace la laisserait facturer chez Vercel, identifiant perdu.
+   */
+  async idDe(tenantId: string): Promise<string | null> {
+    const res = await this.pool.query<{ cle_id: string }>('select cle_id from agent_gateway_keys where tenant_id = $1', [tenantId]);
+    return res.rows[0]?.cle_id ?? null;
+  }
+
+  /**
    * Enregistre la clé d'un espace. Le conflit est un succès : une autre création d'agent a gagné la course,
    * et sa clé fait autorité.
    *

@@ -88,3 +88,18 @@ describe('getPhone', () => {
     expect((await client().getPhone('pn-1', 'T')).codeVerificationStatus).toBeNull();
   });
 });
+
+describe('unsubscribeApp (RC8, la suppression d’un espace)', () => {
+  it('🔴 DELETE sur les abonnements du compte, avec le jeton du CLIENT ; un refus de Meta lève', async () => {
+    const appels: Array<{ url: string; methode?: string; autorisation?: string }> = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      appels.push({ url: String(url), methode: init?.method, autorisation: (init?.headers as Record<string, string> | undefined)?.Authorization });
+      return { ok: true, status: 200, json: async () => ({ success: true }) } as Response;
+    }) as typeof fetch;
+    await client().unsubscribeApp('waba-1', 'TOKEN_CLIENT');
+    expect(appels).toEqual([{ url: 'https://graph.facebook.com/v25.0/waba-1/subscribed_apps', methode: 'DELETE', autorisation: 'Bearer TOKEN_CLIENT' }]);
+
+    fausseReponse({ error: { message: 'refus' } }, false);
+    await expect(client().unsubscribeApp('waba-1', 'TOKEN_CLIENT')).rejects.toThrow();
+  });
+});

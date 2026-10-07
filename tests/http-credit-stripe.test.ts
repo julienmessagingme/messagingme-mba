@@ -378,25 +378,27 @@ function fauxPaiements(o: { espaceInconnu?: boolean } = {}) {
 function webhook(o: { paiements?: ReturnType<typeof fauxPaiements>; apresCredit?: StripeWebhookRouteDeps['apresCredit']; livemode?: boolean } = {}) {
   const paiements = o.paiements ?? fauxPaiements();
   const plafonds: string[] = [];
+  const alertes: string[] = [];
   const deps: StripeWebhookRouteDeps = {
     secret: SECRET_WEBHOOK,
     livemode: o.livemode ?? true,
     paiements,
     apresCredit: o.apresCredit ?? (async (tenantId) => { plafonds.push(tenantId); }),
     // 🔴 Une recharge ne touche jamais l'abonnement du numéro (lot 3c) : ses dépendances lèvent si on les appelle.
+    // Seule l'alerte à Julien sert aussi la recharge : celle d'un espace supprimé (RC8), notée ici.
     numero: {
       enregistrer: async () => { throw new Error('une recharge a touché l’abonnement du numéro'); },
       majStatut: async () => { throw new Error('une recharge a touché l’abonnement du numéro'); },
       noterFinPrevue: async () => { throw new Error('une recharge a touché l’abonnement du numéro'); },
       reprendreCampagnes: async () => { throw new Error('une recharge a repris des campagnes'); },
-      alerter: async () => { throw new Error('une recharge a prévenu Julien'); },
+      alerter: async (texte) => { alertes.push(texte); },
     },
     // Une recharge ne touche jamais le Pro non plus (lot 6, B1).
     pro: stripeProInerte,
     now: () => NOW,
   };
   const srv = buildServer({ queue: new FakeQueue(), stripeWebhook: deps });
-  return { srv, paiements, plafonds };
+  return { srv, paiements, plafonds, alertes };
 }
 
 function session(over: Record<string, unknown> = {}) {
@@ -561,7 +563,7 @@ describe('POST /webhooks/stripe', () => {
     await w.srv.close();
   });
 
-  it('un espace inconnu : 200 sans crédit (rejouer n’y changerait rien), et le plafond n’est pas touché', async () => {
+  it('un espace inconnu : 200 sans crédit (rejouer n’y changerait rien), le plafond n’est pas touché, et Julien est prévenu', async () => {
     const w = webhook({ paiements: fauxPaiements({ espaceInconnu: true }) });
     const erreurs = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
@@ -572,6 +574,18 @@ describe('POST /webhooks/stripe', () => {
       erreurs.mockRestore();
     }
     expect(w.plafonds).toEqual([]);
+    // RC8 : un espace supprimé depuis l'ouverture du paiement. L'argent est encaissé sans crédit : à rembourser, avec
+    // le lien de la facture dans le bon mode.
+    expect(w.alertes).toHaveLength(1);
+    expect(w.alertes[0]).toContain('cs_live_1');
+    expect(w.alertes[0]).toContain('https://dashboard.stripe.com/invoices/in_1');
+    await w.srv.close();
+  });
+
+  it('un paiement crédité ne prévient personne', async () => {
+    const w = webhook();
+    expect((await envoyer(w.srv, evenement(session()))).statusCode).toBe(200);
+    expect(w.alertes).toEqual([]);
     await w.srv.close();
   });
 

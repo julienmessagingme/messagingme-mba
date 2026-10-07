@@ -109,6 +109,7 @@ import { creerAvisAbonnement } from './numero/avis-abonnement';
 import { creerClientDidww } from './didww/client';
 import { PgAlertesCreditStore } from './repondeur/alerte-credit';
 import { ResendClient } from './support/resend';
+import { creerPierreTombale } from './ops/espaces-supprimes.pg';
 
 async function main(): Promise<void> {
   // Le worker est la seule instance qui dépile, et son rôle principal la seule qui supervise : c'est lui qui récupère les
@@ -127,6 +128,9 @@ async function main(): Promise<void> {
   // Le role de ce processus decide des files qu il consomme et des minuteries qu il programme
   // (`src/worker/roles.ts`). `WORKER_ROLE` absent = `all` = exactement le comportement d avant.
   queue.neTravailleQue((nom) => fileDuRole(nom, config.WORKER_ROLE));
+  // Un job d'un espace supprimé depuis /ops (RC8) qui échoue se termine en silence au lieu de finir dans la file des
+  // morts : la pierre tombale (`espaces_supprimes`, migration 0219) le reconnaît.
+  queue.abandonnerSi(creerPierreTombale(pool));
   // L'enfilement d'un run de campagne au débit résolu, partagé par les relances du worker qui ne résolvent pas
   // le débit elles-mêmes.
   const relancerCampagne = relanceurDeCampagnes(queue, config);

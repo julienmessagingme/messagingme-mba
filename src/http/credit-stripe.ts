@@ -11,6 +11,16 @@ import { verifierSignatureStripe } from '../stripe/signature';
 import { creditDeLOffre, definitionOffre, OFFRES_RECHARGE } from '../stripe/offres';
 import { ouvrirPaiement, RECHARGE_INDISPONIBLE, type DepsPaiement } from '../stripe/paiement';
 import type { IssuePaiement, PaiementStripe } from '../stripe/store.pg';
+import { lienTableauStripe } from '../stripe/liens';
+
+/**
+ * L'écriture a été refusée parce que l'espace n'existe plus (23503, la clé étrangère vers `tenants`) : un espace
+ * supprimé depuis /ops (RC8) que Stripe facture encore. Les deux écritures de l'abonnement (la ligne, puis le numéro
+ * attribué) ne portent d'autre clé étrangère que celle de l'espace.
+ */
+function espaceDisparu(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === '23503';
+}
 
 /**
  * Recharger le crédit IA par Stripe : la route qui ouvre un paiement, et le webhook qui crédite.
@@ -148,8 +158,9 @@ export interface StripeWebhookRouteDeps {
   /**
    * L'abonnement du numéro fourni (lot 3c, livraison B) : `enregistrer` (l'abonnement et le numéro, ensemble),
    * `majStatut` et `noterFinPrevue` (lot 4) du magasin (`PgAbonnementsNumeroStore`), `alerter`, qui prévient Julien
-   * (Telegram, ne lève jamais), et `reprendreCampagnes`, qui lève les pauses `numero_suspendu` de l'espace au paiement
-   * (lot 4 ; le balayage du worker rattrape une reprise manquée).
+   * (Telegram, ne lève jamais ; il sert aussi la recharge payée pour un espace supprimé, RC8), et `reprendreCampagnes`,
+   * qui lève les pauses `numero_suspendu` de l'espace au paiement (lot 4 ; le balayage du worker rattrape une reprise
+   * manquée).
    */
   numero: Pick<PgAbonnementsNumeroStore, 'enregistrer' | 'majStatut' | 'noterFinPrevue'> & {
     alerter(texte: string): Promise<void>;
@@ -290,7 +301,18 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
    * objet illisible rend 422 (Stripe rejoue) ; une panne de base lève, donc 5xx, et Stripe rejoue aussi.
    */
   const enregistrer = async (a: { tenantId: string; abonnementId: string; livemode: boolean; periodeFin: Date | null }): Promise<void> => {
-    const issue = await deps.numero.enregistrer(a);
+    let issue: Awaited<ReturnType<typeof deps.numero.enregistrer>>;
+    try {
+      issue = await deps.numero.enregistrer(a);
+    } catch (err) {
+      // 🔴 L'ESPACE A ÉTÉ SUPPRIMÉ (RC8) et Stripe facture encore son abonnement : la clé étrangère vers l'espace refuse
+      // l'écriture (23503). Rejouer n'y changerait rien, donc 200 (sans quoi Stripe rejouerait en boucle pendant trois
+      // jours), et Julien est prévenu avec le lien direct : la clé restreinte ne résilie pas pour lui.
+      if (!espaceDisparu(err)) throw err;
+      journaliser('error', 'stripe_abonnement_espace_disparu', { tenantId: a.tenantId, abonnement: a.abonnementId, livemode: a.livemode });
+      await deps.numero.alerter(`L'espace supprimé ${a.tenantId} paie encore son abonnement ${a.abonnementId} : à résilier chez Stripe. ${lienTableauStripe('subscriptions', a.abonnementId, a.livemode)}`);
+      return;
+    }
     // Un réabonnement payé rend le numéro : les campagnes en pause sur sa suspension repartent.
     if (issue.etat === 'enregistre') await deps.numero.reprendreCampagnes(a.tenantId);
     if (issue.etat === 'doublon') {
@@ -313,7 +335,18 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
     };
     const ok = () => reply.code(200).send({ recu: true });
     const enregistrer = async (a: { tenantId: string; abonnementId: string; periodicite: PeriodiciteOffre; periodeFin: Date | null }) => {
-      const issue = await deps.pro.enregistrer({ ...a, livemode });
+      let issue: Awaited<ReturnType<typeof deps.pro.enregistrer>>;
+      try {
+        issue = await deps.pro.enregistrer({ ...a, livemode });
+      } catch (err) {
+        // 🔴 L'ESPACE A ÉTÉ SUPPRIMÉ (RC8) et Stripe facture encore son Pro : même traitement que le numéro, 200 et alerte
+        // avec le lien direct, sans quoi Stripe rejouerait en boucle. `majStatut`, `modifier` et `finir` ne font que
+        // des mises à jour : sur un espace disparu elles ne trouvent rien, sans erreur.
+        if (!espaceDisparu(err)) throw err;
+        journaliser('error', 'stripe_pro_espace_disparu', { tenantId: a.tenantId, abonnement: a.abonnementId, livemode });
+        await deps.pro.alerter(`L'espace supprimé ${a.tenantId} paie encore son Pro ${a.abonnementId} : à résilier chez Stripe. ${lienTableauStripe('subscriptions', a.abonnementId, livemode)}`);
+        return;
+      }
       if (issue.etat === 'enregistre') {
         deps.pro.invalider(issue.tenantId);
         if (issue.nouveau) await deps.pro.alerter(`Nouveau Pro : espace ${issue.tenantId} (${a.abonnementId}, ${a.periodicite === 'an' ? 'annuel' : 'mensuel'}).`);
@@ -525,6 +558,8 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
     });
     if (issue === 'espace_inconnu') {
       journaliser('error', 'stripe_paiement_espace_inconnu', { evenement: ev.data.id, session: session.id, tenantId });
+      // Un espace supprimé depuis l'ouverture du paiement (RC8) : de l'argent encaissé sans crédit, à rembourser.
+      await deps.numero.alerter(`Recharge payée pour un espace inexistant (supprimé ?) ${tenantId} : session ${session.id}, à rembourser chez Stripe.${facture === null ? '' : ` ${lienTableauStripe('invoices', facture, ev.data.livemode)}`}`);
       return reply.code(200).send({ recu: true, credite: false });
     }
     if (issue === 'credite') {

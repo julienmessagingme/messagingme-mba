@@ -6,6 +6,19 @@ import {
   dlqName, filetNotifieSecondes, notifieePour, pollingSecondsFor, seuilRafalePour, videeEnContinu,
 } from './names';
 import { pgSsl } from '../db/ssl';
+import { estUuid } from '../http/scope';
+import { journaliser } from '../lib/journal';
+
+/**
+ * L'espace qu'un job nomme : `tenantId` dans ses données, sinon son groupe s'il est un identifiant d'espace (une
+ * campagne ne porte que `campaignId`, son groupe est l'espace). `null` pour un job qui ne nomme aucun espace (un
+ * webhook brut de Meta, groupé par contact).
+ */
+export function espaceDuJob(data: unknown, groupId: string | null | undefined): string | null {
+  const t = typeof data === 'object' && data !== null ? (data as { tenantId?: unknown }).tenantId : undefined;
+  if (estUuid(t)) return t;
+  return estUuid(groupId) ? groupId : null;
+}
 
 export interface PgBossPoolOpts {
   /** Max de connexions du pool pg-boss. Budget du pooler Supabase partagé (cf. `src/config.ts`). */
@@ -150,6 +163,8 @@ export class PgBossQueue implements Queue {
   private readonly travaillees: string[] = [];
   /** Restriction des files CONSOMMEES par ce processus. Absente = toutes, le comportement historique. */
   private travaille?: (nom: string) => boolean;
+  /** L'espace a-t-il été supprimé (`abandonnerSi`) ? Absent = tout échec se rejoue, le comportement historique. */
+  private espaceSupprime?: (tenantId: string) => Promise<boolean>;
   private readonly retryLimit: number;
   /** `false` = instance sur un pool PRÊTÉ, qui ne migre jamais le schéma : son échec au démarrage le dit. */
   private readonly migre: boolean;
@@ -305,6 +320,35 @@ export class PgBossQueue implements Queue {
     return [...this.travaillees];
   }
 
+  /**
+   * LES JOBS D'UN ESPACE SUPPRIMÉ (RC8). Un job qui ÉCHOUE et qui nomme un espace (`espaceDuJob`) que `estSupprime`
+   * reconnaît (la pierre tombale, `espaces_supprimes`) se termine en silence, avec une ligne de journal, au lieu de se
+   * rejouer jusqu'à la file des morts. Les jobs encore en file au moment de la purge (une campagne, un tour d'agent,
+   * une analyse, une automation différée) échoueraient tous sur un espace disparu.
+   *
+   * 🔴 Seulement sur un ÉCHEC, et seulement pour un espace PRÉSENT dans la pierre tombale : un job qui réussit ne coûte
+   * aucune lecture, et un espace introuvable pour une autre raison reste une panne à voir. Une lecture de la pierre
+   * tombale qui échoue elle-même laisse l'erreur d'origine remonter, comme avant. Ici et pas dans chaque file : une
+   * file ajoutée demain en profite sans y penser, et aucun job n'est retiré à la main du schéma de pg-boss.
+   */
+  abandonnerSi(estSupprime: (tenantId: string) => Promise<boolean>): void {
+    this.espaceSupprime = estSupprime;
+  }
+
+  /** Le traitement d'un job, et l'abandon d'un job d'un espace supprimé (`abandonnerSi`). */
+  private async traiter(name: string, job: { id: string; data: unknown; groupId?: string | null }, handler: (data: unknown) => Promise<void>): Promise<void> {
+    try {
+      await handler(job.data);
+    } catch (err) {
+      const espace = this.espaceSupprime ? espaceDuJob(job.data, job.groupId) : null;
+      if (espace !== null && this.espaceSupprime && (await this.espaceSupprime(espace).catch(() => false))) {
+        journaliser('warn', 'job_espace_supprime', { file: name, job: job.id, tenantId: espace, err });
+        return;
+      }
+      throw err;
+    }
+  }
+
   async work(
     name: string,
     handler: (data: unknown) => Promise<void>,
@@ -344,7 +388,7 @@ export class PgBossQueue implements Queue {
       async (jobs) => {
         for (const job of jobs) {
           try {
-            await handler(job.data);
+            await this.traiter(name, job, handler);
           } finally {
             // Fini ou rejoué plus tard (`DELAI_REJEU_VIDAGE_SECONDES`), ce message ne bloque plus la file : chaque
             // boucle relit, il en reste peut-être d'autres.

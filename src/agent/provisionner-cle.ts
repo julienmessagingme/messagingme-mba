@@ -36,8 +36,25 @@ export class CleIllisible extends Error {
   }
 }
 
+/**
+ * L'espace est verrouillé (`tenants.status = 'locked'`) : aucune clé ne s'y ouvre. Posé en premier geste de la
+ * suppression d'un espace (RC8) : sans lui, une traduction ou une création d'agent en vol ROUVRIRAIT une clé derrière
+ * la révocation, et la purge en perdrait l'identifiant.
+ */
+export class EspaceVerrouillePourCle extends Error {
+  constructor() {
+    super('espace verrouillé : aucune clé de modèle ne s’ouvre');
+    this.name = 'EspaceVerrouillePourCle';
+  }
+}
+
 export interface DepsProvisionCle {
-  cles: Pick<PgCleGatewayStore, 'lire' | 'lireEtat' | 'enregistrer' | 'ajusterPlafond' | 'oublier'>;
+  cles: Pick<PgCleGatewayStore, 'lire' | 'lireEtat' | 'idDe' | 'enregistrer' | 'ajusterPlafond' | 'oublier'>;
+  /**
+   * L'espace est-il verrouillé ? Requis : un câblage qui l'oublierait laisserait rouvrir une clé sur un espace qu'on
+   * supprime, sans un mot.
+   */
+  espaceVerrouille(tenantId: string): Promise<boolean>;
   /** Le solde prépayé de l'espace, en micro-euros. C'est lui qui devient le plafond. */
   credits: { solde(tenantId: string): Promise<number> };
   /** Comment nommer la cle dans le tableau de bord Vercel. */
@@ -68,6 +85,8 @@ export async function assurerCleGateway(deps: DepsProvisionCle, tenantId: string
   // Seule une ABSENCE autorise à ouvrir une clé : une ligne illisible ferait créer puis supprimer une clé chez
   // Vercel à chaque essai.
   if (lu.etat === 'illisible') throw new CleIllisible();
+  // Avant le crédit et avant Vercel : un espace verrouillé n'ouvre rien, quel que soit son solde.
+  if (await deps.espaceVerrouille(tenantId)) throw new EspaceVerrouillePourCle();
 
   const solde = await deps.credits.solde(tenantId);
   const plafond = dollarsDepuisMicroEuros(solde, deps.tauxEurParDollar);
@@ -182,6 +201,8 @@ export function creerAssureurDeCle(deps: {
     if (!provision) return 'indisponible';
     if (vols.has(tenantId)) return 'en_preparation';
     if (enRepit(tenantId, maintenant)) return 'indisponible';
+    // Un espace verrouillé (qu'on supprime, ou suspendu) n'ouvre aucune clé ; `assurerCleGateway` le redit sous le vol.
+    if (await provision.espaceVerrouille(tenantId)) return 'indisponible';
     // Pas de répit pour un crédit trop bas : Vercel n'est pas appelé, et une recharge doit ouvrir la clé tout de suite.
     if (dollarsDepuisMicroEuros(await provision.credits.solde(tenantId), provision.tauxEurParDollar) === null) {
       return 'credit_insuffisant';
@@ -192,8 +213,9 @@ export function creerAssureurDeCle(deps: {
       .then(
         () => { echecs.delete(tenantId); },
         (err: unknown) => {
-          // Le solde a pu baisser entre la lecture et l'ouverture : pas de répit, comme au-dessus.
-          if (err instanceof CreditInsuffisantPourCle) return;
+          // Le solde a pu baisser, ou l'espace se verrouiller, entre la lecture et l'ouverture : pas de répit, comme
+          // au-dessus.
+          if (err instanceof CreditInsuffisantPourCle || err instanceof EspaceVerrouillePourCle) return;
           echecs.set(tenantId, horloge());
           deps.journal('cle de modele non ouverte', err, tenantId);
         },
@@ -244,12 +266,13 @@ export async function remonterPlafondApresRecharge(deps: DepsProvisionCle, tenan
  * 🔴 `agent_gateway_keys.tenant_id` porte un `on delete cascade` : supprimer un espace sans passer par ici
  * laisserait chez Vercel une clé facturable dont l'identifiant est perdu. Vercel d'abord : commencer par
  * notre ligne perdrait l'identifiant si l'appel échouait. Rend `false` quand l'espace n'avait pas de clé.
+ * L'identifiant se lit sans déchiffrer le secret (`idDe`) : une clé illisible se révoque aussi.
  */
 export async function revoquerCleGateway(deps: DepsProvisionCle, tenantId: string): Promise<boolean> {
-  const cle = await deps.cles.lire(tenantId);
-  if (!cle) return false;
+  const cleId = await deps.cles.idDe(tenantId);
+  if (cleId === null) return false;
   const supprimee = await supprimerCleGateway(deps.transport, {
-    jetonCompte: deps.jetonCompte, teamId: deps.teamId, cleId: cle.cleId,
+    jetonCompte: deps.jetonCompte, teamId: deps.teamId, cleId,
   });
   // On n'oublie la ligne que si Vercel a confirmé : sinon on garde l'identifiant, seul moyen de réessayer.
   if (!supprimee) throw new CleGatewayError('revocation', null, 'Vercel n a pas confirme la suppression');

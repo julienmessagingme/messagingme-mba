@@ -242,6 +242,8 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
   plafondApi: inconnu('plafondApi'),
   // L'offre d'un espace posée par l'exploitation (lot 6) : même session, module à part. Aucun espace n'existe.
   opsOffre: inconnu('opsOffre'),
+  // La suppression d'un espace (RC8) : même session, module à part. Aucun espace n'existe, aucun geste ne part.
+  opsSuppression: inconnu('opsSuppression'),
   // Code dans l'adresse : aucun code ne se résout.
   links: inconnu('links'),
   webhookEntrant: inconnuSaufLimiteurs('webhookEntrant', ['limiter', 'budgetInconnus']),

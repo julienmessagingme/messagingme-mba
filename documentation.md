@@ -185,7 +185,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **Widget WhatsApp** | une bulle sur le site du client qui ouvre WhatsApp avec une phrase, et ce qui se passe quand cette phrase arrive | `src/widgets/`, `src/http/widgets.ts`, `src/http/widget-public.ts` | `/widgets` | `widgets`, `widget_tirs` | aucune : une étape de `processInbound` |
 | **API publique v1** | ce qu'un intégrateur du client appelle | `src/api/`, `src/http/v1-*.ts` | `/developers` | `api_keys`, `api_idempotency` | |
 | **Serveur MCP et son OAuth** | Claude (Claude Code, claude.ai) lit et agit dans un espace, par une clé d'API ou un jeton OAuth (§ 7) | `src/mcp/`, `src/http/mcp.ts`, `src/oauth/`, `src/http/oauth.ts`, `src/http/oauth-consentement.ts` | `/developers/mcp` | `oauth_autorisations`, `oauth_codes` | `retention-oauth` |
-| **Exploitation** | vue cross-tenant, recharge de crédit, alertes | `src/ops/` | `/ops` | `worker_heartbeat`, `audit_log` | `dlq-sweep` |
+| **Exploitation** | vue cross-tenant, recharge de crédit, alertes, suppression d'un espace (§ 10) | `src/ops/` | `/ops` | `worker_heartbeat`, `audit_log`, `espaces_supprimes` | `dlq-sweep` |
 | **Numéros fournis** | la réserve de numéros DIDWW, et le pont qui lit le code que Meta dicte en appelant (lot 3a) | `src/otp/`, `src/didww/`, `src/http/otp-pont.ts`, `src/http/ops-numeros.ts`, `ops/otp-asterisk/` | `/ops` | `numeros_fournis`, `codes_verification` | purge du balayage de rétention |
 | **Offres** | l'offre d'un espace (Base, Pro, Entreprise), ses fonctions, ses limites, le refus 402 (§ 7), le paiement du Pro | `src/offres/`, `src/http/offre.ts`, `src/http/ops-offre.ts`, `src/http/offre-paiement.ts`, `src/stripe/pro.ts` | `/offre`, la barre (`web/lib/nav.ts`) | `abonnements_offre`, `tenants` (`offre_entreprise`), `contacts` (`ne_entrant`), `compteurs_debit` | aucune : une étape au montage, des compteurs |
 | **Auth et comptes** | connexion, invitations, rôles, multi-espace | `src/auth/`, `src/user/` | `/login`, `/admin` | `users`, `identities`, `auth_tokens` | |
@@ -1079,6 +1079,8 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   `mfa_active_le`, `mfa_dernier_pas`, `mfa_secret_attente_enc`), `mfa_codes_secours` (empreintes SHA-256 des
   codes de secours d'une identité, `utilise_le`, cascade sur l'identité), `auth_tokens` (invite | reset,
   `token_hash` sha256, consommation atomique dans le `update ... returning`).
+- `espaces_supprimes` (0219) : une ligne par espace supprimé depuis `/ops` (§ 10), SANS clé étrangère (l'espace n'existe
+  plus) ; elle sert aussi de pierre tombale aux jobs de file de cet espace.
 - ⚠️ **Trois rôles, et DEUX niveaux de droits.** Un `agent` n'a que l'Inbox. Un `manager` y ajoute les écrans
   de CONFORMITÉ (Sécurité : accueil, Consentement, IA, Audit trails, Journal des erreurs), qu'il CONSULTE, et
   il affecte les conversations. Il RÈGLE une seule chose : `tenant_settings.agents_peuvent_prendre`, la seule
@@ -3069,12 +3071,86 @@ tracé à jeton (`/r/<code>/{{1}}`) et ne voit jamais le champ.
   un bouton à champs fait REFUSER la soumission (422 lisible) au lieu du repli sur l'adresse saisie, qui enverrait
   `{cle}` en clair chez Meta.
 
+### Supprimer un espace
+
+Depuis le lien « supprimer » d'une ligne de la table des espaces de `/ops` : `GET /ops/espaces/:tenantId/suppression`
+(le bilan) puis `DELETE /ops/espaces/:tenantId` `{ nom }` (`src/http/ops-suppression.ts`, classe `session-ops`, la
+garde de `/ops`). 🔴 **Définitif** : une purge réelle en base, après la saisie EXACTE du nom (casse comprise, sans les
+espaces en tête et en fin), revérifiée par le serveur. Une seule suppression à la fois par espace, pour toutes les
+copies (verrou court `suppression-espace:<id>`, 10 min). Jamais de 5xx : une suppression qui a tourné rend 200 avec
+`supprime` et le déroulé de ses étapes, qu'elle ait abouti ou non.
+
+**Le bilan** (`PgSuppressionEspaceStore.bilan`, lu AVANT la cascade) : nom, création, comptes, crédit restant, le
+client Stripe et les abonnements (numéro fourni et offre Pro) avec le lien du tableau de bord dans le bon mode
+(`lienTableauStripe`, `src/stripe/liens.ts`), le numéro fourni et s'il a été vu de Meta, l'agent de Meta et sa liste,
+Salesforce, HubSpot, la clé Vercel, les adresses effacées et gardées, et les étapes prévues (`prevoirEtapes`) : à
+faire, sautée (et pourquoi), ou impossible.
+
+**Les étapes** (`src/ops/suppression-espace.ts`), dans l'ordre :
+1. **le verrou** (`tenants.status = 'locked'`). Échec : arrêt.
+2. 🔴 **la clé Vercel**, révoquée chez Vercel puis chez nous (`revoquerCleGateway`, qui lit l'identifiant en clair : une
+   clé illisible se révoque aussi). **Échec, ou clé présente sur une instance sans Vercel : arrêt, rien n'est purgé**
+   (la cascade emporterait l'identifiant d'une clé qui facture).
+3. **au mieux**, chaque échec noté sans arrêter la suite : l'agent de Meta éteint (le chemin de l'Accueil,
+   `activationPour`, si notre drapeau le dit allumé) ; sa liste vidée (`toutRetirer`) ; le compte WhatsApp désabonné de
+   notre app (`DELETE /{waba}/subscribed_apps`, avec le jeton de l'espace relu au geste) ; Salesforce délié
+   (`deconnecter`, ou la ligne seule oubliée si l'app n'est pas configurée sur l'instance) ; HubSpot délié
+   (`/service/unlink` du connecteur, qui révoque aussi le jeton si c'était le dernier espace du portail) ; le numéro
+   fourni sorti (`PgLiberationStore.sortirDeLEspaceSupprime`, la décision de la libération : jamais vu de Meta, rendu à
+   la réserve et donné à l'abonné qui attend ; vu de Meta, résilié chez DIDWW ; DIDWW absent ou en refus, `bloque`).
+4. **la purge**, en UNE transaction (`PgSuppressionEspaceStore.purger`) : la ligne de l'espace verrouillée, refus si une
+   clé Vercel s'est rouverte entre-temps ; le filet du numéro fourni (encore attribué : `bloque`) ; les enfants des clés
+   en `restrict` ou `no action` d'abord (publications et liens de chaîne, outils, requêtes de connecteur), puis
+   `delete from tenants` et la cascade ; puis les identités de cet espace qui n'ont plus AUCUN compte, sauf une adresse
+   de `OPS_EMAILS` ; puis la ligne de trace.
+
+🔴 **Un objet Meta partagé ne se touche pas.** Les trois étapes chez Meta sont SAUTÉES si le compte WhatsApp ou le
+numéro de l'espace sont nommés par un autre espace (`phone_numbers`, `waba`, `waba_credentials`, `campaigns`,
+`mba_liste`, `agent_tool_consommateurs`), ou si les appels partiraient avec le jeton GLOBAL (`META_ACCESS_TOKEN`, celui
+de notre propre compte : un espace sans jeton propre) ou un jeton marqué invalide. Désabonner notre propre compte de
+notre app couperait les webhooks des autres espaces. Le bilan les annonce sautées, avec la raison.
+
+**Les personnes.** Une adresse qui n'a plus aucun autre espace est effacée (identité, mot de passe, second facteur) ;
+une adresse qui en a d'autres, ou une adresse de l'exploitation, est gardée.
+
+**Ce que le verrou arrête, et ce qu'il n'arrête pas.** Il ferme la console, `/v1`, `/mcp` et le relais (403
+`tenant_locked`), et aucune clé Vercel ne s'ouvre plus pour l'espace (`assurerCleGateway` et `creerAssureurDeCle`
+refusent un espace verrouillé : la traduction ne rouvre plus une clé révoquée). Il n'arrête PAS le worker (webhooks
+entrants, tours d'agent IA, qui retombent sur la clé maison entre la révocation et la purge, scénarios endormis,
+campagnes déjà enfilées, balayages), ni une session d'observation (lecture seule).
+
+**Les jobs en file d'un espace supprimé.** Après la purge, un job qui échoue et nomme un espace de
+`espaces_supprimes` (`tenantId` dans ses données, ou son groupe) se termine en silence, avec une ligne
+`job_espace_supprime`, au lieu de finir dans la file des morts (`PgBossQueue.abandonnerSi`, branché par le worker sur
+la pierre tombale `creerPierreTombale`). Un job qui réussit ne la lit pas ; un espace absent pour une autre raison
+reste une panne.
+
+**Ce qui reste chez les tiers, et ce qui est gardé.**
+- **Stripe** : le client et les abonnements restent ; la clé restreinte ne résilie pas, Julien le fait à la main avec
+  les liens montrés par le bilan et la réponse. Une facture payée ou une session rejouée pour un espace disparu rend
+  200 et prévient Julien sur Telegram avec le lien de l'abonnement (`src/http/credit-stripe.ts`, 23503) ; une recharge
+  payée pour un espace disparu aussi (à rembourser).
+- **Meta**, quand ses étapes sont sautées (partagé, jeton global) ou en échec : l'agent, sa liste, l'abonnement du
+  compte à notre app restent, à défaire à la main.
+- **DIDWW**, quand le numéro sort en `bloque` : à résilier à la main.
+- **HubSpot** : `mmhs.conversations`, le journal du connecteur, n'a pas de rétention et n'est pas touché : le schéma
+  `mmhs` appartient au connecteur, qu'on ne nomme que par son canal de service. Si le délien échoue, le portail reste
+  relié, à délier à la main.
+- **Gardé délibérément** : 🔴 `credits_offerts` (la mémoire « jamais deux offres pour un numéro » : l'effacer rendrait
+  l'offre récoltable par suppression et recréation), `webhook_events` (sa propre rétention), les compteurs et verrous
+  courts à clé texte (ils échoient).
+
+**La trace** : une ligne `espaces_supprimes` (migration 0219 : nom, création, date, `par`, les étapes et les nombres de
+lignes purgées, aucune donnée client), écrite DANS la transaction de la purge, et une ligne de journal
+`ops_suppression_espace` signée de l'exploitant.
+
 ### Surveillance
 
 `/ops/verrou/:tenantId` (session d'exploitation, POST, note obligatoire) : pose ou retire le verrou d'un
 espace (`tenants.status`). Il ferme la console ET l'API publique (`/v1`, `/mcp` rendent 403
-`tenant_locked`). 🔴 Il n'arrête PAS les campagnes déjà enfilées : la séquence complète (verrouiller,
-lister les campagnes en cours, les mettre en pause) est dans le runbook de `DEPLOY.md`.
+`tenant_locked`), et aucune clé Vercel ne s'ouvre plus pour l'espace. 🔴 Il n'arrête PAS les campagnes déjà
+enfilées : la séquence complète (verrouiller, lister les campagnes en cours, les mettre en pause) est dans le
+runbook de `DEPLOY.md`.
 
 `/ops/risque/:tenantId` (session d'exploitation, POST, note obligatoire) : lance TOUT DE SUITE le balayage du
 risque de désengagement d'un espace, pour l'essai réel et le dépannage, et rend son bilan (fiches évaluées,
@@ -3468,7 +3544,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/auth/totp.ts` | 🔴 le second facteur sur `node:crypto` seul : base32 RFC 4648 (PAS l'alphabet Crockford de `src/ids/code.ts`, qu'une application d'authentification décoderait autrement), `codeAuPas`, `verifierCode` (fenêtre de plus ou moins un pas, anti-rejeu par le dernier pas, comparaison en temps constant), `uriOtpauth`, et les codes de secours (`genererCodesSecours`, `empreinteCodeSecours`) |
 | `src/auth/mfa-store.pg.ts` -> `PgMfaStore` | l'état du second facteur d'une IDENTITÉ : chiffrement du secret, activation qui ne remplace jamais un facteur actif, pas et code de secours consommés par un `update` conditionnel, réinitialisation (refusée à un admin d'espace pour une identité multi-espace). `tests/mfa.ts` en porte le double en mémoire, aux mêmes conditions |
 | `src/auth/routes.ts` -> `apresLeMotDePasse`, `suiteDeConnexion` | 🔴 la porte du second facteur, et la suite d'une connexion (session si un espace, jeton de choix sinon). UNE fonction pour la connexion, `/auth/mfa/verifier` et `/auth/mfa/activer` : trois copies divergeraient sur « ouvrir ou demander ». Une étape d'exploitation (`etape.ops`, via `entreeOps`) y passe aussi : toujours le code ou l'enrôlement, puis une session d'exploitation, signée seulement avec le moyen vérifié que seules les deux routes du code passent |
-| `src/auth/middleware.ts` -> `makeRequireOps`, `auteurOps`, `estAdresseOps` | 🔴 la garde de `/ops` (session d'exploitation, puis l'adresse relue en base dans `OPS_EMAILS` et le facteur toujours actif, à CHAQUE requête), l'auteur d'une écriture d'exploitation (échoue fermé sans la garde), et la comparaison d'une adresse à la liste (sans la casse, liste vide = personne). Une seule garde, construite par `buildServer` (`Gardes.ops`) pour les deux modules `session-ops` |
+| `src/auth/middleware.ts` -> `makeRequireOps`, `auteurOps`, `estAdresseOps` | 🔴 la garde de `/ops` (session d'exploitation, puis l'adresse relue en base dans `OPS_EMAILS` et le facteur toujours actif, à CHAQUE requête), l'auteur d'une écriture d'exploitation (échoue fermé sans la garde), et la comparaison d'une adresse à la liste (sans la casse, liste vide = personne). Une seule garde, construite par `buildServer` (`Gardes.ops`) pour tous les modules `session-ops` |
 | `src/lib/adresse-privee.ts` | `resolutionPublique` : ce qu'un texte d'URL ne peut pas voir |
 | `src/lib/page-distante.ts` | `urlRecuperable` (garde SSRF) et `fetchUrlBorne` (redirections revalidées saut par saut ; 10 s par saut, et le signal facultatif d'une requête l'arrête plus tôt). 🔴 L'aperçu et l'import d'un site (`src/http/agent-knowledge.ts`) ont une échéance de 30 s de réseau par requête (`ECHEANCE_PARCOURS_MS`), passée à chaque lecture de page et à `visiter` : NPM coupe à 60 s sans réponse (aucun `proxy_read_timeout` posé, donc le défaut de nginx) et un parcours n'avait aucune durée maximale, une page écartée ne comptant pas dans les cinquante. L'aperçu dit alors `tempsAtteint`, y compris quand l'échéance coupe la dernière page de la file ; l'import écrit ce qu'il a lu et rend les pages qu'il n'a pas eu le temps de lire (`restantes`), que la console propose d'un clic et garde jusqu'au prochain import ; chaque coupure est journalisée (`parcours_coupe`). 30 s de réseau, 3 s de résolution DNS (`DELAI_RESOLUTION_MS`), 20 s de lecture (`LECTURE_PAGES`) et, pour l'import, ses écritures (une transaction par page, après les lectures) tiennent sous les 60 s : la somme est tenue par un test, aucune des trois constantes ne se change seule. L'import nomme aussi les pages qui ont atteint le plafond de fiches (`tronquees`) : l'écran comparait le total écrit au plafond par page |
 | `src/lib/corps-borne.ts` | lire un corps distant EN FLUX, avec ses trois verdicts : `lireCorpsBorne` pour du texte, `lireOctetsBornes` pour du binaire (une image), qui ne décode pas en UTF-8 |

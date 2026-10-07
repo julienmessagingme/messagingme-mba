@@ -105,6 +105,7 @@ import { registerOffre, type OffreRouteDeps } from './http/offre';
 import { registerOffrePaiement, type OffrePaiementRouteDeps } from './http/offre-paiement';
 import { registerOpsOffre, type OpsOffreDeps } from './http/ops-offre';
 import { registerOpsNumeros, type OpsNumerosDeps } from './http/ops-numeros';
+import { registerOpsSuppression, type OpsSuppressionDeps } from './http/ops-suppression';
 import { registerOtpPont, type OtpPontRouteDeps } from './http/otp-pont';
 import { MetaApiError } from './meta/errors';
 import { FlowJsonInvalidError } from './meta/flows';
@@ -420,6 +421,8 @@ export interface ServerDeps {
   opsOffre?: OpsOffreDeps;
   /** Payer le Pro (lot 6, livraison B1) : admin, plafond coûteux, aucune garde d'offre (une Base doit pouvoir payer). */
   offrePaiement?: OffrePaiementRouteDeps;
+  /** La suppression définitive d'un espace par l'exploitation (RC8, `/ops/espaces/:tenantId`). */
+  opsSuppression?: OpsSuppressionDeps;
 }
 
 /**
@@ -632,6 +635,8 @@ export function modulesDeRoutes(
     entree('opsOffre', 'session-ops', deps.opsOffre, (app, d, g) => registerOpsOffre(app, d, g.ops)),
     // La réserve de numéros fournis (lot 3a) : même autorité que `/ops`, dans un module à part.
     entree('opsNumeros', 'session-ops', deps.opsNumeros, (app, d, g) => registerOpsNumeros(app, d, g.ops)),
+    // La suppression définitive d'un espace (RC8) : même autorité que `/ops`, dans un module à part.
+    entree('opsSuppression', 'session-ops', deps.opsSuppression, (app, d, g) => registerOpsSuppression(app, d, g.ops)),
     // Redirection des liens tracés : publique (un destinataire clique depuis WhatsApp, sans session), montée
     // avant les gardes d'auth.
     entree('links', 'code-url', deps.links, (app, d) => registerLinks(app, d)),

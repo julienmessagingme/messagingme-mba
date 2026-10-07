@@ -123,6 +123,11 @@ import { transcrireMessage } from './inbox/transcrire';
 import { transcrire } from './agent/llm/transcription';
 import { PgNumerosFournisStore } from './otp/store.pg';
 import { creerClientDidww } from './didww/client';
+import { PgLiberationStore } from './numero/liberation.pg';
+import { PgSuppressionEspaceStore } from './ops/suppression-espace.pg';
+import type { ContexteTiers } from './ops/suppression-espace';
+import type { OpsSuppressionDeps } from './http/ops-suppression';
+import { TokenInvalidError } from './meta/credentials';
 import { lireMediaRecu } from './inbox/media-entrant';
 import type { DepsRepondre } from './inbox/repondre';
 import { assurerCleGateway, creerAssureurDeCle, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
@@ -302,6 +307,11 @@ async function main(): Promise<void> {
       nomEspace: async (tenant) => {
         const r = await pool.query<{ name: string }>('select name from tenants where id = $1', [tenant]);
         return r.rows[0]?.name ?? null;
+      },
+      // Un espace verrouillé (suspendu, ou qu'on supprime depuis /ops) n'ouvre aucune clé ; un espace disparu non plus.
+      espaceVerrouille: async (tenant) => {
+        const r = await pool.query<{ status: string }>('select status from tenants where id = $1', [tenant]);
+        return (r.rows[0]?.status ?? 'locked') === 'locked';
       },
       transport: new FetchTransport(),
       jetonCompte: config.VERCEL_API_TOKEN,
@@ -743,6 +753,90 @@ async function main(): Promise<void> {
   };
   const vueOffre = creerVueOffre({ offres, usage: (tenant) => offresStore.usage(tenant), modelesDuMois: quotaModeles });
 
+  /**
+   * LA SUPPRESSION D'UN ESPACE DEPUIS /ops (RC8, `src/ops/suppression-espace.ts`). Chaque geste chez un tiers reprend le
+   * chemin de production du même geste : la révocation de `/ops/cle-modele`, l'extinction de l'Accueil
+   * (`activationPour`, celle du répondeur), le retrait de toute la liste de l'agent de Meta (`toutRetirer`), les
+   * déconnexions Salesforce et HubSpot des Paramètres, et la décision de la libération du numéro fourni.
+   */
+  // Le magasin Salesforce, construit même sans l'app : une org peut rester d'une instance où elle était configurée.
+  const orgsSuppression = new PgSalesforceStore(pool, config.ENCRYPTION_KEY);
+  const magasinSuppression = new PgSuppressionEspaceStore(pool, opsEmails, orgsSuppression);
+  const liberationsApi = new PgLiberationStore(pool);
+  const didwwApi = config.DIDWW_API_KEY ? creerClientDidww({ cle: config.DIDWW_API_KEY, url: config.DIDWW_API_URL }) : null;
+  const esClientSuppression = new MetaEmbeddedSignupClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
+  const salesforceSuppression = config.SALESFORCE_CLIENT_ID !== ''
+    ? {
+      client: creerClientSalesforce({ clientId: config.SALESFORCE_CLIENT_ID, clientSecret: config.SALESFORCE_CLIENT_SECRET }),
+      store: orgsSuppression,
+      genererSecret: () => randomBytes(32).toString('hex'),
+    }
+    : null;
+  const hubspotSuppression = config.HUBSPOT_SERVICE_URL
+    ? { baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }
+    : null;
+  const suppressionEspace: OpsSuppressionDeps = {
+    bilan: (tenant) => magasinSuppression.bilan(tenant),
+    contexte: async (tenant) => {
+      // 🔴 Le jeton que les appels chez Meta prendraient, relu par le MÊME résolveur qu'eux : sans jeton propre, ils
+      // partiraient avec le nôtre, et les étapes chez Meta sont sautées.
+      let jeton: ContexteTiers['meta']['jeton'] = 'global';
+      let wabaId: string | null = null;
+      try {
+        const r = await metaCredentials.resolveForTenant(tenant);
+        if (r.chiffre !== null) {
+          jeton = 'propre';
+          wabaId = r.wabaId;
+        }
+      } catch (err) {
+        if (!(err instanceof TokenInvalidError)) throw err;
+        jeton = 'invalide';
+      }
+      // Le schéma du connecteur absent (`42P01`) veut dire « pas relié » ; toute autre erreur, « on ne sait pas ».
+      const hubspot = await phoneStatusStore.getHubspotPortal(tenant).then((p) => p.connected).catch((err: unknown) => (
+        typeof err === 'object' && err !== null && 'code' in err && err.code === '42P01' ? false : null
+      ));
+      return {
+        meta: { jeton, wabaId },
+        hubspot,
+        configures: { vercel: provisionCle !== null, salesforce: salesforceSuppression !== null, hubspot: hubspotSuppression !== null },
+      };
+    },
+    gestes: {
+      verrouiller: (tenant) => opsStore.verrouillerEspace(tenant, true),
+      revoquerCleVercel: provisionCle ? (tenant) => revoquerCleGateway(provisionCle, tenant) : null,
+      eteindreMba: (tenant, phoneNumberId) => repondeurDeLaConsole.activation.ecrireChezMeta(tenant, phoneNumberId, false),
+      viderListeMba: (tenant) => listeDeLAgent.toutRetirer(tenant),
+      desabonnerWaba: async (tenant, waba) => {
+        // 🔴 Relu au moment du geste, et jamais avec le jeton global : sur notre propre compte, il couperait les
+        // webhooks des autres espaces.
+        const r = await metaCredentials.resolveForWaba(waba);
+        if (r.chiffre === null) throw new Error('jeton global : désabonnement refusé');
+        await esClientSuppression.unsubscribeApp(waba, r.token);
+      },
+      // Sans l'app sur cette instance, l'org ne peut pas être appelée : la ligne seule est oubliée.
+      deconnecterSalesforce: async (tenant) => {
+        if (salesforceSuppression === null) return (await orgsSuppression.supprimer(tenant)) ? 'oublie' : 'non_relie';
+        const r = await deconnecterSalesforce(salesforceSuppression, tenant);
+        return !r.ok ? 'non_relie' : r.effaceDansOrg ? 'efface' : 'non_efface';
+      },
+      deconnecterHubspot: hubspotSuppression ? async (tenant) => { await disconnectHubspot(hubspotSuppression, tenant); } : null,
+      sortirNumeroFourni: async (tenant) => {
+        const r = await liberationsApi.sortirDeLEspaceSupprime(tenant, didwwApi ? (didId) => didwwApi.resilier(didId) : null);
+        // Rendu à la réserve : il va d'abord à l'abonné qui attend le sien, comme une libération. Au mieux.
+        if (r.fait === 'libre') {
+          await tenter('suppression espace: abonné en attente non servi:', async () => {
+            const suivant = (await abonnementsNumero.enAttenteDeNumero()).find((t) => t !== tenant);
+            if (suivant !== undefined) await numerosFournis.attribuer(suivant);
+          });
+        }
+        return r;
+      },
+      purger: (tenant, trace) => magasinSuppression.purger(tenant, trace),
+    },
+    verrous: verrousCourts,
+  };
+
   const app = buildServer({
     /**
      * 🔴 Le compteur des plafonds de débit, PARTAGÉ par toutes les copies de l'API (migration 0186). Oublié,
@@ -759,6 +853,8 @@ async function main(): Promise<void> {
       ouvrir: (tenant, periodicite, payeur) => ouvrirPro(proDeLaConsole, tenant, periodicite, payeur),
       portail: (tenant, payeur) => ouvrirPortailPro(proDeLaConsole, tenant, payeur),
     },
+    // La suppression définitive d'un espace (RC8).
+    opsSuppression: suppressionEspace,
     /**
      * L'alerte d'exploitation : les quotas quotidiens de l'API publique la lèvent quand leur compteur ne répond pas (les
      * appels passent alors, les quotas ne sont plus tenus). Absente, elle partirait seulement dans le journal.

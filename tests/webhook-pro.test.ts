@@ -21,7 +21,7 @@ function ligne(abonnementId: string, over: Partial<AbonnementOffre> = {}): Abonn
   return { abonnementId, tenantId: T1, periodicite: 'mois', livemode: true, statut: 'actif', periodeFin: null, finPrevueLe: null, finiLe: null, finRaison: null, ...over };
 }
 
-function monter(o: { connus?: string[]; issue?: IssueEnregistrementPro } = {}) {
+function monter(o: { connus?: string[]; issue?: IssueEnregistrementPro; panne?: unknown } = {}) {
   const cap = {
     enregistres: [] as Array<{ tenantId: string; abonnementId: string; periodicite: PeriodiciteOffre; livemode: boolean; periodeFin: Date | null }>,
     statuts: [] as Array<{ abonnementId: string; statut: string; periodeFin: Date | null; finEchouee: Date | null }>,
@@ -39,7 +39,7 @@ function monter(o: { connus?: string[]; issue?: IssueEnregistrementPro } = {}) {
     apresCredit: async () => {},
     numero: stripeNumeroInerte,
     pro: {
-      enregistrer: async (a) => { cap.enregistres.push(a); const neuf = !connus.has(a.abonnementId); connus.add(a.abonnementId); return o.issue ?? { etat: 'enregistre', tenantId: T1, nouveau: neuf }; },
+      enregistrer: async (a) => { if (o.panne !== undefined) throw o.panne; cap.enregistres.push(a); const neuf = !connus.has(a.abonnementId); connus.add(a.abonnementId); return o.issue ?? { etat: 'enregistre', tenantId: T1, nouveau: neuf }; },
       majStatut: async (abonnementId, statut, periodeFin, finEchouee = null) => {
         cap.statuts.push({ abonnementId, statut, periodeFin, finEchouee });
         return connus.has(abonnementId) ? ligne(abonnementId, { statut }) : null;
@@ -110,6 +110,21 @@ describe('le webhook Stripe et le Pro', () => {
     expect(cap.statuts).toEqual([{ abonnementId: 'sub_pro', statut: 'actif', periodeFin: new Date(FIN * 1000), finEchouee: null }]);
     expect(cap.enregistres).toEqual([{ tenantId: T1, abonnementId: 'sub_pro', periodicite: 'an', livemode: true, periodeFin: new Date(FIN * 1000) }]);
     expect(cap.invalides).toEqual([T1]);
+  });
+
+  it('🔴 un espace supprimé depuis /ops (RC8, 23503) qui paie encore son Pro : 200 et Julien prévenu avec le lien, jamais une boucle de rejeux', async () => {
+    for (const [objet, type] of [[sessionPro(), 'checkout.session.completed'], [facturePro(), 'invoice.paid']] as const) {
+      const { srv, cap } = monter({ panne: Object.assign(new Error('violation de clé étrangère'), { code: '23503' }) });
+      expect((await envoyer(srv, evenement(objet, type))).statusCode, type).toBe(200);
+      expect(cap.alertes, type).toEqual([`L'espace supprimé ${T1} paie encore son Pro sub_pro : à résilier chez Stripe. https://dashboard.stripe.com/subscriptions/sub_pro`]);
+      expect(cap.invalides, type).toEqual([]);
+    }
+  });
+
+  it('une autre panne de base à l’enregistrement du Pro remonte toujours (Stripe rejoue)', async () => {
+    const { srv, cap } = monter({ panne: Object.assign(new Error('connexion perdue'), { code: '08006' }) });
+    expect((await envoyer(srv, evenement(sessionPro(), 'checkout.session.completed'))).statusCode).toBeGreaterThanOrEqual(500);
+    expect(cap.alertes).toEqual([]);
   });
 
   it('un renouvellement payé d’un Pro connu : la période avance, le cache est vidé', async () => {

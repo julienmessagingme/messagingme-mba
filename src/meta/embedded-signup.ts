@@ -91,6 +91,18 @@ export class MetaEmbeddedSignupClient extends ClientGraph {
     });
   }
 
+  /**
+   * Désabonne notre app des webhooks du WABA du client : l'inverse de `subscribeApp`, à la suppression d'un espace
+   * (RC8). 🔴 Jamais avec le jeton global : sur notre propre WABA, il couperait les webhooks d'autres espaces
+   * (`src/ops/suppression-espace.ts` ne l'appelle qu'avec le jeton propre de l'espace).
+   */
+  async unsubscribeApp(wabaId: string, businessToken: string): Promise<void> {
+    await this.call(`${this.baseUrl}/${this.version}/${encodeURIComponent(wabaId)}/subscribed_apps`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${businessToken}` },
+    });
+  }
+
   /** Enregistre le numéro sur la Cloud API (numéro neuf). Le pin devient le PIN 2FA du numéro. */
   async register(phoneNumberId: string, businessToken: string, pin: string): Promise<void> {
     await this.call(`${this.baseUrl}/${this.version}/${encodeURIComponent(phoneNumberId)}/register`, {

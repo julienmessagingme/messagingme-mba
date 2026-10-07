@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { assurerCleGateway, creerAssureurDeCle, remonterPlafondApresRecharge, revoquerCleGateway, CreditInsuffisantPourCle, CleIllisible, REPIT_APRES_ECHEC_MS, type DepsProvisionCle } from '../src/agent/provisionner-cle';
+import { assurerCleGateway, creerAssureurDeCle, remonterPlafondApresRecharge, revoquerCleGateway, CreditInsuffisantPourCle, CleIllisible, EspaceVerrouillePourCle, REPIT_APRES_ECHEC_MS, type DepsProvisionCle } from '../src/agent/provisionner-cle';
 import type { CleGatewayEspace, LectureCleGateway } from '../src/agent/cles-gateway.pg';
 import type { HttpResponse, HttpTransportPatch } from '../src/meta/http';
 import type { HttpTransportSuppression } from '../src/agent/llm/cles-gateway';
@@ -41,6 +41,8 @@ class FauxTransport implements HttpTransportPatch, HttpTransportSuppression {
 function fauxCles(initial?: CleGatewayEspace | 'illisible') {
   let illisible = initial === 'illisible';
   let etat = initial === 'illisible' ? null : initial ?? null;
+  /** L'identifiant d'une ligne illisible : en clair dans sa colonne, comme en base. */
+  let idIllisible: string | null = initial === 'illisible' ? 'key_illisible' : null;
   const ecritures: Array<{ cleId: string; plafondMicroEur: number }> = [];
   const plafondsNotes: number[] = [];
   const oublis: boolean[] = [];
@@ -56,6 +58,7 @@ function fauxCles(initial?: CleGatewayEspace | 'illisible') {
       if (illisible) return { etat: 'illisible' };
       return etat ? { etat: 'lue', cle: etat } : { etat: 'absente' };
     },
+    idDe: async () => (illisible ? idIllisible : etat?.cleId ?? null),
     reparer: () => { illisible = false; },
     enregistrer: async (_t: string, o: { cleId: string; cle: string; plafondMicroEur: number }) => {
       ecritures.push({ cleId: o.cleId, plafondMicroEur: o.plafondMicroEur });
@@ -74,14 +77,22 @@ function fauxCles(initial?: CleGatewayEspace | 'illisible') {
       file = tour.catch(() => undefined);
       return tour;
     },
-    oublier: async (_t: string) => { const y = etat !== null; etat = null; oublis.push(true); return y; },
+    oublier: async (_t: string) => {
+      const y = etat !== null || idIllisible !== null;
+      etat = null;
+      idIllisible = null;
+      illisible = false;
+      oublis.push(true);
+      return y;
+    },
   };
   return f;
 }
 
-function deps(o: { cles: ReturnType<typeof fauxCles>; solde: number; transport: HttpTransportPatch & HttpTransportSuppression; journal?: string[] }): DepsProvisionCle {
+function deps(o: { cles: ReturnType<typeof fauxCles>; solde: number; transport: HttpTransportPatch & HttpTransportSuppression; journal?: string[]; verrouille?: boolean }): DepsProvisionCle {
   return {
     cles: o.cles,
+    espaceVerrouille: async () => o.verrouille ?? false,
     credits: { solde: async () => o.solde },
     nomEspace: async () => 'Demo',
     transport: o.transport,
@@ -121,6 +132,17 @@ describe('assurerCleGateway', () => {
     const cles = fauxCles('illisible');
     const t = new FauxTransport([OK]);
     await expect(assurerCleGateway(deps({ cles, solde: 10 * MICRO, transport: t }), 't1')).rejects.toBeInstanceOf(CleIllisible);
+    expect(t.appels).toHaveLength(0);
+    expect(cles.ecritures).toHaveLength(0);
+  });
+
+  it('🔴 un espace VERROUILLÉ n’ouvre aucune clé, quel que soit son crédit : Vercel n’est pas appelé', async () => {
+    // RC8 : le verrou est le premier geste de la suppression d'un espace. Sans cette garde, une création d'agent en vol
+    // rouvrait une clé derrière la révocation, et la purge en perdait l'identifiant (une clé qui facture à vie).
+    const cles = fauxCles();
+    const t = new FauxTransport([OK]);
+    await expect(assurerCleGateway(deps({ cles, solde: 10 * MICRO, transport: t, verrouille: true }), 't1'))
+      .rejects.toBeInstanceOf(EspaceVerrouillePourCle);
     expect(t.appels).toHaveLength(0);
     expect(cles.ecritures).toHaveLength(0);
   });
@@ -348,6 +370,16 @@ describe('revoquerCleGateway', () => {
     expect(await revoquerCleGateway(deps({ cles, solde: 0, transport: t }), 't1')).toBe(false);
     expect(t.appels).toHaveLength(0);
   });
+
+  it('🔴 une clé ILLISIBLE se révoque quand même : son identifiant est en clair', async () => {
+    // RC8 : la révocation lisait la clé DÉCHIFFRÉE, et une clé illisible passait pour « pas de clé ». La suppression de
+    // l'espace aurait alors purgé la ligne, et la clé aurait facturé à vie chez Vercel, identifiant perdu.
+    const cles = fauxCles('illisible');
+    const t = new FauxTransport([]);
+    expect(await revoquerCleGateway(deps({ cles, solde: 0, transport: t }), 't1')).toBe(true);
+    expect(t.appels).toEqual([expect.objectContaining({ methode: 'DELETE', url: expect.stringContaining('key_illisible') })]);
+    expect(cles.oublis).toHaveLength(1);
+  });
 });
 
 /**
@@ -359,12 +391,12 @@ describe('revoquerCleGateway', () => {
  * appels de création en rafale.
  */
 describe('creerAssureurDeCle', () => {
-  function assureur(o: { cles: ReturnType<typeof fauxCles>; solde: number; transport: FauxTransport; provision?: false; now?: () => number }) {
+  function assureur(o: { cles: ReturnType<typeof fauxCles>; solde: number; transport: FauxTransport; provision?: false; now?: () => number; verrouille?: boolean }) {
     const journal: string[] = [];
     const travaux = travauxNotes();
     const assurer = creerAssureurDeCle({
       cles: o.cles,
-      provision: o.provision === false ? null : deps({ cles: o.cles, solde: o.solde, transport: o.transport }),
+      provision: o.provision === false ? null : deps({ cles: o.cles, solde: o.solde, transport: o.transport, verrouille: o.verrouille ?? false }),
       journal: (msg) => { journal.push(msg); },
       travaux,
       ...(o.now ? { now: o.now } : {}),
@@ -431,6 +463,16 @@ describe('creerAssureurDeCle', () => {
   it('provisionnement éteint : seule une clé existante sert, et Vercel n’est jamais appelé', async () => {
     const t = new FauxTransport([]);
     expect(await assureur({ cles: fauxCles(), solde: 10 * MICRO, transport: t, provision: false }).assurer('t1')).toBe('indisponible');
+    expect(t.appels).toHaveLength(0);
+  });
+
+  it('🔴 un espace VERROUILLÉ : `indisponible`, aucune ouverture en vol, Vercel jamais appelé (la traduction ne rouvre rien)', async () => {
+    // Le défaut connu de `todo.md` : la révocation d'une clé était défaite par la traduction suivante. Le verrou,
+    // premier geste de la suppression d'un espace (RC8), l'empêche désormais.
+    const t = new FauxTransport([OK]);
+    const { assurer, travaux } = assureur({ cles: fauxCles(), solde: 10 * MICRO, transport: t, verrouille: true });
+    expect(await assurer('t1')).toBe('indisponible');
+    expect(travaux.suivis).toHaveLength(0);
     expect(t.appels).toHaveLength(0);
   });
 

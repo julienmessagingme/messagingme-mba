@@ -5,6 +5,29 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-07 : supprimer un espace depuis /ops (RC8), écrit, pas encore déployé
+
+**Ce qui est écrit** (plan `docs/superpowers/plans/2026-10-06-rc8-supprimer-un-espace.md`, migration 0219
+`espaces_supprimes`) : un bilan (`GET /ops/espaces/:tenantId/suppression`) puis la suppression définitive
+(`DELETE /ops/espaces/:tenantId`, le nom tapé à l'identique). Le verrou, puis la clé Vercel (son échec arrête tout),
+puis au mieux l'agent de Meta, sa liste, l'abonnement du compte WhatsApp à notre app, Salesforce, HubSpot et le numéro
+fourni, puis la purge en une transaction avec sa ligne de trace. Le détail : `documentation.md` § 10.
+
+**Ce que la lecture du code a ajouté au plan :**
+- la révocation lisait la clé DÉCHIFFRÉE : une clé illisible passait pour « pas de clé », la purge l'aurait laissée
+  facturer à vie. Elle lit désormais l'identifiant en clair (`PgCleGatewayStore.idDe`) ;
+- le verrou n'empêchait pas d'OUVRIR une clé : une traduction lue par une session d'observation, ou une création
+  d'agent en vol, la rouvrait derrière la révocation. `assurerCleGateway` et `creerAssureurDeCle` refusent désormais un
+  espace verrouillé, et la purge refuse si une clé est réapparue ;
+- un objet Meta partagé avec un autre espace, ou le jeton global de notre compte, font SAUTER les étapes chez Meta ;
+- le schéma `salesforce` ne se nomme que dans `src/salesforce/` (`tests/salesforce-isolation.test.ts`) : la purge ne
+  le touche pas, l'étape `salesforce` délie l'org par son propre magasin ; le schéma `mmhs` du connecteur HubSpot ne
+  se touche que par `/service/unlink` (supprimer `tenant_portals` à la main laisserait un jeton HubSpot vivant) ;
+- les jobs en file d'un espace supprimé s'abandonnent en silence sur la pierre tombale (`PgBossQueue.abandonnerSi`) au
+  lieu de remplir la file des morts ;
+- le webhook Stripe rendait 500 en boucle sur la facture d'un espace disparu (23503) : 200, et Julien est prévenu avec
+  le lien de l'abonnement.
+
 ## 2026-10-07 : un champ du contact dans l'adresse d'un bouton « Lien » (RC7), et deux envois cassés réparés
 
 **Ce qui est écrit** (plan `docs/superpowers/plans/2026-10-06-rc7-lien-dynamique.md`, aucune migration) : une

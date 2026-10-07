@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createHmac, randomBytes } from 'node:crypto';
 import { buildServer } from '../src/server';
 import { stripeProInerte } from './routes-inertes';
@@ -17,7 +17,7 @@ const T1 = '5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01';
 const NOW = 1_790_000_000_000;
 const FIN = 1_792_600_000;
 
-function monter(o: { connus?: string[]; issue?: IssueEnregistrement; livemode?: boolean } = {}) {
+function monter(o: { connus?: string[]; issue?: IssueEnregistrement; livemode?: boolean; enregistrerLeve?: Error } = {}) {
   const cap = {
     enregistres: [] as Array<{ tenantId: string; abonnementId: string; livemode: boolean; periodeFin: Date | null }>,
     statuts: [] as Array<{ abonnementId: string; statut: StatutAbonnement; periodeFin: Date | null }>,
@@ -35,7 +35,12 @@ function monter(o: { connus?: string[]; issue?: IssueEnregistrement; livemode?: 
     paiements: { crediterPaiement: async () => { cap.credits += 1; return 'credite'; } },
     apresCredit: async () => {},
     numero: {
-      enregistrer: async (a) => { cap.enregistres.push(a); connus.add(a.abonnementId); return o.issue ?? { etat: 'enregistre', numero: '441235619343' }; },
+      enregistrer: async (a) => {
+        if (o.enregistrerLeve) throw o.enregistrerLeve;
+        cap.enregistres.push(a);
+        connus.add(a.abonnementId);
+        return o.issue ?? { etat: 'enregistre', numero: '441235619343' };
+      },
       majStatut: async (abonnementId, statut, periodeFin, finFactureEchouee = null): Promise<AbonnementNumero | null> => {
         cap.statuts.push({ abonnementId, statut, periodeFin });
         if (statut === 'en_retard') cap.finsEchouees.push(finFactureEchouee);
@@ -237,5 +242,50 @@ describe('le webhook Stripe et le lot 4 du numéro', () => {
     await envoyer(fin.srv, evenement({ id: 'sub_1', object: 'subscription', status: 'canceled', metadata: { tenant_id: T1, produit: 'numero' } }, 'customer.subscription.deleted'));
     expect(fin.cap.alertes[0]).toMatch(/coupés/);
     expect(fin.cap.alertes[0]).toMatch(/7 jours/);
+  });
+});
+
+/**
+ * 🔴 RC8 : L'ESPACE A ÉTÉ SUPPRIMÉ DEPUIS /ops, ET STRIPE FACTURE ENCORE SON ABONNEMENT. La clé restreinte ne résilie
+ * pas : Julien le fait à la main, et la suppression lui a montré les liens. Une facture payée de cet abonnement (ou une
+ * session rejouée) tente d'enregistrer une ligne pour un espace qui n'existe plus : la clé étrangère refuse (23503).
+ * Avant ce correctif, l'erreur montait en 500, et Stripe rejouait l'événement pendant trois jours.
+ */
+describe('le webhook Stripe et un espace supprimé (RC8)', () => {
+  const disparu = () => Object.assign(new Error('insert or update on table "abonnements_numero" violates foreign key constraint'), { code: '23503' });
+
+  it('🔴 une facture payée pour un espace disparu : 200, et Julien est prévenu avec le lien de l’abonnement', async () => {
+    const { srv, cap } = monter({ enregistrerLeve: disparu() });
+    const erreurs = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect((await envoyer(srv, evenement(facture(), 'invoice.paid'))).statusCode).toBe(200);
+    } finally {
+      erreurs.mockRestore();
+    }
+    expect(cap.alertes).toHaveLength(1);
+    expect(cap.alertes[0]).toContain(T1);
+    expect(cap.alertes[0]).toContain('https://dashboard.stripe.com/subscriptions/sub_1');
+  });
+
+  it('🔴 la session rejouée aussi, et le lien est celui du MODE de l’événement', async () => {
+    const { srv, cap } = monter({ enregistrerLeve: disparu(), livemode: false });
+    const erreurs = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect((await envoyer(srv, evenement(sessionAbonnement(), 'checkout.session.completed', false))).statusCode).toBe(200);
+    } finally {
+      erreurs.mockRestore();
+    }
+    expect(cap.alertes).toEqual([expect.stringContaining('https://dashboard.stripe.com/test/subscriptions/sub_1')]);
+  });
+
+  it('une autre panne de base remonte toujours : Stripe rejouera', async () => {
+    const { srv, cap } = monter({ enregistrerLeve: new Error('base indisponible') });
+    const erreurs = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect((await envoyer(srv, evenement(facture(), 'invoice.paid'))).statusCode).toBe(500);
+    } finally {
+      erreurs.mockRestore();
+    }
+    expect(cap.alertes).toEqual([]);
   });
 });
