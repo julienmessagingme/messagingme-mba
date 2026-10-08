@@ -765,3 +765,39 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
   @keyframes clic-ouvre{from{opacity:0;transform:scale(.12)}to{opacity:1;transform:none}}
   @keyframes clic-trace{to{stroke-dashoffset:0}}
 }
+
+/* ============================================================================================================
+   LA UNE WHATSAPP ET RCS (.cx) : les deux téléphones et le logo Messaging Me au centre, reliés par deux fils où
+   partent les messages. Du HTML et non plus une image, pour que le logo soit celui de la marque (recopié de
+   web/components/Logo.tsx) et que les fils bougent. Tout est en pourcentages d'une boîte de proportion fixe, celle
+   des viewBox : 1000 x 482,67 au bureau, 1000 x 1317 au téléphone, où le logo passe au-dessus et les fils
+   descendent en fourche. Les points qui voyagent sont animés en SVG (animateMotion) ; un cycle dure 3 s, comme
+   l'onde du logo, qui part au même instant.
+   ============================================================================================================ */
+.cx{position:relative;width:min(1040px,100%);margin:0 auto;aspect-ratio:1000 / 482.67}
+.cx .cx-tel{position:absolute;top:0;width:23%;max-width:none;margin:0}
+.cx-wa{left:0}
+.cx-rcs{right:0}
+.cx-liens{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.cx-mobile{display:none}
+.cx-fil{fill:none;stroke:rgb(255 255 255 / .45);stroke-width:3;stroke-dasharray:10 9;stroke-linecap:round}
+.cx-envoi-wa{fill:#25D366}
+.cx-envoi-rcs{fill:#4A9BFF}
+.cx-hub{position:absolute;left:50%;top:46.2%;width:12.5%;aspect-ratio:1;display:grid;place-items:center;border-radius:50%;background:#fff;box-shadow:0 0 0 12px rgb(0 155 255 / .16),0 0 90px 30px rgb(0 155 255 / .28);transform:translate(-50%,-50%)}
+.cx-hub svg{width:62%;height:auto}
+.cx-hub::before{content:"";position:absolute;inset:-12px;border-radius:50%;border:2px solid rgb(0 155 255 / .7);opacity:0}
+@media (max-width:640px){
+  .cx{aspect-ratio:1000 / 1317}
+  .cx .cx-tel{top:25.06%;width:47%}
+  .cx-bureau{display:none}
+  .cx-mobile{display:block}
+  .cx-hub{top:6.83%;width:16%;box-shadow:0 0 0 7px rgb(0 155 255 / .16),0 0 50px 16px rgb(0 155 255 / .28)}
+  .cx-hub::before{inset:-7px}
+}
+@media (prefers-reduced-motion:no-preference){
+  .cx-fil{animation:cx-flux 1.2s linear infinite}
+  .cx-hub::before{animation:cx-onde 3s ease-out infinite}
+  @keyframes cx-flux{to{stroke-dashoffset:-38}}
+  @keyframes cx-onde{0%{opacity:.9;transform:scale(1)}40%{opacity:0;transform:scale(1.45)}100%{opacity:0}}
+}
+@media (prefers-reduced-motion:reduce){.cx-envoi{display:none}}

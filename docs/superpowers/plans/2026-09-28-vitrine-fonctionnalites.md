@@ -110,6 +110,14 @@ d'**écrans existants et de visuels HTML**.
 Vérifié à 1440, 960 et 390 px (Playwright, mouvement réduit) : aucun débordement, aucune erreur, JSON-LD valide,
 l'entrée courante marquée dans les deux menus.
 
+Le même jour, sur les retours de Julien :
+- Les unes Chaînes et Publicités montrent le clic : l'appui sur le bouton, la conversation qui s'ouvre de ce point,
+  une flèche « 1 clic » vers la bulle déjà écrite (`.f-clic`, positions posées par page en variables).
+- La une WhatsApp et RCS n'est plus une image : les deux téléphones (`canaux-tel-whatsapp.webp`, `canaux-tel-rcs.webp`,
+  découpés de l'ancienne version mobile), le logo Messaging Me en SVG au centre, et des fils animés où partent les
+  messages (`.cx`). Au téléphone, le logo passe au-dessus et les fils descendent en fourche. Les deux anciennes
+  images, qui portaient le logo d'Engage Me, sont retirées.
+
 ## Essai réel qui clôt
 
 Julien parcourt les deux pages en production, sur ordinateur et sur son téléphone : il ouvre le menu, lance les
