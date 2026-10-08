@@ -19,13 +19,14 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
-## LOT 12 : LES WEBHOOKS SORTANTS, LIVRAISON A ÉCRITE (2026-10-08)
+## LOT 12 : LES WEBHOOKS SORTANTS, LIVRAISON A EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ
 
 Spec `docs/superpowers/specs/2026-10-08-webhooks-sortants-design.md`, plan `docs/superpowers/plans/2026-10-08-webhooks-sortants.md`
 (décisions de Julien du 2026-10-08). Livraison A : les webhooks sortants (migration 0223, deux files, écran
-`/developers/evenements`, deux outils MCP, page de doc) : écrite et testée, reste la relecture, le push, la
-migration 0223 avant le `up` de l'API et des deux workers, puis l'essai réel (une adresse de test reçoit l'essai et un
-vrai message entrant, signature vérifiée par l'exemple de la doc). Livraison B : le mode « mon application répond »
+`/developers/evenements`, deux outils MCP, page de doc) : EN PRODUCTION (`b8908c57`, CI verte job par job, migration
+0223 appliquée et relue en base avant le `up` de l'API, des deux workers et de `mba-web` ; relecture 1 rouge corrigé
+avant le push). Reste l'essai réel : une adresse de test reçoit l'essai et un vrai message entrant, signature vérifiée
+par l'exemple de la doc. Livraison B : le mode « mon application répond »
 (0224), sans repli, réponses hors quota.
 
 ## LOT 19 : LE TUNNEL DE LA BASE, EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ
