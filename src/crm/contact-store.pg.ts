@@ -1518,10 +1518,11 @@ export class PgContactStore implements ContactStore {
       }
 
       // `webhook_events` garde le payload brut de chaque événement Meta, texte et numéro compris. La personne est visée
-      // par `from` (entrant, echo) ou `recipient_id` (statut). 🔴 Scopé au tenant par le numéro destinataire : la même
+      // par `from` (entrant) ou `recipient_id` (statut). 🔴 Scopé au tenant par le numéro destinataire : la même
       // personne peut écrire à deux de nos clients, et purger chez l'un ne touche pas le journal de l'autre. Hors
-      // d'atteinte, couverts par la rétention : les lignes sans `phone_number_id`, et les `messaging_handovers` (sans
-      // `from` ni `recipient_id`, ni texte).
+      // d'atteinte, couverts par la rétention : les lignes sans `phone_number_id` (toutes celles écrites avant le
+      // 2026-10-08, le handler perdait le numéro), les échos (la personne y est dans `message.to`, le texte de
+      // l'agent de Meta compris) et les `messaging_handovers` (dans `sender.phone_number`, sans texte).
       if (waIdsAAnonymiser.length > 0) {
         await client.query(
           `delete from webhook_events

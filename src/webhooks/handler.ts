@@ -146,7 +146,9 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
   // rejeu renverrait la séquence au testeur et facturerait les templates une seconde fois).
   const alreadySeen = new Set<string>();
   for (const ev of events) {
-    const isNew = await store.insertEvent({ source: ev.source, dedupKey: ev.dedupKey, data: ev.data });
+    // L'événement passe ENTIER : recopié champ par champ, il a perdu `phoneNumberId` de 0093 au 2026-10-08, et
+    // `webhook_events` est restée sans rattachement à un espace, donc ineffaçable par espace ou par contact.
+    const isNew = await store.insertEvent(ev);
     if (!isNew && ev.dedupKey.startsWith('msg:')) alreadySeen.add(ev.dedupKey.slice(4));
   }
   if (delivery) await processStatuses(events, delivery, { tarifs: tarifsMeta, echecsLibres, nodeEvents, remiseMba, signaux: signauxAccuse });

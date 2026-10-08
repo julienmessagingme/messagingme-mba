@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { asArray, asRecord, texteNonVide } from './json';
 import { valeurEffective } from './change';
+import { numeroBusinessDuChange } from './handover';
 
 export type WebhookSource =
   | 'messages'
@@ -15,7 +16,8 @@ export interface WebhookEvent {
   /** L'objet événement brut (message, statut, echo, handover). */
   data: unknown;
   /**
-   * Numéro Meta destinataire de l'événement (`value.metadata.phone_number_id`), quand Meta le donne : le seul
+   * Numéro Meta destinataire de l'événement (`value.metadata.phone_number_id`, ou `value.recipient.phone_number_id`
+   * pour une bascule de contrôle), celui de SON `change` quand un payload en nomme plusieurs. Le seul
    * rattachement à un espace d'un payload Meta. Stocké avec l'événement, sans quoi une ligne de `webhook_events`
    * ne serait attribuable à personne, donc jamais effaçable sur demande.
    */
@@ -123,9 +125,10 @@ export function parseWebhook(payload: unknown): WebhookEvent[] {
       const field = typeof change['field'] === 'string' ? (change['field'] as string) : '';
       // `valeurEffective`, jamais `asRecord` directement : voir `./change.ts`.
       const value = valeurEffective(change['value']);
-      // Lu une fois par `change` : tous les événements qu'il porte visent le même numéro.
-      const pnId = asRecord(value['metadata'])['phone_number_id'];
-      const meta = typeof pnId === 'string' && pnId !== '' ? { phoneNumberId: pnId } : {};
+      // Lu une fois par `change` : tous les événements qu'il porte visent le même numéro. `numeroBusinessDuChange`,
+      // parce qu'une bascule de contrôle n'a pas de `metadata` et nomme son numéro dans `recipient`.
+      const pnId = numeroBusinessDuChange(value);
+      const meta = pnId !== undefined ? { phoneNumberId: pnId } : {};
 
       // Messages entrants.
       for (const msgRaw of asArray(value['messages'])) {

@@ -1785,6 +1785,18 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 
 - `webhook_events` : le corps brut de chaque webhook Meta, `meta_message_id` unique (c'est l'idempotence).
   ⚠️ **Purgé** : balayage du worker sur `WEBHOOK_EVENTS_RETENTION_DAYS`.
+  🔴 **Une ligne par ÉVÉNEMENT, rattachée à son espace par `phone_number_id`** (migration 0093), seul discriminant
+  d'espace d'un payload Meta : le numéro business de SON `change`, `metadata.phone_number_id`, ou
+  `recipient.phone_number_id` pour une bascule de contrôle, qui n'a pas de `metadata` (`numeroBusinessDuChange`).
+  `parseWebhook` le pose sur chaque événement et `handleWebhookJob` passe l'événement ENTIER à `insertEvent`, jamais
+  une recopie de ses champs : c'est la recopie qui l'a perdu (journal, 2026-10-08), et `tests/handler.test.ts` tient
+  le chemin du payload à l'insertion. Un payload qui nomme deux numéros donne des lignes qui gardent chacune le sien.
+  ⚠️ **La ligne garde l'événement, pas le `change`** : le numéro n'est pas dans le payload stocké (sauf pour une
+  bascule), donc une ligne écrite à `null` ne se rattache JAMAIS après coup, et seule la rétention l'efface.
+  **Ce qui lit la colonne** : la purge par contact (`PgContactStore.purgeMany`), qui vise la personne par
+  `payload->>'from'` (entrant) ou `payload->>'recipient_id'` (statut), dans les numéros de l'espace. Elle n'atteint
+  ni les échos (la personne y est dans `message.to`) ni les bascules (dans `sender.phone_number`), laissés à la
+  rétention. La suppression d'un espace (§ 10) ne touche pas la table, délibérément.
 - `audit_log` : **AJOUT SEUL**, ni update ni delete, sinon il ne prouve rien. Il ne porte JAMAIS de donnée
   personnelle, seulement l'identifiant interne du contact : y écrire le numéro au moment d'une suppression
   annulerait la suppression. `actor_email` est DÉNORMALISÉ pour que l'historique reste lisible après le départ

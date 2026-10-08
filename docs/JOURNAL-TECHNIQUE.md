@@ -5,6 +5,46 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-08 : `webhook_events` enfin rattaché à son espace, cinq semaines après 0093, écrit
+
+**Le constat** (2026-10-07, lecture seule en production, `begin read only` sur un client dédié) : sur 24 h, 147
+événements, TOUS à `phone_number_id` null. La table portait 1 732 lignes, la plus ancienne du 2026-09-07 : la
+rétention de 30 jours tournait, rien d'autre ne l'effaçait.
+
+**La cause** : 0093 (`5456d143`, 2026-08-31) avait posé les deux bouts, `parseWebhook` qui pose le numéro sur chaque
+événement et `PgEventStore.insertEvent` qui l'écrit, chacun testé seul. `handleWebhookJob`, entre les deux, recopiait
+l'événement champ par champ (`{ source, dedupKey, data }`), sans lui : ce commit n'a jamais touché `handler.ts`. Le
+journal du 2026-08-31 annonçait pourtant que le numéro « suit l'événement depuis `parseWebhook` jusqu'à l'insertion »,
+et le test d'intégration de la purge insérait ses lignes à la main, colonne remplie : il prouvait la purge, pas le
+chemin. 🔴 **Conséquence : la purge RGPD par contact n'a effacé AUCUNE ligne de `webhook_events` depuis sa
+livraison.** Ce que la personne avait écrit restait jusqu'au terme de la rétention.
+
+**Le correctif** : `insertEvent(ev)`, l'événement ENTIER. Et le parseur lit le numéro par `numeroBusinessDuChange`,
+qui couvre la bascule de contrôle (`recipient.phone_number_id`, sans `metadata`), qu'il ne lisait pas. Un payload qui
+nomme plusieurs numéros n'a rien à trancher : chaque ligne est un événement et garde le numéro de SON `change`, ce que
+le parseur faisait déjà. Test dans `tests/handler.test.ts`, vérifié dans les deux sens et borné : la recopie remise
+rend les trois cas rouges sur `undefined`, l'ancien parseur remis seul ne rend rouge que le cas de la bascule.
+
+**Les lecteurs, relus.**
+- `PgContactStore.purgeMany` : son hypothèse tient désormais pour les entrants (`from`) et les statuts
+  (`recipient_id`). Elle avait deux trous que la relecture a montrés : un ÉCHO n'a pas de `from` (la personne est
+  dans `message.to`, avec le texte de l'agent de Meta) et une BASCULE porte la personne dans `sender.phone_number`.
+  Tous deux sont désormais attribuables, mais pas visés ; le commentaire, qui disait l'écho visé, est corrigé,
+  l'extension de la requête est laissée à un lot suivant.
+- La suppression d'un espace (RC8) ne lit pas la colonne et garde la table pour sa rétention : inchangée.
+- `evenementsWebhookDepuis` (alerte des webhooks muets) compte tout : inchangé.
+- Les tarifs et signaux des accusés lisent `ev.phoneNumberId` sur les seuls statuts, qui portent toujours
+  `metadata` : inchangés.
+
+**Les lignes d'avant ne se reprennent pas** : la ligne garde l'événement, pas le `change`, donc le numéro n'est pas
+dans le payload stocké (sauf pour une bascule). Elles partent par la rétention, au plus tard 30 jours après le
+déploiement du correctif.
+
+**La leçon** : un champ qui traverse trois maillons se teste sur le chemin ENTIER. Deux tests unitaires verts et un
+test d'intégration qui insère à la main faisaient trois preuves, et aucune du câblage. Et un objet recopié champ par
+champ pour être retransmis est la forme qui perd le champ ajouté plus tard, même famille que le `Pick` recopié
+(CLAUDE.md).
+
 ## 2026-10-08 : B2b en production, et les jaunes de sa relecture
 
 **Déployée** (`be063d14`, avec `7f23f10b` d'une session voisine, console et docs seulement) : 0220 appliquée à 8 h 30 UTC
