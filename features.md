@@ -3569,6 +3569,10 @@ qu'il va faire, une ligne par modification**, et rien ne part chez Meta tant qu'
   restent donc utilisables pendant la conversation.
 - ✅ **Le fil ne se perd pas.** On peut fermer la page et reprendre la conversation plus tard, au même endroit.
   Le bouton **« Repartir de zéro »** efface la conversation ; **il n'annule rien de ce qui a déjà été appliqué**.
+- ✅ **Il pose une consigne complète** : son nom, **quand** l'agent l'applique (« quand le client parle d'un
+  retour »), et ce qu'il fait.
+  ⚠️ **La liste à appliquer n'en montre que le nom**, et une modification remplace la consigne entière : il ne
+  voit pas le texte actuel, il faut lui dire ce qu'on garde. L'onglet Historique garde la consigne remplacée.
 - ⚠️ **Il n'ajoute pas de document** : un document se dépose par l'onglet **Fichiers**. La conversation peut en
   proposer la suppression, pas l'ajout.
 - ⚠️ **Une seule suppression par proposition.** Meta n'a ni corbeille ni annulation : une demande en lot

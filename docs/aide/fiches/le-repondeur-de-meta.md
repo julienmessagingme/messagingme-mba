@@ -1,7 +1,7 @@
 ---
 ecran: mba-settings
 source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA)
-source_empreinte: 0ff6f8
+source_empreinte: 14d8a0
 ---
 # Le répondeur de Meta : à quoi il sert, et comment le régler
 
@@ -112,7 +112,9 @@ Meta tant que vous n'avez pas cliqué sur Appliquer**. Une suppression est signa
 n'en propose qu'une à la fois : Meta n'a ni corbeille ni annulation, donc une demande en lot obtient une
 liste et une question, jamais une purge. Il ne retirera jamais l'agent du service et ne créera jamais de
 connecteur, et tout ce qu'il fait reste faisable à la main dans les autres onglets. Il n'ajoute pas de
-document : un document se dépose par l'onglet Fichiers.
+document : un document se dépose par l'onglet Fichiers. Une consigne qu'il propose est complète (son nom, quand
+l'agent l'applique, ce qu'il fait), mais la liste n'en montre que le nom, et une modification la remplace en
+entier : il ne voit pas le texte actuel, dites-lui ce qu'il faut garder.
 
 **L'onglet Historique** existe pour la même raison : Meta n'a pas de corbeille. Une FAQ, une consigne, un message interactif ou
 un document supprimé est perdu chez lui, et cette page en garde le seul exemplaire. « Voir le contenu
