@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { estSuppression, propositionMbaSchema, type Operation } from '../src/mba/assistant/proposition';
+import { estSuppression, MAX_QUAND, propositionMbaSchema, type Operation } from '../src/mba/assistant/proposition';
+import { DESCRIPTION_SKILL_MAX } from '../src/http/mba';
 
 /**
  * LA FRONTIÈRE DE CE QUE L'ASSISTANT DU MBA PEUT PROPOSER.
@@ -176,5 +177,20 @@ describe('les consignes (corrigé le 2026-10-08)', () => {
     expect(ok([sansQuand]).success).toBe(false);
     expect(ok([{ ...consigne, quand: 'x'.repeat(1024) }]).success).toBe(true);
     expect(ok([{ ...consigne, quand: 'x'.repeat(1025) }]).success).toBe(false);
+  });
+
+  it('la borne du quand est celle de l’onglet, donc celle de Meta', () => {
+    expect(MAX_QUAND).toBe(DESCRIPTION_SKILL_MAX);
+  });
+
+  it('🔴 la modification exige la même forme, plus sa cible', () => {
+    const { type: _t, ...champs } = consigne;
+    const modif = { type: 'competence.modifier', cible: 's1', ...champs };
+    expect(ok([modif]).success).toBe(true);
+    const { quand: _q, ...sansQuand } = modif;
+    expect(ok([sansQuand]).success).toBe(false);
+    expect(ok([{ ...modif, titre: 'Politique de retour' }]).success).toBe(false);
+    const { cible: _c, ...sansCible } = modif;
+    expect(ok([sansCible]).success).toBe(false);
   });
 });

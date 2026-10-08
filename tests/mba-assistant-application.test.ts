@@ -374,4 +374,34 @@ describe('les consignes (corrigé le 2026-10-08)', () => {
       apres: { cible: 's1', titre: 'rdv', quand: 'Quand le client veut un rendez-vous', instruction: 'Proposer deux créneaux' },
     });
   });
+
+  it('🔴 la modification garde dans l’historique la consigne qu’elle remplace, seul exemplaire', async () => {
+    // Le PUT remplace le corps entier, que le modèle n'a pas vu : sans cette lecture, l'ancien texte serait perdu.
+    const actuelle = { id: 's1', title: 'rdv', description: 'Ancien quand', skill: 'Ancien corps écrit dans l’onglet', status: 'active' };
+    const m = monter({ listSkills: async () => [actuelle] });
+    await appliquer(m.deps, 't1', 'ag1', [MODIF]);
+    expect(m.journal[0]?.avant).toEqual(actuelle);
+  });
+
+  it('⚠️ une lecture ratée de la consigne actuelle ne bloque pas la modification', async () => {
+    const corps: unknown[] = [];
+    const m = monter({ listSkills: async () => { throw new Error('lecture impossible'); }, updateSkill: async (_p, id) => { corps.push(id); } });
+    const r = await appliquer(m.deps, 't1', 'ag1', [MODIF]);
+    expect(r.echec).toBeNull();
+    expect(corps).toEqual(['s1']);
+    expect(m.journal[0]?.avant).toBeNull();
+  });
+
+  it('🔴 une cible qui sortirait de son chemin est refusée sans appeler Meta', async () => {
+    const appels: string[] = [];
+    const m = monter({
+      updateSkill: async (_p, id) => { appels.push(`update:${id}`); },
+      deleteSkill: async (_p, id) => { appels.push(`delete:${id}`); },
+    });
+    const r1 = await appliquer(m.deps, 't1', 'ag1', [{ ...MODIF, cible: '..' } as Operation]);
+    const r2 = await appliquer(m.deps, 't1', 'ag1', [{ type: 'competence.supprimer', cible: '../faq', libelle: 'rdv' }]);
+    expect(r1.echec?.message).toBe('Identifiant de consigne invalide.');
+    expect(r2.echec?.message).toBe('Identifiant de consigne invalide.');
+    expect(appels).toEqual([]);
+  });
 });

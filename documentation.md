@@ -253,7 +253,9 @@ carrousel en `type: 'button'`), donc il reste à l'agent : ni automation ni avan
 (`src/mba/assistant/application.ts`, `inventaire.ts`). Un `PUT` aux noms inconnus rend 200 et ne change rien (mesuré
 le 2026-10-08) : un corps mal nommé ne se voit pas à la réponse, d'où le type plutôt que `unknown`. Les opérations
 `competence.*` de l'assistant portent `titre`, `quand` et `instruction`, et l'inventaire lui donne la cible de
-chaque consigne.
+chaque consigne. Le `PUT` remplace le corps entier : la modification par l'assistant lit d'abord la consigne et
+l'historique en garde la copie (`avant`). Une cible qui n'est pas un identifiant Meta (`ID_MESSAGE_RE`) est refusée
+avant Meta, pour une consigne comme pour un message interactif.
 
 ⚠️ **LES MESSAGES INTERACTIFS VIVENT CHEZ META, COMME LES CONSIGNES** (`/{numéro}/agent-ui-skills`, client
 `src/mba/client.ts`, validation `src/mba/messages-interactifs.ts`). Ce que la mesure du 2026-10-07 impose au code :

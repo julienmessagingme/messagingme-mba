@@ -10,8 +10,8 @@ import {
 /**
  * Appliquer un diff chez Meta, opération par opération, en s'arrêtant à la première erreur avec l'état exact :
  * Meta n'offre aucune transaction, et « tout annuler » à la main pourrait échouer à son tour. Rien n'est
- * journalisé pour une opération qui a échoué. Le contenu supprimé est lu avant de supprimer : c'est le seul
- * exemplaire qui en restera.
+ * journalisé pour une opération qui a échoué. Le contenu supprimé, comme la consigne qu'une modification remplace,
+ * est lu avant d'écrire : c'est le seul exemplaire qui en restera.
  */
 
 /** Ce dont l'application a besoin. Interface étroite : satisfaite par le vrai client MBA comme par un faux. */
@@ -213,12 +213,17 @@ async function journaliserOuTaire(
 }
 
 /**
- * L'état avant, lu avant de toucher à quoi que ce soit. Seules les suppressions en ont besoin, absolument : Meta
- * ne rend plus un objet parti.
+ * L'état avant, lu avant de toucher à quoi que ce soit. Les suppressions en ont besoin, absolument : Meta ne rend plus
+ * un objet parti. La modification d'une consigne aussi : son `PUT` remplace le corps entier (jusqu'à 20 000
+ * caractères écrits dans l'onglet), que le modèle n'a pas vu ; l'historique en garde la copie. Au mieux : une lecture
+ * ratée ne bloque pas la modification, elle laisse `null`.
  */
 async function etatAvant(
   client: ClientMbaEcriture, numero: string, agentId: string, o: Operation,
 ): Promise<unknown> {
+  if (o.type === 'competence.modifier') {
+    return (await client.listSkills(numero, agentId).catch(() => null))?.find((s) => s.id === o.cible) ?? null;
+  }
   if (!estSuppression(o)) return null;
   const cible = 'cible' in o ? o.cible : '';
   if (o.type === 'faq.supprimer') return (await client.listFaqs(numero)).find((f) => f.id === cible) ?? { id: cible };
@@ -244,8 +249,16 @@ async function executer(
     case 'faq.modifier': await client.updateFaq(numero, o.cible, { question: o.question, answer: o.reponse }); return;
     case 'faq.supprimer': await client.deleteFaq(numero, o.cible); return;
     case 'competence.ajouter': await client.createSkill(numero, agentId, versSkill(o)); return;
-    case 'competence.modifier': await client.updateSkill(numero, o.cible, versSkill(o)); return;
-    case 'competence.supprimer': await client.deleteSkill(numero, o.cible); return;
+    // La cible entre telle quelle dans le chemin de Meta : comme pour un message interactif, rien qui l'en fasse sortir
+    // (`..` remonterait d'un cran, et `encodeURIComponent` ne l'encode pas).
+    case 'competence.modifier':
+      if (!ID_MESSAGE_RE.test(o.cible)) throw new RefusAvantMeta('Identifiant de consigne invalide.');
+      await client.updateSkill(numero, o.cible, versSkill(o));
+      return;
+    case 'competence.supprimer':
+      if (!ID_MESSAGE_RE.test(o.cible)) throw new RefusAvantMeta('Identifiant de consigne invalide.');
+      await client.deleteSkill(numero, o.cible);
+      return;
     case 'site.ajouter': await client.createWebsite(numero, o.url); return;
     case 'site.supprimer': await client.deleteWebsite(numero, o.cible); return;
     case 'fichier.supprimer': await client.deleteFile(numero, o.cible); return;

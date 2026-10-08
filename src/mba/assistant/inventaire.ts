@@ -66,7 +66,9 @@ export async function lireInventaireMba(
       faqs: ((faqs ?? []) as Array<Record<string, unknown>>)
         .map((f) => String(f.question ?? '')).filter((q) => q !== ''),
       // ⚠️ Avec leur identifiant, comme les messages interactifs : modifier ou supprimer une consigne exige la cible.
-      competences: (skills ?? []).map((s) => ({ id: s.id ?? '', titre: s.title, etat: s.status ?? 'inconnu' })),
+      // `title` est optionnel dans les RÉPONSES de Meta (sa référence en montre un qui n'est pas un slug) : une consigne
+      // sans titre s'affiche comme telle, jamais « undefined », que le modèle recopierait.
+      competences: (skills ?? []).map((s) => ({ id: s.id ?? '', titre: s.title || '(sans titre)', etat: s.status ?? 'inconnu' })),
       sites: ((websites ?? []) as Array<Record<string, unknown>>)
         .map((w) => ({ url: String(w.url ?? ''), pages: Number(w.pages_crawled ?? 0) })),
       fichiers: ((files ?? []) as Array<Record<string, unknown>>)

@@ -171,4 +171,20 @@ describe('ce que l’assistant voit des consignes (corrigé le 2026-10-08)', () 
     expect(inv.resume.competences).toEqual([{ id: 'pfbid0s1', titre: 'politique-de-retour', etat: 'active' }]);
     expect(systeme(inv)).toContain('politique-de-retour [active] (cible : pfbid0s1)');
   });
+
+  it('⚠️ une consigne sans titre s’affiche comme telle, jamais « undefined »', async () => {
+    const client = {
+      getSettings: async () => ({}), getBusinessInfo: async () => ({}), listFaqs: async () => [],
+      listSkills: async () => [{ id: 'pfbid0s2', description: 'Quand…', skill: '…', status: 'active' } as never],
+      listWebsites: async () => [], listFiles: async () => [], listMessagesInteractifs: async () => [],
+    };
+    const texte = systeme(await lireInventaireMba(client, '123', 'ag1', async () => []));
+    expect(texte).toContain('(sans titre) [active] (cible : pfbid0s2)');
+    expect(texte).not.toContain('undefined');
+  });
+
+  it('au-delà de vingt consignes, le reste est compté et dit', () => {
+    const competences = Array.from({ length: 23 }, (_, i) => ({ id: `s${i}`, titre: `c-${i}`, etat: 'active' }));
+    expect(systeme(inventaire({ competences }))).toContain('(… 3 autres non listées)');
+  });
 });

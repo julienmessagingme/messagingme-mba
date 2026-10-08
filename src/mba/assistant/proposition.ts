@@ -47,7 +47,7 @@ const faqSupprimer = z.object({
  * `nom` et `instruction`, envoyés tels quels : Meta refusait la création en 400 et acceptait la modification en 200
  * sans rien changer (mesuré ce jour-là sur le numéro de test). `MAX_QUAND` est la limite de Meta pour `description`.
  */
-const MAX_QUAND = 1024;
+export const MAX_QUAND = 1024;
 const competenceAjouter = z.object({
   type: z.literal('competence.ajouter'),
   titre: titreSlug,
@@ -209,9 +209,13 @@ export const SCHEMA_PROPOSITION_MBA = {
           reponse: { type: 'string', minLength: 1, maxLength: MAX_TEXTE, description: 'faq : la réponse.' },
           quand: {
             type: 'string', minLength: 1, maxLength: MAX_QUAND,
-            description: 'competence : QUAND l’agent applique la consigne (ex. « Quand le client demande un remboursement »).',
+            description: 'competence.ajouter et .modifier, requis : QUAND l’agent applique la consigne (ex. « Quand le client demande un remboursement »).',
           },
-          instruction: { type: 'string', minLength: 1, maxLength: MAX_TEXTE, description: 'competence : ce que l’agent fait, le corps de la consigne.' },
+          instruction: {
+            type: 'string', minLength: 1, maxLength: MAX_TEXTE,
+            description: 'competence.ajouter et .modifier, requis avec titre et quand : ce que l’agent fait, le corps de la consigne. '
+              + 'En modification, il REMPLACE le corps actuel, que tu ne vois pas : demande d’abord au client ce qu’il garde.',
+          },
           url: { type: 'string', maxLength: 2000, description: 'site.ajouter : l’adresse donnée par le client, jamais devinée.' },
           champ: { type: 'string', enum: [...CHAMPS_BUSINESS], description: 'business.modifier : le champ de la fiche.' },
           valeur: { type: 'string', maxLength: MAX_TEXTE, description: 'business.modifier : la nouvelle valeur.' },

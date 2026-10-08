@@ -32,6 +32,20 @@ le type `unknown` taisait l'écart au compilateur. Les deux sont fermés : les t
 dans les deux sens (l'ancien corps remis : les deux cas tombent sur `name` au lieu de `title`), et l'ancien corps ne
 compile plus (TS2353).
 
+**La relecture** (une, à la fin du lot) : aucun rouge, cinq jaunes, poussés à part. La modification par l'assistant
+garde désormais dans l'historique la consigne qu'elle remplace (elle était un no-op, elle est devenue destructive) ;
+la cible d'une consigne passe le garde des messages interactifs avant d'entrer dans le chemin de Meta (`..` y
+remontait d'un cran) ; une consigne sans titre s'affiche « (sans titre) » et plus « undefined » ; la borne du quand
+est tenue égale à celle de l'onglet ; et les tests couvrent la modification. Le reste est dans `todo.md`.
+
+**Déployée** (`88d0feaf`, l'API seule, `mba-api` recréé à 10 h 06 UTC) après la CI verte job par job, avec
+`00f351f4` d'une session voisine (un déplacement de fonction dans `src/webhooks/`, CI verte) et `3acbc1e8` (une
+spec) ; contrôle de fumée public et fiches OAuth conformes. Les jaunes ci-dessus sont poussés ensuite, NON déployés :
+le prochain déploiement de l'API les emporte. **Essai réel** dans l'image déployée, sur le numéro de test, par le
+vrai `appliquer` et le même Zod que la route : création relue chez Meta avec `title`, `description` et `skill` ;
+modification relue et VRAIMENT changée ; suppression ; quatre consignes avant comme après. Reste à voir un vrai tour
+du modèle produire `titre`, `quand` et `instruction` depuis l'onglet Assistant.
+
 ## 2026-10-08 : `webhook_events` enfin rattaché à son espace, cinq semaines après 0093, écrit
 
 **Le constat** (2026-10-07, lecture seule en production, `begin read only` sur un client dédié) : sur 24 h, 147

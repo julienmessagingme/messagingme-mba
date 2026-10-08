@@ -1,5 +1,18 @@
 # todo.md : backlog
 
+## 🟡 L'assistant du MBA et ses consignes : ce qui reste (2026-10-08)
+
+- **Les cibles des FAQ, des sites et des fichiers entrent sans garde dans le chemin de Meta** (`src/mba/client.ts`,
+  `agent_config/faq/${faqId}` et voisins). Un `..` y remonterait d'un cran, et `encodeURIComponent` ne l'encode pas.
+  Les consignes et les messages interactifs sont gardés par `ID_MESSAGE_RE` à l'application. Mesurer d'abord la forme
+  des identifiants de FAQ, de site et de fichier sur le numéro de test, puis étendre le garde.
+- **Le modèle modifie une consigne sans en voir le texte** : l'inventaire ne lui donne que le titre et la cible, et la
+  modification REMPLACE le corps. L'historique garde l'ancienne consigne (`avant`) et le schéma lui dit de demander au
+  client ce qu'il garde ; lui donner le quand et un début du corps reste possible si l'usage le réclame.
+- **Le quand est borné en caractères** (1 024, comme l'onglet), et Meta compte peut-être en octets, comme pour les
+  messages interactifs. Non mesuré : un quand français proche de la borne serait refusé avec « Meta a refusé cette
+  modification. ».
+
 ## 🟡 Messages interactifs de l'agent de Meta : ce qui reste (2026-10-08)
 
 - **Une liste remplie par un outil ne part pas, et la cause n'est pas isolée.** Quatre essais du 2026-10-08, trois
