@@ -64,21 +64,38 @@
   <symbol id="i-code" viewBox="0 0 256 256"><path d="M69.12,94.15,28.5,128l40.62,33.85a8,8,0,1,1-10.24,12.29l-48-40a8,8,0,0,1,0-12.29l48-40a8,8,0,0,1,10.24,12.3Zm176,27.7-48-40a8,8,0,1,0-10.24,12.3L227.5,128l-40.62,33.85a8,8,0,1,0,10.24,12.29l48-40a8,8,0,0,0,0-12.29ZM162.73,32.48a8,8,0,0,0-10.25,4.79l-64,176a8,8,0,0,0,4.79,10.26A8.14,8.14,0,0,0,96,224a8,8,0,0,0,7.52-5.27l64-176A8,8,0,0,0,162.73,32.48Z"/></symbol>
   <symbol id="i-list-checks" viewBox="0 0 256 256"><path d="M224,128a8,8,0,0,1-8,8H128a8,8,0,0,1,0-16h88A8,8,0,0,1,224,128ZM128,72h88a8,8,0,0,0,0-16H128a8,8,0,0,0,0,16Zm88,112H128a8,8,0,0,0,0,16h88a8,8,0,0,0,0-16ZM82.34,42.34,56,68.69,45.66,58.34A8,8,0,0,0,34.34,69.66l16,16a8,8,0,0,0,11.32,0l32-32A8,8,0,0,0,82.34,42.34Zm0,64L56,132.69,45.66,122.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32,0l32-32a8,8,0,0,0-11.32-11.32Zm0,64L56,196.69,45.66,186.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32,0l32-32a8,8,0,0,0-11.32-11.32Z"/></symbol>
   <symbol id="i-arrows-left-right" viewBox="0 0 256 256"><path d="M213.66,181.66l-32,32a8,8,0,0,1-11.32-11.32L188.69,184H48a8,8,0,0,1,0-16H188.69l-18.35-18.34a8,8,0,0,1,11.32-11.32l32,32A8,8,0,0,1,213.66,181.66Zm-139.32-64a8,8,0,0,0,11.32-11.32L67.31,88H208a8,8,0,0,0,0-16H67.31L85.66,53.66A8,8,0,0,0,74.34,42.34l-32,32a8,8,0,0,0,0,11.32Z"/></symbol><symbol id="i-check" viewBox="0 0 256 256"><path d="M232.49,80.49l-128,128a12,12,0,0,1-17,0l-56-56a12,12,0,1,1,17-17L96,183,215.51,63.51a12,12,0,0,1,17,17Z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 256 256"><path d="M224,128a8,8,0,0,1-8,8H40a8,8,0,0,1,0-16H216A8,8,0,0,1,224,128ZM40,72H216a8,8,0,0,0,0-16H40a8,8,0,0,0,0,16ZM216,184H40a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16Z"/></symbol>
+  <symbol id="i-x" viewBox="0 0 256 256"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></symbol>
 </svg>
 
 <span class="sentinelle" aria-hidden="true"></span>
 <div class="barre">
 <header class="cadre entete">
+  <details class="burger">
+    <summary aria-label="Menu"><svg class="ic burger-ouvrir" aria-hidden="true"><use href="#i-list"/></svg><svg class="ic burger-fermer" aria-hidden="true"><use href="#i-x"/></svg></summary>
+    <div class="burger-panneau">
+      <details class="burger-groupe">
+        <summary>Fonctionnalités<svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>
+        <div class="burger-liens">
+          <a href="/fonctionnalites/publicites-click-to-whatsapp/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-megaphone"/></svg></span><span><strong>Publicités Click-to-WhatsApp</strong><small>La pub et sa conversation, au même endroit</small></span></a>
+          <a href="/fonctionnalites/chaines-whatsapp/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-broadcast"/></svg></span><span><strong>Chaînes WhatsApp</strong><small>Publiez à tous, parlez à chacun</small></span></a>
+          <a href="/fonctionnalites/conversations-en-actions/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-list-checks"/></svg></span><span><strong>Analyse de conversations</strong><small>Définition d’action dans votre CRM</small></span></a>
+          <a href="/fonctionnalites/whatsapp-et-rcs/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-arrows-left-right"/></svg></span><span><strong>WhatsApp et RCS</strong><small>Le fallback dans le sens que vous voulez</small></span></a>
+        </div>
+      </details>
+      <a class="burger-ligne" href="/#developpeurs">Développeurs</a>
+      <a class="bouton bouton-plein burger-connexion" href="https://console.messagingme.app/login">Se connecter</a>
+    </div>
+  </details>
   <a class="marque" href="/" aria-label="Messaging Me, accueil"><img src="/messagingme-logo-blanc.png" alt="Messaging Me" width="185" height="22"></a>
   <nav class="nav" aria-label="Principale">
     <details class="menu">
-      <summary class="lien"><span class="menu-bureau">Fonctionnalités</span><span class="menu-mobile">Menu</span><svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>
+      <summary class="lien"><span class="menu-bureau">Fonctionnalités</span><svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>
       <div class="menu-panneau">
         <a href="/fonctionnalites/publicites-click-to-whatsapp/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-megaphone"/></svg></span><span><strong>Publicités Click-to-WhatsApp</strong><small>La pub et sa conversation, au même endroit</small></span></a>
         <a href="/fonctionnalites/chaines-whatsapp/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-broadcast"/></svg></span><span><strong>Chaînes WhatsApp</strong><small>Publiez à tous, parlez à chacun</small></span></a>
         <a href="/fonctionnalites/conversations-en-actions/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-list-checks"/></svg></span><span><strong>Analyse de conversations</strong><small>Définition d’action dans votre CRM</small></span></a>
         <a href="/fonctionnalites/whatsapp-et-rcs/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-arrows-left-right"/></svg></span><span><strong>WhatsApp et RCS</strong><small>Le fallback dans le sens que vous voulez</small></span></a>
-        <a class="menu-seul-mobile" href="/#developpeurs"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-code"/></svg></span><span><strong>Développeurs</strong><small>L’API et le serveur MCP</small></span></a>
       </div>
     </details>
     <a class="lien nav-dev" href="/#developpeurs">Développeurs</a>

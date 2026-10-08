@@ -8,9 +8,10 @@
   }
   // Le menu est un <details> : il s'ouvre et se ferme sans script, au clavier compris. Ceci le referme seulement
   // au clic hors du menu, et à Échap en rendant le focus à son bouton.
-  var menus = [].slice.call(document.querySelectorAll('details.menu'));
+  var menus = [].slice.call(document.querySelectorAll('details.menu, details.burger'));
   document.addEventListener('click', function (e) {
-    menus.forEach(function (m) { if (m.open && !m.contains(e.target)) m.open = false; });
+    var lien = e.target.closest && e.target.closest('a[href]');
+    menus.forEach(function (m) { if (m.open && (!m.contains(e.target) || lien)) m.open = false; });
   });
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;

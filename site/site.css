@@ -372,9 +372,8 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
   @keyframes pose{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:none}}
 }
 
-/* Menu « Fonctionnalités » : un <details> natif, qui s'ouvre sans script et au clavier ; `site.js` le referme au
-   clic ailleurs et à Échap. Sur mobile, il s'appelle « Menu » et reprend le lien Développeurs, qui n'a plus la place
-   dans la barre. */
+/* Menu « Fonctionnalités » du bureau : un <details> natif, qui s'ouvre sans script et au clavier ; `site.js` le
+   referme au clic ailleurs et à Échap. Sous 640 px, la barre entière laisse la place au burger (plus bas). */
 .menu{position:relative}
 .menu summary{display:flex;align-items:center;gap:6px;cursor:pointer;list-style:none;user-select:none}
 .menu summary::-webkit-details-marker{display:none}
@@ -382,22 +381,41 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .menu[open] summary{color:var(--ink)}
 .menu[open] summary .ic{transform:rotate(180deg)}
 .menu summary:focus-visible{outline:2px solid var(--action);outline-offset:4px;border-radius:6px}
-.menu-mobile{display:none}
 .menu-panneau{position:absolute;top:calc(100% + 16px);left:50%;translate:-50% 0;z-index:20;width:344px;display:grid;gap:2px;padding:8px;border-radius:16px;background:#16237E;border:1px solid rgb(255 255 255 / .16);box-shadow:inset 0 1px 0 rgb(255 255 255 / .07),0 28px 56px -18px var(--ombre)}
 .menu-panneau a{display:grid;grid-template-columns:40px minmax(0,1fr);align-items:center;gap:12px;padding:10px;border-radius:10px;text-decoration:none;transition:background-color .15s}
 .menu-panneau a:hover,.menu-panneau a[aria-current="page"]{background:rgb(255 255 255 / .08)}
-.menu-panneau .menu-seul-mobile{display:none}
 .menu-ic{display:grid;place-items:center;width:40px;height:40px;border-radius:10px;background:rgb(111 194 254 / .14);color:var(--action-ink);font-size:1.25rem}
 .menu-panneau strong{display:block;color:#FFFFFF;font-size:.92rem;font-weight:700;line-height:1.3}
 .menu-panneau small{display:block;color:var(--muted);font-size:.8rem;line-height:1.35}
+/* Le menu du téléphone : trois traits en haut à gauche, qui ouvrent « Fonctionnalités » (dépliable sur les quatre
+   pages, déplié d'office sur l'une d'elles), « Développeurs » et, tout en bas, « Se connecter ». Un <details> natif
+   lui aussi : il marche sans script, et `site.js` le referme au clic ailleurs, à Échap, et sur un lien suivi. */
+.burger{display:none}
 @media (max-width:640px){
-  .menu-bureau,.nav-dev{display:none}
-  .menu-mobile{display:inline}
-  .menu-panneau{position:fixed;top:72px;left:16px;right:16px;width:auto;translate:none}
-  .menu-panneau .menu-seul-mobile{display:grid}
+  .nav{display:none}
+  .entete{justify-content:flex-start;gap:10px}
+  .burger{display:block}
+  .burger > summary{display:grid;place-items:center;width:44px;height:44px;margin-left:-10px;border-radius:10px;cursor:pointer;list-style:none;user-select:none;color:var(--ink);font-size:1.6rem}
+  .burger > summary::-webkit-details-marker{display:none}
+  .burger > summary:focus-visible{outline:2px solid var(--action);outline-offset:2px}
+  .burger-fermer,.burger[open] .burger-ouvrir{display:none}
+  .burger[open] .burger-fermer{display:block}
+  .burger-panneau{position:fixed;top:72px;left:16px;right:16px;z-index:20;display:grid;gap:2px;max-height:calc(100dvh - 88px);overflow-y:auto;padding:8px;border-radius:16px;background:#16237E;border:1px solid rgb(255 255 255 / .16);box-shadow:inset 0 1px 0 rgb(255 255 255 / .07),0 28px 56px -18px var(--ombre)}
+  .burger-groupe > summary,.burger-ligne{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 10px;border-radius:10px;cursor:pointer;list-style:none;text-decoration:none;color:#FFFFFF;font-size:1rem;font-weight:700}
+  .burger-groupe > summary::-webkit-details-marker{display:none}
+  .burger-groupe > summary .ic{font-size:.85rem;transition:transform .2s}
+  .burger-groupe[open] > summary .ic{transform:rotate(180deg)}
+  .burger-groupe > summary:hover,.burger-ligne:hover{background:rgb(255 255 255 / .08)}
+  .burger-liens{display:grid;gap:2px;padding-bottom:6px}
+  .burger-liens a{display:grid;grid-template-columns:40px minmax(0,1fr);align-items:center;gap:12px;padding:10px;border-radius:10px;text-decoration:none}
+  .burger-liens a:hover,.burger-liens a[aria-current="page"]{background:rgb(255 255 255 / .08)}
+  .burger-liens strong{display:block;color:#FFFFFF;font-size:.92rem;font-weight:700;line-height:1.3}
+  .burger-liens small{display:block;color:var(--muted);font-size:.8rem;line-height:1.35}
+  .burger-ligne{border-top:1px solid var(--line);border-radius:0}
+  .burger-connexion{justify-content:center;margin:8px 2px 2px}
 }
 @media (prefers-reduced-motion:no-preference){
-  .js .menu[open] .menu-panneau{animation:menu-ouvre .18s cubic-bezier(.16,1,.3,1)}
+  .js .menu[open] .menu-panneau,.js .burger[open] .burger-panneau{animation:menu-ouvre .18s cubic-bezier(.16,1,.3,1)}
   @keyframes menu-ouvre{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 }
 
