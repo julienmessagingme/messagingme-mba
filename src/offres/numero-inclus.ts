@@ -1,4 +1,4 @@
-import { arreterAbonnementAvecAvoir, creerAbonnementNumeroSeul, StripeError, type TransportStripe } from '../stripe/client';
+import { arreterAbonnementNumeroSeul, creerAbonnementNumeroSeul, StripeError, type TransportStripe } from '../stripe/client';
 import type { AbonnementNumero, IssueEnregistrement } from '../stripe/abonnements.pg';
 import type { RaisonFinOffre } from './abonnements-offre.pg';
 import { lienTableauStripe } from '../stripe/liens';
@@ -33,6 +33,8 @@ export interface DepsNumeroInclus {
     deLEspace(tenantId: string): Promise<AbonnementNumero | null>;
     /** L'espace a-t-il un numéro fourni attribué ? */
     numeroAttribue(tenantId: string): Promise<boolean>;
+    /** L'espace envoie-t-il par un AUTRE numéro que son numéro fourni, le sien (`PgAbonnementsNumeroStore.numeroApporte`) ? */
+    numeroApporte(tenantId: string): Promise<boolean>;
     /** Enregistre l'abonnement recréé, comme le webhook le ferait (`PgAbonnementsNumeroStore.enregistrer`). */
     enregistrer(a: { tenantId: string; abonnementId: string; livemode: boolean; periodeFin: Date | null }): Promise<IssueEnregistrement>;
     /** J5 : les avis de suspension et le rappel de libération de l'espace, effacés. */
@@ -46,11 +48,19 @@ export interface DepsNumeroInclus {
   };
   /** J6 : les campagnes en pause `numero_suspendu` repartent. */
   reprendreCampagnes(tenantId: string): Promise<void>;
+  /** L'espace a-t-il un Pro vivant (`PgAbonnementsOffreStore.vivant`) ? */
+  proVivant(tenantId: string): Promise<boolean>;
   /** Prévient Julien (Telegram). */
   alerter(texte: string): Promise<void>;
 }
 
 const vivant = (a: AbonnementNumero | null): a is AbonnementNumero => a !== null && a.statut !== 'resilie';
+
+/**
+ * J2 de la relecture : la MÊME écriture, sous la même clé d'idempotence, est déjà en cours chez Stripe (deux événements du
+ * même abonnement traités ensemble). L'autre appel fait le travail : ce n'est pas un refus.
+ */
+const dejaEnCours = (err: StripeError): boolean => err.code === 'idempotency_key_in_use';
 
 /** Le passage en Pro de l'espace (un Pro enregistré, rejoué compris). Ne lève que sur une panne de base. */
 export async function surPassageEnPro(d: DepsNumeroInclus, tenantId: string): Promise<void> {
@@ -64,9 +74,14 @@ export async function surPassageEnPro(d: DepsNumeroInclus, tenantId: string): Pr
     return;
   }
   try {
-    await arreterAbonnementAvecAvoir(d.stripe.transport, { cle: d.stripe.cle, abonnementId: a.abonnementId });
+    // J7 de la relecture : une période impayée n'a rien à rendre, l'avoir créditerait un temps jamais payé.
+    await arreterAbonnementNumeroSeul(d.stripe.transport, { cle: d.stripe.cle, abonnementId: a.abonnementId, avoir: a.statut !== 'en_retard' });
   } catch (err) {
     if (!(err instanceof StripeError)) throw err;
+    if (dejaEnCours(err)) {
+      journaliser('info', 'numero_inclus_arret_en_cours', { tenantId, abonnement: a.abonnementId });
+      return;
+    }
     journaliser('error', 'numero_inclus_arret_impossible', { tenantId, abonnement: a.abonnementId, status: err.status, code: err.code, err: err.message });
     await d.alerter(`Espace ${tenantId} passé en Pro : Stripe refuse d'arrêter son abonnement du numéro seul ${a.abonnementId} (${err.status ?? 'réseau'}${err.code ? `, ${err.code}` : ''}). À arrêter à la main avec un avoir au prorata. ${lien}`);
   }
@@ -91,7 +106,11 @@ export interface FinDuPro {
   carte: string | null;
 }
 
-export type IssueFinDuPro = 'sans_numero' | 'deja_abonne' | 'recree' | 'porte';
+/**
+ * `pro_vivant` : un AUTRE Pro de l'espace vit (un rejeu tardif de la fin), il couvre le numéro. `en_cours` : la même
+ * création est déjà en cours chez Stripe. `a_verifier` : le numéro seul recréé n'a pas été enregistré, Julien vérifie.
+ */
+export type IssueFinDuPro = 'sans_numero' | 'pro_vivant' | 'deja_abonne' | 'recree' | 'a_verifier' | 'en_cours' | 'porte';
 
 /**
  * L'écart toléré entre la fin effective du Pro et sa fin prévue pour la tenir pour « à sa fin prévue » : Stripe finit
@@ -101,6 +120,8 @@ export const MARGE_FIN_PREVUE_MS = 24 * 3_600_000;
 
 /** La fin effective du Pro de l'espace (rejouée comprise). Ne lève que sur une panne de base. */
 export async function surFinDuPro(d: DepsNumeroInclus, f: FinDuPro): Promise<IssueFinDuPro> {
+  // J5 de la relecture : la fin d'un Pro relivrée après la souscription d'un autre. Le Pro vivant couvre le numéro.
+  if (await d.proVivant(f.tenantId)) return 'pro_vivant';
   if (!(await d.numero.numeroAttribue(f.tenantId))) return 'sans_numero';
   if (vivant(await d.numero.deLEspace(f.tenantId))) return 'deja_abonne';
 
@@ -112,8 +133,9 @@ export async function surFinDuPro(d: DepsNumeroInclus, f: FinDuPro): Promise<Iss
     return 'porte';
   };
 
-  // Impayé, ou numéro rendu : le chemin du lot 4, sans rien demander à Stripe ; rien d'anormal à signaler.
-  if (f.raison !== 'resiliation' || f.rendreNumero) return porter(null);
+  // Impayé, ou numéro rendu : le chemin du lot 4, sans rien demander à Stripe ; rien d'anormal à signaler. Un client qui
+  // envoie par SON numéro (J8) n'utilise pas le numéro fourni : il n'est pas recréé, le lot 4 le libère 7 jours après.
+  if (f.raison !== 'resiliation' || f.rendreNumero || (await d.numero.numeroApporte(f.tenantId))) return porter(null);
   // 🔴 R1 de la relecture : un Pro arrêté TOUT DE SUITE (Julien à la main, avant une suppression d'espace ou à la demande
   // d'un client) n'a rien annoncé. Prélever le numéro seul sur la carte d'un client qui part serait de l'argent pris à
   // tort : seule une fin à la fin PRÉVUE, donc annoncée, recrée le numéro seul.
@@ -128,11 +150,21 @@ export async function surFinDuPro(d: DepsNumeroInclus, f: FinDuPro): Promise<Iss
       cle: s.cle, tenantId: f.tenantId, customerId: f.customerId, prix: d.prixNumero, carte: f.carte,
       idempotence: `numero-apres-pro-${f.abonnementPro}`,
     });
-    await d.numero.enregistrer({ tenantId: f.tenantId, abonnementId: neuf.id, livemode: f.livemode, periodeFin: neuf.periodeFin });
+    const e = await d.numero.enregistrer({ tenantId: f.tenantId, abonnementId: neuf.id, livemode: f.livemode, periodeFin: neuf.periodeFin });
+    // J5 de la relecture : un abonnement que l'enregistrement ne prend pas (déjà résilié chez nous, ou un autre numéro
+    // seul vivant) ne « reprend » pas : Julien vérifie chez Stripe.
+    if (e.etat !== 'enregistre') {
+      await d.alerter(`Fin du Pro de l'espace ${f.tenantId} : le numéro seul recréé ${neuf.id} n'a pas été enregistré (${e.etat}). À vérifier chez Stripe. ${lienTableauStripe('subscriptions', neuf.id, f.livemode)}`);
+      return 'a_verifier';
+    }
     await d.alerter(`Fin du Pro de l'espace ${f.tenantId} : son numéro seul reprend sur la carte du Pro, 3,50 € HT par mois (${neuf.id}).`);
     return 'recree';
   } catch (err) {
     if (!(err instanceof StripeError)) throw err;
+    if (dejaEnCours(err)) {
+      journaliser('info', 'numero_inclus_creation_en_cours', { tenantId: f.tenantId, pro: f.abonnementPro });
+      return 'en_cours';
+    }
     journaliser('error', 'numero_inclus_creation_impossible', { tenantId: f.tenantId, pro: f.abonnementPro, status: err.status, code: err.code, err: err.message });
     return porter(`Stripe refuse de recréer le numéro seul (${err.status ?? 'réseau'}${err.code ? `, ${err.code}` : ''}).`);
   }

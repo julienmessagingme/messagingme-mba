@@ -19,7 +19,7 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
-## LOT 6 : LES OFFRES ET LEURS LIMITES, A, B1 ET B2a EN PRODUCTION (2026-10-07), B2b EN LIVRAISON, PUIS C
+## LOT 6 : LES OFFRES ET LEURS LIMITES, A, B1, B2a ET B2b EN PRODUCTION (2026-10-07 ET 08), PUIS C
 
 Spec `docs/superpowers/specs/2026-10-07-offres-et-limites-design.md`, plan `docs/superpowers/plans/2026-10-07-offres-et-limites.md`.
 La livraison A est en production et son essai réel est fait (2026-10-07, « Espace de dumas family » ramené en Base,
@@ -45,12 +45,14 @@ Julien, puis remis en Entreprise (l'espace n'a ni automation, ni scénario, ni s
 les tests). **Les jaunes de sa relecture sont corrigés et en production** (`d9517a45`, à relire avec le lot suivant), avec trois décisions de Julien : un widget à devenir
 « scénario » est gelé en Base (refusé à la création, un clic ne démarre rien) ; « Envoyer un bloc » d'un agent IA est
 gelé comme celui de l'agent de Meta ; la suspension des membres ne vaut qu'en Base et en Pro (en Entreprise, la limite
-ne bloque que les invitations). ⏳ **B2b, le numéro inclus dans le Pro, est écrite** (2026-10-08, migration 0220) :
-le numéro obtenu sans payer en Pro, l'abonnement du numéro seul arrêté avec avoir au passage en Pro, l'annonce de la
-suite à la fin prévue du Pro (console, Claude, e-mail), « rendre le numéro » à la fin du Pro, le numéro seul recréé sur
-la carte du Pro à la fin d'un Pro résilié, sinon le chemin du lot 4 ; plus les jaunes J2, J5, J6 de B1. 🔴 Avant son
-déploiement, Julien ajoute « Abonnements : écriture » à la clé restreinte (sans lui, l'arrêt et la recréation
-échouent et le préviennent). Essai réel ensuite. Puis C (les coûts selon l'offre).
+ne bloque que les invitations). ✅ **B2b, le numéro inclus dans le Pro, est EN PRODUCTION** (`be063d14`, migration
+0220 appliquée le 2026-10-08) : le numéro obtenu sans payer en Pro, l'abonnement du numéro seul arrêté avec avoir au
+passage en Pro, l'annonce de la suite à la fin prévue du Pro (console, Claude, e-mail), « rendre le numéro » à la fin
+du Pro, le numéro seul recréé sur la carte du Pro à la fin PRÉVUE d'un Pro résilié, sinon le chemin du lot 4 ; plus
+les jaunes J2, J5, J6 de B1. Les jaunes de sa relecture sont corrigés (à relire avec le lot suivant). 🔴 Julien a choisi
+de déployer AVANT d'ajouter « Abonnements : écriture » à la clé restreinte : tant qu'elle manque, un arrêt au passage
+en Pro ou une recréation à la fin d'un Pro échoue et le prévient sur Telegram, et le geste se fait à la main. ⏳ Essai
+réel de B2b à faire. Puis C (les coûts selon l'offre).
 
 ## RETOURS CONSOLE DU 6 OCTOBRE (RC1 À RC8) : LES HUIT LOTS EN PRODUCTION, ESSAIS RÉELS DUS
 

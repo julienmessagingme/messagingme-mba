@@ -97,12 +97,21 @@ function signataire(personne: PersonneMcp | null): string {
   return personne.userId;
 }
 
+/**
+ * La consigne du numéro fourni. En Pro (J4 de la relecture de B2b), le numéro est inclus : la page l'obtient sans payer,
+ * et Claude ne doit pas annoncer un prix que la page ne demande pas.
+ */
+const consigneFourni = (inclusDansLePro: boolean): string =>
+  'Donne ce lien à la personne : il ouvre la page de connexion de son numéro, sans se connecter, pendant une '
+  + (inclusDansLePro
+    ? 'heure. Sur la page : le numéro est inclus dans son Pro, « Obtenir mon numéro », puis le numéro s’affiche ; '
+    : 'heure. Sur la page : « Payer 3,50 € HT par mois », puis le numéro s’affiche ; ')
+  + 'ensuite la fenêtre de Meta, « Enter a '
+  + 'new phone number », le numéro affiché, et la vérification par appel (« Phone call ») si Meta laisse choisir ; '
+  + 'sinon Meta envoie un SMS, qui arrive aussi. Appelle ensuite watch_whatsapp_connection : le code '
+  + 'arrivera ici, lis-le-lui pour qu’elle le recopie dans la fenêtre de Meta.';
+
 const CONSIGNES = {
-  fourni: 'Donne ce lien à la personne : il ouvre la page de connexion de son numéro, sans se connecter, pendant une '
-    + 'heure. Sur la page : « Payer 3,50 € HT par mois », puis le numéro s’affiche ; ensuite la fenêtre de Meta, « Enter a '
-    + 'new phone number », le numéro affiché, et la vérification par appel (« Phone call ») si Meta laisse choisir ; '
-    + 'sinon Meta envoie un SMS, qui arrive aussi. Appelle ensuite watch_whatsapp_connection : le code '
-    + 'arrivera ici, lis-le-lui pour qu’elle le recopie dans la fenêtre de Meta.',
   apporte: 'Donne ce lien à la personne : il ouvre la page de connexion de son numéro, sans se connecter, pendant une '
     + 'heure. Sur la page : la fenêtre de Meta, son numéro, et le code qu’elle reçoit elle-même. Appelle ensuite '
     + 'watch_whatsapp_connection pour savoir quand le numéro est connecté.',
@@ -117,6 +126,7 @@ function vueEtat(e: EtatConnexion): Record<string, unknown> {
     a_activer: e.connecte?.aActiver === true,
     abonnement: e.abonnement?.statut ?? null,
     prochaine_echeance: e.abonnement?.periodeFin ?? null,
+    inclus_dans_le_pro: e.inclusDansLePro,
     numero_connecte: e.connecte ? (e.connecte.chiffres ? `+${e.connecte.chiffres}` : null) : null,
   };
 }
@@ -153,7 +163,8 @@ export const OUTILS_NUMERO: OutilMcp[] = [
     fonction: null,
     description:
       'L’abonnement du numéro WhatsApp fourni (3,50 € HT par mois) : son statut (actif, en_retard après un paiement échoué, '
-      + 'resilie), la fin de la période payée, et le numéro. `abonnement: null` : l’espace n’a pas de numéro fourni payé.',
+      + 'resilie), la fin de la période payée, et le numéro. `abonnement: null` : l’espace n’a pas de numéro fourni payé. '
+      + '`inclus_dans_le_pro: true` : le Pro de l’espace inclut le numéro, il n’y a rien à payer.',
     scope: 'mcp:read',
     annotations: { title: 'Lire l’abonnement du numéro', readOnlyHint: true, openWorldHint: false },
     entree: { type: 'object', properties: {}, additionalProperties: false },
@@ -164,7 +175,8 @@ export const OUTILS_NUMERO: OutilMcp[] = [
         abonnement: e.abonnement?.statut ?? null,
         prochaine_echeance: e.abonnement?.periodeFin ?? null,
         numero_fourni: e.fourni,
-        prix: '3,50 € HT par mois',
+        prix: e.inclusDansLePro ? 'inclus dans le Pro' : '3,50 € HT par mois',
+        inclus_dans_le_pro: e.inclusDansLePro,
         // Lot 4 : l'état calculé (actif, fin_prevue, en_retard, suspendu, libere) et ses dates.
         etat: a?.etat ?? null,
         fin_prevue: iso(a?.finPrevueLe),
@@ -235,7 +247,7 @@ export const OUTILS_NUMERO: OutilMcp[] = [
     description:
       'Rend le lien qui ouvre la page de connexion du numéro WhatsApp de l’espace, sans passer par la console, valable '
       + 'une heure : la personne y fait la fenêtre de Meta. `fourni` : on lui fournit un numéro dédié (3,50 € HT par mois, '
-      + 'payé sur la page avant d’être attribué), dont le code de '
+      + 'payé sur la page avant d’être attribué ; inclus, sans rien payer, pour un espace en Pro), dont le code de '
       + 'vérification arrive ici par watch_whatsapp_connection. `apporte` : son propre numéro ; demande-lui d’abord '
       + 's’il sert dans l’application WhatsApp, car la fenêtre de Meta le refuserait tant qu’il n’en est pas retiré. '
       + 'Refusé si l’espace a déjà un numéro connecté.',
@@ -255,7 +267,8 @@ export const OUTILS_NUMERO: OutilMcp[] = [
       const userId = signataire(personne);
       const mode = args.mode;
       if (mode !== 'fourni' && mode !== 'apporte') throw new RefusOutil('mode : « fourni » ou « apporte »');
-      const relie = (await deps.numero.etat(tenantId)).connecte;
+      const etat = await deps.numero.etat(tenantId);
+      const relie = etat.connecte;
       if (relie?.aActiver) {
         throw new RefusOutil('Un numéro est déjà relié à cet espace, mais Meta ne l’a pas encore activé : il reste à finir sa '
           + 'vérification, dans l’Accueil de la console (« Activer le numéro »).');
@@ -265,7 +278,7 @@ export const OUTILS_NUMERO: OutilMcp[] = [
       return {
         url: `${deps.numero.urlConsole.replace(/\/+$/, '')}/brancher#${jeton}`,
         expire_le: new Date(deps.numero.maintenant() + DUREE_LIEN_NUMERO_MS).toISOString(),
-        consigne: CONSIGNES[mode],
+        consigne: mode === 'fourni' ? consigneFourni(etat.inclusDansLePro) : CONSIGNES.apporte,
       };
     },
   },

@@ -61,6 +61,18 @@ describe('start_whatsapp_connection', () => {
     expect(typeof r.consigne).toBe('string');
   });
 
+  it('🔴 J4 : à un espace en Pro, Claude ne fait pas payer le numéro fourni ; hors Pro, il dit le prix', async () => {
+    const pro = monter(() => ({ ...VIDE, inclusDansLePro: true })).deps;
+    const enPro = await outil('start_whatsapp_connection').executer(pro, 't1', { mode: 'fourni' }, PERSONNE) as Record<string, string>;
+    expect(enPro.consigne).toMatch(/inclus/);
+    expect(enPro.consigne).not.toMatch(/3,50|Payer/);
+    const base = monter(() => VIDE).deps;
+    const horsPro = await outil('start_whatsapp_connection').executer(base, 't1', { mode: 'fourni' }, PERSONNE) as Record<string, string>;
+    expect(horsPro.consigne).toMatch(/Payer 3,50 € HT par mois/);
+    // La description le dit aussi, avant même l'appel.
+    expect(outil('start_whatsapp_connection').description).toMatch(/Pro/);
+  });
+
   it('le mode apporté est porté par le jeton, et sa consigne parle de l’application WhatsApp', async () => {
     const { deps } = monter(() => VIDE);
     const r = await outil('start_whatsapp_connection').executer(deps, 't1', { mode: 'apporte' }, PERSONNE) as Record<string, string>;
@@ -141,10 +153,19 @@ describe('les outils de l’abonnement du numéro (livraison B)', () => {
     expect(await outil('get_number_subscription').executer(deps, 't1', {}, null))
       .toEqual({
         abonnement: 'en_retard', prochaine_echeance: '2026-11-06T09:00:00.000Z', numero_fourni: '+441235619343', prix: '3,50 € HT par mois',
-        etat: null, fin_prevue: null, coupure_le: null, liberation_le: null,
+        inclus_dans_le_pro: false, etat: null, fin_prevue: null, coupure_le: null, liberation_le: null,
       });
     const sans = monter(() => VIDE).deps;
     expect(await outil('get_number_subscription').executer(sans, 't1', {}, null)).toMatchObject({ abonnement: null, prochaine_echeance: null });
+  });
+
+  it('🔴 J4 : en Pro, get_number_subscription dit que le numéro est inclus, sans prix ; l’état de la connexion aussi', async () => {
+    const { deps } = monter(() => ({ ...VIDE, fourni: '+441235619343', inclusDansLePro: true }));
+    expect(await outil('get_number_subscription').executer(deps, 't1', {}, null))
+      .toMatchObject({ abonnement: null, inclus_dans_le_pro: true, prix: 'inclus dans le Pro' });
+    expect(outil('get_number_subscription').description).toMatch(/inclus_dans_le_pro/);
+    const r = await outil('watch_whatsapp_connection').executer(deps, 't1', {}, PERSONNE) as Record<string, unknown>;
+    expect(r.etat).toMatchObject({ inclus_dans_le_pro: true });
   });
 
   it('🔴 manage_number_subscription : le portail de Stripe au nom de la personne, compté dans les opérations lourdes', async () => {

@@ -1,7 +1,7 @@
 ---
 ecran: offre
 source_section: Offres (menu « Paramètres » > Offre)
-source_empreinte: 8ae9d9
+source_empreinte: 6a144f
 ---
 # Choisir mon offre
 
@@ -44,4 +44,5 @@ la fin de la période payée ; votre espace revient alors en Base.
 S'il était déjà payé à part, cet abonnement s'arrête quand vous passez en Pro, avec un avoir sur la facture suivante.
 Si vous résiliez le Pro, la page Offre et un e-mail vous préviennent : à la fin du Pro, le numéro passe à 3,50 € HT
 par mois sur la même carte. Pour le rendre à la place, choisissez « Rendre mon numéro à la fin du Pro » sur la page
-Offre ; vous pouvez revenir sur ce choix tant que le Pro court.
+Offre ; vous pouvez revenir sur ce choix tant que le Pro court. Si vous envoyez par votre propre numéro, le
+numéro fourni ne reprend pas : il est libéré sept jours après la fin du Pro.

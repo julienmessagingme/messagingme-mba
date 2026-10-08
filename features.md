@@ -3373,14 +3373,17 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   ⚠️ Tant que le Pro n'est pas en vente (prix pas posés), le bouton « Passer en Pro » ouvre le Support, sujet
   prérempli.
 - ✅ **Le numéro fourni est inclus dans le Pro** (livraison B2b) : un espace en Pro obtient son numéro sans payer, depuis
-  la page « Connecter WhatsApp » ou le lien que donne Claude. Un numéro déjà payé à part voit son abonnement s'arrêter
-  au passage en Pro, avec un avoir au prorata sur la facture suivante. Tant que le Pro court, le numéro n'est ni
-  suspendu ni libéré. Quand une fin du Pro est programmée, la page Offre, Claude et un e-mail aux administrateurs
+  la page « Connecter WhatsApp » ou le lien que donne Claude (qui ne lui annonce alors aucun prix). Si la réserve ne
+  garde que des numéros dus à des abonnés qui ont payé et attendent le leur, l'espace en Pro réessaie un peu plus tard.
+  Un numéro déjà payé à part voit son abonnement s'arrêter au passage en Pro, avec un avoir au prorata sur la facture
+  suivante (sans avoir s'il était en retard de paiement : rien n'avait été payé). Tant que le Pro court, le numéro
+  n'est ni suspendu ni libéré. Quand une fin du Pro est programmée, la page Offre, Claude et un e-mail aux administrateurs
   annoncent la suite : le numéro passe à 3,50 € HT par mois sur la même carte, sauf si l'administrateur choisit
   « Rendre mon numéro à la fin du Pro » (sur la page Offre, ou en le demandant à Claude), réversible tant que le Pro
   court. À la fin PRÉVUE d'un Pro résilié, l'abonnement du numéro seul démarre tout seul sur cette carte ; un numéro
   rendu, un Pro fini pour impayé ou arrêté tout de suite (sans fin annoncée), ou une carte refusée suivent le chemin
-  d'un impayé : envois coupés, sept jours pour s'abonner au numéro, puis libération.
+  d'un impayé : envois coupés, sept jours pour s'abonner au numéro, puis libération. Un espace qui envoie par son
+  propre numéro ne reprend pas le numéro fourni : celui-ci est libéré sept jours après la fin du Pro.
 - ✅ **Au retour en Base, on gèle, on n'efface rien** (livraison B2a) : un espace qui revient en Base (fin du Pro) garde
   toutes ses données, et tout revient au réabonnement. Ses scénarios ne démarrent plus que par ses automations, les 10
   plus anciennes seulement (celles au-delà, et celles des chaînes, des publicités et des widgets à scénario, se taisent) ;
@@ -3401,8 +3404,8 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   avec sa limite d'utilisateurs (10 proposés, vide = sans limite) et, si on la donne, la durée de conservation des
   conversations (absente, elle reste telle quelle : changer d'offre ne déclenche jamais de purge). La même route ramène
   un espace en Base. Les espaces qui existaient avant le lot 6 sont tous en Entreprise, sans aucune limite.
-- ⏳ **À venir** : le numéro inclus dans le Pro (livraison B2), les coûts qui suivent l'offre
-  (commission sur le crédit IA, analyse des conversations, conservation : livraison C).
+- ⏳ **À venir** : les coûts qui suivent l'offre (commission sur le crédit IA, analyse des conversations,
+  conservation : livraison C).
 
 ## MBA, le répondeur de Meta (menu « AI Agent » > MBA)
 

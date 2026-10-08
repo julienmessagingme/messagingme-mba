@@ -754,11 +754,13 @@ async function main(): Promise<void> {
     numero: {
       deLEspace: (tenant) => abonnementsNumero.deLEspace(tenant),
       numeroAttribue: async (tenant) => (await numerosFournis.numeroDeLEspace(tenant)) !== null,
+      numeroApporte: (tenant) => abonnementsNumero.numeroApporte(tenant),
       enregistrer: (a) => abonnementsNumero.enregistrer(a),
       oublierAvisDeSuspension: (tenant) => abonnementsNumero.oublierAvisDeSuspension(tenant),
       porterLaFinParLePro: (a) => abonnementsNumero.porterLaFinParLePro(a),
     },
     reprendreCampagnes: async (tenant) => { await numeroDelieStore.leverPausesSuspension(tenant); },
+    proVivant: (tenant) => abonnementsOffre.vivant(tenant),
     alerter: async (texte) => { await sendTelegram(`[mba-${NOM_API}] ${texte}`); },
   };
 

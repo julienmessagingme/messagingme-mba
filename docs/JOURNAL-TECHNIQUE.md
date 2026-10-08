@@ -5,6 +5,23 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-08 : B2b en production, et les jaunes de sa relecture
+
+**Déployée** (`be063d14`, avec `7f23f10b` d'une session voisine, console et docs seulement) : 0220 appliquée à 8 h 30 UTC
+AVANT le `up`, puis l'API, les deux workers et `mba-web` relancés. Julien a choisi de ne pas attendre la permission
+« Abonnements : écriture » de la clé restreinte : les écritures refusées le préviennent. La CI de `be063d14` avait été
+annulée par le push voisin (même groupe de concurrence) ; celle de `7f23f10b`, qui la contient, était verte, job par
+job. **J3 de la relecture mesuré sans objet** : en lecture seule, aucun espace n'avait à la fois un Pro vivant et un
+abonnement du numéro seul vivant (un seul Pro en base, fini, celui de l'essai de B1).
+
+**Les jaunes, corrigés dans le commit suivant** : J1, une vieille ligne de numéro LIBÉRÉE n'empêche plus la ligne
+portée par le Pro (sinon le numéro neuf d'un Pro n'était jamais suspendu ni libéré) ; J2, un 409
+`idempotency_key_in_use` (la même écriture déjà en cours, deux événements traités ensemble) n'est plus pris pour un
+refus ; J4, Claude ne dit plus « payer 3,50 » à un espace en Pro ; J5, la fin d'un Pro ne touche à rien quand un autre
+Pro vit, et un numéro seul recréé que l'enregistrement ne prend pas alerte au lieu de dire « reprend » ; J6, un Pro qui
+prend un numéro neuf ne prend pas celui d'un abonné qui a payé et attend ; J7, un numéro seul en retard de paiement
+s'arrête sans avoir ; J8, un espace qui envoie par son propre numéro ne fait pas recréer le numéro fourni.
+
 ## 2026-10-08 : le numéro fourni inclus dans le Pro (lot 6, livraison B2b), écrit
 
 **Les décisions de Julien** (7 et 8 octobre) : le numéro attribué sans payer à un Pro ; l'abonnement du numéro seul

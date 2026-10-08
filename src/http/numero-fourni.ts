@@ -147,13 +147,24 @@ export function registerNumeroFourni(
   };
 
   /**
-   * L'espace a-t-il droit à un numéro NEUF ? Un numéro déjà attribué se rend toujours ; sinon il faut un abonnement du
-   * numéro vivant, ou un Pro vivant qui l'inclut (lot 6, B2b). La même garde pour obtenir et pour remplacer.
+   * L'espace a-t-il droit à un numéro NEUF, et à quel titre ? Un numéro déjà attribué se rend toujours ; sinon il faut
+   * un abonnement du numéro vivant, ou un Pro vivant qui l'inclut (lot 6, B2b). La même garde pour obtenir et pour
+   * remplacer. `null` : aucun droit.
    */
-  async function droitAuNumero(tenant: string): Promise<boolean> {
-    if (await deps.numeros.numeroDeLEspace(tenant)) return true;
-    if (vivant(await deps.abonnements.deLEspace(tenant))) return true;
-    return deps.pro.vivant(tenant);
+  async function droitAuNumero(tenant: string): Promise<'attribue' | 'abonne' | 'pro' | null> {
+    if (await deps.numeros.numeroDeLEspace(tenant)) return 'attribue';
+    if (vivant(await deps.abonnements.deLEspace(tenant))) return 'abonne';
+    return (await deps.pro.vivant(tenant)) ? 'pro' : null;
+  }
+
+  /**
+   * J6 de la relecture de B2b : un Pro qui prend un numéro NEUF ne prend pas celui d'un abonné qui a payé et attend le
+   * sien (`disponibles`), comme pour l'ouverture d'un paiement. `true` : la réserve n'a rien pour lui.
+   */
+  async function reserveDueAuxAbonnes(droit: 'attribue' | 'abonne' | 'pro'): Promise<boolean> {
+    if (droit !== 'pro' || (await disponibles()) > 0) return false;
+    await surveillerReserve();
+    return true;
   }
 
   app.post('/tenants/:tenantId/numero-fourni', couteux, async (req, reply) => {
@@ -164,9 +175,11 @@ export function registerNumeroFourni(
     // 🔴 Pas de numéro avant le paiement (lot 3c) : un numéro déjà attribué se rend toujours (un retour sur la page,
     // l'essai du 3b), un nouveau exige un abonnement vivant, ou un Pro vivant qui l'inclut (lot 6, B2b). Le webhook
     // attribue d'ordinaire à la confirmation.
-    if (!(await droitAuNumero(tenant))) {
+    const droit = await droitAuNumero(tenant);
+    if (droit === null) {
       return reply.code(409).send({ error: 'Le numéro se paie d’abord : 3,50 € HT par mois.', cause: 'abonnement_requis' });
     }
+    if (await reserveDueAuxAbonnes(droit)) return reply.code(409).send(RESERVE_VIDE);
     const n = await deps.numeros.attribuer(tenant);
     await surveillerReserve();
     if (!n) return reply.code(409).send(RESERVE_VIDE);
@@ -241,9 +254,12 @@ export function registerNumeroFourni(
     }
     // 🔴 La même garde que l'attribution (relecture de la livraison B) : « Remplacer » attribue un numéro neuf, donc un
     // espace sans numéro attribué ni abonnement vivant n'en reçoit pas ; sinon le numéro se prendrait sans payer.
-    if (!(await droitAuNumero(tenant))) {
+    const droit = await droitAuNumero(tenant);
+    if (droit === null) {
       return reply.code(409).send({ error: 'Le numéro se paie d’abord : 3,50 € HT par mois.', cause: 'abonnement_requis' });
     }
+    // Avant le verrou : un refus ne consomme pas le remplacement de l'heure.
+    if (await reserveDueAuxAbonnes(droit)) return reply.code(409).send(RESERVE_VIDE);
     // Le verrou n'est jamais relâché : son échéance EST le délai, commun à toutes les copies de l'API.
     if (!(await deps.verrous.prendre([[`numeros.remplacer:${tenant}`, DELAI_ENTRE_REMPLACEMENTS_MS]]))) {
       return reply.code(429).send({ error: 'Un seul remplacement de numéro par heure. Si Meta refuse encore ce numéro, contactez-nous.', cause: 'trop_de_remplacements' });

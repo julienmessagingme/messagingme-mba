@@ -326,13 +326,16 @@ export async function programmerFinAbonnement(transport: TransportStripe, o: { c
 const arreteSchema = z.object({ id: z.string().startsWith('sub_'), status: z.literal('canceled') });
 
 /**
- * Arrête TOUT DE SUITE l'abonnement du numéro seul au passage en Pro (lot 6, B2b) : `prorate` crédite le temps non utilisé,
- * `invoice_now` l'émet sur une facture finale, négative, qui crédite le solde du client ; la facture suivante (le Pro) le
- * consomme. La clé restreinte doit pouvoir ÉCRIRE les abonnements. Rejouable : l'idempotence est l'abonnement.
+ * Arrête TOUT DE SUITE l'abonnement du numéro seul au passage en Pro (lot 6, B2b). Avec `avoir` : `prorate` crédite le
+ * temps non utilisé, `invoice_now` l'émet sur une facture finale, négative, qui crédite le solde du client ; la facture
+ * suivante (le Pro) le consomme. Sans (J7 de la relecture : une période impayée, rien à rendre) : un arrêt nu. La clé
+ * restreinte doit pouvoir ÉCRIRE les abonnements. Rejouable : l'idempotence est l'abonnement, et une clé par choix, pour
+ * qu'un rejeu qui changerait d'avis ne soit pas refusé pour des paramètres différents.
  */
-export async function arreterAbonnementAvecAvoir(transport: TransportStripe, o: { cle: string; abonnementId: string }): Promise<void> {
-  const r = await appeler(transport, 'resiliation', `/subscriptions/${encodeURIComponent(o.abonnementId)}`, { prorate: 'true', invoice_now: 'true' }, {
-    cle: o.cle, idempotence: `avoir-${o.abonnementId}`, supprimer: true,
+export async function arreterAbonnementNumeroSeul(transport: TransportStripe, o: { cle: string; abonnementId: string; avoir: boolean }): Promise<void> {
+  const champs: Record<string, string> = o.avoir ? { prorate: 'true', invoice_now: 'true' } : {};
+  const r = await appeler(transport, 'resiliation', `/subscriptions/${encodeURIComponent(o.abonnementId)}`, champs, {
+    cle: o.cle, idempotence: `${o.avoir ? 'avoir' : 'arret'}-${o.abonnementId}`, supprimer: true,
   }, arreteSchema);
   if (r.id !== o.abonnementId) throw new StripeError('resiliation', 200, null, null, 'reponse pour un autre abonnement');
 }

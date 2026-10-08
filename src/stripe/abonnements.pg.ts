@@ -236,13 +236,15 @@ export class PgAbonnementsNumeroStore {
    * fini (envois coupés, libération 7 jours après) ; la couverture du Pro la tient pour active tant qu'un Pro vit. Aucun
    * appel chez Stripe ne vise jamais cette ligne : elle n'est pas vivante (« Abandonner » et le portail ne touchent que
    * l'abonnement vivant), et les événements de cet abonnement vont au chemin du Pro. `false` : l'espace avait déjà une
-   * ligne (la couverture y reporte déjà la fin du Pro), ou celle-ci existait (un rejeu).
+   * ligne NON libérée (la couverture y reporte déjà la fin du Pro), ou celle-ci existait (un rejeu). Une ligne libérée ne
+   * compte pas (J1 de la relecture) : elle se lit « libéré », et le numéro neuf du Pro ne serait jamais suspendu ni libéré.
+   * La ligne portée, plus récente, passe devant elle dans `deLEspace`.
    */
   async porterLaFinParLePro(a: { tenantId: string; abonnementPro: string; livemode: boolean; finiLe: Date }): Promise<boolean> {
     const res = await this.pool.query(
       `insert into abonnements_numero (stripe_subscription_id, tenant_id, livemode, statut, fini_le)
        select $2, $1, $3, 'resilie', $4
-        where not exists (select 1 from abonnements_numero where tenant_id = $1)
+        where not exists (select 1 from abonnements_numero where tenant_id = $1 and libere_le is null)
        on conflict (stripe_subscription_id) do nothing`,
       [a.tenantId, a.abonnementPro, a.livemode, a.finiLe],
     );
@@ -264,17 +266,7 @@ export class PgAbonnementsNumeroStore {
     );
     const p = pro.rows[0];
     const a = { ...ligne, ...couvertureParLePro(ligne, { vivant: p?.vivant === true, dernierFini: p?.dernier_fini ?? null }) };
-    // Le numéro fourni attribué et le numéro WhatsApp relié, en chiffres. Des chiffres inconnus (affichage vide, Meta pas
-    // lu à la liaison) sont ceux du numéro fourni, comme pour « Abandonner » et la garde d'envoi (jaune 3).
-    const n = await this.pool.query<{ fourni: string | null; relie: string | null }>(
-      `select (select numero from numeros_fournis where tenant_id = $1 and statut = 'attribue' limit 1) as fourni,
-              (select regexp_replace(coalesce(display_phone_number, ''), '[^0-9]', '', 'g') from phone_numbers
-                where tenant_id = $1 limit 1) as relie`,
-      [tenantId],
-    );
-    const { fourni, relie } = n.rows[0] ?? { fourni: null, relie: null };
-    // Un AUTRE numéro que le numéro fourni envoie (jaune 1) : rien de chez nous n'est coupé.
-    const numeroApporte = relie !== null && relie !== '' && relie !== fourni;
+    const { fourni, numeroApporte } = await this.numerosDeLEspace(tenantId);
     const etat = etatAbonnement(a, { maintenant, numeroAttribue: fourni !== null, numeroApporte });
     return {
       abonnementId: a.abonnementId,
@@ -286,6 +278,28 @@ export class PgAbonnementsNumeroStore {
       finiLe: a.finiLe,
       libereLe: a.libereLe,
     };
+  }
+
+  /**
+   * Le numéro fourni attribué de l'espace, en chiffres, et s'il envoie par un AUTRE numéro (jaune 1 de la livraison A) :
+   * rien de chez nous n'est alors coupé, et la fin d'un Pro ne recrée pas le numéro seul (J8 de B2b). Des chiffres
+   * inconnus (affichage vide, Meta pas lu à la liaison) sont ceux du numéro fourni, comme pour « Abandonner » et la garde
+   * d'envoi (jaune 3).
+   */
+  private async numerosDeLEspace(tenantId: string): Promise<{ fourni: string | null; numeroApporte: boolean }> {
+    const n = await this.pool.query<{ fourni: string | null; relie: string | null }>(
+      `select (select numero from numeros_fournis where tenant_id = $1 and statut = 'attribue' limit 1) as fourni,
+              (select regexp_replace(coalesce(display_phone_number, ''), '[^0-9]', '', 'g') from phone_numbers
+                where tenant_id = $1 limit 1) as relie`,
+      [tenantId],
+    );
+    const { fourni, relie } = n.rows[0] ?? { fourni: null, relie: null };
+    return { fourni, numeroApporte: relie !== null && relie !== '' && relie !== fourni };
+  }
+
+  /** L'espace envoie-t-il par un AUTRE numéro que son numéro fourni (`numerosDeLEspace`) ? */
+  async numeroApporte(tenantId: string): Promise<boolean> {
+    return (await this.numerosDeLEspace(tenantId)).numeroApporte;
   }
 
   /** L'abonnement de l'espace : le vivant s'il y en a un, sinon le dernier résilié ; `null` s'il n'en a jamais eu. */

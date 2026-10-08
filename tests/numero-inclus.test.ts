@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { surFinDuPro, surPassageEnPro, type DepsNumeroInclus, type FinDuPro } from '../src/offres/numero-inclus';
 import type { ReponseStripe, TransportStripe } from '../src/stripe/client';
-import type { AbonnementNumero } from '../src/stripe/abonnements.pg';
+import type { AbonnementNumero, IssueEnregistrement } from '../src/stripe/abonnements.pg';
 
 /**
  * LE NUMÉRO INCLUS DANS LE PRO (lot 6, livraison B2b, tâche 12). Au passage en Pro, l'abonnement du numéro seul s'arrête
@@ -30,7 +30,10 @@ const numeroSeul = (o: Partial<AbonnementNumero> = {}): AbonnementNumero => ({
   finPrevueLe: null, finiLe: null, libereLe: null, ...o,
 });
 
-function monter(o: { reponses?: ReponseStripe[]; numero?: AbonnementNumero | null; attribue?: boolean; stripe?: boolean; livemode?: boolean } = {}) {
+function monter(o: {
+  reponses?: ReponseStripe[]; numero?: AbonnementNumero | null; attribue?: boolean; stripe?: boolean; livemode?: boolean;
+  apporte?: boolean; proVivant?: boolean; issueEnregistrement?: IssueEnregistrement;
+} = {}) {
   const transport = new FauxStripe(o.reponses ?? []);
   const journal: string[] = [];
   const alertes: string[] = [];
@@ -40,11 +43,16 @@ function monter(o: { reponses?: ReponseStripe[]; numero?: AbonnementNumero | nul
     numero: {
       deLEspace: async () => (o.numero === undefined ? null : o.numero),
       numeroAttribue: async () => o.attribue ?? true,
-      enregistrer: async (a) => { journal.push(`enregistre:${a.abonnementId}:${a.periodeFin?.toISOString() ?? '-'}`); return { etat: 'enregistre', numero: '33100000000' }; },
+      numeroApporte: async () => o.apporte ?? false,
+      enregistrer: async (a) => {
+        journal.push(`enregistre:${a.abonnementId}:${a.periodeFin?.toISOString() ?? '-'}`);
+        return o.issueEnregistrement ?? { etat: 'enregistre', numero: '33100000000' };
+      },
       oublierAvisDeSuspension: async (t) => { journal.push(`avis-oublies:${t}`); },
       porterLaFinParLePro: async (a) => { journal.push(`porte:${a.abonnementPro}:${a.finiLe.toISOString()}`); return true; },
     },
     reprendreCampagnes: async (t) => { journal.push(`campagnes:${t}`); },
+    proVivant: async () => o.proVivant ?? false,
     alerter: async (texte) => { alertes.push(texte); },
   };
   return { d, transport, journal, alertes };
@@ -75,6 +83,22 @@ describe('au passage en Pro', () => {
     expect(m.alertes).toHaveLength(1);
     expect(m.alertes[0]).toMatch(/sub_NUM/);
     expect(m.alertes[0]).toMatch(/avoir/);
+  });
+
+  it('🔴 J2 : un arrêt déjà en cours sous la même clé (409 idempotency_key_in_use) n’est pas un refus : aucune alerte', async () => {
+    // La session et la facture du Pro arrivent ensemble : deux passages en Pro envoient le même DELETE à quelques
+    // millisecondes, Stripe répond 409 au second alors que l'arrêt se fait.
+    const m = monter({ numero: numeroSeul(), reponses: [{ status: 409, json: { error: { type: 'idempotency_error', code: 'idempotency_key_in_use', message: 'in use' } } }] });
+    await expect(surPassageEnPro(m.d, T)).resolves.toBeUndefined();
+    expect(m.alertes).toEqual([]);
+  });
+
+  it('🔴 J7 : un numéro seul en retard de paiement s’arrête SANS avoir : aucun crédit sur une période jamais payée', async () => {
+    const m = monter({ numero: numeroSeul({ statut: 'en_retard', premierEchecLe: new Date() }), reponses: [{ status: 200, json: { id: 'sub_NUM', status: 'canceled' } }] });
+    await surPassageEnPro(m.d, T);
+    expect(m.transport.appels).toHaveLength(1);
+    expect(Object.fromEntries(m.transport.appels[0]!.corps)).toEqual({});
+    expect(m.transport.appels[0]!.cle).toBe('arret-sub_NUM');
   });
 
   it('sans Stripe, ou un numéro seul d’un autre mode que la clé : aucun appel, Julien prévenu', async () => {
@@ -152,6 +176,40 @@ describe('à la fin du Pro', () => {
   it('une fin à quelques heures de la fin prévue reste la fin prévue : le numéro seul se recrée', async () => {
     const m = monter({ reponses: [CREE] });
     expect(await surFinDuPro(m.d, fin({ finPrevueLe: new Date(FIN.getTime() + 3 * 3_600_000) }))).toBe('recree');
+  });
+
+  it('🔴 J2 : une création déjà en cours sous la même clé (409) : ni ligne portée, ni alerte, l’autre appel finit le travail', async () => {
+    const m = monter({ reponses: [{ status: 409, json: { error: { type: 'idempotency_error', code: 'idempotency_key_in_use', message: 'in use' } } }] });
+    expect(await surFinDuPro(m.d, fin())).toBe('en_cours');
+    expect(m.journal).toEqual([]);
+    expect(m.alertes).toEqual([]);
+  });
+
+  it('🔴 J5 : un AUTRE Pro vivant à la fin de celui-ci (un rejeu tardif) : rien chez Stripe, rien de porté', async () => {
+    const m = monter({ proVivant: true, reponses: [CREE] });
+    expect(await surFinDuPro(m.d, fin())).toBe('pro_vivant');
+    expect(m.transport.appels).toEqual([]);
+    expect(m.journal).toEqual([]);
+    expect(m.alertes).toEqual([]);
+  });
+
+  it('🔴 J5 : un numéro seul recréé que l’enregistrement ne prend pas (déjà résilié, doublon) : Julien vérifie, pas « reprend »', async () => {
+    for (const issueEnregistrement of [{ etat: 'resilie' } as const, { etat: 'doublon' } as const]) {
+      const m = monter({ reponses: [CREE], issueEnregistrement });
+      expect(await surFinDuPro(m.d, fin())).toBe('a_verifier');
+      expect(m.alertes).toHaveLength(1);
+      expect(m.alertes[0]).toMatch(/sub_NEUF/);
+      expect(m.alertes[0]).toMatch(new RegExp(issueEnregistrement.etat));
+      expect(m.alertes[0]).not.toMatch(/reprend/);
+    }
+  });
+
+  it('🔴 J8 : le client envoie par SON numéro : le numéro fourni n’est pas recréé, il suit le lot 4 (libéré 7 jours après)', async () => {
+    const m = monter({ apporte: true, reponses: [CREE] });
+    expect(await surFinDuPro(m.d, fin())).toBe('porte');
+    expect(m.transport.appels).toEqual([]);
+    expect(m.journal).toEqual([`porte:sub_PRO:${FIN.toISOString()}`]);
+    expect(m.alertes).toEqual([]);
   });
 
   it('aucun numéro fourni attribué : rien à faire ; un numéro seul déjà vivant : il continue', async () => {

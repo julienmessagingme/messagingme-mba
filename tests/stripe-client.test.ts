@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import {
-  arreterAbonnementAvecAvoir, creerAbonnementNumeroSeul, creerClientStripe, creerSessionAbonnement, creerSessionCheckout, creerSessionPortail, estCleLive, lireFactureStripe, lirePrixStripe, StripeError, VERSION_API_STRIPE, type ReponseStripe, type TransportStripe,
+  arreterAbonnementNumeroSeul, creerAbonnementNumeroSeul, creerClientStripe, creerSessionAbonnement, creerSessionCheckout, creerSessionPortail, estCleLive, lireFactureStripe, lirePrixStripe, StripeError, VERSION_API_STRIPE, type ReponseStripe, type TransportStripe,
 } from '../src/stripe/client';
 import { creditDeLOffre, definitionOffre, estOffreRecharge } from '../src/stripe/offres';
 
@@ -252,7 +252,7 @@ describe('l’abonnement du numéro fourni (lot 3c, livraison B)', () => {
 describe('le numéro inclus dans le Pro (lot 6, B2b)', () => {
   it('🔴 arrêter le numéro seul au passage en Pro : DELETE, avec l’avoir au prorata facturé tout de suite', async () => {
     const t = new FauxTransport([{ status: 200, json: { id: 'sub_N', status: 'canceled' } }]);
-    await arreterAbonnementAvecAvoir(t, { cle: CLE, abonnementId: 'sub_N' });
+    await arreterAbonnementNumeroSeul(t, { cle: CLE, abonnementId: 'sub_N', avoir: true });
     expect(t.appels[0]!.methode).toBe('DELETE');
     expect(t.appels[0]!.url).toBe('https://api.stripe.com/v1/subscriptions/sub_N');
     // Le crédit du temps non utilisé (prorate) sur une facture finale émise tout de suite (invoice_now) : négative, elle
@@ -262,10 +262,20 @@ describe('le numéro inclus dans le Pro (lot 6, B2b)', () => {
     expect(t.appels[0]!.entetes['stripe-version']).toBe(VERSION_API_STRIPE);
   });
 
+  it('🔴 J7 : sans avoir (une période impayée), un arrêt nu, sous une autre clé d’idempotence', async () => {
+    const t = new FauxTransport([{ status: 200, json: { id: 'sub_N', status: 'canceled' } }]);
+    await arreterAbonnementNumeroSeul(t, { cle: CLE, abonnementId: 'sub_N', avoir: false });
+    expect(t.appels[0]!.methode).toBe('DELETE');
+    // Aucun crédit du temps restant d'une période jamais payée.
+    expect(Object.fromEntries(t.appels[0]!.corps)).toEqual({});
+    // Une autre clé : un rejeu qui changerait d'avis entre les deux ne se ferait pas refuser pour paramètres différents.
+    expect(t.appels[0]!.entetes['idempotency-key']).toBe('arret-sub_N');
+  });
+
   it('un arrêt qui ne rend pas CET abonnement annulé est un refus', async () => {
-    await expect(arreterAbonnementAvecAvoir(new FauxTransport([{ status: 200, json: { id: 'sub_AUTRE', status: 'canceled' } }]), { cle: CLE, abonnementId: 'sub_N' }))
+    await expect(arreterAbonnementNumeroSeul(new FauxTransport([{ status: 200, json: { id: 'sub_AUTRE', status: 'canceled' } }]), { cle: CLE, abonnementId: 'sub_N', avoir: true }))
       .rejects.toBeInstanceOf(StripeError);
-    await expect(arreterAbonnementAvecAvoir(new FauxTransport([{ status: 200, json: { id: 'sub_N', status: 'active' } }]), { cle: CLE, abonnementId: 'sub_N' }))
+    await expect(arreterAbonnementNumeroSeul(new FauxTransport([{ status: 200, json: { id: 'sub_N', status: 'active' } }]), { cle: CLE, abonnementId: 'sub_N', avoir: true }))
       .rejects.toBeInstanceOf(StripeError);
   });
 

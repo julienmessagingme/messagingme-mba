@@ -201,6 +201,29 @@ describe('POST /numero-fourni sans abonnement (lot 3c, livraison B) : pas de num
     }
   });
 
+  it('🔴 J6 : en Pro, un numéro NEUF ne prend pas celui d’un abonné qui a payé et attend : 409 « réserve vide »', async () => {
+    // Un libre, un abonné en attente : ce libre lui est dû (jaune 7 de la livraison B), comme pour un paiement.
+    const { server, cap } = monter({ abonnement: null, pro: true, reserve: ['441235619343'], attente: ['t2'] });
+    const res = await server.inject({ method: 'POST', url: URL, ...h(adminTok), payload: '{}' });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ cause: 'reserve_vide' });
+    expect(cap.attribues).toBe(0);
+    await server.close();
+  });
+
+  it('J6 : la garde ne vise que le Pro sans numéro : un numéro déjà attribué se rend, un abonné qui attend est servi', async () => {
+    for (const o of [
+      { abonnement: null, pro: true, attribue: '441235619343', attente: ['t2'], libresApres: 0 },
+      { abonnement: 'actif' as const, attente: ['t1'], reserve: ['441235619343'] },
+    ]) {
+      const { server } = monter(o);
+      const res = await server.inject({ method: 'POST', url: URL, ...h(adminTok), payload: '{}' });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ numero: '+441235619343' });
+      await server.close();
+    }
+  });
+
   it('un abonnement en retard de paiement garde son droit : le numéro s’attribue', async () => {
     const { server } = monter({ abonnement: 'en_retard' });
     expect((await server.inject({ method: 'POST', url: URL, ...h(adminTok), payload: '{}' })).statusCode).toBe(200);

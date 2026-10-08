@@ -218,6 +218,25 @@ describe.skipIf(!url)('l’offre calculée (0218)', () => {
       expect((await pool.query('select count(*)::int as n from abonnements_numero where tenant_id = $1', [t])).rows[0].n).toBe(1);
     });
 
+    it('🔴 J1 : une vieille ligne LIBÉRÉE n’empêche pas la ligne portée : le numéro neuf du Pro suit le lot 4', async () => {
+      // Un numéro seul abandonné puis libéré, un Pro, un numéro NEUF sans payer, et la fin du Pro : sans ligne portée, le
+      // numéro neuf ne serait jamais suspendu ni libéré (la vieille ligne se lit « libéré »).
+      const t = await espace('itest-offre-porter-libere');
+      await pool.query(
+        `insert into abonnements_numero (stripe_subscription_id, tenant_id, livemode, statut, fini_le, libere_le, cree_le)
+         values ('sub_itestporterlibere', $1, true, 'resilie', now() - interval '60 days', now() - interval '50 days', now() - interval '90 days')`,
+        [t],
+      );
+      const numeros = new PgAbonnementsNumeroStore(pool);
+      const fin = new Date(Date.now() - 3_600_000);
+      expect(await numeros.porterLaFinParLePro({ tenantId: t, abonnementPro: 'sub_itestporterpro3', livemode: true, finiLe: fin })).toBe(true);
+      const e = await numeros.etatDeLEspace(t);
+      expect(e?.abonnementId).toBe('sub_itestporterpro3');
+      expect(e?.libereLe).toBeNull();
+      expect(e?.liberationLe?.getTime()).toBe(fin.getTime() + 7 * 24 * 3_600_000);
+      expect(await numeros.aSurveiller()).toContain(t);
+    });
+
     it('🔴 J5 : au passage en Pro, les avis de suspension et le rappel de l’espace sont oubliés ; la libération et l’espace voisin, non', async () => {
       const t = await espace('itest-offre-avis');
       const voisin = await espace('itest-offre-avis-voisin');
@@ -237,13 +256,35 @@ describe.skipIf(!url)('l’offre calculée (0218)', () => {
 
     /** Un numéro fourni attribué à l'espace (le chiffre varie par appel : la colonne est unique). */
     let numeroSuivant = 447700900100;
-    async function attribuerUnNumero(tenantId: string): Promise<void> {
+    async function attribuerUnNumero(tenantId: string): Promise<string> {
       numeroSuivant += 1;
       await pool.query(
         "insert into numeros_fournis (numero, didww_did_id, statut, tenant_id, attribue_le) values ($1, $2, 'attribue', $3, now())",
         [String(numeroSuivant), `itest-did-${numeroSuivant}`, tenantId],
       );
+      return String(numeroSuivant);
     }
+
+    it('🔴 J8 : un numéro APPORTÉ, c’est un numéro relié qui n’est pas le numéro fourni, chiffres comparés', async () => {
+      const t = await espace('itest-offre-apporte');
+      const numeros = new PgAbonnementsNumeroStore(pool);
+      const pn = `itest-pn-apporte-${t}`;
+      try {
+        expect(await numeros.numeroApporte(t)).toBe(false);
+        const fourni = await attribuerUnNumero(t);
+        expect(await numeros.numeroApporte(t)).toBe(false);
+        // Relié par le numéro fourni, écrit comme Meta l'affiche : ce n'est pas un numéro apporté.
+        await pool.query(
+          `insert into phone_numbers (id, tenant_id, waba_id, display_phone_number, status) values ($1, $2, $3, $4, 'CONNECTED')`,
+          [pn, t, `itest-waba-apporte-${t}`, `+${fourni.slice(0, 2)} ${fourni.slice(2, 6)} ${fourni.slice(6)}`],
+        );
+        expect(await numeros.numeroApporte(t)).toBe(false);
+        await pool.query(`update phone_numbers set display_phone_number = '+33 6 00 00 00 99' where id = $1`, [pn]);
+        expect(await numeros.numeroApporte(t)).toBe(true);
+      } finally {
+        await pool.query('delete from phone_numbers where id = $1', [pn]);
+      }
+    });
 
     it('🔴 rendre le numéro à la fin du Pro : posé et retiré sur le Pro VIVANT seulement ; la suite du numéro le dit', async () => {
       const t = await espace('itest-offre-rendre');
