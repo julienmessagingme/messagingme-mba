@@ -42,7 +42,8 @@ export default function SignupPage() {
       return;
     }
     saveSession({ token: res.token, email: res.user.email, role: res.user.role, tenantId: res.user.tenantId });
-    router.replace('/accueil');
+    // Le tunnel de la Base (lot 19) : le numéro (sautable), puis la page finale, sans passer par l'accueil.
+    router.replace('/connecter-whatsapp?suite=demarrer');
   }
 
   async function onSubmit(e: React.FormEvent) {

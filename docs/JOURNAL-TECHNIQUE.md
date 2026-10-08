@@ -5,6 +5,20 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-08 : le tunnel de la Base (lot 19), écrit
+
+Un espace qui naît (mot de passe ou Google) ne tombe plus sur l'accueil : la page du numéro, sautable (« Plus tard »),
+puis `/demarrer`, qui donne la commande `claude mcp add --transport http messagingme <API>/mcp` SANS clé (décision de
+Julien : la connexion OAuth se valide par `/mcp` dans Claude Code, rien de secret ne passe par le terminal ; la relecture
+a rappelé que Claude Code ne l'ouvre pas tout seul), la clé de l'application
+créée sur place (droits par défaut, montrée une fois en ligne de `.env` sous `MESSAGINGME_API_KEY`) et le premier
+message à coller. L'adresse dérive de `BASE`, jamais du domaine de la console (où `/mcp` rend 404).
+
+Un écart au plan, tranché à l'exécution : il envoyait l'inscription droit sur `/demarrer`, contre son propre objectif
+(le numéro d'abord). Et un trou qu'il ne voyait pas : le retour de Stripe après le paiement d'un numéro fourni arrive
+sur `/connecter-whatsapp?abonnement=recu` (`src/stripe/abonnement.ts`), sans la suite, donc l'espace aurait perdu la
+page finale. La suite se garde dans la mémoire de l'onglet, et la page finale l'efface.
+
 ## 2026-10-08 : C en production, et les jaunes de sa relecture
 
 **Déployée** (`6f1bd0d5`, puis `e4aeecae` : un test d'intégration attendait encore 1 € pour Claude Code contre 5 € pour

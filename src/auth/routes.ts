@@ -377,7 +377,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     // Adresse inconnue : inscription libre via Google (espace et admin, sans mot de passe).
     const { tenantId, userId } = await creerEspaceParGoogle(deps.comptes, identity, 'console');
     const jwt = await signSession({ userId, tenantId, role: 'admin' }, deps.secret);
-    // isNew:true : le front envoie vers /accueil (onboarding « connecter ton numéro »).
+    // isNew:true : le front ouvre le tunnel de la Base (le numéro, puis la page finale `/demarrer`).
     return reply.code(201).send({ token: jwt, user: { email: identity.email, role: 'admin', tenantId }, isNew: true });
   });
 

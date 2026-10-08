@@ -249,7 +249,7 @@ test.describe('Enrôlement obligatoire d’un administrateur', () => {
     await expect(page.getByText('La double authentification est déjà active. Reconnectez-vous.')).toBeVisible();
   });
 
-  test('🔴 inscription : l’espace créé passe par l’enrôlement avant l’accueil', async ({ page }) => {
+  test('🔴 inscription : l’espace créé passe par l’enrôlement avant le tunnel de la Base', async ({ page }) => {
     const appels = await monter(page, (chemin) => {
       if (chemin === '/auth/signup') return { status: 201, body: { enrolToken: 'jeton-enrol' } };
       if (chemin === '/auth/mfa/enroler') return { body: CLE };
@@ -267,7 +267,8 @@ test.describe('Enrôlement obligatoire d’un administrateur', () => {
     expect(await sessionEnregistree(page)).toBeNull();
     await page.getByTestId('codes-secours-conserves').check();
     await page.getByTestId('codes-secours-continuer').click();
-    await page.waitForURL('**/accueil', { timeout: 15_000 });
+    // Le tunnel de la Base (lot 19) : l'espace créé passe par son numéro (sautable), pas par l'accueil.
+    await page.waitForURL('**/connecter-whatsapp?suite=demarrer', { timeout: 15_000 });
     expect(appelsVers(appels, '/auth/signup')).toHaveLength(1);
   });
 

@@ -169,9 +169,17 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 
 - ✅ **Inscription libre** (`/signup`) : n'importe qui crée **son propre espace** (nom d'espace + email + mot de
-  passe) et en devient l'**admin**. Redirige vers l'accueil (connecter le numéro).
+  passe) et en devient l'**admin**. Elle enchaîne sur le **tunnel de la Base** (2026-10-08), sans passer par
+  l'accueil : la page du numéro WhatsApp (le sien ou un numéro fourni, avec « Plus tard » pour la sauter), puis la
+  **page finale `/demarrer`**, qui donne tout pour vivre dans Claude Code : le numéro (affiché, ou « Connecter mon
+  numéro »), la **commande qui branche Claude Code** (sans clé : la connexion à l'espace se valide ensuite
+  par `/mcp` dans Claude Code), **« Créer la clé de mon application »** (droits par défaut, montrée une seule fois, en ligne de
+  `.env` sous `MESSAGINGME_API_KEY`), et le **premier message à coller** dans Claude Code (le serveur à utiliser, la
+  clé jamais dans le code, la documentation de l'API, et le numéro à brancher s'il ne l'est pas). La suite survit
+  au paiement d'un numéro fourni.
 - ✅ **Se connecter avec Google** (bouton sur `/login`, `/signup`, `/invite`) : vérif du jeton côté serveur ;
-  liaison **par email** (compte existant -> connexion ; email inconnu -> crée un espace, comme un signup).
+  liaison **par email** (compte existant -> connexion ; email inconnu -> crée un espace et prend le même tunnel
+  qu'un signup).
 - ✅ **Invitations d'équipe** (admin) : inviter un membre par email (Resend) -> il pose son mot de passe (ou
   Google) via un lien, puis rejoint l'espace avec le rôle défini. Le compte reste « invité » tant qu'il n'a pas
   activé. L'email est un **HTML brandé** (logo Messaging Me, couleurs de marque) et **personnalisé** (« X t'invite

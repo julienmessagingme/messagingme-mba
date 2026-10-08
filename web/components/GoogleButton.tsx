@@ -119,8 +119,8 @@ export function GoogleButton({ onError, onChoix, surJeton, separateur = true }: 
                   return;
                 }
                 saveSession({ token: res.token, email: res.user.email, role: res.user.role, tenantId: res.user.tenantId });
-                // Nouvel espace -> onboarding (connecter le numéro), comme le signup email ; sinon inbox (agent) / accueil (admin).
-                router.replace(res.isNew ? '/accueil' : pageDArrivee(res.user.role));
+                // Nouvel espace -> le tunnel de la Base (lot 19), comme le signup email ; sinon inbox (agent) / accueil (admin).
+                router.replace(res.isNew ? '/connecter-whatsapp?suite=demarrer' : pageDArrivee(res.user.role));
               })
               .catch((err) => onErrorRef.current?.(err instanceof Error ? err.message : t('Connexion Google impossible', 'Google sign-in failed')));
           },

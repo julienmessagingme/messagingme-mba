@@ -1,5 +1,15 @@
 # todo.md : backlog
 
+## 🟡 Lot 19, le tunnel de la Base : ce qui reste (2026-10-08)
+
+- **La documentation de l'API ne se lit pas sans JavaScript.** Le prompt de `/demarrer` (et `site/llms.txt`) pointe
+  `/developers/api`, dont `CadreDoc` ne rend rien avant d'avoir lu la session côté navigateur : le WebFetch de Claude
+  Code n'y trouve qu'une coquille. Rendre la doc côté serveur, ou en publier une version texte, puis y pointer.
+- **Revenir sur `/demarrer` recrée une clé** « Mon application » à chaque clic (la précédente, montrée une fois, reste
+  active et compte dans les 10). Acceptable (le lien vers Clés d'API est donné), à reprendre si l'essai réel le montre.
+- **Le prompt peut proposer de brancher un numéro déjà connecté** tant que le statut du compte n'a pas répondu.
+  Sans conséquence : l'outil répond qu'il n'y a rien à brancher.
+
 ## 🟡 L'assistant du MBA et ses consignes : ce qui reste (2026-10-08)
 
 - **Les cibles des FAQ, des sites et des fichiers entrent sans garde dans le chemin de Meta** (`src/mba/client.ts`,

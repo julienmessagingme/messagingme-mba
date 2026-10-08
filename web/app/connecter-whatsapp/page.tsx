@@ -5,11 +5,12 @@ import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { TitrePage, IntroPage } from '@/components/TitrePage';
 import { ParcoursNumero, BoutonPortail } from '@/components/ParcoursNumero';
-import { Bouton } from '@/components/Bouton';
+import { Bouton, classesBouton } from '@/components/Bouton';
 import type { Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
 import { getAccountStatus, type AccountStatusResponse } from '@/lib/api';
 import { apiDeLaSession } from '@/lib/api/connexion-numero';
+import { CLE_SUITE, enSuiteDeDemarrage, SUITE_DEMARRER } from '@/lib/demarrer';
 
 /**
  * « CONNECTER WHATSAPP » dans la console (lot 3b, spec `docs/superpowers/specs/2026-10-05-numero-fourni-design.md`).
@@ -32,6 +33,18 @@ function ConnecterWhatsapp({ session }: { session: Session }) {
     getAccountStatus(tenantId).then(setCompte).catch(() => { /* l'écran reste utilisable sans le statut */ });
   }, [tenantId]);
   useEffect(() => { chargerCompte(); }, [chargerCompte]);
+
+  // Une étape du tunnel de la Base (lot 19) : « Plus tard » tant que rien n'est connecté, « Continuer » ensuite, et les
+  // deux mènent à la page finale. La mémoire de l'onglet garde la suite à travers le paiement d'un numéro fourni ; la
+  // page finale l'efface.
+  const [tunnel, setTunnel] = useState(false);
+  useEffect(() => {
+    let memoire: string | null = null;
+    try { memoire = window.sessionStorage.getItem(CLE_SUITE); } catch { /* mémoire indisponible : l'adresse suffit */ }
+    const oui = enSuiteDeDemarrage(window.location.search, memoire);
+    if (oui) { try { window.sessionStorage.setItem(CLE_SUITE, SUITE_DEMARRER); } catch { /* idem */ } }
+    setTunnel(oui);
+  }, []);
 
   const connecte = compte?.hasNumber === true;
   // Connecté avec un numéro fourni payé : l'abonnement se gère encore d'ici (jaune 1 de la relecture de la livraison B).
@@ -66,7 +79,11 @@ function ConnecterWhatsapp({ session }: { session: Session }) {
           <div className="text-lg font-semibold text-ink-900">{t('Votre numéro WhatsApp est connecté', 'Your WhatsApp number is connected')}</div>
           <p className="mt-1 text-sm text-ink-500">{compte?.number ?? ''}</p>
           <div className="mt-4 flex flex-wrap items-center gap-4">
-            <Link href="/accueil" className="inline-block text-sm font-semibold text-ink-900 underline">{t('Retour à l’accueil', 'Back to home')}</Link>
+            {tunnel ? (
+              <Link href="/demarrer" className={classesBouton('principal', 'petite')} data-testid="numero-continuer">{t('Continuer', 'Continue')}</Link>
+            ) : (
+              <Link href="/accueil" className="inline-block text-sm font-semibold text-ink-900 underline">{t('Retour à l’accueil', 'Back to home')}</Link>
+            )}
             {statut === 'resilie' && numeroFourniConnecte ? (
               <Bouton type="button" taille="petite" enCours={reabonnement.enCours} disabled={reabonnement.enCours} onClick={() => { void seReabonner(); }} data-testid="se-reabonner">
                 {t('Se réabonner (3,50 € HT par mois)', 'Renew (€3.50 excl. VAT per month)')}
@@ -86,6 +103,12 @@ function ConnecterWhatsapp({ session }: { session: Session }) {
           connecte={connecte}
           surConnexion={(av) => { setAvertissements(av); chargerCompte(); }}
         />
+      )}
+
+      {tunnel && !connecte && (
+        <Link href="/demarrer" className="mt-6 inline-block text-sm font-semibold text-ink-900 underline" data-testid="numero-plus-tard">
+          {t('Plus tard', 'Later')}
+        </Link>
       )}
 
       {avertissements.length > 0 && (

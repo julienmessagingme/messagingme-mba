@@ -1,6 +1,6 @@
 ---
 source_section: Comptes & authentification
-source_empreinte: 216d7a
+source_empreinte: bbdad8
 ---
 # Inviter mon équipe, et gérer les accès
 
@@ -32,7 +32,10 @@ qu'avant. Un espace suspendu n'y est pas proposé.
 **Créer son propre espace** se fait depuis la page d'inscription : un nom d'espace, une adresse, un mot de
 passe, et vous en êtes l'administrateur. Vous pouvez aussi passer par Google, à l'inscription comme à la
 connexion : le rapprochement se fait sur l'adresse e-mail, donc un compte qui existe déjà est simplement
-reconnu.
+reconnu. Un espace qui vient de naître passe ensuite par son numéro WhatsApp (« Plus tard » le saute), puis par une
+page qui donne tout pour piloter l'espace depuis Claude Code : la commande à lancer (puis /mcp dans Claude Code pour
+valider la connexion), la clé de votre application,
+montrée une seule fois, et le premier message à coller.
 
 **La double authentification** ajoute un code au mot de passe. Elle est obligatoire pour les administrateurs :
 à la première connexion (ou à l'inscription), vous scannez un QR code avec une application d'authentification
