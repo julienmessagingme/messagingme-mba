@@ -4,8 +4,9 @@
 sections validées une à une), puis AMENDÉ le même jour après la cartographie du code qui a précédé le plan
 (sept lecteurs, lecture seule) : dix arbitrages de plus (§ « Les amendements du 2026-09-26 ») et deux
 affirmations corrigées. ÉTENDU le 2026-09-30 (§ « Les ajouts du 2026-09-30 ») : écriture dans les champs du
-client, lecture de champs Salesforce, campagnes lancées depuis Salesforce, actions de Flow. Plan :
-`docs/superpowers/plans/2026-09-26-app-salesforce.md`.
+client, lecture de champs Salesforce, campagnes lancées depuis Salesforce, actions de Flow. ÉTENDU le 2026-10-08
+(§ « L'ajout du 2026-10-08 ») : l'outil « Consulter Salesforce » de l'agent IA, qui lit le CRM en direct pendant
+une conversation. Plan : `docs/superpowers/plans/2026-09-26-app-salesforce.md`.
 
 ## Le problème
 
@@ -140,6 +141,37 @@ Décisions techniques prises sans arbitrage :
   l'utilisateur d'intégration sont ignorées) les couvre, et elle devient d'autant plus nécessaire.
 - **Les règles et la correspondance écrivent par le même écrivain** que les champs Engage Me, dans le même appel
   (un seul écrivain pour ce qu'Engage Me pose dans Salesforce).
+
+### L'ajout du 2026-10-08 : l'outil « Consulter Salesforce » de l'agent IA
+
+Julien, le 2026-10-08 : l'agent IA doit pouvoir s'appuyer sur les données CRM du client pour répondre, comme
+Agentforce s'appuie sur la fiche et ses objets liés. La synchro de nuit (L6) n'y suffit pas : elle copie un
+sous-ensemble de champs du Lead, du Contact et de l'opportunité ouverte, vieux d'au plus un jour, et ni le Compte,
+ni les Cases, ni les objets personnalisés. L'outil les lit **à la demande, au moment du tour**. Les deux se
+complètent : la synchro nourrit la fiche (filtres, conditions, variables de message), l'outil nourrit la réponse.
+
+| Question | Décision |
+|---|---|
+| Le principe | Un **outil maison de l'agent IA** (comme `mba_lire_contact`), proposé quand l'espace est relié à une org et activable agent par agent comme les autres outils. Il interroge Salesforce pendant le tour et rend ce qu'il a lu au modèle. |
+| Pour qui | **Le contact du tour, et lui seul**, retrouvé par son numéro avec l'algorithme de la remontée (mesure 2). Jamais un identifiant, un numéro ou une requête fournis par le modèle : il ne choisit que d'appeler l'outil. |
+| Ce qui se lit | **Ce que l'admin autorise, objet par objet et champ par champ**, dans une liste fermée choisie à l'écran : la fiche (Lead ou Contact), son Compte, ses Cases (ouverts, et les plus récents), ses opportunités, un objet personnalisé relié à la fiche. Chaque objet est borné en nombre de lignes, chaque valeur en longueur. Rien n'est lu par défaut. |
+| Ce qui est gardé | **Aucune copie à part** : la réponse n'entre pas dans la fiche (qui reste la synchro de nuit) et le journal des appels d'outil n'en garde que la trace (outil, durée, statut), jamais les valeurs. ⚠️ Comme tout résultat d'outil, elle entre aujourd'hui dans le transcript de la session de l'agent, sa mémoire de trente jours (`MEMOIRE_JOURS`, `src/agent/brain.gateway.ts`), qui lui permet de répondre à une question de suite sans relire Salesforce. Garder ce résultat tel quel, le réduire ou l'effacer du transcript après le tour : à trancher au cadrage du lot, c'est la question qu'un DSI posera. |
+| Un numéro ambigu | Plusieurs fiches pour le même numéro, ou aucune : **l'outil ne rend rien** et le dit au modèle, plutôt qu'une fiche qui serait peut-être celle d'un autre client. Même règle que le rattachement de la remontée. |
+| Les droits | Le jeu de permissions de l'utilisateur d'intégration doit accorder la lecture des objets choisis ; l'écran ne propose que les champs que cet utilisateur peut réellement lire (vérifiés par `describe`). Le moindre privilège est exigé par la security review et par les DSI : on ne demande jamais « tout lire ». |
+| Le mode de connexion | Indifférent : package (clé répliquée) ou connexion directe par org (identifiants propres à l'org, sans package). Le client REST et la vérification d'identité sont les mêmes. |
+
+Décisions techniques prises sans arbitrage :
+
+- **Un appel d'outil = une requête SOQL par objet autorisé**, bornée (`LIMIT`), sur l'identifiant de la fiche
+  retrouvée ; le compteur d'API de l'org, déjà lu à chaque réponse, en garde la trace. Pas de requête libre.
+- **Le résultat entre dans le prompt comme un bloc de données délimité**, jamais comme une consigne, et il passe
+  par la même borne de taille que les autres outils d'agent.
+- **Une panne de Salesforce n'arrête pas le tour** : l'outil rend « données Salesforce indisponibles », jamais un
+  vide qui laisserait croire au modèle que le client n'a rien chez nous (même règle que `analyse_indisponible`
+  de « Lire la fiche »).
+- **Ce que l'on promet aux DSI** : ces données partent chez le fournisseur du modèle, pour le seul tour. Avant de
+  vendre « l'IA qui lit votre CRM », il faut pouvoir dire lequel, sous quel engagement de conservation, et ce qui
+  est masqué (c'est l'argument de la « couche de confiance » d'Agentforce, la question viendra).
 
 ### Salesforce appelle notre API : ce que le choix achète et ce qu'il coûte
 
@@ -409,14 +441,15 @@ que Salesforce refuse (PKCE exigé sur sa propre application de liaison).
 | **L4 Déclencheurs** | Déclencheurs Apex et boîte d'envoi, route de notifications, le type `salesforce_transition` et son écran. **Ajout du 2026-09-30** : l'action de Flow « envoyer à une personne ». |
 | **L5 Carte** | La carte, la liste autorisée, la route d'envoi synchrone et sa file dédiée, les accusés, les réponses et l'affectation dans l'Inbox. **Ajout du 2026-09-30** : l'action de Flow « lire la dernière analyse ». |
 | **L6 Synchro montante** | Ajout du 2026-09-30 : la synchro de nuit du Lead, du Contact et de l'opportunité ouverte la plus récemment modifiée vers le groupe « Salesforce » de la liste unique de la fiche, pour les fiches déjà reliées. |
+| **L7 Lecture à la demande** | Ajout du 2026-10-08 : l'outil « Consulter Salesforce » de l'agent IA, l'écran des objets et champs autorisés (vérifiés par `describe`), les requêtes bornées, le refus sur numéro ambigu, le journal sans valeurs. Après L1, indépendant de L2 à L6. |
 | **Hors V1** | Listing AppExchange et security review. |
 
 ## Méthode de livraison
 
 **En direct pour L0** (des mesures, aucun code de production). **Implémenteur par lot et revue humaine du diff
-pour L1 à L5** : la production emprunte ces chemins (envois, appels entrants, migrations, écritures chez le
-client), et le code porte des invariants invisibles (consentement, doublons de fiche, quota du client, un
-seul écrivain par objet).
+pour L1 à L7** : la production emprunte ces chemins (envois, appels entrants, migrations, écritures chez le
+client, données du client envoyées au modèle), et le code porte des invariants invisibles (consentement,
+doublons de fiche, quota du client, un seul écrivain par objet, lecture bornée au contact du tour).
 
 **Ordre de déploiement** : pour chaque lot, l'API d'abord, puis les écrans, cachés derrière l'interrupteur
 d'espace éteint par défaut (leçon du 2026-09-21 : un écran qui appelle une route neuve casse dès le push). La
@@ -426,7 +459,8 @@ migration du schéma passe avant le code qui la lit.
 prospect) : quelqu'un installe le package en suivant SEULEMENT le guide ; Julien envoie un WhatsApp depuis la
 carte vers son téléphone, répond, et voit l'analyse arriver en activité ; il passe une opportunité à l'étape
 surveillée et le scénario part ; il lance une campagne sur une Campaign Salesforce et voit les statuts de
-membres bouger.
+membres bouger. Pour L7 : un agent IA à qui Julien écrit depuis le numéro d'une fiche qui porte un Case ouvert
+cite ce Case dans sa réponse, et ne cite rien quand le numéro correspond à deux fiches.
 
 ## Hors périmètre
 
