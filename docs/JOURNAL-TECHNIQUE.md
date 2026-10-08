@@ -5,7 +5,7 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
-## 2026-10-08 : un outil de connecteur suit enfin sa requête, écrit
+## 2026-10-08 : un outil de connecteur suit enfin sa requête, en production
 
 **Le constat** (Groupama PJ) : la variable `age_mois` de la requête « tarif » est renommée `age` à 9 h 43 UTC dans
 Tools > Connecteurs API. L'agent IA qui s'en sert (`obtenir_tarif`) continue de remplir `age_mois`, et chaque appel
@@ -39,7 +39,22 @@ lecture de la colonne remise rend rouge le seul cas du renommage (`['espece','ra
 anti-IDOR retirée rend rouges les deux cas qui la portent. `tests/integration/connecteur-suit-sa-requete.integration.test.ts`
 joue le même parcours sur les vrais magasins, plus les outils maison et MCP et l'isolation de la sous-requête. Le
 nouveau code du catalogue, joué en lecture seule sur la production, expose `[espece, race, age]` pour
-`obtenir_tarif` : l'ancien `age_mois`, le nouveau `age`, sur les mêmes lignes.
+`obtenir_tarif` : l'ancien `age_mois`, le nouveau `age`, sur les mêmes lignes. Le test d'intégration a aussi été vu
+dans les deux sens, sur un Postgres jetable du VPS (accord de Julien) : la lecture de la colonne remise rougit le seul
+cas du renommage, le filtre d'espace retiré de la sous-requête rougit le seul cas d'isolation.
+
+**En production** le 2026-10-08 à 11 h 54 UTC (`d7460e34`, au-dessus de la livraison C du lot 6 et de `3a4414cd`),
+sans migration, après une relecture indépendante sans rouge (six jaunes, corrigés dans `d7460e34`) et la CI verte sur
+ses trois jobs : `merge --ff-only`, l'API et le worker principal, puis le worker d'analyse, le correctif lu dans les
+trois conteneurs, la fumée publique et les fiches OAuth conformes, aucune erreur aux journaux.
+
+**L'essai réel** (`test_agent` sur l'agent de Groupama PJ, « un labrador de 3 ans ») : l'agent appelle
+`obtenir_tarif` avec `age`, et l'appel part chez Groupama, qui répond ; avant, il était refusé avant de partir. Mais
+il envoie `age: 36`. Les MOTS de l'outil, propres à l'outil et écrits le 2026-10-05, disent encore « l'âge en mois
+(3 ans = 36) », et la variable `age` de la requête n'a pas de description ; le système de Groupama répond qu'il lui
+manque l'âge (« en années, ou en mois s'il a moins d'un an »). C'est un réglage de l'espace, pas un défaut du code :
+l'outil de l'agent de Meta, réécrit le matin même, ne demande plus de convertir. Depuis ce lot, une description posée
+sur la variable atteint l'agent au tour suivant.
 
 ## 2026-10-08 : la liste de l'agent de Meta tourne (plafond de 20), écrit, pas encore déployé
 
