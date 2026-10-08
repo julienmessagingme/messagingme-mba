@@ -144,7 +144,7 @@ export interface PolitiqueDeLancement {
  * La raison d'un démarrage refusé par le gel : la chaîne remonte telle quelle à l'appelant (l'outil d'un agent IA, le
  * destinataire d'une campagne, le scénario répondeur qui retombe sur l'équipe).
  */
-export const REFUS_SCENARIOS_HORS_OFFRE = 'offre Base : les scénarios du client ne démarrent plus (offre Pro requise)';
+export const REFUS_SCENARIOS_HORS_OFFRE = 'offre Free : les scénarios du client ne démarrent plus (offre Pro requise)';
 
 /**
  * Le motif d'une session d'agent IA close parce que l'agent a lancé un scénario (RC4). Écrit dans

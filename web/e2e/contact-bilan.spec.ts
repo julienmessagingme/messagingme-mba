@@ -23,10 +23,10 @@ const LIMITES_BASE = {
   adressesWebhook: 1, journalWebhooksJours: 3, conservationJours: 30, commissionPct: 50, badge: true, numeroInclus: false,
 };
 const OFFRE_BASE = {
-  offre: 'base', fonctions: [], limites: LIMITES_BASE, usage: { envoisModelesMois: 0, contacts: 1, automations: 0, membres: 1 },
+  offre: 'free', fonctions: [], limites: LIMITES_BASE, usage: { envoisModelesMois: 0, contacts: 1, automations: 0, membres: 1 },
   // La lecture de la console exige les trois offres de la grille (`lireVueOffre`) ; seules leurs fonctions comptent ici.
   grille: {
-    base: { fonctions: [], limites: LIMITES_BASE },
+    free: { fonctions: [], limites: LIMITES_BASE },
     pro: { fonctions: ['analyse'], limites: LIMITES_BASE },
     entreprise: { fonctions: ['analyse'], limites: LIMITES_BASE },
   },

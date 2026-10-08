@@ -10,20 +10,20 @@ import { test, expect, type Page } from '@playwright/test';
 const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
 const TOUTES = ['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines', 'crm', 'rcs', 'performance_lab'];
 const PRO = TOUTES.slice(0, 10);
-const limites = (o: 'base' | 'pro' | 'entreprise') => ({
-  utilisateurs: o === 'base' ? 1 : o === 'pro' ? 3 : null, admins: o === 'base' ? 1 : o === 'pro' ? 2 : null,
-  contacts: o === 'base' ? 100 : null, envoisModelesMois: o === 'base' ? 1000 : null, automations: o === 'base' ? 10 : null,
-  suppressionsJour: o === 'base' ? 10 : null, adressesWebhook: o === 'base' ? 1 : 5, journalWebhooksJours: o === 'base' ? 3 : 30,
-  conservationJours: o === 'base' ? 30 : 90, commissionPct: o === 'base' ? 50 : 10, badge: o === 'base', numeroInclus: o !== 'base',
+const limites = (o: 'free' | 'pro' | 'entreprise') => ({
+  utilisateurs: o === 'free' ? 1 : o === 'pro' ? 3 : null, admins: o === 'free' ? 1 : o === 'pro' ? 2 : null,
+  contacts: o === 'free' ? 100 : null, envoisModelesMois: o === 'free' ? 1000 : null, automations: o === 'free' ? 10 : null,
+  suppressionsJour: o === 'free' ? 10 : null, adressesWebhook: o === 'free' ? 1 : 5, journalWebhooksJours: o === 'free' ? 3 : 30,
+  conservationJours: o === 'free' ? 30 : 90, commissionPct: o === 'free' ? 50 : 10, badge: o === 'free', numeroInclus: o !== 'free',
 });
 const GRILLE = {
-  base: { fonctions: [], limites: limites('base') },
+  free: { fonctions: [], limites: limites('free') },
   pro: { fonctions: PRO, limites: limites('pro') },
   entreprise: { fonctions: TOUTES, limites: limites('entreprise') },
 };
-const vue = (o: 'base' | 'pro' | 'entreprise') => ({
+const vue = (o: 'free' | 'pro' | 'entreprise') => ({
   offre: o, fonctions: GRILLE[o].fonctions, limites: limites(o),
-  usage: { envoisModelesMois: o === 'base' ? 250 : null, contacts: 100, automations: 3, membres: 1 },
+  usage: { envoisModelesMois: o === 'free' ? 250 : null, contacts: 100, automations: 3, membres: 1 },
   grille: GRILLE, upgradeUrl: 'https://console.e2e.test/offre',
 });
 const PHRASE_LIMITE = 'Limite de votre offre atteinte : 100 contacts. Passez en Pro pour la lever : https://console.e2e.test/offre';
@@ -77,7 +77,7 @@ async function monter(page: Page, offre: unknown, o: { paiement?: Reponse; suspe
 
 test.describe('une Base', () => {
   test('🔴 les menus et les onglets des fonctions fermées sont grisés et mènent à l’offre', async ({ page }) => {
-    await monter(page, vue('base'));
+    await monter(page, vue('free'));
     await page.goto('/contacts');
     await expect(page.getByTestId('nav-verrou-chaine')).toBeVisible();
     await expect(page.getByTestId('nav-verrou-publicites')).toHaveAttribute('href', '/offre?fonction=publicites');
@@ -87,7 +87,7 @@ test.describe('une Base', () => {
   });
 
   test('🔴 l’écran d’une fonction fermée n’est pas monté : l’encart de l’offre le remplace, sans appel à la fonction', async ({ page }) => {
-    const { appels } = await monter(page, vue('base'));
+    const { appels } = await monter(page, vue('free'));
     await page.goto('/chaine');
     await expect(page.getByTestId('encart-offre')).toBeVisible();
     await expect(page.getByTestId('encart-offre')).toContainText('Pro');
@@ -95,16 +95,16 @@ test.describe('une Base', () => {
   });
 
   test('🔴 la pastille des non-lus ne part pas : la route est dans le module de l’Inbox', async ({ page }) => {
-    const { appels } = await monter(page, vue('base'));
+    const { appels } = await monter(page, vue('free'));
     await page.goto('/contacts');
     await expect(page.getByTestId('nav-verrou-chaine')).toBeVisible();
     expect(appels.filter((a) => a.includes('unread-count'))).toEqual([]);
   });
 
   test('la page de l’offre : l’offre, ce qui est consommé, la grille, et « Passer en Pro »', async ({ page }) => {
-    await monter(page, vue('base'));
+    await monter(page, vue('free'));
     await page.goto('/offre?fonction=inbox');
-    await expect(page.getByTestId('offre-actuelle')).toHaveText('Base');
+    await expect(page.getByTestId('offre-actuelle')).toHaveText('Free');
     await expect(page.getByTestId('offre-raison')).toContainText('Pro');
     await expect(page.getByTestId('offre-usage-contacts')).toContainText('100 / 100');
     await expect(page.getByTestId('offre-usage-modeles')).toContainText('250 / 1');
@@ -115,7 +115,7 @@ test.describe('une Base', () => {
   });
 
   test('🔴 la 101e fiche est refusée : la phrase du serveur, et le chemin vers l’offre', async ({ page }) => {
-    await monter(page, vue('base'));
+    await monter(page, vue('free'));
     await page.goto('/contacts');
     await page.getByTestId('contacts-ajouter-menu').click();
     await page.getByTestId('contact-ajouter').click();
@@ -130,7 +130,7 @@ test.describe('une Base', () => {
 
 test.describe('payer le Pro (livraison B1)', () => {
   test('🔴 une Base paie le Pro : le clic demande le paiement à l’API, puis part sur la page de Stripe', async ({ page }) => {
-    const { paiements } = await monter(page, { ...vue('base'), prixPro: PRIX_PRO });
+    const { paiements } = await monter(page, { ...vue('free'), prixPro: PRIX_PRO });
     await page.goto('/offre');
     await expect(page.getByTestId('offre-payer-mois')).toContainText('49 € HT');
     await expect(page.getByTestId('offre-payer-an')).toContainText('490 € HT');
@@ -143,7 +143,7 @@ test.describe('payer le Pro (livraison B1)', () => {
   });
 
   test('🔴 le Pro pas encore en vente (503) : le Support prend le relais, sans message d’erreur', async ({ page }) => {
-    await monter(page, { ...vue('base'), prixPro: PRIX_PRO }, { paiement: { status: 503, corps: { error: 'pas encore en vente', code: 'pro_indisponible' } } });
+    await monter(page, { ...vue('free'), prixPro: PRIX_PRO }, { paiement: { status: 503, corps: { error: 'pas encore en vente', code: 'pro_indisponible' } } });
     await page.goto('/offre');
     await page.getByTestId('offre-payer-mois').click();
     await expect(page.getByTestId('offre-passer-pro')).toHaveAttribute('href', '/support?sujet=pro');
@@ -151,7 +151,7 @@ test.describe('payer le Pro (livraison B1)', () => {
   });
 
   test('un autre refus se dit, et les boutons restent', async ({ page }) => {
-    await monter(page, { ...vue('base'), prixPro: PRIX_PRO }, { paiement: { status: 502, corps: { error: 'Stripe ne répond pas' } } });
+    await monter(page, { ...vue('free'), prixPro: PRIX_PRO }, { paiement: { status: 502, corps: { error: 'Stripe ne répond pas' } } });
     await page.goto('/offre');
     await page.getByTestId('offre-payer-mois').click();
     await expect(page.getByTestId('offre-paiement-erreur')).toBeVisible();
@@ -189,7 +189,7 @@ test.describe('payer le Pro (livraison B1)', () => {
   });
 
   test('le retour de Stripe : paiement reçu, ou abandonné sans débit', async ({ page }) => {
-    await monter(page, { ...vue('base'), prixPro: PRIX_PRO });
+    await monter(page, { ...vue('free'), prixPro: PRIX_PRO });
     await page.goto('/offre?pro=recu');
     await expect(page.getByTestId('offre-paiement-recu')).toBeVisible();
     // 🟡 Le webhook peut ne pas être encore arrivé : pas de bouton pour payer une seconde fois (jaune 8 de la relecture).
@@ -202,7 +202,7 @@ test.describe('payer le Pro (livraison B1)', () => {
   });
 
   test('🟡 le Pro pas encore en vente (prixPro nul) : le Support tout de suite, sans bouton qui échoue', async ({ page }) => {
-    await monter(page, { ...vue('base'), prixPro: null });
+    await monter(page, { ...vue('free'), prixPro: null });
     await page.goto('/offre');
     await expect(page.getByTestId('offre-passer-pro')).toHaveAttribute('href', '/support?sujet=pro');
     await expect(page.getByTestId('offre-payer-mois')).toHaveCount(0);
@@ -211,7 +211,7 @@ test.describe('payer le Pro (livraison B1)', () => {
 
 test.describe('un membre en trop (livraison B2a)', () => {
   test('🔴 chaque requête refusée : la page entière le dit, et on peut se déconnecter', async ({ page }) => {
-    await monter(page, vue('base'), { suspendu: true });
+    await monter(page, vue('free'), { suspendu: true });
     await page.goto('/contacts');
     await expect(page.getByTestId('acces-suspendu')).toBeVisible();
     await expect(page.getByTestId('acces-suspendu-phrase')).toHaveText('Limite de votre offre atteinte : 1 utilisateur. Passez en Pro pour la lever.');
@@ -222,7 +222,7 @@ test.describe('un membre en trop (livraison B2a)', () => {
   });
 
   test('l’accès rendu (l’espace repassé en Pro) : « Réessayer » rouvre la console, sans se reconnecter', async ({ page }) => {
-    const { reprendre } = await monter(page, vue('base'), { suspendu: true });
+    const { reprendre } = await monter(page, vue('free'), { suspendu: true });
     await page.goto('/contacts');
     await expect(page.getByTestId('acces-suspendu')).toBeVisible();
     reprendre();

@@ -2228,6 +2228,11 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
   qui en dépendront l'appelleront dans leur requête. Les VALEURS (fonctions, limites) vivent une fois, dans
   `DROITS` (`src/offres/offres.ts`) ; la console et `get_plan` les lisent dans la vue de l'offre (`grille`), jamais
   recopiées.
+- 🔴 **L'OFFRE GRATUITE S'APPELLE « FREE » DEHORS, `base` DEDANS** (décision de Julien du 2026-10-08) : la base, `Offre`,
+  `DROITS` et `offre_de_l_espace` gardent `base` ; la vue de l'offre (`offrePublique`, `src/offres/vue.ts`) est le SEUL
+  point de traduction, et rend `free` dans `offre` et dans les clés de la `grille`, donc à `GET /offre` et à `get_plan`.
+  La console lit encore `base` d'une API plus ancienne et le ramène à `free` (`lireVueOffre`), parce qu'elle est
+  publiée avant l'API.
 - **Les fonctions se gardent au montage, route par route.** L'entrée d'un module dans `modulesDeRoutes` déclare
   une `FonctionDeRoute` (`toutes`, `ecritures`, ou `fonctionDesStatistiques`) ; `monterAvecEtapeEspace` pose
   `etapeOffre` derrière `etapeEspace`. 🔴 Le module des statistiques se partage d'après l'ÉCRAN qui lit chaque route :

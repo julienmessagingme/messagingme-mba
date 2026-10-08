@@ -710,7 +710,7 @@ export const OUTILS: OutilMcp[] = [
     nom: 'get_plan',
     fonction: null,
     description:
-      'L’offre de l’espace (base, pro ou entreprise) : les fonctions qu’elle ouvre, ses limites (null = sans limite) et '
+      'L’offre de l’espace (free, pro ou entreprise) : les fonctions qu’elle ouvre, ses limites (null = sans limite) et '
       + 'ce qui en est consommé (contacts créés, automations allumées, membres, modèles envoyés ce mois-ci), plus le lien '
       + 'upgradeUrl pour passer en Pro. À lire quand un geste est refusé avec plan_limit_reached ou '
       + 'plan_feature_unavailable : les réponses dans la fenêtre de 24 h ne sont jamais limitées.',

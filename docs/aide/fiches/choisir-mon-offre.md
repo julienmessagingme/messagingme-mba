@@ -1,18 +1,18 @@
 ---
 ecran: offre
 source_section: Offres (menu « Paramètres » > Offre)
-source_empreinte: 422e48
+source_empreinte: 27fc2c
 ---
 # Choisir mon offre
 
-Votre espace a une offre : **Base** (gratuite), **Pro** (un abonnement, au mois ou à l'année) ou **Entreprise**
+Votre espace a une offre : **Free** (gratuite), **Pro** (un abonnement, au mois ou à l'année) ou **Entreprise**
 (sur devis). Elle décide des fonctions ouvertes, et des limites de ce que vous pouvez créer ou envoyer.
 
 **Voir où vous en êtes.** Le menu Paramètres > Offre montre votre offre, ce que votre espace consomme de chaque
 limite (contacts créés, modèles envoyés ce mois-ci, automations allumées, utilisateurs), et la grille des trois
 offres côte à côte.
 
-**Ce que la Base comprend.** Votre numéro WhatsApp, l'API, la connexion à Claude, les contacts, les campagnes de
+**Ce que l'offre Free comprend.** Votre numéro WhatsApp, l'API, la connexion à Claude, les contacts, les campagnes de
 modèles, les automations et l'agent IA, avec des plafonds. L'Inbox, les scénarios, les statistiques, l'agent de
 Meta, les assistants, les publicités, l'e-mail et les chaînes demandent le Pro. Le RCS, les connecteurs CRM et le
 Performance Lab complet demandent l'Entreprise.
@@ -25,14 +25,14 @@ comptée non plus.
 la page Offre. Si une action est refusée parce qu'une limite est atteinte, un message vous le dit, avec un bouton
 « Voir les offres ».
 
-**Ce que l'offre change aux coûts.** Notre commission sur le crédit IA est de 50 % en Base et de 10 % en Pro et en
-Entreprise. L'analyse des conversations ne tourne pas en Base ; en Pro, une conversation est analysée au premier
-nouveau message (le passé n'est pas rattrapé). En Base, les conversations se gardent 30 jours, mais seulement 30 jours
-après l'entrée en Base : à la création de l'espace, à la fin de votre Pro ou au départ de l'Entreprise.
+**Ce que l'offre change aux coûts.** Notre commission sur le crédit IA est de 50 % en Free et de 10 % en Pro et en
+Entreprise. L'analyse des conversations ne tourne pas en Free ; en Pro, une conversation est analysée au premier
+nouveau message (le passé n'est pas rattrapé). En Free, les conversations se gardent 30 jours, mais seulement 30 jours
+après l'entrée en Free : à la création de l'espace, à la fin de votre Pro ou au départ de l'Entreprise.
 
-**Si votre espace revient en Base.** Rien n'est effacé, et tout revient quand vous reprenez le Pro. En attendant,
+**Si votre espace revient en Free.** Rien n'est effacé, et tout revient quand vous reprenez le Pro. En attendant,
 seules vos 10 automations les plus anciennes lancent encore leurs scénarios (vos widgets ne démarrent plus le leur),
-l'agent de Meta ne prend plus de nouvelles conversations, et les membres au-delà de la limite de la Base voient leur
+l'agent de Meta ne prend plus de nouvelles conversations, et les membres au-delà de la limite de l'offre Free voient leur
 accès suspendu (l'administrateur le plus ancien garde le sien) : dès que l'espace repasse en Pro, « Réessayer » leur
 rend la console.
 
@@ -43,7 +43,7 @@ L'offre Entreprise se demande au Support.
 
 **Gérer mon abonnement.** En Pro, le bouton « Gérer mon abonnement » de la page Offre ouvre le portail de Stripe :
 changer de carte, retrouver vos factures ou résilier. Pour passer du mensuel à l'annuel, écrivez-nous au Support. Une résiliation prend effet à
-la fin de la période payée ; votre espace revient alors en Base.
+la fin de la période payée ; votre espace revient alors en Free.
 
 **Votre numéro fourni.** Il est inclus dans le Pro : obtenez-le sans payer depuis la page « Connecter WhatsApp ».
 S'il était déjà payé à part, cet abonnement s'arrête quand vous passez en Pro, avec un avoir sur la facture suivante.

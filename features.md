@@ -169,7 +169,7 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 
 
 - ✅ **Inscription libre** (`/signup`) : n'importe qui crée **son propre espace** (nom d'espace + email + mot de
-  passe) et en devient l'**admin**. Elle enchaîne sur le **tunnel de la Base** (2026-10-08), sans passer par
+  passe) et en devient l'**admin**. Elle enchaîne sur le **tunnel de l'offre Free** (2026-10-08), sans passer par
   l'accueil : la page du numéro WhatsApp (le sien ou un numéro fourni, avec « Plus tard » pour la sauter), puis la
   **page finale `/demarrer`**, qui donne tout pour vivre dans Claude Code : le numéro (affiché, ou « Connecter mon
   numéro »), la **commande qui branche Claude Code** (sans clé : la connexion à l'espace se valide ensuite
@@ -240,10 +240,10 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   nous le décideur d'une chose qui ne nous appartient pas. Les 90 jours sont le défaut de qui n'a rien
   réglé, et **0 veut dire « ne jamais purger cet espace »**. Elle peut être raccourcie, jamais rallongée
   rétroactivement, puisque ce qui est effacé ne revient pas.
-  ✅ **En Base, 30 jours** (lot 6, livraison C), mais seulement **30 jours après l'entrée en Base** : la création de
+  ✅ **En Free, 30 jours** (lot 6, livraison C), mais seulement **30 jours après l'entrée en Free** : la création de
   l'espace, la fin de son Pro, ou sa sortie de l'Entreprise. D'ici là, la règle d'avant continue : changer d'offre
   ne déclenche jamais de purge sur le coup, et laisse le temps de se réabonner ou d'exporter. Une durée plus courte
-  réglée pour l'espace reste respectée ; « ne jamais purger » ou plus long ne dépasse pas les 30 jours de la Base.
+  réglée pour l'espace reste respectée ; « ne jamais purger » ou plus long ne dépasse pas les 30 jours de l'offre Free.
   ⚠️ **Ce qui disparaît, c'est le CONTENU, pas la mémoire de l'activité** : les compteurs de la Synthèse
   (conversations par jour, satisfaction et urgence moyennes, répartition par intention) sont conservés à
   part, sous forme de totaux journaliers qui ne portent ni numéro, ni texte, ni résumé, ni identifiant de
@@ -2277,7 +2277,7 @@ scénario, comment importer des contacts.
   pas 2xx en 10 secondes. Une adresse n'est jamais suspendue d'elle-même ; un `410` arrête l'événement concerné. Le
   même identifiant d'événement (`id`) revient au réessai et au rejeu : l'application dédoublonne.
 - ✅ **Le journal de chaque adresse** : chaque envoi avec le corps envoyé, la dernière réponse, les tentatives, et
-  « Rejouer » ; « Rejouer les échecs depuis… » relance un lot. Il se garde 3 jours en Base, 30 jours en Pro et en
+  « Rejouer » ; « Rejouer les échecs depuis… » relance un lot. Il se garde 3 jours en Free, 30 jours en Pro et en
   Entreprise.
 - ✅ **« Envoyer un essai »** part tout de suite, signé, et dit ce que l'application a répondu.
 - ✅ **Depuis Claude Code** : `create_webhook_endpoint` inscrit une adresse et rend son secret, `send_test_event`
@@ -2288,7 +2288,7 @@ scénario, comment importer des contacts.
   envois, sans avoir à s'y abonner ; l'application répond à cet événement seulement, pas à `message.received`. L'application répond
   par `POST /v1/messages/whatsapp` : sa réponse ne prend pas la conversation, et ne compte pas dans le quota
   quotidien d'envois de l'API (le plafond par minute s'applique). Aucun repli si elle se tait.
-- ⚠️ **Limite de l'offre** : 1 adresse active en Base, 5 en Pro, sans limite en Entreprise. Au retour en Base, les
+- ⚠️ **Limite de l'offre** : 1 adresse active en Free, 5 en Pro, sans limite en Entreprise. Au retour en Free, les
   adresses en trop ne sont pas effacées, elles cessent de recevoir (les plus anciennes restent actives).
 - La documentation publique décrit l'enveloppe, la vérification avec un exemple Node et chaque type :
   Developers > Documentation API, page Webhooks sortants (`/developers/api/webhooks`).
@@ -2947,7 +2947,7 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   INVENTE), et ils parlent correctement français. Un modèle retiré du catalogue disparaît tout seul de la
   liste. Les prix, eux, sont lus en direct chez le fournisseur : ils ne peuvent pas être périmés.
   ✅ **Le tarif affiché est le tarif payé** (2026-09-28) : il inclut notre commission, celle de l'offre de l'espace
-  (50 % en Base, 10 % en Pro et en Entreprise, depuis le lot 6), et le crédit est décompté au même tarif, commission
+  (50 % en Free, 10 % en Pro et en Entreprise, depuis le lot 6), et le crédit est décompté au même tarif, commission
   comprise. La consommation de l'encadré du dessous est donc au prix de
   la liste. ⚠️ Avant cette date, le crédit était décompté au coût brut (environ 10 % sous le tarif
   affiché), et l'écran le disait ; une conversation d'avant garde le montant qui lui a été décompté.
@@ -3401,12 +3401,12 @@ Crédit jusqu'au 2026-09-29 ; l'ancienne adresse y mène toujours.
 
 ## Offres (menu « Paramètres » > Offre)
 
-Chaque espace a une offre : **Base** (gratuite), **Pro** (abonnement mensuel ou annuel) ou **Entreprise** (sur
+Chaque espace a une offre : **Free** (gratuite), **Pro** (abonnement mensuel ou annuel) ou **Entreprise** (sur
 devis). L'offre décide de deux choses : les **fonctions** ouvertes, et les **limites** de ce qu'on peut créer ou
 envoyer. Les chiffres exacts vivent à un seul endroit (`src/offres/offres.ts`) et s'affichent sur la page Offre :
 cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
 
-- ✅ **La Base** donne le numéro, l'API, Claude (le serveur MCP), les contacts, les campagnes de modèles, les
+- ✅ **L'offre Free** donne le numéro, l'API, Claude (le serveur MCP), les contacts, les campagnes de modèles, les
   automations et l'agent IA, avec des plafonds : contacts créés, modèles envoyés par mois civil, automations
   allumées, suppressions de contacts par jour, un seul utilisateur. Elle n'ouvre ni l'Inbox, ni les scénarios, ni
   les statistiques, ni l'agent de Meta, ni les assistants, ni les publicités, l'e-mail ou les chaînes.
@@ -3426,11 +3426,11 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   ouverte.
 - ✅ **La page Offre** (admins) : l'offre de l'espace, ce qu'il consomme de chaque limite (avec une jauge), la
   grille des trois offres, et le passage en Pro.
-- ✅ **Le Pro se paie en ligne** (livraison B1) : une Base choisit « Mensuel » ou « Annuel » sur la page Offre et
+- ✅ **Le Pro se paie en ligne** (livraison B1) : un espace en Free choisit « Mensuel » ou « Annuel » sur la page Offre et
   paie sur la page de Stripe, code promo accepté. L'espace passe en Pro dès que Stripe confirme le paiement (dans la
   minute), et la page Offre le dit au retour. Un Pro y trouve « Gérer mon abonnement », le portail de Stripe : carte,
   factures, résiliation. Passer du mensuel à l'annuel n'y est pas ouvert (réglage du portail). Une résiliation prend effet à la fin de la période payée,
-  et l'espace revient alors en Base ; un renouvellement refusé le laisse en Pro pendant les relances de Stripe.
+  et l'espace revient alors en Free ; un renouvellement refusé le laisse en Pro pendant les relances de Stripe.
   ⚠️ Tant que le Pro n'est pas en vente (prix pas posés), le bouton « Passer en Pro » ouvre le Support, sujet
   prérempli.
 - ✅ **Le numéro fourni est inclus dans le Pro** (livraison B2b) : un espace en Pro obtient son numéro sans payer, depuis
@@ -3445,7 +3445,7 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   rendu, un Pro fini pour impayé ou arrêté tout de suite (sans fin annoncée), ou une carte refusée suivent le chemin
   d'un impayé : envois coupés, sept jours pour s'abonner au numéro, puis libération. Un espace qui envoie par son
   propre numéro ne reprend pas le numéro fourni : celui-ci est libéré sept jours après la fin du Pro.
-- ✅ **Au retour en Base, on gèle, on n'efface rien** (livraison B2a) : un espace qui revient en Base (fin du Pro) garde
+- ✅ **Au retour en Free, on gèle, on n'efface rien** (livraison B2a) : un espace qui revient en Free (fin du Pro) garde
   toutes ses données, et tout revient au réabonnement. Ses scénarios ne démarrent plus que par ses automations, les 10
   plus anciennes seulement (celles au-delà, et celles des chaînes, des publicités et des widgets à scénario, se taisent) ;
   plus de lancement depuis l'Inbox, par l'agent de Meta, par les outils d'un agent IA (lancer un scénario, envoyer un
@@ -3455,23 +3455,23 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   neuf et le scénario répondeur ne part plus : ces deux modes se comportent comme « Équipe », et ne peuvent plus être
   choisis ; l'agent IA répondeur continue. Les membres au-delà des limites perdent l'accès (le plus ancien
   administrateur garde le sien) : la console leur montre une page « accès suspendu », avec « Réessayer » pour revenir
-  dès que l'espace repasse en Pro, et Claude leur répond par le même refus. Cette suspension ne vaut qu'en Base et en
+  dès que l'espace repasse en Pro, et Claude leur répond par le même refus. Cette suspension ne vaut qu'en Free et en
   Pro : en Entreprise, une limite de membres ne bloque que les nouvelles invitations.
 - ✅ **Par l'API et Claude** : un refus rend le statut **402** avec un code, `plan_feature_unavailable` (fonction
   absente de l'offre) ou `plan_limit_reached` (limite atteinte), et le lien `upgradeUrl`. L'outil MCP `get_plan`
-  rend l'offre, ses limites, ce qui est consommé et la grille. Les outils de l'Inbox restent listés en Base et refusent
+  rend l'offre, ses limites, ce qui est consommé et la grille. Les outils de l'Inbox restent listés en Free et refusent
   avec le lien de l'offre.
 - ✅ **L'Entreprise se pose par nous**, par une route de l'exploitation (`PUT /ops/offre/:tenantId`, pas encore d'écran),
   avec sa limite d'utilisateurs (10 proposés, vide = sans limite) et, si on la donne, la durée de conservation des
   conversations (absente, elle reste telle quelle : changer d'offre ne déclenche jamais de purge). La même route ramène
-  un espace en Base. Les espaces qui existaient avant le lot 6 sont tous en Entreprise, sans aucune limite.
+  un espace en Free. Les espaces qui existaient avant le lot 6 sont tous en Entreprise, sans aucune limite.
 - ✅ **Les coûts suivent l'offre** (livraison C) :
-  - la **commission sur le crédit IA** : 50 % en Base, 10 % en Pro et en Entreprise, au tarif affiché comme au montant
+  - la **commission sur le crédit IA** : 50 % en Free, 10 % en Pro et en Entreprise, au tarif affiché comme au montant
     décompté ;
-  - l'**analyse des conversations** ne tourne pas en Base : la fiche d'un contact dit « analyse disponible en Pro ».
+  - l'**analyse des conversations** ne tourne pas en Free : la fiche d'un contact dit « analyse disponible en Pro ».
     Passer en Pro n'analyse pas le passé : une conversation est analysée au premier nouveau message, et la fiche le dit
     (« analysée au prochain message ») ;
-  - la **conservation** : 30 jours en Base, 30 jours après l'entrée en Base (voir les conversations, plus haut) ;
+  - la **conservation** : 30 jours en Free, 30 jours après l'entrée en Free (voir les conversations, plus haut) ;
   - la **recherche dans la connaissance, la préparation des fiches et la transcription** sont payées par le crédit,
     dans toutes les offres ;
   - le **crédit offert** au premier numéro vaut 1 € pour tous les espaces.

@@ -389,7 +389,7 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
         if (a) {
           deps.pro.invalider(a.tenantId);
           // Un rejeu de la fin (Stripe rejoue tout événement non acquitté) ne réalerte pas.
-          if (a.premiereFin) await deps.pro.alerter(`Pro terminé (${raison === 'impaye' ? 'impayé' : 'résiliation'}) : espace ${a.tenantId} (${a.abonnementId}). L'espace revient en Base.`);
+          if (a.premiereFin) await deps.pro.alerter(`Pro terminé (${raison === 'impaye' ? 'impayé' : 'résiliation'}) : espace ${a.tenantId} (${a.abonnementId}). L'espace revient en Free.`);
           // Le numéro inclus (B2b) : la raison et la date gardées en base (la première fin), pas celles d'un rejeu.
           await deps.pro.surFinDuPro({
             tenantId: a.tenantId, abonnementPro: a.abonnementId, livemode,
@@ -422,7 +422,7 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
       const a = await deps.pro.majStatut(abonnementId, 'en_retard', null, finFacture);
       if (a) {
         deps.pro.invalider(a.tenantId);
-        await deps.pro.alerter(`Renouvellement du Pro échoué : espace ${a.tenantId} (${a.abonnementId}). Stripe réessaie ; sans paiement, l'espace reviendra en Base.`);
+        await deps.pro.alerter(`Renouvellement du Pro échoué : espace ${a.tenantId} (${a.abonnementId}). Stripe réessaie ; sans paiement, l'espace reviendra en Free.`);
       }
       return ok();
     }

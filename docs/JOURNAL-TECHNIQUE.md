@@ -5,6 +5,16 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-08 : l'offre gratuite s'appelle « Free », écrit
+
+Décision de Julien du jour, valeur de l'API comprise : `GET /offre` et `get_plan` rendent `offre: "free"` et une grille
+`free`, `pro`, `entreprise`. La base et le code serveur gardent `base` ; la traduction tient en UN point, la vue de
+l'offre (`offrePublique`). Le piège était dans l'ordre de publication : Vercel publie la console au push, avant le `up`
+de l'API, donc une console qui n'aurait connu que `free` aurait lu l'ancienne réponse comme illisible pendant la
+fenêtre (rien de grisé, mais la page de l'offre muette). Elle accepte les deux et ramène `base` à `free`. Les fiches
+d'aide qui citent une section touchée ont été relues : deux nommaient l'offre, quatre n'avaient que leur empreinte à
+reprendre.
+
 ## 2026-10-08 : « mon application répond » (lot 12, livraison B), en production
 
 Poussée (`97235386`), CI verte job par job, 0224 appliquée à 16 h 45 UTC et relue en base avant le `up` de l'API, des

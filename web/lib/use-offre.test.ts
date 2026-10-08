@@ -10,7 +10,7 @@ const VUE = {
   limites: { utilisateurs: null, admins: null, contacts: null, envoisModelesMois: null, automations: null, suppressionsJour: null,
     adressesWebhook: 5, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 10, badge: false, numeroInclus: true },
 };
-const vue = { ...VUE, grille: { base: VUE, pro: VUE, entreprise: VUE } };
+const vue = { ...VUE, grille: { free: VUE, pro: VUE, entreprise: VUE } };
 
 describe('offreEnMemoire', () => {
   beforeEach(() => { oublierOffre(); });

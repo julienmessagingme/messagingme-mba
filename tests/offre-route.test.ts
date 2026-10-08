@@ -23,7 +23,7 @@ beforeAll(async () => {
 const personne: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 
 const VUE_BASE: VueOffre = {
-  offre: 'base', fonctions: [], limites: { ...DROITS.base.limites },
+  offre: 'free', fonctions: [], limites: { ...DROITS.base.limites },
   usage: { envoisModelesMois: 250, contacts: 42, automations: 3, membres: 1 }, grille: grilleDesOffres(), prixPro: { moisCentimes: 4900, anCentimes: 49000 },
   suiteDuNumero: null, upgradeUrl: 'https://console.test/offre',
 };

@@ -8,7 +8,7 @@ source_empreinte: d8301e
 Le crédit IA est le crédit prépayé de votre espace. Il paie **vos agents IA**, à chaque échange avec leur modèle et
 à chaque recherche dans leur base de connaissance (en conversation comme dans l'onglet Tester), **la préparation de
 vos fiches de connaissance**, et **la traduction et la transcription des conversations de l'Inbox**. Le tarif est
-celui de votre offre, affiché dans l'onglet Modèle d'un agent : notre commission y est de 50 % en Base et de 10 % en
+celui de votre offre, affiché dans l'onglet Modèle d'un agent : notre commission y est de 50 % en Free et de 10 % en
 Pro et en Entreprise. Vous le trouvez dans **Paramètres >
 Crédit IA** ; l'écran est réservé aux administrateurs.
 

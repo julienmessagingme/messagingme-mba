@@ -33,7 +33,8 @@ describe('la suite du numéro fourni dans la vue (lot 6, B2b)', () => {
 describe('creerVueOffre', () => {
   it('🔴 une Base : aucune fonction gardée, ses limites, et les modèles CONSOMMÉS ce mois-ci', async () => {
     const v = await vue('base', { max: 1000, reste: 750 })('t1');
-    expect(v.offre).toBe('base');
+    // Le nom PUBLIC (décision du 2026-10-08) : « Free », la base et le code serveur gardant `base`.
+    expect(v.offre).toBe('free');
     expect(v.fonctions).toEqual([]);
     expect(v.limites).toEqual(DROITS.base.limites);
     expect(v.usage).toEqual({ envoisModelesMois: 250, contacts: 42, automations: 3, membres: 1 });
@@ -48,10 +49,10 @@ describe('creerVueOffre', () => {
 
   it('🔴 la vue porte la GRILLE des trois offres, lue dans la seule définition : la console ne la recopie jamais', async () => {
     const v = await vue('base', null)('t1');
-    expect(Object.keys(v.grille)).toEqual(['base', 'pro', 'entreprise']);
-    for (const o of ['base', 'pro', 'entreprise'] as const) {
-      expect(v.grille[o].limites).toEqual(DROITS[o].limites);
-      expect(v.grille[o].fonctions).toEqual(FONCTIONS.filter((f) => DROITS[o].fonctions.has(f)));
+    expect(Object.keys(v.grille)).toEqual(['free', 'pro', 'entreprise']);
+    for (const [publique, o] of [['free', 'base'], ['pro', 'pro'], ['entreprise', 'entreprise']] as const) {
+      expect(v.grille[publique].limites).toEqual(DROITS[o].limites);
+      expect(v.grille[publique].fonctions).toEqual(FONCTIONS.filter((f) => DROITS[o].fonctions.has(f)));
     }
     expect(v.grille.entreprise.fonctions).toEqual([...FONCTIONS]);
     v.grille.pro.limites.utilisateurs = 9999;

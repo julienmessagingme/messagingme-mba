@@ -2,6 +2,16 @@ import { DROITS, FONCTIONS, PRIX_PRO_HT_CENTIMES, type Fonction, type Limites, t
 import type { SourceOffres } from './offre.pg';
 import { adresseOffre } from './refus';
 
+/**
+ * LE NOM PUBLIC D'UNE OFFRE (décision de Julien du 2026-10-08) : l'offre gratuite s'appelle « Free » partout où elle se
+ * lit, valeur de l'API comprise. La base et tout le code serveur gardent `base` (`Offre`, `DROITS`, `offre_de_l_espace`) :
+ * la traduction se fait ICI, à la sortie de la vue, et nulle part ailleurs.
+ */
+export type OffrePublique = 'free' | 'pro' | 'entreprise';
+export function offrePublique(o: Offre): OffrePublique {
+  return o === 'base' ? 'free' : o;
+}
+
 /** Ce qu'un espace a consommé de ses limites. `null` = sans limite, donc rien n'est compté. */
 export interface UsageOffre {
   envoisModelesMois: number | null;
@@ -15,7 +25,8 @@ export interface UsageOffre {
  * `get_plan`, un seul calcul pour les deux. La grille n'est jamais recopiée côté console : elle se lit ici.
  */
 export interface VueOffre {
-  offre: Offre;
+  /** Le nom PUBLIC (`offrePublique`) : `free`, jamais `base`. */
+  offre: OffrePublique;
   /** Les fonctions ouvertes, dans l'ordre de `FONCTIONS`. */
   fonctions: Fonction[];
   limites: Limites;
@@ -24,7 +35,7 @@ export interface VueOffre {
    * La grille des trois offres, lue dans `DROITS` : la page `/offre` de la console et Claude (`get_plan`) la montrent sans
    * jamais la recopier. Les limites de l'Entreprise y sont celles du devis par défaut (`null` = sans limite).
    */
-  grille: Record<Offre, { fonctions: Fonction[]; limites: Limites }>;
+  grille: Record<OffrePublique, { fonctions: Fonction[]; limites: Limites }>;
   /**
    * Les prix HT du Pro, en centimes (`PRIX_PRO_HT_CENTIMES`) : la page de l'offre les affiche, Claude les lit. `null` tant
    * que le Pro n'est pas en vente (ses prix Stripe pas posés) : la console renvoie alors au Support sans faire cliquer.
@@ -50,10 +61,11 @@ export interface DepsVueOffre {
   suiteDuNumero(tenantId: string): Promise<{ finPrevueLe: Date | null; rendreNumero: boolean } | null>;
 }
 
-/** Une copie neuve à chaque appel : la modifier ne touche pas `DROITS`. */
+/** Une copie neuve à chaque appel : la modifier ne touche pas `DROITS`. Les clés passent par `offrePublique`, elle seule. */
 export function grilleDesOffres(): VueOffre['grille'] {
   const une = (o: Offre) => ({ fonctions: FONCTIONS.filter((f) => DROITS[o].fonctions.has(f)), limites: { ...DROITS[o].limites } });
-  return { base: une('base'), pro: une('pro'), entreprise: une('entreprise') };
+  const offres: readonly Offre[] = ['base', 'pro', 'entreprise'];
+  return Object.fromEntries(offres.map((o) => [offrePublique(o), une(o)])) as VueOffre['grille'];
 }
 
 export function creerVueOffre(d: DepsVueOffre): (tenantId: string) => Promise<VueOffre> {
@@ -62,7 +74,7 @@ export function creerVueOffre(d: DepsVueOffre): (tenantId: string) => Promise<Vu
       d.offres.offreDe(tenantId), d.usage(tenantId), d.modelesDuMois.etatDuMois(tenantId), d.suiteDuNumero(tenantId),
     ]);
     return {
-      offre,
+      offre: offrePublique(offre),
       fonctions: FONCTIONS.filter((f) => droits.fonctions.has(f)),
       limites: { ...droits.limites },
       usage: { envoisModelesMois: mois === null ? null : mois.max - mois.reste, ...usage },

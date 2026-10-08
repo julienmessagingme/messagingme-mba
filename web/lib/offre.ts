@@ -16,7 +16,11 @@ export const FONCTIONS_OFFRE = [
 ] as const;
 export type FonctionOffre = (typeof FONCTIONS_OFFRE)[number];
 
-export const NOMS_OFFRES = ['base', 'pro', 'entreprise'] as const;
+/**
+ * Les noms PUBLICS (`offrePublique`, `src/offres/vue.ts`) : l'offre gratuite s'appelle `free` depuis le 2026-10-08. Une
+ * API d'avant ce renommage rend encore `base` : `lireVueOffre` le ramène à `free` (`NOM_D_AVANT`).
+ */
+export const NOMS_OFFRES = ['free', 'pro', 'entreprise'] as const;
 export type NomOffre = (typeof NOMS_OFFRES)[number];
 
 /** Les clés des limites (`Limites`, `src/offres/offres.ts`). `null` = sans limite. */
@@ -62,6 +66,10 @@ const entierOuNul = (v: unknown): v is number | null => v === null || (typeof v 
 const entier = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
 const estFonction = (v: unknown): v is FonctionOffre => typeof v === 'string' && (FONCTIONS_OFFRE as readonly string[]).includes(v);
 const estOffre = (v: unknown): v is NomOffre => typeof v === 'string' && (NOMS_OFFRES as readonly string[]).includes(v);
+/** L'ancien nom de l'offre gratuite, rendu par une API d'avant le 2026-10-08 (la console est publiée avant l'API). */
+const NOM_D_AVANT = 'base';
+/** L'offre lue, l'ancien nom ramené au nouveau. */
+const lireNom = (v: unknown): NomOffre | null => (v === NOM_D_AVANT ? 'free' : estOffre(v) ? v : null);
 
 /** Une fonction inconnue (un serveur plus récent) est ignorée : elle n'a de toute façon aucun écran ici. */
 function lireFonctions(v: unknown): ReadonlySet<FonctionOffre> | null {
@@ -85,7 +93,9 @@ function lireLimites(v: unknown): LimitesOffre | null {
  * console qui grisait tout faute de savoir couperait un client Entreprise de ses écrans sur une simple panne.
  */
 export function lireVueOffre(brut: unknown): VueOffre | null {
-  if (!estObjet(brut) || !estOffre(brut.offre) || typeof brut.upgradeUrl !== 'string') return null;
+  if (!estObjet(brut)) return null;
+  const offre = lireNom(brut.offre);
+  if (offre === null || typeof brut.upgradeUrl !== 'string') return null;
   const fonctions = lireFonctions(brut.fonctions);
   const limites = lireLimites(brut.limites);
   if (fonctions === null || limites === null) return null;
@@ -95,7 +105,7 @@ export function lireVueOffre(brut: unknown): VueOffre | null {
   if (!estObjet(g)) return null;
   const grille: Partial<VueOffre['grille']> = {};
   for (const o of NOMS_OFFRES) {
-    const ligne = g[o];
+    const ligne = o === 'free' && g.free === undefined ? g[NOM_D_AVANT] : g[o];
     if (!estObjet(ligne)) return null;
     const f = lireFonctions(ligne.fonctions);
     const l = lireLimites(ligne.limites);
@@ -103,7 +113,7 @@ export function lireVueOffre(brut: unknown): VueOffre | null {
     grille[o] = { fonctions: f, limites: l };
   }
   return {
-    offre: brut.offre, fonctions, limites,
+    offre, fonctions, limites,
     usage: { envoisModelesMois: u.envoisModelesMois, contacts: u.contacts, automations: u.automations, membres: u.membres },
     grille: grille as VueOffre['grille'],
     prixPro: lirePrixPro(brut.prixPro),
@@ -140,7 +150,7 @@ export function phraseInclusDans(vue: VueOffre, f: FonctionOffre, t: (fr: string
 
 /** Le nom de l'offre, tel que l'écran le montre. */
 export function nomDeLOffre(o: NomOffre, t: (fr: string, en: string) => string): string {
-  return o === 'base' ? t('Base', 'Base') : o === 'pro' ? t('Pro', 'Pro') : t('Entreprise', 'Enterprise');
+  return o === 'free' ? t('Free', 'Free') : o === 'pro' ? t('Pro', 'Pro') : t('Entreprise', 'Enterprise');
 }
 
 /** Ce que la fonction ouvre, tel que l'écran le montre (la grille de `/offre`, la raison d'un menu grisé). */

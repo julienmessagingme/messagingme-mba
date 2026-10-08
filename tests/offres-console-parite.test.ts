@@ -21,7 +21,7 @@ describe('la console et le serveur nomment l’offre de la même façon', () => 
     const cles = Object.keys(DROITS.base.limites).sort();
     expect([...LIMITES_NOMBRE, 'conservationJours', 'commissionPct', 'badge', 'numeroInclus'].sort()).toEqual(cles);
     const vue = {
-      offre: 'base', fonctions: [], limites: { ...DROITS.base.limites },
+      offre: 'free', fonctions: [], limites: { ...DROITS.base.limites },
       usage: { envoisModelesMois: 0, contacts: 0, automations: 0, membres: 1 }, grille: grilleDesOffres(), upgradeUrl: 'https://x/offre',
     };
     const lue = lireVueOffre(JSON.parse(JSON.stringify(vue)));

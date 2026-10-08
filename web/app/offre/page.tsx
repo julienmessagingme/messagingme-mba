@@ -145,7 +145,7 @@ function OffreInner({ session }: { session: Session }) {
     );
   }
 
-  const suivante: NomOffre | null = vue.offre === 'base' ? 'pro' : vue.offre === 'pro' ? 'entreprise' : null;
+  const suivante: NomOffre | null = vue.offre === 'free' ? 'pro' : vue.offre === 'pro' ? 'entreprise' : null;
   const offreDemandee = demandee ? offreQuiOuvre(vue, demandee) : null;
   const jauges: Array<{ cle: string; libelle: string; utilise: number | null; max: number | null; note?: string }> = [
     { cle: 'contacts', libelle: t('Contacts créés', 'Contacts created'), utilise: vue.usage.contacts, max: vue.limites.contacts,

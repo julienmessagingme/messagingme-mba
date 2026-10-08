@@ -11,10 +11,10 @@ const limites = (contacts: number | null) => ({
 });
 const PRO = ['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines'];
 const BASE = {
-  offre: 'base', fonctions: [], limites: limites(100),
+  offre: 'free', fonctions: [], limites: limites(100),
   usage: { envoisModelesMois: 250, contacts: 42, automations: 3, membres: 1 },
   grille: {
-    base: { fonctions: [], limites: limites(100) },
+    free: { fonctions: [], limites: limites(100) },
     pro: { fonctions: PRO, limites: limites(null) },
     entreprise: { fonctions: [...FONCTIONS_OFFRE], limites: limites(null) },
   },
@@ -25,12 +25,19 @@ describe('lireVueOffre', () => {
   it('lit une vue complète, fonctions en ensembles', () => {
     const v = lireVueOffre(BASE);
     expect(v).not.toBeNull();
-    expect(v!.offre).toBe('base');
+    expect(v!.offre).toBe('free');
     expect(v!.fonctions.size).toBe(0);
     expect(v!.limites.contacts).toBe(100);
     expect(v!.usage).toEqual({ envoisModelesMois: 250, contacts: 42, automations: 3, membres: 1 });
     expect(v!.grille.pro.fonctions.has('inbox')).toBe(true);
     expect(v!.grille.pro.limites.contacts).toBeNull();
+  });
+
+  it('🔴 une API d’avant le renommage (`base`, offre et grille) se lit `free` : la console est publiée avant l’API', () => {
+    const { free, ...reste } = BASE.grille;
+    const v = lireVueOffre({ ...BASE, offre: 'base', grille: { ...reste, base: free } });
+    expect(v?.offre).toBe('free');
+    expect(v?.grille.free.limites.contacts).toBe(100);
   });
 
   it('🔴 une réponse illisible rend null (offre inconnue, donc tout ouvert) : le repli {} des e2e, une API ancienne', () => {
