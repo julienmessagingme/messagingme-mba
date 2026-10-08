@@ -40,6 +40,8 @@ test.describe('MBA Paramètres : messages interactifs', () => {
 
     await expect(page.getByTestId('mba-message-fiche-type')).toContainText('Boutons de réponse');
     await expect(page.getByTestId('mba-message-contenu')).toHaveValue(/Boutons \(1 à 3/);
+    // Mesuré le 2026-10-08 : un contenu rempli par un outil MCP fait échouer l'envoi, la fiche le dit.
+    await expect(page.getByTestId('mba-message-contenu-avertissement')).toContainText('Je ne peux pas vous aider avec cela');
     // Sans « quand », rien ne part : c'est ce qui dit à l'agent dans quelle situation envoyer le message.
     await expect(page.getByTestId('mba-message-enregistrer')).toBeDisabled();
     await page.getByTestId('mba-message-quand').fill('le client veut un rendez-vous');

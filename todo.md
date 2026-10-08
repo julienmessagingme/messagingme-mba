@@ -1,5 +1,26 @@
 # todo.md : backlog
 
+## 🟡 Messages interactifs de l'agent de Meta : ce qui reste (2026-10-08)
+
+- **Une liste remplie par un outil ne part pas, et la cause n'est pas isolée.** Quatre essais du 2026-10-08, trois
+  consignes : l'outil MCP `get_contact`, par notre relais, rend `ok`, puis l'agent écrit « Je ne peux pas vous aider
+  avec cela » (mesures : `docs/MBA-API-REFERENCE.md`, table des messages interactifs). L'exemple de Meta remplit un
+  carrousel par un connecteur HTTP. L'essai qui tranche : la même liste remplie par une requête HTTP de la
+  bibliothèque qui rend les étiquettes. La console déconseille ce cas en attendant
+  (`mba-message-contenu-avertissement`).
+- **Le connecteur MCP natif de Meta** (`connector_protocol: MCP`, `refreshMCPTools`, relevé le 2026-10-07) pourrait
+  remplacer notre relais pour les outils MCP. À cadrer avant tout code : ce que le relais apporte et que le natif
+  perdrait (l'identité du client prise de la macro et jamais du modèle, le journal `agent_tool_calls`, la clé qui ne
+  quitte pas Messaging Me, le choix outil par outil), ce que le natif accepte (`auth_type` réduit à
+  `OAUTH2_CLIENT_CREDENTIALS`, `API_KEY` ou `NONE`, donc aucun serveur MCP à connexion OAuth par l'utilisateur), et
+  si une macro peut remplir un paramètre d'outil MCP. C'est aussi la troisième variable de la liste ci-dessus.
+- **Le diff de l'assistant montre l'identifiant brut d'un formulaire**, pas son nom (jaune de la relecture de la
+  livraison B).
+- **L'essai réel de clôture du lot n'est pas fini** : faits le 2026-10-08, la création, l'envoi, l'Inbox, la
+  désactivation et la suppression (après le correctif `82b82b94` de la borne des paramètres d'URL) ; restent le
+  formulaire et sa réponse sur la fiche, l'assistant et sa ligne d'Historique, et le refus de supprimer un
+  formulaire utilisé.
+
 ## 🟡 RC8, supprimer un espace depuis /ops : ce qui reste (2026-10-07)
 
 - **Une clé Vercel déjà disparue chez Vercel rend l'espace insupprimable** : `supprimerCleGateway` ne tient que 2xx

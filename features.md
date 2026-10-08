@@ -3476,7 +3476,9 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   2026-10-07), **Messages interactifs** (les boutons de réponse, listes de choix, boutons lien, formulaires,
   carrousels, images, lieux et demandes de position que l'agent envoie LUI-MÊME quand la situation décrite se
   présente, en gardant la conversation : on choisit le composant dans une grille, puis on dit quand l'envoyer et ce
-  qu'il contient ; un formulaire n'ouvre qu'un formulaire publié, et le type ne se change plus ensuite),
+  qu'il contient ; un formulaire n'ouvre qu'un formulaire publié, et le type ne se change plus ensuite ; le contenu
+  s'écrit FIXE : une liste remplie par la réponse d'un outil MCP n'est jamais partie, et l'agent a alors répondu
+  « Je ne peux pas vous aider avec cela », parfois aussi aux messages suivants, mesuré le 2026-10-08),
   **Outils** (ce que l'agent a le droit
   de FAIRE : poser une étiquette, enregistrer une information, envoyer un bloc, lancer un scénario,
   appeler un système que vous avez connecté), **Fichiers** (jusqu'à 100 Mo de

@@ -272,8 +272,13 @@ function Fiche({ type, message, titresPris, formulaires, busy, onAnnuler, onEnre
       <label className="mt-4 block">
         <span className="text-sm font-medium text-ink-900">{t('Ce que contient le message', 'What the message contains')}</span>
         <span className="mt-0.5 block text-xs text-ink-500">
-          {t('Complétez chaque ligne. Le contenu peut venir d’un outil : « une ligne par créneau rendu par l’outil de réservation ».',
-            'Fill in each line. The content may come from a tool: “one row per slot returned by the booking tool”.')}
+          {t('Complétez chaque ligne avec un contenu fixe.', 'Fill in each line with fixed content.')}
+        </span>
+        {/* Mesuré le 2026-10-08 : une liste remplie par la réponse d'un outil MCP n'est jamais partie (quatre essais,
+            trois consignes), et l'échec a gâché les réponses suivantes de la conversation. */}
+        <span className="mt-1 block text-xs text-alerte-800" data-testid="mba-message-contenu-avertissement">
+          {t('Évitez un contenu rempli par la réponse d’un outil : essayé sur une liste remplie par un outil MCP, l’envoi a échoué à chaque fois, et l’agent a répondu « Je ne peux pas vous aider avec cela », parfois aussi aux messages suivants.',
+            'Avoid content filled from a tool’s answer: tried on a list filled by an MCP tool, sending failed every time, and the agent replied “I can’t help you with that”, sometimes for the following messages too.')}
         </span>
         <textarea className={`${inputCls} mt-1.5 font-mono text-xs`} rows={7} data-testid="mba-message-contenu" value={contenu}
           onChange={(e) => setContenu(e.target.value)} />

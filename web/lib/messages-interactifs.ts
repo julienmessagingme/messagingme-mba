@@ -97,8 +97,8 @@ export const TYPES: Record<TypeMessageInteractif, FicheType> = {
     aide: ['Une épingle sur la carte : une boutique, un point de rendez-vous.', 'A pin on the map: a shop, a meeting point.'],
     icone: 'position',
     canevas: [
-      'Latitude (-90 à 90) et longitude (-180 à 180), venues d’une source sûre comme la réponse d’un outil :\nFacultatif : le nom du lieu, l’adresse',
-      'Latitude (-90 to 90) and longitude (-180 to 180), from a reliable source such as a tool’s answer:\nOptional: the place name, the address',
+      'Latitude (-90 à 90) et longitude (-180 à 180) du lieu :\nFacultatif : le nom du lieu, l’adresse',
+      'Latitude (-90 to 90) and longitude (-180 to 180) of the place:\nOptional: the place name, the address',
     ],
     titre: 'lieu',
   },

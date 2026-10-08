@@ -1,7 +1,7 @@
 ---
 ecran: mba-settings
 source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA)
-source_empreinte: 1fde5a
+source_empreinte: 0ff6f8
 ---
 # Le répondeur de Meta : à quoi il sert, et comment le régler
 
@@ -63,6 +63,13 @@ information, envoyer un bloc, lancer un scénario, appeler un système que vous 
 bac à sable où vous lui parlez sans consommer de conversation facturée).
 Ce menu se range en colonne à gauche du contenu ; sur un téléphone, il redevient la barre horizontale du
 haut.
+
+**Un message interactif s'écrit avec un contenu fixe** : les libellés des boutons, les lignes d'une liste, les
+cartes d'un carrousel sont écrits dans sa fiche. Évitez de le faire remplir par la réponse d'un outil : essayé sur
+une liste remplie par les étiquettes d'un client, l'envoi a échoué à chaque fois, et l'agent a répondu « Je ne
+peux pas vous aider avec cela », parfois aussi aux messages suivants de la même conversation. Pour une information
+propre au client, laissez l'agent répondre en texte : sans message interactif, il cite très bien ce que l'outil
+lui a rendu.
 
 Deux situations bloquent l'édition, et l'écran les distingue parce qu'elles ne se règlent pas au même
 endroit : **aucun numéro rattaché**, qui renvoie à l'Accueil, et **Meta n'a pas encore ouvert l'agent sur ce
