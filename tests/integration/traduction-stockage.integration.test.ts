@@ -233,7 +233,10 @@ describe.skipIf(!url)('traduction : le chemin chaud, par le vrai code (Postgres)
        values ($1, 'in', 'audio', '[audio]', 'media-1', now()) returning id`,
       [conversationId],
     )).rows[0]!.id;
-    await store.ecrireTranscription(tenantId, vocal, 'Hola, tengo un problema', 'openai/whisper-1', 'es');
+    expect(await store.ecrireTranscription(tenantId, vocal, 'Hola, tengo un problema', 'openai/whisper-1', 'es')).toBe(true);
+    // 🔴 Lot 6, C (jaune 4) : une seconde écriture (un autre opérateur, au même moment) ne prend pas et n'écrase rien :
+    // seule la première est débitée.
+    expect(await store.ecrireTranscription(tenantId, vocal, 'Hola, otra version', 'openai/whisper-1', 'es')).toBe(false);
     const relu = (await store.getMessages(conversationId)).find((m) => m.id === vocal)!;
     expect(relu.body).toBe('[audio]');
     expect(relu.transcription).toBe('Hola, tengo un problema');

@@ -53,10 +53,10 @@ export interface AgentsRouteDeps extends DepsGestionAgents {
     messagesTenus(tenantId: string, agentId: string, jours: number): Promise<number>;
   };
   /**
-   * Les modèles proposables et leur tarif, pour la liste de l'onglet Modèle. Le câblage rend nos modèles sans
-   * tarif quand la tarification est indisponible : son absence n'interdit pas un réglage.
+   * Les modèles proposables et leur tarif, pour la liste de l'onglet Modèle, au tarif de l'offre de CET espace (sa
+   * commission). Le câblage rend nos modèles sans tarif quand la tarification est indisponible : son absence
+   * n'interdit pas un réglage.
    */
-  /** Les modèles proposables, au tarif de l'offre de CET espace (sa commission). */
   modelesProposes(tenantId: string): Promise<ModeleProposable[]>;
   /** Le répondeur de l'espace (`src/repondeur/reglage.ts`) : le MÊME objet que l'outil MCP `set_default_responder`. */
   repondeur: DepsReglageRepondeur;

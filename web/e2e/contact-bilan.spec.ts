@@ -17,7 +17,23 @@ const BILAN = {
   ],
 };
 
-async function ouvrir(page: import('@playwright/test').Page, bilan: unknown | 'panne', conversations: unknown[] = []) {
+/** La vue de l'offre d'un espace en Base, telle que `/offre` la rend (forme abrégée, celle que lit `lireVue`). */
+const LIMITES_BASE = {
+  utilisateurs: 1, admins: 1, contacts: 100, envoisModelesMois: 1000, automations: 10, suppressionsJour: 10,
+  adressesWebhook: 1, journalWebhooksJours: 3, conservationJours: 30, commissionPct: 50, badge: true, numeroInclus: false,
+};
+const OFFRE_BASE = {
+  offre: 'base', fonctions: [], limites: LIMITES_BASE, usage: { envoisModelesMois: 0, contacts: 1, automations: 0, membres: 1 },
+  // La lecture de la console exige les trois offres de la grille (`lireVueOffre`) ; seules leurs fonctions comptent ici.
+  grille: {
+    base: { fonctions: [], limites: LIMITES_BASE },
+    pro: { fonctions: ['analyse'], limites: LIMITES_BASE },
+    entreprise: { fonctions: ['analyse'], limites: LIMITES_BASE },
+  },
+  upgradeUrl: 'https://console.e2e.test/offre',
+};
+
+async function ouvrir(page: import('@playwright/test').Page, bilan: unknown | 'panne', conversations: unknown[] = [], offre?: unknown) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const url = route.request().url();
@@ -27,6 +43,7 @@ async function ouvrir(page: import('@playwright/test').Page, bilan: unknown | 'p
       return json(bilan);
     }
     if (/\/history$/.test(url)) return json({ sends: [], conversations });
+    if (offre !== undefined && /\/offre$/.test(url)) return json(offre);
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     if (/\/contacts/.test(url)) {
       return json({ contacts: [{ id: 'ct1', phoneE164: '+33611111111', profileName: 'Claire Fontaine', optInStatus: 'in', tags: [], fields: {}, createdAt: '2026-09-01T10:00:00Z' }], total: 1 });
@@ -38,6 +55,11 @@ async function ouvrir(page: import('@playwright/test').Page, bilan: unknown | 'p
   await page.getByText('Claire Fontaine').first().click();
   await page.getByRole('button', { name: /Historique|History/ }).first().click();
 }
+
+const HORS_OFFRE = {
+  conversationId: 'c1', waId: '33611111111', lastMessageAt: '2026-10-08T10:00:00Z', lastPreview: 'bonjour', messagesCount: 3,
+  analysisStatus: 'hors_offre', analysis: null, analysisStale: false, inboxHref: '/inbox?c=c1',
+};
 
 test.describe('Le bilan d’un contact', () => {
   test('🔴 le coût et l’entonnoir s’affichent, et la troncature se DIT', async ({ page }) => {
@@ -58,12 +80,16 @@ test.describe('Le bilan d’un contact', () => {
 
   test('🔴 une conversation d’un espace en Base dit « analyse disponible en Pro », pas « pas encore analysée » (lot 6, C)', async ({ page }) => {
     // « Pas encore » promettrait une analyse qui ne viendra pas : l'offre Base n'analyse pas les conversations.
-    await ouvrir(page, BILAN, [{
-      conversationId: 'c1', waId: '33611111111', lastMessageAt: '2026-10-08T10:00:00Z', lastPreview: 'bonjour', messagesCount: 3,
-      analysisStatus: 'hors_offre', analysis: null, analysisStale: false, inboxHref: '/inbox?c=c1',
-    }]);
+    await ouvrir(page, BILAN, [HORS_OFFRE], OFFRE_BASE);
     await expect(page.getByText(/analyse disponible en Pro|analysis available in Pro/)).toBeVisible();
     await expect(page.getByText(/pas encore analysée|not analyzed yet/)).toHaveCount(0);
+  });
+
+  test('🔴 J8 : passé en Pro, la même conversation dit qu’elle sera analysée au prochain message, pas « disponible en Pro »', async ({ page }) => {
+    // Sans route d'offre, la console lit tout ouvert : le cas d'un espace en Pro ou en Entreprise.
+    await ouvrir(page, BILAN, [HORS_OFFRE]);
+    await expect(page.getByText(/analysée au prochain message|analyzed at the next message/)).toBeVisible();
+    await expect(page.getByText(/analyse disponible en Pro|analysis available in Pro/)).toHaveCount(0);
   });
 
   test('🔴 le bilan en PANNE ne fait pas disparaître l’historique', async ({ page }) => {

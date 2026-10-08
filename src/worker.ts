@@ -1563,6 +1563,15 @@ async function main(): Promise<void> {
           });
           // eslint-disable-next-line no-console
           if (n > 0) console.log(`vectorisation: ${n} fiche(s) vectorisee(s)`);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error('vectorisation: lot ignore :', messageDe(err));
+          // Alerte, comme les autres balayages : un échec veut dire que la base de connaissance cesse d'être
+          // vectorisée, et l'agent retombe sur la recherche par mots en silence. Throttlée à cinq minutes.
+          alert('sweeper:vectorisation', `vectorisation en echec : ${messageDe(err)}`);
+        }
+        // Dans son propre essai (J2 de la relecture de C) : un espace en échec ne prive plus le bot d'aide de ses vecteurs.
+        try {
           /**
            * Les fiches du mode d'emploi aussi : sinon `aide_fiches.embedding` resterait nul, et le bot d'aide perdrait
            * sa moitié sémantique en continuant de répondre (le client qui ne dit pas « campagne » mais « envoyer un
@@ -1574,10 +1583,8 @@ async function main(): Promise<void> {
           if (na > 0) console.log(`vectorisation: ${na} fiche(s) d aide vectorisee(s)`);
         } catch (err) {
           // eslint-disable-next-line no-console
-          console.error('vectorisation: lot ignore :', messageDe(err));
-          // Alerte, comme les autres balayages : un échec veut dire que la base de connaissance cesse d'être
-          // vectorisée, et l'agent retombe sur la recherche par mots en silence. Throttlée à cinq minutes.
-          alert('sweeper:vectorisation', `vectorisation en echec : ${messageDe(err)}`);
+          console.error('vectorisation: fiches d aide ignorees :', messageDe(err));
+          alert('sweeper:vectorisation-aide', `vectorisation des fiches d aide en echec : ${messageDe(err)}`);
         }
       };
       taches.programmer('vectorisation', 60_000, vectoriser, { immediat: true });

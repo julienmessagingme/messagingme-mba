@@ -9,6 +9,8 @@ const RACINE = resolve(__dirname, '..');
 // que dans `tests/agregats-jour.test.ts`, qui a rendu un faux positif pour cette seule raison.
 const PURGE = readFileSync(join(RACINE, 'src', 'inbox', 'store.pg.ts'), 'utf8').split('\r\n').join('\n');
 const STATS = readFileSync(join(RACINE, 'src', 'stats', 'conversation-stats.pg.ts'), 'utf8').split('\r\n').join('\n');
+const COUTS = readFileSync(join(RACINE, 'src', 'stats', 'store.pg.ts'), 'utf8').split('\r\n').join('\n');
+const RETENTION = readFileSync(join(RACINE, 'src', 'inbox', 'retention.ts'), 'utf8').split('\r\n').join('\n');
 
 /**
  * LA DUREE QU'ON ANNONCE DOIT ETRE CELLE QU'ON APPLIQUE.
@@ -33,6 +35,12 @@ describe('🔴 la conservation de la Base (lot 6, C) : 30 jours, mais seulement 
     expect(retentionEffective(90, null, { depuis: ilYa(29) }, MAINTENANT)).toBe(90);
     expect(retentionEffective(90, 365, { depuis: ilYa(29) }, MAINTENANT)).toBe(365);
     expect(GRACE_RETOUR_BASE_JOURS).toBe(30);
+  });
+
+  it('🔴 J5 : un réglage PLUS COURT que 30 jours reste respecté en Base ; « jamais » ou plus long ne passe pas les 30 jours', () => {
+    expect(retentionEffective(90, 7, { depuis: ilYa(31) }, MAINTENANT)).toBe(7);
+    expect(retentionEffective(90, 0, { depuis: ilYa(31) }, MAINTENANT)).toBe(30);
+    expect(retentionEffective(90, 365, { depuis: ilYa(31) }, MAINTENANT)).toBe(30);
   });
 
   it('🔴 le levier d’urgence gagne aussi sur la Base', () => {
@@ -92,13 +100,20 @@ describe('la purge porte la MEME regle que retentionEffective', () => {
     // aucune erreur. Depuis le lot 6, la duree est la colonne `jours` de chaque espace.
     expect(PURGE).toContain('where d.jours > 0');
     expect(PURGE).toContain('cv.last_message_at < now() - make_interval(days => d.jours)');
-    expect(PURGE.match(/coalesce\(ts\.conversation_retention_days, \$1::int\)/g) ?? []).toHaveLength(1);
   });
 
-  it('🔴 lot 6 : la purge lit l’offre, la date d’entree en Base, et les nombres de la GRILLE, jamais en dur', () => {
-    expect(PURGE).toContain("offre_de_l_espace(t.id) = 'base'");
-    expect(PURGE).toContain('${BASE_DEPUIS_SQL}');
+  it('🔴 lot 6 : la purge et les couts de la synthese lisent le MEME texte de la duree, et les nombres de la GRILLE', () => {
+    // Jaune 3 de la relecture de C : `hors_retention` gardait l'ancienne regle quand la purge lisait la nouvelle.
+    expect(PURGE).toContain('${dureeConservationSql(');
+    expect(COUTS).toContain('${dureeConservationSql(');
     expect(PURGE).toMatch(/GRACE_RETOUR_BASE_JOURS, DROITS\.base\.limites\.conservationJours/);
+    expect(COUTS).toMatch(/GRACE_RETOUR_BASE_JOURS, DROITS\.base\.limites\.conservationJours/);
+    expect(RETENTION).toContain("offre_de_l_espace(t.id) = 'base'");
+    expect(RETENTION).toContain('${BASE_DEPUIS_SQL}');
+  });
+
+  it('🔴 jaune 6 : la duree de chaque espace est MATERIALISEE une fois, pas recalculee par conversation', () => {
+    expect(PURGE).toMatch(/with durees as materialized \(/);
   });
 
   it('🔴 la synthese ne remonte plus la duree d instance telle quelle', () => {

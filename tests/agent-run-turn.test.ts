@@ -368,7 +368,7 @@ describe('le tour, branché sur le VRAI cerveau', () => {
     timeoutMs: 8000, maxBytes: 16384, autonome: false,
   };
 
-  function cerveauReel(reponses: ReponseChat[]) {
+  function cerveauReel(reponses: ReponseChat[], coutOutil?: number) {
     const cap = { tours: [] as unknown[], appels: [] as string[] };
     const brain = creerCerveauGateway({
       client: {
@@ -383,7 +383,10 @@ describe('le tour, branché sur le VRAI cerveau', () => {
       outils: {
         catalogue: { byName: async (_t: string, _a: string, n: string) => (n === OUTIL.name ? OUTIL : null), listActifs: async () => [OUTIL] } satisfies ToolCatalog,
         journal: { ouvrir: async () => 'j1', clore: async () => {} },
-        resolveurs: { mba: async ({ ctx }: EntreeResolveur) => { cap.tours.push({ sessionId: ctx.sessionId, runId: ctx.runId, waId: ctx.waId }); return { contenu: { ok: true } }; } },
+        resolveurs: { mba: async ({ ctx }: EntreeResolveur) => {
+          cap.tours.push({ sessionId: ctx.sessionId, runId: ctx.runId, waId: ctx.waId });
+          return { contenu: { ok: true }, ...(coutOutil !== undefined ? { coutDollars: coutOutil } : {}) };
+        } },
         sessions: {
           compterAppel: async () => { cap.appels.push('x'); },
         },
@@ -396,6 +399,18 @@ describe('le tour, branché sur le VRAI cerveau', () => {
   const reponseTexte = (t: string): ReponseChat => ({
     texte: t, appelsOutils: [], finish: 'stop',
     usage: { tokensIn: 1, tokensOut: 1, tokensCaches: 0, coutDollars: 0 }, generationId: null,
+  });
+
+  it('🔴 lot 6, C (jaune 11) : le coût d’un outil (la recherche) est débité UNE fois, avec le tour, sur l’espace du tour', async () => {
+    const { brain } = cerveauReel([
+      { texte: null, appelsOutils: [{ id: 'c1', nom: 'mba_poser_tag', argumentsJson: '{"tag":"vip"}' }], finish: 'tool_calls', usage: { tokensIn: 1, tokensOut: 1, tokensCaches: 0, coutDollars: 0 }, generationId: null },
+      reponseTexte('Voilà.'),
+    ], 0.002);
+    const debits: Array<{ tenantId: string; montant: number }> = [];
+    const { deps } = make({ brain, debiterTenant: async (tenantId, montant) => { debits.push({ tenantId, montant }); } });
+    expect((await runTurn(JOB, deps)).fait).toBe('repondu');
+    // 0,002 $ au taux 1, commission nulle : 2 000 micro-euros, en une seule ligne.
+    expect(debits).toEqual([{ tenantId: JOB.tenantId, montant: 2000 }]);
   });
 
   it('🔴 le tour lui passe son CONTEXTE : sans lui, le cerveau réel lève à chaque appel', async () => {

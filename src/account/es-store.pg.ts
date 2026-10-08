@@ -63,7 +63,7 @@ export class PgEmbeddedSignupStore {
    *
    * 🔴 ELLE N'OFFRE PLUS RIEN (relecture du 2026-09-29). L'offre y était écrite, dans sa transaction, et la liaison
    * tourne AVANT que la route ne sache si Meta a vérifié le numéro : un numéro que Meta dit `NOT_VERIFIED` recevait
-   * donc ses 5 €. L'offre vit dans `offrirCredit`, que la route appelle quand Meta dit le numéro vérifié.
+   * donc son crédit offert. L'offre vit dans `offrirCredit`, que la route appelle quand Meta dit le numéro vérifié.
    */
   async linkTenant(input: {
     tenantId: string;

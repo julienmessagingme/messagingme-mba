@@ -234,7 +234,8 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   rétroactivement, puisque ce qui est effacé ne revient pas.
   ✅ **En Base, 30 jours** (lot 6, livraison C), mais seulement **30 jours après l'entrée en Base** : la création de
   l'espace, la fin de son Pro, ou sa sortie de l'Entreprise. D'ici là, la règle d'avant continue : changer d'offre
-  ne déclenche jamais de purge sur le coup, et laisse le temps de se réabonner ou d'exporter.
+  ne déclenche jamais de purge sur le coup, et laisse le temps de se réabonner ou d'exporter. Une durée plus courte
+  réglée pour l'espace reste respectée ; « ne jamais purger » ou plus long ne dépasse pas les 30 jours de la Base.
   ⚠️ **Ce qui disparaît, c'est le CONTENU, pas la mémoire de l'activité** : les compteurs de la Synthèse
   (conversations par jour, satisfaction et urgence moyennes, répartition par intention) sont conservés à
   part, sous forme de totaux journaliers qui ne portent ni numéro, ni texte, ni résumé, ni identifiant de
@@ -3426,7 +3427,8 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   - la **commission sur le crédit IA** : 50 % en Base, 10 % en Pro et en Entreprise, au tarif affiché comme au montant
     décompté ;
   - l'**analyse des conversations** ne tourne pas en Base : la fiche d'un contact dit « analyse disponible en Pro ».
-    Passer en Pro n'analyse pas le passé : une conversation est analysée au premier nouveau message ;
+    Passer en Pro n'analyse pas le passé : une conversation est analysée au premier nouveau message, et la fiche le dit
+    (« analysée au prochain message ») ;
   - la **conservation** : 30 jours en Base, 30 jours après l'entrée en Base (voir les conversations, plus haut) ;
   - la **recherche dans la connaissance, la préparation des fiches et la transcription** sont payées par le crédit,
     dans toutes les offres ;

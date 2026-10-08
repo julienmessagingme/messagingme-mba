@@ -11,6 +11,7 @@ import { toCsv, downloadCsv } from '@/lib/csv';
 import { Bouton } from '@/components/Bouton';
 import { Squelette } from '@/components/Squelette';
 import { Nd } from '@/components/Nd';
+import { useFermeture } from '@/lib/use-offre';
 
 /**
  * Onglet « Historique » de la fiche contact : ce qu'on lui a envoyé, et ce qu'il nous a répondu.
@@ -26,6 +27,8 @@ export function ContactHistoryPanel({ tenantId, contactId }: { tenantId: string;
   const t = useT();
   const { locale } = useLocale();
   const [history, setHistory] = useState<ContactHistory | null>(null);
+  // L'analyse des conversations est-elle hors de l'offre de l'espace (lot 6, C) ? Elle décide du libellé de `hors_offre`.
+  const analyseFermee = useFermeture(tenantId, 'analyse');
   /**
    * Le bilan est CHARGÉ À PART, et son échec est SILENCIEUX (il reste `null`).
    *
@@ -119,7 +122,7 @@ export function ContactHistoryPanel({ tenantId, contactId }: { tenantId: string;
           <p className="text-sm text-ink-500">{t('Aucune conversation avec ce contact.', 'No conversation with this contact.')}</p>
         ) : (
           <ul className="space-y-2">
-            {history.conversations.map((c) => <ConversationRow key={c.conversationId} conv={c} stamp={stamp} />)}
+            {history.conversations.map((c) => <ConversationRow key={c.conversationId} conv={c} stamp={stamp} analyseFermee={analyseFermee} />)}
           </ul>
         )}
       </section>
@@ -225,7 +228,11 @@ function DeliveryBadge({ send, stamp }: { send: ContactSend; stamp: (iso: string
   );
 }
 
-function ConversationRow({ conv, stamp }: { conv: ContactConversation; stamp: (iso: string) => string }) {
+/**
+ * `analyseFermee` : l'offre de l'espace si elle ferme l'analyse, `null` si elle l'ouvre (ou si elle est inconnue),
+ * `undefined` tant qu'elle n'est pas lue (`useFermeture`).
+ */
+function ConversationRow({ conv, stamp, analyseFermee }: { conv: ContactConversation; stamp: (iso: string) => string; analyseFermee: unknown }) {
   const t = useT();
   return (
     <li className="rounded-carte border border-ink-200 bg-white px-3 py-2.5 text-sm">
@@ -270,9 +277,13 @@ function ConversationRow({ conv, stamp }: { conv: ContactConversation; stamp: (i
       ) : (
         <p className="mt-1.5 text-xs text-ink-500">
           {/* `hors_offre` (lot 6, C) : un espace en Base n'analyse pas ses conversations ; « pas encore » promettrait une
-              analyse qui ne viendra pas. */}
+              analyse qui ne viendra pas. Passé en Pro (J8 de la relecture), le passé n'est pas rattrapé : la conversation
+              est analysée au prochain message. */}
           {conv.analysisStatus === 'failed' ? t('analyse en échec', 'analysis failed')
-            : conv.analysisStatus === 'hors_offre' ? t('analyse disponible en Pro', 'analysis available in Pro')
+            : conv.analysisStatus === 'hors_offre'
+              ? (analyseFermee === null
+                ? t('analysée au prochain message', 'analyzed at the next message')
+                : t('analyse disponible en Pro', 'analysis available in Pro'))
               : t('pas encore analysée', 'not analyzed yet')}
         </p>
       )}

@@ -19,7 +19,7 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
-## LOT 6 : LES OFFRES ET LEURS LIMITES, A, B1, B2a ET B2b EN PRODUCTION (2026-10-07 ET 08), C EN LIVRAISON
+## LOT 6 : LES OFFRES ET LEURS LIMITES, A, B1, B2a, B2b ET C EN PRODUCTION (2026-10-07 ET 08)
 
 Spec `docs/superpowers/specs/2026-10-07-offres-et-limites-design.md`, plan `docs/superpowers/plans/2026-10-07-offres-et-limites.md`.
 La livraison A est en production et son essai réel est fait (2026-10-07, « Espace de dumas family » ramené en Base,
@@ -56,13 +56,14 @@ réel de B2b APRÈS le 14 octobre (décision de Julien) : la libération du lot 
 l'essai de B2b sur le même espace (Pro avec un code à 100 %, « Obtenir mon numéro » sans payer, résiliation en fin de
 période et annonce de la suite).
 
-⏳ **C, les coûts selon l'offre, est écrite** (2026-10-08, migration 0221) : la commission de l'offre (50 % en Base,
+✅ **C, les coûts selon l'offre, est EN PRODUCTION** (`6f1bd0d5`, migrations 0221 et 0222 appliquées le 2026-10-08) : la commission de l'offre (50 % en Base,
 10 % en Pro et en Entreprise), la recherche dans la connaissance, la vectorisation des fiches et la transcription de
 l'Inbox sur le crédit du client, l'analyse éteinte en Base (`hors_offre`), la conservation de 30 jours en Base après 30
 jours de grâce (migration 0221 : la sortie de l'Entreprise datée, décision de Julien), le crédit offert à 1 € pour toutes
-les origines. Relecture, puis migration 0221 AVANT le `up` de l'API et des deux workers, puis la console. Essai réel
-de C : le prix d'un tour lu dans le journal du crédit en Base puis en Pro, et une conversation de l'espace Base qui reste
-non analysée.
+les origines ; et, sur décision de Julien après la relecture, le budget par conversation d'un agent à 0,07 € (0222), la
+recherche y entrant. Les jaunes de la relecture sont corrigés (à relire avec le lot suivant). ⏳ Essai réel de C : le prix
+d'un tour lu dans le journal du crédit en Base puis en Pro, et une conversation de l'espace Base qui reste non analysée.
+⚠️ L'ancienne console (`mba-web`) n'a pas été reconstruite au déploiement de C : elle le sera au suivant.
 
 ## RETOURS CONSOLE DU 6 OCTOBRE (RC1 À RC8) : LES HUIT LOTS EN PRODUCTION, ESSAIS RÉELS DUS
 

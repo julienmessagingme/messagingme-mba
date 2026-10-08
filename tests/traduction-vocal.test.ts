@@ -43,7 +43,7 @@ function monter(o: Montage = {}) {
         id: 'm-vocal', mediaId: 'media-1', mediaMime: 'audio/ogg; codecs=opus', transcription: null,
         ...o.message,
       }),
-      ecrireTranscription: async (_t, _m, texte, modele, langue) => { ecritures.push({ texte, modele, langue }); },
+      ecrireTranscription: async (_t, _m, texte, modele, langue) => { ecritures.push({ texte, modele, langue }); return true; },
     },
     ...(o.sansTraducteur ? {} : {
       traducteur: {

@@ -114,8 +114,19 @@ export async function balayerVectorisationPayee(
   const parEspace = new Map<string, typeof fiches>();
   for (const f of fiches) parEspace.set(f.tenantId, [...(parEspace.get(f.tenantId) ?? []), f]);
   let ecrites = 0;
+  const echecs: string[] = [];
   for (const [tenantId, lot] of parEspace) {
-    const { n, coutDollars } = await vectoriserEtEcrire(depot, recherche, modele, lot);
+    let n: number;
+    let coutDollars: number;
+    try {
+      ({ n, coutDollars } = await vectoriserEtEcrire(depot, recherche, modele, lot));
+    } catch (err) {
+      // J2 de la relecture de C : un espace dont l'appel échoue (une fiche refusée) n'arrête pas les autres du lot. Le
+      // balayage lève ENSUITE, en le nommant, pour que l'alerte parte ; ses fiches restent à vectoriser.
+      journaliser('error', 'vectorisation_espace_echec', { err, tenantId });
+      echecs.push(tenantId);
+      continue;
+    }
     ecrites += n;
     try {
       const montant = prixClientMicroEur(coutDollars, facturation.tauxEurParDollar, await facturation.commissionPour(tenantId));
@@ -126,5 +137,6 @@ export async function balayerVectorisationPayee(
       journaliser('error', 'vectorisation_debit_impossible', { err, tenantId, coutDollars });
     }
   }
+  if (echecs.length > 0) throw new Error(`vectorisation: ${echecs.length} espace(s) en échec : ${echecs.join(', ')}`);
   return ecrites;
 }

@@ -2271,12 +2271,15 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
     `run-turn`) : son défaut passe de 30 000 à 70 000 micro-euros (migration 0222, qui relève aussi les agents restés au
     défaut), la place d'avant pour le modèle plus les 12 appels d'outils permis par défaut, tous en recherche, en Base
     (`tests/migration-0222.test.ts` le chiffre) ;
-  - l'analyse des conversations ne part pas en Base : `claimForAnalysis` lit l'offre en SQL (`offre_de_l_espace`, une
-    fois par conversation réclamée) et passe la conversation d'un espace Base en `hors_offre` au lieu de `queued`. Un
+  - l'analyse des conversations ne part pas hors de l'offre : `claimForAnalysis` lit l'offre en SQL (`offre_de_l_espace`,
+    une fois par conversation réclamée) et passe en `hors_offre`, au lieu de `queued`, la conversation d'un espace dont
+    l'offre n'ouvre pas la fonction `analyse` (`OFFRES_SANS_ANALYSE`, lu dans la grille : la Base). Un
     nouveau message, entrant ou sortant, la remet en `pending` comme `done` et `failed` ; passer en Pro n'analyse donc
     jamais le passé en rafale ;
-  - la conservation (`retentionEffective`, `src/inbox/retention.ts`, et la purge `purgeConversationsOlderThan`, qui
-    calcule UNE durée par espace) : en Base, 30 jours (la grille), mais seulement une fois passés
+  - la conservation (`retentionEffective`, `src/inbox/retention.ts`, et en SQL `dureeConservationSql`, le MÊME texte lu
+    par la purge `purgeConversationsOlderThan`, qui MATÉRIALISE une durée par espace, et par `hors_retention` des coûts de
+    la synthèse) : en Base, 30 jours (la grille, ou le réglage de l'espace s'il est plus court), mais seulement une fois
+    passés
     `GRACE_RETOUR_BASE_JOURS` (30) après l'entrée en Base, `BASE_DEPUIS_SQL` : la création de l'espace, la fin de son
     dernier Pro, ou sa sortie de l'Entreprise (`tenants.entreprise_quittee_le`, migration 0221, posée par
     `PgOffresStore.ecrireEntreprise` au seul passage de l'Entreprise à la Base). Avant, et hors Base, la règle d'avant :
@@ -2867,7 +2870,9 @@ la connaissance, rendu par l'outil : `SortieResolveur.coutDollars`), la traducti
 des fiches de connaissance (`balayerVectorisationPayee`, un appel par espace, seulement pour un espace au solde
 positif : `PgKnowledgeStore.fichesAVectoriser` le filtre en SQL) et la transcription d'un vocal de l'Inbox
 (`DepsTranscrire.facturation`, refus `CreditEpuise` en 402 sans solde). La recherche, la vectorisation et la
-transcription partent sur NOTRE clé et leur coût est DÉBITÉ ; la passerelle le rend dans la réponse
+transcription partent sur NOTRE clé et leur coût est DÉBITÉ (la vectorisation espace par espace, un espace en échec
+n'arrêtant pas les autres ; la transcription seulement si SON écriture a pris, `ecrireTranscription` n'écrivant que sur
+un message pas encore transcrit, donc deux clics simultanés ne paient qu'une fois) ; la passerelle le rend dans la réponse
 (`providerMetadata.gateway.cost`, et `provider_metadata` pour le reranker, mesuré le 2026-10-08). Le tarif annoncé dans
 la liste des modèles lit la même commission (`modelesProposes(tenantId)`) : le prix affiché est le prix payé. Sur
 **notre clé** et à nos frais : les deux assistants de configuration, mesurés au coût brut (`microEurosDepuisDollars`,

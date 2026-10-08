@@ -47,7 +47,7 @@ export interface EmbeddedSignupRouteDeps {
     lierCompteSansNumero(input: { tenantId: string; wabaId: string }): Promise<void>;
   };
   /**
-   * Le crédit de bienvenue (5 €, décision de Julien du 2026-09-29), pour un numéro de cet espace que Meta dit
+   * Le crédit de bienvenue (`CREDIT_OFFERT_MICRO_EUR`, 1 € depuis le lot 6), pour un numéro de cet espace que Meta dit
    * VÉRIFIÉ. La route ne l'appelle qu'avec cette preuve : à l'inscription si Meta le dit déjà vérifié (ou vient
    * d'accepter son enregistrement), sinon à l'activation, dès que le code est accepté. Une fois par espace, jamais
    * deux fois pour un numéro : ce sont les contraintes de la base qui le tiennent (migrations 0191 et 0193), donc
@@ -354,7 +354,7 @@ export function registerEmbeddedSignup(
 
     // 7. 🔴 Le crédit de bienvenue, SEULEMENT pour un numéro que Meta dit vérifié : déjà sur la Cloud API, code
     //    vérifié, ou enregistrement que Meta vient d'accepter (`pin` n'est gardé que dans ce cas). Il était offert
-    //    à l'étape 3, avant ce constat : un numéro `NOT_VERIFIED` recevait ses 5 €. Sinon, c'est l'activation qui
+    //    à l'étape 3, avant ce constat : un numéro `NOT_VERIFIED` recevait son crédit. Sinon, c'est l'activation qui
     //    l'offrira, dès que le code sera accepté.
     if (phone.status === 'CONNECTED' || phone.codeVerificationStatus === 'VERIFIED' || pin !== null) {
       await offrir(tenant, phoneNumberId);

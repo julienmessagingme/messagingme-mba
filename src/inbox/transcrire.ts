@@ -55,7 +55,8 @@ export interface DepsTranscrire {
      * `conversationId` n'ajoute aucune isolation, il empêche seulement l'URL de viser une autre conversation.
      */
     lireMessagePourTranscription(tenantId: string, messageId: string, conversationId?: string): Promise<MessageATranscrire | null>;
-    ecrireTranscription(tenantId: string, messageId: string, texte: string, modele: string, langue: string | null): Promise<void>;
+    /** `true` si cette écriture a pris ; `false` si le message était déjà transcrit entre-temps (un autre opérateur). */
+    ecrireTranscription(tenantId: string, messageId: string, texte: string, modele: string, langue: string | null): Promise<boolean>;
   };
   /**
    * Traduit la transcription vers la langue du lecteur. Absent -> aucune traduction, jamais d'erreur. La
@@ -150,8 +151,11 @@ export async function transcrireMessage(
   });
   // Écrit avant de rendre : un appel payé dont le résultat n'est pas enregistré serait repayé au clic suivant.
   // La langue part avec, sinon il faudrait un appel de détection pour savoir s'il y a à traduire.
-  await deps.messages.ecrireTranscription(tenantId, messageId, r.texte, deps.modele, r.langue);
-  await facturer(deps, tenantId, messageId, r.coutDollars);
+  // Débitée seulement si CETTE écriture a pris (J4 de la relecture de C) : deux clics simultanés ne paient qu'une fois ;
+  // l'appel perdu reste à nos frais.
+  if (await deps.messages.ecrireTranscription(tenantId, messageId, r.texte, deps.modele, r.langue)) {
+    await facturer(deps, tenantId, messageId, r.coutDollars);
+  }
   return { texte: r.texte, deja: false, langue: r.langue, traduction: await lire(deps, tenantId, msg, r.texte, r.langue, cible) };
 }
 

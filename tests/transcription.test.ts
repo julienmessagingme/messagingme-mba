@@ -128,7 +128,7 @@ describe('Le client de transcription', () => {
 });
 
 /** Faux dépôt de messages, qui note ce qu'on lui écrit. */
-function deps(msg: MessageATranscrire | null, reponses: HttpResponse[] = [OK], o: { solde?: number; debiter?: (t: string, m: number, n: string) => Promise<void> } = {}) {
+function deps(msg: MessageATranscrire | null, reponses: HttpResponse[] = [OK], o: { solde?: number; debiter?: (t: string, m: number, n: string) => Promise<void>; dejaEcrite?: boolean } = {}) {
   const ecrites: Array<{ texte: string; modele: string }> = [];
   const telechargements: string[] = [];
   const ordre: string[] = [];
@@ -140,7 +140,7 @@ function deps(msg: MessageATranscrire | null, reponses: HttpResponse[] = [OK], o
   const d: DepsTranscrire = {
     messages: {
       lireMessagePourTranscription: async (_t, m2, c2) => { lus.push({ messageId: m2, ...(c2 ? { conversationId: c2 } : {}) }); return msg; },
-      ecrireTranscription: async (_t, _m, texte, modele) => { ordre.push('ecrit'); ecrites.push({ texte, modele }); },
+      ecrireTranscription: async (_t, _m, texte, modele) => { ordre.push('ecrit'); ecrites.push({ texte, modele }); return o.dejaEcrite !== true; },
     },
     media: { telechargerEntrant: async (mediaId) => { telechargements.push(mediaId); return { bytes: Buffer.from('audio'), mime: 'audio/ogg' }; } },
     transport: { post: (u, b, h) => { ordre.push('modele'); return faux.post(u, b, h); } },
@@ -206,6 +206,12 @@ describe('Transcrire le message d’une conversation', () => {
     await expect(transcrireMessage(d, 't1', 'm1')).rejects.toBeInstanceOf(CreditEpuise);
     expect(telechargements).toEqual([]);
     expect(faux.appels).toEqual([]);
+    expect(debits).toEqual([]);
+  });
+
+  it('🔴 J4 : deux opérateurs en même temps, une seule écriture prend : le second appel n’est pas débité au client', async () => {
+    const { d, debits } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: null }, [OK], { dejaEcrite: true });
+    expect((await transcrireMessage(d, 't1', 'm1')).texte).toBe('Bonjour, ma commande est-elle partie ?');
     expect(debits).toEqual([]);
   });
 

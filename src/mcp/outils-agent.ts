@@ -710,7 +710,9 @@ export const OUTILS_AGENT: OutilMcp[] = [
     description:
       'Le crédit IA de l’espace : son solde en euros (solde_eur, qui peut finir légèrement négatif) et ses '
       + `${LIGNES_HISTORIQUE} derniers mouvements, du plus récent au plus ancien : achats, crédit offert, recharges, `
-      + 'et la consommation des agents et des traductions, agrégée par jour. Après un paiement ouvert par buy_credit, '
+      + 'la consommation IA (tours des agents et leurs recherches dans la connaissance, préparation des fiches, '
+      + 'transcriptions) et les traductions, chacune agrégée par jour, au tarif de l’offre de l’espace. Après un paiement '
+      + 'ouvert par buy_credit, '
       + 'une ligne « achat » apparaît quand Stripe l’a confirmé.',
     scope: 'mcp:read',
     annotations: lecture('Lire le crédit IA'),

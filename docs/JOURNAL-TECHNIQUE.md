@@ -5,6 +5,24 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-08 : C en production, et les jaunes de sa relecture
+
+**Déployée** (`6f1bd0d5`, puis `e4aeecae` : un test d'intégration attendait encore 1 € pour Claude Code contre 5 € pour
+la console, rouge en CI, corrigé dans la foulée). 0221 et 0222 appliquées à 11 h 35 UTC AVANT le `up` de l'API et des
+deux workers. Rien n'a bougé pour les clients existants, mesuré par le code déployé : les 9 espaces sont en Entreprise,
+donc à 10 % de commission comme avant, à 90 jours de conservation, et aucun n'a été daté par la reprise ; les 2 agents
+sont passés à 0,07 € de budget. La machine locale était saturée par d'autres sessions : plusieurs tests expiraient à
+5 s, tous verts avec un délai d'une minute.
+
+**Les jaunes, corrigés dans le commit suivant** : un espace en échec n'arrête plus la vectorisation des autres, ni celle
+des fiches d'aide (J2) ; les coûts de la synthèse lisent la même durée de conservation que la purge, un seul texte SQL
+(J3) ; deux transcriptions simultanées ne débitent qu'une fois (J4) ; un réglage de conservation plus court que 30 jours
+reste respecté en Base (J5) ; la purge matérialise la durée de chaque espace au lieu de la recalculer par conversation
+(J6) ; la fiche d'un contact dit « analysée au prochain message » une fois l'espace passé en Pro (J8) ; la réclamation
+de l'analyse lit dans la grille les offres qui ne l'ouvrent pas (J9) ; les textes « 5 € » restants, la description de
+`get_credit` et un commentaire doublé (J10) ; un test de bout en bout du débit unique d'un tour avec recherche (J11). Le
+J7 (le cache de l'offre de 30 s) est accepté tel quel.
+
 ## 2026-10-08 : un outil de connecteur suit enfin sa requête, en production
 
 **Le constat** (Groupama PJ) : la variable `age_mois` de la requête « tarif » est renommée `age` à 9 h 43 UTC dans

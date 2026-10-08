@@ -1,7 +1,7 @@
 ---
 ecran: offre
 source_section: Offres (menu « Paramètres » > Offre)
-source_empreinte: afaa30
+source_empreinte: 422e48
 ---
 # Choisir mon offre
 

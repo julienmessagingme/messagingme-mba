@@ -207,4 +207,19 @@ describe.skipIf(!url)('rétention des conversations : la Base (Postgres)', () =>
     expect(await existe(pro)).toBe(true);
     expect(await existe(entreprise)).toBe(true);
   });
+
+  it('🔴 J5 : en Base après la grâce, un réglage plus COURT que 30 jours reste respecté ; un réglage « jamais » ne protège plus', async () => {
+    const court = await espace('itest-ret-base-court', { creeIlYa: 60 });
+    const jamais = await espace('itest-ret-base-jamais', { creeIlYa: 60 });
+    const [tCourt, tJamais] = [espaces[espaces.length - 2]!, espaces[espaces.length - 1]!];
+    // La conversation de l'espace au réglage court a 10 jours : sous les 30 de la Base, au-delà de ses 7.
+    await pool.query(`update conversations set last_message_at = now() - interval '10 days' where id = $1`, [court]);
+    await pool.query(
+      `insert into tenant_settings (tenant_id, conversation_retention_days, updated_at) values ($1, 7, now()), ($2, 0, now())`,
+      [tCourt, tJamais],
+    );
+    await new PgInboxStore(pool).purgeConversationsOlderThan(365, 100_000);
+    expect(await existe(court)).toBe(false);
+    expect(await existe(jamais)).toBe(false);
+  });
 });

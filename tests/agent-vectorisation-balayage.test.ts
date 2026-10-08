@@ -148,10 +148,24 @@ describe('balayerVectorisationPayee', () => {
   it('🔴 une réponse INCOMPLÈTE n’écrit rien pour cet espace et ne le débite pas : elle lève', async () => {
     const d = depotPaye(fiches.slice(0, 2));
     const { f, debits } = facturation();
+    // Chaque espace du lot échoue et le balayage le dit ensuite (J2) ; le cas exercé reste : rien d'écrit, rien de débité.
     await expect(balayerVectorisationPayee(d, { vectoriser: async () => ({ vecteurs: [], coutDollars: 0.001 }) }, 'm', f))
-      .rejects.toThrow(/0 vecteurs pour 1 fiches/);
+      .rejects.toThrow(/2 espace\(s\) en échec : base, pro/);
     expect(d.ecrits).toEqual([]);
     expect(debits).toEqual([]);
+  });
+
+  it('🔴 J2 : un espace dont l’appel échoue n’arrête pas les autres ; le balayage lève ENSUITE, en le nommant', async () => {
+    const d = depotPaye(fiches);
+    const { f, debits } = facturation();
+    const vectoriser = async (textes: string[]) => {
+      // Le texte vectorisé est « titre, saut de ligne, corps » (`texteAVectoriser`) : la fiche de la Base commence par « a ».
+      if (textes.some((t) => t.startsWith('a\n'))) throw new Error('400 fiche refusee');
+      return { vecteurs: textes.map(() => [1]), coutDollars: 0.001 };
+    };
+    await expect(balayerVectorisationPayee(d, { vectoriser }, 'm', f)).rejects.toThrow(/1 espace\(s\) en échec : base/);
+    expect(d.ecrits.map((e) => e.vecteurs.map((v) => v.id))).toEqual([['p1']]);
+    expect(debits).toEqual([{ tenantId: 'pro', montant: 1100, note: 'vectorisation de 1 fiche de connaissance' }]);
   });
 
   it('rien à faire -> AUCUN appel', async () => {

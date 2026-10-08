@@ -9,6 +9,8 @@ import { PLAFOND_CAMPAGNES_SYNTHESE } from './cost';
 import { ORIGINE_EFFECTIVE_SQL, THEME_DE_ORIGINE, DETAIL_IA } from '../inbox/origine';
 import { RECIPIENT_FAILED_SQL, INSTANT_ECHEC_SQL } from '../campaign/echecs-sql';
 import { horsEntreeGratuite } from './entree-gratuite';
+import { dureeConservationSql } from '../inbox/retention';
+import { DROITS, GRACE_RETOUR_BASE_JOURS } from '../offres/offres';
 import type { NodeEventCount } from '../workflow/node-events.pg';
 import type { EnvoisCampagneRow } from './cout-campagne';
 import type { CanalEtage } from '../campaign/etages';
@@ -1013,22 +1015,27 @@ export class PgStatsStore {
               -- campaign_recipients mais dans les conversations, et la purge les supprime (leurs messages
               -- partent en cascade). Passe cette borne, « rien de facturable » ne veut plus dire « rien n a
               -- ete facture » mais « on ne peut plus le savoir », et afficher 0 se lirait « gratuit ».
-              -- ⚠️ LE PREDICAT EST CELUI DE LA PURGE, repris terme a terme (purgeConversationsOlderThan) :
-              -- le zero d instance arrete tout, le zero d espace n arrete que cet espace, et la borne se
-              -- compte en jours. Deux definitions de « purge » divergeraient au premier reglage change.
+              -- ⚠️ LA DUREE EST CELLE DE LA PURGE, le MEME texte (dureeConservationSql, src/inbox/retention.ts,
+              -- lot 6) : le zero d instance arrete tout, le zero d espace n arrete que cet espace hors de la Base, et
+              -- la borne se compte en jours. Deux definitions de « purge » divergeraient au premier reglage change.
               -- ⚠️ ON SE CALE SUR LE DERNIER ENVOI de la campagne, pas sur sa creation : c est lui qui date
               -- les conversations qu elle a ouvertes.
-              (coalesce(ts.conversation_retention_days, $7::int) > 0
+              (d.jours > 0
                  and $7::int > 0
                  and coalesce(e.dernier, (select max(r2.sent_at) from campaign_recipients r2 where r2.campaign_id = g.campaign_id))
-                     < now() - make_interval(days => coalesce(ts.conversation_retention_days, $7::int))) as hors_retention
+                     < now() - make_interval(days => d.jours)) as hors_retention
        from garde g
        join campaigns c on c.id = g.campaign_id and c.tenant_id = $1
-       left join tenant_settings ts on ts.tenant_id = $1
+       left join lateral (
+         select ${dureeConservationSql({ instance: '$7', grace: '$8', base: '$9' })} as jours
+           from tenants t
+           left join tenant_settings ts on ts.tenant_id = t.id
+          where t.id = $1
+       ) d on true
        left join v on v.campaign_id = g.campaign_id
        left join e on e.campaign_id = g.campaign_id`,
       [tenantId, from, to, TZ, PLAFOND_CAMPAGNES_SYNTHESE + 1, opts.inclureArchivees === true,
-       Math.max(0, Math.floor(opts.retentionJours ?? 0))],
+       Math.max(0, Math.floor(opts.retentionJours ?? 0)), GRACE_RETOUR_BASE_JOURS, DROITS.base.limites.conservationJours],
     );
     return res.rows.map((r) => ({
       campaignId: r.campaign_id, nom: r.nom, template: r.template, canal: r.canal,

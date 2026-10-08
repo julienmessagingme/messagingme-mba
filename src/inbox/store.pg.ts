@@ -4,7 +4,7 @@ import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
 import type { OrigineMessage } from './origine';
 import { visibiliteSql, voitTout, type ActeurConversation } from './assignment';
 import { MEDIA_EXPIRE_SQL } from './media-entrant';
-import { BASE_DEPUIS_SQL } from './retention';
+import { dureeConservationSql } from './retention';
 import { DROITS, GRACE_RETOUR_BASE_JOURS } from '../offres/offres';
 import { FENETRE_SERVICE_MS } from '../workflow/engine';
 import type { EcritureDuFil } from './fil';
@@ -1052,26 +1052,21 @@ export class PgInboxStore implements InboxStore {
      */
     if (days <= 0) return 0;
     /**
-     * 🔴 LA DURÉE DE CHAQUE ESPACE, CALCULÉE UNE FOIS (lot 6, C), la règle de `retentionEffective` : en Base, 30 jours une
-     * fois la grâce passée (l'offre et la date d'entrée lues en SQL, une fois par espace et non par conversation) ;
-     * sinon le réglage de l'espace, sinon le défaut. Puis la MÊME colonne `jours` dans le filtre et dans l'âge.
+     * 🔴 LA DURÉE DE CHAQUE ESPACE, CALCULÉE UNE FOIS (lot 6, C) par `dureeConservationSql`, la règle de
+     * `retentionEffective`, puis la MÊME colonne `jours` dans le filtre et dans l'âge. MATÉRIALISÉE (J6 de la relecture) :
+     * aplatie dans la jointure, l'offre et la date d'entrée en Base se recalculaient pour chaque conversation.
      */
     const res = await this.pool.query(
-      `delete from conversations
+      `with durees as materialized (
+         select t.id as tenant_id, ${dureeConservationSql({ instance: '$1', grace: '$3', base: '$4' })} as jours
+           from tenants t
+           left join tenant_settings ts on ts.tenant_id = t.id
+       )
+       delete from conversations
         where id in (
           select cv.id
             from conversations cv
-            join (
-              select t.id as tenant_id,
-                     case
-                       when offre_de_l_espace(t.id) = 'base'
-                            and ${BASE_DEPUIS_SQL} <= now() - make_interval(days => $3::int)
-                         then $4::int
-                       else coalesce(ts.conversation_retention_days, $1::int)
-                     end as jours
-                from tenants t
-                left join tenant_settings ts on ts.tenant_id = t.id
-            ) d on d.tenant_id = cv.tenant_id
+            join durees d on d.tenant_id = cv.tenant_id
            where d.jours > 0
              and cv.last_message_at < now() - make_interval(days => d.jours)
            limit $2
@@ -1695,14 +1690,17 @@ export class PgInboxStore implements InboxStore {
    * langue évite de payer une traduction inutile et une détection de plus. `langue` en dernière position avec
    * un défaut : un câblage qui l'oublie compile quand même.
    */
-  async ecrireTranscription(tenantId: string, messageId: string, texte: string, modele: string, langue: string | null = null): Promise<void> {
-    await this.pool.query(
+  async ecrireTranscription(tenantId: string, messageId: string, texte: string, modele: string, langue: string | null = null): Promise<boolean> {
+    // Seulement sur un message pas encore transcrit (J4 de la relecture de C) : deux opérateurs qui cliquent ensemble ne
+    // s'écrasent pas, et seul celui dont l'écriture prend est débité. `true` : celle-ci a pris.
+    const res = await this.pool.query(
       `update conversation_messages m
           set transcription = $3, transcription_modele = $4, transcription_langue = $5
          from conversations c
-        where m.id = $1 and c.id = m.conversation_id and c.tenant_id = $2`,
+        where m.id = $1 and c.id = m.conversation_id and c.tenant_id = $2 and m.transcription is null`,
       [messageId, tenantId, texte, modele, langue],
     );
+    return (res.rowCount ?? 0) > 0;
   }
 
   /**

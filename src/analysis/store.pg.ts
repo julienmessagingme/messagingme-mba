@@ -7,6 +7,14 @@ import type { AnalysisMessage } from './engine';
 import type { ConversationAnalysis } from './schema';
 import type { StoredConversationAnalysis } from './events';
 import { analyseDeLaLigne, COLONNES_ANALYSE_FICHE, type CopieFiche, type LigneAnalyseFiche } from './fiche';
+import { DROITS, type Offre } from '../offres/offres';
+
+
+/**
+ * Les offres qui n'ouvrent pas l'analyse des conversations, lues dans la grille (J9 de la relecture de C) : la réclamation
+ * les passe en paramètre plutôt qu'un nom d'offre écrit en dur. Aujourd'hui, la Base seule.
+ */
+export const OFFRES_SANS_ANALYSE: readonly Offre[] = (Object.keys(DROITS) as Offre[]).filter((o) => !DROITS[o].fonctions.has('analyse'));
 
 /** Une conversation réclamée pour analyse. */
 export interface ClaimedConversation {
@@ -41,14 +49,14 @@ export class PgConversationAnalysisStore {
        ),
        marquees as (
          update conversations c
-            set analysis_status = case when o.offre = 'base' then 'hors_offre' else 'queued' end,
-                analysis_queued_at = case when o.offre = 'base' then c.analysis_queued_at else now() end
+            set analysis_status = case when o.offre = any($3::text[]) then 'hors_offre' else 'queued' end,
+                analysis_queued_at = case when o.offre = any($3::text[]) then c.analysis_queued_at else now() end
            from candidates k, lateral (select offre_de_l_espace(k.tenant_id) as offre) o
           where c.id = k.id
           returning c.id, c.tenant_id, c.analysis_status
        )
        select id, tenant_id from marquees where analysis_status = 'queued'`,
-      [inactivityMs, limit],
+      [inactivityMs, limit, [...OFFRES_SANS_ANALYSE]],
     );
     return res.rows.map((r) => ({ conversationId: r.id, tenantId: r.tenant_id }));
   }
