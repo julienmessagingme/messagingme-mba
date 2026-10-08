@@ -29,10 +29,11 @@ export interface ReponseStripe {
   json: unknown;
 }
 
-/** POST en formulaire pour créer, GET pour lire un prix. */
+/** POST en formulaire pour créer, GET pour lire un prix, DELETE pour arrêter un abonnement tout de suite (lot 6, B2b). */
 export interface TransportStripe {
   post(url: string, corps: string, entetes: Record<string, string>): Promise<ReponseStripe>;
   get(url: string, entetes: Record<string, string>): Promise<ReponseStripe>;
+  delete(url: string, corps: string, entetes: Record<string, string>): Promise<ReponseStripe>;
 }
 
 /** Le transport de production : `fetch`, plafonné comme les autres appels sortants (30 s). */
@@ -48,6 +49,15 @@ export class FetchTransportStripe implements TransportStripe {
 
   async get(url: string, entetes: Record<string, string>): Promise<ReponseStripe> {
     return lireReponse(await fetch(url, { method: 'GET', headers: entetes, signal: AbortSignal.timeout(HTTP_TIMEOUT_DEFAUT_MS) }));
+  }
+
+  async delete(url: string, corps: string, entetes: Record<string, string>): Promise<ReponseStripe> {
+    return lireReponse(await fetch(url, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', ...entetes },
+      body: corps,
+      signal: AbortSignal.timeout(HTTP_TIMEOUT_DEFAUT_MS),
+    }));
   }
 }
 
@@ -100,15 +110,18 @@ async function appeler<T>(
   operation: 'prix' | 'facture' | 'client' | 'session' | 'abonnement' | 'portail' | 'resiliation',
   chemin: string,
   champs: Record<string, string> | null,
-  o: { cle: string; idempotence?: string },
+  o: { cle: string; idempotence?: string; supprimer?: true },
   schema: z.ZodType<T>,
 ): Promise<T> {
   const entetes: Record<string, string> = { authorization: `Bearer ${o.cle}`, 'stripe-version': VERSION_API_STRIPE };
+  const avecCle = { ...entetes, 'idempotency-key': o.idempotence ?? '' };
   let res: ReponseStripe;
   try {
     res = champs === null
       ? await transport.get(`${API}${chemin}`, entetes)
-      : await transport.post(`${API}${chemin}`, formulaire(champs), { ...entetes, 'idempotency-key': o.idempotence ?? '' });
+      : o.supprimer
+        ? await transport.delete(`${API}${chemin}`, formulaire(champs), avecCle)
+        : await transport.post(`${API}${chemin}`, formulaire(champs), avecCle);
   } catch (err) {
     throw new StripeError(operation, null, null, null, err instanceof Error ? err.name : 'appel impossible');
   }
@@ -308,6 +321,51 @@ export async function programmerFinAbonnement(transport: TransportStripe, o: { c
     cle: o.cle, idempotence: `fin-${o.abonnementId}`,
   }, finProgrammeeSchema);
   if (r.id !== o.abonnementId) throw new StripeError('resiliation', 200, null, null, 'reponse pour un autre abonnement');
+}
+
+const arreteSchema = z.object({ id: z.string().startsWith('sub_'), status: z.literal('canceled') });
+
+/**
+ * Arrête TOUT DE SUITE l'abonnement du numéro seul au passage en Pro (lot 6, B2b) : `prorate` crédite le temps non utilisé,
+ * `invoice_now` l'émet sur une facture finale, négative, qui crédite le solde du client ; la facture suivante (le Pro) le
+ * consomme. La clé restreinte doit pouvoir ÉCRIRE les abonnements. Rejouable : l'idempotence est l'abonnement.
+ */
+export async function arreterAbonnementAvecAvoir(transport: TransportStripe, o: { cle: string; abonnementId: string }): Promise<void> {
+  const r = await appeler(transport, 'resiliation', `/subscriptions/${encodeURIComponent(o.abonnementId)}`, { prorate: 'true', invoice_now: 'true' }, {
+    cle: o.cle, idempotence: `avoir-${o.abonnementId}`, supprimer: true,
+  }, arreteSchema);
+  if (r.id !== o.abonnementId) throw new StripeError('resiliation', 200, null, null, 'reponse pour un autre abonnement');
+}
+
+const abonnementCreeSchema = z.object({
+  id: z.string().startsWith('sub_'),
+  // `error_if_incomplete` : un paiement refusé rend 402 et ne crée rien ; un autre statut que `active` est un refus.
+  status: z.literal('active'),
+  items: z.object({ data: z.array(z.object({ current_period_end: z.number().int().optional() })) }).optional(),
+});
+
+/**
+ * Recrée l'abonnement du numéro seul à la fin d'un Pro résilié (lot 6, B2b), 3,50 € HT par mois sur la CARTE DU PRO :
+ * Checkout la range sur l'abonnement, pas sur le client (mesuré le 2026-10-08), d'où `carte`. Hors session (le client
+ * n'est pas là), taxe comme au Checkout, et nos métadonnées : ses factures suivent ensuite le chemin du numéro. Un
+ * paiement refusé lève un `StripeError` 402 sans rien créer : le chemin de l'impayé (décision de Julien).
+ */
+export async function creerAbonnementNumeroSeul(transport: TransportStripe, o: {
+  cle: string; tenantId: string; customerId: string; prix: string; carte: string; idempotence: string;
+}): Promise<{ id: string; periodeFin: Date | null }> {
+  const r = await appeler(transport, 'abonnement', '/subscriptions', {
+    customer: o.customerId,
+    'items[0][price]': o.prix,
+    'items[0][quantity]': '1',
+    default_payment_method: o.carte,
+    payment_behavior: 'error_if_incomplete',
+    off_session: 'true',
+    'automatic_tax[enabled]': 'true',
+    'metadata[tenant_id]': o.tenantId,
+    'metadata[produit]': 'numero',
+  }, { cle: o.cle, idempotence: o.idempotence }, abonnementCreeSchema);
+  const fins = (r.items?.data ?? []).map((l) => l.current_period_end).filter((v): v is number => typeof v === 'number');
+  return { id: r.id, periodeFin: fins.length > 0 ? new Date(Math.max(...fins) * 1000) : null };
 }
 
 /** Le mode d'une clé, lu sur son préfixe (vérifié au démarrage, `src/config.ts`). */

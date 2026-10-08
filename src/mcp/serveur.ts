@@ -1,6 +1,6 @@
 import { outilsPour, RefusOutil, type DepsMcp, type OutilMcp, type PersonneMcp } from './outils';
 import { messageDe } from '../lib/erreur';
-import { rappelDeLAbonnement } from './outils-numero';
+import { rappelDeLAbonnement, rappelDeLaSuiteDuPro } from './outils-numero';
 import { corpsRefusFonction } from '../offres/refus';
 
 /**
@@ -113,8 +113,12 @@ export async function traiterMessage(deps: DepsMcp, ctx: ContexteMcp, message: u
       // suspendu. Une lecture qui échoue ne prive pas l'appel de sa réponse : pas de rappel, c'est tout. Le `catch` est
       // APRÈS le `then` : il attrape aussi une exception du formateur (une date illisible), que le second argument de
       // `then` laisserait passer (jaune 7 de la relecture de la livraison A).
-      const rappel = await deps.numero.abonnement(ctx.tenantId).then(rappelDeLAbonnement).catch(() => null);
-      const blocs = (texte: string) => [{ type: 'text', text: texte }, ...(rappel !== null ? [{ type: 'text', text: rappel }] : [])];
+      // Le lot 6 (B2b) y ajoute la suite du numéro à la fin prévue du Pro, sur le même modèle.
+      const rappels = (await Promise.all([
+        deps.numero.abonnement(ctx.tenantId).then(rappelDeLAbonnement).catch(() => null),
+        deps.numero.suiteDuPro(ctx.tenantId).then(rappelDeLaSuiteDuPro).catch(() => null),
+      ])).filter((r): r is string => r !== null);
+      const blocs = (texte: string) => [{ type: 'text', text: texte }, ...rappels.map((r) => ({ type: 'text', text: r }))];
       // Le gel de l'offre (lot 6, B2a) : l'outil reste listé, et refuse avec la phrase et le lien de l'offre.
       if (outil.fonction !== null && !(await deps.offres.offreDe(ctx.tenantId)).droits.fonctions.has(outil.fonction)) {
         return ok(id, { content: blocs(corpsRefusFonction(outil.fonction).error), isError: true });

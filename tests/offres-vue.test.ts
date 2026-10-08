@@ -6,14 +6,29 @@ import { DROITS, FONCTIONS, PRIX_PRO_HT_CENTIMES, type Offre } from '../src/offr
  * LA VUE DE L'OFFRE (lot 6, tâche 6) : la même pour la console et pour Claude. Les fonctions dans l'ordre de la grille,
  * les limites telles quelles, l'usage, et le lien vers l'offre.
  */
-function vue(offre: Offre, mois: { max: number; reste: number } | null, proEnVente = true) {
+function vue(offre: Offre, mois: { max: number; reste: number } | null, proEnVente = true, suite: { finPrevueLe: Date | null; rendreNumero: boolean } | null = null) {
   return creerVueOffre({
     offres: { offreDe: async () => ({ offre, droits: DROITS[offre], retourEnBaseLe: null }) },
     usage: async () => ({ contacts: 42, automations: 3, membres: 1 }),
     modelesDuMois: { etatDuMois: async () => mois },
     proEnVente,
+    suiteDuNumero: async () => suite,
   });
 }
+
+describe('la suite du numéro fourni dans la vue (lot 6, B2b)', () => {
+  it('🔴 un Pro qui finit : la date et le choix de rendre, pour la console et pour Claude', async () => {
+    const fin = new Date('2026-11-08T10:00:00Z');
+    expect((await vue('pro', null, true, { finPrevueLe: fin, rendreNumero: false })('t1')).suiteDuNumero)
+      .toEqual({ finPrevueLe: '2026-11-08T10:00:00.000Z', rendreNumero: false });
+    expect((await vue('pro', null, true, { finPrevueLe: null, rendreNumero: true })('t1')).suiteDuNumero)
+      .toEqual({ finPrevueLe: null, rendreNumero: true });
+  });
+
+  it('sans Pro vivant ou sans numéro fourni : rien', async () => {
+    expect((await vue('base', null)('t1')).suiteDuNumero).toBeNull();
+  });
+});
 
 describe('creerVueOffre', () => {
   it('🔴 une Base : aucune fonction gardée, ses limites, et les modèles CONSOMMÉS ce mois-ci', async () => {

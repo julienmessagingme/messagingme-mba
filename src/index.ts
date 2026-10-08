@@ -179,6 +179,7 @@ import type { DepsConnaissance } from './agent/connaissance';
 import type { Origine } from './reglages/historique';
 import { creerOffreDeBienvenue } from './account/offre-bienvenue';
 import { creerGelMembres } from './offres/membres';
+import { surFinDuPro, surPassageEnPro, type DepsNumeroInclus } from './offres/numero-inclus';
 
 /** Le nom de cette copie de l'API dans `/ops` et dans ses alertes : `api` seule, `api-<copie>` à plusieurs (`API_COPIE`). */
 const NOM_API = config.API_COPIE === '' ? 'api' : `api-${config.API_COPIE}`;
@@ -742,6 +743,25 @@ async function main(): Promise<void> {
     urlConsole: config.APP_URL,
   };
 
+  /**
+   * Le numéro fourni inclus dans le Pro (lot 6, B2b, `src/offres/numero-inclus.ts`), appelé par le webhook du Pro : le
+   * MÊME Stripe que la recharge et le numéro (la clé doit pouvoir ÉCRIRE les abonnements), le magasin du numéro, et
+   * Julien prévenu sur Telegram.
+   */
+  const numeroInclus: DepsNumeroInclus = {
+    stripe: paiementDeLaConsole.stripe,
+    prixNumero: config.STRIPE_PRIX_NUMERO,
+    numero: {
+      deLEspace: (tenant) => abonnementsNumero.deLEspace(tenant),
+      numeroAttribue: async (tenant) => (await numerosFournis.numeroDeLEspace(tenant)) !== null,
+      enregistrer: (a) => abonnementsNumero.enregistrer(a),
+      oublierAvisDeSuspension: (tenant) => abonnementsNumero.oublierAvisDeSuspension(tenant),
+      porterLaFinParLePro: (a) => abonnementsNumero.porterLaFinParLePro(a),
+    },
+    reprendreCampagnes: async (tenant) => { await numeroDelieStore.leverPausesSuspension(tenant); },
+    alerter: async (texte) => { await sendTelegram(`[mba-${NOM_API}] ${texte}`); },
+  };
+
   // La durée de chaque requête, par route normalisée : mesurée par le serveur, vidée en base avec l'attente du pool.
   const mesureLatence = new MesureLatenceHttp();
 
@@ -763,6 +783,8 @@ async function main(): Promise<void> {
   const vueOffre = creerVueOffre({
     offres, usage: (tenant) => offresStore.usage(tenant), modelesDuMois: quotaModeles,
     proEnVente: proDeLaConsole.stripe !== null && proDeLaConsole.prixProMois !== '' && proDeLaConsole.prixProAn !== '',
+    // La suite du numéro fourni que le Pro annonce (lot 6, B2b).
+    suiteDuNumero: (tenant) => abonnementsOffre.suiteDuNumero(tenant),
   });
 
   /**
@@ -864,6 +886,8 @@ async function main(): Promise<void> {
     offrePaiement: {
       ouvrir: (tenant, periodicite, payeur) => ouvrirPro(proDeLaConsole, tenant, periodicite, payeur),
       portail: (tenant, payeur) => ouvrirPortailPro(proDeLaConsole, tenant, payeur),
+      // Rendre le numéro fourni à la fin du Pro (lot 6, B2b).
+      rendreLeNumero: (tenant, rendre) => abonnementsOffre.rendreLeNumero(tenant, rendre),
     },
     // La suppression définitive d'un espace (RC8).
     opsSuppression: suppressionEspace,
@@ -1234,8 +1258,12 @@ async function main(): Promise<void> {
           majStatut: (abonnementId, statut, periodeFin, finFactureEchouee) => abonnementsOffre.majStatut(abonnementId, statut, periodeFin, finFactureEchouee),
           modifier: (abonnementId, m) => abonnementsOffre.modifier(abonnementId, m),
           finir: (abonnementId, raison, finiLe) => abonnementsOffre.finir(abonnementId, raison, finiLe),
+          vivant: (tenant) => abonnementsOffre.vivant(tenant),
           invalider: (tenant) => offres.invalider(tenant),
           alerter: async (texte) => { await sendTelegram(`[mba-${NOM_API}] ${texte}`); },
+          // Le numéro inclus (B2b) : au passage en Pro et à la fin du Pro.
+          surPassageEnPro: (tenant) => surPassageEnPro(numeroInclus, tenant),
+          surFinDuPro: (f) => surFinDuPro(numeroInclus, f),
         },
       },
     } : {}),
@@ -2384,6 +2412,8 @@ async function main(): Promise<void> {
         // « Abandonner » d'un abonné (lot 4, B) : la clé restreinte doit pouvoir écrire les abonnements.
         programmerFin: (abonnementId) => programmerFinDuNumero(abonnementDuNumero, abonnementId),
       },
+      // Le numéro inclus dans le Pro (lot 6, B2b) : un Pro vivant l'attribue sans paiement.
+      pro: { vivant: (tenant) => abonnementsOffre.vivant(tenant) },
     },
     // L'état de l'abonnement du numéro (lot 4), pour le bandeau de la console : la seule lecture.
     abonnementNumero: { etat: (tenant) => abonnementsNumero.etatDeLEspace(tenant) },
@@ -2683,7 +2713,7 @@ async function main(): Promise<void> {
         // `/brancher` de la console, et la MÊME lecture de l'état que cette page.
         numero: {
           signerLien: (l) => signLienNumero(l, config.AUTH_SECRET),
-          etat: (tenant) => lireEtatConnexion({ numeros: numerosFournis, numeroConnecte, abonnements: abonnementsNumero }, tenant),
+          etat: (tenant) => lireEtatConnexion({ numeros: numerosFournis, numeroConnecte, abonnements: abonnementsNumero, pro: abonnementsOffre }, tenant),
           urlConsole: config.APP_URL,
           attendre: (ms) => new Promise((r) => { setTimeout(r, ms); }),
           maintenant: () => Date.now(),
@@ -2691,6 +2721,9 @@ async function main(): Promise<void> {
           // Lot 4 : la seule lecture de l'état, et le réabonnement du même numéro (retour sur `/paiement-recu`).
           abonnement: (tenant) => abonnementsNumero.etatDeLEspace(tenant),
           ouvrirAbonnement: (tenant, payeur) => ouvrirAbonnement(abonnementDuNumero, tenant, 'claude', payeur),
+          // Lot 6, B2b : la suite du numéro que le Pro annonce (le rappel), et le choix de le rendre à la fin du Pro.
+          suiteDuPro: (tenant) => abonnementsOffre.suiteDuNumero(tenant),
+          rendreLeNumero: (tenant, rendre) => abonnementsOffre.rendreLeNumero(tenant, rendre),
         },
       },
     },

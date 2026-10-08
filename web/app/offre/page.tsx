@@ -10,7 +10,7 @@ import { Bouton, classesBouton } from '@/components/Bouton';
 import type { Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
 import { oublierOffre, useOffre } from '@/lib/use-offre';
-import { payerPro, portailPro } from '@/lib/api/offre';
+import { payerPro, portailPro, rendreNumero } from '@/lib/api/offre';
 import { ApiError, erreurDeChargement } from '@/lib/http';
 import {
   FONCTIONS_OFFRE, NOMS_OFFRES, libelleFonction, nomDeLOffre, offreQuiOuvre,
@@ -74,6 +74,23 @@ function OffreInner({ session }: { session: Session }) {
   const [paiement, setPaiement] = useState<'mois' | 'an' | 'portail' | null>(null);
   const [erreurPaiement, setErreurPaiement] = useState<string | null>(null);
   const [proIndisponible, setProIndisponible] = useState(false);
+  /** Le choix « rendre le numéro » fait sur cette page (lot 6, B2b) : `null` = celui de la vue. */
+  const [rendreChoisi, setRendreChoisi] = useState<boolean | null>(null);
+  const [rendreEnCours, setRendreEnCours] = useState(false);
+  const [erreurRendre, setErreurRendre] = useState<string | null>(null);
+
+  /** Rendre le numéro fourni à la fin du Pro, ou le garder. */
+  async function choisirRendre(rendre: boolean): Promise<void> {
+    setRendreEnCours(true);
+    setErreurRendre(null);
+    try {
+      setRendreChoisi((await rendreNumero(session.tenantId, rendre)).rendreNumero);
+    } catch (err) {
+      setErreurRendre(erreurDeChargement(err, t));
+    } finally {
+      setRendreEnCours(false);
+    }
+  }
 
   /** Le paiement ou le portail : la console redirige vers l'adresse de Stripe que l'API rend. */
   async function ouvrirStripe(geste: 'mois' | 'an' | 'portail'): Promise<void> {
@@ -216,10 +233,10 @@ function OffreInner({ session }: { session: Session }) {
                 {t(`Annuel, ${euros(vue.prixPro.anCentimes)} HT`, `Yearly, ${euros(vue.prixPro.anCentimes)} excl. VAT`)}
               </Bouton>
             </div>
-            {/* Jusqu'à la livraison B2, le numéro fourni garde son propre abonnement : la grille l'annonce inclus. */}
-            <p className="w-full text-xs text-ink-500" data-testid="offre-numero-a-part">
-              {t('Le numéro WhatsApp que nous vous fournissons reste facturé à part, par son propre abonnement, pour l’instant.',
-                'The WhatsApp number we provide is still billed separately, by its own subscription, for now.')}
+            {/* Depuis la livraison B2b, le numéro fourni est inclus : son abonnement à part s'arrête, avec un avoir. */}
+            <p className="w-full text-xs text-ink-500" data-testid="offre-numero-inclus">
+              {t('Le numéro WhatsApp que nous vous fournissons est inclus dans le Pro : s’il est déjà payé à part, cet abonnement s’arrête, avec un avoir.',
+                'The WhatsApp number we provide is included in Pro: if it is already paid separately, that subscription stops, with a credit.')}
             </p>
             </>
           ) : (
@@ -231,6 +248,37 @@ function OffreInner({ session }: { session: Session }) {
           {erreurPaiement && vue.offre !== 'pro' && <p className="w-full text-sm text-danger" data-testid="offre-paiement-erreur">{erreurPaiement}</p>}
         </section>
       )}
+
+      {vue.offre === 'pro' && vue.suiteDuNumero && (() => {
+        // La suite du numéro fourni (lot 6, B2b) : inclus tant que le Pro court ; à sa fin prévue, 3,50 € HT par mois sur
+        // la même carte, ou rendu si l'administrateur l'a choisi (réversible tant que le Pro court).
+        const fin = vue.suiteDuNumero.finPrevueLe;
+        const rendre = rendreChoisi ?? vue.suiteDuNumero.rendreNumero;
+        const date = fin === null ? '' : new Date(fin).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+        return (
+          <section className="flex flex-wrap items-center gap-3 rounded-carte border border-ink-200 bg-white p-5" data-testid="offre-suite-numero">
+            <p className="min-w-0 flex-1 text-sm text-ink-500">
+              {fin === null
+                ? t('Votre numéro WhatsApp fourni est inclus dans votre Pro.', 'Your provided WhatsApp number is included in your Pro plan.')
+                : rendre
+                  ? t(`Votre Pro se termine le ${date}, et votre numéro WhatsApp fourni sera alors rendu : ses envois seront coupés, puis il sera libéré 7 jours après.`,
+                    `Your Pro plan ends on ${date}, and your provided WhatsApp number will then be given back: its sending stops, and it is released 7 days later.`)
+                  : t(`Votre Pro se termine le ${date}. Votre numéro WhatsApp fourni passera alors à 3,50 € HT par mois, sur la même carte.`,
+                    `Your Pro plan ends on ${date}. Your provided WhatsApp number will then cost €3.50 excl. VAT a month, on the same card.`)}
+            </p>
+            {fin !== null && (rendre ? (
+              <Bouton variante="secondaire" onClick={() => void choisirRendre(false)} enCours={rendreEnCours} disabled={rendreEnCours} data-testid="offre-garder-numero">
+                {t('Garder mon numéro', 'Keep my number')}
+              </Bouton>
+            ) : (
+              <Bouton variante="secondaire" onClick={() => void choisirRendre(true)} enCours={rendreEnCours} disabled={rendreEnCours} data-testid="offre-rendre-numero">
+                {t('Rendre mon numéro à la fin du Pro', 'Give back my number when Pro ends')}
+              </Bouton>
+            ))}
+            {erreurRendre && <p className="w-full text-sm text-danger" data-testid="offre-rendre-erreur">{erreurRendre}</p>}
+          </section>
+        );
+      })()}
 
       {vue.offre === 'pro' && (
         <section className="flex flex-wrap items-center gap-3 rounded-carte border border-ink-200 bg-white p-5" data-testid="offre-abonnement">

@@ -5,6 +5,30 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-08 : le numéro fourni inclus dans le Pro (lot 6, livraison B2b), écrit
+
+**Les décisions de Julien** (7 et 8 octobre) : le numéro attribué sans payer à un Pro ; l'abonnement du numéro seul
+arrêté avec un avoir au passage en Pro ; à la fin prévue du Pro, la suite annoncée par la console, Claude et un e-mail ;
+« rendre le numéro » vaut à la FIN du Pro (une colonne, migration 0220), et un numéro rendu est gardé 7 jours puis
+libéré ; à la fin d'un Pro résilié, le numéro seul recréé sur la même carte ; une création qui échoue se traite comme un
+impayé. Pas de planning d'abonnement chez Stripe (ruling de B1 : il heurterait la résiliation en fin de période).
+
+**Mesuré avant d'écrire, en lecture seule chez Stripe** : Checkout range la carte sur l'ABONNEMENT
+(`default_payment_method`), pas sur le client, y compris pour l'essai payé avec un code à 100 %. Le numéro seul recréé
+prend donc la carte de l'abonnement Pro qui finit ; la créer sans elle aurait échoué faute de carte par défaut.
+
+**Le trou que la conception a fermé** : un numéro attribué pendant le Pro n'a aucune ligne d'abonnement du numéro, donc
+le lot 4 n'aurait rien eu à suspendre ni à libérer à la fin d'un Pro impayé ou d'un numéro rendu. La fin du Pro lui en
+écrit une, finie à la fin du Pro et au nom du Pro, que le lot 4 traite comme un abonnement fini.
+
+**Les jaunes J2, J5, J6 de B1** : un verrou d'espace commun à la libération et à l'enregistrement d'un Pro ; les avis de
+suspension oubliés au passage en Pro ; les pauses `numero_suspendu` levées au paiement du Pro.
+
+**Relecture** : un rouge, corrigé avant le push. Un Pro arrêté TOUT DE SUITE (Julien qui résilie à la main avant de
+supprimer un espace depuis `/ops`, ou à la demande d'un client) recréait le numéro seul et le prélevait sur la carte
+d'un client qui part, sans que rien ne l'ait annoncé. Seule une fin à la fin PRÉVUE (à 24 h près) le recrée désormais ;
+une fin immédiate suit le chemin d'un impayé, et Julien est prévenu. Huit jaunes, reportés au commit suivant.
+
 ## 2026-10-07 : les jaunes de la relecture de B2a (lot 6)
 
 **Ce qui part** : `d9517a45` (51 fichiers, aucune migration), poussé le 7 au soir par-dessus deux commits voisins, l'arbre

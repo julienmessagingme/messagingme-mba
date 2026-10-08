@@ -47,6 +47,8 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
   const [rendu, setRendu] = useState(false);
   /** La fin de l'abonnement est programmée à la fin de la période payée (lot 4, livraison B). */
   const [finProgrammee, setFinProgrammee] = useState(false);
+  /** Un Pro vivant inclut le numéro (lot 6, B2b) : il s'obtient sans payer. Faux tant qu'il n'est pas lu. */
+  const [inclus, setInclus] = useState(false);
   const connexion = useConnexionNumero(tenantId, api, surConnexion);
   /**
    * La course d'un geste et d'une lecture (jaune 5 de la relecture de la livraison B) : une lecture partie AVANT
@@ -73,6 +75,7 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
       api.etat().then((r) => {
         if (!vivant || !fraiche(depart)) return;
         setAbonnement(r.etat.abonnement);
+        setInclus(r.etat.inclusDansLePro === true);
         if (r.etat.fourni) { setNumero(r.etat.fourni); setCode(r.etat.code?.code ?? null); }
       }).catch(() => {});
     };
@@ -90,7 +93,7 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
       if (r.numero && fraiche(depart)) { setNumero(r.numero); setCode(r.code); setChoix('fourni'); }
     }).catch(() => {});
     // L'abonnement, même quand un numéro est déjà là : le portail et le texte après « Abandonner » en dépendent.
-    api.etat().then((r) => { if (fraiche(depart)) setAbonnement(r.etat.abonnement); }).catch(() => {});
+    api.etat().then((r) => { if (fraiche(depart)) { setAbonnement(r.etat.abonnement); setInclus(r.etat.inclusDansLePro === true); } }).catch(() => {});
     // `api` change d'identité à chaque rendu de la page : l'espace suffit à dire qu'il faut relire.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
@@ -148,7 +151,11 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
         <div className="mt-6 grid gap-3 sm:grid-cols-2">
           <button type="button" data-testid="choix-fourni" onClick={() => setChoix('fourni')} className="rounded-carte border border-ink-200 bg-white p-5 text-left hover:border-ink-400">
             <div className="text-base font-semibold text-ink-900">{t('Fournissez-moi un numéro', 'Provide me a number')}</div>
-            <p className="mt-1 text-xs text-ink-500">{t('Un numéro dédié, prêt pour WhatsApp : 3,50 € HT par mois.', 'A dedicated number, ready for WhatsApp: €3.50 excl. VAT per month.')}</p>
+            <p className="mt-1 text-xs text-ink-500">
+              {inclus
+                ? t('Un numéro dédié, prêt pour WhatsApp. Inclus dans votre Pro.', 'A dedicated number, ready for WhatsApp. Included in your Pro plan.')
+                : t('Un numéro dédié, prêt pour WhatsApp : 3,50 € HT par mois.', 'A dedicated number, ready for WhatsApp: €3.50 excl. VAT per month.')}
+            </p>
           </button>
           <button type="button" data-testid="choix-apporte" onClick={() => setChoix('apporte')} className="rounded-carte border border-ink-200 bg-white p-5 text-left hover:border-ink-400">
             <div className="text-base font-semibold text-ink-900">{t('J’ai déjà un numéro', 'I already have a number')}</div>
@@ -180,13 +187,18 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
             <p data-testid="numero-en-preparation" className="mt-3 text-sm text-ink-700">
               {t('Paiement reçu : votre numéro est en préparation, il s’affichera ici dès qu’il sera prêt.', 'Payment received: your number is being prepared and will show here as soon as it is ready.')}
             </p>
+          ) : inclus ? (
+            // Un Pro vivant inclut le numéro (lot 6, B2b) : rien à payer.
+            <p data-testid="numero-inclus" className="mt-3 text-sm text-ink-700">
+              {t('Inclus dans votre Pro : rien à payer.', 'Included in your Pro plan: nothing to pay.')}
+            </p>
           ) : paiementRecu && abonnement === null ? (
             <p data-testid="paiement-en-confirmation" className="mt-3 text-sm text-ink-700">
               {t('Paiement en cours de confirmation… votre numéro s’affichera ici dans quelques secondes.', 'Payment being confirmed… your number will show here in a few seconds.')}
             </p>
           ) : null}
           <div className="mt-4 flex items-center gap-3">
-            {abonnement === undefined || abonne ? (
+            {abonnement === undefined || abonne || inclus ? (
               <Bouton type="button" enCours={enCours} disabled={enCours} onClick={() => { void obtenir(); }} data-testid="obtenir-numero">
                 {t('Obtenir mon numéro', 'Get my number')}
               </Bouton>

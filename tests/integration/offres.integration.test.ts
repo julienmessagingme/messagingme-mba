@@ -190,6 +190,104 @@ describe.skipIf(!url)('l’offre calculée (0218)', () => {
     expect(await numeros.etatDeLEspace(t)).toMatchObject({ etat: 'actif', finiLe: null, liberationLe: null });
   });
 
+  describe('le numéro inclus dans le Pro (lot 6, B2b)', () => {
+    it('🔴 porter la fin par le Pro : une ligne finie au nom du Pro pour un espace qui n’a jamais eu de numéro seul, une seule fois', async () => {
+      const t = await espace('itest-offre-porter');
+      const numeros = new PgAbonnementsNumeroStore(pool);
+      const fin = new Date(Date.now() - 2 * 24 * 3_600_000);
+      await pro(t, 'sub_itestporterpro', fin);
+      expect(await numeros.porterLaFinParLePro({ tenantId: t, abonnementPro: 'sub_itestporterpro', livemode: true, finiLe: fin })).toBe(true);
+      // Rejouée (Stripe rejoue la fin) : rien de plus.
+      expect(await numeros.porterLaFinParLePro({ tenantId: t, abonnementPro: 'sub_itestporterpro', livemode: true, finiLe: fin })).toBe(false);
+      const lignes = (await pool.query('select stripe_subscription_id, statut, fini_le from abonnements_numero where tenant_id = $1', [t])).rows;
+      expect(lignes).toEqual([{ stripe_subscription_id: 'sub_itestporterpro', statut: 'resilie', fini_le: fin }]);
+      // Le lot 4 la lit comme un abonnement fini à la fin du Pro : libération 7 jours après.
+      const e = await numeros.etatDeLEspace(t);
+      expect(e?.finiLe?.getTime()).toBe(fin.getTime());
+      expect(e?.liberationLe?.getTime()).toBe(fin.getTime() + 7 * 24 * 3_600_000);
+    });
+
+    it('🔴 un espace qui a déjà une ligne de numéro n’en reçoit pas d’autre : la couverture y reporte déjà la fin du Pro', async () => {
+      const t = await espace('itest-offre-porter-deja');
+      await pool.query(
+        "insert into abonnements_numero (stripe_subscription_id, tenant_id, livemode, statut, fini_le) values ('sub_itestporterancien', $1, true, 'resilie', now() - interval '40 days')",
+        [t],
+      );
+      const numeros = new PgAbonnementsNumeroStore(pool);
+      expect(await numeros.porterLaFinParLePro({ tenantId: t, abonnementPro: 'sub_itestporterpro2', livemode: true, finiLe: new Date() })).toBe(false);
+      expect((await pool.query('select count(*)::int as n from abonnements_numero where tenant_id = $1', [t])).rows[0].n).toBe(1);
+    });
+
+    it('🔴 J5 : au passage en Pro, les avis de suspension et le rappel de l’espace sont oubliés ; la libération et l’espace voisin, non', async () => {
+      const t = await espace('itest-offre-avis');
+      const voisin = await espace('itest-offre-avis-voisin');
+      for (const [id, tenant] of [['sub_itestavis', t], ['sub_itestavisvoisin', voisin]] as const) {
+        await pool.query("insert into abonnements_numero (stripe_subscription_id, tenant_id, livemode, statut) values ($1, $2, true, 'actif')", [id, tenant]);
+        for (const avis of ['suspension_telegram', 'suspension_mail', 'rappel_liberation_mail', 'liberation_mail']) {
+          await pool.query('insert into abonnements_numero_avis (stripe_subscription_id, avis) values ($1, $2)', [id, avis]);
+        }
+      }
+      await new PgAbonnementsNumeroStore(pool).oublierAvisDeSuspension(t);
+      const restes = async (id: string) => (await pool.query<{ avis: string }>(
+        'select avis from abonnements_numero_avis where stripe_subscription_id = $1 order by avis', [id],
+      )).rows.map((r) => r.avis);
+      expect(await restes('sub_itestavis')).toEqual(['liberation_mail']);
+      expect(await restes('sub_itestavisvoisin')).toEqual(['liberation_mail', 'rappel_liberation_mail', 'suspension_mail', 'suspension_telegram']);
+    });
+
+    /** Un numéro fourni attribué à l'espace (le chiffre varie par appel : la colonne est unique). */
+    let numeroSuivant = 447700900100;
+    async function attribuerUnNumero(tenantId: string): Promise<void> {
+      numeroSuivant += 1;
+      await pool.query(
+        "insert into numeros_fournis (numero, didww_did_id, statut, tenant_id, attribue_le) values ($1, $2, 'attribue', $3, now())",
+        [String(numeroSuivant), `itest-did-${numeroSuivant}`, tenantId],
+      );
+    }
+
+    it('🔴 rendre le numéro à la fin du Pro : posé et retiré sur le Pro VIVANT seulement ; la suite du numéro le dit', async () => {
+      const t = await espace('itest-offre-rendre');
+      const pros = new PgAbonnementsOffreStore(pool);
+      expect(await pros.rendreLeNumero(t, true)).toBe(false);
+      expect(await pros.suiteDuNumero(t)).toBeNull();
+      await pro(t, 'sub_itestrendre', null);
+      await attribuerUnNumero(t);
+      expect(await pros.suiteDuNumero(t)).toEqual({ finPrevueLe: null, rendreNumero: false });
+      expect(await pros.rendreLeNumero(t, true)).toBe(true);
+      expect(await pros.suiteDuNumero(t)).toEqual({ finPrevueLe: null, rendreNumero: true });
+      expect((await pros.deLEspace(t))?.rendreNumero).toBe(true);
+      expect(await pros.rendreLeNumero(t, false)).toBe(true);
+      expect((await pros.deLEspace(t))?.rendreNumero).toBe(false);
+    });
+
+    it('🔴 l’annonce de la suite : due une fois par fin prévue, numéro attribué et gardé ; une fin retirée puis reposée l’annonce de nouveau', async () => {
+      const t = await espace('itest-offre-annonce');
+      const sansNumero = await espace('itest-offre-annonce-sans');
+      const pros = new PgAbonnementsOffreStore(pool);
+      const fin = new Date(Date.now() + 10 * 24 * 3_600_000);
+      await pro(t, 'sub_itestannonce', null);
+      await pro(sansNumero, 'sub_itestannoncesans', null);
+      await attribuerUnNumero(t);
+      const dues = async () => (await pros.aAnnoncer()).filter((a) => a.tenantId === t || a.tenantId === sansNumero);
+      expect(await dues()).toEqual([]);
+      await pros.modifier('sub_itestannonce', { finPrevueLe: fin, periodicite: null });
+      await pros.modifier('sub_itestannoncesans', { finPrevueLe: fin, periodicite: null });
+      // L'espace sans numéro fourni n'a rien à annoncer.
+      expect(await dues()).toEqual([{ tenantId: t, abonnementId: 'sub_itestannonce', finPrevueLe: fin }]);
+      expect(await pros.noterAnnonce('sub_itestannonce')).toBe(true);
+      expect(await pros.noterAnnonce('sub_itestannonce')).toBe(false);
+      expect(await dues()).toEqual([]);
+      // La fin retirée au portail efface l'annonce ; reposée, elle se refait.
+      await pros.modifier('sub_itestannonce', { finPrevueLe: null, periodicite: null });
+      expect((await pros.deLEspace(t))?.suiteAnnonceeLe).toBeNull();
+      await pros.modifier('sub_itestannonce', { finPrevueLe: fin, periodicite: null });
+      expect(await dues()).toHaveLength(1);
+      // Un numéro rendu n'a pas de suite à annoncer.
+      await pros.rendreLeNumero(t, true);
+      expect(await dues()).toEqual([]);
+    });
+  });
+
   describe('le magasin du Pro, écrit par le webhook (lot 6, B1, tâche 11)', () => {
     const D = (s: string) => new Date(s);
     it('🔴 enregistrer : l’espace passe en Pro ; rejoué, rien ne double, la fin de période ne recule pas', async () => {

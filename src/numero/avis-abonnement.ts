@@ -31,6 +31,8 @@ export interface DepsAvisAbonnement {
   envoyer: ((m: { to: string; subject: string; text: string; html: string }) => Promise<void>) | null;
   /** La page « Connecter WhatsApp » de la console. */
   pageNumero: string;
+  /** La page « Offre » de la console (lot 6, B2b) : là où l'on rend le numéro à la fin du Pro. */
+  pageOffre: string;
   avisDejaParti(abonnementId: string, avis: AvisAbonnement): Promise<boolean>;
   noterAvis(abonnementId: string, avis: AvisAbonnement): Promise<boolean>;
 }
@@ -38,6 +40,11 @@ export interface DepsAvisAbonnement {
 export interface AvisAbonnementMail {
   /** `parti` : envoyé (ou personne à prévenir) et noté ; `deja` : noté avant ; `non_envoye` : à rejouer. */
   envoyer(tenantId: string, e: EtatPourAvis, avis: AvisMail): Promise<'parti' | 'deja' | 'non_envoye'>;
+  /**
+   * L'annonce de la suite du numéro à la fin prévue du Pro (lot 6, B2b). Rien n'est noté ici : le balayage note
+   * l'annonce sur le Pro (`noterAnnonce`) quand elle est `parti`, donc une annonce ratée se rejoue au tour suivant.
+   */
+  annoncerSuite(tenantId: string, finPrevueLe: Date): Promise<'parti' | 'non_envoye'>;
 }
 
 function dateLisible(d: Date | null, fuseau: string): string {
@@ -88,8 +95,62 @@ export function messageAvis(avis: AvisMail, e: EtatPourAvis, pageNumero: string,
   return { subject, text, html };
 }
 
+/**
+ * Le texte de l'annonce de la suite du numéro à la fin prévue du Pro (lot 6, B2b, décision de Julien : la console,
+ * Claude et un e-mail l'annoncent). La date et le lien sont les seuls éléments variables.
+ */
+export function messageSuiteDuPro(finPrevueLe: Date, pageOffre: string, fuseau: string): { subject: string; text: string; html: string } {
+  const date = dateLisible(finPrevueLe, fuseau);
+  const subject = `Votre offre Pro se termine le ${date} : et votre numéro WhatsApp ?`;
+  const lignes = [
+    `L’offre Pro de votre espace Messaging Me se termine le ${date}. Le numéro WhatsApp que nous vous avons fourni y était inclus.`,
+    'À cette date, vous le gardez : il passera à 3,50 € HT par mois, prélevés sur la même carte que votre Pro, sans rien reconfigurer.',
+    'Si vous préférez le rendre, choisissez-le sur la page « Offre » de la console, ou demandez-le à Claude : ses envois seront coupés à la fin du Pro, puis il sera libéré 7 jours après.',
+  ];
+  const corps = ['Bonjour,', ...lignes];
+  const text = [...corps, pageOffre].join('\n\n');
+  const html = corps.map((l) => `<p>${l}</p>`).join('') + `<p><a href="${pageOffre}">Ouvrir la page « Offre »</a></p>`;
+  return { subject, text, html };
+}
+
 export function creerAvisAbonnement(d: DepsAvisAbonnement): AvisAbonnementMail {
+  /** Un e-mail à chaque admin, isolé ; `parti` si au moins un l'a reçu, ou s'il n'y a personne à prévenir. */
+  const envoyerAuxAdmins = async (
+    tenantId: string, quoi: string, m: { subject: string; text: string; html: string },
+  ): Promise<'parti' | 'non_envoye' | 'sans_admin'> => {
+    const admins = await d.admins(tenantId);
+    if (admins.length === 0) {
+      journaliser('warn', 'avis_abonnement_sans_admin', { tenantId, avis: quoi });
+      return 'sans_admin';
+    }
+    let partis = 0;
+    for (const to of admins) {
+      try {
+        await d.envoyer!({ to, ...m });
+        partis += 1;
+      } catch (err) {
+        journaliser('error', 'avis_abonnement_non_envoye', { err, tenantId, avis: quoi });
+      }
+    }
+    return partis > 0 ? 'parti' : 'non_envoye';
+  };
+
   return {
+    async annoncerSuite(tenantId, finPrevueLe) {
+      try {
+        if (!d.envoyer) {
+          journaliser('warn', 'avis_abonnement_sans_resend', { tenantId, avis: 'suite_du_pro' });
+          return 'non_envoye';
+        }
+        const r = await envoyerAuxAdmins(tenantId, 'suite_du_pro', messageSuiteDuPro(finPrevueLe, d.pageOffre, await d.fuseau(tenantId)));
+        if (r === 'non_envoye') return 'non_envoye';
+        journaliser('info', 'avis_abonnement_envoye', { tenantId, avis: 'suite_du_pro' });
+        return 'parti';
+      } catch (err) {
+        journaliser('error', 'avis_abonnement_impossible', { err, tenantId, avis: 'suite_du_pro' });
+        return 'non_envoye';
+      }
+    },
     async envoyer(tenantId, e, avis) {
       try {
         if (await d.avisDejaParti(e.abonnementId, avis)) return 'deja';

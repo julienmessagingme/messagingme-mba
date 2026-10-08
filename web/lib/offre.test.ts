@@ -40,6 +40,19 @@ describe('lireVueOffre', () => {
     }
   });
 
+  it('🔴 la suite du numéro fourni (lot 6, B2b) : lue quand elle est juste, absente ou illisible = rien, sans refuser la vue', () => {
+    expect(lireVueOffre({ ...BASE, suiteDuNumero: { finPrevueLe: '2026-11-08T10:00:00.000Z', rendreNumero: false } })!.suiteDuNumero)
+      .toEqual({ finPrevueLe: '2026-11-08T10:00:00.000Z', rendreNumero: false });
+    expect(lireVueOffre({ ...BASE, suiteDuNumero: { finPrevueLe: null, rendreNumero: true } })!.suiteDuNumero)
+      .toEqual({ finPrevueLe: null, rendreNumero: true });
+    // Une API plus ancienne ne la porte pas ; une forme fausse ne fait rien annoncer, et la vue reste lue.
+    for (const suite of [undefined, null, { finPrevueLe: 3, rendreNumero: false }, { finPrevueLe: null }]) {
+      const v = lireVueOffre({ ...BASE, suiteDuNumero: suite });
+      expect(v, JSON.stringify(suite)).not.toBeNull();
+      expect(v!.suiteDuNumero).toBeNull();
+    }
+  });
+
   it('une fonction que la console ne connaît pas (un serveur plus récent) est ignorée, sans refuser la vue', () => {
     const v = lireVueOffre({ ...BASE, fonctions: ['inbox', 'teleportation'] });
     expect([...v!.fonctions]).toEqual(['inbox']);

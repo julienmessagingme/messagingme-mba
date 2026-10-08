@@ -32,6 +32,13 @@ export interface DepsNumeroMcp {
   abonnement(tenantId: string): Promise<EtatDeLEspace | null>;
   /** Un nouveau paiement de l'abonnement (lot 4, réabonnement du même numéro), retour sur `/paiement-recu`. */
   ouvrirAbonnement(tenantId: string, payeur: string): Promise<Issue<{ url: string }>>;
+  /**
+   * La suite du numéro fourni que le Pro vivant annonce (lot 6, B2b, `PgAbonnementsOffreStore.suiteDuNumero`) : une
+   * lecture légère, faite à chaque réponse d'outil pour le rappel.
+   */
+  suiteDuPro(tenantId: string): Promise<{ finPrevueLe: Date | null; rendreNumero: boolean } | null>;
+  /** Rendre le numéro à la fin du Pro (`PgAbonnementsOffreStore.rendreLeNumero`) : `false` sans Pro vivant. */
+  rendreLeNumero(tenantId: string, rendre: boolean): Promise<boolean>;
 }
 
 const jour = (d: Date | null): string | null => (d === null ? null : d.toISOString().slice(0, 10));
@@ -63,6 +70,19 @@ export function rappelDeLAbonnement(a: EtatDeLEspace | null): string | null {
  * L'attente rend la main au plus tard au bout de 25 secondes : le proxy de `api.messagingme.app` coupe une réponse à
  * 45 (`proxy_read_timeout 45s`, NPM, lu le 2026-10-06), et la marge couvre la dernière lecture et la réponse.
  */
+/**
+ * Le rappel de la suite du numéro à la fin prévue du Pro (lot 6, B2b, décision de Julien : la console, Claude et un
+ * e-mail l'annoncent). Rien tant que le Pro court sans fin, ni sans numéro fourni (`null`).
+ */
+export function rappelDeLaSuiteDuPro(s: { finPrevueLe: Date | null; rendreNumero: boolean } | null): string | null {
+  if (s === null || s.finPrevueLe === null) return null;
+  return s.rendreNumero
+    ? `Rappel : le Pro de l’espace se termine le ${jour(s.finPrevueLe)}, et le numéro WhatsApp fourni sera alors rendu (ses `
+      + 'envois coupés, puis libéré 7 jours après). return_number_at_plan_end avec rendre = false le garde.'
+    : `Rappel : le Pro de l’espace se termine le ${jour(s.finPrevueLe)}. Le numéro WhatsApp fourni passera alors à 3,50 € HT `
+      + 'par mois sur la même carte ; return_number_at_plan_end avec rendre = true le rend à la place.';
+}
+
 export const DELAI_ATTENTE_MS = 25_000;
 /** Une lecture de l'état toutes les deux secondes : le code arrive à l'écran comme sur la page (trois secondes). */
 export const PAS_ATTENTE_MS = 2_000;
@@ -102,6 +122,32 @@ function vueEtat(e: EtatConnexion): Record<string, unknown> {
 }
 
 export const OUTILS_NUMERO: OutilMcp[] = [
+  {
+    nom: 'return_number_at_plan_end',
+    fonction: null,
+    description:
+      'Choisit ce que devient le numéro WhatsApp fourni à la FIN du Pro de l’espace : rendre = true le rend (ses envois '
+      + 'sont coupés à la fin du Pro, puis il est libéré 7 jours après) ; rendre = false le garde, à 3,50 € HT par mois sur '
+      + 'la même carte que le Pro. Réversible tant que le Pro court ; refusé sans Pro en cours. Ne le faire que sur la '
+      + 'demande explicite de la personne.',
+    scope: 'mcp:write',
+    exigePersonne: true,
+    annotations: ecriture('Rendre le numéro à la fin du Pro', true),
+    entree: {
+      type: 'object',
+      properties: { rendre: { type: 'boolean', description: 'true : rendre le numéro à la fin du Pro ; false : le garder.' } },
+      required: ['rendre'],
+      additionalProperties: false,
+    },
+    async executer(deps: DepsMcp, tenantId, args, personne) {
+      signataire(personne);
+      if (typeof args.rendre !== 'boolean') throw new RefusOutil('paramètre « rendre » requis : true ou false');
+      if (!(await deps.numero.rendreLeNumero(tenantId, args.rendre))) {
+        throw new RefusOutil('Cet espace n’a pas de Pro en cours : il n’y a pas de fin du Pro où rendre le numéro.');
+      }
+      return { rendre_numero: args.rendre };
+    },
+  },
   {
     nom: 'get_number_subscription',
     fonction: null,

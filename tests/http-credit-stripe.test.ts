@@ -53,6 +53,9 @@ class FauxStripe implements TransportStripe {
     if (!r) throw new Error('lecture non prévue');
     return r;
   }
+  async delete(): Promise<ReponseStripe> {
+    throw new Error('arrêt d’abonnement non prévu');
+  }
 }
 
 const CLIENT_OK: ReponseStripe = { status: 200, json: { id: 'cus_A' } };

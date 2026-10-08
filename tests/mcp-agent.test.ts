@@ -118,6 +118,10 @@ class FauxStripe implements TransportStripe {
     if (!r) throw new Error('appel non prévu');
     return r;
   }
+  /** Aucun arrêt d'abonnement dans ces cas : un appel serait une régression. */
+  async delete(): Promise<ReponseStripe> {
+    throw new Error('arrêt d’abonnement non prévu');
+  }
   async get(url: string): Promise<ReponseStripe> {
     const id = url.slice(url.lastIndexOf('/') + 1);
     return { status: 200, json: { id, unit_amount: id === 'price_100' ? 10_000 : 5_000, currency: 'eur' } };

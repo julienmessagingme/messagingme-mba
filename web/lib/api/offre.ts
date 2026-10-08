@@ -29,3 +29,8 @@ export function payerPro(tenantId: string, periodicite: 'mois' | 'an'): Promise<
 export function portailPro(tenantId: string): Promise<{ url: string }> {
   return request(`/tenants/${tenantId}/offre/portail`, { method: 'POST', body: '{}' });
 }
+
+/** Rendre le numéro fourni à la fin du Pro, ou revenir sur ce choix (lot 6, B2b). */
+export function rendreNumero(tenantId: string, rendre: boolean): Promise<{ rendreNumero: boolean }> {
+  return request(`/tenants/${tenantId}/offre/numero`, { method: 'PUT', body: JSON.stringify({ rendre }) });
+}

@@ -30,6 +30,11 @@ export interface VueOffre {
    * que le Pro n'est pas en vente (ses prix Stripe pas posés) : la console renvoie alors au Support sans faire cliquer.
    */
   prixPro: { moisCentimes: number; anCentimes: number } | null;
+  /**
+   * La suite du numéro fourni que le Pro vivant annonce (lot 6, B2b) : sa fin prévue (`null` tant qu'il court sans fin) et
+   * le choix de le rendre à la fin. `null` sans Pro vivant ou sans numéro fourni. La console l'annonce et Claude la lit.
+   */
+  suiteDuNumero: { finPrevueLe: string | null; rendreNumero: boolean } | null;
   upgradeUrl: string;
 }
 
@@ -41,6 +46,8 @@ export interface DepsVueOffre {
   modelesDuMois: { etatDuMois(tenantId: string): Promise<{ max: number; reste: number } | null> };
   /** Le Pro se paie-t-il en ligne ? (Stripe câblé et `STRIPE_PRIX_PRO_MOIS` et `_AN` posés). */
   proEnVente: boolean;
+  /** La suite du numéro fourni (`PgAbonnementsOffreStore.suiteDuNumero`, lot 6, B2b). */
+  suiteDuNumero(tenantId: string): Promise<{ finPrevueLe: Date | null; rendreNumero: boolean } | null>;
 }
 
 /** Une copie neuve à chaque appel : la modifier ne touche pas `DROITS`. */
@@ -51,8 +58,8 @@ export function grilleDesOffres(): VueOffre['grille'] {
 
 export function creerVueOffre(d: DepsVueOffre): (tenantId: string) => Promise<VueOffre> {
   return async (tenantId) => {
-    const [{ offre, droits }, usage, mois] = await Promise.all([
-      d.offres.offreDe(tenantId), d.usage(tenantId), d.modelesDuMois.etatDuMois(tenantId),
+    const [{ offre, droits }, usage, mois, suite] = await Promise.all([
+      d.offres.offreDe(tenantId), d.usage(tenantId), d.modelesDuMois.etatDuMois(tenantId), d.suiteDuNumero(tenantId),
     ]);
     return {
       offre,
@@ -61,6 +68,7 @@ export function creerVueOffre(d: DepsVueOffre): (tenantId: string) => Promise<Vu
       usage: { envoisModelesMois: mois === null ? null : mois.max - mois.reste, ...usage },
       grille: grilleDesOffres(),
       prixPro: d.proEnVente ? { moisCentimes: PRIX_PRO_HT_CENTIMES.mois, anCentimes: PRIX_PRO_HT_CENTIMES.an } : null,
+      suiteDuNumero: suite === null ? null : { finPrevueLe: suite.finPrevueLe?.toISOString() ?? null, rendreNumero: suite.rendreNumero },
       upgradeUrl: adresseOffre(),
     };
   };

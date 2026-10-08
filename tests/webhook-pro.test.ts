@@ -5,6 +5,7 @@ import { FakeQueue } from './fake-queue';
 import type { StripeWebhookRouteDeps } from '../src/http/credit-stripe';
 import type { AbonnementOffre, IssueEnregistrementPro, PeriodiciteOffre, RaisonFinOffre } from '../src/offres/abonnements-offre.pg';
 import { stripeNumeroInerte } from './routes-inertes';
+import type { FinDuPro } from '../src/offres/numero-inclus';
 
 /**
  * LE WEBHOOK STRIPE ET LE PRO (lot 6, livraison B1, tâche 11). Les objets marqués `produit: pro` écrivent
@@ -18,10 +19,13 @@ const NOW = 1_790_000_000_000;
 const FIN = 1_792_600_000;
 
 function ligne(abonnementId: string, over: Partial<AbonnementOffre> = {}): AbonnementOffre {
-  return { abonnementId, tenantId: T1, periodicite: 'mois', livemode: true, statut: 'actif', periodeFin: null, finPrevueLe: null, finiLe: null, finRaison: null, ...over };
+  return {
+    abonnementId, tenantId: T1, periodicite: 'mois', livemode: true, statut: 'actif', periodeFin: null, finPrevueLe: null, finiLe: null, finRaison: null,
+    rendreNumero: false, suiteAnnonceeLe: null, ...over,
+  };
 }
 
-function monter(o: { connus?: string[]; issue?: IssueEnregistrementPro; panne?: unknown } = {}) {
+function monter(o: { connus?: string[]; issue?: IssueEnregistrementPro; panne?: unknown; rendre?: boolean } = {}) {
   const cap = {
     enregistres: [] as Array<{ tenantId: string; abonnementId: string; periodicite: PeriodiciteOffre; livemode: boolean; periodeFin: Date | null }>,
     statuts: [] as Array<{ abonnementId: string; statut: string; periodeFin: Date | null; finEchouee: Date | null }>,
@@ -30,6 +34,8 @@ function monter(o: { connus?: string[]; issue?: IssueEnregistrementPro; panne?: 
     invalides: [] as string[],
     alertes: [] as string[],
     credits: 0,
+    passages: [] as string[],
+    finsDuPro: [] as FinDuPro[],
   };
   const connus = new Set(o.connus ?? []);
   const finis = new Set<string>();
@@ -51,10 +57,13 @@ function monter(o: { connus?: string[]; issue?: IssueEnregistrementPro; panne?: 
         if (!connus.has(abonnementId)) return null;
         const premiereFin = !finis.has(abonnementId);
         finis.add(abonnementId);
-        return { ...ligne(abonnementId, { statut: 'resilie', finiLe, finRaison: raison }), premiereFin };
+        return { ...ligne(abonnementId, { statut: 'resilie', finiLe, finRaison: raison, rendreNumero: o.rendre ?? false }), premiereFin };
       },
       invalider: (t) => { cap.invalides.push(t); },
       alerter: async (texte) => { cap.alertes.push(texte); },
+      surPassageEnPro: async (t) => { cap.passages.push(t); },
+      surFinDuPro: async (f) => { cap.finsDuPro.push(f); },
+      vivant: async () => false,
     },
     now: () => NOW,
   };
@@ -200,5 +209,44 @@ describe('le webhook Stripe et le Pro', () => {
     await envoyer(srv, evenement(sessionPro(), 'checkout.session.completed'));
     expect(cap.invalides).toEqual([]);
     expect(cap.alertes.join(' ')).toMatch(/double/i);
+    // Un doublon n'ouvre aucun passage en Pro : rien n'arrête le numéro seul de l'espace.
+    expect(cap.passages).toEqual([]);
+  });
+});
+
+describe('le numéro inclus dans le Pro (lot 6, B2b)', () => {
+  it('🔴 le Pro enregistré déclenche le passage en Pro de son espace, à chaque enregistrement (rejouable, donc rejoué)', async () => {
+    const { srv, cap } = monter();
+    await envoyer(srv, evenement(sessionPro(), 'checkout.session.completed'));
+    await envoyer(srv, evenement(sessionPro(), 'checkout.session.completed'));
+    // Une panne au premier passage (5xx, Stripe rejoue) ne doit pas le perdre : le rejeu, non nouveau, le refait.
+    expect(cap.passages).toEqual([T1, T1]);
+  });
+
+  it('🔴 la fin du Pro transmet la raison, la date, le choix de rendre, le client et la carte du Pro', async () => {
+    const { srv, cap } = monter({ connus: ['sub_pro'], rendre: true });
+    await envoyer(srv, evenement(abonnementPro({
+      ended_at: FIN, cancellation_details: { reason: 'cancellation_requested' }, customer: 'cus_P', default_payment_method: 'pm_P',
+    }), 'customer.subscription.deleted'));
+    expect(cap.finsDuPro).toEqual([{
+      tenantId: T1, abonnementPro: 'sub_pro', livemode: true, raison: 'resiliation', finiLe: new Date(FIN * 1000),
+      // La fin prévue gardée sur la ligne du Pro (R1 de la relecture) : sans elle, une fin immédiate recréerait le numéro.
+      finPrevueLe: null, rendreNumero: true, customerId: 'cus_P', carte: 'pm_P',
+    }]);
+  });
+
+  it('une carte dépliée par Stripe se lit sur son identifiant ; sans carte ni client : null, jamais une valeur inventée', async () => {
+    const a = monter({ connus: ['sub_pro'] });
+    await envoyer(a.srv, evenement(abonnementPro({ ended_at: FIN, customer: 'cus_P', default_payment_method: { id: 'pm_DEPLIE', object: 'payment_method' } }), 'customer.subscription.deleted'));
+    expect(a.cap.finsDuPro[0]).toMatchObject({ customerId: 'cus_P', carte: 'pm_DEPLIE' });
+    const b = monter({ connus: ['sub_pro'] });
+    await envoyer(b.srv, evenement(abonnementPro({ ended_at: FIN, default_payment_method: null }), 'customer.subscription.deleted'));
+    expect(b.cap.finsDuPro[0]).toMatchObject({ customerId: null, carte: null });
+  });
+
+  it('la fin d’un Pro inconnu ne déclenche rien', async () => {
+    const { srv, cap } = monter();
+    await envoyer(srv, evenement(abonnementPro({ ended_at: FIN }), 'customer.subscription.deleted'));
+    expect(cap.finsDuPro).toEqual([]);
   });
 });

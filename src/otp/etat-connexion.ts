@@ -19,17 +19,22 @@ export interface EtatConnexion {
   connecte: { chiffres: string; aActiver: boolean } | null;
   /** L'abonnement du numéro fourni (livraison B) : son statut et la fin de la période payée, `null` sans abonnement. */
   abonnement: { statut: StatutAbonnement; periodeFin: string | null } | null;
+  /** Un Pro vivant couvre l'espace (lot 6, B2b) : le numéro fourni y est inclus, la page l'obtient sans payer. */
+  inclusDansLePro: boolean;
 }
 
 export interface DepsEtatConnexion {
   numeros: Pick<PgNumerosFournisStore, 'numeroDeLEspace' | 'codeDeLEspace'>;
   numeroConnecte(tenantId: string): Promise<{ chiffres: string; aActiver: boolean } | null>;
   abonnements: Pick<PgAbonnementsNumeroStore, 'deLEspace'>;
+  /** Le Pro de l'espace (lot 6, B2b, `PgAbonnementsOffreStore.vivant`). */
+  pro: { vivant(tenantId: string): Promise<boolean> };
 }
 
 export async function lireEtatConnexion(deps: DepsEtatConnexion, tenantId: string): Promise<EtatConnexion> {
-  const [n, connecte, a] = await Promise.all([
+  const [n, connecte, a, pro] = await Promise.all([
     deps.numeros.numeroDeLEspace(tenantId), deps.numeroConnecte(tenantId), deps.abonnements.deLEspace(tenantId),
+    deps.pro.vivant(tenantId),
   ]);
   // Le code ne se lit que pour un numéro attribué : `codeDeLEspace` le borne à l'attribution.
   const c = n ? await deps.numeros.codeDeLEspace(tenantId) : null;
@@ -38,6 +43,7 @@ export async function lireEtatConnexion(deps: DepsEtatConnexion, tenantId: strin
     code: c ? { code: c.code, recuLe: c.recuLe.toISOString() } : null,
     connecte,
     abonnement: a ? { statut: a.statut, periodeFin: a.periodeFin ? a.periodeFin.toISOString() : null } : null,
+    inclusDansLePro: pro,
   };
 }
 

@@ -48,6 +48,11 @@ export interface VueOffre {
   grille: Record<NomOffre, { fonctions: ReadonlySet<FonctionOffre>; limites: LimitesOffre }>;
   /** Les prix HT du Pro, en centimes (lot 6, B1). `null` : une API plus ancienne qui ne les porte pas encore. */
   prixPro: { moisCentimes: number; anCentimes: number } | null;
+  /**
+   * La suite du numéro fourni que le Pro annonce (lot 6, B2b) : la fin prévue du Pro (ISO, `null` sans fin) et le choix de
+   * le rendre. `null` sans Pro vivant, sans numéro fourni, ou sur une API plus ancienne.
+   */
+  suiteDuNumero: { finPrevueLe: string | null; rendreNumero: boolean } | null;
   upgradeUrl: string;
 }
 
@@ -102,8 +107,16 @@ export function lireVueOffre(brut: unknown): VueOffre | null {
     usage: { envoisModelesMois: u.envoisModelesMois, contacts: u.contacts, automations: u.automations, membres: u.membres },
     grille: grille as VueOffre['grille'],
     prixPro: lirePrixPro(brut.prixPro),
+    suiteDuNumero: lireSuiteDuNumero(brut.suiteDuNumero),
     upgradeUrl: brut.upgradeUrl,
   };
+}
+
+/** Une suite absente ou illisible ne rend pas la vue illisible : il n'y a rien à annoncer. */
+function lireSuiteDuNumero(v: unknown): VueOffre['suiteDuNumero'] {
+  if (!estObjet(v) || typeof v.rendreNumero !== 'boolean') return null;
+  if (v.finPrevueLe !== null && typeof v.finPrevueLe !== 'string') return null;
+  return { finPrevueLe: v.finPrevueLe, rendreNumero: v.rendreNumero };
 }
 
 /** Des prix illisibles ou absents ne rendent pas la vue illisible : ils sont inconnus. */

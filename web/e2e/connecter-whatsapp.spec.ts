@@ -16,6 +16,8 @@ async function simulerNumeroFourni(page: Page, o: {
   codeDe?: (numero: string) => string | null;
   /** « Abandonner » programme la fin de l'abonnement chez Stripe (lot 4, livraison B) ; absent = une API plus ancienne. */
   finProgrammee?: boolean;
+  /** Un Pro vivant inclut le numéro (lot 6, B2b) ; absent = une API plus ancienne. */
+  inclusDansLePro?: boolean;
 } = {}) {
   const etat = {
     numero: null as string | null, lectures: 0, gestes: [] as string[],
@@ -24,7 +26,10 @@ async function simulerNumeroFourni(page: Page, o: {
   const json = (body: unknown) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   // L'état de la connexion (lot 3c) : l'abonnement du numéro, et le numéro attribué.
   await page.route('**/api/backend/tenants/*/connexion-numero', (route) => route.fulfill(json({
-    etat: { fourni: etat.numero, code: null, connecte: null, abonnement: etat.abonnement ? { statut: etat.abonnement, periodeFin: null } : null },
+    etat: {
+      fourni: etat.numero, code: null, connecte: null, abonnement: etat.abonnement ? { statut: etat.abonnement, periodeFin: null } : null,
+      ...(o.inclusDansLePro === undefined ? {} : { inclusDansLePro: o.inclusDansLePro }),
+    },
     empreinte: '0123456789abcdef',
   })));
   await page.route('**/api/backend/tenants/*/numero-fourni**', async (route) => {
@@ -119,6 +124,19 @@ test('🔴 sans abonnement : le prix et « Payer », puis la page de paiement ; 
   await expect(page).toHaveURL(/abonnement=recu/);
   expect(etat.gestes).toEqual(['payer']);
   expect(etat.retours).toEqual(['console']);
+});
+
+test('🔴 en Pro (lot 6, B2b) : le numéro est inclus, « Obtenir mon numéro » sans jamais « Payer »', async ({ page }) => {
+  await mockAccueil(page, { account: SANS_NUMERO, inscription: { complete: {} } });
+  const etat = await simulerNumeroFourni(page, { abonnement: null, inclusDansLePro: true });
+  await page.goto('/connecter-whatsapp');
+  await expect(page.getByTestId('choix-fourni')).toContainText('Inclus dans votre Pro');
+  await page.getByTestId('choix-fourni').click();
+  await expect(page.getByTestId('numero-inclus')).toBeVisible();
+  await expect(page.getByTestId('payer-numero')).toHaveCount(0);
+  await page.getByTestId('obtenir-numero').click();
+  await expect(page.getByText('+441235619343').first()).toBeVisible();
+  expect(etat.gestes).toEqual(['obtenir']);
 });
 
 test('🔴 retour de Stripe avant le webhook : « confirmation en cours », et pas de second paiement', async ({ page }) => {

@@ -51,6 +51,8 @@ export interface EtatConnexion {
   connecte: { chiffres: string; aActiver: boolean } | null;
   /** L'abonnement du numéro fourni (lot 3c) : `actif`, `en_retard` ou `resilie`, `null` sans abonnement. */
   abonnement: { statut: 'actif' | 'en_retard' | 'resilie'; periodeFin: string | null } | null;
+  /** Un Pro vivant inclut le numéro (lot 6, B2b) : il s'obtient sans payer. Absent sur une API plus ancienne. */
+  inclusDansLePro?: boolean;
 }
 
 /**

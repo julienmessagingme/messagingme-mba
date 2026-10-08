@@ -21,8 +21,11 @@ beforeAll(async () => {
 });
 const personne: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 
-function monter(o: { ouvrir?: OffrePaiementRouteDeps['ouvrir']; portail?: OffrePaiementRouteDeps['portail'] } = {}) {
-  const cap = { ouvertures: [] as Array<{ tenantId: string; periodicite: PeriodicitePro; payeur: string }>, portails: [] as string[] };
+function monter(o: { ouvrir?: OffrePaiementRouteDeps['ouvrir']; portail?: OffrePaiementRouteDeps['portail']; proVivant?: boolean } = {}) {
+  const cap = {
+    ouvertures: [] as Array<{ tenantId: string; periodicite: PeriodicitePro; payeur: string }>, portails: [] as string[],
+    rendus: [] as Array<{ tenantId: string; rendre: boolean }>,
+  };
   const server = buildServer({
     queue: new FakeQueue(), auth: { users: personne, secret: SECRET },
     offrePaiement: {
@@ -31,6 +34,7 @@ function monter(o: { ouvrir?: OffrePaiementRouteDeps['ouvrir']; portail?: OffreP
         return { ok: true, valeur: { url: `https://checkout.stripe.com/c/pay/${periodicite}`, portail: false } };
       }),
       portail: o.portail ?? (async (tenantId) => { cap.portails.push(tenantId); return { ok: true, valeur: { url: 'https://billing.stripe.com/p/session/x' } }; }),
+      rendreLeNumero: async (tenantId, rendre) => { cap.rendus.push({ tenantId, rendre }); return o.proVivant ?? true; },
     },
   });
   return { server, cap };
@@ -83,6 +87,37 @@ describe('POST /tenants/:tenantId/offre/portail', () => {
     expect(r.json()).toEqual({ url: 'https://billing.stripe.com/p/session/x' });
     expect((await poster(server, '/tenants/t1/offre/portail', agent)).statusCode).toBe(403);
     expect(cap.portails).toEqual(['t1']);
+    await server.close();
+  });
+});
+
+/** Rendre le numéro fourni à la fin du Pro (lot 6, B2b) : un choix de l'administrateur, réversible tant que le Pro court. */
+describe('PUT /tenants/:tenantId/offre/numero', () => {
+  const mettre = (server: ReturnType<typeof buildServer>, jeton: string, payload: unknown) =>
+    server.inject({ method: 'PUT', url: '/tenants/t1/offre/numero', headers: { authorization: `Bearer ${jeton}`, 'content-type': 'application/json' }, payload: JSON.stringify(payload) });
+
+  it('🔴 l’administrateur pose puis retire « rendre le numéro » sur le Pro de SON espace', async () => {
+    const { server, cap } = monter();
+    expect((await mettre(server, admin, { rendre: true })).json()).toEqual({ rendreNumero: true });
+    expect((await mettre(server, admin, { rendre: false })).json()).toEqual({ rendreNumero: false });
+    expect(cap.rendus).toEqual([{ tenantId: 't1', rendre: true }, { tenantId: 't1', rendre: false }]);
+    await server.close();
+  });
+
+  it('sans Pro vivant : 409, il n’y a pas de « fin du Pro » où rendre le numéro', async () => {
+    const { server } = monter({ proVivant: false });
+    const r = await mettre(server, admin, { rendre: true });
+    expect(r.statusCode).toBe(409);
+    expect(r.json()).toMatchObject({ cause: 'aucun_pro' });
+    await server.close();
+  });
+
+  it('un agent : 403 ; un corps qui n’est pas un booléen, ou porte autre chose : 400 ; rien n’est écrit', async () => {
+    const { server, cap } = monter();
+    expect((await mettre(server, agent, { rendre: true })).statusCode).toBe(403);
+    expect((await mettre(server, admin, { rendre: 'oui' })).statusCode).toBe(400);
+    expect((await mettre(server, admin, { rendre: true, tenantId: 't2' })).statusCode).toBe(400);
+    expect(cap.rendus).toEqual([]);
     await server.close();
   });
 });

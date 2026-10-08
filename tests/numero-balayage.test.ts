@@ -23,6 +23,8 @@ const finiSuspendu = (e: Partial<EtatDeLEspace> = {}) => etat({ etat: 'suspendu'
 function monter(o: {
   etats: Record<string, EtatDeLEspace | null>; aSurveiller?: string[]; enPause?: string[]; maintenant?: Date;
   liberer?: (t: string) => Promise<IssueLiberation>; alerteEnPanne?: boolean;
+  /** Les Pro dont la suite du numéro est à annoncer (lot 6, B2b), et un e-mail d'annonce en panne. */
+  annonces?: Array<{ tenantId: string; abonnementId: string; finPrevueLe: Date }>; annonceEnPanne?: boolean;
 }) {
   const avis = new Set<string>();
   const alertes: string[] = [];
@@ -30,6 +32,8 @@ function monter(o: {
   const reprises: string[] = [];
   const liberes: string[] = [];
   const servis: string[] = [];
+  const annonces = [...(o.annonces ?? [])];
+  const annoncesNotees: string[] = [];
   const d: DepsBalayageAbonnements = {
     aSurveiller: async () => o.aSurveiller ?? Object.keys(o.etats),
     etat: async (t) => o.etats[t] ?? null,
@@ -43,6 +47,19 @@ function monter(o: {
         avis.add(`${e.abonnementId}:${a}`);
         return 'parti';
       },
+      annoncerSuite: async (t, fin) => {
+        if (o.annonceEnPanne) return 'non_envoye';
+        mails.push(`${t}:suite:${fin.toISOString()}`);
+        return 'parti';
+      },
+    },
+    prosAAnnoncer: async () => [...annonces],
+    noterAnnonce: async (abonnementId) => {
+      annoncesNotees.push(abonnementId);
+      const i = annonces.findIndex((a) => a.abonnementId === abonnementId);
+      if (i < 0) return false;
+      annonces.splice(i, 1);
+      return true;
     },
     liberer: async (t, abonnementId) => {
       liberes.push(`${t}:${abonnementId}`);
@@ -55,8 +72,25 @@ function monter(o: {
     leverPausesSuspension: async (t) => { reprises.push(t); return 1; },
     maintenant: () => o.maintenant ?? new Date(FINI.getTime() + JOUR),
   };
-  return { d, alertes, mails, reprises, liberes, servis, avis };
+  return { d, alertes, mails, reprises, liberes, servis, avis, annoncesNotees };
 }
+
+describe('balayerAbonnements : l’annonce de la suite du numéro à la fin prévue du Pro (lot 6, B2b)', () => {
+  const FIN_PRO = new Date('2026-11-08T10:00:00Z');
+  it('🔴 un Pro qui finit avec un numéro fourni : l’e-mail part une fois, et se note ; le tour suivant ne renvoie rien', async () => {
+    const m = monter({ etats: {}, annonces: [{ tenantId: 't1', abonnementId: 'sub_PRO', finPrevueLe: FIN_PRO }] });
+    await balayerAbonnements(m.d);
+    await balayerAbonnements(m.d);
+    expect(m.mails).toEqual([`t1:suite:${FIN_PRO.toISOString()}`]);
+    expect(m.annoncesNotees).toEqual(['sub_PRO']);
+  });
+
+  it('🔴 un e-mail qui ne part pas ne se note pas : l’annonce se rejoue au tour suivant', async () => {
+    const m = monter({ etats: {}, annonces: [{ tenantId: 't1', abonnementId: 'sub_PRO', finPrevueLe: FIN_PRO }], annonceEnPanne: true });
+    await balayerAbonnements(m.d);
+    expect(m.annoncesNotees).toEqual([]);
+  });
+});
 
 describe('balayerAbonnements : la suspension', () => {
   it('🔴 suspendu (fini) : Julien prévenu UNE fois, les admins aussi, pas au tour suivant', async () => {

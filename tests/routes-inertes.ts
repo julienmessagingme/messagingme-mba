@@ -519,7 +519,7 @@ offres: offresToutOuvert,
 export const mcpNumeroInerte: Pick<DepsMcp, 'numero'> = {
   numero: {
     signerLien: neDevraitPasEtreAppelee('numero.signerLien'),
-    etat: async () => ({ fourni: null, code: null, connecte: null, abonnement: null }),
+    etat: async () => ({ fourni: null, code: null, connecte: null, abonnement: null, inclusDansLePro: false }),
     urlConsole: 'https://console.inerte.test',
     attendre: async () => {},
     maintenant: () => Date.now(),
@@ -527,6 +527,9 @@ export const mcpNumeroInerte: Pick<DepsMcp, 'numero'> = {
     // Lot 4 : aucun abonnement, donc aucun rappel dans les réponses d'outil.
     abonnement: async () => null,
     ouvrirAbonnement: neDevraitPasEtreAppelee('numero.ouvrirAbonnement'),
+    // Lot 6, B2b : aucun Pro, donc aucune suite à rappeler ; rendre le numéro n'est pas le sujet de ces montages.
+    suiteDuPro: async () => null,
+    rendreLeNumero: neDevraitPasEtreAppelee('numero.rendreLeNumero'),
   },
 };
 
@@ -537,7 +540,7 @@ export const mcpOffreInerte: Pick<DepsMcp, 'offre' | 'offres'> = {
     vue: async () => ({
       offre: 'entreprise', fonctions: [...FONCTIONS], limites: { ...DROITS.entreprise.limites },
       usage: { envoisModelesMois: null, contacts: 0, automations: 0, membres: 0 }, grille: grilleDesOffres(), prixPro: { moisCentimes: 4900, anCentimes: 49000 },
-      upgradeUrl: 'https://console.inerte.test/offre',
+      suiteDuNumero: null, upgradeUrl: 'https://console.inerte.test/offre',
     }),
   },
 };
@@ -612,4 +615,8 @@ export const stripeProInerte: StripeWebhookRouteDeps['pro'] = {
   finir: neDevraitPasEtreAppelee('stripe.pro.finir'),
   invalider: neDevraitPasEtreAppelee('stripe.pro.invalider'),
   alerter: async () => {},
+  // Une lecture : la fin d'un numéro seul demande si un Pro le couvre (B2b). Aucun Pro ici.
+  vivant: async () => false,
+  surPassageEnPro: neDevraitPasEtreAppelee('stripe.pro.surPassageEnPro'),
+  surFinDuPro: neDevraitPasEtreAppelee('stripe.pro.surFinDuPro'),
 };

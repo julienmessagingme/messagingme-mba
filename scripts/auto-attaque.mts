@@ -276,6 +276,8 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
     pro: {
       enregistrer: async () => ({ etat: 'doublon' as const }), majStatut: async () => null, modifier: async () => null,
       finir: async () => null, invalider: () => undefined, alerter: async () => undefined,
+      // Le numéro inclus (B2b) : aucun Pro, rien à arrêter ni à recréer.
+      vivant: async () => false, surPassageEnPro: async () => undefined, surFinDuPro: async () => undefined,
     },
   } satisfies StripeWebhookRouteDeps,
   // Le pont du code (lot 3a) : un VRAI secret aussi, et une réserve vide. Une signature fausse ou absente doit tomber

@@ -2919,7 +2919,26 @@ l'Asterisk du VPS (`ops/otp-asterisk/`) décroche, enregistre, puis poste l'enre
   nul) rend l'abonnement `actif`, sans fin ni libération ; un Pro fini APRÈS la fin de l'abonnement du numéro y
   substitue sa propre fin, donc sept jours de plus avant la libération. Seul un Pro payé chez Stripe couvre, jamais
   l'Entreprise posée par nous. `PgLiberationStore.liberer` relit ce Pro dans sa transaction, avec la même grâce : le
-  balayage a lu l'état AVANT elle, et la résiliation chez DIDWW est irréversible.
+  balayage a lu l'état AVANT elle, et la résiliation chez DIDWW est irréversible. Elle prend en tête le verrou
+  d'espace `VERROU_NUMERO_PRO_SQL` (`src/numero/verrou-numero-pro.ts`), le même que l'enregistrement d'un Pro, pour
+  qu'un Pro écrit pendant la libération ne la voie pas passer outre.
+  🔴 **Le numéro fourni est INCLUS dans le Pro** (lot 6, B2b, `src/offres/numero-inclus.ts`, migration 0220). Un Pro
+  vivant donne droit à un numéro sans abonnement du numéro (`droitAuNumero` de `src/http/numero-fourni.ts`, la même
+  garde pour obtenir et remplacer) ; le paiement du numéro y rend 409 `inclus_dans_le_pro`, et l'état de la connexion
+  porte `inclusDansLePro`. Le webhook du Pro appelle deux gestes REJOUABLES, à chaque événement qui les concerne :
+  `surPassageEnPro` (les avis de suspension oubliés, les pauses `numero_suspendu` levées, et l'abonnement du numéro
+  seul vivant arrêté chez Stripe par `DELETE /v1/subscriptions/:id` avec `prorate` et `invoice_now`, donc un avoir sur
+  le solde du client ; un refus prévient Julien) et `surFinDuPro`. À la fin d'un Pro résilié À SA FIN PRÉVUE (à
+  `MARGE_FIN_PREVUE_MS` près : un Pro arrêté tout de suite n'a rien annoncé, et ne recrée rien), sans
+  `abonnements_offre.rendre_numero`, avec un numéro attribué et sans numéro seul vivant, l'abonnement du numéro seul est
+  CRÉÉ sur la carte du Pro (`default_payment_method` de l'abonnement Pro : Checkout y range la carte, pas sur le client),
+  en `error_if_incomplete` et hors session, puis enregistré tout de suite. Sinon (impayé, numéro rendu, carte refusée ou
+  absente) un espace qui n'a JAMAIS eu de ligne de numéro en reçoit une, finie à la fin du Pro et au nom du Pro
+  (`porterLaFinParLePro`) : le lot 4 la suspend puis la libère comme un abonnement fini, et aucun appel chez Stripe ne
+  la vise (elle n'est pas vivante). La suite s'annonce à la fin prévue du Pro : `VueOffre.suiteDuNumero` pour la page
+  Offre, `rappelDeLaSuiteDuPro` sur chaque réponse d'outil MCP, et un e-mail aux admins depuis le balayage du worker
+  (`aAnnoncer`, `noterAnnonce` sur `abonnements_offre.suite_annoncee_le`, effacée quand la fin est retirée). « Rendre »
+  se pose par `PUT /tenants/:tenantId/offre/numero` (admin) ou l'outil `return_number_at_plan_end`.
   `GET /tenants/:tenantId/abonnement-numero` (tout membre, `src/http/abonnement-numero.ts`) la rend pour le bandeau
   de la console (`web/components/BandeauAbonnement.tsx`, dans `AppShell`, aucun bandeau si la route manque). Côté
   MCP, `rappelDeLAbonnement` ajoute un second bloc de texte à CHAQUE réponse d'outil, refus compris, tant que

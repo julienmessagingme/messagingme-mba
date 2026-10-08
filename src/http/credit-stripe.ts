@@ -12,6 +12,7 @@ import { creditDeLOffre, definitionOffre, OFFRES_RECHARGE } from '../stripe/offr
 import { ouvrirPaiement, RECHARGE_INDISPONIBLE, type DepsPaiement } from '../stripe/paiement';
 import type { IssuePaiement, PaiementStripe } from '../stripe/store.pg';
 import { lienTableauStripe } from '../stripe/liens';
+import type { FinDuPro } from '../offres/numero-inclus';
 
 /**
  * L'écriture a été refusée parce que l'espace n'existe plus (23503, la clé étrangère vers `tenants`) : un espace
@@ -172,9 +173,17 @@ export interface StripeWebhookRouteDeps {
    * l'espace qui vient de payer est en Pro tout de suite ici, en moins de 30 s ailleurs) ; `alerter` prévient Julien.
    * Requis : un câblage qui l'oublierait laisserait payer le Pro sans jamais l'ouvrir.
    */
-  pro: Pick<PgAbonnementsOffreStore, 'enregistrer' | 'majStatut' | 'modifier' | 'finir'> & {
+  pro: Pick<PgAbonnementsOffreStore, 'enregistrer' | 'majStatut' | 'modifier' | 'finir' | 'vivant'> & {
     invalider(tenantId: string): void;
     alerter(texte: string): Promise<void>;
+    /**
+     * Le numéro inclus (lot 6, B2b, `src/offres/numero-inclus.ts`) : au passage en Pro, le numéro seul arrêté avec avoir,
+     * les avis de suspension oubliés et les pauses levées ; à la fin du Pro, le numéro seul recréé sur la carte du Pro, ou
+     * le chemin du lot 4. Appelés à CHAQUE événement qui les concerne, rejeux compris : ils sont rejouables, et une
+     * panne au premier passage ne doit pas les perdre.
+     */
+    surPassageEnPro(tenantId: string): Promise<void>;
+    surFinDuPro(f: FinDuPro): Promise<unknown>;
   };
   now?: () => number;
 }
@@ -259,6 +268,10 @@ const abonnementProSchema = z.object({
       price: z.object({ recurring: z.object({ interval: z.string() }).nullable().optional() }).optional(),
     })),
   }).optional(),
+  // Le client et la carte de l'abonnement (B2b) : le numéro seul recréé à la fin du Pro les reprend. Un identifiant, ou
+  // l'objet si l'événement l'a déplié.
+  customer: z.union([z.string(), z.object({ id: z.string() })]).nullable().optional(),
+  default_payment_method: z.union([z.string(), z.object({ id: z.string() })]).nullable().optional(),
 });
 const PERIODICITE_DE_STRIPE: Readonly<Record<string, PeriodiciteOffre>> = { month: 'mois', year: 'an' };
 /** Un impayé (ou un litige) chez Stripe ; toute autre fin est une résiliation. */
@@ -352,6 +365,8 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
       if (issue.etat === 'enregistre') {
         deps.pro.invalider(issue.tenantId);
         if (issue.nouveau) await deps.pro.alerter(`Nouveau Pro : espace ${issue.tenantId} (${a.abonnementId}, ${a.periodicite === 'an' ? 'annuel' : 'mensuel'}).`);
+        // Le numéro inclus (B2b) : à chaque enregistrement, nouveau ou rejoué (une panne au premier ne le perd pas).
+        await deps.pro.surPassageEnPro(issue.tenantId);
       } else if (issue.etat === 'doublon') {
         await deps.pro.alerter(`Pro en double : ${a.abonnementId} pour l'espace ${a.tenantId}, qui a déjà un Pro vivant. À annuler et rembourser chez Stripe.`);
       }
@@ -375,6 +390,13 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
           deps.pro.invalider(a.tenantId);
           // Un rejeu de la fin (Stripe rejoue tout événement non acquitté) ne réalerte pas.
           if (a.premiereFin) await deps.pro.alerter(`Pro terminé (${raison === 'impaye' ? 'impayé' : 'résiliation'}) : espace ${a.tenantId} (${a.abonnementId}). L'espace revient en Base.`);
+          // Le numéro inclus (B2b) : la raison et la date gardées en base (la première fin), pas celles d'un rejeu.
+          await deps.pro.surFinDuPro({
+            tenantId: a.tenantId, abonnementPro: a.abonnementId, livemode,
+            raison: a.finRaison ?? raison, finiLe: a.finiLe ?? fin, rendreNumero: a.rendreNumero, finPrevueLe: a.finPrevueLe,
+            customerId: lu.data.customer ? idDe(lu.data.customer) : null,
+            carte: lu.data.default_payment_method ? idDe(lu.data.default_payment_method) : null,
+          });
         }
         return ok();
       }
@@ -434,7 +456,12 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
       const lu = abonnementSchema.safeParse(objet);
       if (!lu.success) return illisible();
       const a = await deps.numero.majStatut(lu.data.id, 'resilie', null);
-      if (a) await deps.numero.alerter(`Abonnement du numéro terminé : espace ${a.tenantId} (${a.abonnementId}). Ses envois sont coupés ; le numéro est gardé 7 jours pour un réabonnement, puis libéré.`);
+      // Arrêté au passage en Pro (B2b) : le numéro est inclus, rien n'est coupé.
+      if (a) {
+        await deps.numero.alerter(await deps.pro.vivant(a.tenantId)
+          ? `Abonnement du numéro seul arrêté : espace ${a.tenantId} (${a.abonnementId}). Le numéro est inclus dans son Pro.`
+          : `Abonnement du numéro terminé : espace ${a.tenantId} (${a.abonnementId}). Ses envois sont coupés ; le numéro est gardé 7 jours pour un réabonnement, puis libéré.`);
+      }
       return reply.code(200).send({ recu: true });
     }
     if (type === 'customer.subscription.updated') {

@@ -110,6 +110,7 @@ import { creerClientDidww } from './didww/client';
 import { PgAlertesCreditStore } from './repondeur/alerte-credit';
 import { ResendClient } from './support/resend';
 import { creerPierreTombale } from './ops/espaces-supprimes.pg';
+import { PgAbonnementsOffreStore } from './offres/abonnements-offre.pg';
 
 async function main(): Promise<void> {
   // Le worker est la seule instance qui dépile, et son rôle principal la seule qui supervise : c'est lui qui récupère les
@@ -979,6 +980,8 @@ async function main(): Promise<void> {
    * gestes (`src/numero/balayage-abonnements.ts`).
    */
   const abonnementsDuNumero = new PgAbonnementsNumeroStore(pool);
+  // Le Pro (lot 6, B2b) : l'annonce de la suite du numéro à sa fin prévue part de ce balayage.
+  const abonnementsPro = new PgAbonnementsOffreStore(pool);
   const liberations = new PgLiberationStore(pool);
   // La clé DIDWW du worker (livraison B) : la même que l'API, limitée à l'adresse du VPS. Absente, une libération qui
   // doit résilier échoue, se signale, et se rejoue.
@@ -991,6 +994,7 @@ async function main(): Promise<void> {
       ? async (m) => { await new ResendClient(config.RESEND_API_KEY).send({ from: `Messaging Me <${config.SUPPORT_FROM}>`, ...m }); }
       : null,
     pageNumero: `${config.APP_URL.trim().replace(/\/+$/, '')}/connecter-whatsapp`,
+    pageOffre: `${config.APP_URL.trim().replace(/\/+$/, '')}/offre`,
     avisDejaParti: (abonnementId, avis) => abonnementsDuNumero.avisDejaParti(abonnementId, avis),
     noterAvis: (abonnementId, avis) => abonnementsDuNumero.noterAvis(abonnementId, avis),
   });
@@ -1011,6 +1015,8 @@ async function main(): Promise<void> {
     },
     espacesEnPauseSuspension: () => numeroDelieStore.espacesEnPauseSuspension(),
     leverPausesSuspension: (t) => numeroDelieStore.leverPausesSuspension(t),
+    prosAAnnoncer: () => abonnementsPro.aAnnoncer(),
+    noterAnnonce: (abonnementId) => abonnementsPro.noterAnnonce(abonnementId),
   }), { immediat: true, enEchec: echecDeBalayage('abonnements-numero', 'sweeper:abonnements-numero', 'balayage des abonnements du numéro') });
 
   // Balayage de réveil des parcours endormis sur un bloc Attente arrivé à échéance. La granularité du délai

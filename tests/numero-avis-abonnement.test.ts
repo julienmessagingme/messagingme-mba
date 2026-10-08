@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { creerAvisAbonnement, messageAvis, type DepsAvisAbonnement } from '../src/numero/avis-abonnement';
+import { creerAvisAbonnement, messageAvis, messageSuiteDuPro, type DepsAvisAbonnement } from '../src/numero/avis-abonnement';
 import type { AvisAbonnement } from '../src/stripe/abonnements.pg';
 
 /**
@@ -19,11 +19,38 @@ function monter(o: { admins?: string[]; envoi?: (to: string) => void; sansResend
     fuseau: async () => 'Europe/Paris',
     envoyer: o.sansResend ? null : async (m) => { o.envoi?.(m.to); envois.push({ to: m.to, subject: m.subject, text: m.text }); },
     pageNumero: 'https://console.exemple/connecter-whatsapp',
+    pageOffre: 'https://console.exemple/offre',
     avisDejaParti: async (_id, avis) => deja.has(avis),
     noterAvis: async (_id, avis) => { notes.push(avis); deja.add(avis); return true; },
   };
   return { avis: creerAvisAbonnement(deps), envois, notes };
 }
+
+describe('l’annonce de la suite du numéro à la fin prévue du Pro (lot 6, B2b)', () => {
+  const FIN_PRO = new Date('2026-11-08T10:00:00Z');
+
+  it('🔴 le texte : la date de fin du Pro, le numéro à 3,50 € HT par mois sur la même carte, ou le rendre depuis la page Offre', () => {
+    const m = messageSuiteDuPro(FIN_PRO, 'https://console.exemple/offre', 'Europe/Paris');
+    expect(m.subject).toMatch(/8 novembre 2026/);
+    expect(m.text).toMatch(/3,50 € HT par mois/);
+    expect(m.text).toMatch(/même carte/);
+    expect(m.text).toMatch(/rendre/);
+    expect(m.text).toContain('https://console.exemple/offre');
+    expect(m.html).toContain('href="https://console.exemple/offre"');
+  });
+
+  it('🔴 chaque admin la reçoit ; sans Resend, rien ne part et l’annonce se rejouera', async () => {
+    const m = monter();
+    expect(await m.avis.annoncerSuite('t1', FIN_PRO)).toBe('parti');
+    expect(m.envois.map((e) => e.to)).toEqual(['a@exemple.fr', 'b@exemple.fr']);
+    expect(await monter({ sansResend: true }).avis.annoncerSuite('t1', FIN_PRO)).toBe('non_envoye');
+  });
+
+  it('un envoi raté pour tous les admins : à rejouer ; personne à prévenir : « parti », pour ne pas rejouer sans fin', async () => {
+    expect(await monter({ envoi: () => { throw new Error('Resend 500'); } }).avis.annoncerSuite('t1', FIN_PRO)).toBe('non_envoye');
+    expect(await monter({ admins: [] }).avis.annoncerSuite('t1', FIN_PRO)).toBe('parti');
+  });
+});
 
 describe('les e-mails de l’abonnement du numéro', () => {
   it('🔴 chaque admin le reçoit, une seule fois : le second tour ne renvoie rien', async () => {

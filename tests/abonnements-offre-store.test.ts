@@ -24,7 +24,8 @@ function fausseBase(o: { conflits?: number; ligneExiste?: boolean } = {}) {
     if (/from abonnements_offre/i.test(sql)) return o.ligneExiste ? { rows: [{ existe: 1 }], rowCount: 1 } : { rows: [], rowCount: 0 };
     return { rows: [], rowCount: 0 };
   };
-  return { pool: { query } as unknown as Pool, requetes };
+  // L'enregistrement passe par une transaction (le verrou J2, lot 6, B2b) : le même faux sert de client.
+  return { pool: { query, connect: async () => ({ query, release: () => {} }) } as unknown as Pool, requetes };
 }
 
 describe('PgAbonnementsOffreStore.enregistrer', () => {

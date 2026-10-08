@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import {
-  creerClientStripe, creerSessionAbonnement, creerSessionCheckout, creerSessionPortail, estCleLive, lireFactureStripe, lirePrixStripe, StripeError, VERSION_API_STRIPE, type ReponseStripe, type TransportStripe,
+  arreterAbonnementAvecAvoir, creerAbonnementNumeroSeul, creerClientStripe, creerSessionAbonnement, creerSessionCheckout, creerSessionPortail, estCleLive, lireFactureStripe, lirePrixStripe, StripeError, VERSION_API_STRIPE, type ReponseStripe, type TransportStripe,
 } from '../src/stripe/client';
 import { creditDeLOffre, definitionOffre, estOffreRecharge } from '../src/stripe/offres';
 
@@ -13,8 +13,15 @@ const CLE = ['rk', 'test', randomBytes(12).toString('hex')].join('_');
 const TENANT = '5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01';
 
 class FauxTransport implements TransportStripe {
-  readonly appels: Array<{ url: string; corps: URLSearchParams; entetes: Record<string, string> }> = [];
+  readonly appels: Array<{ url: string; corps: URLSearchParams; entetes: Record<string, string>; methode?: 'DELETE' }> = [];
   constructor(private readonly reponses: Array<ReponseStripe | Error>) {}
+  async delete(url: string, corps: string, entetes: Record<string, string>): Promise<ReponseStripe> {
+    this.appels.push({ url, corps: new URLSearchParams(corps), entetes, methode: 'DELETE' });
+    const r = this.reponses.shift();
+    if (!r) throw new Error('appel non prévu');
+    if (r instanceof Error) throw r;
+    return r;
+  }
   async post(url: string, corps: string, entetes: Record<string, string>): Promise<ReponseStripe> {
     this.appels.push({ url, corps: new URLSearchParams(corps), entetes });
     const r = this.reponses.shift();
@@ -239,5 +246,50 @@ describe('l’abonnement du numéro fourni (lot 3c, livraison B)', () => {
     expect(Object.fromEntries(t.appels[0]!.corps)).toEqual({ customer: 'cus_A', return_url: 'https://console.exemple/brancher' });
     const refus = new FauxTransport([{ status: 403, json: { error: { type: 'invalid_request_error', message: 'restricted key' } } }]);
     await expect(creerSessionPortail(refus, { cle: CLE, customerId: 'cus_A', urlRetour: 'https://x' })).rejects.toMatchObject({ operation: 'portail', status: 403 });
+  });
+});
+
+describe('le numéro inclus dans le Pro (lot 6, B2b)', () => {
+  it('🔴 arrêter le numéro seul au passage en Pro : DELETE, avec l’avoir au prorata facturé tout de suite', async () => {
+    const t = new FauxTransport([{ status: 200, json: { id: 'sub_N', status: 'canceled' } }]);
+    await arreterAbonnementAvecAvoir(t, { cle: CLE, abonnementId: 'sub_N' });
+    expect(t.appels[0]!.methode).toBe('DELETE');
+    expect(t.appels[0]!.url).toBe('https://api.stripe.com/v1/subscriptions/sub_N');
+    // Le crédit du temps non utilisé (prorate) sur une facture finale émise tout de suite (invoice_now) : négative, elle
+    // crédite le solde du client, que la facture suivante (le Pro) consomme.
+    expect(Object.fromEntries(t.appels[0]!.corps)).toEqual({ prorate: 'true', invoice_now: 'true' });
+    expect(t.appels[0]!.entetes['idempotency-key']).toBe('avoir-sub_N');
+    expect(t.appels[0]!.entetes['stripe-version']).toBe(VERSION_API_STRIPE);
+  });
+
+  it('un arrêt qui ne rend pas CET abonnement annulé est un refus', async () => {
+    await expect(arreterAbonnementAvecAvoir(new FauxTransport([{ status: 200, json: { id: 'sub_AUTRE', status: 'canceled' } }]), { cle: CLE, abonnementId: 'sub_N' }))
+      .rejects.toBeInstanceOf(StripeError);
+    await expect(arreterAbonnementAvecAvoir(new FauxTransport([{ status: 200, json: { id: 'sub_N', status: 'active' } }]), { cle: CLE, abonnementId: 'sub_N' }))
+      .rejects.toBeInstanceOf(StripeError);
+  });
+
+  it('🔴 recréer le numéro seul à la fin du Pro : sur la carte du Pro, hors session, refusé net si le paiement échoue', async () => {
+    const t = new FauxTransport([{ status: 200, json: { id: 'sub_M', status: 'active', items: { data: [{ current_period_end: 1_800_000_000 }] } } }]);
+    expect(await creerAbonnementNumeroSeul(t, {
+      cle: CLE, tenantId: TENANT, customerId: 'cus_A', prix: 'price_numero', carte: 'pm_PRO', idempotence: 'numero-apres-pro-sub_P',
+    })).toEqual({ id: 'sub_M', periodeFin: new Date(1_800_000_000 * 1000) });
+    expect(t.appels[0]!.url).toBe('https://api.stripe.com/v1/subscriptions');
+    expect(Object.fromEntries(t.appels[0]!.corps)).toEqual({
+      customer: 'cus_A', 'items[0][price]': 'price_numero', 'items[0][quantity]': '1', default_payment_method: 'pm_PRO',
+      // 402 sans rien créer si le paiement échoue : le chemin de l'impayé (décision de Julien), jamais un abonnement incomplet.
+      payment_behavior: 'error_if_incomplete', off_session: 'true', 'automatic_tax[enabled]': 'true',
+      'metadata[tenant_id]': TENANT, 'metadata[produit]': 'numero',
+    });
+    expect(t.appels[0]!.entetes['idempotency-key']).toBe('numero-apres-pro-sub_P');
+  });
+
+  it('un paiement refusé rend un StripeError 402 ; un abonnement qui n’est pas actif est un refus', async () => {
+    const refus = new FauxTransport([{ status: 402, json: { error: { type: 'card_error', code: 'card_declined', message: 'declined' } } }]);
+    await expect(creerAbonnementNumeroSeul(refus, { cle: CLE, tenantId: TENANT, customerId: 'cus_A', prix: 'p', carte: 'pm', idempotence: 'i' }))
+      .rejects.toMatchObject({ operation: 'abonnement', status: 402, code: 'card_declined' });
+    const incomplet = new FauxTransport([{ status: 200, json: { id: 'sub_M', status: 'incomplete', items: { data: [] } } }]);
+    await expect(creerAbonnementNumeroSeul(incomplet, { cle: CLE, tenantId: TENANT, customerId: 'cus_A', prix: 'p', carte: 'pm', idempotence: 'i' }))
+      .rejects.toBeInstanceOf(StripeError);
   });
 });

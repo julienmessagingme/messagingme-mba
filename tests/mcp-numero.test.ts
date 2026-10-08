@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import { OUTILS, outilsPour, type DepsMcp, type OutilMcp } from '../src/mcp/outils';
-import { DELAI_ATTENTE_MS, PAS_ATTENTE_MS, rappelDeLAbonnement } from '../src/mcp/outils-numero';
+import { DELAI_ATTENTE_MS, PAS_ATTENTE_MS, rappelDeLAbonnement, rappelDeLaSuiteDuPro } from '../src/mcp/outils-numero';
 import type { EtatDeLEspace } from '../src/stripe/abonnements.pg';
 import { RefusOutil } from '../src/mcp/saisie';
 import type { Issue } from '../src/lib/issue';
@@ -15,16 +15,17 @@ import { empreinteEtat, type EtatConnexion } from '../src/otp/etat-connexion';
  */
 const SECRET = randomBytes(32).toString('hex');
 const PERSONNE = { userId: 'u-admin' };
-const VIDE: EtatConnexion = { fourni: null, code: null, connecte: null, abonnement: null };
+const VIDE: EtatConnexion = { fourni: null, code: null, connecte: null, abonnement: null, inclusDansLePro: false };
 const outil = (nom: string): OutilMcp => OUTILS.find((o) => o.nom === nom)!;
 
 /** Une horloge simulée : `attendre` avance le temps, et chaque lecture de l'état est comptée avec son heure. */
-function monter(etats: (t: number) => EtatConnexion, o: { portail?: Issue<{ url: string }>; abonnement?: EtatDeLEspace | null } = {}) {
+function monter(etats: (t: number) => EtatConnexion, o: { portail?: Issue<{ url: string }>; abonnement?: EtatDeLEspace | null; proVivant?: boolean } = {}) {
   let t = 1_000_000;
   const lectures: Array<{ tenant: string; t: number }> = [];
   const portails: Array<{ tenant: string; payeur: string }> = [];
   const paiements: Array<{ tenant: string; payeur: string }> = [];
   const couteux: string[] = [];
+  const rendus: Array<{ tenant: string; rendre: boolean }> = [];
   const deps = {
     numero: {
       signerLien: (l: Parameters<typeof signLienNumero>[0]) => signLienNumero(l, SECRET),
@@ -41,10 +42,12 @@ function monter(etats: (t: number) => EtatConnexion, o: { portail?: Issue<{ url:
         paiements.push({ tenant, payeur });
         return { ok: true as const, valeur: { url: 'https://checkout.stripe.com/c/pay/cs_reabo' } };
       },
+      suiteDuPro: async () => null,
+      rendreLeNumero: async (tenant: string, rendre: boolean) => { rendus.push({ tenant, rendre }); return o.proVivant ?? true; },
     },
     couteux: { consommer: async (tenant: string) => { couteux.push(tenant); return { accepte: true, attenteMs: 0 }; } },
   } as unknown as DepsMcp;
-  return { deps, lectures, debut: t, portails, couteux, paiements };
+  return { deps, lectures, debut: t, portails, couteux, paiements, rendus };
 }
 
 describe('start_whatsapp_connection', () => {
@@ -239,5 +242,41 @@ describe('les deux outils dans le catalogue', () => {
     expect(p.maxLength).toBe(16);
     expect(p.pattern).toBe('^[0-9a-f]{16}$');
     expect(outil('start_whatsapp_connection').entree.properties.mode!.enum).toEqual(['fourni', 'apporte']);
+  });
+});
+
+/** Le numéro inclus dans le Pro (lot 6, B2b) : la suite que Claude rappelle, et le choix de rendre le numéro. */
+describe('le numéro inclus dans le Pro', () => {
+  const FIN = new Date('2026-11-08T10:00:00Z');
+
+  it('🔴 le rappel : un Pro qui finit annonce le numéro à 3,50 € HT par mois sur la même carte, ou rendu ; rien sans fin', () => {
+    expect(rappelDeLaSuiteDuPro(null)).toBeNull();
+    expect(rappelDeLaSuiteDuPro({ finPrevueLe: null, rendreNumero: false })).toBeNull();
+    const garde = rappelDeLaSuiteDuPro({ finPrevueLe: FIN, rendreNumero: false })!;
+    expect(garde).toMatch(/2026-11-08/);
+    expect(garde).toMatch(/3,50 € HT par mois/);
+    expect(garde).toMatch(/return_number_at_plan_end/);
+    const rendu = rappelDeLaSuiteDuPro({ finPrevueLe: FIN, rendreNumero: true })!;
+    expect(rendu).toMatch(/rendu/);
+    expect(rendu).not.toMatch(/3,50/);
+  });
+
+  it('🔴 return_number_at_plan_end pose puis retire le choix sur l’espace de la personne', async () => {
+    const { deps, rendus } = monter(() => VIDE);
+    expect(await outil('return_number_at_plan_end').executer(deps, 't1', { rendre: true }, PERSONNE)).toMatchObject({ rendre_numero: true });
+    expect(await outil('return_number_at_plan_end').executer(deps, 't1', { rendre: false }, PERSONNE)).toMatchObject({ rendre_numero: false });
+    expect(rendus).toEqual([{ tenant: 't1', rendre: true }, { tenant: 't1', rendre: false }]);
+  });
+
+  it('sans Pro en cours, ou sans booléen : un refus qui le dit, rien d’écrit', async () => {
+    const sansPro = monter(() => VIDE, { proVivant: false });
+    await expect(outil('return_number_at_plan_end').executer(sansPro.deps, 't1', { rendre: true }, PERSONNE)).rejects.toBeInstanceOf(RefusOutil);
+    const m = monter(() => VIDE);
+    await expect(outil('return_number_at_plan_end').executer(m.deps, 't1', { rendre: 'oui' }, PERSONNE)).rejects.toBeInstanceOf(RefusOutil);
+    expect(m.rendus).toEqual([]);
+  });
+
+  it('une écriture qui exige une personne : invisible avec une clé d’API', () => {
+    expect(outil('return_number_at_plan_end')).toMatchObject({ scope: 'mcp:write', exigePersonne: true, fonction: null });
   });
 });

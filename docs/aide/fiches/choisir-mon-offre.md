@@ -1,7 +1,7 @@
 ---
 ecran: offre
 source_section: Offres (menu « Paramètres » > Offre)
-source_empreinte: 51ba7f
+source_empreinte: 8ae9d9
 ---
 # Choisir mon offre
 
@@ -40,5 +40,8 @@ L'offre Entreprise se demande au Support.
 changer de carte, retrouver vos factures ou résilier. Pour passer du mensuel à l'annuel, écrivez-nous au Support. Une résiliation prend effet à
 la fin de la période payée ; votre espace revient alors en Base.
 
-**Votre numéro fourni.** Tant que votre espace est en Pro, le numéro que nous vous avons fourni n'est jamais
-suspendu. Il reste pour l'instant facturé à part, par son propre abonnement.
+**Votre numéro fourni.** Il est inclus dans le Pro : obtenez-le sans payer depuis la page « Connecter WhatsApp ».
+S'il était déjà payé à part, cet abonnement s'arrête quand vous passez en Pro, avec un avoir sur la facture suivante.
+Si vous résiliez le Pro, la page Offre et un e-mail vous préviennent : à la fin du Pro, le numéro passe à 3,50 € HT
+par mois sur la même carte. Pour le rendre à la place, choisissez « Rendre mon numéro à la fin du Pro » sur la page
+Offre ; vous pouvez revenir sur ce choix tant que le Pro court.

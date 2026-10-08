@@ -17,7 +17,7 @@ const T1 = '5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01';
 const NOW = 1_790_000_000_000;
 const FIN = 1_792_600_000;
 
-function monter(o: { connus?: string[]; issue?: IssueEnregistrement; livemode?: boolean; enregistrerLeve?: Error } = {}) {
+function monter(o: { connus?: string[]; issue?: IssueEnregistrement; livemode?: boolean; enregistrerLeve?: Error; proVivant?: boolean } = {}) {
   const cap = {
     enregistres: [] as Array<{ tenantId: string; abonnementId: string; livemode: boolean; periodeFin: Date | null }>,
     statuts: [] as Array<{ abonnementId: string; statut: StatutAbonnement; periodeFin: Date | null }>,
@@ -50,8 +50,9 @@ function monter(o: { connus?: string[]; issue?: IssueEnregistrement; livemode?: 
       noterFinPrevue: async (abonnementId, fin) => { cap.finsPrevues.push({ abonnementId, fin }); return connus.has(abonnementId); },
       reprendreCampagnes: async (tenantId) => { cap.reprises.push(tenantId); },
     },
-    // Les événements du numéro ne touchent jamais le Pro (lot 6, B1) : ses dépendances lèvent si on les appelle.
-    pro: stripeProInerte,
+    // Les événements du numéro ne touchent jamais le Pro (lot 6, B1) : ses dépendances lèvent si on les appelle. Seule
+    // la lecture « un Pro couvre-t-il l'espace ? » répond (B2b).
+    pro: { ...stripeProInerte, vivant: async () => o.proVivant ?? false },
     now: () => NOW,
   };
   return { srv: buildServer({ queue: new FakeQueue(), stripeWebhook: deps }), cap };
@@ -242,6 +243,15 @@ describe('le webhook Stripe et le lot 4 du numéro', () => {
     await envoyer(fin.srv, evenement({ id: 'sub_1', object: 'subscription', status: 'canceled', metadata: { tenant_id: T1, produit: 'numero' } }, 'customer.subscription.deleted'));
     expect(fin.cap.alertes[0]).toMatch(/coupés/);
     expect(fin.cap.alertes[0]).toMatch(/7 jours/);
+  });
+
+  it('🔴 un numéro seul arrêté au passage en Pro (lot 6, B2b) : l’alerte dit qu’il est inclus, jamais « envois coupés »', async () => {
+    const fin = monter({ connus: ['sub_1'], proVivant: true });
+    await envoyer(fin.srv, evenement({ id: 'sub_1', object: 'subscription', status: 'canceled', metadata: { tenant_id: T1, produit: 'numero' } }, 'customer.subscription.deleted'));
+    expect(fin.cap.statuts).toEqual([{ abonnementId: 'sub_1', statut: 'resilie', periodeFin: null }]);
+    expect(fin.cap.alertes).toHaveLength(1);
+    expect(fin.cap.alertes[0]).toMatch(/inclus dans son Pro/);
+    expect(fin.cap.alertes[0]).not.toMatch(/coupés/);
   });
 });
 

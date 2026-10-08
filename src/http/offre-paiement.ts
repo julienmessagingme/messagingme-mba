@@ -17,10 +17,17 @@ export interface OffrePaiementRouteDeps {
   ouvrir(tenantId: string, periodicite: PeriodicitePro, payeur: string): Promise<Issue<{ url: string; portail: boolean }>>;
   /** `ouvrirPortailPro` : carte, factures, périodicité, résiliation. */
   portail(tenantId: string, payeur: string): Promise<Issue<{ url: string }>>;
+  /**
+   * Rendre le numéro fourni à la fin du Pro (lot 6, B2b, `PgAbonnementsOffreStore.rendreLeNumero`) : `false` sans Pro
+   * vivant.
+   */
+  rendreLeNumero(tenantId: string, rendre: boolean): Promise<boolean>;
 }
 
 /** Le corps ne porte qu'une périodicité, jamais un prix ni un montant : une clé inconnue est refusée. */
 const corpsSchema = z.object({ periodicite: z.enum(['mois', 'an']) }).strict();
+/** Rendre le numéro : un booléen, rien d'autre. */
+const corpsRendreSchema = z.object({ rendre: z.boolean() }).strict();
 
 export function registerOffrePaiement(app: FastifyInstance, deps: OffrePaiementRouteDeps, garde: Guard, limiteCouteuse: PreHandler): void {
   const couteux = gardeEtendue(garde, limiteCouteuse);
@@ -39,5 +46,19 @@ export function registerOffrePaiement(app: FastifyInstance, deps: OffrePaiementR
     const r = await deps.portail(tenant, req.auth?.userId ?? '');
     if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
     return reply.code(200).send(r.valeur);
+  });
+
+  /**
+   * Rendre le numéro fourni à la FIN du Pro (lot 6, B2b, décision de Julien du 2026-10-07), ou revenir sur ce choix tant
+   * que le Pro court. Une écriture en base, rien chez Stripe : la garde d'administrateur seule, sans le plafond coûteux.
+   */
+  app.put('/tenants/:tenantId/offre/numero', { preHandler: garde }, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const lu = corpsRendreSchema.safeParse(req.body ?? {});
+    if (!lu.success) return reply.code(400).send({ error: 'rendre requis : true ou false' });
+    if (!(await deps.rendreLeNumero(tenant, lu.data.rendre))) {
+      return reply.code(409).send({ error: 'Cet espace n’a pas de Pro en cours : il n’y a pas de fin du Pro où rendre le numéro.', cause: 'aucun_pro' });
+    }
+    return reply.code(200).send({ rendreNumero: lu.data.rendre });
   });
 }

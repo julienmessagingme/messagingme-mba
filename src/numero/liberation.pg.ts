@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 import { enTransaction } from '../db/transaction';
 import { texteDe } from '../lib/erreur';
+import { VERROU_NUMERO_PRO_SQL } from './verrou-numero-pro';
 
 /**
  * LA LIBÉRATION D'UN NUMÉRO FOURNI (lot 4, livraison B, spec `docs/superpowers/specs/2026-10-06-numero-impaye-design.md`
@@ -83,6 +84,8 @@ export class PgLiberationStore {
     tenantId: string, abonnementId: string, resilier: ((didId: string) => Promise<void>) | null, maintenant: Date = new Date(),
   ): Promise<IssueLiberation> {
     return enTransaction(this.pool, async (client) => {
+      // J2 (lot 6, B2b) : le verrou d'espace commun avec l'enregistrement d'un Pro, AVANT toute lecture.
+      await client.query(VERROU_NUMERO_PRO_SQL, [tenantId]);
       const due = await client.query(
         `select 1 from abonnements_numero
           where stripe_subscription_id = $1 and tenant_id = $2 and libere_le is null

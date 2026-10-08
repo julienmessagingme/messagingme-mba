@@ -36,6 +36,7 @@ type Reponse = { status: number; corps: unknown };
 async function monter(page: Page, offre: unknown, o: { paiement?: Reponse; suspendu?: boolean } = {}) {
   const appels: string[] = [];
   const paiements: unknown[] = [];
+  const rendus: unknown[] = [];
   // Un membre en trop dont l'administrateur reprend le Pro : `reprendre` lève la suspension pour les requêtes suivantes.
   let suspendu = o.suspendu === true;
   // Les pages de Stripe ne sont jamais jointes : une page factice suffit à prouver la redirection.
@@ -55,6 +56,11 @@ async function monter(page: Page, offre: unknown, o: { paiement?: Reponse; suspe
       return o.paiement ? json(o.paiement.corps, o.paiement.status) : json({ url: CHECKOUT, portail: false });
     }
     if (req.method() === 'POST' && chemin.endsWith('/offre/portail')) return json({ url: PORTAIL });
+    if (req.method() === 'PUT' && chemin.endsWith('/offre/numero')) {
+      const corps = req.postDataJSON() as { rendre: boolean };
+      rendus.push(corps);
+      return json({ rendreNumero: corps.rendre });
+    }
     if (chemin.endsWith('/offre')) return offre === null ? json({ error: 'Not Found' }, 404) : json(offre);
     if (req.method() === 'POST' && chemin.endsWith('/contacts')) {
       return json({ error: PHRASE_LIMITE, code: 'plan_limit_reached', limite: 'contacts', max: 100, upgradeUrl: 'https://console.e2e.test/offre' }, 402);
@@ -66,7 +72,7 @@ async function monter(page: Page, offre: unknown, o: { paiement?: Reponse; suspe
     if (chemin.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     return json({});
   });
-  return { appels, paiements, reprendre: () => { suspendu = false; } };
+  return { appels, paiements, rendus, reprendre: () => { suspendu = false; } };
 }
 
 test.describe('une Base', () => {
@@ -129,8 +135,8 @@ test.describe('payer le Pro (livraison B1)', () => {
     await expect(page.getByTestId('offre-payer-mois')).toContainText('49 € HT');
     await expect(page.getByTestId('offre-payer-an')).toContainText('490 € HT');
     await expect(page.getByTestId('offre-passer-pro')).toHaveCount(0);
-    // Jusqu'à B2, le numéro fourni reste facturé à part : la page où l'on paie le dit.
-    await expect(page.getByTestId('offre-numero-a-part')).toBeVisible();
+    // Depuis B2b, le numéro fourni est inclus dans le Pro : la page où l'on paie le dit.
+    await expect(page.getByTestId('offre-numero-inclus')).toContainText('inclus');
     await page.getByTestId('offre-payer-an').click();
     await expect(page).toHaveURL(CHECKOUT);
     expect(paiements).toEqual([{ periodicite: 'an' }]);
@@ -158,6 +164,28 @@ test.describe('payer le Pro (livraison B1)', () => {
     await expect(page.getByTestId('offre-payer-mois')).toHaveCount(0);
     await page.getByTestId('offre-portail').click();
     await expect(page).toHaveURL(PORTAIL);
+  });
+
+  test('🔴 un Pro qui finit (lot 6, B2b) : la suite du numéro est annoncée, et « rendre » se choisit puis se défait', async ({ page }) => {
+    const { rendus } = await monter(page, { ...vue('pro'), prixPro: PRIX_PRO, suiteDuNumero: { finPrevueLe: '2026-11-08T10:00:00.000Z', rendreNumero: false } });
+    await page.goto('/offre');
+    await expect(page.getByTestId('offre-suite-numero')).toContainText('3,50 € HT par mois');
+    await expect(page.getByTestId('offre-suite-numero')).toContainText('8 novembre 2026');
+    await page.getByTestId('offre-rendre-numero').click();
+    await expect(page.getByTestId('offre-suite-numero')).toContainText('rendu');
+    await page.getByTestId('offre-garder-numero').click();
+    await expect(page.getByTestId('offre-rendre-numero')).toBeVisible();
+    expect(rendus).toEqual([{ rendre: true }, { rendre: false }]);
+  });
+
+  test('un Pro sans fin prévue : le numéro inclus, sans bouton ; une API plus ancienne : rien', async ({ page }) => {
+    await monter(page, { ...vue('pro'), prixPro: PRIX_PRO, suiteDuNumero: { finPrevueLe: null, rendreNumero: false } });
+    await page.goto('/offre');
+    await expect(page.getByTestId('offre-suite-numero')).toContainText('inclus');
+    await expect(page.getByTestId('offre-rendre-numero')).toHaveCount(0);
+    await monter(page, { ...vue('pro'), prixPro: PRIX_PRO });
+    await page.goto('/offre');
+    await expect(page.getByTestId('offre-suite-numero')).toHaveCount(0);
   });
 
   test('le retour de Stripe : paiement reçu, ou abandonné sans débit', async ({ page }) => {

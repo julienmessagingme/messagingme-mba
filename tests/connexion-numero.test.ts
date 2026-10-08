@@ -18,7 +18,7 @@ const NUMERO = (numero: string): NumeroFourni => ({
   id: `id-${numero}`, numero, didwwDidId: `did-${numero}`, statut: 'attribue', tenantId: 't1', attribueLe: new Date(), creeLe: new Date(),
 });
 
-function etatDe(o: { attribue?: string; code?: { code: string; recuLe: Date }; connecte?: string; aActiver?: boolean; abonnement?: 'actif' | 'resilie' }) {
+function etatDe(o: { attribue?: string; code?: { code: string; recuLe: Date }; connecte?: string; aActiver?: boolean; abonnement?: 'actif' | 'resilie'; pro?: boolean }) {
   const lus: string[] = [];
   const deps = {
     numeros: {
@@ -32,6 +32,7 @@ function etatDe(o: { attribue?: string; code?: { code: string; recuLe: Date }; c
         return o.abonnement ? { abonnementId: 'sub_1', tenantId: t, livemode: false, statut: o.abonnement, periodeFin: new Date('2026-11-06T09:00:00Z'), premierEchecLe: null, finPrevueLe: null, finiLe: null, libereLe: null } : null;
       },
     },
+    pro: { vivant: async (t: string) => { lus.push(`pro:${t}`); return o.pro === true; } },
   };
   return { deps, lus };
 }
@@ -39,21 +40,25 @@ function etatDe(o: { attribue?: string; code?: { code: string; recuLe: Date }; c
 describe('lireEtatConnexion', () => {
   it('un espace sans rien : tout à null', async () => {
     const { deps } = etatDe({});
-    expect(await lireEtatConnexion(deps, 't1')).toEqual({ fourni: null, code: null, connecte: null, abonnement: null });
+    expect(await lireEtatConnexion(deps, 't1')).toEqual({ fourni: null, code: null, connecte: null, abonnement: null, inclusDansLePro: false });
   });
 
   it('le numéro attribué, au format tapé dans la fenêtre de Meta, puis le code, puis la connexion', async () => {
     const recuLe = new Date('2026-10-06T08:53:01Z');
     expect(await lireEtatConnexion(etatDe({ attribue: '441235619343' }).deps, 't1'))
-      .toEqual({ fourni: '+441235619343', code: null, connecte: null, abonnement: null });
+      .toEqual({ fourni: '+441235619343', code: null, connecte: null, abonnement: null, inclusDansLePro: false });
     expect(await lireEtatConnexion(etatDe({ attribue: '441235619343', code: { code: '123456', recuLe } }).deps, 't1'))
-      .toEqual({ fourni: '+441235619343', code: { code: '123456', recuLe: '2026-10-06T08:53:01.000Z' }, connecte: null, abonnement: null });
+      .toEqual({ fourni: '+441235619343', code: { code: '123456', recuLe: '2026-10-06T08:53:01.000Z' }, connecte: null, abonnement: null, inclusDansLePro: false });
     expect(await lireEtatConnexion(etatDe({ attribue: '441235619343', connecte: '441235619343' }).deps, 't1'))
-      .toEqual({ fourni: '+441235619343', code: null, connecte: { chiffres: '441235619343', aActiver: false }, abonnement: null });
+      .toEqual({ fourni: '+441235619343', code: null, connecte: { chiffres: '441235619343', aActiver: false }, abonnement: null, inclusDansLePro: false });
     expect((await lireEtatConnexion(etatDe({ abonnement: 'actif' }).deps, 't1')).abonnement)
       .toEqual({ statut: 'actif', periodeFin: '2026-11-06T09:00:00.000Z' });
     expect((await lireEtatConnexion(etatDe({ connecte: '441235619343', aActiver: true }).deps, 't1')).connecte)
       .toEqual({ chiffres: '441235619343', aActiver: true });
+  });
+
+  it('🔴 un Pro vivant (lot 6, B2b) : le numéro est inclus, la page l’obtient sans payer', async () => {
+    expect((await lireEtatConnexion(etatDe({ pro: true }).deps, 't1')).inclusDansLePro).toBe(true);
   });
 
   it('chaque lecture est filtrée sur l’espace demandé', async () => {
@@ -64,7 +69,7 @@ describe('lireEtatConnexion', () => {
 });
 
 describe('empreinteEtat', () => {
-  const vide: EtatConnexion = { fourni: null, code: null, connecte: null, abonnement: null };
+  const vide: EtatConnexion = { fourni: null, code: null, connecte: null, abonnement: null, inclusDansLePro: false };
   const paye: EtatConnexion = { ...vide, abonnement: { statut: 'actif', periodeFin: null } };
   const attribue: EtatConnexion = { ...vide, fourni: '+441235619343' };
   const avecCode: EtatConnexion = { ...attribue, code: { code: '123456', recuLe: '2026-10-06T08:53:01.000Z' } };
@@ -110,6 +115,7 @@ describe('GET /tenants/:tenantId/connexion-numero', () => {
         portail: async () => ({ ok: true as const, valeur: { url: 'https://x' } }),
         programmerFin: async () => ({ ok: true as const, valeur: true as const }),
       },
+      pro: { vivant: async () => false },
     };
     return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET, getUserState: async (userId) => ({ role: userId === 'u2' ? 'agent' : 'admin', disabled: false, horsOffre: null }) }, numeroFourni: deps });
   };
@@ -121,7 +127,7 @@ describe('GET /tenants/:tenantId/connexion-numero', () => {
     const r = await lire(server, 't1', adminTok);
     expect(r.statusCode).toBe(200);
     expect(r.json()).toEqual({
-      etat: { fourni: '+441235619343', code: { code: '123456', recuLe: '2026-10-06T08:53:01.000Z' }, connecte: null, abonnement: null },
+      etat: { fourni: '+441235619343', code: { code: '123456', recuLe: '2026-10-06T08:53:01.000Z' }, connecte: null, abonnement: null, inclusDansLePro: false },
       empreinte: expect.any(String),
     });
     expect((await lire(server, 't1', agentTok)).statusCode).toBe(403);

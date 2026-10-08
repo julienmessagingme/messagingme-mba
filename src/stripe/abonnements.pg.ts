@@ -215,6 +215,41 @@ export class PgAbonnementsNumeroStore {
   }
 
   /**
+   * J5 de la relecture de B1 (lot 6, B2b) : au passage en Pro, les avis de suspension et le rappel de libération de
+   * l'espace sont oubliés, sur tous ses abonnements du numéro. Sans quoi la fin du Pro suspendrait le numéro sans un
+   * nouvel e-mail, celui d'une suspension d'avant comptant pour déjà parti. Les avis de libération restent : un numéro
+   * libéré ne revient pas.
+   */
+  async oublierAvisDeSuspension(tenantId: string): Promise<void> {
+    await this.pool.query(
+      `delete from abonnements_numero_avis v
+        using abonnements_numero a
+        where v.stripe_subscription_id = a.stripe_subscription_id and a.tenant_id = $1
+          and v.avis in ('suspension_telegram', 'suspension_mail', 'rappel_liberation_mail')`,
+      [tenantId],
+    );
+  }
+
+  /**
+   * LE NUMÉRO INCLUS QUI PERD SON PRO (lot 6, B2b) : un espace qui n'a JAMAIS eu d'abonnement du numéro seul (numéro
+   * attribué pendant le Pro) reçoit une ligne finie à la fin du Pro, au nom du Pro. Le lot 4 la lit comme un abonnement
+   * fini (envois coupés, libération 7 jours après) ; la couverture du Pro la tient pour active tant qu'un Pro vit. Aucun
+   * appel chez Stripe ne vise jamais cette ligne : elle n'est pas vivante (« Abandonner » et le portail ne touchent que
+   * l'abonnement vivant), et les événements de cet abonnement vont au chemin du Pro. `false` : l'espace avait déjà une
+   * ligne (la couverture y reporte déjà la fin du Pro), ou celle-ci existait (un rejeu).
+   */
+  async porterLaFinParLePro(a: { tenantId: string; abonnementPro: string; livemode: boolean; finiLe: Date }): Promise<boolean> {
+    const res = await this.pool.query(
+      `insert into abonnements_numero (stripe_subscription_id, tenant_id, livemode, statut, fini_le)
+       select $2, $1, $3, 'resilie', $4
+        where not exists (select 1 from abonnements_numero where tenant_id = $1)
+       on conflict (stripe_subscription_id) do nothing`,
+      [a.tenantId, a.abonnementPro, a.livemode, a.finiLe],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
    * L'état de l'abonnement de l'espace et ses dates, `null` s'il n'en a jamais eu. La SEULE lecture de l'état : la garde
    * d'envoi, la route de l'état, les outils MCP et le balayage passent par elle.
    */

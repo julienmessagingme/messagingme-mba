@@ -1,4 +1,6 @@
 import type { Pool } from 'pg';
+import { enTransaction } from '../db/transaction';
+import { VERROU_NUMERO_PRO_SQL } from '../numero/verrou-numero-pro';
 
 /**
  * L'ABONNEMENT PRO D'UN ESPACE (lot 6, livraison B1, tâche 11, migration 0218). Écrit par le seul webhook signé de Stripe ;
@@ -21,6 +23,10 @@ export interface AbonnementOffre {
   finPrevueLe: Date | null;
   finiLe: Date | null;
   finRaison: RaisonFinOffre | null;
+  /** Le client rend son numéro fourni à la fin de ce Pro (0220, B2b) : il n'est pas recréé, il suit le lot 4. */
+  rendreNumero: boolean;
+  /** L'e-mail qui annonce la suite du numéro à la fin prévue est parti (0220, B2b) ; `null` sinon. */
+  suiteAnnonceeLe: Date | null;
 }
 
 /**
@@ -40,11 +46,15 @@ interface Ligne {
   fin_prevue_le: Date | null;
   fini_le: Date | null;
   fin_raison: RaisonFinOffre | null;
+  rendre_numero: boolean;
+  suite_annoncee_le: Date | null;
 }
-const COLONNES = 'stripe_subscription_id, tenant_id, periodicite, livemode, statut, periode_fin, fin_prevue_le, fini_le, fin_raison';
+const COLONNES = 'stripe_subscription_id, tenant_id, periodicite, livemode, statut, periode_fin, fin_prevue_le, fini_le, fin_raison, '
+  + 'rendre_numero, suite_annoncee_le';
 const versAbonnement = (l: Ligne): AbonnementOffre => ({
   abonnementId: l.stripe_subscription_id, tenantId: l.tenant_id, periodicite: l.periodicite, livemode: l.livemode, statut: l.statut,
   periodeFin: l.periode_fin, finPrevueLe: l.fin_prevue_le, finiLe: l.fini_le, finRaison: l.fin_raison,
+  rendreNumero: l.rendre_numero, suiteAnnonceeLe: l.suite_annoncee_le,
 });
 
 export class PgAbonnementsOffreStore {
@@ -79,14 +89,19 @@ export class PgAbonnementsOffreStore {
   private async enregistrerUneFois(
     a: { tenantId: string; abonnementId: string; periodicite: PeriodiciteOffre; livemode: boolean; periodeFin: Date | null },
   ): Promise<IssueEnregistrementPro> {
-    const res = await this.pool.query<{ tenant_id: string; fini_le: Date | null; nouveau: boolean }>(
-      `insert into abonnements_offre (stripe_subscription_id, tenant_id, periodicite, livemode, statut, periode_fin)
-       values ($1, $2, $3, $4, 'actif', $5)
-       on conflict (stripe_subscription_id) do update
-         set periode_fin = greatest(abonnements_offre.periode_fin, excluded.periode_fin), maj_le = now()
-       returning tenant_id, fini_le, (xmax = 0) as nouveau`,
-      [a.abonnementId, a.tenantId, a.periodicite, a.livemode, a.periodeFin],
-    );
+    // J2 (lot 6, B2b) : le verrou d'espace commun avec la libération du numéro (`src/numero/verrou-numero-pro.ts`), sur
+    // l'espace de l'événement ; un rejeu sur un autre espace ne ferait que prendre un verrou de trop.
+    const res = await enTransaction(this.pool, async (client) => {
+      await client.query(VERROU_NUMERO_PRO_SQL, [a.tenantId]);
+      return client.query<{ tenant_id: string; fini_le: Date | null; nouveau: boolean }>(
+        `insert into abonnements_offre (stripe_subscription_id, tenant_id, periodicite, livemode, statut, periode_fin)
+         values ($1, $2, $3, $4, 'actif', $5)
+         on conflict (stripe_subscription_id) do update
+           set periode_fin = greatest(abonnements_offre.periode_fin, excluded.periode_fin), maj_le = now()
+         returning tenant_id, fini_le, (xmax = 0) as nouveau`,
+        [a.abonnementId, a.tenantId, a.periodicite, a.livemode, a.periodeFin],
+      );
+    });
     const l = res.rows[0]!;
     if (l.fini_le !== null) return { etat: 'fini' };
     // L'espace de la ligne, jamais celui de l'événement rejoué : un abonnement appartient à son premier espace.
@@ -115,17 +130,70 @@ export class PgAbonnementsOffreStore {
   /**
    * Une modification (`customer.subscription.updated`) : la résiliation programmée posée ou retirée, et la périodicité
    * (relue sur le prix, si le portail ouvre un jour le changement de formule, fermé aujourd'hui). Un abonnement fini ne
-   * change plus.
+   * change plus. Une fin retirée efface l'annonce de la suite du numéro (B2b) : reposée, elle s'annonce de nouveau.
    */
   async modifier(abonnementId: string, m: { finPrevueLe: Date | null; periodicite: PeriodiciteOffre | null }): Promise<AbonnementOffre | null> {
     const res = await this.pool.query<Ligne>(
       `update abonnements_offre
-          set fin_prevue_le = $2, periodicite = coalesce($3, periodicite), maj_le = now()
+          set fin_prevue_le = $2, periodicite = coalesce($3, periodicite),
+              suite_annoncee_le = case when $2::timestamptz is null then null else suite_annoncee_le end, maj_le = now()
         where stripe_subscription_id = $1 and fini_le is null
         returning ${COLONNES}`,
       [abonnementId, m.finPrevueLe, m.periodicite],
     );
     return res.rows[0] ? versAbonnement(res.rows[0]) : null;
+  }
+
+  /**
+   * RENDRE LE NUMÉRO À LA FIN DU PRO (lot 6, B2b, décision de Julien du 2026-10-07) : posé ou retiré sur le Pro VIVANT de
+   * l'espace, tant qu'il court. `false` : aucun Pro vivant (rien à rendre « à la fin »). À la fin du Pro, un numéro rendu
+   * n'est pas recréé en numéro seul : il suit le chemin du lot 4 (`src/offres/numero-inclus.ts`).
+   */
+  async rendreLeNumero(tenantId: string, rendre: boolean): Promise<boolean> {
+    const res = await this.pool.query(
+      `update abonnements_offre set rendre_numero = $2, maj_le = now() where tenant_id = $1 and fini_le is null`,
+      [tenantId, rendre],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * La suite du numéro fourni que le Pro vivant de l'espace annonce (B2b) : sa fin prévue et le choix de rendre. `null`
+   * sans Pro vivant ou sans numéro fourni attribué : rien à annoncer. Lue par la vue de l'offre et le rappel de Claude.
+   */
+  async suiteDuNumero(tenantId: string): Promise<{ finPrevueLe: Date | null; rendreNumero: boolean } | null> {
+    const res = await this.pool.query<{ fin_prevue_le: Date | null; rendre_numero: boolean }>(
+      `select o.fin_prevue_le, o.rendre_numero from abonnements_offre o
+        where o.tenant_id = $1 and o.fini_le is null
+          and exists (select 1 from numeros_fournis n where n.tenant_id = o.tenant_id and n.statut = 'attribue')`,
+      [tenantId],
+    );
+    const l = res.rows[0];
+    return l ? { finPrevueLe: l.fin_prevue_le, rendreNumero: l.rendre_numero } : null;
+  }
+
+  /**
+   * Les Pro dont la suite du numéro est à annoncer par e-mail (B2b) : vivants, fin prévue, numéro fourni attribué et
+   * gardé, pas encore annoncés. Lu par le balayage des abonnements du worker, toutes les 15 minutes.
+   */
+  async aAnnoncer(): Promise<Array<{ tenantId: string; abonnementId: string; finPrevueLe: Date }>> {
+    const res = await this.pool.query<{ tenant_id: string; stripe_subscription_id: string; fin_prevue_le: Date }>(
+      `select o.tenant_id, o.stripe_subscription_id, o.fin_prevue_le from abonnements_offre o
+        where o.fini_le is null and o.fin_prevue_le is not null and o.suite_annoncee_le is null and not o.rendre_numero
+          and exists (select 1 from numeros_fournis n where n.tenant_id = o.tenant_id and n.statut = 'attribue')
+        order by o.fin_prevue_le`,
+    );
+    return res.rows.map((r) => ({ tenantId: r.tenant_id, abonnementId: r.stripe_subscription_id, finPrevueLe: r.fin_prevue_le }));
+  }
+
+  /** L'annonce est partie (B2b) : notée une fois par fin prévue. `false` : déjà notée, ou plus rien à annoncer. */
+  async noterAnnonce(abonnementId: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `update abonnements_offre set suite_annoncee_le = now(), maj_le = now()
+        where stripe_subscription_id = $1 and fini_le is null and fin_prevue_le is not null and suite_annoncee_le is null`,
+      [abonnementId],
+    );
+    return (res.rowCount ?? 0) > 0;
   }
 
   /**

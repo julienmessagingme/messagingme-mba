@@ -633,6 +633,8 @@ describe('serveur MCP : cohérence du catalogue', () => {
       manage_number_subscription: [false, false, true],
       // Lot 4 : une session de Stripe de plus à chaque appel, comme le portail.
       resubscribe_number: [false, false, true],
+      // Lot 6, B2b : un choix en base, réversible tant que le Pro court ; rien chez Stripe.
+      return_number_at_plan_end: [false, true, false],
     });
     // Une lecture ne touche personne hors de l'espace, à UNE exception nommée : `preview_site` va lire un site tiers.
     const lecturesEnMondeOuvert = OUTILS.filter((x) => x.annotations.readOnlyHint && x.annotations.openWorldHint).map((o) => o.nom);

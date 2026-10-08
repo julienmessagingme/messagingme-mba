@@ -54,6 +54,8 @@ function monter(o: {
   portail?: Issue<{ url: string }>;
   /** La résiliation en fin de période chez Stripe (lot 4, livraison B). */
   fin?: Issue<true>;
+  /** Un Pro vivant couvre l'espace (lot 6, B2b) : le numéro y est inclus. */
+  pro?: boolean;
 } = {}) {
   const cap = {
     attribues: 0, rendus: 0, remplaces: 0, alertesReserve: [] as number[], bloques: [] as string[],
@@ -117,6 +119,7 @@ function monter(o: {
       },
       programmerFin: async (abonnementId) => { cap.fins.push(abonnementId); return o.fin ?? { ok: true, valeur: true }; },
     },
+    pro: { vivant: async () => o.pro ?? false },
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, numeroFourni: deps }), cap };
 }
@@ -186,6 +189,18 @@ describe('POST /numero-fourni sans abonnement (lot 3c, livraison B) : pas de num
     await server.close();
   });
 
+  it('🔴 en Pro (lot 6, B2b) : sans abonnement du numéro, ou résilié, le numéro s’attribue sans payer', async () => {
+    for (const abonnement of [null, 'resilie'] as const) {
+      const { server, cap } = monter({ abonnement, pro: true });
+      const res = await server.inject({ method: 'POST', url: URL, ...h(adminTok), payload: '{}' });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ numero: '+441235619343' });
+      expect(cap.attribues).toBe(1);
+      expect(cap.ouvertures).toEqual([]);
+      await server.close();
+    }
+  });
+
   it('un abonnement en retard de paiement garde son droit : le numéro s’attribue', async () => {
     const { server } = monter({ abonnement: 'en_retard' });
     expect((await server.inject({ method: 'POST', url: URL, ...h(adminTok), payload: '{}' })).statusCode).toBe(200);
@@ -218,6 +233,17 @@ describe('POST /numero-fourni/abonnement : ouvrir le paiement du numéro', () =>
       const { server, cap } = monter(o);
       const res = await server.inject({ method: 'POST', url: ABO, ...h(adminTok), payload: { retour: 'brancher' } });
       expect(res.statusCode).toBe(409);
+      expect(cap.ouvertures).toEqual([]);
+      await server.close();
+    }
+  });
+
+  it('🔴 en Pro (lot 6, B2b) : le numéro est inclus, aucun paiement ne s’ouvre chez Stripe (409 « inclus »)', async () => {
+    for (const abonnement of [null, 'resilie'] as const) {
+      const { server, cap } = monter({ abonnement, pro: true });
+      const res = await server.inject({ method: 'POST', url: ABO, ...h(adminTok), payload: { retour: 'brancher' } });
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toMatchObject({ cause: 'inclus_dans_le_pro' });
       expect(cap.ouvertures).toEqual([]);
       await server.close();
     }

@@ -35,6 +35,13 @@ export interface DepsBalayageAbonnements {
   espacesEnPauseSuspension(): Promise<string[]>;
   /** Lève ces pauses (`PgNumeroDelieStore.leverPausesSuspension`). */
   leverPausesSuspension(tenantId: string): Promise<number>;
+  /**
+   * Les Pro dont la suite du numéro est à annoncer par e-mail (lot 6, B2b, `PgAbonnementsOffreStore.aAnnoncer`) : fin
+   * prévue, numéro fourni attribué et gardé, pas encore annoncés.
+   */
+  prosAAnnoncer(): Promise<Array<{ tenantId: string; abonnementId: string; finPrevueLe: Date }>>;
+  /** L'annonce est partie : notée sur le Pro, une fois par fin prévue (`PgAbonnementsOffreStore.noterAnnonce`). */
+  noterAnnonce(abonnementId: string): Promise<boolean>;
   maintenant?: () => Date;
 }
 
@@ -106,6 +113,16 @@ export async function balayerAbonnements(d: DepsBalayageAbonnements): Promise<nu
       }
     } catch (err) {
       journaliser('error', 'balayage_abonnements_espace', { tenantId, err });
+    }
+  }
+  // La suite du numéro à la fin prévue du Pro (lot 6, B2b) : une annonce par fin prévue, notée seulement si elle est
+  // partie, donc rejouée au tour suivant sinon.
+  for (const a of await d.prosAAnnoncer()) {
+    try {
+      if ((await d.mails.annoncerSuite(a.tenantId, a.finPrevueLe)) !== 'parti') continue;
+      if (await d.noterAnnonce(a.abonnementId)) gestes += 1;
+    } catch (err) {
+      journaliser('error', 'balayage_abonnements_annonce', { tenantId: a.tenantId, err });
     }
   }
   for (const tenantId of await d.espacesEnPauseSuspension()) {

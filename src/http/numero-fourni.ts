@@ -61,6 +61,11 @@ export interface NumeroFourniRouteDeps {
     /** La fin de l'abonnement programmée à la fin de la période (`programmerFinDuNumero`, lot 4, B). */
     programmerFin(abonnementId: string): Promise<Issue<true>>;
   };
+  /**
+   * Le Pro de l'espace (lot 6, B2b) : un Pro vivant inclut le numéro fourni. Il s'attribue alors sans abonnement du
+   * numéro, et aucun paiement du numéro ne s'ouvre. Requis : un câblage qui l'oublierait ferait payer un client Pro.
+   */
+  pro: { vivant(tenantId: string): Promise<boolean> };
 }
 
 const saisieAbonnement = z.object({ retour: z.enum(['brancher', 'console']) });
@@ -141,14 +146,25 @@ export function registerNumeroFourni(
     }
   };
 
+  /**
+   * L'espace a-t-il droit à un numéro NEUF ? Un numéro déjà attribué se rend toujours ; sinon il faut un abonnement du
+   * numéro vivant, ou un Pro vivant qui l'inclut (lot 6, B2b). La même garde pour obtenir et pour remplacer.
+   */
+  async function droitAuNumero(tenant: string): Promise<boolean> {
+    if (await deps.numeros.numeroDeLEspace(tenant)) return true;
+    if (vivant(await deps.abonnements.deLEspace(tenant))) return true;
+    return deps.pro.vivant(tenant);
+  }
+
   app.post('/tenants/:tenantId/numero-fourni', couteux, async (req, reply) => {
     const tenant = espaceVerifie(req);
     if (await deps.numeroConnecte(tenant)) {
       return reply.code(409).send({ error: 'Cet espace a déjà un numéro WhatsApp.', cause: 'deja_un_numero' });
     }
     // 🔴 Pas de numéro avant le paiement (lot 3c) : un numéro déjà attribué se rend toujours (un retour sur la page,
-    // l'essai du 3b), un nouveau exige un abonnement vivant. Le webhook attribue d'ordinaire à la confirmation.
-    if (!(await deps.numeros.numeroDeLEspace(tenant)) && !vivant(await deps.abonnements.deLEspace(tenant))) {
+    // l'essai du 3b), un nouveau exige un abonnement vivant, ou un Pro vivant qui l'inclut (lot 6, B2b). Le webhook
+    // attribue d'ordinaire à la confirmation.
+    if (!(await droitAuNumero(tenant))) {
       return reply.code(409).send({ error: 'Le numéro se paie d’abord : 3,50 € HT par mois.', cause: 'abonnement_requis' });
     }
     const n = await deps.numeros.attribuer(tenant);
@@ -177,6 +193,10 @@ export function registerNumeroFourni(
     }
     if (vivant(abonnement)) {
       return reply.code(409).send({ error: 'Le numéro de cet espace est déjà payé.', cause: 'deja_abonne' });
+    }
+    // Un Pro vivant inclut le numéro (lot 6, B2b) : rien à payer, la page l'obtient directement.
+    if (await deps.pro.vivant(tenant)) {
+      return reply.code(409).send({ error: 'Le numéro est inclus dans votre Pro : obtenez-le sans payer.', cause: 'inclus_dans_le_pro' });
     }
     // Un numéro déjà attribué ne prend rien à la réserve : seul un numéro neuf la regarde.
     if (fourni === null && (await disponibles()) === 0) {
@@ -221,7 +241,7 @@ export function registerNumeroFourni(
     }
     // 🔴 La même garde que l'attribution (relecture de la livraison B) : « Remplacer » attribue un numéro neuf, donc un
     // espace sans numéro attribué ni abonnement vivant n'en reçoit pas ; sinon le numéro se prendrait sans payer.
-    if (!(await deps.numeros.numeroDeLEspace(tenant)) && !vivant(await deps.abonnements.deLEspace(tenant))) {
+    if (!(await droitAuNumero(tenant))) {
       return reply.code(409).send({ error: 'Le numéro se paie d’abord : 3,50 € HT par mois.', cause: 'abonnement_requis' });
     }
     // Le verrou n'est jamais relâché : son échéance EST le délai, commun à toutes les copies de l'API.
