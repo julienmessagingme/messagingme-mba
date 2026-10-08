@@ -84,6 +84,19 @@
    "publisher": {
     "@id": "https://www.messagingme.fr/#organisation"
    }
+  },
+  {
+   "@type": "VideoObject",
+   "name": "Film : le RCS avec Messaging Me",
+   "description": "Passer au RCS, c’est passer de la télé noir et blanc à la télé couleur : logo vérifié, images et carrousels, boutons d’un appui, tous les opérateurs, l’opt-in de vos clients, une conversation qui continue, et le repli entre WhatsApp et RCS dans les deux sens.",
+   "thumbnailUrl": "https://app.messagingme.fr/films/film-rcs.webp",
+   "contentUrl": "https://app.messagingme.fr/films/film-rcs.mp4",
+   "uploadDate": "2026-10-08T18:00:00+02:00",
+   "duration": "PT1M3S",
+   "inLanguage": "fr-FR",
+   "publisher": {
+    "@id": "https://www.messagingme.fr/#organisation"
+   }
   }
  ]
 }
@@ -382,7 +395,16 @@
           <p class="detail-mobile" aria-live="polite"></p>
         </div>
       </div>
-      <video class="f-video film-accueil" src="/films/film-accueil.mp4" poster="/films/film-accueil.webp" width="1280" height="720" controls muted playsinline preload="none" aria-label="Film : Messaging Me, la plateforme conversationnelle"></video>
+      <div class="films-canaux">
+        <figure class="film-canal" style="--pastille:#25D366">
+          <video class="f-video" src="/films/film-accueil.mp4" poster="/films/film-accueil.webp" width="1280" height="720" controls muted playsinline preload="none" aria-label="Film : Messaging Me, la plateforme conversationnelle"></video>
+          <figcaption>WhatsApp</figcaption>
+        </figure>
+        <figure class="film-canal" style="--pastille:#1A73E8">
+          <video class="f-video" src="/films/film-rcs.mp4" poster="/films/film-rcs.webp" width="1280" height="720" controls muted playsinline preload="none" aria-label="Film : le RCS avec Messaging Me"></video>
+          <figcaption>RCS</figcaption>
+        </figure>
+      </div>
     </div>
   </section>
 

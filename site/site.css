@@ -462,8 +462,13 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .f-video{display:block;width:100%;height:auto;aspect-ratio:16 / 9;border-radius:16px;border:1px solid var(--line);background:#000322;box-shadow:0 40px 80px -40px rgb(0 0 0 / .8)}
 /* Au téléphone, le film vertical (site.js lui donne sa source et son affiche au même seuil), jamais plus haut que 80 % de l'écran */
 @media (max-width:640px){.js .f-video[data-vertical]{aspect-ratio:9 / 16;width:min(100%,45vh);width:min(100%,45svh);margin-inline:auto}}
-/* Le film d'accueil, sous le schéma « Deux canaux, une seule conversation » (section blanche) */
-.relais .film-accueil{margin-top:clamp(40px,6vw,72px);box-shadow:0 40px 80px -40px var(--ombre)}
+/* Les films WhatsApp et RCS, côte à côte sous le schéma « Deux canaux, une seule conversation » (section blanche) */
+.relais .films-canaux{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:clamp(20px,3vw,36px);margin-top:clamp(40px,6vw,72px)}
+.relais .film-canal{margin:0}
+.relais .film-canal .f-video{box-shadow:0 40px 80px -40px var(--ombre)}
+.relais .film-canal figcaption{display:flex;align-items:center;gap:8px;margin-top:14px;font-weight:700;font-size:.95rem;color:var(--muted)}
+.relais .film-canal figcaption::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--pastille)}
+@media (max-width:760px){.relais .films-canaux{grid-template-columns:minmax(0,1fr)}}
 
 /* 4. Les trois étapes, sur la seule bande claire de la page. Au bureau, l'écran reste collé à droite et suit
    l'étape lue ; sans JavaScript et sur mobile, chaque étape porte son image. */
