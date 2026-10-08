@@ -87,10 +87,12 @@
   // Venu d'un bouton « Demander une démo » : le message est pré-rempli avec la fonctionnalité, si rien n'est déjà
   // écrit. Seules les quatre pages connues : aucun texte n'est recopié de l'adresse.
   var DEMOS = {
+    'campagnes-et-scenarios': 'Campagnes et scénarios',
     'publicites-click-to-whatsapp': 'Publicités Click-to-WhatsApp',
     'chaines-whatsapp': 'Chaînes WhatsApp',
     'conversations-en-actions': 'Analyse de conversations',
-    'whatsapp-et-rcs': 'WhatsApp et RCS'
+    'whatsapp-et-rcs': 'WhatsApp et RCS',
+    'pilotage-des-couts': 'Pilotage des coûts'
   };
   var demo = DEMOS[new URLSearchParams(location.search).get('demo')];
   var message = form.querySelector('textarea[name="message"]');

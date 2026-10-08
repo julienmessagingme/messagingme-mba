@@ -6,10 +6,12 @@
 
 ## Fonctionnalités
 
+- [Campagnes et scénarios](https://app.messagingme.fr/fonctionnalites/campagnes-et-scenarios/) : des campagnes WhatsApp et RCS qui ouvrent des conversations, et des scénarios qui répondent à chaque client (code, question, rendez-vous, ou passage à l’équipe).
 - [Publicités Click-to-WhatsApp](https://app.messagingme.fr/fonctionnalites/publicites-click-to-whatsapp/) : des pubs Meta qui ouvrent une conversation, pas une landing page, pilotées du même endroit (la pub, le scénario qui répond, les résultats).
 - [Chaînes WhatsApp](https://app.messagingme.fr/fonctionnalites/chaines-whatsapp/) : publier gratuitement sur sa chaîne ; un bouton sous chaque publication ouvre une conversation en tête-à-tête.
 - [Analyse de conversations](https://app.messagingme.fr/fonctionnalites/conversations-en-actions/) : chaque conversation WhatsApp et RCS est analysée (intention, urgence, satisfaction, risque de départ) et devient une action dans le CRM.
 - [WhatsApp et RCS](https://app.messagingme.fr/fonctionnalites/whatsapp-et-rcs/) : chaque client reçoit le message sur son canal, avec un fallback dans le sens voulu, et toutes les réponses arrivent dans la même Inbox.
+- [Pilotage des coûts](https://app.messagingme.fr/fonctionnalites/pilotage-des-couts/) : le coût par engagement de chaque campagne, le coût par lead (CPL) de chaque publicité, et le coût de l’IA.
 
 ## Développeurs
 

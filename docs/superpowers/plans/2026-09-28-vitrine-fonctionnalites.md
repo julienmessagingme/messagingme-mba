@@ -88,8 +88,31 @@ de ce plan que la production emprunte (un envoi d'e-mail) ; le reste est de la p
   page). Le surtitre des pages fonctionnalités entre dans le h1, sans rien changer à l'affichage (positions
   mesurées avant et après). Restent chez Julien : Search Console, et un lien depuis messagingme.fr.
 
+## Ajout du 2026-10-08 : six fonctionnalités sur l'accueil, deux pages de plus
+
+Demande de Julien : sous les films de l'accueil, une carte par fonctionnalité (un petit texte, un visuel fixe), qui
+mène à sa page. **Méthode : en direct**, comme le reste du plan (pages statiques, réversibles, aucun chemin de
+production). Décisions de Julien : le pilotage des coûts a **sa propre page** ; le terme publicitaire est **« coût
+par lead (CPL) »** (pas le ROAS : le produit ne connaît pas le chiffre d'affaires) ; la page Campagnes est faite
+d'**écrans existants et de visuels HTML**.
+
+- Accueil : la section `.fx`, six cartes (Campagnes push et scénarios, Chaînes WhatsApp, Publicités
+  Click-to-WhatsApp, Analyse de conversations, Fallback WhatsApp et RCS, Pilotage des coûts). Les captures sont
+  recadrées (`--pos`) pour ne pas montrer l'ancien nom « Engage Me » que portent encore certains écrans.
+- `/fonctionnalites/campagnes-et-scenarios/` : l'assistant de campagne en cinq étapes, la réponse dans l'Inbox,
+  quatre scénarios d'exemple en HTML (paniers abandonnés, back to stock, early check-in, déclaration de sinistre),
+  faits tirés de `features.md` (blocs, déclencheurs, test par QR code, heures ouvrées, STOP).
+- `/fonctionnalites/pilotage-des-couts/` : le coût par engagement des campagnes (un clic ou une réponse), le coût
+  par lead (CPL) des publicités, le coût de l'IA à part. Chiffres d'exemple, dits indicatifs, et le coût dit estimé.
+- Menus (bureau et burger), pied, `sitemap.xml`, `llms.txt`, le pré-remplissage de la démo (`site.js`) et deux
+  images de partage, rendues depuis le haut de chaque page.
+
+Vérifié à 1440, 960 et 390 px (Playwright, mouvement réduit) : aucun débordement, aucune erreur, JSON-LD valide,
+l'entrée courante marquée dans les deux menus.
+
 ## Essai réel qui clôt
 
 Julien parcourt les deux pages en production, sur ordinateur et sur son téléphone : il ouvre le menu, lance les
 deux films, et clique « Demander une démo ». Pour le formulaire : il envoie un message depuis `/contact/` sur son
-téléphone, le reçoit dans sa boîte, et sa réponse part à l'adresse saisie.
+téléphone, le reçoit dans sa boîte, et sa réponse part à l'adresse saisie. Pour les six cartes : il clique
+chacune depuis l'accueil, sur son téléphone, et relit les deux pages neuves.

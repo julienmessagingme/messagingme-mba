@@ -644,3 +644,84 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 /* Le surtitre des pages fonctionnalités vit DANS le titre h1 (il porte le mot-clé de la page) : il y garde sa ligne
    à lui et son interligne, pour s'afficher exactement comme avant. */
 h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
+
+/* ============================================================================================================
+   LES FONCTIONNALITÉS DE L'ACCUEIL (.fx) ET LES VISUELS CONSTRUITS EN HTML (.ui, .sc, .co)
+   Six cartes sous les films, chacune mène à sa page. Les visuels HTML imitent la console, en clair, comme les
+   écrans rendus depuis les films : un scénario (.sc) et des coûts (.co), là où aucun écran n'existe.
+   ============================================================================================================ */
+.fx{padding:104px 0 32px}
+.fx-grille{list-style:none;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;margin:44px 0 0;padding:0}
+.fx-carte{display:flex;flex-direction:column;height:100%;overflow:hidden;border-radius:16px;background:#0E1A66;border:1px solid rgb(255 255 255 / .12);color:inherit;text-decoration:none;transition:transform .2s,border-color .2s,box-shadow .2s}
+.fx-carte:hover{transform:translateY(-4px);border-color:rgb(255 255 255 / .3);box-shadow:0 30px 60px -30px var(--ombre)}
+.fx-carte:focus-visible{outline:2px solid var(--action);outline-offset:3px}
+.fx-visuel{position:relative;aspect-ratio:16 / 10;overflow:hidden;background:#EEF1F8}
+.fx-visuel img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:var(--pos,50% 0%)}
+.fx-visuel-ui{display:grid;align-content:center}
+.fx-corps{display:flex;flex:1;flex-direction:column;gap:8px;padding:20px 22px 22px}
+.fx-corps h3{margin:0;font-size:1.15rem;font-weight:800;letter-spacing:-.01em;line-height:1.25}
+.fx-corps p{flex:1;margin:0;color:var(--muted);font-size:.95rem}
+.fx-lien{display:inline-flex;align-items:center;gap:6px;margin-top:4px;color:var(--action-ink);font-size:.92rem;font-weight:700}
+.fx-lien .ic{transition:transform .15s}
+.fx-carte:hover .fx-lien .ic{transform:translateX(3px)}
+@media (max-width:960px){.fx-grille{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){.fx{padding-top:72px}.fx-grille{grid-template-columns:minmax(0,1fr)}}
+
+/* La console, en clair */
+.ui{--ui-ink:#0B1033;--ui-muted:#5B6178;--ui-line:#DCE0EC;--ui-bleu:#0066AA;--ui-vert:#15803D;color:var(--ui-ink)}
+.ui-fenetre{overflow:hidden;border-radius:16px;background:#F5F7FC;box-shadow:0 40px 80px -40px rgb(0 2 20 / .75)}
+.ui-tete{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 18px;background:#FFFFFF;border-bottom:1px solid var(--ui-line);font-weight:700}
+.ui-tete > span{display:flex;align-items:center;gap:8px}
+.ui-tete small{font-size:.85rem;font-weight:500;color:var(--ui-muted)}
+.ui-tete .ic{font-size:1.15rem;color:var(--ui-bleu)}
+.ui-pastille{padding:4px 10px;border-radius:999px;background:#E3F6EA;color:var(--ui-vert);font-size:.75rem;font-weight:700}
+.f-ui{margin:0}
+
+/* Un scénario : des blocs reliés par un fil */
+.sc{display:grid;justify-items:start;padding:20px}
+.sc-bloc{display:flex;align-items:flex-start;gap:10px;max-width:100%;padding:10px 12px;border-radius:12px;background:#FFFFFF;border:1px solid var(--ui-line);box-shadow:0 6px 16px -10px rgb(1 6 48 / .25)}
+.sc-bloc .ic{flex:none;margin-top:2px;font-size:1.1rem;color:var(--ui-bleu)}
+.sc-bloc b{display:block;font-size:.85rem;line-height:1.3}
+.sc-bloc i{display:block;font-size:.8rem;font-style:normal;line-height:1.35;color:var(--ui-muted)}
+.sc-depart{background:#E8F7EE;border-color:#BFE6CD}
+.sc-depart .ic{color:var(--ui-vert)}
+.sc-equipe .ic{color:#6E5AE0}
+.sc-fil{width:2px;height:16px;margin-left:21px;background:#B9C0D4}
+.sc-choix{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 0 12px}
+.sc-choix span,.sc-choix-un{padding:5px 10px;border-radius:8px;border:1px solid var(--ui-line);background:#FFFFFF;color:var(--ui-bleu);font-size:.78rem;font-weight:600}
+.sc-branches{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;width:100%;margin-top:14px;padding-top:14px;border-top:2px dashed #C9CFE0}
+.sc-branches > div{display:grid;justify-items:start;gap:10px}
+.sc-grand{padding:24px}
+.sc-mini{padding:14px 16px}
+.sc-mini .sc-bloc{padding:8px 10px}
+.sc-exemples{list-style:none;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px;margin:44px 0 0;padding:0}
+@media (max-width:1100px){.sc-exemples{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:760px){.sc-exemples{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:480px){.sc-branches{grid-template-columns:minmax(0,1fr)}}
+
+/* Des coûts : des tuiles, une table, des lignes */
+.co{display:grid;gap:12px;padding:18px}
+.co-tuiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.ui-fenetre > .co-tuiles{padding:16px}
+.co-tuile{padding:12px 14px;border-radius:12px;background:#FFFFFF;border:1px solid var(--ui-line)}
+.co-tuile small{display:block;font-size:.75rem;font-weight:600;color:var(--ui-muted)}
+.co-tuile b{display:block;font-size:1.35rem;font-weight:800;letter-spacing:-.02em}
+.co-tuile i{display:block;font-size:.72rem;font-style:normal;color:var(--ui-muted)}
+.co-accent b{color:var(--ui-bleu)}
+.co-barres{display:flex;align-items:flex-end;gap:8px;height:52px;padding:0 4px}
+.co-barres span{flex:1;height:calc(var(--h) * 1%);border-radius:6px 6px 2px 2px;background:linear-gradient(#5AB0F0,#0066AA)}
+.co-mini{padding:14px 16px}
+.co-lignes{display:grid;margin:0;padding:6px 18px}
+.co-lignes div{display:flex;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid var(--ui-line)}
+.co-lignes div:last-child{border-bottom:0}
+.co-lignes dt{color:var(--ui-muted);font-size:.92rem}
+.co-lignes dd{margin:0;font-weight:800}
+.co-une{display:grid;gap:16px}
+.co-une .co-pub{width:min(360px,100%);justify-self:end;margin-top:-6px}
+.co-table{width:100%;border-collapse:collapse;font-size:.88rem}
+.co-table th{padding:10px 14px;border-bottom:1px solid var(--ui-line);color:var(--ui-muted);font-size:.75rem;font-weight:600;text-align:left}
+.co-table td{padding:12px 14px;border-bottom:1px solid var(--ui-line)}
+.co-table tr:last-child td{border-bottom:0}
+.co-table th:not(:first-child),.co-table td:not(:first-child){text-align:right}
+.co-table td:last-child{font-weight:800;color:var(--ui-bleu)}
+@media (max-width:480px){.co-table th,.co-table td{padding:10px 8px}.co-table{font-size:.8rem}}
