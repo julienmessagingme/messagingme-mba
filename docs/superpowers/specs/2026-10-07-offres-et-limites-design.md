@@ -25,7 +25,7 @@ refusé, et une réponse dans la fenêtre de 24 h n'est jamais bloquée.
 | Conservation des conversations | 30 jours | 90 jours | Réglable |
 | Automations | 10 | Illimitées | Illimitées |
 | Suppressions de contacts | 10 par jour | Sans limite | Sans limite |
-| Webhooks sortants (lot à venir) | 1 adresse, journal sur 3 jours | 5 adresses, journal sur 30 jours | Réglable |
+| Webhooks sortants (lot à venir) | 1 adresse, journal sur 3 jours | 5 adresses, journal sur 30 jours | Sans limite d'adresses, journal sur 30 jours (décision de Julien du 2026-10-08 : le code fait foi, plus « réglable ») |
 | Console | Modèles, campagnes, clés d'API, offre ; Inbox, scénarios et statistiques grisés | Tout, plus l'agent de Meta | Plus CRM, RCS, Performance Lab |
 | Bot d'aide et assistants de configuration | Fermés | Ouverts | Ouverts |
 | Numéro fourni | 3,50 € HT par mois | Inclus | Inclus |

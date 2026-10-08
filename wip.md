@@ -19,14 +19,21 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
-## LOT 19 : LE TUNNEL DE LA BASE, ÉCRIT (2026-10-08)
+## LOT 12 : LES WEBHOOKS SORTANTS, CADRÉ (2026-10-08), LIVRAISON A EN COURS
+
+Spec `docs/superpowers/specs/2026-10-08-webhooks-sortants-design.md`, plan `docs/superpowers/plans/2026-10-08-webhooks-sortants.md`
+(décisions de Julien du 2026-10-08). Livraison A : les webhooks sortants (migration 0223, deux files, écran
+`/developers/evenements`, deux outils MCP, page de doc). Livraison B : le mode « mon application répond » (0224), sans
+repli, réponses hors quota.
+
+## LOT 19 : LE TUNNEL DE LA BASE, EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ
 
 Plan `docs/superpowers/plans/2026-10-08-tunnel-de-la-base.md`, console seule (Vercel au push), aucune route ni migration.
 L'inscription (mot de passe ou Google) mène à `/connecter-whatsapp?suite=demarrer` (« Plus tard » saute le numéro,
 « Continuer » une fois connecté), puis à la page finale `/demarrer` : le numéro, la commande `claude mcp add` SANS
 clé (OAuth validé par `/mcp` dans Claude Code), « Créer la clé de mon application » (montrée une fois en ligne de `.env`), et le premier
 message à coller. La suite traverse le retour de Stripe par la mémoire de l'onglet (`mba.suite`), effacée par la page
-finale. Reste : la relecture, le push, la CI, puis **l'essai réel** (une inscription de bout en bout, la commande
+finale. En production (`52ecbafa`, console publiée par Vercel, CI verte job par job, relecture 0 rouge). Reste **l'essai réel** (une inscription de bout en bout, la commande
 collée dans Claude Code qui ouvre la connexion OAuth). La porte de la vitrine s'ouvre après le lot 14.
 
 ## LOT 6 : LES OFFRES ET LEURS LIMITES, A, B1, B2a, B2b ET C EN PRODUCTION (2026-10-07 ET 08)
