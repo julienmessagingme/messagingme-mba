@@ -164,9 +164,22 @@
         <a class="bouton bouton-texte" href="#film">Voir le film <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>
       </div>
     </div>
-    <figure class="f-duo">
-      <img class="entre" style="--d:.1s" src="/img/ctwa-fil.webp" width="560" height="1175" alt="Une publicité Click-to-WhatsApp dans un fil d’actualité, avec son bouton Envoyer un message" fetchpriority="high">
-      <img class="entre" style="--d:.35s" src="/img/ctwa-conversation.webp" width="560" height="1175" alt="La conversation WhatsApp ouverte par la publicité : le prospect reçoit son code">
+    <figure class="f-duo f-clic" style="--tap-x:36.9%;--tap-y:60.8%;--label-x:37%;--label-y:53.5%;--ouvre:-25% 55%">
+      <div class="f-clic-tel entre" style="--d:.1s">
+        <img src="/img/ctwa-fil.webp" width="560" height="1175" alt="Une publicité Click-to-WhatsApp dans un fil d’actualité : le prospect appuie sur Envoyer un message" fetchpriority="high">
+        <svg class="f-clic-appui" viewBox="0 0 560 1175" aria-hidden="true"><path class="f-clic-voile" fill-rule="evenodd" d="M55 15H505A40 40 0 0 1 545 55V1120A40 40 0 0 1 505 1160H55A40 40 0 0 1 15 1120V55A40 40 0 0 1 55 15ZM259 797H516A16 16 0 0 1 532 813V844A16 16 0 0 1 516 860H259A16 16 0 0 1 243 844V813A16 16 0 0 1 259 797Z"/></svg>
+      </div>
+      <img class="f-clic-ouvre" src="/img/ctwa-conversation.webp" width="560" height="1175" alt="La conversation WhatsApp qui s’ouvre d’un clic : le message du prospect est déjà écrit, avec la publicité en référence, et il reçoit son code">
+      <div class="f-clic-geste" aria-hidden="true">
+        <svg viewBox="0 0 1000 1167.14">
+          <rect class="f-clic-bulle" x="578" y="732" width="373" height="165" rx="22"/>
+          <path class="f-clic-halo" d="M412 712Q500 790 572 795" pathLength="1"/>
+          <path class="f-clic-trait" d="M412 712Q500 790 572 795" pathLength="1"/>
+          <path class="f-clic-pointe" d="M584 796L557 807L559 781Z"/>
+        </svg>
+        <span class="f-clic-tap"></span>
+        <span class="f-clic-label"><svg class="ic"><use href="#i-hand-tap"/></svg>1 clic</span>
+      </div>
     </figure>
   </section>
 

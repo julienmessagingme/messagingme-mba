@@ -730,14 +730,17 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
    LE GESTE ENTRE LES DEUX ÉCRANS (.f-clic), sur la une des chaînes : l'appui sur « Commencer à discuter », puis la
    conversation qui s'ouvre de ce point, le message déjà écrit. Les deux téléphones y gardent TOUJOURS la même
    proportion (48 % de la figure, le second décalé de 16 % et rentré de 2 %) : le geste est posé en pourcentages de
-   la figure (viewBox de 1000 de large), il ne tombe juste qu'à cette condition. Sans JavaScript, ou pour qui a
-   demandé moins de mouvement, tout est affiché d'emblée.
+   la figure (viewBox de 1000 de large), il ne tombe juste qu'à cette condition. Chaque page pose ses points sur la
+   figure (--tap-x et --tap-y : l'appui ; --label-x et --label-y : la pastille ; --ouvre : d'où la conversation
+   s'ouvre, rapporté au second téléphone). L'écran « appui » est une image (chaînes) ou un voile SVG percé sur le
+   bouton (publicité). Sans JavaScript, ou pour qui a demandé moins de mouvement, tout est affiché d'emblée.
    ============================================================================================================ */
 .f-clic{width:min(540px,100%);margin-inline:auto}
 .f-clic > img,.f-clic-tel{width:48%}
 .f-clic-tel{position:relative;flex:none}
 .f-clic-tel img{width:100%}
-.f-clic-tel .f-clic-appui{position:absolute;inset:0;margin:0;filter:none}
+.f-clic-tel .f-clic-appui{position:absolute;inset:0;width:100%;height:100%;margin:0;filter:none}
+.f-clic-voile{fill:rgb(36 32 92 / .42)}
 .f-clic-tel + img{position:relative;margin:16% 0 0 -2%}
 .f-clic-geste{position:absolute;inset:0;pointer-events:none}
 .f-clic-geste > svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
@@ -746,14 +749,14 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .f-clic-trait{stroke:#25D366;stroke-width:6}
 .f-clic-pointe{fill:#25D366;stroke:#fff;stroke-width:3;stroke-linejoin:round}
 .f-clic-bulle{fill:none;stroke:#25D366;stroke-width:5}
-.f-clic-tap{position:absolute;left:26.7%;top:75.9%;width:8.5%;aspect-ratio:1;border-radius:50%;border:2px solid #fff;background:rgb(255 255 255 / .3);box-shadow:0 0 0 4px rgb(37 211 102 / .5);transform:translate(-50%,-50%)}
-.f-clic-label{position:absolute;left:47%;top:64%;display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;background:#25D366;color:#03140A;font-size:.8rem;font-weight:800;white-space:nowrap;transform:translate(-50%,-50%);box-shadow:0 10px 24px -10px rgb(0 0 0 / .6)}
+.f-clic-tap{position:absolute;left:var(--tap-x);top:var(--tap-y);width:8.5%;aspect-ratio:1;border-radius:50%;border:2px solid #fff;background:rgb(255 255 255 / .3);box-shadow:0 0 0 4px rgb(37 211 102 / .5);transform:translate(-50%,-50%)}
+.f-clic-label{position:absolute;left:var(--label-x);top:var(--label-y);display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;background:#25D366;color:#03140A;font-size:.8rem;font-weight:800;white-space:nowrap;transform:translate(-50%,-50%);box-shadow:0 10px 24px -10px rgb(0 0 0 / .6)}
 .f-clic-label .ic{font-size:1rem}
 @media (prefers-reduced-motion:no-preference){
   .js .f-clic-appui{opacity:0;animation:clic-fondu .4s ease .9s forwards}
   .js .f-clic-tap{opacity:0;animation:clic-appui .45s cubic-bezier(.16,1,.3,1) .9s forwards}
   .f-clic-tap::after{content:"";position:absolute;inset:-2px;border-radius:50%;border:2px solid #fff;opacity:0;animation:clic-onde 1.8s ease-out 1.4s infinite}
-  .js .f-clic-ouvre{opacity:0;transform-origin:-46% 72%;animation:clic-ouvre .7s cubic-bezier(.16,1,.3,1) 1.3s forwards}
+  .js .f-clic-ouvre{opacity:0;transform-origin:var(--ouvre);animation:clic-ouvre .7s cubic-bezier(.16,1,.3,1) 1.3s forwards}
   .js .f-clic-halo,.js .f-clic-trait{stroke-dasharray:1 2;stroke-dashoffset:1;animation:clic-trace .6s cubic-bezier(.16,1,.3,1) 1.9s forwards}
   .js .f-clic-pointe,.js .f-clic-bulle,.js .f-clic-label{opacity:0;animation:clic-fondu .35s ease 2.35s forwards}
   @keyframes clic-fondu{to{opacity:1}}
