@@ -92,8 +92,10 @@ Tests attendus :
   l'accorde, sinon par la sonde en lecture seule de l'ancien et du nouveau code sur les vraies données, puis la CI.
 
 Ordre de déploiement : sans migration. API et workers ensemble (le catalogue est lu par les deux). La console n'a pas
-de changement. ⚠️ Retour arrière : une image antérieure exposerait SANS paramètre les outils de connecteur créés
-depuis (colonne vide) ; il faudrait les recréer.
+de changement. ⚠️ Retour arrière : une image antérieure relirait la colonne, donc rendrait leur copie périmée aux
+connecteurs d'avant et exposerait SANS paramètre ceux créés depuis. Réécrire alors la colonne des connecteurs depuis
+leur requête (la dérivation de `paramsDuConnecteur`, en SQL, filtrée sur l'espace) plutôt que recréer les outils,
+qui perdraient activation et autonomie et devraient être republiés chez Meta.
 
 Doc : `features.md` (section des connecteurs API, citée par aucune fiche d'aide), `documentation.md` (l'invariant,
 § 4.4), `docs/JOURNAL-TECHNIQUE.md` (le récit), `todo.md` (l'entrée du 2026-10-05, dont les autres points restent).

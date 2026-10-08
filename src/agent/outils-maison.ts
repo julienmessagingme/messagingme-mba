@@ -338,24 +338,25 @@ export function outilsExposes(outils: readonly OutilDefini[], sorties: readonly 
 }
 
 /**
- * Les paramètres effectifs d'un outil : sa copie en base, plus ceux que le catalogue impose et que la copie ne
- * déclare pas (`paramsImposes`). 🔴 L'exposition au modèle ET la validation des arguments (`executeTool`, étape 3)
+ * Les paramètres effectifs d'un outil : sa liste (`OutilDefini.params`, la copie en base d'un outil maison ou MCP,
+ * les variables de sa requête pour un connecteur), plus ceux que le catalogue impose et que la liste ne déclare pas
+ * (`paramsImposes`). 🔴 L'exposition au modèle ET la validation des arguments (`executeTool`, étape 3)
  * les lisent ici : lu d'un seul côté, un paramètre imposé serait annoncé au modèle puis retiré de ses arguments
  * par Zod, sans erreur. Passe par `paramsOutil`, le point de passage unique de la séparation des sources, et par
  * `handlerMaison` : un outil qui n'est pas maison (connecteur, MCP, agent de Meta) ne reçoit rien.
  */
 export function paramsEffectifs(outil: Pick<OutilDefini, 'origin' | 'binding' | 'params'>): ParamOutil[] {
-  const copie: unknown[] = Array.isArray(outil.params) ? outil.params : [];
+  const liste: unknown[] = Array.isArray(outil.params) ? outil.params : [];
   const handler = handlerMaison(outil);
   const imposes = outilMaison(handler)?.paramsImposes ?? [];
-  if (imposes.length === 0) return avecValeursDuChamp(outil.binding, handler, paramsOutil(copie));
-  // « Déclaré » se lit sur le brut, comme les noms réservés de `paramsOutil` : une entrée de la copie
+  if (imposes.length === 0) return avecValeursDuChamp(outil.binding, handler, paramsOutil(liste));
+  // « Déclaré » se lit sur le brut, comme les noms réservés de `paramsOutil` : une entrée de la liste
   // inutilisable garde son nom, et un imposé du même nom ne prend pas sa place.
-  const declares = new Set(copie.map((b) => {
+  const declares = new Set(liste.map((b) => {
     const nom = b && typeof b === 'object' ? (b as { name?: unknown }).name : undefined;
     return typeof nom === 'string' ? nom.trim() : '';
   }));
-  return avecValeursDuChamp(outil.binding, handler, paramsOutil([...copie, ...imposes.filter((p) => !declares.has(p.name))]));
+  return avecValeursDuChamp(outil.binding, handler, paramsOutil([...liste, ...imposes.filter((p) => !declares.has(p.name))]));
 }
 
 /**

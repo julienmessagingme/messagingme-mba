@@ -57,9 +57,10 @@ export interface SchemaObjet {
 const TYPES: readonly TypeParam[] = ['string', 'number', 'integer', 'boolean'];
 
 /**
- * Relit défensivement une entrée de `agent_tools.params` (jsonb opaque). Rend `null` sur une entrée
- * inutilisable plutôt que de lever. Écarter une entrée n'est pas anodin : voir `paramsOutil`, qui empêche
- * qu'un `contact` malformé rende la cible au modèle.
+ * Relit défensivement une entrée de `OutilDefini.params` (jsonb opaque : `agent_tools.params` pour un outil maison
+ * ou MCP, les variables de sa requête pour un connecteur). Rend `null` sur une entrée inutilisable plutôt que de
+ * lever. Écarter une entrée n'est pas anodin : voir `paramsOutil`, qui empêche qu'un `contact` malformé rende la
+ * cible au modèle.
  */
 function coercer(brut: unknown): ParamOutil | null {
   if (!brut || typeof brut !== 'object') return null;

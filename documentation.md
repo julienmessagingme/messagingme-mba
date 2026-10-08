@@ -1016,8 +1016,11 @@ même relecture que le résolveur (`lireVariables`). L'exposition (`outilExpose`
 variable renommée ou ajoutée dans Tools atteint chaque agent au tour suivant. `agent_tools.params` n'est lue que
 pour un outil maison ou MCP, dont les paramètres portent des réglages propres (valeurs permises, sources d'un
 paramètre MCP) ; un connecteur la laisse à son défaut `[]`, et ceux créés avant le 2026-10-08 y gardent une copie
-que rien ne lit. ⚠️ Un retour arrière vers une image antérieure exposerait SANS paramètre les connecteurs créés
-depuis (colonne vide) : il faudrait les recréer.
+que rien ne lit. ⚠️ Un retour arrière vers une image antérieure relirait la colonne : les connecteurs d'avant
+retrouveraient leur copie périmée (le défaut revient), ceux créés depuis seraient exposés SANS paramètre. Il
+faudrait alors réécrire `agent_tools.params` des connecteurs depuis leur requête (la dérivation de
+`paramsDuConnecteur`, en SQL, filtrée sur l'espace), plutôt que recréer les outils, ce qui ferait perdre leur
+activation et leur autonomie, et republier chez Meta.
 
 🔴 **Le risque d'un outil est DÉRIVÉ de la méthode HTTP** (`GET` -> read, `POST`/`PUT`/`PATCH` -> write,
 `DELETE` -> irréversible) et ne peut être que MONTÉ. Un client qui déclarerait `read` un `DELETE` désarmerait
@@ -3731,7 +3734,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/agent/modeles.ts` | les modèles proposables et leur tarif client : le menu ET la garde d'écriture y lisent |
 | `src/llm/errors.ts` -> `direPanneModele` | ce qu'un échec d'appel au modèle a le droit de dire au client, ou `null` : c'est alors NOTRE panne, que l'appelant RELANCE en 500 opaque. ⚠️ `fetch failed` et un abandon n'y sont attribués au modèle que parce que, dans ses quatre appelants, le seul `fetch` est l'appel au modèle |
 | `src/agent/llm/tool-schema.ts` -> `paramsOutil` | 🔴 la séparation des sources d'un paramètre (`modele` vs `contact` ou `fixe`). Deux lectures divergentes rendraient la cible au modèle, donc un IDOR |
-| `src/agent/outils-maison.ts` -> `paramsEffectifs` | 🔴 les paramètres d'un outil d'agent IA tels que le modèle les voit et que l'exécuteur les valide : la copie en base, plus les imposés du catalogue (`paramsImposes`), par `paramsOutil`. L'exposition et l'exécuteur la lisent tous deux : `paramsOutil(outil.params)` à leur place perdrait un imposé d'un seul côté |
+| `src/agent/outils-maison.ts` -> `paramsEffectifs` | 🔴 les paramètres d'un outil d'agent IA tels que le modèle les voit et que l'exécuteur les valide : sa liste (la copie en base d'un outil maison ou MCP, les variables de sa requête pour un connecteur), plus les imposés du catalogue (`paramsImposes`), par `paramsOutil`. L'exposition et l'exécuteur la lisent tous deux : `paramsOutil(outil.params)` à leur place perdrait un imposé d'un seul côté |
 | `src/agent/requetes.ts` -> `lireVariables`, `paramsDuConnecteur` | 🔴 la relecture UNIQUE des variables d'une requête (formes anciennes réécrites), partagée par le résolveur et le catalogue, et ce que le modèle remplit pour un connecteur (les seules variables `modele`, garde anti-IDOR). Le catalogue les dérive à chaque lecture (`versOutil`) : une copie sur l'outil divergeait au premier renommage, et deux relectures pourraient exposer une variable que le résolveur ne cherche pas |
 | `src/agent/setup/proposition.ts` | ce que l'IA de construction a le DROIT de proposer. 🔴 La FRONTIÈRE est la liste des CLÉS et les énumérations FERMÉES, jamais une longueur : les bornes sont de l'hygiène, et `assainirProposition` les RAMÈNE avant que Zod ne juge, au lieu de perdre le tour. ⚠️ Toute borne appliquée est annoncée dans le schéma envoyé au modèle, et un test le dérive plutôt que de le relire |
 | `src/crm/poser-etiquette.ts` | 🔴 poser une étiquette sur UN contact, le geste des cinq portes unitaires (agent IA et agent de Meta, bloc de scénario, widget, outil MCP `tag_conversation`, fiche contact) : nettoyer (`normaliserEtiquette`, `nettoyerEtiquettes` : espaces, 64 caractères, vides et doublons), poser, déclarer dans le référentiel (au mieux), et publier `tag_added` sur les seules nouvelles, SI l'appelant le demande (`publier`, requise). `apresPose` sert la fiche, qui pose dans la transaction d'`applyEdits` ; `publierEnDiffere`, l'exécuteur. Construit une fois par `buildWorkflowRuntime`, rendu à l'API et au worker. Les chemins de masse (import, API publique, action en masse) n'en prennent que le nettoyage |

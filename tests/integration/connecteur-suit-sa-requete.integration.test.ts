@@ -89,6 +89,8 @@ describe.skipIf(!url)('un outil de connecteur suit sa requête (Postgres)', () =
   });
 
   afterAll(async () => {
+    // L'ordre compte : `itest_croise` désigne la requête de l'AUTRE espace (clé étrangère en `restrict`). L'espace
+    // qui porte l'outil part d'abord, sinon la suppression de l'autre échouerait.
     if (tenantId) await pool.query('delete from tenants where id = $1', [tenantId]);
     if (autreTenantId) await pool.query('delete from tenants where id = $1', [autreTenantId]);
     await pool.end();
