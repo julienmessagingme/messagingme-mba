@@ -20,6 +20,14 @@
 
 // Pages fonctionnalités. Chaque bloc ne fait rien si la page n'a pas l'élément qu'il vise.
 (function () {
+  // Au téléphone, un film qui a une version verticale (data-vertical) la prend, avec son affiche. Même seuil que
+  // la règle « .js .f-video[data-vertical] » de site.css, qui donne au cadre sa forme dès le premier affichage.
+  if (matchMedia('(max-width: 640px)').matches) {
+    document.querySelectorAll('.f-video[data-vertical]').forEach(function (v) {
+      v.src = v.dataset.vertical; v.poster = v.dataset.afficheVerticale;
+    });
+  }
+
   if (!('IntersectionObserver' in window)) return;
   var calme = matchMedia('(prefers-reduced-motion: reduce)').matches;
 

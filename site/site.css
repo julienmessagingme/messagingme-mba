@@ -443,6 +443,8 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 /* 3. Le film */
 .f-film .f-texte{margin-bottom:32px}
 .f-video{display:block;width:100%;height:auto;aspect-ratio:16 / 9;border-radius:16px;border:1px solid var(--line);background:#000322;box-shadow:0 40px 80px -40px rgb(0 0 0 / .8)}
+/* Au téléphone, le film vertical (site.js lui donne sa source et son affiche au même seuil), jamais plus haut que 80 % de l'écran */
+@media (max-width:640px){.js .f-video[data-vertical]{aspect-ratio:9 / 16;width:min(100%,45vh);width:min(100%,45svh);margin-inline:auto}}
 /* Le film d'accueil, sous le schéma « Deux canaux, une seule conversation » (section blanche) */
 .relais .film-accueil{margin-top:clamp(40px,6vw,72px);box-shadow:0 40px 80px -40px var(--ombre)}
 
