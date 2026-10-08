@@ -85,6 +85,12 @@ export const PAGES_DOC = [
     ancres: ['signaux'],
   },
   {
+    // Les webhooks sortants (lot 12) : l'enveloppe, la signature, les réessais et chaque type.
+    cle: 'webhooks', href: '/developers/api/webhooks', fichier: 'web/app/developers/api/webhooks/page.tsx', groupe: 'plateforme',
+    nav: ['Webhooks sortants', 'Outgoing webhooks'], titre: ['Webhooks sortants', 'Outgoing webhooks'],
+    ancres: ['enveloppe', 'signature', 'reessais', 'types'],
+  },
+  {
     // L'adresse garde « reference » : publiée le 2026-09-25 (lot 1), elle peut déjà être en favori. Seul le titre change.
     cle: 'reference', href: '/developers/api/reference', fichier: 'web/app/developers/api/reference/page.tsx', groupe: 'plateforme',
     nav: ['Authentification, limites et erreurs', 'Authentication, limits and errors'],

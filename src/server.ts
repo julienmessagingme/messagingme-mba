@@ -10,6 +10,7 @@ import { registerCampaigns } from './http/campaigns';
 import { registerRcsMessages } from './http/rcs-messages';
 import { registerRcsChannel } from './http/rcs-channel';
 import { registerIntegrationBatch } from './http/integration-batch';
+import { registerEvenements, type EvenementsRouteDeps } from './http/evenements';
 import { registerSalesforce } from './http/salesforce';
 import { registerRcsCallback } from './http/rcs-callback';
 import { registerRcsMedia } from './http/rcs-media';
@@ -235,6 +236,8 @@ export interface ServerDeps {
   rcsChannel?: RcsChannelRouteDeps;
   /** Paramètres > Intégrations > Batch : l'outil qui reçoit les signaux. Admin, lecture comprise. */
   integrationBatch?: IntegrationBatchRouteDeps;
+  /** Développeurs > Webhooks sortants (lot 12). */
+  evenements?: EvenementsRouteDeps;
   /**
    * Paramètres > Intégrations > Salesforce : l'interrupteur, la connexion de l'org, ses réglages. Admin,
    * lecture comprise. Monté seulement quand la clé d'app Salesforce est posée sur l'instance.
@@ -664,6 +667,8 @@ export function modulesDeRoutes(
     entree('rcsMessages', 'tenant', deps.rcsMessages, (app, d, g) => registerRcsMessages(app, d, g.auth), toutes('rcs')),
     entree('rcsChannel', 'tenant', deps.rcsChannel, (app, d, g) => registerRcsChannel(app, d, g.auth), toutes('rcs')),
     entree('integrationBatch', 'tenant', deps.integrationBatch, (app, d, g) => registerIntegrationBatch(app, d, g.admin), toutes('crm')),
+    // Une LIMITE de l'offre, pas une fonction : la Base y a droit (une adresse), d'où aucun `toutes`.
+    entree('evenements', 'tenant', deps.evenements, (app, d, g) => registerEvenements(app, d, g.admin, g.limiteCouteuse)),
     entree('salesforce', 'tenant', deps.salesforce, (app, d, g) => registerSalesforce(app, d, g.admin, g.limiteCouteuse), toutes('crm')),
     // Visuels RCS : monté avec `auth` alors qu'il porte aussi une route publique `/m/<code>.<ext>`. Les gardes
     // sont posées par route (`preHandler`), donc la lecture reste ouverte : l'opérateur télécom télécharge

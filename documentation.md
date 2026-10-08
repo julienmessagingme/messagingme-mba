@@ -180,6 +180,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **Statistiques** | volumes, funnel, erreurs, coût | `src/stats/` | `/dashboard` | lecture seule | |
 | **Liens tracés** | compter les clics sur les boutons URL d'un template | `src/links/` | | `tracked_links`, `tracked_link_clicks` | |
 | **Webhooks entrants** | un tiers poste du JSON, on en fait un contact et un événement | `src/webhook-entrant/` | `/webhooks` | `webhooks` | |
+| **Webhooks sortants** | l'application du client reçoit les événements, signés et réessayés 24 h (§ 6) | `src/evenements/`, `src/http/evenements.ts`, `src/mcp/outils-evenements.ts` | `/developers/evenements` | `adresses_evenements`, `envois_evenements` | `evenements-distribution`, `evenements-envoi` |
 | **Connecteur HubSpot** | import de listes, étapes de deal | `src/hubspot/` | `/tuto-hubspot` | | `hubspot-catchup` |
 | **Publicités Click-to-WhatsApp** | connecter le compte publicitaire, créer (image ou vidéo, audiences), publier, suivre, router le prospect | `src/pubs/`, `src/meta/pubs*.ts`, `src/http/pubs.ts` | `/publicites` | `pub_connexion`, `publicites`, `pubs_brouillons`, `pubs_connues`, `arrivees_pub` | balayage de suivi |
 | **Widget WhatsApp** | une bulle sur le site du client qui ouvre WhatsApp avec une phrase, et ce qui se passe quand cette phrase arrive | `src/widgets/`, `src/http/widgets.ts`, `src/http/widget-public.ts` | `/widgets` | `widgets`, `widget_tirs` | aucune : une étape de `processInbound` |
@@ -1896,7 +1897,7 @@ La cadence de polling se règle **par file**, sur la latence réellement utile, 
 | Latence | Cadence | Files |
 |---|---|---|
 | conversationnelle (quelqu'un attend) | 2 s | `webhook`, `agent-turn` |
-| interactive (l'opérateur regarde l'écran) | 5 s | `campaign-run`, `automation-event` |
+| interactive (l'opérateur regarde l'écran) | 5 s | `campaign-run`, `automation-event`, `evenements-distribution`, `evenements-envoi` (l'application d'un client attend) |
 | de fond (personne n'attend) | 30 s | `webhook-status`, `analyze-conversation`, `push-analysis`, `hubspot-catchup`, `optout-poussee`, les files d'adaptateur de signaux (`signaux-batch`, et toute future `signaux-*`) |
 | dépôt inspecté, consommé par personne | 60 s | toute DLQ |
 
@@ -1995,6 +1996,22 @@ abandonnée bloque son client. ⚠️ Le code d'avant 0203
 scelle et libère SANS jeton : une copie ancienne qui vivrait plus d'un bail à côté d'une copie neuve pourrait
 écraser le scellement de celle-ci. Impossible avec une seule copie (`stop_grace_period` de 30 s, très en deçà du
 bail) ; un déploiement progressif à plusieurs copies doit garder son délai d'arrêt sous le bail.
+
+### Les webhooks sortants : une tentative par job, comptée dans la ligne
+
+Deux files, branchées sur le bus des signaux (`creerEmetteur`, une destination de plus, qui n'enfile que les signaux
+qu'une adresse ACTIVE a cochés). `evenements-distribution` fige chaque événement (`text`, jamais `jsonb`, qui
+réordonnerait les clés sous la signature) et écrit une ligne d'`envois_evenements` par adresse, unique sur
+`(adresse_id, evenement_id)` : un message que Meta redélivre ou une distribution rejouée n'envoie pas deux fois.
+`evenements-envoi` fait UNE tentative par job ; le job porte le numéro de la tentative, et la ligne qui n'en est plus
+là le rend périmé (doublon, rejeu, envoi livré). En échec, l'essai suivant s'ENFILE avant de s'écrire (`startAfter`) :
+un arrêt entre les deux laisse un job de trop, jamais un envoi « en cours » que plus rien ne relance. Le calendrier
+(30 s, 2 min, 10 min, 30 min, puis toutes les heures, pendant 24 h) et les gardes réseau vivent dans
+`src/evenements/envoi.ts`, qui câble lui-même `fetchPublic` et `resolutionPublique`. L'adresse n'est jamais suspendue ;
+un `410` n'arrête que cet envoi. Au-delà de la limite de l'offre, les adresses les plus récentes sont gelées au point
+d'envoi, dans le même ordre (`cree_le, id`) côté distribution et côté envoi. Signature : Standard Webhooks
+(`src/evenements/signature.ts`, tenue par le vecteur publié). Purges : le journal par l'offre (balayage de rétention
+générale) et les envois d'un contact par `PgContactStore.purgeMany`.
 
 ### Plusieurs copies de l'API : ce qui ne doit arriver qu'une fois se garde en base
 

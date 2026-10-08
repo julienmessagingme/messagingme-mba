@@ -8,7 +8,7 @@ const C = '6f1c2b3a-4d5e-4f60-8a7b-9c0d1e2f3a4b';
 const S = 'd4e5f6a7-b8c9-4d0e-9f1a-2b3c4d5e6f70';
 const CONV = 'c3d4e5f6-a7b8-4c9d-8e0f-1a2b3c4d5e6f';
 const FICHE: FicheDuSignal = {
-  contactId: C, externalId: 'crm-7781', optOutWhatsapp: true, optOutRcs: false, optInSource: 'whatsapp_stop',
+  contactId: C, telephone: '+33611111111', nom: 'Claire', externalId: 'crm-7781', optOutWhatsapp: true, optOutRcs: false, optInSource: 'whatsapp_stop',
   derniereAnalyse: {
     intent: 'reclamation', sentiment: 'negatif', satisfaction: 0, urgence: 9, resolved: false, topic: 'colis perdu',
     handledBy: 'humain', actionSuggestion: 'rappeler',
@@ -41,7 +41,7 @@ describe('completerSignal : relire ce que le chemin chaud ne portait pas', () =>
   it('un accusé : la fiche par son wa_id, l’origine du message et son envoi', async () => {
     const r = await completerSignal(lectures().l, T, accuse('delivered'));
     // La dernière analyse de la fiche voyage avec le contact : c'est elle que le lot envoie en attributs.
-    expect(r?.contact).toEqual({ contactId: C, externalId: 'crm-7781', optOutWhatsapp: true, optOutRcs: false, derniereAnalyse: FICHE.derniereAnalyse });
+    expect(r?.contact).toEqual({ contactId: C, telephone: '+33611111111', nom: 'Claire', externalId: 'crm-7781', optOutWhatsapp: true, optOutRcs: false, derniereAnalyse: FICHE.derniereAnalyse });
     expect(r?.contenu).toEqual({ nom: 'em_message_delivered', canal: 'whatsapp', origine: 'campagne', sendId: S });
   });
 

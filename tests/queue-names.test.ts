@@ -6,6 +6,8 @@ import {
   SURVEILLANCE_FILES_SECONDES, videeEnContinu, MONITEUR_FILES_SECONDES, DELAI_REJEU_VIDAGE_SECONDES,
 } from '../src/queue/names';
 import { FILE_SIGNAUX_BATCH } from '../src/signaux/batch';
+import { FILE_EVENEMENTS_DISTRIBUTION } from '../src/evenements/distribution';
+import { FILE_EVENEMENTS_ENVOI } from '../src/evenements/envoi';
 
 /**
  * Garde-fou anti-drift : /ops, pg-boss et le worker doivent voir la MÊME liste de files. Si on ajoute une file
@@ -38,6 +40,8 @@ describe('queue names (source unique)', () => {
       if (name === 'AGENT_TURN_QUEUE') return 'agent-turn';
       if (name === 'FILE_POUSSEE_OPTOUT') return 'optout-poussee';
       if (name === 'FILE_SIGNAUX_BATCH') return FILE_SIGNAUX_BATCH;
+      if (name === 'FILE_EVENEMENTS_DISTRIBUTION') return FILE_EVENEMENTS_DISTRIBUTION;
+      if (name === 'FILE_EVENEMENTS_ENVOI') return FILE_EVENEMENTS_ENVOI;
       throw new Error(`constante de file inconnue du test : ${name} (ajoute sa résolution ici)`);
     });
     const worked = [...new Set([...literals, ...resolved])];
@@ -58,6 +62,8 @@ describe('queue names (source unique)', () => {
       AGENT_TURN_QUEUE: 'agent-turn',
       FILE_POUSSEE_OPTOUT: 'optout-poussee',
       FILE_SIGNAUX_BATCH,
+      FILE_EVENEMENTS_DISTRIBUTION,
+      FILE_EVENEMENTS_ENVOI,
     };
     const resolus = new Set([...literals, ...viaConst.map((n) => RESOLUTION[n] ?? n)]);
     for (const q of BASE_QUEUES) {
@@ -348,5 +354,21 @@ describe('la file des signaux (lot 6 de l’API publique)', () => {
   it('traitement de fond : sondée lentement, jamais réveillée', () => {
     expect(pollingSecondsFor(FILE_SIGNAUX_BATCH)).toBe(30);
     expect(notifieePour(FILE_SIGNAUX_BATCH)).toBe(false);
+  });
+});
+
+describe('les files des webhooks sortants (lot 12)', () => {
+  it('🔴 elles sont déclarées, donc visibles de /ops avec leur DLQ', () => {
+    for (const f of [FILE_EVENEMENTS_DISTRIBUTION, FILE_EVENEMENTS_ENVOI]) {
+      expect(BASE_QUEUES as readonly string[]).toContain(f);
+      expect(ALL_QUEUES).toContain(dlqName(f));
+    }
+  });
+
+  it('l’application d’un client attend : réveillées à l’enfilement, filet de 5 s', () => {
+    for (const f of [FILE_EVENEMENTS_DISTRIBUTION, FILE_EVENEMENTS_ENVOI]) {
+      expect(notifieePour(f)).toBe(true);
+      expect(pollingSecondsFor(f)).toBe(5);
+    }
   });
 });

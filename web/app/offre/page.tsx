@@ -41,14 +41,10 @@ function fonctionDemandee(): FonctionOffre | null {
   return (FONCTIONS_OFFRE as readonly string[]).includes(f ?? '') ? (f as FonctionOffre) : null;
 }
 
-/**
- * Les limites montrées dans la grille, dans cet ordre. ⚠️ Les deux limites des webhooks sortants (`adressesWebhook`,
- * `journalWebhooksJours`) n'y sont PAS : ce chantier n'existe pas encore (lot 12), et la console n'annonce pas une
- * limite d'une fonction qu'elle n'a pas.
- */
+/** Les limites montrées dans la grille, dans cet ordre. Les webhooks sortants y entrent avec leur écran (lot 12). */
 const LIGNES_LIMITES = [
-  'utilisateurs', 'contacts', 'envoisModelesMois', 'automations', 'suppressionsJour', 'conservationJours', 'commissionPct',
-  'numeroInclus', 'badge',
+  'utilisateurs', 'contacts', 'envoisModelesMois', 'automations', 'suppressionsJour', 'adressesWebhook', 'journalWebhooksJours',
+  'conservationJours', 'commissionPct', 'numeroInclus', 'badge',
 ] as const satisfies ReadonlyArray<keyof LimitesOffre>;
 
 /**
@@ -117,6 +113,8 @@ function OffreInner({ session }: { session: Session }) {
     envoisModelesMois: t('Modèles envoyés par mois', 'Templates sent per month'),
     automations: t('Automations allumées', 'Active automations'),
     suppressionsJour: t('Contacts supprimés par jour', 'Contacts deleted per day'),
+    adressesWebhook: t('Adresses de webhook sortant actives', 'Active outgoing webhook addresses'),
+    journalWebhooksJours: t('Journal des webhooks sortants', 'Outgoing webhook log'),
     conservationJours: t('Conservation des conversations', 'Conversation retention'),
     commissionPct: t('Commission sur le crédit IA', 'Commission on AI credit'),
     numeroInclus: t('Numéro WhatsApp inclus', 'WhatsApp number included'),
@@ -128,6 +126,7 @@ function OffreInner({ session }: { session: Session }) {
     if (typeof v === 'boolean') return v ? t('Oui', 'Yes') : t('Non', 'No');
     if (v === null) return t('Sans limite', 'Unlimited');
     if (k === 'conservationJours') return v === 0 ? t('Sans limite', 'Unlimited') : t(`${v} jours`, `${v} days`);
+    if (k === 'journalWebhooksJours') return t(`${v} jours`, `${v} days`);
     if (k === 'commissionPct') return `${v} %`;
     return v.toLocaleString('fr-FR');
   };

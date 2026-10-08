@@ -22,7 +22,7 @@ function signal(
     id: over.id ?? ID,
     le: LE,
     contact: {
-      contactId: C, externalId: over.externalId === undefined ? 'crm-7781' : over.externalId, optOutWhatsapp: false, optOutRcs: false,
+      contactId: C, telephone: '+33611111111', nom: 'Claire', externalId: over.externalId === undefined ? 'crm-7781' : over.externalId, optOutWhatsapp: false, optOutRcs: false,
       derniereAnalyse: over.derniereAnalyse ?? null,
     },
     contenu,

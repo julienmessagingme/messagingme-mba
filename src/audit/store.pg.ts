@@ -99,6 +99,14 @@ export type AuditAction =
   | 'integration.modifiee'
   | 'integration.debranchee'
   /**
+   * Les webhooks sortants (lot 12) : une adresse de l'application du client reçoit des données de contacts. Le détail
+   * porte l'adresse et les types, jamais le secret (ni à la création, ni à la rotation).
+   */
+  | 'evenements.adresse_creee'
+  | 'evenements.adresse_modifiee'
+  | 'evenements.adresse_supprimee'
+  | 'evenements.secret_tourne'
+  /**
    * L'APP SALESFORCE (plan 2026-09-26, lot L1). Ces actions NOMMENT l'outil (décision de Julien du 2026-09-26 : le
    * journal nomme l'outil) : relier une org fait sortir des données de contacts vers le système du client, et
    * l'admin doit pouvoir lire lequel. Le détail ne porte jamais le secret de l'org : l'org et le genre (sandbox),

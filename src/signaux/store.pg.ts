@@ -10,18 +10,22 @@ import type { FicheDuSignal, LecturesSignal } from './completer';
  */
 type LigneFiche = {
   id: string;
+  phone_e164: string | null;
+  profile_name: string | null;
   external_id: string | null;
   opt_in_status: string;
   opt_in_source: string | null;
   rcs_optout_at: Date | null;
 } & LigneAnalyseFiche;
 // La dernière analyse se lit dans la MÊME requête que la fiche : aucune lecture de plus par signal.
-const COLONNES_FICHE = `id, external_id, opt_in_status, opt_in_source, rcs_optout_at, ${COLONNES_ANALYSE_FICHE.join(', ')}`;
+const COLONNES_FICHE = `id, phone_e164, profile_name, external_id, opt_in_status, opt_in_source, rcs_optout_at, ${COLONNES_ANALYSE_FICHE.join(', ')}`;
 
 function fiche(r: LigneFiche): FicheDuSignal {
   const a = analyseDeLaLigne(r);
   return {
     contactId: r.id,
+    telephone: r.phone_e164,
+    nom: r.profile_name,
     externalId: r.external_id,
     optOutWhatsapp: r.opt_in_status === 'opted_out',
     optOutRcs: r.rcs_optout_at !== null,

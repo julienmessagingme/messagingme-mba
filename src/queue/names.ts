@@ -7,7 +7,7 @@
  * Les files travaillées par le worker. `analyze-conversation` et `push-analysis` ne sont enregistrées que si la
  * fonction est activée, mais la file existe côté /ops même désactivée : on les liste inconditionnellement.
  */
-export const BASE_QUEUES = ['webhook', 'webhook-status', 'campaign-run', 'analyze-conversation', 'push-analysis', 'hubspot-catchup', 'automation-event', 'agent-turn', 'optout-poussee', 'signaux-batch'] as const;
+export const BASE_QUEUES = ['webhook', 'webhook-status', 'campaign-run', 'analyze-conversation', 'push-analysis', 'hubspot-catchup', 'automation-event', 'agent-turn', 'optout-poussee', 'signaux-batch', 'evenements-distribution', 'evenements-envoi'] as const;
 
 /**
  * Le nom de la DLQ d'une file, défini une seule fois : `PgBossQueue.ensure()` l'importe pour la créer, donc le nom
@@ -30,6 +30,9 @@ export const ALL_QUEUES: string[] = BASE_QUEUES.flatMap((q) => [q, dlqName(q)]);
  * - `analyze-conversation`, `push-analysis`, `hubspot-catchup`, `optout-poussee` (le refus est déjà écrit quand
  *   le job est enfilé), `signaux-batch` : traitements de fond -> 30 s. La promesse « dans la minute » des signaux
  *   de geste tient à leur priorité (`PRIORITE_SIGNAL`), pas à cette cadence.
+ * - `evenements-distribution`, `evenements-envoi` (webhooks sortants, lot 12) : l'application d'un client réagit à un
+ *   message reçu, parfois pour répondre -> 5 s, et notifiées. Les accusés n'y entrent que pour une adresse qui les a
+ *   cochés (décochés par défaut), et partent en priorité basse.
  */
 export const QUEUE_POLLING_SECONDS: Record<(typeof BASE_QUEUES)[number], number> = {
   webhook: 2,
@@ -42,6 +45,8 @@ export const QUEUE_POLLING_SECONDS: Record<(typeof BASE_QUEUES)[number], number>
   'agent-turn': 2,
   'optout-poussee': 30,
   'signaux-batch': 30,
+  'evenements-distribution': 5,
+  'evenements-envoi': 5,
 };
 
 /**
@@ -64,6 +69,8 @@ export const FILES_NOTIFIEES: Record<(typeof BASE_QUEUES)[number], boolean> = {
   'hubspot-catchup': false, // traitement de fond
   'optout-poussee': false, // le refus est deja ecrit ; sa diffusion peut attendre le tour d'horloge
   'signaux-batch': false, // traitement de fond, et une rafale d'accusés en produit autant : l'espacer protège la base
+  'evenements-distribution': true, // l'application d'un client attend le message reçu (lot 12)
+  'evenements-envoi': true, // idem, et un réessai différé n'est pris qu'à son heure (`startAfter`)
 };
 
 /**

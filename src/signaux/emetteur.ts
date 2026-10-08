@@ -50,6 +50,11 @@ export interface DestinationSignaux {
   file: string;
   /** Les espaces où l'adaptateur est actif, lus à travers un cache court : jamais une requête par signal. */
   espacesActifs(): Promise<ReadonlySet<string>>;
+  /**
+   * L'espace veut-il ce signal ? Absent = tous (Batch). Les webhooks sortants s'en servent pour ne rien enfiler qu'aucune
+   * adresse n'a coché : les accusés d'une campagne, décochés par défaut, n'entrent pas dans leur file. Même cache.
+   */
+  accepte?(tenantId: string, nom: NomEvenement): Promise<boolean>;
 }
 
 export interface DepsEmetteur {
@@ -76,6 +81,7 @@ export function creerEmetteur(deps: DepsEmetteur): Emetteur {
         // en emportant les signaux valides avec lui.
         const parPriorite = new Map<number, Signal[]>();
         for (const s of signaux) {
+          if (d.accepte && !(await d.accepte(tenantId, s.nom))) continue;
           const valide = schemaSignal.safeParse(s);
           if (!valide.success) {
             deps.log?.(`signaux: ${s.nom} hors contrat pour ${tenantId}, non enfile (${valide.error.issues[0]?.message ?? 'forme'})`);
@@ -144,7 +150,7 @@ export function boutonTape(m: Pick<InboundMessage, 'type' | 'body' | 'buttonPayl
 export function signalDeLaReponse(r: { messageId: string; waId: string; bouton: string | null; le?: string }, canal: CanalSignal): Signal {
   return {
     nom: 'em_replied', id: idSignal('em_replied', r.messageId), le: r.le ?? maintenant(), waId: r.waId, canal,
-    bouton: r.bouton === null ? null : r.bouton.slice(0, 300),
+    bouton: r.bouton === null ? null : r.bouton.slice(0, 300), messageId: r.messageId,
   };
 }
 

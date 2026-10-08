@@ -2259,6 +2259,29 @@ scénario, comment importer des contacts.
   émis la nuit, et SEULEMENT quand le niveau change (le premier calcul d'une fiche compris). Sans outil
   branché, rien ne part.
 
+### Webhooks sortants : votre application reçoit les événements (Developers > Webhooks sortants)
+
+- ✅ **Une adresse HTTPS de votre application, et les événements qu'elle reçoit** (lot 12, 2026-10-08) : message
+  reçu (avec son texte), message livré, lu ou en échec, lien cliqué, désabonnement, conversation analysée, risque de
+  désengagement. Les trois accusés de livraison sont décochés par défaut : une campagne en produit jusqu'à trois par
+  destinataire. Chaque événement part en POST, signé au format Standard Webhooks (`webhook-id`, `webhook-timestamp`,
+  `webhook-signature`), avec la fiche du contact (numéro, nom, identifiant externe, désabonnements).
+- ✅ **Le secret de signature est montré une seule fois**, à la création ou au renouvellement ; l'ancien signe
+  encore 24 h après un renouvellement, le temps de mettre à jour l'application.
+- ✅ **Réessais pendant 24 h** (30 s, 2 min, 10 min, 30 min, puis toutes les heures) tant que l'adresse ne répond
+  pas 2xx en 10 secondes. Une adresse n'est jamais suspendue d'elle-même ; un `410` arrête l'événement concerné. Le
+  même identifiant d'événement (`id`) revient au réessai et au rejeu : l'application dédoublonne.
+- ✅ **Le journal de chaque adresse** : chaque envoi avec le corps envoyé, la dernière réponse, les tentatives, et
+  « Rejouer » ; « Rejouer les échecs depuis… » relance un lot. Il se garde 3 jours en Base, 30 jours en Pro et en
+  Entreprise.
+- ✅ **« Envoyer un essai »** part tout de suite, signé, et dit ce que l'application a répondu.
+- ✅ **Depuis Claude Code** : `create_webhook_endpoint` inscrit une adresse et rend son secret, `send_test_event`
+  envoie l'essai (connexion OAuth d'un admin, jamais une clé d'API).
+- ⚠️ **Limite de l'offre** : 1 adresse active en Base, 5 en Pro, sans limite en Entreprise. Au retour en Base, les
+  adresses en trop ne sont pas effacées, elles cessent de recevoir (les plus anciennes restent actives).
+- La documentation publique décrit l'enveloppe, la vérification avec un exemple Node et chaque type :
+  Developers > Documentation API, page Webhooks sortants (`/developers/api/webhooks`).
+
 ## Brancher vos systèmes : les connecteurs API (menu « Tools » > Connecteurs API)
 
 - ✅ **Une bibliothèque de systèmes pour tout le workspace** (2026-08-28), dans le menu **Tools**, à côté des

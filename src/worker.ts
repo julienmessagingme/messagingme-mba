@@ -68,6 +68,8 @@ import { PgSignauxStore } from './signaux/store.pg';
 import { completerSignal } from './signaux/completer';
 import { creerPuitsSignauxMeta, signalAnalyse } from './signaux/emetteur';
 import { FILE_SIGNAUX_BATCH, pousserVersBatch } from './signaux/batch';
+import { FILE_EVENEMENTS_DISTRIBUTION, creerTravailDistribution } from './evenements/distribution';
+import { FILE_EVENEMENTS_ENVOI, appelProduction, creerTravailEnvoi } from './evenements/envoi';
 import { creerTravailSignauxBatch } from './signaux/travail-batch';
 import { creerResolveurHttp } from './agent/resolvers/http';
 import { creerResolveurMcp } from './agent/resolvers/mcp';
@@ -112,6 +114,7 @@ import { ResendClient } from './support/resend';
 import { creerPierreTombale } from './ops/espaces-supprimes.pg';
 import { PgAbonnementsOffreStore } from './offres/abonnements-offre.pg';
 import { commissionPour } from './offres/commission';
+import { DROITS } from './offres/offres';
 
 async function main(): Promise<void> {
   // Le worker est la seule instance qui dépile, et son rôle principal la seule qui supervise : c'est lui qui récupère les
@@ -180,6 +183,7 @@ async function main(): Promise<void> {
    */
   const {
     dryRun, transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore,
+    adressesEvenements, envoisEvenements,
     inboxStore, settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages,
     poolAttentesStore, httpLatencesStore, mesuresTachesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, numeroDelieStore, opsStore,
     heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
@@ -771,6 +775,50 @@ async function main(): Promise<void> {
     log: (m) => console.warn(m),
   }), { concurrency: 2, groupConcurrency: 1 });
 
+  /**
+   * Les webhooks sortants (lot 12, livraison A), en deux étages. `evenements-distribution` reçoit les signaux d'un
+   * espace (l'émetteur n'enfile que ceux qu'une adresse a cochés), fige chaque événement et écrit une ligne d'envoi par
+   * adresse ; `evenements-envoi` fait UNE tentative par job, et reprogramme la suivante par un job différé tant que
+   * l'adresse ne répond pas 2xx (24 h). Groupées par espace : la campagne d'un client ne retarde pas les événements des
+   * autres. Plusieurs envois en vol par espace : une adresse lente (10 s au plus) n'arrête pas tout l'espace.
+   */
+  const limiteAdressesEvenements = async (t: string) => (await offres.offreDe(t)).droits.limites.adressesWebhook;
+  await queue.work(FILE_EVENEMENTS_DISTRIBUTION, creerTravailDistribution({
+    adresses: (t) => adressesEvenements.activesPourDistribution(t),
+    limiteAdresses: limiteAdressesEvenements,
+    espaceVerrouille: (t) => envoisEvenements.espaceVerrouille(t),
+    // La relecture complète : un webhook désigne la fiche par notre identifiant, pas par celui d'un outil.
+    completer: (t, s) => completerSignal(signauxStore, t, s, { contexteComplet: true }),
+    messageRecu: (t, m) => envoisEvenements.messageRecu(t, m),
+    creerEnvois: (lignes) => envoisEvenements.creer(lignes),
+    enfiler: (job, priority) => queue.enqueue(FILE_EVENEMENTS_ENVOI, job, { groupId: job.tenantId, priority }),
+  }), { concurrency: 2, groupConcurrency: 1 });
+  await queue.work(FILE_EVENEMENTS_ENVOI, creerTravailEnvoi({
+    lire: async (t, envoiId) => {
+      const e = await envoisEvenements.pourEnvoi(t, envoiId);
+      if (e === null) return null;
+      const a = await adressesEvenements.pourEnvoi(t, e.adresseId);
+      if (a === null) return null;
+      return {
+        id: e.id, tenantId: t, statut: e.statut, tentatives: e.tentatives, essaisDepuis: e.essaisDepuis, evenementId: e.evenementId,
+        type: e.type, corps: e.corps,
+        adresse: {
+          id: e.adresseId, url: a.url, active: a.active, rang: a.rang,
+          secret: decryptSecret(a.secretChiffre, config.ENCRYPTION_KEY),
+          secretPrecedent: a.secretPrecedentChiffre === null ? null : decryptSecret(a.secretPrecedentChiffre, config.ENCRYPTION_KEY),
+          secretPrecedentJusqua: a.secretPrecedentJusqua,
+        },
+      };
+    },
+    noter: (t, envoiId, tentative, maj) => envoisEvenements.noter(t, envoiId, tentative, maj),
+    enfiler: (job, startAfter) => queue.enqueue(FILE_EVENEMENTS_ENVOI, job, { groupId: job.tenantId, startAfter }),
+    espaceVerrouille: (t) => envoisEvenements.espaceVerrouille(t),
+    limiteAdresses: limiteAdressesEvenements,
+    appeler: appelProduction,
+    // eslint-disable-next-line no-console
+    log: (m) => console.warn(m),
+  }), { concurrency: 8, groupConcurrency: 4 });
+
   // File analyze-conversation : inerte tant que CONVERSATION_ANALYSIS_ENABLED != 'true' (aucun worker, aucun
   // balayage, aucun appel LLM).
   if (config.CONVERSATION_ANALYSIS_ENABLED === 'true') {
@@ -1318,6 +1366,11 @@ async function main(): Promise<void> {
     // Les verrous courts échus : ils ne tiennent plus rien, la prise suivante les reprendrait. Sans cette étape, la
     // table garderait une ligne par message de client ayant déclenché un envoi de l'agent de Meta.
     await etape('verrous', 'verrou(s) court(s) échu(s) effacé(s)', () => verrousCourts.purgerEchues());
+    // Le journal des webhooks sortants (lot 12) : la durée de l'offre de chaque espace (3 jours en Base, 30 sinon), lue
+    // dans la grille et jamais écrite ici. Une durée sans limite garde un siècle, c'est-à-dire tout.
+    const joursJournal = (o: keyof typeof DROITS): number => DROITS[o].limites.journalWebhooksJours ?? 36_500;
+    await etape('webhooks-sortants', 'envoi(s) de webhook sortant effacé(s) (durée de l’offre)',
+      () => envoisEvenements.purger({ base: joursJournal('base'), pro: joursJournal('pro'), entreprise: joursJournal('entreprise') }));
     // Les étapes sont indépendantes et chacune a déjà journalisé et alerté ; la passe lève à la fin pour que la
     // mesure de `/ops` la compte en échec au lieu d'afficher « succès, 0 ligne ».
     if (enEchec.length > 0) throw new Error(`étape(s) en échec : ${enEchec.join(', ')}`);

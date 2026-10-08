@@ -13,7 +13,7 @@ import * as catalogue from '../src/mcp/outils';
 import { VALID_API_SCOPES } from '../src/http/api-keys';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE, NumeroSuspenduError, MESSAGE_NUMERO_SUSPENDU } from '../src/meta/numero-delie';
-import { mcpAgentInerte, mcpNumeroInerte, mcpOffreInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpOffreInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { creerPoseEtiquette, LONGUEUR_MAX_ETIQUETTE } from '../src/crm/poser-etiquette';
 import { DROITS } from '../src/offres/offres';
 
@@ -112,6 +112,7 @@ function app(
     ...mcpWidgetsInertes,
     ...mcpAgentInerte,
     ...mcpNumeroInerte,
+    ...mcpEvenementsInertes,
     ...mcpOffreInerte,
     ...reste,
   };
@@ -635,6 +636,9 @@ describe('serveur MCP : cohérence du catalogue', () => {
       resubscribe_number: [false, false, true],
       // Lot 6, B2b : un choix en base, réversible tant que le Pro court ; rien chez Stripe.
       return_number_at_plan_end: [false, true, false],
+      // Lot 12 : une adresse de plus à chaque appel ; l'essai part vers l'application du client.
+      create_webhook_endpoint: [false, false, false],
+      send_test_event: [false, false, true],
     });
     // Une lecture ne touche personne hors de l'espace, à UNE exception nommée : `preview_site` va lire un site tiers.
     const lecturesEnMondeOuvert = OUTILS.filter((x) => x.annotations.readOnlyHint && x.annotations.openWorldHint).map((o) => o.nom);

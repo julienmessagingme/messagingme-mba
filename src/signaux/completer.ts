@@ -52,19 +52,26 @@ async function ficheDu(l: LecturesSignal, tenantId: string, s: Signal): Promise<
 /** Ce qu'un accusé porte quand son message n'a pas été relu : ni origine, ni envoi. */
 const SANS_CONTEXTE = { origine: null, sendId: null } as const;
 
-export async function completerSignal(l: LecturesSignal, tenantId: string, s: Signal): Promise<SignalComplet | null> {
+/**
+ * `contexteComplet` : relire le contexte d'un message et le lien d'un clic même pour une fiche sans identifiant
+ * externe. Les webhooks sortants le demandent : ils désignent une fiche par son identifiant à nous, pas par celui
+ * d'un outil, donc la règle de Batch (`identifiantPoussable`) n'a pas à les amputer.
+ */
+export async function completerSignal(
+  l: LecturesSignal, tenantId: string, s: Signal, opts: { contexteComplet?: boolean } = {},
+): Promise<SignalComplet | null> {
   const fiche = await ficheDu(l, tenantId, s);
   if (fiche === null) return null;
   // Une fiche sans identifiant externe sera seulement comptée : on ne relit pas pour elle le contexte d'un message
   // (un accusé de campagne en produit des milliers) ni le lien d'un clic. L'analyse se relit quand même : son
   // absence veut dire « plus rien à pousser ». Règle d'identité lue en dur, cf. l'en-tête du fichier.
-  const poussable = identifiantPoussable(fiche) !== null;
+  const poussable = opts.contexteComplet === true || identifiantPoussable(fiche) !== null;
   const base = {
     id: s.id,
     le: s.le,
     contact: {
-      contactId: fiche.contactId, externalId: fiche.externalId, optOutWhatsapp: fiche.optOutWhatsapp, optOutRcs: fiche.optOutRcs,
-      derniereAnalyse: fiche.derniereAnalyse,
+      contactId: fiche.contactId, telephone: fiche.telephone, nom: fiche.nom, externalId: fiche.externalId,
+      optOutWhatsapp: fiche.optOutWhatsapp, optOutRcs: fiche.optOutRcs, derniereAnalyse: fiche.derniereAnalyse,
     },
   };
   switch (s.nom) {

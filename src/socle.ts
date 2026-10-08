@@ -8,6 +8,9 @@ import { PgCampaignRepo, PgRecipientStore } from './campaign/store.pg';
 import { PgIntegrationBatchStore } from './signaux/integration-batch.pg';
 import { creerEmetteur, annoncerAussiAuxSignaux, DUREE_CACHE_ESPACES_ACTIFS_MS } from './signaux/emetteur';
 import { FILE_SIGNAUX_BATCH } from './signaux/batch';
+import { PgAdressesEvenementsStore, PgEnvoisEvenementsStore } from './evenements/store.pg';
+import { FILE_EVENEMENTS_DISTRIBUTION } from './evenements/distribution';
+import { TYPE_DU_SIGNAL } from './evenements/types';
 import { creerAnnonceOptOut, FILE_POUSSEE_OPTOUT } from './crm/poussee-optout';
 import { PgContactStore } from './crm/contact-store.pg';
 import { PgUserFieldStore } from './crm/field-store.pg';
@@ -138,8 +141,24 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
    */
   const integrationBatch = new PgIntegrationBatchStore(pool);
   const espacesBatch = cacheCourt<ReadonlySet<string>>(DUREE_CACHE_ESPACES_ACTIFS_MS);
+  /**
+   * Les webhooks sortants (lot 12) : une destination de plus, qui ne reçoit que les signaux qu'une adresse ACTIVE de
+   * l'espace a cochés (les accusés d'une campagne, décochés par défaut, n'entrent pas dans sa file). Même cache court ;
+   * l'API l'invalide à chaque écriture d'une adresse (d'où `espacesEvenements` rendu).
+   */
+  const adressesEvenements = new PgAdressesEvenementsStore(pool);
+  const envoisEvenements = new PgEnvoisEvenementsStore(pool);
+  const espacesEvenements = cacheCourt<Map<string, Set<string>>>(DUREE_CACHE_ESPACES_ACTIFS_MS);
+  const typesEcoutes = () => espacesEvenements.lire('actifs', () => adressesEvenements.espacesEtTypes());
   const emetteur = creerEmetteur({
-    destinations: [{ file: FILE_SIGNAUX_BATCH, espacesActifs: () => espacesBatch.lire('actifs', () => integrationBatch.espacesActifs()) }],
+    destinations: [
+      { file: FILE_SIGNAUX_BATCH, espacesActifs: () => espacesBatch.lire('actifs', () => integrationBatch.espacesActifs()) },
+      {
+        file: FILE_EVENEMENTS_DISTRIBUTION,
+        espacesActifs: async () => new Set((await typesEcoutes()).keys()),
+        accepte: async (tenantId, nom) => (await typesEcoutes()).get(tenantId)?.has(TYPE_DU_SIGNAL[nom]) ?? false,
+      },
+    ],
     queue,
     // eslint-disable-next-line no-console
     log: (m) => console.warn(m),
@@ -446,6 +465,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
 
   return {
     clesGateway, dryRun, transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore,
+    adressesEvenements, envoisEvenements, espacesEvenements,
     inboxStore, settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages,
     poolAttentesStore, httpLatencesStore, mesuresTachesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore,
     workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels,

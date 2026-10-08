@@ -13,7 +13,7 @@ const REPONSE = signalDeLaReponse({ messageId: 'wamid.in1', waId: '33612345678',
 const JOB = { tenantId: T, signaux: [REPONSE] };
 
 function complet(s: Signal, externalId: string | null = 'crm-7781'): SignalComplet {
-  const contact = { contactId: C, externalId, optOutWhatsapp: false, optOutRcs: false, derniereAnalyse: null };
+  const contact = { contactId: C, telephone: '+33611111111', nom: null, externalId, optOutWhatsapp: false, optOutRcs: false, derniereAnalyse: null };
   if (s.nom === 'em_conversation_analyzed') {
     return { id: s.id, le: s.le, contact, contenu: { nom: s.nom, analyse: {
       intent: 'sav', sentiment: 'neutre', satisfaction: 5, urgence: 1, resolved: true, topic: 't',

@@ -16,7 +16,7 @@ import { lienWaMe } from '../src/lib/wa-me';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { jamaisDesabonne } from './consentement';
-import { mcpAgentInerte, mcpNumeroInerte, mcpOffreInerte, mcpInerte } from './routes-inertes';
+import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpOffreInerte, mcpInerte } from './routes-inertes';
 import { bornesDesChamps, champsDe, muettes as bornesMuettes } from './aide/bornes-zod';
 import { offresToutOuvert } from './gardes';
 
@@ -127,6 +127,7 @@ function monter(o: { widgets?: WidgetRow[]; liens?: string[]; scenarios?: Array<
     },
     ...mcpAgentInerte,
     ...mcpNumeroInerte,
+    ...mcpEvenementsInertes,
     ...mcpOffreInerte,
   };
   const keys = new FakeApiKeys()

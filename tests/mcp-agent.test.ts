@@ -9,6 +9,7 @@ import type { AccesOauthResolu, AccesOauthLookup } from '../src/oauth/store.pg';
 import type { EmailIdentity, UserAuthStore } from '../src/auth/store';
 import { OUTILS, type CablageMcp } from '../src/mcp/outils';
 import { OUTILS_NUMERO } from '../src/mcp/outils-numero';
+import { OUTILS_EVENEMENTS } from '../src/mcp/outils-evenements';
 import type { DepsAgentMcp } from '../src/mcp/outils-agent';
 import { MESSAGE_OPERATIONS_LOURDES } from '../src/auth/plafond-partage';
 import type { AgentComplet, AgentResume, PatchAgent } from '../src/agent/agent-store';
@@ -35,7 +36,7 @@ import { cleApiDeTest } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { bornesDesChamps, bornesZod, champsDe, muettes, type Borne } from './aide/bornes-zod';
 import { jamaisDesabonne } from './consentement';
-import { mcpNumeroInerte, mcpOffreInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpNumeroInerte, mcpEvenementsInertes, mcpOffreInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { SANS_MCP } from './outils-mcp';
 import { AUCUN_GESTE, GESTE_MUET } from './gestes';
 import { offresToutOuvert } from './gardes';
@@ -350,6 +351,7 @@ function monter(o: Options = {}) {
 
   const mcp: CablageMcp = {
     ...mcpNumeroInerte,
+    ...mcpEvenementsInertes,
     ...mcpOffreInerte,
     estDesabonne: jamaisDesabonne,
     inbox: {
@@ -402,8 +404,11 @@ async function lister(server: Serveur, bearer: string): Promise<string[]> {
   return res.json<{ result: { tools: Array<{ name: string }> } }>().result.tools.map((t) => t.name).sort();
 }
 
-/** Les outils de la connexion du numéro (lot 3c) exigent aussi une personne : ils ont leur fichier, `tests/mcp-numero.test.ts`. */
-const OUTILS_DU_NUMERO = new Set(OUTILS_NUMERO.map((o) => o.nom));
+/**
+ * Les outils de la connexion du numéro (lot 3c) et des webhooks sortants (lot 12) exigent aussi une personne : ils ont
+ * leur fichier, `tests/mcp-numero.test.ts` et `tests/mcp-evenements.test.ts`.
+ */
+const OUTILS_DU_NUMERO = new Set([...OUTILS_NUMERO, ...OUTILS_EVENEMENTS].map((o) => o.nom));
 const EXIGENT_PERSONNE = OUTILS.filter((o) => o.exigePersonne === true && !OUTILS_DU_NUMERO.has(o.nom)).map((o) => o.nom);
 
 /** Des arguments valides pour chaque outil de l'agent : ce qu'un appel qui passerait la garde ferait. */

@@ -78,7 +78,7 @@ describe.skipIf(!url)('signaux : lectures et réglage (Postgres)', () => {
 
   it('la fiche se retrouve par wa_id, avec son identifiant externe et son consentement', async () => {
     expect(await lectures.ficheParWaId(tenantId, '33600000881')).toEqual({
-      contactId, externalId: 'crm-itest-1', optOutWhatsapp: true, optOutRcs: false, optInSource: 'whatsapp_stop',
+      contactId, telephone: '+33600000881', nom: null, externalId: 'crm-itest-1', optOutWhatsapp: true, optOutRcs: false, optInSource: 'whatsapp_stop',
       derniereAnalyse: null,
     });
     expect((await lectures.ficheParId(tenantId, contactId))?.externalId).toBe('crm-itest-1');

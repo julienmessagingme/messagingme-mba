@@ -5,6 +5,21 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-08 : les webhooks sortants (lot 12, livraison A), écrits
+
+Spec et plan du jour (`docs/superpowers/specs/2026-10-08-webhooks-sortants-design.md`), décisions de Julien en deux
+rondes : les huit signaux en noms pointés, plus `message.received` avec le texte et l'événement d'essai ; données
+personnelles incluses ; réessais 24 h sur toute erreur, adresse jamais suspendue ; console plus deux outils MCP.
+
+Ce que la lecture de l'existant a décidé : le bus des signaux (`creerEmetteur`) existait et branchait déjà huit
+sources ; les webhooks y sont une destination de plus, avec un filtre par type (`accepte`) pour que les accusés d'une
+campagne, décochés par défaut, n'entrent même pas dans la file. Trois pièges évités en écrivant : le corps figé en
+`text` et pas en `jsonb` (qui réordonne les clés sous la signature), l'essai suivant enfilé AVANT d'être écrit (sinon
+un arrêt laisse un envoi en cours que rien ne relance), et `fetchPublic` câblé dans le module d'envoi lui-même plutôt
+que passé par l'appelant (inventaire de `lib-adresse-privee` à six). Le mot « webhook » désigne déjà l'entrée dans le
+code : tout s'appelle « événements », seul l'écran dit « Webhooks sortants ». La signature reproduit le vecteur de test
+publié par Standard Webhooks.
+
 ## 2026-10-08 : le tunnel de la Base (lot 19), écrit
 
 Un espace qui naît (mot de passe ou Google) ne tombe plus sur l'accueil : la page du numéro, sautable (« Plus tard »),

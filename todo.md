@@ -1,5 +1,16 @@
 # todo.md : backlog
 
+## 🟡 Lot 12, les webhooks sortants : ce que la relecture de la livraison A laisse (2026-10-08)
+
+- **Aucun plafond technique en Entreprise** : « sans limite » (décision de Julien) laisse un admin créer autant
+  d'adresses qu'il veut, et chaque message entrant fait une ligne et un job par adresse. Un plafond dur (25 ou 50),
+  invisible de l'offre, protégerait le worker partagé. À trancher avec Julien.
+- **Une session OAuth d'admin dans Claude Code peut créer une adresse sur l'injection d'un message client** lu par
+  `get_conversation` : `exigePersonne` écarte les clés d'API, pas cette session. Atténuation proposée : l'outil crée
+  l'adresse en pause, l'admin l'active dans la console (au prix d'un clic dans le tunnel). À trancher avec Julien.
+- **`conversation.analyzed` garde un identifiant aléatoire** (`signalAnalyse`), alors que la spec annonçait
+  `conversation:analyzedAt` : un rejeu de la distribution renverrait l'analyse sous un autre `id`.
+
 ## 🟡 Lot 19, le tunnel de la Base : ce qui reste (2026-10-08)
 
 - **La documentation de l'API ne se lit pas sans JavaScript.** Le prompt de `/demarrer` (et `site/llms.txt`) pointe

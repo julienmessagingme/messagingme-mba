@@ -22,6 +22,11 @@ export const ACTIONS_JOURNAL: Record<string, [string, string]> = {
   'integration.branchee': ['Outil branché sur les signaux', 'Tool connected to signals'],
   'integration.modifiee': ['Réglage d’un outil modifié', 'Tool settings changed'],
   'integration.debranchee': ['Outil débranché', 'Tool disconnected'],
+  // Les webhooks sortants (lot 12) : le détail porte l'adresse et les types, jamais le secret.
+  'evenements.adresse_creee': ['Webhook sortant créé', 'Outgoing webhook created'],
+  'evenements.adresse_modifiee': ['Webhook sortant modifié', 'Outgoing webhook changed'],
+  'evenements.adresse_supprimee': ['Webhook sortant supprimé', 'Outgoing webhook deleted'],
+  'evenements.secret_tourne': ['Secret d’un webhook sortant renouvelé', 'Outgoing webhook secret rotated'],
   // L'app Salesforce (plan du 2026-09-26) : ces libellés NOMMENT l'outil, décision de Julien du 2026-09-26.
   'salesforce.allumee': ['Salesforce allumé pour l’espace', 'Salesforce turned on for the workspace'],
   'salesforce.eteinte': ['Salesforce éteint pour l’espace', 'Salesforce turned off for the workspace'],

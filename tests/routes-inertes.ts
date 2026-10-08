@@ -620,3 +620,33 @@ export const stripeProInerte: StripeWebhookRouteDeps['pro'] = {
   surPassageEnPro: neDevraitPasEtreAppelee('stripe.pro.surPassageEnPro'),
   surFinDuPro: neDevraitPasEtreAppelee('stripe.pro.surFinDuPro'),
 };
+
+/**
+ * Les webhooks sortants du MCP (lot 12), pour les montages qui n'en parlent pas : toute ÉCRITURE lève, et les lectures
+ * rendent un espace sans adresse.
+ */
+export const mcpEvenementsInertes: Pick<DepsMcp, 'evenements'> = {
+  evenements: {
+    gestion: {
+      adresses: {
+        lister: async () => [], lire: async () => null, existe: async () => false, compterActives: async () => 0,
+        creer: neDevraitPasEtreAppelee('evenements.creer'), modifier: neDevraitPasEtreAppelee('evenements.modifier'),
+        tourner: neDevraitPasEtreAppelee('evenements.tourner'), supprimer: neDevraitPasEtreAppelee('evenements.supprimer'),
+        pourEnvoi: async () => null,
+      },
+      envois: {
+        noterEssai: neDevraitPasEtreAppelee('evenements.noterEssai'), journal: async () => [],
+        rejouer: async () => null, rejouerEchecs: async () => [],
+      },
+      limiteAdresses: async () => null,
+      chiffrementPret: true,
+      chiffrer: neDevraitPasEtreAppelee('evenements.chiffrer'),
+      dechiffrer: neDevraitPasEtreAppelee('evenements.dechiffrer'),
+      verifierAdresse: async () => ({ ok: true }),
+      appeler: neDevraitPasEtreAppelee('evenements.appeler'),
+      enfiler: neDevraitPasEtreAppelee('evenements.enfiler'),
+      invaliderCache: () => {},
+    },
+    audit: async () => {},
+  },
+};

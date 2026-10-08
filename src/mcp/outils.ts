@@ -15,6 +15,7 @@ import type { WorkflowResumeRow } from '../workflow/store.pg';
 import type { PlafondPartage } from '../auth/plafond-partage';
 import { RefusOutil, entierBorne, texteObligatoire, valeurOuRefus } from './saisie';
 import { OUTILS_AGENT, type DepsAgentMcp } from './outils-agent';
+import { OUTILS_EVENEMENTS, type DepsEvenementsMcp } from './outils-evenements';
 import { OUTILS_NUMERO, type DepsNumeroMcp } from './outils-numero';
 import type { VueOffre } from '../offres/vue';
 import type { SourceOffres } from '../offres/offre.pg';
@@ -78,6 +79,8 @@ export interface DepsMcp extends DepsRepondre {
   agentIa: DepsAgentMcp;
   /** La connexion du numéro depuis Claude Code (lot 3c) : le lien signé et l'état, la MÊME lecture que la page. */
   numero: DepsNumeroMcp;
+  /** Les webhooks sortants (lot 12) : la MÊME gestion que la route de la console (`src/index.ts`), et son audit. */
+  evenements: DepsEvenementsMcp;
   /** L'offre de l'espace (lot 6) : la MÊME vue que la console (`GET /tenants/:tenantId/offre`), pour `get_plan`. */
   offre: { vue(tenantId: string): Promise<VueOffre> };
   /**
@@ -722,6 +725,8 @@ export const OUTILS: OutilMcp[] = [
   ...OUTILS_AGENT,
   // La connexion du numéro depuis Claude Code (lot 3c) : leur fichier, `src/mcp/outils-numero.ts`.
   ...OUTILS_NUMERO,
+  // Les webhooks sortants (lot 12) : leur fichier, `src/mcp/outils-evenements.ts`.
+  ...OUTILS_EVENEMENTS,
 ];
 
 /**

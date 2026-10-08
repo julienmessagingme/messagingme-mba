@@ -156,7 +156,13 @@ export const schemaSignal = z.discriminatedUnion('nom', [
     motif: z.string().max(500).nullable(),
     codeMeta: z.number().int().nullable(),
   }).strict(),
-  z.object({ nom: z.literal('em_replied'), id, le, waId, canal, bouton: z.string().max(300).nullable() }).strict(),
+  /**
+   * `messageId` : le message du contact, pour que les webhooks sortants y relisent son texte (`message.received`).
+   * Facultatif : un job enfilé avant lui se relit encore, et Batch ne s'en sert pas.
+   */
+  z.object({
+    nom: z.literal('em_replied'), id, le, waId, canal, bouton: z.string().max(300).nullable(), messageId: messageId.optional(),
+  }).strict(),
   z.object({ nom: z.literal('em_link_clicked'), id, le, contactId: z.string().uuid(), lien: z.string().min(1).max(64) }).strict(),
   /**
    * Ici, `canal` dit quel consentement l'écriture a retiré (`whatsapp` pour `opt_in_status`, `rcs` pour
@@ -188,6 +194,13 @@ export type JobSignaux = z.infer<typeof schemaJobSignaux>;
 /** La fiche d'un signal, telle qu'un adaptateur la voit : identifiants et consentement courant. */
 export interface ContactDuSignal {
   contactId: string;
+  /**
+   * Le numéro en E.164 et le nom de profil, relus avec la fiche. Batch ne s'en sert pas (il désigne une fiche par
+   * `externalId`) ; les webhooks sortants les portent (décision de Julien du 2026-10-08 : données personnelles
+   * incluses). `null` = inconnu (un contact connu seulement par son BSUID n'a pas de numéro).
+   */
+  telephone: string | null;
+  nom: string | null;
   /** L'identifiant de l'outil du client (`contacts.external_id`). `null` = la fiche ne peut pas être poussée. */
   externalId: string | null;
   optOutWhatsapp: boolean;

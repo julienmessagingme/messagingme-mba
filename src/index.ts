@@ -132,7 +132,10 @@ import { TokenInvalidError } from './meta/credentials';
 import { lireMediaRecu } from './inbox/media-entrant';
 import type { DepsRepondre } from './inbox/repondre';
 import { assurerCleGateway, creerAssureurDeCle, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
-import { encryptSecret } from './crypto/secretbox';
+import { decryptSecret, encryptSecret } from './crypto/secretbox';
+import { resolutionPublique } from './lib/adresse-privee';
+import { FILE_EVENEMENTS_ENVOI, appelProduction } from './evenements/envoi';
+import type { DepsGestionEvenements } from './evenements/gestion';
 import { PasDeConnexionPub, ConnexionPubIncomplete } from './http/pubs';
 import { creerConnexionPub } from './pubs/connexion';
 import { PgBrouillonsPubStore } from './pubs/brouillons.pg';
@@ -213,6 +216,7 @@ async function main(): Promise<void> {
    */
   const {
     transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore, inboxStore,
+    adressesEvenements, envoisEvenements, espacesEvenements,
     settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages, poolAttentesStore,
     httpLatencesStore, mesuresTachesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore, workflowStore,
     automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels, credits,
@@ -220,6 +224,31 @@ async function main(): Promise<void> {
     numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, publicites,
     clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, offres, quotaModeles,
   } = construireSocle({ pool, queue, config });
+
+  /**
+   * Les webhooks sortants (lot 12) : UNE gestion, partagée par la route de la console et les outils MCP. Le secret est
+   * chiffré ici (jamais stocké en clair), l'essai part par les mêmes gardes que le worker (`fetchPublic`), et chaque
+   * écriture d'une adresse invalide le cache de l'émetteur de l'API : elle reçoit aussitôt ce que l'API émet.
+   */
+  const gestionEvenements: DepsGestionEvenements = {
+    adresses: adressesEvenements,
+    envois: envoisEvenements,
+    limiteAdresses: async (tenant) => (await offres.offreDe(tenant)).droits.limites.adressesWebhook,
+    chiffrementPret: (() => {
+      try {
+        encryptSecret('sonde', config.ENCRYPTION_KEY);
+        return true;
+      } catch {
+        return false;
+      }
+    })(),
+    chiffrer: (clair) => encryptSecret(clair, config.ENCRYPTION_KEY),
+    dechiffrer: (chiffre) => decryptSecret(chiffre, config.ENCRYPTION_KEY),
+    verifierAdresse: (url) => resolutionPublique(url),
+    appeler: appelProduction,
+    enfiler: (job) => queue.enqueue(FILE_EVENEMENTS_ENVOI, job, { groupId: job.tenantId, priority: 1 }),
+    invaliderCache: () => espacesEvenements.invalider('actifs'),
+  };
 
   const campaignDraftStore = new PgCampaignDraftStore(pool);
   const contactHistoryStore = new PgContactHistoryStore(pool);
@@ -2073,6 +2102,8 @@ async function main(): Promise<void> {
     email: { accounts: emailAccounts, templates: emailTemplates, resolver: emailResolver },
     // 🔴 Paramètres > Intégrations > Batch : les clés sont chiffrées ici, jamais stockées en clair. Le cache
     // de l'émetteur de l'API est invalidé à chaque changement : brancher ou débrancher prend effet aussitôt.
+    // Développeurs > Webhooks sortants (lot 12) : la gestion partagée avec les outils MCP.
+    evenements: { gestion: gestionEvenements, audit: auditSink },
     integrationBatch: {
       batch: integrationBatch,
       // Mesuré avec la vraie fonction de chiffrement, pas une copie de sa règle : c'est exactement ce
@@ -2208,10 +2239,6 @@ async function main(): Promise<void> {
           profileName: null,
           field: 'messages',
         }, 'rcs');
-        // 2 ter. La réponse comme signal : le bouton tapé seulement, jamais le texte.
-        await emetteur.emettreSignal(tenant, signalDeLaReponse({
-          messageId: mo.messageId, waId: mo.from, bouton: mo.kind === 'suggestion' ? mo.text : null,
-        }, 'rcs'));
         // 2 bis. La fiche contact et les automations, comme sur le chemin Meta : sans elles, un client qui
         //    écrit DEVIS en RCS ne déclencherait rien, et le STOP ci-dessus ne trouverait pas de fiche.
         //    Le canal part dans l'événement : sans lui, le runner croirait la fenêtre de service WhatsApp
@@ -2227,6 +2254,12 @@ async function main(): Promise<void> {
           // eslint-disable-next-line no-console
           console.error('automations RCS ignorées:', messageDe(err));
         }
+        // 2 ter. La réponse comme signal, APRÈS la fiche (comme sur le chemin WhatsApp) : émis avant, le premier message
+        //    d'un contact neuf partait vers une fiche pas encore écrite, et la distribution des webhooks sortants
+        //    l'abandonnait (relecture du lot 12). Le bouton tapé seulement ; le texte, les webhooks le relisent.
+        await emetteur.emettreSignal(tenant, signalDeLaReponse({
+          messageId: mo.messageId, waId: mo.from, bouton: mo.kind === 'suggestion' ? mo.text : null,
+        }, 'rcs'));
         // 3. Le parcours. Un bouton tapé porte `btn:<i>` (cf. `normaliserPostbacks`) et choisit sa branche ;
         //    une réponse écrite suit la sortie « envoyé ». Isolé : un scénario qui casse ne doit pas faire
         //    rejouer six fois un rappel dont l'inbox et l'opt-out sont déjà enregistrés.
@@ -2706,6 +2739,8 @@ async function main(): Promise<void> {
         // Les widgets de l'écran, le MÊME objet : un outil MCP n'est qu'un second appelant de leur gestion.
         widgets: widgetsDeLaConsole,
         scenarios: workflowStore,
+        // Les webhooks sortants : la MÊME gestion que la route, et le même audit.
+        evenements: { gestion: gestionEvenements, audit: auditSink },
         // L'agent IA et le crédit : les MÊMES objets que leurs routes. Seul le journal des suppressions de
         // connaissance change, pour signer l'origine `mcp`.
         agentIa: {

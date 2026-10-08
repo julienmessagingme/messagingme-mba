@@ -446,6 +446,7 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
       { key: 'api-docs', href: '/developers/api', label: t('Documentation API', 'API documentation') },
       { key: 'api-keys', href: '/developers/keys', label: t('Clés d\'API', 'API keys') },
       { key: 'mcp', href: '/developers/mcp', label: t('Serveur MCP', 'MCP server') },
+      { key: 'webhooks-sortants', href: '/developers/evenements', label: t('Webhooks sortants', 'Outgoing webhooks') },
     ] },
   ];
   /**

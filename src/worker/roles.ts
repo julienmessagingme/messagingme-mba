@@ -47,6 +47,9 @@ export const FILES_PAR_ROLE: Record<NomDeFile, Appartenance> = {
   'agent-turn': 'principal',
   'optout-poussee': 'principal',
   'signaux-batch': 'principal',
+  // Les webhooks sortants (lot 12) : l'application d'un client attend derrière.
+  'evenements-distribution': 'principal',
+  'evenements-envoi': 'principal',
   // L'analyse et ce qu'elle alimente : personne n'attend derrière, et c'est ce qui appelle les modèles.
   'analyze-conversation': 'analyse',
   'push-analysis': 'analyse',
