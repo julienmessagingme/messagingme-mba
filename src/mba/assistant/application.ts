@@ -1,7 +1,7 @@
 import { estSuppression, type Operation } from './proposition';
 import type { LigneHistorique } from '../../reglages/historique';
 import { messageDe, texteDe } from '../../lib/erreur';
-import { ecrireRollout } from '../client';
+import { ecrireRollout, type Skill } from '../client';
 import {
   ID_MESSAGE_RE, validerCreation, validerModification,
   type CreationMessageInteractif, type MessageInteractif, type ModificationMessageInteractif,
@@ -45,9 +45,13 @@ export interface ClientMbaEcriture {
   createFaq(p: string, faq: unknown): Promise<unknown>;
   updateFaq(p: string, id: string, faq: unknown): Promise<unknown>;
   deleteFaq(p: string, id: string): Promise<void>;
-  listSkills(p: string, agentId: string): Promise<Array<{ id?: string; name?: string; instruction?: string }>>;
-  createSkill(p: string, agentId: string, s: unknown): Promise<unknown>;
-  updateSkill(p: string, id: string, s: unknown): Promise<unknown>;
+  /**
+   * 🔴 Le corps est `Skill`, pas `unknown` : typé `unknown`, il a laissé partir `{ name, instruction }` jusqu'au
+   * 2026-10-08, que Meta refusait à la création et ignorait à la modification. Le compilateur garde la forme.
+   */
+  listSkills(p: string, agentId: string): Promise<Skill[]>;
+  createSkill(p: string, agentId: string, s: Skill): Promise<unknown>;
+  updateSkill(p: string, id: string, s: Skill): Promise<unknown>;
   deleteSkill(p: string, id: string): Promise<void>;
   listWebsites(p: string): Promise<Array<{ id?: string; url?: string }>>;
   createWebsite(p: string, url: string): Promise<unknown>;
@@ -98,8 +102,8 @@ export function libelleDe(o: Operation): string {
     case 'faq.ajouter': return `FAQ : ${o.question}`;
     case 'faq.modifier': return `FAQ : ${o.question}`;
     case 'faq.supprimer': return `FAQ : ${o.libelle}`;
-    case 'competence.ajouter': return `Consigne : ${o.nom}`;
-    case 'competence.modifier': return `Consigne : ${o.nom}`;
+    case 'competence.ajouter': return `Consigne : ${o.titre}`;
+    case 'competence.modifier': return `Consigne : ${o.titre}`;
     case 'competence.supprimer': return `Consigne : ${o.libelle}`;
     case 'message_interactif.ajouter': return `Message interactif : ${o.titre}`;
     case 'message_interactif.modifier': return `Message interactif : ${o.titre}`;
@@ -239,8 +243,8 @@ async function executer(
     case 'faq.ajouter': await client.createFaq(numero, { question: o.question, answer: o.reponse }); return;
     case 'faq.modifier': await client.updateFaq(numero, o.cible, { question: o.question, answer: o.reponse }); return;
     case 'faq.supprimer': await client.deleteFaq(numero, o.cible); return;
-    case 'competence.ajouter': await client.createSkill(numero, agentId, { name: o.nom, instruction: o.instruction }); return;
-    case 'competence.modifier': await client.updateSkill(numero, o.cible, { name: o.nom, instruction: o.instruction }); return;
+    case 'competence.ajouter': await client.createSkill(numero, agentId, versSkill(o)); return;
+    case 'competence.modifier': await client.updateSkill(numero, o.cible, versSkill(o)); return;
     case 'competence.supprimer': await client.deleteSkill(numero, o.cible); return;
     case 'site.ajouter': await client.createWebsite(numero, o.url); return;
     case 'site.supprimer': await client.deleteWebsite(numero, o.cible); return;
@@ -282,6 +286,11 @@ async function executer(
     }
     default: throw new Error('operation inconnue');
   }
+}
+
+/** Une consigne dans la forme de Meta : le titre, le QUAND (`description`) et le corps (`skill`). */
+function versSkill(o: { titre: string; quand: string; instruction: string }): Skill {
+  return { title: o.titre, description: o.quand, skill: o.instruction };
 }
 
 /**

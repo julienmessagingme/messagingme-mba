@@ -24,7 +24,7 @@ export interface InventaireMba {
   resume: {
     description: string;
     faqs: string[];
-    competences: Array<{ nom: string; etat: string }>;
+    competences: Array<{ id: string; titre: string; etat: string }>;
     sites: Array<{ url: string; pages: number }>;
     fichiers: string[];
     enService: boolean;
@@ -104,12 +104,14 @@ function etatEnTexte(inv: InventaireMba): string {
   r.faqs.slice(0, 40).forEach((f) => l.push(`  - ${f}`));
   if (r.faqs.length > 40) l.push(`  (… ${r.faqs.length - 40} autres non listées)`);
   l.push(`Consignes (${r.competences.length}) :`);
-  r.competences.slice(0, 20).forEach((c) => l.push(`  - ${c.nom} [${c.etat}]`));
+  r.competences.slice(0, 20).forEach((c) => l.push(`  - ${c.titre} [${c.etat}] (cible : ${c.id})`));
+  if (r.competences.length > 20) l.push(`  (… ${r.competences.length - 20} autres non listées)`);
   l.push(`Sites (${r.sites.length}) :`);
   r.sites.forEach((s) => l.push(`  - ${s.url} (${s.pages} page(s) lue(s) par Meta)`));
   l.push(`Documents (${r.fichiers.length}) :`);
   r.fichiers.slice(0, 20).forEach((f) => l.push(`  - ${f}`));
-  // Les identifiants sont donnés ici, et seulement ici : modifier, supprimer ou désigner un formulaire les exige.
+  // Les identifiants sont donnés ici et pour les consignes, et seulement là : modifier, supprimer ou désigner un
+  // formulaire les exige.
   if (r.messagesInteractifs === null) l.push('Messages interactifs : (lecture impossible)');
   else {
     l.push(`Messages interactifs (${r.messagesInteractifs.length}) :`);

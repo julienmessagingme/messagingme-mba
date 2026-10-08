@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { calculerCompletion, type EntreeCompletion } from '../src/mba/completion';
 import { construireMessagesMba, type InventaireMba } from '../src/mba/assistant/conversation';
+import { lireInventaireMba } from '../src/mba/assistant/inventaire';
 
 /**
  * LE MANDAT DE L'ASSISTANT DU MBA.
@@ -127,7 +128,7 @@ describe('la conduite de l’entretien', () => {
 describe('ce que l’assistant voit des messages interactifs (lot du 2026-10-07)', () => {
   it('les messages interactifs avec leur identifiant, et les formulaires publiés désignables', () => {
     const texte = systeme(inventaire({
-      competences: [{ nom: 'politique-retour', etat: 'active' }],
+      competences: [{ id: 'pfbid0s1', titre: 'politique-retour', etat: 'active' }],
       messagesInteractifs: [{ id: 'pfbid0m1', titre: 'boutons-rdv', type: 'interactive_reply_buttons', actif: true }],
       formulairesPublies: [{ id: '3234400576763440', nom: 'Demande de contact' }],
     }));
@@ -147,5 +148,27 @@ describe('la liste des messages interactifs est bornée, et le dit', () => {
   it('au-delà de 30, le texte annonce combien ne sont pas listés', () => {
     const messages = Array.from({ length: 33 }, (_, i) => ({ id: `m${i}`, titre: `m-${i}`, type: 'cta_url', actif: true }));
     expect(systeme(inventaire({ messagesInteractifs: messages }))).toContain('(… 3 autres non listés)');
+  });
+});
+
+/**
+ * 🔴 CE QUE L'ASSISTANT VOIT DES CONSIGNES. Jusqu'au 2026-10-08, l'inventaire lisait `name`, champ qu'une consigne de
+ * Meta n'a pas : le modèle voyait « Consignes (4) » et quatre lignes vides, sans identifiant, donc il ne pouvait ni
+ * en modifier ni en supprimer une. Le chemin complet est exercé : la réponse de Meta, l'inventaire, le prompt.
+ */
+describe('ce que l’assistant voit des consignes (corrigé le 2026-10-08)', () => {
+  it('🔴 le titre et la cible de chaque consigne, lus dans la forme de Meta', async () => {
+    const client = {
+      getSettings: async () => ({}),
+      getBusinessInfo: async () => ({}),
+      listFaqs: async () => [],
+      listSkills: async () => [{ id: 'pfbid0s1', title: 'politique-de-retour', description: 'Quand…', skill: '…', status: 'active' }],
+      listWebsites: async () => [],
+      listFiles: async () => [],
+      listMessagesInteractifs: async () => [],
+    };
+    const inv = await lireInventaireMba(client, '123', 'ag1', async () => []);
+    expect(inv.resume.competences).toEqual([{ id: 'pfbid0s1', titre: 'politique-de-retour', etat: 'active' }]);
+    expect(systeme(inv)).toContain('politique-de-retour [active] (cible : pfbid0s1)');
   });
 });

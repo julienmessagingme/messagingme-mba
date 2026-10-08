@@ -140,8 +140,8 @@ describe('les messages interactifs (lot du 2026-10-07)', () => {
     if (r.success) expect(r.data.operations[0]).not.toHaveProperty('composant');
   });
 
-  it('⚠️ un entretien d’avant ce lot se relit à l’identique : les opérations competence.* gardent leur nom', () => {
-    expect(ok([{ type: 'competence.ajouter', nom: 'RDV', instruction: 'Prendre un rendez-vous' }]).success).toBe(true);
+  it('⚠️ les opérations gardent leur nom competence.*, et la suppression sa forme', () => {
+    expect(ok([{ type: 'competence.ajouter', titre: 'rdv', quand: 'Quand le client veut un rendez-vous', instruction: 'Prendre un rendez-vous' }]).success).toBe(true);
     expect(ok([{ type: 'competence.supprimer', cible: 's1', libelle: 'RDV' }]).success).toBe(true);
   });
 
@@ -150,5 +150,31 @@ describe('les messages interactifs (lot du 2026-10-07)', () => {
       { type: 'message_interactif.supprimer', cible: 'm1', libelle: 'a' },
       { type: 'faq.supprimer', cible: 'f1', libelle: 'b' },
     ]).success).toBe(false);
+  });
+});
+
+describe('les consignes (corrigé le 2026-10-08)', () => {
+  const consigne = { type: 'competence.ajouter', titre: 'politique-de-retour', quand: 'Quand le client parle d’un retour', instruction: 'Rappeler le délai de 30 jours' };
+
+  it('🔴 l’ancienne forme { nom, instruction } est refusée : Meta l’aurait refusée ou ignorée', () => {
+    // Elle ne vit plus que dans un onglet resté ouvert pendant le déploiement : refusée ici (422 à l'application),
+    // elle n'atteint pas Meta, qui refusait la création en 400 et ignorait la modification en 200.
+    expect(ok([{ type: 'competence.ajouter', nom: 'RDV', instruction: 'Prendre un rendez-vous' }]).success).toBe(false);
+    expect(ok([{ type: 'competence.modifier', cible: 's1', nom: 'RDV', instruction: 'Prendre un rendez-vous' }]).success).toBe(false);
+  });
+
+  it('🔴 le titre est un slug de 64 au plus, comme Meta l’exige', () => {
+    expect(ok([consigne]).success).toBe(true);
+    expect(ok([{ ...consigne, titre: 'Politique de retour' }]).success).toBe(false);
+    expect(ok([{ ...consigne, titre: '-retour' }]).success).toBe(false);
+    expect(ok([{ ...consigne, titre: 'a'.repeat(64) }]).success).toBe(true);
+    expect(ok([{ ...consigne, titre: 'a'.repeat(65) }]).success).toBe(false);
+  });
+
+  it('🔴 le quand est requis et borné à la limite de Meta (1 024)', () => {
+    const { quand: _q, ...sansQuand } = consigne;
+    expect(ok([sansQuand]).success).toBe(false);
+    expect(ok([{ ...consigne, quand: 'x'.repeat(1024) }]).success).toBe(true);
+    expect(ok([{ ...consigne, quand: 'x'.repeat(1025) }]).success).toBe(false);
   });
 });

@@ -1,4 +1,5 @@
 import { calculerCompletion } from '../completion';
+import type { Skill } from '../client';
 import type { InventaireMba } from './conversation';
 
 /**
@@ -14,7 +15,8 @@ export interface ClientMbaLecture {
   getSettings(p: string): Promise<unknown>;
   getBusinessInfo(p: string): Promise<unknown>;
   listFaqs(p: string): Promise<unknown[]>;
-  listSkills(p: string, agentId: string): Promise<unknown[]>;
+  /** Typé : lue en `unknown`, une consigne a été lue sous `name`, champ qu'elle n'a pas (corrigé le 2026-10-08). */
+  listSkills(p: string, agentId: string): Promise<Skill[]>;
   listWebsites(p: string): Promise<unknown[]>;
   listFiles(p: string): Promise<unknown[]>;
   listMessagesInteractifs(p: string): Promise<Array<{ id: string; titre: string; type: string; actif: boolean }>>;
@@ -63,14 +65,14 @@ export async function lireInventaireMba(
       description: typeof b.business_description === 'string' ? b.business_description : '',
       faqs: ((faqs ?? []) as Array<Record<string, unknown>>)
         .map((f) => String(f.question ?? '')).filter((q) => q !== ''),
-      competences: ((skills ?? []) as Array<Record<string, unknown>>)
-        .map((s) => ({ nom: String(s.name ?? ''), etat: String(s.status ?? 'inconnu') })),
+      // ⚠️ Avec leur identifiant, comme les messages interactifs : modifier ou supprimer une consigne exige la cible.
+      competences: (skills ?? []).map((s) => ({ id: s.id ?? '', titre: s.title, etat: s.status ?? 'inconnu' })),
       sites: ((websites ?? []) as Array<Record<string, unknown>>)
         .map((w) => ({ url: String(w.url ?? ''), pages: Number(w.pages_crawled ?? 0) })),
       fichiers: ((files ?? []) as Array<Record<string, unknown>>)
         .map((f) => String(f.name ?? f.file_name ?? '')).filter((n) => n !== ''),
       enService: ((settings ?? {}) as { rollout?: { enabled?: boolean } }).rollout?.enabled === true,
-      // ⚠️ Avec leur identifiant, contrairement au reste du résumé : modifier ou supprimer un message interactif, et
+      // ⚠️ Avec leur identifiant, comme les consignes : modifier ou supprimer un message interactif, et
       // désigner un formulaire, exigent l'identifiant exact. `null` = pas lu, que le texte dit.
       messagesInteractifs: messages === null ? null : messages.map((m) => ({ id: m.id, titre: m.titre, type: m.type, actif: m.actif })),
       formulairesPublies: formulaires,

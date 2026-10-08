@@ -12,7 +12,7 @@ import type { LigneHistorique } from '../src/reglages/historique';
  */
 const FAQ_A: Operation = { type: 'faq.ajouter', question: 'Horaires ?', reponse: '9h-18h' };
 const SITE: Operation = { type: 'site.ajouter', url: 'https://exemple.fr' };
-const SKILL: Operation = { type: 'competence.ajouter', nom: 'RDV', instruction: 'Prendre un rendez-vous' };
+const SKILL: Operation = { type: 'competence.ajouter', titre: 'rdv', quand: 'Quand le client veut un rendez-vous', instruction: 'Prendre un rendez-vous' };
 const SUPPR: Operation = { type: 'faq.supprimer', cible: 'f1', libelle: 'Horaires du dimanche' };
 
 function monter(sur: Partial<ClientMbaEcriture> = {}, opts: { numero?: string | null } = {}) {
@@ -259,7 +259,7 @@ describe('l’élément et l’opération d’une ligne', () => {
     [{ type: 'faq.ajouter', question: 'Q', reponse: 'R' }, 'faq', 'ajout'],
     [{ type: 'faq.modifier', cible: 'f1', question: 'Q', reponse: 'R' }, 'faq', 'modification'],
     [{ type: 'faq.supprimer', cible: 'f1', libelle: 'A' }, 'faq', 'suppression'],
-    [{ type: 'competence.ajouter', nom: 'n', instruction: 'i' }, 'competence', 'ajout'],
+    [{ type: 'competence.ajouter', titre: 'n', quand: 'q', instruction: 'i' }, 'competence', 'ajout'],
     [{ type: 'site.supprimer', cible: 's1', libelle: 'S' }, 'site', 'suppression'],
     [{ type: 'fichier.supprimer', cible: 'd1', libelle: 'd.pdf' }, 'fichier', 'suppression'],
     // ⚠️ La famille s'appelle `business`, l'élément `business_info` : la table de correspondance n'est pas
@@ -335,8 +335,43 @@ describe('les messages interactifs (lot du 2026-10-07)', () => {
   });
 
   it('les consignes s’appellent « Consigne » dans le diff et l’historique, sans changer d’opération', () => {
-    expect(libelleDe({ type: 'competence.ajouter', nom: 'RDV', instruction: 'x' })).toBe('Consigne : RDV');
-    expect(elementDe({ type: 'competence.ajouter', nom: 'RDV', instruction: 'x' })).toBe('competence');
+    expect(libelleDe(SKILL)).toBe('Consigne : rdv');
+    expect(elementDe(SKILL)).toBe('competence');
     expect(elementDe(AJOUT)).toBe('message_interactif');
+  });
+});
+
+/**
+ * 🔴 LE CORPS D'UNE CONSIGNE EST CELUI DE META. Jusqu'au 2026-10-08, l'assistant envoyait `{ name, instruction }` :
+ * mesuré ce jour-là sur le numéro de test, Meta refusait la création en 400 et acceptait la modification en 200
+ * SANS RIEN CHANGER, donc l'écran aurait dit « Fait » sur une consigne intacte. Le faux d'origine ignorait le corps,
+ * et c'est pour ça qu'aucun test ne l'a vu : ces cas le lisent.
+ */
+describe('les consignes (corrigé le 2026-10-08)', () => {
+  const MODIF: Operation = { type: 'competence.modifier', cible: 's1', titre: 'rdv', quand: 'Quand le client veut un rendez-vous', instruction: 'Proposer deux créneaux' };
+
+  it('🔴 la création envoie title, description et skill, sur l’agent', async () => {
+    const corps: unknown[] = [];
+    const m = monter({ createSkill: async (_p, agentId, s) => { corps.push([agentId, s]); } });
+    const r = await appliquer(m.deps, 't1', 'ag1', [SKILL]);
+    expect(r.echec).toBeNull();
+    expect(corps).toEqual([['ag1', { title: 'rdv', description: 'Quand le client veut un rendez-vous', skill: 'Prendre un rendez-vous' }]]);
+  });
+
+  it('🔴 la modification envoie le même corps complet, sur la cible', async () => {
+    const corps: unknown[] = [];
+    const m = monter({ updateSkill: async (_p, id, s) => { corps.push([id, s]); } });
+    const r = await appliquer(m.deps, 't1', 'ag1', [MODIF]);
+    expect(r.echec).toBeNull();
+    expect(corps).toEqual([['s1', { title: 'rdv', description: 'Quand le client veut un rendez-vous', skill: 'Proposer deux créneaux' }]]);
+  });
+
+  it('l’historique nomme la consigne par son titre et garde ce qui a été posé', async () => {
+    const m = monter();
+    await appliquer(m.deps, 't1', 'ag1', [MODIF]);
+    expect(m.journal[0]).toMatchObject({
+      element: 'competence', operation: 'modification', cible: 's1', libelle: 'Consigne : rdv',
+      apres: { cible: 's1', titre: 'rdv', quand: 'Quand le client veut un rendez-vous', instruction: 'Proposer deux créneaux' },
+    });
   });
 });

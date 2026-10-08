@@ -5,6 +5,33 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-08 : l'assistant du MBA envoyait ses consignes sous des noms que Meta ne connaît pas
+
+**Le défaut**, trouvé à la lecture du code le 2026-10-07 : l'assistant appliquait `competence.ajouter` et
+`competence.modifier` en envoyant `{ name, instruction }` à `createSkill` et `updateSkill`, quand Meta attend
+`title` (slug), `description` (le QUAND) et `skill` (le corps). L'onglet Consignes, lui, envoyait les bons champs.
+
+**La mesure** (numéro de test, sonde effacée, quatre consignes avant et après) : la création à l'ancienne forme
+rend **400** (`title, description, and instruction content are required`) ; la modification rend **200 et ne change
+RIEN**. La seconde est la pire : l'écran aurait dit « Fait » et l'historique aurait gardé une modification qui n'a
+jamais eu lieu. En production, **zéro** ligne d'historique `origine = 'assistant'`, `element = 'competence'` : aucune
+consigne n'a été posée ni faussement modifiée par l'assistant, et rien d'autre ne garde d'opération (le fil ne
+stocke que du texte, la proposition vit dans le navigateur).
+
+**Le même défaut à la lecture** : l'inventaire lisait `name`, donc le modèle voyait « Consignes (4) » et quatre lignes
+vides, sans identifiant. `competence.modifier` et `.supprimer` ne pouvaient viser aucune consigne réelle.
+
+**Ce qui a été changé** (décisions de Julien) : les deux opérations portent `titre` (le slug des messages
+interactifs, `titreSlug`), `quand` (1 024 au plus) et `instruction` ; le corps part en `{ title, description, skill }`
+et il est typé `Skill` dans `ClientMbaEcriture` comme dans `ClientMbaLecture`, au lieu de `unknown`. L'inventaire lit
+`title` et donne la cible de chaque consigne. Une proposition à l'ancienne forme, restée dans un onglet ouvert
+pendant le déploiement, est refusée (422) au lieu d'atteindre Meta.
+
+**Pourquoi rien ne l'avait vu** : le faux client des tests ignorait le corps (`createSkill: async () => {...}`), et
+le type `unknown` taisait l'écart au compilateur. Les deux sont fermés : les tests lisent le corps envoyé, vérifiés
+dans les deux sens (l'ancien corps remis : les deux cas tombent sur `name` au lieu de `title`), et l'ancien corps ne
+compile plus (TS2353).
+
 ## 2026-10-08 : `webhook_events` enfin rattaché à son espace, cinq semaines après 0093, écrit
 
 **Le constat** (2026-10-07, lecture seule en production, `begin read only` sur un client dédié) : sur 24 h, 147

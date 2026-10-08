@@ -248,6 +248,13 @@ composant revient en `standby` (bouton `button_reply`, ligne `list_reply`, formu
 carrousel en `type: 'button'`), donc il reste à l'agent : ni automation ni avance de scénario ne le prend
 (`tests/webhook-triggers.test.ts`).
 
+⚠️ **UNE CONSIGNE PART DANS LA FORME DE META, PAR L'ONGLET COMME PAR L'ASSISTANT** : `title` (slug), `description`
+(le QUAND, 1 024 au plus) et `skill` (le corps), typés `Skill` dans les deux interfaces étroites de l'assistant
+(`src/mba/assistant/application.ts`, `inventaire.ts`). Un `PUT` aux noms inconnus rend 200 et ne change rien (mesuré
+le 2026-10-08) : un corps mal nommé ne se voit pas à la réponse, d'où le type plutôt que `unknown`. Les opérations
+`competence.*` de l'assistant portent `titre`, `quand` et `instruction`, et l'inventaire lui donne la cible de
+chaque consigne.
+
 ⚠️ **LES MESSAGES INTERACTIFS VIVENT CHEZ META, COMME LES CONSIGNES** (`/{numéro}/agent-ui-skills`, client
 `src/mba/client.ts`, validation `src/mba/messages-interactifs.ts`). Ce que la mesure du 2026-10-07 impose au code :
 les bornes de Meta se comptent en OCTETS UTF-8 (titre 64, consigne 20 000), le titre est un SLUG comme celui d'une

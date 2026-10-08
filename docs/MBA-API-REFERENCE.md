@@ -2124,6 +2124,8 @@ ATTENTION sur les limites de longueur : 64 / 1024 / 20000 sont annoncees en pros
 
 ATTENTION sur `PUT` : la spec ne dit **jamais** si `PUT /{skill_id}` est un remplacement complet ou une fusion partielle. La semantique HTTP standard de `PUT` est le remplacement, et le corps est le meme schema que la creation. Traiter `PUT` comme un **remplacement integral** : toujours renvoyer les trois champs `title`, `description`, `skill`, y compris ceux qu'on ne modifie pas, sous peine de vider un champ. Il n'existe **pas de PATCH** dans cette API.
 
+MESURÉ le 2026-10-08 (numéro de test) : un `POST` sans `title` ni `description` (corps `{ name, instruction }`) rend **400** `title, description, and instruction content are required`, donc le serveur valide bien la présence des trois champs. Un `PUT` dont le corps ne porte AUCUN des trois (mêmes noms inconnus) rend **200 et ne change rien** : les champs absents ne sont pas vidés, et les noms inconnus sont ignorés sans erreur. Un `PUT` mal formé ne se voit donc pas à la réponse : seule une relecture le montre. On continue d'envoyer les trois champs.
+
 ##### Corps de reponse : `BizAIOmniChannelSkillsResponse`
 
 | Champ | Type | Requis | Notes |

@@ -16,6 +16,11 @@ const MAX_TEXTE = 4000;
 const MAX_TITRE = 500;
 /** L'identifiant d'un objet chez Meta. Opaque : on ne présume pas de sa forme, seulement de sa taille. */
 const cible = z.string().trim().min(1).max(200);
+/**
+ * Le titre d'une consigne comme celui d'un message interactif : un slug borné à la limite de Meta (64), la même règle
+ * pour les deux (mesuré le 2026-10-07).
+ */
+const titreSlug = z.string().trim().min(1).max(TITRE_MAX).regex(TITRE_RE);
 
 const faqAjouter = z.object({
   type: z.literal('faq.ajouter'),
@@ -36,15 +41,24 @@ const faqSupprimer = z.object({
   libelle: z.string().trim().min(1).max(MAX_TITRE),
 });
 
+/**
+ * Une consigne, dans la forme que Meta exige (`Skill`, `src/mba/client.ts`) : un titre en slug, le QUAND (la
+ * `description` de Meta, qui décide quand l'agent l'applique) et le corps. 🔴 Jusqu'au 2026-10-08 elle portait
+ * `nom` et `instruction`, envoyés tels quels : Meta refusait la création en 400 et acceptait la modification en 200
+ * sans rien changer (mesuré ce jour-là sur le numéro de test). `MAX_QUAND` est la limite de Meta pour `description`.
+ */
+const MAX_QUAND = 1024;
 const competenceAjouter = z.object({
   type: z.literal('competence.ajouter'),
-  nom: z.string().trim().min(1).max(MAX_TITRE),
+  titre: titreSlug,
+  quand: z.string().trim().min(1).max(MAX_QUAND),
   instruction: z.string().trim().min(1).max(MAX_TEXTE),
 });
 const competenceModifier = z.object({
   type: z.literal('competence.modifier'),
   cible,
-  nom: z.string().trim().min(1).max(MAX_TITRE),
+  titre: titreSlug,
+  quand: z.string().trim().min(1).max(MAX_QUAND),
   instruction: z.string().trim().min(1).max(MAX_TEXTE),
 });
 const competenceSupprimer = z.object({
@@ -85,15 +99,14 @@ const businessModifier = z.object({
  * Les messages interactifs (lot du 2026-10-07, `src/mba/messages-interactifs.ts`). La clé du composant s'appelle
  * `composant`, pas `type` : `type` est déjà le discriminant de l'opération. Le formulaire est un identifiant Meta
  * (des chiffres), requis pour un composant `flow` et refusé sinon (le `refine` plus bas) ; qu'il soit un formulaire
- * PUBLIÉ DE L'ESPACE se vérifie à l'application, en base. Le titre est un slug borné à la limite de Meta (64), comme
- * celui d'une consigne (mesuré le 2026-10-07) ; l'application recompte en octets, comme Meta.
+ * PUBLIÉ DE L'ESPACE se vérifie à l'application, en base. Le titre est `titreSlug`, comme celui d'une consigne ;
+ * l'application recompte en octets, comme Meta.
  */
 const ID_FORMULAIRE = /^\d{1,20}$/;
-const titreMessage = z.string().trim().min(1).max(TITRE_MAX).regex(TITRE_RE);
 const consigneMessage = z.string().trim().min(1).max(MAX_TEXTE);
 const messageInteractifAjouter = z.object({
   type: z.literal('message_interactif.ajouter'),
-  titre: titreMessage,
+  titre: titreSlug,
   composant: z.enum(TYPES_MESSAGE_INTERACTIF),
   consigne: consigneMessage,
   formulaire: z.string().trim().regex(ID_FORMULAIRE).optional(),
@@ -101,7 +114,7 @@ const messageInteractifAjouter = z.object({
 const messageInteractifModifier = z.object({
   type: z.literal('message_interactif.modifier'),
   cible,
-  titre: titreMessage,
+  titre: titreSlug,
   consigne: consigneMessage,
 });
 const messageInteractifSupprimer = z.object({
@@ -194,14 +207,17 @@ export const SCHEMA_PROPOSITION_MBA = {
           libelle: { type: 'string', minLength: 1, maxLength: MAX_TITRE, description: 'Le nom lisible de ce que tu supprimes.' },
           question: { type: 'string', minLength: 1, maxLength: MAX_TITRE, description: 'faq : la question.' },
           reponse: { type: 'string', minLength: 1, maxLength: MAX_TEXTE, description: 'faq : la réponse.' },
-          nom: { type: 'string', minLength: 1, maxLength: MAX_TITRE, description: 'competence : son nom.' },
-          instruction: { type: 'string', minLength: 1, maxLength: MAX_TEXTE, description: 'competence : la consigne.' },
+          quand: {
+            type: 'string', minLength: 1, maxLength: MAX_QUAND,
+            description: 'competence : QUAND l’agent applique la consigne (ex. « Quand le client demande un remboursement »).',
+          },
+          instruction: { type: 'string', minLength: 1, maxLength: MAX_TEXTE, description: 'competence : ce que l’agent fait, le corps de la consigne.' },
           url: { type: 'string', maxLength: 2000, description: 'site.ajouter : l’adresse donnée par le client, jamais devinée.' },
           champ: { type: 'string', enum: [...CHAMPS_BUSINESS], description: 'business.modifier : le champ de la fiche.' },
           valeur: { type: 'string', maxLength: MAX_TEXTE, description: 'business.modifier : la nouvelle valeur.' },
           titre: {
             type: 'string', minLength: 1, maxLength: TITRE_MAX, pattern: TITRE_RE.source,
-            description: 'message_interactif : son titre, en minuscules, chiffres et tirets (ex. « boutons-rdv »).',
+            description: 'competence et message_interactif : son titre, en minuscules, chiffres et tirets (ex. « politique-de-retour », « boutons-rdv »).',
           },
           composant: {
             type: 'string',
