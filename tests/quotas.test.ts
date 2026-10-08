@@ -43,7 +43,7 @@ describe('le jour civil de Paris', () => {
   it('les familles : envois et fiches seulement ; lectures, catalogues et MCP hors quota', () => {
     const attendu: Record<OperationApi, 'envois' | 'fiches' | null> = {
       'sends.create': 'envois', 'messages.send': 'envois', 'messages.reponse_application': null, 'contacts.batch': 'fiches', 'contacts.upsert': 'fiches',
-      'contacts.read': null, 'sends.read': null, 'catalogues.read': null, 'mcp.call': null, 'mcp.refus': null,
+      'contacts.read': null, 'sends.read': null, 'catalogues.read': null, 'conversations.read': null, 'mcp.call': null, 'mcp.refus': null,
     };
     for (const [op, f] of Object.entries(attendu)) expect(familleDe(op as OperationApi), op).toBe(f);
     expect(raisonDuRefus('envois', 2000)).toMatch(/2000 envois .*par jour, remise à zéro à minuit \(heure de Paris\)/);

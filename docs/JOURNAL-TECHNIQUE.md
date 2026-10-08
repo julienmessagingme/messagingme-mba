@@ -5,6 +5,18 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-08 : l'API lit les fils (lot 13, domaine 1, livraison A), écrite
+
+Deux rondes de questions avec Julien ont cadré tout le lot 13 (spec `2026-10-08-api-complete-design.md`) : la lecture
+des fils d'abord, l'envoi au format de Meta, un droit neuf par domaine sans reprise des clés, les webhooks aussi par
+l'API, et la lecture ouverte en Free. La livraison A pose cinq routes GET sous `conversations:read`, un magasin à part
+en lecture seule (la liste de l'Inbox, rafraîchie toutes les 4 s, n'a pas été touchée), et ouvre en Free les trois
+outils MCP qui LISENT un fil. Trois choses vues en écrivant : l'identifiant public d'un message est celui de Meta (le
+même que rendent l'envoi et les événements, sinon chacun aurait deux identifiants) ; la lecture d'un fichier reçu
+devait rester UNE définition (`tests/media-cablage.test.ts` l'exige), devenue une constante partagée ; et
+l'auto-attaque rendait 429 au lieu de 401 dès trente routes `/v1`, le pré-filtre des fausses clés étant un budget
+GLOBAL de trente par minute : coupé sur le serveur des sondes, comme les autres plafonds.
+
 ## 2026-10-08 : l'offre gratuite s'appelle « Free », écrit
 
 Décision de Julien du jour, valeur de l'API comprise : `GET /offre` et `get_plan` rendent `offre: "free"` et une grille

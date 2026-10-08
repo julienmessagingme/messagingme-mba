@@ -29,6 +29,7 @@ import { PLAFOND_API_DEFAUT } from '../src/auth/plafond-espace';
 import { QUOTAS_API_DEFAUT } from '../src/api/quotas';
 import { CODES_ECART } from '../src/api/sends-build';
 import type { FicheApi, LastAnalysis, ResultatFiche } from '../src/api/contacts-v1';
+import type { ConversationV1, MessageV1, PageV1 } from '../src/api/conversations-v1';
 import type { SuiviEnvoiApi } from '../src/api/suivi-envoi';
 import { catalogueTemplates, catalogueScenarios, catalogueMessagesRcs } from '../src/http/v1-catalogues';
 import type { MessageRcsCatalogue, ScenarioCatalogue, TemplateCatalogue } from '../src/http/v1-catalogues';
@@ -280,11 +281,27 @@ const ecrit: Lecture<Pick<Extract<ResultatFiche, { status: 'created' | 'updated'
 const tpls: ReadonlyArray<Lecture<TemplateCatalogue>> = EXEMPLES_REPONSES.templates.templates;
 const scns: ReadonlyArray<Lecture<ScenarioCatalogue>> = EXEMPLES_REPONSES.scenarios.scenarios;
 const rcsLus: ReadonlyArray<Lecture<MessageRcsCatalogue>> = EXEMPLES_REPONSES.messagesRcs.rcsMessages;
+// La lecture des fils (lot 13) : une conversation, un message, et les deux pages.
+const convLue: Lecture<ConversationV1> = EXEMPLES_REPONSES.conversationLue;
+const convCles: MemesCles<typeof EXEMPLES_REPONSES.conversationLue, ConversationV1> = true;
+const convContactCles: MemesCles<typeof EXEMPLES_REPONSES.conversationLue.contact, ConversationV1['contact']> = true;
+const msgLu: Lecture<MessageV1> = EXEMPLES_REPONSES.messageLu;
+const msgCles: MemesCles<typeof EXEMPLES_REPONSES.messageLu, MessageV1> = true;
+const msgMediaCles: MemesCles<typeof EXEMPLES_REPONSES.messageLu.media, NonNullable<MessageV1['media']>> = true;
+const pageConv: Lecture<PageV1<ConversationV1>> = EXEMPLES_REPONSES.conversations;
+const pageConvCles: MemesCles<typeof EXEMPLES_REPONSES.conversations, PageV1<ConversationV1>> = true;
+const pageMsg: Lecture<PageV1<MessageV1>> = EXEMPLES_REPONSES.messagesDuFil;
+const pageMsgCles: MemesCles<typeof EXEMPLES_REPONSES.messagesDuFil.data[1], MessageV1> = true;
 
 describe('les réponses montrées ont le type de leurs producteurs', () => {
   it('suivi d’un envoi, rapport 201, fiche lue, recherche, lot, écriture, message simple (tenus au typage)', () => {
     expect([suiviCles, suiviLigneCles, creeCles, ficheCles, ficheAnalyseCles, envoyeCles, envoyeConversation, envoyeCanal]).toEqual([true, true, true, true, true, true, true, true]);
     expect([suivi, cree, fiche, trouve, lot, ecrit, tpls, scns, rcsLus, envoye].every((v) => v !== null)).toBe(true);
+  });
+
+  it('la lecture des fils : conversation, message, et leurs pages (tenus au typage)', () => {
+    expect([convCles, convContactCles, msgCles, msgMediaCles, pageConvCles, pageMsgCles]).toEqual([true, true, true, true, true, true]);
+    expect([convLue, msgLu, pageConv, pageMsg].every((v) => v !== null)).toBe(true);
   });
 });
 

@@ -30,6 +30,9 @@ export type OperationApi =
   // Une lecture de catalogue (`/v1/templates`, `/v1/scenarios`, `/v1/rcs-messages`) : une unité, comptée à
   // part parce que `/v1/templates` interroge Meta, pour voir une boucle de lectures avant qu'elle coûte.
   | 'catalogues.read'
+  // La lecture des fils et des messages (`/v1/conversations`, `/v1/messages/{id}`, lot 13) : une unité, au plafond
+  // d'appels, jamais au quota du jour (une lecture n'envoie rien).
+  | 'conversations.read'
   | 'mcp.call'
   | 'mcp.refus';
 

@@ -454,18 +454,50 @@ describe('serveur MCP : les outils', () => {
     /** Un fil de `n` messages, de « message 1 » (le plus ancien) à « message n ». */
     function monterFil(n: number) {
       const fil = Array.from({ length: n }, (_, i) => ({
-        id: `m${i + 1}`, direction: 'in' as const, type: 'text', body: `message ${i + 1}`, buttonPayload: null,
-        createdAt: new Date(Date.UTC(2026, 8, 1, 9, 0, i)).toISOString(),
+        id: `0000000${i + 1}`.slice(-8) + '-0000-4000-8000-000000000000', direction: 'in' as const, type: 'text', body: `message ${i + 1}`,
+        buttonPayload: null, createdAt: new Date(Date.UTC(2026, 8, 1, 9, 0, i)).toISOString(),
+        curseur: new Date(Date.UTC(2026, 8, 1, 9, 0, i)).toISOString().replace('Z', '000Z'),
       }));
       const demandes: number[] = [];
-      const { server } = app({ inbox: { getDerniersMessages: async (_id, k) => { demandes.push(k); return fil.slice(-k); } } });
+      const avants: Array<{ at: string; id: string } | undefined> = [];
+      const { server } = app({
+        inbox: {
+          // Le faux fait ce que fait le vrai (`getDerniersMessages`) : les `k` derniers AVANT le point donné.
+          getDerniersMessages: async (_id, k, avant) => {
+            demandes.push(k);
+            avants.push(avant);
+            const jusqua = avant ? fil.findIndex((m) => m.id === avant.id) : fil.length;
+            return fil.slice(0, jusqua).slice(-k);
+          },
+        },
+      });
       const lire = async (args: Record<string, unknown>, cle = CLE_TOUT) => {
         const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(cle), payload: appeler('get_messages', { conversation_id: 'cv1', ...args }) });
         return contenu(res);
       };
-      return { server, demandes, lire };
+      return { server, demandes, avants, lire };
     }
-    const corps = (texte: string) => JSON.parse(texte) as { messages: Array<{ body: string }>; tronque: boolean };
+    const corps = (texte: string) => JSON.parse(texte) as { messages: Array<{ body: string }>; tronque: boolean; before: string | null };
+
+    it('🔴 before remonte le fil d’une page, sans doublon ni trou ; la dernière page rend before à null (lot 13)', async () => {
+      const { server, avants, lire } = monterFil(120);
+      const p1 = corps((await lire({})).texte);
+      expect(p1.before).not.toBeNull();
+      const p2 = corps((await lire({ before: p1.before })).texte);
+      expect(p2.messages.map((m) => m.body)).toEqual(Array.from({ length: 50 }, (_, i) => `message ${21 + i}`));
+      expect(avants[1]).toMatchObject({ id: '00000071-0000-4000-8000-000000000000' });
+      const p3 = corps((await lire({ before: p2.before })).texte);
+      expect(p3.messages.map((m) => m.body)).toEqual(Array.from({ length: 20 }, (_, i) => `message ${1 + i}`));
+      expect([p3.tronque, p3.before]).toEqual([false, null]);
+      await server.close();
+    });
+
+    it('un before illisible est refusé, sans rien lire', async () => {
+      const { server, demandes, lire } = monterFil(10);
+      expect((await lire({ before: 'bricole' })).isError).toBe(true);
+      expect(demandes).toEqual([]);
+      await server.close();
+    });
 
     it('sans limite : demande 51 au store, rend les 50 DERNIERS du plus ancien au plus récent, et dit qu’il tronque', async () => {
       const { server, demandes, lire } = monterFil(120);
@@ -798,27 +830,35 @@ describe('🔴 get_contact cherche la fiche au format de la fiche (essai réel d
  * offre, il RESTE listé (à la différence des droits d'une clé) et refuse avec la phrase et le lien de l'offre : l'assistant
  * peut alors l'expliquer. Écrit ici, pas dérivé du catalogue : le comparer à lui-même ne prouverait rien.
  */
+// Lire les fils est ouvert dans toutes les offres depuis le lot 13 (décision de Julien du 2026-10-08) : seuls les trois
+// outils qui ÉCRIVENT dans un fil restent dans l'offre de l'Inbox.
 const FONCTION_DES_OUTILS: Readonly<Record<string, string>> = {
-  list_conversations: 'inbox', get_conversation: 'inbox', get_messages: 'inbox',
   reply_in_open_window: 'inbox', tag_conversation: 'inbox', assign_conversation: 'inbox',
 };
 
 describe('serveur MCP : les outils et l’offre (lot 6, B2a)', () => {
   const base = { offreDe: async () => ({ offre: 'base' as const, droits: DROITS.base, retourEnBaseLe: null }) };
 
-  it('🔴 chaque outil déclare sa fonction : les six de l’Inbox, aucune pour les autres', () => {
+  it('🔴 chaque outil déclare sa fonction : les trois qui écrivent dans un fil, aucune pour les autres', () => {
     for (const o of OUTILS) expect([o.nom, o.fonction]).toEqual([o.nom, FONCTION_DES_OUTILS[o.nom] ?? null]);
   });
 
-  it('🔴 en Base, un outil de l’Inbox RESTE listé et refuse avec le lien de l’offre ; rien n’est lu', async () => {
+  it('🔴 en Free, un outil qui écrit dans un fil RESTE listé et refuse avec le lien de l’offre ; rien n’est posé', async () => {
     const { server, traces } = app({ offres: base });
     const liste = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: rpc('tools/list') });
-    expect(liste.json<{ result: { tools: Array<{ name: string }> } }>().result.tools.map((t) => t.name)).toContain('list_conversations');
-    const c = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('list_conversations') }));
+    expect(liste.json<{ result: { tools: Array<{ name: string }> } }>().result.tools.map((t) => t.name)).toContain('tag_conversation');
+    const c = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('tag_conversation', { conversation_id: 'cv1', tags: ['chaud'] }) }));
     expect(c.isError).toBe(true);
     expect(c.texte).toMatch(/Inbox/);
     expect(c.texte).toMatch(/\/offre/);
-    expect(traces.listes).toEqual([]);
+    expect(traces.poses).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 en Free, Claude LIT les fils (lot 13) : list_conversations répond', async () => {
+    const { server, traces } = app({ offres: base });
+    expect(contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('list_conversations') })).isError).toBe(false);
+    expect(traces.listes).toHaveLength(1);
     await server.close();
   });
 

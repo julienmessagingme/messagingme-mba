@@ -1648,12 +1648,15 @@ export class PgInboxStore implements InboxStore {
    * deux mêmes colonnes, donc deux messages simultanés tombent du même côté de la coupe que dans `getMessages`.
    * ⚠️ Aucune garde d'espace ici, comme `getMessages` : l'appelant l'a posée avant (`getConversationContext`).
    */
-  async getDerniersMessages(conversationId: string, n: number): Promise<ConversationMessage[]> {
+  async getDerniersMessages(conversationId: string, n: number, avant?: { at: string; id: string }): Promise<ConversationMessage[]> {
+    // `avant` (lot 13) : les `n` derniers messages ANTÉRIEURS à ce point, pour remonter un fil long page par page. La
+    // comparaison de tuple suit exactement le tri, même à horodatage égal.
     const res = await this.pool.query<LigneMessage>(
       `${SELECT_MESSAGES_SQL}
        where m.conversation_id = $1
+         ${avant ? 'and (m.created_at, m.id) < ($3::timestamptz, $4::uuid)' : ''}
        order by m.created_at desc, m.id desc limit $2`,
-      [conversationId, n],
+      avant ? [conversationId, n, avant.at, avant.id] : [conversationId, n],
     );
     return res.rows.reverse().map(messageDeLigne);
   }

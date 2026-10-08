@@ -36,6 +36,14 @@ export const STATUT_PAR_CODE = {
   template_not_found: 404,
   rcs_message_not_found: 404,
   send_not_found: 404,
+  // La lecture des fils (lot 13, domaine 1) : un fil ou un message inconnu de CET espace, un curseur bricolé.
+  conversation_not_found: 404,
+  message_not_found: 404,
+  invalid_cursor: 400,
+  // Le fichier d'un message reçu : absent du message, passé le délai de Meta (7 jours), ou que Meta n'a pas rendu.
+  no_media: 404,
+  media_expired: 410,
+  media_unavailable: 422,
   scenario_ambiguous: 409,
   unsendable_target: 422,
   template_category_unknown: 422,

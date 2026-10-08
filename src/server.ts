@@ -64,6 +64,7 @@ import { registerNumeroFourni } from './http/numero-fourni';
 import { registerAbonnementNumero, type AbonnementNumeroRouteDeps } from './http/abonnement-numero';
 import { registerApiKeys } from './http/api-keys';
 import { registerV1Contacts } from './http/v1-contacts';
+import { registerV1Conversations, type V1ConversationsRouteDeps } from './http/v1-conversations';
 import { registerV1Sends } from './http/v1-sends';
 import { registerV1Catalogues } from './http/v1-catalogues';
 import type { V1CataloguesRouteDeps } from './http/v1-catalogues';
@@ -368,6 +369,8 @@ export interface ServerDeps {
     messages?: Omit<V1MessagesRouteDeps, 'usage'>;
     /** Un simple texte en RCS à une fiche (`POST /v1/messages/rcs`). */
     messagesRcs?: Omit<V1MessagesRcsRouteDeps, 'usage'>;
+    /** La lecture des fils et des messages (`/v1/conversations`, `/v1/messages/{id}`, lot 13). */
+    conversations?: Omit<V1ConversationsRouteDeps, 'usage'>;
     /** Le serveur MCP, moins son plafond coûteux : `buildServer` y pose le sien au montage (`DepsMcp.couteux`). */
     mcp?: CablageMcp;
     /** Le relais du Meta Business Agent : même autorité et même limiteur que /v1. */
@@ -784,6 +787,9 @@ export function modulesDeRoutes(
       if (v1.messages) registerV1Messages(app, { ...v1.messages, usage: usageApi }, [requireApiKey, requireScope('sends:create')]);
       // Même droit, même limiteur et même garde que le message WhatsApp : le même geste sur un autre canal.
       if (v1.messagesRcs) registerV1MessagesRcs(app, { ...v1.messagesRcs, usage: usageApi }, [requireApiKey, requireScope('sends:create')]);
+      // La lecture des fils (lot 13) : un droit NEUF, `conversations:read`, sans reprise des clés existantes (décision de
+      // Julien du 2026-10-08). Lire un fil n'est ni lire une fiche, ni envoyer.
+      if (v1.conversations) registerV1Conversations(app, { ...v1.conversations, usage: usageApi }, [requireApiKey, requireScope('conversations:read')]);
       // Serveur MCP : même `requireApiKey` que /v1, donc ses appels comptent dans le plafond de l'espace. Pas
       // de `requireScope` à la porte : il a deux droits (lecture, écriture) et c'est l'outil appelé qui décide
       // duquel il a besoin.

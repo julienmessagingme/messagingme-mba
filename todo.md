@@ -1,5 +1,17 @@
 # todo.md : backlog
 
+## 🟡 Lot 13, la lecture des fils : ce que la relecture de la livraison A laisse (2026-10-08)
+
+- **Le téléchargement d'un fichier reçu n'a pas de borne de concurrence** (`GET /v1/messages/{id}/media`, comme la
+  route de l'Inbox) : chaque appel charge le fichier entier en mémoire, jusqu'à `MEDIA_ENTRANT_TAILLE_MAX_KO` (25 Mo),
+  et ne compte qu'une unité. Soixante téléchargements parallèles pèsent 1,5 à 3 Go dans la copie de l'API. Le compter
+  comme une opération lourde, ou poser un sémaphore par copie.
+- **Le fil d'un contact bloqué se lit par Claude, pas par l'API** : `get_conversation` et `get_messages` passent par
+  `getConversationContext`, sans filtre `blocked_at`. Déjà vrai en Pro, étendu au Free ; même espace, aucune fuite.
+  Aligner sur l'API (et l'Inbox), ou l'écrire.
+- **Un fil sans fiche rend un contact tout à `null`** (le premier message RCS passe `recordInbound` avant
+  `upsertFromInbound`) : l'intégrateur ne sait pas qui écrit. Exposer le `wa_id` en repli.
+
 ## 🟡 Lot 12, les webhooks sortants : ce que la relecture de la livraison A laisse (2026-10-08)
 
 - **Aucun plafond technique en Entreprise** : « sans limite » (décision de Julien) laisse un admin créer autant

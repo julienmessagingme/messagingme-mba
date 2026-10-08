@@ -130,6 +130,7 @@ import type { ContexteTiers } from './ops/suppression-espace';
 import type { OpsSuppressionDeps } from './http/ops-suppression';
 import { TokenInvalidError } from './meta/credentials';
 import { lireMediaRecu } from './inbox/media-entrant';
+import { PgConversationsV1 } from './api/conversations-v1.pg';
 import type { DepsRepondre } from './inbox/repondre';
 import { assurerCleGateway, creerAssureurDeCle, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
 import { decryptSecret, encryptSecret } from './crypto/secretbox';
@@ -437,6 +438,18 @@ async function main(): Promise<void> {
   // Clients Meta phone/pricing/templates/flows : résolus par tenant via metaFactory. `media` reste global :
   // endpoint /{appId}/uploads app-scoped.
   const mediaClient = new MetaMediaClient(config.META_ACCESS_TOKEN, config.META_APP_ID, config.META_GRAPH_VERSION);
+  // La lecture des fils par l'API et par Claude (lot 13) : un magasin en lecture seule, filtré sur l'espace.
+  const conversationsV1 = new PgConversationsV1(pool);
+  /**
+   * Lire une pièce jointe reçue (`lireMediaRecu`, `src/inbox/media-entrant.ts`) : UNE définition, pour l'Inbox et pour
+   * l'API (lot 13), et hors du bloc de la transcription (`tests/media-cablage.test.ts`) : lire un fichier n'a besoin que
+   * du jeton Meta. Son plafond est le sien (`MEDIA_ENTRANT_TAILLE_MAX_KO`), pas les 2 Mo de la transcription.
+   */
+  const lireMediaMessage = (tenant: string, messageId: string, conversationId?: string) => lireMediaRecu({
+    messages: inboxStore,
+    media: mediaClient,
+    tailleMaxOctets: config.MEDIA_ENTRANT_TAILLE_MAX_KO * 1024,
+  }, tenant, messageId, conversationId);
 
   // Hors du câblage de l'écran parce qu'ils ont deux consommateurs : les routes de l'écran Publicités, et la
   // route `/ops` qui dépose un jeton créé à la main. Les construire deux fois donnerait deux chemins de
@@ -1145,16 +1158,8 @@ async function main(): Promise<void> {
           },
         }, tenant, messageId, conversationId, cible),
       } : {}),
-      /**
-       * Lire une pièce jointe reçue (`lireMediaRecu`, `src/inbox/media-entrant.ts`). Hors du bloc de la
-       * transcription : lire un fichier n'a besoin que du jeton Meta. Son plafond est le sien
-       * (`MEDIA_ENTRANT_TAILLE_MAX_KO`), pas les 2 Mo de la transcription.
-       */
-      lireMediaMessage: (tenant, messageId, conversationId) => lireMediaRecu({
-        messages: inboxStore,
-        media: mediaClient,
-        tailleMaxOctets: config.MEDIA_ENTRANT_TAILLE_MAX_KO * 1024,
-      }, tenant, messageId, conversationId),
+      // Lire une pièce jointe reçue : la définition unique, plus haut (hors du bloc de la transcription).
+      lireMediaMessage,
       // La prise d'une conversation du pot commun par un agent : le réglage de l'espace qui l'autorise.
       agentsPeuventPrendre: async (tenant) => (await settingsStore.get(tenant)).agentsPeuventPrendre,
       /**
@@ -2726,6 +2731,14 @@ async function main(): Promise<void> {
         // `app_human`, comme les autres machines : le scénario cesse d'avancer seul. Qui a parlé est porté par
         // l'origine du message (`api`).
         takeControl: fil.prisEnEcrivant,
+      },
+      /**
+       * La lecture des fils (lot 13, domaine 1) : un magasin à part, en lecture seule, et la MÊME lecture d'un fichier
+       * reçu que l'Inbox (`lireMediaRecu`, ses plafonds et son délai de Meta).
+       */
+      conversations: {
+        conversations: conversationsV1,
+        lireMediaMessage,
       },
       /**
        * Serveur MCP (`POST /mcp`) : les mêmes fonctions que la console, jamais des variantes. Un outil MCP

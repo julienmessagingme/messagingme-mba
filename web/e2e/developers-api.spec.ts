@@ -39,6 +39,7 @@ const SECTIONS: Record<CleDePage, string[]> = {
   accueil: ['Premier appel', 'Tous les endpoints', 'Adresse de base', 'Authentification'],
   contacts: [],
   messages: ['Message ou envoi'],
+  conversations: ['Pagination'],
   sends: ['Types de cible', 'Destinataires', 'Paramètres et variables', 'Message d’ouverture', 'Catégorie', 'Exemples de cibles'],
   catalogs: [],
   concepts: ['Désigner une personne', 'Consentement et STOP', 'La fenêtre de 24 h', 'Idempotence'],
@@ -57,7 +58,7 @@ const titresDe = (cle: CleDePage): string[] => [
  * Les commandes `curl` complètes, par page : une par route (plus le premier appel, les exemples de cibles et le
  * guide). Le compte EXACT garde qu'aucune ne se perd et qu'aucune ne s'ajoute sans qu'on le voie.
  */
-const COMMANDES: Partial<Record<CleDePage, number>> = { accueil: 1, contacts: 5, messages: 2, sends: 3, catalogs: 3, 'per-contact': 1 };
+const COMMANDES: Partial<Record<CleDePage, number>> = { accueil: 1, contacts: 5, messages: 2, conversations: 5, sends: 3, catalogs: 3, 'per-contact': 1 };
 
 const OUTILS_TIERS = /custom_id|Universal Channel|Brevo|Salesforce|SFMC|Splio|HubSpot|Klaviyo|Braze|Zapier|smsmode|uchat/i;
 

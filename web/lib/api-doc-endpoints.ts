@@ -16,8 +16,8 @@ import type { LienVers } from './doc-api-pages';
  */
 
 export type Methode = 'GET' | 'POST' | 'PATCH';
-export type Droit = 'contacts:write' | 'contacts:read' | 'sends:create';
-export type GroupeEndpoints = 'contacts' | 'messages' | 'envois' | 'catalogues';
+export type Droit = 'contacts:write' | 'contacts:read' | 'sends:create' | 'conversations:read';
+export type GroupeEndpoints = 'contacts' | 'messages' | 'conversations' | 'envois' | 'catalogues';
 
 export interface EndpointDoc {
   readonly methode: Methode;
@@ -33,11 +33,32 @@ export interface EndpointDoc {
 export const GROUPES_ENDPOINTS: ReadonlyArray<{ readonly cle: GroupeEndpoints; readonly titre: Bilingue }> = [
   { cle: 'contacts', titre: ['Contacts', 'Contacts'] },
   { cle: 'messages', titre: ['Messages', 'Messages'] },
+  { cle: 'conversations', titre: ['Conversations', 'Conversations'] },
   { cle: 'envois', titre: ['Envois', 'Sends'] },
   { cle: 'catalogues', titre: ['Catalogues', 'Catalogs'] },
 ];
 
 export const ENDPOINTS = [
+  {
+    methode: 'GET', chemin: '/v1/conversations', droit: 'conversations:read', groupe: 'conversations', lien: { page: 'conversations', ancre: 'lister' },
+    resume: ['Liste les conversations, la plus récente d’abord, par pages.', 'Lists conversations, most recent first, page by page.'],
+  },
+  {
+    methode: 'GET', chemin: '/v1/conversations/{conversationId}', droit: 'conversations:read', groupe: 'conversations', lien: { page: 'conversations', ancre: 'lire' },
+    resume: ['Lit une conversation : le contact, qui la tient, la fenêtre de 24 h.', 'Reads a conversation: the contact, who handles it, the 24-hour window.'],
+  },
+  {
+    methode: 'GET', chemin: '/v1/conversations/{conversationId}/messages', droit: 'conversations:read', groupe: 'conversations', lien: { page: 'conversations', ancre: 'messages' },
+    resume: ['Les messages d’une conversation, le plus récent d’abord, par pages.', 'A conversation’s messages, most recent first, page by page.'],
+  },
+  {
+    methode: 'GET', chemin: '/v1/messages/{messageId}', droit: 'conversations:read', groupe: 'conversations', lien: { page: 'conversations', ancre: 'message' },
+    resume: ['Lit un message par son identifiant.', 'Reads a message by its ID.'],
+  },
+  {
+    methode: 'GET', chemin: '/v1/messages/{messageId}/media', droit: 'conversations:read', groupe: 'conversations', lien: { page: 'conversations', ancre: 'media' },
+    resume: ['Télécharge le fichier d’un message reçu.', 'Downloads the file of a received message.'],
+  },
   {
     methode: 'POST', chemin: '/v1/contacts', droit: 'contacts:write', groupe: 'contacts', lien: { page: 'contacts', ancre: 'creer' },
     resume: ['Crée ou met à jour une fiche.', 'Creates or updates a record.'],

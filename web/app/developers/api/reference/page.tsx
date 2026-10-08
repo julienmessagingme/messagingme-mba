@@ -27,6 +27,7 @@ const DROITS: ReadonlyArray<{ droit: Droit; quoi: readonly [string, string] }> =
   { droit: 'contacts:write', quoi: ['Créer et modifier des fiches.', 'Create and update records.'] },
   { droit: 'contacts:read', quoi: ['Lire et chercher des fiches.', 'Read and find records.'] },
   { droit: 'sends:create', quoi: ['Envoyer, suivre un envoi, lire les catalogues.', 'Send, follow a send, read the catalogs.'] },
+  { droit: 'conversations:read', quoi: ['Lire les conversations, leurs messages et les fichiers reçus.', 'Read conversations, their messages and received files.'] },
 ];
 
 function Reference() {

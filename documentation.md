@@ -3651,6 +3651,18 @@ Ajouté par le lot 4 de l'API publique :
    confirmés), parce qu'`allocate` remet la confirmation à zéro sur chaque position qu'il touche. Un bouton qui porte
    déjà NOTRE lien (`codeDuLienTrace` : le ré-habillage ne connaît que l'hôte d'aujourd'hui, un template soumis sous
    un ancien nom réaffiche donc notre lien brut) n'est ni retracé (son code pointerait vers lui-même) ni déconfirmé.
+44. **La lecture des fils par l'API (lot 13, domaine 1) vit dans un magasin À PART** (`PgConversationsV1`,
+   `src/api/conversations-v1.pg.ts`), en lecture seule : la liste de l'Inbox est sur le chemin chaud de l'écran, on
+   ne l'alourdit pas pour l'API. 🔴 Chaque requête filtre `conversations.tenant_id` ; `conversation_messages` n'a pas
+   de `tenant_id`, la jointure est le contrôle. « À traiter » y est le MÊME prédicat que l'Inbox (`A_TRAITER_V1_SQL`,
+   recopié, tenu par `tests/v1-conversations.test.ts`), et un contact bloqué y disparaît comme dans l'Inbox.
+   L'identifiant PUBLIC d'un message est celui de Meta (`meta_message_id`, celui que rendent l'envoi et les
+   événements), sinon `msg_<uuid>` ; le curseur est opaque (base64url de l'instant à la microseconde et de
+   l'identifiant), et un curseur illisible rend 400 `invalid_cursor`, jamais une page qui recommence. Le droit
+   `conversations:read` est neuf et N'A PAS été donné aux clés existantes (décision de Julien du 2026-10-08) ; la page
+   « Démarrer » le donne à la clé qu'elle crée. Le fichier d'un message reçu passe par la MÊME `lireMediaMessage` que
+   l'Inbox (une seule définition dans `src/index.ts`, `tests/media-cablage.test.ts`). Côté Claude, les trois outils
+   qui LISENT un fil sont ouverts dans toutes les offres ; seuls ceux qui y écrivent gardent `fonction: 'inbox'`.
 
 ### Sur les contrats externes
 

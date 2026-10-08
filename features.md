@@ -2105,8 +2105,10 @@ scénario, comment importer des contacts.
 - ✅ **Clés d'API** (2026-07-17) : un admin crée des clés depuis la console (nom + droits). La clé n'est
   **montrée qu'une fois** à la création (seule son empreinte est stockée). Révocable. Les droits de l'API
   publique : « Créer et mettre à jour des contacts » (`contacts:write`), « Lire les contacts »
-  (`contacts:read`, 2026-09-24) et « Déclencher des envois » (`sends:create`, qui couvre aussi les messages
-  simples, le suivi d'un envoi et les catalogues). Une clé peut aussi porter les droits du serveur MCP, décrits
+  (`contacts:read`, 2026-09-24), « Déclencher des envois » (`sends:create`, qui couvre aussi les messages
+  simples, le suivi d'un envoi et les catalogues) et « Lire les conversations et leurs messages »
+  (`conversations:read`, lot 13 : les clés créées avant ne l'ont pas, et il n'est pas coché d'avance, sauf sur la clé
+  de la page « Démarrer »). Une clé peut aussi porter les droits du serveur MCP, décrits
   dans leur propre section (« Serveur MCP : brancher un assistant sur la console »).
   ⚠️ Les droits d'une clé se fixent à sa création et ne s'éditent pas : pour un droit de plus, on crée une clé.
   ✅ **Dix clés actives au plus par espace** (2026-10-04) : l'écran affiche « n sur 10 clés actives » ; à dix, le
@@ -2138,6 +2140,13 @@ scénario, comment importer des contacts.
   étiquette inconnus de l'espace refusent la fiche en disant où les créer : un champ se crée dans Bibliothèque >
   Champs, une étiquette se déclare dans Bibliothèque > Étiquettes (ou existe déjà sur une fiche). Retirer une
   étiquette inconnue reste permis. Les gros chargements passent par l'import CSV de la console.
+- ✅ **Lire les conversations** (lot 13, 2026-10-08, droit `conversations:read`, dans toutes les offres) : la liste
+  des conversations, la plus récente d'abord, filtrable sur « À traiter » (`GET /v1/conversations`) ; une
+  conversation, avec qui la tient (l'équipe, l'agent de Meta, ou un automate) et la fin de la fenêtre de 24 h ; ses
+  messages, le plus récent d'abord ; un message par son identifiant (celui de Meta, que rendent l'envoi et les
+  événements) ; et le fichier d'un message reçu (image, vocal, document), tant que Meta le garde (7 jours). Les pages
+  vont de 1 à 100 éléments, et se suivent par un curseur à renvoyer tel quel. Une conversation d'un contact bloqué ne
+  se lit pas, comme dans l'Inbox.
 - ✅ **Envoyer un message simple** : un texte, à une personne, tout de suite, visible dans l'Inbox. Deux routes,
   parce que leurs règles n'ont presque rien en commun : `POST /v1/messages/whatsapp` (dans la fenêtre de 24 h)
   et `POST /v1/messages/rcs` (sans fenêtre, mais seulement vers quelqu'un qui a consenti ou qui vous a déjà
@@ -3459,8 +3468,10 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   Pro : en Entreprise, une limite de membres ne bloque que les nouvelles invitations.
 - ✅ **Par l'API et Claude** : un refus rend le statut **402** avec un code, `plan_feature_unavailable` (fonction
   absente de l'offre) ou `plan_limit_reached` (limite atteinte), et le lien `upgradeUrl`. L'outil MCP `get_plan`
-  rend l'offre, ses limites, ce qui est consommé et la grille. Les outils de l'Inbox restent listés en Free et refusent
-  avec le lien de l'offre.
+  rend l'offre, ses limites, ce qui est consommé et la grille. Les outils qui ÉCRIVENT dans un fil (répondre,
+  étiqueter, affecter) restent listés en Free et refusent avec le lien de l'offre ; LIRE les fils et leurs messages
+  (`list_conversations`, `get_conversation`, `get_messages`, et l'API `/v1/conversations`) est ouvert dans toutes les
+  offres depuis le lot 13 : seul l'écran de l'Inbox reste dans le Pro.
 - ✅ **L'Entreprise se pose par nous**, par une route de l'exploitation (`PUT /ops/offre/:tenantId`, pas encore d'écran),
   avec sa limite d'utilisateurs (10 proposés, vide = sans limite) et, si on la donne, la durée de conservation des
   conversations (absente, elle reste telle quelle : changer d'offre ne déclenche jamais de purge). La même route ramène

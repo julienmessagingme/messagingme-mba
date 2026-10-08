@@ -50,6 +50,7 @@
 import { hash, randomBytes, randomUUID } from 'node:crypto';
 import Fastify from 'fastify';
 import { buildServer, modulesDeRoutes } from '../src/server';
+import { config } from '../src/config';
 import type { ClasseDAcces, Gardes, ServerDeps } from '../src/server';
 import { FakeQueue } from '../tests/fake-queue';
 import { RateLimiter } from '../src/auth/rate-limit';
@@ -590,7 +591,16 @@ const concretiser = (chemin: string, tenant: string): string =>
 
 async function main(): Promise<void> {
   const deps = dependancesDuRegistre();
+  /**
+   * Le serveur des sondes tourne plafonds coupés (sonde 8 ci-dessous), et cela vaut aussi pour le PRÉ-FILTRE des clés
+   * (`API_KEY_PREFILTRE_MAX`, un budget GLOBAL de 30 fausses clés par minute) : les sondes 13 et 13 bis présentent une
+   * fausse clé à chaque route `cle-api`, et au-delà de trente routes le budget rendait 429 au lieu du 401 attendu
+   * (vécu au lot 13). 0 le désactive ; il n'est lu qu'à la construction, et rétabli juste après.
+   */
+  const prefiltre = config.API_KEY_PREFILTRE_MAX;
+  if (LOCAL) config.API_KEY_PREFILTRE_MAX = 0;
   const app = buildServer(deps as unknown as ServerDeps);
+  config.API_KEY_PREFILTRE_MAX = prefiltre;
   await app.ready();
   const routes = inventaire(app);
   const classes = await classesDesRoutes(deps);

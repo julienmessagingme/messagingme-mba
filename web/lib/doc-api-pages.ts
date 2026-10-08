@@ -60,6 +60,12 @@ export const PAGES_DOC = [
     ancres: ['messages-simples', 'message-whatsapp', 'message-rcs'],
   },
   {
+    // La lecture des fils (lot 13, domaine 1) : conversations, messages, statut, fichiers reçus.
+    cle: 'conversations', href: '/developers/api/conversations', fichier: 'web/app/developers/api/conversations/page.tsx', groupe: 'reference-api',
+    nav: ['Conversations', 'Conversations'], titre: ['Conversations', 'Conversations'],
+    ancres: ['lister', 'lire', 'messages', 'message', 'media', 'pagination'],
+  },
+  {
     cle: 'sends', href: '/developers/api/sends', fichier: 'web/app/developers/api/sends/page.tsx', groupe: 'reference-api',
     nav: ['Envois', 'Sends'], titre: ['Envois', 'Sends'],
     ancres: ['envoi', 'cibles', 'destinataires', 'parametres', 'ouverture', 'categorie', 'suivi'],

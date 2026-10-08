@@ -203,6 +203,32 @@ export interface MessageEnvoye {
 
 const MESSAGE_ENVOYE: MessageEnvoye = { messageId: 'wamid.exemple-8412', conversationId: CONVERSATION_ID, channel: 'whatsapp' };
 
+/** Une conversation lue (`GET /v1/conversations/{id}`), la forme d'une ligne de la liste. */
+const CONVERSATION_LUE = {
+  id: CONVERSATION_ID,
+  contact: { id: CONTACT_ID, phone: '+33612345678', name: 'Claire', externalId: 'crm-7781' },
+  lastMessageAt: '2026-10-08T09:58:02.123Z',
+  lastDirection: 'in',
+  windowExpiresAt: '2026-10-09T09:58:02.123Z',
+  handledBy: 'automation',
+  needsReply: false,
+  archived: false,
+} as const;
+
+/** Un message reçu, avec un fichier (`GET /v1/messages/{id}`). */
+const MESSAGE_LU = {
+  id: 'wamid.exemple-9031',
+  conversationId: CONVERSATION_ID,
+  direction: 'in',
+  channel: 'whatsapp',
+  type: 'image',
+  text: 'Voici la photo du colis',
+  buttonPayload: null,
+  transcription: null,
+  media: { mimeType: 'image/jpeg', filename: null, expired: false },
+  createdAt: '2026-10-08T09:58:02.123Z',
+} as const;
+
 export const EXEMPLES_REPONSES = {
   contactEcrit: { contactId: CONTACT_ID, status: 'created' },
   contactsLot: {
@@ -276,6 +302,17 @@ export const EXEMPLES_REPONSES = {
     rcsMessages: [{ name: 'rappel-rdv', kind: 'card', variables: ['prenom', 'date_rdv'] }],
   },
   erreur: { error: 'fenêtre de 24 h fermée : cette personne n’a pas écrit récemment. Utilisez un template (POST /v1/sends).', code: 'window_closed' },
+  // La lecture des fils (lot 13) : leurs formes sont tenues à celles du serveur par `tests/api-exemples.test.ts`.
+  conversationLue: CONVERSATION_LUE,
+  conversations: { data: [CONVERSATION_LUE], nextCursor: 'MjAyNi0xMC0wOFQwOTo1ODowMi4xMjM0NTZafGM0ZTFiMmEzLTlkOGYtNGU3YS1hNmI1LTFjMmQzZTRmNWE2Yg' },
+  messageLu: MESSAGE_LU,
+  messagesDuFil: {
+    data: [MESSAGE_LU, {
+      id: 'wamid.exemple-8412', conversationId: CONVERSATION_ID, direction: 'out', channel: 'whatsapp', type: 'text',
+      text: 'Bonjour Claire, elle part demain.', buttonPayload: null, transcription: null, media: null, createdAt: '2026-10-08T09:55:40.000Z',
+    }],
+    nextCursor: null,
+  },
 } as const;
 
 /**
@@ -316,6 +353,12 @@ export const CODES_DOCUMENTES = [
   { code: 'template_not_found', statut: 404, ecart: false, quoi: ['Template absent, ou pas encore approuvé.', 'Template missing, or not approved yet.'] },
   { code: 'rcs_message_not_found', statut: 404, ecart: false, quoi: ['Message RCS introuvable dans la bibliothèque.', 'RCS message not found in the library.'] },
   { code: 'send_not_found', statut: 404, ecart: false, quoi: ['Envoi inconnu.', 'Unknown send.'] },
+  { code: 'conversation_not_found', statut: 404, ecart: false, quoi: ['Conversation inconnue de cet espace.', 'Conversation unknown to this workspace.'] },
+  { code: 'message_not_found', statut: 404, ecart: false, quoi: ['Message inconnu de cet espace.', 'Message unknown to this workspace.'] },
+  { code: 'invalid_cursor', statut: 400, ecart: false, quoi: ['Curseur illisible : renvoyez tel quel le nextCursor d’une page.', 'Unreadable cursor: send back a page’s nextCursor as is.'] },
+  { code: 'no_media', statut: 404, ecart: false, quoi: ['Ce message ne porte aucun fichier reçu.', 'This message carries no received file.'] },
+  { code: 'media_expired', statut: 410, ecart: false, quoi: ['Meta ne garde un fichier reçu que 7 jours.', 'Meta keeps a received file for 7 days only.'] },
+  { code: 'media_unavailable', statut: 422, ecart: false, quoi: ['Meta n’a pas rendu le fichier, ou il est trop lourd : réessayez.', 'Meta did not return the file, or it is too large: retry.'] },
   { code: 'scenario_ambiguous', statut: 409, ecart: false, quoi: ['Plusieurs scénarios portent ce nom : utilisez le code scn_.', 'Several scenarios have this name: use the scn_ code.'] },
   { code: 'unsendable_target', statut: 422, ecart: false, quoi: ['La cible ne peut pas partir ainsi. Le message dit pourquoi.', 'The target cannot go out like this. The message says why.'] },
   { code: 'template_category_unknown', statut: 422, ecart: false, quoi: ['Catégorie du template illisible chez Meta : l’envoi est refusé plutôt que deviné.', 'The template category cannot be read at Meta: the send is refused rather than guessed.'] },

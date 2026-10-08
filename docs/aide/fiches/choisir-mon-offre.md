@@ -1,7 +1,7 @@
 ---
 ecran: offre
 source_section: Offres (menu « Paramètres » > Offre)
-source_empreinte: 27fc2c
+source_empreinte: 6a7135
 ---
 # Choisir mon offre
 
@@ -13,8 +13,9 @@ limite (contacts créés, modèles envoyés ce mois-ci, automations allumées, u
 offres côte à côte.
 
 **Ce que l'offre Free comprend.** Votre numéro WhatsApp, l'API, la connexion à Claude, les contacts, les campagnes de
-modèles, les automations et l'agent IA, avec des plafonds. L'Inbox, les scénarios, les statistiques, l'agent de
-Meta, les assistants, les publicités, l'e-mail et les chaînes demandent le Pro. Le RCS, les connecteurs CRM et le
+modèles, les automations et l'agent IA, avec des plafonds. Claude et l'API lisent aussi vos conversations et leurs
+messages. L'écran de l'Inbox, les scénarios, les statistiques, l'agent de Meta, les assistants, les publicités,
+l'e-mail et les chaînes demandent le Pro. Le RCS, les connecteurs CRM et le
 Performance Lab complet demandent l'Entreprise.
 
 **Ce qui n'est jamais compté.** Un contact qui vous écrit le premier n'entre pas dans votre limite de contacts. Une

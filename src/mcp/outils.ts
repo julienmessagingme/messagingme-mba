@@ -14,6 +14,7 @@ import {
 import type { WorkflowResumeRow } from '../workflow/store.pg';
 import type { PlafondPartage } from '../auth/plafond-partage';
 import { RefusOutil, entierBorne, texteObligatoire, valeurOuRefus } from './saisie';
+import { decoderCurseur, encoderCurseur } from '../api/conversations-v1';
 import { OUTILS_AGENT, type DepsAgentMcp } from './outils-agent';
 import { OUTILS_EVENEMENTS, type DepsEvenementsMcp } from './outils-evenements';
 import { OUTILS_NUMERO, type DepsNumeroMcp } from './outils-numero';
@@ -46,7 +47,7 @@ export interface DepsMcp extends DepsRepondre {
   inbox: ConversationsRepondre & {
     listConversations(tenantId: string, opts?: ListConversationsOptions): Promise<ConversationSummary[]>;
     /** Les `n` plus récents, dans l'ordre chronologique : le MCP ne lit jamais le DÉBUT d'un fil. */
-    getDerniersMessages(conversationId: string, n: number): Promise<ConversationMessage[]>;
+    getDerniersMessages(conversationId: string, n: number, avant?: { at: string; id: string }): Promise<ConversationMessage[]>;
     getControlOwner(tenantId: string, waId: string): Promise<ControlOwner>;
     getAssignee(tenantId: string, conversationId: string): Promise<string | null | undefined>;
     setAssignee(tenantId: string, conversationId: string, assignee: string | null, par: AuteurDuChangement): Promise<boolean>;
@@ -297,7 +298,9 @@ const lecture = (title: string): AnnotationsMcp => ({ title, readOnlyHint: true,
 export const OUTILS: OutilMcp[] = [
   {
     nom: 'list_conversations',
-    fonction: 'inbox',
+    // Lire les fils est ouvert dans toutes les offres (décision de Julien du 2026-10-08, lot 13) : seul l'écran Inbox,
+    // et les outils qui ÉCRIVENT dans un fil, restent dans l'offre de l'Inbox.
+    fonction: null,
     /**
      * Les conversations archivées sont exclues, comme dans l'Inbox, et la description le dit : sinon un agent
      * conclurait qu'une conversation rangée n'existe pas.
@@ -339,7 +342,7 @@ export const OUTILS: OutilMcp[] = [
   },
   {
     nom: 'get_conversation',
-    fonction: 'inbox',
+    fonction: null,
     description:
       'Détail d’une conversation : le contact, qui la tient, à qui elle est confiée, et surtout si la '
       + 'fenêtre de service de 24 h est OUVERTE. Hors de cette fenêtre, WhatsApp interdit tout message libre : '
@@ -370,11 +373,11 @@ export const OUTILS: OutilMcp[] = [
   },
   {
     nom: 'get_messages',
-    fonction: 'inbox',
+    fonction: null,
     description:
       `Les messages les plus RÉCENTS d’une conversation, ${MAX_MESSAGES_MCP} au plus, rendus du plus ancien au plus `
-      + `récent. tronque = vrai : le fil a des messages plus anciens que ceux rendus ; au-delà des ${MAX_MESSAGES_MCP} `
-      + 'derniers, cet outil ne les lit pas.',
+      + 'récent. tronque = vrai : le fil a des messages plus anciens que ceux rendus, et before les lit (repasser la '
+      + 'valeur before rendue pour remonter d’une page).',
     scope: 'mcp:read',
     annotations: lecture('Lire les derniers messages'),
     entree: {
@@ -385,6 +388,10 @@ export const OUTILS: OutilMcp[] = [
           type: 'integer', minimum: 1, maximum: MAX_MESSAGES_MCP,
           description: `Nombre de messages les plus récents à rendre (1 à ${MAX_MESSAGES_MCP}, défaut ${MAX_MESSAGES_MCP}).`,
         },
+        before: {
+          type: 'string', minLength: 1, maxLength: 200,
+          description: 'Le before rendu par l’appel précédent, tel quel : les messages ANTÉRIEURS à cette page.',
+        },
       },
       required: ['conversation_id'],
     },
@@ -392,17 +399,25 @@ export const OUTILS: OutilMcp[] = [
       const id = texteObligatoire(args, 'conversation_id', 100);
       await contexteOuRefus(deps, tenantId, id); // garde d'espace avant de lire les messages
       const limit = entierBorne(args, 'limit', MAX_MESSAGES_MCP, 1, MAX_MESSAGES_MCP);
+      const brut = args.before === undefined || args.before === null ? null : texteObligatoire(args, 'before', 200);
+      const avant = brut === null ? null : decoderCurseur(brut);
+      if (brut !== null && avant === null) throw new RefusOutil('before illisible : repassez tel quel le before rendu par l’appel précédent');
       // Un de plus que rendu : c'est lui qui dit s'il en reste avant, sans compter le fil entier.
-      const lus = await deps.inbox.getDerniersMessages(id, limit + 1);
+      const lus = await deps.inbox.getDerniersMessages(id, limit + 1, avant ?? undefined);
+      const rendus = lus.slice(-limit);
+      const premier = rendus[0];
+      const tronque = lus.length > limit;
       return {
         conversation_id: id,
-        messages: lus.slice(-limit).map((m) => ({
+        messages: rendus.map((m) => ({
           direction: m.direction,
           type: m.type,
           body: m.body,
           at: m.createdAt,
         })),
-        tronque: lus.length > limit,
+        tronque,
+        // Le point d'où remonter : le plus ancien message rendu, à la microseconde (`curseur`, jamais `createdAt`).
+        before: tronque && premier?.curseur ? encoderCurseur({ at: premier.curseur, id: premier.id }) : null,
       };
     },
   },
