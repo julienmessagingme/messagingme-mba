@@ -269,6 +269,9 @@ describe.skipIf(!url)('l’offre calculée (0218)', () => {
       const t = await espace('itest-offre-apporte');
       const numeros = new PgAbonnementsNumeroStore(pool);
       const pn = `itest-pn-apporte-${t}`;
+      const waba = `itest-waba-apporte-${t}`;
+      // Un numéro relié pointe vers son compte WhatsApp Business (clé étrangère `phone_numbers_waba_id_fkey`).
+      await pool.query(`insert into waba (id, tenant_id, name) values ($1, $2, 'itest')`, [waba, t]);
       try {
         expect(await numeros.numeroApporte(t)).toBe(false);
         const fourni = await attribuerUnNumero(t);
@@ -276,13 +279,14 @@ describe.skipIf(!url)('l’offre calculée (0218)', () => {
         // Relié par le numéro fourni, écrit comme Meta l'affiche : ce n'est pas un numéro apporté.
         await pool.query(
           `insert into phone_numbers (id, tenant_id, waba_id, display_phone_number, status) values ($1, $2, $3, $4, 'CONNECTED')`,
-          [pn, t, `itest-waba-apporte-${t}`, `+${fourni.slice(0, 2)} ${fourni.slice(2, 6)} ${fourni.slice(6)}`],
+          [pn, t, waba, `+${fourni.slice(0, 2)} ${fourni.slice(2, 6)} ${fourni.slice(6)}`],
         );
         expect(await numeros.numeroApporte(t)).toBe(false);
         await pool.query(`update phone_numbers set display_phone_number = '+33 6 00 00 00 99' where id = $1`, [pn]);
         expect(await numeros.numeroApporte(t)).toBe(true);
       } finally {
         await pool.query('delete from phone_numbers where id = $1', [pn]);
+        await pool.query('delete from waba where id = $1', [waba]);
       }
     });
 
