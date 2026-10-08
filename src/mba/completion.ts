@@ -92,12 +92,12 @@ export function calculerCompletion(e: EntreeCompletion): CompletionMba {
       ...(actives > 0
         ? { etat: 'faite' as const }
         : e.skills.length === 0
-          ? { etat: 'a_faire' as const, raison: 'Aucune compétence : l’agent répond avec les réglages par défaut de Meta.' }
+          ? { etat: 'a_faire' as const, raison: 'Aucune consigne : l’agent répond avec les réglages par défaut de Meta.' }
           : {
             etat: 'a_faire' as const,
             raison: bloquees > 0 && enRelecture === 0
-              ? `${bloquees} compétence(s) refusée(s) par Meta. Elles n’agissent pas.`
-              : `${enRelecture} compétence(s) en relecture chez Meta. Elles n’agissent pas encore.`,
+              ? `${bloquees} consigne(s) refusée(s) par Meta. Elles n’agissent pas.`
+              : `${enRelecture} consigne(s) en relecture chez Meta. Elles n’agissent pas encore.`,
           }),
     });
   }

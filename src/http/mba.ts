@@ -719,7 +719,7 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     const title = b.title.trim().toLowerCase();
     if (title.length > TITRE_SKILL_MAX) return { error: `title trop long (max ${TITRE_SKILL_MAX} caractères)` };
     if (!titreSkillValide(title)) return { error: 'title invalide (minuscules, chiffres et tirets, ex. « politique-de-retour »)' };
-    if (!nonEmpty(b.description)) return { error: 'description requise (elle dit QUAND appliquer la compétence)' };
+    if (!nonEmpty(b.description)) return { error: 'description requise (elle dit QUAND appliquer la consigne)' };
     if (b.description.length > DESCRIPTION_SKILL_MAX) return { error: `description trop longue (max ${DESCRIPTION_SKILL_MAX} caractères)` };
     if (!nonEmpty(b.skill)) return { error: 'skill requis (les instructions elles-mêmes)' };
     if (b.skill.length > CORPS_SKILL_MAX) return { error: `skill trop long (max ${CORPS_SKILL_MAX} caractères)` };

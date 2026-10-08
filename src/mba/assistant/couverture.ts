@@ -100,7 +100,7 @@ export function accueilMba(completion: CompletionMba): string {
   const faites = completion.taches.filter((t) => t.requise && t.etat === 'faite');
   const ouverts = ordreDuJourMba(completion);
   const nom = (c: TacheMba['cle']): string => ({
-    business_info: 'votre description', faq: 'vos questions fréquentes', competences: 'vos compétences',
+    business_info: 'votre description', faq: 'vos questions fréquentes', competences: 'vos consignes',
     sites: 'vos sites', fichiers: 'vos documents', activation: 'la mise en service',
     connecteurs: 'vos connecteurs', outils: 'vos outils',
   }[c]);
