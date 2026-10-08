@@ -5,7 +5,17 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
-## 2026-10-08 : « mon application répond » (lot 12, livraison B), écrit
+## 2026-10-08 : « mon application répond » (lot 12, livraison B), en production
+
+Poussée (`97235386`), CI verte job par job, 0224 appliquée à 16 h 45 UTC et relue en base avant le `up` de l'API, des
+deux workers et de `mba-web` ; portes publiques à 200, la route du répondeur à 401, le mode des 9 espaces inchangé par
+le vrai code. La relecture : aucun rouge, douze jaunes. Le premier aurait rendu la CI d'intégration rouge (la fixture
+`settingsShape` sans `repondeurAdresseId`, le piège que son commentaire décrit) : corrigé avant le push. Les jaunes de
+code ont suivi dans le lot suivant : le lead d'une publicité passait par DEUX chemins de remise, donc deux
+`needs_reply` (le faux du test rendait `[]` là où le vrai dépôt rendait la ligne déjà écrite) ; la fin de parcours
+envoyait un texte vide ; une réponse API ne coupait plus un parcours en attente ; un fil resté à l'agent de Meta ;
+les réessais sans leur priorité.
+
 
 Le cinquième mode du répondeur, `application` (migration 0224 : `repondeur_adresse_id` en `on delete set null` vers
 `adresses_evenements`, CHECK à sens unique comme ceux de 0217). La remise d'un entrant que personne ne tient écrit une

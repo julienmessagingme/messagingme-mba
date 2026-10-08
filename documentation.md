@@ -639,15 +639,19 @@ webhooks sortants, `repondeur_adresse_id`, 0224). Les invariants :
   marque d'escalade ; un lancement refusé consomme quand même le délai. Type de lancement `repondeur_scenario` : jamais
   à un opérateur, étiquettes publiées, graphe publié, fenêtre prouvée par l'entrant.
 - **Le mode Application** (lot 12, livraison B, `src/evenements/besoin-reponse.ts`) : la remise reprend le fil à
-  l'équipe puis demande la réponse à l'application par `conversation.needs_reply`, une ligne d'`envois_evenements` vers
-  l'adresse DÉSIGNÉE (sans abonnement), enfilée en priorité 2 sur `evenements-envoi`. Son identifiant dérive de
-  l'identifiant du message (une redélivrance de Meta n'envoie pas deux fois). Le fil reste `app_workflow`, hors
+  l'équipe (et à l'agent de Meta, dont la reprise au changement de mode n'est faite qu'au mieux) puis demande la
+  réponse à l'application par `conversation.needs_reply`, une ligne d'`envois_evenements` vers l'adresse DÉSIGNÉE (sans
+  abonnement), enfilée en priorité 2 sur `evenements-envoi`, réessais compris (`prioriteDuType`). Son identifiant dérive
+  de l'identifiant du message, et la ligne s'écrit par `creerNeuf` (`on conflict do nothing`) : une redélivrance, ou le
+  lead d'une publicité qui passe par deux chemins de remise, n'enfile pas deux fois. Le corps porte le message tel
+  qu'enregistré (type, texte, transcription), relu par son identifiant : la fin de parcours ne passe aucun texte. Le fil reste `app_workflow`, hors
   d'« À traiter ». **Aucun repli** (décision de Julien du 2026-10-08) : une application muette laisse le message sans
   réponse, ses réessais se lisent au journal. Seule une adresse qui NE PEUT PAS recevoir (en pause, ou au-delà de
   l'offre par le même rang que l'envoi) passe le message à l'équipe, comme le mode Équipe ; une panne de la demande
   aussi (l'erreur remonte jusqu'à l'appelant de la remise, qui la journalise : aucun rejeu, le message est à l'équipe). `choisirRepondeur` refuse une adresse
   inconnue (404), en pause ou gelée par l'offre (422). La réponse arrive par `POST /v1/messages/whatsapp` : sur un fil
-  que l'application tient (`ControleDuFil.tenuParLApplication`), elle ne prend PAS le fil (`filTenuParLApplication`
+  que l'application tient (`ControleDuFil.tenuParLApplication` : mode Application, fil `app_workflow`, et AUCUN
+  parcours qui attend la réponse du contact, celui-là la réponse le coupe), elle ne prend PAS le fil (`filTenuParLApplication`
   dans `repondreDansLaFenetre`), sinon la conversation passerait à l'équipe au premier envoi ; et en mode Application
   la route compte l'opération `messages.reponse_application`, hors du quota quotidien d'envois, sous le plafond par
   minute.

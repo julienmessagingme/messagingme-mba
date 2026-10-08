@@ -434,7 +434,8 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
       limiteAdresses: async (t) => (await offres.offreDe(t)).droits.limites.adressesWebhook,
       fiche: (t, waId) => fichesDesEvenements.ficheParWaId(t, waId),
       conversationId: (t, waId) => envoisEvenements.conversationDuContact(t, waId),
-      creerEnvois: (lignes) => envoisEvenements.creer(lignes),
+      messageRecu: (t, m) => envoisEvenements.messageRecu(t, m),
+      creerEnvoiNeuf: (ligne) => envoisEvenements.creerNeuf(ligne),
       enfiler: (job, priority) => queue.enqueue(FILE_EVENEMENTS_ENVOI, job, { groupId: job.tenantId, priority }),
     }),
   });

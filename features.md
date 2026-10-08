@@ -2284,7 +2284,8 @@ scénario, comment importer des contacts.
   envoie l'essai (connexion OAuth d'un admin, jamais une clé d'API).
 - ✅ **« Mon application répond »** (lot 12, livraison B) : désignée dans « Qui répond au client » (Accueil, ou
   `set_default_responder` avec `mode: "application"`), une adresse reçoit `conversation.needs_reply` pour chaque
-  message que personne ne tient, en priorité sur les autres envois, sans avoir à s'y abonner. L'application répond
+  message que personne ne tient (son texte, son type et la transcription d'un vocal), en priorité sur les autres
+  envois, sans avoir à s'y abonner ; l'application répond à cet événement seulement, pas à `message.received`. L'application répond
   par `POST /v1/messages/whatsapp` : sa réponse ne prend pas la conversation, et ne compte pas dans le quota
   quotidien d'envois de l'API (le plafond par minute s'applique). Aucun repli si elle se tait.
 - ⚠️ **Limite de l'offre** : 1 adresse active en Base, 5 en Pro, sans limite en Entreprise. Au retour en Base, les

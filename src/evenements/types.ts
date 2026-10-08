@@ -32,6 +32,12 @@ export const TYPE_ESSAI = 'test';
  * il part vers l'adresse DÉSIGNÉE par le répondeur (`tenant_settings.repondeur_adresse_id`).
  */
 export const TYPE_BESOIN_REPONSE = 'conversation.needs_reply';
+/** Devant tout le reste de la file d'envoi : un client attend sa réponse (les gestes du contact sont à 1, les accusés à 0). */
+export const PRIORITE_BESOIN_REPONSE = 2;
+/** La priorité d'un envoi dans la file, premier essai comme réessais. `null` = la priorité par défaut. */
+export function prioriteDuType(type: string): number | null {
+  return type === TYPE_BESOIN_REPONSE ? PRIORITE_BESOIN_REPONSE : null;
+}
 export type TypeEvenement = TypeAbonnable | typeof TYPE_BESOIN_REPONSE | typeof TYPE_ESSAI;
 
 /** La traduction d'un signal en type public. Exhaustive : un signal ajouté demain ne compile pas sans son type. */
@@ -171,7 +177,7 @@ export const CHAMPS_DU_TYPE: Readonly<Record<TypeEvenement, readonly string[]>> 
     'action_suggestion', 'handled_by', 'exchanges_count', 'summary',
   ],
   'contact.risk_changed': ['contact', 'level', 'previous_level', 'score', 'reasons'],
-  'conversation.needs_reply': ['contact', 'conversation_id', 'message_id', 'text', 'reply_with'],
+  'conversation.needs_reply': ['contact', 'conversation_id', 'channel', 'message_id', 'message_type', 'text', 'transcription', 'reply_with'],
   test: ['message'],
 };
 

@@ -27,8 +27,8 @@ Spec `docs/superpowers/specs/2026-10-08-webhooks-sortants-design.md`, plan `docs
 0223 appliquée et relue en base avant le `up` de l'API, des deux workers et de `mba-web` ; relecture 1 rouge corrigé
 avant le push). Reste l'essai réel : une adresse de test reçoit l'essai et un vrai message entrant, signature vérifiée
 par l'exemple de la doc. Livraison B : le mode « mon application répond »
-(0224), sans repli, réponses hors quota : écrite, tests verts, en relecture, à déployer (0224 AVANT le `up` de l'API
-et des deux workers). Son essai réel : désigner l'adresse de test sur l'Accueil, écrire depuis un téléphone, recevoir
+(0224), sans repli, réponses hors quota : EN PRODUCTION (`97235386`, 0224 appliquée et relue avant le `up`), ses
+jaunes de relecture poussés ensuite. Son essai réel : désigner l'adresse de test sur l'Accueil, écrire depuis un téléphone, recevoir
 `conversation.needs_reply`, répondre par l'API, et voir la conversation rester hors d'« À traiter ».
 
 ## LOT 19 : LE TUNNEL DE LA BASE, EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ

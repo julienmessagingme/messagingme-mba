@@ -12,7 +12,8 @@ const A = 'c3d4e5f6-a7b8-4c9d-8e0f-1a2b3c4d5e6f';
 const CONV = 'd4e5f6a7-b8c9-4d0e-9f1a-2b3c4d5e6f70';
 const C = 'b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e';
 
-function banc(o: { adresse?: { active: boolean; rang: number } | null; limite?: number | null; dejaLa?: boolean } = {}) {
+type Recu = { type: string | null; text: string | null; transcription: string | null } | null;
+function banc(o: { adresse?: { active: boolean; rang: number } | null; limite?: number | null; dejaLa?: boolean; message?: Recu } = {}) {
   const lignes: LigneEnvoi[] = [];
   const jobs: Array<{ job: JobEnvoi; priorite: number }> = [];
   const deps: DepsDemandeALApplication = {
@@ -20,7 +21,9 @@ function banc(o: { adresse?: { active: boolean; rang: number } | null; limite?: 
     limiteAdresses: async () => (o.limite === undefined ? null : o.limite),
     fiche: async () => ({ contactId: C, telephone: '+33611111111', nom: 'Claire', externalId: null, optOutWhatsapp: false, optOutRcs: false }),
     conversationId: async () => CONV,
-    creerEnvois: async (ls) => { lignes.push(...ls); return o.dejaLa ? [] : ls.map(() => ({ id: 'e1e1e1e1-0000-4000-8000-000000000000', type: ls[0]!.type })); },
+    messageRecu: async () => (o.message === undefined ? { type: 'text', text: 'Bonjour, mon colis ?', transcription: null } : o.message),
+    // Le contrat du vrai dépôt (`creerNeuf`) : `null` quand la ligne existait déjà.
+    creerEnvoiNeuf: async (l) => { lignes.push(l); return o.dejaLa ? null : 'e1e1e1e1-0000-4000-8000-000000000000'; },
     enfiler: async (job, priorite) => { jobs.push({ job, priorite }); },
     maintenant: () => new Date('2026-10-08T10:00:00Z'),
   };
@@ -37,7 +40,8 @@ describe('la demande de réponse à l’application', () => {
     expect(corps).toMatchObject({
       type: 'conversation.needs_reply', workspace_id: T,
       data: {
-        contact: { id: C, phone: '+33611111111', name: 'Claire' }, conversation_id: CONV, message_id: 'wamid.1', text: 'Bonjour, mon colis ?',
+        contact: { id: C, phone: '+33611111111', name: 'Claire' }, conversation_id: CONV, channel: 'whatsapp', message_id: 'wamid.1',
+        message_type: 'text', text: 'Bonjour, mon colis ?', transcription: null,
         reply_with: { method: 'POST', path: '/v1/messages/whatsapp' },
       },
     });
@@ -62,9 +66,21 @@ describe('la demande de réponse à l’application', () => {
     }
   });
 
-  it('un contenu vide (fin de parcours) part sans texte, plutôt qu’avec une chaîne vide', async () => {
+  it('un contenu vide sans message nommé part sans texte, plutôt qu’avec une chaîne vide', async () => {
     const b = banc();
     await b.demande.demander(T, '33611111111', { adresseId: A, messageDeclencheur: null, contenu: '  ' });
-    expect(JSON.parse(b.lignes[0]!.corps).data.text).toBeNull();
+    expect(JSON.parse(b.lignes[0]!.corps).data).toMatchObject({ text: null, message_type: null, transcription: null });
+  });
+
+  it('🔴 la fin de parcours (contenu vide) envoie le texte du message enregistré, à quoi l’application doit répondre', async () => {
+    const b = banc({ message: { type: 'text', text: 'Et pour un retour ?', transcription: null } });
+    await b.demande.demander(T, '33611111111', { adresseId: A, messageDeclencheur: 'wamid.2', contenu: '' });
+    expect(JSON.parse(b.lignes[0]!.corps).data).toMatchObject({ message_id: 'wamid.2', message_type: 'text', text: 'Et pour un retour ?' });
+  });
+
+  it('un vocal part avec son type et sa transcription, pas seulement « [audio] »', async () => {
+    const b = banc({ message: { type: 'audio', text: '[audio]', transcription: 'je voudrais changer mon rendez-vous' } });
+    await b.demande.demander(T, '33611111111', { adresseId: A, messageDeclencheur: 'wamid.3', contenu: '[audio]' });
+    expect(JSON.parse(b.lignes[0]!.corps).data).toMatchObject({ message_type: 'audio', transcription: 'je voudrais changer mon rendez-vous' });
   });
 });

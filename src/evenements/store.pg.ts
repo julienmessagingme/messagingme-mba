@@ -203,6 +203,21 @@ export class PgEnvoisEvenementsStore {
    * tentées : une distribution rejouée après un arrêt entre l'écriture et l'enfilement les réenfile (le job en trop se
    * retrouvera périmé). Un événement déjà tenté (livré, en réessai, en échec) n'est jamais renvoyé par là.
    */
+  /**
+   * Une ligne seule, écrite si elle n'existe pas : son identifiant, ou `null` si l'événement est déjà là pour cette
+   * adresse. Pour la demande de réponse à l'application (`besoin-reponse.ts`), qui ne doit pas être enfilée deux fois.
+   */
+  async creerNeuf(l: LigneEnvoi): Promise<string | null> {
+    const res = await this.pool.query<{ id: string }>(
+      `insert into envois_evenements (tenant_id, adresse_id, evenement_id, type, contact_id, corps)
+       values ($1, $2, $3, $4, $5, $6)
+       on conflict (adresse_id, evenement_id) do nothing
+       returning id`,
+      [l.tenantId, l.adresseId, l.evenementId, l.type, l.contactId, l.corps],
+    );
+    return res.rows[0]?.id ?? null;
+  }
+
   async creer(lignes: readonly LigneEnvoi[]): Promise<Array<{ id: string; type: string }>> {
     if (lignes.length === 0) return [];
     const res = await this.pool.query<{ id: string; type: string }>(

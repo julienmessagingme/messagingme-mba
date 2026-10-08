@@ -56,6 +56,22 @@ describe('le mode `application` dans la remise d’un entrant', () => {
     expect(b.etat(W)?.owner).toBe('app_human');
   });
 
+  it('🔴 un fil resté à l’agent de Meta revient aux robots avant la demande : la réponse de l’application ne le prendra pas', async () => {
+    const b = bancDuFil({ mode: 'application', repondeurAdresseId: AD, conversations: { [W]: { owner: 'mba' } } });
+    await remettre(b);
+    expect(b.demandesApplication).toHaveLength(1);
+    expect(b.etat(W)?.owner).toBe('app_workflow');
+  });
+
+  it('🔴 un fil tenu par l’application, mais pas un parcours qui attend la réponse du contact : la réponse API coupe le parcours', async () => {
+    const libreFil = bancDuFil({ ...libre, mode: 'application', repondeurAdresseId: AD });
+    expect(await libreFil.fil.tenuParLApplication(T, W)).toBe(true);
+    const parcours = bancDuFil({ ...libre, mode: 'application', repondeurAdresseId: AD, enAttente: true });
+    expect(await parcours.fil.tenuParLApplication(T, W)).toBe(false);
+    const equipe = bancDuFil({ mode: 'equipe', conversations: { [W]: { owner: 'app_workflow' as const } } });
+    expect(await equipe.fil.tenuParLApplication(T, W)).toBe(false);
+  });
+
   it('l’adresse supprimée (clé étrangère en `set null`) : le mode se lit « équipe »', () => {
     expect(modeEffectif({ mbaEnabled: false, repondeurMode: 'application', repondeurAgentId: null, repondeurWorkflowId: null, repondeurAdresseId: null })).toBe('equipe');
     expect(modeEffectif({ mbaEnabled: false, repondeurMode: 'application', repondeurAgentId: null, repondeurWorkflowId: null, repondeurAdresseId: AD })).toBe('application');

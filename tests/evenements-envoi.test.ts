@@ -88,17 +88,18 @@ function banc(o: { envoi?: EnvoiAFaire | null; issue?: IssueAppel; verrouille?: 
   const gestes: string[] = [];
   const notes: Array<{ tentative: number; statut: string; prochainEssai: Date | null; code: number | null }> = [];
   const jobs: Array<{ job: JobEnvoi; startAfter: Date }> = [];
+  const priorites: Array<number | null> = [];
   const appels: Array<{ url: string; enTetes: Record<string, string> }> = [];
   const deps: DepsTravailEnvoi = {
     lire: async () => (o.envoi === undefined ? envoi() : o.envoi),
     noter: async (_t, _e, tentative, maj) => { gestes.push('noter'); notes.push({ tentative, statut: maj.statut, prochainEssai: maj.prochainEssai, code: maj.code }); },
-    enfiler: async (job, startAfter) => { gestes.push('enfiler'); jobs.push({ job, startAfter }); },
+    enfiler: async (job, startAfter, priorite) => { gestes.push('enfiler'); jobs.push({ job, startAfter }); priorites.push(priorite); },
     espaceVerrouille: async () => o.verrouille ?? false,
     limiteAdresses: async () => (o.limite === undefined ? null : o.limite),
     appeler: async (a) => { appels.push({ url: a.url, enTetes: a.enTetes }); return o.issue ?? { livre: true, definitif: false, code: 200, extrait: '' }; },
     maintenant: () => o.maintenant ?? DEBUT,
   };
-  return { travail: creerTravailEnvoi(deps), gestes, notes, jobs, appels };
+  return { travail: creerTravailEnvoi(deps), gestes, notes, jobs, appels, priorites };
 }
 
 const job = (tentative = 0): JobEnvoi => ({ tenantId: T, envoiId: E, tentative });
@@ -119,6 +120,16 @@ describe('le travail de la file d’envoi', () => {
     expect(b.gestes).toEqual(['enfiler', 'noter']);
     expect(b.jobs).toEqual([{ job: job(1), startAfter: plus(30_000) }]);
     expect(b.notes).toEqual([{ tentative: 0, statut: 'en_cours', prochainEssai: plus(30_000), code: 503 }]);
+  });
+
+  it('🔴 le réessai d’une demande de réponse garde sa priorité ; celui d’un autre type prend la priorité par défaut', async () => {
+    const echec = { livre: false, definitif: false, code: 503, extrait: '' };
+    const demande = banc({ envoi: envoi({ type: 'conversation.needs_reply' }), issue: echec });
+    await demande.travail(job(0));
+    expect(demande.priorites).toEqual([2]);
+    const autre = banc({ issue: echec });
+    await autre.travail(job(0));
+    expect(autre.priorites).toEqual([null]);
   });
 
   it('🔴 au-delà de 24 h, l’envoi passe en échec et n’est plus reprogrammé', async () => {

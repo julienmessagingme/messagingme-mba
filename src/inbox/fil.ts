@@ -510,7 +510,10 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
 
     async tenuParLApplication(tenantId, waId) {
       if (modeEffectif(await reglagesDe(tenantId)) !== 'application') return false;
-      return (await depot.getControlOwner(tenantId, waId)) === 'app_workflow';
+      if ((await depot.getControlOwner(tenantId, waId)) !== 'app_workflow') return false;
+      // `app_workflow` désigne AUSSI un parcours qui attend la réponse du contact : celui-là, une réponse par l'API le
+      // coupe (elle prend le fil), comme avant ce mode ; sinon deux voix parleraient au client.
+      return (await deps.parcours.findWaitingByWaId(tenantId, waId)) === null;
     },
 
     async enModeApplication(tenantId) {
@@ -684,6 +687,9 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
           if (adresseId === null) return;
           if (!(await unRobotPeutPartir())) return;
           if (!(await reprendreALEquipe())) return laisserALEquipe();
+          // Un fil resté à l'agent de Meta (sa reprise au changement de mode n'est faite qu'au mieux) revient aux robots :
+          // sinon la réponse de l'application le prendrait, et le message suivant irait à l'équipe.
+          await depot.setControlOwner(tenantId, waId, 'app_workflow', { par: CAUSES.agentDeMetaRemplace, only: ['mba'] });
           /**
            * Le fil reste tenu par les robots (`app_workflow`), hors d'« À traiter » : l'application répond par l'API, et
            * sa réponse ne prend pas le fil (`repondreDansLaFenetre`). Aucun repli si elle se tait (décision de Julien du

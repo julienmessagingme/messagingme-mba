@@ -811,7 +811,9 @@ async function main(): Promise<void> {
       };
     },
     noter: (t, envoiId, tentative, maj) => envoisEvenements.noter(t, envoiId, tentative, maj),
-    enfiler: (job, startAfter) => queue.enqueue(FILE_EVENEMENTS_ENVOI, job, { groupId: job.tenantId, startAfter }),
+    enfiler: (job, startAfter, priorite) => queue.enqueue(FILE_EVENEMENTS_ENVOI, job, {
+      groupId: job.tenantId, startAfter, ...(priorite === null ? {} : { priority: priorite }),
+    }),
     espaceVerrouille: (t) => envoisEvenements.espaceVerrouille(t),
     limiteAdresses: limiteAdressesEvenements,
     appeler: appelProduction,

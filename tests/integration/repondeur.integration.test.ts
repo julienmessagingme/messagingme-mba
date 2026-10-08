@@ -9,7 +9,7 @@ import { PgInboxStore } from '../../src/inbox/store.pg';
 import { PgListeStore } from '../../src/mba/liste.pg';
 import { PgAlertesCreditStore } from '../../src/repondeur/alerte-credit';
 import { PgContactStore } from '../../src/crm/contact-store.pg';
-import { PgAdressesEvenementsStore } from '../../src/evenements/store.pg';
+import { PgAdressesEvenementsStore, PgEnvoisEvenementsStore } from '../../src/evenements/store.pg';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -132,6 +132,18 @@ describe.skipIf(!url)('le répondeur par défaut (Postgres)', () => {
       expect(await reglages().get(tenantId)).toMatchObject({ repondeurMode: 'application', repondeurAdresseId: null });
       expect((await reglages().modesParTenant([tenantId])).get(tenantId)).toBe('equipe');
       await reglages().setRepondeur(tenantId, { mode: 'equipe' });
+    });
+
+    it('🔴 creerNeuf : la même demande deux fois ne rend une ligne qu’une fois (rien à enfiler la seconde)', async () => {
+      const adresses = new PgAdressesEvenementsStore(pool);
+      const envois = new PgEnvoisEvenementsStore(pool);
+      const a = await adresses.creer(tenantId, { url: 'https://app.client.fr/demande', description: '', types: ['message.received'], secretChiffre: 'c' });
+      const ligne = { tenantId, adresseId: a.id, evenementId: 'evt_demande_itest', type: 'conversation.needs_reply' as const, contactId: null, corps: '{}' };
+      const premier = await envois.creerNeuf(ligne);
+      expect(premier).toMatch(/^[0-9a-f-]{36}$/);
+      expect(await envois.creerNeuf(ligne)).toBeNull();
+      expect((await pool.query('select count(*)::int as n from envois_evenements where adresse_id = $1', [a.id])).rows[0].n).toBe(1);
+      await adresses.supprimer(tenantId, a.id);
     });
 
     it('oublierRepondeurSi : seulement l’agent désigné ; le mode reste `agent`, sans agent', async () => {

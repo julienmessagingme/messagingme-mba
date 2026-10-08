@@ -65,7 +65,7 @@ export const TYPES_DOCUMENTES: readonly TypeDocumente[] = [
       'Mode « mon application répond » : un message attend la réponse de votre application, à l’adresse désignée par le répondeur.',
       '“My app answers” mode: a message awaits your app’s answer, at the address set as the responder.',
     ],
-    champs: ['contact', 'conversation_id', 'message_id', 'text', 'reply_with'],
+    champs: ['contact', 'conversation_id', 'channel', 'message_id', 'message_type', 'text', 'transcription', 'reply_with'],
   },
   {
     type: 'test',

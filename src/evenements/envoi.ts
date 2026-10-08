@@ -4,6 +4,7 @@ import { estRedirectionRefusee, estRefusAdresseInterne, fetchPublic } from '../l
 import { resolutionPublique, type VerdictResolution } from '../lib/adresse-privee';
 import { texteDe } from '../lib/erreur';
 import { enTetesSignes, secretsQuiSignent } from './signature';
+import { prioriteDuType } from './types';
 
 /**
  * L'ENVOI D'UN WEBHOOK SORTANT (lot 12, livraison A) : un job = une tentative d'un envoi (un événement vers une
@@ -134,7 +135,8 @@ export interface DepsTravailEnvoi {
   lire(tenantId: string, envoiId: string): Promise<EnvoiAFaire | null>;
   /** Écrit l'issue de la tentative `tentativeAttendue` (et passe à la suivante), seulement si la ligne en est toujours là. */
   noter(tenantId: string, envoiId: string, tentativeAttendue: number, maj: MajEnvoi): Promise<void>;
-  enfiler(job: JobEnvoi, startAfter: Date): Promise<void>;
+  /** `priorite` : celle du type (`prioriteDuType`), pour qu'un réessai garde sa place ; `null` = par défaut. */
+  enfiler(job: JobEnvoi, startAfter: Date, priorite: number | null): Promise<void>;
   /** Une suppression d'espace en cours : le verrou de l'espace n'arrête pas le worker, il le vérifie lui-même. */
   espaceVerrouille(tenantId: string): Promise<boolean>;
   /** Le nombre d'adresses actives de l'offre, `null` = sans limite. */
@@ -184,7 +186,7 @@ export function creerTravailEnvoi(deps: DepsTravailEnvoi): (data: unknown) => Pr
     }
     // 🔴 L'essai suivant s'enfile AVANT d'être écrit : un arrêt entre les deux laisse un job de plus (qui se retrouvera
     // périmé ou refera une tentative), jamais un envoi « en cours » que plus rien ne relance.
-    await deps.enfiler({ tenantId: job.tenantId, envoiId: e.id, tentative: job.tentative + 1 }, suivant);
+    await deps.enfiler({ tenantId: job.tenantId, envoiId: e.id, tentative: job.tentative + 1 }, suivant, prioriteDuType(e.type));
     await deps.noter(job.tenantId, e.id, job.tentative, { statut: 'en_cours', code: issue.code, extrait: issue.extrait, prochainEssai: suivant });
   };
 }
