@@ -40,7 +40,7 @@ test('🔴 la commande branche Claude Code SANS clé (connexion OAuth au premier
   await expect(commande).not.toContainText(/Authorization|Bearer|VOTRE_CLE/);
 });
 
-test('🔴 la clé de l’application : créée avec les droits par défaut, montrée une fois en ligne de .env', async ({ page }) => {
+test('🔴 la clé de l’application : créée avec les droits par défaut et la lecture des fils, montrée une fois en ligne de .env', async ({ page }) => {
   await mockAccueil(page);
   const demandes = await simulerCreationCle(page);
   await page.goto('/demarrer');
@@ -48,7 +48,8 @@ test('🔴 la clé de l’application : créée avec les droits par défaut, mon
   await expect(page.getByTestId('demarrer-cle')).toHaveText('MESSAGINGME_API_KEY=mm_live_e2e');
   await expect(page.getByTestId('demarrer-creer-cle')).toHaveCount(0);
   expect(demandes).toHaveLength(1);
-  expect(demandes[0]!.scopes).toEqual(['contacts:write', 'sends:create']);
+  // Plus la lecture des fils (lot 13) : l'application répond aux messages, et répondre demande le contexte.
+  expect(demandes[0]!.scopes).toEqual(['contacts:write', 'sends:create', 'conversations:read']);
   // Le prompt range la clé dans la variable, jamais dans le code.
   await expect(page.getByTestId('demarrer-prompt')).toContainText('MESSAGINGME_API_KEY');
 });

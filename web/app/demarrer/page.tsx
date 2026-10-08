@@ -40,7 +40,9 @@ function Demarrer({ session }: { session: Session }) {
   const creerCle = async () => {
     setCle({ enCours: true, valeur: null, erreur: null });
     try {
-      const creee = await createApiKey(tenantId, t('Mon application', 'My application'), [...API_SCOPES_PAR_DEFAUT]);
+      // Plus la lecture des fils (lot 13) : l'application d'un vibe codeur répond aux messages, et répondre demande le
+      // contexte. Hors de cette page, le droit reste une case à cocher (données personnelles, `API_SCOPES_PAR_DEFAUT`).
+      const creee = await createApiKey(tenantId, t('Mon application', 'My application'), [...API_SCOPES_PAR_DEFAUT, 'conversations:read']);
       setCle({ enCours: false, valeur: creee.key, erreur: null });
     } catch (err) {
       setCle({ enCours: false, valeur: null, erreur: err instanceof Error ? err.message : t('Une erreur est survenue', 'Something went wrong') });
