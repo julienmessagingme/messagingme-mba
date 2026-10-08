@@ -31,6 +31,12 @@ par l'exemple de la doc. Livraison B : le mode « mon application répond »
 jaunes de relecture poussés ensuite. Son essai réel : désigner l'adresse de test sur l'Accueil, écrire depuis un téléphone, recevoir
 `conversation.needs_reply`, répondre par l'API, et voir la conversation rester hors d'« À traiter ».
 
+## L'OFFRE GRATUITE S'APPELLE « FREE », EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ
+
+Plan `docs/superpowers/plans/2026-10-08-offre-free.md`. En production (`dd3298bf`, CI verte job par job, `up` de l'API,
+des deux workers et de `mba-web`, fiches d'aide rechargées ; relecture : le rouge portait sur l'ordre écrit du plan,
+corrigé). Reste l'essai réel : la page de l'offre d'un espace en Free et `get_plan` depuis Claude Code disent « Free ».
+
 ## LOT 19 : LE TUNNEL DE LA BASE, EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ
 
 Plan `docs/superpowers/plans/2026-10-08-tunnel-de-la-base.md`, console seule (Vercel au push), aucune route ni migration.
