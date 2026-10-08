@@ -44,6 +44,26 @@ export class PgListeStore implements ListeStore {
     await this.pool.query(`delete from mba_liste where tenant_id = $1 and wa_id = $2`, [tenantId, waId]);
   }
 
+  /**
+   * Au plus `PLAFOND_LISTE` lignes par numéro et par espace : la lecture parcourt la liste de l'espace par la clé
+   * primaire, et rejoint la conversation par son unicité `(tenant_id, wa_id)`, sans index neuf. L'activité est le plus
+   * tardif du dernier message et de l'entrée sur la liste : un contact confié à l'instant par « Rendre la main », dont
+   * le dernier message est ancien, ne doit pas sortir le premier. À égalité, le `wa_id` tranche, pour un choix stable.
+   */
+  async moinsActive(tenantId: string, phoneNumberId: string): Promise<{ waId: string; taille: number } | null> {
+    const res = await this.pool.query<{ wa_id: string; taille: string }>(
+      `select l.wa_id, count(*) over () as taille
+         from mba_liste l
+         left join conversations c on c.tenant_id = l.tenant_id and c.wa_id = l.wa_id
+        where l.tenant_id = $1 and l.phone_number_id = $2
+        order by greatest(l.ajoute_le, coalesce(c.last_message_at, l.ajoute_le)) asc, l.wa_id asc
+        limit 1`,
+      [tenantId, phoneNumberId],
+    );
+    const r = res.rows[0];
+    return r ? { waId: r.wa_id, taille: Number(r.taille) } : null;
+  }
+
   /** Servie par la clé primaire `(tenant_id, wa_id)` : la page suivante repart de la dernière clé lue. */
   async lister(tenantId: string, apres: string | null, limite: number): Promise<string[]> {
     const res = await this.pool.query<{ wa_id: string }>(

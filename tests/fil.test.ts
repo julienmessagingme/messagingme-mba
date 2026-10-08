@@ -231,6 +231,31 @@ describe('le module est le seul à parler au fil', () => {
   });
 });
 
+describe('la liste pleine : qui a le droit de faire sortir quelqu’un (rotation, 2026-10-08)', () => {
+  // Un vrai numéro : un identifiant qui n’est pas un numéro ne fait jamais sortir personne, la table ci-dessous dit 'w'.
+  const N = '33612345678';
+  const pleine = Array.from({ length: 20 }, (_, i) => `3360000${String(i).padStart(4, '0')}`);
+
+  it('🔴 la remise « personne ne suit » l’a : le moins actif sort, puis ajout, release, mba et événement', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+    const b = bancDuFil({ surLaListe: pleine, conversations: { [N]: { owner: 'app_workflow' } } });
+    await b.fil.remettreSiPersonneNeSuit('t1', N, MSG, { rouverte: false });
+    expect(b.appels).toEqual([`retrait:${pleine[0]}`, `ajout:${N}`, `release:${N}`, `evenement:${N}`]);
+    expect(b.etat(N)?.owner).toBe('mba');
+    expect(b.table.has(N)).toBe(true);
+    expect(b.table.size).toBe(20);
+  });
+
+  it('🔴 le balayage d’inactivité ne l’a pas : false, personne ne sort, et AUCUN appel à Meta', async () => {
+    // Il confie en rafale des fils endormis : avec ce droit, il ferait sortir ceux qui parlent à l’agent en ce moment.
+    const b = bancDuFil({ surLaListe: pleine, conversations: { [N]: { owner: 'app_human' } } });
+    expect(await b.fil.rendreApresInactivite('t1', N, 'app_human', 'mba')).toBe(false);
+    expect(b.appels).toEqual([]);
+    expect(b.etat(N)?.owner).toBe('app_human');
+    expect(b.table.size).toBe(20);
+  });
+});
+
 describe('la table des transitions', () => {
   it.each(TABLE)('$nom', async (c) => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});

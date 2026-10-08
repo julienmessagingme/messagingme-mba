@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
-  creerListeDeLAgent, formesDuNumero, numeroDuDestinataire, RetraitDeLaListeRefuse, REJEU_ATTENTE_DEFAUT_MS, REJEU_ATTENTE_MAX_MS,
+  creerListeDeLAgent, formesDuNumero, ListePleine, numeroDuDestinataire, PLAFOND_LISTE, RetraitDeLaListeRefuse, REJEU_ATTENTE_DEFAUT_MS, REJEU_ATTENTE_MAX_MS,
   type ClientListe, type ListeStore,
 } from '../src/mba/liste';
 import { creerControleDuFil } from '../src/inbox/fil';
@@ -25,6 +25,8 @@ afterEach(() => { vi.restoreAllMocks(); });
 const T = 't1';
 const PN = 'pn1';
 const WA = '33612345678';
+/** Le droit de faire sortir quelqu'un quand la liste est pleine : celui de tous les gestes sauf le balayage. */
+const PLACE = { faireDeLaPlace: true };
 
 /** Un faux client MBA qui écrit dans `journal` et répond selon le script. `liste` : ce que Meta a déjà. */
 function clientFactice(o: {
@@ -78,7 +80,7 @@ const doublon = () => new MetaApiError(400, { message: 'The request or consumer 
 describe('ajouter : Meta, puis la ligne', () => {
   it('🔴 dans cet ordre, en E.164, avec l’identifiant rendu par Meta', async () => {
     const m = monter();
-    expect(await m.liste.ajouter(T, PN, WA)).toBe(true);
+    expect(await m.liste.ajouter(T, PN, WA, PLACE)).toBe(true);
     expect(m.journal).toEqual([`meta:ajout:${PN}:+${WA}`, `ligne:pose:${WA}:e-neuve`]);
     expect(m.lignes.get(WA)).toEqual({ phoneNumberId: PN, entreeId: 'e-neuve' });
   });
@@ -87,34 +89,34 @@ describe('ajouter : Meta, puis la ligne', () => {
     // L'idempotence se tient par notre table : Meta répond au doublon par un 400 qui ne se distingue pas d'un numéro
     // invalide (mesuré le 2026-09-29).
     const m = monter({ initial: [WA] });
-    expect(await m.liste.ajouter(T, PN, WA)).toBe(false);
+    expect(await m.liste.ajouter(T, PN, WA, PLACE)).toBe(false);
     expect(m.journal).toEqual([]);
   });
 
   it('🔴 un 400 de doublon (déjà chez Meta, pas chez nous) : une relecture retrouve l’entrée, qui est enregistrée', async () => {
     const m = monter({ ajout: () => { throw doublon(); }, liste: [{ id: 'e-ancienne', consumer_phone_number: `+${WA}` }] });
-    expect(await m.liste.ajouter(T, PN, WA)).toBe(true);
+    expect(await m.liste.ajouter(T, PN, WA, PLACE)).toBe(true);
     expect(m.journal).toEqual([`meta:ajout:${PN}:+${WA}`, 'meta:lecture', `ligne:pose:${WA}:e-ancienne`]);
   });
 
   it('🔴 un 400 que la relecture n’explique pas : l’erreur de Meta remonte, et rien n’est écrit', async () => {
     const m = monter({ ajout: () => { throw doublon(); }, liste: [{ id: 'e-autre', consumer_phone_number: '+33700000000' }] });
-    await expect(m.liste.ajouter(T, PN, WA)).rejects.toThrow(/consumer identifier is invalid/);
+    await expect(m.liste.ajouter(T, PN, WA, PLACE)).rejects.toThrow(/consumer identifier is invalid/);
     expect(m.lignes.has(WA)).toBe(false);
   });
 
   it('un refus qui n’est pas un 400 ne déclenche aucune relecture', async () => {
     const m = monter({ ajout: () => { throw new MetaApiError(403, { message: 'interdit' }); } });
-    await expect(m.liste.ajouter(T, PN, WA)).rejects.toThrow('interdit');
+    await expect(m.liste.ajouter(T, PN, WA, PLACE)).rejects.toThrow('interdit');
     expect(m.journal).toEqual([`meta:ajout:${PN}:+${WA}`]);
   });
 
   it('⚠️ une réponse d’ajout illisible (sans identifiant) : la relecture la retrouve, sinon on lève', async () => {
     const retrouvee = monter({ ajout: () => ({ ok: true }), liste: [{ id: 'e-lue', consumer_phone_number: `+${WA}` }] });
-    expect(await retrouvee.liste.ajouter(T, PN, WA)).toBe(true);
+    expect(await retrouvee.liste.ajouter(T, PN, WA, PLACE)).toBe(true);
     expect(retrouvee.lignes.get(WA)?.entreeId).toBe('e-lue');
     const perdue = monter({ ajout: () => ({ ok: true }) });
-    await expect(perdue.liste.ajouter(T, PN, WA)).rejects.toThrow(/aucun identifiant/);
+    await expect(perdue.liste.ajouter(T, PN, WA, PLACE)).rejects.toThrow(/aucun identifiant/);
     expect(perdue.lignes.has(WA)).toBe(false);
   });
 
@@ -122,8 +124,111 @@ describe('ajouter : Meta, puis la ligne', () => {
     // Sans ligne, plus rien ne retirerait ce contact : il recevrait nos modèles avec l'agent qui répond.
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const m = monter({ poserEchoue: true });
-    await expect(m.liste.ajouter(T, PN, WA)).rejects.toThrow('base indisponible');
+    await expect(m.liste.ajouter(T, PN, WA, PLACE)).rejects.toThrow('base indisponible');
     expect(m.journal).toEqual([`meta:ajout:${PN}:+${WA}`, `ligne:pose:${WA}:e-neuve`, `meta:retrait:${PN}:e-neuve`]);
+  });
+});
+
+describe('la liste tourne : au plafond de Meta, le moins actif sort (2026-10-08)', () => {
+  /** Vingt numéros distincts, posés dans cet ordre : en mémoire, le premier posé est le moins actif. */
+  const vingt = Array.from({ length: PLAFOND_LISTE }, (_, i) => `3360000${String(i).padStart(4, '0')}`);
+  const pleineChezMeta = vingt.map((w) => ({ id: `meta-${w}`, consumer_phone_number: `+${w}` }));
+
+  it('le plafond est celui que Meta documente : 20 contacts par numéro', () => {
+    expect(PLAFOND_LISTE).toBe(20);
+  });
+
+  it('🔴 notre table est pleine : le moins actif sort (Meta puis sa ligne) AVANT l’ajout', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+    const m = monter({ initial: vingt });
+    expect(await m.liste.ajouter(T, PN, WA, PLACE)).toBe(true);
+    expect(m.journal).toEqual([
+      `meta:retrait:${PN}:entree-${vingt[0]}`, `ligne:supprime:${vingt[0]}`,
+      `meta:ajout:${PN}:+${WA}`, `ligne:pose:${WA}:e-neuve`,
+    ]);
+    expect(m.lignes.size).toBe(PLAFOND_LISTE);
+    expect(m.lignes.has(vingt[1]!), 'un seul sort').toBe(true);
+  });
+
+  it('🔴 une place libre : personne ne sort', async () => {
+    const m = monter({ initial: vingt.slice(1) });
+    expect(await m.liste.ajouter(T, PN, WA, PLACE)).toBe(true);
+    expect(m.journal).toEqual([`meta:ajout:${PN}:+${WA}`, `ligne:pose:${WA}:e-neuve`]);
+  });
+
+  it('🔴 le plafond se compte PAR NUMÉRO : vingt contacts sur un autre numéro ne font sortir personne', async () => {
+    const m = monter();
+    for (const w of vingt) m.lignes.set(w, { phoneNumberId: 'pn-autre', entreeId: `entree-${w}` });
+    expect(await m.liste.ajouter(T, PN, WA, PLACE)).toBe(true);
+    expect(m.journal).toEqual([`meta:ajout:${PN}:+${WA}`, `ligne:pose:${WA}:e-neuve`]);
+  });
+
+  it('🔴 Meta la dit pleine alors que notre table ne l’est pas : le moins actif sort, et UN nouvel essai', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+    let essais = 0;
+    const m = monter({
+      initial: [vingt[0]!, vingt[1]!],
+      liste: pleineChezMeta,
+      ajout: () => { essais += 1; if (essais === 1) throw doublon(); return { id: 'e-neuve', consumer_phone_number: `+${WA}` }; },
+    });
+    expect(await m.liste.ajouter(T, PN, WA, PLACE)).toBe(true);
+    expect(m.journal).toEqual([
+      `meta:ajout:${PN}:+${WA}`, 'meta:lecture',
+      `meta:retrait:${PN}:entree-${vingt[0]}`, `ligne:supprime:${vingt[0]}`,
+      `meta:ajout:${PN}:+${WA}`, `ligne:pose:${WA}:e-neuve`,
+    ]);
+  });
+
+  it('🔴 Meta la dit pleine deux fois : le refus remonte, sans troisième essai', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+    const m = monter({ initial: [vingt[0]!, vingt[1]!], liste: pleineChezMeta, ajout: () => { throw doublon(); } });
+    await expect(m.liste.ajouter(T, PN, WA, PLACE)).rejects.toThrow(/consumer identifier is invalid/);
+    expect(m.journal.filter((l) => l.startsWith('meta:ajout')), 'on ne boucle pas').toHaveLength(2);
+    expect(m.lignes.has(WA)).toBe(false);
+  });
+
+  it('🔴 Meta la dit pleine et notre table n’a personne à faire sortir : le refus remonte tout de suite', async () => {
+    const m = monter({ liste: pleineChezMeta, ajout: () => { throw doublon(); } });
+    await expect(m.liste.ajouter(T, PN, WA, PLACE)).rejects.toThrow(/consumer identifier is invalid/);
+    expect(m.journal).toEqual([`meta:ajout:${PN}:+${WA}`, 'meta:lecture']);
+  });
+
+  it('🔴 un 400 sur une liste QUI N’EST PAS pleine ne fait sortir personne', async () => {
+    // Un numéro refusé n'est pas une liste pleine : faire sortir un contact pour rien lui couperait l'agent.
+    const m = monter({ initial: [vingt[0]!], liste: [{ id: 'e-autre', consumer_phone_number: '+33700000000' }], ajout: () => { throw doublon(); } });
+    await expect(m.liste.ajouter(T, PN, WA, PLACE)).rejects.toThrow(/consumer identifier is invalid/);
+    expect(m.lignes.has(vingt[0]!)).toBe(true);
+    expect(m.journal).toEqual([`meta:ajout:${PN}:+${WA}`, 'meta:lecture']);
+  });
+
+  it('🔴 sans le droit de faire de la place (le balayage), liste pleine : `ListePleine`, et AUCUN appel à Meta', async () => {
+    // Le balayage confie en rafale des fils inactifs : avec ce droit, il ferait sortir ceux qui parlent à l'agent.
+    const m = monter({ initial: vingt });
+    await expect(m.liste.ajouter(T, PN, WA, { faireDeLaPlace: false })).rejects.toBeInstanceOf(ListePleine);
+    expect(m.journal).toEqual([]);
+    expect(m.lignes.size).toBe(PLAFOND_LISTE);
+  });
+
+  it('🔴 sans le droit de faire de la place, Meta la dit pleine : le refus remonte, personne ne sort', async () => {
+    const m = monter({ initial: [vingt[0]!], liste: pleineChezMeta, ajout: () => { throw doublon(); } });
+    await expect(m.liste.ajouter(T, PN, WA, { faireDeLaPlace: false })).rejects.toThrow(/consumer identifier is invalid/);
+    expect(m.lignes.has(vingt[0]!)).toBe(true);
+    expect(m.journal).toEqual([`meta:ajout:${PN}:+${WA}`, 'meta:lecture']);
+  });
+
+  it('🔴 un identifiant qui n’est pas un numéro, liste pleine : personne ne sort pour lui', async () => {
+    // Meta refuse un BSUID à chaque ajout : le faire entrer couperait l'agent à un contact valide, pour rien.
+    const m = monter({ initial: vingt });
+    await expect(m.liste.ajouter(T, PN, 'US.13491208655302741918', PLACE)).rejects.toBeInstanceOf(ListePleine);
+    expect(m.journal).toEqual([]);
+  });
+
+  it('⚠️ le retrait du sortant est refusé : l’ajout est tenté quand même, c’est Meta qui dit s’il reste de la place', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const m = monter({ initial: vingt, retrait: [new MetaApiError(403, { message: 'interdit' })] });
+    expect(await m.liste.ajouter(T, PN, WA, PLACE)).toBe(true);
+    expect(m.journal).toEqual([`meta:retrait:${PN}:entree-${vingt[0]}`, `meta:ajout:${PN}:+${WA}`, `ligne:pose:${WA}:e-neuve`]);
   });
 });
 
@@ -364,7 +469,8 @@ describe('migration 0195', () => {
   it('🔴 chaque requête du magasin est scopée à l’espace', () => {
     const magasin = readFileSync(new URL('../src/mba/liste.pg.ts', import.meta.url), 'utf8');
     const requetes = [...magasin.matchAll(/`((?:select|insert|delete|update)[^`]*mba_liste[^`]*)`/g)].map((r) => r[1]!);
-    expect(requetes).toHaveLength(5); // `lister` (lot 5) compris : la cinquième passe la même garde.
+    // `lister` (lot 5) et `moinsActive` (la rotation, 2026-10-08) compris : chacune passe la même garde.
+    expect(requetes).toHaveLength(6);
     for (const q of requetes) expect(q, q).toMatch(/tenant_id = \$1|values \(\$1/);
   });
 });

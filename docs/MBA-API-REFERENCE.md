@@ -432,9 +432,14 @@ Rien n'avait été relu chez Meta depuis le 26 août : les ajouts de ce document
 
 - 🔴 **2026-09-18, la liste de l'agent est plafonnée à 20 contacts par numéro** ; un ajout sur une liste pleine
   rend 400, le maximum courant dans le détail de l'erreur ; ajout, lecture et retrait limités à 1 000 requêtes par
-  heure par app. Notre plateforme inscrit chaque contact confié à l'agent (`src/inbox/fil.ts`, `confier`) et ne l'en
-  retire qu'à une reprise, avant un modèle, à la purge ou au changement de répondeur : la liste ne fait que
-  grossir. Mesuré : 7 contacts sur l'espace de test à 14 h, 5 à 16 h. Traité dans une tâche à part.
+  heure par app. Notre plateforme inscrit chaque contact confié à l'agent (`src/inbox/fil.ts`, `confier`) et l'en
+  retirait seulement à une reprise, avant un modèle, à la purge ou au changement de répondeur (mesuré : 7 contacts
+  sur l'espace de test à 14 h, 5 à 16 h, le 2026-10-07). **Depuis le 2026-10-08, la liste TOURNE** : pleine, le
+  contact le moins récemment actif en sort avant l'ajout (`PLAFOND_LISTE`, `src/mba/liste.ts`), sauf pour le
+  balayage d'inactivité, qui n'en a pas le droit. C'est un pont : la cible est le Conversation Routing de la doc
+  WhatsApp Cloud API (developers.facebook.com/documentation/business-messaging/whatsapp/conversation-routing/), où
+  un appui sur un bouton de modèle marketing ou utility re-route le fil vers le primaire de cette porte, l'agent par
+  défaut, ce qui explique la mesure du 2026-09-29. Il ne se règle que dans Meta Business Suite, par l'entreprise.
 - **2026-09-23, `agent_event` nomme la cause d'un échec** : `consumer_not_in_agent_audience`, `agent_not_enabled`,
   `thread_not_owned_by_agent`, `event_content_rejected`, `billing_not_configured`,
   `agent_temporarily_unavailable`, sinon `internal_server_error`. Deux questions de « Ce que la doc ne dit pas » ont

@@ -19,6 +19,13 @@ import { messageDe } from '../lib/erreur';
  *
  * Le module reçoit le client MBA par une fonction (`clientMba`), appelée au moment du geste : la fabrique Meta,
  * qui fournit ce client, dépend elle-même de ce module.
+ *
+ * 🔴 LA LISTE TOURNE (2026-10-08). Meta la plafonne à 20 contacts par numéro, documenté le 2026-09-18 (page
+ * agent-allowlist : « up to 20 allowlisted consumer phone numbers », 400 au-delà). Sans rotation, le 21e contact
+ * confié était refusé, et l'agent ne prenait plus personne. Quand la liste du numéro est pleine, le contact dont la
+ * conversation est la MOINS RÉCEMMENT ACTIVE sort avant l'ajout (`PLAFOND_LISTE`, `ListeStore.moinsActive`). S'il
+ * réécrit, son message arrive en `standby` hors liste, la remise le confie de nouveau, et un autre sort à sa place.
+ * C'est un pont : la cible est le routage de Meta (Conversation Routing), que nous ne pouvons pas encore régler.
  */
 
 /**
@@ -57,6 +64,12 @@ export interface ListeStore {
    * et une page par rang le rendrait à chaque tour.
    */
   lister(tenantId: string, apres: string | null, limite: number): Promise<string[]>;
+  /**
+   * Le contact de la liste de ce numéro dont la conversation est la moins récemment active (son dernier message,
+   * sinon son entrée sur la liste, le plus tardif des deux), avec la taille de la liste du numéro dans cet espace.
+   * `null` si l'espace n'a aucun contact sur la liste de ce numéro.
+   */
+  moinsActive(tenantId: string, phoneNumberId: string): Promise<{ waId: string; taille: number } | null>;
 }
 
 /** Ce que ce module demande au client MBA (`src/mba/client.ts`). Les réponses sont lues par `safeParse`. */
@@ -79,11 +92,18 @@ export interface DepsListe {
 
 export interface ListeDeLAgent {
   /**
-   * Met le contact sur la liste. Rien si notre table l'y a déjà (aucun appel). Sinon, dans l'ordre : l'ajout chez
-   * Meta en E.164, puis la ligne. Rend `true` si le contact vient d'être ajouté, `false` s'il y était déjà. Lève si
-   * Meta refuse, ou si la ligne n'a pas pu s'écrire (l'ajout est alors défait chez Meta).
+   * Met le contact sur la liste. Rien si notre table l'y a déjà (aucun appel). Sinon, dans l'ordre : la place (si la
+   * liste du numéro est pleine, le contact le moins actif en sort), l'ajout chez Meta en E.164, puis la ligne. Si Meta
+   * dit la liste pleine alors que notre table ne l'était pas, un autre contact sort et l'ajout est tenté UNE fois de
+   * plus. Rend `true` si le contact vient d'être ajouté, `false` s'il y était déjà. Lève si Meta refuse, ou si la
+   * ligne n'a pas pu s'écrire (l'ajout est alors défait chez Meta).
+   *
+   * `faireDeLaPlace` est REQUIS, et chaque appelant dit s'il a le droit de faire sortir quelqu'un. Faux pour le
+   * balayage, qui confie en rafale des fils inactifs : il ferait sortir les contacts qui parlent à l'agent au profit
+   * de contacts endormis, et brûlerait le quota de Meta, partagé par tous les espaces. Liste pleine sans ce droit, ou
+   * pour un identifiant qui n'est pas un numéro (refusé par Meta à chaque ajout) : `ListePleine`, sans aucun appel.
    */
-  ajouter(tenantId: string, phoneNumberId: string, waId: string): Promise<boolean>;
+  ajouter(tenantId: string, phoneNumberId: string, waId: string, o: { faireDeLaPlace: boolean }): Promise<boolean>;
   /**
    * Retire le contact de la liste. `true` : il n'y est plus (retiré maintenant, absent de notre table sans aucun
    * appel, ou déjà absent chez Meta). `false` : Meta a refusé (ou son client est indisponible), journalisé, la ligne
@@ -120,6 +140,14 @@ export interface ListeDeLAgent {
 export const PAQUET_LISTE = 100;
 
 /**
+ * Le nombre de contacts que Meta accepte sur la liste d'un numéro (page agent-allowlist, documenté le 2026-09-18).
+ * Meta prévient que ce plafond peut changer. S'il monte, on garde 20 places sans rien casser. S'il baisse, l'ajout
+ * au-delà est refusé (400) et remonte comme un refus, comme avant la rotation : la constante est à baisser. Le
+ * détail de ce 400 « reports the current maximum » d'après la doc, sous une forme jamais mesurée, donc pas lue.
+ */
+export const PLAFOND_LISTE = 20;
+
+/**
  * Le retrait d'un contact de la liste a été refusé avant un modèle : le modèle n'est pas parti. Une `MetaApiError`
  * en 503, donc rangée rejouable par `classify` et jamais prise pour un plafond du numéro (`estPlafondNumero`) :
  * le refus vise ce contact, pas le numéro. Le message est celui que l'Inbox affiche et que la campagne inscrit
@@ -135,6 +163,17 @@ export class RetraitDeLaListeRefuse extends MetaApiError {
       error_user_msg: 'Ce contact n’a pas pu être retiré de la liste de l’agent de Meta, le modèle n’est pas parti. Réessayez dans un instant.',
     });
     this.name = 'RetraitDeLaListeRefuse';
+  }
+}
+
+/**
+ * La liste du numéro est pleine, et ce geste n'a pas le droit d'en faire sortir quelqu'un (`ajouter`, option
+ * `faireDeLaPlace`), ou le contact n'est pas un numéro. Aucun appel à Meta n'a été fait.
+ */
+export class ListePleine extends Error {
+  constructor() {
+    super('liste de l’agent de Meta pleine : personne n’en sort pour ce geste');
+    this.name = 'ListePleine';
   }
 }
 
@@ -179,18 +218,44 @@ export function creerListeDeLAgent(deps: DepsListe): ListeDeLAgent {
   const { store } = deps;
 
   /**
-   * L'entrée de ce numéro dans une relecture de la liste de Meta, ou `null`. Meta répond au doublon d'ajout par un
-   * 400 sans code qui le distingue d'un numéro invalide (mesuré le 2026-09-29) : seule la relecture tranche.
+   * Une relecture de la liste de Meta : l'entrée de ce numéro (`null` si absente), et le nombre d'entrées du numéro.
+   * Meta répond au doublon d'ajout comme à la liste pleine par un 400 sans code qui les distingue d'un numéro
+   * invalide (mesuré le 2026-09-29 pour le doublon) : seule la relecture tranche. Illisible, elle vaut liste vide.
    */
-  const retrouver = async (client: ClientListe, phoneNumberId: string, waId: string): Promise<string | null> => {
+  const relire = async (client: ClientListe, phoneNumberId: string, waId: string): Promise<{ entreeId: string | null; taille: number }> => {
     const lu = listeMeta.safeParse(await client.listAllowlist(phoneNumberId));
-    if (!lu.success) return null;
+    if (!lu.success) return { entreeId: null, taille: 0 };
     const elements = Array.isArray(lu.data) ? lu.data : lu.data.data;
     for (const brut of elements) {
       const e = entreeMeta.safeParse(brut);
-      if (e.success && e.data.consumer_phone_number !== undefined && chiffresDe(e.data.consumer_phone_number) === waId) return e.data.id;
+      if (e.success && e.data.consumer_phone_number !== undefined && chiffresDe(e.data.consumer_phone_number) === waId) {
+        return { entreeId: e.data.id, taille: elements.length };
+      }
     }
-    return null;
+    return { entreeId: null, taille: elements.length };
+  };
+
+  /**
+   * L'ajout chez Meta : l'identifiant de l'entrée, ou `pleine` (avec le refus de Meta) si la liste du numéro est au
+   * plafond sans ce contact. Lève sur tout autre refus, et sur une réponse sans identifiant que la relecture ne
+   * retrouve pas.
+   */
+  const ajouterChezMeta = async (client: ClientListe, phoneNumberId: string, waId: string): Promise<{ entreeId: string } | { pleine: unknown }> => {
+    try {
+      const lu = entreeMeta.safeParse(await client.addToAllowlist(phoneNumberId, `+${waId}`));
+      if (lu.success) return { entreeId: lu.data.id };
+    } catch (err) {
+      // Seul un 400 peut être un doublon (le contact est déjà sur la liste chez Meta, pas chez nous) ou une liste pleine.
+      if (!(err instanceof MetaApiError && err.httpStatus === 400)) throw err;
+      const relu = await relire(client, phoneNumberId, waId);
+      if (relu.entreeId !== null) return { entreeId: relu.entreeId };
+      if (relu.taille >= PLAFOND_LISTE) return { pleine: err };
+      throw err;
+    }
+    // Une réponse d'ajout illisible : l'entrée existe peut-être chez Meta, la relecture la retrouve.
+    const relu = await relire(client, phoneNumberId, waId);
+    if (relu.entreeId !== null) return { entreeId: relu.entreeId };
+    throw new Error(`Meta n’a rendu aucun identifiant pour l’ajout de ${waId} à la liste de son agent`);
   };
 
   /** Retire une entrée chez Meta, un rejeu sur une erreur rejouable. Un 404 vaut retrait. Lève le dernier refus. */
@@ -225,23 +290,39 @@ export function creerListeDeLAgent(deps: DepsListe): ListeDeLAgent {
     return true;
   };
 
+  /** Fait sortir un contact pour faire place à un autre, et le journalise : c'est la seule trace d'une rotation. */
+  const faireSortir = async (tenantId: string, sortant: string, entrant: string): Promise<boolean> => {
+    const ok = await retirer(tenantId, sortant);
+    // eslint-disable-next-line no-console
+    console.info(`liste de l’agent de Meta pleine (${tenantId}) : ${sortant} ${ok ? 'sort' : 'n’a pas pu sortir'} pour faire place à ${entrant}`);
+    return ok;
+  };
+
   return {
-    async ajouter(tenantId, phoneNumberId, waId) {
+    async ajouter(tenantId, phoneNumberId, waId, o) {
       if (await store.trouver(tenantId, waId)) return false;
-      const client = await deps.clientMba(tenantId);
-      let entreeId: string | null = null;
-      try {
-        const lu = entreeMeta.safeParse(await client.addToAllowlist(phoneNumberId, `+${waId}`));
-        if (lu.success) entreeId = lu.data.id;
-      } catch (err) {
-        // Seul un 400 peut être un doublon (le contact est déjà sur la liste chez Meta, pas chez nous).
-        if (!(err instanceof MetaApiError && err.httpStatus === 400)) throw err;
-        entreeId = await retrouver(client, phoneNumberId, waId);
-        if (entreeId === null) throw err;
+      // Un identifiant qui n'est pas un numéro (BSUID) est refusé par Meta à chaque ajout : faire sortir quelqu'un pour
+      // lui couperait l'agent à un contact valide, sans rien gagner.
+      const peutFaireSortir = o.faireDeLaPlace && numeroDuDestinataire(waId) !== null;
+      // La liste du numéro est pleine dans notre table : le moins actif sort AVANT l'ajout, ou rien ne part du tout.
+      // Un retrait refusé n'arrête rien : l'ajout dira si Meta a encore de la place.
+      const avant = await store.moinsActive(tenantId, phoneNumberId);
+      if (avant && avant.taille >= PLAFOND_LISTE) {
+        if (!peutFaireSortir) throw new ListePleine();
+        await faireSortir(tenantId, avant.waId, waId);
       }
-      // Une réponse d'ajout illisible : l'entrée existe peut-être chez Meta, la relecture la retrouve.
-      entreeId ??= await retrouver(client, phoneNumberId, waId);
-      if (entreeId === null) throw new Error(`Meta n’a rendu aucun identifiant pour l’ajout de ${waId} à la liste de son agent`);
+      const client = await deps.clientMba(tenantId);
+      let ajout = await ajouterChezMeta(client, phoneNumberId, waId);
+      if ('pleine' in ajout) {
+        // Meta la dit pleine, notre table ne l'était pas (un ajout concurrent, une entrée posée hors de nous) : un
+        // contact de plus sort, et UN seul nouvel essai. Rien à faire sortir, ou un second refus : le refus remonte.
+        if (!peutFaireSortir) throw ajout.pleine;
+        const suivant = await store.moinsActive(tenantId, phoneNumberId);
+        if (!suivant || !(await faireSortir(tenantId, suivant.waId, waId))) throw ajout.pleine;
+        ajout = await ajouterChezMeta(client, phoneNumberId, waId);
+        if ('pleine' in ajout) throw ajout.pleine;
+      }
+      const { entreeId } = ajout;
       try {
         await store.poser(tenantId, waId, phoneNumberId, entreeId);
       } catch (err) {

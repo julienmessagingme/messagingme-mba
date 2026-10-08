@@ -148,6 +148,12 @@ export function listeEnMemoire(initial: readonly string[] = [], o: { poserEchoue
     supprimer: async (_t, waId) => { lignes.delete(waId); },
     // Fidèle à `PgListeStore.lister` : par `wa_id` croissant, strictement après la dernière clé lue.
     lister: async (_t, apres, limite) => [...lignes.keys()].sort().filter((w) => apres === null || w > apres).slice(0, limite),
+    // Sans conversations en mémoire, l'activité est l'ordre d'entrée : le premier posé est le moins actif. L'ordre par
+    // dernier message de la vraie requête est éprouvé contre Postgres (`tests/integration/mba-liste.integration.test.ts`).
+    moinsActive: async (_t, phoneNumberId) => {
+      const duNumero = [...lignes].filter(([, e]) => e.phoneNumberId === phoneNumberId).map(([w]) => w);
+      return duNumero.length === 0 ? null : { waId: duNumero[0]!, taille: duNumero.length };
+    },
   };
   return { store, lignes };
 }

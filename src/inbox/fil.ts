@@ -1,7 +1,7 @@
 import type { ControlOwner } from './store.pg';
 import { messageDe } from '../lib/erreur';
 import { automatique, parCause, type AuteurDuChangement } from './evenements';
-import type { ListeDeLAgent } from '../mba/liste';
+import { ListePleine, type ListeDeLAgent } from '../mba/liste';
 import { delaiHumainMs, repriseDue } from './delai-reprise';
 import { destinataireAgentEvent, evenementMessageSansSuite, traceReponse, type EvenementAgent } from '../mba/evenement';
 import type { DemarreurRepondeur } from '../repondeur/demarrer';
@@ -430,7 +430,7 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
    * suivant). Si nous tenions en fait le fil, le prochain message du client arrive chez nous (`messages`), et la
    * remise « personne ne suit » rejoue le `release` et prévient l'agent.
    */
-  const confier = async (tenantId: string, waId: string, o: { automatique: boolean }): Promise<IssueConfier> => {
+  const confier = async (tenantId: string, waId: string, o: { automatique: boolean; faireDeLaPlace: boolean }): Promise<IssueConfier> => {
     if (!(await mbaAllume(tenantId))) return { sorte: 'agent_eteint' };
     if (o.automatique && await depot.estConversationDeTest(tenantId, waId)) {
       // eslint-disable-next-line no-console
@@ -443,7 +443,7 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
     }
     const numero = await deps.numeros.getTenantPhoneNumberId(tenantId);
     if (!numero) return { sorte: 'aucun_numero' };
-    const ajoute = await deps.liste.ajouter(tenantId, numero, waId);
+    const ajoute = await deps.liste.ajouter(tenantId, numero, waId, { faireDeLaPlace: o.faireDeLaPlace });
     try {
       await (await deps.meta.mbaClientForTenant(tenantId)).releaseThread(numero, waId);
       return { sorte: 'confie', numero, ajoute, rendu: true };
@@ -486,7 +486,7 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
     // dans la foulée, un mot-clé). Confier d'abord mettait le contact sur la liste et rendait le fil à l'agent en
     // plein parcours, l'écriture gardée `only: ['app_human']` ne protégeant que notre colonne (relecture du 3/10).
     if ((await depot.getControlOwner(tenantId, waId)) !== 'app_human') return;
-    if ((await confier(tenantId, waId, { automatique: true })).sorte !== 'confie') return;
+    if ((await confier(tenantId, waId, { automatique: true, faireDeLaPlace: true })).sorte !== 'confie') return;
     await depot.setControlOwner(tenantId, waId, 'mba', { par: CAUSES.finDeParcours, only: ['app_human'], effacerEscalade: true });
   };
 
@@ -516,7 +516,7 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
         return 'app_workflow';
       }
       // Geste humain : un fil de test se confie aussi (règle 5).
-      if ((await confier(tenantId, waId, { automatique: false })).sorte !== 'confie') return 'aucun_numero';
+      if ((await confier(tenantId, waId, { automatique: false, faireDeLaPlace: true })).sorte !== 'confie') return 'aucun_numero';
       await depot.setControlOwner(tenantId, waId, 'mba', { par, effacerEscalade: true });
       return 'mba';
     },
@@ -661,7 +661,7 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
       }
       let issue: IssueConfier;
       try {
-        issue = await confier(tenantId, waId, { automatique: true });
+        issue = await confier(tenantId, waId, { automatique: true, faireDeLaPlace: true });
       } catch (err) {
         // L'agent ne répondra pas (un identifiant qui n'est pas un numéro est refusé à chaque ajout) : la
         // conversation passe, ou reste, à l'équipe. Laissée à `app_workflow`, elle sortirait d'« À traiter » sans
@@ -738,8 +738,13 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
     async rendreApresInactivite(tenantId, waId, detenteur, vers) {
       if (vers === 'mba') {
         try {
-          if ((await confier(tenantId, waId, { automatique: true })).sorte !== 'confie') return false;
+          // Sans droit de faire de la place : ces fils sont inactifs depuis le délai de l'équipe, et les confier en
+          // rafale ferait sortir de la liste ceux qui parlent à l'agent en ce moment. Le contact qui réécrit sera
+          // confié par la remise, qui, elle, en a le droit.
+          if ((await confier(tenantId, waId, { automatique: true, faireDeLaPlace: false })).sorte !== 'confie') return false;
         } catch (err) {
+          // Liste pleine : un état normal du balayage, rejoué à chaque passage, qui ne mérite pas une erreur par fil.
+          if (err instanceof ListePleine) return false;
           // eslint-disable-next-line no-console
           console.error(`remise à l’agent de Meta REFUSÉE pour ${waId}, l’état local n’a pas été écrit:`, messageDe(err));
           return false;
@@ -761,7 +766,7 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
         depot.setControlOwner(tenantId, waId, 'app_human', { par, only: ['app_workflow', 'mba'], ouvreUneDemande: true, escalade: true });
       let issue: IssueConfier;
       try {
-        issue = await confier(tenantId, waId, { automatique: true });
+        issue = await confier(tenantId, waId, { automatique: true, faireDeLaPlace: true });
       } catch (err) {
         journaliser('error', 'vers_mba_non_confie', { err, tenantId, waId });
         await aLEquipe();

@@ -5,6 +5,35 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-08 : la liste de l'agent de Meta tourne (plafond de 20), écrit, pas encore déployé
+
+Julien relève que Meta plafonne la liste de l'agent à 20 contacts par numéro (page agent-allowlist, documenté au
+changelog du 2026-09-18, 400 au-delà, 1 000 requêtes par heure par app pour l'ajout, la lecture et le retrait). Le
+mode liste du 2026-09-29 n'en sortait personne par inactivité : au 21e contact confié, l'agent ne prenait plus
+personne et tout partait à l'équipe.
+
+**Ce qu'on a trouvé en cherchant à repasser en EVERYONE.** La cause du « modèle rend le fil à l'agent » du
+2026-09-29 est documentée dans la section Conversation Routing de la doc WhatsApp Cloud API, que ni le dépôt ni la
+veille ne connaissaient : allumer l'agent le rend seul primaire des portes d'entrée, et un appui sur un bouton d'un
+modèle marketing ou utility remet le fil à zéro et le re-route vers ce primaire. Le réglage (primaire par porte,
+« Route to Sender », partenaire d'escalade, visibilité standby) se fait UNIQUEMENT dans Meta Business Suite, par
+l'entreprise, sans API ; nous ne le trouvons même pas dans notre propre compte. Julien a donc tranché : la liste
+reste, et elle tourne, le temps d'obtenir de Meta le routage (ticket Direct Support rédigé).
+
+**La rotation** (`src/mba/liste.ts`, `PLAFOND_LISTE`, `PgListeStore.moinsActive`, sans migration) : liste du numéro
+pleine, le contact dont la conversation est la moins récemment active sort avant l'ajout ; Meta la disant pleine
+quand notre table ne l'était pas, un autre sort et l'ajout est retenté une fois. Le droit de faire sortir quelqu'un
+est requis à chaque ajout : le balayage d'inactivité ne l'a pas (relevé par la relecture : il confiait en rafale des
+fils endormis et aurait fait sortir les contacts actifs), ni un identifiant qui n'est pas un numéro.
+
+Relecture indépendante : aucun rouge. Jaunes traités dans le lot : le balayage, les BSUID, trois cas de test
+(retrait du sortant refusé, `greatest` contre `coalesce`, prédicat d'espace de la jointure). Jaunes laissés : une
+réaction seule en mode MBA fait encore entrer un contact (`fil.ts`, garde `reactionsSeules` absente du cas `mba`) ;
+deux rotations concurrentes choisissent le même sortant ; un contact confié par le bloc « Envoyer au MBA » qui sort
+perd sa délégation sans trace ; la colonne d'un contact sorti reste `mba` (état déjà produit par le retrait avant
+un modèle). Chaque garde neuve vérifiée dans les deux sens par mutation.
+
+
 ## 2026-10-08 : les coûts selon l'offre (lot 6, livraison C), écrit
 
 **Mesuré avant d'écrire** (tâche 16) : la facturation de Vercel n'est pas lisible par l'API (404 sur ce plan), et le
