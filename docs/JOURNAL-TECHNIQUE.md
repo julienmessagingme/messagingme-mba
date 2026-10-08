@@ -7,6 +7,12 @@
 
 ## 2026-10-07 : les jaunes de la relecture de B2a (lot 6)
 
+**Ce qui part** : `d9517a45` (51 fichiers, aucune migration), poussé le 7 au soir par-dessus deux commits voisins, l'arbre
+fusionné revérifié (typage, suite, auto-attaque, console, e2e de l'offre). CI verte job par job, déployé le 8 au matin
+sur décision de Julien : l'API, le worker principal et `mba-web` relancés, le worker d'analyse ensuite, le proxy
+rechargé après le `healthy`. Portes publiques à 200, `/mcp` à 401, journaux propres. Le correctif voisin `75c896ae` (le
+bac à sable de Meta) est parti avec.
+
 **Trois décisions de Julien** : un widget au devenir « scénario » est gelé en Base comme tout démarrage d'un scénario
 du client ; « Envoyer un bloc » d'un agent IA est gelé comme celui de l'agent de Meta ; la suspension des membres ne
 vaut qu'en Base et en Pro (en Entreprise, une limite tapée dans `/ops` ne coupe personne).

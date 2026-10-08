@@ -42,7 +42,7 @@ au-delà des 10 plus anciennes, l'agent de Meta et le scénario répondeur, les 
 par fonction, `set_default_responder`) est EN PRODUCTION (`ac36a394`, sans migration). ✅ Essai réel fait le soir même
 sur « Espace de dumas family » mis en Base : « Agent de Meta » et « Scénario » grisés dans « Qui répond », vus par
 Julien, puis remis en Entreprise (l'espace n'a ni automation, ni scénario, ni second membre : le reste est prouvé par
-les tests). **Les jaunes de sa relecture sont corrigés** (à relire avec le lot suivant), avec trois décisions de Julien : un widget à devenir
+les tests). **Les jaunes de sa relecture sont corrigés et en production** (`d9517a45`, à relire avec le lot suivant), avec trois décisions de Julien : un widget à devenir
 « scénario » est gelé en Base (refusé à la création, un clic ne démarre rien) ; « Envoyer un bloc » d'un agent IA est
 gelé comme celui de l'agent de Meta ; la suspension des membres ne vaut qu'en Base et en Pro (en Entreprise, la limite
 ne bloque que les invitations). Puis **B2b, le numéro inclus dans le Pro** (arrêt du numéro seul avec avoir au passage
