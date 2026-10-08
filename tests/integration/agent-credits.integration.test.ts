@@ -322,15 +322,16 @@ describe.skipIf(!url)('solde prépayé d un workspace (Postgres)', () => {
       expect(offre.rowCount).toBe(0);
     });
 
-    it('🔴 un espace NÉ DEPUIS CLAUDE CODE reçoit 1 €, pas 5 € (tenants.origine, 0212)', async () => {
+    it('🔴 le MÊME montant pour toutes les origines (lot 6, C) : un espace né depuis Claude Code reçoit ce que reçoit la console', async () => {
+      // De 0212 au lot 6, Claude Code recevait 1 € et la console 5 € ; depuis la livraison C, un seul réglage
+      // (`CREDIT_OFFERT_MICRO_EUR`, 1 € par défaut), ici 5 € pour le distinguer du défaut.
       const email = `credit.claude.${suffixe()}@exemple.fr`;
       const { tenantId: t } = await new PgUserStore(pool).createTenantWithAdmin('Espace itest Claude Code', { email, name: null, passwordHash: null }, 'claude_code');
       espaces.push(t);
       expect((await pool.query('select origine from tenants where id = $1', [t])).rows[0]).toEqual({ origine: 'claude_code' });
       const r = await relier(t);
-      expect(r.offert).toBe(1_000_000);
-      expect(await credits.solde(t)).toBe(1_000_000);
-      // Un espace de la console, créé sans origine : 5 €.
+      expect(r.offert).toBe(5_000_000);
+      expect(await credits.solde(t)).toBe(5_000_000);
       const c = await espace('itest-offre-console');
       expect((await pool.query('select origine from tenants where id = $1', [c])).rows[0]).toEqual({ origine: 'console' });
       expect((await relier(c)).offert).toBe(5_000_000);
