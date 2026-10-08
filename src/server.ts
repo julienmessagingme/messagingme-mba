@@ -859,7 +859,14 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     throw new Error('buildServer: `auth` est requis dès qu’un module exposant des routes `:tenantId` est monté');
   }
 
-  const app = Fastify({ logger: false, bodyLimit: 1_000_000 });
+  /**
+   * 🔴 `maxParamLength` : Fastify refuse par défaut un paramètre d'URL de plus de 100 caractères, en 414 et SANS
+   * en-tête CORS (la console n'y voit qu'un « Failed to fetch »). Or Meta identifie une consigne ou un message
+   * interactif de son agent par un `pfbid…` de 106 caractères (mesuré le 2026-10-08) : modifier ou supprimer l'un
+   * d'eux n'atteignait jamais la route. 500 laisse de la marge sans lever la borne
+   * (`tests/server-parametres-longs.test.ts`).
+   */
+  const app = Fastify({ logger: false, bodyLimit: 1_000_000, routerOptions: { maxParamLength: 500 } });
 
   /**
    * Les en-têtes de sécurité, sur chaque réponse. `onSend` est le dernier point du cycle avant l'envoi : il

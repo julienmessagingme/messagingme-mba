@@ -2426,6 +2426,12 @@ CHARGEMENT de la configuration. Jamais `credentials: true` : la session voyage d
 `Authorization`, jamais dans un cookie, donc **il n'y a aucun CSRF aujourd'hui** ; l'activer en créerait un de
 toutes pièces. Vide = aucun en-tête CORS n'est posé, ce qui est le bon défaut.
 
+🔴 **Un paramètre d'URL va jusqu'à 500 caractères (`maxParamLength`, `src/server.ts`), pas 100.** Au-delà de sa
+borne, Fastify rend 414 AVANT tout hook, donc SANS en-tête CORS : la console n'y voit qu'un « Failed to fetch » et la
+route ne compte même pas dans `http_latences`. Or Meta identifie une consigne ou un message interactif de son agent
+par un `pfbid…` de 106 caractères : avec le défaut de 100, aucune modification ni suppression n'arrivait à la route
+(`tests/server-parametres-longs.test.ts`).
+
 🔴 **Deux plafonds de débit, et 0 les désactive.** `RATE_LIMIT_USER_PAR_MINUTE` (clé = utilisateur, posé DANS
 `makeRequireAuth` donc hérité par tous les modules gardés) et `RATE_LIMIT_COUTEUX_PAR_MINUTE` (clé = ESPACE)
 sur import, aperçu, action en masse, purge, export, lancement de campagne, et les routes lourdes de la
