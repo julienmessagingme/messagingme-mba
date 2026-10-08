@@ -1,6 +1,5 @@
 import { asArray, asRecord } from './json';
-import { valeurEffective } from './change';
-import { numeroBusinessDuChange } from './handover';
+import { numeroBusinessDuChange, valeurEffective } from './change';
 import { journaliser } from '../lib/journal';
 
 /**

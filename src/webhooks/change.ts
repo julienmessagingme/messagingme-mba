@@ -1,4 +1,4 @@
-import { asRecord } from './json';
+import { asRecord, texteNonVide } from './json';
 
 /**
  * 🔴 Le point de passage obligé pour lire un `change` d'un webhook Meta. Quand le Meta Business Agent tient le
@@ -26,4 +26,14 @@ import { asRecord } from './json';
 export function valeurEffective(valueRaw: unknown): Record<string, unknown> {
   const value = asRecord(valueRaw);
   return { ...value, ...asRecord(value['standby']) };
+}
+
+/**
+ * Le numéro business d'un `change` (lu par `valeurEffective`), quel que soit le champ : `metadata.phone_number_id`
+ * pour un message, un statut ou un `standby` ; `recipient.phone_number_id` pour un `messaging_handovers`, qui n'a pas
+ * de `metadata`. Ici et pas dans `./handover.ts` : le parseur, couche basse importée par le receveur, s'en sert aussi.
+ */
+export function numeroBusinessDuChange(value: Record<string, unknown>): string | undefined {
+  return texteNonVide(asRecord(value['metadata'])['phone_number_id'])
+    ?? texteNonVide(asRecord(value['recipient'])['phone_number_id']);
 }

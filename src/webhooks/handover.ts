@@ -1,6 +1,6 @@
 import type { ControlOwner } from '../inbox/store.pg';
 import { asArray, asRecord, texteNonVide } from './json';
-import { valeurEffective } from './change';
+import { numeroBusinessDuChange, valeurEffective } from './change';
 import { journaliser } from '../lib/journal';
 import type { EspaceDuNumero } from './rattachement';
 import { ECHO_INCONNU, texteDeLEcho } from './echo-interactif';
@@ -51,15 +51,6 @@ export function ownerFromHandover(value: Record<string, unknown>): ControlOwner 
    */
   if (precedent === 'meta_business_agent') return 'app_human';
   return null;
-}
-
-/**
- * Le numéro business concerné, quel que soit le champ : un `standby` le met dans `metadata.phone_number_id`, un
- * `messaging_handovers` (sans `metadata`) dans `recipient.phone_number_id`.
- */
-export function numeroBusinessDuChange(value: Record<string, unknown>): string | undefined {
-  return texteNonVide(asRecord(value['metadata'])['phone_number_id'])
-    ?? texteNonVide(asRecord(value['recipient'])['phone_number_id']);
 }
 
 /** Le numéro du client concerné par la bascule, dans `sender.phone_number`. */

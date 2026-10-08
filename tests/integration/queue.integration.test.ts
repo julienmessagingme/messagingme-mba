@@ -10,7 +10,7 @@ import { pgSsl } from '../../src/db/ssl';
 const url = process.env.DATABASE_URL ?? '';
 const KEY = 'msg:wamid.INTEG';
 const payload = {
-  entry: [{ changes: [{ field: 'messages', value: { messages: [{ id: 'wamid.INTEG' }] } }] }],
+  entry: [{ changes: [{ field: 'messages', value: { metadata: { phone_number_id: 'itest-pn-queue' }, messages: [{ id: 'wamid.INTEG' }] } }] }],
 };
 
 // N'exécute que si une DB est configurée. Schéma pg-boss isolé : pgboss_test.
@@ -32,12 +32,18 @@ describe.skipIf(!url)('intégration pg-boss + PgEventStore (Supabase)', () => {
     await pool.end();
   });
 
-  it('PgEventStore : insert idempotent (2x -> 1 ligne)', async () => {
+  it('PgEventStore : insert idempotent (2x -> 1 ligne), rattaché au numéro de son espace', async () => {
     const store = new PgEventStore(pool);
     await handleWebhookJob(payload, { store });
     await handleWebhookJob(payload, { store });
-    const res = await pool.query('select count(*)::int as n from webhook_events where meta_message_id = $1', [KEY]);
+    const res = await pool.query<{ n: number; pn: string | null }>(
+      'select count(*)::int as n, max(phone_number_id) as pn from webhook_events where meta_message_id = $1',
+      [KEY],
+    );
     expect(res.rows[0]?.n).toBe(1);
+    // Le dernier maillon, du handler à la colonne, que le faux store des tests unitaires ne voit pas : la colonne est
+    // restée vide en production de 0093 au 2026-10-08, chaque maillon testé seul (journal technique).
+    expect(res.rows[0]?.pn).toBe('itest-pn-queue');
   });
 
   it('pg-boss : enqueue -> work délivre le job', async () => {

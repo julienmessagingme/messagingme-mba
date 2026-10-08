@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import { asArray, asRecord, texteNonVide } from './json';
-import { valeurEffective } from './change';
-import { numeroBusinessDuChange } from './handover';
+import { numeroBusinessDuChange, valeurEffective } from './change';
 
 export type WebhookSource =
   | 'messages'
