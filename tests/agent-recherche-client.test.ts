@@ -34,7 +34,7 @@ describe('vectoriser', () => {
     const { c } = client([{ status: 200, json: { data: [
       { index: 2, embedding: [3] }, { index: 0, embedding: [1] }, { index: 1, embedding: [2] },
     ] } }]);
-    expect(await c.vectoriser(['a', 'b', 'c'])).toEqual([[1], [2], [3]]);
+    expect((await c.vectoriser(['a', 'b', 'c'])).vecteurs).toEqual([[1], [2], [3]]);
   });
 
   it('🔴 un vecteur MANQUANT leve, il ne passe pas en silence', async () => {
@@ -45,7 +45,7 @@ describe('vectoriser', () => {
 
   it('aucun texte -> AUCUN appel reseau', async () => {
     const { c, appels } = client([]);
-    expect(await c.vectoriser([])).toEqual([]);
+    expect(await c.vectoriser([])).toEqual({ vecteurs: [], coutDollars: 0 });
     expect(appels).toHaveLength(0);
   });
 
@@ -64,17 +64,17 @@ describe('reclasser', () => {
     const { c } = client([{ status: 200, json: { results: [
       { index: 1, relevance_score: 0.9 }, { index: 0, relevance_score: 0.1 },
     ] } }]);
-    expect(await c.reclasser('q', [{ texte: 'a' }, { texte: 'b' }])).toEqual([0.1, 0.9]);
+    expect((await c.reclasser('q', [{ texte: 'a' }, { texte: 'b' }])).scores).toEqual([0.1, 0.9]);
   });
 
   it('🔴 une fiche NON NOTEE vaut zero, elle ne passe pas le seuil par accident', async () => {
     const { c } = client([{ status: 200, json: { results: [{ index: 0, relevance_score: 0.5 }] } }]);
-    expect(await c.reclasser('q', [{ texte: 'a' }, { texte: 'b' }])).toEqual([0.5, 0]);
+    expect((await c.reclasser('q', [{ texte: 'a' }, { texte: 'b' }])).scores).toEqual([0.5, 0]);
   });
 
   it('aucune fiche -> AUCUN appel reseau', async () => {
     const { c, appels } = client([]);
-    expect(await c.reclasser('q', [])).toEqual([]);
+    expect(await c.reclasser('q', [])).toEqual({ scores: [], coutDollars: 0 });
     expect(appels).toHaveLength(0);
   });
 });
@@ -88,7 +88,7 @@ describe('rejeux', () => {
       { status: 429, json: { error: { message: 'trop vite' } } },
       { status: 200, json: { results: [{ index: 0, relevance_score: 0.7 }] } },
     ]);
-    expect(await c.reclasser('q', [{ texte: 'a' }])).toEqual([0.7]);
+    expect((await c.reclasser('q', [{ texte: 'a' }])).scores).toEqual([0.7]);
     expect(appels.length).toBeGreaterThan(1);
   });
 
@@ -105,7 +105,36 @@ describe('rejeux', () => {
       { status: 503, json: {} },
       { status: 200, json: { data: [{ index: 0, embedding: [1] }] } },
     ]);
-    expect(await c.vectoriser(['a'])).toEqual([[1]]);
+    expect((await c.vectoriser(['a'])).vecteurs).toEqual([[1]]);
     expect(appels.length).toBeGreaterThan(1);
+  });
+});
+
+describe('🔴 le coût de chaque appel, rendu par la passerelle (lot 6, C : il se débite au crédit du client)', () => {
+  it('la vectorisation lit `providerMetadata.gateway.cost` (camelCase), en chaîne décimale de dollars', async () => {
+    // La forme mesurée le 2026-10-08 sur cohere/embed-v4.0 : 14 jetons, 0,00000168 $.
+    const { c } = client([{ status: 200, json: {
+      data: [{ index: 0, embedding: [1] }], usage: { prompt_tokens: 14 },
+      providerMetadata: { gateway: { cost: '0.00000168', generationId: 'gen_1' } },
+    } }]);
+    expect(await c.vectoriser(['a'])).toEqual({ vecteurs: [[1]], coutDollars: 0.00000168 });
+  });
+
+  it('🔴 le reranker répond en `provider_metadata` (snake_case) : lu aussi, sinon chaque recherche serait gratuite', async () => {
+    // La forme mesurée le 2026-10-08 sur cohere/rerank-v3.5 : une unité de recherche, 0,002 $.
+    const { c } = client([{ status: 200, json: {
+      results: [{ index: 0, relevance_score: 0.2 }], meta: { billed_units: { search_units: 1 } },
+      provider_metadata: { gateway: { cost: '0.002' } },
+    } }]);
+    expect(await c.reclasser('q', [{ texte: 'a' }])).toEqual({ scores: [0.2], coutDollars: 0.002 });
+  });
+
+  it('un coût absent ou illisible vaut zéro, comme pour un tour d’agent', async () => {
+    const { c } = client([
+      { status: 200, json: { data: [{ index: 0, embedding: [1] }] } },
+      { status: 200, json: { results: [{ index: 0, relevance_score: 0.2 }], provider_metadata: { gateway: { cost: 'abc' } } } },
+    ]);
+    expect((await c.vectoriser(['a'])).coutDollars).toBe(0);
+    expect((await c.reclasser('q', [{ texte: 'a' }])).coutDollars).toBe(0);
   });
 });

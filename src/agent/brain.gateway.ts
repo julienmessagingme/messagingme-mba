@@ -56,11 +56,11 @@ export interface GatewayBrainDeps {
    */
   tauxEurParDollar?: number;
   /**
-   * Notre commission, en pourcent (`COMMISSION_MODELE_PCT`) : le coût du tour est le PRIX CLIENT, celui que le
-   * solde paie et que la liste des modèles annonce. Requise : un câblage qui l'oublierait débiterait le coût brut
-   * sans que rien ne le signale.
+   * Notre commission sur l'espace, en pourcent, celle de son offre (`commissionPour`, `src/offres/commission.ts`) : le
+   * coût du tour est le PRIX CLIENT, celui que le solde paie et que la liste des modèles annonce. Lue une fois par tour.
+   * Requise : un câblage qui l'oublierait débiterait le coût brut sans que rien ne le signale.
    */
-  commissionPct: number;
+  commissionPour(tenantId: string): Promise<number>;
   /** Signale une erreur de protocole (bug de notre client). Best-effort : jamais bloquant. */
   alerter?(message: string): void;
   now?: () => number;
@@ -278,6 +278,8 @@ async function boucler(
 ): Promise<DecisionTracee> {
   // Le contact est lu une fois par tour : il sert au prompt et à l'autorisation de chaque outil.
   const contact = deps.contacts ? await deps.contacts.projectionPourTiers(input.tenantId, tour.waId) : null;
+  // La commission de l'offre de l'espace, une fois par tour : un passage en Pro au milieu d'un tour attend le suivant.
+  const commissionPct = await deps.commissionPour(input.tenantId);
   const messages: ChatMessage[] = [
     {
       role: 'system',
@@ -325,7 +327,7 @@ async function boucler(
     console.log(`agent-cache: agent=${input.agentId} ar=${allerRetour} in=${reponse.usage.tokensIn} caches=${reponse.usage.tokensCaches} part=${reponse.usage.tokensIn > 0 ? Math.round((reponse.usage.tokensCaches / reponse.usage.tokensIn) * 100) : 0}%`);
     // La conversion se fait ici, une seule fois, et rend le prix client (commission comprise) : tout l'aval le lit
     // (débit du solde, coût de la session, budget de la conversation, coût affiché de l'essai).
-    usage.coutMicroEur += prixClientMicroEur(reponse.usage.coutDollars, deps.tauxEurParDollar ?? 1, deps.commissionPct);
+    usage.coutMicroEur += prixClientMicroEur(reponse.usage.coutDollars, deps.tauxEurParDollar ?? 1, commissionPct);
 
     if (reponse.appelsOutils.length === 0) {
       const texte = reponse.texte ?? '';
@@ -366,6 +368,11 @@ async function boucler(
       };
       const res = await executeTool({ name: appel.nom, argumentsJson: appel.argumentsJson }, ctx, deps.outils);
       appelsFaits += 1;
+      // Ce que l'outil a payé à la passerelle (la recherche dans la connaissance) entre dans le prix du tour, au même
+      // tarif que le modèle : un seul calcul du prix d'un tour, que le solde paie (lot 6, C).
+      if (res.coutDollars !== undefined && res.coutDollars > 0) {
+        usage.coutMicroEur += prixClientMicroEur(res.coutDollars, deps.tauxEurParDollar ?? 1, commissionPct);
+      }
       appels.push({ nom: appel.nom, arguments: appel.argumentsJson, status: res.status, contenu: res.contenu });
 
       if (res.fatal) {

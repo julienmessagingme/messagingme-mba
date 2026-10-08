@@ -115,7 +115,7 @@ function app(opts: {
       },
     },
     contexte: async () => (opts.agentConnu === false ? null : AGENT),
-    commissionPct: 0,
+    commissionPour: async () => 0,
     outils: {
       catalogue,
       journal,
@@ -199,7 +199,7 @@ describe('bac à sable de l’agent', () => {
           completer: cerveau.completer ?? (async () => { throw new Error('jamais appelé'); }),
         },
         contexte: cerveau.contexte ?? (async () => AGENT),
-        commissionPct: 0,
+        commissionPour: async () => 0,
         outils: { catalogue: { byName: async () => null, listActifs: async () => [] }, journal: { ouvrir: async () => '', clore: async () => {} }, resolveurs: {}, sessions: { compterAppel: async () => {} }, executerGeste: GESTE_MUET },
       },
     },
@@ -323,7 +323,7 @@ describe('bac à sable de l’agent', () => {
                 },
               },
               contexte: async () => AGENT,
-              commissionPct: 0,
+              commissionPour: async () => 0,
               outils: {
                 catalogue: { byName: async () => OUTIL, listActifs: async () => AGENT.outilsActifs },
                 journal: { ouvrir: async () => '', clore: async () => {} },

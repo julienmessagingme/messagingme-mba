@@ -81,8 +81,13 @@ export class PgOffresStore implements SourceOffres {
    */
   async ecrireEntreprise(tenantId: string, r: EcritureEntreprise): Promise<boolean> {
     return enTransaction(this.pool, async (client) => {
+      // La sortie de l'Entreprise est datée (migration 0221, lot 6, C) : la conservation de la Base n'y mord qu'après
+      // 30 jours de grâce. Seulement au passage de l'Entreprise à la Base ; y rester ne repousse pas la date.
       const maj = await client.query(
-        `update tenants set offre_entreprise = $2, entreprise_utilisateurs = $3 where id = $1`,
+        `update tenants
+            set offre_entreprise = $2, entreprise_utilisateurs = $3,
+                entreprise_quittee_le = case when offre_entreprise and not $2 then now() else entreprise_quittee_le end
+          where id = $1`,
         [tenantId, r.entreprise, r.utilisateurs],
       );
       if ((maj.rowCount ?? 0) === 0) return false;

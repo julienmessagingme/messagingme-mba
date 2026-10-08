@@ -2238,6 +2238,23 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
   d'avant reste modifiable), une campagne ou un étage à scénario, un `POST /v1/sends` vers un scénario ou un bloc
   (avant le compteur d'usage et la clé d'idempotence). L'ancienne forme du réglage du répondeur passe par
   `choixDeLAncienneFormeSousLOffre`.
+- 🔴 **Les coûts suivent l'offre** (livraison C) :
+  - la commission (voir « Qui paie quoi ») ; le coût de la recherche dans la connaissance entre dans le coût du tour,
+    donc aussi dans le budget par conversation de l'agent (`budgetMicroEur`, les trois contrôles de `boucler` et de
+    `run-turn`) : son défaut passe de 30 000 à 70 000 micro-euros (migration 0222, qui relève aussi les agents restés au
+    défaut), la place d'avant pour le modèle plus les 12 appels d'outils permis par défaut, tous en recherche, en Base
+    (`tests/migration-0222.test.ts` le chiffre) ;
+  - l'analyse des conversations ne part pas en Base : `claimForAnalysis` lit l'offre en SQL (`offre_de_l_espace`, une
+    fois par conversation réclamée) et passe la conversation d'un espace Base en `hors_offre` au lieu de `queued`. Un
+    nouveau message, entrant ou sortant, la remet en `pending` comme `done` et `failed` ; passer en Pro n'analyse donc
+    jamais le passé en rafale ;
+  - la conservation (`retentionEffective`, `src/inbox/retention.ts`, et la purge `purgeConversationsOlderThan`, qui
+    calcule UNE durée par espace) : en Base, 30 jours (la grille), mais seulement une fois passés
+    `GRACE_RETOUR_BASE_JOURS` (30) après l'entrée en Base, `BASE_DEPUIS_SQL` : la création de l'espace, la fin de son
+    dernier Pro, ou sa sortie de l'Entreprise (`tenants.entreprise_quittee_le`, migration 0221, posée par
+    `PgOffresStore.ecrireEntreprise` au seul passage de l'Entreprise à la Base). Avant, et hors Base, la règle d'avant :
+    le réglage de l'espace, sinon le défaut. Changer d'offre ne purge donc jamais sur le coup. L'écran de synthèse
+    (`conversation-stats.pg.ts`) lit la même règle. Le levier d'urgence (`CONVERSATION_RETENTION_DAYS=0`) gagne sur tout.
 
 🔴 **LE RÔLE ADMIN SE POSE AU MONTAGE, ET `forbidNonAdmin` NE VIT QUE LÀ OÙ UN AGENT PASSE LA GARDE** (lot 3 de
 l'audit ponytail, 2026-09-26). Un module monté sur `g.admin` (`[requireAuth, makeRequireRole(['admin'])]`)
@@ -2800,7 +2817,7 @@ constantes du bloc `constantes` en fin de `src/config.ts` depuis le 2026-09-25 :
 | **Interrupteurs de fonctionnalité** | `META_ES_CONFIG_ID`, `AI_GATEWAY_API_KEY`, `DRY_RUN`, `CONVERSATION_ANALYSIS_ENABLED`, `OPS_EMAILS` | vide = la fonctionnalité est OFF, proprement (503 explicite, file non consommée, `/ops` fermé pour tous) |
 | **Capacité** | `DB_POOL_MAX`, `PGBOSS_MAX`, `RATE_LIMIT_*` | latence, saturation muette, ou coupure de service |
 | **Rétention** | `WEBHOOK_EVENTS_RETENTION_DAYS` | une réponse RGPD fausse |
-| **Paramètres commerciaux** | `EUR_PER_USD`, `COMMISSION_MODELE_PCT`, `CREDIT_OFFERT_MICRO_EUR` | ce qu'on facture, et ce qu'on offre |
+| **Paramètres commerciaux** | `EUR_PER_USD`, `CREDIT_OFFERT_MICRO_EUR` | ce qu'on facture, et ce qu'on offre (la commission vit dans la grille des offres, `src/offres/offres.ts`) |
 | **Provisionnement des clés client** | `VERCEL_API_TOKEN` + `VERCEL_TEAM_ID` | les deux vides = éteint ; une seule moitié = refus au boot (chaque création d'agent échouerait, donc plus aucun client ne pourrait en créer) |
 | **Recharge par Stripe** | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRIX_REFILL_50`, `STRIPE_PRIX_REFILL_100` | vides = recharge fermée (la route rend 503, le webhook n'est pas monté) ; une clé sans préfixe `sk_`/`rk_` + `live_`/`test_`, ou la clé sans le secret du webhook (ou l'inverse) = refus au boot |
 
@@ -2815,13 +2832,20 @@ tour. Un taux absent ou aberrant retombe sur 1, JAMAIS sur 0 : un zéro rendrait
 donc désarmerait le plafond en silence.
 
 🔴 **QUI PAIE QUOI, ET À QUEL PRIX.** Sur le **crédit prépayé du client**, au **prix client** : le coût du
-Gateway au taux `EUR_PER_USD`, majoré de `COMMISSION_MODELE_PCT`, calculé par `prixClientMicroEur`
-(`src/agent/devise.ts`), seul point de calcul du montant débité. Ses appelants : le cerveau de l'agent (donc
-le tour de production et l'essai du bac à sable) et la traduction des conversations. La commission est la même
-variable que celle du tarif annoncé dans la liste des modèles : le prix affiché est le prix payé. Sur **notre
-clé** : les deux assistants de configuration, mesurés au coût brut (`microEurosDepuisDollars`, que
-`tests/agent-devise.test.ts` refuse ailleurs) et plafonnés par espace ; la transcription, le bot d'aide et la
-connaissance (vectorisation, reclassement), qui ne se décomptent d'aucun crédit.
+Gateway au taux `EUR_PER_USD`, majoré de la commission de l'OFFRE de l'espace (`commissionPour`,
+`src/offres/commission.ts` : 50 % en Base, 10 % en Pro et en Entreprise, lue dans la grille par `OffresEnCache`),
+calculé par `prixClientMicroEur` (`src/agent/devise.ts`), seul point de calcul du montant débité. Ses appelants : le
+cerveau de l'agent (donc le tour de production et l'essai du bac à sable, qui y ajoutent le coût de la recherche dans
+la connaissance, rendu par l'outil : `SortieResolveur.coutDollars`), la traduction des conversations, la vectorisation
+des fiches de connaissance (`balayerVectorisationPayee`, un appel par espace, seulement pour un espace au solde
+positif : `PgKnowledgeStore.fichesAVectoriser` le filtre en SQL) et la transcription d'un vocal de l'Inbox
+(`DepsTranscrire.facturation`, refus `CreditEpuise` en 402 sans solde). La recherche, la vectorisation et la
+transcription partent sur NOTRE clé et leur coût est DÉBITÉ ; la passerelle le rend dans la réponse
+(`providerMetadata.gateway.cost`, et `provider_metadata` pour le reranker, mesuré le 2026-10-08). Le tarif annoncé dans
+la liste des modèles lit la même commission (`modelesProposes(tenantId)`) : le prix affiché est le prix payé. Sur
+**notre clé** et à nos frais : les deux assistants de configuration, mesurés au coût brut (`microEurosDepuisDollars`,
+que `tests/agent-devise.test.ts` refuse ailleurs) et plafonnés par espace ; le bot d'aide et la vectorisation de ses
+fiches ; la transcription du pont des codes d'un numéro fourni (notre infrastructure).
 ⚠️ **La traduction se débite à chaque appel mais s'inscrit au journal en UNE ligne par espace et par jour de
 Paris** (raison `traduction`, colonne `jour`, index unique partiel de 0190, upsert de
 `PgCreditStore.debiterTraduction`). Solde nul : pas de traduction. Sa clé de modèle s'ouvre à la première
@@ -2846,7 +2870,7 @@ l'ouverture de la clé, plafond initial compris. Sous le verrou de la ligne de l
 l'appel à Vercel), la cible se lit dans une SECONDE instruction, qui voit donc ce que la remontée précédente a
 noté. Deux remontées simultanées convergent, et un crédit écrit pendant l'ouverture de la clé (quand il n'y avait
 encore rien à remonter) est rattrapé par la remontée qui suit l'enregistrement de la clé.
-⚠️ **`CREDIT_OFFERT_MICRO_EUR`** (5 € par défaut depuis le 2026-09-29) s'offre au PREMIER numéro WhatsApp que
+⚠️ **`CREDIT_OFFERT_MICRO_EUR`** (1 € par défaut depuis le lot 6, pour toutes les origines) s'offre au PREMIER numéro WhatsApp que
 **Meta dit vérifié**, jamais à la liaison seule (`PgEmbeddedSignupStore.linkTenant` n'offre rien : elle tourne
 avant que la route ne sache si le numéro est `NOT_VERIFIED`). La route l'appelle (`offrirCredit`, câblé par
 `creerOffreDeBienvenue`) à l'inscription si Meta le dit `CONNECTED`, `VERIFIED`, ou vient d'accepter son
@@ -2994,11 +3018,10 @@ l'Asterisk du VPS (`ops/otp-asterisk/`) décroche, enregistre, puis poste l'enre
   prévient Julien.
   ⚠️ Ces attentes de 25 s entrent dans `http_latences` sous la route `/mcp`, avec les autres outils : un p95 de `/mcp`
   qui grimpe sur /ops ne dit pas une régression tant qu'on ne l'a pas lu par outil.
-- 🔴 **Le crédit offert dépend de l'origine de l'espace** (`tenants.origine`, migration 0212) : `claude_code` quand
-  l'espace naît par la connexion OAuth de Claude Code (`src/http/oauth.ts`), `console` sinon ; 1 €
-  (`CREDIT_OFFERT_CLAUDE_CODE_MICRO_EUR`) contre 5 € (`CREDIT_OFFERT_MICRO_EUR`), lus dans la transaction de l'offre.
-  `createTenantWithAdmin` exige l'origine dans le contrat des routes d'authentification : une porte d'entrée qui
-  l'oublierait ne compile pas.
+- **L'origine de l'espace** (`tenants.origine`, migration 0212) : `claude_code` quand l'espace naît par la connexion
+  OAuth de Claude Code (`src/http/oauth.ts`), `console` sinon. Elle ne décide plus du crédit offert (1 € pour toutes
+  les origines, lot 6) : c'est une donnée d'exploitation. `createTenantWithAdmin` l'exige toujours dans le contrat des
+  routes d'authentification : une porte d'entrée qui l'oublierait ne compile pas.
 
 🔴 **LA RECHARGE PAR STRIPE** (lot 2, 2026-09-29, `src/http/credit-stripe.ts`, `src/stripe/`). Le client REST
 est écrit sans SDK (formulaire `x-www-form-urlencoded`, `Stripe-Version` épinglée sur celle de la destination

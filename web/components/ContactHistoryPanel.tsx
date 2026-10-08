@@ -269,7 +269,11 @@ function ConversationRow({ conv, stamp }: { conv: ContactConversation; stamp: (i
         </div>
       ) : (
         <p className="mt-1.5 text-xs text-ink-500">
-          {conv.analysisStatus === 'failed' ? t('analyse en échec', 'analysis failed') : t('pas encore analysée', 'not analyzed yet')}
+          {/* `hors_offre` (lot 6, C) : un espace en Base n'analyse pas ses conversations ; « pas encore » promettrait une
+              analyse qui ne viendra pas. */}
+          {conv.analysisStatus === 'failed' ? t('analyse en échec', 'analysis failed')
+            : conv.analysisStatus === 'hors_offre' ? t('analyse disponible en Pro', 'analysis available in Pro')
+              : t('pas encore analysée', 'not analyzed yet')}
         </p>
       )}
 

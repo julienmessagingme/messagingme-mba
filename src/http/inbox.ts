@@ -8,7 +8,7 @@ import { peutEcrire, peutAffecter, peutPrendre } from '../inbox/assignment';
 import { gardeEtendue } from '../auth/middleware';
 import { cacheCourt } from '../lib/cache-court';
 import { journaliser } from '../lib/journal';
-import { RienATranscrire } from '../inbox/transcrire';
+import { CreditEpuise, RienATranscrire } from '../inbox/transcrire';
 import { MediaTropGros } from '../meta/media';
 import { MediaExpire, enTetesMedia } from '../inbox/media-entrant';
 import { makeJournal, type AuditSink } from '../audit/journal';
@@ -544,6 +544,10 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
       // 4xx, jamais 5xx (Cloudflare remplacerait le corps), et trois causes, trois actions : rien à transcrire,
       // fichier trop lourd, panne du fournisseur (réessayer).
       if (err instanceof RienATranscrire) return reply.code(422).send({ error: 'ce message ne porte aucun vocal à transcrire' });
+      // Le crédit IA paie la transcription (lot 6, C) : épuisé, recharger règle le problème, « réessayez » serait faux.
+      if (err instanceof CreditEpuise) {
+        return reply.code(402).send({ error: 'Le crédit IA de l’espace est épuisé : rechargez-le pour transcrire ce vocal.', cause: 'credit' });
+      }
       // Le vocal a disparu chez Meta (sept jours) : rien ne le fera revenir, « réessayez » serait faux.
       if (err instanceof MediaExpire) return reply.code(410).send({ error: err.message, code: 'media_expire' });
       if (err instanceof MediaTropGros) {

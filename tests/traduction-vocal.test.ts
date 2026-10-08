@@ -59,6 +59,7 @@ function monter(o: Montage = {}) {
     cle: 'cle-maison',
     modele: 'openai/whisper-1',
     tailleMaxOctets: 2048 * 1024,
+    facturation: { solde: async () => 5_000_000, commissionPour: async () => 0, tauxEurParDollar: 1, debiter: async () => {} },
   };
   return {
     deps, traduits, ecritures, rangees,

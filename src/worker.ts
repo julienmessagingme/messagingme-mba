@@ -58,7 +58,7 @@ import { AGENT_TURN_QUEUE, parseAgentTurnJob } from './agent/turn-job';
  *  modèle, et un fil bavard ferait payer au client une conversation qu'il a déjà réglée. */
 const MESSAGES_DE_CONTEXTE = 30;
 import { runTurn, type RunTurnDeps } from './agent/run-turn';
-import { balayerVectorisation } from './agent/recherche';
+import { balayerVectorisation, balayerVectorisationPayee } from './agent/recherche';
 import { GatewayChatClient } from './agent/llm/chat-client';
 import { creerCerveauGateway } from './agent/brain.gateway';
 import { lireContexteAvecReglages } from './agent/contexte';
@@ -111,6 +111,7 @@ import { PgAlertesCreditStore } from './repondeur/alerte-credit';
 import { ResendClient } from './support/resend';
 import { creerPierreTombale } from './ops/espaces-supprimes.pg';
 import { PgAbonnementsOffreStore } from './offres/abonnements-offre.pg';
+import { commissionPour } from './offres/commission';
 
 async function main(): Promise<void> {
   // Le worker est la seule instance qui dépile, et son rôle principal la seule qui supervise : c'est lui qui récupère les
@@ -185,6 +186,8 @@ async function main(): Promise<void> {
     journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub,
     publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, alerteCredit, numeroBloqueDeLEspace, offres,
   } = construireSocle({ pool, queue, config });
+  // La commission sur le crédit IA, celle de l'offre de l'espace (lot 6, C) : le cerveau des tours d'agent la lit.
+  const commissionDeLEspace = commissionPour(offres);
   // Les appels captés par le pont du code (lot 3a) : le worker ne fait que les purger (balayage de rétention).
   const numerosFournisStore = new PgNumerosFournisStore(pool);
 
@@ -1551,7 +1554,13 @@ async function main(): Promise<void> {
     if (rechercheSemantique) {
       const vectoriser = async (): Promise<void> => {
         try {
-          const n = await balayerVectorisation(knowledgeStore, rechercheSemantique, config.AGENT_EMBED_MODEL);
+          // Les fiches des agents, sur le crédit de leur espace et au tarif de son offre (lot 6, C) ; celles d'un
+          // espace sans crédit attendent.
+          const n = await balayerVectorisationPayee(knowledgeStore, rechercheSemantique, config.AGENT_EMBED_MODEL, {
+            commissionPour: commissionDeLEspace,
+            tauxEurParDollar: config.EUR_PER_USD,
+            debiter: async (tenant, montant, note) => { await credits.debiter(tenant, montant, { note }); },
+          });
           // eslint-disable-next-line no-console
           if (n > 0) console.log(`vectorisation: ${n} fiche(s) vectorisee(s)`);
           /**
@@ -1650,7 +1659,7 @@ async function main(): Promise<void> {
       // Le Gateway facture en dollars, nos compteurs sont en micro-euros : conversion à l'entrée, une seule fois,
       // au taux commercial de la configuration, majorée de la commission que la liste des modèles annonce.
       tauxEurParDollar: config.EUR_PER_USD,
-      commissionPct: config.COMMISSION_MODELE_PCT,
+      commissionPour: commissionDeLEspace,
       outils: {
         catalogue: toolCatalog,
         /**

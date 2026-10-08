@@ -22,19 +22,32 @@ export interface ClaimedConversation {
 export class PgConversationAnalysisStore {
   constructor(private readonly pool: Pool) {}
 
-  /** Réclame en lot les conversations inactives encore `pending` -> `queued`. Les fils de test sont exclus : ni
-   *  analyse LLM, ni poussée vers HubSpot. */
+  /**
+   * Réclame en lot les conversations inactives encore `pending` -> `queued`. Les fils de test sont exclus : ni analyse
+   * LLM, ni poussée vers HubSpot.
+   *
+   * 🔴 L'ANALYSE EST ÉTEINTE EN BASE (lot 6, livraison C) : la conversation d'un espace en Base passe en `hors_offre`
+   * au lieu de `queued`, l'offre lue en SQL (`offre_de_l_espace`, une fois par conversation), et n'est pas rendue. Un
+   * nouveau message la remet en `pending` (`PgInboxStore`) ; passer en Pro n'analyse donc jamais le passé en rafale.
+   */
   async claimForAnalysis(inactivityMs: number, limit: number): Promise<ClaimedConversation[]> {
     const res = await this.pool.query<{ id: string; tenant_id: string }>(
-      `update conversations set analysis_status = 'queued', analysis_queued_at = now()
-       where id in (
-         select id from conversations
-         where analysis_status = 'pending' and not is_test and last_message_at < now() - make_interval(secs => $1 / 1000.0)
-         order by last_message_at asc
-         limit $2
-         for update skip locked
+      `with candidates as (
+         select id, tenant_id from conversations
+          where analysis_status = 'pending' and not is_test and last_message_at < now() - make_interval(secs => $1 / 1000.0)
+          order by last_message_at asc
+          limit $2
+          for update skip locked
+       ),
+       marquees as (
+         update conversations c
+            set analysis_status = case when o.offre = 'base' then 'hors_offre' else 'queued' end,
+                analysis_queued_at = case when o.offre = 'base' then c.analysis_queued_at else now() end
+           from candidates k, lateral (select offre_de_l_espace(k.tenant_id) as offre) o
+          where c.id = k.id
+          returning c.id, c.tenant_id, c.analysis_status
        )
-       returning id, tenant_id`,
+       select id, tenant_id from marquees where analysis_status = 'queued'`,
       [inactivityMs, limit],
     );
     return res.rows.map((r) => ({ conversationId: r.id, tenantId: r.tenant_id }));

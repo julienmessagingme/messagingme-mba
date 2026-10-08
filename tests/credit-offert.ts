@@ -9,4 +9,4 @@
  * ⚠️ Il vit ici et jamais dans `src/` : il y serait importable par le câblage de production, et éteindrait le
  * crédit offert de tous les nouveaux espaces.
  */
-export const SANS_CREDIT_OFFERT = { creditOffertMicroEur: 0, creditOffertClaudeCodeMicroEur: 0 } as const;
+export const SANS_CREDIT_OFFERT = { creditOffertMicroEur: 0 } as const;

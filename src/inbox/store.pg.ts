@@ -4,6 +4,8 @@ import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
 import type { OrigineMessage } from './origine';
 import { visibiliteSql, voitTout, type ActeurConversation } from './assignment';
 import { MEDIA_EXPIRE_SQL } from './media-entrant';
+import { BASE_DEPUIS_SQL } from './retention';
+import { DROITS, GRACE_RETOUR_BASE_JOURS } from '../offres/offres';
 import { FENETRE_SERVICE_MS } from '../workflow/engine';
 import type { EcritureDuFil } from './fil';
 import {
@@ -347,9 +349,10 @@ export class PgInboxStore implements InboxStore {
          -- y fermerait la chaine. Deja paye une fois dans ce depot (sources.pg.ts).
          last_direction = case when $7::boolean then conversations.last_direction else excluded.last_direction end,
          contact_id = coalesce(conversations.contact_id, excluded.contact_id),
-         -- Un nouveau message ROUVRE l'analyse : une conversation déjà analysée (done/failed) qui reçoit un message
-         -- redevient 'pending' -> ré-analysée à la prochaine inactivité (sinon un contact qui revient n'est jamais réanalysé).
-         analysis_status = case when conversations.analysis_status in ('done', 'failed') then 'pending' else conversations.analysis_status end,
+         -- Un nouveau message ROUVRE l'analyse : une conversation déjà analysée (done/failed), ou laissée hors de l'offre
+         -- (hors_offre, lot 6), qui reçoit un message redevient 'pending' -> ré-analysée à la prochaine inactivité si
+         -- l'offre l'analyse (sinon un contact qui revient n'est jamais réanalysé).
+         analysis_status = case when conversations.analysis_status in ('done', 'failed', 'hors_offre') then 'pending' else conversations.analysis_status end,
          -- Un message du CONTACT sort la conversation d'Archive, dans la MEME ecriture que celle qui avance
          -- last_message_at. Deux ecritures laisseraient une fenetre ou la conversation a un message neuf et
          -- reste rangee dans Archive : precisement l'etat que personne ne regarde.
@@ -1048,17 +1051,32 @@ export class PgInboxStore implements InboxStore {
      * tout). Le `0` par espace ne désactive que cet espace (`coalesce(...) > 0`).
      */
     if (days <= 0) return 0;
+    /**
+     * 🔴 LA DURÉE DE CHAQUE ESPACE, CALCULÉE UNE FOIS (lot 6, C), la règle de `retentionEffective` : en Base, 30 jours une
+     * fois la grâce passée (l'offre et la date d'entrée lues en SQL, une fois par espace et non par conversation) ;
+     * sinon le réglage de l'espace, sinon le défaut. Puis la MÊME colonne `jours` dans le filtre et dans l'âge.
+     */
     const res = await this.pool.query(
       `delete from conversations
         where id in (
           select cv.id
             from conversations cv
-            left join tenant_settings ts on ts.tenant_id = cv.tenant_id
-           where coalesce(ts.conversation_retention_days, $1::int) > 0
-             and cv.last_message_at < now() - make_interval(days => coalesce(ts.conversation_retention_days, $1::int))
+            join (
+              select t.id as tenant_id,
+                     case
+                       when offre_de_l_espace(t.id) = 'base'
+                            and ${BASE_DEPUIS_SQL} <= now() - make_interval(days => $3::int)
+                         then $4::int
+                       else coalesce(ts.conversation_retention_days, $1::int)
+                     end as jours
+                from tenants t
+                left join tenant_settings ts on ts.tenant_id = t.id
+            ) d on d.tenant_id = cv.tenant_id
+           where d.jours > 0
+             and cv.last_message_at < now() - make_interval(days => d.jours)
            limit $2
         )`,
-      [Math.floor(days), Math.max(1, maxParPassage)],
+      [Math.floor(days), Math.max(1, maxParPassage), GRACE_RETOUR_BASE_JOURS, DROITS.base.limites.conservationJours],
     );
     return res.rowCount ?? 0;
   }
@@ -1891,7 +1909,7 @@ export class PgInboxStore implements InboxStore {
          -- 🔴 LA PREMIÈRE RÉPONSE D'UN HUMAIN CLÔT L'ESCALADE (0164) : le balayage pourra rendre le fil à l'agent
          -- après les 2 h habituelles de silence, pas avant (arbitrage de Julien du 2026-09-23).
          escaladee_le = case when $3::boolean then null else escaladee_le end,
-         analysis_status = case when analysis_status in ('done', 'failed') then 'pending' else analysis_status end
+         analysis_status = case when analysis_status in ('done', 'failed', 'hors_offre') then 'pending' else analysis_status end
        where id = $1`,
       [conversationId, body, origine === 'humain'],
     );

@@ -16,7 +16,8 @@ describe.skipIf(!url)('PgConversationAnalysisStore (Supabase)', () => {
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: url, ssl: pgSsl() });
-    tenantId = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-analysis') returning id`)).rows[0]!.id;
+    // En Entreprise (lot 6) : un espace neuf est en Base, et l'analyse n'y part plus. Les cas de la Base ont leur espace.
+    tenantId = (await pool.query<{ id: string }>(`insert into tenants (name, offre_entreprise) values ('itest-analysis', true) returning id`)).rows[0]!.id;
     userId = (await pool.query<{ id: string }>(
       `insert into users (tenant_id, email, role, password_hash) values ($1, 'agent-itest-analysis@x.fr', 'agent', 'x') returning id`, [tenantId])).rows[0]!.id;
   });
@@ -251,6 +252,43 @@ describe.skipIf(!url)('PgConversationAnalysisStore (Supabase)', () => {
     await store.clearPendingCatchup(conv);
     expect(await store.listConversationIdsPendingCatchup(tenantId)).not.toContain(conv);
     expect(await store.listTenantsReadyForCatchup()).not.toContain(tenantId);
+  });
+
+  it('🔴 lot 6, C : une conversation d’un espace BASE n’est jamais réclamée, elle passe en `hors_offre` ; le voisin Entreprise oui', async () => {
+    const store = new PgConversationAnalysisStore(pool);
+    const base = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-analysis-base') returning id`)).rows[0]!.id;
+    try {
+      const enBase = (await pool.query<{ id: string }>(
+        `insert into conversations (tenant_id, wa_id, last_message_at, last_preview, analysis_status)
+         values ($1, '33600100050', now() - interval '60 minutes', 'x', 'pending') returning id`, [base],
+      )).rows[0]!.id;
+      const enEntreprise = await insertConv('33600100051', { ageMin: 60, status: 'pending' });
+      const ids = (await store.claimForAnalysis(25 * 60 * 1000, 1000)).map((c) => c.conversationId);
+      expect(ids).toContain(enEntreprise);
+      expect(ids).not.toContain(enBase);
+      const statut = (id: string) => pool.query<{ analysis_status: string }>(`select analysis_status from conversations where id = $1`, [id])
+        .then((r) => r.rows[0]!.analysis_status);
+      expect(await statut(enBase)).toBe('hors_offre');
+      expect(await statut(enEntreprise)).toBe('queued');
+      // Passer en Pro n'analyse pas le passé : la conversation reste `hors_offre` tant qu'aucun message n'arrive.
+      await pool.query(`update tenants set offre_entreprise = true where id = $1`, [base]);
+      expect((await store.claimForAnalysis(25 * 60 * 1000, 1000)).map((c) => c.conversationId)).not.toContain(enBase);
+      expect(await statut(enBase)).toBe('hors_offre');
+    } finally {
+      await pool.query('delete from tenants where id = $1', [base]);
+    }
+  });
+
+  it('🔴 lot 6, C : un nouveau message rouvre une conversation `hors_offre` (entrant comme sortant)', async () => {
+    const inbox = new PgInboxStore(pool);
+    const waId = '33600100052';
+    const id = await insertConv(waId, { status: 'hors_offre' });
+    await inbox.recordInbound(tenantId, { waId, phoneNumberId: 'pn', body: 'Une autre question', type: 'text', buttonPayload: null, messageId: 'wamid-HORS-OFFRE', profileName: null, field: 'messages' });
+    const statut = async () => (await pool.query<{ analysis_status: string }>(`select analysis_status from conversations where id = $1`, [id])).rows[0]!.analysis_status;
+    expect(await statut()).toBe('pending');
+    await pool.query(`update conversations set analysis_status = 'hors_offre' where id = $1`, [id]);
+    await inbox.recordOutbound(id, 'Une réponse', 'wamid-HORS-OFFRE-OUT', 'scenario');
+    expect(await statut()).toBe('pending');
   });
 
   it('réouverture : un nouvel inbound sur une conversation done repasse en pending', async () => {

@@ -292,6 +292,13 @@ describe('les modèles se choisissent dans une LISTE', () => {
     expect(res.json().modeles).toEqual(await propose());
   });
 
+  it('🔴 le tarif est celui de l’offre de l’ESPACE demandé (lot 6, C) : la route passe l’espace vérifié', async () => {
+    const demandes: string[] = [];
+    const { srv } = app(COMPLET_LINT(), async (tenantId) => { demandes.push(tenantId); return propose(); });
+    expect((await srv.inject({ method: 'GET', url: '/tenants/t1/agents/modeles', ...h(adminTok) })).statusCode).toBe(200);
+    expect(demandes).toEqual(['t1']);
+  });
+
   it('🔴 SANS câblage de tarification, la route rend quand même nos modèles, sans prix', async () => {
     // Un 503 viderait le menu, donc interdirait de changer de modèle : une panne de tarification n'a pas à
     // empêcher un réglage.

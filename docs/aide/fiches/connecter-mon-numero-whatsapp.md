@@ -36,10 +36,9 @@ vous envoyez par votre propre numéro, l'abonnement du numéro fourni ne le coup
 **Rendre un numéro fourni.** « Abandonner » rend le numéro à la réserve ; si son abonnement court, sa fin est
 programmée à la fin de la période déjà payée, et plus rien n'est prélevé ensuite.
 
-Pour le premier numéro de votre espace, **5 € de crédit IA vous sont offerts** (1 € si l'espace a été créé depuis
-Claude Code) dès que Meta l'a vérifié, une seule
-fois : à la connexion s'il l'est déjà, sinon quand vous l'activez avec le code de vérification. Ils paient vos
-agents IA et la traduction de l'Inbox (voir Paramètres > Crédit IA).
+Pour le premier numéro de votre espace, **1 € de crédit IA vous est offert** dès que Meta l'a vérifié, une seule
+fois : à la connexion s'il l'est déjà, sinon quand vous l'activez avec le code de vérification. Il paie vos agents
+IA, la traduction et la transcription de l'Inbox (voir Paramètres > Crédit IA).
 
 **Un espace pilote un seul numéro.** En connecter un second est refusé, en vous disant lequel est déjà là et
 quoi faire : créer un second espace, ou détacher celui-ci. Accepter les deux mélangerait les conversations

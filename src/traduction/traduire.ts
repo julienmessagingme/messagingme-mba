@@ -97,9 +97,12 @@ export interface DepsTraduction {
    * traductions de tous les espaces sans clé.
    */
   assurerCle(tenantId: string): Promise<VerdictCle>;
-  /** Taux et commission du prix client (`prixClientMicroEur`), les mêmes que pour un tour d'agent. */
+  /**
+   * Taux et commission du prix client (`prixClientMicroEur`), les mêmes que pour un tour d'agent : la commission est
+   * celle de l'offre de l'espace (`commissionPour`, `src/offres/commission.ts`).
+   */
   tauxEurParDollar: number;
-  commissionPct: number;
+  commissionPour(tenantId: string): Promise<number>;
   /** Plafond de temps d'un appel. Au-delà, on ne rend rien : le fil s'affiche en VO. */
   delaiMs?: number;
 }
@@ -296,7 +299,7 @@ export function creerTraducteur(deps: DepsTraduction): Traducteur {
      * Gateway (`coutDollars`), au prix client. Un débit qui échoue se journalise et ne prive personne de sa
      * lecture : le modèle a répondu, on perd le décompte, jamais la traduction (même règle qu'un tour d'agent).
      */
-    const montant = prixClientMicroEur(brut.usage.coutDollars, deps.tauxEurParDollar, deps.commissionPct);
+    const montant = prixClientMicroEur(brut.usage.coutDollars, deps.tauxEurParDollar, await deps.commissionPour(tenantId));
     if (montant > 0) {
       try {
         await deps.credit.debiterTraduction(tenantId, montant);

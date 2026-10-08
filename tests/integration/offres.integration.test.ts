@@ -54,6 +54,19 @@ describe.skipIf(!url)('l’offre calculée (0218)', () => {
     await pool.end();
   });
 
+  it('🔴 0221 : quitter l’Entreprise date la sortie ; y entrer ou y rester ne la touche pas', async () => {
+    const t = await espace('itest-offre-quitte', true);
+    const date = async () => (await pool.query<{ q: Date | null }>('select entreprise_quittee_le as q from tenants where id = $1', [t])).rows[0]!.q;
+    await offres.ecrireEntreprise(t, { entreprise: true, utilisateurs: 10 });
+    expect(await date()).toBeNull();
+    await offres.ecrireEntreprise(t, { entreprise: false, utilisateurs: null });
+    const sortie = await date();
+    expect(sortie).not.toBeNull();
+    // Rester en Base, ou y être reposé, ne repousse pas la grâce : la date est celle de la sortie.
+    await offres.ecrireEntreprise(t, { entreprise: false, utilisateurs: null });
+    expect((await date())?.getTime()).toBe(sortie!.getTime());
+  });
+
   it('un espace neuf est en Base, sans retour en Base', async () => {
     const t = await espace('itest-offre-base');
     const o = await offres.offreDe(t);

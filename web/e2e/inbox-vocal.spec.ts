@@ -27,7 +27,7 @@ function messages(opts: { transcription?: string | null } = {}) {
   ];
 }
 
-async function monter(page: import('@playwright/test').Page, opts: { transcription?: string | null; appels?: string[] } = {}) {
+async function monter(page: import('@playwright/test').Page, opts: { transcription?: string | null; appels?: string[]; creditEpuise?: boolean } = {}) {
   const appels = opts.appels ?? [];
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
@@ -39,7 +39,12 @@ async function monter(page: import('@playwright/test').Page, opts: { transcripti
       // Un ogg minuscule mais réel : le lecteur doit recevoir des octets, pas du JSON.
       return route.fulfill({ status: 200, contentType: 'audio/ogg', body: Buffer.from('OggS-faux-audio') });
     }
-    if (/\/messages\/m-vocal\/transcrire$/.test(url)) return json({ texte: 'Bonjour, ma commande est-elle partie ?', deja: false });
+    if (/\/messages\/m-vocal\/transcrire$/.test(url)) {
+      if (opts.creditEpuise) {
+        return route.fulfill({ status: 402, contentType: 'application/json', body: JSON.stringify({ error: 'credit IA epuise', cause: 'credit' }) });
+      }
+      return json({ texte: 'Bonjour, ma commande est-elle partie ?', deja: false });
+    }
     if (/\/conversations\/counts/.test(url)) return json({ tout: 1, aTraiter: 1, signalees: 0, archivees: 0, nonAffectees: 1, parMembre: [] });
     if (url.endsWith('/c1/messages')) return json({ messages: messages(opts), windowOpen: true, controlOwner: 'app_human' });
     if (/\/conversations\?|\/conversations$/.test(url)) return json({ conversations: [CONV] });
@@ -74,6 +79,14 @@ test.describe('Inbox : un vocal s’écoute ou se transcrit', () => {
 
     await page.getByTestId('vocal-transcrire-m-vocal').click();
     await expect(page.getByTestId('vocal-texte-m-vocal')).toContainText('ma commande est-elle partie');
+  });
+
+  test('🔴 sans crédit IA, l’écran dit de recharger, pas « réessayez » (lot 6, C)', async ({ page }) => {
+    // La transcription se paie sur le crédit du client : épuisé, réessayer ne changerait rien.
+    await monter(page, { creditEpuise: true });
+    await page.getByTestId('vocal-transcrire-m-vocal').click();
+    await expect(page.getByText(/Crédit IA épuisé|AI credit used up/)).toBeVisible();
+    await expect(page.getByText(/réessayez|try again/)).toHaveCount(0);
   });
 
   test('🔴 la transcription est MARQUÉE comme telle', async ({ page }) => {

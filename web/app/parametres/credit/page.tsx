@@ -260,8 +260,8 @@ function CreditInner({ session }: { session: Session }) {
         {erreur && <p className="mt-2 text-sm text-danger" data-testid="credit-erreur">{erreur}</p>}
         <p className="mt-3 text-xs text-ink-500">
           {t(
-            'Ce que le crédit paie : chaque échange d’un agent IA avec son modèle (en production comme au bac à sable) et chaque traduction de l’Inbox, au tarif affiché dans l’onglet Modèle. 5 € sont offerts au premier numéro WhatsApp de l’espace, dès que Meta l’a vérifié.',
-            'What the credit pays for: every exchange between an AI agent and its model (in production as in the sandbox) and every Inbox translation, at the rate shown in the Model tab. €5 are offered for the workspace’s first WhatsApp number, as soon as Meta has verified it.',
+            'Ce que le crédit paie : chaque échange d’un agent IA avec son modèle et chaque recherche dans sa base de connaissance (en production comme au bac à sable), la préparation des fiches de connaissance, et chaque traduction ou transcription de l’Inbox, au tarif de votre offre (celui de l’onglet Modèle). 1 € est offert au premier numéro WhatsApp de l’espace, dès que Meta l’a vérifié.',
+            'What the credit pays for: every exchange between an AI agent and its model and every search in its knowledge base (in production as in the sandbox), the preparation of knowledge entries, and every Inbox translation or transcription, at your plan’s rate (the one in the Model tab). €1 is offered for the workspace’s first WhatsApp number, as soon as Meta has verified it.',
           )}
         </p>
       </section>
@@ -322,7 +322,8 @@ function libelle(m: LigneCredit, t: (fr: string, en?: string) => string): string
     case 'achat': return t('Achat de crédit', 'Credit purchase');
     case 'offert': return t('Crédit offert', 'Credit offered');
     case 'recharge': return t('Recharge manuelle', 'Manual top-up');
-    case 'conso': return m.jour ? t(`Agents IA du ${jourCourt(m.jour)}`, `AI agents on ${jourCourt(m.jour)}`) : t('Agents IA', 'AI agents');
+    // Les tours d'agent, et depuis le lot 6 (C) la recherche, la préparation des fiches et la transcription : la même ligne du jour.
+    case 'conso': return m.jour ? t(`Consommation IA du ${jourCourt(m.jour)}`, `AI usage on ${jourCourt(m.jour)}`) : t('Consommation IA', 'AI usage');
     case 'traduction': return m.jour ? t(`Traductions du ${jourCourt(m.jour)}`, `Translations on ${jourCourt(m.jour)}`) : t('Traductions', 'Translations');
     default: return m.raison;
   }

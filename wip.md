@@ -19,7 +19,7 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
-## LOT 6 : LES OFFRES ET LEURS LIMITES, A, B1, B2a ET B2b EN PRODUCTION (2026-10-07 ET 08), PUIS C
+## LOT 6 : LES OFFRES ET LEURS LIMITES, A, B1, B2a ET B2b EN PRODUCTION (2026-10-07 ET 08), C EN LIVRAISON
 
 Spec `docs/superpowers/specs/2026-10-07-offres-et-limites-design.md`, plan `docs/superpowers/plans/2026-10-07-offres-et-limites.md`.
 La livraison A est en production et son essai réel est fait (2026-10-07, « Espace de dumas family » ramené en Base,
@@ -49,10 +49,20 @@ ne bloque que les invitations). ✅ **B2b, le numéro inclus dans le Pro, est EN
 0220 appliquée le 2026-10-08) : le numéro obtenu sans payer en Pro, l'abonnement du numéro seul arrêté avec avoir au
 passage en Pro, l'annonce de la suite à la fin prévue du Pro (console, Claude, e-mail), « rendre le numéro » à la fin
 du Pro, le numéro seul recréé sur la carte du Pro à la fin PRÉVUE d'un Pro résilié, sinon le chemin du lot 4 ; plus
-les jaunes J2, J5, J6 de B1. Les jaunes de sa relecture sont corrigés (à relire avec le lot suivant). 🔴 Julien a choisi
-de déployer AVANT d'ajouter « Abonnements : écriture » à la clé restreinte : tant qu'elle manque, un arrêt au passage
-en Pro ou une recréation à la fin d'un Pro échoue et le prévient sur Telegram, et le geste se fait à la main. ⏳ Essai
-réel de B2b à faire. Puis C (les coûts selon l'offre).
+les jaunes J2, J5, J6 de B1. Les jaunes de sa relecture sont corrigés (à relire avec le lot suivant). La clé restreinte
+de Stripe écrit déjà les abonnements (« Billing > Subscriptions » en écriture, posé depuis longtemps, confirmé par
+Julien le 2026-10-08) : l'arrêt au passage en Pro et la recréation à la fin d'un Pro partent sans geste manuel. ⏳ Essai
+réel de B2b APRÈS le 14 octobre (décision de Julien) : la libération du lot 4 se fait d'abord sur dumas family, puis
+l'essai de B2b sur le même espace (Pro avec un code à 100 %, « Obtenir mon numéro » sans payer, résiliation en fin de
+période et annonce de la suite).
+
+⏳ **C, les coûts selon l'offre, est écrite** (2026-10-08, migration 0221) : la commission de l'offre (50 % en Base,
+10 % en Pro et en Entreprise), la recherche dans la connaissance, la vectorisation des fiches et la transcription de
+l'Inbox sur le crédit du client, l'analyse éteinte en Base (`hors_offre`), la conservation de 30 jours en Base après 30
+jours de grâce (migration 0221 : la sortie de l'Entreprise datée, décision de Julien), le crédit offert à 1 € pour toutes
+les origines. Relecture, puis migration 0221 AVANT le `up` de l'API et des deux workers, puis la console. Essai réel
+de C : le prix d'un tour lu dans le journal du crédit en Base puis en Pro, et une conversation de l'espace Base qui reste
+non analysée.
 
 ## RETOURS CONSOLE DU 6 OCTOBRE (RC1 À RC8) : LES HUIT LOTS EN PRODUCTION, ESSAIS RÉELS DUS
 

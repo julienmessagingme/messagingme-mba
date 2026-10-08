@@ -73,6 +73,11 @@ export interface SortieResolveur {
    * scénario qui parle.
    */
   scenarioLance?: boolean;
+  /**
+   * Ce que l'outil a payé à la passerelle, en dollars (la recherche dans la connaissance : son vecteur et son reranker,
+   * lot 6, C). Le tour l'ajoute à son prix au tarif de l'offre, et le crédit du client le paie. Absent : rien payé.
+   */
+  coutDollars?: number;
 }
 
 export type ResolveurOutil = (entree: EntreeResolveur) => Promise<SortieResolveur>;
@@ -89,6 +94,8 @@ export interface ResultatOutil {
   mainPrise?: boolean;
   /** Voir `SortieResolveur.scenarioLance`. */
   scenarioLance?: boolean;
+  /** Voir `SortieResolveur.coutDollars`. Un résolveur coupé par l'échéance perd le sien : son issue est inconnue. */
+  coutDollars?: number;
   /**
    * Erreur de protocole : bug de notre client, le tour s'arrête et on n'en reparle pas au modèle. L'alerte est
    * du ressort de l'appelant (le canal d'alerte est une dep du worker) : le tour alerte sur `fatal: true`.
@@ -406,5 +413,7 @@ export async function executeTool(
     ...(sortie.mainPrise ? { mainPrise: true } : {}),
     // Seulement sur un succès : un lancement refusé laisse la session vivante, le modèle lit la raison et répond.
     ...(sortie.scenarioLance && status === 'ok' ? { scenarioLance: true } : {}),
+    // Sur toute issue qui a rendu : un échec métier a été payé aussi.
+    ...(sortie.coutDollars !== undefined ? { coutDollars: sortie.coutDollars } : {}),
   };
 }

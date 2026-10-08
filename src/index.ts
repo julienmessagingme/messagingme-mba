@@ -179,6 +179,7 @@ import type { DepsConnaissance } from './agent/connaissance';
 import type { Origine } from './reglages/historique';
 import { creerOffreDeBienvenue } from './account/offre-bienvenue';
 import { creerGelMembres } from './offres/membres';
+import { commissionPour } from './offres/commission';
 import { surFinDuPro, surPassageEnPro, type DepsNumeroInclus } from './offres/numero-inclus';
 
 /** Le nom de cette copie de l'API dans `/ops` et dans ses alertes : `api` seule, `api-<copie>` à plusieurs (`API_COPIE`). */
@@ -241,6 +242,8 @@ async function main(): Promise<void> {
    * celle des jetons de Claude, qui portent une personne. Le rang n'est lu que pour un espace limité.
    */
   const gelMembres = creerGelMembres({ offres, rang: (tenant, user) => userStore.rangMembre(tenant, user) });
+  // La commission sur le crédit IA, celle de l'offre de l'espace (lot 6, C) : la traduction, l'essai et le tarif affiché.
+  const commissionDeLEspace = commissionPour(offres);
   const authTokenStore = new PgAuthTokenStore(pool);
   const apiKeyStore = new PgApiKeyStore(pool);
   const oauthStore = new PgOauthStore(pool);
@@ -385,7 +388,7 @@ async function main(): Promise<void> {
         travaux: travauxEnVol,
       }),
       tauxEurParDollar: config.EUR_PER_USD,
-      commissionPct: config.COMMISSION_MODELE_PCT,
+      commissionPour: commissionDeLEspace,
     })
     : null;
   // Chaîne WhatsApp (Channels Me). La clé de chiffrement est injectée au store (contrat du sous-système), pas
@@ -623,8 +626,11 @@ async function main(): Promise<void> {
      * Gateway en direct : figés dans le code, ils seraient faux au premier changement de tarif.
      * 🔴 La clé du Gateway ne quitte jamais le serveur : la console reçoit des identifiants et des euros.
      */
-    modelesProposes: () => catalogueModelesCache.lire('catalogue', () => lireCatalogueGateway(fetchGet, config.AI_GATEWAY_API_KEY))
-      .then((catalogue) => modelesProposables(catalogue, config.EUR_PER_USD, config.COMMISSION_MODELE_PCT)),
+    modelesProposes: async (tenantId) => {
+      const catalogue = await catalogueModelesCache.lire('catalogue', () => lireCatalogueGateway(fetchGet, config.AI_GATEWAY_API_KEY));
+      // Le tarif de l'offre de CET espace : le prix affiché est celui que son crédit paiera.
+      return modelesProposables(catalogue, config.EUR_PER_USD, await commissionDeLEspace(tenantId));
+    },
   };
 
   /**
@@ -666,7 +672,7 @@ async function main(): Promise<void> {
         // Même taux et même commission qu'en production : un essai annonce, et débite, ce que la conversation
         // coûterait vraiment.
         tauxEurParDollar: config.EUR_PER_USD,
-        commissionPct: config.COMMISSION_MODELE_PCT,
+        commissionPour: commissionDeLEspace,
         outils: {
           catalogue: toolCatalog,
           // Muet : les essais n'ont pas à apparaître comme des pannes dans le journal que le client consulte.
@@ -1080,16 +1086,13 @@ async function main(): Promise<void> {
       ...depsRepondre,
       audit: auditSink,
       /**
-       * 🔴 La clé maison paie la transcription (un service offert). Le résolveur par espace existe
-       * (`clesGateway.lire`) : le jour où elle se refacture, c'est cette ligne, et elle seule.
+       * 🔴 Le crédit du client paie la transcription (lot 6, C), au tarif de son offre ; l'appel part sur notre clé et
+       * son coût est débité. Le pont des codes (`transcrireAppelOtp`), lui, reste à nos frais : c'est notre infrastructure.
        */
       ...(config.AI_GATEWAY_API_KEY && config.TRANSCRIPTION_MODELE ? {
         transcrireMessage: (tenant: string, messageId: string, conversationId?: string, cible?: LangueConsole | null) => transcrireMessage({
           messages: inboxStore,
-          /**
-           * 🔴 La traduction d'un vocal est sur le crédit du client, la transcription sur notre clé : deux
-           * payeurs dans le même geste, parce que la traduction sert les conversations du client.
-           */
+          // La traduction d'un vocal est sur le crédit du client, comme sa transcription depuis le lot 6.
           ...(traducteur ? {
             traducteur,
             rangerTraduction: (t, m2, texte, langue) => traductionStore.ranger(t, null, [{ messageId: m2, texte, langue }]),
@@ -1101,8 +1104,11 @@ async function main(): Promise<void> {
           cle: config.AI_GATEWAY_API_KEY,
           modele: config.TRANSCRIPTION_MODELE,
           tailleMaxOctets: config.TRANSCRIPTION_TAILLE_MAX_KO * 1024,
-          noterCout: (t, m2, cout, secondes) => {
-            journaliser('info', 'transcription_cout', { tenantId: t, messageId: m2, coutDollars: cout, secondes });
+          facturation: {
+            solde: (t) => credits.solde(t),
+            commissionPour: commissionDeLEspace,
+            tauxEurParDollar: config.EUR_PER_USD,
+            debiter: async (t, montant, note) => { await credits.debiter(t, montant, { note }); },
           },
         }, tenant, messageId, conversationId, cible),
       } : {}),

@@ -52,12 +52,11 @@ export const RETIRER_COMPTE_SANS_NUMERO = `delete from waba w
  */
 export class PgEmbeddedSignupStore {
   /**
-   * `offre.creditOffertMicroEur` : le crédit offert au premier numéro vérifié d'un espace né dans la console
-   * (`CREDIT_OFFERT_MICRO_EUR`, 0 l'éteint) ; `offre.creditOffertClaudeCodeMicroEur` : celui d'un espace né depuis
-   * Claude Code (`CREDIT_OFFERT_CLAUDE_CODE_MICRO_EUR`, 1 € par défaut, migration 0212). Requis : un câblage qui les
-   * oublierait relierait des numéros sans jamais rien offrir, sans le dire.
+   * `offre.creditOffertMicroEur` : le crédit offert au premier numéro vérifié d'un espace, quelle que soit son origine
+   * (`CREDIT_OFFERT_MICRO_EUR`, 1 € par défaut depuis le lot 6, 0 l'éteint). Requis : un câblage qui l'oublierait
+   * relierait des numéros sans jamais rien offrir, sans le dire.
    */
-  constructor(private readonly pool: Pool, private readonly offre: { creditOffertMicroEur: number; creditOffertClaudeCodeMicroEur: number }) {}
+  constructor(private readonly pool: Pool, private readonly offre: { creditOffertMicroEur: number }) {}
 
   /**
    * Rattache le WABA et le numéro à l'espace.
@@ -142,13 +141,8 @@ export class PgEmbeddedSignupStore {
    * l'offre et son crédit s'écrivent ensemble ou pas du tout.
    */
   async offrirCredit(tenantId: string, phoneNumberId: string): Promise<number> {
-    return enTransaction(this.pool, async (client) => {
-      // Le montant dépend de l'ORIGINE de l'espace (0212) : 1 € depuis Claude Code, 5 € depuis la console (décision de
-      // Julien du 2026-10-05). Un espace sans ligne, ou d'avant 0212, est `console`.
-      const o = await client.query<{ origine: string }>(`select origine from tenants where id = $1`, [tenantId]);
-      const montant = o.rows[0]?.origine === 'claude_code' ? this.offre.creditOffertClaudeCodeMicroEur : this.offre.creditOffertMicroEur;
-      return offrirAuNumeroVerifie(client, tenantId, phoneNumberId, montant);
-    });
+    // Le même montant pour toutes les origines (lot 6, C) : la console et Claude Code offrent 1 €.
+    return enTransaction(this.pool, (client) => offrirAuNumeroVerifie(client, tenantId, phoneNumberId, this.offre.creditOffertMicroEur));
   }
 
   /**

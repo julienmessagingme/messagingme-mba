@@ -89,6 +89,14 @@ export const DROITS: Readonly<Record<Offre, Droits>> = {
 };
 
 /**
+ * La conservation de la Base ne s'applique que 30 jours après l'entrée en Base (spec § 7, lot 6, C) : la création de
+ * l'espace, la fin de son dernier Pro, ou sa sortie de l'Entreprise (`tenants.entreprise_quittee_le`, migration 0221).
+ * Le temps de se réabonner ou d'exporter : changer d'offre ne purge jamais sur le coup. Lu par la purge et par l'écran
+ * (`src/inbox/retention.ts`).
+ */
+export const GRACE_RETOUR_BASE_JOURS = 30;
+
+/**
  * Les prix HT du Pro, en centimes (lot 6, livraison B1, décision de Julien du 2026-10-07) : 49 € par mois, 490 € par an,
  * taxe en sus. La route de paiement les recoupe avec le prix posé chez Stripe AVANT d'ouvrir un paiement, et la vue de
  * l'offre les montre à la console : jamais recopiés ailleurs.

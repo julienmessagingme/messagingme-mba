@@ -43,8 +43,8 @@ function store(lex: FicheTrouvee[], vec: FicheTrouvee[] | 'absent' = []): Knowle
 
 function recherche(scores: number[], over: Partial<RechercheSemantique> = {}): RechercheSemantique {
   return {
-    vectoriser: async () => [[0.1, 0.2]],
-    reclasser: async () => scores,
+    vectoriser: async () => ({ vecteurs: [[0.1, 0.2]], coutDollars: 0.000001 }),
+    reclasser: async () => ({ scores, coutDollars: 0.002 }),
     candidats: 12,
     seuil: 0.06,
     ...over,
@@ -121,6 +121,28 @@ describe('🔴 LA GARDE : le hors-sujet sort toujours par aucune_source', () => 
     const dessous = await chercherConnaissance(store([], [semantique('x')]), CTX, 'q', recherche([0.059]));
     expect(titres(pile)).toEqual(['titre-x']);
     expect(dessous.contenu).toEqual({ aucune_source: true });
+  });
+});
+
+describe('🔴 le coût de la recherche (lot 6, C : il se débite au crédit du client, dans le tour)', () => {
+  it('la recherche rend ce que ses appels ont coûté : le vecteur de la question et le reranker', async () => {
+    const r = await chercherConnaissance(store([lexicale('a')], [semantique('b')]), CTX, 'question', recherche([0.9, 0.9]));
+    expect(r.coutDollars).toBeCloseTo(0.002001, 9);
+  });
+
+  it('sans recherche sémantique, rien n’est appelé, donc rien ne coûte', async () => {
+    const r = await chercherConnaissance(store([lexicale('a')]), CTX, 'question');
+    expect(r.coutDollars).toBe(0);
+  });
+
+  it('un reranker qui tombe ne coûte que le vecteur déjà payé', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = await chercherConnaissance(
+      store([lexicale('a')], [semantique('b')]), CTX, 'question',
+      recherche([], { reclasser: async () => { throw new Error('rerank KO'); } }),
+    );
+    spy.mockRestore();
+    expect(r.coutDollars).toBe(0.000001);
   });
 });
 

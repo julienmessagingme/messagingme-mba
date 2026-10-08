@@ -232,6 +232,9 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   nous le décideur d'une chose qui ne nous appartient pas. Les 90 jours sont le défaut de qui n'a rien
   réglé, et **0 veut dire « ne jamais purger cet espace »**. Elle peut être raccourcie, jamais rallongée
   rétroactivement, puisque ce qui est effacé ne revient pas.
+  ✅ **En Base, 30 jours** (lot 6, livraison C), mais seulement **30 jours après l'entrée en Base** : la création de
+  l'espace, la fin de son Pro, ou sa sortie de l'Entreprise. D'ici là, la règle d'avant continue : changer d'offre
+  ne déclenche jamais de purge sur le coup, et laisse le temps de se réabonner ou d'exporter.
   ⚠️ **Ce qui disparaît, c'est le CONTENU, pas la mémoire de l'activité** : les compteurs de la Synthèse
   (conversations par jour, satisfaction et urgence moyennes, répartition par intention) sont conservés à
   part, sous forme de totaux journaliers qui ne portent ni numéro, ni texte, ni résumé, ni identifiant de
@@ -2893,8 +2896,9 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   APPELER DES OUTILS (un modèle qui ne le sait pas ne cherche pas dans votre base de connaissance, il
   INVENTE), et ils parlent correctement français. Un modèle retiré du catalogue disparaît tout seul de la
   liste. Les prix, eux, sont lus en direct chez le fournisseur : ils ne peuvent pas être périmés.
-  ✅ **Le tarif affiché est le tarif payé** (2026-09-28) : il inclut notre commission, et le crédit est
-  décompté au même tarif, commission comprise. La consommation de l'encadré du dessous est donc au prix de
+  ✅ **Le tarif affiché est le tarif payé** (2026-09-28) : il inclut notre commission, celle de l'offre de l'espace
+  (50 % en Base, 10 % en Pro et en Entreprise, depuis le lot 6), et le crédit est décompté au même tarif, commission
+  comprise. La consommation de l'encadré du dessous est donc au prix de
   la liste. ⚠️ Avant cette date, le crédit était décompté au coût brut (environ 10 % sous le tarif
   affiché), et l'écran le disait ; une conversation d'avant garde le montant qui lui a été décompté.
   ⚠️ Si le catalogue du fournisseur est injoignable, la liste reste utilisable, simplement sans tarif.
@@ -3211,7 +3215,11 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
 
 - ✅ **Un solde prépayé par espace de travail**, affiché en haut de la liste des agents et libellé en euros.
   Il descend à chaque tour et à chaque traduction de l'Inbox, **au tarif affiché dans la liste des modèles,
-  commission comprise** (2026-09-28 ; avant, au coût brut).
+  commission comprise** (2026-09-28 ; avant, au coût brut). Depuis le lot 6 (livraison C), il paie aussi, au tarif de
+  l'offre et dans toutes les offres, **la recherche dans la base de connaissance** pendant un tour (environ 0,2 centime
+  par recherche, ajouté au tour), **la préparation des fiches de connaissance** (une fiche d'un espace sans crédit
+  attend d'être préparée) et **la transcription d'un vocal dans l'Inbox** (sans crédit, l'écran dit de recharger).
+  Le code de vérification lu par téléphone pour un numéro fourni reste à nos frais.
 - ✅ **Trois états, et ils préviennent avant la panne** : le solde en clair, un avertissement sous **0,50 €**
   (« c'est bas, au bout vos agents cesseront de répondre »), et un bandeau rouge à zéro (« vos agents ne
   répondent plus et sortent par Plafond atteint »). L'agent IA qui répond au client, lui, laisse alors chaque message à
@@ -3219,20 +3227,22 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
 - ✅ **Un admin le recharge lui-même, en payant** (2026-09-29) : **Paramètres > Crédit IA**, 50 € ou 100 € HT,
   sur la page de paiement de Stripe (voir « Crédit IA »). Un client ne s'écrit jamais de crédit : seul le paiement
   confirmé par Stripe en ajoute. La recharge à la main par l'exploitation reste possible (voir la section `/ops`).
-- ✅ **5 € OFFERTS AU PREMIER NUMÉRO WHATSAPP VÉRIFIÉ PAR META** (2026-09-29, décision de Julien), et non plus à
+- ✅ **1 € OFFERT AU PREMIER NUMÉRO WHATSAPP VÉRIFIÉ PAR META** (5 € du 2026-09-29 au lot 6 ; 1 € pour toutes les
+  origines depuis la livraison C, décision de Julien), et non plus à
   la création d'un espace, où ils se récoltaient par script. **Seulement une fois que Meta dit le numéro vérifié** :
   à la connexion s'il l'est déjà, sinon dès que le code de vérification est accepté (« Activer le numéro » sur
   l'Accueil). Un numéro relié mais pas vérifié ne reçoit rien. Une fois par espace, et jamais deux fois pour le même
-  numéro, même s'il change d'espace ou d'identifiant chez Meta (c'est le numéro de téléphone qui compte). **1 € au
-  lieu de 5 € pour un espace créé depuis Claude Code** (2026-10-05, décision de Julien). **Pas
+  numéro, même s'il change d'espace ou d'identifiant chez Meta (c'est le numéro de téléphone qui compte). **Pas
   rétroactif** : les espaces qui avaient déjà un numéro n'en reçoivent pas. Aucune clé de modèle n'est ouverte à ce
   moment, elle s'ouvre au premier usage. Le montant est un réglage du serveur (0 l'éteint).
 - 🔴 **Sans crédit, rien ne démarre**, et c'est le bon défaut : un crédit implicite ferait payer une
   consommation que personne n'a autorisée. Conséquence concrète : **un espace à zéro n'a ni agent qui
-  démarre, ni bac à sable, ni traduction**.
+  démarre, ni bac à sable, ni traduction, ni transcription, et ses nouvelles fiches de connaissance attendent**.
 - ✅ **Trois plafonds de conversation** en plus du solde, réglés sur la fiche (tours, appels d'outils, budget).
   Le premier atteint fait sortir le parcours par 🛑 « Plafond atteint », qui est une sortie à brancher : c'est
-  un garde-fou, pas un réglage de confort.
+  un garde-fou, pas un réglage de confort. Le budget vaut **0,07 € par défaut** depuis le lot 6 (0,03 € avant) : la
+  recherche dans la base de connaissance y entre désormais, et il laisse au modèle la place d'avant plus douze
+  recherches.
 - ✅ **CHAQUE ESPACE A SA PROPRE CLÉ DE MODÈLE** (2026-09-09), créée automatiquement au moment où le client
   crée son PREMIER agent, ou depuis le 2026-09-28 à sa PREMIÈRE TRADUCTION s'il a du crédit, et plafonnée au
   crédit qu'il a acheté. Ce qui change côté client : **sans crédit,
@@ -3296,9 +3306,10 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
 
 ## Crédit IA (menu « Paramètres » > Crédit IA)
 
-Le crédit prépayé de l'espace. Il paie **les agents IA** (chaque échange avec leur modèle, en production comme
-au bac à sable) **et la traduction des conversations de l'Inbox**, au tarif affiché dans l'onglet Modèle d'un
-agent (notre commission comprise). Écran réservé aux admins. Il vivait sous « AI Agent » > Other AI agent >
+Le crédit prépayé de l'espace. Il paie **les agents IA** (chaque échange avec leur modèle et chaque recherche dans
+leur base de connaissance, en production comme au bac à sable), **la préparation des fiches de connaissance, et la
+traduction et la transcription des conversations de l'Inbox**, au tarif de l'offre de l'espace, celui de l'onglet
+Modèle d'un agent (notre commission comprise). Écran réservé aux admins. Il vivait sous « AI Agent » > Other AI agent >
 Crédit jusqu'au 2026-09-29 ; l'ancienne adresse y mène toujours.
 
 - ✅ **Le solde**, en euros, avec un avertissement sous 0,50 € et un bandeau rouge à zéro (« vos agents ne
@@ -3327,14 +3338,14 @@ Crédit jusqu'au 2026-09-29 ; l'ancienne adresse y mène toujours.
   - ⚠️ **Pendant les essais en mode test de Stripe, seul un exploitant peut payer** : une carte de test
     donnerait sinon de vrais euros de modèle à n'importe quel client.
 - ✅ **L'historique** des quatre-vingt-dix derniers jours, raisons en clair : achat de crédit, crédit offert,
-  recharge manuelle, **agents IA du jour** (tous les tours d'une journée en une ligne) et **traductions du jour**.
+  recharge manuelle, **consommation IA du jour** (tous les tours d'agent, les recherches, la préparation des fiches et
+  les transcriptions d'une journée, en une ligne ; « agents IA du jour » avant le lot 6) et **traductions du jour**.
   Aucune note interne n'y apparaît. Au-delà de quatre-vingt-dix jours, le solde compte tout, l'écran ne liste plus.
 - ✅ **« Facture » sur chaque achat qui en a une** (2026-09-29, décision de Julien) : le lien ouvre, dans un nouvel
   onglet, la facture hébergée par Stripe (consultation et PDF). Si elle ne s'ouvre pas, l'onglet vide se referme
   et la page le dit. Un achat payé avant ce lien, ou sans facture chez Stripe, n'en montre pas. On ne lit que les
   factures des achats de SON espace.
-- ✅ **5 € offerts au premier numéro WhatsApp de l'espace (1 € pour un espace créé depuis Claude Code), une fois que
-  Meta l'a vérifié**, une seule fois (voir
+- ✅ **1 € offert au premier numéro WhatsApp de l'espace, une fois que Meta l'a vérifié**, une seule fois (voir
   « Agent IA », le crédit et les plafonds).
 - ⛔ Hors périmètre : recharge automatique, montant libre, abonnement, e-mail de solde bas, remboursement en ligne.
 
@@ -3404,8 +3415,15 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   avec sa limite d'utilisateurs (10 proposés, vide = sans limite) et, si on la donne, la durée de conservation des
   conversations (absente, elle reste telle quelle : changer d'offre ne déclenche jamais de purge). La même route ramène
   un espace en Base. Les espaces qui existaient avant le lot 6 sont tous en Entreprise, sans aucune limite.
-- ⏳ **À venir** : les coûts qui suivent l'offre (commission sur le crédit IA, analyse des conversations,
-  conservation : livraison C).
+- ✅ **Les coûts suivent l'offre** (livraison C) :
+  - la **commission sur le crédit IA** : 50 % en Base, 10 % en Pro et en Entreprise, au tarif affiché comme au montant
+    décompté ;
+  - l'**analyse des conversations** ne tourne pas en Base : la fiche d'un contact dit « analyse disponible en Pro ».
+    Passer en Pro n'analyse pas le passé : une conversation est analysée au premier nouveau message ;
+  - la **conservation** : 30 jours en Base, 30 jours après l'entrée en Base (voir les conversations, plus haut) ;
+  - la **recherche dans la connaissance, la préparation des fiches et la transcription** sont payées par le crédit,
+    dans toutes les offres ;
+  - le **crédit offert** au premier numéro vaut 1 € pour tous les espaces.
 
 ## MBA, le répondeur de Meta (menu « AI Agent » > MBA)
 

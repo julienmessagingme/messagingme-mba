@@ -1,7 +1,7 @@
 ---
 ecran: offre
 source_section: Offres (menu « Paramètres » > Offre)
-source_empreinte: 6a144f
+source_empreinte: afaa30
 ---
 # Choisir mon offre
 
@@ -24,6 +24,11 @@ comptée non plus.
 **Quand quelque chose n'est pas dans votre offre.** Le menu reste visible, grisé, avec un cadenas : il vous mène à
 la page Offre. Si une action est refusée parce qu'une limite est atteinte, un message vous le dit, avec un bouton
 « Voir les offres ».
+
+**Ce que l'offre change aux coûts.** Notre commission sur le crédit IA est de 50 % en Base et de 10 % en Pro et en
+Entreprise. L'analyse des conversations ne tourne pas en Base ; en Pro, une conversation est analysée au premier
+nouveau message (le passé n'est pas rattrapé). En Base, les conversations se gardent 30 jours, mais seulement 30 jours
+après l'entrée en Base : à la création de l'espace, à la fin de votre Pro ou au départ de l'Entreprise.
 
 **Si votre espace revient en Base.** Rien n'est effacé, et tout revient quand vous reprenez le Pro. En attendant,
 seules vos 10 automations les plus anciennes lancent encore leurs scénarios (vos widgets ne démarrent plus le leur),

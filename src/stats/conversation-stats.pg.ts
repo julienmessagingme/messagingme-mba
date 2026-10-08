@@ -1,7 +1,7 @@
 import type { Pool } from 'pg';
 import { STATS_TZ, BOUNDS_CTE } from './range';
 import type { DateRange } from './range';
-import { retentionEffective } from '../inbox/retention';
+import { BASE_DEPUIS_SQL, retentionEffective } from '../inbox/retention';
 import { originesQuiRepondent } from '../inbox/origine';
 import type { Intent } from '../analysis/schema';
 
@@ -191,6 +191,8 @@ export class PgConversationStatsStore {
       a_devis: string; a_rappeler: string; a_relancer: string; a_escalader: string; a_aucune: string;
       c_lt50: string; c_50_70: string; c_70_90: string; c_gte90: string;
       retention_espace: number | null;
+      offre: string;
+      base_depuis: Date | null;
     }>(
       `with ${BOUNDS_CTE}
        select
@@ -198,6 +200,9 @@ export class PgConversationStatsStore {
          -- phrase qui l'annonce est affichee juste sous eux. null = l'espace n'a rien regle, et c'est
          -- retentionEffective qui tranche ensuite, pas ce select.
          (select ts.conversation_retention_days from tenant_settings ts where ts.tenant_id = $1) as retention_espace,
+         -- L offre et l entree en Base (lot 6, C) : la meme regle que la purge, pour annoncer la meme duree.
+         offre_de_l_espace($1::uuid) as offre,
+         (select ${BASE_DEPUIS_SQL} from tenants t where t.id = $1) as base_depuis,
          count(*)::int as total,
          count(*) filter (where sentiment = 'positif')::int as s_pos,
          count(*) filter (where sentiment = 'neutre')::int as s_neu,
@@ -285,7 +290,8 @@ export class PgConversationStatsStore {
        * La durée de l'espace quand il en a une, pas celle de l'instance (figée au démarrage et valable pour
        * tous) : la règle à deux niveaux vit dans `retentionEffective`, partagée avec la purge.
        */
-      retentionDays: retentionEffective(this.retentionDays, r.retention_espace ?? null),
+      retentionDays: retentionEffective(this.retentionDays, r.retention_espace ?? null,
+        r.offre === 'base' && r.base_depuis ? { depuis: r.base_depuis } : null),
       total,
       sentiment: { positif: Number(r.s_pos), neutre: Number(r.s_neu), negatif: Number(r.s_neg) },
       intent: {

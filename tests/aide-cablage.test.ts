@@ -62,7 +62,8 @@ describe('câblage du bot d’aide', () => {
       .toMatch(/balayerVectorisation\(depotAide, rechercheSemantique, config\.AGENT_EMBED_MODEL\)/);
     // Et le MÊME modèle que la connaissance des agents : les deux colonnes ont la même dimension par
     // construction, en prendre un autre rendrait les deux bases incomparables sans erreur.
-    expect(sansComm).toMatch(/balayerVectorisation\(knowledgeStore, rechercheSemantique, config\.AGENT_EMBED_MODEL\)/);
+    // Depuis le lot 6 (C), celles des agents passent par le balayage PAYANT (le crédit de leur espace), même modèle.
+    expect(sansComm).toMatch(/balayerVectorisationPayee\(knowledgeStore, rechercheSemantique, config\.AGENT_EMBED_MODEL,/);
   });
 
   it('🔴 le module `aide` est bien celui que `ServerDeps` attend, ses DEUX capacités comprises', () => {

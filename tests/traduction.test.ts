@@ -36,7 +36,7 @@ function traducteur(over: Partial<Omit<DepsTraduction, 'client'>> & Pick<DepsTra
     credit: { solde: async () => 5_000_000, debiterTraduction: async () => 0 },
     assurerCle: async () => 'prete',
     tauxEurParDollar: 1,
-    commissionPct: 0,
+    commissionPour: async () => 0,
     ...reste,
     client: { completer },
   });
@@ -178,10 +178,10 @@ describe('traducteur : le crédit du client', () => {
       completer: async () => rendTraductionsAuCout(0.001, [{ id: 'seul', texte: 'Bonjour' }]),
       credit: { solde: async () => 5_000_000, debiterTraduction: async (tenantId, montant) => { debits.push({ tenantId, montant }); } },
       tauxEurParDollar: 0.92,
-      commissionPct: 10,
+      commissionPour: async (tenantId) => (tenantId === 'espace-42' ? 10 : 50),
     });
     expect((await t.traduire('espace-42', 'Hola', 'fr'))?.texte).toBe('Bonjour');
-    // 0,001 $ à 0,92 = 920 micro-euros, + 10 % = 1012.
+    // 0,001 $ à 0,92 = 920 micro-euros, + 10 % = 1012 : la commission de CET espace.
     expect(debits).toEqual([{ tenantId: 'espace-42', montant: 1012 }]);
   });
 

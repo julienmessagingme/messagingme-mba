@@ -39,7 +39,7 @@ export function facteurCommission(commissionPct: number): number {
 
 /**
  * Ce que le crédit d'un espace paie pour un appel, en micro-euros : le coût du Gateway au taux commercial, majoré
- * de notre commission (`COMMISSION_MODELE_PCT`), arrondi une seule fois.
+ * de notre commission (celle de l'offre de l'espace, `commissionPour`, `src/offres/commission.ts`), arrondi une seule fois.
  *
  * 🔴 Le seul calcul du montant débité. Ses appelants (le cerveau de l'agent, donc le tour et l'essai de la console,
  * et la traduction) l'importent ; un appelant de plus l'importe aussi, il ne recopie pas la formule.

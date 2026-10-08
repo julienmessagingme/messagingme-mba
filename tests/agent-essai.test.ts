@@ -37,7 +37,7 @@ function monter(solde: number) {
   const cerveau: GatewayBrainDeps = {
     client: { completer: async () => REPONSE },
     contexte: async () => AGENT,
-    commissionPct: 0,
+    commissionPour: async () => 0,
     outils: {
       catalogue: { byName: async () => null, listActifs: async () => [] },
       journal: { ouvrir: async () => '', clore: async () => {} },

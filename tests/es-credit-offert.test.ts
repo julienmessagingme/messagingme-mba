@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { schema } from '../src/config';
 import type { Pool } from 'pg';
 import { PgEmbeddedSignupStore, TenantConflictError } from '../src/account/es-store.pg';
 import { PgUserStore } from '../src/user/store.pg';
@@ -44,7 +45,7 @@ function fausseBase(o: { offrePrend?: boolean; numeroDejaAilleurs?: boolean; ori
 }
 
 const LIAISON = { tenantId: 't1', wabaId: 'waba-1', phoneNumberId: 'pn-1', displayPhoneNumber: '+33600000000', verifiedName: 'Démo' };
-const CINQ_EUROS = { creditOffertMicroEur: 5_000_000, creditOffertClaudeCodeMicroEur: 1_000_000 };
+const UN_EURO = { creditOffertMicroEur: 1_000_000 };
 const indexDe = (b: ReturnType<typeof fausseBase>, re: RegExp) => b.surLaConnexion.findIndex((q) => re.test(q.sql));
 const premiersMots = (b: ReturnType<typeof fausseBase>) => b.surLaConnexion.map((q) => q.sql.trim().split(/\s+/)[0]!.toLowerCase());
 
@@ -53,14 +54,14 @@ describe('le crédit offert au premier numéro vérifié', () => {
     // Le sens inverse de tout le lot : si l'offre revenait dans `linkTenant`, un numéro que Meta dit `NOT_VERIFIED`
     // recevrait de nouveau ses 5 €, puisque la route relie AVANT de savoir.
     const b = fausseBase();
-    await new PgEmbeddedSignupStore(b.pool, CINQ_EUROS).linkTenant(LIAISON);
+    await new PgEmbeddedSignupStore(b.pool, UN_EURO).linkTenant(LIAISON);
     expect(indexDe(b, /insert into phone_numbers/i)).toBeGreaterThan(-1);
     expect([...b.surLePool, ...b.surLaConnexion.map((q) => q.sql)].filter((s) => /credits_offerts|agent_credit/i.test(s))).toEqual([]);
   });
 
   it('🔴 l’offre, PUIS le crédit et sa ligne `offert`, dans une seule transaction', async () => {
     const b = fausseBase();
-    expect(await new PgEmbeddedSignupStore(b.pool, CINQ_EUROS).offrirCredit('t1', 'pn-1')).toBe(5_000_000);
+    expect(await new PgEmbeddedSignupStore(b.pool, UN_EURO).offrirCredit('t1', 'pn-1')).toBe(1_000_000);
 
     const offre = indexDe(b, /insert into credits_offerts/i);
     const credit = indexDe(b, /insert into agent_credit_mouvements/i);
@@ -71,33 +72,38 @@ describe('le crédit offert au premier numéro vérifié', () => {
     // Rien sur le pool à côté : une écriture hors de la transaction survivrait à une offre annulée.
     expect(b.surLePool).toEqual([]);
     // L'offre nomme l'espace ET le numéro, et relit le numéro DANS cet espace, avec son numéro affiché.
-    expect(b.surLaConnexion[offre]!.params).toEqual(['t1', 'pn-1', 5_000_000]);
+    expect(b.surLaConnexion[offre]!.params).toEqual(['t1', 'pn-1', 1_000_000]);
     expect(b.surLaConnexion[offre]!.sql).toMatch(/from phone_numbers pn\s+where pn\.id = \$2 and pn\.tenant_id = \$1/);
     expect(b.surLaConnexion[offre]!.sql).toContain('numero_affiche');
     // (espace, montant, raison, session, note) : positif, `offert`, sans session.
-    expect(b.surLaConnexion[credit]!.params).toEqual(['t1', 5_000_000, 'offert', null, NOTE_CREDIT_OFFERT, null]);
+    expect(b.surLaConnexion[credit]!.params).toEqual(['t1', 1_000_000, 'offert', null, NOTE_CREDIT_OFFERT, null]);
   });
 
-  it('🔴 un espace né depuis Claude Code reçoit 1 €, pas 5 € (décision de Julien du 2026-10-05) ; la console garde 5 €', async () => {
-    const cc = fausseBase({ origine: 'claude_code' });
-    expect(await new PgEmbeddedSignupStore(cc.pool, CINQ_EUROS).offrirCredit('t1', 'pn-1')).toBe(1_000_000);
-    const offre = cc.surLaConnexion.find((q) => /insert into credits_offerts/i.test(q.sql));
-    expect(offre?.params).toContain(1_000_000);
-    const console_ = fausseBase({ origine: 'console' });
-    expect(await new PgEmbeddedSignupStore(console_.pool, CINQ_EUROS).offrirCredit('t1', 'pn-1')).toBe(5_000_000);
+  it('🔴 le défaut de l’instance est 1 € (lot 6, C), et le réglage propre à Claude Code n’existe plus', () => {
+    const r = schema.safeParse({});
+    expect(r.success && r.data.CREDIT_OFFERT_MICRO_EUR).toBe(1_000_000);
+    expect(Object.keys(schema.shape)).not.toContain('CREDIT_OFFERT_CLAUDE_CODE_MICRO_EUR');
+  });
+
+  it('🔴 1 € pour toutes les origines (lot 6, C) : l’origine de l’espace n’est même plus lue', async () => {
+    for (const origine of ['claude_code', 'console'] as const) {
+      const b = fausseBase({ origine });
+      expect(await new PgEmbeddedSignupStore(b.pool, UN_EURO).offrirCredit('t1', 'pn-1')).toBe(1_000_000);
+      expect(b.surLaConnexion.filter((q) => /select origine from tenants/i.test(q.sql))).toEqual([]);
+    }
   });
 
   it('🔴 déjà servi (cet espace, ce numéro, ou ce numéro affiché ailleurs) : l’offre ne prend pas, RIEN n’est crédité', async () => {
     // Les trois cas sont le même geste pour le code : une contrainte annule l'insertion.
     const b = fausseBase({ offrePrend: false });
-    expect(await new PgEmbeddedSignupStore(b.pool, CINQ_EUROS).offrirCredit('t1', 'pn-1')).toBe(0);
+    expect(await new PgEmbeddedSignupStore(b.pool, UN_EURO).offrirCredit('t1', 'pn-1')).toBe(0);
     expect(indexDe(b, /insert into credits_offerts/i)).toBeGreaterThan(-1);
     expect(b.surLaConnexion.filter((q) => /agent_credit/i.test(q.sql))).toEqual([]);
   });
 
   it('échec de la liaison (numéro d’un autre espace) : rien d’offert, et tout est annulé', async () => {
     const b = fausseBase({ numeroDejaAilleurs: true });
-    await expect(new PgEmbeddedSignupStore(b.pool, CINQ_EUROS).linkTenant(LIAISON)).rejects.toBeInstanceOf(TenantConflictError);
+    await expect(new PgEmbeddedSignupStore(b.pool, UN_EURO).linkTenant(LIAISON)).rejects.toBeInstanceOf(TenantConflictError);
     expect(b.surLaConnexion.filter((q) => /credits_offerts|agent_credit/i.test(q.sql))).toEqual([]);
     expect(premiersMots(b)).toContain('rollback');
   });

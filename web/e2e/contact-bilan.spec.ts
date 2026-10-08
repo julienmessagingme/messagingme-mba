@@ -17,7 +17,7 @@ const BILAN = {
   ],
 };
 
-async function ouvrir(page: import('@playwright/test').Page, bilan: unknown | 'panne') {
+async function ouvrir(page: import('@playwright/test').Page, bilan: unknown | 'panne', conversations: unknown[] = []) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const url = route.request().url();
@@ -26,7 +26,7 @@ async function ouvrir(page: import('@playwright/test').Page, bilan: unknown | 'p
       if (bilan === 'panne') return route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"x"}' });
       return json(bilan);
     }
-    if (/\/history$/.test(url)) return json({ sends: [], conversations: [] });
+    if (/\/history$/.test(url)) return json({ sends: [], conversations });
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     if (/\/contacts/.test(url)) {
       return json({ contacts: [{ id: 'ct1', phoneE164: '+33611111111', profileName: 'Claire Fontaine', optInStatus: 'in', tags: [], fields: {}, createdAt: '2026-09-01T10:00:00Z' }], total: 1 });
@@ -54,6 +54,16 @@ test.describe('Le bilan d’un contact', () => {
     // Un zéro se lirait « ce contact ne nous a rien coûté », alors que la vérité est « on ne sait pas ».
     await ouvrir(page, { ...BILAN, cout: { ...BILAN.cout, cout: null } });
     await expect(page.getByTestId('contact-bilan-cout')).toHaveText('n/d');
+  });
+
+  test('🔴 une conversation d’un espace en Base dit « analyse disponible en Pro », pas « pas encore analysée » (lot 6, C)', async ({ page }) => {
+    // « Pas encore » promettrait une analyse qui ne viendra pas : l'offre Base n'analyse pas les conversations.
+    await ouvrir(page, BILAN, [{
+      conversationId: 'c1', waId: '33611111111', lastMessageAt: '2026-10-08T10:00:00Z', lastPreview: 'bonjour', messagesCount: 3,
+      analysisStatus: 'hors_offre', analysis: null, analysisStale: false, inboxHref: '/inbox?c=c1',
+    }]);
+    await expect(page.getByText(/analyse disponible en Pro|analysis available in Pro/)).toBeVisible();
+    await expect(page.getByText(/pas encore analysée|not analyzed yet/)).toHaveCount(0);
   });
 
   test('🔴 le bilan en PANNE ne fait pas disparaître l’historique', async ({ page }) => {

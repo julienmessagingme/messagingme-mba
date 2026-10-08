@@ -59,7 +59,7 @@ export interface DepsAgentMcp {
       solde(tenantId: string): Promise<number>;
       historique(tenantId: string, limite: number): Promise<LigneHistorique[]>;
     };
-    modelesProposes(): Promise<ModeleProposable[]>;
+    modelesProposes(tenantId: string): Promise<ModeleProposable[]>;
   };
   /**
    * La connaissance de la console, à une différence près : son journal des suppressions signe l'origine `mcp`
@@ -191,7 +191,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
       const [outils, lint, modeles, reglages] = await Promise.all([
         ia.outils.listToutes(tenantId, id),
         manquesDeLAgent(ia.gestion, tenantId, id),
-        ia.gestion.modelesProposes(),
+        ia.gestion.modelesProposes(tenantId),
         ia.reglages.get(tenantId),
       ]);
       // Les outils maison par leur code ; les connecteurs sont seulement comptés (Claude ne les règle pas).

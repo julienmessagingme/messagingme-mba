@@ -1062,7 +1062,10 @@ function VocalMessage({ session, conversationId, message, traduire }: {
       setTraduit(r.traduction !== null && r.traduction !== undefined);
     } catch (err) {
       if (err instanceof ApiError && err.status === 410) setExpire(true);
-      else setErreur(t('La transcription a échoué, réessayez.', 'Transcription failed, try again.'));
+      // Le crédit IA paie la transcription (lot 6, C) : épuisé, « réessayez » serait faux, recharger règle le problème.
+      else if (err instanceof ApiError && err.status === 402) {
+        setErreur(t('Crédit IA épuisé : rechargez-le dans Paramètres > Crédit IA pour transcrire ce vocal.', 'AI credit used up: top it up in Settings > AI credit to transcribe this voice note.'));
+      } else setErreur(t('La transcription a échoué, réessayez.', 'Transcription failed, try again.'));
     } finally { setOccupe(null); }
   }
 

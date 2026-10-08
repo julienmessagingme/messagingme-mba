@@ -146,3 +146,65 @@ describe.skipIf(!url)('rétention des conversations (Postgres)', () => {
     expect(await store.purgeConversationsOlderThan(365, 2)).toBe(1);
   });
 });
+
+/**
+ * 🔴 LA CONSERVATION DE LA BASE (lot 6, livraison C, migration 0221) : 30 jours, mais seulement 30 jours après l'entrée en
+ * Base (la création, la fin du dernier Pro, ou la sortie de l'Entreprise). Avant, la règle d'avant : changer d'offre ne
+ * déclenche jamais de purge sur le coup. Une durée d'instance LONGUE (365 jours) pour que seule la règle de la Base
+ * puisse effacer une conversation de 40 jours.
+ */
+describe.skipIf(!url)('rétention des conversations : la Base (Postgres)', () => {
+  let pool: Pool;
+  const espaces: string[] = [];
+
+  /** Un espace et une conversation de 40 jours ; rend l'identifiant de la conversation. */
+  async function espace(nom: string, o: { creeIlYa: number; entreprise?: boolean; quitteIlYa?: number; proFiniIlYa?: number; proVivant?: boolean }): Promise<string> {
+    const t = (await pool.query<{ id: string }>(
+      `insert into tenants (name, created_at, offre_entreprise, entreprise_quittee_le)
+       values ($1, now() - make_interval(days => $2), $3, case when $4::int is null then null else now() - make_interval(days => $4::int) end)
+       returning id`,
+      [nom, o.creeIlYa, o.entreprise ?? false, o.quitteIlYa ?? null],
+    )).rows[0]!.id;
+    espaces.push(t);
+    if (o.proFiniIlYa !== undefined || o.proVivant) {
+      await pool.query(
+        `insert into abonnements_offre (stripe_subscription_id, tenant_id, periodicite, livemode, fini_le, fin_raison, statut)
+         values ($1, $2, 'mois', true, case when $3::int is null then null else now() - make_interval(days => $3::int) end,
+                 case when $3::int is null then null else 'resiliation' end, case when $3::int is null then 'actif' else 'resilie' end)`,
+        [`sub_itestret${espaces.length}`, t, o.proVivant ? null : o.proFiniIlYa],
+      );
+    }
+    return (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, last_message_at) values ($1, '33600000900', now() - interval '40 days') returning id`,
+      [t],
+    )).rows[0]!.id;
+  }
+  const existe = async (id: string) => (await pool.query('select 1 from conversations where id = $1', [id])).rowCount === 1;
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: url, ssl: pgSsl(), max: 2 });
+  });
+
+  afterAll(async () => {
+    await pool.query('delete from tenants where id = any($1::uuid[])', [espaces]);
+    await pool.end();
+  });
+
+  it('🔴 Base depuis plus de 30 jours : la conversation de 40 jours part ; dans la grâce, Pro ou Entreprise : elle reste', async () => {
+    const nee = await espace('itest-ret-base-nee', { creeIlYa: 60 });
+    const sortieAncienne = await espace('itest-ret-base-sortie-40', { creeIlYa: 400, quitteIlYa: 40 });
+    const sortieRecente = await espace('itest-ret-base-sortie-10', { creeIlYa: 400, quitteIlYa: 10 });
+    const proFiniAncien = await espace('itest-ret-base-pro-40', { creeIlYa: 400, proFiniIlYa: 40 });
+    const proFiniRecent = await espace('itest-ret-base-pro-10', { creeIlYa: 400, proFiniIlYa: 10 });
+    const pro = await espace('itest-ret-pro', { creeIlYa: 400, proVivant: true });
+    const entreprise = await espace('itest-ret-entreprise', { creeIlYa: 400, entreprise: true });
+    await new PgInboxStore(pool).purgeConversationsOlderThan(365, 100_000);
+    expect(await existe(nee)).toBe(false);
+    expect(await existe(sortieAncienne)).toBe(false);
+    expect(await existe(proFiniAncien)).toBe(false);
+    expect(await existe(sortieRecente)).toBe(true);
+    expect(await existe(proFiniRecent)).toBe(true);
+    expect(await existe(pro)).toBe(true);
+    expect(await existe(entreprise)).toBe(true);
+  });
+});

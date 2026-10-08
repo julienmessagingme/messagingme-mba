@@ -132,7 +132,8 @@ async function verdict(
 ): Promise<FicheAide[]> {
   if (candidates.length === 0) return [];
   try {
-    const scores = await recherche.reclasser(question, candidates.map((f) => ({ texte: `${f.titre}\n${f.corps}` })));
+    // Le coût est le nôtre (le bot d'aide est sur notre clé) : il n'est débité à personne.
+    const { scores } = await recherche.reclasser(question, candidates.map((f) => ({ texte: `${f.titre}\n${f.corps}` })));
     return candidates
       .map((f, i) => ({ f, score: scores[i] ?? 0 }))
       .filter((x) => x.score >= recherche.seuil)
@@ -189,7 +190,7 @@ export function creerRepondeur(deps: DepsAide): (q: QuestionAide) => Promise<Rep
     let candidates = lexicales;
     if (deps.recherche && deps.depot.chercherParVecteur) {
       try {
-        const [vecteur] = await deps.recherche.vectoriser([question]);
+        const [vecteur] = (await deps.recherche.vectoriser([question])).vecteurs;
         if (vecteur) {
           candidates = fusionner(lexicales, await deps.depot.chercherParVecteur(vecteur, deps.recherche.candidats));
         }

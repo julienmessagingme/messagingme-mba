@@ -56,7 +56,8 @@ export interface AgentsRouteDeps extends DepsGestionAgents {
    * Les modèles proposables et leur tarif, pour la liste de l'onglet Modèle. Le câblage rend nos modèles sans
    * tarif quand la tarification est indisponible : son absence n'interdit pas un réglage.
    */
-  modelesProposes(): Promise<ModeleProposable[]>;
+  /** Les modèles proposables, au tarif de l'offre de CET espace (sa commission). */
+  modelesProposes(tenantId: string): Promise<ModeleProposable[]>;
   /** Le répondeur de l'espace (`src/repondeur/reglage.ts`) : le MÊME objet que l'outil MCP `set_default_responder`. */
   repondeur: DepsReglageRepondeur;
 }
@@ -224,13 +225,13 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
   });
 
   /**
-   * Les modèles proposables, avec leur tarif. 🔴 Le prix affiché porte la commission (`COMMISSION_MODELE_PCT`),
+   * Les modèles proposables, avec leur tarif. 🔴 Le prix affiché porte la commission de l'offre de l'espace,
    * et c'est aussi celui que le crédit paie (`prixClientMicroEur`) : la consommation de l'onglet voisin est au même
    * tarif. La clé du Gateway ne sort jamais d'ici : la console ne reçoit que des identifiants et des prix.
    */
   app.get('/tenants/:tenantId/agents/modeles', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const modeles = await deps.modelesProposes();
+    const modeles = await deps.modelesProposes(tenant);
     return reply.code(200).send({ modeles });
   });
 

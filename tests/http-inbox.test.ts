@@ -6,6 +6,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { InboxDep, InboxRouteDeps } from '../src/http/inbox';
 import { MediaExpire } from '../src/inbox/media-entrant';
+import { CreditEpuise } from '../src/inbox/transcrire';
 import { MediaTropGros } from '../src/meta/media';
 import { capturerJournal } from './journal';
 import { inboxDepInerte, inboxInerte } from './routes-inertes';
@@ -1211,6 +1212,15 @@ describe('servir une pièce jointe reçue (2026-09-19)', () => {
     const { resultat: res, lignes } = await capturerJournal(() => a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/messages/${MSG}/transcrire`, ...auth(), payload: {} }));
     expect(res.statusCode).toBe(410);
     expect(res.json()).toMatchObject({ code: 'media_expire' });
+    expect(lignes.filter((l) => l.msg === 'transcription_impossible')).toEqual([]);
+  });
+
+  it('🔴 sans crédit IA, la transcription rend 402 avec la cause `credit`, et n’écrit AUCUNE erreur (lot 6, C)', async () => {
+    // Un cas métier, et la console le dit : recharger règle le problème, « réessayez » serait faux.
+    const a = app({ transcrireMessage: async () => { throw new CreditEpuise(); } });
+    const { resultat: res, lignes } = await capturerJournal(() => a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/messages/${MSG}/transcrire`, ...auth(), payload: {} }));
+    expect(res.statusCode).toBe(402);
+    expect(res.json()).toMatchObject({ cause: 'credit' });
     expect(lignes.filter((l) => l.msg === 'transcription_impossible')).toEqual([]);
   });
 

@@ -1,4 +1,6 @@
 import { transcrire, TranscriptionError } from '../agent/llm/transcription';
+import { prixClientMicroEur } from '../agent/devise';
+import { journaliser } from '../lib/journal';
 import { MediaExpire, estMediaExpireChezMeta } from './media-entrant';
 import type { HttpTransport } from '../meta/http';
 import type { LangueConsole } from '../traduction/traduire';
@@ -14,6 +16,17 @@ export class RienATranscrire extends Error {
   constructor() {
     super('ce message ne porte aucun media a transcrire');
     this.name = 'RienATranscrire';
+  }
+}
+
+/**
+ * Le crédit IA de l'espace est épuisé (lot 6, livraison C) : la transcription se paie sur le crédit du client, et
+ * sans crédit rien ne part. Distinct d'une panne : recharger règle le problème, « réessayez » serait faux.
+ */
+export class CreditEpuise extends Error {
+  constructor() {
+    super('credit IA epuise');
+    this.name = 'CreditEpuise';
   }
 }
 
@@ -55,11 +68,22 @@ export interface DepsTranscrire {
   rangerTraduction?(tenantId: string, messageId: string, texte: string, langue: LangueConsole): Promise<void>;
   media: { telechargerEntrant(mediaId: string, tailleMaxOctets: number): Promise<{ bytes: Buffer; mime: string | null }> };
   transport: HttpTransport;
-  /** Ce que cet appel a coûté, en dollars : la clé maison paie, ce chiffre dira s'il faut refacturer. */
-  noterCout?(tenantId: string, messageId: string, coutDollars: number | null, secondes: number | null): void;
   /**
-   * La clé qui paie la transcription : la clé maison, rien n'est débité au client. Le jour où ça change, c'est
-   * le seul endroit à toucher (`PgCleGatewayStore.lire` résout déjà par espace).
+   * 🔴 LE CRÉDIT DU CLIENT PAIE LA TRANSCRIPTION (lot 6, livraison C), au tarif de son offre : sans solde, rien ne part ;
+   * après l'écriture, le coût rendu par la passerelle est débité au prix client (`prixClientMicroEur`). Requise : un
+   * câblage qui l'oublierait ferait transcrire à nos frais, sans un mot.
+   */
+  facturation: {
+    solde(tenantId: string): Promise<number>;
+    /** La commission de l'offre de l'espace (`commissionPour`, `src/offres/commission.ts`). */
+    commissionPour(tenantId: string): Promise<number>;
+    tauxEurParDollar: number;
+    /** Débite le crédit (`PgCreditStore.debiter`, une ligne de consommation avec sa note). */
+    debiter(tenantId: string, montantMicroEur: number, note: string): Promise<void>;
+  };
+  /**
+   * La clé sur laquelle l'appel part : la nôtre. Le coût, lui, est débité au crédit du client (`facturation`) ; garder
+   * notre clé évite d'ouvrir une clé d'espace pour un vocal, et notre garde de solde mord avant le plafond Vercel.
    */
   cle: string;
   modele: string;
@@ -107,6 +131,8 @@ export async function transcrireMessage(
   if (!msg.mediaId) throw new RienATranscrire();
   // Après le cas « déjà transcrit » : une transcription faite quand le vocal existait se relit pour toujours.
   if (msg.mediaExpire === true) throw new MediaExpire();
+  // Le crédit d'abord, avant même de télécharger : sans crédit, rien ne part (lot 6, C).
+  if (!((await deps.facturation.solde(tenantId)) > 0)) throw new CreditEpuise();
 
   const fichier = await deps.media.telechargerEntrant(msg.mediaId, deps.tailleMaxOctets).catch((err: unknown) => {
     throw estMediaExpireChezMeta(err) ? new MediaExpire() : err;
@@ -125,8 +151,21 @@ export async function transcrireMessage(
   // Écrit avant de rendre : un appel payé dont le résultat n'est pas enregistré serait repayé au clic suivant.
   // La langue part avec, sinon il faudrait un appel de détection pour savoir s'il y a à traduire.
   await deps.messages.ecrireTranscription(tenantId, messageId, r.texte, deps.modele, r.langue);
-  deps.noterCout?.(tenantId, messageId, r.coutDollars, r.secondes);
+  await facturer(deps, tenantId, messageId, r.coutDollars);
   return { texte: r.texte, deja: false, langue: r.langue, traduction: await lire(deps, tenantId, msg, r.texte, r.langue, cible) };
+}
+
+/**
+ * Le débit d'une transcription, APRÈS son écriture : un débit qui échoue se journalise et ne prive pas l'opérateur de
+ * ce qui a déjà été payé (même règle que la traduction). Un coût illisible ne débite rien.
+ */
+async function facturer(deps: DepsTranscrire, tenantId: string, messageId: string, coutDollars: number | null): Promise<void> {
+  try {
+    const montant = prixClientMicroEur(coutDollars ?? 0, deps.facturation.tauxEurParDollar, await deps.facturation.commissionPour(tenantId));
+    if (montant > 0) await deps.facturation.debiter(tenantId, montant, 'transcription d’un vocal');
+  } catch (err) {
+    journaliser('error', 'transcription_debit_impossible', { err, tenantId, messageId, coutDollars });
+  }
 }
 
 /**

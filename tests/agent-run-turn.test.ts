@@ -379,7 +379,7 @@ describe('le tour, branché sur le VRAI cerveau', () => {
         contenu: { ...ficheVide(), objectif: 'Aider.' }, outilsActifs: [OUTIL],
         plafonds: { maxAppelsOutils: 12, budgetMicroEur: 30_000 }, contactInconnu: 'tous',
       }),
-      commissionPct: 0,
+      commissionPour: async () => 0,
       outils: {
         catalogue: { byName: async (_t: string, _a: string, n: string) => (n === OUTIL.name ? OUTIL : null), listActifs: async () => [OUTIL] } satisfies ToolCatalog,
         journal: { ouvrir: async () => 'j1', clore: async () => {} },
@@ -662,7 +662,7 @@ describe('runTurn : la sortie et son dernier message', () => {
         contenu: { ...ficheVide(), objectif: 'Aider.' }, outilsActifs: [TERMINER],
         plafonds: { maxAppelsOutils: 12, budgetMicroEur: 30_000 }, contactInconnu: 'tous',
       }),
-      commissionPct: 0,
+      commissionPour: async () => 0,
       outils: {
         catalogue: { byName: async (_t: string, _a: string, n: string) => (n === TERMINER.name ? TERMINER : null), listActifs: async () => [TERMINER] } satisfies ToolCatalog,
         journal: { ouvrir: async () => 'j1', clore: async () => {} },
@@ -730,7 +730,7 @@ describe('runTurn : marquer la conversation urgente, puis continuer', () => {
         contenu: { ...ficheVide(), objectif: 'Aider.' }, outilsActifs: [URGENT],
         plafonds: { maxAppelsOutils: 12, budgetMicroEur: 30_000 }, contactInconnu: 'tous',
       }),
-      commissionPct: 0,
+      commissionPour: async () => 0,
       outils: {
         catalogue: { byName: async (_t: string, _a: string, nom: string) => (nom === URGENT.name ? URGENT : null), listActifs: async () => [URGENT] } satisfies ToolCatalog,
         journal: { ouvrir: async () => 'j1', clore: async () => {} },
@@ -790,7 +790,7 @@ describe('runTurn : lancer un scénario, puis se taire', () => {
         contenu: { ...ficheVide(), objectif: 'Aider.' }, outilsActifs: [LANCER],
         plafonds: { maxAppelsOutils: 12, budgetMicroEur: 30_000 }, contactInconnu: 'tous',
       }),
-      commissionPct: 0,
+      commissionPour: async () => 0,
       outils: {
         catalogue: { byName: async (_t: string, _a: string, nom: string) => (nom === LANCER.name ? LANCER : null), listActifs: async () => [LANCER] } satisfies ToolCatalog,
         journal: { ouvrir: async () => 'j1', clore: async () => {} },

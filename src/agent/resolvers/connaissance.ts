@@ -1,6 +1,7 @@
 import { ficheEstPertinente, type FicheTrouvee, type KnowledgeStore } from '../knowledge';
 import { SORTIE_SANS_SOURCE } from '../sorties';
 import { messageDe } from '../../lib/erreur';
+import type { Scores, Vecteurs } from '../llm/recherche-client';
 
 /**
  * La recherche de connaissance d'un agent, en un seul endroit, pour la production et le bac à sable : aucune
@@ -26,10 +27,14 @@ export const CORPS_MAX = 2_000;
  *  paierait en base. */
 export const REQUETE_MAX = 512;
 
-/** Ce que la recherche rend au tronc commun : soit l'aveu d'absence avec sa sortie, soit les sources. */
+/**
+ * Ce que la recherche rend au tronc commun : soit l'aveu d'absence avec sa sortie, soit les sources ; et ce que ses
+ * appels à la passerelle ont coûté, en dollars (lot 6, C) : le tour l'ajoute à son prix, au tarif de l'offre, et le
+ * crédit du client le paie.
+ */
 export type ResultatConnaissance =
-  | { contenu: { aucune_source: true }; sortie: string }
-  | { contenu: { sources: Array<{ titre: string; contenu: string; url: string | null }> } };
+  | { contenu: { aucune_source: true }; sortie: string; coutDollars: number }
+  | { contenu: { sources: Array<{ titre: string; contenu: string; url: string | null }> }; coutDollars: number };
 
 /**
  * Cherche, filtre sur la pertinence, borne, et rend le verdict. Le modèle ne voit aucune mesure : un score
@@ -42,20 +47,23 @@ export async function chercherConnaissance(
   recherche?: RechercheSemantique,
 ): Promise<ResultatConnaissance> {
   const requete = requeteBrute.slice(0, REQUETE_MAX);
+  // Ce que les appels qui ont abouti ont coûté : un appel qui lève n'a rien rendu, ni vecteur ni coût lisible.
+  const cout = { dollars: 0 };
   /**
    * Rappel puis verdict. Sans `recherche`, ou si le Gateway échoue, le plein texte remonte trois fiches et la
    * règle lexicale tranche.
    */
-  const semantique = recherche ? await rappelSemantique(connaissance, ctx, requete, recherche) : null;
+  const semantique = recherche ? await rappelSemantique(connaissance, ctx, requete, recherche, cout) : null;
   const large = semantique !== null;
   const lexicales = await connaissance.chercher(ctx.tenantId, ctx.agentId, requete, large ? recherche!.candidats : FICHES_RENDUES);
   const candidates = semantique === null ? lexicales : fusionner(lexicales, semantique);
 
   const retenues = semantique === null
     ? candidates.filter(ficheEstPertinente)
-    : await verdictReranker(candidates, requete, recherche!);
-  if (retenues.length === 0) return { contenu: { aucune_source: true }, sortie: SORTIE_SANS_SOURCE };
+    : await verdictReranker(candidates, requete, recherche!, cout);
+  if (retenues.length === 0) return { contenu: { aucune_source: true }, sortie: SORTIE_SANS_SOURCE, coutDollars: cout.dollars };
   return {
+    coutDollars: cout.dollars,
     contenu: {
       sources: retenues.map((f) => ({
         titre: f.titre,
@@ -71,8 +79,10 @@ export async function chercherConnaissance(
  * `src/agent/llm/recherche-client.ts`.
  */
 export interface RechercheSemantique {
-  vectoriser(textes: string[]): Promise<number[][]>;
-  reclasser(question: string, fiches: Array<{ texte: string }>): Promise<number[]>;
+  /** Les vecteurs, et le coût de l'appel en dollars (`GatewayRechercheClient`). */
+  vectoriser(textes: string[]): Promise<Vecteurs>;
+  /** Les scores dans l'ordre des fiches, et le coût de l'appel en dollars. */
+  reclasser(question: string, fiches: Array<{ texte: string }>): Promise<Scores>;
   /** Combien de candidats le rappel remonte avant le verdict. Plus large que les 3 rendues au modèle. */
   candidats: number;
   /** Le seuil du reranker, mesuré et re-mesurable : cf. `AGENT_RERANK_SEUIL`. */
@@ -88,10 +98,13 @@ async function rappelSemantique(
   ctx: { tenantId: string; agentId: string },
   requete: string,
   recherche: RechercheSemantique,
+  cout: { dollars: number },
 ): Promise<FicheTrouvee[] | null> {
   if (!connaissance.chercherParVecteur) return null;
   try {
-    const [vecteur] = await recherche.vectoriser([requete]);
+    const v = await recherche.vectoriser([requete]);
+    cout.dollars += v.coutDollars;
+    const [vecteur] = v.vecteurs;
     if (!vecteur || vecteur.length === 0) return null;
     return await connaissance.chercherParVecteur(ctx.tenantId, ctx.agentId, vecteur, recherche.candidats);
   } catch (err) {
@@ -134,11 +147,14 @@ async function verdictReranker(
   candidates: FicheTrouvee[],
   requete: string,
   recherche: RechercheSemantique,
+  cout: { dollars: number },
 ): Promise<FicheTrouvee[]> {
   if (candidates.length === 0) return [];
   let scores: number[];
   try {
-    scores = await recherche.reclasser(requete, candidates.map((f) => ({ texte: `${f.titre}\n${f.corps}` })));
+    const r = await recherche.reclasser(requete, candidates.map((f) => ({ texte: `${f.titre}\n${f.corps}` })));
+    cout.dollars += r.coutDollars;
+    scores = r.scores;
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('connaissance: reranker indisponible, repli sur la regle lexicale:', messageDe(err));

@@ -220,8 +220,8 @@ describe('répondeur d’aide : le fil de la conversation', () => {
 
 describe('répondeur d’aide : avec la recherche sémantique', () => {
   const recherche = {
-    vectoriser: async () => [[1, 0, 0]],
-    reclasser: async (_q: string, f: Array<{ texte: string }>) => f.map(() => 0.5),
+    vectoriser: async () => ({ vecteurs: [[1, 0, 0]], coutDollars: 0 }),
+    reclasser: async (_q: string, f: Array<{ texte: string }>) => ({ scores: f.map(() => 0.5), coutDollars: 0 }),
     candidats: 12,
     seuil: 0.06,
   };
@@ -243,7 +243,7 @@ describe('répondeur d’aide : avec la recherche sémantique', () => {
     // C'est lui qui porte la garde une fois le vectoriel branché, parce qu'aucun seuil n'est posable sur un
     // cosinus d'embedding (mesuré : une question hors sujet y monte plus haut qu'une vraie question).
     const completer = vi.fn();
-    const sousLeSeuil = { ...recherche, reclasser: async (_q: string, f: Array<{ texte: string }>) => f.map(() => 0.01) };
+    const sousLeSeuil = { ...recherche, reclasser: async (_q: string, f: Array<{ texte: string }>) => ({ scores: f.map(() => 0.01), coutDollars: 0 }) };
     const r = await creerRepondeur(deps({ recherche: sousLeSeuil, completer }))(question);
     expect(r.sait).toBe(false);
     expect(completer).not.toHaveBeenCalled();

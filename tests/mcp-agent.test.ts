@@ -268,7 +268,7 @@ function monter(o: Options = {}) {
       }),
     },
     contexte: async () => CONTEXTE,
-    commissionPct: 0,
+    commissionPour: async () => 0,
     outils: {
       catalogue: { byName: async () => null, listActifs: async () => [] },
       journal: { ouvrir: async () => '', clore: async () => {} },

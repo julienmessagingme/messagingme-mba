@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { transcrire, TranscriptionError } from '../src/agent/llm/transcription';
-import { transcrireMessage, RienATranscrire, type DepsTranscrire, type MessageATranscrire } from '../src/inbox/transcrire';
+import { transcrireMessage, RienATranscrire, CreditEpuise, type DepsTranscrire, type MessageATranscrire } from '../src/inbox/transcrire';
 import type { HttpResponse, HttpTransport } from '../src/meta/http';
 import { MediaExpire } from '../src/inbox/media-entrant';
 import { MetaApiError } from '../src/meta/errors';
@@ -128,12 +128,12 @@ describe('Le client de transcription', () => {
 });
 
 /** Faux dépôt de messages, qui note ce qu'on lui écrit. */
-function deps(msg: MessageATranscrire | null, reponses: HttpResponse[] = [OK]) {
+function deps(msg: MessageATranscrire | null, reponses: HttpResponse[] = [OK], o: { solde?: number; debiter?: (t: string, m: number, n: string) => Promise<void> } = {}) {
   const ecrites: Array<{ texte: string; modele: string }> = [];
   const telechargements: string[] = [];
   const ordre: string[] = [];
   const lus: Array<{ messageId: string; conversationId?: string }> = [];
-  const couts: Array<{ coutDollars: number | null; secondes: number | null }> = [];
+  const debits: Array<{ tenantId: string; montant: number; note: string }> = [];
   // ⚠️ La référence est GARDÉE : envelopper le transport sans la garder rendait `d.transport` inspectable
   // uniquement à travers l'enveloppe, et une assertion écrite dessus passait trivialement. Vu ici même.
   const faux = new FauxTransport(reponses);
@@ -147,9 +147,14 @@ function deps(msg: MessageATranscrire | null, reponses: HttpResponse[] = [OK]) {
     cle: 'vck-maison',
     modele: 'openai/whisper-1',
     tailleMaxOctets: 2 * 1024 * 1024,
-    noterCout: (_t, _m, coutDollars, secondes) => { couts.push({ coutDollars, secondes }); },
+    facturation: {
+      solde: async () => o.solde ?? 5_000_000,
+      commissionPour: async (t) => (t === 't-base' ? 50 : 10),
+      tauxEurParDollar: 1,
+      debiter: o.debiter ?? (async (tenantId, montant, note) => { ordre.push('debit'); debits.push({ tenantId, montant, note }); }),
+    },
   };
-  return { d, faux, ecrites, telechargements, ordre, lus, couts };
+  return { d, faux, ecrites, telechargements, ordre, lus, debits };
 }
 
 describe('Transcrire le message d’une conversation', () => {
@@ -171,7 +176,8 @@ describe('Transcrire le message d’une conversation', () => {
     const { d, ordre, ecrites } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: null });
     const r = await transcrireMessage(d, 't1', 'm1');
     expect(r.deja).toBe(false);
-    expect(ordre).toEqual(['modele', 'ecrit']);
+    // Le débit vient après l'écriture (lot 6, C) : un débit qui casserait ne fait jamais perdre le texte payé.
+    expect(ordre).toEqual(['modele', 'ecrit', 'debit']);
     expect(ecrites).toEqual([{ texte: 'Bonjour, ma commande est-elle partie ?', modele: 'openai/whisper-1' }]);
   });
 
@@ -183,12 +189,38 @@ describe('Transcrire le message d’une conversation', () => {
     expect(faux.appels[0]!.body).toMatchObject({ mediaType: 'audio/ogg' });
   });
 
-  it('🔴 c’est la clé MAISON qui paie, pas celle du client', async () => {
-    // Décision de Julien du 2026-09-09 : « on va le payer nous-mêmes sur la clé API générale, et on verra
-    // après si je la refacture au client ». Le jour où ça change, ce test dira exactement quoi changer.
-    const { d, faux } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: null });
-    await transcrireMessage(d, 't1', 'm1');
+  it('🔴 la clé reste la nôtre, et c’est le CRÉDIT DU CLIENT qui paie, au tarif de son offre, après l’écriture (lot 6, C)', async () => {
+    // La décision du 2026-09-09 (« on le paie nous-mêmes ») est remplacée par celle du lot 6 : la transcription se paie
+    // sur le crédit du client, dans toutes les offres. L'appel part toujours sur notre clé ; son coût est débité.
+    const { d, faux, debits, ordre } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: null });
+    await transcrireMessage(d, 't-base', 'm1');
     expect(faux.appels[0]!.headers.authorization).toBe('Bearer vck-maison');
+    // 0,000235 $ au taux 1 : 235 micro-euros bruts, + 50 % en Base.
+    expect(debits).toEqual([{ tenantId: 't-base', montant: 353, note: 'transcription d’un vocal' }]);
+    // Écrit avant d'être débité : un débit qui casserait ne doit pas faire perdre une transcription payée.
+    expect(ordre).toEqual(['modele', 'ecrit', 'debit']);
+  });
+
+  it('🔴 SANS CRÉDIT, rien ne part : ni téléchargement, ni appel, ni débit', async () => {
+    const { d, faux, telechargements, debits } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: null }, [OK], { solde: 0 });
+    await expect(transcrireMessage(d, 't1', 'm1')).rejects.toBeInstanceOf(CreditEpuise);
+    expect(telechargements).toEqual([]);
+    expect(faux.appels).toEqual([]);
+    expect(debits).toEqual([]);
+  });
+
+  it('un message déjà transcrit se relit sans crédit et sans débit', async () => {
+    const { d, debits } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: 'deja dit' }, [OK], { solde: 0 });
+    expect((await transcrireMessage(d, 't1', 'm1')).texte).toBe('deja dit');
+    expect(debits).toEqual([]);
+  });
+
+  it('🔴 un débit qui échoue ne prive pas l’opérateur de la transcription déjà payée', async () => {
+    const { d, ecrites } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: null }, [OK], {
+      debiter: async () => { throw new Error('base indisponible'); },
+    });
+    expect((await transcrireMessage(d, 't1', 'm1')).texte).toBe('Bonjour, ma commande est-elle partie ?');
+    expect(ecrites).toHaveLength(1);
   });
 
   it('🔴 la CONVERSATION nommée dans l’URL est transmise au dépôt', async () => {
@@ -198,22 +230,6 @@ describe('Transcrire le message d’une conversation', () => {
     const { d, lus } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: null });
     await transcrireMessage(d, 't1', 'm1', 'conv-7');
     expect(lus).toEqual([{ messageId: 'm1', conversationId: 'conv-7' }]);
-  });
-
-  it('🔴 le COÛT est noté, il n’est pas lu puis jeté', async () => {
-    // Julien a décidé que la clé maison paie, donc rien n'est débité au client. Sans trace, « combien nous
-    // coûte la transcription » serait une question sans réponse, et c'est exactement le chiffre qui décidera
-    // de la refacturer ou non.
-    const { d, couts } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: null });
-    await transcrireMessage(d, 't1', 'm1');
-    expect(couts).toEqual([{ coutDollars: 0.000235, secondes: 2.35 }]);
-  });
-
-  it('un message déjà transcrit ne note AUCUN coût', async () => {
-    // La contrepartie de l'idempotence : rien n'a été payé, rien ne doit être compté.
-    const { d, couts } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: 'deja' });
-    await transcrireMessage(d, 't1', 'm1');
-    expect(couts).toHaveLength(0);
   });
 
   it('🔴 un vocal EXPIRÉ n’appelle pas Meta : il est trop tard, et on le dit', async () => {

@@ -149,7 +149,7 @@ test.describe('Paramètres > Crédit IA', () => {
     const lignes = page.getByTestId('credit-ligne');
     await expect(lignes).toHaveCount(5);
     await expect(lignes.nth(0)).toContainText('Achat de crédit');
-    await expect(lignes.nth(1)).toContainText('Agents IA du 28/09');
+    await expect(lignes.nth(1)).toContainText('Consommation IA du 28/09');
     await expect(lignes.nth(2)).toContainText('Traductions du 28/09');
     await expect(lignes.nth(3)).toContainText('Crédit offert');
     await expect(lignes.nth(4)).toContainText('Recharge manuelle');

@@ -207,7 +207,7 @@ describe.skipIf(!url)('solde prépayé d un workspace (Postgres)', () => {
    * ici, on relie puis on offre, comme elle.
    */
   describe('le crédit offert au premier numéro vérifié', () => {
-    const CINQ = { creditOffertMicroEur: 5_000_000, creditOffertClaudeCodeMicroEur: 1_000_000 };
+    const CINQ = { creditOffertMicroEur: 5_000_000 };
     const suffixe = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     /** Un numéro affiché neuf à chaque appel, écrit comme Meta l'écrit (espaces compris). */
     const affiche = () => `+33 7 ${String(Math.floor(Math.random() * 1e8)).padStart(8, '0').replace(/(\d{2})(?=\d)/g, '$1 ')}`;

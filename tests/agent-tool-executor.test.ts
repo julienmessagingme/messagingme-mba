@@ -98,6 +98,22 @@ function harnais(over: {
 
 const args = (o: unknown) => JSON.stringify(o);
 
+describe('🔴 le coût d’un résolveur (lot 6, C) : relayé au tour, qui le débite au crédit', () => {
+  it('ce que le résolveur a coûté (la recherche dans la connaissance) remonte avec le résultat, succès ou échec métier', async () => {
+    for (const ok of [true, false]) {
+      const { deps } = harnais({ resolveur: async () => ({ contenu: { sources: [] }, ok, coutDollars: 0.002 }) });
+      const r = await executeTool({ name: OUTIL.name, argumentsJson: args({ reference: 'X' }) }, CTX, deps);
+      expect(r.coutDollars).toBe(0.002);
+    }
+  });
+
+  it('un résolveur sans coût n’en invente pas', async () => {
+    const { deps } = harnais();
+    const r = await executeTool({ name: OUTIL.name, argumentsJson: args({ reference: 'X' }) }, CTX, deps);
+    expect(r.coutDollars).toBeUndefined();
+  });
+});
+
 describe('tronc commun : résoudre et autoriser (étapes 1 et 2)', () => {
   it('outil inconnu ou desactive -> refus rendu au modele, jamais une exception', async () => {
     // `byName` filtre déjà `actif` en SQL : un outil éteint est indistinguable d'un outil absent, et c'est

@@ -462,15 +462,8 @@ export const schema = z.object({
    */
   ASSISTANT_PLAFOND_EUROS_MOIS: z.coerce.number().min(0).default(2),
   /**
-   * Notre commission sur le tarif des modèles, en pourcent. La même valeur sert au tarif annoncé dans l'onglet
-   * Modèle ET au montant débité du crédit à chaque appel (`prixClientMicroEur`, `src/agent/devise.ts`) : le prix
-   * affiché est le prix payé. Le plafond de la clé Vercel, lui, reste le cumul acheté au coût brut : notre solde
-   * s'épuise avant lui.
-   * Paramètre commercial ; 0 est valide (aucune commission), d'où `nonnegative`.
-   */
-  COMMISSION_MODELE_PCT: z.coerce.number().nonnegative().default(10),
-  /**
-   * Le crédit offert au PREMIER numéro WhatsApp d'un espace que Meta dit VÉRIFIÉ, en micro-euros (5 000 000 = 5 €),
+   * Le crédit offert au PREMIER numéro WhatsApp d'un espace que Meta dit VÉRIFIÉ, en micro-euros (1 000 000 = 1 €, pour
+   * toutes les origines depuis le lot 6, décision de Julien du 2026-10-07),
    * avec un mouvement `offert`. Aucune clé Vercel n'est ouverte à ce moment (elle s'ouvre au premier usage qui en a
    * besoin). 0 l'éteint.
    *
@@ -484,13 +477,7 @@ export const schema = z.object({
    * pour le même numéro, ni par son identifiant Meta (0191) ni par son numéro affiché (0193), même s'il change
    * d'espace. Les espaces qui avaient déjà un numéro sont marqués par la migration : pas rétroactif.
    */
-  CREDIT_OFFERT_MICRO_EUR: z.coerce.number().int().min(0).default(5_000_000),
-  /**
-   * Le crédit offert au premier numéro vérifié d'un espace NÉ DEPUIS CLAUDE CODE (`tenants.origine = 'claude_code'`,
-   * migration 0212), à la place du précédent : 1 € (décision de Julien du 2026-10-05, « par Claude Code, si le mec
-   * fournit son numéro cela coûte zéro, donc on ne va pas lui filer 5 € à chaque fois »). Mêmes bornes, 0 l'éteint.
-   */
-  CREDIT_OFFERT_CLAUDE_CODE_MICRO_EUR: z.coerce.number().int().min(0).default(1_000_000),
+  CREDIT_OFFERT_MICRO_EUR: z.coerce.number().int().min(0).default(1_000_000),
   /**
    * La recharge du crédit par Stripe (Checkout hébergé, puis webhook). Les quatre vides par défaut : la route de
    * paiement rend 503 et la console dit « recharge pas encore disponible », rien ne casse au démarrage.

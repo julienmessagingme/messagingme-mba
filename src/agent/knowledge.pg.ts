@@ -98,15 +98,18 @@ export class PgKnowledgeStore implements KnowledgeStore {
    * Les fiches sans vecteur, ou dont le vecteur vient d'un autre modèle : un changement de modèle se rattrape
    * au fil de l'eau, les anciens vecteurs servant jusque-là, au lieu de rendre toutes les bases sourdes.
    */
-  async fichesAVectoriser(modele: string, limite: number): Promise<Array<{ id: string; titre: string; corps: string }>> {
-    const res = await this.pool.query<{ id: string; titre: string; corps: string }>(
-      `select id, titre, corps from agent_knowledge
-        where embedding is null or embedding_modele is distinct from $1
-        order by updated_at asc
+  async fichesAVectoriser(modele: string, limite: number): Promise<Array<{ id: string; titre: string; corps: string; tenantId: string }>> {
+    // 🔴 Seulement les fiches d'un espace qui a du crédit (lot 6, C) : la vectorisation se paie sur le crédit du client,
+    // une fiche d'un espace sans crédit attend. Dans la requête, sinon un lot de fiches sans crédit bloquerait les autres.
+    const res = await this.pool.query<{ id: string; titre: string; corps: string; tenant_id: string }>(
+      `select k.id, k.titre, k.corps, k.tenant_id from agent_knowledge k
+        where (k.embedding is null or k.embedding_modele is distinct from $1)
+          and exists (select 1 from agent_credits c where c.tenant_id = k.tenant_id and c.solde_micro_eur > 0)
+        order by k.updated_at asc
         limit $2::int`,
       [modele, Math.max(1, Math.floor(limite))],
     );
-    return res.rows;
+    return res.rows.map((r) => ({ id: r.id, titre: r.titre, corps: r.corps, tenantId: r.tenant_id }));
   }
 
   /** Écrit les vecteurs calculés. Par identifiant, jamais par position : le lot a pu être réordonné. */

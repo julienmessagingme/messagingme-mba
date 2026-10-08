@@ -26,7 +26,8 @@ export type UserMutation = 'ok' | 'last_admin' | 'not_found';
 
 /**
  * D'où naît un espace (`tenants.origine`, migration 0212) : par la connexion OAuth de Claude Code, ou par la console.
- * Fixée à la création, jamais recalculée ; le crédit offert au premier numéro en dépend.
+ * Fixée à la création, jamais recalculée. Elle ne décide plus du crédit offert (1 € pour toutes les origines depuis le
+ * lot 6) : c'est une donnée d'exploitation, d'où viennent les espaces.
  */
 export type OrigineEspace = 'console' | 'claude_code';
 

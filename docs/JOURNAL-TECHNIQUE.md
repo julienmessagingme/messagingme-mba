@@ -5,6 +5,34 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-08 : les coûts selon l'offre (lot 6, livraison C), écrit
+
+**Mesuré avant d'écrire** (tâche 16) : la facturation de Vercel n'est pas lisible par l'API (404 sur ce plan), et le
+reranker n'a pas de prix publié. Un appel de chaque sur notre clé (moins d'un centime) a montré que les DEUX réponses
+portent leur coût exact : la vectorisation sous `providerMetadata.gateway.cost` (0,00000168 $ pour 14 jetons), le
+reranker sous `provider_metadata.gateway.cost`, en snake_case (0,002 $ par recherche). Lire une seule forme aurait
+rendu chaque recherche gratuite. Le reranker coûte souvent plus que le tour lui-même. `.env.prod` ne surchargeait ni
+la commission, ni le crédit offert, ni la conservation : les défauts du code s'appliquent.
+
+**Ce qui a été arbitré** : la recherche, la vectorisation et la transcription partent sur notre clé et leur coût est
+débité (aucune clé d'espace à ouvrir pour une recherche) ; la commission vient de la grille (la variable
+`COMMISSION_MODELE_PCT` disparaît) ; une offre illisible rend l'Entreprise, donc la commission la plus basse ; le
+journal du crédit garde une ligne de consommation par jour, renommée « consommation IA du jour ».
+
+**Correction de l'entrée de B2b** : la clé restreinte de Stripe écrivait DÉJÀ les abonnements (« Billing >
+Subscriptions » en écriture depuis longtemps, confirmé par Julien) ; rien n'attendait cette permission.
+
+**Relecture** : un rouge, corrigé avant le push sur décision de Julien. La recherche dans la connaissance entrait dans le
+coût du tour, donc dans le budget par conversation de l'agent (0,03 €) : avec douze recherches permises, un agent qui
+cherche beaucoup se taisait bien plus tôt, surtout en Base. Le budget passe à 0,07 € (migration 0222, qui relève les
+deux agents existants). Le jaune 1 aussi, parce qu'il change une migration pas encore appliquée : la reprise de 0221
+date la sortie des espaces sortis de l'Entreprise avant elle (aucun en production, mesuré). Dix autres jaunes au commit
+suivant.
+
+**La décision de Julien sur la purge** : sans date, passer un espace d'Entreprise à Base dans `/ops` aurait effacé tout
+de suite ses conversations de plus de 30 jours. Une migration (0221) date la sortie de l'Entreprise ; les 30 jours de
+grâce valent pour toute entrée en Base. Le plan annonçait C sans migration : la décision l'emporte.
+
 ## 2026-10-08 : l'assistant du MBA envoyait ses consignes sous des noms que Meta ne connaît pas
 
 **Le défaut**, trouvé à la lecture du code le 2026-10-07 : l'assistant appliquait `competence.ajouter` et

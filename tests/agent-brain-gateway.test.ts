@@ -85,7 +85,7 @@ function deps(reponses: ReponseChat[], resolveur?: ResolveurOutil, agent: Contex
     },
     contexte: async () => agent,
     // 0 : ces tests lisent le coût brut ; la commission a son propre test, plus bas.
-    commissionPct: 0,
+    commissionPour: async () => 0,
     outils: {
       catalogue,
       journal,
@@ -376,9 +376,31 @@ describe('penserTrace', () => {
     // Tout l'aval lit ce nombre : le débit du solde, le coût de la session, le budget de la conversation. Au coût
     // brut, le client payait moins que le tarif que la liste des modèles lui annonce.
     const { d } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}'), texte('C’est noté.')]);
-    const r = await penserTrace(entree(), TOUR, { ...d, commissionPct: 10 });
+    const r = await penserTrace(entree(), TOUR, { ...d, commissionPour: async () => 10 });
     // Deux allers-retours à 0,00001 $ au taux par défaut de 1 : 10 micro-euros bruts chacun, 11 avec 10 %.
     expect(r.usage!.coutMicroEur).toBe(22);
+  });
+
+  it('🔴 un outil qui a COÛTÉ (la recherche dans la connaissance) s’ajoute au tour, au prix de l’offre (lot 6, C)', async () => {
+    const resolveur: ResolveurOutil = async () => ({ contenu: { sources: [] }, coutDollars: 0.002 });
+    const { d } = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}'), texte('C’est noté.')], resolveur);
+    const r = await penserTrace(entree(), TOUR, { ...d, commissionPour: async () => 50 });
+    // Deux allers-retours de 10 micro-euros bruts à 50 % (30), plus la recherche : 2 000 bruts, 3 000 à 50 %.
+    expect(r.usage!.coutMicroEur).toBe(3030);
+  });
+
+  it('🔴 le même tour coûte plus cher en Base qu’en Pro : la commission de l’ESPACE, lue une fois par tour', async () => {
+    const lues: string[] = [];
+    const commissionPour = async (tenantId: string) => { lues.push(tenantId); return tenantId === 't-base' ? 50 : 10; };
+    const enBase = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}'), texte('C’est noté.')]).d;
+    const base = await penserTrace({ ...entree(), tenantId: 't-base' }, TOUR, { ...enBase, commissionPour });
+    const enPro = deps([appelOutil('mba_poser_tag', '{"tag":"vip"}'), texte('C’est noté.')]).d;
+    const pro = await penserTrace({ ...entree(), tenantId: 't-pro' }, TOUR, { ...enPro, commissionPour });
+    // Deux allers-retours de 10 micro-euros bruts : 15 chacun à 50 %, 11 chacun à 10 %.
+    expect(base.usage!.coutMicroEur).toBe(30);
+    expect(pro.usage!.coutMicroEur).toBe(22);
+    // Une lecture par tour, pas une par aller-retour.
+    expect(lues).toEqual(['t-base', 't-pro']);
   });
 
   it('🔴 un appel de modèle qui ÉCHOUE APRÈS un autre rend quand même ce qui a été DÉPENSÉ', async () => {

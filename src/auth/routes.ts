@@ -57,7 +57,7 @@ export interface ComptesAuthDep {
   /** Inscription libre : crée un espace et son admin. `passwordHash` null = compte Google seul. */
   /**
    * `origine` (migration 0212) : d'où naît l'espace, `claude_code` par la connexion OAuth de Claude Code, `console` sinon.
-   * Requise : elle fixe le crédit offert au premier numéro (1 € contre 5 €), et une porte qui l'oublierait ne compilerait pas.
+   * Requise : une porte qui l'oublierait ne compilerait pas. Elle ne fixe plus le crédit offert (1 € partout depuis le lot 6).
    */
   createTenantWithAdmin?(workspaceName: string, admin: { email: string; name: string | null; passwordHash: string | null }, origine: OrigineEspace): Promise<{ tenantId: string; userId: string }>;
   /** Pose (écrase) le hash de mot de passe d'un compte (reset / changement). */
