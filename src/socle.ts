@@ -11,6 +11,9 @@ import { FILE_SIGNAUX_BATCH } from './signaux/batch';
 import { PgAdressesEvenementsStore, PgEnvoisEvenementsStore } from './evenements/store.pg';
 import { FILE_EVENEMENTS_DISTRIBUTION } from './evenements/distribution';
 import { TYPE_DU_SIGNAL } from './evenements/types';
+import { creerDemandeALApplication } from './evenements/besoin-reponse';
+import { FILE_EVENEMENTS_ENVOI } from './evenements/envoi';
+import { PgSignauxStore } from './signaux/store.pg';
 import { creerAnnonceOptOut, FILE_POUSSEE_OPTOUT } from './crm/poussee-optout';
 import { PgContactStore } from './crm/contact-store.pg';
 import { PgUserFieldStore } from './crm/field-store.pg';
@@ -149,6 +152,8 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const adressesEvenements = new PgAdressesEvenementsStore(pool);
   const envoisEvenements = new PgEnvoisEvenementsStore(pool);
   const espacesEvenements = cacheCourt<Map<string, Set<string>>>(DUREE_CACHE_ESPACES_ACTIFS_MS);
+  // La fiche d'un contact, relue par la demande de réponse à l'application (mode `application`, lot 12, B).
+  const fichesDesEvenements = new PgSignauxStore(pool);
   const typesEcoutes = () => espacesEvenements.lire('actifs', () => adressesEvenements.espacesEtTypes());
   const emetteur = creerEmetteur({
     destinations: [
@@ -420,6 +425,18 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
         return demarreurScenario.lancerScenario(t, waId, o);
       },
     },
+    // « Mon application répond » (lot 12, B) : la demande de réponse, écrite et enfilée devant le reste de la file d'envoi.
+    application: creerDemandeALApplication({
+      adresse: async (t, id) => {
+        const a = await adressesEvenements.pourEnvoi(t, id);
+        return a === null ? null : { active: a.active, rang: a.rang };
+      },
+      limiteAdresses: async (t) => (await offres.offreDe(t)).droits.limites.adressesWebhook,
+      fiche: (t, waId) => fichesDesEvenements.ficheParWaId(t, waId),
+      conversationId: (t, waId) => envoisEvenements.conversationDuContact(t, waId),
+      creerEnvois: (lignes) => envoisEvenements.creer(lignes),
+      enfiler: (job, priority) => queue.enqueue(FILE_EVENEMENTS_ENVOI, job, { groupId: job.tenantId, priority }),
+    }),
   });
 
   /**

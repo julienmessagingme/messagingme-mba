@@ -36,6 +36,7 @@ function app(over: Partial<Omit<InboxRouteDeps, 'inbox'>> & { inbox?: Partial<In
       ...inbox,
     },
     takeControl: async (_t, waId) => { priseDeControle.push(waId); },
+    filTenuParLApplication: async () => false,
     repo: {
       getTenantPhoneNumberId: async () => 'pn1',
     },

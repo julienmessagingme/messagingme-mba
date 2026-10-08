@@ -39,6 +39,11 @@ export interface V1MessagesRouteDeps {
   };
   /** Le garde d'usage, injecté au bootstrap. Requis, comme sur les autres modules /v1. */
   usage: ApiUsageGuard;
+  /**
+   * L'espace est-il en mode « mon application répond » (lot 12, B) ? Ses réponses WhatsApp sortent alors du quota du
+   * jour (décision de Julien du 2026-10-08) : cette route ne fait que répondre dans la fenêtre de 24 h, jamais un envoi.
+   */
+  enModeApplication(tenantId: string): Promise<boolean>;
 }
 
 /**
@@ -92,7 +97,9 @@ export function registerV1Messages(app: FastifyInstance, deps: V1MessagesRouteDe
     if (!n.ok) return refuser(reply, STATUT_PAR_CODE[n.code], n.code, MESSAGE_RESOLUTION[n.code]);
 
     // Compté après la validation, comme sur `/v1/contacts` : un corps malformé n'a demandé aucun travail.
-    if (!await compterOuRefuser(deps.usage, req, reply, 'messages.send')) return reply;
+    // En mode « mon application répond », compté au plafond d'appels mais jamais au quota du jour.
+    const operation = (await deps.enModeApplication(tenantId)) ? 'messages.reponse_application' : 'messages.send';
+    if (!await compterOuRefuser(deps.usage, req, reply, operation)) return reply;
 
     const fiche = await deps.resoudreFiche(tenantId, cles, { creer: 'jamais' });
     if (!fiche.ok) {

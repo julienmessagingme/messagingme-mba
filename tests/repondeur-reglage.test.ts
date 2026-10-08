@@ -42,16 +42,17 @@ const GRAPHE: WorkflowGraph = { nodes: [{ id: 'q', type: 'quick_message', positi
 
 interface EtatReglage {
   mbaEnabled: boolean; repondeurMode: ModeRepondeur; repondeurAgentId: string | null; repondeurWorkflowId: string | null;
-  repondeurDelaiScenarioS: number;
+  repondeurAdresseId: string | null; repondeurDelaiScenarioS: number;
 }
 
 /** Le réglage et ses dépendances en mémoire, chaque geste noté dans l'ordre. */
 function monter(o: {
   etat?: Partial<EtatReglage>; statut?: AgentComplet['status'] | null; gateway?: boolean;
   numero?: string | null; eligible?: boolean | Error; chezMeta?: Error; ecriture?: Error; reprise?: Error; offre?: Offre;
+  adresses?: Array<{ id: string; url: string; active: boolean }>;
 } = {}) {
   const etat: EtatReglage = {
-    mbaEnabled: false, repondeurMode: 'equipe', repondeurAgentId: null, repondeurWorkflowId: null, repondeurDelaiScenarioS: 86400,
+    mbaEnabled: false, repondeurMode: 'equipe', repondeurAgentId: null, repondeurWorkflowId: null, repondeurAdresseId: null, repondeurDelaiScenarioS: 86400,
     ...o.etat,
   };
   const journal: string[] = [];
@@ -72,11 +73,16 @@ function monter(o: {
         etat.repondeurMode = c.mode;
         etat.repondeurAgentId = c.mode === 'agent' ? c.agentId : null;
         etat.repondeurWorkflowId = c.mode === 'scenario' ? c.workflowId : null;
+        etat.repondeurAdresseId = c.mode === 'application' ? c.adresseId : null;
         if (c.mode === 'scenario') etat.repondeurDelaiScenarioS = c.delaiS;
       },
     },
     gatewayDisponible: o.gateway ?? true,
     offres: { offreDe: async () => ({ offre: o.offre ?? 'entreprise', droits: DROITS[o.offre ?? 'entreprise'], retourEnBaseLe: null }) },
+    adresses: {
+      lire: async (_t, id) => (o.adresses ?? []).find((x) => x.id === id) ?? null,
+      lister: async () => o.adresses ?? [],
+    },
     // Le chemin de l'Accueil, en faux : le numéro, l'éligibilité, Meta, puis le drapeau, qui suit la règle de
     // `setMbaEnabled` (allumer quand personne ne répond passe en `mba`).
     activation: {
@@ -134,11 +140,61 @@ describe('le réglage du répondeur en Base (lot 6, B2a)', () => {
   });
 });
 
+describe('le mode « Mon application » (lot 12, livraison B)', () => {
+  const AD1 = '55555555-5555-4555-8555-555555555555';
+  const AD2 = '66666666-6666-4666-8666-666666666666';
+  const AD_PAUSE = '77777777-7777-4777-8777-777777777777';
+  const adresses = [
+    { id: AD1, url: 'https://app.exemple.fr/un', active: true },
+    { id: AD_PAUSE, url: 'https://app.exemple.fr/pause', active: false },
+    { id: AD2, url: 'https://app.exemple.fr/deux', active: true },
+  ];
+
+  it('🔴 MBA → application : réglage, PUIS liste vidée, PUIS fils repris ; l’adresse est notée, l’historique la nomme', async () => {
+    const m = monter({ adresses, etat: { mbaEnabled: true, repondeurMode: 'mba' } });
+    const r = await choisir(m, { mode: 'application', adresseId: AD1 });
+    expect(r).toMatchObject({ ok: true, valeur: { mode: 'application', adresseId: AD1, agentId: null, workflowId: null } });
+    expect(m.journal).toEqual(['reglage:application', 'liste:videe', 'fils:repris']);
+    expect(m.etat).toMatchObject({ repondeurMode: 'application', repondeurAdresseId: AD1, mbaEnabled: true });
+    expect(m.lignes[0]).toMatchObject({ libelle: 'Qui répond au client : votre application (https://app.exemple.fr/un)' });
+  });
+
+  it('🔴 une adresse inconnue, en pause ou gelée par l’offre est refusée, sans rien écrire', async () => {
+    const m = monter({ adresses, offre: 'base' });
+    expect(await choisir(m, { mode: 'application', adresseId: 'pas-un-uuid' })).toMatchObject({ ok: false, statut: 404 });
+    expect(await choisir(m, { mode: 'application', adresseId: AUTRE })).toMatchObject({ ok: false, statut: 404 });
+    expect(await choisir(m, { mode: 'application', adresseId: AD_PAUSE })).toMatchObject({ ok: false, statut: 422 });
+    // En Base, une seule adresse reçoit : la plus ancienne des actives. La seconde est gelée.
+    expect(await choisir(m, { mode: 'application', adresseId: AD2 })).toMatchObject({ ok: false, statut: 422 });
+    expect([m.journal, m.lignes]).toEqual([[], []]);
+    expect(await choisir(m, { mode: 'application', adresseId: AD1 })).toMatchObject({ ok: true });
+  });
+
+  it('🔴 la lecture ne propose que les adresses qui reçoivent : actives, et dans la limite de l’offre', async () => {
+    const base = await lireRepondeur(monter({ adresses, offre: 'base' }).deps, T, async () => []);
+    expect(base.adressesActives).toEqual([{ id: AD1, url: 'https://app.exemple.fr/un' }]);
+    const ent = await lireRepondeur(monter({ adresses }).deps, T, async () => []);
+    expect(ent.adressesActives.map((a) => a.id)).toEqual([AD1, AD2]);
+  });
+
+  it('🔴 PUT accepte le mode avec son adresse, et refuse le mode sans adresse (400)', async () => {
+    const m = monter({ adresses });
+    const deps: AgentsRouteDeps = { ...agentsInertes, agents: { listActifs: async () => [], listToutes: async () => [], complet: async () => null, create: async () => { throw new Error('x'); }, patch: async () => null, remove: async () => false }, modeleParDefaut: 'modele-config', repondeur: m.deps };
+    const srv = buildServer({ queue: new FakeQueue(), auth: { users: { findIdentity: async () => null }, secret: 'secret-application' }, agents: deps });
+    const admin = await signSession({ userId: 'u1', tenantId: T, role: 'admin' }, 'secret-application');
+    const h = { headers: { 'content-type': 'application/json', authorization: `Bearer ${admin}` } };
+    expect((await srv.inject({ method: 'PUT', url: `/tenants/${T}/repondeur`, ...h, payload: { mode: 'application' } })).statusCode).toBe(400);
+    const res = await srv.inject({ method: 'PUT', url: `/tenants/${T}/repondeur`, ...h, payload: { mode: 'application', adresseId: AD2 } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ mode: 'application', adresseId: AD2 });
+  });
+});
+
 describe('choisirRepondeur : chaque passage de mode, dans les deux sens', () => {
   it('🔴 équipe → agent IA : AUCUN appel chez Meta, le réglage seul, et sa ligne d’historique sur l’agent', async () => {
     const m = monter();
     const r = await choisir(m, { mode: 'agent', agentId: AG });
-    expect(r).toEqual({ ok: true, valeur: { mode: 'agent', agentId: AG, workflowId: null, delaiS: 86400, agentDeMetaAllume: false, liste: { retires: 0, refuses: 0 } } });
+    expect(r).toEqual({ ok: true, valeur: { mode: 'agent', agentId: AG, workflowId: null, adresseId: null, delaiS: 86400, agentDeMetaAllume: false, liste: { retires: 0, refuses: 0 } } });
     expect(m.journal).toEqual(['reglage:agent']);
     expect(m.lignes).toMatchObject([{ surface: 'agent', surfaceId: AG, element: 'repondeur', libelle: 'Qui répond au client : l’agent IA Léa', acteurId: 'u1' }]);
   });
@@ -377,9 +433,9 @@ describe('🔴 cas 3 de la revue du lot 5 : l’agent répondeur désactivé ou 
   });
 
   it('un mode `agent` sans agent (désactivé, supprimé) se lit « Équipe » : la carte peut le signaler', () => {
-    expect(modeEffectif({ mbaEnabled: true, repondeurMode: 'agent', repondeurAgentId: null, repondeurWorkflowId: null })).toBe('equipe');
-    expect(modeEffectif({ mbaEnabled: false, repondeurMode: 'scenario', repondeurAgentId: null, repondeurWorkflowId: null })).toBe('equipe');
-    expect(modeEffectif({ mbaEnabled: false, repondeurMode: 'mba', repondeurAgentId: null, repondeurWorkflowId: null })).toBe('equipe');
+    expect(modeEffectif({ mbaEnabled: true, repondeurMode: 'agent', repondeurAgentId: null, repondeurWorkflowId: null, repondeurAdresseId: null })).toBe('equipe');
+    expect(modeEffectif({ mbaEnabled: false, repondeurMode: 'scenario', repondeurAgentId: null, repondeurWorkflowId: null, repondeurAdresseId: null })).toBe('equipe');
+    expect(modeEffectif({ mbaEnabled: false, repondeurMode: 'mba', repondeurAgentId: null, repondeurWorkflowId: null, repondeurAdresseId: null })).toBe('equipe');
   });
 });
 
@@ -413,9 +469,9 @@ describe('GET et PUT /tenants/:tenantId/repondeur, et l’ancienne PUT .../agent
     const res = await srv.inject({ method: 'GET', url: `/tenants/${T}/repondeur`, ...h(admin) });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
-      mode: 'agent', modeEffectif: 'equipe', agentId: null, workflowId: null, delaiS: 86400,
+      mode: 'agent', modeEffectif: 'equipe', agentId: null, workflowId: null, adresseId: null, delaiS: 86400,
       mbaAllume: false, mbaConfigurable: true, modeleDisponible: true,
-      agentsActifs: [{ id: AG, label: 'Léa' }], scenariosPublies: [{ id: WF, name: 'Bienvenue' }],
+      agentsActifs: [{ id: AG, label: 'Léa' }], scenariosPublies: [{ id: WF, name: 'Bienvenue' }], adressesActives: [],
     });
   });
 
@@ -423,7 +479,7 @@ describe('GET et PUT /tenants/:tenantId/repondeur, et l’ancienne PUT .../agent
     const { m, srv } = serveur();
     const res = await srv.inject({ method: 'PUT', url: `/tenants/${T}/repondeur`, ...h(admin), payload: { mode: 'scenario', workflowId: WF, delaiHeures: 48 } });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ mode: 'scenario', agentId: null, workflowId: WF, delaiS: 172800, agentDeMetaAllume: false, liste: { retires: 3, refuses: 1 } });
+    expect(res.json()).toEqual({ mode: 'scenario', agentId: null, workflowId: WF, adresseId: null, delaiS: 172800, agentDeMetaAllume: false, liste: { retires: 3, refuses: 1 } });
     expect(m.lignes[0]).toMatchObject({ origine: 'formulaire', acteurId: 'u1' });
   });
 

@@ -2127,6 +2127,8 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     // Meme piege pour « qui repond au client » (migration 0217) : un espace neuf est en mode `equipe`, sans scenario,
     // et le delai du scenario vaut 24 h.
     repondeurMode: 'equipe', repondeurWorkflowId: null, repondeurDelaiScenarioS: 86400,
+    // Meme piege pour le mode « application » (migration 0224) : aucune adresse designee par defaut.
+    repondeurAdresseId: null,
     businessHours: DEFAULT_BUSINESS_HOURS, optoutRequestId: null, mentionIaFrequence: null,
     // ⚠️ `prix` A QUITTE CETTE FIXTURE avec la migration 0168 : la grille n appartient plus a un espace,
     // elle est unique et se regle dans /ops. La laisser ici aurait fait croire l inverse au prochain lecteur.

@@ -6,6 +6,7 @@ import { delaiHumainMs, repriseDue } from './delai-reprise';
 import { destinataireAgentEvent, evenementMessageSansSuite, traceReponse, type EvenementAgent } from '../mba/evenement';
 import type { DemarreurRepondeur } from '../repondeur/demarrer';
 import type { DemarreurScenario } from '../repondeur/scenario';
+import type { DemandeALApplication } from '../evenements/besoin-reponse';
 import { leMbaRepond, modeEffectif, sousLOffre, type ReglageDuRepondeur } from '../repondeur/mode';
 import type { SourceOffres } from '../offres/offre.pg';
 import { journaliser } from '../lib/journal';
@@ -211,6 +212,11 @@ export interface DepsControleDuFil {
    * le socle les branche par une liaison tardive qui lève si on l'appelle avant (`src/socle.ts`).
    */
   repondeur: Pick<DemarreurRepondeur, 'demarrer'> & DemarreurScenario;
+  /**
+   * « Mon application répond » (lot 12, livraison B, `src/evenements/besoin-reponse.ts`) : la demande de réponse envoyée
+   * à l'adresse désignée. REQUISE, pour la même raison que les démarreurs.
+   */
+  application: DemandeALApplication;
 }
 
 /**
@@ -252,6 +258,13 @@ export interface ControleDuFil {
    * l'envoi WhatsApp prend le fil implicitement. Ne touche pas l'escalade.
    */
   prisEnEcrivant(tenantId: string, waId: string, par: AuteurDuChangement): Promise<void>;
+  /**
+   * « Mon application répond » (lot 12, B) : l'espace est-il dans ce mode (sous l'offre), et ce fil tenu par les robots ?
+   * La réponse de l'application par l'API ne prend alors pas le fil, sans quoi elle ne serait plus jamais sollicitée.
+   */
+  tenuParLApplication(tenantId: string, waId: string): Promise<boolean>;
+  /** L'espace est-il en mode « mon application répond » (sous l'offre) ? Ses réponses par l'API sortent du quota du jour. */
+  enModeApplication(tenantId: string): Promise<boolean>;
   /**
    * « Reprendre la main » (et le rangement « À traiter ») : prendre le fil sans écrire au client. Le contact est
    * retiré de la liste de l'agent s'il y est, quelle que soit notre colonne ; absent, aucun appel. `'refuse'` : Meta
@@ -495,6 +508,15 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
       await depot.setControlOwner(tenantId, waId, 'app_human', { par });
     },
 
+    async tenuParLApplication(tenantId, waId) {
+      if (modeEffectif(await reglagesDe(tenantId)) !== 'application') return false;
+      return (await depot.getControlOwner(tenantId, waId)) === 'app_workflow';
+    },
+
+    async enModeApplication(tenantId) {
+      return modeEffectif(await reglagesDe(tenantId)) === 'application';
+    },
+
     async reprendreLaMain(tenantId, waId, par) {
       // Quelle que soit notre colonne : elle peut dire `app_human` d'un contact que l'agent a encore sur sa liste.
       if (!(await deps.liste.retirer(tenantId, waId))) return 'refuse';
@@ -595,7 +617,8 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
         par: CAUSES.apresLeDelai, only: ['app_human'], saufEscalade: true, effacerEscalade: true,
       });
 
-      // 🔴 Un `switch` sans `default` : un mode ajouté demain (« mon application répond ») ne compile pas sans sa branche.
+      // 🔴 Chaque mode a sa branche, et le `default` refuse de compiler un mode qui n'en aurait pas : sans lui, un mode
+      // ajouté tombait en silence dans la remise à l'agent de Meta qui suit (`case 'mba': break`).
       switch (mode) {
         case 'equipe': {
           // Rien pour une redélivrance, une réaction, ou un contact muet : un « STOP » n'ouvre pas de demande.
@@ -656,8 +679,32 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
           if (lance !== 'parti') await aLEquipe(CAUSES.repondeurIndisponible);
           return;
         }
+        case 'application': {
+          const adresseId = reglages.repondeurAdresseId;
+          if (adresseId === null) return;
+          if (!(await unRobotPeutPartir())) return;
+          if (!(await reprendreALEquipe())) return laisserALEquipe();
+          /**
+           * Le fil reste tenu par les robots (`app_workflow`), hors d'« À traiter » : l'application répond par l'API, et
+           * sa réponse ne prend pas le fil (`repondreDansLaFenetre`). Aucun repli si elle se tait (décision de Julien du
+           * 2026-10-08). Une adresse qui ne PEUT pas recevoir (en pause, gelée par l'offre) : comme le mode « équipe ».
+           */
+          let demande: Awaited<ReturnType<DemandeALApplication['demander']>>;
+          try {
+            demande = await deps.application.demander(tenantId, waId, { adresseId, messageDeclencheur: entree.messageDeclencheur ?? null, contenu });
+          } catch (err) {
+            await aLEquipe(CAUSES.repondeurIndisponible);
+            throw err;
+          }
+          if (demande === 'indisponible') await aLEquipe(CAUSES.equipe, true);
+          return;
+        }
         case 'mba':
           break;
+        default: {
+          const inconnu: never = mode;
+          throw new Error(`mode du répondeur sans branche dans la remise : ${String(inconnu)}`);
+        }
       }
       let issue: IssueConfier;
       try {

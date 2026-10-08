@@ -111,6 +111,7 @@ function monter(o: { widgets?: WidgetRow[]; liens?: string[]; scenarios?: Array<
     repo: { getTenantPhoneNumberId: jamais('getTenantPhoneNumberId') },
     sendReply: jamais('sendReply'),
     takeControl: jamais('takeControl'),
+    filTenuParLApplication: async () => false,
     contacts: {
       query: jamais('query'),
       findByPhone: jamais('findByPhone'),

@@ -8,17 +8,19 @@ import type { Fonction } from '../offres/offres';
  *  - `scenario` : un scénario publié (`tenant_settings.repondeur_workflow_id`), relancé au plus une fois par délai pour
  *    un même contact (`repondeur_delai_scenario_s`) ; entre-temps, l'équipe.
  *  - `equipe` : personne ne répond automatiquement, la conversation entre dans « À traiter ».
+ *  - `application` (lot 12, livraison B) : l'application du client, par l'événement `conversation.needs_reply` envoyé à
+ *    une adresse désignée de webhooks sortants (`tenant_settings.repondeur_adresse_id`) ; elle répond par l'API. Aucun
+ *    repli (décision de Julien du 2026-10-08) : sans réponse, rien ne se passe, et l'échec se lit au journal.
  *
  * 🔴 ALLUMÉ N'EST PLUS RÉPONDEUR. L'agent de Meta allumé (`mba_enabled`) est DISPONIBLE : hors du mode `mba`, il est en
  * veille, et ni une remise, ni une fin de parcours, ni le balayage ne lui confie rien. Il ne prend un contact que par
  * le bloc « Envoyer au MBA » d'un scénario. La contrainte « une seule voix » de 0209 est levée (0217).
  *
- * 🔴 CETTE LISTE EST LA SEULE DU DÉPÔT, miroir du CHECK `tenant_settings_repondeur_mode_chk` (0217, tenu par
- * `tests/migration-0217.test.ts`). Un mode ajouté demain (« mon application répond ») s'ajoute ICI et dans le CHECK, et
- * chaque `switch` sur le mode refuse de compiler tant qu'il n'a pas sa branche (`modeEffectif`,
- * `standbyPourNous`, la remise de `src/inbox/fil.ts`).
+ * 🔴 CETTE LISTE EST LA SEULE DU DÉPÔT, miroir du CHECK `tenant_settings_repondeur_mode_chk` (reposé par 0224, tenu par
+ * `tests/migration-0224.test.ts`). Un mode ajouté s'ajoute ICI et dans le CHECK, et chaque `switch` sur le mode refuse de
+ * compiler tant qu'il n'a pas sa branche (`modeEffectif`, `standbyPourNous`, la remise de `src/inbox/fil.ts`).
  */
-export const MODES_REPONDEUR = ['mba', 'agent', 'scenario', 'equipe'] as const;
+export const MODES_REPONDEUR = ['mba', 'agent', 'scenario', 'equipe', 'application'] as const;
 export type ModeRepondeur = (typeof MODES_REPONDEUR)[number];
 
 export function estModeRepondeur(v: unknown): v is ModeRepondeur {
@@ -40,6 +42,8 @@ export interface ReglageDuRepondeur {
   repondeurMode: ModeRepondeur;
   repondeurAgentId: string | null;
   repondeurWorkflowId: string | null;
+  /** L'adresse désignée du mode `application` (0224), `null` si elle a été supprimée. En pause, elle reste désignée. */
+  repondeurAdresseId: string | null;
 }
 
 /**
@@ -58,6 +62,7 @@ export function modeEffectif(r: ReglageDuRepondeur): ModeRepondeur {
     case 'agent': return r.repondeurAgentId !== null ? 'agent' : 'equipe';
     case 'scenario': return r.repondeurWorkflowId !== null ? 'scenario' : 'equipe';
     case 'equipe': return 'equipe';
+    case 'application': return r.repondeurAdresseId !== null ? 'application' : 'equipe';
   }
 }
 
@@ -94,7 +99,7 @@ export function leMbaRepond(r: ReglageDuRepondeur): boolean {
  * IA ou un scénario de la console répond, et l'équipe doit voir le message dans « À traiter ». Avant RC6, un espace
  * sans répondeur ne requalifiait rien (un `standby` y voulait dire « une autre application tient le fil ») : ces
  * espaces sont en `equipe`, et un message laissé en `standby` y disparaissait, hors d'« À traiter ».
- * ⚠️ Le `switch` est là pour le mode à venir « mon application répond » : il devra dire si un `standby` est pour lui.
+ * Le mode `application` aussi : l'application du client répond par l'API, et elle doit recevoir le message.
  */
 export function standbyPourNous(mode: ModeRepondeur): boolean {
   switch (mode) {
@@ -102,6 +107,7 @@ export function standbyPourNous(mode: ModeRepondeur): boolean {
     case 'agent':
     case 'scenario':
     case 'equipe':
+    case 'application':
       return true;
   }
 }

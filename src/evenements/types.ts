@@ -27,7 +27,12 @@ export type TypeAbonnable = (typeof TYPES_ABONNABLES)[number];
 
 /** L'événement d'essai : il ne s'abonne pas, il part d'un bouton (ou de l'outil MCP) vers une adresse précise. */
 export const TYPE_ESSAI = 'test';
-export type TypeEvenement = TypeAbonnable | typeof TYPE_ESSAI;
+/**
+ * « Mon application répond » (livraison B) : un message attend la réponse de l'application. Il ne s'abonne pas non plus,
+ * il part vers l'adresse DÉSIGNÉE par le répondeur (`tenant_settings.repondeur_adresse_id`).
+ */
+export const TYPE_BESOIN_REPONSE = 'conversation.needs_reply';
+export type TypeEvenement = TypeAbonnable | typeof TYPE_BESOIN_REPONSE | typeof TYPE_ESSAI;
 
 /** La traduction d'un signal en type public. Exhaustive : un signal ajouté demain ne compile pas sans son type. */
 export const TYPE_DU_SIGNAL: Readonly<Record<NomEvenement, TypeAbonnable>> = {
@@ -166,6 +171,7 @@ export const CHAMPS_DU_TYPE: Readonly<Record<TypeEvenement, readonly string[]>> 
     'action_suggestion', 'handled_by', 'exchanges_count', 'summary',
   ],
   'contact.risk_changed': ['contact', 'level', 'previous_level', 'score', 'reasons'],
+  'conversation.needs_reply': ['contact', 'conversation_id', 'message_id', 'text', 'reply_with'],
   test: ['message'],
 };
 

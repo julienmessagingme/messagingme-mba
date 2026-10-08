@@ -1,7 +1,7 @@
 /**
  * QUI RÉPOND AU CLIENT, CÔTÉ CONSOLE (RC6, plan `docs/superpowers/plans/2026-10-06-rc6-qui-repond.md`, livraison B ; le
  * lot 5 en posait la moitié agent IA). Un seul réglage de l'espace, sur l'Accueil : l'agent de Meta, un agent IA, un
- * scénario, ou l'équipe. Le serveur tient les règles (`src/repondeur/reglage.ts`) ; ce module lit ses réponses, sans
+ * scénario, l'équipe, ou l'application du client (lot 12, livraison B). Le serveur tient les règles (`src/repondeur/reglage.ts`) ; ce module lit ses réponses, sans
  * les caster, et dit ce qu'un geste va changer. Fonctions pures, testées dans `repondeur.test.ts`.
  *
  * 🔴 ALLUMÉ N'EST PLUS RÉPONDEUR. L'agent de Meta allumé est DISPONIBLE ; hors du mode « MBA », il est en veille et ne
@@ -12,7 +12,7 @@
  * ⚠️ MIROIR de `MODES_REPONDEUR` (`src/repondeur/mode.ts`), recopié pour ne pas tirer du code serveur dans le bundle
  * client ; `tests/web-repondeur-modes-parity.test.ts` casse dès qu'ils divergent.
  */
-export const MODES_REPONDEUR = ['mba', 'agent', 'scenario', 'equipe'] as const;
+export const MODES_REPONDEUR = ['mba', 'agent', 'scenario', 'equipe', 'application'] as const;
 export type ModeRepondeur = (typeof MODES_REPONDEUR)[number];
 
 /** Les bornes du délai du mode « Scénario », en heures (1 h à 30 jours, 24 h par défaut), miroir du même fichier. */
@@ -32,12 +32,16 @@ export interface EtatRepondeur {
   modeEffectif: ModeRepondeur;
   agentId: string | null;
   workflowId: string | null;
+  /** L'adresse de webhooks sortants désignée du mode « Mon application ». */
+  adresseId: string | null;
   delaiS: number;
   mbaAllume: boolean;
   mbaConfigurable: boolean;
   modeleDisponible: boolean;
   agentsActifs: Array<{ id: string; label: string }>;
   scenariosPublies: Array<{ id: string; name: string }>;
+  /** Les adresses de webhooks sortants qui peuvent recevoir : seules elles se désignent. */
+  adressesActives: Array<{ id: string; url: string }>;
 }
 
 const liste = <T>(v: unknown, lire: (x: Record<string, unknown>) => T | null): T[] =>
@@ -54,12 +58,15 @@ export function lireEtatRepondeur(brut: unknown): EtatRepondeur | null {
     modeEffectif: brut.modeEffectif,
     agentId: texteOuNull(brut.agentId),
     workflowId: texteOuNull(brut.workflowId),
+    adresseId: texteOuNull(brut.adresseId),
     delaiS: typeof brut.delaiS === 'number' && Number.isFinite(brut.delaiS) && brut.delaiS > 0 ? brut.delaiS : DELAI_HEURES_DEFAUT * 3600,
     mbaAllume: brut.mbaAllume === true,
     mbaConfigurable: brut.mbaConfigurable === true,
     modeleDisponible: brut.modeleDisponible === true,
     agentsActifs: liste(brut.agentsActifs, (x) => (typeof x.id === 'string' && typeof x.label === 'string' ? { id: x.id, label: x.label } : null)),
     scenariosPublies: liste(brut.scenariosPublies, (x) => (typeof x.id === 'string' && typeof x.name === 'string' ? { id: x.id, name: x.name } : null)),
+    // Une API d'avant le lot 12 B ne rend pas la liste : aucune adresse, la position « Mon application » est grisée.
+    adressesActives: liste(brut.adressesActives, (x) => (typeof x.id === 'string' && typeof x.url === 'string' ? { id: x.id, url: x.url } : null)),
   };
 }
 
@@ -69,7 +76,7 @@ export function lireEtatRepondeur(brut: unknown): EtatRepondeur | null {
  * on retombe sur la règle de la reprise de 0217 (un agent IA désigné, sinon l'agent de Meta allumé, sinon l'équipe),
  * c'est-à-dire exactement ce que cette API faisait.
  */
-export function modeEffectifDesReglages(s: { mbaEnabled?: unknown; repondeurMode?: unknown; repondeurAgentId?: unknown; repondeurWorkflowId?: unknown } | null): ModeRepondeur | null {
+export function modeEffectifDesReglages(s: { mbaEnabled?: unknown; repondeurMode?: unknown; repondeurAgentId?: unknown; repondeurWorkflowId?: unknown; repondeurAdresseId?: unknown } | null): ModeRepondeur | null {
   if (s === null || typeof s.mbaEnabled !== 'boolean') return null;
   const agent = typeof s.repondeurAgentId === 'string';
   const mode: ModeRepondeur = estMode(s.repondeurMode) ? s.repondeurMode : agent ? 'agent' : s.mbaEnabled ? 'mba' : 'equipe';
@@ -78,16 +85,17 @@ export function modeEffectifDesReglages(s: { mbaEnabled?: unknown; repondeurMode
     case 'agent': return agent ? 'agent' : 'equipe';
     case 'scenario': return typeof s.repondeurWorkflowId === 'string' ? 'scenario' : 'equipe';
     case 'equipe': return 'equipe';
+    case 'application': return typeof s.repondeurAdresseId === 'string' ? 'application' : 'equipe';
   }
 }
 
 /**
  * Un répondeur AUTOMATIQUE répond-il dans cet espace aux messages que personne ne tient : l'agent de Meta, un agent IA
- * ou un scénario (tout sauf « Équipe ») ? C'est la question des choix « le répondeur automatique prend la main » des
+ * un scénario ou l'application du client (tout sauf « Équipe ») ? C'est la question des choix « le répondeur automatique prend la main » des
  * campagnes et des publicités : en mode « Équipe », la réponse irait à l'équipe, ce que dit déjà l'autre choix. `null`
  * = on ne sait pas (réglages illisibles).
  */
-export function repondeurAutomatique(s: { mbaEnabled?: unknown; repondeurMode?: unknown; repondeurAgentId?: unknown; repondeurWorkflowId?: unknown } | null): boolean | null {
+export function repondeurAutomatique(s: { mbaEnabled?: unknown; repondeurMode?: unknown; repondeurAgentId?: unknown; repondeurWorkflowId?: unknown; repondeurAdresseId?: unknown } | null): boolean | null {
   const mode = modeEffectifDesReglages(s);
   return mode === null ? null : mode !== 'equipe';
 }
@@ -107,6 +115,7 @@ export function nomDuMode(mode: ModeRepondeur, t: T): string {
     case 'agent': return t('Un agent IA', 'An AI agent');
     case 'scenario': return t('Un scénario', 'A scenario');
     case 'equipe': return t('L’équipe', 'The team');
+    case 'application': return t('Votre application', 'Your application');
   }
 }
 
@@ -114,12 +123,21 @@ export function nomDuMode(mode: ModeRepondeur, t: T): string {
  * Ce que la carte dit quand le mode écrit n'est plus celui qui s'applique : sa cible a disparu, et les messages vont à
  * l'équipe. `null` quand tout va bien.
  */
-export function cibleDisparue(etat: Pick<EtatRepondeur, 'mode' | 'modeEffectif'>, t: T): string | null {
+export function cibleDisparue(
+  etat: Pick<EtatRepondeur, 'mode' | 'modeEffectif'> & Partial<Pick<EtatRepondeur, 'adresseId' | 'adressesActives'>>, t: T,
+): string | null {
+  // L'adresse désignée existe mais ne reçoit plus (en pause, ou au-delà de l'offre : la liste ne porte que celles qui
+  // reçoivent) : le serveur passe chaque message à l'équipe.
+  if (etat.modeEffectif === 'application' && etat.adressesActives !== undefined
+    && !etat.adressesActives.some((a) => a.id === etat.adresseId)) {
+    return t('L’adresse de webhook choisie ne reçoit plus (en pause, ou au-delà de votre offre) : vos messages vont à l’équipe.', 'The chosen webhook address no longer receives (paused, or beyond your plan): your messages go to the team.');
+  }
   if (etat.mode === etat.modeEffectif) return null;
   switch (etat.mode) {
     case 'agent': return t('L’agent IA choisi a été désactivé ou supprimé : vos messages vont à l’équipe.', 'The chosen AI agent was disabled or deleted: your messages go to the team.');
     case 'scenario': return t('Le scénario choisi a été supprimé : vos messages vont à l’équipe.', 'The chosen scenario was deleted: your messages go to the team.');
     case 'mba': return t('L’agent de Meta est éteint : vos messages vont à l’équipe.', 'Meta’s agent is off: your messages go to the team.');
+    case 'application': return t('L’adresse de webhook choisie a été supprimée : vos messages vont à l’équipe.', 'The chosen webhook address was deleted: your messages go to the team.');
     case 'equipe': return null;
   }
 }
@@ -129,6 +147,7 @@ export function cibleDisparue(etat: Pick<EtatRepondeur, 'mode' | 'modeEffectif'>
  * - MBA : l'agent de Meta ne peut pas être allumé (aucun numéro, ou Meta ne l'a pas ouvert sur ce numéro).
  * - Agent IA : aucun agent actif, ou aucun modèle sur l'instance.
  * - Scénario : aucun scénario publié.
+ * - Mon application : aucune adresse de webhooks sortants active.
  */
 export function positionGrisee(mode: ModeRepondeur, etat: EtatRepondeur, t: T): { raison: string; lien: string; libelleLien: string } | null {
   switch (mode) {
@@ -147,6 +166,11 @@ export function positionGrisee(mode: ModeRepondeur, etat: EtatRepondeur, t: T): 
     case 'scenario':
       return etat.scenariosPublies.length > 0 ? null : {
         raison: t('Aucun scénario n’est publié.', 'No scenario is published.'), lien: '/workflows', libelleLien: t('Publier un scénario', 'Publish a scenario'),
+      };
+    case 'application':
+      return etat.adressesActives.length > 0 ? null : {
+        raison: t('Aucune adresse de webhooks sortants n’est active.', 'No outgoing webhook address is active.'),
+        lien: '/developers/evenements', libelleLien: t('Ajouter une adresse', 'Add an address'),
       };
     case 'equipe':
       return null;
@@ -179,7 +203,7 @@ export function confirmationEteindreMba(t: T): { titre: string; message: string;
 
 /**
  * Ce qu'allumer l'agent de Meta change, dit AVANT le geste dans les écrans de l'agent de Meta (l'Aperçu, l'assistant).
- * En mode agent IA ou scénario, il reste en VEILLE : le répondeur ne change pas. `null` dans les autres cas : en mode
+ * En mode agent IA, scénario ou application, il reste en VEILLE : le répondeur ne change pas. `null` dans les autres cas : en mode
  * « Équipe », l'allumer en fait le répondeur (ce que ces écrans disent déjà) ; en mode « MBA », il l'est déjà.
  */
 export function avertissementAllumageMeta(etat: Pick<EtatRepondeur, 'modeEffectif' | 'agentId' | 'workflowId' | 'agentsActifs' | 'scenariosPublies'> | null, t: T): string | null {
@@ -191,6 +215,8 @@ export function avertissementAllumageMeta(etat: Pick<EtatRepondeur, 'modeEffecti
   } else if (etat.modeEffectif === 'scenario') {
     const nom = etat.scenariosPublies.find((s) => s.id === etat.workflowId)?.name.trim() ?? '';
     qui = nom !== '' ? t(`Le scénario « ${nom} »`, `The scenario “${nom}”`) : t('Un scénario', 'A scenario');
+  } else if (etat.modeEffectif === 'application') {
+    qui = t('Votre application', 'Your application');
   } else {
     return null;
   }

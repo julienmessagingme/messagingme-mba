@@ -553,6 +553,8 @@ async function main(): Promise<void> {
      * valeurs et celle-ci produit l'effet voulu. Qui a parlé est porté par l'origine du message (`api`, `mcp`).
      */
     takeControl: fil.prisEnEcrivant,
+    // « Mon application répond » (lot 12, B) : sa réponse par l'API ne prend pas un fil qu'elle tient.
+    filTenuParLApplication: fil.tenuParLApplication,
   } satisfies DepsRepondre;
 
   /**
@@ -607,6 +609,8 @@ async function main(): Promise<void> {
     historique: historiqueStore,
     fils: fil,
     offres,
+    // La cible du mode « mon application répond » (lot 12, B) : les adresses de webhooks sortants de l'espace.
+    adresses: adressesEvenements,
   };
 
   /**
@@ -2705,6 +2709,8 @@ async function main(): Promise<void> {
         // bouton « Ouvrir la conversation » du mini-CRM, qui refuse un contact supprimé comme un contact
         // bloqué : c'est la garde de blocage de cette route.
         inbox: inboxStore,
+        // « Mon application répond » (lot 12, B) : ses réponses sortent du quota du jour.
+        enModeApplication: fil.enModeApplication,
       },
       /**
        * `POST /v1/messages/rcs`. Ce bloc ne fait que brancher : les gardes du RCS vivent dans

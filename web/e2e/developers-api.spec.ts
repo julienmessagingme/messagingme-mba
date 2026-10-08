@@ -44,7 +44,7 @@ const SECTIONS: Record<CleDePage, string[]> = {
   concepts: ['Désigner une personne', 'Consentement et STOP', 'La fenêtre de 24 h', 'Idempotence'],
   'per-contact': ['1 L’adresse et l’en-tête', '3 La clé d’idempotence', '6 Éprouver l’appel'],
   events: ['Ce que la console remonte', 'Délais', 'Les événements', 'Les attributs de la fiche'],
-  webhooks: ['L’enveloppe', 'Vérifier la signature', 'Réponse et réessais', 'Les événements'],
+  webhooks: ['L’enveloppe', 'Vérifier la signature', 'Réponse et réessais', 'Les événements', 'Mon application répond'],
   reference: ['Authentification et droits', 'Débit', 'Erreurs'],
   mcp: ['Adresse', 'Ce que l’assistant peut faire', 'Ce qu’il ne fait pas'],
 };

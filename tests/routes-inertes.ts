@@ -123,7 +123,7 @@ export const repondeurInerte: DepsReglageRepondeur = {
   agents: { complet: async () => null },
   scenarios: { getById: async () => null, listResume: async () => [] },
   reglages: {
-    get: async () => ({ mbaEnabled: false, repondeurMode: 'equipe', repondeurAgentId: null, repondeurWorkflowId: null, repondeurDelaiScenarioS: 86400 }),
+    get: async () => ({ mbaEnabled: false, repondeurMode: 'equipe', repondeurAgentId: null, repondeurWorkflowId: null, repondeurAdresseId: null, repondeurDelaiScenarioS: 86400 }),
     setRepondeur: neDevraitPasEtreAppelee('setRepondeur'),
   },
   gatewayDisponible: false,
@@ -137,6 +137,7 @@ export const repondeurInerte: DepsReglageRepondeur = {
   historique: { ecrire: neDevraitPasEtreAppelee('historique.ecrire') },
   fils: { reprendreLesFilsDeMeta: neDevraitPasEtreAppelee('reprendreLesFilsDeMeta') },
   offres: offresToutOuvert,
+  adresses: { lire: async () => null, lister: async () => [] },
 };
 
 export const agentsInertes: Pick<AgentsRouteDeps, 'credits' | 'sessions' | 'etatPourLint' | 'modelesProposes' | 'historique' | 'oublierRepondeur' | 'repondeur'> = {
@@ -256,7 +257,7 @@ export const priseDeFilSansEffet = async (): Promise<void> => {};
 export const COMPTEURS_VIDES = { tout: 0, aTraiter: 0, urgentes: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] };
 
 export const inboxInerte: Pick<InboxRouteDeps,
-  'audit' | 'lireMediaMessage' | 'agentsPeuventPrendre' | 'takeControl' | 'reprendreLaMain' | 'releaseControl'
+  'audit' | 'lireMediaMessage' | 'agentsPeuventPrendre' | 'takeControl' | 'filTenuParLApplication' | 'reprendreLaMain' | 'releaseControl'
   | 'resolveTemplateParams' | 'sendRcsFromInbox' | 'categorieDuModele' | 'prepareCarousel' | 'startWorkflow'> = {
   audit: journalMuet,
   lireMediaMessage: async () => null,
@@ -264,6 +265,8 @@ export const inboxInerte: Pick<InboxRouteDeps,
   agentsPeuventPrendre: async () => false,
   // Absentes : l'état local du fil ne bougeait pas, et « Reprendre la main » réussissait sans rien écrire.
   takeControl: priseDeFilSansEffet,
+  // Absente : aucun espace en mode « mon application répond », la réponse prend le fil comme avant le lot 12.
+  filTenuParLApplication: async () => false,
   reprendreLaMain: async () => 'pris',
   releaseControl: neDevraitPasEtreAppelee('releaseControl'),
   // Absente : des champs vides à remplir à la main.

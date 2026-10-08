@@ -31,6 +31,9 @@ const ENVELOPPE = JSON.stringify({
   },
 }, null, 2);
 
+/** La réponse de l'application à `conversation.needs_reply`, sérialisée elle aussi. */
+const REPONSE = JSON.stringify({ contactId: '8b1e07c4-…', text: 'Bonjour Claire, votre commande part demain.' }, null, 2);
+
 const VERIFICATION = [
   "import crypto from 'node:crypto';",
   '',
@@ -117,6 +120,24 @@ function Contenu() {
           }))}
         />
         <p>{t('Le contact porte son id, son numéro (phone), son nom, son identifiant externe et ses désabonnements.', 'The contact carries its id, number (phone), name, external id and opt-outs.')}</p>
+      </Section>
+
+      <Section id="repondre" titre={t('Mon application répond', 'My app answers')}>
+        <p>
+          {t(
+            'Désignez une adresse dans « Qui répond au client » (Accueil), ou par l’outil MCP set_default_responder en mode application : chaque message que personne ne tient lui arrive en ',
+            'Pick an address in “Who answers the customer” (Home), or with the set_default_responder MCP tool in application mode: each message nobody handles reaches it as ',
+          )}
+          <C>conversation.needs_reply</C>
+          {t(', sans abonnement à cocher, devant les autres envois. Votre application répond par l’API, avec la clé d’API de l’espace :', ', with no type to check, ahead of other deliveries. Your app answers through the API, with the workspace API key:')}
+        </p>
+        <Bloc legende="POST /v1/messages/whatsapp">{REPONSE}</Bloc>
+        <Liste>
+          <li>{t('Répondez 2xx tout de suite au webhook, puis envoyez la réponse : la conversation reste à votre application, hors de la file « À traiter » de l’équipe.', 'Answer the webhook 2xx right away, then send the reply: the conversation stays with your app, out of the team’s “To handle” queue.')}</li>
+          <li>{t('La fenêtre de 24 h s’applique : la réponse part tant que le client a écrit dans les 24 dernières heures.', 'The 24-hour window applies: the reply goes out as long as the customer wrote in the last 24 hours.')}</li>
+          <li>{t('Ces réponses ne comptent pas dans le quota quotidien d’envois de l’API ; le plafond par minute s’applique.', 'These replies do not count toward the API daily send quota; the per-minute cap applies.')}</li>
+          <li>{t('Aucun repli : si votre application ne répond pas, personne ne le fait à sa place. Une adresse en pause, supprimée ou au-delà de votre offre rend les messages à l’équipe.', 'No fallback: if your app does not answer, nobody does in its place. A paused or deleted address, or one beyond your plan, hands the messages back to the team.')}</li>
+        </Liste>
       </Section>
     </>
   );

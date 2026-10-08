@@ -15,12 +15,14 @@ import { Bouton } from '@/components/Bouton';
 /**
  * « QUI RÉPOND AU CLIENT » (RC6, plan `docs/superpowers/plans/2026-10-06-rc6-qui-repond.md`) : la carte de l'Accueil,
  * réservée aux admins (le serveur aussi). Un seul réglage décide qui répond à un nouveau contact, ou à un message que
- * personne ne tient : l'agent de Meta, un agent IA, un scénario, ou l'équipe.
+ * personne ne tient : l'agent de Meta, un agent IA, un scénario, l'équipe, ou l'application du client (lot 12 B : le
+ * message part en `conversation.needs_reply` vers une adresse de webhooks sortants, l'application répond par l'API).
  *
  * Ce que la carte garantit, et pourquoi :
  *  - une position qui ne peut pas répondre est GRISÉE avec le lien qui la configure (`positionGrisee`) : la choisir
  *    laisserait les clients sans réponse ;
- *  - un mode dont la cible a disparu (agent désactivé, scénario supprimé, agent de Meta éteint) se lit « Équipe », et
+ *  - un mode dont la cible a disparu (agent désactivé, scénario supprimé, agent de Meta éteint, adresse supprimée ou en
+ *    pause) se lit « Équipe », et
  *    la carte le DIT (`cibleDisparue`) au lieu d'afficher un choix qui ne s'applique plus ;
  *  - quitter « MBA » se confirme : l'agent de Meta cesse de répondre aux contacts qu'il tient ;
  *  - rien ne part à la sélection : il faut « Enregistrer », et l'état est RELU ensuite, jamais supposé.
@@ -36,6 +38,7 @@ export function QuiRepond({ tenantId, version = 0, onChange }: {
   const [choix, setChoix] = useState<ModeRepondeur>('equipe');
   const [agentId, setAgentId] = useState('');
   const [workflowId, setWorkflowId] = useState('');
+  const [adresseId, setAdresseId] = useState('');
   const [delai, setDelai] = useState(24);
   const [enCours, setEnCours] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -47,6 +50,7 @@ export function QuiRepond({ tenantId, version = 0, onChange }: {
     setChoix(e.modeEffectif);
     setAgentId(e.agentsActifs.some((a) => a.id === e.agentId) ? (e.agentId ?? '') : (e.agentsActifs[0]?.id ?? ''));
     setWorkflowId(e.scenariosPublies.some((s) => s.id === e.workflowId) ? (e.workflowId ?? '') : (e.scenariosPublies[0]?.id ?? ''));
+    setAdresseId(e.adressesActives.some((a) => a.id === e.adresseId) ? (e.adresseId ?? '') : (e.adressesActives[0]?.id ?? ''));
     setDelai(delaiHeuresDe(e.delaiS));
   }, []);
 
@@ -62,8 +66,10 @@ export function QuiRepond({ tenantId, version = 0, onChange }: {
   const delaiValide = Number.isInteger(delai) && delai >= DELAI_HEURES_MIN && delai <= DELAI_HEURES_MAX;
   const modifie = choix !== etat.modeEffectif
     || (choix === 'agent' && agentId !== etat.agentId)
-    || (choix === 'scenario' && (workflowId !== etat.workflowId || delai !== delaiHeuresDe(etat.delaiS)));
-  const complet = (choix !== 'agent' || agentId !== '') && (choix !== 'scenario' || (workflowId !== '' && delaiValide));
+    || (choix === 'scenario' && (workflowId !== etat.workflowId || delai !== delaiHeuresDe(etat.delaiS)))
+    || (choix === 'application' && adresseId !== etat.adresseId);
+  const complet = (choix !== 'agent' || agentId !== '') && (choix !== 'scenario' || (workflowId !== '' && delaiValide))
+    && (choix !== 'application' || adresseId !== '');
   const avertissement = cibleDisparue(etat, t);
 
   async function enregistrer(): Promise<void> {
@@ -72,7 +78,8 @@ export function QuiRepond({ tenantId, version = 0, onChange }: {
     if (etat.mode === 'mba' && choix !== 'mba' && !(await confirmer(confirmationQuitterMba(t)))) return;
     const demande: ChoixQuiRepond = choix === 'agent' ? { mode: 'agent', agentId }
       : choix === 'scenario' ? { mode: 'scenario', workflowId, delaiHeures: delai }
-        : { mode: choix };
+        : choix === 'application' ? { mode: 'application', adresseId }
+          : { mode: choix };
     setEnCours(true);
     setErreur(null);
     try {
@@ -98,6 +105,10 @@ export function QuiRepond({ tenantId, version = 0, onChange }: {
       case 'agent': return t('Un de vos agents IA répond, comme le ferait l’agent de Meta.', 'One of your AI agents answers, as Meta’s agent would.');
       case 'scenario': return t('Un scénario publié démarre, au plus une fois par délai pour un même contact ; entre-temps, l’équipe.', 'A published scenario starts, at most once per delay for the same contact; in between, the team.');
       case 'equipe': return t('Personne ne répond automatiquement : le message arrive dans « À traiter ».', 'Nobody answers automatically: the message lands in “To handle”.');
+      case 'application': return t(
+        'Le message part vers votre application (événement conversation.needs_reply), qui répond par l’API. Si elle ne répond pas, personne ne le fait à sa place.',
+        'The message goes to your application (conversation.needs_reply event), which answers through the API. If it does not answer, nobody does in its place.',
+      );
     }
   };
 
@@ -142,6 +153,14 @@ export function QuiRepond({ tenantId, version = 0, onChange }: {
                   className={`${inputCls} ml-6 max-w-sm bg-white`} value={agentId} onChange={(e) => setAgentId(e.target.value)}
                 >
                   {etat.agentsActifs.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
+                </select>
+              )}
+              {mode === 'application' && choix === 'application' && (
+                <select
+                  data-testid="qui-repond-adresse" aria-label={t('L’adresse qui reçoit les messages', 'The address that receives the messages')}
+                  className={`${inputCls} ml-6 max-w-sm bg-white`} value={adresseId} onChange={(e) => setAdresseId(e.target.value)}
+                >
+                  {etat.adressesActives.map((a) => <option key={a.id} value={a.id}>{a.url}</option>)}
                 </select>
               )}
               {mode === 'scenario' && choix === 'scenario' && (

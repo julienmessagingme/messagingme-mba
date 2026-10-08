@@ -44,7 +44,7 @@ type Champ = 'appels' | 'unites' | 'refusees';
 const cleUsage = (champ: Champ, d: DemandeUsage): string => `${PREFIXE}${champ}|${d.tenantId}|${d.cleId}|${d.operation}`;
 
 const OPERATIONS: ReadonlySet<OperationApi> = new Set<OperationApi>([
-  'contacts.upsert', 'contacts.batch', 'contacts.read', 'sends.create', 'sends.read', 'messages.send',
+  'contacts.upsert', 'contacts.batch', 'contacts.read', 'sends.create', 'sends.read', 'messages.send', 'messages.reponse_application',
   'catalogues.read', 'mcp.call', 'mcp.refus',
 ]);
 

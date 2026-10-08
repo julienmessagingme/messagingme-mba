@@ -44,6 +44,9 @@ const NUMERO = '+33612345678';
 const URL_WA = '/v1/messages/whatsapp';
 
 interface Monde {
+  /** « Mon application répond » (lot 12, B) : l'espace est dans ce mode, et l'application tient-elle le fil ? */
+  modeApplication?: boolean;
+  tenuParLApplication?: boolean;
   /** La fiche que les clés désignent. `null` = inconnue. */
   fiche: { id: string } | null;
   /** `null` = fiche bloquée ou supprimée : `filDuContact` la dit injoignable. */
@@ -91,6 +94,7 @@ function app(over: Partial<Monde> = {}) {
     },
     estDesabonne: async (_t, waId) => { desabonneLu.push(waId); return m.desabonne; },
     takeControl: async (_t, waId) => { prises.push(waId); },
+    filTenuParLApplication: async () => m.tenuParLApplication === true,
   };
 
   const keys = new FakeApiKeys()
@@ -106,6 +110,7 @@ function app(over: Partial<Monde> = {}) {
       contacts: contactsV1Muets(),
       messages: {
         repondre,
+        enModeApplication: async () => m.modeApplication === true,
         /** Double de la résolution du lot 1 : elle NORMALISE le numéro (format national compris). */
         resoudreFiche: async (tenant, cles, o) => {
           resolutions.push({ tenant, cles, creer: o.creer });
@@ -379,5 +384,26 @@ describe('câblage de /v1/messages/whatsapp, lu dans `src/index.ts`', () => {
     const tranche = route.slice(route.indexOf('  inbox: {'), route.indexOf('\n  };', route.indexOf('  inbox: {')));
     expect(tranche).toContain('filDuContact(');
     expect(tranche).not.toMatch(/ouvrir/i);
+  });
+});
+
+describe('POST /v1/messages/whatsapp en mode « mon application répond » (lot 12, B)', () => {
+  it('🔴 la réponse de l’application à un fil qu’elle tient ne le prend pas : le message suivant lui reviendra', async () => {
+    const tient = app({ modeApplication: true, tenuParLApplication: true });
+    expect((await post(tient.server, { contactId: C1, text: 'Votre colis arrive demain.' })).statusCode).toBe(200);
+    expect(tient.envois).toHaveLength(1);
+    expect(tient.prises).toEqual([]);
+    // Un fil que l'équipe a pris entre-temps : la réponse de l'application le prend, comme avant le lot 12.
+    const equipe = app({ modeApplication: true, tenuParLApplication: false });
+    await post(equipe.server, { contactId: C1, text: 'bonjour' });
+    expect(equipe.prises).toEqual(['33612345678']);
+  });
+
+  it('🔴 hors du quota du jour, mais comptée au plafond d’appels', async () => {
+    const { server, usage } = app({ modeApplication: true, tenuParLApplication: true });
+    await post(server, { contactId: C1, text: 'bonjour' });
+    const compteurs = await usage.compteurs();
+    expect(compteurs.find((c) => c.operation === 'messages.reponse_application')).toMatchObject({ appels: 1 });
+    expect(compteurs.find((c) => c.operation === 'messages.send')).toBeUndefined();
   });
 });

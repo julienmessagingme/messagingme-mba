@@ -245,6 +245,7 @@ export async function mockAccueil(
         quiRepond.modeEffectif = b.mode;
         quiRepond.agentId = b.mode === 'agent' ? b.agentId : null;
         quiRepond.workflowId = b.mode === 'scenario' ? b.workflowId : null;
+        quiRepond.adresseId = b.mode === 'application' ? b.adresseId : null;
         if (b.mode === 'scenario' && typeof b.delaiHeures === 'number') quiRepond.delaiS = b.delaiHeures * 3600;
         if (b.mode === 'mba') { quiRepond.mbaAllume = true; settings.mbaEnabled = true; }
         return json({ mode: b.mode });

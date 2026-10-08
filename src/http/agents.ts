@@ -77,6 +77,7 @@ const corpsQuiRepond = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('equipe') }),
   z.object({ mode: z.literal('agent'), agentId: z.string().max(100) }),
   z.object({ mode: z.literal('scenario'), workflowId: z.string().max(100), delaiHeures: z.number().int().optional() }),
+  z.object({ mode: z.literal('application'), adresseId: z.string().max(100) }),
 ]);
 
 /**
@@ -160,14 +161,14 @@ export function registerAgents(app: FastifyInstance, deps: AgentsRouteDeps, gard
 
   /**
    * Règle qui répond au client : `{ mode: 'mba' | 'equipe' }`, `{ mode: 'agent', agentId }`, `{ mode: 'scenario',
-   * workflowId, delaiHeures? }`. Admins seulement. Quitter le mode « MBA » retire ses contacts de la liste de l'agent de
+   * workflowId, delaiHeures? }`, `{ mode: 'application', adresseId }` (lot 12 B). Admins seulement. Quitter le mode « MBA » retire ses contacts de la liste de l'agent de
    * Meta (la console le confirme avant) ; choisir « MBA » l'allume s'il est éteint. L'auteur vient de la session.
    */
   app.put('/tenants/:tenantId/repondeur', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const lu = corpsQuiRepond.safeParse(req.body ?? {});
     if (!lu.success) {
-      return reply.code(400).send({ error: 'mode requis : « mba », « equipe », « agent » avec agentId, ou « scenario » avec workflowId (et delaiHeures)' });
+      return reply.code(400).send({ error: 'mode requis : « mba », « equipe », « agent » avec agentId, « scenario » avec workflowId (et delaiHeures), ou « application » avec adresseId' });
     }
     const c = lu.data;
     const choix: ChoixRepondeur = c.mode === 'scenario'

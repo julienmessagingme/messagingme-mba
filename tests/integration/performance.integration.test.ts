@@ -383,8 +383,9 @@ describe.skipIf(!url)('les demandes du Quantitatif > Performance', () => {
   describe('un client rouvre une conversation « Traité » que l’équipe tient encore', () => {
     const faux = metaFactice();
     const fil = () => creerControleDuFil({
+    application: { demander: async () => 'demande' },
       depot: inbox,
-      reglages: { get: async () => ({ mbaEnabled: true, repondeurMode: 'mba', repondeurAgentId: null, repondeurWorkflowId: null, repondeurDelaiScenarioS: 86400, controlHandbackSeconds: null }) },
+      reglages: { get: async () => ({ mbaEnabled: true, repondeurMode: 'mba', repondeurAgentId: null, repondeurWorkflowId: null, repondeurAdresseId: null, repondeurDelaiScenarioS: 86400, controlHandbackSeconds: null }) },
       repondeur: aucunRepondeur,
       delaiRepriseParDefautMs: DELAI_REPRISE_DEFAUT_MS,
       parcours: { findWaitingByWaId: async () => null },

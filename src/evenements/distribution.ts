@@ -1,6 +1,6 @@
 import { schemaJobSignaux, type NomEvenement, type Signal, type SignalComplet } from '../signaux/types';
 import { PRIORITE_SIGNAL } from '../signaux/emetteur';
-import { TYPE_DU_SIGNAL, donneesDuSignal, enveloppe, idEvenement, type MessageRecu, type TypeAbonnable } from './types';
+import { TYPE_DU_SIGNAL, donneesDuSignal, enveloppe, idEvenement, type MessageRecu, type TypeEvenement } from './types';
 import type { JobEnvoi } from './envoi';
 
 /**
@@ -25,7 +25,7 @@ export interface LigneEnvoi {
   tenantId: string;
   adresseId: string;
   evenementId: string;
-  type: TypeAbonnable;
+  type: TypeEvenement;
   contactId: string | null;
   corps: string;
 }

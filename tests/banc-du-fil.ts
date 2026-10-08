@@ -240,6 +240,10 @@ export interface OptionsBanc {
   repondeurAgentId?: string | null;
   /** Le scénario répondeur (RC6) ; `null` = aucun. Défaut : aucun. */
   repondeurWorkflowId?: string | null;
+  /** L'adresse du mode `application` (lot 12, B) ; `null` = aucune. Défaut : aucune. */
+  repondeurAdresseId?: string | null;
+  /** Ce que rend la demande de réponse à l'application. Défaut : `demande`. Ses appels sont notés dans `demandesApplication`. */
+  demandeApplication?: 'demande' | 'indisponible' | Error;
   /** L'offre de l'espace (lot 6, B2a : le gel de l'agent de Meta et du scénario répondeur). Défaut : Entreprise. */
   offre?: Offre;
   /** Le délai du scénario répondeur, en secondes. Défaut : 24 h. */
@@ -301,6 +305,7 @@ export function bancDuFil(o: OptionsBanc = {}): {
   /** Les réclamations du scénario répondeur, puis ses lancements, dans l'ordre (RC6). */
   reclamations: Array<{ waId: string; workflowId: string; delaiS: number }>;
   lancementsScenario: Array<{ waId: string; workflowId: string; messageDeclencheur: string | null }>;
+  demandesApplication: Array<{ waId: string; adresseId: string; messageDeclencheur: string | null; contenu: string }>;
   /** Les lignes `mba_indisponible` de la frise (RC6). */
   indisponibles: Array<{ waId: string; cause: string }>;
 } {
@@ -322,6 +327,7 @@ export function bancDuFil(o: OptionsBanc = {}): {
   const demarrages: Array<{ waId: string; agentId: string; messageDeclencheur: string | null }> = [];
   const reclamations: Array<{ waId: string; workflowId: string; delaiS: number }> = [];
   const lancementsScenario: Array<{ waId: string; workflowId: string; messageDeclencheur: string | null }> = [];
+  const demandesApplication: Array<{ waId: string; adresseId: string; messageDeclencheur: string | null; contenu: string }> = [];
   const mbaEnabled = o.mbaEnabled ?? true;
   const repondeurAgentId = o.repondeurAgentId ?? null;
   const mode: ModeRepondeur = o.mode ?? (repondeurAgentId !== null ? 'agent' : (mbaEnabled ? 'mba' : 'equipe'));
@@ -329,7 +335,7 @@ export function bancDuFil(o: OptionsBanc = {}): {
     depot: { ...memoire.depot, ...o.depot },
     reglages: {
       get: async () => ({
-        mbaEnabled, repondeurMode: mode, repondeurAgentId, repondeurWorkflowId: o.repondeurWorkflowId ?? null,
+        mbaEnabled, repondeurMode: mode, repondeurAgentId, repondeurWorkflowId: o.repondeurWorkflowId ?? null, repondeurAdresseId: o.repondeurAdresseId ?? null,
         repondeurDelaiScenarioS: o.delaiScenarioS ?? 86400, controlHandbackSeconds: o.delaiRepriseSecondes ?? null,
       }),
     },
@@ -366,10 +372,17 @@ export function bancDuFil(o: OptionsBanc = {}): {
         return o.lancementScenario ?? 'parti';
       },
     },
+    application: {
+      demander: async (_t, waId, d) => {
+        demandesApplication.push({ waId, adresseId: d.adresseId, messageDeclencheur: d.messageDeclencheur, contenu: d.contenu });
+        if (o.demandeApplication instanceof Error) throw o.demandeApplication;
+        return o.demandeApplication ?? 'demande';
+      },
+    },
   });
   return {
     fil, liste, etat: memoire.etat, lignes: memoire.lignes, table: table.lignes, ecritures: memoire.ecritures, demandes: memoire.demandes,
     appels: faux.appels, evenements: faux.evenements, attentes, client: faux.client, demarrages,
-    reclamations, lancementsScenario, indisponibles: memoire.indisponibles,
+    reclamations, lancementsScenario, demandesApplication, indisponibles: memoire.indisponibles,
   };
 }

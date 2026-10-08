@@ -24,6 +24,9 @@ export type OperationApi =
   | 'sends.read'
   // Un texte libre à une personne (`POST /v1/messages/whatsapp` et `/rcs`) : une unité par appel.
   | 'messages.send'
+  // La même réponse WhatsApp, d'un espace en mode « mon application répond » (lot 12, B) : comptée au plafond d'appels,
+  // jamais au quota du jour (décision de Julien du 2026-10-08). Une réponse dans la fenêtre de 24 h n'est pas un envoi.
+  | 'messages.reponse_application'
   // Une lecture de catalogue (`/v1/templates`, `/v1/scenarios`, `/v1/rcs-messages`) : une unité, comptée à
   // part parce que `/v1/templates` interroge Meta, pour voir une boucle de lectures avant qu'elle coûte.
   | 'catalogues.read'

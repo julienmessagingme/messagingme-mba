@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { CHAMPS_DU_TYPE, TYPES_ABONNABLES, TYPES_DECOCHES_PAR_DEFAUT, TYPE_ESSAI } from '../src/evenements/types';
+import { CHAMPS_DU_TYPE, TYPES_ABONNABLES, TYPES_DECOCHES_PAR_DEFAUT, TYPE_BESOIN_REPONSE, TYPE_ESSAI } from '../src/evenements/types';
 import { TYPES_DOCUMENTES } from '../web/lib/evenements-dictionnaire';
 import { PAGES_DOC } from '../web/lib/doc-api-pages';
 
@@ -13,7 +13,7 @@ describe('la page « Webhooks sortants » et le contrat du serveur', () => {
     const doc = Object.fromEntries(TYPES_DOCUMENTES.map((d) => [d.type, [...d.champs]]));
     const serveur = Object.fromEntries(Object.entries(CHAMPS_DU_TYPE).map(([t, c]) => [t, [...c]]));
     expect(doc).toEqual(serveur);
-    expect(TYPES_DOCUMENTES.map((d) => d.type)).toEqual([...TYPES_ABONNABLES, TYPE_ESSAI]);
+    expect(TYPES_DOCUMENTES.map((d) => d.type)).toEqual([...TYPES_ABONNABLES, TYPE_BESOIN_REPONSE, TYPE_ESSAI]);
   });
 
   it('les types décochés par défaut sont ceux que la doc annonce', () => {

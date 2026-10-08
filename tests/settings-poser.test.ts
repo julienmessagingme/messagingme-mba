@@ -73,15 +73,18 @@ describe('PgTenantSettingsStore : un setter écrit SA colonne, et seulement elle
     await s.setRepondeur(T, { mode: 'agent', agentId: 'ag-1' });
     await s.setRepondeur(T, { mode: 'scenario', workflowId: 'wf-1', delaiS: 7200 });
     await s.setRepondeur(T, { mode: 'equipe' });
+    await s.setRepondeur(T, { mode: 'application', adresseId: 'ad-1' });
     expect(appels.map((x) => x.params)).toEqual([
-      [T, 'agent', 'ag-1', null, null],
-      [T, 'scenario', null, 'wf-1', 7200],
-      [T, 'equipe', null, null, null],
+      [T, 'agent', 'ag-1', null, null, null],
+      [T, 'scenario', null, 'wf-1', 7200, null],
+      [T, 'equipe', null, null, null, null],
+      [T, 'application', null, null, null, 'ad-1'],
     ]);
-    // Un seul `update` par choix, qui écrit les quatre colonnes ; le délai garde sa valeur hors du mode scénario.
+    // Un seul `update` par choix, qui écrit les cinq colonnes ; le délai garde sa valeur hors du mode scénario.
     for (const x of appels) {
       expect(x.sql).toContain('repondeur_agent_id = excluded.repondeur_agent_id');
       expect(x.sql).toContain('repondeur_workflow_id = excluded.repondeur_workflow_id');
+      expect(x.sql).toContain('repondeur_adresse_id = excluded.repondeur_adresse_id');
       expect(x.sql).toContain('repondeur_delai_scenario_s = coalesce($5::integer, tenant_settings.repondeur_delai_scenario_s)');
     }
   });

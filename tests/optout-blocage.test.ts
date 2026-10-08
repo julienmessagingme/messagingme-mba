@@ -267,6 +267,7 @@ describe('les deux chemins tranchés : modèle de l’Inbox, et agent MCP', () =
         sendReply: async (_t, _pn, to) => { envois.push(to); return 'wamid.1'; },
         estDesabonne: async (_t, waId) => { lu.push(waId); return desabonne; },
         takeControl: priseDeFilSansEffet,
+        filTenuParLApplication: async () => false,
       };
       return { d, envois, lu };
     };

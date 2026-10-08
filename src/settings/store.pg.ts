@@ -38,6 +38,8 @@ export interface TenantSettings {
   repondeurAgentId: string | null;
   /** Le scénario du mode `scenario` (0217). Même règle que l'agent. */
   repondeurWorkflowId: string | null;
+  /** L'adresse de webhooks sortants du mode `application` (0224). Même règle que l'agent. */
+  repondeurAdresseId: string | null;
   /** Le délai du mode `scenario`, en secondes : au plus un départ du scénario par contact et par délai (0217). */
   repondeurDelaiScenarioS: number;
   /** Fuseau IANA du tenant (ex. 'Europe/Paris'). Défaut serveur si non réglé. Base de NOW / weekday / horaires. */
@@ -128,7 +130,8 @@ type ColonneReglage =
 export type ChoixRepondeurEcrit =
   | { mode: 'mba' | 'equipe' }
   | { mode: 'agent'; agentId: string }
-  | { mode: 'scenario'; workflowId: string; delaiS: number };
+  | { mode: 'scenario'; workflowId: string; delaiS: number }
+  | { mode: 'application'; adresseId: string };
 
 /**
  * Le mode d'une ligne de réglages. 🔴 Une base en retard sur 0217 ne rend pas la colonne (`select *`) : on retombe sur
@@ -172,6 +175,7 @@ export class PgTenantSettingsStore {
       // Une base en retard ne rend pas la colonne (`select *`) : aucune cible, le mode se lit alors `equipe`.
       repondeurAgentId: typeof r?.repondeur_agent_id === 'string' ? r.repondeur_agent_id : null,
       repondeurWorkflowId: typeof r?.repondeur_workflow_id === 'string' ? r.repondeur_workflow_id : null,
+      repondeurAdresseId: typeof r?.repondeur_adresse_id === 'string' ? r.repondeur_adresse_id : null,
       repondeurDelaiScenarioS: typeof r?.repondeur_delai_scenario_s === 'number' ? r.repondeur_delai_scenario_s : DELAI_SCENARIO_DEFAUT_S,
       hubspotListsEnabled: r?.hubspot_lists_enabled ?? false,
       campaignsPaused: r?.campaigns_paused ?? false,
@@ -304,7 +308,8 @@ export class PgTenantSettingsStore {
          repondeur_mode = case
            when excluded.mba_enabled and (tenant_settings.repondeur_mode = 'equipe'
              or (tenant_settings.repondeur_mode = 'agent' and tenant_settings.repondeur_agent_id is null)
-             or (tenant_settings.repondeur_mode = 'scenario' and tenant_settings.repondeur_workflow_id is null)) then 'mba'
+             or (tenant_settings.repondeur_mode = 'scenario' and tenant_settings.repondeur_workflow_id is null)
+             or (tenant_settings.repondeur_mode = 'application' and tenant_settings.repondeur_adresse_id is null)) then 'mba'
            when not excluded.mba_enabled and tenant_settings.repondeur_mode = 'mba' then 'equipe'
            else tenant_settings.repondeur_mode end,
          updated_at = now()`,
@@ -323,17 +328,19 @@ export class PgTenantSettingsStore {
     const agentId = choix.mode === 'agent' ? choix.agentId : null;
     const workflowId = choix.mode === 'scenario' ? choix.workflowId : null;
     const delaiS = choix.mode === 'scenario' ? choix.delaiS : null;
+    const adresseId = choix.mode === 'application' ? choix.adresseId : null;
     await this.pool.query(
       `insert into tenant_settings (tenant_id, repondeur_mode, repondeur_agent_id, repondeur_workflow_id,
-                                    repondeur_delai_scenario_s, updated_at)
-       values ($1, $2, $3, $4, coalesce($5::integer, ${DELAI_SCENARIO_DEFAUT_S}), now())
+                                    repondeur_delai_scenario_s, repondeur_adresse_id, updated_at)
+       values ($1, $2, $3, $4, coalesce($5::integer, ${DELAI_SCENARIO_DEFAUT_S}), $6, now())
        on conflict (tenant_id) do update set
          repondeur_mode = excluded.repondeur_mode,
          repondeur_agent_id = excluded.repondeur_agent_id,
          repondeur_workflow_id = excluded.repondeur_workflow_id,
          repondeur_delai_scenario_s = coalesce($5::integer, tenant_settings.repondeur_delai_scenario_s),
+         repondeur_adresse_id = excluded.repondeur_adresse_id,
          updated_at = now()`,
-      [tenantId, choix.mode, agentId, workflowId, delaiS],
+      [tenantId, choix.mode, agentId, workflowId, delaiS, adresseId],
     );
   }
 
@@ -407,6 +414,7 @@ export class PgTenantSettingsStore {
       repondeurMode: modeDeLaLigne(r),
       repondeurAgentId: typeof r.repondeur_agent_id === 'string' ? r.repondeur_agent_id : null,
       repondeurWorkflowId: typeof r.repondeur_workflow_id === 'string' ? r.repondeur_workflow_id : null,
+      repondeurAdresseId: typeof r.repondeur_adresse_id === 'string' ? r.repondeur_adresse_id : null,
       // Une offre illisible se lit Entreprise, comme `OffresEnCache` : une panne ne gèle rien.
     }, DROITS[estOffre(r.offre_calculee) ? r.offre_calculee : 'entreprise'].fonctions))]));
   }

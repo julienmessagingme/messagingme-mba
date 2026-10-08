@@ -91,6 +91,7 @@ function app(
     },
     sendReply: async (tenant, _pn, to, texte) => { traces.envois.push({ tenant, to, texte }); return 'wamid-1'; },
     takeControl: async () => {},
+    filTenuParLApplication: async () => false,
     contacts: {
       query: async () => [],
       findByPhone: async () => null,

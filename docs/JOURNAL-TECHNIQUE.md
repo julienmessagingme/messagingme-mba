@@ -5,6 +5,23 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-08 : « mon application répond » (lot 12, livraison B), écrit
+
+Le cinquième mode du répondeur, `application` (migration 0224 : `repondeur_adresse_id` en `on delete set null` vers
+`adresses_evenements`, CHECK à sens unique comme ceux de 0217). La remise d'un entrant que personne ne tient écrit une
+ligne `conversation.needs_reply` vers l'adresse désignée, enfilée en priorité 2 ; l'application répond par
+`POST /v1/messages/whatsapp`, hors du quota quotidien. Décisions de Julien du jour : aucun repli si l'application se
+tait.
+
+Trois choses trouvées en écrivant, qu'aucun compilateur ne signalait. Le `switch` de la remise (`src/inbox/fil.ts`)
+n'avait pas de `default` : le mode neuf y tombait dans le chemin de l'agent de Meta, sans erreur ; il porte désormais
+un cas explicite et un `default` en `never`. La réponse de l'application prenait le fil (`takeControl` de
+`repondreDansLaFenetre`) : la conversation serait passée à l'équipe au premier message, ce qui sortait cette
+conversation du mode dès la première réponse ; une réponse API sur un fil tenu par l'application ne le prend plus. Et l'ensemble
+FERMÉ des opérations du compteur d'usage (`usage-guard.compteur.ts`) cachait la nouvelle opération : comptée, mais
+invisible des chiffres. Enfin, le choix d'une adresse suit le gel par l'offre, dans le même ordre (`cree_le, id`) que
+l'envoi : désigner une adresse gelée aurait passé chaque message à l'équipe en silence.
+
 ## 2026-10-08 : les webhooks sortants (lot 12, livraison A), écrits
 
 Spec et plan du jour (`docs/superpowers/specs/2026-10-08-webhooks-sortants-design.md`), décisions de Julien en deux

@@ -105,7 +105,8 @@ export async function lireQuiRepond(tenantId: string): Promise<EtatRepondeur | n
 export type ChoixQuiRepond =
   | { mode: 'mba' } | { mode: 'equipe' }
   | { mode: 'agent'; agentId: string }
-  | { mode: 'scenario'; workflowId: string; delaiHeures: number };
+  | { mode: 'scenario'; workflowId: string; delaiHeures: number }
+  | { mode: 'application'; adresseId: string };
 
 /**
  * Règle qui répond au client. Le serveur vérifie tout (agent actif, scénario publié, agent de Meta configurable) et

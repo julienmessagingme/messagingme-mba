@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { decouperInstructions, veutHorsTransaction } from '../src/db/migration-directives';
 import { TYPES_EVENEMENT } from '../src/inbox/evenements';
-import { DELAI_SCENARIO_DEFAUT_S, DELAI_SCENARIO_MAX_S, DELAI_SCENARIO_MIN_S, MODES_REPONDEUR } from '../src/repondeur/mode';
+import { DELAI_SCENARIO_DEFAUT_S, DELAI_SCENARIO_MAX_S, DELAI_SCENARIO_MIN_S } from '../src/repondeur/mode';
 
 /**
  * 0217 : qui répond au client (RC6). Elle AJOUTE (le mode, le scénario et son délai, la date du dernier départ du
@@ -32,11 +32,11 @@ describe('migration 0217', () => {
     expect(instructions.filter((i) => i.includes('une_voix') && !i.includes('drop constraint'))).toEqual([]);
   });
 
-  it('🔴 le mode : défaut `equipe`, et son CHECK est EXACTEMENT la liste du code (`MODES_REPONDEUR`)', () => {
+  it('🔴 le mode : défaut `equipe`, et son CHECK à ses QUATRE valeurs d’alors (0224 le repose à cinq)', () => {
     expect(instructions).toContain("alter table tenant_settings add column if not exists repondeur_mode text not null default 'equipe'");
     const chk = instructions.find((i) => i.startsWith('alter table tenant_settings add constraint tenant_settings_repondeur_mode_chk'));
     expect(chk).toBeDefined();
-    expect([...(chk ?? '').matchAll(/'([a-z_]+)'/g)].map((m) => m[1])).toEqual([...MODES_REPONDEUR]);
+    expect([...(chk ?? '').matchAll(/'([a-z_]+)'/g)].map((m) => m[1])).toEqual(['mba', 'agent', 'scenario', 'equipe']);
   });
 
   it('🔴 le scénario en `on delete set null`, le délai au défaut et aux bornes du code', () => {

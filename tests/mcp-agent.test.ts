@@ -188,11 +188,11 @@ function monter(o: Options = {}) {
   /** Les réglages de l'espace qui portent le répondeur : un seul objet, que les deux portes lisent et écrivent. */
   const reglagesRepondeur: {
     mbaEnabled: boolean; repondeurMode: ModeRepondeur; repondeurAgentId: string | null; repondeurWorkflowId: string | null;
-    repondeurDelaiScenarioS: number;
+    repondeurAdresseId: string | null; repondeurDelaiScenarioS: number;
   } = {
     mbaEnabled: o.mbaAllume === true,
     repondeurMode: o.repondeurAgentId ? 'agent' : (o.mbaAllume === true ? 'mba' : 'equipe'),
-    repondeurAgentId: o.repondeurAgentId ?? null, repondeurWorkflowId: null, repondeurDelaiScenarioS: 86400,
+    repondeurAgentId: o.repondeurAgentId ?? null, repondeurWorkflowId: null, repondeurAdresseId: null, repondeurDelaiScenarioS: 86400,
   };
 
   const gestion: DepsAgentMcp['gestion'] = {
@@ -343,6 +343,7 @@ function monter(o: Options = {}) {
         ecrireDrapeau: async (_t, enabled) => { reglagesRepondeur.mbaEnabled = enabled; },
       },
       liste: { toutRetirer: async (t) => { cap.vidages.push(t); return { retires: 2, refuses: 0 }; } },
+      adresses: { lire: async () => null, lister: async () => [] },
       historique: { ecrire: async (_t, l) => { cap.historique.push(l); } },
       fils: { reprendreLesFilsDeMeta: async () => 0 },
       offres: offresToutOuvert,
@@ -364,6 +365,7 @@ function monter(o: Options = {}) {
     repo: { getTenantPhoneNumberId: async () => null },
     sendReply: async () => 'wamid',
     takeControl: async () => {},
+    filTenuParLApplication: async () => false,
     contacts: {
       query: async () => [],
       findByPhone: async () => null,
@@ -747,7 +749,7 @@ describe('🔴 qui répond au client (lot 5, RC6) : set_default_responder et lis
     const r = await appeler(server, JETON.brut, 'set_default_responder', { agent_id: AG });
     expect(r.isError, r.texte).toBe(false);
     expect(r.json()).toEqual({
-      mode: 'agent', agent_id: AG, workflow_id: null, delai_heures: 24, agent_de_meta_allume: false,
+      mode: 'agent', agent_id: AG, workflow_id: null, adresse_id: null, delai_heures: 24, agent_de_meta_allume: false,
       liste_meta: { retires: 2, refuses: 0 }, repondeur_agent_id: AG,
     });
     // Aucun appel chez Meta : allumé, l'agent de Meta reste disponible, en veille.
@@ -800,6 +802,9 @@ describe('🔴 qui répond au client (lot 5, RC6) : set_default_responder et lis
     expect((await appeler(server, JETON.brut, 'set_default_responder', { mode: 'equipe' })).json()).toMatchObject({ mode: 'equipe', liste_meta: { retires: 2, refuses: 0 } });
     expect((await appeler(server, JETON.brut, 'set_default_responder', { mode: 'robot' })).isError).toBe(true);
     expect((await appeler(server, JETON.brut, 'set_default_responder', { mode: 'scenario' })).isError).toBe(true);
+    // « application » (lot 12 B) : l'adresse est requise, et une adresse inconnue de l'espace est refusée sans rien écrire.
+    expect((await appeler(server, JETON.brut, 'set_default_responder', { mode: 'application' })).isError).toBe(true);
+    expect((await appeler(server, JETON.brut, 'set_default_responder', { mode: 'application', adresse_id: AG })).texte).toBe('adresse de webhook sortant introuvable');
     expect((await appeler(server, JETON_T2.brut, 'set_default_responder', { mode: 'scenario', workflow_id: WF_MCP })).texte).toBe('scénario introuvable');
     expect(cap.repondeurs).toEqual([`${WF_MCP}/21600`, 'mba', 'equipe']);
     await server.close();

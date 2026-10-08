@@ -386,7 +386,9 @@ export const OUTILS_AGENT: OutilMcp[] = [
       + `même contact (${DELAI_SCENARIO_HEURES_DEFAUT} par défaut, de ${DELAI_SCENARIO_HEURES_MIN} à ${DELAI_SCENARIO_HEURES_MAX}) ; entre-temps, `
       + 'l’équipe. mode « mba » : l’agent de Meta, ALLUMÉ par ce geste s’il ne l’est pas (refusé s’il n’est pas '
       + 'configuré : un numéro relié et l’agent ouvert par Meta). mode « equipe » : personne ne répond automatiquement, '
-      + 'la conversation entre dans « À traiter ». Hors du mode « mba », l’agent de Meta allumé reste disponible mais '
+      + 'la conversation entre dans « À traiter ». mode « application » (avec adresse_id) : votre application reçoit chaque '
+      + 'message par l’événement conversation.needs_reply, envoyé à cette adresse (create_webhook_endpoint), et répond par '
+      + 'POST /v1/messages/whatsapp sans prendre le fil ; sans réponse, rien ne se passe (aucun repli). Hors du mode « mba », l’agent de Meta allumé reste disponible mais '
       + 'ne reçoit rien tout seul (seul le bloc « Envoyer au MBA » d’un scénario lui confie un contact). 🔴 Quitter le '
       + 'mode « mba » retire de la liste de l’agent de Meta tous les contacts qu’il tient (liste_meta le compte) : il '
       + 'cesse de leur répondre. Le dire à la personne et ne le faire que sur sa demande explicite. Ancienne forme '
@@ -404,7 +406,9 @@ export const OUTILS_AGENT: OutilMcp[] = [
       properties: {
         mode: {
           type: 'string', enum: [...MODES_REPONDEUR],
-          description: 'Qui répond : « mba », « agent », « scenario » ou « equipe ». Absent : l’ancienne forme, agent_id seul.',
+          description: 'Qui répond : « mba », « agent », « scenario », « equipe » ou « application » (votre application, par '
+            + 'l’événement conversation.needs_reply envoyé à une adresse de create_webhook_endpoint ; elle répond par l’API). '
+            + 'Absent : l’ancienne forme, agent_id seul.',
         },
         agent_id: {
           type: ['string', 'null'], format: 'uuid', minLength: 1, maxLength: 100,
@@ -414,6 +418,10 @@ export const OUTILS_AGENT: OutilMcp[] = [
         workflow_id: {
           type: 'string', format: 'uuid', minLength: 1, maxLength: 100,
           description: 'Avec le mode « scenario » : l’identifiant d’un scénario publié de l’espace (list_scenarios).',
+        },
+        adresse_id: {
+          type: 'string', format: 'uuid', minLength: 1, maxLength: 100,
+          description: 'Avec le mode « application » : l’identifiant (id) d’une adresse active rendue par create_webhook_endpoint.',
         },
         delai_heures: {
           type: 'integer', minimum: DELAI_SCENARIO_HEURES_MIN, maximum: DELAI_SCENARIO_HEURES_MAX,
@@ -430,11 +438,11 @@ export const OUTILS_AGENT: OutilMcp[] = [
         // L'ancienne forme (lot 5) : `agent_id` seul, requis.
         const brut = args.agent_id;
         if (brut !== null && (typeof brut !== 'string' || brut.trim() === '' || brut.length > 100)) {
-          throw new RefusOutil('paramètre « mode » requis (« mba », « agent », « scenario » ou « equipe »), ou l’ancienne forme : « agent_id » (un agent actif, ou null)');
+          throw new RefusOutil('paramètre « mode » requis (« mba », « agent », « scenario », « equipe » ou « application »), ou l’ancienne forme : « agent_id » (un agent actif, ou null)');
         }
         choix = await choixDeLAncienneFormeSousLOffre(reglage, tenantId, brut === null ? null : brut.trim());
       } else if (!estModeRepondeur(args.mode)) {
-        throw new RefusOutil('paramètre « mode » invalide : « mba », « agent », « scenario » ou « equipe »');
+        throw new RefusOutil('paramètre « mode » invalide : « mba », « agent », « scenario », « equipe » ou « application »');
       } else if (args.mode === 'agent') {
         choix = { mode: 'agent', agentId: texteObligatoire(args, 'agent_id', 100) };
       } else if (args.mode === 'scenario') {
@@ -446,12 +454,14 @@ export const OUTILS_AGENT: OutilMcp[] = [
           // compare au schéma, qui les tient de `src/repondeur/mode.ts` ; une constante qui bouge le fait échouer.
           : entierBorne(args, 'delai_heures', 24, 1, 720);
         choix = { mode: 'scenario', workflowId, ...(heures !== undefined ? { delaiS: heures * 3600 } : {}) };
+      } else if (args.mode === 'application') {
+        choix = { mode: 'application', adresseId: texteObligatoire(args, 'adresse_id', 100) };
       } else {
         choix = { mode: args.mode };
       }
       const r = valeurOuRefus(await choisirRepondeur(reglage, tenantId, choix, auteur));
       return {
-        mode: r.mode, agent_id: r.agentId, workflow_id: r.workflowId, delai_heures: r.delaiS / 3600,
+        mode: r.mode, agent_id: r.agentId, workflow_id: r.workflowId, adresse_id: r.adresseId, delai_heures: r.delaiS / 3600,
         agent_de_meta_allume: r.agentDeMetaAllume, liste_meta: r.liste, repondeur_agent_id: r.agentId,
       };
     },

@@ -305,6 +305,15 @@ export class PgEnvoisEvenementsStore {
     );
   }
 
+  /** La conversation d'un contact, pour que l'application sache à qui répondre (`conversation.needs_reply`). */
+  async conversationDuContact(tenantId: string, waId: string): Promise<string | null> {
+    const res = await this.pool.query<{ id: string }>(
+      `select id from conversations where tenant_id = $1 and wa_id = $2 limit 1`,
+      [tenantId, waId],
+    );
+    return res.rows[0]?.id ?? null;
+  }
+
   /** Une suppression d'espace en cours (`tenants.status = 'locked'`), ou un espace disparu : rien ne part. */
   async espaceVerrouille(tenantId: string): Promise<boolean> {
     const res = await this.pool.query<{ status: string }>(`select status from tenants where id = $1`, [tenantId]);

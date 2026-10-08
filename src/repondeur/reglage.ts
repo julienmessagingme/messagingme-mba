@@ -30,6 +30,8 @@ import { refusFonction } from '../offres/refus';
  *    PLUS l'agent de Meta : allumé, celui-ci reste disponible, en veille (la contrainte d'une seule voix est levée).
  *  - `scenario` : un scénario PUBLIÉ de l'espace (le magasin cache le scénario système), et un délai de 1 h à 30 jours.
  *  - `equipe` : rien à vérifier.
+ *  - `application` (lot 12, livraison B) : une adresse ACTIVE de webhooks sortants de l'espace, désignée pour recevoir
+ *    `conversation.needs_reply`.
  * Puis le réglage s'écrit, EN PREMIER parmi les effets : une fois écrit, la remise ne confie plus rien à l'agent de
  * Meta. Puis, si l'espace QUITTE le mode `mba`, les contacts qu'il tenait sont retirés de sa liste (`toutRetirer`) et
  * les fils que notre colonne lui donnait reviennent aux robots (`reprendreLesFilsDeMeta`) : sans eux, il continuerait
@@ -42,7 +44,8 @@ export type ChoixRepondeur =
   | { mode: 'mba' }
   | { mode: 'agent'; agentId: string }
   | { mode: 'scenario'; workflowId: string; delaiS?: number }
-  | { mode: 'equipe' };
+  | { mode: 'equipe' }
+  | { mode: 'application'; adresseId: string };
 
 export interface DepsReglageRepondeur {
   /** La fiche, scopée espace : `null` = inconnu (supprimé, ou d'un autre espace). */
@@ -71,6 +74,9 @@ export interface DepsReglageRepondeur {
   activation: ActivationDeps;
   /** La liste de l'agent de Meta (`src/mba/liste.ts`), le seul module qui la touche. */
   liste: Pick<ListeDeLAgent, 'toutRetirer'>;
+  /** Les adresses de webhooks sortants de l'espace (lot 12), scopées espace : la cible du mode `application`. */
+  adresses: { lire(tenantId: string, id: string): Promise<{ id: string; url: string; active: boolean } | null>;
+    lister(tenantId: string): Promise<Array<{ id: string; url: string; active: boolean }>> };
   /** L'historique des réglages : le changement de répondeur y laisse sa ligne, avec son auteur et sa porte. */
   historique: Pick<HistoriqueStore, 'ecrire'>;
   /** Le contrôle du fil (`src/inbox/fil.ts`), le seul qui écrit le détenteur d'une conversation. */
@@ -87,6 +93,7 @@ export interface ReglageRepondeur {
   mode: ModeRepondeur;
   agentId: string | null;
   workflowId: string | null;
+  adresseId: string | null;
   delaiS: number;
   /** Ce geste vient d'allumer l'agent de Meta (mode `mba` choisi alors qu'il était éteint). */
   agentDeMetaAllume: boolean;
@@ -99,6 +106,19 @@ export interface ReglageRepondeur {
 
 const AGENT_INTROUVABLE = 'agent introuvable';
 const SCENARIO_INTROUVABLE = 'scénario introuvable';
+const ADRESSE_INTROUVABLE = 'adresse de webhook sortant introuvable';
+const ADRESSE_EN_PAUSE = 'seule une adresse active peut recevoir les messages : réactivez-la d’abord (Developers > Webhooks sortants).';
+const ADRESSE_HORS_OFFRE = 'cette adresse dépasse le nombre d’adresses de votre offre : elle ne reçoit plus rien. Désignez l’une des premières, ou passez à l’offre supérieure.';
+
+/**
+ * Les adresses qui REÇOIVENT : actives, et dans la limite de l'offre, les plus anciennes d'abord (le gel par rang de
+ * l'envoi, `RANG_SQL`). `lister` rend l'ordre `cree_le, id`, le même. Une adresse gelée ne se désigne pas : la demande
+ * la jugerait indisponible et passerait chaque message à l'équipe.
+ */
+function adressesQuiRecoivent<A extends { active: boolean }>(adresses: readonly A[], limite: number | null): A[] {
+  const actives = adresses.filter((a) => a.active);
+  return limite === null ? actives : actives.slice(0, limite);
+}
 const PAS_DE_MODELE = 'les agents IA ne peuvent pas répondre sur cette instance (aucun modèle configuré) : choisissez un autre répondeur.';
 const PAS_ACTIF = 'seul un agent actif peut répondre au client : activez-le d’abord.';
 const PAS_PUBLIE = 'seul un scénario publié peut répondre au client : publiez-le d’abord.';
@@ -117,6 +137,7 @@ export interface EtatRepondeur {
   modeEffectif: ModeRepondeur;
   agentId: string | null;
   workflowId: string | null;
+  adresseId: string | null;
   delaiS: number;
   /** L'agent de Meta est allumé (disponible), répondeur ou en veille. */
   mbaAllume: boolean;
@@ -126,14 +147,16 @@ export interface EtatRepondeur {
   modeleDisponible: boolean;
   agentsActifs: Array<{ id: string; label: string }>;
   scenariosPublies: Array<{ id: string; name: string }>;
+  /** Les adresses actives de webhooks sortants : les cibles possibles du mode `application`. */
+  adressesActives: Array<{ id: string; url: string }>;
 }
 
 export async function lireRepondeur(
-  deps: Pick<DepsReglageRepondeur, 'reglages' | 'activation' | 'scenarios' | 'gatewayDisponible' | 'offres'>,
+  deps: Pick<DepsReglageRepondeur, 'reglages' | 'activation' | 'scenarios' | 'gatewayDisponible' | 'offres' | 'adresses'>,
   tenantId: string,
   agentsActifs: (tenantId: string) => Promise<Array<{ id: string; label: string }>>,
 ): Promise<EtatRepondeur> {
-  const [r, configurable, agents, scenarios, offre] = await Promise.all([
+  const [r, configurable, agents, scenarios, offre, adresses] = await Promise.all([
     deps.reglages.get(tenantId),
     // Une panne de lecture chez Meta grise la position : c'est un affichage, l'écran ne doit pas tomber pour lui.
     // Le choix lui-même, s'il est tenté, redemande et refuse lisiblement.
@@ -141,6 +164,7 @@ export async function lireRepondeur(
     agentsActifs(tenantId),
     deps.scenarios.listResume(tenantId),
     deps.offres.offreDe(tenantId),
+    deps.adresses.lister(tenantId),
   ]);
   const { fonctions } = offre.droits;
   return {
@@ -149,6 +173,7 @@ export async function lireRepondeur(
     modeEffectif: modeEffectif(sousLOffre(r, fonctions)),
     agentId: r.repondeurAgentId,
     workflowId: r.repondeurWorkflowId,
+    adresseId: r.repondeurAdresseId,
     delaiS: r.repondeurDelaiScenarioS,
     mbaAllume: r.mbaEnabled,
     // Allumé, il l'est forcément : la lecture de Meta ne grise pas une position déjà en service.
@@ -157,6 +182,7 @@ export async function lireRepondeur(
     modeleDisponible: deps.gatewayDisponible,
     agentsActifs: agents.map((a) => ({ id: a.id, label: a.label })),
     scenariosPublies: fonctions.has('scenarios') ? scenarios.filter((s) => s.nodeCount > 0).map((s) => ({ id: s.id, name: s.name })) : [],
+    adressesActives: adressesQuiRecoivent(adresses, offre.droits.limites.adressesWebhook).map((a) => ({ id: a.id, url: a.url })),
   };
 }
 
@@ -237,6 +263,17 @@ export async function choisirRepondeur(
       ecrit = { mode: 'mba' };
       libelle = 'l’agent de Meta';
       break;
+    case 'application': {
+      if (!estUuid(choix.adresseId)) return refus(404, ADRESSE_INTROUVABLE);
+      const a = await deps.adresses.lire(tenantId, choix.adresseId);
+      if (!a) return refus(404, ADRESSE_INTROUVABLE);
+      if (!a.active) return refus(422, ADRESSE_EN_PAUSE);
+      const [toutes, o] = await Promise.all([deps.adresses.lister(tenantId), deps.offres.offreDe(tenantId)]);
+      if (!adressesQuiRecoivent(toutes, o.droits.limites.adressesWebhook).some((x) => x.id === a.id)) return refus(422, ADRESSE_HORS_OFFRE);
+      ecrit = { mode: 'application', adresseId: a.id };
+      libelle = `votre application (${a.url})`;
+      break;
+    }
   }
 
   // Déjà le réglage en vigueur (agent de Meta allumé s'il est choisi) : rien à faire, rien à journaliser.
@@ -267,7 +304,9 @@ export async function choisirRepondeur(
     await deps.reglages.setRepondeur(tenantId, ecrit);
   } catch (err) {
     // L'agent ou le scénario a été supprimé entre la lecture et l'écriture (clé étrangère).
-    if (codeSql(err) === '23503') return refus(404, ecrit.mode === 'scenario' ? SCENARIO_INTROUVABLE : AGENT_INTROUVABLE);
+    if (codeSql(err) === '23503') {
+      return refus(404, ecrit.mode === 'scenario' ? SCENARIO_INTROUVABLE : ecrit.mode === 'application' ? ADRESSE_INTROUVABLE : AGENT_INTROUVABLE);
+    }
     throw err;
   }
 
@@ -291,6 +330,7 @@ function memeReglage(avant: ReglageDuRepondeur & { repondeurDelaiScenarioS: numb
     case 'equipe': return true;
     case 'agent': return avant.repondeurAgentId === ecrit.agentId;
     case 'scenario': return avant.repondeurWorkflowId === ecrit.workflowId && avant.repondeurDelaiScenarioS === ecrit.delaiS;
+    case 'application': return avant.repondeurAdresseId === ecrit.adresseId;
   }
 }
 
@@ -299,6 +339,7 @@ function vue(ecrit: ChoixRepondeurEcrit, delaiS: number, agentDeMetaAllume: bool
     mode: ecrit.mode,
     agentId: ecrit.mode === 'agent' ? ecrit.agentId : null,
     workflowId: ecrit.mode === 'scenario' ? ecrit.workflowId : null,
+    adresseId: ecrit.mode === 'application' ? ecrit.adresseId : null,
     delaiS,
     agentDeMetaAllume,
     liste,
@@ -341,7 +382,7 @@ async function journaliserLigne(
       element: 'repondeur', operation: 'modification', cible: null, libelle,
       avant: {
         mode: avant.repondeurMode, modeEffectif: modeEffectif(avant), agentId: avant.repondeurAgentId,
-        workflowId: avant.repondeurWorkflowId, delaiS: avant.repondeurDelaiScenarioS, mbaEnabled: avant.mbaEnabled,
+        workflowId: avant.repondeurWorkflowId, adresseId: avant.repondeurAdresseId, delaiS: avant.repondeurDelaiScenarioS, mbaEnabled: avant.mbaEnabled,
       },
       apres: { ...ecrit, effets },
       origine: auteur.origine, acteurEmail: null, acteurId: auteur.userId,

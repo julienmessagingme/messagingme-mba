@@ -54,6 +54,11 @@ export interface DepsRepondre {
    * la réponse d'un opérateur ne paie aucune requête.
    */
   estDesabonne(tenantId: string, waId: string): Promise<boolean>;
+  /**
+   * « Mon application répond » (lot 12, B) : le fil est-il tenu par l'application du client ? Lue seulement pour l'origine
+   * `api` : sa réponse ne prend alors pas le fil, et le message suivant du client lui revient (`ControleDuFil`).
+   */
+  filTenuParLApplication(tenantId: string, waId: string): Promise<boolean>;
 }
 
 /**
@@ -108,7 +113,10 @@ export async function repondreDansLaFenetre(
   // soit le tiers qui écrit. Ce que ça n'arrête pas : une campagne (déclenchée par un opérateur) et un clic sur un
   // bouton de chaîne (geste explicite de l'abonné), dont le type de lancement reprend le fil
   // (`POLITIQUE_DE_LANCEMENT`, `src/workflow/lancements.ts`). Une automation ordinaire par mot-clé reste arrêtée.
-  await deps.takeControl(tenantId, ctx.waId, auteurDeLEnvoi(origine, auteur)).catch(() => {});
+  // Sauf la réponse de l'application à un fil qu'elle tient (mode « mon application répond ») : prendre le fil
+  // l'écarterait de la conversation, et le message suivant du client irait à « À traiter » au lieu de lui revenir.
+  const laisserALApplication = origine === 'api' && await deps.filTenuParLApplication(tenantId, ctx.waId).catch(() => false);
+  if (!laisserALApplication) await deps.takeControl(tenantId, ctx.waId, auteurDeLEnvoi(origine, auteur)).catch(() => {});
   await deps.inbox.recordOutbound(conversationId, texte, messageId, origine, 'text', null, null, auteur, 'whatsapp', redactionOrigine);
   return { messageId };
 }

@@ -5,7 +5,7 @@ import { repondre } from './aide/confirmation';
 /**
  * « QUI RÉPOND AU CLIENT » SUR L'ACCUEIL (RC6, plan `docs/superpowers/plans/2026-10-06-rc6-qui-repond.md`, livraison B).
  *
- * Ce qu'on vérifie vraiment : les quatre positions ; une position qui ne peut pas répondre est GRISÉE avec le lien qui
+ * Ce qu'on vérifie vraiment : les cinq positions (« Votre application » depuis le lot 12 B) ; une position qui ne peut pas répondre est GRISÉE avec le lien qui
  * la configure ; rien ne part à la sélection, il faut « Enregistrer » ; le corps envoyé (l'agent, le scénario et son
  * délai en heures) ; quitter « MBA » se confirme et un refus n'envoie rien ; un mode dont la cible a disparu est DIT ;
  * et une API d'avant RC6 (la route rend `{}`) ne fait pas apparaître de carte qui mentirait.
@@ -15,14 +15,16 @@ const ETAT = {
   mbaAllume: false, mbaConfigurable: true, modeleDisponible: true,
   agentsActifs: [{ id: 'ag-lea', label: 'Léa' }, { id: 'ag-marc', label: 'Marc' }],
   scenariosPublies: [{ id: 'wf-1', name: 'Bienvenue' }, { id: 'wf-2', name: 'Devis' }],
+  adresseId: null,
+  adressesActives: [{ id: 'ad-1', url: 'https://app.exemple.fr/un' }, { id: 'ad-2', url: 'https://app.exemple.fr/deux' }],
 };
 
 test.describe('Accueil : qui répond au client', () => {
-  test('🔴 les quatre positions ; la sélection seule n’envoie rien ; « Enregistrer » envoie l’agent choisi', async ({ page }) => {
+  test('🔴 les cinq positions ; la sélection seule n’envoie rien ; « Enregistrer » envoie l’agent choisi', async ({ page }) => {
     const reglages: unknown[] = [];
     await mockAccueil(page, { quiRepond: ETAT, reglagesRepondeur: reglages });
     const carte = page.getByTestId('qui-repond');
-    for (const nom of ['L’agent de Meta (MBA)', 'Un agent IA', 'Un scénario', 'L’équipe']) {
+    for (const nom of ['L’agent de Meta (MBA)', 'Un agent IA', 'Un scénario', 'L’équipe', 'Votre application']) {
       await expect(carte.getByRole('radio', { name: nom })).toBeEnabled();
     }
     await expect(carte.getByRole('radio', { name: 'L’équipe' })).toBeChecked();
@@ -54,8 +56,21 @@ test.describe('Accueil : qui répond au client', () => {
     await expect.poll(() => reglages).toEqual([{ mode: 'scenario', workflowId: 'wf-2', delaiHeures: 48 }]);
   });
 
+  test('🔴 « Votre application » : on choisit l’adresse, « Enregistrer » envoie le mode et son adresse', async ({ page }) => {
+    const reglages: unknown[] = [];
+    await mockAccueil(page, { quiRepond: ETAT, reglagesRepondeur: reglages });
+    const carte = page.getByTestId('qui-repond');
+    await carte.getByRole('radio', { name: 'Votre application' }).check();
+    await page.getByTestId('qui-repond-adresse').selectOption('ad-2');
+    expect(reglages).toEqual([]);
+    await page.getByTestId('qui-repond-enregistrer').click();
+    await expect.poll(() => reglages).toEqual([{ mode: 'application', adresseId: 'ad-2' }]);
+    await expect(carte.getByRole('radio', { name: 'Votre application' })).toBeChecked();
+    await expect(page.getByTestId('qui-repond-adresse')).toHaveValue('ad-2');
+  });
+
   test('🔴 une position qui ne peut pas répondre est GRISÉE, avec le lien qui la configure', async ({ page }) => {
-    await mockAccueil(page, { quiRepond: { ...ETAT, mbaConfigurable: false, agentsActifs: [], scenariosPublies: [] } });
+    await mockAccueil(page, { quiRepond: { ...ETAT, mbaConfigurable: false, agentsActifs: [], scenariosPublies: [], adressesActives: [] } });
     const carte = page.getByTestId('qui-repond');
     await expect(carte.getByRole('radio', { name: 'L’agent de Meta (MBA)' })).toBeDisabled();
     await expect(carte.getByRole('radio', { name: 'Un agent IA' })).toBeDisabled();
@@ -64,6 +79,8 @@ test.describe('Accueil : qui répond au client', () => {
     await expect(page.getByTestId('qui-repond-mba-grisee').getByRole('link')).toHaveAttribute('href', '/mba/parametres');
     await expect(page.getByTestId('qui-repond-agent-grisee').getByRole('link')).toHaveAttribute('href', '/agents');
     await expect(page.getByTestId('qui-repond-scenario-grisee').getByRole('link')).toHaveAttribute('href', '/workflows');
+    await expect(carte.getByRole('radio', { name: 'Votre application' })).toBeDisabled();
+    await expect(page.getByTestId('qui-repond-application-grisee').getByRole('link')).toHaveAttribute('href', '/developers/evenements');
   });
 
   test('🔴 quitter « MBA » se confirme : un refus n’envoie rien, l’accord envoie l’équipe', async ({ page }) => {

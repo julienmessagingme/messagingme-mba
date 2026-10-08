@@ -412,11 +412,12 @@ describe('confier et reprendre, dans l’ordre (`src/inbox/fil.ts` sur `src/mba/
     const liste = creerListeDeLAgent({ store: table.store, clientMba: async () => client, attendre: async () => {} });
     const memoire = depotEnMemoire({ [WA]: { owner: 'app_human' } });
     const fil = creerControleDuFil({
+    application: { demander: async () => 'demande' },
       depot: {
         ...memoire.depot,
         setControlOwner: async (t, w, owner, opts) => { journal.push(`colonne:${owner}`); return memoire.depot.setControlOwner(t, w, owner, opts); },
       },
-      reglages: { get: async () => ({ mbaEnabled: true, repondeurMode: 'mba', repondeurAgentId: null, repondeurWorkflowId: null, repondeurDelaiScenarioS: 86400, controlHandbackSeconds: null }) },
+      reglages: { get: async () => ({ mbaEnabled: true, repondeurMode: 'mba', repondeurAgentId: null, repondeurWorkflowId: null, repondeurAdresseId: null, repondeurDelaiScenarioS: 86400, controlHandbackSeconds: null }) },
       repondeur: aucunRepondeur,
       delaiRepriseParDefautMs: DELAI_REPRISE_DEFAUT_MS,
       parcours: { findWaitingByWaId: async () => null },

@@ -9,6 +9,7 @@ import { PgInboxStore } from '../../src/inbox/store.pg';
 import { PgListeStore } from '../../src/mba/liste.pg';
 import { PgAlertesCreditStore } from '../../src/repondeur/alerte-credit';
 import { PgContactStore } from '../../src/crm/contact-store.pg';
+import { PgAdressesEvenementsStore } from '../../src/evenements/store.pg';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -111,6 +112,26 @@ describe.skipIf(!url)('le répondeur par défaut (Postgres)', () => {
       await pool.query('delete from workflows where id = $1 and tenant_id = $2', [wf, tenantId]);
       expect(await reglages().get(tenantId)).toMatchObject({ repondeurMode: 'scenario', repondeurWorkflowId: null });
       expect((await reglages().modesParTenant([tenantId])).get(tenantId)).toBe('equipe');
+    });
+
+    it('🔴 le mode « application » (0224) : l’adresse s’écrit et se lit ; CHECK à sens unique ; supprimer l’adresse NE lève PAS, le mode se lit « Équipe »', async () => {
+      const adresses = new PgAdressesEvenementsStore(pool);
+      const a = await adresses.creer(tenantId, { url: 'https://app.client.fr/repond', description: '', types: ['message.received'], secretChiffre: 'c' });
+      await reglages().setRepondeur(tenantId, { mode: 'equipe' });
+      await expect(pool.query(`update tenant_settings set repondeur_adresse_id = $2 where tenant_id = $1`, [tenantId, a.id]))
+        .rejects.toMatchObject({ code: '23514', constraint: 'tenant_settings_repondeur_adresse_chk' });
+      await reglages().setRepondeur(tenantId, { mode: 'application', adresseId: a.id });
+      expect(await reglages().get(tenantId)).toMatchObject({ repondeurMode: 'application', repondeurAdresseId: a.id, repondeurAgentId: null, repondeurWorkflowId: null });
+      expect((await reglages().modesParTenant([tenantId])).get(tenantId)).toBe('application');
+      // Allumer l'agent de Meta en mode application le laisse en veille : le mode ne bouge pas.
+      await reglages().setMbaEnabled(tenantId, true);
+      expect((await reglages().get(tenantId)).repondeurMode).toBe('application');
+      await reglages().setMbaEnabled(tenantId, false);
+      // Une clé étrangère en `set null` : la suppression passe, la cible tombe, le mode reste et se lit « Équipe ».
+      expect(await adresses.supprimer(tenantId, a.id)).toBe(true);
+      expect(await reglages().get(tenantId)).toMatchObject({ repondeurMode: 'application', repondeurAdresseId: null });
+      expect((await reglages().modesParTenant([tenantId])).get(tenantId)).toBe('equipe');
+      await reglages().setRepondeur(tenantId, { mode: 'equipe' });
     });
 
     it('oublierRepondeurSi : seulement l’agent désigné ; le mode reste `agent`, sans agent', async () => {

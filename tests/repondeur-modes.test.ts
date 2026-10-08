@@ -33,8 +33,8 @@ const remettre = (b: ReturnType<typeof bancDuFil>, o: { redelivre?: boolean; rea
 
 describe('le mode qui s’applique, et la question « le MBA est-il le répondeur ? »', () => {
   it('🔴 allumé n’est pas répondeur : seul le mode `mba`, avec l’agent de Meta allumé', () => {
-    const r = (repondeurMode: ModeRepondeur, mbaEnabled: boolean, cibles: { a?: string; w?: string } = {}) =>
-      ({ mbaEnabled, repondeurMode, repondeurAgentId: cibles.a ?? null, repondeurWorkflowId: cibles.w ?? null });
+    const r = (repondeurMode: ModeRepondeur, mbaEnabled: boolean, cibles: { a?: string; w?: string; ad?: string } = {}) =>
+      ({ mbaEnabled, repondeurMode, repondeurAgentId: cibles.a ?? null, repondeurWorkflowId: cibles.w ?? null, repondeurAdresseId: cibles.ad ?? null });
     expect(leMbaRepond(r('mba', true))).toBe(true);
     for (const [mode, cibles] of [['agent', { a: AG }], ['scenario', { w: WF }], ['equipe', {}]] as const) {
       expect(leMbaRepond(r(mode, true, cibles)), mode).toBe(false);

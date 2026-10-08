@@ -66,6 +66,7 @@ function monter(o: { publicApiUrl?: string; apiParMinute?: number } = {}) {
     repo: { getTenantPhoneNumberId: async () => 'pn-1' },
     sendReply: async () => 'wamid-1',
     takeControl: async () => {},
+    filTenuParLApplication: async () => false,
     contacts: {
       query: async () => [],
       findByPhone: async () => null,

@@ -7,9 +7,10 @@ import {
 const fr = (f: string): string => f;
 
 const ETAT: EtatRepondeur = {
-  mode: 'agent', modeEffectif: 'agent', agentId: 'ag-lea', workflowId: null, delaiS: 86400,
+  mode: 'agent', modeEffectif: 'agent', agentId: 'ag-lea', workflowId: null, adresseId: null, delaiS: 86400,
   mbaAllume: true, mbaConfigurable: true, modeleDisponible: true,
   agentsActifs: [{ id: 'ag-lea', label: 'Léa' }], scenariosPublies: [{ id: 'wf-1', name: 'Bienvenue' }],
+  adressesActives: [{ id: 'ad-1', url: 'https://app.exemple.fr/hooks' }],
 };
 
 describe('l’état de « Qui répond au client », vérifié et jamais casté', () => {
@@ -69,6 +70,20 @@ describe('ce que la carte dit', () => {
     expect(cibleDisparue({ mode: 'scenario', modeEffectif: 'equipe' }, fr)).toMatch(/scénario choisi a été supprimé/);
     expect(cibleDisparue({ mode: 'mba', modeEffectif: 'equipe' }, fr)).toMatch(/agent de Meta est éteint/);
     expect(cibleDisparue({ mode: 'agent', modeEffectif: 'agent' }, fr)).toBeNull();
+    expect(cibleDisparue({ mode: 'application', modeEffectif: 'equipe' }, fr)).toMatch(/adresse de webhook choisie a été supprimée/);
+  });
+
+  it('🔴 « Mon application » sur une adresse en pause : le serveur passe tout à l’équipe, et la carte le dit', () => {
+    const app = { ...ETAT, mode: 'application' as const, modeEffectif: 'application' as const, adresseId: 'ad-1' };
+    expect(cibleDisparue(app, fr)).toBeNull();
+    expect(cibleDisparue({ ...app, adressesActives: [] }, fr)).toMatch(/adresse de webhook choisie ne reçoit plus/);
+  });
+
+  it('🔴 l’ancienne API (sans `adressesActives`) : aucune adresse, la position « Mon application » est grisée', () => {
+    const { adressesActives: _sans, ...ancien } = ETAT;
+    const lu = lireEtatRepondeur(ancien);
+    expect(lu?.adressesActives).toEqual([]);
+    expect(positionGrisee('application', lu!, fr)).toMatchObject({ lien: '/developers/evenements' });
   });
 
   it('🔴 une position qui ne peut pas répondre est GRISÉE, avec le lien qui la configure', () => {
@@ -76,7 +91,8 @@ describe('ce que la carte dit', () => {
     expect(positionGrisee('agent', { ...ETAT, agentsActifs: [] }, fr)).toMatchObject({ lien: '/agents', raison: 'Aucun agent IA n’est actif.' });
     expect(positionGrisee('agent', { ...ETAT, modeleDisponible: false }, fr)).toMatchObject({ lien: '/agents' });
     expect(positionGrisee('scenario', { ...ETAT, scenariosPublies: [] }, fr)).toMatchObject({ lien: '/workflows' });
-    for (const m of ['mba', 'agent', 'scenario', 'equipe'] as const) expect(positionGrisee(m, ETAT, fr), m).toBeNull();
+    expect(positionGrisee('application', { ...ETAT, adressesActives: [] }, fr)).toMatchObject({ lien: '/developers/evenements' });
+    for (const m of ['mba', 'agent', 'scenario', 'equipe', 'application'] as const) expect(positionGrisee(m, ETAT, fr), m).toBeNull();
   });
 
   it('les deux confirmations disent ce qui change pour le client', () => {
@@ -87,6 +103,7 @@ describe('ce que la carte dit', () => {
   it('🔴 allumer l’agent de Meta en mode agent IA ou scénario : il reste en VEILLE, et c’est dit en nommant qui répond', () => {
     expect(avertissementAllumageMeta(ETAT, fr)).toMatch(/^L’agent IA « Léa » répond aujourd’hui au client .* restera en veille/);
     expect(avertissementAllumageMeta({ ...ETAT, modeEffectif: 'scenario', workflowId: 'wf-1' }, fr)).toMatch(/^Le scénario « Bienvenue » répond/);
+    expect(avertissementAllumageMeta({ ...ETAT, modeEffectif: 'application' }, fr)).toMatch(/^Votre application répond .* restera en veille/);
     // En « Équipe » il devient le répondeur, en « MBA » il l'est : rien de plus à dire ; illisible non plus.
     expect(avertissementAllumageMeta({ ...ETAT, modeEffectif: 'equipe' }, fr)).toBeNull();
     expect(avertissementAllumageMeta({ ...ETAT, modeEffectif: 'mba' }, fr)).toBeNull();

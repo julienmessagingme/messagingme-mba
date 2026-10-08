@@ -60,6 +60,14 @@ export const TYPES_DOCUMENTES: readonly TypeDocumente[] = [
     champs: ['contact', 'level', 'previous_level', 'score', 'reasons'],
   },
   {
+    type: 'conversation.needs_reply',
+    quand: [
+      'Mode « mon application répond » : un message attend la réponse de votre application, à l’adresse désignée par le répondeur.',
+      '“My app answers” mode: a message awaits your app’s answer, at the address set as the responder.',
+    ],
+    champs: ['contact', 'conversation_id', 'message_id', 'text', 'reply_with'],
+  },
+  {
     type: 'test',
     quand: ['Le bouton « Envoyer un essai », ou l’outil MCP send_test_event.', 'The “Send a test” button, or the send_test_event MCP tool.'],
     champs: ['message'],

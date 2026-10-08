@@ -180,6 +180,7 @@ function monter(o: { publicApiUrl?: string } = {}) {
     repo: { getTenantPhoneNumberId: async () => null },
     sendReply: async () => 'wamid',
     takeControl: async () => {},
+    filTenuParLApplication: async () => false,
     contacts: {
       query: async () => [],
       findByPhone: async () => null,

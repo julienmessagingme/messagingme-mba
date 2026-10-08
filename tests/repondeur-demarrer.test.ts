@@ -638,7 +638,7 @@ describe('un `standby` arrivé après la bascule n’est pas perdu', () => {
   };
 
   it('🔴 répondeur IA désigné, contact absent de la liste : le `standby` devient un `messages`', async () => {
-    const mode = modeEffectif({ mbaEnabled: false, repondeurMode: 'agent', repondeurAgentId: AGENT, repondeurWorkflowId: null });
+    const mode = modeEffectif({ mbaEnabled: false, repondeurMode: 'agent', repondeurAgentId: AGENT, repondeurWorkflowId: null, repondeurAdresseId: null });
     const liste = { standbyPourNous: async () => standbyPourNous(mode), presents: async () => new Set<string>() };
     const [e] = await requalifierLesStandby(await entrantsDe(STANDBY), liste);
     expect(e?.message.field).toBe('messages');
@@ -646,7 +646,7 @@ describe('un `standby` arrivé après la bascule n’est pas perdu', () => {
 
   it('🔴 RC6 : en mode « Équipe » (aucun robot), le `standby` devient aussi un `messages` : l’équipe doit le voir', async () => {
     // Avant RC6 il restait un `standby` (« une autre application tient le fil ») et disparaissait hors d'« À traiter ».
-    const mode = modeEffectif({ mbaEnabled: false, repondeurMode: 'equipe', repondeurAgentId: null, repondeurWorkflowId: null });
+    const mode = modeEffectif({ mbaEnabled: false, repondeurMode: 'equipe', repondeurAgentId: null, repondeurWorkflowId: null, repondeurAdresseId: null });
     const liste = { standbyPourNous: async () => standbyPourNous(mode), presents: async () => new Set<string>() };
     const [e] = await requalifierLesStandby(await entrantsDe(STANDBY), liste);
     expect(e?.message.field).toBe('messages');

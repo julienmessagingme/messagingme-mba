@@ -229,11 +229,11 @@ comme un message ordinaire, et la correction du détenteur n'écrit pas `mba`. L
 (`fieldRecu`) et au journal (`standby_hors_liste`). Contact PRÉSENT sur la liste : le `standby` reste un
 `standby`, et la garde `field !== 'messages'` (automations, avance, jeton de test) le fait taire, l'agent lui
 parlant. 🔴 C'est le MODE de l'espace qui décide si un `standby` d'un contact absent est pour nous
-(`standbyPourNous`, `src/repondeur/mode.ts`, RC6), et dans les quatre modes il l'est : l'agent de Meta répondeur ne
+(`standbyPourNous`, `src/repondeur/mode.ts`, RC6), et dans les cinq modes il l'est : l'agent de Meta répondeur ne
 parle qu'à sa liste, en veille il ne répond qu'aux contacts qu'un bloc lui a confiés, éteint Meta peut croire encore
-tenir le fil d'un contact qu'il servait, et en mode « Équipe » l'équipe doit voir le message dans « À traiter ».
-⚠️ Avant RC6, un espace sans répondeur ne requalifiait rien (« une autre application tient le fil ») ; le `switch` sur
-le mode attend le futur mode « mon application répond », qui dira si un `standby` est pour lui.
+tenir le fil d'un contact qu'il servait, en mode « Équipe » l'équipe doit voir le message dans « À traiter », et en
+mode « Application » l'application du client doit le recevoir. ⚠️ Avant RC6, un espace sans répondeur ne requalifiait
+rien (« une autre application tient le fil »).
 `WebhookJobDeps` rend `listeALArrivee` obligatoire avec `inbox`.
 
 🔴 **CE QUE L'AGENT DE META ENVOIE S'ENREGISTRE DANS L'INBOX, COMPOSANTS COMPRIS** (lot « messages interactifs »,
@@ -600,8 +600,9 @@ lot 5 en posait la moitié agent IA, spec `docs/superpowers/specs/2026-10-04-rep
 réglage de l'espace, le MODE (`tenant_settings.repondeur_mode`, 0217, `MODES_REPONDEUR` dans `src/repondeur/mode.ts`),
 décide qui répond à un nouveau contact ou à un message que ni un scénario, ni un mot-clé, ni un humain ne tient :
 `mba` (l'agent de Meta), `agent` (un agent IA, `repondeur_agent_id`), `scenario` (un scénario publié,
-`repondeur_workflow_id`, au plus une fois par `repondeur_delai_scenario_s` pour un même contact) ou `equipe`
-(personne : la conversation entre dans « À traiter »). Les invariants :
+`repondeur_workflow_id`, au plus une fois par `repondeur_delai_scenario_s` pour un même contact), `equipe`
+(personne : la conversation entre dans « À traiter ») ou `application` (l'application du client, par une adresse de
+webhooks sortants, `repondeur_adresse_id`, 0224). Les invariants :
 - 🔴 **ALLUMÉ N'EST PLUS RÉPONDEUR.** `mba_enabled` dit l'agent de Meta DISPONIBLE ; il n'est le répondeur qu'en mode
   `mba` (`leMbaRepond`). Hors de ce mode il est en VEILLE : ni la remise « personne ne suit », ni « Rendre la main »,
   ni la fin de parcours (`mbaActifPour` de l'exécuteur, câblé sur `leMbaRepond`), ni le balayage
@@ -609,7 +610,7 @@ décide qui répond à un nouveau contact ou à un message que ni un scénario, 
   lui-même : son agent est en `ALLOWLISTED_ONLY` et ne parle qu'aux contacts de `mba_liste`, ce qui rend la veille sûre.
   La contrainte « une seule voix » de 0209 est supprimée (0217).
 - **Le mode qui s'applique** (`modeEffectif`) : un mode dont la cible a disparu (agent supprimé ou désactivé,
-  scénario supprimé, agent de Meta éteint) se lit `equipe`, et la carte de l'Accueil le dit. 🔴 Les CHECK de 0217 sont
+  scénario supprimé, agent de Meta éteint, adresse supprimée) se lit `equipe`, et la carte de l'Accueil le dit. 🔴 Les CHECK de 0217 sont
   À SENS UNIQUE (une cible n'existe que dans son mode, jamais l'inverse) : refuser un mode `agent` sans agent ferait
   échouer la suppression d'un agent (leçon de 0144). Désactiver l'agent répondeur remet sa cible à nul et garde le
   mode (`oublierRepondeurSi`), d'où l'avertissement.
@@ -637,6 +638,19 @@ décide qui répond à un nouveau contact ou à un message que ni un scénario, 
   que la rétention purge et qu'aucun index ne sert par contact. Dans le délai, la conversation va à l'équipe, avec la
   marque d'escalade ; un lancement refusé consomme quand même le délai. Type de lancement `repondeur_scenario` : jamais
   à un opérateur, étiquettes publiées, graphe publié, fenêtre prouvée par l'entrant.
+- **Le mode Application** (lot 12, livraison B, `src/evenements/besoin-reponse.ts`) : la remise reprend le fil à
+  l'équipe puis demande la réponse à l'application par `conversation.needs_reply`, une ligne d'`envois_evenements` vers
+  l'adresse DÉSIGNÉE (sans abonnement), enfilée en priorité 2 sur `evenements-envoi`. Son identifiant dérive de
+  l'identifiant du message (une redélivrance de Meta n'envoie pas deux fois). Le fil reste `app_workflow`, hors
+  d'« À traiter ». **Aucun repli** (décision de Julien du 2026-10-08) : une application muette laisse le message sans
+  réponse, ses réessais se lisent au journal. Seule une adresse qui NE PEUT PAS recevoir (en pause, ou au-delà de
+  l'offre par le même rang que l'envoi) passe le message à l'équipe, comme le mode Équipe ; une panne de la demande
+  aussi (l'erreur remonte jusqu'à l'appelant de la remise, qui la journalise : aucun rejeu, le message est à l'équipe). `choisirRepondeur` refuse une adresse
+  inconnue (404), en pause ou gelée par l'offre (422). La réponse arrive par `POST /v1/messages/whatsapp` : sur un fil
+  que l'application tient (`ControleDuFil.tenuParLApplication`), elle ne prend PAS le fil (`filTenuParLApplication`
+  dans `repondreDansLaFenetre`), sinon la conversation passerait à l'équipe au premier envoi ; et en mode Application
+  la route compte l'opération `messages.reponse_application`, hors du quota quotidien d'envois, sous le plafond par
+  minute.
 - **Le mode Équipe** : la remise passe le fil à l'équipe (`app_human`, pot commun) avec une demande ET la marque
   d'escalade, que la première réponse d'un humain efface : sans elle, le balayage rendrait aux robots, au bout du délai
   de reprise, une conversation à laquelle personne n'a répondu, et elle sortirait d'« À traiter ». Un fil que l'équipe
@@ -1753,9 +1767,10 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 | Colonne | Ce qu'elle gouverne |
 |---|---|
 | `mba_enabled` | l'agent Meta Business Agent est actif sur cet espace |
-| `repondeur_mode` | qui répond au client (§ 4.4, 0217) : `mba`, `agent`, `scenario` ou `equipe` (défaut). Le seul écrivain est `choisirRepondeur` ; `setMbaEnabled` le change aussi, dans la même instruction que le drapeau (allumer quand personne ne répond passe en `mba`, éteindre en `mba` passe en `equipe`) |
+| `repondeur_mode` | qui répond au client (§ 4.4, 0217, 0224) : `mba`, `agent`, `scenario`, `equipe` (défaut) ou `application`. Le seul écrivain est `choisirRepondeur` ; `setMbaEnabled` le change aussi, dans la même instruction que le drapeau (allumer quand personne ne répond passe en `mba`, éteindre en `mba` passe en `equipe`) |
 | `repondeur_agent_id` | l'agent IA du mode `agent` (0209). CHECK à sens unique `tenant_settings_repondeur_agent_chk` : non nul seulement en mode `agent`. Clé étrangère en `on delete set null` : supprimer l'agent laisse le mode `agent` sans agent, lu `equipe` |
 | `repondeur_workflow_id` et `repondeur_delai_scenario_s` | le scénario du mode `scenario` et son délai (1 h à 30 jours, 24 h par défaut), même règle à sens unique (`tenant_settings_repondeur_scenario_chk`), clé étrangère en `on delete set null` vers `workflows` |
+| `repondeur_adresse_id` | l'adresse de webhooks sortants du mode `application` (0224), même règle à sens unique (`tenant_settings_repondeur_adresse_chk`), clé étrangère en `on delete set null` vers `adresses_evenements` : supprimer l'adresse laisse le mode lu `equipe` |
 | `hubspot_lists_enabled` | l'import de contacts HubSpot (pas les étapes de deal) |
 | `hubspot_actif` | l'interrupteur HubSpot de l'espace (0179, Paramètres > Intégrations) : allumé, le bloc HubSpot de l'Accueil s'affiche, numéro ou pas. `false` par défaut ; la reprise de 0179 l'a allumé pour les espaces reliés à un portail (`mmhs.tenant_portals` joint à `mmhs.portals`, la lecture de `getHubspotPortal`), gardée par `to_regclass` parce qu'une base sans connecteur n'a pas ce schéma. 🔴 **On ne l'éteint pas tant qu'un portail est relié** : `PATCH /settings/hubspot-actif` rend 409, sinon les analyses continueraient de partir vers HubSpot depuis un espace où il paraît éteint. 🔴 Et une lecture du portail en ÉCHEC refuse l'extinction (503, « réessayez »), elle ne vaut jamais « pas relié » ici : seul un schéma du connecteur absent (`42P01`) rend `false` dans le câblage (`src/index.ts`), toute autre erreur remonte, et seul l'affichage (`GET /settings`) la rattrape en « pas relié ». On délie d'abord (« Déconnexion complète »), et un espace SANS numéro le fait par `POST /hubspot/deconnexion`, la même fonction que la porte d'un numéro. ⚠️ Il ne gouverne PAS le masquage des fonctions HubSpot des campagnes et des automations, qui suit le portail relié (`hubspotPortalConnecte`). ⚠️ Côté console, `undefined` (API plus ancienne) n'est pas `false` : `affichageHubspotAccueil` (`web/lib/hubspot-actif.ts`) garde alors l'ancien comportement |
 | `campaigns_paused` | coupe-circuit d'envoi pour tout l'espace |
@@ -2011,7 +2026,9 @@ un arrêt entre les deux laisse un job de trop, jamais un envoi « en cours » q
 un `410` n'arrête que cet envoi. Au-delà de la limite de l'offre, les adresses les plus récentes sont gelées au point
 d'envoi, dans le même ordre (`cree_le, id`) côté distribution et côté envoi. Signature : Standard Webhooks
 (`src/evenements/signature.ts`, tenue par le vecteur publié). Purges : le journal par l'offre (balayage de rétention
-générale) et les envois d'un contact par `PgContactStore.purgeMany`.
+générale) et les envois d'un contact par `PgContactStore.purgeMany`. Le mode « Application » du répondeur écrit ses
+lignes `conversation.needs_reply` hors du bus (sans abonnement, vers l'adresse désignée seule) et les enfile en priorité 2,
+devant les autres envois (§ 4.4).
 
 ### Plusieurs copies de l'API : ce qui ne doit arriver qu'une fois se garde en base
 

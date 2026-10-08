@@ -21,7 +21,7 @@ const trace = (b: Banc) => ({
 
 describe('sousLOffre : les réglages tels que l’offre les laisse jouer', () => {
   const r = (over: Partial<ReglageDuRepondeur> = {}): ReglageDuRepondeur => ({
-    mbaEnabled: true, repondeurMode: 'mba', repondeurAgentId: null, repondeurWorkflowId: null, ...over,
+    mbaEnabled: true, repondeurMode: 'mba', repondeurAgentId: null, repondeurWorkflowId: null, repondeurAdresseId: null, ...over,
   });
 
   it('🔴 en Base, « MBA » et « Scénario » se lisent « Équipe », « Agent IA » reste', () => {

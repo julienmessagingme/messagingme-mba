@@ -1876,7 +1876,7 @@ scénario, comment importer des contacts.
   Meta » tant qu'il n'y en a pas ; le débit brut en messages par seconde, identique pour tous, n'est plus affiché),
   le **nom d'affichage** et la **santé du compte**, et la carte **MBA actif/inactif** (déplacée hors du Dashboard).
 - ✅ **« Qui répond au client »** (RC6, admins) : UN réglage décide qui répond à un nouveau contact, et à tout message
-  que ni un scénario, ni un mot-clé, ni un membre de l'équipe ne tient. Quatre positions :
+  que ni un scénario, ni un mot-clé, ni un membre de l'équipe ne tient. Cinq positions :
   - **L'agent de Meta (MBA)** : il répond, et lui seul reçoit ces contacts. Le choisir l'allume s'il est éteint.
   - **Un agent IA** (on choisit lequel parmi les agents actifs) : il répond comme le ferait l'agent de Meta.
   - **Un scénario** (on choisit un scénario publié, et un délai en heures, 24 h par défaut, de 1 h à 30 jours) : il
@@ -1884,8 +1884,13 @@ scénario, comment importer des contacts.
     vont à l'équipe. Deux messages envoyés au même instant ne le font partir qu'une fois.
   - **L'équipe** : personne ne répond automatiquement, le message arrive dans « À traiter » et y reste tant que
     personne ne lui a répondu.
+  - **Votre application** (lot 12, 2026-10-08 ; on choisit une adresse de webhooks sortants active) : chaque message
+    part vers elle (événement `conversation.needs_reply`, avec le texte, la fiche et la conversation), et elle répond
+    par l'API (`POST /v1/messages/whatsapp`). La conversation reste aux robots, hors d'« À traiter ». **Aucun repli** :
+    si l'application ne répond pas, personne ne le fait à sa place (ses réessais se lisent au journal de l'adresse).
+    Une adresse en pause, supprimée ou au-delà de l'offre fait passer les messages à l'équipe, et la carte le dit.
   Une position qui ne peut pas répondre est **grisée, avec le lien qui la configure** (agent de Meta pas encore
-  ouvert sur le numéro, aucun agent IA actif, aucun scénario publié). Rien ne change tant qu'on n'a pas cliqué sur
+  ouvert sur le numéro, aucun agent IA actif, aucun scénario publié, aucune adresse de webhooks sortants active). Rien ne change tant qu'on n'a pas cliqué sur
   **Enregistrer**. Si l'agent ou le scénario choisi a été désactivé ou supprimé depuis, la carte le dit (« vos
   messages vont à l'équipe »). Quitter « MBA » demande confirmation : l'agent de Meta cesse de répondre aux
   conversations qu'il tient. Une automation « un nouveau contact écrit pour la première fois » garde la priorité, pour
@@ -2277,6 +2282,11 @@ scénario, comment importer des contacts.
 - ✅ **« Envoyer un essai »** part tout de suite, signé, et dit ce que l'application a répondu.
 - ✅ **Depuis Claude Code** : `create_webhook_endpoint` inscrit une adresse et rend son secret, `send_test_event`
   envoie l'essai (connexion OAuth d'un admin, jamais une clé d'API).
+- ✅ **« Mon application répond »** (lot 12, livraison B) : désignée dans « Qui répond au client » (Accueil, ou
+  `set_default_responder` avec `mode: "application"`), une adresse reçoit `conversation.needs_reply` pour chaque
+  message que personne ne tient, en priorité sur les autres envois, sans avoir à s'y abonner. L'application répond
+  par `POST /v1/messages/whatsapp` : sa réponse ne prend pas la conversation, et ne compte pas dans le quota
+  quotidien d'envois de l'API (le plafond par minute s'applique). Aucun repli si elle se tait.
 - ⚠️ **Limite de l'offre** : 1 adresse active en Base, 5 en Pro, sans limite en Entreprise. Au retour en Base, les
   adresses en trop ne sont pas effacées, elles cessent de recevoir (les plus anciennes restent actives).
 - La documentation publique décrit l'enveloppe, la vérification avec un exemple Node et chaque type :

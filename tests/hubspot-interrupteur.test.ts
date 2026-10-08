@@ -43,7 +43,7 @@ function reglages(o: { portail?: SettingsRouteDeps['hubspotPortalConnecte']; ini
     reglages: {
       ...reglagesDepInertes,
       get: async () => ({
-        mbaEnabled: false, repondeurMode: 'equipe', repondeurAgentId: null, repondeurWorkflowId: null, repondeurDelaiScenarioS: 86400, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
+        mbaEnabled: false, repondeurMode: 'equipe', repondeurAgentId: null, repondeurWorkflowId: null, repondeurAdresseId: null, repondeurDelaiScenarioS: 86400, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
         controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false,
         hubspotActif: courant, optoutRequestId: null, mentionIaFrequence: null, timezone: 'Europe/Paris', businessHours: {},
       }),

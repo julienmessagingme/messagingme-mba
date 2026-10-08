@@ -26,7 +26,7 @@ describe('parité des modes du répondeur entre le serveur et la console', () =>
     for (const repondeurMode of MODES_REPONDEUR as readonly ModeRepondeur[]) {
       for (const mbaEnabled of [true, false]) {
         for (const cible of [null, 'x']) {
-          const r = { mbaEnabled, repondeurMode, repondeurAgentId: cible, repondeurWorkflowId: cible };
+          const r = { mbaEnabled, repondeurMode, repondeurAgentId: cible, repondeurWorkflowId: cible, repondeurAdresseId: cible };
           expect(modeEffectifDesReglages(r), JSON.stringify(r)).toBe(modeEffectif(r));
         }
       }
