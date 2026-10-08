@@ -37,7 +37,7 @@ export interface MbaOutilsDeps {
   };
   /** Créer l'outil de connecteur et l'activer pour l'agent de Meta, au nom de `parUtilisateur`. */
   creerConnecteur(tenantId: string, phoneNumberId: string, outil: TextesOutil & {
-    sourceId: string; requestId: string; params: unknown; risk: RisqueOutil;
+    sourceId: string; requestId: string; risk: RisqueOutil;
   }, parUtilisateur: string): Promise<{ id: string } | null>;
   modifierConnecteur(tenantId: string, phoneNumberId: string, outilId: string, patch: Partial<TextesOutil>): Promise<{ id: string } | null>;
   /** Rallumer un outil éteint par le départ de son auteur. */
@@ -212,15 +212,10 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
       if (cible.type === 'connecteur') {
         const requete = await deps.requetes.parId(tenant, cible.requeteId);
         if (!requete) return reply.code(404).send({ error: 'requête introuvable' });
-        // Le modèle ne voit que ce qu'il doit remplir ; le risque se dérive de la méthode, jamais du navigateur.
-        const params = requete.variables.filter((v) => v.origine.type === 'modele').map((v) => ({
-          name: v.nom, type: v.type, source: 'modele' as const,
-          ...(v.description ? { description: v.description } : {}),
-          ...(v.requis ? { required: true } : {}),
-          ...(v.enum && v.enum.length > 0 ? { enum: v.enum } : {}),
-        }));
+        // Le risque se dérive de la méthode, jamais du navigateur. Les variables ne se recopient pas : la publication
+        // et le relais lisent la requête, et un agent IA qui partagerait l'outil aussi (`paramsDuConnecteur`).
         const cree = await deps.creerConnecteur(tenant, pn, {
-          ...mots, sourceId: requete.sourceId, requestId: requete.id, params,
+          ...mots, sourceId: requete.sourceId, requestId: requete.id,
           risk: risqueSelonMethode(requete.methode as MethodeConnecteur),
         }, userId);
         if (!cree) return reply.code(404).send({ error: 'requête introuvable' });

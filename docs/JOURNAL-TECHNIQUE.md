@@ -5,6 +5,42 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-08 : un outil de connecteur suit enfin sa requête, écrit
+
+**Le constat** (Groupama PJ) : la variable `age_mois` de la requête « tarif » est renommée `age` à 9 h 43 UTC dans
+Tools > Connecteurs API. L'agent IA qui s'en sert (`obtenir_tarif`) continue de remplir `age_mois`, et chaque appel
+est refusé (« information manquante pour interroger le système du client »), sans rien à l'écran. Le défaut était au
+backlog depuis la relecture de `099fd6c1` (2026-10-05).
+
+**La mesure** (production en lecture seule, `begin read only` sur un client dédié, aucun SET, base à 0220) : les 3
+outils de connecteur de la base divergeaient de leur requête. `obtenir_tarif` et `demande_un_devis` (Groupama PJ)
+voyaient `[espece, race, age_mois]` au lieu de `[espece, race, age]` ; `add_tag` (Messaging Me Tech SANDBOX) voyait
+`[user]`, sa requête n'ayant plus aucune variable « décidée par l'agent ». Le vrai code du catalogue
+(`listToutesConsommateur` puis `outilExpose`) exposait et exigeait `age_mois`.
+
+**La cause** : la création d'un outil recopiait les variables `modele` de la requête dans `agent_tools.params` (la
+même dérivation écrite deux fois, `agent-tools.ts` et `mba-outils.ts`). L'exposition au modèle et la validation des
+arguments lisaient la copie, le résolveur la requête. Rien ne rafraîchissait la copie. L'agent de Meta y échappait :
+sa publication et son relais lisent la requête.
+
+**La parade** : plus de copie. Le catalogue ramène les variables de la requête avec l'outil (sous-requête filtrée sur
+l'espace de l'outil, dans `COLONNES`), `versOutil` en dérive les paramètres (`paramsDuConnecteur`) par la relecture
+du résolveur (`lireVariables`, déplacée dans `requetes.ts`). La création n'écrit plus rien dans la colonne. Écartées :
+la resynchronisation dans la transaction du PATCH (la piste du backlog), qui garde une copie que chaque écrivain futur
+devra rafraîchir et demande une reprise des 3 outils faux ; et le refus ou l'avertissement (« N outils à recréer »),
+qui fait refaire à la main, consentement compris, ce que le serveur sait faire seul. Les paramètres d'un connecteur
+n'ont aucun réglage par outil (le PATCH refuse toute énumération hors catalogue maison) : la copie ne portait rien que
+la requête n'ait déjà. Les outils maison et MCP gardent leur colonne. Plan :
+`docs/superpowers/plans/2026-10-08-parametres-du-connecteur.md`.
+
+**Les preuves.** `tests/agent-connecteur-params.test.ts` fait traverser une ligne lue (sa colonne périmée, sa requête
+modifiée) jusqu'à l'appel réseau, par `executeTool` et le vrai résolveur : vérifié dans les deux sens et borné, la
+lecture de la colonne remise rend rouge le seul cas du renommage (`['espece','race','age_mois']`), la garde
+anti-IDOR retirée rend rouges les deux cas qui la portent. `tests/integration/connecteur-suit-sa-requete.integration.test.ts`
+joue le même parcours sur les vrais magasins, plus les outils maison et MCP et l'isolation de la sous-requête. Le
+nouveau code du catalogue, joué en lecture seule sur la production, expose `[espece, race, age]` pour
+`obtenir_tarif` : l'ancien `age_mois`, le nouveau `age`, sur les mêmes lignes.
+
 ## 2026-10-08 : la liste de l'agent de Meta tourne (plafond de 20), écrit, pas encore déployé
 
 Julien relève que Meta plafonne la liste de l'agent à 20 contacts par numéro (page agent-allowlist, documenté au
@@ -32,7 +68,6 @@ réaction seule en mode MBA fait encore entrer un contact (`fil.ts`, garde `reac
 deux rotations concurrentes choisissent le même sortant ; un contact confié par le bloc « Envoyer au MBA » qui sort
 perd sa délégation sans trace ; la colonne d'un contact sorti reste `mba` (état déjà produit par le retrait avant
 un modèle). Chaque garde neuve vérifiée dans les deux sens par mutation.
-
 
 ## 2026-10-08 : les coûts selon l'offre (lot 6, livraison C), écrit
 

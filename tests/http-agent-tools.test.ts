@@ -508,8 +508,8 @@ describe('outils d’un agent : ce que fait un appel, modifié après coup', () 
  * 🔴 L'APPEL N'EST PLUS DÉCRIT ICI, et c'est tout le changement : la méthode, le chemin, le corps, les
  * variables et les champs à lire vivent sur la requête, mise au point une fois dans Tools. Ce qui se garde
  * encore ici, et nulle part ailleurs : la requête appartient au tenant, le risque dérive de SA méthode et ne
- * peut être que MONTÉ, ce que le modèle voit est DÉRIVÉ de ses variables, et l'écran reçoit de quoi faire
- * confirmer ce qui partira.
+ * peut être que MONTÉ, et l'écran reçoit de quoi faire confirmer ce qui partira. Ce que le modèle voit est
+ * DÉRIVÉ de ses variables par le catalogue, à chaque lecture, et plus recopié ici (2026-10-08).
  */
 describe('outils d’un agent : brancher une requête de connecteur', () => {
   const corps = (over: Record<string, unknown> = {}) => ({
@@ -530,14 +530,16 @@ describe('outils d’un agent : brancher une requête de connecteur', () => {
     expect(res.json().outil.actif).toBe(false);
   });
 
-  it('🔴 ce que le MODÈLE voit est DÉRIVÉ des variables de la requête, et seulement celles du modèle', async () => {
-    // Exposer une variable résolue par le serveur (champ du contact, valeur système) inviterait le modèle à
-    // la fournir lui-même, donc à désigner la ressource de quelqu’un d’autre. C’est la garde anti-IDOR.
+  it('🔴 la route ne RECOPIE pas les variables : le catalogue les relit sur la requête à chaque lecture', async () => {
+    /**
+     * Jusqu'au 2026-10-08, ce test vérifiait la copie que la route passait au magasin : la seule variable `ref` du
+     * modèle, sans le champ du contact ni la valeur système. Cette copie divergeait au premier renommage dans Tools
+     * (Groupama PJ, `age_mois` devenu `age`) : elle a disparu. Son cas, la garde anti-IDOR sur ces trois familles
+     * d'origine, est porté par `tests/agent-connecteur-params.test.ts`, sur la dérivation qui l'a remplacée.
+     */
     const { cap, srv } = app();
     await srv.inject({ method: 'POST', url: `${base('t1')}/connecteur`, ...h(adminTok), payload: corps() });
-    expect(cap.connecteurs[0]!.outil.params).toEqual([
-      { name: 'ref', type: 'string', source: 'modele', required: true },
-    ]);
+    expect(cap.connecteurs[0]!.outil).not.toHaveProperty('params');
   });
 
   it('🔴 la réponse porte CE QUI PARTIRA, pour que l’écran le fasse confirmer', async () => {

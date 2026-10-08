@@ -47,7 +47,11 @@ export interface OutilDefini {
    * principale réussisse ou non (`src/agent/gestes.ts`). Requis : un câblage qui les oublierait ne compile pas.
    */
   gestes: Geste[];
-  /** `agent_tools.params`, jsonb opaque : à lire par `paramsOutil` et rien d'autre. */
+  /**
+   * Jsonb opaque, à lire par `paramsOutil` et rien d'autre. `agent_tools.params` pour un outil maison ou MCP ; pour un
+   * connecteur API, les variables « décidée par l'agent » de sa requête, relues avec l'outil (`paramsDuConnecteur`),
+   * jamais la colonne : une copie divergeait au premier renommage dans Tools (2026-10-08).
+   */
   params: unknown;
   /** Ce qui dit au résolveur quoi faire (`handler` pour `mba`, gabarit d'URL pour `http`...). Opaque ici. */
   binding: Record<string, unknown>;

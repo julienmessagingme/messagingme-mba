@@ -153,12 +153,12 @@ describe('créer un outil de l’agent de Meta', () => {
     expect(res.json().error).toContain('Connecteurs API');
   });
 
-  it('🔴 (porté) le MODÈLE ne voit que les variables qu’il doit remplir', async () => {
+  it('🔴 (porté) la route ne recopie pas les variables : l’outil les relit sur sa requête', async () => {
+    // Ce test vérifiait la copie (`ref` du modèle, sans `ville` du mini-CRM), qui divergeait au premier renommage
+    // dans Tools (2026-10-08). Son cas est porté par `tests/agent-connecteur-params.test.ts`, sur la dérivation.
     const { app, gestes } = monter();
     await app.inject({ method: 'POST', url, ...h(), payload: { ...TEXTES, cible: { type: 'connecteur', requeteId: REQ } } });
-    const outil = gestes[0]!.args[2] as { params: Array<Record<string, unknown>> };
-    // `ville` vient du mini-CRM : ce n'est pas un paramètre du modèle.
-    expect(outil.params).toEqual([{ name: 'ref', type: 'string', source: 'modele', required: true }]);
+    expect(gestes[0]!.args[2]).not.toHaveProperty('params');
   });
 
   it('🔴 (porté) le risque n’est jamais accepté du navigateur : une clé `risk` est refusée', async () => {

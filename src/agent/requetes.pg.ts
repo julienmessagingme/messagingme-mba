@@ -3,10 +3,9 @@ import { enTransaction } from '../db/transaction';
 import { verrouillerDefinitions } from './catalog.pg';
 import { risqueSelonMethode, risquesSous, type MethodeConnecteur } from './http-cible';
 import type { GabaritCorps, EnTete, ParametreUrl } from './requete-http';
-import { normaliserOrigine } from './variables';
 import {
-  LabelRequeteDejaPris, SourceIntrouvable,
-  type CreationRequete, type PatchRequete, type RequeteConnecteur, type RequeteStore, type VariableDeclaree,
+  LabelRequeteDejaPris, SourceIntrouvable, lireVariables,
+  type CreationRequete, type PatchRequete, type RequeteConnecteur, type RequeteStore,
 } from './requetes';
 
 /**
@@ -51,24 +50,6 @@ function lireCorps(mode: string, brut: string | null, champs: unknown): GabaritC
   if (mode === 'json') return { mode: 'json', gabarit: brut ?? '' };
   if (mode === 'champs') return { mode: 'champs', champs: lireParametres(champs) };
   return { mode: 'aucun' };
-}
-
-/**
- * Les variables déclarées. Une origine illisible écarte l'entrée : une variable manquante refuse l'appel en
- * le disant, une origine devinée enverrait au client une valeur venue d'ailleurs.
- */
-function lireVariables(v: unknown): VariableDeclaree[] {
-  if (!Array.isArray(v)) return [];
-  return v.flatMap((x) => {
-    const o = (x ?? {}) as Partial<VariableDeclaree> & { origine?: unknown };
-    if (typeof o.nom !== 'string' || o.nom === '') return [];
-    if (typeof o.type !== 'string') return [];
-    // Les formes anciennes (`contact:*`, `systeme:analyse_*`) sont RÉÉCRITES en origine `fiche`, pas refusées :
-    // une requête enregistrée avant le lot 2 garde toutes ses variables, sans reprise en base.
-    const origine = normaliserOrigine(o.origine);
-    if (origine === null) return [];
-    return [{ ...(o as VariableDeclaree), origine }];
-  });
 }
 
 function lireValeursTest(v: unknown): Record<string, string | number | boolean> {

@@ -68,7 +68,7 @@ describe.skipIf(!url)('le risque des outils suit la méthode de leur requête (P
   const outil = async (requestId: string, name: string, risk: RisqueOutil): Promise<string> => {
     const cree = await catalogue.ajouterConnecteur(tenantId, agentId, {
       sourceId, requestId, name, title: 'Titre', description: 'sert à ça', nePasUtiliser: 'jamais pour ça',
-      params: [], risk, nature: 'pousse', outputPaths: [],
+      risk, nature: 'pousse', outputPaths: [],
     });
     expect(cree?.risk).toBe(risk);
     return cree!.id;

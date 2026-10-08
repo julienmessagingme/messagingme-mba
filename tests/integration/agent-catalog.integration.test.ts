@@ -908,14 +908,14 @@ describe.skipIf(!url)('la règle unique : offrable, appelable, rattachable (Post
     for (const [source, requete] of [[ids.httpEteint!, ids.rqEteinte!], [ids.httpBrouillon!, ids.rqBrouillon!]]) {
       await expect(catalogue.ajouterConnecteurPourMba(tenantId, NUMERO, {
         sourceId: source!, requestId: requete!, name: 'http_refuse', title: 'T', description: 'd', nePasUtiliser: '',
-        params: [], risk: 'read',
+        risk: 'read',
       })).rejects.toBeInstanceOf(OutilNonActivable);
     }
     expect(await compter()).toBe(avant);
     // Sur une source active, il se crée comme avant.
     const cree = await catalogue.ajouterConnecteurPourMba(tenantId, NUMERO, {
       sourceId: ids.httpActive!, requestId: ids.rqActive!, name: 'http_accepte', title: 'T', description: 'd', nePasUtiliser: '',
-      params: [], risk: 'read',
+      risk: 'read',
     });
     expect(cree?.inappelable).toBeNull();
   });

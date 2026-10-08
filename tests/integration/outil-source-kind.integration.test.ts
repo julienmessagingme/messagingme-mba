@@ -73,7 +73,7 @@ describe.skipIf(!url)('la garde de kind entre un outil et sa source (Postgres)',
 
   const base = (nom: string, sourceId: string) => ({
     sourceId, requestId: requeteId, name: nom, title: 'Titre', description: 'sert à ça',
-    nePasUtiliser: 'jamais pour ça', params: [], risk: 'write' as const,
+    nePasUtiliser: 'jamais pour ça', risk: 'write' as const,
     nature: 'integre' as const, outputPaths: ['statut'],
   });
 

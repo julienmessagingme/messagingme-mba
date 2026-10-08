@@ -8,7 +8,8 @@
 
 import type { MethodeConnecteur } from './http-cible';
 import type { GabaritCorps, EnTete, ParametreUrl } from './requete-http';
-import { libelleOrigine, type OrigineVariable } from './variables';
+import type { ParamOutil } from './llm/tool-schema';
+import { libelleOrigine, normaliserOrigine, type OrigineVariable } from './variables';
 
 /** Le type annoncé d'une variable. Il décide de ce qui part dans le corps : un « nombre » part en nombre. */
 export type TypeVariable = 'string' | 'number' | 'integer' | 'boolean';
@@ -63,6 +64,46 @@ export type PatchRequete = Partial<CreationRequete>;
  */
 export function resumeEnvoi(requete: Pick<RequeteConnecteur, 'variables'>): Array<{ nom: string; libelle: string }> {
   return requete.variables.map((v) => ({ nom: v.nom, libelle: libelleOrigine(v.origine) }));
+}
+
+/**
+ * Les variables déclarées, relues depuis le jsonb de `connector_requests`. Une origine illisible écarte l'entrée : une
+ * variable manquante refuse l'appel en le disant, une origine devinée enverrait au client une valeur venue d'ailleurs.
+ * Ici et pas dans `requetes.pg.ts` : le catalogue d'outils relit les mêmes variables (`paramsDuConnecteur`), et deux
+ * relectures pourraient exposer au modèle une variable que le résolveur ne cherche pas.
+ */
+export function lireVariables(v: unknown): VariableDeclaree[] {
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((x) => {
+    const o = (x ?? {}) as Partial<VariableDeclaree> & { origine?: unknown };
+    if (typeof o.nom !== 'string' || o.nom === '') return [];
+    if (typeof o.type !== 'string') return [];
+    // Les formes anciennes (`contact:*`, `systeme:analyse_*`) sont RÉÉCRITES en origine `fiche`, pas refusées :
+    // une requête enregistrée avant le lot 2 garde toutes ses variables, sans reprise en base.
+    const origine = normaliserOrigine(o.origine);
+    if (origine === null) return [];
+    return [{ ...(o as VariableDeclaree), origine }];
+  });
+}
+
+/**
+ * 🔴 CE QUE LE MODÈLE REMPLIT POUR UN APPEL DE CONNECTEUR : les variables « décidée par l'agent » de la requête, et
+ * elles seules. Les autres (fiche, champ, valeur système, constante) sont résolues par le serveur : les exposer
+ * inviterait le modèle à les fournir lui-même, donc à désigner la ressource d'un autre (garde anti-IDOR).
+ *
+ * Dérivé à CHAQUE lecture de l'outil (`versOutil`, `catalog.pg.ts`), jamais recopié sur l'outil : le résolveur lit les
+ * variables courantes de la requête (`creerAppelConnecteur`), et la copie que la création écrivait jusqu'au
+ * 2026-10-08 divergeait au premier renommage (le modèle remplissait l'ancien nom, chaque appel était refusé).
+ */
+export function paramsDuConnecteur(variables: readonly VariableDeclaree[]): ParamOutil[] {
+  return variables
+    .filter((v) => v.origine.type === 'modele')
+    .map((v) => ({
+      name: v.nom, type: v.type, source: 'modele' as const,
+      ...(v.description ? { description: v.description } : {}),
+      ...(v.requis ? { required: true } : {}),
+      ...(v.enum && v.enum.length > 0 ? { enum: v.enum } : {}),
+    }));
 }
 
 /** Le libellé est déjà pris pour ce tenant. Erreur typée : la route rend 409, jamais 500. */

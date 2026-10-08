@@ -77,7 +77,7 @@ describe.skipIf(!url)('un agent ne voit jamais deux outils du même nom (Postgre
   });
   const appel = (name: string) => ({
     sourceId, requestId: requeteId, name, title: 'Appel', description: 'Appelle le système.', nePasUtiliser: '',
-    params: [], risk: 'write' as const, nature: 'pousse' as const, outputPaths: [],
+    risk: 'write' as const, nature: 'pousse' as const, outputPaths: [],
   });
   /** Les noms des outils d'un agent, tels que son onglet et son modèle les voient. */
   const nomsDe = async (agentId: string) => (await catalogue.listToutes(tenantId, agentId)).map((o) => o.name).sort();

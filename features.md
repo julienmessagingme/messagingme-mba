@@ -2327,6 +2327,13 @@ scénario, comment importer des contacts.
   un appel de la bibliothèque et lui donner SES mots : le nom vu par l'agent, à quoi ça sert, quand ne pas
   l'appeler. Deux agents peuvent utiliser le même appel avec des
   consignes différentes, et le corriger une fois le corrige partout.
+- ✅ **Modifier un appel vaut tout de suite pour les agents qui s'en servent** (2026-10-08). Renommer une donnée
+  « décidée par l'agent », en ajouter une, la rendre obligatoire, changer ses valeurs permises ou sa description :
+  chaque agent IA qui utilise l'appel le voit dès son message suivant, sans retirer ni remettre l'outil, et
+  « Voir ce que le modèle voit » le montre. La publication chez l'agent de Meta lisait déjà l'appel tel qu'il est.
+  🔴 **Avant, un agent IA gardait les données de l'appel telles qu'elles étaient le jour où on le lui avait
+  donné.** Après un renommage, il remplissait l'ancien nom et chaque appel échouait (« information manquante »),
+  sans rien à l'écran, jusqu'à ce qu'on retire puis remette l'outil.
 - ✅ **« Ça pousse ou ça intègre ? »**, la question posée quand vous donnez un appel à un agent (2026-09-15).
   Deux réponses possibles, et la seconde question n'apparaît que si elle sert :
   - **Il POUSSE de l'information** vers votre système (poser une étiquette, créer une fiche). Rien de plus à

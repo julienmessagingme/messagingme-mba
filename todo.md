@@ -270,16 +270,11 @@ son heure, ou jusqu'à la connexion du numéro. Correction prévue : porter l'id
 jeton du lien (`signLienNumero`) et exiger dans la garde `adminOuLien` qu'elle ne soit pas révoquée. Dit dans
 `features.md` en attendant.
 
-## 🟠 Connecteurs : les paramètres d'un outil ne suivent pas les variables de sa requête (relecture de `099fd6c1`, 2026-10-05)
+## 🟠 Connecteurs : l'autonomie d'un outil ne suit pas le risque monté par sa requête (relecture de `099fd6c1`, 2026-10-05)
 
-- **Même racine, autre symptôme** (vu le 2026-10-05, lot « Modifier un appel de connecteur ») : les PARAMÈTRES qu'un
-  outil expose au modèle (`agent_tools.params`) sont dérivés des variables « décidée par l'agent » de la requête à la
-  CRÉATION (`POST .../tools/connecteur`) et ne suivent pas la requête ensuite (`outilExpose` lit `outil.params`). Une
-  telle variable REQUISE ajoutée après coup n'est jamais demandée au modèle, et chaque appel est refusé
-  (« information manquante pour interroger le système du client »). « Modifier » ne la recalcule pas non plus. Le
-  RISQUE, lui, suit la méthode depuis le 2026-10-06 (`PgRequeteStore.patch`, monté dans la transaction de
-  l'écriture) : le recalcul des paramètres s'y branche, et leur dérivation est écrite deux fois
-  (`src/http/agent-tools.ts`, `src/http/mba-outils.ts`).
+- ✅ ~~Les paramètres d'un outil ne suivaient pas les variables de sa requête~~ : réglé le 2026-10-08, ils se lisent
+  sur la requête à chaque lecture de l'outil, sans copie (`paramsDuConnecteur`, plan
+  `docs/superpowers/plans/2026-10-08-parametres-du-connecteur.md`).
 - **Un connecteur monté à `irreversible` garde son autonomie** : depuis RC4 (2026-10-06), la ligne d'un connecteur
   irréversible le dit et « Modifier » offre la case. Reste à faire tomber `autonome` des outils montés à
   `irreversible` par un changement de méthode, dans la même transaction (`PgRequeteStore.patch`) : un consentement

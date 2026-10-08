@@ -66,7 +66,7 @@ describe.skipIf(!url)('la purge d’un espace supprimé (RC8)', () => {
     )).rows[0]!.id;
     const outil = await new PgToolCatalog(pool).ajouterConnecteur(id, agent, {
       sourceId: source, requestId: requete, name: 'itest_outil', title: 'Titre', description: 'sert à ça', nePasUtiliser: 'jamais',
-      params: [], risk: 'write', nature: 'integre', outputPaths: ['statut'],
+      risk: 'write', nature: 'integre', outputPaths: ['statut'],
     });
     expect(outil).not.toBeNull();
 

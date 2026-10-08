@@ -42,10 +42,11 @@ export interface OutilsAgentDep {
    * Déclare un outil de connecteur sur une source de l'espace. Séparée de `ajouter`, dont la garde est de prendre
    * son `handler` dans le catalogue et de refuser le reste : fusionnées, on finirait par accepter un handler inventé.
    * `null` = agent, source ou requête inconnus de cet espace (404), plutôt qu'une clé étrangère violée (500).
+   * Pas de `params` : ce que le modèle remplit se lit sur la requête à chaque lecture de l'outil (`versOutil`).
    */
   ajouterConnecteur(tenantId: string, agentId: string, outil: {
     sourceId: string; requestId: string; name: string; title: string; description: string; nePasUtiliser: string;
-    params: unknown; risk: OutilComplet['risk'];
+    risk: OutilComplet['risk'];
     /** Ce que cet agent fait de la réponse, et les champs qu'il lit quand il l'intègre. */
     nature: OutilComplet['nature']; outputPaths: readonly string[];
   }): Promise<OutilComplet | null>;
@@ -237,17 +238,8 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     if (!risqueAuMoins(plancher, risk)) {
       return reply.code(400).send({ error: `un appel ${requete.methode} vaut au moins « ${plancher} » : le risque ne peut pas être abaissé` });
     }
-    // Ce que le modèle voit, dérivé des variables de la requête dont l'origine est `modele`. Les autres (champ du
-    // contact, valeur système, constante) sont résolues par le serveur : les exposer au modèle l'inviterait à les
-    // fournir lui-même, donc à désigner la ressource d'un autre.
-    const params = requete.variables
-      .filter((v) => v.origine.type === 'modele')
-      .map((v) => ({
-        name: v.nom, type: v.type, source: 'modele' as const,
-        ...(v.description ? { description: v.description } : {}),
-        ...(v.requis ? { required: true } : {}),
-        ...(v.enum && v.enum.length > 0 ? { enum: v.enum } : {}),
-      }));
+    // Ce que le modèle remplit n'est pas recopié ici : le catalogue le dérive des variables de la requête à chaque
+    // lecture de l'outil (`paramsDuConnecteur`, 2026-10-08), pour qu'un renommage dans Tools atteigne cet agent.
     try {
       const outil = await deps.outils.ajouterConnecteur(ctx.tenant, ctx.agentId, {
         sourceId: requete.sourceId,
@@ -258,7 +250,6 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
         nePasUtiliser: d.nePasUtiliser,
         nature: d.nature,
         outputPaths: d.outputPaths,
-        params,
         risk,
       });
       if (!outil) return reply.code(404).send({ error: 'agent introuvable' });

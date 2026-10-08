@@ -465,7 +465,7 @@ describe.skipIf(!url)('le magasin des outils de l’agent de Meta', () => {
       await suppression.query('select 1 from agents where tenant_id = $1 and id = $2 for update', [tenantId, partant]);
       const creation = cat.ajouterConnecteur(tenantId, partant, {
         sourceId, requestId: requete, name: 'course_creation', title: 'x', description: 'x', nePasUtiliser: 'x',
-        params: [], risk: 'write', nature: 'pousse', outputPaths: [],
+        risk: 'write', nature: 'pousse', outputPaths: [],
       });
       creation.catch(() => {});
       await attendreUnVerrou();

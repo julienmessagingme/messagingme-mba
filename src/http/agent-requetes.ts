@@ -275,9 +275,11 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
     if (pb) return reply.code(400).send({ error: pb });
     /**
      * Pas de garde contre le fait de vider les champs d'un appel déjà utilisé : ces champs ne gouvernent plus
-     * l'exécution. Chaque outil porte sa propre liste, copiée au rattachement ; celle de l'appel n'est qu'un défaut
-     * de pré-remplissage, et la changer ne touche aucun agent en service. La MÉTHODE, elle, les touche : le magasin
-     * monte le risque des outils branchés dans la transaction de l'écriture (`PgRequeteStore.patch`).
+     * l'exécution. Chaque outil porte sa propre liste de champs LUS, copiée à sa création ; celle de l'appel n'est
+     * qu'un défaut de pré-remplissage, et la changer ne touche aucun agent en service. Les VARIABLES, elles, ne sont
+     * copiées nulle part : tout outil branché les relit sur la requête à chaque lecture (`paramsDuConnecteur`), donc
+     * un renommage ou une variable ajoutée atteint chaque agent tout de suite (2026-10-08). La MÉTHODE les touche
+     * aussi : le magasin monte le risque des outils branchés dans la transaction de l'écriture (`PgRequeteStore.patch`).
      */
     try {
       const requete = await deps.requetes.patch(tenant, id, parse.data);

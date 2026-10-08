@@ -10,6 +10,7 @@ import { asRecord } from '../webhooks/json';
 import { agentDuConsommateur, consommateurAgent, consommateurMba } from './consommateur';
 import { RISQUE_MAISON, type CibleMaison } from '../mba/outils-maison';
 import type { CibleOutilAgent } from './outils-maison';
+import { lireVariables, paramsDuConnecteur } from './requetes';
 import { enTransaction } from '../db/transaction';
 
 /** Le scénario que vise la cible d'un outil d'agent IA (RC4), pour la garde d'isolation de l'écriture, ou `null`. */
@@ -40,6 +41,8 @@ interface Ligne {
   timeout_ms: number;
   max_bytes: number;
   autonome: boolean;
+  /** Les variables de la requête que l'outil désigne (jsonb opaque), `null` sans requête. */
+  requete_variables: unknown;
 }
 
 /**
@@ -53,11 +56,16 @@ const JOINTURE = `from agent_tools t
 /**
  * Colonnes lues par toutes les requêtes : une seule projection, pour que l'exécution voie le même outil que
  * les autres chemins. 🔴 `autonome` vient de `c`, la liaison : c'est un consentement, par consommateur.
+ * 🔴 `requete_variables` : les variables de la requête d'un connecteur, d'où `versOutil` dérive ses paramètres
+ * (2026-10-08). Filtrées sur l'espace de l'outil : une ligne qui désignerait la requête d'un autre espace n'en reçoit
+ * rien, et le résolveur, qui la cherche dans l'espace, la refuserait de même.
  */
 const COLONNES = `t.id, t.tenant_id, t.origin, t.name, t.description, t.ne_pas_utiliser, t.params,
                   t.binding, t.source_id, t.request_id, t.output_paths, t.nature, t.risk, t.timeout_ms, t.max_bytes,
                   t.mcp_annonce, t.mcp_non_activable, t.mcp_indisponible_le, t.mcp_vu_le,
                   t.gestes,
+                  (select r.variables from connector_requests r
+                    where r.tenant_id = t.tenant_id and r.id = t.request_id) as requete_variables,
                   c.autonome`;
 
 /**
@@ -104,7 +112,8 @@ function lireInappelable(cause: string | null, mcpNonActivable: string | null): 
   return null;
 }
 
-function versOutil(r: Ligne): OutilDefini {
+/** Exportée pour le test qui fait traverser une ligne lue jusqu'à l'appel réseau (`tests/agent-connecteur-params.test.ts`). */
+export function versOutil(r: Ligne): OutilDefini {
   return {
     id: r.id,
     tenantId: r.tenant_id,
@@ -115,7 +124,10 @@ function versOutil(r: Ligne): OutilDefini {
     nePasUtiliser: r.ne_pas_utiliser,
     // `safeParse` et repli vide : un jsonb corrompu ne produit aucun geste, sans rendre l'agent muet.
     gestes: lireGestes(r.gestes),
-    params: r.params,
+    // 🔴 Un connecteur API n'a pas de paramètres à lui : ce sont les variables « décidée par l'agent » de SA requête,
+    // relues avec l'outil, par la relecture du résolveur (`lireVariables`). Recopiés à la création jusqu'au 2026-10-08,
+    // ils divergeaient au premier renommage. La colonne fait foi pour un outil maison ou MCP (réglages propres).
+    params: r.origin === 'http' ? paramsDuConnecteur(lireVariables(r.requete_variables)) : r.params,
     // `binding` est du jsonb opaque : un scalaire ou un null donne un objet vide, et le résolveur refuse.
     binding: asRecord(r.binding),
     // La source vit sur la ligne, pas dans `binding` : clé étrangère, obligatoire dès que l'origine n'est pas
@@ -295,7 +307,7 @@ export class PgToolCatalog implements ToolCatalog {
    */
   async ajouterConnecteur(tenantId: string, agentId: string, outil: {
     sourceId: string; requestId: string; name: string; title: string; description: string; nePasUtiliser: string;
-    params: unknown; risk: RisqueOutil;
+    risk: RisqueOutil;
     /** Obligatoires tous les deux : optionnels, un appelant retomberait sur `integre` avec une liste vide, donc
      *  un outil qui refuse chaque appel. */
     nature: NatureOutil; outputPaths: readonly string[];
@@ -307,29 +319,29 @@ export class PgToolCatalog implements ToolCatalog {
    *  d'isolation ne divergent pas. */
   private async creerOutilConnecteur(tenantId: string, consommateur: string, outil: {
     sourceId: string; requestId: string; name: string; title: string; description: string; nePasUtiliser: string;
-    params: unknown; risk: RisqueOutil; nature: NatureOutil; outputPaths: readonly string[];
+    risk: RisqueOutil; nature: NatureOutil; outputPaths: readonly string[];
   }): Promise<OutilComplet | null> {
     return enTransaction(this.pool, async (client) => {
       if (!(await verrouillerAgentDuConsommateur(client, tenantId, consommateur))) return null;
       const res = await client.query<{ id: string }>(
         /**
-         * `binding` reste vide : la requête porte l'appel. `output_paths` est rempli : ce qu'un agent lit est une
-         * propriété de son outil (la requête garde sa liste comme défaut). Les trois `exists` sont la garde
-         * d'isolation (agent, source et requête de ce tenant). `source_kind` est écrit et la source contrainte à
-         * `kind = 'http'` : un outil HTTP ne se branche pas sur un serveur MCP. Un refus rend zéro ligne, donc le
-         * `null` de l'appelant, pas un 500.
+         * `binding` reste vide : la requête porte l'appel. `params` reste à son défaut (`[]`) : les paramètres d'un
+         * connecteur se lisent sur sa requête à chaque lecture (`versOutil`), une copie divergerait au premier
+         * renommage. `output_paths` est rempli : ce qu'un agent lit est une propriété de son outil (la requête garde
+         * sa liste comme défaut). Les trois `exists` sont la garde d'isolation (agent, source et requête de ce
+         * tenant). `source_kind` est écrit et la source contrainte à `kind = 'http'` : un outil HTTP ne se branche
+         * pas sur un serveur MCP. Un refus rend zéro ligne, donc le `null` de l'appelant, pas un 500.
          */
         `insert into agent_tools
-           (tenant_id, origin, source_id, source_kind, request_id, name, title, description, ne_pas_utiliser, params, binding, output_paths, nature, risk)
-         select $1, 'http', $2, 'http', $3, $4, $5, $6, $7, $8::jsonb, '{}'::jsonb, $9::text[], $10, $11
-          where ($12::uuid is null or exists (select 1 from agents where id = $12 and tenant_id = $1))
+           (tenant_id, origin, source_id, source_kind, request_id, name, title, description, ne_pas_utiliser, binding, output_paths, nature, risk)
+         select $1, 'http', $2, 'http', $3, $4, $5, $6, $7, '{}'::jsonb, $8::text[], $9, $10
+          where ($11::uuid is null or exists (select 1 from agents where id = $11 and tenant_id = $1))
             and exists (select 1 from agent_tool_sources where id = $2 and tenant_id = $1 and kind = 'http')
             and exists (select 1 from connector_requests where id = $3 and tenant_id = $1)
          returning id`,
         [
           tenantId, outil.sourceId, outil.requestId,
           outil.name, outil.title, outil.description, outil.nePasUtiliser,
-          JSON.stringify(outil.params ?? []),
           // Un `pousse` force la liste à vide plutôt que de faire confiance à l'appelant.
           outil.nature === 'pousse' ? [] : [...outil.outputPaths],
           outil.nature,
@@ -354,7 +366,7 @@ export class PgToolCatalog implements ToolCatalog {
    */
   async ajouterConnecteurPourMba(tenantId: string, phoneNumberId: string, outil: {
     sourceId: string; requestId: string; name: string; title: string; description: string; nePasUtiliser: string;
-    params: unknown; risk: RisqueOutil;
+    risk: RisqueOutil;
   }): Promise<OutilComplet | null> {
     /**
      * 🔴 REFUSÉ AVANT DE CRÉER sur une source qui n'est pas active (Julien, 2026-10-02). Pour l'agent de Meta, créer

@@ -74,7 +74,7 @@ describe.skipIf(!url)('la nature d un outil de connecteur (Postgres)', () => {
 
   const base = (nom: string) => ({
     sourceId, requestId: requeteId, name: nom, title: 'Titre', description: 'sert à ça',
-    nePasUtiliser: 'jamais pour ça', params: [], risk: 'write' as const,
+    nePasUtiliser: 'jamais pour ça', risk: 'write' as const,
   });
 
   it('🔴 un outil qui INTÈGRE porte SES champs, pas ceux de l appel', async () => {

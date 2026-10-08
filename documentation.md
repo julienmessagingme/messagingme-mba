@@ -1007,6 +1007,18 @@ le gabarit est écrit par un administrateur, et `construireCible` vérifie que l
 de base, segment par segment, après encodage. Le `wa_id` vient du TOUR, pas de la projection du contact : la
 projection part chez le fournisseur de modèle et ne porte donc pas le numéro.
 
+🔴 **Ce que le modèle remplit pour un connecteur se LIT sur sa requête, il ne se recopie pas** (2026-10-08). Les
+paramètres d'un outil de connecteur sont les variables « décidée par l'agent » de SA requête, relues à chaque
+lecture de l'outil : `PgToolCatalog` les ramène avec lui (`requete_variables` dans `COLONNES`, filtrée sur l'espace
+de l'outil) et `versOutil` en dérive les paramètres par `paramsDuConnecteur` (`src/agent/requetes.ts`), après la
+même relecture que le résolveur (`lireVariables`). L'exposition (`outilExpose`), la validation des arguments
+(`executeTool`, étape 3) et le résolveur (`creerAppelConnecteur`, étape 4) lisent donc la même liste, et une
+variable renommée ou ajoutée dans Tools atteint chaque agent au tour suivant. `agent_tools.params` n'est lue que
+pour un outil maison ou MCP, dont les paramètres portent des réglages propres (valeurs permises, sources d'un
+paramètre MCP) ; un connecteur la laisse à son défaut `[]`, et ceux créés avant le 2026-10-08 y gardent une copie
+que rien ne lit. ⚠️ Un retour arrière vers une image antérieure exposerait SANS paramètre les connecteurs créés
+depuis (colonne vide) : il faudrait les recréer.
+
 🔴 **Le risque d'un outil est DÉRIVÉ de la méthode HTTP** (`GET` -> read, `POST`/`PUT`/`PATCH` -> write,
 `DELETE` -> irréversible) et ne peut être que MONTÉ. Un client qui déclarerait `read` un `DELETE` désarmerait
 la garde d'autonomie sur une action irréversible. Il SUIT la méthode quand la requête en change :
@@ -3720,6 +3732,7 @@ Points de passage OBLIGÉS. Chacun existe parce que la même chose était écrit
 | `src/llm/errors.ts` -> `direPanneModele` | ce qu'un échec d'appel au modèle a le droit de dire au client, ou `null` : c'est alors NOTRE panne, que l'appelant RELANCE en 500 opaque. ⚠️ `fetch failed` et un abandon n'y sont attribués au modèle que parce que, dans ses quatre appelants, le seul `fetch` est l'appel au modèle |
 | `src/agent/llm/tool-schema.ts` -> `paramsOutil` | 🔴 la séparation des sources d'un paramètre (`modele` vs `contact` ou `fixe`). Deux lectures divergentes rendraient la cible au modèle, donc un IDOR |
 | `src/agent/outils-maison.ts` -> `paramsEffectifs` | 🔴 les paramètres d'un outil d'agent IA tels que le modèle les voit et que l'exécuteur les valide : la copie en base, plus les imposés du catalogue (`paramsImposes`), par `paramsOutil`. L'exposition et l'exécuteur la lisent tous deux : `paramsOutil(outil.params)` à leur place perdrait un imposé d'un seul côté |
+| `src/agent/requetes.ts` -> `lireVariables`, `paramsDuConnecteur` | 🔴 la relecture UNIQUE des variables d'une requête (formes anciennes réécrites), partagée par le résolveur et le catalogue, et ce que le modèle remplit pour un connecteur (les seules variables `modele`, garde anti-IDOR). Le catalogue les dérive à chaque lecture (`versOutil`) : une copie sur l'outil divergeait au premier renommage, et deux relectures pourraient exposer une variable que le résolveur ne cherche pas |
 | `src/agent/setup/proposition.ts` | ce que l'IA de construction a le DROIT de proposer. 🔴 La FRONTIÈRE est la liste des CLÉS et les énumérations FERMÉES, jamais une longueur : les bornes sont de l'hygiène, et `assainirProposition` les RAMÈNE avant que Zod ne juge, au lieu de perdre le tour. ⚠️ Toute borne appliquée est annoncée dans le schéma envoyé au modèle, et un test le dérive plutôt que de le relire |
 | `src/crm/poser-etiquette.ts` | 🔴 poser une étiquette sur UN contact, le geste des cinq portes unitaires (agent IA et agent de Meta, bloc de scénario, widget, outil MCP `tag_conversation`, fiche contact) : nettoyer (`normaliserEtiquette`, `nettoyerEtiquettes` : espaces, 64 caractères, vides et doublons), poser, déclarer dans le référentiel (au mieux), et publier `tag_added` sur les seules nouvelles, SI l'appelant le demande (`publier`, requise). `apresPose` sert la fiche, qui pose dans la transaction d'`applyEdits` ; `publierEnDiffere`, l'exécuteur. Construit une fois par `buildWorkflowRuntime`, rendu à l'API et au worker. Les chemins de masse (import, API publique, action en masse) n'en prennent que le nettoyage |
 | `src/agent/contexte.ts` | ce que le cerveau doit savoir d'un agent (production ET bac à sable), et `lireContexteAvecReglages`, la lecture UNIQUE des réglages de l'espace pour ses deux politiques, branchée par le worker ET par l'API |
