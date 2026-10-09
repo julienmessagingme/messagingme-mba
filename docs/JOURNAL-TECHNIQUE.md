@@ -5,6 +5,19 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-09 : le contrat OpenAPI de l'API publique (lot 16, livraison A), en production
+
+`05501ec5`, CI verte job par job, aucune migration ; `GET https://api.messagingme.app/openapi.json` rend 200 avec
+`access-control-allow-origin: *` (33 opérations, 11 webhooks, serveur `https://api.messagingme.app`). Le contrat se
+DÉRIVE du code : un registre des routes `/v1` (schémas d'entrée importés des routes), des réponses et des événements
+en Zod, et `z.toJSONSchema` ; aucune dépendance ajoutée. Deux leçons. L'auto-attaque attribue chaque module du
+registre à la clé de `deps` qui le monte : une entrée toujours montée, sans dépendance, faisait croire que CHAQUE clé
+montait aussi ce module ; la route se monte donc sur `deps.openapi`, câblée dans `src/index.ts`, comme toutes les
+autres. Et Zod rend facultatif en entrée tout champ passé par `z.preprocess` (un `pipe` dont la transformation est
+« optionnelle ») : `category` d'un modèle, la position d'un lieu, que la route exige ; un `override` les remet en
+`required`, et le test relit désormais le JSON ÉMIS par `z.fromJSONSchema`, pas seulement le Zod d'origine. La
+relecture : 0 rouge, 8 jaunes, tous poussés juste après (`5fd285b4`). Douze défauts remis au total, tous vus.
+
 ## 2026-10-09 : la connexion OAuth ouverte aux autres clients MCP (lot 15), en production
 
 `2d17b2cd`, CI verte job par job, migration 0227 appliquée à 15 h 48 UTC avant le `up`, et APRÈS la publication de la
