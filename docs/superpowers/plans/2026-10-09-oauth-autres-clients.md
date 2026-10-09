@@ -22,18 +22,20 @@ L'essai réel qui clôt le lot : ChatGPT puis Lovable se connectent, autorisent 
    plafond par adresse ; purge à 30 jours dans le balayage de rétention. Tests : corps valides et refusés, plafond,
    purge qui épargne un client utilisé (intégration).
 5. **La résolution d'un client** dans `/oauth/authorize`, l'échange et le renouvellement ; `consentement/demande` rend
-   `verification` et `domaine` ; l'origine `client_mcp`. Tests : chaque sorte de client de bout en bout, un client
+   `marque` et `domaine` ; l'origine `client_mcp`. Tests : chaque sorte de client de bout en bout, un client
    enregistré purgé refusé au renouvellement, aucune requête sortante hors de l'autorisation.
 6. **Les dépendants** : l'auto-attaque (registre de routes), la liste des applications autorisées côté API, l'audit.
 
 ## Livraison B : la console et la doc
 
 7. **La page « Autoriser »** : la marque du client, l'avertissement, la phrase générale sur l'éditeur ; tolère une API
-   sans `verification` (déploiement). e2e.
+   sans `marque` (déploiement). e2e.
 8. **Applications autorisées** : nom, marque, hôte de retour.
 9. **La doc** : page MCP (connecter ChatGPT, Cursor, VS Code, Lovable), `features.md`, `documentation.md`.
 
 ## Ordre de déploiement
 
-0227 AVANT le `up` de l'API (elle relâche, l'ancien code y survit). La console après l'API : la page lit des champs
-neufs, et doit tolérer leur absence.
+0227 AVANT le `up` de l'API (elle relâche, l'ancien code y survit). 🔴 La console AVANT l'API (relecture de A) : une
+API neuve devant l'ancienne page de consentement montrerait le nom déclaré d'un client enregistré (« Claude ») avec la
+phrase sur Anthropic. A et B partent donc dans le MÊME push : Vercel publie la page, puis le `up` de l'API ; la page
+tolère une API sans `marque`.

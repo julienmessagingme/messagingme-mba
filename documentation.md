@@ -185,7 +185,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **Publicités Click-to-WhatsApp** | connecter le compte publicitaire, créer (image ou vidéo, audiences), publier, suivre, router le prospect | `src/pubs/`, `src/meta/pubs*.ts`, `src/http/pubs.ts` | `/publicites` | `pub_connexion`, `publicites`, `pubs_brouillons`, `pubs_connues`, `arrivees_pub` | balayage de suivi |
 | **Widget WhatsApp** | une bulle sur le site du client qui ouvre WhatsApp avec une phrase, et ce qui se passe quand cette phrase arrive | `src/widgets/`, `src/http/widgets.ts`, `src/http/widget-public.ts` | `/widgets` | `widgets`, `widget_tirs` | aucune : une étape de `processInbound` |
 | **API publique v1** | ce qu'un intégrateur du client appelle | `src/api/`, `src/http/v1-*.ts` | `/developers` | `api_keys`, `api_idempotency` | |
-| **Serveur MCP et son OAuth** | Claude (Claude Code, claude.ai) lit et agit dans un espace, par une clé d'API ou un jeton OAuth (§ 7) | `src/mcp/`, `src/http/mcp.ts`, `src/oauth/`, `src/http/oauth.ts`, `src/http/oauth-consentement.ts` | `/developers/mcp` | `oauth_autorisations`, `oauth_codes` | `retention-oauth` |
+| **Serveur MCP et son OAuth** | Claude et les autres clients MCP (ChatGPT, Cursor, VS Code, Lovable) lisent et agissent dans un espace, par une clé d'API ou un jeton OAuth (§ 7) | `src/mcp/`, `src/http/mcp.ts`, `src/oauth/`, `src/http/oauth.ts`, `src/http/oauth-consentement.ts` | `/developers/mcp` | `oauth_autorisations`, `oauth_codes`, `oauth_clients` | `retention-oauth` |
 | **Exploitation** | vue cross-tenant, recharge de crédit, alertes, suppression d'un espace (§ 10) | `src/ops/` | `/ops` | `worker_heartbeat`, `audit_log`, `espaces_supprimes` | `dlq-sweep` |
 | **Numéros fournis** | la réserve de numéros DIDWW, et le pont qui lit le code que Meta dicte en appelant (lot 3a) | `src/otp/`, `src/didww/`, `src/http/otp-pont.ts`, `src/http/ops-numeros.ts`, `ops/otp-asterisk/` | `/ops` | `numeros_fournis`, `codes_verification` | purge du balayage de rétention |
 | **Offres** | l'offre d'un espace (Base, Pro, Entreprise), ses fonctions, ses limites, le refus 402 (§ 7), le paiement du Pro | `src/offres/`, `src/http/offre.ts`, `src/http/ops-offre.ts`, `src/http/offre-paiement.ts`, `src/stripe/pro.ts` | `/offre`, la barre (`web/lib/nav.ts`) | `abonnements_offre`, `tenants` (`offre_entreprise`), `contacts` (`ne_entrant`), `compteurs_debit` | aucune : une étape au montage, des compteurs |
@@ -1181,8 +1181,10 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   et une personne admin (`tenant_id` et `user_id` en cascade : supprimer le compte révoque). Elle porte UNE paire de
   jetons vivante, remplacée à chaque renouvellement : `acces_hash` (1 h), `refresh_hash`, `refresh_precedent_hash`
   (le précédent, qui reconnaît un rejeu), `refresh_expire_le` (30 jours sans usage), `refresh_max_le` (90 jours, fixé
-  au premier échange), `revoque_le`. `client_id` est borné aux deux fiches de Claude et `scopes` à `mcp:read` et
-  `mcp:write` par deux CHECK. Un code (60 s, usage unique) garde son défi PKCE et son adresse de retour. Seules des
+  au premier échange), `revoque_le`. `client_id` est borné par un CHECK de FORME (une adresse `https` ou `mcl_` et 32
+  caractères, 0227) et `scopes` à `mcp:read` et `mcp:write`. `client_nom`, `client_marque` et `client_hote` (0227)
+  gardent le client affiché d'un client non épinglé, pour les applications autorisées. `oauth_clients` (0227) : les
+  clients ENREGISTRÉS par `POST /oauth/register`, anonymes, sans secret. Un code (60 s, usage unique) garde son défi PKCE et son adresse de retour. Seules des
   empreintes SHA-256 y entrent ; le rôle et la désactivation ne sont PAS recopiés, ils se relisent dans `users`.
 - 🔴 **La connexion multi-espace est en deux temps.** Un seul espace -> session directe. Plusieurs -> le
   serveur rend la LISTE et un jeton de CHOIX, jamais une session. Ce jeton ne peut pas tenir lieu de session
@@ -2136,7 +2138,7 @@ automations, servis par le principal) : ça tient parce que `enqueue` crée sa f
 | purge des événements Meta | `WEBHOOK_EVENTS_RETENTION_DAYS` |
 | `ops/dlq-sweep` | alerte Telegram sur les DLQ non vides |
 | `compteurs-debit` | toutes les 5 min, efface les fenêtres échues des plafonds partagés (`compteurs_debit`) : une tentative de connexion sur une adresse inventée écrit une ligne, six heures de rafale en garderaient des millions |
-| `retention-oauth` | toutes les 6 h (`principal`), efface les codes OAuth échus depuis une heure et les autorisations révoquées ou expirées depuis 30 jours, par paquets (`PgOauthStore.purger`) |
+| `retention-oauth` | toutes les 6 h (`principal`), efface les codes OAuth échus depuis une heure et les autorisations révoquées ou expirées depuis 30 jours, par paquets (`PgOauthStore.purger`), puis les clients enregistrés de plus de 30 jours qu'aucune autorisation vivante n'utilise (`PgOauthClientsStore.purger`) |
 | heartbeat | écrit `worker_heartbeat`, UNE LIGNE PAR RÔLE (clé = le rôle), lu par `/ops` pour voir un worker mort et par l'API pour alerter quand il se tait ; une ligne unique laisserait le survivant masquer la mort de l’autre |
 
 🔴 **LE BALAYAGE DU RISQUE EST LE SEUL CHEMIN DE MASSE QUI ÉMET UN ÉVÉNEMENT D'AUTOMATION** (exception décidée,
@@ -2481,11 +2483,23 @@ clique « Autoriser » dans un espace où elle est admin, et Claude reçoit un j
   Posé par un crochet de la route `/mcp` (`src/http/mcp.ts`), jamais par la garde partagée : ni `/v1`, ni un 403, ni
   un 429 ne le portent. Et seulement quand l'hôte appelé est celui de `PUBLIC_API_URL`, ce qui suppose que NPM
   transmet le `Host` d'origine (à mesurer après le déploiement : `curl -si -X POST https://api.messagingme.app/mcp`).
-- **Deux clients, épinglés** (`src/oauth/clients.ts`) : les fiches de Claude Code et de claude.ai, RECOPIÉES et
-  jamais récupérées à la volée (pas de requête sortante vers une adresse fournie par un tiers, pas de dépendance au
-  Cloudflare de claude.ai). Claude Code revient sur `http://localhost:<port>/callback` ou `127.0.0.1`, tout port ;
-  claude.ai sur son adresse exacte. Tout autre client, ou une adresse de retour non validée : 400 en texte, AUCUNE
-  redirection. `npm run oauth:fiches` relit les fiches publiées à chaque déploiement de l'API (`DEPLOY.md`).
+- **Trois sortes de clients** (`src/oauth/clients.ts`, `src/oauth/resolution.ts`, lot 15, spec
+  `docs/superpowers/specs/2026-10-09-oauth-autres-clients-design.md`). **Épinglés** : les fiches de Claude Code et de
+  claude.ai, RECOPIÉES et jamais récupérées (pas de dépendance au Cloudflare de claude.ai) ; `npm run oauth:fiches` les
+  relit à chaque déploiement de l'API (`DEPLOY.md`). **À fiche d'identité** : tout autre `client_id` qui est une
+  adresse `https` (ChatGPT), dont la fiche est récupérée à `/oauth/authorize` SEULEMENT, avec toutes les gardes d'une
+  adresse saisie (`src/oauth/fiche-client.ts` : résolution publique, `fetchPublic`, aucune redirection, 10 Ko, 5 s,
+  cache 10 min ou 1 min), son `client_id` égal à l'adresse au caractère près ; le domaine prouve l'éditeur.
+  **Enregistrés** : `POST /oauth/register` (RFC 7591, anonyme) rend `mcl_…` sans secret ; leur nom est DÉCLARÉ (ni
+  invisible, ni « Claude »). Le serveur REMPLACE ce qu'il ne fait pas (RFC 7591, § 2) : une adresse de retour hors
+  politique est écartée et seul un client sans adresse utilisable est refusé (Cursor déclare aussi `cursor://`), un
+  mode d'authentification avec secret devient `none`. Plafonds de l'enregistrement et des fiches : par adresse du client
+  (`CF-Connecting-IP`, `ipIndicative` : `req.ip` est le proxy) ET globaux, en secours d'un en-tête forgé. Les adresses de retour d'un client non épinglé : `https`, ou `http://localhost` et
+  `127.0.0.1` sur tout port, rien d'autre (`adresseDeRetourPermise`, décision de Julien). L'échange et le
+  renouvellement ne lisent jamais de fiche : ils vérifient la forme avant le plafond, puis qu'un enregistré existe
+  encore. Le client affiché est scellé dans la demande signée (`client`), puis gardé sur l'autorisation. Client inconnu
+  ou adresse de retour non validée : 400 en texte, AUCUNE redirection. Un espace né par un autre client que Claude
+  porte l'origine `client_mcp`.
 - **Les jetons sont opaques**, jamais des JWT : `mbo_` l'accès (1 h, `expires_in` rendu), `mbr_` le renouvellement
   (30 jours sans usage, 90 au plus, remplacé à chaque usage), `mbc_` le code (60 s, usage unique, brûlé même si
   l'échange échoue ensuite). PKCE S256 seul. 🔴 **Un ancien jeton de renouvellement présenté révoque toute

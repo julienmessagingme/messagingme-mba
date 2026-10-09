@@ -26,12 +26,17 @@ export interface DepsAutoriser {
 
 export type ResultatAutorisation = { ok: true; adresse: string } | { ok: false; erreur: string };
 
+/** Le nom affiché d'un client : celui scellé dans la demande (lot 15), sinon celui d'un épinglé, sinon l'identifiant. */
+export function nomDuClient(demande: Pick<DemandeOauth, 'clientId' | 'client'>): string {
+  return demande.client?.nom ?? clientConnu(demande.clientId)?.nom ?? demande.clientId;
+}
+
 /**
  * La demande que la page présente n'est plus lisible : expirée (10 minutes) ou signée ailleurs. Un 400 et non un
  * 401 : la route de la console le rend aussi, et un 401 y viderait la session de la console.
  */
 export const DEMANDE_EXPIREE = {
-  error: 'demande expirée ou invalide : relancez la connexion depuis Claude',
+  error: 'demande expirée ou invalide : relancez la connexion depuis votre application',
   code: 'demande_expiree',
 } as const;
 
@@ -50,7 +55,7 @@ export async function autoriser(
 ): Promise<ResultatAutorisation> {
   const compte = (await deps.comptes.getByEmail(personne.email)).find((c) => c.tenantId === espace && !c.disabled);
   if (!compte) return { ok: false, erreur: 'vous n’avez pas de compte actif dans cet espace' };
-  if (compte.role !== 'admin') return { ok: false, erreur: 'seul un administrateur de l’espace peut autoriser Claude' };
+  if (compte.role !== 'admin') return { ok: false, erreur: 'seul un administrateur de l’espace peut autoriser une application' };
   const code = nouveauJeton(PREFIXE_CODE);
   const { autorisationId } = await deps.store.creerAutorisation({
     tenantId: espace,
@@ -59,10 +64,13 @@ export async function autoriser(
     scopes: demande.scopes,
     resource: demande.resource,
     code: { empreinte: code.empreinte, challenge: demande.codeChallenge, redirectUri: demande.redirectUri },
+    ...(demande.client ? { client: { nom: demande.client.nom, marque: demande.client.marque, hote: new URL(demande.redirectUri).hostname } } : {}),
   });
   // L'acteur est le compte qui autorise, quelle que soit la porte : il n'y a pas toujours de session.
   await makeJournal(deps.audit)(espace, { auth: { userId: compte.id } }, 'oauth.autorise',
-    { kind: 'oauth_autorisation', id: autorisationId }, { client: clientConnu(demande.clientId)?.nom ?? demande.clientId, scopes: demande.scopes });
+    { kind: 'oauth_autorisation', id: autorisationId }, {
+      client: nomDuClient(demande), ...(demande.client ? { marque: demande.client.marque } : {}), scopes: demande.scopes,
+    });
   // L'adresse de retour n'a ni requête ni fragment (`adresseDeRetourAcceptee`) : les paramètres s'y ajoutent sans rien écraser.
   const adresse = new URL(demande.redirectUri);
   adresse.searchParams.set('code', code.brut);

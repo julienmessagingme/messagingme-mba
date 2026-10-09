@@ -343,7 +343,16 @@ function ApplicationsAutorisees({ tenantId }: { tenantId: string }) {
           <tbody>
             {autorisations.map((a) => (
               <tr key={a.id} className="border-b border-ink-50 last:border-0">
-                <td className="px-5 py-2.5 text-ink-900">{a.client}</td>
+                <td className="px-5 py-2.5 text-ink-900">
+                  {a.client}
+                  {/* Lot 15 : un nom déclaré se dit tel, et l'hôte où le client reçoit son code se montre. */}
+                  {(a.marque === 'declaree' || a.clientHote) && (
+                    <span className="block text-xs text-ink-500" data-testid={`application-provenance-${a.id}`}>
+                      {[a.marque === 'declaree' ? t('non vérifié', 'unverified') : null, a.clientHote ? t(`retour vers ${a.clientHote}`, `returns to ${a.clientHote}`) : null]
+                        .filter((x) => x !== null).join(' · ')}
+                    </span>
+                  )}
+                </td>
                 <td className="px-5 py-2.5 text-ink-500">{personneDe(a)}</td>
                 <td className="px-5 py-2.5 text-ink-500">{fmt(a.creeLe)}</td>
                 <td className="px-5 py-2.5 text-ink-500">{a.dernierUsageLe ? fmt(a.dernierUsageLe) : t('jamais', 'never')}</td>

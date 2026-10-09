@@ -92,7 +92,8 @@ describe.skipIf(!url)('PgOauthStore (Postgres réel)', () => {
       `insert into oauth_autorisations (tenant_id, user_id, client_id, scopes, resource) values ($1, $2, $3, $4, $5)`,
       [tenantId, adminId, client, scopes, RESSOURCE],
     );
-    await expect(tenter('https://evil.test/fiche', ['mcp:read'])).rejects.toMatchObject({ constraint: 'oauth_autorisations_client_chk' });
+    // Depuis 0227 (lot 15), une adresse https est la forme d'une fiche d'identité : seule une autre forme est refusée.
+    await expect(tenter('http://evil.test/fiche', ['mcp:read'])).rejects.toMatchObject({ constraint: 'oauth_autorisations_client_chk' });
     await expect(tenter(CLAUDE_CODE, ['mcp:read', 'contacts:write'])).rejects.toMatchObject({ constraint: 'oauth_autorisations_scopes_chk' });
     await expect(tenter(CLAUDE_AI, [])).rejects.toMatchObject({ constraint: 'oauth_autorisations_scopes_chk' });
   });

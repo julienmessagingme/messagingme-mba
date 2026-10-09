@@ -56,6 +56,13 @@ livraison A (champs et suppression RGPD) EN PRODUCTION (`5e768c39`), ses jaunes 
 des fiches effacées, trois ans, migration 0226) EN PRODUCTION (`a421ba13`, 0226 appliquée le 2026-10-09 à 13 h 43 UTC),
 ses jaunes poussés ensuite. Essai réel dû : une fiche en STOP effacée puis recréée (API, message entrant) naît en STOP.
 
+## LOT 15 : L'OAUTH OUVERT AUX AUTRES CLIENTS MCP (2026-10-09), EN COURS
+
+Spec `docs/superpowers/specs/2026-10-09-oauth-autres-clients-design.md`, plan
+`docs/superpowers/plans/2026-10-09-oauth-autres-clients.md` (décisions de Julien du 2026-10-09). Livraison A (l'API :
+migration 0227, fiches d'identité, enregistrement dynamique) EN COURS ; livraison B (la console et la doc) ensuite.
+Essai réel : ChatGPT puis Lovable.
+
 ## L'OFFRE GRATUITE S'APPELLE « FREE », EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ
 
 Plan `docs/superpowers/plans/2026-10-08-offre-free.md`. En production (`dd3298bf`, CI verte job par job, `up` de l'API,

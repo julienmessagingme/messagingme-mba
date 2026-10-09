@@ -9,6 +9,8 @@ import type { OauthRouteDeps } from '../src/http/oauth';
 import type { OauthConsentementRouteDeps } from '../src/http/oauth-consentement';
 import type { GoogleIdentity } from '../src/auth/google';
 import type { CablageMcp } from '../src/mcp/outils';
+import type { ClientResolu } from '../src/oauth/clients';
+import { nouvelIdentifiantClient } from '../src/oauth/clients.pg';
 import { FakeQueue } from './fake-queue';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { jamaisDesabonne } from './consentement';
@@ -42,6 +44,7 @@ interface Compte { id: string; tenantId: string; tenantName: string; role: strin
 interface Ligne {
   id: string; tenantId: string; userId: string; clientId: string; scopes: string[]; resource: string;
   acces: string | null; refresh: string | null; precedent: string | null; revoque: boolean;
+  client?: NouvelleAutorisation['client'];
 }
 
 /** Les comptes, par adresse : modifiables en cours de test (un admin rétrogradé, un espace créé). */
@@ -71,7 +74,7 @@ class FauxMagasin {
     const id = randomUUID();
     this.lignes.set(id, {
       id, tenantId: e.tenantId, userId: e.userId, clientId: e.clientId, scopes: [...e.scopes], resource: e.resource,
-      acces: null, refresh: null, precedent: null, revoque: false,
+      acces: null, refresh: null, precedent: null, revoque: false, ...(e.client ? { client: e.client } : {}),
     });
     this.codes.set(e.code.empreinte, { autorisationId: id, challenge: e.code.challenge, redirectUri: e.code.redirectUri, utilise: false });
     return { autorisationId: id };
@@ -126,6 +129,7 @@ class FauxMagasin {
     return [...this.lignes.values()].filter((a) => a.tenantId === tenantId && !a.revoque && a.refresh !== null).map((a) => ({
       id: a.id, clientId: a.clientId, userId: a.userId, email: 'admin@x.fr', nom: null, scopes: a.scopes,
       creeLe: '2026-10-03T10:00:00.000Z', dernierUsageLe: null,
+      clientNom: a.client?.nom ?? null, clientMarque: a.client?.marque ?? null, clientHote: a.client?.hote ?? null,
     }));
   }
   async revoquer(tenantId: string, id: string): Promise<boolean> {
@@ -136,13 +140,16 @@ class FauxMagasin {
   }
 }
 
-function monter(o: { publicApiUrl?: string } = {}) {
+function monter(o: { publicApiUrl?: string; fiches?: Record<string, ClientResolu> } = {}) {
   const comptes = comptesDeDepart();
   const compteDe = (userId: string) => [...comptes.values()].flat().find((c) => c.id === userId);
   const magasin = new FauxMagasin(compteDe);
   const audits: Array<{ tenant: string; acteur: string | null; action: string; cible: string; detail: Record<string, unknown> }> = [];
   const crees: Array<{ nom: string; email: string; passwordHash: string | null; origine: string }> = [];
   const connexions: string[] = [];
+  // Lot 15 : les fiches d'identité connues de ce montage (aucune requête sortante), et les clients enregistrés.
+  const fichesLues: string[] = [];
+  const enregistres = new Map<string, ClientResolu>();
   const deps: OauthRouteDeps & OauthConsentementRouteDeps = {
     store: magasin,
     comptes: {
@@ -167,6 +174,18 @@ function monter(o: { publicApiUrl?: string } = {}) {
     secret: SECRET,
     appUrl: `${APP}/`,
     audit: async (tenant, acteur, action, cible, detail = {}) => { audits.push({ tenant, acteur: acteur.userId, action, cible: cible.id, detail }); },
+    clients: {
+      fiches: { lire: async (id) => { fichesLues.push(id); return o.fiches?.[id] ?? null; } },
+      enregistres: {
+        lire: async (id) => enregistres.get(id) ?? null,
+        enregistrer: async (c) => {
+          const clientId = nouvelIdentifiantClient();
+          const hote = new URL(c.adressesDeRetour[0]!).hostname;
+          enregistres.set(clientId, { id: clientId, nom: c.nom ?? hote, adressesDeRetour: c.adressesDeRetour, marque: 'declaree' });
+          return { clientId, creeLe: new Date('2026-10-09T12:00:00.000Z') };
+        },
+      },
+    },
   };
   const mcp: CablageMcp = {
     estDesabonne: jamaisDesabonne,
@@ -215,7 +234,7 @@ function monter(o: { publicApiUrl?: string } = {}) {
       mcp,
     },
   });
-  return { server, magasin, comptes, audits, crees, connexions };
+  return { server, magasin, comptes, audits, crees, connexions, fichesLues, enregistres };
 }
 
 type Serveur = ReturnType<typeof monter>['server'];
@@ -340,7 +359,7 @@ describe('le parcours de Claude', () => {
     const demande = await demander(server);
 
     const vue = await server.inject({ method: 'POST', url: '/oauth/consentement/demande', headers: json, payload: { demande } });
-    expect(vue.json()).toEqual({ client: 'Claude Code', hoteDeRetour: 'localhost', droits: ['mcp:read', 'mcp:write'] });
+    expect(vue.json()).toEqual({ client: 'Claude Code', marque: 'epingle', domaine: null, hoteDeRetour: 'localhost', droits: ['mcp:read', 'mcp:write'] });
 
     const g = await parGoogle(server, demande, 'G:admin@x.fr');
     expect(g.statusCode).toBe(200);
@@ -520,7 +539,12 @@ describe('/oauth/token', () => {
   it('les autres refus sont au format OAuth, en 400, sans cache, et une forme fausse n’atteint pas la base', async () => {
     const { server, magasin } = monter();
     for (const [champs, erreur] of [
-      [{ grant_type: 'authorization_code', code: 'mbc_x', redirect_uri: RETOUR, client_id: 'https://evil.test/fiche', code_verifier: VERIF }, 'invalid_client'],
+      // Une forme qui n'est d'aucune sorte de client (`http`) : refusée avant tout. Une adresse `https` est la forme d'une
+      // fiche d'identité (lot 15) : elle passe, et c'est le code, lié à son client, qui refuse.
+      [{ grant_type: 'authorization_code', code: 'mbc_x', redirect_uri: RETOUR, client_id: 'http://evil.test/fiche', code_verifier: VERIF }, 'invalid_client'],
+      [{ grant_type: 'authorization_code', code: 'mbc_x', redirect_uri: RETOUR, client_id: 'https://evil.test/fiche', code_verifier: VERIF }, 'invalid_grant'],
+      // Un client enregistré inconnu (ou purgé), avec un code bien formé : refusé comme client.
+      [{ grant_type: 'authorization_code', code: nouveauJeton(PREFIXE_CODE).brut, redirect_uri: RETOUR, client_id: `mcl_${'Z'.repeat(32)}`, code_verifier: VERIF }, 'invalid_client'],
       [{ grant_type: 'authorization_code', code: 'mbc_x', redirect_uri: RETOUR, client_id: CC, code_verifier: VERIF }, 'invalid_grant'],
       [{ grant_type: 'authorization_code', code: 'mbc_x', client_id: CC }, 'invalid_request'],
       [{ grant_type: 'refresh_token', refresh_token: 'mbr_x', client_id: CC }, 'invalid_grant'],
@@ -605,6 +629,7 @@ describe('🔴 sans PUBLIC_API_URL', () => {
       ['POST', '/oauth/consentement/demande'],
       ['POST', '/oauth/consentement/google'],
       ['POST', '/oauth/consentement/autoriser'],
+      ['POST', '/oauth/register'],
     ] as const) {
       const r = await server.inject({ method, url, headers: json, ...(method === 'POST' ? { payload: {} } : {}) });
       expect(r.statusCode, url).toBe(404);
@@ -613,6 +638,203 @@ describe('🔴 sans PUBLIC_API_URL', () => {
       method: 'POST', url: `/tenants/${T1}/oauth/autoriser`, headers: { ...json, authorization: `Bearer ${await session('u-admin', T1, 'admin')}` }, payload: { demande: 'x' },
     });
     expect(console_.statusCode).toBe(404);
+    await server.close();
+  });
+});
+
+/**
+ * 🔴 LOT 15 : LES AUTRES CLIENTS MCP (spec `2026-10-09-oauth-autres-clients-design.md`). Un client ENREGISTRÉ
+ * (Cursor, VS Code) et un client à FICHE D'IDENTITÉ (ChatGPT) font le même parcours que Claude ; le consentement dit
+ * comment leur nom est établi ; la fiche n'est lue qu'à la demande, jamais à l'échange ni au renouvellement.
+ */
+describe('lot 15 : les autres clients MCP', () => {
+  const FICHE = 'https://chatgpt.com/oauth/abc/client.json';
+  const RETOUR_GPT = 'https://chatgpt.com/connector_platform_oauth_redirect';
+  const GPT: ClientResolu = { id: FICHE, nom: 'ChatGPT', adressesDeRetour: [RETOUR_GPT], marque: 'domaine', domaine: 'chatgpt.com' };
+  const enregistrer = (server: Serveur, corps: Record<string, unknown>) =>
+    server.inject({ method: 'POST', url: '/oauth/register', headers: json, payload: corps });
+
+  /** Demande, Google, autoriser dans T1, échange : rend les jetons et la demande (pour lire le consentement). */
+  async function parcours(server: Serveur, clientId: string, retour: string) {
+    const demande = await demander(server, { client_id: clientId, redirect_uri: retour });
+    const { choix } = (await parGoogle(server, demande, 'G:admin@x.fr')).json<{ choix: string }>();
+    const ok = await autoriserParGoogle(server, demande, choix, T1);
+    expect(ok.statusCode, ok.body).toBe(200);
+    const code = new URL(ok.json<{ adresse: string }>().adresse).searchParams.get('code') ?? '';
+    const jetons = await echanger(server, { grant_type: 'authorization_code', code, redirect_uri: retour, client_id: clientId, code_verifier: VERIF });
+    expect(jetons.statusCode, jetons.body).toBe(200);
+    return { demande, jetons: jetons.json<{ access_token: string; refresh_token: string }>() };
+  }
+
+  it('🔴 un client enregistré : 201 sans secret, puis tout le parcours, « non vérifié » au consentement', async () => {
+    const { server, audits, magasin } = monter();
+    const reg = await enregistrer(server, { client_name: 'Cursor', redirect_uris: ['http://127.0.0.1:8787/callback'], token_endpoint_auth_method: 'none' });
+    expect(reg.statusCode, reg.body).toBe(201);
+    const c = reg.json<Record<string, unknown>>();
+    expect(c).toMatchObject({
+      client_name: 'Cursor', redirect_uris: ['http://127.0.0.1:8787/callback'], token_endpoint_auth_method: 'none',
+      grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'],
+    });
+    expect(String(c.client_id)).toMatch(/^mcl_[A-Za-z0-9]{32}$/);
+    expect(c).not.toHaveProperty('client_secret');
+    expect(reg.headers['cache-control']).toBe('no-store');
+    const id = String(c.client_id);
+
+    // Le port de la boucle locale change à chaque session : un autre port est accepté.
+    const { demande, jetons } = await parcours(server, id, 'http://127.0.0.1:51234/callback');
+    const vue = await server.inject({ method: 'POST', url: '/oauth/consentement/demande', headers: json, payload: { demande } });
+    expect(vue.json()).toEqual({ client: 'Cursor', marque: 'declaree', domaine: null, hoteDeRetour: '127.0.0.1', droits: ['mcp:read', 'mcp:write'] });
+    expect(audits.at(-1)?.detail).toMatchObject({ client: 'Cursor', marque: 'declaree' });
+    expect([...magasin.lignes.values()].at(-1)?.client).toEqual({ nom: 'Cursor', marque: 'declaree', hote: '127.0.0.1' });
+    expect((await appelerMcp(server, jetons.access_token)).statusCode).toBe(200);
+    const r2 = await echanger(server, { grant_type: 'refresh_token', refresh_token: jetons.refresh_token, client_id: id });
+    expect(r2.statusCode, r2.body).toBe(200);
+    await server.close();
+  });
+
+  it('🔴 l’enregistrement refuse un client sans adresse de retour utilisable ou sans flux par code, et n’enregistre rien', async () => {
+    const { server, enregistres } = monter();
+    const cas: Array<[Record<string, unknown>, string]> = [
+      [{ redirect_uris: ['cursor://anysphere.cursor-mcp/oauth/callback'] }, 'invalid_redirect_uri'],
+      [{ redirect_uris: ['http://evil.test/callback'] }, 'invalid_redirect_uri'],
+      [{ redirect_uris: ['https://app.exemple.fr/cb?x=1'] }, 'invalid_redirect_uri'],
+      [{ redirect_uris: [`https://app.exemple.fr/${'a'.repeat(500)}`] }, 'invalid_redirect_uri'],
+      [{ redirect_uris: [] }, 'invalid_client_metadata'],
+      [{}, 'invalid_client_metadata'],
+      [{ redirect_uris: ['https://app.exemple.fr/cb'], grant_types: ['implicit'] }, 'invalid_client_metadata'],
+      [{ redirect_uris: ['https://app.exemple.fr/cb'], response_types: ['token'] }, 'invalid_client_metadata'],
+    ];
+    for (const [corps, erreur] of cas) {
+      const r = await enregistrer(server, corps);
+      expect([r.statusCode, r.json<{ error: string }>().error], JSON.stringify(corps)).toEqual([400, erreur]);
+    }
+    expect(enregistres.size).toBe(0);
+    await server.close();
+  });
+
+  it('🔴 l’enregistrement REMPLACE ce qu’il ne fait pas : Cursor passe sans cursor://, un secret devient none', async () => {
+    const { server, enregistres } = monter();
+    const cursor = await enregistrer(server, {
+      client_name: 'Cursor',
+      redirect_uris: ['cursor://anysphere.cursor-mcp/oauth/callback', 'https://www.cursor.com/agents/mcp/oauth/callback', 'http://localhost:8787/callback'],
+      token_endpoint_auth_method: 'client_secret_post',
+      grant_types: ['authorization_code', 'refresh_token', 'client_credentials'],
+      application_type: 'console',
+    });
+    expect(cursor.statusCode, cursor.body).toBe(201);
+    expect(cursor.json()).toMatchObject({
+      redirect_uris: ['https://www.cursor.com/agents/mcp/oauth/callback', 'http://localhost:8787/callback'],
+      token_endpoint_auth_method: 'none', grant_types: ['authorization_code', 'refresh_token'],
+    });
+    expect(cursor.json()).not.toHaveProperty('application_type');
+    const id = cursor.json<{ client_id: string }>().client_id;
+    expect(enregistres.get(id)?.adressesDeRetour).toEqual(['https://www.cursor.com/agents/mcp/oauth/callback', 'http://localhost:8787/callback']);
+    await server.close();
+  });
+
+  it('🔴 un client enregistré ne porte jamais le nom de Claude : l’hôte de retour en tient lieu', async () => {
+    const { server } = monter();
+    for (const nom of ['Claude', 'claude code', 'Claude\u200b', 'Anthropic']) {
+      const r = await enregistrer(server, { client_name: nom, redirect_uris: ['https://evil.test/cb'] });
+      expect(r.json(), nom).not.toHaveProperty('client_name');
+      const id = r.json<{ client_id: string }>().client_id;
+      const vue = await server.inject({
+        method: 'POST', url: '/oauth/consentement/demande', headers: json,
+        payload: { demande: await demander(server, { client_id: id, redirect_uri: 'https://evil.test/cb' }) },
+      });
+      expect(vue.json(), nom).toMatchObject({ client: 'evil.test', marque: 'declaree' });
+    }
+    await server.close();
+  });
+
+  it('le plafond : dix enregistrements par minute et par adresse', async () => {
+    const { server, enregistres } = monter();
+    for (let i = 0; i < 10; i += 1) expect((await enregistrer(server, { redirect_uris: ['https://app.exemple.fr/cb'] })).statusCode).toBe(201);
+    const trop = await enregistrer(server, { redirect_uris: ['https://app.exemple.fr/cb'] });
+    expect(trop.statusCode).toBe(429);
+    expect(enregistres.size).toBe(10);
+    // 🔴 Par adresse RÉELLE (`CF-Connecting-IP`) : un autre client n'est pas bloqué par le premier.
+    const autre = await server.inject({
+      method: 'POST', url: '/oauth/register', headers: { ...json, 'cf-connecting-ip': '203.0.113.9' }, payload: { redirect_uris: ['https://app.exemple.fr/cb'] },
+    });
+    expect(autre.statusCode).toBe(201);
+    await server.close();
+  });
+
+  it('🔴 une fiche d’identité : « publié par chatgpt.com », lue à la demande seulement, jamais à l’échange ni au renouvellement', async () => {
+    const { server, fichesLues, crees } = monter({ fiches: { [FICHE]: GPT } });
+    const { demande, jetons } = await parcours(server, FICHE, RETOUR_GPT);
+    const vue = await server.inject({ method: 'POST', url: '/oauth/consentement/demande', headers: json, payload: { demande } });
+    expect(vue.json()).toEqual({ client: 'ChatGPT', marque: 'domaine', domaine: 'chatgpt.com', hoteDeRetour: 'chatgpt.com', droits: ['mcp:read', 'mcp:write'] });
+    expect(fichesLues).toEqual([FICHE]);
+    expect((await appelerMcp(server, jetons.access_token)).statusCode).toBe(200);
+    expect((await echanger(server, { grant_type: 'refresh_token', refresh_token: jetons.refresh_token, client_id: FICHE })).statusCode).toBe(200);
+    expect(fichesLues).toEqual([FICHE]);
+    expect(crees).toHaveLength(0);
+    await server.close();
+  });
+
+  it('🔴 une fiche introuvable, ou une adresse de retour absente de la fiche : 400 en texte, AUCUNE redirection', async () => {
+    const { server } = monter({ fiches: { [FICHE]: GPT } });
+    const cas: Array<[string, string]> = [
+      ['https://evil.test/fiche.json', RETOUR_GPT],
+      [FICHE, 'https://evil.test/cb'],
+      [`mcl_${'Q'.repeat(32)}`, 'https://app.exemple.fr/cb'],
+    ];
+    for (const [client, retour] of cas) {
+      const q = new URLSearchParams({ response_type: 'code', client_id: client, redirect_uri: retour, code_challenge: DEFI, code_challenge_method: 'S256', state: 's' });
+      const r = await server.inject({ method: 'GET', url: `/oauth/authorize?${q}` });
+      expect([r.statusCode, r.headers.location], `${client} ${retour}`).toEqual([400, undefined]);
+    }
+    await server.close();
+  });
+
+  it('🔴 les demandes d’un client à fiche : vingt par minute et par adresse, puis 429 sans requête sortante', async () => {
+    const { server, fichesLues } = monter({ fiches: { [FICHE]: GPT } });
+    const q = (i: number) => new URLSearchParams({
+      response_type: 'code', client_id: `https://evil.test/fiche-${i}.json`, redirect_uri: RETOUR_GPT, code_challenge: DEFI, code_challenge_method: 'S256', state: 's',
+    });
+    for (let i = 0; i < 20; i += 1) expect((await server.inject({ method: 'GET', url: `/oauth/authorize?${q(i)}` })).statusCode).toBe(400);
+    const trop = await server.inject({ method: 'GET', url: `/oauth/authorize?${q(20)}` });
+    expect(trop.statusCode).toBe(429);
+    expect(fichesLues).toHaveLength(20);
+    // Un client épinglé ou enregistré ne passe pas par ce plafond : il ne fait partir aucune requête.
+    expect((await server.inject({ method: 'GET', url: `/oauth/authorize?${new URLSearchParams({
+      response_type: 'code', client_id: CC, redirect_uri: RETOUR, code_challenge: DEFI, code_challenge_method: 'S256', state: 's',
+    })}` })).statusCode).toBe(302);
+    await server.close();
+  });
+
+  it('🔴 un client enregistré purgé : son renouvellement est refusé, l’application redemande une connexion', async () => {
+    const { server, enregistres } = monter();
+    const id = String((await enregistrer(server, { redirect_uris: ['https://app.exemple.fr/cb'] })).json<{ client_id: string }>().client_id);
+    const { jetons } = await parcours(server, id, 'https://app.exemple.fr/cb');
+    enregistres.delete(id);
+    const r = await echanger(server, { grant_type: 'refresh_token', refresh_token: jetons.refresh_token, client_id: id });
+    expect([r.statusCode, r.json<{ error: string }>().error]).toEqual([400, 'invalid_client']);
+    await server.close();
+  });
+
+  it('un espace créé par la connexion d’un autre client porte l’origine client_mcp ; par Claude, claude_code', async () => {
+    const { server, crees } = monter({ fiches: { [FICHE]: GPT } });
+    const viaGpt = await demander(server, { client_id: FICHE, redirect_uri: RETOUR_GPT });
+    expect((await parGoogle(server, viaGpt, 'G:nouveau-gpt@x.fr')).json<{ nouveau: boolean }>().nouveau).toBe(true);
+    const viaClaude = await demander(server);
+    expect((await parGoogle(server, viaClaude, 'G:nouveau-claude@x.fr')).json<{ nouveau: boolean }>().nouveau).toBe(true);
+    expect(crees.map((c) => c.origine)).toEqual(['client_mcp', 'claude_code']);
+    await server.close();
+  });
+
+  it('les applications autorisées montrent le nom, la marque et l’hôte de retour', async () => {
+    const { server } = monter({ fiches: { [FICHE]: GPT } });
+    await parcours(server, FICHE, RETOUR_GPT);
+    const liste = await server.inject({
+      method: 'GET', url: `/tenants/${T1}/oauth/autorisations`, headers: { authorization: `Bearer ${await session('u-admin', T1, 'admin')}` },
+    });
+    expect(liste.statusCode, liste.body).toBe(200);
+    expect(liste.json<{ autorisations: unknown[] }>().autorisations[0]).toMatchObject({
+      client: 'ChatGPT', marque: 'domaine', clientHote: 'chatgpt.com', clientId: FICHE,
+    });
     await server.close();
   });
 });

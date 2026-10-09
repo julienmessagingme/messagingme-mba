@@ -14,10 +14,20 @@ import type { Session } from './session';
  * à la console qui se trompe de compte Google en perdrait sa session, sur une page qui ne la lui a pas demandée.
  */
 
+/**
+ * Comment le nom d'un client est établi (lot 15) : recopié par nous (Claude, Claude Code), prouvé par le domaine de sa
+ * fiche d'identité (ChatGPT), ou déclaré par l'application qui s'est enregistrée (Cursor, VS Code).
+ */
+export type MarqueClient = 'epingle' | 'domaine' | 'declaree';
+
 /** Ce que la page affiche AVANT tout bouton : le client, l'hôte de retour, les droits demandés. */
 export interface DemandeAffichee {
-  /** Le nom du client (« Claude Code », « Claude »), donné par le serveur. */
+  /** Le nom du client (« Claude Code », « Claude », « ChatGPT »), donné par le serveur. */
   client: string;
+  /** Absente d'une API d'avant le lot 15 : la page la traite comme `epingle`. */
+  marque?: MarqueClient;
+  /** Le domaine qui publie la fiche d'un client `domaine` ; `null` sinon. */
+  domaine?: string | null;
   /** L'hôte où partira le code : `localhost`, `127.0.0.1` ou `claude.ai`. */
   hoteDeRetour: string;
   /** `mcp:read`, `mcp:write`, ou les deux. */
@@ -137,6 +147,9 @@ export interface AutorisationOauth {
   clientId: string;
   /** Le nom du client, donné par le serveur. */
   client: string;
+  /** Lot 15 : comment ce nom est établi, et l'hôte où le client reçoit son code. Absents d'une API plus ancienne. */
+  marque?: MarqueClient;
+  clientHote?: string | null;
   userId: string;
   email: string;
   nom: string | null;

@@ -33,7 +33,7 @@ le lot : section 8.
 | Fiche d'identité | une adresse `https` qui n'est pas épinglée | sa fiche, récupérée à l'autorisation (section 2) | « ChatGPT, publié par chatgpt.com » : le domaine de l'adresse prouve l'éditeur |
 | Enregistré | `mcl_` suivi de 32 caractères | `POST /oauth/register` (section 3), gardé en base | « Cursor (non vérifié) » : le nom est celui que le client a déclaré |
 
-Une seule fonction résout un `client_id` en `{ nom, verification: 'epingle' | 'domaine' | 'declaree', adresses }`,
+Une seule fonction résout un `client_id` en `{ nom, marque: 'epingle' | 'domaine' | 'declaree', adresses }`,
 ou `null`. `/oauth/authorize` la lit ; l'échange du code et le renouvellement comparent le `client_id` à celui lié au
 code ou à l'autorisation (aucune requête sortante), et refusent un client enregistré qui n'existe plus.
 
@@ -49,12 +49,16 @@ public, avec PKCE. Cache en mémoire par processus : 10 minutes pour une fiche v
 
 ## 3. L'enregistrement dynamique
 
-`POST /oauth/register`, anonyme, corps JSON (RFC 7591). Accepte `redirect_uris` (requis, 1 à 10, politique de la
-section 4), `client_name`, `token_endpoint_auth_method` (`none` seul, sinon `invalid_client_metadata`), `grant_types`
-(parmi `authorization_code` et `refresh_token`), `response_types` (`code`), `application_type` ; ignore le reste. Rend
-201 avec un `client_id` aléatoire `mcl_…`, sans secret. Les métadonnées du serveur annoncent `registration_endpoint`.
-Plafond : 10 enregistrements par minute et par adresse (`PlafondPartage`). Un client enregistré qu'aucune autorisation
-vivante n'utilise est purgé 30 jours après sa création.
+`POST /oauth/register`, anonyme, corps JSON (RFC 7591). Lit `redirect_uris` (requis, 1 à 10), `client_name`,
+`token_endpoint_auth_method`, `grant_types`, `response_types`, `application_type` ; ignore le reste. Le serveur
+REMPLACE ce qu'il ne fait pas (RFC 7591, § 2) au lieu de refuser le client entier : une adresse de retour hors politique
+(section 4) ou de plus de 500 caractères est écartée, et seul un client sans adresse utilisable est refusé (Cursor
+déclare aussi `cursor://`) ; un mode d'authentification avec secret devient `none` ; les `grant_types` deviennent les
+nôtres, et seul un client qui n'a ni `authorization_code` ni `code` est refusé. Rend 201 avec un `client_id` aléatoire
+`mcl_…`, sans secret, et ce qui est réellement enregistré. Les métadonnées du serveur annoncent `registration_endpoint`.
+Plafonds : 10 enregistrements par minute et par adresse du client (`CF-Connecting-IP`), 300 par heure en tout. Le nom
+déclaré n'est jamais invisible, ni celui de Claude. Un client enregistré qu'aucune autorisation vivante n'utilise est
+purgé 30 jours après sa création.
 
 ## 4. Les adresses de retour d'un client non épinglé
 
@@ -65,7 +69,7 @@ refusé à l'enregistrement et à l'autorisation, sans redirection.
 
 ## 5. Le consentement et la console
 
-La demande rendue à la page porte `client`, `verification`, `domaine` (fiche d'identité) et `hoteDeRetour`. La page :
+La demande rendue à la page porte `client`, `marque`, `domaine` (fiche d'identité) et `hoteDeRetour`. La page :
 - un client épinglé s'affiche comme aujourd'hui ;
 - un autre s'affiche avec sa marque (« publié par chatgpt.com », « non vérifié ») et un avertissement : vérifiez que
   vous venez de lancer cette connexion depuis cette application, le nom est déclaré par elle ;

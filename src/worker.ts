@@ -37,6 +37,7 @@ import { DUREE_CLE_IDEMPOTENCE_MS } from './api/idempotence';
 import { PgArriveesPubStore } from './pubs/arrivees.pg';
 import { PgTarifsMetaStore } from './pubs/tarifs-meta.pg';
 import { PgOauthStore } from './oauth/store.pg';
+import { PgOauthClientsStore } from './oauth/clients.pg';
 import { balayerLesPubs } from './pubs/suivi';
 import { estJetonRefuse } from './meta/graph';
 import { runControlSweep } from './inbox/control-sweep';
@@ -1421,8 +1422,11 @@ async function main(): Promise<void> {
    * (`PgOauthStore.purger`), idempotente : sans danger le jour où ce rôle aura deux exemplaires.
    */
   const oauthStore = new PgOauthStore(pool);
+  const oauthClientsStore = new PgOauthClientsStore(pool);
   taches.programmer('retention-oauth', 6 * 60 * 60 * 1000, async () => {
-    const n = await oauthStore.purger();
+    // Les autorisations d'abord : un client enregistré n'est purgé que si plus aucune autorisation vivante ne l'utilise
+    // (lot 15, `PgOauthClientsStore.purger`).
+    const n = (await oauthStore.purger()) + (await oauthClientsStore.purger());
     // eslint-disable-next-line no-console
     if (n > 0) console.log(`retention-oauth: ${n} code(s) ou autorisation(s) OAuth effacé(s)`);
     return n;

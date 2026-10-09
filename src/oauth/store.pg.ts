@@ -44,6 +44,8 @@ export interface NouvelleAutorisation {
   scopes: readonly string[];
   resource: string;
   code: { empreinte: string; challenge: string; redirectUri: string };
+  /** Lot 15 : le client affiché, pour la liste des applications autorisées. Absent pour Claude et Claude Code. */
+  client?: { nom: string; marque: 'domaine' | 'declaree'; hote: string };
 }
 
 export interface CodeConsomme {
@@ -74,6 +76,10 @@ export interface AutorisationListee {
   scopes: string[];
   creeLe: string;
   dernierUsageLe: string | null;
+  /** Lot 15 : le nom, la marque et l'hôte de retour d'un client non épinglé ; `null` pour Claude et Claude Code. */
+  clientNom: string | null;
+  clientMarque: 'domaine' | 'declaree' | null;
+  clientHote: string | null;
 }
 
 /** La purge efface par paquets : une rafale de lignes mortes ne tient jamais un verrou long. */
@@ -94,9 +100,9 @@ export class PgOauthStore {
     try {
       await client.query('begin');
       const res = await client.query<{ id: string }>(
-        `insert into oauth_autorisations (tenant_id, user_id, client_id, scopes, resource)
-         values ($1, $2, $3, $4, $5) returning id`,
-        [e.tenantId, e.userId, e.clientId, e.scopes, e.resource],
+        `insert into oauth_autorisations (tenant_id, user_id, client_id, scopes, resource, client_nom, client_marque, client_hote)
+         values ($1, $2, $3, $4, $5, $6, $7, $8) returning id`,
+        [e.tenantId, e.userId, e.clientId, e.scopes, e.resource, e.client?.nom ?? null, e.client?.marque ?? null, e.client?.hote ?? null],
       );
       const autorisationId = res.rows[0]!.id;
       await client.query(
@@ -243,9 +249,11 @@ export class PgOauthStore {
   async lister(tenantId: string): Promise<AutorisationListee[]> {
     const res = await this.pool.query<{
       id: string; client_id: string; user_id: string; email: string; name: string | null; scopes: string[];
-      cree_le: Date; dernier_usage_le: Date | null;
+      cree_le: Date; dernier_usage_le: Date | null; client_nom: string | null; client_marque: 'domaine' | 'declaree' | null;
+      client_hote: string | null;
     }>(
-      `select a.id, a.client_id, a.user_id, u.email, u.name, a.scopes, a.cree_le, a.dernier_usage_le
+      `select a.id, a.client_id, a.user_id, u.email, u.name, a.scopes, a.cree_le, a.dernier_usage_le,
+              a.client_nom, a.client_marque, a.client_hote
          from oauth_autorisations a join users u on u.id = a.user_id and u.tenant_id = a.tenant_id
         where a.tenant_id = $1 and a.revoque_le is null and a.refresh_hash is not null
           and least(a.refresh_expire_le, a.refresh_max_le) > now()
@@ -255,6 +263,7 @@ export class PgOauthStore {
     return res.rows.map((r) => ({
       id: r.id, clientId: r.client_id, userId: r.user_id, email: r.email, nom: r.name, scopes: r.scopes,
       creeLe: r.cree_le.toISOString(), dernierUsageLe: r.dernier_usage_le ? r.dernier_usage_le.toISOString() : null,
+      clientNom: r.client_nom, clientMarque: r.client_marque, clientHote: r.client_hote,
     }));
   }
 

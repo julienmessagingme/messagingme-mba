@@ -13,15 +13,17 @@ import { useT } from '@/lib/i18n';
 import { getSession, type Session } from '@/lib/session';
 import {
   adresseDeRetourSure, autoriserParGoogle, autoriserParSession, capacitesAnnoncees, continuerAvecGoogle, estDemandeExpiree,
-  ouvrirConsentement, type ChoixOauth, type Ouverture,
+  ouvrirConsentement, type ChoixOauth, type MarqueClient, type Ouverture,
 } from '@/lib/oauth';
 
 /** La politique de confidentialité de messagingme.fr, que la page cite avec la phrase sur Anthropic (spec, section 3). */
 const POLITIQUE_DE_CONFIDENTIALITE = 'https://www.messagingme.fr/politique-de-confidentialite/';
 
 /**
- * LE CONSENTEMENT DE CLAUDE (spec `docs/superpowers/specs/2026-10-03-oauth-mcp-design.md`, section 3). Claude ouvre
- * `/oauth/authorize` sur l'API, qui vérifie la demande, la signe et redirige ici avec `?demande=`.
+ * LE CONSENTEMENT D'UN CLIENT MCP (spec `docs/superpowers/specs/2026-10-03-oauth-mcp-design.md`, section 3, et
+ * `2026-10-09-oauth-autres-clients-design.md`, § 5). Le client ouvre `/oauth/authorize` sur l'API, qui vérifie la
+ * demande, la signe et redirige ici avec `?demande=`. Claude et Claude Code ont un nom vérifié ; un autre client
+ * (ChatGPT, Cursor) montre comment son nom est établi, et un avertissement.
  *
  * 🔴 LE CONSENTEMENT N'EST JAMAIS SAUTÉ. La page montre le client, l'hôte de retour et les droits AVANT tout bouton,
  * et aucun code ne s'émet avant un clic, même pour une personne déjà connectée à la console : notre serveur délègue
@@ -72,8 +74,8 @@ export default function AutoriserPage() {
       const { adresse } = await appel();
       if (!adresseDeRetourSure(adresse, ouverture.demande.hoteDeRetour)) {
         setErreur(t(
-          'L’adresse de retour ne correspond pas à celle annoncée : la page ne s’y rend pas. Relancez la connexion depuis Claude.',
-          'The return address does not match the one shown: this page will not go there. Start the connection again from Claude.',
+          'L’adresse de retour ne correspond pas à celle annoncée : la page ne s’y rend pas. Relancez la connexion depuis votre application.',
+          'The return address does not match the one shown: this page will not go there. Start the connection again from your application.',
         ));
         return;
       }
@@ -127,15 +129,15 @@ export default function AutoriserPage() {
         ) : ouverture.etat === 'absente' ? (
           <EtatFinal testId="autoriser-absente" titre={t('Aucune demande à autoriser', 'No request to authorize')}>
             {t(
-              'Cette page s’ouvre depuis Claude, au moment où vous connectez votre espace. Relancez la connexion depuis Claude.',
-              'This page opens from Claude, when you connect your workspace. Start the connection again from Claude.',
+              'Cette page s’ouvre depuis votre application (Claude, ChatGPT…), au moment où vous connectez votre espace. Relancez la connexion depuis votre application.',
+              'This page opens from your application (Claude, ChatGPT…), when you connect your workspace. Start the connection again from your application.',
             )}
           </EtatFinal>
         ) : ouverture.etat === 'expiree' ? (
           <EtatFinal testId="autoriser-expiree" titre={t('Demande expirée', 'Request expired')}>
             {t(
-              'Cette demande d’autorisation a expiré : relancez la connexion depuis Claude.',
-              'This authorization request has expired: start the connection again from Claude.',
+              'Cette demande d’autorisation a expiré : relancez la connexion depuis votre application.',
+              'This authorization request has expired: start the connection again from your application.',
             )}
           </EtatFinal>
         ) : ouverture.etat === 'erreur' ? (
@@ -164,7 +166,14 @@ export default function AutoriserPage() {
               </p>
             </div>
 
-            <Capacites client={ouverture.demande.client} droits={ouverture.demande.droits} />
+            <Provenance client={ouverture.demande.client} marque={ouverture.demande.marque ?? 'epingle'} domaine={ouverture.demande.domaine ?? null} />
+
+            <Capacites
+              client={ouverture.demande.client}
+              droits={ouverture.demande.droits}
+              marque={ouverture.demande.marque ?? 'epingle'}
+              domaine={ouverture.demande.domaine ?? null}
+            />
 
             {erreur && <p role="alert" className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700" data-testid="autoriser-refus">{erreur}</p>}
 
@@ -234,13 +243,40 @@ function EtatFinal({ titre, testId, children }: { titre: string; testId: string;
 }
 
 /**
- * Ce que Claude pourra lire et faire, droit par droit, et la phrase sur Anthropic. Les listes suivent les outils du
+ * D'OÙ VIENT LE NOM DU CLIENT (lot 15, décision de Julien du 2026-10-09). Claude et Claude Code n'ont rien à
+ * signaler : leur nom est recopié par nous. Un autre client montre sa marque, « publié par chatgpt.com » (le domaine de
+ * sa fiche prouve l'éditeur) ou « non vérifié » (un nom déclaré à l'enregistrement), et un avertissement : un nom
+ * déclaré peut imiter n'importe qui, seule la personne sait si elle vient de lancer cette connexion.
+ */
+function Provenance({ client, marque, domaine }: { client: string; marque: MarqueClient; domaine: string | null }) {
+  const t = useT();
+  if (marque === 'epingle') return null;
+  return (
+    <div className="space-y-1 rounded-controle border border-alerte-300 bg-alerte-50 px-3 py-2 text-sm text-alerte-900" data-testid="autoriser-avertissement">
+      <p className="font-medium" data-testid="autoriser-marque">
+        {marque === 'domaine' && domaine
+          ? t(`${client}, publié par ${domaine}`, `${client}, published by ${domaine}`)
+          : t(`${client} (non vérifié)`, `${client} (unverified)`)}
+      </p>
+      <p>
+        {t(
+          `Vérifiez que vous venez de lancer cette connexion depuis ${client}. Le nom est déclaré par l’application elle-même${marque === 'domaine' ? '' : ', et nous ne l’avons pas vérifié'}.`,
+          `Make sure you have just started this connection from ${client}. The name is declared by the application itself${marque === 'domaine' ? '' : ', and we have not verified it'}.`,
+        )}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Ce que le client pourra lire et faire, droit par droit, et la phrase sur son éditeur : Anthropic pour Claude, l'éditeur
+ * de l'application pour un autre client (lot 15). Les listes suivent les outils du
  * serveur MCP (`lib/mcp-outils.ts`) : lire les conversations, les contacts, les widgets, les scénarios, les membres, les
  * agents IA, leur connaissance et le crédit IA ; répondre dans la fenêtre de 24 h, poser des étiquettes, confier une
  * conversation, créer et modifier des widgets, construire, essayer et activer des agents IA, ouvrir une recharge.
  * 🔴 Le consentement dit l'argent (lot 8a) : un essai d'agent est débité du crédit, et une recharge ouvre un paiement.
  */
-function Capacites({ client, droits }: { client: string; droits: string[] }) {
+function Capacites({ client, droits, marque, domaine }: { client: string; droits: string[]; marque: MarqueClient; domaine: string | null }) {
   const t = useT();
   const { lire, faire } = capacitesAnnoncees(droits);
   return (
@@ -264,10 +300,15 @@ function Capacites({ client, droits }: { client: string; droits: string[] }) {
         </p>
       )}
       <p className="text-xs text-ink-500">
-        {t(
-          'Ces données seront lues par Claude et traitées par Anthropic, qui édite Claude.',
-          'This data will be read by Claude and processed by Anthropic, the company behind Claude.',
-        )}{' '}
+        {marque === 'epingle'
+          ? t(
+            'Ces données seront lues par Claude et traitées par Anthropic, qui édite Claude.',
+            'This data will be read by Claude and processed by Anthropic, the company behind Claude.',
+          )
+          : t(
+            `Ces données seront lues par ${client} et traitées par son éditeur${domaine ? ` (${domaine})` : ''}.`,
+            `This data will be read by ${client} and processed by its publisher${domaine ? ` (${domaine})` : ''}.`,
+          )}{' '}
         <a href={POLITIQUE_DE_CONFIDENTIALITE} target="_blank" rel="noopener noreferrer" className="font-medium text-brand-600 underline underline-offset-2 hover:text-brand-700">
           {t('Notre politique de confidentialité', 'Our privacy policy')}
         </a>

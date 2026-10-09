@@ -254,13 +254,22 @@ const demandeOauth = z.object({
   scopes: z.array(z.string()).min(1),
   state: z.string(),
   resource: z.string(),
+  /**
+   * Lot 15 : ce que le consentement montre d'un client NON épinglé, scellé par `/oauth/authorize` (aucune seconde
+   * récupération de sa fiche). Absent pour Claude et Claude Code, et dans une demande signée avant le lot 15.
+   */
+  client: z.object({
+    nom: z.string(),
+    marque: z.enum(['domaine', 'declaree']),
+    domaine: z.string().optional(),
+  }).optional(),
 });
 export type DemandeOauth = z.infer<typeof demandeOauth>;
 
 export function signDemandeOauth(d: DemandeOauth, secret: string): Promise<string> {
   return signerKind('oauth_demande', {
     clientId: d.clientId, redirectUri: d.redirectUri, codeChallenge: d.codeChallenge, scopes: d.scopes, state: d.state,
-    resource: d.resource,
+    resource: d.resource, ...(d.client ? { client: d.client } : {}),
   }, secret, '10m');
 }
 export function verifyDemandeOauth(token: string, secret: string): Promise<DemandeOauth | null> {

@@ -25,11 +25,12 @@ export interface UserRow {
 export type UserMutation = 'ok' | 'last_admin' | 'not_found';
 
 /**
- * D'où naît un espace (`tenants.origine`, migration 0212) : par la connexion OAuth de Claude Code, ou par la console.
+ * D'où naît un espace (`tenants.origine`, migrations 0212 et 0227) : par la connexion OAuth de Claude (`claude_code`), d'un
+ * autre client MCP (`client_mcp`, lot 15), ou par la console.
  * Fixée à la création, jamais recalculée. Elle ne décide plus du crédit offert (1 € pour toutes les origines depuis le
  * lot 6) : c'est une donnée d'exploitation, d'où viennent les espaces.
  */
-export type OrigineEspace = 'console' | 'claude_code';
+export type OrigineEspace = 'console' | 'claude_code' | 'client_mcp';
 
 /** Email déjà pris (unicité globale de lower(email)). Traduit en 409 côté route. */
 export class DuplicateEmailError extends Error {

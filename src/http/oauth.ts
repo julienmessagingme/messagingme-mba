@@ -6,14 +6,19 @@ import type { GoogleIdentity } from '../auth/google';
 import { signChoixOauth, signDemandeOauth, verifyChoixOauth, verifyDemandeOauth } from '../auth/token';
 import type { CompteurDebit } from '../db/debit';
 import { sha256Hex } from '../lib/signature';
-import { adresseDeRetourAcceptee, clientConnu } from '../oauth/clients';
+import { adresseDeRetourAcceptee, adresseDeRetourPermise, clientConnu, estAdresseDeFiche } from '../oauth/clients';
+import { clientEncoreReconnu, formeDeClient, resoudreClient, type DepsClients } from '../oauth/resolution';
+import { nomAffichable } from '../oauth/fiche-client';
+import type { PgOauthClientsStore } from '../oauth/clients.pg';
+import { journaliser } from '../lib/journal';
+import { ipIndicative } from '../ops/tentatives';
 import { formeDeDefi, verifierPkce } from '../oauth/pkce';
 import {
   DUREE_ACCES_S, DUREE_RENOUVELLEMENT_INACTIF_S, DUREE_RENOUVELLEMENT_MAX_S, formeDeJeton, nouveauJeton,
   PREFIXE_ACCES, PREFIXE_CODE, PREFIXE_RENOUVELLEMENT,
 } from '../oauth/jetons';
 import { DROITS_OAUTH, metadonneesRessource, metadonneesServeur, ressourceMcp } from '../oauth/metadonnees';
-import { autoriser, DEMANDE_EXPIREE, type DepsAutoriser } from '../oauth/autoriser';
+import { autoriser, DEMANDE_EXPIREE, nomDuClient, type DepsAutoriser } from '../oauth/autoriser';
 import type { PgOauthStore } from '../oauth/store.pg';
 
 /**
@@ -46,6 +51,8 @@ export interface OauthRouteDeps extends DepsAutoriser {
   secret: string;
   /** La console (`APP_URL`), où vit la page de consentement `/autoriser`. */
   appUrl: string;
+  /** Lot 15 : les fiches d'identité (récupérées avec nos gardes) et les clients enregistrés. */
+  clients: DepsClients & { enregistres: Pick<PgOauthClientsStore, 'lire' | 'enregistrer'> };
 }
 
 /** Les paramètres de `/oauth/authorize` sans lesquels on ne sait pas vers qui rediriger : refusés sans redirection. */
@@ -75,6 +82,20 @@ const Renouvellement = z.object({
   resource: z.string().optional(),
 });
 
+/**
+ * L'enregistrement dynamique (RFC 7591, lot 15) : ce qu'on lit d'un client qui s'enregistre. Le reste est ignoré
+ * (logo, contacts, politique) : rien n'en serait affiché sans être vérifié.
+ */
+const Enregistrement = z.object({
+  redirect_uris: z.array(z.string()).min(1).max(10),
+  client_name: z.string().optional(),
+  token_endpoint_auth_method: z.string().optional(),
+  grant_types: z.array(z.string()).optional(),
+  response_types: z.array(z.string()).optional(),
+  application_type: z.string().optional(),
+});
+const GRANTS: readonly string[] = ['authorization_code', 'refresh_token'];
+
 const DemandeSeule = z.object({ demande: z.string().min(1) });
 const ParGoogle = z.object({ demande: z.string().min(1), idToken: z.string().min(1) });
 const ParPreuve = z.object({ demande: z.string().min(1), choix: z.string().min(1), tenantId: z.string().min(1) });
@@ -98,6 +119,21 @@ export function registerOauth(app: FastifyInstance, deps: OauthRouteDeps, base: 
     new PlafondPartage(compteur, { nom: `oauth.${nom}`, max, dureeMs: 60_000, siLaBaseEchoue: 'refuser' });
   const plafondJetons = plafond('jeton', 10);
   const plafondConsentement = plafond('consentement', 20);
+  /**
+   * Lot 15 : les deux surfaces anonymes neuves, l'enregistrement (il écrit en base) et la fiche d'identité (elle fait
+   * partir une requête sortante vers l'adresse donnée). Chacune a DEUX plafonds :
+   * - par ADRESSE du client, lue dans `CF-Connecting-IP` (`ipIndicative`) : `req.ip` est le proxy (pas de
+   *   `trustProxy`), et un plafond sur lui serait global, donc bloquable par un seul script pour toute la plateforme ;
+   * - GLOBAL, en secours : l'en-tête se forge par un appel qui contournerait Cloudflare, et ce plafond-là borne tout.
+   */
+  const plafondSur = (nom: string, max: number, dureeMs: number): PlafondPartage =>
+    new PlafondPartage(compteur, { nom: `oauth.${nom}`, max, dureeMs, siLaBaseEchoue: 'refuser' });
+  const plafondEnregistrement = plafondSur('enregistrement', 10, 60_000);
+  const plafondEnregistrementGlobal = plafondSur('enregistrement-global', 300, 3_600_000);
+  const plafondFiches = plafondSur('fiche', 20, 60_000);
+  const plafondFichesGlobal = plafondSur('fiche-global', 600, 60_000);
+  const parAdresse = (req: { ip: string; headers: Record<string, unknown> }, discriminant: string): string =>
+    rateKey({ ip: ipIndicative(req) }, discriminant);
 
   // Les métadonnées de la ressource, aux deux adresses : Claude Code lit la racine, la spécification MCP fait
   // essayer la forme à chemin d'abord.
@@ -126,12 +162,22 @@ export function registerOauth(app: FastifyInstance, deps: OauthRouteDeps, base: 
      */
     portee.get('/oauth/authorize', async (req, reply) => {
       const pageErreur = (raison: string) => reply.code(400).type('text/plain; charset=utf-8')
-        .send(`Demande d’autorisation refusée : ${raison}.\nRelancez la connexion depuis Claude.\n`);
+        .send(`Demande d’autorisation refusée : ${raison}.\nRelancez la connexion depuis votre application.\n`);
       const dest = Destinataire.safeParse(req.query);
       if (!dest.success) return pageErreur('client_id et redirect_uri requis');
-      const client = clientConnu(dest.data.client_id);
+      // Lot 15 : épinglé, à fiche d'identité (récupérée ici, avec nos gardes) ou enregistré.
+      if (estAdresseDeFiche(dest.data.client_id)) {
+        if (await freine(plafondFiches, parAdresse(req, 'oauth.fiche'), reply)) return reply;
+        if (await freine(plafondFichesGlobal, 'oauth.fiche.global', reply)) return reply;
+      }
+      const client = await resoudreClient(deps.clients, dest.data.client_id);
       if (!client) return pageErreur('client inconnu');
-      if (!adresseDeRetourAcceptee(client, dest.data.redirect_uri)) return pageErreur('adresse de retour non autorisée pour ce client');
+      // Un client non épinglé passe AUSSI par la politique (https ou boucle locale) : sa fiche et son enregistrement
+      // l'ont déjà appliquée, la revoir ici ne coûte rien et ne dépend d'aucun des deux.
+      if (!adresseDeRetourAcceptee(client, dest.data.redirect_uri)
+        || (client.marque !== 'epingle' && !adresseDeRetourPermise(dest.data.redirect_uri))) {
+        return pageErreur('adresse de retour non autorisée pour ce client');
+      }
       const redirectUri = dest.data.redirect_uri;
 
       const lu = Autorisation.safeParse(req.query);
@@ -161,6 +207,9 @@ export function registerOauth(app: FastifyInstance, deps: OauthRouteDeps, base: 
 
       const demande = await signDemandeOauth({
         clientId: client.id, redirectUri, codeChallenge: q.code_challenge, scopes, state: q.state, resource: ressource,
+        ...(client.marque === 'epingle' ? {} : {
+          client: { nom: client.nom, marque: client.marque, ...(client.domaine ? { domaine: client.domaine } : {}) },
+        }),
       }, deps.secret);
       return reply.redirect(`${pageConsentement}?demande=${encodeURIComponent(demande)}`, 302);
     });
@@ -194,9 +243,10 @@ export function registerOauth(app: FastifyInstance, deps: OauthRouteDeps, base: 
         const lu = Echange.safeParse(req.body);
         if (!lu.success) return refus('invalid_request', 'code, redirect_uri, client_id and code_verifier required');
         const e = lu.data;
-        if (!clientConnu(e.client_id)) return refus('invalid_client', 'unknown client');
+        if (!formeDeClient(e.client_id)) return refus('invalid_client', 'unknown client');
         if (!formeDeJeton(e.code, PREFIXE_CODE)) return refus('invalid_grant', 'invalid, expired or already used code');
         if (await freine(plafondJetons, rateKey(req, e.code), reply)) return reply;
+        if (!(await clientEncoreReconnu(deps.clients, e.client_id))) return refus('invalid_client', 'unknown client');
         // 🔴 Le code est consommé AVANT les comparaisons : un vérificateur faux le brûle aussi, un vérificateur ne
         // se devine donc pas en plusieurs essais. Même réponse pour toutes les causes.
         const c = await deps.store.consommerCode(sha256Hex(e.code));
@@ -216,10 +266,11 @@ export function registerOauth(app: FastifyInstance, deps: OauthRouteDeps, base: 
         const lu = Renouvellement.safeParse(req.body);
         if (!lu.success) return refus('invalid_request', 'refresh_token and client_id required');
         const r = lu.data;
-        if (!clientConnu(r.client_id)) return refus('invalid_client', 'unknown client');
+        if (!formeDeClient(r.client_id)) return refus('invalid_client', 'unknown client');
         if (r.resource !== undefined && r.resource !== ressource) return refus('invalid_target', `supported resource: ${ressource}`);
         if (!formeDeJeton(r.refresh_token, PREFIXE_RENOUVELLEMENT)) return refus('invalid_grant', 'invalid refresh token');
         if (await freine(plafondJetons, rateKey(req, r.refresh_token), reply)) return reply;
+        if (!(await clientEncoreReconnu(deps.clients, r.client_id))) return refus('invalid_client', 'unknown client');
         const p = paire();
         // 🔴 Un ANCIEN jeton présenté révoque toute l'autorisation (`PgOauthStore.renouveler`, RFC 9700 4.14) :
         // Claude reçoit `invalid_grant` et redemande une connexion. `scope` absent de la réponse : il est celui
@@ -230,6 +281,55 @@ export function registerOauth(app: FastifyInstance, deps: OauthRouteDeps, base: 
       }
 
       return refus('unsupported_grant_type', 'supported grant types: authorization_code, refresh_token');
+    });
+
+    /**
+     * L'ENREGISTREMENT DYNAMIQUE (RFC 7591 ; lot 15, spec § 3) : anonyme, il rend un `client_id` aléatoire `mcl_…`,
+     * sans secret (client public, PKCE). Le nom est celui que le client déclare, et le consentement le dira « non
+     * vérifié ».
+     * Le serveur REMPLACE ce qu'il ne fait pas, comme la RFC 7591 (§ 2) le permet, plutôt que de refuser le client
+     * entier : les adresses de retour hors politique (https ou boucle locale, décision de Julien) sont ÉCARTÉES, et
+     * seul un client à qui il n'en reste aucune est refusé (Cursor déclare aussi `cursor://`) ; un mode
+     * d'authentification avec secret devient `none` (le SDK MCP Python envoie `client_secret_post`) ; les
+     * `grant_types` deviennent les nôtres. La réponse dit ce qui est réellement enregistré.
+     * 🔴 Les plafonds précèdent la base : dix par minute et par adresse, trois cents par heure en tout.
+     */
+    portee.post('/oauth/register', async (req, reply) => {
+      const refus = (error: string, description: string) => reply.code(400).send({ error, error_description: description });
+      const lu = Enregistrement.safeParse(req.body);
+      if (!lu.success) return refus('invalid_client_metadata', 'redirect_uris (1 to 10) required');
+      const e = lu.data;
+      // 500 caractères au plus par adresse : dix adresses de 2 000 feraient 20 Ko par enregistrement anonyme.
+      const adresses = [...new Set(e.redirect_uris)].filter((a) => a.length <= 500 && adresseDeRetourPermise(a));
+      if (adresses.length === 0) {
+        return refus('invalid_redirect_uri', 'no usable redirect_uri: https, or http on localhost or 127.0.0.1, without query or fragment');
+      }
+      if (e.grant_types !== undefined && !e.grant_types.includes('authorization_code')) {
+        return refus('invalid_client_metadata', 'grant_types must include authorization_code');
+      }
+      if (e.response_types !== undefined && !e.response_types.includes('code')) {
+        return refus('invalid_client_metadata', 'response_types must include code');
+      }
+      if (await freine(plafondEnregistrement, parAdresse(req, 'oauth.enregistrement'), reply)) return reply;
+      if (await freine(plafondEnregistrementGlobal, 'oauth.enregistrement.global', reply)) return reply;
+      const nom = nomAffichable(e.client_name);
+      const typeApplication = e.application_type === 'web' || e.application_type === 'native' ? e.application_type : null;
+      const c = await deps.clients.enregistres.enregistrer({ nom, adressesDeRetour: adresses, typeApplication });
+      // Le nom DÉCLARÉ et les hôtes de retour : c'est ce qui dira, à l'essai réel, quel client s'est enregistré.
+      journaliser('info', 'oauth_client_enregistre', {
+        nom, hotes: [...new Set(adresses.map((a) => new URL(a).hostname))], ecartees: e.redirect_uris.length - adresses.length,
+        ...(e.token_endpoint_auth_method !== undefined && e.token_endpoint_auth_method !== 'none' ? { authentificationRemplacee: e.token_endpoint_auth_method } : {}),
+      });
+      return reply.code(201).send({
+        client_id: c.clientId,
+        client_id_issued_at: Math.floor(c.creeLe.getTime() / 1000),
+        ...(nom ? { client_name: nom } : {}),
+        redirect_uris: adresses,
+        token_endpoint_auth_method: 'none',
+        grant_types: [...GRANTS],
+        response_types: ['code'],
+        ...(typeApplication ? { application_type: typeApplication } : {}),
+      });
     });
 
     /**
@@ -255,7 +355,10 @@ export function registerOauth(app: FastifyInstance, deps: OauthRouteDeps, base: 
       const demande = await verifyDemandeOauth(lu.data.demande, deps.secret);
       if (!demande) return reply.code(400).send(DEMANDE_EXPIREE);
       return reply.code(200).send({
-        client: clientConnu(demande.clientId)?.nom ?? demande.clientId,
+        client: nomDuClient(demande),
+        // Lot 15 : comment ce nom est établi. `epingle` pour Claude et Claude Code (et pour une demande d'avant le lot).
+        marque: demande.client?.marque ?? 'epingle',
+        domaine: demande.client?.domaine ?? null,
         hoteDeRetour: new URL(demande.redirectUri).hostname,
         droits: demande.scopes,
       });
@@ -269,7 +372,8 @@ export function registerOauth(app: FastifyInstance, deps: OauthRouteDeps, base: 
     portee.post('/oauth/consentement/google', async (req, reply) => {
       const lu = ParGoogle.safeParse(req.body);
       if (!lu.success) return reply.code(400).send({ error: 'demande et idToken requis' });
-      if (!(await verifyDemandeOauth(lu.data.demande, deps.secret))) return reply.code(400).send(DEMANDE_EXPIREE);
+      const demandeLue = await verifyDemandeOauth(lu.data.demande, deps.secret);
+      if (!demandeLue) return reply.code(400).send(DEMANDE_EXPIREE);
       // Avant la vérification Google, comme `/auth/google` : la clé est le jeton présenté.
       if (await freine(plafondConsentement, rateKey(req, lu.data.idToken), reply)) return reply;
       const identite = await deps.verifyGoogle(lu.data.idToken);
@@ -279,8 +383,9 @@ export function registerOauth(app: FastifyInstance, deps: OauthRouteDeps, base: 
       if (tous.length > 0 && actifs.length === 0) return reply.code(403).send({ error: 'compte révoqué' });
       const nouveau = tous.length === 0;
       if (nouveau) {
-        // L'espace naît ici par la connexion de Claude Code : son origine fixe le crédit offert à 1 € (0212).
-        const cree = await creerEspaceParGoogle(deps.comptes, identite, 'claude_code');
+        // L'espace naît ici par la connexion d'un client MCP : `claude_code` pour Claude, `client_mcp` pour un autre (0227).
+        // Une trace : l'origine ne décide plus du crédit offert.
+        const cree = await creerEspaceParGoogle(deps.comptes, identite, clientConnu(demandeLue.clientId) ? 'claude_code' : 'client_mcp');
         actifs = [{ id: cree.userId, tenantId: cree.tenantId, tenantName: cree.tenantName, role: 'admin', disabled: false }];
       }
       const choix = await signChoixOauth({ email: identite.email, demande: sha256Hex(lu.data.demande) }, deps.secret);

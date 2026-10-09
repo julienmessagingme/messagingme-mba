@@ -251,6 +251,7 @@ describe('inventaire des appels sortants vers une URL saisie par un client', () 
     ['src/salesforce/connexion.ts', 'la connexion d’une org Salesforce (adresse saisie par l’admin du client)'],
     ['src/evenements/envoi.ts', 'un webhook sortant, vers l’adresse de l’application du client (lot 12)'],
     ['src/api/entete-par-url.ts', 'le fichier d’en-tête d’un modèle créé par l’API ou par Claude (lot 13)'],
+    ['src/oauth/fiche-client.ts', 'la fiche d’identité d’un client OAuth, à l’adresse qu’il donne (lot 15)'],
   ] as const;
 
   for (const [fichier, quoi] of CHEMINS) {
@@ -270,10 +271,10 @@ describe('inventaire des appels sortants vers une URL saisie par un client', () 
     });
   }
 
-  it('et le compte est de SEPT (l’en-tête d’un modèle par son adresse est le septième, 2026-10-09)', () => {
+  it('et le compte est de HUIT (la fiche d’identité d’un client OAuth est le huitième, 2026-10-09)', () => {
     // Si un septième apparaît sans être ajouté ici, ce test ne le verra pas : c'est sa limite, et elle est
     // dite. Ce qu'il empêche, c'est qu'un des sept PERDE sa garde sans que personne ne s'en aperçoive.
-    expect(CHEMINS).toHaveLength(7);
+    expect(CHEMINS).toHaveLength(8);
   });
 });
 
@@ -306,6 +307,7 @@ describe('inventaire : chaque appel vers une URL client passe par le fetch véri
     ['src/salesforce/client.ts', 'le client REST Salesforce (adresse My Domain saisie par l’admin du client)', true],
     ['src/evenements/envoi.ts', 'un webhook sortant (lot 12)', true],
     ['src/api/entete-par-url.ts', 'l’en-tête d’un modèle par son adresse (lot 13)', true],
+    ['src/oauth/fiche-client.ts', 'la fiche d’identité d’un client OAuth (lot 15)', true],
   ] as const;
 
   for (const [fichier, quoi, sansFetchNu] of CHEMINS) {

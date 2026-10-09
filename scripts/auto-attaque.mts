@@ -323,6 +323,18 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
     secret: SECRET,
     appUrl: 'https://console.exemple.test',
     audit: async () => undefined,
+    // Lot 15 : aucune fiche ne se récupère (aucune requête sortante d'une sonde), aucun client enregistré n'est connu ;
+    // un enregistrement valide rend un client factice, compté comme une interrogation.
+    clients: {
+      fiches: { lire: async () => { interrogations.set('oauth', (interrogations.get('oauth') ?? 0) + 1); return null; } },
+      enregistres: {
+        lire: async () => { interrogations.set('oauth', (interrogations.get('oauth') ?? 0) + 1); return null; },
+        enregistrer: async () => {
+          interrogations.set('oauth', (interrogations.get('oauth') ?? 0) + 1);
+          return { clientId: `mcl_${'A'.repeat(32)}`, creeLe: new Date() };
+        },
+      },
+    },
   } satisfies OauthRouteDeps,
   // Le formulaire de contact de la vitrine : public par nature, il n'a aucune autorité à tromper. Sa fausse autorité
   // est un envoi COUPÉ : une sonde qui l'atteindrait n'enverrait aucun courriel, même en visant une cible distante.
@@ -495,7 +507,7 @@ const OUVERTES: ReadonlyArray<{ motif: RegExp; raison: string }> = [
   // L'OAuth devant `/mcp` : par construction, personne n'a encore de jeton quand il les appelle. Chacune est autorisée
   // par ce qu'elle reçoit (une demande signée, un code, un jeton, une preuve Google signée), attaqué par la sonde 14.
   { motif: /^\/\.well-known\/oauth-(protected-resource(\/mcp)?|authorization-server)$/, raison: 'métadonnées OAuth publiques (RFC 9728, RFC 8414)' },
-  { motif: /^\/oauth\/(authorize|token|revoke)$/, raison: 'OAuth : le client n’a pas encore de jeton (sonde 14)' },
+  { motif: /^\/oauth\/(authorize|token|revoke|register)$/, raison: 'OAuth : le client n’a pas encore de jeton, ou s’enregistre (RFC 7591, lot 15 ; sonde 14)' },
   { motif: /^\/oauth\/consentement\/(demande|google|autoriser)$/, raison: 'consentement OAuth : demande et preuve signées, pas de session (sonde 14)' },
 ];
 

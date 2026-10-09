@@ -4148,8 +4148,8 @@ essayer : le même serveur en connecteur dans claude.ai.
 **À quoi ça sert.** Claude Desktop et claude.ai ne savent pas porter une clé d'API, et un nouvel utilisateur de
 Claude Code devait d'abord ouvrir la console pour en créer une. Désormais, la personne ajoute
 `https://api.messagingme.app/mcp` dans Claude, sans clé : Claude ouvre une page de la console, elle s'y identifie,
-clique « Autoriser », et Claude travaille dans son espace. Les clés d'API ne changent pas, et restent la seule voie
-pour les autres clients MCP (Cursor, VS Code, ChatGPT).
+clique « Autoriser », et Claude travaille dans son espace. Les clés d'API ne changent pas. Depuis le lot 15
+(2026-10-09), les autres clients MCP se connectent de la même façon (plus bas).
 
 **La page « Autoriser ».** Avant tout bouton, elle dit quel client demande l'accès (« Claude Code » ou « Claude »),
 vers quelle adresse il repartira (`localhost` ou `claude.ai`), ce qu'il pourra lire et faire, et que ces données
@@ -4162,7 +4162,7 @@ façons de prouver qui l'on est :
   pour chacun de ceux où elle est administrateur, les autres affichés avec « demandez à un administrateur ». Une
   adresse Google inconnue crée son espace au passage, et la page le dit sous le bouton, avant le clic.
 
-Une demande expirée (dix minutes) le dit, et invite à relancer la connexion depuis Claude.
+Une demande expirée (dix minutes) le dit, et invite à relancer la connexion depuis son application.
 
 **Seul un administrateur autorise**, et son rôle est relu au clic, puis à chaque appel de Claude : un compte
 rétrogradé ou désactivé perd l'accès à l'appel suivant. Une autorisation vaut pour un seul espace : changer
@@ -4175,8 +4175,19 @@ coupe l'accès dès l'appel suivant ; Claude redemande alors une connexion. Deux
 deux lignes, révocables séparément. Le journal des actions (menu Sécurité) garde qui a autorisé Claude, et qui a
 révoqué cet accès.
 
-**Ce qui ne change pas.** Les mêmes refus qu'avec une clé : rien hors de la fenêtre de 24 h, aucun envoi de
-template, aucune automation réveillée. Les appels comptent dans le plafond de l'API de l'espace. Une réponse
+**Les autres clients MCP (lot 15, 2026-10-09).** ChatGPT, Cursor, VS Code ou Lovable ajoutent la même adresse
+(`https://api.messagingme.app/mcp`), sans clé, en connecteur ou serveur MCP distant avec l'authentification OAuth, et
+passent par la même page « Autoriser ». Un client qui publie une fiche d'identité (ChatGPT) y apparaît « publié par »
+son domaine ; un client qui s'enregistre (Cursor, VS Code) y apparaît « non vérifié », son nom étant celui qu'il
+déclare ; les deux avec un avertissement (vérifier qu'on vient de lancer cette connexion), et la phrase sur les
+données nomme l'éditeur de l'application au lieu d'Anthropic. Le client reçoit son code sur une adresse https, ou sur
+localhost et 127.0.0.1 : un retour par un schéma d'application (`cursor://`) est refusé. Comme pour Claude : toutes
+les offres, seul un administrateur autorise, et les outils réservés à une personne (connecter un numéro, créer un
+agent) s'ouvrent. « Applications autorisées » dit « non vérifié » et l'hôte de retour. Un espace créé par cette
+connexion est marqué comme né d'un client MCP. Essai réel dû : ChatGPT, puis Lovable.
+
+**Ce qui ne change pas.** Les mêmes refus qu'avec une clé : rien hors de la fenêtre de 24 h, sauf un modèle par
+l'outil réservé à une personne (lot 13), aucune automation réveillée. Les appels comptent dans le plafond de l'API de l'espace. Une réponse
 envoyée ou une conversation confiée par Claude connecté ainsi porte le nom de la personne qui l'a autorisé.
 L'ancienne adresse `https://mba.messagingme.app/mcp` reste à clé seulement. Ce qui change : les outils de l'agent IA
 et du crédit (ci-dessous) ne s'ouvrent qu'à cette connexion.

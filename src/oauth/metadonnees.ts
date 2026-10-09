@@ -40,11 +40,11 @@ export function metadonneesRessource(base: string): Record<string, unknown> {
 }
 
 /**
- * Les métadonnées du serveur d'autorisation (RFC 8414). Deux annonces décident de ce que fait Claude :
- * `code_challenge_methods_supported` (sans elle, le client doit refuser de continuer) et le couple
- * `token_endpoint_auth_methods_supported: ["none"]` + `client_id_metadata_document_supported`, qui lui fait
- * présenter sa fiche d'identité plutôt que tenter un enregistrement dynamique. Aucun `registration_endpoint` :
- * il n'y en a pas.
+ * Les métadonnées du serveur d'autorisation (RFC 8414). Trois annonces décident de ce que fait un client :
+ * `code_challenge_methods_supported` (sans elle, le client doit refuser de continuer) ; le couple
+ * `token_endpoint_auth_methods_supported: ["none"]` + `client_id_metadata_document_supported`, qui lui fait présenter
+ * sa fiche d'identité (Claude, ChatGPT) ; et `registration_endpoint` (lot 15), l'enregistrement dynamique en repli pour
+ * un client qui n'en a pas (Cursor, VS Code).
  * `revocation_endpoint_auth_methods_supported` est annoncé aussi : omis, la RFC 8414 le fait valoir
  * `client_secret_basic`, qu'un client public ne peut pas présenter.
  */
@@ -54,6 +54,7 @@ export function metadonneesServeur(base: string): Record<string, unknown> {
     authorization_endpoint: `${base}/oauth/authorize`,
     token_endpoint: `${base}/oauth/token`,
     revocation_endpoint: `${base}/oauth/revoke`,
+    registration_endpoint: `${base}/oauth/register`,
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     code_challenge_methods_supported: ['S256'],

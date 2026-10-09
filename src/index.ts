@@ -32,6 +32,8 @@ import { PgAuthTokenStore } from './auth/token-store.pg';
 import { verifyGoogleIdToken } from './auth/google';
 import { PgApiKeyStore } from './auth/api-key-store.pg';
 import { PgOauthStore } from './oauth/store.pg';
+import { PgOauthClientsStore } from './oauth/clients.pg';
+import { lecteurDeFichesProduction } from './oauth/fiche-client';
 import { PgPlafondEspaceStore } from './auth/plafond-espace.pg';
 import { QuotaSuppressions, creerModelesDuLancement } from './offres/compteurs';
 import { PgOffresStore } from './offres/offre.pg';
@@ -2631,6 +2633,8 @@ async function main(): Promise<void> {
       secret: config.AUTH_SECRET,
       appUrl: config.APP_URL,
       audit: auditSink,
+      // Lot 15 : les autres clients MCP, par leur fiche d'identité (requête sortante gardée) ou par l'enregistrement.
+      clients: { fiches: lecteurDeFichesProduction(), enregistres: new PgOauthClientsStore(pool) },
     },
     oauthConsentement: { store: oauthStore, comptes: userStore, secret: config.AUTH_SECRET, audit: auditSink },
     v1: {

@@ -145,7 +145,7 @@ describe('les métadonnées', () => {
     expect(ressourceMcp(BASE)).toBe(`${BASE}/mcp`);
   });
 
-  it('🔴 le serveur : les champs REQUIRED de la RFC 8414, S256 seul, aucun enregistrement dynamique', () => {
+  it('🔴 le serveur : les champs REQUIRED de la RFC 8414, S256 seul, l’enregistrement dynamique en repli (lot 15)', () => {
     const m = metadonneesServeur(BASE);
     expect(m.issuer).toBe(BASE);
     expect(m.authorization_endpoint).toBe(`${BASE}/oauth/authorize`);
@@ -158,7 +158,8 @@ describe('les métadonnées', () => {
     expect(m.token_endpoint_auth_methods_supported).toEqual(['none']);
     expect(m.client_id_metadata_document_supported).toBe(true);
     expect(m.authorization_response_iss_parameter_supported).toBe(true);
-    expect(m).not.toHaveProperty('registration_endpoint');
+    // L'enregistrement dynamique, en repli pour un client sans fiche (Cursor, VS Code) : lot 15, décision du 2026-10-09.
+    expect(m.registration_endpoint).toBe(`${BASE}/oauth/register`);
     // Toutes les adresses annoncées vivent sur la base, aucune ne vient d'ailleurs.
     for (const v of Object.values(m)) if (typeof v === 'string' && v.startsWith('http')) expect(v.startsWith(BASE)).toBe(true);
   });

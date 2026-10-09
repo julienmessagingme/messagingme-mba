@@ -50,7 +50,12 @@ export function registerOauthConsentement(app: FastifyInstance, deps: OauthConse
   // Ni empreinte ni échéance de jeton : le client (nommé), la personne, la date, le dernier usage.
   app.get('/tenants/:tenantId/oauth/autorisations', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const autorisations = (await deps.store.lister(tenant)).map((a) => ({ ...a, client: clientConnu(a.clientId)?.nom ?? a.clientId }));
+    // Lot 15 : un client non épinglé porte son nom, sa marque (`domaine`, `declaree`) et son hôte de retour.
+    const autorisations = (await deps.store.lister(tenant)).map((a) => ({
+      ...a,
+      client: a.clientNom ?? clientConnu(a.clientId)?.nom ?? a.clientId,
+      marque: a.clientMarque ?? (clientConnu(a.clientId) ? 'epingle' : 'declaree'),
+    }));
     return reply.code(200).send({ autorisations });
   });
 

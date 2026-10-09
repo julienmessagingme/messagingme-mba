@@ -57,17 +57,50 @@ test.describe('Autoriser Claude : ce que la page montre', () => {
   test('🔴 sans demande dans l’adresse : la page le dit, et rien n’est appelé', async ({ page }) => {
     const appels = await monter(page, () => undefined);
     await page.goto('/autoriser');
-    await expect(page.getByTestId('autoriser-absente')).toContainText(/Relancez la connexion depuis Claude/);
+    await expect(page.getByTestId('autoriser-absente')).toContainText(/Relancez la connexion depuis votre application/);
     expect(appels).toEqual([]);
   });
 
-  test('🔴 demande expirée : « relancez la connexion depuis Claude », et aucun bouton', async ({ page }) => {
+  test('🔴 demande expirée : « relancez la connexion depuis votre application », et aucun bouton', async ({ page }) => {
     await monter(page, (chemin) => (chemin === '/oauth/consentement/demande'
       ? { status: 400, body: { error: 'demande expirée ou invalide : relancez la connexion depuis Claude', code: 'demande_expiree' } }
       : undefined));
     await page.goto('/autoriser?demande=d-perimee');
-    await expect(page.getByTestId('autoriser-expiree')).toContainText(/relancez la connexion depuis Claude/);
+    await expect(page.getByTestId('autoriser-expiree')).toContainText(/relancez la connexion depuis votre application/);
     await expect(page.getByRole('button', { name: /Autoriser/ })).toHaveCount(0);
+  });
+});
+
+/**
+ * 🔴 LOT 15 : UN AUTRE CLIENT QUE CLAUDE. Son nom se dit tel qu'il est établi (publié par son domaine, ou non vérifié),
+ * avec un avertissement, et la phrase sur l'éditeur ne parle plus d'Anthropic. Claude, lui, n'a ni marque ni avertissement.
+ */
+test.describe('Autoriser un autre client MCP', () => {
+  for (const [nom, demande, marque, editeur] of [
+    ['une fiche d’identité', { ...DEMANDE, client: 'ChatGPT', marque: 'domaine', domaine: 'chatgpt.com', hoteDeRetour: 'chatgpt.com' }, 'ChatGPT, publié par chatgpt.com', 'traitées par son éditeur (chatgpt.com)'],
+    ['un client enregistré', { ...DEMANDE, client: 'Cursor', marque: 'declaree', domaine: null, hoteDeRetour: '127.0.0.1' }, 'Cursor (non vérifié)', 'traitées par son éditeur.'],
+  ] as const) {
+    test(`🔴 ${nom} : sa marque, l’avertissement, et pas d’Anthropic`, async ({ page }) => {
+      await avecSession(page, SESSION_ADMIN);
+      await monter(page, (chemin) => {
+        if (chemin === '/oauth/consentement/demande') return { body: demande };
+        if (chemin === '/tenants/t1/nom') return { body: { nom: 'Mon espace' } };
+        return undefined;
+      });
+      await page.goto('/autoriser?demande=d-e2e');
+      await expect(page.getByTestId('autoriser-marque')).toHaveText(marque);
+      await expect(page.getByTestId('autoriser-avertissement')).toContainText('Vérifiez que vous venez de lancer cette connexion');
+      await expect(page.getByTestId('autoriser-droits')).toContainText(editeur);
+      await expect(page.getByTestId('autoriser-droits')).not.toContainText('Anthropic');
+    });
+  }
+
+  test('Claude n’a ni marque ni avertissement', async ({ page }) => {
+    await avecSession(page, SESSION_ADMIN);
+    await monter(page, (chemin) => (chemin === '/oauth/consentement/demande' ? { body: { ...DEMANDE, marque: 'epingle', domaine: null } } : undefined));
+    await page.goto('/autoriser?demande=d-e2e');
+    await expect(page.getByTestId('autoriser-droits')).toContainText('traitées par Anthropic');
+    await expect(page.getByTestId('autoriser-avertissement')).toHaveCount(0);
   });
 });
 

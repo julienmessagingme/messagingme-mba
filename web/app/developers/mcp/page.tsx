@@ -104,6 +104,29 @@ function McpInner({ session }: { session: Session | null }) {
         )}
       </Section>
 
+      <Section titre={t('Connecter un autre client (ChatGPT, Cursor, VS Code, Lovable)', 'Connect another client (ChatGPT, Cursor, VS Code, Lovable)')}>
+        <Liste>
+          <li data-testid="mcp-autres-clients">
+            {t(
+              `Ajoutez un serveur MCP distant (ou un connecteur) à l’adresse ${origine}/mcp, sans clé, avec l’authentification OAuth : le client ouvre notre page d’autorisation, où un administrateur de l’espace se connecte et choisit l’espace.`,
+              `Add a remote MCP server (or a connector) at ${origine}/mcp, with no key, using OAuth authentication: the client opens our authorization page, where a workspace administrator signs in and picks the workspace.`,
+            )}
+          </li>
+          <li>
+            {t(
+              'La page dit d’où vient le nom du client : vérifié pour Claude, publié par son domaine pour un client qui a une fiche d’identité (ChatGPT), non vérifié pour un client qui s’enregistre (Cursor, VS Code).',
+              'The page says where the client’s name comes from: verified for Claude, published by its domain for a client with an identity document (ChatGPT), unverified for a client that registers itself (Cursor, VS Code).',
+            )}
+          </li>
+          <li>
+            {t(
+              'Le client reçoit son code sur une adresse https, ou sur localhost et 127.0.0.1 : un retour par un schéma d’application (cursor://) est refusé.',
+              'The client receives its code on an https address, or on localhost and 127.0.0.1: a return through an app scheme (cursor://) is refused.',
+            )}
+          </li>
+        </Liste>
+      </Section>
+
       <Section titre={t('Ce que l’assistant peut faire', 'What the assistant can do')}>
         <p>{t('Une clé en lecture seule ne voit pas les outils qui écrivent.', 'A read-only key does not see the tools that write.')}</p>
         {/* 🔴 Les outils de l'agent IA et du crédit agissent au nom d'une personne (lot 8a) : une clé d'API ne les voit
