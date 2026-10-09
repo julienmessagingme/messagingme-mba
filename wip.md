@@ -19,6 +19,16 @@
 | Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
 | Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
 
+## PLAN DE PERFORMANCE : LOTS 3, 1, 2 ET 4 POUSSÉS, API PAS ENCORE DÉPLOYÉE (2026-10-09)
+
+Poussés sur `main` : le lot 3 (`ensure` partagé), le lot 1 (relevés arrêtés à l’expiration de la session), les jaunes
+du lot 0 bis, et les lots 2 et 4 (seuil de latence par file, révision de l’API dans `/ops`). La console est publiée par
+Vercel ; l’API et les deux workers tournent encore le lot 0 bis (en production, essai fait). Raison : la CI n’a pas pu
+lancer l’intégration (Docker Hub, `toomanyrequests`, trois essais), et ces lots touchent du code qu’elle couvre.
+Reste : relancer la CI du dernier de ces commits, lire `integration` job par job, puis déployer `mba-api`, `mba-worker`
+et `mba-worker-analyse` avec `REVISION` (`DEPLOY.md`), et lire dans `/ops` la révision et `webhook-status` en vert. La
+console tolère l’API d’avant (révision et seuil absents : l’ancien affichage).
+
 ## LOT 12 : LES WEBHOOKS SORTANTS, LIVRAISON A EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ
 
 Spec `docs/superpowers/specs/2026-10-08-webhooks-sortants-design.md`, plan `docs/superpowers/plans/2026-10-08-webhooks-sortants.md`
