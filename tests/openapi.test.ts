@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import Fastify from 'fastify';
 import { readFileSync } from 'node:fs';
-import type { z } from 'zod';
+import { z as zod, type z } from 'zod';
 import { contratOpenapi } from '../src/api/openapi';
 import { ROUTES_V1 } from '../src/api/openapi/registre';
 import { EVENEMENTS_OPENAPI, donneesDe, enveloppeEvenement } from '../src/api/openapi/evenements';
@@ -21,9 +21,13 @@ import type { SuiviEnvoiApi } from '../src/api/suivi-envoi';
 import type { RapportEnvoi } from '../src/http/v1-sends';
 import type { ReponseMessageSimple } from '../src/http/v1-messages';
 import type { ChampV1 } from '../src/http/v1-contacts-admin';
-import type { DeliveryV1, WebhookV1 } from '../src/http/v1-webhooks';
+import type {
+  DeliveryV1, EssaiWebhookV1, JournalWebhookV1, ListeWebhooksV1, RejeuEchecsV1, RejeuV1, SecretTourneV1, WebhookCreeV1, WebhookV1,
+} from '../src/http/v1-webhooks';
 import type { ModeleCree, StatutLangue } from '../src/api/creer-modele';
-import type { MessageRcsCatalogue, ScenarioCatalogue, TemplateCatalogue } from '../src/http/v1-catalogues';
+import type {
+  CatalogueMessagesRcsV1, CatalogueScenariosV1, CatalogueTemplatesV1, MessageRcsCatalogue, ScenarioCatalogue, TemplateCatalogue,
+} from '../src/http/v1-catalogues';
 import { ENDPOINTS, GROUPES_ENDPOINTS, cleEndpoint } from '../web/lib/api-doc-endpoints';
 import { EXEMPLES_CORPS, EXEMPLES_REPONSES } from '../web/lib/api-exemples';
 import { GardeUsageMemoire } from './aide/usage';
@@ -68,9 +72,22 @@ const typeLangue: Meme<Sortie<typeof R.statutLangue>, StatutLangue> = true;
 const typeTemplate: Meme<Sortie<typeof R.templateCatalogue>, TemplateCatalogue> = true;
 const typeScenario: Meme<Sortie<typeof R.scenarioCatalogue>, ScenarioCatalogue> = true;
 const typeRcs: Meme<Sortie<typeof R.messageRcsCatalogue>, MessageRcsCatalogue> = true;
+// Les réponses que les handlers construisent en littéral : chacune y est tenue par `satisfies` sur ce type.
+const typeListeWebhooks: Meme<Sortie<typeof R.listeWebhooks>, ListeWebhooksV1> = true;
+const typeWebhookCree: Meme<Sortie<typeof R.webhookCree>, WebhookCreeV1> = true;
+const typeSecret: Meme<Sortie<typeof R.secretTourne>, SecretTourneV1> = true;
+const typeEssai: Meme<Sortie<typeof R.essaiWebhook>, EssaiWebhookV1> = true;
+const typeJournal: Meme<Sortie<typeof R.journalWebhook>, JournalWebhookV1> = true;
+const typeRejeu: Meme<Sortie<typeof R.rejeu>, RejeuV1> = true;
+const typeRejeuEchecs: Meme<Sortie<typeof R.rejeuEchecs>, RejeuEchecsV1> = true;
+const typeCatTemplates: Meme<Sortie<typeof R.reponseTemplates>, CatalogueTemplatesV1> = true;
+const typeCatScenarios: Meme<Sortie<typeof R.reponseScenarios>, CatalogueScenariosV1> = true;
+const typeCatRcs: Meme<Sortie<typeof R.reponseMessagesRcs>, CatalogueMessagesRcsV1> = true;
 void [
   typeFiche, typeAnalyse, typeRisque, typeResultat, typeConversation, typeMessage, typePage, typeSuivi, typeRapport,
   typeSimple, typeChamp, typeWebhook, typeDelivery, typeModele, typeLangue, typeTemplate, typeScenario, typeRcs,
+  typeListeWebhooks, typeWebhookCree, typeSecret, typeEssai, typeJournal, typeRejeu, typeRejeuEchecs, typeCatTemplates,
+  typeCatScenarios, typeCatRcs,
 ];
 
 describe('🔴 le registre du contrat est l’API documentée (donc montée)', () => {
@@ -276,6 +293,41 @@ describe('le document est un OpenAPI 3.1 bien formé', () => {
       expect(cible, ref).toBeDefined();
     }
     expect(JSON.stringify(doc)).not.toContain('"$schema"');
+  });
+
+  /** Le JSON Schema ÉMIS, pas le Zod d'origine : c'est lui que lisent un outil de requêtes et un générateur de client. */
+  const corpsEmis = (k: string): z.ZodType => {
+    const [methode, chemin] = k.split(' ');
+    const op = doc.paths[chemin!]?.[methode!.toLowerCase()] as { requestBody?: { content: { 'application/json': { schema: unknown } } } } | undefined;
+    if (!op?.requestBody) throw new Error(`pas de corps émis pour ${k}`);
+    return zod.fromJSONSchema(op.requestBody.content['application/json'].schema as Parameters<typeof zod.fromJSONSchema>[0]);
+  };
+
+  it('🔴 chaque corps d’exemple de la doc valide le JSON Schema émis de sa route', () => {
+    for (const [nom, ex] of Object.entries(EXEMPLES_CORPS)) {
+      const lu = corpsEmis(ex.route).safeParse(ex.corps);
+      expect(lu.success, `${nom} : ${lu.success ? '' : JSON.stringify(lu.error.issues)}`).toBe(true);
+    }
+  });
+
+  it('🔴 un champ que la route exige est requis dans le JSON Schema émis, même passé par un preprocess', () => {
+    const { category: _c, ...modeleSansCategorie } = EXEMPLES_CORPS.modeleMeta.corps;
+    expect(corpsEmis('POST /v1/templates').safeParse(modeleSansCategorie).success).toBe(false);
+    expect(route('POST /v1/templates').corps!.safeParse(modeleSansCategorie).success).toBe(false);
+    const lieu = { to: '33612345678', type: 'location', location: { longitude: 2.35, name: 'Paris' } };
+    expect(corpsEmis('POST /v1/messages').safeParse(lieu).success).toBe(false);
+    expect(corpsEmis('POST /v1/messages').safeParse({ ...lieu, location: { ...lieu.location, latitude: 48.85 } }).success).toBe(true);
+  });
+
+  it('l’erreur n’exige que error (le gestionnaire commun rend { error } seul), et les webhooks ne demandent pas de clé', () => {
+    const composants = doc.components as { schemas: { Error: { required: string[] } }; securitySchemes: { bearer: { description: string } } };
+    expect(composants.schemas.Error.required).toEqual(['error']);
+    expect(composants.securitySchemes.bearer.description).not.toMatch(/oauth/i);
+    for (const [type, w] of Object.entries(doc.webhooks)) {
+      const post = (w as { post: { security: unknown[]; parameters: Array<{ name: string }> } }).post;
+      expect(post.security, type).toEqual([]);
+      expect(post.parameters.map((p) => p.name), type).toEqual(['webhook-id', 'webhook-timestamp', 'webhook-signature']);
+    }
   });
 
   it('une section webhooks par type d’événement, et aucune réponse ni événement fermé à un champ ajouté demain', () => {

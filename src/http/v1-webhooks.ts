@@ -8,7 +8,7 @@ import { messageDeForme } from '../api/forme';
 import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
 import type { Refus } from '../lib/issue';
 import { operationLourdeAcceptee, type PlafondPartage } from '../auth/plafond-partage';
-import { TYPES_ABONNABLES } from '../evenements/types';
+import { TYPES_ABONNABLES, type TypeAbonnable } from '../evenements/types';
 import type { AdresseVue, EnvoiVue } from '../evenements/store.pg';
 import {
   JOURNAL_PAGE_MAX, TYPES_PAR_DEFAUT, creerAdresse, envoyerEssai, lireJournal, modifierAdresse, rejouerEchecs, rejouerEnvoi,
@@ -69,6 +69,18 @@ export interface DeliveryV1 {
   body: string;
 }
 
+/**
+ * Les réponses des autres routes, nommées pour que le contrat OpenAPI les suive (`tests/openapi.test.ts` exige au typage
+ * que chaque schéma de `src/api/openapi/reponses.ts` soit le type rendu) : chaque handler s'y tient par `satisfies`.
+ */
+export interface ListeWebhooksV1 { data: WebhookV1[]; limit: number | null; types: TypeAbonnable[]; defaultTypes: TypeAbonnable[] }
+export interface WebhookCreeV1 { webhook: WebhookV1; secret: string }
+export interface SecretTourneV1 { secret: string; previousSecretValidUntil: string }
+export interface EssaiWebhookV1 { eventId: string; delivered: boolean; statusCode: number | null; response: string }
+export interface JournalWebhookV1 { data: DeliveryV1[]; nextBefore: string | null }
+export interface RejeuV1 { replayed: true }
+export interface RejeuEchecsV1 { replayed: number }
+
 export const webhookV1 = (a: AdresseVue): WebhookV1 => ({
   id: a.id, url: a.url, description: a.description, types: a.types, active: a.active, createdAt: a.creeLe,
   previousSecretValidUntil: a.ancienSecretJusqua, lastDeliveredAt: a.derniereLivraisonLe, retrying: a.enReessai, failed: a.echecs,
@@ -124,9 +136,9 @@ export function registerV1Webhooks(app: FastifyInstance, deps: V1WebhooksRouteDe
     return reply.code(200).send({
       data: (await g.adresses.lister(t)).map(webhookV1),
       limit: await g.limiteAdresses(t),
-      types: TYPES_ABONNABLES,
-      defaultTypes: TYPES_PAR_DEFAUT,
-    });
+      types: [...TYPES_ABONNABLES],
+      defaultTypes: [...TYPES_PAR_DEFAUT],
+    } satisfies ListeWebhooksV1);
   });
 
   app.post('/v1/webhooks', opts, async (req, reply) => {
@@ -137,7 +149,7 @@ export function registerV1Webhooks(app: FastifyInstance, deps: V1WebhooksRouteDe
     if (!r.ok) return refuserGestion(reply, r, 'webhook');
     await journal(t, req, 'evenements.adresse_creee', CIBLE(r.valeur.adresse.id), { url: r.valeur.adresse.url, types: r.valeur.adresse.types, via: 'api' });
     // 🔴 Le secret n'est rendu qu'ici et à la rotation : il ne se relit jamais.
-    return reply.code(201).send({ webhook: webhookV1(r.valeur.adresse), secret: r.valeur.secret });
+    return reply.code(201).send({ webhook: webhookV1(r.valeur.adresse), secret: r.valeur.secret } satisfies WebhookCreeV1);
   });
 
   app.get('/v1/webhooks/:webhookId', opts, async (req, reply) => {
@@ -167,7 +179,7 @@ export function registerV1Webhooks(app: FastifyInstance, deps: V1WebhooksRouteDe
     const r = await tournerSecret(g, t, id);
     if (!r.ok) return refuserGestion(reply, r, 'webhook');
     await journal(t, req, 'evenements.secret_tourne', CIBLE(id), { ancienJusqua: r.valeur.ancienJusqua, via: 'api' });
-    return reply.code(200).send({ secret: r.valeur.secret, previousSecretValidUntil: r.valeur.ancienJusqua });
+    return reply.code(200).send({ secret: r.valeur.secret, previousSecretValidUntil: r.valeur.ancienJusqua } satisfies SecretTourneV1);
   });
 
   app.delete('/v1/webhooks/:webhookId', opts, async (req, reply) => {
@@ -187,7 +199,7 @@ export function registerV1Webhooks(app: FastifyInstance, deps: V1WebhooksRouteDe
     if (!await operationLourdeAcceptee(deps.couteux, req.auth.tenantId, reply)) return reply;
     const r = await envoyerEssai(g, req.auth.tenantId, adresseDe(req.params));
     if (!r.ok) return refuserGestion(reply, r, 'webhook');
-    return reply.code(200).send({ eventId: r.valeur.evenementId, delivered: r.valeur.livre, statusCode: r.valeur.code, response: r.valeur.reponse });
+    return reply.code(200).send({ eventId: r.valeur.evenementId, delivered: r.valeur.livre, statusCode: r.valeur.code, response: r.valeur.reponse } satisfies EssaiWebhookV1);
   });
 
   app.get('/v1/webhooks/:webhookId/deliveries', opts, async (req, reply) => {
@@ -201,7 +213,7 @@ export function registerV1Webhooks(app: FastifyInstance, deps: V1WebhooksRouteDe
     const data = r.valeur.map(deliveryV1);
     // La page suivante commence avant le dernier rendu, quand la page est pleine.
     const nextBefore = data.length === limite ? data[data.length - 1]!.createdAt : null;
-    return reply.code(200).send({ data, nextBefore });
+    return reply.code(200).send({ data, nextBefore } satisfies JournalWebhookV1);
   });
 
   app.post('/v1/webhooks/deliveries/:deliveryId/replay', opts, async (req, reply) => {
@@ -210,7 +222,7 @@ export function registerV1Webhooks(app: FastifyInstance, deps: V1WebhooksRouteDe
     const p = parametresEnvoi.safeParse(req.params);
     const r = await rejouerEnvoi(g, req.auth.tenantId, p.success ? p.data.deliveryId : '');
     if (!r.ok) return refuserGestion(reply, r, 'delivery');
-    return reply.code(202).send({ replayed: true });
+    return reply.code(202).send({ replayed: true } satisfies RejeuV1);
   });
 
   app.post('/v1/webhooks/:webhookId/replay-failures', opts, async (req, reply) => {
@@ -221,6 +233,6 @@ export function registerV1Webhooks(app: FastifyInstance, deps: V1WebhooksRouteDe
     if (!await operationLourdeAcceptee(deps.couteux, req.auth.tenantId, reply)) return reply;
     const r = await rejouerEchecs(g, req.auth.tenantId, adresseDe(req.params), { depuis: lu.data.since });
     if (!r.ok) return refuserGestion(reply, r, 'webhook');
-    return reply.code(202).send({ replayed: r.valeur.rejoues });
+    return reply.code(202).send({ replayed: r.valeur.rejoues } satisfies RejeuEchecsV1);
   });
 }

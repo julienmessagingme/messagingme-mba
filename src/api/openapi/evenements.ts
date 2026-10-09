@@ -35,7 +35,7 @@ const statutMessage = z.object({
 });
 
 /** Le contenu de chaque type, et sa phrase. `Record<TypeEvenement, …>` : un type ajouté au serveur ne compile pas ici. */
-const DONNEES: Readonly<Record<TypeEvenement, { resume: string; donnees: z.ZodObject }>> = {
+const DONNEES: Readonly<Record<TypeEvenement, { resume: string; donnees: z.ZodObject; destinataires?: string }>> = {
   'message.received': {
     resume: 'A contact sent a message (WhatsApp or RCS).',
     donnees: z.object({
@@ -81,7 +81,8 @@ const DONNEES: Readonly<Record<TypeEvenement, { resume: string; donnees: z.ZodOb
     }),
   },
   'conversation.needs_reply': {
-    resume: 'Your application should reply (sent only to the endpoint designated as the responder).',
+    resume: 'Your application should reply.',
+    destinataires: 'Sent only to the endpoint designated as the responder (the workspace answers through your application), whether or not it subscribed to this type.',
     donnees: z.object({
       contact: contactPublic.nullable(), conversation_id: z.string().nullable(), channel: z.literal('whatsapp'),
       message_id: z.string().nullable(), message_type: z.string().nullable(), text: z.string().nullable(),
@@ -89,13 +90,17 @@ const DONNEES: Readonly<Record<TypeEvenement, { resume: string; donnees: z.ZodOb
     }),
   },
   test: {
-    resume: 'A test event (POST /v1/webhooks/{webhookId}/test).',
+    resume: 'A test event.',
+    destinataires: 'Sent only by POST /v1/webhooks/{webhookId}/test, to that endpoint.',
     donnees: z.object({ message: z.string() }),
   },
 };
 
 export const EVENEMENTS_OPENAPI: readonly EvenementOpenapi[] = (Object.keys(DONNEES) as TypeEvenement[])
-  .map((type) => ({ type, resume: DONNEES[type].resume, donnees: DONNEES[type].donnees }));
+  .map((type) => {
+    const d = DONNEES[type];
+    return { type, resume: d.resume, donnees: d.donnees, ...(d.destinataires !== undefined ? { destinataires: d.destinataires } : {}) };
+  });
 
 /** Le schéma des données d'un type, pour les tests. */
 export function donneesDe(type: TypeEvenement): z.ZodObject {

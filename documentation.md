@@ -3773,14 +3773,15 @@ Ajouté par le lot 4 de l'API publique :
     où il veut en nommant ses clés comme nos champs.
 17. **Le tenant vient du CODE de l'URL, jamais du corps**, sur toute route publique remise à un tiers.
 18. **Ce qui est servi est décidé par la SIGNATURE du fichier**, jamais par le type déclaré au téléversement.
-19. **Le contrat OpenAPI se DÉRIVE, il ne s'écrit pas à côté** (lot 16). `GET /openapi.json` est construit depuis le
+32. **Le contrat OpenAPI se DÉRIVE, il ne s'écrit pas à côté** (lot 16). `GET /openapi.json` est construit depuis le
     registre `src/api/openapi/registre.ts`, dont les schémas d'ENTRÉE sont ceux que les routes appliquent, et depuis
     les schémas des événements. `tests/openapi.test.ts` tient le registre égal à l'index de la doc (lui-même égal
     aux routes montées), y passe chaque exemple de la doc, produit chaque événement par les vrais constructeurs, et
     exige au typage que chaque schéma de réponse soit le type que sa route rend : une route `/v1` ajoutée, un champ
     de réponse ajouté ou un événement ajouté sans son entrée casse la CI. Ce que l'intégrateur REÇOIT n'est jamais
     fermé (`additionalProperties: false` retiré des réponses et des événements) : ajouter un champ n'est pas un
-    changement cassant, et un client généré ne doit pas casser ce jour-là.
+    changement cassant, et un client généré ne doit pas casser ce jour-là. À l'inverse, un champ que la route exige y est
+    requis même passé par un `z.preprocess` (que Zod rend facultatif en entrée), et le test le vérifie sur le JSON émis.
 
 ### Sur le code
 

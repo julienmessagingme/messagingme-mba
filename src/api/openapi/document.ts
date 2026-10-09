@@ -46,7 +46,19 @@ export interface EvenementOpenapi {
   readonly type: string;
   readonly resume: string;
   readonly donnees: z.ZodType;
+  /** À qui il part, quand ce n'est pas « chaque adresse abonnée à ce type » (l'essai, la demande de réponse). */
+  readonly destinataires?: string;
 }
+
+/** Les en-têtes de signature (Standard Webhooks) que porte chaque événement. */
+const ENTETES_SIGNATURE: readonly Schema[] = [
+  { name: 'webhook-id', in: 'header', required: true, schema: { type: 'string' }, description: 'The event id (evt_…), stable across retries.' },
+  { name: 'webhook-timestamp', in: 'header', required: true, schema: { type: 'string' }, description: 'Unix time in seconds; reject a timestamp more than 5 minutes away.' },
+  {
+    name: 'webhook-signature', in: 'header', required: true, schema: { type: 'string' },
+    description: 'v1,<base64 HMAC-SHA256 of id.timestamp.body>, keyed with the base64-decoded part of the secret after whsec_; during a rotation, two signatures separated by a space.',
+  },
+];
 
 /** Les refus de la garde de clé et du plafond, possibles sur toutes les routes. */
 export const ERREURS_COMMUNES: readonly CodeApi[] = ['unauthorized', 'missing_scope', 'tenant_locked', 'rate_limited', 'quota_exceeded'];
@@ -66,19 +78,47 @@ function ouvrir(v: unknown): unknown {
     .map(([cle, val]) => [cle, ouvrir(val)]));
 }
 
+/**
+ * Ce que la route EXIGE se dit `required`. Zod écrit chaque `z.preprocess` comme un `pipe(transform, …)`, et une
+ * transformation y passe pour facultative : en entrée, une clé `category: z.preprocess(…, z.enum(…))` sortirait non
+ * requise, alors que la route refuse son absence. On la rend requise quand le schéma d'arrivée ne l'est pas lui-même.
+ */
+function requisMalgreLePreprocess(ctx: { zodSchema: unknown; jsonSchema: Schema }): void {
+  type Interne = { _zod: { def: { type: string; shape?: Record<string, Interne>; in?: Interne; out?: Interne }; optin?: string } };
+  const def = (ctx.zodSchema as Interne)._zod.def;
+  if (def.type !== 'object' || def.shape === undefined) return;
+  for (const [cle, s] of Object.entries(def.shape)) {
+    const d = s._zod.def;
+    if (d.type === 'pipe' && d.in?._zod.def.type === 'transform' && d.out?._zod.optin !== 'optional') {
+      ctx.jsonSchema.required = [...new Set([...((ctx.jsonSchema.required as string[] | undefined) ?? []), cle])];
+    }
+  }
+}
+
 /** Le JSON Schema d'un schéma Zod, sans sa déclaration de version (le document entier est en 2020-12). */
 function versJson(s: z.ZodType, io: 'input' | 'output'): Schema {
-  const { $schema: _version, ...reste } = z.toJSONSchema(s, { io, target: 'draft-2020-12', unrepresentable: 'any' }) as Schema;
+  const { $schema: _version, ...reste } = z.toJSONSchema(s, {
+    io, target: 'draft-2020-12', unrepresentable: 'any', ...(io === 'input' ? { override: requisMalgreLePreprocess } : {}),
+  }) as Schema;
   return io === 'output' ? ouvrir(reste) as Schema : reste;
 }
 
+/**
+ * `code` n'est PAS requis : le gestionnaire d'erreurs commun de l'API (`src/server.ts`) rend `{ error }` seul sur ce
+ * qu'aucune route ne refuse elle-même (un JSON illisible, un corps trop gros, un refus de Meta relancé, une erreur
+ * interne). Un client généré qui l'exigerait casserait sur ces réponses-là.
+ */
 const SCHEMA_ERREUR: Schema = {
   type: 'object',
   properties: {
     error: { type: 'string', description: 'A human-readable message (French).' },
-    code: { type: 'string', enum: Object.keys(STATUT_PAR_CODE), description: 'The stable machine-readable code.' },
+    code: {
+      type: 'string', enum: Object.keys(STATUT_PAR_CODE),
+      description: 'The stable machine-readable code. Absent only on generic failures: malformed JSON, payload too large, an upstream error from Meta, an internal error.',
+    },
+    upgradeUrl: { type: 'string', description: 'On 402 (plan_feature_unavailable, plan_limit_reached): the page where the plan is upgraded.' },
   },
-  required: ['error', 'code'],
+  required: ['error'],
 };
 
 /** Les réponses d'erreur d'une opération, regroupées par statut HTTP (un statut, plusieurs codes possibles). */
@@ -124,15 +164,16 @@ function operation(r: RouteOpenapi): Schema {
   const succes = r.succes.schema === null
     ? { description: 'Success, no content.' }
     : r.succes.schema === 'binaire'
-      ? { description: 'The file.', content: { 'application/octet-stream': { schema: { type: 'string', contentMediaType: 'application/octet-stream' } } } }
+      ? { description: 'The file, served with its own content type (image, audio, video, document).', content: { '*/*': {} } }
       : { description: 'Success.', content: { 'application/json': { schema: versJson(r.succes.schema, 'output') } } };
   const params = parametres(r);
   return {
     operationId: r.operationId,
     summary: r.resume,
     tags: [r.groupe],
-    // Une clé d'API (`mba_…`) ou un jeton OAuth (`mbo_…`), dans `Authorization: Bearer`. Le droit exigé n'est pas un
-    // `scope` OpenAPI (un schéma `http` n'en porte pas) : il est dit en extension et dans la description.
+    // Une clé d'API (`mba_…`) dans `Authorization: Bearer`. Un jeton OAuth (`mbo_…`) ne porte que les droits du MCP, donc
+    // `/v1` lui répond 403 : il n'est pas annoncé. Le droit exigé n'est pas un `scope` OpenAPI (un schéma `http` n'en porte
+    // pas) : il est dit en extension et dans la description.
     security: [{ bearer: [] }],
     'x-required-scope': r.droit,
     description: `Requires the ${r.droit} scope.`,
@@ -163,7 +204,10 @@ export function construireDocument(o: {
     webhooks[e.type] = {
       post: {
         summary: e.resume,
-        description: 'Sent to every webhook endpoint subscribed to this type, signed per Standard Webhooks (webhook-id, webhook-timestamp, webhook-signature).',
+        description: `${e.destinataires ?? 'Sent to every webhook endpoint subscribed to this type.'} Signed per Standard Webhooks.`,
+        // Signé par le secret de l'adresse, jamais par une clé d'API : la sécurité de la racine ne s'applique pas.
+        security: [],
+        parameters: ENTETES_SIGNATURE,
         requestBody: { required: true, content: { 'application/json': { schema: enveloppe(e, o.enveloppe) } } },
         responses: { '2XX': { description: 'Acknowledged. Anything else is retried for 24 hours.' } },
       },
@@ -174,7 +218,7 @@ export function construireDocument(o: {
     info: {
       title: 'Messaging Me API',
       version: '1',
-      description: 'The public API of Messaging Me: contacts, sends, conversations, templates and outgoing webhooks. Errors are { error, code }.',
+      description: 'The public API of Messaging Me: contacts, sends, conversations, templates and outgoing webhooks. Errors are { error, code }; code is absent only on generic failures.',
     },
     servers: [{ url: o.base }],
     security: [{ bearer: [] }],
@@ -183,7 +227,7 @@ export function construireDocument(o: {
     webhooks,
     components: {
       securitySchemes: {
-        bearer: { type: 'http', scheme: 'bearer', description: 'An API key (mba_…) or an OAuth access token, in Authorization: Bearer.' },
+        bearer: { type: 'http', scheme: 'bearer', description: 'An API key (mba_…), created in the console (Developers > API keys), in Authorization: Bearer.' },
       },
       schemas: { Error: SCHEMA_ERREUR },
     },

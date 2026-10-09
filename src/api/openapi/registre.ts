@@ -14,9 +14,10 @@ import { saisieCreation, saisieModification } from '../../evenements/gestion';
 import type { CodeApi } from '../erreurs';
 import type { RouteOpenapi } from './document';
 import {
-  champV1, champs, contactEcrit, contactModifie, contactTrouve, contactsLot, conversationV1, deliveryV1, ficheApi,
-  ficheEffacee, messageRcsCatalogue, messageV1, modeleCree, pageV1, paramSource, rapportEnvoi, reponseMessageSimple,
-  scenarioCatalogue, statutModele, suiviEnvoi, templateCatalogue, webhookV1,
+  champV1, champs, contactEcrit, contactModifie, contactTrouve, contactsLot, conversationV1, essaiWebhook, ficheApi,
+  ficheEffacee, journalWebhook, listeWebhooks, messageV1, modeleCree, pageV1, paramSource, rapportEnvoi, rejeu, rejeuEchecs,
+  reponseMessageSimple, reponseMessagesRcs, reponseScenarios, reponseTemplates, secretTourne, statutModele, suiviEnvoi,
+  webhookCree, webhookV1,
 } from './reponses';
 
 /**
@@ -51,8 +52,8 @@ export const corpsEnvoi = schemaCorps.extend({
     variables: z.record(z.string(), z.string()).optional()
       .describe('Values for this recipient only, never written on the record: the {{name}} of an RCS message, or a template parameter of source variable.'),
   })).min(1).max(MAX_RECIPIENTS),
-  params: z.array(parametreTemplate).optional(),
-});
+  params: z.array(parametreTemplate).optional().describe('Template parameters: positions run from 1 to N, with no gap and no repeat.'),
+}).describe('One target, 1 to 50 recipients. A malformed recipient is skipped (see skipped in the response), it does not fail the send.');
 
 const RESOLUTION: readonly CodeApi[] = ['invalid_recipient', 'invalid_phone', 'unknown_contact', 'identity_conflict'];
 const NUMERO: readonly CodeApi[] = ['no_whatsapp_number', 'number_unlinked', 'number_suspended'];
@@ -109,7 +110,8 @@ export const ROUTES_V1: readonly RouteOpenapi[] = [
   },
   {
     methode: 'POST', chemin: '/v1/contacts/search', droit: 'contacts:read', groupe: C, operationId: 'searchContact',
-    resume: 'Finds a record by phone, BSUID or external id.', corps: schemaRechercheContactV1,
+    resume: 'Finds a record by phone, BSUID or external id.',
+    corps: schemaRechercheContactV1.describe('Exactly one of phone, bsuid or externalId.'),
     succes: { statut: 200, schema: contactTrouve }, erreurs: ['invalid_body', 'invalid_phone'],
   },
   {
@@ -134,7 +136,8 @@ export const ROUTES_V1: readonly RouteOpenapi[] = [
   },
   {
     methode: 'POST', chemin: '/v1/messages', droit: 'sends:create', groupe: M, operationId: 'sendMessage',
-    resume: 'Sends a message in Meta’s format: image, document, location, buttons, list, link button.', corps: schemaMessageMeta,
+    resume: 'Sends a message in Meta’s format: image, document, location, buttons, list, link button.',
+    corps: schemaMessageMeta.describe('Name the person with to (the number with its country code), contactId or externalId. type names the content, and the object of the same name carries it, as at Meta.'),
     succes: { statut: 200, schema: reponseMessageSimple }, erreurs: MESSAGE_WHATSAPP,
   },
   {
@@ -178,20 +181,12 @@ export const ROUTES_V1: readonly RouteOpenapi[] = [
   {
     methode: 'GET', chemin: '/v1/webhooks', droit: 'webhooks:write', groupe: W, operationId: 'listWebhooks',
     resume: 'Lists the endpoints, the plan limit and the available types.',
-    succes: {
-      statut: 200,
-      schema: z.object({
-        data: z.array(webhookV1),
-        limit: z.number().nullable().describe('The plan’s maximum number of endpoints; null: unlimited.'),
-        types: z.array(z.string()), defaultTypes: z.array(z.string()),
-      }),
-    },
-    erreurs: [],
+    succes: { statut: 200, schema: listeWebhooks }, erreurs: [],
   },
   {
     methode: 'POST', chemin: '/v1/webhooks', droit: 'webhooks:write', groupe: W, operationId: 'createWebhook',
     resume: 'Registers an endpoint and returns its secret, only once.', corps: saisieCreation,
-    succes: { statut: 201, schema: z.object({ webhook: webhookV1, secret: z.string().describe('whsec_…, returned only here and at rotation.') }) },
+    succes: { statut: 201, schema: webhookCree },
     erreurs: ['invalid_body', 'plan_limit_reached', 'webhooks_unavailable'],
   },
   {
@@ -206,7 +201,7 @@ export const ROUTES_V1: readonly RouteOpenapi[] = [
   {
     methode: 'POST', chemin: '/v1/webhooks/{webhookId}/rotate-secret', droit: 'webhooks:write', groupe: W, operationId: 'rotateWebhookSecret',
     resume: 'Rotates the secret; the old one still signs for 24 h.',
-    succes: { statut: 200, schema: z.object({ secret: z.string(), previousSecretValidUntil: z.string().describe('ISO 8601 date-time') }) },
+    succes: { statut: 200, schema: secretTourne },
     erreurs: ['webhook_not_found', 'webhooks_unavailable'],
   },
   {
@@ -216,42 +211,38 @@ export const ROUTES_V1: readonly RouteOpenapi[] = [
   {
     methode: 'POST', chemin: '/v1/webhooks/{webhookId}/test', droit: 'webhooks:write', groupe: W, operationId: 'testWebhook',
     resume: 'Sends a signed test event and returns the app’s answer.',
-    succes: {
-      statut: 200,
-      schema: z.object({ eventId: z.string(), delivered: z.boolean(), statusCode: z.number().nullable(), response: z.string() }),
-    },
-    erreurs: ['webhook_not_found'],
+    succes: { statut: 200, schema: essaiWebhook }, erreurs: ['webhook_not_found', 'webhooks_unavailable'],
   },
   {
     methode: 'GET', chemin: '/v1/webhooks/{webhookId}/deliveries', droit: 'webhooks:write', groupe: W, operationId: 'listWebhookDeliveries',
     resume: 'Reads an endpoint’s log, most recent first.', requete: requeteJournal,
-    succes: { statut: 200, schema: z.object({ data: z.array(deliveryV1), nextBefore: z.string().nullable().describe('Pass it as before for the next page.') }) },
+    succes: { statut: 200, schema: journalWebhook },
     erreurs: ['invalid_body', 'webhook_not_found'],
   },
   {
     methode: 'POST', chemin: '/v1/webhooks/deliveries/{deliveryId}/replay', droit: 'webhooks:write', groupe: W, operationId: 'replayWebhookDelivery',
-    resume: 'Replays a finished delivery, with the same body.', succes: { statut: 202, schema: z.object({ replayed: z.literal(true) }) },
+    resume: 'Replays a finished delivery, with the same body.', succes: { statut: 202, schema: rejeu },
     erreurs: ['delivery_not_found', 'delivery_not_replayable'],
   },
   {
     methode: 'POST', chemin: '/v1/webhooks/{webhookId}/replay-failures', droit: 'webhooks:write', groupe: W, operationId: 'replayWebhookFailures',
     resume: 'Replays the failed deliveries since a date.', corps: corpsRejeu,
-    succes: { statut: 202, schema: z.object({ replayed: z.number().describe('How many deliveries were replayed.') }) },
+    succes: { statut: 202, schema: rejeuEchecs },
     erreurs: ['invalid_body', 'webhook_not_found'],
   },
   {
     methode: 'GET', chemin: '/v1/templates', droit: 'sends:create', groupe: K, operationId: 'listTemplates',
     resume: 'Lists the approved, sendable WhatsApp templates.',
-    succes: { statut: 200, schema: z.object({ templates: z.array(templateCatalogue) }) }, erreurs: [],
+    succes: { statut: 200, schema: reponseTemplates }, erreurs: [],
   },
   {
     methode: 'GET', chemin: '/v1/scenarios', droit: 'sends:create', groupe: K, operationId: 'listScenarios',
     resume: 'Lists the published scenarios and their opening message.',
-    succes: { statut: 200, schema: z.object({ scenarios: z.array(scenarioCatalogue) }) }, erreurs: [],
+    succes: { statut: 200, schema: reponseScenarios }, erreurs: [],
   },
   {
     methode: 'GET', chemin: '/v1/rcs-messages', droit: 'sends:create', groupe: K, operationId: 'listRcsMessages',
     resume: 'Lists the RCS messages of the library.',
-    succes: { statut: 200, schema: z.object({ rcsMessages: z.array(messageRcsCatalogue) }) }, erreurs: [],
+    succes: { statut: 200, schema: reponseMessagesRcs }, erreurs: [],
   },
 ];

@@ -4,10 +4,11 @@ import { NIVEAUX_RISQUE, RAISONS_RISQUE } from '../../engagement/risque';
 import { STATUTS_MESSAGE } from '../conversations-v1';
 import { CODES_ECART } from '../sends-build';
 import { STATUT_PAR_CODE, type CodeApi } from '../erreurs';
+import { TYPES_ABONNABLES } from '../../evenements/types';
 
 /**
  * LES RÉPONSES DE L'API PUBLIQUE, EN ZOD, pour le contrat OpenAPI (lot 16). Les routes rendent des types TypeScript
- * (`FicheApi`, `ConversationV1`…) ; ces schémas les décrivent pour un intégrateur, et `tests/openapi-types.test.ts`
+ * (`FicheApi`, `ConversationV1`…) ; ces schémas les décrivent pour un intégrateur, et `tests/openapi.test.ts`
  * exige au TYPAGE que chacun soit exactement le type que sa route rend, dans les deux sens : un champ ajouté, retiré ou
  * renommé côté serveur casse la CI au lieu de laisser le contrat mentir. Les listes de valeurs viennent du serveur.
  */
@@ -195,3 +196,22 @@ export const deliveryV1 = z.object({
   deliveredAt: date.nullable(),
   body: z.string().describe('The exact body that was sent, byte for byte.'),
 });
+
+/** Les réponses des routes des webhooks (`ListeWebhooksV1`… dans `src/http/v1-webhooks.ts`). */
+export const listeWebhooks = z.object({
+  data: z.array(webhookV1),
+  limit: z.number().nullable().describe('The plan’s maximum number of endpoints; null: unlimited.'),
+  types: z.array(z.enum(TYPES_ABONNABLES)),
+  defaultTypes: z.array(z.enum(TYPES_ABONNABLES)),
+});
+export const webhookCree = z.object({ webhook: webhookV1, secret: z.string().describe('whsec_…, returned only here and at rotation.') });
+export const secretTourne = z.object({ secret: z.string(), previousSecretValidUntil: date });
+export const essaiWebhook = z.object({ eventId: z.string(), delivered: z.boolean(), statusCode: z.number().nullable(), response: z.string() });
+export const journalWebhook = z.object({ data: z.array(deliveryV1), nextBefore: date.nullable().describe('Pass it as before for the next page.') });
+export const rejeu = z.object({ replayed: z.literal(true) });
+export const rejeuEchecs = z.object({ replayed: z.number().describe('How many deliveries were replayed.') });
+
+/** Les trois catalogues (`CatalogueTemplatesV1`… dans `src/http/v1-catalogues.ts`). */
+export const reponseTemplates = z.object({ templates: z.array(templateCatalogue) });
+export const reponseScenarios = z.object({ scenarios: z.array(scenarioCatalogue) });
+export const reponseMessagesRcs = z.object({ rcsMessages: z.array(messageRcsCatalogue) });

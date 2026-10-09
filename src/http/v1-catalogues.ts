@@ -175,6 +175,11 @@ export interface V1CataloguesRouteDeps {
  * Une panne de Meta sur `/v1/templates` remonte au gestionnaire global, jamais en liste vide (qui ferait croire
  * à l'absence de template approuvé) : un refus de Meta sort en 422 `{ error: "Meta: …" }`, le reste en 500 opaque.
  */
+/** Les trois réponses, nommées pour le contrat OpenAPI (`tests/openapi.test.ts`). */
+export interface CatalogueTemplatesV1 { templates: TemplateCatalogue[] }
+export interface CatalogueScenariosV1 { scenarios: ScenarioCatalogue[] }
+export interface CatalogueMessagesRcsV1 { rcsMessages: MessageRcsCatalogue[] }
+
 export function registerV1Catalogues(app: FastifyInstance, deps: V1CataloguesRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
 
@@ -183,20 +188,20 @@ export function registerV1Catalogues(app: FastifyInstance, deps: V1CataloguesRou
     const tenantId = req.auth.tenantId;
     if (!await compterOuRefuser(deps.usage, req, reply, 'catalogues.read')) return reply;
     const [templates, indices] = await Promise.all([deps.templates(tenantId), deps.indices.listerParEspace(tenantId)]);
-    return reply.code(200).send({ templates: catalogueTemplates(templates, indices) });
+    return reply.code(200).send({ templates: catalogueTemplates(templates, indices) } satisfies CatalogueTemplatesV1);
   });
 
   app.get('/v1/scenarios', opts, async (req, reply) => {
     if (!req.auth) return refuser(reply, 401, 'unauthorized', 'clé d’API requise');
     const tenantId = req.auth.tenantId;
     if (!await compterOuRefuser(deps.usage, req, reply, 'catalogues.read')) return reply;
-    return reply.code(200).send({ scenarios: catalogueScenarios(await deps.scenarios.listPublies(tenantId)) });
+    return reply.code(200).send({ scenarios: catalogueScenarios(await deps.scenarios.listPublies(tenantId)) } satisfies CatalogueScenariosV1);
   });
 
   app.get('/v1/rcs-messages', opts, async (req, reply) => {
     if (!req.auth) return refuser(reply, 401, 'unauthorized', 'clé d’API requise');
     const tenantId = req.auth.tenantId;
     if (!await compterOuRefuser(deps.usage, req, reply, 'catalogues.read')) return reply;
-    return reply.code(200).send({ rcsMessages: catalogueMessagesRcs(await deps.messagesRcs.list(tenantId)) });
+    return reply.code(200).send({ rcsMessages: catalogueMessagesRcs(await deps.messagesRcs.list(tenantId)) } satisfies CatalogueMessagesRcsV1);
   });
 }
