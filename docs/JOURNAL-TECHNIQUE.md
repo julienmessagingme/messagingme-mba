@@ -5,7 +5,10 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
-## 2026-10-09 : l'envoi au format de Meta (lot 13, domaine 2), écrit
+## 2026-10-09 : l'envoi au format de Meta (lot 13, domaine 2), en production
+
+`8f237a41`, CI verte job par job, aucune migration. La relecture avait un rouge : la position écrite en chaînes,
+comme dans l'exemple de Meta, était refusée ; acceptée depuis, et envoyée en nombres.
 
 Ronde de questions du matin : les types courants, le corps de Meta tel quel (`to` ou nos identifiants), les médias par
 URL, rien de plus. La route réutilise les étapes et les gardes du message simple : elles sont sorties de la route
