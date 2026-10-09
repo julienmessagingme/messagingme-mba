@@ -5,6 +5,15 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-09 : la préparation d'une file se partage (lot 3 du plan de performance)
+
+`PgBossQueue.ensure` ne retenait une file qu'APRÈS l'avoir préparée (création, file des morts, trois réglages : 3 à 5
+requêtes). Juste après un redémarrage, une rafale vers une file neuve refaisait donc ce travail une fois par message :
+mesuré sur le banc, 845 prises de connexion pour 120 messages, et 830 attentes de 230 ms au pire pendant une minute.
+Elle retient désormais la promesse EN COURS, que les appels simultanés partagent (`tests/queue-ensure.test.ts` : dix
+envois simultanés, une seule préparation). Une préparation en échec est oubliée : la retenir rendrait la file
+inutilisable jusqu'au redémarrage suivant.
+
 ## 2026-10-09 : quotas de l'API, ce que la relecture avait laissé (lot 0 bis)
 
 - **Un envoi compte son quota APRÈS la clé d'idempotence** (`lancerEnvoi`, `src/http/v1-sends.ts`). Un rejeu, un envoi

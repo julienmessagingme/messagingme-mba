@@ -158,7 +158,8 @@ type OptsPoolPropre = PgBossPoolOpts & PgBossMaintenanceOpts & PgBossNotifyOpts 
 export class PgBossQueue implements Queue {
   private readonly boss: PgBoss;
   private started = false;
-  private readonly ensured = new Set<string>();
+  /** La préparation de chaque file, EN COURS ou faite : partagée par les appels simultanés (`ensure`). */
+  private readonly ensured = new Map<string, Promise<void>>();
   /** Files consommées par ce process, dans l'ordre : le message de démarrage en dérive (jamais recopié). */
   private readonly travaillees: string[] = [];
   /** Restriction des files CONSOMMEES par ce processus. Absente = toutes, le comportement historique. */
@@ -268,8 +269,21 @@ export class PgBossQueue implements Queue {
    * On ne peut pas l'ajouter ici : pg-boss refuse tout changement de policy après création, et les files de
    * production existent déjà. La déduplication passe par un verrou applicatif, cf. `Queue.enqueue`.
    */
-  private async ensure(name: string): Promise<void> {
-    if (this.ensured.has(name)) return;
+  private ensure(name: string): Promise<void> {
+    // 🔴 LA PROMESSE EN COURS, PAS SEULEMENT LE RÉSULTAT : la préparation fait 3 à 5 requêtes, et des envois
+    // simultanés vers une file neuve (le démarrage d'une copie, une rafale de webhooks) les refaisaient chacun. Une
+    // préparation en échec est oubliée, sinon la file resterait refusée jusqu'au redémarrage.
+    let prete = this.ensured.get(name);
+    if (!prete) {
+      prete = this.preparer(name);
+      this.ensured.set(name, prete);
+      const enCours = prete;
+      enCours.catch(() => { if (this.ensured.get(name) === enCours) this.ensured.delete(name); });
+    }
+    return prete;
+  }
+
+  private async preparer(name: string): Promise<void> {
     const dlq = dlqName(name); // convention -dlq partagée avec src/queue/names.ts
     await this.boss.createQueue(dlq);
     await this.boss.createQueue(name, {
@@ -286,7 +300,6 @@ export class PgBossQueue implements Queue {
     // Une file vidée en continu relit aussitôt une tâche en échec : sans délai, ses rejeux s'enchaîneraient en une
     // seconde jusqu'à la file d'échec (`DELAI_REJEU_VIDAGE_SECONDES`).
     if (videeEnContinu(name)) await this.boss.updateQueue(name, { retryDelay: DELAI_REJEU_VIDAGE_SECONDES });
-    this.ensured.add(name);
   }
 
   async enqueue(

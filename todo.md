@@ -444,10 +444,6 @@ Le défaut de rafale et l'attente de 15 min au crash sont corrigés et déployé
   60 s après une tâche si rien ne la réveille. Pas mesuré : une campagne avec un bloc agent peut produire plus de
   douze tours d'un coup. À passer au banc (épreuve `rafale` adaptée), avant d'étendre `FILES_VIDEES_EN_CONTINU`
   (`agent-turn` a douze boucles : un filet court y coûterait cher, le vidage non).
-- **Le démarrage à froid de l'API** : juste après un redémarrage, chaque premier enfilement d'une file refait sa
-  création et ses réglages (`ensure`), et une rafale fait ce travail en parallèle avant que le premier ne le mémorise.
-  Mesuré sur le banc : 845 prises de connexion pour 120 messages, 830 attentes de 230 ms au pire, une minute.
-  Remède : mémoriser la promesse en vol de `ensure` par file.
 - **Compter les reprises par battement** (« job heartbeat timeout ») dans `/ops` : c'est ce qui dira si de faux
   orphelins existent (une tâche vivante dont les battements n'ont pas pu partir).
 - Le banc : programmer les sondages des onglets depuis le début du geste précédent (la console tire à heure fixe,
