@@ -5,6 +5,16 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-09 : le film d'accueil de la vitrine passe lui aussi en vertical au téléphone, en production
+
+À la demande de Julien, le film d'accueil (WhatsApp, 1 min 12) a sa version 9:16, recomposée scène par scène dans la
+même source de l'atelier que le 16:9 (`~/engageme-motion/engageme-accueil/accueil.src.html`), même minutage et même
+musique. Le 16:9 est resté identique à l'image près : 35 captures de référence sur 36 identiques au bit près avant et
+après la retouche, la 36e (en pleine plongée de l'ouverture) variant déjà d'une capture à l'autre de la même page.
+Sa vidéo porte `data-vertical` et `data-affiche-verticale`, comme le film RCS à côté (`f61970a1`). Vérifié en ligne :
+fichiers servis identiques à l'octet près, et au téléphone, source et affiche 9:16, cadre vertical, lecture
+automatique. Les huit films de la vitrine ont désormais tous leur version verticale.
+
 ## 2026-10-08 : le statut d'un message (lot 13, domaine 1, livraison B), en production le 2026-10-09
 
 `c21dc3b0`, migration 0225 appliquée à 6 h 29 UTC et relue avant le `up`. La relecture : aucun rouge ; l'échec est
