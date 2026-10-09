@@ -51,8 +51,9 @@ d'un modèle créé par l'API.
 Domaine 4 (les webhooks sortants par l'API et par Claude, plan `docs/superpowers/plans/2026-10-09-webhooks-api.md`,
 décisions prises par Claude en l'absence de Julien, à relire : spec § 6) EN PRODUCTION (`f7a75586`). Domaine 5
 (les contacts complets, plan `docs/superpowers/plans/2026-10-09-contacts-complets.md`, spec § 7, mêmes réserves) :
-livraison A (champs et suppression RGPD) EN PRODUCTION (`5e768c39`), ses jaunes poussés ensuite ; l'import d'un
-fichier et le STOP perdu à l'effacement (`todo.md`) attendent la décision de Julien.
+livraison A (champs et suppression RGPD) EN PRODUCTION (`5e768c39`), ses jaunes poussés ensuite. Livraison B
+(décisions de Julien du 2026-10-09 : pas de route d'import, la recette des lots de 50 dans la doc ; la liste de refus
+des fiches effacées, trois ans, migration 0226) EN COURS.
 
 ## L'OFFRE GRATUITE S'APPELLE « FREE », EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ
 

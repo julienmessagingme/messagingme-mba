@@ -11,8 +11,41 @@ import { clauseFiltreFiche, estCleFiltrable, estOperateurFicheSeul, type Operate
 import { COLONNES_ANALYSE_FICHE, analyseDeLaLigne, type AnalyseDeFiche, type LigneAnalyseFiche } from '../analysis/fiche';
 import { LimiteOffreError } from '../offres/refus';
 import {
-  affectationsDUpsert, ecritureDuConsentement, type AutoriteParWaId, type CompteDeLEcriture, type FicheDeLEcriture,
+  affectationsDUpsert, ecritureDuConsentement, issueDeLaTransition, type AutoriteParWaId, type CompteDeLEcriture,
+  type FicheDeLEcriture,
 } from './transition-consentement';
+import { empreinteRefus, empreintesDeLaFiche, SOURCE_LISTE_DE_REFUS } from './refus-effaces';
+
+/**
+ * 🔴 LA LISTE DE REFUS À LA CRÉATION D'UNE FICHE (`src/crm/refus-effaces.ts`). Un CTE qui CONSOMME les entrées des
+ * identifiants de la fiche, mais seulement si aucune fiche ne porte déjà l'un d'eux : sinon la requête retombe dans son
+ * `on conflict` et ne crée rien, et l'entrée doit attendre une vraie création. Rend UNE ligne `refus(whatsapp_le,
+ * rcs_le)`, à `null` sans entrée. Les quatre insertions de fiches le composent (`tests/refus-effaces.test.ts` les compte).
+ */
+function cteRefus(p: { espace: string; empreintes: string; tel: string; bsuid: string }): string {
+  return `refus_lus as (
+         delete from refus_effaces
+          where tenant_id = ${p.espace} and empreinte = any(${p.empreintes}::text[])
+            and not exists (select 1 from contacts c where c.tenant_id = ${p.espace}
+                              and (c.phone_e164 = ${p.tel}::text or c.bsuid = ${p.bsuid}::text))
+          returning whatsapp_le, rcs_le
+       ), refus as (select max(whatsapp_le) as whatsapp_le, max(rcs_le) as rcs_le from refus_lus)`;
+}
+
+/**
+ * Les colonnes de consentement d'une fiche NEUVE, lues sur son entrée de refus (`r`, à `null` sans entrée) : comme si
+ * elle n'avait jamais été effacée, elle naît en STOP avec la date d'origine, sauf si la création lève un STOP (`leve`,
+ * calculé par `issueDeLaTransition`). Le STOP RCS revient tel quel : aucune création ne le lève.
+ */
+function colonnesNeuves(r: string, voulu: string, source: string, leve: string): { statut: string; source: string; optOutAt: string; rcsOptoutAt: string } {
+  const enStop = `(${r}.whatsapp_le is not null and not ${leve}::boolean)`;
+  return {
+    statut: `case when ${enStop} then 'opted_out' else ${voulu} end`,
+    source: `case when ${enStop} then '${SOURCE_LISTE_DE_REFUS}' else ${source} end`,
+    optOutAt: `case when ${enStop} then ${r}.whatsapp_le end`,
+    rcsOptoutAt: `${r}.rcs_le`,
+  };
+}
 
 export interface ContactRow {
   id: string;
@@ -293,11 +326,17 @@ export class PgContactStore implements ContactStore {
    */
   async upsertByPhoneReturningId(c: ContactUpsert): Promise<{ id: string; created: boolean }> {
     await this.verifierPlaceContacts(c.tenantId, [c.phoneE164]);
+    const leve = issueDeLaTransition('opted_out', c.optInStatus, 'webhook_ou_saisie') === 'ecrit';
+    const neuf = colonnesNeuves('refus', '$5::text', '$6::text', '$10');
     // Index unique partiel contacts_tenant_phone_uidx (where phone_e164 is not null) : le ON CONFLICT doit répéter
     // le prédicat pour cibler cet index.
     const res = await this.pool.query<{ id: string; created: boolean }>(
-      `insert into contacts (tenant_id, phone_e164, profile_name, fields, opt_in_status, opt_in_source, tags, bsuid)
-       values ($1, $2, $3, $4::jsonb, $5, $6, $7::text[], $8)
+      `with ${cteRefus({ espace: '$1::uuid', empreintes: '$9', tel: '$2', bsuid: '$8' })}
+       insert into contacts (tenant_id, phone_e164, profile_name, fields, opt_in_status, opt_in_source, tags, bsuid,
+                             opt_out_at, rcs_optout_at)
+       select $1::uuid, $2::text, $3::text, $4::jsonb, ${neuf.statut}, ${neuf.source}, $7::text[], $8::text,
+              ${neuf.optOutAt}, ${neuf.rcsOptoutAt}
+         from refus
        on conflict (tenant_id, phone_e164) where phone_e164 is not null
        do update set
          fields = contacts.fields || excluded.fields,
@@ -308,7 +347,7 @@ export class PgContactStore implements ContactStore {
          -- UN STOP NE SE LEVE PAS ICI (2026-09-26) : le webhook entrant (un outil tiers) et la creation a la main
          -- dans la console reabonnaient quelqu un qui avait dit STOP. Le nom, les champs et les tags se mettent a
          -- jour quand meme.
-         ${affectationsDUpsert('webhook_ou_saisie')},
+         ${affectationsDUpsert('webhook_ou_saisie', { voulu: '$5::text', source: '$6::text' })},
          -- Union dédupliquée : les nouveaux tags s'ajoutent, jamais d'écrasement.
          tags = (select coalesce(array_agg(distinct t), '{}') from unnest(contacts.tags || excluded.tags) t),
          -- Ré-ajouter un contact (webhook entrant, création à la main dans la console) le RESSUSCITE : re-poser le numéro
@@ -325,6 +364,8 @@ export class PgContactStore implements ContactStore {
         c.optInSource ?? null,
         c.tags ?? [],
         c.bsuid ?? null,
+        empreintesDeLaFiche(c.tenantId, { phoneE164: c.phoneE164, bsuid: c.bsuid }),
+        leve,
       ],
     );
     const row = res.rows[0]!;
@@ -363,15 +404,30 @@ export class PgContactStore implements ContactStore {
       phone: c.phoneE164,
       nom: c.profileName,
       champs: c.fields,
+      // Un import ne porte jamais de BSUID : le numéro est la seule clé de sa liste de refus.
+      empreinte: empreinteRefus(lot.tenantId, { tel: c.phoneE164 }),
     }));
+    const leve = issueDeLaTransition('opted_out', lot.optInStatus, lot.autorite) === 'ecrit';
+    const neuf = colonnesNeuves('f', '$2::text', '$3::text', '$6');
 
     const res = await this.pool.query<{ phone_e164: string; created: boolean }>(
-      `insert into contacts (tenant_id, phone_e164, profile_name, fields, opt_in_status, opt_in_source, tags)
+      `with refus_lus as (
+         -- La liste de refus, par ligne (voir cteRefus) : consommée seulement pour un numéro qu'aucune fiche ne porte.
+         delete from refus_effaces r
+          using jsonb_to_recordset($5::jsonb) as x(phone text, empreinte text)
+          where r.tenant_id = $1::uuid and r.empreinte = x.empreinte
+            and not exists (select 1 from contacts c where c.tenant_id = $1::uuid and c.phone_e164 = x.phone)
+          returning r.empreinte, r.whatsapp_le, r.rcs_le
+       )
+       insert into contacts (tenant_id, phone_e164, profile_name, fields, opt_in_status, opt_in_source, tags,
+                             opt_out_at, rcs_optout_at)
        -- Chaque paramètre est CASTÉ explicitement : dans un « insert ... select », Postgres ne déduit pas
        -- toujours le type d'un paramètre depuis la colonne visée, et refuse alors la requête entière.
        -- Alias « l » et non « t » : la clause de conflit plus bas utilise déjà « t » pour son unnest.
-       select $1::uuid, l.phone, l.nom, coalesce(l.champs, '{}'::jsonb), $2::text, $3::text, $4::text[]
-       from jsonb_to_recordset($5::jsonb) as l(phone text, nom text, champs jsonb)
+       select $1::uuid, l.phone, l.nom, coalesce(l.champs, '{}'::jsonb), ${neuf.statut}, ${neuf.source}, $4::text[],
+              ${neuf.optOutAt}, ${neuf.rcsOptoutAt}
+       from jsonb_to_recordset($5::jsonb) as l(phone text, nom text, champs jsonb, empreinte text)
+       left join refus_lus f on f.empreinte = l.empreinte
        on conflict (tenant_id, phone_e164) where phone_e164 is not null
        do update set
          fields = contacts.fields || excluded.fields,
@@ -379,14 +435,14 @@ export class PgContactStore implements ContactStore {
          -- UN STOP NE SE LEVE PAS PAR IMPORT, SAUF LA CASE COCHEE D UN CSV (autorite du lot, decision de Julien du
          -- 2026-09-26) : une liste HubSpot qui contenait quelqu un qui avait dit STOP le reabonnait. Le nom, les
          -- champs et les tags se mettent a jour quand meme.
-         ${affectationsDUpsert(lot.autorite)},
+         ${affectationsDUpsert(lot.autorite, { voulu: '$2::text', source: '$3::text' })},
          tags = (select coalesce(array_agg(distinct t), '{}') from unnest(contacts.tags || excluded.tags) t),
          deleted_at = null,
          updated_at = now()
        returning phone_e164, (xmax = 0) as created`,
       // `bsuid` n'est pas écrit : un import n'en porte jamais, et ne pas toucher la colonne préserve l'identifiant d'un
       // contact arrivé sans numéro partagé.
-      [lot.tenantId, lot.optInStatus, lot.optInSource ?? null, lot.tags ?? [], JSON.stringify(lignes)],
+      [lot.tenantId, lot.optInStatus, lot.optInSource ?? null, lot.tags ?? [], JSON.stringify(lignes), leve],
     );
 
     const creePar = new Map(res.rows.map((r) => [r.phone_e164, r.created] as const));
@@ -584,13 +640,18 @@ export class PgContactStore implements ContactStore {
     const conflict = phoneE164
       ? 'on conflict (tenant_id, phone_e164) where phone_e164 is not null'
       : 'on conflict (tenant_id, bsuid) where bsuid is not null';
+    // Écrire ne lève pas un STOP : la personne qui revient naît en STOP si elle l'avait dit avant d'être effacée.
+    const neuf = colonnesNeuves('refus', `'unknown'`, `'inbound'`, 'false');
     const res = await this.pool.query<{ created: boolean }>(
-      `insert into contacts (tenant_id, phone_e164, bsuid, profile_name, opt_in_status, opt_in_source, ne_entrant)
-       values ($1, $2, $3, $4, 'unknown', 'inbound', true)
+      `with ${cteRefus({ espace: '$1::uuid', empreintes: '$5', tel: '$2', bsuid: '$3' })}
+       insert into contacts (tenant_id, phone_e164, bsuid, profile_name, opt_in_status, opt_in_source, ne_entrant,
+                             opt_out_at, rcs_optout_at)
+       select $1::uuid, $2::text, $3::text, $4::text, ${neuf.statut}, ${neuf.source}, true, ${neuf.optOutAt}, ${neuf.rcsOptoutAt}
+         from refus
        ${conflict}
        do update set profile_name = coalesce(excluded.profile_name, contacts.profile_name), updated_at = now()
        returning (xmax = 0) as created`,
-      [tenantId, phoneE164 ?? null, bsuid ?? null, profileName],
+      [tenantId, phoneE164 ?? null, bsuid ?? null, profileName, empreintesDeLaFiche(tenantId, { phoneE164, bsuid })],
     );
     return res.rows[0]?.created ? 'created' : 'updated';
   }
@@ -948,9 +1009,14 @@ export class PgContactStore implements ContactStore {
       ? 'on conflict (tenant_id, phone_e164) where phone_e164 is not null'
       : 'on conflict (tenant_id, bsuid) where bsuid is not null';
     try {
+      // La fiche naît `unknown` ; le consentement s'écrit ensuite (`ecrireConsentementParId`, autorité `api`, qui ne lève
+      // jamais un STOP). La liste de refus la fait naître en STOP.
+      const neuf = colonnesNeuves('refus', `'unknown'`, 'null::text', 'false');
       const res = await this.pool.query<{ id: string; created: boolean; external_id: string | null; phone_e164: string | null; bsuid: string | null }>(
-        `insert into contacts (tenant_id, phone_e164, bsuid, external_id)
-         values ($1, $2, $3, $4)
+        `with ${cteRefus({ espace: '$1::uuid', empreintes: '$5', tel: '$2', bsuid: '$3' })}
+         insert into contacts (tenant_id, phone_e164, bsuid, external_id, opt_in_status, opt_in_source, opt_out_at, rcs_optout_at)
+         select $1::uuid, $2::text, $3::text, $4::text, ${neuf.statut}, ${neuf.source}, ${neuf.optOutAt}, ${neuf.rcsOptoutAt}
+           from refus
          ${conflit}
          do update set
            external_id = coalesce(contacts.external_id, excluded.external_id),
@@ -962,7 +1028,8 @@ export class PgContactStore implements ContactStore {
          returning id, (xmax = 0) as created, external_id, phone_e164, bsuid`,
         // `|| null` : une chaîne vide vaut absence ; sinon `{ phoneE164: '' }` insérerait un numéro vide qui occuperait
         // ensuite l'index du numéro.
-        [tenantId, cles.phoneE164 || null, cles.bsuid || null, cles.externalId || null],
+        [tenantId, cles.phoneE164 || null, cles.bsuid || null, cles.externalId || null,
+          empreintesDeLaFiche(tenantId, { phoneE164: cles.phoneE164 || null, bsuid: cles.bsuid || null })],
       );
       const r = res.rows[0];
       // Aucune ligne : la fiche de ce numéro (ou BSUID) porte une autre clé, le `where` a tout refusé.
@@ -1440,6 +1507,18 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
+   * La liste de refus au-delà de sa durée (`RETENTION_REFUS_ANS`), comptée depuis le STOP le plus récent de l'entrée
+   * (`greatest` ignore le canal sans STOP). Rend le nombre d'entrées effacées.
+   */
+  async purgerRefusEffaces(ans: number): Promise<number> {
+    const res = await this.pool.query(
+      `delete from refus_effaces where greatest(whatsapp_le, rcs_le) < now() - make_interval(years => $1::int)`,
+      [ans],
+    );
+    return res.rowCount ?? 0;
+  }
+
+  /**
    * 🔴 Purge : efface réellement les données d'une personne, en gardant les compteurs. `listeAgent` : les lignes
    * de la liste de l'agent de Meta supprimées ici, à retirer chez Meta après la transaction (la route s'en charge).
    * Effacé : le fil, ses messages, son analyse (texte libre tiré de la conversation), et les traces techniques
@@ -1454,11 +1533,38 @@ export class PgContactStore implements ContactStore {
     if (ids.length === 0) return { purges: 0, conversations: 0, messages: 0, analyses: 0, listeAgent: [] };
     return enTransaction(this.pool, async (client) => {
       // Numéros des contacts visés, lus avant l'anonymisation : le cache RCS est indexé en E.164 (`+33…`), pas en wa_id.
-      const cibles = await client.query<{ phone_e164: string | null }>(
-        `select phone_e164 from contacts where tenant_id = $1 and id = any($2::uuid[])`,
+      const cibles = await client.query<{
+        phone_e164: string | null; bsuid: string | null; opt_in_status: string; opt_out_at: Date | null; rcs_optout_at: Date | null;
+      }>(
+        `select phone_e164, bsuid, opt_in_status, opt_out_at, rcs_optout_at from contacts where tenant_id = $1 and id = any($2::uuid[])`,
         [tenantId, ids],
       );
       const e164 = cibles.rows.map((r) => r.phone_e164).filter((p): p is string => p !== null && !p.startsWith('anon:'));
+
+      // 🔴 LA LISTE DE REFUS (`src/crm/refus-effaces.ts`) : une fiche en STOP (WhatsApp ou RCS) laisse l'empreinte de
+      // chacun de ses identifiants, AVANT que l'anonymisation ne les efface. Une fiche recréée avec l'un d'eux naîtra en
+      // STOP. Dans la transaction : une purge annulée ne laisse aucune entrée, une purge validée n'en oublie aucune.
+      const refus = new Map<string, { empreinte: string; stop_whatsapp: boolean; whatsapp_le: Date | null; rcs_le: Date | null }>();
+      for (const r of cibles.rows) {
+        const stopWhatsapp = r.opt_in_status === 'opted_out';
+        if (!stopWhatsapp && r.rcs_optout_at === null) continue;
+        for (const empreinte of empreintesDeLaFiche(tenantId, { phoneE164: r.phone_e164, bsuid: r.bsuid })) {
+          refus.set(empreinte, { empreinte, stop_whatsapp: stopWhatsapp, whatsapp_le: r.opt_out_at, rcs_le: r.rcs_optout_at });
+        }
+      }
+      if (refus.size > 0) {
+        // Un STOP sans date (antérieur à 0138) compte depuis la purge : la durée de la liste ne part pas d'une date inventée
+        // dans le passé. Une entrée déjà là garde le plus récent des deux STOP de chaque canal.
+        await client.query(
+          `insert into refus_effaces (tenant_id, empreinte, whatsapp_le, rcs_le)
+           select $1::uuid, x.empreinte, case when x.stop_whatsapp then coalesce(x.whatsapp_le, now()) end, x.rcs_le
+             from jsonb_to_recordset($2::jsonb) as x(empreinte text, stop_whatsapp boolean, whatsapp_le timestamptz, rcs_le timestamptz)
+           on conflict (tenant_id, empreinte) do update set
+             whatsapp_le = greatest(refus_effaces.whatsapp_le, excluded.whatsapp_le),
+             rcs_le = greatest(refus_effaces.rcs_le, excluded.rcs_le)`,
+          [tenantId, JSON.stringify([...refus.values()])],
+        );
+      }
       // Les mesures par bloc sont indexées par wa_id (chiffres nus) : on dérive les numéros visés en plus des wa_id
       // des fils, un contact pouvant avoir des mesures sans conversation.
       const waIdsDuNumero = e164.map((p) => p.replace(/[^0-9]/g, '')).filter((d) => d !== '');

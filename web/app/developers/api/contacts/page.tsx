@@ -2,11 +2,38 @@
 
 import { CadreDoc } from '@/components/doc-api/CadreDoc';
 import {
-  Bloc, C, Champs, EnTetePage, Erreurs, LienDoc, Liste, Route, Sous, SurCettePage, Tableau, curl, curlGet, json,
+  ADRESSE_API, Bloc, C, CLE_EXEMPLE, Champs, EnTetePage, Erreurs, LienDoc, Liste, Route, Sous, SurCettePage, Tableau, curl,
+  curlGet, json,
 } from '@/components/doc-api/elements';
 import { useT } from '@/lib/i18n';
-import { EXEMPLES_CORPS, EXEMPLES_REPONSES } from '@/lib/api-exemples';
+import { BORNES, EXEMPLES_CORPS, EXEMPLES_REPONSES } from '@/lib/api-exemples';
 import { CHAMPS } from '@/lib/api-champs';
+
+/**
+ * La recette d'import d'un fichier (décision de Julien du 2026-10-09) : pas de route d'import, le lot reste à
+ * `BORNES.contactsParLot` (plus gros, il garderait la place lourde de l'API, partagée avec les envois de tous les
+ * clients) ; un fichier s'envoie donc en lots, et un 429 se rejoue après Retry-After.
+ */
+const RECETTE_FICHIER = `import { readFileSync } from 'node:fs';
+
+const lignes = readFileSync('contacts.csv', 'utf8').trim().split(/\\r?\\n/).slice(1);
+const fiches = lignes.map((l) => { const [phone, name] = l.split(','); return { phone, name }; });
+
+for (let i = 0; i < fiches.length; ) {
+  const r = await fetch('${ADRESSE_API}/v1/contacts/batch', {
+    method: 'POST',
+    headers: { authorization: 'Bearer ${CLE_EXEMPLE}', 'content-type': 'application/json' },
+    body: JSON.stringify({ contacts: fiches.slice(i, i + ${BORNES.contactsParLot}) }),
+  });
+  if (r.status === 429) {
+    await new Promise((ok) => setTimeout(ok, Number(r.headers.get('retry-after') ?? 2) * 1000));
+    continue;
+  }
+  if (!r.ok) throw new Error(await r.text());
+  const { results } = await r.json();
+  for (const e of results.filter((x) => x.status === 'error')) console.log(i + e.index, e.code, e.reason);
+  i += ${BORNES.contactsParLot};
+}`;
 
 /**
  * LES CINQ ROUTES DES FICHES, chacune sur le patron de `Route` : phrase et droit (tirés de l'index des endpoints),
@@ -73,7 +100,14 @@ function Contacts() {
         <Liste>
           <li>{t('Un élément refusé (mal formé, trop de champs ou de tags, champ ou tag inconnu) n’arrête pas les autres.', 'A refused item (malformed, too many fields or tags, unknown field or tag) does not stop the others.')}</li>
           <li>{t('Les éléments qui désignent la même personne s’écrivent dans l’ordre du lot.', 'Items that designate the same person are written in the order of the list.')}</li>
+          <li data-testid="doc-import-fichier">
+            {t(
+              `Importer un fichier : envoyez-le par lots de ${BORNES.contactsParLot}, comme ci-dessous. Au plafond par défaut, ${BORNES.contactsParLot * BORNES.plafondEspaceMinute} fiches par minute. Un 429 n’a rien écrit : attendez Retry-After et renvoyez le même lot. Un très gros fichier passe plus vite par l’import CSV de la console.`,
+              `Importing a file: send it in batches of ${BORNES.contactsParLot}, as below. At the default limit, ${BORNES.contactsParLot * BORNES.plafondEspaceMinute} records per minute. A 429 wrote nothing: wait for Retry-After and send the same records again. A very large file goes faster through the console’s CSV import.`,
+            )}
+          </li>
         </Liste>
+        <Bloc legende={t('Importer un CSV simple (phone,name), Node.js', 'Importing a simple CSV (phone,name), Node.js')}>{RECETTE_FICHIER}</Bloc>
       </Route>
 
       <Route ep="GET /v1/contacts/{contactId}">
@@ -183,8 +217,8 @@ function Contacts() {
       <Route ep="DELETE /v1/contacts/{contactId}">
         <p>
           {t(
-            'Avec le droit contacts:admin. Irréversible : la fiche, ses conversations, ses messages et son analyse sont effacés ; ce qui porte les compteurs est anonymisé. Dans la limite du jour de l’offre (10 en Free, sans limite en Pro et Entreprise).',
-            'With the contacts:admin scope. Irreversible: the record, its conversations, messages and analysis are erased; what carries the counters is anonymised. Within the plan’s daily limit (10 on Free, unlimited on Pro and Enterprise).',
+            'Avec le droit contacts:admin. Irréversible : la fiche, ses conversations, ses messages et son analyse sont effacés ; ce qui porte les compteurs est anonymisé. Dans la limite du jour de l’offre (10 en Free, sans limite en Pro et Entreprise). Une fiche désabonnée (STOP) laisse une empreinte non réversible de son numéro, gardée trois ans : recréée, elle naît désabonnée.',
+            'With the contacts:admin scope. Irreversible: the record, its conversations, messages and analysis are erased; what carries the counters is anonymised. Within the plan’s daily limit (10 on Free, unlimited on Pro and Enterprise). An opted-out record (STOP) leaves a non-reversible fingerprint of its number, kept three years: recreated, it is born opted out.',
           )}
         </p>
         <Sous>{t('Réponse 200', '200 response')}</Sous>

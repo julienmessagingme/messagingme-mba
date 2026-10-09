@@ -1,12 +1,13 @@
 # todo.md : backlog
 
-## 🟡 Lot 13, les contacts par l'API : ce que la relecture du domaine 5 laisse (2026-10-09)
+## 🟡 Lot 13, la liste de refus des fiches effacées : ce qu'elle ne couvre pas (2026-10-09)
 
-- **Effacer une fiche efface aussi son STOP** : la purge anonymise le numéro, donc une fiche recréée ensuite avec le même
-  numéro (import, API, message entrant) repart sans opt-out. C'était déjà vrai de la purge de la console ; l'API rend le
-  geste scriptable. Deux voies, à trancher par Julien : garder une liste de refus par empreinte du numéro (qui survit à
-  l'effacement, ce qu'il faut alors dire dans la politique de confidentialité), ou le documenter comme le prix de
-  l'effacement.
+- **Un identifiant RATTACHÉ à une fiche existante ne lit pas la liste** (`rattacherCles`, ou le BSUID d'une création par
+  l'API qui retombe sur une fiche existante) : seules les quatre CRÉATIONS de fiches la consomment. Cas rare (une
+  personne effacée en STOP qui revient sous un autre identifiant, puis à qui l'on rattache l'ancien) ; l'entrée reste et
+  se purge à trois ans.
+- **La politique de confidentialité** du produit, quand elle sera écrite, doit dire l'empreinte gardée trois ans après
+  l'effacement d'un contact désabonné (la console et la doc de l'API le disent déjà).
 
 ## 🟡 Lot 13, les webhooks par l'API : ce que la relecture du domaine 4 laisse (2026-10-09)
 

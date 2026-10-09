@@ -7,6 +7,7 @@ import { fabriquerJeton } from './links/jeton-contact';
 import { RETENTION_ESSAIS_JOURS } from './agent/test-runs';
 import { PgNumerosFournisStore, RETENTION_CODES_VERIFICATION_JOURS } from './otp/store.pg';
 import { RETENTION_LATENCES_JOURS } from './ops/latence-http';
+import { RETENTION_REFUS_ANS } from './crm/refus-effaces';
 import { MesureTaches, RETENTION_TACHES_JOURS } from './ops/mesure-taches';
 import { viderMesuresTachesVersLaBase } from './ops/mesure-taches.pg';
 import { PgConversationStatsStore } from './stats/conversation-stats.pg';
@@ -1384,6 +1385,10 @@ async function main(): Promise<void> {
     // Les verrous courts échus : ils ne tiennent plus rien, la prise suivante les reprendrait. Sans cette étape, la
     // table garderait une ligne par message de client ayant déclenché un envoi de l'agent de Meta.
     await etape('verrous', 'verrou(s) court(s) échu(s) effacé(s)', () => verrousCourts.purgerEchues());
+    // La liste de refus des fiches effacées : trois ans depuis le STOP, le minimum que la CNIL recommande pour respecter
+    // une opposition (`src/crm/refus-effaces.ts`).
+    await etape('refus', `refus de fiche effacée échu(s) (au-delà de ${RETENTION_REFUS_ANS} ans)`,
+      () => contactStore.purgerRefusEffaces(RETENTION_REFUS_ANS));
     // Le journal des webhooks sortants (lot 12) : la durée de l'offre de chaque espace (3 jours en Base, 30 sinon), lue
     // dans la grille et jamais écrite ici. Une durée sans limite garde un siècle, c'est-à-dire tout.
     const joursJournal = (o: keyof typeof DROITS): number => DROITS[o].limites.journalWebhooksJours ?? 36_500;

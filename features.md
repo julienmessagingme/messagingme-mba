@@ -2162,7 +2162,13 @@ scénario, comment importer des contacts.
   `DELETE /v1/contacts/{contactId}` efface une fiche pour de vrai, avec le droit neuf `contacts:admin`. L'effacement
   est celui du mini-CRM : la fiche, ses conversations, ses messages et son analyse partent, dans la limite du jour de
   l'offre (10 en Free, sans limite en Pro et Entreprise), et c'est journalisé. Renommer ou supprimer un champ reste
-  un geste de la console. L'import d'un fichier par l'API attend une décision de Julien.
+  un geste de la console. Un fichier s'importe par lots de 50 avec `POST /v1/contacts/batch` (la doc de l'API en
+  donne la recette) ; un très gros fichier passe par l'import CSV de la console.
+- ✅ **Un contact désabonné le reste, même effacé** (lot 13, domaine 5, livraison B, 2026-10-09) : effacer une fiche qui
+  avait dit STOP (WhatsApp ou RCS), depuis la console ou l'API, garde une empreinte non réversible de son numéro
+  pendant trois ans. Recréée par un import, l'API, un webhook ou un message de la personne, la fiche naît désabonnée
+  avec la date de son STOP d'origine, comme si elle n'avait jamais été effacée : seul l'import CSV case cochée la
+  réabonne, comme pour une fiche jamais effacée.
 - ✅ **Créer un modèle et suivre sa validation** (lot 13, domaine 3, livraison A, 2026-10-09, droit neuf
   `templates:write`) : `POST /v1/templates` prend le corps de Meta (`name`, `language`, `category` UTILITY ou
   MARKETING, `components`) et passe par la création de l'écran Modèles : liens tracés, mêmes gardes. Une image, une

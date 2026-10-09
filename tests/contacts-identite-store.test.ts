@@ -1,5 +1,6 @@
 // tests/contacts-identite-store.test.ts
 import { describe, it, expect } from 'vitest';
+import { empreinteRefus } from '../src/crm/refus-effaces';
 import type { Pool } from 'pg';
 import { PgContactStore } from '../src/crm/contact-store.pg';
 
@@ -75,7 +76,8 @@ describe('creerFicheApi', () => {
     const { p, appels } = pool(() => ({ rows: [{ id: ID, created: true, external_id: null, phone_e164: null, bsuid: 'B' }], rowCount: 1 }));
     await new PgContactStore(p).creerFicheApi(T, { phoneE164: '', bsuid: 'B', externalId: '' });
     expect(appels[0]!.sql).toMatch(/on conflict \(tenant_id, bsuid\) where bsuid is not null/);
-    expect(appels[0]!.params).toEqual([T, null, 'B', null]);
+    // Le cinquième paramètre : les empreintes de la liste de refus, celle du BSUID seule (aucun numéro).
+    expect(appels[0]!.params).toEqual([T, null, 'B', null, [empreinteRefus(T, { bsuid: 'B' })]]);
   });
 
   it('🔴 une violation d’unicité (identifiant externe ou BSUID pris par une autre fiche) rend « conflit »', async () => {

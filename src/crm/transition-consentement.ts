@@ -19,9 +19,10 @@
  *
  * Ce qui ne passe PAS par ici : le STOP RCS (`rcs_optout_at`), le blocage, la purge (qui garde ce qui dit non), et
  * `upsertFromInbound`, qui ne crée qu'en `unknown` et ne touche jamais au consentement d'une fiche existante.
- * ⚠️ Aucun chemin ne CRÉE une fiche `opted_out` (mesuré le 2026-10-03), et seuls les types l'empêchent :
- * `ContactUpsert` et `LotContacts` ne demandent que `opted_in` ou `unknown`. La branche `insert` d'un upsert écrit le
- * statut et la source demandés mais jamais `opt_out_at` : une fiche créée `opted_out` par là n'aurait PAS de date.
+ * ⚠️ Une fiche ne naît `opted_out` que par la liste de refus (`src/crm/refus-effaces.ts`, 2026-10-09) : son identifiant
+ * appartenait à une fiche effacée en STOP. Elle naît alors avec la date d'origine (`opt_out_at`) et la source
+ * `liste_de_refus`, sauf si la création lève un STOP (`issueDeLaTransition('opted_out', …) === 'ecrit'`). Hors de là,
+ * les types l'empêchent : `ContactUpsert` et `LotContacts` ne demandent que `opted_in` ou `unknown`.
  * L'API publique crée en `unknown` (`creerFicheApi`) puis écrit le consentement par `ecrireConsentementParId`, qui
  * passe par ici : la date est posée, et le passage s'annonce au système du client (décision de Julien du 2026-10-03).
  */
@@ -146,12 +147,18 @@ export function transition(ligne: LigneDAvant, d: DemandeConsentement): {
 }
 
 /**
- * Les affectations du consentement d'un upsert (`insert ... on conflict do update`), demande lue dans `excluded`.
- * Le nom, les champs et les étiquettes s'y écrivent quand même : la transition ne garde que le consentement. Un upsert
- * ne demande jamais `opted_out` (types `ContactUpsert` et `LotContacts`), il n'a donc rien à annoncer.
+ * Les affectations du consentement d'un upsert (`insert ... on conflict do update`), demande lue dans `excluded` par
+ * défaut. Le nom, les champs et les étiquettes s'y écrivent quand même : la transition ne garde que le consentement. Un
+ * upsert ne demande jamais `opted_out` (types `ContactUpsert` et `LotContacts`), il n'a donc rien à annoncer.
+ * 🔴 Un upsert dont la branche `insert` lit la liste de refus (`src/crm/refus-effaces.ts`) passe sa DEMANDE D'ORIGINE
+ * (`demande`) : son `excluded` porte le statut de la liste, et une fiche vivante qui s'est réabonnée depuis serait
+ * désabonnée par une écriture qui ne le demandait pas.
  */
-export function affectationsDUpsert(autorite: AutoriteUpsert): string {
-  return transition('contacts.', { voulu: 'excluded.opt_in_status', source: 'excluded.opt_in_source', autorite }).affectations;
+export function affectationsDUpsert(
+  autorite: AutoriteUpsert,
+  demande: { voulu: string; source: string } = { voulu: 'excluded.opt_in_status', source: 'excluded.opt_in_source' },
+): string {
+  return transition('contacts.', { ...demande, autorite }).affectations;
 }
 
 /** Une fiche ciblée par `ecritureDuConsentement` en rendu `par_fiche`. */

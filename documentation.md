@@ -1315,12 +1315,28 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   lus sur la copie verrouillée. L'action en masse prend le rendu `compte`, UNE ligne agrégée : elle rend
   `{ affected, stopsGardes }`, la route `set_optin` les renvoie et la console dit « N fiches ont gardé leur
   STOP » (en tolérant une réponse sans ce nombre). Un upsert ne demande jamais `opted_out` (types `ContactUpsert`
-  et `LotContacts`) : il n'a rien à annoncer. Aucun chemin ne crée une fiche `opted_out`, et seuls ces types
-  l'empêchent : la branche `insert` d'un upsert ne pose pas `opt_out_at`. L'API crée en `unknown`
+  et `LotContacts`) : il n'a rien à annoncer. Une fiche ne NAÎT `opted_out` que par la liste de refus (point
+  suivant), avec la date d'origine ; hors de là, ces types l'empêchent. L'API crée en `unknown`
   (`creerFicheApi`) puis écrit le consentement par la transition, qui pose la date et annonce le passage (décision
   de Julien du 2026-10-03 : un refus envoyé par l'API reste annoncé au système du client). La fiche de la console
   (`applyEdits`) rend `consentementChange`, et la route ne journalise `contact.optin` ou `contact.optout` que
   s'il est vrai. La table de cas : `tests/integration/transition-consentement.integration.test.ts`.
+- 🔴 **La liste de refus des fiches effacées** (`src/crm/refus-effaces.ts`, migration 0226, décision de Julien du
+  2026-10-09). La purge anonymise le numéro : sans elle, une fiche recréée avec le même numéro repartait sans son
+  STOP. `purgeMany`, dans sa transaction et AVANT l'anonymisation, écrit dans `refus_effaces` une EMPREINTE de chaque
+  identifiant (numéro, BSUID) d'une fiche en STOP WhatsApp ou RCS, avec la date d'origine de chaque canal. L'empreinte
+  est un HMAC par espace dont la clé est dérivée d'`ENCRYPTION_KEY` (HKDF) : un hachage simple d'un numéro se
+  renverse, celui-ci non sans la clé, et changer `ENCRYPTION_KEY` viderait la liste de fait. Les quatre insertions de
+  fiches (`upsertByPhoneReturningId`, `upsertManyByPhone`, `upsertFromInbound`, `creerFicheApi`, comptées par
+  `tests/refus-effaces.test.ts`) la CONSOMMENT dans la même requête (`cteRefus`) : la fiche naît `opted_out` avec
+  `opt_out_at` d'origine, la source `liste_de_refus` et le STOP RCS, sauf si la création lève un STOP
+  (`issueDeLaTransition('opted_out', …)`, donc l'import CSV case cochée seul) ; l'entrée est supprimée dans les deux
+  cas, la fiche porte désormais la vérité. Deux gardes : une entrée n'est consommée que si AUCUNE fiche ne porte déjà
+  l'identifiant (sinon la requête retombe dans son `on conflict` sans rien créer), et la branche `on conflict` reçoit
+  la demande d'ORIGINE (`affectationsDUpsert(autorite, demande)`), jamais le statut de la liste : une fiche vivante
+  réabonnée n'est jamais désabonnée. Aucune annonce au système du client : ce STOP a déjà été annoncé. Rétention :
+  trois ans depuis le STOP le plus récent de l'entrée (`RETENTION_REFUS_ANS`, balayage de rétention du worker).
+  ⚠️ Un identifiant RATTACHÉ à une fiche existante (`rattacherCles`) ne lit pas la liste.
 - 🔴 **Un consentement posé par l'API passe par `ecrireConsentementParId`**, qui n'écrit RIEN quand la valeur
   ne change pas : un outil qui renvoie `opted_out` à chaque appel ne repousse pas la date du désabonnement et
   n'écrit pas une ligne d'audit par appel. Sur une fiche déjà `opted_in`, un `opted_in` d'une autre source ne
@@ -3722,7 +3738,10 @@ Ajouté par le lot 4 de l'API publique :
    la purge du mini-CRM appelle aussi : la limite du jour de l'offre (`quotaSuppressions`, le MÊME objet), tout ou rien,
    puis `PgContactStore.purgeMany`, puis le retrait chez l'agent de Meta APRÈS la réponse. La fiche est d'abord résolue
    VIVANTE dans l'espace (`etatPourEnvoi`, `deleted_at is null`) : une fiche d'un autre espace ou déjà effacée rend 404
-   sans entamer la limite, et l'effacement passe sous le plafond coûteux de la console.
+   sans entamer la limite, et l'effacement passe sous le plafond coûteux de la console. Une fiche en STOP laisse son
+   empreinte dans la liste de refus (§ du consentement). Il n'y a pas de route d'import d'un fichier : le lot
+   `POST /v1/contacts/batch` reste à `MAX_BATCH` (relevé, il garderait plus longtemps la place lourde unique du
+   processus, celle de `/v1/sends`), et la doc donne la recette d'un fichier envoyé en lots.
 
 ### Sur les contrats externes
 
