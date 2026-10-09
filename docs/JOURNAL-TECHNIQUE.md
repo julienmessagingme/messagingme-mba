@@ -5,6 +5,21 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-09 : la connexion OAuth ouverte aux autres clients MCP (lot 15), en production
+
+`2d17b2cd`, CI verte job par job, migration 0227 appliquée à 15 h 48 UTC avant le `up`, et APRÈS la publication de la
+console. Décisions de Julien du même jour : fiches d'identité de tout client (récupérées avec nos gardes) et
+enregistrement dynamique en repli ; retour https ou boucle locale ; nom déclaré marqué comme tel ; toutes les offres,
+admins seulement. La spec MCP du 2026-07-28 déprécie l'enregistrement dynamique au profit des fiches, mais Cursor et
+VS Code ne pratiquent sûrement que lui. Une base jetable a trouvé AVANT le push le défaut le plus grave du lot : un
+CHECK `{1,2000}` passe à l'application de la migration, mais Postgres refuse toute répétition au-delà de 255 à
+CHAQUE évaluation, donc toute autorisation, Claude compris, aurait échoué. La relecture a trouvé un rouge d'ordre de
+déploiement, pas de code : une API neuve devant l'ancienne page de consentement aurait montré un client enregistré
+nommé « Claude » avec la phrase sur Anthropic ; A et B sont parties dans le même push, la page publiée avant le `up`.
+Ses jaunes corrigés avant le push : les plafonds étaient globaux (`req.ip` est le proxy, d'où `CF-Connecting-IP` et un
+plafond global de secours), Cursor était refusé en entier pour son `cursor://` (le serveur remplace désormais ce qu'il
+ne fait pas, RFC 7591 § 2), les noms invisibles ou « Claude » sont refusés. Vingt défauts remis au total, tous vus.
+
 ## 2026-10-09 : un contact désabonné le reste, même effacé (lot 13, domaine 5, livraison B), en production
 
 `a421ba13`, CI verte job par job, migration 0226 appliquée à 13 h 43 UTC avant le `up` (relue en base, puis les six

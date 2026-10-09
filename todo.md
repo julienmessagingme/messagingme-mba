@@ -1,5 +1,13 @@
 # todo.md : backlog
 
+## 🟡 Lot 15, l'OAuth ouvert : ce que la relecture laisse (2026-10-09)
+
+- **Un client enregistré purgé (30 jours sans autorisation vivante) qui revient sans se réenregistrer** voit une page
+  texte « client inconnu » à `/oauth/authorize`, sans signal lisible par l'application ; au renouvellement, il reçoit
+  `invalid_client`, que le SDK MCP TypeScript sait traiter. À observer à l'essai réel.
+- **Le plafond par adresse lit `CF-Connecting-IP`**, forgeable par un appel qui contournerait Cloudflare : le plafond
+  global le borne. Il deviendra sûr le jour où l'origine ne répondra qu'à Cloudflare (`docs/ARCHITECTURE-CIBLE.md` § 7).
+
 ## 🟡 Lot 13, la liste de refus des fiches effacées : ce qu'elle ne couvre pas (2026-10-09)
 
 - **Un identifiant RATTACHÉ à une fiche existante ne lit pas la liste** (`rattacherCles`, ou le BSUID d'une création par

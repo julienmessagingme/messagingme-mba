@@ -59,9 +59,11 @@ ses jaunes poussés ensuite. Essai réel dû : une fiche en STOP effacée puis r
 ## LOT 15 : L'OAUTH OUVERT AUX AUTRES CLIENTS MCP (2026-10-09), EN COURS
 
 Spec `docs/superpowers/specs/2026-10-09-oauth-autres-clients-design.md`, plan
-`docs/superpowers/plans/2026-10-09-oauth-autres-clients.md` (décisions de Julien du 2026-10-09). Livraison A (l'API :
-migration 0227, fiches d'identité, enregistrement dynamique) EN COURS ; livraison B (la console et la doc) ensuite.
-Essai réel : ChatGPT puis Lovable.
+`docs/superpowers/plans/2026-10-09-oauth-autres-clients.md` (décisions de Julien du 2026-10-09). Livraisons A (l'API :
+migration 0227, fiches d'identité, enregistrement dynamique) et B (la console et la doc) EN PRODUCTION ensemble
+(`2d17b2cd`, 0227 appliquée à 15 h 48 UTC). Essai réel dû : ChatGPT puis Lovable (l'événement `oauth_fiche_refusee` ou
+`oauth_client_enregistre` du journal de l'API dit par quelle voie chacun passe) ; reconnecter aussi Claude Code et
+claude.ai, et vérifier qu'aucun `oauth_client_enregistre` ne sort pour eux.
 
 ## L'OFFRE GRATUITE S'APPELLE « FREE », EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ
 
