@@ -29,6 +29,8 @@ test('🔴 numéro relié, admin : le bouton rejoue l’inscription, et la carte
   await expect(page.getByRole('button', { name: 'Renouveler la connexion Meta' })).toBeEnabled();
   await expect(page.getByTestId('numero-card')).toBeVisible();
   await expect(page.getByTestId('renouveler-erreur')).toHaveCount(0);
+  // L'accusé de réussite, qui survit au rechargement de la grille.
+  await expect(page.getByTestId('connexion-renouvelee')).toBeVisible();
 });
 
 test('un refus du serveur s’affiche sous le bouton, avec sa raison', async ({ page }) => {

@@ -118,7 +118,8 @@ export const DELAI_ENTRE_CODES_MS = 60_000;
  * recommence. Rendu en 409 et non en 5xx, sinon Cloudflare remplace le corps par sa page.
  */
 function messageSecondNumero(err: SecondNumeroRefuseError): string {
-  return `Cet espace utilise déjà le numéro ${err.dejaRattache}. Un espace ne peut piloter qu'un seul numéro WhatsApp : pour en connecter un autre, crée un second espace, ou détache d'abord le numéro actuel.`;
+  // Pas « détache » : délier coupe les envois et laisse le numéro rattaché, donc ce refus resterait le même.
+  return `Cet espace utilise déjà le numéro ${err.dejaRattache}. Un espace ne peut piloter qu'un seul numéro WhatsApp : pour renouveler sa connexion, choisis ce même numéro dans la fenêtre de Meta ; pour en connecter un autre, crée un second espace.`;
 }
 
 /** La clé du délai d'un numéro dans les verrous courts, préfixée pour ne croiser aucun autre usage. */
@@ -138,6 +139,24 @@ export function cleDemandeCode(phoneNumberId: string): string {
  *    enregistre le numéro sur la Cloud API.
  * Les deux dernières existent parce que la fenêtre Meta peut se terminer sur un numéro non vérifié.
  */
+/** Au plus tant de comptes interrogés pour départager : au-delà, le refus « impossible de deviner » reste. */
+const MAX_COMPTES_A_DEPARTAGER = 10;
+
+/**
+ * Parmi les comptes WhatsApp d'un jeton, LE compte qui porte le numéro déjà rattaché à l'espace, ou `null` (l'espace n'a
+ * pas de numéro, aucun ou plusieurs comptes le portent, trop de comptes à interroger). Jamais un choix au hasard.
+ */
+async function compteQuiPorte(
+  meta: Pick<MetaInscriptionDep, 'listPhones'>, comptes: readonly string[], numero: string | null, jeton: string,
+): Promise<string | null> {
+  if (numero === null || comptes.length > MAX_COMPTES_A_DEPARTAGER) return null;
+  const porteurs: string[] = [];
+  for (const compte of comptes) {
+    if ((await meta.listPhones(compte, jeton)).some((p) => p.id === numero)) porteurs.push(compte);
+  }
+  return porteurs.length === 1 ? porteurs[0]! : null;
+}
+
 export function registerEmbeddedSignup(
   app: FastifyInstance,
   deps: EmbeddedSignupRouteDeps,
@@ -207,6 +226,12 @@ export function registerEmbeddedSignup(
     let sansNumero = false;
     if (wabaId === '' || phoneNumberId === '') {
       try {
+        // Le numéro que l'espace porte DÉJÀ (un renouvellement de la connexion, bouton « Renouveler la connexion Meta »
+        // de l'Accueil) : il départage une ambiguïté, sans jamais faire choisir autre chose que ce que l'espace a déjà.
+        // Lu en base, et seulement quand il faut départager. Mesuré le 2026-10-09 : le jeton de « MessagingMeEmbdedded »
+        // donne accès à DEUX comptes WhatsApp, donc son renouvellement, qui ne rend qu'un code, échouait ici en 409.
+        let actuel: string | null | undefined;
+        const numeroActuel = async (): Promise<string | null> => (actuel === undefined ? (actuel = await deps.numeroDuTenant(tenant)) : actuel);
         if (wabaId === '') {
           const wabas = await deps.meta.wabasForToken(businessToken);
           if (wabas.length === 0) {
@@ -215,17 +240,28 @@ export function registerEmbeddedSignup(
             return reply.code(422).send({ error: 'le compte Meta connecté n’expose aucun compte WhatsApp. Termine le parcours Meta jusqu’au bout, en partageant bien ton compte WhatsApp avec l’application.' });
           }
           if (wabas.length > 1) {
-            return reply.code(409).send({ error: `ce compte Meta donne accès à ${wabas.length} comptes WhatsApp : impossible de deviner lequel rattacher.` });
+            const porteur = await compteQuiPorte(deps.meta, wabas, await numeroActuel(), businessToken);
+            if (porteur === null) {
+              return reply.code(409).send({ error: `ce compte Meta donne accès à ${wabas.length} comptes WhatsApp : impossible de deviner lequel rattacher.` });
+            }
+            wabaId = porteur;
+          } else {
+            wabaId = wabas[0]!;
           }
-          wabaId = wabas[0]!;
         }
         if (phoneNumberId === '') {
           const phones = await deps.meta.listPhones(wabaId, businessToken);
           if (phones.length > 1) {
-            return reply.code(409).send({ error: `ce compte WhatsApp contient ${phones.length} numéros : impossible de deviner lequel rattacher.` });
+            const n = await numeroActuel();
+            if (n === null || !phones.some((p) => p.id === n)) {
+              return reply.code(409).send({ error: `ce compte WhatsApp contient ${phones.length} numéros : impossible de deviner lequel rattacher.` });
+            }
+            phoneNumberId = n;
+          } else if (phones.length === 0) {
+            sansNumero = true;
+          } else {
+            phoneNumberId = phones[0]!.id;
           }
-          if (phones.length === 0) sansNumero = true;
-          else phoneNumberId = phones[0]!.id;
         }
         // eslint-disable-next-line no-console
         console.info(`embedded-signup: identifiants retrouvés depuis le token (waba=${wabaId}, numéro=${sansNumero ? 'aucun' : phoneNumberId}) faute d'annonce par la popup`);

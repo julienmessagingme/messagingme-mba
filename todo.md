@@ -1,5 +1,18 @@
 # todo.md : backlog
 
+## 🟡 « Renouveler la connexion Meta » : ce que la relecture laisse (2026-10-09)
+
+- **Un `register` rejoué sur un numéro en service non `CONNECTED`** (`src/http/embedded-signup.ts`, étape 5) : un numéro
+  `FLAGGED`, `RESTRICTED` ou `RATE_LIMITED` déjà relié à l'espace recevrait un `register` avec un PIN neuf ; Meta le
+  refuse (PIN 2FA différent), un des dix essais sur 72 h est brûlé et la carte affiche un avertissement. Rien n'est
+  perdu (le PIN gardé reste). À faire : ne tenter `register` que pour un numéro qui n'était pas déjà rattaché à cet
+  espace, ou rejouer avec le PIN chiffré gardé.
+- **Un espace branché à la main sur notre propre compte (jeton global)** verrait le bouton : si un admin qui a accès à
+  notre portefeuille Meta l'utilise, l'espace quitte le jeton global pour un jeton propre, qu'un 190 peut ensuite
+  marquer invalide. Aucun espace de client n'est dans ce cas (ils viennent tous de l'inscription). À faire si cela
+  devient réel : exposer « jeton propre » dans `account-status` et n'offrir le bouton qu'à ces espaces.
+- Le refus d'un second numéro nomme l'identifiant Meta du numéro déjà là, pas le numéro affiché.
+
 ## 🟡 Lot 15, l'OAuth ouvert : ce que la relecture laisse (2026-10-09)
 
 - **Un client enregistré purgé (30 jours sans autorisation vivante) qui revient sans se réenregistrer** voit une page

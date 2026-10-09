@@ -31,13 +31,13 @@ interface Cap {
 }
 
 function app(
-  over: Partial<MetaInscriptionDep> & { configId?: string } = {},
+  over: Partial<MetaInscriptionDep> & { configId?: string; numeroDuTenant?: EmbeddedSignupRouteDeps['numeroDuTenant'] } = {},
   linkTenant?: EmbeddedSignupRouteDeps['inscriptions']['linkTenant'],
   offrirCredit?: EmbeddedSignupRouteDeps['offrirCredit'],
   lierCompteSansNumero?: EmbeddedSignupRouteDeps['inscriptions']['lierCompteSansNumero'],
 ) {
   const cap: Cap = { exchanged: [], verifiedWaba: [], linked: [], subscribed: [], registered: [], saved: [], offerts: [], sansNumero: [] };
-  const { configId = 'cfg-123', ...meta } = over;
+  const { configId = 'cfg-123', numeroDuTenant, ...meta } = over;
   const deps: EmbeddedSignupRouteDeps = {
     ...signupInerte,
     configId,
@@ -61,7 +61,8 @@ function app(
     // L'activation du numéro a son propre fichier (`tests/numero-activation.test.ts`). Ici, ces dépendances
     // LÈVENT au lieu de ne rien faire : si un chemin d'inscription se mettait à les appeler, il faut le voir,
     // pas le laisser passer sous un faux silence.
-    numeroDuTenant: async () => { throw new Error('non attendu dans ce test'); },
+    // Lu par l'inscription seulement pour départager plusieurs comptes ou numéros (un renouvellement) : ailleurs, il lève.
+    numeroDuTenant: numeroDuTenant ?? (async () => { throw new Error('non attendu dans ce test'); }),
     etatNumero: async () => { throw new Error('non attendu dans ce test'); },
     demanderCode: async () => { throw new Error('non attendu dans ce test'); },
     verifierCode: async () => { throw new Error('non attendu dans ce test'); },
@@ -157,7 +158,10 @@ describe('POST /embedded-signup/complete', () => {
     const message = res.json<{ error: string }>().error;
     expect(message).toContain('pn-deja');
     expect(message).toContain('un seul numéro WhatsApp');
-    expect(message).toMatch(/second espace|détache/);
+    expect(message).toContain('second espace');
+    // Le renouvellement de l'Accueil aboutit ici quand l'admin choisit un autre numéro : le message dit quoi faire.
+    expect(message).toContain('choisis ce même numéro');
+    expect(message).not.toContain('détache');
     // Comme pour le conflit inter-workspace : rien n'est abonné, registré ni sauvegardé derrière un refus.
     expect(cap.subscribed).toHaveLength(0);
     expect(cap.registered).toHaveLength(0);
@@ -265,17 +269,67 @@ describe('POST /embedded-signup/complete sans identifiants (parcours déjà abou
 
   it('🔴 AMBIGUÏTÉ (plusieurs comptes, ou plusieurs numéros) -> 409, jamais un choix au hasard', async () => {
     // Rattacher le mauvais numéro serait bien pire qu'un message d'erreur.
-    const deuxWabas = app({ ...repechage, wabasForToken: async () => ['w1', 'w2'] });
+    // L'espace n'a pas encore de numéro : rien ne départage.
+    const sansNumeroActuel = { numeroDuTenant: async () => null };
+    const deuxWabas = app({ ...repechage, ...sansNumeroActuel, wabasForToken: async () => ['w1', 'w2'] });
     const r1 = await deuxWabas.server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: JSON.stringify({ code: 'c' }) });
     expect(r1.statusCode).toBe(409);
     expect(deuxWabas.cap.linked).toHaveLength(0);
     await deuxWabas.server.close();
 
-    const deuxNums = app({ ...repechage, listPhones: async () => [{ id: 'a' }, { id: 'b' }] });
+    const deuxNums = app({ ...repechage, ...sansNumeroActuel, listPhones: async () => [{ id: 'a' }, { id: 'b' }] });
     const r2 = await deuxNums.server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: JSON.stringify({ code: 'c' }) });
     expect(r2.statusCode).toBe(409);
     expect(deuxNums.cap.linked).toHaveLength(0);
     await deuxNums.server.close();
+  });
+
+  /** Deux comptes, chacun son numéro : le renouvellement d'un espace qui porte DÉJÀ l'un d'eux (mesuré le 2026-10-09). */
+  const deuxComptes = {
+    wabasForToken: async () => ['w-autre', 'w-espace'],
+    listPhones: async (w: string) => (w === 'w-espace' ? [{ id: 'pn-espace' }] : [{ id: 'pn-autre' }]),
+  };
+  // Une fonction : le jeton admin n'existe qu'une fois le `beforeAll` passé.
+  const corpsSeul = () => ({ method: 'POST' as const, url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: JSON.stringify({ code: 'c' }) });
+
+  it('🔴 renouvellement : plusieurs comptes, l’espace porte déjà un numéro -> son compte et son numéro sont retenus', async () => {
+    const { server, cap } = app({ ...deuxComptes, numeroDuTenant: async () => 'pn-espace' });
+    const res = await server.inject(corpsSeul());
+    expect(res.statusCode).toBe(200);
+    expect(cap.linked).toEqual([{ tenantId: 't1', wabaId: 'w-espace', phoneNumberId: 'pn-espace', displayPhoneNumber: '+33525680250' }]);
+    // La preuve d'appartenance reste jouée sur le compte retenu.
+    expect(cap.verifiedWaba).toEqual(['w-espace']);
+    await server.close();
+  });
+
+  it('renouvellement : le numéro de l’espace n’est dans aucun compte, ou dans deux -> 409, rien n’est rattaché', async () => {
+    const aucun = app({ ...deuxComptes, numeroDuTenant: async () => 'pn-inconnu' });
+    expect((await aucun.server.inject(corpsSeul())).statusCode).toBe(409);
+    expect(aucun.cap.linked).toHaveLength(0);
+    await aucun.server.close();
+    const deux = app({ ...deuxComptes, listPhones: async () => [{ id: 'pn-espace' }], numeroDuTenant: async () => 'pn-espace' });
+    expect((await deux.server.inject(corpsSeul())).statusCode).toBe(409);
+    expect(deux.cap.linked).toHaveLength(0);
+    await deux.server.close();
+  });
+
+  it('renouvellement : plusieurs numéros dans le compte -> celui que l’espace porte, jamais un autre', async () => {
+    const { server, cap } = app({ ...repechage, listPhones: async () => [{ id: 'a' }, { id: 'pn-espace' }], numeroDuTenant: async () => 'pn-espace' });
+    expect((await server.inject(corpsSeul())).statusCode).toBe(200);
+    expect(cap.linked[0]).toMatchObject({ wabaId: 'waba-decouvert', phoneNumberId: 'pn-espace' });
+    await server.close();
+  });
+
+  it('trop de comptes à interroger (plus de 10) -> 409 sans en lire aucun', async () => {
+    let lus = 0;
+    const { server, cap } = app({
+      wabasForToken: async () => Array.from({ length: 11 }, (_, i) => `w${i}`),
+      listPhones: async () => { lus += 1; return [{ id: 'pn-espace' }]; },
+      numeroDuTenant: async () => 'pn-espace',
+    });
+    expect((await server.inject(corpsSeul())).statusCode).toBe(409);
+    expect([lus, cap.linked.length]).toEqual([0, 0]);
+    await server.close();
   });
 
   it('code absent -> 400 (le code, lui, reste indispensable)', async () => {

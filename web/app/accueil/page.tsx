@@ -78,6 +78,11 @@ function AccueilInner({ session }: { session: Session }) {
    */
   const [avertissementsConnexion, setAvertissementsConnexion] = useState<string[]>([]);
   /**
+   * Vrai après un renouvellement abouti (« Renouveler la connexion Meta » sur un espace qui avait DÉJÀ son numéro). Au
+   * niveau de la page pour la même raison que les avertissements : un succès recharge la grille, qui démonte la carte.
+   */
+  const [connexionRenouvelee, setConnexionRenouvelee] = useState(false);
+  /**
    * L'etat REEL de l'agent chez Meta, par opposition a `mbaEnabled` qui n'est que NOTRE drapeau.
    *
    * 🔴 CETTE DISTINCTION EST TOUT LE CORRECTIF DU 2026-09-10. La carte affichait `mbaEnabled` sous le titre
@@ -375,6 +380,8 @@ function AccueilInner({ session }: { session: Session }) {
    */
   const connexionNumero = useConnexionNumero(session.tenantId, apiDeLaSession(session.tenantId), (avertissements) => {
     setAvertissementsConnexion(avertissements);
+    // Le compte lu au moment du geste : avec un numéro, c'était un renouvellement ; sans, une première connexion.
+    setConnexionRenouvelee(account?.hasNumber === true);
     setLoading(true);
     void load();
     void loadAccount();
@@ -591,6 +598,11 @@ function AccueilInner({ session }: { session: Session }) {
                 <div data-testid="avertissements-connexion" className="mt-3 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte-700">
                   {t('Connecté, avec avertissement', 'Connected, with warning')}{avertissementsConnexion.length > 1 ? 's' : ''} : {avertissementsConnexion.join(' · ')}
                 </div>
+              )}
+              {connexionRenouvelee && avertissementsConnexion.length === 0 && (
+                <p data-testid="connexion-renouvelee" className="mt-3 rounded-controle bg-succes-50 px-3 py-2 text-xs text-succes-700">
+                  {t('Connexion Meta renouvelée : Messaging Me a reçu une autorisation neuve.', 'Meta connection renewed: Messaging Me received a fresh authorization.')}
+                </p>
               )}
               {/* ⚠️ `numberStatus !== null` AVANT tout : un statut qu'on n'a pas pu lire n'est pas un numéro
                   inactif. Affirmer une panne qu'on n'a pas constatée est le défaut que la cascade au-dessus
@@ -949,7 +961,9 @@ function ConnectNumberZone({ isAdmin, connexion }: { isAdmin: boolean; connexion
 }
 
 /**
- * « Renouveler la connexion Meta » : rouvre la fenêtre de Meta sur un espace QUI A DÉJÀ son numéro.
+ * « Renouveler la connexion Meta » : rouvre la fenêtre de Meta sur un espace QUI A DÉJÀ son numéro. Meta ne présélectionne
+ * rien : l'admin y choisit le même compte et le même numéro (un code seul suffit, le serveur retrouve le compte qui
+ * porte le numéro de l'espace parmi ceux du jeton).
  *
  * 🔴 POURQUOI CE BOUTON EXISTE. Un espace relié avant la v4 de l'inscription porte un jeton à 60 jours : celui de
  * « MessagingMeEmbdedded » expire le 2026-10-16 (lu chez Meta le 2026-10-09), et la zone « Connecter » ne s'affiche que
@@ -973,8 +987,8 @@ function RenouvelerConnexionMeta({ connexion }: { connexion: ConnexionNumero }) 
       </Bouton>
       <p className="mt-1 text-xs text-ink-500">
         {t(
-          'Rouvre la fenêtre de Meta sur le même compte et le même numéro : Messaging Me reçoit une autorisation neuve. Rien n’est effacé, le numéro reste branché. À faire si les envois s’arrêtent sur une erreur d’autorisation.',
-          'Reopens the Meta window on the same account and number: Messaging Me gets a fresh authorization. Nothing is erased, the number stays connected. Do it if sending stops on an authorization error.',
+          'Rouvre la fenêtre de Meta : choisissez-y le même compte et le même numéro, et Messaging Me reçoit une autorisation neuve. Rien n’est effacé, le numéro reste branché. À faire si les envois s’arrêtent sur une erreur d’autorisation.',
+          'Reopens the Meta window: pick the same account and number there, and Messaging Me gets a fresh authorization. Nothing is erased, the number stays connected. Do it if sending stops on an authorization error.',
         )}
       </p>
       {connexion.error && <p data-testid="renouveler-erreur" className="mt-2 rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700">{connexion.error}</p>}
