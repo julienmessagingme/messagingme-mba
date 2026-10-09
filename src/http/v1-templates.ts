@@ -28,7 +28,8 @@ function refuserModele(reply: FastifyReply, r: RefusModele): FastifyReply {
   if (r.reessayerDansS !== undefined) reply.header('retry-after', String(r.reessayerDansS));
   return refuser(reply, r.statut, r.code, r.message);
 }
-const requete = z.object({ language: z.string().max(20).optional() });
+/** Exporté pour le contrat OpenAPI (`src/api/openapi/registre.ts`) : la requête du statut, telle que la route la lit. */
+export const requeteStatutModele = z.object({ language: z.string().max(20).optional() });
 
 export function registerV1Templates(app: FastifyInstance, deps: V1TemplatesRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
@@ -49,7 +50,7 @@ export function registerV1Templates(app: FastifyInstance, deps: V1TemplatesRoute
     if (!req.auth) return refuser(reply, 401, 'unauthorized', 'clé d’API requise');
     if (!await compterOuRefuser(deps.usage, req, reply, 'templates.read')) return reply;
     const p = parametres.safeParse(req.params);
-    const q = requete.safeParse(req.query);
+    const q = requeteStatutModele.safeParse(req.query);
     if (!p.success) return refuser(reply, 404, 'template_not_found', 'modèle inconnu');
     if (!q.success) return refuser(reply, 400, 'invalid_body', messageDeForme(q.error));
     const issue = await statutsDuModele(deps, req.auth.tenantId, p.data.name, q.data.language);

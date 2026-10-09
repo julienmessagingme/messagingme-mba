@@ -2268,6 +2268,12 @@ scénario, comment importer des contacts.
   ses erreurs propres, peu de notes. Chaque page de ressource s'ouvre sur « Sur cette page ». Les anciennes
   ancres renvoient à leur nouvelle adresse. Toujours lisible sans compte, et dans la console pour un admin, en
   français et en anglais.
+- ✅ **Le contrat OpenAPI de l'API** (lot 16, 2026-10-09) : `https://api.messagingme.app/openapi.json`, public et sans
+  compte, au format OpenAPI 3.1. Il décrit chaque route `/v1` (son droit, son corps, sa réponse, ses erreurs, l'en-tête
+  d'idempotence de l'envoi) et, dans sa section `webhooks`, chaque événement des webhooks sortants. Servi par l'API
+  elle-même, il est toujours égal au code en production : un intégrateur l'importe dans son outil de requêtes ou en
+  génère un client. La Documentation API le présente sur son Accueil (section « Contrat OpenAPI ») et `llms.txt` le
+  cite.
 
 ### Ce que la console remonte vers l'outil du client (Paramètres > Intégrations)
 

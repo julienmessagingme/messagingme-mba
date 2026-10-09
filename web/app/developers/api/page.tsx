@@ -45,6 +45,21 @@ function Accueil({ session }: { session: Session | null }) {
         <Bloc legende={t('Adresse de base', 'Base URL')}>{`${ADRESSE_API}/v1`}</Bloc>
       </Section>
 
+      <Section id="openapi" titre={t('Contrat OpenAPI', 'OpenAPI contract')}>
+        <p>
+          {t(
+            'Le contrat OpenAPI 3.1 de l’API, servi par l’API elle-même et donc toujours égal au code en production : chaque route, son droit, son corps, sa réponse, ses erreurs, et les événements des webhooks sortants. Il s’importe dans un outil de requêtes ou un générateur de client.',
+            'The OpenAPI 3.1 contract of the API, served by the API itself and therefore always equal to the code in production: every route, its scope, its body, its response, its errors, and the outgoing webhook events. Import it into a request tool or a client generator.',
+          )}
+        </p>
+        <Bloc legende={t('Contrat', 'Contract')}>{`${ADRESSE_API}/openapi.json`}</Bloc>
+        <p>
+          <a href={`${ADRESSE_API}/openapi.json`} className="font-medium text-brand-600 underline underline-offset-2 hover:text-brand-700">
+            {t('Ouvrir le contrat', 'Open the contract')}
+          </a>
+        </p>
+      </Section>
+
       <Section id="authentification" titre={t('Authentification', 'Authentication')}>
         <p>{t('Une clé d’API dans l’en-tête Authorization de chaque appel :', 'An API key in the Authorization header of every call:')}</p>
         <Bloc legende={t('En-tête', 'Header')}>{`Authorization: Bearer ${CLE_EXEMPLE}`}</Bloc>

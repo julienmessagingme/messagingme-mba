@@ -67,6 +67,8 @@ import type { HubspotEventRouteDeps } from '../src/http/hubspot-events';
 import type { StripeWebhookRouteDeps } from '../src/http/credit-stripe';
 import type { OtpPontRouteDeps } from '../src/http/otp-pont';
 import type { ContactVitrineDeps } from '../src/http/contact-vitrine';
+import type { OpenapiRouteDeps } from '../src/http/openapi';
+import { contratOpenapi } from '../src/api/openapi';
 import type { FastifyInstance } from 'fastify';
 import { plafondCoupe, offresToutOuvert } from '../tests/gardes';
 import { OUTILS } from '../src/mcp/outils';
@@ -342,6 +344,8 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
     enabled: false,
     envoyer: async () => { throw new Error('auto-attaque : le formulaire de contact n’envoie rien'); },
   } satisfies ContactVitrineDeps,
+  // Le contrat OpenAPI : un document public, sans autorité à tromper ni effet. Le vrai contrat, construit en mémoire.
+  openapi: { contrat: contratOpenapi } satisfies OpenapiRouteDeps,
 };
 
 /**
@@ -509,6 +513,8 @@ const OUVERTES: ReadonlyArray<{ motif: RegExp; raison: string }> = [
   { motif: /^\/\.well-known\/oauth-(protected-resource(\/mcp)?|authorization-server)$/, raison: 'métadonnées OAuth publiques (RFC 9728, RFC 8414)' },
   { motif: /^\/oauth\/(authorize|token|revoke|register)$/, raison: 'OAuth : le client n’a pas encore de jeton, ou s’enregistre (RFC 7591, lot 15 ; sonde 14)' },
   { motif: /^\/oauth\/consentement\/(demande|google|autoriser)$/, raison: 'consentement OAuth : demande et preuve signées, pas de session (sonde 14)' },
+  // Le contrat OpenAPI de l'API publique (lot 16) : un document public, qui ne dépend que du code déployé.
+  { motif: /^\/openapi\.json$/, raison: 'contrat OpenAPI public, aucune donnée d’espace' },
 ];
 
 const estOuverte = (chemin: string): string | null => OUVERTES.find((o) => o.motif.test(chemin))?.raison ?? null;

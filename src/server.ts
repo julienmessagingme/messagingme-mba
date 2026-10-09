@@ -64,6 +64,7 @@ import { registerNumeroFourni } from './http/numero-fourni';
 import { registerAbonnementNumero, type AbonnementNumeroRouteDeps } from './http/abonnement-numero';
 import { registerApiKeys } from './http/api-keys';
 import { registerV1Contacts } from './http/v1-contacts';
+import { registerOpenapi, type OpenapiRouteDeps } from './http/openapi';
 import { registerV1Conversations, type V1ConversationsRouteDeps } from './http/v1-conversations';
 import { registerV1Templates, type V1TemplatesRouteDeps } from './http/v1-templates';
 import { registerV1Webhooks, type V1WebhooksRouteDeps } from './http/v1-webhooks';
@@ -319,6 +320,8 @@ export interface ServerDeps {
   support?: SupportRouteDeps;
   /** Formulaire de contact de la vitrine (app.messagingme.fr) : public, même envoi que le support. */
   contactVitrine?: ContactVitrineDeps;
+  /** Le contrat OpenAPI de l'API publique (lot 16), `GET /openapi.json` : public, sans donnée d'espace. */
+  openapi?: OpenapiRouteDeps;
   /** Le bot d'aide de la console : il explique et il emmène, il n'écrit jamais rien. */
   aide?: AideRouteDeps;
   /** Édition d'un contact (fields/tags depuis la fiche), réservé aux admins. */
@@ -672,6 +675,9 @@ export function modulesDeRoutes(
     // L'OAuth devant `/mcp` : public par nature, personne n'a encore de jeton. Ses plafonds sont dans le module, et
     // il ne monte rien sans `PUBLIC_API_URL` : l'émetteur annoncé serait l'adresse de la console.
     entree('oauth', 'anonyme', deps.oauth, (app, d) => registerOauth(app, d, baseOauthApi, debit)),
+    // Le contrat OpenAPI de l'API publique (lot 16) : un document public, sans donnée d'espace. Son adresse de serveur
+    // est relative sans `PUBLIC_API_URL`.
+    entree('openapi', 'anonyme', deps.openapi, (app, d) => registerOpenapi(app, d, baseOauthApi)),
     entree('import', 'tenant', deps.import, (app, d, g) => registerImport(app, d, g.admin, g.limiteCouteuse)),
     entree('campaigns', 'tenant', deps.campaigns, (app, d, g) => registerCampaigns(app, d, g.admin, g.limiteCouteuse)),
     // Bibliothèque RCS : montée avec `auth` et non `admin`, car la liste doit être lisible par un agent (bloc

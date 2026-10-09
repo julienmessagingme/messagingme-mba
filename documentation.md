@@ -184,7 +184,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **Connecteur HubSpot** | import de listes, étapes de deal | `src/hubspot/` | `/tuto-hubspot` | | `hubspot-catchup` |
 | **Publicités Click-to-WhatsApp** | connecter le compte publicitaire, créer (image ou vidéo, audiences), publier, suivre, router le prospect | `src/pubs/`, `src/meta/pubs*.ts`, `src/http/pubs.ts` | `/publicites` | `pub_connexion`, `publicites`, `pubs_brouillons`, `pubs_connues`, `arrivees_pub` | balayage de suivi |
 | **Widget WhatsApp** | une bulle sur le site du client qui ouvre WhatsApp avec une phrase, et ce qui se passe quand cette phrase arrive | `src/widgets/`, `src/http/widgets.ts`, `src/http/widget-public.ts` | `/widgets` | `widgets`, `widget_tirs` | aucune : une étape de `processInbound` |
-| **API publique v1** | ce qu'un intégrateur du client appelle | `src/api/`, `src/http/v1-*.ts` | `/developers` | `api_keys`, `api_idempotency` | |
+| **API publique v1** | ce qu'un intégrateur du client appelle, et son contrat OpenAPI (`GET /openapi.json`, dérivé de `src/api/openapi/`) | `src/api/`, `src/http/v1-*.ts`, `src/http/openapi.ts` | `/developers` | `api_keys`, `api_idempotency` | |
 | **Serveur MCP et son OAuth** | Claude et les autres clients MCP (ChatGPT, Cursor, VS Code, Lovable) lisent et agissent dans un espace, par une clé d'API ou un jeton OAuth (§ 7) | `src/mcp/`, `src/http/mcp.ts`, `src/oauth/`, `src/http/oauth.ts`, `src/http/oauth-consentement.ts` | `/developers/mcp` | `oauth_autorisations`, `oauth_codes`, `oauth_clients` | `retention-oauth` |
 | **Exploitation** | vue cross-tenant, recharge de crédit, alertes, suppression d'un espace (§ 10) | `src/ops/` | `/ops` | `worker_heartbeat`, `audit_log`, `espaces_supprimes` | `dlq-sweep` |
 | **Numéros fournis** | la réserve de numéros DIDWW, et le pont qui lit le code que Meta dicte en appelant (lot 3a) | `src/otp/`, `src/didww/`, `src/http/otp-pont.ts`, `src/http/ops-numeros.ts`, `ops/otp-asterisk/` | `/ops` | `numeros_fournis`, `codes_verification` | purge du balayage de rétention |
@@ -3773,6 +3773,14 @@ Ajouté par le lot 4 de l'API publique :
     où il veut en nommant ses clés comme nos champs.
 17. **Le tenant vient du CODE de l'URL, jamais du corps**, sur toute route publique remise à un tiers.
 18. **Ce qui est servi est décidé par la SIGNATURE du fichier**, jamais par le type déclaré au téléversement.
+19. **Le contrat OpenAPI se DÉRIVE, il ne s'écrit pas à côté** (lot 16). `GET /openapi.json` est construit depuis le
+    registre `src/api/openapi/registre.ts`, dont les schémas d'ENTRÉE sont ceux que les routes appliquent, et depuis
+    les schémas des événements. `tests/openapi.test.ts` tient le registre égal à l'index de la doc (lui-même égal
+    aux routes montées), y passe chaque exemple de la doc, produit chaque événement par les vrais constructeurs, et
+    exige au typage que chaque schéma de réponse soit le type que sa route rend : une route `/v1` ajoutée, un champ
+    de réponse ajouté ou un événement ajouté sans son entrée casse la CI. Ce que l'intégrateur REÇOIT n'est jamais
+    fermé (`additionalProperties: false` retiré des réponses et des événements) : ajouter un champ n'est pas un
+    changement cassant, et un client généré ne doit pas casser ce jour-là.
 
 ### Sur le code
 

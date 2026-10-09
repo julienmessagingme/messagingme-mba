@@ -47,7 +47,7 @@ export const PAGES_DOC = [
   {
     cle: 'accueil', href: '/developers/api', fichier: 'web/app/developers/api/page.tsx', groupe: 'demarrer',
     nav: ['Accueil', 'Overview'], titre: ['API Messaging Me', 'Messaging Me API'],
-    ancres: ['premier-appel', 'endpoints', 'adresse', 'authentification'],
+    ancres: ['premier-appel', 'endpoints', 'adresse', 'openapi', 'authentification'],
   },
   {
     cle: 'contacts', href: '/developers/api/contacts', fichier: 'web/app/developers/api/contacts/page.tsx', groupe: 'reference-api',

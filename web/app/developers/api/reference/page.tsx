@@ -48,6 +48,10 @@ function Reference() {
           <li>
             {t('Adresse de base :', 'Base URL:')} <LienDoc page="accueil" ancre="adresse">{t('Accueil', 'Overview')}</LienDoc>.
           </li>
+          <li>
+            {t('Le droit de chaque route, ses erreurs et ses formes, lisibles par une machine :', 'Each route’s scope, errors and shapes, machine-readable:')}{' '}
+            <LienDoc page="accueil" ancre="openapi">{t('le contrat OpenAPI', 'the OpenAPI contract')}</LienDoc>.
+          </li>
         </Liste>
         <Bloc legende={t('En-tête', 'Header')}>{`Authorization: Bearer ${CLE_EXEMPLE}`}</Bloc>
         <Tableau

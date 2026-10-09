@@ -191,6 +191,7 @@ import { creerOffreDeBienvenue } from './account/offre-bienvenue';
 import { creerGelMembres } from './offres/membres';
 import { commissionPour } from './offres/commission';
 import { surFinDuPro, surPassageEnPro, type DepsNumeroInclus } from './offres/numero-inclus';
+import { contratOpenapi } from './api/openapi';
 
 /** Le nom de cette copie de l'API dans `/ops` et dans ses alertes : `api` seule, `api-<copie>` à plusieurs (`API_COPIE`). */
 const NOM_API = config.API_COPIE === '' ? 'api' : `api-${config.API_COPIE}`;
@@ -2605,6 +2606,8 @@ async function main(): Promise<void> {
         });
       },
     },
+    // Le contrat OpenAPI (lot 16) : il ne dépend que du code, `GET /openapi.json` le sert tel quel.
+    openapi: { contrat: contratOpenapi },
     // Même envoi et même destinataire que le support : le texte du courriel se construit dans la route (testée).
     contactVitrine: {
       enabled: !!config.RESEND_API_KEY && !!config.SUPPORT_TO,

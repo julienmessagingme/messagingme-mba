@@ -98,7 +98,8 @@ function refuserGestion(reply: FastifyReply, r: Refus, objet: 'webhook' | 'deliv
 const CIBLE = (id: string) => ({ kind: 'adresse_evenements', id });
 const parametresAdresse = z.object({ webhookId: z.string().max(100) });
 const parametresEnvoi = z.object({ deliveryId: z.string().max(100) });
-const requeteJournal = z.strictObject({
+/** Exporté pour le contrat OpenAPI (`src/api/openapi/registre.ts`) : la requête du journal, telle que la route la lit. */
+export const requeteJournal = z.strictObject({
   before: z.string().datetime({ offset: true }).optional(),
   limit: z.coerce.number().int().min(1).max(JOURNAL_PAGE_MAX).optional(),
 });

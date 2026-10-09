@@ -65,6 +65,14 @@ migration 0227, fiches d'identité, enregistrement dynamique) et B (la console e
 `oauth_client_enregistre` du journal de l'API dit par quelle voie chacun passe) ; reconnecter aussi Claude Code et
 claude.ai, et vérifier qu'aucun `oauth_client_enregistre` ne sort pour eux.
 
+## LOT 16 : LE CONTRAT OPENAPI ET LE SDK (2026-10-09), LIVRAISON A EN COURS
+
+Spec `docs/superpowers/specs/2026-10-09-openapi-sdk-design.md`, plan `docs/superpowers/plans/2026-10-09-openapi-sdk.md`
+(décisions de Julien du 2026-10-09). Livraison A : le contrat (`src/api/openapi/`, `GET /openapi.json`, la section
+« Contrat OpenAPI » de la doc, `llms.txt`), aucune migration. Livraison B ensuite : le SDK (`sdk/`), son action et son
+dépôt dédié, que Julien crée (commande fournie). Essai réel : importer le contrat dans un outil et appeler une route avec
+une clé, puis installer le SDK, créer une fiche et vérifier un webhook d'essai.
+
 ## L'OFFRE GRATUITE S'APPELLE « FREE », EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ
 
 Plan `docs/superpowers/plans/2026-10-08-offre-free.md`. En production (`dd3298bf`, CI verte job par job, `up` de l'API,
