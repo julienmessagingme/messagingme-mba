@@ -33,6 +33,12 @@ export const STATUT_PAR_CODE = {
   template_rejected: 422,
   // Meta refuse le JETON de l'espace (401, code 190) en créant ou lisant un modèle : le compte est à reconnecter.
   meta_auth_failed: 409,
+  // Les webhooks sortants par l'API (lot 13, domaine 4) : une adresse ou un envoi inconnu de CET espace, un envoi encore
+  // en cours (ou un essai) qu'on ne rejoue pas, et une instance qui ne sait pas chiffrer les secrets.
+  webhook_not_found: 404,
+  delivery_not_found: 404,
+  delivery_not_replayable: 409,
+  webhooks_unavailable: 503,
   // Le numéro WhatsApp de l'espace est délié depuis l'Accueil : rien ne part avant qu'il soit relié. Distinct
   // de `no_whatsapp_number` : le numéro existe, et se relie d'un clic.
   number_unlinked: 409,

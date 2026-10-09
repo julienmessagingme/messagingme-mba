@@ -15,9 +15,9 @@ import type { LienVers } from './doc-api-pages';
  * ⚠️ AUCUN IMPORT DE VALEUR : lu par le build de la console ET par la suite racine.
  */
 
-export type Methode = 'GET' | 'POST' | 'PATCH';
-export type Droit = 'contacts:write' | 'contacts:read' | 'sends:create' | 'conversations:read' | 'templates:write';
-export type GroupeEndpoints = 'contacts' | 'messages' | 'conversations' | 'envois' | 'modeles' | 'catalogues';
+export type Methode = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+export type Droit = 'contacts:write' | 'contacts:read' | 'sends:create' | 'conversations:read' | 'templates:write' | 'webhooks:write';
+export type GroupeEndpoints = 'contacts' | 'messages' | 'conversations' | 'envois' | 'modeles' | 'webhooks' | 'catalogues';
 
 export interface EndpointDoc {
   readonly methode: Methode;
@@ -36,6 +36,7 @@ export const GROUPES_ENDPOINTS: ReadonlyArray<{ readonly cle: GroupeEndpoints; r
   { cle: 'conversations', titre: ['Conversations', 'Conversations'] },
   { cle: 'envois', titre: ['Envois', 'Sends'] },
   { cle: 'modeles', titre: ['Modèles', 'Templates'] },
+  { cle: 'webhooks', titre: ['Webhooks sortants', 'Outgoing webhooks'] },
   { cle: 'catalogues', titre: ['Catalogues', 'Catalogs'] },
 ];
 
@@ -107,6 +108,46 @@ export const ENDPOINTS = [
   {
     methode: 'GET', chemin: '/v1/templates/{name}', droit: 'templates:write', groupe: 'modeles', lien: { page: 'templates', ancre: 'statut' },
     resume: ['Lit le statut d’un modèle chez Meta, langue par langue.', 'Reads a template’s status at Meta, language by language.'],
+  },
+  {
+    methode: 'GET', chemin: '/v1/webhooks', droit: 'webhooks:write', groupe: 'webhooks', lien: { page: 'webhook-endpoints', ancre: 'lister' },
+    resume: ['Liste les adresses, la limite de l’offre et les types disponibles.', 'Lists the endpoints, the plan limit and the available types.'],
+  },
+  {
+    methode: 'POST', chemin: '/v1/webhooks', droit: 'webhooks:write', groupe: 'webhooks', lien: { page: 'webhook-endpoints', ancre: 'creer' },
+    resume: ['Inscrit une adresse et rend son secret, une seule fois.', 'Registers an endpoint and returns its secret, only once.'],
+  },
+  {
+    methode: 'GET', chemin: '/v1/webhooks/{webhookId}', droit: 'webhooks:write', groupe: 'webhooks', lien: { page: 'webhook-endpoints', ancre: 'lire' },
+    resume: ['Lit une adresse et l’état de ses envois.', 'Reads an endpoint and the state of its deliveries.'],
+  },
+  {
+    methode: 'PATCH', chemin: '/v1/webhooks/{webhookId}', droit: 'webhooks:write', groupe: 'webhooks', lien: { page: 'webhook-endpoints', ancre: 'modifier' },
+    resume: ['Change les types, la description, ou met l’adresse en pause.', 'Changes the types, the description, or pauses the endpoint.'],
+  },
+  {
+    methode: 'POST', chemin: '/v1/webhooks/{webhookId}/rotate-secret', droit: 'webhooks:write', groupe: 'webhooks', lien: { page: 'webhook-endpoints', ancre: 'rotation' },
+    resume: ['Renouvelle le secret ; l’ancien signe encore 24 h.', 'Rotates the secret; the old one still signs for 24 h.'],
+  },
+  {
+    methode: 'DELETE', chemin: '/v1/webhooks/{webhookId}', droit: 'webhooks:write', groupe: 'webhooks', lien: { page: 'webhook-endpoints', ancre: 'supprimer' },
+    resume: ['Supprime une adresse.', 'Deletes an endpoint.'],
+  },
+  {
+    methode: 'POST', chemin: '/v1/webhooks/{webhookId}/test', droit: 'webhooks:write', groupe: 'webhooks', lien: { page: 'webhook-endpoints', ancre: 'essai' },
+    resume: ['Envoie un événement d’essai signé et rend la réponse de l’application.', 'Sends a signed test event and returns the app’s answer.'],
+  },
+  {
+    methode: 'GET', chemin: '/v1/webhooks/{webhookId}/deliveries', droit: 'webhooks:write', groupe: 'webhooks', lien: { page: 'webhook-endpoints', ancre: 'journal' },
+    resume: ['Lit le journal d’une adresse, le plus récent d’abord.', 'Reads an endpoint’s log, most recent first.'],
+  },
+  {
+    methode: 'POST', chemin: '/v1/webhooks/deliveries/{deliveryId}/replay', droit: 'webhooks:write', groupe: 'webhooks', lien: { page: 'webhook-endpoints', ancre: 'rejeu' },
+    resume: ['Rejoue un envoi terminé, avec le même corps.', 'Replays a finished delivery, with the same body.'],
+  },
+  {
+    methode: 'POST', chemin: '/v1/webhooks/{webhookId}/replay-failures', droit: 'webhooks:write', groupe: 'webhooks', lien: { page: 'webhook-endpoints', ancre: 'rejeu-echecs' },
+    resume: ['Rejoue les envois en échec depuis une date.', 'Replays the failed deliveries since a date.'],
   },
   {
     methode: 'GET', chemin: '/v1/templates', droit: 'sends:create', groupe: 'catalogues', lien: { page: 'catalogs', ancre: 'templates' },

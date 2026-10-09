@@ -42,7 +42,7 @@ async function monterV1() {
     cles.ajouter(cleSans(d), { id: `sans-${d}`, tenantId: `t-sans-${d}`, scopes: DROITS.filter((x) => x !== d) });
     cles.ajouter(cleSeul(d), { id: `seul-${d}`, tenantId: `t-seul-${d}`, scopes: [d] });
   }
-  const deps = { v1: { apiKeys: cles, oauth: aucunJetonOauth, contacts: {}, sends: {}, catalogues: {}, messages: {}, messagesRcs: {}, conversations: {}, templates: {} } };
+  const deps = { v1: { apiKeys: cles, oauth: aucunJetonOauth, contacts: {}, sends: {}, catalogues: {}, messages: {}, messagesRcs: {}, conversations: {}, templates: {}, webhooks: {} } };
   const v1 = modulesDeRoutes(deps as never, new GardeUsageMemoire()).find((m) => m.nom === 'v1');
   if (!v1) throw new Error('le registre n’a plus d’entrée v1');
   const app = Fastify({ logger: false });
@@ -58,8 +58,8 @@ async function monterV1() {
 }
 
 describe('🔴 l’index des endpoints est l’API que le serveur monte', () => {
-  it('vingt entrées, sans doublon, chacune dans un groupe, avec son texte dans les deux langues', () => {
-    expect(ENDPOINTS).toHaveLength(20);
+  it('trente entrées, sans doublon, chacune dans un groupe, avec son texte dans les deux langues', () => {
+    expect(ENDPOINTS).toHaveLength(30);
     expect(new Set(ENDPOINTS.map(cleEndpoint)).size).toBe(ENDPOINTS.length);
     for (const e of ENDPOINTS) {
       expect(GROUPES_ENDPOINTS.map((g) => g.cle), cleEndpoint(e)).toContain(e.groupe);

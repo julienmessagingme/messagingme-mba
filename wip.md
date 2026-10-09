@@ -48,7 +48,8 @@ COURS, aucune migration : l'application Meta n'est PAS abonnée au champ `messag
 2026-10-09 : `messages`, `messaging_handovers`, `standby`) ; Julien s'y abonnera depuis le tableau de bord, sans risque
 avant le code (un champ inconnu est reçu puis ignoré), puis l'essai réel : une adresse de test qui coche le type reçoit
 l'événement à la validation d'un modèle créé par l'API.
-Puis les webhooks par l'API et les contacts complets.
+Domaine 4 (les webhooks sortants par l'API et par Claude, plan `docs/superpowers/plans/2026-10-09-webhooks-api.md`,
+décisions prises par Claude en l'absence de Julien, à relire : spec § 6) EN COURS. Puis les contacts complets.
 
 ## L'OFFRE GRATUITE S'APPELLE « FREE », EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ
 

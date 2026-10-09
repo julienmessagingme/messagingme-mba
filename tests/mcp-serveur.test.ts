@@ -688,6 +688,8 @@ describe('serveur MCP : cohérence du catalogue', () => {
       // Lot 12 : une adresse de plus à chaque appel ; l'essai part vers l'application du client.
       create_webhook_endpoint: [false, false, false],
       send_test_event: [false, false, true],
+      // Lot 13, domaine 4 : l'envoi repart vers l'application, avec le même identifiant d'événement.
+      replay_webhook_delivery: [false, true, true],
       // Lot 13, domaine 3 : un modèle de plus chez Meta à chaque appel, qui y reste.
       create_template: [false, false, true],
       // Livraison B : un message part chez une personne ; la même clé d'idempotence ne renvoie rien ; le fil n'est pas pris.

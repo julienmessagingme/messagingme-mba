@@ -55,13 +55,14 @@ const types = z.array(z.enum(TYPES_ABONNABLES)).min(1).max(TYPES_ABONNABLES.leng
   .refine((l) => new Set(l).size === l.length, { message: 'un type apparaît deux fois' });
 const description = z.string().trim().max(200);
 
-const saisieCreation = z.object({
+/** Exportés pour la doc : ses exemples passent par les MÊMES règles (`tests/api-exemples.test.ts`). */
+export const saisieCreation = z.object({
   url: z.string().trim().min(1).max(2048),
   description: description.optional(),
   types: types.optional(),
 }).strict();
 
-const saisieModification = z.object({
+export const saisieModification = z.object({
   description: description.optional(),
   types: types.optional(),
   active: z.boolean().optional(),

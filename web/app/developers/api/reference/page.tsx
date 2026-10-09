@@ -29,6 +29,7 @@ const DROITS: ReadonlyArray<{ droit: Droit; quoi: readonly [string, string] }> =
   { droit: 'sends:create', quoi: ['Envoyer, suivre un envoi, lire les catalogues.', 'Send, follow a send, read the catalogs.'] },
   { droit: 'conversations:read', quoi: ['Lire les conversations, leurs messages et les fichiers reçus.', 'Read conversations, their messages and received files.'] },
   { droit: 'templates:write', quoi: ['Créer des modèles et suivre leur validation par Meta.', 'Create templates and follow their review by Meta.'] },
+  { droit: 'webhooks:write', quoi: ['Gérer les webhooks sortants, lire et rejouer leur journal (il porte des données de contacts).', 'Manage outgoing webhooks, read and replay their log (it carries contact data).'] },
 ];
 
 function Reference() {

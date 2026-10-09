@@ -57,6 +57,7 @@ function KeysInner({ session }: { session: Session }) {
     'mcp:write': t('MCP : répondre, taguer, affecter, créer et modifier les widgets du site', 'MCP: reply, tag, assign, create and edit the website widgets'),
     'conversations:read': t('Lire les conversations et leurs messages', 'Read conversations and their messages'),
     'templates:write': t('Créer des modèles et suivre leur validation', 'Create templates and follow their review'),
+    'webhooks:write': t('Gérer les webhooks sortants et lire leur journal', 'Manage outgoing webhooks and read their log'),
   };
 
   function toggleScope(s: string) {

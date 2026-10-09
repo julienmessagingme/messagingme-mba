@@ -83,6 +83,7 @@ const COULEUR_METHODE: Record<Methode, string> = {
   GET: 'bg-succes-50 text-succes-700 ring-succes-200',
   POST: 'bg-brand-50 text-brand-700 ring-brand-200',
   PATCH: 'bg-alerte-50 text-alerte-800 ring-alerte-200',
+  DELETE: 'bg-danger-50 text-danger-700 ring-danger-200',
 };
 
 export function BadgeMethode({ methode, petit = false }: { methode: Methode; petit?: boolean }) {

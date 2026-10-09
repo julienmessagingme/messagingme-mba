@@ -3708,6 +3708,11 @@ Ajouté par le lot 4 de l'API publique :
    `/mcp` pose à chaque requête sous la clé ou le jeton de l'appel), appelé au même endroit. L'outil construit le corps
    de l'API pour une personne, ses valeurs en sources `literal`, et refuse celles que Meta refuserait à l'envoi
    (retour à la ligne, tabulation, cinq espaces de suite).
+48. **Les webhooks sortants gérés par une clé (`/v1/webhooks`, lot 13, domaine 4) n'ont aucune logique propre** :
+   `src/http/v1-webhooks.ts` appelle les fonctions de `src/evenements/gestion.ts` (celles de la console et des outils
+   MCP du lot 12), traduit les noms en anglais (`WebhookV1`, `DeliveryV1`, partagées avec les outils
+   `list_webhook_endpoints` et `get_webhook_deliveries`) et les refus en codes de l'API. Droit `webhooks:write` ;
+   chaque écriture est auditée comme dans la console, avec `via: 'api'`.
 
 ### Sur les contrats externes
 

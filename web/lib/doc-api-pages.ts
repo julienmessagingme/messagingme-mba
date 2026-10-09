@@ -77,6 +77,12 @@ export const PAGES_DOC = [
     ancres: ['creer', 'statut'],
   },
   {
+    // Les webhooks sortants gérés par une clé (lot 13, domaine 4). Le format des événements reste sur `webhooks`.
+    cle: 'webhook-endpoints', href: '/developers/api/webhook-endpoints', fichier: 'web/app/developers/api/webhook-endpoints/page.tsx', groupe: 'reference-api',
+    nav: ['Gérer les webhooks', 'Manage webhooks'], titre: ['Gérer les webhooks sortants', 'Manage outgoing webhooks'],
+    ancres: ['lister', 'creer', 'lire', 'modifier', 'rotation', 'supprimer', 'essai', 'journal', 'rejeu', 'rejeu-echecs'],
+  },
+  {
     cle: 'catalogs', href: '/developers/api/catalogs', fichier: 'web/app/developers/api/catalogs/page.tsx', groupe: 'reference-api',
     nav: ['Catalogues', 'Catalogs'], titre: ['Catalogues', 'Catalogs'],
     ancres: ['templates', 'scenarios', 'messages-rcs'],

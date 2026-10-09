@@ -21,6 +21,8 @@ import { schemaMessageWhatsapp, type ReponseMessageSimple } from '../src/http/v1
 import { schemaMessageRcs } from '../src/http/v1-messages-rcs';
 import { schemaMessageMeta } from '../src/api/message-meta';
 import { schemaModeleMeta } from '../src/api/modele-meta';
+import { saisieCreation, saisieModification } from '../src/evenements/gestion';
+import { corpsRejeu, type DeliveryV1, type WebhookV1 } from '../src/http/v1-webhooks';
 import type { ModeleCree, StatutLangue } from '../src/api/creer-modele';
 import { validateParamMapping } from '../src/crm/template';
 import { destinataireAvecVariablesInterdites } from '../src/api/variables';
@@ -111,6 +113,9 @@ const VALIDATEURS: Record<RouteAvecCorps, (corps: unknown) => Verdict> = {
   'POST /v1/messages': (c) => depuis(schemaMessageMeta.safeParse(c)),
   'POST /v1/messages/rcs': (c) => depuis(schemaMessageRcs.safeParse(c)),
   'POST /v1/templates': (c) => depuis(schemaModeleMeta.safeParse(c)),
+  'POST /v1/webhooks': (c) => depuis(saisieCreation.safeParse(c)),
+  'PATCH /v1/webhooks/{webhookId}': (c) => depuis(saisieModification.safeParse(c)),
+  'POST /v1/webhooks/{webhookId}/replay-failures': (c) => depuis(corpsRejeu.safeParse(c)),
 };
 
 describe('🔴 chaque corps d’exemple passe le validateur de SA route', () => {
@@ -301,6 +306,10 @@ const modeleCree: Lecture<ModeleCree> = EXEMPLES_REPONSES.modeleCree;
 const modeleCreeCles: MemesCles<typeof EXEMPLES_REPONSES.modeleCree, ModeleCree> = true;
 const statutLangue: Lecture<StatutLangue> = EXEMPLES_REPONSES.statutModele.languages[1];
 const statutLangueCles: MemesCles<typeof EXEMPLES_REPONSES.statutModele.languages[1], StatutLangue> = true;
+const webhookLu: Lecture<WebhookV1> = EXEMPLES_REPONSES.webhook;
+const webhookCles: MemesCles<typeof EXEMPLES_REPONSES.webhook, WebhookV1> = true;
+const envoiLu: Lecture<DeliveryV1> = EXEMPLES_REPONSES.envoisWebhook.data[0];
+const envoiCles: MemesCles<typeof EXEMPLES_REPONSES.envoisWebhook.data[0], DeliveryV1> = true;
 
 describe('les réponses montrées ont le type de leurs producteurs', () => {
   it('suivi d’un envoi, rapport 201, fiche lue, recherche, lot, écriture, message simple (tenus au typage)', () => {
@@ -311,6 +320,11 @@ describe('les réponses montrées ont le type de leurs producteurs', () => {
   it('la lecture des fils : conversation, message, et leurs pages (tenus au typage)', () => {
     expect([convCles, convContactCles, msgCles, msgMediaCles, pageConvCles, pageMsgCles]).toEqual([true, true, true, true, true, true]);
     expect([convLue, msgLu, pageConv, pageMsg].every((v) => v !== null)).toBe(true);
+  });
+
+  it('les webhooks sortants : l’adresse et l’envoi (tenus au typage)', () => {
+    expect([webhookCles, envoiCles]).toEqual([true, true]);
+    expect([webhookLu, envoiLu].every((v) => v !== null)).toBe(true);
   });
 
   it('les modèles : la création et le statut d’une langue (tenus au typage)', () => {

@@ -66,6 +66,7 @@ import { registerApiKeys } from './http/api-keys';
 import { registerV1Contacts } from './http/v1-contacts';
 import { registerV1Conversations, type V1ConversationsRouteDeps } from './http/v1-conversations';
 import { registerV1Templates, type V1TemplatesRouteDeps } from './http/v1-templates';
+import { registerV1Webhooks, type V1WebhooksRouteDeps } from './http/v1-webhooks';
 import { registerV1Sends } from './http/v1-sends';
 import { registerV1Catalogues } from './http/v1-catalogues';
 import type { V1CataloguesRouteDeps } from './http/v1-catalogues';
@@ -374,6 +375,8 @@ export interface ServerDeps {
     conversations?: Omit<V1ConversationsRouteDeps, 'usage'>;
     /** La création des modèles et le suivi de leur validation (`POST /v1/templates`, `GET /v1/templates/{name}`, lot 13). */
     templates?: Omit<V1TemplatesRouteDeps, 'usage'>;
+    /** Les webhooks sortants gérés par une clé (`/v1/webhooks`, lot 13, domaine 4). */
+    webhooks?: Omit<V1WebhooksRouteDeps, 'usage'>;
     /** Le serveur MCP, moins son plafond coûteux : `buildServer` y pose le sien au montage (`DepsMcp.couteux`). */
     mcp?: CablageMcp;
     /** Le relais du Meta Business Agent : même autorité et même limiteur que /v1. */
@@ -795,6 +798,9 @@ export function modulesDeRoutes(
       if (v1.conversations) registerV1Conversations(app, { ...v1.conversations, usage: usageApi }, [requireApiKey, requireScope('conversations:read')]);
       // Les modèles (lot 13, domaine 3) : un droit NEUF, `templates:write`, sans reprise. Créer un modèle n'est pas envoyer.
       if (v1.templates) registerV1Templates(app, { ...v1.templates, usage: usageApi }, [requireApiKey, requireScope('templates:write')]);
+      // Les webhooks sortants (lot 13, domaine 4) : un droit NEUF, `webhooks:write`, sans reprise ; il couvre la lecture, le
+      // journal portant des données de contacts.
+      if (v1.webhooks) registerV1Webhooks(app, { ...v1.webhooks, usage: usageApi }, [requireApiKey, requireScope('webhooks:write')]);
       // Serveur MCP : même `requireApiKey` que /v1, donc ses appels comptent dans le plafond de l'espace. Pas
       // de `requireScope` à la porte : il a deux droits (lecture, écriture) et c'est l'outil appelé qui décide
       // duquel il a besoin.

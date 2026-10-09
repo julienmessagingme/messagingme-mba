@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { OUTILS, outilsPour, type DepsMcp } from '../src/mcp/outils';
 import { RefusOutil } from '../src/mcp/saisie';
 import { mcpEvenementsInertes } from './routes-inertes';
-import type { DepsGestionEvenements } from '../src/evenements/gestion';
-import type { AdresseVue } from '../src/evenements/store.pg';
+import { JOURNAL_PAGE_MAX, type DepsGestionEvenements } from '../src/evenements/gestion';
+import type { AdresseVue, EnvoiVue } from '../src/evenements/store.pg';
 
 /**
  * LES WEBHOOKS SORTANTS DEPUIS CLAUDE CODE (lot 12, livraison A) : deux outils, qui appellent la MÊME gestion que la
@@ -68,5 +68,67 @@ describe('les outils MCP des webhooks sortants', () => {
     expect(r).toMatchObject({ livre: false, code: 401, reponse: 'signature invalide' });
     await expect(outil('send_test_event').executer(deps({ couteuxAccepte: false }).d, T, { adresse_id: A }, { userId: 'u1' }))
       .rejects.toBeInstanceOf(RefusOutil);
+  });
+});
+
+describe('la liste, le journal et le rejeu depuis Claude (lot 13, domaine 4)', () => {
+  const ENVOI: EnvoiVue = {
+    id: 'd4e5f6a7-b8c9-4d0e-8f1a-2b3c4d5e6f7a', evenementId: 'evt_0123456789abcdef0123456789abcdef', type: 'message.received', statut: 'livre',
+    tentatives: 1, dernierCode: 200, derniereReponse: 'ok', prochainEssaiLe: null, creeLe: '2026-10-09T10:00:00.000Z', livreLe: '2026-10-09T10:00:01.000Z', corps: '{}',
+  };
+  function avecJournal() {
+    const { d, audit } = deps();
+    const vus: Array<{ tenant: string; avant: string | null; limite: number }> = [];
+    d.evenements.gestion.adresses = {
+      ...d.evenements.gestion.adresses,
+      lister: async () => [{
+        id: A, url: 'https://app.client.fr/hook', description: '', types: ['message.received'], active: true, creeLe: '2026-10-08T10:00:00.000Z',
+        ancienSecretJusqua: null, derniereLivraisonLe: null, enReessai: 0, echecs: 2,
+      }],
+      existe: async (t, id) => t === T && id === A,
+    };
+    d.evenements.gestion.envois = {
+      ...d.evenements.gestion.envois,
+      journal: async (t, _id, p) => { vus.push({ tenant: t, avant: p.avant?.toISOString() ?? null, limite: p.limite }); return [ENVOI]; },
+      rejouer: async (t, id) => (t === T && id === ENVOI.id ? { tentative: 2 } : null),
+    };
+    d.evenements.gestion.enfiler = async () => {};
+    return { d, audit, vus };
+  }
+
+  it('la page du journal annoncée à Claude est celle de la gestion', () => {
+    expect(JOURNAL_PAGE_MAX).toBe(100);
+  });
+
+  it('🔴 la liste, le journal et le rejeu exigent une personne : une adresse peut porter un jeton dans son chemin', () => {
+    expect(outil('list_webhook_endpoints').exigePersonne).toBe(true);
+    expect(outil('get_webhook_deliveries').exigePersonne).toBe(true);
+    expect(outil('replay_webhook_delivery').exigePersonne).toBe(true);
+    const parCle = outilsPour({ scopes: ['mcp:read', 'mcp:write'], personne: null } as never).map((o) => o.nom);
+    expect(parCle).not.toContain('list_webhook_endpoints');
+    expect(parCle).not.toContain('get_webhook_deliveries');
+    expect(parCle).not.toContain('replay_webhook_delivery');
+  });
+
+  it('la liste et le journal ont les vues de l’API (webhookV1, deliveryV1)', async () => {
+    const { d, vus } = avecJournal();
+    expect(await outil('list_webhook_endpoints').executer(d, T, {}, { userId: 'u1' })).toMatchObject({
+      adresses: [{ id: A, url: 'https://app.client.fr/hook', active: true, failed: 2 }], limite: null, types: expect.arrayContaining(['template.status_changed']),
+    });
+    const j = await outil('get_webhook_deliveries').executer(d, T, { adresse_id: A, limit: 1, before: '2026-10-09T11:00:00Z' }, { userId: 'u1' });
+    expect(j).toEqual({
+      envois: [expect.objectContaining({ id: ENVOI.id, status: 'delivered', eventId: ENVOI.evenementId })],
+      next_before: ENVOI.creeLe,
+    });
+    expect(vus).toEqual([{ tenant: T, avant: '2026-10-09T11:00:00.000Z', limite: 1 }]);
+    await expect(outil('get_webhook_deliveries').executer(d, T, { adresse_id: A, before: 'hier' }, { userId: 'u1' })).rejects.toThrow(/before/);
+  });
+
+  it('🔴 le rejeu repart, signé de la personne dans l’audit ; un envoi inconnu est un refus lisible', async () => {
+    const { d, audit } = avecJournal();
+    expect(await outil('replay_webhook_delivery').executer(d, T, { envoi_id: ENVOI.id }, { userId: 'u1' })).toEqual({ rejoue: true });
+    expect(audit).toEqual([{ action: 'evenements.envoi_rejoue', userId: 'u1', detail: { via: 'mcp' } }]);
+    await expect(outil('replay_webhook_delivery').executer(d, T, { envoi_id: 'e5f6a7b8-c9d0-4e1f-8a2b-3c4d5e6f7a8b' }, { userId: 'u1' }))
+      .rejects.toThrow(/rien à rejouer/);
   });
 });

@@ -106,6 +106,8 @@ export type AuditAction =
   | 'evenements.adresse_modifiee'
   | 'evenements.adresse_supprimee'
   | 'evenements.secret_tourne'
+  // Un envoi rejoué par Claude (lot 13, domaine 4) : il repart vers l'application avec le même corps.
+  | 'evenements.envoi_rejoue'
   /**
    * L'APP SALESFORCE (plan 2026-09-26, lot L1). Ces actions NOMMENT l'outil (décision de Julien du 2026-09-26 : le
    * journal nomme l'outil) : relier une org fait sortir des données de contacts vers le système du client, et

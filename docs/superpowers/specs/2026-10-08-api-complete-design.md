@@ -111,3 +111,43 @@ Décisions de Julien du 2026-10-09 :
 - **Trois livraisons** : A, créer et suivre (API et Claude) ; B, Claude envoie un modèle à un contact, par le cœur de
   `/v1/sends` extrait en une fonction ; C, l'événement, après l'abonnement de l'application Meta au champ
   `message_template_status_update` (un geste chez Meta, à faire par Julien).
+
+## 6. Domaine 4 : les webhooks sortants par l'API
+
+⚠️ **Décisions prises par Claude le 2026-10-09, en l'absence de Julien** (il a demandé de continuer seul) : les options
+qu'aurait recommandées la ronde de questions. À relire à son retour ; chacune se change sans migration.
+
+| Question | Décision |
+| --- | --- |
+| Droit | `webhooks:write`, neuf, sans reprise ; il couvre aussi la lecture, le journal portant des données de contacts |
+| Offre | Toutes, avec la limite d'adresses actives de l'offre (la même fonction que la console) |
+| Changer l'adresse | Non, comme la console : on supprime et on recrée (le secret change avec) |
+| Claude | La liste, le journal et le rejeu (le lot 12 a déjà la création et l'essai) ; journal et rejeu réservés à une personne |
+
+- **Les routes**, sous `webhooks:write`, noms et champs en anglais comme le reste de `/v1` : `GET /v1/webhooks`,
+  `POST /v1/webhooks` (201, le secret montré une fois), `GET /v1/webhooks/{id}`, `PATCH /v1/webhooks/{id}` (types,
+  description, `active` pour la pause), `POST /v1/webhooks/{id}/rotate-secret`, `DELETE /v1/webhooks/{id}`,
+  `POST /v1/webhooks/{id}/test`, `GET /v1/webhooks/{id}/deliveries` (le journal, paginé), `POST
+  /v1/webhooks/deliveries/{deliveryId}/replay`, `POST /v1/webhooks/{id}/replay-failures` (`since`).
+- **Une seule vérité** : les fonctions de `src/evenements/gestion.ts`, celles de la console et des outils MCP du lot
+  12 ; la route ne fait que traduire les noms et les refus (codes `webhook_not_found`, `delivery_not_found`,
+  `delivery_not_replayable`, plus ceux qui existent).
+- **L'audit** : chaque écriture est journalisée comme dans la console, l'acteur étant la clé.
+
+## 7. Domaine 5 : les contacts complets
+
+⚠️ **Décisions prises par Claude le 2026-10-09, en l'absence de Julien**, à relire à son retour.
+
+| Question | Décision |
+| --- | --- |
+| Droit | `contacts:admin`, neuf, sans reprise : créer un champ et effacer une fiche. La LISTE des champs reste sous `contacts:read` : ses clés figurent déjà dans les fiches que ce droit lit |
+| Champs | Lister (système et personnalisés, avec leur type) et créer ; ni renommer ni supprimer par l'API (une clé supprimée casserait des campagnes et des scénarios) : la console garde ces gestes |
+| Suppression RGPD | `DELETE /v1/contacts/{contactId}` efface pour de vrai, par la purge de la console, sous la limite du jour de l'offre (10 en Free, sans limite en Pro et Entreprise), auditée |
+| Import d'un fichier | ⚠️ **En attente de Julien** : le « dépôt signé » de la spec suppose un stockage de fichiers que le produit n'a pas. Deux voies : un CSV dans le corps (borné, comme l'import de la console), ou un vrai stockage (bucket et URL signée). Rien n'est livré avant sa décision |
+
+- **Les routes** : `GET /v1/fields` (`contacts:read`), `POST /v1/fields` (`contacts:admin`, `{ label, type }`, la clé dérivée du
+  libellé comme dans la console, 409 si elle existe), `DELETE /v1/contacts/{contactId}` (`contacts:admin`, 200 avec ce
+  qui a été effacé, 404 pour une fiche inconnue de l'espace, 402 au-delà de la limite du jour).
+- **Une seule vérité** : la création de champ de l'écran Contenu (mêmes gardes de libellé réservé) et la purge du
+  mini-CRM (même transaction, même retrait chez l'agent de Meta après la réponse, même audit `contact.purged`).
+- **Claude** : rien de neuf dans ce domaine (effacer une fiche depuis un assistant n'est pas souhaitable) ; à rediscuter.

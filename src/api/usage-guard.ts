@@ -39,6 +39,9 @@ export type OperationApi =
   // copie) serait prise aux envois ; ses téléchargements ont leurs propres places (`PLACES_TELECHARGEMENT`).
   | 'templates.create'
   | 'templates.read'
+  // Les webhooks sortants (`/v1/webhooks`, lot 13, domaine 4) : une unité, au plafond d'appels, hors quota du jour.
+  | 'webhooks.read'
+  | 'webhooks.write'
   | 'mcp.call'
   | 'mcp.refus';
 

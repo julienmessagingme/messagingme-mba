@@ -32,7 +32,10 @@ export type RouteAvecCorps =
   | 'POST /v1/messages/whatsapp'
   | 'POST /v1/messages'
   | 'POST /v1/messages/rcs'
-  | 'POST /v1/templates';
+  | 'POST /v1/templates'
+  | 'POST /v1/webhooks'
+  | 'PATCH /v1/webhooks/{webhookId}'
+  | 'POST /v1/webhooks/{webhookId}/replay-failures';
 
 export interface ExempleCorps {
   readonly route: RouteAvecCorps;
@@ -43,6 +46,12 @@ const CONTACT_ID = '5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01';
 const CONTACT_ID_2 = '7a3d9c10-2e4b-4f6a-b8c1-0d9e8f7a6b5c';
 const SEND_ID = '0b9d7a42-3c1e-4f5a-8d2b-6e7f8a9b0c1d';
 const CONVERSATION_ID = 'c4e1b2a3-9d8f-4e7a-a6b5-1c2d3e4f5a6b';
+/** Une adresse de webhook sortant, telle que `/v1/webhooks` la rend (lot 13, domaine 4). */
+const WEBHOOK = {
+  id: '3b8e1f2a-7c4d-4e9b-a5f6-0d1c2b3a4e5f', url: 'https://www.exemple.fr/messagingme/evenements', description: 'Mon application',
+  types: ['message.received', 'template.status_changed'], active: true, createdAt: '2026-10-09T08:00:00.000Z',
+  previousSecretValidUntil: null, lastDeliveredAt: '2026-10-09T09:41:02.000Z', retrying: 0, failed: 1,
+} as const;
 /**
  * Les codes publics, sous la forme que le serveur les pose (`<type>_<code client>_<ULID en majuscules>`) : un
  * code d'exemple d'une autre forme ne serait retrouvé par aucune cible. Deux scénarios : le premier ouvre par un
@@ -183,6 +192,13 @@ export const EXEMPLES_CORPS = {
       ],
     },
   },
+  // Les webhooks sortants par l'API (lot 13, domaine 4).
+  webhookCree: {
+    route: 'POST /v1/webhooks',
+    corps: { url: 'https://www.exemple.fr/messagingme/evenements', description: 'Mon application', types: ['message.received', 'template.status_changed'] },
+  },
+  webhookEnPause: { route: 'PATCH /v1/webhooks/{webhookId}', corps: { active: false } },
+  rejeuEchecs: { route: 'POST /v1/webhooks/{webhookId}/replay-failures', corps: { since: '2026-10-09T00:00:00Z' } },
   messageRcs: {
     route: 'POST /v1/messages/rcs',
     corps: { phone: '+33612345678', text: 'Votre rendez-vous de jeudi 14 h est confirmé.' },
@@ -352,6 +368,18 @@ export const EXEMPLES_REPONSES = {
   conversationLue: CONVERSATION_LUE,
   conversations: { data: [CONVERSATION_LUE], nextCursor: 'MjAyNi0xMC0wOFQwOTo1ODowMi4xMjM0NTZafGM0ZTFiMmEzLTlkOGYtNGU3YS1hNmI1LTFjMmQzZTRmNWE2Yg' },
   messageLu: MESSAGE_LU,
+  // Les webhooks sortants (lot 13, domaine 4) : tenus aux formes du serveur par `tests/api-exemples.test.ts`.
+  webhook: WEBHOOK,
+  webhooks: { data: [WEBHOOK], limit: 5, types: ['message.received', 'template.status_changed'], defaultTypes: ['message.received', 'template.status_changed'] },
+  webhookCree: { webhook: WEBHOOK, secret: 'whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw' },
+  envoisWebhook: {
+    data: [{
+      id: '9c2e4a10-6b3d-4f7a-8e1c-2d5b7a9f0c3e', eventId: 'evt_4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c', type: 'message.received', status: 'failed',
+      attempts: 9, lastStatusCode: 500, lastResponse: 'erreur interne', nextAttemptAt: null, createdAt: '2026-10-09T08:12:30.000Z', deliveredAt: null,
+      body: '{"id":"evt_4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c","type":"message.received","created_at":"2026-10-09T08:12:30.000Z","workspace_id":"…","data":{}}',
+    }],
+    nextBefore: null,
+  },
   // Les modèles (lot 13, domaine 3) : tenus aux formes du serveur par `tests/api-exemples.test.ts`.
   modeleCree: { id: '1489201163476524', name: 'commande_prete', language: 'fr', category: 'utility', status: 'pending' },
   statutModele: {
@@ -412,6 +440,10 @@ export const CODES_DOCUMENTES = [
   { code: 'meta_rejected', statut: 422, ecart: false, quoi: ['Meta a refusé le contenu du message ou du modèle : son motif suit.', 'Meta refused the message or template content: its reason follows.'] },
   { code: 'invalid_header_media', statut: 422, ecart: false, quoi: ['Le fichier d’en-tête d’un modèle n’a pas pu être pris à son adresse : son motif suit.', 'The template header file could not be fetched from its address: the reason follows.'] },
   { code: 'meta_auth_failed', statut: 409, ecart: false, quoi: ['Meta refuse le jeton de l’espace : reconnectez le compte WhatsApp depuis la console.', 'Meta refuses the workspace token: reconnect the WhatsApp account from the console.'] },
+  { code: 'webhook_not_found', statut: 404, ecart: false, quoi: ['Adresse de webhook inconnue de cet espace.', 'Webhook endpoint unknown to this workspace.'] },
+  { code: 'delivery_not_found', statut: 404, ecart: false, quoi: ['Envoi de webhook inconnu.', 'Webhook delivery unknown.'] },
+  { code: 'delivery_not_replayable', statut: 409, ecart: false, quoi: ['Envoi inconnu de cet espace, encore en cours, ou un essai : rien à rejouer.', 'Delivery unknown to this workspace, still pending, or a test: nothing to replay.'] },
+  { code: 'webhooks_unavailable', statut: 503, ecart: false, quoi: ['L’instance ne sait pas chiffrer les secrets : réessayez plus tard.', 'The instance cannot encrypt secrets: retry later.'] },
   { code: 'template_rejected', statut: 422, ecart: false, quoi: ['Le modèle est refusé avant Meta (un lien n’a pas pu être tracé) : son motif suit.', 'The template is refused before Meta (a link could not be tracked): the reason follows.'] },
   { code: 'conversation_not_found', statut: 404, ecart: false, quoi: ['Conversation inconnue de cet espace.', 'Conversation unknown to this workspace.'] },
   { code: 'message_not_found', statut: 404, ecart: false, quoi: ['Message inconnu de cet espace.', 'Message unknown to this workspace.'] },

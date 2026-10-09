@@ -27,6 +27,7 @@ export const ACTIONS_JOURNAL: Record<string, [string, string]> = {
   'evenements.adresse_modifiee': ['Webhook sortant modifié', 'Outgoing webhook changed'],
   'evenements.adresse_supprimee': ['Webhook sortant supprimé', 'Outgoing webhook deleted'],
   'evenements.secret_tourne': ['Secret d’un webhook sortant renouvelé', 'Outgoing webhook secret rotated'],
+  'evenements.envoi_rejoue': ['Envoi d’un webhook sortant rejoué', 'Outgoing webhook delivery replayed'],
   // L'app Salesforce (plan du 2026-09-26) : ces libellés NOMMENT l'outil, décision de Julien du 2026-09-26.
   'salesforce.allumee': ['Salesforce allumé pour l’espace', 'Salesforce turned on for the workspace'],
   'salesforce.eteinte': ['Salesforce éteint pour l’espace', 'Salesforce turned off for the workspace'],

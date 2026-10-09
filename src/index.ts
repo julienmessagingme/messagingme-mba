@@ -2786,6 +2786,8 @@ async function main(): Promise<void> {
       },
       // Les modèles (lot 13, domaine 3) : la création de l'écran Modèles, au format de Meta.
       templates: creationModeles,
+      // Les webhooks sortants par une clé (lot 13, domaine 4) : la MÊME gestion que la console et les outils MCP.
+      webhooks: { gestion: gestionEvenements, audit: auditSink },
       /**
        * Serveur MCP (`POST /mcp`) : les mêmes fonctions que la console, jamais des variantes. Un outil MCP
        * n'est qu'un second appelant : une garde qui change (fenêtre de 24 h, prise de fil, scope tenant) change

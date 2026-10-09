@@ -2318,7 +2318,13 @@ scénario, comment importer des contacts.
   Entreprise.
 - ✅ **« Envoyer un essai »** part tout de suite, signé, et dit ce que l'application a répondu.
 - ✅ **Depuis Claude Code** : `create_webhook_endpoint` inscrit une adresse et rend son secret, `send_test_event`
-  envoie l'essai (connexion OAuth d'un admin, jamais une clé d'API).
+  envoie l'essai (connexion OAuth d'un admin, jamais une clé d'API). Depuis le lot 13 (domaine 4, 2026-10-09),
+  `list_webhook_endpoints` liste les adresses, `get_webhook_deliveries` lit un journal et `replay_webhook_delivery`
+  rejoue un envoi (ces deux-là réservés à une personne connectée : le journal porte des données de contacts).
+- ✅ **Par l'API** (lot 13, domaine 4, 2026-10-09, droit neuf `webhooks:write`, qui couvre aussi la lecture) :
+  `/v1/webhooks` liste, crée (le secret montré une fois), lit, met en pause ou change les types, tourne le secret,
+  supprime, envoie un essai, lit le journal, rejoue un envoi ou les échecs depuis une date. Les mêmes contrôles et la
+  même limite de l'offre que la console. L'adresse ne se modifie pas : on supprime et on recrée.
 - ✅ **« Mon application répond »** (lot 12, livraison B) : désignée dans « Qui répond au client » (Accueil, ou
   `set_default_responder` avec `mode: "application"`), une adresse reçoit `conversation.needs_reply` pour chaque
   message que personne ne tient (son texte, son type et la transcription d'un vocal), en priorité sur les autres

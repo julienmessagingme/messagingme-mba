@@ -90,3 +90,10 @@ describe('câblage de l’envoi RCS libre (bouton de l’Inbox et /v1/messages/r
     expect(source).toMatch(/sendRcsFromInbox: async \(tenant, waId, contenu\) => \{\s*const issue = await envoyerRcsLibre\(depsRcsLibre, tenant, waId, contenu, 'humain'\);/);
   });
 });
+
+describe('câblage de /v1/webhooks (lot 13, domaine 4)', () => {
+  it('🔴 les routes sont montées, sur la MÊME gestion que la console et les outils MCP', () => {
+    // `v1.webhooks` est optionnel dans `buildServer` : sans ce câblage, les routes ne seraient pas montées, sans erreur.
+    expect(source).toMatch(/webhooks: \{ gestion: gestionEvenements, audit: auditSink \},/);
+  });
+});
