@@ -68,7 +68,7 @@ import { PgSignauxStore } from './signaux/store.pg';
 import { completerSignal } from './signaux/completer';
 import { creerPuitsSignauxMeta, signalAnalyse } from './signaux/emetteur';
 import { FILE_SIGNAUX_BATCH, pousserVersBatch } from './signaux/batch';
-import { FILE_EVENEMENTS_DISTRIBUTION, creerTravailDistribution } from './evenements/distribution';
+import { FILE_EVENEMENTS_DISTRIBUTION, creerTravailDistribution, distribuerEvenementEspace, type DepsDistributionEspace } from './evenements/distribution';
 import { FILE_EVENEMENTS_ENVOI, appelProduction, creerTravailEnvoi } from './evenements/envoi';
 import { creerTravailSignauxBatch } from './signaux/travail-batch';
 import { creerResolveurHttp } from './agent/resolvers/http';
@@ -192,6 +192,19 @@ async function main(): Promise<void> {
   } = construireSocle({ pool, queue, config });
   // La commission sur le crédit IA, celle de l'offre de l'espace (lot 6, C) : le cerveau des tours d'agent la lit.
   const commissionDeLEspace = commissionPour(offres);
+  /**
+   * Ce que la distribution des événements sortants lit et écrit, partagé par la file `evenements-distribution` (les
+   * signaux de contact) et l'étape des statuts de modèles du webhook (lot 13, domaine 3, livraison C) : les MÊMES
+   * adresses, le MÊME gel par l'offre, les MÊMES lignes d'envoi. Déclaré ici, avant toute file qui le lit.
+   */
+  const limiteAdressesEvenements = async (t: string) => (await offres.offreDe(t)).droits.limites.adressesWebhook;
+  const depsDistributionEspace: DepsDistributionEspace = {
+    adresses: (t) => adressesEvenements.activesPourDistribution(t),
+    limiteAdresses: limiteAdressesEvenements,
+    espaceVerrouille: (t) => envoisEvenements.espaceVerrouille(t),
+    creerEnvois: (lignes) => envoisEvenements.creer(lignes),
+    enfiler: (job, priority) => queue.enqueue(FILE_EVENEMENTS_ENVOI, job, { groupId: job.tenantId, priority }),
+  };
   // Les appels captés par le pont du code (lot 3a) : le worker ne fait que les purger (balayage de rétention).
   const numerosFournisStore = new PgNumerosFournisStore(pool);
 
@@ -377,6 +390,14 @@ async function main(): Promise<void> {
     await handleWebhookJob(data, {
       store: eventStore,
       delivery: recipientStore,
+      /**
+       * Le statut d'un modèle tranché par Meta (lot 13, domaine 3, livraison C) : `template.status_changed`, par la MÊME
+       * distribution que les signaux (`depsDistributionEspace`), vers l'espace qui porte le compte WhatsApp.
+       */
+      statutsModeles: {
+        espaceDuCompte: (waba) => repo.espaceDuCompteWhatsapp(waba),
+        distribuer: async (t, ev) => { await distribuerEvenementEspace(depsDistributionEspace, t, ev); },
+      },
       /**
        * Les deux files qui voient des statuts reçoivent la remise du fil, celle-ci et `webhook-status` : un
        * accusé arrive par l'une ou l'autre selon le découpage des lots par Meta, qui ne nous appartient pas.
@@ -782,16 +803,11 @@ async function main(): Promise<void> {
    * l'adresse ne répond pas 2xx (24 h). Groupées par espace : la campagne d'un client ne retarde pas les événements des
    * autres. Plusieurs envois en vol par espace : une adresse lente (10 s au plus) n'arrête pas tout l'espace.
    */
-  const limiteAdressesEvenements = async (t: string) => (await offres.offreDe(t)).droits.limites.adressesWebhook;
   await queue.work(FILE_EVENEMENTS_DISTRIBUTION, creerTravailDistribution({
-    adresses: (t) => adressesEvenements.activesPourDistribution(t),
-    limiteAdresses: limiteAdressesEvenements,
-    espaceVerrouille: (t) => envoisEvenements.espaceVerrouille(t),
+    ...depsDistributionEspace,
     // La relecture complète : un webhook désigne la fiche par notre identifiant, pas par celui d'un outil.
     completer: (t, s) => completerSignal(signauxStore, t, s, { contexteComplet: true }),
     messageRecu: (t, m) => envoisEvenements.messageRecu(t, m),
-    creerEnvois: (lignes) => envoisEvenements.creer(lignes),
-    enfiler: (job, priority) => queue.enqueue(FILE_EVENEMENTS_ENVOI, job, { groupId: job.tenantId, priority }),
   }), { concurrency: 2, groupConcurrency: 1 });
   await queue.work(FILE_EVENEMENTS_ENVOI, creerTravailEnvoi({
     lire: async (t, envoiId) => {

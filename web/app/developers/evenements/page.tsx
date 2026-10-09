@@ -41,6 +41,7 @@ function useLibelles() {
     'contact.opted_out': t('Désabonnement', 'Opt-out'),
     'conversation.analyzed': t('Conversation analysée', 'Conversation analyzed'),
     'contact.risk_changed': t('Risque de désengagement', 'Disengagement risk'),
+    'template.status_changed': t('Validation d’un modèle', 'Template review'),
     test: t('Essai', 'Test'),
   } as Record<string, string>;
 }

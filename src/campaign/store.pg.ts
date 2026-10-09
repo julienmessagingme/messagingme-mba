@@ -979,6 +979,15 @@ export class PgCampaignRepo {
     return res.rows[0]?.id ?? null;
   }
 
+  /**
+   * L'espace d'un compte WhatsApp (lot 13, domaine 3, livraison C) : un événement de Meta au niveau du compte (le statut
+   * d'un modèle) nomme le WABA, pas l'espace. `waba.id` est la clé primaire : un seul espace, ou aucun.
+   */
+  async espaceDuCompteWhatsapp(wabaId: string): Promise<string | null> {
+    const res = await this.pool.query<{ tenant_id: string }>(`select tenant_id from waba where id = $1`, [wabaId]);
+    return res.rows[0]?.tenant_id ?? null;
+  }
+
   /** Numéro (phone_number_id) du tenant, pour répondre depuis l'inbox. null si aucun. */
   async getTenantPhoneNumberId(tenantId: string): Promise<string | null> {
     const res = await this.pool.query<{ id: string }>(

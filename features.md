@@ -2303,6 +2303,11 @@ scénario, comment importer des contacts.
   désengagement. Les trois accusés de livraison sont décochés par défaut : une campagne en produit jusqu'à trois par
   destinataire. Chaque événement part en POST, signé au format Standard Webhooks (`webhook-id`, `webhook-timestamp`,
   `webhook-signature`), avec la fiche du contact (numéro, nom, identifiant externe, désabonnements).
+- ✅ **La validation de vos modèles** (lot 13, domaine 3, livraison C, 2026-10-09) : `template.status_changed` part
+  quand Meta tranche sur un modèle de l'espace (approuvé, refusé avec son motif, en pause, désactivé), sans donnée de
+  contact. Coché par défaut sur une adresse neuve ; une adresse existante le coche elle-même. ⚠️ Il faut que
+  l'application Meta soit abonnée au champ `message_template_status_update` (geste dans le tableau de bord de Meta) :
+  sans cet abonnement, rien n'arrive.
 - ✅ **Le secret de signature est montré une seule fois**, à la création ou au renouvellement ; l'ancien signe
   encore 24 h après un renouvellement, le temps de mettre à jour l'application.
 - ✅ **Réessais pendant 24 h** (30 s, 2 min, 10 min, 30 min, puis toutes les heures) tant que l'adresse ne répond

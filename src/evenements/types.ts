@@ -22,8 +22,14 @@ export const TYPES_ABONNABLES = [
   'contact.opted_out',
   'conversation.analyzed',
   'contact.risk_changed',
+  // Lot 13, domaine 3, livraison C : Meta a tranché sur un modèle (approuvé, refusé, en pause…). Pas un signal de
+  // contact : il naît du webhook de Meta au niveau du compte WhatsApp (`src/webhooks/statuts-modeles.ts`).
+  'template.status_changed',
 ] as const;
 export type TypeAbonnable = (typeof TYPES_ABONNABLES)[number];
+
+/** Le statut d'un modèle tranché par Meta : un événement d'ESPACE, sans contact. */
+export const TYPE_STATUT_MODELE = 'template.status_changed' satisfies TypeAbonnable;
 
 /** L'événement d'essai : il ne s'abonne pas, il part d'un bouton (ou de l'outil MCP) vers une adresse précise. */
 export const TYPE_ESSAI = 'test';
@@ -177,9 +183,28 @@ export const CHAMPS_DU_TYPE: Readonly<Record<TypeEvenement, readonly string[]>> 
     'action_suggestion', 'handled_by', 'exchanges_count', 'summary',
   ],
   'contact.risk_changed': ['contact', 'level', 'previous_level', 'score', 'reasons'],
+  'template.status_changed': ['template', 'status', 'reason'],
   'conversation.needs_reply': ['contact', 'conversation_id', 'channel', 'message_id', 'message_type', 'text', 'transcription', 'reply_with'],
   test: ['message'],
 };
+
+/** Un changement de statut de modèle, tel que Meta l'envoie (`message_template_status_update`), déjà validé. */
+export interface StatutModeleRecu {
+  event: string;
+  message_template_id: string;
+  message_template_name: string;
+  message_template_language: string;
+  reason?: string | null | undefined;
+}
+
+/** Le contenu de `template.status_changed` : le modèle, son statut (en minuscules, comme l'API), le motif d'un refus. */
+export function donneesStatutModele(s: StatutModeleRecu): Record<string, unknown> {
+  return {
+    template: { id: s.message_template_id, name: s.message_template_name, language: s.message_template_language },
+    status: s.event.toLowerCase(),
+    reason: s.reason !== undefined && s.reason !== null && s.reason !== '' && s.reason !== 'NONE' ? s.reason : null,
+  };
+}
 
 /** Le contenu de l'événement d'essai : aucune donnée de contact. */
 export function donneesEssai(): Record<string, unknown> {

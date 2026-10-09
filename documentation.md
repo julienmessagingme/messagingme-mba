@@ -2032,7 +2032,13 @@ d'envoi, dans le même ordre (`cree_le, id`) côté distribution et côté envoi
 (`src/evenements/signature.ts`, tenue par le vecteur publié). Purges : le journal par l'offre (balayage de rétention
 générale) et les envois d'un contact par `PgContactStore.purgeMany`. Le mode « Application » du répondeur écrit ses
 lignes `conversation.needs_reply` hors du bus (sans abonnement, vers l'adresse désignée seule) et les enfile en priorité 2,
-devant les autres envois (§ 4.4).
+devant les autres envois (§ 4.4). Un événement d'ESPACE, sans contact, passe par `distribuerEvenementEspace` : les mêmes
+adresses servies (`adressesServies`, le même gel par l'offre), une ligne par adresse qui a coché son type. C'est le
+chemin de `template.status_changed` (lot 13, domaine 3, livraison C) : le champ `message_template_status_update` de
+Meta, au niveau du COMPTE, devient une source `template_status` du découpage (`parse.ts`, clé
+`tpl:<modèle>:<statut>:<instant de Meta>`), puis l'étape `processStatutsModeles` retrouve l'espace par son compte
+(`waba.id`) dans la file `webhook`, isolée par `tenter`. L'identifiant d'événement dérive de cette clé : une
+redélivrance ne part pas deux fois. L'application Meta doit être abonnée au champ (geste du tableau de bord).
 
 ### Plusieurs copies de l'API : ce qui ne doit arriver qu'une fois se garde en base
 

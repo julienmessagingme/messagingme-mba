@@ -46,9 +46,14 @@ touchés, le corps construit par l'outil passe les règles de la route, l'outil 
 
 ## Livraison C : l'événement
 
-Lire d'abord, en lecture seule, si Meta envoie déjà le champ `message_template_status_update` ; sinon Julien abonne
-l'application. Puis une source `template_status` dans `src/webhooks/parse.ts`, l'espace retrouvé par son compte
-WhatsApp, et l'événement `template.status_changed` au catalogue du lot 12.
+Lu le 2026-10-09 (lecture seule, accord de Julien) : l'application n'est PAS abonnée au champ
+`message_template_status_update` ; Julien l'abonnera depuis le tableau de bord, sans risque avant le code. Une source
+`template_status` dans `src/webhooks/parse.ts` (clé `tpl:<modèle>:<statut>:<instant>`), l'étape `processStatutsModeles`
+(`src/webhooks/statuts-modeles.ts`) qui retrouve l'espace par son compte (`waba.id`), et la distribution d'un événement
+d'espace (`distribuerEvenementEspace`, les mêmes adresses et le même gel que les signaux). Le type
+`template.status_changed` entre au catalogue du lot 12, coché par défaut sur une adresse neuve. Tests : le découpage,
+l'étape (redélivrance au même identifiant, compte inconnu, statut illisible), la distribution (type coché, limite de
+l'offre, espace verrouillé), la parité de la page, et la lecture du compte en intégration.
 
 ## Ordre de déploiement
 

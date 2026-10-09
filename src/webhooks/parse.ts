@@ -6,7 +6,9 @@ export type WebhookSource =
   | 'messages'
   | 'statuses'
   | 'messaging_handovers'
-  | 'standby';
+  | 'standby'
+  // Le statut d'un modèle tranché par Meta (lot 13, domaine 3, livraison C) : au niveau du COMPTE, sans numéro.
+  | 'template_status';
 
 export interface WebhookEvent {
   source: WebhookSource;
@@ -165,6 +167,22 @@ export function parseWebhook(payload: unknown): WebhookEvent[] {
           dedupKey: id ? `standby:${id}` : hash('standby', echo),
           data: echo,
           ...meta,
+        });
+      }
+
+      // Le statut d'un modèle (lot 13, domaine 3, livraison C) : il ne nomme que le compte (`entry.id`). La clé porte le
+      // modèle, le statut et l'instant de Meta : une redélivrance garde la même, un retour au même statut plus tard non.
+      if (field === 'message_template_status_update') {
+        const modele = value['message_template_id'];
+        const statut = texteNonVide(value['event']);
+        const instant = typeof entry['time'] === 'number' ? entry['time'] : undefined;
+        const idModele = typeof modele === 'number' || typeof modele === 'string' ? String(modele) : undefined;
+        events.push({
+          source: 'template_status',
+          dedupKey: idModele !== undefined && statut !== undefined && instant !== undefined
+            ? `tpl:${idModele}:${statut}:${instant}`
+            : hash('template_status', { ...value, compte: entry['id'] }),
+          data: { ...value, waba_id: entry['id'], ...(instant !== undefined ? { le: instant } : {}) },
         });
       }
 

@@ -1,6 +1,6 @@
 import { schemaJobSignaux, type NomEvenement, type Signal, type SignalComplet } from '../signaux/types';
 import { PRIORITE_SIGNAL } from '../signaux/emetteur';
-import { TYPE_DU_SIGNAL, donneesDuSignal, enveloppe, idEvenement, type MessageRecu, type TypeEvenement } from './types';
+import { TYPE_DU_SIGNAL, donneesDuSignal, enveloppe, idEvenement, type MessageRecu, type TypeAbonnable, type TypeEvenement } from './types';
 import type { JobEnvoi } from './envoi';
 
 /**
@@ -49,6 +49,40 @@ function prioriteDuType(type: string): number {
   return nom === undefined ? 1 : PRIORITE_SIGNAL[nom];
 }
 
+/** Ce que la distribution d'un événement d'ESPACE lit et écrit : les mêmes adresses, le même gel, les mêmes lignes. */
+export type DepsDistributionEspace = Pick<DepsDistribution, 'adresses' | 'limiteAdresses' | 'espaceVerrouille' | 'creerEnvois' | 'enfiler'>;
+
+/**
+ * Les adresses qu'un espace sert : aucune s'il est verrouillé, les actives sinon, les plus anciennes dans la limite de
+ * l'offre (le gel du retour en Base). Partagé par les signaux et les événements d'espace : un seul gel.
+ */
+async function adressesServies(deps: DepsDistributionEspace, tenantId: string): Promise<AdresseDestinataire[]> {
+  if (await deps.espaceVerrouille(tenantId)) return [];
+  const toutes = await deps.adresses(tenantId);
+  if (toutes.length === 0) return [];
+  const limite = await deps.limiteAdresses(tenantId);
+  return limite === null ? toutes : toutes.slice(0, limite);
+}
+
+/**
+ * Un événement d'ESPACE, sans contact (lot 13, domaine 3, livraison C : `template.status_changed`) : figé, écrit une
+ * fois par adresse qui a coché son type, puis enfilé. `ev.id` doit être stable pour un même fait : la ligne d'envoi
+ * est unique par (adresse, événement), donc un fait redélivré ne part pas deux fois. Rend le nombre d'envois neufs.
+ */
+export async function distribuerEvenementEspace(
+  deps: DepsDistributionEspace,
+  tenantId: string,
+  ev: { id: string; type: TypeAbonnable; le: string; data: Record<string, unknown> },
+): Promise<number> {
+  const destinataires = (await adressesServies(deps, tenantId)).filter((a) => a.types.includes(ev.type));
+  if (destinataires.length === 0) return 0;
+  const corps = JSON.stringify(enveloppe({ id: ev.id, type: ev.type, le: ev.le, tenantId, data: ev.data }));
+  const lignes = destinataires.map((a): LigneEnvoi => ({ tenantId, adresseId: a.id, evenementId: ev.id, type: ev.type, contactId: null, corps }));
+  const neufs = await deps.creerEnvois(lignes);
+  for (const neuf of neufs) await deps.enfiler({ tenantId, envoiId: neuf.id, tentative: 0 }, prioriteDuType(neuf.type));
+  return neufs.length;
+}
+
 export function creerTravailDistribution(deps: DepsDistribution): (data: unknown) => Promise<void> {
   return async (data) => {
     const lu = schemaJobSignaux.safeParse(data);
@@ -57,12 +91,8 @@ export function creerTravailDistribution(deps: DepsDistribution): (data: unknown
       throw new Error(`evenements-distribution : payload invalide (${i ? `${i.path.join('.')} ${i.message}` : 'forme'})`);
     }
     const { tenantId, signaux } = lu.data;
-    if (await deps.espaceVerrouille(tenantId)) return;
-
-    const toutes = await deps.adresses(tenantId);
-    if (toutes.length === 0) return;
-    const limite = await deps.limiteAdresses(tenantId);
-    const adresses = limite === null ? toutes : toutes.slice(0, limite);
+    const adresses = await adressesServies(deps, tenantId);
+    if (adresses.length === 0) return;
 
     const lignes: LigneEnvoi[] = [];
     for (const s of signaux) {

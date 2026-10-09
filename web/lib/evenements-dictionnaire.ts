@@ -60,6 +60,14 @@ export const TYPES_DOCUMENTES: readonly TypeDocumente[] = [
     champs: ['contact', 'level', 'previous_level', 'score', 'reasons'],
   },
   {
+    type: 'template.status_changed',
+    quand: [
+      'Meta a tranché sur un de vos modèles (approuvé, refusé, en pause, désactivé). Aucune donnée de contact.',
+      'Meta ruled on one of your templates (approved, rejected, paused, disabled). No contact data.',
+    ],
+    champs: ['template', 'status', 'reason'],
+  },
+  {
     type: 'conversation.needs_reply',
     quand: [
       'Mode « mon application répond » : un message attend la réponse de votre application, à l’adresse désignée par le répondeur.',

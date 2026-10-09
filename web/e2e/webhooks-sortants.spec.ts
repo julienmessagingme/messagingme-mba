@@ -5,7 +5,7 @@ import { mockAccueil } from './support/accueil';
  * DÉVELOPPEURS > WEBHOOKS SORTANTS (lot 12, livraison A) : créer une adresse (le secret montré une seule fois), l'essai,
  * le journal, et la limite d'adresses de l'offre. Le serveur est simulé.
  */
-const TYPES = ['message.received', 'message.delivered', 'message.read', 'message.failed', 'link.clicked', 'contact.opted_out', 'conversation.analyzed', 'contact.risk_changed'];
+const TYPES = ['message.received', 'message.delivered', 'message.read', 'message.failed', 'link.clicked', 'contact.opted_out', 'conversation.analyzed', 'contact.risk_changed', 'template.status_changed'];
 const PAR_DEFAUT = TYPES.filter((t) => !['message.delivered', 'message.read', 'message.failed'].includes(t));
 const SECRET = 'whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw';
 

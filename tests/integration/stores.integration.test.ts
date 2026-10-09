@@ -1948,6 +1948,23 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
   });
 
   /**
+   * L'ESPACE D'UN COMPTE WHATSAPP (lot 13, domaine 3, livraison C) : le statut d'un modèle tranché par Meta nomme le
+   * compte, pas l'espace. Un compte inconnu rend `null`, jamais l'espace d'un autre.
+   */
+  it('PgCampaignRepo.espaceDuCompteWhatsapp : le compte rend son espace, un compte inconnu rend null', async () => {
+    const store = new PgCampaignRepo(pool);
+    const t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-waba-espace') returning id`)).rows[0]!.id;
+    try {
+      await pool.query(`insert into waba (id, tenant_id) values ('waba-itest-espace', $1)`, [t]);
+      expect(await store.espaceDuCompteWhatsapp('waba-itest-espace')).toBe(t);
+      expect(await store.espaceDuCompteWhatsapp('waba-itest-inconnu')).toBeNull();
+    } finally {
+      await pool.query('delete from waba where id = $1', ['waba-itest-espace']);
+      await pool.query('delete from tenants where id = $1', [t]);
+    }
+  });
+
+  /**
    * 🔴 LE COMPTE SANS NUMÉRO (lot 3b) : la fenêtre de Meta finie sans numéro relie le compte à l'espace, sans ligne
    * `phone_numbers`, pour que le serveur y ajoute ensuite le numéro fourni. Il est PROVISOIRE : relier un numéro sur un
    * AUTRE compte le remplace, sinon l'espace porterait deux comptes et `getTenantWabaId` (le premier créé) ferait

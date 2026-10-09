@@ -28,6 +28,7 @@ import type { SignalReponse } from './inbound';
 import { rattacherLesEntrants, uneLectureParNumero, type EntrantRattache, type NumeroVersEspace } from './rattachement';
 import { requalifierLesStandby, type ListeALArrivee } from './standby-hors-liste';
 import { tenter } from '../lib/tenter';
+import { processStatutsModeles, type StatutsModelesDeps } from './statuts-modeles';
 import { messageDe } from '../lib/erreur';
 
 /** Report des valeurs d'un WhatsApp Flow rempli vers les user fields du contact (optionnel). */
@@ -66,6 +67,11 @@ interface WebhookJobDepsCommunes {
    * rendus par le balayage de contrôle, plus tard.
    */
   remiseMba?: RemiseMbaSurAccuse;
+  /**
+   * Le statut d'un modèle tranché par Meta (lot 13, domaine 3, livraison C) : l'événement sortant
+   * `template.status_changed`. Câblé sur la file `webhook` seulement : un statut de modèle n'est pas un accusé.
+   */
+  statutsModeles?: StatutsModelesDeps;
 }
 
 /**
@@ -152,6 +158,9 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
     if (!isNew && ev.dedupKey.startsWith('msg:')) alreadySeen.add(ev.dedupKey.slice(4));
   }
   if (delivery) await processStatuses(events, delivery, { tarifs: tarifsMeta, echecsLibres, nodeEvents, remiseMba, signaux: signauxAccuse });
+  // Isolé : une panne ici ne rejoue pas les messages du webhook (journalisée par `tenter`). Rejouable sans double envoi.
+  const { statutsModeles } = deps;
+  if (statutsModeles) await tenter('handleWebhookJob: statut de modèle ignoré:', () => processStatutsModeles(events, statutsModeles));
   // Contacts créés par ce webhook (clé `tenant:waId`) : le signal « 1er message d'un contact inconnu » n'existe
   // qu'à l'instant de l'upsert, on le capture pour la durée de ce job. Limite assumée : il ne survit pas à un retry
   // pg-boss (la fiche existe déjà, `new_contact` ne part pas) ; le rendre infaillible coûterait une requête par
