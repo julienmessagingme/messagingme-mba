@@ -118,6 +118,13 @@ Le même jour, sur les retours de Julien :
   messages (`.cx`). Au téléphone, le logo passe au-dessus et les fils descendent en fourche. Les deux anciennes
   images, qui portaient le logo d'Engage Me, sont retirées.
 
+## Ajout du 2026-10-09 : Industries, Pricing, et la démo sur l'accueil
+
+Demande de Julien : « Demander une démo » sur la une de l'accueil (avec « Les fonctionnalités », qui descend aux six
+cartes), et deux entrées dans l'en-tête, **Industries** et **Pricing**, dont les pages (`/industries/`, `/pricing/`)
+disent « Page en construction » et proposent la démo. Elles sont en `noindex` et hors sitemap tant qu'elles n'ont pas
+de contenu. Le menu du bureau passant à 561 px, le burger prend le relais jusqu'à 820 px (au lieu de 640).
+
 ## Essai réel qui clôt
 
 Julien parcourt les deux pages en production, sur ordinateur et sur son téléphone : il ouvre le menu, lance les

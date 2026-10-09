@@ -54,7 +54,7 @@ a:focus-visible{outline:2px solid var(--action);outline-offset:3px;border-radius
 .marque img{display:block;width:auto;height:22px;flex:none}
 .nav{display:flex;align-items:center;gap:22px}
 .lien{white-space:nowrap;font-size:.92rem;font-weight:600;text-decoration:none;color:var(--muted);transition:color .15s}
-.lien:hover{color:var(--ink)}
+.lien:hover,.lien[aria-current="page"]{color:var(--ink)}
 @media (max-width:480px){.marque{gap:8px;font-size:.95rem}.marque img{height:19px}.nav{gap:12px}.nav .lien{font-size:.85rem}.nav .bouton-trait{padding:.45em .8em;font-size:.85rem}}
 
 /* Boutons */
@@ -391,7 +391,9 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
    pages, déplié d'office sur l'une d'elles), « Développeurs » et, tout en bas, « Se connecter ». Un <details> natif
    lui aussi : il marche sans script, et `site.js` le referme au clic ailleurs, à Échap, et sur un lien suivi. */
 .burger{display:none}
-@media (max-width:640px){
+/* 820 px et non 640 : avec Industries et Pricing, le menu du bureau mesure 561 px et ne tient sur une ligne qu'à
+   partir d'environ 800 px de large (mesuré le 2026-10-09). */
+@media (max-width:820px){
   .nav{display:none}
   .burger{display:block}
   .burger > summary{display:grid;place-items:center;width:44px;height:44px;margin-right:-10px;border-radius:10px;cursor:pointer;list-style:none;user-select:none;color:var(--ink);font-size:1.6rem}
@@ -404,7 +406,7 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
   .burger-groupe > summary::-webkit-details-marker{display:none}
   .burger-groupe > summary .ic{font-size:.85rem;transition:transform .2s}
   .burger-groupe[open] > summary .ic{transform:rotate(180deg)}
-  .burger-groupe > summary:hover,.burger-ligne:hover{background:rgb(255 255 255 / .08)}
+  .burger-groupe > summary:hover,.burger-ligne:hover,.burger-ligne[aria-current="page"]{background:rgb(255 255 255 / .08)}
   .burger-liens{display:grid;gap:2px;padding-bottom:6px}
   .burger-liens a{display:grid;grid-template-columns:40px minmax(0,1fr);align-items:center;gap:12px;padding:10px;border-radius:10px;text-decoration:none}
   .burger-liens a:hover,.burger-liens a[aria-current="page"]{background:rgb(255 255 255 / .08)}
@@ -801,3 +803,6 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
   @keyframes cx-onde{0%{opacity:.9;transform:scale(1)}40%{opacity:0;transform:scale(1.45)}100%{opacity:0}}
 }
 @media (prefers-reduced-motion:reduce){.cx-envoi{display:none}}
+
+/* Les pages en construction (Industries, Pricing) : une une seule, assez haute pour que le pied ne remonte pas. */
+.chantier{min-height:min(62vh,560px);align-content:center}
