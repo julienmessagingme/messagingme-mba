@@ -2040,7 +2040,9 @@ Meta, au niveau du COMPTE, devient une source `template_status` du découpage (`
 (`waba.id`) dans la file `webhook` (`nAQueDesAccuses` n'envoie jamais un statut de modèle vers la file des accusés).
 Un payload qui ne porte que des statuts de modèles lève sur une panne et se rejoue ; mêlé à des messages, l'étape est
 isolée par `tenter`. L'identifiant d'événement dérive de la clé : une redélivrance ne part pas deux fois. L'application
-Meta doit être abonnée au champ (geste du tableau de bord).
+Meta doit être abonnée au champ (geste du tableau de bord), et elle l'est, en v26.0 quand les autres champs sont en
+v25.0 : la lecture (`statutRecuSchema`, `src/webhooks/statuts-modeles.ts`) n'exige que `event`, l'identifiant, le nom
+et la langue du modèle, et ignore tout champ en plus.
 
 ### Plusieurs copies de l'API : ce qui ne doit arriver qu'une fois se garde en base
 

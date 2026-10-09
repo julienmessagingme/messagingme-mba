@@ -44,10 +44,10 @@ Meta, en-tête par adresse, statut, trois outils de Claude) EN PRODUCTION (`0ef5
 relecture poussés ensuite ; essai réel dû (voir le plan) ; `create_template` réservé à une personne (décision de Julien,
 `233234cb`). B (Claude envoie un modèle à un contact, `send_template_to_contact`, par le cœur de `/v1/sends` extrait)
 EN PRODUCTION (`3e0f2f39`, le 2026-10-09), ses jaunes poussés ensuite. C (l'événement `template.status_changed`) EN
-PRODUCTION (`cbaa9933`), ses jaunes poussés ensuite : l'application Meta n'est PAS abonnée au champ `message_template_status_update` (lu le
-2026-10-09 : `messages`, `messaging_handovers`, `standby`) ; Julien s'y abonnera depuis le tableau de bord, sans risque
-avant le code (un champ inconnu est reçu puis ignoré), puis l'essai réel : une adresse de test qui coche le type reçoit
-l'événement à la validation d'un modèle créé par l'API.
+PRODUCTION (`cbaa9933`), ses jaunes poussés ensuite ; l'application Meta est abonnée au champ
+`message_template_status_update` depuis le 2026-10-09 (geste de Julien, relu le même jour : v26.0, les trois autres
+champs restant en v25.0). Reste l'essai réel : une adresse de test qui coche le type reçoit l'événement à la validation
+d'un modèle créé par l'API.
 Domaine 4 (les webhooks sortants par l'API et par Claude, plan `docs/superpowers/plans/2026-10-09-webhooks-api.md`,
 décisions prises par Claude en l'absence de Julien, à relire : spec § 6) EN PRODUCTION (`f7a75586`). Domaine 5
 (les contacts complets, plan `docs/superpowers/plans/2026-10-09-contacts-complets.md`, spec § 7, mêmes réserves) :

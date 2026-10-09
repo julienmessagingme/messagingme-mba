@@ -5,6 +5,14 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-09 : l'application Meta abonnée aux statuts de modèles
+
+Julien a abonné l'application au champ `message_template_status_update` depuis le tableau de bord (WhatsApp >
+Configuration > champs de webhook). Relu en lecture seule juste après (`GET /{app-id}/subscriptions`) : quatre champs,
+`message_template_status_update` en v26.0, `messages`, `messaging_handovers` et `standby` en v25.0, rappel inchangé.
+La version plus récente ne gêne pas : la lecture n'exige que `event`, l'identifiant, le nom et la langue du modèle.
+`template.status_changed` peut donc partir ; il n'a pas encore été vu sur une vraie validation.
+
 ## 2026-10-09 : les champs et l'effacement par l'API (lot 13, domaine 5, livraison A), en production
 
 `5e768c39`, CI verte job par job, aucune migration. `GET /v1/fields` (`contacts:read`), `POST /v1/fields` et

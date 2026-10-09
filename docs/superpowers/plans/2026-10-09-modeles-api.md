@@ -47,7 +47,8 @@ touchés, le corps construit par l'outil passe les règles de la route, l'outil 
 ## Livraison C : l'événement
 
 Lu le 2026-10-09 (lecture seule, accord de Julien) : l'application n'est PAS abonnée au champ
-`message_template_status_update` ; Julien l'abonnera depuis le tableau de bord, sans risque avant le code. Une source
+`message_template_status_update` ; Julien l'abonnera depuis le tableau de bord, sans risque avant le code. Fait le
+même jour, relu ensuite : abonné, en v26.0. Une source
 `template_status` dans `src/webhooks/parse.ts` (clé `tpl:<modèle>:<statut>:<instant>`), l'étape `processStatutsModeles`
 (`src/webhooks/statuts-modeles.ts`) qui retrouve l'espace par son compte (`waba.id`), et la distribution d'un événement
 d'espace (`distribuerEvenementEspace`, les mêmes adresses et le même gel que les signaux). Le type
