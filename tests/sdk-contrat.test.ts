@@ -25,7 +25,13 @@ describe('le contrat et les types du SDK sont ceux du code', () => {
     // propre à NodeNext (une extension d'import oubliée) se voit ici, en CI, et non à la publication.
     const racine = fileURLToPath(new URL('..', import.meta.url));
     const tsc = fileURLToPath(new URL('../node_modules/typescript/bin/tsc', import.meta.url));
-    expect(() => execFileSync(process.execPath, [tsc, '-p', 'sdk/tsconfig.json', '--noEmit'], { cwd: racine, stdio: 'pipe' })).not.toThrow();
+    try {
+      execFileSync(process.execPath, [tsc, '-p', 'sdk/tsconfig.json', '--noEmit'], { cwd: racine, stdio: 'pipe' });
+    } catch (e) {
+      // tsc écrit ses diagnostics sur la sortie standard : les remonter, sinon l'échec ne dit que « Command failed ».
+      const sortie = e as { stdout?: Buffer; stderr?: Buffer };
+      throw new Error(`tsc -p sdk/tsconfig.json a échoué :\n${String(sortie.stdout ?? '')}${String(sortie.stderr ?? '')}`);
+    }
   }, 120_000);
 
   it('le SDK publié pointe la production et n’embarque aucune dépendance d’exécution', () => {

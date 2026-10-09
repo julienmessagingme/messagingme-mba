@@ -1,33 +1,64 @@
 name: SDK (publication)
 
-# 🔴 LE SDK SE PUBLIE DANS SON PROPRE DEPOT, PAS SUR NPM (lot 16, decision de Julien du 2026-10-09). Sur un push qui
-# touche `sdk/`, ce job verifie le SDK (contrat a jour, client, signature), le construit, et pousse le paquet construit
-# vers `julienmessagingme/messagingme-sdk`, puis l'etiquette `v<version>` de `sdk/package.json`. Un integrateur
-# l'installe par `npm install github:julienmessagingme/messagingme-sdk#v<version>`.
+# 🔴 LE SDK SE PUBLIE DANS SON PROPRE DEPOT, PAS SUR NPM (lot 16, decision de Julien du 2026-10-09) : le paquet construit
+# part vers `julienmessagingme/messagingme-sdk`, etiquete `v<version>` de `sdk/package.json`. Un integrateur l'installe
+# par `npm install github:julienmessagingme/messagingme-sdk#v<version>`.
 #
-# ⚠️ INERTE SANS LE SECRET `SDK_DEPLOY_KEY` : la cle privee d'une cle de deploiement en ECRITURE sur le depot dedie,
-# creee par Julien (commande dans `wip.md`, lot 16). Sans elle, le job le dit et s'arrete en vert : rien n'est publie.
+# 🔴 A LA MAIN, APRES LE DEPLOIEMENT DE L'API : `gh workflow run sdk.yml --ref main`. Jamais sur un push : un SDK publie
+# avant le `up` de l'API qui porte son contrat donnerait aux integrateurs des types pour des routes encore en 404 (le
+# piege de « l'ecran qui appelle une route neuve », `CLAUDE.md` du depot). La CI `unit` verifie deja le SDK a chaque push.
 #
-# ⚠️ UNE VERSION PUBLIEE NE BOUGE PLUS : si l'etiquette existe deja, `main` du depot dedie est mis a jour mais
-# l'etiquette reste sur l'ancien contenu, et le job le signale. Pour publier, monter la version de `sdk/package.json`.
+# 🔴 DEUX JOBS, ET SEUL LE SECOND VOIT LA CLE. Le premier execute du code tiers (`npm ci`, vitest, tsc) SANS aucun
+# secret et produit un artefact ; le second n'installe rien, recupere l'artefact et pousse. Un paquet npm compromis ne
+# peut donc ni lire la cle, ni poser un crochet git ou une configuration ssh que l'etape qui la detient lirait.
+#
+# ⚠️ INERTE SANS LE SECRET `SDK_DEPLOY_KEY` (cle de deploiement en ECRITURE sur le depot dedie, creee par Julien,
+# commande dans `wip.md`, lot 16) : le job le dit et s'arrete en vert.
+#
+# ⚠️ UNE VERSION PUBLIEE NE BOUGE PLUS : si l'etiquette existe et que le contenu differe, le job ECHOUE sans rien
+# pousser (monter la version de `sdk/package.json`) ; si le contenu est le meme, il ne fait rien.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'sdk/**'
-      - '.github/workflows/sdk.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Deux publications ne se croisent jamais : la seconde attend la premiere.
 concurrency:
   group: sdk-publication
   cancel-in-progress: false
 
 jobs:
+  construire:
+    # Une autre branche ne se publie jamais.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      # Un SDK en retard sur l'API, ou dont la signature ne verifie plus ce que le serveur signe, ne part pas.
+      - name: Verifier le SDK
+        run: npx vitest run tests/sdk-contrat.test.ts tests/sdk-client.test.ts tests/sdk-webhook.test.ts
+      - name: Construire le paquet
+        run: |
+          npm run sdk:construire
+          mkdir -p paquet
+          cp sdk/package.json sdk/README.md sdk/LICENSE sdk/openapi.json paquet/
+          cp -r sdk/dist paquet/dist
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: paquet-sdk
+          path: paquet/
+          if-no-files-found: error
+          retention-days: 1
+
   publier:
+    needs: construire
     runs-on: ubuntu-latest
     steps:
       - name: La cle de publication est-elle posee ?
@@ -41,45 +72,27 @@ jobs:
           else
             echo "present=true" >> "$GITHUB_OUTPUT"
           fi
-
-      - uses: actions/checkout@v5
-        if: steps.cle.outputs.present == 'true'
-      - uses: actions/setup-node@v5
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         if: steps.cle.outputs.present == 'true'
         with:
-          node-version: '22'
-          cache: npm
-      - if: steps.cle.outputs.present == 'true'
-        run: npm ci
-
-      # Un SDK en retard sur l'API, ou dont la signature ne verifie plus ce que le serveur signe, ne part pas.
-      - name: Verifier le SDK
-        if: steps.cle.outputs.present == 'true'
-        run: npx vitest run tests/sdk-contrat.test.ts tests/sdk-client.test.ts tests/sdk-webhook.test.ts
-
-      - name: Construire le paquet
-        if: steps.cle.outputs.present == 'true'
-        run: |
-          npm run sdk:construire
-          mkdir -p "$RUNNER_TEMP/paquet"
-          cp sdk/package.json sdk/README.md sdk/LICENSE sdk/openapi.json "$RUNNER_TEMP/paquet/"
-          cp -r sdk/dist "$RUNNER_TEMP/paquet/dist"
-
+          name: paquet-sdk
+          path: paquet
       - name: Pousser vers messagingme-sdk
         if: steps.cle.outputs.present == 'true'
         env:
           CLE: ${{ secrets.SDK_DEPLOY_KEY }}
+          SOURCE: ${{ github.sha }}
         run: |
           set -euo pipefail
+          umask 077
           mkdir -p ~/.ssh
           printf '%s\n' "$CLE" > ~/.ssh/cle_sdk
-          chmod 600 ~/.ssh/cle_sdk
-          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
-          export GIT_SSH_COMMAND="ssh -i ~/.ssh/cle_sdk -o IdentitiesOnly=yes"
-          VERSION=$(node -p "require('./sdk/package.json').version")
-          SOURCE=$(git rev-parse --short=8 HEAD)
-          git clone --quiet git@github.com:julienmessagingme/messagingme-sdk.git "$RUNNER_TEMP/depot"
-          cd "$RUNNER_TEMP/depot"
+          # La cle d'hote publiee par GitHub (`gh api meta`), ecrite en dur : jamais de confiance au premier contact.
+          printf '%s\n' 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > ~/.ssh/hote_github
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/cle_sdk -o IdentitiesOnly=yes -o UserKnownHostsFile=$HOME/.ssh/hote_github -o StrictHostKeyChecking=yes"
+          VERSION=$(node -p "require('./paquet/package.json').version")
+          git clone --quiet git@github.com:julienmessagingme/messagingme-sdk.git depot
+          cd depot
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config core.autocrlf false
@@ -88,19 +101,22 @@ jobs:
           # et le second envoi etait refuse (rejoue contre un depot nu le 2026-10-09).
           if git rev-parse --verify --quiet origin/main >/dev/null; then git checkout --quiet -B main origin/main; else git checkout --quiet --orphan main; fi
           find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-          cp -r "$RUNNER_TEMP/paquet/." .
+          cp -r ../paquet/. .
           git add -A
-          if git diff --cached --quiet; then
-            echo "::notice::rien de neuf a publier (v$VERSION)"
-          else
-            git commit --quiet -m "v$VERSION (messagingme-mba $SOURCE)"
-            git push --quiet origin main
-            PUBLIE=1
-            echo "::notice::main publie (v$VERSION, source $SOURCE)"
+          CHANGE=1; if git diff --cached --quiet; then CHANGE=0; fi
+          ETIQUETTE=0; if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then ETIQUETTE=1; fi
+          if [ "$ETIQUETTE" = 1 ] && [ "$CHANGE" = 1 ]; then
+            echo "::error::v$VERSION est deja publiee avec un autre contenu : rien n'est pousse. Monter la version de sdk/package.json."
+            exit 1
           fi
-          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
-            if [ "${PUBLIE:-0}" = 1 ]; then echo "::warning::l'etiquette v$VERSION existe deja : elle reste sur l'ancien contenu. Monter la version de sdk/package.json pour publier."; fi
+          if [ "$CHANGE" = 1 ]; then
+            git commit --quiet -m "v$VERSION (messagingme-mba ${SOURCE:0:8})"
+            git push --quiet origin main
+            echo "::notice::main publie (v$VERSION, source ${SOURCE:0:8})"
           else
+            echo "::notice::rien de neuf a publier (v$VERSION)"
+          fi
+          if [ "$ETIQUETTE" = 0 ]; then
             git tag "v$VERSION"
             git push --quiet origin "v$VERSION"
             echo "::notice::etiquette v$VERSION posee"

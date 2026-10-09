@@ -1,7 +1,8 @@
 /**
  * @messagingme/sdk : le client TypeScript de l'API Messaging Me (lot 16, livraison B).
  *
- * Aucune dépendance d'exécution : `fetch` natif, Web Crypto pour les signatures (Node 18 ou plus, Deno, Bun, Workers).
+ * Aucune dépendance d'exécution : `fetch` natif, Web Crypto pour les signatures (Node 20 ou plus, Deno, Bun, Workers).
+ * ESM seulement. Aucun import de `node:*` : le paquet se met en bundle tel quel pour un runtime qui n'est pas Node.
  * Les types viennent du contrat OpenAPI de l'API (`./schema.ts`, généré par `npm run sdk:contrat` dans le dépôt de
  * l'API) : un chemin, une méthode, un corps ou une réponse qui n'existent pas ne compilent pas.
  *
@@ -205,6 +206,13 @@ export interface VerifyWebhookOptions {
 }
 
 const TOLERANCE_DEFAUT_S = 300;
+/** Un HMAC-SHA256 fait 32 octets : une signature d'une autre longueur ne peut pas être la nôtre. */
+const OCTETS_SIGNATURE = 32;
+/**
+ * Au plus tant de signatures examinées : nous en envoyons une, deux pendant une rotation. Sans plafond, un en-tête
+ * rempli de candidates ferait calculer un HMAC du corps par candidate, sans connaître aucun secret.
+ */
+const MAX_SIGNATURES = 10;
 
 function entete(headers: VerifyWebhookOptions['headers'], nom: string): string | null {
   if (typeof (headers as Headers).get === 'function') return (headers as Headers).get(nom);
@@ -221,49 +229,73 @@ function octetsDuBase64(b64: string): Uint8Array<ArrayBuffer> {
   return out;
 }
 
-async function sousCrypto(): Promise<SubtleCrypto> {
-  if (globalThis.crypto?.subtle) return globalThis.crypto.subtle;
-  // Node 18 n'expose pas encore Web Crypto en global : on le prend dans `node:crypto`.
-  const { webcrypto } = await import('node:crypto');
-  return webcrypto.subtle as SubtleCrypto;
+/**
+ * Les clés des secrets. Un secret vide ou illisible est une erreur de CONFIGURATION de l'intégrateur, pas une
+ * signature fausse : `TypeError`, pour qu'elle se voie (un 500 chez lui) au lieu de se confondre avec un 401.
+ */
+function clesDesSecrets(secret: string | readonly string[]): Uint8Array<ArrayBuffer>[] {
+  const secrets = typeof secret === 'string' ? [secret] : secret;
+  if (secrets.length === 0) throw new TypeError('secret requis');
+  return secrets.map((s) => {
+    let cle: Uint8Array<ArrayBuffer>;
+    try { cle = octetsDuBase64(s.startsWith('whsec_') ? s.slice('whsec_'.length) : s); } catch { throw new TypeError('secret illisible : attendu whsec_ suivi de base64'); }
+    if (cle.length === 0) throw new TypeError('secret vide');
+    return cle;
+  });
 }
 
 /**
  * Vérifie un événement reçu (Standard Webhooks) et le rend typé. Lève `WebhookVerificationError` si la signature ne
- * correspond à aucun secret, si l'horodatage sort de la tolérance, ou si le corps n'est pas un événement.
+ * correspond à aucun secret, si l'horodatage sort de la tolérance, ou si le corps n'est pas un événement ; `TypeError`
+ * sur une erreur de configuration (secret vide ou illisible, tolérance qui n'est pas un nombre).
  *
- * La comparaison se fait par `subtle.verify`, en temps constant.
+ * La comparaison se fait par `subtle.verify`, en temps constant. Un même événement peut être reçu deux fois (réessai,
+ * rejeu dans la fenêtre) : dédoublonner par `webhook-id`.
  */
 export async function verifyWebhook(o: VerifyWebhookOptions): Promise<WebhookEvent> {
+  const tolerance = o.toleranceSeconds ?? TOLERANCE_DEFAUT_S;
+  if (!Number.isFinite(tolerance) || tolerance < 0) throw new TypeError('toleranceSeconds : un nombre de secondes, positif ou nul');
+  const maintenant = o.now ?? Date.now();
+  if (!Number.isFinite(maintenant)) throw new TypeError('now : un horodatage en millisecondes');
+  const cles = clesDesSecrets(o.secret);
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle === undefined) throw new TypeError('Web Crypto indisponible : Node 20 ou plus, Deno, Bun ou Workers');
+
   const id = entete(o.headers, 'webhook-id');
   const horodatage = entete(o.headers, 'webhook-timestamp');
   const signatures = entete(o.headers, 'webhook-signature');
   if (id === null || horodatage === null || signatures === null) throw new WebhookVerificationError('en-têtes webhook-id, webhook-timestamp ou webhook-signature absents');
   if (!/^\d+$/.test(horodatage)) throw new WebhookVerificationError('webhook-timestamp illisible');
-  const ecart = Math.abs((o.now ?? Date.now()) / 1000 - Number(horodatage));
-  if (ecart > (o.toleranceSeconds ?? TOLERANCE_DEFAUT_S)) throw new WebhookVerificationError('horodatage hors tolérance : événement trop ancien ou rejoué');
+  if (Math.abs(maintenant / 1000 - Number(horodatage)) > tolerance) throw new WebhookVerificationError('horodatage hors tolérance : événement trop ancien ou rejoué');
 
-  const corps = typeof o.body === 'string' ? o.body : new TextDecoder().decode(o.body);
-  const signe = new TextEncoder().encode(`${id}.${horodatage}.${corps}`);
-  const recues = signatures.split(' ').flatMap((s) => {
+  // La préimage porte sur les octets REÇUS : un corps en octets n'est ni décodé ni réencodé avant d'être signé.
+  const corps = typeof o.body === 'string' ? new TextEncoder().encode(o.body) : o.body;
+  const prefixe = new TextEncoder().encode(`${id}.${horodatage}.`);
+  const signe = new Uint8Array(prefixe.length + corps.length);
+  signe.set(prefixe);
+  signe.set(corps, prefixe.length);
+
+  const vues = new Set<string>();
+  const recues: Uint8Array<ArrayBuffer>[] = [];
+  for (const s of signatures.split(' ')) {
     const [version, valeur] = s.split(',');
-    if (version !== 'v1' || valeur === undefined || valeur === '') return [];
-    try { return [octetsDuBase64(valeur)]; } catch { return []; }
-  });
-  const subtle = await sousCrypto();
-  const secrets = typeof o.secret === 'string' ? [o.secret] : o.secret;
-  for (const secret of secrets) {
-    let cle: Uint8Array<ArrayBuffer>;
-    try { cle = octetsDuBase64(secret.startsWith('whsec_') ? secret.slice('whsec_'.length) : secret); } catch { continue; }
+    if (version !== 'v1' || valeur === undefined || vues.has(valeur)) continue;
+    vues.add(valeur);
+    let octets: Uint8Array<ArrayBuffer>;
+    try { octets = octetsDuBase64(valeur); } catch { continue; }
+    if (octets.length === OCTETS_SIGNATURE) recues.push(octets);
+    if (recues.length === MAX_SIGNATURES) break;
+  }
+  for (const cle of cles) {
     const k = await subtle.importKey('raw', cle, { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
     for (const recue of recues) if (await subtle.verify('HMAC', k, recue, signe)) return lireEvenement(corps);
   }
   throw new WebhookVerificationError('signature invalide');
 }
 
-function lireEvenement(corps: string): WebhookEvent {
+function lireEvenement(octets: Uint8Array): WebhookEvent {
   let v: unknown;
-  try { v = JSON.parse(corps); } catch { throw new WebhookVerificationError('corps illisible'); }
+  try { v = JSON.parse(new TextDecoder().decode(octets)); } catch { throw new WebhookVerificationError('corps illisible'); }
   const e = v as Partial<Record<'id' | 'type' | 'created_at' | 'workspace_id' | 'data', unknown>> | null;
   if (e === null || typeof e !== 'object' || typeof e.id !== 'string' || typeof e.type !== 'string' || typeof e.data !== 'object') {
     throw new WebhookVerificationError('corps signé qui n’est pas un événement');

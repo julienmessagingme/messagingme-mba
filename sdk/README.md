@@ -1,7 +1,8 @@
 # @messagingme/sdk
 
 Le client TypeScript de l'API Messaging Me : des appels typés par chemin et par méthode, des erreurs typées, et la
-vérification de signature des webhooks. Aucune dépendance. Node 18 ou plus, Deno, Bun, Workers.
+vérification de signature des webhooks. Aucune dépendance. Node 20 ou plus, Deno, Bun, Workers. Paquet ESM seulement
+(`import`, pas `require`).
 
 Ses types sont générés depuis le contrat OpenAPI de l'API (`https://api.messagingme.app/openapi.json`, recopié dans
 `openapi.json`) : un chemin, un corps ou une réponse qui n'existent pas ne compilent pas.
@@ -87,7 +88,9 @@ export async function POST(req: Request) {
 ```
 
 Pendant une rotation de secret, l'ancien signe encore 24 h : passez les deux, `secret: [nouveau, ancien]`. Un
-horodatage à plus de 5 minutes est refusé (`toleranceSeconds` pour changer).
+horodatage à plus de 5 minutes est refusé (`toleranceSeconds` pour changer). Un même événement peut arriver deux fois
+(réessai, rejeu) : dédoublonnez par `event.id`, égal à l'en-tête `webhook-id`. Un secret vide ou illisible lève une
+`TypeError` : c'est une erreur de configuration, pas une signature fausse.
 
 ## Licence
 

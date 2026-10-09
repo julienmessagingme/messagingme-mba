@@ -87,6 +87,10 @@ Remove-Item "$env:TEMP\cle_sdk", "$env:TEMP\cle_sdk.pub"
 gh workflow run sdk.yml --repo julienmessagingme/messagingme-mba
 ```
 
+Les publications suivantes : à la main, APRÈS le `up` de l'API (`DEPLOY.md`, « Le SDK se publie APRÈS le
+déploiement de l'API »). Conseillé à Julien : réserver la portée npm `@messagingme` (une organisation npm gratuite,
+rien à y publier), pour qu'un `npm i @messagingme/sdk` tapé par erreur ne trouve jamais le paquet d'un tiers.
+
 Essais réels : importer le contrat dans un outil et appeler une route avec une clé ; puis installer le SDK, créer une
 fiche et vérifier un webhook d'essai (liste unique : `docs/prive/ESSAIS-REELS.md`, essais 19 et 20).
 

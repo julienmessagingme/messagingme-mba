@@ -3787,9 +3787,11 @@ Ajouté par le lot 4 de l'API publique :
     et `tests/sdk-contrat.test.ts` les régénère depuis le code et exige l'égalité au caractère près. Toute modification
     du contrat se livre donc avec `npm run sdk:contrat`, sinon la CI est rouge. Le SDK n'a aucune dépendance
     d'exécution, ne relance rien, et vérifie les signatures par Web Crypto (`tests/sdk-webhook.test.ts` le tient
-    contre `enTetesSignes`, le vrai code d'envoi). Il se publie par `.github/workflows/sdk.yml`, sur un push qui
-    touche `sdk/`, inerte sans le secret `SDK_DEPLOY_KEY` ; une version publiée ne bouge plus (monter
-    `sdk/package.json` pour publier).
+    contre `enTetesSignes`, le vrai code d'envoi). Il se publie À LA MAIN, après le `up` de l'API qui porte son contrat
+    (`gh workflow run sdk.yml --ref main`, `DEPLOY.md`), jamais sur un push : publié avant, il typerait des routes
+    encore en 404. L'action tient en deux jobs : la construction exécute le code npm SANS aucun secret, la
+    publication ne fait tourner aucun code npm et seule voit `SDK_DEPLOY_KEY` (sans lui, elle ne fait rien). Une
+    version publiée ne bouge plus : un contenu changé sous la même version fait échouer le run sans rien pousser.
 
 ### Sur le code
 

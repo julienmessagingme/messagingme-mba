@@ -239,6 +239,19 @@ poste : `npm run oauth:fiches`. `src/oauth/clients.ts` les RECOPIE ; si Anthropi
 les connexions de Claude échouent sans rien dire. Code 1 : mettre à jour `CLIENTS_OAUTH` (et le CHECK de 0204 si
 un identifiant change). Code 2 : claude.ai injoignable, à relancer.
 
+## 🔴 Le SDK se publie APRÈS le déploiement de l'API, à la main
+
+Le SDK (`sdk/`) embarque le contrat de l'API. Le publier avant le `up` de l'API qui porte ce contrat donnerait aux
+intégrateurs des types pour des routes encore en 404. Donc, quand un lot change le contrat :
+
+1. `npm run sdk:contrat` dans le commit qui change le contrat (sinon la CI est rouge), et monter la version de
+   `sdk/package.json` si l'on veut la publier ;
+2. déployer l'API comme d'habitude, contrôle de fumée compris ;
+3. seulement ensuite : `gh workflow run sdk.yml --ref main`, puis lire le run.
+
+Une version déjà publiée ne bouge plus : si son contenu change sans montée de version, le run échoue sans rien pousser.
+Le run n'a d'effet que si le secret `SDK_DEPLOY_KEY` existe (commande de création dans `wip.md`, lot 16).
+
 ## ⚠️ Deux gestes qu'on oublie, et leur symptôme
 
 **`up -d --build` OBLIGATOIRE dès que `web/next.config.mjs` bouge.** Les `rewrites` sont **gelés au build** de

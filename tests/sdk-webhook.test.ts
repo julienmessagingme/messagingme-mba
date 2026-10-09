@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { verifyWebhook, WebhookVerificationError, type WebhookEvent } from '../sdk/src/index';
 import { enTetesSignes, genererSecret } from '../src/evenements/signature';
 import { donneesEssai, enveloppe } from '../src/evenements/types';
@@ -61,6 +61,54 @@ describe('verifyWebhook contre la signature du serveur', () => {
     expect(rotation['webhook-signature'].split(' ')).toHaveLength(2);
     for (const s of [nouveau, secret, [genererSecret(), secret]]) {
       await expect(verifyWebhook({ secret: s, headers: rotation, body: corpsEssai, now: MAINTENANT.getTime() })).resolves.toBeDefined();
+    }
+  });
+
+  it('une configuration fausse est une TypeError, jamais un refus de signature (ni une tolérance éteinte)', async () => {
+    const t = MAINTENANT.getTime();
+    const base = { headers: signes, body: corpsEssai, now: t };
+    for (const s of ['', 'whsec_', 'whsec_%%%', [] as string[]]) {
+      await expect(verifyWebhook({ ...base, secret: s })).rejects.toBeInstanceOf(TypeError);
+    }
+    // `Number(process.env.X)` sans la variable : NaN ne doit pas éteindre la protection contre le rejeu.
+    await expect(verifyWebhook({ ...base, secret, toleranceSeconds: Number.NaN })).rejects.toBeInstanceOf(TypeError);
+    await expect(verifyWebhook({ ...base, secret, toleranceSeconds: -1 })).rejects.toBeInstanceOf(TypeError);
+    await expect(verifyWebhook({ ...base, secret, now: Number.NaN })).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it('un en-tête en tableau, ou des signatures jointes par Node (« , »), se vérifient', async () => {
+    const [, valide] = signes['webhook-signature'].split(',');
+    const autre = `v1,${btoa(String.fromCharCode(...new Uint8Array(32).fill(7)))}`;
+    const t = MAINTENANT.getTime();
+    await expect(verifyWebhook({ secret, headers: { ...signes, 'webhook-signature': [autre, `v1,${valide}`] }, body: corpsEssai, now: t })).resolves.toBeDefined();
+    await expect(verifyWebhook({ secret, headers: { ...signes, 'webhook-signature': `${autre}, v1,${valide}` }, body: corpsEssai, now: t })).resolves.toBeDefined();
+  });
+
+  it('🔴 une signature qui ne fait pas 32 octets est écartée sans calcul', async () => {
+    const t = MAINTENANT.getTime();
+    // Deux cents candidates courtes et toutes différentes, puis la vraie : sans le filtre, le plafond serait atteint
+    // avant elle et l'événement refusé.
+    const courtes = Array.from({ length: 200 }, (_, i) => `v1,${btoa(String.fromCharCode(i % 256, Math.floor(i / 256)))}`);
+    const espion = vi.spyOn(globalThis.crypto.subtle, 'verify');
+    try {
+      const entetes = { ...signes, 'webhook-signature': [...courtes, signes['webhook-signature']].join(' ') };
+      await expect(verifyWebhook({ secret, headers: entetes, body: corpsEssai, now: t })).resolves.toBeDefined();
+      expect(espion.mock.calls.length).toBe(1);
+    } finally {
+      espion.mockRestore();
+    }
+  });
+
+  it('🔴 un en-tête bourré de candidates de 32 octets ne fait pas calculer un HMAC par candidate', async () => {
+    const t = MAINTENANT.getTime();
+    const candidates = Array.from({ length: 200 }, (_, i) => `v1,${btoa(String.fromCharCode(...new Uint8Array(32).fill(i % 256)))}`);
+    const espion = vi.spyOn(globalThis.crypto.subtle, 'verify');
+    try {
+      const entetes = { ...signes, 'webhook-signature': [...candidates, signes['webhook-signature']].join(' ') };
+      expect(await refus(verifyWebhook({ secret, headers: entetes, body: corpsEssai, now: t }))).toBe('signature invalide');
+      expect(espion.mock.calls.length).toBe(10);
+    } finally {
+      espion.mockRestore();
     }
   });
 
