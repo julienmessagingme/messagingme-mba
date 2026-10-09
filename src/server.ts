@@ -379,7 +379,7 @@ export interface ServerDeps {
     /** Les webhooks sortants gérés par une clé (`/v1/webhooks`, lot 13, domaine 4). */
     webhooks?: Omit<V1WebhooksRouteDeps, 'usage' | 'couteux'>;
     /** Les champs personnalisés et la suppression RGPD (`/v1/fields`, `DELETE /v1/contacts/{id}`, lot 13, domaine 5). */
-    contactsAdmin?: Omit<V1ContactsAdminRouteDeps, 'usage'>;
+    contactsAdmin?: Omit<V1ContactsAdminRouteDeps, 'usage' | 'couteux'>;
     /** Le serveur MCP, moins son plafond coûteux : `buildServer` y pose le sien au montage (`DepsMcp.couteux`). */
     mcp?: CablageMcp;
     /** Le relais du Meta Business Agent : même autorité et même limiteur que /v1. */
@@ -806,9 +806,10 @@ export function modulesDeRoutes(
       // Le plafond coûteux de la console (`g.plafondCouteux`), posé ici comme pour le MCP : l'essai et le rejeu en masse.
       if (v1.webhooks) registerV1Webhooks(app, { ...v1.webhooks, usage: usageApi, couteux: g.plafondCouteux }, [requireApiKey, requireScope('webhooks:write')]);
       // Les contacts complets (lot 13, domaine 5) : la liste des champs sous `contacts:read` (ses clés sont déjà dans les
-      // fiches lues), créer un champ et effacer une fiche sous `contacts:admin`, un droit NEUF sans reprise.
+      // fiches lues), créer un champ et effacer une fiche sous `contacts:admin`, un droit NEUF sans reprise. L'effacement
+      // passe sous le plafond coûteux de la console (`g.plafondCouteux`), comme la purge du mini-CRM.
       if (v1.contactsAdmin) {
-        registerV1ContactsAdmin(app, { ...v1.contactsAdmin, usage: usageApi }, {
+        registerV1ContactsAdmin(app, { ...v1.contactsAdmin, usage: usageApi, couteux: g.plafondCouteux }, {
           lire: [requireApiKey, requireScope('contacts:read')],
           administrer: [requireApiKey, requireScope('contacts:admin')],
         });

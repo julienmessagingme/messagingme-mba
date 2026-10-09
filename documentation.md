@@ -3719,7 +3719,8 @@ Ajouté par le lot 4 de l'API publique :
    (`src/http/fields.ts`) pour un champ personnalisé, et `effacerContacts` (`src/crm/effacement.ts`) pour une fiche, que
    la purge du mini-CRM appelle aussi : la limite du jour de l'offre (`quotaSuppressions`, le MÊME objet), tout ou rien,
    puis `PgContactStore.purgeMany`, puis le retrait chez l'agent de Meta APRÈS la réponse. La fiche est d'abord résolue
-   DANS l'espace (`contactIdsForTarget`) : une fiche d'un autre espace rend 404 sans entamer la limite.
+   VIVANTE dans l'espace (`etatPourEnvoi`, `deleted_at is null`) : une fiche d'un autre espace ou déjà effacée rend 404
+   sans entamer la limite, et l'effacement passe sous le plafond coûteux de la console.
 
 ### Sur les contrats externes
 

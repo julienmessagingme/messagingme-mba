@@ -7,7 +7,7 @@ import { refuser, type CodeApi } from '../api/erreurs';
 import { messageDeForme } from '../api/forme';
 import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
 import type { Refus } from '../lib/issue';
-import { MESSAGE_OPERATIONS_LOURDES, type PlafondPartage } from '../auth/plafond-partage';
+import { operationLourdeAcceptee, type PlafondPartage } from '../auth/plafond-partage';
 import { TYPES_ABONNABLES } from '../evenements/types';
 import type { AdresseVue, EnvoiVue } from '../evenements/store.pg';
 import {
@@ -111,14 +111,6 @@ export function registerV1Webhooks(app: FastifyInstance, deps: V1WebhooksRouteDe
   const g = deps.gestion;
   const lecture = (req: Parameters<typeof compterOuRefuser>[1], reply: FastifyReply) => compterOuRefuser(deps.usage, req, reply, 'webhooks.read');
   const ecriture = (req: Parameters<typeof compterOuRefuser>[1], reply: FastifyReply) => compterOuRefuser(deps.usage, req, reply, 'webhooks.write');
-  /** Le plafond coûteux : `true` si l'opération passe, sinon le 429 est rendu avec son `Retry-After`. */
-  const lourde = async (tenantId: string, reply: FastifyReply): Promise<boolean> => {
-    const c = await deps.couteux.consommer(tenantId);
-    if (c.accepte) return true;
-    reply.header('retry-after', String(Math.max(1, Math.ceil(c.attenteMs / 1000))));
-    await refuser(reply, 429, 'rate_limited', MESSAGE_OPERATIONS_LOURDES);
-    return false;
-  };
   const adresseDe = (params: unknown): string => {
     const p = parametresAdresse.safeParse(params);
     return p.success ? p.data.webhookId : '';
@@ -191,7 +183,7 @@ export function registerV1Webhooks(app: FastifyInstance, deps: V1WebhooksRouteDe
   app.post('/v1/webhooks/:webhookId/test', opts, async (req, reply) => {
     if (!req.auth) return refuser(reply, 401, 'unauthorized', 'clé d’API requise');
     if (!await ecriture(req, reply)) return reply;
-    if (!await lourde(req.auth.tenantId, reply)) return reply;
+    if (!await operationLourdeAcceptee(deps.couteux, req.auth.tenantId, reply)) return reply;
     const r = await envoyerEssai(g, req.auth.tenantId, adresseDe(req.params));
     if (!r.ok) return refuserGestion(reply, r, 'webhook');
     return reply.code(200).send({ eventId: r.valeur.evenementId, delivered: r.valeur.livre, statusCode: r.valeur.code, response: r.valeur.reponse });
@@ -225,7 +217,7 @@ export function registerV1Webhooks(app: FastifyInstance, deps: V1WebhooksRouteDe
     if (!await ecriture(req, reply)) return reply;
     const lu = corpsRejeu.safeParse(req.body ?? {});
     if (!lu.success) return refuser(reply, 400, 'invalid_body', messageDeForme(lu.error));
-    if (!await lourde(req.auth.tenantId, reply)) return reply;
+    if (!await operationLourdeAcceptee(deps.couteux, req.auth.tenantId, reply)) return reply;
     const r = await rejouerEchecs(g, req.auth.tenantId, adresseDe(req.params), { depuis: lu.data.since });
     if (!r.ok) return refuserGestion(reply, r, 'webhook');
     return reply.code(202).send({ replayed: r.valeur.rejoues });

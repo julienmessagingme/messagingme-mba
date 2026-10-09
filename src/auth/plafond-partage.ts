@@ -95,6 +95,19 @@ export class PlafondPartage {
  */
 export const MESSAGE_OPERATIONS_LOURDES = 'trop d’opérations lourdes sur cet espace, patientez une minute';
 
+/**
+ * Le plafond des opérations lourdes d'un espace sur une route de l'API publique (`/v1`) : `false` = refusé, le 429 est
+ * déjà parti avec son `Retry-After`. SANS les en-têtes `x-ratelimit-*` de `consommerPartageAvecEntetes` : sur `/v1`, ce
+ * sont ceux du plafond de l'API de l'espace (`plafond-espace.ts`), et les écraser annoncerait le reste des opérations
+ * lourdes comme celui de l'API.
+ */
+export async function operationLourdeAcceptee(couteux: Pick<PlafondPartage, 'consommer'>, tenantId: string, reply: FastifyReply): Promise<boolean> {
+  const c = await couteux.consommer(tenantId);
+  if (c.accepte) return true;
+  await refuserTropDeRequetes(reply, c.attenteMs, MESSAGE_OPERATIONS_LOURDES, 'rate_limited');
+  return false;
+}
+
 /** Le refus d'un plafond qui n'a pas pu compter (`siLaBaseEchoue: 'refuser'`) : il ne dit pas « trop de tentatives ». */
 export const MESSAGE_PLAFOND_INDISPONIBLE = 'vérification momentanément impossible, réessaie dans un instant';
 

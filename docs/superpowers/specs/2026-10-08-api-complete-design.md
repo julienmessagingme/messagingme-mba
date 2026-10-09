@@ -141,13 +141,14 @@ qu'aurait recommandées la ronde de questions. À relire à son retour ; chacune
 | Question | Décision |
 | --- | --- |
 | Droit | `contacts:admin`, neuf, sans reprise : créer un champ et effacer une fiche. La LISTE des champs reste sous `contacts:read` : ses clés figurent déjà dans les fiches que ce droit lit |
-| Champs | Lister (système et personnalisés, avec leur type) et créer ; ni renommer ni supprimer par l'API (une clé supprimée casserait des campagnes et des scénarios) : la console garde ces gestes |
+| Champs | Lister les champs personnalisés, avec leur type (les champs de base, téléphone, nom, sont ceux de la fiche) et créer ; ni renommer ni supprimer par l'API (une clé supprimée casserait des campagnes et des scénarios) : la console garde ces gestes |
 | Suppression RGPD | `DELETE /v1/contacts/{contactId}` efface pour de vrai, par la purge de la console, sous la limite du jour de l'offre (10 en Free, sans limite en Pro et Entreprise), auditée |
 | Import d'un fichier | ⚠️ **En attente de Julien** : le « dépôt signé » de la spec suppose un stockage de fichiers que le produit n'a pas. Deux voies : un CSV dans le corps (borné, comme l'import de la console), ou un vrai stockage (bucket et URL signée). Rien n'est livré avant sa décision |
 
 - **Les routes** : `GET /v1/fields` (`contacts:read`), `POST /v1/fields` (`contacts:admin`, `{ label, type }`, la clé dérivée du
   libellé comme dans la console, 409 si elle existe), `DELETE /v1/contacts/{contactId}` (`contacts:admin`, 200 avec ce
-  qui a été effacé, 404 pour une fiche inconnue de l'espace, 402 au-delà de la limite du jour).
+  qui a été effacé, 404 pour une fiche inconnue de l'espace ou déjà effacée, 402 au-delà de la limite du jour, 429 au-delà
+  du plafond des opérations lourdes de la console).
 - **Une seule vérité** : la création de champ de l'écran Contenu (mêmes gardes de libellé réservé) et la purge du
   mini-CRM (même transaction, même retrait chez l'agent de Meta après la réponse, même audit `contact.purged`).
 - **Claude** : rien de neuf dans ce domaine (effacer une fiche depuis un assistant n'est pas souhaitable) ; à rediscuter.

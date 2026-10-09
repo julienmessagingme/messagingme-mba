@@ -10,7 +10,7 @@ import { USER_FIELD_TYPES } from '../crm/fields';
 import { effacerContacts, type DepsEffacement } from '../crm/effacement';
 import { creerChamp, type ChampsDep } from './fields';
 import { LimiteOffreError, STATUT_REFUS_OFFRE, corpsRefusLimite } from '../offres/refus';
-import type { BulkTarget } from '../crm/contact-store.pg';
+import { operationLourdeAcceptee, type PlafondPartage } from '../auth/plafond-partage';
 
 /**
  * LES CONTACTS COMPLETS PAR L'API (lot 13, domaine 5, livraison A, spec § 7) : les champs personnalisés (lister, créer)
@@ -25,9 +25,17 @@ export interface V1ContactsAdminRouteDeps extends DepsEffacement {
   usage: ApiUsageGuard;
   /** Le référentiel des champs de l'écran Contenu, le MÊME objet (`src/index.ts`). */
   champs: Pick<ChampsDep, 'list' | 'create'>;
-  /** La résolution d'une cible en identifiants DANS l'espace (`PgContactStore.contactIdsForTarget`). */
-  contacts: DepsEffacement['contacts'] & { contactIdsForTarget(tenantId: string, target: BulkTarget): Promise<string[]> };
+  /**
+   * `etatPourEnvoi` : la lecture d'une fiche VIVANTE de l'espace (`deleted_at is null`, tenue par
+   * `tests/integration/rcs-libre.integration.test.ts`). Pas `contactIdsForTarget`, qui rend aussi une fiche déjà
+   * effacée : un second DELETE rendait 200 et entamait la limite du jour.
+   */
+  contacts: DepsEffacement['contacts'] & {
+    etatPourEnvoi(tenantId: string, contactId: string): Promise<{ phoneE164: string | null; bloque: boolean } | null>;
+  };
   audit: AuditSink;
+  /** Le plafond des opérations lourdes de la console (par espace), posé par `buildServer` au montage : la purge y passe. */
+  couteux: Pick<PlafondPartage, 'consommer'>;
 }
 
 export interface GardesContactsAdminV1 {
@@ -70,7 +78,8 @@ export function registerV1ContactsAdmin(app: FastifyInstance, deps: V1ContactsAd
 
   /**
    * 🔴 Irréversible : la fiche, ses conversations, ses messages et son analyse sont effacés, ce qui porte les compteurs
-   * est anonymisé. Une fiche d'un autre espace (ou inconnue) rend 404 SANS consommer la limite du jour.
+   * est anonymisé. Une fiche d'un autre espace, inconnue ou déjà effacée rend 404 SANS consommer ni le plafond des
+   * opérations lourdes ni la limite du jour.
    */
   app.delete('/v1/contacts/:contactId', administrer, async (req, reply) => {
     if (!req.auth) return refuser(reply, 401, 'unauthorized', 'clé d’API requise');
@@ -78,11 +87,12 @@ export function registerV1ContactsAdmin(app: FastifyInstance, deps: V1ContactsAd
     const t = req.auth.tenantId;
     const p = parametresFiche.safeParse(req.params);
     if (!p.success) return refuser(reply, 404, 'unknown_contact', 'fiche inconnue');
-    const ids = await deps.contacts.contactIdsForTarget(t, { ids: [p.data.contactId] });
-    if (ids.length === 0) return refuser(reply, 404, 'unknown_contact', 'fiche inconnue');
-    const e = await effacerContacts(deps, t, ids);
+    const id = p.data.contactId;
+    if (!await deps.contacts.etatPourEnvoi(t, id)) return refuser(reply, 404, 'unknown_contact', 'fiche inconnue');
+    if (!await operationLourdeAcceptee(deps.couteux, t, reply)) return reply;
+    const e = await effacerContacts(deps, t, [id]);
     if (!e.ok) return reply.code(STATUT_REFUS_OFFRE).send(corpsRefusLimite(new LimiteOffreError(t, 'suppressionsJour', e.max)));
-    for (const id of ids) await journal(t, req, 'contact.purged', { kind: 'contact', id }, { lot: ids.length, via: 'api' });
+    await journal(t, req, 'contact.purged', { kind: 'contact', id }, { lot: 1, via: 'api' });
     // La réponse part d'abord, le retrait chez Meta ensuite, au mieux (voir `effacerContacts`).
     reply.code(200).send({ deleted: true, conversations: e.bilan.conversations, messages: e.bilan.messages });
     e.retirerChezMeta();

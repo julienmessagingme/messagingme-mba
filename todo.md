@@ -1,5 +1,13 @@
 # todo.md : backlog
 
+## 🟡 Lot 13, les contacts par l'API : ce que la relecture du domaine 5 laisse (2026-10-09)
+
+- **Effacer une fiche efface aussi son STOP** : la purge anonymise le numéro, donc une fiche recréée ensuite avec le même
+  numéro (import, API, message entrant) repart sans opt-out. C'était déjà vrai de la purge de la console ; l'API rend le
+  geste scriptable. Deux voies, à trancher par Julien : garder une liste de refus par empreinte du numéro (qui survit à
+  l'effacement, ce qu'il faut alors dire dans la politique de confidentialité), ou le documenter comme le prix de
+  l'effacement.
+
 ## 🟡 Lot 13, les webhooks par l'API : ce que la relecture du domaine 4 laisse (2026-10-09)
 
 - **Le journal d'une adresse se pagine par la date seule** (`PgEnvoisEvenementsStore.journal`, `cree_le < before`, et

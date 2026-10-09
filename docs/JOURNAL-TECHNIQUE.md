@@ -5,6 +5,30 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-09 : les champs et l'effacement par l'API (lot 13, domaine 5, livraison A), en production
+
+`5e768c39`, CI verte job par job, aucune migration. `GET /v1/fields` (`contacts:read`), `POST /v1/fields` et
+`DELETE /v1/contacts/{contactId}` (droit neuf `contacts:admin`), sans logique propre : la création de champ de l'écran
+Contenu sortie en `creerChamp`, la purge du mini-CRM sortie en `effacerContacts`, que la console appelle désormais
+aussi, avec la MÊME instance de limite du jour. Décisions prises par Claude en l'absence de Julien (spec § 7), à
+relire ; l'import d'un fichier attend sa décision. Relecture : aucun rouge, cinq jaunes, dont quatre poussés ensuite :
+un second DELETE sur une fiche déjà effacée rendait 200 et entamait la limite du jour (`contactIdsForTarget` rend aussi
+les fiches effacées, la route lit désormais la fiche vivante) ; l'effacement passe sous le plafond des opérations
+lourdes, comme la purge de la console ; le test « la réponse n'attend pas Meta » ne prouvait pas l'ordre, il reprend le
+montage de la purge ; la spec dit ce que la liste rend. Le cinquième attend Julien : effacer puis recréer une fiche
+efface aussi son STOP.
+
+## 2026-10-09 : les webhooks sortants par l'API et par Claude (lot 13, domaine 4), en production
+
+`f7a75586`, CI verte job par job, aucune migration. Dix routes `/v1/webhooks` sous le droit neuf `webhooks:write`
+(lire compris : le journal porte des données de contacts) et trois outils MCP réservés à une personne, sur les
+fonctions de gestion de la console. Décisions prises par Claude en l'absence de Julien (spec § 6), à relire. Relecture :
+un rouge, corrigé avant le push et vérifié dans les deux sens : les routes n'étaient câblées nulle part dans
+`src/index.ts`, donc absentes de la production (tenu par `tests/v1-cablage.test.ts`). Et un jaune corrigé dans le même
+commit : l'audit d'un appel par clé échouait, l'identifiant `apikey:<id>` n'étant pas un uuid ; `journalDeLApi` laisse
+l'acteur vide et met la clé dans le détail. Le plafond des opérations lourdes sur l'essai et le rejeu est parti avec le
+domaine 5 ; la pagination du journal par la date seule est au backlog.
+
 ## 2026-10-09 : la validation d'un modèle devient un événement (lot 13, domaine 3, livraison C), en production
 
 `cbaa9933`, CI verte job par job, aucune migration. `template.status_changed` naît du champ

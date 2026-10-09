@@ -192,8 +192,9 @@ function Contacts() {
         <Sous>{erreurs}</Sous>
         <Erreurs
           lignes={[
-            ['unknown_contact', t('Fiche inconnue de cet espace (la limite du jour n’est pas entamée).', 'Record unknown to this workspace (the daily limit is not used).')],
+            ['unknown_contact', t('Fiche inconnue de cet espace, ou déjà effacée (la limite du jour n’est pas entamée).', 'Record unknown to this workspace, or already erased (the daily limit is not used).')],
             ['plan_limit_reached', t('Limite d’effacements du jour de l’offre atteinte.', 'The plan’s daily erase limit is reached.')],
+            ['rate_limited', t('Trop d’opérations lourdes sur cet espace (10 par minute, comme la purge de la console) : réessayer après Retry-After.', 'Too many heavy operations on this workspace (10 per minute, like the console purge): retry after Retry-After.')],
           ]}
         />
       </Route>
