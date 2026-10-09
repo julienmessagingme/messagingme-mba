@@ -13,15 +13,18 @@ const sansCommentaires = (chemin: string): string => readFileSync(new URL(chemin
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 const source = sansCommentaires('../src/index.ts');
-/** Le bloc des envois de `/v1/sends`, du template lu chez Meta jusqu'au bloc suivant. */
-const envois = source.slice(source.indexOf('lireModele: async (tenant, name, language)'), source.indexOf('      messages: {'));
+/** Le bloc des envois de `/v1/sends` (`depsEnvois`, partagé avec Claude), du template lu chez Meta jusqu'au serveur. */
+const envois = source.slice(source.indexOf('lireModele: async (tenant, name, language)'), source.indexOf('  const app = buildServer({'));
 
 describe('câblage de /v1/sends', () => {
   it('🔴 l’empreinte du corps atteint le magasin d’idempotence', () => {
     // Le magasin passe tel quel : aucune flèche intermédiaire ne peut avaler l'empreinte, et la route l'appelle
     // avec ses trois arguments.
     expect(envois).toMatch(/\bidempotence: idempotencyStore,/);
-    expect(sansCommentaires('../src/http/v1-sends.ts')).toMatch(/deps\.idempotence\.claim\(tenantId, idem\.cle, empreinteCorps\(req\.body\)\)/);
+    // Le cœur (`lancerEnvoi`) prend l'empreinte du corps brut, et la route lui passe le corps de la requête.
+    const sends = sansCommentaires('../src/http/v1-sends.ts');
+    expect(sends).toMatch(/deps\.idempotence\.claim\(tenantId, idem\.cle, empreinteCorps\(brut\)\)/);
+    expect(sends).toMatch(/lancerEnvoi\(\s*deps, req\.auth\.tenantId, req\.body, req\.headers\['idempotency-key'\],/);
   });
 
   it('🔴 la SOURCE du consentement atteint l’écriture', () => {
@@ -72,6 +75,9 @@ describe('câblage de /v1/templates', () => {
     expect(source).toMatch(/modeles: \{ \.\.\.creationModeles, lister: listerModeles \}/);
     // 🔴 Le téléchargement de l'en-tête est la voie GARDÉE (inventoriée par `tests/lib-adresse-privee.test.ts`) : un
     // `fetch` nu injecté ici échapperait à l'inventaire, `DepsCreationModele` acceptant n'importe quel téléchargeur.
+    // Livraison B : Claude envoie par le MÊME cœur que `POST /v1/sends`, sur les MÊMES dépendances.
+    expect(source).toMatch(/sends: depsEnvois,/);
+    expect(source).toMatch(/envoyerModele: \(tenant, corps, compter\) => lancerEnvoi\(depsEnvois, tenant, corps, undefined, compter\),/);
     expect(source).toMatch(/telechargerEntete: telechargerEnteteProduction,\s*deposerEntete: \(octets, mime\) => mediaClient\.uploadImage\(octets, mime\),\s*placesEntete: placesDeTelechargement,/);
   });
 });

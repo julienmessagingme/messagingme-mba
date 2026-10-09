@@ -629,9 +629,10 @@ export const stripeProInerte: StripeWebhookRouteDeps['pro'] = {
  * aucun message connu, aucun modèle, un espace sans compte WhatsApp, et chaque geste qui écrit LÈVE (un test qui envoie
  * ou crée le dit en passant les siens).
  */
-export const mcpMessagesInertes: Pick<DepsMcp, 'messagesApi' | 'envoyerMessage' | 'modeles'> = {
+export const mcpMessagesInertes: Pick<DepsMcp, 'messagesApi' | 'envoyerMessage' | 'modeles' | 'envoyerModele'> = {
   messagesApi: { message: async () => null },
   envoyerMessage: neDevraitPasEtreAppelee('envoyerMessage'),
+  envoyerModele: neDevraitPasEtreAppelee('envoyerModele'),
   modeles: {
     lister: async () => [],
     modeles: {

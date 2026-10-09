@@ -174,6 +174,7 @@ import type { TemplateSummary } from './meta/templates';
 import type { TemplateRouteDeps } from './http/templates';
 import type { DepsCreationModele } from './api/creer-modele';
 import { placesDeTelechargement, telechargerEnteteProduction } from './api/entete-par-url';
+import { lancerEnvoi, type DepsEnvoi } from './http/v1-sends';
 import { tenter } from './lib/tenter';
 import { messageDe } from './lib/erreur';
 import { PgStripeStore } from './stripe/store.pg';
@@ -988,6 +989,63 @@ async function main(): Promise<void> {
     telechargerEntete: telechargerEnteteProduction,
     deposerEntete: (octets, mime) => mediaClient.uploadImage(octets, mime),
     placesEntete: placesDeTelechargement,
+  };
+
+  /**
+   * Les dépendances du cœur de `POST /v1/sends` (`lancerEnvoi`), partagées avec l'outil `send_template_to_contact`
+   * (lot 13, domaine 3, livraison B) : un modèle envoyé par Claude passe par les MÊMES gardes que l'API.
+   */
+  const depsEnvois: DepsEnvoi = {
+    resolveScenario: (tenant, ref) => resolveScenario(tenant, ref, workflowStore),
+    /**
+     * Cible node : le code `nod_` vit dans le graphe publié, d'où le scan des scénarios de l'espace. Le
+     * graphe est rendu avec le bloc : c'est depuis lui que `ouvertureApi` juge ce qui part en premier.
+     * Le libellé du bloc (ou son code à défaut) nomme la campagne dans la console.
+     */
+    resolveNode: async (tenant, code) => {
+      const r = await resolveNode(tenant, code, workflowStore);
+      // Un code `nod_` est unique : resolveNode ne produit jamais 'ambiguous', seulement not_found.
+      if (!r.ok) return { ok: false, reason: 'not_found' };
+      const node = r.value.graph.nodes.find((n) => n.id === r.value.nodeId);
+      const label = String(node?.data.label ?? '').trim() || code;
+      return { ok: true, value: { workflowId: r.value.workflowId, nodeId: r.value.nodeId, label, graph: r.value.graph } };
+    },
+    /**
+     * 🔴 La catégorie d'un template est lue chez Meta, comme dans l'Inbox (`categorieDuModele`) : déclarée
+     * par l'appelant, un template marketing annoncé « utility » partirait aux contacts sans consentement.
+     * Même lecture et même cache court que le worker. Une panne de lecture est « illisible », jamais
+     * « utility » par défaut.
+     */
+    lireModele: async (tenant, name, language) => {
+      try {
+        return verdictModele(await workflowRuntime.templateVarInfo(tenant, name, language), language);
+      } catch (err) {
+        // Journalisée : une panne durable (jeton révoqué, compte déconnecté) rendrait sinon 422 pour
+        // toujours sans aucune trace chez nous.
+        console.error('v1/sends: lecture du template chez Meta échouée:', messageDe(err));
+        return { statut: 'illisible' };
+      }
+    },
+    inbox: inboxStore,
+    // Bloqués compris à la lecture des fiches : l'API les écarte avec un motif au lieu de les perdre.
+    repo,
+    // La garde de ce process, celle dont « Délier » et « Relier » vident le cache.
+    numerosDelies: gardeNumeroDelie,
+    numerosSuspendus: gardeNumeroSuspendu,
+    // Les modèles du mois (lot 6) : un envoi qui ouvre par un modèle et ne tient pas dans ce qu'il reste est refusé.
+    modelesDuMois: quotaModeles,
+    // L'offre (lot 6, B2a) : hors `scenarios`, une cible scénario ou bloc est refusée tout de suite.
+    offres,
+    // La résolution de fiche et l'écriture du consentement, sur les mêmes dépendances que `/v1/contacts`
+    // (le dépôt des contacts et `depsConsentementDe`). Les quatre paramètres de chaque flèche sont gardés
+    // par `tests/v1-cablage.test.ts`.
+    resoudreFiche: (tenant, cles, o) => resoudreFiche(contactStore, tenant, cles, o),
+    appliquerConsentement: (tenant, contactId, consent, source) => appliquerConsentement(depsConsentement, tenant, contactId, consent, source),
+    enqueue: (campaignId, tenantId, count, rate) =>
+      relanceurDeCampagnes(queue, config)({ campaignId, tenantId, pendingCount: count, ratePerMinute: rate }),
+    idempotence: idempotencyStore,
+    // La cible `rcsMessage` : la bibliothèque par son nom, et l'agent RCS de l'espace.
+    rcs: { messages: rcsMessageStore, agents: workflowRuntime.rcsStack.agents },
   };
 
   const app = buildServer({
@@ -2681,58 +2739,7 @@ async function main(): Promise<void> {
           return joignabiliteRcsToutesFormes(rcsJoignabilite, agentId, e164, Date.now());
         },
       }),
-      sends: {
-        resolveScenario: (tenant, ref) => resolveScenario(tenant, ref, workflowStore),
-        /**
-         * Cible node : le code `nod_` vit dans le graphe publié, d'où le scan des scénarios de l'espace. Le
-         * graphe est rendu avec le bloc : c'est depuis lui que `ouvertureApi` juge ce qui part en premier.
-         * Le libellé du bloc (ou son code à défaut) nomme la campagne dans la console.
-         */
-        resolveNode: async (tenant, code) => {
-          const r = await resolveNode(tenant, code, workflowStore);
-          // Un code `nod_` est unique : resolveNode ne produit jamais 'ambiguous', seulement not_found.
-          if (!r.ok) return { ok: false, reason: 'not_found' };
-          const node = r.value.graph.nodes.find((n) => n.id === r.value.nodeId);
-          const label = String(node?.data.label ?? '').trim() || code;
-          return { ok: true, value: { workflowId: r.value.workflowId, nodeId: r.value.nodeId, label, graph: r.value.graph } };
-        },
-        /**
-         * 🔴 La catégorie d'un template est lue chez Meta, comme dans l'Inbox (`categorieDuModele`) : déclarée
-         * par l'appelant, un template marketing annoncé « utility » partirait aux contacts sans consentement.
-         * Même lecture et même cache court que le worker. Une panne de lecture est « illisible », jamais
-         * « utility » par défaut.
-         */
-        lireModele: async (tenant, name, language) => {
-          try {
-            return verdictModele(await workflowRuntime.templateVarInfo(tenant, name, language), language);
-          } catch (err) {
-            // Journalisée : une panne durable (jeton révoqué, compte déconnecté) rendrait sinon 422 pour
-            // toujours sans aucune trace chez nous.
-            console.error('v1/sends: lecture du template chez Meta échouée:', messageDe(err));
-            return { statut: 'illisible' };
-          }
-        },
-        inbox: inboxStore,
-        // Bloqués compris à la lecture des fiches : l'API les écarte avec un motif au lieu de les perdre.
-        repo,
-        // La garde de ce process, celle dont « Délier » et « Relier » vident le cache.
-        numerosDelies: gardeNumeroDelie,
-        numerosSuspendus: gardeNumeroSuspendu,
-        // Les modèles du mois (lot 6) : un envoi qui ouvre par un modèle et ne tient pas dans ce qu'il reste est refusé.
-        modelesDuMois: quotaModeles,
-        // L'offre (lot 6, B2a) : hors `scenarios`, une cible scénario ou bloc est refusée tout de suite.
-        offres,
-        // La résolution de fiche et l'écriture du consentement, sur les mêmes dépendances que `/v1/contacts`
-        // (le dépôt des contacts et `depsConsentementDe`). Les quatre paramètres de chaque flèche sont gardés
-        // par `tests/v1-cablage.test.ts`.
-        resoudreFiche: (tenant, cles, o) => resoudreFiche(contactStore, tenant, cles, o),
-        appliquerConsentement: (tenant, contactId, consent, source) => appliquerConsentement(depsConsentement, tenant, contactId, consent, source),
-        enqueue: (campaignId, tenantId, count, rate) =>
-          relanceurDeCampagnes(queue, config)({ campaignId, tenantId, pendingCount: count, ratePerMinute: rate }),
-        idempotence: idempotencyStore,
-        // La cible `rcsMessage` : la bibliothèque par son nom, et l'agent RCS de l'espace.
-        rcs: { messages: rcsMessageStore, agents: workflowRuntime.rcsStack.agents },
-      },
+      sends: depsEnvois,
       /**
        * `POST /v1/messages/whatsapp` : un simple texte dans la fenêtre de 24 h. Ce bloc ne fait que brancher :
        * les quatre gestes (fenêtre, désabonnement, envoi, trace) vivent dans `repondreDansLaFenetre`, partagé
@@ -2789,6 +2796,8 @@ async function main(): Promise<void> {
         offre: { vue: vueOffre },
         // Les modèles (lot 13, domaine 3) : la MÊME création que `POST /v1/templates`, la MÊME liste que le catalogue.
         modeles: { ...creationModeles, lister: listerModeles },
+        // L'envoi d'un modèle à un contact (livraison B) : le MÊME cœur que `POST /v1/sends`, sans clé d'en-tête.
+        envoyerModele: (tenant, corps, compter) => lancerEnvoi(depsEnvois, tenant, corps, undefined, compter),
         // Le statut d'un message (lot 13) : la MÊME lecture que `GET /v1/messages/{id}`.
         messagesApi: conversationsV1,
         // L'envoi au format de Meta (lot 13, domaine 2) : le MÊME que `POST /v1/messages`.

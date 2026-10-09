@@ -18,6 +18,9 @@ import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpMessagesInert
 import { creerPoseEtiquette, LONGUEUR_MAX_ETIQUETTE } from '../src/crm/poser-etiquette';
 import { DROITS } from '../src/offres/offres';
 import { MetaTemplateClient, type FetchLike, type TemplateSummary } from '../src/meta/templates';
+import { lireCible, schemaCorps, schemaDestinataire, type ReponseEnvoi } from '../src/http/v1-sends';
+import { validateParamMapping } from '../src/crm/template';
+import { cleIdempotence } from '../src/api/idempotence';
 import { modelesInertes, aucuneCampagneActive } from './routes-inertes';
 
 /**
@@ -601,14 +604,19 @@ describe('serveur MCP : les outils', () => {
 });
 
 describe('serveur MCP : cohérence du catalogue', () => {
-  it('🔴 aucun outil n’expose de campagne ; les outils de modèle sont ceux décidés, et aucun n’en envoie', () => {
+  it('🔴 aucun outil n’expose de campagne ; les outils de modèle sont ceux décidés, et le seul qui envoie vise UNE personne', () => {
     // Décision du lot MCP, et pas un oubli : ouvrir l'envoi de MASSE à un modèle, c'est lui donner un mégaphone facturé
     // sur un numéro dont Meta note la qualité. Les modèles sont entrés par une décision de Julien (spec du lot 13,
-    // 2026-10-08) : les créer, suivre leur validation, les lister ; l'envoi à UN contact viendra avec sa livraison. Ce
-    // test est là pour que chaque ajout soit une décision explicite (il faudra le modifier) et non un glissement.
+    // 2026-10-08) : les créer, suivre leur validation, les lister, et en envoyer un à UN contact, réservé à une personne
+    // connectée. Ce test est là pour que chaque ajout soit une décision explicite (il faudra le modifier) et non un
+    // glissement.
     const noms = OUTILS.map((o) => o.nom);
     expect(noms.join(' ')).not.toMatch(/campaign|campagne|broadcast/i);
-    expect(noms.filter((n) => /template/i.test(n)).sort()).toEqual(['create_template', 'get_template_status', 'list_templates']);
+    expect(noms.filter((n) => /template/i.test(n)).sort())
+      .toEqual(['create_template', 'get_template_status', 'list_templates', 'send_template_to_contact']);
+    const envoi = OUTILS.find((o) => o.nom === 'send_template_to_contact')!;
+    expect(envoi.exigePersonne).toBe(true);
+    expect(envoi.entree.properties).not.toHaveProperty('recipients');
   });
 
   it('🔴 chaque scope d’outil est un scope de clé RÉELLEMENT attribuable', () => {
@@ -682,6 +690,8 @@ describe('serveur MCP : cohérence du catalogue', () => {
       send_test_event: [false, false, true],
       // Lot 13, domaine 3 : un modèle de plus chez Meta à chaque appel, qui y reste.
       create_template: [false, false, true],
+      // Livraison B : un message part chez une personne ; la même clé d'idempotence ne renvoie rien ; le fil n'est pas pris.
+      send_template_to_contact: [false, true, true],
     });
     // Une lecture ne touche personne hors de l'espace, à UNE exception nommée : `preview_site` va lire un site tiers.
     const lecturesEnMondeOuvert = OUTILS.filter((x) => x.annotations.readOnlyHint && x.annotations.openWorldHint).map((o) => o.nom);
@@ -990,5 +1000,62 @@ describe('serveur MCP : les modèles (lot 13, domaine 3)', () => {
     const liste = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_LECTURE), payload: appeler('list_templates') }));
     expect(JSON.parse(liste.texte)).toEqual({ templates: [{ name: 'commande_prete', language: 'fr', category: 'utility', status: 'approved' }], tronque: false });
     await server.close();
+  });
+});
+
+describe('serveur MCP : envoyer un modèle à un contact (lot 13, domaine 3, livraison B)', () => {
+  const outil = OUTILS.find((o) => o.nom === 'send_template_to_contact')!;
+  const RAPPORT = { sendId: 'send-1', opening: 'whatsapp_template', recipientCount: 1, created: 0, matched: 1, skipped: [], skippedTotal: 0 };
+
+  function monterEnvoi(reponse: ReponseEnvoi | null, couteuxAccepte = true) {
+    const corps: unknown[] = [];
+    const comptes: number[] = [];
+    const deps = {
+      couteux: { consommer: async () => ({ accepte: couteuxAccepte, attenteMs: 4000 }) },
+      envoyerModele: async (_t: string, c: unknown, compter: (n: number) => Promise<boolean>) => {
+        corps.push(c);
+        comptes.push(Number(await compter(1)));
+        return reponse;
+      },
+    } as unknown as DepsMcp;
+    return { deps, corps, comptes };
+  }
+  const ARGS = { name: 'commande_prete', language: 'fr', phone: '+33612345678', values: ['Claire', '8412'], idempotency_key: 'claude-8412' };
+
+  it('🔴 réservé à une PERSONNE : une clé d’API, même mcp:write, ne le voit pas', () => {
+    expect(outilsPour({ scopes: ['mcp:read', 'mcp:write'], personne: null }).map((o) => o.nom)).not.toContain('send_template_to_contact');
+  });
+
+  it('🔴 le corps construit est un corps de POST /v1/sends que ses propres règles acceptent, pour UNE personne', async () => {
+    const { deps, corps, comptes } = monterEnvoi({ statut: 201, corps: RAPPORT });
+    expect(await outil.executer(deps, 't1', ARGS, { userId: 'u1' })).toEqual({ send_id: 'send-1', contact_created: false });
+    expect(comptes).toEqual([1]);
+    const lu = schemaCorps.safeParse(corps[0]);
+    expect(lu.success).toBe(true);
+    if (!lu.success) return;
+    expect(cleIdempotence(undefined, lu.data)).toEqual({ ok: true, cle: 'claude-8412' });
+    const params = validateParamMapping(lu.data.params ?? [], { accepterVariables: true });
+    expect(params).toEqual([{ position: 1, source: { type: 'literal', value: 'Claire' } }, { position: 2, source: { type: 'literal', value: '8412' } }]);
+    expect(lireCible(lu.data, params!)).toEqual({ kind: 'template', name: 'commande_prete', language: 'fr' });
+    expect(lu.data.recipients).toEqual([{ phone: '+33612345678' }]);
+    expect(schemaDestinataire.safeParse(lu.data.recipients[0]).success).toBe(true);
+  });
+
+  it('🔴 un refus de l’envoi revient à Claude avec sa phrase et son code ; une personne écartée aussi', async () => {
+    const refus = monterEnvoi({ statut: 402, corps: { error: 'limite de 1000 envois de modèles par mois atteinte', code: 'plan_limit_reached' } });
+    await expect(outil.executer(refus.deps, 't1', ARGS, { userId: 'u1' })).rejects.toThrow(/1000 envois de modèles.*plan_limit_reached/);
+    const ecarte = monterEnvoi({ statut: 201, corps: { ...RAPPORT, recipientCount: 0, skipped: [{ index: 0, reason: 'no_consent' }], skippedTotal: 1 } });
+    await expect(outil.executer(ecarte.deps, 't1', ARGS, { userId: 'u1' })).rejects.toThrow(/rien n’est parti.*no_consent/);
+  });
+
+  it('phone OU contact_id, une valeur non vide par variable : sinon rien n’est appelé ; le plafond coûteux refuse aussi', async () => {
+    const { deps, corps } = monterEnvoi({ statut: 201, corps: RAPPORT });
+    await expect(outil.executer(deps, 't1', { ...ARGS, contact_id: '5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01' }, { userId: 'u1' })).rejects.toThrow(/phone OU par contact_id/);
+    const { phone: _p, ...sansPersonne } = ARGS;
+    await expect(outil.executer(deps, 't1', sansPersonne, { userId: 'u1' })).rejects.toThrow(/phone OU par contact_id/);
+    await expect(outil.executer(deps, 't1', { ...ARGS, values: ['Claire', ''] }, { userId: 'u1' })).rejects.toThrow(/values/);
+    expect(corps).toHaveLength(0);
+    const plein = monterEnvoi({ statut: 201, corps: RAPPORT }, false);
+    await expect(outil.executer(plein.deps, 't1', ARGS, { userId: 'u1' })).rejects.toThrow(/réessayer dans 4 s/);
   });
 });

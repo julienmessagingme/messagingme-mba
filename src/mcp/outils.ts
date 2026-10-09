@@ -22,6 +22,7 @@ import { OUTILS_AGENT, type DepsAgentMcp } from './outils-agent';
 import { OUTILS_EVENEMENTS, type DepsEvenementsMcp } from './outils-evenements';
 import { OUTILS_NUMERO, type DepsNumeroMcp } from './outils-numero';
 import { OUTILS_MODELES, type DepsModelesMcp } from './outils-modeles';
+import type { ReponseEnvoi } from '../http/v1-sends';
 import type { VueOffre } from '../offres/vue';
 import type { SourceOffres } from '../offres/offre.pg';
 import type { Fonction } from '../offres/offres';
@@ -94,6 +95,11 @@ export interface DepsMcp extends DepsRepondre {
   envoyerMessage(tenantId: string, phoneNumberId: string, to: string, corps: Record<string, unknown>): Promise<string>;
   /** Les modèles (lot 13, domaine 3) : la MÊME création et le MÊME suivi que `POST /v1/templates`, et la liste du catalogue. */
   modeles: DepsModelesMcp;
+  /**
+   * L'envoi d'un modèle (lot 13, domaine 3, livraison B) : `lancerEnvoi`, le cœur de `POST /v1/sends`, lié à ses
+   * dépendances par le câblage. `compter` est appelé où la route compte ; il rend `true` ou lève.
+   */
+  envoyerModele(tenantId: string, corps: unknown, compter: (unites: number) => Promise<boolean>): Promise<ReponseEnvoi | null>;
   /**
    * 🔴 Le plafond des opérations coûteuses de la console, la MÊME instance que celle des routes, comptée par espace
    * sous la même clé : sans lui, le serveur MCP serait la porte qui contourne les dix opérations lourdes par minute

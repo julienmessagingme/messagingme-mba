@@ -3690,7 +3690,14 @@ Ajouté par le lot 4 de l'API publique :
    AVANT le téléchargement. Une erreur de Meta se traduit par `refusDeMeta` : jeton refusé (409 `meta_auth_failed`),
    passagère (429 avec `Retry-After`), contenu refusé (422 `meta_rejected`). La création compte `templates.create` à
    l'usage, hors quota du jour, et ne prend PAS la place lourde (une par copie), qu'un téléchargement de 20 s prendrait
-   aux envois.
+   aux envois. `create_template` et `send_template_to_contact` exigent une personne (jeton OAuth) : une clé d'API ne les
+   voit pas.
+47. **Le cœur de `POST /v1/sends` est une fonction, `lancerEnvoi` (`src/http/v1-sends.ts`)**, que la route et l'outil
+   `send_template_to_contact` appellent sur les MÊMES dépendances (`depsEnvois`, `src/index.ts`) : validation,
+   idempotence, cible, gardes du numéro, modèles du mois, destinataires, consentement, campagne scellée avec sa clé,
+   enfilement. Elle rend `{ statut, corps }` au lieu d'écrire la réponse ; le compteur est celui de l'appelant (le garde
+   d'usage pour la route, le plafond coûteux pour Claude), appelé au même endroit. L'outil construit le corps de l'API
+   pour une personne, ses valeurs en sources `literal`.
 
 ### Sur les contrats externes
 

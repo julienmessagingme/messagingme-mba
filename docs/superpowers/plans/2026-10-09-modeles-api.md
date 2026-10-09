@@ -39,9 +39,10 @@ C en recevant `template.status_changed` sur une adresse webhook de test.
 
 ## Livraison B : Claude envoie un modèle
 
-Le cœur de `POST /v1/sends` (idempotence comprise) extrait en une fonction que la route et l'outil
-`send_template_to_contact` (`mcp:write`, un destinataire) appellent ; les mêmes refus (STOP, modèles du mois, numéro
-délié ou suspendu). Tests : ceux de `/v1/sends` restent verts, l'outil refuse et envoie comme la route.
+Le cœur de `POST /v1/sends` (idempotence comprise) extrait en une fonction (`lancerEnvoi`) que la route et l'outil
+`send_template_to_contact` (`mcp:write`, réservé à une personne comme `create_template`, un destinataire) appellent ;
+les mêmes refus (STOP, modèles du mois, numéro délié ou suspendu). Tests : ceux de `/v1/sends` restent verts sans être
+touchés, le corps construit par l'outil passe les règles de la route, l'outil rend ses refus avec leur code.
 
 ## Livraison C : l'événement
 

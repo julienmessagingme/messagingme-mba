@@ -129,6 +129,9 @@ export interface V1SendsRouteDeps {
   sleep?(ms: number): Promise<void>;
 }
 
+/** Ce que le cœur de l'envoi (`lancerEnvoi`) lit : tout, sauf le garde d'usage, qui est celui de la route. */
+export type DepsEnvoi = Omit<V1SendsRouteDeps, 'usage'>;
+
 export const MAX_RECIPIENTS = 50;
 export const MAX_SKIPPED_REPORT = 200;
 /** Retry borné de l'enqueue : 3 tentatives, backoff court entre chacune. Cf. la note au call site sur ce qui
@@ -251,7 +254,7 @@ export function lireCible(corps: Corps, params: TemplateParam[]): CibleDemandee 
  * jamais ramené à « utility ».
  */
 async function modeleEnvoyable(
-  deps: V1SendsRouteDeps, tenantId: string, name: string, language: string, params: TemplateParam[] | null, quoi: string,
+  deps: DepsEnvoi, tenantId: string, name: string, language: string, params: TemplateParam[] | null, quoi: string,
 ): Promise<{ categorie: CampaignCategory } | Refus> {
   const lu = await deps.lireModele(tenantId, name, language);
   if (lu.statut === 'absent') {
@@ -282,7 +285,7 @@ function categoriePlusStricte(lue: CampaignCategory, declaree: CampaignCategory)
   return lue === 'marketing' || declaree === 'marketing' ? 'marketing' : 'utility';
 }
 
-async function numeroDEnvoi(deps: V1SendsRouteDeps, tenantId: string, demande: string | undefined): Promise<{ phoneNumberId: string } | Refus> {
+async function numeroDEnvoi(deps: DepsEnvoi, tenantId: string, demande: string | undefined): Promise<{ phoneNumberId: string } | Refus> {
   if (demande !== undefined) {
     return await deps.repo.phoneNumberBelongsToTenant(demande, tenantId)
       ? { phoneNumberId: demande }
@@ -299,7 +302,7 @@ async function numeroDEnvoi(deps: V1SendsRouteDeps, tenantId: string, demande: s
  * refusé à la création de campagne, template inconnu ou non approuvé) ; une cible `node` est jugée sur ce qui
  * part en premier depuis elle, et le template qu'elle fait partir est lu chez Meta.
  */
-async function resoudreCible(deps: V1SendsRouteDeps, tenantId: string, c: CibleDemandee, params: TemplateParam[]): Promise<CibleResolue | Refus> {
+async function resoudreCible(deps: DepsEnvoi, tenantId: string, c: CibleDemandee, params: TemplateParam[]): Promise<CibleResolue | Refus> {
   if (c.kind === 'template') {
     const m = await modeleEnvoyable(deps, tenantId, c.name, c.language, params, 'template');
     if ('refus' in m) return m;
@@ -366,7 +369,7 @@ async function resoudreCible(deps: V1SendsRouteDeps, tenantId: string, c: CibleD
  * fenêtre chez un inconnu, donc `jamais`. Un inconnu qui ne porte qu'un `bsuid` n'est jamais créé ici.
  */
 async function resoudreDestinataires(
-  deps: V1SendsRouteDeps, tenantId: string, bruts: unknown[], creer: ModeCreation,
+  deps: DepsEnvoi, tenantId: string, bruts: unknown[], creer: ModeCreation,
 ): Promise<{ resolus: DestinataireResolu[]; created: number; matched: number }> {
   const resolus: DestinataireResolu[] = [];
   let created = 0;
@@ -389,7 +392,7 @@ async function resoudreDestinataires(
 }
 
 /** La fenêtre de 24 h par contact, en une requête pour tout le lot, interrogée avec le wa_id (chiffres nus). */
-async function fenetresParContact(deps: V1SendsRouteDeps, tenantId: string, contacts: ContactEnvoi[]): Promise<Map<string, boolean>> {
+async function fenetresParContact(deps: DepsEnvoi, tenantId: string, contacts: ContactEnvoi[]): Promise<Map<string, boolean>> {
   const waIdParContact = new Map<string, string>();
   for (const c of contacts) {
     const w = waIdOf(c.phone_e164, c.bsuid);
@@ -413,207 +416,234 @@ const MESSAGE_CLE_REPRISE = 'un autre appel a repris cette clé d’idempotence 
  * lectures : un rejeu rend le rapport scellé même si le template a changé depuis. Un refus ou une erreur après
  * le claim libère la clé.
  */
+/** Une réponse de l'envoi : son statut et son corps, que la route envoie et que l'outil de Claude traduit. */
+export interface ReponseEnvoi { statut: number; corps: unknown }
+
+/** La même enveloppe que `refuser` (`{ error, code }`), rendue au lieu d'être envoyée. */
+const repondre = (statut: number, code: CodeApi, message: string): ReponseEnvoi => ({ statut, corps: { error: message, code } });
+
+/**
+ * 🔴 LE cœur de `POST /v1/sends`, partagé par la route et l'outil `send_template_to_contact` (lot 13, domaine 3,
+ * livraison B) : validation, compteur, idempotence, cible, gardes du numéro, modèles du mois, destinataires,
+ * consentement, campagne scellée avec sa clé, enfilement. Une garde ajoutée ici vaut pour les deux.
+ * `compter` est le compteur de l'appelant (le garde d'usage pour la route, le plafond coûteux pour Claude), appelé au
+ * même endroit qu'avant : `false` = il a déjà répondu, rien n'est fait et la fonction rend `null`.
+ */
+export async function lancerEnvoi(
+  deps: DepsEnvoi,
+  tenantId: string,
+  brut: unknown,
+  cleEnTete: string | string[] | undefined,
+  compter: (unites: number) => Promise<boolean>,
+): Promise<ReponseEnvoi | null> {
+
+  const lu = schemaCorps.safeParse(brut);
+  if (!lu.success) return repondre(400, 'invalid_body', messageDeForme(lu.error, PRECISIONS));
+  const corps = lu.data;
+  // La clé se donne en en-tête ou dans le corps (`idempotencyKey`) : un outil qui appelle une adresse par
+  // contact remplit son corps avec les données du contact, pas toujours ses en-têtes.
+  const idem = cleIdempotence(cleEnTete, corps);
+  if (!idem.ok) return repondre(400, idem.code, idem.message);
+  // Même validation que la route console : une source malformée casserait sinon en 500 au lieu d'un 400.
+  // La source « variable » est admise ici, et nulle part dans la console.
+  const params = validateParamMapping(corps.params ?? [], { accepterVariables: true });
+  if (params === null) return repondre(400, 'invalid_body', 'params : positions 1..N contiguës et sources valides attendues');
+  const demandee = lireCible(corps, params);
+  if ('message' in demandee) return repondre(400, 'invalid_body', demandee.message);
+  // Un scénario ou un bloc n'a aucun endroit où ranger des variables par destinataire : refusé avant le
+  // compteur d'usage et le claim d'idempotence, sur les destinataires tels que reçus.
+  const fautif = destinataireAvecVariablesInterdites(demandee.kind, corps.recipients);
+  if (fautif !== null) {
+    return repondre(400, 'invalid_body', `recipients.${fautif}.variables : un scénario ou un bloc n’a aucun endroit où ranger des variables par destinataire`);
+  }
+  // Hors offre (lot 6, B2a) : un scénario ou un bloc ne démarre plus de parcours. Refusé avant le compteur et la clé,
+  // comme les variables : sinon l'envoi serait accepté (202), puis chaque destinataire finirait « non démarré ».
+  if ((demandee.kind === 'scenario' || demandee.kind === 'node') && !(await deps.offres.offreDe(tenantId)).droits.fonctions.has('scenarios')) {
+    return { statut: STATUT_REFUS_OFFRE, corps: corpsRefusFonction('scenarios') };
+  }
+
+  /**
+   * Compté avant la résolution de la cible, qui fait déjà des lectures (scénario, bloc, template chez Meta,
+   * numéro) : compter après laisserait ce travail hors des compteurs.
+   */
+  if (!await compter(corps.recipients.length)) return null;
+
+  // Idempotence : claim atomique avec l'empreinte du corps, avant toute lecture qui peut changer d'un appel à
+  // l'autre (numéro, cible, template chez Meta). Autre corps -> 422 ; concurrent -> 409 ; déjà scellé ->
+  // rejeu du rapport, tel quel.
+  const claim = await deps.idempotence.claim(tenantId, idem.cle, empreinteCorps(brut));
+  if (!claim.claimed && 'reused' in claim) {
+    return repondre(422, 'idempotency_key_reused', `cette clé d’idempotence a déjà servi pour un autre corps : une clé désigne un seul envoi, et elle vit ${DUREE_CLE_IDEMPOTENCE_MS / 3_600_000} h`);
+  }
+  if (!claim.claimed && 'pending' in claim) {
+    return repondre(409, 'idempotency_in_progress', 'un envoi avec cette clé d’idempotence est en cours : réessayez dans un instant');
+  }
+  if (!claim.claimed) return { statut: 201, corps: claim.response };
+  const { jeton } = claim;
+  const poseeLe = Date.now();
+  /**
+   * Une clé reprise par un autre appel est une ANOMALIE à surveiller : un envoi légitime prend quelques secondes,
+   * et il a fallu dépasser le bail pour la perdre. On trace l'espace et le délai, jamais la clé, qu'un outil
+   * compose parfois avec les données d'un contact.
+   */
+  const cleReprise = () => {
+    // eslint-disable-next-line no-console
+    console.warn(`v1/sends: clé d'idempotence reprise par un autre appel, espace ${tenantId}, ${Math.round((Date.now() - poseeLe) / 1000)} s après sa pose : rien n'est créé`);
+    return repondre(409, 'idempotency_in_progress', MESSAGE_CLE_REPRISE);
+  };
+
+  /** Un refus après le claim n'a rien créé : la clé est libérée, le même appel repartira une fois corrigé. */
+  const libererEtRefuser = async (r: Refus['refus']) => {
+    await deps.idempotence.release(tenantId, idem.cle, jeton);
+    return repondre(r.statut, r.code, r.message);
+  };
+
+  // Rempli + scellé dans le try ; l'enqueue (hors try) le lit après scellement (definite assignment).
+  let report!: RapportEnvoi;
+  try {
+    // Un message RCS part de l'agent RCS de l'espace : aucun numéro WhatsApp n'est exigé, et un `phoneNumberId`
+    // fourni est ignoré (`numeroDEnvoi` rendrait sinon 409 `no_whatsapp_number` à un espace qui n'a que le RCS).
+    const numero = demandee.kind === 'rcsMessage' ? { phoneNumberId: '' } : await numeroDEnvoi(deps, tenantId, corps.phoneNumberId);
+    if ('refus' in numero) return await libererEtRefuser(numero.refus);
+    const cible = await resoudreCible(deps, tenantId, demandee, params);
+    if ('refus' in cible) return await libererEtRefuser(cible.refus);
+    /**
+     * Numéro délié : refusé ici en 409 `number_unlinked`, comme `POST /v1/messages/whatsapp` ; sinon l'envoi serait
+     * accepté en 201 et ses messages partiraient au premier « Relier ». Seulement quand ce qui part en premier est
+     * WhatsApp : une cible qui ouvre en RCS ne demande rien au numéro, et son repli WhatsApp bute plus tard sur la
+     * garde.
+     */
+    if (cible.ouverture !== 'rcs' && await deps.numerosDelies.estDelie(numero.phoneNumberId)) {
+      return await libererEtRefuser({ statut: 409, code: 'number_unlinked', message: MESSAGE_NUMERO_DELIE });
+    }
+    if (cible.ouverture !== 'rcs' && await deps.numerosSuspendus.estSuspendu(numero.phoneNumberId)) {
+      return await libererEtRefuser({ statut: 409, code: 'number_suspended', message: MESSAGE_NUMERO_SUSPENDU });
+    }
+    /**
+     * Les modèles du mois (lot 6), lus UNE fois, seulement quand l'envoi ouvre par un modèle WhatsApp (un template, ou un
+     * scénario qui commence par un template). 🔴 Épuisés : refusé AVANT de résoudre les destinataires, qui créerait les
+     * fiches inconnues (et entamerait la limite de contacts) pour un envoi qui ne partira pas (relecture finale du lot 6).
+     */
+    const etatDuMois = cible.ouverture === 'whatsapp_template' ? await deps.modelesDuMois.etatDuMois(tenantId) : null;
+    const refuserLeMois = async (etat: { max: number; reste: number }, demandes: number) => {
+      await deps.idempotence.release(tenantId, idem.cle, jeton);
+      const refus = corpsRefusLimite(new LimiteOffreError(tenantId, 'envoisModelesMois', etat.max));
+      return { statut: STATUT_REFUS_OFFRE, corps: { ...refus, reste: etat.reste, demandes } };
+    };
+    if (etatDuMois !== null && etatDuMois.reste === 0) return await refuserLeMois(etatDuMois, corps.recipients.length);
+    const { resolus, created, matched } = await resoudreDestinataires(
+      deps, tenantId, corps.recipients, cible.ouverture === 'whatsapp_session' ? 'jamais' : 'phone',
+    );
+    const uniques = marquerDoublons(resolus);
+    /**
+     * 🔴 Le consentement s'écrit avant la lecture des fiches, donc avant le tri marketing : un outil où vit le
+     * consentement envoie sans pousser chaque fiche au préalable ; la fiche relue dit ce qui a été enregistré. Il
+     * se lit sur toutes les occurrences, doublons compris, et s'écrit une fois par fiche : un refus l'emporte sur un
+     * accord (sinon un `opted_out` porté par un doublon serait perdu et la personne recevrait le message).
+     */
+    const consentements = new Map<string, { consent: 'opted_in' | 'opted_out'; source: string }>();
+    for (const r of resolus) {
+      if (!('contactId' in r) || !r.consent) continue;
+      const deja = consentements.get(r.contactId);
+      if (!deja || (deja.consent === 'opted_in' && r.consent === 'opted_out')) {
+        consentements.set(r.contactId, { consent: r.consent, source: r.consentSource ?? 'api' });
+      }
+    }
+    for (const [contactId, c] of consentements) await deps.appliquerConsentement(tenantId, contactId, c.consent, c.source);
+    const contacts = await deps.repo.listContactsPourEnvoiApi(tenantId, uniques.flatMap((r) => ('contactId' in r ? [r.contactId] : [])));
+    const fenetre = cible.ouverture === 'whatsapp_session' ? await fenetresParContact(deps, tenantId, contacts) : undefined;
+    const tri = trierDestinataires({
+      category: cible.category, ouverture: cible.ouverture, resolus: uniques, contacts,
+      ...(fenetre ? { fenetreOuverteParContact: fenetre } : {}),
+    });
+    const { recipients, ecarts } = construireDestinataires(cible.category, params, tri, new Date(), cible.rcs ? 'rcs' : 'whatsapp');
+    // Le refus exact, sur les destinataires réels (doublons et écarts retirés) : refusé en entier, avant toute campagne,
+    // et la clé rendue : le même appel repartira le mois prochain ou après le passage en Pro.
+    if (etatDuMois !== null && recipients.length > etatDuMois.reste) return await refuserLeMois(etatDuMois, recipients.length);
+    report = {
+      sendId: '',
+      opening: cible.ouverture,
+      recipientCount: recipients.length,
+      created,
+      matched,
+      skipped: ecarts.slice(0, MAX_SKIPPED_REPORT),
+      skippedTotal: ecarts.length,
+    };
+    /**
+     * 🔴 Juste avant le geste irréversible : la clé est-elle encore à nous ? Un traitement qui a dépassé
+     * `DUREE_CLE_EN_COURS_MAX_MS` a pu la voir abandonnée et reprise par un autre appel, qui enverra : on
+     * s'arrête sans créer de campagne, et sans libérer la clé, qui n'est plus la nôtre.
+     */
+    if (!await deps.idempotence.possede(tenantId, idem.cle, jeton)) return cleReprise();
+    /**
+     * 🔴 Créée ET scellée dans la MÊME transaction. Scellée avant l'enqueue : sinon un échec de `complete` après
+     * un enqueue réussi libérerait la clé, et un retry recréerait une campagne, donc renverrait les messages en
+     * double. Et scellée DANS la création : en deux temps, une copie tuée entre les deux laissait une campagne
+     * sans clé qui la désigne, un brouillon lançable depuis la console. Clé reprise entre la garde et ici
+     * (`complete` rend faux) -> la création est annulée, rien n'existe, l'appel qui a repris la clé enverra.
+     * Échec en cours de route -> rollback, release + throw (retry propre).
+     */
+    const send = await deps.repo.createWithRecipientsSiConfirme(
+      {
+        // Le préfixe est `PREFIXE_ENVOI_API`, que le suivi relit (`nomDuMessageRcs`). Le nom d'un envoi RCS n'est pas
+        // coupé : le suivi y relit le nom du message (jusqu'à 120 caractères). Les autres cibles gardent leur coupe.
+        tenantId, phoneNumberId: numero.phoneNumberId, category: cible.category,
+        name: cible.rcs ? `${PREFIXE_ENVOI_API}${cible.label}` : `${PREFIXE_ENVOI_API}${cible.label}`.slice(0, 120),
+        templateName: cible.templateName, templateLanguage: cible.templateLanguage, paramMapping: params,
+        ...(cible.workflowId ? { workflowId: cible.workflowId } : {}),
+        ...(cible.startNodeId ? { startNodeId: cible.startNodeId } : {}),
+        ...(cible.rcs ? { channel: 'rcs' as const, rcsAgentId: cible.rcs.agentId, rcsMessage: cible.rcs.contenu } : {}),
+      },
+      recipients,
+      (tx, campaignId) => {
+        report.sendId = campaignId;
+        return deps.idempotence.complete(tenantId, idem.cle, jeton, campaignId, report, tx);
+      },
+    );
+    // La clé a été reprise : rien n'a été créé, et elle n'est plus la nôtre, donc rien à libérer.
+    if (send === null) return cleReprise();
+  } catch (err) {
+    await deps.idempotence.release(tenantId, idem.cle, jeton);
+    throw err;
+  }
+
+  // Idempotence scellée, définitivement : plus aucun release ci-dessous. On retente l'enfilement (hoquet
+  // transitoire de la file) ; échec persistant -> 201 et log fort : sous-envoi assumé, jamais de sur-envoi. Le
+  // retry est sûr grâce au claim atomique par destinataire, pas à la file (qui ne déduplique rien) : un second
+  // run n'enverrait rien deux fois, mais additionnerait son débit. Borné à 3 tentatives.
+  const sleep = deps.sleep ?? ((ms: number) => dormir(ms));
+  for (let attempt = 0; attempt < ENQUEUE_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      await deps.enqueue(report.sendId, tenantId, report.recipientCount, corps.ratePerMinute ?? null);
+      break;
+    } catch (err) {
+      const last = attempt === ENQUEUE_MAX_ATTEMPTS - 1;
+      // eslint-disable-next-line no-console
+      console.error(
+        last
+          ? `v1/sends: enqueue échoué ${ENQUEUE_MAX_ATTEMPTS} fois après scellement idempotence (campagne NON lancée, à ré-enfiler à la main):`
+          : `v1/sends: enqueue échoué (tentative ${attempt + 1}/${ENQUEUE_MAX_ATTEMPTS}), nouvelle tentative:`,
+        report.sendId,
+        messageDe(err),
+      );
+      if (last) break;
+      await sleep(ENQUEUE_RETRY_DELAYS_MS[attempt] ?? 300);
+    }
+  }
+  return { statut: 201, corps: report };
+}
+
 export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
 
   app.post('/v1/sends', opts, async (req, reply) => {
     if (!req.auth) return refuser(reply, 401, 'unauthorized', 'clé d’API requise');
-    const tenantId = req.auth.tenantId;
-
-    const lu = schemaCorps.safeParse(req.body);
-    if (!lu.success) return refuser(reply, 400, 'invalid_body', messageDeForme(lu.error, PRECISIONS));
-    const corps = lu.data;
-    // La clé se donne en en-tête ou dans le corps (`idempotencyKey`) : un outil qui appelle une adresse par
-    // contact remplit son corps avec les données du contact, pas toujours ses en-têtes.
-    const idem = cleIdempotence(req.headers['idempotency-key'], corps);
-    if (!idem.ok) return refuser(reply, 400, idem.code, idem.message);
-    // Même validation que la route console : une source malformée casserait sinon en 500 au lieu d'un 400.
-    // La source « variable » est admise ici, et nulle part dans la console.
-    const params = validateParamMapping(corps.params ?? [], { accepterVariables: true });
-    if (params === null) return refuser(reply, 400, 'invalid_body', 'params : positions 1..N contiguës et sources valides attendues');
-    const demandee = lireCible(corps, params);
-    if ('message' in demandee) return refuser(reply, 400, 'invalid_body', demandee.message);
-    // Un scénario ou un bloc n'a aucun endroit où ranger des variables par destinataire : refusé avant le
-    // compteur d'usage et le claim d'idempotence, sur les destinataires tels que reçus.
-    const fautif = destinataireAvecVariablesInterdites(demandee.kind, corps.recipients);
-    if (fautif !== null) {
-      return refuser(reply, 400, 'invalid_body', `recipients.${fautif}.variables : un scénario ou un bloc n’a aucun endroit où ranger des variables par destinataire`);
-    }
-    // Hors offre (lot 6, B2a) : un scénario ou un bloc ne démarre plus de parcours. Refusé avant le compteur et la clé,
-    // comme les variables : sinon l'envoi serait accepté (202), puis chaque destinataire finirait « non démarré ».
-    if ((demandee.kind === 'scenario' || demandee.kind === 'node') && !(await deps.offres.offreDe(tenantId)).droits.fonctions.has('scenarios')) {
-      return reply.code(STATUT_REFUS_OFFRE).send(corpsRefusFonction('scenarios'));
-    }
-
-    /**
-     * Compté avant la résolution de la cible, qui fait déjà des lectures (scénario, bloc, template chez Meta,
-     * numéro) : compter après laisserait ce travail hors des compteurs.
-     */
-    if (!await compterOuRefuser(deps.usage, req, reply, 'sends.create', corps.recipients.length)) return reply;
-
-    // Idempotence : claim atomique avec l'empreinte du corps, avant toute lecture qui peut changer d'un appel à
-    // l'autre (numéro, cible, template chez Meta). Autre corps -> 422 ; concurrent -> 409 ; déjà scellé ->
-    // rejeu du rapport, tel quel.
-    const claim = await deps.idempotence.claim(tenantId, idem.cle, empreinteCorps(req.body));
-    if (!claim.claimed && 'reused' in claim) {
-      return refuser(reply, 422, 'idempotency_key_reused', `cette clé d’idempotence a déjà servi pour un autre corps : une clé désigne un seul envoi, et elle vit ${DUREE_CLE_IDEMPOTENCE_MS / 3_600_000} h`);
-    }
-    if (!claim.claimed && 'pending' in claim) {
-      return refuser(reply, 409, 'idempotency_in_progress', 'un envoi avec cette clé d’idempotence est en cours : réessayez dans un instant');
-    }
-    if (!claim.claimed) return reply.code(201).send(claim.response);
-    const { jeton } = claim;
-    const poseeLe = Date.now();
-    /**
-     * Une clé reprise par un autre appel est une ANOMALIE à surveiller : un envoi légitime prend quelques secondes,
-     * et il a fallu dépasser le bail pour la perdre. On trace l'espace et le délai, jamais la clé, qu'un outil
-     * compose parfois avec les données d'un contact.
-     */
-    const cleReprise = () => {
-      // eslint-disable-next-line no-console
-      console.warn(`v1/sends: clé d'idempotence reprise par un autre appel, espace ${tenantId}, ${Math.round((Date.now() - poseeLe) / 1000)} s après sa pose : rien n'est créé`);
-      return refuser(reply, 409, 'idempotency_in_progress', MESSAGE_CLE_REPRISE);
-    };
-
-    /** Un refus après le claim n'a rien créé : la clé est libérée, le même appel repartira une fois corrigé. */
-    const libererEtRefuser = async (r: Refus['refus']) => {
-      await deps.idempotence.release(tenantId, idem.cle, jeton);
-      return refuser(reply, r.statut, r.code, r.message);
-    };
-
-    // Rempli + scellé dans le try ; l'enqueue (hors try) le lit après scellement (definite assignment).
-    let report!: RapportEnvoi;
-    try {
-      // Un message RCS part de l'agent RCS de l'espace : aucun numéro WhatsApp n'est exigé, et un `phoneNumberId`
-      // fourni est ignoré (`numeroDEnvoi` rendrait sinon 409 `no_whatsapp_number` à un espace qui n'a que le RCS).
-      const numero = demandee.kind === 'rcsMessage' ? { phoneNumberId: '' } : await numeroDEnvoi(deps, tenantId, corps.phoneNumberId);
-      if ('refus' in numero) return await libererEtRefuser(numero.refus);
-      const cible = await resoudreCible(deps, tenantId, demandee, params);
-      if ('refus' in cible) return await libererEtRefuser(cible.refus);
-      /**
-       * Numéro délié : refusé ici en 409 `number_unlinked`, comme `POST /v1/messages/whatsapp` ; sinon l'envoi serait
-       * accepté en 201 et ses messages partiraient au premier « Relier ». Seulement quand ce qui part en premier est
-       * WhatsApp : une cible qui ouvre en RCS ne demande rien au numéro, et son repli WhatsApp bute plus tard sur la
-       * garde.
-       */
-      if (cible.ouverture !== 'rcs' && await deps.numerosDelies.estDelie(numero.phoneNumberId)) {
-        return await libererEtRefuser({ statut: 409, code: 'number_unlinked', message: MESSAGE_NUMERO_DELIE });
-      }
-      if (cible.ouverture !== 'rcs' && await deps.numerosSuspendus.estSuspendu(numero.phoneNumberId)) {
-        return await libererEtRefuser({ statut: 409, code: 'number_suspended', message: MESSAGE_NUMERO_SUSPENDU });
-      }
-      /**
-       * Les modèles du mois (lot 6), lus UNE fois, seulement quand l'envoi ouvre par un modèle WhatsApp (un template, ou un
-       * scénario qui commence par un template). 🔴 Épuisés : refusé AVANT de résoudre les destinataires, qui créerait les
-       * fiches inconnues (et entamerait la limite de contacts) pour un envoi qui ne partira pas (relecture finale du lot 6).
-       */
-      const etatDuMois = cible.ouverture === 'whatsapp_template' ? await deps.modelesDuMois.etatDuMois(tenantId) : null;
-      const refuserLeMois = async (etat: { max: number; reste: number }, demandes: number) => {
-        await deps.idempotence.release(tenantId, idem.cle, jeton);
-        const refus = corpsRefusLimite(new LimiteOffreError(tenantId, 'envoisModelesMois', etat.max));
-        return reply.code(STATUT_REFUS_OFFRE).send({ ...refus, reste: etat.reste, demandes });
-      };
-      if (etatDuMois !== null && etatDuMois.reste === 0) return await refuserLeMois(etatDuMois, corps.recipients.length);
-      const { resolus, created, matched } = await resoudreDestinataires(
-        deps, tenantId, corps.recipients, cible.ouverture === 'whatsapp_session' ? 'jamais' : 'phone',
-      );
-      const uniques = marquerDoublons(resolus);
-      /**
-       * 🔴 Le consentement s'écrit avant la lecture des fiches, donc avant le tri marketing : un outil où vit le
-       * consentement envoie sans pousser chaque fiche au préalable ; la fiche relue dit ce qui a été enregistré. Il
-       * se lit sur toutes les occurrences, doublons compris, et s'écrit une fois par fiche : un refus l'emporte sur un
-       * accord (sinon un `opted_out` porté par un doublon serait perdu et la personne recevrait le message).
-       */
-      const consentements = new Map<string, { consent: 'opted_in' | 'opted_out'; source: string }>();
-      for (const r of resolus) {
-        if (!('contactId' in r) || !r.consent) continue;
-        const deja = consentements.get(r.contactId);
-        if (!deja || (deja.consent === 'opted_in' && r.consent === 'opted_out')) {
-          consentements.set(r.contactId, { consent: r.consent, source: r.consentSource ?? 'api' });
-        }
-      }
-      for (const [contactId, c] of consentements) await deps.appliquerConsentement(tenantId, contactId, c.consent, c.source);
-      const contacts = await deps.repo.listContactsPourEnvoiApi(tenantId, uniques.flatMap((r) => ('contactId' in r ? [r.contactId] : [])));
-      const fenetre = cible.ouverture === 'whatsapp_session' ? await fenetresParContact(deps, tenantId, contacts) : undefined;
-      const tri = trierDestinataires({
-        category: cible.category, ouverture: cible.ouverture, resolus: uniques, contacts,
-        ...(fenetre ? { fenetreOuverteParContact: fenetre } : {}),
-      });
-      const { recipients, ecarts } = construireDestinataires(cible.category, params, tri, new Date(), cible.rcs ? 'rcs' : 'whatsapp');
-      // Le refus exact, sur les destinataires réels (doublons et écarts retirés) : refusé en entier, avant toute campagne,
-      // et la clé rendue : le même appel repartira le mois prochain ou après le passage en Pro.
-      if (etatDuMois !== null && recipients.length > etatDuMois.reste) return await refuserLeMois(etatDuMois, recipients.length);
-      report = {
-        sendId: '',
-        opening: cible.ouverture,
-        recipientCount: recipients.length,
-        created,
-        matched,
-        skipped: ecarts.slice(0, MAX_SKIPPED_REPORT),
-        skippedTotal: ecarts.length,
-      };
-      /**
-       * 🔴 Juste avant le geste irréversible : la clé est-elle encore à nous ? Un traitement qui a dépassé
-       * `DUREE_CLE_EN_COURS_MAX_MS` a pu la voir abandonnée et reprise par un autre appel, qui enverra : on
-       * s'arrête sans créer de campagne, et sans libérer la clé, qui n'est plus la nôtre.
-       */
-      if (!await deps.idempotence.possede(tenantId, idem.cle, jeton)) return cleReprise();
-      /**
-       * 🔴 Créée ET scellée dans la MÊME transaction. Scellée avant l'enqueue : sinon un échec de `complete` après
-       * un enqueue réussi libérerait la clé, et un retry recréerait une campagne, donc renverrait les messages en
-       * double. Et scellée DANS la création : en deux temps, une copie tuée entre les deux laissait une campagne
-       * sans clé qui la désigne, un brouillon lançable depuis la console. Clé reprise entre la garde et ici
-       * (`complete` rend faux) -> la création est annulée, rien n'existe, l'appel qui a repris la clé enverra.
-       * Échec en cours de route -> rollback, release + throw (retry propre).
-       */
-      const send = await deps.repo.createWithRecipientsSiConfirme(
-        {
-          // Le préfixe est `PREFIXE_ENVOI_API`, que le suivi relit (`nomDuMessageRcs`). Le nom d'un envoi RCS n'est pas
-          // coupé : le suivi y relit le nom du message (jusqu'à 120 caractères). Les autres cibles gardent leur coupe.
-          tenantId, phoneNumberId: numero.phoneNumberId, category: cible.category,
-          name: cible.rcs ? `${PREFIXE_ENVOI_API}${cible.label}` : `${PREFIXE_ENVOI_API}${cible.label}`.slice(0, 120),
-          templateName: cible.templateName, templateLanguage: cible.templateLanguage, paramMapping: params,
-          ...(cible.workflowId ? { workflowId: cible.workflowId } : {}),
-          ...(cible.startNodeId ? { startNodeId: cible.startNodeId } : {}),
-          ...(cible.rcs ? { channel: 'rcs' as const, rcsAgentId: cible.rcs.agentId, rcsMessage: cible.rcs.contenu } : {}),
-        },
-        recipients,
-        (tx, campaignId) => {
-          report.sendId = campaignId;
-          return deps.idempotence.complete(tenantId, idem.cle, jeton, campaignId, report, tx);
-        },
-      );
-      // La clé a été reprise : rien n'a été créé, et elle n'est plus la nôtre, donc rien à libérer.
-      if (send === null) return cleReprise();
-    } catch (err) {
-      await deps.idempotence.release(tenantId, idem.cle, jeton);
-      throw err;
-    }
-
-    // Idempotence scellée, définitivement : plus aucun release ci-dessous. On retente l'enfilement (hoquet
-    // transitoire de la file) ; échec persistant -> 201 et log fort : sous-envoi assumé, jamais de sur-envoi. Le
-    // retry est sûr grâce au claim atomique par destinataire, pas à la file (qui ne déduplique rien) : un second
-    // run n'enverrait rien deux fois, mais additionnerait son débit. Borné à 3 tentatives.
-    const sleep = deps.sleep ?? ((ms: number) => dormir(ms));
-    for (let attempt = 0; attempt < ENQUEUE_MAX_ATTEMPTS; attempt += 1) {
-      try {
-        await deps.enqueue(report.sendId, tenantId, report.recipientCount, corps.ratePerMinute ?? null);
-        break;
-      } catch (err) {
-        const last = attempt === ENQUEUE_MAX_ATTEMPTS - 1;
-        // eslint-disable-next-line no-console
-        console.error(
-          last
-            ? `v1/sends: enqueue échoué ${ENQUEUE_MAX_ATTEMPTS} fois après scellement idempotence (campagne NON lancée, à ré-enfiler à la main):`
-            : `v1/sends: enqueue échoué (tentative ${attempt + 1}/${ENQUEUE_MAX_ATTEMPTS}), nouvelle tentative:`,
-          report.sendId,
-          messageDe(err),
-        );
-        if (last) break;
-        await sleep(ENQUEUE_RETRY_DELAYS_MS[attempt] ?? 300);
-      }
-    }
-    return reply.code(201).send(report);
+    const r = await lancerEnvoi(
+      deps, req.auth.tenantId, req.body, req.headers['idempotency-key'],
+      (unites) => compterOuRefuser(deps.usage, req, reply, 'sends.create', unites),
+    );
+    if (r === null) return reply;
+    return reply.code(r.statut).send(r.corps);
   });
 
   app.get('/v1/sends/:sendId', opts, async (req, reply) => {

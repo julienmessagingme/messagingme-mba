@@ -2164,8 +2164,12 @@ scénario, comment importer des contacts.
   rend le statut de chaque langue (pending, approved, rejected…) avec le motif d'un refus. Claude fait de même avec
   `create_template` (réservé à une personne connectée, jamais à une clé d'API), `get_template_status` et
   `list_templates`, dans toutes les offres. Hors de cette route :
-  carrousel, authentification, Flow, variables nommées. L'envoi d'un modèle par Claude et l'événement de validation
-  viennent avec les livraisons B et C.
+  carrousel, authentification, Flow, variables nommées. L'événement de validation vient avec la livraison C.
+- ✅ **Claude envoie un modèle à une personne** (lot 13, domaine 3, livraison B, 2026-10-09) : `send_template_to_contact`,
+  réservé à une personne connectée, envoie un modèle approuvé à UN contact (par son numéro ou sa fiche), même hors de
+  la fenêtre de 24 h, avec une valeur par variable et une clé d'idempotence. Il passe par le même chemin que
+  `POST /v1/sends` : consentement, STOP, numéro délié ou suspendu, modèles du mois de l'offre ; un refus revient avec
+  sa raison. Pas de campagne depuis Claude.
 - ✅ **Envoyer un message simple** : un texte, à une personne, tout de suite, visible dans l'Inbox. Deux routes,
   parce que leurs règles n'ont presque rien en commun : `POST /v1/messages/whatsapp` (dans la fenêtre de 24 h)
   et `POST /v1/messages/rcs` (sans fenêtre, mais seulement vers quelqu'un qui a consenti ou qui vous a déjà

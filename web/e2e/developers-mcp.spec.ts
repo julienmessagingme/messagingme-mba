@@ -89,7 +89,7 @@ test.describe('Developers : le serveur MCP', () => {
     // tard qu'il n'existe pas. Les taire coûterait plus cher que de les écrire.
     await mock(page);
     await page.goto('/developers/mcp');
-    await expect(page.getByText(/Pas d’envoi de template, pas de campagne/)).toBeVisible();
+    await expect(page.getByText(/Pas de campagne\./)).toBeVisible();
     await expect(page.getByText(/Hors de la fenêtre de 24 h, rien ne part/)).toBeVisible();
     await expect(page.getByText(/Les automations ne se déclenchent pas/)).toBeVisible();
   });
