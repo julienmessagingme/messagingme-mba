@@ -4102,10 +4102,11 @@ mais elle donne ce pouvoir à QUICONQUE la détient : elle peut changer ce que l
 depuis un assistant : elle reste un geste de la console.
 
 **Ce qu'il ne fait PAS, et c'est délibéré.**
-- **Aucun envoi de template, aucune campagne.** Ouvrir l'envoi de template à un modèle, c'est lui donner un
-  mégaphone facturé sur un numéro dont Meta note la qualité. Un assistant répond dans une conversation
-  ouverte ; il ne lance pas d'envoi de masse.
-- **Hors de la fenêtre de 24 h, rien ne part.** L'outil refuse et dit pourquoi.
+- **Aucune campagne.** Ouvrir l'envoi de masse à un modèle, c'est lui donner un mégaphone facturé sur un numéro
+  dont Meta note la qualité. Un assistant répond dans une conversation ouverte, et envoie un modèle approuvé à
+  UNE personne à la fois (`send_template_to_contact`, réservé à une personne connectée, compté dans les envois du
+  jour) ; il ne lance pas d'envoi de masse.
+- **Hors de la fenêtre de 24 h, seul un modèle approuvé part.** Un message libre est refusé, avec la raison.
 - **Les automations ne se déclenchent pas.** Un tag posé par un assistant classe le contact, il ne réveille
   pas les automations qui écoutent ce tag : un agent qui boucle sur 500 fils déclencherait 500 envois. Comme
   ailleurs dans la console, le tag est coupé à 64 caractères et déclaré dans Contenu > Bibliothèque >

@@ -7,7 +7,7 @@ import { OUTILS_MCP } from '../lib/mcp-outils';
  * C'est la page d'où part un intégrateur : s'il n'y trouve pas l'adresse et la commande, il n'y a pas
  * d'intégration. Le test vérifie donc le chemin de nav (la page n'est atteignable que par là) et la
  * présence de ce qu'on lui promet, y compris la ligne qui dit ce que le serveur ne fait PAS : c'est celle
- * qui évite qu'il conçoive son agent autour d'un envoi de template qui n'existe pas.
+ * qui évite qu'il conçoive son agent autour d'un envoi de masse qui n'existe pas.
  */
 const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
 
@@ -90,7 +90,7 @@ test.describe('Developers : le serveur MCP', () => {
     await mock(page);
     await page.goto('/developers/mcp');
     await expect(page.getByText(/Pas de campagne\./)).toBeVisible();
-    await expect(page.getByText(/Hors de la fenêtre de 24 h, rien ne part/)).toBeVisible();
+    await expect(page.getByText(/Hors de la fenêtre de 24 h, seul un modèle approuvé part/)).toBeVisible();
     await expect(page.getByText(/Les automations ne se déclenchent pas/)).toBeVisible();
   });
 });

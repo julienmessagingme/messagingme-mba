@@ -7,7 +7,8 @@ import { signSession } from '../src/auth/token';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { AccesOauthResolu, AccesOauthLookup } from '../src/oauth/store.pg';
 import type { EmailIdentity, UserAuthStore } from '../src/auth/store';
-import { OUTILS, type CablageMcp } from '../src/mcp/outils';
+import { OUTILS, type CablageMcp, type DepsMcp } from '../src/mcp/outils';
+import { GardeUsageMemoire } from './aide/usage';
 import { OUTILS_NUMERO } from '../src/mcp/outils-numero';
 import { OUTILS_EVENEMENTS } from '../src/mcp/outils-evenements';
 import { OUTILS_MODELES } from '../src/mcp/outils-modeles';
@@ -157,7 +158,7 @@ interface Options {
   fiches?: FicheConnaissance[];
 }
 
-function monter(o: Options = {}) {
+function monter(o: Options & { envoyerModele?: DepsMcp['envoyerModele']; usage?: GardeUsageMemoire } = {}) {
   let agent: AgentComplet = {
     id: AG, label: 'Conseiller', status: o.statut ?? 'draft',
     mentionIa: 'Vous échangez avec un assistant automatique.', modele: 'modele-config',
@@ -355,6 +356,7 @@ function monter(o: Options = {}) {
     ...mcpNumeroInerte,
     ...mcpEvenementsInertes,
     ...mcpMessagesInertes,
+    ...(o.envoyerModele ? { envoyerModele: o.envoyerModele } : {}),
     ...mcpOffreInerte,
     estDesabonne: jamaisDesabonne,
     inbox: {
@@ -383,6 +385,7 @@ function monter(o: Options = {}) {
     queue: new FakeQueue(),
     auth: { users: aucunCompte, secret: SECRET },
     plafonds: { couteuxParMinute: o.couteux ?? 0, apiParMinute: 100_000, apiParHeure: 100_000 },
+    ...(o.usage ? { usage: o.usage } : {}),
     // La connaissance de la console, le MÊME objet : c'est ce qui prouve que le plafond est partagé.
     agentKnowledge: connaissance,
     v1: { apiKeys: new FaussesCles(), oauth: new FauxJetons(), contacts: contactsV1Muets(), mcp },
@@ -891,5 +894,22 @@ describe('🔴 les bornes de la console sont annoncées dans les schémas des ou
 
   it('les modes de transfert annoncés sont ceux que le réglage accepte', () => {
     expect(schema('set_transfer_mode').properties.mode!.enum).toEqual([...MODES_TRANSFERT]);
+  });
+});
+
+describe('le quota d’envois du jour, posé par la route /mcp (lot 13, domaine 3, livraison B)', () => {
+  it('🔴 un modèle envoyé par Claude compte dans les envois du jour de l’espace, sous le jeton de l’appel', async () => {
+    const usage = new GardeUsageMemoire();
+    const { server } = monter({
+      usage,
+      envoyerModele: async (_t, _c, compter) => {
+        await compter(1);
+        return { statut: 201, corps: { sendId: 'send-1', opening: 'whatsapp_template', recipientCount: 1, created: 0, matched: 1, skipped: [], skippedTotal: 0 } };
+      },
+    });
+    const r = await appeler(server, JETON.brut, 'send_template_to_contact', { name: 'commande_prete', language: 'fr', phone: '+33612345678', idempotency_key: 'k-1' });
+    expect(r.isError, r.texte).toBe(false);
+    expect((await usage.compteurs()).find((c) => c.operation === 'sends.create')).toMatchObject({ appels: 1, unites: 1 });
+    await server.close();
   });
 });

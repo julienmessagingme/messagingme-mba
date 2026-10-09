@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { PreHandler } from '../auth/middleware';
 import { traiterMessage, erreurDeParsing, lotRefuse, VERSION_PROTOCOLE, type ContexteMcp } from '../mcp/serveur';
 import type { DepsMcp } from '../mcp/outils';
-import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
+import { cleIdDe, compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
 import { enTeteWwwAuthenticate } from '../oauth/metadonnees';
 import { PREFIXE_ACCES } from '../oauth/jetons';
 
@@ -18,7 +18,7 @@ import { PREFIXE_ACCES } from '../oauth/jetons';
  * l'adresse appelée (RFC 9728, 3.3), et un client à clé révoquée partirait vers une connexion qui ne peut pas
  * aboutir. Jamais sur `/v1`, ni sur un 403 ou un 429 : seul ce 401 ouvre une connexion.
  */
-export function registerMcp(app: FastifyInstance, deps: DepsMcp, prehandlers: PreHandler[], usage: ApiUsageGuard, base: string | null): void {
+export function registerMcp(app: FastifyInstance, deps: Omit<DepsMcp, 'quotaEnvois'>, prehandlers: PreHandler[], usage: ApiUsageGuard, base: string | null): void {
   const hote = base === null ? null : new URL(base).host.toLowerCase();
   /**
    * Un crochet de route, et pas la garde : la garde sert aussi `/v1` et le relais. Il voit aussi le 401 rendu par
@@ -58,7 +58,15 @@ export function registerMcp(app: FastifyInstance, deps: DepsMcp, prehandlers: Pr
       return reply.code(200).send(lotRefuse());
     }
 
-    const reponse = await traiterMessage(deps, ctx, corps);
+    // Le quota d'envois du jour, compté sous la clé ou le jeton de CET appel, comme sur `POST /v1/sends`.
+    const depsDeLAppel: DepsMcp = {
+      ...deps,
+      quotaEnvois: async (t, unites) => {
+        const v = await usage.demander({ tenantId: t, cleId: cleIdDe(req), operation: 'sends.create', unites });
+        return v.accepte ? { accepte: true } : { accepte: false, ...(v.raison !== undefined ? { raison: v.raison } : {}) };
+      },
+    };
+    const reponse = await traiterMessage(depsDeLAppel, ctx, corps);
     // Notification : rien à répondre. 202 avec un corps vide, pas un 200 avec `null`, qu'un client lirait
     // comme une réponse malformée.
     if (reponse === null) return reply.code(202).send();

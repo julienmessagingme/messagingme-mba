@@ -36,8 +36,8 @@ export { RefusOutil } from './saisie';
  * (`reply_in_open_window` passe par `repondreDansLaFenetre`, les outils des widgets par `src/widgets/gestion.ts`).
  * Une seconde implémentation dériverait, et sur une surface d'écriture ce serait un agent qui écrit avec d'autres
  * garde-fous (fenêtre de 24 h, prise du fil, journal, phrase d'un widget).
- * Lecture d'abord, écriture étroite : pas d'envoi de template ni de campagne, un mégaphone facturé sur un numéro
- * dont Meta note la qualité.
+ * Lecture d'abord, écriture étroite : pas de campagne, un mégaphone facturé sur un numéro dont Meta note la qualité ;
+ * un modèle part vers UNE personne à la fois (`send_template_to_contact`, réservé à une personne connectée).
  * 🔴 Aucun outil n'émet d'événement d'automation : un agent qui boucle sur 500 conversations déclencherait 500
  * automations facturées. Un tag posé ici ne réveille rien (la pose est appelée SANS publier), et la description le
  * dit.
@@ -101,6 +101,12 @@ export interface DepsMcp extends DepsRepondre {
    */
   envoyerModele(tenantId: string, corps: unknown, compter: (unites: number) => Promise<boolean>): Promise<ReponseEnvoi | null>;
   /**
+   * Le quota QUOTIDIEN d'envois de l'espace (`src/api/quotas.ts`), le même que `POST /v1/sends` (opération
+   * `sends.create`) : sans lui, Claude enverrait jusqu'à dix modèles par minute toute la journée. Posé par la route
+   * `/mcp` à chaque requête, parce qu'il compte sous la clé ou le jeton de l'appel ; jamais par le câblage.
+   */
+  quotaEnvois(tenantId: string, unites: number): Promise<{ accepte: boolean; raison?: string }>;
+  /**
    * 🔴 Le plafond des opérations coûteuses de la console, la MÊME instance que celle des routes, comptée par espace
    * sous la même clé : sans lui, le serveur MCP serait la porte qui contourne les dix opérations lourdes par minute
    * (un import de site, un essai facturé, un paiement). Posé par `buildServer` au montage, jamais par le câblage
@@ -109,8 +115,11 @@ export interface DepsMcp extends DepsRepondre {
   couteux: Pick<PlafondPartage, 'consommer'>;
 }
 
-/** Ce que le câblage fournit : tout, sauf le plafond coûteux, que `buildServer` ajoute (voir `couteux`). */
-export type CablageMcp = Omit<DepsMcp, 'couteux'>;
+/**
+ * Ce que le câblage fournit : tout, sauf le plafond coûteux, que `buildServer` ajoute (voir `couteux`), et le quota
+ * d'envois, que la route `/mcp` pose à chaque requête (voir `quotaEnvois`).
+ */
+export type CablageMcp = Omit<DepsMcp, 'couteux' | 'quotaEnvois'>;
 
 /**
  * Une propriété d'un schéma d'entrée. 🔴 Toute borne que l'outil applique s'y annonce (longueur, motif, énumération,

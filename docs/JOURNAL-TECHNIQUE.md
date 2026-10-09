@@ -5,6 +5,18 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-09 : Claude envoie un modèle à une personne (lot 13, domaine 3, livraison B), en production
+
+`3e0f2f39`, CI verte job par job, aucune migration, `up` de l'API, des deux workers et de `mba-web` ; cinq portes à
+200. Le cœur de `POST /v1/sends` est sorti de sa route en une fonction (`lancerEnvoi`) qui rend `{ statut, corps }` ;
+la relecture l'a comparé ligne à ligne à l'ancien handler : mêmes refus, même ordre, même comptage, même idempotence.
+`send_template_to_contact` est réservé à une personne, comme `create_template` (décision de Julien du même jour).
+Relecture : aucun rouge, sept jaunes, poussés ensuite : le quota d'envois du jour appliqué à Claude (sans lui, dix
+modèles par minute toute la journée), les valeurs que Meta refuse à l'envoi refusées avant, la clé consommée dite
+dans le refus, la trace de la personne dans le journal, et la page MCP qui disait encore « hors de la fenêtre, rien ne
+part ». Lecture des abonnements de l'application Meta, avec l'accord de Julien : le champ des statuts de modèles
+n'y est pas ; il s'y abonnera.
+
 ## 2026-10-09 : les modèles par l'API et par Claude (lot 13, domaine 3, livraison A), en production
 
 `0ef5ebad`, CI verte job par job, aucune migration, `up` de l'API, des deux workers et de `mba-web` ; cinq portes à

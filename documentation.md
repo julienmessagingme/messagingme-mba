@@ -3696,8 +3696,10 @@ Ajouté par le lot 4 de l'API publique :
    `send_template_to_contact` appellent sur les MÊMES dépendances (`depsEnvois`, `src/index.ts`) : validation,
    idempotence, cible, gardes du numéro, modèles du mois, destinataires, consentement, campagne scellée avec sa clé,
    enfilement. Elle rend `{ statut, corps }` au lieu d'écrire la réponse ; le compteur est celui de l'appelant (le garde
-   d'usage pour la route, le plafond coûteux pour Claude), appelé au même endroit. L'outil construit le corps de l'API
-   pour une personne, ses valeurs en sources `literal`.
+   d'usage pour la route ; pour Claude, le plafond coûteux PUIS le quota d'envois du jour, `quotaEnvois`, que la route
+   `/mcp` pose à chaque requête sous la clé ou le jeton de l'appel), appelé au même endroit. L'outil construit le corps
+   de l'API pour une personne, ses valeurs en sources `literal`, et refuse celles que Meta refuserait à l'envoi
+   (retour à la ligne, tabulation, cinq espaces de suite).
 
 ### Sur les contrats externes
 

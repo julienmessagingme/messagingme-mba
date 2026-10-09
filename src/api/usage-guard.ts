@@ -185,6 +185,14 @@ async function reserverPlaceLourde(
   return true;
 }
 
+/**
+ * La clé sous laquelle un appel est compté : `api_keys.id`, ou `oauth:<autorisation>` pour un jeton OAuth. « inconnue »
+ * ne devrait jamais arriver (le préhandler pose `apiAcces` avec `req.auth`) : le repli garde le compteur honnête.
+ */
+export function cleIdDe(req: FastifyRequest): string {
+  return req.apiAcces ? (req.apiAcces.type === 'cle' ? req.apiAcces.id : `oauth:${req.apiAcces.id}`) : 'inconnue';
+}
+
 export async function compterOuRefuser(
   usage: ApiUsageGuard,
   req: FastifyRequest,
@@ -203,7 +211,7 @@ export async function compterOuRefuser(
     // le compteur honnête si une route est un jour montée derrière une autre autorité. Un jeton OAuth est rangé
     // sous son autorisation, préfixée (`oauth:<id>`) : jamais confondue avec une clé, et sans `|`, que la clé du
     // compteur réserve.
-    cleId: req.apiAcces ? (req.apiAcces.type === 'cle' ? req.apiAcces.id : `oauth:${req.apiAcces.id}`) : 'inconnue',
+    cleId: cleIdDe(req),
     operation,
     unites: unitesDe(operation, taille),
   };

@@ -3,6 +3,7 @@ import { RefusOutil, entierBorne } from './saisie';
 import { MESSAGE_OPERATIONS_LOURDES } from '../auth/plafond-partage';
 import type { RapportEnvoi, ReponseEnvoi } from '../http/v1-sends';
 import { CLE_IDEMPOTENCE_MAX } from '../api/idempotence';
+import { journaliser } from '../lib/journal';
 import { messageDeForme } from '../api/forme';
 import { BORNES_MODELE, schemaModeleMeta } from '../api/modele-meta';
 import { creerModeleDepuisMeta, statutsDuModele, type DepsCreationModele } from '../api/creer-modele';
@@ -25,6 +26,12 @@ function phraseDeRefus(r: ReponseEnvoi): string {
   const phrase = typeof c?.error === 'string' ? c.error : `refus ${r.statut}`;
   return typeof c?.code === 'string' ? `${phrase} (${c.code})` : phrase;
 }
+
+/**
+ * Une valeur de variable que Meta accepte : ni retour à la ligne, ni tabulation, ni plus de quatre espaces de suite
+ * (erreur 132018, constatée à l'envoi, donc APRÈS un succès annoncé). Annoncée dans le schéma de l'outil.
+ */
+const VALEUR_ACCEPTEE = /^(?!.*[\n\t])(?!.* {5,}).*$/s;
 
 const NOM = { type: 'string' as const, minLength: 1, maxLength: BORNES_MODELE.nom, pattern: '^[a-z0-9_]+$', description: 'Le nom du modèle (minuscules, chiffres et _).' };
 const lecture = (title: string): AnnotationsMcp => ({ title, readOnlyHint: true, openWorldHint: false });
@@ -118,13 +125,14 @@ export const OUTILS_MODELES: OutilMcp[] = [
       required: ['template'],
       additionalProperties: false,
     },
-    async executer(deps: DepsMcp, tenantId, args) {
+    async executer(deps: DepsMcp, tenantId, args, personne) {
       const lu = schemaModeleMeta.safeParse(args.template);
       if (!lu.success) throw new RefusOutil(`modèle invalide : ${messageDeForme(lu.error)}`);
       const c = await deps.couteux.consommer(tenantId);
       if (!c.accepte) throw new RefusOutil(`${MESSAGE_OPERATIONS_LOURDES} (réessayer dans ${Math.max(1, Math.ceil(c.attenteMs / 1000))} s)`);
       const r = await creerModeleDepuisMeta(deps.modeles, tenantId, lu.data);
       if ('refus' in r) throw new RefusOutil(r.refus.message);
+      journaliser('info', 'mcp_modele_cree', { tenantId, userId: personne?.userId ?? null, nom: r.modele.name, langue: r.modele.language });
       return r.modele;
     },
   },
@@ -155,20 +163,25 @@ export const OUTILS_MODELES: OutilMcp[] = [
         phone: { type: 'string', pattern: '^\\+[1-9][0-9]{7,14}$', description: 'Le numéro avec l’indicatif du pays. Ou contact_id.' },
         contact_id: { type: 'string', format: 'uuid', minLength: 36, maxLength: 36, description: 'L’identifiant d’une fiche. Ou phone.' },
         values: {
-          type: 'array', maxItems: 50, items: { type: 'string', minLength: 1, maxLength: 1024 },
-          description: 'Une valeur par variable du corps, dans l’ordre ({{1}} puis {{2}}…). Vide si le corps n’en a pas.',
+          type: 'array', maxItems: 50,
+          items: { type: 'string', minLength: 1, maxLength: 1024, pattern: VALEUR_ACCEPTEE.source },
+          description: 'Une valeur par variable du corps, dans l’ordre ({{1}} puis {{2}}…), sans retour à la ligne, sans '
+            + 'tabulation et sans plus de quatre espaces de suite (Meta les refuse). Vide si le corps n’en a pas.',
         },
         idempotency_key: { type: 'string', minLength: 1, maxLength: CLE_IDEMPOTENCE_MAX, description: 'Une clé propre à cet envoi (un UUID par exemple).' },
       },
       required: ['name', 'language', 'idempotency_key'],
       additionalProperties: false,
     },
-    async executer(deps: DepsMcp, tenantId, args) {
+    async executer(deps: DepsMcp, tenantId, args, personne) {
       const phone = typeof args.phone === 'string' ? args.phone : undefined;
       const contactId = typeof args.contact_id === 'string' ? args.contact_id : undefined;
       if ((phone === undefined) === (contactId === undefined)) throw new RefusOutil('désignez la personne par phone OU par contact_id, pas les deux');
       const values = Array.isArray(args.values) ? args.values : [];
       if (values.some((v) => typeof v !== 'string' || v === '')) throw new RefusOutil('values : une chaîne non vide par variable');
+      if (values.some((v) => !VALEUR_ACCEPTEE.test(v as string))) {
+        throw new RefusOutil('values : ni retour à la ligne, ni tabulation, ni plus de quatre espaces de suite (Meta refuserait le message)');
+      }
       // Le corps de `POST /v1/sends`, pour une seule personne : les valeurs en sources littérales, positions 1..N.
       const corps = {
         idempotencyKey: args.idempotency_key,
@@ -176,9 +189,12 @@ export const OUTILS_MODELES: OutilMcp[] = [
         ...(values.length > 0 ? { params: values.map((v, i) => ({ position: i + 1, source: { type: 'literal', value: v } })) } : {}),
         recipients: [phone !== undefined ? { phone } : { contactId }],
       };
-      const r = await deps.envoyerModele(tenantId, corps, async () => {
+      // Compté où la route compte (avant la clé d'idempotence) : le plafond coûteux, PUIS le quota d'envois du jour.
+      const r = await deps.envoyerModele(tenantId, corps, async (unites) => {
         const c = await deps.couteux.consommer(tenantId);
         if (!c.accepte) throw new RefusOutil(`${MESSAGE_OPERATIONS_LOURDES} (réessayer dans ${Math.max(1, Math.ceil(c.attenteMs / 1000))} s)`);
+        const q = await deps.quotaEnvois(tenantId, unites);
+        if (!q.accepte) throw new RefusOutil(q.raison ?? 'quota quotidien d’envois de l’espace atteint');
         return true;
       });
       if (r === null) throw new RefusOutil('envoi refusé');
@@ -186,8 +202,12 @@ export const OUTILS_MODELES: OutilMcp[] = [
       // 201 : le rapport de l'envoi, ou celui d'un envoi déjà fait avec cette clé (rejeu), qui a la même forme.
       const rapport = r.corps as RapportEnvoi;
       if (rapport.recipientCount === 0) {
-        throw new RefusOutil(`rien n’est parti : la personne est écartée (${rapport.skipped[0]?.reason ?? 'motif inconnu'})`);
+        // La clé est consommée : l'envoi vide est scellé, et le même appel rejouerait ce refus.
+        throw new RefusOutil(`rien n’est parti : la personne est écartée (${rapport.skipped[0]?.reason ?? 'motif inconnu'})`
+          + `${rapport.created > 0 ? ' ; sa fiche a été créée' : ''} ; une fois la cause levée, réessayer avec une NOUVELLE idempotency_key`);
       }
+      // La trace de la personne qui a envoyé : la campagne, elle, porte le préfixe des envois de l'API.
+      journaliser('info', 'mcp_modele_envoye', { tenantId, userId: personne?.userId ?? null, sendId: rapport.sendId });
       return { send_id: rapport.sendId, contact_created: rapport.created > 0 };
     },
   },

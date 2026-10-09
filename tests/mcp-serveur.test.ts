@@ -1007,11 +1007,12 @@ describe('serveur MCP : envoyer un modèle à un contact (lot 13, domaine 3, liv
   const outil = OUTILS.find((o) => o.nom === 'send_template_to_contact')!;
   const RAPPORT = { sendId: 'send-1', opening: 'whatsapp_template', recipientCount: 1, created: 0, matched: 1, skipped: [], skippedTotal: 0 };
 
-  function monterEnvoi(reponse: ReponseEnvoi | null, couteuxAccepte = true) {
+  function monterEnvoi(reponse: ReponseEnvoi | null, couteuxAccepte = true, quotaAccepte = true) {
     const corps: unknown[] = [];
     const comptes: number[] = [];
     const deps = {
       couteux: { consommer: async () => ({ accepte: couteuxAccepte, attenteMs: 4000 }) },
+      quotaEnvois: async () => (quotaAccepte ? { accepte: true } : { accepte: false, raison: '2000 envois par jour, remise à zéro à minuit' }),
       envoyerModele: async (_t: string, c: unknown, compter: (n: number) => Promise<boolean>) => {
         corps.push(c);
         comptes.push(Number(await compter(1)));
@@ -1044,8 +1045,9 @@ describe('serveur MCP : envoyer un modèle à un contact (lot 13, domaine 3, liv
   it('🔴 un refus de l’envoi revient à Claude avec sa phrase et son code ; une personne écartée aussi', async () => {
     const refus = monterEnvoi({ statut: 402, corps: { error: 'limite de 1000 envois de modèles par mois atteinte', code: 'plan_limit_reached' } });
     await expect(outil.executer(refus.deps, 't1', ARGS, { userId: 'u1' })).rejects.toThrow(/1000 envois de modèles.*plan_limit_reached/);
-    const ecarte = monterEnvoi({ statut: 201, corps: { ...RAPPORT, recipientCount: 0, skipped: [{ index: 0, reason: 'no_consent' }], skippedTotal: 1 } });
-    await expect(outil.executer(ecarte.deps, 't1', ARGS, { userId: 'u1' })).rejects.toThrow(/rien n’est parti.*no_consent/);
+    const ecarte = monterEnvoi({ statut: 201, corps: { ...RAPPORT, recipientCount: 0, created: 1, skipped: [{ index: 0, reason: 'no_consent' }], skippedTotal: 1 } });
+    await expect(outil.executer(ecarte.deps, 't1', ARGS, { userId: 'u1' }))
+      .rejects.toThrow(/rien n’est parti.*no_consent.*fiche a été créée.*NOUVELLE idempotency_key/);
   });
 
   it('phone OU contact_id, une valeur non vide par variable : sinon rien n’est appelé ; le plafond coûteux refuse aussi', async () => {
@@ -1057,5 +1059,23 @@ describe('serveur MCP : envoyer un modèle à un contact (lot 13, domaine 3, liv
     expect(corps).toHaveLength(0);
     const plein = monterEnvoi({ statut: 201, corps: RAPPORT }, false);
     await expect(outil.executer(plein.deps, 't1', ARGS, { userId: 'u1' })).rejects.toThrow(/réessayer dans 4 s/);
+  });
+
+  it('🔴 le quota d’envois du jour refuse aussi, avec sa phrase', async () => {
+    const quota = monterEnvoi({ statut: 201, corps: RAPPORT }, true, false);
+    await expect(outil.executer(quota.deps, 't1', ARGS, { userId: 'u1' })).rejects.toThrow(/2000 envois par jour/);
+  });
+
+  it('🔴 une valeur que Meta refuserait à l’envoi (retour à la ligne, tabulation, cinq espaces) est refusée avant', async () => {
+    const { deps, corps } = monterEnvoi({ statut: 201, corps: RAPPORT });
+    for (const v of ['Claire\nDupont', 'Claire\tDupont', 'Claire     Dupont']) {
+      await expect(outil.executer(deps, 't1', { ...ARGS, values: [v] }, { userId: 'u1' }), v).rejects.toThrow(/retour à la ligne/);
+    }
+    expect(corps).toHaveLength(0);
+    // Quatre espaces passent ; le schéma annoncé dit la même règle.
+    expect(await outil.executer(deps, 't1', { ...ARGS, values: ['Claire    Dupont'] }, { userId: 'u1' })).toMatchObject({ send_id: 'send-1' });
+    const motif = new RegExp((outil.entree.properties.values as { items: { pattern: string } }).items.pattern);
+    expect(['Claire\nDupont', 'Claire     Dupont'].map((v) => motif.test(v))).toEqual([false, false]);
+    expect(motif.test('Claire    Dupont')).toBe(true);
   });
 });

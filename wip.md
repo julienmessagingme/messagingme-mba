@@ -43,8 +43,10 @@ Domaine 3 (les modèles, plan `docs/superpowers/plans/2026-10-09-modeles-api.md`
 Meta, en-tête par adresse, statut, trois outils de Claude) EN PRODUCTION (`0ef5ebad`, le 2026-10-09), ses jaunes de
 relecture poussés ensuite ; essai réel dû (voir le plan) ; `create_template` réservé à une personne (décision de Julien,
 `233234cb`). B (Claude envoie un modèle à un contact, `send_template_to_contact`, par le cœur de `/v1/sends` extrait)
-EN COURS. C (l'événement `template.status_changed`, après l'abonnement de l'application Meta au champ, geste de Julien)
-ensuite.
+EN PRODUCTION (`3e0f2f39`, le 2026-10-09), ses jaunes poussés ensuite. C (l'événement `template.status_changed`) EN
+COURS : l'application Meta n'est PAS abonnée au champ `message_template_status_update` (lu le 2026-10-09 : `messages`,
+`messaging_handovers`, `standby`) ; Julien s'y abonnera depuis le tableau de bord, sans risque avant le code (un champ
+inconnu est reçu puis ignoré).
 Puis les webhooks par l'API et les contacts complets.
 
 ## L'OFFRE GRATUITE S'APPELLE « FREE », EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ

@@ -408,14 +408,6 @@ const schemaIdEnvoi = z.object({ sendId: z.string().regex(FORME_ID_ENVOI) });
 /** Une clé abandonnée (traitement trop long) puis reprise : réessayer rend le rapport de l'appel qui a repris. */
 const MESSAGE_CLE_REPRISE = 'un autre appel a repris cette clé d’idempotence et traite l’envoi : réessayez dans un instant pour lire son rapport';
 
-/**
- * API publique /v1 des envois. L'espace vient de la clé (`req.auth`), jamais du corps. Garde attendue :
- * `[makeRequireApiKey, requireScope('sends:create')]`.
- * 🔴 L'ordre compte : la forme, le compteur d'usage, le claim d'idempotence, puis le numéro et la cible (des
- * lectures), et seulement alors ce qui écrit (fiches, consentements, campagne). Le claim passe avant les
- * lectures : un rejeu rend le rapport scellé même si le template a changé depuis. Un refus ou une erreur après
- * le claim libère la clé.
- */
 /** Une réponse de l'envoi : son statut et son corps, que la route envoie et que l'outil de Claude traduit. */
 export interface ReponseEnvoi { statut: number; corps: unknown }
 
@@ -633,6 +625,14 @@ export async function lancerEnvoi(
   return { statut: 201, corps: report };
 }
 
+/**
+ * API publique /v1 des envois. L'espace vient de la clé (`req.auth`), jamais du corps. Garde attendue :
+ * `[makeRequireApiKey, requireScope('sends:create')]`.
+ * 🔴 L'ordre compte : la forme, le compteur d'usage, le claim d'idempotence, puis le numéro et la cible (des
+ * lectures), et seulement alors ce qui écrit (fiches, consentements, campagne). Le claim passe avant les
+ * lectures : un rejeu rend le rapport scellé même si le template a changé depuis. Un refus ou une erreur après
+ * le claim libère la clé.
+ */
 export function registerV1Sends(app: FastifyInstance, deps: V1SendsRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
 

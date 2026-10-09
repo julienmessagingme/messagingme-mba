@@ -139,8 +139,8 @@ function McpInner({ session }: { session: Session | null }) {
             {t('Il envoie un modèle à une personne à la fois, connecté en votre nom ; il ne lance pas d’envoi de masse.', 'It sends a template to one person at a time, signed in as you; it does not launch a mass send.')}
           </li>
           <li>
-            <strong className="text-ink-900">{t('Hors de la fenêtre de 24 h, rien ne part.', 'Outside the 24 h window, nothing is sent.')}</strong>{' '}
-            {t('L’outil refuse, avec la raison.', 'The tool refuses, with the reason.')}
+            <strong className="text-ink-900">{t('Hors de la fenêtre de 24 h, seul un modèle approuvé part.', 'Outside the 24 h window, only an approved template goes out.')}</strong>{' '}
+            {t('Un message libre est refusé, avec la raison ; un modèle approuvé part par send_template_to_contact.', 'A free-form message is refused, with the reason; an approved template goes out through send_template_to_contact.')}
           </li>
           <li>
             <strong className="text-ink-900">{t('Numéro WhatsApp délié, rien ne part.', 'WhatsApp number unlinked, nothing is sent.')}</strong>{' '}
