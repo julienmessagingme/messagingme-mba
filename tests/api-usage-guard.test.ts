@@ -217,6 +217,8 @@ describe('les opérations LOURDES ont un plafond de places simultanées', () => 
     expect(estLourde('contacts.read')).toBe(false);
     expect(estLourde('mcp.call')).toBe(false);
     expect(estLourde('mcp.refus')).toBe(false);
+    // Une création de modèle télécharge un fichier jusqu'à 20 s : elle ne prend pas la place (une par copie) des envois.
+    expect(estLourde('templates.create')).toBe(false);
   });
 });
 

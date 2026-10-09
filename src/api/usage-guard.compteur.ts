@@ -45,7 +45,7 @@ const cleUsage = (champ: Champ, d: DemandeUsage): string => `${PREFIXE}${champ}|
 
 const OPERATIONS: ReadonlySet<OperationApi> = new Set<OperationApi>([
   'contacts.upsert', 'contacts.batch', 'contacts.read', 'sends.create', 'sends.read', 'messages.send', 'messages.reponse_application',
-  'catalogues.read', 'conversations.read', 'mcp.call', 'mcp.refus',
+  'catalogues.read', 'conversations.read', 'templates.create', 'templates.read', 'mcp.call', 'mcp.refus',
 ]);
 
 export interface OptionsGardeUsage {

@@ -2156,6 +2156,15 @@ scénario, comment importer des contacts.
   Les mêmes gardes que le message simple (fenêtre, STOP, numéro délié ou suspendu, quota), le message apparaît dans
   l'Inbox, et le bouton touché par le contact revient dans `message.received`. Claude fait de même avec
   `send_message`, dans toutes les offres.
+- ✅ **Créer un modèle et suivre sa validation** (lot 13, domaine 3, livraison A, 2026-10-09, droit neuf
+  `templates:write`) : `POST /v1/templates` prend le corps de Meta (`name`, `language`, `category` UTILITY ou
+  MARKETING, `components`) et passe par la création de l'écran Modèles : liens tracés, mêmes gardes. Une image, une
+  vidéo ou un document d'en-tête se donne par son adresse https (`example.header_url`) : le serveur le télécharge
+  (5 Mo pour une image, 16 Mo sinon, sans suivre de redirection) et le dépose chez Meta. `GET /v1/templates/{name}`
+  rend le statut de chaque langue (pending, approved, rejected…) avec le motif d'un refus. Claude fait de même avec
+  `create_template`, `get_template_status` et `list_templates`, dans toutes les offres. Hors de cette route :
+  carrousel, authentification, Flow, variables nommées. L'envoi d'un modèle par Claude et l'événement de validation
+  viennent avec les livraisons B et C.
 - ✅ **Envoyer un message simple** : un texte, à une personne, tout de suite, visible dans l'Inbox. Deux routes,
   parce que leurs règles n'ont presque rien en commun : `POST /v1/messages/whatsapp` (dans la fenêtre de 24 h)
   et `POST /v1/messages/rcs` (sans fenêtre, mais seulement vers quelqu'un qui a consenti ou qui vous a déjà

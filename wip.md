@@ -38,9 +38,11 @@ A : cinq routes GET sous `conversations:read`, outils MCP de lecture ouverts en 
 EN PRODUCTION (`ee479c01`, `cfedc5ff`). B : le statut d'un message (migration 0225, `get_message_status`) et Claude
 qui répond en Free : EN PRODUCTION (`c21dc3b0`, 0225 appliquée le 2026-10-09). Essai réel du domaine : voir le plan.
 Domaine 2 (l'envoi au format de Meta, `POST /v1/messages`, `send_message`) : EN PRODUCTION (`8f237a41`, le
-2026-10-09). Essai réel : voir le plan `docs/superpowers/plans/2026-10-09-envoi-format-meta.md`. Suivant : domaine 3,
-les modèles. Ensuite :
-l'envoi au format de Meta, les modèles, les webhooks par l'API, les contacts complets.
+2026-10-09). Essai réel : voir le plan `docs/superpowers/plans/2026-10-09-envoi-format-meta.md`.
+Domaine 3 (les modèles, plan `docs/superpowers/plans/2026-10-09-modeles-api.md`) : livraison A (créer au format de
+Meta, en-tête par adresse, statut, trois outils de Claude) EN COURS ; B (Claude envoie un modèle à un contact) et C
+(l'événement `template.status_changed`, après l'abonnement de l'application Meta au champ, geste de Julien) ensuite.
+Puis les webhooks par l'API et les contacts complets.
 
 ## L'OFFRE GRATUITE S'APPELLE « FREE », EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ
 

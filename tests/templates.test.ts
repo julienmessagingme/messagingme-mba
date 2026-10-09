@@ -53,7 +53,8 @@ describe('MetaTemplateClient.create (payload)', () => {
       body: 'Bonjour {{1}}', example: ['Julie'],
       buttons: [{ type: 'QUICK_REPLY', text: 'Oui' }, { type: 'URL', text: 'Voir', url: 'https://x.fr' }],
     });
-    expect(res).toEqual({ id: 'tid', status: 'PENDING' });
+    // Meta n'a pas rendu de catégorie : celle demandée.
+    expect(res).toEqual({ id: 'tid', status: 'PENDING', category: 'MARKETING' });
     const body = JSON.parse(calls[0]!.init.body as string);
     expect(body.name).toBe('promo');
     expect(body.components[0]).toMatchObject({ type: 'BODY', text: 'Bonjour {{1}}', example: { body_text: [['Julie']] } });

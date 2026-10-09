@@ -16,8 +16,8 @@ import type { LienVers } from './doc-api-pages';
  */
 
 export type Methode = 'GET' | 'POST' | 'PATCH';
-export type Droit = 'contacts:write' | 'contacts:read' | 'sends:create' | 'conversations:read';
-export type GroupeEndpoints = 'contacts' | 'messages' | 'conversations' | 'envois' | 'catalogues';
+export type Droit = 'contacts:write' | 'contacts:read' | 'sends:create' | 'conversations:read' | 'templates:write';
+export type GroupeEndpoints = 'contacts' | 'messages' | 'conversations' | 'envois' | 'modeles' | 'catalogues';
 
 export interface EndpointDoc {
   readonly methode: Methode;
@@ -35,6 +35,7 @@ export const GROUPES_ENDPOINTS: ReadonlyArray<{ readonly cle: GroupeEndpoints; r
   { cle: 'messages', titre: ['Messages', 'Messages'] },
   { cle: 'conversations', titre: ['Conversations', 'Conversations'] },
   { cle: 'envois', titre: ['Envois', 'Sends'] },
+  { cle: 'modeles', titre: ['Modèles', 'Templates'] },
   { cle: 'catalogues', titre: ['Catalogues', 'Catalogs'] },
 ];
 
@@ -98,6 +99,14 @@ export const ENDPOINTS = [
   {
     methode: 'GET', chemin: '/v1/sends/{sendId}', droit: 'sends:create', groupe: 'envois', lien: { page: 'sends', ancre: 'suivi' },
     resume: ['Lit l’état et les résultats d’un envoi.', 'Reads the state and results of a send.'],
+  },
+  {
+    methode: 'POST', chemin: '/v1/templates', droit: 'templates:write', groupe: 'modeles', lien: { page: 'templates', ancre: 'creer' },
+    resume: ['Crée un modèle au format de Meta et le soumet à sa validation.', 'Creates a template in Meta’s format and submits it for review.'],
+  },
+  {
+    methode: 'GET', chemin: '/v1/templates/{name}', droit: 'templates:write', groupe: 'modeles', lien: { page: 'templates', ancre: 'statut' },
+    resume: ['Lit le statut d’un modèle chez Meta, langue par langue.', 'Reads a template’s status at Meta, language by language.'],
   },
   {
     methode: 'GET', chemin: '/v1/templates', droit: 'sends:create', groupe: 'catalogues', lien: { page: 'catalogs', ancre: 'templates' },

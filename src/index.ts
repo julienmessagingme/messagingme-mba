@@ -171,6 +171,9 @@ import { catalogueBranchable } from './http/agent-setup';
 import type { CountryCode } from 'libphonenumber-js';
 import { handlerMaison } from './agent/outils-maison';
 import type { TemplateSummary } from './meta/templates';
+import type { TemplateRouteDeps } from './http/templates';
+import type { DepsCreationModele } from './api/creer-modele';
+import { telechargerEnteteProduction } from './api/entete-par-url';
 import { tenter } from './lib/tenter';
 import { messageDe } from './lib/erreur';
 import { PgStripeStore } from './stripe/store.pg';
@@ -934,6 +937,58 @@ async function main(): Promise<void> {
     verrous: verrousCourts,
   };
 
+  /**
+   * Les dépendances de l'écran Modèles, partagées avec `POST /v1/templates` et l'outil `create_template` (lot 13,
+   * domaine 3) : la création passe par `creerUnModele`, avec ces gardes et ce traçage des liens, quel que soit l'appelant.
+   */
+  const depsModeles: TemplateRouteDeps = {
+    meta: metaFactory, // token par tenant, repli global
+    repo,
+    getPublishedFlow: (tenant, flowId) => flowStore.isPublished(flowId, tenant),
+    indices: templateHintStore,
+    // Les champs qu'un bouton « Lien » peut porter dans son adresse (`{numero_commande}`), avec les champs de base.
+    champsDeclares: async (tenant) => (await fieldStore.list(tenant)).map((f) => f.key),
+    // Traçage des liens : l'adresse publique est celle qui part dans les messages, donc elle suit l'API
+    // (`adressesPubliques`), pas la console.
+    tracking: {
+      allocate: (tenant, cible, destination, avecJeton) => trackedLinkStore.allocate(tenant, newTrackingCode(), cible, destination, avecJeton),
+      liens: trackedLinkStore,
+      // Le lien soumis porte un suffixe variable, qui fera voyager le jeton du destinataire (qui a cliqué).
+      // Les templates déjà approuvés gardent l'ancienne forme, leur URL étant figée chez Meta.
+      lienDe: (code, avecJeton) => (avecJeton ? lienTraceAvecJeton(adressesApi.racine, code) : lienDe(adressesApi.racine, code)),
+      // `adresse de redirection -> destination d'origine`, pour remontrer le lien saisi partout où la
+      // console liste des templates. Les deux formes sont dans la map : les anciens templates portent
+      // l'adresse nue, les récents le suffixe variable ; n'en mettre qu'une ferait réapparaître notre URL
+      // de redirection à la place du lien saisi.
+      destinations: async (tenant, noms) => new Map(
+        (await trackedLinkStore.listByTemplates(tenant, noms)).flatMap((l) => [
+          [lienDe(adressesApi.racine, l.code), l.destination] as [string, string],
+          [lienTraceAvecJeton(adressesApi.racine, l.code), l.destination] as [string, string],
+        ]),
+      ),
+    },
+  };
+
+  /**
+   * Les modèles de l'espace tels que Meta les rend, en cache une minute : le catalogue `GET /v1/templates` et l'outil
+   * `list_templates` lisent la MÊME liste.
+   */
+  const listerModeles = async (tenant: string): Promise<TemplateSummary[]> => {
+    const waba = await repo.getTenantWabaId(tenant);
+    if (!waba) return [];
+    return catalogueTemplatesCache.lire(`${tenant}:${waba}`, async () => (await metaFactory.templateClientForTenant(tenant)).list(waba));
+  };
+
+  /**
+   * La création d'un modèle au format de Meta (lot 13, domaine 3) : l'en-tête téléchargé par la voie gardée
+   * (`telechargerEnteteProduction`), déposé chez Meta comme celui de l'écran Modèles (`uploadImage`).
+   */
+  const creationModeles: DepsCreationModele = {
+    modeles: depsModeles,
+    telechargerEntete: telechargerEnteteProduction,
+    deposerEntete: (octets, mime) => mediaClient.uploadImage(octets, mime),
+  };
+
   const app = buildServer({
     /**
      * 🔴 Le compteur des plafonds de débit, PARTAGÉ par toutes les copies de l'API (migration 0186). Oublié,
@@ -1108,33 +1163,7 @@ async function main(): Promise<void> {
       repo,
       baseUrl: adressesApi.avecPrefixe,
     },
-    templates: {
-      meta: metaFactory, // token par tenant, repli global
-      repo,
-      getPublishedFlow: (tenant, flowId) => flowStore.isPublished(flowId, tenant),
-      indices: templateHintStore,
-      // Les champs qu'un bouton « Lien » peut porter dans son adresse (`{numero_commande}`), avec les champs de base.
-      champsDeclares: async (tenant) => (await fieldStore.list(tenant)).map((f) => f.key),
-      // Traçage des liens : l'adresse publique est celle qui part dans les messages, donc elle suit l'API
-      // (`adressesPubliques`), pas la console.
-      tracking: {
-        allocate: (tenant, cible, destination, avecJeton) => trackedLinkStore.allocate(tenant, newTrackingCode(), cible, destination, avecJeton),
-        liens: trackedLinkStore,
-        // Le lien soumis porte un suffixe variable, qui fera voyager le jeton du destinataire (qui a cliqué).
-        // Les templates déjà approuvés gardent l'ancienne forme, leur URL étant figée chez Meta.
-        lienDe: (code, avecJeton) => (avecJeton ? lienTraceAvecJeton(adressesApi.racine, code) : lienDe(adressesApi.racine, code)),
-        // `adresse de redirection -> destination d'origine`, pour remontrer le lien saisi partout où la
-        // console liste des templates. Les deux formes sont dans la map : les anciens templates portent
-        // l'adresse nue, les récents le suffixe variable ; n'en mettre qu'une ferait réapparaître notre URL
-        // de redirection à la place du lien saisi.
-        destinations: async (tenant, noms) => new Map(
-          (await trackedLinkStore.listByTemplates(tenant, noms)).flatMap((l) => [
-            [lienDe(adressesApi.racine, l.code), l.destination] as [string, string],
-            [lienTraceAvecJeton(adressesApi.racine, l.code), l.destination] as [string, string],
-          ]),
-        ),
-      },
-    },
+    templates: depsModeles,
     inbox: {
       // Les dépendances de la réponse (fenêtre, désabonnement, envoi, trace, prise du fil) : `depsRepondre`, dont
       // `inbox`, le dépôt des conversations que les routes lisent aussi.
@@ -2558,11 +2587,7 @@ async function main(): Promise<void> {
        * déjà (`templateVarInfo` garde cinq minutes).
        */
       catalogues: {
-        templates: async (tenant) => {
-          const waba = await repo.getTenantWabaId(tenant);
-          if (!waba) return [];
-          return catalogueTemplatesCache.lire(`${tenant}:${waba}`, async () => (await metaFactory.templateClientForTenant(tenant)).list(waba));
-        },
+        templates: listerModeles,
         indices: templateHintStore,
         scenarios: workflowStore,
         messagesRcs: rcsMessageStore,
@@ -2751,6 +2776,8 @@ async function main(): Promise<void> {
         conversations: conversationsV1,
         lireMediaMessage,
       },
+      // Les modèles (lot 13, domaine 3) : la création de l'écran Modèles, au format de Meta.
+      templates: creationModeles,
       /**
        * Serveur MCP (`POST /mcp`) : les mêmes fonctions que la console, jamais des variantes. Un outil MCP
        * n'est qu'un second appelant : une garde qui change (fenêtre de 24 h, prise de fil, scope tenant) change
@@ -2759,6 +2786,8 @@ async function main(): Promise<void> {
       mcp: {
         // L'offre de l'espace (lot 6) : la même vue que la console, pour l'outil `get_plan`.
         offre: { vue: vueOffre },
+        // Les modèles (lot 13, domaine 3) : la MÊME création que `POST /v1/templates`, la MÊME liste que le catalogue.
+        modeles: { ...creationModeles, lister: listerModeles },
         // Le statut d'un message (lot 13) : la MÊME lecture que `GET /v1/messages/{id}`.
         messagesApi: conversationsV1,
         // L'envoi au format de Meta (lot 13, domaine 2) : le MÊME que `POST /v1/messages`.

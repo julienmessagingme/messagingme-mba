@@ -20,6 +20,8 @@ import {
 import { schemaMessageWhatsapp, type ReponseMessageSimple } from '../src/http/v1-messages';
 import { schemaMessageRcs } from '../src/http/v1-messages-rcs';
 import { schemaMessageMeta } from '../src/api/message-meta';
+import { schemaModeleMeta } from '../src/api/modele-meta';
+import type { ModeleCree, StatutLangue } from '../src/api/creer-modele';
 import { validateParamMapping } from '../src/crm/template';
 import { destinataireAvecVariablesInterdites } from '../src/api/variables';
 import { cleIdempotence, CLE_IDEMPOTENCE_MAX, DUREE_CLE_EN_COURS_MAX_MS, DUREE_CLE_IDEMPOTENCE_MS } from '../src/api/idempotence';
@@ -108,6 +110,7 @@ const VALIDATEURS: Record<RouteAvecCorps, (corps: unknown) => Verdict> = {
   'POST /v1/messages/whatsapp': (c) => depuis(schemaMessageWhatsapp.safeParse(c)),
   'POST /v1/messages': (c) => depuis(schemaMessageMeta.safeParse(c)),
   'POST /v1/messages/rcs': (c) => depuis(schemaMessageRcs.safeParse(c)),
+  'POST /v1/templates': (c) => depuis(schemaModeleMeta.safeParse(c)),
 };
 
 describe('🔴 chaque corps d’exemple passe le validateur de SA route', () => {
@@ -294,6 +297,10 @@ const pageConv: Lecture<PageV1<ConversationV1>> = EXEMPLES_REPONSES.conversation
 const pageConvCles: MemesCles<typeof EXEMPLES_REPONSES.conversations, PageV1<ConversationV1>> = true;
 const pageMsg: Lecture<PageV1<MessageV1>> = EXEMPLES_REPONSES.messagesDuFil;
 const pageMsgCles: MemesCles<typeof EXEMPLES_REPONSES.messagesDuFil.data[1], MessageV1> = true;
+const modeleCree: Lecture<ModeleCree> = EXEMPLES_REPONSES.modeleCree;
+const modeleCreeCles: MemesCles<typeof EXEMPLES_REPONSES.modeleCree, ModeleCree> = true;
+const statutLangue: Lecture<StatutLangue> = EXEMPLES_REPONSES.statutModele.languages[1];
+const statutLangueCles: MemesCles<typeof EXEMPLES_REPONSES.statutModele.languages[1], StatutLangue> = true;
 
 describe('les réponses montrées ont le type de leurs producteurs', () => {
   it('suivi d’un envoi, rapport 201, fiche lue, recherche, lot, écriture, message simple (tenus au typage)', () => {
@@ -304,6 +311,11 @@ describe('les réponses montrées ont le type de leurs producteurs', () => {
   it('la lecture des fils : conversation, message, et leurs pages (tenus au typage)', () => {
     expect([convCles, convContactCles, msgCles, msgMediaCles, pageConvCles, pageMsgCles]).toEqual([true, true, true, true, true, true]);
     expect([convLue, msgLu, pageConv, pageMsg].every((v) => v !== null)).toBe(true);
+  });
+
+  it('les modèles : la création et le statut d’une langue (tenus au typage)', () => {
+    expect([modeleCreeCles, statutLangueCles]).toEqual([true, true]);
+    expect([modeleCree, statutLangue].every((v) => v !== null)).toBe(true);
   });
 });
 

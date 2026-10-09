@@ -34,6 +34,11 @@ export type OperationApi =
   // La lecture des fils et des messages (`/v1/conversations`, `/v1/messages/{id}`, lot 13) : une unité, au plafond
   // d'appels, jamais au quota du jour (une lecture n'envoie rien).
   | 'conversations.read'
+  // Les modèles (`POST /v1/templates`, `GET /v1/templates/{name}`, lot 13, domaine 3) : une unité, au plafond d'appels,
+  // jamais au quota du jour (créer un modèle n'envoie rien). La création n'est PAS lourde : la place lourde (une par
+  // copie) serait prise aux envois ; ses téléchargements ont leurs propres places (`PLACES_TELECHARGEMENT`).
+  | 'templates.create'
+  | 'templates.read'
   | 'mcp.call'
   | 'mcp.refus';
 

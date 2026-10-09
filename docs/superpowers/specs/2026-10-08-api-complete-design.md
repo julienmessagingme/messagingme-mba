@@ -90,3 +90,24 @@ Décisions de Julien du 2026-10-09 :
 - **L'Inbox** montre ce qui est parti : le texte, la légende d'un média, le corps d'un interactif (avec ses boutons),
   le lieu ; l'origine du message est `api`.
 - **Claude** : un outil `send_message` (même validation, même route interne), sous `mcp:write`.
+
+## 5. Domaine 3 : les modèles
+
+Décisions de Julien du 2026-10-09 :
+
+| Question | Décision |
+| --- | --- |
+| Format | Celui de Meta (`name`, `language`, `category`, `components`), traduit vers la création de la console : les liens tracés et les gardes de la console s'appliquent |
+| Catégories | Utility et marketing ; pas d'authentification |
+| Suivi de la validation | Une lecture du statut, ET un événement `template.status_changed` poussé quand Meta tranche |
+| En-tête image, vidéo ou document | Par URL : notre serveur télécharge le fichier (gardes réseau, taille bornée) et le dépose chez Meta |
+
+- **Le droit** : `templates:write`, neuf, sans reprise ; il couvre la création et la lecture du statut. Le catalogue
+  `GET /v1/templates` (les modèles envoyables) reste sous `sends:create`.
+- **L'offre** : ouvert à toutes, comme l'écran Modèles de la console.
+- **Hors lot** : carrousel, bouton Flow, bouton téléphone ou copie de code, variables nommées, variable dans l'en-tête,
+  variable `{{1}}` dans l'adresse d'un bouton (le lien est tracé par nous ; les champs `{cle}` de la console restent
+  admis, avec leurs gardes).
+- **Trois livraisons** : A, créer et suivre (API et Claude) ; B, Claude envoie un modèle à un contact, par le cœur de
+  `/v1/sends` extrait en une fonction ; C, l'événement, après l'abonnement de l'application Meta au champ
+  `message_template_status_update` (un geste chez Meta, à faire par Julien).

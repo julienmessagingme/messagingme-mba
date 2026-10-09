@@ -16,6 +16,8 @@ import { NumeroDelieError, MESSAGE_NUMERO_DELIE, NumeroSuspenduError, MESSAGE_NU
 import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpMessagesInertes, mcpOffreInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { creerPoseEtiquette, LONGUEUR_MAX_ETIQUETTE } from '../src/crm/poser-etiquette';
 import { DROITS } from '../src/offres/offres';
+import { MetaTemplateClient, type FetchLike, type TemplateSummary } from '../src/meta/templates';
+import { modelesInertes, aucuneCampagneActive } from './routes-inertes';
 
 /**
  * Le serveur MCP : `POST /mcp`, du JSON-RPC 2.0 sans état, autorisé par une clé d'API.
@@ -598,12 +600,14 @@ describe('serveur MCP : les outils', () => {
 });
 
 describe('serveur MCP : cohérence du catalogue', () => {
-  it('🔴 aucun outil n’expose l’envoi de TEMPLATE ni de campagne', () => {
-    // Décision du lot, et pas un oubli : ouvrir l'envoi de template à un modèle, c'est lui donner un
-    // mégaphone facturé sur un numéro dont Meta note la qualité. Ce test est là pour qu'un ajout futur
-    // soit une décision explicite (il faudra le modifier) et non un glissement.
-    const noms = OUTILS.map((o) => o.nom).join(' ');
-    expect(noms).not.toMatch(/template|campaign|campagne|broadcast/i);
+  it('🔴 aucun outil n’expose de campagne ; les outils de modèle sont ceux décidés, et aucun n’en envoie', () => {
+    // Décision du lot MCP, et pas un oubli : ouvrir l'envoi de MASSE à un modèle, c'est lui donner un mégaphone facturé
+    // sur un numéro dont Meta note la qualité. Les modèles sont entrés par une décision de Julien (spec du lot 13,
+    // 2026-10-08) : les créer, suivre leur validation, les lister ; l'envoi à UN contact viendra avec sa livraison. Ce
+    // test est là pour que chaque ajout soit une décision explicite (il faudra le modifier) et non un glissement.
+    const noms = OUTILS.map((o) => o.nom);
+    expect(noms.join(' ')).not.toMatch(/campaign|campagne|broadcast/i);
+    expect(noms.filter((n) => /template/i.test(n)).sort()).toEqual(['create_template', 'get_template_status', 'list_templates']);
   });
 
   it('🔴 chaque scope d’outil est un scope de clé RÉELLEMENT attribuable', () => {
@@ -675,6 +679,8 @@ describe('serveur MCP : cohérence du catalogue', () => {
       // Lot 12 : une adresse de plus à chaque appel ; l'essai part vers l'application du client.
       create_webhook_endpoint: [false, false, false],
       send_test_event: [false, false, true],
+      // Lot 13, domaine 3 : un modèle de plus chez Meta à chaque appel, qui y reste.
+      create_template: [false, false, true],
     });
     // Une lecture ne touche personne hors de l'espace, à UNE exception nommée : `preview_site` va lire un site tiers.
     const lecturesEnMondeOuvert = OUTILS.filter((x) => x.annotations.readOnlyHint && x.annotations.openWorldHint).map((o) => o.nom);
@@ -917,6 +923,65 @@ describe('serveur MCP : les outils et l’offre (lot 6, B2a)', () => {
   it('en Base, un outil ouvert à toutes les offres répond comme avant', async () => {
     const { server } = app({ offres: base });
     expect(contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('list_members') })).isError).toBe(false);
+    await server.close();
+  });
+});
+
+describe('serveur MCP : les modèles (lot 13, domaine 3)', () => {
+  const base = { offreDe: async () => ({ offre: 'base' as const, droits: DROITS.base, retourEnBaseLe: null }) };
+
+  /** Meta est un faux `fetch` qui garde le corps de chaque appel ; la création de l'écran Modèles est la vraie. */
+  function modeles(reponse: unknown, liste: TemplateSummary[] = []) {
+    const corps: Array<Record<string, unknown> | null> = [];
+    const fetchMeta: FetchLike = async (_url, init) => {
+      corps.push(typeof init.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : null);
+      return { ok: true, status: 200, json: async () => reponse } as Response;
+    };
+    return {
+      corps,
+      modeles: {
+        lister: async () => liste,
+        modeles: {
+          ...modelesInertes,
+          meta: { templateClientForTenant: async () => new MetaTemplateClient('tok', 'v23.0', fetchMeta) },
+          repo: { getTenantWabaId: async () => 'waba1', listActiveCampaignsForTemplate: aucuneCampagneActive },
+        },
+        telechargerEntete: async () => ({ refus: 'jamais appelé ici' }),
+        deposerEntete: async () => '4::h',
+      },
+    };
+  }
+  const MODELE = { name: 'commande_prete', language: 'fr', category: 'UTILITY', components: [{ type: 'BODY', text: 'Votre commande est prête.' }] };
+
+  it('🔴 create_template crée par la création de l’écran Modèles, ouvert en Free ; un corps invalide ne part pas chez Meta', async () => {
+    const m = modeles({ id: 'tid', status: 'PENDING', category: 'UTILITY' });
+    const { server } = app({ offres: base, modeles: m.modeles });
+    const ok = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('create_template', { template: MODELE }) }));
+    expect(ok.isError, ok.texte).toBe(false);
+    expect(JSON.parse(ok.texte)).toEqual({ id: 'tid', name: 'commande_prete', language: 'fr', category: 'utility', status: 'pending' });
+    expect(m.corps).toHaveLength(1);
+    const mauvais = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('create_template', { template: { ...MODELE, category: 'AUTHENTICATION' } }) }));
+    expect([mauvais.isError, mauvais.texte]).toEqual([true, expect.stringMatching(/category/)]);
+    expect(m.corps).toHaveLength(1);
+    // Une clé qui ne fait que lire ne crée rien : l'outil lui est inconnu (erreur JSON-RPC, pas un résultat).
+    const lecteur = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_LECTURE), payload: appeler('create_template', { template: MODELE }) });
+    expect(lecteur.json<{ error?: unknown }>().error).toBeDefined();
+    expect(m.corps).toHaveLength(1);
+    await server.close();
+  });
+
+  it('get_template_status rend chaque langue et le motif d’un refus ; list_templates la liste en minuscules', async () => {
+    const m = modeles(
+      { data: [{ name: 'commande_prete', language: 'fr', status: 'REJECTED', category: 'UTILITY', rejected_reason: 'INVALID_FORMAT' }] },
+      [{ id: '1', name: 'commande_prete', language: 'fr', status: 'APPROVED', category: 'UTILITY', body: 'x', headerFormat: null, isCarousel: false, editable: true }],
+    );
+    const { server } = app({ offres: base, modeles: m.modeles });
+    const statut = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_LECTURE), payload: appeler('get_template_status', { name: 'commande_prete' }) }));
+    expect(JSON.parse(statut.texte)).toEqual({
+      name: 'commande_prete', languages: [{ language: 'fr', status: 'rejected', category: 'utility', rejectedReason: 'INVALID_FORMAT' }],
+    });
+    const liste = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_LECTURE), payload: appeler('list_templates') }));
+    expect(JSON.parse(liste.texte)).toEqual({ templates: [{ name: 'commande_prete', language: 'fr', category: 'utility', status: 'approved' }], tronque: false });
     await server.close();
   });
 });

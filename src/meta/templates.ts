@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { appelGraph } from './graph';
 import { FLOW_ENTRY_SCREEN } from './flow-json';
 import type { OutboundCarouselCard } from './template-components';
@@ -73,6 +74,27 @@ export interface TemplateSummary {
    *  L'UI et la route PATCH bloquent l'édition si `editable` est false. */
   editable: boolean;
 }
+
+/** Le statut d'une langue d'un modèle chez Meta (lot 13, domaine 3), avec le motif d'un refus (`null` sans motif). */
+export interface StatutModele {
+  language: string;
+  status: string;
+  category: string | null;
+  rejectedReason: string | null;
+}
+
+/** Une entrée de la liste de Meta pour le suivi : une entrée sans nom, langue ou statut est écartée, sans faire échouer. */
+const statutLuSchema = z.object({
+  name: z.string(),
+  language: z.string(),
+  status: z.string(),
+  category: z.string().optional(),
+  rejected_reason: z.string().optional(),
+});
+const pageDeStatutsSchema = z.object({
+  data: z.array(z.unknown()).optional(),
+  paging: z.object({ next: z.string().optional() }).optional(),
+});
 
 /** Un composant de template tel que Meta le rend : tout est optionnel, rien n'est garanti. */
 type Composant = {
@@ -271,8 +293,11 @@ export class MetaTemplateClient {
     return appelGraph(this.fetchImpl, this.token, url, init);
   }
 
-  /** Crée (soumet à validation) un template. Retourne l'id + le statut initial. */
-  async create(wabaId: string, input: CreateTemplateInput): Promise<{ id: string; status: string }> {
+  /**
+   * Crée (soumet à validation) un template. Retourne l'id, le statut initial et la catégorie : Meta peut RECLASSER un
+   * modèle (un utility jugé marketing), la catégorie rendue est donc la sienne, celle demandée à défaut.
+   */
+  async create(wabaId: string, input: CreateTemplateInput): Promise<{ id: string; status: string; category: string }> {
     const json = (await this.call(this.url(wabaId), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -282,8 +307,34 @@ export class MetaTemplateClient {
         language: input.language,
         components: buildComponents(input),
       }),
-    })) as { id?: string; status?: string };
-    return { id: json.id ?? '', status: json.status ?? 'PENDING' };
+    })) as { id?: string; status?: string; category?: string };
+    return { id: json.id ?? '', status: json.status ?? 'PENDING', category: typeof json.category === 'string' ? json.category : input.category };
+  }
+
+  /**
+   * Le statut de chaque langue d'un nom (lot 13, domaine 3), avec le motif d'un refus. Meta filtre par `name` sans
+   * promettre l'égalité exacte : on garde le seul nom demandé. Plafond de 5 pages, un nom ayant au plus quelques langues.
+   */
+  async statutsDuNom(wabaId: string, name: string): Promise<StatutModele[]> {
+    const qs = new URLSearchParams({ name, fields: 'name,language,status,category,rejected_reason', limit: '100' });
+    const out: StatutModele[] = [];
+    let next: string | null = this.url(wabaId, `?${qs.toString()}`);
+    for (let page = 0; page < 5 && next; page++) {
+      const lu = pageDeStatutsSchema.safeParse(await this.call(next, { method: 'GET' }));
+      if (!lu.success) break;
+      for (const brut of lu.data.data ?? []) {
+        const t = statutLuSchema.safeParse(brut);
+        if (!t.success || t.data.name !== name) continue;
+        out.push({
+          language: t.data.language,
+          status: t.data.status,
+          category: t.data.category ?? null,
+          rejectedReason: t.data.rejected_reason && t.data.rejected_reason !== 'NONE' ? t.data.rejected_reason : null,
+        });
+      }
+      next = lu.data.paging?.next ?? null;
+    }
+    return out;
   }
 
   /** Liste tous les templates du WABA avec leur statut, en suivant `paging.next` (plafond de 20 pages). */

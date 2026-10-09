@@ -27,6 +27,10 @@ export const STATUT_PAR_CODE = {
   no_whatsapp_number: 409,
   // Meta refuse le CONTENU d'un message au format de Meta (`POST /v1/messages`, lot 13) : son motif est dans le message.
   meta_rejected: 422,
+  // Le fichier d'en-tête d'un modèle (lot 13, domaine 3) n'a pas pu être pris à son adresse : son motif suit.
+  invalid_header_media: 422,
+  // Un modèle refusé AVANT Meta par les gardes de la console (le traçage d'un lien) : son motif suit.
+  template_rejected: 422,
   // Le numéro WhatsApp de l'espace est délié depuis l'Accueil : rien ne part avant qu'il soit relié. Distinct
   // de `no_whatsapp_number` : le numéro existe, et se relie d'un clic.
   number_unlinked: 409,

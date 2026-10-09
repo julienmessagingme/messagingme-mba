@@ -71,6 +71,12 @@ export const PAGES_DOC = [
     ancres: ['envoi', 'cibles', 'destinataires', 'parametres', 'ouverture', 'categorie', 'suivi'],
   },
   {
+    // Les modèles (lot 13, domaine 3) : créer au format de Meta, suivre la validation.
+    cle: 'templates', href: '/developers/api/templates', fichier: 'web/app/developers/api/templates/page.tsx', groupe: 'reference-api',
+    nav: ['Modèles', 'Templates'], titre: ['Modèles', 'Templates'],
+    ancres: ['creer', 'statut'],
+  },
+  {
     cle: 'catalogs', href: '/developers/api/catalogs', fichier: 'web/app/developers/api/catalogs/page.tsx', groupe: 'reference-api',
     nav: ['Catalogues', 'Catalogs'], titre: ['Catalogues', 'Catalogs'],
     ancres: ['templates', 'scenarios', 'messages-rcs'],

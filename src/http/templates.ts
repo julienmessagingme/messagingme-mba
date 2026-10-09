@@ -418,6 +418,35 @@ async function flowButtonOk(deps: TemplateRouteDeps, tenant: string, buttons: Te
   return deps.getPublishedFlow(tenant, flowBtn.flowId ?? '');
 }
 
+/** L'issue d'une création : le refus (statut et phrase), ou ce que Meta a rendu. */
+export type IssueCreationModele =
+  | { statut: 400 | 422; error: string; motif: 'champs' | 'compte' | 'flow' | 'liens' }
+  | { res: { id: string; status: string; category: string } };
+
+/**
+ * 🔴 LA création d'un modèle, partagée par l'écran Modèles, `POST /v1/templates` et l'outil `create_template` (lot 13,
+ * domaine 3) : les champs des liens, le compte WhatsApp, le flow publié, puis la soumission avec les liens tracés. Une
+ * garde ajoutée ici vaut pour les trois ; une garde ajoutée dans l'un d'eux manquerait aux deux autres.
+ * Les champs arrivent déjà validés (`parseTemplateFields` pour la console, `schemaModeleMeta` pour l'API). Un refus de
+ * Meta lève (`MetaApiError`) : chaque appelant le rend à sa façon.
+ */
+export async function creerUnModele(deps: TemplateRouteDeps, tenant: string, input: CreateTemplateInput): Promise<IssueCreationModele> {
+  const refusChamps = await refusDesChamps(deps, tenant, input);
+  if (refusChamps) return { ...refusChamps, motif: 'champs' };
+  const wabaId = await deps.repo.getTenantWabaId(tenant);
+  if (!wabaId) return { statut: 400, error: 'aucun WABA pour ce tenant', motif: 'compte' };
+  if (!(await flowButtonOk(deps, tenant, input.buttons))) {
+    return { statut: 400, error: 'le flow référencé n\'est pas publié', motif: 'flow' };
+  }
+  // Substitution des liens juste avant la soumission : l'utilisateur a saisi son adresse, Meta reçoit la nôtre.
+  // La destination est enregistrée avant l'appel à Meta : l'inverse laisserait, en cas de panne entre les deux,
+  // un template approuvé pointant un code inexistant (un lien mort dans des messages livrés).
+  const client = await deps.meta.templateClientForTenant(tenant);
+  const issue = await soumettreAvecLiens(deps, tenant, input, (aSoumettre) => client.create(wabaId, aSoumettre));
+  if ('refus' in issue) return { statut: 422, error: issue.refus, motif: 'liens' };
+  return { res: issue.res };
+}
+
 /** Routes de templates : liste + création + édition + suppression (soumission à validation Meta). */
 export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
@@ -443,23 +472,9 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
     const parsed = parseTemplateFields(b);
     if ('error' in parsed) return reply.code(400).send({ error: parsed.error });
     if (parseParamHints(b.paramHints) === null) return reply.code(400).send({ error: 'paramHints invalides' });
-    const refusChamps = await refusDesChamps(deps, tenant, parsed.fields);
-    if (refusChamps) return reply.code(refusChamps.statut).send({ error: refusChamps.error });
 
-    const wabaId = await deps.repo.getTenantWabaId(tenant);
-    if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
-    if (!(await flowButtonOk(deps, tenant, parsed.fields.buttons))) {
-      return reply.code(400).send({ error: 'le flow référencé n\'est pas publié' });
-    }
-
-    const input: CreateTemplateInput = { name: b.name, language: b.language, ...parsed.fields };
-
-    // Substitution des liens juste avant la soumission : l'utilisateur a saisi son adresse, Meta reçoit la nôtre.
-    // La destination est enregistrée avant l'appel à Meta : l'inverse laisserait, en cas de panne entre les deux,
-    // un template approuvé pointant un code inexistant (un lien mort dans des messages livrés).
-    const client = await deps.meta.templateClientForTenant(tenant);
-    const issue = await soumettreAvecLiens(deps, tenant, input, (aSoumettre) => client.create(wabaId, aSoumettre));
-    if ('refus' in issue) return reply.code(422).send({ error: issue.refus });
+    const issue = await creerUnModele(deps, tenant, { name: b.name, language: b.language, ...parsed.fields });
+    if (!('res' in issue)) return reply.code(issue.statut).send({ error: issue.error });
     await saveHintsSafe(deps, tenant, b.name, b.language, b.paramHints);
     return reply.code(201).send(issue.res);
   });

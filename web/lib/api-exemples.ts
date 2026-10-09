@@ -31,7 +31,8 @@ export type RouteAvecCorps =
   | 'POST /v1/sends'
   | 'POST /v1/messages/whatsapp'
   | 'POST /v1/messages'
-  | 'POST /v1/messages/rcs';
+  | 'POST /v1/messages/rcs'
+  | 'POST /v1/templates';
 
 export interface ExempleCorps {
   readonly route: RouteAvecCorps;
@@ -159,6 +160,27 @@ export const EXEMPLES_CORPS = {
           ],
         },
       },
+    },
+  },
+  // Un modèle au format de Meta (lot 13, domaine 3) : une image d'en-tête par son adresse, une variable, deux boutons.
+  modeleMeta: {
+    route: 'POST /v1/templates',
+    corps: {
+      name: 'commande_prete',
+      language: 'fr',
+      category: 'UTILITY',
+      components: [
+        { type: 'HEADER', format: 'IMAGE', example: { header_url: ['https://www.exemple.fr/img/commande.jpg'] } },
+        { type: 'BODY', text: 'Bonjour {{1}}, votre commande est prête. Vous pouvez passer la retirer.', example: { body_text: [['Claire']] } },
+        { type: 'FOOTER', text: 'Boutique du centre' },
+        {
+          type: 'BUTTONS',
+          buttons: [
+            { type: 'QUICK_REPLY', text: 'J’arrive' },
+            { type: 'URL', text: 'Voir la commande', url: 'https://www.exemple.fr/commandes' },
+          ],
+        },
+      ],
     },
   },
   messageRcs: {
@@ -330,6 +352,15 @@ export const EXEMPLES_REPONSES = {
   conversationLue: CONVERSATION_LUE,
   conversations: { data: [CONVERSATION_LUE], nextCursor: 'MjAyNi0xMC0wOFQwOTo1ODowMi4xMjM0NTZafGM0ZTFiMmEzLTlkOGYtNGU3YS1hNmI1LTFjMmQzZTRmNWE2Yg' },
   messageLu: MESSAGE_LU,
+  // Les modèles (lot 13, domaine 3) : tenus aux formes du serveur par `tests/api-exemples.test.ts`.
+  modeleCree: { id: '1489201163476524', name: 'commande_prete', language: 'fr', category: 'utility', status: 'pending' },
+  statutModele: {
+    name: 'commande_prete',
+    languages: [
+      { language: 'fr', status: 'approved', category: 'utility', rejectedReason: null },
+      { language: 'en_US', status: 'rejected', category: 'utility', rejectedReason: 'INVALID_FORMAT' },
+    ],
+  },
   messagesDuFil: {
     data: [MESSAGE_LU, {
       id: 'wamid.exemple-8412', conversationId: CONVERSATION_ID, direction: 'out', channel: 'whatsapp', type: 'text',
@@ -378,7 +409,9 @@ export const CODES_DOCUMENTES = [
   { code: 'template_not_found', statut: 404, ecart: false, quoi: ['Template absent, ou pas encore approuvé.', 'Template missing, or not approved yet.'] },
   { code: 'rcs_message_not_found', statut: 404, ecart: false, quoi: ['Message RCS introuvable dans la bibliothèque.', 'RCS message not found in the library.'] },
   { code: 'send_not_found', statut: 404, ecart: false, quoi: ['Envoi inconnu.', 'Unknown send.'] },
-  { code: 'meta_rejected', statut: 422, ecart: false, quoi: ['Meta a refusé le contenu du message : son motif suit.', 'Meta refused the message content: its reason follows.'] },
+  { code: 'meta_rejected', statut: 422, ecart: false, quoi: ['Meta a refusé le contenu du message ou du modèle : son motif suit.', 'Meta refused the message or template content: its reason follows.'] },
+  { code: 'invalid_header_media', statut: 422, ecart: false, quoi: ['Le fichier d’en-tête d’un modèle n’a pas pu être pris à son adresse : son motif suit.', 'The template header file could not be fetched from its address: the reason follows.'] },
+  { code: 'template_rejected', statut: 422, ecart: false, quoi: ['Le modèle est refusé avant Meta (un lien n’a pas pu être tracé) : son motif suit.', 'The template is refused before Meta (a link could not be tracked): the reason follows.'] },
   { code: 'conversation_not_found', statut: 404, ecart: false, quoi: ['Conversation inconnue de cet espace.', 'Conversation unknown to this workspace.'] },
   { code: 'message_not_found', statut: 404, ecart: false, quoi: ['Message inconnu de cet espace.', 'Message unknown to this workspace.'] },
   { code: 'invalid_cursor', statut: 400, ecart: false, quoi: ['Curseur illisible : renvoyez tel quel le nextCursor d’une page.', 'Unreadable cursor: send back a page’s nextCursor as is.'] },

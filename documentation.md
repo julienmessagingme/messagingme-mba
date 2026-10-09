@@ -3679,6 +3679,15 @@ Ajouté par le lot 4 de l'API publique :
    Meta dans `BORNES_META`), puis SEUL le type et son contenu partent (`corpsPourMeta`) par `MetaClient.sendMessage`,
    le destinataire étant celui de la fiche. Les médias ne passent que par une URL https (`link`) : Meta les cherche,
    rien ne transite chez nous. L'Inbox garde l'aperçu (`apercuDuMessage`) et le type.
+46. **Un modèle créé par l'API ou par Claude (lot 13, domaine 3) passe par la création de l'écran Modèles** :
+   `creerUnModele` (`src/http/templates.ts`) porte les champs des liens, le compte WhatsApp, le flow publié et la
+   soumission avec les liens tracés ; la route de la console, `POST /v1/templates` et `create_template` l'appellent.
+   Le corps de Meta est validé par `schemaModeleMeta` puis traduit par `versModeleConsole` (`src/api/modele-meta.ts`) ;
+   `creerModeleDepuisMeta` (`src/api/creer-modele.ts`) ajoute le seul geste propre à l'API, l'en-tête par adresse :
+   `telechargerEntete` (`src/api/entete-par-url.ts`, gardes d'une adresse saisie par un client, type décidé par la
+   signature des octets, trois téléchargements en vol par copie) puis le dépôt chez Meta de l'écran Modèles
+   (`uploadImage`). La création compte `templates.create` à l'usage, hors quota du jour, et ne prend PAS la place
+   lourde (une par copie), qu'un téléchargement de 20 s prendrait aux envois.
 
 ### Sur les contrats externes
 

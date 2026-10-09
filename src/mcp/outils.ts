@@ -21,6 +21,7 @@ import { decoderCurseur, encoderCurseur, type DepotConversationsV1 } from '../ap
 import { OUTILS_AGENT, type DepsAgentMcp } from './outils-agent';
 import { OUTILS_EVENEMENTS, type DepsEvenementsMcp } from './outils-evenements';
 import { OUTILS_NUMERO, type DepsNumeroMcp } from './outils-numero';
+import { OUTILS_MODELES, type DepsModelesMcp } from './outils-modeles';
 import type { VueOffre } from '../offres/vue';
 import type { SourceOffres } from '../offres/offre.pg';
 import type { Fonction } from '../offres/offres';
@@ -91,6 +92,8 @@ export interface DepsMcp extends DepsRepondre {
   messagesApi: Pick<DepotConversationsV1, 'message'>;
   /** L'envoi au format de Meta (lot 13, domaine 2) : le MÊME que `POST /v1/messages`, pour `send_message`. */
   envoyerMessage(tenantId: string, phoneNumberId: string, to: string, corps: Record<string, unknown>): Promise<string>;
+  /** Les modèles (lot 13, domaine 3) : la MÊME création et le MÊME suivi que `POST /v1/templates`, et la liste du catalogue. */
+  modeles: DepsModelesMcp;
   /**
    * 🔴 Le plafond des opérations coûteuses de la console, la MÊME instance que celle des routes, comptée par espace
    * sous la même clé : sans lui, le serveur MCP serait la porte qui contourne les dix opérations lourdes par minute
@@ -790,6 +793,8 @@ export const OUTILS: OutilMcp[] = [
   ...OUTILS_NUMERO,
   // Les webhooks sortants (lot 12) : leur fichier, `src/mcp/outils-evenements.ts`.
   ...OUTILS_EVENEMENTS,
+  // Les modèles (lot 13, domaine 3) : leur fichier, `src/mcp/outils-modeles.ts`.
+  ...OUTILS_MODELES,
 ];
 
 /**

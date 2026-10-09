@@ -625,12 +625,23 @@ export const stripeProInerte: StripeWebhookRouteDeps['pro'] = {
 };
 
 /**
- * Le statut d'un message et l'envoi au format de Meta (lot 13), pour les montages qui n'en parlent pas : aucun message
- * connu, et un envoi qui LÈVE (un test qui envoie le dit en passant son propre `envoyerMessage`).
+ * Le statut d'un message, l'envoi au format de Meta et les modèles (lot 13), pour les montages qui n'en parlent pas :
+ * aucun message connu, aucun modèle, un espace sans compte WhatsApp, et chaque geste qui écrit LÈVE (un test qui envoie
+ * ou crée le dit en passant les siens).
  */
-export const mcpMessagesInertes: Pick<DepsMcp, 'messagesApi' | 'envoyerMessage'> = {
+export const mcpMessagesInertes: Pick<DepsMcp, 'messagesApi' | 'envoyerMessage' | 'modeles'> = {
   messagesApi: { message: async () => null },
   envoyerMessage: neDevraitPasEtreAppelee('envoyerMessage'),
+  modeles: {
+    lister: async () => [],
+    modeles: {
+      ...modelesInertes,
+      meta: { templateClientForTenant: neDevraitPasEtreAppelee('templateClientForTenant') },
+      repo: { getTenantWabaId: async () => null, listActiveCampaignsForTemplate: aucuneCampagneActive },
+    },
+    telechargerEntete: neDevraitPasEtreAppelee('telechargerEntete'),
+    deposerEntete: neDevraitPasEtreAppelee('deposerEntete'),
+  },
 };
 
 /**

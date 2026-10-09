@@ -65,6 +65,7 @@ import { registerAbonnementNumero, type AbonnementNumeroRouteDeps } from './http
 import { registerApiKeys } from './http/api-keys';
 import { registerV1Contacts } from './http/v1-contacts';
 import { registerV1Conversations, type V1ConversationsRouteDeps } from './http/v1-conversations';
+import { registerV1Templates, type V1TemplatesRouteDeps } from './http/v1-templates';
 import { registerV1Sends } from './http/v1-sends';
 import { registerV1Catalogues } from './http/v1-catalogues';
 import type { V1CataloguesRouteDeps } from './http/v1-catalogues';
@@ -371,6 +372,8 @@ export interface ServerDeps {
     messagesRcs?: Omit<V1MessagesRcsRouteDeps, 'usage'>;
     /** La lecture des fils et des messages (`/v1/conversations`, `/v1/messages/{id}`, lot 13). */
     conversations?: Omit<V1ConversationsRouteDeps, 'usage'>;
+    /** La création des modèles et le suivi de leur validation (`POST /v1/templates`, `GET /v1/templates/{name}`, lot 13). */
+    templates?: Omit<V1TemplatesRouteDeps, 'usage'>;
     /** Le serveur MCP, moins son plafond coûteux : `buildServer` y pose le sien au montage (`DepsMcp.couteux`). */
     mcp?: CablageMcp;
     /** Le relais du Meta Business Agent : même autorité et même limiteur que /v1. */
@@ -790,6 +793,8 @@ export function modulesDeRoutes(
       // La lecture des fils (lot 13) : un droit NEUF, `conversations:read`, sans reprise des clés existantes (décision de
       // Julien du 2026-10-08). Lire un fil n'est ni lire une fiche, ni envoyer.
       if (v1.conversations) registerV1Conversations(app, { ...v1.conversations, usage: usageApi }, [requireApiKey, requireScope('conversations:read')]);
+      // Les modèles (lot 13, domaine 3) : un droit NEUF, `templates:write`, sans reprise. Créer un modèle n'est pas envoyer.
+      if (v1.templates) registerV1Templates(app, { ...v1.templates, usage: usageApi }, [requireApiKey, requireScope('templates:write')]);
       // Serveur MCP : même `requireApiKey` que /v1, donc ses appels comptent dans le plafond de l'espace. Pas
       // de `requireScope` à la porte : il a deux droits (lecture, écriture) et c'est l'outil appelé qui décide
       // duquel il a besoin.

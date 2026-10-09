@@ -250,6 +250,7 @@ describe('inventaire des appels sortants vers une URL saisie par un client', () 
     ['src/agent/eprouver-source.ts', 'le bouton éprouver une SOURCE, oublié jusqu’au 2026-09-03'],
     ['src/salesforce/connexion.ts', 'la connexion d’une org Salesforce (adresse saisie par l’admin du client)'],
     ['src/evenements/envoi.ts', 'un webhook sortant, vers l’adresse de l’application du client (lot 12)'],
+    ['src/api/entete-par-url.ts', 'le fichier d’en-tête d’un modèle créé par l’API ou par Claude (lot 13)'],
   ] as const;
 
   for (const [fichier, quoi] of CHEMINS) {
@@ -269,10 +270,10 @@ describe('inventaire des appels sortants vers une URL saisie par un client', () 
     });
   }
 
-  it('et le compte est de SIX (les webhooks sortants sont le sixième, 2026-10-08)', () => {
+  it('et le compte est de SEPT (l’en-tête d’un modèle par son adresse est le septième, 2026-10-09)', () => {
     // Si un septième apparaît sans être ajouté ici, ce test ne le verra pas : c'est sa limite, et elle est
-    // dite. Ce qu'il empêche, c'est qu'un des six PERDE sa garde sans que personne ne s'en aperçoive.
-    expect(CHEMINS).toHaveLength(6);
+    // dite. Ce qu'il empêche, c'est qu'un des sept PERDE sa garde sans que personne ne s'en aperçoive.
+    expect(CHEMINS).toHaveLength(7);
   });
 });
 
@@ -304,6 +305,7 @@ describe('inventaire : chaque appel vers une URL client passe par le fetch véri
     ['src/agent/eprouver-source.ts', 'le bouton éprouver une SOURCE', true],
     ['src/salesforce/client.ts', 'le client REST Salesforce (adresse My Domain saisie par l’admin du client)', true],
     ['src/evenements/envoi.ts', 'un webhook sortant (lot 12)', true],
+    ['src/api/entete-par-url.ts', 'l’en-tête d’un modèle par son adresse (lot 13)', true],
   ] as const;
 
   for (const [fichier, quoi, sansFetchNu] of CHEMINS) {

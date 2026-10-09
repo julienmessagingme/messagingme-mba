@@ -136,7 +136,7 @@ function McpInner({ session }: { session: Session | null }) {
         <Liste>
           <li>
             <strong className="text-ink-900">{t('Pas d’envoi de template, pas de campagne.', 'No template sending, no campaigns.')}</strong>{' '}
-            {t('Il répond dans une conversation ouverte ; il ne lance pas d’envoi de masse.', 'It replies inside an open conversation; it does not launch a mass send.')}
+            {t('Il crée des modèles et suit leur validation, il répond dans une conversation ouverte ; il ne lance pas d’envoi de masse.', 'It creates templates and follows their review, it replies inside an open conversation; it does not launch a mass send.')}
           </li>
           <li>
             <strong className="text-ink-900">{t('Hors de la fenêtre de 24 h, rien ne part.', 'Outside the 24 h window, nothing is sent.')}</strong>{' '}
