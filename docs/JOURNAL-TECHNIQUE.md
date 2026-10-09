@@ -29,6 +29,20 @@ lot B).
   route qui éteint un lien de chaîne (fonction produit), les interfaces à une implémentation (les tests les
   imitent par leur forme) et les réglages sans valeur posée (leviers d'urgence, de montée en charge ou de rétention).
 
+## 2026-10-09 : « Renouveler la connexion Meta », en production
+
+`35765f12` puis `2ca33d15`, CI verte job par job, aucune migration. Trouvé en dressant la liste unique des essais réels
+de Julien : le plan Embedded Signup v4 du 2026-09-22 avait mesuré qu'un jeton émis avant la v4 dure 60 jours, celui de
+« MessagingMeEmbdedded » jusqu'au 2026-10-16, et prévoyait un bouton de reconnexion jamais construit. Julien pensait la
+question réglée par la v4 ; une sonde en lecture seule (les dates en base, `debug_token` chez Meta, le jeton jamais
+affiché) a tranché : la v4 vaut pour les connexions faites depuis, ce jeton-là n'avait jamais été remplacé. La relecture
+a trouvé le défaut qui aurait fait échouer le geste lui-même, et une seconde sonde l'a confirmé : le jeton expose deux
+comptes WhatsApp, et un renouvellement, qui ne rend qu'un code, tombait sur « impossible de deviner ». La route retient
+désormais le compte qui porte le numéro déjà rattaché à l'espace. Leçon : une affirmation « c'est réglé depuis » se
+mesure contre l'objet précis, pas contre la règle générale ; et un recours se teste sur l'état réel de celui qui doit
+s'en servir, pas sur le cas nominal. Au passage : le jeton de « Test DIDWA claude code » est marqué invalide chez nous
+depuis le 5 octobre alors que Meta le dit valide (signalé à Julien).
+
 ## 2026-10-09 : le contrat OpenAPI de l'API publique (lot 16, livraison A), en production
 
 `05501ec5`, CI verte job par job, aucune migration ; `GET https://api.messagingme.app/openapi.json` rend 200 avec

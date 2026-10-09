@@ -65,6 +65,16 @@ migration 0227, fiches d'identité, enregistrement dynamique) et B (la console e
 `oauth_client_enregistre` du journal de l'API dit par quelle voie chacun passe) ; reconnecter aussi Claude Code et
 claude.ai, et vérifier qu'aucun `oauth_client_enregistre` ne sort pour eux.
 
+## « RENOUVELER LA CONNEXION META » (2026-10-09), EN PRODUCTION, ESSAI RÉEL DÛ AVANT LE 16 OCTOBRE
+
+Le bouton de la carte du numéro (Accueil, admins) rejoue l'inscription Meta sur un espace qui a déjà son numéro :
+`35765f12` (console), `2ca33d15` (la route retrouve le compte de l'espace quand le jeton en expose plusieurs ; l'accusé
+de réussite), déployés le 2026-10-09 (quatre conteneurs, fiches d'aide rechargées). Pourquoi : le jeton de
+« MessagingMeEmbdedded » (WABA `1067000669256166`), émis avant la v4, expire le **2026-10-16 à 12 h 55 UTC** (relu chez
+Meta) ; les cinq autres espaces ont des jetons sans expiration ; et ce jeton expose DEUX comptes WhatsApp, ce qui faisait
+échouer le renouvellement avant `2ca33d15`. **Essai réel AVANT le 16** (`docs/prive/ESSAIS-REELS.md`, en tête) : sur cet
+espace, le bouton, le même compte et le même numéro, puis Claude relit le jeton chez Meta (« expire : jamais »).
+
 ## LOT 16 : LE CONTRAT OPENAPI ET LE SDK (2026-10-09), A EN PRODUCTION, B ATTEND LE DÉPÔT DÉDIÉ
 
 Spec `docs/superpowers/specs/2026-10-09-openapi-sdk-design.md`, plan `docs/superpowers/plans/2026-10-09-openapi-sdk.md`
