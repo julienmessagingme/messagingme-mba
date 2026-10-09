@@ -57,7 +57,7 @@ export const PAGES_DOC = [
   {
     cle: 'messages', href: '/developers/api/messages', fichier: 'web/app/developers/api/messages/page.tsx', groupe: 'reference-api',
     nav: ['Messages', 'Messages'], titre: ['Messages', 'Messages'],
-    ancres: ['messages-simples', 'message-whatsapp', 'message-rcs'],
+    ancres: ['messages-simples', 'message-whatsapp', 'message-meta', 'message-rcs'],
   },
   {
     // La lecture des fils (lot 13, domaine 1) : conversations, messages, statut, fichiers reçus.

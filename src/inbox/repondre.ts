@@ -91,6 +91,47 @@ export async function repondreDansLaFenetre(
    */
   redactionOrigine: string | null = null,
 ): Promise<ResultatReponse> {
+  return repondreAvec(deps, tenantId, conversationId, {
+    envoyer: (phoneNumberId, to) => deps.sendReply(tenantId, phoneNumberId, to, texte),
+    trace: texte,
+    type: 'text',
+  }, auteur, origine, redactionOrigine);
+}
+
+/**
+ * Un message au FORMAT DE META (lot 13, domaine 2) : texte, média par URL, lieu, réaction, interactif. Les MÊMES gardes
+ * que le texte (`repondreAvec`) : un seul chemin, pour qu'une garde ajoutée demain vaille pour les deux.
+ * `envoyerMessage` : l'envoi générique du client Meta (`MetaClient.sendMessage`), le contenu déjà validé.
+ */
+export async function repondreAvecUnMessage(
+  deps: DepsRepondre,
+  envoyerMessage: (tenantId: string, phoneNumberId: string, to: string, corps: Record<string, unknown>) => Promise<string>,
+  tenantId: string,
+  conversationId: string,
+  message: { corps: Record<string, unknown>; trace: string; type: string },
+  auteur: string | null,
+  origine: OrigineMessage,
+): Promise<ResultatReponse> {
+  return repondreAvec(deps, tenantId, conversationId, {
+    envoyer: (phoneNumberId, to) => envoyerMessage(tenantId, phoneNumberId, to, message.corps),
+    trace: message.trace,
+    type: message.type,
+  }, auteur, origine, null);
+}
+
+/**
+ * Les gardes d'une réponse dans la fenêtre de 24 h, puis l'envoi, la prise du fil et la trace dans l'Inbox. `envoi.trace`
+ * est ce que l'Inbox affiche du message parti, `envoi.type` son type.
+ */
+async function repondreAvec(
+  deps: DepsRepondre,
+  tenantId: string,
+  conversationId: string,
+  envoi: { envoyer(phoneNumberId: string, to: string): Promise<string>; trace: string; type: string },
+  auteur: string | null,
+  origine: OrigineMessage,
+  redactionOrigine: string | null,
+): Promise<ResultatReponse> {
   const ctx = await deps.inbox.getConversationContext(conversationId, tenantId);
   if (ctx === null) return { refus: { motif: 'conversation_inconnue' } };
   if (!ctx.windowOpen) return { refus: { motif: 'fenetre_fermee' } };
@@ -108,7 +149,7 @@ export async function repondreDansLaFenetre(
   const phoneNumberId = await deps.repo.getTenantPhoneNumberId(tenantId);
   if (!phoneNumberId) return { refus: { motif: 'aucun_numero' } };
 
-  const messageId = await deps.sendReply(tenantId, phoneNumberId, ctx.waId, texte);
+  const messageId = await envoi.envoyer(phoneNumberId, ctx.waId);
   // Le fil est pris : le scénario cesse d'avancer tout seul sur ce contact et MBA cesse de répondre, quel que
   // soit le tiers qui écrit. Ce que ça n'arrête pas : une campagne (déclenchée par un opérateur) et un clic sur un
   // bouton de chaîne (geste explicite de l'abonné), dont le type de lancement reprend le fil
@@ -117,6 +158,6 @@ export async function repondreDansLaFenetre(
   // l'écarterait de la conversation, et le message suivant du client irait à « À traiter » au lieu de lui revenir.
   const laisserALApplication = origine === 'api' && await deps.filTenuParLApplication(tenantId, ctx.waId).catch(() => false);
   if (!laisserALApplication) await deps.takeControl(tenantId, ctx.waId, auteurDeLEnvoi(origine, auteur)).catch(() => {});
-  await deps.inbox.recordOutbound(conversationId, texte, messageId, origine, 'text', null, null, auteur, 'whatsapp', redactionOrigine);
+  await deps.inbox.recordOutbound(conversationId, envoi.trace, messageId, origine, envoi.type, null, null, auteur, 'whatsapp', redactionOrigine);
   return { messageId };
 }

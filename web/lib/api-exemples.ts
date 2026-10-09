@@ -30,6 +30,7 @@ export type RouteAvecCorps =
   | 'PATCH /v1/contacts/{contactId}'
   | 'POST /v1/sends'
   | 'POST /v1/messages/whatsapp'
+  | 'POST /v1/messages'
   | 'POST /v1/messages/rcs';
 
 export interface ExempleCorps {
@@ -140,6 +141,25 @@ export const EXEMPLES_CORPS = {
   messageWhatsapp: {
     route: 'POST /v1/messages/whatsapp',
     corps: { externalId: 'crm-7781', text: 'Votre commande 8412 est prête, vous pouvez passer la retirer.' },
+  },
+  // Le corps de Meta tel quel (lot 13, domaine 2) : deux boutons de réponse.
+  messageMeta: {
+    route: 'POST /v1/messages',
+    corps: {
+      messaging_product: 'whatsapp',
+      to: '+33612345678',
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: 'Votre commande 8412 part demain. On la livre où ?' },
+        action: {
+          buttons: [
+            { type: 'reply', reply: { id: 'domicile', title: 'À domicile' } },
+            { type: 'reply', reply: { id: 'relais', title: 'En point relais' } },
+          ],
+        },
+      },
+    },
   },
   messageRcs: {
     route: 'POST /v1/messages/rcs',
@@ -358,6 +378,7 @@ export const CODES_DOCUMENTES = [
   { code: 'template_not_found', statut: 404, ecart: false, quoi: ['Template absent, ou pas encore approuvé.', 'Template missing, or not approved yet.'] },
   { code: 'rcs_message_not_found', statut: 404, ecart: false, quoi: ['Message RCS introuvable dans la bibliothèque.', 'RCS message not found in the library.'] },
   { code: 'send_not_found', statut: 404, ecart: false, quoi: ['Envoi inconnu.', 'Unknown send.'] },
+  { code: 'meta_rejected', statut: 422, ecart: false, quoi: ['Meta a refusé le contenu du message : son motif suit.', 'Meta refused the message content: its reason follows.'] },
   { code: 'conversation_not_found', statut: 404, ecart: false, quoi: ['Conversation inconnue de cet espace.', 'Conversation unknown to this workspace.'] },
   { code: 'message_not_found', statut: 404, ecart: false, quoi: ['Message inconnu de cet espace.', 'Message unknown to this workspace.'] },
   { code: 'invalid_cursor', statut: 400, ecart: false, quoi: ['Curseur illisible : renvoyez tel quel le nextCursor d’une page.', 'Unreadable cursor: send back a page’s nextCursor as is.'] },

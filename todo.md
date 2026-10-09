@@ -9,6 +9,9 @@
 - **Le fil d'un contact bloqué se lit par Claude, pas par l'API** : `get_conversation` et `get_messages` passent par
   `getConversationContext`, sans filtre `blocked_at`. Déjà vrai en Pro, étendu au Free ; même espace, aucune fuite.
   Aligner sur l'API (et l'Inbox), ou l'écrire.
+- **Une réaction envoyée par l'API ou par Claude sort le fil d'« À traiter »** (lot 13, domaine 2) : `recordOutbound`
+  pose `last_direction = 'out'` et l'emoji en aperçu, alors qu'une réaction REÇUE est délibérément neutre. Un 👍 sur
+  « où est ma commande ? » fait disparaître la question sans réponse. Rendre la réaction sortante neutre elle aussi.
 - **Le rapport RCS pose le statut d'un message sans filtre d'espace** (livraison B) : `traiterRapportRcs` connaît
   l'espace mais `majLivraison` (`src/index.ts`) écrit par le seul identifiant de message, comme il le faisait déjà pour
   `campaign_recipients`. Smsmode ne signe pas : un code de rappel valide et l'identifiant d'un message d'un autre espace

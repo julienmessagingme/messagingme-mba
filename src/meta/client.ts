@@ -78,7 +78,9 @@ export class MetaClient {
    * `sendText` n'y passe pas (`recipient_type` et `to` nu), ni `sendMarketing` (qui choisit son point d'entrée).
    */
   private async envoyer(to: string, corps: Record<string, unknown>): Promise<SendResult> {
-    const json = await this.call('messages', { messaging_product: 'whatsapp', ...messagingTarget(to), ...corps });
+    // Un `to` ou un `recipient` glissé dans le corps ne peut pas remplacer le destinataire : il est retiré.
+    const { to: _to, recipient: _recipient, ...propre } = corps;
+    const json = await this.call('messages', { messaging_product: 'whatsapp', ...messagingTarget(to), ...propre });
     return { messageId: this.messageId(json) };
   }
 
@@ -87,6 +89,14 @@ export class MetaClient {
     const id = messages?.[0]?.id;
     if (!id) throw new Error('réponse Meta sans message id');
     return id;
+  }
+
+  /**
+   * Un message au format de Meta, déjà VALIDÉ (`schemaContenuMeta`, `src/api/message-meta.ts`) : le type et son contenu,
+   * le destinataire posé ici comme pour les autres envois (`messagingTarget`). Lot 13, domaine 2.
+   */
+  async sendMessage(to: string, corps: Record<string, unknown>): Promise<SendResult> {
+    return this.envoyer(to, corps);
   }
 
   async sendText(to: string, body: string): Promise<SendResult> {

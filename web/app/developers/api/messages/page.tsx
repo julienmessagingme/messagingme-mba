@@ -83,6 +83,26 @@ function Messages() {
         </p>
       </Route>
 
+      <Route ep="POST /v1/messages">
+        <p>
+          {t(
+            'Le corps de Meta tel quel, dans la fenêtre de 24 h : un exemple de la documentation de Meta (Cloud API, messages) passe, pour les types ci-dessous et avec ses médias en link. to est le numéro avec l’indicatif du pays, retrouvé sur sa fiche ; contactId ou externalId peuvent le remplacer.',
+            'Meta’s body as is, within the 24-hour window: an example from Meta’s documentation (Cloud API, messages) goes through, for the types below and with its media as link. to is the number with its country code, found on its record; contactId or externalId can replace it.',
+          )}
+        </p>
+        <Liste>
+          <li>{t('Types : text, image, video, audio, document, location, reaction, interactive (button, list, cta_url).', 'Types: text, image, video, audio, document, location, reaction, interactive (button, list, cta_url).')}</li>
+          <li>{t('Un média passe par une URL https publique (link) : Meta va chercher le fichier.', 'A media goes through a public https URL (link): Meta fetches the file.')}</li>
+          <li>{t('Les bornes sont celles de Meta (3 boutons, titre de 20 caractères, 10 lignes de liste) ; un champ inconnu est refusé en invalid_body, avec le champ fautif.', 'The bounds are Meta’s (3 buttons, 20-character title, 10 list rows); an unknown field is refused as invalid_body, naming the field.')}</li>
+          <li>{t('Le contact qui touche un bouton revient dans l’événement message.received, avec son id.', 'The contact who taps a button comes back in the message.received event, with its id.')}</li>
+        </Liste>
+        <Bloc legende={t('Commande', 'Command')}>{curl('/v1/messages', EXEMPLES_CORPS.messageMeta.corps)}</Bloc>
+        <Sous>{reponse}</Sous>
+        <Bloc legende="JSON">{json(EXEMPLES_REPONSES.messageEnvoye)}</Bloc>
+        <Sous>{erreurs}</Sous>
+        <p>{t('Les mêmes que POST /v1/messages/whatsapp, dans le même ordre.', 'The same as POST /v1/messages/whatsapp, in the same order.')}</p>
+      </Route>
+
       <Route ep="POST /v1/messages/rcs">
         <Sous>{requete}</Sous>
         <Champs table={CHAMPS.messageRcs} />

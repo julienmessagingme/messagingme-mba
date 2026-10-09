@@ -2148,6 +2148,14 @@ scénario, comment importer des contacts.
   code et le motif de Meta ; livraison B, migration 0225, aussi par l'outil `get_message_status`) ; et le fichier d'un message reçu (image, vocal, document), tant que Meta le garde (7 jours). Les pages
   vont de 1 à 100 éléments, et se suivent par un curseur à renvoyer tel quel. Une conversation d'un contact bloqué ne
   se lit pas, comme dans l'Inbox.
+- ✅ **Envoyer un message au format de Meta** (lot 13, domaine 2, 2026-10-09, `POST /v1/messages`, droit
+  `sends:create`) : le corps de la documentation de Meta tel quel, dans la fenêtre de 24 h : texte, image, vidéo,
+  audio, document (par une URL https publique, que Meta va chercher), lieu, réaction, et les interactifs (jusqu'à trois
+  boutons de réponse, une liste, un bouton lien). `to` est le numéro, retrouvé sur sa fiche ; `contactId` ou
+  `externalId` peuvent le remplacer. Un champ inconnu ou une borne de Meta dépassée est refusé avec le champ fautif.
+  Les mêmes gardes que le message simple (fenêtre, STOP, numéro délié ou suspendu, quota), le message apparaît dans
+  l'Inbox, et le bouton touché par le contact revient dans `message.received`. Claude fait de même avec
+  `send_message`, dans toutes les offres.
 - ✅ **Envoyer un message simple** : un texte, à une personne, tout de suite, visible dans l'Inbox. Deux routes,
   parce que leurs règles n'ont presque rien en commun : `POST /v1/messages/whatsapp` (dans la fenêtre de 24 h)
   et `POST /v1/messages/rcs` (sans fenêtre, mais seulement vers quelqu'un qui a consenti ou qui vous a déjà

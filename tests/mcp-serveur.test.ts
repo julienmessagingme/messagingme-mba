@@ -641,6 +641,8 @@ describe('serveur MCP : cohérence du catalogue', () => {
     ]));
     expect(ecritures).toEqual({
       reply_in_open_window: [true, false, true],
+      // Comme reply_in_open_window : un message part chez une personne, et prend le fil (lot 13, domaine 2).
+      send_message: [true, false, true],
       tag_conversation: [false, true, false],
       assign_conversation: [true, true, false],
       create_widget: [false, false, false],
@@ -885,6 +887,22 @@ describe('serveur MCP : les outils et l’offre (lot 6, B2a)', () => {
     const inconnu = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('get_message_status', { message_id: 'wamid.ailleurs' }) }));
     expect([inconnu.isError, inconnu.texte]).toEqual([true, 'message inconnu de cet espace']);
     expect(lus.map((l) => l.tenant)).toEqual(['t1', 't1']);
+    await server.close();
+  });
+
+  it('🔴 send_message envoie le contenu de Meta TEL QUEL (lot 13, domaine 2), ouvert en Free ; un contenu invalide est refusé sans rien envoyer', async () => {
+    const partis: Array<{ tenant: string; to: string; corps: Record<string, unknown> }> = [];
+    const { server, traces } = app({ offres: base, envoyerMessage: async (tenant, _pn, to, corps) => { partis.push({ tenant, to, corps }); return 'wamid.meta'; } });
+    const image = { type: 'image', image: { link: 'https://exemple.fr/colis.jpg', caption: 'Votre colis' } };
+    const ok = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('send_message', { conversation_id: 'cv1', message: image }) }));
+    expect(ok.isError, ok.texte).toBe(false);
+    expect(JSON.parse(ok.texte)).toEqual({ message_id: 'wamid.meta', conversation_id: 'cv1' });
+    expect(partis).toEqual([{ tenant: 't1', to: expect.any(String), corps: image }]);
+    expect(traces.journal).toEqual([{ origine: 'mcp', auteur: null }]);
+    const mauvais = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('send_message', { conversation_id: 'cv1', message: { type: 'image', image: { id: '123' } } }) }));
+    expect(mauvais.isError).toBe(true);
+    expect(mauvais.texte).toMatch(/^message invalide/);
+    expect(partis).toHaveLength(1);
     await server.close();
   });
 

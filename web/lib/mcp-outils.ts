@@ -21,6 +21,7 @@ export interface OutilDocumente {
 export const OUTILS_MCP: OutilDocumente[] = [
   { nom: 'list_conversations', scope: 'mcp:read', quoi: ['Les conversations, la plus active en premier.', 'Conversations, most recently active first.'] },
   { nom: 'get_conversation', scope: 'mcp:read', quoi: ['Le détail d’un fil, et surtout si la fenêtre de 24 h est ouverte.', 'Thread details, and whether the 24 h window is open.'] },
+  { nom: 'send_message', scope: 'mcp:write', quoi: ['Envoyer dans la fenêtre de 24 h une image, un document, un lieu, des boutons, une liste ou un bouton lien, au format de Meta.', 'Send within the 24-hour window an image, a document, a location, buttons, a list or a link button, in Meta’s format.'] },
   { nom: 'get_message_status', scope: 'mcp:read', quoi: ['Le statut de livraison d’un message envoyé : envoyé, distribué, lu ou en échec, avec le motif de Meta.', 'The delivery status of a sent message: sent, delivered, read or failed, with Meta’s reason.'] },
   { nom: 'get_messages', scope: 'mcp:read', quoi: ['Les 50 derniers messages d’un fil, du plus ancien au plus récent, et before pour remonter plus loin.', 'The last 50 messages of a thread, oldest first, and before to go further back.'] },
   { nom: 'search_contacts', scope: 'mcp:read', quoi: ['Chercher un contact par nom ou par numéro, avec sa dernière analyse.', 'Find a contact by name or number, with their latest analysis.'] },

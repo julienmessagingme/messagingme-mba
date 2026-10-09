@@ -58,8 +58,8 @@ async function monterV1() {
 }
 
 describe('🔴 l’index des endpoints est l’API que le serveur monte', () => {
-  it('dix-sept entrées, sans doublon, chacune dans un groupe, avec son texte dans les deux langues', () => {
-    expect(ENDPOINTS).toHaveLength(17);
+  it('dix-huit entrées, sans doublon, chacune dans un groupe, avec son texte dans les deux langues', () => {
+    expect(ENDPOINTS).toHaveLength(18);
     expect(new Set(ENDPOINTS.map(cleEndpoint)).size).toBe(ENDPOINTS.length);
     for (const e of ENDPOINTS) {
       expect(GROUPES_ENDPOINTS.map((g) => g.cle), cleEndpoint(e)).toContain(e.groupe);

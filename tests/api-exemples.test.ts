@@ -19,6 +19,7 @@ import {
 } from '../src/http/v1-sends';
 import { schemaMessageWhatsapp, type ReponseMessageSimple } from '../src/http/v1-messages';
 import { schemaMessageRcs } from '../src/http/v1-messages-rcs';
+import { schemaMessageMeta } from '../src/api/message-meta';
 import { validateParamMapping } from '../src/crm/template';
 import { destinataireAvecVariablesInterdites } from '../src/api/variables';
 import { cleIdempotence, CLE_IDEMPOTENCE_MAX, DUREE_CLE_EN_COURS_MAX_MS, DUREE_CLE_IDEMPOTENCE_MS } from '../src/api/idempotence';
@@ -105,6 +106,7 @@ const VALIDATEURS: Record<RouteAvecCorps, (corps: unknown) => Verdict> = {
     return { ok: true };
   },
   'POST /v1/messages/whatsapp': (c) => depuis(schemaMessageWhatsapp.safeParse(c)),
+  'POST /v1/messages': (c) => depuis(schemaMessageMeta.safeParse(c)),
   'POST /v1/messages/rcs': (c) => depuis(schemaMessageRcs.safeParse(c)),
 };
 

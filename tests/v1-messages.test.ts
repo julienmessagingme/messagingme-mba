@@ -12,6 +12,7 @@ import type { ClesFiche, ModeCreation } from '../src/api/fiche';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE, NumeroSuspenduError, MESSAGE_NUMERO_SUSPENDU } from '../src/meta/numero-delie';
+import { MetaApiError } from '../src/meta/errors';
 
 /**
  * `POST /v1/messages/whatsapp` : UN SIMPLE TEXTE, À UNE FICHE, DANS LA FENÊTRE DE 24 H (spec 2026-09-24, § 4).
@@ -60,6 +61,8 @@ interface Monde {
   numeroDelie: boolean;
   /** L'abonnement du numéro fourni est suspendu (lot 4) : le point de passage lève `NumeroSuspenduError`. */
   numeroSuspendu?: boolean;
+  /** Meta refuse le contenu d'un message au format de Meta (lot 13, domaine 2). */
+  metaRefuse?: boolean;
 }
 
 const MONDE: Monde = { fiche: { id: C1 }, conversation: 'conv-1', sansFil: false, fenetreOuverte: true, desabonne: false, numeroDeLEspace: 'pn1', numeroDelie: false };
@@ -67,6 +70,8 @@ const MONDE: Monde = { fiche: { id: C1 }, conversation: 'conv-1', sansFil: false
 function app(over: Partial<Monde> = {}) {
   const m: Monde = { ...MONDE, ...over };
   const envois: Array<{ to: string; text: string }> = [];
+  // Les envois au format de Meta (`POST /v1/messages`) : ce qui part chez Meta, tel quel.
+  const envoisMeta: Array<{ to: string; corps: Record<string, unknown> }> = [];
   const enregistres: Array<{ body: string; origine: OrigineMessage; auteur: string | null; type?: string }> = [];
   const desabonneLu: string[] = [];
   const prises: string[] = [];
@@ -111,6 +116,12 @@ function app(over: Partial<Monde> = {}) {
       messages: {
         repondre,
         enModeApplication: async () => m.modeApplication === true,
+        envoyerMessage: async (_t, pn, to, corps) => {
+          if (m.numeroDelie) throw new NumeroDelieError(pn);
+          if (m.metaRefuse) throw new MetaApiError(400, { code: 131009, message: 'Parameter value is not valid', error_user_msg: 'Le titre du bouton est invalide.' });
+          envoisMeta.push({ to, corps });
+          return 'wamid.meta';
+        },
         /** Double de la résolution du lot 1 : elle NORMALISE le numéro (format national compris). */
         resoudreFiche: async (tenant, cles, o) => {
           resolutions.push({ tenant, cles, creer: o.creer });
@@ -131,7 +142,7 @@ function app(over: Partial<Monde> = {}) {
       },
     },
   });
-  return { server, envois, enregistres, desabonneLu, prises, resolutions, contextesLus, filsCherches, usage };
+  return { server, envois, envoisMeta, enregistres, desabonneLu, prises, resolutions, contextesLus, filsCherches, usage };
 }
 
 const auth = (key: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` } });
@@ -307,9 +318,12 @@ describe('POST /v1/messages/whatsapp', () => {
     await server.close();
   });
 
-  it('l’ancienne adresse `POST /v1/messages` n’existe plus', async () => {
-    const { server } = app();
-    expect((await post(server, { contactId: C1, text: 'x' }, VALID, '/v1/messages')).statusCode).toBe(404);
+  it('l’ancienne forme `{ contactId, text }` sur `POST /v1/messages` (devenue la route au format de Meta, lot 13) : 400 qui nomme le type, rien ne part', async () => {
+    const { server, envois, envoisMeta } = app();
+    const res = await post(server, { contactId: C1, text: 'x' }, VALID, '/v1/messages');
+    expect([res.statusCode, res.json().code]).toEqual([400, 'invalid_body']);
+    expect(res.json().error).toMatch(/type/);
+    expect([envois, envoisMeta]).toEqual([[], []]);
     await server.close();
   });
 
@@ -405,5 +419,90 @@ describe('POST /v1/messages/whatsapp en mode « mon application répond » (lot 
     const compteurs = await usage.compteurs();
     expect(compteurs.find((c) => c.operation === 'messages.reponse_application')).toMatchObject({ appels: 1 });
     expect(compteurs.find((c) => c.operation === 'messages.send')).toBeUndefined();
+  });
+});
+
+/**
+ * `POST /v1/messages` (lot 13, domaine 2) : le corps de Meta tel quel. Les MÊMES étapes et gardes que le texte (elles
+ * sont partagées) ; ce qui est propre à la route : le contenu part TEL QUEL, `to` désigne la fiche, et l'Inbox garde
+ * l'aperçu et le type.
+ */
+describe('POST /v1/messages (le corps de Meta tel quel)', () => {
+  const URL_META = '/v1/messages';
+  const IMAGE = { messaging_product: 'whatsapp', to: NUMERO, type: 'image', image: { link: 'https://exemple.fr/colis.jpg', caption: 'Votre colis' } };
+
+  it('🔴 une image par URL : 200, le contenu part TEL QUEL (sans to ni nos champs), l’Inbox garde la légende et le type', async () => {
+    const { server, envoisMeta, enregistres, prises, resolutions } = app();
+    const res = await post(server, IMAGE, VALID, URL_META);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ messageId: 'wamid.meta', conversationId: 'conv-1', channel: 'whatsapp' });
+    expect(envoisMeta).toEqual([{ to: '33612345678', corps: { type: 'image', image: { link: 'https://exemple.fr/colis.jpg', caption: 'Votre colis' } } }]);
+    expect(enregistres).toEqual([{ body: 'Votre colis', origine: 'api', auteur: null, type: 'image' }]);
+    expect(prises).toEqual(['33612345678']);
+    // `to` est le numéro, relayé à la résolution partagée comme `phone`.
+    expect(resolutions[0]).toMatchObject({ tenant: 't1', cles: { phone: NUMERO }, creer: 'jamais' });
+    await server.close();
+  });
+
+  it('contactId ou externalId à la place de to', async () => {
+    const { server, envoisMeta } = app();
+    const { to: _to, ...sansTo } = IMAGE;
+    expect((await post(server, { ...sansTo, contactId: C1 }, VALID, URL_META)).statusCode).toBe(200);
+    expect((await post(server, { ...sansTo, externalId: 'crm-7781' }, VALID, URL_META)).statusCode).toBe(200);
+    expect(envoisMeta).toHaveLength(2);
+    await server.close();
+  });
+
+  it('🔴 les mêmes gardes que le texte : STOP, fenêtre fermée, numéro délié, droit manquant ; rien ne part', async () => {
+    for (const [monde, statut, code] of [
+      [{ desabonne: true }, 409, 'opted_out'], [{ fenetreOuverte: false }, 422, 'window_closed'],
+      [{ sansFil: true }, 422, 'window_closed'], [{ numeroDelie: true }, 409, 'number_unlinked'],
+    ] as const) {
+      const { server, envoisMeta } = app(monde);
+      const res = await post(server, IMAGE, VALID, URL_META);
+      expect([res.statusCode, res.json().code], JSON.stringify(monde)).toEqual([statut, code]);
+      expect(envoisMeta).toEqual([]);
+      await server.close();
+    }
+    const { server } = app();
+    expect((await post(server, IMAGE, NOSCOPE, URL_META)).statusCode).toBe(403);
+    await server.close();
+  });
+
+  it('🔴 un corps hors du format accepté est un 400 qui nomme le champ, sans compter ni rien envoyer', async () => {
+    const { server, envoisMeta, usage } = app();
+    const res = await post(server, { ...IMAGE, image: { id: '123' } }, VALID, URL_META);
+    expect([res.statusCode, res.json().code]).toEqual([400, 'invalid_body']);
+    expect(res.json().error).toMatch(/image/);
+    expect((await post(server, { type: 'text', text: { body: 'x' } }, VALID, URL_META)).json()).toMatchObject({ code: 'invalid_body' });
+    expect(envoisMeta).toEqual([]);
+    expect((await usage.compteurs()).find((c) => c.operation === 'messages.send')).toBeUndefined();
+    await server.close();
+  });
+});
+
+describe('POST /v1/messages : les corrections de la relecture', () => {
+  const URL_META = '/v1/messages';
+  const TEXTE = { messaging_product: 'whatsapp', type: 'text', text: { body: 'Bonjour' } };
+
+  it('🔴 `to` est INTERNATIONAL, comme chez Meta : sans « + », il garde son indicatif (jamais lu comme un numéro français)', async () => {
+    const { server, resolutions } = app();
+    expect((await post(server, { ...TEXTE, to: '33612345678' }, VALID, URL_META)).statusCode).toBe(200);
+    expect(resolutions[0]).toMatchObject({ cles: { phone: '+33612345678' } });
+    const etranger = await post(server, { ...TEXTE, to: '447911123456' }, VALID, URL_META);
+    expect(resolutions[1]).toMatchObject({ cles: { phone: '+447911123456' } });
+    expect(etranger.statusCode).toBe(404);
+    const illisible = await post(server, { ...TEXTE, to: '06 12 34 56 78' }, VALID, URL_META);
+    expect([illisible.statusCode, illisible.json().code]).toEqual([400, 'invalid_body']);
+    expect(illisible.json().error).toMatch(/^to : le numéro avec l’indicatif du pays/);
+    await server.close();
+  });
+
+  it('🔴 Meta refuse le contenu : 422 meta_rejected avec SON motif, jamais une erreur sans code', async () => {
+    const { server } = app({ metaRefuse: true });
+    const res = await post(server, { ...TEXTE, to: '33612345678' }, VALID, URL_META);
+    expect([res.statusCode, res.json().code]).toEqual([422, 'meta_rejected']);
+    expect(res.json().error).toMatch(/Le titre du bouton est invalide/);
+    await server.close();
   });
 });

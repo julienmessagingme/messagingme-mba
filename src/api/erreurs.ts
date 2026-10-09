@@ -25,6 +25,8 @@ export const STATUT_PAR_CODE = {
   rcs_unreachable: 422,
   rcs_not_enabled: 409,
   no_whatsapp_number: 409,
+  // Meta refuse le CONTENU d'un message au format de Meta (`POST /v1/messages`, lot 13) : son motif est dans le message.
+  meta_rejected: 422,
   // Le numéro WhatsApp de l'espace est délié depuis l'Accueil : rien ne part avant qu'il soit relié. Distinct
   // de `no_whatsapp_number` : le numéro existe, et se relie d'un clic.
   number_unlinked: 409,

@@ -1,6 +1,9 @@
 import type { ConversationSummary, ConversationMessage, ListConversationsOptions, ControlOwner } from '../inbox/store.pg';
 import type { AnalyseEtResume, ContactRow, ContactFilters } from '../crm/contact-store.pg';
-import { repondreDansLaFenetre, type ConversationsRepondre, type DepsRepondre } from '../inbox/repondre';
+import { repondreAvecUnMessage, repondreDansLaFenetre, type ConversationsRepondre, type DepsRepondre, type ResultatReponse } from '../inbox/repondre';
+import { apercuDuMessage, corpsPourMeta, schemaContenuMeta } from '../api/message-meta';
+import { messageDeForme } from '../api/forme';
+import { MetaApiError } from '../meta/errors';
 import { parCause, type AuteurDuChangement } from '../inbox/evenements';
 import { NumeroBloqueError } from '../meta/numero-delie';
 import { e164DepuisSaisie } from '../crm/phone';
@@ -86,6 +89,8 @@ export interface DepsMcp extends DepsRepondre {
   offre: { vue(tenantId: string): Promise<VueOffre> };
   /** Un message par son identifiant public (lot 13) : la MÊME lecture que `GET /v1/messages/{id}`, pour `get_message_status`. */
   messagesApi: Pick<DepotConversationsV1, 'message'>;
+  /** L'envoi au format de Meta (lot 13, domaine 2) : le MÊME que `POST /v1/messages`, pour `send_message`. */
+  envoyerMessage(tenantId: string, phoneNumberId: string, to: string, corps: Record<string, unknown>): Promise<string>;
   /**
    * 🔴 Le plafond des opérations coûteuses de la console, la MÊME instance que celle des routes, comptée par espace
    * sous la même clé : sans lui, le serveur MCP serait la porte qui contourne les dix opérations lourdes par minute
@@ -557,29 +562,41 @@ export const OUTILS: OutilMcp[] = [
       // cas). Les déduire l'un de l'autre écrit une valeur fausse en base.
       // Le numéro délié sort en exception : traduit en refus, sinon l'agent lirait une panne et réessaierait en
       // consommant le plafond de l'espace.
-      let res: Awaited<ReturnType<typeof repondreDansLaFenetre>>;
-      try {
-        res = await repondreDansLaFenetre(deps, tenantId, id, texte, personne?.userId ?? null, 'mcp');
-      } catch (err) {
-        if (err instanceof NumeroBloqueError) throw new RefusOutil(err.message);
-        throw err;
-      }
-      if ('refus' in res) {
-        if (res.refus.motif === 'conversation_inconnue') throw new RefusOutil('conversation inconnue dans cet espace');
-        if (res.refus.motif === 'aucun_numero') throw new RefusOutil('aucun numéro WhatsApp rattaché à cet espace');
-        // 🔴 Une machine ne parle pas à quelqu'un qui a dit STOP. Le message donne la raison et l'issue (un
-        // opérateur peut encore répondre), sinon l'agent conclurait à une panne et réessaierait.
-        if (res.refus.motif === 'contact_desabonne') {
-          throw new RefusOutil(
-            'ce contact a demandé à ne plus recevoir de messages (opt-out) : aucun envoi automatique ne lui '
-            + 'est adressé. Un opérateur peut encore lui répondre à la main depuis la console.',
-          );
-        }
-        throw new RefusOutil(
-          'fenêtre de 24 h fermée : le contact n’a pas écrit récemment, WhatsApp refuse le message libre. '
-          + 'Il faut un template approuvé, envoyé depuis la console.',
-        );
-      }
+      const res = await reponseOuRefus(() => repondreDansLaFenetre(deps, tenantId, id, texte, personne?.userId ?? null, 'mcp'));
+      return { message_id: res.messageId, conversation_id: id };
+    },
+  },
+  {
+    nom: 'send_message',
+    // Comme `reply_in_open_window` : une réponse dans la fenêtre de 24 h, ouverte dans toutes les offres.
+    fonction: null,
+    description:
+      'Envoie dans une conversation un message au FORMAT DE META (l’objet message de la Cloud API, sans destinataire) : '
+      + 'text, image, video, audio, document (médias par une URL https publique, link), location, reaction, ou '
+      + 'interactive (button : 3 boutons de réponse au plus ; list ; cta_url : un bouton lien). UNIQUEMENT dans la '
+      + 'fenêtre de 24 h (get_conversation le dit). Pour un simple texte, reply_in_open_window suffit. Envoyer PREND le '
+      + 'fil, comme reply_in_open_window.',
+    scope: 'mcp:write',
+    annotations: { title: 'Envoyer un message au format de Meta', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    entree: {
+      type: 'object',
+      properties: {
+        conversation_id: CONVERSATION_ID,
+        message: {
+          type: 'object',
+          description: 'L’objet message de Meta sans destinataire, par exemple { "type": "image", "image": { "link": '
+            + '"https://…", "caption": "…" } }. Les bornes sont celles de Meta (texte 4 096 caractères, légende 1 024, '
+            + 'titre de bouton 20, 10 lignes de liste) ; un champ inconnu est refusé.',
+        },
+      },
+      required: ['conversation_id', 'message'],
+    },
+    async executer(deps, tenantId, args, personne) {
+      const id = texteObligatoire(args, 'conversation_id', 100);
+      const lu = schemaContenuMeta.safeParse(args.message);
+      if (!lu.success) throw new RefusOutil(`message invalide : ${messageDeForme(lu.error)}`);
+      const message = { corps: corpsPourMeta(lu.data), trace: apercuDuMessage(lu.data), type: lu.data.type };
+      const res = await reponseOuRefus(() => repondreAvecUnMessage(deps, deps.envoyerMessage, tenantId, id, message, personne?.userId ?? null, 'mcp'));
       return { message_id: res.messageId, conversation_id: id };
     },
   },
@@ -782,4 +799,38 @@ export const OUTILS: OutilMcp[] = [
  */
 export function outilsPour(ctx: { scopes: readonly string[]; personne: PersonneMcp | null }): OutilMcp[] {
   return OUTILS.filter((o) => ctx.scopes.includes(o.scope) && (o.exigePersonne !== true || ctx.personne != null));
+}
+
+/**
+ * La réponse dans la fenêtre de 24 h, ou son refus en `RefusOutil` lisible : le numéro délié ou suspendu (exception du
+ * point d'envoi), la conversation inconnue, l'espace sans numéro, le STOP, la fenêtre fermée. Sans cela, l'agent lirait
+ * une panne et réessaierait en consommant le plafond de l'espace.
+ */
+async function reponseOuRefus(envoi: () => Promise<ResultatReponse>): Promise<{ messageId: string }> {
+  let res: ResultatReponse;
+  try {
+    res = await envoi();
+  } catch (err) {
+    if (err instanceof NumeroBloqueError) throw new RefusOutil(err.message);
+    // Meta refuse le contenu : un refus lisible, sinon l'agent lirait une panne et renverrait le même message.
+    if (err instanceof MetaApiError && err.httpStatus >= 400 && err.httpStatus < 500 && !err.retryable) {
+      throw new RefusOutil(`Meta a refusé le message : ${(err.userMessage ?? err.message).slice(0, 300)}`);
+    }
+    throw err;
+  }
+  if (!('refus' in res)) return res;
+  if (res.refus.motif === 'conversation_inconnue') throw new RefusOutil('conversation inconnue dans cet espace');
+  if (res.refus.motif === 'aucun_numero') throw new RefusOutil('aucun numéro WhatsApp rattaché à cet espace');
+  // 🔴 Une machine ne parle pas à quelqu'un qui a dit STOP. Le message donne la raison et l'issue (un opérateur peut
+  // encore répondre), sinon l'agent conclurait à une panne et réessaierait.
+  if (res.refus.motif === 'contact_desabonne') {
+    throw new RefusOutil(
+      'ce contact a demandé à ne plus recevoir de messages (opt-out) : aucun envoi automatique ne lui '
+      + 'est adressé. Un opérateur peut encore lui répondre à la main depuis la console.',
+    );
+  }
+  throw new RefusOutil(
+    'fenêtre de 24 h fermée : le contact n’a pas écrit récemment, WhatsApp refuse le message libre. '
+    + 'Il faut un template approuvé, envoyé depuis la console.',
+  );
 }

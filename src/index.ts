@@ -538,6 +538,15 @@ async function main(): Promise<void> {
   };
 
   /**
+   * L'envoi d'un message au format de Meta (lot 13, domaine 2), le contenu déjà validé : le client de l'espace, comme
+   * `sendReply` (donc ses gardes : numéro délié ou suspendu, jeton). Partagé par `POST /v1/messages` et `send_message`.
+   */
+  const envoyerMessage = async (tenant: string, phoneNumberId: string, to: string, corps: Record<string, unknown>) => {
+    const client = await metaFactory.clientForTenant(tenant, phoneNumberId);
+    return (await client.sendMessage(to, corps)).messageId;
+  };
+
+  /**
    * Les dépendances de `repondreDansLaFenetre`, branchées une fois pour ses trois appelants (réponse de
    * l'Inbox, `POST /v1/messages/whatsapp`, serveur MCP) : une garde qui change (fenêtre de 24 h,
    * désabonnement, prise du fil) change pour les trois. `satisfies` porte ici le contrôle des clés en trop,
@@ -2716,6 +2725,8 @@ async function main(): Promise<void> {
         inbox: inboxStore,
         // « Mon application répond » (lot 12, B) : ses réponses sortent du quota du jour.
         enModeApplication: fil.enModeApplication,
+        // Le corps de Meta tel quel (`POST /v1/messages`, lot 13, domaine 2).
+        envoyerMessage,
       },
       /**
        * `POST /v1/messages/rcs`. Ce bloc ne fait que brancher : les gardes du RCS vivent dans
@@ -2750,6 +2761,8 @@ async function main(): Promise<void> {
         offre: { vue: vueOffre },
         // Le statut d'un message (lot 13) : la MÊME lecture que `GET /v1/messages/{id}`.
         messagesApi: conversationsV1,
+        // L'envoi au format de Meta (lot 13, domaine 2) : le MÊME que `POST /v1/messages`.
+        envoyerMessage,
         // La fonction de chaque outil se vérifie sur la même offre en cache (lot 6, B2a).
         offres,
         ...depsRepondre,

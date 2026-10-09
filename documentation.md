@@ -3672,6 +3672,13 @@ Ajouté par le lot 4 de l'API publique :
    jamais de statut, et un échec est définitif ; son code et son motif viennent d'`echecs_messages` (message libre),
    sinon de `campaign_recipients` (modèle de campagne). Aucune reprise : un message envoyé avant le 2026-10-08 garde
    un statut `null`.
+45. **L'envoi au format de Meta (`POST /v1/messages`, lot 13, domaine 2) partage TOUTES les gardes du texte** :
+   `repondreAvecUnMessage` et `repondreDansLaFenetre` passent par le même `repondreAvec` (`src/inbox/repondre.ts`),
+   et les deux routes par les mêmes étapes (`jusquAuFil`, `envoyerEtRepondre`, `src/http/v1-messages.ts`) : une garde
+   ajoutée vaut pour les deux. Le corps est validé par `schemaMessageMeta` (`src/api/message-meta.ts`, strict, bornes de
+   Meta dans `BORNES_META`), puis SEUL le type et son contenu partent (`corpsPourMeta`) par `MetaClient.sendMessage`,
+   le destinataire étant celui de la fiche. Les médias ne passent que par une URL https (`link`) : Meta les cherche,
+   rien ne transite chez nous. L'Inbox garde l'aperçu (`apercuDuMessage`) et le type.
 
 ### Sur les contrats externes
 

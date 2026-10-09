@@ -118,8 +118,10 @@ const CLASSEMENT: Record<string, { verdict: Verdict; pourquoi: string }> = {
       + 'ROUVRE une conversation fermée, donc le MARKETING est refusé et le SERVICE passe, sur la catégorie '
       + 'lue chez Meta et jamais dans le corps de la requête (son appel à Meta vit depuis le 2026-10-07 dans '
       + '`src/inbox/envoi-modele.ts`, classé à part). (3) La réponse d’un agent tiers par MCP : '
-      + 'BLOQUÉE, c’est une machine. La garde vit dans `src/inbox/repondre.ts`, visant la seule origine '
-      + '`mcp` : c’est l’asymétrie de câblage qui fait l’exemption de l’opérateur.',
+      + 'BLOQUÉE, c’est une machine. (4) Le message au format de Meta (`envoyerMessage`, lot 13 : '
+      + '`POST /v1/messages` et `send_message`) : BLOQUÉ, il passe par la MÊME garde. Elle vit dans '
+      + '`src/inbox/repondre.ts` (`repondreAvec`) et vise toute origine qui n’est pas `humain` : c’est l’asymétrie '
+      + 'de câblage qui fait l’exemption de l’opérateur.',
   },
 };
 

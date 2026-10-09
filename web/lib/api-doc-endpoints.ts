@@ -80,6 +80,10 @@ export const ENDPOINTS = [
     resume: ['Modifie les champs, les tags, le consentement ou l’identifiant externe d’une fiche.', 'Updates a record’s fields, tags, consent or external id.'],
   },
   {
+    methode: 'POST', chemin: '/v1/messages', droit: 'sends:create', groupe: 'messages', lien: { page: 'messages', ancre: 'message-meta' },
+    resume: ['Envoie un message au format de Meta : image, document, lieu, boutons, liste, bouton lien.', 'Sends a message in Meta’s format: image, document, location, buttons, list, link button.'],
+  },
+  {
     methode: 'POST', chemin: '/v1/messages/whatsapp', droit: 'sends:create', groupe: 'messages', lien: { page: 'messages', ancre: 'message-whatsapp' },
     resume: ['Envoie tout de suite un texte WhatsApp à une fiche existante.', 'Sends a WhatsApp text right away to an existing record.'],
   },

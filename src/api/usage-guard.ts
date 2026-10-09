@@ -22,7 +22,8 @@ export type OperationApi =
   | 'contacts.read'
   | 'sends.create'
   | 'sends.read'
-  // Un texte libre à une personne (`POST /v1/messages/whatsapp` et `/rcs`) : une unité par appel.
+  // Un message libre à une personne (`POST /v1/messages/whatsapp`, `/rcs`, et `POST /v1/messages` au format de Meta) :
+  // une unité par appel.
   | 'messages.send'
   // La même réponse WhatsApp, d'un espace en mode « mon application répond » (lot 12, B) : comptée au plafond d'appels,
   // jamais au quota du jour (décision de Julien du 2026-10-08). Une réponse dans la fenêtre de 24 h n'est pas un envoi.

@@ -5,6 +5,14 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-09 : l'envoi au format de Meta (lot 13, domaine 2), écrit
+
+Ronde de questions du matin : les types courants, le corps de Meta tel quel (`to` ou nos identifiants), les médias par
+URL, rien de plus. La route réutilise les étapes et les gardes du message simple : elles sont sorties de la route
+existante en deux fonctions partagées, et `repondreDansLaFenetre` passe désormais par le même `repondreAvec` que
+l'envoi générique. L'ancienne adresse `POST /v1/messages` (le premier message simple, renommé `/v1/messages/whatsapp`)
+renaît au format de Meta : un ancien appel `{ contactId, text }` y reçoit un 400 qui nomme `type`, rien ne part.
+
 ## 2026-10-09 : le film d'accueil de la vitrine passe lui aussi en vertical au téléphone, en production
 
 À la demande de Julien, le film d'accueil (WhatsApp, 1 min 12) a sa version 9:16, recomposée scène par scène dans la

@@ -37,6 +37,13 @@ export function messageDeForme(err: ZodError, precisions: Readonly<Record<string
       return `${chemin} : champ inconnu (${i.keys.slice(0, 5).map((k) => k.slice(0, 40)).join(', ')})`;
     case 'invalid_value':
       return `${chemin} : valeur admise ${i.values.map(String).join(' | ')}`;
+    // Une règle maison (`refine`, `superRefine`) porte SA phrase, écrite pour l'appelant : on la rend. Le message par
+    // défaut de zod (en anglais) ne l'est pas.
+    case 'custom':
+      return i.message && i.message !== 'Invalid input' ? `${chemin} : ${i.message.slice(0, 200)}` : `${chemin} : valeur invalide`;
+    // Un format (`regex`, `url`) qui porte une phrase écrite par nous la rend ; celle de zod commence par « Invalid ».
+    case 'invalid_format':
+      return i.message && !/^Invalid/.test(i.message) ? `${chemin} : ${i.message.slice(0, 200)}` : `${chemin} : valeur invalide`;
     default:
       return `${chemin} : valeur invalide`;
   }
