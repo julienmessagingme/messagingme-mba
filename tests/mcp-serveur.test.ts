@@ -5,7 +5,8 @@ import { contactsV1Muets } from './aide/contacts-v1';
 import { FakeQueue } from './fake-queue';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
-import type { CablageMcp } from '../src/mcp/outils';
+import type { CablageMcp, DepsMcp } from '../src/mcp/outils';
+import { outilsPour } from '../src/mcp/outils';
 import type { ContactRow } from '../src/crm/contact-store.pg';
 import type { AnalyseDeFiche } from '../src/analysis/fiche';
 import { OUTILS } from '../src/mcp/outils';
@@ -954,21 +955,26 @@ describe('serveur MCP : les modèles (lot 13, domaine 3)', () => {
   }
   const MODELE = { name: 'commande_prete', language: 'fr', category: 'UTILITY', components: [{ type: 'BODY', text: 'Votre commande est prête.' }] };
 
-  it('🔴 create_template crée par la création de l’écran Modèles, ouvert en Free ; un corps invalide ne part pas chez Meta', async () => {
+  it('🔴 create_template est réservé à une PERSONNE : une clé d’API, même mcp:write, ne le voit pas et ne crée rien', async () => {
+    expect(OUTILS.find((o) => o.nom === 'create_template')?.exigePersonne).toBe(true);
+    expect(outilsPour({ scopes: ['mcp:read', 'mcp:write'], personne: null }).map((o) => o.nom)).not.toContain('create_template');
     const m = modeles({ id: 'tid', status: 'PENDING', category: 'UTILITY' });
     const { server } = app({ offres: base, modeles: m.modeles });
-    const ok = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('create_template', { template: MODELE }) }));
-    expect(ok.isError, ok.texte).toBe(false);
-    expect(JSON.parse(ok.texte)).toEqual({ id: 'tid', name: 'commande_prete', language: 'fr', category: 'utility', status: 'pending' });
-    expect(m.corps).toHaveLength(1);
-    const mauvais = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('create_template', { template: { ...MODELE, category: 'AUTHENTICATION' } }) }));
-    expect([mauvais.isError, mauvais.texte]).toEqual([true, expect.stringMatching(/category/)]);
-    expect(m.corps).toHaveLength(1);
-    // Une clé qui ne fait que lire ne crée rien : l'outil lui est inconnu (erreur JSON-RPC, pas un résultat).
-    const lecteur = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_LECTURE), payload: appeler('create_template', { template: MODELE }) });
-    expect(lecteur.json<{ error?: unknown }>().error).toBeDefined();
-    expect(m.corps).toHaveLength(1);
+    const parCle = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('create_template', { template: MODELE }) });
+    expect(parCle.json<{ error?: unknown }>().error).toBeDefined();
+    expect(m.corps).toHaveLength(0);
     await server.close();
+  });
+
+  it('🔴 pour une personne, create_template crée par la création de l’écran Modèles ; un corps invalide ne part pas chez Meta', async () => {
+    const m = modeles({ id: 'tid', status: 'PENDING', category: 'UTILITY' });
+    const outil = OUTILS.find((o) => o.nom === 'create_template')!;
+    const deps = { modeles: m.modeles, couteux: { consommer: async () => ({ accepte: true, attenteMs: 0 }) } } as unknown as DepsMcp;
+    expect(await outil.executer(deps, 't1', { template: MODELE }, { userId: 'u1' }))
+      .toEqual({ id: 'tid', name: 'commande_prete', language: 'fr', category: 'utility', status: 'pending' });
+    expect(m.corps).toHaveLength(1);
+    await expect(outil.executer(deps, 't1', { template: { ...MODELE, category: 'AUTHENTICATION' } }, { userId: 'u1' })).rejects.toThrow(/category/);
+    expect(m.corps).toHaveLength(1);
   });
 
   it('get_template_status rend chaque langue et le motif d’un refus ; list_templates la liste en minuscules', async () => {

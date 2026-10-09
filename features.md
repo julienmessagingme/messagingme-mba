@@ -2162,7 +2162,8 @@ scénario, comment importer des contacts.
   vidéo ou un document d'en-tête se donne par son adresse https (`example.header_url`) : le serveur le télécharge
   (5 Mo pour une image, 16 Mo sinon, sans suivre de redirection) et le dépose chez Meta. `GET /v1/templates/{name}`
   rend le statut de chaque langue (pending, approved, rejected…) avec le motif d'un refus. Claude fait de même avec
-  `create_template`, `get_template_status` et `list_templates`, dans toutes les offres. Hors de cette route :
+  `create_template` (réservé à une personne connectée, jamais à une clé d'API), `get_template_status` et
+  `list_templates`, dans toutes les offres. Hors de cette route :
   carrousel, authentification, Flow, variables nommées. L'envoi d'un modèle par Claude et l'événement de validation
   viennent avec les livraisons B et C.
 - ✅ **Envoyer un message simple** : un texte, à une personne, tout de suite, visible dans l'Inbox. Deux routes,

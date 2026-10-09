@@ -87,6 +87,13 @@ export const OUTILS_MODELES: OutilMcp[] = [
       + 'adresse https sans {{1}}, tracée par nous). Rend le statut initial (souvent pending) : suivre avec '
       + 'get_template_status. Compte dans les opérations lourdes de l’espace.',
     scope: 'mcp:write',
+    /**
+     * 🔴 Une PERSONNE (jeton OAuth), jamais une clé d'API (décision de Julien du 2026-10-09) : un Claude branché sur des
+     * conversations de clients pourrait, sur l'injection d'un message, créer des modèles en boucle jusqu'au plafond du
+     * compte WhatsApp, et bloquer ensuite la création depuis la console. L'API (`POST /v1/templates`) reste aux clés
+     * `templates:write`, un droit qu'on donne en connaissance de cause.
+     */
+    exigePersonne: true,
     // Monde ouvert : le modèle part chez Meta et y reste (le supprimer est un autre geste, depuis la console).
     annotations: { title: 'Créer un modèle', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     entree: {

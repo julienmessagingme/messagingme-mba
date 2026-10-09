@@ -14,8 +14,9 @@ fonction (`creerUnModele`) que l'API et Claude appellent ; la seule chose propre
 Un ancien test interdisait tout outil MCP « template » : assoupli par la décision du lot, il interdit toujours les
 campagnes et n'admet que les trois outils décidés. Relecture : aucun rouge, douze jaunes, poussés ensuite (gardes des
 liens avant le téléchargement, place tenue jusqu'au dépôt, erreurs de Meta traduites, `Retry-After`, marque MP4, corps
-d'échec rendu, pagination du statut, câblage tenu par un test) ; deux restent dans `todo.md`, dont une décision pour
-Julien (`create_template` sous `mcp:write`).
+d'échec rendu, pagination du statut, câblage tenu par un test) ; le délai du dépôt chez Meta reste dans `todo.md`. Le
+dernier jaune était une décision : `create_template` est réservé à une personne connectée (Julien, le même jour), une
+clé d'API ne le voit plus, l'API restant aux clés `templates:write`.
 
 ## 2026-10-09 : l'envoi au format de Meta (lot 13, domaine 2), en production
 

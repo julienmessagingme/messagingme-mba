@@ -10,6 +10,7 @@ import type { EmailIdentity, UserAuthStore } from '../src/auth/store';
 import { OUTILS, type CablageMcp } from '../src/mcp/outils';
 import { OUTILS_NUMERO } from '../src/mcp/outils-numero';
 import { OUTILS_EVENEMENTS } from '../src/mcp/outils-evenements';
+import { OUTILS_MODELES } from '../src/mcp/outils-modeles';
 import type { DepsAgentMcp } from '../src/mcp/outils-agent';
 import { MESSAGE_OPERATIONS_LOURDES } from '../src/auth/plafond-partage';
 import type { AgentComplet, AgentResume, PatchAgent } from '../src/agent/agent-store';
@@ -408,10 +409,11 @@ async function lister(server: Serveur, bearer: string): Promise<string[]> {
 }
 
 /**
- * Les outils de la connexion du numéro (lot 3c) et des webhooks sortants (lot 12) exigent aussi une personne : ils ont
- * leur fichier, `tests/mcp-numero.test.ts` et `tests/mcp-evenements.test.ts`.
+ * Les outils de la connexion du numéro (lot 3c), des webhooks sortants (lot 12) et la création d'un modèle (lot 13)
+ * exigent aussi une personne : ils ont leur fichier, `tests/mcp-numero.test.ts`, `tests/mcp-evenements.test.ts` et
+ * `tests/mcp-serveur.test.ts`.
  */
-const OUTILS_DU_NUMERO = new Set([...OUTILS_NUMERO, ...OUTILS_EVENEMENTS].map((o) => o.nom));
+const OUTILS_DU_NUMERO = new Set([...OUTILS_NUMERO, ...OUTILS_EVENEMENTS, ...OUTILS_MODELES].map((o) => o.nom));
 const EXIGENT_PERSONNE = OUTILS.filter((o) => o.exigePersonne === true && !OUTILS_DU_NUMERO.has(o.nom)).map((o) => o.nom);
 
 /** Des arguments valides pour chaque outil de l'agent : ce qu'un appel qui passerait la garde ferait. */
