@@ -647,7 +647,7 @@ export function modulesDeRoutes(
     entree('ops', 'session-ops', deps.ops, (app, d, g) => registerOps(app, { ...d, usage: usageApi }, g.ops)),
     // Le réglage du plafond de l'API d'un espace : même autorité que `/ops`, dans un module à part.
     entree('plafondApi', 'session-ops', deps.plafondApi, (app, d, g) => registerOpsPlafondApi(
-      app, { store: d, reglages: reglagesPlafond, defauts: defautsPlafond() }, g.ops,
+      app, { store: d, reglages: reglagesPlafond, defauts: defautsPlafond(), compteur: debit }, g.ops,
     )),
     // L'Entreprise d'un espace (lot 6) : sur devis, posée par l'exploitation, dans un module à part.
     entree('opsOffre', 'session-ops', deps.opsOffre, (app, d, g) => registerOpsOffre(app, d, g.ops)),

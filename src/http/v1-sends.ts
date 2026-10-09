@@ -418,8 +418,8 @@ const repondre = (statut: number, code: CodeApi, message: string): ReponseEnvoi 
  * 🔴 LE cœur de `POST /v1/sends`, partagé par la route et l'outil `send_template_to_contact` (lot 13, domaine 3,
  * livraison B) : validation, compteur, idempotence, cible, gardes du numéro, modèles du mois, destinataires,
  * consentement, campagne scellée avec sa clé, enfilement. Une garde ajoutée ici vaut pour les deux.
- * `compter` est le compteur de l'appelant (le garde d'usage pour la route, le plafond coûteux pour Claude), appelé au
- * même endroit qu'avant : `false` = il a déjà répondu, rien n'est fait et la fonction rend `null`.
+ * `compter` est le compteur de l'appelant (le garde d'usage pour la route, le plafond coûteux pour Claude), appelé
+ * juste après le claim : `false` = il a déjà répondu, rien n'est créé, la clé est libérée et la fonction rend `null`.
  */
 export async function lancerEnvoi(
   deps: DepsEnvoi,
@@ -454,12 +454,6 @@ export async function lancerEnvoi(
     return { statut: STATUT_REFUS_OFFRE, corps: corpsRefusFonction('scenarios') };
   }
 
-  /**
-   * Compté avant la résolution de la cible, qui fait déjà des lectures (scénario, bloc, template chez Meta,
-   * numéro) : compter après laisserait ce travail hors des compteurs.
-   */
-  if (!await compter(corps.recipients.length)) return null;
-
   // Idempotence : claim atomique avec l'empreinte du corps, avant toute lecture qui peut changer d'un appel à
   // l'autre (numéro, cible, template chez Meta). Autre corps -> 422 ; concurrent -> 409 ; déjà scellé ->
   // rejeu du rapport, tel quel.
@@ -493,6 +487,18 @@ export async function lancerEnvoi(
   // Rempli + scellé dans le try ; l'enqueue (hors try) le lit après scellement (definite assignment).
   let report!: RapportEnvoi;
   try {
+    /**
+     * Compté APRÈS le claim : un rejeu (201), un envoi en cours (409) ou une clé déjà servie (422) n'envoie rien, donc
+     * ne consomme rien du quota. Et AVANT la résolution de la cible, qui fait déjà des lectures (scénario, bloc,
+     * template chez Meta, numéro) : compter après laisserait ce travail hors des compteurs. Le plafond d'appels de
+     * l'espace, lui, s'est appliqué à l'authentification. Refusé, rien n'est créé et la clé est libérée.
+     * 🔴 DANS LE `try` : le compteur de l'outil MCP ne rend pas `false`, il LÈVE (`RefusOutil`, plafond coûteux ou
+     * quota). Hors du `try`, l'exception partait sans libérer, et la même clé restait en 409 pendant tout le bail.
+     */
+    if (!await compter(corps.recipients.length)) {
+      await deps.idempotence.release(tenantId, idem.cle, jeton);
+      return null;
+    }
     // Un message RCS part de l'agent RCS de l'espace : aucun numéro WhatsApp n'est exigé, et un `phoneNumberId`
     // fourni est ignoré (`numeroDEnvoi` rendrait sinon 409 `no_whatsapp_number` à un espace qui n'a que le RCS).
     const numero = demandee.kind === 'rcsMessage' ? { phoneNumberId: '' } : await numeroDEnvoi(deps, tenantId, corps.phoneNumberId);
@@ -628,7 +634,7 @@ export async function lancerEnvoi(
 /**
  * API publique /v1 des envois. L'espace vient de la clé (`req.auth`), jamais du corps. Garde attendue :
  * `[makeRequireApiKey, requireScope('sends:create')]`.
- * 🔴 L'ordre compte : la forme, le compteur d'usage, le claim d'idempotence, puis le numéro et la cible (des
+ * 🔴 L'ordre compte : la forme, le claim d'idempotence, le compteur d'usage, puis le numéro et la cible (des
  * lectures), et seulement alors ce qui écrit (fiches, consentements, campagne). Le claim passe avant les
  * lectures : un rejeu rend le rapport scellé même si le template a changé depuis. Un refus ou une erreur après
  * le claim libère la clé.

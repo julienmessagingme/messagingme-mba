@@ -5,6 +5,23 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-09 : quotas de l'API, ce que la relecture avait laissé (lot 0 bis)
+
+- **Un envoi compte son quota APRÈS la clé d'idempotence** (`lancerEnvoi`, `src/http/v1-sends.ts`). Un rejeu, un envoi
+  en cours (409) ou une clé déjà servie (422) n'envoient rien et ne consomment plus rien ; un envoi refusé par le quota
+  LIBÈRE sa clé, sans quoi le même appel resterait en 409 jusqu'à l'expiration du bail. Le plafond d'appels de l'espace
+  s'applique à l'authentification, avant le handler : le déplacement ne laisse passer aucun appel de plus. La
+  documentation publique disait l'inverse (« un rejeu compte à nouveau ») : corrigée.
+- **La consommation du jour se lit dans `/ops`** : le lien « quotas API » d'un espace ouvre ses quatre fenêtres, le
+  consommé face au plafond qui s'applique (« défaut », « aucun »), et un compteur muet s'y lit « n/d », jamais 0.
+- **Un changement de quota fait depuis `/ops` laisse une trace durable** : une ligne `api.limites_modifiees` au journal
+  d'audit de l'espace, avec l'auteur, l'avant et l'après. Avant, seul le journal du conteneur la portait.
+- **Un test fige « deux clés d'un même espace partagent le quota »**, vrai par construction et dit nulle part.
+- **L'enquête sur les appels MCP à 30 s est close sans code** : des essais d'agent (`test_agent`) et un import de site
+  arrivés au bout de leur budget de 30 s, tous rendus en 200. C'est le comportement voulu.
+- Le lot B ci-dessous est en production le même soir (API et deux workers) : l'image ne reçoit que `web/lib/partage`,
+  les conteneurs démarrent sans erreur d'import, et la recherche de contacts, qui passe par le code déplacé, répond.
+
 ## 2026-10-09 : audit de simplicité, lot B (le code partagé entre le serveur et la console)
 
 Huit règles que le serveur applique et que la console affiche n'existent plus qu'une fois, dans `web/lib/partage/`,

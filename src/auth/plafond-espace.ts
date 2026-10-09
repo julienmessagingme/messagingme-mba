@@ -82,6 +82,26 @@ export interface PlafondApiStore {
   lire(tenantId: string): Promise<ReglagePlafondApi | null>;
   /** Écrit les quatre colonnes d'un coup (plafond et quotas). `false` si l'espace n'existe pas. */
   ecrire(tenantId: string, reglage: ReglagePlafondApi): Promise<boolean>;
+  /**
+   * Laisse la trace DURABLE d'un changement, dans le journal d'audit de l'espace (`api.limites_modifiees`) : le
+   * journal du conteneur, lui, part à chaque recréation. Ses administrateurs y lisent que l'exploitation a changé
+   * leurs limites, et lesquelles. La note n'y entre pas : elle est écrite pour nous, pas pour le client.
+   */
+  tracer(tenantId: string, trace: { par: string; avant: ReglagePlafondApi; apres: ReglagePlafondApi }): Promise<void>;
+}
+
+/**
+ * Le détail d'une ligne d'audit de changement de limites : à plat (la console l'affiche en « clé valeur »), et
+ * seulement ce qui a bougé, avec sa valeur d'avant. « défaut » = la valeur de la configuration (réglage à `null`).
+ */
+export function detailDuChangement(avant: ReglagePlafondApi, apres: ReglagePlafondApi): Record<string, number | string> {
+  const detail: Record<string, number | string> = { par: 'exploitation' };
+  for (const champ of ['minute', 'heure', 'envoisJour', 'fichesJour'] as const) {
+    if (avant[champ] === apres[champ]) continue;
+    detail[champ] = apres[champ] ?? 'défaut';
+    detail[`${champ}Avant`] = avant[champ] ?? 'défaut';
+  }
+  return detail;
 }
 
 export interface LecteurReglagePlafond {

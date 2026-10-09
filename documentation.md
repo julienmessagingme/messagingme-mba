@@ -2656,6 +2656,9 @@ d'autant. `CF-Connecting-IP` ne deviendra lisible qu'avec une origine qui ne ré
   et `_heure`, migration 0181, `null` = défaut, CHECK > 0), lu à travers un cache de 30 s (une lecture partagée par
   rafale ; en cas d'échec, le dernier réglage connu, sinon le défaut) et réglé par `GET`/`PUT
   /ops/plafond-api/:tenantId` (session d'exploitation, note obligatoire, ligne `ops_plafond_api` avec l'état d'avant et `par`,
+  et une ligne `api.limites_modifiees` au journal d'audit de l'espace, la seule trace qui survive au conteneur ; le `GET`
+  rend aussi la consommation du jour, `null` quand le compteur ne répond pas, lisible dans `/ops` par le lien « quotas API »
+  d'un espace ;
   la route pose dans le cache le réglage écrit (`poser`), qui reste le dernier réglage connu si une relecture
   échoue). Refus : 429 `rate_limited`, `Retry-After` = la fenêtre pleine qui se libère le
   plus tard, message qui la nomme avec son plafond ; les `x-ratelimit-*` décrivent la fenêtre la plus proche de
@@ -2671,8 +2674,8 @@ d'autant. `CF-Connecting-IP` ne deviendra lisible qu'avec une origine qui ne ré
   champs requis). Compté par le garde d'usage dans la MÊME opération que l'usage : refusé, rien n'est compté, et un
   lot qui dépasserait est refusé en entier. La fenêtre est un jour de Paris (la date dans la clé, l'origine à son
   minuit, sa durée de 23, 24 ou 25 h : `origineMs` du compteur partagé), donc `Retry-After` dit l'attente jusqu'au
-  minuit suivant. Refus : 429 `quota_exceeded`. ⚠️ Compté AVANT la clé d'idempotence : un rejeu compte à nouveau
-  (écrit dans la documentation publique). Compteur en panne : l'appel passe, comme tout le garde, et une alerte
+  minuit suivant. Refus : 429 `quota_exceeded`. Un envoi est compté APRÈS la clé d'idempotence : un rejeu ou un envoi en
+  cours ne compte pas, et un envoi refusé par le quota libère sa clé. Compteur en panne : l'appel passe, comme tout le garde, et une alerte
   Telegram (`ServerDeps.alerter`) dit, au plus toutes les 30 min, que les quotas ne sont plus tenus.
 - La clé du relais du Meta Business Agent (droit `mba:relais`, attribué par la seule publication) n'entre PAS
   dans ce plafond : elle garde un compteur PAR CLÉ (`API_KEY_RATE_LIMIT_MAX`, sur l'empreinte), pour qu'un

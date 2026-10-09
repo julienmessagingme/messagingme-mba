@@ -189,7 +189,8 @@ export const OUTILS_MODELES: OutilMcp[] = [
         ...(values.length > 0 ? { params: values.map((v, i) => ({ position: i + 1, source: { type: 'literal', value: v } })) } : {}),
         recipients: [phone !== undefined ? { phone } : { contactId }],
       };
-      // Compté où la route compte (avant la clé d'idempotence) : le plafond coûteux, PUIS le quota d'envois du jour.
+      // Compté où la route compte (juste après la clé d'idempotence, que `lancerEnvoi` libère si ce compteur lève) : le
+      // plafond coûteux, PUIS le quota d'envois du jour.
       const r = await deps.envoyerModele(tenantId, corps, async (unites) => {
         const c = await deps.couteux.consommer(tenantId);
         if (!c.accepte) throw new RefusOutil(`${MESSAGE_OPERATIONS_LOURDES} (réessayer dans ${Math.max(1, Math.ceil(c.attenteMs / 1000))} s)`);

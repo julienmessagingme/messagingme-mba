@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgPlafondEspaceStore } from '../../src/auth/plafond-espace.pg';
 import { PgTenantSettingsStore } from '../../src/settings/store.pg';
+import { PgAuditStore } from '../../src/audit/store.pg';
 
 /**
  * LE RÉGLAGE DU PLAFOND DE L'API D'UN ESPACE (migration 0181), contre une VRAIE base.
@@ -27,7 +28,7 @@ describe.skipIf(!url)('le plafond de l’API par espace, en base', () => {
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: url, ssl: pgSsl() });
-    store = new PgPlafondEspaceStore(pool);
+    store = new PgPlafondEspaceStore(pool, new PgAuditStore(pool));
     reglages = new PgTenantSettingsStore(pool);
     tenantId = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-plafond-api') returning id`)).rows[0]!.id;
     autreTenantId = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-plafond-api-autre') returning id`)).rows[0]!.id;
@@ -83,5 +84,26 @@ describe.skipIf(!url)('le plafond de l’API par espace, en base', () => {
           .rejects.toMatchObject({ code: '23514' });
       }
     }
+  });
+
+  it('🔴 la trace d’un changement entre dans l’audit DE L’ESPACE : l’exploitant pour acteur, ce qui a bougé, sans compte', async () => {
+    await store.tracer(tenantId, {
+      par: 'exploitant@itest.fr',
+      avant: { minute: null, heure: null, envoisJour: 2000, fichesJour: null },
+      apres: { minute: null, heure: null, envoisJour: 50000, fichesJour: null },
+    });
+    const r = await pool.query(
+      `select tenant_id, actor_user_id, actor_email, action, target_kind, target_id, detail
+         from audit_log where tenant_id = $1 and action = 'api.limites_modifiees'`,
+      [tenantId],
+    );
+    expect(r.rows).toEqual([{
+      tenant_id: tenantId, actor_user_id: null, actor_email: 'exploitant@itest.fr', action: 'api.limites_modifiees',
+      target_kind: 'tenant', target_id: tenantId,
+      detail: { par: 'exploitation', envoisJour: 50000, envoisJourAvant: 2000 },
+    }]);
+    // L'espace voisin n'en voit rien.
+    const voisin = await pool.query(`select 1 from audit_log where tenant_id = $1 and action = 'api.limites_modifiees'`, [autreTenantId]);
+    expect(voisin.rowCount).toBe(0);
   });
 });

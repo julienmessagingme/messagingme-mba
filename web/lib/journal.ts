@@ -52,6 +52,8 @@ export const ACTIONS_JOURNAL: Record<string, [string, string]> = {
   // détail porte le client et les droits, jamais un jeton ni un code.
   'oauth.autorise': ['Claude autorisé dans l’espace', 'Claude authorized in the workspace'],
   'oauth.revoque': ['Accès de Claude révoqué', 'Claude access revoked'],
+  // Écrite depuis l'exploitation (`/ops`) : l'acteur est l'adresse de l'exploitant, le détail ce qui a bougé.
+  'api.limites_modifiees': ['Limites de l’API modifiées par l’exploitation', 'API limits changed by operations'],
 };
 
 /** Détail compact : « created 2 · optIn oui ». Rien à interpréter, ce sont des compteurs et des drapeaux. */

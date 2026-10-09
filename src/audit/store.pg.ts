@@ -136,7 +136,12 @@ export type AuditAction =
   | 'mfa.echec'
   | 'mfa.reinitialise'
   | 'mfa.codes_regeneres'
-  | 'mfa.desactive';
+  | 'mfa.desactive'
+  /**
+   * Les limites de l'API publique de l'espace changées depuis `/ops` (plafond d'appels, quotas quotidiens). Acteur :
+   * l'adresse de l'exploitant. Détail : ce qui a bougé et sa valeur d'avant, jamais la note, écrite pour nous.
+   */
+  | 'api.limites_modifiees';
 
 export interface AuditEntry {
   id: string;

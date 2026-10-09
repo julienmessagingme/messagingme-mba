@@ -69,3 +69,14 @@ describe('resumeDetail', () => {
     expect(resumeDetail({}, 'oui', 'non')).toBe('');
   });
 });
+
+describe('les limites de l’API changées depuis l’exploitation', () => {
+  it('l’action a son libellé, en français et en anglais, et son détail se lit à plat', () => {
+    const [fr, en] = ACTIONS_JOURNAL['api.limites_modifiees'] ?? ['', ''];
+    expect(fr).not.toBe('');
+    expect(en).not.toBe('');
+    // La forme que `detailDuChangement` écrit côté serveur : ce qui a bougé, et sa valeur d'avant.
+    expect(resumeDetail({ par: 'exploitation', envoisJour: 50000, envoisJourAvant: 'défaut' }, 'oui', 'non'))
+      .toBe('par exploitation · envoisJour 50000 · envoisJourAvant défaut');
+  });
+});

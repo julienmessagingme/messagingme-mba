@@ -1189,13 +1189,8 @@ vient d'une décision de Julien.
 
 - ✅ **Les quotas quotidiens par espace sont posés** (2026-10-05, `src/api/quotas.ts`, `ARCHITECTURE-CIBLE.md` § 13.1) :
   2 000 envois et 20 000 fiches par jour. Ce qui reste, de la relecture du lot :
-  - **Compter le quota d'un envoi APRÈS le `claim` d'idempotence** : aujourd'hui un rejeu, ou une relance qui tombe
-    sur un envoi en cours (409), consomme `recipients.length` (documenté publiquement). Le faire demande de libérer la
-    clé si le quota refuse ensuite : sur le chemin d'envoi, donc en lot à part.
   - **Le 429 de quota de bout en bout sur `/v1/sends` et `/v1/messages/*`** : la famille de chaque opération est testée,
     pas l'opération que chaque route déclare (seul `/v1/contacts` l'est, par le vrai câblage).
-  - **Le compte du jour dans `GET /ops/plafond-api`** : la consommation n'est pas visible ; on ne sait qu'un espace a
-    atteint son quota que par l'alerte (une par espace, famille et jour).
 - **L'usage de `/v1` ne vit que deux heures** (`/ops/usage`, en base depuis le lot B du 2026-09-28 :
   `compteurs_debit`, une écriture par appel ACCEPTÉ, bornée par le plafond de l'espace), et rien n'alerte sur une
   série de `429`, l'épuisement du préfiltre ou la saturation des opérations lourdes. À faire : des agrégats par

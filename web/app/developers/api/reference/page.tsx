@@ -118,7 +118,7 @@ function Reference() {
         <Liste>
           <li>{t('Remise à zéro à minuit, heure de Paris.', 'Reset at midnight, Paris time.')}</li>
           <li>{t('Une requête qui dépasserait le quota est refusée en entier :', 'A request that would exceed the quota is refused entirely:')}{' '}<Refus c="quota_exceeded" />{t(', avec retry-after jusqu’à minuit. Un lot plus petit peut encore passer.', ', with retry-after until midnight. A smaller request may still go through.')}</li>
-          <li>{t('Un nouvel appel avec la même clé d’idempotence compte à nouveau, qu’il rejoue un envoi fini ou tombe sur un envoi en cours (409) : espacez vos relances.', 'A new call with the same idempotency key counts again, whether it replays a finished send or hits one in progress (409): space out your retries.')}</li>
+          <li>{t('Un nouvel appel avec la même clé d’idempotence ne compte pas, qu’il rejoue un envoi fini ou tombe sur un envoi en cours (409). Un envoi refusé par le quota libère sa clé.', 'A new call with the same idempotency key does not count, whether it replays a finished send or hits one in progress (409). A send refused by the quota frees its key.')}</li>
           <li>{t('Les lectures, les catalogues et le serveur MCP n’ont pas de quota ; les campagnes lancées depuis la console non plus.', 'Reads, catalogs and the MCP server have no quota; neither do campaigns launched from the console.')}</li>
           <li>{t('Quota différent pour un espace : sur demande.', 'Different quota for a workspace: on request.')}</li>
         </Liste>

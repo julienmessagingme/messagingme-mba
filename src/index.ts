@@ -2551,7 +2551,7 @@ async function main(): Promise<void> {
       },
     },
     // Le réglage du plafond de l'API par espace : lu par le limiteur de `/v1` et `/mcp`, écrit par `/ops`.
-    plafondApi: new PgPlafondEspaceStore(pool),
+    plafondApi: new PgPlafondEspaceStore(pool, auditStore),
     // Le numéro fourni côté client (lot 3b) : la page « Connecter WhatsApp » obtient un numéro de la réserve et lit le
     // code capté par l'Asterisk. Julien est prévenu sous le seuil, au plus une fois par jour : le verrou court n'est
     // jamais relâché, son échéance EST le silence, commun à toutes les copies de l'API.

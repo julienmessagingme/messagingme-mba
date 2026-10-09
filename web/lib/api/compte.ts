@@ -424,6 +424,24 @@ export function lireNumerosFournis(sessionOps: string): Promise<ReserveNumerosOp
   return appelOps(sessionOps, '/ops/numeros-fournis');
 }
 
+/** Une fenêtre du plafond ou d'un quota d'un espace : son réglage, le défaut, et ce qui s'applique (`null` = aucun). */
+export interface FenetrePlafondOps { reglage: number | null; defaut: number; effectif: number | null }
+
+/** Le plafond d'appels et les quotas du jour d'un espace, avec sa consommation (`GET /ops/plafond-api/:tenantId`). */
+export interface PlafondApiOps {
+  tenantId: string;
+  /** `null` = le compteur n'a pas répondu : consommation inconnue, surtout pas zéro. */
+  aujourdhui: { jour: string; envois: number; fiches: number; remiseAZero: string } | null;
+  minute: FenetrePlafondOps;
+  heure: FenetrePlafondOps;
+  envoisJour: FenetrePlafondOps;
+  fichesJour: FenetrePlafondOps;
+}
+
+export function lirePlafondApiOps(sessionOps: string, tenantId: string): Promise<PlafondApiOps> {
+  return appelOps(sessionOps, `/ops/plafond-api/${encodeURIComponent(tenantId)}`);
+}
+
 /** Retrouve le numéro chez DIDWW, le branche sur le trunk de l'Asterisk, puis l'inscrit dans la réserve. */
 export function declarerNumeroFourni(sessionOps: string, numero: string, note: string): Promise<{ cree: boolean }> {
   return appelOps(sessionOps, '/ops/numeros-fournis', { method: 'POST', corps: { numero, note } });

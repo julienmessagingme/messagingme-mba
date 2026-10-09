@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
-import type { PlafondApiStore, ReglagePlafondApi } from './plafond-espace';
+import { detailDuChangement, type PlafondApiStore, type ReglagePlafondApi } from './plafond-espace';
+import type { PgAuditStore } from '../audit/store.pg';
 
 /**
  * Le réglage du plafond et des quotas de l'API d'un espace (`tenant_settings.api_plafond_minute`, `api_plafond_heure`,
@@ -7,7 +8,8 @@ import type { PlafondApiStore, ReglagePlafondApi } from './plafond-espace';
  * est au défaut, et seule l'absence de l'espace rend `null`, pour que la route d'exploitation dise 404.
  */
 export class PgPlafondEspaceStore implements PlafondApiStore {
-  constructor(private readonly pool: Pool) {}
+  /** `audit` : le journal d'audit des espaces, requis. Sans lui, un changement de limites ne laisserait aucune trace durable. */
+  constructor(private readonly pool: Pool, private readonly audit: Pick<PgAuditStore, 'record'>) {}
 
   async lire(tenantId: string): Promise<ReglagePlafondApi | null> {
     const r = await this.pool.query<{ minute: number | null; heure: number | null; envois: number | null; fiches: number | null }>(
@@ -38,5 +40,19 @@ export class PgPlafondEspaceStore implements PlafondApiStore {
       [tenantId, reglage.minute, reglage.heure, reglage.envoisJour, reglage.fichesJour],
     );
     return (r.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * L'acteur est l'adresse de l'exploitant, sans compte dans l'espace (`userId` à `null`), comme la réinitialisation
+   * du second facteur depuis `/ops` (`mfa.reinitialise`). La cible est l'espace lui-même.
+   */
+  async tracer(tenantId: string, trace: { par: string; avant: ReglagePlafondApi; apres: ReglagePlafondApi }): Promise<void> {
+    await this.audit.record(
+      tenantId,
+      { userId: null, email: trace.par },
+      'api.limites_modifiees',
+      { kind: 'tenant', id: tenantId },
+      detailDuChangement(trace.avant, trace.apres),
+    );
   }
 }

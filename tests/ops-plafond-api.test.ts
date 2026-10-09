@@ -11,6 +11,8 @@ import type { MbaRelaisDeps } from '../src/http/mba-relais';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { capturerJournal } from './journal';
+import { bornesDuJour, jourDeParis } from '../src/api/quotas';
+import type { CompteurDebit } from '../src/db/debit';
 
 /**
  * LE PLAFOND DE L'API PAR ESPACE, PAR LE VRAI CÂBLAGE (`buildServer`), ET LA ROUTE QUI LE RÈGLE.
@@ -51,6 +53,13 @@ class MagasinMemoire implements PlafondApiStore {
     this.reglages.set(t, r);
     return true;
   }
+  readonly traces: Array<{ tenantId: string; par: string; avant: ReglagePlafondApi; apres: ReglagePlafondApi }> = [];
+  /** Vrai : la trace d'audit échoue, comme une base qui refuse l'écriture dans `audit_log`. */
+  tracerEchoue = false;
+  async tracer(t: string, trace: { par: string; avant: ReglagePlafondApi; apres: ReglagePlafondApi }) {
+    if (this.tracerEchoue) throw new Error('audit_log indisponible');
+    this.traces.push({ tenantId: t, ...trace });
+  }
 }
 
 /**
@@ -68,11 +77,12 @@ beforeAll(async () => {
   await s.close();
 });
 
-function monter(apiParMinute = 2, quotaFichesJour = 300) {
+function monter(apiParMinute = 2, quotaFichesJour = 300, debit?: CompteurDebit) {
   const magasin = new MagasinMemoire();
   const server = buildServer({
     queue: new FakeQueue(),
     auth: acces.auth,
+    ...(debit ? { debit } : {}),
     plafonds: { apiParMinute, apiParHeure: 1000, quotaEnvoisJour: 30, quotaFichesJour },
     plafondApi: magasin,
     v1: { apiKeys: new Cles(), oauth: aucunJetonOauth, contacts: contactsV1Muets(), mcp: {} as never, mbaRelais: relaisMuet },
@@ -167,6 +177,38 @@ describe('🔴 le quota quotidien de l’espace, par le vrai câblage', () => {
     expect((await contact(server, CLE_A)).statusCode).toBe(429);
     await server.close();
   });
+
+  it('🔴 /ops lit la consommation que le garde COMPTE : deux clés, un seul compte, et le refus n’y entre pas', async () => {
+    const { server } = monter(100, 3);
+    await contact(server, CLE_A);
+    await contact(server, CLE_B);
+    await contact(server, CLE_A);
+    expect((await contact(server, CLE_B)).statusCode).toBe(429);
+    await contact(server, CLE_T2);
+    const res = await server.inject({ method: 'GET', url: `/ops/plafond-api/${T1}`, headers: ops });
+    const jour = jourDeParis(Date.now());
+    expect(res.json()).toMatchObject({
+      fichesJour: { effectif: 3 },
+      aujourdhui: { jour, envois: 0, fiches: 3, remiseAZero: new Date(bornesDuJour(jour).finMs).toISOString() },
+    });
+    // L'espace voisin a sa propre ligne.
+    const voisin = await server.inject({ method: 'GET', url: `/ops/plafond-api/${T2}`, headers: ops });
+    expect(voisin.json()).toMatchObject({ aujourdhui: { fiches: 1 } });
+    await server.close();
+  });
+
+  it('⚠️ compteur muet : la consommation est INCONNUE (null), surtout pas zéro, et le réglage reste lisible', async () => {
+    const muet: CompteurDebit = {
+      compter: async () => { throw new Error('base injoignable'); },
+      lister: async () => { throw new Error('base injoignable'); },
+    };
+    const { server } = monter(100, 3, muet);
+    const { resultat: res, lignes } = await capturerJournal(() => server.inject({ method: 'GET', url: `/ops/plafond-api/${T1}`, headers: ops }));
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ fichesJour: { effectif: 3 }, aujourdhui: null });
+    expect(lignes.filter((l) => l.msg === 'ops_plafond_api_consommation_illisible')).toHaveLength(1);
+    await server.close();
+  });
 });
 
 describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
@@ -194,6 +236,7 @@ describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
       heure: { reglage: null, defaut: 1000, effectif: 1000 },
       envoisJour: { reglage: null, defaut: 30, effectif: 30 },
       fichesJour: { reglage: null, defaut: 300, effectif: 300 },
+      aujourdhui: { jour: jourDeParis(Date.now()), envois: 0, fiches: 0, remiseAZero: new Date(bornesDuJour(jourDeParis(Date.now())).finMs).toISOString() },
     });
     expect((await server.inject({ method: 'GET', url: `/ops/plafond-api/${INCONNU}`, headers: ops })).statusCode).toBe(404);
     expect((await server.inject({ method: 'GET', url: '/ops/plafond-api/pas-un-uuid', headers: ops })).statusCode).toBe(404);
@@ -255,6 +298,37 @@ describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
     await server.close();
   });
 
+  it('🔴 PUT laisse sa trace DURABLE dans l’audit de l’espace : l’exploitant, l’avant et l’après, jamais la note', async () => {
+    const { server, magasin } = monter();
+    magasin.reglages.set(T1, { minute: null, heure: null, envoisJour: 2000, fichesJour: null });
+    const res = await server.inject({
+      method: 'PUT', url: `/ops/plafond-api/${T1}`, headers: ops,
+      payload: { minute: null, heure: null, envoisJour: 50_000, fichesJour: null, note: 'intégrateur à fort volume' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(magasin.traces).toEqual([{
+      tenantId: T1, par: ADRESSE_OPS,
+      avant: { minute: null, heure: null, envoisJour: 2000, fichesJour: null },
+      apres: { minute: null, heure: null, envoisJour: 50_000, fichesJour: null },
+    }]);
+    expect(JSON.stringify(magasin.traces)).not.toContain('intégrateur à fort volume');
+    await server.close();
+  });
+
+  it('⚠️ un audit en panne ne fait pas échouer le réglage : il est posé, et le journal le dit', async () => {
+    const { server, magasin } = monter();
+    magasin.tracerEchoue = true;
+    const { resultat: res, lignes } = await capturerJournal(() => server.inject({
+      method: 'PUT', url: `/ops/plafond-api/${T1}`, headers: ops,
+      payload: { minute: null, heure: null, envoisJour: 40, fichesJour: null, note: 'intégrateur à fort volume' },
+    }));
+    expect(res.statusCode).toBe(200);
+    expect(magasin.ecritures).toHaveLength(1);
+    expect(lignes.filter((l) => l.msg === 'ops_plafond_api')).toHaveLength(1);
+    expect(lignes.filter((l) => l.msg === 'ops_plafond_api_audit_ignore')).toHaveLength(1);
+    await server.close();
+  });
+
   it('PUT sur un espace inconnu : 404, rien d’écrit ni de journalisé', async () => {
     const { server, magasin } = monter();
     const { resultat: res, lignes } = await capturerJournal(() => server.inject({
@@ -263,6 +337,7 @@ describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
     expect(res.statusCode).toBe(404);
     expect(magasin.ecritures).toEqual([]);
     expect(lignes.filter((l) => l.msg === 'ops_plafond_api')).toEqual([]);
+    expect(magasin.traces).toEqual([]);
     await server.close();
   });
 

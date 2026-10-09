@@ -9,7 +9,7 @@ import { nomDuMessageRcs, PREFIXE_ENVOI_API } from '../src/api/cible-rcs';
 import { appliquerConsentement, type IssueConsentement } from '../src/api/consentement';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { PoolClient } from 'pg';
-import type { V1SendsRouteDeps, V1SendCreateInput } from '../src/http/v1-sends';
+import { lancerEnvoi, type V1SendsRouteDeps, type V1SendCreateInput } from '../src/http/v1-sends';
 import type { BuiltRecipient, ContactEnvoi } from '../src/campaign/build';
 import type { EnvoiApiBrut } from '../src/campaign/store.pg';
 import type { ClesFiche, ModeCreation } from '../src/api/fiche';
@@ -253,7 +253,7 @@ function app(over: Surcharges = {}, monde: Partial<Monde> = {}) {
     ...reste,
   };
   // Le module `/v1/contacts` n'est pas appelé ici : le double muet du lot 1 suffit à le monter.
-  return { server: buildServer({ queue: new FakeQueue(), v1: { apiKeys: keys, oauth: aucunJetonOauth, contacts: contactsV1Muets(), sends } }), cap, idem, m };
+  return { server: buildServer({ queue: new FakeQueue(), v1: { apiKeys: keys, oauth: aucunJetonOauth, contacts: contactsV1Muets(), sends } }), cap, idem, m, sends };
 }
 
 const H = (key: string, idemKey?: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${key}`, ...(idemKey ? { 'idempotency-key': idemKey } : {}) } });
@@ -849,6 +849,39 @@ describe('POST /v1/sends : idempotence', () => {
     expect(r2.json()).toMatchObject({ code: 'idempotency_key_reused' });
     expect(cap.sends).toHaveLength(1);
     await server.close();
+  });
+
+  /**
+   * 🔴 LE QUOTA SE COMPTE APRÈS LA CLÉ. `lancerEnvoi` est le seul endroit où l'ordre se décide (la route et l'outil
+   * `send_template_to_contact` y passent) : un compteur espion dit ce qui a été compté.
+   */
+  it('🔴 un rejeu, un envoi en cours ou une clé déjà servie ne comptent rien du quota', async () => {
+    const { sends, idem, cap } = app();
+    const comptes: number[] = [];
+    const compter = async (n: number) => { comptes.push(n); return true; };
+    expect((await lancerEnvoi(sends, 't1', CORPS, 'k-q', compter))?.statut).toBe(201);
+    expect((await lancerEnvoi(sends, 't1', CORPS, 'k-q', compter))?.statut).toBe(201);
+    expect((await lancerEnvoi(sends, 't1', { ...TPL, recipients: [{ contactId: C2 }] }, 'k-q', compter))?.statut).toBe(422);
+    idem.set('k-en-cours', { hash: empreinteCorps(CORPS), jeton: 'autre' });
+    expect((await lancerEnvoi(sends, 't1', CORPS, 'k-en-cours', compter))?.statut).toBe(409);
+    expect(comptes).toEqual([1]);
+    expect(cap.sends).toHaveLength(1);
+  });
+
+  it('🔴 un envoi refusé par le quota ne crée rien et LIBÈRE sa clé : le même appel repart ensuite', async () => {
+    const { sends, idem, cap } = app();
+    expect(await lancerEnvoi(sends, 't1', CORPS, 'k-refus', async () => false)).toBeNull();
+    expect(idem.has('k-refus')).toBe(false);
+    expect(cap.sends).toHaveLength(0);
+    expect((await lancerEnvoi(sends, 't1', CORPS, 'k-refus', async () => true))?.statut).toBe(201);
+  });
+
+  it('🔴 un compteur qui LÈVE (l’outil MCP) libère aussi la clé : la même demande repart ensuite', async () => {
+    const { sends, idem } = app();
+    const refus = new Error('opérations lourdes : réessayer dans 20 s');
+    await expect(lancerEnvoi(sends, 't1', CORPS, 'k-leve', async () => { throw refus; })).rejects.toBe(refus);
+    expect(idem.has('k-leve')).toBe(false);
+    expect((await lancerEnvoi(sends, 't1', CORPS, 'k-leve', async () => true))?.statut).toBe(201);
   });
 
   it('un envoi identique en cours : 409 idempotency_in_progress', async () => {

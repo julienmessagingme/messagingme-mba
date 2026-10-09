@@ -1,4 +1,4 @@
-import type { Comptage } from '../db/debit';
+import type { Comptage, CompteurDebit } from '../db/debit';
 import { addDays, zonedMidnightEpochSec } from '../stats/range';
 import type { OperationApi } from './usage-guard';
 
@@ -62,6 +62,41 @@ export function comptageQuota(famille: FamilleQuota, tenantId: string, max: numb
   const jour = jourDeParis(instantMs);
   const { debutMs, finMs } = bornesDuJour(jour);
   return { cle: `quota.${famille}|${tenantId}|${jour}`, dureeMs: finMs - debutMs, origineMs: debutMs, max, pas: unites };
+}
+
+/** Ce qu'un espace a consommé de ses quotas aujourd'hui, et quand ils repartent : ce que `/ops` montre. */
+export interface ConsommationDuJour {
+  readonly jour: string;
+  readonly envois: number;
+  readonly fiches: number;
+  /** Le minuit de Paris suivant, en ISO 8601. */
+  readonly remiseAZero: string;
+}
+
+/**
+ * La consommation du jour, lue dans le compteur partagé sous les MÊMES clés que `comptageQuota` les écrit : une seule
+ * fabrique de clé, sinon l'écran lirait une ligne que personne n'écrit et afficherait zéro sans erreur. Lit, ne
+ * décide rien. Lève si le compteur ne répond pas : à l'appelant de dire « inconnue » plutôt que zéro.
+ */
+export async function consommationDuJour(
+  compteur: Pick<CompteurDebit, 'lister'>,
+  tenantId: string,
+  instantMs: number,
+): Promise<ConsommationDuJour> {
+  const lire = async (famille: FamilleQuota): Promise<{ n: number; c: Comptage }> => {
+    const c = comptageQuota(famille, tenantId, 1, 1, instantMs);
+    // Une heure de marge sur la fenêtre : `lister` la compare à l'horloge de la base, pas à celle de la copie.
+    const lignes = await compteur.lister(c.cle, c.dureeMs + 3_600_000);
+    // `lister` cherche par PRÉFIXE : on ne garde que la clé exacte.
+    return { n: lignes.filter((l) => l.cle === c.cle).reduce((s, l) => s + l.n, 0), c };
+  };
+  const [envois, fiches] = await Promise.all([lire('envois'), lire('fiches')]);
+  return {
+    jour: jourDeParis(instantMs),
+    envois: envois.n,
+    fiches: fiches.n,
+    remiseAZero: new Date((envois.c.origineMs ?? 0) + envois.c.dureeMs).toISOString(),
+  };
 }
 
 /** Ce que dit un refus : le quota, ce qu'il compte, et quand il revient. Écrit pour l'intégrateur, pas pour nous. */

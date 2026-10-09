@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { DailyChart } from '@/components/DailyChart';
 import { getOpsOverview, getOpsStockage, observerTenant, lireGrillePrixOps, ecrireGrillePrixOps, loginOps, loginOpsGoogle, estEtapeSecondFacteur, type OpsOverview,
-  lireNumerosFournis, declarerNumeroFourni, type ReserveNumerosOps,
+  lireNumerosFournis, declarerNumeroFourni, type ReserveNumerosOps, lirePlafondApiOps, type PlafondApiOps, type FenetrePlafondOps,
   lireSuppressionOps, supprimerEspaceOps, type BilanSuppressionOps, type EtapePrevueOps, type SuppressionEspaceOps, type EtapeSuppressionNom,
   type TenantOverviewRow, type QueueLoadRow, type QueueGroupLoadRow, type QueueLatenceRow, type LatenceHttpRow, type WorkerHeartbeat, type PoolInstantane,
   type PoolAttentePoint, type GrillePrix, type EtapeSecondFacteur, type SessionOpsOuverte, type TacheFondRow, type MesureStockage } from '@/lib/api';
@@ -48,6 +48,7 @@ export default function OpsPage() {
   const [loading, setLoading] = useState(false);
   /** L'espace dont on ouvre le bilan de suppression (RC8). */
   const [aSupprimer, setASupprimer] = useState<{ id: string; nom: string } | null>(null);
+  const [quotasDe, setQuotasDe] = useState<{ id: string; nom: string } | null>(null);
 
   useEffect(() => {
     // Relue ici et pas au rendu : le stockage du navigateur n'existe pas côté serveur. `getSessionOps` efface au
@@ -193,10 +194,12 @@ export default function OpsPage() {
             <TenantTable
               onObserver={(id, nom) => { void observer(id, nom); }}
               onSupprimer={(id, nom) => setASupprimer({ id, nom })}
+              onQuotas={(id, nom) => setQuotasDe({ id, nom })}
               tenants={data.tenants}
             />
           </>
         ) : null}
+        {quotasDe && <QuotasApi jeton={session.token} tenantId={quotasDe.id} nom={quotasDe.nom} onFermer={() => setQuotasDe(null)} />}
         {aSupprimer && (
           <SuppressionEspace
             jeton={session.token}
@@ -1235,10 +1238,73 @@ function fmtSecondes(s: number): string {
   return `${Math.round(s / 60)} min`;
 }
 
-function TenantTable({ tenants, onObserver, onSupprimer }: {
+/**
+ * LE PLAFOND ET LES QUOTAS DE L'API D'UN ESPACE, avec ce qu'il a consommé aujourd'hui (`GET /ops/plafond-api/:tenantId`).
+ * En lecture : le réglage s'écrit par `PUT` sur la même route, avec une note, tracé dans le journal d'audit de l'espace.
+ * Une consommation `null` est un compteur muet : « inconnue », jamais zéro.
+ */
+function QuotasApi({ jeton, tenantId, nom, onFermer }: { jeton: string; tenantId: string; nom: string; onFermer: () => void }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const [etat, setEtat] = useState<PlafondApiOps | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+  useEffect(() => {
+    lirePlafondApiOps(jeton, tenantId)
+      .then(setEtat)
+      .catch((e: unknown) => setErreur(e instanceof Error ? e.message : t('Lecture impossible', 'Read failed')));
+  }, [jeton, tenantId, t]);
+  const plafond = (f: FenetrePlafondOps) => (f.effectif === null
+    ? t('aucun', 'none')
+    : `${fmtNum(f.effectif, locale)}${f.reglage === null ? t(' (défaut)', ' (default)') : ''}`);
+  const conso = (n: number | undefined) => (n === undefined ? <Nd /> : fmtNum(n, locale));
+  const lignes = etat ? [
+    { cle: 'envois', nom: t('Envois du jour', 'Sends today'), conso: conso(etat.aujourdhui?.envois), f: etat.envoisJour },
+    { cle: 'fiches', nom: t('Fiches du jour', 'Contacts today'), conso: conso(etat.aujourdhui?.fiches), f: etat.fichesJour },
+    { cle: 'minute', nom: t('Appels par minute', 'Calls per minute'), conso: null, f: etat.minute },
+    { cle: 'heure', nom: t('Appels par heure', 'Calls per hour'), conso: null, f: etat.heure },
+  ] : [];
+  return (
+    <Modale titre={t('Quotas de l’API', 'API quotas')} sousTitre={nom} testId="quotas-api-modale" onClose={onFermer}>
+      {erreur ? (
+        <p className="text-xs text-danger">{erreur}</p>
+      ) : !etat ? (
+        <Squelette forme="lignes" lignes={4} />
+      ) : (
+        <div className="grid gap-3">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-ink-100 text-left text-xs text-ink-500">
+                <th className="py-2 font-medium">{t('Fenêtre', 'Window')}</th>
+                <th className="py-2 text-right font-medium">{t('Consommé', 'Used')}</th>
+                <th className="py-2 text-right font-medium">{t('Plafond', 'Limit')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lignes.map((l) => (
+                <tr key={l.cle} className="border-b border-ink-50 last:border-0" data-testid={`quota-${l.cle}`}>
+                  <td className="py-2 text-ink-900">{l.nom}</td>
+                  <td className="py-2 text-right tabular-nums text-ink-900">{l.conso}</td>
+                  <td className="py-2 text-right tabular-nums text-ink-500">{plafond(l.f)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="text-xs text-ink-500">
+            {etat.aujourdhui
+              ? `${t('Remise à zéro', 'Reset')} ${formatDate(etat.aujourdhui.remiseAZero, locale, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+              : t('Le compteur n’a pas répondu : consommation inconnue.', 'The counter did not answer: usage unknown.')}
+          </p>
+        </div>
+      )}
+    </Modale>
+  );
+}
+
+function TenantTable({ tenants, onObserver, onSupprimer, onQuotas }: {
   tenants: TenantOverviewRow[];
   onObserver: (id: string, nom: string) => void;
   onSupprimer: (id: string, nom: string) => void;
+  onQuotas: (id: string, nom: string) => void;
 }) {
   const t = useT();
   const { locale } = useLocale();
@@ -1273,6 +1339,13 @@ function TenantTable({ tenants, onObserver, onSupprimer }: {
                   className="mt-1 text-xs font-medium text-brand-600 underline decoration-dotted hover:text-brand-700"
                 >
                   {t('observer cet espace', 'observe this workspace')}
+                </button>
+                <button
+                  onClick={() => onQuotas(tn.id, tn.name)}
+                  data-testid={`quotas-${tn.id}`}
+                  className="ml-3 mt-1 text-xs font-medium text-brand-600 underline decoration-dotted hover:text-brand-700"
+                >
+                  {t('quotas API', 'API quotas')}
                 </button>
                 {/* Ouvre le bilan : rien n'est supprimé avant la saisie du nom. */}
                 <button
