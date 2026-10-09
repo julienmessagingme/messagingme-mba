@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PEREMPTION_WHATSAPP_MS, verdictWhatsApp } from '../src/contacts/joignabilite';
+import { PEREMPTION_WHATSAPP_MS, verdictWhatsApp } from '../web/lib/partage/joignabilite';
 
 const MAINTENANT = new Date('2026-09-12T10:00:00Z');
 const ilYA = (jours: number) => new Date(MAINTENANT.getTime() - jours * 86_400_000);

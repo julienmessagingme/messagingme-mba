@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useT } from '@/lib/i18n';
 import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from './MbaNotice';
-import { isSendableButtonUrl } from '@/lib/button-url';
+import { isSendableButtonUrl } from '@/lib/partage/button-url';
 import { createMbaWebsite, deleteMbaWebsite, listMbaWebsites, type MbaWebsite } from '@/lib/api-mba';
 import { Bouton } from '@/components/Bouton';
 import { BoutonConfirme } from '@/components/Confirmation';

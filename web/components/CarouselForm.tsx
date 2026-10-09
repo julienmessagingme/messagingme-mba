@@ -5,7 +5,7 @@ import { createTemplate, uploadMedia, type TemplateButtonInput } from '@/lib/api
 import { resizeToDataUrl } from '@/lib/image';
 import { CarouselPreview } from '@/components/CarouselPreview';
 import { useTemplateBody, TemplateBodyField, TemplateVariableExamples, unmappedVariablesMessage } from '@/components/TemplateBodyField';
-import { isSendableButtonUrl } from '@/lib/button-url';
+import { isSendableButtonUrl } from '@/lib/partage/button-url';
 import { useT } from '@/lib/i18n';
 import { inputClsAuto } from '@/lib/ui';
 import { ListeManques } from '@/components/ListeManques';

@@ -3,6 +3,7 @@
  * carousel), au format de l'API Cloud. Seul constructeur de composants d'envoi du projet : campagnes et
  * scénarios passent tous par ici.
  */
+import { carouselButtonHandle } from '../../web/lib/partage/carousel-handle';
 
 /**
  * Une carte de carousel relue dans le template (GET message_templates?fields=components), prête pour l'envoi.
@@ -50,16 +51,6 @@ export interface OutboundTemplateParts {
 }
 
 const HAS_VAR = /\{\{\s*\d+\s*\}\}/;
-
-/**
- * Identifiant d'un bouton de carte : à la fois le `payload` envoyé à Meta et le nom de la sortie du bloc dans le
- * builder, qui doivent être la même chaîne pour qu'un tap retrouve sa branche. `buttonIndex` compte tous les
- * boutons de la carte (URL compris). Dupliqué dans `web/lib/carousel-handle.ts`, parité tenue par
- * `tests/web-carousel-handle-parity.test.ts`.
- */
-export function carouselButtonHandle(cardIndex: number, buttonIndex: number): string {
-  return `card:${cardIndex}:btn:${buttonIndex}`;
-}
 
 /**
  * Pourquoi ce carousel n'est pas envoyable, ou null. À appeler avant l'envoi : une raison lisible plutôt qu'un

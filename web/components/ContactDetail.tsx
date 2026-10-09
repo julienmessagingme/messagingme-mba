@@ -15,7 +15,7 @@ import { ContactHistoryPanel } from '@/components/ContactHistoryPanel';
 import { useT, useLocale } from '@/lib/i18n';
 import { fieldValue, SOCLE_CLES, waIdDuContact } from '@/lib/fields';
 import { formatDate } from '@/lib/day';
-import { verdictWhatsApp, type Verdict } from '@/lib/joignabilite';
+import { verdictWhatsApp, type Verdict } from '@/lib/partage/joignabilite';
 import { BADGE_NIVEAU_RISQUE, libelleRaisonRisque, risqueLu } from '@/lib/risque';
 import { etatResume, phraseResumeAbsent } from '@/lib/resume-conversation';
 import { libelleIntention } from '@/lib/intentions';

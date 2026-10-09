@@ -1,4 +1,4 @@
-import { isSendableButtonUrl } from '../meta/button-url';
+import { isSendableButtonUrl } from '../../web/lib/partage/button-url';
 import type { RcsOutbound, RcsCard, RcsSuggestion } from '../rcs/types';
 
 /**

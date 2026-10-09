@@ -5,9 +5,9 @@ import {
 } from './risque';
 
 /**
- * Le risque de désengagement À L'ÉCRAN (lot 7). La parité avec le serveur (niveaux et codes, dans les deux sens)
- * est dans `tests/web-risque-parite.test.ts`, qui voit les deux côtés ; ce fichier-ci garde ce que l'écran fait
- * de ce qu'il reçoit.
+ * Le risque de désengagement À L'ÉCRAN (lot 7). Niveaux et codes sont partagés avec le serveur (`./partage/risque`),
+ * le filtre est vérifié par `tests/web-risque-parite.test.ts` ; ce fichier-ci garde ce que l'écran fait de ce qu'il
+ * reçoit.
  */
 describe('les libellés', () => {
   it('chaque raison a son libellé, dans les deux langues, et ce n’est pas le code recopié', () => {

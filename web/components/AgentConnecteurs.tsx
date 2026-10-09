@@ -192,8 +192,8 @@ export function ModificationAppel({ tenantId, agentId, outil, onChange }: {
 /**
  * Le libellé français d'une origine de variable.
  *
- * ⚠️ Il DOUBLE `libelleOrigine` de `src/agent/variables.ts`, et c'est assumé : les deux builds ne partagent
- * aucun module, comme `web/lib/button-url.ts` double `src/meta/button-url.ts`. Le serveur reste la source de
+ * ⚠️ Il DOUBLE `libelleOrigine` de `src/agent/variables.ts`, et c'est assumé : il n'est pas dans le code
+ * partagé (`web/lib/partage/`). Le serveur reste la source de
  * vérité (il renvoie `envoi` à la création) ; celui-ci sert à montrer ce qui partira AVANT de valider, donc
  * quand il n'y a encore rien à demander au serveur.
  */

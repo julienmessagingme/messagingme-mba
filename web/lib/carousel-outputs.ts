@@ -1,4 +1,4 @@
-import { carouselButtonHandle } from './carousel-handle';
+import { carouselButtonHandle } from './partage/carousel-handle';
 
 /**
  * Module PUR : aucune IO, aucune dépendance React/navigateur (types STRUCTURAUX locaux, comme

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { buildContactWhere, buildBulkSelector } from '../src/crm/contact-store.pg';
-import { PEREMPTION_WHATSAPP_MS } from '../src/contacts/joignabilite';
+import { PEREMPTION_WHATSAPP_MS } from '../web/lib/partage/joignabilite';
 
 // Fonctions PURES (aucune DB) : on vérifie le SQL + les params générés. C'est le GATE testable de la boucle
 // mini-CRM (les nouveaux opérateurs de filtre + le sélecteur d'action en masse), sans toucher Postgres.

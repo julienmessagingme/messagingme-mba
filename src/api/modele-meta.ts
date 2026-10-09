@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { isValidTemplateLanguage } from '../meta/languages';
-import { isSendableButtonUrl } from '../meta/button-url';
+import { isSendableButtonUrl } from '../../web/lib/partage/button-url';
 import type { CreateTemplateInput, TemplateButton } from '../meta/templates';
 
 /**

@@ -7,11 +7,12 @@ import {
   useTemplateBody, TemplateBodyField, TemplateVariableExamples, labelForSource, unmappedVariablesMessage,
   FieldPicker, type FieldOption,
 } from '@/components/TemplateBodyField';
-import { analyserChampsUrl, exempleUrl, type AnalyseChampsUrl } from '@/lib/champs-url';
+import { exempleUrl } from '@/lib/champs-url';
+import { analyserChampsUrl, type AnalyseChampsUrl } from '@/lib/partage/champs-url';
 import { customFieldsOnly } from '@/lib/fields';
 import { listFlows, createTemplate, updateTemplate, uploadMedia, getTemplateHints, type TemplateSummary, type TemplateButtonInput, type TemplateHeaderInput, type FlowSummary, type TemplateParamHint } from '@/lib/api';
 import { resizeToDataUrl, fileToDataUrl } from '@/lib/image';
-import { isSendableButtonUrl } from '@/lib/button-url';
+import { isSendableButtonUrl } from '@/lib/partage/button-url';
 import { useLocale, useT } from '@/lib/i18n';
 import { categorieTemplate } from '@/lib/format';
 import { META_TEMPLATE_LANGUAGES } from '@/lib/languages';
@@ -314,7 +315,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
         ));
       }
       // 🔴 Un champ dans le nom du site ferait de notre domaine un redirecteur ouvert : refusé avant l'envoi, et le
-      // serveur le refuse aussi (même règle, parité tenue par un test).
+      // serveur le refuse aussi (la même règle, partagée : `web/lib/partage/champs-url.ts`).
       const refusChamps = b.type === 'URL' ? refusChampsUrl(analyserChampsUrl(b.url ?? ''), rang) : null;
       if (refusChamps) fautes.push(refusChamps);
       if (b.type === 'FLOW' && (b.flowId ?? '') === '') fautes.push(t(`le formulaire du bouton ${rang}`, `the form of button ${rang}`));

@@ -21,7 +21,7 @@ import {
  * Les deux builds (Next et API) ne partagent aucun module : les règles d'acceptation d'un fichier de
  * connaissance et d'un titre de compétence sont écrites DEUX FOIS. Ce test casse dès qu'elles divergent.
  *
- * Même forme que `web-button-url-parity.test.ts` : une TABLE DE CAS, et chaque cas est posé aux DEUX
+ * Une TABLE DE CAS, et chaque cas est posé aux DEUX
  * implémentations. Comparer des constantes ne suffirait pas, c'est la façon de s'en servir qui diverge en
  * pratique (une borne oubliée dans un handler, une équivalence d'extension retirée d'un seul côté).
  */

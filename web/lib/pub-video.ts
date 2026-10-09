@@ -3,18 +3,17 @@
  * cadrage. Fonctions pures, sans DOM : la durée se lit dans le fichier (`dureeDuFichier`, qui reçoit de quoi en lire
  * des morceaux), et le décodeur du navigateur (un `<video>`, dans le formulaire) n'est plus que son repli.
  *
- * 🔴 LES BORNES DOIVENT ÉGALER CELLES DU SERVEUR (`src/pubs/video.ts`), et c'est un test de parité qui le tient
- * (`tests/web-pubs-parity.test.ts`). L'écran refuse avant d'envoyer cent mégaoctets pour rien ; le serveur refuse
- * en dernier ressort, et lui seul protège.
+ * 🔴 LES BORNES SONT CELLES DU SERVEUR, partagées (`./partage/pub-video`). L'écran refuse avant d'envoyer cent
+ * mégaoctets pour rien ; le serveur refuse en dernier ressort, et lui seul protège.
  */
 
-/** 100 Mo : décision de Julien du 2026-09-28. */
-export const TAILLE_VIDEO_MAX = 100 * 1024 * 1024;
+import {
+  TAILLE_VIDEO_PUB_MAX as TAILLE_VIDEO_MAX, DUREE_VIDEO_PUB_MAX_S as DUREE_VIDEO_MAX_S, TYPES_VIDEO_PUB as TYPES_VIDEO,
+  dureeTropLongue, dureeDeLaTete, nomDe, u32, u64,
+} from './partage/pub-video';
 
-/** 60 secondes : même décision. */
-export const DUREE_VIDEO_MAX_S = 60;
-
-export const TYPES_VIDEO = ['video/mp4', 'video/quicktime'] as const;
+/** Partagés avec le serveur (`./partage/pub-video`), sous leurs noms d'écran. */
+export { TAILLE_VIDEO_MAX, DUREE_VIDEO_MAX_S, TYPES_VIDEO, dureeTropLongue, dureeDeLaTete };
 export type TypeVideo = (typeof TYPES_VIDEO)[number];
 
 /** Pourquoi une vidéo est refusée avant l'envoi. `null` = elle peut partir. */
@@ -32,14 +31,6 @@ export function typeVideoDe(f: { type: string; name: string }): TypeVideo | null
   if (ext === 'mp4' || ext === 'm4v') return 'video/mp4';
   if (ext === 'mov') return 'video/quicktime';
   return null;
-}
-
-/**
- * La durée dépasse-t-elle la borne ? ARRONDIE à la seconde, comme au serveur (`dureeTropLongue`) : un téléphone
- * qui filme « 60 secondes » produit souvent 60,03 s, et le refuser serait refuser la vidéo que la règle autorise.
- */
-export function dureeTropLongue(secondes: number): boolean {
-  return Math.round(secondes) > DUREE_VIDEO_MAX_S;
 }
 
 /**
@@ -102,65 +93,8 @@ export function morceauSuivant(
  * tenue. La durée vit dans la boîte `mvhd` du conteneur, lisible sans décoder une seule image. Le décodeur reste le
  * repli quand `mvhd` est illisible.
  *
- * ⚠️ LES QUATRE FONCTIONS CI-DESSOUS SONT LA COPIE EXACTE DE CELLES DU SERVEUR (`src/pubs/video.ts`), que la console
- * ne peut pas importer (elle se construit seule, chez Vercel). `tests/web-pubs-parity.test.ts` les fait tourner côte
- * à côte sur les mêmes fichiers : une correction faite d'un seul côté fait tomber ce test.
+ * Le parseur (`dureeDeLaTete`) est celui du serveur, partagé (`./partage/pub-video`).
  */
-
-/** Lit un entier non signé de 32 bits, gros-boutiste. */
-function u32(o: Uint8Array, i: number): number {
-  return ((o[i] ?? 0) * 0x1000000) + (((o[i + 1] ?? 0) << 16) | ((o[i + 2] ?? 0) << 8) | (o[i + 3] ?? 0));
-}
-
-/** Lit un entier de 64 bits en nombre : exact jusqu'à 2^53, ce qui couvre toute taille et toute durée réelles. */
-function u64(o: Uint8Array, i: number): number {
-  return u32(o, i) * 0x100000000 + u32(o, i + 4);
-}
-
-/** Le nom d'une boîte, quatre caractères ASCII. */
-function nomDe(o: Uint8Array, i: number): string {
-  return String.fromCharCode(o[i] ?? 0, o[i + 1] ?? 0, o[i + 2] ?? 0, o[i + 3] ?? 0);
-}
-
-/**
- * La durée d'une vidéo en secondes, lue dans la tête du fichier SANS la décoder, ou `null` quand la tête ne la
- * porte pas. On parcourt les boîtes de premier niveau ; la durée vit dans `mvhd`, la première boîte de `moov`.
- */
-export function dureeDeLaTete(tete: Uint8Array): number | null {
-  let i = 0;
-  while (i + 8 <= tete.length) {
-    let taille = u32(tete, i);
-    const nom = nomDe(tete, i + 4);
-    let entete = 8;
-    if (taille === 1) {
-      if (i + 16 > tete.length) return null;
-      taille = u64(tete, i + 8);
-      entete = 16;
-    }
-    // `0` veut dire « jusqu'à la fin du fichier » : rien ne peut suivre, et ce n'est pas `moov`.
-    if (taille === 0 && nom !== 'moov') return null;
-    if (nom === 'moov') return dureeDuMvhd(tete, i + entete);
-    if (taille < entete) return null; // boîte incohérente : on ne devine pas
-    i += taille;
-  }
-  return null;
-}
-
-/** La durée portée par une boîte `mvhd` qui commence à `p`, ou `null` si elle n'y est pas ou pas entière. */
-function dureeDuMvhd(o: Uint8Array, p: number): number | null {
-  if (p + 8 > o.length || nomDe(o, p + 4) !== 'mvhd') return null;
-  const version = o[p + 8];
-  // Version 0 : dates sur 32 bits ; version 1 : sur 64 bits. L'échelle (unités par seconde) est sur 32 bits
-  // dans les deux cas, la durée suit la taille des dates.
-  const [echelleA, dureeA, dureeSur64] = version === 1 ? [p + 28, p + 32, true] : [p + 20, p + 24, false];
-  if (dureeA + (dureeSur64 ? 8 : 4) > o.length) return null;
-  const echelle = u32(o, echelleA);
-  const duree = dureeSur64 ? u64(o, dureeA) : u32(o, dureeA);
-  // Une durée « tout à un » veut dire « inconnue » dans la norme : ce n'est pas une durée.
-  const inconnue = dureeSur64 ? u32(o, dureeA) === 0xffffffff && u32(o, dureeA + 4) === 0xffffffff : duree === 0xffffffff;
-  if (echelle === 0 || inconnue) return null;
-  return duree / echelle;
-}
 
 /**
  * La durée retenue pour le contrôle : celle du conteneur (`mvhd`) quand elle est une vraie durée, sinon celle du

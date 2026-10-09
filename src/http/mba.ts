@@ -5,7 +5,7 @@ import type { BudgetAgent, BusinessInfo, Faq, FenetreBudget, Skill, UniteBudget 
 import { ID_MESSAGE_RE, validerCreation, validerModification } from '../mba/messages-interactifs';
 import { extraireDepuisCsvHorsBoucle, extraireDepuisHtmlHorsBoucle, extraireDepuisJson, normaliser, planifierImport } from '../mba/faq-import';
 import type { FaqRow } from '../mba/faq-import';
-import { isSendableButtonUrl } from '../meta/button-url';
+import { isSendableButtonUrl } from '../../web/lib/partage/button-url';
 import { urlRecuperable } from '../lib/page-distante';
 import type { PageDistante } from '../lib/page-distante';
 import { espaceVerifie, nonEmpty } from './scope';

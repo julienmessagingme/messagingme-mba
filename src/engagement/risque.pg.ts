@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import { verdictWhatsApp } from '../contacts/joignabilite';
+import { verdictWhatsApp } from '../../web/lib/partage/joignabilite';
 import { waIdOf } from '../crm/identity';
 import { joignabiliteRcsConnue } from '../rcs/reachability';
 import type { FaitsRisque, MessageDelivre, NiveauRisque, RaisonRisque, Risque } from './risque';

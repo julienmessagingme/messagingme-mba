@@ -2,63 +2,15 @@
  * LE PANNEAU DÉTAIL DE L'INBOX (cadrage du 2026-09-28) : la forme de ce que rend
  * `GET /tenants/:tenantId/conversations/:id/detail`, sa validation, et les phrases de sa frise.
  *
- * Miroir de `src/inbox/evenements.ts` (le serveur). Fonctions pures, testées dans `inbox-detail.test.ts`.
+ * La liste des types et la forme du détail sont partagées avec le serveur (`./partage/evenements-conversation`).
+ * Fonctions pures, testées dans `inbox-detail.test.ts`.
  */
+import {
+  TYPES_EVENEMENT, CAUSE_AMORCAGE,
+  type TypeEvenement, type QuiEvenement, type EvenementConversation, type DetailConversation,
+} from './partage/evenements-conversation';
 
-export type TypeEvenement =
-  | 'assignee' | 'desassignee' | 'prise_mba' | 'rendue_mba' | 'passee_par_mba'
-  | 'traitee' | 'non_traitee' | 'archivee' | 'desarchivee' | 'signalee' | 'designalee' | 'rouverte'
-  | 'escaladee' | 'rendue_scenario' | 'sortie_agent' | 'urgente' | 'urgence_levee' | 'mba_indisponible';
-
-/**
- * ⚠️ Un type que l'API écrit doit être ICI avant qu'elle ne l'écrive (ceux de 0194, `sortie_agent` de 0209, puis
- * `urgente` et `urgence_levee` de 0216, `mba_indisponible` de 0217) : un type inconnu de l'écran est écarté par `lireDetail`, et la frise perdrait
- * la ligne sans rien dire.
- */
-export const TYPES_EVENEMENT: readonly TypeEvenement[] = [
-  'assignee', 'desassignee', 'prise_mba', 'rendue_mba', 'passee_par_mba',
-  'traitee', 'non_traitee', 'archivee', 'desarchivee', 'signalee', 'designalee', 'rouverte',
-  'escaladee', 'rendue_scenario', 'sortie_agent', 'urgente', 'urgence_levee', 'mba_indisponible',
-];
-
-/** Un collaborateur, un collaborateur supprimé depuis, ou personne (un changement automatique porte sa cause). */
-export type QuiEvenement = { nom: string } | { ancien: true } | null;
-
-export interface EvenementConversation {
-  id: string;
-  type: TypeEvenement;
-  at: string;
-  acteur: QuiEvenement;
-  cible: QuiEvenement;
-  cause: string | null;
-  reassignation: boolean;
-  /** Une assignation que le collaborateur s'est faite à lui-même : une prise (« Prise en charge »). */
-  prise: boolean;
-}
-
-export interface DetailConversation {
-  conversationId: string;
-  identite: {
-    contactId: string | null;
-    waId: string;
-    nom: string | null;
-    prenom: string | null;
-    telephone: string | null;
-    email: string | null;
-    tags: string[];
-    desabonne: boolean;
-    bloque: boolean;
-  };
-  resume: string | null;
-  assignation: { userId: string; nom: string } | null;
-  historique: EvenementConversation[];
-}
-
-/**
- * La cause des lignes que la migration a amorcées depuis l'état trouvé (miroir de `CAUSE_AMORCAGE`). Sur une
- * de ces lignes, `prise_mba` ne dit pas à qui le fil a été pris : on sait seulement que l'équipe le tenait.
- */
-export const CAUSE_AMORCAGE = 'état au déploiement';
+export { TYPES_EVENEMENT, CAUSE_AMORCAGE, type TypeEvenement, type QuiEvenement, type EvenementConversation, type DetailConversation };
 
 const estObjet = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const texteOuNul = (v: unknown): v is string | null => v === null || typeof v === 'string';

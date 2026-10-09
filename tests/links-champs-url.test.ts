@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { analyserChampsUrl, porteDesChamps, refusChampsUrl, remplirChampsUrl, valeursDeLaFiche } from '../src/links/champs-url';
+import { porteDesChamps, refusChampsUrl, remplirChampsUrl, valeursDeLaFiche } from '../src/links/champs-url';
+import { analyserChampsUrl } from '../web/lib/partage/champs-url';
 
 describe('analyserChampsUrl : la règle lue sur le TEXTE de l’adresse', () => {
   it('une adresse sans accolade n’a aucun champ (toutes les adresses d’avant ce lot)', () => {

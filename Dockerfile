@@ -33,6 +33,10 @@ RUN npm ci --omit=dev
 
 COPY --chown=node:node tsconfig.json ./
 COPY --chown=node:node src ./src
+# 🔴 LE CODE PARTAGÉ AVEC LA CONSOLE, que `src/` importe (`../../web/lib/partage/...`) : rangé côté console parce que
+# c'est le seul endroit que Vercel et l'image de `mba-web` voient. Sans cette ligne, l'API ne démarre pas (module
+# introuvable à l'import). Tenu par `tests/partage.test.ts`. Rien d'autre de `web/` n'entre dans l'image.
+COPY --chown=node:node web/lib/partage ./web/lib/partage
 COPY --chown=node:node db ./db
 # 🔴 LES FICHES DU MODE D EMPLOI ENTRENT DANS L IMAGE, comme les migrations, et pour la meme raison :
 # `npm run aide:charger` tourne DANS le conteneur. Sans cette ligne il ne trouve aucun fichier, refuse de

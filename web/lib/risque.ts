@@ -1,17 +1,16 @@
 /**
  * LE RISQUE DE DÉSENGAGEMENT, À L'ÉCRAN (lot 7 de l'API publique, spec du 2026-09-24 § 19).
  *
- * Module PUR (aucune dépendance React/Next/navigateur au chargement) : testé par `web/lib/risque.test.ts`, et
- * tenu aligné sur le serveur (`src/engagement/risque.ts`) par `tests/web-risque-parite.test.ts`, qui compare les
- * niveaux et les codes de raisons dans les deux sens. Un code ajouté au serveur sans son libellé ici ferait
- * échouer ce test, pas l'écran.
+ * Module PUR (aucune dépendance React/Next/navigateur au chargement) : testé par `web/lib/risque.test.ts`. Les
+ * niveaux et les codes de raisons sont partagés avec le serveur (`./partage/risque`), et les libellés sont typés sur
+ * ces codes : un code ajouté au serveur sans son libellé ici ne compile pas.
  *
  * Les libellés portent les DEUX langues [fr, en], résolues au rendu par `t(...)` : ces constantes vivent au niveau
  * module, où `useT()` est inappelable (même idiome que `OPT_IN_LABEL` dans `components/ContactDetail.tsx`).
  */
 
-export const NIVEAUX_RISQUE = ['inconnu', 'faible', 'moyen', 'eleve'] as const;
-export type NiveauRisque = (typeof NIVEAUX_RISQUE)[number];
+import { NIVEAUX_RISQUE, type NiveauRisque, type RaisonRisque } from './partage/risque';
+export { NIVEAUX_RISQUE, type NiveauRisque, type RaisonRisque };
 
 export function estNiveauRisque(v: unknown): v is NiveauRisque {
   return typeof v === 'string' && (NIVEAUX_RISQUE as readonly string[]).includes(v);
@@ -43,8 +42,7 @@ export const LIBELLES_RAISON_RISQUE = {
   negatif: ['Dernière conversation : un ressenti négatif', 'Last conversation: a negative sentiment'],
   insatisfait: ['Dernière conversation : une satisfaction de 3 sur 10 ou moins', 'Last conversation: a satisfaction of 3 out of 10 or less'],
   injoignable: ['Injoignable au dernier envoi', 'Unreachable on the last send'],
-} as const satisfies Record<string, readonly [string, string]>;
-export type RaisonRisque = keyof typeof LIBELLES_RAISON_RISQUE;
+} as const satisfies Record<RaisonRisque, readonly [string, string]>;
 
 /**
  * Le libellé d'un code. ⚠️ Un code que cette console ne connaît pas encore (le serveur en ajoute un avant qu'elle

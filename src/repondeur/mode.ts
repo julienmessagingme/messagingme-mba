@@ -1,4 +1,3 @@
-import type { Fonction } from '../offres/offres';
 /**
  * QUI RÉPOND AU CLIENT (RC6, plan `docs/superpowers/plans/2026-10-06-rc6-qui-repond.md`) : le réglage unique de
  * l'Accueil qui décide qui répond à un nouveau contact, ou à un message que personne ne tient.
@@ -16,56 +15,20 @@ import type { Fonction } from '../offres/offres';
  * veille, et ni une remise, ni une fin de parcours, ni le balayage ne lui confie rien. Il ne prend un contact que par
  * le bloc « Envoyer au MBA » d'un scénario. La contrainte « une seule voix » de 0209 est levée (0217).
  *
- * 🔴 CETTE LISTE EST LA SEULE DU DÉPÔT, miroir du CHECK `tenant_settings_repondeur_mode_chk` (reposé par 0224, tenu par
- * `tests/migration-0224.test.ts`). Un mode ajouté s'ajoute ICI et dans le CHECK, et chaque `switch` sur le mode refuse de
+ * 🔴 LA LISTE DES MODES EST LA SEULE DU DÉPÔT, dans `web/lib/partage/repondeur-modes.ts` (partagée avec la console), miroir
+ * du CHECK `tenant_settings_repondeur_mode_chk` (reposé par 0224, tenu par `tests/migration-0224.test.ts`). Un mode
+ * ajouté s'ajoute LÀ et dans le CHECK, et chaque `switch` sur le mode refuse de
  * compiler tant qu'il n'a pas sa branche (`modeEffectif`, `standbyPourNous`, la remise de `src/inbox/fil.ts`).
  */
-export const MODES_REPONDEUR = ['mba', 'agent', 'scenario', 'equipe', 'application'] as const;
-export type ModeRepondeur = (typeof MODES_REPONDEUR)[number];
-
-export function estModeRepondeur(v: unknown): v is ModeRepondeur {
-  return typeof v === 'string' && (MODES_REPONDEUR as readonly string[]).includes(v);
-}
-
-/** Le délai du mode Scénario, en secondes : 24 h par défaut, de 1 h à 30 jours (bornes du CHECK de 0217). */
-export const DELAI_SCENARIO_DEFAUT_S = 24 * 60 * 60;
-export const DELAI_SCENARIO_MIN_S = 60 * 60;
-export const DELAI_SCENARIO_MAX_S = 30 * 24 * 60 * 60;
-/** Les mêmes, en heures : l'unité de l'écran et de l'outil MCP `set_default_responder`. */
-export const DELAI_SCENARIO_HEURES_DEFAUT = DELAI_SCENARIO_DEFAUT_S / 3600;
-export const DELAI_SCENARIO_HEURES_MIN = DELAI_SCENARIO_MIN_S / 3600;
-export const DELAI_SCENARIO_HEURES_MAX = DELAI_SCENARIO_MAX_S / 3600;
-
-/** Ce que le mode lit des réglages de l'espace (`TenantSettings`). */
-export interface ReglageDuRepondeur {
-  mbaEnabled: boolean;
-  repondeurMode: ModeRepondeur;
-  repondeurAgentId: string | null;
-  repondeurWorkflowId: string | null;
-  /** L'adresse désignée du mode `application` (0224), `null` si elle a été supprimée. En pause, elle reste désignée. */
-  repondeurAdresseId: string | null;
-}
-
-/**
- * Le mode qui S'APPLIQUE, et pas celui qui est écrit. Trois états écrits sont atteignables sans être tenables, et
- * tous trois se lisent « Équipe » (l'écran le signale, `GET /tenants/:id/repondeur`) :
- *  - `agent` sans agent : l'agent a été supprimé après coup (clé étrangère en `on delete set null`) ;
- *  - `scenario` sans scénario : même chose pour le scénario ;
- *  - `mba` avec l'agent de Meta éteint : aucun chemin ne l'écrit (`setMbaEnabled` passe le mode à `equipe` dans la
- *    même instruction), c'est une ceinture.
- * 🔴 Un CHECK qui refuserait les deux premiers ferait ÉCHOUER la suppression d'un agent ou d'un scénario (leçon de
- * 0144) : la base ne tient que le sens inverse (une cible n'existe que dans son mode).
- */
-export function modeEffectif(r: ReglageDuRepondeur): ModeRepondeur {
-  switch (r.repondeurMode) {
-    case 'mba': return r.mbaEnabled ? 'mba' : 'equipe';
-    case 'agent': return r.repondeurAgentId !== null ? 'agent' : 'equipe';
-    case 'scenario': return r.repondeurWorkflowId !== null ? 'scenario' : 'equipe';
-    case 'equipe': return 'equipe';
-    case 'application': return r.repondeurAdresseId !== null ? 'application' : 'equipe';
-  }
-}
-
+import type { Fonction } from '../offres/offres';
+import { modeEffectif, type ModeRepondeur, type ReglageDuRepondeur } from '../../web/lib/partage/repondeur-modes';
+// Partagés avec la console (`web/lib/partage/repondeur-modes.ts`) : les modes, les bornes du délai, le mode effectif.
+export {
+  MODES_REPONDEUR, estModeRepondeur, modeEffectif,
+  DELAI_SCENARIO_DEFAUT_S, DELAI_SCENARIO_MIN_S, DELAI_SCENARIO_MAX_S,
+  DELAI_SCENARIO_HEURES_DEFAUT, DELAI_SCENARIO_HEURES_MIN, DELAI_SCENARIO_HEURES_MAX,
+  type ModeRepondeur, type ReglageDuRepondeur,
+} from '../../web/lib/partage/repondeur-modes';
 /**
  * 🔴 LES RÉGLAGES TELS QUE L'OFFRE LES LAISSE JOUER (lot 6, livraison B2a, spec § 7, décision de Julien du 2026-10-07) :
  * le gel au retour en Base. Sans `agent_meta`, l'agent de Meta se lit éteint (il ne reçoit plus aucun contact neuf, et le

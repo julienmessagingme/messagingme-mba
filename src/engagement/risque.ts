@@ -9,17 +9,9 @@
  * par destinataire.
  */
 
-export const NIVEAUX_RISQUE = ['inconnu', 'faible', 'moyen', 'eleve'] as const;
-export type NiveauRisque = (typeof NIVEAUX_RISQUE)[number];
-
-/**
- * Les codes des raisons, courts et stables : ce sont des identifiants, qui partent tels quels chez l'outil du
- * client (`em_risk_reasons`) et dans l'API publique (`engagementRisk.reasons`).
- */
-export const RAISONS_RISQUE = [
-  'stop', 'bloque', 'silence_60j', 'silence_30j', 'sans_reponse', 'non_lu', 'reclamation', 'negatif', 'insatisfait', 'injoignable',
-] as const;
-export type RaisonRisque = (typeof RAISONS_RISQUE)[number];
+// Partagés avec la console (`web/lib/partage/risque.ts`) : les niveaux et les codes de raisons.
+import { NIVEAUX_RISQUE, RAISONS_RISQUE, type NiveauRisque, type RaisonRisque } from '../../web/lib/partage/risque';
+export { NIVEAUX_RISQUE, RAISONS_RISQUE, type NiveauRisque, type RaisonRisque };
 
 /**
  * La grille. L'ordre des clés sert : à points égaux, une raison plus haute passe devant (`raisonsLesPlusLourdes`).

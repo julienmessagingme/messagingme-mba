@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import { enTransaction } from '../db/transaction';
-import { PEREMPTION_WHATSAPP_MS } from '../contacts/joignabilite';
+import { PEREMPTION_WHATSAPP_MS } from '../../web/lib/partage/joignabilite';
 import type { NiveauRisque, RaisonRisque } from '../engagement/risque';
 import type { ContactStore, ContactUpsert, ContactDeLot, LotContacts } from './import';
 import { classifyWaId, waIdOf } from './identity';

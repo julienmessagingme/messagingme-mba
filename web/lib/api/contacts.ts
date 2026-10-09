@@ -37,7 +37,7 @@ export interface Contact {
    *
    * ⚠️ NE JAMAIS LIRE `whatsappJoignable` SEUL. Une valeur sans date ne peut pas se périmer, donc elle
    * vaudrait pour toujours ; et `null`/absent veut dire « jamais testé », pas « injoignable ». La lecture
-   * passe par `verdictWhatsApp` (`src/contacts/joignabilite.ts`), qui tient ces trois cas d'un coup.
+   * passe par `verdictWhatsApp` (`web/lib/partage/joignabilite.ts`), qui tient ces trois cas d'un coup.
    */
   whatsappJoignable?: boolean | null;
   whatsappJoignableLe?: string | null;

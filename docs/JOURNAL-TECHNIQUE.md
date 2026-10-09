@@ -5,6 +5,27 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-09 : audit de simplicité, lot B (le code partagé entre le serveur et la console)
+
+Huit règles que le serveur applique et que la console affiche n'existent plus qu'une fois, dans `web/lib/partage/`,
+au lieu d'être recopiées puis tenues alignées par un test de parité : les champs d'adresse d'un bouton « Lien »,
+l'URL de bouton envoyable, l'identifiant de bouton de carrousel, la joignabilité WhatsApp, les types et la forme des
+événements d'une conversation, les modes du répondeur et son mode effectif, les niveaux et codes du risque, les bornes
+et le parseur de durée de la vidéo publicitaire.
+
+- **Rangé côté console**, parce que c'est le seul endroit que Vercel et l'image de `mba-web` voient ; le serveur
+  l'importe en relatif, et l'image de l'API le copie (une ligne `COPY` du `Dockerfile`). `tests/partage.test.ts` tient
+  les deux règles : le dossier n'importe que lui-même, et l'image le copie dès que `src/` l'importe.
+- **L'inventaire a corrigé le chiffrage de l'audit.** La plupart des 48 tests de parité ne gardent pas du code recopié
+  mais des listes de libellés d'écran, qui restent. Deux paires de vraie logique (la performance, les conditions de
+  scénario) entraînaient la moitié du serveur et la base : écartées. Les offres n'avaient aucun nom en commun :
+  écartées. Gain réel : quelques centaines de lignes de copies et de tests de parité, pas les milliers annoncés.
+- **Un piège trouvé en route** : depuis `web/lib`, la console doit importer le partage en RELATIF. Des tests du
+  serveur lisent `web/lib`, et le serveur ne connaît pas l'alias `@/` ; le typecheck du serveur l'a vu tout de suite.
+- **Ce que le partage ne prouve pas reste testé** : la lecture défensive de la console qui passe ses champs au mode
+  effectif du répondeur, le filtre des niveaux de risque (une liste, que le compilateur ne complète pas). Les
+  libellés des raisons de risque sont désormais typés sur les codes partagés : un code sans libellé ne compile plus.
+
 ## 2026-10-09 : audit de simplicité, lot A (suppressions sûres)
 
 Deuxième audit de simplicité, refait à l'économie : des scripts sur une extraction figée d'origin (exports morts,

@@ -1,4 +1,4 @@
-import { isSendableButtonUrl } from '../meta/button-url';
+import { isSendableButtonUrl } from '../../web/lib/partage/button-url';
 import { fetchPublic, estRefusAdresseInterne } from './connexion-publique';
 import { lireCorpsBorne } from './corps-borne';
 import { resolutionPublique, type VerdictResolution } from './adresse-privee';

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { AuditSink } from '../audit/journal';
 import type { ClesNormalisees, FicheApiLigne, PgContactStore } from '../crm/contact-store.pg';
 import type { UserFieldStore } from '../crm/fields';
-import { verdictWhatsApp } from '../contacts/joignabilite';
+import { verdictWhatsApp } from '../../web/lib/partage/joignabilite';
 import type { NiveauRisque, RaisonRisque } from '../engagement/risque';
 import type { AnalyseDeFiche } from '../analysis/fiche';
 import { estUuid } from '../http/scope';

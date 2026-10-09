@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { isSendableButtonUrl } from '../meta/button-url';
+import { isSendableButtonUrl } from '../../web/lib/partage/button-url';
 import { estClicAutomatique } from '../links/clic-automatique';
 import { estJeton } from '../links/jeton-contact';
 import { porteDesChamps, remplirChampsUrl } from '../links/champs-url';

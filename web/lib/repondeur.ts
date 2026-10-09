@@ -8,20 +8,16 @@
  * prend un contact que par le bloc « Envoyer au MBA » d'un scénario.
  */
 
-/**
- * ⚠️ MIROIR de `MODES_REPONDEUR` (`src/repondeur/mode.ts`), recopié pour ne pas tirer du code serveur dans le bundle
- * client ; `tests/web-repondeur-modes-parity.test.ts` casse dès qu'ils divergent.
- */
-export const MODES_REPONDEUR = ['mba', 'agent', 'scenario', 'equipe', 'application'] as const;
-export type ModeRepondeur = (typeof MODES_REPONDEUR)[number];
+import {
+  MODES_REPONDEUR, estModeRepondeur, modeEffectif, type ModeRepondeur,
+  DELAI_SCENARIO_HEURES_MIN as DELAI_HEURES_MIN, DELAI_SCENARIO_HEURES_MAX as DELAI_HEURES_MAX,
+  DELAI_SCENARIO_HEURES_DEFAUT as DELAI_HEURES_DEFAUT,
+} from './partage/repondeur-modes';
 
-/** Les bornes du délai du mode « Scénario », en heures (1 h à 30 jours, 24 h par défaut), miroir du même fichier. */
-export const DELAI_HEURES_MIN = 1;
-export const DELAI_HEURES_MAX = 720;
-export const DELAI_HEURES_DEFAUT = 24;
+/** Partagés avec le serveur (`./partage/repondeur-modes`) ; les bornes du délai, en heures, sous leur nom d'écran. */
+export { MODES_REPONDEUR, type ModeRepondeur, DELAI_HEURES_MIN, DELAI_HEURES_MAX, DELAI_HEURES_DEFAUT };
 
 const estObjet = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-const estMode = (v: unknown): v is ModeRepondeur => typeof v === 'string' && (MODES_REPONDEUR as readonly string[]).includes(v);
 const texteOuNull = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
 
 /** Ce que rend `GET /tenants/:tenantId/repondeur` (`EtatRepondeur` côté serveur). */
@@ -52,7 +48,7 @@ const liste = <T>(v: unknown, lire: (x: Record<string, unknown>) => T | null): T
  * 404, et le mock d'un test rend `{}`) : la carte ne s'affiche pas plutôt que d'annoncer un réglage qu'elle n'a pas lu.
  */
 export function lireEtatRepondeur(brut: unknown): EtatRepondeur | null {
-  if (!estObjet(brut) || !estMode(brut.mode) || !estMode(brut.modeEffectif)) return null;
+  if (!estObjet(brut) || !estModeRepondeur(brut.mode) || !estModeRepondeur(brut.modeEffectif)) return null;
   return {
     mode: brut.mode,
     modeEffectif: brut.modeEffectif,
@@ -78,15 +74,14 @@ export function lireEtatRepondeur(brut: unknown): EtatRepondeur | null {
  */
 export function modeEffectifDesReglages(s: { mbaEnabled?: unknown; repondeurMode?: unknown; repondeurAgentId?: unknown; repondeurWorkflowId?: unknown; repondeurAdresseId?: unknown } | null): ModeRepondeur | null {
   if (s === null || typeof s.mbaEnabled !== 'boolean') return null;
-  const agent = typeof s.repondeurAgentId === 'string';
-  const mode: ModeRepondeur = estMode(s.repondeurMode) ? s.repondeurMode : agent ? 'agent' : s.mbaEnabled ? 'mba' : 'equipe';
-  switch (mode) {
-    case 'mba': return s.mbaEnabled ? 'mba' : 'equipe';
-    case 'agent': return agent ? 'agent' : 'equipe';
-    case 'scenario': return typeof s.repondeurWorkflowId === 'string' ? 'scenario' : 'equipe';
-    case 'equipe': return 'equipe';
-    case 'application': return typeof s.repondeurAdresseId === 'string' ? 'application' : 'equipe';
-  }
+  const texte = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+  const agent = texte(s.repondeurAgentId);
+  // Une API d'avant le mode écrit le déduit de l'agent et de l'agent de Meta ; le calcul, lui, est celui du serveur.
+  const mode: ModeRepondeur = estModeRepondeur(s.repondeurMode) ? s.repondeurMode : agent !== null ? 'agent' : s.mbaEnabled ? 'mba' : 'equipe';
+  return modeEffectif({
+    mbaEnabled: s.mbaEnabled, repondeurMode: mode, repondeurAgentId: agent,
+    repondeurWorkflowId: texte(s.repondeurWorkflowId), repondeurAdresseId: texte(s.repondeurAdresseId),
+  });
 }
 
 /**

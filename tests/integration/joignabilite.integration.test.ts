@@ -6,7 +6,7 @@ import { PgCampaignRepo } from '../../src/campaign/store.pg';
 import { buildContactWhere } from '../../src/crm/contact-store.pg';
 import { runRetrySweep, type RetrySweepDeps } from '../../src/campaign/retry-sweep';
 import { creerNoteurJoignabilite } from '../../src/contacts/joignabilite.pg';
-import { verdictWhatsApp } from '../../src/contacts/joignabilite';
+import { verdictWhatsApp } from '../../web/lib/partage/joignabilite';
 
 /**
  * LA JOIGNABILITÉ WHATSAPP MÉMORISÉE CHEZ NOUS (migration 0133).

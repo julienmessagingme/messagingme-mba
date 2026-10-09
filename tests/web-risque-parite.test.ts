@@ -1,9 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { NIVEAUX_RISQUE, RAISONS_RISQUE } from '../src/engagement/risque';
-import {
-  BADGE_NIVEAU_RISQUE, LIBELLES_RAISON_RISQUE, NIVEAUX_DU_FILTRE, NIVEAUX_RISQUE as NIVEAUX_CONSOLE,
-} from '../web/lib/risque';
+import { NIVEAUX_DU_FILTRE } from '../web/lib/risque';
 import { FICHIERS_DOC } from '../web/lib/doc-api-pages';
 
 /**
@@ -11,19 +9,15 @@ import { FICHIERS_DOC } from '../web/lib/doc-api-pages';
  *
  * 🔴 LES CODES SONT UN CONTRAT : le serveur les écrit en base, l'API publique et l'outil du client les lisent tels
  * quels, et la console les traduit. Un code ajouté au serveur sans libellé s'afficherait brut sur la fiche ; un
- * libellé sans code serait un reste. Les deux sens sont vérifiés, sur les niveaux comme sur les raisons, et pour
- * le filtre : un niveau proposé à l'écran que le serveur ne connaît pas serait REFUSÉ en 400 à chaque clic.
+ * libellé sans code serait un reste. Niveaux et codes sont désormais PARTAGÉS (`web/lib/partage/risque.ts`), badges
+ * et libellés typés dessus : reste le filtre, une liste, où un niveau que le serveur ne connaît pas serait REFUSÉ en
+ * 400 à chaque clic, et la documentation de l'API.
  */
 const trie = (l: readonly string[]): string[] => [...l].sort();
 
 describe('le risque : parité serveur et console', () => {
-  it('🔴 les codes de raisons de la console sont EXACTEMENT ceux du serveur', () => {
-    expect(trie(Object.keys(LIBELLES_RAISON_RISQUE))).toEqual(trie(RAISONS_RISQUE));
-  });
-
-  it('🔴 les niveaux de la console, ses badges et son filtre sont EXACTEMENT ceux du serveur', () => {
-    expect(trie(NIVEAUX_CONSOLE)).toEqual(trie(NIVEAUX_RISQUE));
-    expect(trie(Object.keys(BADGE_NIVEAU_RISQUE))).toEqual(trie(NIVEAUX_RISQUE));
+  // Niveaux et codes sont partagés, badges et libellés typés dessus : seul le filtre, une liste, peut en oublier un.
+  it('🔴 le filtre de la console propose EXACTEMENT les niveaux du serveur', () => {
     expect(trie(NIVEAUX_DU_FILTRE)).toEqual(trie(NIVEAUX_RISQUE));
   });
 
