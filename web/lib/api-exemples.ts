@@ -411,6 +411,7 @@ export const CODES_DOCUMENTES = [
   { code: 'send_not_found', statut: 404, ecart: false, quoi: ['Envoi inconnu.', 'Unknown send.'] },
   { code: 'meta_rejected', statut: 422, ecart: false, quoi: ['Meta a refusé le contenu du message ou du modèle : son motif suit.', 'Meta refused the message or template content: its reason follows.'] },
   { code: 'invalid_header_media', statut: 422, ecart: false, quoi: ['Le fichier d’en-tête d’un modèle n’a pas pu être pris à son adresse : son motif suit.', 'The template header file could not be fetched from its address: the reason follows.'] },
+  { code: 'meta_auth_failed', statut: 409, ecart: false, quoi: ['Meta refuse le jeton de l’espace : reconnectez le compte WhatsApp depuis la console.', 'Meta refuses the workspace token: reconnect the WhatsApp account from the console.'] },
   { code: 'template_rejected', statut: 422, ecart: false, quoi: ['Le modèle est refusé avant Meta (un lien n’a pas pu être tracé) : son motif suit.', 'The template is refused before Meta (a link could not be tracked): the reason follows.'] },
   { code: 'conversation_not_found', statut: 404, ecart: false, quoi: ['Conversation inconnue de cet espace.', 'Conversation unknown to this workspace.'] },
   { code: 'message_not_found', statut: 404, ecart: false, quoi: ['Message inconnu de cet espace.', 'Message unknown to this workspace.'] },

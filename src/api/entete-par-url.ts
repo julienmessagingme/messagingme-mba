@@ -35,13 +35,22 @@ export interface DepsTelechargement {
   delaiMs?: number;
 }
 
+/**
+ * Les marques d'un fichier MP4 (octets 8 à 12, après `ftyp`) : `ftyp` seul couvre toute la famille ISO, dont HEIC, M4A et
+ * MOV (`qt  `), que Meta refuserait plus tard avec un message moins clair.
+ */
+const MARQUES_MP4: ReadonlySet<string> = new Set(['isom', 'iso2', 'iso3', 'iso4', 'iso5', 'iso6', 'mp41', 'mp42', 'avc1', 'M4V ']);
+
 /** Le type réel du fichier pour ce format, d'après ses octets, ou `null` s'il ne convient pas. */
 function typeReel(format: FormatEntete, octets: Buffer): string | null {
   if (format === 'IMAGE') {
     const t = typeImage(octets);
     return t === 'image/jpeg' || t === 'image/png' ? t : null;
   }
-  if (format === 'VIDEO') return octets.length >= 12 && octets.subarray(4, 8).toString('latin1') === 'ftyp' ? 'video/mp4' : null;
+  if (format === 'VIDEO') {
+    const mp4 = octets.length >= 12 && octets.subarray(4, 8).toString('latin1') === 'ftyp' && MARQUES_MP4.has(octets.subarray(8, 12).toString('latin1'));
+    return mp4 ? 'video/mp4' : null;
+  }
   return octets.subarray(0, 5).toString('latin1') === '%PDF-' ? 'application/pdf' : null;
 }
 
@@ -65,7 +74,12 @@ export async function telechargerEntete(
   const minuteur = setTimeout(() => controle.abort(), delai);
   try {
     const res = await deps.fetch(url, { method: 'GET', redirect: 'error', signal: controle.signal });
-    if (!res.ok) return { refus: `le serveur du fichier a répondu HTTP ${res.status}` };
+    if (!res.ok) {
+      // Le corps n'est pas lu : il est rendu tout de suite, sinon la connexion reste tenue sur l'agent PARTAGÉ (webhooks
+      // sortants, client MCP, connecteurs) jusqu'au ramasse-miettes.
+      await res.body?.cancel().catch(() => {});
+      return { refus: `le serveur du fichier a répondu HTTP ${res.status}` };
+    }
     const plafond = PLAFONDS_ENTETE[format];
     const lu = await lireOctetsBornes(res, plafond);
     if (lu.octets === null) {
@@ -85,28 +99,31 @@ export async function telechargerEntete(
 }
 
 /**
- * Combien de fichiers d'en-tête cette copie télécharge en même temps : chacun peut peser 16 Mo en mémoire. Pas la place
+ * Combien d'en-têtes cette copie télécharge et dépose en même temps : chacun peut peser 16 Mo en mémoire, du
+ * téléchargement à la fin du dépôt chez Meta (`creerModeleDepuisMeta` tient la place sur les deux). Pas la place
  * « lourde » de l'usage (`estLourde`), qui vaut 1 par copie et qu'un téléchargement de 20 s prendrait aux envois.
  */
 export const PLACES_TELECHARGEMENT = 3;
 let enCours = 0;
 
-/** Le refus quand toutes les places sont prises : à réessayer, d'où un 429 et non un refus du fichier. */
-export const OCCUPE = { refus: 'trop de fichiers d’en-tête en cours de téléchargement, réessayez dans un instant', reessayer: true } as const;
+/** Les places de la copie : `prendre` rend la fonction qui la rend, ou `null` quand toutes sont prises. */
+export const placesDeTelechargement = {
+  prendre(): (() => void) | null {
+    if (enCours >= PLACES_TELECHARGEMENT) return null;
+    enCours += 1;
+    let rendue = false;
+    return () => {
+      if (rendue) return;
+      rendue = true;
+      enCours -= 1;
+    };
+  },
+};
 
 /**
  * 🔴 Le téléchargement de production : `fetchPublic` et `resolutionPublique`, câblés ICI et non par l'appelant, qui ne
- * peut donc pas les oublier. Borné à {@link PLACES_TELECHARGEMENT} en vol.
+ * peut donc pas les oublier.
  */
-export async function telechargerEnteteProduction(
-  format: FormatEntete,
-  url: string,
-): Promise<{ octets: Buffer; mime: string } | { refus: string; reessayer?: true }> {
-  if (enCours >= PLACES_TELECHARGEMENT) return OCCUPE;
-  enCours += 1;
-  try {
-    return await telechargerEntete({ fetch: fetchPublic, verifier: (u) => resolutionPublique(u) }, format, url);
-  } finally {
-    enCours -= 1;
-  }
+export function telechargerEnteteProduction(format: FormatEntete, url: string): Promise<{ octets: Buffer; mime: string } | { refus: string }> {
+  return telechargerEntete({ fetch: fetchPublic, verifier: (u) => resolutionPublique(u) }, format, url);
 }

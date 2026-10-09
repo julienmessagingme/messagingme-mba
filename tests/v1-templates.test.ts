@@ -28,6 +28,8 @@ interface Options {
   waba?: string | null;
   meta?: Array<{ ok: boolean; status: number; json: unknown }>;
   telechargement?: { octets: Buffer; mime: string } | { refus: string };
+  /** `false` : toutes les places d'en-tête de la copie sont prises. */
+  places?: boolean;
 }
 
 function monter(o: Options = {}) {
@@ -42,6 +44,7 @@ function monter(o: Options = {}) {
   };
   const telechargements: string[] = [];
   const depots: Array<{ taille: number; mime: string }> = [];
+  const places = { prises: 0, rendues: 0 };
   const usage = new GardeUsageMemoire();
   const keys = new FakeApiKeys()
     .add(AUTEUR, { id: 'k1', tenantId: 't1', scopes: ['templates:write'] })
@@ -63,7 +66,19 @@ function monter(o: Options = {}) {
           telechargements.push(url);
           return o.telechargement ?? { octets: JPEG, mime: 'image/jpeg' };
         },
-        deposerEntete: async (octets, mime) => { depots.push({ taille: octets.length, mime }); return '4::handle'; },
+        deposerEntete: async (octets, mime) => {
+          // La place est TENUE pendant le dépôt : le fichier est encore en mémoire.
+          expect(places.prises - places.rendues).toBe(1);
+          depots.push({ taille: octets.length, mime });
+          return '4::handle';
+        },
+        placesEntete: {
+          prendre: () => {
+            if (o.places === false) return null;
+            places.prises += 1;
+            return () => { places.rendues += 1; };
+          },
+        },
       },
     },
   });
@@ -71,7 +86,7 @@ function monter(o: Options = {}) {
     method: 'POST', url: '/v1/templates', headers: { authorization: `Bearer ${cle}`, 'content-type': 'application/json' }, payload: corps as object,
   });
   const lire = (url: string, cle = AUTEUR) => server.inject({ method: 'GET', url, headers: { authorization: `Bearer ${cle}` } });
-  return { server, poster, lire, appelsMeta, telechargements, depots, usage };
+  return { server, poster, lire, appelsMeta, telechargements, depots, usage, places };
 }
 
 const MODELE = {
@@ -170,6 +185,55 @@ describe('POST /v1/templates', () => {
     expect(res.statusCode).toBe(422);
     expect(res.json()).toMatchObject({ code: 'meta_rejected', error: expect.stringMatching(/existe déjà/) });
     await server.close();
+  });
+
+  const AVEC_IMAGE = {
+    ...MODELE,
+    components: [{ type: 'HEADER', format: 'IMAGE', example: { header_url: ['https://exemple.fr/a.jpg'] } }, ...MODELE.components],
+  };
+
+  it('🔴 la place d’en-tête est rendue après le dépôt, même quand Meta refuse ensuite', async () => {
+    const { poster, places, server } = monter({ meta: [{ ok: false, status: 400, json: { error: { message: 'Invalid parameter', code: 100 } } }] });
+    expect((await poster(AVEC_IMAGE)).statusCode).toBe(422);
+    expect(places).toEqual({ prises: 1, rendues: 1 });
+    await server.close();
+  });
+
+  it('🔴 toutes les places prises : 429 avec Retry-After, rien téléchargé', async () => {
+    const { poster, telechargements, server } = monter({ places: false });
+    const res = await poster(AVEC_IMAGE);
+    expect(res.statusCode).toBe(429);
+    expect(res.json()).toMatchObject({ code: 'rate_limited' });
+    expect(res.headers['retry-after']).toBe('2');
+    expect(telechargements).toHaveLength(0);
+    await server.close();
+  });
+
+  it('🔴 un champ {cle} inconnu dans l’adresse d’un bouton est refusé AVANT de télécharger l’en-tête', async () => {
+    const { poster, telechargements, server } = monter();
+    const res = await poster({
+      ...AVEC_IMAGE,
+      components: [...AVEC_IMAGE.components.slice(0, 2), { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Voir', url: 'https://exemple.fr/c/{inconnu}' }] }],
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ code: 'invalid_body' });
+    expect(telechargements).toHaveLength(0);
+    await server.close();
+  });
+
+  it('🔴 Meta momentanément indisponible : 429 avec Retry-After ; jeton refusé : 409 meta_auth_failed, jamais « modèle refusé »', async () => {
+    const lent = monter({ meta: [{ ok: false, status: 503, json: { error: { message: 'Service temporarily unavailable', code: 2 } } }] });
+    const r1 = await lent.poster(MODELE);
+    expect(r1.statusCode).toBe(429);
+    expect(r1.json()).toMatchObject({ code: 'rate_limited' });
+    expect(r1.headers['retry-after']).toBe('30');
+    await lent.server.close();
+    const jeton = monter({ meta: [{ ok: false, status: 400, json: { error: { message: 'Error validating access token', code: 190 } } }] });
+    const r2 = await jeton.poster(MODELE);
+    expect(r2.statusCode).toBe(409);
+    expect(r2.json()).toMatchObject({ code: 'meta_auth_failed' });
+    expect((await jeton.lire('/v1/templates/commande_prete')).json()).toMatchObject({ code: 'meta_auth_failed' });
+    await jeton.server.close();
   });
 
   it('chaque création est comptée à l’usage, sans prendre la place lourde des envois', async () => {

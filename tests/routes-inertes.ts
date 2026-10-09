@@ -641,6 +641,7 @@ export const mcpMessagesInertes: Pick<DepsMcp, 'messagesApi' | 'envoyerMessage' 
     },
     telechargerEntete: neDevraitPasEtreAppelee('telechargerEntete'),
     deposerEntete: neDevraitPasEtreAppelee('deposerEntete'),
+    placesEntete: { prendre: neDevraitPasEtreAppelee('placesEntete.prendre') },
   },
 };
 

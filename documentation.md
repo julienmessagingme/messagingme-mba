@@ -3685,9 +3685,12 @@ Ajouté par le lot 4 de l'API publique :
    Le corps de Meta est validé par `schemaModeleMeta` puis traduit par `versModeleConsole` (`src/api/modele-meta.ts`) ;
    `creerModeleDepuisMeta` (`src/api/creer-modele.ts`) ajoute le seul geste propre à l'API, l'en-tête par adresse :
    `telechargerEntete` (`src/api/entete-par-url.ts`, gardes d'une adresse saisie par un client, type décidé par la
-   signature des octets, trois téléchargements en vol par copie) puis le dépôt chez Meta de l'écran Modèles
-   (`uploadImage`). La création compte `templates.create` à l'usage, hors quota du jour, et ne prend PAS la place
-   lourde (une par copie), qu'un téléchargement de 20 s prendrait aux envois.
+   signature des octets) puis le dépôt chez Meta de l'écran Modèles (`uploadImage`), sous une des trois places de la
+   copie (`placesDeTelechargement`), tenue du téléchargement à la fin du dépôt. Les champs `{cle}` des liens sont jugés
+   AVANT le téléchargement. Une erreur de Meta se traduit par `refusDeMeta` : jeton refusé (409 `meta_auth_failed`),
+   passagère (429 avec `Retry-After`), contenu refusé (422 `meta_rejected`). La création compte `templates.create` à
+   l'usage, hors quota du jour, et ne prend PAS la place lourde (une par copie), qu'un téléchargement de 20 s prendrait
+   aux envois.
 
 ### Sur les contrats externes
 

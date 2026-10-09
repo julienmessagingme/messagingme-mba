@@ -5,6 +5,18 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-09 : les modèles par l'API et par Claude (lot 13, domaine 3, livraison A), en production
+
+`0ef5ebad`, CI verte job par job, aucune migration, `up` de l'API, des deux workers et de `mba-web` ; cinq portes à
+200, les deux routes neuves à 401. Ronde de questions : le format de Meta, utility et marketing, la lecture du statut
+plus un événement, l'en-tête par adresse avec nos gardes. La création de l'écran Modèles est sortie de sa route en une
+fonction (`creerUnModele`) que l'API et Claude appellent ; la seule chose propre à l'API est le dépôt de l'en-tête.
+Un ancien test interdisait tout outil MCP « template » : assoupli par la décision du lot, il interdit toujours les
+campagnes et n'admet que les trois outils décidés. Relecture : aucun rouge, douze jaunes, poussés ensuite (gardes des
+liens avant le téléchargement, place tenue jusqu'au dépôt, erreurs de Meta traduites, `Retry-After`, marque MP4, corps
+d'échec rendu, pagination du statut, câblage tenu par un test) ; deux restent dans `todo.md`, dont une décision pour
+Julien (`create_template` sous `mcp:write`).
+
 ## 2026-10-09 : l'envoi au format de Meta (lot 13, domaine 2), en production
 
 `8f237a41`, CI verte job par job, aucune migration. La relecture avait un rouge : la position écrite en chaînes,

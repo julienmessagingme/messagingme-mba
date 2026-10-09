@@ -5,7 +5,8 @@ import { refuser } from '../api/erreurs';
 import { messageDeForme } from '../api/forme';
 import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
 import { schemaModeleMeta } from '../api/modele-meta';
-import { creerModeleDepuisMeta, statutsDuModele, type DepsCreationModele } from '../api/creer-modele';
+import { creerModeleDepuisMeta, statutsDuModele, type DepsCreationModele, type RefusModele } from '../api/creer-modele';
+import type { FastifyReply } from 'fastify';
 
 /**
  * LES MODÈLES PAR L'API (lot 13, domaine 3, spec § 5) : `POST /v1/templates`, le corps de Meta traduit vers la création
@@ -21,6 +22,12 @@ export interface V1TemplatesRouteDeps extends DepsCreationModele {
 }
 
 const parametres = z.object({ name: z.string().max(600) });
+
+/** Un refus du cœur, avec son `Retry-After` quand il est passager : sans lui, un client réessaie aussitôt. */
+function refuserModele(reply: FastifyReply, r: RefusModele): FastifyReply {
+  if (r.reessayerDansS !== undefined) reply.header('retry-after', String(r.reessayerDansS));
+  return refuser(reply, r.statut, r.code, r.message);
+}
 const requete = z.object({ language: z.string().max(20).optional() });
 
 export function registerV1Templates(app: FastifyInstance, deps: V1TemplatesRouteDeps, garde: Guard): void {
@@ -34,7 +41,7 @@ export function registerV1Templates(app: FastifyInstance, deps: V1TemplatesRoute
     const lu = schemaModeleMeta.safeParse(req.body);
     if (!lu.success) return refuser(reply, 400, 'invalid_body', messageDeForme(lu.error));
     const issue = await creerModeleDepuisMeta(deps, tenantId, lu.data);
-    if ('refus' in issue) return refuser(reply, issue.refus.statut, issue.refus.code, issue.refus.message);
+    if ('refus' in issue) return refuserModele(reply, issue.refus);
     return reply.code(201).send(issue.modele);
   });
 
@@ -46,7 +53,7 @@ export function registerV1Templates(app: FastifyInstance, deps: V1TemplatesRoute
     if (!p.success) return refuser(reply, 404, 'template_not_found', 'modèle inconnu');
     if (!q.success) return refuser(reply, 400, 'invalid_body', messageDeForme(q.error));
     const issue = await statutsDuModele(deps, req.auth.tenantId, p.data.name, q.data.language);
-    if ('refus' in issue) return refuser(reply, issue.refus.statut, issue.refus.code, issue.refus.message);
+    if ('refus' in issue) return refuserModele(reply, issue.refus);
     return reply.code(200).send(issue);
   });
 }

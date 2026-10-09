@@ -1,5 +1,14 @@
 # todo.md : backlog
 
+## 🟡 Lot 13, les modèles : ce que la relecture de la livraison A laisse (2026-10-09)
+
+- **`create_template` est sous `mcp:write`, donc ouvert à toute clé `mcp:write` existante** (décision de la spec, à
+  reconfirmer par Julien) : un Claude qui lit des messages de contacts peut être poussé par injection à créer des
+  modèles en boucle, jusqu'au plafond de modèles du compte WhatsApp, ce qui bloquerait la création depuis la console.
+  Options : `exigePersonne` (une personne, jamais une clé), ou un plafond de créations par jour.
+- **Le dépôt d'un fichier chez Meta (`uploadImage`) n'a aucun délai** : un Meta muet tient la place d'en-tête (et
+  16 Mo en mémoire) jusqu'à la fin de la socket. Défaut déjà présent côté écran Modèles ; lui donner un signal.
+
 ## 🟡 Lot 13, la lecture des fils : ce que la relecture de la livraison A laisse (2026-10-08)
 
 - **Le téléchargement d'un fichier reçu n'a pas de borne de concurrence** (`GET /v1/messages/{id}/media`, comme la

@@ -1,5 +1,6 @@
-import { creerUnModele, type TemplateRouteDeps } from '../http/templates';
+import { creerUnModele, refusDesChamps, type TemplateRouteDeps } from '../http/templates';
 import { MetaApiError } from '../meta/errors';
+import { MediaUploadError } from '../meta/media';
 import { isValidTemplateLanguage } from '../meta/languages';
 import type { CodeApi } from './erreurs';
 import { versModeleConsole, type ModeleMeta } from './modele-meta';
@@ -15,13 +16,21 @@ export interface DepsCreationModele {
   /** Les dépendances de l'écran Modèles, le MÊME objet (`src/index.ts`). */
   modeles: TemplateRouteDeps;
   /** Le téléchargement gardé d'une adresse saisie par un client : `telechargerEnteteProduction` en production. */
-  telechargerEntete(format: FormatEntete, url: string): Promise<{ octets: Buffer; mime: string } | { refus: string; reessayer?: true }>;
+  telechargerEntete(format: FormatEntete, url: string): Promise<{ octets: Buffer; mime: string } | { refus: string }>;
   /** Le dépôt chez Meta (Resumable Upload), qui rend le `header_handle` : le `uploadImage` de l'écran Modèles. */
   deposerEntete(octets: Buffer, mime: string): Promise<string>;
+  /**
+   * Les places d'en-tête de la copie (`placesDeTelechargement`) : une place est TENUE du téléchargement à la fin du dépôt
+   * chez Meta, le fichier (jusqu'à 16 Mo) restant en mémoire jusque-là. `null` : toutes prises.
+   */
+  placesEntete: { prendre(): (() => void) | null };
 }
 
-/** Un refus, rendu par la route en `{ error, code }` et par l'outil en `RefusOutil`. */
-export interface RefusModele { statut: number; code: CodeApi; message: string }
+/**
+ * Un refus, rendu par la route en `{ error, code }` et par l'outil en `RefusOutil`. `reessayerDansS` : un refus
+ * passager, que la route accompagne d'un `Retry-After` (sans lui, un client réessaie aussitôt).
+ */
+export interface RefusModele { statut: number; code: CodeApi; message: string; reessayerDansS?: number }
 
 export interface ModeleCree {
   id: string;
@@ -34,17 +43,54 @@ export interface ModeleCree {
 }
 
 /**
- * Un refus de Meta sur ce qu'on lui soumet (4xx non transitoire) : sa phrase, sinon `null` (une panne, qui reste une
- * erreur du serveur). Le motif lisible de Meta (`error_user_msg`) d'abord.
+ * Ce qu'une erreur de Meta veut dire pour l'appelant, ou `null` (une panne inconnue, qui reste une erreur du serveur) :
+ *  - le JETON de l'espace refusé (401, code 190) : le modèle n'y est pour rien, le compte est à reconnecter ;
+ *  - un refus PASSAGER (limite, panne de Meta, dépôt sans handle) : à réessayer, avec son délai ;
+ *  - un refus du CONTENU (4xx terminal) : son motif, le lisible de Meta (`error_user_msg`) d'abord.
  */
-export function refusDeMeta(err: unknown): string | null {
-  if (!(err instanceof MetaApiError) || err.httpStatus < 400 || err.httpStatus >= 500 || err.retryable) return null;
-  return `Meta a refusé le modèle : ${(err.userMessage ?? err.message).slice(0, 300)}`;
+export function refusDeMeta(err: unknown): RefusModele | null {
+  if (err instanceof MediaUploadError) {
+    return { statut: 429, code: 'rate_limited', message: 'le dépôt du fichier d’en-tête chez Meta a échoué : réessayez dans un instant', reessayerDansS: 30 };
+  }
+  if (!(err instanceof MetaApiError)) return null;
+  if (err.httpStatus === 401 || err.code === 190) {
+    return { statut: 409, code: 'meta_auth_failed', message: 'Meta refuse le jeton de l’espace : reconnectez le compte WhatsApp depuis la console' };
+  }
+  if (err.retryable) {
+    const s = err.retryAfterMs !== undefined ? Math.max(1, Math.ceil(err.retryAfterMs / 1000)) : 30;
+    return { statut: 429, code: 'rate_limited', message: 'Meta ne répond pas pour l’instant (limite ou panne passagère) : réessayez dans un instant', reessayerDansS: s };
+  }
+  if (err.httpStatus >= 400 && err.httpStatus < 500) {
+    return { statut: 422, code: 'meta_rejected', message: `Meta a refusé le modèle : ${(err.userMessage ?? err.message).slice(0, 300)}` };
+  }
+  return null;
 }
 
 const AUCUN_COMPTE: RefusModele = { statut: 409, code: 'no_whatsapp_number', message: 'aucun compte WhatsApp n’est relié à cet espace' };
+const OCCUPE: RefusModele = {
+  statut: 429, code: 'rate_limited', message: 'trop de fichiers d’en-tête en cours de dépôt, réessayez dans un instant', reessayerDansS: 2,
+};
 
-/** Crée le modèle, corps déjà validé par `schemaModeleMeta`. Un refus de Meta devient un refus, une panne lève. */
+/** Un refus des gardes de la console, sous un code de l'API. Un 422 de `refusDesChamps` est une panne de lecture : à réessayer. */
+function refusDeLaConsole(r: { statut: 400 | 422; error: string }): RefusModele {
+  if (r.statut === 400) return { statut: 400, code: 'invalid_body', message: r.error };
+  return { statut: 429, code: 'rate_limited', message: r.error, reessayerDansS: 5 };
+}
+
+/** Télécharge l'en-tête et le dépose chez Meta en tenant une place de la copie : le handle, ou un refus. */
+async function deposerLEntete(deps: DepsCreationModele, format: FormatEntete, url: string): Promise<{ handle: string } | { refus: RefusModele }> {
+  const rendre = deps.placesEntete.prendre();
+  if (rendre === null) return { refus: OCCUPE };
+  try {
+    const fichier = await deps.telechargerEntete(format, url);
+    if ('refus' in fichier) return { refus: { statut: 422, code: 'invalid_header_media', message: `en-tête : ${fichier.refus}` } };
+    return { handle: await deps.deposerEntete(fichier.octets, fichier.mime) };
+  } finally {
+    rendre();
+  }
+}
+
+/** Crée le modèle, corps déjà validé par `schemaModeleMeta`. Une erreur de Meta connue devient un refus, une panne lève. */
 export async function creerModeleDepuisMeta(deps: DepsCreationModele, tenantId: string, lu: ModeleMeta): Promise<{ refus: RefusModele } | { modele: ModeleCree }> {
   const { input, enteteMedia } = versModeleConsole(lu);
   // Avant de télécharger quoi que ce soit : un espace sans compte n'a rien à déposer.
@@ -52,17 +98,18 @@ export async function creerModeleDepuisMeta(deps: DepsCreationModele, tenantId: 
   try {
     let complet = input;
     if (enteteMedia) {
-      const fichier = await deps.telechargerEntete(enteteMedia.format, enteteMedia.url);
-      if ('refus' in fichier) {
-        // Toutes les places de téléchargement prises : à réessayer, comme un plafond, et non un fichier refusé.
-        if ('reessayer' in fichier) return { refus: { statut: 429, code: 'rate_limited', message: fichier.refus } };
-        return { refus: { statut: 422, code: 'invalid_header_media', message: `en-tête : ${fichier.refus}` } };
-      }
-      complet = { ...input, header: { format: enteteMedia.format, handle: await deps.deposerEntete(fichier.octets, fichier.mime) } };
+      // La seule garde de la console qui peut refuser ce corps (les champs `{cle}` des liens), avant de télécharger et de
+      // déposer jusqu'à 16 Mo pour rien. `creerUnModele` la rejoue : elle ne lit les champs que si une adresse en porte.
+      const avant = await refusDesChamps(deps.modeles, tenantId, input);
+      if (avant) return { refus: refusDeLaConsole(avant) };
+      const depot = await deposerLEntete(deps, enteteMedia.format, enteteMedia.url);
+      if ('refus' in depot) return depot;
+      complet = { ...input, header: { format: enteteMedia.format, handle: depot.handle } };
     }
     const issue = await creerUnModele(deps.modeles, tenantId, complet);
     if (!('res' in issue)) {
       if (issue.motif === 'compte') return { refus: AUCUN_COMPTE };
+      if (issue.motif === 'champs') return { refus: refusDeLaConsole(issue) };
       return { refus: { statut: issue.statut, code: issue.statut === 400 ? 'invalid_body' : 'template_rejected', message: issue.error } };
     }
     return {
@@ -72,8 +119,8 @@ export async function creerModeleDepuisMeta(deps: DepsCreationModele, tenantId: 
       },
     };
   } catch (err) {
-    const motif = refusDeMeta(err);
-    if (motif !== null) return { refus: { statut: 422, code: 'meta_rejected', message: motif } };
+    const refus = refusDeMeta(err);
+    if (refus !== null) return { refus };
     throw err;
   }
 }
@@ -84,7 +131,7 @@ export interface StatutLangue { language: string; status: string; category: stri
 /** Un nom de modèle tel que Meta les accepte : un autre ne peut pas exister, il est donc inconnu. */
 export const estNomDeModele = (n: string): boolean => /^[a-z0-9_]{1,512}$/.test(n);
 
-/** Le statut de chaque langue d'un modèle, ou un refus (aucun compte, modèle inconnu, langue hors liste). */
+/** Le statut de chaque langue d'un modèle, ou un refus (aucun compte, modèle inconnu, langue hors liste, Meta). */
 export async function statutsDuModele(
   deps: Pick<DepsCreationModele, 'modeles'>,
   tenantId: string,
@@ -98,7 +145,14 @@ export async function statutsDuModele(
   if (!estNomDeModele(name)) return { refus: inconnu };
   const waba = await deps.modeles.repo.getTenantWabaId(tenantId);
   if (!waba) return { refus: AUCUN_COMPTE };
-  const tous = await (await deps.modeles.meta.templateClientForTenant(tenantId)).statutsDuNom(waba, name);
+  let tous;
+  try {
+    tous = await (await deps.modeles.meta.templateClientForTenant(tenantId)).statutsDuNom(waba, name);
+  } catch (err) {
+    const refus = refusDeMeta(err);
+    if (refus !== null) return { refus };
+    throw err;
+  }
   const retenus = tous.filter((s) => language === undefined || s.language === language);
   if (retenus.length === 0) return { refus: inconnu };
   return {

@@ -948,6 +948,7 @@ describe('serveur MCP : les modèles (lot 13, domaine 3)', () => {
         },
         telechargerEntete: async () => ({ refus: 'jamais appelé ici' }),
         deposerEntete: async () => '4::h',
+        placesEntete: { prendre: () => () => {} },
       },
     };
   }

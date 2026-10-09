@@ -60,10 +60,12 @@ function Modeles() {
         <p>{ordre}</p>
         <Erreurs
           lignes={[
-            ['invalid_body', t('Corps hors du format, avec le champ fautif.', 'Body outside the format, naming the field.')],
+            ['invalid_body', t('Corps hors du format, avec le champ fautif ; puis un champ {cle} inconnu dans l’adresse d’un bouton.', 'Body outside the format, naming the field; then an unknown {key} field in a button URL.')],
             ['no_whatsapp_number', t('Espace sans compte WhatsApp.', 'Workspace without a WhatsApp account.')],
+            ['rate_limited', t('Toutes les places de dépôt d’en-tête sont prises, ou Meta est momentanément indisponible : réessayez après Retry-After.', 'All header upload slots are taken, or Meta is briefly unavailable: retry after Retry-After.')],
             ['invalid_header_media', t('Fichier d’en-tête introuvable, trop lourd, ou d’un autre type.', 'Header file not found, too large, or of another type.')],
             ['template_rejected', t('Un lien n’a pas pu être tracé.', 'A link could not be tracked.')],
+            ['meta_auth_failed', t('Meta refuse le jeton de l’espace : reconnectez le compte WhatsApp.', 'Meta refuses the workspace token: reconnect the WhatsApp account.')],
             ['meta_rejected', t('Meta refuse le modèle (nom déjà pris dans cette langue, contenu) : son motif suit.', 'Meta refuses the template (name already taken in this language, content): its reason follows.')],
           ]}
         />

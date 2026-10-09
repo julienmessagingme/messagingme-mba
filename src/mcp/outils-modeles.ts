@@ -77,12 +77,15 @@ export const OUTILS_MODELES: OutilMcp[] = [
     nom: 'create_template',
     fonction: null,
     description:
-      'Crée un modèle WhatsApp et le soumet à la validation de Meta, au FORMAT DE META : { name, language, category '
-      + '(UTILITY ou MARKETING), components }. Composants : HEADER (format TEXT avec text, ou IMAGE, VIDEO, DOCUMENT avec '
-      + 'example.header_url : [« https://… »], le fichier est téléchargé et déposé chez Meta), BODY obligatoire (variables '
-      + '{{1}}, {{2}}… avec example.body_text : [[valeurs]]), FOOTER, BUTTONS (QUICK_REPLY, ou URL : 2 au plus, liens '
-      + 'tracés). Bornes de Meta : corps 1 024 caractères, en-tête et pied 60, texte de bouton 25, 10 boutons. Rend le '
-      + 'statut initial (souvent pending) : suivre avec get_template_status. Compte dans les opérations lourdes de l’espace.',
+      'Crée un modèle WhatsApp et le soumet à la validation de Meta, au FORMAT DE META : { name (minuscules, chiffres et _, '
+      + '512 au plus), language (fr, en_US…), category (UTILITY ou MARKETING), components }. Chaque composant au plus une '
+      + 'fois. HEADER : format TEXT avec text (60 caractères, sans variable), ou IMAGE, VIDEO, DOCUMENT avec '
+      + 'example.header_url : [« https://… »] (2 000 caractères, sans redirection ; image JPEG ou PNG de 5 Mo, vidéo MP4 ou '
+      + 'document PDF de 16 Mo ; le fichier est téléchargé et déposé chez Meta). BODY obligatoire (1 024 caractères ; '
+      + 'variables {{1}}, {{2}}… contiguës, avec example.body_text : [[une valeur par variable, 200 caractères]]). FOOTER '
+      + '(60 caractères, sans variable). BUTTONS (10 au plus, texte de 25 caractères) : QUICK_REPLY, ou URL (2 au plus, '
+      + 'adresse https sans {{1}}, tracée par nous). Rend le statut initial (souvent pending) : suivre avec '
+      + 'get_template_status. Compte dans les opérations lourdes de l’espace.',
     scope: 'mcp:write',
     // Monde ouvert : le modèle part chez Meta et y reste (le supprimer est un autre geste, depuis la console).
     annotations: { title: 'Créer un modèle', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },

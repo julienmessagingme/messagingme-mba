@@ -220,7 +220,7 @@ async function soumettreAvecLiens<T>(
  * Un bouton de premier niveau peut en porter ; un bouton de carte jamais : tracé sans jeton (`estAttribuable`), son
  * champ ne serait jamais rempli. Les champs déclarés de l'espace ne sont lus que si une adresse porte une accolade.
  */
-async function refusDesChamps(
+export async function refusDesChamps(
   deps: TemplateRouteDeps,
   tenant: string,
   fields: TemplateFields,

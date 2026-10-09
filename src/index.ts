@@ -173,7 +173,7 @@ import { handlerMaison } from './agent/outils-maison';
 import type { TemplateSummary } from './meta/templates';
 import type { TemplateRouteDeps } from './http/templates';
 import type { DepsCreationModele } from './api/creer-modele';
-import { telechargerEnteteProduction } from './api/entete-par-url';
+import { placesDeTelechargement, telechargerEnteteProduction } from './api/entete-par-url';
 import { tenter } from './lib/tenter';
 import { messageDe } from './lib/erreur';
 import { PgStripeStore } from './stripe/store.pg';
@@ -987,6 +987,7 @@ async function main(): Promise<void> {
     modeles: depsModeles,
     telechargerEntete: telechargerEnteteProduction,
     deposerEntete: (octets, mime) => mediaClient.uploadImage(octets, mime),
+    placesEntete: placesDeTelechargement,
   };
 
   const app = buildServer({

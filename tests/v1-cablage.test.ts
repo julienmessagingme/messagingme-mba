@@ -70,6 +70,9 @@ describe('câblage de /v1/templates', () => {
     expect(source).toMatch(/const listerModeles = async \(tenant: string\): Promise<TemplateSummary\[\]> => \{\s*const waba = await repo\.getTenantWabaId\(tenant\);\s*if \(!waba\) return \[\];\s*return catalogueTemplatesCache\.lire\(`\$\{tenant\}:\$\{waba\}`, async \(\) => \(await metaFactory\.templateClientForTenant\(tenant\)\)\.list\(waba\)\);/);
     expect(source).toMatch(/catalogues: \{\s*templates: listerModeles,/);
     expect(source).toMatch(/modeles: \{ \.\.\.creationModeles, lister: listerModeles \}/);
+    // 🔴 Le téléchargement de l'en-tête est la voie GARDÉE (inventoriée par `tests/lib-adresse-privee.test.ts`) : un
+    // `fetch` nu injecté ici échapperait à l'inventaire, `DepsCreationModele` acceptant n'importe quel téléchargeur.
+    expect(source).toMatch(/telechargerEntete: telechargerEnteteProduction,\s*deposerEntete: \(octets, mime\) => mediaClient\.uploadImage\(octets, mime\),\s*placesEntete: placesDeTelechargement,/);
   });
 });
 

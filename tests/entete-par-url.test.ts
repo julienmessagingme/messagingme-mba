@@ -29,6 +29,21 @@ describe('le téléchargement d’un en-tête', () => {
     expect(await telechargerEntete(deps(new Response(PDF)), 'DOCUMENT', URL_OK)).toEqual({ octets: PDF, mime: 'application/pdf' });
   });
 
+  it('🔴 une vidéo : MP4 seulement, pas un autre fichier de la famille ISO (HEIC, MOV)', async () => {
+    const famille = (marque: string) => Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from(`ftyp${marque}`), Buffer.alloc(8)]);
+    for (const marque of ['heic', 'qt  ', 'M4A ']) {
+      expect(await telechargerEntete(deps(new Response(famille(marque))), 'VIDEO', URL_OK), marque).toEqual({ refus: expect.stringMatching(/MP4/) });
+    }
+    expect(await telechargerEntete(deps(new Response(famille('isom'))), 'VIDEO', URL_OK)).toMatchObject({ mime: 'video/mp4' });
+  });
+
+  it('un statut d’échec : le corps est rendu tout de suite, la connexion ne reste pas tenue', async () => {
+    let annule = false;
+    const corps = new ReadableStream({ cancel() { annule = true; } });
+    expect(await telechargerEntete(deps(new Response(corps, { status: 500 })), 'IMAGE', URL_OK)).toEqual({ refus: expect.stringMatching(/500/) });
+    expect(annule).toBe(true);
+  });
+
   it('🔴 le type DÉCLARÉ ne compte pas : un PDF annoncé image/jpeg est refusé pour une image', async () => {
     const r = await telechargerEntete(deps(new Response(PDF, { headers: { 'content-type': 'image/jpeg' } })), 'IMAGE', URL_OK);
     expect(r).toEqual({ refus: expect.stringMatching(/JPEG ou PNG/) });

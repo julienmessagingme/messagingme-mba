@@ -313,13 +313,14 @@ export class MetaTemplateClient {
 
   /**
    * Le statut de chaque langue d'un nom (lot 13, domaine 3), avec le motif d'un refus. Meta filtre par `name` sans
-   * promettre l'égalité exacte : on garde le seul nom demandé. Plafond de 5 pages, un nom ayant au plus quelques langues.
+   * promettre l'égalité exacte : on garde le seul nom demandé. Plafond de 20 pages, comme `list` : un filtre par inclusion
+   * peut rendre beaucoup de noms voisins avant le bon.
    */
   async statutsDuNom(wabaId: string, name: string): Promise<StatutModele[]> {
     const qs = new URLSearchParams({ name, fields: 'name,language,status,category,rejected_reason', limit: '100' });
     const out: StatutModele[] = [];
     let next: string | null = this.url(wabaId, `?${qs.toString()}`);
-    for (let page = 0; page < 5 && next; page++) {
+    for (let page = 0; page < 20 && next; page++) {
       const lu = pageDeStatutsSchema.safeParse(await this.call(next, { method: 'GET' }));
       if (!lu.success) break;
       for (const brut of lu.data.data ?? []) {

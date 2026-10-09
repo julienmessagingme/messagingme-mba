@@ -31,6 +31,8 @@ export const STATUT_PAR_CODE = {
   invalid_header_media: 422,
   // Un modèle refusé AVANT Meta par les gardes de la console (le traçage d'un lien) : son motif suit.
   template_rejected: 422,
+  // Meta refuse le JETON de l'espace (401, code 190) en créant ou lisant un modèle : le compte est à reconnecter.
+  meta_auth_failed: 409,
   // Le numéro WhatsApp de l'espace est délié depuis l'Accueil : rien ne part avant qu'il soit relié. Distinct
   // de `no_whatsapp_number` : le numéro existe, et se relie d'un clic.
   number_unlinked: 409,
