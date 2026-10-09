@@ -645,6 +645,7 @@ function AccueilInner({ session }: { session: Session }) {
                   </p>
                 </div>
               )}
+              {account?.hasNumber && isAdmin && <RenouvelerConnexionMeta connexion={connexionNumero} />}
             </div>
           )}
 
@@ -943,6 +944,40 @@ function ConnectNumberZone({ isAdmin, connexion }: { isAdmin: boolean; connexion
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * « Renouveler la connexion Meta » : rouvre la fenêtre de Meta sur un espace QUI A DÉJÀ son numéro.
+ *
+ * 🔴 POURQUOI CE BOUTON EXISTE. Un espace relié avant la v4 de l'inscription porte un jeton à 60 jours : celui de
+ * « MessagingMeEmbdedded » expire le 2026-10-16 (lu chez Meta le 2026-10-09), et la zone « Connecter » ne s'affiche que
+ * sans numéro. Sans ce bouton, un tel espace cessait d'envoyer à la date prévue, sans aucun recours dans la console.
+ *
+ * Le serveur est prêt pour ce geste : sur le MÊME numéro et le même espace, `linkTenant` est idempotent, aucun
+ * enregistrement n'est refait pour un numéro déjà `CONNECTED`, le PIN gardé n'est pas effacé, `saveCredentials`
+ * repart d'un jeton actif, et le crédit de bienvenue n'est jamais offert deux fois. Un autre numéro est refusé avec
+ * sa raison (un seul numéro par espace).
+ *
+ * ⚠️ LA MÊME INSTANCE que la zone « Connecter » et le bloc « Canaux et services » (`connexionNumero`) : elle porte
+ * l'écoute des messages de la fenêtre Meta, et une seconde instance les capterait de son côté.
+ */
+function RenouvelerConnexionMeta({ connexion }: { connexion: ConnexionNumero }) {
+  const t = useT();
+  if (connexion.cfg?.enabled !== true) return null;
+  return (
+    <div data-testid="renouveler-connexion" className="mt-4 border-t border-ink-100 pt-3">
+      <Bouton variante="secondaire" type="button" enCours={connexion.busy} disabled={connexion.busy} onClick={() => { void connexion.connect(); }}>
+        {connexion.busy ? t('Connexion en cours…', 'Connecting…') : t('Renouveler la connexion Meta', 'Renew the Meta connection')}
+      </Bouton>
+      <p className="mt-1 text-xs text-ink-500">
+        {t(
+          'Rouvre la fenêtre de Meta sur le même compte et le même numéro : Messaging Me reçoit une autorisation neuve. Rien n’est effacé, le numéro reste branché. À faire si les envois s’arrêtent sur une erreur d’autorisation.',
+          'Reopens the Meta window on the same account and number: Messaging Me gets a fresh authorization. Nothing is erased, the number stays connected. Do it if sending stops on an authorization error.',
+        )}
+      </p>
+      {connexion.error && <p data-testid="renouveler-erreur" className="mt-2 rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700">{connexion.error}</p>}
     </div>
   );
 }

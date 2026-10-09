@@ -1,7 +1,7 @@
 ---
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
-source_empreinte: f9b657
+source_empreinte: 8dc945
 ---
 # Connecter mon numéro WhatsApp, et lire son état
 
@@ -50,6 +50,10 @@ bouton qui règle ça : Meta vous envoie un code (par appel, ou par SMS si vous 
 et le numéro est enregistré dans la foulée. Meta ne tolère que dix demandes par numéro sur 72 heures, toutes
 étapes confondues, et bloque le numéro au-delà : l'écran refuse donc un second code avant une minute et ne
 réessaie jamais tout seul.
+
+**Renouveler la connexion Meta.** Si vos envois s'arrêtent sur une erreur d'autorisation, un administrateur clique
+« Renouveler la connexion Meta » au bas de la carte du numéro : la fenêtre de Meta se rouvre sur le même compte et le
+même numéro, et Messaging Me reçoit une autorisation neuve. Rien n'est effacé, le numéro reste branché.
 
 **Ce que la carte du numéro affiche** : votre photo de profil WhatsApp, celle que voient vos destinataires
 (rien ne s'affiche tant que vous n'en avez pas posé, c'est le cas ordinaire au début), le statut du compte

@@ -3773,7 +3773,7 @@ Ajouté par le lot 4 de l'API publique :
     où il veut en nommant ses clés comme nos champs.
 17. **Le tenant vient du CODE de l'URL, jamais du corps**, sur toute route publique remise à un tiers.
 18. **Ce qui est servi est décidé par la SIGNATURE du fichier**, jamais par le type déclaré au téléversement.
-32. **Le contrat OpenAPI se DÉRIVE, il ne s'écrit pas à côté** (lot 16). `GET /openapi.json` est construit depuis le
+50. **Le contrat OpenAPI se DÉRIVE, il ne s'écrit pas à côté** (lot 16). `GET /openapi.json` est construit depuis le
     registre `src/api/openapi/registre.ts`, dont les schémas d'ENTRÉE sont ceux que les routes appliquent, et depuis
     les schémas des événements. `tests/openapi.test.ts` tient le registre égal à l'index de la doc (lui-même égal
     aux routes montées), y passe chaque exemple de la doc, produit chaque événement par les vrais constructeurs, et

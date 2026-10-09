@@ -1965,6 +1965,11 @@ scénario, comment importer des contacts.
   Cloud API fait automatiquement (l'étape qui, ailleurs, oblige à cliquer un bouton pour sortir du « pending »).
   Prérequis Meta remplis : Tech Provider vérifié ET **inscrit** (l'inscription est une étape à part de la
   vérification, c'est elle qui débloquait), app publiée.
+- ✅ **« Renouveler la connexion Meta »** (2026-10-09) : sur la carte d'un espace qui a DÉJÀ son numéro, un
+  administrateur rouvre la fenêtre de Meta sur le même compte et le même numéro ; Messaging Me reçoit une autorisation
+  neuve, rien n'est effacé et le numéro reste branché (un autre numéro est refusé : un espace en pilote un seul). C'est
+  le recours d'un espace relié avant la v4 de l'inscription, dont l'autorisation dure 60 jours (celle des espaces
+  reliés depuis n'expire pas), et de tout espace dont les envois s'arrêtent sur une erreur d'autorisation.
 - ✅ **Un numéro fourni pour qui n'en a pas** (lot 3b, LIVE et éprouvé le 2026-10-06) : sur l'Accueil d'un
   espace sans numéro, « Pas de numéro ? Nous vous en fournissons un » mène à la page « Connecter WhatsApp ».
   « Fournissez-moi un numéro » se paie d'abord (3,50 € HT par mois, abonnement Stripe, lot 3c) : « Payer » mène à la
