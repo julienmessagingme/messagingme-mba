@@ -18,7 +18,8 @@
  *    falsifierait le registre. Seule une création le pose.
  *
  * Ce qui ne passe PAS par ici : le STOP RCS (`rcs_optout_at`), le blocage, la purge (qui garde ce qui dit non), et
- * `upsertFromInbound`, qui ne crée qu'en `unknown` et ne touche jamais au consentement d'une fiche existante.
+ * `upsertFromInbound`, qui crée en `unknown` (ou en STOP par la liste de refus) et ne touche jamais au consentement
+ * d'une fiche existante.
  * ⚠️ Une fiche ne naît `opted_out` que par la liste de refus (`src/crm/refus-effaces.ts`, 2026-10-09) : son identifiant
  * appartenait à une fiche effacée en STOP. Elle naît alors avec la date d'origine (`opt_out_at`) et la source
  * `liste_de_refus`, sauf si la création lève un STOP (`issueDeLaTransition('opted_out', …) === 'ecrit'`). Hors de là,
@@ -147,17 +148,14 @@ export function transition(ligne: LigneDAvant, d: DemandeConsentement): {
 }
 
 /**
- * Les affectations du consentement d'un upsert (`insert ... on conflict do update`), demande lue dans `excluded` par
- * défaut. Le nom, les champs et les étiquettes s'y écrivent quand même : la transition ne garde que le consentement. Un
- * upsert ne demande jamais `opted_out` (types `ContactUpsert` et `LotContacts`), il n'a donc rien à annoncer.
- * 🔴 Un upsert dont la branche `insert` lit la liste de refus (`src/crm/refus-effaces.ts`) passe sa DEMANDE D'ORIGINE
- * (`demande`) : son `excluded` porte le statut de la liste, et une fiche vivante qui s'est réabonnée depuis serait
- * désabonnée par une écriture qui ne le demandait pas.
+ * Les affectations du consentement d'un upsert (`insert ... on conflict do update`). Le nom, les champs et les étiquettes
+ * s'y écrivent quand même : la transition ne garde que le consentement. Un upsert ne demande jamais `opted_out` (types
+ * `ContactUpsert` et `LotContacts`), il n'a donc rien à annoncer.
+ * 🔴 La DEMANDE D'ORIGINE est requise (`demande`, les paramètres de la requête), jamais lue dans `excluded` : la branche
+ * `insert` lit la liste de refus (`src/crm/refus-effaces.ts`), son `excluded` peut donc porter `opted_out`, et une fiche
+ * vivante réabonnée serait désabonnée par une écriture qui ne le demandait pas.
  */
-export function affectationsDUpsert(
-  autorite: AutoriteUpsert,
-  demande: { voulu: string; source: string } = { voulu: 'excluded.opt_in_status', source: 'excluded.opt_in_source' },
-): string {
+export function affectationsDUpsert(autorite: AutoriteUpsert, demande: { voulu: string; source: string }): string {
   return transition('contacts.', { ...demande, autorite }).affectations;
 }
 

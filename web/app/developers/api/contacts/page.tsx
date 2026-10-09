@@ -102,8 +102,8 @@ function Contacts() {
           <li>{t('Les éléments qui désignent la même personne s’écrivent dans l’ordre du lot.', 'Items that designate the same person are written in the order of the list.')}</li>
           <li data-testid="doc-import-fichier">
             {t(
-              `Importer un fichier : envoyez-le par lots de ${BORNES.contactsParLot}, comme ci-dessous. Au plafond par défaut, ${BORNES.contactsParLot * BORNES.plafondEspaceMinute} fiches par minute. Un 429 n’a rien écrit : attendez Retry-After et renvoyez le même lot. Un très gros fichier passe plus vite par l’import CSV de la console.`,
-              `Importing a file: send it in batches of ${BORNES.contactsParLot}, as below. At the default limit, ${BORNES.contactsParLot * BORNES.plafondEspaceMinute} records per minute. A 429 wrote nothing: wait for Retry-After and send the same records again. A very large file goes faster through the console’s CSV import.`,
+              `Importer un fichier : envoyez-le par lots de ${BORNES.contactsParLot}, comme ci-dessous (un module : fichier .mjs). Aux plafonds par défaut, ${BORNES.contactsParLot * BORNES.plafondEspaceMinute} fiches par minute, ${BORNES.contactsParLot * BORNES.plafondEspaceHeure} par heure et ${BORNES.quotaFichesJour} par jour. Un 429 n’a rien écrit : attendez Retry-After (jusqu’à minuit pour le quota du jour) et renvoyez le même lot. Un très gros fichier passe plus vite par l’import CSV de la console.`,
+              `Importing a file: send it in batches of ${BORNES.contactsParLot}, as below (a module: .mjs file). At the default limits, ${BORNES.contactsParLot * BORNES.plafondEspaceMinute} records per minute, ${BORNES.contactsParLot * BORNES.plafondEspaceHeure} per hour and ${BORNES.quotaFichesJour} per day. A 429 wrote nothing: wait for Retry-After (until midnight for the daily quota) and send the same records again. A very large file goes faster through the console’s CSV import.`,
             )}
           </li>
         </Liste>
@@ -217,8 +217,8 @@ function Contacts() {
       <Route ep="DELETE /v1/contacts/{contactId}">
         <p>
           {t(
-            'Avec le droit contacts:admin. Irréversible : la fiche, ses conversations, ses messages et son analyse sont effacés ; ce qui porte les compteurs est anonymisé. Dans la limite du jour de l’offre (10 en Free, sans limite en Pro et Entreprise). Une fiche désabonnée (STOP) laisse une empreinte non réversible de son numéro, gardée trois ans : recréée, elle naît désabonnée.',
-            'With the contacts:admin scope. Irreversible: the record, its conversations, messages and analysis are erased; what carries the counters is anonymised. Within the plan’s daily limit (10 on Free, unlimited on Pro and Enterprise). An opted-out record (STOP) leaves a non-reversible fingerprint of its number, kept three years: recreated, it is born opted out.',
+            'Avec le droit contacts:admin. Irréversible : la fiche, ses conversations, ses messages et son analyse sont effacés ; ce qui porte les compteurs est anonymisé. Dans la limite du jour de l’offre (10 en Free, sans limite en Pro et Entreprise). Une fiche désabonnée (STOP) laisse une empreinte de son numéro, illisible sans notre clé, gardée trois ans après le STOP : recréée, elle naît désabonnée.',
+            'With the contacts:admin scope. Irreversible: the record, its conversations, messages and analysis are erased; what carries the counters is anonymised. Within the plan’s daily limit (10 on Free, unlimited on Pro and Enterprise). An opted-out record (STOP) leaves a fingerprint of its number, unreadable without our key, kept three years after the STOP: recreated, it is born opted out.',
           )}
         </p>
         <Sous>{t('Réponse 200', '200 response')}</Sous>

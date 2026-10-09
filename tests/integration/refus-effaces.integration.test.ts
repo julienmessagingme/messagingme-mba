@@ -161,6 +161,24 @@ describe.skipIf(!url)('la liste de refus des fiches effacées (Postgres)', () =>
       [tenantId, empreinteRefus(tenantId, { tel: '+33600001071' })])).rowCount).toBe(1);
   });
 
+  it('🔴 un STOP écrit pendant la purge n’est pas perdu : la purge lit ses fiches sous verrou', async () => {
+    const { id } = await store.upsertByPhoneReturningId({ tenantId, phoneE164: '+33600001081', profileName: null, fields: {}, optInStatus: 'opted_in' });
+    const autre = await pool.connect();
+    try {
+      // Le STOP tient la ligne, pas encore validé ; la purge démarre, puis le STOP est validé.
+      await autre.query('begin');
+      await autre.query(`update contacts set opt_in_status = 'opted_out', opt_out_at = now() where id = $1`, [id]);
+      const purge = store.purgeMany(tenantId, [id]);
+      await new Promise((ok) => { setTimeout(ok, 500); });
+      await autre.query('commit');
+      await purge;
+    } finally {
+      autre.release();
+    }
+    expect((await pool.query('select 1 from refus_effaces where tenant_id = $1 and empreinte = $2',
+      [tenantId, empreinteRefus(tenantId, { tel: '+33600001081' })])).rowCount).toBe(1);
+  });
+
   it('la rétention : trois ans depuis le STOP le plus récent de l’entrée', async () => {
     const e = (n: number) => empreinteRefus(tenantId, { tel: `+3360000109${n}` });
     await pool.query(

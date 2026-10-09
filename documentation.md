@@ -1332,10 +1332,12 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   `opt_out_at` d'origine, la source `liste_de_refus` et le STOP RCS, sauf si la création lève un STOP
   (`issueDeLaTransition('opted_out', …)`, donc l'import CSV case cochée seul) ; l'entrée est supprimée dans les deux
   cas, la fiche porte désormais la vérité. Deux gardes : une entrée n'est consommée que si AUCUNE fiche ne porte déjà
-  l'identifiant (sinon la requête retombe dans son `on conflict` sans rien créer), et la branche `on conflict` reçoit
+  l'identifiant (une fiche existante fait retomber la requête dans son `on conflict`, ou lever une unicité, et
+  l'instruction annulée rend l'entrée), et la branche `on conflict` reçoit
   la demande d'ORIGINE (`affectationsDUpsert(autorite, demande)`), jamais le statut de la liste : une fiche vivante
   réabonnée n'est jamais désabonnée. Aucune annonce au système du client : ce STOP a déjà été annoncé. Rétention :
   trois ans depuis le STOP le plus récent de l'entrée (`RETENTION_REFUS_ANS`, balayage de rétention du worker).
+  La purge lit ses fiches `for update` : un STOP concurrent est écrit avant elle, ou attend qu'elle finisse.
   ⚠️ Un identifiant RATTACHÉ à une fiche existante (`rattacherCles`) ne lit pas la liste.
 - 🔴 **Un consentement posé par l'API passe par `ecrireConsentementParId`**, qui n'écrit RIEN quand la valeur
   ne change pas : un outil qui renvoie `opted_out` à chaque appel ne repousse pas la date du désabonnement et

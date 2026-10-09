@@ -107,10 +107,10 @@ describe('les affectations', () => {
     expect(affectation('opt_in_source')).toContain('then coalesce(excluded.opt_in_source, contacts.opt_in_source)');
   });
 
-  it('un upsert lit sa demande dans `excluded` et la ligne existante dans `contacts`', () => {
-    expect(affectationsDUpsert('webhook_ou_saisie')).toBe(
-      transition('contacts.', { voulu: 'excluded.opt_in_status', source: 'excluded.opt_in_source', autorite: 'webhook_ou_saisie' }).affectations,
-    );
+  it('un upsert lit sa demande dans ses paramètres, jamais dans `excluded`, et la ligne existante dans `contacts`', () => {
+    const a = affectationsDUpsert('webhook_ou_saisie', { voulu: '$5::text', source: '$6::text' });
+    expect(a).toBe(transition('contacts.', { voulu: '$5::text', source: '$6::text', autorite: 'webhook_ou_saisie' }).affectations);
+    expect(a).not.toContain('excluded.');
   });
 });
 

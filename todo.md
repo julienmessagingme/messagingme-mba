@@ -6,6 +6,9 @@
   l'API qui retombe sur une fiche existante) : seules les quatre CRÉATIONS de fiches la consomment. Cas rare (une
   personne effacée en STOP qui revient sous un autre identifiant, puis à qui l'on rattache l'ancien) ; l'entrée reste et
   se purge à trois ans.
+- **Une fiche créée PENDANT la purge de la même personne naît sans son STOP** : son `not exists` voit encore l'ancien
+  numéro (la purge n'est pas validée), son insertion attend la fin de la purge, puis crée la fiche ; l'entrée reste à côté
+  d'une fiche vivante. Fenêtre : la durée de la transaction de purge (relecture de la livraison B).
 - **La politique de confidentialité** du produit, quand elle sera écrite, doit dire l'empreinte gardée trois ans après
   l'effacement d'un contact désabonné (la console et la doc de l'API le disent déjà).
 

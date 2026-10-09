@@ -32,6 +32,7 @@ function sourceDite(source: string | null, t: (fr: string, en: string) => string
   if (source === 'crm') return t('saisi par l’équipe', 'set by the team');
   if (source === 'scenario') return t('posé par un scénario', 'set by a scenario');
   if (source === 'flow') return t('coché par la personne', 'ticked by the person');
+  if (source === 'liste_de_refus') return t('désabonné avant d’être effacé', 'opted out before being erased');
   if (source.startsWith('webhook:')) return `${t('reçu de', 'received from')} ${source.slice('webhook:'.length)}`;
   return source;
 }

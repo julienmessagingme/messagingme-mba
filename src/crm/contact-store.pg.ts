@@ -630,8 +630,9 @@ export class PgContactStore implements ContactStore {
 
   /**
    * Crée ou rafraîchit une fiche depuis un message entrant, le `wa_id` classé en numéro ou BSUID (`classifyWaId`).
-   * Ne fait jamais régresser l'opt-in (`unknown` seulement à la création, source 'inbound') et ne met à jour que le
-   * nom de profil (jamais écrasé par null). Best-effort, à appeler isolé : ne doit pas casser l'inbox.
+   * Ne fait jamais régresser l'opt-in (`unknown` à la création, source 'inbound', sauf une personne effacée en STOP :
+   * la liste de refus la fait naître `opted_out`) et ne met à jour que le nom de profil (jamais écrasé par null).
+   * Best-effort, à appeler isolé : ne doit pas casser l'inbox.
    */
   async upsertFromInbound(tenantId: string, waId: string, profileName: string | null): Promise<'created' | 'updated' | 'skipped'> {
     const { phoneE164, bsuid } = classifyWaId(waId);
@@ -1536,7 +1537,10 @@ export class PgContactStore implements ContactStore {
       const cibles = await client.query<{
         phone_e164: string | null; bsuid: string | null; opt_in_status: string; opt_out_at: Date | null; rcs_optout_at: Date | null;
       }>(
-        `select phone_e164, bsuid, opt_in_status, opt_out_at, rcs_optout_at from contacts where tenant_id = $1 and id = any($2::uuid[])`,
+        // `for update` : un STOP qui arrive pendant la purge attend qu'elle finisse, ou bien il est lu ici. Sans verrou, la
+        // purge lisait l'état d'avant, le STOP s'écrivait sur la fiche, puis l'anonymisation l'emportait sans entrée de refus.
+        `select phone_e164, bsuid, opt_in_status, opt_out_at, rcs_optout_at from contacts where tenant_id = $1 and id = any($2::uuid[])
+          for update`,
         [tenantId, ids],
       );
       const e164 = cibles.rows.map((r) => r.phone_e164).filter((p): p is string => p !== null && !p.startsWith('anon:'));

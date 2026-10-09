@@ -5,6 +5,21 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-09 : un contact désabonné le reste, même effacé (lot 13, domaine 5, livraison B), en production
+
+`a421ba13`, CI verte job par job, migration 0226 appliquée à 13 h 43 UTC avant le `up` (relue en base, puis les six
+requêtes neuves planifiées par Postgres contre la production, sans rien exécuter). Décisions de Julien du même jour :
+pas de route d'import (le lot reste à 50, une recette dans la doc), et une liste de refus de trois ans. Une première
+recommandation de relever le lot à 1 000 a été retirée avant tout code : elle ignorait que le lot tient la place lourde
+unique du processus, celle des envois de tous les clients ; la règle est de lire l'invariant écrit au-dessus d'une
+borne avant de proposer de la bouger. Les tests d'intégration ont tourné AVANT le push sur une Postgres jetable du VPS
+(accord de Julien), vérifiés dans les deux sens (onze défauts remis, tous vus, dont un premier essai faussé par un
+paramètre SQL laissé sans usage, que Postgres refusait pour une autre raison que le défaut). Relecture : aucun rouge,
+sept jaunes, poussés ensuite : la purge lit ses fiches sous verrou (un STOP concurrent était perdu), la recette cite
+les plafonds horaire et quotidien, « non réversible » devient « illisible sans notre clé », la source est dite en
+français dans Sécurité > Consentement, la demande d'origine devient obligatoire dans `affectationsDUpsert`, et deux
+commentaires faux sont corrigés. Reste au backlog : une fiche créée pendant la purge de la même personne.
+
 ## 2026-10-09 : l'application Meta abonnée aux statuts de modèles
 
 Julien a abonné l'application au champ `message_template_status_update` depuis le tableau de bord (WhatsApp >

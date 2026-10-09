@@ -53,7 +53,8 @@ décisions prises par Claude en l'absence de Julien, à relire : spec § 6) EN P
 (les contacts complets, plan `docs/superpowers/plans/2026-10-09-contacts-complets.md`, spec § 7, mêmes réserves) :
 livraison A (champs et suppression RGPD) EN PRODUCTION (`5e768c39`), ses jaunes poussés ensuite. Livraison B
 (décisions de Julien du 2026-10-09 : pas de route d'import, la recette des lots de 50 dans la doc ; la liste de refus
-des fiches effacées, trois ans, migration 0226) EN COURS.
+des fiches effacées, trois ans, migration 0226) EN PRODUCTION (`a421ba13`, 0226 appliquée le 2026-10-09 à 13 h 43 UTC),
+ses jaunes poussés ensuite. Essai réel dû : une fiche en STOP effacée puis recréée (API, message entrant) naît en STOP.
 
 ## L'OFFRE GRATUITE S'APPELLE « FREE », EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ
 
