@@ -69,3 +69,24 @@ accusés de Meta, sans jamais reculer (un `read` arrivé avant le `delivered` ne
 ### La documentation
 
 Une page « Conversations » (`/developers/api/conversations`), et les routes dans la liste des points d'entrée.
+
+## 4. Domaine 2 : l'envoi au format de Meta
+
+Décisions de Julien du 2026-10-09 :
+
+| Question | Décision |
+| --- | --- |
+| Types acceptés | Les courants : texte, image, vidéo, audio, document, lieu, réaction, et les interactifs (boutons de réponse, liste, bouton lien). Hors lot : sticker, carte de contact, formulaire (Flow), demande de position, carrousel |
+| Désignation | Le corps de Meta tel quel (`messaging_product`, `to`, `type`, ...) : `to` est le numéro, retrouvé sur sa fiche ; `contactId` ou `externalId` sont acceptés à la place de `to` |
+| Médias | Une URL publique (`image.link`, `document.link`...) : Meta va chercher le fichier, rien ne transite chez nous. Le dépôt d'un fichier (pour un `id`) viendra plus tard |
+| En plus | Rien dans ce domaine : ni « marquer lu » ni la citation d'un message |
+
+- **La route** : `POST /v1/messages`, sous `sends:create` (le droit de `POST /v1/messages/whatsapp`, qui reste tel
+  quel). Mêmes gardes que lui : fenêtre de 24 h, STOP, contact bloqué, numéro délié ou suspendu, quota du jour (hors
+  mode « mon application répond »), prise du fil comme lui.
+- **La validation** : un schéma Zod par type, bornes de Meta annoncées (longueurs, nombre de boutons et de lignes),
+  `safeParse`, jamais `as`. Un champ inconnu de Meta est refusé (le corps est envoyé tel quel, après validation, avec
+  `to` remplacé par l'adresse de la fiche).
+- **L'Inbox** montre ce qui est parti : le texte, la légende d'un média, le corps d'un interactif (avec ses boutons),
+  le lieu ; l'origine du message est `api`.
+- **Claude** : un outil `send_message` (même validation, même route interne), sous `mcp:write`.

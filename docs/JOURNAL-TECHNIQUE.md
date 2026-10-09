@@ -5,7 +5,11 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
-## 2026-10-08 : le statut d'un message (lot 13, domaine 1, livraison B), écrit
+## 2026-10-08 : le statut d'un message (lot 13, domaine 1, livraison B), en production le 2026-10-09
+
+`c21dc3b0`, migration 0225 appliquée à 6 h 29 UTC et relue avant le `up`. La relecture : aucun rouge ; l'échec est
+devenu définitif, le motif d'un modèle de campagne est relu dans la campagne, et le CHECK est posé NOT VALID (colonne
+neuve, rien à balayer). Dans la même livraison, décision de Julien : Claude répond en Free (`reply_in_open_window`).
 
 Migration 0225 (`conversation_messages.statut` et `statut_le`). Plutôt qu'un puits d'accusés de plus, à recâbler dans
 trente doubles de tests et dans deux files, l'écriture vit dans la requête qui pose déjà la livraison d'un destinataire
