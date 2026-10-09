@@ -2203,7 +2203,7 @@ async function main(): Promise<void> {
        */
       onDlr: async (tenant, dlr) => {
         await traiterRapportRcs({
-        majLivraison: (id, statut, detail) => recipientStore.updateDeliveryByMessageId(id, statut, detail, null),
+        majLivraison: (id, statut, detail) => recipientStore.updateDeliveryByMessageId(id, statut, detail, null, null),
         mesures: nodeEventStore,
         echecs: echecsMessages,
         joignabilite: rcsJoignabilite,
@@ -2748,6 +2748,8 @@ async function main(): Promise<void> {
       mcp: {
         // L'offre de l'espace (lot 6) : la même vue que la console, pour l'outil `get_plan`.
         offre: { vue: vueOffre },
+        // Le statut d'un message (lot 13) : la MÊME lecture que `GET /v1/messages/{id}`.
+        messagesApi: conversationsV1,
         // La fonction de chaque outil se vérifie sur la même offre en cache (lot 6, B2a).
         offres,
         ...depsRepondre,

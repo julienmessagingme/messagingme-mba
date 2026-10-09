@@ -213,7 +213,7 @@ describe.skipIf(!url)('le journal des tentatives (0134)', () => {
     await campaignRunJob({ campaignId }, deps(new SenderQuiPasse()));
     const recipients = new PgRecipientStore(pool);
 
-    const touche = await recipients.updateDeliveryByMessageId('wamid-+33600001006', 'delivered', null, null);
+    const touche = await recipients.updateDeliveryByMessageId('wamid-+33600001006', 'delivered', null, null, null);
     // ⚠️ LE COMPTE RENDU RESTE CELUI DES DESTINATAIRES, pas la somme des deux tables : l'appelant
     // (le webhook de livraison) lit ce nombre comme « ce wamid est-il à nous ? ».
     expect(touche).toBe(1);
@@ -224,12 +224,12 @@ describe.skipIf(!url)('le journal des tentatives (0134)', () => {
     expect((await journal(campaignId))[0]?.delivery_status).toBe('delivered');
 
     // La monotonie vaut des deux côtés : un `delivered` en retard ne rabaisse pas un `read`.
-    await recipients.updateDeliveryByMessageId('wamid-+33600001006', 'read', null, null);
-    await recipients.updateDeliveryByMessageId('wamid-+33600001006', 'delivered', null, null);
+    await recipients.updateDeliveryByMessageId('wamid-+33600001006', 'read', null, null, null);
+    await recipients.updateDeliveryByMessageId('wamid-+33600001006', 'delivered', null, null, null);
     expect((await destinataires(campaignId))[0]?.delivery_status).toBe('read');
     expect((await journal(campaignId))[0]?.delivery_status).toBe('read');
 
     // Un wamid qui n'est pas à nous ne touche rien, et le dit.
-    expect(await recipients.updateDeliveryByMessageId('wamid-inconnu', 'read', null, null)).toBe(0);
+    expect(await recipients.updateDeliveryByMessageId('wamid-inconnu', 'read', null, null, null)).toBe(0);
   });
 });

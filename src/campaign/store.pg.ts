@@ -1561,7 +1561,7 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
    * canal ou n'en verrait aucun. Une seule instruction, donc les deux tables ne peuvent pas diverger ; la règle
    * de monotonie est la même des deux côtés. Le compte rendu reste celui des destinataires (`maj`).
    */
-  async updateDeliveryByMessageId(messageId: string, status: DeliveryStatus, error: string | null, errorCode: number | null): Promise<number> {
+  async updateDeliveryByMessageId(messageId: string, status: DeliveryStatus, error: string | null, errorCode: number | null, le: string | null): Promise<number> {
     const res = await this.pool.query<{ n: number }>(
       `with maj as (
          update campaign_recipients
@@ -1583,9 +1583,25 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
               > (case delivery_status when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end)
          )
          returning 1 as touche
+       ),
+       -- 🔴 Le statut du MESSAGE (migration 0225, lot 13) : le même accusé, la même règle (ne jamais reculer, sauf vers
+       -- l'échec), par l'index unique de l'identifiant de Meta. Un CTE qui modifie s'exécute même non lu : un seul
+       -- aller-retour par accusé, et toute file qui applique des statuts le pose. Le compte rendu reste celui des
+       -- destinataires de campagne (l'appelant en déduit l'échec d'un message libre).
+       message as (
+         update conversation_messages
+         set statut = $2, statut_le = coalesce($5::timestamptz, now())
+         where meta_message_id = $1 and direction = 'out' and (
+           $2 = 'failed'
+           -- Un echec est DEFINITIF : un sent rejoue apres lui (job relance par pg-boss) ne l efface pas.
+           or (statut is distinct from 'failed'
+               and (case $2 when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end)
+                   > (case statut when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end))
+         )
+         returning 1 as touche
        )
        select (select count(*) from maj)::int as n`,
-      [messageId, status, error, errorCode],
+      [messageId, status, error, errorCode, le],
     );
     // `rowCount` ne convient pas : l'énoncé rend toujours une ligne (le `select` final). C'est le compte porté
     // par cette ligne qui répond.

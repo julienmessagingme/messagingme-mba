@@ -36,7 +36,7 @@ import { cleApiDeTest } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { bornesDesChamps, bornesZod, champsDe, muettes, type Borne } from './aide/bornes-zod';
 import { jamaisDesabonne } from './consentement';
-import { mcpNumeroInerte, mcpEvenementsInertes, mcpOffreInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpNumeroInerte, mcpEvenementsInertes, mcpMessagesInertes, mcpOffreInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { SANS_MCP } from './outils-mcp';
 import { AUCUN_GESTE, GESTE_MUET } from './gestes';
 import { offresToutOuvert } from './gardes';
@@ -353,6 +353,7 @@ function monter(o: Options = {}) {
   const mcp: CablageMcp = {
     ...mcpNumeroInerte,
     ...mcpEvenementsInertes,
+    ...mcpMessagesInertes,
     ...mcpOffreInerte,
     estDesabonne: jamaisDesabonne,
     inbox: {

@@ -2,8 +2,8 @@ import type { Pool } from 'pg';
 import type { ControlOwner } from '../inbox/store.pg';
 import { MEDIA_EXPIRE_SQL } from '../inbox/media-entrant';
 import {
-  encoderCurseur, idPublic, lireIdPublic, responsableDe,
-  type ConversationV1, type DepotConversationsV1, type MessageV1, type PageV1, type Reprise,
+  encoderCurseur, idPublic, lireIdPublic, responsableDe, STATUTS_MESSAGE,
+  type ConversationV1, type DepotConversationsV1, type MessageV1, type PageV1, type Reprise, type StatutMessage,
 } from './conversations-v1';
 
 /**
@@ -57,16 +57,30 @@ function conversationDeLigne(r: LigneConversation, maintenant: number): Conversa
 const SELECT_MESSAGES_SQL = `select m.id, m.meta_message_id, m.conversation_id, m.direction, m.channel, m.type, m.body,
        m.button_payload, m.transcription, m.media_id, m.media_mime, m.media_nom, m.created_at,
        (m.media_id is not null and ${MEDIA_EXPIRE_SQL}) as media_expire,
-       to_char(m.created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as curseur
+       to_char(m.created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as curseur,
+       -- statut et statut_le (migration 0225) sont NOMMES ici : la migration passe AVANT le deploiement de l API.
+       m.statut, m.statut_le,
+       -- L echec d un message libre vit dans echecs_messages (index unique sur message_id) ; celui d un modele de
+       -- campagne, que cette table exclut, dans campaign_recipients. Les deux sous l espace du fil.
+       coalesce(e.code, cr.error_code) as echec_code,
+       coalesce(e.motif, cr.delivery_error) as echec_motif
   from conversation_messages m
-  join conversations c on c.id = m.conversation_id`;
+  join conversations c on c.id = m.conversation_id
+  left join echecs_messages e on e.message_id = m.meta_message_id and e.tenant_id = c.tenant_id
+  left join lateral (
+    select r.error_code, r.delivery_error from campaign_recipients r join campaigns k on k.id = r.campaign_id
+     where r.message_id = m.meta_message_id and k.tenant_id = c.tenant_id and m.statut = 'failed'
+     limit 1
+  ) cr on true`;
 
 interface LigneMessage {
   id: string; meta_message_id: string | null; conversation_id: string; direction: 'in' | 'out'; channel: string | null;
   type: string | null; body: string | null; button_payload: string | null; transcription: string | null;
   media_id: string | null; media_mime: string | null; media_nom: string | null; created_at: Date; media_expire: boolean;
-  curseur: string;
+  curseur: string; statut: string | null; statut_le: Date | null; echec_code: number | null; echec_motif: string | null;
 }
+
+const estStatut = (v: string | null): v is StatutMessage => v !== null && (STATUTS_MESSAGE as readonly string[]).includes(v);
 
 function messageDeLigne(r: LigneMessage): MessageV1 {
   return {
@@ -80,6 +94,10 @@ function messageDeLigne(r: LigneMessage): MessageV1 {
     transcription: r.transcription,
     // Un fichier n'est annoncé que REÇU : un média que nous avons envoyé n'est pas gardé chez Meta pour nous.
     media: r.media_id !== null && r.direction === 'in' ? { mimeType: r.media_mime, filename: r.media_nom, expired: r.media_expire === true } : null,
+    // Un message REÇU n'a pas de livraison à suivre : `null`, même si une colonne venait à porter une valeur.
+    status: r.direction === 'out' && estStatut(r.statut) ? r.statut : null,
+    statusAt: r.direction === 'out' && r.statut_le !== null ? r.statut_le.toISOString() : null,
+    error: r.direction === 'out' && r.statut === 'failed' ? { code: r.echec_code, reason: r.echec_motif } : null,
     createdAt: r.created_at.toISOString(),
   };
 }

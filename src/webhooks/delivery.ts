@@ -7,8 +7,11 @@ import { messageDe } from '../lib/erreur';
 export type DeliveryStatus = 'sent' | 'delivered' | 'read' | 'failed';
 
 export interface DeliveryStore {
-  /** Met à jour le statut de livraison d'un destinataire par message_id. Retourne le nb de lignes touchées. */
-  updateDeliveryByMessageId(messageId: string, status: DeliveryStatus, error: string | null, errorCode: number | null): Promise<number>;
+  /**
+   * Met à jour le statut de livraison d'un destinataire par message_id, et celui du message lui-même (`le` : l'instant
+   * de l'accusé selon Meta, migration 0225). Retourne le nb de destinataires de campagne touchés.
+   */
+  updateDeliveryByMessageId(messageId: string, status: DeliveryStatus, error: string | null, errorCode: number | null, le: string | null): Promise<number>;
 }
 
 const VALID = new Set<DeliveryStatus>(['sent', 'delivered', 'read', 'failed']);
@@ -67,11 +70,17 @@ export function destinataireDuStatut(data: unknown): string | null {
   return typeof r === 'string' && r.trim() !== '' ? r : null;
 }
 
-/** L'instant d'un statut Meta (secondes Unix), en ISO, ou `null`. Ne lève jamais. */
+/** Le dernier instant Unix que l'on accepte (an 9999) : au-delà, `toISOString` lève, ou rend une année que Postgres refuse. */
+const INSTANT_MAX_S = 253402300799;
+
+/**
+ * L'instant d'un statut Meta (secondes Unix), en ISO, ou `null`. Ne lève jamais : il est appelé hors de tout `try` sur
+ * le chemin des accusés (le statut du message, migration 0225), et une exception y ferait rejouer le job entier.
+ */
 export function instantDuStatut(data: unknown): string | null {
   const brut = asRecord(data)['timestamp'];
   const secondes = typeof brut === 'string' || typeof brut === 'number' ? Number(brut) : Number.NaN;
-  return Number.isFinite(secondes) && secondes > 0 ? new Date(secondes * 1000).toISOString() : null;
+  return Number.isFinite(secondes) && secondes > 0 && secondes <= INSTANT_MAX_S ? new Date(secondes * 1000).toISOString() : null;
 }
 
 /**
@@ -149,7 +158,8 @@ export async function processStatuses(
     }
     const d = extractDelivery(ev.data);
     if (!d) continue;
-    const touches = await delivery.updateDeliveryByMessageId(d.messageId, d.status, d.error, d.errorCode);
+    // `le` : l'instant de l'accusé selon Meta, que le statut du message garde (`statut_le`, migration 0225).
+    const touches = await delivery.updateDeliveryByMessageId(d.messageId, d.status, d.error, d.errorCode, instantDuStatut(ev.data));
     /**
      * L'échec d'un message libre (réponse d'Inbox, message d'API ou de bloc) : il ne touche aucun destinataire de
      * campagne (`touches` vaut 0), seul cas qui paie une requête de plus. Best-effort : une exception ferait

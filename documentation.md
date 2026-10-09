@@ -3662,7 +3662,16 @@ Ajouté par le lot 4 de l'API publique :
    `conversations:read` est neuf et N'A PAS été donné aux clés existantes (décision de Julien du 2026-10-08) ; la page
    « Démarrer » le donne à la clé qu'elle crée. Le fichier d'un message reçu passe par la MÊME `lireMediaMessage` que
    l'Inbox (une seule définition dans `src/index.ts`, `tests/media-cablage.test.ts`). Côté Claude, les trois outils
-   qui LISENT un fil sont ouverts dans toutes les offres ; seuls ceux qui y écrivent gardent `fonction: 'inbox'`.
+   qui LISENT un fil, et `reply_in_open_window` (comme `POST /v1/messages/whatsapp`, décision de Julien du
+   2026-10-08), sont ouverts dans toutes les offres ; seuls étiqueter et affecter gardent `fonction: 'inbox'`.
+   🔴 **Le statut d'un message envoyé** (`conversation_messages.statut` et `statut_le`, migration 0225) s'écrit dans
+   la MÊME requête que la livraison d'un destinataire de campagne (`PgRecipientStore.updateDeliveryByMessageId`, un
+   CTE de plus), donc par toute file qui applique des accusés, avec la même règle (ne jamais reculer, sauf vers
+   l'échec) ; `statut_le` est l'instant de l'accusé selon Meta, sinon l'heure de réception. Le compte rendu reste
+   celui des destinataires de campagne, dont l'appelant déduit l'échec d'un message libre. Un message reçu ne rend
+   jamais de statut, et un échec est définitif ; son code et son motif viennent d'`echecs_messages` (message libre),
+   sinon de `campaign_recipients` (modèle de campagne). Aucune reprise : un message envoyé avant le 2026-10-08 garde
+   un statut `null`.
 
 ### Sur les contrats externes
 

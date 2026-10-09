@@ -624,6 +624,9 @@ export const stripeProInerte: StripeWebhookRouteDeps['pro'] = {
   surFinDuPro: neDevraitPasEtreAppelee('stripe.pro.surFinDuPro'),
 };
 
+/** Le statut d'un message (lot 13), pour les montages qui n'en parlent pas : aucun message connu. */
+export const mcpMessagesInertes: Pick<DepsMcp, 'messagesApi'> = { messagesApi: { message: async () => null } };
+
 /**
  * Les webhooks sortants du MCP (lot 12), pour les montages qui n'en parlent pas : toute ÉCRITURE lève, et les lectures
  * rendent un espace sans adresse.

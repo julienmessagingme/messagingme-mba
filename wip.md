@@ -31,11 +31,12 @@ par l'exemple de la doc. Livraison B : le mode « mon application répond »
 jaunes de relecture poussés ensuite. Son essai réel : désigner l'adresse de test sur l'Accueil, écrire depuis un téléphone, recevoir
 `conversation.needs_reply`, répondre par l'API, et voir la conversation rester hors d'« À traiter ».
 
-## LOT 13 : L'API COMPLÈTE, DOMAINE 1 (LA LECTURE DES FILS), LIVRAISON A ÉCRITE (2026-10-08)
+## LOT 13 : L'API COMPLÈTE, DOMAINE 1 (LA LECTURE DES FILS), A EN PRODUCTION, B ÉCRITE (2026-10-08)
 
 Spec `docs/superpowers/specs/2026-10-08-api-complete-design.md`, plan `docs/superpowers/plans/2026-10-08-lecture-des-fils.md`.
-A : cinq routes GET sous `conversations:read`, ouverts en Free, outils MCP de lecture ouverts en Free, `before` dans
-`get_messages` ; en relecture, puis déploiement sans migration. B : le statut d'un message (migration 0225). Ensuite :
+A : cinq routes GET sous `conversations:read`, outils MCP de lecture ouverts en Free, `before` dans `get_messages` :
+EN PRODUCTION (`ee479c01`, `cfedc5ff`). B : le statut d'un message (migration 0225, `get_message_status`) : écrite,
+en relecture. Essai réel du domaine : voir le plan. Ensuite :
 l'envoi au format de Meta, les modèles, les webhooks par l'API, les contacts complets.
 
 ## L'OFFRE GRATUITE S'APPELLE « FREE », EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ

@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgConversationsV1 } from '../../src/api/conversations-v1.pg';
 import { decoderCurseur } from '../../src/api/conversations-v1';
+import { PgRecipientStore } from '../../src/campaign/store.pg';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -94,6 +95,32 @@ describe.skipIf(!url)('la lecture des fils par l’API (Postgres)', () => {
     expect(new Set(vus).size).toBe(5);
     expect(vus[0]).toBe('m4');
     expect(vus[4]).toBe('m0');
+  });
+
+  it('🔴 le statut d’un message envoyé (0225) : posé par l’accusé, il ne recule pas, sauf vers l’échec ; un reçu n’en a pas', async () => {
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, channel)
+       values ($1, 'out', 'text', 'réponse', 'wamid.itest-conv-v1-envoye', 'whatsapp')`,
+      [conv],
+    );
+    const accuses = new PgRecipientStore(pool);
+    expect(await depot().message(t1, 'wamid.itest-conv-v1-envoye')).toMatchObject({ status: null, statusAt: null, error: null });
+    // Le compte rendu reste celui des destinataires de campagne : 0 ici, le message n'en est pas un.
+    expect(await accuses.updateDeliveryByMessageId('wamid.itest-conv-v1-envoye', 'read', null, null, '2026-10-08T10:05:00.000Z')).toBe(0);
+    await accuses.updateDeliveryByMessageId('wamid.itest-conv-v1-envoye', 'delivered', null, null, '2026-10-08T10:04:00.000Z');
+    expect(await depot().message(t1, 'wamid.itest-conv-v1-envoye')).toMatchObject({ status: 'read', statusAt: '2026-10-08T10:05:00.000Z' });
+    await pool.query(
+      `insert into echecs_messages (tenant_id, message_id, wa_id, canal, code, motif) values ($1, 'wamid.itest-conv-v1-envoye', '33600001301', 'whatsapp', 131049, 'bloqué par Meta')`,
+      [t1],
+    );
+    await accuses.updateDeliveryByMessageId('wamid.itest-conv-v1-envoye', 'failed', '131049', 131049, null);
+    expect(await depot().message(t1, 'wamid.itest-conv-v1-envoye')).toMatchObject({ status: 'failed', error: { code: 131049, reason: 'bloqué par Meta' } });
+    // Un échec est DÉFINITIF : un `sent` rejoué après lui ne l'efface pas.
+    await accuses.updateDeliveryByMessageId('wamid.itest-conv-v1-envoye', 'sent', null, null, null);
+    expect(await depot().message(t1, 'wamid.itest-conv-v1-envoye')).toMatchObject({ status: 'failed' });
+    // Un message REÇU ne porte jamais de statut, même si un accusé visait son identifiant.
+    await accuses.updateDeliveryByMessageId('wamid.itest-conv-v1-dernier', 'read', null, null, null);
+    expect(await depot().message(t1, 'wamid.itest-conv-v1-dernier')).toMatchObject({ status: null, statusAt: null });
   });
 
   it('un message se lit par l’identifiant de Meta comme par le nôtre préfixé', async () => {

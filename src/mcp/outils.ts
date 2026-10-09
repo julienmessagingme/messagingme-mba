@@ -14,7 +14,7 @@ import {
 import type { WorkflowResumeRow } from '../workflow/store.pg';
 import type { PlafondPartage } from '../auth/plafond-partage';
 import { RefusOutil, entierBorne, texteObligatoire, valeurOuRefus } from './saisie';
-import { decoderCurseur, encoderCurseur } from '../api/conversations-v1';
+import { decoderCurseur, encoderCurseur, type DepotConversationsV1 } from '../api/conversations-v1';
 import { OUTILS_AGENT, type DepsAgentMcp } from './outils-agent';
 import { OUTILS_EVENEMENTS, type DepsEvenementsMcp } from './outils-evenements';
 import { OUTILS_NUMERO, type DepsNumeroMcp } from './outils-numero';
@@ -84,6 +84,8 @@ export interface DepsMcp extends DepsRepondre {
   evenements: DepsEvenementsMcp;
   /** L'offre de l'espace (lot 6) : la MÊME vue que la console (`GET /tenants/:tenantId/offre`), pour `get_plan`. */
   offre: { vue(tenantId: string): Promise<VueOffre> };
+  /** Un message par son identifiant public (lot 13) : la MÊME lecture que `GET /v1/messages/{id}`, pour `get_message_status`. */
+  messagesApi: Pick<DepotConversationsV1, 'message'>;
   /**
    * 🔴 Le plafond des opérations coûteuses de la console, la MÊME instance que celle des routes, comptée par espace
    * sous la même clé : sans lui, le serveur MCP serait la porte qui contourne les dix opérations lourdes par minute
@@ -422,6 +424,33 @@ export const OUTILS: OutilMcp[] = [
     },
   },
   {
+    nom: 'get_message_status',
+    fonction: null,
+    description:
+      'Le statut de livraison d’un message ENVOYÉ, par son identifiant de Meta (wamid…, celui que rend l’envoi) : sent, '
+      + 'delivered, read ou failed, null tant qu’aucun accusé n’est arrivé, et toujours null pour un message reçu. En '
+      + 'échec, le code et le motif de Meta.',
+    scope: 'mcp:read',
+    annotations: lecture('Lire le statut d’un message'),
+    entree: {
+      type: 'object',
+      properties: {
+        message_id: { type: 'string', minLength: 1, maxLength: 200, description: 'L’identifiant du message : wamid… (celui de Meta) ou msg_… (pour un message sans identifiant de Meta).' },
+      },
+      required: ['message_id'],
+    },
+    async executer(deps, tenantId, args) {
+      const id = texteObligatoire(args, 'message_id', 200);
+      // Le dépôt filtre sur l'espace : un message d'un autre espace est inconnu, comme un message qui n'existe pas.
+      const m = await deps.messagesApi.message(tenantId, id);
+      if (!m) throw new RefusOutil('message inconnu de cet espace');
+      return {
+        message_id: m.id, conversation_id: m.conversationId, direction: m.direction,
+        status: m.status, status_at: m.statusAt, error: m.error,
+      };
+    },
+  },
+  {
     nom: 'search_contacts',
     fonction: null,
     description:
@@ -500,7 +529,9 @@ export const OUTILS: OutilMcp[] = [
   },
   {
     nom: 'reply_in_open_window',
-    fonction: 'inbox',
+    // Répondre dans la fenêtre de 24 h est ouvert dans toutes les offres (décision de Julien du 2026-10-08), comme
+    // `POST /v1/messages/whatsapp` : seuls étiqueter et affecter, gestes d'équipe, restent dans l'offre de l'Inbox.
+    fonction: null,
     description:
       'Envoie un message texte dans une conversation, UNIQUEMENT si la fenêtre de service de 24 h est '
       + 'ouverte (le contact a écrit récemment). Hors fenêtre, l’appel est refusé : WhatsApp exige alors un '

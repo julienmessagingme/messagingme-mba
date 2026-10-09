@@ -36,7 +36,8 @@ const CONVERSATION: ConversationV1 = {
 };
 const MESSAGE: MessageV1 = {
   id: 'wamid.photo', conversationId: CONV, direction: 'in', channel: 'whatsapp', type: 'image', text: null, buttonPayload: null,
-  transcription: null, media: { mimeType: 'image/jpeg', filename: null, expired: false }, createdAt: '2026-10-08T09:58:02.123Z',
+  transcription: null, media: { mimeType: 'image/jpeg', filename: null, expired: false }, status: null, statusAt: null, error: null,
+  createdAt: '2026-10-08T09:58:02.123Z',
 };
 
 function monter(o: { media?: MessageV1['media']; lecture?: Error | 'vide' } = {}) {

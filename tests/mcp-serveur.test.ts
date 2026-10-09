@@ -13,7 +13,7 @@ import * as catalogue from '../src/mcp/outils';
 import { VALID_API_SCOPES } from '../src/http/api-keys';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE, NumeroSuspenduError, MESSAGE_NUMERO_SUSPENDU } from '../src/meta/numero-delie';
-import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpOffreInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpMessagesInertes, mcpOffreInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { creerPoseEtiquette, LONGUEUR_MAX_ETIQUETTE } from '../src/crm/poser-etiquette';
 import { DROITS } from '../src/offres/offres';
 
@@ -114,6 +114,7 @@ function app(
     ...mcpAgentInerte,
     ...mcpNumeroInerte,
     ...mcpEvenementsInertes,
+    ...mcpMessagesInertes,
     ...mcpOffreInerte,
     ...reste,
   };
@@ -830,16 +831,16 @@ describe('🔴 get_contact cherche la fiche au format de la fiche (essai réel d
  * offre, il RESTE listé (à la différence des droits d'une clé) et refuse avec la phrase et le lien de l'offre : l'assistant
  * peut alors l'expliquer. Écrit ici, pas dérivé du catalogue : le comparer à lui-même ne prouverait rien.
  */
-// Lire les fils est ouvert dans toutes les offres depuis le lot 13 (décision de Julien du 2026-10-08) : seuls les trois
-// outils qui ÉCRIVENT dans un fil restent dans l'offre de l'Inbox.
+// Lire les fils (lot 13) et y répondre dans la fenêtre de 24 h sont ouverts dans toutes les offres (décisions de Julien
+// du 2026-10-08) : seuls étiqueter et affecter, gestes d'équipe, restent dans l'offre de l'Inbox.
 const FONCTION_DES_OUTILS: Readonly<Record<string, string>> = {
-  reply_in_open_window: 'inbox', tag_conversation: 'inbox', assign_conversation: 'inbox',
+  tag_conversation: 'inbox', assign_conversation: 'inbox',
 };
 
 describe('serveur MCP : les outils et l’offre (lot 6, B2a)', () => {
   const base = { offreDe: async () => ({ offre: 'base' as const, droits: DROITS.base, retourEnBaseLe: null }) };
 
-  it('🔴 chaque outil déclare sa fonction : les trois qui écrivent dans un fil, aucune pour les autres', () => {
+  it('🔴 chaque outil déclare sa fonction : étiqueter et affecter, aucune pour les autres', () => {
     for (const o of OUTILS) expect([o.nom, o.fonction]).toEqual([o.nom, FONCTION_DES_OUTILS[o.nom] ?? null]);
   });
 
@@ -859,6 +860,39 @@ describe('serveur MCP : les outils et l’offre (lot 6, B2a)', () => {
     const { server, traces } = app({ offres: base });
     expect(contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('list_conversations') })).isError).toBe(false);
     expect(traces.listes).toHaveLength(1);
+    await server.close();
+  });
+
+  it('🔴 get_message_status lit le message dans l’espace de la CLÉ, rend son statut, et refuse un message inconnu', async () => {
+    const lus: Array<{ tenant: string; id: string }> = [];
+    const { server } = app({
+      messagesApi: {
+        message: async (tenant, id) => {
+          lus.push({ tenant, id });
+          return id !== 'wamid.envoye' ? null : {
+            id: 'wamid.envoye', idInterne: 'a1a1a1a1-0000-4000-8000-000000000001', conversationId: 'cv1', direction: 'out', channel: 'whatsapp',
+            type: 'text', text: 'Bonjour', buttonPayload: null, transcription: null, media: null,
+            status: 'failed', statusAt: '2026-10-08T10:00:00.000Z', error: { code: 131049, reason: 'bloqué par Meta' }, createdAt: '2026-10-08T09:59:00.000Z',
+          };
+        },
+      },
+    });
+    const ok = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('get_message_status', { message_id: 'wamid.envoye' }) }));
+    expect(JSON.parse(ok.texte)).toEqual({
+      message_id: 'wamid.envoye', conversation_id: 'cv1', direction: 'out', status: 'failed', status_at: '2026-10-08T10:00:00.000Z',
+      error: { code: 131049, reason: 'bloqué par Meta' },
+    });
+    const inconnu = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('get_message_status', { message_id: 'wamid.ailleurs' }) }));
+    expect([inconnu.isError, inconnu.texte]).toEqual([true, 'message inconnu de cet espace']);
+    expect(lus.map((l) => l.tenant)).toEqual(['t1', 't1']);
+    await server.close();
+  });
+
+  it('🔴 en Free, Claude RÉPOND dans la fenêtre de 24 h, comme l’API (décision du 2026-10-08)', async () => {
+    const { server, traces } = app({ offres: base });
+    const c = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('reply_in_open_window', { conversation_id: 'cv1', text: 'Bonjour, c’est noté.' }) }));
+    expect(c.isError, c.texte).toBe(false);
+    expect(traces.envois).toHaveLength(1);
     await server.close();
   });
 

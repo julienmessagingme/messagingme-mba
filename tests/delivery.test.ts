@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractDelivery, processStatuses } from '../src/webhooks/delivery';
+import { extractDelivery, instantDuStatut, processStatuses } from '../src/webhooks/delivery';
 import type { DeliveryStore, DeliveryStatus } from '../src/webhooks/delivery';
 import { handleWebhookJob } from '../src/webhooks/handler';
 import { aucunTarif, aucunEchecLibre, aucunSignalAccuse } from './webhook-fixtures';
@@ -27,9 +27,9 @@ describe('extractDelivery', () => {
 });
 
 class FakeDelivery implements DeliveryStore {
-  readonly calls: Array<{ messageId: string; status: DeliveryStatus; error: string | null; errorCode: number | null }> = [];
-  async updateDeliveryByMessageId(messageId: string, status: DeliveryStatus, error: string | null, errorCode: number | null): Promise<number> {
-    this.calls.push({ messageId, status, error, errorCode });
+  readonly calls: Array<{ messageId: string; status: DeliveryStatus; error: string | null; errorCode: number | null; le: string | null }> = [];
+  async updateDeliveryByMessageId(messageId: string, status: DeliveryStatus, error: string | null, errorCode: number | null, le: string | null): Promise<number> {
+    this.calls.push({ messageId, status, error, errorCode, le });
     return 1;
   }
 }
@@ -41,6 +41,13 @@ class FakeEvents implements EventStore {
   }
 }
 
+describe('instantDuStatut', () => {
+  it('🔴 ne lève jamais : un horodatage démesuré ou absurde rend null (il est appelé hors de tout try)', () => {
+    expect(instantDuStatut({ timestamp: '1759917600' })).toBe('2025-10-08T10:00:00.000Z');
+    for (const t of ['9e15', '253402300800', '-5', 'abc', 0, null]) expect(instantDuStatut({ timestamp: t }), String(t)).toBeNull();
+  });
+});
+
 describe('processStatuses via handleWebhookJob', () => {
   const payload = {
     entry: [
@@ -50,7 +57,7 @@ describe('processStatuses via handleWebhookJob', () => {
             field: 'messages',
             value: {
               statuses: [
-                { id: 'wamid.1', status: 'sent' },
+                { id: 'wamid.1', status: 'sent', timestamp: '1759917600' },
                 { id: 'wamid.1', status: 'read' },
               ],
               messages: [{ id: 'wamid.in', type: 'text' }],
@@ -72,6 +79,9 @@ describe('processStatuses via handleWebhookJob', () => {
       signauxAccuse: aucunSignalAccuse,
     });
     expect(delivery.calls.map((c) => `${c.messageId}:${c.status}`)).toEqual(['wamid.1:sent', 'wamid.1:read']);
+    // 🔴 L'instant de l'accusé selon Meta atteint le magasin (le statut du message le garde, migration 0225) ; sans
+    // horodatage, `null` (le magasin pose alors l'heure de réception).
+    expect(delivery.calls.map((c) => c.le)).toEqual(['2025-10-08T10:00:00.000Z', null]);
     // Les événements (statuts + message entrant) sont tous stockés.
     expect(events.events.length).toBeGreaterThanOrEqual(3);
   });

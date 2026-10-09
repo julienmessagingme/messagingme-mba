@@ -64,6 +64,7 @@ function Conversations() {
           lignes={[
             { cle: 'id', cellules: [<C key="c">id</C>, t('L’identifiant de Meta (wamid.…), le même que rendent POST /v1/messages/whatsapp, message.received et conversation.needs_reply.', 'Meta’s ID (wamid.…), the same as returned by POST /v1/messages/whatsapp, message.received and conversation.needs_reply.')] },
             { cle: 'media', cellules: [<C key="c">media</C>, t('Un fichier reçu (image, vocal, document) ; null sinon. expired : Meta ne l’a plus.', 'A received file (image, voice note, document); null otherwise. expired: Meta no longer has it.')] },
+            { cle: 'status', cellules: [<C key="c">status</C>, t('La livraison d’un message ENVOYÉ, selon les accusés de Meta : sent, delivered, read ou failed ; null pour un message reçu, et tant qu’aucun accusé n’est arrivé. Il ne recule jamais. statusAt : l’instant de l’accusé. error : le code et le motif d’un échec.', 'The delivery of a SENT message, from Meta’s receipts: sent, delivered, read or failed; null for a received message, and until a receipt arrives. It never goes back. statusAt: the receipt’s time. error: a failure’s code and reason.')] },
             { cle: 'transcription', cellules: [<C key="c">transcription</C>, t('La transcription d’un vocal, quand elle a été faite : la lecture d’un modèle, pas ce que le client a dit.', 'A voice note’s transcription, when made: a model’s reading, not what the customer said.')] },
           ]}
         />

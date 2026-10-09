@@ -226,6 +226,10 @@ const MESSAGE_LU = {
   buttonPayload: null,
   transcription: null,
   media: { mimeType: 'image/jpeg', filename: null, expired: false },
+  // Un message REÇU n'a pas de livraison à suivre.
+  status: null,
+  statusAt: null,
+  error: null,
   createdAt: '2026-10-08T09:58:02.123Z',
 } as const;
 
@@ -309,7 +313,8 @@ export const EXEMPLES_REPONSES = {
   messagesDuFil: {
     data: [MESSAGE_LU, {
       id: 'wamid.exemple-8412', conversationId: CONVERSATION_ID, direction: 'out', channel: 'whatsapp', type: 'text',
-      text: 'Bonjour Claire, elle part demain.', buttonPayload: null, transcription: null, media: null, createdAt: '2026-10-08T09:55:40.000Z',
+      text: 'Bonjour Claire, elle part demain.', buttonPayload: null, transcription: null, media: null,
+      status: 'read', statusAt: '2026-10-08T09:56:12.000Z', error: null, createdAt: '2026-10-08T09:55:40.000Z',
     }],
     nextCursor: null,
   },

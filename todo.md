@@ -9,6 +9,16 @@
 - **Le fil d'un contact bloqué se lit par Claude, pas par l'API** : `get_conversation` et `get_messages` passent par
   `getConversationContext`, sans filtre `blocked_at`. Déjà vrai en Pro, étendu au Free ; même espace, aucune fuite.
   Aligner sur l'API (et l'Inbox), ou l'écrire.
+- **Le rapport RCS pose le statut d'un message sans filtre d'espace** (livraison B) : `traiterRapportRcs` connaît
+  l'espace mais `majLivraison` (`src/index.ts`) écrit par le seul identifiant de message, comme il le faisait déjà pour
+  `campaign_recipients`. Smsmode ne signe pas : un code de rappel valide et l'identifiant d'un message d'un autre espace
+  suffiraient à le marquer `failed`. Passer l'espace et filtrer par `conversations`.
+- **Un accusé et la purge RGPD verrouillent dans l'ordre inverse** (livraison B) : l'accusé prend `campaign_recipients`
+  puis `conversation_messages`, `purgeMany` l'inverse. Un accusé du contact pendant sa purge peut faire tuer l'une des
+  deux transactions (40P01) : un job rejoué ou une purge à relancer, sans perte.
+- **Aucune reprise des statuts d'avant le 2026-10-08** (livraison B) : un message envoyé avant garde `status: null`,
+  alors que `campaign_recipients.delivery_status` connaît celui d'un modèle de campagne. Reprendre si un client le
+  demande.
 - **Un fil sans fiche rend un contact tout à `null`** (le premier message RCS passe `recordInbound` avant
   `upsertFromInbound`) : l'intégrateur ne sait pas qui écrit. Exposer le `wa_id` en repli.
 

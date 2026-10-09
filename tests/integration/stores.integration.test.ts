@@ -1085,15 +1085,15 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(status).toBe('completed');
 
     // Suivi de livraison (par message_id 'm-1'), monotone.
-    expect(await recipients.updateDeliveryByMessageId('m-1', 'sent', null, null)).toBe(1);
-    expect(await recipients.updateDeliveryByMessageId('m-1', 'read', null, null)).toBe(1);
-    expect(await recipients.updateDeliveryByMessageId('m-1', 'delivered', null, null)).toBe(0); // read ne régresse pas
+    expect(await recipients.updateDeliveryByMessageId('m-1', 'sent', null, null, null)).toBe(1);
+    expect(await recipients.updateDeliveryByMessageId('m-1', 'read', null, null, null)).toBe(1);
+    expect(await recipients.updateDeliveryByMessageId('m-1', 'delivered', null, null, null)).toBe(0); // read ne régresse pas
     const dstatus = (await pool.query<{ delivery_status: string }>(`select delivery_status from campaign_recipients where id = $1`, [rid])).rows[0]?.delivery_status;
     expect(dstatus).toBe('read');
-    expect(await recipients.updateDeliveryByMessageId('m-inconnu', 'sent', null, null)).toBe(0); // wamid pas à nous
+    expect(await recipients.updateDeliveryByMessageId('m-inconnu', 'sent', null, null, null)).toBe(0); // wamid pas à nous
 
     // error_code : un 'failed' avec code le persiste (breakdown analytics).
-    expect(await recipients.updateDeliveryByMessageId('m-1', 'failed', '131049 blocked', 131049)).toBe(1);
+    expect(await recipients.updateDeliveryByMessageId('m-1', 'failed', '131049 blocked', 131049, null)).toBe(1);
     const ec = (await pool.query<{ error_code: number | null }>(`select error_code from campaign_recipients where id = $1`, [rid])).rows[0]?.error_code;
     expect(ec).toBe(131049);
   });
@@ -1170,8 +1170,8 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     await recipients.claim(r3); await recipients.markResult(r3, { status: 'failed', error: '131026 x', errorCode: 131026 });
     // r4 : parti, et AUCUN accuse ne viendra jamais. On ne l appelle donc pas.
     await recipients.claim(r4); await recipients.markResult(r4, { status: 'sent', messageId: 'wf-scenario', sentAt: at });
-    await recipients.updateDeliveryByMessageId('ms-1', 'read', null, null);
-    await recipients.updateDeliveryByMessageId('ms-2', 'delivered', null, null);
+    await recipients.updateDeliveryByMessageId('ms-1', 'read', null, null, null);
+    await recipients.updateDeliveryByMessageId('ms-2', 'delivered', null, null, null);
 
     // r1 répond : conversation + message ENTRANT après l'envoi (created_at defaut now() > at).
     const convId = (await pool.query<{ id: string }>(

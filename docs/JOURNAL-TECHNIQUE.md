@@ -5,6 +5,14 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-08 : le statut d'un message (lot 13, domaine 1, livraison B), écrit
+
+Migration 0225 (`conversation_messages.statut` et `statut_le`). Plutôt qu'un puits d'accusés de plus, à recâbler dans
+trente doubles de tests et dans deux files, l'écriture vit dans la requête qui pose déjà la livraison d'un destinataire
+de campagne : un CTE de plus, la même règle de rang, et toute file qui applique des accusés la pose. Ce qui l'a décidé :
+le chemin des accusés est le plus fréquenté du worker (des milliers par campagne), un aller-retour de plus par accusé
+aurait coûté plus que le CTE.
+
 ## 2026-10-08 : les films de la vitrine passent en Messaging Me, et le RCS a le sien, en production
 
 À la demande de Julien, six pushs sur `site/` dans la journée, tous en plomberie sur l'origin du moment (d'autres
@@ -29,7 +37,11 @@ Encodage commun : H.264 `crf 28`, 60 i/s, AAC 96k, `faststart`, 2 à 6 Mo par fi
 (fichiers servis identiques à l'octet près aux fichiers poussés), puis en émulation de téléphone (lecture
 automatique, source 9:16 choisie).
 
-## 2026-10-08 : l'API lit les fils (lot 13, domaine 1, livraison A), écrite
+## 2026-10-08 : l'API lit les fils (lot 13, domaine 1, livraison A), en production
+
+Deux pushs (`ee479c01`, puis `cfedc5ff` pour la page « Démarrer » une fois l'API déployée) : la relecture avait vu que
+la page demanderait un droit que l'API en production refusait encore (400), dans la fenêtre que Vercel ouvre au push.
+Et un curseur au 30 février passait la forme et faisait lever Postgres (500) : refusé en 400 depuis.
 
 Deux rondes de questions avec Julien ont cadré tout le lot 13 (spec `2026-10-08-api-complete-design.md`) : la lecture
 des fils d'abord, l'envoi au format de Meta, un droit neuf par domaine sans reprise des clés, les webhooks aussi par

@@ -12,6 +12,7 @@ avec ses routes `/v1`, son outil MCP et sa page de documentation, dans le même 
 | Droits des clés | Un droit neuf par domaine, SANS reprise : une clé existante n'en reçoit aucun, une clé neuve peut les porter |
 | Webhooks sortants | Les deux : l'API (`/v1/webhooks`, avec une clé) s'AJOUTE à la console et au MCP du lot 12 |
 | Lecture en Free | Oui : l'API et Claude lisent les fils et les messages en Free ; l'écran Inbox reste Pro |
+| Répondre en Free (Claude) | Oui : `reply_in_open_window` s'ouvre en Free, comme l'API ; étiqueter et affecter restent Pro |
 | Médias reçus | Téléchargeables par l'API dans ce lot ; au-delà des 7 jours de Meta, la route le dit (410) |
 
 ## 2. Les domaines, dans l'ordre

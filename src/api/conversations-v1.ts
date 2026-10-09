@@ -50,8 +50,20 @@ export interface MessageV1 {
   transcription: string | null;
   /** Un fichier reçu : `GET /v1/messages/{id}/media` le sert tant que Meta le garde (`expired` faux). */
   media: { mimeType: string | null; filename: string | null; expired: boolean } | null;
+  /**
+   * La livraison d'un message ENVOYÉ : `null` pour un message reçu, et tant qu'aucun accusé n'est arrivé. Ne recule
+   * jamais (un `read` arrivé avant le `delivered` reste `read`). `statusAt` : l'instant de l'accusé selon Meta.
+   */
+  status: StatutMessage | null;
+  statusAt: string | null;
+  /** L'échec annoncé par Meta (`status: 'failed'`) : son code et son motif, s'ils ont été notés ; `null` sinon. */
+  error: { code: number | null; reason: string | null } | null;
   createdAt: string;
 }
+
+/** Le statut de livraison d'un message ENVOYÉ, tel que Meta l'annonce (migration 0225). Miroir du CHECK. */
+export const STATUTS_MESSAGE = ['sent', 'delivered', 'read', 'failed'] as const;
+export type StatutMessage = (typeof STATUTS_MESSAGE)[number];
 
 /** Une page : `nextCursor` mène à la suivante (plus ancienne), `null` quand il n'y en a plus. */
 export interface PageV1<T> {
