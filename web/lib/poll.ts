@@ -1,5 +1,7 @@
 'use client';
 
+import { SESSION_EXPIRED_EVENT } from './http';
+
 /**
  * Répétition périodique DÉSYNCHRONISÉE (AUDIT-SCALE-2026-08-25.md, R7, correctif 4).
  *
@@ -12,10 +14,20 @@
  * ensemble s'écartent au lieu de rester en phase.
  *
  * Rend la fonction d'arrêt, à appeler dans le nettoyage de l'effet (comme `clearInterval`).
+ *
+ * 🔴 IL S'ARRÊTE AUSSI DE LUI-MÊME À L'EXPIRATION DE LA SESSION (`SESSION_EXPIRED_EVENT`) : sans session, chaque relevé
+ * rend 401, et un onglet expiré laissé ouvert les enchaînait jusqu'à sa fermeture (738 mesurés sur la seule pastille
+ * des non-lus ; l'Inbox relève son fil toutes les 4 s). La reconnexion passe par `/login` et remonte les écrans, donc
+ * leurs relevés. ⚠️ Une session rouverte dans un AUTRE onglet ne relance pas ceux de l'onglet expiré : il se recharge.
  */
 export function repeterAvecGigue(action: () => void, periodeMs: number): () => void {
   let vivant = true;
   let id: ReturnType<typeof setTimeout>;
+  const arreter = (): void => {
+    vivant = false;
+    clearTimeout(id);
+    if (typeof window !== 'undefined') window.removeEventListener(SESSION_EXPIRED_EVENT, arreter);
+  };
   const programmer = (): void => {
     id = setTimeout(() => {
       if (!vivant) return;
@@ -23,9 +35,7 @@ export function repeterAvecGigue(action: () => void, periodeMs: number): () => v
       programmer();
     }, periodeMs * (0.8 + Math.random() * 0.4));
   };
+  if (typeof window !== 'undefined') window.addEventListener(SESSION_EXPIRED_EVENT, arreter);
   programmer();
-  return () => {
-    vivant = false;
-    clearTimeout(id);
-  };
+  return arreter;
 }
