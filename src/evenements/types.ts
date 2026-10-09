@@ -64,10 +64,6 @@ export const TYPE_DU_SIGNAL: Readonly<Record<NomEvenement, TypeAbonnable>> = {
  */
 export const TYPES_DECOCHES_PAR_DEFAUT: ReadonlySet<TypeAbonnable> = new Set(['message.delivered', 'message.read', 'message.failed']);
 
-export function estTypeAbonnable(v: unknown): v is TypeAbonnable {
-  return typeof v === 'string' && (TYPES_ABONNABLES as readonly string[]).includes(v);
-}
-
 /** Le préfixe d'un identifiant d'événement : `evt_` puis l'identifiant stable du signal (32 caractères hexadécimaux). */
 export const PREFIXE_EVENEMENT = 'evt_';
 

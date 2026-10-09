@@ -322,10 +322,6 @@ export interface RcsMedia {
   createdAt: string;
 }
 
-export function listRcsMedia(tenantId: string): Promise<{ media: RcsMedia[] }> {
-  return request<{ media: RcsMedia[] }>(`/tenants/${tenantId}/rcs/media`);
-}
-
 /**
  * Téléverse un visuel et rend son adresse publique. Le serveur relit la SIGNATURE du fichier : un fichier
  * renommé en `.png` est refusé, et c'est le type réel qui décide de l'extension de l'URL.
@@ -335,10 +331,6 @@ export function uploadRcsMedia(tenantId: string, dataUrl: string, nom: string | 
     method: 'POST',
     body: JSON.stringify({ dataUrl, nom }),
   });
-}
-
-export function deleteRcsMedia(tenantId: string, id: string): Promise<{ ok: true }> {
-  return request<{ ok: true }>(`/tenants/${tenantId}/rcs/media/${id}`, { method: 'DELETE' });
 }
 
 /** Agents RCS du tenant (sélecteur de l'assistant de campagne). Liste vide = canal RCS non configuré. */

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  lireSalesforceActif, lireIntegrationSalesforce, etatCarteSalesforce, phraseEtatOrg, lireRefusConnexion, lienEtape,
+  lireIntegrationSalesforce, etatCarteSalesforce, phraseEtatOrg, lireRefusConnexion, lienEtape,
   type IntegrationSalesforceVue, type OrgSalesforceVue,
 } from './salesforce';
 
@@ -11,16 +11,6 @@ const org = (etat: OrgSalesforceVue['etat']): OrgSalesforceVue => ({
 });
 const vue = (o: Partial<IntegrationSalesforceVue> = {}): IntegrationSalesforceVue => ({
   actif: true, cleAppPosee: true, chiffrementPret: true, liensInstallation: null, org: null, ...o,
-});
-
-describe('lireSalesforceActif', () => {
-  it('rend le booléen tel quel, et un champ absent ou bancal est INCONNU', () => {
-    expect(lireSalesforceActif({ salesforceActif: true })).toBe(true);
-    expect(lireSalesforceActif({ salesforceActif: false })).toBe(false);
-    expect(lireSalesforceActif({})).toBeUndefined();
-    expect(lireSalesforceActif({ salesforceActif: 'oui' })).toBeUndefined();
-    expect(lireSalesforceActif(null)).toBeUndefined();
-  });
 });
 
 describe('lireIntegrationSalesforce', () => {

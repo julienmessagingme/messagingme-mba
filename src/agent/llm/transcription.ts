@@ -51,10 +51,7 @@ export class TranscriptionError extends Error {
   }
 }
 
-/**
- * À ne pas confondre avec `Transcription` de `src/zadarma/api.ts` (l'enregistrement d'un appel
- * téléphonique) : ici, un fichier audio reçu sur WhatsApp, transcrit par un modèle.
- */
+/** Un fichier audio reçu sur WhatsApp, transcrit par un modèle. */
 export interface TranscriptionAudio {
   texte: string;
   /** Langue detectee par le modele, quand il la rend. Sert a l affichage, jamais a une decision. */

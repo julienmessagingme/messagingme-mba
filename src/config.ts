@@ -32,12 +32,6 @@ export const schema = z.object({
   META_ADS_CONFIG_ID: z.string().default(''),
   /** Clé AES-256-GCM (64 hex = 32 octets) du chiffrement au repos des tokens business ES. Requise si ES activé. */
   ENCRYPTION_KEY: z.string().default(''),
-  /**
-   * Fournisseur des numéros du pool (Zadarma) : il reçoit l'appel de vérification de Meta, dont on transcrit
-   * l'enregistrement pour capter l'OTP. Vides -> capture inerte, l'embarquement retombe sur la saisie manuelle.
-   */
-  ZADARMA_API_KEY: z.string().default(''),
-  ZADARMA_API_SECRET: z.string().default(''),
   /** Pays par défaut pour normaliser les numéros à l'import CSV. */
   DEFAULT_COUNTRY: z.string().default('FR'),
   /** Secret HMAC de signature des JWT de session (login console). */
@@ -678,11 +672,6 @@ export const schema = z.object({
     // Idem canal service (import de listes) : URL posée sans secret -> le connecteur refuserait tout (401).
     if (c.HUBSPOT_SERVICE_URL !== '' && c.HUBSPOT_SERVICE_SECRET === '') {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['HUBSPOT_SERVICE_SECRET'], message: 'HUBSPOT_SERVICE_SECRET requis quand HUBSPOT_SERVICE_URL est défini' });
-    }
-    // Zadarma : les deux moitiés vont ensemble. Une seule posée signerait avec une clé vide et Zadarma
-    // répondrait « 401 Not authorized », qu'on mettrait sur le dos de clés pourtant valides.
-    if ((c.ZADARMA_API_KEY === '') !== (c.ZADARMA_API_SECRET === '')) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['ZADARMA_API_SECRET'], message: 'ZADARMA_API_KEY et ZADARMA_API_SECRET se posent ensemble (ou aucun des deux)' });
     }
     // Provider RCS smsmode sans sa clé de canal : chaque envoi partirait en 401/403. Fail-fast au boot,
     // comme pour META_APP_SECRET, plutôt qu'une panne silencieuse découverte au premier envoi client.

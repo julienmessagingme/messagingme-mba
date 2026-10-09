@@ -47,7 +47,7 @@ const LECTEURS: Array<{ fichier: string; gardes: string[]; pourquoi: string }> =
   {
     fichier: 'src/http/agent-mcp.ts',
     gardes: ["source.kind !== 'mcp'"],
-    pourquoi: 'éprouver, aperçu et import ouvrent une connexion sortante',
+    pourquoi: 'aperçu et import ouvrent une connexion sortante',
   },
   {
     fichier: 'src/index.ts',

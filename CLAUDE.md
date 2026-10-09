@@ -1355,8 +1355,8 @@ connexion ne remonte que comme une panne réseau. Le SMTP n'en a pas : son refus
 `res.text()` suivi d'un test de taille : le corps entier entrerait en mémoire avant d'être jeté, et `.length`
 compte des unités UTF-16, donc un corps d'idéogrammes passe un plafond « en octets » à trois fois sa taille.
 Ses TROIS consommateurs doivent lire ses trois verdicts : `trop_gros`, `casse` (un flux coupé n'est pas un
-corps vide, sans quoi on annonce un succès sur une lecture ratée) et le texte. ⚠️ Les clients de NOS API (Meta,
-Zadarma) n'y passent pas : hôtes fixes et de confiance.
+corps vide, sans quoi on annonce un succès sur une lecture ratée) et le texte. ⚠️ Les clients de NOS API (Meta)
+n'y passent pas : hôtes fixes et de confiance.
 
 Le détail de ces trois lots, et la mesure qui a montré que cinq cas IPv6 sur huit passaient, sont dans
 [documentation.md](documentation.md).

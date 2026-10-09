@@ -113,27 +113,6 @@ function harnais(over: {
   return { app, ecrit, epreuves, regles, proposes, session, crees, traces };
 }
 
-describe('eprouver un serveur MCP', () => {
-  it('rend ok et marque la source saine', async () => {
-    const h = harnais();
-    const r = await h.app.inject({ method: 'POST', url: `/tenants/${TENANT}/mcp/${SOURCE}/eprouver` });
-    expect(r.statusCode).toBe(200);
-    expect(r.json()).toEqual({ ok: true });
-    expect(h.epreuves).toEqual([{ ok: true }]);
-  });
-
-  it('🔴 une adresse qui resout vers une adresse privee est refusee SANS connexion', async () => {
-    // 🔴 L ORDRE EST LA GARDE. Posee apres l ouverture, elle serait decorative : la connexion aurait deja
-    // eu lieu, donc le degat aussi. Le texte de l hote est valide a l ecriture ; ce qui se verifie ici est
-    // ce vers quoi il RESOUT, qu un texte ne peut pas dire.
-    const h = harnais({ resolution: { ok: false, raison: 'adresse privee' } });
-    const r = await h.app.inject({ method: 'POST', url: `/tenants/${TENANT}/mcp/${SOURCE}/eprouver` });
-    expect(r.json()).toEqual({ ok: false, erreur: 'adresse privee' });
-    expect(h.session.lister).not.toHaveBeenCalled();
-    expect(h.epreuves).toEqual([{ ok: false }]);
-  });
-});
-
 describe('🔴 une source qui n est PAS un serveur MCP', () => {
   /**
    * 🔴 CE QUE CES TROIS ROUTES FAISAIENT SANS CE FILTRE. `pourAppel` ne filtre pas le `kind` : un
@@ -146,7 +125,6 @@ describe('🔴 une source qui n est PAS un serveur MCP', () => {
    * outils crees. Un apercu qui ment sur ce qu il a applique.
    */
   for (const [nom, chemin, methode] of [
-    ['eprouver', 'eprouver', 'POST'],
     ['apercu', 'apercu', 'POST'],
     ['importer', 'importer', 'POST'],
   ] as const) {

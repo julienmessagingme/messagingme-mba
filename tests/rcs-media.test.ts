@@ -7,7 +7,7 @@ import {
   typeImage, extensionDe, mimeDeExtension, octetsDepuisDataUrl, urlImageRcs, TAILLE_IMAGE_MAX,
 } from '../src/rcs/image';
 import type { MimeImage } from '../src/rcs/image';
-import type { RcsMediaResume, RcsMediaFichier } from '../src/rcs/media-store.pg';
+import type { RcsMediaFichier } from '../src/rcs/media-store.pg';
 
 /** Signatures REELLES, suivies de remplissage : `typeImage` ne lit que les premiers octets. */
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(16, 7)]);
@@ -77,8 +77,6 @@ function appWith(stocke: { bytes: Buffer; mime: MimeImage } | null) {
     auth: { users: noUsers, secret: SECRET },
     rcsMedia: {
       medias: {
-        list: async (): Promise<RcsMediaResume[]> => [],
-        remove: async () => true,
         getByCode: async (code): Promise<RcsMediaFichier | null> => (code === CODE && stocke ? stocke : null),
       },
       create: async (_t, input) => {

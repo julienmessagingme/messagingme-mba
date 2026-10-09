@@ -37,7 +37,7 @@ const OUTILS = [
 
 async function mock(page: Page, over: { plan?: unknown; tronque?: boolean; aucun?: boolean; apercuRefuse?: string; serveur?: Record<string, unknown>; outils?: unknown[]; proposeRefuse?: string } = {}): Promise<Array<{ method: string; url: string }>> {
   const appels: Array<{ method: string; url: string }> = [];
-  // Mutable comme en base : une épreuve réussie pose `lastOkAt`, que la carte doit relire.
+  // Mutable comme en base : un aperçu réussi pose `lastOkAt`, que la carte doit relire.
   let lastOkAt: string | null = null;
   // Comme en base : l'import pose les outils, que la carte relit ensuite.
   let outilsCourants: unknown[] = over.outils ?? OUTILS;
@@ -73,7 +73,6 @@ async function mock(page: Page, over: { plan?: unknown; tronque?: boolean; aucun
       });
     }
     if (url.includes('/importer')) { outilsCourants = OUTILS; return json({ plan: [], tronque: false }); }
-    if (url.includes('/eprouver')) { lastOkAt = '2026-10-02T12:00:00Z'; return json({ ok: true }); }
     return json({});
   });
   return appels;

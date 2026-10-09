@@ -26,10 +26,6 @@ const DEFINITIONS: Readonly<Record<OffreRecharge, DefinitionOffre>> = {
   refill_100: { offre: 'refill_100', htCentimes: 10_000, libelle: 'Refill 100 € HT' },
 };
 
-export function estOffreRecharge(v: unknown): v is OffreRecharge {
-  return typeof v === 'string' && (OFFRES_RECHARGE as readonly string[]).includes(v);
-}
-
 export function definitionOffre(offre: OffreRecharge): DefinitionOffre {
   return DEFINITIONS[offre];
 }

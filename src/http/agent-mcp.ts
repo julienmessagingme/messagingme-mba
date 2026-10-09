@@ -17,7 +17,7 @@ import { espaceVerifie, estUuid } from './scope';
 import { makeJournal, type AuditSink } from '../audit/journal';
 
 /**
- * Les connecteurs MCP : éprouver un serveur, importer son catalogue, régler ce qu'on en expose. Un serveur MCP est
+ * Les connecteurs MCP : prévisualiser et importer le catalogue d'un serveur, régler ce qu'on en expose. Un serveur MCP est
  * une adresse que notre serveur appelle, un secret, et un catalogue d'outils écrit par un tiers dont les
  * descriptions entrent dans le contexte du modèle. Trois gardes :
  *  1. 🔴 l'adresse est vérifiée à l'écriture comme à l'appel, par la même fonction ;
@@ -283,7 +283,7 @@ export function registerAgentMcp(
 ): void {
   const opts = { preHandler: garde };
   const journal = makeJournal(deps.audit);
-  // L'épreuve, l'aperçu et l'import sont lourds (session vers un serveur tiers, catalogue paginé) : ils portent
+  // L'aperçu et l'import sont lourds (session vers un serveur tiers, catalogue paginé) : ils portent
   // `RATE_LIMIT_COUTEUX_PAR_MINUTE`, comme l'import CSV et l'aperçu d'un site.
   const lourd = gardeEtendue(garde, limiteCouteuse);
 
@@ -360,26 +360,6 @@ export function registerAgentMcp(
       deps.clesDeChamps(tenant),
     ]);
     return reply.code(200).send({ outils, champs, champsContact: [...CHAMPS_CONTACT_AUTORISES] });
-  });
-
-  /**
-   * Éprouver un serveur : `initialize` seul, pas d'import. Seul moyen de voir un jeton mort ou un transport non
-   * pris en charge avant qu'un contact ne le découvre.
-   */
-  app.post('/tenants/:tenantId/mcp/:sourceId/eprouver', lourd, async (req, reply) => {
-    const ciblee = await serveurMcp(deps, req, reply);
-    if (ciblee === null) return reply;
-    const { tenant, sourceId, source } = ciblee;
-
-    const ouverte = await connecter(deps, source);
-    if ('echec' in ouverte) {
-      const raison = typeof ouverte.echec === 'string' ? ouverte.echec : direEchec(ouverte.echec);
-      await deps.sources.marquerEpreuve(tenant, sourceId, false, raison);
-      return reply.code(200).send({ ok: false, erreur: raison });
-    }
-    await ouverte.fermer();
-    await deps.sources.marquerEpreuve(tenant, sourceId, true);
-    return reply.code(200).send({ ok: true });
   });
 
   /**

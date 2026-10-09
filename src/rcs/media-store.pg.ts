@@ -1,7 +1,7 @@
 import type { Pool } from 'pg';
 import type { MimeImage } from './image';
 
-/** Un visuel, sans ses octets : ce que la médiathèque affiche. */
+/** Un visuel, sans ses octets : ce que le téléversement rend. */
 export interface RcsMediaResume {
   id: string;
   code: string;
@@ -52,30 +52,5 @@ export class PgRcsMediaStore {
       [code],
     );
     return rows[0] ? { bytes: rows[0].bytes, mime: rows[0].mime } : null;
-  }
-
-  /** Médiathèque d'un workspace. Les octets ne sont jamais chargés ici : une liste de dix visuels ferait
-   *  sinon transiter vingt mégaoctets pour afficher des vignettes. */
-  async list(tenantId: string): Promise<RcsMediaResume[]> {
-    const { rows } = await this.pool.query<{
-      id: string; code: string; mime: MimeImage; taille: number; nom: string | null; created_at: Date;
-    }>(
-      `select id, code, mime, taille, nom, created_at from rcs_media
-       where tenant_id = $1 order by created_at desc limit 100`,
-      [tenantId],
-    );
-    return rows.map((r) => ({
-      id: r.id, code: r.code, mime: r.mime, taille: r.taille, nom: r.nom, createdAt: r.created_at.toISOString(),
-    }));
-  }
-
-  /**
-   * Supprime un visuel, scope tenant dans le where : un identifiant d'un autre workspace ne supprime rien.
-   * Suppression dure, à la différence des modèles et des messages : ce qui compte est que le visuel cesse
-   * d'être servi publiquement. Un message déjà envoyé qui pointait dessus affichera une image cassée.
-   */
-  async remove(tenantId: string, id: string): Promise<boolean> {
-    const res = await this.pool.query('delete from rcs_media where tenant_id = $1 and id = $2', [tenantId, id]);
-    return (res.rowCount ?? 0) > 0;
   }
 }

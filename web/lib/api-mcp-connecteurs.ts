@@ -110,17 +110,6 @@ export function supprimerServeurMcp(tenantId: string, sourceId: string): Promise
 }
 
 /**
- * Éprouve le serveur : `initialize` seul, rien n'est importé.
- *
- * ⚠️ C'est le seul moyen de voir un jeton mort ou un transport non pris en charge AVANT qu'un contact ne le
- * découvre. Un serveur inatteignable ne produit aucune erreur applicative : l'agent dégraderait en silence,
- * au milieu d'une conversation.
- */
-export function eprouverServeurMcp(tenantId: string, sourceId: string): Promise<{ ok: boolean; erreur?: string }> {
-  return request<{ ok: boolean; erreur?: string }>(`${base(tenantId)}/${sourceId}/eprouver`, { method: 'POST' });
-}
-
-/**
  * Le plan, SANS rien écrire.
  *
  * 🔴 C'est la moitié qui rend le rafraîchissement acceptable : écraser n'est acceptable que si l'on montre

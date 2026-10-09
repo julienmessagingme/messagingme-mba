@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import {
   arreterAbonnementNumeroSeul, creerAbonnementNumeroSeul, creerClientStripe, creerSessionAbonnement, creerSessionCheckout, creerSessionPortail, estCleLive, lireFactureStripe, lirePrixStripe, StripeError, VERSION_API_STRIPE, type ReponseStripe, type TransportStripe,
 } from '../src/stripe/client';
-import { creditDeLOffre, definitionOffre, estOffreRecharge } from '../src/stripe/offres';
+import { creditDeLOffre, definitionOffre, OFFRES_RECHARGE } from '../src/stripe/offres';
 
 /**
  * LE CLIENT REST DE STRIPE, contre un transport simulé : aucun appel ne part chez Stripe, aucune vraie clé n'existe
@@ -171,9 +171,8 @@ describe('les offres et le mode de la clé', () => {
   });
 
   it('seules nos deux offres existent', () => {
-    expect(estOffreRecharge('refill_50')).toBe(true);
-    expect(estOffreRecharge('refill_1000')).toBe(false);
-    expect(estOffreRecharge(50)).toBe(false);
+    // La liste que la route valide (`z.enum(OFFRES_RECHARGE)`, `src/http/credit-stripe.ts`) : rien d'autre ne s'achète.
+    expect(OFFRES_RECHARGE).toEqual(['refill_50', 'refill_100']);
   });
 
   it('le mode se lit sur le préfixe de la clé', () => {

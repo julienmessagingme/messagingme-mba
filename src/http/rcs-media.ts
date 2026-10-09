@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
-import { espaceVerifie, estUuid } from './scope';
+import { espaceVerifie } from './scope';
 import { typeImage, octetsDepuisDataUrl, mimeDeExtension, TAILLE_IMAGE_MAX } from '../rcs/image';
 import type { MimeImage } from '../rcs/image';
 import type { RcsMediaResume, RcsMediaFichier } from '../rcs/media-store.pg';
@@ -13,8 +13,6 @@ const TAILLE_MAX_CORPS = 4 * 1024 * 1024;
 const CODE_RE = /^[0-9a-hjkmnp-tv-z]{26}$/;
 
 export interface RcsMediasDep {
-  list(tenantId: string): Promise<RcsMediaResume[]>;
-  remove(tenantId: string, id: string): Promise<boolean>;
   /** Le fichier derrière un code. Pas de tenant : la route de lecture est publique. */
   getByCode(code: string): Promise<RcsMediaFichier | null>;
 }
@@ -33,11 +31,6 @@ export interface RcsMediaRouteDeps {
  */
 export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
-
-  app.get('/tenants/:tenantId/rcs/media', opts, async (req, reply) => {
-    const tenant = espaceVerifie(req);
-    return reply.code(200).send({ media: await deps.medias.list(tenant) });
-  });
 
   app.post('/tenants/:tenantId/rcs/media', { ...opts, bodyLimit: TAILLE_MAX_CORPS }, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -59,17 +52,6 @@ export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, 
     const nom = typeof body.nom === 'string' && body.nom.trim() !== '' ? body.nom.trim().slice(0, 120) : null;
     const { media, url } = await deps.create(tenant, { mime, bytes, nom });
     return reply.code(201).send({ media, url });
-  });
-
-  app.delete('/tenants/:tenantId/rcs/media/:id', opts, async (req, reply) => {
-    const tenant = espaceVerifie(req);
-    if (forbidNonAdmin(req, reply)) return;
-    const { id } = req.params as { id: string };
-    // Identifiant mal formé : 404 avant la requête (sur une colonne uuid, Postgres lèverait, donc 500).
-    if (!estUuid(id)) return reply.code(404).send({ error: 'visuel inconnu' });
-    const fait = await deps.medias.remove(tenant, id);
-    if (!fait) return reply.code(404).send({ error: 'visuel inconnu' });
-    return reply.code(200).send({ ok: true });
   });
 
   /**
@@ -95,8 +77,8 @@ export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, 
       .header('x-content-type-options', 'nosniff')
       .header('content-disposition', `inline; filename="${code}"`)
       /**
-       * Un jour, pas un an en `immutable` : Cloudflare met ces images en cache au bord et servirait un visuel supprimé
-       * alors que l'origine rend 404. Un jour couvre la rafale de lectures d'une campagne et borne l'exposition.
+       * Un jour, pas un an en `immutable` : Cloudflare met ces images en cache au bord et servirait un visuel effacé
+       * (suppression de l'espace) alors que l'origine rend 404. Un jour couvre la rafale de lectures d'une campagne et borne l'exposition.
        */
       .header('cache-control', 'public, max-age=86400')
       .send(fichierStocke.bytes);

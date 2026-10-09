@@ -2737,7 +2737,7 @@ le réseau Docker, il ne traverse jamais l'interface publique.
 de taille : le corps entier entrerait en mémoire avant d'être jeté, et `.length` compte des unités UTF-16,
 donc un corps d'idéogrammes passe un plafond « en octets » à trois fois sa taille. Ses consommateurs doivent
 lire ses TROIS verdicts : `trop_gros`, `casse` (un flux coupé n'est pas un corps vide, sans quoi on annonce un
-succès sur une lecture ratée) et le texte. ⚠️ Les clients de NOS API (Meta, Zadarma) n'y passent pas : hôtes
+succès sur une lecture ratée) et le texte. ⚠️ Les clients de NOS API (Meta) n'y passent pas : hôtes
 fixes et de confiance.
 
 🔴 **Ce qui est servi est décidé par la SIGNATURE du fichier**, jamais par le type déclaré au téléversement.
@@ -2937,8 +2937,8 @@ constantes du bloc `constantes` en fin de `src/config.ts` depuis le 2026-09-25 :
 | **Recharge par Stripe** | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRIX_REFILL_50`, `STRIPE_PRIX_REFILL_100` | vides = recharge fermée (la route rend 503, le webhook n'est pas monté) ; une clé sans préfixe `sk_`/`rk_` + `live_`/`test_`, ou la clé sans le secret du webhook (ou l'inverse) = refus au boot |
 
 🔴 **Le boot ÉCHOUE VITE plutôt que de dégrader en silence**, et c'est délibéré : `AUTH_SECRET` trop court en
-production, `CORS_ORIGINS` à `*`, une entrée de `OPS_EMAILS` qui n'a pas la forme d'une adresse, `AI_GATEWAY_API_KEY` sans ses deux modèles, une seule moitié des clés
-Zadarma, `VERCEL_API_TOKEN` sans `VERCEL_TEAM_ID` ou sans `ENCRYPTION_KEY`, `STRIPE_SECRET_KEY` sans un préfixe qui dise son mode, une seule moitié de Stripe (la clé seule laisserait payer sans que rien ne crédite ; le secret seul monterait un webhook qui ignore le mode de la clé). Chacun de ces cas produirait sinon une panne en pleine conversation, des semaines plus tard.
+production, `CORS_ORIGINS` à `*`, une entrée de `OPS_EMAILS` qui n'a pas la forme d'une adresse, `AI_GATEWAY_API_KEY` sans ses deux modèles,
+`VERCEL_API_TOKEN` sans `VERCEL_TEAM_ID` ou sans `ENCRYPTION_KEY`, `STRIPE_SECRET_KEY` sans un préfixe qui dise son mode, une seule moitié de Stripe (la clé seule laisserait payer sans que rien ne crédite ; le secret seul monterait un webhook qui ignore le mode de la clé). Chacun de ces cas produirait sinon une panne en pleine conversation, des semaines plus tard.
 
 ⚠️ **`EUR_PER_USD` est un paramètre commercial, pas un cours.** Le Gateway facture en dollars, tous nos
 compteurs sont en micro-euros. Aller chercher un cours en temps réel ferait varier le prix d'une même

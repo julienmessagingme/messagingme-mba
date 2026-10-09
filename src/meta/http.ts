@@ -155,8 +155,6 @@ function isRetryable(err: unknown): boolean {
   return false;
 }
 
-const realSleep = (ms: number): Promise<void> => dormir(ms);
-
 export interface RetryOpts {
   maxRetries?: number;
   baseDelayMs?: number;
@@ -178,7 +176,7 @@ export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOpts = {}): 
   const cap = opts.maxDelayMs ?? 30000;
   const factor = opts.factor ?? 2;
   const random = opts.random ?? Math.random;
-  const sleep = opts.sleep ?? realSleep;
+  const sleep = opts.sleep ?? dormir;
 
   let attempt = 0;
   for (;;) {
@@ -213,7 +211,7 @@ export class RateLimiter implements PorteDeDebit {
     deps: { now?: () => number; sleep?: (ms: number) => Promise<void> } = {},
   ) {
     this.now = deps.now ?? (() => Date.now());
-    this.sleep = deps.sleep ?? realSleep;
+    this.sleep = deps.sleep ?? dormir;
   }
 
   async acquire(): Promise<void> {

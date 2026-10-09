@@ -189,7 +189,6 @@ export const schemaMessageMeta = z.strictObject({
     ctx.addIssue({ code: 'custom', path: ['to'], message: 'désignez la personne : to (son numéro), contactId ou externalId' });
   }
 });
-export type MessageMeta = z.infer<typeof schemaMessageMeta>;
 
 /**
  * Le message SANS destinataire : ce que Claude envoie dans une conversation (`send_message`), le même contenu.

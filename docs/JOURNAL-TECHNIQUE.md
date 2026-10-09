@@ -5,6 +5,30 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-09 : audit de simplicité, lot A (suppressions sûres)
+
+Deuxième audit de simplicité, refait à l'économie : des scripts sur une extraction figée d'origin (exports morts,
+symboles servis aux seuls tests, blocs recopiés, usage des dépendances, enveloppes, interfaces à une implémentation,
+configuration jamais lue), puis une vérification à la main des seules pistes sérieuses. Le dépôt sortait maigre des
+trois lots du 25 septembre ; le gros gisement restant est structurel (le code recopié entre le serveur et la console,
+lot B).
+
+- **`src/zadarma` supprimé** (trois fichiers, leurs deux tests, les deux clés de configuration et leur contrôle de
+  paire) : plus aucun importeur en production depuis que la capture du code a quitté Zadarma pour DIDWW.
+- **La galerie de visuels RCS supprimée**, décision de Julien : `GET` et `DELETE /tenants/:id/rcs/media`, leurs
+  fonctions de console et les méthodes `list` et `remove` du magasin. Jamais appelées par l'écran. Le téléversement
+  (`POST`) et les adresses publiques `/m/` déjà envoyées ne bougent pas.
+- **L'épreuve d'un serveur MCP supprimée** (`POST /tenants/:id/mcp/:sourceId/eprouver` et sa fonction de console) :
+  l'écran ne l'appelle pas, l'aperçu ouvre la même connexion et marque la source. Le cas de sécurité qu'elle portait
+  (une adresse qui résout vers le réseau interne est refusée avant toute connexion) reste tenu sur l'aperçu et
+  l'import.
+- **Symboles sans appelant** retirés (`estTypeAbonnable`, `MessageMeta`, `lireSalesforceActif`, `estOffreRecharge`,
+  l'alias `realSleep`). Le cas « seules nos deux offres existent » vérifie désormais la liste que la route valide.
+- **Gardés délibérément** : `NOMS_ATTRIBUTS` (référence d'un test de parité avec la console), les outils de test
+  logés en production (`selectionVide`, `cheminsAttachables`, `lignesAvecIndices`, les déplacer ne gagne rien), la
+  route qui éteint un lien de chaîne (fonction produit), les interfaces à une implémentation (les tests les
+  imitent par leur forme) et les réglages sans valeur posée (leviers d'urgence, de montée en charge ou de rétention).
+
 ## 2026-10-09 : le contrat OpenAPI de l'API publique (lot 16, livraison A), en production
 
 `05501ec5`, CI verte job par job, aucune migration ; `GET https://api.messagingme.app/openapi.json` rend 200 avec

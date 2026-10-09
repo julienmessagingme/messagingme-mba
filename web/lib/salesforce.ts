@@ -41,17 +41,6 @@ export interface IntegrationSalesforceVue {
   org: OrgSalesforceVue | null;
 }
 
-/**
- * L'interrupteur, ou `undefined` quand l'API ne le rend pas.
- *
- * 🔴 `undefined` N'EST PAS `false` : la console se publie AVANT l'API. Mais pour une intégration NEUVE, l'inconnu
- * se traduit par « on ne montre rien » (voir `salesforceUtilisable`), jamais par un bouton vers une route absente.
- */
-export function lireSalesforceActif(reglages: { salesforceActif?: unknown } | null | undefined): boolean | undefined {
-  const v = reglages?.salesforceActif;
-  return typeof v === 'boolean' ? v : undefined;
-}
-
 const ETATS: readonly string[] = ['connexion', 'connectee', 'en_pause', 'coupee'];
 
 /**

@@ -42,9 +42,8 @@ export function corpsCanonique(v: unknown): string {
 }
 
 /**
- * base64 des octets bruts du HMAC-SHA256, tenu par le vecteur d'or de `tests/channels-me-signature.test.ts`.
- * Zadarma, lui, encode l'hexadécimal (`signZadarma`) : une signature correcte fait 44 caractères, 88 veut
- * dire qu'on a encodé l'hexadécimal, et l'API rend 401.
+ * base64 des octets bruts du HMAC-SHA256, tenu par le vecteur d'or de `tests/channels-me-signature.test.ts`. Une
+ * signature correcte fait 44 caractères ; 88 veut dire qu'on a encodé l'hexadécimal, et l'API rend 401.
  */
 export function signer(canonique: string, secret: string): string {
   return createHmac('sha256', secret).update(canonique, 'utf8').digest('base64');
