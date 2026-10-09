@@ -5,6 +5,30 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-08 : les films de la vitrine passent en Messaging Me, et le RCS a le sien, en production
+
+À la demande de Julien, six pushs sur `site/` dans la journée, tous en plomberie sur l'origin du moment (d'autres
+sessions poussaient la refonte des pages en même temps), aucun ne lançant de CI (`ci.yml` ignore `site/**`).
+
+- **L'accueil** (`03fc9879`, `617b438f`) : sous le schéma « Deux canaux, une seule conversation », le film d'accueil
+  (WhatsApp, 1 min 12) et le film RCS (1 min 03, « passer au RCS, c'est passer de la télé noir et blanc à la télé
+  couleur ») côte à côte, l'un sous l'autre sous 760 px, chacun avec sa légende et sa fiche VideoObject.
+- **Les quatre films des pages Fonctionnalités**, repassés en Messaging Me sous le même nom (`03fc9879`). Julien
+  voyait encore Engage Me : `/films/` se garde un jour dans le navigateur, plus une semaine de
+  `stale-while-revalidate` (`site/vercel.json`). Le `?v=2` de leur `src` change la clé du cache sans changer le
+  fichier (`739b782c`) ; la règle est dans le `CLAUDE.md` du dépôt.
+- **Les deux pages neuves** (Campagnes et scénarios, Pilotage des coûts) reçoivent leur short de 36 s, dans une
+  section film sous l'en-tête comme les autres pages (`8d81567e`). L'affiche du pilotage montre la synthèse et sa
+  mention « Exemple, chiffres indicatifs », pas un compteur arrêté en plein défilement.
+- **Le 9:16 au téléphone** (`4f3865e6`, `a987136e`, puis chaque film neuf) : sous 640 px, `site.js` met dans le
+  lecteur la version désignée par `data-vertical` et son affiche `data-affiche-verticale`, et `site.css` donne au
+  cadre la forme 9:16 dès le premier affichage, jamais plus haut que 80 % de l'écran. Le film d'accueil n'en avait
+  pas encore à la fin de la journée.
+
+Encodage commun : H.264 `crf 28`, 60 i/s, AAC 96k, `faststart`, 2 à 6 Mo par film. Chaque push vérifié en ligne
+(fichiers servis identiques à l'octet près aux fichiers poussés), puis en émulation de téléphone (lecture
+automatique, source 9:16 choisie).
+
 ## 2026-10-08 : l'API lit les fils (lot 13, domaine 1, livraison A), écrite
 
 Deux rondes de questions avec Julien ont cadré tout le lot 13 (spec `2026-10-08-api-complete-design.md`) : la lecture

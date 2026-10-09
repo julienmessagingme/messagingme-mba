@@ -80,6 +80,13 @@ une page qui poste vers une route pas encore déployée aussi : l'API se déploi
 `site/llms.txt`, et le bloc JSON-LD de chaque page (fil d'Ariane, fiche du film). `site/vercel.json` redirige
 `engageme-site.vercel.app`, `/index.html` et les adresses sans barre finale vers l'adresse canonique.
 
+⚠️ **Les images et les films de la vitrine restent un jour en cache chez le visiteur** (2026-10-08) :
+`max-age=86400` plus une semaine de `stale-while-revalidate` sur `/img/` et `/films/` (`site/vercel.json`). Un
+fichier remplacé sous le MÊME nom prend donc un `?v=` incrémenté dans chaque page qui le cite, sinon qui l'a déjà vu
+garde l'ancien (vécu : les films des pages, repassés en Messaging Me, montraient encore Engage Me). Au téléphone
+(moins de 640 px), `site.js` met à la place d'un film sa version 9:16 désignée par `data-vertical` et
+`data-affiche-verticale`. Les films se fabriquent dans `~/engageme-motion` (son `CLAUDE.md`).
+
 🔴 **L'IGNORED BUILD STEP DE LA VITRINE NE DOIT JAMAIS FINIR EN ERROR, et il vit dans `site/vercel.json`**
 (2026-09-26). `VERCEL_GIT_PREVIOUS_SHA` est le SHA du dernier déploiement READY (un CANCELED ne l'avance pas),
 et Vercel clone en profondeur 10 SANS aucun remote, mesuré. Dès dix commits sans changement dans `site/`, ce SHA
