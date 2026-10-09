@@ -97,3 +97,10 @@ describe('câblage de /v1/webhooks (lot 13, domaine 4)', () => {
     expect(source).toMatch(/webhooks: \{ gestion: gestionEvenements, audit: auditSink \},/);
   });
 });
+
+describe('câblage des contacts complets (lot 13, domaine 5)', () => {
+  it('🔴 les routes sont montées, et la suppression compte dans la MÊME limite du jour que la purge de la console', () => {
+    expect(source).toMatch(/contactsAdmin: \{\s*champs: fieldStore,\s*contacts: contactStore,\s*suppressionsDuJour: quotaSuppressions,\s*listeDeLAgent,\s*enVol: travauxEnVol,\s*audit: auditSink,\s*\},/);
+    expect(source).toMatch(/suppressionsDuJour: quotaSuppressions,\s*createOneContact:/);
+  });
+});

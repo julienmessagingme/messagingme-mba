@@ -39,6 +39,8 @@ export const STATUT_PAR_CODE = {
   delivery_not_found: 404,
   delivery_not_replayable: 409,
   webhooks_unavailable: 503,
+  // Les champs personnalisés par l'API (lot 13, domaine 5) : la clé dérivée du libellé existe déjà, ou c'est un champ de base.
+  field_exists: 409,
   // Le numéro WhatsApp de l'espace est délié depuis l'Accueil : rien ne part avant qu'il soit relié. Distinct
   // de `no_whatsapp_number` : le numéro existe, et se relie d'un clic.
   number_unlinked: 409,

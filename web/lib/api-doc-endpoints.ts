@@ -16,7 +16,7 @@ import type { LienVers } from './doc-api-pages';
  */
 
 export type Methode = 'GET' | 'POST' | 'PATCH' | 'DELETE';
-export type Droit = 'contacts:write' | 'contacts:read' | 'sends:create' | 'conversations:read' | 'templates:write' | 'webhooks:write';
+export type Droit = 'contacts:write' | 'contacts:read' | 'sends:create' | 'conversations:read' | 'templates:write' | 'webhooks:write' | 'contacts:admin';
 export type GroupeEndpoints = 'contacts' | 'messages' | 'conversations' | 'envois' | 'modeles' | 'webhooks' | 'catalogues';
 
 export interface EndpointDoc {
@@ -76,6 +76,18 @@ export const ENDPOINTS = [
   {
     methode: 'POST', chemin: '/v1/contacts/search', droit: 'contacts:read', groupe: 'contacts', lien: { page: 'contacts', ancre: 'rechercher' },
     resume: ['Cherche une fiche par téléphone, BSUID ou identifiant externe.', 'Finds a record by phone, BSUID or external id.'],
+  },
+  {
+    methode: 'DELETE', chemin: '/v1/contacts/{contactId}', droit: 'contacts:admin', groupe: 'contacts', lien: { page: 'contacts', ancre: 'effacer' },
+    resume: ['Efface une fiche pour de vrai (RGPD), dans la limite du jour de l’offre.', 'Erases a record for good (GDPR), within the plan’s daily limit.'],
+  },
+  {
+    methode: 'GET', chemin: '/v1/fields', droit: 'contacts:read', groupe: 'contacts', lien: { page: 'contacts', ancre: 'champs' },
+    resume: ['Liste les champs personnalisés : les clés à utiliser dans fields.', 'Lists the custom fields: the keys to use in fields.'],
+  },
+  {
+    methode: 'POST', chemin: '/v1/fields', droit: 'contacts:admin', groupe: 'contacts', lien: { page: 'contacts', ancre: 'creer-champ' },
+    resume: ['Crée un champ personnalisé ; sa clé vient du libellé.', 'Creates a custom field; its key comes from the label.'],
   },
   {
     methode: 'PATCH', chemin: '/v1/contacts/{contactId}', droit: 'contacts:write', groupe: 'contacts', lien: { page: 'contacts', ancre: 'modifier' },

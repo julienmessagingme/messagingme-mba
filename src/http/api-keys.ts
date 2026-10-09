@@ -10,7 +10,7 @@ import { makeJournal, type AuditSink } from '../audit/journal';
  * autres : une clé donnée à un agent tiers pour lire l'Inbox n'emporte pas le droit d'écrire, et le serveur MCP
  * ne liste même pas les outils hors des scopes de la clé.
  */
-export const VALID_API_SCOPES = ['contacts:write', 'contacts:read', 'sends:create', 'mcp:read', 'mcp:write', 'conversations:read', 'templates:write', 'webhooks:write'] as const;
+export const VALID_API_SCOPES = ['contacts:write', 'contacts:read', 'sends:create', 'mcp:read', 'mcp:write', 'conversations:read', 'templates:write', 'webhooks:write', 'contacts:admin'] as const;
 
 /**
  * Au plus dix clés actives par espace (décision de Julien, 2026-10-04). Chaque clé active est un secret confié à

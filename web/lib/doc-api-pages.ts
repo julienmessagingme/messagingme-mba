@@ -52,7 +52,7 @@ export const PAGES_DOC = [
   {
     cle: 'contacts', href: '/developers/api/contacts', fichier: 'web/app/developers/api/contacts/page.tsx', groupe: 'reference-api',
     nav: ['Contacts', 'Contacts'], titre: ['Contacts', 'Contacts'],
-    ancres: ['creer', 'lot', 'lire', 'rechercher', 'modifier'],
+    ancres: ['creer', 'lot', 'lire', 'rechercher', 'modifier', 'effacer', 'champs', 'creer-champ'],
   },
   {
     cle: 'messages', href: '/developers/api/messages', fichier: 'web/app/developers/api/messages/page.tsx', groupe: 'reference-api',

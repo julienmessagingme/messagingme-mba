@@ -2156,6 +2156,13 @@ scénario, comment importer des contacts.
   Les mêmes gardes que le message simple (fenêtre, STOP, numéro délié ou suspendu, quota), le message apparaît dans
   l'Inbox, et le bouton touché par le contact revient dans `message.received`. Claude fait de même avec
   `send_message`, dans toutes les offres.
+- ✅ **Les champs personnalisés et la suppression RGPD par l'API** (lot 13, domaine 5, livraison A, 2026-10-09) :
+  `GET /v1/fields` liste les champs personnalisés (les clés à utiliser dans `fields` d'une fiche), avec le droit
+  `contacts:read` ; `POST /v1/fields` en crée un (la clé vient du libellé, comme dans Contenu > Champs) et
+  `DELETE /v1/contacts/{contactId}` efface une fiche pour de vrai, avec le droit neuf `contacts:admin`. L'effacement
+  est celui du mini-CRM : la fiche, ses conversations, ses messages et son analyse partent, dans la limite du jour de
+  l'offre (10 en Free, sans limite en Pro et Entreprise), et c'est journalisé. Renommer ou supprimer un champ reste
+  un geste de la console. L'import d'un fichier par l'API attend une décision de Julien.
 - ✅ **Créer un modèle et suivre sa validation** (lot 13, domaine 3, livraison A, 2026-10-09, droit neuf
   `templates:write`) : `POST /v1/templates` prend le corps de Meta (`name`, `language`, `category` UTILITY ou
   MARKETING, `components`) et passe par la création de l'écran Modèles : liens tracés, mêmes gardes. Une image, une

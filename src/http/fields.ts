@@ -25,6 +25,25 @@ export interface FieldsRouteDeps {
   };
 }
 
+/** L'issue d'une création de champ : le champ, ou un refus avec son statut et sa phrase. */
+export type IssueChamp = { ok: true; champ: UserFieldDef } | { ok: false; statut: 400 | 409; erreur: string };
+
+/**
+ * 🔴 LA création d'un champ personnalisé, partagée par l'écran Contenu et `POST /v1/fields` (lot 13, domaine 5) : la clé
+ * dérivée du libellé (slug), immuable ensuite ; un libellé qui fantômiserait un champ de base est refusé, par sa clé
+ * dérivée (« BSUID » -> 'bsuid') comme par le libellé lui-même (« Nom », « Téléphone ») ; 409 si la clé existe déjà.
+ */
+export async function creerChamp(champs: Pick<ChampsDep, 'create'>, tenantId: string, label: string, type: string): Promise<IssueChamp> {
+  const libelle = label.trim();
+  if (libelle === '') return { ok: false, statut: 400, erreur: 'label requis' };
+  if (!isUserFieldType(type)) return { ok: false, statut: 400, erreur: 'type invalide (text|number|date|datetime|boolean|url)' };
+  const def: UserFieldDef = { key: slugify(libelle), label: libelle, type };
+  if (isReservedFieldLabel(def.label)) return { ok: false, statut: 409, erreur: `« ${def.label} » correspond à un champ de base déjà présent` };
+  const res = await champs.create(tenantId, def);
+  if (res === 'exists') return { ok: false, statut: 409, erreur: `un champ existe déjà pour cette clé (${def.key})` };
+  return { ok: true, champ: def };
+}
+
 /**
  * Gestion des user fields (menu Contenu), admin. On édite libellé et type ; la clé est immuable (la renommer
  * casserait les paramMapping de campagnes et les valeurs `contacts.fields` indexées par clé).
@@ -67,14 +86,10 @@ export function registerFields(app: FastifyInstance, deps: FieldsRouteDeps, gard
     const tenant = espaceVerifie(req);
     const b = (req.body ?? {}) as { label?: unknown; type?: unknown };
     if (!nonEmpty(b.label)) return reply.code(400).send({ error: 'label requis' });
-    if (typeof b.type !== 'string' || !isUserFieldType(b.type)) return reply.code(400).send({ error: 'type invalide (text|number|date|datetime|boolean|url)' });
-    const def: UserFieldDef = { key: slugify(b.label.trim()), label: b.label.trim(), type: b.type };
-    // Le libellé ne doit pas fantômiser un champ de base, ni par sa clé dérivée (« BSUID » -> 'bsuid') ni
-    // par le libellé lui-même (« Nom », « Téléphone »), qui sont français là où les clés sont anglaises.
-    if (isReservedFieldLabel(def.label)) return reply.code(409).send({ error: `« ${def.label} » correspond à un champ de base déjà présent` });
-    const res = await deps.fields.create(tenant, def);
-    if (res === 'exists') return reply.code(409).send({ error: `un champ existe déjà pour cette clé (${def.key})` });
-    return reply.code(201).send(def);
+    if (typeof b.type !== 'string') return reply.code(400).send({ error: 'type invalide (text|number|date|datetime|boolean|url)' });
+    const r = await creerChamp(deps.fields, tenant, b.label, b.type);
+    if (!r.ok) return reply.code(r.statut).send({ error: r.erreur });
+    return reply.code(201).send(r.champ);
   });
 
   app.patch('/tenants/:tenantId/user-fields/:key', opts, async (req, reply) => {

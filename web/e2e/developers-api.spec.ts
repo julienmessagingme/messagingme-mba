@@ -60,7 +60,7 @@ const titresDe = (cle: CleDePage): string[] => [
  * Les commandes `curl` complètes, par page : une par route (plus le premier appel, les exemples de cibles et le
  * guide). Le compte EXACT garde qu'aucune ne se perd et qu'aucune ne s'ajoute sans qu'on le voie.
  */
-const COMMANDES: Partial<Record<CleDePage, number>> = { accueil: 1, contacts: 5, messages: 3, conversations: 5, sends: 3, templates: 2, 'webhook-endpoints': 4, catalogs: 3, 'per-contact': 1 };
+const COMMANDES: Partial<Record<CleDePage, number>> = { accueil: 1, contacts: 7, messages: 3, conversations: 5, sends: 3, templates: 2, 'webhook-endpoints': 4, catalogs: 3, 'per-contact': 1 };
 
 const OUTILS_TIERS = /custom_id|Universal Channel|Brevo|Salesforce|SFMC|Splio|HubSpot|Klaviyo|Braze|Zapier|smsmode|uchat/i;
 

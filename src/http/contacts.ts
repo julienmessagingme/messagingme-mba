@@ -16,6 +16,7 @@ import { messageDe } from '../lib/erreur';
 import type { ListeDeLAgent, LigneDeLaListe } from '../mba/liste';
 import type { TravauxEnVol } from '../lib/en-vol';
 import { LimiteOffreError, STATUT_REFUS_OFFRE, corpsRefusLimite } from '../offres/refus';
+import { effacerContacts } from '../crm/effacement';
 
 /** Ce que les routes lisent et écrivent des fiches de contact. */
 export interface ContactsDep {
@@ -568,26 +569,14 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     if (target === null) return reply.code(400).send({ error: 'cible invalide (target: { ids } ou { filters, excludeIds })' });
     const ids = await deps.contacts.contactIdsForTarget(tenant, target);
     if (ids.length === 0) return reply.code(200).send({ purges: 0, conversations: 0, messages: 0, analyses: 0 });
-    // Les suppressions du jour de l'offre (lot 6) : tout ou rien, avant la moindre écriture.
-    const quota = await deps.suppressionsDuJour.consommer(tenant, ids.length);
-    if (!quota.ok) return reply.code(STATUT_REFUS_OFFRE).send(corpsRefusLimite(new LimiteOffreError(tenant, 'suppressionsJour', quota.max)));
-    const { listeAgent, ...res } = await deps.contacts.purgeMany(tenant, ids);
+    // L'effacement partagé avec `DELETE /v1/contacts/{id}` (`src/crm/effacement.ts`) : la limite du jour de l'offre,
+    // tout ou rien, avant la moindre écriture, puis la purge.
+    const e = await effacerContacts(deps, tenant, ids);
+    if (!e.ok) return reply.code(STATUT_REFUS_OFFRE).send(corpsRefusLimite(new LimiteOffreError(tenant, 'suppressionsJour', e.max)));
     for (const id of ids) await journal(tenant, req, 'contact.purged', { kind: 'contact', id }, { lot: ids.length });
-    /**
-     * La réponse part d'abord, le retrait chez Meta ensuite, au mieux : un appel par contact (avec rejeu) avant la
-     * réponse pouvait dépasser le délai de Cloudflare sur une grosse purge, et l'écran annonçait un échec pour des
-     * données effacées. Après la validation, jamais dedans : un appel à Meta retiendrait la transaction ouverte.
-     */
-    reply.code(200).send(res);
-    // La fonction `async` enveloppe aussi une levée synchrone : aucune promesse rejetée ne reste sans gestionnaire.
-    void deps.enVol.suivre((async () => {
-      try {
-        await deps.listeDeLAgent.oublierChezMeta(tenant, listeAgent);
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error(`purge : retrait chez Meta des contacts purgés en échec (${tenant}) :`, messageDe(err));
-      }
-    })());
+    // La réponse part d'abord, le retrait chez Meta ensuite, au mieux (voir `effacerContacts`).
+    reply.code(200).send(e.bilan);
+    e.retirerChezMeta();
     return reply;
   });
 }

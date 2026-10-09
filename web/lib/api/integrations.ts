@@ -14,7 +14,7 @@ import type { UserFieldKind } from '../field-kinds';
 // --- Clés d'API (surface publique /v1) ---
 
 /** Droits reconnus. La parité avec `VALID_API_SCOPES` (`src/http/api-keys.ts`) est tenue par `tests/api-droits-parite.test.ts`. */
-export const API_SCOPES = ['contacts:write', 'contacts:read', 'sends:create', 'mcp:read', 'mcp:write', 'conversations:read', 'templates:write', 'webhooks:write'] as const;
+export const API_SCOPES = ['contacts:write', 'contacts:read', 'sends:create', 'mcp:read', 'mcp:write', 'conversations:read', 'templates:write', 'webhooks:write', 'contacts:admin'] as const;
 /**
  * Ce qui est COCHÉ D'AVANCE à la création d'une clé.
  *

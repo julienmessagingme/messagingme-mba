@@ -23,6 +23,7 @@ import { schemaMessageMeta } from '../src/api/message-meta';
 import { schemaModeleMeta } from '../src/api/modele-meta';
 import { saisieCreation, saisieModification } from '../src/evenements/gestion';
 import { corpsRejeu, type DeliveryV1, type WebhookV1 } from '../src/http/v1-webhooks';
+import { corpsChamp, type ChampV1 } from '../src/http/v1-contacts-admin';
 import type { ModeleCree, StatutLangue } from '../src/api/creer-modele';
 import { validateParamMapping } from '../src/crm/template';
 import { destinataireAvecVariablesInterdites } from '../src/api/variables';
@@ -113,6 +114,7 @@ const VALIDATEURS: Record<RouteAvecCorps, (corps: unknown) => Verdict> = {
   'POST /v1/messages': (c) => depuis(schemaMessageMeta.safeParse(c)),
   'POST /v1/messages/rcs': (c) => depuis(schemaMessageRcs.safeParse(c)),
   'POST /v1/templates': (c) => depuis(schemaModeleMeta.safeParse(c)),
+  'POST /v1/fields': (c) => depuis(corpsChamp.safeParse(c)),
   'POST /v1/webhooks': (c) => depuis(saisieCreation.safeParse(c)),
   'PATCH /v1/webhooks/{webhookId}': (c) => depuis(saisieModification.safeParse(c)),
   'POST /v1/webhooks/{webhookId}/replay-failures': (c) => depuis(corpsRejeu.safeParse(c)),
@@ -306,6 +308,8 @@ const modeleCree: Lecture<ModeleCree> = EXEMPLES_REPONSES.modeleCree;
 const modeleCreeCles: MemesCles<typeof EXEMPLES_REPONSES.modeleCree, ModeleCree> = true;
 const statutLangue: Lecture<StatutLangue> = EXEMPLES_REPONSES.statutModele.languages[1];
 const statutLangueCles: MemesCles<typeof EXEMPLES_REPONSES.statutModele.languages[1], StatutLangue> = true;
+const champLu: Lecture<ChampV1> = EXEMPLES_REPONSES.champCree;
+const champCles: MemesCles<typeof EXEMPLES_REPONSES.champCree, ChampV1> = true;
 const webhookLu: Lecture<WebhookV1> = EXEMPLES_REPONSES.webhook;
 const webhookCles: MemesCles<typeof EXEMPLES_REPONSES.webhook, WebhookV1> = true;
 const envoiLu: Lecture<DeliveryV1> = EXEMPLES_REPONSES.envoisWebhook.data[0];
@@ -323,8 +327,8 @@ describe('les réponses montrées ont le type de leurs producteurs', () => {
   });
 
   it('les webhooks sortants : l’adresse et l’envoi (tenus au typage)', () => {
-    expect([webhookCles, envoiCles]).toEqual([true, true]);
-    expect([webhookLu, envoiLu].every((v) => v !== null)).toBe(true);
+    expect([webhookCles, envoiCles, champCles]).toEqual([true, true, true]);
+    expect([webhookLu, envoiLu, champLu].every((v) => v !== null)).toBe(true);
   });
 
   it('les modèles : la création et le statut d’une langue (tenus au typage)', () => {

@@ -32,7 +32,7 @@ const ENVOI: EnvoiVue = {
   livreLe: null, corps: '{"id":"evt_0123456789abcdef0123456789abcdef"}',
 };
 
-function monter(o: { limite?: number | null } = {}) {
+function monter(o: { limite?: number | null; couteux?: number } = {}) {
   const adresses = new Map<string, AdresseVue & { tenantId: string; secretChiffre: string }>();
   const audit: Array<{ action: string; detail: unknown; acteur?: unknown }> = [];
   const appels: Array<{ quoi: string; tenantId: string }> = [];
@@ -89,6 +89,7 @@ function monter(o: { limite?: number | null } = {}) {
   const server = buildServer({
     queue: new FakeQueue(),
     usage,
+    plafonds: { couteuxParMinute: o.couteux ?? 0, apiParMinute: 100_000, apiParHeure: 100_000 },
     v1: {
       apiKeys: keys, oauth: aucunJetonOauth, contacts: contactsV1Muets(),
       // Comme `audit_log.actor_user_id` (uuid) : un acteur qui n'est pas un compte fait échouer l'écriture.
@@ -203,6 +204,17 @@ describe('les webhooks sortants par l’API', () => {
     const echecs = await appel('POST', `/v1/webhooks/${webhook.id}/replay-failures`, GERANT, { since: '2026-10-09T00:00:00Z' });
     expect([echecs.statusCode, echecs.json()]).toEqual([202, { replayed: 1 }]);
     expect((await appel('POST', `/v1/webhooks/${webhook.id}/replay-failures`, GERANT, { depuis: '2026-10-09T00:00:00Z' })).statusCode).toBe(400);
+    await server.close();
+  });
+
+  it('🔴 l’essai et le rejeu en masse passent sous le plafond coûteux de l’espace, comme dans la console', async () => {
+    const { appel, creer, server } = monter({ couteux: 1 });
+    const { webhook } = await creer();
+    expect((await appel('POST', `/v1/webhooks/${webhook.id}/test`)).statusCode).toBe(200);
+    const deux = await appel('POST', `/v1/webhooks/${webhook.id}/test`);
+    expect([deux.statusCode, deux.json().code]).toEqual([429, 'rate_limited']);
+    expect(Number(deux.headers['retry-after'])).toBeGreaterThan(0);
+    expect((await appel('POST', `/v1/webhooks/${webhook.id}/replay-failures`, GERANT, { since: '2026-10-09T00:00:00Z' })).statusCode).toBe(429);
     await server.close();
   });
 

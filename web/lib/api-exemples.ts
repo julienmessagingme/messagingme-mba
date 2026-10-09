@@ -33,6 +33,7 @@ export type RouteAvecCorps =
   | 'POST /v1/messages'
   | 'POST /v1/messages/rcs'
   | 'POST /v1/templates'
+  | 'POST /v1/fields'
   | 'POST /v1/webhooks'
   | 'PATCH /v1/webhooks/{webhookId}'
   | 'POST /v1/webhooks/{webhookId}/replay-failures';
@@ -192,6 +193,8 @@ export const EXEMPLES_CORPS = {
       ],
     },
   },
+  // Les champs personnalisés par l'API (lot 13, domaine 5).
+  champCree: { route: 'POST /v1/fields', corps: { label: 'Date de naissance', type: 'date' } },
   // Les webhooks sortants par l'API (lot 13, domaine 4).
   webhookCree: {
     route: 'POST /v1/webhooks',
@@ -368,6 +371,10 @@ export const EXEMPLES_REPONSES = {
   conversationLue: CONVERSATION_LUE,
   conversations: { data: [CONVERSATION_LUE], nextCursor: 'MjAyNi0xMC0wOFQwOTo1ODowMi4xMjM0NTZafGM0ZTFiMmEzLTlkOGYtNGU3YS1hNmI1LTFjMmQzZTRmNWE2Yg' },
   messageLu: MESSAGE_LU,
+  // Les contacts complets (lot 13, domaine 5).
+  champs: { data: [{ key: 'numero_commande', label: 'Numéro de commande', type: 'text' }, { key: 'date_de_naissance', label: 'Date de naissance', type: 'date' }] },
+  champCree: { key: 'date_de_naissance', label: 'Date de naissance', type: 'date' },
+  ficheEffacee: { deleted: true, conversations: 1, messages: 14 },
   // Les webhooks sortants (lot 13, domaine 4) : tenus aux formes du serveur par `tests/api-exemples.test.ts`.
   webhook: WEBHOOK,
   webhooks: { data: [WEBHOOK], limit: 5, types: ['message.received', 'template.status_changed'], defaultTypes: ['message.received', 'template.status_changed'] },
@@ -440,6 +447,7 @@ export const CODES_DOCUMENTES = [
   { code: 'meta_rejected', statut: 422, ecart: false, quoi: ['Meta a refusé le contenu du message ou du modèle : son motif suit.', 'Meta refused the message or template content: its reason follows.'] },
   { code: 'invalid_header_media', statut: 422, ecart: false, quoi: ['Le fichier d’en-tête d’un modèle n’a pas pu être pris à son adresse : son motif suit.', 'The template header file could not be fetched from its address: the reason follows.'] },
   { code: 'meta_auth_failed', statut: 409, ecart: false, quoi: ['Meta refuse le jeton de l’espace : reconnectez le compte WhatsApp depuis la console.', 'Meta refuses the workspace token: reconnect the WhatsApp account from the console.'] },
+  { code: 'field_exists', statut: 409, ecart: false, quoi: ['Un champ porte déjà cette clé, ou le libellé est celui d’un champ de base.', 'A field already has this key, or the label is that of a base field.'] },
   { code: 'webhook_not_found', statut: 404, ecart: false, quoi: ['Adresse de webhook inconnue de cet espace.', 'Webhook endpoint unknown to this workspace.'] },
   { code: 'delivery_not_found', statut: 404, ecart: false, quoi: ['Envoi de webhook inconnu.', 'Webhook delivery unknown.'] },
   { code: 'delivery_not_replayable', statut: 409, ecart: false, quoi: ['Envoi inconnu de cet espace, encore en cours, ou un essai : rien à rejouer.', 'Delivery unknown to this workspace, still pending, or a test: nothing to replay.'] },

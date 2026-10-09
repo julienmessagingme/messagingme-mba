@@ -1,5 +1,14 @@
 # todo.md : backlog
 
+## 🟡 Lot 13, les webhooks par l'API : ce que la relecture du domaine 4 laisse (2026-10-09)
+
+- **Le journal d'une adresse se pagine par la date seule** (`PgEnvoisEvenementsStore.journal`, `cree_le < before`, et
+  `GET /v1/webhooks/{id}/deliveries` qui rend `nextBefore`) : les lignes d'un même job de distribution partagent le même
+  `cree_le`, et `toISOString` tronque la microseconde ; une page qui coupe un tel groupe fait sauter le reste. Passer à
+  un curseur `(cree_le, id)` à pleine précision, pour la console comme pour l'API.
+- **`list_webhook_endpoints` a été réservé à une personne** (décision prise par Claude en l'absence de Julien) : une
+  adresse d'outil sans code porte son jeton dans le chemin. À reconfirmer.
+
 ## 🟡 Lot 13, les modèles : ce que la relecture de la livraison A laisse (2026-10-09)
 
 - **Le dépôt d'un fichier chez Meta (`uploadImage`) n'a aucun délai** : un Meta muet tient la place d'en-tête (et

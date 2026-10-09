@@ -40,7 +40,9 @@ describe('le câblage de l’offre', () => {
     expect(socle).toMatch(/new PgWebhookStore\(pool, async \(tenant\) => \(await offres\.offreDe\(tenant\)\)\.droits\.limites\.automations\)/);
     // Les membres et les suppressions du jour : dans l'API, seule à inviter et à purger.
     expect(api).toMatch(/const userStore = new PgUserStore\(pool, async \(tenant\) => \{/);
-    expect(api).toMatch(/suppressionsDuJour: new QuotaSuppressions\(\{ offres, compteur: compteurDebit \}\),/);
+    // Une seule instance (lot 13, domaine 5) : la purge de la console et `DELETE /v1/contacts/{id}` comptent ensemble.
+    expect(api).toMatch(/const quotaSuppressions = new QuotaSuppressions\(\{ offres, compteur: compteurDebit \}\);/);
+    expect(api).toMatch(/suppressionsDuJour: quotaSuppressions,\s*createOneContact:/);
   });
 
   it('🔴 la console, Claude, l’exploitation et le badge lisent la MÊME offre en cache', () => {

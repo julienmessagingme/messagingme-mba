@@ -42,6 +42,9 @@ export type OperationApi =
   // Les webhooks sortants (`/v1/webhooks`, lot 13, domaine 4) : une unité, au plafond d'appels, hors quota du jour.
   | 'webhooks.read'
   | 'webhooks.write'
+  // Créer un champ, effacer une fiche (lot 13, domaine 5) : une unité, au plafond d'appels, hors quota du jour (la
+  // suppression a sa propre limite du jour, celle de l'offre).
+  | 'contacts.admin'
   | 'mcp.call'
   | 'mcp.refus';
 

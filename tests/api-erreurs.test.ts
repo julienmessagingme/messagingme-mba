@@ -20,7 +20,7 @@ describe('les codes d’erreur de l’API publique', () => {
       rcs_not_enabled: 409, no_whatsapp_number: 409, number_unlinked: 409, number_suspended: 409,
       scenario_not_found: 404, node_not_found: 404, template_not_found: 404, rcs_message_not_found: 404, send_not_found: 404,
       meta_rejected: 422, invalid_header_media: 422, template_rejected: 422, meta_auth_failed: 409,
-      webhook_not_found: 404, delivery_not_found: 404, delivery_not_replayable: 409, webhooks_unavailable: 503, conversation_not_found: 404, message_not_found: 404, invalid_cursor: 400, no_media: 404, media_expired: 410, media_unavailable: 422,
+      webhook_not_found: 404, delivery_not_found: 404, delivery_not_replayable: 409, webhooks_unavailable: 503, field_exists: 409, conversation_not_found: 404, message_not_found: 404, invalid_cursor: 400, no_media: 404, media_expired: 410, media_unavailable: 422,
       scenario_ambiguous: 409, unsendable_target: 422, template_category_unknown: 422,
       idempotency_key_required: 400, idempotency_in_progress: 409, idempotency_key_reused: 422,
       rate_limited: 429, quota_exceeded: 429,

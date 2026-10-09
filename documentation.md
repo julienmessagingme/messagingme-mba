@@ -3712,7 +3712,14 @@ Ajouté par le lot 4 de l'API publique :
    `src/http/v1-webhooks.ts` appelle les fonctions de `src/evenements/gestion.ts` (celles de la console et des outils
    MCP du lot 12), traduit les noms en anglais (`WebhookV1`, `DeliveryV1`, partagées avec les outils
    `list_webhook_endpoints` et `get_webhook_deliveries`) et les refus en codes de l'API. Droit `webhooks:write` ;
-   chaque écriture est auditée comme dans la console, avec `via: 'api'`.
+   chaque écriture est auditée par `journalDeLApi` (`src/api/journal-api.ts`) : derrière une clé, l'acteur reste vide
+   (une clé n'est pas un compte, et `audit_log.actor_user_id` est un uuid), la clé est dans le détail avec `via: 'api'`.
+   L'essai et le rejeu en masse passent sous le plafond coûteux de la console.
+49. **Les champs et l'effacement par l'API (lot 13, domaine 5) passent par la console** : `creerChamp`
+   (`src/http/fields.ts`) pour un champ personnalisé, et `effacerContacts` (`src/crm/effacement.ts`) pour une fiche, que
+   la purge du mini-CRM appelle aussi : la limite du jour de l'offre (`quotaSuppressions`, le MÊME objet), tout ou rien,
+   puis `PgContactStore.purgeMany`, puis le retrait chez l'agent de Meta APRÈS la réponse. La fiche est d'abord résolue
+   DANS l'espace (`contactIdsForTarget`) : une fiche d'un autre espace rend 404 sans entamer la limite.
 
 ### Sur les contrats externes
 

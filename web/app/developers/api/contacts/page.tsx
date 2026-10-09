@@ -179,6 +179,45 @@ function Contacts() {
           ]}
         />
       </Route>
+
+      <Route ep="DELETE /v1/contacts/{contactId}">
+        <p>
+          {t(
+            'Avec le droit contacts:admin. Irréversible : la fiche, ses conversations, ses messages et son analyse sont effacés ; ce qui porte les compteurs est anonymisé. Dans la limite du jour de l’offre (10 en Free, sans limite en Pro et Entreprise).',
+            'With the contacts:admin scope. Irreversible: the record, its conversations, messages and analysis are erased; what carries the counters is anonymised. Within the plan’s daily limit (10 on Free, unlimited on Pro and Enterprise).',
+          )}
+        </p>
+        <Sous>{t('Réponse 200', '200 response')}</Sous>
+        <Bloc legende="JSON">{json(EXEMPLES_REPONSES.ficheEffacee)}</Bloc>
+        <Sous>{erreurs}</Sous>
+        <Erreurs
+          lignes={[
+            ['unknown_contact', t('Fiche inconnue de cet espace (la limite du jour n’est pas entamée).', 'Record unknown to this workspace (the daily limit is not used).')],
+            ['plan_limit_reached', t('Limite d’effacements du jour de l’offre atteinte.', 'The plan’s daily erase limit is reached.')],
+          ]}
+        />
+      </Route>
+
+      <Route ep="GET /v1/fields">
+        <Bloc legende={commande}>{curlGet('/v1/fields')}</Bloc>
+        <Sous>{reponse}</Sous>
+        <Bloc legende="JSON">{json(EXEMPLES_REPONSES.champs)}</Bloc>
+        <p>{t('key est la clé à utiliser dans fields d’une fiche ; type : text, number, date, datetime, boolean ou url.', 'key is the key to use in a record’s fields; type: text, number, date, datetime, boolean or url.')}</p>
+      </Route>
+
+      <Route ep="POST /v1/fields">
+        <Bloc legende={commande}>{curl('/v1/fields', EXEMPLES_CORPS.champCree.corps)}</Bloc>
+        <Sous>{t('Réponse 201', '201 response')}</Sous>
+        <Bloc legende="JSON">{json(EXEMPLES_REPONSES.champCree)}</Bloc>
+        <p>{t('La clé vient du libellé (minuscules, sans accents, _ entre les mots) et ne change plus. Renommer ou supprimer un champ se fait dans la console.', 'The key comes from the label (lowercase, no accents, _ between words) and never changes. Renaming or deleting a field is done in the console.')}</p>
+        <Sous>{erreurs}</Sous>
+        <Erreurs
+          lignes={[
+            ['invalid_body', t('Libellé vide ou trop long (100), type inconnu.', 'Empty or too long label (100), unknown type.')],
+            ['field_exists', t('Un champ porte déjà cette clé, ou c’est le libellé d’un champ de base (Nom, Téléphone…).', 'A field already has this key, or it is a base field’s label (Name, Phone…).')],
+          ]}
+        />
+      </Route>
     </>
   );
 }

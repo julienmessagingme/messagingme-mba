@@ -1048,6 +1048,12 @@ async function main(): Promise<void> {
     rcs: { messages: rcsMessageStore, agents: workflowRuntime.rcsStack.agents },
   };
 
+  /**
+   * Les suppressions de contacts du jour de l'offre (lot 6), sur le compteur partagé des copies : le MÊME objet pour la
+   * purge du mini-CRM et `DELETE /v1/contacts/{id}` (lot 13, domaine 5), qui comptent donc dans la même limite.
+   */
+  const quotaSuppressions = new QuotaSuppressions({ offres, compteur: compteurDebit });
+
   const app = buildServer({
     /**
      * 🔴 Le compteur des plafonds de débit, PARTAGÉ par toutes les copies de l'API (migration 0186). Oublié,
@@ -1909,7 +1915,7 @@ async function main(): Promise<void> {
       ensureSocleField: async (tenant, key, label, type) => { await ensureFieldByKey(fieldStore, tenant, key, label, type); },
       // Création à la main : même upsert que le webhook entrant, avec le pays par défaut du tenant.
       // Les suppressions de contacts du jour de l'offre (lot 6), sur le compteur partagé des copies.
-      suppressionsDuJour: new QuotaSuppressions({ offres, compteur: compteurDebit }),
+      suppressionsDuJour: quotaSuppressions,
       createOneContact: async (tenant, input) => {
         const [r] = await upsertContactsFromApi(tenant, [input], { contacts: contactStore, fields: fieldStore, defaultCountry: config.DEFAULT_COUNTRY as CountryCode });
         return r
@@ -2788,6 +2794,18 @@ async function main(): Promise<void> {
       templates: creationModeles,
       // Les webhooks sortants par une clé (lot 13, domaine 4) : la MÊME gestion que la console et les outils MCP.
       webhooks: { gestion: gestionEvenements, audit: auditSink },
+      /**
+       * Les contacts complets (lot 13, domaine 5) : le MÊME référentiel des champs que l'écran Contenu, et l'effacement
+       * de la purge du mini-CRM (même limite du jour, même retrait chez l'agent de Meta, même suivi en fond).
+       */
+      contactsAdmin: {
+        champs: fieldStore,
+        contacts: contactStore,
+        suppressionsDuJour: quotaSuppressions,
+        listeDeLAgent,
+        enVol: travauxEnVol,
+        audit: auditSink,
+      },
       /**
        * Serveur MCP (`POST /mcp`) : les mêmes fonctions que la console, jamais des variantes. Un outil MCP
        * n'est qu'un second appelant : une garde qui change (fenêtre de 24 h, prise de fil, scope tenant) change

@@ -58,6 +58,7 @@ function KeysInner({ session }: { session: Session }) {
     'conversations:read': t('Lire les conversations et leurs messages', 'Read conversations and their messages'),
     'templates:write': t('Créer des modèles et suivre leur validation', 'Create templates and follow their review'),
     'webhooks:write': t('Gérer les webhooks sortants et lire leur journal', 'Manage outgoing webhooks and read their log'),
+    'contacts:admin': t('Créer des champs et effacer des fiches (RGPD)', 'Create fields and erase records (GDPR)'),
   };
 
   function toggleScope(s: string) {
