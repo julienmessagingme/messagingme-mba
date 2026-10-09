@@ -125,6 +125,16 @@ cartes), et deux entrées dans l'en-tête, **Industries** et **Pricing**, dont l
 disent « Page en construction » et proposent la démo. Elles sont en `noindex` et hors sitemap tant qu'elles n'ont pas
 de contenu. Le menu du bureau passant à 561 px, le burger prend le relais jusqu'à 820 px (au lieu de 640).
 
+Le même jour, sur ses retours :
+- La une de l'accueil joue la conversation en boucle (15 s, seulement à l'écran) : les messages des deux téléphones
+  arrivent un à un, la carte « Analysé par Messaging Me » jaillit quand la conversation WhatsApp est dépliée, les
+  vignettes CRM montent, puis tout repart. En mouvement réduit, tout reste affiché. « Les fonctionnalités » quitte
+  la une, la démo reste.
+- Le bandeau reprend celui de messagingme.fr : le menu part du logo après un trait, un trait souligne le bandeau et
+  s'efface au défilement, les drapeaux FR et UK (l'anglais n'existe pas encore : le drapeau ne mène nulle part et le
+  dit), « Se connecter » en vert comme « Nous contacter », les boutons en pilule, plus d'espace au-dessus de la une.
+  Plus large, le bandeau passe au burger jusqu'à 1000 px.
+
 ## Essai réel qui clôt
 
 Julien parcourt les deux pages en production, sur ordinateur et sur son téléphone : il ouvre le menu, lance les

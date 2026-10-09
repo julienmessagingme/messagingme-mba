@@ -68,6 +68,9 @@
   <symbol id="i-lightning" viewBox="0 0 256 256"><path d="M215.79,118.17a8,8,0,0,0-5-5.66L153.18,90.9l14.66-73.33a8,8,0,0,0-13.69-7l-112,120a8,8,0,0,0,3,13l57.63,21.61L88.16,238.43a8,8,0,0,0,13.69,7l112-120A8,8,0,0,0,215.79,118.17ZM109.37,214l10.47-52.38a8,8,0,0,0-5-9.06L62,132.71l84.62-90.66L136.16,94.43a8,8,0,0,0,5,9.06l52.8,19.8Z"/></symbol>
   <symbol id="i-buildings" viewBox="0 0 256 256"><path d="M240,208H224V96a16,16,0,0,0-16-16H144V32a16,16,0,0,0-24.88-13.32L39.12,72A16,16,0,0,0,32,85.34V208H16a8,8,0,0,0,0,16H240a8,8,0,0,0,0-16ZM208,96V208H144V96ZM48,85.34,128,32V208H48ZM112,112v16a8,8,0,0,1-16,0V112a8,8,0,1,1,16,0Zm-32,0v16a8,8,0,0,1-16,0V112a8,8,0,1,1,16,0Zm0,56v16a8,8,0,0,1-16,0V168a8,8,0,0,1,16,0Zm32,0v16a8,8,0,0,1-16,0V168a8,8,0,0,1,16,0Z"/></symbol>
   <symbol id="i-tag" viewBox="0 0 256 256"><path d="M243.31,136,144,36.69A15.86,15.86,0,0,0,132.69,32H40a8,8,0,0,0-8,8v92.69A15.86,15.86,0,0,0,36.69,144L136,243.31a16,16,0,0,0,22.63,0l84.68-84.68a16,16,0,0,0,0-22.63Zm-96,96L48,132.69V48h84.69L232,147.31ZM96,84A12,12,0,1,1,84,72,12,12,0,0,1,96,84Z"/></symbol>
+  <symbol id="i-sign-in" viewBox="0 0 256 256"><path d="M141.66,133.66l-40,40a8,8,0,0,1-11.32-11.32L116.69,136H24a8,8,0,0,1,0-16h92.69L90.34,93.66a8,8,0,0,1,11.32-11.32l40,40A8,8,0,0,1,141.66,133.66ZM200,32H136a8,8,0,0,0,0,16h56V208H136a8,8,0,0,0,0,16h64a8,8,0,0,0,8-8V40A8,8,0,0,0,200,32Z"/></symbol>
+  <symbol id="drapeau-fr" viewBox="0 0 3 2"><path fill="#0055A4" d="M0 0h1v2H0z"/><path fill="#FFFFFF" d="M1 0h1v2H1z"/><path fill="#EF4135" d="M2 0h1v2H2z"/></symbol>
+  <symbol id="drapeau-uk" viewBox="0 0 60 30" preserveAspectRatio="xMidYMid slice"><path fill="#012169" d="M0 0h60v30H0z"/><path d="M0 0l60 30M60 0L0 30" stroke="#FFFFFF" stroke-width="6"/><path d="M0 0l60 30M60 0L0 30" stroke="#C8102E" stroke-width="2"/><path d="M30 0v30M0 15h60" stroke="#FFFFFF" stroke-width="10"/><path d="M30 0v30M0 15h60" stroke="#C8102E" stroke-width="6"/></symbol>
 </svg>
 
 <span class="sentinelle" aria-hidden="true"></span>
@@ -91,7 +94,11 @@
       <a class="burger-ligne" href="/industries/">Industries</a>
       <a class="burger-ligne" href="/pricing/" aria-current="page">Pricing</a>
       <a class="burger-ligne" href="/#developpeurs">Développeurs</a>
-      <a class="bouton bouton-plein burger-connexion" href="https://console.messagingme.app/login">Se connecter</a>
+      <div class="langues burger-langues" role="group" aria-label="Langue du site">
+        <span class="langue" aria-current="true" title="Français"><svg aria-hidden="true"><use href="#drapeau-fr"/></svg><span class="masque">Français, langue du site</span></span>
+        <span class="langue" title="English version coming soon"><svg aria-hidden="true"><use href="#drapeau-uk"/></svg><span class="masque">English, coming soon</span></span>
+      </div>
+      <a class="bouton bouton-vert burger-connexion" href="https://console.messagingme.app/login">Se connecter<span class="bouton-rond" aria-hidden="true"><svg class="ic"><use href="#i-sign-in"/></svg></span></a>
     </div>
   </details>
   <nav class="nav" aria-label="Principale">
@@ -109,7 +116,13 @@
     <a class="lien" href="/industries/">Industries</a>
     <a class="lien" href="/pricing/" aria-current="page">Pricing</a>
     <a class="lien nav-dev" href="/#developpeurs">Développeurs</a>
-    <a class="bouton bouton-trait" href="https://console.messagingme.app/login">Se connecter</a>
+    <div class="nav-droite">
+      <div class="langues" role="group" aria-label="Langue du site">
+        <span class="langue" aria-current="true" title="Français"><svg aria-hidden="true"><use href="#drapeau-fr"/></svg><span class="masque">Français, langue du site</span></span>
+        <span class="langue" title="English version coming soon"><svg aria-hidden="true"><use href="#drapeau-uk"/></svg><span class="masque">English, coming soon</span></span>
+      </div>
+      <a class="bouton bouton-vert" href="https://console.messagingme.app/login">Se connecter<span class="bouton-rond" aria-hidden="true"><svg class="ic"><use href="#i-sign-in"/></svg></span></a>
+    </div>
   </nav>
 </header>
 </div>
