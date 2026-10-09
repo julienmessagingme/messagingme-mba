@@ -2037,8 +2037,10 @@ adresses servies (`adressesServies`, le même gel par l'offre), une ligne par ad
 chemin de `template.status_changed` (lot 13, domaine 3, livraison C) : le champ `message_template_status_update` de
 Meta, au niveau du COMPTE, devient une source `template_status` du découpage (`parse.ts`, clé
 `tpl:<modèle>:<statut>:<instant de Meta>`), puis l'étape `processStatutsModeles` retrouve l'espace par son compte
-(`waba.id`) dans la file `webhook`, isolée par `tenter`. L'identifiant d'événement dérive de cette clé : une
-redélivrance ne part pas deux fois. L'application Meta doit être abonnée au champ (geste du tableau de bord).
+(`waba.id`) dans la file `webhook` (`nAQueDesAccuses` n'envoie jamais un statut de modèle vers la file des accusés).
+Un payload qui ne porte que des statuts de modèles lève sur une panne et se rejoue ; mêlé à des messages, l'étape est
+isolée par `tenter`. L'identifiant d'événement dérive de la clé : une redélivrance ne part pas deux fois. L'application
+Meta doit être abonnée au champ (geste du tableau de bord).
 
 ### Plusieurs copies de l'API : ce qui ne doit arriver qu'une fois se garde en base
 

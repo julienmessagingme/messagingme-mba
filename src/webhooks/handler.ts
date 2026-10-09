@@ -158,9 +158,19 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
     if (!isNew && ev.dedupKey.startsWith('msg:')) alreadySeen.add(ev.dedupKey.slice(4));
   }
   if (delivery) await processStatuses(events, delivery, { tarifs: tarifsMeta, echecsLibres, nodeEvents, remiseMba, signaux: signauxAccuse });
-  // Isolé : une panne ici ne rejoue pas les messages du webhook (journalisée par `tenter`). Rejouable sans double envoi.
+  /**
+   * Un payload qui ne porte QUE des statuts de modèles : une panne lève et fait rejouer le job par pg-boss, sans risque
+   * (rien d'autre à rejouer, identifiant d'événement stable, ligne d'envoi unique par adresse). Mêlé à des messages :
+   * isolé par `tenter`, une panne ne rejoue pas les messages, et ce statut-là est perdu, journalisé.
+   * ⚠️ Une ligne d'envoi écrite dont l'enfilement échoue reste « en cours » sans relance automatique, comme pour les
+   * signaux : seul le rejeu manuel la reprend (`ORPHELIN_SQL`).
+   */
   const { statutsModeles } = deps;
-  if (statutsModeles) await tenter('handleWebhookJob: statut de modèle ignoré:', () => processStatutsModeles(events, statutsModeles));
+  if (statutsModeles) {
+    const seulementDesModeles = events.length > 0 && events.every((e) => e.source === 'template_status');
+    if (seulementDesModeles) await processStatutsModeles(events, statutsModeles);
+    else await tenter('handleWebhookJob: statut de modèle ignoré:', () => processStatutsModeles(events, statutsModeles));
+  }
   // Contacts créés par ce webhook (clé `tenant:waId`) : le signal « 1er message d'un contact inconnu » n'existe
   // qu'à l'instant de l'upsert, on le capture pour la durée de ce job. Limite assumée : il ne survit pas à un retry
   // pg-boss (la fiche existe déjà, `new_contact` ne part pas) ; le rendre infaillible coûterait une requête par

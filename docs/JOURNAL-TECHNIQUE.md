@@ -5,6 +5,16 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-09 : la validation d'un modèle devient un événement (lot 13, domaine 3, livraison C), en production
+
+`cbaa9933`, CI verte job par job, aucune migration. `template.status_changed` naît du champ
+`message_template_status_update` de Meta, au niveau du compte WhatsApp : l'espace se retrouve par `waba.id`, et la
+distribution d'un événement d'espace partage avec les signaux les adresses servies et le gel par l'offre. L'application
+Meta n'y est pas encore abonnée (lu le même jour) : Julien s'y abonnera, et rien n'arrive d'ici là. Relecture : aucun
+rouge, trois jaunes, poussés ensuite : un lot mixte « accusés plus statut de modèle » partait sur la file des accusés,
+qui n'a pas l'étape ; une panne sur un payload de modèles seul se rejoue désormais au lieu d'être perdue ; le câblage
+du worker est tenu par un test.
+
 ## 2026-10-09 : Claude envoie un modèle à une personne (lot 13, domaine 3, livraison B), en production
 
 `3e0f2f39`, CI verte job par job, aucune migration, `up` de l'API, des deux workers et de `mba-web` ; cinq portes à

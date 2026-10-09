@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { parseWebhook } from '../src/webhooks/parse';
+import { nAQueDesAccuses, parseWebhook } from '../src/webhooks/parse';
+import { handleWebhookJob } from '../src/webhooks/handler';
+import type { EventStore } from '../src/webhooks/store';
+import { readFileSync } from 'node:fs';
 import { processStatutsModeles, type StatutsModelesDeps } from '../src/webhooks/statuts-modeles';
 import { distribuerEvenementEspace, type DepsDistributionEspace, type LigneEnvoi } from '../src/evenements/distribution';
 import { CHAMPS_DU_TYPE, TYPES_ABONNABLES, TYPES_DECOCHES_PAR_DEFAUT } from '../src/evenements/types';
@@ -119,5 +122,51 @@ describe('la distribution d’un événement d’espace (sans contact)', () => {
   it('le type s’abonne, et il est coché par défaut à la création d’une adresse', () => {
     expect(TYPES_ABONNABLES).toContain('template.status_changed');
     expect(TYPES_DECOCHES_PAR_DEFAUT.has('template.status_changed')).toBe(false);
+  });
+});
+
+describe('le statut d’un modèle dans le traitement du webhook', () => {
+  const store: EventStore = { insertEvent: async () => true } as unknown as EventStore;
+  const accuse = {
+    field: 'messages',
+    value: { metadata: { phone_number_id: 'pn-1' }, statuses: [{ id: 'wamid.A', status: 'delivered', recipient_id: '33600000001' }] },
+  };
+
+  it('🔴 un statut de modèle part sur la file des entrants, seul ou mêlé à des accusés : celle des accusés n’a pas son étape', () => {
+    expect(nAQueDesAccuses(statut())).toBe(false);
+    const mixte = statut();
+    mixte.entry[0]!.changes.push(accuse as never);
+    expect(nAQueDesAccuses(mixte)).toBe(false);
+    expect(nAQueDesAccuses({ entry: [{ id: 'waba-1', changes: [accuse] }] })).toBe(true);
+  });
+
+  it('🔴 handleWebhookJob appelle l’étape : un payload de modèle seul distribue une fois', async () => {
+    const vus: string[] = [];
+    await handleWebhookJob(statut(), {
+      store,
+      statutsModeles: { espaceDuCompte: async () => 't1', distribuer: async (t) => { vus.push(t); } },
+    });
+    expect(vus).toEqual(['t1']);
+  });
+
+  it('🔴 une panne sur un payload de modèles SEUL fait rejouer le job ; mêlée à un message, elle ne fait rien tomber', async () => {
+    const enPanne = { espaceDuCompte: async () => 't1', distribuer: async () => { throw new Error('base indisponible'); } };
+    await expect(handleWebhookJob(statut(), { store, statutsModeles: enPanne })).rejects.toThrow(/base indisponible/);
+    const mixte = statut();
+    mixte.entry[0]!.changes.push({
+      field: 'messages',
+      value: { metadata: { phone_number_id: 'pn-1' }, messages: [{ id: 'wamid.B', from: '33600000001', type: 'text', text: { body: 'bonjour' } }] },
+    } as never);
+    await expect(handleWebhookJob(mixte, { store, statutsModeles: enPanne })).resolves.toBeUndefined();
+  });
+});
+
+describe('le câblage dans le worker', () => {
+  it('🔴 la file des entrants porte l’étape, sur la MÊME distribution que les signaux', () => {
+    // `statutsModeles` est optionnel dans `handleWebhookJob` : sans cette lecture, son retrait du worker compilerait.
+    const worker = readFileSync('src/worker.ts', 'utf8');
+    const fileEntrants = worker.slice(worker.indexOf("await queue.work('webhook', "), worker.indexOf("await queue.work('webhook-status', "));
+    expect(fileEntrants).toMatch(/statutsModeles: \{\s*espaceDuCompte: \(waba\) => repo\.espaceDuCompteWhatsapp\(waba\),\s*distribuer: async \(t, ev\) => \{ await distribuerEvenementEspace\(depsDistributionEspace, t, ev\); \},/);
+    expect(worker).toMatch(/creerTravailDistribution\(\{\s*\.\.\.depsDistributionEspace,/);
   });
 });

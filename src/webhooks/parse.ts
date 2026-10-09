@@ -66,6 +66,8 @@ export function nAQueDesAccuses(payload: unknown): boolean {
       if (asArray(value['messages']).length > 0) return false;
       if (asArray(value['message_echoes']).length > 0) return false;
       if (change['field'] === 'messaging_handovers') return false;
+      // Le statut d'un modèle (lot 13, domaine 3, C) : la file des accusés n'a pas son étape, il se perdrait.
+      if (change['field'] === 'message_template_status_update') return false;
       accuses += asArray(value['statuses']).length;
     }
   }
