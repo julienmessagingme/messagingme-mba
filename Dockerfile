@@ -48,6 +48,12 @@ COPY --chown=node:node docs/aide ./docs/aide
 # (pas de crash import-time sur un mount manquant), reproductible et compatible Railway. Cf. src/db/ssl.ts (4.11).
 COPY --chown=node:node certs ./certs
 
+# 🔴 LA RÉVISION CONSTRUITE, que `/ops` affiche : l'image n'a pas `.git` (`.dockerignore`), elle la reçoit du compose
+# (`REVISION=$(git rev-parse --short HEAD)` devant `docker compose`, `DEPLOY.md`). Oubliée, elle vaut « inconnue »,
+# jamais une révision devinée. En dernier : elle change à chaque commit, et les couches du dessus restent en cache.
+ARG REVISION=inconnue
+ENV REVISION=$REVISION
+
 EXPOSE 8095
 # API par défaut ; le worker surcharge la commande (voir docker-compose).
 CMD ["npx", "tsx", "src/index.ts"]

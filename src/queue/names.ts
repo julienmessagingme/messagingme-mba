@@ -200,6 +200,17 @@ export function notifieePour(queue: string): boolean {
 }
 
 /**
+ * Le seuil d'alerte de `/ops` sur la latence d'une file (p95 de l'attente et de bout en bout, sur 24 h). 30 s, le SLO
+ * d'un message entrant ; mais une file LENTE PAR CONSTRUCTION (`webhook-status`, les traitements de fond, sondés toutes
+ * les 30 s) attend jusqu'à une cadence avant même d'être vue, et passait au rouge en marchant comme prévu : trois
+ * cadences pour elle. DÉRIVÉ de la cadence, jamais recopié : une file ajoutée reçoit le seuil de sa classe.
+ */
+export const SEUIL_LATENCE_SECONDES = 30;
+export function seuilLatenceSecondes(queue: string): number {
+  return Math.max(SEUIL_LATENCE_SECONDES, 3 * pollingSecondsFor(queue));
+}
+
+/**
  * Cadence de sondage d'une file, DLQ comprise. Une DLQ n'est qu'un dépôt inspecté par /ops -> 60 s. Une file
  * inconnue retombe sur 5 s : assez lent pour l'egress, assez vif pour un chemin interactif non déclaré.
  */

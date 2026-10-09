@@ -70,7 +70,7 @@ Créer dans Cloudflare `mba.messagingme.app` -> A `$VPS`, **Proxied** (orange).
 ssh -i ~/.ssh/id_ed25519 ubuntu@$VPS
 cd /home/ubuntu/mba
 git pull            # si nouveau code
-sudo docker compose up -d --build
+sudo REVISION=$(git rev-parse --short HEAD) docker compose up -d --build
 sudo docker compose ps                    # mba-api, mba-worker, mba-web up
 sudo docker compose logs --tail=20 mba-api mba-worker mba-web
 # attendu : api "en écoute :8095", worker "démarré ... [DRY_RUN]", web "Ready"
@@ -118,10 +118,15 @@ migrations en attente sur la base partagée :
 
 ```bash
 cd /home/ubuntu/mba && git pull
-sudo docker compose build mba-api                                # 1) OBLIGATOIRE avant de migrer, cf. ci-dessous
+export REVISION=$(git rev-parse --short HEAD)                     # 0) la révision que /ops affichera
+sudo REVISION="$REVISION" docker compose build mba-api         # 1) OBLIGATOIRE avant de migrer, cf. ci-dessous
 sudo docker compose run --rm --no-deps mba-api npm run migrate   # 2) applique les migrations (idempotent)
-sudo docker compose up -d --build                                # 3) bascule les services
+sudo REVISION="$REVISION" docker compose up -d --build         # 3) bascule les services
 ```
+
+⚠️ **`REVISION` passe à CHAQUE `build` et `up --build`**, nommée après `sudo` (qui ne transmet pas l'environnement ;
+`sudo -E` le transmettrait TOUT, `HOME` compris) : une reconstruction sans elle
+repose « inconnue », que `/ops` affiche sous son titre. Ce n'est qu'un affichage, rien d'autre ne la lit.
 
 ⚠️ **Avec une seule copie de l'API, le trou du `up` peut s'allonger jusqu'à ~20 s** si un envoi du relais de l'agent de Meta (ou le signal d'un clic) est en vol : l'arrêt de l'ancien conteneur l'attend (`ATTENTE_GESTES_A_L_ARRET_MS`) avant de rendre la place. Rien n'est perdu : les webhooks de Meta non acquittés sont rejoués par Meta.
 
@@ -172,7 +177,7 @@ n'ont pas été relues. Une fiche relue est une fiche à recharger.
 
 ```bash
 cd /home/ubuntu/mba && git pull
-sudo docker compose up -d --build                                # 1) deploy le code qui ne lit plus la colonne
+sudo REVISION=$(git rev-parse --short HEAD) docker compose up -d --build   # 1) deploy le code qui ne lit plus la colonne
 sudo docker compose run --rm --no-deps mba-api npm run migrate   # 2) PUIS drop la colonne
 ```
 
@@ -184,8 +189,8 @@ le worker. Et pg-boss VÉRIFIE au démarrage de l'API que le schéma est à la v
 stricte, donc dans les deux sens). Les déploiements ordinaires ne sont pas concernés. Une version de pg-boss qui
 change son schéma impose en revanche deux règles :
 
-- **le worker d'abord** : `sudo docker compose up -d --build mba-worker`, attendre dans ses journaux sa ligne
-  « démarré » (sa migration est faite), PUIS `sudo docker compose up -d --build mba-api`. Un `up -d --build` des deux
+- **le worker d'abord** : `sudo REVISION=$(git rev-parse --short HEAD) docker compose up -d --build mba-worker`, attendre dans ses journaux sa ligne
+  « démarré » (sa migration est faite), PUIS la même commande pour `mba-api`. Un `up -d --build` des deux
   à la fois marche aussi, en plus bruyant : l'API refuse de démarrer (« c'est le WORKER qui le fait ») et Docker la
   relance (`restart: unless-stopped`) jusqu'à la fin de la migration, pendant quoi Meta reçoit des erreurs et rejoue.
 - **un retour arrière de l'image APRÈS cette migration ne redémarre plus l'API** (schéma plus récent que son code) :
@@ -207,7 +212,7 @@ timing : `up -d` REND LA MAIN avant que la recréation soit finie, donc le reloa
 sur l'ancienne adresse. Un second reload, quelques secondes plus tard, a tout remis d'aplomb.
 
 ```bash
-sudo docker compose up -d --build
+sudo REVISION=$(git rev-parse --short HEAD) docker compose up -d --build
 until [ "$(sudo docker inspect -f '{{.State.Health.Status}}' mba-api)" = healthy ]; do sleep 2; done
 sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload
 ```

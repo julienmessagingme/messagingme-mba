@@ -6,6 +6,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # La révision construite, affichée dans `/ops` (`Dockerfile`, `DEPLOY.md`).
+      args:
+        REVISION: ${REVISION:-inconnue}
     container_name: mba-api
     env_file: .env.prod
     restart: unless-stopped
@@ -36,6 +39,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # La révision construite, affichée dans `/ops` (`Dockerfile`, `DEPLOY.md`).
+      args:
+        REVISION: ${REVISION:-inconnue}
     container_name: mba-worker
     command: ["npx", "tsx", "src/worker.ts"]
     env_file: .env.prod
@@ -63,6 +69,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # La révision construite, affichée dans `/ops` (`Dockerfile`, `DEPLOY.md`).
+      args:
+        REVISION: ${REVISION:-inconnue}
     container_name: mba-worker-analyse
     command: ["npx", "tsx", "src/worker.ts"]
     env_file: .env.prod

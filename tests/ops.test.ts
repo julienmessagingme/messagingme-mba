@@ -41,6 +41,29 @@ function app(over: Surcharges = {}) {
 const withTok = (t: string) => ({ headers: { authorization: `Bearer ${t}` } });
 
 describe('route /ops/overview', () => {
+  it('la révision de l’API, posée à la construction de l’image ; « inconnue » sans elle', async () => {
+    const avant = process.env.REVISION;
+    const server = app();
+    try {
+      process.env.REVISION = 'abc1234';
+      expect((await server.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) })).json<{ revision: string }>().revision).toBe('abc1234');
+      delete process.env.REVISION;
+      expect((await server.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) })).json<{ revision: string }>().revision).toBe('inconnue');
+    } finally {
+      if (avant === undefined) delete process.env.REVISION; else process.env.REVISION = avant;
+      await server.close();
+    }
+  });
+
+  it('🔴 chaque ligne de latence porte le seuil de SA file : 30 s pour un entrant, trois cadences pour le fond', async () => {
+    const ligne = (queue: string) => ({ queue, echantillons: 3, attenteP50Secondes: 1, attenteP95Secondes: 40, boutEnBoutP95Secondes: 41, boutEnBoutMaxSecondes: 50 });
+    const server = app({ exploitation: { getQueueLatence: async () => [ligne('webhook'), ligne('webhook-status')] } });
+    const res = await server.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) });
+    const latences = res.json<{ latences: Array<{ queue: string; seuilSecondes: number }> }>().latences;
+    expect(latences.map((l) => [l.queue, l.seuilSecondes])).toEqual([['webhook', 30], ['webhook-status', 90]]);
+    await server.close();
+  });
+
   it('session d’exploitation -> 200 { tenants, daily, queues, workers }', async () => {
     const server = app();
     const res = await server.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) });

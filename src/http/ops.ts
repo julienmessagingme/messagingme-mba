@@ -10,6 +10,7 @@ import type { TacheMesureRow } from '../ops/mesure-taches';
 import type { MesureStockage } from '../ops/stockage.pg';
 import type { LatenceHttpRow } from '../ops/latence-http';
 import type { BilanRisque } from '../engagement/balayage';
+import { seuilLatenceSecondes } from '../queue/names';
 import { messageDe } from '../lib/erreur';
 
 /**
@@ -230,7 +231,14 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
       deps.mesuresTaches.lire(24).catch(() => []),
     ]);
     const poolInstantane = deps.etatPoolInstantane();
-    return reply.code(200).send({ tenants, daily, queues, workers, queuesParGroupe, poolInstantane, attentesPool, latences, latencesHttp, tachesFond });
+    return reply.code(200).send({
+      tenants, daily, queues, workers, queuesParGroupe, poolInstantane, attentesPool,
+      // Chaque ligne porte SON seuil (`seuilLatenceSecondes`) : l'écran ne tient aucune liste de files.
+      latences: latences.map((l) => ({ ...l, seuilSecondes: seuilLatenceSecondes(l.queue) })),
+      latencesHttp, tachesFond,
+      // La révision de CETTE copie de l'API, posée à la construction de l'image (`Dockerfile`, `ARG REVISION`).
+      revision: process.env.REVISION || 'inconnue',
+    });
   });
 
   /** Les octets en base : lus une fois à l'ouverture de l'écran, pas à chaque chargement de la vue d'ensemble (voir `PgStockageStore`). */

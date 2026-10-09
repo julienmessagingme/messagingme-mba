@@ -1940,6 +1940,12 @@ La cadence de polling se règle **par file**, sur la latence réellement utile, 
 | de fond (personne n'attend) | 30 s | `webhook-status`, `analyze-conversation`, `push-analysis`, `hubspot-catchup`, `optout-poussee`, les files d'adaptateur de signaux (`signaux-batch`, et toute future `signaux-*`) |
 | dépôt inspecté, consommé par personne | 60 s | toute DLQ |
 
+La carte de latence de `/ops` passe au rouge au-delà du seuil de la FILE (`seuilLatenceSecondes`, même fichier) : 30 s,
+le SLO d'un message entrant, ou trois cadences pour une file sondée lentement, qui attend jusqu'à une cadence avant même
+d'être vue. Le serveur l'envoie avec chaque ligne ; l'écran ne tient aucune liste de files. ⚠️ `webhook-status` reste
+vert jusqu'à 90 s, alors que le retour d'un fil à l'agent de Meta attend l'accusé de notre dernier envoi
+(`demanderReleaseMba`) : une reprise retenue jusque-là ne se voit pas en rouge.
+
 🔴 **Pourquoi pas le défaut de pg-boss (2 s partout)** : mesuré, le polling à vide des quatre process (mba api
 et worker, mm-hubspot api et worker) produisait 663 000 requêtes et 249 Mo d'egress par jour pour 157 jobs en
 table, soit 7,5 Go par mois contre 5 Go inclus. L'egress d'un sondage à vide est du pur overhead.

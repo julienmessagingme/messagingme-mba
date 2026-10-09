@@ -444,6 +444,11 @@ Le défaut de rafale et l'attente de 15 min au crash sont corrigés et déployé
   60 s après une tâche si rien ne la réveille. Pas mesuré : une campagne avec un bloc agent peut produire plus de
   douze tours d'un coup. À passer au banc (épreuve `rafale` adaptée), avant d'étendre `FILES_VIDEES_EN_CONTINU`
   (`agent-turn` a douze boucles : un filet court y coûterait cher, le vidage non).
+- **Les relevés hors de `repeterAvecGigue`** : `ParcoursNumero.tsx` (deux `setInterval`) et `CreationModeleEnLigne.tsx`
+  (toutes les 15 s) continuent de relever en 401 après l'expiration de la session. Les faire passer par lui.
+- **Borner la préparation d'une file** (`PgBossQueue.ensure`) : partagée, une préparation BLOQUÉE (verrou, connexion à
+  moitié morte, aucune limite de durée de requête sur ce pool) fait attendre tous les enfilements de la file jusqu'à
+  l'abandon TCP. Avant, seul l'appel en cours restait pris. Un `Promise.race` d'une quinzaine de secondes suffirait.
 - **Compter les reprises par battement** (« job heartbeat timeout ») dans `/ops` : c'est ce qui dira si de faux
   orphelins existent (une tâche vivante dont les battements n'ont pas pu partir).
 - Le banc : programmer les sondages des onglets depuis le début du geste précédent (la console tire à heure fixe,

@@ -5,6 +5,20 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-09 : plan de performance, lots 1, 2 et 4
+
+- **Lot 1, les relevés périodiques s'arrêtent à l'expiration de la session** (`repeterAvecGigue`, `web/lib/poll.ts`). Ils
+  ne s'arrêtaient qu'au démontage de l'écran : un onglet expiré laissé ouvert enchaînait les 401 jusqu'à sa fermeture
+  (738 mesurés sur la seule pastille des non-lus ; l'Inbox relève son fil toutes les 4 s, huit fois plus). Le relevé
+  écoute désormais l'événement « session expirée » que la console émettait déjà. Cela couvre ceux qui passent par lui
+  (la pastille, l'Inbox) ; deux écrans relèvent encore par leur propre minuterie (`todo.md`).
+- **Lot 2, le seuil de latence de `/ops` dépend de la file** (`seuilLatenceSecondes`, `src/queue/names.ts`) : 30 s, ou
+  trois cadences pour une file sondée toutes les 30 s. `webhook-status` passait au rouge en marchant comme prévu. Le
+  seuil est DÉRIVÉ de la cadence et envoyé avec chaque ligne : une file ajoutée reçoit celui de sa classe.
+- **Lot 4, la révision de l'API se lit sous le titre de `/ops`.** L'image n'a pas `.git` : elle reçoit la révision par
+  `ARG REVISION`, que le compose transmet depuis `REVISION=$(git rev-parse --short HEAD)` (`DEPLOY.md`). Oubliée, elle
+  vaut « inconnue », jamais une révision devinée.
+
 ## 2026-10-09 : la préparation d'une file se partage (lot 3 du plan de performance)
 
 `PgBossQueue.ensure` ne retenait une file qu'APRÈS l'avoir préparée (création, file des morts, trois réglages : 3 à 5

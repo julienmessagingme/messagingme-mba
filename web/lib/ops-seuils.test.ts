@@ -26,19 +26,21 @@ const sansCommentaires = source
 describe('carte de latence : ce qui déclenche le rouge', () => {
   it('🔴 le bout en bout a son propre seuil, il n’est plus affiché sans alarme', () => {
     expect(sansCommentaires, 'le bout en bout doit être comparé au seuil')
-      .toMatch(/l\.boutEnBoutP95Secondes >= SEUIL_S/);
+      .toMatch(/l\.boutEnBoutP95Secondes >= seuilDe\(l\)/);
   });
 
   it('l’attente garde le sien : les deux mesures ne se corrigent pas au même endroit', () => {
     // Remplacer l'un par l'autre aurait fermé un trou en en ouvrant un second : une file dont l'attente
     // explose mais dont le traitement reste court redeviendrait verte.
-    expect(sansCommentaires).toMatch(/l\.attenteP95Secondes >= SEUIL_S/);
+    expect(sansCommentaires).toMatch(/l\.attenteP95Secondes >= seuilDe\(l\)/);
   });
 
-  it('🔴 le seuil est une constante NOMMÉE, plus un littéral recopié', () => {
+  it('🔴 le seuil est celui de la FILE, avec un repli NOMMÉ, plus un littéral recopié', () => {
     // Deux littéraux `30` à deux endroits, c'est deux endroits à corriger le jour où le SLO bouge, et un seul
-    // qu'on corrigera.
-    expect(sansCommentaires).toMatch(/const SEUIL_S = 30;/);
+    // qu'on corrigera. Le seuil vient du serveur (`seuilLatenceSecondes`, dérivé de la cadence de la file) ; le
+    // repli ne sert qu'à une API d'avant.
+    expect(sansCommentaires).toMatch(/const SEUIL_DEFAUT_S = 30;/);
+    expect(sansCommentaires).toMatch(/l\.seuilSecondes \?\? SEUIL_DEFAUT_S/);
     expect(sansCommentaires, 'plus aucune comparaison à un 30 en dur').not.toMatch(/Secondes >= 30\b/);
   });
 

@@ -147,6 +147,11 @@ export default function OpsPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <TitrePage>{t("Console d’exploitation", 'Operations console')}</TitrePage>
+            {data?.revision && (
+              <p className="-mt-2 text-xs text-ink-500" data-testid="ops-revision">
+                {t('API en production : révision', 'API in production: revision')} <span className="font-mono text-ink-900">{data.revision}</span>
+              </p>
+            )}
             <p className="text-sm text-ink-500">
               {t('Vue cross-tenant, au nom de', 'Cross-tenant view, as')} <span className="font-medium text-ink-900" data-testid="ops-exploitant">{session.email}</span>
             </p>
@@ -685,8 +690,13 @@ function LatenceCard({ lignes }: { lignes: QueueLatenceRow[] }) {
    *
    * Chaque chiffre garde son propre seuil plutôt qu'un seuil commun : les deux ne se corrigent pas au même
    * endroit (une attente longue est un problème de capacité, un traitement long un problème de dépendance).
+   *
+   * Le seuil est celui de la FILE (`seuilSecondes`, dérivé de sa cadence par le serveur) : 30 s pour une file qu'un
+   * contact attend, trois cadences pour une file de fond, qui sinon passait au rouge en marchant comme prévu. 30 s
+   * quand une API plus ancienne ne l'envoie pas.
    */
-  const SEUIL_S = 30;
+  const SEUIL_DEFAUT_S = 30;
+  const seuilDe = (l: QueueLatenceRow): number => l.seuilSecondes ?? SEUIL_DEFAUT_S;
   return (
     <div className="rounded-carte border border-ink-200 bg-white p-5">
       <h3 className="text-sm font-semibold text-ink-900">{t('Latence réelle des files (24 h)', 'Actual queue latency (24 h)')}</h3>
@@ -713,14 +723,14 @@ function LatenceCard({ lignes }: { lignes: QueueLatenceRow[] }) {
                 </span>
                 <span
                   data-testid={`latence-p95-${l.queue}`}
-                  className={l.attenteP95Secondes >= SEUIL_S ? 'font-medium text-danger' : 'text-ink-500'}
+                  className={l.attenteP95Secondes >= seuilDe(l) ? 'font-medium text-danger' : 'text-ink-500'}
                   title={t('attente au 95e centile', '95th percentile wait')}
                 >
                   p95 {fmtSecondes(l.attenteP95Secondes)}
                 </span>
                 <span
                   data-testid={`latence-bout-en-bout-${l.queue}`}
-                  className={l.boutEnBoutP95Secondes >= SEUIL_S ? 'font-medium text-danger' : 'text-ink-500'}
+                  className={l.boutEnBoutP95Secondes >= seuilDe(l) ? 'font-medium text-danger' : 'text-ink-500'}
                   title={t('bout en bout au 95e centile (attente + traitement)', 'end-to-end 95th percentile')}
                 >
                   {t('bout en bout', 'end to end')} {fmtSecondes(l.boutEnBoutP95Secondes)}

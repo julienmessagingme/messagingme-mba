@@ -216,6 +216,8 @@ export interface WorkerHeartbeat {
 }
 export interface OpsOverview {
   tenants: TenantOverviewRow[];
+  /** La révision de l'API qui a répondu (« inconnue » si l'image a été construite sans elle) ; absente d'une API d'avant. */
+  revision?: string;
   daily: DailyPoint[];
   queues: QueueLoadRow[];
   /**
@@ -307,6 +309,8 @@ export interface QueueLatenceRow {
   /** Attente PLUS traitement : ce que l'utilisateur ressent. */
   boutEnBoutP95Secondes: number;
   boutEnBoutMaxSecondes: number;
+  /** Le seuil d'alerte de CETTE file, dérivé de sa cadence côté serveur ; absent d'une API plus ancienne. */
+  seuilSecondes?: number;
 }
 
 export interface PoolInstantane {
