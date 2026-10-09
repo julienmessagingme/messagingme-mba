@@ -25,9 +25,9 @@ COPY --chown=node:node package.json package-lock.json ./
 #
 # ⚠️ Ce qui rend ce drapeau SÛR ici, et qu'il faut revérifier avant d'ajouter une dépendance : l'application
 # tourne par `tsx`, qui est une dépendance de PRODUCTION, et qui transpile par esbuild sans avoir besoin du
-# paquet `typescript`. Les seules `devDependencies` sont les `@types/*` (effacés à l'exécution), `typescript`
-# et `vitest`. `tsconfig.json` ne déclare aucun alias de chemin, donc rien ne réclame le compilateur au
-# démarrage. Le jour où un module du chemin d'exécution dépendrait d'un paquet de développement, le conteneur
+# paquet `typescript`. Les seules `devDependencies` sont les `@types/*` (effacés à l'exécution), `typescript`,
+# `vitest` et `openapi-typescript` (les types du SDK, `npm run sdk:contrat`, jamais lu par l'API). `tsconfig.json`
+# ne déclare aucun alias de chemin, donc rien ne réclame le compilateur au démarrage. Le jour où un module du chemin d'exécution dépendrait d'un paquet de développement, le conteneur
 # ne démarrerait plus : la preuve se refait par un `compose run --rm --no-deps mba-api npm run migrate`.
 RUN npm ci --omit=dev
 

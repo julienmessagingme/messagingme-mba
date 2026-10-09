@@ -1,0 +1,108 @@
+name: SDK (publication)
+
+# 🔴 LE SDK SE PUBLIE DANS SON PROPRE DEPOT, PAS SUR NPM (lot 16, decision de Julien du 2026-10-09). Sur un push qui
+# touche `sdk/`, ce job verifie le SDK (contrat a jour, client, signature), le construit, et pousse le paquet construit
+# vers `julienmessagingme/messagingme-sdk`, puis l'etiquette `v<version>` de `sdk/package.json`. Un integrateur
+# l'installe par `npm install github:julienmessagingme/messagingme-sdk#v<version>`.
+#
+# ⚠️ INERTE SANS LE SECRET `SDK_DEPLOY_KEY` : la cle privee d'une cle de deploiement en ECRITURE sur le depot dedie,
+# creee par Julien (commande dans `wip.md`, lot 16). Sans elle, le job le dit et s'arrete en vert : rien n'est publie.
+#
+# ⚠️ UNE VERSION PUBLIEE NE BOUGE PLUS : si l'etiquette existe deja, `main` du depot dedie est mis a jour mais
+# l'etiquette reste sur l'ancien contenu, et le job le signale. Pour publier, monter la version de `sdk/package.json`.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sdk/**'
+      - '.github/workflows/sdk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Deux publications ne se croisent jamais : la seconde attend la premiere.
+concurrency:
+  group: sdk-publication
+  cancel-in-progress: false
+
+jobs:
+  publier:
+    runs-on: ubuntu-latest
+    steps:
+      - name: La cle de publication est-elle posee ?
+        id: cle
+        env:
+          CLE: ${{ secrets.SDK_DEPLOY_KEY }}
+        run: |
+          if [ -z "$CLE" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::SDK_DEPLOY_KEY absent : rien n'est publie (le depot messagingme-sdk et sa cle se creent une fois)."
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v5
+        if: steps.cle.outputs.present == 'true'
+      - uses: actions/setup-node@v5
+        if: steps.cle.outputs.present == 'true'
+        with:
+          node-version: '22'
+          cache: npm
+      - if: steps.cle.outputs.present == 'true'
+        run: npm ci
+
+      # Un SDK en retard sur l'API, ou dont la signature ne verifie plus ce que le serveur signe, ne part pas.
+      - name: Verifier le SDK
+        if: steps.cle.outputs.present == 'true'
+        run: npx vitest run tests/sdk-contrat.test.ts tests/sdk-client.test.ts tests/sdk-webhook.test.ts
+
+      - name: Construire le paquet
+        if: steps.cle.outputs.present == 'true'
+        run: |
+          npm run sdk:construire
+          mkdir -p "$RUNNER_TEMP/paquet"
+          cp sdk/package.json sdk/README.md sdk/LICENSE sdk/openapi.json "$RUNNER_TEMP/paquet/"
+          cp -r sdk/dist "$RUNNER_TEMP/paquet/dist"
+
+      - name: Pousser vers messagingme-sdk
+        if: steps.cle.outputs.present == 'true'
+        env:
+          CLE: ${{ secrets.SDK_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$CLE" > ~/.ssh/cle_sdk
+          chmod 600 ~/.ssh/cle_sdk
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/cle_sdk -o IdentitiesOnly=yes"
+          VERSION=$(node -p "require('./sdk/package.json').version")
+          SOURCE=$(git rev-parse --short=8 HEAD)
+          git clone --quiet git@github.com:julienmessagingme/messagingme-sdk.git "$RUNNER_TEMP/depot"
+          cd "$RUNNER_TEMP/depot"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config core.autocrlf false
+          # `main` repris d'origin quand il existe, quelle que soit la branche par defaut du depot ; orphelin au premier
+          # envoi (depot vide). Sans ca, un clone dont la branche par defaut n'est pas `main` partait d'une branche vide,
+          # et le second envoi etait refuse (rejoue contre un depot nu le 2026-10-09).
+          if git rev-parse --verify --quiet origin/main >/dev/null; then git checkout --quiet -B main origin/main; else git checkout --quiet --orphan main; fi
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -r "$RUNNER_TEMP/paquet/." .
+          git add -A
+          if git diff --cached --quiet; then
+            echo "::notice::rien de neuf a publier (v$VERSION)"
+          else
+            git commit --quiet -m "v$VERSION (messagingme-mba $SOURCE)"
+            git push --quiet origin main
+            PUBLIE=1
+            echo "::notice::main publie (v$VERSION, source $SOURCE)"
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
+            if [ "${PUBLIE:-0}" = 1 ]; then echo "::warning::l'etiquette v$VERSION existe deja : elle reste sur l'ancien contenu. Monter la version de sdk/package.json pour publier."; fi
+          else
+            git tag "v$VERSION"
+            git push --quiet origin "v$VERSION"
+            echo "::notice::etiquette v$VERSION posee"
+          fi
+          rm -f ~/.ssh/cle_sdk

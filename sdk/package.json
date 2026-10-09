@@ -1,0 +1,31 @@
+{
+  "name": "@messagingme/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript client for the Messaging Me API: typed calls, typed errors, webhook signature verification.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./openapi.json": "./openapi.json"
+  },
+  "files": [
+    "dist",
+    "openapi.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/julienmessagingme/messagingme-sdk.git"
+  },
+  "homepage": "https://console.messagingme.app/developers/api"
+}

@@ -18,7 +18,9 @@
     "oauth:fiches": "tsx scripts/oauth-fiches.mts",
     "aide:carte": "tsx scripts/carte-console.ts",
     "aide:charger": "tsx db/charger-aide.ts",
-    "aide:proposer": "tsx scripts/aide-proposer.ts"
+    "aide:proposer": "tsx scripts/aide-proposer.ts",
+    "sdk:contrat": "tsx scripts/sdk-contrat.ts",
+    "sdk:construire": "tsc -p sdk/tsconfig.json"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",
@@ -44,6 +46,7 @@
     "@types/papaparse": "^5.5.2",
     "@types/pg": "^8.20.0",
     "@types/qrcode": "^1.5.6",
+    "openapi-typescript": "7.13.0",
     "typescript": "^5.7.3",
     "vitest": "^2.1.8"
   }

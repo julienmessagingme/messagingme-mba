@@ -65,14 +65,30 @@ migration 0227, fiches d'identité, enregistrement dynamique) et B (la console e
 `oauth_client_enregistre` du journal de l'API dit par quelle voie chacun passe) ; reconnecter aussi Claude Code et
 claude.ai, et vérifier qu'aucun `oauth_client_enregistre` ne sort pour eux.
 
-## LOT 16 : LE CONTRAT OPENAPI ET LE SDK (2026-10-09), LIVRAISON A EN PRODUCTION
+## LOT 16 : LE CONTRAT OPENAPI ET LE SDK (2026-10-09), A EN PRODUCTION, B ATTEND LE DÉPÔT DÉDIÉ
 
 Spec `docs/superpowers/specs/2026-10-09-openapi-sdk-design.md`, plan `docs/superpowers/plans/2026-10-09-openapi-sdk.md`
 (décisions de Julien du 2026-10-09). Livraison A : le contrat (`src/api/openapi/`, `GET /openapi.json`, la section
 « Contrat OpenAPI » de la doc, `llms.txt`), aucune migration : EN PRODUCTION (`05501ec5`, jaunes de relecture
-`5fd285b4`). Livraison B ensuite : le SDK (`sdk/`), son action et son
-dépôt dédié, que Julien crée (commande fournie). Essai réel : importer le contrat dans un outil et appeler une route avec
-une clé, puis installer le SDK, créer une fiche et vérifier un webhook d'essai.
+`5fd285b4`). Livraison B : le SDK (`sdk/`, `npm run sdk:contrat`, `.github/workflows/sdk.yml`) est sur `main`, sans
+effet en production ; l'action reste inerte tant que le dépôt dédié et sa clé n'existent pas. La page « SDK » de la
+doc, `features.md` et `llms.txt` partent APRÈS la première publication, pour qu'aucune commande d'installation ne mente.
+
+**La commande de Julien** (PowerShell, une seule fois ; `ssh-keygen` demande une phrase de passe : Entrée deux fois,
+vide). Le dépôt public, une clé de déploiement en écriture sur lui seul, sa moitié privée posée en secret de ce dépôt
+sans jamais s'afficher, puis la première publication :
+
+```powershell
+gh repo create julienmessagingme/messagingme-sdk --public --description "SDK TypeScript de l'API Messaging Me"
+ssh-keygen -t ed25519 -C "publication messagingme-sdk" -f "$env:TEMP\cle_sdk"
+gh repo deploy-key add "$env:TEMP\cle_sdk.pub" --repo julienmessagingme/messagingme-sdk --title "publication depuis messagingme-mba" --allow-write
+Get-Content "$env:TEMP\cle_sdk" -Raw | gh secret set SDK_DEPLOY_KEY --repo julienmessagingme/messagingme-mba
+Remove-Item "$env:TEMP\cle_sdk", "$env:TEMP\cle_sdk.pub"
+gh workflow run sdk.yml --repo julienmessagingme/messagingme-mba
+```
+
+Essais réels : importer le contrat dans un outil et appeler une route avec une clé ; puis installer le SDK, créer une
+fiche et vérifier un webhook d'essai (liste unique : `docs/prive/ESSAIS-REELS.md`, essais 19 et 20).
 
 ## L'OFFRE GRATUITE S'APPELLE « FREE », EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ
 
@@ -1239,69 +1255,10 @@ client ordinaire rend `null`, donc ne coûte aucune requête.
 
 ## CE QUI ATTEND UN ESSAI RÉEL
 
-🔴 **Aucun des chemins livrés le 2026-09-15 et le 2026-09-16 n'a tourné sur un vrai échange.** Ils sont verts,
-déployés, et éprouvés par mutation ; aucun n'est éprouvé tout court. ⚠️ Et Julien a signalé le 2026-09-16 que
-les numéros des deux incidents ne sont pas les siens : **il ne peut pas rejouer ces deux cas-là**, ce qui
-déplace le poids sur la revue et sur les vérifications faites contre les vraies données.
-
-### 1. L'agent de Meta répond après un silence
-
-Écrire depuis un numéro dont la conversation dort depuis des jours : l'agent doit répondre, quel que soit le
-délai et quel que soit le canal du dernier échange. Puis **répondre à un scénario qui pose une question** : le
-scénario doit avancer et l'agent rester MUET. C'est cette troisième vérification qui prouve qu'on n'a rien
-cassé, et c'est la plus importante des trois.
-
-⚠️ **Ce qui peut être rejoué sans les numéros des clients** : mettre la conversation d'un numéro qu'on
-contrôle dans l'état exact de l'incident (`app_workflow` + `control_changed_at` à null), ce qui est une
-écriture réversible, puis écrire depuis ce numéro.
-
-### 2. Le journal d'audit
-
-Inviter quelqu'un, changer son rôle, créer puis révoquer une clé d'API, et ouvrir Sécurité > Audit : les
-quatre lignes doivent y être, avec le bon auteur et le bon horodatage, et **aucune ne doit porter d'email
-ailleurs que dans la colonne auteur**.
-
-### 3. Tester un scénario À PARTIR D'UN BLOC : ✅ ÇA MARCHE depuis le 2026-09-16 au soir
-
-✅ **CONFIRMÉ PAR JULIEN le 2026-09-16 au soir : « ça a marché, le scénario est parti ».** C'est le geste 1
-de la liste ci-dessous, et il a fallu DEUX essais ratés pour y arriver.
-
-🔴 **CE QUE CES DEUX ESSAIS ONT TROUVÉ, ET QU'AUCUN TEST N'AURAIT TROUVÉ.** L'agent de Meta tenait le fil,
-il répondait « je n'ai pas bien compris votre message », et le test ne démarrait jamais. Mesuré en base :
-zéro parcours créé, conversation même pas marquée comme test. **Cause réelle : le message arrivait sur le
-canal `standby`**, que le chemin du jeton refusait. Or `standby`, c'est Meta qui dit « mon agent tient ce
-fil » : exactement la situation où il faut la lui reprendre.
-
-⚠️ **ET LE PREMIER ESSAI N'AVAIT LAISSÉ AUCUNE TRACE** : quatre sorties muettes, cause indéterminable. Ce
-qui a résolu l'affaire n'est pas un correctif, c'est de rendre ces sorties bavardes : le scan suivant a
-nommé la cause en une ligne. Les trois leçons transversales sont dans `brain/LEARNINGS.md` au 2026-09-16.
-
-**Les trois gestes qui restent dus** (le 1 est fait) :
-
-⚠️ **La revue finale du 2026-09-16 a attesté le CODE, pas l'usage.** L'essai ci-dessous est matériellement
-impossible avant le déploiement du VPS, et la skill refusait d'écrire l'attestation tant qu'il manquait :
-Julien a tranché « on atteste le code, l'essai reste dû ». Tant que ces quatre gestes n'ont pas eu lieu,
-**cette feature n'est pas close**, et personne ne doit écrire le contraire ailleurs.
-
-Quatre gestes, et le troisième est le seul qu'aucun test ne remplace :
-
-1. **Cliquer le bouton lecture d'un bloc AU MILIEU d'un scénario**, scanner le QR, envoyer : c'est CE
-   message-là qui doit arriver, pas le premier du scénario.
-2. **Modifier le brouillon SANS publier**, recliquer le même bloc : le test doit suivre la modification.
-3. 🔴 **Atteindre un bloc d'attente ou une question et RÉPONDRE** : le parcours doit continuer sur le
-   BROUILLON. C'est la vérification du défaut que la migration 0151 répare, et elle ne se fait qu'à la main.
-4. **Cliquer un bloc d'un scénario publié SANS brouillon en attente** : ce cas ne doit rien casser.
-
-⚠️ **Et regarder la bulle WhatsApp** : `test-a7k2m9p3.<uuid>` ressemble à un nom de domaine, WhatsApp va
-probablement l'afficher en lien bleu. Ça ne change pas le texte envoyé, mais personne ne l'a encore vu.
-
-### 4. « Ça pousse ou ça intègre » (migration 0150), toujours dû depuis le 2026-09-15
-
-Donner `testadd` (`POST /subscriber/add-tag`) à un agent IA en « ça pousse », l'essayer depuis le bac à sable,
-puis **vérifier dans UChat que l'étiquette est réellement posée**. Refaire avec un appel qui intègre, cocher un
-champ, vérifier que la valeur remonte mot pour mot. ⚠️ Un `POST` reste SIMULÉ au bac à sable (seul un GET qui
-intègre, sans donnée du contact, y part pour de vrai depuis le 2026-10-05) : l'étiquette ne se vérifie que dans une
-vraie conversation. Le bac à sable rendait zéro champ pour tout connecteur jusqu'au 2026-10-05 : réparé.
+🔴 **La liste unique et à jour des essais réels de Julien vit dans `docs/prive/ESSAIS-REELS.md`** (2026-10-09, à sa
+demande), non versionnée parce qu'elle porte des numéros de téléphone. Elle est tenue à chaque livraison. Cette section
+en portait une copie partielle datée de septembre (l'agent de Meta après un silence, le lien de test, le journal
+d'audit, « ça pousse ») : ses essais y sont repris, et son détail reste dans l'historique git.
 
 ## UN POINT D'ÉCRAN QUI RESTE À FAIRE
 

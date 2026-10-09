@@ -184,7 +184,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **Connecteur HubSpot** | import de listes, étapes de deal | `src/hubspot/` | `/tuto-hubspot` | | `hubspot-catchup` |
 | **Publicités Click-to-WhatsApp** | connecter le compte publicitaire, créer (image ou vidéo, audiences), publier, suivre, router le prospect | `src/pubs/`, `src/meta/pubs*.ts`, `src/http/pubs.ts` | `/publicites` | `pub_connexion`, `publicites`, `pubs_brouillons`, `pubs_connues`, `arrivees_pub` | balayage de suivi |
 | **Widget WhatsApp** | une bulle sur le site du client qui ouvre WhatsApp avec une phrase, et ce qui se passe quand cette phrase arrive | `src/widgets/`, `src/http/widgets.ts`, `src/http/widget-public.ts` | `/widgets` | `widgets`, `widget_tirs` | aucune : une étape de `processInbound` |
-| **API publique v1** | ce qu'un intégrateur du client appelle, et son contrat OpenAPI (`GET /openapi.json`, dérivé de `src/api/openapi/`) | `src/api/`, `src/http/v1-*.ts`, `src/http/openapi.ts` | `/developers` | `api_keys`, `api_idempotency` | |
+| **API publique v1** | ce qu'un intégrateur du client appelle, son contrat OpenAPI (`GET /openapi.json`, dérivé de `src/api/openapi/`), et le SDK TypeScript qui en tire ses types (`sdk/`, publié par `.github/workflows/sdk.yml` dans le dépôt public `messagingme-sdk`) | `src/api/`, `src/http/v1-*.ts`, `src/http/openapi.ts`, `sdk/`, `scripts/sdk-contrat.ts` | `/developers` | `api_keys`, `api_idempotency` | |
 | **Serveur MCP et son OAuth** | Claude et les autres clients MCP (ChatGPT, Cursor, VS Code, Lovable) lisent et agissent dans un espace, par une clé d'API ou un jeton OAuth (§ 7) | `src/mcp/`, `src/http/mcp.ts`, `src/oauth/`, `src/http/oauth.ts`, `src/http/oauth-consentement.ts` | `/developers/mcp` | `oauth_autorisations`, `oauth_codes`, `oauth_clients` | `retention-oauth` |
 | **Exploitation** | vue cross-tenant, recharge de crédit, alertes, suppression d'un espace (§ 10) | `src/ops/` | `/ops` | `worker_heartbeat`, `audit_log`, `espaces_supprimes` | `dlq-sweep` |
 | **Numéros fournis** | la réserve de numéros DIDWW, et le pont qui lit le code que Meta dicte en appelant (lot 3a) | `src/otp/`, `src/didww/`, `src/http/otp-pont.ts`, `src/http/ops-numeros.ts`, `ops/otp-asterisk/` | `/ops` | `numeros_fournis`, `codes_verification` | purge du balayage de rétention |
@@ -3782,6 +3782,14 @@ Ajouté par le lot 4 de l'API publique :
     fermé (`additionalProperties: false` retiré des réponses et des événements) : ajouter un champ n'est pas un
     changement cassant, et un client généré ne doit pas casser ce jour-là. À l'inverse, un champ que la route exige y est
     requis même passé par un `z.preprocess` (que Zod rend facultatif en entrée), et le test le vérifie sur le JSON émis.
+    🔴 **Le SDK (`sdk/`) n'est jamais en retard sur ce contrat** : `sdk/openapi.json` et ses types (`sdk/src/schema.ts`,
+    générés par `openapi-typescript`, dépendance de développement à version exacte) se refont par `npm run sdk:contrat`,
+    et `tests/sdk-contrat.test.ts` les régénère depuis le code et exige l'égalité au caractère près. Toute modification
+    du contrat se livre donc avec `npm run sdk:contrat`, sinon la CI est rouge. Le SDK n'a aucune dépendance
+    d'exécution, ne relance rien, et vérifie les signatures par Web Crypto (`tests/sdk-webhook.test.ts` le tient
+    contre `enTetesSignes`, le vrai code d'envoi). Il se publie par `.github/workflows/sdk.yml`, sur un push qui
+    touche `sdk/`, inerte sans le secret `SDK_DEPLOY_KEY` ; une version publiée ne bouge plus (monter
+    `sdk/package.json` pour publier).
 
 ### Sur le code
 
