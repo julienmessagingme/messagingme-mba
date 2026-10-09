@@ -496,7 +496,11 @@ export async function lancerEnvoi(
      * quota). Hors du `try`, l'exception partait sans libérer, et la même clé restait en 409 pendant tout le bail.
      */
     if (!await compter(corps.recipients.length)) {
-      await deps.idempotence.release(tenantId, idem.cle, jeton);
+      // La réponse (429) est déjà partie : un échec de libération ne lève pas, il se trace (la clé échoira avec son bail).
+      await deps.idempotence.release(tenantId, idem.cle, jeton).catch((err: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error(`v1/sends: clé d'idempotence non libérée après un refus du compteur, espace ${tenantId}:`, err);
+      });
       return null;
     }
     // Un message RCS part de l'agent RCS de l'espace : aucun numéro WhatsApp n'est exigé, et un `phoneNumberId`

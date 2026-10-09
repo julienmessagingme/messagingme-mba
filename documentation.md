@@ -2675,7 +2675,9 @@ d'autant. `CF-Connecting-IP` ne deviendra lisible qu'avec une origine qui ne ré
   lot qui dépasserait est refusé en entier. La fenêtre est un jour de Paris (la date dans la clé, l'origine à son
   minuit, sa durée de 23, 24 ou 25 h : `origineMs` du compteur partagé), donc `Retry-After` dit l'attente jusqu'au
   minuit suivant. Refus : 429 `quota_exceeded`. Un envoi est compté APRÈS la clé d'idempotence : un rejeu ou un envoi en
-  cours ne compte pas, et un envoi refusé par le quota libère sa clé. Compteur en panne : l'appel passe, comme tout le garde, et une alerte
+  cours ne compte pas, et un envoi refusé par le quota libère sa clé. Deux conséquences : ces appels n'apparaissent plus
+  dans `/ops/usage` (seul le plafond d'appels les voit), et un envoi refusé coûte la pose et la libération de sa clé,
+  bornées par le plafond d'appels de l'espace. Compteur en panne : l'appel passe, comme tout le garde, et une alerte
   Telegram (`ServerDeps.alerter`) dit, au plus toutes les 30 min, que les quotas ne sont plus tenus.
 - La clé du relais du Meta Business Agent (droit `mba:relais`, attribué par la seule publication) n'entre PAS
   dans ce plafond : elle garde un compteur PAR CLÉ (`API_KEY_RATE_LIMIT_MAX`, sur l'empreinte), pour qu'un

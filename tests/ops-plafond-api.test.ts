@@ -315,6 +315,18 @@ describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
     await server.close();
   });
 
+  it('un PUT qui ne change rien n’écrit AUCUNE ligne d’audit (elle dirait « limites modifiées » sans rien dire)', async () => {
+    const { server, magasin } = monter();
+    magasin.reglages.set(T1, { minute: null, heure: null, envoisJour: 2000, fichesJour: null });
+    const res = await server.inject({
+      method: 'PUT', url: `/ops/plafond-api/${T1}`, headers: ops,
+      payload: { minute: null, heure: null, envoisJour: 2000, fichesJour: null, note: 'relecture sans changement' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(magasin.traces).toEqual([]);
+    await server.close();
+  });
+
   it('⚠️ un audit en panne ne fait pas échouer le réglage : il est posé, et le journal le dit', async () => {
     const { server, magasin } = monter();
     magasin.tracerEchoue = true;

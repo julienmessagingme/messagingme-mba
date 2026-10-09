@@ -11,7 +11,8 @@ import type { OperationApi } from './usage-guard';
  * de qualité d'un numéro chez Meta. Le quota compte le TRAVAIL d'un jour, deux familles :
  * - **les envois** : les destinataires d'un envoi (`/v1/sends`) et chaque message libre (WhatsApp ou RCS) ;
  * - **les fiches** : chaque fiche écrite (`/v1/contacts`, une par fiche d'un lot).
- * Les lectures, les catalogues et le MCP n'en ont pas : le plafond d'appels leur suffit. Les campagnes lancées depuis
+ * Les lectures, les catalogues et le MCP n'en ont pas, sauf l'envoi d'un modèle par le MCP (`send_template_to_contact`),
+ * compté dans les envois : le plafond d'appels leur suffit. Les campagnes lancées depuis
  * la console ne passent pas par ici.
  *
  * Le jour est le jour CIVIL de Paris : remise à zéro à minuit, heure de Paris, changement d'heure compris. Un lot qui

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { auteurOps, type PreHandler } from '../auth/middleware';
 import { estUuid } from './scope';
 import { journaliser } from '../lib/journal';
-import type { PlafondApiStore, PlafondsParDefaut, ReglagePlafondApi } from '../auth/plafond-espace';
+import { detailDuChangement, type PlafondApiStore, type PlafondsParDefaut, type ReglagePlafondApi } from '../auth/plafond-espace';
 import type { CompteurDebit } from '../db/debit';
 import { consommationDuJour, type ConsommationDuJour } from '../api/quotas';
 // Le même seuil que les autres écritures de `/ops` : importé, pas recopié.
@@ -80,7 +80,8 @@ export function registerOpsPlafondApi(app: FastifyInstance, deps: OpsPlafondApiD
   };
 
   app.get('/ops/plafond-api/:tenantId', opts, async (req, reply) => {
-    const { tenantId } = req.params as { tenantId: string };
+    // En minuscules : `estUuid` accepte les majuscules, la base aussi, mais pas la clé du compteur ni celle du cache.
+    const tenantId = (req.params as { tenantId: string }).tenantId.toLowerCase();
     // Un identifiant mal formé partirait dans un `where id = $1` sur une colonne `uuid` : 22P02, donc 500.
     if (!estUuid(tenantId)) return reply.code(404).send({ error: 'espace inconnu' });
     const reglage = await deps.store.lire(tenantId);
@@ -89,7 +90,8 @@ export function registerOpsPlafondApi(app: FastifyInstance, deps: OpsPlafondApiD
   });
 
   app.put('/ops/plafond-api/:tenantId', opts, async (req, reply) => {
-    const { tenantId } = req.params as { tenantId: string };
+    // En minuscules : `estUuid` accepte les majuscules, la base aussi, mais pas la clé du compteur ni celle du cache.
+    const tenantId = (req.params as { tenantId: string }).tenantId.toLowerCase();
     if (!estUuid(tenantId)) return reply.code(404).send({ error: 'espace inconnu' });
     const lu = corpsSchema.safeParse(req.body ?? {});
     if (!lu.success) {
@@ -110,10 +112,15 @@ export function registerOpsPlafondApi(app: FastifyInstance, deps: OpsPlafondApiD
     journaliser('warn', 'ops_plafond_api', { tenantId, avant, apres, par, note, at: new Date().toISOString() });
     // La trace durable, dans le journal d'audit de l'espace. Après l'écriture, et sans la faire échouer : le réglage
     // est posé, un audit en panne ne doit pas faire croire le contraire (la ligne ci-dessus reste).
-    try {
-      await deps.store.tracer(tenantId, { par, avant, apres });
-    } catch (err) {
-      journaliser('error', 'ops_plafond_api_audit_ignore', { tenantId, err });
+    // Rien n'a bougé : aucune ligne, qui se lirait « limites modifiées » sans rien dire.
+    // `detailDuChangement` porte la liste des champs : au-delà de `par`, chaque clé est un champ qui a bougé.
+    const change = Object.keys(detailDuChangement(avant, apres)).length > 1;
+    if (change) {
+      try {
+        await deps.store.tracer(tenantId, { par, avant, apres });
+      } catch (err) {
+        journaliser('error', 'ops_plafond_api_audit_ignore', { tenantId, err });
+      }
     }
     return reply.code(200).send(etat(tenantId, apres, deps.defauts, await lireAujourdhui(tenantId)));
   });

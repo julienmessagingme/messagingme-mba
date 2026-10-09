@@ -1257,9 +1257,13 @@ function QuotasApi({ jeton, tenantId, nom, onFermer }: { jeton: string; tenantId
     ? t('aucun', 'none')
     : `${fmtNum(f.effectif, locale)}${f.reglage === null ? t(' (défaut)', ' (default)') : ''}`);
   const conso = (n: number | undefined) => (n === undefined ? <Nd /> : fmtNum(n, locale));
+  // Un quota désactivé (`effectif` à `null`) ne laisse aucune ligne au compteur : son « 0 » serait faux.
+  const compte = (f: FenetrePlafondOps, n: number | undefined) => (f.effectif === null
+    ? <Nd titre={t('Quota désactivé : rien n’est compté', 'Quota disabled: nothing is counted')} />
+    : conso(n));
   const lignes = etat ? [
-    { cle: 'envois', nom: t('Envois du jour', 'Sends today'), conso: conso(etat.aujourdhui?.envois), f: etat.envoisJour },
-    { cle: 'fiches', nom: t('Fiches du jour', 'Contacts today'), conso: conso(etat.aujourdhui?.fiches), f: etat.fichesJour },
+    { cle: 'envois', nom: t('Envois du jour', 'Sends today'), conso: compte(etat.envoisJour, etat.aujourdhui?.envois), f: etat.envoisJour },
+    { cle: 'fiches', nom: t('Fiches du jour', 'Contacts today'), conso: compte(etat.fichesJour, etat.aujourdhui?.fiches), f: etat.fichesJour },
     { cle: 'minute', nom: t('Appels par minute', 'Calls per minute'), conso: null, f: etat.minute },
     { cle: 'heure', nom: t('Appels par heure', 'Calls per hour'), conso: null, f: etat.heure },
   ] : [];
@@ -1292,7 +1296,9 @@ function QuotasApi({ jeton, tenantId, nom, onFermer }: { jeton: string; tenantId
           <p className="text-xs text-ink-500">
             {etat.aujourdhui
               ? `${t('Remise à zéro', 'Reset')} ${formatDate(etat.aujourdhui.remiseAZero, locale, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
-              : t('Le compteur n’a pas répondu : consommation inconnue.', 'The counter did not answer: usage unknown.')}
+              : etat.aujourdhui === null
+                ? t('Le compteur n’a pas répondu : consommation inconnue.', 'The counter did not answer: usage unknown.')
+                : t('Cette version de l’API ne rend pas encore la consommation.', 'This API version does not return usage yet.')}
           </p>
         </div>
       )}

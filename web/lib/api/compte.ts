@@ -430,8 +430,8 @@ export interface FenetrePlafondOps { reglage: number | null; defaut: number; eff
 /** Le plafond d'appels et les quotas du jour d'un espace, avec sa consommation (`GET /ops/plafond-api/:tenantId`). */
 export interface PlafondApiOps {
   tenantId: string;
-  /** `null` = le compteur n'a pas répondu : consommation inconnue, surtout pas zéro. */
-  aujourdhui: { jour: string; envois: number; fiches: number; remiseAZero: string } | null;
+  /** `null` = le compteur n'a pas répondu : consommation inconnue, surtout pas zéro. Absent d'une API d'avant. */
+  aujourdhui?: { jour: string; envois: number; fiches: number; remiseAZero: string } | null;
   minute: FenetrePlafondOps;
   heure: FenetrePlafondOps;
   envoisJour: FenetrePlafondOps;
