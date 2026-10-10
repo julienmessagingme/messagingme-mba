@@ -6,6 +6,34 @@
 > tranchent, jamais ce fichier.
 
 
+## 2026-10-10 : « Déconnecter le numéro », en production
+
+Demandé par Julien le jour même, à côté de « Renouveler la connexion Meta » : retirer pour de bon le numéro d'un espace
+pour en connecter un autre (« Délier » le gardait, et le refus du second numéro disait « crée un second espace »).
+Décisions par rondes de questions : détacher pour de vrai, conversations purgées (fils entiers, RCS compris), numéro
+fourni accepté (perdu, abonnement arrêté en fin de période sans remboursement). Plan
+`docs/superpowers/plans/2026-10-10-deconnecter-le-numero.md`, aucune migration ; l'invariant est le 51 du manuel.
+
+- Serveur `ad805d0d` : `GET /numero/deconnexion` (le bilan), `POST /numero/deconnecter` (`{ confirme: true }`, verrou
+  court, 409 jamais 5xx). Le déroulé réutilise les gestes chez Meta et la sortie du numéro fourni de la suppression
+  d'espace (`objetsMetaDeLEspace` extrait), et la fin d'abonnement d'« Abandonner » (`programmerLaFinDuNumero` extrait).
+- La relecture (aucun rouge, dix jaunes) a fait corriger avant le premier push : la suppression de `waba` qui aurait
+  emporté par cascade le numéro d'un AUTRE espace sur un compte partagé ; le numéro fourni résilié chez DIDWW sur des
+  chiffres inconnus (la règle d'« Abandonner » refuse dans ce cas, ici elle aurait détruit) ; les campagnes RCS à repli
+  WhatsApp passées `failed` alors qu'une relance pouvait les remettre `running` ; la pause HubSpot orpheline ; un jeton
+  illisible qui rendait 500 ; les échecs chez Meta muets alors que le numéro quitte la console. Le reste est en
+  `todo.md` (clé du relais de l'agent, caches de 60 s des autres processus, coûts purgés, ce que la confirmation tait).
+- Déployé le 2026-10-10 vers 12 h 25 UTC (`0c46b3c9`, après une CI rouge due à une aide du test d'intégration, `count(*)` lu sous le mauvais nom de colonne, corrigée seule) : API, deux workers et `mba-web`, `aide:charger` (28 fiches), cinq portes à 200, la route neuve en 401 sans session. Le bilan joué par le vrai code, en lecture seule, sur les six espaces qui ont un numéro : un seul porte un numéro fourni connecté (vu de Meta), aucun objet partagé. L'écran est poussé juste après (Vercel). Essai réel dû (`docs/prive/ESSAIS-REELS.md`, n° 87).
+
+## 2026-10-10 : la page « SDK TypeScript » de la documentation (fin du lot 16)
+
+Le SDK v0.1.0 publié (`julienmessagingme/messagingme-sdk`, étiquette `v0.1.0`) après trois échecs de l'action : la clé
+de déploiement portait une phrase de passe (Julien en avait mis une deux fois), `ssh-keygen -y -P ''` le dit désormais
+au lieu d'un « Permission denied (publickey) » (`b6764d0b`). Installé depuis GitHub dans un projet vide et appelé. La
+page de la doc (`a8ba77d0`) : installation, premier appel, erreurs, vérification d'un webhook ; la version qu'elle et
+le README installent est tenue à `sdk/package.json` par un test. Relecture : aucun rouge ; les exemples de la page ne
+sont compilés par aucun test (`todo.md`).
+
 ## 2026-10-10 : le ménage documentaire (lot 8 du bilan des audits)
 
 `CLAUDE.md` était redevenu une archive, `wip.md` portait des lots déployés depuis des semaines, et `todo.md` des

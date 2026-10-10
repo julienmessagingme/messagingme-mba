@@ -213,6 +213,39 @@ export function relierNumero(tenantId: string): Promise<{ relie: true; campagnes
   return request(`/tenants/${tenantId}/numero/relier`, { method: 'POST', body: JSON.stringify({}) });
 }
 
+/**
+ * Ce que « Déconnecter le numéro » effacerait et arrêterait, lu sans rien écrire (`BilanDeconnexion`,
+ * `src/account/deconnexion-numero.ts`). La confirmation l'affiche avant le geste.
+ */
+export interface BilanDeconnexionNumero {
+  phoneNumberId: string;
+  /** Le numéro tel que Meta l'affiche, que la confirmation fait retaper ; `null` s'il n'est pas connu. */
+  affiche: string | null;
+  wabaId: string | null;
+  /** Un autre espace nomme ce compte ou ce numéro : rien ne se fait chez Meta. */
+  partage: boolean;
+  jeton: 'propre' | 'global' | 'invalide';
+  /** Le numéro connecté est un numéro fourni : il est perdu, et son abonnement prend fin. */
+  numeroFourni: { numero: string; vuDeMeta: boolean } | null;
+  conversations: number;
+  campagnesArretees: number;
+  mbaAllume: boolean;
+  contactsSurLaListe: number;
+}
+export function lireBilanDeconnexion(tenantId: string): Promise<BilanDeconnexionNumero> {
+  return request(`/tenants/${tenantId}/numero/deconnexion`);
+}
+/**
+ * DÉCONNECTE le numéro pour de bon : il quitte l'espace, ses conversations sont effacées, et l'espace peut ensuite en
+ * connecter un autre. Irréversible : seule la confirmation l'appelle, avec `{ confirme: true }`.
+ */
+export function deconnecterNumero(tenantId: string): Promise<{
+  deconnecte: true; conversations: number; campagnesArretees: number;
+  etapes: Array<{ etape: string; etat: 'fait' | 'sautee' | 'echec'; detail: string | null }>;
+}> {
+  return request(`/tenants/${tenantId}/numero/deconnecter`, { method: 'POST', body: JSON.stringify({ confirme: true }) });
+}
+
 // --- Automations (Lot E : déclencher un scénario sur un événement) ---
 
 /**

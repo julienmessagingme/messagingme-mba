@@ -14,8 +14,8 @@ import {
   getMe, getSettings, getAccountStatus, setHubspotConnected, disconnectHubspot, deconnecterHubspotEspace, listPhoneNumbers,
   setHubspotListsEnabled as saveHubspotListsEnabled,
   getStats, getTemplateStats, getCostSeries,
-  demanderCodeNumero, activerNumero,
-  type MeResponse, type AccountStatusResponse, type CanalCodeNumero,
+  demanderCodeNumero, activerNumero, lireBilanDeconnexion, deconnecterNumero,
+  type MeResponse, type AccountStatusResponse, type CanalCodeNumero, type BilanDeconnexionNumero,
 } from '@/lib/api';
 import { DOT_HEX } from '@/lib/ui';
 import { PastilleNumero } from '@/components/PastilleNumero';
@@ -82,6 +82,8 @@ function AccueilInner({ session }: { session: Session }) {
    * niveau de la page pour la même raison que les avertissements : un succès recharge la grille, qui démonte la carte.
    */
   const [connexionRenouvelee, setConnexionRenouvelee] = useState(false);
+  // Le compte rendu de « Déconnecter le numéro », montré au-dessus de la zone « Connecter » qui le remplace.
+  const [numeroDeconnecte, setNumeroDeconnecte] = useState<{ conversations: number; campagnesArretees: number; echecsMeta: number } | null>(null);
   /**
    * L'etat REEL de l'agent chez Meta, par opposition a `mbaEnabled` qui n'est que NOTRE drapeau.
    *
@@ -547,6 +549,22 @@ function AccueilInner({ session }: { session: Session }) {
             </div>
           ) : account && !account.hasNumber ? (
             <>
+              {numeroDeconnecte && (
+                <p data-testid="numero-deconnecte" className="mb-3 rounded-controle bg-succes-50 px-3 py-2 text-xs text-succes-700">
+                  {t(
+                    `Numéro déconnecté : ${numeroDeconnecte.conversations} conversation(s) effacée(s), ${numeroDeconnecte.campagnesArretees} campagne(s) arrêtée(s). L’espace peut connecter un autre numéro.`,
+                    `Number disconnected: ${numeroDeconnecte.conversations} conversation(s) erased, ${numeroDeconnecte.campagnesArretees} campaign(s) stopped. The workspace can connect another number.`,
+                  )}
+                </p>
+              )}
+              {numeroDeconnecte && numeroDeconnecte.echecsMeta > 0 && (
+                <p data-testid="numero-deconnecte-meta" className="mb-3 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte-700">
+                  {t(
+                    'Meta n’a pas tout accepté : l’agent de Meta peut encore répondre sur ce numéro, ou Messaging Me rester abonné à votre compte. Notre équipe est prévenue et termine chez Meta ; vous pouvez aussi retirer l’app dans le Business Manager de Meta.',
+                    'Meta did not accept everything: Meta’s agent may still answer on this number, or Messaging Me may stay subscribed to your account. Our team is notified and will finish at Meta; you can also remove the app in Meta’s Business Manager.',
+                  )}
+                </p>
+              )}
               <ConnectNumberZone isAdmin={isAdmin} connexion={connexionNumero} />
               {/* 🔴 Le compte peut revenir de la fenêtre Meta SANS numéro (lot 3b) : l'espace n'a toujours pas de
                   numéro, donc c'est cette branche qui s'affiche, et l'avertissement qui dit quoi faire doit y être.
@@ -657,7 +675,20 @@ function AccueilInner({ session }: { session: Session }) {
                   </p>
                 </div>
               )}
-              {account?.hasNumber && isAdmin && <RenouvelerConnexionMeta connexion={connexionNumero} />}
+              {account?.hasNumber && isAdmin && (
+                <ConnexionMetaDuNumero
+                  connexion={connexionNumero}
+                  tenantId={session.tenantId}
+                  onDeconnecte={(r) => {
+                    setConnexionRenouvelee(false);
+                    setAvertissementsConnexion([]);
+                    setNumeroDeconnecte(r);
+                    setLoading(true);
+                    void load();
+                    void loadAccount();
+                  }}
+                />
+              )}
             </div>
           )}
 
@@ -961,6 +992,12 @@ function ConnectNumberZone({ isAdmin, connexion }: { isAdmin: boolean; connexion
 }
 
 /**
+ * Les deux gestes sur la connexion d'un numéro DÉJÀ relié, côte à côte : « Renouveler la connexion Meta » et
+ * « Déconnecter le numéro » (décision de Julien du 2026-10-10 : le numéro quitte l'espace pour de bon, ses
+ * conversations sont effacées, et l'espace peut en connecter un autre ; plan
+ * `docs/superpowers/plans/2026-10-10-deconnecter-le-numero.md`). « Délier » (Canaux et services) reste la coupure
+ * réversible.
+ *
  * « Renouveler la connexion Meta » : rouvre la fenêtre de Meta sur un espace QUI A DÉJÀ son numéro. Meta ne présélectionne
  * rien : l'admin y choisit le même compte et le même numéro (un code seul suffit, le serveur retrouve le compte qui
  * porte le numéro de l'espace parmi ceux du jeton).
@@ -977,22 +1014,157 @@ function ConnectNumberZone({ isAdmin, connexion }: { isAdmin: boolean; connexion
  * ⚠️ LA MÊME INSTANCE que la zone « Connecter » et le bloc « Canaux et services » (`connexionNumero`) : elle porte
  * l'écoute des messages de la fenêtre Meta, et une seconde instance les capterait de son côté.
  */
-function RenouvelerConnexionMeta({ connexion }: { connexion: ConnexionNumero }) {
+function ConnexionMetaDuNumero({ connexion, tenantId, onDeconnecte }: {
+  connexion: ConnexionNumero;
+  tenantId: string;
+  onDeconnecte: (r: { conversations: number; campagnesArretees: number; echecsMeta: number }) => void;
+}) {
   const t = useT();
-  if (connexion.cfg?.enabled !== true) return null;
+  const [confirmer, setConfirmer] = useState(false);
+  // « Renouveler » rouvre la fenêtre de Meta : sans inscription configurée sur l'instance, il n'a rien à ouvrir.
+  // « Déconnecter » n'appelle pas la fenêtre, il reste.
+  const renouveler = connexion.cfg?.enabled === true;
   return (
-    <div data-testid="renouveler-connexion" className="mt-4 border-t border-ink-100 pt-3">
-      <Bouton variante="secondaire" type="button" enCours={connexion.busy} disabled={connexion.busy} onClick={() => { void connexion.connect(); }}>
-        {connexion.busy ? t('Connexion en cours…', 'Connecting…') : t('Renouveler la connexion Meta', 'Renew the Meta connection')}
-      </Bouton>
+    <div data-testid="connexion-meta" className="mt-4 border-t border-ink-100 pt-3">
+      <div className="flex flex-wrap gap-2">
+        {renouveler && (
+          <Bouton data-testid="renouveler-connexion" variante="secondaire" type="button" enCours={connexion.busy} disabled={connexion.busy} onClick={() => { void connexion.connect(); }}>
+            {connexion.busy ? t('Connexion en cours…', 'Connecting…') : t('Renouveler la connexion Meta', 'Renew the Meta connection')}
+          </Bouton>
+        )}
+        <Bouton data-testid="deconnecter-numero" variante="discret" type="button" disabled={connexion.busy} onClick={() => setConfirmer(true)}>
+          {t('Déconnecter le numéro', 'Disconnect the number')}
+        </Bouton>
+      </div>
+      {renouveler && (
+        <p className="mt-1 text-xs text-ink-500">
+          {t(
+            'Renouveler rouvre la fenêtre de Meta : choisissez-y le même compte et le même numéro, et Messaging Me reçoit une autorisation neuve. Rien n’est effacé, le numéro reste branché. À faire si les envois s’arrêtent sur une erreur d’autorisation.',
+            'Renew reopens the Meta window: pick the same account and number there, and Messaging Me gets a fresh authorization. Nothing is erased, the number stays connected. Do it if sending stops on an authorization error.',
+          )}
+        </p>
+      )}
       <p className="mt-1 text-xs text-ink-500">
         {t(
-          'Rouvre la fenêtre de Meta : choisissez-y le même compte et le même numéro, et Messaging Me reçoit une autorisation neuve. Rien n’est effacé, le numéro reste branché. À faire si les envois s’arrêtent sur une erreur d’autorisation.',
-          'Reopens the Meta window: pick the same account and number there, and Messaging Me gets a fresh authorization. Nothing is erased, the number stays connected. Do it if sending stops on an authorization error.',
+          'Déconnecter retire le numéro de cet espace et efface ses conversations, pour en connecter un autre.',
+          'Disconnect removes the number from this workspace and erases its conversations, to connect another one.',
         )}
       </p>
       {connexion.error && <p data-testid="renouveler-erreur" className="mt-2 rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700">{connexion.error}</p>}
+      {confirmer && (
+        <ConfirmationDeconnexion
+          tenantId={tenantId}
+          onAnnuler={() => setConfirmer(false)}
+          onFait={(r) => { setConfirmer(false); onDeconnecte(r); }}
+        />
+      )}
     </div>
+  );
+}
+
+/** Les chiffres d'un numéro, pour comparer ce que l'admin tape à ce que Meta affiche, espaces et « + » compris. */
+const chiffresDe = (texte: string): string => texte.replace(/[^0-9]/g, '');
+
+/**
+ * La confirmation de « Déconnecter le numéro » : ce qui part, lu sur le serveur AVANT le geste (`lireBilanDeconnexion`),
+ * puis le numéro à retaper. Irréversible (les conversations sont effacées), d'où la saisie plutôt qu'un simple clic.
+ * Le serveur exige de son côté `{ confirme: true }` : un appel nu ne détache rien.
+ */
+function ConfirmationDeconnexion({ tenantId, onAnnuler, onFait }: {
+  tenantId: string;
+  onAnnuler: () => void;
+  onFait: (r: { conversations: number; campagnesArretees: number; echecsMeta: number }) => void;
+}) {
+  const t = useT();
+  const [bilan, setBilan] = useState<BilanDeconnexionNumero | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [saisie, setSaisie] = useState('');
+  const [enCours, setEnCours] = useState(false);
+
+  useEffect(() => {
+    let vivant = true;
+    lireBilanDeconnexion(tenantId)
+      .then((b) => { if (vivant) setBilan(b); })
+      .catch((err: unknown) => { if (vivant) setErreur(err instanceof Error ? err.message : t('Bilan indisponible', 'Summary unavailable')); });
+    return () => { vivant = false; };
+  }, [tenantId, t]);
+
+  // Sans numéro affiché connu, le mot à taper remplace le numéro.
+  const attendu = bilan?.affiche ? chiffresDe(bilan.affiche) : null;
+  const confirme = bilan !== null && (attendu !== null ? chiffresDe(saisie) === attendu : saisie.trim().toUpperCase() === 'DECONNECTER');
+
+  async function deconnecter() {
+    if (!confirme || enCours) return;
+    setEnCours(true);
+    setErreur(null);
+    try {
+      const r = await deconnecterNumero(tenantId);
+      // Les étapes chez Meta qui ont échoué se disent : le numéro a quitté la console, plus aucun écran ne les montrerait.
+      const echecsMeta = r.etapes.filter((e) => e.etat === 'echec' && ['mba_eteint', 'mba_liste', 'waba_desabonne'].includes(e.etape)).length;
+      onFait({ conversations: r.conversations, campagnesArretees: r.campagnesArretees, echecsMeta });
+    } catch (err) {
+      setErreur(err instanceof Error ? err.message : t('La déconnexion a échoué', 'Disconnection failed'));
+      setEnCours(false);
+    }
+  }
+
+  return (
+    <Modale titre={t('Déconnecter le numéro WhatsApp ?', 'Disconnect the WhatsApp number?')} taille="petite" testId="deconnexion-confirmation" fermeture={enCours ? 'boutons' : 'partout'} onClose={() => { if (!enCours) onAnnuler(); }}>
+      {bilan === null && erreur === null && <Squelette forme="carte" />}
+      {bilan && (
+        <ul data-testid="deconnexion-bilan" className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-500">
+          <li>{t(
+            `Le numéro ${bilan.affiche ?? ''} quitte cet espace : Messaging Me oublie le numéro, son compte WhatsApp et son autorisation. L’espace pourra ensuite connecter un autre numéro.`,
+            `The number ${bilan.affiche ?? ''} leaves this workspace: Messaging Me forgets the number, its WhatsApp account and its authorization. The workspace can then connect another number.`,
+          )}</li>
+          <li className="font-medium text-ink-900">{t(
+            `${bilan.conversations} conversation(s) effacée(s) définitivement, avec leurs messages (RCS compris) et leur analyse. Les fiches des contacts restent.`,
+            `${bilan.conversations} conversation(s) permanently erased, with their messages (RCS included) and their analysis. Contact records stay.`,
+          )}</li>
+          {bilan.campagnesArretees > 0 && <li>{t(
+            `${bilan.campagnesArretees} campagne(s) WhatsApp en cours, programmée(s) ou en pause s’arrêtent définitivement. Une campagne RCS continue, sans son repli WhatsApp.`,
+            `${bilan.campagnesArretees} running, scheduled or paused WhatsApp campaign(s) stop for good. An RCS campaign keeps going, without its WhatsApp fallback.`,
+          )}</li>}
+          {bilan.mbaAllume && <li>{t('L’agent de Meta est éteint, et l’équipe redevient celle qui répond.', 'Meta’s agent is turned off, and the team answers again.')}</li>}
+          <li>{bilan.partage
+            ? t('Ce compte WhatsApp sert aussi un autre espace : rien n’est changé chez Meta.', 'This WhatsApp account also serves another workspace: nothing changes at Meta.')
+            : bilan.jeton !== 'propre'
+              ? t('Messaging Me ne peut pas se retirer de votre compte chez Meta (autorisation absente ou expirée) : vous pouvez retirer l’app dans le Business Manager de Meta.', 'Messaging Me cannot remove itself from your account at Meta (missing or expired authorization): you can remove the app in Meta’s Business Manager.')
+              : t('Chez Meta, Messaging Me se retire de votre compte WhatsApp. Le numéro reste à vous : vous pouvez le connecter ailleurs.', 'At Meta, Messaging Me removes itself from your WhatsApp account. The number stays yours: you can connect it elsewhere.')}</li>
+          {bilan.numeroFourni && <li data-testid="deconnexion-numero-fourni" className="font-medium text-danger-700">{t(
+            'Ce numéro vous a été fourni par Messaging Me : il est perdu, il ne pourra plus être connecté nulle part. Son abonnement s’arrête à la fin de la période payée, sans remboursement.',
+            'This number was provided by Messaging Me: it is lost, it can no longer be connected anywhere. Its subscription ends at the end of the paid period, without refund.',
+          )}</li>}
+        </ul>
+      )}
+      {bilan && (
+        <label className="mt-4 block text-sm text-ink-900">
+          {attendu !== null
+            ? t(`Pour confirmer, tapez le numéro : ${bilan.affiche ?? ''}`, `To confirm, type the number: ${bilan.affiche ?? ''}`)
+            : t('Pour confirmer, tapez DECONNECTER', 'To confirm, type DECONNECTER')}
+          <input
+            data-testid="deconnexion-saisie"
+            value={saisie}
+            onChange={(e) => setSaisie(e.target.value)}
+            autoComplete="off"
+            className="mt-1 block w-full rounded-controle border border-ink-200 px-3 py-2 font-mono text-sm"
+          />
+        </label>
+      )}
+      {erreur && <p data-testid="deconnexion-erreur" className="mt-3 rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700">{erreur}</p>}
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <Bouton variante="secondaire" type="button" disabled={enCours} onClick={onAnnuler}>{t('Annuler', 'Cancel')}</Bouton>
+        <button
+          type="button"
+          data-testid="deconnexion-ok"
+          disabled={!confirme || enCours}
+          onClick={() => { void deconnecter(); }}
+          className="rounded-controle bg-danger-600 px-3 py-2 text-sm font-semibold text-white transition-colors duration-150 hover:bg-danger-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {enCours ? t('Déconnexion…', 'Disconnecting…') : t('Déconnecter', 'Disconnect')}
+        </button>
+      </div>
+    </Modale>
   );
 }
 
