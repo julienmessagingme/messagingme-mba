@@ -3812,6 +3812,32 @@ Ajouté par le lot 4 de l'API publique :
     encore en 404. L'action tient en deux jobs : la construction exécute le code npm SANS aucun secret, la
     publication ne fait tourner aucun code npm et seule voit `SDK_DEPLOY_KEY` (sans lui, elle ne fait rien). Une
     version publiée ne bouge plus : un contenu changé sous la même version fait échouer le run sans rien pousser.
+51. **Un numéro DÉCONNECTÉ quitte l'espace, et l'ORDRE du geste porte deux invariants** (« Déconnecter le numéro »,
+    2026-10-10, `src/account/deconnexion-numero.ts` pour le déroulé, `deconnexion-numero.pg.ts` pour la base). À la
+    différence de « Délier » (invariant 38), le numéro, ses comptes WhatsApp et leur jeton sont SUPPRIMÉS : aucune clé
+    étrangère ne vise `phone_numbers`, la cascade de `waba` emporte `waba_credentials`, et l'espace redevient sans
+    numéro, donc `linkTenant` accepte ensuite un autre numéro. 🔴 Un compte WhatsApp qui porte encore le numéro d'un
+    AUTRE espace n'est jamais supprimé (la cascade de `phone_numbers.waba_id` l'emporterait). Les conversations de
+    l'espace partent avec (fils entiers, RCS compris, par lots de `CONVERSATIONS_PAR_LOT` puis le reste dans la
+    transaction), les campagnes de canal PRINCIPAL WhatsApp pas finies passent `failed` (une campagne RCS à repli
+    WhatsApp reste vivante : `failed` pourrait être remis `running` par une relance, et son étage WhatsApp devient
+    simplement inservable), les webhooks bruts des numéros, les consentements `mba:<numéro>` et la liste de l'agent de
+    Meta sont effacés, `mba_enabled` retombe à faux, le répondeur `mba` à `equipe` et `campaigns_paused` (la pause
+    HubSpot, portée par la ligne du numéro) à faux. `credits_offerts` n'est PAS touché : le crédit de bienvenue reste
+    « une fois par numéro ». Le numéro fourni ne sort que si ses chiffres sont ÉGAUX à ceux du numéro connecté
+    (inconnus : il reste, on ne résilie pas chez DIDWW sur un doute). 🔴 **Les gestes chez Meta passent AVANT la transaction** : ils lisent le
+    jeton dans `waba_credentials`, qu'elle emporte. 🔴 **Le numéro fourni est jugé « vu de Meta » AVANT que sa ligne
+    parte** (`vuDeMeta` lit `phone_numbers`) : jugé après, un numéro tenu par Meta retournerait à la réserve et serait
+    attribué à un autre client. Il ne sort que s'il EST le numéro connecté (ses chiffres), comme pour « Abandonner »,
+    puis sa fin d'abonnement se programme en fin de période (`programmerLaFinDuNumero`, partagé avec « Abandonner »).
+    Les gestes chez Meta et la règle « objet partagé » sont ceux de la suppression d'un espace (`objetsMetaDeLEspace`,
+    `jetonMetaDeLEspace` dans le câblage) : rien chez Meta sur un compte qu'un autre espace nomme, ni avec le jeton
+    global ou illisible. Un échec de la purge arrête tout avant le moindre détachement ; un échec chez Meta est noté,
+    n'arrête rien, se dit dans le compte rendu de l'écran et part en alerte Telegram (le numéro a quitté la console,
+    plus aucun écran ne le rattraperait) ; la route répond 409 avec ses étapes, jamais 5xx, et un verrou court par
+    espace empêche deux gestes simultanés. ⚠️ Fenêtre acceptée : le numéro et le compte de l'espace sont en cache
+    60 s par processus (`NUMERO_ESPACE_TTL_MS`) et le jeton 5 min ; un envoi du worker peut encore partir de l'ancien
+    numéro dans la minute qui suit.
 
 ### Sur le code
 

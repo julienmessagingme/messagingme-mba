@@ -128,6 +128,9 @@ import { PgNumerosFournisStore } from './otp/store.pg';
 import { creerClientDidww } from './didww/client';
 import { PgLiberationStore } from './numero/liberation.pg';
 import { PgSuppressionEspaceStore } from './ops/suppression-espace.pg';
+import { PgDeconnexionNumeroStore } from './account/deconnexion-numero.pg';
+import { deconnecterNumero } from './account/deconnexion-numero';
+import { programmerLaFinDuNumero } from './numero/fin-abonnement';
 import type { ContexteTiers } from './ops/suppression-espace';
 import type { OpsSuppressionDeps } from './http/ops-suppression';
 import { TokenInvalidError } from './meta/credentials';
@@ -178,7 +181,7 @@ import type { DepsCreationModele } from './api/creer-modele';
 import { placesDeTelechargement, telechargerEnteteProduction } from './api/entete-par-url';
 import { lancerEnvoi, type DepsEnvoi } from './http/v1-sends';
 import { tenter } from './lib/tenter';
-import { messageDe } from './lib/erreur';
+import { messageDe, texteDe } from './lib/erreur';
 import { PgStripeStore } from './stripe/store.pg';
 import { estCleLive, FetchTransportStripe } from './stripe/client';
 import { creerPayeurAutorise, type CreditPaiementRouteDeps } from './http/credit-stripe';
@@ -867,6 +870,7 @@ async function main(): Promise<void> {
   const orgsSuppression = new PgSalesforceStore(pool, config.ENCRYPTION_KEY);
   const magasinSuppression = new PgSuppressionEspaceStore(pool, opsEmails, orgsSuppression);
   const liberationsApi = new PgLiberationStore(pool);
+  const deconnexionNumero = new PgDeconnexionNumeroStore(pool);
   const didwwApi = config.DIDWW_API_KEY ? creerClientDidww({ cle: config.DIDWW_API_KEY, url: config.DIDWW_API_URL }) : null;
   const esClientSuppression = new MetaEmbeddedSignupClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
   const salesforceSuppression = config.SALESFORCE_CLIENT_ID !== ''
@@ -879,23 +883,24 @@ async function main(): Promise<void> {
   const hubspotSuppression = config.HUBSPOT_SERVICE_URL
     ? { baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }
     : null;
+  /**
+   * 🔴 Le jeton que les appels chez Meta prendraient pour cet espace, relu par le MÊME résolveur qu'eux : sans jeton
+   * propre, ils partiraient avec le nôtre, et les gestes qui désabonnent ou éteignent sont sautés. Lu par la suppression
+   * d'un espace et par « Déconnecter le numéro ».
+   */
+  const jetonMetaDeLEspace = async (tenant: string): Promise<ContexteTiers['meta']> => {
+    try {
+      const r = await metaCredentials.resolveForTenant(tenant);
+      return r.chiffre !== null ? { jeton: 'propre', wabaId: r.wabaId } : { jeton: 'global', wabaId: null };
+    } catch (err) {
+      if (!(err instanceof TokenInvalidError)) throw err;
+      return { jeton: 'invalide', wabaId: null };
+    }
+  };
   const suppressionEspace: OpsSuppressionDeps = {
     bilan: (tenant) => magasinSuppression.bilan(tenant),
     contexte: async (tenant) => {
-      // 🔴 Le jeton que les appels chez Meta prendraient, relu par le MÊME résolveur qu'eux : sans jeton propre, ils
-      // partiraient avec le nôtre, et les étapes chez Meta sont sautées.
-      let jeton: ContexteTiers['meta']['jeton'] = 'global';
-      let wabaId: string | null = null;
-      try {
-        const r = await metaCredentials.resolveForTenant(tenant);
-        if (r.chiffre !== null) {
-          jeton = 'propre';
-          wabaId = r.wabaId;
-        }
-      } catch (err) {
-        if (!(err instanceof TokenInvalidError)) throw err;
-        jeton = 'invalide';
-      }
+      const { jeton, wabaId } = await jetonMetaDeLEspace(tenant);
       // Le schéma du connecteur absent (`42P01`) veut dire « pas relié » ; toute autre erreur, « on ne sait pas ».
       const hubspot = await phoneStatusStore.getHubspotPortal(tenant).then((p) => p.connected).catch((err: unknown) => (
         typeof err === 'object' && err !== null && 'code' in err && err.code === '42P01' ? false : null
@@ -2019,6 +2024,55 @@ async function main(): Promise<void> {
           gardeNumeroDelie.invaliderTout();
           return r;
         },
+        // ----- « Déconnecter le numéro » -----
+        // Les gestes chez Meta et la sortie du numéro fourni sont ceux de la suppression d'un espace (/ops) : une seule
+        // façon d'éteindre l'agent, de vider sa liste, de désabonner le compte et de rendre un numéro.
+        bilanDeconnexion: async (tenant: string) => {
+          const b = await deconnexionNumero.bilan(tenant);
+          if (b === null) return null;
+          // Un jeton illisible (déchiffrement, base) ne doit pas interdire de déconnecter : les étapes chez Meta sont
+          // sautées, comme pour un jeton refusé, au lieu d'un 500 que Cloudflare remplacerait par sa page.
+          const jeton = await jetonMetaDeLEspace(tenant).then((j) => j.jeton).catch((err: unknown) => {
+            journaliser('error', 'deconnexion_jeton_illisible', { tenantId: tenant, err: texteDe(err) });
+            return 'invalide' as const;
+          });
+          return { ...b, jeton };
+        },
+        deconnecterNumero: async (tenant: string, b) => {
+          const r = await deconnecterNumero(tenant, b, {
+            purgerConversations: (t) => deconnexionNumero.purgerConversations(t),
+            eteindreMba: suppressionEspace.gestes.eteindreMba,
+            viderListeMba: suppressionEspace.gestes.viderListeMba,
+            desabonnerWaba: suppressionEspace.gestes.desabonnerWaba,
+            sortirNumeroFourni: async (t) => {
+              const s = await suppressionEspace.gestes.sortirNumeroFourni(t);
+              // Le client ne lit pas /ops : Julien est prévenu d'un numéro sorti sans être résilié.
+              if (s.fait === 'bloque') {
+                await sendTelegram(`[mba-${NOM_API}] Numéro fourni déconnecté par le client, NON résilié chez DIDWW : +${s.numero} (espace ${t}, ${s.cause}). À résilier à la main.`);
+              }
+              return s;
+            },
+            programmerFinDuNumero: (t) => programmerLaFinDuNumero({
+              abonnements: abonnementsNumero,
+              programmerFin: (id) => programmerFinDuNumero(abonnementDuNumero, id),
+              finNonProgrammee: async (id, tt) => {
+                await sendTelegram(`[mba-${NOM_API}] Numéro déconnecté sans résiliation chez Stripe : abonnement ${id} (espace ${tt}). À résilier à la main en fin de période.`);
+              },
+            }, t),
+            detacher: (t) => deconnexionNumero.detacher(t),
+          });
+          // La garde de CETTE copie : les autres copies et le worker ont au plus `NUMERO_DELIE_TTL_MS` de retard.
+          gardeNumeroDelie.invaliderTout();
+          gardeNumeroSuspendu.invaliderTout();
+          // 🔴 Un échec chez Meta laisse l'agent de Meta répondre, ou nos webhooks arriver, pour un numéro que la
+          // console ne montre plus : plus aucun écran pour le rattraper, donc Julien est prévenu.
+          const ratees = r.etapes.filter((e) => e.etat === 'echec' && ['mba_eteint', 'mba_liste', 'waba_desabonne'].includes(e.etape));
+          if (ratees.length > 0) {
+            await sendTelegram(`[mba-${NOM_API}] Numéro ${b.phoneNumberId} déconnecté (espace ${tenant}, compte ${b.wabaId ?? '?'}) avec des étapes chez Meta en échec : ${ratees.map((e) => `${e.etape} (${e.detail ?? ''})`).join(' ; ')}. À finir à la main chez Meta.`);
+          }
+          return r;
+        },
+
         // La minute entre deux demandes de code d'un numéro, commune à toutes les copies (le quota de Meta).
         verrous: verrousCourts,
       };

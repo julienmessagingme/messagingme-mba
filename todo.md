@@ -1,5 +1,29 @@
 # todo.md : backlog
 
+## 🟡 « Déconnecter le numéro » : ce que la relecture laisse (2026-10-10)
+
+Corrigés avant le premier push : compte WhatsApp partagé épargné, numéro fourni seulement à chiffres égaux, campagnes
+RCS laissées vivantes, pause HubSpot remise à zéro, jeton illisible traité en « invalide », échecs chez Meta dits à
+l'écran et en Telegram, boucle de purge bornée. Restent :
+
+- **La clé du relais de l'agent de Meta (`tenant_settings.mba_relais_cle_id`) n'est pas révoquée** : le connecteur
+  EngageMe chez Meta garde une clé valide, et le relais déduit le numéro de l'espace COURANT (`src/http/mba-relais.ts`).
+  Si l'agent de l'ancien numéro est resté allumé chez Meta (une extinction refusée), il pourrait appeler les outils
+  consentis pour le numéro suivant. À faire : `oublierCle` au mieux, après les étapes chez Meta.
+- **Les caches des autres processus** : numéro et compte de l'espace 60 s (`NUMERO_ESPACE_TTL_MS`), jeton 5 min. Un
+  envoi du worker peut partir de l'ancien numéro dans la minute, et recréer une conversation après la purge. Documenté
+  (invariant 51) ; une invalidation par espace dans la copie qui sert le geste réduirait la fenêtre de moitié.
+- **Décision produit pour Julien : les coûts.** Le suivi des coûts lit `conversation_messages` : la purge retire les
+  coûts de la période en cours (modèles et conversations de service), sans le drapeau `horsRetention`, et les montants
+  baissent. Les garder (agrégat avant purge) ou l'assumer et le dire dans la confirmation.
+- **Ce que la confirmation ne dit pas encore** : les publicités Click-to-WhatsApp actives continuent de dépenser vers le
+  numéro quitté ; la configuration de l'agent de Meta reste attachée à l'ancien numéro chez Meta ; les brouillons de
+  campagne WhatsApp gardent l'ancien numéro et seront refusés au lancement ; les transcriptions de l'agent IA
+  (`agent_sessions.transcript`) restent.
+- **Robustesse** : le verrou de 5 min n'est pas prolongé pendant une purge très longue (volumes faibles aujourd'hui) ;
+  après un 409 `deja_detache` ou `detachement`, l'écran ne recharge pas la carte ; après un succès, les KPIs de l'Accueil
+  ne se rechargent pas.
+
 ## 🟡 Lot 16, le SDK publié : trois décisions à faire valider par Julien (2026-10-10)
 
 - **Node 20 au minimum, licence MIT au nom de SmartLink** : posées sans lui dans `sdk/package.json` et `sdk/LICENSE`.

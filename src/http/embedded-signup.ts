@@ -1,4 +1,5 @@
 import { randomInt } from 'node:crypto';
+import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import { gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
 import { TenantConflictError, SecondNumeroRefuseError } from '../account/es-store.pg';
@@ -6,6 +7,7 @@ import { espaceVerifie, nonEmpty } from './scope';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import { texteDe } from '../lib/erreur';
 import type { Prise, VerrousCourts } from '../db/verrous-courts';
+import type { BilanDeconnexion, IssueDeconnexion } from '../account/deconnexion-numero';
 
 /** Les appels Graph de l'inscription, faits avec le business token que le parcours vient d'obtenir. */
 export interface MetaInscriptionDep {
@@ -100,9 +102,25 @@ export interface EmbeddedSignupRouteDeps {
   /**
    * Les verrous courts partagés par les copies de l'API (`src/db/verrous-courts.ts`) : ils tiennent la minute entre
    * deux demandes de code d'un numéro, quelle que soit la copie qui sert chacune. Requis : en mémoire, deux copies
-   * laissaient partir deux demandes dans la même minute, et chacune coûte un des dix essais de Meta.
+   * laissaient partir deux demandes dans la même minute, et chacune coûte un des dix essais de Meta. Ils tiennent aussi
+   * « Déconnecter le numéro » le temps du geste : un double clic, ou deux copies, ne le jouent pas deux fois.
    */
-  verrous: Pick<VerrousCourts, 'prendre'>;
+  verrous: Pick<VerrousCourts, 'prendre' | 'relacher'>;
+
+  // ----- « Déconnecter le numéro » : le numéro quitte l'espace pour de bon -----
+  //
+  // Requises, comme les précédentes, et sans jeton : le câblage le résout.
+
+  /**
+   * Ce que la déconnexion effacerait et arrêterait, lu sans rien écrire (`PgDeconnexionNumeroStore.bilan`, plus le jeton
+   * relu par le résolveur des appels chez Meta). `null` = l'espace n'a aucun numéro.
+   */
+  bilanDeconnexion(tenantId: string): Promise<BilanDeconnexion | null>;
+  /**
+   * Le déroulé (`deconnecterNumero`, `src/account/deconnexion-numero.ts`) avec ses gestes câblés, puis les caches de ce
+   * process vidés (garde du numéro délié, jetons).
+   */
+  deconnecterNumero(tenantId: string, bilan: BilanDeconnexion): Promise<IssueDeconnexion>;
 }
 
 /**
@@ -118,9 +136,27 @@ export const DELAI_ENTRE_CODES_MS = 60_000;
  * recommence. Rendu en 409 et non en 5xx, sinon Cloudflare remplace le corps par sa page.
  */
 function messageSecondNumero(err: SecondNumeroRefuseError): string {
-  // Pas « détache » : délier coupe les envois et laisse le numéro rattaché, donc ce refus resterait le même.
-  return `Cet espace utilise déjà le numéro ${err.dejaRattache}. Un espace ne peut piloter qu'un seul numéro WhatsApp : pour renouveler sa connexion, choisis ce même numéro dans la fenêtre de Meta ; pour en connecter un autre, crée un second espace.`;
+  // « Déconnecter le numéro » (Accueil) et non « délier » : délier coupe les envois et laisse le numéro rattaché, donc ce
+  // refus resterait le même ; déconnecter le retire de l'espace.
+  return `Cet espace utilise déjà le numéro ${err.dejaRattache}. Un espace ne peut piloter qu'un seul numéro WhatsApp : pour renouveler sa connexion, choisis ce même numéro dans la fenêtre de Meta ; pour en connecter un autre, retire d'abord celui-ci (« Déconnecter le numéro » sur l'Accueil), ou crée un second espace.`;
 }
+
+/**
+ * La durée du verrou de « Déconnecter le numéro » : relâché à la fin du geste, il ne sert d'échéance que si la copie qui
+ * le tient meurt en route. Assez long pour une purge et trois appels à Meta, assez court pour qu'un geste interrompu se
+ * rejoue sans attendre.
+ */
+export const DUREE_VERROU_DECONNEXION_MS = 5 * 60_000;
+
+/** Le corps de « Déconnecter le numéro » : la confirmation, explicite. */
+const CORPS_DECONNEXION = z.object({ confirme: z.literal(true) });
+
+/** Ce que dit un échec, par raison : rien de technique, et ce qu'il faut faire. */
+const MESSAGE_ECHEC_DECONNEXION: Record<'purge' | 'detachement' | 'deja_detache', string> = {
+  purge: 'L’effacement des conversations a échoué : le numéro est toujours connecté. Recommencez dans un instant.',
+  detachement: 'Le numéro n’a pas pu être détaché : il est toujours connecté, mais Meta a peut-être déjà été prévenu. Recommencez dans un instant.',
+  deja_detache: 'Cet espace n’a plus de numéro : la déconnexion a déjà eu lieu.',
+};
 
 /** La clé du délai d'un numéro dans les verrous courts, préfixée pour ne croiser aucun autre usage. */
 export function cleDemandeCode(phoneNumberId: string): string {
@@ -567,5 +603,49 @@ export function registerEmbeddedSignup(
     if (r === null) return reply.code(404).send({ error: 'aucun numéro rattaché à cet espace' });
     await journal(tenant, req, 'numero.relie', { kind: 'tenant', id: tenant }, { ...r });
     return reply.code(200).send({ relie: true, ...r });
+  });
+
+  /**
+   * Le bilan que la confirmation de « Déconnecter le numéro » affiche : ce qui sera effacé, arrêté, perdu. Lecture seule.
+   */
+  app.get('/tenants/:tenantId/numero/deconnexion', optsAdmin, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const b = await deps.bilanDeconnexion(tenant);
+    if (b === null) return reply.code(404).send({ error: 'aucun numéro rattaché à cet espace' });
+    return reply.code(200).send(b);
+  });
+
+  /**
+   * « Déconnecter le numéro » : le numéro quitte l'espace pour de bon (plan
+   * `docs/superpowers/plans/2026-10-10-deconnecter-le-numero.md`). Les conversations sont effacées, l'agent de Meta
+   * éteint et notre app désabonnée du compte WhatsApp (sauf objet partagé ou jeton global), un numéro fourni sorti et son
+   * abonnement arrêté en fin de période, puis le numéro, son compte et son jeton oubliés : l'espace peut en connecter un
+   * autre. Admin seulement, et `{ confirme: true }` exigé : un appel nu ne détache rien.
+   *
+   * 🔴 Un échec rend 409 avec les étapes jouées, jamais 5xx (Cloudflare remplacerait le corps par sa page) : avant le
+   * détachement, rien n'est perdu que les conversations déjà effacées, et le geste se rejoue.
+   */
+  app.post('/tenants/:tenantId/numero/deconnecter', optsAdmin, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    if (!CORPS_DECONNEXION.safeParse(req.body).success) {
+      return reply.code(400).send({ error: 'confirmation requise : { "confirme": true }' });
+    }
+    const prise = await deps.verrous.prendre([[`numero.deconnecter:${tenant}`, DUREE_VERROU_DECONNEXION_MS]]);
+    if (prise === null) return reply.code(409).send({ error: 'Une déconnexion du numéro est déjà en cours pour cet espace.', cause: 'en_cours' });
+    try {
+      const b = await deps.bilanDeconnexion(tenant);
+      if (b === null) return reply.code(404).send({ error: 'aucun numéro rattaché à cet espace' });
+      const r = await deps.deconnecterNumero(tenant, b);
+      // Les identifiants Meta seulement : le numéro affiché est une donnée personnelle, et ce journal n'est jamais purgé.
+      await journal(tenant, req, 'numero.deconnecte', { kind: 'tenant', id: tenant }, {
+        phoneNumberId: b.phoneNumberId, wabaId: b.wabaId, fait: r.fait, etapes: r.etapes.map((e) => `${e.etape}:${e.etat}`),
+      });
+      if (!r.fait) {
+        return reply.code(409).send({ error: MESSAGE_ECHEC_DECONNEXION[r.raison], cause: r.raison, etapes: r.etapes });
+      }
+      return reply.code(200).send({ deconnecte: true, conversations: r.conversations, campagnesArretees: r.campagnesArretees, etapes: r.etapes });
+    } finally {
+      await deps.verrous.relacher(prise);
+    }
   });
 }

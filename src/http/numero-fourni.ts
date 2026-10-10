@@ -10,6 +10,7 @@ import { z } from 'zod';
 import type { PgAbonnementsNumeroStore } from '../stripe/abonnements.pg';
 import type { RetourAbonnement } from '../stripe/abonnement';
 import { corpsDuRefus, type Issue } from '../lib/issue';
+import { programmerLaFinDuNumero } from '../numero/fin-abonnement';
 
 /**
  * LE NUMÉRO FOURNI CÔTÉ CLIENT (lot 3b, spec `docs/superpowers/specs/2026-10-05-numero-fourni-design.md`).
@@ -290,27 +291,13 @@ export function registerNumeroFourni(
     return reply.code(200).send({ rendu: rendu !== null, finProgrammee: await programmerLaFin(tenant) });
   });
 
-  /**
-   * « Abandonner » d'un abonné (lot 4, livraison B) : l'abonnement qui court prend fin à la fin de la période payée chez
-   * Stripe, et la fin se note tout de suite chez nous (sans attendre le webhook) : l'espace ne compte plus parmi les
-   * abonnés qui attendent un numéro. Un refus de Stripe n'empêche pas l'abandon, Julien résilie à la main. Ne lève pas.
-   */
+  /** « Abandonner » d'un abonné (lot 4, livraison B) : la fin de l'abonnement à la fin de la période payée. Ne lève pas. */
   async function programmerLaFin(tenant: string): Promise<boolean> {
-    try {
-      const a = await deps.abonnements.deLEspace(tenant);
-      if (a === null || !vivant(a)) return false;
-      const r = await deps.abonnement.programmerFin(a.abonnementId);
-      if (!r.ok) {
-        await deps.alertes.finNonProgrammee(a.abonnementId, tenant);
-        return false;
-      }
-      await deps.abonnements.noterFinPrevue(a.abonnementId, a.periodeFin ?? new Date());
-      return true;
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error(`numero-fourni : la fin de l'abonnement n'a pas pu être programmée : ${texteDe(err)}`);
-      return false;
-    }
+    return (await programmerLaFinDuNumero({
+      abonnements: deps.abonnements,
+      programmerFin: (id) => deps.abonnement.programmerFin(id),
+      finNonProgrammee: (id, t) => deps.alertes.finNonProgrammee(id, t),
+    }, tenant)) === 'programmee';
   }
 
   /**

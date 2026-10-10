@@ -72,7 +72,7 @@ function app(
     delierNumero: async () => { throw new Error('non attendu dans ce test'); },
     relierNumero: async () => { throw new Error('non attendu dans ce test'); },
     // La minute entre deux demandes de code : `tests/numero-activation.test.ts` l'éprouve. Ici, aucun chemin ne la prend.
-    verrous: { prendre: async () => { throw new Error('non attendu dans ce test'); } },
+    verrous: { prendre: async () => { throw new Error('non attendu dans ce test'); }, relacher: async () => {} },
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, embeddedSignup: deps }), cap };
 }
@@ -161,6 +161,8 @@ describe('POST /embedded-signup/complete', () => {
     expect(message).toContain('second espace');
     // Le renouvellement de l'Accueil aboutit ici quand l'admin choisit un autre numéro : le message dit quoi faire.
     expect(message).toContain('choisis ce même numéro');
+    // Depuis le 2026-10-10, le geste qui libère l'espace existe : le message le nomme.
+    expect(message).toContain('« Déconnecter le numéro »');
     expect(message).not.toContain('détache');
     // Comme pour le conflit inter-workspace : rien n'est abonné, registré ni sauvegardé derrière un refus.
     expect(cap.subscribed).toHaveLength(0);

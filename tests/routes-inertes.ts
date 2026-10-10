@@ -234,8 +234,12 @@ export const historiqueContactInerte: Pick<ContactsRouteDeps['contactHistory'], 
   resumeContact: async () => null,
 };
 
-export const signupInerte: Pick<EmbeddedSignupRouteDeps, 'audit'> = {
+export const signupInerte: Pick<EmbeddedSignupRouteDeps, 'audit' | 'bilanDeconnexion' | 'deconnecterNumero'> = {
   audit: journalMuet,
+  // « Déconnecter le numéro » a son propre fichier (`tests/numero-deconnexion.test.ts`) : ailleurs, ces deux-là LÈVENT,
+  // pour qu'un chemin d'inscription qui se mettrait à les appeler se voie.
+  bilanDeconnexion: async () => { throw new Error('non attendu dans ce test'); },
+  deconnecterNumero: async () => { throw new Error('non attendu dans ce test'); },
 };
 
 export const metaInscriptionInerte: Pick<MetaInscriptionDep, 'wabasForToken' | 'listPhones'> = {

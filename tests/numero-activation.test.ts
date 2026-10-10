@@ -159,7 +159,7 @@ describe('POST /tenants/:tenantId/numero/code', () => {
   });
 
   it('🔴 si la base ne dit rien de la minute, Meta n’est PAS appelé (un essai brûlé ne se rend pas)', async () => {
-    const { server, cap } = app({ verrous: { prendre: async () => { throw new Error('connexion perdue'); } } });
+    const { server, cap } = app({ verrous: { prendre: async () => { throw new Error('connexion perdue'); }, relacher: async () => {} } });
     const res = await server.inject({ method: 'POST', url: CODE_URL, ...h(adminTok), payload: {} });
     expect(res.statusCode).toBe(429);
     expect(res.json<{ error: string }>().error).toMatch(/impossible de vérifier/);

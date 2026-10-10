@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { enTransaction } from '../db/transaction';
 import { vuDeMeta } from '../numero/liberation.pg';
 import { lienTableauStripe } from '../stripe/liens';
@@ -14,6 +14,48 @@ import type { AbonnementStripe, BilanSuppression, ComptesPurges, EtapeJouee, Iss
  * `tests/integration/suppression-espace.integration.test.ts` vérifie qu'un espace voisin, peuplé des mêmes tables, sort
  * intact.
  */
+/** Ce que les gestes chez Meta viseraient pour un espace, et si un AUTRE espace le nomme. */
+export interface ObjetsMeta {
+  /** Les numéros de l'espace, les premiers créés d'abord. */
+  phoneNumberIds: string[];
+  /** Les comptes WhatsApp de l'espace (`waba`), les premiers créés d'abord. */
+  wabasPropres: string[];
+  /** Un autre espace nomme l'un de ces comptes ou de ces numéros : rien ne doit se faire chez Meta. */
+  partage: boolean;
+}
+
+/**
+ * Le numéro et le compte WhatsApp que les gestes chez Meta viseraient (les premiers créés, comme les lisent l'activation
+ * de l'agent, `getTenantPhoneNumberId`, et le jeton, `getTenantWabaId`), et la règle « partagé ». Une seule définition
+ * pour la suppression d'un espace (RC8) et la déconnexion de son numéro : deux copies divergeraient à la première table
+ * neuve qui nomme un numéro. Lecture seule.
+ *
+ * 🔴 PARTAGÉ : un AUTRE espace nomme ce compte WhatsApp ou ce numéro, dans une table qui porte un `waba_id` ou un
+ * `phone_number_id` vivant (`credits_offerts` est une mémoire, pas un usage : elle n'y est pas). Alors rien ne se fait
+ * chez Meta : désabonner le compte, éteindre l'agent ou vider sa liste toucherait cet autre espace.
+ */
+export async function objetsMetaDeLEspace(db: Pool | PoolClient, tenantId: string): Promise<ObjetsMeta> {
+  const numeros = (await db.query<{ id: string; waba_id: string }>(
+    'select id, waba_id from phone_numbers where tenant_id = $1 order by created_at', [tenantId],
+  )).rows;
+  const wabasPropres = (await db.query<{ id: string }>(
+    'select id from waba where tenant_id = $1 order by created_at', [tenantId],
+  )).rows.map((r) => r.id);
+  const wabas = [...new Set([...wabasPropres, ...numeros.map((r) => r.waba_id)])];
+  const pns = numeros.map((r) => r.id);
+  const partage = (await db.query<{ partage: boolean }>(
+    `select exists (select 1 from phone_numbers p where p.tenant_id <> $1 and (p.waba_id = any($2::text[]) or p.id = any($3::text[])))
+         or exists (select 1 from waba w where w.tenant_id <> $1 and w.id = any($2::text[]))
+         or exists (select 1 from waba_credentials c where c.tenant_id <> $1 and c.waba_id = any($2::text[]))
+         or exists (select 1 from campaigns c where c.tenant_id <> $1 and c.phone_number_id = any($3::text[]))
+         or exists (select 1 from mba_liste m where m.tenant_id <> $1 and m.phone_number_id = any($3::text[]))
+         or exists (select 1 from agent_tool_consommateurs a where a.tenant_id <> $1 and a.consommateur = any($4::text[]))
+         as partage`,
+    [tenantId, wabas, pns, pns.map((pn) => `mba:${pn}`)],
+  )).rows[0]!.partage;
+  return { phoneNumberIds: pns, wabasPropres, partage };
+}
+
 export class PgSuppressionEspaceStore {
   constructor(
     private readonly pool: Pool,
@@ -72,29 +114,7 @@ export class PgSuppressionEspaceStore {
     )).rows[0];
     const numeroFourni = f ? { numero: f.numero, vuDeMeta: (await vuDeMeta(this.pool, tenantId, f)).vu } : null;
 
-    // Le numéro et le compte WhatsApp que les gestes chez Meta viseraient : les premiers créés, comme les lisent
-    // l'activation de l'agent (`getTenantPhoneNumberId`) et le jeton (`getTenantWabaId`).
-    const numeros = (await this.pool.query<{ id: string; waba_id: string }>(
-      'select id, waba_id from phone_numbers where tenant_id = $1 order by created_at', [tenantId],
-    )).rows;
-    const wabasPropres = (await this.pool.query<{ id: string }>(
-      'select id from waba where tenant_id = $1 order by created_at', [tenantId],
-    )).rows.map((r) => r.id);
-    const wabas = [...new Set([...wabasPropres, ...numeros.map((r) => r.waba_id)])];
-    const pns = numeros.map((r) => r.id);
-    // 🔴 PARTAGÉ : un AUTRE espace nomme ce compte WhatsApp ou ce numéro, dans une table qui porte un `waba_id` ou un
-    // `phone_number_id` vivant (`credits_offerts` est une mémoire, pas un usage : elle n'y est pas). Alors rien ne se
-    // fait chez Meta : désabonner le compte, éteindre l'agent ou vider sa liste toucherait cet autre espace.
-    const partage = (await this.pool.query<{ partage: boolean }>(
-      `select exists (select 1 from phone_numbers p where p.tenant_id <> $1 and (p.waba_id = any($2::text[]) or p.id = any($3::text[])))
-           or exists (select 1 from waba w where w.tenant_id <> $1 and w.id = any($2::text[]))
-           or exists (select 1 from waba_credentials c where c.tenant_id <> $1 and c.waba_id = any($2::text[]))
-           or exists (select 1 from campaigns c where c.tenant_id <> $1 and c.phone_number_id = any($3::text[]))
-           or exists (select 1 from mba_liste m where m.tenant_id <> $1 and m.phone_number_id = any($3::text[]))
-           or exists (select 1 from agent_tool_consommateurs a where a.tenant_id <> $1 and a.consommateur = any($4::text[]))
-           as partage`,
-      [tenantId, wabas, pns, pns.map((pn) => `mba:${pn}`)],
-    )).rows[0]!.partage;
+    const { phoneNumberIds: pns, wabasPropres, partage } = await objetsMetaDeLEspace(this.pool, tenantId);
 
     const personnes = (await this.pool.query<{ email: string; ailleurs: boolean }>(
       `select i.email,

@@ -71,6 +71,11 @@ export type AuditAction =
    */
   | 'numero.delie'
   | 'numero.relie'
+  /**
+   * « Déconnecter le numéro » : le numéro quitte l'espace pour de bon. Le détail porte les identifiants Meta du numéro et du
+   * compte, et les étapes jouées ; jamais le numéro affiché.
+   */
+  | 'numero.deconnecte'
   | 'contact.exporte'
   /**
    * La connexion publicitaire : ce geste pose un jeton qui permet de dépenser l'argent du client chez Meta. Qui a

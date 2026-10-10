@@ -1970,6 +1970,18 @@ scénario, comment importer des contacts.
   autorisation neuve (la carte le confirme), rien n'est effacé et le numéro reste branché (un autre numéro est refusé : un espace en pilote un seul). C'est
   le recours d'un espace relié avant la v4 de l'inscription, dont l'autorisation dure 60 jours (celle des espaces
   reliés depuis n'expire pas), et de tout espace dont les envois s'arrêtent sur une erreur d'autorisation.
+- ✅ **« Déconnecter le numéro »** (2026-10-10) : à côté de « Renouveler la connexion Meta », un administrateur retire
+  pour de bon le numéro de l'espace, pour en connecter un autre. Une fenêtre dit d'abord ce qui part : les
+  conversations de l'espace, effacées définitivement avec leurs messages (RCS compris) et leur analyse ; les campagnes
+  WhatsApp en cours, programmées ou en pause, arrêtées pour de bon (une campagne RCS continue, sans son repli
+  WhatsApp) ; l'agent de Meta éteint, l'équipe redevenant celle qui répond. Il faut retaper le numéro pour confirmer.
+  Chez Meta, Messaging Me se retire du compte WhatsApp du client, qui garde son numéro et peut le connecter ailleurs
+  (rien n'est touché chez Meta si ce compte sert aussi un autre espace, ou sans autorisation valide) ; si Meta refuse
+  une étape, le compte rendu le dit et l'équipe Messaging Me est prévenue. Les fiches des contacts, les scénarios, les
+  agents et les réglages restent ; les modèles de message, eux, appartiennent au compte WhatsApp, et la synchro HubSpot
+  est à rallumer sur le nouveau numéro. Un numéro fourni par Messaging Me est perdu : son abonnement s'arrête à la fin
+  de la période payée, sans remboursement. Ensuite, la carte redevient la zone « Connecter ». « Délier » (Canaux et
+  services) reste la coupure réversible, qui garde le numéro.
 - ✅ **Un numéro fourni pour qui n'en a pas** (lot 3b, LIVE et éprouvé le 2026-10-06) : sur l'Accueil d'un
   espace sans numéro, « Pas de numéro ? Nous vous en fournissons un » mène à la page « Connecter WhatsApp ».
   « Fournissez-moi un numéro » se paie d'abord (3,50 € HT par mois, abonnement Stripe, lot 3c) : « Payer » mène à la
