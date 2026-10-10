@@ -18,6 +18,10 @@
 - **Lot 4, la révision de l'API se lit sous le titre de `/ops`.** L'image n'a pas `.git` : elle reçoit la révision par
   `ARG REVISION`, que le compose transmet depuis `REVISION=$(git rev-parse --short HEAD)` (`DEPLOY.md`). Oubliée, elle
   vaut « inconnue », jamais une révision devinée.
+- **En production le 2026-10-10** (API et deux workers), après une CI verte job par job : l’intégration avait été
+  bloquée la veille par la limite de tirage de Docker Hub, trois essais. Les trois conteneurs portent la révision
+  déployée, tournent en uid 1000, sans erreur ni redémarrage ; la latence 24 h relue par le vrai code avec les seuils
+  neufs (90 s pour les files de fond).
 
 ## 2026-10-09 : la préparation d'une file se partage (lot 3 du plan de performance)
 
