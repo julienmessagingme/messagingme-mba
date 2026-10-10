@@ -86,7 +86,15 @@ jobs:
           set -euo pipefail
           umask 077
           mkdir -p ~/.ssh
-          printf '%s\n' "$CLE" > ~/.ssh/cle_sdk
+          # Sans retour chariot : posée depuis PowerShell, la clé peut arriver en CRLF, qu'OpenSSH ne lit pas.
+          printf '%s\n' "$CLE" | tr -d '\r' > ~/.ssh/cle_sdk
+          # L'empreinte PUBLIQUE de la clé lue (sans danger) : à comparer à celle de la clé de déploiement du dépôt
+          # (gh repo deploy-key list). Illisible ou protégée par une phrase de passe : on le dit et on s'arrête.
+          if ! ssh-keygen -y -P '' -f ~/.ssh/cle_sdk > ~/.ssh/cle_sdk.pub 2>/dev/null; then
+            echo "::error::SDK_DEPLOY_KEY illisible, ou protégée par une phrase de passe : la recréer sans phrase de passe."
+            exit 1
+          fi
+          echo "::notice::empreinte de la clé lue : $(ssh-keygen -lf ~/.ssh/cle_sdk.pub)"
           # La cle d'hote publiee par GitHub (`gh api meta`), ecrite en dur : jamais de confiance au premier contact.
           printf '%s\n' 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > ~/.ssh/hote_github
           export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/cle_sdk -o IdentitiesOnly=yes -o UserKnownHostsFile=$HOME/.ssh/hote_github -o StrictHostKeyChecking=yes"
