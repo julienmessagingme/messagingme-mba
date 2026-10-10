@@ -75,35 +75,6 @@ Meta) ; les cinq autres espaces ont des jetons sans expiration ; et ce jeton exp
 échouer le renouvellement avant `2ca33d15`. **Essai réel AVANT le 16** (`docs/prive/ESSAIS-REELS.md`, en tête) : sur cet
 espace, le bouton, le même compte et le même numéro, puis Claude relit le jeton chez Meta (« expire : jamais »).
 
-## LOT 16 : LE CONTRAT OPENAPI ET LE SDK (2026-10-09), A EN PRODUCTION, B ATTEND LE DÉPÔT DÉDIÉ
-
-Spec `docs/superpowers/specs/2026-10-09-openapi-sdk-design.md`, plan `docs/superpowers/plans/2026-10-09-openapi-sdk.md`
-(décisions de Julien du 2026-10-09). Livraison A : le contrat (`src/api/openapi/`, `GET /openapi.json`, la section
-« Contrat OpenAPI » de la doc, `llms.txt`), aucune migration : EN PRODUCTION (`05501ec5`, jaunes de relecture
-`5fd285b4`). Livraison B : le SDK (`sdk/`, `npm run sdk:contrat`, `.github/workflows/sdk.yml`) est sur `main`, sans
-effet en production ; l'action reste inerte tant que le dépôt dédié et sa clé n'existent pas. La page « SDK » de la
-doc, `features.md` et `llms.txt` partent APRÈS la première publication, pour qu'aucune commande d'installation ne mente.
-
-**La commande de Julien** (PowerShell, une seule fois ; `ssh-keygen` demande une phrase de passe : Entrée deux fois,
-vide). Le dépôt public, une clé de déploiement en écriture sur lui seul, sa moitié privée posée en secret de ce dépôt
-sans jamais s'afficher, puis la première publication :
-
-```powershell
-gh repo create julienmessagingme/messagingme-sdk --public --description "SDK TypeScript de l'API Messaging Me"
-ssh-keygen -t ed25519 -C "publication messagingme-sdk" -f "$env:TEMP\cle_sdk"
-gh repo deploy-key add "$env:TEMP\cle_sdk.pub" --repo julienmessagingme/messagingme-sdk --title "publication depuis messagingme-mba" --allow-write
-Get-Content "$env:TEMP\cle_sdk" -Raw | gh secret set SDK_DEPLOY_KEY --repo julienmessagingme/messagingme-mba
-Remove-Item "$env:TEMP\cle_sdk", "$env:TEMP\cle_sdk.pub"
-gh workflow run sdk.yml --repo julienmessagingme/messagingme-mba
-```
-
-Les publications suivantes : à la main, APRÈS le `up` de l'API (`DEPLOY.md`, « Le SDK se publie APRÈS le
-déploiement de l'API »). Conseillé à Julien : réserver la portée npm `@messagingme` (une organisation npm gratuite,
-rien à y publier), pour qu'un `npm i @messagingme/sdk` tapé par erreur ne trouve jamais le paquet d'un tiers.
-
-Essais réels : importer le contrat dans un outil et appeler une route avec une clé ; puis installer le SDK, créer une
-fiche et vérifier un webhook d'essai (liste unique : `docs/prive/ESSAIS-REELS.md`, essais 19 et 20).
-
 ## L'OFFRE GRATUITE S'APPELLE « FREE », EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ
 
 Plan `docs/superpowers/plans/2026-10-08-offre-free.md`. En production (`dd3298bf`, CI verte job par job, `up` de l'API,

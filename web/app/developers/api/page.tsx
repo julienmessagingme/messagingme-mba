@@ -58,6 +58,10 @@ function Accueil({ session }: { session: Session | null }) {
             {t('Ouvrir le contrat', 'Open the contract')}
           </a>
         </p>
+        <p className="text-sm text-ink-500">
+          {t('En TypeScript, le client généré depuis ce contrat :', 'In TypeScript, the client generated from this contract:')}{' '}
+          <LienDoc page="sdk">{t('SDK TypeScript', 'TypeScript SDK')}</LienDoc>.
+        </p>
       </Section>
 
       <Section id="authentification" titre={t('Authentification', 'Authentication')}>

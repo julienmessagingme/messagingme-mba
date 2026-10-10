@@ -18,6 +18,7 @@
 - [Documentation de l’API](https://console.messagingme.app/developers/api)
 - [Serveur MCP](https://console.messagingme.app/developers/mcp)
 - [Contrat OpenAPI de l’API](https://api.messagingme.app/openapi.json) : chaque route, ses corps, ses réponses, ses erreurs, et les événements des webhooks sortants.
+- [SDK TypeScript](https://console.messagingme.app/developers/api/sdk) : le client typé de l’API, généré depuis le contrat, et la vérification de signature des webhooks.
 
 ## Contact
 

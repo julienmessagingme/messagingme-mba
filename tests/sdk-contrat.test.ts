@@ -34,6 +34,13 @@ describe('le contrat et les types du SDK sont ceux du code', () => {
     }
   }, 120_000);
 
+  it('la page SDK de la doc et le README installent la version de sdk/package.json', () => {
+    // Monter la version sans les toucher ferait installer l'ancienne aux intégrateurs, sans aucune erreur.
+    const { version } = JSON.parse(lire('sdk/package.json')) as { version: string };
+    expect(lire('web/app/developers/api/sdk/page.tsx')).toContain(`const VERSION_SDK = '${version}';`);
+    expect(lire('sdk/README.md')).toContain(`messagingme-sdk#v${version}`);
+  });
+
   it('le SDK publié pointe la production et n’embarque aucune dépendance d’exécution', () => {
     const paquet = JSON.parse(lire('sdk/package.json')) as Record<string, unknown>;
     expect(paquet.dependencies).toBeUndefined();

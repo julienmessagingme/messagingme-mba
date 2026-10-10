@@ -50,6 +50,12 @@ export const PAGES_DOC = [
     ancres: ['premier-appel', 'endpoints', 'adresse', 'openapi', 'authentification'],
   },
   {
+    // Le client TypeScript (lot 16, livraison B), publié dans son propre dépôt.
+    cle: 'sdk', href: '/developers/api/sdk', fichier: 'web/app/developers/api/sdk/page.tsx', groupe: 'demarrer',
+    nav: ['SDK TypeScript', 'TypeScript SDK'], titre: ['SDK TypeScript', 'TypeScript SDK'],
+    ancres: ['installation', 'premier-appel', 'erreurs', 'webhook'],
+  },
+  {
     cle: 'contacts', href: '/developers/api/contacts', fichier: 'web/app/developers/api/contacts/page.tsx', groupe: 'reference-api',
     nav: ['Contacts', 'Contacts'], titre: ['Contacts', 'Contacts'],
     ancres: ['creer', 'lot', 'lire', 'rechercher', 'modifier', 'effacer', 'champs', 'creer-champ'],

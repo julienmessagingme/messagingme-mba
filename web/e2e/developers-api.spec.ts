@@ -37,6 +37,7 @@ async function sansSession(page: Page) {
  */
 const SECTIONS: Record<CleDePage, string[]> = {
   accueil: ['Premier appel', 'Tous les endpoints', 'Adresse de base', 'Authentification'],
+  sdk: ['Installation', 'Un premier appel', 'Les erreurs', 'Vérifier un webhook'],
   contacts: [],
   messages: ['Message ou envoi'],
   conversations: ['Pagination'],

@@ -1,5 +1,18 @@
 # todo.md : backlog
 
+## 🟡 Lot 16, le SDK publié : trois décisions à faire valider par Julien (2026-10-10)
+
+- **Node 20 au minimum, licence MIT au nom de SmartLink** : posées sans lui dans `sdk/package.json` et `sdk/LICENSE`.
+- **Réserver la portée npm `@messagingme`** (une organisation npm gratuite, rien à y publier) : un `npm i @messagingme/sdk`
+  tapé par erreur ne doit jamais trouver le paquet d'un tiers. Le SDK s'installe depuis GitHub
+  (`julienmessagingme/messagingme-sdk`) ; une nouvelle version se publie à la main après le `up` de l'API (`DEPLOY.md`).
+- 🟡 **Les exemples de la page « SDK TypeScript » ne sont gardés par rien** (relecture du 2026-10-10) : ils sont écrits
+  dans `web/app/developers/api/sdk/page.tsx`, la garde anti-JSON ne voit pas des clés TypeScript sans guillemets, et aucun
+  test ne les compile contre `sdk/src/index.ts`. À faire : un module `web/lib/sdk-exemples.ts` typé contre le SDK, dont
+  les corps passent les validateurs de `tests/api-exemples.test.ts`, et le README qui reprend les mêmes blocs. Le README
+  publié (`v0.1.0`) envoie encore un modèle sans `params` : à corriger à la prochaine version (une étiquette ne se
+  republie pas).
+
 ## 🟡 « Renouveler la connexion Meta » : ce que la relecture laisse (2026-10-09)
 
 - **Un `register` rejoué sur un numéro en service non `CONNECTED`** (`src/http/embedded-signup.ts`, étape 5) : un numéro

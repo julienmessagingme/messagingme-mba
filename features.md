@@ -2279,6 +2279,14 @@ scénario, comment importer des contacts.
   elle-même, il est toujours égal au code en production : un intégrateur l'importe dans son outil de requêtes ou en
   génère un client. La Documentation API le présente sur son Accueil (section « Contrat OpenAPI ») et `llms.txt` le
   cite.
+- ✅ **Le SDK TypeScript** (lot 16, 2026-10-10) : `@messagingme/sdk`, publié dans son propre dépôt GitHub
+  (`julienmessagingme/messagingme-sdk`, étiquette par version) et installé par
+  `npm install github:julienmessagingme/messagingme-sdk#v<version>` (la version de `sdk/package.json`). Ses types sont générés depuis le contrat OpenAPI : un
+  chemin, un corps ou une réponse qui n'existent pas ne compilent pas. Il lève une erreur typée sur toute réponse hors
+  2xx (statut, code de l'API, délai à attendre) et vérifie la signature d'un webhook sortant (rotation du secret
+  comprise). Aucune dépendance, Node 20 ou plus. La Documentation API lui consacre une page (Démarrer > SDK
+  TypeScript) et `llms.txt` le cite. Une version publiée ne change plus ; une nouvelle se publie à la main, après le
+  déploiement de l'API.
 
 ### Ce que la console remonte vers l'outil du client (Paramètres > Intégrations)
 
