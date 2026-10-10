@@ -21,15 +21,16 @@ n'est pas documentaire, elle est côté serveur, et elle est posée depuis le 20
 
 🔴 **`api.` ET `mba.messagingme.app` N'ACCEPTENT QUE CE QUI ARRIVE PAR CLOUDFLARE.** Deux fichiers
 personnalisés de NPM, que NPM ne réécrit jamais : `/data/nginx/custom/http_top.conf` (la liste des plages
-de Cloudflare, et la table qui ne vise que ces DEUX hôtes) et `/data/nginx/custom/server_proxy.conf` (la
-ligne de refus). Un appel direct sur l'IP est fermé sans réponse (`444`) ; les autres clients du VPS ne sont
-pas touchés.
+de Cloudflare, et la table des hôtes visés) et `/data/nginx/custom/server_proxy.conf` (la ligne de refus).
+Un appel direct sur l'IP est fermé sans réponse (`444`). Posé pour ces deux hôtes le 2026-09-21, le filtre
+couvre depuis le 2026-10-10 tous les hôtes du VPS qui passent par Cloudflare ; la liste vit dans le fichier,
+pas ici (dépôt public).
 - 🔴 **Le filtre lit `$realip_remote_addr`, JAMAIS `$remote_addr`.** NPM réécrit `$remote_addr` avec
   l'en-tête `X-Real-IP` (`nginx.conf`), que n'importe qui peut envoyer à travers Cloudflare : un filtre
   posé dessus bloquerait de vrais utilisateurs et se laisserait tromper. Vérifié : un appel direct portant
   un `X-Real-IP` d'une plage Cloudflare est bien refusé.
 - ⚠️ **`server_proxy.conf` est inclus dans TOUS les hôtes du VPS**, d'où la table qui restreint l'effet aux
-  deux nôtres. Y ajouter quelque chose pour un autre projet se fait À LA SUITE, jamais en écrasant le fichier.
+  hôtes listés. Un nouvel hôte derrière Cloudflare s'y ajoute, sinon il reste joignable en direct. Y ajouter quelque chose pour un autre projet se fait À LA SUITE, jamais en écrasant le fichier.
 - ⚠️ **En HTTP simple (port 80), l'appel direct reçoit encore un `301` vers l'adresse HTTPS**, parce que la
   redirection de NPM passe avant notre ligne. Rien n'atteint l'application par là, et la redirection renvoie
   vers Cloudflare.
