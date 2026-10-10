@@ -3,6 +3,7 @@ import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
 import { espaceVerifie, nonEmpty } from './scope';
 import type { RcsChannelInfo, RcsChannelCheck } from '../rcs/channel-info';
+import { makeJournal, type AuditSink } from '../audit/journal';
 
 export interface RcsChannelRouteDeps {
   /** Les canaux RCS des espaces. */
@@ -15,6 +16,8 @@ export interface RcsChannelRouteDeps {
   verifier(apiKey: string): Promise<RcsChannelCheck>;
   /** Enregistre une clé déjà vérifiée (chiffrement fait par l'appelant). */
   activer(tenantId: string, canal: RcsChannelInfo, apiKey: string): Promise<void>;
+  /** Le journal des actions (lot 5) : activer ou désactiver le canal se trace, jamais la clé. */
+  audit: AuditSink;
 }
 
 /**
@@ -24,6 +27,7 @@ export interface RcsChannelRouteDeps {
  */
 export function registerRcsChannel(app: FastifyInstance, deps: RcsChannelRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
+  const journal = makeJournal(deps.audit);
 
   app.get('/tenants/:tenantId/rcs/channel', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -45,6 +49,7 @@ export function registerRcsChannel(app: FastifyInstance, deps: RcsChannelRouteDe
     }
 
     await deps.activer(tenant, check.channel, (apiKey as string).trim());
+    await journal(tenant, req, 'rcs.canal_active', { kind: 'canal_rcs', id: tenant });
     return reply.code(200).send({ active: true, channel: check.channel });
   });
 
@@ -53,6 +58,7 @@ export function registerRcsChannel(app: FastifyInstance, deps: RcsChannelRouteDe
     if (forbidNonAdmin(req, reply)) return;
     const fait = await deps.agents.desactiver(tenant);
     if (!fait) return reply.code(404).send({ error: 'canal RCS non activé' });
+    await journal(tenant, req, 'rcs.canal_desactive', { kind: 'canal_rcs', id: tenant });
     return reply.code(200).send({ active: false });
   });
 }

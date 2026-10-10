@@ -12,6 +12,7 @@ import type { LatenceHttpRow } from '../ops/latence-http';
 import type { BilanRisque } from '../engagement/balayage';
 import { seuilLatenceSecondes } from '../queue/names';
 import { messageDe } from '../lib/erreur';
+import { makeTraceOps, type AuditSink } from '../audit/journal';
 
 /**
  * Surface d'exploitation entre espaces, en lecture sauf quelques écritures d'exploitation par nature.
@@ -151,6 +152,11 @@ export interface OpsRouteDeps {
    * `mfa.reinitialise` dans chacun de ses espaces, avec l'adresse de l'exploitant (`par`) pour acteur.
    */
   reinitialiserMfa(email: string, par: string): Promise<{ identityId: string; espaces: number } | null>;
+  /**
+   * Le journal des actions de l'espace touché (lot 5) : chaque geste d'exploitation sur un espace y laisse sa ligne,
+   * l'adresse de l'exploitant pour acteur, sans la note (`makeTraceOps`).
+   */
+  audit: AuditSink;
 }
 
 /**
@@ -180,6 +186,7 @@ const MAX_REJEU = 100;
  */
 export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: PreHandler): void {
   const opts = { preHandler: garde };
+  const tracer = makeTraceOps(deps.audit);
 
   /**
    * L'usage de l'API publique, agrégé par minute : qui consomme quoi, pour arbitrer un jour un seuil sur des
@@ -207,6 +214,7 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
     const fait = await deps.verrouillerEspace(tenantId, corps.verrouille, note);
     if (!fait) return reply.code(404).send({ error: 'espace inconnu' });
     journaliser('warn', 'ops_verrou_espace', { tenantId, verrouille: corps.verrouille, par: auteurOps(req), note, at: new Date().toISOString() });
+    await tracer(tenantId, auteurOps(req), 'ops.verrou', { verrouille: corps.verrouille });
     return reply.code(200).send({ tenantId, verrouille: corps.verrouille });
   });
 
@@ -293,7 +301,7 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
 
   /**
    * Entrer dans l'espace d'un client pour voir ce qu'il voit : jeton rendu en lecture seule, qui ne marque rien
-   * comme lu et porte l'adresse de l'observateur. 🔴 Invisible côté client, journalisé côté exploitation.
+   * comme lu et porte l'adresse de l'observateur. 🔴 Visible du client dans son journal des actions (lot 5), et journalisé côté exploitation.
    */
   app.post('/ops/observe', opts, async (req, reply) => {
     const tenantId = (req.body as { tenantId?: unknown } | null)?.tenantId;
@@ -308,6 +316,8 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
     if (!r) return reply.code(404).send({ error: 'espace inconnu' });
     // eslint-disable-next-line no-console
     console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_observation', tenantId, tenantName: r.tenantName, par, at: new Date().toISOString() }));
+    // Le client voit que Messaging Me a regardé son espace : une observation ne modifie rien, elle se trace quand même.
+    await tracer(tenantId, par, 'ops.espace_observe');
     return reply.code(200).send({ token: r.token, tenantId, tenantName: r.tenantName });
   });
 
@@ -333,6 +343,8 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
       const revoquee = await deps.revoquerCleModele(tenantId);
       // eslint-disable-next-line no-console
       console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_revoque_cle_modele', tenantId, revoquee, par: auteurOps(req), at: new Date().toISOString() }));
+      // Rien n'est tracé sans clé révoquée : la ligne dirait le contraire de ce qui s'est passé.
+      if (revoquee) await tracer(tenantId, auteurOps(req), 'ops.cle_modele_revoquee');
       return reply.code(200).send({ tenantId, revoquee });
     } catch (err) {
       // 4xx et jamais 5xx : Cloudflare remplacerait le corps, et l'opérateur doit savoir que la clé est toujours là
@@ -359,6 +371,7 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
     if (solde === null) return reply.code(404).send({ error: 'espace inconnu' });
     // eslint-disable-next-line no-console
     console.log(JSON.stringify({ lvl: 'warn', msg: 'ops_recharge_agent', tenantId, montantMicroEur: montant, soldeMicroEur: solde, par, note, at: new Date().toISOString() }));
+    await tracer(tenantId, par, 'ops.credit_ajoute', { montantMicroEur: montant });
     return reply.code(200).send({ tenantId, soldeMicroEur: solde });
   });
 
@@ -391,6 +404,7 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
       tenantId, comptePubId: depose.comptePubId, pageId: depose.pageId,
       ancienRevoque: depose.ancienRevoque, par: auteurOps(req), note, at: new Date().toISOString(),
     });
+    await tracer(tenantId, auteurOps(req), 'ops.pub_connectee', { comptePubId: depose.comptePubId, pageId: depose.pageId });
     return reply.code(200).send({ tenantId, connexion: depose });
   });
 
@@ -410,6 +424,7 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
     const bilan = await deps.balayerRisque(tenantId);
     if (bilan === null) return reply.code(404).send({ error: 'espace inconnu' });
     journaliser('warn', 'ops_balayage_risque', { ...bilan, par: auteurOps(req), note, at: new Date().toISOString() });
+    await tracer(tenantId, auteurOps(req), 'ops.risque_balaye', { evalues: bilan.evalues, transitions: bilan.transitions, declenches: bilan.declenches });
     return reply.code(200).send({ bilan });
   });
 

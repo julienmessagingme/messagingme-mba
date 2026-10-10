@@ -6,6 +6,7 @@ import { signSession, verifySession } from '../src/auth/token';
 import { inboxDepInerte, inboxInerte, opsInerte } from './routes-inertes';
 import { accesOps, ADRESSE_OPS } from './acces-ops';
 import { capturerJournal } from './journal';
+import type { AuditSink } from '../src/audit/journal';
 
 /**
  * Session d'OBSERVATION : entrer dans l'espace d'un client depuis la surface d'exploitation, pour voir ce
@@ -187,5 +188,41 @@ describe('ce que peut faire une session d’observation', () => {
     const vrai = await new SignJWT({ tenantId: 't1', role: 'admin', impersonated: true })
       .setProtectedHeader({ alg: 'HS256' }).setSubject('u1').setIssuedAt().setExpirationTime('1h').sign(cle);
     expect((await verifySession(vrai, SECRET))?.impersonated).toBe(true);
+  });
+});
+
+describe('les gestes d’exploitation laissent leur ligne dans l’espace qu’ils touchent (lot 5)', () => {
+  function avecJournal(over: Record<string, unknown> = {}) {
+    const audits: Array<{ tenant: string; acteur: { userId: string | null; email: string | null }; action: string; cible: { kind: string; id: string }; detail: Record<string, unknown> | undefined }> = [];
+    const audit: AuditSink = async (tenant, acteur, action, cible, detail) => { audits.push({ tenant, acteur, action, cible, detail }); };
+    return { audits, a: app({ audit, verrouillerEspace: async () => true, rechargerAgent: async () => 9_000_000, ...over }) };
+  }
+
+  it('🔴 observer, verrouiller, recharger : l’exploitant pour acteur, l’espace pour cible, jamais la note', async () => {
+    const { a, audits } = avecJournal();
+    await a.inject({ method: 'POST', url: '/ops/observe', ...avecOps(OPS), payload: { tenantId: CONNU } });
+    await a.inject({ method: 'POST', url: `/ops/verrou/${CONNU}`, ...avecOps(OPS), payload: { verrouille: true, note: 'note interne du verrou' } });
+    await a.inject({ method: 'POST', url: `/ops/credits/${CONNU}`, ...avecOps(OPS), payload: { montantMicroEur: 5_000_000, note: 'note interne de recharge' } });
+    expect(audits.map((l) => [l.action, l.detail])).toEqual([
+      ['ops.espace_observe', {}], ['ops.verrou', { verrouille: true }], ['ops.credit_ajoute', { montantMicroEur: 5_000_000 }],
+    ]);
+    expect(audits.every((l) => l.tenant === CONNU && l.acteur.userId === null && l.acteur.email === ADRESSE_OPS
+      && l.cible.kind === 'tenant' && l.cible.id === CONNU)).toBe(true);
+    expect(JSON.stringify(audits)).not.toContain('note interne');
+    await a.close();
+  });
+
+  it('un journal en panne ne fait pas échouer le geste : l’observation s’ouvre quand même', async () => {
+    const { a } = avecJournal({ audit: async () => { throw new Error('audit_log indisponible'); } });
+    const res = await a.inject({ method: 'POST', url: '/ops/observe', ...avecOps(OPS), payload: { tenantId: CONNU } });
+    expect(res.statusCode).toBe(200);
+    await a.close();
+  });
+
+  it('un espace inconnu n’écrit rien', async () => {
+    const { a, audits } = avecJournal();
+    await a.inject({ method: 'POST', url: '/ops/observe', ...avecOps(OPS), payload: { tenantId: INCONNU } });
+    expect(audits).toEqual([]);
+    await a.close();
   });
 });

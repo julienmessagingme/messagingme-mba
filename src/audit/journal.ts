@@ -2,7 +2,8 @@ import type { AuditAction } from './store.pg';
 import { tenter } from '../lib/tenter';
 
 /**
- * Écriture du journal, telle qu'une route la reçoit en dépendance. Optionnelle : absente (câblages de test),
+ * Écriture du journal, telle qu'une route la reçoit en dépendance. Requise : les tests qui ne l'observent pas passent
+ * `journalMuet`. (L'ancienne phrase disait « optionnelle », elle ne l'est plus depuis les dépendances requises.)
  * l'action métier se déroule sans trace.
  */
 export type AuditSink = (
@@ -12,6 +13,19 @@ export type AuditSink = (
   target: { kind: string; id: string },
   detail?: Record<string, unknown>,
 ) => Promise<void>;
+
+/**
+ * Ce qu'un geste d'exploitation laisse dans l'espace qu'il touche : l'exploitant (`par`, son adresse) pour acteur,
+ * l'espace pour cible. Best-effort comme `makeJournal` : le geste a eu lieu, un journal en panne ne doit pas faire croire
+ * le contraire.
+ */
+export type TraceOps = (tenantId: string, par: string, action: AuditAction, detail?: Record<string, unknown>) => Promise<void>;
+
+export function makeTraceOps(audit: AuditSink): TraceOps {
+  return async (tenantId, par, action, detail = {}) => {
+    await tenter('audit ignoré:', () => audit(tenantId, { userId: null, email: par }, action, { kind: 'tenant', id: tenantId }, detail));
+  };
+}
 
 /** Ce qu'une route appelle. L'acteur est déduit de la requête, l'appelant n'a pas à le construire. */
 export type Journal = (

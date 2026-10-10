@@ -11,6 +11,7 @@ import { lireContexteAgent } from '../src/agent/contexte';
 import type { AgentComplet } from '../src/agent/agent-store';
 import { ficheVide } from '../src/agent/fiche';
 import { reglagesDepInertes, reglagesInertes } from './routes-inertes';
+import type { AuditSink } from '../src/audit/journal';
 
 /**
  * « L'IA SE DÉCLARE COMME TELLE », AU NIVEAU DE L'ESPACE (tâche 8, migration 0140).
@@ -35,8 +36,11 @@ const h = (t: string) => ({ headers: { 'content-type': 'application/json', autho
 function app(depart: FrequenceMentionIa | null = null) {
   const ecrits: FrequenceMentionIa[] = [];
   let courant = depart;
+  const audits: Array<{ tenant: string; acteur: { userId: string | null; email: string | null }; action: string; cible: { kind: string; id: string }; detail: Record<string, unknown> | undefined }> = [];
+  const audit: AuditSink = async (tenant, acteur, action, cible, detail) => { audits.push({ tenant, acteur, action, cible, detail }); };
   const settings: SettingsRouteDeps = {
     ...reglagesInertes,
+    audit,
     // Aucun portail lie : c est le defaut, et la fixture le DIT (cf. `tests/hubspot.ts`).
     hubspotPortalConnecte: sansPortailHubspot,
     reglages: {
@@ -60,7 +64,7 @@ function app(depart: FrequenceMentionIa | null = null) {
       ],
     },
   };
-  return { ecrits, srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, settings }) };
+  return { ecrits, audits, srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, settings }) };
 }
 
 const URL_IA = '/tenants/t1/settings/mention-ia';
@@ -172,5 +176,23 @@ describe('le contexte d’un tour lit la politique de l’ESPACE', () => {
     // Le piège serait un `?? 'session'` posé sur une valeur falsy : `jamais` est une chaîne non vide, mais
     // c'est le régime que quelqu'un pourrait « corriger » par prudence. Il est le choix du client.
     expect((await lireContexteAgent(deps('jamais'), 't1', AG))?.mentionIaFrequence).toBe('jamais');
+  });
+});
+
+describe('la mention d’IA au journal des actions (lot 5)', () => {
+  it('🔴 régler la fréquence se trace, avant et après ; `null` avant quand rien n’était réglé', async () => {
+    const { srv, audits } = app(null);
+    await srv.inject({ method: 'PATCH', url: URL_IA, ...h(adminTok), payload: { frequence: 'jamais' } });
+    expect(audits).toEqual([expect.objectContaining({
+      action: 'ia.mention_reglee', cible: { kind: 'tenant', id: 't1' },
+      detail: { frequence: 'jamais', frequenceAvant: null },
+    })]);
+    expect(audits[0]!.acteur.userId).toBe('u1');
+  });
+
+  it('réenregistrer la même valeur n’écrit rien', async () => {
+    const { srv, audits } = app('session');
+    await srv.inject({ method: 'PATCH', url: URL_IA, ...h(adminTok), payload: { frequence: 'session' } });
+    expect(audits).toEqual([]);
   });
 });

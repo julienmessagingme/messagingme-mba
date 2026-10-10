@@ -146,7 +146,32 @@ export type AuditAction =
    * Les limites de l'API publique de l'espace changées depuis `/ops` (plafond d'appels, quotas quotidiens). Acteur :
    * l'adresse de l'exploitant. Détail : ce qui a bougé et sa valeur d'avant, jamais la note, écrite pour nous.
    */
-  | 'api.limites_modifiees';
+  | 'api.limites_modifiees'
+  /**
+   * Les réglages sensibles du client (lot 5 du bilan des audits). Une boîte d'envoi porte un mot de passe, le canal RCS
+   * une clé : leur détail n'en porte jamais, seulement l'hôte, le port et si le mot de passe a changé. La mention IA et le
+   * modèle d'un agent portent leur valeur d'avant et d'après, ce qu'un auditeur demande.
+   */
+  | 'email.boite_ajoutee'
+  | 'email.boite_modifiee'
+  | 'email.boite_supprimee'
+  | 'rcs.canal_active'
+  | 'rcs.canal_desactive'
+  | 'ia.mention_reglee'
+  | 'agent.modele_change'
+  | 'agent.mention_modifiee'
+  /**
+   * Les gestes de Messaging Me dans un espace, depuis `/ops` (`makeTraceOps`) : l'acteur est l'adresse de l'exploitant,
+   * la cible l'espace. La note de l'exploitant n'y entre jamais : texte libre, écrite pour nous, elle reste dans le
+   * journal du conteneur.
+   */
+  | 'ops.offre_posee'
+  | 'ops.verrou'
+  | 'ops.cle_modele_revoquee'
+  | 'ops.credit_ajoute'
+  | 'ops.pub_connectee'
+  | 'ops.risque_balaye'
+  | 'ops.espace_observe';
 
 export interface AuditEntry {
   id: string;

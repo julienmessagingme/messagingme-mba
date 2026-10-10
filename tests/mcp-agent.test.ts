@@ -38,7 +38,7 @@ import { cleApiDeTest } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { bornesDesChamps, bornesZod, champsDe, muettes, type Borne } from './aide/bornes-zod';
 import { jamaisDesabonne } from './consentement';
-import { mcpNumeroInerte, mcpEvenementsInertes, mcpMessagesInertes, mcpOffreInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { journalMuet, mcpNumeroInerte, mcpEvenementsInertes, mcpMessagesInertes, mcpOffreInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { SANS_MCP } from './outils-mcp';
 import { AUCUN_GESTE, GESTE_MUET } from './gestes';
 import { offresToutOuvert } from './gardes';
@@ -198,6 +198,7 @@ function monter(o: Options & { envoyerModele?: DepsMcp['envoyerModele']; usage?:
   };
 
   const gestion: DepsAgentMcp['gestion'] = {
+    audit: journalMuet,
     agents: {
       listToutes: async (t): Promise<AgentResume[]> => {
         cap.lectures.push(t);

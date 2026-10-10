@@ -1885,7 +1885,7 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 - `audit_log` : **AJOUT SEUL**, ni update ni delete, sinon il ne prouve rien. Il ne porte JAMAIS de donnée
   personnelle, seulement l'identifiant interne du contact : y écrire le numéro au moment d'une suppression
   annulerait la suppression. `actor_email` est DÉNORMALISÉ pour que l'historique reste lisible après le départ
-  d'un collaborateur ; acteur `null` = le système. Écriture best-effort : une panne de journal ne doit pas
+  d'un collaborateur ; sans compte ni adresse, l'acteur est le système (une adresse sans compte est l'exploitation). Écriture best-effort : une panne de journal ne doit pas
   empêcher un client d'exercer son droit à l'effacement.
   🔴 **LA RÈGLE « PAS DE DONNÉE PERSONNELLE » EST MÉCANIQUE, PLUS UNE CONVENTION** : `PgAuditStore.record` est
   le point de passage unique de toutes les écritures, et il FILTRE les clés interdites (`CLES_INTERDITES`)
@@ -1896,6 +1896,14 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   contient « email » sans être une donnée personnelle, et une garde en sous-chaîne l'effacerait.
   ⚠️ `action` est un `text` LIBRE, sans CHECK : le type `AuditAction` est la SEULE garde contre une faute de
   frappe, et un nom mal orthographié s'écrirait sans que rien ne proteste.
+  Ce qu'il couvre, au-delà des contacts : les accès et les portes (collaborateurs, clés d'API, Claude, webhooks,
+  connecteurs, numéro), les réglages sensibles (boîtes d'envoi e-mail, canal RCS, fréquence de la mention IA, modèle
+  et phrase de mention d'un agent, par `modifierAgent` quelle que soit la porte ; jamais un mot de passe ni une clé),
+  et les gestes de `/ops` qui touchent un espace (`makeTraceOps`, `src/audit/journal.ts` : offre, verrou, crédit, clé du
+  modèle révoquée, connexion publicitaire, balayage du risque, ouverture d'une session d'observation ; l'adresse de
+  l'exploitant pour acteur, l'espace pour cible, jamais la note). Le rejeu des files d'échec, commun à tous les espaces,
+  et les LECTURES de `/ops` n'y entrent pas. 🔴 Chaque action a son libellé dans la console (`ACTIONS_JOURNAL`,
+  `web/lib/journal.ts`) : `tests/journal-libelles.test.ts` l'exige.
 
 ### Les identifiants publics
 

@@ -291,7 +291,8 @@ async function main(): Promise<void> {
   // L'email de l'acteur est résolu ICI, une fois, et écrit en clair dans le journal : une jointure sur `users`
   // rendrait l'historique illisible au premier départ d'un collaborateur.
   const auditSink: AuditSink = async (tenant, actor, action, target, detail) => {
-    const email = actor.userId ? (await userStore.getSessionUser(actor.userId))?.email ?? null : null;
+    // Une adresse fournie d'office prime : c'est celle de l'exploitant pour un geste de `/ops` (`makeTraceOps`).
+    const email = actor.email ?? (actor.userId ? (await userStore.getSessionUser(actor.userId))?.email ?? null : null);
     await auditStore.record(tenant, { userId: actor.userId, email }, action, target, detail);
   };
   /**
@@ -661,6 +662,8 @@ async function main(): Promise<void> {
     ...(provisionCle ? { assurerCleModele: (tenant: string) => assurerCleGateway(provisionCle, tenant) } : {}),
     // Chaque modification de la fiche y laisse sa ligne `fiche_agent`, avec son auteur et sa porte.
     historique: historiqueStore,
+    // Le modèle et la phrase de mention changés laissent aussi leur ligne au journal des actions (lot 5).
+    audit: auditSink,
     // Un agent qui quitte le statut actif cesse d'être le répondeur de l'espace (lot 5).
     oublierRepondeur: (tenant, agentId) => settingsStore.oublierRepondeurSi(tenant, agentId),
     repondeur: repondeurDeLaConsole,
@@ -1073,7 +1076,7 @@ async function main(): Promise<void> {
     offres,
     // La vue de l'offre pour la console, et l'Entreprise posée par l'exploitation (lot 6).
     offre: { vue: vueOffre },
-    opsOffre: { store: offresStore, invalider: (tenant) => offres.invalider(tenant) },
+    opsOffre: { store: offresStore, invalider: (tenant) => offres.invalider(tenant), audit: auditSink },
     offrePaiement: {
       ouvrir: (tenant, periodicite, payeur) => ouvrirPro(proDeLaConsole, tenant, periodicite, payeur),
       portail: (tenant, payeur) => ouvrirPortailPro(proDeLaConsole, tenant, payeur),
@@ -1464,6 +1467,7 @@ async function main(): Promise<void> {
     },
     workflowReports: reportStore,
     settings: {
+      audit: auditSink,
       reglages: settingsStore,
       // Canal RCS allumé dès qu'un agent est rattaché au tenant : l'interface suit l'état réel du dépôt.
       rcs: workflowRuntime.rcsStack.agents,
@@ -2268,7 +2272,7 @@ async function main(): Promise<void> {
     },
     // Node « Envoi de mail » : boîtes SMTP + modèles (Contenu), et le résolveur qu'invalident les routes
     // d'écriture pour ne jamais garder un transport périmé (hôte/mot de passe changés).
-    email: { accounts: emailAccounts, templates: emailTemplates, resolver: emailResolver },
+    email: { accounts: emailAccounts, templates: emailTemplates, resolver: emailResolver, audit: auditSink },
     // 🔴 Paramètres > Intégrations > Batch : les clés sont chiffrées ici, jamais stockées en clair. Le cache
     // de l'émetteur de l'API est invalidé à chaque changement : brancher ou débrancher prend effet aussitôt.
     // Développeurs > Webhooks sortants (lot 12) : la gestion partagée avec les outils MCP.
@@ -2333,6 +2337,7 @@ async function main(): Promise<void> {
       } satisfies SalesforceRouteDeps;
     })() } : {}),
     rcsChannel: {
+      audit: auditSink,
       agents: workflowRuntime.rcsStack.agents,
       verifier: (apiKey) => verifierCleRcs(fetchGet, apiKey),
       activer: async (tenant, canal, apiKey) => {
@@ -2499,6 +2504,8 @@ async function main(): Promise<void> {
       },
     },
     ops: {
+      // Les gestes sur un espace laissent leur ligne dans SON journal des actions (lot 5).
+      audit: auditSink,
       /**
        * Déposer un jeton publicitaire créé à la main (notre propre portefeuille, que la fenêtre Meta ne peut pas
        * servir). Il remplace une connexion existante, là où l'écran la refuse. Vérification chez Meta,

@@ -140,7 +140,8 @@ export const repondeurInerte: DepsReglageRepondeur = {
   adresses: { lire: async () => null, lister: async () => [] },
 };
 
-export const agentsInertes: Pick<AgentsRouteDeps, 'credits' | 'sessions' | 'etatPourLint' | 'modelesProposes' | 'historique' | 'oublierRepondeur' | 'repondeur'> = {
+export const agentsInertes: Pick<AgentsRouteDeps, 'credits' | 'sessions' | 'etatPourLint' | 'modelesProposes' | 'historique' | 'oublierRepondeur' | 'repondeur' | 'audit'> = {
+  audit: journalMuet,
   credits: { solde: async () => 0, historique: async () => [] },
   sessions: {
     consommation: neDevraitPasEtreAppelee('consommation'),
@@ -340,7 +341,8 @@ export const opsInerte: Pick<OpsRouteDeps,
   'deposerJetonPub' | 'lireGrillePrix' | 'reglages' | 'verrouillerEspace' | 'observerTenant'
   | 'file' | 'heartbeat' | 'soldeAgent' | 'rechargerAgent' | 'etatPoolInstantane' | 'attentesPool' | 'latencesHttp'
   | 'mesuresTaches' | 'stockage'
-  | 'balayerRisque' | 'reinitialiserMfa'> = {
+  | 'balayerRisque' | 'reinitialiserMfa' | 'audit'> = {
+  audit: journalMuet,
   deposerJetonPub: neDevraitPasEtreAppelee('deposerJetonPub'),
   lireGrillePrix: neDevraitPasEtreAppelee('lireGrillePrix'),
   reglages: { setGrillePrixGlobale: neDevraitPasEtreAppelee('reglages.setGrillePrixGlobale') },
@@ -376,7 +378,8 @@ export const rappelsRcsInertes: Pick<RcsCallbackRouteDeps['agents'], 'noterRappe
   noterRappel: async () => {},
 };
 
-export const reglagesInertes: Pick<SettingsRouteDeps, 'rcs' | 'applyMbaHandoffEnabled' | 'listerRequetesConnecteur' | 'agents'> = {
+export const reglagesInertes: Pick<SettingsRouteDeps, 'rcs' | 'applyMbaHandoffEnabled' | 'listerRequetesConnecteur' | 'agents' | 'audit'> = {
+  audit: journalMuet,
   // Absente : `false`, briques éteintes.
   rcs: { hasAgent: async () => false },
   // Absente : rien n'était appliqué chez Meta (`appliqueChezMeta: false`). Un échec produit ce même `false`.
@@ -555,6 +558,7 @@ export const mcpOffreInerte: Pick<DepsMcp, 'offre' | 'offres'> = {
 export const mcpAgentInerte: Pick<DepsMcp, 'agentIa'> = {
   agentIa: {
     gestion: {
+      audit: journalMuet,
       agents: {
         listToutes: async () => [],
         complet: async () => null,

@@ -6,6 +6,7 @@ import { sendSmtpEmail } from '../email/smtp';
 import { estRefusAdresseInterne } from '../lib/connexion-publique';
 import { espaceVerifie } from './scope';
 import { messageDe } from '../lib/erreur';
+import { makeJournal, type AuditSink } from '../audit/journal';
 import type {
   EmailAccount,
   EmailAccountInput,
@@ -77,10 +78,16 @@ export interface EmailRoutesDeps {
   accounts: EmailAccountsDep;
   templates: EmailTemplatesDep;
   resolver: EmailResolverDep;
+  /**
+   * Le journal des actions (lot 5) : une boîte porte un mot de passe, l'ajouter, la modifier ou la retirer se trace. Le
+   * détail ne porte que l'hôte, le port et si le mot de passe a changé, jamais l'identifiant ni le mot de passe.
+   */
+  audit: AuditSink;
 }
 
 export function registerEmailRoutes(app: FastifyInstance, deps: EmailRoutesDeps, garde: Guard): void {
   const opts = { preHandler: garde };
+  const journal = makeJournal(deps.audit);
 
   // ---- Boîtes SMTP ----
   app.get('/tenants/:tenantId/email/accounts', opts, async (req, reply) => {
@@ -94,6 +101,7 @@ export function registerEmailRoutes(app: FastifyInstance, deps: EmailRoutesDeps,
     const parsed = accountCreate.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'compte invalide' });
     const created = await deps.accounts.create(tenant, parsed.data);
+    await journal(tenant, req, 'email.boite_ajoutee', { kind: 'boite_email', id: created.id }, { hote: parsed.data.host, port: parsed.data.port });
     return reply.code(200).send(publicAccount(created));
   });
 
@@ -106,6 +114,11 @@ export function registerEmailRoutes(app: FastifyInstance, deps: EmailRoutesDeps,
     if (!updated) return reply.code(404).send({ error: 'compte introuvable' });
     // Le transport en cache (hôte/identifiants) serait sinon périmé après ce patch.
     deps.resolver.invalidate(id);
+    // La console renvoie tout le formulaire à chaque édition : lister les champs reçus ne dirait rien de ce qui a changé.
+    // Le mot de passe se dit par sa seule présence ; l'hôte et le port sont relus sur la boîte écrite.
+    await journal(tenant, req, 'email.boite_modifiee', { kind: 'boite_email', id }, {
+      hote: updated.host, port: updated.port, motDePasseChange: 'password' in parsed.data,
+    });
     return reply.code(200).send(publicAccount(updated));
   });
 
@@ -115,6 +128,7 @@ export function registerEmailRoutes(app: FastifyInstance, deps: EmailRoutesDeps,
     const ok = await deps.accounts.softDelete(tenant, id);
     deps.resolver.invalidate(id);
     if (!ok) return reply.code(404).send({ error: 'compte introuvable' });
+    await journal(tenant, req, 'email.boite_supprimee', { kind: 'boite_email', id });
     return reply.code(200).send({ ok: true });
   });
 

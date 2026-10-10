@@ -1,7 +1,7 @@
 ---
 ecran: securite-audit
 source_section: Journaux et traces (menu Sécurité)
-source_empreinte: 50b685
+source_empreinte: fde9a8
 ---
 # Retrouver qui a fait quoi, et pourquoi un message n'est pas parti
 
@@ -12,7 +12,10 @@ ajouté, supprimé, effacé, ou basculé un consentement. Mais aussi les **accè
 un collaborateur, changé son rôle, révoqué ou supprimé son compte ; qui a créé ou révoqué une clé d'API ;
 qui a autorisé Claude dans l'espace, et qui a révoqué cet accès ; les échecs de connexion ; qui a créé,
 modifié ou supprimé un webhook entrant ou un connecteur, et qui a touché à leur secret ; qui a rattaché un
-numéro WhatsApp ; et qui a exporté l'historique d'un contact.
+numéro WhatsApp ; et qui a exporté l'historique d'un contact. Et, depuis le 10 octobre, les **réglages
+sensibles** (une boîte d'envoi e-mail, le canal RCS, la mention « je suis une IA », le modèle ou la phrase
+d'un agent) et **les gestes de Messaging Me** sur votre espace (offre, verrou, crédit, clé du modèle, connexion
+publicitaire, risque recalculé, ouverture d'une consultation), signés de l'adresse de la personne qui a agi.
 
 Ce journal est fait pour ne jamais être modifié, et cela dicte ce qu'il contient :
 

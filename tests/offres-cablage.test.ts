@@ -53,7 +53,7 @@ describe('le câblage de l’offre', () => {
     expect(api).toMatch(/proEnVente: proDeLaConsole\.stripe !== null && proDeLaConsole\.prixProMois !== '' && proDeLaConsole\.prixProAn !== '',/);
     expect(api.match(/^\s+offre: \{ vue: vueOffre \},$/gm)).toHaveLength(2);
     // L'exploitation vide le cache de CE process : sans quoi un espace ramené en Base garderait l'Entreprise 30 s.
-    expect(api).toMatch(/opsOffre: \{ store: offresStore, invalider: \(tenant\) => offres\.invalider\(tenant\) \},/);
+    expect(api).toMatch(/opsOffre: \{ store: offresStore, invalider: \(tenant\) => offres\.invalider\(tenant\), audit: auditSink \},/);
     expect(api).toMatch(/badgeDeLOffre: async \(tenant\) => \(await offres\.offreDe\(tenant\)\)\.droits\.limites\.badge,/);
   });
 

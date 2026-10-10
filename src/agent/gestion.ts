@@ -9,6 +9,8 @@ import { estUuid, nonEmpty } from '../http/scope';
 import { journaliser } from '../lib/journal';
 import { refus, type Issue, type Refus } from '../lib/issue';
 import type { HistoriqueStore, Origine } from '../reglages/historique';
+import type { AuditSink } from '../audit/journal';
+import { tenter } from '../lib/tenter';
 
 /**
  * LA GESTION D'UN AGENT IA : le créer, le modifier, l'activer (lot 8a, `docs/superpowers/plans/2026-10-03-mcp-agent-ia.md`).
@@ -81,6 +83,11 @@ export interface DepsGestionAgents {
    * `fiche_agent`. Requis : un câblage qui l'oublierait ne compile pas, au lieu de ne rien journaliser en silence.
    */
   historique: Pick<HistoriqueStore, 'ecrire'>;
+  /**
+   * Le journal des actions (lot 5) : le modèle et la phrase de mention d'IA changés y laissent aussi leur ligne, avant
+   * et après, quelle que soit la porte (console, outil MCP).
+   */
+  audit: AuditSink;
   /**
    * Retire le répondeur de l'espace SI c'est cet agent (`PgTenantSettingsStore.oublierRepondeurSi`) : un agent qui
    * quitte le statut actif cesse de répondre à tous les messages de l'espace (lot 5). Rend `true` si l'espace a perdu
@@ -319,5 +326,16 @@ async function journaliserFiche(
     });
   } catch (err) {
     journaliser('error', 'fiche_agent_non_journalisee', { err, tenantId, agentId: agent.id });
+  }
+  // Le journal des actions, pour les deux réglages qu'un auditeur demande. Une création n'est pas un changement.
+  if (courant === null) return;
+  const acteur = { userId: auteur.userId, email: null };
+  const cible = { kind: 'agent', id: agent.id };
+  if ('modele' in apres) {
+    await tenter('audit ignoré:', () => deps.audit(tenantId, acteur, 'agent.modele_change', cible, { modele: apres.modele, modeleAvant: avant?.modele ?? null }));
+  }
+  if ('mentionIa' in apres) {
+    const phrase = (v: unknown) => (typeof v === 'string' ? v.slice(0, 200) : null);
+    await tenter('audit ignoré:', () => deps.audit(tenantId, acteur, 'agent.mention_modifiee', cible, { phrase: phrase(apres.mentionIa), phraseAvant: phrase(avant?.mentionIa) }));
   }
 }

@@ -10,6 +10,8 @@ import { changerStatut, modifierAgent, type AuteurModification } from '../src/ag
 import type { LigneHistorique } from '../src/reglages/historique';
 import { agentsInertes } from './routes-inertes';
 import { capturerJournal } from './journal';
+import type { AuditSink } from '../src/audit/journal';
+import { IDS_MODELES_CHOISIS } from '../src/agent/modeles';
 
 /**
  * LA GESTION D'UN AGENT IA (lot 8a) : les deux changements voulus de la spec, section 3.
@@ -46,9 +48,12 @@ function monter(o: { statut: StatutAgent; fichesConnaissance?: number; historiqu
     maxTours: 8, maxAppelsOutils: 12, budgetMicroEur: 30_000, inactiviteMinutes: 30,
     contactInconnu: 'lecture_seule', contenu: FICHE_COMPLETE, ficheVersion: 1,
   };
-  const cap = { patches: [] as PatchAgent[], lignes: [] as LigneHistorique[] };
+  const cap = { patches: [] as PatchAgent[], lignes: [] as LigneHistorique[], audits: [] as Array<{ tenant: string; acteur: { userId: string | null; email: string | null }; action: string; cible: { kind: string; id: string }; detail: Record<string, unknown> | undefined }> };
+  const audits = cap.audits;
+  const audit: AuditSink = async (tenant, acteur, action, cible, detail) => { audits.push({ tenant, acteur, action, cible, detail }); };
   const deps: AgentsRouteDeps = {
     ...agentsInertes,
+    audit,
     agents: {
       listActifs: async (): Promise<AgentResume[]> => [],
       listToutes: async (): Promise<AgentResume[]> => [],
@@ -197,5 +202,34 @@ describe('🔴 chaque modification laisse sa ligne `fiche_agent` dans l’histor
     const m = monter({ statut: 'draft' });
     expect((await modifierAgent(m.deps, 't1', AG, { maxTours: 99 }, CONSOLE)).ok).toBe(false);
     expect(m.cap.lignes).toHaveLength(0);
+  });
+});
+
+describe('le modèle et la phrase de mention d’un agent au journal des actions (lot 5)', () => {
+  const AUTRE_MODELE = [...IDS_MODELES_CHOISIS].find((m) => m !== 'modele-config')!;
+
+  it('🔴 changer le modèle se trace, avant et après, avec son auteur, par la console comme par Claude', async () => {
+    const m = monter({ statut: 'active' });
+    expect((await modifierAgent(m.deps, 't1', AG, { modele: AUTRE_MODELE }, CLAUDE)).ok).toBe(true);
+    expect(m.cap.audits).toEqual([expect.objectContaining({
+      tenant: 't1', acteur: { userId: 'u9', email: null }, action: 'agent.modele_change', cible: { kind: 'agent', id: AG },
+      detail: { modele: AUTRE_MODELE, modeleAvant: 'modele-config' },
+    })]);
+  });
+
+  it('changer la phrase de mention se trace ; un enregistrement à l’identique n’écrit rien', async () => {
+    const m = monter({ statut: 'active' });
+    await modifierAgent(m.deps, 't1', AG, { mentionIa: 'Je suis un assistant automatique.' }, CONSOLE);
+    await modifierAgent(m.deps, 't1', AG, { mentionIa: 'Je suis un assistant automatique.' }, CONSOLE);
+    expect(m.cap.audits.map((a) => a.action)).toEqual(['agent.mention_modifiee']);
+    expect(m.cap.audits[0]!.detail).toEqual({
+      phrase: 'Je suis un assistant automatique.', phraseAvant: 'Vous échangez avec un assistant automatique.',
+    });
+  });
+
+  it('modifier un autre champ (le ton) ne touche pas au journal des actions', async () => {
+    const m = monter({ statut: 'active' });
+    await modifierAgent(m.deps, 't1', AG, { contenu: { ton: 'Chaleureux.' } }, CONSOLE);
+    expect(m.cap.audits).toEqual([]);
   });
 });

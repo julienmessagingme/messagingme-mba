@@ -10,6 +10,7 @@ import { reglerModeTransfert } from '../agent/reglages';
 import { corpsDuRefus } from '../lib/issue';
 import { valideGrille, BORNES_GRILLE } from '../stats/prix';
 import { messageDe } from '../lib/erreur';
+import { makeJournal, type AuditSink } from '../audit/journal';
 
 /** Ce que les routes lisent et écrivent des réglages de l'espace. */
 export interface ReglagesDep {
@@ -41,6 +42,8 @@ export interface ReglagesDep {
 
 export interface SettingsRouteDeps {
   reglages: ReglagesDep;
+  /** Le journal des actions (lot 5) : la fréquence de la mention IA réglée, avant et après. */
+  audit: AuditSink;
   rcs: {
     /**
      * Le canal RCS est-il exploitable pour ce tenant ? Vrai dès qu'un agent RCS lui est rattaché : dérivé de
@@ -252,7 +255,13 @@ export function registerSettings(
     if (!estFrequenceMention(brut)) {
       return reply.code(400).send({ error: `frequence requise (${FREQUENCES_MENTION_IA.join(' | ')})` });
     }
+    // La valeur d'avant, pour la trace seulement : sa lecture en échec ne bloque pas le réglage, elle saute la trace.
+    const avant = await deps.reglages.get(tenant).then((r) => r.mentionIaFrequence, () => undefined);
     await deps.reglages.setMentionIaFrequence(tenant, brut);
+    if (avant !== undefined && avant !== brut) {
+      // `null` = rien n'était réglé (le défaut s'appliquait).
+      await makeJournal(deps.audit)(tenant, req, 'ia.mention_reglee', { kind: 'tenant', id: tenant }, { frequence: brut, frequenceAvant: avant });
+    }
     return reply.code(200).send({ frequence: brut });
   });
 

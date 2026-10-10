@@ -6,6 +6,25 @@
 > tranchent, jamais ce fichier.
 
 
+## 2026-10-10 : la traçabilité (lot 5 du bilan des audits)
+
+Le journal des actions d'un espace ne voyait ni ses réglages sensibles ni ce que Messaging Me y fait. Plan :
+`docs/superpowers/plans/2026-10-10-lot5-tracabilite.md`.
+- **Les réglages sensibles y entrent** : une boîte d'envoi e-mail ajoutée, modifiée ou retirée (l'hôte, le port et si le
+  mot de passe a changé, jamais l'identifiant ni le mot de passe), le canal RCS activé ou désactivé (jamais la clé), la
+  fréquence de la mention IA (avant et après), le modèle et la phrase de mention d'un agent. Ces deux derniers passent
+  par `modifierAgent`, donc la console et l'outil MCP `update_agent` sont couverts d'un seul branchement.
+- **Les gestes de `/ops` sur un espace y laissent leur ligne** (`makeTraceOps`) : l'offre posée, le verrou, la clé du
+  modèle révoquée (quand une clé l'a été), le crédit ajouté, la connexion publicitaire, le risque recalculé, et l'observation, qui ne modifie
+  rien mais que le client a le droit de voir. L'adresse de l'exploitant pour acteur, jamais sa note. Le câblage du
+  journal préfère désormais une adresse fournie : il l'ignorait quand l'acteur n'avait pas d'identifiant.
+- **Un trou trouvé en route** : 27 actions déjà écrites (accès, clés d'API, webhooks, connecteurs, numéro, publicités)
+  n'avaient aucun libellé, et la console affichait leur identifiant brut. `tests/journal-libelles.test.ts` exige
+  désormais un libellé pour chaque action du serveur.
+- Aucune migration (`audit_log.action` est un texte libre). Écriture best-effort partout : un journal en panne ne fait
+  échouer aucun réglage ni aucun geste (testé).
+
+
 ## 2026-10-10 : « Déconnecter le numéro », en production
 
 Demandé par Julien le jour même, à côté de « Renouveler la connexion Meta » : retirer pour de bon le numéro d'un espace

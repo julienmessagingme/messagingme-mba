@@ -2787,6 +2787,11 @@ boîte par sous-menu.
     supprimé un webhook entrant ou un connecteur, et qui a touché à leur secret ; qui a rattaché un numéro
     WhatsApp ; et **qui a exporté l'historique d'un contact**. Avant, le
     journal ne savait répondre qu'aux questions sur les personnes, jamais à « qui a donné les droits admin ? ».
+  - ✅ **Et les réglages sensibles et les interventions de Messaging Me, depuis le 2026-10-10** : qui a ajouté,
+    modifié ou retiré une boîte d'envoi e-mail, activé ou désactivé le canal RCS, réglé la mention « je suis une IA »,
+    changé le modèle ou la phrase de mention d'un agent ; et les gestes de Messaging Me sur l'espace (offre posée,
+    verrou, crédit ajouté, clé du modèle révoquée, connexion publicitaire, risque recalculé, ouverture d'une session
+    de consultation), signés de l'adresse de la personne qui a agi. Jamais un mot de passe ni une clé.
   - 🔴 **Ce qu'il ne contient JAMAIS**, et c'est vérifié à l'écriture par le produit lui-même : aucune adresse
     e-mail (sauf celle de l'auteur de l'action), aucun numéro, aucun texte de message, ni le code d'un
     webhook, ni le secret d'un connecteur, ni une clé d'API. Un champ interdit est retiré avant l'écriture, et

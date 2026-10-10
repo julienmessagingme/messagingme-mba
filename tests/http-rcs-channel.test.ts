@@ -4,6 +4,7 @@ import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { RcsChannelCheck, RcsChannelInfo } from '../src/rcs/channel-info';
+import type { AuditSink } from '../src/audit/journal';
 
 const SECRET = 'test-secret';
 let adminToken = '';
@@ -23,10 +24,12 @@ const CANAL: RcsChannelInfo = {
 
 function appWith(opts: { check?: RcsChannelCheck; actif?: boolean } = {}) {
   const active: Array<{ tenant: string; apiKey: string }> = [];
+  const audits: Array<{ tenant: string; acteur: { userId: string | null; email: string | null }; action: string; cible: { kind: string; id: string }; detail: Record<string, unknown> | undefined }> = [];
+  const audit: AuditSink = async (tenant, acteur, action, cible, detail) => { audits.push({ tenant, acteur, action, cible, detail }); };
   const app = buildServer({
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
-    rcsChannel: {
+    rcsChannel: { audit,
       agents: {
         etatPour: async () => (opts.actif ? { agentId: 'ch-1', brandName: 'MessagingMe', displayName: 'Messaging Me (TEST)', status: 'testing', checkedAt: null } : null),
         desactiver: async () => opts.actif === true,
@@ -35,7 +38,7 @@ function appWith(opts: { check?: RcsChannelCheck; actif?: boolean } = {}) {
       activer: async (tenant, _canal, apiKey) => { active.push({ tenant, apiKey }); },
     },
   });
-  return { app, active };
+  return { app, active, audits };
 }
 
 describe('Activation du canal RCS', () => {
@@ -93,5 +96,22 @@ describe('Activation du canal RCS', () => {
     const r = await app.inject({ method: 'DELETE', url: '/tenants/t1/rcs/channel', ...asAdmin() });
     expect(r.statusCode).toBe(200);
     expect(r.json()).toEqual({ active: false });
+  });
+});
+
+describe('le canal RCS au journal des actions (lot 5)', () => {
+  it('🔴 activer puis désactiver se trace, et la clé n’y entre jamais', async () => {
+    const { app, audits } = appWith({ actif: true });
+    await app.inject({ method: 'POST', url: '/tenants/t1/rcs/channel', ...asAdmin(), payload: { apiKey: 'cle-rcs-tres-secrete' } });
+    await app.inject({ method: 'DELETE', url: '/tenants/t1/rcs/channel', ...asAdmin() });
+    expect(audits.map((a) => a.action)).toEqual(['rcs.canal_active', 'rcs.canal_desactive']);
+    expect(audits[0]!.acteur.userId).toBe('u1');
+    expect(JSON.stringify(audits)).not.toContain('cle-rcs-tres-secrete');
+  });
+
+  it('une clé refusée par le fournisseur n’écrit rien', async () => {
+    const { app, audits } = appWith({ check: { ok: false, reason: 'invalid_key', detail: 'clé refusée' } as RcsChannelCheck });
+    await app.inject({ method: 'POST', url: '/tenants/t1/rcs/channel', ...asAdmin(), payload: { apiKey: 'mauvaise' } });
+    expect(audits).toEqual([]);
   });
 });

@@ -6,6 +6,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { EmailRoutesDeps, EmailAccountsDep, EmailTemplatesDep, EmailResolverDep } from '../src/http/email';
 import type { EmailAccount, EmailAccountInput, EmailAccountUpdate, EmailTemplate, EmailTemplateInput, EmailTemplateUpdate } from '../src/email/types';
+import type { AuditSink } from '../src/audit/journal';
 
 /**
  * Tests d'intégration des routes email (comptes SMTP + modèles), calqués sur tests/http-mba.test.ts :
@@ -117,9 +118,11 @@ function app(sendMail: (msg: unknown) => Promise<unknown> = vi.fn().mockResolved
   const accounts = fakeAccountsStore();
   const templates = fakeTemplatesStore();
   const resolver = fakeResolver(accounts.rows, sendMail);
-  const deps: EmailRoutesDeps = { accounts: accounts.dep, templates: templates.dep, resolver: resolver.dep };
+  const audits: Array<{ tenant: string; acteur: { userId: string | null; email: string | null }; action: string; cible: { kind: string; id: string }; detail: Record<string, unknown> | undefined }> = [];
+  const audit: AuditSink = async (tenant, acteur, action, cible, detail) => { audits.push({ tenant, acteur, action, cible, detail }); };
+  const deps: EmailRoutesDeps = { audit, accounts: accounts.dep, templates: templates.dep, resolver: resolver.dep };
   const server = buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, email: deps });
-  return { server, accountRows: accounts.rows, templateRows: templates.rows, invalidated: resolver.invalidated };
+  return { server, accountRows: accounts.rows, templateRows: templates.rows, invalidated: resolver.invalidated, audits };
 }
 
 const validAccountPayload = {
@@ -275,6 +278,41 @@ describe('routes email : modèles', () => {
     expect(del.statusCode).toBe(200);
     const list = await server.inject({ method: 'GET', url: '/tenants/t1/email/templates', ...h(adminTok) });
     expect(list.json().templates).toEqual([]);
+    await server.close();
+  });
+});
+
+describe('routes email : le journal des actions (lot 5)', () => {
+  it('🔴 ajouter, modifier, retirer une boîte se trace, sans jamais l’identifiant ni le mot de passe', async () => {
+    const { server, audits } = app();
+    const cree = await server.inject({ method: 'POST', url: '/tenants/t1/email/accounts', ...h(adminTok), payload: validAccountPayload });
+    const id = cree.json<{ id: string }>().id;
+    await server.inject({ method: 'PATCH', url: `/tenants/t1/email/accounts/${id}`, ...h(adminTok), payload: { password: 'n0uveau-secret' } });
+    await server.inject({ method: 'DELETE', url: `/tenants/t1/email/accounts/${id}`, ...h(adminTok) });
+    expect(audits.map((a) => a.action)).toEqual(['email.boite_ajoutee', 'email.boite_modifiee', 'email.boite_supprimee']);
+    expect(audits.every((a) => a.tenant === 't1' && a.acteur.userId === 'u1' && a.cible.id === id)).toBe(true);
+    expect(audits[0]!.detail).toEqual({ hote: 'ssl0.ovh.net', port: 465 });
+    expect(audits[1]!.detail).toEqual({ hote: 'ssl0.ovh.net', port: 465, motDePasseChange: true });
+    const tout = JSON.stringify(audits);
+    expect(tout).not.toContain('s3cr3t');
+    expect(tout).not.toContain('n0uveau-secret');
+    expect(tout).not.toContain('support@exemple.fr');
+    await server.close();
+  });
+
+  it('le formulaire entier renvoyé sans mot de passe : la ligne dit que le mot de passe n’a PAS changé', async () => {
+    const { server, audits } = app();
+    const cree = await server.inject({ method: 'POST', url: '/tenants/t1/email/accounts', ...h(adminTok), payload: validAccountPayload });
+    const { password: _p, ...sansMotDePasse } = validAccountPayload;
+    await server.inject({ method: 'PATCH', url: `/tenants/t1/email/accounts/${cree.json<{ id: string }>().id}`, ...h(adminTok), payload: { ...sansMotDePasse, port: 587 } });
+    expect(audits[1]!.detail).toEqual({ hote: 'ssl0.ovh.net', port: 587, motDePasseChange: false });
+    await server.close();
+  });
+
+  it('un geste refusé (agent, 403) n’écrit rien', async () => {
+    const { server, audits } = app();
+    await server.inject({ method: 'POST', url: '/tenants/t1/email/accounts', ...h(agentTok), payload: validAccountPayload });
+    expect(audits).toEqual([]);
     await server.close();
   });
 });

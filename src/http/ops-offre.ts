@@ -6,6 +6,7 @@ import { journaliser } from '../lib/journal';
 import type { EcritureEntreprise, ReglageEntreprise } from '../offres/offre.pg';
 // Le même seuil que les autres écritures de `/ops` : importé, pas recopié.
 import { MIN_NOTE } from './ops';
+import { makeTraceOps, type AuditSink } from '../audit/journal';
 
 /**
  * L'ENTREPRISE D'UN ESPACE, POSÉE PAR L'EXPLOITATION (lot 6, tâche 6, spec § 3). L'Entreprise est sur devis : elle ne
@@ -21,6 +22,8 @@ export interface OpsOffreDeps {
   };
   /** Le cache de l'offre de CE process : l'espace change d'offre tout de suite ici, en moins de 30 s ailleurs. */
   invalider(tenantId: string): void;
+  /** Le journal des actions de l'espace (lot 5) : l'offre posée, avant et après, l'exploitant pour acteur. */
+  audit: AuditSink;
 }
 
 /** 10 utilisateurs proposés à l'écran ; la route accepte toute limite positive, ou `null` (sans limite). */
@@ -42,6 +45,7 @@ const corpsSchema = z.object({
 /** `garde` : la garde d'exploitation, la même instance que celle de `/ops` (`buildServer`). */
 export function registerOpsOffre(app: FastifyInstance, deps: OpsOffreDeps, garde: PreHandler): void {
   const opts = { preHandler: garde };
+  const tracer = makeTraceOps(deps.audit);
 
   app.get('/ops/offre/:tenantId', opts, async (req, reply) => {
     const { tenantId } = req.params as { tenantId: string };
@@ -74,6 +78,10 @@ export function registerOpsOffre(app: FastifyInstance, deps: OpsOffreDeps, garde
     const apres: ReglageEntreprise = (await deps.store.lireEntreprise(tenantId)) ?? { ...ecriture, conservationJours: avant.conservationJours };
     deps.invalider(tenantId);
     journaliser('warn', 'ops_offre', { tenantId, avant, apres, par: auteurOps(req), note, at: new Date().toISOString() });
+    await tracer(tenantId, auteurOps(req), 'ops.offre_posee', {
+      entreprise: apres.entreprise, utilisateurs: apres.utilisateurs, conservationJours: apres.conservationJours,
+      entrepriseAvant: avant.entreprise, utilisateursAvant: avant.utilisateurs, conservationJoursAvant: avant.conservationJours,
+    });
     return reply.code(200).send({ tenantId, ...apres, utilisateursProposes: UTILISATEURS_ENTREPRISE_PROPOSES });
   });
 }

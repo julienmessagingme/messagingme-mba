@@ -5,6 +5,7 @@ import { FakeQueue } from './fake-queue';
 import { capturerJournal } from './journal';
 import type { OpsOffreDeps } from '../src/http/ops-offre';
 import type { EcritureEntreprise, ReglageEntreprise } from '../src/offres/offre.pg';
+import type { AuditSink } from '../src/audit/journal';
 
 /**
  * L'ENTREPRISE D'UN ESPACE, POSÉE PAR L'EXPLOITATION (lot 6, tâche 6), PAR LE VRAI CÂBLAGE (`buildServer`).
@@ -20,9 +21,12 @@ class MagasinMemoire {
   lectures = 0;
   readonly ecritures: Array<{ tenantId: string; reglage: EcritureEntreprise }> = [];
   readonly invalides: string[] = [];
+  readonly audits: Array<{ tenant: string; acteur: { userId: string | null; email: string | null }; action: string; cible: { kind: string; id: string }; detail: Record<string, unknown> | undefined }> = [];
   readonly reglages = new Map<string, ReglageEntreprise>([[T1, { entreprise: true, utilisateurs: null, conservationJours: null }]]);
   deps(): OpsOffreDeps {
-    return {
+    const audits = this.audits;
+    const audit: AuditSink = async (tenant, acteur, action, cible, detail) => { audits.push({ tenant, acteur, action, cible, detail }); };
+    return { audit,
       store: {
         lireEntreprise: async (t) => { this.lectures += 1; return this.reglages.get(t) ?? null; },
         ecrireEntreprise: async (t, r) => {
@@ -158,6 +162,23 @@ describe('la route d’exploitation /ops/offre/:tenantId', () => {
   it('⚠️ sans dépendance câblée, la route n’existe pas', async () => {
     const server = buildServer({ queue: new FakeQueue(), auth: acces.auth });
     expect((await server.inject({ method: 'GET', url: `/ops/offre/${T1}`, headers: ops })).statusCode).toBe(404);
+    await server.close();
+  });
+});
+
+describe('l’offre posée par l’exploitation, au journal des actions de l’espace (lot 5)', () => {
+  it('🔴 l’exploitant pour acteur, l’espace pour cible, avant et après, jamais la note', async () => {
+    const { server, magasin } = monter();
+    const res = await server.inject({ method: 'PUT', url: `/ops/offre/${T1}`, headers: ops, payload: { ...BASE, conservationJours: 365 } });
+    expect(res.statusCode).toBe(200);
+    expect(magasin.audits).toEqual([{
+      tenant: T1, acteur: { userId: null, email: ADRESSE_OPS }, action: 'ops.offre_posee', cible: { kind: 'tenant', id: T1 },
+      detail: {
+        entreprise: false, utilisateurs: null, conservationJours: 365,
+        entrepriseAvant: true, utilisateursAvant: null, conservationJoursAvant: null,
+      },
+    }]);
+    expect(JSON.stringify(magasin.audits)).not.toContain(BASE.note);
     await server.close();
   });
 });
