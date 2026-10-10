@@ -102,7 +102,8 @@ describe.skipIf(!url)('Déconnecter le numéro (Postgres réel)', () => {
     return id;
   }
   const statut = async (id: string) => (await pool.query<{ status: string }>('select status from campaigns where id = $1', [id])).rows[0]!.status;
-  const compte = async (sql: string, p: unknown[]) => Number((await pool.query<{ n: string }>(sql, p)).rows[0]!.n);
+  // `count(*)` sans alias : la colonne s'appelle `count`.
+  const compte = async (sql: string, p: unknown[]) => Number((await pool.query<{ count: string }>(sql, p)).rows[0]!.count);
 
   it('🔴 le geste complet : bilan, purge, détachement ; ce qui part, ce qui reste, et le voisin intact', async () => {
     const enCours = await campagne(tenant, { status: 'running' });
