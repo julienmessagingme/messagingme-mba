@@ -1,7 +1,5 @@
 import { z } from 'zod';
-import type { PgAbonnementsNumeroStore } from '../stripe/abonnements.pg';
-import type { PgAbonnementsOffreStore, PeriodiciteOffre, RaisonFinOffre } from '../offres/abonnements-offre.pg';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
 import { espaceVerifie } from './scope';
 import { journaliser } from '../lib/journal';
@@ -12,16 +10,7 @@ import { creditDeLOffre, definitionOffre, OFFRES_RECHARGE } from '../stripe/offr
 import { ouvrirPaiement, RECHARGE_INDISPONIBLE, type DepsPaiement } from '../stripe/paiement';
 import type { IssuePaiement, PaiementStripe } from '../stripe/store.pg';
 import { lienTableauStripe } from '../stripe/liens';
-import type { FinDuPro } from '../offres/numero-inclus';
-
-/**
- * L'écriture a été refusée parce que l'espace n'existe plus (23503, la clé étrangère vers `tenants`) : un espace
- * supprimé depuis /ops (RC8) que Stripe facture encore. Les deux écritures de l'abonnement (la ligne, puis le numéro
- * attribué) ne portent d'autre clé étrangère que celle de l'espace.
- */
-function espaceDisparu(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === '23503';
-}
+import { creerTraitementAbonnements, type DepsTraitementAbonnements } from '../stripe/traitement-abonnements';
 
 /**
  * Recharger le crédit IA par Stripe : la route qui ouvre un paiement, et le webhook qui crédite.
@@ -139,7 +128,7 @@ export function registerCreditPaiement(app: FastifyInstance, deps: CreditPaiemen
 /** Corps brut, capturé par le parser JSON global (celui du receveur Meta). */
 type AvecCorpsBrut = FastifyRequest & { rawBody?: Buffer };
 
-export interface StripeWebhookRouteDeps {
+export interface StripeWebhookRouteDeps extends DepsTraitementAbonnements {
   /** Le secret de signature de la destination déclarée chez Stripe (`whsec_...`). Vide : tout est refusé. */
   secret: string;
   /**
@@ -156,128 +145,10 @@ export interface StripeWebhookRouteDeps {
    * le crédit est écrit.
    */
   apresCredit(tenantId: string): Promise<void>;
-  /**
-   * L'abonnement du numéro fourni (lot 3c, livraison B) : `enregistrer` (l'abonnement et le numéro, ensemble),
-   * `majStatut` et `noterFinPrevue` (lot 4) du magasin (`PgAbonnementsNumeroStore`), `alerter`, qui prévient Julien
-   * (Telegram, ne lève jamais ; il sert aussi la recharge payée pour un espace supprimé, RC8), et `reprendreCampagnes`,
-   * qui lève les pauses `numero_suspendu` de l'espace au paiement (lot 4 ; le balayage du worker rattrape une reprise
-   * manquée).
-   */
-  numero: Pick<PgAbonnementsNumeroStore, 'enregistrer' | 'majStatut' | 'noterFinPrevue'> & {
-    alerter(texte: string): Promise<void>;
-    reprendreCampagnes(tenantId: string): Promise<void>;
-  };
-  /**
-   * Le Pro (lot 6, livraison B1, tâche 11) : les objets marqués `produit: pro` écrivent `abonnements_offre`
-   * (`PgAbonnementsOffreStore`). `invalider` vide le cache de l'offre de CETTE copie après chaque écriture (vigilance 3 :
-   * l'espace qui vient de payer est en Pro tout de suite ici, en moins de 30 s ailleurs) ; `alerter` prévient Julien.
-   * Requis : un câblage qui l'oublierait laisserait payer le Pro sans jamais l'ouvrir.
-   */
-  pro: Pick<PgAbonnementsOffreStore, 'enregistrer' | 'majStatut' | 'modifier' | 'finir' | 'vivant'> & {
-    invalider(tenantId: string): void;
-    alerter(texte: string): Promise<void>;
-    /**
-     * Le numéro inclus (lot 6, B2b, `src/offres/numero-inclus.ts`) : au passage en Pro, le numéro seul arrêté avec avoir,
-     * les avis de suspension oubliés et les pauses levées ; à la fin du Pro, le numéro seul recréé sur la carte du Pro, ou
-     * le chemin du lot 4. Appelés à CHAQUE événement qui les concerne, rejeux compris : ils sont rejouables, et une
-     * panne au premier passage ne doit pas les perdre.
-     */
-    surPassageEnPro(tenantId: string): Promise<void>;
-    surFinDuPro(f: FinDuPro): Promise<unknown>;
-  };
-  now?: () => number;
 }
 
 /** Les deux événements qui créditent. Tout autre événement rend 200 sans effet. */
 const EVENEMENTS_CREDITANTS = new Set(['checkout.session.completed', 'checkout.session.async_payment_succeeded']);
-/**
- * Les quatre événements de l'abonnement du numéro ; la session payée (`checkout.session.completed`) en est le
- * cinquième. `customer.subscription.updated` (lot 4) porte la résiliation programmée.
- */
-const EVENEMENTS_ABONNEMENT = new Set([
-  'invoice.paid', 'invoice.payment_failed', 'customer.subscription.deleted', 'customer.subscription.updated',
-]);
-
-/** Une session d'abonnement : seules les nôtres, `produit: numero`, nous concernent. */
-const sessionAbonnementSchema = z.object({
-  id: z.string().min(1),
-  mode: z.literal('subscription'),
-  payment_status: z.string(),
-  subscription: z.union([z.string().startsWith('sub_'), z.object({ id: z.string().startsWith('sub_') })]),
-  metadata: z.object({ tenant_id: z.uuid(), produit: z.literal('numero') }),
-});
-
-/**
- * Une facture (version d'API `2025-11-17.clover`) : l'abonnement et ses métadonnées sont sous `parent.subscription_details`
- * (lu dans la documentation de Stripe le 2026-10-06), la fin de la période payée sur ses lignes.
- */
-const factureSchema = z.object({
-  id: z.string().startsWith('in_'),
-  parent: z.object({
-    subscription_details: z.object({
-      subscription: z.union([z.string(), z.object({ id: z.string() })]),
-      metadata: z.record(z.string(), z.string()).nullable().optional(),
-    }).nullable().optional(),
-  }).nullable().optional(),
-  lines: z.object({ data: z.array(z.object({ period: z.object({ end: z.number().int() }).optional() })) }).optional(),
-});
-const abonnementSchema = z.object({ id: z.string().startsWith('sub_') });
-/**
- * Un abonnement modifié (version d'API `2025-11-17.clover`, lu dans la documentation de Stripe le 2026-10-06) : la
- * résiliation programmée est `cancel_at` (une date) ou `cancel_at_period_end` (la fin de la période en cours, qui vit sur
- * les lignes, `items.data[].current_period_end`, et plus à la racine).
- */
-const abonnementModifieSchema = z.object({
-  id: z.string().startsWith('sub_'),
-  cancel_at: z.number().int().nullable().optional(),
-  cancel_at_period_end: z.boolean().optional(),
-  items: z.object({ data: z.array(z.object({ current_period_end: z.number().int().optional() })) }).optional(),
-  metadata: z.record(z.string(), z.string()).nullable().optional(),
-});
-const metaNumeroSchema = z.object({ tenant_id: z.uuid(), produit: z.literal('numero') });
-
-/**
- * LE PRO (lot 6, B1). Nos métadonnées (`creerSessionAbonnement`, `produit: pro`) font d'un objet un objet du Pro ; sa
- * périodicité y est recopiée à la création (le portail la change ensuite, relue sur le prix de l'abonnement).
- */
-const metaProSchema = z.object({ tenant_id: z.uuid(), produit: z.literal('pro'), periodicite: z.enum(['mois', 'an']).optional() });
-/**
- * L'aiguillage : un objet porte-t-il la marque du Pro ? Par `safeParse`, jamais par `as` sur un corps externe (jaune 7 de
- * la relecture de B1). La facture la porte sur son abonnement (`parent.subscription_details.metadata`).
- */
-const marqueProSchema = z.object({ metadata: z.object({ produit: z.literal('pro') }) });
-const factureMarqueeProSchema = z.object({ parent: z.object({ subscription_details: marqueProSchema }) });
-const sessionProSchema = z.object({
-  id: z.string().min(1),
-  mode: z.literal('subscription'),
-  payment_status: z.string(),
-  subscription: z.union([z.string().startsWith('sub_'), z.object({ id: z.string().startsWith('sub_') })]),
-  metadata: metaProSchema,
-});
-/** Un abonnement du Pro, modifié ou fini : la périodicité sur le prix, la raison de la fin chez Stripe. */
-const abonnementProSchema = z.object({
-  id: z.string().startsWith('sub_'),
-  metadata: metaProSchema,
-  cancel_at: z.number().int().nullable().optional(),
-  cancel_at_period_end: z.boolean().optional(),
-  ended_at: z.number().int().nullable().optional(),
-  cancellation_details: z.object({ reason: z.string().nullable().optional() }).nullable().optional(),
-  items: z.object({
-    data: z.array(z.object({
-      current_period_end: z.number().int().optional(),
-      price: z.object({ recurring: z.object({ interval: z.string() }).nullable().optional() }).optional(),
-    })),
-  }).optional(),
-  // Le client et la carte de l'abonnement (B2b) : le numéro seul recréé à la fin du Pro les reprend. Un identifiant, ou
-  // l'objet si l'événement l'a déplié.
-  customer: z.union([z.string(), z.object({ id: z.string() })]).nullable().optional(),
-  default_payment_method: z.union([z.string(), z.object({ id: z.string() })]).nullable().optional(),
-});
-const PERIODICITE_DE_STRIPE: Readonly<Record<string, PeriodiciteOffre>> = { month: 'mois', year: 'an' };
-/** Un impayé (ou un litige) chez Stripe ; toute autre fin est une résiliation. */
-const raisonDeLaFin = (reason: string | null | undefined): RaisonFinOffre =>
-  (reason === 'payment_failed' || reason === 'payment_disputed' ? 'impaye' : 'resiliation');
-const idDe = (v: string | { id: string }): string => (typeof v === 'string' ? v : v.id);
 
 const evenementSchema = z.object({
   id: z.string(),
@@ -308,203 +179,7 @@ const metadonneesSchema = z.object({
 
 export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookRouteDeps): void {
   const maintenant = deps.now ?? (() => Date.now());
-
-  /**
-   * L'abonnement du numéro fourni (lot 3c, livraison B). L'ordre d'arrivée des événements ne change pas l'état final :
-   * une facture payée arrivée avant la session enregistre l'abonnement depuis ses métadonnées, et la session qui suit
-   * ne fait que le retrouver. Rien n'est coupé avant le lot 4 : un retard ou une résiliation préviennent Julien. Un
-   * objet illisible rend 422 (Stripe rejoue) ; une panne de base lève, donc 5xx, et Stripe rejoue aussi.
-   */
-  const enregistrer = async (a: { tenantId: string; abonnementId: string; livemode: boolean; periodeFin: Date | null }): Promise<void> => {
-    let issue: Awaited<ReturnType<typeof deps.numero.enregistrer>>;
-    try {
-      issue = await deps.numero.enregistrer(a);
-    } catch (err) {
-      // 🔴 L'ESPACE A ÉTÉ SUPPRIMÉ (RC8) et Stripe facture encore son abonnement : la clé étrangère vers l'espace refuse
-      // l'écriture (23503). Rejouer n'y changerait rien, donc 200 (sans quoi Stripe rejouerait en boucle pendant trois
-      // jours), et Julien est prévenu avec le lien direct : la clé restreinte ne résilie pas pour lui.
-      if (!espaceDisparu(err)) throw err;
-      journaliser('error', 'stripe_abonnement_espace_disparu', { tenantId: a.tenantId, abonnement: a.abonnementId, livemode: a.livemode });
-      await deps.numero.alerter(`L'espace supprimé ${a.tenantId} paie encore son abonnement ${a.abonnementId} : à résilier chez Stripe. ${lienTableauStripe('subscriptions', a.abonnementId, a.livemode)}`);
-      return;
-    }
-    // Un réabonnement payé rend le numéro : les campagnes en pause sur sa suspension repartent.
-    if (issue.etat === 'enregistre') await deps.numero.reprendreCampagnes(a.tenantId);
-    if (issue.etat === 'doublon') {
-      await deps.numero.alerter(`Abonnement en double : ${a.abonnementId} pour l'espace ${a.tenantId}, qui en a déjà un. À annuler et rembourser chez Stripe. Tant qu'il ne l'est pas, chacune de ses factures redonne cette alerte.`);
-    } else if (issue.etat === 'enregistre' && issue.numero === null) {
-      await deps.numero.alerter(`URGENT : l'espace ${a.tenantId} a payé son numéro (${a.abonnementId}) mais la réserve est vide. Déclare un numéro dans /ops : il lui sera attribué.`);
-    }
-    // `resilie` : un événement en retard pour un abonnement déjà résilié (jaune 3 de la relecture de la livraison B).
-  };
-
-  /**
-   * LE PRO (lot 6, livraison B1, tâche 11). Mêmes événements que le numéro, autre magasin : l'offre de l'espace se calcule
-   * sur `abonnements_offre`, et chaque écriture vide le cache de l'offre de cette copie (vigilance 3). Une session réglée à
-   * zéro par un code promo à 100 % (`no_payment_required`) fait le Pro, comme un paiement : c'est l'essai réel.
-   */
-  async function traiterPro(evenement: string, type: string, livemode: boolean, objet: unknown, reply: FastifyReply) {
-    const illisible = () => {
-      journaliser('error', 'stripe_pro_illisible', { evenement, type });
-      return reply.code(422).send({ error: 'événement illisible' });
-    };
-    const ok = () => reply.code(200).send({ recu: true });
-    const enregistrer = async (a: { tenantId: string; abonnementId: string; periodicite: PeriodiciteOffre; periodeFin: Date | null }) => {
-      let issue: Awaited<ReturnType<typeof deps.pro.enregistrer>>;
-      try {
-        issue = await deps.pro.enregistrer({ ...a, livemode });
-      } catch (err) {
-        // 🔴 L'ESPACE A ÉTÉ SUPPRIMÉ (RC8) et Stripe facture encore son Pro : même traitement que le numéro, 200 et alerte
-        // avec le lien direct, sans quoi Stripe rejouerait en boucle. `majStatut`, `modifier` et `finir` ne font que
-        // des mises à jour : sur un espace disparu elles ne trouvent rien, sans erreur.
-        if (!espaceDisparu(err)) throw err;
-        journaliser('error', 'stripe_pro_espace_disparu', { tenantId: a.tenantId, abonnement: a.abonnementId, livemode });
-        await deps.pro.alerter(`L'espace supprimé ${a.tenantId} paie encore son Pro ${a.abonnementId} : à résilier chez Stripe. ${lienTableauStripe('subscriptions', a.abonnementId, livemode)}`);
-        return;
-      }
-      if (issue.etat === 'enregistre') {
-        deps.pro.invalider(issue.tenantId);
-        if (issue.nouveau) await deps.pro.alerter(`Nouveau Pro : espace ${issue.tenantId} (${a.abonnementId}, ${a.periodicite === 'an' ? 'annuel' : 'mensuel'}).`);
-        // Le numéro inclus (B2b) : à chaque enregistrement, nouveau ou rejoué (une panne au premier ne le perd pas).
-        await deps.pro.surPassageEnPro(issue.tenantId);
-      } else if (issue.etat === 'doublon') {
-        await deps.pro.alerter(`Pro en double : ${a.abonnementId} pour l'espace ${a.tenantId}, qui a déjà un Pro vivant. À annuler et rembourser chez Stripe.`);
-      }
-    };
-    if (type === 'checkout.session.completed') {
-      const lu = sessionProSchema.safeParse(objet);
-      if (!lu.success) return illisible();
-      if (lu.data.payment_status !== 'paid' && lu.data.payment_status !== 'no_payment_required') return ok();
-      await enregistrer({ tenantId: lu.data.metadata.tenant_id, abonnementId: idDe(lu.data.subscription), periodicite: lu.data.metadata.periodicite ?? 'mois', periodeFin: null });
-      return ok();
-    }
-    if (type === 'customer.subscription.updated' || type === 'customer.subscription.deleted') {
-      const lu = abonnementProSchema.safeParse(objet);
-      if (!lu.success) return illisible();
-      const lignes = lu.data.items?.data ?? [];
-      if (type === 'customer.subscription.deleted') {
-        const fin = lu.data.ended_at ? new Date(lu.data.ended_at * 1000) : new Date(maintenant());
-        const raison = raisonDeLaFin(lu.data.cancellation_details?.reason);
-        const a = await deps.pro.finir(lu.data.id, raison, fin);
-        if (a) {
-          deps.pro.invalider(a.tenantId);
-          // Un rejeu de la fin (Stripe rejoue tout événement non acquitté) ne réalerte pas.
-          if (a.premiereFin) await deps.pro.alerter(`Pro terminé (${raison === 'impaye' ? 'impayé' : 'résiliation'}) : espace ${a.tenantId} (${a.abonnementId}). L'espace revient en Free.`);
-          // Le numéro inclus (B2b) : la raison et la date gardées en base (la première fin), pas celles d'un rejeu.
-          await deps.pro.surFinDuPro({
-            tenantId: a.tenantId, abonnementPro: a.abonnementId, livemode,
-            raison: a.finRaison ?? raison, finiLe: a.finiLe ?? fin, rendreNumero: a.rendreNumero, finPrevueLe: a.finPrevueLe,
-            customerId: lu.data.customer ? idDe(lu.data.customer) : null,
-            carte: lu.data.default_payment_method ? idDe(lu.data.default_payment_method) : null,
-          });
-        }
-        return ok();
-      }
-      const fins = lignes.map((l) => l.current_period_end).filter((v): v is number => typeof v === 'number');
-      const finDePeriode = fins.length > 0 ? Math.max(...fins) : null;
-      const finPrevue = lu.data.cancel_at ?? (lu.data.cancel_at_period_end === true ? finDePeriode : null);
-      const intervalle = lignes.map((l) => l.price?.recurring?.interval).find((v): v is string => typeof v === 'string');
-      const a = await deps.pro.modifier(lu.data.id, {
-        finPrevueLe: finPrevue === null ? null : new Date(finPrevue * 1000),
-        periodicite: intervalle ? (PERIODICITE_DE_STRIPE[intervalle] ?? null) : null,
-      });
-      if (a) deps.pro.invalider(a.tenantId);
-      return ok();
-    }
-    const lu = factureSchema.safeParse(objet);
-    const details = lu.success ? lu.data.parent?.subscription_details : null;
-    const meta = metaProSchema.safeParse(details?.metadata ?? {});
-    if (!lu.success || !details || !meta.success) return illisible();
-    const abonnementId = idDe(details.subscription);
-    const finsFacture = (lu.data.lines?.data ?? []).map((l) => l.period?.end).filter((v): v is number => typeof v === 'number');
-    const finFacture = finsFacture.length > 0 ? new Date(Math.max(...finsFacture) * 1000) : null;
-    if (type === 'invoice.payment_failed') {
-      const a = await deps.pro.majStatut(abonnementId, 'en_retard', null, finFacture);
-      if (a) {
-        deps.pro.invalider(a.tenantId);
-        await deps.pro.alerter(`Renouvellement du Pro échoué : espace ${a.tenantId} (${a.abonnementId}). Stripe réessaie ; sans paiement, l'espace reviendra en Free.`);
-      }
-      return ok();
-    }
-    // invoice.paid : la période payée avance ; une facture arrivée avant la session enregistre le Pro.
-    const paye = await deps.pro.majStatut(abonnementId, 'actif', finFacture);
-    if (paye) deps.pro.invalider(paye.tenantId);
-    else await enregistrer({ tenantId: meta.data.tenant_id, abonnementId, periodicite: meta.data.periodicite ?? 'mois', periodeFin: finFacture });
-    return ok();
-  }
-
-  /** L'objet porte-t-il nos métadonnées du Pro ? (une session, un abonnement, ou une facture d'abonnement). */
-  function objetDuPro(type: string, objet: unknown): boolean {
-    return (type.startsWith('invoice.') ? factureMarqueeProSchema : marqueProSchema).safeParse(objet).success;
-  }
-
-  async function traiterAbonnement(evenement: string, type: string, livemode: boolean, objet: unknown, reply: FastifyReply) {
-    // Le Pro d'abord : ses objets ne vont jamais au chemin du numéro (lot 6, B1).
-    if (objetDuPro(type, objet)) return traiterPro(evenement, type, livemode, objet, reply);
-    const illisible = () => {
-      journaliser('error', 'stripe_abonnement_illisible', { evenement, type });
-      return reply.code(422).send({ error: 'événement illisible' });
-    };
-    if (type === 'checkout.session.completed') {
-      const lu = sessionAbonnementSchema.safeParse(objet);
-      if (!lu.success) return illisible();
-      if (lu.data.payment_status !== 'paid') return reply.code(200).send({ recu: true });
-      await enregistrer({ tenantId: lu.data.metadata.tenant_id, abonnementId: idDe(lu.data.subscription), livemode, periodeFin: null });
-      return reply.code(200).send({ recu: true });
-    }
-    if (type === 'customer.subscription.deleted') {
-      const lu = abonnementSchema.safeParse(objet);
-      if (!lu.success) return illisible();
-      const a = await deps.numero.majStatut(lu.data.id, 'resilie', null);
-      // Arrêté au passage en Pro (B2b) : le numéro est inclus, rien n'est coupé.
-      if (a) {
-        await deps.numero.alerter(await deps.pro.vivant(a.tenantId)
-          ? `Abonnement du numéro seul arrêté : espace ${a.tenantId} (${a.abonnementId}). Le numéro est inclus dans son Pro.`
-          : `Abonnement du numéro terminé : espace ${a.tenantId} (${a.abonnementId}). Ses envois sont coupés ; le numéro est gardé 7 jours pour un réabonnement, puis libéré.`);
-      }
-      return reply.code(200).send({ recu: true });
-    }
-    if (type === 'customer.subscription.updated') {
-      const lu = abonnementModifieSchema.safeParse(objet);
-      if (!lu.success) return illisible();
-      // Seules nos métadonnées en font un abonnement du numéro : le compte Stripe vend aussi autre chose.
-      if (!metaNumeroSchema.safeParse(lu.data.metadata ?? {}).success) return reply.code(200).send({ recu: true });
-      const fins = (lu.data.items?.data ?? []).map((l) => l.current_period_end).filter((v): v is number => typeof v === 'number');
-      const finDePeriode = fins.length > 0 ? Math.max(...fins) : null;
-      const fin = lu.data.cancel_at ?? (lu.data.cancel_at_period_end === true ? finDePeriode : null);
-      await deps.numero.noterFinPrevue(lu.data.id, fin === null ? null : new Date(fin * 1000));
-      return reply.code(200).send({ recu: true });
-    }
-    const lu = factureSchema.safeParse(objet);
-    if (!lu.success) return illisible();
-    const details = lu.data.parent?.subscription_details;
-    // Une facture sans abonnement (une recharge) : pas la nôtre.
-    if (!details) return reply.code(200).send({ recu: true });
-    const abonnementId = idDe(details.subscription);
-    // La fin de la période que la facture couvre, la plus lointaine de ses lignes : payée, elle avance la période de
-    // l'abonnement ; échouée, elle dit si cette période est DÉJÀ payée.
-    const fins = (lu.data.lines?.data ?? []).map((l) => l.period?.end).filter((v): v is number => typeof v === 'number');
-    const finFacture = fins.length > 0 ? new Date(Math.max(...fins) * 1000) : null;
-    if (type === 'invoice.payment_failed') {
-      // 🔴 Stripe ne garantit pas l'ordre : un échec rejoué APRÈS le paiement de la même facture ne repose rien, sans
-      // quoi un client qui a payé serait coupé sept jours plus tard (rouge 2 de la relecture du lot 4).
-      const a = await deps.numero.majStatut(abonnementId, 'en_retard', null, finFacture);
-      if (a) await deps.numero.alerter(`Renouvellement du numéro échoué : espace ${a.tenantId} (${a.abonnementId}). Stripe réessaie ; sans paiement, ses envois seront coupés 7 jours après le premier échec.`);
-      return reply.code(200).send({ recu: true });
-    }
-    // invoice.paid : la fin de la période payée.
-    const periodeFin = finFacture;
-    const paye = await deps.numero.majStatut(abonnementId, 'actif', periodeFin);
-    if (paye) {
-      // Une facture payée en retard sur un abonnement fini ne rend rien : seul un abonnement actif rouvre les envois.
-      if (paye.statut === 'actif') await deps.numero.reprendreCampagnes(paye.tenantId);
-      return reply.code(200).send({ recu: true });
-    }
-    // Inconnu : arrivée avant la session. Seules nos métadonnées en font un abonnement du numéro.
-    const meta = metaNumeroSchema.safeParse(details.metadata ?? {});
-    if (meta.success) await enregistrer({ tenantId: meta.data.tenant_id, abonnementId, livemode, periodeFin });
-    return reply.code(200).send({ recu: true });
-  }
+  const abonnements = creerTraitementAbonnements(deps);
 
   app.post('/webhooks/stripe', async (req, reply) => {
     // 1. 🔴 La signature, sur le corps brut, AVANT de lire quoi que ce soit du corps.
@@ -521,26 +196,40 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
       journaliser('error', 'stripe_webhook_illisible', { issues: ev.error.issues.length });
       return reply.code(400).send({ error: 'événement illisible' });
     }
-    const abonnement = EVENEMENTS_ABONNEMENT.has(ev.data.type)
-      || (ev.data.type === 'checkout.session.completed'
-        && (sessionAbonnementSchema.safeParse(ev.data.data.object).success || objetDuPro(ev.data.type, ev.data.data.object)));
-    if (!EVENEMENTS_CREDITANTS.has(ev.data.type) && !abonnement) return reply.code(200).send({ recu: true });
+    const evenement = {
+      id: ev.data.id,
+      type: ev.data.type,
+      livemode: ev.data.livemode,
+      objet: ev.data.data.object,
+    };
+    const abonnement = abonnements.concerne(evenement);
+    if (!EVENEMENTS_CREDITANTS.has(evenement.type) && !abonnement) {
+      return reply.code(200).send({ recu: true });
+    }
 
-    // 2 bis. 🔴 Le mode de l'événement doit être celui de la clé configurée (relecture du 2026-09-29). Rejouer n'y
-    //        changerait rien, donc 200, et une trace en erreur : c'est une destination mal déclarée chez Stripe.
-    if (ev.data.livemode !== deps.livemode) {
-      journaliser('error', 'stripe_mode_incoherent', { evenement: ev.data.id, type: ev.data.type, livemodeEvenement: ev.data.livemode, livemodeCle: deps.livemode });
+    // 2 bis. 🔴 Le mode de l'événement doit être celui de la clé configurée. Rejouer n'y changerait rien, donc
+    // 200 et une trace en erreur : c'est une destination mal déclarée chez Stripe.
+    if (evenement.livemode !== deps.livemode) {
+      journaliser('error', 'stripe_mode_incoherent', {
+        evenement: evenement.id,
+        type: evenement.type,
+        livemodeEvenement: evenement.livemode,
+        livemodeCle: deps.livemode,
+      });
       return reply.code(200).send({ recu: true, credite: false });
     }
 
-    // 2 ter. L'abonnement du numéro (lot 3c) : son propre chemin, qui ne crédite rien.
-    if (abonnement) return traiterAbonnement(ev.data.id, ev.data.type, ev.data.livemode, ev.data.data.object, reply);
+    // 2 ter. Les abonnements Pro et numéro ont leur propre chemin, qui ne crédite rien.
+    if (abonnement) {
+      const issue = await abonnements.traiter(evenement);
+      if (issue.issue === 'illisible') return reply.code(422).send({ error: 'événement illisible' });
+      if (issue.issue === 'acquitte') return reply.code(200).send({ recu: true });
+    }
 
-    // 3. La session. Un événement qui crédite et qu'on ne sait pas lire est de l'argent encaissé sans crédit : 422,
-    //    donc rejoué par Stripe pendant trois jours, le temps de corriger le code.
-    const lue = sessionSchema.safeParse(ev.data.data.object);
+    // 3. Une session créditante illisible est de l'argent encaissé sans crédit : 422 pour demander le rejeu de Stripe.
+    const lue = sessionSchema.safeParse(evenement.objet);
     if (!lue.success) {
-      journaliser('error', 'stripe_session_illisible', { evenement: ev.data.id, type: ev.data.type });
+      journaliser('error', 'stripe_session_illisible', { evenement: evenement.id, type: evenement.type });
       return reply.code(422).send({ error: 'session illisible' });
     }
     const session = lue.data;
@@ -548,27 +237,27 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
     // Pas une de nos recharges : 200 sans effet, sinon Stripe rejouerait un événement qui ne nous concerne pas.
     if (session.mode !== 'payment' || !meta.success) return reply.code(200).send({ recu: true });
     // Paiement différé pas encore arrivé : `async_payment_succeeded` viendra. `no_payment_required` est une session
-    // réglée à zéro par un code promo à 100 % : elle crédite, comme un paiement (décision de Julien du 2026-09-29).
+    // réglée à zéro par un code promo à 100 % : elle crédite, comme un paiement.
     if (session.payment_status !== 'paid' && session.payment_status !== 'no_payment_required') {
       return reply.code(200).send({ recu: true });
     }
 
-    // 4. 🔴 Le recoupement : l'offre des métadonnées doit correspondre au prix HT de la ligne, en euros, pour cet
-    //    espace. `amount_subtotal` est le prix AVANT remise : un code promo ne change pas le crédit, qui reste plein
-    //    (décision de Julien du 2026-09-29), et un prix Stripe qui ne vaut pas l'offre est toujours refusé. Sinon aucun crédit, et une trace en erreur : rejouer n'y changerait rien, donc 200.
+    // 4. 🔴 L'offre des métadonnées doit correspondre au prix HT de la ligne, en euros, pour cet espace.
+    // `amount_subtotal` est le prix avant remise : un code promo ne change pas le crédit, qui reste plein.
     const { tenant_id: tenantId, offre } = meta.data;
     const attendu = definitionOffre(offre).htCentimes;
     const reference = session.client_reference_id ?? null;
     if (session.currency !== 'eur' || session.amount_subtotal !== attendu || (reference !== null && reference !== tenantId)) {
       journaliser('error', 'stripe_paiement_incoherent', {
-        evenement: ev.data.id, session: session.id, tenantId, offre, attenduCentimes: attendu,
-        payeCentimes: session.amount_subtotal, devise: session.currency, referenceConcorde: reference === null || reference === tenantId,
+        evenement: evenement.id, session: session.id, tenantId, offre, attenduCentimes: attendu,
+        payeCentimes: session.amount_subtotal, devise: session.currency,
+        referenceConcorde: reference === null || reference === tenantId,
       });
       return reply.code(200).send({ recu: true, credite: false });
     }
 
     // 5. Une transaction : la ligne de paiement (idempotence), le crédit, le mouvement `achat`. Une panne de base
-    //    lève, donc 5xx, et Stripe rejoue : c'est ce qu'on veut.
+    // lève, donc 5xx, et Stripe rejoue.
     const credit = creditDeLOffre(offre);
     const facture = session.invoice === undefined || session.invoice === null
       ? null
@@ -581,18 +270,19 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
       htCentimes: attendu,
       ttcCentimes: session.amount_total,
       factureId: facture,
-      livemode: ev.data.livemode,
+      livemode: evenement.livemode,
     });
     if (issue === 'espace_inconnu') {
-      journaliser('error', 'stripe_paiement_espace_inconnu', { evenement: ev.data.id, session: session.id, tenantId });
-      // Un espace supprimé depuis l'ouverture du paiement (RC8) : de l'argent encaissé sans crédit, à rembourser.
-      await deps.numero.alerter(`Recharge payée pour un espace inexistant (supprimé ?) ${tenantId} : session ${session.id}, à rembourser chez Stripe.${facture === null ? '' : ` ${lienTableauStripe('invoices', facture, ev.data.livemode)}`}`);
+      journaliser('error', 'stripe_paiement_espace_inconnu', {
+        evenement: evenement.id, session: session.id, tenantId,
+      });
+      // Un espace supprimé depuis l'ouverture du paiement : de l'argent encaissé sans crédit, à rembourser.
+      await deps.numero.alerter(`Recharge payée pour un espace inexistant (supprimé ?) ${tenantId} : session ${session.id}, à rembourser chez Stripe.${facture === null ? '' : ` ${lienTableauStripe('invoices', facture, evenement.livemode)}`}`);
       return reply.code(200).send({ recu: true, credite: false });
     }
     if (issue === 'credite') {
-      // Après la transaction, et SANS la faire attendre à Stripe : la réponse part dès que le crédit est écrit (Stripe
-      // abandonne un webhook trop lent, et Vercel peut prendre jusqu'à 30 s). Un échec se journalise : le crédit est
-      // écrit, le plafond rattrapera au mouvement suivant.
+      // Après la transaction et sans faire attendre Stripe. Un échec se journalise : le crédit est écrit et le plafond
+      // rattrapera au mouvement suivant.
       deps.apresCredit(tenantId).catch((err: unknown) => {
         journaliser('error', 'stripe_plafond_non_remonte', { tenantId, err });
       });
