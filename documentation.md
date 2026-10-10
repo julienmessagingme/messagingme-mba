@@ -42,7 +42,7 @@ la recopie pas.
 |---|---|---|
 | Comment le code se comporte | **le code**, et les tests qui le tiennent | un manuel vieillit, un test échoue |
 | Quelles migrations sont APPLIQUÉES en production | **la base** : `select name from public.schema_migrations order by name desc` | qualifier `public.` : plusieurs schémas de cette base portent une table de ce nom |
-| Quelle est la dernière migration, et le prochain nom libre | **[CLAUDE.md](CLAUDE.md)**, section Déploiement, seule source du compteur | ce compteur a déjà dérivé dans quatre documents |
+| Quelle est la dernière migration, et le prochain nom libre | **`npm run migrations`** (le dossier pour ce qui est pris, la base pour ce qui est appliqué) | un compteur écrit à la main a dérivé dans quatre documents, `CLAUDE.md` compris |
 | Quelles variables existent et quels sont leurs défauts | **`src/config.ts`** (schéma zod), gabarits dans `.env.example` et `.env.prod.example` | une centaine de clés, recopiées elles dérivent |
 | Quelles files existent | **`src/queue/names.ts`** (`BASE_QUEUES`) | un compte écrit à la main est faux au premier ajout |
 | Comment on déploie, et comment on revient en arrière | **[DEPLOY.md](DEPLOY.md)** | c'est un runbook exécutable, pas un récit |
@@ -61,8 +61,8 @@ ordre, c'est-à-dire un risque de production.
    commité et poussé sans être appliqué ;
 3. **le prochain NOM libre** : le numéro suivant celui du point 1, pas du point 2.
 
-`CLAUDE.md` porte 1 et 3 et se déclare seule source du compteur. Il ne peut pas porter 2 : seule la base le
-sait, et personne ne doit l'affirmer sans avoir posé la question.
+`npm run migrations` (`db/etat.ts`) les dit toutes les trois, et aucun document ne les écrit : un compteur tenu à la
+main a dérivé jusque dans `CLAUDE.md` (onze fois), avant d'y être supprimé le 2026-10-10.
 
 ---
 
@@ -4054,7 +4054,7 @@ Une livraison ne « met pas à jour tous les fichiers ». Elle choisit selon la 
 | le travail encore en cours | `wip.md` |
 | une limite ou un travail futur confirmé | `todo.md` |
 | le récit d'une livraison, une mesure ponctuelle, un incident | `docs/JOURNAL-TECHNIQUE.md` |
-| le compteur de migrations, les commandes, les règles de travail | `CLAUDE.md` |
+| les commandes, les règles de travail | `CLAUDE.md` |
 
 ### 🔴 Ce qui n'entre PAS dans ce manuel
 

@@ -25,6 +25,7 @@ npm install              # deps
 npm run dev              # API Fastify en watch (charge .env)
 npm run worker           # worker pg-boss : webhooks + campaign-run + sweeper (charge .env)
 npm run migrate          # applique db/migrations/*.sql (suivi schema_migrations)
+npm run migrations       # dernier numéro pris, prochain libre, dernier appliqué, en attente (base en lecture seule)
 npm run seed             # compte/tenant démo (SEED_PASSWORD requis, ou SEED_DEMO=true)
 npm test                 # vitest unitaires (sans DB)
 npm run test:integration # vitest intégration (⚠️ le DATABASE_URL local = la PROD, cf. ci-dessous)
@@ -141,18 +142,18 @@ Auth **JWT (login)** + **RBAC** (écritures réservées aux admins).
 passer sur le VPS AVANT le déploiement (`sudo REVISION=$(git rev-parse --short HEAD) docker compose build mba-api` puis
 `sudo docker compose run --rm --no-deps mba-api npm run migrate`, PUIS `up -d --build` avec la même `REVISION`, `DEPLOY.md`).
 
-🔴 **LE COMPTEUR TIENT EN UNE LIGNE, ET IL N'EST ÉCRIT QU'ICI.** Ailleurs, un POINTEUR vers elle : trois documents
-l'avaient recopié, les trois étaient faux. Elle se met à jour DANS le commit qui prend le numéro, et se relit après
-`migrate`. **Le DOSSIER tranche sur ce qui est PRIS, la BASE sur ce qui est APPLIQUÉ** (`select name from
-public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas portent une table de ce nom).
+🔴 **LE NUMÉRO D'UNE MIGRATION SE LIT, IL NE S'ÉCRIT NULLE PART** (décision de Julien, 2026-10-10). **`npm run
+migrations`** dit le dernier numéro PRIS et le prochain libre (le DOSSIER `db/migrations/` tranche sur ce qui est pris),
+le dernier APPLIQUÉ et ce qui attend (la BASE, lue en lecture seule ; le `DATABASE_URL` d'un poste est la production).
+Le compteur qu'on écrivait ici a dérivé onze fois, puis il est devenu le registre où chaque déploiement racontait sa
+migration : 820 lignes sur 1 391, parties au journal le 2026-10-10. Le dossier a deux trous voulus : 0153 (réservé,
+jamais écrit) et 0060 (appliquée sans fichier, ancien nom de `0062_email.sql`, même SQL, sans conséquence).
 
-**Dernière appliquée : 0227** (`oauth_autres_clients`, le 2026-10-09 à 15 h 48 UTC). **Prochaine libre = 0228.** Le
-dossier a deux trous voulus : 0153 (réservé, jamais écrit) et 0060 (appliquée sans fichier : l'ancien nom de
-`0062_email.sql`, même SQL, sans conséquence, vérifié le 2026-10-03).
-
-Le récit de chaque migration (0093 à 0227 : ce qu'elle a coûté, ce qu'elle a appris, comment elle a été relue) vit
-dans [docs/JOURNAL-TECHNIQUE.md](docs/JOURNAL-TECHNIQUE.md) § « Les migrations, une par une » ; il a quitté ce
-fichier le 2026-10-10, où il occupait 820 lignes sur 1 391. Ce qui suit en est la règle.
+🔴 **CE FICHIER NE RACONTE RIEN.** Le récit d'une migration (ce qu'elle a coûté, comment elle a été relue) va au
+[journal](docs/JOURNAL-TECHNIQUE.md) § « Les migrations, une par une », dans le commit qui la déploie ; ici n'entre
+qu'une RÈGLE nouvelle. Le hook `claude-md-projet-garde.js` (poste de Julien) le tient à l'écriture : il refuse un
+ajout qui raconte (la suite des migrations précédentes, la relecture en base, une heure UTC, une rafale de numéros, un compteur) et un fichier
+au-delà de 650 lignes. Ce qui suit est la règle que le récit a laissée.
 
 🔴 **« Avant ou après le déploiement » se décide sur « l'ancien code survit-il ? », pas sur « ajoute ou retire ».**
 Ajouter une colonne que le code écrit, relâcher une contrainte (`drop not null`, `drop constraint` d'une cascade) :
@@ -394,7 +395,7 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
 
 ### Automation (règles d'archi issues des revues, 2026-08-03)
 
-- **Le compteur de migrations est plus haut, section Déploiement, et il n'est écrit qu'une fois.** Elles ne sont PAS auto-appliquées : construire l'image AVANT de
+- **Le numéro d'une migration se lit par `npm run migrations`, il ne s'écrit nulle part.** Elles ne sont PAS auto-appliquées : construire l'image AVANT de
   migrer (une migration ajoutée après le dernier build est absente de l'image, et `migrate` répond « à jour »
   sans rien appliquer). Cf `DEPLOY.md`.
 - **L'émission d'un événement d'automation est gouvernée par le CHEMIN appelant, jamais par la dépendance

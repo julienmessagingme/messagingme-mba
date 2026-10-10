@@ -13,6 +13,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "worker": "tsx src/worker.ts",
     "migrate": "tsx db/migrate.ts",
+    "migrations": "tsx db/etat.ts",
     "seed": "tsx db/seed.ts",
     "auto-attaque": "tsx scripts/auto-attaque.mts",
     "oauth:fiches": "tsx scripts/oauth-fiches.mts",

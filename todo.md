@@ -2725,7 +2725,7 @@ Chacun est un compromis assumé, pas un oubli.
 
 ## Chantier OTP + étapes de deal HubSpot (ouvert le 2026-08-16)
 
-Contexte et gotchas : `docs/JOURNAL-TECHNIQUE.md` (l archive). ⚠️ Le compteur de migrations vit dans `CLAUDE.md`, pas ici : cette ligne a annoncé « 0059 » pendant trente migrations.
+Contexte et gotchas : `docs/JOURNAL-TECHNIQUE.md` (l archive). ⚠️ Le numéro des migrations se lit par `npm run migrations`, il ne s'écrit nulle part : cette ligne a annoncé « 0059 » pendant trente migrations.
 
 - 🔴 **Le pilote OTP, avant toute construction.** Répondeur Zadarma sur un numéro DÉDIÉ, un OTP déclenché, et
   on regarde si Meta dicte son code à une machine ou raccroche. Aucun retour d'expérience publié : c'est la

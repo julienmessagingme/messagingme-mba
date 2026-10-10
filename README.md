@@ -20,7 +20,7 @@ casserait les connexions déjà configurées chez les clients.
 | ce sur quoi on travaille en ce moment | [wip.md](wip.md) |
 | ce qui reste à faire | [todo.md](todo.md) |
 | pourquoi telle décision a été prise il y a trois mois | [docs/JOURNAL-TECHNIQUE.md](docs/JOURNAL-TECHNIQUE.md), l'archive |
-| les commandes, les règles de travail, le compteur de migrations | [CLAUDE.md](CLAUDE.md) |
+| les commandes, les règles de travail (le numéro des migrations : `npm run migrations`) | [CLAUDE.md](CLAUDE.md) |
 
 ⚠️ **L'archive ne fait jamais autorité sur l'état actuel.** Elle décrit l'état au moment de chaque livraison.
 Une phrase trouvée dedans se revérifie dans le manuel avant d'être crue.

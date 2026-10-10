@@ -645,7 +645,7 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    et §3.5 éprouvés au banc, §3.4 retiré) ; §3.2 seulement si un rôle de worker passe à deux copies.
 1 bis. ✅ **La migration 0060, vérifiée le 2026-10-03** : la ligne `0060_email.sql` de la production est l'ancien
    nom de `0062_email.sql`, dont le SQL est identique (seuls des commentaires diffèrent) et entièrement en
-   `if not exists`. Une base neuve obtient les mêmes objets (`CLAUDE.md`, compteur de migrations).
+   `if not exists`. Une base neuve obtient les mêmes objets (`CLAUDE.md`, section Déploiement).
 2. **pgvector existe chez la destination.** Seule extension non universelle dont ce produit dépend
    (`agent_knowledge.embedding`, fiches d'aide). `pg_trgm` et `unaccent` sont des contribs standard.
    `pgcrypto` ne sert qu'à `gen_random_uuid()`, natif depuis PostgreSQL 13.

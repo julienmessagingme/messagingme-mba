@@ -14,7 +14,7 @@
 | `origin/main` | voir `git log` (ce fichier ne recopie plus un SHA, il a menti six fois) |
 | VPS (`mba-api`, `mba-worker`, `mba-worker-analyse`) | la révision déployée se lit sous le titre de `/ops` (lot 4 du plan de performance), jamais ici |
 | Vercel | suit `origin/main` tout seul (la console, et la vitrine au push qui touche `site/`) |
-| Migrations | 🔴 **LE COMPTEUR N'EST PAS ICI, IL EST DANS [CLAUDE.md](CLAUDE.md), SECTION DÉPLOIEMENT.** En cas de doute, la BASE tranche. |
+| Migrations | 🔴 **LE NUMÉRO SE LIT, IL NE S'ÉCRIT NULLE PART** : `npm run migrations` (le dossier pour ce qui est pris, la base pour ce qui est appliqué). |
 | CI | lue job par job sur `gh run view <id> --json jobs`, jamais sur le code de sortie du watch ; un rouge `toomanyrequests` (Docker Hub) n'a rien vérifié |
 | Le récit | les lots déployés sont sortis de ce fichier le 2026-10-10, texte d'origine, vers [docs/JOURNAL-TECHNIQUE.md](docs/JOURNAL-TECHNIQUE.md) ; les essais dus vivent dans `docs/prive/ESSAIS-REELS.md`, les restes dans [todo.md](todo.md) |
 

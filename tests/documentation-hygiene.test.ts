@@ -57,12 +57,13 @@ describe('le manuel ne recopie aucun compteur calculable', () => {
   });
 
   it('🔴 aucun numéro de migration n’est annoncé comme « la dernière »', () => {
-    // Ce compteur a dérivé dans QUATRE documents. Le manuel renvoie vers CLAUDE.md et vers la base, il ne
+    // Ce compteur a dérivé dans QUATRE documents, CLAUDE.md compris, où il est supprimé depuis le 2026-10-10. Le
+    // manuel renvoie vers `npm run migrations`, il ne
     // porte pas le chiffre : le porter, c'est promettre de le tenir à jour à chaque migration.
     const texte = lire(MANUEL);
     const motifs = [/derni[èe]re migration\s*(du repo)?\s*:?\s*\*{0,2}0\d{3}/i, /prochaine libre\s*:?\s*\*{0,2}0\d{3}/i];
     for (const motif of motifs) {
-      expect(motif.test(texte), `« ${motif.source} » : le compteur vit dans CLAUDE.md, jamais ici`).toBe(false);
+      expect(motif.test(texte), `« ${motif.source} » : le numéro se lit par npm run migrations, il ne s'écrit nulle part`).toBe(false);
     }
   });
 });
