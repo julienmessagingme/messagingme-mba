@@ -392,6 +392,11 @@ POST /campaigns/:id/run  -> job `campaign-run` (expiration DIMENSIONNÉE au volu
 🔴 **Le claim atomique par destinataire est la seule garantie anti-double-envoi.** Ni la file ni le verrou ne
 la donnent : aucune file de ce dépôt ne déduplique quoi que ce soit (voir § 6).
 
+⚠️ **Le tour de rôle d'une campagne (les réponses assignées à l'équipe) tient UN rang par campagne**
+(`campaigns.tour_de_role_rang`, `integer`, sans repliage) : un rang par étage ferait tourner deux roulements sur la
+même équipe, et un repliage (l'ancien `% 32767` d'un `smallint`) servait deux fois de suite la même personne. Le
+DEVENIR d'une réponse (l'Inbox, l'agent de Meta, un scénario), lui, se règle par étage (`campaign_etages.devenir`).
+
 🔴 **Le consentement se lit DEUX fois : à la construction de la liste (`optInAllows`), puis au moment d'envoyer,
 par le claim** (`PgRecipientStore.claim`, son `returning` lit la fiche par sa clé primaire). Une campagne étalée
 (débit bas, pause, heures ouvrées) part des heures après sa construction : une purge, un STOP ou un blocage posés
@@ -1138,6 +1143,10 @@ l'envers (7 à 15 chiffres -> numéro, sinon BSUID). `contacts` porte `phone_e16
 ⚠️ **Trois formats coexistent et se confondent facilement** : le fil porte un `wa_id` SANS `+`
 (`33612345678`), la fiche un E.164 (`+33612345678`), et le cache de joignabilité RCS a pour clé l'E.164. La
 correspondance passe par le prédicat partagé `MATCH_BY_WAID_SQL`, jamais par une égalité directe.
+
+⚠️ **Il n'y a PAS de colonne `contacts.email`, délibérément** : l'adresse vit dans le jsonb `contacts.fields`, sous une
+clé que le client nomme lui-même (« email », « mail »...), et l'étage e-mail d'une campagne désigne cette clé
+(`campaign_etages.email_champ`). Une colonne créerait une seconde vérité, vide, que la campagne lirait.
 
 ⚠️ **Le cache de joignabilité RCS est écrit par le RAPPORT DE LIVRAISON**, smsmode ne sachant pas la dire avant
 l'envoi : un échec définitif y pose « injoignable », une livraison « joignable », pour l'agent qui a envoyé et

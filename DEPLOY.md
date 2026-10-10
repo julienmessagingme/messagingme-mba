@@ -1,8 +1,12 @@
-# Déploiement — mba.messagingme.app (VPS OVH + NPM)
+# Déploiement : l'API et les workers sur le VPS (OVH + NPM)
 
 Quatre conteneurs sur le réseau `mcp-robot_default` : `mba-api` (Fastify :8095), DEUX workers pg-boss
-(`mba-worker` au rôle `principal`, `mba-worker-analyse` au rôle `analyse`, depuis le 2026-10-03), `mba-web` (Next.js :3000). NPM expose `mba.messagingme.app` -> `mba-web:3000` ;
-le front proxifie `/api/backend/*` -> `mba-api:8095` (interne, pas de CORS, backend non public).
+(`mba-worker` au rôle `principal`, `mba-worker-analyse` au rôle `analyse`, depuis le 2026-10-03) et `mba-web`
+(Next.js :3000, l'ANCIENNE console). NPM sert l'API sous `api.messagingme.app` (CORS en liste blanche, `CORS_ORIGINS`),
+et `mba.messagingme.app` par un routage par CHEMIN : `/api/backend/*` vers `mba-api` (préfixe retiré), `/r/`, `/m/`
+et `/mcp` vers `mba-api`, le reste vers `mba-web` ; c'est ce qui garde vivantes les adresses déjà distribuées et le
+webhook de Meta. La console (`console.messagingme.app`) et la vitrine (`app.messagingme.fr`) sont sur Vercel et
+se déploient au `git push` : ce document ne les concerne pas (`CLAUDE.md`, section Déploiement).
 
 🔴 **`$VPS` N'EST PAS UNE VARIABLE D'ENVIRONNEMENT, C'EST UNE CAVITÉ VOLONTAIRE.** L'adresse IP du VPS ne
 figure plus dans ce dépôt : elle vit dans le `CLAUDE.md` global du poste, hors dépôt. Raison, et elle est

@@ -26,6 +26,14 @@
   devient réel : exposer « jeton propre » dans `account-status` et n'offrir le bouton qu'à ces espaces.
 - Le refus d'un second numéro nomme l'identifiant Meta du numéro déjà là, pas le numéro affiché.
 
+## 🟡 Sortis de `wip.md` le 2026-10-10 : deux restes
+
+- **Les médias RCS hors de Postgres** : APRÈS la bascule Scaleway, en lot séparé (décidé le 2026-10-04,
+  `docs/prive/AUDIT-PERFORMANCE-COMPLET-2026-10-02.md` § 6). Leur volume est suivi dans `/ops` (rouge à 500 Mo).
+- **La section des connexions échouées doit dire qu'elle ne montre que les tentatives sur des comptes existants.**
+  `audit_log.tenant_id` est NOT NULL : une tentative sur une adresse inconnue n'appartient à aucun espace et ne peut pas
+  s'écrire. Sans cette phrase, on lira « aucune tentative » alors qu'il y en a eu.
+
 ## 🟡 Lot 15, l'OAuth ouvert : ce que la relecture laisse (2026-10-09)
 
 - **Un client enregistré purgé (30 jours sans autorisation vivante) qui revient sans se réenregistrer** voit une page
@@ -188,7 +196,6 @@
   lecture rend alors 422 sans raison pour ce cas.
 - **La console ne propose pas tous les champs que le serveur accepte** (un champ déclaré hors « Mes champs », comme
   `email`), et une clé inconnue tapée à la main n'est refusée qu'au serveur.
-
 
 ## 🟡 Lot 6 : ce que les livraisons A et B1 laissent pour plus tard (2026-10-07)
 
@@ -378,9 +385,6 @@ jeton du lien (`signLienNumero`) et exiger dans la garde `adminOuLien` qu'elle n
 
 ## 🟠 Connecteurs : l'autonomie d'un outil ne suit pas le risque monté par sa requête (relecture de `099fd6c1`, 2026-10-05)
 
-- ✅ ~~Les paramètres d'un outil ne suivaient pas les variables de sa requête~~ : réglé le 2026-10-08, ils se lisent
-  sur la requête à chaque lecture de l'outil, sans copie (`paramsDuConnecteur`, plan
-  `docs/superpowers/plans/2026-10-08-parametres-du-connecteur.md`).
 - **Un connecteur monté à `irreversible` garde son autonomie** : depuis RC4 (2026-10-06), la ligne d'un connecteur
   irréversible le dit et « Modifier » offre la case. Reste à faire tomber `autonome` des outils montés à
   `irreversible` par un changement de méthode, dans la même transaction (`PgRequeteStore.patch`) : un consentement
@@ -703,8 +707,6 @@ en production.
    - `/tenants/:id/conversations/:id/prendre` : une panne de base avant l'appel à Meta sort en 500 (Cloudflare
      mange le corps) au lieu de 409 ;
    - `FlowMappingDeps.audit` (trace du consentement capté par un Flow) reste optionnel.
-3. ✅ **Candidat 6 de la revue d'architecture** (un point d'entrée « lancer un scénario » qui porte la politique de
-   chaque type de lancement) : fait le 2026-10-04, piste 4 du rapport du 2026-10-02 (plus bas).
 
 ## 🟠 Suites de la session du 2026-09-25 au 27 (MFA, audit ponytail, commentaires)
 
@@ -760,10 +762,6 @@ Vu en montant, avec Julien, un scénario qui répond sur le numéro WhatsApp d'u
 - **Le mode d'authentification et le nom d'en-tête d'un système ne se modifient pas après création**
   (`web/components/ConnecteursBibliotheque.tsx` : seul le secret se remplace), et le nom d'en-tête est
   pré-rempli à `x-api-key`. Brevo attend `api-key` : il a fallu supprimer et recréer le système deux fois.
-- ✅ **Corrigé le 2026-09-30** : le bloc « Appel HTTP » d'un scénario accepte un appel qui POUSSE. Sans champ
-  cible, la lecture est `pousse` (corps non lu, un 2xx vaut succès, 204 compris, aucun champ de réponse exigé,
-  donc plus besoin d'un vrai « Essayer » pour en cocher un) ; avec un champ cible, rien ne change. Mesuré avant :
-  le seul bloc `http` en production avait un champ, donc aucun comportement n'a bougé.
 
 ## 🟠 `features.md` se contredit à TROIS endroits, trouvé en écrivant les fiches d'aide (2026-09-23)
 
@@ -1244,9 +1242,6 @@ aujourd'hui ; chacun rend faux, à moitié, ce que le lot affirme.
   erreurs », `web/app/developers/api/reference/page.tsx`, section « Erreurs », avec le 415 sans `code` d'un corps
   qui n'est pas du JSON, mesuré le 2026-09-25) : la corriger dans le même commit que le parseur, sinon elle
   mentira dans l'autre sens.
-- ~~**La puce de `documentation.md` qui suit les trois ajoutées au lot 1**~~ **FAIT le 2026-09-25** (lot 4,
-  tâche 8) : l'API publique y crée en `unknown`, sauf `consent` explicite, et sait écrire `opted_out` comme
-  `opted_in`.
 - **Le cache de joignabilité RCS porte un même numéro sous DEUX formes** (`+33…` écrit par les campagnes et
   par les rapports de livraison, `traiterRapportRcs` ; chiffres seuls par les scénarios et la réponse RCS de
   l'Inbox). DEUX lecteurs lisent les deux formes, la plus récente gagnant (`joignabiliteRcsToutesFormes`,
@@ -1314,7 +1309,6 @@ concurrence par tenant sans affamer les autres ») se verifie peut-etre sur les 
 que sur une fenetre de temps, ce que le test unitaire voisin (`tests/queue-group-concurrency.test.ts`) fait
 deja avec un faux.
 
-
 ## 🟡 Ce que les six revues du Performance Lab ont laisse porter (2026-09-18)
 
 Aucun ne bloque le deploiement, la sixieme revue l a tranche explicitement. Ils sont ranges dans l ordre ou
@@ -1375,7 +1369,6 @@ elle recommande de les prendre.
   2026-09-29) : `conversation_evenements` n a d index que par conversation ; un index `(tenant_id, at)` demande une migration.
 - 🟡 **Une course rare sur `passee_par_mba`** (relecture du 2026-09-29) : traite APRES une reponse deja enregistree de
   l equipe, il ouvre une demande que cette reponse precede, donc ne compte pas ; a mesurer avant de corriger.
-
 
 ## 🟡 Quatre ecarts mineurs releves par les revues finales (2026-09-17 et 18)
 
@@ -1471,16 +1464,6 @@ gros dépôts, gardes de consentement en flèches nommées, émission décidée 
 
 **Les huit restantes**, de la plus forte à la plus spéculative :
 
-1. ✅ **Une seule transition de consentement dans la fiche contact : FAIT et déployé le 2026-10-04** (`1c4df5ec`
-   serveur, `a34c88c3` console, plan `docs/superpowers/plans/2026-10-03-transition-consentement.md`). La règle vit
-   dans `src/crm/transition-consentement.ts`, les six écritures la composent, l'autorité de chaque appelant est un
-   type fermé. Écarts corrigés (décisions de Julien) : statut inchangé, rien de réécrit ni d'annoncé ; l'action en
-   masse ne lève plus un STOP et le dit. Une table d'intégration remplace les tests par expressions régulières.
-2. ✅ **Sortir l'envoi d'un bloc de scénario du câblage : FAIT et déployé le 2026-10-03** (`cdcbde3e`, plan
-   `docs/superpowers/plans/2026-10-03-envois-de-bloc.md`). Les quatre envois vivent dans
-   `src/workflow/envois-bloc.ts`, exécutés par `tests/workflow-envois-bloc.test.ts`. Pas couplé au point d'envoi
-   unique (décision de Julien), qui reste le candidat 2 ci-dessous. ⚠️ Les « 20 commits dont 8 correctifs »
-   portaient sur tout `wiring.ts`, pas sur ces quatre fonctions.
 3. **L'accès publicitaire d'un espace, lié une fois** (à explorer). Chaque appel Graph ajouté se câble trois fois
    (client, flèche de `src/index.ts` autour d'`accesPub`, dépendance de route), et `src/worker.ts` déchiffre le
    jeton lui-même, hors de la règle « le jeton ne sort en clair que par `jetonClair` » (`src/pubs/connexion.ts`).
@@ -1524,12 +1507,6 @@ gros dépôts, gardes de consentement en flèches nommées, émission décidée 
 7. **Le cerveau de l'agent IA construit deux fois** (spéculatif). `src/index.ts` (bac à sable) et `src/worker.ts`
    (production) recopient la moitié commune de `creerCerveauGateway`, alignées par deux tests de texte ; l'écart du
    2026-09-16 (bac à sable sans résolveur) venait de là. Une fabrique « production / essai » dans `src/agent/`.
-8. ✅ **Le bail anti-double-envoi de l'exécuteur, requis : FAIT le 2026-10-04** (plan
-   `docs/superpowers/plans/2026-10-04-bail-avance-requis.md`). `reserverAvance`, `prolongerAvance` et
-   `libererAvance` sont requises ; les fixtures reçoivent un bail inerte par `avecGardesDEtatInertes`, et
-   `tests/workflow-bail-requis.test.ts` fait échouer le typecheck si l'une redevient optionnelle. Aucun changement
-   en production (`PgWorkflowRunStore` les portait toutes). Le reste du **candidat 6 du rapport du 2026-09-14**
-   (dépendances optionnelles) demeure.
 
 Écartée : les deux journaux du sortant de `PgInboxStore`, déjà décrits plus bas (« un échec du JOURNAL »).
 
@@ -1638,7 +1615,6 @@ dans `wiring.ts`) que `npm run typecheck` laissait passer sans rien dire. Un imp
 il fait croire à une dépendance qui n'existe pas.
 
 **À faire** : un script `npm run morts` et une étape dans le job `unit` de `.github/workflows/ci.yml`.
-
 
 ## 🟠 Bascule Scaleway : tout est dans UN document (2026-09-15)
 
@@ -1749,82 +1725,6 @@ Deux sorties possibles, et c'est un arbitrage de Julien :
 ⚠️ Ne pas trancher à notre main : la première option est un vrai chantier, la seconde retire une
 promesse qui a peut-être été faite à un client.
 
-## ✅ LIVRÉ : traduction des conversations (tranché le 2026-09-12, livré et déployé le 2026-09-13)
-
-> ⚠️ **CE TITRE A DIT « RIEN DE COMMENCÉ » PENDANT QUE C'ÉTAIT EN PRODUCTION** (migration 0137,
-> `TRADUCTION_MODELE` posée, six tâches livrées). Relevé le 2026-09-14 en répondant à « il reste quoi à
-> faire ? », c'est-à-dire par quelqu'un qui allait s'en servir. **Un backlog qui garde une entrée livrée ne
-> vieillit pas, il MENT** : il fait rouvrir un chantier fini. Ce qui suit est le CADRAGE d'origine, gardé
-> parce qu'il porte les décisions ; le fonctionnel vit dans `features.md`.
-
-**Deux langues, FR et EN, et c'est ce qui rend le dessin simple.** « Traduire » veut dire « dans
-l'autre », donc **aucun sélecteur de langue nulle part** : ni sur le contact, ni sur la conversation.
-
-Décisions de Julien :
-
-- **La langue de lecture vient de la console.** Elle vit dans le `localStorage`
-  ([web/lib/i18n.tsx](web/lib/i18n.tsx)), **pas sur le compte**, donc le serveur ne la connaît pas.
-  C'est le navigateur qui la passe à chaque appel. ⚠️ Le motif existe déjà et se décalque : le bot
-  d'aide envoie `QuestionAide.langue: 'fr' | 'en'` à chaque question.
-- **Les entrants se traduisent TOUS à l'ouverture d'une conversation**, jamais à l'arrivée. Traduire
-  à l'arrivée fait payer les « ok », les emojis et toutes les conversations que personne n'ouvrira.
-  Le premier lecteur paie, les suivants réutilisent le résultat rangé.
-- **Les sortants ne se traduisent JAMAIS automatiquement.** Un bouton « Traduire » avant l'envoi.
-  🔴 C'est une garde, pas une commodité : une traduction ratée en entrée se rattrape sur l'original
-  affiché à côté, une traduction ratée en sortie est partie chez un client et **aucun message
-  WhatsApp livré ne se rappelle**.
-- **Le toggle « traduire les entrants » vit dans le `localStorage`**, comme la langue elle-même.
-- **Stockage** : une colonne de traduction plus la langue dans laquelle elle est. Un message français
-  n'a jamais besoin que d'une traduction anglaise, et réciproquement.
-- 🔴 **À l'envoi, `body` porte ce qui est PARTI (le texte traduit), et une colonne à part porte ce
-  que l'opérateur a ÉCRIT.** Miroir exact de la migration 0125 : ne garder que le traduit rend
-  l'opérateur incapable de se relire, ne garder que l'original rend notre trace fausse le jour d'un
-  litige.
-
-Trois pièges à ne pas découvrir en route :
-
-- 🔴 **Un template ne se traduit pas.** Il est approuvé par Meta dans une langue, et le texte
-  approuvé EST le texte. La traduction ne concerne que les messages libres, dans la fenêtre de 24 h.
-  Un bouton « Traduire » affiché sur un template ment.
-- ⚠️ **Traduire coûte des jetons** sur la clé Gateway de l'espace (migration 0124), donc sur le
-  crédit prépayé. Un espace à zéro ne peut pas traduire, et ça se dit à l'activation, pas au premier
-  message muet.
-- 🔴 **« L'autre langue » NE SUFFIT PAS, et c'est la précision de Julien du 2026-09-12.** Nos deux
-  langues sont celles de la CONSOLE, pas celles des contacts : un client peut très bien écrire en
-  espagnol. La règle juste est donc dissymétrique.
-  - **En entrée** : traduire vers la langue du LECTEUR, quelle que soit la source. Aucun problème,
-    la cible est toujours connue.
-  - **En sortie** : la cible est la langue du CONTACT, qui n'est ni le français ni l'anglais dans ce
-    cas. « L'autre des deux » ne veut plus rien dire.
-
-### La langue du contact s'APPREND, elle ne se demande pas
-
-🔴 **On la détecte déjà, et on la jette.** `src/agent/llm/transcription.ts` rend `langue: string |
-null` (ligne 94) et la migration 0125 n'a créé aucune colonne pour la garder. Troisième fois dans la
-même journée qu'on trouve une donnée calculée puis perdue, après la joignabilité WhatsApp.
-
-Elle se retient donc sur la fiche du contact, alimentée par la transcription de ses vocaux et par la
-traduction de ses textes. Ni question posée au contact, ni choix imposé à l'opérateur.
-
-⚠️ **Le bouton NOMME sa cible** : « Traduire en espagnol », jamais « Traduire » tout court. Meilleur
-même quand la cible est évidente, parce que l'opérateur voit où part sa phrase avant de valider.
-Tant qu'on n'a rien appris du contact, il nomme la langue par défaut : il ne ment donc jamais.
-
-### Les vocaux (précision de Julien, 2026-09-12)
-
-Quand le client appuie sur **Transcrire** et que la traduction est active, la transcription doit
-arriver dans SA langue de console, **même si le vocal était en espagnol**.
-
-- 🔴 **On traduit la TRANSCRIPTION, pas le corps.** Le `body` d'un audio vaut `[audio]` ou la
-  légende : le traduire ne produirait rien. L'ordre est imposé, transcrire puis traduire, et ça
-  reste **un seul geste** pour l'opérateur.
-- 🔴 **NE PAS utiliser le mode « traduire » intégré des API de transcription.** Il ne cible que
-  l'anglais : s'en servir donnerait un comportement différent selon que l'opérateur est en FR ou en
-  EN, et **détruirait l'original**. On transcrit fidèlement, puis on traduit.
-- ⚠️ **Deux appels, donc deux fois le coût** sur le crédit prépayé pour un vocal traduit.
-- La transcription garde ce qui a été **dit** (en espagnol), la traduction vit dans sa colonne avec
-  sa langue. Même principe qu'en 0125 : la lecture d'un modèle n'est pas ce que le client a dit.
-
 ## 🔴 Ce qu'on exécute est le POINT 2 de l'audit externe du 2026-09-02
 
 > **Au 2026-09-03 au soir : A1 à A4, B et C sont livrés et déployés.** Ne restent de ce point que le profil
@@ -1836,41 +1736,6 @@ Vérifiés DANS LE CODE avant d'être acceptés, jamais sur leur formulation. **
 et les trois moitiés fausses valaient d'être établies, parce qu'elles auraient fait travailler pour rien.
 **Tous les points confirmés sont corrigés**, sauf ceux listés comme ouverts en fin de section.
 
-- ~~**A3-ipv6** : la classification IPv6 laissait passer cinq cas sur huit.~~ **CORRIGÉ.** C'était le plus
-  grave, et il était à moi. La garde testait des PRÉFIXES DE TEXTE : `fe80::/10` fait dix bits et va jusqu'à
-  `febf`, donc trois adresses lien-local sur quatre passaient ; et une IPv4 mappée s'écrit aussi en
-  hexadécimal, donc `::ffff:ac12:1`, qui EST `172.18.0.1`, la passerelle du réseau Docker du VPS, passait.
-  C'est l'adresse même que cette garde existe pour bloquer, et l'en-tête du module affirmait qu'elle était
-  rejetée, « vérifié ». L'adresse est désormais DÉVELOPPÉE en huit groupes de seize bits et comparée en
-  nombres. ⚠️ La vérification a aussi trouvé quatre cas que le contre-rapport ne voyait pas : forme non
-  compressée, `::/96` déprécié, et `0:0:0:0:0:0:0:1` classé public. Non retenus en revanche : `fec0::/10`,
-  `2002::/16` et `::ffff:0:0:0/96`, aucun n'étant joignable depuis ce VPS.
-- ~~**A1-transition** : la sortie terminale d'un tour était une double écriture non atomique.~~ **CORRIGÉ.**
-  Clore la session puis faire sortir le parcours : une panne entre les deux laissait un parcours mort POUR
-  TOUJOURS, la clôture ayant effacé le marqueur qui l'aurait désigné au balayage. ⚠️ **Et le correctif évident
-  était faux** : inverser l'ordre paraît plus sûr, mais `sortirDuBlocAgent` fait AVANCER le parcours, qui peut
-  retomber sur un autre bloc agent dans le même appel et réutiliser la session encore vivante avec ses tours
-  consommés. La réparation passe donc par la MARQUE, pas par l'ordre.
-- ~~**B4-exclusions** : les exclusions de cible étaient appliquées APRÈS le `LIMIT` SQL.~~ **CORRIGÉ.** Sur
-  30 000 contacts, un plafond de 20 000 et 5 000 exclus dans la fenêtre, la campagne partait vers 15 000
-  destinataires. **Elle sous-envoyait en silence** : le nombre affiché est celui qu'on vient de calculer.
-- ~~**A2-garde-rcs** : une fenêtre subsistait entre la garde et l'envoi RCS.~~ **CORRIGÉ.** Exactement deux
-  attentes séparaient le contrôle du `sendTo`. La règle du lot A2 se précise : « entre les effets » veut dire
-  immédiatement avant l'effet, pas avant le travail qui le précède.
-- ~~**A3-timeout** : le bouton « Test » n'avait aucun plafond de temps.~~ **CORRIGÉ.** Seul des trois boutons
-  de la même famille à ne pas en avoir. ⚠️ Deux moitiés du constat étaient fausses : ce n'était pas illimité
-  mais borné au défaut d'undici, **mesuré à 309 s** ; et ça n'immobilisait PAS une place du pool, les lectures
-  en base étant terminées avant l'appel. Rien à faire non plus sur `page-distante.ts`, dont le plafond par
-  saut est explicite et borne le pire cas.
-- ~~**A4-sli** : le SLO d'entrée alarmait sur la mauvaise mesure.~~ **CORRIGÉ.** Le rouge ne se posait que sur
-  l'ATTENTE quand le SLO promet un message TRAITÉ en 30 s. `agent-turn` étant un appel modèle, cette file
-  serait restée verte quelle que soit la lenteur du modèle. Le p99 promis se lit maintenant sur le pire cas
-  bout en bout, qui était calculé et transporté depuis toujours et affiché nulle part.
-- ~~**C1-spread** : un commentaire affirmait une garantie du compilateur qui est fausse.~~ **CORRIGÉ.**
-  Mesuré, pas raisonné : une propriété en trop dans un littéral DIRECT est refusée (TS2353), la même
-  introduite par un SPREAD passe en silence, et un `satisfies` sur le littéral EXTÉRIEUR n'y change rien.
-  Seul un `satisfies` sur l'objet INTÉRIEUR du spread la voit. C'est précisément là que vivaient les deux
-  capacités de la panne du 2026-09-02.
 - **A4-equite** : le réglage rend le SLO 3 arithmétiquement intenable à la cible annoncée. **DOCUMENTÉ, pas
   corrigé, et c'est délibéré.** L'enveloppe manquait à tout le monde : `attente = N × T / C − T`, donc avec les
   valeurs par défaut (tranche de 2 min, 4 runs) le seuil de 5 min tient jusqu'à **environ 13 campagnes longues
@@ -1887,35 +1752,11 @@ Quatre nouveaux constats, vérifiés dans le code avec passe adverse : **trois c
 cinquième point hors tableau, sur mes propres tests, et **deux angles morts trouvés en propre**. Les deux
 angles morts et deux des trois confirmés sont des **régressions que j'avais introduites la veille**.
 
-- ~~**P1c, l'épreuve d'une SOURCE sans résolution DNS.**~~ **CORRIGÉ**, et c'était le plus grave. Elle
-  appelait `construireCible` puis `fetch` : elle ne voyait donc pas qu'un nom public pointe vers le réseau
-  Docker du VPS. C'était le **quatrième** chemin de ce genre, alors que le `CLAUDE.md` affirmait qu'il y en
-  avait trois et qu'ils étaient tous gardés. Ce qui l'a fait rater : les deux boutons « Test » se ressemblent
-  beaucoup, et l'autre appelait bien la garde. L'inventaire est désormais tenu par un test.
-- ~~**P1a, le balayage sortait par « échec » en dur.**~~ **CORRIGÉ.** Juste tant qu'il ne réclamait que des
-  sessions `en_cours` ; faux depuis qu'il ramasse aussi les closes dont la sortie est due. Le contact
-  repartait par le repli technique au lieu de la branche prévue, et c'est le cas le plus fréquent. ⚠️ Le test
-  unitaire du balayage ne voyait PAS le câblage du worker : une garde qui lit la source a été ajoutée, comme
-  pour le plafond de campagne. Troisième fois que ce piège se présente.
-- ~~**P2, l'index partiel de la 0112.**~~ **CORRIGÉ** (migration 0113, appliquée ; la base est à 0116, cf. le compteur de CLAUDE.md, seule source).
 - **P1b, l'escalade humaine : RÉFUSÉ, et c'est un arbitrage.** Les faits sont vrais, c'est le seul couple
   « clore puis sortir » qui ne préserve pas la marque. Mais poser la marque **dégrade le cas le plus
   probable** : le rattrapage existant (le message suivant du contact remonte le fil en inbox ET escalade) est
   meilleur que le balayage, et un contact qui vient de réclamer un humain face à un silence total réécrit
   presque toujours. Le refus est écrit dans `src/agent/escalade.ts` avec sa raison.
-- ~~**Point 5, mes deux tests du plafond de temps ne prouvaient rien.**~~ **CORRIGÉ.** Le premier n'assertait
-  qu'un signal, le second passait AUSSI sans la garde qu'il tenait. Les faux minuteurs de vitest ne pilotent
-  pas `AbortSignal.timeout`, d'où une couture `delaiTestMs`. Même lot : la résolution DNS n'était dans aucun
-  budget, les deux s'additionnaient au lieu de se recouvrir.
-- ~~**Angle mort 1 : un `Math.min(100_000)` écrasait en silence une limite de cible plus grande.**~~
-  **CORRIGÉ.** Le plafond de campagne vit en configuration pour se relever le jour d'un gros client : le geste
-  que le produit a prévu était exactement celui qui armait le défaut. C'est le sous-envoi silencieux de la
-  veille, transposé du filtre d'exclusion au filtre de taille, trois lignes plus bas.
-- ~~**Angle mort 2 : `AGE_TOUR_MORT_S` valait exactement `DUREE_MAX_AVANCE_MS`.**~~ **CORRIGÉ** (15 min).
-  Marge nulle : une avance qui va au bout de son temps rend sa ligne réclamable à l'instant où elle abandonne.
-  Ferme au passage la course sur `sortieAppliquee`, qui n'a pas de jeton de garde. Deux constantes qui doivent
-  être ordonnées se règlent par une valeur, pas par une architecture ; le lien est tenu par un test, parce
-  qu'il ne se voit dans aucun des deux fichiers pris séparément.
 
 ### Audit de RAYON DE SOUFFLE du lot précédent (2026-09-04) : ce que mes propres correctifs avaient cassé
 
@@ -1923,28 +1764,6 @@ Nouvelle discipline, née de la question de Julien (« qu'est-ce qui me fait cro
 pas détruit autre chose ? »). Pour chacun des six changements du lot, **tous les dépendants ont été énumérés
 et vérifiés un par un** : 102 au total, puis un réfuteur par changement chargé de trouver celui qui manquait.
 **Aucun comportement cassé, trois risques réels, tous corrigés.**
-
-- ~~**Des tests faisaient un VRAI appel DNS.**~~ **CORRIGÉ.** `tests/page-distante.test.ts` appelait
-  `fetchUrlBorne(1000, impl)` à deux arguments, donc la vraie résolution, sur `www.exemple.fr`, un domaine que
-  personne ici ne contrôle. Un des tests **passait aussi quand le nom ne résolvait pas** (« hôte non autorisé
-  (nom introuvable) » contient bien « hôte non autorisé ») : vert par le chemin du refus, sans jamais
-  atteindre la redirection qu'il prétend refuser. Le plafond DNS ajouté la veille avait en plus resserré leur
-  marge en CI. **Un test unitaire qui touche le réseau n'est pas un test unitaire**, c'est un test dont le
-  verdict appartient à quelqu'un d'autre. Prouvé corrigé en coupant le résolveur par défaut : 7 tests verts.
-- ~~**Ma réécriture avait supprimé un cas de test sans le remplacer.**~~ **CORRIGÉ.** L'ancien test exerçait
-  « le système coupe la connexion en plein corps », mal asserté mais exercé ; sa réécriture l'a remplacé par
-  un cas piloté par l'échéance. Le chemin vivait toujours dans le code et produisait le même faux succès.
-  `lireCorpsBorne` distingue désormais un flux CASSÉ d'un corps vide (les deux rendaient `{texte:''}`), et la
-  route refuse aussi le corps **trop gros**, qu'elle ignorait alors que ses deux routes sœurs le refusent.
-- ~~**Six endroits disaient encore « dix minutes ».**~~ **CORRIGÉ.** Dont le docbloc juste au-dessus de la
-  constante à quinze, qui affirmait « même ordre de grandeur que la durée maximale d'une avance » alors que
-  tout l'intérêt du changement est de NE PAS l'être ; et `CLAUDE.md`, avec deux affirmations fausses dans une
-  seule phrase. Ma justification était en plus **orpheline**, placée après la constante, donc invisible au
-  survol.
-- ~~**Le `CLAUDE.md` se contredisait sur le compte des chemins sortants.**~~ **CORRIGÉ.** J'avais écrit qu'il
-  y en avait quatre à la ligne 392 et laissé « les TROIS chemins concernés » à la ligne 407, plus les copies
-  dans `todo.md` et `wip.md`. **Corriger un compte à un endroit et le laisser à trois autres, c'est le
-  laisser faux.**
 
 ### Contradiction de mon PROPRE lot de correction (2026-09-04) : ce qui reste ouvert
 
@@ -1974,47 +1793,8 @@ deux signatures) ; et le compte jugé par le plafond de campagne inclut les cont
 chargement des destinataires les filtre. Ce dernier **sur-compte** au lieu de sous-envoyer, donc le sens est
 le bon, et il est préexistant.
 
-
 Les sept lots de [docs/PLAN-POST-AUDIT-2026-09-02.md](docs/PLAN-POST-AUDIT-2026-09-02.md) sont **livrés et
 déployés** (2026-09-02 au soir), ainsi que le point 1 de l'audit qui a suivi. Ce qui reste, dans cet ordre :
-
-~~**A2 — arrêter les EFFETS à la perte du bail d'avance.**~~ **LIVRÉ le 2026-09-03.** Le battement expose
-désormais `perduPourquoi()`, consulté avant CHAQUE effet dans `apply`, avant l'envoi RCS de `walkResolved` et
-avant l'enfilement d'un tour d'agent ; une durée totale maximale de dix minutes abandonne une avance PENDUE
-(le seul mode de panne que battre ne distinguait pas). ⚠️ **Un point de la demande a été volontairement NON
-fait** : l'`AbortSignal` est exposé mais AUCUN transport ne l'écoute. Couper un envoi Meta en plein vol
-échangerait « un message de trop » contre « un message parti que nous n'avons pas enregistré », qui est pire.
-La garde se pose donc ENTRE deux effets. Le signal servira aux travaux réellement annulables (recherche de
-connaissance, reranker, lecture de connecteur).
-
-~~**A1 — rattraper un tour d'agent tué par un crash.**~~ **LIVRÉ le 2026-09-03** (migration 0112). Le
-watchdog prévu : `src/agent/tour-bloque-sweep.ts`, passage à la minute, réclame et clôt en UNE requête les
-tours en vol depuis plus de QUINZE minutes, puis fait sortir le parcours par la sortie RÉELLEMENT DUE (le
-seuil était de dix, corrigé le 2026-09-03, et la sortie était en dur). On ne rejoue
-pas, comme arbitré : le worker a pu mourir APRÈS l'envoi au contact. ⚠️ Il a fallu une COLONNE
-(`tour_commence_le`) : « session en cours + run en attente + aucune échéance » décrit aussi un tour qui vient
-d'être enfilé, et un balayage bâti là-dessus aurait tué des conversations vivantes.
-
-~~**A3 — les deux bornes de sécurité des connecteurs HTTP.**~~ **LIVRÉ le 2026-09-03.** Résolution DNS
-contrôlée (`src/lib/adresse-privee.ts`) sur les QUATRE chemins qui appellent une URL saisie par un client (le
-compte a dit trois pendant un jour, l'épreuve d'une SOURCE manquait) : le
-connecteur en conversation, le bouton « Test » d'une REQUÊTE, le bouton « éprouver » une SOURCE, et la lecture
-de page distante (à chaque saut de redirection). Lecture bornée EN FLUX (`src/lib/corps-borne.ts`) sur les
-TROIS qui lisent un corps, en OCTETS et non en unités UTF-16 (l'épreuve d'une source ne regarde que le
-statut : dire « sur les mêmes » après avoir monté le compte à quatre serait faux). Le « DNS rebinding » (répondre public puis privé entre la vérification et l'appel), laissé ouvert ce
-jour-là, est FERMÉ depuis le 2026-09-21 : l'adresse se revérifie à l'ouverture de la connexion (`fetchPublic`,
-`src/lib/connexion-publique.ts`).
-
-~~**A4 — la preuve de capacité.**~~ **LIVRÉ le 2026-09-03.** La photo compte désormais
-les jobs `active` (elle retombait à zéro sur un job coincé), un VRAI p95 par file est calculé sur 24 h depuis
-les horodatages que pg-boss écrit déjà (aucune instrumentation ajoutée, elle existait et personne ne la
-lisait) et affiché dans `/ops`, l'affirmation fausse du document de SLO est retirée, et le banc agent a
-désormais un mode DURÉE avec découpe par minute, et **il a tourné six minutes sur le VPS** : 1 406 tours,
-738 000 tokens/minute, **zéro refus**, et aucune dérive (la durée moyenne DESCEND de 1 445 à 1 217 ms d'une
-minute à l'autre). Le Gateway n'est pas le prochain plafond, et ce n'est plus une extrapolation. La mesure
-longue a aussi montré une QUEUE que les rafales cachaient : 113 s pour le tour le plus lent contre 2,4 s de
-médiane, soit 0,14 % des tours au-dessus de 30 s, c'est-à-dire exactement ce que `DEADLINE_MS` protège.
-**Reste seulement** le profil `equite` du banc de charge, déjà listé plus bas.
 
 🔴 **Ce que la mesure a trouvé au passage, et qui n'était dans aucun audit** : `webhook-status` se vidait à
 DEUX jobs par minute (sondage 30 s, un job par sondage, travail de 0,05 s), soit 125 heures pour absorber les
@@ -2025,18 +1805,6 @@ dans `docs/SLO-2026-09-01.md`.
 parce que le « lot immédiat » du 2026-09-02 en avait déjà fermé une partie et que l'audit est donc périmé par
 endroits) :
 
-- ~~**B2** sémantique de la télémétrie du pool~~, ~~**B3** validation stricte des concurrences et plafonds~~,
-  ~~**B5** faux 500 sur une source absente~~ : **livrés le 2026-09-02** (lot immédiat, `f711743`).
-- ~~**B4** course du plafond « tous les contacts »~~ : **livré le 2026-09-03**. Le chemin résout et FIGE son
-  jeu d'identifiants, borné à `plafond + 1`, au lieu de compter puis recharger. ⚠️ La contre-vérification a
-  trouvé le trou que mon propre correctif avait laissé : le câblage relayait `(tenant, target)` vers un
-  contrat à trois paramètres, donc la borne était avalée EN SILENCE et le compilateur ne pouvait pas le voir
-  (une flèche plus courte est assignable). Gardé par `tests/campagne-cablage.test.ts`.
-- ~~**C2** contradictions documentaires~~ : **livré le 2026-09-03**, et le pire des trois n'était pas un
-  document : l'infobulle « vous avez la main » promettait à l'opérateur, dans le produit, que les campagnes
-  n'enverraient pas. C'est l'inverse du code, qui passe `ignoreHumanControl` et REPREND la main, délibérément.
-- ~~**C3** attribution RCS~~ : **livré le 2026-09-03** (textuel). La phrase « le détail par campagne reste
-  reconstructible » de la 0107 était fausse, et l'entrée de backlog décrivait un manque déjà comblé.
 - **B1** échecs d'avance : **partiellement livré le 2026-09-03**. Le contexte (parcours, run, canal) traverse
   désormais, donc la jointure sur le nom du scénario sert enfin à quelque chose. ⚠️ **Trois points restent
   OUVERTS, et c'est un choix**, pas un oubli :
@@ -2049,18 +1817,6 @@ endroits) :
   ⚠️ Et une fausse piste à ne pas suivre : passer `alreadySeen` à l'avance pour dédupliquer CASSERAIT la
   reprise, `insertEvent` marquant l'événement dès la première tentative, donc un rejeu pg-boss trouverait tous
   ses messages « déjà vus » et n'avancerait plus rien.
-- ~~**C1** capacités imbriquées~~ : **livré le 2026-09-03**, et l'audit généralisait à tort (« recopiés de
-  fichier en fichier »). Inventaire fait : **14 `Pick<` dans `src/`, 13 sont des contrats étroits légitimes,
-  UN SEUL était un passe-plat**, `src/campaign/run-job.ts`, et c'est celui qui avait déjà cassé la production.
-  Ses onze capacités voyagent maintenant dans un objet `moteur` transmis d'un seul spread : il n'y a plus de
-  liste à tenir alignée. Gardé par trois tests de forme (`tests/clics-cablage.test.ts`), vérifiés dans les deux
-  sens. Les 13 autres `Pick` n'ont pas été touchés : leurs membres sont consommés sur place, donc un oubli y
-  est déjà une erreur de compilation.
-- ~~**C4** découpage des gros fichiers~~ : **refusé, et la contre-vérification a tranché**. Les mesures
-  (`worker.ts` 877 lignes de code, `executor.ts` 680, `CampaignCreateForm` 1 319) ne justifient pas un
-  découpage, et le dépôt l'avait déjà refusé nommément le 2026-08-31 avec un meilleur argument. Le seul défaut
-  VIVANT que cet item recouvrait a été corrigé au passage : deux balayages sur vingt-deux journalisaient leur
-  échec sans ALERTER (`vectorisation` et `analyse-conversations`), donc une panne y restait invisible.
 
 **Ajouté le 2026-09-02 (lot 5) : écrire le profil `equite` du banc de charge**, après le lot 6.
 `docs/SLO-2026-09-01.md` l'annonçait comme une commande existante alors que `scripts/banc-charge.mts` ne la
@@ -2190,64 +1946,6 @@ REVERIFIES dans le code avant d'etre inscrits ici ; les six etaient vrais. Ce qu
 actionnable, trie. Deux items sont deja faits (le typecheck du WIP, ferme par la brique C ; le texte du
 palier et le commentaire du banc, fermes le jour meme).
 
-**1. ✅ FAIT le 2026-09-01 (migration 0102).** Le debit par numero est desormais partage entre l'API et le
-worker : le compteur en memoire devient une ligne, la reservation une instruction SQL atomique, et l'attente
-se fait HORS de la base. Panne de la base = repli sur le frein local, donc le pire cas est le comportement
-d'avant. La PRIORITE (faire passer l'inbox devant une campagne) n'est PAS faite et n'etait pas le sujet :
-elle demanderait une file d'envoi ordonnee, donc de la latence sur le chemin interactif. Detail dans
-`documentation.md`. Le constat d'origine, garde pour memoire :
-
-~~**Le debit par numero n'est PAS partage entre l'API et le worker.**~~ `src/index.ts:192` et
-`src/worker.ts:193` construisent chacun leur arbitre en memoire. Les deux conteneurs tournent DEJA en
-production : pendant qu'une campagne part du worker, un operateur qui repond depuis l'inbox consomme un
-SECOND budget sur le meme numero. Le debit affiche n'est donc pas une propriete du numero.
-⚠️ Ce n'est pas un sujet de gros volume : ca se produit avec un client et deux messages.
-**Decision a prendre avant de coder** : soit une file d'envoi durable partitionnee par numero (l'ordre et
-les priorites deviennent simples, la latence interactive augmente), soit un compteur partage en base avec
-bail (les chemins directs restent directs, une brique de coordination apparait). Test d'acceptation dans les
-deux cas : une campagne, un scenario et un envoi inbox lances ensemble depuis DEUX process.
-
-**2. ✅ FAIT le 2026-09-01.** La cible part en INTENTION (`contactTarget`), resolue en base, avec le MEME
-analyseur que les actions en masse du mini-CRM. Quatre refus ferment le pire accident (une campagne a tout
-l'espace), dont un trou PRE-EXISTANT : `contactIds: []` etait truthy et retombait sur « tous les contacts ».
-Le decoupage SQL du moteur (`listPending` sans limite) reste NON FAIT, hors sujet decide par Julien.
-Le constat d'origine, garde pour memoire :
-
-~~**Le piege des 25 000 destinataires.**~~ Le front propose jusqu'a 100 000 contacts
-(`idsForFilters`, cap 100 000), met tous leurs identifiants dans le POST, et la route plafonne a 1 Mo
-(`src/server.ts:209`). Le JSON des seuls identifiants pese environ 975 Ko a 25 000 contacts : la casse
-arrive donc bien AVANT la limite que l'ecran annonce. L'interface promet quelque chose qui echoue.
-⚠️ Julien a mis les campagnes de 100k hors sujet pour l'instant, mais le piege, lui, reste pose.
-La moitie du correctif ne coute presque rien : `BulkTarget` EXISTE deja dans le mini-CRM
-(`{ filters, excludeIds } | { ids }`), il suffit d'envoyer l'INTENTION de selection et de la resoudre dans
-la transaction. Le decoupage SQL du moteur (`listPending` sans limite) est un chantier separe, non retenu.
-
-**3. ✅ FAIT le 2026-09-01.** La route sert un RESUME (`listResume`) : plus aucun graphe ne traverse le
-reseau pour afficher des noms. `nodeCount` et `hasDraft` sont calcules en SQL, `campaignEligible` cote serveur
-avec la MEME fonction que la garde de creation. `list()` reste inchangee (la resolution par code en a besoin).
-⚠️ La base envoie toujours le graphe a l'application : seul le trajet vers le navigateur disparait. Aller plus
-loin demanderait de denormaliser en colonnes tenues a l'ecriture, avec le risque de peremption. Le constat :
-
-~~**La liste des scenarios renvoie DEUX graphes complets par ligne**~~ (`graph` et `draft_graph` sont
-tous les deux dans `COLS`, `src/workflow/store.pg.ts:29`), pour des ecrans qui n'affichent qu'un nom.
-Correctif : une projection resumee et paginee (id, code, nom, dates, brouillon en attente, nombre de blocs,
-eligibilite campagne), le graphe complet restant sur `GET /workflows/:id`.
-⚠️ Deux consommateurs empechent un simple retrait : `estEnLigne` a besoin du nombre de blocs, et le
-selecteur de scenario de l'inbox appelle `isCampaignEligible(w.graph)`. Les deux doivent devenir des
-champs calcules cote serveur, avec un test de parite, sinon la regle existe a deux endroits.
-**Declencheur** : avant environ 100 scenarios par espace.
-
-**4. ✅ FAIT le 2026-09-01 (migration 0103).** `pause_reason` + `paused_until`, un balayage qui reprend les
-pauses de DEBIT echues (reclamation atomique), et une pause de QUALITE qui n'est JAMAIS reprise par une
-machine. L'angle mort du 429 sans code connu est ferme aussi : il entre desormais dans `estPlafondNumero`.
-Le constat d'origine, garde pour memoire :
-
-~~**La pause Meta ne reprend jamais toute seule.**~~ Le texte est corrige (il dit desormais que la reprise
-est manuelle), mais la reprise elle-meme reste a faire : `pause_reason` + `paused_until`, un debit temporaire
-reessaye apres un `Retry-After` borne, une qualite degradee JAMAIS reactivee aveuglement.
-⚠️ Angle mort a traiter en meme temps : un HTTP 429 sans code Meta connu n'entre pas dans `estPlafondNumero`
-et finit en echec destinataire au lieu d'une pause globale.
-
 **5. 🟠 PARTIELLEMENT FAIT le 2026-09-01.** Les SLO sont ECRITS AVANT toute mesure
 (`docs/SLO-2026-09-01.md`, trois objectifs avec leurs seuils), l'age du plus vieux job PRET est instrumente
 dans `/ops` (c'est la mesure qui les rend observables, la profondeur seule ne dit rien), et le profil
@@ -2256,21 +1954,6 @@ dans `/ops` (c'est la mesure qui les rend observables, la profondeur seule ne di
 qu'A MOITIE instrumente. `/ops` donne l'age par FILE, pas par espace : un espace affame derriere un espace
 bavard reste invisible. Le geste suivant est d'ajouter `group_id` au regroupement de `getQueueLoad`. Et le
 profil `equite` du banc n'est pas ecrit. Le constat d'origine :
-
-~~**Le banc de charge ne mesure pas ce qu'on lui prete.**~~ Il prouve la reprise apres kill d'une campagne
-de 400 destinataires sur un worker, et rien d'autre. Manquent : le debit des entrants et son p95, l'equite
-entre espaces, la rafale d'accuses, la concurrence API + worker sur un meme numero, deux workers.
-🔴 **Ecrire les SLO AVANT les profils** : un resultat sans seuil d'acceptation est une observation, pas une
-preuve de capacite. Trois suffisent pour commencer : delai d'un entrant, delai avant premier envoi de
-campagne, age du plus vieux job par espace.
-
-**5bis. ✅ FAIT le 2026-09-02 : le plafond de debit des entrants est leve.** La premiere mesure contre les
-seuils avait donne 120 s sur une rafale de 400, soit 1,5 message/s, et j'avais conclu a un arbitrage cout
-contre latence a soumettre a Julien (relever la concurrence, ou baisser la cadence de sondage). C'etait une
-fausse alternative : pg-boss 12.25, DEJA installe, sait reveiller ses workers par `LISTEN/NOTIFY`. Mesure sur
-le meme banc, meme rafale : 22 ms d'age maximum, 400 jobs sur 400 traites, latence moyenne 7 ms. Le levier que
-Julien demandait (sondage a 0,5 s) a ete mesure aussi, honnetement : 6,06 msg/s, exactement la prediction de la
-formule, et le seuil de 30 s reste DEPASSE (65 s). Detail et preuves : `docs/SLO-2026-09-01.md`.
 
 ⚠️ **Ce qui reste ouvert la-dessus, et qui est petit.** Le filet de sondage a ete pose EGAL a la cadence
 d'avant, pour que le pire cas du changement soit exactement le comportement d'hier. Le defaut pg-boss serait de
@@ -2485,7 +2168,6 @@ seul worker tourne, et deux leviers ont été laissés SCIEMMENT, avec leur cond
   webhook du même contact est traité par le worker. Et `PgWorkerHeartbeatStore.beat` écrit une ligne
   unique `id = 'worker'` : à deux workers, un mort est masqué par le vivant.
 
-
 ## Sorti de `wip.md` à sa vidange (2026-08-29)
 
 Ces points vivaient dans des sections de lots déployés. Ils n’ont rien à y faire : ce sont des choses à faire.
@@ -2520,12 +2202,6 @@ Ces points vivaient dans des sections de lots déployés. Ils n’ont rien à y 
 
 ## Relevé au lot « entretien de construction » (2026-08-31)
 
-- ✅ **Les deux failles HAUTES des briques de Fastify sont FERMÉES** (2026-08-31) : `fast-uri` 3.1.3 -> 3.1.6
-  et `find-my-way` 9.6.0 -> 9.9.0, dans les intervalles que Fastify autorisait déjà, donc `package.json`
-  inchangé. Et **l'image de production n'embarque plus les outils de test** : le `Dockerfile` fait désormais
-  `npm ci --omit=dev`, ce qui emporte `vitest` et toute sa chaîne (109 -> 76 paquets). `npm audit --omit=dev`
-  rend 0 vulnérabilité. Prouvé AVANT bascule sur l'image allégée : `migrate`, l'API qui répond sur `/live` et
-  `/health`, et le worker qui démarre avec ses sept files.
 - ⚠️ **L'entretien à neuf points n'a jamais été mené en vrai.** Toute la mécanique est testée contre des
   doubles ; personne n'a encore vu le modèle formuler les neuf questions à la suite, ni le creusement
   `quel_outil` se déclencher sur une vraie conversation. C'est le premier essai à faire, et il demande un
@@ -2581,29 +2257,9 @@ séquencement et le pourquoi de l'ordre sont en §7 de
 [AGENT-IA-CADRAGE-2026-08-23.md](AGENT-IA-CADRAGE-2026-08-23.md) ; le tableau côté client est dans
 [AGENT-IA-PRODUIT-2026-08-27.md](AGENT-IA-PRODUIT-2026-08-27.md).
 
-- ✅ **L2 : le connecteur API (HTTP) du client. LIVRÉ ET DÉPLOYÉ le 2026-08-28** (migration 0088 appliquée).
-  Plan exécuté : [AGENT-IA-PLAN-L2.md](AGENT-IA-PLAN-L2.md), neuf tâches. Le système se déclare dans
-  **Tools > Connecteurs API**, l'agent n'y déclare que ses appels. Détail dans [documentation.md](documentation.md) §Le connecteur API d’un client.
 - 🟠 **L3 : le « temps 2 ».** L'IA de construction relit les VRAIES conversations, le journal d'outils et le
   signal de mécontentement, propose des corrections et **rejoue des cas de test avant d'appliquer**. N'a de
   valeur qu'une fois qu'il existe des conversations, donc après une mise en service réelle.
-- ✅ **L4 : MCP en jeton statique. LIVRÉ le 2026-09-17**, pas encore déployé. Le chantier a suivi son
-  propre plan (`docs/superpowers/plans/2026-09-16-connecteurs-mcp.md`), écrit sans connaître
-  `AGENT-IA-PLAN-L4.md`, qui reste lisible pour ses constats. Ce qui a été tranché AUTREMENT que ce que
-  cette ligne annonçait : **URL libre validée, pas d'allowlist** (décision de Julien du 2026-09-16 ; la
-  garde est la double vérification d'adresse, sur le TEXTE et sur ce vers quoi elle RÉSOUT), et le `risk`
-  est **proposé par les annotations du serveur puis CONFIRMÉ par le client**, jamais dérivé, la spec MCP
-  déclarant ces annotations non fiables. Ce qui a été tenu : le schéma distant est TRADUIT dans notre
-  modèle, jamais transmis tel quel, et c'est ce qui fait descendre la garde anti-IDOR jusqu'aux feuilles.
-  **Reste à faire, dans cet ordre** : le déploiement, l'essai réel, puis la migration `0153` ci-dessous.
-  🔴 **ET L4 NE SERVIRA JAMAIS LE MBA, vérifié le 2026-09-10 sur le corpus OpenAPI officiel de Meta**
-  (`mba documentation/`, version 2.0.0) : zéro occurrence de « MCP » dans les 16 specs et 12 pages, et
-  surtout **aucun champ où le déclarer**. Un `agent_connector` exige `base_url` + `auth_type`
-  (`OAUTH2 | OAUTH2_CLIENT_CREDENTIALS | API_KEY | BASIC | CUSTOM | NONE`) et rien d'autre ; un tool est
-  un `request_definition` HTTP. **Un outil MCP n'est donc pas publiable au MBA**, et L4 ne vaut que pour
-  NOS agents. Ce constat a sorti le client MCP du programme « catalogue centralisé » du 2026-09-10
-  (décision de Julien), il ne l'a pas annulé ici. ⚠️ Corollaire à ne pas perdre : le jour où L4 se fait,
-  la case « exposé au MBA » d'un outil MCP doit être **grisée avec la raison**, pas cochable en vain.
 - 🔴 **`0153_outil_source_kind_strict.sql` : le CHECK strict sur `agent_tools.source_kind`, APRÈS le
   déploiement de L4 et pas avant.** 0152 est délibérément permissive : elle pose la clé étrangère composite
   en `MATCH SIMPLE`, donc une ligne dont `source_kind` est null lui échappe, ce qui est exactement ce qui
@@ -2752,7 +2408,6 @@ Depuis le passage au BAIL, le dégât se limite à repousser leur réveil de 15 
 consommait l'échéance l'aurait détruite). À borner au tenant du test avant que des clients aient des
 questions en vol.
 
-
 ## ⚠️ En attente d'une VÉRIFICATION EN VOL (2026-08-26)
 
 Deux fonctionnalités sont livrées et déployées, mais AUCUNE n'a encore été vue fonctionner sur du vrai
@@ -2798,34 +2453,6 @@ sur le rappel smsmode, et un plafond par code existant le protège : `src/http/r
 
 > **Le plan global vit dans `PLAN.md`.** Audit de scalabilité et lot de features séquencés ensemble,
 > en 6 blocs. Ce `todo.md` reste l'historique détaillé des lots livrés et le backlog de fond.
-
-## ✅ LOT LIVRÉ : étanchéité des canaux RCS / WhatsApp (2026-08-25)
-
-**L'audit reste la référence** : `AUDIT-ETANCHEITE-CANAUX-2026-08-25.md`, 6 rouges, 9 jaunes, et surtout
-**41 partages de canal qui sont VOULUS et qu'il ne faut pas « corriger »**. Cette dernière liste se relit
-avant toute intervention dans cette zone. Le plan exécuté est dans `.loop/etancheite-canaux.md`.
-
-Le fond du sujet, en une phrase : `workflow_runs.channel` existait, il était correctement ÉCRIT à l'envoi,
-mais **jamais relu** au moment de décider si un message entrant concernait ce parcours. Un tap RCS faisait
-donc avancer une branche d'une question posée en WhatsApp, et l'inverse. `advance` reçoit désormais le canal
-du retour et refuse ce qui ne vient pas du bon tuyau.
-
-Les deux décisions produit ont été tranchées par Julien le 2026-08-25 : réponse RCS libre depuis l'inbox
-→ **oui, livrée** ; automations sur un message RCS → **câblées**. Le troisième point (`lastInboundAt` poussé à
-HubSpot) est résolu sans arbitrage : le champ est restreint à WhatsApp, puisque sa raison d'être écrite est
-de piloter la fenêtre 24 h de Meta ; un besoin « dernier contact tous canaux » prendra un champ DISTINCT.
-
-Ce qui reste ouvert est plus bas, section « Étanchéité des canaux : ce que le lot a volontairement laissé ».
-
-## ✅ Laissé ouvert par le lot « Journée 1 », puis FAIT le 2026-08-31
-
-Les deux chemins que le correctif voisin ne couvrait pas sont fermés : le **plafond de temps d'un appel
-sortant** (30 s pour une API ordinaire, 120 s pour un modèle, l'échéance de l'appelant restant prioritaire) et
-le **dimensionnement de l'enfilement du retry-sweep**. Détail et pièges dans `documentation.md` §Journal des
-lots livrés.
-
-⚠️ **Le même trou de plafond existe dans le connecteur** (`mm-hubspot/src/http/transport.ts`), consigné dans
-le `todo.md` de CE dépôt-là.
 
 ## Ouvert par le lot « webhooks entrants » (2026-08-23)
 
@@ -3009,37 +2636,12 @@ connexions Postgres) ; le troisième, un seul numéro par tenant, est `PLAN.md 5
 
 ## Plan des boucles feature-loop (ordre)
 
-1. ✅ **Loop 1 : Webhook receiver + file + idempotence** (le socle que tout consomme).
-2. ✅ **Loop 2 : Wrapper Cloud API + MM Lite** (send text/template, statuts, marketing_messages,
-   erreurs + retries + throttling).
-3. ✅ **Loop 3 : Contacts BSUID-native + import CSV + user fields** (parsing, dédup, merge CTA).
-4. ✅ **Loop 4 : Moteur de campagne + garde-fous** (pacing, fréquence max, coupure quality rating).
-5. ✅ **Loop 5 : Adaptateurs Postgres + run E2E** (stores PG, services create/run, routes HTTP
-   import/campagne/run, worker campaign-run ; E2E CSV->campagne->envoi prouvé contre Supabase).
-
 Fait ✅ : UI (login, contacts/import, campagnes) + auth JWT/RBAC + déployé **LIVE** sur
 `mba.messagingme.app` (1er envoi WhatsApp réel le 2026-07-06, numéro Zadarma).
 
 ## Programme 16 features (2026-07-16) : lots restants
 
 Lots A-E LIVE (cf `docs/JOURNAL-TECHNIQUE.md` (l archive)). Restent, dans l'ordre recommandé :
-- ✅ **Lot 4b : fin du socle identifiants : FAIT (2026-07-16)** (codes des NODES mintés serveur + champs système
-  déterministes + backfill, cf `.loop/lotF-identifiants-4b.md`). Reste le chantier DÉDIÉ **endpoints API publics**
-  adressés par code (API keys, auth consommateur externe, scopes, rate limiting -> cadrage produit).
-- ✅ **Lot 6 : i18n anglais COMPLET : FAIT (2026-07-16)** (bug lang resync fermé, day/format locale-requis,
-  toggle pré-login sur les 5 pages auth, cf `.loop/lotG-i18n-anglais.md`).
-- ✅ **Lot 7 : Flow avancé (#6b/#6c) : FAIT (2026-07-17)** : formulaires MULTI-ÉCRANS (onglets builder, ids
-  `FORM`/`FORM_B`…, complete agrégé par refs globales, webhook INCHANGÉ), champs CONDITIONNELS (`visibleIf` ->
-  propriété `visible`, sondé : champ masqué OMIS du payload, requis caché ne bloque pas), **fix node `flow`**
-  (envoi interactif réel + garde fenêtre 24 h à 3 étages). Sondes LIVE avant plan + sonde committée
-  `scripts/sonde-flow-live.mts` (générateur produit vs WABA réel). Cf `.loop/lot7-flow-avance.md`.
-  ⚠️ Vérif Julien restante (V2) : scénario avec node Formulaire -> envoi réel reçu sur son WhatsApp,
-  formulaire multi-écrans rempli -> champs contact + run avancé + carte inbox.
-- ✅ **Lot 8 : Campagne « une-page » : FAIT (2026-07-17, 5 phases LIVE)** : écran pleine largeur 2 étapes
-  (Préparation / Lancement), sources de destinataires (Liste de contacts requêtable par filtres / Import fichier
-  + tag / HubSpot grisé), débit ajustable (mig 0033, timeout de job dimensionné), planification maintenant/plus
-  tard (mig 0034, sweeper, annulable). Cf `.loop/lot8-campagne-une-page.md`. ⚠️ Vérif Julien restante (E1/V1) :
-  drive navigateur du parcours complet + coup d'œil visuel (pleine largeur, filtres, slider, calendrier).
 - **HubSpot import (#14, parké)** = **3e bouton de source** de campagne (le socle source-picker est prêt, il ne
   reste que la source HubSpot) : importer une liste HubSpot comme destinataires. Multi-repo : scope
   `crm.lists.read` sur l'app mm-hubspot + RE-CONSENTEMENT du portail cobaye (action Julien), client lists + route
@@ -3047,21 +2649,6 @@ Lots A-E LIVE (cf `docs/JOURNAL-TECHNIQUE.md` (l archive)). Restent, dans l'ordr
   'opted_in' par défaut (conformité). + (todo #5-tail) proposer les internal names HubSpot dans les sélecteurs.
 - **Analytics palier L (suite #8)** : tracker les erreurs des envois Inbox/Workflow (colonnes d'erreur sur
   `conversation_messages` + toucher le handler de statuts webhook EN PROD, risqué → à froid).
-- ✅ **ConvAnalyzer light (Lot 9) : FAIT (2026-07-17)** : bloc « Conversations (analyse) » dans Analytics
-  (quanti donut/barres + table quali filtrable -> inbox), sur le moteur Pièce 1 déjà actif. Cf
-  `.loop/lot9-convanalyzer.md`. **V2 (backlog)** : ~~(a) agent IA décisionnel branché sur l’analyse~~ **FAIT AUTREMENT, et mieux**
-  (2026-08-03) : le déclencheur d’automation `conversation_analyzed` existe, donc une analyse démarre un scénario,
-  qui sait poser un tag, écrire dans HubSpot et envoyer. Restent ouverts :
-  (b) enrichir le schéma d'analyse pour reprendre ce que le vrai convanalyzer a en plus (urgence graduée 0-5,
-  score d'échec du bot, churn, clustering de sujets) ; (c) tendance temporelle stable (joindre
-  `conversations.created_at`, pas `conversation_analysis.created_at` qui bouge à la ré-analyse).
-- ✅ **Palier 2 : champ booléen + consentement de flow : FAIT (2026-07-17)** : canonicalisation booléenne
-  (`crm/fields.ts`, partagée fiche/import/webhook), OptIn de flow -> champ booléen choisi (défaut `whatsapp_optin`
-  créé à la volée) ET flip `opt_in_status='opted_in'` (opt-out écrasé, décision Julien), garde double-consentement.
-  Cf `.loop/palier2-consentement.md` + cadrage `~/messagingme-pilot/docs/CADRAGE-MBA-API-CONTENU-HUBSPOT.md`.
-  ⚠️ Dette test : `toBElems` (FlowBuilder) non testé unitairement (fonction non exportée) -> exporter + test
-  (optin défaut -> saveTo vide ; optin cible explicite -> saveTo non vide). ⚠️ Vérif Julien : flow avec écran
-  de consentement -> coché -> champ « Oui » + statut opt-in + éligibilité campagne marketing.
 
 ## Décisions API/HubSpot tranchées (2026-07-17) -> paliers restants
 
@@ -3096,8 +2683,6 @@ Cf `~/messagingme-pilot/docs/CADRAGE-MBA-API-CONTENU-HUBSPOT.md` (D-1..D-10 vali
   - 🟡 **intégration `queue.integration.test.ts`** : échoue en EMAXCONNSESSION (pooler Supabase plafonné à 15
     sessions, partagées avec la prod mba-api/mba-worker). `fileParallelism: false` a réglé les 5 autres fichiers
     (17 -> 60 tests verts). Reste à borner les pools de ce test précis, ou à le pointer sur une autre base.
-- ~~Palier 3 (ancien cadrage)~~ remplacé par l'entrée ci-dessus.
-  Rappel de portée (fait) : `POST /v1/sends` scénario + template, node = fenêtre 24h uniquement (D-1, Phase B2).
 - 🔶 **Palier 4 : import listes HubSpot (Phase 0+1 FAITES 2026-07-18)** : toggle self-serve + re-consentement
   ciblé (`optional_scope=crm.lists.read`, mécanisme natif HubSpot, ne touche pas les autres portails). Phase 0
   (connecteur mm-hubspot) : client Lists (search/memberships/batch-read borné 5000), OAuth optional_scope +
@@ -3155,10 +2740,6 @@ Contexte et gotchas : `docs/JOURNAL-TECHNIQUE.md` (l archive). ⚠️ Le compteu
 - 🟡 **L'aperçu de template n'affiche pas le visuel d'en-tête.** `web/components/TemplatePreview.tsx` ne
   transmet pas la prop `header` que `WhatsAppPreview` accepte pourtant déjà. Purement cosmétique (l'envoi, lui,
   joint bien le visuel depuis le 2026-08-17), mais ça donne un aperçu qui ne ressemble pas au message reçu.
-- ✅ **Menu des étapes de deal dans l'écran Automation** (fait et déployé le 2026-08-16).
-- ✅ **Souscription webhook HubSpot envoyée** (2026-08-16, build #8 sur le compte dev 148896252). La chaîne
-  est donc vivante de bout en bout ; reste à l'éprouver sur le portail cobaye avec un deal dont le contact
-  porte un numéro, et un scénario qui ouvre par un template.
 
 ## Suite de l'audit anti-slop (2026-08-18) : 1 item sur 57
 
@@ -3204,65 +2785,12 @@ et Meta a modifié 6 pages entre le 11 et le 15 août dont une page `changelog` 
   fonctionnalité n est pas configurée, mais personne ne lit cette ligne. Une alerte (Telegram, comme
   l error-tracking) au démarrage d une file inerte aurait économisé une journée sur le déclencheur HubSpot.
 
-
-- ✅ **Token permanent POSÉ (2026-07-08).** `META_ACCESS_TOKEN` = token System User permanent
-  (`expires_at:0`, scopes messaging+management), dans `.env.prod` du VPS. Templates create+list
-  validés en live via l'app. Détails : `brain/PROJECTS.md` §Meta/WhatsApp.
-- ✅ **Placeholders demo supprimés (2026-07-08).** `demo-pn`/`demo-waba` (seed) traînaient sous le
-  tenant réel et gagnaient le `order by created_at limit 1` -> 502 templates. DELETE des 2 lignes.
 - **Template `mba_console_test`** (id `1507311428074574`, PENDING) : template de test créé pour prouver
   la feature. Supprimable depuis l'onglet Templates quand tu veux.
 - **Onboarding client (Embedded Signup)** : Facebook Login for Business (config_id) → bouton ES +
   échange de token BISU côté backend → **Access Verification (Tech Provider)** + **App Review**
   (Advanced Access sur les perms WhatsApp, screencast par permission). Ni l'un ni l'autre requis
   pour NOTRE propre numéro (rôle sur l'app), mais requis pour brancher les WABA de clients.
-- ✅ **Veille MBA POSÉE (2026-07-09)** : cron VPS `ops/mba-eligibility-watch.mjs` (crontab ubuntu,
-  toutes les 6h) qui poll `GET api.facebook.com/{pnid}/agent_eligibility` (X-API-Version 2.0.0).
-  Baseline = 403 « Meta Business AI Terms » (`BLOCKED_TOS`, état dans `.mba-eligibility-state.json`).
-  Alerte Telegram (`@Messagingmeapp_bot`, creds lus au runtime depuis `messagingme-pilot/config.json`)
-  au moindre changement d'état (mur ToS levé → MBA ouvre FR). Log `.mba-eligibility.log`.
-
-## ✅ Suites revue templates + inbox : TOUT RÉSOLU (2026-07-08)
-
-- ✅ **Bouton URL dynamique** : `buildComponents` émet l'`example` bouton quand l'URL contient `{{n}}`.
-- ✅ **Types interactifs Flows** : `nfm_reply` capturé (corps + `response_json` en payload), réaction
-  (emoji), médias (légende ou `[type]`), localisation, sous-type inconnu -> `[interactif]`. Plus de
-  perte silencieuse.
-- ✅ **Liaison contact** : match `'+'||wa_id` PUIS chiffres normalisés (`regexp_replace`) -> tolère un
-  formatage différent.
-- ✅ **Message Meta** : 502 tronqué à 200 car., espaces compactés.
-- ✅ **Templates list** : pagination complète (suit `paging.next`, cap 20 pages).
-
-## ✅ Sécurité / auth : RÉSOLU (était BLOQUANT à la revue Loops 3-5)
-
-Auth construite et déployée : login JWT (scrypt async, rate-limit, hash leurre anti-énumération),
-isolation tenant sur toutes les routes (tenant DÉRIVÉ du JWT, 403 si mismatch), RBAC (écritures
-admin-only via `forbidNonAdmin`), ownership `phoneNumberId` validée, `AUTH_SECRET` fail-fast en
-prod. Résidus non bloquants ci-dessous.
-
-## Suites de la revue sécurité auth
-
-- ✅ **RBAC** : `forbidNonAdmin` applique le rôle admin sur les écritures (import, création + run
-  de campagne). Reads ouverts aux comptes authentifiés. Matrice à affiner si un rôle `agent` est
-  réellement provisionné.
-- ✅ **Compte démo** `admin@demo.test` désactivé en prod (password_hash null, réversible).
-- ✅ **AUTH_SECRET** : boot prod échoue si absent/faible ; posé sur le VPS.
-- ✅ **Unicité email** : tranché -> email GLOBAL insensible à la casse. Migration 0010 (index
-  `users_email_lower_unique` sur `lower(email)`), `findByEmail` matche `lower(email)`. Fin du
-  non-déterminisme multi-tenant.
-
-## ✅ Dashboard v2 : prix templates MARCHE EN PROD (corrigé 2026-07-10)
-
-⚠️ CORRECTION d'une conclusion erronée. J'avais écrit que `pricing_analytics` était bloqué par
-l'Advanced Access (403 #200). **C'était FAUX** : la sonde avait tourné avec le token du `.env` LOCAL,
-qui est limité/périmé, PAS le token permanent de prod. Re-testé DANS le conteneur `mba-api` (vrai token
-`.env.prod`) : `pricing_analytics` renvoie **200 + vraies données** (marketing 0,0712 / utility 0,0248…).
-Donc **le prix par template s'affiche déjà en prod** (le getPricing déployé utilise le bon token). Aucun
-App Review requis pour l'analytics de NOTRE WABA. Pas de dégradation « indisponible » en réalité.
-
-- **Leçon (cf. LEARNINGS)** : le `META_ACCESS_TOKEN` du `.env` LOCAL n'est PAS le token de prod. Toute
-  sonde Meta doit tourner **dans le conteneur / avec le token de prod** (`docker cp` + `docker exec mba-api
-  node ...`), jamais avec un scratch local, sinon faux négatifs (#200 « Provide valid app ID »).
 
 ## Dette Feature 2 : Admin + RBAC (revue adversariale 2026-07-10)
 
@@ -3272,11 +2800,6 @@ créer un agent, changer un rôle). Corrigé à la revue : 🔴 templates GET re
 (l'inbox agent en dépend) ; invariant « ≥1 admin/tenant » forcé EN BASE dans `setRole` (refus
 `last_admin` -> 409) ; tests agent->403 ajoutés sur contacts/import. Résidus non bloquants :
 
-- ✅ **JWT figé sur changement de rôle / révocation : RÉSOLU (2026-07-10)** : `requireAuth` relit
-  l'état du compte EN BASE à chaque requête authentifiée (`getUserState` -> `PgUserStore.getAuthState`) :
-  compte supprimé/révoqué -> 401 immédiat, rôle rafraîchi depuis la base. Un changement de rôle, une
-  révocation ou une suppression prennent effet TOUT DE SUITE, plus de fenêtre de 12h. Coût : un lookup
-  PK par requête (négligeable à ce volume). Optionnel (absent en test -> JWT seul).
 - 🟡 **Oracle d'existence d'email cross-tenant** : POST /users renvoie 409 si l'email existe DÉJÀ
   ailleurs (index unique GLOBAL `lower(email)`, migration 0010). Un admin peut ainsi sonder si un
   email est déjà un compte console d'un autre tenant (fuite limitée à l'existence, message générique,
@@ -3289,11 +2812,6 @@ créer un agent, changer un rôle). Corrigé à la revue : 🔴 templates GET re
 
 ## Suites de la revue Loops 3-5
 
-- ✅ **Réconciliation `sending`** : sweeper `reclaimStale` en place (worker.ts, `STALE_SENDING_MS`),
-  reset `sending` -> `pending` au-delà du timeout.
-- ✅ **createCampaign transactionnel + bulk** : `createWithRecipients` est dans un BEGIN/COMMIT et
-  insère les destinataires en UNE requête (`unnest`, helper `bulkInsertRecipients`, idempotent
-  `on conflict do nothing`). `insertRecipients` idem.
 - 🟡 **quality getRating** : lu à chaque destinataire (point-query PK). Mémoïser (TTL court) si la
   volumétrie l'exige. Dominé par l'appel Meta aujourd'hui -> laissé tel quel.
 
@@ -3304,11 +2822,6 @@ Les sous-requêtes « ≥1 admin actif » de `PgUserStore.setRole/setDisabled/de
 acceptée). Non exploitable (self-block + un pending ne peut pas s'authentifier), mais correctness-of-intent :
 ajouter `and password_hash is not null` aux 3 sous-requêtes pour qu'un admin invité jamais activé ne compte pas
 comme « admin actif ». Défense en profondeur, à faire à froid (touche du SQL d'invariant sécurité).
-
-## Refonte auth : ✅ FAITE (Lot 6, 2026-07-13)
-
-Inscription libre + Google + invitations Resend + mot de passe perdu/reset/changement, tous LIVE. Détail :
-`docs/JOURNAL-TECHNIQUE.md` (l archive) §Lot 6. Domaine Resend vérifié + client OAuth Google configuré (origine JS + app publiée par Julien).
 
 ## Vérifier l'identité BSUID au 1er trafic réel (lot 4)
 
@@ -3350,10 +2863,6 @@ Signalés à la revue Phase 3 (sous le seuil de confiance, défense en profondeu
 
 ## Dette de la revue Loops 1-2
 
-- ✅ **Test DLQ** : test d'intégration qui prouve job qui throw -> `<name>-dlq` (retryLimit
-  configurable + `pullPending`, 1 seule tentative avec retryLimit:0).
-- ✅ **CI intégration** : job `integration` (service Postgres 16, `DB_SSL=off`, migrate +
-  `test:integration`) ajouté à `.github/workflows/ci.yml`.
 - 🟢 **parse.ts** : VÉRIFIÉ, pas de double-comptage. Chaque sous-événement a une `dedupKey`
   distincte par source (rien ne collapse) ; messages+statuses arrivent sous le même `field:messages`
   donc le routage par tableau est le bon choix (gater par `field` serait fragile aux versions Meta).
@@ -3367,16 +2876,9 @@ Signalés à la revue Phase 3 (sous le seuil de confiance, défense en profondeu
 
 ## Raffinements notés
 
-- ✅ **Loop 3 / import collision** : deux colonnes -> même custom key est signalé (`report.errors`
-  « colonnes fusionnées »), 1re valeur non vide gagne.
 - ⏸️ **Loop 3 / slugify** : deux labels distincts -> même key = fusion (1er gagne) + warning.
   Décision : on GARDE ce comportement. Disambiguer en `ville_2` casserait silencieusement le mapping
   des variables de template (l'utilisateur mappe sur `ville`). Le warning est le bon compromis.
-- ✅ **Loop 2 / `withRetry`** : ne rejoue QUE `MetaApiError.retryable` + codes réseau connus
-  (`NETWORK_CODES`), pas un throw arbitraire.
-- ✅ **Loop 2 / `MetaClient`** : test « `rateLimiter.acquire()` appelé à chaque tentative » ajouté.
-- ✅ **Loop 5 / existence campagne** : `campaignBelongsTo` = `select 1 ... where id and tenant_id`.
-- ✅ **Loop 5 / `insertRecipients`** : bulk insert (`unnest`).
 - 🟡 **Loop 5 / état `queued`** : la route `run` enqueue sans état intermédiaire visible (reste
   `draft` jusqu'à `running`). Une future UI voudra peut-être un `queued`. Décision produit.
 - 🟡 **Loop 5 / quality rating** : `PgQualityProvider` lit `phone_numbers.quality_rating` (défaut
@@ -3384,9 +2886,6 @@ Signalés à la revue Phase 3 (sous le seuil de confiance, défense en profondeu
 
 ## À durcir / suites (2026-07-15)
 
-- ✅ **Bouton FLOW dans l'envoi workflow : FAIT (2026-07-16)** : `buildWorkflowTemplateComponents` génère désormais
-  le composant `{sub_type:'flow', parameters:[{type:'action', action:{flow_token}}]}` par bouton FLOW (corrige #131009).
-  Vérifié empiriquement contre la Cloud API. Détail : `CLAUDE.md` §Gotchas 2026-07-16.
 - ⚠️ **Variables de template non contiguës** (`{{1}}` + `{{3}}` sans `{{2}}`) : le front compte les positions distinctes
   (Set) alors que le backend attend 1..N contigu -> désalignement possible. Pré-existant (mode direct), pas introduit
   ce lot ; à corriger si un template non contigu apparaît.

@@ -5,6 +5,1867 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+
+## 2026-10-10 : le ménage documentaire (lot 8 du bilan des audits)
+
+`CLAUDE.md` était redevenu une archive, `wip.md` portait des lots déployés depuis des semaines, et `todo.md` des
+points clos : trois points d'entrée qui mentaient par accumulation. Tout ce qui en sort est GARDÉ ici, texte d'origine :
+- **`CLAUDE.md`, de 1 391 à environ 600 lignes** : le récit des migrations 0114 à 0227 est passé au § « Les migrations,
+  une par une » ; le compteur y tient en une ligne, et le récit a laissé ses règles (l'ordre se décide sur « l'ancien code
+  survit-il ? », la relecture en base, la migration bloquante poussée seule, la mise de côté, le retour arrière).
+  Deux invariants qu'il était seul à porter sont passés au manuel (le tour de rôle d'une campagne, l'adresse e-mail dans
+  les champs du contact).
+- **`wip.md`** ne garde que le travail en cours ; ses sections de lots déployés suivent, sous leur titre d'origine. Les
+  essais réels dus vivent dans `docs/prive/ESSAIS-REELS.md` (vérifié : ceux de ces sections y sont), les restes dans
+  `todo.md`.
+- **`todo.md`** perd ses sections et points clos (cochés, barrés, « CORRIGÉ », « LIVRÉ »), retirés seulement quand aucun
+  sous-point n'y restait ouvert ; ils suivent aussi. Les décisions (« TRANCHÉ ») restent.
+
+### Sortis de `wip.md` le 2026-10-10 : les lots déployés, texte d'origine
+
+### L'ÉTAT EXACT, AU 2026-09-28
+
+| | |
+|---|---|
+| `origin/main` | voir `git log` (ce fichier ne recopie plus un SHA, il a menti six fois) |
+| VPS (`mba-api`, `mba-worker`, `mba-web`) | ✅ **À JOUR AU 2026-09-29** : la recharge Stripe (Crédit IA sous Paramètres, commission au débit, traduction débitée, code promo, lien Facture, 5 € au numéro vérifié), le panneau Détail de l'Inbox et les publicités archivées ou programmées, migrations 0189 à 0193 appliquées AVANT chaque `up` et relues en base. CI verte job par job, sauf le plan d'une autre session (voir `todo.md`). Le SHA n'est pas recopié ici (`git log` fait foi). |
+| Vercel (`engageme`) | suit `origin/main` tout seul |
+| Migrations | 🔴 **LE COMPTEUR N'EST PAS ICI, IL EST DANS [CLAUDE.md](CLAUDE.md), SECTION DÉPLOIEMENT.** Cette ligne l'a recopié et l'a eu FAUX (elle annonçait 0151 quand la base portait 0152, neuvième dérive), exactement comme `PLAN.md` et `brain/PROJECTS.md` avant elle. En cas de doute, c'est la BASE qui tranche : `select name from public.schema_migrations order by name desc`. |
+| CI | ✅ verte job par job, lue sur `gh run view <id> --json jobs` et jamais sur le code de sortie du watch. ⚠️ **Elle est passée ROUGE une fois le 2026-09-17**, sur le seul job qui voit une base (`integration`), pour un test qui laissait de la donnée derrière lui : la cause et la parade sont dans la section Performance Lab |
+| Revue finale | ✅ **ATTESTÉE, 0 rouge, 4 jaunes**, sur `9c29257a` (rapport `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md`). Vérifié par moi et pas sur le rapport d’un pair : typecheck propre, **6294 tests unitaires verts**, CI relue JOB PAR JOB sur le dernier commit de code, et surtout l’état RÉEL de la base, qui a démenti le « trois migrations en attente » d’un message inter-session. Les 4 jaunes sont préexistants ou déjà déclarés par leurs auteurs. |
+| Contrôle public | ✅ **Les cinq portes publiques à 200** après le déploiement du 2026-09-23 : `/health` et `/live` sur `api.`, le chemin `/api/backend/` de `mba.` qui porte le webhook Meta, la console Vercel, l’ancienne console. `nginx -s reload` posé APRÈS l’attente de `healthy`, jamais enchaîné au `up` (leçon du 2026-09-08) : aucun 502 cette fois. ⚠️ Et les deux routes neuves répondent **401, pas 404** : montées et gardées, donc la fenêtre Vercel/API est fermée. |
+
+### LOT 12 : LES WEBHOOKS SORTANTS, LIVRAISON A EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ
+
+Spec `docs/superpowers/specs/2026-10-08-webhooks-sortants-design.md`, plan `docs/superpowers/plans/2026-10-08-webhooks-sortants.md`
+(décisions de Julien du 2026-10-08). Livraison A : les webhooks sortants (migration 0223, deux files, écran
+`/developers/evenements`, deux outils MCP, page de doc) : EN PRODUCTION (`b8908c57`, CI verte job par job, migration
+0223 appliquée et relue en base avant le `up` de l'API, des deux workers et de `mba-web` ; relecture 1 rouge corrigé
+avant le push). Reste l'essai réel : une adresse de test reçoit l'essai et un vrai message entrant, signature vérifiée
+par l'exemple de la doc. Livraison B : le mode « mon application répond »
+(0224), sans repli, réponses hors quota : EN PRODUCTION (`97235386`, 0224 appliquée et relue avant le `up`), ses
+jaunes de relecture poussés ensuite. Son essai réel : désigner l'adresse de test sur l'Accueil, écrire depuis un téléphone, recevoir
+`conversation.needs_reply`, répondre par l'API, et voir la conversation rester hors d'« À traiter ».
+
+### LOT 13 : L'API COMPLÈTE, DOMAINE 1 (LA LECTURE DES FILS) EN PRODUCTION (2026-10-09), DOMAINE 2 CADRÉ
+
+Spec `docs/superpowers/specs/2026-10-08-api-complete-design.md`, plan `docs/superpowers/plans/2026-10-08-lecture-des-fils.md`.
+A : cinq routes GET sous `conversations:read`, outils MCP de lecture ouverts en Free, `before` dans `get_messages` :
+EN PRODUCTION (`ee479c01`, `cfedc5ff`). B : le statut d'un message (migration 0225, `get_message_status`) et Claude
+qui répond en Free : EN PRODUCTION (`c21dc3b0`, 0225 appliquée le 2026-10-09). Essai réel du domaine : voir le plan.
+Domaine 2 (l'envoi au format de Meta, `POST /v1/messages`, `send_message`) : EN PRODUCTION (`8f237a41`, le
+2026-10-09). Essai réel : voir le plan `docs/superpowers/plans/2026-10-09-envoi-format-meta.md`.
+Domaine 3 (les modèles, plan `docs/superpowers/plans/2026-10-09-modeles-api.md`) : livraison A (créer au format de
+Meta, en-tête par adresse, statut, trois outils de Claude) EN PRODUCTION (`0ef5ebad`, le 2026-10-09), ses jaunes de
+relecture poussés ensuite ; essai réel dû (voir le plan) ; `create_template` réservé à une personne (décision de Julien,
+`233234cb`). B (Claude envoie un modèle à un contact, `send_template_to_contact`, par le cœur de `/v1/sends` extrait)
+EN PRODUCTION (`3e0f2f39`, le 2026-10-09), ses jaunes poussés ensuite. C (l'événement `template.status_changed`) EN
+PRODUCTION (`cbaa9933`), ses jaunes poussés ensuite ; l'application Meta est abonnée au champ
+`message_template_status_update` depuis le 2026-10-09 (geste de Julien, relu le même jour : v26.0, les trois autres
+champs restant en v25.0). Reste l'essai réel : une adresse de test qui coche le type reçoit l'événement à la validation
+d'un modèle créé par l'API.
+Domaine 4 (les webhooks sortants par l'API et par Claude, plan `docs/superpowers/plans/2026-10-09-webhooks-api.md`,
+décisions prises par Claude en l'absence de Julien, à relire : spec § 6) EN PRODUCTION (`f7a75586`). Domaine 5
+(les contacts complets, plan `docs/superpowers/plans/2026-10-09-contacts-complets.md`, spec § 7, mêmes réserves) :
+livraison A (champs et suppression RGPD) EN PRODUCTION (`5e768c39`), ses jaunes poussés ensuite. Livraison B
+(décisions de Julien du 2026-10-09 : pas de route d'import, la recette des lots de 50 dans la doc ; la liste de refus
+des fiches effacées, trois ans, migration 0226) EN PRODUCTION (`a421ba13`, 0226 appliquée le 2026-10-09 à 13 h 43 UTC),
+ses jaunes poussés ensuite. Essai réel dû : une fiche en STOP effacée puis recréée (API, message entrant) naît en STOP.
+
+### LOT 15 : L'OAUTH OUVERT AUX AUTRES CLIENTS MCP (2026-10-09), EN COURS
+
+Spec `docs/superpowers/specs/2026-10-09-oauth-autres-clients-design.md`, plan
+`docs/superpowers/plans/2026-10-09-oauth-autres-clients.md` (décisions de Julien du 2026-10-09). Livraisons A (l'API :
+migration 0227, fiches d'identité, enregistrement dynamique) et B (la console et la doc) EN PRODUCTION ensemble
+(`2d17b2cd`, 0227 appliquée à 15 h 48 UTC). Essai réel dû : ChatGPT puis Lovable (l'événement `oauth_fiche_refusee` ou
+`oauth_client_enregistre` du journal de l'API dit par quelle voie chacun passe) ; reconnecter aussi Claude Code et
+claude.ai, et vérifier qu'aucun `oauth_client_enregistre` ne sort pour eux.
+
+### « RENOUVELER LA CONNEXION META » (2026-10-09), EN PRODUCTION, ESSAI RÉEL DÛ AVANT LE 16 OCTOBRE
+
+Le bouton de la carte du numéro (Accueil, admins) rejoue l'inscription Meta sur un espace qui a déjà son numéro :
+`35765f12` (console), `2ca33d15` (la route retrouve le compte de l'espace quand le jeton en expose plusieurs ; l'accusé
+de réussite), déployés le 2026-10-09 (quatre conteneurs, fiches d'aide rechargées). Pourquoi : le jeton de
+« MessagingMeEmbdedded » (WABA `1067000669256166`), émis avant la v4, expire le **2026-10-16 à 12 h 55 UTC** (relu chez
+Meta) ; les cinq autres espaces ont des jetons sans expiration ; et ce jeton expose DEUX comptes WhatsApp, ce qui faisait
+échouer le renouvellement avant `2ca33d15`. **Essai réel AVANT le 16** (`docs/prive/ESSAIS-REELS.md`, en tête) : sur cet
+espace, le bouton, le même compte et le même numéro, puis Claude relit le jeton chez Meta (« expire : jamais »).
+
+### L'OFFRE GRATUITE S'APPELLE « FREE », EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ
+
+Plan `docs/superpowers/plans/2026-10-08-offre-free.md`. En production (`dd3298bf`, CI verte job par job, `up` de l'API,
+des deux workers et de `mba-web`, fiches d'aide rechargées ; relecture : le rouge portait sur l'ordre écrit du plan,
+corrigé). Reste l'essai réel : la page de l'offre d'un espace en Free et `get_plan` depuis Claude Code disent « Free ».
+
+### LOT 19 : LE TUNNEL DE LA BASE, EN PRODUCTION (2026-10-08), ESSAI RÉEL DÛ
+
+Plan `docs/superpowers/plans/2026-10-08-tunnel-de-la-base.md`, console seule (Vercel au push), aucune route ni migration.
+L'inscription (mot de passe ou Google) mène à `/connecter-whatsapp?suite=demarrer` (« Plus tard » saute le numéro,
+« Continuer » une fois connecté), puis à la page finale `/demarrer` : le numéro, la commande `claude mcp add` SANS
+clé (OAuth validé par `/mcp` dans Claude Code), « Créer la clé de mon application » (montrée une fois en ligne de `.env`), et le premier
+message à coller. La suite traverse le retour de Stripe par la mémoire de l'onglet (`mba.suite`), effacée par la page
+finale. En production (`52ecbafa`, console publiée par Vercel, CI verte job par job, relecture 0 rouge). Reste **l'essai réel** (une inscription de bout en bout, la commande
+collée dans Claude Code qui ouvre la connexion OAuth). La porte de la vitrine s'ouvre après le lot 14.
+
+### LOT 6 : LES OFFRES ET LEURS LIMITES, A, B1, B2a, B2b ET C EN PRODUCTION (2026-10-07 ET 08)
+
+Spec `docs/superpowers/specs/2026-10-07-offres-et-limites-design.md`, plan `docs/superpowers/plans/2026-10-07-offres-et-limites.md`.
+La livraison A est en production et son essai réel est fait (2026-10-07, « Espace de dumas family » ramené en Base,
+Inbox et menus payants grisés vus par Julien, puis remis en Entreprise).
+
+La livraison B1 (le Pro payable chez Stripe, le numéro fourni protégé par un Pro) est en production (`4220dc42`, puis les
+jaunes de sa relecture `d8cf836d`, sans migration), et **le Pro est EN VENTE depuis le 2026-10-07** : produit
+« Messaging Me Pro » créé par Julien (49 € HT par mois, 490 € HT par an, taxe en sus, deux produits du même nom),
+`STRIPE_PRIX_PRO_MOIS` et `_AN` posés dans `.env.prod`, API et workers recréés, prix lus par les trois conteneurs. Le
+portail est déjà réglé comme il faut : résiliation en fin de période, changement de formule FERMÉ (pas de passage du
+mensuel à l'annuel, mais aucun basculement vers un autre produit). 🔴 Restent chez Julien : désactiver ENGAGE100
+(recharges, nommé dans le dépôt public), recréer GMC100 et VERIF100 restreints à leurs produits ; ENGAGEME (essai
+réel, une utilisation) n'est restreint à aucun produit, d'où l'essai à faire vite.
+✅ **Essai réel de B1 fait le 2026-10-07** (Julien, « Espace de dumas family » mis en Base pour l'occasion) : « Mensuel »
+payé avec ENGAGEME à 100 %, l'abonnement enregistré et l'espace en Pro dans la minute, puis l'abonnement annulé
+immédiatement chez Stripe : fin datée, raison « résiliation », espace revenu en Base, remis en Entreprise ensuite.
+
+B2 est découpée (décision de Julien) : **B2a, le gel au retour en Base** (les démarrages de scénario, les automations
+au-delà des 10 plus anciennes, l'agent de Meta et le scénario répondeur, les membres en trop, les outils de Claude
+par fonction, `set_default_responder`) est EN PRODUCTION (`ac36a394`, sans migration). ✅ Essai réel fait le soir même
+sur « Espace de dumas family » mis en Base : « Agent de Meta » et « Scénario » grisés dans « Qui répond », vus par
+Julien, puis remis en Entreprise (l'espace n'a ni automation, ni scénario, ni second membre : le reste est prouvé par
+les tests). **Les jaunes de sa relecture sont corrigés et en production** (`d9517a45`, à relire avec le lot suivant), avec trois décisions de Julien : un widget à devenir
+« scénario » est gelé en Base (refusé à la création, un clic ne démarre rien) ; « Envoyer un bloc » d'un agent IA est
+gelé comme celui de l'agent de Meta ; la suspension des membres ne vaut qu'en Base et en Pro (en Entreprise, la limite
+ne bloque que les invitations). ✅ **B2b, le numéro inclus dans le Pro, est EN PRODUCTION** (`be063d14`, migration
+0220 appliquée le 2026-10-08) : le numéro obtenu sans payer en Pro, l'abonnement du numéro seul arrêté avec avoir au
+passage en Pro, l'annonce de la suite à la fin prévue du Pro (console, Claude, e-mail), « rendre le numéro » à la fin
+du Pro, le numéro seul recréé sur la carte du Pro à la fin PRÉVUE d'un Pro résilié, sinon le chemin du lot 4 ; plus
+les jaunes J2, J5, J6 de B1. Les jaunes de sa relecture sont corrigés (à relire avec le lot suivant). La clé restreinte
+de Stripe écrit déjà les abonnements (« Billing > Subscriptions » en écriture, posé depuis longtemps, confirmé par
+Julien le 2026-10-08) : l'arrêt au passage en Pro et la recréation à la fin d'un Pro partent sans geste manuel. ⏳ Essai
+réel de B2b APRÈS le 14 octobre (décision de Julien) : la libération du lot 4 se fait d'abord sur dumas family, puis
+l'essai de B2b sur le même espace (Pro avec un code à 100 %, « Obtenir mon numéro » sans payer, résiliation en fin de
+période et annonce de la suite).
+
+✅ **C, les coûts selon l'offre, est EN PRODUCTION** (`6f1bd0d5`, migrations 0221 et 0222 appliquées le 2026-10-08) : la commission de l'offre (50 % en Base,
+10 % en Pro et en Entreprise), la recherche dans la connaissance, la vectorisation des fiches et la transcription de
+l'Inbox sur le crédit du client, l'analyse éteinte en Base (`hors_offre`), la conservation de 30 jours en Base après 30
+jours de grâce (migration 0221 : la sortie de l'Entreprise datée, décision de Julien), le crédit offert à 1 € pour toutes
+les origines ; et, sur décision de Julien après la relecture, le budget par conversation d'un agent à 0,07 € (0222), la
+recherche y entrant. Les jaunes de la relecture sont corrigés (à relire avec le lot suivant). ⏳ Essai réel de C : le prix
+d'un tour lu dans le journal du crédit en Base puis en Pro, et une conversation de l'espace Base qui reste non analysée.
+⚠️ L'ancienne console (`mba-web`) n'a pas été reconstruite au déploiement de C : elle le sera au suivant.
+
+### RETOURS CONSOLE DU 6 OCTOBRE (RC1 À RC8) : LES HUIT LOTS EN PRODUCTION, ESSAIS RÉELS DUS
+
+⏳ **Essai réel de RC1, par Julien** : ouvrir un scénario, vérifier que les textes listés ont disparu des cinq blocs,
+taper une réponse rapide et voir `0/20` se remplir, trouver « Widget WhatsApp » sous Tools.
+
+⏳ **Essai réel de RC2, par Julien** : marquer à la main une conversation urgente depuis l'Inbox (« Ranger dans… »),
+la voir dans « Urgent » et en tête de « À traiter », la passer « Traité » et la voir quitter « Urgent » ; puis donner
+l'outil « Marquer la conversation urgente » à un agent IA, lui écrire « c'est urgent » depuis un vrai téléphone, et
+retrouver la conversation dans « Urgent » (pas dans « À traiter » : l'agent la tient encore), l'agent continuant de
+répondre.
+
+⏳ **Essai réel de RC3, par Julien** : avec son adresse qui porte plusieurs espaces, ouvrir le menu du compte, y voir
+le nom de l'espace actuel et « Changer d'espace » avec les autres, en choisir un, arriver sur ses données sans écran de
+connexion, et revenir de la même façon ; une adresse à un seul espace ne voit pas l'entrée.
+
+⏳ **Essai réel de RC4, par Julien** : sur l'agent IA d'un espace de test, l'onglet Outils montre « Toujours là » et
+la grille de six cartes ; poser un « Lancer un scénario » vers un scénario publié et un « Poser un tag » fixe, cocher
+l'autonomie du premier ; depuis un vrai téléphone, amener l'agent à les appeler : le tag est sur la fiche, le scénario
+part, l'agent se tait ensuite. ⚠️ À valider aussi : l'assistant de construction ne propose plus d'outil à cible
+(`todo.md`).
+
+⏳ **Essai réel de RC5 A, par Julien** : un scénario avec une Condition à trois familles (« pays est France »,
+« langue est anglais », une troisième au choix) testé depuis un vrai téléphone, qui sort par la bonne famille ; le
+champ « dernier message reçu » se teste par une campagne, pas par un lien de test (le message qui lance vaut
+« maintenant »).
+
+⏳ **Essai réel de RC5 B, par Julien** : un menu qui renvoie par « Aller à » vers la question d'un autre scénario,
+joué de bout en bout depuis un vrai téléphone ; le code d'un bloc copié depuis sa carte puis collé dans un « Aller à ».
+
+⏳ **Essai réel de RC6, par Julien**, sur un espace de test avec l'agent de Meta configuré et un agent IA actif, depuis
+un vrai téléphone, les quatre modes de la carte « Qui répond au client » de l'Accueil : (1) « Scénario » : un message
+lance le scénario, un second dans le délai arrive à l'équipe, et l'agent de Meta allumé ne répond jamais ; (2) le bloc
+« Envoyer au MBA » au bout du scénario, AVEC un message avant lui : l'agent de Meta répond au dernier message (voir
+`todo.md`, la course de l'accusé) ; (3) « Agent IA » : l'agent répond, l'agent de Meta reste muet ; (4) « Équipe » : le
+message arrive dans « À traiter » ; (5) « MBA » : comportement d'avant. ⚠️ À relire aussi : allumer l'agent de Meta
+en mode « Équipe » fait passer en mode « MBA » (`todo.md`).
+
+⏳ **Essai réel de RC7, par Julien** : un modèle à bouton « Suivre ma commande » vers `https://…/{numero_commande}`,
+approuvé par Meta, envoyé par une campagne à deux vrais numéros dont les fiches portent deux numéros de commande
+différents, et depuis l'Inbox à l'un d'eux ; un clic sur chaque téléphone arrive sur SA page, et les clics sont comptés
+dans les mesures de la campagne. À faire aussi : rééditer `lancement_napo_date_finale` (`todo.md`).
+
+⏳ **Essai réel de RC8, par Julien** : créer un espace d'essai depuis une adresse jetable, avec son propre compte
+WhatsApp (pas le jeton global, sinon les étapes chez Meta sont sautées), un agent IA (donc une clé Vercel) et quelques
+contacts ; le supprimer depuis /ops (« supprimer » sur sa ligne, le bilan, la saisie du nom) ; puis vérifier : la clé
+n'existe plus chez Vercel, le compte WhatsApp n'est plus abonné à notre app, l'espace et ses données ont disparu,
+l'adresse ne se connecte plus, la ligne de `espaces_supprimes` est là, et la file des jobs morts de /ops ne porte aucun
+échec lié à cet espace dans l'heure qui suit.
+
+Les décisions de chaque lot sont dans son plan (`docs/superpowers/plans/2026-10-06-rc*.md`), ce qui reste dans
+`todo.md` (une section par lot), et le récit des livraisons dans `docs/JOURNAL-TECHNIQUE.md`.
+
+### UN AGENT NE VOIT JAMAIS DEUX OUTILS DU MÊME NOM (0211, 0213) : LES DEUX LOTS EN PRODUCTION, ESSAIS D'ÉCRAN DUS
+
+Plan : `docs/superpowers/plans/2026-10-06-nom-unique-par-consommateur.md` ; récit et mesures :
+`docs/JOURNAL-TECHNIQUE.md` (les deux entrées du 2026-10-06).
+
+- ✅ **Lot 1** (`2a6c2046`) déployé le 2026-10-06, 0211 appliquée à 7 h 05 UTC et relue en base.
+- ✅ **Lot 2** (`3cb96ab7`) déployé le 2026-10-06, 0213 appliquée à 8 h 01 UTC et relue en base (`tool_name` NOT NULL).
+- ⏳ **Essais d'écran, par Julien** (puis cette section sort) :
+  - lot 1 : sur un agent de test qui a une action (par exemple `mba_terminer`) et un appel de connecteur, « Modifier »
+    l'appel et lui donner le nom technique de l'action, puis Enregistrer : le refus s'affiche dans le formulaire, rien
+    ne change ; l'onglet Tester répond toujours ;
+  - lot 2 : sur un agent qui a une action `x` et un connecteur `x` de l'espace qu'il n'utilise pas, l'assistant de
+    construction ne propose pas de brancher `x`, et l'onglet Outils le propose toujours, avec le refus lisible au clic.
+- 🟡 **Laissés, avec leur raison** (les trois jaunes de conception du lot 2 sont dans `todo.md`) : le 409 ne nomme ni l'outil ni l'agent en conflit (le nom est celui qu'on vient de
+  saisir ; nommer l'agent demanderait de lire le détail de l'erreur de Postgres) ; deux interblocages théoriques
+  relevés par la relecture (la migration contre trois chemins rares, deux renommages croisés simultanés), en 500 sur
+  une requête au pire.
+
+### LOT 4 DE « MESSAGING ME POUR CLAUDE CODE » : CE QUE DEVIENT UN NUMÉRO FOURNI DONT L'ABONNEMENT TOMBE, PLAN ÉCRIT
+
+Cadré avec Julien le 2026-10-06 ; spec `docs/superpowers/specs/2026-10-06-numero-impaye-design.md`. Deux livraisons :
+A, la suspension (état calculé sur des dates, migration 0215, garde au point d'envoi unique, réabonnement, bandeau,
+rappel MCP) ; B, la libération (délié, résilié chez DIDWW) et les e-mails. L'espace de l'essai du 2026-10-06 suit le
+cycle : c'est l'essai réel.
+- ✅ Spec validée par Julien ; plan `docs/superpowers/plans/2026-10-06-numero-impaye.md` (12 tâches).
+- ✅ Migration 0215 poussée seule (`149db406`) et appliquée le 2026-10-06 à 16 h 57 UTC, relue en base.
+- ✅ **Lot 4, livraison A (la suspension) en production le 2026-10-06 : migration 0215 appliquée à 16 h 57 UTC et relue
+  en base, API et deux workers sur `fca3d285` (premier balayage à 18 h 48 UTC), console `bef80514` publiée à 18 h 52
+  UTC, CI verte job par job.** Relue : deux rouges corrigés avant le déploiement,
+  chacun avec son test vu rouge puis vert ; neuf jaunes dans `todo.md`. Réglages Stripe faits par Julien avant le `up`
+  (`customer.subscription.updated` au webhook, relu chez Stripe ; « annuler l'abonnement » après la dernière relance
+  l'était déjà, pour tout le compte).
+- ✅ **Essai réel de A fait le 2026-10-06** (Julien, après le déploiement) sur l'espace de l'essai du 3c, dont
+  l'abonnement était fini depuis 15 h 14 : une seule alerte Telegram, le bandeau « envois coupés » avec la date de
+  libération (13 octobre), le refus dans l'Inbox, et dans Claude Code `get_number_subscription` « suspendu » et le
+  rappel sur chaque réponse d'outil. Vérifié aussi par le code déployé, en lecture seule : ce numéro est suspendu,
+  ceux de trois autres espaces non.
+- ✅ **Lot 4, livraison B (la libération, « Abandonner », les e-mails) en production le 2026-10-06 au soir : API et deux
+  workers sur `a2bf45c7` (le commit `40f8322e` et le correctif de son test d'intégration), console `7fe7c7e7`, aucune
+  migration, CI verte job par job.** Relue : deux rouges corrigés avant le
+  déploiement (après la libération, l'espace ne pouvait plus jamais connecter de numéro : la ligne est désormais
+  RETIRÉE et non déliée ; la purge des codes effaçait toujours la preuve « vu de Meta » : elle épargne un numéro
+  attribué), les jaunes dans `todo.md`. Les jaunes de A sont corrigés, sauf l'ordre des `customer.subscription.updated`.
+  Réglages de Julien faits : le droit d'écrire les abonnements sur la clé restreinte (vérifié sur un abonnement
+  inexistant : 404, pas 403). La clé DIDWW du worker est valide (lue, 200).
+- ✅ Dès le déploiement, l'e-mail de suspension est parti à l'admin de l'espace de l'essai (20 h 36 UTC), l'alerte
+  Telegram n'est pas repartie (déjà notée par A).
+- 🔜 **La première libération réelle** : l'espace de l'essai, le **14 octobre vers 15 h 50 UTC** (rappel le 12), décalée
+  d'un jour par l'essai réel de B1 sur le même espace (un Pro pris puis annulé le 7 : sa fin est devenue celle du
+  numéro, calculée par le code déployé). Julien a
+  accepté d'y perdre +44 1259 797311. Puis les jaunes de B.
+
+### LOT 3c DE « MESSAGING ME POUR CLAUDE CODE » : LE NUMÉRO BRANCHÉ DEPUIS CLAUDE CODE, EN PRODUCTION, ESSAI RÉEL FAIT
+
+Le client ne passe jamais par la console : Claude Code lui donne un lien qui ouvre la page de connexion du numéro
+sans connexion, suit le branchement et affiche le code. Spec `docs/superpowers/specs/2026-10-06-lien-attente-abonnement-design.md`,
+validée par Julien le 2026-10-06 ; plan `docs/superpowers/plans/2026-10-06-lien-attente-abonnement.md`.
+
+- ✅ **Livraison A en production le 2026-10-06** : API `d20dea6b` (aucune migration), console `b4f81ec4` poussée après
+  le `up`. Relue : zéro rouge ; les jaunes (numéro relié non activé, 403 sur la page, chargeur d'état exigé, « Abandonner »
+  après la connexion d'un autre numéro, test d'isolation resserré) corrigés dans le commit suivant ; la révocation de
+  l'accès de Claude qui ne coupe pas un lien déjà donné est dans `todo.md`.
+- ✅ **Livraison B en production le 2026-10-06** : migration 0214 appliquée à 12 h 24 UTC et relue en base, API et
+  workers sur `c9973f44` (12 h 25), console `7c1ede29` poussée après le `up`. Réglages Stripe faits par Julien avant le
+  `up` : `STRIPE_PRIX_NUMERO` (posé par Claude avec son accord), les trois événements ajoutés au webhook (relus chez
+  Stripe), le portail client actif. Relue : un rouge (« Remplacer » attribuait sans abonnement) corrigé, test vu rouge
+  puis vert. Ses huit jaunes sont corrigés le même jour, chacun avec son test vu rouge puis vert : le portail de Stripe
+  dans la console (route à la session d'admin seule), le texte après « Abandonner », le retour de Stripe qui rouvre le
+  numéro fourni (et « Payer » si l'abonnement est résilié), la course de « Remplacer », les numéros libres dus d'abord
+  aux abonnés en attente (paiement, alerte, et un numéro rendu qui les sert), et les deux fausses alertes du webhook.
+  En production le même jour : API et workers sur `6050fdb7` (aucune migration ; la route du portail rend 401 sans
+  session, contre 404 pour une route inconnue), console `fbae4608` poussée après, CI verte job par job.
+- ✅ **Essai réel commun A et B fait le 2026-10-06** (Julien, vérifié en base, chez Meta et chez DIDWW en lecture
+  seule) : +44 1259 797311 acheté chez DIDWW, déclaré dans /ops à 14 h 41 UTC (libre, branché sur le trunk de
+  l'Asterisk) ; espace neuf né de la connexion de Claude Code à 14 h 45 (`claude_code`, avec le Gmail de l'essai du 3b,
+  dont l'espace avait été supprimé) ; un vrai paiement : l'abonnement `actif` en mode réel et le numéro attribué dans la
+  MÊME transaction à 14 h 52, la facture payée juste après pose la fin de période ; le code de Meta capté et affiché
+  dans le terminal de Claude Code ; le numéro relié à 14 h 57, `CONNECTED` et `VERIFIED` chez Meta ; 1 € offert.
+  Meta a imposé le SMS : la ligne fixe l'a lu à voix haute, code non retenu (« ### to ### ») ; le code redemandé est
+  arrivé par appel. Corrigé le même jour : `extraireCodeOtp` lit aussi le SMS lu (centaines anglaises, trois chiffres
+  « to » trois chiffres juste après « code »), et la page comme la consigne de Claude disent que le SMS arrive aussi. La résiliation par le portail ne donne rien avant la fin de période (aucun événement écouté) ; annulé ensuite
+  immédiatement dans Stripe : `resilie` à 15 h 14, l'alerte Telegram reçue (Julien), le numéro reste attribué (rien
+  n'est coupé avant le lot 4). Ce qu'il a montré est dans `todo.md`. Reste à Julien : résilier chez DIDWW le numéro de
+  l'essai du 3b (+44 1235 619343, en `bloque`), puis le passer en `resilie`.
+
+### LOT 5 DE « MESSAGING ME POUR CLAUDE CODE » : LE RÉPONDEUR PAR DÉFAUT, EN PRODUCTION, ESSAI RÉEL FAIT, CORRECTIFS ÉCRITS
+
+Un agent IA qui répond à tout message que personne ne tient, comme l'agent de Meta, sans scénario du client. Cadré
+avec Julien le 2026-10-04 ; spec `docs/superpowers/specs/2026-10-04-repondeur-par-defaut-design.md`, plan
+`docs/superpowers/plans/2026-10-05-repondeur-par-defaut.md`. La technique durable est dans `documentation.md` (§ 4.4,
+« Le répondeur de l'espace »).
+
+- ✅ **Livraison A en production le 2026-10-05** (`1f28aee7`, 0209 appliquée à 10 h 41 UTC AVANT le `up` de l'API
+  et des deux workers, relue en base) : le réglage et son geste unique (`src/repondeur/reglage.ts`, route
+  `PUT /tenants/:tenantId/agents/repondeur`, outil MCP `set_default_responder`), le scénario système caché par le
+  magasin, le type de lancement `repondeur` au graphe fourni et figé, le démarreur branché dans la remise « personne ne
+  suit » par une liaison tardive du socle, la mémoire de trente messages sur trente jours pour tous les agents, la
+  mention d'IA sur le dernier message d'une sortie, l'événement de frise `sortie_agent`, l'alerte de crédit épuisé.
+  Deux pièces que le plan ne listait pas : le message « à côté » d'un parcours qui finit va au répondeur IA
+  (`confierAuRepondeur`), et un `standby` arrivé après la bascule est requalifié (`unRepondeurRepond`).
+- ✅ **Relue sans rouge**, CI verte job par job, et les tests d'intégration vérifiés DANS LES DEUX SENS par deux commits
+  mutés sur étiquettes jetables (quatorze mutations : chaque test visé tombe, aucun masquage). Aucun espace n'a encore de
+  répondeur : rien n'a changé pour personne tant que personne ne le désigne.
+- 🟡 **Jaunes de la relecture de A** (J1, J4, J6 et J7 traités dans B, ci-dessous) : (J1) une RÉACTION (pouce) du
+  contact relance l'agent IA là où l'agent de Meta se tait ; (J3) la bascule depuis l'agent de Meta est synchrone
+  (un appel Meta par contact de sa liste) : lire la taille de `mba_liste` de l'espace de l'essai avant ; (J4) trous de
+  tests sur l'exécuteur qui confierait le « à côté » au répondeur agent de Meta allumé, et sur le câblage du worker qui
+  ne nommerait pas le message déclencheur (`rendreLeFil`, `confierAuRepondeur`) ; (J5) deux résidus de double tour
+  rares (lot redélivré de plusieurs messages, deux jobs parallèles du même contact) ; (J6) les contacts que Meta refuse
+  de retirer de sa liste restent muets, la console B doit l'afficher ; (J7) allumer l'agent de Meta efface le répondeur
+  IA sans ligne d'historique, la console B doit l'annoncer ; (J8) l'alerte de crédit marque le jour avant l'envoi ;
+  (J9) la mémoire de 30 jours donne au modèle nos sortants (opérateur, campagne) en rôle agent.
+- ✅ **Livraison B en production le 2026-10-05** (`8e907531`, API et deux workers relancés, aucune migration, CI verte
+  job par job) : le bloc « Répondeur de l'espace » sur la
+  page des agents (`web/components/RepondeurEspace.tsx` : « Aucun » ou un agent ACTIF, l'agent de Meta allumé dit avec
+  un lien vers son écran, la confirmation « l'agent de Meta sera éteint pour tous vos contacts de cet espace », les
+  contacts que Meta n'a pas retirés COMPTÉS) ; la désactivation et la suppression de l'agent répondeur confirmées ; les
+  libellés « Le répondeur automatique prend la main » des campagnes, du widget et des publicités, qui suivent désormais
+  l'agent de Meta OU l'agent IA répondeur (`repondeurAutomatique`, `web/lib/repondeur.ts`), le choix grisé « agent IA
+  (à venir) » du widget retiré ; `features.md` (Agent IA, Campagnes, Publicités, Widget, MBA) et leurs cinq fiches
+  d'aide, empreintes à jour. Aucune migration. Un e2e neuf (`web/e2e/agents-repondeur.spec.ts`).
+- ✅ **Jaunes de A traités dans B** : (J1) une réaction ne démarre plus le répondeur (la remise passe
+  `reactionsSeules`, lu sur le TYPE) et ne fait plus répondre un agent IA en pleine conversation (la porte Meta passe
+  `entrant.reaction` à `WorkflowExecutor.advance`, câblé dans `src/worker.ts`) ; (J4) l'exécuteur qui confierait le
+  « à côté » au répondeur agent de Meta allumé, le câblage `confierAuRepondeur` (monté et exécuté) et `rendreLeFil` du
+  worker (lu dans sa source) sont tenus par des tests ; (J6) l'écran compte les contacts non retirés ; (J7) allumer
+  l'agent de Meta (Accueil, paramètres, assistant) dit avant que l'agent IA quitte le rôle de répondeur. ⚠️ B touche
+  donc aussi le SERVEUR (J1 dans le worker, plus deux textes de l'API : la description MCP du devenir d'un widget et
+  le refus du devenir `agent`) : `up` de l'API ET des deux workers. La console n'appelle aucune route neuve (celle du
+  répondeur est en production depuis A), elle peut partir avec le push.
+- ✅ **B relue sans rouge, ses jaunes traités** (2026-10-05, même extraction, chacun avec son test vérifié dans les
+  deux sens) : (JB1) une réaction sur un bloc agent sort SANS RIEN ÉCRIRE, l'échéance d'inactivité survit
+  (`setStateSiEncoreSur` réécrit `resume_at` sans coalesce, et aucun tour ne la reposait) ; (JB2) deux tests tiennent
+  la garde `reactionsSeules` AVANT la bascule `app_human -> app_workflow`, et la réaction lue au TYPE (une fiche de
+  contact, une commande, un type inconnu, sans texte, démarrent le répondeur) ; (JB4, JB5) le bloc relit l'état de
+  l'agent de Meta au moment d'enregistrer et après une erreur, le dit éteint sur toute réussite qui désigne un agent,
+  et le choix ne part plus qu'au bouton « Enregistrer » (« Aucun » se confirme : plus aucun agent IA ne répondra) ;
+  (JB3) un état illisible fait confirmer, et la phrase J7 de l'interrupteur des paramètres et de l'assistant de
+  l'agent de Meta sont tenues par des e2e ; (JB6) la page MCP publique et `features.md` ne disent plus qu'un agent IA
+  ne répond jamais seul ; (JB8) l'interrupteur des paramètres de l'agent de Meta est occupé dès la lecture du
+  répondeur ; (JB9) le refus du devenir `agent` d'un widget ne nomme plus un scénario. Reste (JB7) : ce n'est pas une
+  livraison console seule, `src/worker.ts` change (annonce aux autres sessions avant le commit, câblage partagé) et
+  J1 ne vaut qu'après le `up` du worker : faire le `up` de l'API et des deux workers avant l'essai réel.
+- 🟡 **Toujours ouverts de la relecture de A** : J3 (bascule synchrone ; le bouton dit seulement « Enregistrement… »
+  pendant qu'elle dure), J5, J8, J9, la ligne d'historique de J7 côté serveur, RA, MX5.
+- ✅ **Essai réel fait le 2026-10-05** (espace « Messaging Me Tech SANDBOX », Gan PrevMCP répondeur, téléphone de
+  Julien ; détail daté dans le journal) : premier message pris en compte, retour de l'équipe puis reprise par l'agent,
+  réaction sans réponse ni débit, aucun doublon de l'agent de Meta. La demande d'humain arrive dans « À traiter », mais
+  seulement après deux correctifs (ci-dessous). Le répondeur est retiré et l'agent de Meta rallumé sur cet espace le
+  même jour, à la demande de Julien. La mémoire de trente jours reste à vérifier lors d'un prochain essai.
+- ✅ **Livraison C, les correctifs de l'essai : EN PRODUCTION le 2026-10-05** (`fad9a0c6`, API et deux workers, CI verte
+  job par job, aucune migration). Méthode : en direct, chaque test vérifié dans les deux sens par mutation, une
+  relecture indépendante. ✅ Essai réel fait à 15 h 21 UTC : après « Rendre la main », le répondeur répond, la demande
+  de conseiller part avec sa phrase (« Je transmets ta demande à un conseiller… ») et arrive dans « À traiter ».
+  (1) Désigner le répondeur laissait `mba` sur les fils que l'agent de Meta tenait : un parcours en attente gelait et
+  la remise refusait l'agent IA, donc plus aucune réponse. `ControleDuFil.reprendreLesFilsDeMeta`, appelé APRÈS le
+  réglage, les rend aux robots (`prise_mba` dans la frise). (2) Dans le répondeur, l'escalade jetait la phrase de
+  l'agent (dans un scénario, c'est la branche `humain` qui parle ; ici rien) : `ContexteTourAgent.repondeur`, lu par
+  `estRepondeur` sur le scénario du job. (3) Un `message` imposé sur l'outil d'escalade, comme sur `terminer` :
+  Mistral Small escalade sans un mot 10 fois sur 10, Claude Sonnet 4.5 9 sur 10, Gemini 2.5 Flash Lite 7 sur 8 ; avec
+  lui, plus aucune escalade muette. ⚠️ Le contact de Julien est revenu à l'agent de Meta : rien à réparer en base.
+- ✅ **Relue sans rouge** (une relecture indépendante). Traités avant le commit, chacun avec son test vérifié par
+  mutation : la lecture `estRepondeur` sort du `try` du cerveau (un raté de la base fait rejouer le job au lieu de
+  sortir par `echec`) ; le `message` de l'escalade ne promet plus un conseiller quand l'équipe est fermée (remesuré :
+  aucune escalade muette sur Mistral Small ni Claude Sonnet 4.5) ; le test des paquets compte ses lectures ; un
+  identifiant de message libre dans le test d'intégration.
+- 🟡 **Jaunes ouverts de la relecture de C** : (JC3) re-désigner le même agent ne relance pas la reprise des fils, et
+  `fils` ne remonte ni à l'écran ni à l'outil MCP (le balayage de 24 h les rend de toute façon) ; (JC6) un fil `mba`
+  dont le dernier message est ENTRANT sort d'« À traiter » à la reprise, sans réponse tant que le contact ne réécrit
+  pas (décision produit : le donner à l'équipe ?) ; (JC7) aucun test du lien réel entre `systeme = 'repondeur'` et
+  `estRepondeur` (lambda du worker), l'annonce d'IA sur le `message` d'une escalade l'étant depuis le 2026-10-05 ; (JC8) le bac à sable simule
+  l'escalade sans rendre la main, il ne montre donc pas la phrase que le contact du répondeur recevrait.
+- ❌ **Abandonné, mesure à l'appui** : une phrase de consigne « passe la main par l'outil d'escalade, jamais par une
+  règle d'arrêt » (l'agent était sorti par la règle « Passage à un conseiller humain » de sa fiche, retirée depuis).
+  Ce choix arrive 1 fois sur 48 sur Gemini 2.5 Flash, et la phrase faisait INVENTER des noms d'outil à Flash Lite
+  (`escalader_humain`). Reste un conseil de fiche : pas de règle d'arrêt qui passe la main à un humain.
+- ✅ **Tranché par Julien le 2026-10-05 : les agents créés par Claude Code passent sur Claude Haiku 4.5**
+  (`MODELE_AGENT_CLAUDE_CODE`, l'outil MCP `create_agent`), Gan PrevMCP aussi ; la console garde son défaut, son
+  client choisit le modèle. Mesuré sur la qualification de Gan PrevMCP (5 essais par situation) : Haiku cherche dans
+  la connaissance avant de répondre, ferme chaque sortie et escalade sans fausse promesse ; Gemini 2.5 Flash répond de
+  mémoire, ferme « hors cible » 3 fois sur 5 et promet un conseiller sans le prévenir 3 fois sur 5. Environ quatre
+  fois le prix par appel. Le défaut, mesuré avant la décision : Sur la même demande « je veux parler à un conseiller », le modèle
+  écrit « un conseiller va prendre le relais » SANS appeler aucun outil : personne n'est prévenu. Mesuré sur 10 appels :
+  GLM 4.7 Flash 7, Gemini 2.5 Flash 3 (2 à 6 selon les passes), GPT-4.1 mini 1, Gemini 2.5 Flash Lite 1, Claude Haiku
+  4.5, Claude Sonnet 4.5 et Mistral Small 0. Une consigne plus ferme n'y change rien (4 sur 20 contre 5 sur 20). Défaut
+  de TOUS les agents IA, pas seulement du répondeur.
+- 🟡 **L'Inbox dit « agent Meta » quand c'est l'agent IA qui a la main** (remarque de Julien pendant l'essai). Pendant
+  l'essai, c'était vrai de notre colonne (défaut 1) ; une fois réparé, le libellé doit dire « agent IA » quand le
+  répondeur IA tient le fil.
+
+### LOT 8a DE « MESSAGING ME POUR CLAUDE CODE » : LES OUTILS MCP DE L'AGENT IA ET DU CRÉDIT, EN PRODUCTION, ESSAI RÉEL FAIT
+
+Spec `docs/superpowers/specs/2026-10-03-mcp-agent-ia-design.md`, plan `docs/superpowers/plans/2026-10-03-mcp-agent-ia.md`.
+La technique durable est dans `documentation.md` (§ 7, « Les outils MCP de l'agent IA et du crédit »), le
+fonctionnel dans `features.md` (« Construire un agent IA depuis Claude »).
+
+- ✅ **Livraison A relue (aucun rouge) et en production** (`b1b4c034`, 0206 appliquée avant le `up`) : la logique de
+  l'agent, de sa connaissance, du bac à sable et du paiement sortie des routes (`src/agent/gestion.ts`,
+  `connaissance.ts`, `essai.ts`, `reglages.ts`, `src/stripe/paiement.ts`), le contrôle de complétude sur la
+  modification d'un agent actif, la ligne `fiche_agent` de l'historique, et la migration 0206 (origine `mcp`).
+- ✅ **Livraison B écrite, à relire** : les outils de l'agent IA et du crédit (`src/mcp/outils-agent.ts`), le drapeau `exigePersonne`
+  (`outilsPour`), le plafond coûteux de la console posé dans le MCP par `buildServer`, la sonde 15 de
+  l'auto-attaque, la page « Serveur MCP » et la page « Autoriser » qui disent ces outils, l'historique qui affiche
+  « par Claude », et trois jaunes de la relecture de A (le 422 d'un agent actif lisible dans la console, les textes
+  de l'historique, le caractère nul refusé par l'import d'un texte et sa découpe sous l'échéance d'un fichier).
+  Aucune migration.
+- ✅ **Relecture indépendante de B : aucun rouge.** Corrigés avant le commit, chacun avec son test vérifié dans les deux
+  sens : les descriptions d'`activate_agent` et d'`update_agent` disent que désactiver COUPE l'agent dans ses
+  scénarios publiés et ne se fait que sur demande explicite (sinon un refus poussait Claude à le faire de lui-même) ;
+  le test des sept outils coûteux vérifie que rien n'est touché quand le plafond refuse (il ne le tenait que pour deux) ;
+  `list_knowledge` dit que ses extraits sont des données de tiers ; le refus du caractère nul est annoncé ; la garde de
+  personne échoue fermée sur `undefined` ; la page « Autoriser » nomme les gestes sur la connaissance.
+- ✅ **Livraison B en production le 2026-10-04** (`5b6f4a1f`, `mba-api` seul, workers inchangés ; la console avec le
+  push). Mesuré en production avec la clé de lecture du poste : 12 outils (les 8 d'avant, plus `list_agents`,
+  `get_agent`, `list_knowledge`, `get_credit`), aucun outil réservé à une personne, `create_agent` refusé comme un
+  outil inconnu, `get_credit` et `list_agents` répondent.
+- ✅ **Essai réel du 2026-10-04, vers 12 h 37 UTC, par Julien**, depuis une session Claude Code neuve connectée par
+  OAuth (29 outils) : l'agent « Gan PrevMCP » monté de bout en bout par Claude (`create_agent`, `preview_site`,
+  `update_agent`, `set_agent_tools`, `import_site`, douze `test_agent`, `activate_agent`). Relu en base, en lecture
+  seule, juste après : la fiche et le modèle tels que Claude les a posés ; 150 fiches de connaissance, 22 pages,
+  provenance `page` avec leur adresse, toutes vectorisées ; les quatre outils actifs, signés par l'admin ; quatre
+  lignes `fiche_agent` d'origine `mcp` avec leur auteur, l'activation comprise ; douze essais, chacun débité de son
+  coût exact au prix client, note « essai depuis le serveur MCP » (2,9 centimes au total). La création elle-même ne
+  laisse pas de ligne, comme dans la console.
+- ✅ **Corrigé et en production le 2026-10-04 : une sortie part avec son dernier message.** L'essai avait trouvé que sous
+  GPT-5 mini l'agent appelait `mba_terminer` sans écrire (5 sorties sur 5 muettes). `terminer` porte désormais le
+  paramètre imposé `message` (`2674276b`, relu sans rouge), dont la description demande un message toujours rempli
+  (`866aae5c`, après un premier essai où le lead qualifié partait encore vide). Essai réel sous GPT-5 mini sur Gan
+  PrevMCP, avec l'accord de Julien : 3 sorties sur 3 avec leur message, récapitulatif compris ; sous Gemini, le texte
+  écrit part seul, sans doublon. Puis **GPT-5 mini a quitté la liste des modèles** (`1351821d`, aucun agent ne
+  l'utilisait) : 2,5 fois le coût de Gemini 2.5 Flash à l'essai, pour un tarif affiché plus bas.
+- 🟡 **Restes de la relecture de ce correctif** : un dernier message refusé à l'envoi fait
+  sortir par « échec » et perd la règle d'arrêt (déjà vrai pour un texte écrit) ; le texte écrit à côté d'un appel qui
+  sort n'est pas passé à `ressembleAUnBlocOutil`, seul le message de repli l'est.
+- 🟡 **Ouverts, hors de ces deux livraisons** : l'assistant de construction journalise ses propositions « depuis les
+  onglets » (il passe par la même route) ; chaque modification de la fiche d'un agent actif relit toutes ses fiches
+  de connaissance (`etatPourLint`, un compte suffirait) ; `ajouterFiches` n'est pas atomique (un agent qui disparaît
+  au milieu laisse les premières fiches) ; un changement de statut est journalisé sous `fiche_agent` et pas
+  `activation` ; les lignes `fiche_agent` repoussent plus vite les suppressions hors des 200 lignes affichées ;
+  `list_agents` relit toutes les fiches de chaque agent pour les compter ; les refus de bornes de `modifierAgent`
+  nomment les champs de la console (`contenu.objectif`) et pas ceux de l'outil ; `src/mcp/outils-agent.ts` importe une
+  constante de `src/http/agents` ; sur une erreur qui n'est pas un 422 (verrou, 400), l'écran des agents laisse sa
+  liste de manques vide (antérieur à B).
+
+### OAUTH DEVANT `/mcp` (LOT 2 DE « MESSAGING ME POUR CLAUDE CODE ») : EN PRODUCTION, ESSAI RÉEL FAIT DEPUIS CLAUDE CODE
+
+- ✅ **Essai réel du 2026-10-03, vers 20 h 30 UTC, par Julien, depuis Claude Code 2.1.257 sous Windows** :
+  `api.messagingme.app/mcp` ajouté sans clé, `/mcp`, Authenticate, page « Autoriser », retour vers Claude Code, et
+  Claude liste les conversations ; révocation depuis « Applications autorisées », Claude redemande la connexion.
+  L'adresse de retour `http://localhost` passe le proxy NPM (Claude encode ses paramètres). Puis depuis l'app de
+  bureau (onglet Code) : le serveur apparaît dans `/mcp` (seul, sans nom) dans une NOUVELLE session, « Connecter »
+  ouvre la page « Autoriser », et Claude lit les conversations ; le jeton du terminal est partagé avec l'app.
+- ⚠️ **Deux frictions du poste, pas du serveur, à écrire dans la FAQ du plugin (lot 10)** : PowerShell refuse
+  `claude.ps1` quand l'exécution de scripts est désactivée, et `claude.cmd` passe sans toucher à ce réglage ; Claude
+  Code n'a pas ouvert le navigateur tout seul, il a fallu copier le lien qu'il affiche ; dans l'app de bureau, un
+  serveur ajouté pendant une session n'apparaît qu'à la session suivante, et `/mcp <nom>` n'est pas une commande
+  (`/mcp` seul ouvre le panneau, avec « Connecter »).
+- ⏳ **Reste à essayer** : une adresse Google jamais vue qui crée son espace ; le même serveur en connecteur dans
+  claude.ai ; et une connexion qui dure plus d'une heure (le renouvellement du jeton, et le jaune des deux
+  renouvellements simultanés).
+
+Spec `docs/superpowers/specs/2026-10-03-oauth-mcp-design.md`, plan `docs/superpowers/plans/2026-10-03-oauth-mcp.md`.
+La technique durable est dans `documentation.md` (§ 7, « L'OAuth devant `/mcp` »).
+
+- ✅ **2a écrite (tâches 1 à 8)** : migration 0204 (`oauth_autorisations`, `oauth_codes`), le noyau `src/oauth/`, la
+  garde de `/mcp` qui accepte un jeton `mbo_`, le 401 qui annonce la connexion, les routes `/oauth/*` et le
+  consentement (`src/http/oauth.ts`, `src/http/oauth-consentement.ts`), la purge `retention-oauth`, le script
+  `npm run oauth:fiches` (les deux fiches de Claude relues CONFORMES le 2026-10-03). Tests unitaires et auto-attaque
+  verts ; les tests d'intégration du magasin ne tournent qu'en CI.
+- ✅ **Relecture indépendante de 2a : aucun rouge.** Corrigés dans le lot, chacun avec son test vérifié dans les deux
+  sens : une réponse de Claude signée d'une personne restait comptée comme humaine par l'analyse et comme une
+  sollicitation par le bilan du contact ; la ressource d'un renouvellement n'était tenue par aucun test ; deux
+  clés étrangères de 0204 sans index ; une phrase fausse de `documentation.md` sur les 5xx de `/oauth/token`.
+- 🟡 **Ouverts** : deux renouvellements SIMULTANÉS du même jeton révoquent l'autorisation (à observer à l'essai
+  réel, une fenêtre de grâce sinon) ; un code présenté deux fois est refusé sans révoquer l'autorisation (OAuth 2.1
+  le recommande) ; chaque jeton d'accès neuf coûte une unité du budget des empreintes inconnues de chaque copie ;
+  la liste « Applications autorisées » montre encore celles d'un admin rétrogradé (elles ne marchent plus).
+- ✅ **2a déployée le 2026-10-03** (`0a399f9a`) : 0204 appliquée à 16 h 27 UTC et relue en base, `mba-api` et les
+  deux workers reconstruits, NPM rechargé, les trois portes à 200, `npm run oauth:fiches` CONFORME. CI verte, et un
+  commit faussé jetable (lecteurs « humain » et rejeu défaits) l'a vu rouge sur ces seuls tests.
+- ✅ **Les trois mesures, depuis l'extérieur** : `/.well-known/oauth-authorization-server` porte les en-têtes de l'API
+  (pas une 404 de NPM), sans `registration_endpoint` ; `POST /mcp` sans jeton rend 401 avec `www-authenticate` sur
+  `api.` et sans lui sur `mba.` ; `/oauth/token` rend 400 `invalid_grant` à un client en ligne de commande (Cloudflare
+  laisse passer). `/oauth/authorize` encodé comme Claude l'envoie : 302 vers `engageme…/autoriser` ; client inconnu :
+  400 en texte, sans redirection.
+- ⚠️ **NPM refuse en 403 (« openresty ») une adresse `http://` écrite EN CLAIR dans la requête** (sa protection contre
+  les exploits courants) : `?redirect_uri=http://localhost…` non encodé ne parvient jamais à l'API. Claude encode ses
+  paramètres, donc rien ne casse ; à confirmer à l'essai réel.
+- ⚠️ **Entre 2a et 2b, la page de consentement n'existe pas** : une connexion lancée depuis Claude arrive sur une 404
+  de la console. Personne n'est branché sur cette adresse sans clé, donc personne n'est touché.
+- ✅ **2b (la console)** : la page `/autoriser` (consentement par Google ou par la session de la console, admin
+  seulement, départ vers la seule adresse rendue par l'API et vers l'hôte affiché) et « Applications autorisées »
+  sur la page des clés. Relecture : aucun rouge ; corrigé dans le lot, une réponse sans la liste qui emportait toute
+  la page des clés. `npm run aide:charger` sur le VPS (la fiche `retrouver-qui-a-fait-quoi` a changé d'empreinte).
+- 🟡 **Ouverts de la 2b** : l'e2e « Google ne pose aucune session de la console » lit le stockage APRÈS le départ
+  vers Claude, donc il ne vérifie rien (à relire juste après le clic Google) ; la liste d'espaces recopie celle de la
+  page de connexion au lieu d'être partagée, et `fmt` est recopié dans la page des clés ; un admin à mot de passe
+  connecté sur un autre espace ne voit pas qu'il doit se reconnecter ; le bouton direct disparaît sans explication
+  si la lecture du nom de l'espace échoue ; la mention « Il sera créé avec votre adresse Google » reste affichée si
+  Google est éteint ; la page « Serveur MCP » ne parle encore que de la clé (à réécrire après l'essai réel).
+- ⏳ **L'essai réel qui clôt le lot** (spec, section 8) : Claude Code sur le poste de Julien, `https://api.messagingme.app/mcp`
+  ajouté SANS clé, Google, « Autoriser », lecture d'un fil ; révocation depuis la console, nouvelle connexion exigée ;
+  une adresse Google jamais vue qui crée son espace ; le même serveur en connecteur dans claude.ai.
+### LES ENVOIS D'UN BLOC SORTIS DU CÂBLAGE (DÉPLOYÉ LE 2026-10-03 À 11 H 46 UTC ; ESSAI RÉEL FAIT)
+
+- ✅ Refactor à comportement identique, plan `docs/superpowers/plans/2026-10-03-envois-de-bloc.md` : les quatre
+  envois WhatsApp d'un bloc de scénario vivent dans `src/workflow/envois-bloc.ts` (`cdcbde3e`), exécutés par leurs
+  tests. Relecture : 0 rouge, 4 jaunes, poussés après le déploiement (`e253e4a5`). **Essai réel fait le 3 à
+  16 h 38** (journal du 2026-10-03) : les quatre envois partis, journalisés et routés.
+- ⏳ **L'agent de Meta a envoyé son message de passage à un contact ABSENT de sa liste**, juste après un modèle
+  (essai du 3 à 16 h 38, une seule occurrence, journal du 2026-10-03). Deux essais suivants (16 h 53 et 16 h 54,
+  réponse au modèle par un bouton puis par du texte) : l'agent n'a rien dit. Occurrence isolée, à surveiller.
+
+### UN SEUL GESTE « POSER UNE ÉTIQUETTE » (DÉPLOYÉ LE 2026-10-04 ; ESSAI RÉEL FAIT ; JAUNES POUSSÉS)
+
+- ✅ Piste 6 du rapport d'architecture du 2026-10-02, plan `docs/superpowers/plans/2026-10-04-poser-une-etiquette.md`.
+  Cinq portes passent par `src/crm/poser-etiquette.ts` (`93e321b5`, CI verte job par job) ; l'outil MCP coupe à 64
+  et déclare, la fiche déclare. Relecture : 0 rouge, 7 jaunes, dont deux corrigés après le déploiement, les autres
+  au backlog (`todo.md`, piste 6). API et workers à 14 h 15 UTC.
+- ✅ **Essai réel du 4 vers 16 h 35 (Paris)**, relu en base : par Claude (aucune publication), par la fiche
+  (publiée), par un scénario lancé depuis l'Inbox (publiée) ; les trois dans Contenus > Étiquettes. Récit au journal.
+
+### UN POINT D'ENTRÉE PAR TYPE DE LANCEMENT DE SCÉNARIO (DÉPLOYÉ LE 2026-10-04 ; ESSAI RÉEL FAIT ; JAUNES POUSSÉS)
+
+- ✅ Piste 4 du rapport d'architecture du 2026-10-02, plan `docs/superpowers/plans/2026-10-04-lancements-de-scenario.md`.
+  Les sept lancements passent par `src/workflow/lancements.ts`, comportement identique (`b6e674ac`, CI verte job par
+  job). Relecture : 0 rouge, 4 jaunes, poussés après le déploiement. API puis workers (12 h 31 UTC, avec l'accord de
+  Julien pour les jaunes pg-boss d'une session voisine qu'ils emportaient).
+- ✅ **Essai réel du 4 entre 14 h 42 et 14 h 45 (Paris)**, relu en base : Inbox, lien de test (graphe figé), mot-clé,
+  campagne vers un seul numéro ; chacun a fait la même chose qu'avant. Récit au journal du 2026-10-04.
+
+### UNE SEULE TRANSITION DE CONSENTEMENT (DÉPLOYÉ LE 2026-10-04 ; ESSAI RÉEL FAIT ; JAUNES POUSSÉS)
+
+- ✅ Plan `docs/superpowers/plans/2026-10-03-transition-consentement.md`, cadrage en trois rondes avec Julien.
+  Serveur `1c4df5ec` (API et deux workers à 8 h 45 UTC, CI verte job par job, intégration comprise), console
+  `a34c88c3` poussée APRÈS le `up` (l'écran annonce que la masse garde les STOP). Relecture : 0 rouge, 6 jaunes.
+- ✅ **Essai réel du 4 vers 10 h 52 (Paris)**, sur la fiche de Julien : désabonnement par la fiche ; action en masse
+  « Passer en opt-in » : STOP gardé, journal `affected 0, stopsGardes 1`, date du refus inchangée, l'écran a dit
+  « 1 fiche a gardé son STOP » ; réabonnement par la fiche : passé.
+- ✅ Décision de Julien après coup : un refus venu de l'API publique reste annoncé au client (pas d'exception à la
+  création ; aucun chemin ne crée une fiche directement `opted_out`, mesuré).
+- ✅ **Les six jaunes, poussés (`87931675`, CI verte job par job, intégration comprise)** : une phrase unique « qui
+  lève un STOP » (`quiLeveUnStop`) qui dit les quatre chemins, à l'écran, dans `features.md` et la fiche
+  `importer-mes-contacts` ; commentaires de création corrigés ; `applyEdits` rend `consentementChange` et la route
+  ne journalise qu'alors ; `tenant_id` reposé dans la CTE `ecrit` sur le paramètre que chaque écriture désigne ;
+  cas de table ajoutés, cas « gardé » des upserts ancrés sur une preuve. La console (texte seul) est publiée ; le
+  serveur part au prochain `up` (celui du lot des lancements), et la relecture de ce lot les couvre.
+- ⏳ **Même défaut ailleurs, relevé en passant** : `src/webhooks/flow-mapping.ts` journalise `contact.optin` dès que
+  `markOptedIn` rend un identifiant, même si le statut était déjà en place (un formulaire coché deux fois laisse deux
+  traces).
+
+### « TESTER LE SCÉNARIO » NE MARQUE PLUS LA CONVERSATION (DÉPLOYÉ LE 2026-10-03 ; ESSAI RÉEL FAIT)
+
+- ✅ Décision de Julien (« ne mets plus jamais un flag test sur ma conversation »), plan
+  `docs/superpowers/plans/2026-10-03-lien-de-test-sans-marquage.md`, `0c4e2099` ; ses jaunes (`70613288`, dont la
+  relecture du détenteur avant de confier) en production sur les workers depuis 15 h 50 UTC. La conversation de
+  Julien a été démarquée à la main le 3.
+- ✅ **Essai réel du 3 à 19 h 40 (Paris)** : test lancé par le lien, message rapide, réponse en texte libre
+  (« Tu es là MBA ? ») : le parcours s'arrête, la conversation est rendue à l'agent, `agent_event` accepté, l'agent
+  répond 23 s plus tard. Conversation non marquée.
+- ✅ **Modèle PUIS texte libre : l'agent répond aussi** (23 h 01, après « Reprendre la main »). Deux refus de Meta
+  plus tôt dans la soirée restent inexpliqués (`todo.md`). **Parade pour la démo du 7 : « Reprendre la main » sur la
+  conversation juste avant de lancer le scénario.**
+- ⏳ **Le mot du lien reçu par l'agent de Meta** (vu le 3 à 19 h 38, revu cinq fois le 6 sur SANDBOX avec Geoffrey) :
+  si l'agent tient la conversation, Meta lui donne le mot `test-…` ; le test lui reprenait le fil en plein tour, et
+  son message de passage tombait 13 à 23 s plus tard au milieu du scénario. Correctif du 6 (`src/mba/lien-de-test.ts`) :
+  consigne « Je lance le test. » par `agent_event`, attente de son écho (40 s au plus, hors du job du webhook, l'écho
+  passant par la même file groupée par contact), puis lancement. **Essai réel dû** : lien de test sans « Reprendre la
+  main », conversation chez l'agent ; lire `lien-de-test:` dans le journal du worker. ⚠️ Inconnue à mesurer : l'agent
+  peut répondre DEUX fois (au mot, puis à la consigne) ; le second tour serait alors coupé, et son message de passage
+  reviendrait. Si c'est le cas, retirer la consigne et garder l'attente seule.
+
+### DOUBLE WORKER, BANCS, CLÉ D'IDEMPOTENCE, POOLS (TOUT DÉPLOYÉ LE 2026-10-03 ; ESSAI RÉEL FAIT)
+
+Plan `docs/superpowers/plans/2026-10-02-deux-workers-et-banc-deux-api.md`, décidé par Julien le 2026-10-02.
+
+- ✅ **En production** : `mba-worker` au rôle `principal` (7 files : webhooks, campagnes, scénarios, tours d'agent,
+  opt-out, signaux), `mba-worker-analyse` au rôle `analyse` (3 files : `analyze-conversation`, `push-analysis`,
+  `hubspot-catchup`). Les 10 ensemble, sans recouvrement, lu dans leurs journaux de démarrage.
+- ✅ **Un battement par rôle**, depuis deux conteneurs distincts, relu en base après 0202 ; l'ancienne ligne
+  `worker` a disparu. `/ops` expose `workers`, la console une ligne par rôle (et lit encore l'ancienne forme).
+- ✅ **Déployé en deux temps** (principal, puis analyse) à cause du plafond de 15 sessions du pooler : aucun
+  `EMAXCONNSESSION`. Cinq portes publiques à 200.
+- ✅ **Le banc à deux copies d'API** est vert sur ses trois propriétés (clé acceptée des deux côtés, clé révoquée
+  refusée par les DEUX, plafond par espace GLOBAL : 54 acceptés contre 76 refusés sur 130 tirs, plafond 60). Il a
+  été DÉMONTÉ du VPS le 2026-10-03 ; la recette pour le remonter est en tête de `scripts/banc-deux-api.mts`.
+- ✅ **L'ESSAI RÉEL EST FAIT** : le message WhatsApp de Julien traité par le principal (webhooks à 9 h 50 UTC le
+  2026-10-03), son analyse par le worker d'analyse (job pris à 10 h 54 min 57, fini à 10 h 55 min 24 : sentiment
+  négatif, SAV, satisfaction 3/10, urgence 6/10, « escalader »), puis poussée vers HubSpot. L'analyse ne part qu'après
+  25 minutes SANS message sur la conversation (`CONVERSATION_INACTIVITY_MS`), à compter du DERNIER message.
+- ✅ **Les cinq jaunes de la relecture** : corrigés (`8b37a1ba`) et déployés le 2026-10-03 à 10 h 18 UTC (les deux
+  workers seulement). Vérifié en production : le principal rejoue les agrégats au démarrage, l'analyse non ; les
+  attentes de pool arrivent sous `worker-principal` et `worker-analyse` ; deux battements frais ; portes à 200.
+- ✅ **Le second banc à deux copies d'API a tourné le 2026-10-03** (`scripts/banc-deux-api-2.mts`, démonté
+  ensuite) : idempotence entre copies, arrêt propre, webhooks sous pression de pool et connexions par copie
+  VERTS ; l'arrêt BRUTAL laissait la clé d'idempotence « en cours » 24 h dans 3 cas sur 5.
+- ✅ **La clé coincée est corrigée et DÉPLOYÉE** (`0c476865`, le 2026-10-03 à 11 h 46 UTC, avec la migration 0203
+  appliquée avant et le lot `cdcbde3e` d'une session voisine dans le même `up`) : bail de 5 min et jeton de garde.
+  Relue sans rouge, CI verte job par job, et l'essai réel fait au banc (clé coupée en 409, puis 201 une fois le bail
+  passé, aucune orpheline lancée). Ses deux jaunes de comportement sont traités et DÉPLOYÉS (`f74ebb59`, `mba-api`
+  seul, le 2026-10-03 à 14 h 59 UTC) : création et scellement dans UNE transaction, bail limité au même corps.
+  Relus sans rouge, prouvés en base (atomicité comprise) et rejoués au banc, zéro campagne orpheline.
+- ✅ **Les pools sont dimensionnés par copie, et DÉPLOYÉS** (`f4eec9f2`, `mba-api` recréé à 15 h 49 UTC, `DB_POOL_MAX=10` relu dans le conteneur ; 2026-10-03) : le « Pool Size » du pooler Supabase monté de 15 à 30
+  par Julien (mesuré : 31 connexions simultanées, contre 16), chaque service fixe son `DB_POOL_MAX` dans le compose
+  (API 10, principal 8, analyse 3), et `tests/budget-pooler.test.ts` refuse tout compose qui dépasse le budget.
+- ⏳ **Ce qui reste avant d'autoriser l'autoscaling** : le répartiteur et la capacité, **sur Scaleway** (décision de
+  Julien du 2026-10-03 : pas de seconde copie fixe sur le VPS, où des copies ne créeraient aucune capacité ; le
+  répartiteur viendra avec les conteneurs serverless, minimum 1 copie). Deux faits mesurés pour ce jour-là : sur
+  la base Micro actuelle, le budget du pooler plafonne à DEUX copies d'API de 8 connexions (27 avec les workers,
+  la limite exacte des 80 % ; `tests/budget-pooler.test.ts` refuse au-delà) ; et le VPS aurait eu la place (16,8 Go
+  libres, 160 Mo par copie), l'API n'ayant qu'une tâche périodique, déjà prévue pour plusieurs copies. La liste
+  complète est dans `docs/ARCHITECTURE-CIBLE.md` (en tête, et §10).
+- ✅ **Plus de 502 durable après un `up`** (2026-10-03) : les quatre routes de `mba.` (hôte NPM 21) nomment `mba-api`
+  par une variable ; essai réel, 4 à 5 s de 502 pendant le redémarrage puis 200, sans recharger NPM.
+- ✅ **La migration 0060 vérifiée** (2026-10-03) : ancien nom de `0062_email.sql`, SQL identique, en `if not exists`.
+
+### PROCHAIN : CE QUI RESTE DE L'AUDIT DE PERFORMANCE DU 2026-10-02 (`docs/prive/AUDIT-PERFORMANCE-COMPLET-2026-10-02.md`)
+
+Déjà fait : la preuve à deux copies (deux bancs), le budget de connexions (test, Pool Size 30), les deux workers et
+leur battement par rôle, le cache Cloudflare du widget, le document de bascule. Ce qui reste, dans l'ordre recommandé
+à Julien le 2026-10-03 (il a demandé de compacter avant de commencer le 1) :
+1. ✅ **La latence HTTP par route** (2026-10-03) : déployée à 20 h 33 UTC (`22d01fe4`, migration 0205), essai réel
+   fait en base (dix lignes du vrai trafic, aucune adresse réelle). Les jaunes de sa relecture sont poussés
+   (`b1d3bc8a` : l'abandon par le client mesuré en 499, le rouge réservé aux webhooks et lectures de l'Inbox, un
+   plafond de lignes, l'écriture triée, un vidage final), déployés à 20 h 47 UTC (`f7e9acd0`) ; l'écriture a continué à
+   travers le redémarrage. Reste à Julien : ouvrir `/ops` et voir la carte. Le reste du § 11 de l'audit (CPU, mémoire et redémarrages par conteneur, connexions côté pooler
+   et Postgres, durée des gros balayages, volume des fichiers en base) n'est pas fait.
+2. ✅ **Le banc des trente espaces** (2026-10-03, recadré par Julien : 30 espaces de 2 personnes et 10 conversations,
+   pas un client à 30 agents) : `charge` vert avec une marge énorme (p95 de l'Inbox 54 ms pour un seuil de 800, zéro
+   attente du pool de l'API, 600 messages du pic écrits en 366 ms au pire) ; `crash` et `arret` sans perte ni doublon.
+   Deux défauts trouvés, CORRIGÉS ET DÉPLOYÉS le 2026-10-04 (`933557b7`, puis ses jaunes) : le message en cours lors
+   d'un crash repart en 29 s (contre 932), une rafale de 120 messages passe en 8,6 s (contre 67). Ce qui reste est
+   dans `todo.md`. Les jaunes (`59ec71e2`) sont partis avec le redémarrage des workers sur `b6e674ac` ; relu en base
+   juste après (battement à 20 s sur les dix files, rejeu à 10 s sur `webhook`, moniteur à jour). Le banc a été
+   DÉMONTÉ du VPS le 2026-10-04 ; la recette pour le remonter est en tête de `scripts/banc-trente-espaces.mts`.
+3. ✅ **Au plus DIX clés d'API actives par espace** (Julien a remonté le chiffre de 5 à 10 le 2026-10-04) : la
+   onzième refusée en 409, la clé du relais de l'agent de Meta et les révoquées non comptées, le bouton grisé dans
+   la console. Mesuré avant : un seul espace a des clés (2 actives), personne n'est au-delà. Test d'intégration
+   prouvé dans les deux sens sur un Postgres jetable. Relu sans rouge, commité en `92652e5c`, CI verte job par job,
+   `mba-api` seul déployé le 2026-10-04 à 13 h 38 UTC, fumée verte, essai réel en production fait (sans écriture).
+4. ✅ **Le lot observabilité** (2026-10-04, décidé par Julien) : ferme les deux critères de sortie non tenus de l'audit.
+   Alerte Telegram quand un worker se tait OU redémarre en boucle (surveillance dans l'API) ; durée, lignes, échecs et
+   tours sautés de chaque tâche de fond (migration 0207, carte de `/ops`) ; octets en base, fichiers compris
+   (`GET /ops/stockage`, carte de `/ops` ; mesuré le 2026-10-04 : base de 45 Mo, dont 10 Mo pour 28 images RCS) ; les
+   six passages « deux copies au plus » d'`ARCHITECTURE-CIBLE.md` ; le compteur « n sur 10 » des clés. Relu sans
+   rouge, ses jaunes réglés dans le lot. EN PRODUCTION depuis le 2026-10-04 à 16 h 51 UTC (`e6711818`, migration 0207
+   appliquée avant le `up`, CI verte job par job, e2e complet vert). Essai réel fait : `mba-worker-analyse` arrêté à
+   16 h 53, alerte Telegram à 16 h 56 min 37 s, retour à 16 h 57 min 40 s, les deux acceptés par Telegram (verrous lus
+   en base). Ce qui reste est dans `todo.md`.
+5. **mm-hubspot sur sa propre base : décidé par Julien le 2026-10-04, CHEZ SCALEWAY, EN PREMIER**, comme répétition
+   quelques jours avant le jour J de Messaging Me, jamais le même jour (`docs/ARCHITECTURE-CIBLE.md` §8 et §10 étape 0).
+   Préalable, en lot à part : remplacer la lecture cross-schéma de `mmhs` (`getHubspotPortal`) par un appel au
+   connecteur ; sans lui, l'interrupteur HubSpot affirmerait en silence qu'aucun portail n'est relié.
+6. **Les médias RCS hors de Postgres : APRÈS la bascule Scaleway**, en lot séparé (décidé le 2026-10-04, §6). Leur
+   volume est suivi dans `/ops` (10 Mo aujourd'hui, rouge à 500 Mo).
+7. ✅ **Les quotas par espace de l'API publique : tranchés par Julien le 2026-10-04, EN PRODUCTION le 2026-10-05**
+   (`fb070954`, 0208 appliquée avant le `up` de l'API, essai réel concluant : récit au journal ; relus sans rouge, usage
+   réel mesuré avant : au plus 4 destinataires par jour ; restes dans `todo.md`). Par espace et par
+   jour (minuit, heure de Paris) : 2 000 envois et 20 000 fiches écrites par l'API, réglables par espace depuis
+   `/ops`, refus 429 lisible ; lectures et MCP sous le plafond d'appels ; compteur en panne, l'appel passe avec une
+   alerte (§13.1).
+Le reste de l'audit (équité des campagnes, agrégats, Redis, temps réel, troisième worker) attend un seuil mesuré.
+
+### L'AGENT DE META POUR LA DÉMO DU MERCREDI 7 OCTOBRE (TROIS LOTS DÉPLOYÉS LE 2026-10-02 ; ESSAIS RÉELS DUS)
+
+Le fonctionnel est dans `features.md` (section « MBA, le répondeur de Meta » et onglet « Outils »), le récit dans le
+journal du 2026-10-02, les restes dans `todo.md`. Ce qui reste EN COURS, ce sont les essais réels, faits par Julien :
+
+- ✅ **Le message de passage en français** : déployé (console seule).
+- ⏳ **Le plafond** (Activation, en bas) : poser un petit plafond en jetons, écrire depuis un téléphone, vérifier ce
+  que Meta documente (au plafond, l'agent finit son tour puis passe la main à un humain), puis le retirer.
+- ⏳ **Le message de passage** : demander un humain depuis un téléphone, et lire le message reçu (en base :
+  `conversation_messages.origin = 'mba'`). Le bac à sable ne le montre pas (mesuré le 2026-10-02).
+- ⏳ **La carte « Agent de Meta »** de Performance Lab > Synthèse : la lire sur l'espace MessagingMe.
+- ✅ **Les outils MCP** : ÉPROUVÉS le 2026-10-02 au soir sur le numéro MessagingMe. Microsoft Learn (exemples de
+  code, `ok` en 0,9 s), puis le serveur MCP de Messaging Me : `get_contact`, le numéro posé par la console
+  (`contact` / `wa_id`), a lu la fiche de Julien ; une question sur un autre numéro a été refusée par l'agent,
+  sans appel. Trois défauts trouvés en route, corrigés et déployés le soir même (journal du 2026-10-02).
+- ⏳ **Une compétence « Périmètre »** à poser sur l'agent (Julien) : périmètre = l'activité ET tout ce que ses
+  outils permettent, sinon il répond à tout (il a donné du code Azure de mémoire quand l'outil a échoué). Puis
+  retirer l'outil Microsoft.
+- ✅ **La règle unique du catalogue d'outils** (plan `docs/superpowers/plans/2026-10-02-catalogue-regle-unique.md`) :
+  déployée dans la nuit du 2 au 3 octobre, **essai réel fait le 3 à 12 h 26** (journal du 2026-10-02 et 03) :
+  `get_contact` proposé, réglé, publié puis appelé avec succès par l'agent de Meta. ⚠️ Effet voulu mais à savoir : un
+  appel de connecteur dont le système est en brouillon ne s'active plus, donc ne s'essaie plus au bac à sable.
+- ⏳ **Remplacer la clé `mba_HZak…`** (écrite en clair dans une conversation le 2026-10-03) : elle sert À LA FOIS au
+  connecteur « Serveur Messaging ME MCP » de l'espace de démo et à Claude Code (`~/.claude.json`, serveur `mba`). Les
+  deux se changent ensemble, sinon ils cassent ensemble.
+- ⏳ **Après le lot 1 du serveur MCP (autre session)** : l'annonce des douze outils change (annotations, bornes), donc
+  le premier rafraîchissement du connecteur marquera `get_contact` modifié et l'éteindra pour l'agent de Meta. Le
+  revalider, puis republier l'agent.
+
+### WIDGET WHATSAPP (LOTS 1 À 5 DÉPLOYÉS DANS LA NUIT DU 2 AU 3 OCTOBRE ; ESSAI RÉEL DÛ)
+
+Le fonctionnel est dans `features.md` (section « Widget WhatsApp »), la technique dans `documentation.md` (§4.1 et
+bloc « Widgets »), le récit dans le journal du 2026-10-02 et 03, les jaunes ouverts dans le plan
+(`docs/superpowers/plans/2026-10-02-widget-whatsapp.md`, « Ce qui reste »). Ce qui reste EN COURS :
+
+- ⏳ **Le passage sur l'écran** (Julien) : créer un widget, l'éteindre, copier la balise, modifier un widget dont le
+  scénario a été supprimé. Personne n'a encore cliqué.
+- ⏳ **L'essai réel qui clôt la feature** : ✅ la balise sur un vrai site (l'accueil de la vitrine depuis le
+  2026-10-03, widget `ndabjvs20vc4`, servi : bulle, panneau du QR au clic au bureau, appui direct vers WhatsApp sur
+  téléphone) ; ✅ la bulle grisée constatée en production sur un espace SANS numéro (`kh532t8hq6nr`, « Test DIDWA
+  claude code ») ; reste un message depuis un vrai téléphone, la conversation marquée `widget-<code>`, le devenir
+  qui prend la main, la bulle grisée sur un numéro DÉLIÉ, puis `create_widget` depuis Claude Code avec une clé
+  `mcp:write`.
+- ⏳ **Trois décisions de Julien** : un droit à part pour les widgets (`mcp:write` peut aujourd'hui changer ce que la
+  bulle affiche sur le site public ; au déploiement, les clés qui le portaient étaient toutes dans l'espace
+  SANDBOX) ; une longueur minimale de phrase (« Bonjour » passe sur un espace sans historique) ; les bornes posées au
+  lot 4 (nom 80, phrase 300, libellé 60).
+
+### PANNEAU DÉTAIL DE L'INBOX (DÉPLOYÉ LE 2026-09-29, ESSAI RÉEL DÛ)
+
+Spec `docs/superpowers/specs/2026-09-28-inbox-panneau-detail-design.md`. Le journal `conversation_evenements`
+(0192) s'écrit dans la même requête que chaque changement de `PgInboxStore`. En production, la frise ne porte
+encore que sa ligne d'amorçage (la seule assignation en cours sur 17 conversations).
+
+🔴 **L'ESSAI RÉEL, PAR JULIEN** : sur une conversation de l'espace MessagingMe, assigner, réassigner,
+désassigner, prendre puis rendre à l'agent de Meta, archiver ; relire la frise (qui, par qui, quand, dans
+l'ordre) ; puis vérifier qu'un message du contact sur la conversation archivée ajoute « rouverte ».
+
+### LES DEUX ÉCRANS D'AGENT : EN-TÊTE ET MENU EN COLONNE (DÉPLOYÉ LE 2026-09-23, ESSAI RÉEL DÛ)
+
+Neuf tâches, relues une par une puis en bloc. Les deux écrans de réglage d'agent portent un en-tête qui
+IDENTIFIE l'agent (logo, nom, état, ce qui manque, messages échangés sur 30 jours) et leurs onglets sont
+descendus en colonne. Deux routes de comptage neuves, sans migration. Détail dans
+`docs/superpowers/plans/2026-09-23-refactor-ecrans-agents.md`.
+
+🔴 **L'ESSAI RÉEL, QUATRE POINTS, ET LE TROISIÈME NE TOMBERA PAS JUSTE.** Ouvrir les deux écrans sur un
+agent complètement réglé ET sur un agent vide : le bon logo de fournisseur ; le nombre d'étapes restantes
+comparé à ce que les onglets contiennent vraiment ; le chiffre de messages comparé au Performance Lab ; et
+la colonne sur un téléphone, où elle doit redevenir la barre horizontale.
+
+⚠️ **L'écart attendu sur le chiffre** : l'en-tête compte TOUS les messages des conversations tenues, envois
+de campagne compris, là où le Performance Lab exclut les modèles sortants. C'est le périmètre arbitré, la
+légende l'avoue. Ce qu'on vérifie est le SENS et l'ORDRE DE GRANDEUR de l'écart, pas qu'il soit nul.
+
+⚠️ **Un arbitrage attend Julien** : la pastille de l'en-tête montre l'état du NUMÉRO, pas celui de l'agent.
+Sur un numéro sain dont l'agent est éteint, l'écran affiche un point vert à côté d'une ligne qui dit que
+personne ne répond. Les textes ont été corrigés, le choix reste ouvert. Cf. `todo.md`.
+
+### API PUBLIQUE COHÉRENTE : LOTS 1 À 6 (DÉPLOYÉS LE 2026-09-25 DANS LA NUIT, ESSAIS RÉELS DUS)
+
+Spec `docs/superpowers/specs/2026-09-24-api-publique-coherente-design.md`, plans
+`docs/superpowers/plans/2026-09-24-api-v1-lot*.md`. Tout est en production (API sur le VPS, console chez
+Vercel), migrations 0172 à 0177 appliquées avant le code et relues en base. Le récit : journal technique,
+2026-09-24 et 25. ⚠️ `POST /v1/messages` n'existe plus, c'est `POST /v1/messages/whatsapp` (on a cassé
+proprement, aucun intégrateur n'était branché).
+
+🔴 **LES ESSAIS RÉELS, À FAIRE PAR JULIEN** (une vraie clé d'API, droits Écrire + Lire les contacts et
+Envois, le numéro d'essai) :
+1. **Lot 1** : `POST /v1/contacts` avec un `externalId`, puis la fiche dans le mini-CRM porte « Identifiant API ».
+   ⚠️ Depuis le 2026-09-26, un champ ou une étiquette envoyés dans l'essai doivent déjà exister dans l'espace.
+2. **Lot 2** : `POST /v1/sends` cible template avec `idempotencyKey` dans le corps ; rejouer la même clé
+   avec un autre corps rend 422 `idempotency_key_reused` ; `GET /v1/sends/{id}` rend le rapport.
+3. **Lot 3** : les six gestes du plan du lot 3 (§ « Essai réel »), dont un RCS vers un appareil SANS RCS :
+   l'échec doit apparaître dans Sécurité > Journal des erreurs, et le second envoi rendre 422 `rcs_unreachable`.
+4. **Lot 4** : `GET /v1/templates`, `/v1/scenarios`, `/v1/rcs-messages` avec la clé ; relire la page
+   Developers > Documentation API.
+5. **Lot 5** : trois conversations d'essai (suivi de commande, retour, achat), chacune classée juste dans le
+   Performance Lab. La tâche 7 du lot 5 (le récit dans la doc) suit cet essai.
+6. **Lot 6** : brancher un outil dans Paramètres > Intégrations sur un espace d'essai et regarder arriver les
+   signaux ; relire la fiche d'aide « retrouver qui a fait quoi », réécrite (texte lu par les clients, elle
+   part au prochain `npm run aide:charger`).
+
+🟡 **LES DÉCISIONS QUI ATTENDENT JULIEN** (le code n'y a pas touché) :
+- un scénario « RCS puis attente » est accepté par l'API alors que la console le refuse (`ouverture-api.ts`) ;
+- une clé neuve (externalId) est rattachée à la fiche même quand le message est ensuite refusé ;
+- un `{{x}}` sans valeur part VIDE dans un RCS de l'API (un template, lui, écarte en `missing_variable`) ;
+- `POST /v1/messages/rcs` prend le fil en local, mais pas chez Meta quand l'agent de Meta le tient ;
+- chaque repli WhatsApp d'un bloc RCS de scénario écrit une ligne « RCS non délivré » dans le journal ;
+- `null` sur un champ de destinataire est refusé (et non lu comme une absence) ;
+- une panne de Meta rend 422 sans `code` (un code dédié élargirait la table des codes) ;
+- un événement trop vieux pour l'outil est écarté sans compteur visible, et un refus partiel répété de l'outil
+  écrit une ligne par job dans le journal (plafond à décider).
+
+### HUBSPOT MASQUÉ SANS PORTAIL (LOT 9, DÉPLOYÉ LE 2026-09-23, ESSAI RÉEL DÛ)
+
+Lot 9 du plan `docs/superpowers/plans/2026-09-23-liste-julien.md`, RÉDUIT à ses deux écarts réels après
+inventaire (arbitrage de Julien du 2026-09-23).
+
+- 🔴 **L'INVENTAIRE A MONTRÉ QUE LE LOT N'ÉTAIT PAS CE QUE LE PLAN DÉCRIVAIT**, et c'est le vrai résultat de
+  cette étape. Sur les quatre fonctions à masquer : la source de campagne l'était **déjà**, mais sur le
+  MAUVAIS signal ; le déclencheur « étape de deal » était **grisé** et seulement après sélection ; la
+  « mention injoignable dans HubSpot » n'est **pas un écran** mais une écriture du balayage de relance ; et
+  la quatrième (l'action du bloc) n'existe pas encore.
+- ✅ **Écrit et vert** : les deux écrans se masquent désormais sur le **lien du portail**, pas sur
+  l'interrupteur `hubspotListsEnabled`. Un client qui DÉLIE son portail gardait son interrupteur allumé,
+  donc la source restait offerte et ne menait nulle part.
+- ⚠️ **Aucune migration.** Le lien du portail est une lecture LOCALE (schéma `mmhs` de la même base), jointe
+  aux réglages, donc aucun aller-retour réseau sur une route que plusieurs écrans appellent.
+- 🔴 **`undefined` VEUT DIRE « ON NE SAIT PAS », ET ON MONTRE.** Une API antérieure à ce lot ne rend pas le
+  drapeau : le traiter comme « pas connecté » ferait DISPARAÎTRE la source d'un client qui l'a, pendant
+  toute la fenêtre entre le déploiement de la console et celui de l'API. Entre les deux erreurs possibles,
+  une seule se rattrape d'un clic. Tenu par un cas e2e.
+- ⚠️ **CE QUI RESTE DEHORS, PAR DÉCISION DE JULIEN** : `flagUnreachable` (le balayage écrit « injoignable »
+  dans HubSpot) n'est neutralisé que quand l'INSTANCE n'a pas de connecteur, pas quand un ESPACE n'a pas de
+  portail. Le neutraliser par espace toucherait un chemin que la production emprunte. Consigné, pas oublié.
+- 🔴 **ET LA SECONDE MOITIÉ DU LOT VIT DANS UN AUTRE DÉPÔT** : l'action « mettre à jour un champ HubSpot »
+  demande une route générique d'écriture de propriété dans `mm-hubspot`, seul détenteur du jeton. Non faite.
+- 🔴 **L'ESSAI RÉEL QUI CLÔT LE LOT** : un espace SANS portail ne voit ni la source HubSpot d'une campagne,
+  ni le déclencheur « étape de deal ». Un espace connecté les voit toujours.
+
+### GRILLE DE PRIX UNIQUE DANS /ops (LOT 8, DÉPLOYÉ LE 2026-09-23, ESSAI RÉEL DÛ)
+
+Lot 8 du plan `docs/superpowers/plans/2026-09-23-liste-julien.md`.
+
+- ✅ **Écrit et vert** : une seule grille de prix pour tous les espaces, réglée dans `/ops`. L'écran « Vos
+  prix » des Paramètres du client disparaît. Les six champs n'ont PAS été réécrits, ils vivent désormais
+  dans `web/components/GrillePrixChamps.tsx`, partagés par les deux surfaces.
+- ✅ **MIGRATION 0168 APPLIQUÉE le 2026-09-23 à 11 h 36, AVANT le `up`**, et relue en base : `grille_prix`
+  porte UNE ligne, reprise exacte (marge 100, service 2,48 cts, franchise 1000, RCS 6,00 et 8,00), avec
+  `modifie_par = 'migration 0168'`. La requête de contrôle rend « 1 grille distincte, 1 espace », donc le
+  `raise exception` ne pouvait pas se déclencher et personne ne voit un chiffre bouger.
+- 🔴 **CE QU'ELLE GARANTIT.** Elle CRÉE `grille_prix`, un singleton structurel
+  (`id boolean primary key check (id)` : il ne PEUT pas y avoir deux grilles), et reprend la valeur actuelle.
+  Elle REFUSE plutôt que d'inventer si les espaces divergent ; mesuré avant de l'écrire, un seul espace
+  porte des prix, donc ce refus ne peut pas se déclencher. Elle ne touche à AUCUNE colonne existante, donc
+  le retour arrière reste possible jusqu'au dernier moment.
+- 🔴 **CE LOT RETOURNE UNE DÉCISION ÉCRITE SIX JOURS PLUS TÔT, et c'est dit dans le code.** `src/stats/prix.ts`
+  portait depuis le 2026-09-17 : « par ESPACE et pas en configuration globale, un grand compte ne se facture
+  pas comme un petit ». Cette raison n'a pas disparu, elle a été pesée contre « le client n'a pas à fixer ce
+  qu'on lui facture » et elle a perdu (arbitrage de Julien, question posée explicitement). Le jour où un
+  grand compte demandera son prix, ce sera une SURCHARGE par espace à rouvrir, pas un oubli à réparer.
+- ⚠️ **LES SIX COLONNES DE `tenant_settings` RESTENT EN PLACE, mortes**, et leur `drop` est une migration
+  SUIVANTE, à passer APRÈS le déploiement (la marche à suivre est dans [todo.md](todo.md)).
+- ⚠️ **FENÊTRE VERCEL / API, et elle est réelle ici** : la carte `/ops` appelle une route que la production
+  n'a pas encore. Elle se MASQUE dans ce cas, avec une phrase qui dit pourquoi, et un e2e tient ce
+  comportement : un formulaire de zéros ferait croire que tout est gratuit, pour tous les espaces.
+- 🔴 **L'ESSAI RÉEL QUI CLÔT LE LOT** : changer un prix dans `/ops`, avec sa phrase, et le voir dans le coût
+  par engagement de DEUX espaces différents. C'est le seul essai qui prouve « une grille pour tous ».
+- ✅ **La devise est tranchée** (Julien, 2026-09-23) : tous les WABA sont en euros, aucune garde, aucune
+  conversion. Ce qui rendrait la question vivante est consigné dans [todo.md](todo.md).
+
+### PUBLICITÉS CLICK-TO-WHATSAPP (LOTS 1 À 3 DÉPLOYÉS ; UNE VRAIE CAMPAGNE DIFFUSE DEPUIS LE 2026-09-29)
+
+Spec `docs/superpowers/specs/2026-09-22-pubs-ctwa-design.md`, plan
+`docs/superpowers/plans/2026-09-22-pubs-ctwa-lot1-capter.md`.
+
+- ✅ **Lot 1 « Capter », DÉPLOYÉ le 2026-09-23 vers 9 h 15**, par une session qui n'en avait écrit aucune
+  ligne : arrivées publicitaires (`arrivees_pub`, `ctwa_clid` compris) et tarifs de Meta (`tarifs_meta`)
+  gardés à la réception, 72 h gratuites exclues de toute lecture de coût, `ctwa_clid` effacé par la purge
+  RGPD. Migration 0163 appliquée AVANT le `up` et relue en base point par point (le détail vit dans
+  [CLAUDE.md](CLAUDE.md) § Déploiement, il ne se recopie pas ici). Revue finale : 0 rouge.
+- ✅ **UNE VRAIE CAMPAGNE, créée depuis Messaging Me sur le compte publicitaire MessagingMe, diffuse depuis le
+  2026-09-29** : statut, dépense, clics, impressions, couverture et dépense jour par jour relus par le balayage ;
+  dépense recoupée avec le Gestionnaire de Meta par Julien le 2026-10-01, et vue dans le coût par engagement de
+  Performance lab.
+- ✅ **LE PREMIER CLIC RÉEL EST ARRIVÉ LE 2026-09-30 À 14 H 34 UTC** (lu en base le 2026-10-01) : une arrivée
+  rattachée à sa campagne, `en_standby` VRAI (l'agent de Meta tenait le fil, le contact étant sur sa liste), issue
+  `agent_meta` (la destination de cette publicité), et SANS `ctwa_clid`, que Meta n'a pas rendu (la spec le dit
+  « parfois vide »). ⚠️ Une seule arrivée : rien n'est encore mesuré sur un lead routé vers un SCÉNARIO.
+- ⚠️ **La moitié TARIFS se prouve, elle, SANS publicité** : `tarifs_meta` se remplit à chaque accusé ordinaire.
+  C'est la preuve la moins chère que le lot tourne vraiment en production, et elle se lit en base. Pas faite.
+- 🟡 **Les jaunes de la revue finale qui portent sur ce lot**, rapport
+  `docs/prive/REVUE-FINALE-2026-09-23-deploiement.md` : le puits de tarifs en queue de paramètres optionnels est
+  CORRIGÉ depuis (`PuitsAccuses`, nommé et obligatoire, vérifié dans les deux sens) ; l'interpolation SQL de
+  `horsEntreeGratuite` RESTE, ses deux arguments étant des expressions de la requête appelante et jamais une
+  valeur d'utilisateur ; `bilanContact` garde l'écart de gardes de livraison ANTÉRIEUR à ce lot et déclaré dans
+  le code, parce que le fermer CHANGE un chiffre que le client voit et demande donc sa propre mesure.
+- ✅ **Lot 2 « Connecter » : ÉPROUVÉ EN PRODUCTION le 2026-09-23.** Un vrai compte publicitaire d'un vrai
+  portefeuille est connecté depuis l'écran : nom, devise, fuseau et Page lus chez Meta. Migrations 0167
+  et 0169 appliquées avant leur `up`, relues en base point par point.
+- ✅ **SIX RELECTURES À FROID ONT SUIVI, ET TOUT EST DÉPLOYÉ** (2026-09-23 au soir, `cc3380ee`).
+  Quatorze constats bloquants au total, et **chaque relecture a trouvé un défaut que la précédente
+  avait créé** : c'est le vrai enseignement du lot, plus que les défauts eux-mêmes.
+- 🔴 **LE PLUS GRAVE ALLAIT DANS LE SENS INVERSE DE CE QU'ON CROYAIT CORRIGER.** Le dépôt par `/ops`
+  révoquait l'ancien jeton sans voir que `DELETE /me/permissions` porte sur le couple (application,
+  ENTITÉ) : dans l'usage normal de cette route, il désarmait le jeton NEUF et répondait 200 sur une
+  connexion morte. Le raisonnement était déjà écrit 400 lignes plus haut dans le même fichier, non lu.
+  On compare désormais les identités (`GET /me`) avant de retirer quoi que ce soit.
+- 🔴 **ET LA GARDE CENSÉE PROTÉGER TOUT ÇA A ÉTÉ PRISE EN DÉFAUT DEUX FOIS**, parce qu'elle lisait le
+  TEXTE d'un `if` : trois orthographes du même bug l'ont traversée, et une réécriture censée la
+  renforcer l'a AFFAIBLIE. La décision vit désormais dans `retirerAncienAcces`, exécutée contre un faux
+  client : 13 mutants sur 14 tués, le survivant étant équivalent. **Un test de source ne sait pas juger
+  une sémantique**, il épingle une orthographe.
+- 🔴 **LES DEUX MESURES DU PLAN SONT TRANCHÉES, ET LA TROISIÈME N'AVAIT PAS ÉTÉ POSÉE.** La liaison
+  Page / numéro ne se lit PAS chez Meta (le verdict `inconnu` est le cas normal, pas un repli) ; la
+  devise et le fuseau se lisent SANS la permission `MANAGE`, ce qui valide l'arbitrage de la
+  configuration ; et un jeton d'utilisateur système **ne déclare pas ses actifs**, il faut les
+  DEMANDER. Ce dernier point a coûté un écran qui annonçait « aucun compte » sur une connexion
+  parfaite : `brain/LEARNINGS.md`, 2026-09-23.
+- ✅ **LES DEUX GESTES QUI MANQUAIENT CÔTÉ JULIEN SONT FAITS** (points 4 et 5 de la spec § 11) : la Page
+  « Messaging Me » est liée au numéro, et le compte publicitaire porte un moyen de paiement actif.
+  ⚠️ La Page à choisir reste CELLE QUI EST LIÉE au numéro : c'est elle qui décide vers quel WhatsApp le
+  bouton ouvre la conversation.
+- 🔴 **L'ÉCRAN MONTRE DÉSORMAIS SI LE COMPTE PEUT DIFFUSER, et il ne prétend plus connaître la
+  liaison.** Le statut du compte et la présence d'un moyen de paiement sont lus EN DIRECT chez Meta,
+  parce que sans eux une pub se crée et ne diffuse jamais, et l'erreur arrive des jours plus tard.
+  `null` y veut dire « je n'ai pas pu demander », jamais « tout va bien ». La liaison Page / numéro,
+  elle, n'est plus demandée du tout : dix champs essayés, aucun ne la rend, et l'appel était condamné
+  à un 400 à chaque choix. L'écran emmène le client là où Meta l'affiche.
+- ⚠️ **MessagingMe ne peut pas connecter SON PROPRE compte par cet écran**, et c'est structurel chez
+  Meta : le portefeuille qui possède l'app ne peut pas être son propre client. D'où
+  `POST /ops/pubs/connexion/:tenantId`, qui dépose un jeton d'utilisateur système créé à la main après
+  l'avoir vérifié chez Meta. Notre propre espace est connecté ainsi depuis le 2026-09-23.
+
+#### Lot 3 « Router, créer, suivre » : DÉPLOYÉ LE 2026-09-24
+
+Plan : `docs/superpowers/plans/2026-09-23-pubs-ctwa-lot3-router-creer-suivre.md`. Livré en trois commits,
+comme le cadrage l'impose (routage, puis création, puis suivi), CI verte sur les trois.
+
+- ✅ **MIGRATION 0170 APPLIQUÉE LE 2026-09-24, AVANT le `up`** (`pubs_router` : `publicites`, `pubs_connues`, et
+  quatre colonnes de routage sur `arrivees_pub`), relue en base point par point juste après `migrate`. Le compteur qui fait foi est celui de `CLAUDE.md`.
+- ✅ **Le routage** : une fonction PURE, les six lignes du tableau de la spec, et une exception à la doctrine
+  du `standby` pour un seul cas, celui d'un lead dont on a DÉJÀ repris le fil chez Meta.
+- ✅ **La création** : tout est créé EN PAUSE chez Meta, chaque identifiant rangé dès qu'il arrive, et un
+  rattrapage qui supprime la campagne dès qu'une étape échoue. Publier allume l'automation AVANT Meta.
+- ✅ **Le suivi** : deux appels par compte toutes les quinze minutes, l'entonnoir, la pause et la reprise.
+- 🔴 **LE PLUS GROS DÉFAUT DU LOT ÉTAIT UNE RÉGRESSION, PAS UNE CAPACITÉ MANQUANTE**, et c'est une relecture
+  à froid qui l'a vu : le fil était pris à l'agent de Meta dès qu'un lead arrivait en `standby`, SANS
+  regarder s'il y avait quoi que ce soit à démarrer. Sur une publicité créée et pas encore publiée (son
+  automation naît éteinte), un clic PAYÉ recevait donc un silence de vingt-quatre heures, là où l'agent de
+  Meta répondait avant ce lot. Deux moitiés au correctif : la règle ne prend plus le fil sans automation
+  ALLUMÉE, et le handler REND le fil quand il l'a pris et que rien n'a finalement démarré.
+  ⚠️ **Aucun compte de relectures ni de rouges n'est écrit ici.** Cette ligne a annoncé « deux rouges »
+  pendant que les relectures suivantes en trouvaient d'autres : c'est un fait dérivable du `git log`, donc
+  il n'a pas sa place en prose. Le détail vit dans `.git/revue-finale-rapport.md`, hors versionnement.
+- ✅ **DÉPLOYÉ le 2026-09-24** : migration 0170 d'abord, relue en base point par point, puis l'API et le
+  worker, puis le contrôle des portes publiques, qui a de nouveau rendu 502 le temps d'un `nginx -s
+  reload`. La fenêtre Vercel est refermée : l'écran et les routes qu'il appelle sont en ligne ensemble.
+
+**Ce qui reste** : l'ESSAI RÉEL, qui seul clôt la feature, et qui appartient à Julien : première campagne
+MessagingMe créée depuis Messaging Me, un vrai clic depuis un téléphone, l'agent de Meta qui se tait pendant
+que le scénario parle, et les cinq mesures de la spec § 6. 🔴 Rien de ce qui précède ne le remplace : aucun
+mécanisme de ce lot n'a encore tourné sur de l'argent réel.
+
+⚠️ **Deux points que seule cette première campagne tranchera**, et qui sont écrits dans le code à l'endroit
+où on les changera : l'optimisation `CONVERSATIONS` pour un annonceur français, et l'emplacement de
+`page_welcome_message` dans la créa, sur lequel la documentation de Meta se contredit.
+  ⚠️ L'App Review, elle, n'est PAS bloquée : la démonstration se fait avec un portefeuille client, ce
+  qui est le cas d'usage réel.
+
+#### Brouillons et aperçu (2026-09-24, DÉPLOYÉ, ESSAI RÉEL DÛ)
+
+Demande de Julien du 2026-09-24. Plan : `docs/superpowers/plans/2026-09-24-pubs-brouillons-et-liste.md`.
+
+- **Migration 0171** (`pubs_brouillons`), purement additive, passée AVANT le `up`. L'état d'application ne
+  se recopie pas ici : il vit dans [CLAUDE.md](CLAUDE.md) § Déploiement, et la base tranche.
+- ✅ **L'aperçu** : l'annonce dans le fil, la conversation qui s'ouvre, puis la réponse. Un scénario est
+  déterministe, donc ses mots exacts sont lus dans le graphe PUBLIÉ ; l'agent de Meta compose, donc c'est
+  une illustration et l'écran le dit.
+- ✅ **Les brouillons** vivent dans leur table, pas comme un état de `publicites` : c'est
+  `publicites.campagne_id` qui est `not null` et porte l'unique par laquelle le routage retrouve la
+  publicité d'un lead payé, et un brouillon n'a aucune campagne chez Meta.
+- ✅ **La liste en trois groupes** (brouillons, en cours, achevées), « achevée » dérivé de la date de fin.
+  Au clic, budget initial, dépensé à date et clics en face.
+- 🔴 **L'ESSAI RÉEL QUI CLÔT CE LOT, et il appartient à Julien** : écrire un brouillon avec un visuel,
+  fermer l'onglet, revenir, le rouvrir et retrouver l'image, puis le transformer en publicité et voir le
+  brouillon disparaître.
+
+### 🔴 OUTILS MAISON DE L'AGENT DE META (LOT 2 DÉPLOYÉ ET ÉPROUVÉ ; LOTS 3 ET 4 ÉCRITS LE 2026-09-22)
+
+Spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`, plan
+`docs/superpowers/plans/2026-09-21-outils-maison-mba.md` (4 lots, 20 tâches, deux déploiements).
+
+- ✅ **Lot 1, la mesure `agent_event`** : l'agent de Meta répond 11 secondes après l'événement, dans une
+  conversation en cours, en suivant la consigne (`docs/MBA-API-REFERENCE.md`). La transmission de la réponse
+  « à côté » (lot 4) est donc possible.
+- ✅ **Lot 2, DÉPLOYÉ le 2026-09-21 au soir** : gestes « Poser un tag » et « Enregistrer une information »
+  exécutés par le relais ; publication ; onglet « Outils » refait d'après le croquis de Julien. Séquence tenue :
+  attestation (trois relectures à froid, `.git/revue-finale-rapport.md`), build, 0162 vue DANS l'image,
+  `migrate`, relecture en base point par point, `up -d --build`, rechargement de NPM (le 502 est revenu),
+  `fumee.mjs` à 6 sur 6, `/mba-outils` à 401 au lieu de 404, relais à 401 sans clé. Le verdict de la CI se lit
+  sur le dernier commit de code (`gh run view <id> --json jobs`), jamais dans ce fichier : il y a menti.
+- ✅ **Revue finale à froid du lot 2 (2026-09-21 au soir) : 4 rouges, 16 jaunes, tous traités.** Les rouges :
+  un test d'intégration périmé par la règle des orphelins, l'IP d'origine du VPS dans le plan (dépôt public),
+  `.env.example` resté à l'ancienne valeur de `API_MAX_LOURDES_SIMULTANEES` (`.env.prod` ne la porte pas : sans
+  effet en production), et une note de l'écran qui renvoyait vers « Lancer un scénario », absent du lot 2. Les
+  jaunes portant sur le lot de sécurité ont été corrigés par sa propre session.
+- ✅ **L'onglet « Outils » a été EN PANNE en production** du push de `b30c3a05` au déploiement (Vercel sert
+  la console à chaque push, l'API n'avait pas la route). Réparé par le déploiement ; la règle est dans
+  `CLAUDE.md` § Déploiement.
+- ✅ **ESSAI RÉEL DU LOT 2, FAIT PAR JULIEN LE 2026-09-21 AU SOIR, ET RELU EN BASE.** Deux outils créés depuis
+  l'onglet (`messagingme_is_genial`, étiquette `genial` ; `job_description`, champ `metier`), passés « Chez
+  Meta », puis déclenchés sur WhatsApp : trois lignes de journal, appelant `mba`, toutes `ok` (deux poses à
+  21:20 et 21:22 UTC, l'information à 21:26:46.880), et la fiche porte `genial` et `metier: électricien`,
+  modifiée 26 ms après l'appel. La conversation est rendue à l'agent de Meta.
+- ✅ **SECOND ESSAI RÉEL, FAIT PAR JULIEN LE 2026-09-22 AU MATIN, ET RELU EN BASE** (après le déploiement des
+  corrections) : un outil information modifié depuis l'onglet (renommé `metier_du_client`, l'ancien nom retiré chez
+  Meta dans le même envoi), un outil maison supprimé depuis l'onglet (parti, sans bandeau résiduel), et
+  « rajoute une étiquette » sur le connecteur `add_tag` : journal `ok`, appelant `mba`, HTTP 200 du CRM en 494 ms,
+  ce qui éprouve `fetchPublic` (lot 1 de sécurité) en conditions réelles.
+- ✅ **L'ORDRE UNIQUE des verrous de `remove`, DÉPLOYÉ le 2026-09-22 vers 10 h** : l'agent, ses sessions, les
+  définitions, puis le reste (trois ordres antérieurs interbloquaient chacun avec un chemin voisin, tous rejoués
+  contre un Postgres jetable), avec les outils et le connecteur distingués dans `effacementsImprevus` et la
+  suppression en cours qui bloque aussi le formulaire.
+- ✅ **DÉPLOYÉS le 2026-09-22 vers 11 h 25, les deux lots de suites** : un rattachement qui verrouille son agent,
+  la dispense du bandeau purgée dès la publication, un enregistrement qui bloque « Supprimer » et « Modifier », puis
+  les chemins VOISINS de la suppression d'un agent alignés sur son ordre (import et suppression d'un serveur MCP,
+  relecture de la connaissance, chacun rejoué contre un Postgres jetable et rouge sur son mutant).
+- ⏳ **Poussé après ce déploiement, sans relecture dédiée (règle du 2026-09-22)** : les 5 jaunes de la dernière
+  relecture (l'import d'un serveur MCP verrouille AVANT ses insertions, sans quoi il interbloquait avec la
+  suppression du même serveur ; une clé d'agent en majuscules ramenée en minuscules ; « Annuler » grisé pendant un
+  enregistrement ; la précondition physique du test de suppression vérifiée). Relus et déployés avec le lot 3.
+- ✅ **Connecteurs orphelins, décision de Julien du 2026-09-21 : suppression automatique.** Une action ou un
+  connecteur HTTP qui perd son dernier utilisateur part (`detacher`, suppression d'un agent, `retirerDeMba`) ; un
+  outil MCP reste. `supprimerDefinition` et `detacherConsommateur`, devenus sans appelant, sont retirés.
+- ✅ **Le drapeau « test » de la conversation de Julien est levé** (décision du 2026-09-21, une ligne, relue avant
+  et après) : sa conversation revient à l'agent de Meta en fin de scénario, et compte désormais dans les
+  statistiques et l'analyse.
+- 🔴 **Lots 3 et 4, ÉCRITS ET PROUVÉS, À RELIRE ET DÉPLOYER** (2026-09-22) : « Envoyer un bloc » (le bloc seul,
+  vérifié à la création et à chaque appel), « Lancer un scénario » (le chemin de l'Inbox), la réponse « à côté »
+  transmise par `agent_event`, et le marqueur de 0149 qui ne se pose plus sur un envoi déjà traité (aucun marqueur
+  en attente en production au moment de l'écrire, mesuré en lecture seule : le défaut se lit dans le code, le
+  balayage l'a toujours rattrapé). Prouvé : unitaires, 7 mutations rouges, intégration sur Postgres jetable (le
+  marqueur : l'ancienne règle fait tomber les 4 cas neufs et eux seuls), e2e de l'onglet 41/41. Pas de migration
+  (0162 porte déjà `accuse_le`). Reste : la revue finale, le déploiement, puis **l'essai réel de Julien** : un bloc
+  déclenché en conversation, un scénario mené au bout (l'agent de Meta reprend la parole), et un second scénario
+  où il répond à côté (l'agent de Meta répond à ce qu'il a écrit). L'inconnue M1 (l'agent de Meta écrit-il après
+  notre prise du fil ?) se lit pendant cet essai.
+
+### ✅ META BUSINESS AGENT : LE RELAIS (2026-09-21, DÉPLOYÉ, ESSAI RÉEL FAIT)
+
+**Le relais** (spec `docs/superpowers/specs/2026-09-21-relais-mba-design.md`, plan
+`docs/superpowers/plans/2026-09-21-relais-mba.md`) : Meta appelle `POST /mba/relais/outils/:id`, Messaging Me
+retrouve le contact par la macro `WHATSAPP_PHONE_NUMBER`, remplit les variables du mini-CRM et fait l'appel
+par `creerAppelConnecteur`. Déployé le 2026-09-21 (0161 appliquée avant, relue en base).
+
+✅ **L'ESSAI RÉEL, FAIT PAR JULIEN LE 2026-09-21 À 15 H 04 (heure de Paris)** : « je voudrais rajouter une
+étiquette » sur WhatsApp, l'étiquette est posée sur sa fiche UChat. Preuves relues : ligne de journal
+`add_tag`, `ok`, appelant `mba`, HTTP 200 de UChat en 2,9 s ; clé « Agent de Meta » utilisée à la même
+seconde ; chez Meta, un seul connecteur `EngageMe` (adresse du relais, clé API) et un seul outil `add_tag`.
+
+**Ce que l'essai a appris** (consigné dans `docs/MBA-API-REFERENCE.md`) :
+- `WHATSAPP_PHONE_NUMBER` est rempli en conversation, et vaut le numéro international SANS « + », chiffres
+  seuls (11 caractères pour un numéro français). Le relais le lisait déjà ; c'était la dernière inconnue.
+- 🔴 **C'est la description de l'outil qui décide si l'agent de Meta l'appelle, et ses compétences peuvent
+  l'emporter.** Deux essais avec « Le client demande à rajouter une etiquette » : l'agent n'a jamais appelé
+  l'outil, sa compétence « passer la main » a gagné. Avec une description DIRECTIVE (quand l'appeler, ce que
+  l'outil sait déjà, confirmer après, « ne passe pas la main, c'est cet outil qui traite »), il l'a appelé au
+  premier essai.
+- Un premier essai a échoué parce que « Envoyer » n'avait pas été cliqué, l'écran ne disant pas si un outil
+  était déjà chez Meta. C'est fait depuis : l'onglet refait du 2026-09-21 donne l'état chez Meta ligne par ligne,
+  et enregistrer envoie.
+
+**Reste à faire, sans urgence** :
+- Confirmer d'un clic qu'un « Envoyer » sans changement répond « Rien à changer » (la forme que Meta renvoie
+  est identique, clé pour clé, à celle qu'on publie : aucun geste attendu).
+- `journaliserForme` reste en place (il ne journalise que la FORME du numéro, jamais sa valeur) tant que les
+  refus du relais n'ont pas de ligne de journal (`todo.md`) : c'est aujourd'hui la seule trace d'une macro vide.
+
+### 🔴 CARROUSEL RCS : EN SERVICE, ESSAI RÉEL EN PARTIE FAIT (2026-09-21)
+
+Plan `docs/superpowers/plans/2026-09-21-carrousel-rcs.md` ; l'essai qui le clôt est écrit dans la spec
+(`docs/superpowers/specs/2026-09-21-carrousel-rcs-design.md`, § « L'essai réel »). Récit et mesures :
+[docs/JOURNAL-TECHNIQUE.md](docs/JOURNAL-TECHNIQUE.md), entrée du 2026-09-21.
+
+✅ **FAIT PAR JULIEN, RELU CHEZ SMSMODE ET EN BASE** : un carrousel de 3 cartes renvoyé depuis l'Inbox à
+14 h 46, après le déploiement du correctif `96eebb5a`. smsmode l'accepte, les rappels et les boutons sont sur
+`api.messagingme.app`, et l'appui sur « En savoir plus » est compté ET attribué, son rappel revenant en moins
+d'une seconde. Les envois de 14 h 21 et 14 h 40 gardent des boutons morts (leur adresse est figée chez
+smsmode) : c'est attendu, rien à réparer.
+
+🔴 **CE QUI RESTE DÛ** (rien n'est clos avant) :
+1. Le rendu, dit par Julien : les cartes défilent, les visuels s'affichent, les boutons sont dans les cartes.
+2. Un bouton **Réponse** : ce carrousel n'en portait pas. Son chemin (un rappel `SUGGESTION`) est celui qu'a
+   pris l'appui sur le lien, mais aucune réponse n'a été vue arriver.
+3. Une **campagne** RCS vers lui-même avec ce carrousel : le lot 2 n'est jamais parti pour de vrai.
+
+⚠️ **À ARBITRER PAR JULIEN, MESURÉ PENDANT L'ESSAI** : chez smsmode, l'appui sur un bouton LIEN revient AUSSI
+en rappel `SUGGESTION`, avec son `postbackData`. Il entre donc dans le fil comme une réponse du contact
+(« En savoir plus ») et range la conversation dans « À traiter » ; aucun parcours n'a démarré. Sur WhatsApp,
+un bouton lien ne produit aucun message entrant : le clic, compté sur la fiche, est le seul signal.
+
+⚠️ **QUESTION OUVERTE** : un texte AU-DESSUS des cartes, comme sur un template WhatsApp. smsmode n'en prévoit
+pas dans un carrousel ; l'option proposée est un message texte envoyé juste avant lui. En attente de Julien.
+
+### 🔴 INBOX : « TRAITÉ », PIÈCES JOINTES, « JE M'EN OCCUPE » (2026-09-19, DÉPLOYÉ, ESSAI RÉEL EN PARTIE FAIT)
+
+Trois demandes de Julien, arbitrées le jour même. Plan :
+`docs/superpowers/plans/2026-09-19-inbox-traite-medias-prise.md`. Fonctionnel dans [features.md](features.md),
+invariants dans [documentation.md](documentation.md) § Conversations, migration 0160 dans le compteur de
+[CLAUDE.md](CLAUDE.md).
+
+🔴 **L'ESSAI RÉEL, À FAIRE PAR JULIEN SUR SON ESPACE** (rien n'est clos avant) :
+
+1. Envoyer depuis son téléphone une photo puis un PDF au numéro : la photo s'affiche dans le fil, le PDF se
+   télécharge sous son nom.
+2. Marquer la conversation « Traité » : elle quitte « À traiter », reste dans « Tout » avec sa pastille.
+   Répondre par un 👍 : elle RESTE « Traité » (c'est le seul endroit où un vrai payload de réaction Meta
+   traverse ce chemin). Puis écrire un mot : elle revient dans « À traiter », la pastille disparaît.
+   ✅ **Fait le 2026-10-01 pour « Traité » et la réouverture** (essai du délai de reprise : le délai repart du clic,
+   un message avant le délai reste à l'équipe et ouvre une demande, après le délai l'agent de Meta répond). Le 👍
+   reste à essayer.
+3. Créer un compte agent, activer « Les agents peuvent prendre une conversation non affectée » dans
+   Paramètres DEPUIS UN COMPTE MANAGER, et vérifier que l'agent voit « Je m'en occupe » sur une conversation
+   non affectée, rien sur celle d'un collègue ; et que le manager peut affecter à quelqu'un (son menu était
+   vide jusqu'au 2026-09-19).
+
+⚠️ **À SIGNALER, HORS DE CE CHANTIER** : le VPS tournait sur `0482ae0` (chantier des moments d'un agent IA,
+déployé le 2026-09-18 au soir par une autre session) alors qu'aucune attestation de revue finale n'était
+enregistrée dans ce dépôt pour ses 25 commits. Ce déploiement-ci n'a fait relire que ce qui le suit.
+
+### PERFORMANCE LAB : LES COÛTS ET L'ANALYSE (2026-09-17, DÉPLOYÉ LE 2026-09-23 AU PLUS TARD)
+
+Refonte de l'onglet Synthèse demandée par Julien : une carte « Coûts » à gauche (coût moyen par
+engagement, coût total des messages envoyés, coût total IA), les intentions et la matrice
+urgence/satisfaction à droite, l'écran d'analyse en UNE LIGNE PAR JOUR, et « qui a répondu ».
+Spec : `docs/superpowers/specs/2026-09-17-performance-lab-couts-et-analyse-design.md`.
+Plan : `docs/superpowers/plans/2026-09-17-performance-lab-couts.md` (8 tâches).
+
+✅ **0154 ET 0155 SONT APPLIQUÉES**, le 2026-09-18. Le compteur de [CLAUDE.md](CLAUDE.md) fait foi et porte
+le détail de ce qui a été relu en base ; il n'est pas recopié ici.
+
+🔴 **LE BALAYAGE D'AGRÉGATS A TOURNÉ AVANT LA PURGE, ET ON L'A VU PLUTÔT QUE SUPPOSÉ.** Au démarrage du
+worker : `agregats-analyse: 6 journee(s) ecrite(s)`. Puis vérifié en base par le vrai code : sur les deux
+espaces, la lecture directe et la table d'agrégats rendent des journées **IDENTIQUES**. C'est la propriété
+qui autorise à effacer.
+
+⚠️ **ET LA PURGE N'A RIEN EFFACÉ, PARCE QU'ELLE NE LE POUVAIT PAS** : zéro conversation n'a plus de 90
+jours (la plus ancienne date du 2026-08-18). La seule opération irréversible du dépôt a été allumée au
+moment précis où elle ne peut rien détruire, ce qui était le bon moment pour l'allumer et pas une chance.
+
+🔴 **LA RÉTENTION PASSE DE 365 À 90 JOURS, ET L'ORDRE DES DEUX BALAYAGES EST LA SEULE CHOSE
+IRRATTRAPABLE DU LOT.** Supprimer une conversation supprime son analyse EN CASCADE : si la purge part
+avant que les agrégats du jour soient écrits, l'historique est perdu pour toujours. C'est rendu
+MÉCANIQUE dans `src/worker.ts` : le balayage d'agrégats est **attendu** au démarrage, et un drapeau
+`agregatsAJour` **suspend la purge** tant qu'il a échoué. ⚠️ Un espace peut poser SA durée, et `0` chez
+lui veut dire « ne purge jamais cet espace » quand `0` au niveau de l'INSTANCE veut dire « purge
+éteinte partout ». Les deux zéros ne disent pas la même chose et c'est délibéré.
+
+⚠️ **LA CI EST PASSÉE ROUGE SUR CE LOT, ET SEUL LE JOB `integration` POUVAIT LE VOIR.** Un des deux cas
+de rétention par espace que je venais d'ajouter laissait derrière lui une conversation de 500 jours,
+volontairement protégée de la purge : le cas voisin, qui vérifie que l'effacement est BORNÉ à deux par
+passage, en supprimait donc une qui n'était pas à lui. `npm test` en local n'a pas de base et ne
+pouvait rien en dire. Corrigé, les deux cas rendent maintenant la base comme ils l'ont trouvée.
+
+🔴 **0155 EST DEVENUE BLOQUANTE POUR UN SECOND CHEMIN, ET C'EST LE PLUS CHAUD DES DEUX.** Depuis le
+correctif de revue du 2026-09-17, `getSummary` LIT `tenant_settings.conversation_retention_days` pour
+annoncer à l'écran la durée réellement appliquée à CET espace. C'est le chemin d'affichage de toute la
+page Synthèse : déployer le code avant la migration ne casserait plus seulement le balayage, ça rendrait
+`42703` sur la page entière, en boucle. Même symptôme que le 2026-08-17. ⚠️ Mesuré : la colonne n'existe
+pas encore en base, une sonde l'a confirmé en rendant `column ts.conversation_retention_days does not
+exist`. Le SQL a donc été validé dans une session isolée par TABLE TEMPORAIRE du même nom (`pg_temp` passe
+avant `public`), sans jamais poser de verrou sur la vraie table.
+
+⚠️ **UNE FICHE DU BOT D'AIDE A CHANGÉ, DONC IL FAUT LA CHARGER** : `npx tsx db/charger-aide.ts` après le
+déploiement. Le dépôt est la source, la table `aide_fiches` n'est que l'index : sans ce chargement, le bot
+continue de répondre avec l'ancien texte. La fiche « importer-mes-contacts » décrit désormais le résumé
+de conversation sur la fiche du contact. ⚠️ Elle a été rattrapée par un test (`aide-proposer`), pas par
+moi : modifier une section de `features.md` PÉRIME l'empreinte des fiches qui la citent, et la CI le dit.
+
+✅ **LA TÂCHE 8 EST COMPLÈTE depuis le 2026-09-17 au soir**, step 6 compris : le résumé de la dernière
+conversation analysée est un champ de base de la fiche contact, DÉRIVÉ et jamais recopié (la purge le vide
+d'elle-même, une copie dans `contacts.fields` y survivrait). L'arbitrage de coût a été tranché sur l'option
+recommandée : la fiche, pas la liste paginée, et surtout pas une variable de message. Détail et mesure dans
+le plan. ⚠️ Cette ligne annonçait encore « SEUL point non fait » après la livraison, relevé en revue à
+froid : c'est très exactement la dérive contre laquelle l'en-tête de ce fichier met en garde.
+
+**CE QUI RESTE DÛ SUR CE CHANTIER**, dans l'ordre où ça se pose :
+
+1. 🔴 **L'ESSAI RÉEL, ET IL SEUL CLÔT LA FEATURE. IL A DEUX MOITIÉS.**
+
+   **(a) Les écrans.** Ouvrir Performance Lab sur les vraies données : déplier les trois lignes de la carte
+   « Coûts », cliquer une campagne mesurée et vérifier que le funnel et les barres par bloc disent quelque
+   chose de vrai, puis cliquer une journée de l'écran d'analyse. Aucun de ces écrans n'a jamais tourné
+   ailleurs que dans ses propres tests.
+
+   **(b) 🔴 LA MARGE, ET C'EST CELLE QU'ON ALLAIT OUBLIER.** Poser une **marge à 150 %** dans Paramètres >
+   Vos prix, puis vérifier que **cinq écrans annoncent le même prix unitaire** : l'écran Campagnes (total,
+   ligne, tiroir de détail), la fiche d'une campagne dans Performance Lab, le graphe de coût du Quantitatif,
+   le détail par template, et le bilan d'un contact. Vérifier au passage que la carte « Facturé par Meta »
+   nomme la marge comme cause de l'écart, en plus du tarif moyen.
+
+   ⚠️ **POURQUOI CETTE MOITIÉ EXISTE.** Le défaut « un écran affiche encore le tarif brut » a échappé à
+   TROIS revues successives, parce qu'il est **invisible tant que la marge vaut 100** : les deux chiffres
+   coïncident alors, et tous les tests passent. Un essai qui ne pose jamais de marge ne peut donc pas voir
+   le septième consommateur oublié. Elle était écrite dans le plan, que le plan lui-même déclare non fiable ;
+   relevé à la sixième revue, elle est désormais ici, où ce fichier fait foi.
+2. **Lot 3 : les thèmes déclarés par le client et la réanalyse de toute la base**, facturée sur SA clé
+   Gateway. Cadré dans la spec, aucun plan écrit, rien commencé.
+
+### 🔴 CE QUI RESTE DÛ SUR LES CONNECTEURS MCP (déployés le 2026-09-17)
+
+**Messaging Me sait se brancher sur un serveur MCP tiers, importer son catalogue et exposer ses outils à un
+agent IA.** Le lot est EN PRODUCTION : routes montées et gardées (401 et non 404), migration 0152 déjà en
+base (`migrate` a répondu « à jour, rien à appliquer »), contrôle public vert.
+
+🔴 **L'ESSAI RÉEL N'A PAS ÉTÉ FAIT, ET IL SEUL CLÔT LA FEATURE.** Messaging Me branché sur NOTRE propre serveur
+MCP (`/mcp` sur `api.messagingme.app`), puis depuis un vrai WhatsApp : poser à l'agent une question dont la
+réponse exige l'appel, vérifier qu'il répond avec la donnée du BON contact, puis lui demander explicitement
+la donnée d'un AUTRE numéro et vérifier qu'il ne l'obtient pas. C'est la garde anti-IDOR du lot, et ni les
+5 555 tests ni les quatre relectures à froid ne la remplacent. ⚠️ Le chemin à emprunter dans l'écran :
+Tools > Connecteurs MCP pour déclarer et importer, puis **AI Agent > Outils, section « Vos serveurs MCP »**,
+où il faut RATTACHER l'outil avant de l'activer. Ces deux gestes sont séparés exprès.
+
+🔴 **`0153_outil_source_kind_strict.sql` RESTE À ÉCRIRE ET À JOUER, et seulement une fois que ce déploiement
+a vécu.** 0152 est délibérément permissive : sa clé étrangère composite est en `MATCH SIMPLE`, donc une
+ligne dont `source_kind` est null lui échappe. Le CHECK strict ferme cette échappatoire, et il ne peut
+passer qu'une fois que tout le code en production renseigne la colonne. Détail dans `todo.md`.
+
+⚠️ **CE QUE QUATRE RELECTURES À FROID ONT COÛTÉ ET RAPPORTÉ, parce que ça décide de la prochaine fois.**
+15 rouges au total, tous reproduits dans le code avant correction, AUCUN faux positif. Trois d'entre eux
+étaient le MÊME motif : une capacité livrée sans le chemin qui la produit (aucune route ne créait de
+serveur, puis les outils n'apparaissaient sur aucun écran d'agent, puis ils n'y étaient pas rattachables).
+Deux fois, un correctif avait cassé autre chose. Le nombre de rouges n'a PAS convergé vers zéro (6, 3, 2,
+4), mais leur GRAVITÉ s'est effondrée : de la perte de données en production à une phrase fausse à l'écran.
+C'est la gravité qui dit quand s'arrêter, pas le compte.
+
+⚠️ **LA FENÊTRE FRONT / API EST REFERMÉE, et elle mérite d'être racontée.** Entre le push du bouton lecture et
+le déploiement de l'API, Vercel servait un bouton que le serveur ne savait pas lire : le mot n'était pas
+reconnu comme un jeton, donc pas consommé, et il descendait jusqu'à l'agent de Meta, qui répondait au
+testeur. 🔴 **Règle pour la prochaine feature qui traverse cette frontière : ordonner les lots pour que le
+FRONT parte en dernier.**
+
+⚠️ **CE QUI A ÉTÉ VÉRIFIÉ DANS LE CONTENEUR, pas déduit du push.** Le module déployé a été exécuté dans
+`mba-worker` : un lien sans suffixe rend `nodeId: null` (les liens déjà distribués marchent toujours), un
+lien avec suffixe est lu, un mot recopié EN CAPITALES donne le bon bloc après résolution, et un message de
+client ordinaire rend `null`, donc ne coûte aucune requête.
+
+### CE QU'UNE SESSION SUIVANTE DOIT SAVOIR
+
+- 🔴 **LE DÉPÔT EST PUBLIC** depuis le 2026-09-15 (GitHub Actions gratuit). Rien de sensible ne s'écrit ici.
+- 🔴 **LA CI EST DÉCOUPÉE EN DEUX WORKFLOWS**, et l'asymétrie est volontaire : `ci-web.yml` ne part que sur
+  `web/**`, mais `ci.yml` garde un `paths-ignore` et jamais un filtre positif, parce que 43 tests de la
+  racine LISENT des fichiers de `web/`. `tests/ci-decoupage.test.ts` tient la règle ET sa raison.
+- ⚠️ **LA MESURE DU 2026-09-15 SUR META ÉTAIT FAUSSE, ET LA CORRECTION COMPTE PLUS QUE L'ERREUR.** Ce fichier,
+  trois commentaires de code et `CLAUDE.md` ont affirmé toute une journée que « Meta acquitte nos envois avec
+  DEUX MINUTES de retard ». C'était une erreur de LECTURE : les heures relevées étaient celles où NOTRE worker
+  traitait l'accusé. L'horodatage que Meta inscrit vaut la seconde de l'envoi, et son webhook arrive une
+  seconde après. Les deux minutes venaient de la file `webhook-status`, qui se vidait à deux accusés par
+  minute. Corrigé partout le 2026-09-15 au soir.
+
+### Sortis de `todo.md` le 2026-10-10 : les points clos, texte d'origine
+
+<!-- sous « 🟠 Connecteurs : l'autonomie d'un outil ne suit pas le risque monté par sa requête (relect » -->
+- ✅ ~~Les paramètres d'un outil ne suivaient pas les variables de sa requête~~ : réglé le 2026-10-08, ils se lisent
+  sur la requête à chaque lecture de l'outil, sans copie (`paramsDuConnecteur`, plan
+  `docs/superpowers/plans/2026-10-08-parametres-du-connecteur.md`).
+
+<!-- sous « 🟠 Suites de « approfondir la racine » (2026-09-27 et 28, plan `docs/superpowers/plans/202 » -->
+3. ✅ **Candidat 6 de la revue d'architecture** (un point d'entrée « lancer un scénario » qui porte la politique de
+   chaque type de lancement) : fait le 2026-10-04, piste 4 du rapport du 2026-10-02 (plus bas).
+
+<!-- sous « 🟠 Connecteurs API : un défaut restant, vu pendant l'essai Brevo (2026-09-28) » -->
+- ✅ **Corrigé le 2026-09-30** : le bloc « Appel HTTP » d'un scénario accepte un appel qui POUSSE. Sans champ
+  cible, la lecture est `pousse` (corps non lu, un 2xx vaut succès, 204 compris, aucun champ de réponse exigé,
+  donc plus besoin d'un vrai « Essayer » pour en cocher un) ; avec un champ cible, rien ne change. Mesuré avant :
+  le seul bloc `http` en production avait un champ, donc aucun comportement n'a bougé.
+
+<!-- sous « 🟡 API publique, lot 1 : quatre restes que la relecture a laissés hors du lot (2026-09-24) » -->
+- ~~**La puce de `documentation.md` qui suit les trois ajoutées au lot 1**~~ **FAIT le 2026-09-25** (lot 4,
+  tâche 8) : l'API publique y crée en `unknown`, sauf `consent` explicite, et sait écrire `opted_out` comme
+  `opted_in`.
+
+<!-- sous « 🟠 Le rapport d'architecture du 2026-10-02 : huit pistes restantes sur neuf (2026-10-03) » -->
+1. ✅ **Une seule transition de consentement dans la fiche contact : FAIT et déployé le 2026-10-04** (`1c4df5ec`
+   serveur, `a34c88c3` console, plan `docs/superpowers/plans/2026-10-03-transition-consentement.md`). La règle vit
+   dans `src/crm/transition-consentement.ts`, les six écritures la composent, l'autorité de chaque appelant est un
+   type fermé. Écarts corrigés (décisions de Julien) : statut inchangé, rien de réécrit ni d'annoncé ; l'action en
+   masse ne lève plus un STOP et le dit. Une table d'intégration remplace les tests par expressions régulières.
+
+<!-- sous « 🟠 Le rapport d'architecture du 2026-10-02 : huit pistes restantes sur neuf (2026-10-03) » -->
+2. ✅ **Sortir l'envoi d'un bloc de scénario du câblage : FAIT et déployé le 2026-10-03** (`cdcbde3e`, plan
+   `docs/superpowers/plans/2026-10-03-envois-de-bloc.md`). Les quatre envois vivent dans
+   `src/workflow/envois-bloc.ts`, exécutés par `tests/workflow-envois-bloc.test.ts`. Pas couplé au point d'envoi
+   unique (décision de Julien), qui reste le candidat 2 ci-dessous. ⚠️ Les « 20 commits dont 8 correctifs »
+   portaient sur tout `wiring.ts`, pas sur ces quatre fonctions.
+
+<!-- sous « 🟠 Le rapport d'architecture du 2026-10-02 : huit pistes restantes sur neuf (2026-10-03) » -->
+8. ✅ **Le bail anti-double-envoi de l'exécuteur, requis : FAIT le 2026-10-04** (plan
+   `docs/superpowers/plans/2026-10-04-bail-avance-requis.md`). `reserverAvance`, `prolongerAvance` et
+   `libererAvance` sont requises ; les fixtures reçoivent un bail inerte par `avecGardesDEtatInertes`, et
+   `tests/workflow-bail-requis.test.ts` fait échouer le typecheck si l'une redevient optionnelle. Aucun changement
+   en production (`PgWorkflowRunStore` les portait toutes). Le reste du **candidat 6 du rapport du 2026-09-14**
+   (dépendances optionnelles) demeure.
+
+### ✅ LIVRÉ : traduction des conversations (tranché le 2026-09-12, livré et déployé le 2026-09-13)
+
+> ⚠️ **CE TITRE A DIT « RIEN DE COMMENCÉ » PENDANT QUE C'ÉTAIT EN PRODUCTION** (migration 0137,
+> `TRADUCTION_MODELE` posée, six tâches livrées). Relevé le 2026-09-14 en répondant à « il reste quoi à
+> faire ? », c'est-à-dire par quelqu'un qui allait s'en servir. **Un backlog qui garde une entrée livrée ne
+> vieillit pas, il MENT** : il fait rouvrir un chantier fini. Ce qui suit est le CADRAGE d'origine, gardé
+> parce qu'il porte les décisions ; le fonctionnel vit dans `features.md`.
+
+**Deux langues, FR et EN, et c'est ce qui rend le dessin simple.** « Traduire » veut dire « dans
+l'autre », donc **aucun sélecteur de langue nulle part** : ni sur le contact, ni sur la conversation.
+
+Décisions de Julien :
+
+- **La langue de lecture vient de la console.** Elle vit dans le `localStorage`
+  ([web/lib/i18n.tsx](web/lib/i18n.tsx)), **pas sur le compte**, donc le serveur ne la connaît pas.
+  C'est le navigateur qui la passe à chaque appel. ⚠️ Le motif existe déjà et se décalque : le bot
+  d'aide envoie `QuestionAide.langue: 'fr' | 'en'` à chaque question.
+- **Les entrants se traduisent TOUS à l'ouverture d'une conversation**, jamais à l'arrivée. Traduire
+  à l'arrivée fait payer les « ok », les emojis et toutes les conversations que personne n'ouvrira.
+  Le premier lecteur paie, les suivants réutilisent le résultat rangé.
+- **Les sortants ne se traduisent JAMAIS automatiquement.** Un bouton « Traduire » avant l'envoi.
+  🔴 C'est une garde, pas une commodité : une traduction ratée en entrée se rattrape sur l'original
+  affiché à côté, une traduction ratée en sortie est partie chez un client et **aucun message
+  WhatsApp livré ne se rappelle**.
+- **Le toggle « traduire les entrants » vit dans le `localStorage`**, comme la langue elle-même.
+- **Stockage** : une colonne de traduction plus la langue dans laquelle elle est. Un message français
+  n'a jamais besoin que d'une traduction anglaise, et réciproquement.
+- 🔴 **À l'envoi, `body` porte ce qui est PARTI (le texte traduit), et une colonne à part porte ce
+  que l'opérateur a ÉCRIT.** Miroir exact de la migration 0125 : ne garder que le traduit rend
+  l'opérateur incapable de se relire, ne garder que l'original rend notre trace fausse le jour d'un
+  litige.
+
+Trois pièges à ne pas découvrir en route :
+
+- 🔴 **Un template ne se traduit pas.** Il est approuvé par Meta dans une langue, et le texte
+  approuvé EST le texte. La traduction ne concerne que les messages libres, dans la fenêtre de 24 h.
+  Un bouton « Traduire » affiché sur un template ment.
+- ⚠️ **Traduire coûte des jetons** sur la clé Gateway de l'espace (migration 0124), donc sur le
+  crédit prépayé. Un espace à zéro ne peut pas traduire, et ça se dit à l'activation, pas au premier
+  message muet.
+- 🔴 **« L'autre langue » NE SUFFIT PAS, et c'est la précision de Julien du 2026-09-12.** Nos deux
+  langues sont celles de la CONSOLE, pas celles des contacts : un client peut très bien écrire en
+  espagnol. La règle juste est donc dissymétrique.
+  - **En entrée** : traduire vers la langue du LECTEUR, quelle que soit la source. Aucun problème,
+    la cible est toujours connue.
+  - **En sortie** : la cible est la langue du CONTACT, qui n'est ni le français ni l'anglais dans ce
+    cas. « L'autre des deux » ne veut plus rien dire.
+
+#### La langue du contact s'APPREND, elle ne se demande pas
+
+🔴 **On la détecte déjà, et on la jette.** `src/agent/llm/transcription.ts` rend `langue: string |
+null` (ligne 94) et la migration 0125 n'a créé aucune colonne pour la garder. Troisième fois dans la
+même journée qu'on trouve une donnée calculée puis perdue, après la joignabilité WhatsApp.
+
+Elle se retient donc sur la fiche du contact, alimentée par la transcription de ses vocaux et par la
+traduction de ses textes. Ni question posée au contact, ni choix imposé à l'opérateur.
+
+⚠️ **Le bouton NOMME sa cible** : « Traduire en espagnol », jamais « Traduire » tout court. Meilleur
+même quand la cible est évidente, parce que l'opérateur voit où part sa phrase avant de valider.
+Tant qu'on n'a rien appris du contact, il nomme la langue par défaut : il ne ment donc jamais.
+
+#### Les vocaux (précision de Julien, 2026-09-12)
+
+Quand le client appuie sur **Transcrire** et que la traduction est active, la transcription doit
+arriver dans SA langue de console, **même si le vocal était en espagnol**.
+
+- 🔴 **On traduit la TRANSCRIPTION, pas le corps.** Le `body` d'un audio vaut `[audio]` ou la
+  légende : le traduire ne produirait rien. L'ordre est imposé, transcrire puis traduire, et ça
+  reste **un seul geste** pour l'opérateur.
+- 🔴 **NE PAS utiliser le mode « traduire » intégré des API de transcription.** Il ne cible que
+  l'anglais : s'en servir donnerait un comportement différent selon que l'opérateur est en FR ou en
+  EN, et **détruirait l'original**. On transcrit fidèlement, puis on traduit.
+- ⚠️ **Deux appels, donc deux fois le coût** sur le crédit prépayé pour un vocal traduit.
+- La transcription garde ce qui a été **dit** (en espagnol), la traduction vit dans sa colonne avec
+  sa langue. Même principe qu'en 0125 : la lecture d'un modèle n'est pas ce que le client a dit.
+
+<!-- sous « Contre-rapport de ChatGPT sur ces livraisons (2026-09-03) : les huit constats, vérifiés un » -->
+- ~~**A3-ipv6** : la classification IPv6 laissait passer cinq cas sur huit.~~ **CORRIGÉ.** C'était le plus
+  grave, et il était à moi. La garde testait des PRÉFIXES DE TEXTE : `fe80::/10` fait dix bits et va jusqu'à
+  `febf`, donc trois adresses lien-local sur quatre passaient ; et une IPv4 mappée s'écrit aussi en
+  hexadécimal, donc `::ffff:ac12:1`, qui EST `172.18.0.1`, la passerelle du réseau Docker du VPS, passait.
+  C'est l'adresse même que cette garde existe pour bloquer, et l'en-tête du module affirmait qu'elle était
+  rejetée, « vérifié ». L'adresse est désormais DÉVELOPPÉE en huit groupes de seize bits et comparée en
+  nombres. ⚠️ La vérification a aussi trouvé quatre cas que le contre-rapport ne voyait pas : forme non
+  compressée, `::/96` déprécié, et `0:0:0:0:0:0:0:1` classé public. Non retenus en revanche : `fec0::/10`,
+  `2002::/16` et `::ffff:0:0:0/96`, aucun n'étant joignable depuis ce VPS.
+
+<!-- sous « Contre-rapport de ChatGPT sur ces livraisons (2026-09-03) : les huit constats, vérifiés un » -->
+- ~~**A1-transition** : la sortie terminale d'un tour était une double écriture non atomique.~~ **CORRIGÉ.**
+  Clore la session puis faire sortir le parcours : une panne entre les deux laissait un parcours mort POUR
+  TOUJOURS, la clôture ayant effacé le marqueur qui l'aurait désigné au balayage. ⚠️ **Et le correctif évident
+  était faux** : inverser l'ordre paraît plus sûr, mais `sortirDuBlocAgent` fait AVANCER le parcours, qui peut
+  retomber sur un autre bloc agent dans le même appel et réutiliser la session encore vivante avec ses tours
+  consommés. La réparation passe donc par la MARQUE, pas par l'ordre.
+
+<!-- sous « Contre-rapport de ChatGPT sur ces livraisons (2026-09-03) : les huit constats, vérifiés un » -->
+- ~~**B4-exclusions** : les exclusions de cible étaient appliquées APRÈS le `LIMIT` SQL.~~ **CORRIGÉ.** Sur
+  30 000 contacts, un plafond de 20 000 et 5 000 exclus dans la fenêtre, la campagne partait vers 15 000
+  destinataires. **Elle sous-envoyait en silence** : le nombre affiché est celui qu'on vient de calculer.
+
+<!-- sous « Contre-rapport de ChatGPT sur ces livraisons (2026-09-03) : les huit constats, vérifiés un » -->
+- ~~**A2-garde-rcs** : une fenêtre subsistait entre la garde et l'envoi RCS.~~ **CORRIGÉ.** Exactement deux
+  attentes séparaient le contrôle du `sendTo`. La règle du lot A2 se précise : « entre les effets » veut dire
+  immédiatement avant l'effet, pas avant le travail qui le précède.
+
+<!-- sous « Contre-rapport de ChatGPT sur ces livraisons (2026-09-03) : les huit constats, vérifiés un » -->
+- ~~**A3-timeout** : le bouton « Test » n'avait aucun plafond de temps.~~ **CORRIGÉ.** Seul des trois boutons
+  de la même famille à ne pas en avoir. ⚠️ Deux moitiés du constat étaient fausses : ce n'était pas illimité
+  mais borné au défaut d'undici, **mesuré à 309 s** ; et ça n'immobilisait PAS une place du pool, les lectures
+  en base étant terminées avant l'appel. Rien à faire non plus sur `page-distante.ts`, dont le plafond par
+  saut est explicite et borne le pire cas.
+
+<!-- sous « Contre-rapport de ChatGPT sur ces livraisons (2026-09-03) : les huit constats, vérifiés un » -->
+- ~~**A4-sli** : le SLO d'entrée alarmait sur la mauvaise mesure.~~ **CORRIGÉ.** Le rouge ne se posait que sur
+  l'ATTENTE quand le SLO promet un message TRAITÉ en 30 s. `agent-turn` étant un appel modèle, cette file
+  serait restée verte quelle que soit la lenteur du modèle. Le p99 promis se lit maintenant sur le pire cas
+  bout en bout, qui était calculé et transporté depuis toujours et affiché nulle part.
+
+<!-- sous « Contre-rapport de ChatGPT sur ces livraisons (2026-09-03) : les huit constats, vérifiés un » -->
+- ~~**C1-spread** : un commentaire affirmait une garantie du compilateur qui est fausse.~~ **CORRIGÉ.**
+  Mesuré, pas raisonné : une propriété en trop dans un littéral DIRECT est refusée (TS2353), la même
+  introduite par un SPREAD passe en silence, et un `satisfies` sur le littéral EXTÉRIEUR n'y change rien.
+  Seul un `satisfies` sur l'objet INTÉRIEUR du spread la voit. C'est précisément là que vivaient les deux
+  capacités de la panne du 2026-09-02.
+
+<!-- sous « Contre-CONTRE-rapport, sur les correctifs ci-dessus (2026-09-03 au soir) » -->
+- ~~**P1c, l'épreuve d'une SOURCE sans résolution DNS.**~~ **CORRIGÉ**, et c'était le plus grave. Elle
+  appelait `construireCible` puis `fetch` : elle ne voyait donc pas qu'un nom public pointe vers le réseau
+  Docker du VPS. C'était le **quatrième** chemin de ce genre, alors que le `CLAUDE.md` affirmait qu'il y en
+  avait trois et qu'ils étaient tous gardés. Ce qui l'a fait rater : les deux boutons « Test » se ressemblent
+  beaucoup, et l'autre appelait bien la garde. L'inventaire est désormais tenu par un test.
+
+<!-- sous « Contre-CONTRE-rapport, sur les correctifs ci-dessus (2026-09-03 au soir) » -->
+- ~~**P1a, le balayage sortait par « échec » en dur.**~~ **CORRIGÉ.** Juste tant qu'il ne réclamait que des
+  sessions `en_cours` ; faux depuis qu'il ramasse aussi les closes dont la sortie est due. Le contact
+  repartait par le repli technique au lieu de la branche prévue, et c'est le cas le plus fréquent. ⚠️ Le test
+  unitaire du balayage ne voyait PAS le câblage du worker : une garde qui lit la source a été ajoutée, comme
+  pour le plafond de campagne. Troisième fois que ce piège se présente.
+
+<!-- sous « Contre-CONTRE-rapport, sur les correctifs ci-dessus (2026-09-03 au soir) » -->
+- ~~**P2, l'index partiel de la 0112.**~~ **CORRIGÉ** (migration 0113, appliquée ; la base est à 0116, cf. le compteur de CLAUDE.md, seule source).
+
+<!-- sous « Contre-CONTRE-rapport, sur les correctifs ci-dessus (2026-09-03 au soir) » -->
+- ~~**Point 5, mes deux tests du plafond de temps ne prouvaient rien.**~~ **CORRIGÉ.** Le premier n'assertait
+  qu'un signal, le second passait AUSSI sans la garde qu'il tenait. Les faux minuteurs de vitest ne pilotent
+  pas `AbortSignal.timeout`, d'où une couture `delaiTestMs`. Même lot : la résolution DNS n'était dans aucun
+  budget, les deux s'additionnaient au lieu de se recouvrir.
+
+<!-- sous « Contre-CONTRE-rapport, sur les correctifs ci-dessus (2026-09-03 au soir) » -->
+- ~~**Angle mort 1 : un `Math.min(100_000)` écrasait en silence une limite de cible plus grande.**~~
+  **CORRIGÉ.** Le plafond de campagne vit en configuration pour se relever le jour d'un gros client : le geste
+  que le produit a prévu était exactement celui qui armait le défaut. C'est le sous-envoi silencieux de la
+  veille, transposé du filtre d'exclusion au filtre de taille, trois lignes plus bas.
+
+<!-- sous « Contre-CONTRE-rapport, sur les correctifs ci-dessus (2026-09-03 au soir) » -->
+- ~~**Angle mort 2 : `AGE_TOUR_MORT_S` valait exactement `DUREE_MAX_AVANCE_MS`.**~~ **CORRIGÉ** (15 min).
+  Marge nulle : une avance qui va au bout de son temps rend sa ligne réclamable à l'instant où elle abandonne.
+  Ferme au passage la course sur `sortieAppliquee`, qui n'a pas de jeton de garde. Deux constantes qui doivent
+  être ordonnées se règlent par une valeur, pas par une architecture ; le lien est tenu par un test, parce
+  qu'il ne se voit dans aucun des deux fichiers pris séparément.
+
+<!-- sous « Audit de RAYON DE SOUFFLE du lot précédent (2026-09-04) : ce que mes propres correctifs av » -->
+- ~~**Des tests faisaient un VRAI appel DNS.**~~ **CORRIGÉ.** `tests/page-distante.test.ts` appelait
+  `fetchUrlBorne(1000, impl)` à deux arguments, donc la vraie résolution, sur `www.exemple.fr`, un domaine que
+  personne ici ne contrôle. Un des tests **passait aussi quand le nom ne résolvait pas** (« hôte non autorisé
+  (nom introuvable) » contient bien « hôte non autorisé ») : vert par le chemin du refus, sans jamais
+  atteindre la redirection qu'il prétend refuser. Le plafond DNS ajouté la veille avait en plus resserré leur
+  marge en CI. **Un test unitaire qui touche le réseau n'est pas un test unitaire**, c'est un test dont le
+  verdict appartient à quelqu'un d'autre. Prouvé corrigé en coupant le résolveur par défaut : 7 tests verts.
+
+<!-- sous « Audit de RAYON DE SOUFFLE du lot précédent (2026-09-04) : ce que mes propres correctifs av » -->
+- ~~**Ma réécriture avait supprimé un cas de test sans le remplacer.**~~ **CORRIGÉ.** L'ancien test exerçait
+  « le système coupe la connexion en plein corps », mal asserté mais exercé ; sa réécriture l'a remplacé par
+  un cas piloté par l'échéance. Le chemin vivait toujours dans le code et produisait le même faux succès.
+  `lireCorpsBorne` distingue désormais un flux CASSÉ d'un corps vide (les deux rendaient `{texte:''}`), et la
+  route refuse aussi le corps **trop gros**, qu'elle ignorait alors que ses deux routes sœurs le refusent.
+
+<!-- sous « Audit de RAYON DE SOUFFLE du lot précédent (2026-09-04) : ce que mes propres correctifs av » -->
+- ~~**Six endroits disaient encore « dix minutes ».**~~ **CORRIGÉ.** Dont le docbloc juste au-dessus de la
+  constante à quinze, qui affirmait « même ordre de grandeur que la durée maximale d'une avance » alors que
+  tout l'intérêt du changement est de NE PAS l'être ; et `CLAUDE.md`, avec deux affirmations fausses dans une
+  seule phrase. Ma justification était en plus **orpheline**, placée après la constante, donc invisible au
+  survol.
+
+<!-- sous « Audit de RAYON DE SOUFFLE du lot précédent (2026-09-04) : ce que mes propres correctifs av » -->
+- ~~**Le `CLAUDE.md` se contredisait sur le compte des chemins sortants.**~~ **CORRIGÉ.** J'avais écrit qu'il
+  y en avait quatre à la ligne 392 et laissé « les TROIS chemins concernés » à la ligne 407, plus les copies
+  dans `todo.md` et `wip.md`. **Corriger un compte à un endroit et le laisser à trois autres, c'est le
+  laisser faux.**
+
+<!-- sous « Contradiction de mon PROPRE lot de correction (2026-09-04) : ce qui reste ouvert » -->
+~~**A2 — arrêter les EFFETS à la perte du bail d'avance.**~~ **LIVRÉ le 2026-09-03.** Le battement expose
+désormais `perduPourquoi()`, consulté avant CHAQUE effet dans `apply`, avant l'envoi RCS de `walkResolved` et
+avant l'enfilement d'un tour d'agent ; une durée totale maximale de dix minutes abandonne une avance PENDUE
+(le seul mode de panne que battre ne distinguait pas). ⚠️ **Un point de la demande a été volontairement NON
+fait** : l'`AbortSignal` est exposé mais AUCUN transport ne l'écoute. Couper un envoi Meta en plein vol
+échangerait « un message de trop » contre « un message parti que nous n'avons pas enregistré », qui est pire.
+La garde se pose donc ENTRE deux effets. Le signal servira aux travaux réellement annulables (recherche de
+connaissance, reranker, lecture de connecteur).
+
+<!-- sous « Contradiction de mon PROPRE lot de correction (2026-09-04) : ce qui reste ouvert » -->
+~~**A1 — rattraper un tour d'agent tué par un crash.**~~ **LIVRÉ le 2026-09-03** (migration 0112). Le
+watchdog prévu : `src/agent/tour-bloque-sweep.ts`, passage à la minute, réclame et clôt en UNE requête les
+tours en vol depuis plus de QUINZE minutes, puis fait sortir le parcours par la sortie RÉELLEMENT DUE (le
+seuil était de dix, corrigé le 2026-09-03, et la sortie était en dur). On ne rejoue
+pas, comme arbitré : le worker a pu mourir APRÈS l'envoi au contact. ⚠️ Il a fallu une COLONNE
+(`tour_commence_le`) : « session en cours + run en attente + aucune échéance » décrit aussi un tour qui vient
+d'être enfilé, et un balayage bâti là-dessus aurait tué des conversations vivantes.
+
+<!-- sous « Contradiction de mon PROPRE lot de correction (2026-09-04) : ce qui reste ouvert » -->
+~~**A3 — les deux bornes de sécurité des connecteurs HTTP.**~~ **LIVRÉ le 2026-09-03.** Résolution DNS
+contrôlée (`src/lib/adresse-privee.ts`) sur les QUATRE chemins qui appellent une URL saisie par un client (le
+compte a dit trois pendant un jour, l'épreuve d'une SOURCE manquait) : le
+connecteur en conversation, le bouton « Test » d'une REQUÊTE, le bouton « éprouver » une SOURCE, et la lecture
+de page distante (à chaque saut de redirection). Lecture bornée EN FLUX (`src/lib/corps-borne.ts`) sur les
+TROIS qui lisent un corps, en OCTETS et non en unités UTF-16 (l'épreuve d'une source ne regarde que le
+statut : dire « sur les mêmes » après avoir monté le compte à quatre serait faux). Le « DNS rebinding » (répondre public puis privé entre la vérification et l'appel), laissé ouvert ce
+jour-là, est FERMÉ depuis le 2026-09-21 : l'adresse se revérifie à l'ouverture de la connexion (`fetchPublic`,
+`src/lib/connexion-publique.ts`).
+
+<!-- sous « Contradiction de mon PROPRE lot de correction (2026-09-04) : ce qui reste ouvert » -->
+~~**A4 — la preuve de capacité.**~~ **LIVRÉ le 2026-09-03.** La photo compte désormais
+les jobs `active` (elle retombait à zéro sur un job coincé), un VRAI p95 par file est calculé sur 24 h depuis
+les horodatages que pg-boss écrit déjà (aucune instrumentation ajoutée, elle existait et personne ne la
+lisait) et affiché dans `/ops`, l'affirmation fausse du document de SLO est retirée, et le banc agent a
+désormais un mode DURÉE avec découpe par minute, et **il a tourné six minutes sur le VPS** : 1 406 tours,
+738 000 tokens/minute, **zéro refus**, et aucune dérive (la durée moyenne DESCEND de 1 445 à 1 217 ms d'une
+minute à l'autre). Le Gateway n'est pas le prochain plafond, et ce n'est plus une extrapolation. La mesure
+longue a aussi montré une QUEUE que les rafales cachaient : 113 s pour le tour le plus lent contre 2,4 s de
+médiane, soit 0,14 % des tours au-dessus de 30 s, c'est-à-dire exactement ce que `DEADLINE_MS` protège.
+**Reste seulement** le profil `equite` du banc de charge, déjà listé plus bas.
+
+<!-- sous « Contradiction de mon PROPRE lot de correction (2026-09-04) : ce qui reste ouvert » -->
+- ~~**B2** sémantique de la télémétrie du pool~~, ~~**B3** validation stricte des concurrences et plafonds~~,
+  ~~**B5** faux 500 sur une source absente~~ : **livrés le 2026-09-02** (lot immédiat, `f711743`).
+
+<!-- sous « Contradiction de mon PROPRE lot de correction (2026-09-04) : ce qui reste ouvert » -->
+- ~~**B4** course du plafond « tous les contacts »~~ : **livré le 2026-09-03**. Le chemin résout et FIGE son
+  jeu d'identifiants, borné à `plafond + 1`, au lieu de compter puis recharger. ⚠️ La contre-vérification a
+  trouvé le trou que mon propre correctif avait laissé : le câblage relayait `(tenant, target)` vers un
+  contrat à trois paramètres, donc la borne était avalée EN SILENCE et le compilateur ne pouvait pas le voir
+  (une flèche plus courte est assignable). Gardé par `tests/campagne-cablage.test.ts`.
+
+<!-- sous « Contradiction de mon PROPRE lot de correction (2026-09-04) : ce qui reste ouvert » -->
+- ~~**C2** contradictions documentaires~~ : **livré le 2026-09-03**, et le pire des trois n'était pas un
+  document : l'infobulle « vous avez la main » promettait à l'opérateur, dans le produit, que les campagnes
+  n'enverraient pas. C'est l'inverse du code, qui passe `ignoreHumanControl` et REPREND la main, délibérément.
+
+<!-- sous « Contradiction de mon PROPRE lot de correction (2026-09-04) : ce qui reste ouvert » -->
+- ~~**C3** attribution RCS~~ : **livré le 2026-09-03** (textuel). La phrase « le détail par campagne reste
+  reconstructible » de la 0107 était fausse, et l'entrée de backlog décrivait un manque déjà comblé.
+
+<!-- sous « Contradiction de mon PROPRE lot de correction (2026-09-04) : ce qui reste ouvert » -->
+- ~~**C1** capacités imbriquées~~ : **livré le 2026-09-03**, et l'audit généralisait à tort (« recopiés de
+  fichier en fichier »). Inventaire fait : **14 `Pick<` dans `src/`, 13 sont des contrats étroits légitimes,
+  UN SEUL était un passe-plat**, `src/campaign/run-job.ts`, et c'est celui qui avait déjà cassé la production.
+  Ses onze capacités voyagent maintenant dans un objet `moteur` transmis d'un seul spread : il n'y a plus de
+  liste à tenir alignée. Gardé par trois tests de forme (`tests/clics-cablage.test.ts`), vérifiés dans les deux
+  sens. Les 13 autres `Pick` n'ont pas été touchés : leurs membres sont consommés sur place, donc un oubli y
+  est déjà une erreur de compilation.
+
+<!-- sous « Contradiction de mon PROPRE lot de correction (2026-09-04) : ce qui reste ouvert » -->
+- ~~**C4** découpage des gros fichiers~~ : **refusé, et la contre-vérification a tranché**. Les mesures
+  (`worker.ts` 877 lignes de code, `executor.ts` 680, `CampaignCreateForm` 1 319) ne justifient pas un
+  découpage, et le dépôt l'avait déjà refusé nommément le 2026-08-31 avec un meilleur argument. Le seul défaut
+  VIVANT que cet item recouvrait a été corrigé au passage : deux balayages sur vingt-deux journalisaient leur
+  échec sans ALERTER (`vectorisation` et `analyse-conversations`), donc une panne y restait invisible.
+
+<!-- sous « Contre-audit du 2026-09-01 : ce qui est retenu, verifie dans le code » -->
+**1. ✅ FAIT le 2026-09-01 (migration 0102).** Le debit par numero est desormais partage entre l'API et le
+worker : le compteur en memoire devient une ligne, la reservation une instruction SQL atomique, et l'attente
+se fait HORS de la base. Panne de la base = repli sur le frein local, donc le pire cas est le comportement
+d'avant. La PRIORITE (faire passer l'inbox devant une campagne) n'est PAS faite et n'etait pas le sujet :
+elle demanderait une file d'envoi ordonnee, donc de la latence sur le chemin interactif. Detail dans
+`documentation.md`. Le constat d'origine, garde pour memoire :
+
+<!-- sous « Contre-audit du 2026-09-01 : ce qui est retenu, verifie dans le code » -->
+~~**Le debit par numero n'est PAS partage entre l'API et le worker.**~~ `src/index.ts:192` et
+`src/worker.ts:193` construisent chacun leur arbitre en memoire. Les deux conteneurs tournent DEJA en
+production : pendant qu'une campagne part du worker, un operateur qui repond depuis l'inbox consomme un
+SECOND budget sur le meme numero. Le debit affiche n'est donc pas une propriete du numero.
+⚠️ Ce n'est pas un sujet de gros volume : ca se produit avec un client et deux messages.
+**Decision a prendre avant de coder** : soit une file d'envoi durable partitionnee par numero (l'ordre et
+les priorites deviennent simples, la latence interactive augmente), soit un compteur partage en base avec
+bail (les chemins directs restent directs, une brique de coordination apparait). Test d'acceptation dans les
+deux cas : une campagne, un scenario et un envoi inbox lances ensemble depuis DEUX process.
+
+<!-- sous « Contre-audit du 2026-09-01 : ce qui est retenu, verifie dans le code » -->
+**2. ✅ FAIT le 2026-09-01.** La cible part en INTENTION (`contactTarget`), resolue en base, avec le MEME
+analyseur que les actions en masse du mini-CRM. Quatre refus ferment le pire accident (une campagne a tout
+l'espace), dont un trou PRE-EXISTANT : `contactIds: []` etait truthy et retombait sur « tous les contacts ».
+Le decoupage SQL du moteur (`listPending` sans limite) reste NON FAIT, hors sujet decide par Julien.
+Le constat d'origine, garde pour memoire :
+
+<!-- sous « Contre-audit du 2026-09-01 : ce qui est retenu, verifie dans le code » -->
+~~**Le piege des 25 000 destinataires.**~~ Le front propose jusqu'a 100 000 contacts
+(`idsForFilters`, cap 100 000), met tous leurs identifiants dans le POST, et la route plafonne a 1 Mo
+(`src/server.ts:209`). Le JSON des seuls identifiants pese environ 975 Ko a 25 000 contacts : la casse
+arrive donc bien AVANT la limite que l'ecran annonce. L'interface promet quelque chose qui echoue.
+⚠️ Julien a mis les campagnes de 100k hors sujet pour l'instant, mais le piege, lui, reste pose.
+La moitie du correctif ne coute presque rien : `BulkTarget` EXISTE deja dans le mini-CRM
+(`{ filters, excludeIds } | { ids }`), il suffit d'envoyer l'INTENTION de selection et de la resoudre dans
+la transaction. Le decoupage SQL du moteur (`listPending` sans limite) est un chantier separe, non retenu.
+
+<!-- sous « Contre-audit du 2026-09-01 : ce qui est retenu, verifie dans le code » -->
+**3. ✅ FAIT le 2026-09-01.** La route sert un RESUME (`listResume`) : plus aucun graphe ne traverse le
+reseau pour afficher des noms. `nodeCount` et `hasDraft` sont calcules en SQL, `campaignEligible` cote serveur
+avec la MEME fonction que la garde de creation. `list()` reste inchangee (la resolution par code en a besoin).
+⚠️ La base envoie toujours le graphe a l'application : seul le trajet vers le navigateur disparait. Aller plus
+loin demanderait de denormaliser en colonnes tenues a l'ecriture, avec le risque de peremption. Le constat :
+
+<!-- sous « Contre-audit du 2026-09-01 : ce qui est retenu, verifie dans le code » -->
+~~**La liste des scenarios renvoie DEUX graphes complets par ligne**~~ (`graph` et `draft_graph` sont
+tous les deux dans `COLS`, `src/workflow/store.pg.ts:29`), pour des ecrans qui n'affichent qu'un nom.
+Correctif : une projection resumee et paginee (id, code, nom, dates, brouillon en attente, nombre de blocs,
+eligibilite campagne), le graphe complet restant sur `GET /workflows/:id`.
+⚠️ Deux consommateurs empechent un simple retrait : `estEnLigne` a besoin du nombre de blocs, et le
+selecteur de scenario de l'inbox appelle `isCampaignEligible(w.graph)`. Les deux doivent devenir des
+champs calcules cote serveur, avec un test de parite, sinon la regle existe a deux endroits.
+**Declencheur** : avant environ 100 scenarios par espace.
+
+<!-- sous « Contre-audit du 2026-09-01 : ce qui est retenu, verifie dans le code » -->
+**4. ✅ FAIT le 2026-09-01 (migration 0103).** `pause_reason` + `paused_until`, un balayage qui reprend les
+pauses de DEBIT echues (reclamation atomique), et une pause de QUALITE qui n'est JAMAIS reprise par une
+machine. L'angle mort du 429 sans code connu est ferme aussi : il entre desormais dans `estPlafondNumero`.
+Le constat d'origine, garde pour memoire :
+
+<!-- sous « Contre-audit du 2026-09-01 : ce qui est retenu, verifie dans le code » -->
+~~**La pause Meta ne reprend jamais toute seule.**~~ Le texte est corrige (il dit desormais que la reprise
+est manuelle), mais la reprise elle-meme reste a faire : `pause_reason` + `paused_until`, un debit temporaire
+reessaye apres un `Retry-After` borne, une qualite degradee JAMAIS reactivee aveuglement.
+⚠️ Angle mort a traiter en meme temps : un HTTP 429 sans code Meta connu n'entre pas dans `estPlafondNumero`
+et finit en echec destinataire au lieu d'une pause globale.
+
+<!-- sous « Contre-audit du 2026-09-01 : ce qui est retenu, verifie dans le code » -->
+~~**Le banc de charge ne mesure pas ce qu'on lui prete.**~~ Il prouve la reprise apres kill d'une campagne
+de 400 destinataires sur un worker, et rien d'autre. Manquent : le debit des entrants et son p95, l'equite
+entre espaces, la rafale d'accuses, la concurrence API + worker sur un meme numero, deux workers.
+🔴 **Ecrire les SLO AVANT les profils** : un resultat sans seuil d'acceptation est une observation, pas une
+preuve de capacite. Trois suffisent pour commencer : delai d'un entrant, delai avant premier envoi de
+campagne, age du plus vieux job par espace.
+
+<!-- sous « Contre-audit du 2026-09-01 : ce qui est retenu, verifie dans le code » -->
+**5bis. ✅ FAIT le 2026-09-02 : le plafond de debit des entrants est leve.** La premiere mesure contre les
+seuils avait donne 120 s sur une rafale de 400, soit 1,5 message/s, et j'avais conclu a un arbitrage cout
+contre latence a soumettre a Julien (relever la concurrence, ou baisser la cadence de sondage). C'etait une
+fausse alternative : pg-boss 12.25, DEJA installe, sait reveiller ses workers par `LISTEN/NOTIFY`. Mesure sur
+le meme banc, meme rafale : 22 ms d'age maximum, 400 jobs sur 400 traites, latence moyenne 7 ms. Le levier que
+Julien demandait (sondage a 0,5 s) a ete mesure aussi, honnetement : 6,06 msg/s, exactement la prediction de la
+formule, et le seuil de 30 s reste DEPASSE (65 s). Detail et preuves : `docs/SLO-2026-09-01.md`.
+
+<!-- sous « Relevé au lot « entretien de construction » (2026-08-31) » -->
+- ✅ **Les deux failles HAUTES des briques de Fastify sont FERMÉES** (2026-08-31) : `fast-uri` 3.1.3 -> 3.1.6
+  et `find-my-way` 9.6.0 -> 9.9.0, dans les intervalles que Fastify autorisait déjà, donc `package.json`
+  inchangé. Et **l'image de production n'embarque plus les outils de test** : le `Dockerfile` fait désormais
+  `npm ci --omit=dev`, ce qui emporte `vitest` et toute sa chaîne (109 -> 76 paquets). `npm audit --omit=dev`
+  rend 0 vulnérabilité. Prouvé AVANT bascule sur l'image allégée : `migrate`, l'API qui répond sur `/live` et
+  `/health`, et le worker qui démarre avec ses sept files.
+
+<!-- sous « 🔴 Agent IA : les lots NON développés (L3, L4, L6, L7), du cadrage du 2026-08-23 » -->
+- ✅ **L2 : le connecteur API (HTTP) du client. LIVRÉ ET DÉPLOYÉ le 2026-08-28** (migration 0088 appliquée).
+  Plan exécuté : [AGENT-IA-PLAN-L2.md](AGENT-IA-PLAN-L2.md), neuf tâches. Le système se déclare dans
+  **Tools > Connecteurs API**, l'agent n'y déclare que ses appels. Détail dans [documentation.md](documentation.md) §Le connecteur API d’un client.
+
+<!-- sous « 🔴 Agent IA : les lots NON développés (L3, L4, L6, L7), du cadrage du 2026-08-23 » -->
+- ✅ **L4 : MCP en jeton statique. LIVRÉ le 2026-09-17**, pas encore déployé. Le chantier a suivi son
+  propre plan (`docs/superpowers/plans/2026-09-16-connecteurs-mcp.md`), écrit sans connaître
+  `AGENT-IA-PLAN-L4.md`, qui reste lisible pour ses constats. Ce qui a été tranché AUTREMENT que ce que
+  cette ligne annonçait : **URL libre validée, pas d'allowlist** (décision de Julien du 2026-09-16 ; la
+  garde est la double vérification d'adresse, sur le TEXTE et sur ce vers quoi elle RÉSOUT), et le `risk`
+  est **proposé par les annotations du serveur puis CONFIRMÉ par le client**, jamais dérivé, la spec MCP
+  déclarant ces annotations non fiables. Ce qui a été tenu : le schéma distant est TRADUIT dans notre
+  modèle, jamais transmis tel quel, et c'est ce qui fait descendre la garde anti-IDOR jusqu'aux feuilles.
+  **Reste à faire, dans cet ordre** : le déploiement, l'essai réel, puis la migration `0153` ci-dessous.
+  🔴 **ET L4 NE SERVIRA JAMAIS LE MBA, vérifié le 2026-09-10 sur le corpus OpenAPI officiel de Meta**
+  (`mba documentation/`, version 2.0.0) : zéro occurrence de « MCP » dans les 16 specs et 12 pages, et
+  surtout **aucun champ où le déclarer**. Un `agent_connector` exige `base_url` + `auth_type`
+  (`OAUTH2 | OAUTH2_CLIENT_CREDENTIALS | API_KEY | BASIC | CUSTOM | NONE`) et rien d'autre ; un tool est
+  un `request_definition` HTTP. **Un outil MCP n'est donc pas publiable au MBA**, et L4 ne vaut que pour
+  NOS agents. Ce constat a sorti le client MCP du programme « catalogue centralisé » du 2026-09-10
+  (décision de Julien), il ne l'a pas annulé ici. ⚠️ Corollaire à ne pas perdre : le jour où L4 se fait,
+  la case « exposé au MBA » d'un outil MCP doit être **grisée avec la raison**, pas cochable en vain.
+
+### ✅ LOT LIVRÉ : étanchéité des canaux RCS / WhatsApp (2026-08-25)
+
+**L'audit reste la référence** : `AUDIT-ETANCHEITE-CANAUX-2026-08-25.md`, 6 rouges, 9 jaunes, et surtout
+**41 partages de canal qui sont VOULUS et qu'il ne faut pas « corriger »**. Cette dernière liste se relit
+avant toute intervention dans cette zone. Le plan exécuté est dans `.loop/etancheite-canaux.md`.
+
+Le fond du sujet, en une phrase : `workflow_runs.channel` existait, il était correctement ÉCRIT à l'envoi,
+mais **jamais relu** au moment de décider si un message entrant concernait ce parcours. Un tap RCS faisait
+donc avancer une branche d'une question posée en WhatsApp, et l'inverse. `advance` reçoit désormais le canal
+du retour et refuse ce qui ne vient pas du bon tuyau.
+
+Les deux décisions produit ont été tranchées par Julien le 2026-08-25 : réponse RCS libre depuis l'inbox
+→ **oui, livrée** ; automations sur un message RCS → **câblées**. Le troisième point (`lastInboundAt` poussé à
+HubSpot) est résolu sans arbitrage : le champ est restreint à WhatsApp, puisque sa raison d'être écrite est
+de piloter la fenêtre 24 h de Meta ; un besoin « dernier contact tous canaux » prendra un champ DISTINCT.
+
+Ce qui reste ouvert est plus bas, section « Étanchéité des canaux : ce que le lot a volontairement laissé ».
+
+### ✅ Laissé ouvert par le lot « Journée 1 », puis FAIT le 2026-08-31
+
+Les deux chemins que le correctif voisin ne couvrait pas sont fermés : le **plafond de temps d'un appel
+sortant** (30 s pour une API ordinaire, 120 s pour un modèle, l'échéance de l'appelant restant prioritaire) et
+le **dimensionnement de l'enfilement du retry-sweep**. Détail et pièges dans `documentation.md` §Journal des
+lots livrés.
+
+⚠️ **Le même trou de plafond existe dans le connecteur** (`mm-hubspot/src/http/transport.ts`), consigné dans
+le `todo.md` de CE dépôt-là.
+
+<!-- sous « Plan des boucles feature-loop (ordre) » -->
+1. ✅ **Loop 1 : Webhook receiver + file + idempotence** (le socle que tout consomme).
+
+<!-- sous « Plan des boucles feature-loop (ordre) » -->
+2. ✅ **Loop 2 : Wrapper Cloud API + MM Lite** (send text/template, statuts, marketing_messages,
+   erreurs + retries + throttling).
+
+<!-- sous « Plan des boucles feature-loop (ordre) » -->
+3. ✅ **Loop 3 : Contacts BSUID-native + import CSV + user fields** (parsing, dédup, merge CTA).
+
+<!-- sous « Plan des boucles feature-loop (ordre) » -->
+4. ✅ **Loop 4 : Moteur de campagne + garde-fous** (pacing, fréquence max, coupure quality rating).
+
+<!-- sous « Plan des boucles feature-loop (ordre) » -->
+5. ✅ **Loop 5 : Adaptateurs Postgres + run E2E** (stores PG, services create/run, routes HTTP
+   import/campagne/run, worker campaign-run ; E2E CSV->campagne->envoi prouvé contre Supabase).
+
+<!-- sous « Programme 16 features (2026-07-16) : lots restants » -->
+- ✅ **Lot 4b : fin du socle identifiants : FAIT (2026-07-16)** (codes des NODES mintés serveur + champs système
+  déterministes + backfill, cf `.loop/lotF-identifiants-4b.md`). Reste le chantier DÉDIÉ **endpoints API publics**
+  adressés par code (API keys, auth consommateur externe, scopes, rate limiting -> cadrage produit).
+
+<!-- sous « Programme 16 features (2026-07-16) : lots restants » -->
+- ✅ **Lot 6 : i18n anglais COMPLET : FAIT (2026-07-16)** (bug lang resync fermé, day/format locale-requis,
+  toggle pré-login sur les 5 pages auth, cf `.loop/lotG-i18n-anglais.md`).
+
+<!-- sous « Programme 16 features (2026-07-16) : lots restants » -->
+- ✅ **Lot 7 : Flow avancé (#6b/#6c) : FAIT (2026-07-17)** : formulaires MULTI-ÉCRANS (onglets builder, ids
+  `FORM`/`FORM_B`…, complete agrégé par refs globales, webhook INCHANGÉ), champs CONDITIONNELS (`visibleIf` ->
+  propriété `visible`, sondé : champ masqué OMIS du payload, requis caché ne bloque pas), **fix node `flow`**
+  (envoi interactif réel + garde fenêtre 24 h à 3 étages). Sondes LIVE avant plan + sonde committée
+  `scripts/sonde-flow-live.mts` (générateur produit vs WABA réel). Cf `.loop/lot7-flow-avance.md`.
+  ⚠️ Vérif Julien restante (V2) : scénario avec node Formulaire -> envoi réel reçu sur son WhatsApp,
+  formulaire multi-écrans rempli -> champs contact + run avancé + carte inbox.
+
+<!-- sous « Programme 16 features (2026-07-16) : lots restants » -->
+- ✅ **Lot 8 : Campagne « une-page » : FAIT (2026-07-17, 5 phases LIVE)** : écran pleine largeur 2 étapes
+  (Préparation / Lancement), sources de destinataires (Liste de contacts requêtable par filtres / Import fichier
+  + tag / HubSpot grisé), débit ajustable (mig 0033, timeout de job dimensionné), planification maintenant/plus
+  tard (mig 0034, sweeper, annulable). Cf `.loop/lot8-campagne-une-page.md`. ⚠️ Vérif Julien restante (E1/V1) :
+  drive navigateur du parcours complet + coup d'œil visuel (pleine largeur, filtres, slider, calendrier).
+
+<!-- sous « Programme 16 features (2026-07-16) : lots restants » -->
+- ✅ **ConvAnalyzer light (Lot 9) : FAIT (2026-07-17)** : bloc « Conversations (analyse) » dans Analytics
+  (quanti donut/barres + table quali filtrable -> inbox), sur le moteur Pièce 1 déjà actif. Cf
+  `.loop/lot9-convanalyzer.md`. **V2 (backlog)** : ~~(a) agent IA décisionnel branché sur l’analyse~~ **FAIT AUTREMENT, et mieux**
+  (2026-08-03) : le déclencheur d’automation `conversation_analyzed` existe, donc une analyse démarre un scénario,
+  qui sait poser un tag, écrire dans HubSpot et envoyer. Restent ouverts :
+  (b) enrichir le schéma d'analyse pour reprendre ce que le vrai convanalyzer a en plus (urgence graduée 0-5,
+  score d'échec du bot, churn, clustering de sujets) ; (c) tendance temporelle stable (joindre
+  `conversations.created_at`, pas `conversation_analysis.created_at` qui bouge à la ré-analyse).
+
+<!-- sous « Programme 16 features (2026-07-16) : lots restants » -->
+- ✅ **Palier 2 : champ booléen + consentement de flow : FAIT (2026-07-17)** : canonicalisation booléenne
+  (`crm/fields.ts`, partagée fiche/import/webhook), OptIn de flow -> champ booléen choisi (défaut `whatsapp_optin`
+  créé à la volée) ET flip `opt_in_status='opted_in'` (opt-out écrasé, décision Julien), garde double-consentement.
+  Cf `.loop/palier2-consentement.md` + cadrage `~/messagingme-pilot/docs/CADRAGE-MBA-API-CONTENU-HUBSPOT.md`.
+  ⚠️ Dette test : `toBElems` (FlowBuilder) non testé unitairement (fonction non exportée) -> exporter + test
+  (optin défaut -> saveTo vide ; optin cible explicite -> saveTo non vide). ⚠️ Vérif Julien : flow avec écran
+  de consentement -> coché -> champ « Oui » + statut opt-in + éligibilité campagne marketing.
+
+<!-- sous « Décisions API/HubSpot tranchées (2026-07-17) -> paliers restants » -->
+- ~~Palier 3 (ancien cadrage)~~ remplacé par l'entrée ci-dessus.
+  Rappel de portée (fait) : `POST /v1/sends` scénario + template, node = fenêtre 24h uniquement (D-1, Phase B2).
+
+<!-- sous « Chantier OTP + étapes de deal HubSpot (ouvert le 2026-08-16) » -->
+- ✅ **Menu des étapes de deal dans l'écran Automation** (fait et déployé le 2026-08-16).
+
+<!-- sous « Chantier OTP + étapes de deal HubSpot (ouvert le 2026-08-16) » -->
+- ✅ **Souscription webhook HubSpot envoyée** (2026-08-16, build #8 sur le compte dev 148896252). La chaîne
+  est donc vivante de bout en bout ; reste à l'éprouver sur le portail cobaye avec un deal dont le contact
+  porte un numéro, et un scénario qui ouvre par un template.
+
+<!-- sous « Post-live : prochaines actions » -->
+- ✅ **Token permanent POSÉ (2026-07-08).** `META_ACCESS_TOKEN` = token System User permanent
+  (`expires_at:0`, scopes messaging+management), dans `.env.prod` du VPS. Templates create+list
+  validés en live via l'app. Détails : `brain/PROJECTS.md` §Meta/WhatsApp.
+
+<!-- sous « Post-live : prochaines actions » -->
+- ✅ **Placeholders demo supprimés (2026-07-08).** `demo-pn`/`demo-waba` (seed) traînaient sous le
+  tenant réel et gagnaient le `order by created_at limit 1` -> 502 templates. DELETE des 2 lignes.
+
+<!-- sous « Post-live : prochaines actions » -->
+- ✅ **Veille MBA POSÉE (2026-07-09)** : cron VPS `ops/mba-eligibility-watch.mjs` (crontab ubuntu,
+  toutes les 6h) qui poll `GET api.facebook.com/{pnid}/agent_eligibility` (X-API-Version 2.0.0).
+  Baseline = 403 « Meta Business AI Terms » (`BLOCKED_TOS`, état dans `.mba-eligibility-state.json`).
+  Alerte Telegram (`@Messagingmeapp_bot`, creds lus au runtime depuis `messagingme-pilot/config.json`)
+  au moindre changement d'état (mur ToS levé → MBA ouvre FR). Log `.mba-eligibility.log`.
+
+### ✅ Suites revue templates + inbox : TOUT RÉSOLU (2026-07-08)
+
+- ✅ **Bouton URL dynamique** : `buildComponents` émet l'`example` bouton quand l'URL contient `{{n}}`.
+- ✅ **Types interactifs Flows** : `nfm_reply` capturé (corps + `response_json` en payload), réaction
+  (emoji), médias (légende ou `[type]`), localisation, sous-type inconnu -> `[interactif]`. Plus de
+  perte silencieuse.
+- ✅ **Liaison contact** : match `'+'||wa_id` PUIS chiffres normalisés (`regexp_replace`) -> tolère un
+  formatage différent.
+- ✅ **Message Meta** : 502 tronqué à 200 car., espaces compactés.
+- ✅ **Templates list** : pagination complète (suit `paging.next`, cap 20 pages).
+
+### ✅ Sécurité / auth : RÉSOLU (était BLOQUANT à la revue Loops 3-5)
+
+Auth construite et déployée : login JWT (scrypt async, rate-limit, hash leurre anti-énumération),
+isolation tenant sur toutes les routes (tenant DÉRIVÉ du JWT, 403 si mismatch), RBAC (écritures
+admin-only via `forbidNonAdmin`), ownership `phoneNumberId` validée, `AUTH_SECRET` fail-fast en
+prod. Résidus non bloquants ci-dessous.
+
+### Suites de la revue sécurité auth
+
+- ✅ **RBAC** : `forbidNonAdmin` applique le rôle admin sur les écritures (import, création + run
+  de campagne). Reads ouverts aux comptes authentifiés. Matrice à affiner si un rôle `agent` est
+  réellement provisionné.
+- ✅ **Compte démo** `admin@demo.test` désactivé en prod (password_hash null, réversible).
+- ✅ **AUTH_SECRET** : boot prod échoue si absent/faible ; posé sur le VPS.
+- ✅ **Unicité email** : tranché -> email GLOBAL insensible à la casse. Migration 0010 (index
+  `users_email_lower_unique` sur `lower(email)`), `findByEmail` matche `lower(email)`. Fin du
+  non-déterminisme multi-tenant.
+
+### ✅ Dashboard v2 : prix templates MARCHE EN PROD (corrigé 2026-07-10)
+
+⚠️ CORRECTION d'une conclusion erronée. J'avais écrit que `pricing_analytics` était bloqué par
+l'Advanced Access (403 #200). **C'était FAUX** : la sonde avait tourné avec le token du `.env` LOCAL,
+qui est limité/périmé, PAS le token permanent de prod. Re-testé DANS le conteneur `mba-api` (vrai token
+`.env.prod`) : `pricing_analytics` renvoie **200 + vraies données** (marketing 0,0712 / utility 0,0248…).
+Donc **le prix par template s'affiche déjà en prod** (le getPricing déployé utilise le bon token). Aucun
+App Review requis pour l'analytics de NOTRE WABA. Pas de dégradation « indisponible » en réalité.
+
+- **Leçon (cf. LEARNINGS)** : le `META_ACCESS_TOKEN` du `.env` LOCAL n'est PAS le token de prod. Toute
+  sonde Meta doit tourner **dans le conteneur / avec le token de prod** (`docker cp` + `docker exec mba-api
+  node ...`), jamais avec un scratch local, sinon faux négatifs (#200 « Provide valid app ID »).
+
+<!-- sous « Dette Feature 2 : Admin + RBAC (revue adversariale 2026-07-10) » -->
+- ✅ **JWT figé sur changement de rôle / révocation : RÉSOLU (2026-07-10)** : `requireAuth` relit
+  l'état du compte EN BASE à chaque requête authentifiée (`getUserState` -> `PgUserStore.getAuthState`) :
+  compte supprimé/révoqué -> 401 immédiat, rôle rafraîchi depuis la base. Un changement de rôle, une
+  révocation ou une suppression prennent effet TOUT DE SUITE, plus de fenêtre de 12h. Coût : un lookup
+  PK par requête (négligeable à ce volume). Optionnel (absent en test -> JWT seul).
+
+<!-- sous « Suites de la revue Loops 3-5 » -->
+- ✅ **Réconciliation `sending`** : sweeper `reclaimStale` en place (worker.ts, `STALE_SENDING_MS`),
+  reset `sending` -> `pending` au-delà du timeout.
+
+<!-- sous « Suites de la revue Loops 3-5 » -->
+- ✅ **createCampaign transactionnel + bulk** : `createWithRecipients` est dans un BEGIN/COMMIT et
+  insère les destinataires en UNE requête (`unnest`, helper `bulkInsertRecipients`, idempotent
+  `on conflict do nothing`). `insertRecipients` idem.
+
+### Refonte auth : ✅ FAITE (Lot 6, 2026-07-13)
+
+Inscription libre + Google + invitations Resend + mot de passe perdu/reset/changement, tous LIVE. Détail :
+`docs/JOURNAL-TECHNIQUE.md` (l archive) §Lot 6. Domaine Resend vérifié + client OAuth Google configuré (origine JS + app publiée par Julien).
+
+<!-- sous « Dette de la revue Loops 1-2 » -->
+- ✅ **Test DLQ** : test d'intégration qui prouve job qui throw -> `<name>-dlq` (retryLimit
+  configurable + `pullPending`, 1 seule tentative avec retryLimit:0).
+
+<!-- sous « Dette de la revue Loops 1-2 » -->
+- ✅ **CI intégration** : job `integration` (service Postgres 16, `DB_SSL=off`, migrate +
+  `test:integration`) ajouté à `.github/workflows/ci.yml`.
+
+<!-- sous « Raffinements notés » -->
+- ✅ **Loop 3 / import collision** : deux colonnes -> même custom key est signalé (`report.errors`
+  « colonnes fusionnées »), 1re valeur non vide gagne.
+
+<!-- sous « Raffinements notés » -->
+- ✅ **Loop 2 / `withRetry`** : ne rejoue QUE `MetaApiError.retryable` + codes réseau connus
+  (`NETWORK_CODES`), pas un throw arbitraire.
+
+<!-- sous « Raffinements notés » -->
+- ✅ **Loop 2 / `MetaClient`** : test « `rateLimiter.acquire()` appelé à chaque tentative » ajouté.
+
+<!-- sous « Raffinements notés » -->
+- ✅ **Loop 5 / existence campagne** : `campaignBelongsTo` = `select 1 ... where id and tenant_id`.
+
+<!-- sous « Raffinements notés » -->
+- ✅ **Loop 5 / `insertRecipients`** : bulk insert (`unnest`).
+
+<!-- sous « À durcir / suites (2026-07-15) » -->
+- ✅ **Bouton FLOW dans l'envoi workflow : FAIT (2026-07-16)** : `buildWorkflowTemplateComponents` génère désormais
+  le composant `{sub_type:'flow', parameters:[{type:'action', action:{flow_token}}]}` par bouton FLOW (corrige #131009).
+  Vérifié empiriquement contre la Cloud API. Détail : `CLAUDE.md` §Gotchas 2026-07-16.
+
 ## 2026-10-09 : plan de performance, lots 1, 2 et 4
 
 - **Lot 1, les relevés périodiques s'arrêtent à l'expiration de la session** (`repeterAvecGigue`, `web/lib/poll.ts`). Ils
@@ -3436,7 +5297,7 @@ en déplaçant est le meilleur moyen de perdre une information sans s'en apercev
 ## Comment le lire
 
 - **par date** : les sections de la seconde moitié portent leur date de livraison dans leur titre ;
-- **par migration** : le § « LES MIGRATIONS, UNE PAR UNE » raconte 0093 à 0113, une par une ;
+- **par migration** : le § « LES MIGRATIONS, UNE PAR UNE » raconte 0093 à 0227, une par une ;
 - **par incident** : chercher le symptôme, pas le module. La plupart des sections partent d'une panne réelle ;
 - **par commit** : plusieurs sections nomment le commit qui les a produites.
 
@@ -5788,7 +7649,7 @@ piège évité) qu’aucun autre document ne consigne. Elles se lisent à la dem
 contradiction avec le reste de ce fichier ou avec `features.md`, c’est le reste qui fait foi.
 
 ---
-## LES MIGRATIONS, UNE PAR UNE : ce que chacune a coûté et ce qu'elle a appris (0093 à 0113)
+## LES MIGRATIONS, UNE PAR UNE : ce que chacune a coûté et ce qu'elle a appris (0093 à 0227)
 
 🔴 **CE BLOC VIENT DU `CLAUDE.md`, ET IL EN EST SORTI LE 2026-09-04.** Il y avait grossi jusqu'à 120 lignes,
 soit un quart d'un fichier chargé à CHAQUE session, pour raconter des migrations dont la plupart sont
@@ -5798,7 +7659,8 @@ devient une archive cesse d'être un point d'entrée.
 ⚠️ **LE COMPTEUR N'EST PAS ICI, ET IL NE DOIT JAMAIS Y ÊTRE.** `CLAUDE.md` se déclare sa source unique, et
 trois documents qui l'avaient recopié étaient tous faux (de 43, de 15 et de 5 migrations). Ce qui suit ne
 contient aucun numéro « dernière appliquée » ni « prochaine libre » : c'est vérifié par assertion au moment du
-déplacement, et ça doit le rester.
+déplacement, et ça doit le rester. ⚠️ **Sauf le bloc 0114 à 0227**, sorti tel quel de `CLAUDE.md` le 2026-10-10 : ses
+« dernière appliquée » sont DATÉS et périmés, et le compteur vivant reste dans `CLAUDE.md`.
 
 Ce qui est RESTÉ dans `CLAUDE.md` parce que ça se décide à chaque déploiement : le compteur, la règle qui dit
 si une migration est bloquante ou non (donc l'ordre migrer/déployer), la directive hors-transaction, le verrou
@@ -5943,6 +7805,834 @@ exactement l'incident du 2026-08-17. C'est le cas d'école de la règle ci-dessu
 décide de l'ordre, et il faut se poser la question à chaque fois plutôt que d'appliquer une routine.
 
 ---
+
+### 0114 à 0227 : sorties de `CLAUDE.md` le 2026-10-10, texte d'origine (du plus récent au plus ancien)
+
+🔴 **CE FICHIER EST LA SEULE SOURCE DU COMPTEUR. Ne le recopiez nulle part.** Trois documents l'ont fait, les
+trois étaient faux : `PLAN.md` en retard de 43 migrations (croire sa ligne menait à écrire par-dessus une
+migration existante), `brain/PROJECTS.md` de 15, `wip.md` de 5. Il a aussi dérivé DEUX fois dans la seule
+journée du 2026-09-03, et dans les deux sens : annoncé 0107 quand la base était à 0111, puis « prochaine libre
+= 0112 » alors que 0112 était déjà appliquée. **En cas de doute, la base tranche, jamais ce fichier**
+(`select name from public.schema_migrations order by name desc`, qualifié `public.` : plusieurs schémas de
+cette base portent une table de ce nom). Ailleurs, on met un POINTEUR vers la ligne ci-dessous.
+
+**Dernière appliquée : 0227**, le 2026-10-09 à 15 h 48 UTC (`oauth_autres_clients`, lot 15 : `oauth_clients`, le CHECK de forme de `oauth_autorisations.client_id`, `client_nom`, `client_marque` et `client_hote`, `client_mcp` dans `tenants_origine_chk` ; elle ajoute et relâche), poussée avec son code (`2d17b2cd`) et appliquée AVANT le `up` de l'API, des deux workers et de `mba-web`, après la CI verte job par job et APRÈS la publication de la console par Vercel (relecture de A : une API neuve devant l'ancienne page de consentement aurait montré un client enregistré nommé « Claude »), après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur `tenants` ni `oauth_autorisations`) et vérifié dans l'image qu'elle seule serait appliquée : relue en base juste après (les colonnes, les sept contraintes sous leur nom, les six autorisations de Claude Code intactes, zéro client enregistré), puis le parcours de Claude Code vérifié de l'extérieur (`/oauth/authorize` rend 302 vers la console). ⚠️ Retour arrière : le CHECK de forme accepte toute adresse `https` ; une image d'avant le lot 15 n'écrit que les deux client_id de Claude, elle y survit. **Prochaine libre = 0228.** Avant elle, **0226**, le 2026-10-09 à 13 h 43 UTC (`refus_effaces`, lot 13 domaine 5 livraison B : la liste de refus des fiches effacées, une table neuve en cascade depuis `tenants`), poussée avec son code (`a421ba13`) et appliquée AVANT le `up` de l'API, des deux workers et de `mba-web` (elle est BLOQUANTE : la purge et les quatre insertions de fiches la nomment, dont chaque message entrant), après la CI verte job par job, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur `tenants`) et vérifié dans l'image qu'elle seule serait appliquée : relue en base juste après (les cinq colonnes, leurs types, nullabilités et défauts ; la clé primaire `(tenant_id, empreinte)` pour seul index ; la clé étrangère en `confdeltype = 'c'` ; le CHECK sous son nom ; table vide), puis les six requêtes neuves construites par le vrai code déployé et planifiées par Postgres contre le schéma de production (`explain` sans exécution, en lecture seule). Avant elle, **0225**, le 2026-10-09 à 6 h 29 UTC (`statut_message`, lot 13 domaine 1 livraison B : `conversation_messages.statut` et `.statut_le`, nullables SANS défaut, et `conversation_messages_statut_chk` posé NOT VALID), poussée avec son code (`c21dc3b0`) et appliquée AVANT le `up` de l'API, des deux workers et de `mba-web` (elle est BLOQUANTE : le worker des accusés l'écrit, l'API la lit), après la CI verte job par job, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur `conversation_messages`, 424 lignes) et vérifié dans l'image qu'elle seule serait appliquée : relue en base juste après (les deux colonnes, leurs types et l'absence de défaut ; le CHECK sous son nom en `convalidated = false` ; aucun statut posé), puis le worker relu sans erreur après le `up`. Avant elle, **0224**, le 2026-10-08 à 16 h 45 UTC (`repondeur_application`, lot 12 livraison B : le mode `application` dans `tenant_settings_repondeur_mode_chk`, `repondeur_adresse_id` en `on delete set null` vers `adresses_evenements`, `tenant_settings_repondeur_adresse_chk` à sens unique), poussée avec son code (`97235386`) et appliquée AVANT le `up` de l'API, des deux workers et de `mba-web`, après la CI verte job par job, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur `tenant_settings`) et vérifié dans l'image qu'elle seule serait appliquée : relue en base juste après (`uuid` nullable SANS défaut, la clé étrangère en `confdeltype = 'n'`, le CHECK des modes à cinq valeurs et celui de l'adresse sous leur nom, zéro adresse désignée, la répartition des modes inchangée), puis le mode des 9 espaces lu par le vrai code déployé, en lecture seule (1 MBA, 1 agent IA, 7 en équipe). ⚠️ Retour arrière : la consigne est en tête du fichier SQL. Avant elle, **0223**, le 2026-10-08 à 15 h 25 UTC (`evenements_sortants`, lot 12 livraison A : `adresses_evenements` et `envois_evenements`, deux tables neuves que seul le code neuf écrit et lit, aucune clé en `restrict`), poussée avec son code (`b8908c57`) et appliquée AVANT le `up` de l'API, des deux workers et de `mba-web`, après sa CI verte job par job, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s) et vérifié dans l'image qu'elle seule serait appliquée : relue en base juste après (les onze et quinze colonnes avec leurs types, nullabilités et défauts ; `tenant_id` et `adresse_id` en `confdeltype = 'c'`, `contact_id` en `'n'` ; les CHECK sous leur nom, l'unicité `(adresse_id, evenement_id)` ; les huit index d'`envois_evenements` dont les trois partiels de l'état d'une adresse ; tables vides), puis le worker relu consommant `evenements-distribution` et `evenements-envoi`, et la route neuve en 401. Avant elle, **0222**, le 2026-10-08 à 11 h 35 UTC, avec **0221** dans le même `migrate` (lot 6 livraison C : `0221_entreprise_quittee`, `tenants.entreprise_quittee_le` en `timestamptz` nullable SANS défaut et sa reprise ; `0222_budget_recherche`, le défaut de `agents.budget_micro_eur` passé de 30 000 à 70 000 et les agents restés au défaut relevés), poussées avec leur code (`6f1bd0d5`, le test corrigé `e4aeecae`) et appliquées AVANT le `up` de l'API et des deux workers, après la CI verte, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur `tenants` ni `agents`) et vérifié dans l'image qu'elles seules seraient appliquées : relues en base juste après (la colonne et sa nullabilité, zéro espace daté par la reprise puisque tous sont en Entreprise, le défaut 70000, les 2 agents relevés), puis la commission des 9 espaces (10 %), les fiches à vectoriser et la conservation lues par le vrai code déployé, en lecture seule. Avant elles, **0220**, le 2026-10-08 à 8 h 30 UTC (`numero_inclus`, lot 6 livraison B2b : `abonnements_offre.rendre_numero` en `boolean NOT NULL DEFAULT false` et `.suite_annoncee_le` en `timestamptz` nullable SANS défaut), poussée avec son code (`be063d14`) et appliquée AVANT le `up` de l'API, des deux workers et de `mba-web` (la lecture du Pro nomme les deux colonnes), après la CI verte de `7f23f10b`, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur `abonnements_offre`) et vérifié dans l'image qu'elle seule serait appliquée : relue en base juste après (les deux colonnes, leurs types, nullabilités et défauts ; la seule ligne de Pro à `false` et `null`), puis la suite du numéro, les annonces à faire et l'état du numéro calculés par le vrai code déployé, en lecture seule, sur les 9 espaces. Avant elle, **0219**, le 2026-10-07 à 14 h 08 UTC (`espaces_supprimes`, RC8 : la trace des espaces supprimés depuis /ops, qui sert aussi de pierre tombale aux jobs de file d'un espace disparu ; une table neuve, sans clé étrangère, que seul le code neuf écrit et lit), poussée avec son code (`2e082268`) et appliquée AVANT le `up` de l'API et des deux workers, après sa CI verte, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s) et vérifié dans l'image qu'elle seule serait appliquée : relue en base juste après (les sept colonnes avec leurs types, nullabilités et le défaut `now()` de `supprime_le`, la clé primaire sur `tenant_id` pour seule contrainte et seul index, AUCUNE clé étrangère, table vide, les 9 espaces présents), puis le bilan de suppression exécuté par le vrai code déployé, en lecture seule, sur l'espace d'essai « nouveau test ». Avant elle, **0218**, le 2026-10-07 à 10 h 34 UTC (`offres`, lot 6 livraison A : la table `abonnements_offre` et son index unique partiel, `tenants.offre_entreprise` et `.entreprise_utilisateurs`, `contacts.ne_entrant`, `hors_offre` dans le CHECK de l'analyse, la fonction `offre_de_l_espace`, et la reprise qui pose tous les espaces existants en Entreprise), poussée SEULE (`45ad6976`) et appliquée AVANT que son code n'arrive sur main, après sa CI verte, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur `tenants`, `contacts` ni `conversations`) et vérifié en base que 0217 était la dernière appliquée : relue en base juste après (les onze colonnes d'`abonnements_offre`, ses cinq CHECK sous leur nom, la cascade depuis `tenants`, l'index `abonnements_offre_un_vivant_par_espace` avec le prédicat exact `fini_le IS NULL`, `offre_entreprise` en `boolean NOT NULL DEFAULT false`, `entreprise_utilisateurs` et son CHECK, `ne_entrant` en `boolean NOT NULL DEFAULT false`, `hors_offre` dans le CHECK, la fonction ; les 9 espaces en Entreprise par la reprise), puis la vue de l'offre calculée par le vrai code déployé sur les 9 espaces. Avant elle, **0217**, le 2026-10-07 à 9 h 11 UTC (`qui_repond`, RC6 : `tenant_settings.repondeur_mode` à quatre valeurs, `.repondeur_workflow_id` en `on delete set null`, `.repondeur_delai_scenario_s`, `contacts.repondeur_scenario_le`, la contrainte « une voix » SUPPRIMÉE, deux CHECK à sens unique, et `mba_indisponible` dans le CHECK des événements, dix-huit types), AVANT le `up` de l'API et des deux workers, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur `tenant_settings`, `contacts`, `conversation_evenements` ni `workflows`) et vérifié dans l'image qu'elle seule serait appliquée : relue en base juste après (les quatre colonnes, leurs types, nullabilités et défauts ; les six contraintes du répondeur sous leur nom, dont les deux clés étrangères en `confdeltype = 'n'` ; le CHECK des événements à dix-huit types ; la répartition des modes égale au comptage d'avant, un `agent` et un `mba`, et relue identique APRÈS le `up`), puis le mode de chaque espace lu par le vrai code (1 MBA qui répond, 1 agent IA, 7 en équipe faute de ligne de réglages). Avant elle, **0216**, le 2026-10-06 à 17 h 56 UTC (`conversation_urgente`, RC2 : `conversations.urgente_le` et `.urgente_par`, l'index partiel `conversations_urgentes_idx`, le CHECK des événements à dix-sept types avec `urgente` et `urgence_levee`), AVANT le `up` de l'API et des deux workers (la liste de l'Inbox nomme `urgente_le`), après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur `conversations`, 26 conversations) et vérifié dans l'image qu'elle seule serait appliquée : relue en base juste après (deux colonnes nullables SANS défaut, la clé étrangère en `confdeltype = 'n'`, l'index avec son prédicat exact, un seul CHECK sous son nom à dix-sept types, zéro conversation urgente), puis le chemin chaud exécuté par le vrai code (`listConversations` en « À traiter » et « Urgent », `compterConversations`). Avant elle, **0215**, le 2026-10-06 à 16 h 57 UTC (`numero_impaye`, lot 4 livraison A : `abonnements_numero.premier_echec_le`, `.fin_prevue_le`, `.fini_le`, `.libere_le`, la table `abonnements_numero_avis`, le CHECK des pauses élargi à `numero_suspendu`, et la reprise `fini_le` des abonnements résiliés), poussée SEULE (`149db406`) et appliquée AVANT que son code n'arrive sur main, après avoir lu `pg_stat_activity` : relue en base juste après (quatre `timestamptz` nullables SANS défaut, le CHECK des avis sous son nom, la clé étrangère en cascade, le CHECK des pauses à cinq motifs, l'espace de l'essai du 6 octobre repris avec `fini_le` à 15 h 14). Avant elle, **0214**, le 2026-10-06 à 12 h 24 UTC (`abonnements_numero`, lot 3c livraison B : l'abonnement du numéro fourni, une table neuve que seul le code neuf écrit et lit), AVANT le `up` de l'API et des deux workers, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s) et vérifié dans l'image qu'elle seule serait appliquée : relue en base juste après (sept colonnes, les deux CHECK sous leur nom, la clé étrangère en `confdeltype = 'c'`, l'index unique partiel `abonnements_numero_un_par_espace` avec son prédicat exact, table vide). Avant elle, **0213**, le 2026-10-06 à 8 h 01 UTC (`tool_name_requis` : `agent_tool_consommateurs.tool_name` NOT NULL, après un contrôle qui refuse en nommant un éventuel doublon ; écrite sous le numéro 0212, pris entre-temps par la suivante, car le dossier tranche sur ce qui est pris), après le `up` du lot 1 de 0211 et AVANT celui de son lot (API, deux workers et `mba-web`, avec le rebranding `4224fe36`), après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur les deux tables) et vérifié dans l'image qu'elle seule serait appliquée : relue en base juste après (`tool_name` en `text` NOT NULL sans défaut, 14 liaisons nommées et justes, aucun doublon). **⚠️ Retour arrière : une image antérieure à `2a6c2046` échouerait en 23502 à chaque création ou rattachement d'outil, il faudrait d'abord `alter table agent_tool_consommateurs alter column tool_name drop not null`. Avant elle, **0212**, le 2026-10-06 à 7 h 50 UTC (`numero_fourni_client`, lot 3b livraison B, plan `docs/superpowers/plans/2026-10-05-numero-fourni.md` : `tenants.origine` en `text NOT NULL DEFAULT 'console'` et `tenants_origine_chk`, `numeros_fournis_statut_chk` à quatre statuts dont `bloque` sous son nom de 0210, l'index unique partiel `numeros_fournis_un_par_espace`), par la session « numéro fourni », AVANT le `up` de l'API et des deux workers, après avoir lu `pg_stat_activity` et vérifié dans l'image qu'elle seule serait appliquée : relue en base juste après (les 8 espaces en `console`, la réserve inchangée). Avant 0212, **0211**, le 2026-10-06 à 7 h 05 UTC (`nom_par_consommateur` : `agent_tool_consommateurs.tool_name`, la clé étrangère composite `atc_tool_name_fkey` en `on update cascade` vers la contrainte unique `agent_tools_id_name_key`, et l'index unique `atc_nom_par_consommateur_uidx`, plan `docs/superpowers/plans/2026-10-06-nom-unique-par-consommateur.md`), AVANT le `up` de l'API et des deux workers, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur les deux tables) et vérifié dans l'image qu'elle seule serait appliquée : relue en base juste après (colonne `text` nullable SANS défaut, clé étrangère en `confupdtype = 'c'` et MATCH SIMPLE, index unique valide, 14 liaisons toutes nommées et justes, aucun doublon). Avant 0211, **0210**, le 2026-10-05 à 16 h 49 UTC (`numeros_fournis`, lot 3a : la réserve de numéros fournis et les codes captés, deux tables neuves que seul le code neuf écrit et lit), AVANT le `up` de l'API et des deux workers, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s) et vérifié dans l'image qu'elle seule serait appliquée : relue en base juste après (les colonnes et leur nullabilité, les quatre CHECK sous leur nom dont celui à sens unique sur l'espace, `tenant_id` en `confdeltype = 'n'` et `numero_id` en `'c'`, les trois unicités et l'index `(numero_id, recu_le desc)`, tables vides). Avant elle, **0209**, le 2026-10-05 à 10 h 41 UTC (`repondeur`, lot 5 : `tenant_settings.repondeur_agent_id` et le CHECK `tenant_settings_repondeur_une_voix_chk`, `workflows.systeme` et son index unique partiel, `sortie_agent` dans `conversation_evenements_type_check`, la table `repondeur_alertes_credit`), AVANT le `up` de l'API et des deux workers, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s) et vérifié dans l'image qu'elle seule serait appliquée : relue en base juste après (les colonnes et leur nullabilité, la clé étrangère en `confdeltype = 'n'`, les trois CHECK sous leur nom, celui des événements à quinze types, l'index avec son prédicat, la clé primaire des alertes, zéro espace avec un répondeur). Avant elle, **0208**, le 2026-10-05 à 8 h 56 UTC (`quotas_api` : `tenant_settings.api_quota_envois_jour` et `.api_quota_fiches_jour`, les quotas quotidiens de l'API par espace), AVANT le `up` de l'API seule (elle les nomme dans la lecture des réglages ; les workers n'y touchent pas), après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur `tenant_settings`) et vérifié dans l'image qu'elle seule serait appliquée : relue en base juste après (deux `integer` nullables SANS défaut, les deux CHECK `> 0` sous leur nom, aucun espace ne porte de quota propre). Avant elle, **0207**, le 2026-10-04 à 16 h 50 UTC (`taches_mesures` : la durée, les lignes, les échecs et les tours sautés des tâches de fond, une table neuve que seul le code neuf écrit et lit), AVANT le `up` des deux workers et de l’API, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s) et vérifié dans l’image qu’elle seule serait appliquée : relue en base juste après (dix colonnes aux types et défauts attendus, la clé primaire `(fenetre, process, tache)` pour seul index, table vide), puis remplie par les deux workers dès leur première minute. Avant elle, **0206**, le 2026-10-04 (`historique_origine_mcp` : `reglages_historique_origine_chk` élargi à `mcp`, sous le même nom, livraison A du lot 8a), AVANT le `up` de l’API et des workers, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s) et vérifié dans l’image qu’elle seule serait appliquée : relue en base juste après (le CHECK sous son nom, à trois origines). Avant elle, **0205**, le 2026-10-03 à 20 h 33 UTC (`http_latences` : la latence HTTP par route, une table neuve que seul le code neuf écrit et lit), AVANT le `up` de l’API et des workers, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s) et vérifié dans l’image qu’elle seule serait appliquée : relue en base juste après (huit colonnes aux types attendus, la clé primaire `(fenetre, process, methode, route, code)` pour seul index, table vide), puis remplie par le premier vidage du vrai trafic (dix lignes, routes au format `/tenants/:tenantId/...`, aucune adresse réelle). Avant elle, **0204**, le 2026-10-03 à 16 h 27 UTC (`oauth` : `oauth_autorisations` et `oauth_codes`, lot OAuth 2a), AVANT le `up` de l’API et des workers (le code neuf les écrit, et un jeton `mbo_` bien formé rendrait 500 sans elles), après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s) et vérifié dans l’image qu’elle seule serait appliquée : relue en base juste après (les deux CHECK sous leur nom, trois clés étrangères en `confdeltype = 'c'`, sept index dont les deux des cascades, tables vides). Avant elle, **0203**, le 2026-10-03 à 10 h 59 UTC (`idempotence_jeton` : `api_idempotency.jeton`, le jeton de garde d’une clé d’idempotence, pour le correctif de la clé coincée par un arrêt brutal), poussée SEULE (`8df012ac`) et appliquée AVANT que son code n’arrive sur main, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur `api_idempotency`) et vérifié dans l’image qu’elle seule serait appliquée : relue en base juste après (`uuid` nullable SANS défaut, table vide). Avant elle, **0202**, le 2026-10-03 à 8 h 17 UTC (`battement_par_role` : efface l’ancienne ligne `worker` de `worker_heartbeat`, AUCUN changement de schéma, le battement passant à une ligne par rôle), APRÈS le `up` et non avant (l’ancien worker réécrivait cette ligne toutes les 20 s) : relue en base juste après (deux lignes, `principal` et `analyse`, venant de deux conteneurs distincts, l’ancienne `worker` disparue). Avant elle, **0201**, le 2026-10-02 à 16 h 59 UTC (`widget_tirs`, lot 3 du widget : les tirs d'un widget, pendant d'`automation_fires`, clé primaire `(widget_id, wa_id)`, deux cascades), BLOQUANTE parce que la purge RGPD la nomme : poussée SEULE (`5c1d7684`) et appliquée AVANT que son code n'arrive sur main, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s) et vérifié dans l'image qu'elle seule serait appliquée ; relue en base juste après (quatre colonnes `NOT NULL`, la clé primaire, les deux clés étrangères en `confdeltype = 'c'`, un seul index, table vide). Avant elle, **0200**, le 2026-10-02 à 15 h 26 UTC (`widgets`, lot 1 du widget WhatsApp : la table `widgets`, vide, que rien ne lit encore), appliquée par la session « Intégration Batch Salesforce » AVANT son `up` de `6ae0a144` : relue en base juste après, point par point (les huit CHECK sous leur nom, dont les deux à sens unique écrits `coalesce(devenir = 'agent', false)` ; `agent_id` et `workflow_id` en `confdeltype = 'n'`, `tenant_id` en `'c'` ; `widgets_phrase_key` sur `(tenant_id, lower(btrim(phrase)))` ; zéro ligne). Le dossier d'origin et la base étaient exactement alignés de 0183 à 0200. Avant elle, **0199**, le 2026-10-02 à 14 h 20 UTC (`mcp_propose` : `agent_tools.mcp_propose`, ce qu'on enregistre sur Tools > Connecteurs MCP), AVANT le `up` et après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur `agent_tools`) : relue en base juste après (`boolean NOT NULL DEFAULT true`, zéro outil MCP en base à ce moment-là). Avant elle, **0198**, le 2026-09-30 à 17 h 56 UTC (`pubs_depense_jour` : la dépense d'une publicité jour par jour, clé primaire `(tenant_id, campagne_id, jour)`, quatre colonnes `not null`, cascade sur l'espace), AVANT le `up`, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s) : relue en base juste après (colonnes, clé primaire, `confdeltype = 'c'`, un seul index, table vide), puis remplie par le premier balayage (deux jours sur la seule publicité active, leur somme égale au cumul). Avant elle, **0197**, le 2026-09-30 à 17 h 06 UTC (`pubs_impressions` : `publicites.impressions` et `.couverture`, deux `bigint` nullables SANS défaut), AVANT le `up`, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur `publicites`) : relue en base juste après (les deux colonnes, leur type et l'absence de défaut), puis remplie par le premier balayage de suivi sur la seule publicité active. Avant elle, **0196**, le 2026-09-30 à 16 h 30 UTC (`fiche_analyse` : la dernière analyse recopiée sur la fiche du contact, onze colonnes `analyse_*` sur `contacts`, chantier « Tout sur la fiche », lot 1), poussée SEULE (`187b36bb`) et appliquée AVANT de pousser le code qui l'écrit, après sa CI verte et après avoir lu `pg_stat_activity` sur `contacts` ET `conversations` (aucune transaction de plus de 5 s, aucun verrou ; la clé étrangère verrouille aussi `conversations`, d'où un `lock_timeout` de 5 s) : relue en base juste après (onze colonnes nullables SANS défaut, les huit CHECK et celui de cohérence sous leur nom, la clé étrangère en `confdeltype = 'n'`, `contacts_analyse_conversation_idx` en `indisvalid = true` avec le prédicat exact, zéro fiche portant une copie). Avant elle, **0195**, le 2026-09-29 à 22 h 25 UTC (`mba_liste` : la liste de l'agent de Meta tenue par la plateforme, une ligne par contact confié à l'agent, avec l'identifiant que Meta rend et sans lequel on ne peut pas le retirer), AVANT le `up` (le code neuf la lit avant chaque modèle et à chaque `standby`), après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s) : relue en base juste après (cinq colonnes `NOT NULL`, clé primaire `(tenant_id, wa_id)` et aucun autre index, cascade depuis `tenants` en `confdeltype = 'c'`, RLS active, table vide). Avant elle, **0194**, le 2026-09-29 à 21 h 10 UTC (`evenements_demandes` : le CHECK de `conversation_evenements.type` élargi à `escaladee` et `rendue_scenario`, sous le nom posé par 0192), AVANT le `up`, après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur `conversation_evenements`), avec un `lock_timeout` de 5 s : relue en base juste après (un seul CHECK, sous son nom, à quatorze types). Avant elle, **0193**, le 2026-09-29 à 10 h 32 UTC (`credit_offert_et_factures` : `credits_offerts.numero_affiche` et son index unique, `agent_credit_mouvements.stripe_session_id`, nullables), AVANT le `up` de l'API ET du worker (chaque mouvement de crédit nomme la colonne), après avoir lu `pg_stat_activity` : relue en base juste après (les 4 offres existantes portent leur numéro, l'achat existant est relié à sa session). Avant elle, **0192**, le 2026-09-29 à 8 h 44 UTC, avec **0191** dans le même `migrate`, AVANT le `up` et après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s) : relues en base juste après. **0191** (`stripe_recharge`) : `stripe_clients` (clé primaire `(tenant_id, livemode)`), `stripe_paiements` (clé primaire sur la session), `credits_offerts` (sans clé étrangère vers `tenants`, délibérément) et sa reprise, qui a marqué les 4 numéros existants à 0 € (pas rétroactif) ; cascades vers `tenants` relues (`confdeltype = 'c'`). **0192** (`conversation_evenements`) : huit colonnes, index `(conversation_id, at desc, id desc)`, cascade vers la conversation et l'espace, `set null` vers les deux utilisateurs, amorcée d'UNE ligne (la seule assignation en cours sur 17 conversations). Avant elles, **0190** le 2026-09-29 à 6 h 11 UTC (`credit_traduction_jour`), relue en base. Avant elle, **0189** le 2026-09-28 à 17 h 44 UTC (`pubs_archivage`), relue en base. Avant elle, **0188** le 2026-09-28 à 16 h 55 UTC (`pubs_bouton` : `pubs_brouillons.bouton` `text NOT NULL DEFAULT 'WHATSAPP_MESSAGE'`, sans CHECK, délibérément), AVANT le `up`. Avant 0188, **0186** le 2026-09-28 à 13 h 55 UTC (`compteurs_debit`, lot B de l'API en plusieurs copies : `cle`, `fenetre`, `n`, `expire_le`, clé primaire `(cle, fenetre)`, relue en base, table vide), AVANT le `up` et après avoir lu `pg_stat_activity`. Elle est passée APRÈS 0187 (le runner applique les fichiers absents de `schema_migrations` par ordre de nom, sans exiger la continuité) : **0187** le même jour à 13 h 32 UTC (`pubs_video_audiences` : `pubs_brouillons.video_id` `text` nullable SANS défaut, `audiences_incluses` et `audiences_exclues` `text[] NOT NULL DEFAULT '{}'`, le CHECK `pubs_brouillons_un_visuel_chk`, relus en base, aucun brouillon touché), et **0185** à 11 h 46 UTC (`verrous_courts`, lot A : clé primaire `cle`, `jeton`, `expire_le`, relue en base, table vide), toutes AVANT le `up`. Avant 0185, **0184** le 2026-09-27 à 13 h 24 UTC (`mfa_blocage` : `identities.mfa_echecs` `integer NOT NULL DEFAULT 0` et `.mfa_bloque_jusqua` `timestamptz` nullable SANS défaut, relues en base juste après, aucune identité touchée sur 139), AVANT le `up` et après avoir lu `pg_stat_activity`. Avant 0184, **0183** le 2026-09-27 à 10 h 35 UTC (`salesforce_socle`, lot L1 de l'app Salesforce : le schéma `salesforce`, le premier que ce dépôt crée, avec `salesforce.orgs`, et `tenant_settings.salesforce_actif`), AVANT le `up` et après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur `tenant_settings`) : relue en base juste après (les 23 colonnes de `salesforce.orgs` avec leurs types, leur nullabilité et leurs défauts, ses cinq contraintes sous leur définition exacte, deux index et AUCUNE clé étrangère, table vide ; `salesforce_actif` en `boolean NOT NULL DEFAULT false`, zéro espace allumé ; `anon` et `authenticated` sans usage du schéma ni droit sur la table). Le code qui l'écrit tourne depuis, invisible tant que `SALESFORCE_CLIENT_ID` n'est pas posé (la route rend 404). Avant elle, **0182**, le 2026-09-26 à 0 h 45 UTC (`mfa_identites`, le second facteur des administrateurs), AVANT le `up` et après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur `identities`), et APRÈS la publication de la console par Vercel (une API neuve devant l'ancienne console bloquait tous les admins) : relue en base juste après (quatre colonnes `mfa_*` nullables SANS défaut sur `identities`, `mfa_codes_secours` avec sa clé primaire `(identity_id, code_hash)` et sa cascade `confdeltype = 'c'`, zéro facteur actif sur 139 identités). Avant 0182, **0181** le 2026-09-25 à 11 h 28 UTC (`plafond_api`, le plafond de l'API publique par espace : `tenant_settings.api_plafond_minute` et `.api_plafond_heure`), AVANT le `up` : relue en base (deux `integer` nullables SANS défaut, leurs deux CHECK `> 0` sous leur nom, aucun espace ne porte de plafond propre, donc tous au défaut). Avant 0181, **0180** le 2026-09-25 à 10 h 54 UTC (`numero_delie`, le bloc « Canaux et services » : `phone_numbers.delie_le` et le motif de pause `numero_delie`), AVANT le `up` et après avoir lu `pg_stat_activity` (aucune transaction de plus de 5 s, aucun verrou sur `campaigns` ni `phone_numbers`) : relue en base juste après (`delie_le` en `timestamptz` nullable SANS défaut, le CHECK à quatre motifs sous son nom lu en base, `campaigns_reprise_idx` inchangé, zéro numéro délié). Avant 0180, **0179** le 2026-09-25 à 9 h 02 UTC (`hubspot_actif`, l'interrupteur HubSpot par espace), relue en base (la colonne, son type et son défaut ; la reprise n'a allumé que le seul espace qui a un portail relié). Avant elle, **0178** le 2026-09-25 à 7 h 48 UTC (`risque_desengagement`, lot 7 : quatre colonnes du risque sur `contacts`, leurs CHECK, et l'index du filtre construit `CONCURRENTLY`), relue en base (`indisvalid = true`, prédicat exact, aucune fiche ne porte de niveau). Avant elle, **0177** le 2026-09-24 à 23 h 20 UTC (`signaux_batch`, lot 6 de l'API publique :
+elle CRÉE `integration_batch` et RELÂCHE `agent_tool_calls_source_check` pour `signaux`), AVANT tout code qui
+la lit : relue en base juste après (huit colonnes, clé primaire sur l'espace et `on delete cascade`, le CHECK
+à cinq sources, table vide). Avant elle, **0176** à 22 h 19 UTC (`intentions_commerce`, lot 5 : elle RELÂCHE
+`conversation_analysis_intent_check` à neuf valeurs), relue en base (UN seul CHECK sur l'intention, neuf
+valeurs, répartition des analyses inchangée). Avant elle, **0175** et **0174** à 21 h 58 UTC dans le même `migrate` (`echecs_messages` et
+`variables_destinataire`, lot 3), relues en base (`variables` en `jsonb` nullable sans défaut ;
+`echecs_messages` avec ses neuf colonnes, l'index unique sur `message_id`, l'index `(tenant_id, at desc)` et la
+cascade sur l'espace ; les deux vides). Puis **0173** à 21 h 33 UTC (`idempotence_empreinte`, lot 2), relue en
+base (`text` nullable SANS défaut, table vide). Toutes sont passées AVANT le `up` de leur code.
+Le dossier `db/migrations/` s'arrête à **0227** (`oauth_autres_clients`, appliquée le 2026-10-09 à 15 h 48 UTC), et il porte **225 fichiers** : deux numéros y manquent, 0153 (RÉSERVÉ, jamais écrit) et **0060**. ✅ **0060 EST APPLIQUÉE EN PRODUCTION SANS FICHIER, ET C'EST SANS CONSÉQUENCE** (vérifié le 2026-10-03). La ligne `0060_email.sql` de `schema_migrations` (2026-08-18 à 21 h 40) est l'ancien nom de `0062_email.sql`, renuméroté pour une collision avec le chantier RGPD (`28f3d022`, `17c1f13b`) puis rejoué en production le lendemain (2026-08-19 à 9 h 56) sans effet. Comparé à son contenu d'origine dans l'historique (`55bceff7`), le SQL de `0062_email.sql` est IDENTIQUE ligne pour ligne, seuls trois commentaires diffèrent, et toutes ses instructions sont en `if not exists`. Une base neuve obtient donc exactement les mêmes objets ; l'intermédiaire `0061_email` n'a jamais été appliqué. Avant 0173, **0172** le même jour à
+20 h 01 UTC (`contacts_external_id`), puis **0171** à 13 h 46 UTC (`pubs_brouillons`).
+
+🔴 **0172 RELUE EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT** : `schema_migrations` la rend en tête à
+20 h 01 UTC ; `external_id` est `text` nullable SANS défaut ; l'index `contacts_tenant_external_id_uidx` est
+UNIQUE sur `(tenant_id, external_id)` avec le prédicat EXACT `external_id IS NOT NULL AND deleted_at IS NULL`
+(parmi les fiches ACTIVES, décidé par la revue finale : la seule suppression est la purge, qui vide la
+colonne, et le prédicat est une ceinture) ; et surtout **`indisvalid = true`**, puisqu'il a été construit
+`CONCURRENTLY` hors transaction, sans filet. Aucune transaction longue n'était ouverte juste avant (lu dans
+`pg_stat_activity`), zéro fiche ne porte d'identifiant, donc rien n'a bougé pour personne, et les deux portes
+publiques rendent 200.
+
+🔴 **RELUE EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT, PAS EN ÉCRIVANT CETTE LIGNE.**
+`schema_migrations` rend `0171_pubs_brouillons.sql` en tête à 13 h 46 UTC, après 0170 à 3 h 01 ; les douze
+champs du formulaire sont `text NOT NULL DEFAULT ''` (un brouillon sert à garder un travail INCOMPLET,
+exiger une date valide ou un nombre refuserait la moitié des brouillons qu'on veut poser) ; `destination`
+porte son défaut `'scenario'` et son CHECK à deux valeurs ; `visuel_octets` est `bytea` nullable et le CHECK
+lie la PAIRE (un type sans octets afficherait une image vide, des octets sans type ne pourraient pas être
+rendus) ; `workflow_id` est en **`on delete set null`** (`confdeltype = 'n'`, une cascade détruirait le
+brouillon pour la suppression d'un scénario) quand `tenant_id` est en cascade ; et il y a exactement DEUX
+index, la clé primaire et `(tenant_id, modifie_le desc)`, celui de la seule requête qui existe sur cette
+table.
+
+⚠️ **RIEN N'A BOUGÉ POUR PERSONNE, ET C'EST MESURÉ** : la table est VIDE. Les trois conteneurs sont sains,
+le worker a repris ses neuf files, et les DEUX portes publiques rendent 200 après le `up` et le
+rechargement NPM, contrôlées depuis l'extérieur. ⚠️ Le rechargement a été fait APRÈS avoir attendu
+`mba-api` sain, et **le 502 n'est pas apparu cette fois** : c'est la première fois de la semaine.
+
+🔴 **ONZIÈME DÉRIVE, TROUVÉE PAR LA RELECTURE À FROID DU 2026-09-24.** Cette ligne annonçait « prochaine
+libre = 0171, et le dossier s'arrête bien à 0170 » alors que le commit qui la lisait venait d'y ajouter
+0171 : les deux moitiés de la phrase étaient fausses en même temps. Même cause que la dixième, et même
+leçon, déjà écrite trois paragraphes plus bas : **le DOSSIER tranche sur ce qui est PRIS, la base sur ce
+qui est APPLIQUÉ**. La parade qui manquait n'est pas de faire attention, c'est d'écrire la ligne DANS le
+commit qui prend le numéro, et non après.
+
+🔴 **RELUE EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT, PAS EN ÉCRIVANT CETTE LIGNE.**
+`schema_migrations` rend bien `0170_pubs_router.sql` en tête avec son horodatage ; `publicites` porte son
+unique `(tenant_id, campagne_id)`, son CHECK à SENS UNIQUE (`workflow_id is null or destination =
+'scenario'`, l'inverse étant un état atteignable) et ses trois clés étrangères en `on delete set null`
+(une cascade détruirait la publicité pour la suppression d'un scénario) ; `pubs_connues` a sa clé primaire
+`(tenant_id, ad_id)` ; les quatre colonnes d'`arrivees_pub` sont nullables SANS défaut ; le CHECK des
+issues porte ses HUIT valeurs, `sans_scenario` comprise ; et les deux index PARTIELS ont le prédicat
+exact de leur requête (`etat = 'publiee'`, `campagne_id is not null`).
+
+⚠️ **AUCUN COMPORTEMENT N'A BOUGÉ POUR PERSONNE, ET C'EST MESURÉ** : les deux tables neuves sont VIDES,
+zéro arrivée porte une issue, zéro automation de publicité existe. Et le chemin chaud a été exécuté PAR LE
+VRAI CODE juste après le déploiement (`PgPublicitesStore.pubDeLaCampagne`, `campagneConnue`, `lister`,
+`espacesASuivre`, `campagnesASuivre`, `comptesDeLaCampagne` puis `entonnoir`) : une campagne inconnue rend
+`null`, donc le routage retombe exactement sur le comportement d'avant ce lot, et l'entonnoir rend des
+coûts à `null` et non à zéro. La sonde a été effacée ensuite.
+
+⚠️ **ET LE 502 PUBLIC EST ARRIVÉ, une fois de plus** : les trois conteneurs `healthy`, et pourtant 502 sur
+`api.` comme sur le chemin `/api/backend/` de `mba.`. NPM tenait l'ancienne IP, `nginx -s reload` a suffi,
+et les deux portes sont revenues à 200. Le contrôle public après CHAQUE `up --build` reste la seule façon
+de voir ce défaut.
+Avant elle, **0166, 0167 et 0168** le même jour à 11 h 36 UTC, elles aussi avant le `up`, et les trois
+relues en base point par point juste après `migrate` : 0166 RELÂCHE un CHECK
+(`conversation_messages.origin` accepte `api`), 0167 CRÉE `pub_connexion`, 0168 CRÉE `grille_prix` ;
+l'ancien code survit aux quatre.
+🔴 **DIXIÈME DÉRIVE, TROUVÉE PAR UNE RELECTURE À FROID LE 2026-09-23** : cette ligne annonçait
+« prochaine libre = 0166 » alors que le dépôt portait DÉJÀ les trois. La base, elle, n'avait pas bougé :
+c'est donc le DOSSIER qui tranche sur ce qui est PRIS, et la base sur ce qui est APPLIQUÉ. Les neuf
+précédentes ne comparaient qu'à la base, ce qui ne pouvait pas voir une migration écrite et non appliquée.
+(Relu dans `schema_migrations` juste après `migrate`, avec les horodatages, pas en écrivant cette ligne.) Les trois dernières sont parties en DEUX fois :
+**0164** (`escalade_mba`, `conversations.escaladee_le`) et **0165** (`reessai_par_campagne`,
+`campaigns.reessai_par_campagne`) le 2026-09-22 à 20 h 49, par la session qui les a écrites, trois heures avant
+que son code ne sorte ; **0163** (`pubs_capter`, `arrivees_pub` et `tarifs_meta`, lot 1 des publicités
+Click-to-WhatsApp) le 2026-09-23 à 9 h 09, avec le déploiement des trois lots. Les trois AJOUTENT et l'ancien
+code les ignore : toutes AVANT le `up`.
+
+🔴 **CETTE LIGNE A DÉRIVÉ UNE NEUVIÈME FOIS, ET CETTE FOIS UN PAIR L'A RECOPIÉE.** Elle annonçait 0162 et
+« prochaine libre = 0163 » quand la base en portait DEUX de plus. Un message inter-session a repris le chiffre
+pour en déduire « trois migrations en attente, trois décisions d'ordre à prendre » ; il n'y en avait qu'une, et
+les deux autres étaient en place depuis la veille. Même cause que les huit fois précédentes, même parade, et
+elle a encore fonctionné : **la base tranche**. ⚠️ Ce que la neuvième ajoute : **plusieurs sessions écrivent des
+migrations dans le même dépôt**, donc cette ligne peut être périmée sans que celui qui la lit ait rien fait, et
+un pair qui la recopie propage l'erreur au lieu de la corriger. Le seul énoncé fiable reste `schema_migrations`,
+horodatages compris : ce sont eux qui ont dit QUI avait appliqué QUOI, et qu'il n'y avait pas eu d'accident.
+
+🔴 **0163 RELUE EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT** : elle est dans `schema_migrations` ;
+`arrivees_pub` porte ses onze colonnes (dont `en_standby` en `boolean NOT NULL` SANS défaut, `ctwa_clid`
+nullable, `arrivee_le` par défaut à `now()`), son unique `(tenant_id, meta_message_id)` et son index
+`(contact_id, arrivee_le desc)` ; `tarifs_meta` porte sa clé primaire `(tenant_id, wamid)` et AUCUN autre index ;
+les quatre clés étrangères sont en `on delete cascade` (`confdeltype = 'c'`) ; et les deux tables sont VIDES,
+donc rien n'a bougé pour personne.
+
+🔴 **ELLE ÉTAIT BLOQUANTE, ET C'EST CE QUI A DÉCIDÉ DE L'ORDRE.** Le code neuf nomme ces tables en QUATRE
+endroits, dont deux qui ne pardonnent pas : la **transaction de purge RGPD** (`PgContactStore.purgeMany`, qui
+aurait échoué en entier, donc plus aucune suppression de contact) et **toute lecture de coût**
+(`horsEntreeGratuite`, posé dans cinq requêtes). Déployer avant de migrer rendait `42P01` sur la purge et sur
+chaque écran de coût, comme le 2026-08-17. ⚠️ Et le chemin chaud a été exécuté PAR LE VRAI CODE juste après le
+déploiement (`PgStatsStore.getVolumeParCampagne` puis `servicesParCampagne` sur les deux espaces réels) : il
+rend ses lignes et `horsRetention` à `false`, pas à `undefined`. La sonde a été effacée ensuite.
+
+⚠️ **0164 et 0165 ont été relues en base le 2026-09-23, après coup** : `escaladee_le` en `timestamptz` nullable
+SANS défaut, `reessai_par_campagne` en `boolean NOT NULL DEFAULT false`, les types exacts de leurs specs. Leur
+code était déjà en production depuis la veille au soir, donc l'ordre a été respecté.
+
+Avant elles, **0162**, le 2026-09-21 au soir (`outils_maison_mba`, les outils maison de l'agent de
+Meta, lot 2). 0162 AJOUTE `agent_tools.pour_agent_meta` (écrit par la création
+d'un outil maison) et `conversation_messages.accuse_le` (que PERSONNE n'écrit encore : c'est le lot 4 ; les
+messages acquittés d'ici là garderont `null`), RELÂCHE `agent_tools_action_par_agent_chk` et AJOUTE
+`agent_tools_pour_agent_meta_chk` (le drapeau n'existe que sur un outil `mba` sans agent) : l'ancien code y
+survit, donc AVANT le déploiement. 🔴 **RELUE EN BASE JUSTE APRÈS `migrate`** : 0162 en tête de
+`schema_migrations`, `pour_agent_meta` en `boolean NOT NULL DEFAULT false`, `accuse_le` en `timestamptz`
+nullable SANS défaut, les deux CHECK avec leur définition exacte (`pg_get_constraintdef`), AUCUN index, et rien
+n'a bougé pour personne (zéro outil ne porte le drapeau, zéro message ne porte d'accusé, un seul outil en base).
+
+Avant elle, **0161**, le 2026-09-21 (`relais_mba`, le relais du Meta Business Agent).
+0161 RELÂCHE le CHECK `agent_tool_calls_source_check` (l'appelant `mba` s'ajoute ;
+l'ancien code y survit) et AJOUTE `tenant_settings.mba_relais_cle_id` (la clé posée chez Meta, écrite par la
+publication), donc AVANT le déploiement. 🔴 **RELUE EN BASE JUSTE APRÈS `migrate`** : 0161 en tête de
+`schema_migrations`, le CHECK avec `mba`, la colonne `uuid` nullable SANS défaut, sa clé étrangère vers
+`api_keys` en `on delete set null` (`confdeltype = 'n'`), et zéro espace portant une clé retenue.
+
+Avant elle, **0160**, le 2026-09-19 après-midi (`inbox_traite_medias_prise`, chantier Inbox). Elle AJOUTE
+trois colonnes que le code écrit ou nomme, donc AVANT le déploiement :
+`conversations.traitee_le` (le statut « Traité »), `conversation_messages.media_nom` (le nom de fichier d'un
+document reçu, NOMMÉ dans le `select` du fil, donc bloquante pour l'Inbox) et
+`tenant_settings.agents_peuvent_prendre` (`false` par défaut). 🔴 **RELUE EN BASE JUSTE APRÈS `migrate`** :
+0160 en tête de `schema_migrations`, les trois colonnes avec leur type, leur nullabilité et leur défaut exacts,
+AUCUN index sur `traitee_le` (délibéré), et rien n'a bougé pour personne (zéro conversation traitée, zéro nom,
+zéro espace avec la prise activée).
+
+Avant elle, **0159**, le 2026-09-18 au soir, avec **0156, 0157 et 0158** le même soir : tout le
+chantier des MOMENTS d'un agent IA. Ces quatre-là portent : **0156**
+(`agent_transfert_mode`, quand l'équipe est joignable pour un agent IA), **0157** (`outils_par_agent`, une
+ACTION appartient à l'agent, un CONNECTEUR à l'espace, deux index partiels complémentaires), **0158**
+(`outil_gestes`, les GESTES d'un moment, ce que NOUS faisons sans le demander au modèle) et **0159**
+(`actions_orphelines`, la seule irréversible). Avant elles, **0155** (`analyse_jour`) et **0154** (la grille
+de prix par espace).
+
+🔴 **L'ORDRE N'ÉTAIT PAS UNIFORME, ET 0159 A ÉTÉ MISE DE CÔTÉ SUR LE VPS AVANT LE BUILD.** 0156 à 0158
+ajoutent des colonnes que le code écrit, donc AVANT le déploiement ; 0159 ferme un CHECK que l'ANCIEN
+`ajouter` viole, donc APRÈS. Or les migrations vivent DANS L'IMAGE et `migrate` applique tout ce qu'il y
+trouve : les quatre étant poussées ensemble, un seul `build` puis `migrate` les aurait appliquées d'un bloc.
+Même parade qu'en 0141 : `mv` de 0159 hors du dépôt avant le build, `ls` DANS L'IMAGE pour vérifier qu'elle
+n'y est pas, migrate, déploiement, puis remise, rebuild, et migrate pour elle seule.
+
+🔴 **RELUES EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT.** `schema_migrations` rend bien 0159 puis 0158 en
+tête ; `agent_transfert_mode` est `text` NULLABLE SANS défaut ; `agent_id` est `uuid` nullable avec un
+`on delete cascade` (`confdeltype = 'c'`) ; `gestes` est `jsonb NOT NULL DEFAULT '[]'` ; les quatre CHECK
+sont posés avec leur définition exacte ; et les TROIS index de 0157 existent avec leurs prédicats
+(`agent_tools_nom_espace_uidx` sur `agent_id is null`, `agent_tools_nom_agent_uidx` sur `agent_id is not
+null`, `agent_tools_par_agent_idx`), l'ancien `agent_tools_nom_espace_idx` ayant bien disparu.
+
+⚠️ **AUCUN COMPORTEMENT N'A BOUGÉ POUR PERSONNE, ET C'EST MESURÉ** : zéro espace porte un mode de transfert
+(donc tous en `always`, le comportement d'hier), zéro outil porte un geste, zéro outil porte un
+propriétaire.
+
+🔴 **CE QUE 0159 A SUPPRIMÉ, COMPTÉ AVANT ET APRÈS.** Ses DEUX requêtes de contrôle ont été jouées juste
+avant de l'appliquer : la première rend les **7** définitions `mba_*` sans AUCUN consommateur
+(`mba_escalader_humain`, `mba_chercher_connaissance`, `mba_terminer`, `mba_envoyer_bloc`, `mba_poser_tag`,
+`mba_lire_contact`, `mba_ecrire_variable`), la seconde, celle qui dit ce qui BLOQUERAIT le CHECK, rend
+**zéro**. Après : plus aucune action au niveau de l'espace, aucun consentement orphelin laissé derrière, et
+le CHECK strict posé. Aucune de ces 7 n'était rattachée à quoi que ce soit, donc aucun agent n'a rien perdu.
+
+⚠️ **LA SECONDE REQUÊTE DE CONTRÔLE A ÉTÉ AJOUTÉE PAR LA REVUE FINALE, ET ELLE MANQUAIT.** La migration ne
+mesurait que ce qu'elle allait SUPPRIMER, ce qui ne répond pas à la question que pose son CHECK : une action
+créée par l'ancien code porte un consommateur, survit donc au `delete`, et viole le CHECK. La CI a ensuite
+trouvé la suite : le consentement n'est pas une clé étrangère, donc il peut nommer un agent supprimé, et
+l'adoption y aurait écrit un `agent_id` fantôme. **`0153` reste RÉSERVÉ** au
+CHECK strict de `agent_tools.source_kind` du chantier MCP (cf. `todo.md`) : le numéro est pris, le fichier
+n'existe pas, et le runner n'exige aucune continuité.
+
+🔴 **RELUES EN BASE JUSTE APRÈS `migrate`, POINT PAR POINT, PAS EN ÉCRIVANT CETTE LIGNE.**
+`schema_migrations` rend bien 0155 puis 0154 en tête ; les six colonnes de prix existent, `NOT NULL` avec
+leurs défauts ; `prix_marge_template` est un **`numeric(6,2)`** (précision et échelle relues dans
+`information_schema`, pas déduites) ; les trois CHECK sont posés avec leur définition exacte ;
+`analyse_jour` a sa clé primaire `(tenant_id, jour)` et un `on delete cascade` (`confdeltype = 'c'`) ; et
+`conversation_retention_days` est nullable SANS défaut.
+
+⚠️ **AUCUN COMPORTEMENT N'A BOUGÉ POUR PERSONNE, ET C'EST MESURÉ** : zéro espace porte un réglage neuf
+(marge à 100 partout, rétention non réglée), donc chacun lit le même chiffre qu'hier. Et **zéro
+conversation** n'a plus de 90 jours, donc la purge nouvellement abaissée n'efface rien aujourd'hui : la
+seule opération irréversible du dépôt a été allumée au moment où elle ne peut rien détruire.
+
+🔴 **LE BALAYAGE D'AGRÉGATS A TOURNÉ AVANT LA PURGE, ET ON L'A VU.** Au démarrage du worker :
+`agregats-analyse: 6 journee(s) ecrite(s)`. Vérifié ensuite en base par le vrai code : sur les deux espaces,
+la lecture directe et la table d'agrégats rendent des journées **IDENTIQUES**. C'est la propriété qui
+autorise à effacer, et elle est constatée en production, pas seulement en CI.
+
+Avant elles : **0152**, le 2026-09-16 (les quatre colonnes MCP d'`agent_tools` plus la garde de `kind`).
+Relue en base juste après `migrate`, pas en écrivant cette ligne :
+`schema_migrations` rend bien `0152_outils_mcp.sql` en tête, les cinq colonnes sont nullables SANS défaut,
+`pg_indexes` n'en porte AUCUN, la clé étrangère composite existe en `confmatchtype = 's'`, et **zéro ligne
+sur quatre n'en porte une valeur**, donc aucun comportement n'a bougé.
+
+🔴 **ELLE EST DÉLIBÉRÉMENT PERMISSIVE, ET C'EST LA LEÇON DE 0128 APPLIQUÉE À L'AVANCE.** Elle NE POSE PAS le
+CHECK qui exigerait `source_kind`. Le code DÉPLOYÉ au moment où elle s'applique ignore cette colonne : un
+CHECK strict aurait fait échouer **toute création d'outil de connecteur** pendant la fenêtre censée être la
+plus sûre, celle où l'on peut encore revenir en arrière. Le CHECK strict fera l'objet d'une migration
+SUIVANTE, appliquée APRÈS le déploiement du code qui renseigne la colonne. « Avant ou après le déploiement »
+ne se décide pas sur *ajoute / retire*, mais sur **« l'ancien code survit-il à ce changement ? »**.
+
+🔴 **LA GARDE DE `kind` SE TIENT PAR UNE CLÉ ÉTRANGÈRE COMPOSITE, PAS PAR UN DÉCLENCHEUR.** Rien n'empêchait
+un outil `origin = 'mcp'` de pointer vers une source `kind = 'http'`, ni l'inverse : `agent_tools_origin_src_chk`
+(0088) vérifie qu'une source EXISTE, pas LAQUELLE, et le résolveur serait parti dans la mauvaise branche. Un
+déclencheur est le réflexe et c'est le mauvais : il se teste mal et ne se voit pas quand on lit le schéma.
+⚠️ Le trou était nommé depuis des semaines dans `AGENT-IA-PLAN-L4.md` (« le trou n°3 »), un plan MCP
+antérieur que le cadrage du 2026-09-16 a été écrit **sans connaître**.
+
+⚠️ **MESURÉE EN BASE AVANT D'ÊTRE ÉCRITE** : 4 outils, tous `origin='mba'` et sans source ; 1 source
+`kind='http'` en brouillon ; ZÉRO croisement `origin`/`kind` déjà faux. Sans cette mesure, la clé étrangère
+aurait pu échouer à l'application, en production, sur une donnée qu'on n'avait pas regardée.
+
+Avant elle : **0151**, le 2026-09-16 (`workflow_runs.graphe_fige` : le graphe qu'un parcours de test
+joue, figé à son démarrage). Relue en base juste après `migrate`, pas en écrivant
+cette ligne : `schema_migrations` rend bien `0151_run_graphe_fige.sql` en tête, la colonne est `jsonb`
+nullable SANS défaut dans `information_schema`, `pg_indexes` n'en porte AUCUN (délibéré), et zéro parcours
+existant n'en porte un, donc aucun comportement n'a bougé.
+
+🔴 **ELLE RÉPARE UN DÉFAUT EXISTANT, PAS SEULEMENT LA NOUVELLE FONCTIONNALITÉ.** Un test DÉMARRE sur le
+brouillon (`startTestRun` passe `grapheEditable(wf)`) et REPRENAIT sur le publié : les trois points de reprise
+de l'exécuteur (`resume`, `runEnAttenteSur`, `advance`) demandaient le graphe à `getGraph`, que le câblage
+résout en `row.graph`. Un test qui atteignait un bloc d'attente et recevait une réponse CHANGEAIT donc de
+version en cours de route, en silence ; si le bloc courant n'existait pas dans le publié, le parcours se
+figeait sans un mot.
+
+🔴 **UN SEUL POINT DE PASSAGE, ET C'EST TOUT L'INTÉRÊT** : `grapheDuRun(run, lirePublie)`
+(`src/workflow/executor.ts`). Poser la préférence dans chacun des trois points de reprise ferait trois
+endroits où l'oublier, et le quatrième point ajouté demain ne l'aurait pas. Le figeage se DEMANDE (la
+politique `graphe: 'brouillon_fige'` du type `lien_de_test`, `src/workflow/lancements.ts`), il n'est jamais
+implicite.
+
+⚠️ **NULLABLE, ET `null` EST LE CAS NORMAL** : aucun parcours réel n'en porte. Figer le graphe de chaque
+destinataire d'une campagne de 5 000 personnes recopierait 5 000 fois le même objet. `null` = on lit le
+publié, c'est-à-dire exactement le comportement d'avant pour tout ce qui n'est pas un test. La colonne est
+REQUISE dans `WorkflowRunRow` et dans `DueRun` : un câblage qui l'oublierait ne compile pas, et c'est ce qui
+garantit que le graphe figé survit AUSSI au balayage des parcours endormis.
+
+⚠️ **RIEN À PURGER EN PLUS** : `purgeTerminesOlderThan` supprime les parcours terminés, le graphe figé part
+avec eux.
+
+Avant elle : **0150**, le 2026-09-15 après-midi (`agent_tools.nature` : un outil dit si l'agent
+POUSSE de l'info ou s'il INTÈGRE la réponse). Relue en base juste après `migrate` :
+`schema_migrations` rend bien 0150 en tête, la colonne est `text NOT NULL DEFAULT 'integre'`, le CHECK borne
+à `pousse`/`integre`, et les 4 outils existants sont tous en `integre`, donc aucun comportement n'a bougé.
+
+🔴 **ELLE RÉPARE UNE QUESTION QU'ON NE POSAIT PAS.** Tout appel de connecteur était supposé RENDRE quelque
+chose : la déclaration exigeait des champs de réponse et le résolveur refusait un appel sans. Or la moitié des
+appels qu'un client veut brancher ne rendent rien d'utile (poser une étiquette, créer une fiche, pousser un
+opt-out). Julien, bloqué sur un `POST /subscriber/add-tag` : « la question c'est qu'est-ce que cet appel
+fait ? pousser de l'info, ou avoir un retour de payload qui enrichirait la discussion ».
+
+🔴 **ELLE NE SE DÉDUIT PAS DE LA MÉTHODE HTTP**, d'où une colonne et pas un calcul : un `POST` peut être une
+RECHERCHE (l'API de UChat en a). Dériver du verbe rangerait ces appels en « pousse » et rendrait leur réponse
+invisible à l'agent, sans aucune erreur.
+
+🔴 **ET ELLE DÉPLACE LE FILTRE DE SORTIE DE L'APPEL VERS L'OUTIL, ce qui est le vrai changement.** Un appel est
+PARTAGÉ entre agents ; ce que CET agent a le droit de lire ne l'est pas. Tant que `output_paths` vivait sur
+`connector_requests`, restreindre pour un agent restreignait pour tous. La requête garde la sienne comme
+DÉFAUT de pré-remplissage, et ne gouverne plus rien à l'exécution.
+
+⚠️ **`agent_tools.output_paths` EXISTAIT DÉJÀ (0086) ET ÉTAIT DÉLIBÉRÉMENT LAISSÉE VIDE**, avec une
+justification (« la REQUÊTE les porte, les remplir en double créerait deux vérités ») juste pour l'ancienne
+conception. Deux vérités existaient pourtant : `connecteurSimule` bouclait DÉJÀ sur cette colonne vide et
+rendait zéro champ, alors que le bac à sable promet « exactement ce que l'agent recevra ». **Il mentait depuis
+le 2026-09-02** ; remplir la colonne ne le réparait qu'à moitié : l'exécuteur refiltrait ensuite le résultat simulé
+et le vidait, jusqu'au 2026-10-05, et les deux tests interrogeaient `connecteurSimule` seul. La promesse est tenue
+par un test de bout en bout (`tests/agent-resolveur-http-nature.test.ts`).
+
+Avant elle : **0149**, le 2026-09-15 au matin (`conversations.release_mba_apres_message` : le fil
+attend l'accusé de NOTRE dernier envoi avant de repartir chez l'agent de Meta).
+Relue en base juste après `migrate`, pas en écrivant cette ligne : `schema_migrations` rend bien 0149 en tête,
+la colonne est `text` et nullable dans `information_schema`, et `pg_indexes` n'en porte AUCUN, comme prévu.
+
+🔴 **ELLE RÉPARE UNE COURSE, ET C'EST LA MESURE QUI L'A MONTRÉE.** La fin d'un parcours relâchait le fil dans
+la seconde suivant son dernier envoi. Or la documentation de Meta dit qu'ENVOYER UN MESSAGE PREND LE FIL
+implicitement : l'envoi reprenait donc le fil juste après notre remise. Trois releases émis deux secondes
+après un envoi ont échoué, celui émis quatorze minutes après a marché.
+
+🔴 **ET LA CAUSE DES « DEUX MINUTES » A ÉTÉ MAL ATTRIBUÉE PENDANT TOUTE LA JOURNÉE DU 2026-09-15.** Cette page
+a affirmé que « Meta acquitte nos envois avec DEUX MINUTES de retard », sur une corrélation par identifiant
+(envoi 07:42:17 -> 07:44:04 ; 08:26:47 -> 08:28:42). **C'était une erreur de lecture** : les heures d'arrivée
+étaient celles où NOTRE worker traitait l'accusé, pas celles où Meta l'envoyait. Vérifié le soir même dans le
+journal brut des webhooks : l'horodatage que Meta inscrit dans l'accusé du message de 08:26:47 vaut
+**08:26:47**, et son webhook nous parvient à **08:26:48**. Meta acquitte en UNE SECONDE ; les deux minutes
+venaient de la file `webhook-status`, qui se vidait à deux accusés par minute.
+
+⚠️ **LE MARQUEUR RESTE JUSTE, ET C'EST CE QUI COMPTE** : ce qu'on attend n'est pas un délai, c'est la PREUVE
+que Meta a fini de traiter l'envoi. Seul l'accusé la porte, qu'il arrive en une seconde ou en deux minutes.
+🔴 **DEPUIS LE LOT 4 DES OUTILS MAISON (2026-09-22), il ne se pose plus sur une preuve DÉJÀ reçue** : un entrant
+plus récent que notre envoi, un accusé déjà là (`accuse_le`, 0162), ou un envoi de plus de dix minutes. Sans
+ça, la réponse « à côté » et la question expirée gelaient le fil jusqu'au balayage. Détail :
+`PgInboxStore.demanderReleaseMba`.
+La leçon est ailleurs : **un écart mesuré ne dit pas à qui il appartient**, et attribuer le sien à un tiers
+est la façon la plus sûre de ne jamais le corriger.
+
+🔴 **UN MARQUEUR, PAS UNE TEMPORISATION, et il NOMME le message attendu.** Un délai fixe serait un nombre
+deviné, faux le jour où Meta ralentit. Et un simple « quelque chose est en attente » ne suffirait pas : un
+parcours envoie plusieurs messages, l'accusé du PREMIER arrive souvent après que le DERNIER soit parti, donc
+il reproduirait la course. N'importe lequel des statuts de ce message la lève (`sent`, `delivered`, `read`,
+`failed`) : ce qu'on attend n'est pas une bonne nouvelle, c'est la preuve que Meta a fini de traiter l'envoi.
+
+⚠️ **L'ÉTAT D'ATTENTE EST `app_human`, ET AUCUNE AUTRE VALEUR NE CONVIENT.** `mba` mentirait tant que Meta n'a
+pas confirmé, et `app_workflow` est la SEULE valeur que le dossier « À traiter » exclut : un client qui écrit
+pendant cette fenêtre ne produirait alors aucune ligne de travail, ce qui est exactement le symptôme signalé.
+C'est aussi ce qui arme le filet, `CONTROL_HUMAN_TIMEOUT_MS` reprenant les fils `app_human` immobiles et les
+rendant pour de vrai.
+
+🔴 **LE `sous-select` A ÉTÉ EXÉCUTÉ SUR LES VRAIES DONNÉES, faute de CI.** GitHub Actions refusait alors de
+démarrer le moindre job (« recent account payments have failed or your spending limit needs to be
+increased »), donc le job `integration` n'a PAS tourné ce jour-là, et c'est le seul qui voit une base. La
+moitié LECTURE de la requête a donc été jouée en production, en lecture seule : sur la conversation d'essai,
+elle désigne bien l'envoi de 08:26:47, c'est-à-dire précisément celui dont l'accusé est arrivé à 08:28:42.
+⚠️ **CE BLOCAGE EST LEVÉ** : les runs repartent depuis, vérifié le 2026-09-17 (`gh run list`). La phrase
+restait au présent et serait devenue une excuse permanente pour sauter la CI.
+
+⚠️ **CETTE LIGNE AVAIT DÉRIVÉ UNE HUITIÈME FOIS**, relevée par la revue finale du chantier des assistants :
+elle annonçait 0144 quand la base en portait CINQ de plus, toutes appliquées la même nuit. Même cause que les
+sept précédentes, et même parade : **la base tranche**, on RELIT `schema_migrations` juste après `migrate`,
+jamais après avoir écrit le fichier SQL.
+
+Avant elle, dans l'ordre d'application : **0147** (`agent_setup_conversations.auteurs` : QUI a écrit chaque
+tour du fil, tableau PARALLÈLE à `messages` et pas une clé dedans, `tourSchema` étant strict, l'y ajouter
+aurait fait échouer la relecture de TOUS les entretiens existants, qui seraient retombés sur l'entretien
+vierge, donc le client aurait perdu sa conversation en silence) ; **0146** (`reglages_historique`, à rétention
+ILLIMITÉE, et `assistant_depense_mois`, NOTRE dépense d'assistants, PAR ESPACE et pas par assistant) ;
+**0145** (`campaign_etages.devenir` retombe à DEUX valeurs et perd `agent_id`) ; **0144** (`campaign_etages.devenir`
+et `.agent_id` : ce qui se passe quand le contact répond, étage par étage).
+
+🔴 **0145 RETIRE CE QUE 0144 VENAIT D'AJOUTER, et le désordre est délibéré** : 0144 ouvrait le devenir à
+trois choix dont « un agent IA prend la main », arbitré ensuite à deux. Les deux sont passées la même nuit,
+avant le déploiement, sur une colonne qu'aucun code déployé ne lisait encore.
+
+🔴 **0146 PORTE DEUX TABLES QUE LE CODE ÉCRIT, donc elle passe AVANT le déploiement.** `reglages_historique`
+n'est PAS `audit_log` : ce dernier est PURGÉ (deux ans), quand la rétention demandée ici est illimitée parce
+que ces lignes portent le seul exemplaire d'un contenu que Meta ne garde pas. ⚠️ Elle ne porte AUCUN index
+sur `at` seul, délibérément : un tel index ne sert qu'à une purge par date, et son absence est ce qui dit au
+prochain lecteur que cette table ne se purge pas.
+
+🔴 **ELLE CÂBLE UNE QUESTION QUI EXISTAIT DÉJÀ À L'ÉCRAN ET DONT DEUX RÉPONSES SUR TROIS N'ALLAIENT NULLE
+PART.** Seule « la conversation arrive dans l'Inbox » avait une traduction serveur (`campaigns.assignation`) ;
+« l'agent de Meta prend la main » et « un agent IA prend la main » ne quittaient pas le navigateur, alors que
+la seconde fait CHOISIR un agent précis dans une liste. C'est le motif « offert-et-inerte », que le produit
+s'interdit ailleurs. Le défaut était décrit dans `todo.md` et attendait un arbitrage, tranché par Julien le
+2026-09-14 : on câble les trois.
+
+⚠️ **PAR ÉTAGE, ET L'ASSIGNATION RESTE SUR LA CAMPAGNE.** Une chaîne de repli peut servir un modèle seul en
+WhatsApp (réponses à l'équipe) et un scénario en RCS (qui décide lui-même), d'où le devenir sur l'étage. Mais
+« qui, dans l'équipe » reste une politique de campagne : le tour de rôle compte ses réponses sur un rang
+unique (`campaigns.tour_de_role_rang`), et un rang par étage ferait tourner deux roulements indépendants sur
+la même équipe, donc servirait deux fois la même personne.
+
+⚠️ **AUCUNE REPRISE DE DONNÉES, délibérément.** `null` = campagne d'avant, qui retombe sur l'ancien
+comportement. Écrire 'inbox' sur les étages des campagnes qui portent déjà une assignation paraîtrait plus
+propre, mais inventerait une intention : ces campagnes sont parties SANS que personne ne prenne le fil à
+l'agent de Meta, et leur donner rétroactivement un devenir qui change ce comportement ferait diverger ce qui
+s'est passé de ce que la fiche annonce.
+
+🔴 **LUE EN BASE APRÈS `migrate`** : les deux colonnes dans `information_schema`, le `on delete set null` de
+la clé étrangère (une cascade détruirait l'étage, donc la chaîne, pour la suppression d'un agent), les deux
+CHECK avec leur définition exacte, et `schema_migrations` relue. ⚠️ Le CHECK `agent_id is null or devenir =
+'agent'` ne contraint QU'UN SENS : `devenir = 'agent'` avec `agent_id` à null est un état ATTEIGNABLE (agent
+supprimé après coup), et le refuser ferait échouer la suppression d'un agent sur une contrainte de campagne.
+
+Avant elle : **0143**, le 2026-09-14 au matin (elle RETIRE `tenant_settings_optout_request_idx`, un
+index partiel que 0139 avait créé et qui ne servait AUCUNE requête).
+
+🔴 **UN INDEX PARTIEL EST UN CONTRAT AVEC UNE REQUÊTE PRÉCISE, ET CELUI-LÀ N'EN AVAIT AUCUNE.** 0139
+l'annonçait comme servant « quelles requêtes sont branchées sur le consentement ? » ; cette question n'est
+jamais posée ainsi, `brancheeSurConsentement` lit les réglages de l'espace par CLÉ PRIMAIRE. Ce qu'on retire
+n'est pas un coût (`tenant_settings` porte une ligne par espace) : **c'est une justification fausse inscrite
+dans le schéma**, que le prochain lecteur aurait crue, et qui l'aurait autorisé à élargir un `where` en
+pensant rester dans son contrat. Vérifié en base après coup : l'index inutile est parti, les DEUX qui servent
+vraiment (`contacts_opted_out_idx`, `agent_tool_calls_echecs_idx`) sont là, et aucun réglage n'a bougé.
+
+Avant elle : **0142**, le 2026-09-14 au matin (le journal des appels de connecteur s'ouvre à SES
+TROIS APPELANTS : `agent_tool_calls.session_id` devient NULLABLE, une colonne `source` dit qui appelait, et
+un index PARTIEL sert la lecture des échecs).
+
+🔴 **CE QU'ELLE RÉPARE EST UNE EXHAUSTIVITÉ, PAS UNE FONCTIONNALITÉ.** `creerAppelConnecteur`
+(`src/agent/resolvers/http.ts`) est le point de passage unique des appels vers le système d'un client, et il
+a TROIS appelants : l'agent IA, le bloc « Appel HTTP » d'un scénario, et la poussée d'un opt-out. UN SEUL
+journalisait ses échecs. Les deux autres n'écrivaient qu'un `console.warn` : un connecteur qui refusait
+l'appel d'un scénario, ou qui ne recevait jamais le refus d'un contact, ne laissait AUCUNE trace
+consultable. C'est le motif « une capacité câblée sur un consommateur sur trois », payé plusieurs fois ici.
+
+🔴 **DEUX VERROUS DE SCHÉMA LES EN EMPÊCHAIENT, ET C'EST POUR ÇA QU'ILS NE LE FAISAIENT PAS.** `session_id`
+était `NOT NULL` et référençait `agent_sessions` : un scénario n'ouvre pas de session, une poussée non plus.
+Et rien ne disait QUI appelait, donc les lignes auraient été indiscernables. **Le champ `journal` est
+désormais OBLIGATOIRE dans `AppelConnecteur`** : un quatrième appelant devra écrire `null` et se demander
+pourquoi, au lieu de l'oublier. Un test garde cette propriété, qu'un `journal?:` ferait disparaître sans bruit.
+
+⚠️ **ET LA JUSTIFICATION DE `JOURNAL_MUET` A CESSÉ D'ÊTRE VRAIE** : elle invoquait précisément ce `NOT NULL`.
+Corrigée. Ce qui reste est un choix produit (les essais du bac à sable n'ont pas à apparaître comme des
+pannes dans le journal que le client consulte), plus une contrainte.
+
+🔴 **LU EN BASE APRÈS `migrate`, ET LE CHEMIN COMPLET EXÉCUTÉ PAR LE VRAI CODE** : `session_id` nullable, la
+colonne `source` et son défaut, le PRÉDICAT EXACT de l'index partiel, puis une ligne SANS session d'agent
+ÉCRITE par `PgJournalAppels` et RELUE par `PgErreursLivraisonStore.listerEchecsSysteme`. La sonde a été
+effacée ensuite : le journal d'un client n'a pas à porter nos essais.
+
+Avant elle : **0141**, le 2026-09-13 dans la nuit (elle RETIRE `agents.mention_ia_frequence`, que
+0140 venait de remonter au niveau de l'ESPACE dans `tenant_settings.mention_ia_frequence`).
+
+🔴 **0140 ET 0141 SONT UNE PAIRE, ET ELLES N'ONT PAS ÉTÉ APPLIQUÉES AU MÊME MOMENT.** 0140 AJOUTE et
+REPREND, donc avant le déploiement ; 0141 RETIRE une colonne que le code déployé lisait encore, donc APRÈS.
+Même séquence que 0128 après 0129, et pour la même raison : migrer d'abord aurait fait tomber chaque lecture
+de fiche d'agent en `42703` pendant toute la durée du déploiement.
+
+⚠️ **ET LE PIÈGE EST DANS LE DÉPÔT, PAS DANS LA BASE** : les migrations vivent DANS L'IMAGE, et `migrate`
+applique TOUT ce qu'il y trouve. 0141 étant poussée en même temps que 0140, un `compose build` suivi d'un
+`migrate` les aurait appliquées ENSEMBLE. 0141 a donc été mise de côté sur le VPS AVANT le build, remise
+après le déploiement, et l'image reconstruite pour elle seule.
+
+🔴 **CE QUE 0140 REPREND, ET POURQUOI LA MESURE DÉCIDAIT DE TOUT.** La spec demandait « un réglage d'espace »
+ET « ne change rien aux agents existants », ce qui ne se concilie que si aucun espace ne porte deux agents
+divergents. Mesure faite AVANT d'écrire la migration : UN seul agent en production, sur un seul espace, en
+`session`. La reprise est donc EXACTE. La règle pour le jour où la divergence existera est écrite quand même,
+et elle va vers PLUS de déclaration (`chaque_message` > `session` > `jamais`) : rassembler deux agents sous
+une politique unique oblige à bouger l'un des deux, et entre les deux erreurs possibles, une seule se
+rattrape.
+
+🔴 **LU EN BASE APRÈS `migrate`**, pour les deux : la colonne et son CHECK sur `tenant_settings`, la reprise
+espace par espace, puis après 0141 la disparition de la colonne d'agent et de son CHECK, et surtout les
+CHEMINS CHAUDS exécutés PAR LE VRAI CODE (`PgAgentStore.byId`, celui de chaque tour d'agent, et
+`listerPourConformite`) : ils rendent `session`, donc l'agent de production fait exactement ce qu'il faisait.
+
+⚠️ **`agents.mention_ia` NE BOUGE PAS** : la PHRASE reste la voix de l'agent, seul le QUAND est monté à
+l'espace. L'écran Sécurité > IA montre les deux, sans quoi il ne montrerait qu'un interrupteur.
+
+Avant elles : **0139**, le 2026-09-13 dans la nuit (`tenant_settings.optout_request_id` : QUEL
+connecteur prévenir quand quelqu'un se désabonne, plus son index partiel).
+
+🔴 **LUE EN BASE APRÈS `migrate`, PAS EN ÉCRIVANT CETTE LIGNE**, et les quatre points l'ont été : la colonne
+dans `information_schema`, le PRÉDICAT EXACT de l'index partiel dans `pg_indexes`, `confdeltype = 'n'` sur la
+clé étrangère (c'est-à-dire `on delete set null`, et surtout pas `restrict`), et `schema_migrations` relue.
+
+🔴 **ELLE DÉSIGNE UNE REQUÊTE, PAS UN OUTIL D'AGENT, et la nuance décide de tout.** Un « outil » est une
+surface exposée à un MODÈLE : nom exposé, description destinée au modèle, paramètres que le modèle remplit.
+Il n'y a aucun modèle ici. C'est exactement le cas du bloc « Appel HTTP » d'un scénario, qui DÉSIGNE une
+requête de la bibliothèque : les trois appelants passent donc par `creerAppelConnecteur`, avec les mêmes sept
+gardes. ⚠️ Trois commentaires de ce fichier-là disaient « DEUX appelants » : le compte n'y est plus écrit.
+
+🔴 **`on delete set null` EST LA CEINTURE, LE REFUS LISIBLE EST DANS LA ROUTE.** Le compteur `outils` d'une
+requête ne voit que les outils d'agent : une requête branchée sur le consentement y compte ZÉRO, donc elle se
+supprimait, et la cascade débranchait la conformité EN SILENCE. La suppression rend désormais 409. La
+contrainte reste `set null` et surtout pas `restrict` : une contrainte qui BLOQUERAIT rendrait 500 sur un
+geste ordinaire, donc une page Cloudflare sans explication.
+
+⚠️ **`null` PAR DÉFAUT POUR TOUS LES ESPACES** : personne n'est prévenu tant que personne ne l'a demandé. Un
+défaut qui enverrait quoi que ce soit à un système tiers sans qu'on l'ait choisi serait l'inverse de ce que
+le centre de sécurité garantit.
+
+Avant elle : **0138**, le 2026-09-13 au soir (`contacts.opt_out_at` : QUAND un contact s'est
+désabonné, plus l'index partiel `contacts_opted_out_idx` qui sert la liste du centre de Sécurité).
+
+🔴 **LUE EN BASE APRÈS `migrate`, PAS EN ÉCRIVANT CETTE LIGNE** : la colonne dans `information_schema`, le
+PRÉDICAT EXACT de l'index partiel dans `pg_indexes` (il doit reprendre mot pour mot le `where` de
+`listeDesabonnes`, sans quoi cette page retombe sur un balayage complet de la table des contacts sans
+qu'aucune erreur ne le signale), et `schema_migrations` relue.
+
+🔴 **CE QU'ELLE RÉPARE : le dépôt savait QUI avait posé un opt-out et pas QUAND.** `opt_in_source` portait
+déjà l'origine ('crm', 'scenario', 'flow', 'webhook:<nom>') ; `updated_at` ne répond PAS à la question,
+il bouge à la moindre modification de la fiche, si bien qu'un contact désabonné en mars et renommé hier
+paraîtrait s'être désabonné hier. Sur un écran de conformité, afficher cette date aurait été pire que de
+n'en afficher aucune, et les lignes antérieures restent donc à `null` avec « date inconnue » à l'écran.
+
+⚠️ **ELLE SE REMET À NULL AU RETOUR EN `opted_in`, SUR LES QUATRE CHEMINS D'ÉCRITURE.** Trois étaient
+évidents (le parcours/webhook, la fiche contact, l'action en masse) ; le QUATRIÈME, relevé en revue, est
+l'upsert d'import CSV et de l'API publique, qui peut faire régresser un statut sans que personne y pense.
+Un invariant énoncé dans une migration se tient partout ou nulle part.
+
+Avant elle : **0137**, le 2026-09-13 (la traduction des conversations :
+`conversation_messages.traduction`, `.traduction_langue`, `.redaction_origine`, `.transcription_langue`,
+plus `contacts.langue_detectee` et `.langue_detectee_le`). Vérifiée EN BASE après `migrate`, pas déduite
+de l'absence d'erreur : les six colonnes dans `information_schema`, le CHECK qui borne
+`traduction_langue` à `fr`/`en` dans `pg_constraint`, et `schema_migrations` relue.
+
+🔴 **ELLE ÉTAIT BLOQUANTE, ET LA SÉQUENCE A ÉTÉ SUIVIE DANS CET ORDRE** : `git pull`, `compose build
+mba-api`, `compose run --rm --no-deps mba-api npm run migrate`, PUIS `up -d --build`. Ces colonnes ne
+sont pas seulement écrites, elles sont NOMMÉES dans les `select` du chemin chaud (`getMessages`,
+rafraîchi toutes les 4 secondes). Déployer d'abord aurait rendu `42703` en boucle sur l'Inbox entière,
+comme le 2026-08-17.
+
+⚠️ **ET LE 502 PUBLIC EST ARRIVÉ, une fois de plus** : conteneurs `healthy`, appel interne à 200, appel
+public à 502 sur `api.` comme sur le chemin `/api/backend/` de `mba.`. NPM tenait l'ancienne IP.
+`sudo docker exec mcp-robot_nginx-proxy-manager_1 nginx -s reload` a suffi. Le contrôle public après
+CHAQUE `up --build` n'est pas une précaution de circonstance, c'est la seule façon de voir ce défaut.
+
+Avant elle : **0136**, le 2026-09-12 au soir (`campaigns.tour_de_role_rang` passe de `smallint` à
+`integer`, ce qui retire le repliage `% 32767` du tour de rôle).
+
+⚠️ **LU EN BASE APRÈS `migrate`, PAS EN ÉCRIVANT CETTE LIGNE.** Le fichier avait dérivé une SIXIÈME fois
+dans la journée (il annonçait 0131 quand la base portait 0134). Le moment où cette ligne se met à jour est
+l'exécution de `migrate`, et il faut la RELIRE juste après, jamais après avoir écrit le fichier SQL.
+
+Avant elle : **0135** le même soir (`campaign_etages.email_champ` : QUELLE clé du jsonb `contacts.fields`
+porte l'adresse e-mail d'un étage). 🔴 **Il n'y a PAS de colonne `contacts.email`, et c'est délibéré** :
+l'adresse vit dans le jsonb depuis 0002, sous une clé que le client nomme lui-même, et le dépôt porte la
+trace d'un espace qui l'appelait « mail » quand un autre disait « email » (`src/workflow/wiring.ts`,
+2026-08-25). Ajouter une colonne aurait créé une SECONDE vérité à côté du jsonb, et le jour où les deux
+divergent, c'est la neuve, vide, que la campagne aurait lue.
+
+Avant elle : **0134** (la CHAÎNE d'étages : `campaign_etages`, `campaign_envois`,
+`campaign_recipients.etage_courant`, et les cinq réglages de l'assistant sur `campaigns`), et **0133**
+(`contacts.whatsapp_joignable` : garder le verdict qu'on calculait déjà et qu'on jetait dans HubSpot).
+
+⚠️ **CETTE LIGNE A DÉRIVÉ UNE SEPTIÈME FOIS, ET DOUBLEMENT, le 2026-09-13.** Elle annonçait à la fois
+« 0137 EST ÉCRITE ET PAS ENCORE APPLIQUÉE » et « 0136 EST ÉCRITE ET PAS ENCORE APPLIQUÉE », alors que
+0136 l'était depuis la veille au soir et que 0137 venait de l'être. Deux affirmations fausses d'un coup,
+dans un fichier qui se déclare seule source du compteur et qui prévient qu'il dérive. La parade n'a pas
+changé et elle a encore fonctionné : **la base tranche**. Ce qui ne fonctionne toujours pas, c'est
+d'écrire la ligne au moment où l'on écrit le fichier SQL : le moment juste est l'exécution de `migrate`,
+et il faut RELIRE la base juste après.
+
+**0136** (`campaigns.tour_de_role_rang` passe de `smallint` à
+`integer`). Elle RETIRE un repliage, et c'est la vraie raison : le `% 32767` qui protégeait le `smallint`
+créait un point où deux rangs consécutifs valent 32766 puis 0, donc la MÊME personne servie deux fois
+d'affilée pour une équipe de 2, 3 ou 6 (mesuré ; seules les tailles divisant 32767 = 7 x 31 x 151 y
+échappaient). Il échangeait une panne visible contre une double affectation silencieuse. Elle est un
+ÉLARGISSEMENT, donc l'ancien code y survit, mais elle passe quand même AVANT le déploiement : le code neuf
+n'a plus de repliage et lèverait `22003` sur un `smallint`.
+
+🔴 **CE N'EST PAS LA MIGRATION QUE LE PLAN ANNONÇAIT, ET C'EST LE VRAI RÉSULTAT DE CE LOT.** Il prévoyait une
+colonne `contacts.email`, sur l'idée que « le destinataire sera l'adresse e-mail présente sur la fiche du
+mini-CRM ». Vérification faite dans les migrations : `contacts` n'a effectivement PAS de colonne `email`
+(0001 crée la table sans, aucun `alter table contacts` n'en ajoute), mais l'adresse EXISTE, dans le jsonb
+`fields` de 0002, sous une clé que le CLIENT crée. Et il n'y a **aucune convention de nom** : le dépôt porte
+la trace d'un espace qui l'appelait « mail » quand un autre l'appelait « email » (`src/workflow/wiring.ts`,
+cas du 2026-08-25). Une colonne `contacts.email` aurait donc créé une SECONDE vérité à côté du jsonb, et le
+jour où les deux divergent, c'est la neuve, vide, que la campagne aurait lue.
+
+Avant elle : **0132** (`french_sans_accent` : la recherche plein texte cessait de trouver un mot écrit sans
+accent), **0133** (la joignabilité WhatsApp MÉMORISÉE d'un contact) et **0134** (la chaîne d'étages). ⚠️ Cette
+page décrivait encore 0132 comme « écrite, pas encore appliquée » : elle l'est, comme 0133 et 0134. C'est la
+même dérive, pour la même raison, et la base a encore tranché.
+
+⚠️ **ET CETTE LIGNE A DÉRIVÉ UNE CINQUIÈME FOIS** : elle annonçait 0130 alors que 0131 était appliquée depuis
+le matin même. Toujours la même cause, et toujours la même parade : la base tranche. Relire la ligne APRÈS
+avoir lancé `migrate`, jamais après avoir écrit le fichier SQL.
+
+Avant elle : **0130**, le 2026-09-11 (`conversations.last_direction` : le SENS du dernier message
+d'une conversation, plus son CHECK et sa reprise de l'historique. C'est ce qui permet au dossier « À traiter »
+de vouloir dire « la balle est dans notre camp » plutôt que « quelqu'un a écrit »). Avant elle, **0129** le
+2026-09-10 à 20h50 (`agent_tool_sources.secret_publie_le` : se souvenir du secret qu'on a POSÉ chez Meta, seul
+moyen de savoir quand le reposer), et **0127** le même jour à 19h35 (`agent_tool_consommateurs` : la
+DÉFINITION d'un outil appartient à l'ESPACE, le CONSENTEMENT au couple (outil, consommateur), où le Meta
+Business Agent est un consommateur comme un agent).
+
+⚠️ **CETTE LIGNE A DÉRIVÉ UNE QUATRIÈME FOIS, le 2026-09-11** : elle annonçait 0129 et « prochaine libre =
+0130 » alors que 0130 était écrite ET appliquée depuis le matin. Relevée en écrivant une spec qui avait
+besoin du prochain numéro, donc par quelqu'un qui allait s'en servir. La parade reste la même et elle a encore
+fonctionné : **la base tranche**. Ce qui ne fonctionne toujours pas, c'est de compter sur le souvenir d'avoir
+mis à jour la ligne : le moment où elle se met à jour est l'exécution de `migrate`, et il faut la RELIRE
+juste après.
+
+⚠️ **0128 A ÉTÉ APPLIQUÉE APRÈS 0129, et le désordre des numéros est délibéré** : elle RETIRE `agent_id` et
+les six colonnes de consentement de `agent_tools`, donc elle devait passer après que le nouveau code ait été
+vu en production, quand 0129 devait passer avant. Le runner applique les fichiers absents de
+`schema_migrations` par ordre de nom, sans exiger que la suite soit continue ni que l'ordre d'application la
+suive.
+
+🔴 **L'ORDRE DE LA SÉQUENCE S'INVERSE POUR UNE MIGRATION QUI RETIRE** : build, `up -d --build`, PUIS
+`migrate`. La routine documentée (migrer d'abord) vaut pour une migration qui AJOUTE une colonne que le code
+écrit. Ici, migrer d'abord aurait cassé la production pendant toute la durée du déploiement. Et avant de
+lancer `migrate`, le code DÉPLOYÉ a été mesuré dans le conteneur (`grep` dans `mba-api` et `mba-worker` :
+zéro écriture restante sur les colonnes qui partaient), pas déduit du fait qu'on venait de le pousser.
+
+🔴 **DEUX LECTEURS ÉCRIVAIENT ENCORE CES COLONNES, ET AUCUN N'ÉTAIT VISIBLE D'UN TEST UNITAIRE.**
+`PgUserStore.deleteUser` éteignait les outils du partant sur `agent_tools` EN PLUS de la table de liaison :
+tout `delete` d'un compte serait tombé en `42703`, sur un chemin qu'on n'emprunte que le jour d'un départ de
+collaborateur. Et trois fixtures d'intégration inséraient encore `agent_id`, `actif` et `active_par`, donc la
+CI serait devenue rouge sur une base fraîche. La question « qui écrit encore ceci ? » se pose AVANT d'écrire
+le `drop column`, pas après l'avoir appliqué.
+
+Vérifiée EN BASE après coup : les 7 colonnes parties, les deux CHECK partis, les deux index remplacés
+(`agent_tools_name_idx` et `agent_tools_actifs_idx` absents, `agent_tools_nom_espace_idx` présent), et les
+chemins chauds exécutés PAR LE VRAI CODE (`listActifs`, `listToutes`, `byName`, `listActifsConsommateur`,
+`listCatalogue`, `PgSourceStore.lister`), plus les deux écritures de `deleteUser` jouées pour de vrai dans
+une transaction annulée.
+
+🔴 **UN SECRET NE SE COMPARE PAS, IL SE SOUVIENT (0129).** Meta ne rend JAMAIS le secret d'un connecteur : la
+publication ne le posait donc qu'à la CRÉATION, et un commentaire du code affirmait qu'un bouton dédié
+permettait de le faire tourner. Ce bouton n'existait pas, et ce texte partait vers `features.md` comme une
+fonctionnalité. **Une justification fausse est pire qu'aucune, parce qu'elle sera recopiée**, et c'est en
+écrivant la doc que le défaut est sorti. Le drapeau retombe dès qu'on touche à l'authentification de la
+source (le secret, mais aussi le MODE et le NOM D'EN-TÊTE, qui décident du corps envoyé), et la publication
+suivante repose le secret. À secret inchangé, publier deux fois ne produit toujours aucun geste.
+
+Vérifiée EN BASE après coup : `information_schema` pour la colonne, `schema_migrations` pour l'ordre, et le
+chemin chaud exécuté PAR LE VRAI CODE (`PgSourceStore.lister` sur l'espace réel rend `secretPublie: false`,
+pas `undefined`).
+
+Vérifiée EN BASE après coup : les trois CHECK (dont celui qui verrouille la FORME de la clé de consommateur,
+recopiée verbatim depuis `src/agent/consommateur.ts` et tenue par un test qui LIT le fichier SQL), les deux
+index, `agent_id` devenu nullable, ZÉRO clé étrangère restante sur `agent_id`, les 2 lignes reprises (le
+compte exact des outils existants), et la requête du chemin chaud exécutée sur les vraies données.
+
+🔴 **« ELLE N'AJOUTE QUE » ÉTAIT FAUX, ET C'EST LA LEÇON DE CE LOT.** La migration a été écrite en croyant
+qu'ajouter suffisait, puis la CI a rendu ONZE tests d'intégration rouges d'un coup : le nouveau code n'écrit
+plus `agent_id`, or la colonne était `NOT NULL`. Toute création d'outil aurait échoué **pendant la fenêtre
+censée être la plus sûre**, celle où l'on peut encore revenir en arrière. Et le même raisonnement cachait un
+second piège, trouvé par un test : `agent_id` portait `on delete cascade`, donc supprimer UN agent aurait
+détruit les définitions que plusieurs agents partagent.
+
+⚠️ **LA RÈGLE CORRIGÉE, ET ELLE VAUT POUR TOUTES LES MIGRATIONS À VENIR** : « avant ou après le déploiement »
+ne se décide pas sur *ajoute / retire*, mais sur **« l'ancien code survit-il à ce changement ? »**. RELÂCHER
+une contrainte le laisse vivre (il continue de renseigner la colonne), RETIRER non. Un `drop not null` et un
+`drop constraint` de cascade ont donc leur place AVANT, un `drop column` APRÈS.
+
+⚠️ **ET CETTE LIGNE A ENCORE DÉRIVÉ, une troisième fois.** Elle annonçait « écrite, PAS ENCORE APPLIQUÉE »
+alors que la base portait 0124, 0125 et 0126 depuis le jour même. La parade est écrite juste au-dessus et
+elle a fonctionné : **la base tranche**. Ce qui n'a pas fonctionné, c'est de relire la ligne après avoir
+appliqué la migration plutôt qu'après l'avoir écrite. Le moment où elle se met à jour est l'exécution de
+`migrate`, pas la rédaction du fichier SQL.
+
+🔴 **LA REVUE DE L'AGENT A TROUVÉ QUE L'ANNONCE ÉTAIT CONFIÉE AU MODÈLE**, et c'est ce que 0126 corrige. La
+consigne système disait « au tout premier message d'une conversation, tu annonces que tu es une IA » : rien
+ne garantissait qu'elle parte, et surtout « le premier message d'une conversation » est une notion que le
+MODÈLE devait deviner depuis un transcript. Il ne sait pas où commence une session, donc un réglage « une
+fois par session » posé sur cette base n'aurait jamais pu être tenu. **C'est le code qui choisit désormais
+l'instruction avant l'appel** : dire la phrase maintenant, ou ne pas en parler. Le modèle n'a plus de
+décision à prendre.
+🔴 **MAIS LE TEXTE RESTAIT AU MODÈLE, ET IL L'OUBLIAIT** dès qu'il appelait un outil avant de répondre (une
+réponse sur cinq la portait, mesuré le 2026-10-05 par `test_agent` sur un agent en production). Depuis ce jour,
+c'est le code qui écrit la phrase devant la réponse (`pourLeContact`, `src/agent/brain.gateway.ts`) : une
+obligation légale ne se confie pas à une consigne.
+
+⚠️ **`jamais` est un choix EXPLICITE du client, obtenu en le lui demandant à la construction du bot**
+(décision de Julien du 2026-09-09 : « par principe non, on ne demande pas à l'IA de dire systématiquement je
+suis une IA »). L'AI Act article 50 n'impose l'information que lorsqu'elle n'est pas évidente du contexte, et
+l'obligation pèse sur la marque DÉPLOYANTE : c'est donc à elle de trancher, pas à nous en silence. Défaut
+`session`, qui ne change rien aux agents existants.
+
+Avant elle : **0125** (`conversation_messages.media_id`, `.media_mime`, `.transcription`,
+`.transcription_modele` : garder de quoi RETROUVER un média entrant, et ce qu'on en a lu).
+
+🔴 **L'IDENTIFIANT DU MÉDIA ÉTAIT JETÉ À LA PORTE, et c'est le vrai sujet de 0125.** Meta ne transmet pas le
+fichier dans le webhook, il transmet un identifiant avec lequel on va chercher une URL de téléchargement.
+`contentOf` n'en gardait rien : un vocal se réduisait au libellé `[audio]` et devenait **inatteignable pour
+toujours**. Aucun correctif ultérieur ne rattrape ça, et Meta ne garde un média REÇU que **sept jours** : c'est
+pourquoi cette migration passe AVANT que quoi que ce soit sache transcrire. ⚠️ Cette ligne a dit « 30 jours »
+jusqu'au 2026-09-19 : c'est le délai des médias qu'on TÉLÉVERSE, et la mesure l'a démenti ce jour-là (deux vocaux
+de 7,9 et 8,9 jours introuvables chez Meta). La constante qui fait foi : `DUREE_MEDIA_RECU_JOURS`.
+
+⚠️ **`body` NE CHANGE PAS** : il garde la légende, sinon `[audio]`. Tout ce qui le lit (aperçu de l'Inbox,
+historique de l'agent, analyse) continue à l'identique, et la transcription vit dans SA colonne. Même règle
+qu'en 0123 : la lecture d'un modèle n'est pas ce que le client a écrit, et un opérateur qui reprend une
+conversation menée par l'IA doit pouvoir écouter ce qui a réellement été dit.
+
+Avant elle : **0124**, le 2026-09-09 (`agent_gateway_keys` : une clé AI Gateway par espace,
+provisionnée chez Vercel à la création du premier agent).
+
+Vérifiée EN BASE après coup, comme 0120 à 0123 : `information_schema` pour les six colonnes,
+`pg_constraint` pour la clé PRIMAIRE sur `tenant_id` (c'est elle qui rend le provisionnement IDEMPOTENT sans
+verrou applicatif : deux créations d'agent simultanées ne peuvent pas produire deux clés Vercel) et pour la
+clé étrangère, et `schema_migrations` pour l'ordre.
+
+🔴 **LE PLAFOND DE LA CLÉ EST LE CRÉDIT ACHETÉ, jamais un nombre que le client saisit** (tranché par Julien
+le 2026-09-09). La nuance décide de tout : un plafond que le client choisit ne protège personne, il suffit
+d'y taper 10 000 pour vider le pot commun ; un plafond égal à ce qu'il a payé est une garantie. Corollaire
+assumé : **pas de crédit, pas de clé, donc pas d'agent**, parce que le bac à sable appelle vraiment le
+modèle et qu'un client à zéro mettrait son agent au point sur notre argent.
+
+🔴 **DEUX APPELS VERCEL, DEUX HÔTES, DEUX AUTHENTIFICATIONS**, et c'est le piège du lot : créer une clé va
+sur `api.vercel.com/v1/api-keys?teamId=` avec le JETON DE COMPTE ; bouger son plafond va sur
+`ai-gateway.vercel.sh/v1/quotas?quotaEntityId=api_key_id_<id>` avec la CLÉ GATEWAY maison. Trois façons
+indépendantes de se tromper, aucune visible du compilateur, toutes découvertes en production au moment où un
+client crée son premier agent. Lues dans la documentation avant d'écrire une ligne, et figées par
+`tests/agent-cles-gateway.test.ts`.
+
+🔴 **ET LA DOCUMENTATION DE VERCEL EST FAUSSE SUR LA RÉPONSE DE CRÉATION.** Elle annonce `apiKeyString` ET
+`id` à la RACINE ; le serveur rend `apiKeyString` à la racine et l'identifiant sous **`apiKey.id`**. Mesuré
+le 2026-09-09 à la première création réelle. Le `safeParse` a refusé, donc rien n'a été enregistré : sans
+lui, `id` valait `undefined`, on gardait une ligne à l'identifiant vide, et on perdait DÉFINITIVEMENT le
+moyen de replafonner ou de révoquer une clé qui facture (Vercel ne rend le secret qu'une fois, il n'y a
+aucune session de rattrapage). ⚠️ La leçon générale n'est pas « Vercel se trompe », c'est **qu'une réponse
+d'API se VÉRIFIE, y compris quand sa documentation est explicite** : c'est exactement ce que la règle
+« `safeParse`, jamais `as` » achète, et c'est la deuxième fois en deux jours qu'elle paie.
+
+🔴 **`VERCEL_API_TOKEN` EST BIEN PLUS DANGEREUX QUE `AI_GATEWAY_API_KEY`** : la seconde ne sait que dépenser
+sous un plafond, le premier sait FABRIQUER des clés facturées à l'équipe. La parade ne vit pas dans le code,
+c'est le **plafond d'ÉQUIPE** posé chez Vercel, qui borne les dégâts quel que soit le nombre de clés créées.
+**Posé le 2026-09-09 : 100 $/mois, actif**, vérifié en relecture (⚠️ la relecture juste après l'écriture rend
+`Quota not found` pendant quelques secondes, c'est une propagation, pas un échec).
+
+⚠️ **`monthly` pour l'ÉQUIPE, `none` pour les clés CLIENT**, et l'inverse serait faux des deux côtés : le
+plafond d'équipe est un budget de fonctionnement mensuel, en `none` il couperait tout définitivement une fois
+atteint ; le crédit d'un client est prépayé, en `monthly` il lui redonnerait chaque mois ce qu'il n'a pas
+acheté. 🔴 Et le plafond d'équipe coupe **TOUS** les projets du Gateway d'un coup, y compris les bots
+clients en production (Odalys, Hyundai, Gan Prévoyance, les deux Leadgen) : le calibrer bas n'est pas
+« prudent », c'est une panne.
+
+🔴 **RÉVOQUER LA CLÉ AVANT DE SUPPRIMER UN ESPACE** (question de Julien du
+2026-09-09). `agent_gateway_keys.tenant_id` porte un `on delete cascade`, qui reste le bon choix (une
+contrainte qui BLOQUERAIT la suppression d'un espace serait pire), mais il a une conséquence : notre ligne part
+avec l'espace, et **la clé survit chez Vercel avec son identifiant PERDU**, donc facturable et irrévocable pour
+toujours. Le geste est `DELETE /ops/cle-modele/:tenantId`, qui supprime chez Vercel **puis** chez nous et refuse
+d'oublier la ligne si Vercel n'a pas confirmé : échouer dans ce sens-là garde de quoi réessayer.
+⚠️ Depuis RC8 (2026-10-07), la suppression d'un espace depuis `/ops` (`DELETE /ops/espaces/:tenantId`,
+`documentation.md` § 10) verrouille l'espace (plus aucune clé ne s'y ouvre), révoque la clé, et s'arrête sans
+rien purger si Vercel ne confirme pas. Un `delete from tenants` écrit à la main, lui, réarme le piège.
+
+⚠️ **Supprimer un AGENT, en revanche, ne touche à rien, et c'est correct** : la clé est par ESPACE. Un espace
+sans agent ne peut plus rien dépenser (les deux seuls chemins, tour et bac à sable, passent par une fiche
+d'agent), et s'il en recrée un, la clé existante est RÉUTILISÉE au lieu d'en ouvrir une seconde.
+
+⚠️ **NON BLOQUANTE dans l'autre sens** : le code lit la clé en tolérant son absence (l'espace retombe sur la
+clé maison, comme un espace RCS sans clé propre). Elle passe AVANT le déploiement parce que la route de
+création d'agent l'écrit.
+
+Avant elle : **0123**, le 2026-09-09 (`conversations.signalee_le` et `.signalee_par` : signaler une
+conversation À LA MAIN, sans écraser le constat de l'analyse).
+
+🔴 **UNE COLONNE À PART, ET PAS `conversation_analysis.abusive`.** Ce champ-là est un CONSTAT posé par un
+modèle, RECALCULÉ à chaque ré-analyse : un signalement humain écrit dedans disparaîtrait au passage suivant,
+sans cause visible. Le dossier « Signalé » montre donc l'UNION des deux sources, et chacune reste lisible pour
+elle-même. C'est la séparation que le dépôt fait déjà tenir entre `abusive` (constat, ne déclenche rien) et
+`contacts.blocked_at` (décision, a des effets) : la casser ici la rendrait discutable là-bas.
+
+⚠️ NON BLOQUANTE (le code tolère la colonne absente), mais passée AVANT le déploiement : la requête du
+dossier est sur le chemin d'affichage de l'Inbox.
+
+Vérifiée EN BASE après coup, comme 0120 à 0122 : `information_schema` pour les deux colonnes,
+`pg_indexes` pour le prédicat exact de l'index partiel, et `pg_constraint` pour le `on delete set null` de
+l'auteur (`confdeltype = 'n'`, sans quoi le départ d'un collaborateur DÉSIGNALERAIT ses conversations).
+Puis la requête du dossier exécutée PAR LE VRAI CODE (`PgInboxStore`), pas par un SQL recopié : compteurs et
+listes concordent, et `signaleeMain` remonte à `false`, pas à `undefined`.
+
+⚠️ **ET C'EST UNE SONDE RATÉE QUI A TROUVÉ LE SEUL RESTE DU LOT.** Le premier appel passait
+`{ dossier: 'signalees' }` là où l'option s'appelle `signalees: true` : une clé inconnue ne lève rien, le
+filtre n'est pas posé, et la liste rend TOUT. Le symptôme n'a été lisible que parce que le compteur était
+lu dans le même passage et disait 0. **Une sonde de vérification se lit à côté d'un chiffre qui la contredit**,
+sinon elle confirme ce qu'on croyait.
+
+Avant elle : **0122** le 2026-09-08 (`campaigns.business_hours_only` : une campagne peut n'envoyer
+que pendant les heures d'ouverture de l'espace, s'arrêter à la fermeture et REPRENDRE au créneau suivant).
+
+🔴 **ELLE NE CRÉE AUCUNE MÉCANIQUE DE REPRISE, ELLE ÉLARGIT CELLE DE 0103**, et c'est ce qui la rend petite :
+une campagne hors créneau se met `paused` avec un `paused_until`, exactement comme sur un plafond de débit,
+et le balayage existant la relance. D'où ses TROIS changements, dont le troisième est celui qu'on oublie :
+la colonne, le CHECK de `pause_reason` (qui n'acceptait que `debit` et `qualite`, donc la mise en pause
+aurait échoué à l'écriture, en pleine campagne), et **l'index partiel `campaigns_reprise_idx`, qui est un
+CONTRAT AVEC UNE REQUÊTE PRÉCISE** : élargir le `where` de `reprendreCampagnesDues` sans élargir le prédicat
+de l'index ne produit AUCUNE erreur, juste un balayage qui parcourt la table des campagnes chaque minute.
+`qualite` reste hors des deux : cette pause-là n'a jamais d'échéance.
+
+Le nom de la contrainte de 0103 (créée en ligne, donc nommée automatiquement) a été LU EN BASE avant
+d'écrire le `drop constraint if exists` : un nom deviné à côté aurait laissé l'ancienne contrainte en place
+ET ajouté la nouvelle, donc rejeté `hors_horaires` en silence, un `if exists` ne protégeant que de l'absence.
+
+Avant elle : **0121** le 2026-09-08 (`conversation_analysis.satisfaction` et `.urgence`, deux `smallint`
+NULLABLES bornés 0-10 par un CHECK : l'analyse note où en est le client et à quel point ça presse, et la page
+de synthèse en fait un nuage de points).
+
+🔴 **`null` N'EST PAS `0`, ET C'EST TOUTE LA MIGRATION 0121.** Les analyses d'avant n'ont aucune mesure (14 en
+base au moment de l'appliquer, toutes à null, vérifié) et n'en auront jamais : on ne réanalyse pas. Les
+compter comme zéro rangerait tout l'historique dans le coin « client furieux, urgence nulle ». À l'inverse,
+une satisfaction de 0 est une mesure PARFAITEMENT valide, celle qui alarme : un `if (!satisfaction)` la
+ferait disparaître de l'écran, qui resterait crédible sans elle. Les deux sens sont tenus par des tests
+d'intégration, vérifiés par MUTATION contre une vraie base.
+
+Vérifiée EN BASE après coup, comme la 0120 : `information_schema` pour les deux colonnes, `pg_constraint`
+pour les deux CHECK, et la requête du chemin chaud exécutée pour de vrai (elle rend bien 13 lignes à
+`(null, null)` sur le premier espace, donc « sans mesure », et aucune à `(0, 0)`).
+
+Avant elle : **0120** le 2026-09-08 (`conversations.archived_at` et son index PARTIEL : ranger une
+conversation finie sans rien effacer, l'Inbox étant passée en boîte mail).
+
+Vérifiée AVANT le déploiement du code qui l'écrit, et vérifiée EN BASE plutôt que par l'absence d'erreur :
+`information_schema` pour la colonne, `pg_indexes` pour l'index partiel, et la requête du chemin chaud
+exécutée pour de vrai. Sans trafic, un silence dans les journaux ne prouve rien.
+
+Avant elle : **0119** le 2026-09-08 (`agent_test_runs`, l'historique des essais du bac à sable, gardé
+14 jours).
+
+0119 est le cas d'école de l'ordre : elle CRÉE une table que le code écrit, donc elle est passée AVANT le
+déploiement (image construite, `migrate`, puis `up -d --build`). La route, elle, tient sans : son dépôt
+d'essais est OPTIONNEL et la liste rend `{essais: []}` quand il manque, ce qui permet de déployer l'écran
+avant la table sans que rien ne casse. Vérifiée après coup en interrogeant `pg_indexes` et
+`schema_migrations`, pas en constatant l'absence d'erreur dans les journaux.
+
+Avant elle : **0118** le 2026-09-08 (la PROVENANCE d'une fiche de connaissance, `source_type` et
+`source_nom` : une fiche issue d'un PDF était jusque-là indiscernable d'une fiche tapée à la main, les deux
+ayant `source_url` à null, et l'écran ne peut pas montrer ce qu'il ne sait pas).
+
+⚠️ **CETTE LIGNE A DÉRIVÉ UNE FOIS DE PLUS LE 2026-09-08, ET DE MON FAIT.** Elle annonçait encore 0116 alors
+que 0117 était appliquée : l'édition qui devait la mettre à jour n'a pas pris, et je ne l'ai pas relue. Le
+fichier se déclare seule source du compteur et prévient qu'il dérive ; la parade n'est pas d'y faire
+attention, c'est de RELIRE la ligne après l'avoir changée, ou de demander à la base.
+
+Avant elle : **0117** le 2026-09-08 (le mot-clé d'un lien de chaîne perd la ponctuation FINALE de sa phrase :
+sans ça, un bouton dont la phrase finit par « ! » ne démarrait aucun scénario, l'auto-détection de liens de
+WhatsApp excluant cette ponctuation de l'adresse qu'elle ouvre) ; **0116** le 2026-09-07 au soir (la phrase
+d'un lien de chaîne devient sa clé de routage : index unique par espace, et bascule des mots-clés des liens
+existants du jeton vers la phrase) ; **0114** le 2026-09-07 au matin (les trois tables Channels Me, plus
+`possede_par` et `max_fires_per_hour` sur `automations`) ; **0115** le même soir (l'index qui sert « le
+parcours actif de ce contact », `CREATE INDEX CONCURRENTLY`, hors transaction, `indisvalid` vérifié après
+coup et le planificateur la prend).
+
+🔴 **CE QUI A ÉTÉ VÉRIFIÉ SUR 0116, ET POURQUOI CE N'ÉTAIT PAS FACULTATIF.** Sa précondition (aucune phrase
+en double) a été REVÉRIFIÉE juste avant de l'appliquer, pas seulement quand elle a été écrite. Puis ses deux
+effets ont été mesurés en base plutôt que déduits de l'absence d'erreur : `indisvalid = true` sur
+`channelsme_links_phrase_key`, et les mots-clés des deux liens réellement basculés. Surtout, le point dont
+dépendait la survie de tous les posts DÉJÀ PUBLIÉS a été lu dans la donnée : leur automation porte bien
+`mode: "contains"`. En `equals`, le texte historique `phrase (cm-xxxx)` aurait cessé de correspondre et tous
+les boutons en circulation seraient morts, sans aucun recours.
+
+**0114** a suivi l'ordre que la section impose, et c'est le cas d'école : ses deux colonnes sur `automations`
+sont lues par le CHEMIN CHAUD (`PgAutomationStore.listEnabled`, qui sert la correspondance des messages
+entrants), donc image construite, puis `migrate`, puis `up -d --build`. Vérifié après coup en interrogeant
+`information_schema` ET en exécutant la requête du chemin chaud, pas en constatant l'absence d'erreur dans
+les journaux : sans trafic entrant, un silence ne prouve rien.
+
 ## DÉPLOYÉ le 2026-09-03 au soir : le contre-CONTRE-rapport, et ce qu'il dit de mes propres correctifs (migration 0113)
 
 Quatre constats, trois confirmés. Mais l'intérêt du lot n'est pas là : **quatre des six défauts fermés ce
