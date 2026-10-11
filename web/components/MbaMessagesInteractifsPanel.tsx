@@ -16,9 +16,10 @@ import {
   type MbaMessageInteractif, type MbaStatus,
 } from '@/lib/api-mba';
 import { listFlows } from '@/lib/api/scenarios';
-import { isValidSkillTitle, slugSkillTitle, slugSkillTitleFrappe, SKILL_TITLE_MAX } from '@/lib/mba-skills';
+import { slugSkillTitle, slugSkillTitleFrappe } from '@/lib/mba-skills';
 import {
-  CONSIGNE_MESSAGE_MAX, TYPES, composerConsigne, octets, separerConsigne, type TypeMessageInteractif,
+  CONSIGNE_MESSAGE_MAX, TITRE_MESSAGE_INTERACTIF_MAX, TYPES, composerConsigne, octets, separerConsigne,
+  titreMessageInteractifValide, type TypeMessageInteractif,
 } from '@/lib/messages-interactifs';
 
 /**
@@ -238,7 +239,7 @@ function Fiche({ type, message, titresPris, formulaires, busy, onAnnuler, onEnre
 
   // Comme une consigne : mis en forme pendant la frappe, et la forme DÉFINITIVE est celle qu'on valide et qu'on envoie.
   const titreEnvoye = slugSkillTitle(titre);
-  const titreValide = isValidSkillTitle(titreEnvoye);
+  const titreValide = titreMessageInteractifValide(titreEnvoye);
   const consigne = composerConsigne(quand, contenu, locale === 'en' ? 'en' : 'fr');
   const taille = octets(consigne);
   const consigneValide = quand.trim() !== '' && contenu.trim() !== '' && taille <= CONSIGNE_MESSAGE_MAX;
@@ -313,7 +314,7 @@ function Fiche({ type, message, titresPris, formulaires, busy, onAnnuler, onEnre
         <span className="mt-0.5 block text-xs text-ink-500">
           {t('En minuscules, avec des tirets. Il est mis en forme pendant la saisie.', 'Lowercase with dashes. It is formatted as you type.')}
         </span>
-        <input className={`${inputCls} mt-1.5 font-mono`} maxLength={SKILL_TITLE_MAX} data-testid="mba-message-titre" value={titre}
+        <input className={`${inputCls} mt-1.5 font-mono`} maxLength={TITRE_MESSAGE_INTERACTIF_MAX} data-testid="mba-message-titre" value={titre}
           onChange={(e) => setTitre(slugSkillTitleFrappe(e.target.value))} onBlur={() => setTitre(titreEnvoye)} />
         {titreEnvoye !== '' && !titreValide && (
           <span className="mt-1 block text-xs text-danger-600" data-testid="mba-message-titre-erreur">

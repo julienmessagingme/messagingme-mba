@@ -6,6 +6,15 @@
 > tranchent, jamais ce fichier.
 
 
+## 2026-10-11 : un seul contrat pour les messages interactifs
+
+Les neuf types de messages interactifs, leur borne en octets et la lecture de la ligne « Quand » existaient côté
+serveur et côté console, avec un test chargé de comparer les copies. Ils vivent désormais dans
+`web/lib/partage/messages-interactifs.ts`, module pur importé par le serveur, l'assistant et la console. Le serveur
+garde la validation métier et la traduction vers Meta ; la console garde ses traductions, icônes et canevas. Le test
+compare maintenant la règle unique à des résultats attendus. Aucun contrat HTTP, comportement ni stockage ne change.
+
+
 ## 2026-10-11 : l'orchestration de la publication Meta sort de la route
 
 La route `mba-publication` portait à la fois HTTP, calcul du plan, verrou distribué, contexte des gestes et classement

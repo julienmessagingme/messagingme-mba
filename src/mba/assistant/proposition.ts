@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { TITRE_MAX, TITRE_RE, TYPES_MESSAGE_INTERACTIF } from '../messages-interactifs';
+import {
+  ID_FORMULAIRE_MESSAGE_RE,
+  TITRE_MESSAGE_INTERACTIF_MAX,
+  TITRE_MESSAGE_INTERACTIF_RE,
+  TYPES_MESSAGE_INTERACTIF,
+} from '../../../web/lib/partage/messages-interactifs';
 
 /**
  * Ce que l'assistant du MBA a le droit de proposer, et rien d'autre.
@@ -20,7 +25,7 @@ const cible = z.string().trim().min(1).max(200);
  * Le titre d'une consigne comme celui d'un message interactif : un slug borné à la limite de Meta (64), la même règle
  * pour les deux (mesuré le 2026-10-07).
  */
-const titreSlug = z.string().trim().min(1).max(TITRE_MAX).regex(TITRE_RE);
+const titreSlug = z.string().trim().min(1).max(TITRE_MESSAGE_INTERACTIF_MAX).regex(TITRE_MESSAGE_INTERACTIF_RE);
 
 const faqAjouter = z.object({
   type: z.literal('faq.ajouter'),
@@ -102,14 +107,13 @@ const businessModifier = z.object({
  * PUBLIÉ DE L'ESPACE se vérifie à l'application, en base. Le titre est `titreSlug`, comme celui d'une consigne ;
  * l'application recompte en octets, comme Meta.
  */
-const ID_FORMULAIRE = /^\d{1,20}$/;
 const consigneMessage = z.string().trim().min(1).max(MAX_TEXTE);
 const messageInteractifAjouter = z.object({
   type: z.literal('message_interactif.ajouter'),
   titre: titreSlug,
   composant: z.enum(TYPES_MESSAGE_INTERACTIF),
   consigne: consigneMessage,
-  formulaire: z.string().trim().regex(ID_FORMULAIRE).optional(),
+  formulaire: z.string().trim().regex(ID_FORMULAIRE_MESSAGE_RE).optional(),
 });
 const messageInteractifModifier = z.object({
   type: z.literal('message_interactif.modifier'),
@@ -220,7 +224,7 @@ export const SCHEMA_PROPOSITION_MBA = {
           champ: { type: 'string', enum: [...CHAMPS_BUSINESS], description: 'business.modifier : le champ de la fiche.' },
           valeur: { type: 'string', maxLength: MAX_TEXTE, description: 'business.modifier : la nouvelle valeur.' },
           titre: {
-            type: 'string', minLength: 1, maxLength: TITRE_MAX, pattern: TITRE_RE.source,
+            type: 'string', minLength: 1, maxLength: TITRE_MESSAGE_INTERACTIF_MAX, pattern: TITRE_MESSAGE_INTERACTIF_RE.source,
             description: 'competence et message_interactif : son titre, en minuscules, chiffres et tirets (ex. « politique-de-retour », « boutons-rdv »).',
           },
           composant: {
@@ -236,7 +240,7 @@ export const SCHEMA_PROPOSITION_MBA = {
           },
           formulaire: {
             type: 'string',
-            pattern: ID_FORMULAIRE.source,
+            pattern: ID_FORMULAIRE_MESSAGE_RE.source,
             description: 'message_interactif.ajouter, composant flow SEULEMENT : l’identifiant d’un formulaire publié de la liste fournie.',
           },
         },

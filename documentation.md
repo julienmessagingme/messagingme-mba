@@ -259,7 +259,10 @@ l'historique en garde la copie (`avant`). Une cible qui n'est pas un identifiant
 avant Meta, pour une consigne comme pour un message interactif.
 
 ⚠️ **LES MESSAGES INTERACTIFS VIVENT CHEZ META, COMME LES CONSIGNES** (`/{numéro}/agent-ui-skills`, client
-`src/mba/client.ts`, validation `src/mba/messages-interactifs.ts`). Ce que la mesure du 2026-10-07 impose au code :
+`src/mba/client.ts`, validation `src/mba/messages-interactifs.ts`). Leur contrat pur vit à un seul endroit,
+`web/lib/partage/messages-interactifs.ts`, lu par le serveur, l'assistant et la console : les neuf types, les bornes
+en octets, le titre en slug, l'identifiant de formulaire et la forme « Quand » de la consigne. La console ne garde
+dans `web/lib/messages-interactifs.ts` que les libellés, icônes, aides et canevas. Ce que la mesure du 2026-10-07 impose au code :
 les bornes de Meta se comptent en OCTETS UTF-8 (titre 64, consigne 20 000), le titre est un SLUG comme celui d'une
 consigne (minuscules, chiffres, tirets ; `TITRE_RE`, gardé identique à `TITRE_SKILL_RE`), un `PUT` qui change le type rend 200 et
 l'IGNORE (le type et le formulaire ne se modifient donc pas, on supprime et on recrée), la pagination suit
@@ -3926,7 +3929,8 @@ démarre plus. ⚠️ Depuis `web/lib`, la console l'importe en RELATIF : des te
 serveur ne connaît pas l'alias. Ce qu'il porte : les champs d'adresse (`champs-url`), l'URL de bouton envoyable
 (`button-url`), l'identifiant de bouton de carrousel, la joignabilité WhatsApp, les types et la forme des événements
 d'une conversation, les modes du répondeur et son mode effectif, les niveaux et codes du risque, les bornes et le
-parseur de durée de la vidéo publicitaire. Une copie qui reste ailleurs (une liste de libellés d'écran, une règle
+parseur de durée de la vidéo publicitaire, et le contrat des messages interactifs de l'agent de Meta
+(`messages-interactifs`). Une copie qui reste ailleurs (une liste de libellés d'écran, une règle
 liée à la base ou à `zod`) garde son test de parité.
 
 ### Backend

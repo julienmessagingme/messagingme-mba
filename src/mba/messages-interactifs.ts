@@ -1,4 +1,16 @@
 import { z } from 'zod';
+import {
+  CONSIGNE_MESSAGE_MAX,
+  ID_FORMULAIRE_MESSAGE_RE,
+  TITRE_MESSAGE_INTERACTIF_MAX,
+  TITRE_MESSAGE_INTERACTIF_RE,
+  TYPES_MESSAGE_INTERACTIF,
+  estTypeMessageInteractif,
+  octetsUtf8,
+  type TypeMessageInteractif,
+} from '../../web/lib/partage/messages-interactifs';
+
+export { TYPES_MESSAGE_INTERACTIF, estTypeMessageInteractif, type TypeMessageInteractif };
 
 /**
  * LES MESSAGES INTERACTIFS DE L'AGENT DE META (ses « UI Skills », renommées « interactive messages » par Meta le
@@ -11,28 +23,14 @@ import { z } from 'zod';
  * 2026-10-07), pas seulement de la doc.
  */
 
-/** Les neuf types, dans l'ordre de la grille de la console. Une seule liste, que la console recopie (`web/lib`). */
-export const TYPES_MESSAGE_INTERACTIF = [
-  'interactive_reply_buttons',
-  'interactive_list',
-  'cta_url',
-  'flow',
-  'image',
-  'location',
-  'location_request',
-  'carousel_url',
-  'carousel_quick_reply',
-] as const;
-export type TypeMessageInteractif = (typeof TYPES_MESSAGE_INTERACTIF)[number];
-
 /**
  * 🔴 LES BORNES SE COMPTENT EN OCTETS UTF-8, COMME META LES COMPTE. Mesuré le 2026-10-07 : une consigne de 20 000
  * caractères dont 10 accentués est refusée comme « 20010 ». Compter en `.length` laisserait passer, en français, une
  * consigne que Meta refuse.
  */
-export const TITRE_MAX = 64;
-export const CONSIGNE_MAX = 20_000;
-export const octets = (s: string): number => Buffer.byteLength(s, 'utf8');
+export const TITRE_MAX = TITRE_MESSAGE_INTERACTIF_MAX;
+export const CONSIGNE_MAX = CONSIGNE_MESSAGE_MAX;
+export const octets = octetsUtf8;
 
 /**
  * 🔴 LE TITRE EST UN SLUG, comme celui d'une consigne (`TITRE_SKILL_RE`, `src/http/mba.ts`, que
@@ -40,7 +38,7 @@ export const octets = (s: string): number => Buffer.byteLength(s, 'utf8');
  * à la fin. Mesuré le 2026-10-07 : Meta refuse en 400 tout autre titre (« title must contain only lowercase letters,
  * numbers, and hyphens »), et le compte en octets (40 « é » comptent 71).
  */
-export const TITRE_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+export const TITRE_RE = TITRE_MESSAGE_INTERACTIF_RE;
 
 /** Un identifiant Meta (`pfbid…`) tel qu'on le remet dans un chemin : rien qui puisse le faire sortir du sien. */
 export const ID_MESSAGE_RE = /^[A-Za-z0-9_-]{1,200}$/;
@@ -57,10 +55,6 @@ export interface MessageInteractif {
   /** Secondes Unix, telles que Meta les rend. */
   creeLe: number;
   modifieLe: number;
-}
-
-export function estTypeMessageInteractif(v: unknown): v is TypeMessageInteractif {
-  return typeof v === 'string' && (TYPES_MESSAGE_INTERACTIF as readonly string[]).includes(v);
 }
 
 type Verdict<T> = { ok: true; valeur: T } | { ok: false; erreur: string };
@@ -100,7 +94,7 @@ export function validerCreation(e: { titre?: unknown; type?: unknown; consigne?:
   if (!consigne.ok) return consigne;
   const formulaire = e.formulaireId === undefined || e.formulaireId === null ? null : e.formulaireId;
   if (e.type === 'flow') {
-    if (typeof formulaire !== 'string' || !/^\d{1,20}$/.test(formulaire)) return { ok: false, erreur: 'un formulaire est requis pour un message de type formulaire' };
+    if (typeof formulaire !== 'string' || !ID_FORMULAIRE_MESSAGE_RE.test(formulaire)) return { ok: false, erreur: 'un formulaire est requis pour un message de type formulaire' };
     return { ok: true, valeur: { titre: titre.valeur, type: e.type, consigne: consigne.valeur, formulaireId: formulaire } };
   }
   if (formulaire !== null) return { ok: false, erreur: 'un formulaire ne se joint qu’à un message de type formulaire' };

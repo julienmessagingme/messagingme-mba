@@ -1,31 +1,28 @@
 import type { NomIcone } from './icones';
+import {
+  TYPES_MESSAGE_INTERACTIF,
+  type TypeMessageInteractif,
+} from './partage/messages-interactifs';
+
+export {
+  CONSIGNE_MESSAGE_MAX,
+  TITRE_MESSAGE_INTERACTIF_MAX,
+  TYPES_MESSAGE_INTERACTIF,
+  composerConsigneMessage as composerConsigne,
+  estTypeMessageInteractif,
+  octetsUtf8 as octets,
+  separerConsigneMessage as separerConsigne,
+  titreMessageInteractifValide,
+  type TypeMessageInteractif,
+} from './partage/messages-interactifs';
 
 /**
  * LES MESSAGES INTERACTIFS DE L'AGENT DE META, côté console : les neuf composants, leur nom, leur icône, leur phrase
  * d'aide et le canevas qui pré-remplit leur fiche. Spec : `docs/superpowers/specs/2026-10-07-messages-interactifs-design.md`.
  *
- * ⚠️ LA LISTE DES TYPES EST DUPLIQUÉE du serveur (`src/mba/messages-interactifs.ts`), délibérément, comme
- * `web/lib/mba-skills.ts` : les deux builds ne partagent aucun module. `tests/web-messages-interactifs.test.ts` casse
- * dès que les deux listes divergent. Le titre suit la règle des consignes (`slugSkillTitle`, `web/lib/mba-skills.ts`) :
- * Meta exige un slug (mesuré le 2026-10-07).
+ * Le contrat commun (types, bornes, titre et forme de la consigne) vit dans `./partage/messages-interactifs.ts`.
+ * Ce module ne garde que les noms, icônes, aides et canevas propres à l'écran.
  */
-
-export const TYPES_MESSAGE_INTERACTIF = [
-  'interactive_reply_buttons',
-  'interactive_list',
-  'cta_url',
-  'flow',
-  'image',
-  'location',
-  'location_request',
-  'carousel_url',
-  'carousel_quick_reply',
-] as const;
-export type TypeMessageInteractif = (typeof TYPES_MESSAGE_INTERACTIF)[number];
-
-/** La borne de Meta sur la consigne, comptée en OCTETS UTF-8 comme Meta la compte (un « é » en vaut deux). */
-export const CONSIGNE_MESSAGE_MAX = 20_000;
-export const octets = (s: string): number => new TextEncoder().encode(s).length;
 
 type Paire = readonly [string, string];
 
@@ -130,36 +127,3 @@ export const TYPES: Record<TypeMessageInteractif, FicheType> = {
     titre: 'carrousel-reponses',
   },
 };
-
-export function estTypeMessageInteractif(v: unknown): v is TypeMessageInteractif {
-  return typeof v === 'string' && (TYPES_MESSAGE_INTERACTIF as readonly string[]).includes(v);
-}
-
-/** Les deux préfixes écrits par la console, selon sa langue. */
-const PREFIXES_QUAND = ['Quand : ', 'When: '] as const;
-/** Ce qui est RECONNU à la relecture : aussi « quand: » ou « When : », qu'un modèle peut écrire. */
-const LIGNE_QUAND = /^(quand|when)\s*:\s*/i;
-
-/**
- * La consigne envoyée à Meta : « Quand : <la situation> » sur la première ligne, puis le contenu. C'est la forme que
- * Meta met en avant (la consigne dit à la fois QUAND envoyer et QUOI mettre), et celle que l'assistant écrit aussi.
- */
-export function composerConsigne(quand: string, contenu: string, langue: 'fr' | 'en' = 'fr'): string {
-  const q = quand.trim().replace(/\s*\n\s*/g, ' ');
-  const c = contenu.trim();
-  if (q === '') return c;
-  return `${langue === 'en' ? PREFIXES_QUAND[1] : PREFIXES_QUAND[0]}${q}\n${c}`;
-}
-
-/**
- * L'inverse, pour rouvrir une fiche. Une consigne qui ne commence pas par l'un des préfixes (écrite à la main dans un
- * autre outil, ou ancienne) va ENTIÈRE dans le contenu : la couper au hasard perdrait ce qu'elle dit.
- */
-export function separerConsigne(consigne: string): { quand: string; contenu: string } {
-  const m = LIGNE_QUAND.exec(consigne);
-  if (m === null) return { quand: '', contenu: consigne };
-  const fin = consigne.indexOf('\n');
-  return fin === -1
-    ? { quand: consigne.slice(m[0].length).trim(), contenu: '' }
-    : { quand: consigne.slice(m[0].length, fin).trim(), contenu: consigne.slice(fin + 1) };
-}

@@ -1,34 +1,43 @@
 import { describe, it, expect } from 'vitest';
 import {
-  CONSIGNE_MESSAGE_MAX, TYPES, TYPES_MESSAGE_INTERACTIF as TYPES_WEB, composerConsigne, octets, separerConsigne,
+  CONSIGNE_MESSAGE_MAX, TITRE_MESSAGE_INTERACTIF_MAX, TYPES, TYPES_MESSAGE_INTERACTIF, composerConsigne, octets,
+  separerConsigne, titreMessageInteractifValide,
 } from '../web/lib/messages-interactifs';
-import { CONSIGNE_MAX, TYPES_MESSAGE_INTERACTIF as TYPES_SERVEUR } from '../src/mba/messages-interactifs';
-import { isValidSkillTitle } from '../web/lib/mba-skills';
 import { NOMS_ICONES } from '../web/lib/icones';
 
 /**
- * Les messages interactifs côté console (`web/lib/messages-interactifs.ts`) : la liste des types et la borne sont
- * DUPLIQUÉES du serveur, délibérément (les deux builds ne partagent aucun module) ; ce fichier casse dès qu'elles
- * divergent.
+ * Le contrat des messages interactifs est partagé par la console, le serveur et l'assistant. Ce fichier tient ses
+ * résultats attendus et ce que la console seule ajoute : les textes, icônes et canevas.
  */
 
-describe('la console et le serveur parlent des mêmes neuf types', () => {
-  it('🔴 même liste, même ordre, même borne', () => {
-    expect([...TYPES_WEB]).toEqual([...TYPES_SERVEUR]);
-    expect(CONSIGNE_MESSAGE_MAX).toBe(CONSIGNE_MAX);
+describe('le contrat partagé des messages interactifs', () => {
+  it('🔴 porte les neuf types mesurés et leurs bornes', () => {
+    expect([...TYPES_MESSAGE_INTERACTIF]).toEqual([
+      'interactive_reply_buttons', 'interactive_list', 'cta_url', 'flow', 'image', 'location',
+      'location_request', 'carousel_url', 'carousel_quick_reply',
+    ]);
+    expect(CONSIGNE_MESSAGE_MAX).toBe(20_000);
+    expect(TITRE_MESSAGE_INTERACTIF_MAX).toBe(64);
   });
 
   it('chaque type a un nom, une aide, un canevas en deux langues, une icône de la famille, et un titre de départ valide', () => {
-    for (const type of TYPES_WEB) {
+    for (const type of TYPES_MESSAGE_INTERACTIF) {
       const x = TYPES[type];
       for (const paire of [x.nom, x.aide, x.canevas]) {
         expect(paire[0].trim(), type).not.toBe('');
         expect(paire[1].trim(), type).not.toBe('');
       }
       expect(NOMS_ICONES as readonly string[], type).toContain(x.icone);
-      expect(isValidSkillTitle(x.titre), type).toBe(true);
+      expect(titreMessageInteractifValide(x.titre), type).toBe(true);
       // La ligne « Quand » a son propre champ : le canevas ne la répète pas.
       expect(x.canevas[0]).not.toMatch(/^Quand/);
+    }
+  });
+
+  it('refuse un titre qui ne respecte pas le slug ou la borne de Meta', () => {
+    expect(titreMessageInteractifValide('boutons-rdv')).toBe(true);
+    for (const titre of ['', 'Boutons-RDV', 'boutons rdv', '-rdv', 'rdv-', 'a'.repeat(65)]) {
+      expect(titreMessageInteractifValide(titre), titre).toBe(false);
     }
   });
 });
