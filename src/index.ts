@@ -166,6 +166,7 @@ import { creerSignalerEchecTardif } from './mba/signaler-echec-tardif';
 import { creerAttendreFinDuTour } from './mba/fin-de-tour';
 import { cleAJour, depsCleRelaisDepuis } from './mba/cle-relais';
 import { creerAppliquerGeste } from './mba/appliquer-publication';
+import { creerPublicationMba } from './mba/orchestration-publication';
 import { baseDuRelais } from './mba/relais';
 import { resolveursSimulation } from './agent/resolvers/simulation';
 import { JOURNAL_MUET } from './agent/journal-muet';
@@ -348,6 +349,29 @@ async function main(): Promise<void> {
     );
   /** La clé « Agent de Meta », par acteur : la fabrique et son audit vivent dans `src/mba/cle-relais.ts`. */
   const depsCleRelaisPour = depsCleRelaisDepuis({ cles: apiKeyStore, reglages: settingsStore, audit: auditSink });
+  const publicationMba = creerPublicationMba({
+    numeroWhatsapp: (tenant) => repo.getTenantPhoneNumberId(tenant),
+    relais: async (tenant) => {
+      const base = adresseDuRelais();
+      if (base === null) return null;
+      return { baseUrl: base, cleAJour: await cleAJour(depsCleRelaisPour(null), tenant) };
+    },
+    outilsExposes: (tenant, pn) => outilsPourMeta(tenant, pn),
+    etatMeta: async (tenant, pn) => {
+      const client = await metaFactory.mbaClientForTenant(tenant);
+      const connecteurs = await client.listConnectors(pn);
+      /** Le type vient du client : le plan compare aussi `request_definition`, qu'une copie pourrait omettre. */
+      const outilsParConnecteur: Record<string, Awaited<ReturnType<typeof client.listConnectorTools>>> = {};
+      for (const c of connecteurs) outilsParConnecteur[c.id] = await client.listConnectorTools(pn, c.id);
+      return { connecteurs, outilsParConnecteur };
+    },
+    appliquer: creerAppliquerGeste({
+      meta: metaFactory,
+      adresseDuRelais,
+      cle: depsCleRelaisPour,
+    }),
+    verrous: verrousCourts,
+  });
   /**
    * `null` quand le jeton Vercel n'est pas configuré : le provisionnement est éteint et la création d'agent
    * se passe de clé propre.
@@ -1812,35 +1836,7 @@ async function main(): Promise<void> {
      * API et la clé une clé d'API de l'espace (`src/mba/cle-relais.ts`). Le secret du client ne quitte pas
      * notre serveur ; les valeurs du mini-CRM sont remplies par le relais (`src/http/mba-relais.ts`).
      */
-    mbaPublication: {
-      repo,
-      relais: async (tenant) => {
-        const base = adresseDuRelais();
-        if (base === null) return null;
-        return { baseUrl: base, cleAJour: await cleAJour(depsCleRelaisPour(null), tenant) };
-      },
-      outilsExposes: (tenant, pn) => outilsPourMeta(tenant, pn),
-      etatMeta: async (tenant, pn) => {
-        const client = await metaFactory.mbaClientForTenant(tenant);
-        const connecteurs = await client.listConnectors(pn);
-        /**
-         * Le type vient du client, il n'est pas recopié : le plan compare `request_definition`, qu'une
-         * annotation écrite à la main pourrait omettre.
-         */
-        const outilsParConnecteur: Record<string, Awaited<ReturnType<typeof client.listConnectorTools>>> = {};
-        for (const c of connecteurs) outilsParConnecteur[c.id] = await client.listConnectorTools(pn, c.id);
-        return { connecteurs, outilsParConnecteur };
-      },
-      /** Sorti en module pour être testé contre des faux (`src/mba/appliquer-publication.ts`). */
-      appliquer: creerAppliquerGeste({
-        meta: metaFactory,
-        adresseDuRelais,
-        outils: outilsPourMeta,
-        cle: depsCleRelaisPour,
-      }),
-      // En base, pour que deux copies de l'API ne publient pas en même temps pour un espace.
-      verrous: verrousCourts,
-    },
+    mbaPublication: publicationMba,
     /**
      * Les connecteurs MCP. Tout passe par `PgMcpStore` sauf la source elle-même, servie par `agentSources` :
      * c'est la même table (`agent_tool_sources`, `kind = 'mcp'`), et un second chemin de lecture ferait deux

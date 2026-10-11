@@ -5,7 +5,7 @@ import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgVerrousCourts } from '../../src/db/verrous-courts.pg';
 import { clesAntiRejeu } from '../../src/mba/anti-rejeu';
-import { BAIL_PUBLICATION_MS, clePublication } from '../../src/http/mba-publication';
+import { BAIL_PUBLICATION_MS, clePublication } from '../../src/mba/orchestration-publication';
 import { attendreQueLaPurgeAttende, verrouillerPuisPurger } from './aide-verrous-ordonnes';
 
 /**

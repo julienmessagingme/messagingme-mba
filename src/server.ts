@@ -34,8 +34,8 @@ import { registerMbaAssistant } from './http/mba-assistant';
 import { registerHistorique } from './http/historique';
 import type { HistoriqueRouteDeps } from './http/historique';
 import type { MbaAssistantDeps } from './http/mba-assistant';
-import type { MbaPublicationDeps } from './http/mba-publication';
 import type { MbaOutilsDeps } from './http/mba-outils';
+import type { PublicationMba } from './mba/orchestration-publication';
 import { registerPubs, type PubsRouteDeps } from './http/pubs';
 import type { AgentCatalogueRouteDeps } from './http/agent-catalogue';
 import { registerAgentSources, type AgentSourcesRouteDeps } from './http/agent-sources';
@@ -291,7 +291,7 @@ export interface ServerDeps {
   /** La bibliothèque d'outils de l'espace : les définitions, et qui s'en sert. */
   agentCatalogue?: AgentCatalogueRouteDeps;
   /** Publication du catalogue d'outils chez Meta : l'aperçu, puis l'exécution. */
-  mbaPublication?: MbaPublicationDeps;
+  mbaPublication?: PublicationMba;
   /** L'onglet « Outils » de l'agent de Meta. */
   mbaOutils?: MbaOutilsDeps;
   /**

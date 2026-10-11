@@ -6,6 +6,15 @@
 > tranchent, jamais ce fichier.
 
 
+## 2026-10-11 : l'orchestration de la publication Meta sort de la route
+
+La route `mba-publication` portait à la fois HTTP, calcul du plan, verrou distribué, contexte des gestes et classement
+des échecs. `src/mba/orchestration-publication.ts` réunit désormais ce cycle derrière `PublicationMba` : l'aperçu reste
+sans écriture, le clic recalcule sous verrou, chaque geste reçoit le même instantané typé et la prise est prolongée puis
+libérée dans tous les chemins. La route ne garde que l'authentification et la traduction de l'`Issue` en réponse HTTP.
+Le contrat public et l'ordre des appels à Meta ne changent pas ; aucune migration.
+
+
 ## 2026-10-10 : la traçabilité (lot 5 du bilan des audits)
 
 Le journal des actions d'un espace ne voyait ni ses réglages sensibles ni ce que Messaging Me y fait. Plan :

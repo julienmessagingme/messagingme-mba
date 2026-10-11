@@ -756,7 +756,9 @@ correspondance dériverait dès qu'un client supprime un connecteur dans WhatsAp
 renommer un outil chez nous se lit « supprimer l'ancien, créer le nouveau », et l'aperçu le dit avant le clic.
 Le plan est PUR (`src/mba/publication.ts`, aucune IO) et il compare la description et TOUTE la définition
 envoyée (méthode, chemin, en-têtes, corps), normalisée : en comparer une partie rendait la publication
-silencieusement incomplète.
+silencieusement incomplète. `src/mba/orchestration-publication.ts` est le point de passage de l'aperçu et de
+l'exécution : il recalcule le plan sous verrou, construit le contexte typé partagé par les gestes et classe leurs
+échecs. La route HTTP ne traduit que son résultat.
 
 🔴 **META APPELLE LE RELAIS, PLUS LE SYSTÈME DU CLIENT** (migration 0161, spec
 `docs/superpowers/specs/2026-09-21-relais-mba-design.md`). Un espace qui expose au moins un outil a UN
@@ -3934,6 +3936,7 @@ liée à la base ou à `zod`) garde son test de parité.
 | `src/http/scope.ts` | `scopeTenant` (la RÈGLE d'accès tenant), `etapeEspace` et `monterAvecEtapeEspace` (où elle s'applique : au montage des modules `tenant`, jamais dans un handler), `espaceVerifie` (ce qu'un handler de route `:tenantId` lit : l'espace vérifié, et il lève sans l'étape), `nonEmpty`, `estUuid` |
 | `src/api/modele-envoi.ts` | ce qu'un envoi de l'API sait d'un template : `modeleLuDe` (la construction de la lecture partagée `templateVarInfo` ET du catalogue `/v1/templates`), `raisonNonEnvoyable` (ce qu'aucun envoi ne peut faire partir) et `verdictModele`. Le catalogue n'annonce que ce que l'envoi accepte |
 | `src/server.ts` -> `modulesDeRoutes` | 🔴 le point de passage OBLIGÉ pour monter un module de routes. Chaque entrée déclare sa `ClasseDAcces` (six valeurs, pas deux), et la couverture du garde-fou d'authentification s'en DÉRIVE au lieu d'être recopiée, comme l'étape d'espace (posée par `entree` sur les seuls modules `tenant`). Monter une route ailleurs la sort du garde-fou et de l'étape : si elle lit l'espace par `espaceVerifie`, elle rend un 500 au lieu de servir, sinon aucune erreur ne le dit |
+| `src/mba/orchestration-publication.ts` -> `PublicationMba` | 🔴 le point de passage OBLIGÉ pour apercevoir et exécuter une publication chez Meta : résolution du numéro, instantané et recalcul du plan sous verrou, contexte typé commun aux gestes, prolongation et libération du verrou, classement des échecs. `src/http/mba-publication.ts` ne fait que traduire son `Issue` en HTTP |
 | `src/crm/contact-store.pg.ts` -> `MATCH_BY_WAID_SQL` | résoudre un contact par `wa_id` (E.164 exact, chiffres nus, BSUID) |
 | `src/workflow/engine.ts` -> `cibleDuSaut`, `blocDuCode` ; `src/workflow/aller-a.ts` | 🔴 où mène un « Aller à » : dans le graphe joué d'abord, ailleurs par `resoudreBloc`. `aller-a.ts` porte ce qui lit plusieurs scénarios : `MAX_SAUTS_SANS_PAUSE` et `refusDePublication`. Voir § 4.3 |
 | `src/workflow/conditions.ts` -> `sortiesDeCondition`, `famillesDeCondition` | 🔴 les sorties d'un bloc Condition (une par famille, puis « Sinon ») et la lecture de ses familles, compatibilité des blocs d'avant comprise. Aucun lecteur du graphe n'écrit `true` / `false` : voir § 4.3 |

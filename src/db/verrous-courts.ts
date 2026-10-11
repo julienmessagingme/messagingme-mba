@@ -2,7 +2,7 @@
  * Les verrous courts : une clé tenue jusqu'à une échéance, partagée par toutes les copies d'un processus (table
  * `verrous_courts`, migration 0185). Ce qui doit n'arriver qu'une fois pour tout le service, et pas une fois par
  * copie, se garde ici : un geste d'envoi de l'agent de Meta (`src/mba/anti-rejeu.ts`), une publication du relais
- * (`src/http/mba-publication.ts`).
+ * (`src/mba/orchestration-publication.ts`).
  *
  * Trois règles, les mêmes pour l'adaptateur Postgres (`verrous-courts.pg.ts`) et pour le double des tests
  * (`tests/verrous.ts`) :
