@@ -1259,13 +1259,22 @@ aujourd'hui ; chacun rend faux, à moitié, ce que le lot affirme.
 - **Le parseur JSON est GLOBAL et avale tout corps illisible en `{}`** (`src/webhooks/receiver.ts`, posé pour
   le webhook Meta). Un `POST /v1/contacts` au corps `{bad` passe donc la validation : il rend `invalid_recipient`
   au lieu de `invalid_body`, et il est compté dans l'usage ; un `PATCH` illisible devient « rien à modifier ».
-  Correction : ne rendre `{}` que pour `/webhooks/meta`, ailleurs `done(err)` avec un statut 400, et faire
-  rendre aux adresses `/v1/*` `{ error: 'corps JSON illisible', code: 'invalid_body' }` dans `setErrorHandler`.
-  Un test de route le fixe : `payload: '{bad'` rend 400 `invalid_body` sans que le service soit appelé.
+  Correction : ne rendre `{}` que pour `/webhooks/meta`, ailleurs `done(err)` avec un statut 400 (un corps VIDE
+  restant `{}`). La moitié `setErrorHandler` est faite depuis le lot 17 (A) : sous `/v1`, toute erreur de Fastify sous
+  500 rend `invalid_body`, donc le 400 du parseur y portera son code sans rien ajouter. ⚠️ Laissé hors du lot 17 :
+  le parseur sert TOUTES les réceptions (Meta, Stripe, les autres webhooks entrants), et y passer d'un `{}` à un 400
+  se relit route par route. Un test de route le fixe : `payload: '{bad'` rend 400 `invalid_body` sans que le service
+  soit appelé.
   ⚠️ **La documentation de l'API décrit ce comportement tel qu'il est** (page « Authentification, limites et
   erreurs », `web/app/developers/api/reference/page.tsx`, section « Erreurs », avec le 415 sans `code` d'un corps
   qui n'est pas du JSON, mesuré le 2026-09-25) : la corriger dans le même commit que le parseur, sinon elle
   mentira dans l'autre sens.
+- **Deux refus de Fastify échappent au `code` de `/v1`** (relecture du lot 17, A). `FST_ERR_BAD_URL` (400, adresse
+  mal encodée) et `FST_ERR_MAX_PARAM_LENGTH` (414) sont rendus par Fastify avant `setErrorHandler`, avec leur propre
+  `code`, que le SDK type comme un `ErrorCode`. Le second est atteignable : `GET /v1/templates/{name}` accepte un nom de
+  600 caractères (`src/http/v1-templates.ts`) quand le routeur coupe à 500 (`maxParamLength`, `src/server.ts`). Parade :
+  l'option `frameworkErrors` de Fastify (sous `/v1`, `invalid_body` au même statut ; ailleurs, le corps actuel), et
+  ramener la borne du nom à 500.
 - **Le cache de joignabilité RCS porte un même numéro sous DEUX formes** (`+33…` écrit par les campagnes et
   par les rapports de livraison, `traiterRapportRcs` ; chiffres seuls par les scénarios et la réponse RCS de
   l'Inbox). DEUX lecteurs lisent les deux formes, la plus récente gagnant (`joignabiliteRcsToutesFormes`,

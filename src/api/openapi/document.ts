@@ -60,8 +60,8 @@ const ENTETES_SIGNATURE: readonly Schema[] = [
   },
 ];
 
-/** Les refus de la garde de clé et du plafond, possibles sur toutes les routes. */
-export const ERREURS_COMMUNES: readonly CodeApi[] = ['unauthorized', 'missing_scope', 'tenant_locked', 'rate_limited', 'quota_exceeded'];
+/** Les refus de la garde de clé et du plafond, et la panne (lot 17), possibles sur toutes les routes. */
+export const ERREURS_COMMUNES: readonly CodeApi[] = ['unauthorized', 'missing_scope', 'tenant_locked', 'rate_limited', 'quota_exceeded', 'internal_error'];
 
 type Schema = Record<string, unknown>;
 
@@ -104,9 +104,9 @@ function versJson(s: z.ZodType, io: 'input' | 'output'): Schema {
 }
 
 /**
- * `code` n'est PAS requis : le gestionnaire d'erreurs commun de l'API (`src/server.ts`) rend `{ error }` seul sur ce
- * qu'aucune route ne refuse elle-même (un JSON illisible, un corps trop gros, un refus de Meta relancé, une erreur
- * interne). Un client généré qui l'exigerait casserait sur ces réponses-là.
+ * `code` n'est PAS requis, alors que toute réponse d'erreur JSON de `/v1` en porte un depuis le lot 17 (le gestionnaire
+ * commun de `src/server.ts` nomme ce qu'aucune route ne refuse elle-même) : un 5xx peut arriver sans notre corps,
+ * remplacé en chemin par une page d'erreur générique. Un client généré qui l'exigerait casserait sur celui-là.
  */
 const SCHEMA_ERREUR: Schema = {
   type: 'object',
@@ -114,7 +114,11 @@ const SCHEMA_ERREUR: Schema = {
     error: { type: 'string', description: 'A human-readable message (French).' },
     code: {
       type: 'string', enum: Object.keys(STATUT_PAR_CODE),
-      description: 'The stable machine-readable code. Absent only on generic failures: malformed JSON, payload too large, an upstream error from Meta, an internal error.',
+      description: 'The stable machine-readable code, on every JSON error response of the API. A 5xx may arrive without this body (a generic error page replaced it on the way).',
+    },
+    metaCode: {
+      type: ['integer', 'null'],
+      description: 'On meta_rejected: Meta’s own error number (131047, 132000…), null when Meta gives none.',
     },
     upgradeUrl: { type: 'string', description: 'On 402 (plan_feature_unavailable, plan_limit_reached): the page where the plan is upgraded.' },
   },

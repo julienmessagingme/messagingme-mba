@@ -25,6 +25,7 @@ describe('les codes d’erreur de l’API publique', () => {
       idempotency_key_required: 400, idempotency_in_progress: 409, idempotency_key_reused: 422,
       rate_limited: 429, quota_exceeded: 429,
       plan_feature_unavailable: 402, plan_limit_reached: 402,
+      route_not_found: 404, internal_error: 500,
     });
   });
 

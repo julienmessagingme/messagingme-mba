@@ -25,7 +25,8 @@ export const STATUT_PAR_CODE = {
   rcs_unreachable: 422,
   rcs_not_enabled: 409,
   no_whatsapp_number: 409,
-  // Meta refuse le CONTENU d'un message au format de Meta (`POST /v1/messages`, lot 13) : son motif est dans le message.
+  // Meta a refusé la demande : le contenu d'un message au format de Meta (`POST /v1/messages`, lot 13), ou tout refus de
+  // Meta relancé jusqu'au gestionnaire commun (lot 17). Son motif suit « Meta: », et `metaCode` porte le numéro de Meta.
   meta_rejected: 422,
   // Le fichier d'en-tête d'un modèle (lot 13, domaine 3) n'a pas pu être pris à son adresse : son motif suit.
   invalid_header_media: 422,
@@ -74,6 +75,10 @@ export const STATUT_PAR_CODE = {
   // règle pas en payant. Le corps porte en plus `upgradeUrl`, la page de l'offre.
   plan_feature_unavailable: 402,
   plan_limit_reached: 402,
+  // Les deux réponses du gestionnaire commun sous `/v1` (lot 17, `src/server.ts`) : une adresse ou une méthode inconnue,
+  // et une panne. Le corps d'un 5xx peut ne jamais arriver : Cloudflare remplace la page de l'origine (mesuré sur un 502).
+  route_not_found: 404,
+  internal_error: 500,
 } as const satisfies Record<string, number | null>;
 
 export type CodeApi = keyof typeof STATUT_PAR_CODE;
@@ -81,8 +86,9 @@ export type CodeApi = keyof typeof STATUT_PAR_CODE;
 /**
  * Refuse une requête de l'API publique : `{ error, code }` avec le statut donné. Le statut reste un
  * paramètre : la route sait si son refus est un 404 ou un 409 ; la table ne sert que de défaut à qui relaie
- * le code d'un service (`STATUT_PAR_CODE[code] ?? 400`).
+ * le code d'un service (`STATUT_PAR_CODE[code] ?? 400`). `en plus` : des champs propres au refus, comme le
+ * `metaCode` d'un `meta_rejected` (lot 17).
  */
-export function refuser(reply: FastifyReply, statut: number, code: CodeApi, message: string): FastifyReply {
-  return reply.code(statut).send({ error: message, code });
+export function refuser(reply: FastifyReply, statut: number, code: CodeApi, message: string, enPlus?: { metaCode?: number | null }): FastifyReply {
+  return reply.code(statut).send({ error: message, code, ...enPlus });
 }

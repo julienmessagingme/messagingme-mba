@@ -64,7 +64,10 @@ try {
 }
 ```
 
-`code` vaut `null` sur une panne générique (JSON illisible, erreur interne). `upgradeUrl` est posé sur un 402.
+`code` est posé sur toute réponse d'erreur de l'API (catalogue : https://console.messagingme.app/developers/api/errors).
+Il vaut `null` seulement quand une page d'erreur générique a remplacé la réponse en chemin (un 5xx) : pour décider
+d'un réessai, regardez `status >= 500`, `internal_error` ou `rate_limited`, jamais `code === null`. `metaCode` porte
+le numéro d'erreur de Meta sur `meta_rejected`. `upgradeUrl` est posé sur un 402.
 
 ## Vérifier un webhook
 

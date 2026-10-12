@@ -128,7 +128,8 @@ function Contenu() {
         </p>
         <Bloc legende="TypeScript">{ERREURS}</Bloc>
         <Liste>
-          <li><C>code</C>{t(' vaut null sur une panne générique (JSON illisible, erreur interne).', ' is null on a generic failure (unreadable JSON, internal error).')}</li>
+          <li><C>code</C>{t(' est posé sur toute réponse d’erreur de l’API ; il vaut null seulement quand une page d’erreur générique a remplacé la réponse en chemin (un 5xx). Pour réessayer, regardez status >= 500, internal_error ou rate_limited.', ' is set on every API error response; it is null only when a generic error page replaced the response on the way (a 5xx). To decide on a retry, look at status >= 500, internal_error or rate_limited.')}</li>
+          <li><C>metaCode</C>{t(' porte le numéro d’erreur de Meta sur meta_rejected.', ' carries Meta’s error number on meta_rejected.')}</li>
           <li><C>upgradeUrl</C>{t(' est posé sur un 402 (plan_feature_unavailable, plan_limit_reached) : la page où l’offre se change.', ' is set on a 402 (plan_feature_unavailable, plan_limit_reached): the page where the plan is changed.')}</li>
         </Liste>
       </Section>

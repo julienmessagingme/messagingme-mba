@@ -114,6 +114,13 @@ describe('createClient : les erreurs', () => {
     expect(texte.message).toMatch(/^HTTP 500/);
   });
 
+  it('un refus de Meta porte son numéro (metaCode), null ailleurs', async () => {
+    const e = await echec(json({ error: 'Meta: Message failed to send because more than 24 hours have passed', code: 'meta_rejected', metaCode: 131047 }, 422));
+    expect([e.code, e.metaCode]).toEqual(['meta_rejected', 131047]);
+    expect((await echec(json({ error: 'Meta: refus', code: 'meta_rejected', metaCode: null }, 422))).metaCode).toBeNull();
+    expect((await echec(json({ error: 'fenêtre de 24 h fermée', code: 'window_closed' }, 422))).metaCode).toBeNull();
+  });
+
   it('un 402 porte la page de l’offre', async () => {
     const e = await echec(json({ error: 'non compris dans l’offre', code: 'plan_feature_unavailable', upgradeUrl: 'https://console.messagingme.app/offre' }, 402));
     expect([e.code, e.upgradeUrl]).toEqual(['plan_feature_unavailable', 'https://console.messagingme.app/offre']);

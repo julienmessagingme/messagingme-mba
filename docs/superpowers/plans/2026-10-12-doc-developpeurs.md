@@ -18,7 +18,8 @@ la relecture et l'essai réel attrapent mieux qu'une boucle.
 **L'essai réel qui clôt le lot** : Julien, sur un projet Next.js vide, colle le prompt de la recette dans Claude Code,
 pose sa clé, envoie un modèle à son téléphone, reçoit le webhook et voit la signature vérifiée ; puis demande à Claude,
 avec `console.messagingme.app/llms.txt` pour seule source, ce que veut dire `131047`. Contrôle de A en production :
-`curl` d'un JSON illisible et d'une route inconnue sous `/v1` (leur `code`). Essai n° 88 de `docs/prive/ESSAIS-REELS.md`.
+`curl` d'un corps en `application/xml` (415) et d'une route inconnue sous `/v1` (leur `code`). Essai n° 88 de
+`docs/prive/ESSAIS-REELS.md`.
 
 ## Livraison A : un `code` sur toute erreur de `/v1`
 

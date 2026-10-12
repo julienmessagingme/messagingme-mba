@@ -114,6 +114,9 @@ import { registerOpsNumeros, type OpsNumerosDeps } from './http/ops-numeros';
 import { registerOpsSuppression, type OpsSuppressionDeps } from './http/ops-suppression';
 import { registerOtpPont, type OtpPontRouteDeps } from './http/otp-pont';
 import { MetaApiError } from './meta/errors';
+import type { CodeApi } from './api/erreurs';
+import { classerErreurMeta } from './api/refus-meta';
+import { NumeroBloqueError } from './meta/numero-delie';
 import { FlowJsonInvalidError } from './meta/flows';
 import type { AuthRouteDeps } from './auth/routes';
 import type { ImportRouteDeps } from './http/import';
@@ -855,6 +858,22 @@ export function modulesDeRoutes(
  */
 export const CORPS_OPAQUE_5XX = 'Internal Server Error';
 
+/** Une adresse de l'API publique : `/v1/...`, requête comprise (`req.url` porte la chaîne de requête). */
+function estAdresseV1(url: string): boolean {
+  return url.startsWith('/v1/');
+}
+
+/**
+ * Le code d'une erreur de `/v1` qu'aucune route n'a nommée : une panne (5xx), un débit refusé plus haut, ou un refus de
+ * forme de Fastify (type de contenu sans analyseur, 415). ⚠️ Un JSON illisible n'en est pas un : l'analyseur JSON du
+ * récepteur de Meta, posé pour tout le serveur, le lit comme un objet vide, et la route refuse ce qui manque.
+ */
+function codeParDefautV1(statut: number): CodeApi {
+  if (statut >= 500) return 'internal_error';
+  if (statut === 429) return 'rate_limited';
+  return 'invalid_body';
+}
+
 /**
  * Construit l'instance Fastify. La file et les stores sont injectés pour rester testable sans DB. Les routes
  * tenant exigent l'auth : le tenant est dérivé du JWT, jamais de l'URL.
@@ -963,8 +982,16 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     });
   }
 
-  // Enveloppe d'erreur uniforme { error } et pas de fuite du message interne sur les 5xx.
+  /**
+   * Enveloppe d'erreur uniforme { error } et pas de fuite du message interne sur les 5xx.
+   *
+   * 🔴 SOUS `/v1`, TOUTE ERREUR PORTE AUSSI UN `code` DE LA TABLE (lot 17) : un programme se branche sur `code`, jamais
+   * sur la phrase, et ces réponses-là étaient les seules à n'en pas porter. Les routes de la console gardent `{ error }`
+   * seul : leur écran lit la phrase, et le texte opaque des 5xx est reconnu par elle (`tests/corps-opaque-parite.test.ts`).
+   * `tests/v1-erreurs-code.test.ts` tient les deux sens.
+   */
   app.setErrorHandler((err: FastifyError, req: FastifyRequest, reply: FastifyReply) => {
+    const surV1 = estAdresseV1(req.url);
     // Erreur remontée de l'API Meta (token expiré, template invalide...) -> 422 + message clair.
     // 422 (4xx) et non 502 : Cloudflare/NPM remplacent les 5xx de l'origine par leur propre page
     // « error code: 502 », ce qui masque le message Meta utile. Un 4xx passe tel quel avec le body.
@@ -973,7 +1000,18 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       // ex. suppression d'un exemple de template -> « Les exemples de modèles ne peuvent pas être supprimés ».
       const friendly = err.userMessage ?? err.message;
       const detail = friendly.replace(/\s+/g, ' ').trim().slice(0, 200);
-      return reply.code(422).send({ error: `Meta: ${detail}` });
+      const error = `Meta: ${detail}`;
+      if (!surV1) return reply.code(422).send({ error });
+      // Sous `/v1`, le classement commun : un refus passager n'est jamais `meta_rejected` (l'intégrateur ne réessaierait
+      // pas), le jeton refusé est `meta_auth_failed`.
+      const c = classerErreurMeta(err);
+      if (c.reessayerDansS !== undefined) reply.header('retry-after', String(c.reessayerDansS));
+      return reply.code(c.statut).send(c.code === 'meta_rejected' ? { error, code: c.code, metaCode: c.metaCode } : { error, code: c.code });
+    }
+    // Un numéro délié ou suspendu qui échapperait à une route de `/v1` : son code, pas un `invalid_body` (409 par
+    // `statusCode`). Hors `/v1`, inchangé.
+    if (surV1 && err instanceof NumeroBloqueError) {
+      return reply.code(409).send({ error: err.message, code: (err.motif === 'numero_delie' ? 'number_unlinked' : 'number_suspended') satisfies CodeApi });
     }
     // Une limite de l'offre atteinte (lot 6) : 402, la phrase et le lien vers l'offre, sur TOUTE route, d'où qu'elle
     // vienne (un magasin, la fabrique). Jamais un 500 : ce n'est pas une panne, et Cloudflare masquerait le corps.
@@ -982,12 +1020,14 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     }
     // flow_json refusé par Meta à la création : 422 + les erreurs de validation (pas un 500 opaque).
     if (err instanceof FlowJsonInvalidError) {
-      return reply.code(422).send({ error: err.message.slice(0, 200) });
+      const error = err.message.slice(0, 200);
+      return reply.code(422).send(surV1 ? { error, code: 'meta_rejected' satisfies CodeApi, metaCode: null } : { error });
     }
     // Corps trop gros : Fastify répond en anglais sans dire quoi faire. Un opérateur qui importe un gros CSV
     // doit lire l'issue (couper le fichier), pas seulement le refus.
     if (err.code === 'FST_ERR_CTP_BODY_TOO_LARGE') {
-      return reply.code(413).send({ error: 'Fichier trop volumineux pour un seul envoi. Découpe-le en plusieurs fichiers plus petits et recommence.' });
+      const error = 'Fichier trop volumineux pour un seul envoi. Découpe-le en plusieurs fichiers plus petits et recommence.';
+      return reply.code(413).send(surV1 ? { error, code: 'invalid_body' satisfies CodeApi } : { error });
     }
     const code = err.statusCode ?? 500;
     // Journaliser avant de masquer : le corps des 5xx reste opaque (pas de fuite d'interne), mais l'exception
@@ -998,8 +1038,25 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     }
     // Ce texte a un lecteur : la console le reconnaît et le remplace par une phrase traduite
     // (`OPAQUE_DU_SERVEUR`, `web/lib/http.ts`). Les deux se tiennent par `tests/corps-opaque-parite.test.ts`.
-    reply.code(code).send({ error: code < 500 ? err.message : CORPS_OPAQUE_5XX });
+    const error = code < 500 ? err.message : CORPS_OPAQUE_5XX;
+    if (surV1 && code < 500 && code !== 429 && !String(err.code ?? '').startsWith('FST_ERR_')) {
+      // Un 4xx qu'aucune route n'a nommé et qui ne vient pas de Fastify : il porte un code quand même (la règle de `/v1`),
+      // mais il se voit, pour lui donner le sien.
+      journaliser('error', 'v1_erreur_sans_code', { method: req.method, url: req.url, statut: code, err });
+    }
+    reply.code(code).send(surV1 ? { error, code: codeParDefautV1(code) } : { error });
   });
+
+  /**
+   * Une adresse inconnue sous `/v1` : 404 `route_not_found` (lot 17). Une mauvaise méthode sur un chemin connu y tombe
+   * aussi (Fastify ne rend pas de 405). Posé dans une portée préfixée : hors `/v1`, le 404 par défaut de Fastify reste.
+   */
+  void app.register(async (portee) => {
+    portee.setNotFoundHandler((_req, reply) => reply.code(404).send({
+      error: 'route inconnue : vérifiez la méthode et le chemin dans le contrat (GET /openapi.json)',
+      code: 'route_not_found' satisfies CodeApi,
+    }));
+  }, { prefix: '/v1' });
 
   // Liveness : le process répond (event loop non bloquée). Zéro DB, zéro dépendance : cible d'un healthcheck.
   // Ne jamais y toucher la DB, sinon il devient une seconde readiness et perd son sens.

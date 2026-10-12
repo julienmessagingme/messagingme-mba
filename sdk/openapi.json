@@ -275,6 +275,16 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "Error: internal_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -465,6 +475,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -798,6 +818,16 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "Error: internal_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -1068,6 +1098,16 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "Error: internal_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -1163,6 +1203,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1369,6 +1419,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1589,7 +1649,9 @@
                                   "rate_limited",
                                   "quota_exceeded",
                                   "plan_feature_unavailable",
-                                  "plan_limit_reached"
+                                  "plan_limit_reached",
+                                  "route_not_found",
+                                  "internal_error"
                                 ]
                               },
                               "reason": {
@@ -1666,6 +1728,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2073,6 +2145,16 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "Error: internal_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       },
@@ -2179,6 +2261,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2392,6 +2484,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2827,6 +2929,16 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "Error: internal_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -2913,6 +3025,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3046,6 +3168,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3867,7 +3999,7 @@
             }
           },
           "409": {
-            "description": "Error: identity_conflict, blocked_contact, opted_out, no_whatsapp_number, number_unlinked, number_suspended.",
+            "description": "Error: identity_conflict, blocked_contact, opted_out, no_whatsapp_number, number_unlinked, number_suspended, meta_auth_failed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3896,6 +4028,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4038,7 +4180,7 @@
             }
           },
           "409": {
-            "description": "Error: identity_conflict, blocked_contact, opted_out, no_whatsapp_number, number_unlinked, number_suspended.",
+            "description": "Error: identity_conflict, blocked_contact, opted_out, no_whatsapp_number, number_unlinked, number_suspended, meta_auth_failed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4067,6 +4209,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4238,6 +4390,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4708,6 +4870,16 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "Error: internal_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -5054,6 +5226,16 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "Error: internal_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -5391,6 +5573,16 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "Error: internal_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       },
@@ -5589,6 +5781,26 @@
               }
             }
           },
+          "409": {
+            "description": "Error: meta_auth_failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error: meta_rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Error: rate_limited, quota_exceeded. Wait for Retry-After (seconds) before retrying.",
             "headers": {
@@ -5599,6 +5811,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5773,6 +5995,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5962,6 +6194,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6175,6 +6417,16 @@
               }
             }
           },
+          "500": {
+            "description": "Error: internal_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "503": {
             "description": "Error: webhooks_unavailable.",
             "content": {
@@ -6327,6 +6579,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6541,6 +6803,16 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "Error: internal_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       },
@@ -6611,6 +6883,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6710,6 +6992,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6833,6 +7125,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7075,6 +7377,16 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "Error: internal_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -7173,6 +7485,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7299,6 +7621,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7464,6 +7796,16 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "Error: internal_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -7558,6 +7900,16 @@
                 "description": "Seconds to wait."
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error: internal_error.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9616,9 +9968,18 @@
               "rate_limited",
               "quota_exceeded",
               "plan_feature_unavailable",
-              "plan_limit_reached"
+              "plan_limit_reached",
+              "route_not_found",
+              "internal_error"
             ],
-            "description": "The stable machine-readable code. Absent only on generic failures: malformed JSON, payload too large, an upstream error from Meta, an internal error."
+            "description": "The stable machine-readable code, on every JSON error response of the API. A 5xx may arrive without this body (a generic error page replaced it on the way)."
+          },
+          "metaCode": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "On meta_rejected: Meta’s own error number (131047, 132000…), null when Meta gives none."
           },
           "upgradeUrl": {
             "type": "string",

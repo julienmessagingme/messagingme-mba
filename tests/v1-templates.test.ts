@@ -183,7 +183,7 @@ describe('POST /v1/templates', () => {
     });
     const res = await poster(MODELE);
     expect(res.statusCode).toBe(422);
-    expect(res.json()).toMatchObject({ code: 'meta_rejected', error: expect.stringMatching(/existe déjà/) });
+    expect(res.json()).toMatchObject({ code: 'meta_rejected', metaCode: 100, error: expect.stringMatching(/existe déjà/) });
     await server.close();
   });
 

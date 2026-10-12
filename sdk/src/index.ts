@@ -67,7 +67,10 @@ export type ErrorCode = NonNullable<components['schemas']['Error']['code']>;
 // Les erreurs.
 // ---------------------------------------------------------------------------------------------------------------------
 
-/** Une réponse hors 2xx. `code` est `null` sur une panne générique (JSON illisible, erreur interne, réponse non JSON). */
+/**
+ * Une réponse hors 2xx. `code` est `null` quand la réponse n'est pas un JSON de l'API : la page d'erreur générique qui
+ * remplace parfois un 5xx en chemin. Toute réponse d'erreur JSON de `/v1` porte un `code`.
+ */
 export class ApiError extends Error {
   override readonly name = 'ApiError';
   constructor(
@@ -80,6 +83,8 @@ export class ApiError extends Error {
     readonly upgradeUrl: string | null,
     /** Le corps reçu, tel quel (l'objet JSON, ou le texte s'il n'en était pas un). */
     readonly body: unknown,
+    /** Sur `meta_rejected` : le numéro d'erreur de Meta (131047…), `null` s'il n'en donne pas ou sur un autre code. */
+    readonly metaCode: number | null = null,
   ) {
     super(message);
   }
@@ -107,6 +112,7 @@ async function erreurDe(res: Response): Promise<ApiError> {
     secondesAAttendre(res.headers.get('retry-after'), Date.now()),
     typeof objet?.upgradeUrl === 'string' ? objet.upgradeUrl : null,
     corps,
+    typeof objet?.metaCode === 'number' ? objet.metaCode : null,
   );
 }
 

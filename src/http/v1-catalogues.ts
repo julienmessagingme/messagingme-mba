@@ -173,7 +173,8 @@ export interface V1CataloguesRouteDeps {
 /**
  * Garde attendue : `[makeRequireApiKey, requireScope('sends:create')]`, posée par l'entrée `v1` du registre.
  * Une panne de Meta sur `/v1/templates` remonte au gestionnaire global, jamais en liste vide (qui ferait croire
- * à l'absence de template approuvé) : un refus de Meta sort en 422 `{ error: "Meta: …" }`, le reste en 500 opaque.
+ * à l'absence de template approuvé) : classée comme partout (`src/api/refus-meta.ts`, `meta_rejected` avec le numéro
+ * de Meta, `meta_auth_failed`, ou `rate_limited` si elle est passagère), le reste en 500 `internal_error`.
  */
 /** Les trois réponses, nommées pour le contrat OpenAPI (`tests/openapi.test.ts`). */
 export interface CatalogueTemplatesV1 { templates: TemplateCatalogue[] }

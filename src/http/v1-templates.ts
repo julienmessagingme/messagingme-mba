@@ -26,7 +26,7 @@ const parametres = z.object({ name: z.string().max(600) });
 /** Un refus du cœur, avec son `Retry-After` quand il est passager : sans lui, un client réessaie aussitôt. */
 function refuserModele(reply: FastifyReply, r: RefusModele): FastifyReply {
   if (r.reessayerDansS !== undefined) reply.header('retry-after', String(r.reessayerDansS));
-  return refuser(reply, r.statut, r.code, r.message);
+  return refuser(reply, r.statut, r.code, r.message, r.metaCode === undefined ? undefined : { metaCode: r.metaCode });
 }
 /** Exporté pour le contrat OpenAPI (`src/api/openapi/registre.ts`) : la requête du statut, telle que la route la lit. */
 export const requeteStatutModele = z.object({ language: z.string().max(20).optional() });

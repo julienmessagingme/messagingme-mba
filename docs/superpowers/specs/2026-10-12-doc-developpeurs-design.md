@@ -46,14 +46,19 @@ lit la doc pour lui (Claude, ChatGPT, Cursor) y trouve le même texte, sans exé
 Sur une adresse `/v1/...` seulement ; les routes de la console ne changent pas (leur écran lit `error`, et
 `tests/corps-opaque-parite.test.ts` tient le texte opaque des 5xx).
 
-- **Refus de Meta** : toujours 422 et la phrase « Meta: … », plus `code: "meta_rejected"` et `metaCode` (le numéro
-  de Meta, `null` s'il n'en donne pas). Le sens de `meta_rejected` s'élargit : « Meta a refusé la demande, `metaCode`
-  dit pourquoi ».
+- **Refus de Meta** : la phrase « Meta: … », classée comme les routes classaient déjà (`refusDeMeta`, extrait dans
+  `src/api/refus-meta.ts`) : le jeton refusé en 409 `meta_auth_failed`, une limite ou une panne passagère de Meta en
+  429 `rate_limited` avec `retry-after`, tout autre refus en 422 `meta_rejected` avec `metaCode` (le numéro de Meta,
+  `null` s'il n'en donne pas). Les routes qui nomment elles-mêmes un refus de Meta portent aussi `metaCode`.
+  ⚠️ Décision prise en écrivant A, sur la relecture (une version « toujours 422 » disait `meta_rejected` d'une panne de
+  Meta, et l'intégrateur ne l'aurait jamais réessayée) : coût si faux, un statut à revoir sur une route `/v1`.
 - **Panne** : 500 avec `code: "internal_error"`, code neuf. La doc dit qu'un 5xx peut arriver sans corps lisible
   (Cloudflare remplace la page de l'origine, mesuré sur un 502) : réessayer, un envoi se rejoue avec la même clé
   d'idempotence.
-- **Refus de forme de Fastify** (JSON illisible, corps trop gros, type de contenu refusé) : `code: "invalid_body"`,
-  statut inchangé.
+- **Refus de forme de Fastify** (corps trop gros, type de contenu sans analyseur) : `code: "invalid_body"`, statut
+  inchangé. ⚠️ Mesuré en écrivant A : un JSON illisible n'est PAS un refus de Fastify. L'analyseur JSON du récepteur de
+  Meta (`src/webhooks/receiver.ts`), posé pour tout le serveur, le lit comme un objet vide, et la route refuse ensuite ce
+  qui manque, avec son code. On n'y touche pas : cet analyseur sert la réception de Meta.
 - **Route inconnue** : 404 `{ error, code: "route_not_found" }`, code neuf. Les adresses hors `/v1` gardent le 404 de
   Fastify.
 - Le contrat OpenAPI : `metaCode` dans le schéma d'erreur ; `code` reste non requis (un 5xx peut ne pas venir de nous),
@@ -110,5 +115,5 @@ Les adresses suivent celles qui existent (anglaises, déjà publiées).
 
 Julien, sur un projet Next.js vide : coller le prompt de la recette dans Claude Code, poser sa clé, envoyer un modèle à
 son téléphone, recevoir le webhook et voir la signature vérifiée. Puis demander à Claude, sans autre source que
-`console.messagingme.app/llms.txt`, ce que veut dire `131047` et quoi faire. Contrôle de A en production : une requête
-au JSON illisible et une route inconnue rendent leur `code` (`curl`).
+`console.messagingme.app/llms.txt`, ce que veut dire `131047` et quoi faire. Contrôle de A en production : un corps en
+`application/xml` (415) et une route inconnue rendent leur `code` (`curl`).

@@ -15,9 +15,8 @@ import { ENDPOINTS, type Droit } from '@/lib/api-doc-endpoints';
  *
  * ⚠️ LE TEXTE EST ÉCRIT À LA MAIN d'après les routes (`src/http/v1-*.ts`) : une règle qui change côté serveur ne
  * change pas ici toute seule. Les codes cités passent par `<Code>`, typé sur la table des codes : un code inventé
- * ne compile pas. Deux comportements décrits ici attendent une décision ou un correctif (`todo.md`) : le refus de
- * Meta sans `code`, et le corps JSON illisible lu comme un objet vide. Les corriger, c'est corriger cette page dans
- * le même commit.
+ * ne compile pas. Un comportement décrit ici attend un correctif (`todo.md`) : le corps JSON illisible lu comme un
+ * objet vide. Le corriger, c'est corriger cette page dans le même commit.
  */
 export default function ApiReferencePage() {
   return <CadreDoc page="reference">{() => <Reference />}</CadreDoc>;
@@ -153,27 +152,12 @@ function Reference() {
           ]}
         />
         <Encadre sorte="attention">
-          <p>{t('Ces réponses n’ont pas encore de champ code :', 'These responses have no code field yet:')}</p>
-          <Liste>
-            <li>
-              {t(
-                'Refus de Meta (lecture de GET /v1/templates, envoi de POST /v1/messages/whatsapp) : 422, error seul, commençant par « Meta: ».',
-                'Meta refusal (reading GET /v1/templates, sending POST /v1/messages/whatsapp): 422, error only, starting with “Meta:”.',
-              )}
-            </li>
-            <li>
-              {t(
-                'Panne (Meta injoignable, erreur de l’API) : 500, parfois une page d’erreur générique. Réessayer ; un envoi se rejoue avec la même clé d’idempotence.',
-                'Outage (Meta unreachable, API error): 500, sometimes a generic error page. Retry; a send is replayed with the same idempotency key.',
-              )}
-            </li>
-            <li>
-              {t(
-                'Corps non JSON : 415 possible. Toujours envoyer Content-Type: application/json. Un JSON illisible est lu comme un objet vide : le refus nomme ce qui manque, pas la syntaxe.',
-                'Non-JSON body: 415 possible. Always send Content-Type: application/json. An unreadable JSON is read as an empty object: the refusal names what is missing, not the syntax.',
-              )}
-            </li>
-          </Liste>
+          <p>
+            {t(
+              'Un JSON illisible est lu comme un objet vide : le refus nomme ce qui manque, pas la syntaxe. Toujours envoyer Content-Type: application/json. Un 5xx peut arriver sans corps lisible (page d’erreur générique) : traitez-le comme internal_error.',
+              'An unreadable JSON is read as an empty object: the refusal names what is missing, not the syntax. Always send Content-Type: application/json. A 5xx may arrive without a readable body (generic error page): treat it as internal_error.',
+            )}
+          </p>
         </Encadre>
         <Tableau
           entetes={[t('Code', 'Code'), t('Statut', 'Status'), t('Motif d’écart', 'Skip reason'), t('Sens', 'Meaning')]}

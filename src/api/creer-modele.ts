@@ -3,6 +3,7 @@ import { MetaApiError } from '../meta/errors';
 import { MediaUploadError } from '../meta/media';
 import { isValidTemplateLanguage } from '../meta/languages';
 import type { CodeApi } from './erreurs';
+import { classerErreurMeta } from './refus-meta';
 import { versModeleConsole, type ModeleMeta } from './modele-meta';
 import type { FormatEntete } from './entete-par-url';
 
@@ -30,7 +31,11 @@ export interface DepsCreationModele {
  * Un refus, rendu par la route en `{ error, code }` et par l'outil en `RefusOutil`. `reessayerDansS` : un refus
  * passager, que la route accompagne d'un `Retry-After` (sans lui, un client réessaie aussitôt).
  */
-export interface RefusModele { statut: number; code: CodeApi; message: string; reessayerDansS?: number }
+export interface RefusModele {
+  statut: number; code: CodeApi; message: string; reessayerDansS?: number;
+  /** Sur `meta_rejected` : le numéro d'erreur de Meta, `null` s'il n'en donne pas (lot 17). */
+  metaCode?: number | null;
+}
 
 export interface ModeleCree {
   id: string;
@@ -53,15 +58,16 @@ export function refusDeMeta(err: unknown): RefusModele | null {
     return { statut: 429, code: 'rate_limited', message: 'le dépôt du fichier d’en-tête chez Meta a échoué : réessayez dans un instant', reessayerDansS: 30 };
   }
   if (!(err instanceof MetaApiError)) return null;
-  if (err.httpStatus === 401 || err.code === 190) {
-    return { statut: 409, code: 'meta_auth_failed', message: 'Meta refuse le jeton de l’espace : reconnectez le compte WhatsApp depuis la console' };
+  // Le classement commun à toute l'API (`src/api/refus-meta.ts`) ; seules les phrases sont propres aux modèles.
+  const c = classerErreurMeta(err);
+  if (c.code === 'meta_auth_failed') {
+    return { statut: c.statut, code: c.code, message: 'Meta refuse le jeton de l’espace : reconnectez le compte WhatsApp depuis la console' };
   }
-  if (err.retryable) {
-    const s = err.retryAfterMs !== undefined ? Math.max(1, Math.ceil(err.retryAfterMs / 1000)) : 30;
-    return { statut: 429, code: 'rate_limited', message: 'Meta ne répond pas pour l’instant (limite ou panne passagère) : réessayez dans un instant', reessayerDansS: s };
+  if (c.code === 'rate_limited') {
+    return { statut: c.statut, code: c.code, message: 'Meta ne répond pas pour l’instant (limite ou panne passagère) : réessayez dans un instant', reessayerDansS: c.reessayerDansS };
   }
   if (err.httpStatus >= 400 && err.httpStatus < 500) {
-    return { statut: 422, code: 'meta_rejected', message: `Meta a refusé le modèle : ${(err.userMessage ?? err.message).slice(0, 300)}` };
+    return { statut: c.statut, code: c.code, metaCode: c.metaCode, message: `Meta a refusé le modèle : ${(err.userMessage ?? err.message).slice(0, 300)}` };
   }
   return null;
 }

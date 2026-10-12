@@ -57,7 +57,7 @@ export const corpsEnvoi = schemaCorps.extend({
 
 const RESOLUTION: readonly CodeApi[] = ['invalid_recipient', 'invalid_phone', 'unknown_contact', 'identity_conflict'];
 const NUMERO: readonly CodeApi[] = ['no_whatsapp_number', 'number_unlinked', 'number_suspended'];
-const MESSAGE_WHATSAPP: readonly CodeApi[] = ['invalid_body', ...RESOLUTION, 'blocked_contact', 'window_closed', 'opted_out', ...NUMERO, 'meta_rejected'];
+const MESSAGE_WHATSAPP: readonly CodeApi[] = ['invalid_body', ...RESOLUTION, 'blocked_contact', 'window_closed', 'opted_out', ...NUMERO, 'meta_rejected', 'meta_auth_failed'];
 
 const C = 'Contacts';
 const M = 'Messages';
@@ -233,7 +233,7 @@ export const ROUTES_V1: readonly RouteOpenapi[] = [
   {
     methode: 'GET', chemin: '/v1/templates', droit: 'sends:create', groupe: K, operationId: 'listTemplates',
     resume: 'Lists the approved, sendable WhatsApp templates.',
-    succes: { statut: 200, schema: reponseTemplates }, erreurs: [],
+    succes: { statut: 200, schema: reponseTemplates }, erreurs: ['meta_rejected', 'meta_auth_failed'],
   },
   {
     methode: 'GET', chemin: '/v1/scenarios', droit: 'sends:create', groupe: K, operationId: 'listScenarios',

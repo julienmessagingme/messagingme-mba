@@ -114,8 +114,8 @@ export function registerV1Messages(app: FastifyInstance, deps: V1MessagesRouteDe
 
   /**
    * L'envoi, puis la réponse. `auteur` à `null` : personne ne signe ce message dans l'Inbox ; `origine` à `'api'`. Le
-   * numéro délié sort du point de passage des envois en exception, que le gestionnaire du serveur rend sans `code` : on
-   * l'attrape ici, et seulement lui, pour rendre l'enveloppe `{ error, code }` de l'API publique.
+   * numéro délié sort du point de passage des envois en exception : on l'attrape ici pour lui donner sa phrase (le
+   * gestionnaire commun de `/v1` le traduirait aussi, depuis le lot 17).
    */
   const envoyerEtRepondre = async (reply: FastifyReply, conversationId: string, envoi: () => Promise<ResultatReponse>): Promise<FastifyReply> => {
     let res: ResultatReponse;
@@ -125,10 +125,11 @@ export function registerV1Messages(app: FastifyInstance, deps: V1MessagesRouteDe
       if (err instanceof NumeroBloqueError) {
         return refuser(reply, 409, err.motif === 'numero_delie' ? 'number_unlinked' : 'number_suspended', err.message);
       }
-      // Meta refuse le message lui-même (un contenu qu'il n'accepte pas) : 422 avec SON motif et un code, plutôt que
-      // l'enveloppe générique sans code. Une panne de Meta (5xx, réseau) reste une erreur du serveur.
-      if (err instanceof MetaApiError && err.httpStatus >= 400 && err.httpStatus < 500 && !err.retryable) {
-        return refuser(reply, 422, 'meta_rejected', `Meta a refusé le message : ${(err.userMessage ?? err.message).slice(0, 300)}`);
+      // Meta refuse le message lui-même (un contenu qu'il n'accepte pas) : 422 avec SON motif, son code et le numéro de
+      // Meta. Le reste (jeton refusé, limite ou panne passagère) est classé par le gestionnaire commun de `/v1`, comme
+      // partout (`src/api/refus-meta.ts`).
+      if (err instanceof MetaApiError && err.httpStatus >= 400 && err.httpStatus < 500 && !err.retryable && err.httpStatus !== 401 && err.code !== 190) {
+        return refuser(reply, 422, 'meta_rejected', `Meta a refusé le message : ${(err.userMessage ?? err.message).slice(0, 300)}`, { metaCode: err.code ?? null });
       }
       throw err;
     }

@@ -566,27 +566,36 @@ describe('monté dans l’entrée /v1 du registre', () => {
   }
 
   /**
-   * 🔴 CE QU'UNE PANNE DE META REND, parce que la documentation de l'API (section Erreurs de la page Authentification, limites et erreurs) le dit mot pour mot, et que le plan du
-   * lot 4 l'avait écrit faux (« 5xx sans corps »). Le catalogue n'attrape rien : le gestionnaire GLOBAL décide.
-   * Un REFUS de Meta sort en 422 avec une phrase qui commence par « Meta: », une panne réseau en 500 opaque, et
-   * dans les deux cas SANS `code` et JAMAIS en liste vide (qui ferait croire à l'intégrateur qu'il n'a aucun
-   * template approuvé). Le jour où un code dédié est décidé (`todo.md`), ces deux cas tombent, et la page avec.
+   * 🔴 CE QU'UNE PANNE DE META REND, parce que la documentation de l'API (le catalogue des erreurs) le dit, et que le plan
+   * du lot 4 l'avait écrit faux (« 5xx sans corps »). Le catalogue n'attrape rien : le gestionnaire GLOBAL décide.
+   * Un REFUS de Meta sort en 422 avec une phrase qui commence par « Meta: », une panne réseau en 500 opaque, et dans les
+   * deux cas JAMAIS en liste vide (qui ferait croire à l'intégrateur qu'il n'a aucun template approuvé). Depuis le lot 17,
+   * les deux portent leur `code` (`meta_rejected` et le numéro de Meta, `internal_error`) : `tests/v1-erreurs-code.test.ts`.
    */
-  it('🔴 un REFUS de Meta pendant la lecture : 422, une phrase « Meta: … », sans code, jamais une liste vide', async () => {
-    const server = serveur(async () => { throw new MetaApiError(400, { code: 190, message: 'Invalid OAuth access token' }); });
+  it('🔴 un REFUS de Meta pendant la lecture : 422, « Meta: … », meta_rejected et son numéro, jamais une liste vide', async () => {
+    const server = serveur(async () => { throw new MetaApiError(400, { code: 132001, message: 'Template name does not exist' }); });
     const res = await server.inject({ method: 'GET', url: '/v1/templates', headers: avec(CLE_ENVOIS) });
     expect(res.statusCode).toBe(422);
     const corps = res.json<Record<string, unknown>>();
     expect(corps.error).toMatch(/^Meta: /);
-    expect(Object.keys(corps)).toEqual(['error']);
+    expect(corps).toMatchObject({ code: 'meta_rejected', metaCode: 132001 });
+    expect(Object.keys(corps).sort()).toEqual(['code', 'error', 'metaCode']);
     await server.close();
   });
 
-  it('🔴 une panne RÉSEAU pendant la lecture : 500 au corps opaque, sans code', async () => {
+  it('🔴 le JETON refusé par Meta pendant la lecture : 409 meta_auth_failed, comme à la création d’un modèle', async () => {
+    const server = serveur(async () => { throw new MetaApiError(400, { code: 190, message: 'Invalid OAuth access token' }); });
+    const res = await server.inject({ method: 'GET', url: '/v1/templates', headers: avec(CLE_ENVOIS) });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ code: 'meta_auth_failed' });
+    await server.close();
+  });
+
+  it('🔴 une panne RÉSEAU pendant la lecture : 500 au corps opaque, internal_error', async () => {
     const server = serveur(async () => { throw new TypeError('fetch failed'); });
     const res = await server.inject({ method: 'GET', url: '/v1/templates', headers: avec(CLE_ENVOIS) });
     expect(res.statusCode).toBe(500);
-    expect(res.json()).toEqual({ error: CORPS_OPAQUE_5XX });
+    expect(res.json()).toEqual({ error: CORPS_OPAQUE_5XX, code: 'internal_error' });
     await server.close();
   });
 

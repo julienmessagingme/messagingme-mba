@@ -503,6 +503,8 @@ describe('POST /v1/messages : les corrections de la relecture', () => {
     const res = await post(server, { ...TEXTE, to: '33612345678' }, VALID, URL_META);
     expect([res.statusCode, res.json().code]).toEqual([422, 'meta_rejected']);
     expect(res.json().error).toMatch(/Le titre du bouton est invalide/);
+    // Le numéro de Meta voyage avec le refus (lot 17) : c'est lui que le catalogue des erreurs explique.
+    expect(res.json().metaCode).toBe(131009);
     await server.close();
   });
 });
