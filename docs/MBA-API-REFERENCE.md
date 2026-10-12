@@ -451,6 +451,12 @@ Rien n'avait été relu chez Meta depuis le 26 août : les ajouts de ce document
 - **2026-09-02, statut de revue des consignes** : `active`, `pending_review` ou `blocked` (une consigne qui demande
   ou cite une donnée personnelle sensible est enregistrée mais jamais appliquée) ; la liste rend désormais les
   bloquées.
+- **2026-10-08, ce qui fait bloquer une consigne (mesuré sur l'espace Groupama)** : la revue juge des MOTS, pas leur
+  sujet. Deux consignes d'une assurance santé animale sont passées en `blocked` alors qu'elles ne parlaient que de
+  l'animal : celle du devis citait « race » et « âge », celle des garanties « maladie » et « chirurgie ». Réécrites
+  sans ces mots, elles sont passées en `active` : la consigne du devis ne collecte plus rien elle-même, elle appelle
+  l'outil et relaie sa réponse, et c'est la description de l'outil qui nomme les champs. Les FAQ et la description
+  d'un outil ne passent pas par cette revue. Un `PUT` relance la revue, rendue en 45 à 60 s environ.
 - **2026-09-30 et 2026-10-05, Agent Configuration Versions** : l'historique des configurations d'un numéro, le
   déploiement, le retour arrière et la copie depuis un autre numéro du même WABA par une seule requête, et des
   changements « retenus pour approbation » (`review_id`). Un `409` sur les écritures concurrentes des consignes.
