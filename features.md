@@ -3142,10 +3142,13 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
 - ✅ **Un outil n'est utilisable qu'une fois ACTIVÉ à la main.** Tant qu'il ne l'est pas, l'agent ne sait même
   pas qu'il existe. L'activation est un geste séparé de l'ajout, et elle garde le nom de qui l'a donnée.
   ⚠️ **Sans aucun outil actif, l'agent peut parler mais ne peut rien faire, pas même terminer.**
-- ✅ **« Toujours là »**, en tête de l'onglet : les gestes propres à l'agent IA, **un interrupteur chacun**.
-  Allumer pose l'outil s'il manque, puis l'active ; éteindre le désactive (il reste posé, avec ses réglages). Ses
-  réglages (le nom vu par le modèle, quand l'appeler, quand ne pas l'appeler, les gestes « Et en plus, faire
-  ceci ») sont derrière « Régler ». Ces cinq gestes :
+- ✅ **« Toujours là »**, en tête de l'onglet : les gestes propres à l'agent IA, avec **les mêmes commandes que
+  les outils posés** (2026-10-12) : une pastille « Actif » ou « Inactif », le bouton « Activer » ou « Désactiver »,
+  « Modifier » et une croix qui supprime. « Activer » pose l'outil s'il manque, puis l'active ; « Désactiver » le
+  désactive (il reste posé, avec ses réglages) ; la croix le supprime, réglages compris, et « Activer » le remet
+  avec ceux par défaut. Un geste jamais posé n'a que « Activer ». Ses réglages (le nom vu par le modèle, quand
+  l'appeler, quand ne pas l'appeler, les gestes « Et en plus, faire ceci ») sont derrière « Modifier ». Ces cinq
+  gestes :
   - **Terminer par une règle d'arrêt** (lecture) : rendre la main au scénario par la sortie choisie, après un
     dernier message au contact (le texte de l'agent, ou à défaut le message qu'il joint à l'outil : certains
     modèles terminent sans rien écrire à côté).
@@ -3166,7 +3169,7 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
   par tag, par champ, par bloc, par scénario. L'agent ne décide que du **moment**, et pour une information, de
   la **valeur**, bornée à la liste des valeurs permises si vous en donnez une. Il ne peut donc ni inventer un
   tag, ni écrire dans le champ sur lequel une condition de votre scénario branche. Un outil se pose avec un
-  titre, un nom technique (vu par le modèle) et ses deux consignes, et il naît éteint.
+  titre, un nom technique (vu par le modèle) et ses deux consignes, et il naît « Inactif ».
   - **Poser un tag** (écriture) : pour retrouver le contact dans le mini-CRM, ou déclencher une automation.
   - **Enregistrer une information** (écriture) : un champ du mini-CRM, pour qu'un bloc plus loin dans le
     scénario le réutilise.
@@ -3272,12 +3275,12 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
   l'agent lance un scénario, la question suivante liste vos scénarios **en ligne** par leur nom ; vous en nommez un,
   et la proposition porte la ligne « Outil « Lancer un scénario » : <son nom>, dès que le contact… », avec la
   situation tirée du moment, à corriger si besoin. « Enregistrer » pose l'outil dans l'onglet Outils, visant ce
-  scénario et **éteint**, comme tout outil ajouté : il reste à l'allumer. Un nom qui ne désigne pas un seul
+  scénario et **« Inactif »**, comme tout outil ajouté : il reste à l'activer. Un nom qui ne désigne pas un seul
   scénario en ligne ne propose rien, et la liste « Pour finir » dit comment le poser à la main ; un scénario que
   l'agent lance déjà n'est pas reproposé.
 - ✅ **À la fin, il dit ce qu'il reste à faire** (2026-10-12), sous la forme d'une liste numérotée « Pour finir » :
   enregistrer la proposition (bouton « Enregistrer »), importer le site donné dans Base de connaissance, brancher le connecteur qu'un moment
-  demande, allumer l'outil du scénario posé (ou le poser à la main), vérifier le modèle de l'agent (posé à la
+  demande, activer l'outil du scénario posé (ou le poser à la main), vérifier le modèle de l'agent (posé à la
   création, changeable dans l'onglet Modèle), le tester, puis l'activer. La liste se calcule sur l'état réel de
   l'agent : une étape déjà faite n'y figure pas.
 - ✅ **Il pose vraiment toutes les questions** (2026-08-31). Avant, il décidait lui-même de ce qu'il avait

@@ -5,8 +5,8 @@ import { repondre } from './aide/confirmation';
  * Onglet OUTILS d'un agent IA, présenté comme celui de l'agent de Meta (RC4, décision de Julien du 2026-10-06).
  *
  * Ce qu'on vérifie vraiment ici :
- *  - « Toujours là » : un interrupteur par geste propre à l'agent IA ; allumer POSE l'outil s'il manque puis l'ACTIVE,
- *    éteindre le désactive sans le retirer ;
+ *  - « Toujours là » : les commandes de la liste pour chaque geste propre à l'agent IA ; « Activer » POSE l'outil s'il
+ *    manque puis l'ACTIVE, « Désactiver » le désactive sans le retirer, la croix le supprime après confirmation ;
  *  - « Quel outil ajouter ? » : la grille de l'agent de Meta, ses six cartes, et une CIBLE fixée par l'administrateur
  *    pour le tag, l'information, le bloc et le scénario ; l'outil naît inactif ;
  *  - la liste des outils posés, au format des lignes de l'agent de Meta, connecteurs API et outils MCP compris ;
@@ -169,35 +169,58 @@ const onglet = async (page: import('@playwright/test').Page) => {
 const postsOutil = (appels: Appel[]) => appels.filter((a) => a.method === 'POST' && /\/tools$/.test(a.url));
 
 test.describe('Agents IA : « Toujours là »', () => {
-  test('🔴 allumer « Marquer urgent » le POSE puis l’ACTIVE ; l’éteindre le désactive sans le retirer', async ({ page }) => {
+  test('🔴 « Activer » pose « Marquer urgent » puis l’ACTIVE ; « Désactiver » le désactive sans le retirer', async ({ page }) => {
     const appels: Appel[] = [];
     await mock(page, appels, []);
     await onglet(page);
-    // Les cinq gestes propres à l'agent IA sont là, éteints, avant même d'avoir rien posé.
+    // Les cinq gestes propres à l'agent IA sont là, inactifs, avant même d'avoir rien posé : rien à modifier ni à supprimer.
     for (const h of ['terminer', 'escalader', 'chercher_connaissance', 'lire_contact', 'marquer_urgent']) {
-      await expect(page.getByTestId(`toujours-${h}`)).not.toBeChecked();
+      await expect(page.getByTestId(`toujours-etat-${h}`)).toContainText('Inactif');
+      await expect(page.getByTestId(`toujours-activer-${h}`)).toHaveText('Activer');
+      await expect(page.getByTestId(`toujours-modifier-${h}`)).toHaveCount(0);
+      await expect(page.getByTestId(`toujours-retirer-${h}`)).toHaveCount(0);
     }
 
-    await page.getByTestId('toujours-marquer_urgent').click();
+    // Un lecteur d'écran entend le nom de l'outil, pas cinq « Activer » identiques.
+    await expect(page.getByRole('button', { name: 'Activer « Marquer la conversation urgente »' })).toBeVisible();
+    await page.getByTestId('toujours-activer-marquer_urgent').click();
     await expect.poll(() => appels.map((a) => `${a.method} ${a.url.replace(/^.*\/tools/, '/tools')}`), { timeout: 5000 })
       .toEqual(['POST /tools', 'PUT /tools/n1/activation']);
     expect(postsOutil(appels)[0]!.body).toEqual({ handler: 'marquer_urgent' });
     expect(appels[1]!.body).toEqual({ valeur: true });
-    await expect(page.getByTestId('toujours-marquer_urgent')).toBeChecked();
+    await expect(page.getByTestId('toujours-etat-marquer_urgent')).toContainText('Actif');
+    await expect(page.getByTestId('toujours-activer-marquer_urgent')).toHaveText('Désactiver');
+    await expect(page.getByTestId('toujours-modifier-marquer_urgent')).toBeVisible();
 
-    await page.getByTestId('toujours-marquer_urgent').click();
+    await page.getByTestId('toujours-activer-marquer_urgent').click();
     await expect.poll(() => appels.at(-1)?.body, { timeout: 5000 }).toEqual({ valeur: false });
     expect(appels.at(-1)!.url).toMatch(/\/tools\/n1\/activation$/);
-    // Éteint, pas retiré : aucune suppression, et l'outil garde ses réglages.
+    // Désactivé, pas retiré : aucune suppression, et l'outil garde ses réglages.
     expect(appels.some((a) => a.method === 'DELETE')).toBe(false);
-    await expect(page.getByTestId('toujours-marquer_urgent')).not.toBeChecked();
+    await expect(page.getByTestId('toujours-etat-marquer_urgent')).toContainText('Inactif');
+    await expect(page.getByTestId('toujours-modifier-marquer_urgent')).toBeVisible();
   });
 
-  test('🔴 un « terminer » actif que le modèle ne VOIT PAS est signalé, et « Régler » montre pourquoi', async ({ page }) => {
+  test('🔴 la croix d’un geste « Toujours là » le supprime après confirmation, et sa ligne revient à « Inactif »', async ({ page }) => {
+    // Julien, 2026-10-12 : les mêmes commandes partout, croix comprise.
+    const appels: Appel[] = [];
+    await mock(page, appels, [MUET]);
+    await onglet(page);
+    await page.getByTestId('toujours-retirer-terminer').click();
+    await repondre(page, false, 'par défaut');
+    expect(appels.some((a) => a.method === 'DELETE')).toBe(false);
+    await page.getByTestId('toujours-retirer-terminer').click();
+    await repondre(page, true);
+    await expect.poll(() => appels.find((a) => a.method === 'DELETE')?.url, { timeout: 5000 }).toMatch(/\/tools\/o3$/);
+    await expect(page.getByTestId('toujours-etat-terminer')).toContainText('Inactif');
+    await expect(page.getByTestId('toujours-retirer-terminer')).toHaveCount(0);
+  });
+
+  test('🔴 un « terminer » actif que le modèle ne VOIT PAS est signalé, et « Modifier » montre pourquoi', async ({ page }) => {
     await mock(page, [], [MUET]);
     await onglet(page);
     await expect(page.getByTestId('toujours-muet-terminer')).toContainText('le modèle n’en voit rien');
-    await page.getByTestId('toujours-regler-terminer').click();
+    await page.getByTestId('toujours-modifier-terminer').click();
     await page.getByTestId('outil-schema-bouton-o3').click();
     await expect(page.getByTestId('outil-schema-o3')).toContainText('aucune valeur possible');
   });
@@ -206,7 +229,7 @@ test.describe('Agents IA : « Toujours là »', () => {
     const appels: Appel[] = [];
     await mock(page, appels, [MUET]);
     await onglet(page);
-    await page.getByTestId('toujours-regler-terminer').click();
+    await page.getByTestId('toujours-modifier-terminer').click();
     await page.getByTestId('outil-nom-o3').fill('Terminer la conversâtion');
     await expect(page.getByTestId('outil-nom-normalise-o3')).toHaveText('terminer_la_conversation');
     await page.getByTestId('outil-description-o3').click(); // sortie du champ
@@ -221,7 +244,7 @@ test.describe('Agents IA : « Toujours là »', () => {
     const appels: Appel[] = [];
     await mock(page, appels, [MUET]);
     await onglet(page);
-    await page.getByTestId('toujours-regler-terminer').click();
+    await page.getByTestId('toujours-modifier-terminer').click();
     await expect(page.getByTestId('outil-gestes-o3')).toContainText('même si l’appel ci-dessus échoue');
     await page.getByTestId('outil-geste-valeur-o3').fill('rendez_vous_demande');
     await page.getByTestId('outil-geste-ajouter-o3').click();
@@ -233,7 +256,7 @@ test.describe('Agents IA : « Toujours là »', () => {
     const appels: Appel[] = [];
     await mock(page, appels, [MUET]);
     await onglet(page);
-    await page.getByTestId('toujours-regler-terminer').click();
+    await page.getByTestId('toujours-modifier-terminer').click();
     await page.getByTestId('outil-geste-type-o3').selectOption('variable');
     await page.getByTestId('outil-geste-champ-o3').fill('origine');
     await page.getByTestId('outil-geste-valeur-o3').fill('agent');
@@ -278,7 +301,7 @@ test.describe('Agents IA : « Quel outil ajouter ? »', () => {
     // Né inactif : l'activation reste un geste séparé.
     expect(appels.some((a) => /activation$/.test(a.url))).toBe(false);
     await expect(page.getByTestId('outil-cible-n1')).toHaveText('Tag : rdv_pris');
-    await expect(page.getByTestId('outil-etat-n1')).toContainText('inactif');
+    await expect(page.getByTestId('outil-etat-n1')).toContainText('Inactif');
   });
 
   test('🔴 poser « Lancer un scénario » : le scénario FIXÉ, l’agent qui se retire, et l’autonomie demandée', async ({ page }) => {

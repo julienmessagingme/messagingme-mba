@@ -10,8 +10,8 @@ import type { GesteMoment, ModeleOutil, OutilAgent, TexteBilingue } from '@/lib/
 
 /**
  * LES RÉGLAGES D'UN OUTIL POSÉ SUR UN AGENT IA : son nom vu par le modèle, ses deux consignes, ses gestes, l'autonomie
- * d'une action irréversible, et ce que le modèle en voit. Ouverts par « Régler » (section « Toujours là ») ou par
- * « Modifier » (outil MCP) ; un outil à cible (RC4) a son propre formulaire (`FormulaireOutilAgent`), qui reprend
+ * d'une action irréversible, et ce que le modèle en voit. Ouverts par « Modifier » (section « Toujours là », ou outil
+ * MCP) ; un outil à cible (RC4) a son propre formulaire (`FormulaireOutilAgent`), qui reprend
  * l'autonomie, les gestes et le schéma d'ici.
  *
  * 🔴 CE QUE CET ÉCRAN ACCORDE. Un outil actif est exposé au modèle et exécutable par lui, donc par un texte qu'un

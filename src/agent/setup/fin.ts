@@ -57,18 +57,18 @@ export function etapesDeFin(e: EntreeFin): string[] {
     } else if (b.action === 'outil_mcp' && e.outilsMcp === 0) {
       out.push(`Outils : branchez l’outil MCP pour « ${b.moment} » (menu Tools > Connecteurs MCP).`);
     } else if (b.action === 'scenario') {
-      // L'outil naît éteint, comme tout outil ajouté (route `POST .../tools`), et « Lancer un scénario » est une action
+      // L'outil naît inactif, comme tout outil ajouté (route `POST .../tools`), et « Lancer un scénario » est une action
       // irréversible : sans la case d'autonomie, chaque appel est refusé. Sans ces deux gestes, « Enregistrer » pose un
       // outil que l'agent n'appelle jamais. Les libellés sont ceux de l'écran (`AutonomieOutil`, `LigneOutilAgent`).
       const reconnu = e.scenarios?.find((s) => s.moment === b.moment);
       out.push(!reconnu
         ? `Outils : pour « ${b.moment} », onglet « Outils », « Ajouter un outil », « Lancer un scénario » : choisissez `
-          + `le scénario, cochez « ${CASE_AUTONOMIE} », puis allumez l’outil.`
+          + `le scénario, cochez « ${CASE_AUTONOMIE} », puis cliquez « Activer ».`
         : reconnu.dejaVise
-          ? `Outils : l’outil qui lance « ${reconnu.nom} » est déjà là ; vérifiez qu’il est allumé et que `
+          ? `Outils : l’outil qui lance « ${reconnu.nom} » est déjà là ; vérifiez qu’il est « Actif » et que `
             + `« ${CASE_AUTONOMIE} » est coché (onglet « Outils », « Modifier »).`
-          : `Outils : après « ${BOUTON_ENREGISTRER} », l’outil qui lance « ${reconnu.nom} » naît éteint : onglet `
-            + `« Outils », « Modifier » sur sa ligne, cochez « ${CASE_AUTONOMIE} », puis allumez-le.`);
+          : `Outils : après « ${BOUTON_ENREGISTRER} », l’outil qui lance « ${reconnu.nom} » naît « Inactif » : onglet `
+            + `« Outils », « Modifier » sur sa ligne, cochez « ${CASE_AUTONOMIE} », puis cliquez « Activer ».`);
     }
   }
   out.push(e.modele

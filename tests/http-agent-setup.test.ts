@@ -7,6 +7,7 @@ import type { AgentSetupRouteDeps } from '../src/http/agent-setup';
 import type { ChatMessage, ChatMessageImage, ReponseChat } from '../src/agent/llm/chat-client';
 import { OUTIL_PROPOSER } from '../src/agent/setup/proposition';
 import { AGENDA } from '../src/agent/setup/couverture';
+import { MOYEN_DECRIT_PAR_LE_CLIENT } from '../src/agent/setup/scenarios';
 import type { EntretienComplet, EntretienStore } from '../src/agent/setup/entretien-store';
 import { ficheVide } from '../src/agent/fiche';
 import { MAX_FICHES_PAR_PAGE } from '../src/agent/scrape';
@@ -95,6 +96,8 @@ function app(opts: {
   const cap = {
     appels: [] as Array<{ modele: string; messages: Array<ChatMessage | ChatMessageImage>; toolChoice: string }>,
     imports: [] as string[],
+    /** Combien de fois la route a lu les scénarios en ligne. */
+    scenarios: 0,
   };
   let rang = 0;
   const entretiens = new FakeEntretiens(opts.entretien ?? null);
@@ -108,7 +111,7 @@ function app(opts: {
         titresConnaissance: ['La piscine'],
       }
       : null),
-    scenariosEnLigne: async () => opts.scenarios ?? [],
+    scenariosEnLigne: async () => { cap.scenarios += 1; return opts.scenarios ?? []; },
     entretiens,
     importerSiteDeLEntretien: async (_t: string, _a: string, url: string) => {
       cap.imports.push(url);
@@ -863,8 +866,8 @@ describe('conversation de construction', () => {
         apres: 'veut faire un devis',
       });
       expect(res.json().proposition.scenarios).toEqual([{ workflowId: DEVIS.id, nom: DEVIS.nom, moment: MOMENT }]);
-      // Le bloc « Pour finir » dit d'allumer l'outil, qui naîtra éteint.
-      expect(res.json().message).toContain(`l’outil qui lance « ${DEVIS.nom} » naît éteint`);
+      // Le bloc « Pour finir » dit d'activer l'outil, qui naîtra inactif.
+      expect(res.json().message).toContain(`l’outil qui lance « ${DEVIS.nom} » naît « Inactif »`);
     });
 
     it('🔴 un nom qui ne désigne aucun scénario en ligne ne propose rien, et le bloc de fin dit la marche à la main', async () => {
@@ -907,6 +910,68 @@ describe('conversation de construction', () => {
       const res = await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: { message: 'c’est quoi un scénario ?' } });
       expect(a.entretiens.ecrits.at(-1)!.bascules[0]!.moyen).toBeUndefined();
       expect(res.json().couverture.manquants).toEqual(['bascule_1_moyen']);
+    });
+
+    it('🔴 un scénario nommé avec l’ACTION du moment est retenu sous son nom exact', async () => {
+      // Relecture du 2026-10-12 : le client répond « lancer le scénario SMATIS Devis (flow) » à la question de l'action ;
+      // le modèle range une paraphrase, et le point du moyen, déjà répondu, ne revenait jamais.
+      const surLAction: EntretienComplet = {
+        messages: [], auteurs: [], poses: [...BASE], reponses: toutesLesReponses(), bascules: [{ moment: MOMENT }],
+      };
+      // Le modèle ne rend rien, comme 3 fois sur 4 au tour de l'action (mesuré sur Haiku 4.5) : seul le message parle.
+      const muet = reponse(JSON.stringify({ message: 'Très bien.', reponses: [] }));
+      const a = app({ reponse: muet, entretien: surLAction, scenarios: [DEVIS] });
+      await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: { message: '1, lancer le scénario SMATIS Devis (flow)' } });
+      expect(a.entretiens.ecrits.at(-1)!.bascules[0]).toMatchObject({ action: 'scenario', moyen: DEVIS.nom });
+    });
+
+    describe('après l’entretien', () => {
+      const RDV = { id: '55555555-5555-4555-8555-555555555555', nom: 'Prise de rendez-vous' };
+      const fini: EntretienComplet = { ...ENTRETIEN_FINI, poses: [...BASE, 'bascule_1_action', 'bascule_1_moyen'],
+        bascules: [{ moment: MOMENT, action: 'scenario', moyen: DEVIS.nom }] };
+      const rendu = (moyen: string) => reponse(JSON.stringify({
+        message: 'C’est noté.', reponses: [], bascules: [{ moment: MOMENT, action: 'scenario', moyen }],
+      }));
+
+      it('🔴 un changement d’avis est pris quand le client et le modèle désignent le même scénario', async () => {
+        const a = app({ reponse: rendu('Prise de rendez-vous'), entretien: fini, scenarios: [DEVIS, RDV] });
+        const res = await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: { message: 'Finalement, ce sera Prise de rendez-vous.' } });
+        expect(a.entretiens.ecrits.at(-1)!.bascules[0]!.moyen).toBe(RDV.nom);
+        expect(res.json().proposition.scenarios).toEqual([{ workflowId: RDV.id, nom: RDV.nom, moment: MOMENT }]);
+      });
+
+      it('🔴 un scénario seulement cité par le client, sans que le modèle le reprenne, ne change pas le choix', async () => {
+        const a = app({ reponse: rendu('le parcours de devis'), entretien: fini, scenarios: [DEVIS, RDV] });
+        await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: { message: 'Le scénario Prise de rendez-vous est-il bien ?' } });
+        expect(a.entretiens.ecrits.at(-1)!.bascules[0]!.moyen).toBe(DEVIS.nom);
+      });
+    });
+
+    it('🔴 une réponse libre ferme le point du moyen à son SECOND passage, par un marqueur fixe', async () => {
+      // La question promet « ou décrivez ce qu'il devra faire » : un modèle qui ne note pas la description la ferait
+      // revenir sans fin. Le marqueur ferme le point sans recopier le message dans la consigne.
+      const muet = reponse(JSON.stringify({ message: 'D’accord.', reponses: [] }));
+      const secondPassage: EntretienComplet = { ...SUR_LE_MOYEN, poses: [...SUR_LE_MOYEN.poses, 'bascule_1_moyen'] };
+      const a = app({ reponse: muet, entretien: secondPassage, scenarios: [DEVIS] });
+      const res = await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: { message: 'il envoie le devis par e-mail' } });
+      expect(a.entretiens.ecrits.at(-1)!.bascules[0]!.moyen).toBe(MOYEN_DECRIT_PAR_LE_CLIENT);
+      expect(res.json().couverture.manquants).toEqual([]);
+      // Il ne désigne aucun scénario : rien n'est proposé, et « Pour finir » dit la marche à la main.
+      expect(res.json().proposition.scenarios).toEqual([]);
+    });
+
+    it('les scénarios ne se lisent qu’au tour POST', async () => {
+      // L'ouverture de l'onglet, les suggestions et l'effacement n'en ont pas besoin : une lecture de plus à chaque fois.
+      const { srv, lectures } = (() => {
+        const a = app({ entretien: SUR_LE_MOYEN, scenarios: [DEVIS] });
+        return { srv: a.srv, lectures: a.cap };
+      })();
+      await srv.inject({ method: 'GET', url: url('t1'), ...h(adminTok) });
+      await srv.inject({ method: 'GET', url: `${url('t1')}/suggestions`, ...h(adminTok) });
+      await srv.inject({ method: 'DELETE', url: url('t1'), ...h(adminTok) });
+      expect(lectures.scenarios).toBe(0);
+      await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+      expect(lectures.scenarios).toBe(1);
     });
 
     it('pendant l’entretien, rien n’est proposé ; après, la ligne revient à chaque tour tant que l’outil n’est pas posé', async () => {

@@ -65,7 +65,8 @@ function libelleCible(o: OutilAgent, noms: Noms, t: Traduire): string {
  * L'onglet OUTILS d'un agent IA, présenté comme celui de l'agent de Meta (RC4, décision de Julien du 2026-10-06).
  *
  *  - **« Toujours là »** en tête : les gestes propres à l'agent IA (terminer, passer à l'équipe, chercher dans la
- *    connaissance, lire la fiche, marquer urgent), un interrupteur chacun, leurs réglages derrière « Régler ».
+ *    connaissance, lire la fiche, marquer urgent), avec les mêmes commandes que la liste (`ActionsOutil`) : Activer
+ *    ou Désactiver, Modifier pour leurs réglages, et la croix qui supprime.
  *  - **« Ajouter un outil »** ouvre la grille « Quel outil ajouter ? » de l'agent de Meta (`ChoixTypeOutil`, ses six
  *    cartes) : un tag, une information, un bloc ou un scénario FIXÉS par l'administrateur, un appel de Connecteurs API,
  *    un outil MCP.
@@ -73,8 +74,8 @@ function libelleCible(o: OutilAgent, noms: Noms, t: Traduire): string {
  *    les sections « Vos systèmes » et « Vos serveurs MCP » ont disparu en tant que sections.
  *
  * 🔴 CE QUE CET ÉCRAN ACCORDE, et qui ne change pas : un outil actif est exposé au modèle et exécutable par lui, donc par
- * un texte qu'un contact influence. Poser et ACTIVER restent deux gestes (l'interrupteur de « Toujours là » les enchaîne
- * à la main du client), et l'autonomie sur une action irréversible en reste un troisième.
+ * un texte qu'un contact influence. Poser et ACTIVER restent deux gestes (« Activer » sur une ligne de « Toujours là » les
+ * enchaîne à la main du client), et l'autonomie sur une action irréversible en reste un troisième.
  *
  * ⚠️ `onChange` EXISTE PARCE QUE LE BANDEAU D'AVERTISSEMENT VIT AILLEURS : ce panneau écrit dans SA table, et la page
  * relit ses manques quand on le lui dit (Julien, 2026-09-11).
@@ -137,7 +138,7 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
       onChange?.();
     } catch (err) {
       setErreur(err instanceof Error ? err.message : t('Opération impossible', 'Operation failed'));
-      // Ce qui a pu réussir avant l'échec (un outil posé, pas encore allumé) se voit tout de suite.
+      // Ce qui a pu réussir avant l'échec (un outil posé, pas encore actif) se voit tout de suite.
       await charger();
     } finally {
       setBusy(false);
@@ -156,12 +157,21 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
   const retirer = async (o: OutilAgent): Promise<void> => {
     // Une ACTION appartient à cet agent (0157) : la retirer la SUPPRIME, réglages compris. Un connecteur part s'il ne
     // sert plus à personne ; un outil MCP reste branchable par les autres agents.
+    // Un geste de « Toujours là » supprimé garde sa ligne : « Activer » le repose, avec les réglages par défaut. Lu sur
+    // la section réellement affichée : un doublon du même geste vit dans la liste, et sa suppression n'a rien à remettre.
+    const toujoursLa = dansToujoursLa.has(o.id);
+    // « Retirer » quand l'outil survit ailleurs (un outil MCP, un connecteur qui sert à d'autres agents), « Supprimer »
+    // quand il disparaît avec ses réglages.
+    const detache = o.origin === 'mcp' || o.origin === 'http';
     const message = o.origin === 'mcp'
       ? t(`Retirer « ${o.title} » de cet agent ? Il reste disponible pour vos autres agents.`, `Remove “${o.title}” from this agent? It stays available to your other agents.`)
       : o.origin === 'http'
         ? t(`Retirer « ${o.name} » de cet agent ? Ses réglages seront supprimés s’il ne sert à aucun autre agent.`, `Remove “${o.name}” from this agent? Its settings are deleted if no other agent uses it.`)
-        : t(`Retirer « ${o.title} » de cet agent ? L’action et ses réglages seront supprimés.`, `Remove “${o.title}” from this agent? The action and its settings will be deleted.`);
-    if (!(await confirmer({ titre: t('Retirer l’outil', 'Remove the tool'), message, confirmer: t('Retirer', 'Remove') }))) return;
+        : toujoursLa
+          ? t(`Supprimer « ${o.title} » ? Ses réglages seront supprimés ; « Activer » le remettra avec ceux par défaut.`, `Delete “${o.title}”? Its settings will be deleted; “Activate” brings it back with the defaults.`)
+          : t(`Retirer « ${o.title} » de cet agent ? L’action et ses réglages seront supprimés.`, `Remove “${o.title}” from this agent? The action and its settings will be deleted.`);
+    const titre = detache ? t('Retirer l’outil', 'Remove the tool') : t('Supprimer l’outil', 'Delete the tool');
+    if (!(await confirmer({ titre, message, confirmer: detache ? t('Retirer', 'Remove') : t('Supprimer', 'Delete') }))) return;
     await agir(async () => {
       await retirerOutil(tenantId, agentId, o.id);
       if (ouvert === o.id) setOuvert(null);
@@ -227,9 +237,10 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
       {vue !== null && (
         <ToujoursLa
           outils={outils} catalogue={catalogue} busy={busy} ouvert={ouvert} reglages={reglages}
-          onRegler={(o) => setOuvert((v) => (v === o.id ? null : o.id))}
+          onModifier={(o) => setOuvert((v) => (v === o.id ? null : o.id))}
+          onRetirer={(o) => { void retirer(o); }}
           onBasculer={(handler, outil, valeur) => agir(async () => {
-            // Allumer : poser l'outil s'il manque (inactif, comme toujours), PUIS l'activer au nom de qui allume.
+            // Activer : poser l'outil s'il manque (inactif, comme toujours), PUIS l'activer au nom de qui active.
             const cible = outil ?? await ajouterOutil(tenantId, agentId, handler);
             await activerOutil(tenantId, agentId, cible.id, valeur);
           })}
@@ -242,8 +253,8 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
             <div>
               <h3 className="text-sm font-semibold text-ink-900">{t('Ses outils', 'Its tools')}</h3>
               <p className="text-xs text-ink-500">
-                {t('Ce que l’agent peut faire de plus, chaque outil sur ce que vous avez choisi. Un outil naît éteint : activez-le pour que l’agent s’en serve.',
-                  'What else the agent can do, each tool on what you picked. A tool starts off: activate it for the agent to use it.')}
+                {t('Ce que l’agent peut faire de plus, chaque outil sur ce que vous avez choisi. Un outil naît « Inactif » : activez-le pour que l’agent s’en serve.',
+                  'What else the agent can do, each tool on what you picked. A tool starts “Inactive”: activate it for the agent to use it.')}
               </p>
             </div>
             {mode.vue === 'liste' && (

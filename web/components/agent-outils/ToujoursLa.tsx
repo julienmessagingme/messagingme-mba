@@ -6,24 +6,27 @@ import { signeDuHandler } from '@/lib/signes-outils';
 import { TOUJOURS_LA, type HandlerToujoursLa } from '@/lib/agent-outils';
 import { raisonInappelable, type ModeleOutil, type OutilAgent } from '@/lib/api-agent-tools';
 import { Bilingue, Risque } from './ReglagesOutil';
+import { ActionsOutil } from './LigneOutilAgent';
 
 /**
  * « TOUJOURS LÀ » (RC4, décision de Julien du 2026-10-06) : les outils propres à l'agent IA, qui n'ont pas d'équivalent
- * chez l'agent de Meta et rien à viser. Un interrupteur chacun : allumer pose l'outil s'il manque, puis l'active ;
- * éteindre le désactive (il reste posé, avec ses réglages). Ses réglages (nom vu par le modèle, quand l'appeler) restent
- * derrière « Régler ».
+ * chez l'agent de Meta et rien à viser. Chaque ligne porte le MÊME bloc d'actions que la liste des outils posés
+ * (`ActionsOutil`, décision de Julien du 2026-10-12) : « Activer » pose l'outil s'il manque, puis l'active ;
+ * « Désactiver » le désactive (il reste posé, avec ses réglages) ; « Modifier » ouvre ses réglages (nom vu par le
+ * modèle, quand l'appeler) ; la croix le supprime, réglages compris, et sa ligne revient à « Inactif ».
  *
- * ⚠️ L'ACTIVATION RESTE LE CONSENTEMENT HUMAIN, porté par le nom de qui allume (le serveur le prend sur le jeton) :
- * l'interrupteur n'est qu'un raccourci des deux gestes « poser » puis « activer ».
+ * ⚠️ L'ACTIVATION RESTE LE CONSENTEMENT HUMAIN, porté par le nom de qui active (le serveur le prend sur le jeton) :
+ * « Activer » n'est qu'un raccourci des deux gestes « poser » puis « activer ».
  */
-export function ToujoursLa({ outils, catalogue, busy, ouvert, onBasculer, onRegler, reglages }: {
+export function ToujoursLa({ outils, catalogue, busy, ouvert, onBasculer, onModifier, onRetirer, reglages }: {
   outils: OutilAgent[];
   catalogue: ModeleOutil[];
   busy: boolean;
   /** L'outil dont les réglages sont ouverts, s'il est de cette section. */
   ouvert: string | null;
   onBasculer: (handler: HandlerToujoursLa, outil: OutilAgent | undefined, valeur: boolean) => void;
-  onRegler: (outil: OutilAgent) => void;
+  onModifier: (outil: OutilAgent) => void;
+  onRetirer: (outil: OutilAgent) => void;
   /** Le panneau des réglages d'un outil de la section, rendu sous sa ligne quand il est ouvert. */
   reglages: (outil: OutilAgent) => React.ReactNode;
 }) {
@@ -33,8 +36,8 @@ export function ToujoursLa({ outils, catalogue, busy, ouvert, onBasculer, onRegl
       <div>
         <h3 className="text-sm font-semibold text-ink-900">{t('Toujours là', 'Always there')}</h3>
         <p className="text-xs text-ink-500">
-          {t('Les gestes propres à l’agent IA. Allumez ceux dont il a besoin : il ne s’en sert qu’une fois allumés.',
-            'The AI agent’s own moves. Turn on the ones it needs: it only uses them once turned on.')}
+          {t('Les gestes propres à l’agent IA. Activez ceux dont il a besoin : il ne s’en sert qu’une fois actifs.',
+            'The AI agent’s own moves. Activate the ones it needs: it only uses them once active.')}
         </p>
       </div>
       <ul className="divide-y divide-ink-100 rounded-carte border border-ink-200 bg-white">
@@ -69,24 +72,17 @@ export function ToujoursLa({ outils, catalogue, busy, ouvert, onBasculer, onRegl
                     </p>
                   )}
                 </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  {outil && (
-                    <button type="button" data-testid={`toujours-regler-${handler}`} disabled={busy} onClick={() => onRegler(outil)}
-                      className="text-xs text-ink-500 hover:underline disabled:opacity-40">
-                      {ouvert === outil.id ? t('Fermer', 'Close') : t('Régler', 'Settings')}
-                    </button>
-                  )}
-                  <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-ink-700">
-                    <input
-                      type="checkbox" role="switch" data-testid={`toujours-${handler}`}
-                      aria-label={modele ? modele.titre.fr : handler}
-                      checked={outil?.actif === true}
-                      // Pas d'allumage d'un outil que la ligne déclare mort ; l'extinction reste possible.
-                      disabled={busy || (outil?.actif !== true && mort !== null)}
-                      onChange={(e) => onBasculer(handler, outil, e.target.checked)}
-                    />
-                    {outil?.actif ? t('Allumé', 'On') : t('Éteint', 'Off')}
-                  </label>
+                {/* Les deux mêmes colonnes que la liste des outils posés (`LigneOutilAgent`) : les boutons s'alignent d'une
+                    ligne à l'autre et d'une section à l'autre, posé ou non. */}
+                <div className="flex shrink-0 flex-wrap items-center gap-2 sm:grid sm:grid-cols-[9rem_9rem]">
+                  <ActionsOutil
+                    prefixe="toujours" cle={handler} nom={modele ? t(modele.titre.fr, modele.titre.en) : (outil?.title ?? handler)}
+                    pose={outil !== undefined} actif={outil?.actif === true}
+                    activable={mort === null} busy={busy} ouvert={outil !== undefined && ouvert === outil.id}
+                    onActiver={(v) => onBasculer(handler, outil, v)}
+                    onModifier={() => { if (outil) onModifier(outil); }}
+                    onRetirer={() => { if (outil) onRetirer(outil); }}
+                  />
                 </div>
               </div>
               {outil && ouvert === outil.id && reglages(outil)}

@@ -186,7 +186,7 @@ export function restreindreProposition(
     /**
      * 🔴 UN SCÉNARIO NE PART QUE SI SA LIGNE EST GARDÉE, et sans ligne il ne part pas. ⚠️ Gardée par défaut, comme
      * toutes les lignes du diff (`Diff`, `web/components/AgentConstruction.tsx`) : « Enregistrer » pose donc chaque
-     * scénario proposé. Ce qui borne le geste, c'est que l'outil naît éteint et sans autonomie.
+     * scénario proposé. Ce qui borne le geste, c'est que l'outil naît inactif et sans autonomie.
      */
     scenarios: (proposition.scenarios ?? []).flatMap((sc) => {
       const garde = gardees.get(`scenario.${sc.workflowId}`);
@@ -365,7 +365,7 @@ export async function appliquerProposition(
      * Les scénarios des moments (RC4) : la route du bouton « Ajouter un outil », avec la cible rapprochée par le
      * serveur, puis la consigne de l'onglet Outils complétée de la situation gardée. Un scénario que l'agent lance déjà
      * est sauté (la proposition a pu vieillir) ; un nom pris prend un suffixe, la route refuserait en 409. L'outil naît
-     * INACTIF, comme tout outil ajouté : l'allumer reste au client, et le bloc « Pour finir » le lui dit.
+     * INACTIF, comme tout outil ajouté : l'activer reste au client, et le bloc « Pour finir » le lui dit.
      */
     const textes = textesDuType('scenario', 'agent');
     const pris = new Set(poses.map((o) => o.name));

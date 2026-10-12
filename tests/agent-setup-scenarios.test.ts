@@ -114,6 +114,15 @@ describe('la question du moyen d’un moment « scénario »', () => {
     expect(q).toMatch(/Ou décrivez ce qu’il devra faire/);
   });
 
+  it('un seul scénario au-delà du plafond s’accorde, un nom long ou sur plusieurs lignes est ramené', () => {
+    const seize = Array.from({ length: MAX_SCENARIOS_LISTES + 1 }, (_, i) => `Scénario ${i + 1}`);
+    expect(question(seize)).toContain('et 1 autre.');
+    const long = question([`Un nom
+sur deux lignes ${'x'.repeat(200)}`]);
+    expect(long).toContain('Un nom sur deux lignes');
+    expect(long).not.toContain('x'.repeat(100));
+  });
+
   it('une longue liste est plafonnée', () => {
     // Quarante noms, en dur : un compte dérivé de la constante suivrait la constante, et ne verrait pas le plafond sauter.
     const quarante = Array.from({ length: 40 }, (_, i) => `Scénario ${i + 1}`);

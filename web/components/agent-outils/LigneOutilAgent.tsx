@@ -7,6 +7,7 @@ import { signeDuHandler, type SigneOutil } from '@/lib/signes-outils';
 import { typeDuHandler } from '@/lib/agent-outils';
 import { raisonInappelable, type OutilAgent } from '@/lib/api-agent-tools';
 import { Bouton } from '@/components/Bouton';
+import { Icone } from '@/components/Icone';
 import { Risque } from './ReglagesOutil';
 
 /** Le badge d'un outil posé : le même dessin et le même mot que la carte de « Quel outil ajouter ? » qui l'a posé. */
@@ -72,27 +73,68 @@ export function LigneOutilAgent({ o, cible, busy, ouvert, onActiver, onModifier,
           </span>
           {o.risk === 'irreversible' && <Risque risk={o.risk} handler={handler} />}
         </span>
-        <span className="flex items-center gap-2" data-testid={`outil-etat-${o.id}`}>
-          <span className={`rounded-controle px-1.5 py-0.5 text-xs ${o.actif ? 'bg-succes-100 text-succes-700' : 'bg-ink-100 text-ink-500'}`}>
-            {o.actif ? t('actif', 'active') : t('inactif', 'inactive')}
-          </span>
-          {/* ⚠️ PAS D'ACTIVATION D'UN OUTIL QUE LA LIGNE DÉCLARE MORT : le serveur la refuse déjà (409), et proposer un
-              geste dont on vient d'écrire qu'il est impossible est le motif « offert-et-inerte ». La désactivation reste. */}
-          <Bouton variante={o.actif ? 'secondaire' : 'principal'} taille="petite" data-testid={`outil-activer-${o.id}`}
-            disabled={busy || (!o.actif && mort !== null)} onClick={() => onActiver(!o.actif)}>
-            {o.actif ? t('Désactiver', 'Deactivate') : t('Activer', 'Activate')}
-          </Bouton>
-        </span>
-        <span className="flex gap-3 text-xs">
-          <button type="button" data-testid={`outil-modifier-${o.id}`} disabled={busy} onClick={onModifier}
-            className="text-ink-500 hover:underline disabled:opacity-40">
-            {ouvert ? t('Fermer', 'Close') : t('Modifier', 'Edit')}
-          </button>
-          <button type="button" data-testid={`outil-retirer-${o.id}`} disabled={busy} onClick={onRetirer}
-            className="text-danger hover:underline disabled:opacity-40">{t('Supprimer', 'Delete')}</button>
-        </span>
+        <ActionsOutil
+          prefixe="outil" cle={o.id} nom={o.title} pose actif={o.actif} activable={mort === null} busy={busy} ouvert={ouvert}
+          onActiver={onActiver} onModifier={onModifier} onRetirer={onRetirer}
+        />
       </div>
       {ouvert && children}
     </li>
+  );
+}
+
+/**
+ * LE MÊME BLOC D'ACTIONS POUR TOUT OUTIL D'UN AGENT IA (décision de Julien du 2026-10-12), « Toujours là » comme la liste
+ * des outils posés : une pastille « Actif » ou « Inactif », le bouton qui fait l'inverse (« Désactiver » ou
+ * « Activer »), « Modifier », et une croix qui supprime. Deux cases, pour tenir les deux dernières colonnes de la ligne.
+ * Un geste de « Toujours là » jamais posé (`pose` faux) n'a que « Activer » : il n'y a encore rien à modifier ni à
+ * supprimer. Les identifiants de test se forment sur `prefixe` et `cle` (`outil-activer-<id>`, `toujours-activer-<geste>`).
+ */
+export function ActionsOutil({ prefixe, cle, nom, pose, actif, activable, busy, ouvert, onActiver, onModifier, onRetirer }: {
+  prefixe: string;
+  cle: string;
+  /** Le nom lisible de l'outil : un lecteur d'écran entend « Activer « Marquer urgent » », pas cinq « Activer ». */
+  nom: string;
+  pose: boolean;
+  actif: boolean;
+  /** Faux pour un outil que sa ligne déclare mort : on ne l'active pas, on peut toujours le désactiver. */
+  activable: boolean;
+  busy: boolean;
+  ouvert: boolean;
+  onActiver: (v: boolean) => void;
+  onModifier: () => void;
+  onRetirer: () => void;
+}) {
+  const t = useT();
+  return (
+    <>
+      <span className="flex items-center justify-between gap-2" data-testid={`${prefixe}-etat-${cle}`}>
+        <span className={`rounded-controle px-1.5 py-0.5 text-xs ${actif ? 'bg-succes-100 text-succes-700' : 'bg-ink-100 text-ink-500'}`}>
+          {actif ? t('Actif', 'Active') : t('Inactif', 'Inactive')}
+        </span>
+        {/* ⚠️ PAS D'ACTIVATION D'UN OUTIL QUE LA LIGNE DÉCLARE MORT : le serveur la refuse déjà (409), et proposer un
+            geste dont on vient d'écrire qu'il est impossible est le motif « offert-et-inerte ». La désactivation reste. */}
+        <Bouton variante={actif ? 'secondaire' : 'principal'} taille="petite" data-testid={`${prefixe}-activer-${cle}`}
+          aria-label={actif ? t(`Désactiver « ${nom} »`, `Deactivate “${nom}”`) : t(`Activer « ${nom} »`, `Activate “${nom}”`)}
+          disabled={busy || (!actif && !activable)} onClick={() => onActiver(!actif)}>
+          {actif ? t('Désactiver', 'Deactivate') : t('Activer', 'Activate')}
+        </Bouton>
+      </span>
+      <span className="flex items-center gap-3 text-xs">
+        {pose && (
+          <>
+            <button type="button" data-testid={`${prefixe}-modifier-${cle}`} disabled={busy} onClick={onModifier}
+              className="text-ink-500 hover:underline disabled:opacity-40">
+              {ouvert ? t('Fermer', 'Close') : t('Modifier', 'Edit')}
+            </button>
+            <button type="button" data-testid={`${prefixe}-retirer-${cle}`} disabled={busy} onClick={onRetirer}
+              title={t('Supprimer', 'Delete')} aria-label={t(`Supprimer « ${nom} »`, `Delete “${nom}”`)}
+              className="rounded-controle px-1.5 text-sm text-danger hover:bg-danger-50 disabled:opacity-40">
+              <Icone nom="fermer" taille="petite" />
+            </button>
+          </>
+        )}
+      </span>
+    </>
   );
 }

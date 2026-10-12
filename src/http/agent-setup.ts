@@ -13,7 +13,7 @@ import {
   assainirProposition, differences, propositionSchema, OUTIL_PROPOSER, SCHEMA_PROPOSITION,
 } from '../agent/setup/proposition';
 import {
-  champScenario, scenarioDuMoyen, scenariosAPoser, scenariosDesMoments, situationDuMoment,
+  champScenario, MOYEN_DECRIT_PAR_LE_CLIENT, scenarioDuMoyen, scenariosAPoser, scenariosDesMoments, situationDuMoment,
 } from '../agent/setup/scenarios';
 import {
   actionChoisie, agendaEffectif, basculesDuTour, fusionner, fusionnerBascules, manquesDeCouverture, momentDuPoint,
@@ -491,24 +491,48 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
       if (choisie) momentVise.action = choisie;
     }
     /**
-     * LE NOM D'UN SCÉNARIO RECONNU NE BOUGE PLUS (Julien, 2026-10-12). Au tour qui demande le moyen du moment N, un
-     * moment « scénario » dont le client NOMME un scénario en ligne prend son nom exact : le modèle le paraphrase, et la
-     * paraphrase ne se rapproche plus de rien. Aux autres tours, le modèle renvoie souvent la bascule entière avec un
-     * moyen reformulé, que `fusionnerBascules` recopie : un moyen qui désignait déjà un scénario est alors rétabli.
+     * LE SCÉNARIO D'UN MOMENT SE LIT DANS LE MESSAGE DU CLIENT, SOUS SON NOM EXACT (Julien, 2026-10-12) : le modèle le
+     * paraphrase, et la paraphrase ne se rapproche plus de rien. Un scénario que le client NOMME devient le moyen d'un
+     * moment « scénario » dans trois cas, et seulement eux :
+     *  - le tour porte sur CE moment (son action ou son moyen) : le client le nomme souvent avec l'action ;
+     *  - le modèle a rendu, pour ce moment, un moyen qui désigne le MÊME scénario : les deux s'accordent (un changement
+     *    d'avis après l'entretien) ;
+     *  - c'est le SEUL moment « scénario » qui n'a encore jamais eu de scénario reconnu, et le modèle lui a rattaché un
+     *    moyen ce tour-ci.
+     * Sinon, un moyen qui désignait déjà un scénario est rétabli : le modèle renvoie souvent la bascule entière avec un
+     * moyen reformulé, que `fusionnerBascules` recopie, et une question du client (« ce scénario est-il bien ? ») ne
+     * doit pas changer le choix.
      * ⚠️ Le message brut du client ne devient jamais un moyen : le moyen part dans la consigne du tour (`ordreDuJour`),
      * hors du bloc de données, et une réponse comme « c'est quoi ? » fermerait le point sans réponse.
      */
     const scenariosEnLigne = ctx.etat.scenarios ?? [];
+    const nomme = scenarioDuMoyen(parse.data.message, scenariosEnLigne);
+    const reconnu = (moyen: string | undefined) => (moyen ? scenarioDuMoyen(moyen, scenariosEnLigne) : null);
+    const sansScenario = listeBascules.filter((b) => b.action === 'scenario' && reconnu(b.moyen) === null);
     listeBascules.forEach((b, i) => {
       if (b.action !== 'scenario') return;
-      if (vise?.quoi === 'moyen' && vise.index === i) {
-        const nomme = scenarioDuMoyen(parse.data.message, scenariosEnLigne);
-        if (nomme) b.moyen = nomme.nom;
+      const ancien = (avant.bascules ?? [])[i];
+      const prisDuModele = reconnu(b.moyen);
+      const pourCeMoment = vise?.index === i
+        || (nomme !== null && prisDuModele?.id === nomme.id)
+        || (sansScenario.length === 1 && sansScenario[0] === b && Boolean(b.moyen?.trim()) && b.moyen !== ancien?.moyen
+          && reconnu(ancien?.moyen) === null);
+      if (nomme && pourCeMoment) {
+        b.moyen = nomme.nom;
         return;
       }
-      const ancien = (avant.bascules ?? [])[i];
-      if (ancien?.moyen && b.moyen !== ancien.moyen && scenarioDuMoyen(ancien.moyen, scenariosEnLigne)) b.moyen = ancien.moyen;
+      if (ancien?.moyen && b.moyen !== ancien.moyen && reconnu(ancien.moyen)) b.moyen = ancien.moyen;
     });
+    /**
+     * UNE RÉPONSE LIBRE FERME LE POINT À SON DEUXIÈME PASSAGE, sans entrer dans la consigne. La question du moyen promet
+     * « ou décrivez ce qu'il devra faire » ; un modèle qui ne note pas la description la ferait revenir sans fin. Au
+     * second passage du même point, le moyen prend un marqueur FIXE : il ferme le point, et `scenariosDesMoments` ne le
+     * rapproche de rien (le bloc « Pour finir » dit alors de poser l'outil à la main).
+     */
+    const momentDuMoyen = vise?.quoi === 'moyen' ? listeBascules[vise.index] : undefined;
+    if (momentDuMoyen && !momentDuMoyen.moyen?.trim() && pointDuTour && avant.poses.includes(pointDuTour.code)) {
+      momentDuMoyen.moyen = MOYEN_DECRIT_PAR_LE_CLIENT;
+    }
     const poses = pointDuTour && !avant.poses.includes(pointDuTour.code)
       ? [...avant.poses, pointDuTour.code]
       : avant.poses;
@@ -610,7 +634,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
 
     /**
      * Les scénarios des moments, rapprochés de la liste RÉELLE de l'espace, jamais d'un nom rendu par le modèle (RC4) :
-     * chacun que l'agent ne vise pas encore devient une ligne du diff, qu'« Enregistrer » pose en outil éteint. Calculés
+     * chacun que l'agent ne vise pas encore devient une ligne du diff, qu'« Enregistrer » pose en outil inactif. Calculés
      * à chaque tour hors entretien, comme le diff : un tour de plus avant d'enregistrer ne les fait pas disparaître.
      */
     const vises = new Set(ctx.etat.outils.flatMap((o) => (o.handler === 'lancer_scenario' && o.workflowId ? [o.workflowId] : [])));

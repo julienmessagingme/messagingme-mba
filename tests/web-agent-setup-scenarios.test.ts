@@ -69,7 +69,7 @@ describe('appliquerProposition, les scénarios', () => {
     });
     // La consigne est complète : le formulaire de l'onglet refuserait un texte qui garde son « [décrivez la situation] ».
     expect(String(mots.body!.description)).not.toContain(PLACEHOLDER);
-    // Aucune activation : l'outil naît éteint, l'allumer reste au client.
+    // Aucune activation : l'outil naît inactif, l'activer reste au client.
     expect(etat.appels.some((a) => /activ/.test(a.path))).toBe(false);
   });
 

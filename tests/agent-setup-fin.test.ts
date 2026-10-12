@@ -51,19 +51,33 @@ describe('etapesDeFin', () => {
     expect(e).not.toMatch(/conseiller/);
   });
 
-  it('🔴 un scénario reconnu dit d’allumer l’outil qu’« Enregistrer » pose éteint, un scénario déjà visé de vérifier qu’il est allumé', () => {
+  it('🔴 un scénario reconnu dit d’activer l’outil qu’« Enregistrer » pose inactif, un scénario déjà visé de vérifier qu’il est actif', () => {
     const moment = 'le client veut faire un devis';
     const pose = etapesDeFin({
       ...base, bascules: [{ moment, action: 'scenario', moyen: 'SMATIS Devis (flow)' }],
       scenarios: [{ moment, nom: 'SMATIS Devis (flow)', dejaVise: false }],
     }).join('\n');
-    expect(pose).toContain('Outils : après « Enregistrer », l’outil qui lance « SMATIS Devis (flow) » naît éteint : onglet « Outils », « Modifier » sur sa ligne, cochez « Autoriser l’agent à faire ça seul », puis allumez-le.');
+    expect(pose).toContain('Outils : après « Enregistrer », l’outil qui lance « SMATIS Devis (flow) » naît « Inactif » : onglet « Outils », « Modifier » sur sa ligne, cochez « Autoriser l’agent à faire ça seul », puis cliquez « Activer ».');
     expect(pose).not.toMatch(/Ajouter un outil/);
     const deja = etapesDeFin({
       ...base, bascules: [{ moment, action: 'scenario', moyen: 'SMATIS Devis (flow)' }],
       scenarios: [{ moment, nom: 'SMATIS Devis (flow)', dejaVise: true }],
     }).join('\n');
-    expect(deja).toContain('l’outil qui lance « SMATIS Devis (flow) » est déjà là ; vérifiez qu’il est allumé');
+    expect(deja).toContain('l’outil qui lance « SMATIS Devis (flow) » est déjà là ; vérifiez qu’il est « Actif »');
+  });
+
+  it('🔴 nomme les commandes que l’onglet Outils affiche vraiment', () => {
+    // Le bloc dit « Inactif », « Modifier », « Activer » : les mots de `ActionsOutil`. Un renommage d'un côté seulement
+    // désaccorderait le guide sans que rien ne casse.
+    const ecran = readFileSync(resolve(__dirname, '../web/components/agent-outils/LigneOutilAgent.tsx'), 'utf8');
+    const etapes = etapesDeFin({
+      ...base, bascules: [{ moment: 'm', action: 'scenario' }, { moment: 'n', action: 'scenario', moyen: 'X' }],
+      scenarios: [{ moment: 'n', nom: 'X', dejaVise: false }],
+    }).join('\n');
+    for (const mot of ['Inactif', 'Modifier', 'Activer']) {
+      expect(ecran, mot).toContain(`t('${mot}'`);
+      expect(etapes, mot).toContain(`« ${mot} »`);
+    }
   });
 
   it('🔴 nomme la case d’autonomie que l’onglet Outils affiche vraiment', () => {

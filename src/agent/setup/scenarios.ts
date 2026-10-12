@@ -83,6 +83,13 @@ export function scenariosAPoser(desMoments: readonly ScenarioDuMoment[]): Scenar
   return out;
 }
 
+/**
+ * Le moyen d'un moment dont le client a décrit la suite sans que le modèle la note (route `POST /setup`, second passage
+ * du point) : un texte FIXE, qui ferme le point sans recopier le message du client dans la consigne du tour, et qui ne
+ * désigne aucun scénario.
+ */
+export const MOYEN_DECRIT_PAR_LE_CLIENT = 'décrit par le client dans la conversation';
+
 /** La clé de la ligne de diff d'un scénario à poser : la console s'en sert pour savoir si le client l'a gardée. */
 export const champScenario = (workflowId: string): string => `scenario.${workflowId}`;
 

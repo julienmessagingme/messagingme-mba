@@ -61,6 +61,8 @@ export const INVENTAIRE_VIDE: Inventaire = { outilsApi: [], systemesApi: [], mcp
 
 /** Combien de scénarios la question du moyen nomme ; au-delà, « et N autres ». */
 export const MAX_SCENARIOS_LISTES = 15;
+/** La longueur d'un nom de scénario dans cette question : un nom de l'espace est un texte libre. */
+const MAX_NOM_SCENARIO_LISTE = 80;
 
 /** Une énumération lisible, « a, b et c ». */
 function enumerer(noms: readonly string[]): string {
@@ -276,11 +278,13 @@ export function agendaEffectif(etat: EtatEntretien, inv: Inventaire = INVENTAIRE
  */
 function moyenDemande(action: Action, inv: Inventaire): string {
   if (action === 'scenario') {
-    const enLigne = inv.scenarios ?? [];
-    // Bornée : la liste part dans la consigne du tour, et un espace peut en avoir des dizaines. Toujours une autre
-    // issue que la liste, jamais un cul-de-sac.
-    const montres = enLigne.length > MAX_SCENARIOS_LISTES
-      ? [...enLigne.slice(0, MAX_SCENARIOS_LISTES), `${enLigne.length - MAX_SCENARIOS_LISTES} autres`]
+    // Bornée : la liste part dans la consigne du tour, et un espace peut en avoir des dizaines ; un nom est un texte
+    // libre de l'espace, ramené à une ligne et à une longueur raisonnable. Toujours une autre issue que la liste.
+    const enLigne = (inv.scenarios ?? []).map((n) => n.replace(/\s+/g, ' ').trim().slice(0, MAX_NOM_SCENARIO_LISTE))
+      .filter((n) => n !== '');
+    const reste = enLigne.length - MAX_SCENARIOS_LISTES;
+    const montres = reste > 0
+      ? [...enLigne.slice(0, MAX_SCENARIOS_LISTES), reste === 1 ? '1 autre' : `${reste} autres`]
       : enLigne;
     return enLigne.length > 0
       ? `lequel doit-il lancer ? Vos scénarios en ligne : ${enumerer(montres)}. Ou décrivez ce qu’il devra faire.`

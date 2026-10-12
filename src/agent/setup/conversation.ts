@@ -312,8 +312,9 @@ function etat(ctx: ContexteConstruction): string {
     // Le scénario d'un moment est l'exception, et elle passe par le serveur (`scenariosDesMoments`), pas par le modèle.
     'Poser un tag précis, enregistrer une information ou envoyer un bloc : à poser par le client dans l’onglet Outils '
       + 'de l’agent, en choisissant ce que l’outil vise. Tu ne peux pas les proposer, dis-lui où. Lancer un scénario : '
-      + 'quand le client nomme, pour un moment, un de ses scénarios en ligne, le serveur propose lui-même l’outil dans '
-      + 'la proposition ; ne le propose pas toi-même, et ne lui dis pas de le poser à la main.',
+      + 'pour un moment de l’entretien dont le client nomme un de ses scénarios en ligne, le serveur propose lui-même '
+      + 'l’outil dans la proposition, ne le propose pas toi-même ; sinon, dis-lui de le poser dans l’onglet Outils '
+      + '(« Ajouter un outil », « Lancer un scénario »).',
     `Fiches de connaissance (titres) : ${ctx.titresConnaissance.length === 0
       ? '(aucune, l’agent transférera toutes les questions de fond)'
       : ctx.titresConnaissance.slice(0, MAX_TITRES_CONNAISSANCE).join(' | ')}`,
@@ -346,6 +347,8 @@ export function construireMessages(
   /** Les points vidés viennent de la fiche réelle : seul endroit qui sache qu'un champ a été effacé depuis. */
   const vides = pointsSansContenu(ctx.fiche);
   const consigne = opts.synthese ? consigneDeSynthese() : consigneDuTour(entretien, inv, vides);
-  const texte = mandat(consigne, ordreDuJour(entretien, inv, vides));
+  // L'ordre du jour porte des textes venus de l'espace et du modèle (moyens, noms de scénarios) : aucun ne doit pouvoir
+  // refermer un bloc de données.
+  const texte = mandat(consigne, sansDelimiteur(ordreDuJour(entretien, inv, vides)));
   return [{ role: 'system', content: `${texte}\n\n${bloc}` }, ...recents];
 }

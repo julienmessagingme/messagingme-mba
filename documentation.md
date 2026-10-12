@@ -1138,9 +1138,12 @@ pas dans `etatCourant`, que l'ouverture de l'onglet appelle aussi), et `etatCour
 toujours « ou décrivez »). Au tour qui la pose, un scénario NOMMÉ par le client (`scenarioDuMoyen`, en mots entiers :
 nom exact normalisé, sinon le nom contenu dans la réponse, le plus englobant si plusieurs, sinon pour une réponse d'au
 moins quatre caractères un seul nom qui la contient ; deux candidats = aucun) devient le moyen sous son nom exact,
-parce que le modèle le paraphrase ; aux autres tours, un moyen qui désignait déjà un scénario est rétabli si le modèle
-le reformule. ⚠️ Le message brut du client ne devient jamais un moyen : il partirait dans la consigne du tour, hors du
-bloc de données. Hors entretien, à chaque tour comme le diff, `scenariosDesMoments` rapproche chaque
+parce que le modèle le paraphrase. Un scénario nommé dans le message ne vaut que pour le moment sur lequel porte le tour
+(son action ou son moyen), pour un moment dont le modèle rend un moyen qui désigne le MÊME scénario (un changement
+d'avis), ou pour le seul moment « scénario » qui n'en a encore jamais eu ; sinon, un moyen qui désignait déjà un
+scénario est rétabli si le modèle le reformule. ⚠️ Le message brut du client ne devient jamais un moyen : il partirait
+dans la consigne du tour, hors du bloc de données ; au second passage du point sans moyen noté, un marqueur fixe
+(`MOYEN_DECRIT_PAR_LE_CLIENT`) ferme le point et ne désigne aucun scénario. Hors entretien, à chaque tour comme le diff, `scenariosDesMoments` rapproche chaque
 moment « scénario » et écarte ceux que l'agent vise déjà ; chacun devient une ligne `scenario.<workflowId>` dont le
 texte est la SITUATION (`situationDuMoment`), et `proposition.scenarios` porte la cible. La console
 (`appliquerProposition`) pose l'outil par `POST .../tools` avec `cible: { workflowId }`, un nom `lancer_<nom>` suffixé

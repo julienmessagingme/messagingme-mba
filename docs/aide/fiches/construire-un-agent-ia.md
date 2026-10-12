@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: 90e158
+source_empreinte: 01856a
 ---
 # Construire un agent IA
 
@@ -61,14 +61,14 @@ fiches de connaissance.
 **Un moment où l'agent doit lancer un scénario se règle dans l'entretien.** La question qui suit liste vos
 scénarios en ligne par leur nom : nommez celui qu'il faut. La proposition porte alors une ligne « Outil « Lancer un
 scénario » », avec la situation où l'appeler, à corriger si besoin, et « Enregistrer » pose l'outil dans l'onglet
-Outils, éteint. Il vous reste à cocher « Autoriser l'agent à faire ça seul » (« Modifier » sur sa ligne) et à
-l'allumer. Si le nom que vous donnez ne désigne pas un seul scénario en ligne, rien n'est posé, et la liste « Pour
+Outils, « Inactif ». Il vous reste à cocher « Autoriser l'agent à faire ça seul » (« Modifier » sur sa ligne) et à
+cliquer « Activer ». Si le nom que vous donnez ne désigne pas un seul scénario en ligne, rien n'est posé, et la liste « Pour
 finir » vous dit comment l'ajouter à la main.
 
 **À la fin de l'entretien, suivez la liste « Pour finir ».** Elle dit, dans l'ordre, ce qu'il reste à faire
 pour votre agent : enregistrer la proposition (bouton « Enregistrer »), importer votre site dans Base de
 connaissance, brancher le
-connecteur qu'un moment demande, allumer l'outil du scénario posé, vérifier son modèle dans l'onglet Modèle, le
+connecteur qu'un moment demande, activer l'outil du scénario posé, vérifier son modèle dans l'onglet Modèle, le
 tester, puis l'activer. Une étape déjà faite n'y figure pas.
 
 **Sa base de connaissance est la seule chose dont il a le droit de se servir.** Sur une question qu'aucune
@@ -87,13 +87,13 @@ est écrite sous chaque fiche, et une fiche que personne n'a touchée depuis plu
 une pastille « À relire ».
 
 **Les outils sont ce qu'il a le droit de FAIRE**, en plus de parler. L'onglet Outils a la forme de celui de
-l'agent de Meta. En tête, **« Toujours là »** : les gestes propres à l'agent IA, avec un interrupteur chacun
+l'agent de Meta. En tête, **« Toujours là »** : les gestes propres à l'agent IA
 (terminer par une règle d'arrêt, passer la main à un humain, chercher dans sa base de connaissance, lire la
-fiche du contact, marquer la conversation urgente) ; allumer pose l'outil puis l'active, éteindre le désactive,
-et « Régler » ouvre ses consignes. Puis **« Ajouter un outil »** ouvre la grille « Quel outil ajouter ? » :
+fiche du contact, marquer la conversation urgente), avec les mêmes commandes que vos outils : « Activer » pose
+l'outil puis l'active, « Désactiver » le désactive, « Modifier » ouvre ses consignes, et la croix le supprime. Puis **« Ajouter un outil »** ouvre la grille « Quel outil ajouter ? » :
 poser un tag, enregistrer une information, envoyer un bloc, lancer un scénario, appeler un connecteur API,
-appeler un outil MCP. Enfin, la liste des outils posés, chacun avec son état, « Activer », « Modifier » et
-« Supprimer ». Quatre choses à retenir :
+appeler un outil MCP. Enfin, la liste des outils posés, chacun avec son état (« Actif » ou « Inactif »), « Activer » ou
+« Désactiver », « Modifier » et la croix qui supprime. Quatre choses à retenir :
 
 - **Le tag, l'information, le bloc et le scénario sont choisis par vous**, un par outil : l'agent ne décide que
   du moment, et pour une information, de la valeur (bornée à la liste que vous donnez, si vous en donnez une).
@@ -102,8 +102,8 @@ appeler un outil MCP. Enfin, la liste des outils posés, chacun avec son état, 
   sans ce qui le suit, et l'agent garde la main.
 - **Un outil n'est utilisable qu'une fois activé**, par vous ou par Claude à votre nom. Tant qu'il ne l'est
   pas, l'agent ne sait même pas qu'il existe. Le cas qui coûte le plus cher est une base bien remplie avec
-  l'outil de recherche resté éteint : l'agent transfère alors toutes les questions de fond, et l'écran a
-  pourtant l'air en ordre. Un outil posé par la grille naît éteint lui aussi, et s'active depuis sa ligne. Un
+  l'outil de recherche resté inactif : l'agent transfère alors toutes les questions de fond, et l'écran a
+  pourtant l'air en ordre. Un outil posé par la grille naît « Inactif » lui aussi, et s'active depuis sa ligne. Un
   agent ne porte jamais deux outils du même nom : le second est refusé, parce que le modèle refuserait toute la
   liste et que l'agent ne répondrait plus.
 - **Ce qui part chez le client demande votre accord** : sur « Envoyer un bloc » et « Lancer un scénario »,
