@@ -6,6 +6,32 @@
 > tranchent, jamais ce fichier.
 
 
+## 2026-10-12 : un formulaire construit dans WhatsApp Manager ne partait jamais d'un scénario
+
+Essai de Julien sur l'espace SANDBOX : « Message rapide, Formulaire SMATIS, Message rapide ». Le premier message est
+parti, le formulaire jamais, et l'écran n'en disait rien.
+
+- **La cause, mesurée** : le journal du worker portait `processTestTokens: jeton ignoré: (#131009) Parameter value is
+  not valid`. `sendFlowMessage` ouvre toujours le formulaire sur l'écran `FORM`, le nom que seul notre générateur donne
+  au premier écran. SMATIS a été construit dans WhatsApp Manager puis importé par la synchro (`insertExternal`, sans
+  structure ni `ref`) ; son flow_json, lu chez Meta en lecture seule, ouvre sur `CIVILITE`. Meta refusait donc tout le
+  message.
+- **Le correctif** : `MetaFlowClient.ecranDEntree` lit le premier écran du flow_json (`GET /{flow}/assets`, puis le
+  fichier, plafond de 10 s par lecture), en cache cinq minutes par espace et par flow au câblage, et `sendFlow` le
+  passe à `sendFlowMessage`. Illisible, l'envoi retombe sur `FORM`, et nos flows partent comme avant.
+- 🔴 **Trouvé par la relecture, corrigé dans le lot** : l'intercepteur de la fabrique invalide le jeton d'un espace sur
+  toute `MetaApiError` de type `OAuthException`, et Meta pose ce type sur un simple paramètre refusé (code 100). Une
+  lecture accessoire aurait pu couper tous les envois d'un espace connecté par Embedded Signup. `ecranDEntree` ne
+  laisse donc sortir qu'une `Error` simple ; vérifié dans les deux sens par la vraie fabrique
+  (`tests/meta-factory.test.ts`). Sondé en lecture seule : aucun jeton invalidé par l'incident (SANDBOX est sur le
+  jeton global ; le seul jeton invalide date du 2026-10-05).
+- **Deux silences restent, hors de ce lot** : une exception de Meta pendant l'envoi d'un bloc remonte jusqu'au
+  démarrage, qui meurt sans parcours ni mesure `failed` (le premier message était parti, rien ne le dit à l'écran) ; et
+  le premier scan du lien de test avait figé un brouillon où le message rapide n'avait pas encore de texte, bloc qui
+  bloque sans rien envoyer (« par historique », `walk`). Le bouton FLOW d'un modèle garde `navigate_screen: FORM`
+  (`mapButton`, `src/meta/templates.ts`), même cause pour un flow importé.
+
+
 ## 2026-10-12 : le banc de l'API publique (lot 14, livraison B)
 
 Premier banc (`scripts/banc-api.sh` sur `e95b5e46`, lancé par Julien) : une copie jetable de l'API et du worker
@@ -7777,7 +7803,7 @@ Vue chronologique par lot. La vue thématique correspondante est dans les sectio
 - **Import HubSpot (#14) parké en todo** (multi-repo : scope `crm.lists.read` + re-consentement portail + client lists mm-hubspot + proxy mba).
 
 ### Gotchas / décisions (2026-07-17, Lot 7 : Flow avancé)
-- **⚠️ Id d'écran Flow JSON = lettres + underscores UNIQUEMENT** (`ETAPE_2` rejeté à cause du chiffre, sondé live). Nos ids : `FORM`, `FORM_B`, `FORM_C`… L'écran 1 s'appelle `FORM` POUR TOUJOURS (baké en `navigate_screen` des templates FLOW approuvés + `flow_action_payload.screen` de `sendFlowMessage`).
+- **⚠️ Id d'écran Flow JSON = lettres + underscores UNIQUEMENT** (`ETAPE_2` rejeté à cause du chiffre, sondé live). Nos ids : `FORM`, `FORM_B`, `FORM_C`… L'écran 1 s'appelle `FORM` POUR TOUJOURS (baké en `navigate_screen` des templates FLOW approuvés + `flow_action_payload.screen` de `sendFlowMessage`). ⚠️ **Vrai pour NOS flows seulement** : un flow importé de WhatsApp Manager porte ses propres noms, et depuis le 2026-10-12 l'envoi d'un bloc lit son premier écran chez Meta (entrée du jour, en tête de ce fichier).
 - **Champ masqué (visible/If) ou vide = OMIS du payload `complete`** (sondé) : le mapping webhook (`hasOwnProperty`) suffit tel quel, AUCUN risque d'écrasement de champ contact par du vide. Un `required` caché ne bloque ni navigate ni complete. Refs globales `${screen.<ID>.form.<clé>}` : payloads d'action SEULEMENT (non résolues dans les textes affichés).
 - **`flows.elements` = jsonb POLYMORPHE sans migration** : null legacy / tableau plat (mono-écran historique) / `{screens:[...]}` (Lot 7), normalisé par `screensOf` à la LECTURE. Toute nouvelle lecture de la colonne passe par `screensOf`, jamais un cast direct.
 - **Garde fenêtre 24 h** : un scénario ne peut pas OUVRIR sur un node flow/quick_message (`opensOutsideServiceWindow` -> 400 au save + skip défensif `start()` + badge UI sur le node d'ouverture réel, calculé en traversant les blocs synchrones tag/field). ⚠️ Contrat de test CHANGÉ sciemment : « quick_message en entrée envoyé par start » assertait la faille -> réécrit.

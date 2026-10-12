@@ -69,6 +69,7 @@ function monter(over: Partial<DepsEnvoisDeBloc> = {}) {
     contactStore: { getResolvableByPhone: vi.fn(async () => null) },
     varsDuContact: vi.fn(async () => ({})),
     inboxStore: { recordOutboundByWaId: vi.fn(async (...a: unknown[]) => { journal.push(a); }) },
+    ecranDEntree: vi.fn(async () => 'FORM'),
     ...over,
   };
   return { envois: creerEnvoisDeBloc(deps), deps, appels, journal };
@@ -565,8 +566,32 @@ describe('sendFlow', () => {
     const { envois, appels } = monter();
     await envois.sendFlow(T, W, 'flow-1', 'Remplissez le formulaire', 'Ouvrir');
     expect(appels).toEqual([['sendFlowMessage', W, {
-      body: 'Remplissez le formulaire', flowId: 'flow-1', cta: 'Ouvrir', flowToken: expect.stringMatching(new RegExp(`^${W}-\\d+$`)),
+      body: 'Remplissez le formulaire', flowId: 'flow-1', cta: 'Ouvrir', flowToken: expect.stringMatching(new RegExp(`^${W}-\\d+$`)), screen: 'FORM',
     }]]);
+  });
+
+  it('🔴 le formulaire s’ouvre sur l’écran que SON flow_json nomme, pas sur `FORM`', async () => {
+    // SMATIS, construit dans WhatsApp Manager, ouvre sur `CIVILITE` : envoyé sur `FORM`, Meta refusait tout le
+    // message en 131009 et le scénario s'arrêtait au bloc (2026-10-12).
+    const { envois, deps, appels } = monter({ ecranDEntree: vi.fn(async () => 'CIVILITE') });
+    expect(await envois.sendFlow(T, W, '1835918317399586', 'Bienvenue chez SMATIS', 'Cliquer ici')).toEqual({ messageId: MESSAGE_ID });
+    expect(deps.ecranDEntree).toHaveBeenCalledWith(T, '1835918317399586');
+    expect(appels).toEqual([['sendFlowMessage', W, expect.objectContaining({ flowId: '1835918317399586', screen: 'CIVILITE' })]]);
+  });
+
+  it('un écran illisible : le formulaire part sur `FORM` (l’écran de nos flows), et le journal le dit', async () => {
+    const { envois, appels } = monter({ ecranDEntree: vi.fn(async () => { throw new Error('flow_json illisible'); }) });
+    expect(await envois.sendFlow(T, W, 'flow-1', 'Remplissez', 'Ouvrir')).toEqual({ messageId: MESSAGE_ID });
+    expect(appels).toEqual([['sendFlowMessage', W, expect.objectContaining({ screen: 'FORM' })]]);
+    expect(erreurs).toHaveBeenCalledWith('workflow sendFlow: écran d\'ouverture du formulaire flow-1 illisible, envoi sur « FORM » :', 'flow_json illisible');
+  });
+
+  it('sans numéro, ou en DRY_RUN, l’écran n’est pas lu', async () => {
+    for (const over of [{ dryRun: true }, { clientWhatsApp: vi.fn(async () => SANS_NUMERO) }]) {
+      const { envois, deps } = monter(over);
+      await envois.sendFlow(T, W, 'flow-1', 'Remplissez', 'Ouvrir');
+      expect(deps.ecranDEntree).not.toHaveBeenCalled();
+    }
   });
 });
 
@@ -584,6 +609,8 @@ function cablage(opts: { dryRun?: boolean; numero?: string | null; templates?: T
   const appels: Appel[] = [];
   const journal: unknown[][] = [];
   const clients: unknown[][] = [];
+  /** Chaque lecture d'écran d'ouverture demandée à Meta : l'espace, puis le flow. */
+  const lecturesEcran: unknown[][] = [];
   const inerte = {} as never;
   const { executor, templateVarInfo } = buildWorkflowRuntime({
     pool: { query: async () => ({ rows: [], rowCount: 0 }) } as never,
@@ -595,6 +622,9 @@ function cablage(opts: { dryRun?: boolean; numero?: string | null; templates?: T
     metaFactory: {
       clientForTenant: async (...a: unknown[]) => { clients.push(a); return fauxClient(appels); },
       templateClientForTenant: async () => ({ list: async () => opts.templates ?? [template({})] }),
+      flowClientForTenant: async (tenant: string) => ({
+        ecranDEntree: async (flowId: string) => { lecturesEcran.push([tenant, flowId]); return 'CIVILITE'; },
+      }),
     } as never,
     rcsProvider: 'fake', emailTemplates: inerte, emailResolver: inerte,
     numeroDeLEspace: async () => (opts.numero === undefined ? 'pn-1' : opts.numero), runStore: inerte, fil: inerte,
@@ -602,7 +632,7 @@ function cablage(opts: { dryRun?: boolean; numero?: string | null; templates?: T
   });
   // `deps` est privé à l'exécuteur : on lit les dépendances que le câblage lui a données.
   const deps = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
-  return { deps, templateVarInfo, appels, journal, clients };
+  return { deps, templateVarInfo, appels, journal, clients, lecturesEcran };
 }
 
 describe('le vrai câblage donne ces envois à l’exécuteur', () => {
@@ -614,6 +644,18 @@ describe('le vrai câblage donne ces envois à l’exécuteur', () => {
     expect(await deps.sendQuickMessage(T, W, 'La brochure', [], undefined, lien)).toEqual({ messageId: MESSAGE_ID });
     expect(clients).toEqual([[T, 'pn-1']]);
     expect(appels).toEqual([['sendCtaUrl', W, 'La brochure', lien, undefined]]);
+  });
+
+  it('🔴 le sendFlow de l’exécuteur ouvre sur l’écran lu chez Meta, lu UNE fois pour plusieurs envois', async () => {
+    // Une campagne de 5 000 destinataires sur un bloc formulaire ne doit pas coûter 10 000 appels à Meta.
+    const { deps, appels, lecturesEcran } = cablage();
+    expect(await deps.sendFlow(T, W, '1835918317399586', 'Bienvenue', 'Ouvrir')).toEqual({ messageId: MESSAGE_ID });
+    expect(await deps.sendFlow(T, '33600000002', '1835918317399586', 'Bienvenue', 'Ouvrir')).toEqual({ messageId: MESSAGE_ID });
+    expect(lecturesEcran).toEqual([[T, '1835918317399586']]);
+    expect(appels.map((a) => (a[2] as { screen?: string }).screen)).toEqual(['CIVILITE', 'CIVILITE']);
+    // Un autre espace relit avec SON jeton : le cache ne passe pas d'un espace à l'autre.
+    await deps.sendFlow('t2', W, '1835918317399586', 'Bienvenue', 'Ouvrir');
+    expect(lecturesEcran).toEqual([[T, '1835918317399586'], ['t2', '1835918317399586']]);
   });
 
   it('🔴 DRY_RUN traverse le câblage : aucun des quatre envois ne construit de client', async () => {

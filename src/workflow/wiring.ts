@@ -234,12 +234,24 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     return info;
   };
 
+  /**
+   * L'écran d'ouverture d'un formulaire, lu au plus toutes les cinq minutes par flow : deux appels à Meta qu'une
+   * campagne ne doit pas refaire par destinataire. Un flow publié est immuable chez Meta : la durée, celle des
+   * templates, borne le brouillon dont le premier écran change avant sa publication, que l'API ne peut pas invalider
+   * dans le cache du worker. Clé = l'espace ET le flow : la lecture se fait avec le jeton de
+   * l'espace, un autre espace ne réutilise pas ce qu'elle a rendu. Un échec n'est pas mis en cache (`cacheCourt`), le
+   * prochain envoi relit.
+   */
+  const ecransDEntree = cacheCourt<string>(TPL_CACHE_MS);
+  const ecranDEntree = (tenant: string, flowId: string): Promise<string> =>
+    ecransDEntree.lire(`${tenant}|${flowId}`, async () => (await metaFactory.flowClientForTenant(tenant)).ecranDEntree(flowId));
+
   // Les quatre envois WhatsApp d'un bloc (modèle, message rapide, question, formulaire) vivent dans leur module,
   // exécuté par ses tests. Il reçoit d'ici ce qui est partagé : le client de l'espace (la réponse d'un agent IA
   // l'emprunte) et le cache des templates (les campagnes et l'API le lisent).
   const envois = creerEnvoisDeBloc({
     dryRun, clientWhatsApp, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia,
-    trackedLinks, hintStore, contactStore, varsDuContact, inboxStore,
+    trackedLinks, hintStore, contactStore, varsDuContact, inboxStore, ecranDEntree,
   });
 
   // Contexte d'évaluation du contact (état CRM + fuseau/horaires du tenant). Partagé par les blocs `condition`

@@ -4,6 +4,7 @@ import { problemeLienBouton } from './engine';
 import { buildWorkflowTemplateComponents } from './template-send';
 import type { MetaClient } from '../meta/client';
 import { carouselSendBlocker, headerMediaSendBlocker } from '../meta/template-components';
+import { FLOW_ENTRY_SCREEN } from '../meta/flow-json';
 import type { OutboundCarouselCard } from '../meta/template-components';
 import type { PgTrackedLinkStore } from '../links/tracked-links.pg';
 import type { PgTemplateHintStore } from '../crm/template-hints.pg';
@@ -87,6 +88,11 @@ export interface DepsEnvoisDeBloc {
   varsDuContact(tenant: string, waId: string): Promise<Record<string, string | null>>;
   /** Le fil de conversation, où chaque envoi parti est journalisé avec l'origine `scenario`. */
   inboxStore: OutboundLogger;
+  /**
+   * L'écran d'ouverture d'un formulaire (`MetaFlowClient.ecranDEntree`), en cache au câblage. Lève quand il est
+   * illisible : l'envoi retombe alors sur `FORM`, l'écran de nos flows.
+   */
+  ecranDEntree(tenant: string, flowId: string): Promise<string>;
 }
 
 /**
@@ -106,7 +112,7 @@ async function modeleOuLimite<T>(name: string, waId: string, envoyer: () => Prom
 }
 
 export function creerEnvoisDeBloc(deps: DepsEnvoisDeBloc): EnvoisDeBloc {
-  const { dryRun, clientWhatsApp, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, trackedLinks, hintStore, contactStore, varsDuContact, inboxStore } = deps;
+  const { dryRun, clientWhatsApp, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, trackedLinks, hintStore, contactStore, varsDuContact, inboxStore, ecranDEntree } = deps;
 
   /**
    * Visuels d'un template prêts pour l'envoi (cartes de carousel et en-tête média), ou la raison du refus.
@@ -313,8 +319,18 @@ export function creerEnvoisDeBloc(deps: DepsEnvoisDeBloc): EnvoisDeBloc {
       if (flowId.trim() === '') return 'le bloc « formulaire » ne désigne aucun formulaire'; // défense, actionOf filtre déjà
       const client = await clientWhatsApp(tenant, 'workflow sendFlow', `formulaire non envoyé à ${waId}`);
       if (typeof client === 'string') return client;
+      // 🔴 Le message ouvre le formulaire sur un écran qu'il NOMME, et Meta refuse tout le message (131009) si le flow
+      // n'en a pas de ce nom. Un flow construit dans WhatsApp Manager n'ouvre pas sur `FORM` : SMATIS, le 2026-10-12,
+      // n'est jamais parti. Illisible -> `FORM`, l'écran de nos flows, qui partent comme avant.
+      let screen = FLOW_ENTRY_SCREEN;
+      try {
+        screen = await ecranDEntree(tenant, flowId);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(`workflow sendFlow: écran d'ouverture du formulaire ${flowId} illisible, envoi sur « ${FLOW_ENTRY_SCREEN} » :`, messageDe(err));
+      }
       // flow_token jamais vide (exigence Meta #131009) mais jetable : la corrélation passe par le _ref du flow_json.
-      const res = await client.sendFlowMessage(waId, { body, flowId, cta, flowToken: `${waId}-${Date.now()}` });
+      const res = await client.sendFlowMessage(waId, { body, flowId, cta, flowToken: `${waId}-${Date.now()}`, screen });
       // Journalise l'envoi dans le fil (best-effort). Le corps = l'accroche visible par le contact.
       try { await inboxStore.recordOutboundByWaId(tenant, waId, { body, messageId: res.messageId, type: 'text', origine: 'scenario' }); } catch { /* best-effort */ }
       return { messageId: res.messageId };

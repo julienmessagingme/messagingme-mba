@@ -87,6 +87,57 @@ describe('MetaFlowClient.list', () => {
   });
 });
 
+/**
+ * L'ÉCRAN D'OUVERTURE D'UN FLOW, lu dans son flow_json. Le message interactif le nomme, et un nom que le flow n'a pas
+ * fait refuser tout le message (131009) : SMATIS, construit dans WhatsApp Manager, ouvre sur `CIVILITE` et n'est jamais
+ * parti tant qu'on envoyait `FORM` (2026-10-12).
+ */
+describe('MetaFlowClient.ecranDEntree', () => {
+  const ASSETS = { data: [{ name: 'flow.json', asset_type: 'FLOW_JSON', download_url: 'https://lookaside.fbsbx.com/flow.json?sig=1' }] };
+  const SMATIS = { version: '7.3', screens: [{ id: 'CIVILITE', layout: {} }, { id: 'IDENTITE', layout: {} }, { id: 'DATE_EFFET', terminal: true }] };
+
+  it('rend le PREMIER écran du flow_json, lu au fichier que désignent ses assets', async () => {
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: ASSETS }, { ok: true, status: 200, json: SMATIS }]);
+    const client = new MetaFlowClient('tok', 'v25.0', '7.2', fn);
+    expect(await client.ecranDEntree('1835918317399586')).toBe('CIVILITE');
+    expect(calls.map((c) => c.url)).toEqual(['https://graph.facebook.com/v25.0/1835918317399586/assets', 'https://lookaside.fbsbx.com/flow.json?sig=1']);
+    // Le jeton part à Graph, jamais au CDN, dont l'adresse est déjà signée.
+    expect((calls[0]!.init.headers as Record<string, string>).authorization).toBe('Bearer tok');
+    expect(calls[1]!.init.headers).toBeUndefined();
+  });
+
+  it('lève quand le flow n’a pas de flow_json, ou qu’il est illisible : jamais un écran inventé', async () => {
+    const cas: Array<Array<{ ok: boolean; status: number; json: unknown }>> = [
+      [{ ok: true, status: 200, json: { data: [{ asset_type: 'OTHER', download_url: 'https://x' }] } }],
+      [{ ok: true, status: 200, json: { data: [] } }],
+      [{ ok: true, status: 200, json: { inattendu: true } }],
+      [{ ok: true, status: 200, json: ASSETS }, { ok: false, status: 403, json: SMATIS }],
+      [{ ok: true, status: 200, json: ASSETS }, { ok: true, status: 200, json: { screens: [] } }],
+      [{ ok: true, status: 200, json: ASSETS }, { ok: true, status: 200, json: { screens: [{ id: '' }] } }],
+    ];
+    for (const reponses of cas) {
+      const { fn } = makeFetch(reponses);
+      await expect(new MetaFlowClient('tok', 'v25.0', '7.2', fn).ecranDEntree('f1'), JSON.stringify(reponses)).rejects.toThrow(/flow f1 :/);
+    }
+  });
+
+  it('🔴 un refus de Graph remonte en `Error` simple, JAMAIS en MetaApiError', async () => {
+    // L'intercepteur de la fabrique invalide le jeton de l'espace sur toute MetaApiError de type OAuthException, type
+    // que Meta pose aussi sur un paramètre refusé (code 100). Une lecture accessoire ne doit pas couper un espace.
+    const { fn } = makeFetch([{ ok: false, status: 400, json: { error: { message: 'no', code: 100, type: 'OAuthException' } } }]);
+    const echec = await new MetaFlowClient('tok', 'v25.0', '7.2', fn).ecranDEntree('f1').catch((e: unknown) => e);
+    expect(echec).toBeInstanceOf(Error);
+    expect(echec).not.toBeInstanceOf(MetaApiError);
+    expect((echec as Error).message).toBe('flow f1 : lecture de ses fichiers refusée (HTTP 400, code 100)');
+  });
+
+  it('l’identifiant du flow est encodé dans l’adresse Graph', async () => {
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { data: [] } }]);
+    await new MetaFlowClient('tok', 'v25.0', '7.2', fn).ecranDEntree('a/b?c').catch(() => {});
+    expect(calls[0]!.url).toBe('https://graph.facebook.com/v25.0/a%2Fb%3Fc/assets');
+  });
+});
+
 // --- Routes flows (fakes + spy sur les appels Meta réels via un fetch fake) ---
 
 const SECRET = 'test-secret';

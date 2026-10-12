@@ -105,6 +105,21 @@ describe('MetaClientFactory (B1 : câblage par tenant)', () => {
     await expect(client.sendText('33600000001', 'coucou')).rejects.toBeTruthy();
     expect(invalidated).toEqual(['wA']); // un token révoqué détecté sur un envoi workflow s'auto-invalide aussi
   });
+
+  describe('🔴 la lecture de l’écran d’ouverture d’un formulaire n’invalide JAMAIS le jeton', () => {
+    afterEach(() => { vi.unstubAllGlobals(); });
+
+    it('un refus de type OAuthException sur un simple paramètre (code 100) laisse le WABA actif', async () => {
+      // Meta pose `OAuthException` sur un paramètre refusé : sans la conversion dans `ecranDEntree`, l'intercepteur
+      // marquerait invalide le jeton de l'espace, et tous ses envois tomberaient pour une lecture accessoire.
+      vi.stubGlobal('fetch', async () => ({ ok: false, status: 400, json: async () => ({ error: { code: 100, type: 'OAuthException', message: 'Invalid parameter' } }) }));
+      const { resolver: r, invalidated } = resolver({ tenants: { tA: 'wA' }, creds: { wA: { businessTokenEnc: 'enc:TOK_A', tokenStatus: 'active' } } });
+      const flows = await factory(r, new FakeTransport()).flowClientForTenant('tA');
+      const echec = await flows.ecranDEntree('flow-1').catch((e: unknown) => e);
+      expect(invalidated).toEqual([]);
+      expect((echec as Error).message).toBe('flow flow-1 : lecture de ses fichiers refusée (HTTP 400, code 100)');
+    });
+  });
 });
 
 /**

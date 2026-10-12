@@ -1,5 +1,8 @@
+import { z } from 'zod';
 import type { FetchLike } from './templates';
 import { appelGraph } from './graph';
+import { MetaApiError } from './errors';
+import { messageDe } from '../lib/erreur';
 import { buildFlowScreens } from './flow-json';
 import type { FlowScreenDef } from './flow-json';
 
@@ -29,9 +32,21 @@ export class FlowJsonInvalidError extends Error {
   }
 }
 
+/** Les fichiers d'un flow (`GET /{flow}/assets`), lus champ par champ : seul le flow_json nous sert. */
+const assetsSchema = z.object({
+  data: z.array(z.object({ asset_type: z.string().optional(), download_url: z.string().optional() })),
+});
+
+/** Le flow_json d'un flow, réduit à ce qu'on en lit : l'id de chaque écran, dans l'ordre. */
+const flowJsonSchema = z.object({ screens: z.array(z.object({ id: z.string().min(1) })) });
+
+/** Plafond de chacune des deux lectures de `ecranDEntree`. Dépassé, l'envoi retombe sur `FORM` (`envois-bloc.ts`). */
+const DELAI_LECTURE_FLOW_MS = 10_000;
+
 /**
- * Client des WhatsApp Flows (niveau WABA) : créer, publier, lister via l'API Graph. Ne lève que MetaApiError
- * (réseau, HTTP) ou FlowJsonInvalidError (validation) ; la génération du flow_json est interne (buildFlowScreens).
+ * Client des WhatsApp Flows (niveau WABA) : créer, publier, lister via l'API Graph, lire l'écran d'ouverture. Ne lève
+ * que MetaApiError (réseau, HTTP), FlowJsonInvalidError (validation), ou une `Error` simple pour tout échec de
+ * `ecranDEntree`, refus de Graph compris ; la génération du flow_json est interne (buildFlowScreens).
  */
 export class MetaFlowClient {
   constructor(
@@ -91,6 +106,38 @@ export class MetaFlowClient {
   /** POST /{flow}/deprecate : retire de l'usage un flow PUBLISHED, qui ne se supprime pas. */
   async deprecate(flowId: string): Promise<void> {
     await this.call(`${this.baseUrl}/${this.version}/${flowId}/deprecate`, { method: 'POST' });
+  }
+
+  /**
+   * L'écran d'ouverture d'un flow : le premier de son flow_json, lu par `GET /{flow}/assets` puis le fichier désigné.
+   * Le message interactif doit le nommer (`flow_action_payload.screen`), et un écran que le flow n'a pas fait refuser
+   * le message entier par Meta en 131009. Nos flows ouvrent sur `FORM` ; un flow construit dans WhatsApp Manager porte
+   * ses propres noms (`CIVILITE` pour SMATIS, le 2026-10-12). Lève une `Error` simple si la lecture est refusée, ou
+   * si le fichier est introuvable ou illisible.
+   *
+   * ⚠️ `screens[0]` : l'écran de tête, celui de nos flows et des flows de WhatsApp Manager mesurés. Un flow à endpoint
+   * dont l'entrée ne serait pas en tête n'est pas couvert, et `sendFlowMessage` ne sait de toute façon pas l'ouvrir
+   * (`navigate` sans `data`).
+   */
+  async ecranDEntree(flowId: string): Promise<string> {
+    // Plafond par lecture : elle précède l'envoi d'un formulaire, qu'une lecture pendue retiendrait sans fin.
+    const lus = await this.call(`${this.baseUrl}/${this.version}/${encodeURIComponent(flowId)}/assets`, { method: 'GET', signal: AbortSignal.timeout(DELAI_LECTURE_FLOW_MS) })
+      .catch((err: unknown) => {
+        // 🔴 Jamais une `MetaApiError` hors d'ici : l'intercepteur de la fabrique (`guard`) prend tout refus de type
+        // `OAuthException` pour un jeton mort et invalide celui de l'espace, or Meta pose ce type sur un simple
+        // paramètre refusé (code 100). Une lecture accessoire ne doit pas couper tous les envois d'un espace ; un jeton
+        // réellement mort sera vu par l'envoi qui suit.
+        throw new Error(`flow ${flowId} : lecture de ses fichiers refusée (${err instanceof MetaApiError ? `HTTP ${err.httpStatus}, code ${err.code ?? '?'}` : messageDe(err)})`);
+      });
+    const assets = assetsSchema.safeParse(lus);
+    const url = assets.success ? assets.data.data.find((a) => a.asset_type === 'FLOW_JSON')?.download_url : undefined;
+    if (!url) throw new Error(`flow ${flowId} : aucun flow_json dans ses fichiers chez Meta`);
+    // Une adresse signée du CDN de Meta, servie sans jeton.
+    const res = await this.fetchImpl(url, { method: 'GET', signal: AbortSignal.timeout(DELAI_LECTURE_FLOW_MS) });
+    const lu = flowJsonSchema.safeParse(res.ok ? await res.json().catch(() => null) : null);
+    const ecran = lu.success ? lu.data.screens[0]?.id : undefined;
+    if (!ecran) throw new Error(`flow ${flowId} : flow_json illisible (HTTP ${res.status})`);
+    return ecran;
   }
 
   /** GET /{waba}/flows, en suivant paging.next. Non branché sur la route GET, qui sert le store local. */

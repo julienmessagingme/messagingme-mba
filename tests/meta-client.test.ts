@@ -143,6 +143,14 @@ describe('MetaClient.sendFlowMessage (Lot 7 : formulaire hors template)', () => 
     });
   });
 
+  it('🔴 l’écran demandé ouvre le formulaire : un flow de WhatsApp Manager n’a pas d’écran FORM', async () => {
+    // SMATIS ouvre sur `CIVILITE` : envoyé sur `FORM`, Meta refusait tout le message en 131009 (2026-10-12).
+    const t = new FakeTransport([okBody('wamid.f4')]);
+    await client(t).sendFlowMessage('33600000000', { body: 'x', flowId: 'fl1', cta: 'Go', flowToken: 'tok', screen: 'CIVILITE' });
+    const body = t.requests[0]!.body as { interactive: { action: { parameters: Record<string, unknown> } } };
+    expect(body.interactive.action.parameters['flow_action_payload']).toEqual({ screen: 'CIVILITE' });
+  });
+
   it('flowToken absent/vide -> repli « mba-flow » (Meta exige un token non vide, #131009)', async () => {
     const t = new FakeTransport([okBody('wamid.f2')]);
     await client(t).sendFlowMessage('33600000000', { body: 'x', flowId: 'fl1', cta: 'Go', flowToken: '  ' });
