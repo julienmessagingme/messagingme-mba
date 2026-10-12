@@ -529,7 +529,7 @@ export class PgConversationStatsStore {
          calcule_le = excluded.calcule_le
        -- 🔴 L AGREGAT NE DESCEND JAMAIS, ET SANS CETTE LIGNE LA TABLE ENREGISTRAIT LE RESIDU DE LA PURGE
        -- AU LIEU DE LA MEMOIRE DE LA JOURNEE. Le balayage recalcule chaque journee depuis les analyses
-       -- ENCORE PRESENTES, or la purge est BORNEE (500 par passage) et son seuil est un INSTANT, pas une
+       -- ENCORE PRESENTES, or la purge est BORNEE (lots de 500, budget de temps par passe) et son seuil est un INSTANT, pas une
        -- frontiere de journee civile : toute journee traverse donc un etat partiel. Sans garde :
        -- passage N, la journee vaut 800, la purge en efface 500 ; passage N+1, le balayage revoit 300 et
        -- REMPLACE 800 par 300 ; passage N+2, la journee ne produit plus aucune ligne, la mise a jour ne

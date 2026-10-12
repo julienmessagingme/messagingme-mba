@@ -95,6 +95,10 @@ import { runPhoneStatusSweep, type PhoneProblem } from './account/status-sweep';
 import { viderVersLaBase } from './ops/pool-attentes.pg';
 import { creerDlqSweep } from './ops/dlq-sweep';
 import { creerWebhooksMuetsSweep } from './ops/webhooks-muets-sweep';
+import { creerVeilleCharge } from './ops/veille-charge';
+import { lireConsommationEquipe, creerVeilleVercel } from './agent/llm/consommation-equipe';
+import { fetchGet } from './lib/http-get';
+import { CLE_REFUS_GLOBAL } from './auth/plafond-global';
 import { decryptSecret } from './crypto/secretbox';
 import { DryRunSender } from './campaign/dry-run-sender';
 import type { MessageSender } from './campaign/engine';
@@ -116,6 +120,8 @@ import { creerPierreTombale } from './ops/espaces-supprimes.pg';
 import { PgAbonnementsOffreStore } from './offres/abonnements-offre.pg';
 import { commissionPour } from './offres/commission';
 import { DROITS } from './offres/offres';
+import { purgerJusquAEpuisement } from './lib/purge-par-lots';
+import { PURGE_CONVERSATIONS_PAR_LOT, BUDGET_PURGE_CONVERSATIONS_MS } from './inbox/store.pg';
 
 /**
  * Démarre l’orchestration du worker. L’appelant garde la responsabilité du chargement d’environnement
@@ -1316,25 +1322,29 @@ export async function demarrerWorker(): Promise<void> {
   }, { enEchec: () => {} });
   // RGPD : les conversations et, par cascade, leurs messages et leur analyse. La rétention la plus lourde de
   // conséquence du dépôt (elle efface du contenu que le client voit dans son inbox) : d'où une durée quatre
-  // fois supérieure au plancher demandé, et un journal du nombre effacé à chaque passage. Toutes les 6 heures :
-  // la rétention se compte en mois, et l'effacement est borné par passage.
+  // fois supérieure au plancher demandé, et un journal du nombre effacé à chaque passage. Toutes les heures, par
+  // lots enchaînés jusqu'à épuisement ou au budget de la passe (lot 14) : un lot par passage toutes les 6 heures
+  // plafonnait l'effacement à 2 000 conversations par jour, et au-delà la conservation n'était plus tenue.
   const conversationSweep = async (): Promise<number | undefined> => {
     /**
      * La seule opération irréversible du dépôt ne part pas sans sa contrepartie : si les agrégats n'ont pas été
-     * écrits, effacer une conversation détruirait son analyse en cascade, sans trace. On saute ce passage : six
-     * heures de retard ne coûtent rien, un effacement ne se rattrape pas.
+     * écrits, effacer une conversation détruirait son analyse en cascade, sans trace. On saute ce passage : une
+     * heure de retard ne coûte rien, un effacement ne se rattrape pas.
      */
     if (!agregatsAJour) {
       // eslint-disable-next-line no-console
       console.warn('conversation-retention-sweep: SAUTE, les agregats journaliers ne sont pas a jour.');
       return undefined;
     }
-    const n = await inboxStore.purgeConversationsOlderThan(config.CONVERSATION_RETENTION_DAYS);
+    const n = await purgerJusquAEpuisement(
+      () => inboxStore.purgeConversationsOlderThan(config.CONVERSATION_RETENTION_DAYS),
+      { taille: PURGE_CONVERSATIONS_PAR_LOT, budgetMs: BUDGET_PURGE_CONVERSATIONS_MS },
+    );
     // eslint-disable-next-line no-console
     if (n > 0) console.log(`conversation-retention-sweep: ${n} conversation(s) effacée(s) (rétention ${config.CONVERSATION_RETENTION_DAYS} j)`);
     return n;
   };
-  taches.programmer('retention-conversations', 6 * 60 * 60 * 1000, conversationSweep, { immediat: true, enEchec: echecDeBalayage('conversation-retention-sweep', 'sweeper:conversation-retention') });
+  taches.programmer('retention-conversations', 60 * 60 * 1000, conversationSweep, { immediat: true, enEchec: echecDeBalayage('conversation-retention-sweep', 'sweeper:conversation-retention') });
 
   /**
    * Les dernières tables qui grossissaient sans fin, en un balayage à étapes indépendantes (chacune son
@@ -1533,6 +1543,42 @@ export async function demarrerWorker(): Promise<void> {
     // eslint-disable-next-line no-console
     enEchec: (err) => console.error('webhooks-muets-sweep erreur:', messageDe(err)),
   });
+
+  /**
+   * La veille de charge (lot 14, `ops/veille-charge.ts`) : une file en retard, la réception de Meta lente, la base
+   * saturée, le plafond global atteint, lus chaque minute sur les mesures déjà en base, une alerte par clé au plus
+   * toutes les 30 minutes.
+   */
+  const veilleCharge = creerVeilleCharge({
+    lire: {
+      agesDAttente: () => opsStore.agesDAttente(),
+      latencesReceptionMeta: (fenetre) => httpLatencesStore.lireFenetre('POST', '/webhooks/meta', fenetre),
+      attentesPool: () => poolAttentesStore.lireDernieresMinutes(3),
+      refusPlafondGlobal: () => compteurDebit.lister(CLE_REFUS_GLOBAL, 2 * 60_000),
+    },
+    alerter: (cle, texte) => alert(cle, texte),
+  });
+  taches.programmer('veille-charge', 60_000, veilleCharge, {
+    // eslint-disable-next-line no-console
+    enEchec: (err) => console.error('veille-charge erreur:', messageDe(err)),
+  });
+
+  /**
+   * Le budget d'équipe de la passerelle d'IA chez Vercel (lot 14, `agent/llm/consommation-equipe.ts`) : lu toutes les
+   * heures, une alerte à 80 % puis à 95 %, une fois par seuil et par mois. Sans jeton de compte, rien à lire. Une
+   * lecture en échec alerte : cette veille est le seul avertissement avant que tous les bots ne se taisent.
+   */
+  if (config.VERCEL_API_TOKEN !== '' && config.VERCEL_TEAM_ID !== '') {
+    const veilleVercel = creerVeilleVercel({
+      lire: () => lireConsommationEquipe(fetchGet, { jeton: config.VERCEL_API_TOKEN, teamId: config.VERCEL_TEAM_ID, signal: AbortSignal.timeout(15_000) }),
+      compteur: compteurDebit,
+      alerter: (cle, texte) => alert(cle, texte),
+    });
+    taches.programmer('consommation-vercel', 60 * 60_000, veilleVercel, {
+      immediat: true,
+      enEchec: (err) => alert('vercel:lecture', `lecture du budget Vercel impossible : ${messageDe(err)}`),
+    });
+  }
 
   // Balayage du statut et de la qualité des numéros : les rafraîchit tous (cross-tenant, lecture Graph
   // seule) et alerte sur jeton invalide, numéro non connecté ou qualité rouge. Palliatif par polling (le

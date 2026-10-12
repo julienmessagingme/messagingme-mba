@@ -29,6 +29,11 @@ describe('câblage des purges de rétention', () => {
     expect(worker, "un échec de purge doit ALERTER").toMatch(/taches\.programmer\('retention-conversations'[^\n]*enEchec: echecDeBalayage\('[^']+', 'sweeper:conversation-retention'\)/);
   });
 
+  it('🔴 sans plafond journalier (lot 14) : toutes les heures, les lots enchaînés jusqu’à épuisement ou au budget de la passe', () => {
+    expect(worker).toMatch(/taches\.programmer\('retention-conversations', 60 \* 60 \* 1000, conversationSweep,/);
+    expect(worker).toMatch(/purgerJusquAEpuisement\(\s*\(\) => inboxStore\.purgeConversationsOlderThan\(config\.CONVERSATION_RETENTION_DAYS\),\s*\{ taille: PURGE_CONVERSATIONS_PAR_LOT, budgetMs: BUDGET_PURGE_CONVERSATIONS_MS \},?\s*\)/);
+  });
+
   it('et il purge toujours les payloads dormants des webhooks entrants (l’autre rétention)', () => {
     expect(worker).toMatch(/purgeStalePayloads\(\s*config\.WEBHOOK_PAYLOAD_RETENTION_DAYS\s*\)/);
   });

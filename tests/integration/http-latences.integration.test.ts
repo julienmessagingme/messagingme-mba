@@ -80,6 +80,26 @@ describe.skipIf(!url)('latence HTTP (Postgres)', () => {
     expect(restantes.rows.map((r) => r.route)).toEqual([recente]);
   });
 
+  it('🔴 la fenêtre d’une route (lot 14, la veille de charge) : copies et codes additionnés, ni l’autre fenêtre ni l’autre route', async () => {
+    const route = `${marque}/webhooks/meta`;
+    const ici = fenetreDe(new Date());
+    const avant = new Date(ici.getTime() - 5 * 60_000);
+    await store.enregistrer('api', avant, [ligne(route, [5, 5, 120])]);
+    await store.enregistrer('api-b', avant, [ligne(route, [900])]);
+    await store.enregistrer('api', avant, [ligne(route, [2500], 403)]);
+    await store.enregistrer('api', ici, [ligne(route, [5000])]);
+    await store.enregistrer('api', avant, [ligne(`${route}/autre`, [7000])]);
+    const lue = await store.lireFenetre('GET', route, avant);
+    const attendu = new Array<number>(N).fill(0);
+    attendu[trancheDe(5)] = 2;
+    attendu[trancheDe(120)] = 1;
+    attendu[trancheDe(900)] = 1;
+    attendu[trancheDe(2500)] = 1;
+    expect(lue.seaux).toEqual(attendu);
+    expect(lue.maxMs).toBe(2500);
+    expect(await store.lireFenetre('POST', route, avant), 'une autre méthode, rien').toEqual({ seaux: [], maxMs: 0 });
+  });
+
   it('un vidage vide n’écrit rien', async () => {
     await expect(store.enregistrer('api', fenetreDe(new Date()), [])).resolves.toBeUndefined();
   });

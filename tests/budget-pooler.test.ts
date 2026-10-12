@@ -46,7 +46,8 @@ const AUTRES_CLIENTS_TRANSACTION = 2;
 /** Les services sans base de données : la console Next.js, qui ne parle qu'à l'API. Tout AUTRE service compte. */
 const SERVICES_SANS_BASE = ['mba-web'];
 
-interface Service { nom: string; worker: boolean; poolMax: number | null; pgbossMax: number | null }
+/** `receptionMax` : le pool réservé à la réception de Meta, que seule une copie d'API ouvre (lot 14, `creerPoolReception`). */
+interface Service { nom: string; worker: boolean; poolMax: number | null; pgbossMax: number | null; receptionMax: number | null }
 
 /**
  * TOUS les services de `docker-compose.yml`, sauf ceux de `SERVICES_SANS_BASE` : peu importe qu'une copie soit
@@ -76,6 +77,7 @@ function servicesDuCompose(): Service[] {
       worker: code(b.lignes).some((l) => /^\s+WORKER_ROLE:/.test(l) || /^\s+command:.*worker/.test(l)),
       poolMax: valeur(b.lignes, 'DB_POOL_MAX'),
       pgbossMax: valeur(b.lignes, 'PGBOSS_MAX'),
+      receptionMax: valeur(b.lignes, 'DB_POOL_RECEPTION_MAX'),
     }));
 }
 
@@ -86,7 +88,8 @@ describe('le budget de connexions des processus', () => {
   // Chaque worker tient PGBOSS_MAX sessions plus une pour l'écoute des notifications ; l'API n'en ouvre aucune
   // (elle prête son pool applicatif à pg-boss), tant que `APP_DATABASE_URL` est posée.
   const sessions = services.filter((s) => s.worker).reduce((n, s) => n + (s.pgbossMax ?? 0) + 1, 0) + SESSIONS_MM_HUBSPOT;
-  const sommePools = services.reduce((n, s) => n + (s.poolMax ?? 0), 0);
+  // Une copie d'API ouvre DEUX pools en mode transaction : l'applicatif et celui de la réception de Meta (lot 14).
+  const sommePools = services.reduce((n, s) => n + (s.poolMax ?? 0) + (s.worker ? 0 : s.receptionMax ?? 0), 0);
 
   it('la lecture du compose trouve l’API et les deux workers, et rien d’autre n’échappe au compte', () => {
     expect(services.map((s) => s.nom).sort()).toEqual(expect.arrayContaining(['mba-api', 'mba-worker', 'mba-worker-analyse']));
@@ -99,6 +102,13 @@ describe('le budget de connexions des processus', () => {
     // une valeur posée dans `.env.prod` échapperait à ce test.
     for (const s of services) expect(s.poolMax, `${s.nom} sans DB_POOL_MAX`).not.toBeNull();
     for (const s of services.filter((x) => x.worker)) expect(s.pgbossMax, `${s.nom} sans PGBOSS_MAX`).not.toBeNull();
+  });
+
+  it('🔴 chaque copie d’API déclare le pool de la réception de Meta (lot 14), et aucun worker n’en porte', () => {
+    // Le défaut de la configuration (2) s'appliquerait sinon sans être compté ici. Un worker ne l'ouvre jamais :
+    // l'y déclarer laisserait croire qu'il compte.
+    for (const s of services.filter((x) => !x.worker)) expect(s.receptionMax ?? 0, `${s.nom} sans DB_POOL_RECEPTION_MAX`).toBeGreaterThanOrEqual(1);
+    for (const s of services.filter((x) => x.worker)) expect(s.receptionMax, s.nom).toBeNull();
   });
 
   it('🔴 la somme des pools tient dans le pool du pooler, sinon l’attente part chez Supavisor, muette', () => {
@@ -121,7 +131,7 @@ describe('le budget de connexions des processus', () => {
 
   it('🔴 chaque copie d’API garde de quoi servir la console et les webhooks pendant ses opérations lourdes', () => {
     // Un lot prend jusqu'à ECRITURES_EN_VOL connexions, et API_MAX_LOURDES_SIMULTANEES lots tournent à la fois :
-    // le pool d'une copie doit rester PLUS grand, sinon l'accusé d'un webhook de Meta attend un intégrateur.
+    // le pool d'une copie doit rester PLUS grand, sinon la console attend un intégrateur (la réception de Meta a son pool).
     for (const s of services.filter((x) => !x.worker)) {
       expect(s.poolMax ?? 0, s.nom).toBeGreaterThan(ECRITURES_EN_VOL * LOURDES_DEFAUT);
     }

@@ -31,8 +31,10 @@ services:
     # `tests/budget-pooler.test.ts` sous la taille du pool de Supabase (mesurée, pas supposée). Ajouter une copie
     # d'API, c'est ajouter un service ici : le test refuse alors le dépassement, et il faut redimensionner
     # chaque copie, ou monter le pool de Supabase dans la limite que le test calcule.
+    # DB_POOL_RECEPTION_MAX : le pool réservé à la réception de Meta (lot 14), en plus de DB_POOL_MAX.
     environment:
       DB_POOL_MAX: "10"
+      DB_POOL_RECEPTION_MAX: "2"
     networks: [mcp-robot_default]
 
   mba-worker:

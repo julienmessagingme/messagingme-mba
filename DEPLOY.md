@@ -308,7 +308,8 @@ toute réponse 5xx par sa page d'erreur, donc le corps public n'apprend rien.)
 Chaque processus ouvre son propre pool (`DB_POOL_MAX`, fixé par service dans `docker-compose.yml`), et leur
 SOMME doit tenir dans le « Pool Size » du pooler de Supabase, sinon les requêtes attendent chez Supavisor sans
 aucune trace. Dans cet ordre :
-1. Ajouter le service au compose, avec son `DB_POOL_MAX` (et son `PGBOSS_MAX` si c'est un worker).
+1. Ajouter le service au compose, avec son `DB_POOL_MAX` (et son `PGBOSS_MAX` si c'est un worker, son
+   `DB_POOL_RECEPTION_MAX` si c'est une copie d'API : le pool réservé à la réception de Meta, lot 14).
 2. `npx vitest run tests/budget-pooler.test.ts` : il refuse un compose qui dépasse le pool, ou une copie d'API
    trop petite pour ses opérations lourdes.
 3. S'il refuse : redimensionner chaque copie, ou monter « Pool Size » (Supabase : Database, Settings, Connection

@@ -226,12 +226,29 @@ describe('câblage des deux processus', () => {
   const sansCommentaires = (f: string): string =>
     readFileSync(new URL(f, import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
-  it('🔴 l’API construit sa file sur SON pool applicatif, et nulle part sur une chaîne de connexion', () => {
+  it('🔴 l’API construit ses files sur SES pools applicatifs, et nulle part sur une chaîne de connexion', () => {
     const src = sansCommentaires('../src/index.ts');
-    expect(src).toMatch(/import \{ pool, mesureAttentePool \} from '\.\/db\/pool';/);
+    expect(src).toMatch(/import \{ pool, mesureAttentePool, creerPoolReception, mesureAttenteReception \} from '\.\/db\/pool';/);
     expect(src).toMatch(/new PgBossQueue\(pool, config\.PGBOSS_SCHEMA\)/);
-    expect(src.match(/new PgBossQueue\(/g)).toHaveLength(1);
+    expect(src).toMatch(/const poolReception = creerPoolReception\(\);/);
+    expect(src).toMatch(/const queueReception = new PgBossQueue\(poolReception, config\.PGBOSS_SCHEMA\)/);
+    expect(src.match(/new PgBossQueue\(/g)).toHaveLength(2);
     expect(src).not.toMatch(/PGBOSS_MAX/);
+  });
+
+  it('🔴 la réception de Meta empile sur SON pool (lot 14) : elle n’attend jamais `/v1`, `/mcp` ni la console', () => {
+    const src = sansCommentaires('../src/index.ts');
+    // `buildServer` ne se sert de `queue` que pour le récepteur du webhook de Meta (`src/server.ts`).
+    expect(src).toMatch(/buildServer\(\{[\s\S]*?\n    queue: queueReception,\n/);
+    expect(sansCommentaires('../src/server.ts').match(/deps\.queue\b/g)).toEqual(['deps.queue']);
+    expect(src).toMatch(/await queueReception\.start\(\);/);
+    // Son attente se mesure à part et s'écrit sous son propre nom : la carte du pool de `/ops` et l'alerte « base
+    // saturée » de la veille de charge la voient, sans la mêler à celle du pool applicatif.
+    expect(sansCommentaires('../src/db/pool.ts')).toMatch(/instrumenterPool\(reception as unknown as PoolInstrumentable, mesureAttenteReception\);/);
+    expect(src).toMatch(/viderVersLaBase\(poolAttentesStore, mesureAttenteReception, `\$\{NOM_API\}-reception`, new Date\(\),/);
+    // Les deux files s'arrêtent et les deux pools se ferment à l'arrêt.
+    expect(src).toMatch(/fermerFile: async \(\) => \{ await queueReception\.stop\(\); await queue\.stop\(\); \}/);
+    expect(src).toMatch(/await poolReception\.end\(\); await pool\.end\(\);/);
   });
 
   it('🔴 le worker garde sa chaîne de connexion, son plafond et son écoute', () => {

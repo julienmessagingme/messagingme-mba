@@ -107,10 +107,17 @@ export const schema = z.object({
    * par `DB_CONN_TIMEOUT_MS` et visible dans `/ops`, à celle de Supavisor, qui est muette (au-delà, la latence
    * double sans erreur). Ce budget, mesuré, et sa règle par copie : `tests/budget-pooler.test.ts`, qui refuse un
    * compose qui le dépasse. Ajouter une copie d'API se paie donc ici, AVANT de la lancer.
-   * Côté API, ce pool porte AUSSI les enfilements (pg-boss l'emprunte), dont l'accusé des webhooks de Meta :
-   * une attente ici est une attente de la réception, et `mesureAttentePool` la voit.
+   * Côté API, ce pool porte AUSSI les enfilements (pg-boss l'emprunte), sauf ceux de la réception de Meta, qui ont
+   * leur pool (`DB_POOL_RECEPTION_MAX`, lot 14). Une attente ici, `mesureAttentePool` la voit.
    */
   DB_POOL_MAX: z.coerce.number().default(8),
+  /**
+   * Le pool RÉSERVÉ à la réception de Meta dans une copie d'API (lot 14, `creerPoolReception`) : l'enfilement des
+   * webhooks n'attend plus jamais `/v1`, `/mcp` ni la console sur le pool applicatif. Deux connexions : un
+   * enfilement est une instruction de quelques millisecondes. Fixé par service dans `docker-compose.yml`, et compté
+   * dans le budget du pooler (`tests/budget-pooler.test.ts`). Le worker ne l'ouvre pas.
+   */
+  DB_POOL_RECEPTION_MAX: z.coerce.number().int().min(1).default(2),
   /** Max de connexions du pool pg-boss du WORKER, resté en mode session : c'est lui qui vit dans le budget des
    *  sessions du pooler, partagé avec mm-hubspot (PGBOSS_MAX par worker plus l'écoute des notifications, plus
    *  les sessions de mm-hubspot ; le calcul et sa borne : `tests/budget-pooler.test.ts`). L'API ne le lit plus : elle n'ouvre aucun pool pg-boss,
@@ -176,6 +183,14 @@ export const schema = z.object({
   API_PLAFOND_MINUTE: z.coerce.number().int().min(0).default(PLAFOND_API_DEFAUT.minute),
   API_PLAFOND_HEURE: z.coerce.number().int().min(0).default(PLAFOND_API_DEFAUT.heure),
   /**
+   * Le plafond de TOUTE la plateforme sur `/v1` et `/mcp` (lot 14, `src/auth/plafond-global.ts`) : appels par fenêtre
+   * de 10 secondes, tous espaces confondus, compté au total des copies. 🔴 0 = éteint, le défaut jusqu'à la mesure du
+   * banc (livraison B), puis 70 % de la capacité mesurée, posé dans `.env.prod`. `API_PLAFOND_GLOBAL_PART_FREE` est la
+   * part, en %, au-delà de laquelle un espace de l'offre Base reçoit 429 : les payants gardent le reste.
+   */
+  API_PLAFOND_GLOBAL_PAR_10S: z.coerce.number().int().min(0).default(0),
+  API_PLAFOND_GLOBAL_PART_FREE: z.coerce.number().int().min(0).max(100).default(50),
+  /**
    * Les quotas QUOTIDIENS par espace de l'API publique (décision de Julien du 2026-10-04, `src/api/quotas.ts`) : les
    * envois (destinataires et messages libres) et les fiches écrites, par jour civil de Paris. Un réglage d'espace
    * (`/ops/plafond-api`, migration 0208) l'emporte. `0` le désactive pour tous : le levier d'urgence, sans déployer.
@@ -195,8 +210,8 @@ export const schema = z.object({
    * 0 désactive.
    * Un, et le chiffre se calcule : le pool de l'API (`DB_POOL_MAX` de `mba-api`) sert tout le process, et un lot
    * en prend jusqu'à `ECRITURES_EN_VOL`. Que le pool reste plus grand que ce qu'en prennent les opérations
-   * lourdes est tenu par `tests/budget-pooler.test.ts`. Saturer le pool ferait attendre la console et la
-   * réception des webhooks de Meta : le travail d'un intégrateur ne doit jamais prendre tout le pool.
+   * lourdes est tenu par `tests/budget-pooler.test.ts`. Saturer le pool ferait attendre la console (la réception
+   * de Meta a le sien, `DB_POOL_RECEPTION_MAX`) : le travail d'un intégrateur ne doit jamais prendre tout le pool.
    * La place est globale au process, tous clients confondus (un autre espace reçoit 429, `Retry-After: 2`) :
    * un plafond par espace ne protégerait pas un pool partagé.
    * Le limiteur de débit n'en protège pas (fenêtre fixe, 60 requêtes peuvent tomber dans la même

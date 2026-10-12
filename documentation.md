@@ -2165,6 +2165,9 @@ automations, servis par le principal) : ça tient parce que `enqueue` crée sa f
 | purge des payloads webhook | rétention du dernier payload d'un webhook entrant |
 | purge des événements Meta | `WEBHOOK_EVENTS_RETENTION_DAYS` |
 | `ops/dlq-sweep` | alerte Telegram sur les DLQ non vides |
+| `retention-conversations` | toutes les heures (`principal`), après les agrégats : lots de 500 (`PURGE_CONVERSATIONS_PAR_LOT`) enchaînés tant qu'ils sont pleins, dans un budget de 2 min par passe (`purgerJusquAEpuisement`), sans plafond journalier |
+| `veille-charge` | chaque minute (`principal`), quatre alertes Telegram, au plus une par clé toutes les 30 min (§ Surveillance) |
+| `consommation-vercel` | toutes les heures (`principal`), seulement avec `VERCEL_API_TOKEN` : le budget d'équipe de la passerelle d'IA, alertes à 80 % et 95 % (§ Surveillance) |
 | `compteurs-debit` | toutes les 5 min, efface les fenêtres échues des plafonds partagés (`compteurs_debit`) : une tentative de connexion sur une adresse inventée écrit une ligne, six heures de rafale en garderaient des millions |
 | `retention-oauth` | toutes les 6 h (`principal`), efface les codes OAuth échus depuis une heure et les autorisations révoquées ou expirées depuis 30 jours, par paquets (`PgOauthStore.purger`), puis les clients enregistrés de plus de 30 jours qu'aucune autorisation vivante n'utilise (`PgOauthClientsStore.purger`) |
 | heartbeat | écrit `worker_heartbeat`, UNE LIGNE PAR RÔLE (clé = le rôle), lu par `/ops` pour voir un worker mort et par l'API pour alerter quand il se tait ; une ligne unique laisserait le survivant masquer la mort de l’autre |
@@ -2227,13 +2230,21 @@ premier tour qui arrive pendant qu'elle tourne encore est sauté et journalisé.
   version du schéma au démarrage, et l'API refuse de démarrer si elle diffère, DEPLOY.md « Montée de version de
   pg-boss »), ni supervision, ni écoute, ni cron. Il reste, sur le pool prêté : quatre `select` au démarrage, le
   cache des files (un `select` par minute), les `send`, et au premier enfilement de chaque file sa création et ses
-  réglages (`createQueue`, puis `updateQueue` pour le réveil, le battement et le délai de rejeu). Conséquences : **une copie de l'API ne coûte plus aucune
-  session**, quel que soit leur nombre ; et **l'accusé d'un webhook de Meta attend sur le même pool que la
-  console**, donc `pool_attentes` (ligne `api`, ou `api-<copie>` quand `API_COPIE` nomme une copie parmi
-  plusieurs) mesure aussi la réception. ⚠️ Un `send` part sur une connexion
+  réglages (`createQueue`, puis `updateQueue` pour le réveil, le battement et le délai de rejeu). Conséquence : **une copie de l'API ne coûte plus aucune
+  session**, quel que soit leur nombre. `pool_attentes` (ligne `api`, ou `api-<copie>` quand `API_COPIE` nomme une
+  copie parmi plusieurs) mesure ce pool. ⚠️ Un `send` part sur une connexion
   prise au pool, jamais sur celle d'une transaction ouverte : enfiler DANS une transaction (`enTransaction`) n'y
   inscrirait pas la tâche (comme avant) et prendrait une SECONDE connexion au même pool. Aucun code ne le fait
   (l'opt-out annonce après le `commit`).
+- 🔴 **LA RÉCEPTION DE META A SON PROPRE POOL** (lot 14, `creerPoolReception`, `src/db/pool.ts`) : une seconde
+  instance pg-boss, prêtée elle aussi, sur un pool de `DB_POOL_RECEPTION_MAX` connexions (2, fixé par service dans
+  `docker-compose.yml`), que seul le récepteur du webhook de Meta emprunte (`buildServer` reçoit cette file-là ; tout ce
+  qui empile ailleurs dans l'API garde la file du pool applicatif). Une rafale sur `/v1`, `/mcp` ou la console peut
+  prendre tout le pool applicatif sans faire attendre l'accusé d'un webhook. Son attente se mesure à part
+  (`mesureAttenteReception`) et s'écrit dans `pool_attentes` sous `<NOM_API>-reception` : la carte du pool et l'alerte
+  « base saturée » le voient. Il compte dans le budget du pooler (`tests/budget-pooler.test.ts`), le worker ne l'ouvre
+  pas. ⚠️ Deux connexions bornent l'accusé vers 200 enfilements par seconde (10 ms jusqu'à la base) : au-delà, la
+  réception attend, puis Meta réessaie ; le banc du lot 14 (B) le mesure.
 - **`DB_POOL_MAX`** est instancié **PAR PROCESS**, et **chaque service le fixe dans `docker-compose.yml`** (le
   défaut de la configuration n'est qu'un repli). Ce qui mord n'est pas Postgres mais le pool du pooler de
   Supabase, « Pool Size », par utilisateur, base et MODE : la somme des pools de tous les processus doit y
@@ -2693,6 +2704,17 @@ d'autant. `CF-Connecting-IP` ne deviendra lisible qu'avec une origine qui ne ré
   son plafond. `0` en configuration éteint la fenêtre pour les espaces sans réglage (levier d'urgence) ; un
   réglage d'espace reste appliqué. ⚠️ Le cache du réglage, lui, reste par copie : un plafond relevé par `/ops`
   s'applique tout de suite sur la copie qui a servi l'écriture, dans les 30 s sur les autres.
+- 🔴 **Le plafond de TOUTE la plateforme** (`src/auth/plafond-global.ts`, lot 14) : un compteur partagé par fenêtre de
+  10 secondes, tous espaces, clés et jetons OAuth confondus (`api.zz-plateforme`, triée après celles de l'espace), compté dans la MÊME instruction
+  que les deux fenêtres de l'espace (toutes ou aucune : un refus de l'espace ne consomme pas la plateforme, et
+  inversement, et la mémoire des fenêtres pleines sert les refus sans écrire). Deux plafonds sur ce compteur : un espace
+  de l'offre Base n'est accepté que sous la part Free (`API_PLAFOND_GLOBAL_PART_FREE` %, défaut 50), un espace payant
+  jusqu'au plafond (`API_PLAFOND_GLOBAL_PAR_10S`) ; une seule clé suffit parce que la mémoire ne réutilise un refus que
+  pour un plafond au plus égal. Une offre illisible compte comme payante. Refus : 429 `rate_limited`, `Retry-After`
+  jusqu'à la fin de la fenêtre, message « la plateforme est saturée » ; une part Free arrondie à 0 refuse tout Free sans
+  compter. Les refus s'agrègent en mémoire et s'écrivent toutes les 2 s (`api.global-refus|free` et `|payant`, fenêtres
+  d'une minute gardées dix), lus par la veille de charge. **`0` éteint** (le défaut) : la valeur se pose sur la mesure du
+  banc. La clé du relais du Meta Business Agent n'y entre pas (elle n'atteint pas `PlafondEspace`).
 - **Les quotas QUOTIDIENS par espace** (`src/api/quotas.ts`, migration 0208, décision du 2026-10-04) : le plafond
   compte des appels, le quota le TRAVAIL d'un jour civil de Paris, en deux familles, les envois (`sends.create` en
   destinataires, `messages.send`) et les fiches (`contacts.batch` en fiches, `contacts.upsert`). Défauts
@@ -3464,6 +3486,35 @@ charge qu'elle observe. Aucun seuil n'est posé à ce jour, ces compteurs OBSERV
 
 `/ops/overview` (session d'exploitation) : rollup par tenant, charge des files, battement de chaque rôle de worker. Les DLQ non
 vides déclenchent une alerte Telegram. Le SLO vit dans [docs/SLO-2026-09-01.md](docs/SLO-2026-09-01.md).
+
+**La veille de charge** (`src/ops/veille-charge.ts`, worker principal, chaque minute) lit les mesures que seul `/ops`
+lisait, et alerte sur Telegram au plus une fois par clé toutes les 30 minutes :
+- une **file en retard** : le plus vieux job qui ATTEND (créé ou à rejouer, `start_after` passé, `PgOpsStore.agesDAttente` ;
+  un job en cours n'attend pas, un run de campagne dure le temps de sa campagne, et un job dont le GROUPE a déjà un job
+  en cours attend son tour, pas une place : une seconde campagne du même espace, par exemple) depuis plus de 60 s sur
+  `webhook` et `webhook-status`, plus de 5 min ailleurs ; jamais une file des morts. ⚠️ Dans les quelques secondes
+  entre la fin d'un job de groupe et la prise du suivant, ce dernier peut apparaître avec l'âge de sa création : une
+  alerte rare, sans suite si elle ne revient pas ;
+- la **réception de Meta lente** : p95 de `POST /webhooks/meta` au-delà de 2 s sur la dernière fenêtre de 5 minutes
+  complète, d'au moins 20 requêtes (`PgHttpLatencesStore.lireFenetre`) ;
+- la **base saturée** : sur une minute d'un processus, au moins 5 % des prises de connexion ont attendu un pool plein, et
+  la plus longue plus de 200 ms, sur au moins 20 prises. `pool_attentes` ne garde ni centile ni histogramme (presque
+  toutes les prises valent zéro) : c'est ce qui s'approche d'un p95 ;
+- le **plafond global atteint** : au moins un refus ces deux dernières minutes, Free et payants comptés à part.
+Une lecture en échec n'empêche pas les trois autres et se journalise (`veille_charge_lecture_impossible`).
+
+**Le budget d'équipe de Vercel** (`src/agent/llm/consommation-equipe.ts`). La passerelle d'IA a un budget d'ÉQUIPE
+mensuel (100 $), au-dessus des plafonds par clé : à 100 %, Vercel refuse tous les appels de l'équipe (402), donc chaque
+bot de chaque client se tait. Lu par `GET api.vercel.com/ai-gateway/budgets/list` (jeton de compte) : la documentation
+de Vercel ne donne pas la réponse, sa forme a été MESURÉE (`{ budgets: [{ scopeType, limitAmount, currentSpend,
+refreshPeriod, active, archived, ... }] }`, en dollars, sans pagination) et toute autre forme lève. La jauge retient le
+plus grand de deux chiffres, le compteur du budget d'équipe et la somme des clés à période mensuelle : mesuré, le
+premier peut être en retard sur la seconde (0 $ contre 7,96 $). Le worker la lit toutes les heures et alerte à 80 % puis
+à 95 %, une fois par seuil et par mois civil UTC, et une fois par mois s'il n'y a aucun budget d'équipe ; ce « une fois »
+est tenu par `compteurs_debit` (plafond 1 sur la fenêtre du mois), pas en mémoire. Une lecture en échec alerte
+(`vercel:lecture`). `GET /ops/vercel` (session d'exploitation) la lit à la demande pour sa carte de `/ops` (502 et le
+message, jamais le corps, sur une lecture en échec ; `configure: false` sans jeton), aux mêmes seuils de couleur
+(`web/lib/ops-mesures.ts`). Julien relève le budget lui-même, chez Vercel.
 
 **La latence HTTP par route** (carte de `/ops/overview`, sur 24 h). Chaque requête de l'API est mesurée par un
 crochet `onResponse` (`src/server.ts`), ou `onRequestAbort` sous le code 499 quand le client l'abandonne avant sa

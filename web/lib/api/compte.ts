@@ -392,6 +392,24 @@ export function getOpsOverview(sessionOps: string): Promise<OpsOverview> {
   return appelOps(sessionOps, '/ops/overview');
 }
 
+/**
+ * La jauge du budget d'équipe Vercel (lot 14), en dollars. `configure: false` = jeton de compte non configuré ;
+ * `limiteDollars: null` = aucun budget d'équipe chez Vercel. Les autres champs suivent `configure: true`.
+ */
+export interface JaugeVercel {
+  configure: boolean;
+  limiteDollars?: number | null;
+  depenseEquipeDollars?: number;
+  depenseClesMensuellesDollars?: number;
+  depenseRetenueDollars?: number;
+  part?: number | null;
+}
+
+/** Lue chez Vercel à chaque appel : une fois, à l'ouverture de l'écran. */
+export function getOpsVercel(sessionOps: string): Promise<JaugeVercel> {
+  return appelOps(sessionOps, '/ops/vercel');
+}
+
 /** Coûteux côté base : lu une fois à l'ouverture de l'écran, jamais avec la vue d'ensemble. */
 export function getOpsStockage(sessionOps: string): Promise<MesureStockage> {
   return appelOps(sessionOps, '/ops/stockage');

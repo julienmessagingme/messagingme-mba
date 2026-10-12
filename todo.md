@@ -1,5 +1,15 @@
 # todo.md : backlog
 
+## 🟡 Lot 14, la tenue en charge : ce que la spec laisse hors périmètre (2026-10-12)
+
+- **La durée limite des requêtes** (`statement_timeout`) sur le pool applicatif : à juger sur la mesure du banc (B). Le
+  pooler en mode transaction ne prend pas tous les paramètres de session, donc la poser demande une vérification à part.
+- **Le téléchargement des médias reçus n'a aucune borne de concurrence** : une rafale d'images entrantes ouvre autant
+  de téléchargements chez Meta. À borner si le banc le montre.
+- **Une seconde copie de l'API, une base plus grosse** : seulement sur la mesure, par décision de Julien (le budget du
+  pooler et sa procédure : `DEPLOY.md`, « Ajouter une copie d'API »).
+- **Cloudflare Pro** reste dans sa propre entrée plus bas (décision du 2026-10-12 : le plafond vit dans l'API).
+
 ## 🟡 « Déconnecter le numéro » : ce que la relecture laisse (2026-10-10)
 
 Corrigés avant le premier push : compte WhatsApp partagé épargné, numéro fourni seulement à chiffres égaux, campagnes

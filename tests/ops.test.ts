@@ -125,6 +125,27 @@ describe('route /ops/overview', () => {
     await a.close();
   });
 
+  it('🔴 la jauge du budget d’équipe Vercel (lot 14) a SA route : lue à la demande, « non configurée » sans jeton, 502 sur une lecture en échec', async () => {
+    const jauge = { limiteDollars: 100, depenseEquipeDollars: 0, depenseClesMensuellesDollars: 7.96, depenseRetenueDollars: 7.96, part: 0.0796 };
+    let lectures = 0;
+    const a = app({ vercel: { lire: async () => { lectures += 1; return jauge; } } });
+    await a.inject({ method: 'GET', url: '/ops/overview', ...withTok(OPS) });
+    expect(lectures, 'la vue d’ensemble ne paie pas un appel chez Vercel').toBe(0);
+    const res = await a.inject({ method: 'GET', url: '/ops/vercel', ...withTok(OPS) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ configure: true, ...jauge });
+    expect((await a.inject({ method: 'GET', url: '/ops/vercel' })).statusCode).toBe(401);
+    await a.close();
+    const sans = app({ vercel: { lire: async () => null } });
+    expect((await sans.inject({ method: 'GET', url: '/ops/vercel', ...withTok(OPS) })).json()).toEqual({ configure: false });
+    await sans.close();
+    const panne = app({ vercel: { lire: async () => { throw new Error('consommation Vercel illisible (403) : reponse en echec'); } } });
+    const { resultat } = await capturerJournal(() => panne.inject({ method: 'GET', url: '/ops/vercel', ...withTok(OPS) }));
+    expect(resultat.statusCode).toBe(502);
+    expect(resultat.json()).toEqual({ error: 'consommation Vercel illisible (403) : reponse en echec' });
+    await panne.close();
+  });
+
   it('inclut UN battement PAR RÔLE quand le magasin en rend', async () => {
     const hb = [
       { role: 'analyse', beatAt: '2026-07-24T10:00:00.000Z', bootedAt: '2026-07-24T09:00:00.000Z', instance: 'host:2', ageSeconds: 700 },

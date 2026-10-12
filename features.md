@@ -2248,6 +2248,11 @@ scénario, comment importer des contacts.
   minute ou l'heure qui est pleine. L'exploitation peut régler le plafond d'un espace précis sans toucher les
   autres. L'agent de Meta n'est jamais privé de ses outils par un intégrateur qui charge l'API : sa clé a son
   propre compteur.
+- 🚧 **Plafond de toute la plateforme, Free d'abord** (lot 14, 2026-10-12, ÉTEINT jusqu'à la mesure de capacité) : un
+  plafond commun à tous les espaces sur l'API publique et le serveur MCP, par tranche de 10 secondes. Quand la
+  plateforme approche de sa limite, les espaces de l'offre Base reçoivent le refus en premier (au-delà de leur part,
+  la moitié par défaut) ; Pro et Entreprise gardent le reste. Le refus est le même 429 `rate_limited`, avec
+  `Retry-After` et un message qui dit que la plateforme est saturée : le geste de l'intégrateur ne change pas.
 - ✅ **Quotas quotidiens de l'API publique, par espace** (2026-10-05) : 2 000 envois (destinataires d'un envoi et
   messages libres WhatsApp ou RCS) et 20 000 fiches écrites par jour, remise à zéro à minuit (heure de Paris). Une
   requête qui dépasserait est refusée en entier : 429 `quota_exceeded`, avec `Retry-After` jusqu'à minuit et un
@@ -2838,6 +2843,14 @@ boîte par sous-menu.
 - ✅ **Export CSV** des deux journaux.
 
 ## Exploitation `/ops` (interne, hors console client)
+
+- ✅ **Prévenu avant que ça casse** (lot 14, 2026-10-12) : une alerte Telegram quand une file de travail prend du
+  retard (une minute sur la réception des messages, cinq ailleurs), quand la réception des messages de Meta ralentit,
+  quand la base sature, ou quand le plafond de toute la plateforme refuse des appels. Au plus une alerte par sujet
+  toutes les 30 minutes.
+- ✅ **Le budget d'équipe de l'IA chez Vercel** (lot 14, 2026-10-12) : à 100 %, Vercel coupe tous les bots de tous
+  les clients d'un coup. Une carte de `/ops` dit la dépense du mois face au budget, en orange à 80 % et en rouge à
+  95 %, et une alerte Telegram part à ces deux seuils, une fois par mois. Le budget se relève chez Vercel.
 
 - ✅ **Console d'exploitation cross-tenant** `/ops` : vue de TOUS les clients. Par client : MBA on/off, numéro +
   qualité, nb d'utilisateurs / contacts / messages / templates, dernier envoi. **Signal de charge pg-boss**

@@ -7,7 +7,7 @@ import { surveillerOps } from './ops/tentatives';
 import { sendTelegram } from './ops/telegram';
 import { creerAlertesReserve } from './http/numero-fourni';
 import { PgBossQueue } from './queue/pgboss';
-import { pool, mesureAttentePool } from './db/pool';
+import { pool, mesureAttentePool, creerPoolReception, mesureAttenteReception } from './db/pool';
 import { construireSocle } from './socle';
 import { PgContactHistoryStore } from './crm/contact-history.pg';
 import { PgTagStore } from './crm/tag-store.pg';
@@ -106,6 +106,7 @@ import { urlImageRcs } from './rcs/image';
 import { newMediaCode } from './ids/code';
 import { verifierCleRcs } from './rcs/channel-info';
 import { fetchGet } from './lib/http-get';
+import { lireConsommationEquipe } from './agent/llm/consommation-equipe';
 import { lireCatalogueGateway } from './agent/llm/modeles-gateway';
 import { modelesProposables, type ModeleGateway } from './agent/modeles';
 import { contactVars } from './crm/render';
@@ -207,14 +208,24 @@ async function main(): Promise<void> {
   // L'API ne fait qu'EMPILER : elle PRÊTE son pool applicatif à pg-boss, qui n'en ouvre aucun à lui. Une copie de
   // l'API ne retient donc plus aucune connexion de session, et N copies ne multiplient plus `PGBOSS_MAX` (lu par le
   // seul worker). Prêter éteint aussi la migration, la supervision et l'écoute : c'est le worker qui les fait
-  // (`PgBossQueue`). Contrepartie : un enfilement, donc l'accusé d'un webhook de Meta, attend sur le MÊME pool
-  // que les requêtes de la console, ce que mesure `mesureAttentePool`.
+  // (`PgBossQueue`). Contrepartie : un enfilement attend sur le MÊME pool que les requêtes de la console, ce que
+  // mesure `mesureAttentePool` ; celui de la réception de Meta a son propre pool (plus bas).
   const queue = new PgBossQueue(pool, config.PGBOSS_SCHEMA);
   // Un event `error` de pg-boss non capté est une exception non gérée qui tue l'API. On le journalise
   // et on laisse tourner : une saturation ponctuelle du pooler ne doit pas coûter un redémarrage.
   // eslint-disable-next-line no-console
   queue.onError((err) => console.error('[pg-boss:api]', messageDe(err)));
   await queue.start();
+  /**
+   * La réception de Meta empile par SA file, sur SON pool (lot 14, `creerPoolReception`) : une rafale sur `/v1`, `/mcp`
+   * ou la console ne fait plus attendre l'accusé d'un webhook. `buildServer` ne se sert de sa `queue` que pour le
+   * récepteur ; tout ce qui empile ailleurs dans l'API garde `queue`.
+   */
+  const poolReception = creerPoolReception();
+  const queueReception = new PgBossQueue(poolReception, config.PGBOSS_SCHEMA);
+  // eslint-disable-next-line no-console
+  queueReception.onError((err) => console.error('[pg-boss:reception]', messageDe(err)));
+  await queueReception.start();
 
   /**
    * Le socle commun avec le worker (`src/socle.ts`) : les dépôts, le dépôt de contacts qui annonce chaque opt-out
@@ -1114,7 +1125,7 @@ async function main(): Promise<void> {
     // Origines autorisées à appeler l'API depuis un navigateur. Vide -> aucun en-tête CORS. Les deux règles
     // qui la rendent sûre : `src/server.ts`.
     corsOrigins: config.CORS_ORIGINS.split(',').map((o) => o.trim()).filter((o) => o !== ''),
-    queue,
+    queue: queueReception,
     // Readiness : `select 1` (timeout court 2 s) -> /health 503 si la DB est injoignable. /live reste trivial.
     checkReadiness: makeDbReadinessCheck(pool, 2000),
     auth: {
@@ -2365,6 +2376,11 @@ async function main(): Promise<void> {
       latencesHttp: httpLatencesStore,
       mesuresTaches: mesuresTachesStore,
       stockage: new PgStockageStore(pool),
+      vercel: {
+        lire: () => (config.VERCEL_API_TOKEN !== '' && config.VERCEL_TEAM_ID !== ''
+          ? lireConsommationEquipe(fetchGet, { jeton: config.VERCEL_API_TOKEN, teamId: config.VERCEL_TEAM_ID, signal: AbortSignal.timeout(10_000) })
+          : Promise.resolve(null)),
+      },
       // 🔴 Le solde prépayé d'un espace pour l'agent IA. La recharge est ici parce qu'un client ne doit
       // jamais pouvoir créditer son propre compte. L'espace est résolu d'abord : en lecture, un espace inconnu
       // rendrait un solde de zéro qu'on rechargerait ; en écriture, la clé étrangère lèverait un 500 masqué
@@ -2780,6 +2796,11 @@ async function main(): Promise<void> {
       // eslint-disable-next-line no-console
       console.error('pool-attentes: écriture impossible:', messageDe(err));
     });
+    // Le pool de la réception de Meta (lot 14), sous son propre nom.
+    void viderVersLaBase(poolAttentesStore, mesureAttenteReception, `${NOM_API}-reception`, new Date(), (err) => {
+      // eslint-disable-next-line no-console
+      console.error('pool-attentes (reception): écriture impossible:', messageDe(err));
+    });
     void viderLatences();
     void surveillerWorkers().catch((err: unknown) => {
       // eslint-disable-next-line no-console
@@ -2794,10 +2815,10 @@ async function main(): Promise<void> {
       fermerServeur: () => app.close(),
       travaux: travauxEnVol,
       borneMs: ATTENTE_GESTES_A_L_ARRET_MS,
-      fermerFile: () => queue.stop(),
+      fermerFile: async () => { await queueReception.stop(); await queue.stop(); },
       // Le dernier vidage, une fois le serveur fermé et les requêtes en vol finies : sinon chaque déploiement perd sa
       // dernière minute, celle du redémarrage.
-      fermerPool: async () => { await viderLatences(); await pool.end(); },
+      fermerPool: async () => { await viderLatences(); await poolReception.end(); await pool.end(); },
       // eslint-disable-next-line no-console
       journal: (ligne) => console.warn(ligne),
     });

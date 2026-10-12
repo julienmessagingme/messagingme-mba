@@ -244,6 +244,35 @@ export class PgOpsStore {
     }
   }
 
+  /**
+   * Le plus vieux job qui ATTEND, par file de base (lot 14, la veille de charge) : créé ou à rejouer, `start_after`
+   * passé. Un job en cours n'attend pas (un run de campagne dure le temps de sa campagne), un job programmé pour plus
+   * tard non plus, et une file des morts ne se vide jamais d'elle-même : aucune n'entre ici. Une file sans attente ne
+   * rend aucune ligne. 🔴 Un job dont le GROUPE a déjà un job en cours n'entre pas non plus : il attend son tour, pas
+   * une place (une file à un job par espace, `campaign-run`, garde la seconde campagne d'un espace en `created` pendant
+   * toute la première, une heure et plus). Les groupes en cours sont lus d'abord, ils sont peu nombreux.
+   */
+  async agesDAttente(): Promise<Array<{ file: string; ageSecondes: number }>> {
+    try {
+      const res = await this.pool.query<{ name: string; age: string }>(
+        `with en_cours as (
+           select distinct name, group_id from ${this.schema}.job
+            where name = any($1) and state = 'active' and group_id is not null
+         )
+         select j.name, max(extract(epoch from (now() - j.start_after)))::int::text as age
+           from ${this.schema}.job j
+          where j.name = any($1) and j.state in ('created', 'retry') and j.start_after <= now()
+            and not exists (select 1 from en_cours e where e.name = j.name and e.group_id = j.group_id)
+          group by j.name`,
+        [[...BASE_QUEUES]],
+      );
+      return res.rows.map((r) => ({ file: r.name, ageSecondes: Math.max(0, Number(r.age)) }));
+    } catch (err) {
+      if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === '42P01') return [];
+      throw err;
+    }
+  }
+
   async getQueueLoad(): Promise<QueueLoadRow[]> {
     const zero = (): QueueLoadRow[] => ALL_QUEUES.map((q) => ({ queue: q, backlog: 0, active: 0, failed: 0, ageMaxSecondes: 0 }));
     try {

@@ -8,6 +8,7 @@ import type { TenantOverviewRow, QueueLoadRow, QueueGroupLoadRow, QueueLatenceRo
 import type { WorkerHeartbeatRow } from '../ops/heartbeat-store.pg';
 import type { TacheMesureRow } from '../ops/mesure-taches';
 import type { MesureStockage } from '../ops/stockage.pg';
+import type { ConsommationEquipe } from '../agent/llm/consommation-equipe';
 import type { LatenceHttpRow } from '../ops/latence-http';
 import type { BilanRisque } from '../engagement/balayage';
 import { seuilLatenceSecondes } from '../queue/names';
@@ -141,6 +142,11 @@ export interface OpsRouteDeps {
    */
   stockage: { mesurer(): Promise<MesureStockage> };
   /**
+   * Le budget d'équipe de la passerelle d'IA chez Vercel (lot 14) : lu chez Vercel à chaque ouverture de sa carte, jamais
+   * par la vue d'ensemble. `null` = jeton de compte non configuré.
+   */
+  vercel: { lire(): Promise<ConsommationEquipe | null> };
+  /**
    * Lance le balayage du risque de désengagement d'un espace, tout de suite. Rend son bilan, ou `null` si
    * l'espace est inconnu.
    */
@@ -251,6 +257,17 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
 
   /** Les octets en base : lus une fois à l'ouverture de l'écran, pas à chaque chargement de la vue d'ensemble (voir `PgStockageStore`). */
   app.get('/ops/stockage', opts, async (_req, reply) => reply.code(200).send(await deps.stockage.mesurer()));
+
+  /** La jauge du budget d'équipe Vercel. Une lecture en échec rend 502 et son message, qui ne porte jamais le corps. */
+  app.get('/ops/vercel', opts, async (_req, reply) => {
+    try {
+      const c = await deps.vercel.lire();
+      return reply.code(200).send(c === null ? { configure: false } : { configure: true, ...c });
+    } catch (err) {
+      journaliser('warn', 'ops_vercel_illisible', { err });
+      return reply.code(502).send({ error: messageDe(err) });
+    }
+  });
 
   /**
    * Les jobs morts : les voir, puis décider de les rejouer. Un job qui épuise ses rejeux part en file d'échec, que

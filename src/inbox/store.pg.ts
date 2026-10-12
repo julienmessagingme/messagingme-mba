@@ -283,6 +283,14 @@ export type FilDuContact = { etat: 'fil'; conversationId: string } | { etat: 'sa
  * insertions FILLES (un message, un événement, une analyse : leur clé étrangère pose `for key share` sur la
  * conversation), qui n'avaient aucune raison d'attendre un geste de la console.
  */
+/** La taille d'un lot de la purge des conversations : une instruction courte, que le balayage enchaîne (lot 14). */
+export const PURGE_CONVERSATIONS_PAR_LOT = 500;
+/**
+ * Le budget de temps d'une passe de cette purge (lot 14) : deux minutes, loin de l'heure qui sépare deux passes. Au
+ * pire une seconde par lot, c'est une soixantaine de milliers de conversations par heure.
+ */
+export const BUDGET_PURGE_CONVERSATIONS_MS = 2 * 60_000;
+
 export class PgInboxStore implements InboxStore {
   constructor(private readonly pool: Pool) {}
 
@@ -1042,9 +1050,9 @@ export class PgInboxStore implements InboxStore {
    *
    * Le `coalesce` est dans les deux moitiés de la condition (filtre et âge), sinon on effacerait selon une
    * durée que personne n'a choisie. `left join` : un espace sans ligne de réglages doit être purgé au défaut.
-   * Effacement borné par passage (verrou, WAL) : le balayage repasse.
+   * Effacement borné par passage (verrou, WAL) : le balayage enchaîne les lots (`purgerJusquAEpuisement`).
    */
-  async purgeConversationsOlderThan(days: number, maxParPassage = 500): Promise<number> {
+  async purgeConversationsOlderThan(days: number, maxParPassage = PURGE_CONVERSATIONS_PAR_LOT): Promise<number> {
     /**
      * 🔴 `days <= 0` arrête tout, y compris les espaces qui ont réglé leur propre durée : c'est le levier
      * d'urgence de la seule opération irréversible du dépôt (sans lui, `make_interval(days => 0)` viserait

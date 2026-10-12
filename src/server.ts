@@ -105,6 +105,7 @@ import type { SourceOffres } from './offres/offre.pg';
 import { LimiteOffreError, STATUT_REFUS_OFFRE, corpsRefusLimite } from './offres/refus';
 import { makeRequireApiKey, requireScope } from './auth/api-key';
 import { RateLimiter } from './auth/rate-limit';
+import { PlafondGlobal } from './auth/plafond-global';
 import { PlafondEspace, ReglagesPlafondEnCache, SANS_REGLAGE, type PlafondApiStore, type PlafondsParDefaut } from './auth/plafond-espace';
 import { registerOpsPlafondApi } from './http/ops-plafond-api';
 import { registerOffre, type OffreRouteDeps } from './http/offre';
@@ -779,9 +780,15 @@ export function modulesDeRoutes(
        * Le compteur par clé ne sert qu'au relais du Meta Business Agent, hors du plafond de l'espace : un
        * intégrateur qui charge l'API ne doit pas couper les outils de l'agent de Meta. Il reste en mémoire, par
        * copie, délibérément (`documentation.md`, les plafonds). Aucun des deux n'a besoin d'un plafond de clés
-       * (clés résolues seulement).
+       * (clés résolues seulement). Le plafond de la plateforme (lot 14, Free d'abord) se compte dans la même
+       * instruction que celui de l'espace.
        */
-      const plafondEspace = new PlafondEspace(defautsPlafond(), reglagesPlafond, debit);
+      const plafondGlobal = new PlafondGlobal(
+        { parFenetre: config.API_PLAFOND_GLOBAL_PAR_10S, partFreePct: config.API_PLAFOND_GLOBAL_PART_FREE },
+        deps.offres ?? toutOuvert,
+        debit,
+      );
+      const plafondEspace = new PlafondEspace(defautsPlafond(), reglagesPlafond, debit, plafondGlobal);
       const apiLimiter = new RateLimiter(config.API_KEY_RATE_LIMIT_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS);
       /**
        * Le pré-filtre : budget global des lookups spéculatifs. Sa clé est une constante

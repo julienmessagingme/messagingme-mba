@@ -9,7 +9,7 @@ import { DROIT_RELAIS } from '../src/mba/cle-relais';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
-import { plafondsDeTest } from './aide/plafonds';
+import { plafondsDeTest, plafondGlobalEteint } from './aide/plafonds';
 import { capturerJournal } from './journal';
 import { CompteurDebitMemoire } from '../src/db/debit.memoire';
 
@@ -49,7 +49,7 @@ async function appel(p: PlafondEspace, tenantId: string) {
 describe('les deux fenêtres d’un espace', () => {
   it('🔴 la MINUTE pleine refuse, nomme la minute et son plafond, et `retry-after` va à la fin de la minute', async () => {
     const h = horloge();
-    const p = new PlafondEspace({ minute: 2, heure: 100 }, sansReglage, new CompteurDebitMemoire(h.now));
+    const p = new PlafondEspace({ minute: 2, heure: 100 }, sansReglage, new CompteurDebitMemoire(h.now), plafondGlobalEteint());
     expect((await appel(p, 't1')).ok).toBe(true);
     h.avancer(10_000);
     expect((await appel(p, 't1')).ok).toBe(true);
@@ -72,7 +72,7 @@ describe('les deux fenêtres d’un espace', () => {
 
   it('🔴 puis l’HEURE pleine refuse, nomme l’heure, et `retry-after` va à la fin de l’heure, pas de la minute', async () => {
     const h = horloge();
-    const p = new PlafondEspace({ minute: 2, heure: 3 }, sansReglage, new CompteurDebitMemoire(h.now));
+    const p = new PlafondEspace({ minute: 2, heure: 3 }, sansReglage, new CompteurDebitMemoire(h.now), plafondGlobalEteint());
     expect((await appel(p, 't1')).ok).toBe(true);
     expect((await appel(p, 't1')).ok).toBe(true);
     h.avancer(61_000);
@@ -91,7 +91,7 @@ describe('les deux fenêtres d’un espace', () => {
 
   it('🔴 les deux pleines : `retry-after` vaut la plus LONGUE attente, sinon le réessai prend un second 429', async () => {
     const h = horloge();
-    const p = new PlafondEspace({ minute: 1, heure: 1 }, sansReglage, new CompteurDebitMemoire(h.now));
+    const p = new PlafondEspace({ minute: 1, heure: 1 }, sansReglage, new CompteurDebitMemoire(h.now), plafondGlobalEteint());
     expect((await appel(p, 't1')).ok).toBe(true);
     h.avancer(20_000);
     const refus = await appel(p, 't1');
@@ -101,7 +101,7 @@ describe('les deux fenêtres d’un espace', () => {
 
   it('🔴 un appel REFUSÉ ne consomme rien : ni la minute, ni l’heure', async () => {
     const h = horloge();
-    const p = new PlafondEspace({ minute: 1, heure: 3 }, sansReglage, new CompteurDebitMemoire(h.now));
+    const p = new PlafondEspace({ minute: 1, heure: 3 }, sansReglage, new CompteurDebitMemoire(h.now), plafondGlobalEteint());
     expect((await appel(p, 't1')).ok).toBe(true);
     // Dix refus de la minute. S'ils prenaient une place dans l'heure, elle serait pleine avant la fin du cas.
     for (let i = 0; i < 10; i += 1) expect((await appel(p, 't1')).ok).toBe(false);
@@ -115,7 +115,7 @@ describe('les deux fenêtres d’un espace', () => {
 
   it('⚠️ les en-têtes décrivent la fenêtre la plus proche de son plafond', async () => {
     const h = horloge();
-    const p = new PlafondEspace({ minute: 5, heure: 7 }, sansReglage, new CompteurDebitMemoire(h.now));
+    const p = new PlafondEspace({ minute: 5, heure: 7 }, sansReglage, new CompteurDebitMemoire(h.now), plafondGlobalEteint());
     const premier = await appel(p, 't1');
     expect([premier.headers['x-ratelimit-limit'], premier.headers['x-ratelimit-remaining']]).toEqual(['5', '4']);
     for (let i = 0; i < 4; i += 1) await appel(p, 't1');
@@ -130,8 +130,8 @@ describe('les copies de l’API partagent le plafond (lot B, 2026-09-28)', () =>
   it('🔴 deux copies sur le même compteur : l’espace a son plafond au TOTAL, et chacune annonce le compte commun', async () => {
     const h = horloge();
     const base = new CompteurDebitMemoire(h.now);
-    const copieA = new PlafondEspace({ minute: 3, heure: 100 }, sansReglage, base);
-    const copieB = new PlafondEspace({ minute: 3, heure: 100 }, sansReglage, base);
+    const copieA = new PlafondEspace({ minute: 3, heure: 100 }, sansReglage, base, plafondGlobalEteint());
+    const copieB = new PlafondEspace({ minute: 3, heure: 100 }, sansReglage, base, plafondGlobalEteint());
     const a1 = await appel(copieA, 't1');
     const b1 = await appel(copieB, 't1');
     expect([a1.headers['x-ratelimit-remaining'], b1.headers['x-ratelimit-remaining']]).toEqual(['2', '1']);
@@ -146,7 +146,7 @@ describe('les copies de l’API partagent le plafond (lot B, 2026-09-28)', () =>
     // d'un refus qui n'a rien compté. Ici, le double ; en base, `tests/integration/compteurs-debit.integration.test.ts`.
     const h = horloge();
     const base = new CompteurDebitMemoire(h.now);
-    const p = new PlafondEspace({ minute: 1, heure: 2 }, sansReglage, base);
+    const p = new PlafondEspace({ minute: 1, heure: 2 }, sansReglage, base, plafondGlobalEteint());
     expect((await appel(p, 't1')).ok).toBe(true);
     for (let i = 0; i < 5; i += 1) expect((await appel(p, 't1')).ok).toBe(false);
     h.avancer(60_000);
@@ -155,7 +155,7 @@ describe('les copies de l’API partagent le plafond (lot B, 2026-09-28)', () =>
 
   it('🔴 base muette : l’appel PASSE, sans en-têtes, et la panne se dit une fois par minute', async () => {
     const muette = { compter: async () => { throw new Error('connexion perdue'); }, lister: async () => [] };
-    const p = new PlafondEspace({ minute: 1, heure: 1 }, sansReglage, muette);
+    const p = new PlafondEspace({ minute: 1, heure: 1 }, sansReglage, muette, plafondGlobalEteint());
     const { resultat, lignes } = await capturerJournal(async () => Promise.all([appel(p, 't1'), appel(p, 't1'), appel(p, 't1')]));
     for (const r of resultat) {
       expect(r.ok).toBe(true);
@@ -167,7 +167,7 @@ describe('les copies de l’API partagent le plafond (lot B, 2026-09-28)', () =>
 
 describe('le réglage d’un espace', () => {
   it('🔴 relève SON plafond sans toucher celui des autres', async () => {
-    const p = new PlafondEspace({ minute: 2, heure: 100 }, { reglage: async (t) => (t === 't1' ? { minute: 5, heure: null, envoisJour: null, fichesJour: null } : SANS_REGLAGE) }, new CompteurDebitMemoire());
+    const p = new PlafondEspace({ minute: 2, heure: 100 }, { reglage: async (t) => (t === 't1' ? { minute: 5, heure: null, envoisJour: null, fichesJour: null } : SANS_REGLAGE) }, new CompteurDebitMemoire(), plafondGlobalEteint());
     const codes = async (t: string, n: number) => {
       const r: Array<number | null> = [];
       for (let i = 0; i < n; i += 1) r.push((await appel(p, t)).statusCode);
@@ -179,7 +179,7 @@ describe('le réglage d’un espace', () => {
 
   it('🔴 `null` = le défaut de la configuration, fenêtre par fenêtre', async () => {
     const h = horloge();
-    const p = new PlafondEspace({ minute: 2, heure: 100 }, { reglage: async () => ({ minute: null, heure: 3, envoisJour: null, fichesJour: null }) }, new CompteurDebitMemoire(h.now));
+    const p = new PlafondEspace({ minute: 2, heure: 100 }, { reglage: async () => ({ minute: null, heure: 3, envoisJour: null, fichesJour: null }) }, new CompteurDebitMemoire(h.now), plafondGlobalEteint());
     expect((await appel(p, 't1')).headers['x-ratelimit-limit'], 'la minute par défaut').toBe('2');
     await appel(p, 't1');
     expect((await appel(p, 't1')).body).toMatchObject({ error: expect.stringContaining('2 appels par minute') });
@@ -189,7 +189,7 @@ describe('le réglage d’un espace', () => {
   });
 
   it('⚠️ un défaut à 0 éteint la fenêtre (le levier d’urgence), un réglage d’espace reste appliqué', async () => {
-    const p = new PlafondEspace({ minute: 0, heure: 0 }, { reglage: async (t) => (t === 't1' ? { minute: 1, heure: null, envoisJour: null, fichesJour: null } : SANS_REGLAGE) }, new CompteurDebitMemoire());
+    const p = new PlafondEspace({ minute: 0, heure: 0 }, { reglage: async (t) => (t === 't1' ? { minute: 1, heure: null, envoisJour: null, fichesJour: null } : SANS_REGLAGE) }, new CompteurDebitMemoire(), plafondGlobalEteint());
     for (let i = 0; i < 20; i += 1) {
       const r = await appel(p, 't2');
       expect(r.ok).toBe(true);
@@ -341,6 +341,17 @@ describe('la garde de clé compte l’ESPACE, et le relais à part', () => {
     expect(relais.statusCode, 'l’agent de Meta garde ses outils').toBeNull();
     // Ses en-têtes sont ceux de SA clé, pas ceux de l'espace.
     expect([relais.headers['x-ratelimit-limit'], relais.headers['x-ratelimit-remaining']]).toEqual(['50', '49']);
+  });
+
+  it('🔴 NI DANS CELUI DE LA PLATEFORME (lot 14) : la plateforme saturée, l’agent de Meta garde ses outils, et ses appels n’y comptent pas', async () => {
+    const garde = makeRequireApiKey(new FaussesCles(), plafondsDeTest({ global: { parFenetre: 2, partFreePct: 50 }, relais: 50 }), large(), aucunJetonOauth);
+    for (let i = 0; i < 5; i += 1) expect((await passer(garde, RELAIS)).statusCode, 'le relais ne compte pas').toBeNull();
+    expect((await passer(garde, A)).statusCode).toBeNull();
+    expect((await passer(garde, AUTRE)).statusCode).toBeNull();
+    const refus = await passer(garde, B);
+    expect(refus.statusCode, 'la plateforme est à bout').toBe(429);
+    expect(refus.body).toMatchObject({ error: expect.stringContaining('plateforme') });
+    expect((await passer(garde, RELAIS)).statusCode, 'l’agent de Meta garde ses outils').toBeNull();
   });
 
   it('🔴 et ses appels ne coûtent rien à l’espace', async () => {

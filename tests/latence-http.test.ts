@@ -335,7 +335,8 @@ describe('🔴 le câblage', () => {
   });
 
   it('un dernier vidage part à l’arrêt, avant la fermeture du pool', () => {
-    expect(INDEX).toContain('fermerPool: async () => { await viderLatences(); await pool.end(); },');
+    // Avant les DEUX pools : l'applicatif et celui de la réception de Meta (lot 14).
+    expect(INDEX).toContain('fermerPool: async () => { await viderLatences(); await poolReception.end(); await pool.end(); },');
   });
 
   it('le worker purge la table à sa rétention', () => {

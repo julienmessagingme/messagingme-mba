@@ -78,6 +78,24 @@ export class PgHttpLatencesStore {
     }));
   }
 
+  /**
+   * Les tranches d'UNE route sur UNE fenêtre de cinq minutes, toutes copies et tous codes confondus (lot 14, la veille
+   * de charge sur la réception de Meta). Aucune ligne : des tranches vides.
+   */
+  async lireFenetre(methode: string, route: string, fenetre: Date): Promise<{ seaux: number[]; maxMs: number }> {
+    const res = await this.pool.query<{ seaux: number[]; max_ms: number }>(
+      `select seaux, max_ms from http_latences where fenetre = $1 and methode = $2 and route = $3`,
+      [fenetre, methode, route],
+    );
+    const seaux: number[] = [];
+    let maxMs = 0;
+    for (const r of res.rows) {
+      r.seaux.forEach((n, i) => { seaux[i] = (seaux[i] ?? 0) + Number(n); });
+      maxMs = Math.max(maxMs, Number(r.max_ms));
+    }
+    return { seaux, maxMs };
+  }
+
   async purgeOlderThan(jours: number): Promise<number> {
     const res = await this.pool.query(
       `delete from http_latences where fenetre < now() - make_interval(days => $1::int)`,

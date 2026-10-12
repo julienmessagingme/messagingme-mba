@@ -6,6 +6,28 @@
 > tranchent, jamais ce fichier.
 
 
+## 2026-10-12 : les protections de la tenue en charge (lot 14, livraison A)
+
+Cinq protections avant l'ouverture du site (spec `docs/superpowers/specs/2026-10-12-tenue-en-charge-design.md`) : le
+plafond de toute la plateforme sur `/v1` et `/mcp`, Free d'abord, ÉTEINT jusqu'à la mesure du banc (B) ; un pool de
+deux connexions réservé à la réception de Meta ; la purge des conversations sans plafond journalier ; la veille de
+charge (quatre alertes Telegram) ; la jauge et les alertes du budget d'équipe de la passerelle d'IA chez Vercel.
+
+- **Le plafond global se compte dans la même instruction que les fenêtres de l'espace**, pas dans un second appel :
+  compté à part, un refus de la plateforme aurait brûlé la minute de l'espace, et la boucle d'un intégrateur refusé
+  aurait coûté une écriture par appel, ce que la mémoire des fenêtres pleines évite. Sa clé (`api.zz-plateforme`) se
+  trie après celles de l'espace : la ligne que tous les appels se disputent se verrouille en dernier.
+- **La réponse de `GET /ai-gateway/budgets/list` n'est pas documentée chez Vercel** : lue en lecture seule depuis le
+  conteneur de l'API. Le même jour, le compteur du budget d'équipe disait 0 $ quand les clés mensuelles en disaient
+  7,96 : la jauge retient le plus grand des deux. Le « une fois par seuil et par mois » vit dans `compteurs_debit`, et
+  sa clé porte le plafond, pour que relever le budget réarme les seuils.
+- **`pool_attentes` ne garde pas de centile** : l'alerte « base saturée » lit au moins 5 % d'attentes dont une au-delà
+  de 200 ms, à la place du p95 que la spec supposait. L'âge d'une file ne compte que les jobs qui attendent une place,
+  pas ceux dont le groupe a déjà un job en cours (la seconde campagne d'un espace).
+- Relecture unique (opus) : aucun rouge, six jaunes corrigés avant le push (les quatre ci-dessus, le pool de réception
+  mesuré sous son propre nom, un test qui comptait aussi les écritures différées). Sondes en lecture seule avant le
+  `up` : aucune file en attente, la première purge ne vise aucune conversation.
+
 ## 2026-10-12 : la documentation pour développeurs (lot 17)
 
 Décisions de Julien en deux rondes de questions : recette Next.js seule (un prompt à coller et le code qu'il doit

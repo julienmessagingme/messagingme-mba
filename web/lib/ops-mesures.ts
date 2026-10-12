@@ -1,4 +1,5 @@
 import type { MesureStockage, TacheFondRow } from './api';
+import type { Locale } from './locale';
 
 /**
  * La lecture des tâches de fond et du stockage sur `/ops` : ce qui passe en rouge. À part des composants pour se
@@ -10,6 +11,26 @@ export const SEUIL_TACHE_LENTE_MS = 5 * 60_000;
 
 /** Au-delà, il est temps de sortir les fichiers de la base (`SEUIL_FICHIERS_EN_BASE_OCTETS`, `src/ops/stockage.pg.ts`). */
 export const SEUIL_FICHIERS_EN_BASE_OCTETS = 500 * 1024 * 1024;
+
+/**
+ * Le budget d'équipe Vercel (lot 14) : orange à 80 %, rouge à 95 %, les seuils des alertes Telegram du worker
+ * (`SEUILS_POURCENT`, `src/agent/llm/consommation-equipe.ts`).
+ */
+export const SEUIL_VERCEL_ORANGE_POURCENT = 80;
+export const SEUIL_VERCEL_ROUGE_POURCENT = 95;
+
+/** La teinte de la jauge : `null` sous le premier seuil. Sans budget d'équipe, rouge : rien ne borne la dépense. */
+export function teinteVercel(part: number | null): 'danger' | 'alerte' | null {
+  if (part === null) return 'danger';
+  if (part * 100 >= SEUIL_VERCEL_ROUGE_POURCENT) return 'danger';
+  if (part * 100 >= SEUIL_VERCEL_ORANGE_POURCENT) return 'alerte';
+  return null;
+}
+
+/** Des dollars de la passerelle d'IA, deux décimales : « 7,96 $ » (fr), « 7.96 $ » (en). */
+export function fmtDollars(n: number, locale: Locale): string {
+  return `${n.toLocaleString(locale === 'en' ? 'en-GB' : 'fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
+}
 
 /** Une tâche à regarder : une passe a dépassé le seuil, a échoué, ou un tour a été sauté (passe trop longue ou bloquée). */
 export function tacheEnAlerte(t: TacheFondRow): boolean {

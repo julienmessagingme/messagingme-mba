@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { DailyChart } from '@/components/DailyChart';
-import { getOpsOverview, getOpsStockage, observerTenant, lireGrillePrixOps, ecrireGrillePrixOps, loginOps, loginOpsGoogle, estEtapeSecondFacteur, type OpsOverview,
+import { getOpsOverview, getOpsStockage, getOpsVercel, type JaugeVercel, observerTenant, lireGrillePrixOps, ecrireGrillePrixOps, loginOps, loginOpsGoogle, estEtapeSecondFacteur, type OpsOverview,
   lireNumerosFournis, declarerNumeroFourni, type ReserveNumerosOps, lirePlafondApiOps, type PlafondApiOps, type FenetrePlafondOps,
   lireSuppressionOps, supprimerEspaceOps, type BilanSuppressionOps, type EtapePrevueOps, type SuppressionEspaceOps, type EtapeSuppressionNom,
   type TenantOverviewRow, type QueueLoadRow, type QueueGroupLoadRow, type QueueLatenceRow, type LatenceHttpRow, type WorkerHeartbeat, type PoolInstantane,
@@ -15,7 +15,7 @@ import { fmtCost, fmtNum } from '@/lib/format';
 import { eurosDepuisMicro } from '@/lib/agent-solde';
 import { Modale } from '@/components/Modale';
 import { ordonnerLatences, enAlerte, SEUIL_P95_MS, EFFECTIF_MIN, CODE_ABANDON } from '@/lib/latence-http';
-import { tacheEnAlerte, fichiersEnBase, fmtOctets, SEUIL_TACHE_LENTE_MS, SEUIL_FICHIERS_EN_BASE_OCTETS } from '@/lib/ops-mesures';
+import { tacheEnAlerte, fichiersEnBase, fmtOctets, SEUIL_TACHE_LENTE_MS, SEUIL_FICHIERS_EN_BASE_OCTETS, teinteVercel, fmtDollars, SEUIL_VERCEL_ORANGE_POURCENT, SEUIL_VERCEL_ROUGE_POURCENT } from '@/lib/ops-mesures';
 import { useLocale, useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { saveSession, getSessionOps, saveSessionOps, clearSessionOps, type SessionOps } from '@/lib/session';
@@ -177,6 +177,7 @@ export default function OpsPage() {
             <LatenceHttpCard lignes={data.latencesHttp ?? []} />
             <TachesFondCard taches={data.tachesFond ?? []} />
             <StockageCard jeton={session.token} />
+            <VercelCard jeton={session.token} />
             <PoolCard instantane={data.poolInstantane ?? null} points={data.attentesPool ?? []} />
             <EquiteCard groupes={data.queuesParGroupe ?? []} />
 
@@ -865,6 +866,75 @@ function TachesFondCard({ taches }: { taches: TacheFondRow[] }) {
               </span>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * LE BUDGET D'ÉQUIPE VERCEL (lot 14). À 100 %, chaque bot de chaque client se tait : la carte dit où on en est, aux
+ * couleurs des alertes Telegram du worker. Lue chez Vercel une fois, à l'ouverture de l'écran. Une API qui ne porte pas
+ * encore la route (la console est publiée avant l'API) ou une lecture en échec ne fait tomber que cette carte.
+ */
+function VercelCard({ jeton }: { jeton: string }) {
+  const t = useT();
+  const { locale } = useLocale();
+  const [jauge, setJauge] = useState<JaugeVercel | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+  useEffect(() => {
+    let vivant = true;
+    getOpsVercel(jeton)
+      .then((j) => {
+        if (!vivant) return;
+        if (typeof j?.configure === 'boolean') setJauge(j);
+        else setErreur(t('Jauge indisponible sur cette version de l’API.', 'Gauge unavailable on this API version.'));
+      })
+      .catch((e: unknown) => {
+        if (!vivant) return;
+        const detail = e instanceof Error ? e.message : '';
+        setErreur(`${t('Jauge indisponible', 'Gauge unavailable')}${detail ? ` : ${detail}` : ''}`);
+      });
+    return () => { vivant = false; };
+  }, [jeton, t]);
+  const part = jauge?.part ?? null;
+  const teinte = jauge?.configure ? teinteVercel(part) : null;
+  const classe = teinte === 'danger' ? 'text-danger' : teinte === 'alerte' ? 'text-alerte-700' : 'text-ink-900';
+  return (
+    <div className="rounded-carte border border-ink-200 bg-white p-5" data-testid="vercel-budget">
+      <h3 className="text-sm font-semibold text-ink-900">{t('Budget d’équipe Vercel (IA)', 'Vercel team budget (AI)')}</h3>
+      <p className="mb-3 mt-1 text-xs text-ink-500">
+        {t(
+          `À 100 %, Vercel refuse tous les appels de l’équipe et chaque bot se tait. Alerte Telegram à ${SEUIL_VERCEL_ORANGE_POURCENT} % puis à ${SEUIL_VERCEL_ROUGE_POURCENT} % ; le budget se relève chez Vercel.`,
+          `At 100%, Vercel refuses every team call and every bot goes silent. Telegram alert at ${SEUIL_VERCEL_ORANGE_POURCENT}% then ${SEUIL_VERCEL_ROUGE_POURCENT}%; the budget is raised at Vercel.`,
+        )}
+      </p>
+      {erreur ? (
+        <p className="text-xs text-danger">{erreur}</p>
+      ) : !jauge ? (
+        <Squelette forme="lignes" lignes={2} />
+      ) : !jauge.configure ? (
+        <p className="text-xs text-ink-500">{t('Jeton de compte Vercel non configuré : rien à lire.', 'Vercel account token not configured: nothing to read.')}</p>
+      ) : jauge.limiteDollars === null || jauge.limiteDollars === undefined || part === null ? (
+        <p className="text-xs text-danger">
+          {t('Aucun budget d’équipe chez Vercel : rien ne borne la dépense', 'No team budget at Vercel: nothing caps spend')}
+          {' '}({fmtDollars(jauge.depenseRetenueDollars ?? 0, locale)} {t('ce mois', 'this month')}).
+        </p>
+      ) : (
+        <div className="grid gap-1.5 text-xs">
+          <p className="text-ink-900">
+            <span data-testid="vercel-part" className={`font-medium tabular-nums ${classe}`}>{Math.round(part * 100)} %</span>
+            {' · '}
+            <span className="tabular-nums">{fmtDollars(jauge.depenseRetenueDollars ?? 0, locale)}</span>
+            {' '}{t('sur', 'of')}{' '}
+            <span className="tabular-nums">{fmtDollars(jauge.limiteDollars, locale)}</span>
+            {' '}{t('ce mois', 'this month')}
+          </p>
+          <p className="text-ink-500">
+            {/* Les deux chiffres : le compteur de l'équipe a été mesuré en retard sur les clés (2026-10-12). */}
+            {t('Compteur de l’équipe', 'Team counter')} <span className="tabular-nums">{fmtDollars(jauge.depenseEquipeDollars ?? 0, locale)}</span>
+            {' · '}{t('clés mensuelles', 'monthly keys')} <span className="tabular-nums">{fmtDollars(jauge.depenseClesMensuellesDollars ?? 0, locale)}</span>
+          </p>
         </div>
       )}
     </div>

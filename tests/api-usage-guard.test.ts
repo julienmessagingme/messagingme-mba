@@ -303,7 +303,7 @@ describe('un refus de PLACE se voit dans les compteurs', () => {
  * Trois constantes de trois fichiers : le nombre d'opérations lourdes simultanées (`src/config.ts`), les
  * écritures qu'un lot de contacts lance à la fois (`src/api/contacts-upsert.ts`) et la taille du pool de
  * l'API (`src/config.ts`). Chacune est plausible seule ; c'est leur PRODUIT qui décide si un intégrateur peut
- * faire attendre la console et la réception des webhooks de Meta. La valeur a été 2 jusqu'au 2026-09-21, et
+ * faire attendre la console (la réception de Meta a son propre pool depuis le lot 14). La valeur a été 2 jusqu'au 2026-09-21, et
  * 2 x 4 = 8 prenait TOUT le pool : ce test l'aurait refusé.
  */
 describe('la part du pool de l’API que prennent les opérations lourdes', () => {

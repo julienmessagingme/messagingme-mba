@@ -84,6 +84,7 @@ export const TACHES_PAR_ROLE: Record<string, Appartenance> = {
   'campagnes-programmees': 'principal',
   'campagnes-reprise-plafond': 'principal',
   'compteurs-debit': 'principal',
+  'consommation-vercel': 'principal',
   'files-echec': 'principal',
   'handoff-mba': 'principal',
   'idempotence-api': 'principal',
@@ -98,6 +99,7 @@ export const TACHES_PAR_ROLE: Record<string, Appartenance> = {
   'statut-numeros': 'principal',
   'suivi-pubs': 'principal',
   'tours-agent-bloques': 'principal',
+  'veille-charge': 'principal',
   vectorisation: 'principal',
   'webhooks-muets': 'principal',
 };

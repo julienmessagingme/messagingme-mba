@@ -4,7 +4,7 @@ import { grilleDepuisLigne } from '../../src/stats/prix';
 import '../../src/charger-env';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
-import { ALL_QUEUES } from '../../src/queue/names';
+import { ALL_QUEUES, BASE_QUEUES } from '../../src/queue/names';
 import { pgSsl } from '../../src/db/ssl';
 import { PgContactStore } from '../../src/crm/contact-store.pg';
 import { PgEventStore } from '../../src/webhooks/store';
@@ -1460,6 +1460,11 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       expect(q.backlog).toBeGreaterThanOrEqual(0);
       expect(q.active).toBeGreaterThanOrEqual(0);
       expect(q.failed).toBeGreaterThanOrEqual(0);
+    }
+    // L'âge d'attente de la veille de charge (lot 14) : des files de base seulement, jamais une file des morts.
+    for (const a of await ops.agesDAttente()) {
+      expect(BASE_QUEUES as readonly string[]).toContain(a.file);
+      expect(a.ageSecondes).toBeGreaterThanOrEqual(0);
     }
   });
 

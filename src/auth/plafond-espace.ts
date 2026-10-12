@@ -2,6 +2,7 @@ import type { FastifyReply } from 'fastify';
 import { refuserTropDeRequetes } from './rate-limit';
 import { restantDe, type CompteurDebit, type EtatFenetre, type VerdictDebit } from '../db/debit';
 import { journaliser } from '../lib/journal';
+import { FENETRE_GLOBALE_MS, MESSAGE_PLATEFORME_SATUREE, type PlafondGlobal } from './plafond-global';
 
 /**
  * Le plafond de l'API publique par espace, commun à toutes les clés d'un espace, `/v1` et `/mcp` confondus,
@@ -169,6 +170,8 @@ export class PlafondEspace {
     private readonly reglages: LecteurReglagePlafond,
     /** Le compteur partagé par les copies de l'API. Aucun plafond de clés : la clé est l'espace d'une clé résolue. */
     private readonly compteur: CompteurDebit,
+    /** Le plafond de la plateforme (`plafond-global.ts`), compté dans la MÊME instruction que les deux fenêtres. */
+    private readonly global: PlafondGlobal,
   ) {}
 
   /**
@@ -183,12 +186,21 @@ export class PlafondEspace {
       { nom: 'minute', dureeMs: FENETRE_MINUTE_MS, max: reglage.minute ?? this.defauts.minute },
       { nom: 'heure', dureeMs: FENETRE_HEURE_MS, max: reglage.heure ?? this.defauts.heure },
     ].filter((f) => f.max > 0);
-    // Aucune fenêtre active : aucun en-tête. Annoncer une limite de 0 sur un appel accepté serait faux.
-    if (fenetres.length === 0) return true;
+    const plateforme = await this.global.fenetre(tenantId);
+    if (fenetres.length === 0 && plateforme === null) return true;
+    // Une part Free arrondie à 0 refuse tout Free sans compter : le compteur refuse un plafond nul comme une faute d'appel.
+    if (plateforme?.comptage.max === 0) {
+      this.global.noterRefus(plateforme.sorte);
+      await refuserTropDeRequetes(reply, FENETRE_GLOBALE_MS, MESSAGE_PLATEFORME_SATUREE, 'rate_limited');
+      return false;
+    }
 
     let verdict: VerdictDebit;
     try {
-      verdict = await this.compteur.compter(fenetres.map((f) => ({ cle: `api.${f.nom}|${tenantId}`, dureeMs: f.dureeMs, max: f.max })));
+      verdict = await this.compteur.compter([
+        ...fenetres.map((f) => ({ cle: `api.${f.nom}|${tenantId}`, dureeMs: f.dureeMs, max: f.max })),
+        ...(plateforme ? [plateforme.comptage] : []),
+      ]);
     } catch (err) {
       // La politique écrite en tête de fichier : l'appel passe, sans en-têtes, et la panne se dit une fois par minute.
       const t = Date.now();
@@ -201,8 +213,15 @@ export class PlafondEspace {
     const etats: Array<{ nom: string; max: number; etat: EtatFenetre }> = fenetres.map((f, i) => ({ nom: f.nom, max: f.max, etat: verdict.fenetres[i]! }));
 
     if (!verdict.accepte) {
-      // Une fenêtre au moins est pleine (c'est la seule raison d'un refus) ; le repli sur toutes n'est qu'une ceinture.
       const pleines = etats.filter((f) => f.etat.pleine);
+      // Aucune fenêtre de l'espace pleine : c'est la plateforme qui refuse. Sa fenêtre suit celles de l'espace.
+      if (pleines.length === 0 && plateforme) {
+        this.global.noterRefus(plateforme.sorte);
+        const fin = verdict.fenetres[fenetres.length]!.finMs;
+        await refuserTropDeRequetes(reply, fin - verdict.maintenantMs, MESSAGE_PLATEFORME_SATUREE, 'rate_limited');
+        return false;
+      }
+      // Une fenêtre au moins est pleine (c'est la seule raison d'un refus) ; le repli sur toutes n'est qu'une ceinture.
       const bloquante = (pleines.length > 0 ? pleines : etats).reduce((a, b) => (b.etat.finMs > a.etat.finMs ? b : a));
       annoncer(reply, bloquante.max, 0, bloquante.etat.finMs);
       await refuserTropDeRequetes(
@@ -213,6 +232,8 @@ export class PlafondEspace {
       );
       return false;
     }
+    // Aucune fenêtre de l'espace active : aucun en-tête. Annoncer une limite de 0 sur un appel accepté serait faux.
+    if (etats.length === 0) return true;
     const annoncee = etats.reduce((a, b) => (restantDe(b.etat) < restantDe(a.etat) ? b : a));
     annoncer(reply, annoncee.max, restantDe(annoncee.etat), annoncee.etat.finMs);
     return true;
