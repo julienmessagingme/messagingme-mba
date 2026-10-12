@@ -105,9 +105,12 @@ describe('le budget de connexions des processus', () => {
   });
 
   it('🔴 chaque copie d’API déclare le pool de la réception de Meta (lot 14), et aucun worker n’en porte', () => {
-    // Le défaut de la configuration (2) s'appliquerait sinon sans être compté ici. Un worker ne l'ouvre jamais :
+    // Le défaut de la configuration (4) s'appliquerait sinon sans être compté ici. Un worker ne l'ouvre jamais :
     // l'y déclarer laisserait croire qu'il compte.
-    for (const s of services.filter((x) => !x.worker)) expect(s.receptionMax ?? 0, `${s.nom} sans DB_POOL_RECEPTION_MAX`).toBeGreaterThanOrEqual(1);
+    // Au moins 4 : mesuré au banc du lot 14 (2026-10-12), deux connexions accusaient environ 150 webhooks par seconde,
+    // et une rafale de 300 accusés par seconde attendait jusqu'à 7,6 s, à un souffle du délai de 8 s au-delà duquel
+    // la réception rend 500 et Meta rejoue.
+    for (const s of services.filter((x) => !x.worker)) expect(s.receptionMax ?? 0, `${s.nom} : DB_POOL_RECEPTION_MAX`).toBeGreaterThanOrEqual(4);
     for (const s of services.filter((x) => x.worker)) expect(s.receptionMax, s.nom).toBeNull();
   });
 

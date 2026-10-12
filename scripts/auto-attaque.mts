@@ -611,9 +611,9 @@ async function main(): Promise<void> {
   const deps = dependancesDuRegistre();
   /**
    * Le serveur des sondes tourne plafonds coupés (sonde 8 ci-dessous), et cela vaut aussi pour le PRÉ-FILTRE des clés
-   * (`API_KEY_PREFILTRE_MAX`, un budget GLOBAL de 30 fausses clés par minute) : les sondes 13 et 13 bis présentent une
-   * fausse clé à chaque route `cle-api`, et au-delà de trente routes le budget rendait 429 au lieu du 401 attendu
-   * (vécu au lot 13). 0 le désactive ; il n'est lu qu'à la construction, et rétabli juste après.
+   * (`API_KEY_PREFILTRE_MAX`, un budget GLOBAL de fausses clés par minute) : les sondes 13 et 13 bis présentent une
+   * fausse clé à chaque route `cle-api`, et au-delà du budget il rendait 429 au lieu du 401 attendu (vécu au lot 13,
+   * quand il valait 30). 0 le désactive ; il n'est lu qu'à la construction, et rétabli juste après.
    */
   const prefiltre = config.API_KEY_PREFILTRE_MAX;
   if (LOCAL) config.API_KEY_PREFILTRE_MAX = 0;

@@ -113,11 +113,12 @@ export const schema = z.object({
   DB_POOL_MAX: z.coerce.number().default(8),
   /**
    * Le pool RÉSERVÉ à la réception de Meta dans une copie d'API (lot 14, `creerPoolReception`) : l'enfilement des
-   * webhooks n'attend plus jamais `/v1`, `/mcp` ni la console sur le pool applicatif. Deux connexions : un
-   * enfilement est une instruction de quelques millisecondes. Fixé par service dans `docker-compose.yml`, et compté
-   * dans le budget du pooler (`tests/budget-pooler.test.ts`). Le worker ne l'ouvre pas.
+   * webhooks n'attend plus jamais `/v1`, `/mcp` ni la console sur le pool applicatif. Quatre connexions, mesurées au
+   * banc du lot 14 (2026-10-12) : deux accusaient environ 150 webhooks par seconde, et une rafale de 300 accusés par
+   * seconde attendait jusqu'à 7,6 s, à un souffle du délai de connexion de 8 s. Fixé par service dans
+   * `docker-compose.yml`, et compté dans le budget du pooler (`tests/budget-pooler.test.ts`). Le worker ne l'ouvre pas.
    */
-  DB_POOL_RECEPTION_MAX: z.coerce.number().int().min(1).default(2),
+  DB_POOL_RECEPTION_MAX: z.coerce.number().int().min(1).default(4),
   /** Max de connexions du pool pg-boss du WORKER, resté en mode session : c'est lui qui vit dans le budget des
    *  sessions du pooler, partagé avec mm-hubspot (PGBOSS_MAX par worker plus l'écoute des notifications, plus
    *  les sessions de mm-hubspot ; le calcul et sa borne : `tests/budget-pooler.test.ts`). L'API ne le lit plus : elle n'ouvre aucun pool pg-boss,
@@ -200,11 +201,16 @@ export const schema = z.object({
   /**
    * Pré-filtre des clés d'API : ce qu'un porteur non résolu peut coûter, par minute.
    * Le plafond ci-dessus ne compte que des clés résolues : sans ce budget, chaque fausse clé coûte un SHA-256
-   * et une requête Postgres sur le pool de la copie, partagé avec la console et la réception des webhooks.
+   * et une requête Postgres sur le pool applicatif de la copie, partagé avec la console.
    * Global et non par clé : un compteur par empreinte ne freine rien (trente fausses clés, trente compteurs
-   * à 1). Une empreinte déjà résolue n'y est plus soumise, donc 30 est très large. 0 le désactive.
+   * à 1). Une empreinte déjà résolue n'y est plus soumise tant que le processus vit, mais un DÉMARRAGE les oublie
+   * toutes : chaque clé et chaque jeton actifs y repassent une fois après chaque déploiement. 🔴 600 et non 30
+   * (mesuré au banc du lot 14, le 2026-10-12) : à 30, cent intégrateurs attendaient plus de trois minutes après un
+   * redémarrage, et 72 % de leurs appels de la première minute partaient en 429. Une empreinte inconnue coûte une
+   * lecture indexée ; la fenêtre est FIXE, donc sous attaque les 600 peuvent tomber d'un coup en début de minute,
+   * soit environ 0,6 s de pool applicatif plein par minute et par copie. 0 le désactive.
    */
-  API_KEY_PREFILTRE_MAX: z.coerce.number().int().min(0).default(30),
+  API_KEY_PREFILTRE_MAX: z.coerce.number().int().min(0).default(600),
   /**
    * Nombre d'opérations lourdes de l'API publique (lot de contacts, création d'envoi) en vol en même temps.
    * 0 désactive.

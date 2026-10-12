@@ -480,7 +480,8 @@ workers.
 ### 7.5 Le budget de connexions se recalcule, il ne se recopie pas
 
 ```
-  N x API        (pool applicatif SEUL : DB_POOL_MAX chacune ; pg-boss l'emprunte, §3.1)
+  N x API        (pool applicatif DB_POOL_MAX + pool de la réception de Meta DB_POOL_RECEPTION_MAX, lot 14 ;
+                  pg-boss emprunte l'un et l'autre, §3.1)
 + worker principal (pool applicatif + consommateur pg-boss PGBOSS_MAX + écoute de notifications)
 + worker analyse   (pool applicatif + consommateur pg-boss, écoute seulement si elle sert)
 + marge pour les migrations et l'administration
@@ -723,6 +724,14 @@ diverge. La bascule est franche, et le retour arrière est la restauration du du
   entre deux copies ; arrêt propre sans requête coupée ; arrêt brutal, toute clé coupée aboutit une fois le bail
   passé, ZÉRO campagne orpheline ; webhooks acquittés sous pression de pool ; chaque copie sous son `DB_POOL_MAX`.
   Sa recette de montage est en tête de `scripts/banc-deux-api.mts`.
+- **Le banc de l'API publique rejoué sur la cible** (`scripts/banc-api.sh`, lot 14) : cent espaces, paliers de débit
+  sur `/v1` et `/mcp` avec webhooks de Meta, rafale d'accusés, plafond global allumé. Sur le VPS et la base de Londres
+  (10 ms), il a tenu 150 appels/s sans casser. À la cible, il se rejoue avec la latence de la région
+  (`BANC_DELAI_MS`, environ 1) et, mieux, contre une base jetable de l'OFFRE CHOISIE (Supabase Pro ou PostgreSQL
+  managé Scaleway), parce que la limite tombera sur la base avant l'API : sa garde refuse aujourd'hui toute adresse
+  Supabase, à adapter pour une base jetable nommée. Le plafond global (`API_PLAFOND_GLOBAL_PAR_10S`, valeur
+  intérimaire posée sur l'infrastructure actuelle) se repose alors à 70 % de la capacité mesurée, et
+  `DB_POOL_RECEPTION_MAX` se revoit : à 1 ms, chaque connexion accuse dix fois plus de webhooks qu'à 10 ms.
 
 **Les deux workers**
 - Tuer le worker d'analyse ne ralentit ni les entrants ni les campagnes.

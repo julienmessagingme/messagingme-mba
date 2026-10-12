@@ -2250,14 +2250,15 @@ premier tour qui arrive pendant qu'elle tourne encore est sauté et journalisé.
   inscrirait pas la tâche (comme avant) et prendrait une SECONDE connexion au même pool. Aucun code ne le fait
   (l'opt-out annonce après le `commit`).
 - 🔴 **LA RÉCEPTION DE META A SON PROPRE POOL** (lot 14, `creerPoolReception`, `src/db/pool.ts`) : une seconde
-  instance pg-boss, prêtée elle aussi, sur un pool de `DB_POOL_RECEPTION_MAX` connexions (2, fixé par service dans
+  instance pg-boss, prêtée elle aussi, sur un pool de `DB_POOL_RECEPTION_MAX` connexions (4, fixé par service dans
   `docker-compose.yml`), que seul le récepteur du webhook de Meta emprunte (`buildServer` reçoit cette file-là ; tout ce
   qui empile ailleurs dans l'API garde la file du pool applicatif). Une rafale sur `/v1`, `/mcp` ou la console peut
   prendre tout le pool applicatif sans faire attendre l'accusé d'un webhook. Son attente se mesure à part
   (`mesureAttenteReception`) et s'écrit dans `pool_attentes` sous `<NOM_API>-reception` : la carte du pool et l'alerte
   « base saturée » le voient. Il compte dans le budget du pooler (`tests/budget-pooler.test.ts`), le worker ne l'ouvre
-  pas. ⚠️ Deux connexions bornent l'accusé vers 200 enfilements par seconde (10 ms jusqu'à la base) : au-delà, la
-  réception attend, puis Meta réessaie ; le banc du lot 14 (B) le mesure.
+  pas. ⚠️ Sa taille borne le débit d'accusés (environ une instruction par aller-retour vers la base et par connexion) :
+  sous une rafale qui le dépasse, l'attente approche le délai de connexion de 8 s, au-delà duquel la réception rend 500
+  et Meta rejoue. Quatre au minimum, exigé par le test du budget (la mesure : `src/config.ts`).
 - **`DB_POOL_MAX`** est instancié **PAR PROCESS**, et **chaque service le fixe dans `docker-compose.yml`** (le
   défaut de la configuration n'est qu'un repli). Ce qui mord n'est pas Postgres mais le pool du pooler de
   Supabase, « Pool Size », par utilisateur, base et MODE : la somme des pools de tous les processus doit y
@@ -2695,9 +2696,11 @@ plusieurs adresses sources, la même identité se répartirait sur plusieurs cl�
 d'autant. `CF-Connecting-IP` ne deviendra lisible qu'avec une origine qui ne répond qu'à Cloudflare (§7.3).
 
 🔴 **Les portes publiques ont leurs propres plafonds, et un plafond ne compte que des clés qui EXISTENT.**
-- `/v1` et `/mcp` : un budget GLOBAL (`API_KEY_PREFILTRE_MAX`, clé constante) freine les empreintes jamais
-  résolues par ce process AVANT la requête en base ; une empreinte résolue en est exemptée, sinon une attaque qui
-  l'épuise couperait tous les clients. Puis le plafond de l'ESPACE (`src/auth/plafond-espace.ts`, 2026-09-25),
+- `/v1` et `/mcp` : un budget GLOBAL (`API_KEY_PREFILTRE_MAX`, clé constante, 600 par minute) freine les empreintes
+  jamais résolues par ce process AVANT la requête en base ; une empreinte résolue en est exemptée, sinon une attaque
+  qui l'épuise couperait tous les clients. ⚠️ Un démarrage oublie toutes les empreintes résolues : chaque clé et chaque
+  jeton actifs repassent une fois par ce budget après chaque déploiement, qui doit donc couvrir en une minute ceux de
+  tous les intégrateurs actifs (le pourquoi de 600 : `src/config.ts`). Puis le plafond de l'ESPACE (`src/auth/plafond-espace.ts`, 2026-09-25),
   commun à toutes ses clés : deux fenêtres fixes qui s'appliquent ensemble (`API_PLAFOND_MINUTE`, défaut 60,
   `API_PLAFOND_HEURE`, défaut 1 000), comptées toutes ou aucune, sur l'ESPACE d'une clé résolue (avant la lecture
   de la clé dès qu'elle est connue, l'espace étant retenu avec l'empreinte dans `ClesResolues` ; après la lecture

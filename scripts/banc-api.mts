@@ -16,7 +16,8 @@
  *   `BANC_SECRET` (le script la recalcule, rien n'est affiché) ;
  * - `paliers` : les paliers `BANC_PALIERS` (appels par seconde), `BANC_PALIER_S` secondes chacun ;
  * - `statuts` : une rafale d'accusés de livraison (`webhook-status`) à `BANC_STATUTS_PAR_S` pendant 10 s, au-delà de
- *   ce que le pool de deux connexions de la réception accuse (environ 200 par seconde à 10 ms de la base) ;
+ *   ce que le pool de réception accuse (au premier banc, deux connexions à 10 ms de la base en accusaient environ 150
+ *   par seconde ; quatre depuis) ;
  * - `plafond` : un palier au-dessus du plafond global, l'API relancée avec `API_PLAFOND_GLOBAL_PAR_10S` posé : les Free
  *   doivent recevoir le 429 de la plateforme en premier, et la ligne chaude du compteur se mesure.
  *
@@ -26,7 +27,10 @@
  *
  * 🔴 CE QUE LE BANC NE REPRODUIT PAS : le pooler de Supabase (ses files d'attente muettes, son « Pool Size » partagé),
  * une base Micro peuplée, TLS, l'envoi réel chez Meta (`DRY_RUN=true`), les agents et l'analyse. Seul le délai réseau
- * vers la base est fidèle (10 ms, `tc netem`). La mesure est donc OPTIMISTE, d'où les 70 %.
+ * vers la base est fidèle (`BANC_DELAI_MS`, 10 ms par défaut comme Londres, `tc netem`). La mesure est donc
+ * OPTIMISTE, d'où les 70 %. 🔴 Elle décrit l'infrastructure où elle tourne : sur la cible Scaleway (Supabase Pro ou
+ * PostgreSQL managé), le banc se rejoue avec sa latence et la valeur du plafond se repose (`docs/ARCHITECTURE-CIBLE.md`,
+ * § 11).
  */
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
@@ -35,7 +39,7 @@ import { PgPoolAttentesStore } from '../src/ops/pool-attentes.pg';
 import { PgOpsStore } from '../src/ops/store.pg';
 import { PgCompteurDebit } from '../src/db/debit.pg';
 import { creerVeilleCharge } from '../src/ops/veille-charge';
-import { CLE_REFUS_GLOBAL } from '../src/auth/plafond-global';
+import { CLE_REFUS_GLOBAL, MESSAGE_PLATEFORME_SATUREE } from '../src/auth/plafond-global';
 import { sendTelegram } from '../src/ops/telegram';
 
 const API = process.env.BANC_API ?? '';
@@ -107,7 +111,8 @@ async function semer(pool: Pool): Promise<void> {
 // LE TRAFIC : quatre familles, tirées au hasard, vers un espace au hasard.
 // ---------------------------------------------------------------------------------------------------------------
 type Famille = 'lecture' | 'fiche' | 'lot' | 'mcp' | 'reception';
-interface Mesure { famille: Famille; statut: number | string; ms: number; free: boolean; code: string | null }
+/** `plateforme` : le refus vient du plafond de la plateforme (son message), pas d'une place lourde ni d'un autre plafond. */
+interface Mesure { famille: Famille; statut: number | string; ms: number; free: boolean; code: string | null; plateforme: boolean }
 let mesures: Mesure[] = [];
 
 async function appeler(famille: Famille, rang: number): Promise<void> {
@@ -124,11 +129,14 @@ async function appeler(famille: Famille, rang: number): Promise<void> {
     const r = await fetch(`${API}${init.url}`, {
       method: init.methode, headers: init.entetes, ...(init.corps === undefined ? {} : { body: JSON.stringify(init.corps) }), signal: AbortSignal.timeout(20_000),
     });
-    const corps = (await r.json().catch(() => null)) as { code?: string } | null;
-    mesures.push({ famille, statut: r.status, ms: Date.now() - t0, free: estFree(rang), code: corps?.code ?? null });
+    const corps = (await r.json().catch(() => null)) as { code?: string; error?: string } | null;
+    mesures.push({
+      famille, statut: r.status, ms: Date.now() - t0, free: estFree(rang), code: corps?.code ?? null,
+      plateforme: r.status === 429 && corps?.error === MESSAGE_PLATEFORME_SATUREE,
+    });
   } catch (e) {
     const cause = (e as { cause?: { code?: string } }).cause?.code ?? (e instanceof Error ? e.name : 'erreur');
-    mesures.push({ famille, statut: cause, ms: Date.now() - t0, free: estFree(rang), code: null });
+    mesures.push({ famille, statut: cause, ms: Date.now() - t0, free: estFree(rang), code: null, plateforme: false });
   }
 }
 
@@ -161,10 +169,22 @@ async function poster(corps: string): Promise<void> {
   try {
     const r = await fetch(`${API}/webhooks/meta`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hub-signature-256': signature }, body: corps, signal: AbortSignal.timeout(20_000) });
     await r.text();
-    mesures.push({ famille: 'reception', statut: r.status, ms: Date.now() - t0, free: false, code: null });
+    mesures.push({ famille: 'reception', statut: r.status, ms: Date.now() - t0, free: false, code: null, plateforme: false });
   } catch (e) {
-    mesures.push({ famille: 'reception', statut: (e as { cause?: { code?: string } }).cause?.code ?? 'erreur', ms: Date.now() - t0, free: false, code: null });
+    mesures.push({ famille: 'reception', statut: (e as { cause?: { code?: string } }).cause?.code ?? 'erreur', ms: Date.now() - t0, free: false, code: null, plateforme: false });
   }
+}
+
+/**
+ * Un appel par clé, l'une après l'autre, avant toute mesure : une API qui vient de démarrer ne connaît aucune clé, et
+ * chacune repasse une fois par le budget des lectures spéculatives. Sans ce tour, la première minute mesure le
+ * démarrage et pas la charge (vu au premier banc, le 2026-10-12 : 72 % de 429 juste après un redémarrage).
+ */
+async function chauffer(): Promise<void> {
+  for (let rang = 1; rang <= ESPACES; rang += 1) await appeler('lecture', rang);
+  const refus = mesures.filter((m) => m.statut !== 200).length;
+  dire(`chauffe : ${ESPACES} cles vues, ${refus} refus`);
+  mesures = [];
 }
 
 /** Envoie `parS` appels par seconde pendant `dureeMs`, sans attendre les réponses (un client lent ne ralentit pas le débit). */
@@ -231,6 +251,7 @@ async function paliers(pool: Pool): Promise<void> {
   const veille = veilleDuBanc(pool);
   const minuterie = setInterval(() => { void veille().catch((e: unknown) => dire(`veille en echec : ${String(e)}`)); }, 60_000);
   const bilans: Bilan[] = [];
+  await chauffer();
   try {
     for (const palier of PALIERS) {
       mesures = [];
@@ -274,14 +295,17 @@ async function statuts(pool: Pool): Promise<void> {
 
 async function plafond(pool: Pool): Promise<void> {
   const palier = PALIERS[0]!;
-  mesures = [];
+  await chauffer();
   dire(`=== palier ${palier} appels/s, API relancee avec le plafond global pose (Free d abord) ===`);
   await rythmer(palier, PALIER_MS, () => appeler(tirer(), 1 + Math.floor(Math.random() * ESPACES)));
   const v1 = mesures.filter((m) => m.famille !== 'reception');
-  const plateforme = (free: boolean) => v1.filter((m) => m.free === free && m.statut === 429 && m.code === 'rate_limited').length;
+  const plateforme = (free: boolean) => v1.filter((m) => m.free === free && m.plateforme).length;
   const total = (free: boolean) => v1.filter((m) => m.free === free).length;
-  dire(`Free : ${plateforme(true)} refus sur ${total(true)} | payants : ${plateforme(false)} refus sur ${total(false)} | p95 ${quantile(v1.map((m) => m.ms), 0.95)} ms`);
-  dire(plateforme(true) > plateforme(false) ? 'FREE D ABORD : tenu' : 'FREE D ABORD : NON TENU (plus de refus payants que Free)');
+  const autres = v1.filter((m) => m.statut === 429 && !m.plateforme).length;
+  dire(`refus de la plateforme : Free ${plateforme(true)} sur ${total(true)} | payants ${plateforme(false)} sur ${total(false)} | autres 429 ${autres} | p95 ${quantile(v1.map((m) => m.ms), 0.95)} ms`);
+  dire(plateforme(true) === 0 && plateforme(false) === 0
+    ? 'PLAFOND NON ATTEINT : aucun refus de la plateforme, le palier ne le depasse pas'
+    : plateforme(true) > plateforme(false) ? 'FREE D ABORD : tenu' : 'FREE D ABORD : NON TENU (plus de refus payants que Free)');
   await attendre(65_000);
   await rapportServeur(pool);
   await veilleDuBanc(pool)();

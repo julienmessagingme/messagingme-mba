@@ -9,6 +9,14 @@
 - **Une seconde copie de l'API, une base plus grosse** : seulement sur la mesure, par décision de Julien (le budget du
   pooler et sa procédure : `DEPLOY.md`, « Ajouter une copie d'API »).
 - **Cloudflare Pro** reste dans sa propre entrée plus bas (décision du 2026-10-12 : le plafond vit dans l'API).
+- **Préremplir les clés connues au démarrage** (relecture du 2026-10-12) : un démarrage oublie toutes les empreintes
+  résolues (`ClesResolues`, en mémoire), et chaque clé repasse par le budget des lectures spéculatives. Relevé à 600,
+  il couvre cent intégrateurs ; mais une attaque soutenue juste après un déploiement le garderait vide, et toutes les
+  clés (relais de Meta compris) prendraient des 429 tant qu'elle dure. Piste : charger au démarrage les empreintes
+  utilisées récemment (`last_used_at`), plutôt que relever encore le budget.
+- **Les lots de fiches refusés faute de place lourde** : au banc, à 15 lots par seconde sur une copie, une bonne part
+  des `POST /v1/contacts/batch` rendait 429 (`API_MAX_LOURDES_SIMULTANEES` vaut 1, tenu à la moitié du pool par son
+  test). C'est le comportement voulu, mais il se revoit avec la cible : plus de copies, ou un pool plus grand.
 
 ## 🟡 « Déconnecter le numéro » : ce que la relecture laisse (2026-10-10)
 

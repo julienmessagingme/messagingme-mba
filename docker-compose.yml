@@ -34,7 +34,7 @@ services:
     # DB_POOL_RECEPTION_MAX : le pool réservé à la réception de Meta (lot 14), en plus de DB_POOL_MAX.
     environment:
       DB_POOL_MAX: "10"
-      DB_POOL_RECEPTION_MAX: "2"
+      DB_POOL_RECEPTION_MAX: "4"
     networks: [mcp-robot_default]
 
   mba-worker:

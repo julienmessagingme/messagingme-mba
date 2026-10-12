@@ -3,20 +3,26 @@
 # `scripts/banc-api.mts` (semer, paliers, rafale d'accusés, plafond global allumé), puis démonte tout. Lancé par Julien
 # sur le VPS, avec sudo : il crée des conteneurs, et c'est son accord à ce moment-là qui le permet.
 #
-# Usage : sudo bash banc-api.sh <sha de main> [palier1,palier2,...]
+# Usage : sudo bash banc-api.sh <sha de main> [palier1,palier2,...] [epreuves, défaut paliers,statuts,plafond]
 #   BANC_TELEGRAM=1 : les alertes de la veille de charge du banc partent sur Telegram, préfixées « [BANC lot 14, copie
 #   jetable, PAS la production] » (essai réel 91). Seul le conteneur du script reçoit le jeton Telegram, lu dans
 #   /home/ubuntu/mba/.env.prod ; ni l'API ni le worker du banc ne l'ont.
 #   BANC_GARDER=1 : ne démonte pas à la fin (pour relire la base du banc).
+#   BANC_PLAFOND_10S=N : la valeur du plafond global de l'épreuve « plafond » (sinon, celle que les paliers recommandent).
+#   BANC_DELAI_MS=N : l'aller-retour simulé vers la base (10 par défaut, comme Londres ; environ 1 pour une base de la
+#   même région chez Scaleway).
+#   ⚠️ sudo efface l'environnement : ces variables se passent APRÈS sudo, `sudo BANC_PLAFOND_10S=700 bash banc-api.sh ...`.
 #
 # 🔴 NE TOUCHE PAS LA PRODUCTION : tout porte l'étiquette banc=api14 et le préfixe banc14-, sur un réseau à part
 # (banc14_net), sans aucun port publié, et le démontage passe par l'étiquette, jamais par un nom. La base est un
-# conteneur jetable, à 10 ms d'aller-retour comme Supabase (tc netem). Aucun secret de production n'entre, sauf le
+# conteneur jetable, à BANC_DELAI_MS d'aller-retour (tc netem). Aucun secret de production n'entre, sauf le
 # jeton Telegram si BANC_TELEGRAM=1.
 set -euo pipefail
 
 SHA="${1:?usage : sudo bash banc-api.sh <sha de main> [paliers]}"
 PALIERS="${2:-10,25,50,75,100,150}"
+DELAI_MS="${BANC_DELAI_MS:-10}"
+EPREUVES=",${3:-paliers,statuts,plafond},"
 D=/home/ubuntu/banc-api14
 IMG=banc-mba:api14
 NET=banc14_net
@@ -32,7 +38,7 @@ demonter() {
 }
 trap demonter EXIT
 
-echo "== montage du banc sur $SHA"
+echo "== montage du banc sur $SHA (base à ${DELAI_MS} ms)"
 rm -rf "$D/src-banc" && mkdir -p "$D" "$R"
 git clone -q https://github.com/julienmessagingme/messagingme-mba.git "$D/src-banc"
 git -C "$D/src-banc" checkout -q "$SHA"
@@ -43,7 +49,7 @@ PGPASS=$(openssl rand -hex 16)
 docker run -d --name banc14-postgres --label "$LBL" --network "$NET" --cap-add NET_ADMIN \
   -e POSTGRES_PASSWORD="$PGPASS" pgvector/pgvector:pg16 >/dev/null
 until docker exec banc14-postgres pg_isready -U postgres >/dev/null 2>&1; do sleep 1; done
-docker exec banc14-postgres sh -c 'apt-get update -qq >/dev/null && apt-get install -qq -y iproute2 >/dev/null && tc qdisc add dev eth0 root netem delay 10ms'
+docker exec banc14-postgres sh -c "apt-get update -qq >/dev/null && apt-get install -qq -y iproute2 >/dev/null && tc qdisc add dev eth0 root netem delay ${DELAI_MS}ms"
 
 # Les secrets du banc : JETABLES, jamais affichés, effacés au démontage avec le dossier des sources.
 E="$D/src-banc/.env.banc"
@@ -72,7 +78,7 @@ sleep 20
 lancer_api() {
   docker rm -f banc14-api >/dev/null 2>&1 || true
   docker run -d --name banc14-api --label "$LBL" --network "$NET" --env-file "$E" \
-    -e DB_POOL_MAX=10 -e DB_POOL_RECEPTION_MAX=2 -e API_COPIE=banc "$@" "$IMG" >/dev/null
+    -e DB_POOL_MAX=10 -e DB_POOL_RECEPTION_MAX=4 -e API_COPIE=banc "$@" "$IMG" >/dev/null
   until docker exec banc14-api wget -qO- http://127.0.0.1:8095/live >/dev/null 2>&1; do sleep 1; done
 }
 lancer_api
@@ -93,16 +99,19 @@ jouer() {
 STATS=$!
 
 echo "== semer"; jouer -e BANC_EPREUVE=semer | tee "$R/semer.log"
-echo "== paliers $PALIERS"; jouer -e BANC_EPREUVE=paliers -e BANC_PALIERS="$PALIERS" | tee "$R/paliers.log"
-echo "== rafale d'accusés"; jouer -e BANC_EPREUVE=statuts | tee "$R/statuts.log"
+if [[ "$EPREUVES" == *,paliers,* ]]; then echo "== paliers $PALIERS"; jouer -e BANC_EPREUVE=paliers -e BANC_PALIERS="$PALIERS" | tee "$R/paliers.log"; fi
+if [[ "$EPREUVES" == *,statuts,* ]]; then echo "== rafale d'accusés"; jouer -e BANC_EPREUVE=statuts | tee "$R/statuts.log"; fi
 
 # Le plafond global posé à la valeur recommandée, puis un palier une fois et demie au-dessus.
-N=$(grep -o 'API_PLAFOND_GLOBAL_PAR_10S=[0-9]*' "$R/paliers.log" | tail -1 | cut -d= -f2)
-if [ -n "$N" ] && [ "$N" -gt 0 ]; then
+N=$(grep -o 'API_PLAFOND_GLOBAL_PAR_10S=[0-9]*' "$R/paliers.log" 2>/dev/null | tail -1 | cut -d= -f2 || true)
+N="${BANC_PLAFOND_10S:-$N}"
+if [[ "$EPREUVES" == *,plafond,* ]] && [ -n "$N" ] && [ "$N" -gt 0 ]; then
   lancer_api -e API_PLAFOND_GLOBAL_PAR_10S="$N" -e API_PLAFOND_GLOBAL_PART_FREE=50
   AU_DESSUS=$(( N * 15 / 100 ))
   echo "== plafond global à $N par 10 s, palier à $AU_DESSUS appels/s"
   jouer -e BANC_EPREUVE=plafond -e BANC_PALIERS="$AU_DESSUS" | tee "$R/plafond.log"
+elif [[ "$EPREUVES" == *,plafond,* ]]; then
+  echo "== plafond SAUTÉ : ni paliers.log ni BANC_PLAFOND_10S (passé après sudo) pour en donner la valeur"
 fi
 
 kill "$STATS" 2>/dev/null || true

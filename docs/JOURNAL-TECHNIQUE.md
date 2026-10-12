@@ -6,6 +6,27 @@
 > tranchent, jamais ce fichier.
 
 
+## 2026-10-12 : le banc de l'API publique (lot 14, livraison B)
+
+Premier banc (`scripts/banc-api.sh` sur `e95b5e46`, lancé par Julien) : une copie jetable de l'API et du worker
+principal sur le VPS, un Postgres jetable à 10 ms (comme Londres), cent espaces (moitié Base, moitié Entreprise),
+paliers de 10 à 150 appels/s sur `/v1` et `/mcp` (lectures 50 %, fiches 25 %, lots 10 %, MCP 15 %) et 5 webhooks de
+Meta par seconde.
+
+- **La capacité n'a pas été atteinte** : à 150 appels/s, p95 de 140 ms, aucun 5xx, réception de Meta à 30 ms. L'API
+  était à 75 % d'un cœur, Postgres à 114 %. L'hypothèse du lot (environ 50 appels/s) est couverte trois fois sur
+  CETTE infrastructure ; la cible Scaleway le remesurera (`docs/ARCHITECTURE-CIBLE.md`, § 11).
+- **Les 429 sans plafond venaient de deux sources** : les lots de fiches au-delà de la place lourde (attendu), et le
+  budget des lectures spéculatives après le démarrage. À 30 par minute, les cent clés mettaient plus de trois minutes
+  à toutes passer : 72 % des appels de la minute qui a suivi le redémarrage de l'API ont été refusés, Free et payants
+  confondus, ce qui a rendu l'épreuve « Free d'abord » sans objet. Le défaut passe à 600.
+- **La réception sous une rafale d'accusés** : à 300 par seconde, deux connexions en accusaient environ 150, attente
+  p50 4,1 s, p95 7,3 s, pire 7,6 s pour un délai de connexion de 8 s ; aucune erreur, mais à un souffle. Le pool passe
+  à quatre. La veille de charge a dit ce qu'il fallait : file `webhook-status` en retard, pool de réception saturé,
+  réception de Meta lente (sur Telegram, préfixées « BANC »).
+- Relecture du correctif : aucun rouge ; jaunes corrigés avant le push (commentaires périmés, le récit sorti du
+  manuel, la reconnaissance exacte du refus de la plateforme, l'épreuve sautée qui le dit).
+
 ## 2026-10-12 : les protections de la tenue en charge (lot 14, livraison A)
 
 Cinq protections avant l'ouverture du site (spec `docs/superpowers/specs/2026-10-12-tenue-en-charge-design.md`) : le

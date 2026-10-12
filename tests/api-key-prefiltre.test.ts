@@ -7,6 +7,7 @@ import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import { DROIT_RELAIS } from '../src/mba/cle-relais';
 import { plafondsDeTest } from './aide/plafonds';
 import { aucunJetonOauth } from './aide/cle-api';
+import { schema } from '../src/config';
 
 /**
  * CE QU'UNE FAUSSE CLÉ COÛTE AVANT D'ÊTRE REFUSÉE.
@@ -390,5 +391,32 @@ describe('le plafond est PAR espace', () => {
     await garde(req, r.reply);
     expect(r.code(), 'l’espace de B ne doit rien payer pour A').toBeNull();
     expect(req.auth?.tenantId).toBe('tb');
+  });
+});
+
+/**
+ * 🔴 LE DÉMARRAGE À FROID (lot 14, B, mesuré au banc le 2026-10-12). Une empreinte résolue reste connue tant que le
+ * processus vit ; un DÉMARRAGE les oublie toutes, et chaque clé repasse une fois par le budget spéculatif. À 30 par
+ * minute, cent intégrateurs actifs attendaient plus de trois minutes après chaque déploiement, les derniers sous 429 :
+ * au banc, 72 % des appels refusés dans la minute qui suit un redémarrage, Free et payants confondus. Le défaut doit
+ * laisser passer, dans la première minute, les clés et jetons de quelques centaines d'intégrateurs.
+ */
+describe('le budget spéculatif par défaut, au démarrage', () => {
+  it('🔴 trois cents clés valides jamais vues passent toutes dans la première minute', async () => {
+    const cles = Array.from({ length: 300 }, (_, i) => cleBienFormee(`demarrage${i}`));
+    const empreintes = new Set(cles.map((c) => sha256Hex(c)));
+    const store: ApiKeyLookup = {
+      findActiveByHash: async (h) => (empreintes.has(h) ? { id: `k-${h.slice(0, 6)}`, tenantId: `t-${h.slice(0, 6)}`, scopes: ['contacts:write'] } : null),
+      touchLastUsed: async () => {},
+    };
+    const defaut = schema.shape.API_KEY_PREFILTRE_MAX.parse(undefined);
+    const garde = makeRequireApiKey(store, plafondsDeTest(), new RateLimiter(defaut, 60_000), aucunJetonOauth);
+    const refusees: number[] = [];
+    for (const [i, c] of cles.entries()) {
+      const r = fausseReponse();
+      await garde(requete(c), r.reply);
+      if (r.code() !== null) refusees.push(i);
+    }
+    expect(refusees, `budget par défaut : ${defaut} par minute`).toEqual([]);
   });
 });
