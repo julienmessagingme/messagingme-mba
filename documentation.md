@@ -1025,10 +1025,12 @@ restent disjoints de ceux de l'agent de Meta (`tag_fixe`…), seuls les champs s
   raison et répond. Relancer le scénario où l'agent parle est refusé (il retomberait sur l'agent). ⚠️ Un lancement
   plus long que le délai de l'outil (8 s par défaut) est rendu en `timeout` au modèle alors qu'il aboutit ensuite :
   le modèle répond par-dessus le scénario, risque résiduel connu.
-- **L'assistant de construction ne propose aucun outil à cible** (`OUTILS_PROPOSABLES`,
-  `src/agent/setup/proposition.ts`) : il ne voit ni tags, ni champs, ni scénarios, et en inventerait l'identifiant.
-  Schéma annoncé et schéma appliqué lisent la même liste ; `assainirProposition` retire un outil à cible proposé
-  quand même, sans faire tomber le tour.
+- **Le MODÈLE de l'assistant de construction ne propose aucun outil à cible** (`OUTILS_PROPOSABLES`,
+  `src/agent/setup/proposition.ts`) : il ne voit ni tags, ni champs, et en inventerait l'identifiant. Schéma annoncé
+  et schéma appliqué lisent la même liste ; `assainirProposition` retire un outil à cible proposé quand même, sans
+  faire tomber le tour. 🔴 **Une seule exception, et elle ne passe pas par le modèle** (2026-10-12) : le scénario
+  d'un moment, que le SERVEUR rapproche de la liste réelle des scénarios en ligne (voir « Le scénario d'un moment »
+  ci-dessous).
 - Les deux outils qui envoient sont `irreversible` : sans l'autonomie cochée, le tronc commun refuse chaque appel.
 
 🔴 **Le modèle ne choisit jamais une cible.** Sur un connecteur API client, l'adresse est figée sur la source,
@@ -1124,6 +1126,20 @@ journalise son issue (`agent_setup_import_site`) et l'annonce dans le message. E
 si une fiche vient déjà de ce site : relire une adresse remplace ses fiches, corrections comprises. ⚠️ Lancée dans
 le process de l'API, elle se perd si l'API redémarre pendant le parcours : l'adresse reste dans le champ de l'onglet,
 pré-rempli par `/setup/suggestions`, et l'import s'y relance d'un geste.
+
+🔴 **Le scénario d'un moment se choisit dans l'entretien, et sa cible vient de la liste RÉELLE** (décision de Julien,
+2026-10-12, `src/agent/setup/scenarios.ts`). `etatCourant` porte les scénarios en ligne de l'espace (`listResume`
+filtré sur un graphe non vide, la règle `estEnLigne` du sélecteur de l'onglet Outils) et le `workflowId` des outils
+`lancer_scenario` de l'agent. La question du moyen d'un moment « scénario » les liste par leur nom. Au tour qui la
+pose, un scénario NOMMÉ par le client (`scenarioDuMoyen` : nom exact normalisé, sinon un seul nom contenu dans la
+réponse, sinon une réponse contenue dans un seul nom ; deux candidats = aucun) devient le moyen sous son nom exact,
+parce que le modèle le paraphrase. Hors entretien, à chaque tour comme le diff, `scenariosDesMoments` rapproche chaque
+moment « scénario » et écarte ceux que l'agent vise déjà ; chacun devient une ligne `scenario.<workflowId>` dont le
+texte est la SITUATION (`situationDuMoment`), et `proposition.scenarios` porte la cible. La console
+(`appliquerProposition`) pose l'outil par `POST .../tools` avec `cible: { workflowId }`, un nom `lancer_<nom>` suffixé
+s'il est pris (`nomLibre`), puis la consigne de l'onglet Outils (`TEXTES_AGENT_PAR_TYPE.scenario`) complétée de la
+situation gardée. ⚠️ Une ligne jetée, ou absente, ne pose rien. ⚠️ L'outil naît éteint ET sans autonomie (action
+irréversible) : le bloc « Pour finir » dit les deux gestes, sans lesquels l'agent ne lance jamais le scénario.
 
 **Le catalogue proposé au client** est une liste CHOISIE (`src/agent/modeles.ts`), intersectée avec le
 catalogue réel du Gateway et tarifée en direct. Deux critères pour y entrer : le modèle sait **appeler des

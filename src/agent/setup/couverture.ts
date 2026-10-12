@@ -42,6 +42,9 @@ const DEMANDE_UN_MOYEN = new Set<Action>(['scenario', 'outil_api', 'outil_mcp', 
  * différente.
  */
 export interface Inventaire {
+  /** Les scénarios EN LIGNE de l'espace, par leur nom : la question du moyen d'un moment « scénario » les liste
+   *  (Julien, 2026-10-12 : il devait taper le nom de mémoire). Absent = aucun. */
+  scenarios?: string[];
   /** Les outils de connecteur déjà branchés sur cet agent : appelables aujourd'hui. */
   outilsApi: string[];
   /** Les systèmes déclarés dans l'espace mais pas branchés sur cet agent : à relier (geste d'administrateur).
@@ -269,7 +272,13 @@ export function agendaEffectif(etat: EtatEntretien, inv: Inventaire = INVENTAIRE
  * l'entretien puisse toujours se terminer.
  */
 function moyenDemande(action: Action, inv: Inventaire): string {
-  if (action === 'scenario') return 'quel scénario doit-il lancer, ou que doit contenir ce scénario ?';
+  if (action === 'scenario') {
+    const enLigne = inv.scenarios ?? [];
+    return enLigne.length > 0
+      ? `lequel doit-il lancer ? Vos scénarios en ligne : ${enumerer(enLigne)}.`
+      : 'AUCUN scénario n’est en ligne dans votre espace : créez-le dans le menu Scénarios, ou décrivez ce qu’il devra '
+        + 'faire, ou choisissez autre chose pour ce moment.';
+  }
   if (action === 'outil_api') {
     if (inv.outilsApi.length > 0) {
       const dispo = `Branchés sur cet agent : ${enumerer(inv.outilsApi)}.`;

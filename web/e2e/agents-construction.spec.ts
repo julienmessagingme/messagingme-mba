@@ -34,7 +34,7 @@ const PROPOSITION = {
 
 type Appel = { method: string; url: string; body: unknown };
 
-async function mock(page: import('@playwright/test').Page, appels: Appel[], opts: { setup?: { status: number; body: unknown }; activation?: { status: number; body: unknown }; outilsEnEchec?: boolean; pieceJointe?: unknown; manques?: unknown[]; avertissements?: unknown[] } = {}) {
+async function mock(page: import('@playwright/test').Page, appels: Appel[], opts: { setup?: { status: number; body: unknown }; activation?: { status: number; body: unknown }; outilsEnEchec?: boolean; pieceJointe?: unknown; manques?: unknown[]; avertissements?: unknown[]; outilsAppels?: Appel[] } = {}) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const req = route.request();
@@ -56,6 +56,8 @@ async function mock(page: import('@playwright/test').Page, appels: Appel[], opts
       return json(r.body, r.status);
     }
     if (/\/tools/.test(url)) {
+      // Noté à part : les tests d'avant comptent `appels` et n'attendent pas les appels d'outils.
+      if (method !== 'GET') opts.outilsAppels?.push({ method, url, body: req.postDataJSON() });
       if (method === 'GET') return json({ outils: [], catalogue: [] });
       if (opts.outilsEnEchec) return json({ error: 'un outil de cet agent porte déjà ce nom' }, 409);
       return json({ outil: { id: 'o1' } }, method === 'POST' ? 201 : 200);
@@ -223,6 +225,38 @@ test.describe('Agents IA : construire en parlant', () => {
     await expect(page.getByTestId('setup-erreur')).toContainText('La fiche est enregistrée, mais un outil n’a pas pu l’être');
     // La fiche, elle, est bien partie : le message ne ment pas.
     expect(appels.some((a) => a.method === 'PATCH' && (a.body as { contenu?: unknown })?.contenu !== undefined)).toBe(true);
+  });
+
+  test('🔴 « Enregistrer » pose l outil qui lance le scénario du moment, avec sa cible et la situation corrigée', async ({ page }) => {
+    // Julien, 2026-10-12 : il avait dit « lancer le scénario SMATIS Devis (flow) », et rien n'arrivait dans Outils.
+    const WF = '44444444-4444-4444-8444-444444444444';
+    const outilsAppels: Appel[] = [];
+    await mock(page, [], {
+      outilsAppels,
+      setup: {
+        status: 200,
+        body: {
+          ...PROPOSITION,
+          proposition: { fiche: {}, outils: [], scenarios: [{ workflowId: WF, nom: 'SMATIS Devis (flow)', moment: 'le client veut faire un devis' }] },
+          changements: [{
+            champ: `scenario.${WF}`, label: 'Outil « Lancer un scénario » : SMATIS Devis (flow), dès que le contact…',
+            avant: '', apres: 'veut faire un devis',
+          }],
+        },
+      },
+    });
+    await page.goto(`/agents?id=${AG}&tab=construction`);
+    await page.getByTestId('setup-saisie').fill('C’est SMATIS Devis (flow).');
+    await page.getByTestId('setup-envoyer').click();
+    await expect(page.getByTestId(`setup-diff-scenario.${WF}`)).toContainText('SMATIS Devis (flow)');
+    await page.getByTestId(`setup-texte-scenario.${WF}`).fill('demande un devis de toiture');
+    await page.getByTestId('setup-garder').click();
+
+    await expect.poll(() => outilsAppels.filter((a) => a.method === 'PATCH').length, { timeout: 5000 }).toBe(1);
+    expect(outilsAppels[0]).toMatchObject({
+      method: 'POST', body: { handler: 'lancer_scenario', name: 'lancer_smatis_devis_flow', cible: { workflowId: WF } },
+    });
+    expect((outilsAppels[1]!.body as { description: string }).description).toContain('dès que le contact demande un devis de toiture');
   });
 
   test('🔴 un agent incomplet ne s active pas, et l écran DIT ce qui manque', async ({ page }) => {

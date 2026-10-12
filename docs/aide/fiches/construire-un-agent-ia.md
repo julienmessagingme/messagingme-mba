@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: 31e470
+source_empreinte: 90e158
 ---
 # Construire un agent IA
 
@@ -58,11 +58,18 @@ avec la valeur d'avant barrée. Chaque règle se garde, se corrige sur place ou 
 lui joindre un document ou une photo (une grille de tarifs, par exemple) : le texte en est extrait et découpé en
 fiches de connaissance.
 
+**Un moment où l'agent doit lancer un scénario se règle dans l'entretien.** La question qui suit liste vos
+scénarios en ligne par leur nom : nommez celui qu'il faut. La proposition porte alors une ligne « Outil « Lancer un
+scénario » », avec la situation où l'appeler, à corriger si besoin, et « Enregistrer » pose l'outil dans l'onglet
+Outils, éteint. Il vous reste à cocher « Autoriser l'agent à faire ça seul » (« Modifier » sur sa ligne) et à
+l'allumer. Si le nom que vous donnez ne désigne pas un seul scénario en ligne, rien n'est posé, et la liste « Pour
+finir » vous dit comment l'ajouter à la main.
+
 **À la fin de l'entretien, suivez la liste « Pour finir ».** Elle dit, dans l'ordre, ce qu'il reste à faire
 pour votre agent : enregistrer la proposition (bouton « Enregistrer »), importer votre site dans Base de
 connaissance, brancher le
-connecteur qu'un moment demande, vérifier son modèle dans l'onglet Modèle, le tester, puis l'activer. Une
-étape déjà faite n'y figure pas.
+connecteur qu'un moment demande, allumer l'outil du scénario posé, vérifier son modèle dans l'onglet Modèle, le
+tester, puis l'activer. Une étape déjà faite n'y figure pas.
 
 **Sa base de connaissance est la seule chose dont il a le droit de se servir.** Sur une question qu'aucune
 fiche ne couvre, il n'invente pas : il sort du bloc par « Aucune source ». Une base vide fait donc un agent

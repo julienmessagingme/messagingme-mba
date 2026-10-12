@@ -21,11 +21,18 @@ export interface EntreeFin {
   modele: string | null;
   /** L'import du site donné vient de partir, sur ce même tour : ses fiches arrivent, il reste à les relire. */
   importEnCours?: boolean;
+  /**
+   * Les moments « scénario » dont le scénario est reconnu (`scenariosDesMoments`) : l'outil est proposé dans le diff,
+   * ou l'agent l'a déjà. Un moment « scénario » absent d'ici est à poser à la main.
+   */
+  scenarios?: ReadonlyArray<{ moment: string; nom: string; dejaVise: boolean }>;
 }
 
 export const TITRE_FIN = 'Pour finir :';
 /** Le bouton qui écrit la proposition dans les onglets, tel que la console l'affiche. */
 export const BOUTON_ENREGISTRER = 'Enregistrer';
+/** La case d'autonomie d'une action irréversible, telle que l'onglet Outils l'affiche (`AutonomieOutil`). */
+export const CASE_AUTONOMIE = 'Autoriser l’agent à faire ça seul';
 
 export function etapesDeFin(e: EntreeFin): string[] {
   const out: string[] = [];
@@ -50,7 +57,18 @@ export function etapesDeFin(e: EntreeFin): string[] {
     } else if (b.action === 'outil_mcp' && e.outilsMcp === 0) {
       out.push(`Outils : branchez l’outil MCP pour « ${b.moment} » (menu Tools > Connecteurs MCP).`);
     } else if (b.action === 'scenario') {
-      out.push(`Scénarios : préparez le scénario à lancer pour « ${b.moment} ».`);
+      // L'outil naît éteint, comme tout outil ajouté (route `POST .../tools`), et « Lancer un scénario » est une action
+      // irréversible : sans la case d'autonomie, chaque appel est refusé. Sans ces deux gestes, « Enregistrer » pose un
+      // outil que l'agent n'appelle jamais. Les libellés sont ceux de l'écran (`AutonomieOutil`, `LigneOutilAgent`).
+      const reconnu = e.scenarios?.find((s) => s.moment === b.moment);
+      out.push(!reconnu
+        ? `Outils : pour « ${b.moment} », onglet « Outils », « Ajouter un outil », « Lancer un scénario » : choisissez `
+          + `le scénario, cochez « ${CASE_AUTONOMIE} », puis allumez l’outil.`
+        : reconnu.dejaVise
+          ? `Outils : l’outil qui lance « ${reconnu.nom} » est déjà là ; vérifiez qu’il est allumé et que `
+            + `« ${CASE_AUTONOMIE} » est coché (onglet « Outils », « Modifier »).`
+          : `Outils : après « ${BOUTON_ENREGISTRER} », l’outil qui lance « ${reconnu.nom} » naît éteint : onglet `
+            + `« Outils », « Modifier » sur sa ligne, cochez « ${CASE_AUTONOMIE} », puis allumez-le.`);
     }
   }
   out.push(e.modele

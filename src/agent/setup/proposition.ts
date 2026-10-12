@@ -462,7 +462,9 @@ export interface EtatCourant {
   /** Le délai d'inactivité actuel, en minutes. */
   inactiviteMinutes: number;
   /** Les outils déjà posés sur l'agent, par handler, avec leurs mots actuels. */
-  outils: Array<{ handler: string; description: string; nePasUtiliser: string }>;
+  outils: Array<{ handler: string; description: string; nePasUtiliser: string;
+    /** Le scénario qu'un outil `lancer_scenario` vise (RC4), pour ne pas en reproposer un second. */
+    workflowId?: string }>;
   /**
    * Les connecteurs déjà déclarés, par leur nom exposé : l'assistant ne peut proposer que leurs mots.
    * `origine` est requise : la liste porte connecteurs API et outils MCP, qui ne doivent pas se confondre.

@@ -88,6 +88,9 @@ function app(opts: {
   fiches?: Array<{ titre: string; corps: string }>;
   /** Une écriture de dépense qui LÈVE : notre panne, jamais celle du fournisseur de modèle. */
   depensesEchouent?: boolean;
+  /** Les scénarios en ligne de l'espace, et les outils maison de l'agent (pour un scénario déjà visé). */
+  scenarios?: Array<{ id: string; nom: string }>;
+  outils?: Array<{ handler: string; description: string; nePasUtiliser: string; workflowId?: string }>;
 } = {}) {
   const cap = {
     appels: [] as Array<{ modele: string; messages: Array<ChatMessage | ChatMessageImage>; toolChoice: string }>,
@@ -101,8 +104,9 @@ function app(opts: {
       ? {
         label: 'Conseiller séjours', mentionIaFrequence: 'session', inactiviteMinutes: 30,
         fiche: { ...ficheVide(), objectif: 'Aider.' },
-        outils: [],
+        outils: opts.outils ?? [],
         titresConnaissance: ['La piscine'],
+        ...(opts.scenarios ? { scenarios: opts.scenarios } : {}),
       }
       : null),
     entretiens,
@@ -824,6 +828,78 @@ describe('conversation de construction', () => {
     expect((await srv.inject({ method: 'GET', url: url('t2'), ...h(adminTok) })).statusCode).toBe(403);
     expect((await srv.inject({ method: 'DELETE', url: url('t2'), ...h(adminTok) })).statusCode).toBe(403);
     expect(cap.appels).toHaveLength(0);
+  });
+
+  /**
+   * LE SCÉNARIO D'UN MOMENT (décision de Julien du 2026-10-12) : il avait dit « lancer le scénario SMATIS Devis
+   * (flow) », et rien n'est arrivé dans l'onglet Outils. Le serveur rapproche le moyen de la liste RÉELLE des scénarios
+   * en ligne, et le diff porte la ligne qu'« Enregistrer » pose en outil.
+   */
+  describe('le scénario d’un moment', () => {
+    const DEVIS = { id: '44444444-4444-4444-8444-444444444444', nom: 'SMATIS Devis (flow)' };
+    const MOMENT = 'le client veut faire un devis';
+    /** Tout est posé et répondu, l'action du moment est tranchée : il ne reste que son moyen. */
+    const SUR_LE_MOYEN: EntretienComplet = {
+      messages: [], auteurs: [], poses: [...BASE, 'bascule_1_action'], reponses: toutesLesReponses(),
+      bascules: [{ moment: MOMENT, action: 'scenario' }],
+    };
+    // Le modèle PARAPHRASE le moyen, comme mesuré sur Haiku : la paraphrase ne désigne aucun scénario.
+    const paraphrase = reponse(JSON.stringify({
+      message: 'C’est noté.', reponses: [],
+      bascules: [{ moment: MOMENT, action: 'scenario', moyen: 'le flow de devis' }],
+    }));
+    const choix = { message: 'Celui-là : SMATIS Devis (flow)' };
+
+    it('🔴 le client nomme un scénario en ligne : son nom exact devient le moyen, et le diff propose l’outil', async () => {
+      const a = app({ reponse: paraphrase, entretien: SUR_LE_MOYEN, scenarios: [DEVIS] });
+      const res = await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: choix });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().couverture.manquants).toEqual([]);
+      expect(a.entretiens.ecrits.at(-1)!.bascules[0]!.moyen).toBe(DEVIS.nom);
+      expect(res.json().changements).toContainEqual({
+        champ: `scenario.${DEVIS.id}`,
+        label: `Outil « Lancer un scénario » : ${DEVIS.nom}, dès que le contact…`,
+        avant: '',
+        apres: 'veut faire un devis',
+      });
+      expect(res.json().proposition.scenarios).toEqual([{ workflowId: DEVIS.id, nom: DEVIS.nom, moment: MOMENT }]);
+      // Le bloc « Pour finir » dit d'allumer l'outil, qui naîtra éteint.
+      expect(res.json().message).toContain(`l’outil qui lance « ${DEVIS.nom} » naît éteint`);
+    });
+
+    it('🔴 un nom qui ne désigne aucun scénario en ligne ne propose rien, et le bloc de fin dit la marche à la main', async () => {
+      const a = app({ reponse: paraphrase, entretien: SUR_LE_MOYEN, scenarios: [DEVIS] });
+      const res = await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: { message: 'Le parcours de prise de contact' } });
+      expect(res.json().changements.some((c: { champ: string }) => c.champ.startsWith('scenario.'))).toBe(false);
+      expect(res.json().proposition.scenarios).toEqual([]);
+      expect(res.json().message).toContain('« Ajouter un outil », « Lancer un scénario »');
+    });
+
+    it('🔴 un scénario que l’agent lance déjà n’est pas reproposé', async () => {
+      const a = app({
+        reponse: paraphrase, entretien: SUR_LE_MOYEN, scenarios: [DEVIS],
+        outils: [{ handler: 'lancer_scenario', description: 'x', nePasUtiliser: 'y', workflowId: DEVIS.id }],
+      });
+      const res = await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: choix });
+      expect(res.json().changements.some((c: { champ: string }) => c.champ.startsWith('scenario.'))).toBe(false);
+      expect(res.json().message).toContain(`l’outil qui lance « ${DEVIS.nom} » est déjà là`);
+    });
+
+    it('pendant l’entretien, rien n’est proposé ; après, la ligne revient à chaque tour tant que l’outil n’est pas posé', async () => {
+      const deuxMoments: EntretienComplet = {
+        ...SUR_LE_MOYEN, bascules: [{ moment: MOMENT, action: 'scenario' }, { moment: 'il veut parler à un conseiller' }],
+      };
+      const enCours = await app({ reponse: paraphrase, entretien: deuxMoments, scenarios: [DEVIS] }).srv
+        .inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: choix });
+      expect(enCours.json().couverture.manquants).toEqual(['bascule_2_action']);
+      expect(enCours.json().changements).toEqual([]);
+      // L'entretien est fini, le client ajoute un mot avant d'enregistrer : la ligne ne disparaît pas.
+      const fini: EntretienComplet = { ...ENTRETIEN_FINI, poses: [...BASE, 'bascule_1_action', 'bascule_1_moyen'],
+        bascules: [{ moment: MOMENT, action: 'scenario', moyen: DEVIS.nom }] };
+      const apres = await app({ entretien: fini, scenarios: [DEVIS] }).srv
+        .inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+      expect(apres.json().changements.map((c: { champ: string }) => c.champ)).toContain(`scenario.${DEVIS.id}`);
+    });
   });
 
   /**

@@ -209,6 +209,9 @@ export interface ContexteConstruction extends EtatCourant {
   sources?: Array<{ id: string; label: string; kind: 'http' | 'mcp'; status: string }>;
   /** Le modèle de l'agent, nommé dans le bloc de fin de l'entretien (`blocDeFin`). Absent = « vérifiez-le ». */
   modele?: string;
+  /** Les scénarios EN LIGNE de l'espace (`scenariosAPoser`) : listés par la question du moyen, et seuls à pouvoir
+   *  être visés par l'outil que l'entretien propose. Absent = aucun. */
+  scenarios?: Array<{ id: string; nom: string }>;
 }
 
 /**
@@ -226,6 +229,7 @@ export function inventaireDe(ctx: ContexteConstruction): Inventaire {
   return {
     outilsApi,
     outilsMcp,
+    ...(ctx.scenarios && ctx.scenarios.length > 0 ? { scenarios: ctx.scenarios.map((s) => s.nom) } : {}),
     /** Un système déjà branché n'est pas reproposé « à relier ». Par `sourceId` : le titre d'un outil et le
      *  libellé de son système n'ont aucune raison d'être égaux. */
     systemesApi: actives

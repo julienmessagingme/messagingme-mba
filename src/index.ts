@@ -1659,7 +1659,7 @@ async function main(): Promise<void> {
       etatCourant: async (tenant, agentId) => {
         const fiche = await agentStore.complet(tenant, agentId);
         if (!fiche) return null;
-        const [outils, fiches, sources, catalogue, offrables] = await Promise.all([
+        const [outils, fiches, sources, catalogue, offrables, scenarios] = await Promise.all([
           toolCatalog.listToutes(tenant, agentId),
           knowledgeStore.lister(tenant, agentId),
           // Les sources déclarées de l'espace, branchées sur cet agent ou non, pour répondre « vous avez
@@ -1672,6 +1672,9 @@ async function main(): Promise<void> {
           // Ce que le catalogue permet de lui offrir : la règle unique, que l'assistant ne recalcule pas. Il écarte
           // seulement ce que le catalogue marque `nomPris` (0211).
           toolCatalog.offrablesPour(tenant, consommateurAgent(agentId)),
+          // Les scénarios que l'entretien liste et que l'outil « Lancer un scénario » qu'il propose peut viser : ceux EN
+          // LIGNE, la règle du sélecteur de l'onglet Outils (`estEnLigne`, un graphe publié non vide).
+          workflowStore.listResume(tenant),
         ]);
         return {
           label: fiche.label,
@@ -1685,7 +1688,11 @@ async function main(): Promise<void> {
           fiche: fiche.contenu,
           // Les outils maison, par leur handler : c'est par lui que l'assistant les désigne.
           outils: outils.filter((o) => o.origin === 'mba')
-            .map((o) => ({ handler: String(o.binding.handler ?? ''), description: o.description, nePasUtiliser: o.nePasUtiliser })),
+            .map((o) => ({
+              handler: String(o.binding.handler ?? ''), description: o.description, nePasUtiliser: o.nePasUtiliser,
+              // Le scénario visé (RC4) : l'entretien ne repropose pas un outil pour un scénario que l'agent lance déjà.
+              ...(typeof o.binding.workflowId === 'string' ? { workflowId: o.binding.workflowId } : {}),
+            })),
           // Les connecteurs déjà déclarés, par leur nom exposé. L'assistant peut en réécrire les mots, jamais
           // en créer (déclarer une source, c'est écrire une adresse réseau et un secret). L'origine part avec,
           // sinon un outil MCP serait annoncé comme un connecteur API.
@@ -1702,6 +1709,7 @@ async function main(): Promise<void> {
           // `branche` se lit sur les consommateurs de la définition : seul le catalogue connaît les outils
           // non branchés, justement ceux que l'assistant peut proposer de brancher, s'ils sont offrables.
           catalogue: catalogueBranchable(catalogue, offrables, agentId),
+          scenarios: scenarios.filter((w) => w.nodeCount > 0).map((w) => ({ id: w.id, nom: w.name })),
         };
       },
       /**

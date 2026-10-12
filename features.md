@@ -3212,9 +3212,10 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
 - ✅ **Les outils d'un serveur MCP se branchent de la même façon**, une fois le serveur déclaré dans
   **Tools > Connecteurs MCP** et ses outils importés : la carte « Appeler un outil MCP » propose ceux que l'agent
   n'a pas encore, et leurs paramètres se règlent là-bas.
-- ⚠️ **L'assistant de construction ne pose pas d'outil à cible** : il ne voit ni vos tags, ni vos champs, ni vos
-  scénarios, et inventerait ce que l'outil vise. Il propose les mots des gestes de « Toujours là », et vous dit
-  où poser le reste.
+- ⚠️ **L'assistant de construction ne pose qu'un seul outil à cible : « Lancer un scénario »** (2026-10-12), et
+  seulement sur un scénario EN LIGNE que vous avez nommé (voir « Construire son agent en parlant »). Il ne voit ni
+  vos tags ni vos champs, et inventerait ce que l'outil vise : pour le reste, il propose les mots des gestes de
+  « Toujours là », et vous dit où poser le reste.
 
 ### Les règles d'arrêt, et les sorties du bloc
 
@@ -3267,10 +3268,18 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
   site, ses pages sont lues et découpées en fiches en arrière-plan, avec les mêmes contrôles que l'import de l'onglet :
   quand vous ouvrez Base de connaissance, elles y sont, à relire et corriger. Un site que vous aviez déjà importé à la
   main n'est pas relu, pour ne pas écraser vos corrections.
+- ✅ **Un moment confié à un scénario se règle dans l'entretien** (2026-10-12). Quand vous dites qu'à ce moment
+  l'agent lance un scénario, la question suivante liste vos scénarios **en ligne** par leur nom ; vous en nommez un,
+  et la proposition porte la ligne « Outil « Lancer un scénario » : <son nom>, dès que le contact… », avec la
+  situation tirée du moment, à corriger si besoin. « Enregistrer » pose l'outil dans l'onglet Outils, visant ce
+  scénario et **éteint**, comme tout outil ajouté : il reste à l'allumer. Un nom qui ne désigne pas un seul
+  scénario en ligne ne propose rien, et la liste « Pour finir » dit comment le poser à la main ; un scénario que
+  l'agent lance déjà n'est pas reproposé.
 - ✅ **À la fin, il dit ce qu'il reste à faire** (2026-10-12), sous la forme d'une liste numérotée « Pour finir » :
   enregistrer la proposition (bouton « Enregistrer »), importer le site donné dans Base de connaissance, brancher le connecteur qu'un moment
-  demande, vérifier le modèle de l'agent (posé à la création, changeable dans l'onglet Modèle), le tester, puis
-  l'activer. La liste se calcule sur l'état réel de l'agent : une étape déjà faite n'y figure pas.
+  demande, allumer l'outil du scénario posé (ou le poser à la main), vérifier le modèle de l'agent (posé à la
+  création, changeable dans l'onglet Modèle), le tester, puis l'activer. La liste se calcule sur l'état réel de
+  l'agent : une étape déjà faite n'y figure pas.
 - ✅ **Il pose vraiment toutes les questions** (2026-08-31). Avant, il décidait lui-même de ce qu'il avait
   couvert, et il sautait régulièrement le ton, l'identité et la base de connaissance. Un point n'est
   maintenant considéré comme vu que s'il vous a été **réellement posé**. Si vous y aviez déjà répondu en

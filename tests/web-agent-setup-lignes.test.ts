@@ -91,8 +91,8 @@ describe('garder, corriger ou jeter ligne par ligne', () => {
   it('tout jeter ne laisse rien à écrire', () => {
     const r = restreindreProposition(PROPOSITION, CHANGEMENTS, new Map());
     // ⚠️ Le branchement suit la même règle : une ligne jetée ne part pas, donc « tout jeter » ne laisse
-    // rien, y compris sur les deux listes ajoutées le 2026-09-15.
-    expect(r).toEqual({ fiche: {}, outils: [], connecteurs: [], outilsBranches: [], outilsDebranches: [] });
+    // rien, y compris sur les deux listes ajoutées le 2026-09-15, et les scénarios à poser du 2026-10-12.
+    expect(r).toEqual({ fiche: {}, outils: [], connecteurs: [], outilsBranches: [], outilsDebranches: [], scenarios: [] });
   });
 
   it('un champ SANS ligne de diff est envoyé tel quel : il est déjà identique à l’existant', () => {

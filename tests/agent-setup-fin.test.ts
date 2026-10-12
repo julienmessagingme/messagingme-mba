@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { blocDeFin, BOUTON_ENREGISTRER, etapesDeFin, TITRE_FIN, type EntreeFin } from '../src/agent/setup/fin';
+import { blocDeFin, BOUTON_ENREGISTRER, CASE_AUTONOMIE, etapesDeFin, TITRE_FIN, type EntreeFin } from '../src/agent/setup/fin';
 
 /**
  * Le bloc « Pour finir » de l'entretien de construction (décision de Julien, 2026-10-12) : écrit par le serveur sur
@@ -47,8 +47,31 @@ describe('etapesDeFin', () => {
     }).join('\n');
     expect(e).toMatch(/branchez le connecteur API pour « le client veut un devis »/);
     expect(e).toMatch(/branchez l’outil MCP pour « il veut son attestation »/);
-    expect(e).toMatch(/préparez le scénario à lancer pour « il veut prendre rendez-vous »/);
+    expect(e).toMatch(/pour « il veut prendre rendez-vous », onglet « Outils », « Ajouter un outil », « Lancer un scénario »/);
     expect(e).not.toMatch(/conseiller/);
+  });
+
+  it('🔴 un scénario reconnu dit d’allumer l’outil qu’« Enregistrer » pose éteint, un scénario déjà visé de vérifier qu’il est allumé', () => {
+    const moment = 'le client veut faire un devis';
+    const pose = etapesDeFin({
+      ...base, bascules: [{ moment, action: 'scenario', moyen: 'SMATIS Devis (flow)' }],
+      scenarios: [{ moment, nom: 'SMATIS Devis (flow)', dejaVise: false }],
+    }).join('\n');
+    expect(pose).toContain('Outils : après « Enregistrer », l’outil qui lance « SMATIS Devis (flow) » naît éteint : onglet « Outils », « Modifier » sur sa ligne, cochez « Autoriser l’agent à faire ça seul », puis allumez-le.');
+    expect(pose).not.toMatch(/Ajouter un outil/);
+    const deja = etapesDeFin({
+      ...base, bascules: [{ moment, action: 'scenario', moyen: 'SMATIS Devis (flow)' }],
+      scenarios: [{ moment, nom: 'SMATIS Devis (flow)', dejaVise: true }],
+    }).join('\n');
+    expect(deja).toContain('l’outil qui lance « SMATIS Devis (flow) » est déjà là ; vérifiez qu’il est allumé');
+  });
+
+  it('🔴 nomme la case d’autonomie que l’onglet Outils affiche vraiment', () => {
+    // « Lancer un scénario » est irréversible : sans cette case, chaque appel est refusé, et l'outil posé ne sert à rien.
+    const ecran = readFileSync(resolve(__dirname, '../web/components/agent-outils/ReglagesOutil.tsx'), 'utf8');
+    expect(ecran).toContain(`'${CASE_AUTONOMIE}.`);
+    const main = etapesDeFin({ ...base, bascules: [{ moment: 'm', action: 'scenario' }] }).join('\n');
+    expect(main).toContain(`cochez « ${CASE_AUTONOMIE} »`);
   });
 
   it('un connecteur déjà branché ne redemande rien', () => {

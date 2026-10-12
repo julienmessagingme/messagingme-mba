@@ -2,6 +2,8 @@ import { request } from './http';
 import { patchAgent, type PatchAgent, type SortieAgent } from './api-agent';
 import { setPolitiqueMentionIa } from './api';
 import { ajouterOutil, getBibliothequeOutils, listOutils, patchOutil, rattacherOutil } from './api-agent-tools';
+import { normaliserNomOutil, MAX_NOM_OUTIL } from './agent-outils';
+import { PLACEHOLDER, textesDuType } from './mba-outils';
 
 /**
  * La conversation de construction : elle propose, le client corrige.
@@ -45,6 +47,13 @@ export interface PropositionConstruction {
    */
   outilsBranches?: string[];
   outilsDebranches?: string[];
+  /**
+   * Les outils « Lancer un scénario » qu'« Enregistrer » pose, un par scénario qu'un moment de l'entretien confie à un
+   * scénario EN LIGNE (décision de Julien du 2026-10-12). La cible est celle que le SERVEUR a rapprochée de la liste
+   * réelle de l'espace ; la ligne du diff (`scenario.<workflowId>`) porte la situation, que le client corrige ou jette.
+   * `situation` : le texte gardé, posé par `restreindreProposition`.
+   */
+  scenarios?: Array<{ workflowId: string; nom: string; moment: string; situation?: string }>;
 }
 
 /**
@@ -174,6 +183,14 @@ export function restreindreProposition(
     outilsDebranches: (proposition.outilsDebranches ?? []).filter(
       (n) => !avantDe.has(`outil.${n}.rattachement`) || gardees.has(`outil.${n}.rattachement`),
     ),
+    /**
+     * 🔴 UN SCÉNARIO NE PART QUE SI SA LIGNE EST GARDÉE, et sans ligne il ne part pas : poser un outil qui envoie des
+     * messages facturés exige un geste du client sur CETTE ligne, pas l'absence d'un refus.
+     */
+    scenarios: (proposition.scenarios ?? []).flatMap((sc) => {
+      const garde = gardees.get(`scenario.${sc.workflowId}`);
+      return garde === undefined ? [] : [{ ...sc, situation: garde }];
+    }),
   };
 }
 
@@ -316,7 +333,8 @@ export async function appliquerProposition(
     }
   }
   const connecteurs = proposition.connecteurs ?? [];
-  if (proposition.outils.length === 0 && connecteurs.length === 0) return;
+  const scenarios = proposition.scenarios ?? [];
+  if (proposition.outils.length === 0 && connecteurs.length === 0 && scenarios.length === 0) return;
   try {
     // Les outils posés sont relus MAINTENANT : la proposition a pu être calculée il y a plusieurs minutes, et
     // ajouter un outil qui existe déjà rendrait 409 sur un nom pris.
@@ -342,6 +360,27 @@ export async function appliquerProposition(
         nePasUtiliser: propose.nePasUtiliser,
       });
     }
+    /**
+     * Les scénarios des moments (RC4) : la route du bouton « Ajouter un outil », avec la cible rapprochée par le
+     * serveur, puis la consigne de l'onglet Outils complétée de la situation gardée. Un scénario que l'agent lance déjà
+     * est sauté (la proposition a pu vieillir) ; un nom pris prend un suffixe, la route refuserait en 409. L'outil naît
+     * INACTIF, comme tout outil ajouté : l'allumer reste au client, et le bloc « Pour finir » le lui dit.
+     */
+    const textes = textesDuType('scenario', 'agent');
+    const pris = new Set(poses.map((o) => o.name));
+    for (const sc of scenarios) {
+      const dejaLance = poses.some((o) => String(o.binding.handler ?? '') === 'lancer_scenario' && o.binding.workflowId === sc.workflowId);
+      if (dejaLance) continue;
+      const name = nomLibre(`lancer_${normaliserNomOutil(sc.nom)}`.replace(/_+$/, ''), pris);
+      pris.add(name);
+      const situation = (sc.situation ?? '').trim() || sc.moment.trim();
+      const cree = await ajouterOutil(tenantId, agentId, 'lancer_scenario', { name, cible: { workflowId: sc.workflowId } });
+      await patchOutil(tenantId, agentId, cree.id, {
+        title: `Lancer « ${sc.nom} »`.slice(0, 120),
+        description: textes.quand[0].replace(PLACEHOLDER, situation).slice(0, 2000),
+        nePasUtiliser: textes.pasQuand[0],
+      });
+    }
   } catch (err) {
     // 🔴 Ces écritures ne sont PAS dans une transaction : la fiche part par une route, les outils par une
     // autre. Un échec ici laisse donc la fiche déjà écrite, et le dire est la seule honnêteté possible.
@@ -354,6 +393,17 @@ export async function appliquerProposition(
     throw new Error(ficheEcrite
       ? `La fiche est enregistrée, mais un outil n’a pas pu l’être : ${cause}. Vérifiez l’onglet Outils.`
       : `Un outil n’a pas pu être enregistré : ${cause}`);
+  }
+}
+
+/** Un nom d'outil que l'agent n'a pas encore : `base`, sinon `base_2`, `base_3`… dans les 64 caractères de la route. */
+export function nomLibre(base: string, pris: ReadonlySet<string>): string {
+  const racine = (base.slice(0, MAX_NOM_OUTIL) || 'lancer_scenario');
+  if (!pris.has(racine)) return racine;
+  for (let i = 2; ; i += 1) {
+    const suffixe = `_${i}`;
+    const nom = `${racine.slice(0, MAX_NOM_OUTIL - suffixe.length)}${suffixe}`;
+    if (!pris.has(nom)) return nom;
   }
 }
 

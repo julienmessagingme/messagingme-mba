@@ -10,8 +10,11 @@ import {
 } from '../agent/setup/piece-jointe';
 import { construireMessages, inventaireDe, MAX_CARACTERES_MESSAGE, type ContexteConstruction } from '../agent/setup/conversation';
 import {
-  assainirProposition, differences, propositionSchema, OUTIL_PROPOSER, SCHEMA_PROPOSITION,
+  assainirProposition, BORNES_PROPOSITION, differences, propositionSchema, OUTIL_PROPOSER, SCHEMA_PROPOSITION,
 } from '../agent/setup/proposition';
+import {
+  champScenario, scenarioDuMoyen, scenariosAPoser, scenariosDesMoments, situationDuMoment,
+} from '../agent/setup/scenarios';
 import {
   actionChoisie, agendaEffectif, basculesDuTour, fusionner, fusionnerBascules, manquesDeCouverture, momentDuPoint,
   momentsDesReponses, poseUneQuestion, prochainPoint, urlDeConnaissance,
@@ -479,6 +482,20 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
       const choisie = actionChoisie(parse.data.message);
       if (choisie) momentVise.action = choisie;
     }
+    /**
+     * Au tour qui demande le moyen du moment N : un moment « scénario » dont le client NOMME un scénario en ligne prend
+     * son nom exact (le modèle le paraphrase, et la paraphrase ne se rapproche plus de rien) ; sinon, faute de moyen
+     * rendu par le modèle, la réponse du client. C'est ce moyen que `scenariosDesMoments` rapproche (Julien, 2026-10-12).
+     */
+    const momentDuMoyen = vise?.quoi === 'moyen' ? listeBascules[vise.index] : undefined;
+    if (momentDuMoyen) {
+      const nomme = momentDuMoyen.action === 'scenario'
+        ? scenarioDuMoyen(parse.data.message, ctx.etat.scenarios ?? [])
+        : null;
+      const dit = parse.data.message.trim().slice(0, BORNES_PROPOSITION.moyen);
+      if (nomme) momentDuMoyen.moyen = nomme.nom;
+      else if (!momentDuMoyen.moyen?.trim() && dit !== '') momentDuMoyen.moyen = dit;
+    }
     const poses = pointDuTour && !avant.poses.includes(pointDuTour.code)
       ? [...avant.poses, pointDuTour.code]
       : avant.poses;
@@ -578,8 +595,25 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
         + 'dans l’onglet « Base de connaissance » d’ici une minute, à relire et corriger si besoin.';
     }
 
+    /**
+     * Les scénarios des moments, rapprochés de la liste RÉELLE de l'espace, jamais d'un nom rendu par le modèle (RC4) :
+     * chacun que l'agent ne vise pas encore devient une ligne du diff, qu'« Enregistrer » pose en outil éteint. Calculés
+     * à chaque tour hors entretien, comme le diff : un tour de plus avant d'enregistrer ne les fait pas disparaître.
+     */
+    const vises = new Set(ctx.etat.outils.flatMap((o) => (o.handler === 'lancer_scenario' && o.workflowId ? [o.workflowId] : [])));
+    const desMoments = enEntretien ? [] : scenariosDesMoments(listeBascules, ctx.etat.scenarios ?? [], vises);
+    const aPoser = scenariosAPoser(desMoments);
     /** Le diff montré au client, calculé une fois : le bloc de fin en dépend, la réponse aussi. */
-    const changements = enEntretien ? [] : differences(ctx.etat, propositionFinale);
+    const changements = enEntretien ? [] : [
+      ...differences(ctx.etat, propositionFinale),
+      // Le texte de la ligne est la SITUATION : la console la place dans la consigne de l'onglet Outils.
+      ...aPoser.map((s) => ({
+        champ: champScenario(s.workflowId),
+        label: `Outil « Lancer un scénario » : ${s.nom}, dès que le contact…`,
+        avant: '',
+        apres: situationDuMoment(s.moment),
+      })),
+    ];
     /**
      * Le bloc « Pour finir », ajouté au tour qui FERME l'entretien (la même transition que la synthèse) et écrit par
      * le serveur sur l'état réel (`blocDeFin`) : appliquer, la connaissance à importer, les outils à brancher, le
@@ -596,6 +630,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
         outilsMcp: inv.outilsMcp.length,
         modele: ctx.etat.modele ?? null,
         importEnCours: importLance,
+        scenarios: desMoments,
       })}`;
     }
 
@@ -638,6 +673,8 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
          */
         outilsBranches: brancheables(ctx.etat.catalogue, propositionFinale.outilsBranches, false),
         outilsDebranches: brancheables(ctx.etat.catalogue, propositionFinale.outilsDebranches, true),
+        // Ce que « Enregistrer » pose (`appliquerProposition`) : la cible vient d'ici, la description de la ligne gardée.
+        scenarios: aPoser,
       },
       changements,
       usage: { tokensIn, tokensOut },
