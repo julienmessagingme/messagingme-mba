@@ -8,9 +8,9 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
  * en parallèle : la traduction est co-localisée avec la chaîne (maintenable, pas de dérive). Anglais absent -> FR.
  *
  * Usage dans un composant :  const t = useT();  ...  {t('Bonjour', 'Hello')}
- * Défaut FR ; le choix (menu compte) est mémorisé par navigateur.
+ * Défaut FR ; le choix (menu compte) est mémorisé par navigateur, et un lien `?lang=en` le pose (lot 18).
  */
-import { LOCALE_STORAGE_KEY, type Locale } from './locale';
+import { LOCALE_STORAGE_KEY, langueDeLAdresse, type Locale } from './locale';
 export type { Locale } from './locale';
 const STORAGE_KEY = LOCALE_STORAGE_KEY;
 
@@ -25,6 +25,14 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   // est appliqué APRÈS le montage (effet client), au prix d'un bref flash si l'utilisateur avait choisi EN.
   const [locale, setLocaleState] = useState<Locale>('fr');
   useEffect(() => {
+    // La langue de l'adresse d'abord (`?lang=en`, lot 18), et elle devient le choix mémorisé.
+    const parLAdresse = langueDeLAdresse(window.location.search);
+    if (parLAdresse) {
+      setLocaleState(parLAdresse);
+      try { window.localStorage.setItem(STORAGE_KEY, parLAdresse); } catch { /* non bloquant */ }
+      try { document.documentElement.lang = parLAdresse; } catch { /* edge */ }
+      return;
+    }
     try {
       const saved = window.localStorage.getItem(STORAGE_KEY);
       if (saved === 'fr' || saved === 'en') {

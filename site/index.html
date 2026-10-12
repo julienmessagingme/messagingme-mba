@@ -178,7 +178,7 @@
       </details>
       <a class="burger-ligne" href="/industries/">Industries</a>
       <a class="burger-ligne" href="/pricing/">Pricing</a>
-      <a class="burger-ligne" href="/#developpeurs">Développeurs</a>
+      <a class="burger-ligne" href="/developpeurs/">Développeurs</a>
       <div class="langues burger-langues" role="group" aria-label="Langue du site">
         <span class="langue" aria-current="true" title="Français"><svg aria-hidden="true"><use href="#drapeau-fr"/></svg><span class="masque">Français, langue du site</span></span>
         <span class="langue" title="English version coming soon"><svg aria-hidden="true"><use href="#drapeau-uk"/></svg><span class="masque">English, coming soon</span></span>
@@ -200,7 +200,7 @@
     </details>
     <a class="lien" href="/industries/">Industries</a>
     <a class="lien" href="/pricing/">Pricing</a>
-    <a class="lien nav-dev" href="/#developpeurs">Développeurs</a>
+    <a class="lien nav-dev" href="/developpeurs/">Développeurs</a>
     <div class="nav-droite">
       <div class="langues" role="group" aria-label="Langue du site">
         <span class="langue" aria-current="true" title="Français"><svg aria-hidden="true"><use href="#drapeau-fr"/></svg><span class="masque">Français, langue du site</span></span>
@@ -219,6 +219,7 @@
       <p class="chapeau">WhatsApp et RCS, campagnes et service client au même endroit. Vous choisissez qui répond, et chaque conversation est qualifiée et se transforme en action pour votre CRM.</p>
       <div class="appels">
         <a class="bouton bouton-plein" href="/contact/#formulaire">Demander une démo</a>
+        <a class="bouton bouton-texte" href="https://console.messagingme.app/signup">Créer mon espace <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>
       </div>
     </div>
 
@@ -540,12 +541,12 @@
         <p>Contacts, messages WhatsApp et RCS, scénarios&nbsp;: pilotez tout depuis vos outils avec l’API, ou depuis un assistant IA avec le serveur MCP.</p>
         <div class="appels">
           <a class="bouton bouton-plein" href="https://console.messagingme.app/developers/api">Documentation de l’API</a>
-          <a class="bouton bouton-texte" href="https://console.messagingme.app/developers/mcp">Serveur MCP <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>
+          <a class="bouton bouton-texte" href="/developpeurs/">La section développeurs <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>
         </div>
       </div>
       <!-- L'appel reprend web/lib/api-exemples.ts (messageWhatsapp), celui que la doc publie et que la suite
-           racine valide contre la route ; la commande MCP reprend web/app/developers/mcp/page.tsx. S'ils
-           changent là-bas, ils changent ici. -->
+           racine valide contre la route ; la commande Claude Code est celle du tunnel (commandeMcp,
+           web/lib/demarrer.ts), et tests/vitrine-developpeurs.test.ts la tient égale. -->
       <pre class="code" aria-label="Exemples de branchement"><code><span class="c"># Envoyer un message par l’API</span>
 curl -X POST https://api.messagingme.app/v1/messages/whatsapp \
   -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
@@ -553,9 +554,8 @@ curl -X POST https://api.messagingme.app/v1/messages/whatsapp \
   -d '{"externalId":"crm-7781",
        "text":"Votre commande 8412 est prête, vous pouvez passer la retirer."}'
 
-<span class="c"># Brancher un assistant sur le serveur MCP</span>
-claude mcp add --transport http mba https://api.messagingme.app/mcp \
-  --header "Authorization: Bearer VOTRE_CLE"</code></pre>
+<span class="c"># Brancher Claude Code sur votre espace</span>
+claude mcp add --transport http messagingme https://api.messagingme.app/mcp</code></pre>
     </div>
   </section>
 </main>

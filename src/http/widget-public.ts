@@ -39,8 +39,11 @@ export interface WidgetPublicRouteDeps {
   badgeDeLOffre(tenantId: string): Promise<boolean>;
 }
 
-/** Un code est 12 caractères base32 minuscules (`newTrackingCode`). Tout le reste est refusé sans toucher la base. */
-const CODE_RE = /^[0-9a-hjkmnp-tv-z]{12}$/;
+/**
+ * Un code est 12 caractères base32 minuscules (`newTrackingCode`). Tout le reste est refusé sans toucher la base. Exporté
+ * pour le test de la vitrine, qui montre une balise de widget (lot 18).
+ */
+export const CODE_RE = /^[0-9a-hjkmnp-tv-z]{12}$/;
 
 /** Le paramètre d'URL, vérifié comme toute entrée externe. Fastify le rend sans le suffixe `.js`. */
 const parametres = z.object({ code: z.string().trim().toLowerCase().regex(CODE_RE) });

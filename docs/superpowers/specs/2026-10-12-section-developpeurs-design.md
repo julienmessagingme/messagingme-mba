@@ -36,8 +36,9 @@ serveur, lot 17).
 - La console s'ouvre toujours en français : la langue vient d'un choix mémorisé par navigateur (`web/lib/i18n.tsx`),
   jamais de l'adresse. Un visiteur venu de la page anglaise tomberait sur une inscription en français.
 - La grille de la Free vit dans `DROITS.base` et le prix du Pro dans `PRIX_PRO_HT_CENTIMES` (`src/offres/offres.ts`).
-  Le prix du numéro fourni (3,50 € HT par mois) n'a pas de source dans le code : il vit chez Stripe, et la console
-  l'écrit en dur.
+  Le prix du numéro fourni (3,50 € HT par mois) est `PRIX_NUMERO_HT_CENTIMES` (`src/stripe/abonnement.ts`), que la
+  route compare au prix posé chez Stripe. (Corrigé par la relecture : la première version de cette spec le disait sans
+  source dans le code.)
 - Les exemples de code de la doc sortent d'un module compilé contre le SDK (`web/lib/exemples-code.ts`, lot 17).
 - La CI de la racine ignore `site/**`, et son commentaire dit de retirer la ligne le jour où un test lira `site/`.
 
@@ -123,7 +124,8 @@ Un test de la racine (`tests/vitrine-developpeurs.test.ts`) lit `site/` :
 chaque push de la vitrine lance la CI de la racine. La règle « un push `site/` seul ne lance aucune CI », écrite dans
 `CLAUDE.md` et dans la mémoire des sessions, est mise à jour dans le même commit.
 
-Le prix du numéro (3,50 €) reste écrit à la main, comme dans la console : il n'a pas de source dans le code.
+Le prix du numéro (3,50 €) et les utilisateurs du Pro portent aussi leur `data-offre`, comparés à
+`PRIX_NUMERO_HT_CENTIMES` et à `DROITS.pro`.
 
 ## Hors périmètre
 

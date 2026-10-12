@@ -6,6 +6,31 @@
 > tranchent, jamais ce fichier.
 
 
+## 2026-10-12 : la section développeurs de la vitrine (lot 18)
+
+Décisions de Julien en deux rondes de questions : une page pour les vibe coders (Claude Code, Cursor, Lovable), en
+français et en anglais, le bouton d'inscription tout de suite (sur la page et en haut de l'accueil, malgré l'ouverture
+du site prévue sur Scaleway), la Free en chiffres, Claude Code d'abord, un terminal animé. Spec
+`docs/superpowers/specs/2026-10-12-section-developpeurs-design.md`, plan
+`docs/superpowers/plans/2026-10-12-section-developpeurs.md`.
+
+- Mesuré avant d'écrire : l'accueil publiait l'ANCIENNE commande Claude Code (serveur `mba`, clé dans l'en-tête), le
+  tunnel la nouvelle (sans clé, par OAuth). Une seule reste, tenue par le test. La console s'ouvrait toujours en
+  français, la langue venant d'un choix mémorisé : `?lang=en` la pose désormais.
+- Les deux pages sont assemblées depuis l'accueil (icônes, en-tête et pied recopiés), la page anglaise avec un en-tête
+  et un pied réduits. Regardées dans un navigateur à 1440 et 375 px, animations coupées et JavaScript coupé compris :
+  aucun défilement horizontal, aucune erreur, la séance du terminal lisible dans les trois cas. Un premier essai
+  laissait la une sur deux colonnes au téléphone (la règle de la page écrasait celle du téléphone), corrigé.
+- Le test de la vitrine, vu rouge sur un chiffre de la Free faussé puis sur l'ancienne commande remise dans l'accueil,
+  vert une fois restauré. `site/**` sort des chemins ignorés de `ci.yml`.
+- Relecture : aucun rouge. Jaunes corrigés avant le push : la séance montrée sautait la fiche de l'agent et son outil,
+  que l'activation exige (deux appels ajoutés, l'ordre tenu par le test) ; le prix du numéro et les utilisateurs du Pro
+  comparés au code (le prix avait une source, `PRIX_NUMERO_HT_CENTIMES`, que la spec ignorait) ; le nom affiché de
+  chaque outil égal à sa marque ; la ligne d'installation du SDK (le paquet n'est pas sur npm) ; le bouton Copier
+  caché quand le navigateur ne sait pas copier, et son résultat annoncé. Laissé à Julien : la phrase « Cursor, VS Code
+  ou Lovable », que seul un essai avec Cursor prouvera (la doc MCP de la console dit déjà la même chose).
+- Essai réel n° 98 dû (Julien).
+
 ## 2026-10-12 : un formulaire construit dans WhatsApp Manager ne partait jamais d'un scénario
 
 Essai de Julien sur l'espace SANDBOX : « Message rapide, Formulaire SMATIS, Message rapide ». Le premier message est

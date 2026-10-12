@@ -15,6 +15,8 @@
 
 ## Développeurs
 
+- [Messaging Me pour les développeurs](https://app.messagingme.fr/developpeurs/) : WhatsApp dans votre app en une session Claude Code. Créer son espace, brancher Claude Code en une commande, l’API, le SDK et ce que permet l’offre gratuite.
+- [Messaging Me for developers](https://app.messagingme.fr/en/developers/) : the same page in English.
 - [La documentation pour les modèles](https://console.messagingme.app/llms.txt) : chaque page de la doc de l’API et du serveur MCP en Markdown, en français et en anglais, avec sa phrase.
 - [Documentation de l’API](https://console.messagingme.app/developers/api)
 - [Serveur MCP](https://console.messagingme.app/developers/mcp)

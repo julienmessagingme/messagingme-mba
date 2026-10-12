@@ -1,4 +1,5 @@
-// Commun aux pages de la vitrine : l'en-tête collant et le menu « Fonctionnalités ».
+// Commun aux pages de la vitrine : l'en-tête collant et le menu « Fonctionnalités ». Puis, page par page, ce qui ne
+// sert qu'à une page (chaque bloc ne fait rien si la page n'a pas l'élément qu'il vise).
 (function () {
   // L'en-tête prend son fond dès que la sentinelle du haut de page sort de l'écran (jamais d'écouteur de défilement).
   var barre = document.querySelector('.barre'), sentinelle = document.querySelector('.sentinelle');
@@ -69,6 +70,46 @@
     entrees.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('vu'); revele.unobserve(e.target); } });
   }, { threshold: 0.35 });
   document.querySelectorAll('.f-revele').forEach(function (el) { revele.observe(el); });
+})();
+
+// Page développeurs (lot 18) : le bouton « Copier » de la commande, et le terminal qui rejoue sa séance en boucle,
+// SEULEMENT quand il est à l'écran. Le minutage des lignes est dans leur `--t`. Rien ne tourne pour qui a demandé
+// moins de mouvement : la séance y reste affichée, finie.
+(function () {
+  // Le bouton ne se montre que si le navigateur sait copier ; le résultat, réussi ou non, est dit au bouton et à la
+  // zone de statut qui le suit, pour un lecteur d'écran.
+  document.querySelectorAll('.dev-copier').forEach(function (b) {
+    var cible = document.getElementById(b.getAttribute('aria-controls')), libelle = b.textContent;
+    var statut = b.nextElementSibling && b.nextElementSibling.classList.contains('dev-statut') ? b.nextElementSibling : null;
+    if (!cible || !navigator.clipboard) return;
+    b.classList.add('pret');
+    var dire = function (texte) {
+      b.textContent = texte;
+      if (statut) statut.textContent = texte;
+      setTimeout(function () { b.textContent = libelle; if (statut) statut.textContent = ''; }, 2000);
+    };
+    b.addEventListener('click', function () {
+      navigator.clipboard.writeText(cible.textContent.trim()).then(function () { dire(b.dataset.copie); }, function () { dire(b.dataset.echec); });
+    });
+  });
+
+  var t = document.querySelector('.dev-terminal');
+  if (!t || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (!('IntersectionObserver' in window)) { t.classList.add('statique'); return; }
+  var minuteries = [], actif = false;
+  function arreter() { minuteries.forEach(clearTimeout); minuteries = []; }
+  function tour() {
+    arreter();
+    t.classList.remove('joue', 'sortie');
+    void t.offsetWidth;
+    t.classList.add('joue');
+    minuteries.push(setTimeout(function () { t.classList.add('sortie'); }, 12000));
+    minuteries.push(setTimeout(tour, 12600));
+  }
+  new IntersectionObserver(function (e) {
+    if (e[0].isIntersecting && !actif) { actif = true; tour(); }
+    else if (!e[0].isIntersecting && actif) { actif = false; arreter(); }
+  }, { threshold: 0.25 }).observe(t);
 })();
 
 // Page contact. Le formulaire part SANS script (formulaire HTML natif, l'API répond par une redirection) ; ceci

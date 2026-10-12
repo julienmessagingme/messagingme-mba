@@ -25,6 +25,13 @@ serveur MCP. Accroche : « La plateforme conversationnelle qui comprend chaque c
 répondre en parallèle, comme secours et pour toutes les adresses déjà distribuées (liens tracés, visuels RCS,
 webhook Meta, MCP). Rien de ce qui a été envoyé à un client ne cesse de fonctionner.
 
+✅ **La vitrine a sa page développeurs** (2026-10-12, lot 18) : `app.messagingme.fr/developpeurs/`, et sa jumelle en
+anglais `/en/developers/`, la seule page anglaise de la vitrine. Pour qui construit avec Claude Code, Cursor ou Lovable :
+une séance Claude Code rejouée (l'agent IA, la lecture du site, la bulle WhatsApp), les trois étapes (créer son espace,
+brancher Claude Code en une commande, demander), le branchement par le code (API, SDK, webhooks signés) et ce que
+permet l'offre gratuite. « Développeurs », dans le menu de toutes les pages, y mène ; « Créer mon espace », en haut de
+l'accueil et de la page, ouvre l'inscription. Venu de la page anglaise, un lien ouvre la console en anglais.
+
 ✅ **Les tentatives d'accès à `/ops` alertent** (2026-09-03). Au 5e refus en 5 minutes, un message Telegram
 part, une fois par demi-heure au plus. Chaque refus est journalisé même quand l'alerte est étouffée. Le jeton
 présenté n'est jamais écrit nulle part.

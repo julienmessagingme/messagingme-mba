@@ -11,3 +11,13 @@ export type Locale = 'fr' | 'en';
  * d'atteinte. Deux copies du littéral finiraient par diverger, et la traduction s'arrêterait sans bruit.
  */
 export const LOCALE_STORAGE_KEY = 'mba_locale';
+
+/**
+ * La langue portée par l'adresse (`?lang=en`), ou `null` (lot 18) : la page anglaise de la vitrine envoie vers
+ * l'inscription et la doc avec ce paramètre, sinon le visiteur arriverait sur une console en français. L'adresse
+ * l'emporte sur le choix mémorisé (le lien dit ce que le visiteur vient de choisir). Une valeur inconnue ne dit rien.
+ */
+export function langueDeLAdresse(recherche: string): Locale | null {
+  const l = new URLSearchParams(recherche).get('lang')?.toLowerCase();
+  return l === 'fr' || l === 'en' ? l : null;
+}
