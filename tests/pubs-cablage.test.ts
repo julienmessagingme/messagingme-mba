@@ -78,6 +78,19 @@ describe('câblage des publicités : le jeton ne touche jamais la base en clair'
     }
   });
 
+  it('🔴 seul le module de connexion peut lire le jeton chiffré ou l instantané d accès', () => {
+    const lectures = SOURCES.flatMap(({ fichier, texte }) =>
+      [...texte.matchAll(/\.(?:lireJetonChiffre|lireAcces)\(/g)].map(() => fichier));
+    expect(lectures.length).toBeGreaterThan(0);
+    expect([...new Set(lectures)]).toEqual(['src/pubs/connexion.ts']);
+  });
+
+  it('l ancienne sortie publique du jeton en clair ne réapparaît nulle part', () => {
+    for (const { fichier, texte } of SOURCES) {
+      expect(texte, fichier).not.toContain('.jetonClair(');
+    }
+  });
+
   it('⚠️ les routes sont câblées avec la configuration « publicités », pas celle de l’inscription', () => {
     // Deux configurations Facebook Login for Business coexistent. Les confondre enverrait le client dans le
     // parcours WhatsApp au moment où il croit connecter ses publicités, et ne rapporterait aucun compte.

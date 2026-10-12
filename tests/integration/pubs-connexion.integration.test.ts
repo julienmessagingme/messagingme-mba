@@ -34,6 +34,11 @@ describe.skipIf(!url)('lot 2 des pubs : la connexion d un espace (Postgres réel
     expect(etat?.pageLiee).toBeNull();
     expect(Object.keys(etat ?? {})).not.toContain('jetonChiffre');
     await expect(store.lireJetonChiffre(tenantId)).resolves.toBe('CHIFFRE_1');
+    await expect(store.lireAcces(tenantId)).resolves.toEqual({
+      comptePubId: null,
+      pageId: null,
+      jetonChiffre: 'CHIFFRE_1',
+    });
   });
 
   it('🔴 un second jeton n ECRASE JAMAIS le premier : la base refuse, et le dit', async () => {
@@ -51,6 +56,11 @@ describe.skipIf(!url)('lot 2 des pubs : la connexion d un espace (Postgres réel
     expect(rows[0]!.n).toBe('1');
     await expect(store.lireJetonChiffre(tenantId)).resolves.toBe('CHIFFRE_1');
     expect((await store.lire(tenantId))?.comptePubId).toBe('111');
+    await expect(store.lireAcces(tenantId)).resolves.toEqual({
+      comptePubId: '111',
+      pageId: 'p1',
+      jetonChiffre: 'CHIFFRE_1',
+    });
   });
 
   it('apres une deconnexion, un jeton neuf se pose : le chemin normal reste ouvert', async () => {

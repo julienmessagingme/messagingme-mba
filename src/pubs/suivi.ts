@@ -1,4 +1,5 @@
 import type { DepensePub, EtatCampagneMeta } from '../meta/pubs-creation';
+import type { GestesConnexionPub } from './connexion';
 
 /**
  * Le balayage du suivi des publicités : toutes les quinze minutes, on relit chez Meta ce que les campagnes
@@ -18,8 +19,8 @@ export interface SuiviPubsDeps {
     /** Les campagnes de cet espace qu'il faut relire. Vide = rien à faire, aucun appel à Meta. */
     campagnesASuivre(tenantId: string): Promise<string[]>;
   };
-  /** Le jeton en clair. `null` = plus de connexion (déconnectée entre-temps) : on passe. */
-  jeton(tenantId: string): Promise<string | null>;
+  /** Accès facultatif : plus de connexion entre-temps = cet espace est simplement sauté. */
+  acces: Pick<GestesConnexionPub, 'siConnecte'>;
   /** Les lectures chez Meta. */
   meta: {
     lireCampagnes(campagneIds: readonly string[], jeton: string): Promise<Map<string, EtatCampagneMeta>>;
@@ -29,9 +30,7 @@ export interface SuiviPubsDeps {
   noterSuivi(tenantId: string, campagneId: string, v: {
     etat: EtatCampagneMeta | null; depense: DepensePub | null;
   }): Promise<void>;
-  /** Meta a refusé le jeton : la connexion est invalide, l'écran doit le dire. */
-  connexions: { marquerJetonRejete(tenantId: string): Promise<void> };
-  /** Ce jeton est-il refusé par Meta, par opposition à une panne passagère ? */
+  /** Le module d'accès a déjà mémorisé le refus ; le suivi le reconnaît encore pour son bilan et son alerte. */
   estJetonRefuse(err: unknown): boolean;
   /** Prévient l'exploitation. Un jeton mort ne se répare pas tout seul, et personne ne lit les journaux. */
   alerter(sujet: string, message: string): void;
@@ -65,20 +64,21 @@ export async function balayerLesPubs(deps: SuiviPubsDeps): Promise<BilanSuivi> {
       const campagnes = await deps.publicites.campagnesASuivre(tenantId);
       // Aucun appel à Meta quand il n'y a rien à suivre.
       if (campagnes.length === 0) continue;
-      const jeton = await deps.jeton(tenantId);
-      if (jeton === null) continue;
+      const utilisation = await deps.acces.siConnecte(tenantId, async (appelerMeta) => {
+        const [etats, depenses] = await Promise.all([
+          lireOuRien(() => appelerMeta((jeton) => deps.meta.lireCampagnes(campagnes, jeton)), 'statuts', tenantId, deps),
+          lireOuRien(() => appelerMeta((jeton) => deps.meta.lireDepenses(campagnes, jeton)), 'dépenses', tenantId, deps),
+        ]);
+        return { etats, depenses };
+      });
+      if (!utilisation.connecte) continue;
       bilan.espaces += 1;
+      const { etats, depenses } = utilisation.valeur;
 
-      const [etats, depenses] = await Promise.all([
-        lireOuRien(() => deps.meta.lireCampagnes(campagnes, jeton), 'statuts', tenantId, deps),
-        lireOuRien(() => deps.meta.lireDepenses(campagnes, jeton), 'dépenses', tenantId, deps),
-      ]);
-
-      // Un jeton rejeté se retient une fois : les deux lectures échouent ensemble, et deux alertes identiques
-      // toutes les quinze minutes feraient ignorer la seule qui compte.
+      // L'accès central marque un jeton rejeté une seule fois, même si les deux lectures échouent ensemble.
+      // Le suivi agrège aussi l'alerte : deux alertes identiques feraient ignorer la seule qui compte.
       if (etats.jetonRefuse || depenses.jetonRefuse) {
         bilan.jetonsRejetes += 1;
-        await deps.connexions.marquerJetonRejete(tenantId);
         deps.alerter('pubs-jeton', `connexion publicitaire refusée par Meta pour l’espace ${tenantId} : le suivi s’arrête, le routage des leads continue`);
         continue;
       }

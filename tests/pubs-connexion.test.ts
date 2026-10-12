@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { creerConnexionPub, type ClientConnexionPub, type DepotConnexionPub } from '../src/pubs/connexion';
+import {
+  creerConnexionPub, ConnexionPubIncomplete, DejaConnectePub, JetonNonEnregistre, PasDeConnexionPub,
+  type ClientConnexionPub, type DepotConnexionPub,
+} from '../src/pubs/connexion';
 import { encryptSecret, decryptSecret } from '../src/crypto/secretbox';
 import { ErreurGraph } from '../src/meta/graph';
-import { DejaConnectePub, JetonNonEnregistre, PasDeConnexionPub } from '../src/http/pubs';
 import type { ActifsAccordes } from '../src/meta/pubs';
 
 /**
@@ -27,9 +29,16 @@ const ACTIFS: ActifsAccordes = {
 /** Qui porte chaque jeton chez Meta ; un jeton absent de la table ne répond pas (un cryptogramme, par exemple). */
 const ENTITES: Record<string, string> = { ANCIEN: 'entite-a', NEUF: 'entite-b', NEUF_MEME_ENTITE: 'entite-a' };
 
-function monter(o: { chiffreEnBase?: string | null; client?: Partial<ClientConnexionPub>; depot?: Partial<DepotConnexionPub>; cle?: string } = {}) {
+function monter(o: {
+  chiffreEnBase?: string | null;
+  configuration?: { comptePubId: string | null; pageId: string | null };
+  client?: Partial<ClientConnexionPub>;
+  depot?: Partial<DepotConnexionPub>;
+  cle?: string;
+} = {}) {
   const journal: string[] = [];
   let chiffre = o.chiffreEnBase === undefined ? null : o.chiffreEnBase;
+  const configuration = o.configuration ?? { comptePubId: '111', pageId: 'p1' };
   const client: ClientConnexionPub = {
     exchangeCode: async (code) => { journal.push(`meta.exchangeCode(${code})`); return 'NEUF'; },
     actifsAccordes: async (jeton) => { journal.push(`meta.actifsAccordes(${jeton})`); return ACTIFS; },
@@ -44,9 +53,10 @@ function monter(o: { chiffreEnBase?: string | null; client?: Partial<ClientConne
   const ecrits: string[] = [];
   const depot: DepotConnexionPub = {
     lire: async () => (chiffre === null ? null : {
-      comptePubId: '111', compteNom: 'Compte', pageId: 'p1', pageNom: 'Page', devise: 'EUR', fuseau: 'Europe/Paris',
+      comptePubId: configuration.comptePubId, compteNom: 'Compte', pageId: configuration.pageId, pageNom: 'Page', devise: 'EUR', fuseau: 'Europe/Paris',
       pageLiee: 'inconnu', connectePar: null, connecteLe: new Date(0), jetonRejeteLe: null,
     }),
+    lireAcces: async () => (chiffre === null ? null : { ...configuration, jetonChiffre: chiffre }),
     lireJetonChiffre: async () => { journal.push('base.lireJetonChiffre'); return chiffre; },
     poserJeton: async (_t, c) => {
       journal.push('base.poserJeton');
@@ -79,12 +89,84 @@ describe('le jeton ne touche jamais la base en clair, et ne part jamais chiffré
     const { gestes, journal } = monter({ chiffreEnBase: encryptSecret('ANCIEN', CLE) });
     await gestes.actifsAccordes('t1');
     expect(journal).toContain('meta.actifsAccordes(ANCIEN)');
-    expect(await gestes.jetonClair('t1')).toBe('ANCIEN');
+    await gestes.avecJeton('t1', (appelerMeta) => appelerMeta(async (jeton) => {
+      expect(jeton).toBe('ANCIEN');
+    }));
   });
 
   it('un espace sans connexion lève une erreur NOMMÉE, que la route rend en 409', async () => {
     const { gestes } = monter();
-    await expect(gestes.jetonClair('t1')).rejects.toBeInstanceOf(PasDeConnexionPub);
+    await expect(gestes.avecJeton('t1', async () => undefined)).rejects.toBeInstanceOf(PasDeConnexionPub);
+  });
+});
+
+describe('l accès publicitaire centralisé', () => {
+  it('rend ensemble le compte, la Page et un appel Meta avec le jeton déchiffré', async () => {
+    const { gestes } = monter({ chiffreEnBase: encryptSecret('ANCIEN', CLE) });
+    const valeur = await gestes.avecConfiguration('t1', ({ comptePubId, pageId, appelerMeta }) =>
+      appelerMeta(async (jeton) => `${comptePubId}:${pageId}:${jeton}`));
+    expect(valeur).toBe('111:p1:ANCIEN');
+  });
+
+  it('refuse une configuration incomplète avant d appeler l action', async () => {
+    let appelee = false;
+    const { gestes } = monter({
+      chiffreEnBase: encryptSecret('ANCIEN', CLE),
+      configuration: { comptePubId: '111', pageId: null },
+    });
+    await expect(gestes.avecConfiguration('t1', async () => { appelee = true; }))
+      .rejects.toBeInstanceOf(ConnexionPubIncomplete);
+    expect(appelee).toBe(false);
+  });
+
+  it('le worker distingue une absence de connexion d une valeur `null` rendue par Meta', async () => {
+    const absent = monter();
+    let appelee = false;
+    expect(await absent.gestes.siConnecte('t1', async () => { appelee = true; return null; }))
+      .toEqual({ connecte: false });
+    expect(appelee).toBe(false);
+
+    const present = monter({ chiffreEnBase: encryptSecret('ANCIEN', CLE) });
+    expect(await present.gestes.siConnecte('t1', async () => null))
+      .toEqual({ connecte: true, valeur: null });
+  });
+
+  it('deux refus parallèles dans la même action ne marquent la connexion qu une fois', async () => {
+    const refus = new ErreurGraph(401, 190, 'jeton expiré');
+    const { gestes, journal } = monter({ chiffreEnBase: encryptSecret('ANCIEN', CLE) });
+    await gestes.avecJeton('t1', async (appelerMeta) => {
+      const resultats = await Promise.allSettled([
+        appelerMeta(async () => { throw refus; }),
+        appelerMeta(async () => { throw refus; }),
+      ]);
+      expect(resultats.every((r) => r.status === 'rejected')).toBe(true);
+    });
+    expect(journal.filter((e) => e === 'base.marquerJetonRejete')).toHaveLength(1);
+  });
+
+  it('un orchestrateur peut absorber le refus après que le module l a mémorisé', async () => {
+    const { gestes, journal } = monter({ chiffreEnBase: encryptSecret('ANCIEN', CLE) });
+    const issue = await gestes.avecJeton('t1', async (appelerMeta) => {
+      try {
+        await appelerMeta(async () => { throw new ErreurGraph(401, 190, 'jeton expiré'); });
+        return 'ok';
+      } catch {
+        return 'refuse';
+      }
+    });
+    expect(issue).toBe('refuse');
+    expect(journal).toContain('base.marquerJetonRejete');
+  });
+
+  it('une panne du marquage ne masque jamais le refus original de Meta', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const refus = new ErreurGraph(401, 190, 'jeton expiré');
+    const { gestes } = monter({
+      chiffreEnBase: encryptSecret('ANCIEN', CLE),
+      depot: { marquerJetonRejete: async () => { throw new Error('base indisponible'); } },
+    });
+    await expect(gestes.avecJeton('t1', (appelerMeta) =>
+      appelerMeta(async () => { throw refus; }))).rejects.toBe(refus);
   });
 });
 

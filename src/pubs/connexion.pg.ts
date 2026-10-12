@@ -7,7 +7,7 @@ import type { LiaisonPage } from '../meta/pubs';
  *
  * 🔴 `tenant_id = $1` sur chaque requête : le pooler est superuser, la RLS est contournée, ce filtrage est le
  * contrôle d'isolation. 🔴 Le jeton n'est jamais lu en clair ici : il entre et sort chiffré, le déchiffrement
- * appartient à `src/pubs/connexion.ts` (et au balayage du worker), pour qu'il ne finisse pas un jour dans un journal.
+ * appartient à `src/pubs/connexion.ts`, pour qu'il ne finisse pas un jour dans un journal.
  */
 export interface ConnexionPub {
   comptePubId: string | null;
@@ -51,6 +51,32 @@ export class PgPubConnexionStore {
       connectePar: r.connecte_par,
       connecteLe: r.connecte_le,
       jetonRejeteLe: r.jeton_rejete_le,
+    };
+  }
+
+  /**
+   * Instantané minimal pour agir chez Meta. Le jeton reste chiffré à cette seam : seul le module de connexion
+   * sait le déchiffrer. Une requête unique empêche de mélanger les actifs d'une connexion avec le jeton d'une
+   * autre si une déconnexion ou un remplacement survient entre deux lectures.
+   */
+  async lireAcces(tenantId: string): Promise<{
+    comptePubId: string | null;
+    pageId: string | null;
+    jetonChiffre: string;
+  } | null> {
+    const { rows } = await this.pool.query<{
+      compte_pub_id: string | null;
+      page_id: string | null;
+      jeton_chiffre: string;
+    }>(
+      'select compte_pub_id, page_id, jeton_chiffre from pub_connexion where tenant_id = $1',
+      [tenantId],
+    );
+    const r = rows[0];
+    return r === undefined ? null : {
+      comptePubId: r.compte_pub_id,
+      pageId: r.page_id,
+      jetonChiffre: r.jeton_chiffre,
     };
   }
 

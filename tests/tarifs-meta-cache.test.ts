@@ -60,13 +60,14 @@ describe('le tarif de Meta est mis en cache court', () => {
     expect(constructions).toEqual(['src/stats/chiffrage.ts']);
   });
 
-  it('🔴 le chiffrage et la connexion publicitaire n ont qu UN site de construction, dans la racine', () => {
-    // Ce test compte des SITES : un appel placé dans un gestionnaire de route de la racine compterait encore pour un.
+  it('🔴 le chiffrage et la connexion publicitaire n ont qu UN site de construction', () => {
+    // Ce test compte des SITES : un appel placé dans un gestionnaire de route compterait encore pour un.
     // Le cache vit dans la fabrique : un second appel (dans une route, par exemple) ouvrirait un second cache,
     // et le compte des constructions de cache ci-dessus resterait à un.
     const appels = (nom: string) => sources().flatMap(({ fichier, texte }) =>
       [...texte.matchAll(new RegExp(`(?<!function )\\b${nom}\\(`, 'g'))].map(() => fichier));
     expect(appels('creerChiffrage')).toEqual(['src/index.ts']);
-    expect(appels('creerConnexionPub')).toEqual(['src/index.ts']);
+    // API et worker construisent leur socle une fois chacun ; la recette de connexion n'existe qu'ici.
+    expect(appels('creerConnexionPub')).toEqual(['src/socle.ts']);
   });
 });

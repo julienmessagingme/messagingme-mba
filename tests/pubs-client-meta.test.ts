@@ -103,6 +103,23 @@ describe('etatCompte : ce qui empeche de diffuser', () => {
   });
 });
 
+describe('campagneDeLaPub : le routage laisse le module d accès voir les refus', () => {
+  it('rend la campagne quand Meta la connaît', async () => {
+    graph([{ body: { campaign_id: 'camp-1' } }]);
+    await expect(client().campagneDeLaPub('ad-1', 'JETON')).resolves.toBe('camp-1');
+  });
+
+  it('une réponse sans campagne reste une absence, pas une panne', async () => {
+    graph([{ body: {} }]);
+    await expect(client().campagneDeLaPub('ad-1', 'JETON')).resolves.toBeNull();
+  });
+
+  it('🔴 un refus du jeton remonte pour être mémorisé avant que le routage ne le transforme en absence', async () => {
+    graph([{ ok: false, status: 401, body: { error: { message: 'jeton expiré', code: 190 } } }]);
+    await expect(client().campagneDeLaPub('ad-1', 'JETON')).rejects.toMatchObject({ code: 190 });
+  });
+});
+
 /**
  * ⚠️ OÙ SONT PASSÉS LES QUATRE CAS DE `pageLieeAuCompte`, plutôt que de les faire disparaître en silence.
  *

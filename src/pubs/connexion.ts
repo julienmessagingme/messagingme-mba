@@ -6,18 +6,48 @@ import {
   retirerAncienAcces, sansPrefixeAct,
   type ActifsAccordes, type ClientRetrait, type EtatComptePub, type LiaisonPage, type SortAncienAcces,
 } from '../meta/pubs';
-import { DejaConnectePub, JetonNonEnregistre, PasDeConnexionPub } from '../http/pubs';
 import type { ConnexionPub } from './connexion.pg';
+
+/** Notre panne après l'échange : Meta a émis un jeton que nous n'avons pas réussi à conserver. */
+export class JetonNonEnregistre extends Error {
+  constructor(readonly cause: unknown) {
+    super('jeton publicitaire non enregistré');
+    this.name = 'JetonNonEnregistre';
+  }
+}
+
+/** Une connexion existe déjà et ne doit jamais être écrasée sans révocation préalable. */
+export class DejaConnectePub extends Error {
+  constructor(readonly jetonOrphelin: boolean) {
+    super('une connexion publicitaire existe déjà pour cet espace');
+    this.name = 'DejaConnectePub';
+  }
+}
+
+/** L'espace n'a aucune connexion publicitaire : une demande hors d'état, pas une panne. */
+export class PasDeConnexionPub extends Error {
+  constructor() {
+    super('aucune connexion publicitaire pour cet espace');
+    this.name = 'PasDeConnexionPub';
+  }
+}
+
+/** Le compte publicitaire ou la Page n'a pas encore été choisi. */
+export class ConnexionPubIncomplete extends Error {
+  constructor() {
+    super('la connexion publicitaire est incomplète : choisissez un compte publicitaire et une Page');
+    this.name = 'ConnexionPubIncomplete';
+  }
+}
 
 /**
  * LA CONNEXION PUBLICITAIRE D'UN ESPACE : le jeton du client, de l'échange du code à la révocation.
  *
- * 🔴 Le jeton est chiffré ICI, et déchiffré ici pour les gestes de l'écran et de `/ops` ; le worker le déchiffre à
- * deux endroits, le routage d'un lead entrant et le suivi des publicités. Les routes ne reçoivent qu'un `tenantId`,
- * comme pour l'inscription WhatsApp, donc le jeton ne peut fuiter ni dans un journal, ni dans une réponse, ni
- * dans une trace de pile. Il n'en sort en clair que par `jetonClair`, vers le client de création de la racine.
- * Construit une fois, pour ses deux consommateurs : les routes de l'écran Publicités, et `/ops`, qui dépose un
- * jeton créé à la main. Deux constructions donneraient deux chemins de chiffrement à tenir alignés.
+ * 🔴 Le jeton est chiffré et déchiffré ICI. L'API et le worker ne le reçoivent jamais comme donnée : ils donnent
+ * à `appelerMeta` une opération qui le consomme. Cette capacité éphémère mémorise les vrais refus du jeton avant
+ * qu'une orchestration ne transforme l'erreur en valeur. Les routes et tâches ne connaissent que le `tenantId`.
+ * Chaque processus construit ce module une fois ; `/ops`, les routes, le routage et le suivi partagent donc le
+ * même chemin de chiffrement et la même définition d'une connexion publicitaire utilisable.
  *
  * L'ordre « Meta d'abord, notre état ensuite » se joue ici, et il s'exécute contre de faux objets
  * (`tests/pubs-connexion.test.ts`) : révoquer avant d'effacer, décider du sort de l'ancien jeton avant de le
@@ -40,6 +70,12 @@ interface ChoixRange {
 /** Ce que la connexion lit et écrit chez nous. `PgPubConnexionStore` en est l'implémentation. */
 export interface DepotConnexionPub {
   lire(tenantId: string): Promise<ConnexionPub | null>;
+  /** Lecture atomique réservée à l'accès Meta : état minimal et jeton toujours chiffré. */
+  lireAcces(tenantId: string): Promise<{
+    comptePubId: string | null;
+    pageId: string | null;
+    jetonChiffre: string;
+  } | null>;
   lireJetonChiffre(tenantId: string): Promise<string | null>;
   /** `false` quand une connexion existe déjà : rien n'est écrasé. */
   poserJeton(tenantId: string, jetonChiffre: string, parUserId: string | null): Promise<boolean>;
@@ -69,9 +105,31 @@ export interface ConnexionDeposee {
   ancienRevoque: SortAncienAcces;
 }
 
+/**
+ * Un appel Meta authentifié avec le jeton publicitaire de l'espace. Le jeton n'est jamais rendu comme donnée :
+ * il n'existe que pendant ce callback, où le module peut observer et mémoriser un refus réel.
+ */
+export type AppelMetaPub = <T>(appel: (jeton: string) => Promise<T>) => Promise<T>;
+
+/** Le compte et la Page choisis, accompagnés du seul chemin autorisé vers le jeton. */
+export interface ConfigurationPubAccordee {
+  readonly comptePubId: string;
+  readonly pageId: string;
+  readonly appelerMeta: AppelMetaPub;
+}
+
+/** Distingue une absence de connexion d'une action connectée qui rend légitimement `null`. */
+export type AccesPubOptionnel<T> =
+  | { connecte: false }
+  | { connecte: true; valeur: T };
+
 export interface GestesConnexionPub {
-  /** Le jeton en clair ; `PasDeConnexionPub` quand l'espace n'est pas connecté (la route en fait un 409). */
-  jetonClair(tenantId: string): Promise<string>;
+  /** Accès strict au jeton : `PasDeConnexionPub` quand l'espace n'est pas connecté. */
+  avecJeton<T>(tenantId: string, action: (appelerMeta: AppelMetaPub) => Promise<T>): Promise<T>;
+  /** Accès strict au jeton, au compte et à la Page choisis. */
+  avecConfiguration<T>(tenantId: string, action: (acces: ConfigurationPubAccordee) => Promise<T>): Promise<T>;
+  /** Accès du worker : seule l'absence de connexion est absorbée. */
+  siConnecte<T>(tenantId: string, action: (appelerMeta: AppelMetaPub) => Promise<T>): Promise<AccesPubOptionnel<T>>;
   etatCompte(tenantId: string): Promise<EtatComptePub | null>;
   connecter(tenantId: string, code: string, userId: string | null): Promise<ActifsAccordes>;
   actifsAccordes(tenantId: string): Promise<ActifsAccordes>;
@@ -92,39 +150,71 @@ export function creerConnexionPub(d: DepsConnexionPub): GestesConnexionPub {
    */
   const etatComptePubCache = cacheCourt<EtatComptePub | null>(2 * 60_000);
 
-  const jetonClair = async (tenantId: string): Promise<string> => {
+  const lireJeton = async (tenantId: string): Promise<string | null> => {
     const chiffre = await connexions.lireJetonChiffre(tenantId);
-    // Une erreur nommée : la route en fait un 409 « pas connecté », et non un 502 « Meta ne répond pas »
-    // qui enverrait chercher une panne inexistante.
-    if (chiffre === null) throw new PasDeConnexionPub();
-    return decryptSecret(chiffre, d.cleChiffrement);
+    return chiffre === null ? null : decryptSecret(chiffre, d.cleChiffrement);
   };
 
   /**
-   * Un jeton refusé se retient, une panne non (« reconnectez-vous » contre « réessayez ») : cela se lit
-   * sur le code de Meta (`estJetonRefuse`), jamais sur la phrase, qui se reformule. L'erreur remonte dans
-   * les deux cas.
+   * Un accès garde le même instantané du jeton pendant toute l'action. Chaque appel Meta est protégé séparément :
+   * la création et le suivi peuvent donc transformer l'erreur en valeur après que le refus a été mémorisé.
+   * Deux refus parallèles ne produisent qu'une écriture. Une panne du marquage est journalisée sans masquer
+   * l'erreur originale de Meta.
    */
-  const noterSiRefus = async <T>(tenantId: string, appel: Promise<T>): Promise<T> => {
-    try {
-      return await appel;
-    } catch (err) {
-      if (estJetonRefuse(err)) await connexions.marquerJetonRejete(tenantId);
-      throw err;
-    }
+  const appelerMetaPour = (tenantId: string, jeton: string): AppelMetaPub => {
+    let refusNote: Promise<void> | null = null;
+    const noterRefus = (): Promise<void> => {
+      refusNote ??= connexions.marquerJetonRejete(tenantId).catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error(`jeton publicitaire refusé mais non marqué pour l'espace ${tenantId}:`, messageDe(err));
+      });
+      return refusNote;
+    };
+    return async <T>(appel: (jeton: string) => Promise<T>): Promise<T> => {
+      try {
+        return await appel(jeton);
+      } catch (err) {
+        if (estJetonRefuse(err)) await noterRefus();
+        throw err;
+      }
+    };
+  };
+
+  const avecJeton = async <T>(tenantId: string, action: (appelerMeta: AppelMetaPub) => Promise<T>): Promise<T> => {
+    const jeton = await lireJeton(tenantId);
+    if (jeton === null) throw new PasDeConnexionPub();
+    return action(appelerMetaPour(tenantId, jeton));
   };
 
   return {
-    jetonClair,
+    avecJeton,
+
+    avecConfiguration: async (tenantId, action) => {
+      const acces = await connexions.lireAcces(tenantId);
+      if (acces === null) throw new PasDeConnexionPub();
+      if (acces.comptePubId === null || acces.pageId === null) throw new ConnexionPubIncomplete();
+      const jeton = decryptSecret(acces.jetonChiffre, d.cleChiffrement);
+      return action({
+        comptePubId: acces.comptePubId,
+        pageId: acces.pageId,
+        appelerMeta: appelerMetaPour(tenantId, jeton),
+      });
+    },
+
+    siConnecte: async (tenantId, action) => {
+      const jeton = await lireJeton(tenantId);
+      if (jeton === null) return { connecte: false };
+      return { connecte: true, valeur: await action(appelerMetaPour(tenantId, jeton)) };
+    },
 
     etatCompte: async (t) => {
-      const etat = await connexions.lire(t);
-      const comptePubId = etat?.comptePubId ?? null;
+      const acces = await connexions.lireAcces(t);
+      const comptePubId = acces?.comptePubId ?? null;
       if (comptePubId === null) return null;
       return etatComptePubCache.lire(`${t}:${comptePubId}`, async () => {
-        // Pas de `noterSiRefus` : un refus ici ne doit pas marquer la connexion morte pour un
+        // Pas de `appelerMetaPour` : un refus ici ne doit pas marquer la connexion morte pour un
         // indicateur d'affichage. La route traite déjà l'échec comme « je ne sais pas ».
-        return client.etatCompte(comptePubId, await jetonClair(t));
+        return client.etatCompte(comptePubId, decryptSecret(acces!.jetonChiffre, d.cleChiffrement));
       });
     },
 
@@ -155,17 +245,16 @@ export function creerConnexionPub(d: DepsConnexionPub): GestesConnexionPub {
         console.error(`connexion publicitaire concurrente sur l'espace ${t} : un jeton a été émis par Meta et n'a pas été gardé`);
         throw new DejaConnectePub(true);
       }
-      return client.actifsAccordes(jeton);
+      return appelerMetaPour(t, jeton)((j) => client.actifsAccordes(j));
     },
 
-    actifsAccordes: async (t) => noterSiRefus(t, client.actifsAccordes(await jetonClair(t))),
+    actifsAccordes: async (t) => avecJeton(t, (appelerMeta) => appelerMeta((jeton) => client.actifsAccordes(jeton))),
 
     choisir: async (t, choix) => {
-      const jeton = await jetonClair(t);
       // La devise et le fuseau viennent de la liste des actifs, qui les porte déjà : les relire compte par
       // compte serait un appel pour rien et une seconde vérité, qui pourrait diverger de celle qui a
       // validé le choix.
-      const actifs = await noterSiRefus(t, client.actifsAccordes(jeton));
+      const actifs = await avecJeton(t, (appelerMeta) => appelerMeta((jeton) => client.actifsAccordes(jeton)));
       const compte = actifs.comptesPub.find((c) => c.id === choix.comptePubId);
       const page = actifs.pages.find((p) => p.id === choix.pageId);
       // `inconnu` sans appeler Meta : aucune API n'expose la liaison Page / numéro (détail dans

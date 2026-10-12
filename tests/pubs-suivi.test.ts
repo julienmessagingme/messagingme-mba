@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { balayerLesPubs, type SuiviPubsDeps } from '../src/pubs/suivi';
 import type { DepensePub, EtatCampagneMeta } from '../src/meta/pubs-creation';
+import type { AppelMetaPub } from '../src/pubs/connexion';
 
 /**
  * LE BALAYAGE DU SUIVI DES PUBLICITÉS.
@@ -16,7 +17,6 @@ const depense = (d: number, c: number): DepensePub => ({ depense: d, clics: c, i
 
 interface Traces {
   notes: Array<{ tenant: string; campagne: string; statut: string | null; depense: number | null }>;
-  rejetes: string[];
   alertes: string[];
   appelsMeta: string[];
 }
@@ -27,14 +27,19 @@ type Surcharges = Partial<Omit<SuiviPubsDeps, 'publicites' | 'meta'>> & {
 
 function monter(over: Surcharges = {}): { deps: SuiviPubsDeps; t: Traces } {
   const { publicites: surPublicites, meta: surMeta, ...reste } = over;
-  const t: Traces = { notes: [], rejetes: [], alertes: [], appelsMeta: [] };
+  const t: Traces = { notes: [], alertes: [], appelsMeta: [] };
   const deps: SuiviPubsDeps = {
     publicites: {
       espacesASuivre: async () => ['t1'],
       campagnesASuivre: async () => ['c-1', 'c-2'],
       ...surPublicites,
     },
-    jeton: async () => 'jeton-clair',
+    acces: {
+      siConnecte: async <T>(_tenantId: string, action: (appelerMeta: AppelMetaPub) => Promise<T>) => ({
+        connecte: true,
+        valeur: await action((appel) => appel('jeton-clair')),
+      }),
+    },
     meta: {
       lireCampagnes: async (ids) => {
         t.appelsMeta.push(`statuts:${ids.join(',')}`);
@@ -48,9 +53,6 @@ function monter(over: Surcharges = {}): { deps: SuiviPubsDeps; t: Traces } {
     },
     noterSuivi: async (tenant, campagne, v) => {
       t.notes.push({ tenant, campagne, statut: v.etat?.statut ?? null, depense: v.depense?.depense ?? null });
-    },
-    connexions: {
-      marquerJetonRejete: async (tenant) => { t.rejetes.push(tenant); },
     },
     estJetonRefuse: (err) => err instanceof Error && err.message === 'jeton mort',
     alerter: (sujet) => { t.alertes.push(sujet); },
@@ -96,14 +98,14 @@ describe('les économies d’appels', () => {
   });
 
   it('un espace déconnecté entre-temps est sauté, sans appel et sans erreur', async () => {
-    const { deps, t } = monter({ jeton: async () => null });
+    const { deps, t } = monter({ acces: { siConnecte: async () => ({ connecte: false }) } });
     expect((await balayerLesPubs(deps)).espaces).toBe(0);
     expect(t.appelsMeta).toEqual([]);
   });
 });
 
 describe('🔴 LE JETON REJETÉ', () => {
-  it('est marqué UNE fois, alerte UNE fois, et le balayage passe à l’espace suivant', async () => {
+  it('alerte UNE fois, et le balayage passe à l’espace suivant', async () => {
     const { deps, t } = monter({
       publicites: {
         espacesASuivre: async () => ['t1', 't2'],
@@ -114,10 +116,8 @@ describe('🔴 LE JETON REJETÉ', () => {
       },
     });
     const bilan = await balayerLesPubs(deps);
-    // Les DEUX lectures échouent ensemble quand le jeton est mort. Marquer et alerter dans chacune
-    // produirait deux alertes identiques toutes les quinze minutes, ce qui est le meilleur moyen de faire
-    // ignorer la seule qui compte.
-    expect(t.rejetes).toEqual(['t1', 't2']);
+    // Les DEUX lectures échouent ensemble quand le jeton est mort. Le module d'accès déduplique le marquage ;
+    // le suivi déduplique ici l'alerte, sinon on produirait deux alertes identiques toutes les quinze minutes.
     expect(t.alertes).toEqual(['pubs-jeton', 'pubs-jeton']);
     expect(bilan.jetonsRejetes).toBe(2);
     // Rien n'est noté : on n'écrit pas de chiffres qu'on n'a pas lus.
@@ -150,7 +150,6 @@ describe('🔴 LES DEUX LECTURES SONT INDÉPENDANTES', () => {
       { tenant: 't1', campagne: 'c-1', statut: 'ACTIVE', depense: null },
       { tenant: 't1', campagne: 'c-2', statut: 'ACTIVE', depense: null },
     ]);
-    expect(t.rejetes).toEqual([]);
   });
 
   it('le statut échoue, la dépense passe quand même', async () => {
@@ -171,7 +170,6 @@ describe('🔴 LES DEUX LECTURES SONT INDÉPENDANTES', () => {
     });
     await balayerLesPubs(deps);
     spy.mockRestore();
-    expect(t.rejetes).toEqual([]);
     expect(t.alertes).toEqual([]);
   });
 });

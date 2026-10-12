@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { ConnexionPubIncomplete, PasDeConnexionPub, registerPubs, type PubsRouteDeps } from '../src/http/pubs';
+import { registerPubs, type PubsRouteDeps } from '../src/http/pubs';
+import { ConnexionPubIncomplete, PasDeConnexionPub } from '../src/pubs/connexion';
 import { monterAvecEtapeEspace } from '../src/http/scope';
 import { PublicationRefusee } from '../src/pubs/creation';
 import type { ConnexionPub } from '../src/pubs/connexion.pg';

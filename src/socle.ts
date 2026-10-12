@@ -63,6 +63,7 @@ import { decryptSecret, encryptSecret } from './crypto/secretbox';
 import { PgCleGatewayStore } from './agent/cles-gateway.pg';
 import { journaliser } from './lib/journal';
 import { PgPubConnexionStore } from './pubs/connexion.pg';
+import { creerConnexionPub } from './pubs/connexion';
 import { PgPublicitesStore } from './pubs/publicites.pg';
 import { MetaPubsClient } from './meta/pubs';
 import { MetaPubsCreationClient } from './meta/pubs-creation';
@@ -340,7 +341,8 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
 
   /**
    * Les publicités Click-to-WhatsApp. Le dépôt de connexion et celui des publicités servent l'écran et `/ops` dans
-   * l'API, le routage d'un lead entrant et le suivi dans le worker (deux lectures sur clé sur le chemin chaud).
+   * l'API, le routage d'un lead entrant et le suivi dans le worker. Le module de connexion centralise la lecture
+   * atomique de la configuration, le déchiffrement du jeton et le rejet par Meta pour les deux processus.
    * Deux clients Graph distincts : `clientPubs` lit (actifs accordés, campagne d'une publicité jamais vue, que le
    * worker mémorise ensuite) ; 🔴 `clientCreationPubs` crée une publicité sur le compte du client, donc dépense son
    * argent, et relit statuts et dépense pour le suivi. Une route de lecture ne doit pas avoir de quoi créer une
@@ -350,6 +352,11 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const publicites = new PgPublicitesStore(pool);
   const clientPubs = new MetaPubsClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
   const clientCreationPubs = new MetaPubsCreationClient(config.META_APP_ID, config.META_APP_SECRET, config.META_GRAPH_VERSION);
+  const connexionPub = creerConnexionPub({
+    client: clientPubs,
+    connexions: connexionsPub,
+    cleChiffrement: config.ENCRYPTION_KEY,
+  });
 
   /**
    * Le numéro Meta de l'espace, mis en cache pour le processus : le runtime de scénario le demande à chaque envoi,
@@ -489,7 +496,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels,
     credits, agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver,
     wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, numeroBloqueDeLEspace, esCredentialsStore, metaCredentials, metaFactory, listeDeLAgent,
-    connexionsPub, publicites, clientPubs, clientCreationPubs, workflowRuntime, fil, alerteCredit, offres, quotaModeles,
+    connexionsPub, connexionPub, publicites, clientPubs, clientCreationPubs, workflowRuntime, fil, alerteCredit, offres, quotaModeles,
   };
 }
 

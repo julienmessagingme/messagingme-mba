@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { DejaConnectePub, JetonNonEnregistre, PasDeConnexionPub, registerPubs, type PubsRouteDeps } from '../src/http/pubs';
+import { registerPubs, type PubsRouteDeps } from '../src/http/pubs';
+import { DejaConnectePub, JetonNonEnregistre, PasDeConnexionPub } from '../src/pubs/connexion';
 import { monterAvecEtapeEspace } from '../src/http/scope';
 import type { ConnexionPub } from '../src/pubs/connexion.pg';
 import type { ActifsAccordes } from '../src/meta/pubs';

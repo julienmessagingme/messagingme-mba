@@ -189,7 +189,7 @@ async function main(): Promise<void> {
     inboxStore, settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages,
     poolAttentesStore, httpLatencesStore, mesuresTachesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, numeroDelieStore, opsStore,
     heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
-    journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub,
+    journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub, connexionPub,
     publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, alerteCredit, numeroBloqueDeLEspace, offres,
   } = construireSocle({ pool, queue, config });
   // La commission sur le crédit IA, celle de l'offre de l'espace (lot 6, C) : le cerveau des tours d'agent la lit.
@@ -439,9 +439,10 @@ async function main(): Promise<void> {
         resoudreChezMeta: async (t, adId) => {
           // Sans connexion publicitaire, rien à demander (pas de jeton, un appel anonyme serait refusé) : la
           // campagne reste inconnue, donc le chemin ordinaire.
-          const chiffre = await connexionsPub.lireJetonChiffre(t);
-          if (chiffre === null) return null;
-          const campagneId = await clientPubs.campagneDeLaPub(adId, decryptSecret(chiffre, config.ENCRYPTION_KEY));
+          const resultat = await connexionPub.siConnecte(t, (appelerMeta) =>
+            appelerMeta((jeton) => clientPubs.campagneDeLaPub(adId, jeton)));
+          if (!resultat.connecte) return null;
+          const campagneId = resultat.valeur;
           // On ne mémorise que les succès : écrire un échec figerait une panne réseau en verdict permanent pour tous
           // les leads suivants de la même publicité.
           if (campagneId !== null) await publicites.memoriserPub(t, adId, campagneId);
@@ -1570,10 +1571,7 @@ async function main(): Promise<void> {
     const suivrePubs = async (): Promise<void> => {
       const bilan = await balayerLesPubs({
         publicites,
-        jeton: async (t) => {
-          const chiffre = await connexionsPub.lireJetonChiffre(t);
-          return chiffre === null ? null : decryptSecret(chiffre, config.ENCRYPTION_KEY);
-        },
+        acces: connexionPub,
         meta: clientCreationPubs,
         noterSuivi: async (t, campagneId, v) => {
           await publicites.noterSuivi(t, campagneId, {
@@ -1597,7 +1595,6 @@ async function main(): Promise<void> {
             console.error(`suivi des publicités : jours de dépense non écrits pour la campagne ${campagneId} :`, err instanceof Error ? err.message : err);
           }
         },
-        connexions: connexionsPub,
         // Sur le code de Meta, jamais sur la phrase : une garde qui lit une phrase casse en silence le jour où
         // Meta la réécrit.
         estJetonRefuse,

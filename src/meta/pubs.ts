@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { ClientGraph } from './graph';
-import { messageDe } from '../lib/erreur';
 
 /**
  * Client Graph des publicités Click-to-WhatsApp (connexion) ; l'appel Graph, l'échange du code et la lecture
@@ -137,24 +136,18 @@ export class MetaPubsClient extends ClientGraph {
   }
 
   /**
-   * La campagne d'une publicité (`GET /{ad-id}?fields=campaign_id`) ; `null` si Meta n'a pas répondu, a refusé ou
-   * a dépassé trois secondes. Le webhook ne porte que l'identifiant de la pub, le lien est par campagne : une pub
+   * La campagne d'une publicité (`GET /{ad-id}?fields=campaign_id`) ; `null` quand la réponse ne porte aucun lien.
+   * Le webhook ne porte que l'identifiant de la pub, le lien est par campagne : une pub
    * dupliquée dans le Gestionnaire route ainsi comme l'originale (résultat mémorisé dans `pubs_connues`).
-   * Ne lève jamais : l'appelant est le chemin d'un message entrant. Le plafond passe par `delaiMs`, donc le message
-   * d'abandon de `ClientGraph.call` dit bien trois secondes.
+   * Les pannes et refus remontent : le module d'accès publicitaire peut ainsi mémoriser un jeton refusé, puis le
+   * routage les transforme en `null` pour préserver le chemin chaud. Le plafond passe par `delaiMs`.
    */
   async campagneDeLaPub(adId: string, jeton: string): Promise<string | null> {
-    try {
-      const brut = await this.call(`${this.baseUrl}/${this.version}/${encodeURIComponent(adId)}?fields=campaign_id`, {
-        headers: { Authorization: `Bearer ${jeton}` },
-      }, DELAI_RESOLUTION_PUB_MS);
-      const lu = campagneDeLaPubSchema.safeParse(brut);
-      return lu.success ? lu.data.campaign_id ?? null : null;
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn(`campagne de la publicité ${adId} non résolue (plafond ${DELAI_RESOLUTION_PUB_MS} ms) :`, messageDe(err));
-      return null;
-    }
+    const brut = await this.call(`${this.baseUrl}/${this.version}/${encodeURIComponent(adId)}?fields=campaign_id`, {
+      headers: { Authorization: `Bearer ${jeton}` },
+    }, DELAI_RESOLUTION_PUB_MS);
+    const lu = campagneDeLaPubSchema.safeParse(brut);
+    return lu.success ? lu.data.campaign_id ?? null : null;
   }
 
   /**

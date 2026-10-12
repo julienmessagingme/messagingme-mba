@@ -12,6 +12,7 @@ import {
 } from '../meta/pubs-payloads';
 import { estRefusDeMeta } from '../meta/graph';
 import type { ConnexionPub } from '../pubs/connexion.pg';
+import { ConnexionPubIncomplete, DejaConnectePub, JetonNonEnregistre, PasDeConnexionPub } from '../pubs/connexion';
 import type { Publicite } from '../pubs/publicites.pg';
 import type { BrouillonPub, BrouillonPubComplet, ChampsBrouillon } from '../pubs/brouillons.pg';
 import { PublicationRefusee } from '../pubs/creation';
@@ -109,53 +110,6 @@ export interface PubsRouteDeps {
   /** Les audiences personnalisées du compte publicitaire connecté, lues chez Meta à chaque demande. */
   audiences(tenantId: string): Promise<ListeAudiencesPub>;
   audit: AuditSink;
-}
-
-/**
- * 🔴 Notre panne n'est pas un refus de Meta : si l'écriture échoue après l'échange, Meta a émis un jeton sans
- * expiration dont nous perdons le seul exemplaire. Il faut le dire et le tracer, pas l'habiller en « échange
- * refusé par Meta ».
- */
-export class JetonNonEnregistre extends Error {
-  constructor(readonly cause: unknown) {
-    super('jeton publicitaire non enregistré');
-    this.name = 'JetonNonEnregistre';
-  }
-}
-
-/**
- * 🔴 Une connexion existe déjà, et on ne l'écrase pas : le jeton en place n'expire jamais, le remplacer sans le
- * révoquer laisserait un accès vivant dont nous perdrions le seul exemplaire. Reconnecter passe par la
- * déconnexion, qui révoque d'abord ; un appel direct reçoit donc 409.
- */
-export class DejaConnectePub extends Error {
-  /**
-   * `jetonOrphelin` : Meta avait déjà émis un jeton quand on s'en est aperçu (la course) ; le cas ordinaire est
-   * refusé avant l'échange. Il ne change pas le message au client : il sert à tracer l'événement côté serveur.
-   */
-  constructor(readonly jetonOrphelin: boolean) {
-    super('une connexion publicitaire existe déjà pour cet espace');
-    this.name = 'DejaConnectePub';
-  }
-}
-
-/** L'espace n'a aucune connexion publicitaire : une demande hors d'état, pas une panne. */
-export class PasDeConnexionPub extends Error {
-  constructor() {
-    super('aucune connexion publicitaire pour cet espace');
-    this.name = 'PasDeConnexionPub';
-  }
-}
-
-/**
- * La connexion est incomplète : compte publicitaire ou Page non choisi. Une erreur nommée plutôt qu'un 400 :
- * c'est un état du parcours, et l'écran doit renvoyer le client finir sa connexion.
- */
-export class ConnexionPubIncomplete extends Error {
-  constructor() {
-    super('la connexion publicitaire est incomplète : choisissez un compte publicitaire et une Page');
-    this.name = 'ConnexionPubIncomplete';
-  }
 }
 
 /** `.strict()` : une clé en trop est refusée, le navigateur ne choisit pas ce qu'il envoie. */

@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
   DELAI_MORCEAU_VIDEO_MS, DELAI_VIGNETTE_MS, HOTE_DEPOT_VIDEO, MetaPubsCreationClient,
 } from '../src/meta/pubs-creation';
-import { ErreurGraph } from '../src/meta/graph';
+import { ErreurGraph, estJetonRefuse } from '../src/meta/graph';
 import { HTTP_TIMEOUT_DEFAUT_MS, HttpTimeoutError } from '../src/meta/http';
 
 /**
@@ -15,7 +15,7 @@ import { HTTP_TIMEOUT_DEFAUT_MS, HttpTimeoutError } from '../src/meta/http';
  */
 
 const vrai = globalThis.fetch;
-afterEach(() => { globalThis.fetch = vrai; });
+afterEach(() => { globalThis.fetch = vrai; vi.restoreAllMocks(); });
 
 interface Appel { url: string; init?: RequestInit }
 
@@ -59,6 +59,19 @@ describe('le dépôt d’une vidéo : ouvrir', () => {
   it('⚠️ un décalage qui n’est pas un entier positif est refusé', async () => {
     graph([{ body: { upload_session_id: '7', video_id: '8', start_offset: '-1', end_offset: 'dix' } }]);
     await expect(client().demarrerDepotVideo('111', 'J', 10)).rejects.toThrow();
+  });
+});
+
+describe('le jeton de Page', () => {
+  it('garde le repli sur le jeton du client quand Meta subit une panne ordinaire', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    graph([{ ok: false, status: 503, body: { error: { message: 'indisponible', code: 2 } } }]);
+    await expect(client().jetonDePage('page-1', 'JETON')).resolves.toBeNull();
+  });
+
+  it('🔴 laisse remonter un vrai refus du jeton pour que l accès central le mémorise', async () => {
+    graph([{ ok: false, status: 401, body: { error: { message: 'jeton expiré', code: 190 } } }]);
+    await expect(client().jetonDePage('page-1', 'JETON')).rejects.toSatisfy(estJetonRefuse);
   });
 });
 

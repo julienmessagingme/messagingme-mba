@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
-import { ClientGraph } from './graph';
+import { ClientGraph, estJetonRefuse } from './graph';
 import { sansPrefixeAct } from './pubs';
 import { STATUT_ACTIF, STATUT_PAUSE } from './pubs-payloads';
 import { messageDe } from '../lib/erreur';
@@ -749,8 +749,8 @@ export class MetaPubsCreationClient extends ClientGraph {
 
   /**
    * Le jeton de Page, dérivé du jeton du client, jamais stocké. La documentation de Meta l'exige pour la créa,
-   * qui agit sur la Page. `null` plutôt qu'une levée : l'appelant retombe sur le jeton du client, et un refus de
-   * Meta s'affiche tel quel.
+   * qui agit sur la Page. Une panne ordinaire rend `null` pour retomber sur le jeton du client. Un vrai refus du
+   * jeton remonte afin que le module d'accès le mémorise avant que la création ne transforme d'autres erreurs.
    */
   async jetonDePage(pageId: string, jeton: string): Promise<string | null> {
     try {
@@ -760,6 +760,7 @@ export class MetaPubsCreationClient extends ClientGraph {
       const lu = jetonPageSchema.safeParse(brut);
       return lu.success ? lu.data.access_token : null;
     } catch (err) {
+      if (estJetonRefuse(err)) throw err;
       // eslint-disable-next-line no-console
       console.warn(`jeton de Page ${pageId} non dérivé, on garde le jeton du client :`, messageDe(err));
       return null;
