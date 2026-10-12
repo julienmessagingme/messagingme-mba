@@ -330,6 +330,14 @@ l'écran et en Telegram, boucle de purge bornée. Restent :
 - **Fenêtre de déploiement** : une console neuve devant une API ancienne écrirait des familles que l'ancien moteur lit
   comme un groupe vide (tout le monde sur la première famille). Tenue en déployant l'API AVANT de pousser la console.
 
+## 🟡 Le premier allumage de l'agent de Meta sur le numéro d'un client (2026-10-07)
+
+- **L'échec ne dit pas quoi faire.** Tant que « Allow AI agent to respond » n'est pas activé dans WhatsApp Manager
+  (onglet Meta Business Agent), Meta rend 500 « Could not update settings for channel » à l'allumage, et la console
+  répond « Meta a refusé de changer l'état de l'agent. Rien n'a été changé de notre côté. » (vécu sur Groupama PJ,
+  `docs/MBA-API-REFERENCE.md`, premier allumage). Piste : sur ce 500 à l'allumage, nommer le toggle et son écran.
+  ⚠️ Un arrêt puis un rallumage depuis la console (essai dû) disent d'abord si ce toggle est bien la condition.
+
 ## 🟡 RC4, les outils de l'agent IA : ce qui reste (2026-10-06)
 
 - **À valider par Julien : l'assistant de construction ne propose aucun outil à cible fixe** (tag, information, bloc,
@@ -343,6 +351,11 @@ l'écran et en Telegram, boucle de purge bornée. Restent :
   chaque saut est une décision du modèle, et les plafonds repartent à zéro à chaque session.
 - `scripts/mesure-tour-agent.mts` exclut désormais aussi `poser_tag` et `ecrire_variable` : ses mesures de latence et
   de jetons ne sont plus comparables à celles d'avant RC4.
+- 🟡 **Un outil tiré d'un appel de connecteur fige les variables de l'appel à sa création** (`agent_tools.params`,
+  copiés à la création de l'outil, jamais rafraîchis depuis la requête). Vu sur l'espace Groupama le 2026-10-08 : la
+  variable `age_mois` de l'appel « tarif » renommée `age`, l'outil `obtenir_tarif` garde `age_mois` et doit être
+  supprimé puis recréé. L'outil de l'agent de Meta, lui, publie les variables VIVANTES de la requête
+  (`outilsAPublier`). Piste : lire les variables de la requête à l'appel, comme lui.
 
 ## 🟡 RC3, changer d'espace : ce qui reste (2026-10-06)
 
@@ -1200,6 +1213,22 @@ Chantier : spec `docs/superpowers/specs/2026-09-21-outils-maison-mba-design.md`,
   `agent_tools.params`). Relevé en cadrant les outils de l'agent de Meta (spec § 12).
 - 🟡 **Et il ne vérifie pas la fenêtre de 24 h avant d'envoyer** (même fonction) : Meta refuse alors en 131047,
   après coup. Le relais de l'agent de Meta, lui, la vérifie avant de prendre le fil (lot 3).
+
+## 🟡 La lecture sans contact du relais : ce que sa relecture laisse (2026-10-07, `75c896ae`)
+
+- **La garde `nature` est creuse pour l'agent de Meta** : `ajouterConnecteurPourMba` force `nature: 'integre'`
+  (`src/agent/catalog.pg.ts`) et le patch de l'agent de Meta ne la porte pas, donc `litSansLeContact` s'y réduit à
+  « un GET sans variable du contact ». Un webhook appelé en GET et exposé à l'agent de Meta part à chaque essai
+  `agent_test`, et pour un client non identifié. Même effet qu'avec un client identifié, d'où le jaune.
+- **`fiche wa_id` rend `''` au lieu de `null` sans contact** (`resoudreVariable`, `src/agent/variables.ts`) : seul
+  `litSansLeContact` empêche ce `''` de partir, inatteignable aujourd'hui. Correction : `ctx.waId === '' ? null : ctx.waId`.
+- **`duContact` échoue ouvert** (`src/agent/resolvers/simulation.ts`) : une liste NÉGATIVE (`fiche`, `champ`,
+  `systeme:derniere_saisie`) devenue décision de production ; la prochaine origine qui lit le contact passerait
+  sans contact. Correction : un `switch` exhaustif avec `never`, ou une liste blanche (`modele`, `fixe`,
+  `systeme:maintenant`).
+- **Trou de test au relais** (`tests/http-mba-relais.test.ts`) : `fiche wa_id` et `derniere_saisie` ne sont couverts
+  qu'au bac à sable, et aucun test ne traverse le vrai `creerAppelConnecteur` avec `waId: ''` et `contact: null`
+  (piste : `tests/agent-resolveur-http-entier.test.ts`).
 
 ## 🟡 Relais du MBA : ce qu'il laisse derrière lui (2026-09-21)
 

@@ -2657,6 +2657,25 @@ supprimer un espace depuis `/ops`, ou à la demande d'un client) recréait le nu
 d'un client qui part, sans que rien ne l'ait annoncé. Seule une fin à la fin PRÉVUE (à 24 h près) le recrée désormais ;
 une fin immédiate suit le chemin d'un impayé, et Julien est prévenu. Huit jaunes, reportés au commit suivant.
 
+## 2026-10-07 : l'agent de Meta allumé sur le numéro d'un client, et un devis éprouvé dans le bac à sable de Meta
+
+Premier allumage sur le numéro d'un client (Groupama PJ). `PUT settings` avec `rollout.enabled: true` rendait 500
+« Could not update settings for channel ». Deux causes annoncées puis démenties par la mesure : le moyen de paiement
+(ajouté, même erreur) et la connaissance vide (l'allumage a fini par passer avec elle vide). Le toggle « Allow AI
+agent to respond » de WhatsApp Manager l'a débloqué (`docs/MBA-API-REFERENCE.md`, premier allumage). Les journaux
+Docker ayant disparu à la recréation des conteneurs par d'autres sessions, `api_keys.last_used_at` de la clé du
+relais a servi de témoin des appels de Meta.
+
+Le même soir, l'outil de devis (un GET de l'appel « tarif ») échouait au bac à sable de Meta : la macro du numéro y
+vaut 16 chiffres, `waIdDepuisEntete` la refuse, et le relais refusait tout appel sans contact identifié. `75c896ae`
+fait partir sans contact un appel de connecteur qui lit sans rien savoir du contact (`litSansLeContact`, la règle du
+bac à sable de l'agent IA, désormais partagée) : déployé le soir même sur `mba-api`, fiches d'aide rechargées le
+lendemain matin, et Julien a vérifié les prix au bac à sable. Relecture : aucun rouge, quatre jaunes dans `todo.md`.
+
+Le 2026-10-08, deux consignes de l'agent de Groupama ont été bloquées par la revue de Meta pour des mots (race, âge,
+maladie, chirurgie) qui ne parlaient que de l'animal ; réécrites sans eux, elles sont passées
+(`docs/MBA-API-REFERENCE.md`).
+
 ## 2026-10-07 : les jaunes de la relecture de B2a (lot 6)
 
 **Ce qui part** : `d9517a45` (51 fichiers, aucune migration), poussé le 7 au soir par-dessus deux commits voisins, l'arbre

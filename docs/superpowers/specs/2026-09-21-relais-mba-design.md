@@ -132,6 +132,9 @@ Dans l'ordre :
    tirets sont retirés ; une valeur qui n'a pas la forme d'un numéro est gardée telle quelle, c'est peut-être
    un BSUID). Recherche par `getContactStateByWaId`, qui sait déjà trouver `+33...`, `33...` et un BSUID. En-tête
    absent ou contact introuvable : refus. **On n'appelle jamais le système du client sans contact identifié.**
+   ⚠️ **Amendé le 2026-10-07 (`75c896ae`)** : sauf un appel de connecteur qui LIT sans rien savoir du contact
+   (`litSansLeContact`), qui part sans contact ; c'est ce qui fait marcher un devis au bac à sable de Meta, dont la
+   macro vaut 16 chiffres (`documentation.md`, le relais).
 4. **Les valeurs du modèle** : le corps JSON est validé par Zod (`safeParse`) contre les variables `modele`
    déclarées : type, valeurs permises, requises. Une clé inconnue est ignorée. Un corps invalide : refus qui
    nomme la variable fautive.

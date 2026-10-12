@@ -773,7 +773,8 @@ connecteur chez Meta, `EngageMe`, dont l'adresse est `PUBLIC_API_URL` + `/mba/re
 - **Le contact vient d'un en-tête lié à la macro `WHATSAPP_PHONE_NUMBER`** (`X-Contact-WhatsApp`) : Meta le
   remplit, son modèle ne le choisit pas. Pas de contact identifié, pas d'appel, sauf un appel de connecteur qui LIT
   sans rien savoir du contact (`litSansLeContact`, la règle du bac à sable d'un agent IA : un GET, une réponse
-  intégrée, un risque `read`, aucune variable de la fiche ni de la dernière saisie). Il part alors sans contact.
+  intégrée, un risque `read`, aucune variable de la fiche, d'un champ du contact ni de sa dernière saisie). Il part
+  alors sans contact.
   C'est ce qui fait marcher un devis dans le bac à sable de Meta (`agent_test`), dont la macro vaut 16 chiffres ne
   désignant aucun client. Un geste maison, un outil MCP ou un appel qui lit la fiche restent refusés.
 - **Seules les variables `modele` sont déclarées chez Meta** et lues dans le corps (`lireValeursModele`, Zod) ;
@@ -1087,7 +1088,9 @@ quatre faits : la requête est un GET (ce qui part sur le réseau, lu sur la REQ
 vide) ; l'outil intègre la réponse (« il pousse » est la seule déclaration du client qu'il agit) ; son risque est
 resté `read` (il monte avec la méthode et ne redescend jamais : une requête repassée en GET garde des outils
 simulés) ; aucune variable ne vient du contact (il n'y en a pas au bac à sable, et `wa_id` y vaudrait
-`bac-a-sable`, une valeur inventée). Le reste est simulé (`connecteurSimule`) : les champs déclarés avec une valeur
+`bac-a-sable`, une valeur inventée). 🔴 Cette règle (`litSansLeContact`) a un second consommateur, le relais de
+l'agent de Meta, qui fait partir SANS CONTACT ce qu'elle juge « qui lit » : la durcir ou l'assouplir change les
+deux. Le reste est simulé (`connecteurSimule`) : les champs déclarés avec une valeur
 d'exemple, et une note qui nomme l'appel par le LIBELLÉ et la méthode de sa requête, jamais par son chemin, qui
 part chez le fournisseur du modèle et porte parfois le jeton d'un webhook. Un essai n'écrit ni notre journal
 (`JOURNAL_MUET`) ni l'épreuve de la source (`marquerEpreuve` muet, câblé dans `src/index.ts`). Le coût accepté :

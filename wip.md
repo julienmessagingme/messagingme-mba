@@ -42,6 +42,17 @@ des trois lots est dans le journal technique, le présent dans `documentation.md
   premier intégrateur ; une note du journal sur le retour arrière du lot 2a (une API d'avant refuserait
   `fiche:*` à l'enregistrement).
 
+## RENVOI DES LEADS À META (CADRAGE, RIEN DE CODÉ)
+
+Spec [docs/superpowers/specs/2026-10-09-renvoi-leads-meta-design.md](docs/superpowers/specs/2026-10-09-renvoi-leads-meta-design.md),
+Groupama PJ d'abord : `LeadSubmitted` pour chaque arrivée d'une publicité Click-to-WhatsApp, `QualifiedLead` quand un
+robot passe la main à un humain, envoyés par une tâche du worker à la Conversions API for Business Messaging.
+
+- **Attend Julien** : la validation de la spec, qui ouvre le plan ; l'utilisateur système et son jeton dans le BM
+  Groupama ; la ligne `CONVERSIONS_META` dans `.env.prod`, posée par lui ; le code « Test events » du jeu de données.
+- **Mesure 0a** (avant le plan) : un événement d'essai avec ce jeton, lu côté serveur sans jamais l'afficher.
+- **Mesure 0b** : au premier vrai clic sur une publicité Groupama (aucune arrivée sur l'espace à l'écriture de la spec).
+
 ## CE QUI ATTEND UN ESSAI RÉEL
 
 🔴 **La liste unique et à jour des essais réels de Julien vit dans `docs/prive/ESSAIS-REELS.md`** (2026-10-09, à sa
