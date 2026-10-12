@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: 16b7ee
+source_empreinte: c79f3b
 ---
 # Construire un agent IA
 
@@ -58,7 +58,8 @@ lui joindre un document ou une photo (une grille de tarifs, par exemple) : le te
 fiches de connaissance.
 
 **À la fin de l'entretien, suivez la liste « Pour finir ».** Elle dit, dans l'ordre, ce qu'il reste à faire
-pour votre agent : appliquer la proposition, importer votre site dans Base de connaissance, brancher le
+pour votre agent : enregistrer la proposition (bouton « Enregistrer »), importer votre site dans Base de
+connaissance, brancher le
 connecteur qu'un moment demande, vérifier son modèle dans l'onglet Modèle, le tester, puis l'activer. Une
 étape déjà faite n'y figure pas.
 

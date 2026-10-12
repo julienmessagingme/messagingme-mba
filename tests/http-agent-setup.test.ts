@@ -478,6 +478,50 @@ describe('conversation de construction', () => {
     expect(a.entretiens.ecrits.at(-1)!.bascules.map((b) => b.moment)).toEqual(['le client veut parler à un conseiller']);
   });
 
+  /** Le tour qui demande l'ACTION du premier moment (agent SMATIS, 2026-10-12). */
+  const SUR_LE_PREMIER_MOMENT: EntretienComplet = {
+    messages: [], auteurs: [],
+    poses: [...BASE.slice(0, BASE.indexOf('bascules') + 1), 'bascule_1_action'],
+    reponses: toutesLesReponses().slice(0, BASE.indexOf('bascules') + 1),
+    bascules: [{ moment: 'le client veut parler à un conseiller' }, { moment: 'le client a une question sur son dossier' }],
+  };
+
+  it('🔴 la réponse du client à la liste numérotée est retenue même quand le modèle ne rend rien', async () => {
+    // Mesuré le 2026-10-12 : à ce tour, Haiku ne renvoie rien dans `bascules` 3 fois sur 4. La réponse « passer la
+    // main à un humain » était perdue, et la même question revenait, trois fois de suite.
+    const r = reponse(JSON.stringify({ message: 'Noté. Et quand il a une question sur son dossier ?', reponses: [], fiche: {} }));
+    const a = app({ reponse: r, entretien: SUR_LE_PREMIER_MOMENT });
+    const res = await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: { message: 'Il doit passer la main à un humain' } });
+    expect(res.statusCode).toBe(200);
+    expect(a.entretiens.ecrits.at(-1)!.bascules[0]).toEqual({ moment: 'le client veut parler à un conseiller', action: 'humain' });
+    expect(res.json().couverture.manquants[0]).toBe('bascule_2_action');
+  });
+
+  it('🔴 un moment REFORMULÉ par le modèle est rattaché au moment demandé, pas ajouté en double', async () => {
+    const r = reponse(JSON.stringify({
+      message: 'Noté ?', reponses: [], fiche: {},
+      bascules: [{ moment: 'Le client demande à parler à un conseiller', action: 'humain' }],
+    }));
+    const a = app({ reponse: r, entretien: SUR_LE_PREMIER_MOMENT });
+    await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: { message: 'un humain' } });
+    expect(a.entretiens.ecrits.at(-1)!.bascules).toEqual([
+      { moment: 'le client veut parler à un conseiller', action: 'humain' },
+      { moment: 'le client a une question sur son dossier' },
+    ]);
+  });
+
+  it('hors du tour qui les recueille, un moment qui n’apparie rien ne naît pas', async () => {
+    const r = reponse(JSON.stringify({
+      message: 'Noté ?', reponses: [], fiche: {},
+      bascules: [{ moment: 'le client veut résilier' }, { moment: 'le client parle d’un sinistre' }],
+    }));
+    const a = app({ reponse: r, entretien: SUR_LE_PREMIER_MOMENT });
+    await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: { message: 'je ne sais pas' } });
+    expect(a.entretiens.ecrits.at(-1)!.bascules.map((b) => b.moment)).toEqual([
+      'le client veut parler à un conseiller', 'le client a une question sur son dossier',
+    ]);
+  });
+
   it('🔴 CHAQUE moment cité ouvre SA question, et l’entretien ne peut pas finir sans', async () => {
     // Julien, 2026-08-31 : « il faut que tu prennes 1 par 1, je dis bien 1 par 1 ». Il avait cité deux moments
     // dans la même phrase (prendre rendez-vous -> un outil ; donner l'adresse -> un scénario) et le second
@@ -491,11 +535,14 @@ describe('conversation de construction', () => {
       ],
       fiche: { objectif: 'x' },
     }));
-    const a = app({ reponse: r, entretien: ENTRETIEN_FINI });
+    // Joué sur le tour qui RECUEILLE les moments : c'est le seul où un moment peut naître (`basculesDuTour`).
+    const a = app({ reponse: r, entretien: OUVERT_SUR_LES_MOMENTS });
     const res = await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
     expect(res.statusCode).toBe(200);
-    // Les DEUX moments ouvrent leur question, aucun n'écrase l'autre.
-    expect(res.json().couverture.manquants).toEqual(['bascule_1_action', 'bascule_2_action']);
+    // Les DEUX moments ouvrent leur question, aucun n'écrase l'autre. Et la liste remplie RÉPOND au point des
+    // moments, même sans réponse texte : sinon la question des moments reviendrait.
+    expect(res.json().couverture.manquants.slice(0, 2)).toEqual(['bascule_1_action', 'bascule_2_action']);
+    expect(res.json().couverture.manquants).not.toContain('bascules');
     expect(res.json().couverture.total).toBe(BASE.length + 2);
     expect(res.json().changements).toEqual([]); // le diff reste retenu tant qu'il en reste
     // Et les bascules sont PERSISTÉES : c'est ce qui permet de les reprendre une par une au tour d'après.

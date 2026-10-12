@@ -3,11 +3,11 @@ import type { Bascule } from './couverture';
 /**
  * CE QU'IL RESTE À FAIRE QUAND L'ENTRETIEN DE CONSTRUCTION SE FERME, écrit par le serveur (décision de Julien,
  * 2026-10-12). Le dernier tour ne disait rien de la suite : le client lisait « C'est noté : vouvoiement. » et ne savait
- * ni qu'il fallait appliquer la proposition, ni où importer son site, ni comment allumer l'agent. Le calcul part de
+ * ni qu'il fallait enregistrer la proposition, ni où importer son site, ni comment allumer l'agent. Le calcul part de
  * l'état réel, jamais du modèle : une étape qu'un modèle oublie est une étape que le client ne fait pas.
  */
 export interface EntreeFin {
-  /** La proposition montrée porte au moins un changement : il faut l'appliquer. */
+  /** La proposition montrée porte au moins un changement : il faut l'enregistrer. */
   aAppliquer: boolean;
   /** L'adresse donnée au point `connaissance`, si l'entretien en a retenu une. */
   connaissanceUrl: string | null;
@@ -22,12 +22,17 @@ export interface EntreeFin {
 }
 
 export const TITRE_FIN = 'Pour finir :';
+/** Le bouton qui écrit la proposition dans les onglets, tel que la console l'affiche. */
+export const BOUTON_ENREGISTRER = 'Enregistrer';
 
 export function etapesDeFin(e: EntreeFin): string[] {
   const out: string[] = [];
   if (e.aAppliquer) {
-    out.push('Relisez la proposition ci-dessous, puis cliquez sur « Appliquer » : rien n’est écrit tant que vous ne '
-      + 'l’avez pas fait.');
+    // Le libellé du bouton de la console (`web/components/AgentConstruction.tsx`), tenu par
+    // `tests/agent-setup-fin.test.ts` : « Appliquer » a été écrit ici le premier jour, alors que le bouton s'appelle
+    // « Enregistrer » (Julien, 2026-10-12).
+    out.push('Relisez la proposition ci-dessous : chaque ligne se garde, se corrige ou se jette. Cliquez ensuite sur '
+      + `« ${BOUTON_ENREGISTRER} » : rien n’est écrit dans les onglets tant que vous ne l’avez pas fait.`);
   }
   if (e.fichesDeConnaissance === 0) {
     out.push(e.connaissanceUrl

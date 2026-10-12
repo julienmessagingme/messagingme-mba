@@ -3261,9 +3261,10 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
   page blanche.
 - ✅ **Chaque moment cité est repris un par un** (2026-10-12). Citer deux moments dans la même phrase (« quand le
   client veut parler à un conseiller, quand il a une question sur son dossier ») ouvre une question pour chacun :
-  le second n'est plus perdu.
+  le second n'est plus perdu. Une réponse à la liste des choix (« 4 », « passer la main à un humain ») est retenue
+  du premier coup, et un moment ne se crée plus en double quand l'assistant le reformule.
 - ✅ **À la fin, il dit ce qu'il reste à faire** (2026-10-12), sous la forme d'une liste numérotée « Pour finir » :
-  appliquer la proposition, importer le site donné dans Base de connaissance, brancher le connecteur qu'un moment
+  enregistrer la proposition (bouton « Enregistrer »), importer le site donné dans Base de connaissance, brancher le connecteur qu'un moment
   demande, vérifier le modèle de l'agent (posé à la création, changeable dans l'onglet Modèle), le tester, puis
   l'activer. La liste se calcule sur l'état réel de l'agent : une étape déjà faite n'y figure pas.
 - ✅ **Il pose vraiment toutes les questions** (2026-08-31). Avant, il décidait lui-même de ce qu'il avait

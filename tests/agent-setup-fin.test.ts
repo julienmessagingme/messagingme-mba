@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { blocDeFin, etapesDeFin, TITRE_FIN, type EntreeFin } from '../src/agent/setup/fin';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { blocDeFin, BOUTON_ENREGISTRER, etapesDeFin, TITRE_FIN, type EntreeFin } from '../src/agent/setup/fin';
 
 /**
  * Le bloc « Pour finir » de l'entretien de construction (décision de Julien, 2026-10-12) : écrit par le serveur sur
@@ -11,9 +13,16 @@ const base: EntreeFin = {
 };
 
 describe('etapesDeFin', () => {
-  it('🔴 dit d’appliquer la proposition quand elle change quelque chose, et pas sinon', () => {
-    expect(etapesDeFin(base)[0]).toMatch(/« Appliquer »/);
-    expect(etapesDeFin({ ...base, aAppliquer: false }).join('\n')).not.toMatch(/Appliquer »/);
+  it('🔴 dit d’enregistrer la proposition quand elle change quelque chose, et pas sinon', () => {
+    expect(etapesDeFin(base)[0]).toMatch(/« Enregistrer »/);
+    expect(etapesDeFin({ ...base, aAppliquer: false }).join('\n')).not.toMatch(/Enregistrer »/);
+  });
+
+  it('🔴 nomme le bouton que la console affiche vraiment', () => {
+    // Le premier jour, le bloc disait « Appliquer » sous un bouton « Enregistrer » (Julien, 2026-10-12).
+    const ecran = readFileSync(resolve(__dirname, '../web/components/AgentConstruction.tsx'), 'utf8');
+    expect(ecran).toContain(`t('${BOUTON_ENREGISTRER}', 'Save')`);
+    expect(etapesDeFin(base)[0]).toContain(`« ${BOUTON_ENREGISTRER} »`);
   });
 
   it('🔴 nomme le site à importer quand l’agent n’a encore aucune fiche', () => {

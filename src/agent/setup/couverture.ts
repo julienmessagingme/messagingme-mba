@@ -340,6 +340,9 @@ export function manquesDeCouverture(etat: EtatEntretien, inv: Inventaire = INVEN
   const poses = new Set(etat.poses);
   const repondus = new Set(retenues(etat.reponses).map((r) => r.point));
   const liste = bascules(etat);
+  // La liste remplie RÉPOND au point qui recueille les moments, même sans réponse texte : un modèle qui ne remplit
+  // que la liste ferait sinon reposer la question des moments au tour suivant.
+  if (liste.length > 0) for (const p of AGENDA) if (p.collecteDesMoments) repondus.add(p.code);
   // Une question engendrée est répondue quand la bascule porte le champ : pas de copie dans `reponses`, qui
   // finirait par diverger.
   liste.forEach((b, i) => {
@@ -405,6 +408,57 @@ export function fusionnerBascules(etat: readonly Bascule[], nouvelles: readonly 
     if (n.moyen && n.moyen.trim() !== '') deja.moyen = n.moyen;
   }
   return out;
+}
+
+/** Le moment qu'un point engendré désigne : `bascule_2_action` -> l'index 1. `null` pour tout autre point. */
+export function momentDuPoint(code: string | undefined): { index: number; quoi: 'action' | 'moyen' } | null {
+  const m = /^bascule_(\d+)_(action|moyen)$/.exec(code ?? '');
+  return m ? { index: Number(m[1]) - 1, quoi: m[2] as 'action' | 'moyen' } : null;
+}
+
+/**
+ * Les bascules qu'un tour a le droit de fusionner. 🔴 Mesuré le 2026-10-12 (agent SMATIS, Haiku 4.5) : d'un tour à
+ * l'autre, le modèle REFORMULE un moment déjà cité (« le client veut parler à un conseiller » redevient « Le client
+ * demande à parler à un conseiller »), `fusionnerBascules` ne l'apparie pas, et un quatrième moment naissait, avec sa
+ * question reposée au client. Deux règles, sans rien demander au modèle :
+ *  - un moment ne NAÎT qu'au tour qui recueille les moments ; ailleurs, une entrée qui n'apparie rien est écartée ;
+ *  - au tour qui demande l'action ou le moyen du moment N, une SEULE entrée qui n'apparie rien est rattachée au
+ *    moment N, celui que le serveur vient de demander (plusieurs : aucune, on ne devine pas laquelle).
+ */
+export function basculesDuTour(
+  avant: readonly Bascule[], proposees: readonly Bascule[], point: Point | null,
+): Bascule[] {
+  const connu = (m: string): boolean => avant.some((b) => b.moment.trim().toLowerCase() === m.trim().toLowerCase());
+  if (point?.collecteDesMoments) return [...proposees];
+  const apparies = proposees.filter((b) => connu(b.moment));
+  const orphelines = proposees.filter((b) => !connu(b.moment) && (b.action || (b.moyen && b.moyen.trim() !== '')));
+  const vise = momentDuPoint(point?.code);
+  const cible = vise ? avant[vise.index] : undefined;
+  if (cible && orphelines.length === 1) apparies.push({ ...orphelines[0]!, moment: cible.moment });
+  return apparies;
+}
+
+/** Le mot qui distingue chaque choix de `questionnaireAction`, pour lire la réponse du client sans le modèle. */
+const MOTS_DES_ACTIONS: ReadonlyArray<{ action: Action; motif: RegExp }> = [
+  { action: 'scenario', motif: /sc[ée]nario/i },
+  { action: 'outil_api', motif: /\bapi\b/i },
+  { action: 'outil_mcp', motif: /\bmcp\b/i },
+  { action: 'humain', motif: /\bhumain|passer la main/i },
+  { action: 'continuer', motif: /rien de particulier|continue[rs]? (simplement )?(à|a) r[ée]pondre/i },
+  { action: 'autre', motif: /^\s*autre\b/i },
+];
+
+/**
+ * 🔴 L'action que le client a choisie, lue dans SON message, au tour où le serveur lui a posé la liste numérotée de
+ * `questionnaireAction`. Mesuré le 2026-10-12 : à ce tour, le modèle ne renvoie rien dans `bascules` 3 fois sur 4, et
+ * la réponse du client (« passer la main à un humain ») était perdue, donc la question reposée. Le numéro seul, ou le
+ * mot qui distingue un choix ; `null` si rien ne ressort, ou si deux choix se disputent le message.
+ */
+export function actionChoisie(message: string): Action | null {
+  const numero = /^\s*([1-9])\s*[).]?\s*$/.exec(message);
+  if (numero) return CHOIX_ACTION[Number(numero[1]) - 1]?.action ?? null;
+  const trouvees = MOTS_DES_ACTIONS.filter((m) => m.motif.test(message)).map((m) => m.action);
+  return trouvees.length === 1 ? trouvees[0]! : null;
 }
 
 /** Une réponse au point des moments qui dit qu'il n'y en a pas : elle couvre le point, elle n'est pas un moment. */

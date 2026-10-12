@@ -13,8 +13,8 @@ import {
   assainirProposition, differences, propositionSchema, OUTIL_PROPOSER, SCHEMA_PROPOSITION,
 } from '../agent/setup/proposition';
 import {
-  agendaEffectif, fusionner, fusionnerBascules, manquesDeCouverture, momentsDesReponses, poseUneQuestion,
-  prochainPoint, urlDeConnaissance,
+  actionChoisie, agendaEffectif, basculesDuTour, fusionner, fusionnerBascules, manquesDeCouverture, momentDuPoint,
+  momentsDesReponses, poseUneQuestion, prochainPoint, urlDeConnaissance,
 } from '../agent/setup/couverture';
 import { bornerPourModele, ENTRETIEN_VIERGE, type EntretienComplet, type EntretienStore, type TourEntretien } from '../agent/setup/entretien-store';
 import { espaceVerifie, estUuid } from './scope';
@@ -459,8 +459,19 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     // bornes : une réponse « d'avance » ou réécrite ferait sinon naître un moment jamais cité, ou en double).
     const reprendreDesReponses = pointDuTour?.collecteDesMoments === true
       && (propose.data.bascules ?? []).length === 0 && (avant.bascules ?? []).length === 0;
-    const basculesDuTour = reprendreDesReponses ? momentsDesReponses(propose.data.reponses) : propose.data.bascules ?? [];
-    const listeBascules = fusionnerBascules(avant.bascules ?? [], basculesDuTour);
+    // Hors du tour qui les recueille, un moment reformulé ne crée pas de doublon (`basculesDuTour`).
+    const basculesProposees = reprendreDesReponses
+      ? momentsDesReponses(propose.data.reponses)
+      : basculesDuTour(avant.bascules ?? [], propose.data.bascules ?? [], pointDuTour);
+    const listeBascules = fusionnerBascules(avant.bascules ?? [], basculesProposees);
+    // Au tour qui demande l'action du moment N, si le modèle ne l'a pas rendue : la réponse du client, lue dans la
+    // liste numérotée qu'on lui a posée (`actionChoisie`). Sans elle, la question revenait, trois fois de suite.
+    const vise = momentDuPoint(pointDuTour?.code);
+    const momentVise = vise?.quoi === 'action' ? listeBascules[vise.index] : undefined;
+    if (momentVise && !momentVise.action) {
+      const choisie = actionChoisie(parse.data.message);
+      if (choisie) momentVise.action = choisie;
+    }
     const poses = pointDuTour && !avant.poses.includes(pointDuTour.code)
       ? [...avant.poses, pointDuTour.code]
       : avant.poses;

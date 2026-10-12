@@ -1109,6 +1109,13 @@ un par un depuis la liste `bascules` ; un modèle les range souvent dans la rép
 moment (GLM 4.7 à chaque fois, Haiku 4.5 une fois sur deux, mesuré le 2026-10-12). `momentsDesReponses` les reprend,
 sur le SEUL tour qui répond à la question des moments et tant que la liste n'a rien tenu : une réponse « d'avance »
 ou réécrite ferait sinon naître un moment jamais cité, ou rouvrirait un entretien fini.
+🔴 **Un moment ne naît qu'au tour qui les recueille, et la réponse du client à la liste numérotée se lit sans le
+modèle.** D'un tour à l'autre, le modèle reformule un moment déjà cité : hors du tour qui les recueille,
+`basculesDuTour` écarte ce qui n'apparie rien, et rattache au moment demandé la seule entrée porteuse d'une action ou
+d'un moyen. Au tour qui demande l'action du moment N, si le modèle n'a rien rendu (3 fois sur 4 mesuré, Haiku 4.5),
+`actionChoisie` lit le numéro ou le mot du choix dans le message du client. Une liste de moments remplie répond au
+point qui les recueille, même sans réponse texte (2026-10-12, agent SMATIS : trois fois la même question, un moment
+en double).
 
 **Le catalogue proposé au client** est une liste CHOISIE (`src/agent/modeles.ts`), intersectée avec le
 catalogue réel du Gateway et tarifée en direct. Deux critères pour y entrer : le modèle sait **appeler des
