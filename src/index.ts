@@ -48,6 +48,7 @@ import { verdictModele } from './api/modele-envoi';
 import { resoudreFiche } from './api/fiche';
 import { appliquerConsentement, depsConsentementDe } from './api/consentement';
 import { traiterRapportRcs } from './rcs/rapport-livraison';
+import { traiterMessageEntrantRcs } from './rcs/message-entrant';
 import { envoyerRcsLibre, phraseOperateur, type DepsRcsLibre } from './rcs/envoyer-libre';
 import { PLAFOND_CONTACTS_ERREUR } from './http/stats';
 import { viderVersLaBase } from './ops/pool-attentes.pg';
@@ -66,7 +67,7 @@ import { PgSalesforceStore } from './salesforce/store.pg';
 import { creerClientSalesforce } from './salesforce/client';
 import { connecter as connecterSalesforce, deconnecter as deconnecterSalesforce } from './salesforce/connexion';
 import type { SalesforceRouteDeps } from './http/salesforce';
-import { signalDeLAccuse, signalDeLaReponse, signalDesabonnement, signalDuClic } from './signaux/emetteur';
+import { signalDeLAccuse, signalDuClic } from './signaux/emetteur';
 import { plafondLePlusBas } from './campaign/pacing';
 import { fetchHubspotLists, importHubspotList, disconnectHubspot, fetchHubspotDealStages } from './crm/hubspot-service';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
@@ -107,8 +108,6 @@ import { verifierCleRcs } from './rcs/channel-info';
 import { fetchGet } from './lib/http-get';
 import { lireCatalogueGateway } from './agent/llm/modeles-gateway';
 import { modelesProposables, type ModeleGateway } from './agent/modeles';
-import { apercuMo } from './rcs/callback';
-import { estDemandeArret } from './crm/consentement';
 import { contactVars } from './crm/render';
 import { resolveHintParams } from './crm/template';
 import { FetchTransport, HTTP_TIMEOUT_MODELE_MS } from './meta/http';
@@ -2250,62 +2249,14 @@ async function main(): Promise<void> {
           if (signal !== null) await emetteur.emettreSignal(tenant, signal);
         }
       },
-      onMo: async (tenant, mo) => {
-        // Une position ou un fichier n'ont pas de texte : `apercuMo` en fabrique un lisible plutôt que de
-        // laisser une bulle vide et de jeter les coordonnées.
-        const apercu = apercuMo(mo);
-        // 🔴 1. Le STOP avant tout le reste : continuer d'écrire après un refus fait suspendre l'agent par
-        //    l'opérateur, et l'enregistrement de l'opt-out ne doit dépendre d'aucune étape qui pourrait
-        //    échouer après lui.
-        if (mo.kind === 'text' && estDemandeArret(mo.text)) {
-          const marque = await workflowRuntime.rcsStack.optout.markOptedOut(tenant, mo.from);
-          if (!marque) {
-            // eslint-disable-next-line no-console
-            console.error(`STOP RCS reçu de ${mo.from} (${tenant}) sans fiche contact : rien à désabonner`);
-          }
-          // Le STOP RCS n'écrit pas par le dépôt des contacts (il pose `rcs_optout_at`) : l'annonce composée
-          // plus haut ne le voit pas, il émet donc lui-même son signal, avec l'identifiant du message STOP pour
-          // clé naturelle (un STOP redélivré garde le même `em_event_id`).
-          if (marque) await emetteur.emettreSignal(tenant, signalDesabonnement(mo.from, 'rcs', mo.messageId));
-        }
-        // 2. Le fil d'inbox : un échange RCS se lit au même endroit qu'un échange WhatsApp, dans le fil unique
-        //    du contact. La bulle porte son canal.
-        await inboxStore.recordInbound(tenant, {
-          phoneNumberId: '',
-          waId: mo.from,
-          messageId: mo.messageId,
-          type: mo.kind === 'suggestion' ? 'button' : mo.kind,
-          body: apercu,
-          buttonPayload: mo.postbackData,
-          profileName: null,
-          field: 'messages',
-        }, 'rcs');
-        // 2 bis. La fiche contact et les automations, comme sur le chemin Meta : sans elles, un client qui
-        //    écrit DEVIS en RCS ne déclencherait rien, et le STOP ci-dessus ne trouverait pas de fiche.
-        //    Le canal part dans l'événement : sans lui, le runner croirait la fenêtre de service WhatsApp
-        //    ouverte, et le scénario ouvrirait par un message rapide hors fenêtre (refus Meta 131047).
-        //    Isolé : ni la fiche ni l'automation ne doivent faire échouer la réception d'un message.
-        try {
-          const issue = await contactStore.upsertFromInbound(tenant, mo.from, null);
-          await enfilerEvenementAutomation(queue, {
-            tenantId: tenant,
-            event: { kind: 'message', waId: mo.from, body: mo.kind === 'text' ? mo.text : null, isNewContact: issue === 'created', channel: 'rcs' },
-          } satisfies AutomationEventJob);
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.error('automations RCS ignorées:', messageDe(err));
-        }
-        // 2 ter. La réponse comme signal, APRÈS la fiche (comme sur le chemin WhatsApp) : émis avant, le premier message
-        //    d'un contact neuf partait vers une fiche pas encore écrite, et la distribution des webhooks sortants
-        //    l'abandonnait (relecture du lot 12). Le bouton tapé seulement ; le texte, les webhooks le relisent.
-        await emetteur.emettreSignal(tenant, signalDeLaReponse({
-          messageId: mo.messageId, waId: mo.from, bouton: mo.kind === 'suggestion' ? mo.text : null,
-        }, 'rcs'));
-        // 3. Le parcours. Un bouton tapé porte `btn:<i>` (cf. `normaliserPostbacks`) et choisit sa branche ;
-        //    une réponse écrite suit la sortie « envoyé ». Isolé : un scénario qui casse ne doit pas faire
-        //    rejouer six fois un rappel dont l'inbox et l'opt-out sont déjà enregistrés.
-        await tenter('avance de scénario sur réponse RCS ignorée:', () => workflowRuntime.executor.advance(tenant, mo.from, mo.messageId, mo.postbackData, 'rcs'));
-      },
+      onMo: (tenant, mo) => traiterMessageEntrantRcs({
+        optout: workflowRuntime.rcsStack.optout,
+        inbox: inboxStore,
+        contacts: contactStore,
+        automations: queue,
+        signaux: emetteur,
+        parcours: workflowRuntime.executor,
+      }, tenant, mo),
     },
     /**
      * Visuels des messages RCS. Le téléversement rend directement l'URL publique : l'opérateur télécom va

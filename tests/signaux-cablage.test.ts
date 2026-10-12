@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
  *
  * Le typage impose déjà une partie des branchements (le puits des accusés et celui des réponses sont requis
  * par `handleWebhookJob`, le signal du clic par `LinksRouteDeps`). Ce test garde ce que le typage ne voit pas :
- * les fermetures écrites en ligne (les rappels RCS, la sortie de l'analyse). L'annonce d'opt-out du dépôt des
+ * les points de passage RCS et la sortie de l'analyse. L'annonce d'opt-out du dépôt des
  * contacts, dépendance optionnelle, est construite une fois pour les deux processus par le socle, et
  * `tests/socle.test.ts` l'exécute : un STOP écrit par ce dépôt doit partir vers le connecteur et les signaux.
  */
@@ -14,6 +14,7 @@ function sansCommentaires(source: string): string {
   return source.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 }
 const api = sansCommentaires(readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8'));
+const messageRcs = sansCommentaires(readFileSync(new URL('../src/rcs/message-entrant.ts', import.meta.url), 'utf8'));
 
 describe('le câblage des signaux dans l’API', () => {
   it('🔴 le rapport de livraison RCS remonte ses accusés', () => {
@@ -21,9 +22,11 @@ describe('le câblage des signaux dans l’API', () => {
   });
 
   it('🔴 la réponse RCS et son STOP remontent', () => {
-    expect(api).toMatch(/signalDeLaReponse\(\{\s*messageId: mo\.messageId/);
+    expect(api).toMatch(/onMo: \(tenant, mo\) => traiterMessageEntrantRcs\(\{/);
+    expect(api).toMatch(/signaux: emetteur/);
+    expect(messageRcs).toMatch(/signalDeLaReponse\(\{\s*messageId: mo\.messageId/);
     // Avec l'identifiant du message STOP : c'est lui qui rend le signal stable si le fournisseur le redélivre.
-    expect(api).toMatch(/signalDesabonnement\(mo\.from, 'rcs', mo\.messageId\)/);
+    expect(messageRcs).toMatch(/signalDesabonnement\(mo\.from, 'rcs', mo\.messageId\)/);
   });
 
   it('le clic attribué remonte', () => {
