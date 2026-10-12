@@ -3,82 +3,21 @@
 import { CadreDoc } from '@/components/doc-api/CadreDoc';
 import { Bloc, C, Encadre, EnTetePage, LienDoc, Liste, Section } from '@/components/doc-api/elements';
 import { useT } from '@/lib/i18n';
+import { EXEMPLES_SDK, VERSION_SDK } from '@/lib/exemples-code';
 
 /**
  * LE SDK TYPESCRIPT (lot 16, livraison B) : l'installation, un premier appel, les erreurs et la vérification d'un
  * webhook. Le paquet vit dans son propre dépôt (`julienmessagingme/messagingme-sdk`), publié à la main après le
- * déploiement de l'API (`.github/workflows/sdk.yml`). Ses exemples reprennent ceux de `sdk/README.md` ; aucun test ne les
- * compile encore contre le SDK (`todo.md`, lot 16).
+ * déploiement de l'API (`.github/workflows/sdk.yml`).
  *
- * ⚠️ LA VERSION EST CELLE DE `sdk/package.json` : `tests/sdk-contrat.test.ts` les compare, comme celle du README.
- * Monter la version du SDK sans toucher cette ligne ferait installer l'ancienne. Pas d'`export` : un fichier
- * `page.tsx` n'exporte que ce que Next attend d'une page, le build refuse le reste.
+ * Ses exemples et sa version viennent de `@/lib/exemples-code` (lot 17) : `tests/doc-exemples-compiles.test.ts` compile
+ * les exemples contre le SDK, `tests/sdk-contrat.test.ts` tient la version égale à `sdk/package.json`.
  */
-const VERSION_SDK = '0.1.0';
-
 export default function ApiSdkPage() {
   return <CadreDoc page="sdk">{() => <Contenu />}</CadreDoc>;
 }
 
 const INSTALLATION = `npm install github:julienmessagingme/messagingme-sdk#v${VERSION_SDK}`;
-
-const PREMIER_APPEL = [
-  "import { createClient } from '@messagingme/sdk';",
-  '',
-  'const api = createClient({ apiKey: process.env.MESSAGINGME_API_KEY! });',
-  '',
-  '// Créer une fiche, ou la mettre à jour si elle existe.',
-  "const { contactId, status } = await api.POST('/v1/contacts', {",
-  "  body: { phone: '+33612345678', name: 'Camille Roy', consent: 'opted_in', consentSource: 'formulaire-site' },",
-  '});',
-  '',
-  '// Lire une fiche : les paramètres de chemin passent par path.',
-  "const fiche = await api.GET('/v1/contacts/{contactId}', { path: { contactId } });",
-  '',
-  '// Les conversations qui attendent une réponse, par pages : query.',
-  "const page = await api.GET('/v1/conversations', { query: { needsReply: true, limit: 20 } });",
-  '',
-  '// Un envoi, rejouable sans doublon avec la même clé d’idempotence. Ici un modèle sans variable :',
-  '// avec variables, ajoutez params (voir Envois).',
-  "const envoi = await api.POST('/v1/sends', {",
-  '  body: {',
-  "    target: { template: { name: 'confirmation_commande', language: 'fr' } },",
-  "    recipients: [{ phone: '+33612345678' }],",
-  '  },',
-  "  idempotencyKey: 'commande-7781',",
-  '});',
-].join('\n');
-
-const ERREURS = [
-  "import { ApiError } from '@messagingme/sdk';",
-  '',
-  'try {',
-  "  await api.POST('/v1/messages/whatsapp', { body: { contactId, text: 'Bonjour' } });",
-  '} catch (e) {',
-  '  if (e instanceof ApiError) {',
-  "    if (e.code === 'window_closed') { /* la personne n’a pas écrit depuis 24 h : passer par un modèle */ }",
-  '    if (e.status === 429 && e.retryAfter !== null) { /* attendre e.retryAfter secondes */ }',
-  '  }',
-  '  throw e;',
-  '}',
-].join('\n');
-
-const WEBHOOK = [
-  "import { verifyWebhook, WebhookVerificationError } from '@messagingme/sdk';",
-  '',
-  '// Une route qui reçoit les webhooks sortants (ici avec l’API Request standard).',
-  'export async function POST(req: Request) {',
-  '  const body = await req.text();',
-  '  try {',
-  '    const event = await verifyWebhook({ secret: process.env.MESSAGINGME_WEBHOOK_SECRET!, headers: req.headers, body });',
-  "    if (event.type === 'message.received') console.log(event.data.text);",
-  '    return new Response(null, { status: 204 });',
-  '  } catch (e) {',
-  '    if (e instanceof WebhookVerificationError) return new Response(null, { status: 401 });',
-  '    throw e;',
-  '  }',
-  '}',
-].join('\n');
 
 function Contenu() {
   const t = useT();
@@ -114,7 +53,7 @@ function Contenu() {
           {t(') se crée dans la console, Developers > Clés d’API. Gardez-la côté serveur. Le client appelle l’API de production ; ', ') is created in the console, Developers > API keys. Keep it server-side. The client calls the production API; ')}
           <C>baseUrl</C>{t(' en désigne une autre.', ' points to another one.')}
         </p>
-        <Bloc legende="TypeScript">{PREMIER_APPEL}</Bloc>
+        <Bloc legende="TypeScript">{EXEMPLES_SDK.premierAppel.code}</Bloc>
         <p className="text-sm text-ink-500">
           {t('Les droits de chaque route :', 'The scope of each route:')}{' '}
           <LienDoc page="reference" ancre="authentification">{t('Authentification, limites et erreurs', 'Authentication, limits and errors')}</LienDoc>.
@@ -126,10 +65,10 @@ function Contenu() {
           {t('Toute réponse hors 2xx lève ', 'Any non-2xx response throws ')}<C>ApiError</C>
           {t(', avec le statut, le code de l’API et, quand l’API le dit, le délai à attendre. Le SDK ne relance rien de lui-même.', ', with the status, the API code and, when the API says so, the delay to wait. The SDK retries nothing on its own.')}
         </p>
-        <Bloc legende="TypeScript">{ERREURS}</Bloc>
+        <Bloc legende="TypeScript">{EXEMPLES_SDK.erreurs.code}</Bloc>
         <Liste>
-          <li><C>code</C>{t(' est posé sur toute réponse d’erreur de l’API ; il vaut null seulement quand une page d’erreur générique a remplacé la réponse en chemin (un 5xx). Pour réessayer, regardez status >= 500, internal_error ou rate_limited.', ' is set on every API error response; it is null only when a generic error page replaced the response on the way (a 5xx). To decide on a retry, look at status >= 500, internal_error or rate_limited.')}</li>
-          <li><C>metaCode</C>{t(' porte le numéro d’erreur de Meta sur meta_rejected.', ' carries Meta’s error number on meta_rejected.')}</li>
+          <li><C>code</C>{t(' est posé sur toute réponse d’erreur de l’API ; il vaut null quand une page d’erreur générique a remplacé la réponse en chemin (un 5xx).', ' is set on every API error response; it is null when a generic error page replaced the response on the way (a 5xx).')}</li>
+          <li>{t('Sur meta_rejected, le corps (', 'On meta_rejected, the body (')}<C>e.body</C>{t(') porte aussi ', ') also carries ')}<C>metaCode</C>{t(', le numéro d’erreur de Meta : ', ', Meta’s error number: ')}<LienDoc page="errors" ancre="meta">{t('les erreurs de Meta', 'Meta errors')}</LienDoc>.</li>
           <li><C>upgradeUrl</C>{t(' est posé sur un 402 (plan_feature_unavailable, plan_limit_reached) : la page où l’offre se change.', ' is set on a 402 (plan_feature_unavailable, plan_limit_reached): the page where the plan is changed.')}</li>
         </Liste>
       </Section>
@@ -139,7 +78,7 @@ function Contenu() {
           {t('Passez le corps BRUT, tel que reçu : la signature porte sur ses octets. Le format est décrit dans ', 'Pass the RAW body, as received: the signature covers its bytes. The format is described in ')}
           <LienDoc page="webhooks" ancre="signature">{t('Webhooks sortants', 'Outgoing webhooks')}</LienDoc>.
         </p>
-        <Bloc legende="TypeScript">{WEBHOOK}</Bloc>
+        <Bloc legende="TypeScript">{EXEMPLES_SDK.webhook.code}</Bloc>
         <Liste>
           <li>{t('Pendant une rotation de secret, l’ancien signe encore 24 h : passez les deux, secret: [nouveau, ancien].', 'During a secret rotation, the old one keeps signing for 24 h: pass both, secret: [new, old].')}</li>
           <li>{t('Un horodatage à plus de 5 minutes est refusé (toleranceSeconds pour changer).', 'A timestamp more than 5 minutes away is refused (toleranceSeconds to change it).')}</li>

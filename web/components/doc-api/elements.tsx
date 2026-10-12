@@ -9,6 +9,10 @@ import type { ChampDoc, TableDeChamps } from '@/lib/api-champs';
 import { hrefDe, pageDoc, type AncreDe, type CleDePage, type LienVers } from '@/lib/doc-api-pages';
 import { ENDPOINTS, GROUPES_ENDPOINTS, endpoint, type CleEndpoint, type EndpointDoc, type Methode } from '@/lib/api-doc-endpoints';
 import { TitrePage } from '@/components/TitrePage';
+import { ancreErreurMeta, type ERREURS_META } from '@/lib/erreurs-meta';
+
+/** Un code d'erreur de Meta présent au catalogue. */
+type CodeMeta = (typeof ERREURS_META)[number]['code'];
 
 /**
  * LES BRIQUES DES PAGES DE LA DOCUMENTATION (refonte du 2026-09-25) : seulement ce que plusieurs pages répètent.
@@ -194,6 +198,24 @@ export function Refus({ c }: { c: NomDeCode }) {
   return <span className="whitespace-nowrap">{statutDe(c)} <Code c={c} /></span>;
 }
 
+/**
+ * Un lien vers un code du catalogue des erreurs (lot 17) : un des nôtres (`code`), ou une erreur de Meta (`meta`). Typé sur
+ * les deux listes : un code inventé ne compile pas. Le texte affiché est le code lui-même.
+ */
+export function LienErreur(p: { code: NomDeCode } | { meta: CodeMeta }) {
+  const ancre = 'code' in p ? p.code : ancreErreurMeta(p.meta);
+  return (
+    <Link href={`${pageDoc('errors').href}#${ancre}`} className={lienCls}>
+      <code className={inlineCls}>{'code' in p ? p.code : String(p.meta)}</code>
+    </Link>
+  );
+}
+
+/** Un lien hors de la doc (la documentation de Meta) : nouvel onglet, sans transmettre l'adresse de la page. */
+export function LienExterne({ href, children }: { href: string; children: React.ReactNode }) {
+  return <a href={href} target="_blank" rel="noopener noreferrer" className={lienCls}>{children}</a>;
+}
+
 /** Un lien vers une page de la doc, ou vers une de ses ancres DÉCLARÉES (`@/lib/doc-api-pages`). */
 export function LienDoc<P extends CleDePage>({ page, ancre, children }: { page: P; ancre?: AncreDe<P>; children: React.ReactNode }) {
   // Le type générique ne se réduit pas à l'union `LienVers` : la paire (page, ancre) est pourtant exactement l'une de ses branches.
@@ -244,7 +266,7 @@ export function Bloc({ children, legende, testid, testidCopier }: {
   return (
     <div className="min-w-0 overflow-hidden rounded-controle bg-ink-900">
       <div className="flex items-center justify-between gap-2 border-b border-white/10 py-1 pl-4 pr-1.5">
-        <span className="text-xs font-medium text-ink-500">{legende}</span>
+        <span className="text-xs font-medium text-ink-500" data-md="legende">{legende}</span>
         <BoutonCopier texte={children} quoi={legende} sombre {...(testidCopier ? { testid: testidCopier } : {})} />
       </div>
       <pre className="overflow-x-auto px-4 py-3 font-mono text-xs leading-relaxed text-ink-50" data-testid={testid}>{children}</pre>
@@ -299,7 +321,7 @@ export function Champs({ table }: { table: TableDeChamps }) {
                 <td className="px-3 py-2 text-ink-900">
                   <span className="whitespace-nowrap"><C>{c.nom}</C></span>
                   <span className="mt-1 block font-mono text-xs text-ink-500">{c.type}</span>
-                  <span className="mt-0.5 block text-xs text-ink-500 sm:hidden">
+                  <span className="mt-0.5 block text-xs text-ink-500 sm:hidden" data-md="ignorer">
                     {c.obligatoire === 'oui' ? t('Obligatoire', 'Required') : c.obligatoire === 'non' ? t('Optionnel', 'Optional') : t(c.obligatoire[0], c.obligatoire[1])}
                   </span>
                 </td>
@@ -332,7 +354,7 @@ export function Champs({ table }: { table: TableDeChamps }) {
 /**
  * Les erreurs PROPRES à une route : statut, code, cause. Le statut est lu dans la table des codes (`statutDe`),
  * jamais écrit à côté. `clesDeFiche` ajoute la ligne commune aux routes qui désignent une fiche, qui renvoie à
- * la règle au lieu de la répéter. Le catalogue complet vit dans la Référence.
+ * la règle au lieu de la répéter. Le catalogue complet vit sur sa page (`errors`, lot 17).
  */
 export function Erreurs({ lignes, clesDeFiche = false }: {
   lignes: ReadonlyArray<readonly [NomDeCode, React.ReactNode]>; clesDeFiche?: boolean;

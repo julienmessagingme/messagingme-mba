@@ -6,6 +6,46 @@
 > tranchent, jamais ce fichier.
 
 
+## 2026-10-12 : la documentation pour développeurs (lot 17)
+
+Décisions de Julien en deux rondes de questions : recette Next.js seule (un prompt à coller et le code qu'il doit
+produire, compilé par un test), catalogue de tous nos codes et des erreurs de Meta qui nous concernent, un code stable
+sur les refus de Meta et les pannes, pages en `.md` dans les deux langues avec un `llms.txt`, page « Démarrer » depuis
+l'inscription, aucun prix de Meta, la règle « une route, sa page » tenue par la CI. Spec
+`docs/superpowers/specs/2026-10-12-doc-developpeurs-design.md`, plan `docs/superpowers/plans/2026-10-12-doc-developpeurs.md`.
+
+- Deux mesures avant d'écrire. Le HTML de la doc est VIDE côté serveur (`CadreDoc` attend la session, lue dans le
+  navigateur) : un modèle qui lit une page sans JavaScript n'y trouve rien, d'où les `.md`. Et la production n'avait vu
+  AUCUNE erreur de Meta (28 destinataires de campagne, aucun échec, aucun code dans un mois de statuts bruts, sonde en
+  lecture seule) : la liste des erreurs de Meta croise la page officielle de Meta et les codes que `src/` nomme.
+- A, en production le même jour (`d0e36cc4`, aucune migration, CI verte des deux côtés, API, workers et `mba-web`
+  déployés, cinq portes à 200) : sous `/v1` seulement, toute erreur porte un `code`. Le gestionnaire commun nomme ce
+  qu'aucune route ne nomme (`internal_error`, `route_not_found` par une portée préfixée, `invalid_body` pour un 415 ou un
+  413), et une erreur de Meta y est classée comme les routes la classaient déjà (`src/api/refus-meta.ts`, extrait de
+  `refusDeMeta`). Contrôlé en production par `curl` : un corps en `application/xml` rend 415 `invalid_body`, une route
+  inconnue 404 `route_not_found`, et hors `/v1` le 404 de Fastify reste. Mesuré en écrivant A : un JSON illisible n'est
+  pas un refus de Fastify, l'analyseur JSON du récepteur de Meta (posé pour tout le serveur) le lit comme un objet vide.
+- La relecture de A (aucun rouge, sept jaunes) a fait corriger avant le push : une panne ou une limite de Meta sortait
+  en `meta_rejected` (« ne réessayez pas »), donc l'intégrateur n'aurait jamais rejoué un message que Meta aurait pris une
+  minute plus tard ; le `metaCode` manquait sur les refus que les routes nomment elles-mêmes, les plus fréquents ; la
+  doc publiée par Vercel au push aurait contredit A (les pages Authentification et SDK sont parties dans A en version
+  intermédiaire) ; le balayage du test n'éprouvait pas le gestionnaire (`text/plain` a un analyseur, `application/xml`
+  non). Deux refus du routeur de Fastify restent hors table (`todo.md`).
+- B : quatre pages (Démarrer, Les pièges de Meta, la recette Next.js, le Catalogue des erreurs), un lien typé vers un
+  code (`LienErreur`), les exemples de la page SDK et de la recette compilés contre le SDK, et les `.md`, `llms.txt`,
+  `llms-full.txt` générés depuis les pages et tenus égaux par un test (`npm run doc:md`). Le premier envoi de « Démarrer »
+  est une RÉPONSE et non un modèle : un compte neuf n'a parfois aucun modèle approuvé (vérifié), et la validation de Meta
+  peut prendre 24 h.
+- La relecture de B (un rouge, huit jaunes) a trouvé que la recette Next.js ne compilait pas chez l'intégrateur : elle
+  lisait `e.metaCode`, ajouté à `sdk/src` par A mais absent du SDK publié (0.1.0), et le test compilait contre `sdk/src`.
+  Corrigé avant le push : le numéro de Meta se lit dans le corps de l'erreur, et les exemples se compilent désormais
+  contre les déclarations de la version PUBLIÉE, recopiées dans `tests/sdk-publie/` (à recopier à chaque publication).
+  Les jaunes aussi : la recette envoie les deux paramètres de son modèle, les chemins de console justes (Developers >
+  Webhooks sortants, Contenu > WhatsApp > Templates), plus d'affirmation non prouvée sur les réponses sans carte, deux
+  « ce que Messaging Me fait déjà » précisés (le réessai dépend de la case de la campagne ou du réglage de l'espace), un
+  espace entre deux codes voisins dans le Markdown, la CI de la console qui voit `web/public/`, et « pendant 24 h » au
+  lieu de « jamais deux fois ».
+
 ## 2026-10-11 : un seul contrat pour les messages interactifs
 
 Les neuf types de messages interactifs, leur borne en octets et la lecture de la ligne « Quand » existaient côté

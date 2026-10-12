@@ -25,11 +25,17 @@ on:
     paths:
       - 'web/**'
       - '!web/**.md'
+      # La doc en Markdown générée depuis les pages (lot 17) : un `.md` de `public/` changé seul doit passer
+      # `lib/doc-md.test.ts`, sinon c'est le push front suivant qui devient rouge pour une raison étrangère.
+      - 'web/public/**'
       - '.github/workflows/ci-web.yml'
   pull_request:
     paths:
       - 'web/**'
       - '!web/**.md'
+      # La doc en Markdown générée depuis les pages (lot 17) : un `.md` de `public/` changé seul doit passer
+      # `lib/doc-md.test.ts`, sinon c'est le push front suivant qui devient rouge pour une raison étrangère.
+      - 'web/public/**'
       - '.github/workflows/ci-web.yml'
 
 # Groupe DISTINCT de celui de `ci.yml` : un groupe partage ferait s'annuler les deux moities de la CI.

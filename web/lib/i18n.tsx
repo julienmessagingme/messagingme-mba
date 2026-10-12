@@ -43,6 +43,14 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   return <Ctx.Provider value={{ locale, setLocale }}>{children}</Ctx.Provider>;
 }
 
+/**
+ * Une langue IMPOSÉE, sans mémoire ni effet : pour rendre une page hors du navigateur (la doc en Markdown, lot 17,
+ * `lib/doc-md.test.ts`). L'écran ne s'en sert jamais : il passe par `LocaleProvider`.
+ */
+export function LocaleFixe({ locale, children }: { locale: Locale; children?: ReactNode }) {
+  return <Ctx.Provider value={{ locale, setLocale: () => {} }}>{children}</Ctx.Provider>;
+}
+
 export function useLocale(): LocaleCtx {
   return useContext(Ctx);
 }

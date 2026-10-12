@@ -30,12 +30,22 @@ l'écran et en Telegram, boucle de purge bornée. Restent :
 - **Réserver la portée npm `@messagingme`** (une organisation npm gratuite, rien à y publier) : un `npm i @messagingme/sdk`
   tapé par erreur ne doit jamais trouver le paquet d'un tiers. Le SDK s'installe depuis GitHub
   (`julienmessagingme/messagingme-sdk`) ; une nouvelle version se publie à la main après le `up` de l'API (`DEPLOY.md`).
-- 🟡 **Les exemples de la page « SDK TypeScript » ne sont gardés par rien** (relecture du 2026-10-10) : ils sont écrits
-  dans `web/app/developers/api/sdk/page.tsx`, la garde anti-JSON ne voit pas des clés TypeScript sans guillemets, et aucun
-  test ne les compile contre `sdk/src/index.ts`. À faire : un module `web/lib/sdk-exemples.ts` typé contre le SDK, dont
-  les corps passent les validateurs de `tests/api-exemples.test.ts`, et le README qui reprend les mêmes blocs. Le README
-  publié (`v0.1.0`) envoie encore un modèle sans `params` : à corriger à la prochaine version (une étiquette ne se
-  republie pas).
+- 🟡 **Le README du SDK n'est pas tenu égal aux exemples compilés.** Depuis le lot 17, les exemples de la page « SDK
+  TypeScript » vivent dans `web/lib/exemples-code.ts` et `tests/doc-exemples-compiles.test.ts` les compile contre
+  `sdk/src` ; le README (`sdk/README.md`) garde ses propres blocs, et le README publié (`v0.1.0`) envoie un modèle sans
+  `params`. À corriger avec la 0.2.0 : le README reprend les blocs du module (ou un test les compare).
+
+## 🟡 Lot 17, la doc pour développeurs : ce qui reste hors périmètre (2026-10-12)
+
+- **Le HTML de la doc est vide côté serveur** : `CadreDoc` attend la session, lue dans le navigateur, avant de rendre le
+  contenu. Les `.md` et `llms.txt` servent les modèles ; les moteurs de recherche, eux, n'indexent que ce qu'ils
+  exécutent. Rendre le contenu public côté serveur, puis basculer vers la console à la lecture de la session.
+- **Un lien vers la doc dans chaque corps d'erreur** (`docUrl`, vers l'ancre du code dans le catalogue).
+- **Le numéro de Meta porte trois noms** selon l'endroit : `metaCode` (refus, suivi d'un envoi), `meta_code` (événement
+  `message.failed`) et `error.code` (un message lu). Les unifier casserait ce qui est publié ; le catalogue les nomme.
+- **Les autres recettes** : Lovable et Supabase, Make, n8n (décision de Julien du 2026-10-12 : Next.js seul d'abord).
+- **Le top des erreurs de Meta n'est pas tiré de notre trafic** : la production n'en avait vu aucune le 2026-10-12. À
+  revoir sur les premiers volumes réels (`echecs_messages.code`, `campaign_envois.error_code`).
 
 ## 🟡 « Renouveler la connexion Meta » : ce que la relecture laisse (2026-10-09)
 

@@ -2,21 +2,22 @@
 
 import { CadreDoc } from '@/components/doc-api/CadreDoc';
 import {
-  Bloc, C, CLE_EXEMPLE, Code, Encadre, EnTetePage, Erreurs, LienDoc, Liste, Refus, Section, Tableau, json,
+  Bloc, C, CLE_EXEMPLE, Encadre, EnTetePage, Erreurs, LienDoc, Liste, Refus, Section, Tableau, json,
 } from '@/components/doc-api/elements';
 import { useT } from '@/lib/i18n';
-import { BORNES, CODES_DOCUMENTES, EXEMPLES_REPONSES } from '@/lib/api-exemples';
+import { BORNES, EXEMPLES_REPONSES } from '@/lib/api-exemples';
 import { ENDPOINTS, type Droit } from '@/lib/api-doc-endpoints';
 
 /**
  * AUTHENTIFICATION, LIMITES ET ERREURS : ce qui vaut pour toutes les routes. Le tableau des droits se dérive de
- * l'index des endpoints (`@/lib/api-doc-endpoints`, tenu égal aux gardes du serveur) ; le catalogue des codes
- * vient de `CODES_DOCUMENTES`, tenu égal aux codes du serveur. L'adresse garde `reference` (publiée au lot 1).
+ * l'index des endpoints (`@/lib/api-doc-endpoints`, tenu égal aux gardes du serveur) ; le catalogue des codes a sa
+ * page depuis le lot 17 (`errors`). L'adresse garde `reference` (publiée au lot 1).
  *
  * ⚠️ LE TEXTE EST ÉCRIT À LA MAIN d'après les routes (`src/http/v1-*.ts`) : une règle qui change côté serveur ne
  * change pas ici toute seule. Les codes cités passent par `<Code>`, typé sur la table des codes : un code inventé
- * ne compile pas. Un comportement décrit ici attend un correctif (`todo.md`) : le corps JSON illisible lu comme un
- * objet vide. Le corriger, c'est corriger cette page dans le même commit.
+ * ne compile pas. Le catalogue complet des codes vit sur sa page (`errors`, lot 17). Un comportement décrit ici attend
+ * un correctif (`todo.md`) : le corps JSON illisible lu comme un objet vide. Le corriger, c'est corriger cette page dans
+ * le même commit.
  */
 export default function ApiReferencePage() {
   return <CadreDoc page="reference">{() => <Reference />}</CadreDoc>;
@@ -151,26 +152,18 @@ function Reference() {
             { cle: '429', cellules: ['429', t('Débit ou quota quotidien dépassé.', 'Rate limit or daily quota exceeded.')] },
           ]}
         />
+        <p>
+          {t('Chaque code, quand il arrive et quoi faire, avec les erreurs de Meta : ', 'Every code, when it happens and what to do, with Meta’s errors: ')}
+          <LienDoc page="errors">{t('le catalogue des erreurs', 'the error catalog')}</LienDoc>.
+        </p>
         <Encadre sorte="attention">
           <p>
             {t(
-              'Un JSON illisible est lu comme un objet vide : le refus nomme ce qui manque, pas la syntaxe. Toujours envoyer Content-Type: application/json. Un 5xx peut arriver sans corps lisible (page d’erreur générique) : traitez-le comme internal_error.',
-              'An unreadable JSON is read as an empty object: the refusal names what is missing, not the syntax. Always send Content-Type: application/json. A 5xx may arrive without a readable body (generic error page): treat it as internal_error.',
+              'Un JSON illisible est lu comme un objet vide : le refus nomme ce qui manque, pas la syntaxe. Toujours envoyer Content-Type: application/json.',
+              'An unreadable JSON is read as an empty object: the refusal names what is missing, not the syntax. Always send Content-Type: application/json.',
             )}
           </p>
         </Encadre>
-        <Tableau
-          entetes={[t('Code', 'Code'), t('Statut', 'Status'), t('Motif d’écart', 'Skip reason'), t('Sens', 'Meaning')]}
-          lignes={CODES_DOCUMENTES.map((c) => ({
-            cle: c.code,
-            cellules: [
-              <Code key="c" c={c.code} testid={`code-${c.code}`} />,
-              c.statut === null ? '' : String(c.statut),
-              c.ecart ? t('oui', 'yes') : '',
-              t(c.quoi[0], c.quoi[1]),
-            ],
-          }))}
-        />
       </Section>
     </>
   );

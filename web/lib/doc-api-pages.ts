@@ -50,6 +50,12 @@ export const PAGES_DOC = [
     ancres: ['premier-appel', 'endpoints', 'adresse', 'openapi', 'authentification'],
   },
   {
+    // De l'inscription au premier webhook vérifié (lot 17).
+    cle: 'quickstart', href: '/developers/api/quickstart', fichier: 'web/app/developers/api/quickstart/page.tsx', groupe: 'demarrer',
+    nav: ['Démarrer', 'Quickstart'], titre: ['Démarrer en dix minutes', 'Get started in ten minutes'],
+    ancres: ['espace', 'cle', 'premier-envoi', 'webhook', 'ensuite'],
+  },
+  {
     // Le client TypeScript (lot 16, livraison B), publié dans son propre dépôt.
     cle: 'sdk', href: '/developers/api/sdk', fichier: 'web/app/developers/api/sdk/page.tsx', groupe: 'demarrer',
     nav: ['SDK TypeScript', 'TypeScript SDK'], titre: ['SDK TypeScript', 'TypeScript SDK'],
@@ -104,6 +110,18 @@ export const PAGES_DOC = [
     ancres: ['cle'],
   },
   {
+    // Ce que Meta impose et qui surprend (lot 17) ; chaque piège renvoie à son code dans le catalogue des erreurs.
+    cle: 'meta-pitfalls', href: '/developers/api/guides/meta-pitfalls', fichier: 'web/app/developers/api/guides/meta-pitfalls/page.tsx', groupe: 'guides',
+    nav: ['Pièges de Meta', 'Meta pitfalls'], titre: ['Les pièges de Meta', 'Meta pitfalls'],
+    ancres: ['fenetre', 'modeles', 'facturation', 'paiement', 'consentement', 'qualite', 'debit', 'marketing', 'nom-affiche', 'injoignable', 'medias'],
+  },
+  {
+    // La recette Next.js (lot 17) : un prompt à coller, et le code qu'il doit produire, compilé par la suite racine.
+    cle: 'nextjs', href: '/developers/api/guides/nextjs', fichier: 'web/app/developers/api/guides/nextjs/page.tsx', groupe: 'guides',
+    nav: ['Recette Next.js', 'Next.js recipe'], titre: ['Recette : Next.js', 'Recipe: Next.js'],
+    ancres: ['prompt', 'installation', 'client', 'envoi', 'webhook', 'essayer'],
+  },
+  {
     cle: 'events', href: '/developers/api/events', fichier: 'web/app/developers/api/events/page.tsx', groupe: 'plateforme',
     nav: ['Événements', 'Events'], titre: ['Événements', 'Events'],
     ancres: ['signaux'],
@@ -122,6 +140,13 @@ export const PAGES_DOC = [
     ancres: ['authentification', 'debit', 'erreurs'],
   },
   {
+    // Le catalogue des erreurs (lot 17) : nos codes et les erreurs de Meta, une ancre par code (hors liste ci-dessous :
+    // les autres pages les visent par `LienErreur`, typé sur les deux listes de codes).
+    cle: 'errors', href: '/developers/api/errors', fichier: 'web/app/developers/api/errors/page.tsx', groupe: 'plateforme',
+    nav: ['Catalogue des erreurs', 'Error catalog'], titre: ['Catalogue des erreurs', 'Error catalog'],
+    ancres: ['forme', 'codes', 'meta'],
+  },
+  {
     cle: 'mcp', href: '/developers/mcp', fichier: 'web/app/developers/mcp/page.tsx', groupe: 'plateforme',
     nav: ['Serveur MCP', 'MCP server'], titre: ['Serveur MCP', 'MCP server'],
     ancres: [],
@@ -129,6 +154,32 @@ export const PAGES_DOC = [
 ] as const satisfies readonly PageDoc[];
 
 export type CleDePage = (typeof PAGES_DOC)[number]['cle'];
+
+/**
+ * UNE PHRASE PAR PAGE, pour le `llms.txt` de la console (lot 17) : ce qu'un modèle y trouvera. Un `Record` sur toutes les
+ * pages : une page ajoutée à la carte ne compile pas sans sa phrase.
+ */
+export const RESUMES_PAGES: Readonly<Record<CleDePage, Bilingue>> = {
+  accueil: ['L’API REST : son adresse, l’authentification par clé, un premier appel et l’index des routes.', 'The REST API: its address, key authentication, a first call and the route index.'],
+  quickstart: ['De l’inscription au premier message envoyé par l’API : l’espace, la clé, un webhook reçu et vérifié, une réponse, puis un premier modèle.', 'From sign-up to the first message sent through the API: the workspace, the key, a webhook received and verified, a reply, then a first template.'],
+  sdk: ['Le client TypeScript : installation, appels typés, erreurs typées, vérification des webhooks.', 'The TypeScript client: installation, typed calls, typed errors, webhook verification.'],
+  contacts: ['Créer, lire, chercher, modifier et effacer des fiches, et leurs champs personnalisés.', 'Create, read, find, update and erase records, and their custom fields.'],
+  messages: ['Écrire à une personne : texte simple, message au format de Meta, RCS.', 'Write to a person: plain text, message in Meta’s format, RCS.'],
+  conversations: ['Lire les conversations, leurs messages, le statut d’un message et les fichiers reçus.', 'Read conversations, their messages, a message’s status and received files.'],
+  sends: ['Envoyer un modèle, un scénario ou un message RCS à des destinataires, et suivre l’envoi.', 'Send a template, a scenario or an RCS message to recipients, and follow the send.'],
+  templates: ['Créer un modèle WhatsApp au format de Meta et suivre sa validation.', 'Create a WhatsApp template in Meta’s format and follow its review.'],
+  'webhook-endpoints': ['Gérer par l’API les adresses des webhooks sortants : créer, tester, lire le journal, rejouer.', 'Manage outgoing webhook endpoints through the API: create, test, read the log, replay.'],
+  catalogs: ['Lister les modèles approuvés, les scénarios publiés et les messages RCS de l’espace.', 'List the workspace’s approved templates, published scenarios and RCS messages.'],
+  concepts: ['Les règles communes : désigner une personne, consentement et STOP, fenêtre de 24 h, idempotence.', 'The common rules: identifying a person, consent and STOP, the 24-hour window, idempotency.'],
+  'per-contact': ['Brancher un outil qui appelle l’API une fois par contact.', 'Connecting a tool that calls the API once per contact.'],
+  'meta-pitfalls': ['Ce que Meta impose et qui surprend : fenêtre de 24 h, modèles, facturation, qualité, débit, consentement.', 'What Meta imposes and what surprises: the 24-hour window, templates, billing, quality, throughput, consent.'],
+  nextjs: ['Une recette Next.js : envoyer un modèle et recevoir un webhook vérifié, avec le prompt à coller dans son assistant.', 'A Next.js recipe: send a template and receive a verified webhook, with the prompt to paste into your assistant.'],
+  events: ['Les signaux que Messaging Me remonte vers un outil branché.', 'The signals Messaging Me sends up to a connected tool.'],
+  webhooks: ['Le format des webhooks sortants : enveloppe, signature, réessais et types d’événements.', 'The format of outgoing webhooks: envelope, signature, retries and event types.'],
+  reference: ['Authentification, droits des clés, limites de débit et quotas.', 'Authentication, key scopes, rate limits and quotas.'],
+  errors: ['Chaque code d’erreur de l’API et les erreurs de Meta : quand elles arrivent, et quoi faire.', 'Every API error code and Meta’s errors: when they happen, and what to do.'],
+  mcp: ['Le serveur MCP : brancher Claude ou un autre assistant sur un espace Messaging Me.', 'The MCP server: connecting Claude or another assistant to a Messaging Me workspace.'],
+};
 /** Les ancres déclarées d'une page : un lien vers une ancre qui n'y est pas déclarée ne compile pas. */
 export type AncreDe<C extends CleDePage> = Extract<(typeof PAGES_DOC)[number], { cle: C }>['ancres'][number];
 
@@ -208,4 +259,8 @@ export const FICHIERS_DOC: readonly string[] = [
   'web/lib/api-doc-endpoints.ts',
   'web/lib/signaux-dictionnaire.ts',
   'web/lib/mcp-outils.ts',
+  // Le catalogue des erreurs et le code compilé que la doc montre (lot 17).
+  'web/lib/erreurs-gestes.ts',
+  'web/lib/erreurs-meta.ts',
+  'web/lib/exemples-code.ts',
 ];

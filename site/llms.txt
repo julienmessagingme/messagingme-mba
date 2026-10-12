@@ -15,6 +15,7 @@
 
 ## Développeurs
 
+- [La documentation pour les modèles](https://console.messagingme.app/llms.txt) : chaque page de la doc de l’API et du serveur MCP en Markdown, en français et en anglais, avec sa phrase.
 - [Documentation de l’API](https://console.messagingme.app/developers/api)
 - [Serveur MCP](https://console.messagingme.app/developers/mcp)
 - [Contrat OpenAPI de l’API](https://api.messagingme.app/openapi.json) : chaque route, ses corps, ses réponses, ses erreurs, et les événements des webhooks sortants.

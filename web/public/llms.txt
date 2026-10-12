@@ -1,0 +1,45 @@
+# Messaging Me : API et serveur MCP
+
+> L’API REST et le serveur MCP de Messaging Me (WhatsApp et RCS, sur l’API officielle de Meta) : envoyer, recevoir, gérer les fiches, les modèles et les webhooks sortants. The REST API and MCP server of Messaging Me (WhatsApp and RCS, on Meta’s official API).
+
+Chaque page existe en français (.md) et en anglais (.en.md). Every page exists in French (.md) and English (.en.md).
+
+## Démarrer / Get started
+
+- [API Messaging Me](https://console.messagingme.app/developers/api.md): L’API REST : son adresse, l’authentification par clé, un premier appel et l’index des routes. English: [Messaging Me API](https://console.messagingme.app/developers/api.en.md)
+- [Démarrer en dix minutes](https://console.messagingme.app/developers/api/quickstart.md): De l’inscription au premier message envoyé par l’API : l’espace, la clé, un webhook reçu et vérifié, une réponse, puis un premier modèle. English: [Get started in ten minutes](https://console.messagingme.app/developers/api/quickstart.en.md)
+- [SDK TypeScript](https://console.messagingme.app/developers/api/sdk.md): Le client TypeScript : installation, appels typés, erreurs typées, vérification des webhooks. English: [TypeScript SDK](https://console.messagingme.app/developers/api/sdk.en.md)
+
+## Référence API / API reference
+
+- [Contacts](https://console.messagingme.app/developers/api/contacts.md): Créer, lire, chercher, modifier et effacer des fiches, et leurs champs personnalisés. English: [Contacts](https://console.messagingme.app/developers/api/contacts.en.md)
+- [Messages](https://console.messagingme.app/developers/api/messages.md): Écrire à une personne : texte simple, message au format de Meta, RCS. English: [Messages](https://console.messagingme.app/developers/api/messages.en.md)
+- [Conversations](https://console.messagingme.app/developers/api/conversations.md): Lire les conversations, leurs messages, le statut d’un message et les fichiers reçus. English: [Conversations](https://console.messagingme.app/developers/api/conversations.en.md)
+- [Envois](https://console.messagingme.app/developers/api/sends.md): Envoyer un modèle, un scénario ou un message RCS à des destinataires, et suivre l’envoi. English: [Sends](https://console.messagingme.app/developers/api/sends.en.md)
+- [Modèles](https://console.messagingme.app/developers/api/templates.md): Créer un modèle WhatsApp au format de Meta et suivre sa validation. English: [Templates](https://console.messagingme.app/developers/api/templates.en.md)
+- [Gérer les webhooks sortants](https://console.messagingme.app/developers/api/webhook-endpoints.md): Gérer par l’API les adresses des webhooks sortants : créer, tester, lire le journal, rejouer. English: [Manage outgoing webhooks](https://console.messagingme.app/developers/api/webhook-endpoints.en.md)
+- [Catalogues](https://console.messagingme.app/developers/api/catalogs.md): Lister les modèles approuvés, les scénarios publiés et les messages RCS de l’espace. English: [Catalogs](https://console.messagingme.app/developers/api/catalogs.en.md)
+
+## Guides / Guides
+
+- [Concepts](https://console.messagingme.app/developers/api/concepts.md): Les règles communes : désigner une personne, consentement et STOP, fenêtre de 24 h, idempotence. English: [Concepts](https://console.messagingme.app/developers/api/concepts.en.md)
+- [Brancher un outil qui appelle par contact](https://console.messagingme.app/developers/api/guides/per-contact.md): Brancher un outil qui appelle l’API une fois par contact. English: [Connecting a tool that calls per contact](https://console.messagingme.app/developers/api/guides/per-contact.en.md)
+- [Les pièges de Meta](https://console.messagingme.app/developers/api/guides/meta-pitfalls.md): Ce que Meta impose et qui surprend : fenêtre de 24 h, modèles, facturation, qualité, débit, consentement. English: [Meta pitfalls](https://console.messagingme.app/developers/api/guides/meta-pitfalls.en.md)
+- [Recette : Next.js](https://console.messagingme.app/developers/api/guides/nextjs.md): Une recette Next.js : envoyer un modèle et recevoir un webhook vérifié, avec le prompt à coller dans son assistant. English: [Recipe: Next.js](https://console.messagingme.app/developers/api/guides/nextjs.en.md)
+
+## Plateforme / Platform
+
+- [Événements](https://console.messagingme.app/developers/api/events.md): Les signaux que Messaging Me remonte vers un outil branché. English: [Events](https://console.messagingme.app/developers/api/events.en.md)
+- [Webhooks sortants](https://console.messagingme.app/developers/api/webhooks.md): Le format des webhooks sortants : enveloppe, signature, réessais et types d’événements. English: [Outgoing webhooks](https://console.messagingme.app/developers/api/webhooks.en.md)
+- [Authentification, limites et erreurs](https://console.messagingme.app/developers/api/reference.md): Authentification, droits des clés, limites de débit et quotas. English: [Authentication, limits and errors](https://console.messagingme.app/developers/api/reference.en.md)
+- [Catalogue des erreurs](https://console.messagingme.app/developers/api/errors.md): Chaque code d’erreur de l’API et les erreurs de Meta : quand elles arrivent, et quoi faire. English: [Error catalog](https://console.messagingme.app/developers/api/errors.en.md)
+- [Serveur MCP](https://console.messagingme.app/developers/mcp.md): Le serveur MCP : brancher Claude ou un autre assistant sur un espace Messaging Me. English: [MCP server](https://console.messagingme.app/developers/mcp.en.md)
+
+## Contrat / Contract
+
+- [OpenAPI 3.1](https://api.messagingme.app/openapi.json): chaque route, ses corps, ses réponses, ses erreurs, et les événements des webhooks sortants. Every route, body, response and error, and the outgoing webhook events.
+
+## Optional
+
+- [Toute la documentation, en français](https://console.messagingme.app/llms-full.txt)
+- [The whole documentation, in English](https://console.messagingme.app/llms-full.en.txt)

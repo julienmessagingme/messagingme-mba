@@ -1,0 +1,4145 @@
+<!-- Version Markdown de https://console.messagingme.app/developers/api, générée depuis la page (npm run doc:md). English: https://console.messagingme.app/developers/api.en.md -->
+
+# API Messaging Me
+
+API REST : contacts, messages WhatsApp et RCS, envois.
+
+<a id="premier-appel"></a>
+
+## Premier appel
+
+Créer une fiche, ou la mettre à jour si elle existe :
+
+_Commande_
+
+```
+curl -X POST https://api.messagingme.app/v1/contacts \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "phone": "+33612345678",
+  "externalId": "crm-7781",
+  "name": "Camille Roy",
+  "fields": {
+    "ville": "Lyon"
+  },
+  "tags": [
+    "prospect"
+  ],
+  "consent": "opted_in",
+  "consentSource": "formulaire-site"
+}'
+```
+
+_Réponse 200_
+
+```
+{
+  "contactId": "5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01",
+  "status": "created"
+}
+```
+
+Détail : [POST /v1/contacts](https://console.messagingme.app/developers/api/contacts.md#creer).
+
+<a id="endpoints"></a>
+
+## Tous les endpoints
+
+### Contacts
+
+|   |   |   |
+| --- | --- | --- |
+| POST | [/v1/contacts](https://console.messagingme.app/developers/api/contacts.md#creer) : Crée ou met à jour une fiche. | `contacts:write` |
+| POST | [/v1/contacts/batch](https://console.messagingme.app/developers/api/contacts.md#lot) : Crée ou met à jour jusqu’à 50 fiches en un appel. | `contacts:write` |
+| GET | [/v1/contacts/{contactId}](https://console.messagingme.app/developers/api/contacts.md#lire) : Lit une fiche. | `contacts:read` |
+| POST | [/v1/contacts/search](https://console.messagingme.app/developers/api/contacts.md#rechercher) : Cherche une fiche par téléphone, BSUID ou identifiant externe. | `contacts:read` |
+| DELETE | [/v1/contacts/{contactId}](https://console.messagingme.app/developers/api/contacts.md#effacer) : Efface une fiche pour de vrai (RGPD), dans la limite du jour de l’offre. | `contacts:admin` |
+| GET | [/v1/fields](https://console.messagingme.app/developers/api/contacts.md#champs) : Liste les champs personnalisés : les clés à utiliser dans fields. | `contacts:read` |
+| POST | [/v1/fields](https://console.messagingme.app/developers/api/contacts.md#creer-champ) : Crée un champ personnalisé ; sa clé vient du libellé. | `contacts:admin` |
+| PATCH | [/v1/contacts/{contactId}](https://console.messagingme.app/developers/api/contacts.md#modifier) : Modifie les champs, les tags, le consentement ou l’identifiant externe d’une fiche. | `contacts:write` |
+
+### Messages
+
+|   |   |   |
+| --- | --- | --- |
+| POST | [/v1/messages](https://console.messagingme.app/developers/api/messages.md#message-meta) : Envoie un message au format de Meta : image, document, lieu, boutons, liste, bouton lien. | `sends:create` |
+| POST | [/v1/messages/whatsapp](https://console.messagingme.app/developers/api/messages.md#message-whatsapp) : Envoie tout de suite un texte WhatsApp à une fiche existante. | `sends:create` |
+| POST | [/v1/messages/rcs](https://console.messagingme.app/developers/api/messages.md#message-rcs) : Envoie tout de suite un texte RCS à une fiche existante. | `sends:create` |
+
+### Conversations
+
+|   |   |   |
+| --- | --- | --- |
+| GET | [/v1/conversations](https://console.messagingme.app/developers/api/conversations.md#lister) : Liste les conversations, la plus récente d’abord, par pages. | `conversations:read` |
+| GET | [/v1/conversations/{conversationId}](https://console.messagingme.app/developers/api/conversations.md#lire) : Lit une conversation : le contact, qui la tient, la fenêtre de 24 h. | `conversations:read` |
+| GET | [/v1/conversations/{conversationId}/messages](https://console.messagingme.app/developers/api/conversations.md#messages) : Les messages d’une conversation, le plus récent d’abord, par pages. | `conversations:read` |
+| GET | [/v1/messages/{messageId}](https://console.messagingme.app/developers/api/conversations.md#message) : Lit un message par son identifiant. | `conversations:read` |
+| GET | [/v1/messages/{messageId}/media](https://console.messagingme.app/developers/api/conversations.md#media) : Télécharge le fichier d’un message reçu. | `conversations:read` |
+
+### Envois
+
+|   |   |   |
+| --- | --- | --- |
+| POST | [/v1/sends](https://console.messagingme.app/developers/api/sends.md#envoi) : Lance un envoi asynchrone et idempotent, vers 1 à 50 destinataires. | `sends:create` |
+| GET | [/v1/sends/{sendId}](https://console.messagingme.app/developers/api/sends.md#suivi) : Lit l’état et les résultats d’un envoi. | `sends:create` |
+
+### Modèles
+
+|   |   |   |
+| --- | --- | --- |
+| POST | [/v1/templates](https://console.messagingme.app/developers/api/templates.md#creer) : Crée un modèle au format de Meta et le soumet à sa validation. | `templates:write` |
+| GET | [/v1/templates/{name}](https://console.messagingme.app/developers/api/templates.md#statut) : Lit le statut d’un modèle chez Meta, langue par langue. | `templates:write` |
+
+### Webhooks sortants
+
+|   |   |   |
+| --- | --- | --- |
+| GET | [/v1/webhooks](https://console.messagingme.app/developers/api/webhook-endpoints.md#lister) : Liste les adresses, la limite de l’offre et les types disponibles. | `webhooks:write` |
+| POST | [/v1/webhooks](https://console.messagingme.app/developers/api/webhook-endpoints.md#creer) : Inscrit une adresse et rend son secret, une seule fois. | `webhooks:write` |
+| GET | [/v1/webhooks/{webhookId}](https://console.messagingme.app/developers/api/webhook-endpoints.md#lire) : Lit une adresse et l’état de ses envois. | `webhooks:write` |
+| PATCH | [/v1/webhooks/{webhookId}](https://console.messagingme.app/developers/api/webhook-endpoints.md#modifier) : Change les types, la description, ou met l’adresse en pause. | `webhooks:write` |
+| POST | [/v1/webhooks/{webhookId}/rotate-secret](https://console.messagingme.app/developers/api/webhook-endpoints.md#rotation) : Renouvelle le secret ; l’ancien signe encore 24 h. | `webhooks:write` |
+| DELETE | [/v1/webhooks/{webhookId}](https://console.messagingme.app/developers/api/webhook-endpoints.md#supprimer) : Supprime une adresse. | `webhooks:write` |
+| POST | [/v1/webhooks/{webhookId}/test](https://console.messagingme.app/developers/api/webhook-endpoints.md#essai) : Envoie un événement d’essai signé et rend la réponse de l’application. | `webhooks:write` |
+| GET | [/v1/webhooks/{webhookId}/deliveries](https://console.messagingme.app/developers/api/webhook-endpoints.md#journal) : Lit le journal d’une adresse, le plus récent d’abord. | `webhooks:write` |
+| POST | [/v1/webhooks/deliveries/{deliveryId}/replay](https://console.messagingme.app/developers/api/webhook-endpoints.md#rejeu) : Rejoue un envoi terminé, avec le même corps. | `webhooks:write` |
+| POST | [/v1/webhooks/{webhookId}/replay-failures](https://console.messagingme.app/developers/api/webhook-endpoints.md#rejeu-echecs) : Rejoue les envois en échec depuis une date. | `webhooks:write` |
+
+### Catalogues
+
+|   |   |   |
+| --- | --- | --- |
+| GET | [/v1/templates](https://console.messagingme.app/developers/api/catalogs.md#templates) : Liste les templates WhatsApp approuvés et envoyables. | `sends:create` |
+| GET | [/v1/scenarios](https://console.messagingme.app/developers/api/catalogs.md#scenarios) : Liste les scénarios publiés et leur message d’ouverture. | `sends:create` |
+| GET | [/v1/rcs-messages](https://console.messagingme.app/developers/api/catalogs.md#messages-rcs) : Liste les messages RCS de la bibliothèque. | `sends:create` |
+
+<a id="adresse"></a>
+
+## Adresse de base
+
+_Adresse de base_
+
+```
+https://api.messagingme.app/v1
+```
+
+<a id="openapi"></a>
+
+## Contrat OpenAPI
+
+Le contrat OpenAPI 3.1 de l’API, servi par l’API elle-même et donc toujours égal au code en production : chaque route, son droit, son corps, sa réponse, ses erreurs, et les événements des webhooks sortants. Il s’importe dans un outil de requêtes ou un générateur de client.
+
+_Contrat_
+
+```
+https://api.messagingme.app/openapi.json
+```
+
+[Ouvrir le contrat](https://api.messagingme.app/openapi.json)
+
+En TypeScript, le client généré depuis ce contrat : [SDK TypeScript](https://console.messagingme.app/developers/api/sdk.md).
+
+<a id="authentification"></a>
+
+## Authentification
+
+Une clé d’API dans l’en-tête Authorization de chaque appel :
+
+_En-tête_
+
+```
+Authorization: Bearer mba_xxxxxxxxxxxxxxxx
+```
+
+Les clés se créent dans la console (Developers > Clés d’API), avec un compte administrateur.
+
+Droits, débit et erreurs : [Authentification, limites et erreurs](https://console.messagingme.app/developers/api/reference.md).
+
+---
+
+<!-- Version Markdown de https://console.messagingme.app/developers/api/quickstart, générée depuis la page (npm run doc:md). English: https://console.messagingme.app/developers/api/quickstart.en.md -->
+
+# Démarrer en dix minutes
+
+De l’inscription au premier message envoyé par l’API, avec votre propre téléphone pour vérifier chaque étape. Il vous faut un numéro WhatsApp (le vôtre, ou un numéro que nous fournissons) et un serveur qui reçoit des requêtes HTTPS.
+
+<a id="espace"></a>
+
+## 1. Créer son espace et brancher son numéro
+
+Inscrivez-vous sur `https://console.messagingme.app/signup`. La console enchaîne : connecter un numéro WhatsApp (le vôtre, par la fenêtre de Meta, ou un numéro fourni), puis une page qui donne la commande pour brancher Claude Code et le premier message à lui écrire.
+
+Sans numéro branché, rien ne part : [`no_whatsapp_number`](https://console.messagingme.app/developers/api/errors.md#no_whatsapp_number).
+
+<a id="cle"></a>
+
+## 2. Créer une clé d’API
+
+Dans la console, Developers > Clés d’API. Cochez au moins sends:create (envoyer) et conversations:read (lire les fils). La clé (mba_…) n’est montrée qu’une fois : gardez-la côté serveur, dans une variable d’environnement.
+
+_Vérifier la clé_
+
+```
+curl https://api.messagingme.app/v1/templates \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx"
+```
+
+Une liste, même vide, veut dire que la clé marche. Sinon : [`unauthorized`](https://console.messagingme.app/developers/api/errors.md#unauthorized), [`missing_scope`](https://console.messagingme.app/developers/api/errors.md#missing_scope).
+
+<a id="webhook"></a>
+
+## 3. Recevoir les événements
+
+Déclarez l’adresse de votre serveur dans la console (Developers > Webhooks sortants), ou par l’API avec une clé qui porte webhooks:write. Le secret (whsec_…) n’est montré qu’une fois : il sert à vérifier chaque signature.
+
+_Commande_
+
+```
+curl -X POST https://api.messagingme.app/v1/webhooks \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "url": "https://www.exemple.fr/messagingme/evenements",
+  "description": "Mon application",
+  "types": [
+    "message.received",
+    "template.status_changed"
+  ]
+}'
+```
+
+Vérifiez la signature sur le corps brut, avec le [SDK](https://console.messagingme.app/developers/api/sdk.md#webhook) ou à la main ([le format](https://console.messagingme.app/developers/api/webhooks.md#signature)), puis répondez 2xx en moins de 10 s.
+
+<a id="premier-envoi"></a>
+
+## 4. Un premier envoi
+
+Le plus rapide : depuis votre téléphone, écrivez au numéro de l’espace. Votre serveur reçoit message.received, avec la fiche créée pour vous. Pendant 24 h, l’API peut vous répondre par un message libre :
+
+_Commande_
+
+```
+curl -X POST https://api.messagingme.app/v1/messages/whatsapp \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "phone": "+33612345678",
+  "text": "Bien reçu, merci ! Nous revenons vers vous dans la journée."
+}'
+```
+
+Pour écrire en premier, il faut un modèle approuvé par Meta : créez-le dans la console (Contenu > WhatsApp > Templates) ou par [POST /v1/templates](https://console.messagingme.app/developers/api/templates.md#creer), attendez son approbation (de quelques minutes à 24 h), puis envoyez-le :
+
+_Commande_
+
+```
+curl -X POST https://api.messagingme.app/v1/sends \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "idempotencyKey": "premier-envoi-1",
+  "target": {
+    "template": {
+      "name": "confirmation_commande",
+      "language": "fr"
+    }
+  },
+  "recipients": [
+    {
+      "phone": "+33612345678"
+    }
+  ],
+  "params": [
+    {
+      "position": 1,
+      "source": {
+        "type": "attribute",
+        "key": "name"
+      },
+      "fallback": "Bonjour"
+    },
+    {
+      "position": 2,
+      "source": {
+        "type": "literal",
+        "value": "8412"
+      }
+    }
+  ]
+}'
+```
+
+- Fenêtre fermée : [`window_closed`](https://console.messagingme.app/developers/api/errors.md#window_closed) ; passez par un modèle.
+- Pas de carte dans le Business Manager : [`131042`](https://console.messagingme.app/developers/api/errors.md#meta-131042).
+- Le numéro n’est pas sur WhatsApp : [`131026`](https://console.messagingme.app/developers/api/errors.md#meta-131026).
+
+<a id="ensuite"></a>
+
+## Ensuite
+
+- [Les pièges de Meta](https://console.messagingme.app/developers/api/guides/meta-pitfalls.md) : ce que Meta impose, avant votre premier envoi en nombre.
+- [La recette Next.js](https://console.messagingme.app/developers/api/guides/nextjs.md) : les mêmes étapes dans un projet, avec un prompt à coller.
+- [Le catalogue des erreurs](https://console.messagingme.app/developers/api/errors.md) : chaque code et quoi faire.
+
+> **Note**
+>
+> Avec Claude Code, tout ceci se fait aussi en conversation : [le serveur MCP](https://console.messagingme.app/developers/mcp.md).
+
+---
+
+<!-- Version Markdown de https://console.messagingme.app/developers/api/sdk, générée depuis la page (npm run doc:md). English: https://console.messagingme.app/developers/api/sdk.en.md -->
+
+# SDK TypeScript
+
+Le client TypeScript de l’API : des appels typés par chemin et par méthode, des erreurs typées, et la vérification de signature des webhooks sortants. Ses types sont générés depuis le [contrat OpenAPI](https://console.messagingme.app/developers/api.md#openapi) : un chemin, un corps ou une réponse qui n’existent pas ne compilent pas.
+
+<a id="installation"></a>
+
+## Installation
+
+_Installation_
+
+```
+npm install github:julienmessagingme/messagingme-sdk#v0.1.0
+```
+
+- Aucune dépendance. Node 20 ou plus, Deno, Bun, et les environnements qui exposent fetch et Web Crypto.
+- Paquet ESM seulement : il s’importe par import, pas par require.
+- L’installation depuis GitHub demande git sur la machine (une image Docker minimale ne l’a pas toujours).
+- Une version publiée ne change plus : la version suit l’étiquette après le #.
+
+<a id="premier-appel"></a>
+
+## Un premier appel
+
+La clé d’API (`mba_…`) se crée dans la console, Developers > Clés d’API. Gardez-la côté serveur. Le client appelle l’API de production ; `baseUrl` en désigne une autre.
+
+_TypeScript_
+
+```
+import { createClient } from '@messagingme/sdk';
+
+const api = createClient({ apiKey: process.env.MESSAGINGME_API_KEY! });
+
+// Créer une fiche, ou la mettre à jour si elle existe.
+const { contactId, status } = await api.POST('/v1/contacts', {
+  body: { phone: '+33612345678', name: 'Camille Roy', consent: 'opted_in', consentSource: 'formulaire-site' },
+});
+
+// Lire une fiche : les paramètres de chemin passent par path.
+const fiche = await api.GET('/v1/contacts/{contactId}', { path: { contactId } });
+
+// Les conversations qui attendent une réponse, par pages : query.
+const page = await api.GET('/v1/conversations', { query: { needsReply: true, limit: 20 } });
+
+// Un envoi, rejouable sans doublon avec la même clé d’idempotence. Ici un modèle sans variable :
+// avec variables, ajoutez params (voir Envois).
+const envoi = await api.POST('/v1/sends', {
+  body: {
+    target: { template: { name: 'confirmation_commande', language: 'fr' } },
+    recipients: [{ phone: '+33612345678' }],
+  },
+  idempotencyKey: 'commande-7781',
+});
+```
+
+Les droits de chaque route : [Authentification, limites et erreurs](https://console.messagingme.app/developers/api/reference.md#authentification).
+
+<a id="erreurs"></a>
+
+## Les erreurs
+
+Toute réponse hors 2xx lève `ApiError`, avec le statut, le code de l’API et, quand l’API le dit, le délai à attendre. Le SDK ne relance rien de lui-même.
+
+_TypeScript_
+
+```
+import { ApiError } from '@messagingme/sdk';
+
+try {
+  await api.POST('/v1/messages/whatsapp', { body: { contactId, text: 'Bonjour' } });
+} catch (e) {
+  if (e instanceof ApiError) {
+    if (e.code === 'window_closed') { /* la personne n’a pas écrit depuis 24 h : passer par un modèle */ }
+    if (e.code === 'meta_rejected') { /* Meta a refusé : son numéro est dans e.body, champ metaCode (131047…) */ }
+    if (e.status === 429 && e.retryAfter !== null) { /* attendre e.retryAfter secondes */ }
+  }
+  throw e;
+}
+```
+
+- `code` est posé sur toute réponse d’erreur de l’API ; il vaut null quand une page d’erreur générique a remplacé la réponse en chemin (un 5xx).
+- Sur meta_rejected, le corps (`e.body`) porte aussi `metaCode`, le numéro d’erreur de Meta : [les erreurs de Meta](https://console.messagingme.app/developers/api/errors.md#meta).
+- `upgradeUrl` est posé sur un 402 (plan_feature_unavailable, plan_limit_reached) : la page où l’offre se change.
+
+<a id="webhook"></a>
+
+## Vérifier un webhook
+
+Passez le corps BRUT, tel que reçu : la signature porte sur ses octets. Le format est décrit dans [Webhooks sortants](https://console.messagingme.app/developers/api/webhooks.md#signature).
+
+_TypeScript_
+
+```
+import { verifyWebhook, WebhookVerificationError } from '@messagingme/sdk';
+
+// Une route qui reçoit les webhooks sortants (ici avec l’API Request standard).
+export async function POST(req: Request) {
+  const body = await req.text();
+  try {
+    const event = await verifyWebhook({ secret: process.env.MESSAGINGME_WEBHOOK_SECRET!, headers: req.headers, body });
+    if (event.type === 'message.received') console.log(event.data.text);
+    return new Response(null, { status: 204 });
+  } catch (e) {
+    if (e instanceof WebhookVerificationError) return new Response(null, { status: 401 });
+    throw e;
+  }
+}
+```
+
+- Pendant une rotation de secret, l’ancien signe encore 24 h : passez les deux, secret: [nouveau, ancien].
+- Un horodatage à plus de 5 minutes est refusé (toleranceSeconds pour changer).
+- Un même événement peut arriver deux fois (réessai, rejeu) : dédoublonnez par event.id, égal à l’en-tête webhook-id.
+
+> **Obligatoire**
+>
+> Un secret vide ou illisible lève une TypeError : c’est une erreur de configuration, pas une signature fausse. Ne la transformez pas en 401.
+
+---
+
+<!-- Version Markdown de https://console.messagingme.app/developers/api/contacts, générée depuis la page (npm run doc:md). English: https://console.messagingme.app/developers/api/contacts.en.md -->
+
+# Contacts
+
+Une fiche se désigne par ses clés : [Désigner une personne](https://console.messagingme.app/developers/api/concepts.md#identification).
+
+Sur cette page
+
+|   |   |
+| --- | --- |
+| POST | [/v1/contacts](https://console.messagingme.app/developers/api/contacts.md#creer) : Crée ou met à jour une fiche. |
+| POST | [/v1/contacts/batch](https://console.messagingme.app/developers/api/contacts.md#lot) : Crée ou met à jour jusqu’à 50 fiches en un appel. |
+| GET | [/v1/contacts/{contactId}](https://console.messagingme.app/developers/api/contacts.md#lire) : Lit une fiche. |
+| POST | [/v1/contacts/search](https://console.messagingme.app/developers/api/contacts.md#rechercher) : Cherche une fiche par téléphone, BSUID ou identifiant externe. |
+| DELETE | [/v1/contacts/{contactId}](https://console.messagingme.app/developers/api/contacts.md#effacer) : Efface une fiche pour de vrai (RGPD), dans la limite du jour de l’offre. |
+| GET | [/v1/fields](https://console.messagingme.app/developers/api/contacts.md#champs) : Liste les champs personnalisés : les clés à utiliser dans fields. |
+| POST | [/v1/fields](https://console.messagingme.app/developers/api/contacts.md#creer-champ) : Crée un champ personnalisé ; sa clé vient du libellé. |
+| PATCH | [/v1/contacts/{contactId}](https://console.messagingme.app/developers/api/contacts.md#modifier) : Modifie les champs, les tags, le consentement ou l’identifiant externe d’une fiche. |
+
+<a id="creer"></a>
+
+## POST /v1/contacts
+
+Crée ou met à jour une fiche.
+
+Droit : `contacts:write`
+
+### Requête
+
+| Champ | Obligatoire | Description |
+| --- | --- | --- |
+| `contactId` : uuid | Une clé au moins | L’identifiant de la fiche, rendu à sa création. [Désigner une personne](https://console.messagingme.app/developers/api/concepts.md#identification) |
+| `externalId` : string | Une clé au moins | Votre identifiant de la personne, unique par espace, 512 caractères au plus. |
+| `phone` : string | Une clé au moins | Le numéro, au format international (+33…). |
+| `bsuid` : string | Une clé au moins | L’identifiant WhatsApp d’une personne sans numéro visible. |
+| `name` : string | Non | Le nom affiché. |
+| `fields` : object | Non | Les champs de la fiche, par clé technique ou code fld_, 20 au plus. Valeur texte, nombre ou booléen, enregistrée en texte. Un champ inconnu de l’espace est refusé : créez-le d’abord dans la console (Bibliothèque > Champs). |
+| `tags` : string[] | Non | Des tags à ajouter, 20 au plus. Aucun n’est retiré : PATCH le fait. Un tag inconnu de l’espace est refusé : déclarez-le d’abord dans la console (Bibliothèque > Étiquettes). |
+| `consent` : string | Non | Absent : inchangé. Valeurs : `opted_in` , `opted_out`. [Consentement et STOP](https://console.messagingme.app/developers/api/concepts.md#consentement) |
+| `consentSource` : string | Non | D’où vient le consentement, 100 caractères au plus. Absent : api. |
+
+Une clé inconnue est ignorée. Refusées : `optIn` , `optInSource` (les anciens noms de consent et consentSource).
+
+_Commande_
+
+```
+curl -X POST https://api.messagingme.app/v1/contacts \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "phone": "+33612345678",
+  "externalId": "crm-7781",
+  "name": "Camille Roy",
+  "fields": {
+    "ville": "Lyon"
+  },
+  "tags": [
+    "prospect"
+  ],
+  "consent": "opted_in",
+  "consentSource": "formulaire-site"
+}'
+```
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "contactId": "5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01",
+  "status": "created"
+}
+```
+
+status : created ou updated. Le statut HTTP est 200 dans les deux cas.
+
+### Erreurs
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 400 | `invalid_body` | Champ mal formé ou refusé, trop de champs ou de tags, champ ou tag inconnu de l’espace ; le message le nomme. |
+| 404 | `unknown_contact` | Aucune fiche trouvée, et ni phone ni bsuid pour en créer une (un externalId seul, par exemple). |
+| 409 | `opted_out` | consent opted_in sur une fiche désabonnée. Rien n’est modifié. |
+| 400, 409 | `invalid_recipient` `invalid_phone` `identity_conflict` | Clés de fiche absentes, illisibles ou contradictoires : [Désigner une personne](https://console.messagingme.app/developers/api/concepts.md#identification) |
+
+<a id="lot"></a>
+
+## POST /v1/contacts/batch
+
+Crée ou met à jour jusqu’à 50 fiches en un appel.
+
+Droit : `contacts:write`
+
+### Requête
+
+| Champ | Obligatoire | Description |
+| --- | --- | --- |
+| `contacts` : object[] | Oui | De 1 à 50 fiches, chacune avec les champs de POST /v1/contacts, mais 10 champs et 10 tags au plus par fiche. |
+
+Une clé inconnue est ignorée.
+
+_Commande_
+
+```
+curl -X POST https://api.messagingme.app/v1/contacts/batch \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "contacts": [
+    {
+      "phone": "+33612345678",
+      "externalId": "crm-7781"
+    },
+    {
+      "phone": "+33698765432",
+      "externalId": "crm-7782",
+      "consent": "opted_out",
+      "consentSource": "desinscription-email"
+    }
+  ]
+}'
+```
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "results": [
+    {
+      "index": 0,
+      "status": "updated",
+      "contactId": "5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01"
+    },
+    {
+      "index": 1,
+      "status": "created",
+      "contactId": "7a3d9c10-2e4b-4f6a-b8c1-0d9e8f7a6b5c"
+    }
+  ],
+  "created": 1,
+  "updated": 1,
+  "errors": 0
+}
+```
+
+| Champ | Sens |
+| --- | --- |
+| `results` | Un résultat par élément, dans l’ordre : index, status (created, updated ou error), et pour un refus code et reason. |
+| `created`, `updated`, `errors` | Le nombre de résultats de chaque status. |
+
+### Erreurs
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 400 | `invalid_body` | contacts absent, vide, ou trop long. |
+
+### Notes
+
+- Un élément refusé (mal formé, trop de champs ou de tags, champ ou tag inconnu) n’arrête pas les autres.
+- Les éléments qui désignent la même personne s’écrivent dans l’ordre du lot.
+- Importer un fichier : envoyez-le par lots de 50, comme ci-dessous (un module : fichier .mjs). Aux plafonds par défaut, 3000 fiches par minute, 50000 par heure et 20000 par jour. Un 429 n’a rien écrit : attendez Retry-After (jusqu’à minuit pour le quota du jour) et renvoyez le même lot. Un très gros fichier passe plus vite par l’import CSV de la console.
+
+_Importer un CSV simple (phone,name), Node.js_
+
+```
+import { readFileSync } from 'node:fs';
+
+const lignes = readFileSync('contacts.csv', 'utf8').trim().split(/\r?\n/).slice(1);
+const fiches = lignes.map((l) => { const [phone, name] = l.split(','); return { phone, name }; });
+
+for (let i = 0; i < fiches.length; ) {
+  const r = await fetch('https://api.messagingme.app/v1/contacts/batch', {
+    method: 'POST',
+    headers: { authorization: 'Bearer mba_xxxxxxxxxxxxxxxx', 'content-type': 'application/json' },
+    body: JSON.stringify({ contacts: fiches.slice(i, i + 50) }),
+  });
+  if (r.status === 429) {
+    await new Promise((ok) => setTimeout(ok, Number(r.headers.get('retry-after') ?? 2) * 1000));
+    continue;
+  }
+  if (!r.ok) throw new Error(await r.text());
+  const { results } = await r.json();
+  for (const e of results.filter((x) => x.status === 'error')) console.log(i + e.index, e.code, e.reason);
+  i += 50;
+}
+```
+
+<a id="lire"></a>
+
+## GET /v1/contacts/{contactId}
+
+Lit une fiche.
+
+Droit : `contacts:read`
+
+### Requête
+
+contactId, dans le chemin.
+
+_Commande_
+
+```
+curl https://api.messagingme.app/v1/contacts/5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01 \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx"
+```
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "contactId": "5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01",
+  "externalId": "crm-7781",
+  "phone": "+33612345678",
+  "bsuid": null,
+  "name": "Camille Roy",
+  "fields": {
+    "ville": "Lyon"
+  },
+  "tags": [
+    "prospect"
+  ],
+  "consent": {
+    "status": "opted_in",
+    "source": "formulaire-site",
+    "optedOutAt": null
+  },
+  "rcsOptedOutAt": null,
+  "blocked": false,
+  "reachability": {
+    "whatsapp": true,
+    "rcs": null
+  },
+  "engagementRisk": {
+    "level": "moyen",
+    "score": 40,
+    "reasons": [
+      "silence_60j"
+    ],
+    "computedAt": "2026-09-25T03:05:00.000Z"
+  },
+  "lastAnalysis": {
+    "intent": "suivi_commande",
+    "sentiment": "negatif",
+    "satisfaction": 3,
+    "urgency": 7,
+    "resolved": false,
+    "topic": "Colis en retard",
+    "handledBy": "humain",
+    "actionSuggestion": "rappeler",
+    "analyzedAt": "2026-09-26T14:32:00.000Z"
+  },
+  "createdAt": "2026-09-24T10:00:00.000Z"
+}
+```
+
+| Champ | Sens |
+| --- | --- |
+| `consent` | status : opted_in, opted_out ou unknown. source : son origine. optedOutAt : date du désabonnement. |
+| `rcsOptedOutAt` | Date d’un STOP sur le canal RCS, sinon null. |
+| `blocked` | true : un message vers la fiche est refusé, un envoi l’écarte. |
+| `reachability` | true ou false quand un envoi l’a appris, null sinon. |
+
+`engagementRisk` : risque de désengagement, recalculé chaque nuit sur les 90 derniers jours (réponses, clics, lectures, dernière conversation analysée, joignabilité, désabonnement, blocage). null s’il n’a jamais été calculé. level : `faible` (score 0 à 29), `moyen` (30 à 59), `eleve` (60 à 100), `inconnu` (score null : aucun message délivré sur la période). Désabonnement ou blocage : eleve, score 100. reasons : 3 codes au plus, du plus lourd au plus léger, parmi `stop`, `bloque`, `silence_60j`, `silence_30j`, `sans_reponse`, `non_lu`, `reclamation`, `negatif`, `insatisfait`, `injoignable`. computedAt : date du passage à ce niveau ; elle ne change qu’avec le niveau, score et reasons sont toujours à jour.
+
+`lastAnalysis` : la dernière analyse de conversation du contact, recopiée sur sa fiche ; elle reste là quand la conversation est effacée. null s’il n’a jamais été analysé. Lecture seule : envoyée dans un POST ou un PATCH, elle est ignorée. intent : `demande_devis`, `sav`, `reclamation`, `information`, `prise_rdv`, `achat`, `suivi_commande`, `retour`, `autre`. sentiment : `positif`, `neutre`, `negatif`. satisfaction et urgency : de 0 à 10, null quand l’analyse n’a pas pu les mesurer (0 est une vraie mesure). resolved : la conversation est-elle résolue. topic : son sujet, en clair. handledBy : `humain`, `automatise`, `mba`. actionSuggestion : `creer_devis`, `rappeler`, `relancer`, `escalader`, `aucune`. analyzedAt : la date de l’analyse. Le résumé de la conversation n’en fait pas partie : il reprend les propos du client.
+
+### Erreurs
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 404 | `unknown_contact` | Fiche inconnue ou supprimée. |
+
+<a id="rechercher"></a>
+
+## POST /v1/contacts/search
+
+Cherche une fiche par téléphone, BSUID ou identifiant externe.
+
+Droit : `contacts:read`
+
+### Requête
+
+| Champ | Obligatoire | Description |
+| --- | --- | --- |
+| `externalId` : string | Exactement une | Votre identifiant de la personne, unique par espace, 512 caractères au plus. |
+| `phone` : string | Exactement une | Le numéro, au format international (+33…). |
+| `bsuid` : string | Exactement une | L’identifiant WhatsApp d’une personne sans numéro visible. |
+
+Une clé inconnue est ignorée.
+
+_Commande_
+
+```
+curl -X POST https://api.messagingme.app/v1/contacts/search \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "externalId": "crm-7781"
+}'
+```
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "contact": {
+    "contactId": "5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01",
+    "externalId": "crm-7781",
+    "phone": "+33612345678",
+    "bsuid": null,
+    "name": "Camille Roy",
+    "fields": {
+      "ville": "Lyon"
+    },
+    "tags": [
+      "prospect"
+    ],
+    "consent": {
+      "status": "opted_in",
+      "source": "formulaire-site",
+      "optedOutAt": null
+    },
+    "rcsOptedOutAt": null,
+    "blocked": false,
+    "reachability": {
+      "whatsapp": true,
+      "rcs": null
+    },
+    "engagementRisk": {
+      "level": "moyen",
+      "score": 40,
+      "reasons": [
+        "silence_60j"
+      ],
+      "computedAt": "2026-09-25T03:05:00.000Z"
+    },
+    "lastAnalysis": {
+      "intent": "suivi_commande",
+      "sentiment": "negatif",
+      "satisfaction": 3,
+      "urgency": 7,
+      "resolved": false,
+      "topic": "Colis en retard",
+      "handledBy": "humain",
+      "actionSuggestion": "rappeler",
+      "analyzedAt": "2026-09-26T14:32:00.000Z"
+    },
+    "createdAt": "2026-09-24T10:00:00.000Z"
+  }
+}
+```
+
+contact : la fiche, sous la forme de GET /v1/contacts/{contactId}, ou null. Rien n’est créé ni rattaché.
+
+### Erreurs
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 400 | `invalid_body` | Aucune clé, ou plusieurs. |
+| 400 | `invalid_phone` | Numéro illisible. |
+
+<a id="modifier"></a>
+
+## PATCH /v1/contacts/{contactId}
+
+Modifie les champs, les tags, le consentement ou l’identifiant externe d’une fiche.
+
+Droit : `contacts:write`
+
+### Requête
+
+contactId, dans le chemin. Corps : au moins un champ.
+
+| Champ | Obligatoire | Description |
+| --- | --- | --- |
+| `name` : string | Non | Le nouveau nom. null le vide. |
+| `fields` : object | Non | Fusionnés avec les champs de la fiche, 20 au plus. Une valeur null vide le champ. Un champ inconnu de l’espace est refusé. |
+| `addTags` : string[] | Non | Des tags à ajouter, 20 au plus. Un tag inconnu de l’espace est refusé. |
+| `removeTags` : string[] | Non | Des tags à retirer, 20 au plus. |
+| `consent` : string | Non | Absent : inchangé. Valeurs : `opted_in` , `opted_out`. [Consentement et STOP](https://console.messagingme.app/developers/api/concepts.md#consentement) |
+| `consentSource` : string | Non | D’où vient le consentement, 100 caractères au plus. Absent : api. |
+| `externalId` : string | Non | Pose ou remplace votre identifiant, 512 caractères au plus. |
+
+Une clé inconnue est ignorée. Refusées : `phone` , `bsuid` (ils portent les conversations de la fiche).
+
+_Commande_
+
+```
+curl -X PATCH https://api.messagingme.app/v1/contacts/5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01 \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "fields": {
+    "ville": "Grenoble",
+    "code_promo": null
+  },
+  "addTags": [
+    "client"
+  ],
+  "removeTags": [
+    "prospect"
+  ],
+  "consent": "opted_out",
+  "consentSource": "centre-de-preferences"
+}'
+```
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "contactId": "5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01"
+}
+```
+
+### Erreurs
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 400 | `invalid_body` | Rien à modifier, trop de champs ou de tags, champ ou tag à ajouter inconnu de l’espace, ou valeur refusée. |
+| 404 | `unknown_contact` | Fiche inconnue. |
+| 409 | `identity_conflict` | externalId déjà porté par une autre fiche. |
+| 409 | `opted_out` | consent opted_in sur une fiche désabonnée. |
+
+<a id="effacer"></a>
+
+## DELETE /v1/contacts/{contactId}
+
+Efface une fiche pour de vrai (RGPD), dans la limite du jour de l’offre.
+
+Droit : `contacts:admin`
+
+Avec le droit contacts:admin. Irréversible : la fiche, ses conversations, ses messages et son analyse sont effacés ; ce qui porte les compteurs est anonymisé. Dans la limite du jour de l’offre (10 en Free, sans limite en Pro et Entreprise). Une fiche désabonnée (STOP) laisse une empreinte de son numéro, illisible sans notre clé, gardée trois ans après le STOP : recréée, elle naît désabonnée.
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "deleted": true,
+  "conversations": 1,
+  "messages": 14
+}
+```
+
+### Erreurs
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 404 | `unknown_contact` | Fiche inconnue de cet espace, ou déjà effacée (la limite du jour n’est pas entamée). |
+| 402 | `plan_limit_reached` | Limite d’effacements du jour de l’offre atteinte. |
+| 429 | `rate_limited` | Trop d’opérations lourdes sur cet espace (10 par minute, comme la purge de la console) : réessayer après Retry-After. |
+
+<a id="champs"></a>
+
+## GET /v1/fields
+
+Liste les champs personnalisés : les clés à utiliser dans fields.
+
+Droit : `contacts:read`
+
+_Commande_
+
+```
+curl https://api.messagingme.app/v1/fields \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx"
+```
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "data": [
+    {
+      "key": "numero_commande",
+      "label": "Numéro de commande",
+      "type": "text"
+    },
+    {
+      "key": "date_de_naissance",
+      "label": "Date de naissance",
+      "type": "date"
+    }
+  ]
+}
+```
+
+key est la clé à utiliser dans fields d’une fiche ; type : text, number, date, datetime, boolean ou url.
+
+<a id="creer-champ"></a>
+
+## POST /v1/fields
+
+Crée un champ personnalisé ; sa clé vient du libellé.
+
+Droit : `contacts:admin`
+
+_Commande_
+
+```
+curl -X POST https://api.messagingme.app/v1/fields \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "label": "Date de naissance",
+  "type": "date"
+}'
+```
+
+### Réponse 201
+
+_JSON_
+
+```
+{
+  "key": "date_de_naissance",
+  "label": "Date de naissance",
+  "type": "date"
+}
+```
+
+La clé vient du libellé (minuscules, sans accents, _ entre les mots) et ne change plus. Renommer ou supprimer un champ se fait dans la console.
+
+### Erreurs
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 400 | `invalid_body` | Libellé vide ou trop long (100), type inconnu. |
+| 409 | `field_exists` | Un champ porte déjà cette clé, ou c’est le libellé d’un champ de base (Nom, Téléphone…). |
+
+---
+
+<!-- Version Markdown de https://console.messagingme.app/developers/api/messages, générée depuis la page (npm run doc:md). English: https://console.messagingme.app/developers/api/messages.en.md -->
+
+# Messages
+
+Un texte, à une fiche existante, envoyé tout de suite. Pour une liste de destinataires, un template ou un scénario : [Envois](https://console.messagingme.app/developers/api/sends.md).
+
+Sur cette page
+
+|   |   |
+| --- | --- |
+| POST | [/v1/messages](https://console.messagingme.app/developers/api/messages.md#message-meta) : Envoie un message au format de Meta : image, document, lieu, boutons, liste, bouton lien. |
+| POST | [/v1/messages/whatsapp](https://console.messagingme.app/developers/api/messages.md#message-whatsapp) : Envoie tout de suite un texte WhatsApp à une fiche existante. |
+| POST | [/v1/messages/rcs](https://console.messagingme.app/developers/api/messages.md#message-rcs) : Envoie tout de suite un texte RCS à une fiche existante. |
+
+<a id="messages-simples"></a>
+
+## Message ou envoi
+
+|  | Message | Envoi |
+| --- | --- | --- |
+| Destinataires | Une fiche | 1 à 50 |
+| Contenu | Un texte | Template, scénario, bloc ou message RCS |
+| Traitement | Synchrone : la réponse 200 porte le message | Asynchrone : GET /v1/sends/{sendId} |
+| Fiche inconnue | Refusée | Créée avec un phone, sauf ouverture whatsapp_session |
+| Idempotence | Non | [Oui, clé obligatoire](https://console.messagingme.app/developers/api/concepts.md#idempotence) |
+
+- Le message apparaît dans l’Inbox.
+- Il prend le fil : le scénario en cours s’arrête, l’agent de Meta cesse de répondre.
+
+> **Attention**
+>
+> Pas de clé d’idempotence : rejouer l’appel envoie un second message.
+
+<a id="message-whatsapp"></a>
+
+## POST /v1/messages/whatsapp
+
+Envoie tout de suite un texte WhatsApp à une fiche existante.
+
+Droit : `sends:create`
+
+### Requête
+
+| Champ | Obligatoire | Description |
+| --- | --- | --- |
+| `contactId` : uuid | Une clé au moins | L’identifiant de la fiche, rendu à sa création. [Désigner une personne](https://console.messagingme.app/developers/api/concepts.md#identification) |
+| `externalId` : string | Une clé au moins | Votre identifiant de la personne, unique par espace, 512 caractères au plus. |
+| `phone` : string | Une clé au moins | Le numéro, au format international (+33…). |
+| `bsuid` : string | Une clé au moins | L’identifiant WhatsApp d’une personne sans numéro visible. |
+| `text` : string | Oui | Le texte, 4096 caractères au plus. |
+
+Une clé inconnue est refusée : 400 `invalid_body`.
+
+_Commande_
+
+```
+curl -X POST https://api.messagingme.app/v1/messages/whatsapp \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "externalId": "crm-7781",
+  "text": "Votre commande 8412 est prête, vous pouvez passer la retirer."
+}'
+```
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "messageId": "wamid.exemple-8412",
+  "conversationId": "c4e1b2a3-9d8f-4e7a-a6b5-1c2d3e4f5a6b",
+  "channel": "whatsapp"
+}
+```
+
+conversationId est toujours renseigné.
+
+### Erreurs
+
+Dans l’ordre où elles sont vérifiées :
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 404 | `unknown_contact` | Fiche inconnue. |
+| 409 | `blocked_contact` | Fiche bloquée, ou sans adresse WhatsApp. |
+| 422 | `window_closed` | Fenêtre de 24 h fermée. |
+| 409 | `opted_out` | Fiche désabonnée. |
+| 409 | `no_whatsapp_number` | Espace sans numéro WhatsApp. |
+| 409 | `number_unlinked` | Numéro délié depuis l’Accueil. |
+| 409 | `number_suspended` | Abonnement du numéro fourni impayé ou terminé. |
+| 400, 409 | `invalid_recipient` `invalid_phone` `identity_conflict` | Clés de fiche absentes, illisibles ou contradictoires : [Désigner une personne](https://console.messagingme.app/developers/api/concepts.md#identification) |
+
+### Notes
+
+Fenêtre fermée : seul un template peut partir. [La fenêtre de 24 h](https://console.messagingme.app/developers/api/concepts.md#fenetre-24h)
+
+<a id="message-meta"></a>
+
+## POST /v1/messages
+
+Envoie un message au format de Meta : image, document, lieu, boutons, liste, bouton lien.
+
+Droit : `sends:create`
+
+Le corps de Meta tel quel, dans la fenêtre de 24 h : un exemple de la documentation de Meta (Cloud API, messages) passe, pour les types ci-dessous et avec ses médias en link. to est le numéro avec l’indicatif du pays, retrouvé sur sa fiche ; contactId ou externalId peuvent le remplacer.
+
+- Types : text, image, video, audio, document, location, reaction, interactive (button, list, cta_url).
+- Un média passe par une URL https publique (link) : Meta va chercher le fichier.
+- Les bornes sont celles de Meta (3 boutons, titre de 20 caractères, 10 lignes de liste) ; un champ inconnu est refusé en invalid_body, avec le champ fautif.
+- Le contact qui touche un bouton revient dans l’événement message.received, avec son id.
+
+_Commande_
+
+```
+curl -X POST https://api.messagingme.app/v1/messages \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "messaging_product": "whatsapp",
+  "to": "+33612345678",
+  "type": "interactive",
+  "interactive": {
+    "type": "button",
+    "body": {
+      "text": "Votre commande 8412 part demain. On la livre où ?"
+    },
+    "action": {
+      "buttons": [
+        {
+          "type": "reply",
+          "reply": {
+            "id": "domicile",
+            "title": "À domicile"
+          }
+        },
+        {
+          "type": "reply",
+          "reply": {
+            "id": "relais",
+            "title": "En point relais"
+          }
+        }
+      ]
+    }
+  }
+}'
+```
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "messageId": "wamid.exemple-8412",
+  "conversationId": "c4e1b2a3-9d8f-4e7a-a6b5-1c2d3e4f5a6b",
+  "channel": "whatsapp"
+}
+```
+
+### Erreurs
+
+Les mêmes que POST /v1/messages/whatsapp, dans le même ordre.
+
+<a id="message-rcs"></a>
+
+## POST /v1/messages/rcs
+
+Envoie tout de suite un texte RCS à une fiche existante.
+
+Droit : `sends:create`
+
+### Requête
+
+| Champ | Obligatoire | Description |
+| --- | --- | --- |
+| `contactId` : uuid | Une clé au moins | L’identifiant de la fiche, rendu à sa création. [Désigner une personne](https://console.messagingme.app/developers/api/concepts.md#identification) |
+| `externalId` : string | Une clé au moins | Votre identifiant de la personne, unique par espace, 512 caractères au plus. |
+| `phone` : string | Une clé au moins | Le numéro, au format international (+33…). |
+| `bsuid` : string | Une clé au moins | L’identifiant WhatsApp d’une personne sans numéro visible. |
+| `text` : string | Oui | Le texte, 3072 caractères au plus. |
+
+Une clé inconnue est refusée : 400 `invalid_body`.
+
+_Commande_
+
+```
+curl -X POST https://api.messagingme.app/v1/messages/rcs \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "phone": "+33612345678",
+  "text": "Votre rendez-vous de jeudi 14 h est confirmé."
+}'
+```
+
+### Réponse 200
+
+Celle de POST /v1/messages/whatsapp, channel à rcs. conversationId vaut null dans un cas : le message est parti, mais la fiche a été bloquée ou supprimée entre-temps.
+
+### Erreurs
+
+Dans l’ordre où elles sont vérifiées :
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 404 | `unknown_contact` | Fiche inconnue. |
+| 422 | `no_phone` | Fiche sans numéro. |
+| 409 | `blocked_contact` | Fiche bloquée. |
+| 409 | `opted_out` | Désabonnée, en général ou du RCS. |
+| 409 | `no_consent` | Ni opted_in, ni jamais écrit. |
+| 409 | `rcs_not_enabled` | Canal RCS inactif sur l’espace. |
+| 422 | `rcs_unreachable` | Numéro connu comme injoignable en RCS. |
+| 400, 409 | `invalid_recipient` `invalid_phone` `identity_conflict` | Clés de fiche absentes, illisibles ou contradictoires : [Désigner une personne](https://console.messagingme.app/developers/api/concepts.md#identification) |
+
+### Notes
+
+- Pas de fenêtre de 24 h en RCS.
+- Joignabilité RCS apprise après coup : le premier message vers un numéro sans RCS est accepté, son échec est enregistré (Sécurité > Journal des erreurs), le suivant est refusé en `rcs_unreachable`.
+
+---
+
+<!-- Version Markdown de https://console.messagingme.app/developers/api/conversations, générée depuis la page (npm run doc:md). English: https://console.messagingme.app/developers/api/conversations.en.md -->
+
+# Conversations
+
+Ce que vos contacts ont écrit et ce qui leur a été répondu, pour qu’une application réponde avec le contexte. Ouvert dans toutes les offres, sous le droit conversations:read, à cocher sur une clé neuve : les clés créées avant ce droit ne l’ont pas.
+
+Sur cette page
+
+|   |   |
+| --- | --- |
+| GET | [/v1/conversations](https://console.messagingme.app/developers/api/conversations.md#lister) : Liste les conversations, la plus récente d’abord, par pages. |
+| GET | [/v1/conversations/{conversationId}](https://console.messagingme.app/developers/api/conversations.md#lire) : Lit une conversation : le contact, qui la tient, la fenêtre de 24 h. |
+| GET | [/v1/conversations/{conversationId}/messages](https://console.messagingme.app/developers/api/conversations.md#messages) : Les messages d’une conversation, le plus récent d’abord, par pages. |
+| GET | [/v1/messages/{messageId}](https://console.messagingme.app/developers/api/conversations.md#message) : Lit un message par son identifiant. |
+| GET | [/v1/messages/{messageId}/media](https://console.messagingme.app/developers/api/conversations.md#media) : Télécharge le fichier d’un message reçu. |
+
+<a id="lister"></a>
+
+## GET /v1/conversations
+
+Liste les conversations, la plus récente d’abord, par pages.
+
+Droit : `conversations:read`
+
+_Commande_
+
+```
+curl https://api.messagingme.app/v1/conversations?limit=20 \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx"
+```
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "data": [
+    {
+      "id": "c4e1b2a3-9d8f-4e7a-a6b5-1c2d3e4f5a6b",
+      "contact": {
+        "id": "5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01",
+        "phone": "+33612345678",
+        "name": "Claire",
+        "externalId": "crm-7781"
+      },
+      "lastMessageAt": "2026-10-08T09:58:02.123Z",
+      "lastDirection": "in",
+      "windowExpiresAt": "2026-10-09T09:58:02.123Z",
+      "handledBy": "automation",
+      "needsReply": false,
+      "archived": false
+    }
+  ],
+  "nextCursor": "MjAyNi0xMC0wOFQwOTo1ODowMi4xMjM0NTZafGM0ZTFiMmEzLTlkOGYtNGU3YS1hNmI1LTFjMmQzZTRmNWE2Yg"
+}
+```
+
+| Champ | Sens |
+| --- | --- |
+| `needsReply=true` | Seulement les conversations « À traiter » : le contact attend une réponse de l’ÉQUIPE. Celles que tient votre application (mode « mon application répond ») n’y sont pas : elles arrivent par l’événement conversation.needs_reply. |
+| `handledBy` | Qui tient la conversation : team (l’équipe), meta_agent (l’agent de Meta), automation (un scénario, un agent IA, ou votre application). |
+| `windowExpiresAt` | La fin de la fenêtre de 24 h ouverte par le dernier message WhatsApp du contact ; null si elle est fermée. |
+
+<a id="lire"></a>
+
+## GET /v1/conversations/{conversationId}
+
+Lit une conversation : le contact, qui la tient, la fenêtre de 24 h.
+
+Droit : `conversations:read`
+
+_Commande_
+
+```
+curl https://api.messagingme.app/v1/conversations/c4e1b2a3-9d8f-4e7a-a6b5-1c2d3e4f5a6b \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx"
+```
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "id": "c4e1b2a3-9d8f-4e7a-a6b5-1c2d3e4f5a6b",
+  "contact": {
+    "id": "5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01",
+    "phone": "+33612345678",
+    "name": "Claire",
+    "externalId": "crm-7781"
+  },
+  "lastMessageAt": "2026-10-08T09:58:02.123Z",
+  "lastDirection": "in",
+  "windowExpiresAt": "2026-10-09T09:58:02.123Z",
+  "handledBy": "automation",
+  "needsReply": false,
+  "archived": false
+}
+```
+
+Une conversation d’un autre espace, ou d’un contact bloqué, rend 404 conversation_not_found.
+
+<a id="messages"></a>
+
+## GET /v1/conversations/{conversationId}/messages
+
+Les messages d’une conversation, le plus récent d’abord, par pages.
+
+Droit : `conversations:read`
+
+_Commande_
+
+```
+curl https://api.messagingme.app/v1/conversations/c4e1b2a3-9d8f-4e7a-a6b5-1c2d3e4f5a6b/messages?limit=50 \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx"
+```
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "data": [
+    {
+      "id": "wamid.exemple-9031",
+      "conversationId": "c4e1b2a3-9d8f-4e7a-a6b5-1c2d3e4f5a6b",
+      "direction": "in",
+      "channel": "whatsapp",
+      "type": "image",
+      "text": "Voici la photo du colis",
+      "buttonPayload": null,
+      "transcription": null,
+      "media": {
+        "mimeType": "image/jpeg",
+        "filename": null,
+        "expired": false
+      },
+      "status": null,
+      "statusAt": null,
+      "error": null,
+      "createdAt": "2026-10-08T09:58:02.123Z"
+    },
+    {
+      "id": "wamid.exemple-8412",
+      "conversationId": "c4e1b2a3-9d8f-4e7a-a6b5-1c2d3e4f5a6b",
+      "direction": "out",
+      "channel": "whatsapp",
+      "type": "text",
+      "text": "Bonjour Claire, elle part demain.",
+      "buttonPayload": null,
+      "transcription": null,
+      "media": null,
+      "status": "read",
+      "statusAt": "2026-10-08T09:56:12.000Z",
+      "error": null,
+      "createdAt": "2026-10-08T09:55:40.000Z"
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+| Champ | Sens |
+| --- | --- |
+| `id` | L’identifiant de Meta (wamid.…), le même que rendent POST /v1/messages/whatsapp, message.received et conversation.needs_reply. |
+| `media` | Un fichier reçu (image, vocal, document) ; null sinon. expired : Meta ne l’a plus. |
+| `status` | La livraison d’un message ENVOYÉ, selon les accusés de Meta : sent, delivered, read ou failed ; null pour un message reçu, et tant qu’aucun accusé n’est arrivé. Il ne recule jamais. statusAt : l’instant de l’accusé. error : le code et le motif d’un échec. |
+| `transcription` | La transcription d’un vocal, quand elle a été faite : la lecture d’un modèle, pas ce que le client a dit. |
+
+<a id="message"></a>
+
+## GET /v1/messages/{messageId}
+
+Lit un message par son identifiant.
+
+Droit : `conversations:read`
+
+_Commande_
+
+```
+curl https://api.messagingme.app/v1/messages/wamid.exemple-9031 \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx"
+```
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "id": "wamid.exemple-9031",
+  "conversationId": "c4e1b2a3-9d8f-4e7a-a6b5-1c2d3e4f5a6b",
+  "direction": "in",
+  "channel": "whatsapp",
+  "type": "image",
+  "text": "Voici la photo du colis",
+  "buttonPayload": null,
+  "transcription": null,
+  "media": {
+    "mimeType": "image/jpeg",
+    "filename": null,
+    "expired": false
+  },
+  "status": null,
+  "statusAt": null,
+  "error": null,
+  "createdAt": "2026-10-08T09:58:02.123Z"
+}
+```
+
+<a id="media"></a>
+
+## GET /v1/messages/{messageId}/media
+
+Télécharge le fichier d’un message reçu.
+
+Droit : `conversations:read`
+
+_Commande_
+
+```
+curl https://api.messagingme.app/v1/messages/wamid.exemple-9031/media \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
+  --output photo.jpg
+```
+
+Les octets du fichier, avec son type (Content-Type). Les erreurs :
+
+- 404 no_media : le message ne porte aucun fichier reçu ;
+- 410 media_expired : Meta ne garde un fichier reçu que 7 jours, téléchargez-le avant ;
+- 422 media_unavailable : Meta ne l’a pas rendu, ou il est trop lourd ; réessayez.
+
+<a id="pagination"></a>
+
+## Pagination
+
+- limit : de 1 à 100, 50 par défaut. Le plus récent d’abord.
+- nextCursor : à renvoyer tel quel dans cursor pour la page suivante (plus ancienne) ; null quand il n’y en a plus.
+- Un curseur modifié rend 400 invalid_cursor, jamais une page qui recommence au début.
+
+> **Note**
+>
+> Chaque appel compte au plafond d’appels de l’espace, pas au quota du jour. [Débit](https://console.messagingme.app/developers/api/reference.md#debit)
+
+---
+
+<!-- Version Markdown de https://console.messagingme.app/developers/api/sends, générée depuis la page (npm run doc:md). English: https://console.messagingme.app/developers/api/sends.en.md -->
+
+# Envois
+
+Une cible (template, scénario, bloc ou message RCS) vers 1 à 50 destinataires, en tâche de fond. Chaque envoi apparaît dans Campagnes.
+
+Sur cette page
+
+|   |   |
+| --- | --- |
+| POST | [/v1/sends](https://console.messagingme.app/developers/api/sends.md#envoi) : Lance un envoi asynchrone et idempotent, vers 1 à 50 destinataires. |
+| GET | [/v1/sends/{sendId}](https://console.messagingme.app/developers/api/sends.md#suivi) : Lit l’état et les résultats d’un envoi. |
+
+<a id="envoi"></a>
+
+## POST /v1/sends
+
+Lance un envoi asynchrone et idempotent, vers 1 à 50 destinataires.
+
+Droit : `sends:create`
+
+> **Obligatoire**
+>
+> Une clé d’idempotence : en-tête Idempotency-Key ou champ idempotencyKey. [Idempotence](https://console.messagingme.app/developers/api/concepts.md#idempotence)
+
+### Requête
+
+| Champ | Obligatoire | Description |
+| --- | --- | --- |
+| `idempotencyKey` : string | Oui, ici ou en en-tête Idempotency-Key | La clé qui rend l’appel rejouable sans double envoi, 255 caractères au plus. [Idempotence](https://console.messagingme.app/developers/api/concepts.md#idempotence) |
+| `target` : object | Oui | Ce qui part : un template, un scénario, un bloc ou un message RCS. |
+| `recipients` : object[] | Oui | De 1 à 50 destinataires. |
+| `params` : object[] | Non | Les variables du template qui part. |
+| `category` : string | Oui, sauf pour un template | Refusée sur un template : sa catégorie est lue chez Meta. Valeurs : `marketing` , `utility`. |
+| `ratePerMinute` : integer | Non | De 1 à 80 messages par minute. Le plafond du canal s’applique ensuite, il peut être plus bas. |
+| `phoneNumberId` : string | Non | Le numéro WhatsApp qui envoie. Absent : le numéro par défaut de l’espace. Ignoré pour un message RCS. |
+
+Une clé inconnue est refusée : 400 `invalid_body`.
+
+_Commande : un template, une variable par destinataire_
+
+```
+curl -X POST https://api.messagingme.app/v1/sends \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "idempotencyKey": "confirmation-8412",
+  "target": {
+    "template": {
+      "name": "confirmation_commande",
+      "language": "fr"
+    }
+  },
+  "recipients": [
+    {
+      "externalId": "crm-7781",
+      "phone": "+33612345678",
+      "consent": "opted_in",
+      "variables": {
+        "commande": "8412"
+      }
+    },
+    {
+      "contactId": "7a3d9c10-2e4b-4f6a-b8c1-0d9e8f7a6b5c",
+      "variables": {
+        "commande": "8413"
+      }
+    }
+  ],
+  "params": [
+    {
+      "position": 1,
+      "source": {
+        "type": "field",
+        "key": "prenom"
+      }
+    },
+    {
+      "position": 2,
+      "source": {
+        "type": "variable",
+        "key": "commande"
+      }
+    }
+  ],
+  "ratePerMinute": 20
+}'
+```
+
+<a id="cibles"></a>
+
+#### Types de cible
+
+target porte exactement une clé :
+
+| Clé | Valeur | Canal |
+| --- | --- | --- |
+| `template` | un objet : name et language d’un template approuvé (GET /v1/templates) | WhatsApp |
+| `scenario` | le code scn_ ou le nom d’un scénario (GET /v1/scenarios) | celui de son premier envoi |
+| `node` | le code nod_ d’un bloc (Contenu > Blocs, ou entryNode dans GET /v1/scenarios) | celui de son premier envoi |
+| `rcsMessage` | le nom d’un message de Contenu > Messages RCS (GET /v1/rcs-messages) | RCS, par l’agent RCS de l’espace |
+
+<a id="destinataires"></a>
+
+#### Destinataires
+
+Chaque élément de recipients :
+
+| Champ | Obligatoire | Description |
+| --- | --- | --- |
+| `contactId` : uuid | Une clé au moins | L’identifiant de la fiche, rendu à sa création. [Désigner une personne](https://console.messagingme.app/developers/api/concepts.md#identification) |
+| `externalId` : string | Une clé au moins | Votre identifiant de la personne, unique par espace, 512 caractères au plus. |
+| `phone` : string | Une clé au moins | Le numéro, au format international (+33…). |
+| `bsuid` : string | Une clé au moins | L’identifiant WhatsApp d’une personne sans numéro visible. |
+| `consent` : string | Non | Écrit sur la fiche avant le tri. opted_out désabonne et écarte ce destinataire. Valeurs : `opted_in` , `opted_out`. [Consentement et STOP](https://console.messagingme.app/developers/api/concepts.md#consentement) |
+| `consentSource` : string | Non | D’où vient le consentement, 100 caractères au plus. Absent : api. |
+| `variables` : object | Non | Des valeurs propres à ce destinataire, jamais écrites sur la fiche. 50 au plus, de 1024 caractères au plus ; noms en lettres, chiffres, _, . ou -. |
+
+Une clé inconnue est ignorée.
+
+- Destinataire inconnu avec un phone : fiche créée, sauf ouverture whatsapp_session. Sinon écarté (`unknown_contact`).
+- Destinataire mal formé : écarté (`invalid_recipient`, `invalid_phone`), l’envoi continue.
+
+<a id="parametres"></a>
+
+#### Paramètres et variables
+
+Chaque élément de params :
+
+| Champ | Obligatoire | Description |
+| --- | --- | --- |
+| `position` : integer | Oui | La variable du template : 1 pour {{1}}. Positions de 1 à N, sans trou. |
+| `source` : object | Oui | D’où vient la valeur. |
+| `fallback` : string | Non | La valeur de repli, quand la source est vide. |
+
+Une clé inconnue est ignorée.
+
+| source.type | Avec | Lit |
+| --- | --- | --- |
+| `field` | `key` | un champ de la fiche, par sa clé |
+| `attribute` | `key` : `name` , `phone` , `bsuid` , `wa_id` | un attribut de la fiche |
+| `now` |  | la date du jour (JJ/MM/AAAA, heure de Paris) |
+| `literal` | `value` | un texte fixe |
+| `variable` | `key` | une variable du destinataire (recipients[].variables), sur un template seulement |
+
+Selon la cible :
+
+| Cible | params | recipients[].variables |
+| --- | --- | --- |
+| template | Une entrée par variable du corps (GET /v1/templates). Autre nombre : 422 `unsendable_target`. | Lues par la source variable. Absente et sans fallback : destinataire écarté (`missing_variable`). |
+| scénario qui ouvre par un template | Paramètrent ce template (openingTemplate), toute source sauf variable. | Refusées (400 `invalid_body`). |
+| bloc, scénario qui ouvre en RCS | Refusés (400 `invalid_body`). Un bloc remplit son template avec les champs associés à ses variables dans la console. | Refusées (400 `invalid_body`). |
+| message RCS | Refusés (400 `invalid_body`). | `{{commande}}` : variables.commande, sinon le champ de fiche commande, sinon vide. |
+
+<a id="ouverture"></a>
+
+#### Message d’ouverture
+
+Le premier message que la cible fait partir décide des règles, pas le type du bloc visé. La réponse le rend dans opening.
+
+| Premier envoi | opening | Règle |
+| --- | --- | --- |
+| un template | `whatsapp_template` | Part vers qui n’a pas écrit. |
+| un bloc RCS | `rcs` | Part vers qui n’a pas écrit. Fiche sans numéro : écartée (`no_phone`). |
+| un message rapide, une question, un formulaire, un agent | `whatsapp_session` | Fenêtre de 24 h exigée par destinataire, sinon écarté (`window_closed`). |
+| une attente avant tout envoi, rien, plusieurs templates possibles, un template sans nom | (aucun) | 422 `unsendable_target`, raison dans le message. |
+
+- Une seule branche capable d’un message de session : la fenêtre est exigée pour tous.
+- Scénario en whatsapp_session : refusé. Viser son bloc d’entrée (cible node, code dans entryNode).
+- Un bloc admet les trois ouvertures.
+- Un envoi joue la version publiée : un scénario jamais publié est refusé.
+
+<a id="categorie"></a>
+
+#### Catégorie
+
+| Cible | category |
+| --- | --- |
+| template | Refusée : lue chez Meta, marketing ou utility. Illisible ou autre : 422 `template_category_unknown`. |
+| scénario, bloc, message RCS | Obligatoire. Premier message en template marketing (scénario, bloc) : marketing, même déclaré utility. |
+
+| Catégorie | Destinataires écartés |
+| --- | --- |
+| `marketing` | Tout destinataire qui n’est pas opted_in (`no_consent`). |
+| `utility` | Les désabonnés seulement. |
+
+### Réponse 201
+
+_JSON_
+
+```
+{
+  "sendId": "0b9d7a42-3c1e-4f5a-8d2b-6e7f8a9b0c1d",
+  "opening": "whatsapp_template",
+  "recipientCount": 1,
+  "created": 0,
+  "matched": 2,
+  "skipped": [
+    {
+      "index": 1,
+      "reason": "opted_out"
+    }
+  ],
+  "skippedTotal": 1
+}
+```
+
+| Champ | Sens |
+| --- | --- |
+| `opening` | [Message d’ouverture](https://console.messagingme.app/developers/api/sends.md#ouverture) |
+| `recipientCount` | Destinataires retenus. |
+| `created`, `matched` | Fiches créées, fiches trouvées. |
+| `skipped` | Un élément par destinataire écarté : index dans recipients et motif. 200 au plus ; skippedTotal donne le total. |
+
+Motifs d’écart : `invalid_recipient` , `invalid_phone` , `unknown_contact` , `duplicate` , `identity_conflict` , `blocked_contact` , `opted_out` , `no_consent` , `window_closed` , `missing_variable` , `no_phone` , `plan_limit_reached`.
+
+### Erreurs
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 400 | `invalid_body` | Corps, cible ou params mal formés ; category absente ou en trop ; phoneNumberId inconnu de l’espace. |
+| 400 | `idempotency_key_required` | Clé d’idempotence absente. |
+| 422 | `idempotency_key_reused` | Clé déjà utilisée pour un autre corps. |
+| 409 | `idempotency_in_progress` | Envoi en cours avec cette clé. |
+| 409 | `no_whatsapp_number` | Aucun numéro WhatsApp sur l’espace (sauf message RCS). |
+| 409 | `number_unlinked` | Numéro WhatsApp délié depuis l’Accueil, et premier message en WhatsApp. Rien n’est créé. Une cible qui ouvre en RCS part. |
+| 409 | `number_suspended` | Abonnement du numéro fourni impayé ou terminé, et premier message en WhatsApp. Rien n’est créé. |
+| 404 | `template_not_found` | Template absent, non approuvé, ou d’une autre langue. |
+| 422 | `template_category_unknown` | Catégorie du template illisible, ou ni marketing ni utility. |
+| 404 | `scenario_not_found` | Scénario introuvable. |
+| 409 | `scenario_ambiguous` | Plusieurs scénarios portent ce nom : utiliser le code scn_. |
+| 404 | `node_not_found` | Bloc introuvable dans les scénarios publiés. |
+| 404 | `rcs_message_not_found` | Message RCS introuvable. |
+| 409 | `rcs_not_enabled` | Canal RCS inactif, cible rcsMessage. |
+| 422 | `unsendable_target` | La cible ne peut pas partir ainsi ; raison dans le message. |
+
+### Exemples de cibles
+
+_Corps : scénario qui ouvre par un template (ses deux params)_
+
+```
+{
+  "idempotencyKey": "suivi-commande-crm-7781-2026-09-24",
+  "target": {
+    "scenario": "scn_k3f9qa_01J8Z3M4V6X7Y8Z9A0B1C2D3E4"
+  },
+  "category": "utility",
+  "recipients": [
+    {
+      "externalId": "crm-7781"
+    }
+  ],
+  "params": [
+    {
+      "position": 1,
+      "source": {
+        "type": "field",
+        "key": "prenom"
+      }
+    },
+    {
+      "position": 2,
+      "source": {
+        "type": "field",
+        "key": "numero_commande"
+      }
+    }
+  ]
+}
+```
+
+_Corps : bloc, dans la fenêtre_
+
+```
+{
+  "idempotencyKey": "relance-fenetre-crm-7781-2026-09-24",
+  "target": {
+    "node": "nod_k3f9qa_01J8Z3N5W7X8Y9Z0A1B2C3D4E5"
+  },
+  "category": "utility",
+  "recipients": [
+    {
+      "contactId": "5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01"
+    }
+  ]
+}
+```
+
+_Commande : message RCS de la bibliothèque_
+
+```
+curl -X POST https://api.messagingme.app/v1/sends \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "idempotencyKey": "rappel-rdv-crm-7781-2026-09-24",
+  "target": {
+    "rcsMessage": "rappel-rdv"
+  },
+  "category": "utility",
+  "recipients": [
+    {
+      "externalId": "crm-7781",
+      "variables": {
+        "date_rdv": "jeudi 25 septembre à 14 h"
+      }
+    }
+  ]
+}'
+```
+
+<a id="suivi"></a>
+
+## GET /v1/sends/{sendId}
+
+Lit l’état et les résultats d’un envoi.
+
+Droit : `sends:create`
+
+### Requête
+
+sendId, dans le chemin : celui de la réponse 201.
+
+_Commande_
+
+```
+curl https://api.messagingme.app/v1/sends/0b9d7a42-3c1e-4f5a-8d2b-6e7f8a9b0c1d \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx"
+```
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "sendId": "0b9d7a42-3c1e-4f5a-8d2b-6e7f8a9b0c1d",
+  "status": "running",
+  "target": {
+    "template": {
+      "name": "confirmation_commande",
+      "language": "fr"
+    }
+  },
+  "opening": "whatsapp_template",
+  "createdAt": "2026-09-24T10:00:00.000Z",
+  "counts": {
+    "pending": 0,
+    "sending": 0,
+    "sent": 1,
+    "failed": 0,
+    "skipped": 0
+  },
+  "recipientsTotal": 1,
+  "recipients": [
+    {
+      "contactId": "5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01",
+      "externalId": "crm-7781",
+      "channel": "whatsapp",
+      "status": "sent",
+      "messageId": "wamid.exemple-8412",
+      "delivery": "delivered",
+      "error": null,
+      "sentAt": "2026-09-24T10:00:04.000Z"
+    }
+  ]
+}
+```
+
+| Champ | Sens |
+| --- | --- |
+| `status` | État de l’envoi, dont running, paused et completed. |
+| `counts` | Destinataires retenus, par statut. Les destinataires écartés à la création n’y figurent pas : seulement dans skipped et skippedTotal de la réponse 201. |
+| `recipients` | Une ligne par destinataire retenu, 500 au plus ; recipientsTotal donne le total. |
+| `error` | Sur une ligne failed : message et metaCode. failed couvre aussi un échec de livraison signalé après l’envoi. |
+| `channel` | Scénario ou bloc : la ligne décrit le départ du parcours. channel : son canal d’ouverture ; messageId et delivery : null. La suite se lit dans la console. |
+
+### Erreurs
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 404 | `send_not_found` | Envoi inconnu. |
+
+---
+
+<!-- Version Markdown de https://console.messagingme.app/developers/api/templates, générée depuis la page (npm run doc:md). English: https://console.messagingme.app/developers/api/templates.en.md -->
+
+# Modèles
+
+Créer un modèle WhatsApp et suivre sa validation par Meta, avec le droit templates:write. Une fois approuvé, il part par [Envois](https://console.messagingme.app/developers/api/sends.md).
+
+Sur cette page
+
+|   |   |
+| --- | --- |
+| POST | [/v1/templates](https://console.messagingme.app/developers/api/templates.md#creer) : Crée un modèle au format de Meta et le soumet à sa validation. |
+| GET | [/v1/templates/{name}](https://console.messagingme.app/developers/api/templates.md#statut) : Lit le statut d’un modèle chez Meta, langue par langue. |
+
+<a id="creer"></a>
+
+## POST /v1/templates
+
+Crée un modèle au format de Meta et le soumet à sa validation.
+
+Droit : `templates:write`
+
+Le corps de Meta (Cloud API, modèles de message) : name, language, category, components. Il passe par la création de l’écran Modèles : ses liens sont tracés et ses gardes s’appliquent.
+
+| Champ | Sens |
+| --- | --- |
+| `name` | Minuscules, chiffres et _, comme chez Meta. |
+| `category` | UTILITY ou MARKETING. Meta peut reclasser : la réponse dit la sienne. |
+| `HEADER` | format TEXT avec text, sans variable ; ou IMAGE, VIDEO, DOCUMENT avec example.header_url : l’adresse https du fichier. |
+| `BODY` | Obligatoire. Variables {{1}}, {{2}}… contiguës, une valeur d’exemple chacune dans example.body_text. |
+| `FOOTER` | Texte court, sans variable. |
+| `BUTTONS` | QUICK_REPLY, ou URL (2 au plus) : l’adresse est tracée par nous, sans {{1}}. |
+
+_Commande_
+
+```
+curl -X POST https://api.messagingme.app/v1/templates \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "name": "commande_prete",
+  "language": "fr",
+  "category": "UTILITY",
+  "components": [
+    {
+      "type": "HEADER",
+      "format": "IMAGE",
+      "example": {
+        "header_url": [
+          "https://www.exemple.fr/img/commande.jpg"
+        ]
+      }
+    },
+    {
+      "type": "BODY",
+      "text": "Bonjour {{1}}, votre commande est prête. Vous pouvez passer la retirer.",
+      "example": {
+        "body_text": [
+          [
+            "Claire"
+          ]
+        ]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "Boutique du centre"
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "QUICK_REPLY",
+          "text": "J’arrive"
+        },
+        {
+          "type": "URL",
+          "text": "Voir la commande",
+          "url": "https://www.exemple.fr/commandes"
+        }
+      ]
+    }
+  ]
+}'
+```
+
+### Réponse 201
+
+_JSON_
+
+```
+{
+  "id": "1489201163476524",
+  "name": "commande_prete",
+  "language": "fr",
+  "category": "utility",
+  "status": "pending"
+}
+```
+
+### Erreurs
+
+Dans l’ordre où elles sont vérifiées :
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 400 | `invalid_body` | Corps hors du format, avec le champ fautif ; puis un champ {cle} inconnu dans l’adresse d’un bouton. |
+| 409 | `no_whatsapp_number` | Espace sans compte WhatsApp. |
+| 429 | `rate_limited` | Toutes les places de dépôt d’en-tête sont prises, ou Meta est momentanément indisponible : réessayez après Retry-After. |
+| 422 | `invalid_header_media` | Fichier d’en-tête introuvable, trop lourd, ou d’un autre type. |
+| 422 | `template_rejected` | Un lien n’a pas pu être tracé. |
+| 409 | `meta_auth_failed` | Meta refuse le jeton de l’espace : reconnectez le compte WhatsApp. |
+| 422 | `meta_rejected` | Meta refuse le modèle (nom déjà pris dans cette langue, contenu) : son motif suit. |
+
+### Notes
+
+- Bornes de Meta : corps 1 024 caractères, en-tête et pied 60, texte de bouton 25, 10 boutons.
+- Fichier d’en-tête : image JPEG ou PNG jusqu’à 5 Mo, vidéo MP4 ou document PDF jusqu’à 16 Mo. L’adresse ne doit pas rediriger.
+- Hors de cette route : carrousel, authentification, Flow, variables nommées.
+
+> **Attention**
+>
+> Pas d’idempotence : rejouer l’appel avec le même nom est refusé par Meta.
+
+<a id="statut"></a>
+
+## GET /v1/templates/{name}
+
+Lit le statut d’un modèle chez Meta, langue par langue.
+
+Droit : `templates:write`
+
+Le statut de chaque langue chez Meta : pending, approved, rejected, paused… La validation prend de quelques minutes à quelques heures.
+
+_Commande_
+
+```
+curl https://api.messagingme.app/v1/templates/commande_prete?language=fr \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx"
+```
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "name": "commande_prete",
+  "languages": [
+    {
+      "language": "fr",
+      "status": "approved",
+      "category": "utility",
+      "rejectedReason": null
+    },
+    {
+      "language": "en_US",
+      "status": "rejected",
+      "category": "utility",
+      "rejectedReason": "INVALID_FORMAT"
+    }
+  ]
+}
+```
+
+- language (facultatif) : une seule langue. Absent : toutes.
+- rejectedReason : le motif de Meta pour un refus, null sinon.
+
+### Erreurs
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 400 | `invalid_body` | Langue hors de la liste WhatsApp. |
+| 409 | `no_whatsapp_number` | Espace sans compte WhatsApp. |
+| 404 | `template_not_found` | Aucun modèle de ce nom, ou pas dans cette langue. |
+
+---
+
+<!-- Version Markdown de https://console.messagingme.app/developers/api/webhook-endpoints, générée depuis la page (npm run doc:md). English: https://console.messagingme.app/developers/api/webhook-endpoints.en.md -->
+
+# Gérer les webhooks sortants
+
+Les adresses de votre application qui reçoivent les événements, gérées par une clé portant le droit webhooks:write. Ce sont les mêmes que dans Developers > Webhooks sortants, avec les mêmes contrôles et la même limite de l’offre. Le format des événements : [Webhooks sortants](https://console.messagingme.app/developers/api/webhooks.md).
+
+Sur cette page
+
+|   |   |
+| --- | --- |
+| GET | [/v1/webhooks](https://console.messagingme.app/developers/api/webhook-endpoints.md#lister) : Liste les adresses, la limite de l’offre et les types disponibles. |
+| POST | [/v1/webhooks](https://console.messagingme.app/developers/api/webhook-endpoints.md#creer) : Inscrit une adresse et rend son secret, une seule fois. |
+| GET | [/v1/webhooks/{webhookId}](https://console.messagingme.app/developers/api/webhook-endpoints.md#lire) : Lit une adresse et l’état de ses envois. |
+| PATCH | [/v1/webhooks/{webhookId}](https://console.messagingme.app/developers/api/webhook-endpoints.md#modifier) : Change les types, la description, ou met l’adresse en pause. |
+| POST | [/v1/webhooks/{webhookId}/rotate-secret](https://console.messagingme.app/developers/api/webhook-endpoints.md#rotation) : Renouvelle le secret ; l’ancien signe encore 24 h. |
+| DELETE | [/v1/webhooks/{webhookId}](https://console.messagingme.app/developers/api/webhook-endpoints.md#supprimer) : Supprime une adresse. |
+| POST | [/v1/webhooks/{webhookId}/test](https://console.messagingme.app/developers/api/webhook-endpoints.md#essai) : Envoie un événement d’essai signé et rend la réponse de l’application. |
+| GET | [/v1/webhooks/{webhookId}/deliveries](https://console.messagingme.app/developers/api/webhook-endpoints.md#journal) : Lit le journal d’une adresse, le plus récent d’abord. |
+| POST | [/v1/webhooks/deliveries/{deliveryId}/replay](https://console.messagingme.app/developers/api/webhook-endpoints.md#rejeu) : Rejoue un envoi terminé, avec le même corps. |
+| POST | [/v1/webhooks/{webhookId}/replay-failures](https://console.messagingme.app/developers/api/webhook-endpoints.md#rejeu-echecs) : Rejoue les envois en échec depuis une date. |
+
+<a id="lister"></a>
+
+## GET /v1/webhooks
+
+Liste les adresses, la limite de l’offre et les types disponibles.
+
+Droit : `webhooks:write`
+
+_Commande_
+
+```
+curl https://api.messagingme.app/v1/webhooks \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx"
+```
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "data": [
+    {
+      "id": "3b8e1f2a-7c4d-4e9b-a5f6-0d1c2b3a4e5f",
+      "url": "https://www.exemple.fr/messagingme/evenements",
+      "description": "Mon application",
+      "types": [
+        "message.received",
+        "template.status_changed"
+      ],
+      "active": true,
+      "createdAt": "2026-10-09T08:00:00.000Z",
+      "previousSecretValidUntil": null,
+      "lastDeliveredAt": "2026-10-09T09:41:02.000Z",
+      "retrying": 0,
+      "failed": 1
+    }
+  ],
+  "limit": 5,
+  "types": [
+    "message.received",
+    "template.status_changed"
+  ],
+  "defaultTypes": [
+    "message.received",
+    "template.status_changed"
+  ]
+}
+```
+
+limit : les adresses actives de l’offre, null sans limite. Le secret n’est jamais relu.
+
+<a id="creer"></a>
+
+## POST /v1/webhooks
+
+Inscrit une adresse et rend son secret, une seule fois.
+
+Droit : `webhooks:write`
+
+_Commande_
+
+```
+curl -X POST https://api.messagingme.app/v1/webhooks \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "url": "https://www.exemple.fr/messagingme/evenements",
+  "description": "Mon application",
+  "types": [
+    "message.received",
+    "template.status_changed"
+  ]
+}'
+```
+
+### Réponse 201
+
+_JSON_
+
+```
+{
+  "webhook": {
+    "id": "3b8e1f2a-7c4d-4e9b-a5f6-0d1c2b3a4e5f",
+    "url": "https://www.exemple.fr/messagingme/evenements",
+    "description": "Mon application",
+    "types": [
+      "message.received",
+      "template.status_changed"
+    ],
+    "active": true,
+    "createdAt": "2026-10-09T08:00:00.000Z",
+    "previousSecretValidUntil": null,
+    "lastDeliveredAt": "2026-10-09T09:41:02.000Z",
+    "retrying": 0,
+    "failed": 1
+  },
+  "secret": "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw"
+}
+```
+
+> **Attention**
+>
+> Le secret n’est montré qu’ici : rangez-le dans une variable d’environnement de votre application.
+
+- url : https, joignable depuis Internet. Elle ne se modifie pas ensuite : supprimez et recréez.
+- types : absents, tous sauf les trois accusés de livraison.
+
+### Erreurs
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 400 | `invalid_body` | Corps hors du format, ou adresse refusée (http, hôte interne). |
+| 402 | `plan_limit_reached` | Limite d’adresses actives de l’offre atteinte. |
+
+<a id="lire"></a>
+
+## GET /v1/webhooks/{webhookId}
+
+Lit une adresse et l’état de ses envois.
+
+Droit : `webhooks:write`
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "id": "3b8e1f2a-7c4d-4e9b-a5f6-0d1c2b3a4e5f",
+  "url": "https://www.exemple.fr/messagingme/evenements",
+  "description": "Mon application",
+  "types": [
+    "message.received",
+    "template.status_changed"
+  ],
+  "active": true,
+  "createdAt": "2026-10-09T08:00:00.000Z",
+  "previousSecretValidUntil": null,
+  "lastDeliveredAt": "2026-10-09T09:41:02.000Z",
+  "retrying": 0,
+  "failed": 1
+}
+```
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 404 | `webhook_not_found` | Adresse inconnue de cet espace. |
+
+<a id="modifier"></a>
+
+## PATCH /v1/webhooks/{webhookId}
+
+Change les types, la description, ou met l’adresse en pause.
+
+Droit : `webhooks:write`
+
+active à false met l’adresse en pause ; true la rallume, dans la limite de l’offre.
+
+_Corps_
+
+```
+{
+  "active": false
+}
+```
+
+### Réponse
+
+L’adresse, comme GET /v1/webhooks/{webhookId}.
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 400 | `invalid_body` | Corps hors du format. |
+| 404 | `webhook_not_found` | Adresse inconnue de cet espace. |
+| 402 | `plan_limit_reached` | Réactivation au-delà de la limite de l’offre. |
+
+<a id="rotation"></a>
+
+## POST /v1/webhooks/{webhookId}/rotate-secret
+
+Renouvelle le secret ; l’ancien signe encore 24 h.
+
+Droit : `webhooks:write`
+
+Rend { secret, previousSecretValidUntil } : l’ancien secret signe encore 24 h, le temps de mettre à jour l’application.
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 404 | `webhook_not_found` | Adresse inconnue de cet espace. |
+
+<a id="supprimer"></a>
+
+## DELETE /v1/webhooks/{webhookId}
+
+Supprime une adresse.
+
+Droit : `webhooks:write`
+
+204 sans corps. Les envois en cours de cette adresse s’arrêtent.
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 404 | `webhook_not_found` | Adresse inconnue de cet espace. |
+
+<a id="essai"></a>
+
+## POST /v1/webhooks/{webhookId}/test
+
+Envoie un événement d’essai signé et rend la réponse de l’application.
+
+Droit : `webhooks:write`
+
+Envoie tout de suite un événement test signé, même à une adresse en pause, et rend { eventId, delivered, statusCode, response }.
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 404 | `webhook_not_found` | Adresse inconnue de cet espace. |
+
+<a id="journal"></a>
+
+## GET /v1/webhooks/{webhookId}/deliveries
+
+Lit le journal d’une adresse, le plus récent d’abord.
+
+Droit : `webhooks:write`
+
+_Commande_
+
+```
+curl https://api.messagingme.app/v1/webhooks/{webhookId}/deliveries?limit=20 \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx"
+```
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "data": [
+    {
+      "id": "9c2e4a10-6b3d-4f7a-8e1c-2d5b7a9f0c3e",
+      "eventId": "evt_4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c",
+      "type": "message.received",
+      "status": "failed",
+      "attempts": 9,
+      "lastStatusCode": 500,
+      "lastResponse": "erreur interne",
+      "nextAttemptAt": null,
+      "createdAt": "2026-10-09T08:12:30.000Z",
+      "deliveredAt": null,
+      "body": "{\"id\":\"evt_4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c\",\"type\":\"message.received\",\"created_at\":\"2026-10-09T08:12:30.000Z\",\"workspace_id\":\"…\",\"data\":{}}"
+    }
+  ],
+  "nextBefore": null
+}
+```
+
+- limit : 1 à 100, 50 par défaut. before : une date ISO, celle que rend nextBefore pour la page suivante.
+- status : pending (en cours ou en réessai), delivered, failed. body : le corps envoyé, octet pour octet ; il porte des données de contacts.
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 400 | `invalid_body` | limit ou before hors du format. |
+| 404 | `webhook_not_found` | Adresse inconnue de cet espace. |
+
+<a id="rejeu"></a>
+
+## POST /v1/webhooks/deliveries/{deliveryId}/replay
+
+Rejoue un envoi terminé, avec le même corps.
+
+Droit : `webhooks:write`
+
+202 { replayed: true } : l’envoi repart avec le même corps et le même identifiant d’événement (votre application dédoublonne).
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 404 | `delivery_not_found` | Identifiant qui n’est pas celui d’un envoi. |
+| 409 | `delivery_not_replayable` | Envoi inconnu de cet espace, encore en cours, ou un essai : rien à rejouer. |
+
+<a id="rejeu-echecs"></a>
+
+## POST /v1/webhooks/{webhookId}/replay-failures
+
+Rejoue les envois en échec depuis une date.
+
+Droit : `webhooks:write`
+
+_Commande_
+
+```
+curl -X POST https://api.messagingme.app/v1/webhooks/{webhookId}/replay-failures \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "since": "2026-10-09T00:00:00Z"
+}'
+```
+
+202 { replayed } : le nombre d’envois en échec relancés depuis since, 500 au plus par appel.
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 400 | `invalid_body` | since absent ou hors du format. |
+| 404 | `webhook_not_found` | Adresse inconnue de cet espace. |
+
+---
+
+<!-- Version Markdown de https://console.messagingme.app/developers/api/catalogs, générée depuis la page (npm run doc:md). English: https://console.messagingme.app/developers/api/catalogs.en.md -->
+
+# Catalogues
+
+Ce qu’un envoi (POST /v1/sends) peut faire partir. Chaque template et message RCS listé est envoyable ; un scénario le dit par opening.
+
+Sur cette page
+
+|   |   |
+| --- | --- |
+| GET | [/v1/templates](https://console.messagingme.app/developers/api/catalogs.md#templates) : Liste les templates WhatsApp approuvés et envoyables. |
+| GET | [/v1/scenarios](https://console.messagingme.app/developers/api/catalogs.md#scenarios) : Liste les scénarios publiés et leur message d’ouverture. |
+| GET | [/v1/rcs-messages](https://console.messagingme.app/developers/api/catalogs.md#messages-rcs) : Liste les messages RCS de la bibliothèque. |
+
+<a id="templates"></a>
+
+## GET /v1/templates
+
+Liste les templates WhatsApp approuvés et envoyables.
+
+Droit : `sends:create`
+
+_Commande_
+
+```
+curl https://api.messagingme.app/v1/templates \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx"
+```
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "templates": [
+    {
+      "name": "confirmation_commande",
+      "language": "fr",
+      "category": "utility",
+      "header": "none",
+      "variables": [
+        {
+          "position": 1,
+          "source": {
+            "type": "field",
+            "key": "prenom"
+          }
+        },
+        {
+          "position": 2,
+          "source": null
+        }
+      ]
+    }
+  ]
+}
+```
+
+| Champ | Sens |
+| --- | --- |
+| `variables` | Une entrée par variable du corps, donc par entrée attendue dans params. source : le champ associé dans la console, à recopier tel quel dans params ; null sinon. |
+| `header` | Type d’en-tête. Carrousel : none (visuels par carte). |
+
+Absents de la liste, car un envoi ou Meta les refuserait :
+
+- catégorie autre que marketing ou utility ;
+- en-tête de localisation, ou en-tête texte à variable ;
+- bouton de lien à variable dans l’adresse (hors liens de suivi des clics de la console) ;
+- carrousel dont une carte ou un lien porte une variable ;
+- visuel d’en-tête ou de carte illisible par la console.
+
+> **Note**
+>
+> Lecture en direct chez Meta : une panne rend une erreur, jamais une liste vide. [Erreurs](https://console.messagingme.app/developers/api/reference.md#erreurs)
+
+<a id="scenarios"></a>
+
+## GET /v1/scenarios
+
+Liste les scénarios publiés et leur message d’ouverture.
+
+Droit : `sends:create`
+
+_Commande_
+
+```
+curl https://api.messagingme.app/v1/scenarios \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx"
+```
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "scenarios": [
+    {
+      "code": "scn_k3f9qa_01J8Z3M4V6X7Y8Z9A0B1C2D3E4",
+      "name": "Suivi de commande",
+      "opening": "whatsapp_template",
+      "openingTemplate": {
+        "name": "confirmation_commande",
+        "language": "fr"
+      },
+      "entryNode": "nod_k3f9qa_01J8Z3Q7Y9Z0A1B2C3D4E5F6G7",
+      "publishedAt": "2026-09-20T08:30:00.000Z"
+    },
+    {
+      "code": "scn_k3f9qa_01J8Z3P6X8Y9Z0A1B2C3D4E5F6",
+      "name": "Relance dans la fenêtre",
+      "opening": "whatsapp_session",
+      "openingTemplate": null,
+      "entryNode": "nod_k3f9qa_01J8Z3N5W7X8Y9Z0A1B2C3D4E5",
+      "publishedAt": null
+    }
+  ]
+}
+```
+
+| Champ | Sens |
+| --- | --- |
+| `opening` | Même règle que POST /v1/sends. rcs ou whatsapp_template : cible scenario (code ou nom). whatsapp_session : cible node sur entryNode. null : aucune des deux ; un autre bloc du scénario, en cible node, est jugé pour lui-même. [Message d’ouverture](https://console.messagingme.app/developers/api/sends.md#ouverture) |
+| `openingTemplate` | Ouverture whatsapp_template : le template que params paramètre ; null sinon. Ses variables : GET /v1/templates, même nom et même langue. Autre nombre dans params : 422 `unsendable_target`. |
+| `entryNode` | Code nod_ du bloc d’entrée, pour une cible node : même ouverture que le scénario. Seul chemin d’une ouverture whatsapp_session. null si le bloc n’a pas de code public. |
+| `publishedAt` | null pour un scénario publié avant que cette date soit enregistrée. |
+
+<a id="messages-rcs"></a>
+
+## GET /v1/rcs-messages
+
+Liste les messages RCS de la bibliothèque.
+
+Droit : `sends:create`
+
+_Commande_
+
+```
+curl https://api.messagingme.app/v1/rcs-messages \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx"
+```
+
+### Réponse 200
+
+_JSON_
+
+```
+{
+  "rcsMessages": [
+    {
+      "name": "rappel-rdv",
+      "kind": "card",
+      "variables": [
+        "prenom",
+        "date_rdv"
+      ]
+    }
+  ]
+}
+```
+
+| Champ | Sens |
+| --- | --- |
+| `name` | Valeur de la cible rcsMessage. |
+| `kind` | `text`, `card` ou `carousel`. |
+| `variables` | Noms entre doubles accolades utilisés par le message. |
+
+---
+
+<!-- Version Markdown de https://console.messagingme.app/developers/api/concepts, générée depuis la page (npm run doc:md). English: https://console.messagingme.app/developers/api/concepts.en.md -->
+
+# Concepts
+
+Les règles communes à plusieurs routes.
+
+<a id="identification"></a>
+
+## Désigner une personne
+
+Une personne est une fiche. Quatre clés la désignent :
+
+| Clé | Ce que c’est |
+| --- | --- |
+| `contactId` | Identifiant de la fiche, créé avec elle. Affiché sur la fiche du mini-CRM (« Identifiant API », bouton Copier). |
+| `externalId` | Identifiant de la personne dans votre outil (CRM, plateforme marketing), gardé sur la fiche. Unique par espace, 512 caractères au plus. |
+| `phone` | Numéro au format international (+33…). Sans indicatif : lu comme français. |
+| `bsuid` | Identifiant WhatsApp d’une personne qui écrit sous un nom d’utilisateur, sans numéro visible. |
+
+- Au moins une clé, sinon `invalid_recipient`. Numéro illisible : `invalid_phone`.
+- Toutes les clés données désignent la même fiche, sinon `identity_conflict` et rien n’est modifié.
+- Une clé que la fiche ne porte pas encore lui est rattachée : un externalId envoyé avec le numéro se pose sur la fiche.
+- contactId ne se rattache jamais : il existe, ou il est inconnu.
+
+| Route | Aucune fiche ne correspond |
+| --- | --- |
+| POST /v1/contacts, POST /v1/contacts/batch | Fiche créée avec un phone ou un bsuid. |
+| POST /v1/sends | Fiche créée avec un phone, sauf ouverture whatsapp_session. |
+| Autres routes | Aucune création. |
+
+Pas de création possible : `unknown_contact`.
+
+> **Note**
+>
+> L’adresse d’envoi vient de la fiche, jamais de la clé reçue. WhatsApp : le numéro, sinon le BSUID. RCS : le numéro (fiche sans numéro : `no_phone`).
+
+<a id="consentement"></a>
+
+## Consentement et STOP
+
+| Champ | Effet |
+| --- | --- |
+| `consent` = `opted_in` | Enregistre le consentement. |
+| `consent` = `opted_out` | Désabonne : statut, date, ligne au journal d’audit. |
+| `consent` absent | Aucun changement. |
+| `consentSource` | Origine du consentement. Absent : api. |
+
+> **Attention**
+>
+> opted_in ne lève jamais un STOP : sur une fiche désabonnée, 409 `opted_out`, rien n’est modifié. Seuls un opérateur ou la personne elle-même peuvent la réabonner.
+
+- POST /v1/sends : consent par destinataire, même effet, écrit sur la fiche avant le tri. opted_out écarte le destinataire.
+- Exigences d’une catégorie d’envoi : [Catégorie](https://console.messagingme.app/developers/api/sends.md#categorie) ; d’un message RCS : [POST /v1/messages/rcs](https://console.messagingme.app/developers/api/messages.md#message-rcs).
+
+<a id="fenetre-24h"></a>
+
+## La fenêtre de 24 h
+
+- Règle de Meta : s’ouvre quand la personne écrit, se ferme 24 h après son dernier message.
+- Hors fenêtre, seul un template peut partir (POST /v1/sends).
+- S’applique à [POST /v1/messages/whatsapp](https://console.messagingme.app/developers/api/messages.md#message-whatsapp) et aux envois qui ouvrent en whatsapp_session ([Message d’ouverture](https://console.messagingme.app/developers/api/sends.md#ouverture)). Fermée : `window_closed`.
+- Pas de fenêtre en RCS.
+
+<a id="idempotence"></a>
+
+## Idempotence
+
+Seul POST /v1/sends porte une clé d’idempotence. Les messages n’en ont pas ([Message ou envoi](https://console.messagingme.app/developers/api/messages.md#messages-simples)).
+
+> **Obligatoire**
+>
+> Clé obligatoire : en-tête Idempotency-Key ou champ idempotencyKey. Absente : 400 `idempotency_key_required`.
+
+_En-tête_
+
+```
+Idempotency-Key: confirmation-8412
+```
+
+| Cas | Réponse |
+| --- | --- |
+| Même clé, même corps | Le rapport 201 du premier appel, tel quel, même si la cible a changé depuis. Rien n’est renvoyé. |
+| Même clé, autre corps | 422 `idempotency_key_reused` |
+| Premier appel encore en cours | 409 `idempotency_in_progress` |
+| Premier appel interrompu avant sa réponse (coupure, panne) | Rejouer la même clé rend son rapport si l’envoi a abouti ; sinon la clé reste en cours 5 min au plus, puis se libère, et la même clé crée l’envoi, une seule fois. |
+| En-tête et champ présents et différents | 400 `invalid_body` |
+| Envoi refusé (cible introuvable, numéro absent…) | Clé libérée : l’appel corrigé repart avec la même. |
+
+Durée de vie d’une clé : 24 h au moins. Composer la clé pour un outil qui appelle par contact : [La clé d’idempotence](https://console.messagingme.app/developers/api/guides/per-contact.md#cle).
+
+---
+
+<!-- Version Markdown de https://console.messagingme.app/developers/api/guides/per-contact, générée depuis la page (npm run doc:md). English: https://console.messagingme.app/developers/api/guides/per-contact.en.md -->
+
+# Brancher un outil qui appelle par contact
+
+Pour un outil (orchestration, CRM, marketing) qui appelle une fois par contact, avec un corps rempli par le profil. Six étapes ; les étapes 3 à 5 se règlent une fois.
+
+## 1 L’adresse et l’en-tête
+
+_Adresse_
+
+```
+POST https://api.messagingme.app/v1/sends
+```
+
+En-tête identique pour tous les contacts ; clé avec le droit sends:create :
+
+_En-tête_
+
+```
+Authorization: Bearer mba_xxxxxxxxxxxxxxxx
+```
+
+## 2 Le corps
+
+Un destinataire par appel : externalId et numéro. L’externalId reste sur la fiche et la retrouve aux appels suivants.
+
+_Corps_
+
+```
+{
+  "idempotencyKey": "relance-panier-crm-7781-etape-3-2026-09-24",
+  "target": {
+    "template": {
+      "name": "relance_panier",
+      "language": "fr"
+    }
+  },
+  "recipients": [
+    {
+      "externalId": "crm-7781",
+      "phone": "+33612345678",
+      "consent": "opted_in",
+      "consentSource": "outil-marketing",
+      "variables": {
+        "produit": "Veste en lin"
+      }
+    }
+  ],
+  "params": [
+    {
+      "position": 1,
+      "source": {
+        "type": "variable",
+        "key": "produit"
+      }
+    }
+  ]
+}
+```
+
+<a id="cle"></a>
+
+## 3 La clé d’idempotence
+
+Dans le corps (idempotencyKey), rempli contact par contact. Composition : identifiant du contact, plus ce qui rend ce passage unique (étape, date d’entrée dans le parcours).
+
+> **Attention**
+>
+> Clé faite du seul identifiant du contact : un second passage légitime est pris pour un rejeu, et ne part pas.
+
+[Idempotence](https://console.messagingme.app/developers/api/concepts.md#idempotence)
+
+## 4 Le consentement
+
+consent et consentSource à chaque appel, depuis l’outil qui tient le consentement. [Consentement et STOP](https://console.messagingme.app/developers/api/concepts.md#consentement).
+
+## 5 Les variables
+
+variables : les valeurs propres à ce contact (numéro de commande, produit). Rien n’est écrit sur la fiche.
+
+## 6 Éprouver l’appel
+
+Un refus se lit dans la réponse 201 (destinataire écarté) ou dans le code d’erreur (cible introuvable). Outil qui ne lit pas les réponses : un appel à la main d’abord.
+
+_Commande_
+
+```
+curl -X POST https://api.messagingme.app/v1/sends \
+  -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "idempotencyKey": "relance-panier-crm-7781-etape-3-2026-09-24",
+  "target": {
+    "template": {
+      "name": "relance_panier",
+      "language": "fr"
+    }
+  },
+  "recipients": [
+    {
+      "externalId": "crm-7781",
+      "phone": "+33612345678",
+      "consent": "opted_in",
+      "consentSource": "outil-marketing",
+      "variables": {
+        "produit": "Veste en lin"
+      }
+    }
+  ],
+  "params": [
+    {
+      "position": 1,
+      "source": {
+        "type": "variable",
+        "key": "produit"
+      }
+    }
+  ]
+}'
+```
+
+[POST /v1/sends](https://console.messagingme.app/developers/api/sends.md#envoi) · [Erreurs](https://console.messagingme.app/developers/api/reference.md#erreurs)
+
+---
+
+<!-- Version Markdown de https://console.messagingme.app/developers/api/guides/meta-pitfalls, générée depuis la page (npm run doc:md). English: https://console.messagingme.app/developers/api/guides/meta-pitfalls.en.md -->
+
+# Les pièges de Meta
+
+Messaging Me passe par la plateforme officielle de Meta pour WhatsApp. Ses règles s’appliquent à chaque message, quel que soit l’outil qui l’envoie : les voici, avec le code que vous recevrez quand l’une d’elles bloque.
+
+<a id="fenetre"></a>
+
+## La fenêtre de 24 h
+
+Un message libre (texte, image, boutons) ne part que dans les 24 h qui suivent le dernier message de la personne. Passé ce délai, seul un modèle approuvé par Meta peut partir. Quand elle le sait, l’API refuse avant Meta : [`window_closed`](https://console.messagingme.app/developers/api/errors.md#window_closed) ; sinon Meta répond [`131047`](https://console.messagingme.app/developers/api/errors.md#meta-131047).
+
+Une conversation dit si sa fenêtre est ouverte : [GET /v1/conversations/{conversationId}](https://console.messagingme.app/developers/api/conversations.md#lire). [La règle en détail](https://console.messagingme.app/developers/api/concepts.md#fenetre-24h).
+
+<a id="modeles"></a>
+
+## Les modèles et leur validation
+
+- Meta valide chaque modèle, en quelques minutes ou jusqu’à 24 h. Seul un modèle approuvé part.
+- Trois catégories : marketing, utility (transactionnel) et authentication. Meta peut changer la catégorie que vous avez choisie, et le prix change avec elle.
+- Un modèle peut être mis en pause pour mauvaise qualité ([`132015`](https://console.messagingme.app/developers/api/errors.md#meta-132015)), puis désactivé pour de bon s’il recommence ([`132016`](https://console.messagingme.app/developers/api/errors.md#meta-132016)).
+- Les paramètres d’un envoi doivent correspondre au modèle, en nombre ([`132000`](https://console.messagingme.app/developers/api/errors.md#meta-132000)) et en format ([`132012`](https://console.messagingme.app/developers/api/errors.md#meta-132012)).
+- Suivre le statut : [GET /v1/templates/{name}](https://console.messagingme.app/developers/api/templates.md#statut), ou l’événement `template.status_changed`.
+
+<a id="facturation"></a>
+
+## Ce que Meta facture
+
+Meta facture les messages de modèle selon leur catégorie et le pays du destinataire. Les messages de service (les réponses dans la fenêtre de 24 h) ont leurs propres conditions, qui ont changé le 1er octobre 2026. Messaging Me ne fixe pas ces prix : la grille officielle de Meta fait foi.
+
+[La grille de prix de Meta](https://developers.facebook.com/docs/whatsapp/pricing)
+
+<a id="paiement"></a>
+
+## La carte dans le Business Manager
+
+Meta exige un moyen de paiement valide sur le compte WhatsApp pour ce qu’il facture, à commencer par les modèles, quelle que soit l’offre Messaging Me. Sans lui : [`131042`](https://console.messagingme.app/developers/api/errors.md#meta-131042).
+
+<a id="consentement"></a>
+
+## Le consentement et STOP
+
+Meta demande un consentement avant d’écrire en premier à quelqu’un. Messaging Me le garde sur la fiche et refuse un envoi marketing sans lui ([`no_consent`](https://console.messagingme.app/developers/api/errors.md#no_consent)). Une personne qui répond STOP est désabonnée ([`opted_out`](https://console.messagingme.app/developers/api/errors.md#opted_out)) : l’API ne la réabonne jamais.
+
+La personne peut aussi refuser le marketing de votre entreprise dans WhatsApp même : [`131050`](https://console.messagingme.app/developers/api/errors.md#meta-131050). [La règle en détail](https://console.messagingme.app/developers/api/concepts.md#consentement).
+
+<a id="qualite"></a>
+
+## La qualité du numéro
+
+Meta note la qualité de chaque numéro selon les blocages et les signalements qu’il reçoit, et elle décide du nombre de personnes différentes qu’il peut joindre par 24 h. Une qualité basse restreint les envois ([`131048`](https://console.messagingme.app/developers/api/errors.md#meta-131048)) : une campagne Messaging Me se met alors en pause, et rien ne la relance seule. Écrivez à des personnes qui l’ont accepté, avec un contenu qu’elles attendent.
+
+<a id="debit"></a>
+
+## Le débit
+
+- Un numéro a un débit d’envoi maximal : [`130429`](https://console.messagingme.app/developers/api/errors.md#meta-130429).
+- Trop de messages vers la même personne en peu de temps : [`131056`](https://console.messagingme.app/developers/api/errors.md#meta-131056). Les autres destinataires ne sont pas touchés.
+- L’API a aussi ses propres limites, par minute et par jour : [`rate_limited`](https://console.messagingme.app/developers/api/errors.md#rate_limited), [`quota_exceeded`](https://console.messagingme.app/developers/api/errors.md#quota_exceeded) (attendre `retry-after`). [Les limites](https://console.messagingme.app/developers/api/reference.md#debit).
+
+<a id="marketing"></a>
+
+## La limite marketing par personne
+
+Meta limite le nombre de messages marketing qu’une personne reçoit, toutes entreprises confondues. Au-delà, votre message n’est pas délivré ([`131049`](https://console.messagingme.app/developers/api/errors.md#meta-131049)), sans que vous ayez rien fait de travers. Ne réessayez pas aussitôt : attendez au moins 24 h.
+
+<a id="nom-affiche"></a>
+
+## Le nom affiché
+
+Le nom que la personne voit en face du numéro passe par la validation de Meta. Suivez son état dans le WhatsApp Manager avant de lancer des envois, et corrigez-le là s’il est refusé.
+
+<a id="injoignable"></a>
+
+## Le numéro injoignable
+
+Un numéro qui n’est pas sur WhatsApp, une personne qui n’a pas accepté les conditions de WhatsApp ou dont l’application est trop ancienne : [`131026`](https://console.messagingme.app/developers/api/errors.md#meta-131026). Passez par un autre canal (RCS, e-mail).
+
+<a id="medias"></a>
+
+## Les fichiers
+
+- Meta ne garde un fichier reçu que 7 jours : téléchargez-le dès l’événement `message.received` ([GET /v1/messages/{messageId}/media](https://console.messagingme.app/developers/api/conversations.md#media)). Après : [`media_expired`](https://console.messagingme.app/developers/api/errors.md#media_expired).
+- Un fichier envoyé doit avoir un type et une taille que WhatsApp accepte : [`131053`](https://console.messagingme.app/developers/api/errors.md#meta-131053).
+
+> **Note**
+>
+> Tous les codes, et ce que Messaging Me fait déjà de lui-même : [les erreurs de Meta](https://console.messagingme.app/developers/api/errors.md#meta).
+
+---
+
+<!-- Version Markdown de https://console.messagingme.app/developers/api/guides/nextjs, générée depuis la page (npm run doc:md). English: https://console.messagingme.app/developers/api/guides/nextjs.en.md -->
+
+# Recette : Next.js
+
+Un projet Next.js (App Router) qui envoie un modèle WhatsApp et reçoit les webhooks sortants, signature vérifiée. Collez le prompt dans votre assistant de code, ou recopiez les trois fichiers.
+
+<a id="prompt"></a>
+
+## Le prompt à coller
+
+Dans Claude Code, Cursor ou un autre assistant, ouvert sur votre projet. Il renvoie l’assistant vers cette recette et vers le contrat de l’API : il n’a rien à deviner.
+
+_Prompt_
+
+```
+Branche Messaging Me (WhatsApp) dans ce projet Next.js (App Router), en suivant la recette
+https://console.messagingme.app/developers/api/guides/nextjs.md :
+1. installe le SDK : npm install github:julienmessagingme/messagingme-sdk#v0.1.0 ;
+2. crée lib/messagingme.ts (le client, côté serveur seulement) ;
+3. crée la route POST /api/confirmation qui envoie le modèle « confirmation_commande » (deux variables : le nom
+   du contact, puis le numéro de commande) avec une clé d’idempotence tirée du numéro de commande, et renvoie code
+   et metaCode (lu dans le corps de l’erreur) en cas d’erreur ;
+4. crée la route POST /api/webhooks/messagingme qui vérifie la signature avec verifyWebhook sur le corps brut
+   et répond 204 ;
+5. ajoute MESSAGINGME_API_KEY et MESSAGINGME_WEBHOOK_SECRET à .env.local, sans valeur réelle dans le code.
+N’invente aucune route ni aucun champ : ils sont dans https://api.messagingme.app/openapi.json.
+```
+
+<a id="installation"></a>
+
+## Installation
+
+_Commande_
+
+```
+npm install github:julienmessagingme/messagingme-sdk#v0.1.0
+```
+
+Deux variables dans `.env.local` : la clé d’API (Developers > Clés d’API, droit sends:create) et le secret de l’adresse de webhook, donné une seule fois à sa création.
+
+_.env.local_
+
+```
+MESSAGINGME_API_KEY=mba_...
+MESSAGINGME_WEBHOOK_SECRET=whsec_...
+```
+
+<a id="client"></a>
+
+## Le client
+
+_lib/messagingme.ts_
+
+```
+import { createClient } from '@messagingme/sdk';
+
+// Côté serveur seulement : la clé ne doit jamais partir dans le navigateur (pas de NEXT_PUBLIC_).
+export const messagingme = createClient({ apiKey: process.env.MESSAGINGME_API_KEY! });
+```
+
+<a id="envoi"></a>
+
+## Envoyer un modèle
+
+Le modèle doit être approuvé par Meta ([GET /v1/templates/{name}](https://console.messagingme.app/developers/api/templates.md#statut)). La clé d’idempotence tirée du numéro de commande empêche un doublon pendant 24 h, même si la route est rappelée.
+
+_app/api/confirmation/route.ts_
+
+```
+import { ApiError } from '@messagingme/sdk';
+import { messagingme } from '../../../lib/messagingme';
+
+// POST /api/confirmation, avec phone (au format +33…) et commande dans le corps JSON.
+export async function POST(req: Request) {
+  const { phone, commande } = (await req.json()) as { phone?: unknown; commande?: unknown };
+  if (typeof phone !== 'string' || typeof commande !== 'string') {
+    return Response.json({ error: 'phone et commande requis' }, { status: 400 });
+  }
+  try {
+    const envoi = await messagingme.POST('/v1/sends', {
+      body: {
+        // Le modèle a deux variables : le nom du contact, puis le numéro de commande.
+        target: { template: { name: 'confirmation_commande', language: 'fr' } },
+        recipients: [{ phone, variables: { commande } }],
+        params: [
+          { position: 1, source: { type: 'attribute', key: 'name' }, fallback: 'Bonjour' },
+          { position: 2, source: { type: 'variable', key: 'commande' } },
+        ],
+      },
+      // Rappelée avec la même commande pendant 24 h, la route ne renvoie pas le message.
+      idempotencyKey: `commande-${commande}`,
+    });
+    return Response.json({ sendId: envoi.sendId, skipped: envoi.skipped });
+  } catch (e) {
+    if (e instanceof ApiError) {
+      // e.code est stable (voir le catalogue des erreurs) ; sur meta_rejected, le corps porte aussi metaCode.
+      const metaCode = typeof e.body === 'object' && e.body !== null && 'metaCode' in e.body ? e.body.metaCode : null;
+      return Response.json({ code: e.code, metaCode, error: e.message }, { status: e.status });
+    }
+    throw e;
+  }
+}
+```
+
+- Un destinataire désabonné ou sans consentement n’est pas une erreur : il revient dans `skipped`, avec son motif.
+- Une erreur porte `code` (le catalogue : [codes de l’API](https://console.messagingme.app/developers/api/errors.md#codes)) et, sur [`meta_rejected`](https://console.messagingme.app/developers/api/errors.md#meta_rejected), un champ `metaCode` dans son corps (e.body).
+
+<a id="webhook"></a>
+
+## Recevoir les webhooks
+
+Déclarez l’adresse `https://votre-domaine/api/webhooks/messagingme` dans la console (Developers > Webhooks sortants) ou par [POST /v1/webhooks](https://console.messagingme.app/developers/api/webhook-endpoints.md#creer), et cochez message.failed : il est décoché par défaut.
+
+_app/api/webhooks/messagingme/route.ts_
+
+```
+import { verifyWebhook, WebhookVerificationError } from '@messagingme/sdk';
+
+export async function POST(req: Request) {
+  // Le corps BRUT : la signature porte sur ses octets.
+  const body = await req.text();
+  let event;
+  try {
+    event = await verifyWebhook({ secret: process.env.MESSAGINGME_WEBHOOK_SECRET!, headers: req.headers, body });
+  } catch (e) {
+    if (e instanceof WebhookVerificationError) return new Response(null, { status: 401 });
+    throw e;
+  }
+  // Un même événement peut arriver deux fois : dédoublonnez par event.id.
+  if (event.type === 'message.received') console.log('reçu', event.data.contact, event.data.text);
+  if (event.type === 'message.failed') console.warn('échec', event.data.meta_code, event.data.reason);
+  // Répondre vite (moins de 10 s) : un traitement long se fait après, sinon le webhook est réessayé.
+  return new Response(null, { status: 204 });
+}
+```
+
+> **Obligatoire**
+>
+> Lisez le corps BRUT (req.text()), jamais req.json() avant la vérification : la signature porte sur les octets reçus. Répondez en moins de 10 s, sinon l’envoi est réessayé.
+
+<a id="essayer"></a>
+
+## Essayer
+
+- Envoyez un événement d’essai depuis la console, ou par [POST /v1/webhooks/{webhookId}/test](https://console.messagingme.app/developers/api/webhook-endpoints.md#essai) : la route doit répondre 204.
+- Appelez POST /api/confirmation avec votre propre numéro : le modèle arrive sur votre téléphone.
+- Répondez depuis votre téléphone : la route reçoit message.received.
+
+---
+
+<!-- Version Markdown de https://console.messagingme.app/developers/api/events, générée depuis la page (npm run doc:md). English: https://console.messagingme.app/developers/api/events.en.md -->
+
+# Événements
+
+<a id="signaux"></a>
+
+## Ce que la console remonte
+
+Quand il se passe quelque chose sur une fiche, la console pousse un événement, avec l’état courant de la fiche, vers l’outil que votre administrateur a branché dans Paramètres > Intégrations.
+
+- Seuls les outils proposés dans Paramètres > Intégrations les reçoivent : ce n’est pas un webhook vers une adresse de votre choix.
+- Les noms commencent par `em_`, et ne changent pas d’un outil à l’autre, ceux des champs non plus. Un texte fait 300 caractères au plus ; une valeur absente ou vide n’est pas envoyée.
+- Le profil est désigné par votre identifiant, `externalId` : une fiche qui n’en porte pas n’est pas remontée (l’écran du réglage compte ces signaux). Passez-le à chaque appel : fiche, envoi, message.
+- Un même événement peut arriver deux fois : dédupliquez sur `em_event_id`, stable.
+
+> **Attention**
+>
+> Le texte d’un message n’est jamais remonté. Le résumé d’une conversation ne l’est que si l’option est activée dans le réglage : il contient des propos du client.
+
+## Délais
+
+- Moins d’une minute en temps normal. Chaque événement porte l’heure où il s’est produit, pas celle où il arrive.
+- Derrière une campagne de plusieurs milliers de destinataires, les accusés de livraison et de lecture peuvent arriver avec plusieurs dizaines de minutes de retard. Les réponses, clics, désabonnements et conversations analysées ne sont pas retardés.
+- « À la fin d’une conversation » : après 25 minutes sans message, puis le passage de l’analyse, toutes les 5 minutes. Comptez environ une demi-heure après le dernier message : assez pour une relance, pas pour une alerte immédiate.
+- Après une panne de plus de 24 heures, selon l’outil, un événement en attente peut ne pas partir. Seul part alors l’état de la fiche relu au moment de l’envoi (son identifiant, ses désabonnements, sa dernière analyse) ; jamais ce que l’événement seul apprenait (dernière réponse, joignabilité RCS), qui écraserait un état plus récent.
+
+## Les événements
+
+Valeurs de `origine` : `humain`, `scenario`, `ia`, `mba`, `campagne`, `mcp`, `api` ; de `canal` : `whatsapp`, `rcs`. Une note absente (satisfaction, urgence) veut dire « pas de mesure » : elle n’écrase jamais la précédente.
+
+| Événement | Quand | Champs |
+| --- | --- | --- |
+| `em_message_delivered` | Dans la minute ; en retard derrière une grosse campagne | `canal` `origine` `send_id` : send_id : l’envoi (sendId) auquel le message appartient, seulement s’il appartient à un envoi |
+| `em_message_read` | Dans la minute ; en retard derrière une grosse campagne | `canal` `origine` `send_id` : Mêmes champs que la livraison |
+| `em_message_failed` | Dans la minute ; en retard derrière une grosse campagne | `canal` `origine` `send_id` `motif` `code_meta` : motif : la raison de l’échec, quand elle est connue. code_meta : le code d’erreur de Meta, pour un message WhatsApp |
+| `em_replied` | Dans la minute, même pendant une grosse campagne | `canal` `bouton` : bouton : le libellé du bouton tapé. Jamais le texte du message. Une réaction (emoji) n’est pas une réponse. |
+| `em_link_clicked` | Dans la minute, même pendant une grosse campagne | `lien` `template` `destination` : lien : le code du lien suivi. Seulement quand le clic est attribué à une fiche ; un clic automatique (aperçu, robot) ne compte pas. destination : l’adresse vers laquelle le lien mène, absente au-delà de 300 caractères (une adresse coupée serait fausse). |
+| `em_opted_out` | Dans la minute, même pendant une grosse campagne | `canal` `source` : canal : seulement quand la personne a écrit STOP sur ce canal ; absent pour un désabonnement posé par votre équipe ou par l’API. source : d’où vient le refus (whatsapp_stop, rcs_stop, crm, api…). |
+| `em_conversation_analyzed` | À la fin d’une conversation | `intent` `sentiment` `satisfaction` `urgence` `resolved` `topic` `action_suggestion` `handled_by` `exchanges_count` `summary_1` `summary_2` `summary_3` : summary_1 à summary_3 : le résumé, seulement si l’option est activée, en morceaux de 300 caractères au plus, à recoller bout à bout sans séparateur (les derniers sont absents quand il est court). |
+| `em_risk_changed` | Chaque nuit, quand le niveau change | `niveau` `ancien_niveau` `score` `raisons` : niveau et ancien_niveau : inconnu, faible, moyen ou eleve. raisons : jusqu’à trois codes séparés par des virgules (silence_60j, silence_30j, sans_reponse, non_lu, reclamation, negatif, insatisfait, injoignable, stop, bloque). |
+
+## Les attributs de la fiche
+
+| Attribut de la fiche | Sens |
+| --- | --- |
+| `em_contact_id` | L’identifiant de la fiche (contactId), pour la désigner sans ambiguïté dans un appel à l’API |
+| `em_last_intent` | L’intention de la dernière conversation analysée (mêmes valeurs que l’écran d’analyse) |
+| `em_last_sentiment` | Le sentiment de la dernière conversation analysée |
+| `em_satisfaction` | La satisfaction, de 0 à 10. Absente d’une analyse, elle n’écrase pas la précédente |
+| `em_urgency` | L’urgence, de 0 à 10, même règle |
+| `em_last_resolved` | La dernière conversation analysée est-elle résolue ? |
+| `em_last_topic` | Le sujet de la dernière conversation analysée, en clair |
+| `em_last_handled_by` | Qui l’a traitée : humain, automatise ou mba (l’agent de Meta) |
+| `em_last_action_suggestion` | L’action que l’analyse suggère : creer_devis, rappeler, relancer, escalader ou aucune |
+| `em_last_reply_at` | La date de la dernière réponse du contact |
+| `em_whatsapp_optout` | Le contact est-il désabonné ? |
+| `em_rcs_optout` | A-t-il dit STOP sur le canal RCS ? |
+| `em_rcs_reachable` | Le dernier message RCS lui a-t-il été délivré ? |
+| `em_risk_level` | Le risque de désengagement : inconnu, faible, moyen ou eleve, recalculé chaque nuit |
+| `em_risk_score` | Le score de risque, de 0 à 100 (absent quand le niveau est inconnu) |
+| `em_risk_reasons` | Les raisons principales du niveau, jusqu’à trois codes séparés par des virgules |
+
+---
+
+<!-- Version Markdown de https://console.messagingme.app/developers/api/webhooks, générée depuis la page (npm run doc:md). English: https://console.messagingme.app/developers/api/webhooks.en.md -->
+
+# Webhooks sortants
+
+Votre application reçoit en direct ce qui se passe sur WhatsApp : chaque événement part en POST vers l’adresse que vous inscrivez, signé et horodaté. Les adresses se gèrent dans [Developers > Webhooks sortants](https://console.messagingme.app/developers/evenements), ou depuis Claude Code par l’outil MCP create_webhook_endpoint.
+
+<a id="enveloppe"></a>
+
+## L’enveloppe
+
+Le même format pour tous les événements : seul data change selon type.
+
+_Corps reçu_
+
+```
+{
+  "id": "evt_5f0c2b9e8d7a4c1b9e3f6a2d4c8b1e07",
+  "type": "message.received",
+  "created_at": "2026-10-08T14:03:11.000Z",
+  "workspace_id": "3f2a9c1e-…",
+  "data": {
+    "contact": {
+      "id": "8b1e07c4-…",
+      "phone": "+33612345678",
+      "name": "Claire",
+      "external_id": null,
+      "opted_out": {
+        "whatsapp": false,
+        "rcs": false
+      }
+    },
+    "channel": "whatsapp",
+    "message_id": "wamid.…",
+    "message_type": "text",
+    "text": "Bonjour, où en est ma commande ?",
+    "transcription": null,
+    "button": null
+  }
+}
+```
+
+- id est stable : le même au réessai et au rejeu. Gardez les id déjà traités pour ignorer un doublon (la livraison est « au moins une fois »).
+- Aucun ordre n’est garanti entre deux événements : un message lu peut arriver avant le message livré.
+- Le contenu est figé au moment de l’événement : un réessai renvoie exactement le même corps.
+
+<a id="signature"></a>
+
+## Vérifier la signature
+
+Le format est celui de Standard Webhooks : trois en-têtes, `webhook-id`, `webhook-timestamp`, `webhook-signature`, et une signature HMAC-SHA256 de `id.timestamp.corps` avec la clé qui suit whsec_ dans votre secret. Les bibliothèques Standard Webhooks de tous les langages la vérifient telles quelles.
+
+_Vérification en Node.js_
+
+```
+import crypto from 'node:crypto';
+
+// Le corps BRUT reçu (une chaîne), jamais l’objet déjà analysé : la signature porte sur ces octets-là.
+export function verifier(corpsBrut, entetes, secret = process.env.MESSAGINGME_WEBHOOK_SECRET) {
+  const id = entetes['webhook-id'];
+  const horodatage = entetes['webhook-timestamp'];
+  // Refuser un envoi de plus de 5 minutes : un rejeu d’un message intercepté ne passe pas.
+  if (Math.abs(Date.now() / 1000 - Number(horodatage)) > 300) return false;
+  const cle = Buffer.from(secret.replace(/^whsec_/, ''), 'base64');
+  const attendue = crypto.createHmac('sha256', cle).update(id + '.' + horodatage + '.' + corpsBrut).digest('base64');
+  // Plusieurs signatures pendant une rotation du secret, séparées par une espace : une seule suffit.
+  return entetes['webhook-signature'].split(' ').some((s) => {
+    const [version, valeur] = s.split(',');
+    return version === 'v1' && valeur.length === attendue.length
+      && crypto.timingSafeEqual(Buffer.from(valeur), Buffer.from(attendue));
+  });
+}
+```
+
+> **Obligatoire**
+>
+> Rangez le secret dans une variable d’environnement de votre application, jamais dans le code ni dans un fichier suivi par git. Il n’est montré qu’une fois ; un secret perdu se renouvelle (l’ancien signe encore 24 h).
+
+<a id="reessais"></a>
+
+## Réponse et réessais
+
+- Répondez 2xx dans les 10 secondes : l’événement est livré. Traitez le travail long après avoir répondu.
+- Toute autre réponse, ou aucune, fait réessayer : 30 s, 2 min, 10 min, 30 min, puis toutes les heures, pendant 24 h.
+- 410 Gone arrête les réessais de cet événement. Les redirections ne sont pas suivies.
+- Chaque envoi se lit dans le journal de l’adresse (corps envoyé, réponse, tentatives) et se rejoue d’un clic.
+
+<a id="types"></a>
+
+## Les événements
+
+Chaque adresse choisit ses types. Les accusés de livraison sont décochés par défaut : une campagne en produit jusqu’à trois par destinataire.
+
+| Type | Quand | Champs de data |
+| --- | --- | --- |
+| `message.received` | Un contact vous écrit (texte, bouton tapé, média, réponse de formulaire). | contact, channel, message_id, message_type, text, transcription, button |
+| `message.delivered` | Meta confirme la livraison d’un de vos messages. (décoché par défaut) | contact, channel, message_id, origin, send_id |
+| `message.read` | Le contact a lu un de vos messages. (décoché par défaut) | contact, channel, message_id, origin, send_id |
+| `message.failed` | Un de vos messages n’a pas pu être livré. (décoché par défaut) | contact, channel, message_id, origin, send_id, reason, meta_code |
+| `link.clicked` | Le contact a cliqué un lien suivi. | contact, link, template, destination |
+| `contact.opted_out` | Le contact s’est désabonné (STOP, fiche, action en masse, API). | contact, channel, source |
+| `conversation.analyzed` | L’analyse d’une conversation est prête (offres Pro et Entreprise). | contact, conversation_id, intent, sentiment, satisfaction, urgency, resolved, topic, action_suggestion, handled_by, exchanges_count, summary |
+| `contact.risk_changed` | Le risque de désengagement d’un contact a changé de niveau (calcul de nuit). | contact, level, previous_level, score, reasons |
+| `template.status_changed` | Meta a tranché sur un de vos modèles (approuvé, refusé, en pause, désactivé). Aucune donnée de contact. | template, status, reason |
+| `conversation.needs_reply` | Mode « mon application répond » : un message attend la réponse de votre application, à l’adresse désignée par le répondeur. | contact, conversation_id, channel, message_id, message_type, text, transcription, reply_with |
+| `test` | Le bouton « Envoyer un essai », ou l’outil MCP send_test_event. | message |
+
+Le contact porte son id, son numéro (phone), son nom, son identifiant externe et ses désabonnements.
+
+<a id="repondre"></a>
+
+## Mon application répond
+
+Désignez une adresse dans « Qui répond au client » (Accueil), ou par l’outil MCP set_default_responder en mode application : chaque message que personne ne tient lui arrive en `conversation.needs_reply`, sans abonnement à cocher, devant les autres envois. Votre application répond par l’API, avec la clé d’API de l’espace :
+
+_POST /v1/messages/whatsapp_
+
+```
+{
+  "contactId": "8b1e07c4-…",
+  "text": "Bonjour Claire, votre commande part demain."
+}
+```
+
+- Répondez 2xx tout de suite au webhook, puis envoyez la réponse : la conversation reste à votre application, hors de la file « À traiter » de l’équipe.
+- La fenêtre de 24 h s’applique : la réponse part tant que le client a écrit dans les 24 dernières heures.
+- Répondez à conversation.needs_reply seulement : si l’adresse reçoit aussi message.received, le même message y arrive deux fois, et une réponse aux deux partirait deux fois. La clé d’API doit porter le droit sends:create.
+- Ces réponses ne comptent pas dans le quota quotidien d’envois de l’API ; le plafond par minute s’applique.
+- Aucun repli : si votre application ne répond pas, personne ne le fait à sa place. Une adresse en pause, supprimée ou au-delà de votre offre rend les messages à l’équipe.
+
+---
+
+<!-- Version Markdown de https://console.messagingme.app/developers/api/reference, générée depuis la page (npm run doc:md). English: https://console.messagingme.app/developers/api/reference.en.md -->
+
+# Authentification, limites et erreurs
+
+Valable pour toutes les routes.
+
+<a id="authentification"></a>
+
+## Authentification et droits
+
+- Une clé par appel, dans l’en-tête Authorization. Elle commence par mba_.
+- L’espace se déduit de la clé : aucune adresse ne porte d’identifiant d’espace.
+- Adresse de base : [Accueil](https://console.messagingme.app/developers/api.md#adresse).
+- Le droit de chaque route, ses erreurs et ses formes, lisibles par une machine : [le contrat OpenAPI](https://console.messagingme.app/developers/api.md#openapi).
+
+_En-tête_
+
+```
+Authorization: Bearer mba_xxxxxxxxxxxxxxxx
+```
+
+| Droit | Ouvre | Routes |
+| --- | --- | --- |
+| `contacts:write` | Créer et modifier des fiches. | POST /v1/contacts POST /v1/contacts/batch PATCH /v1/contacts/{contactId} |
+| `contacts:read` | Lire et chercher des fiches. | GET /v1/contacts/{contactId} POST /v1/contacts/search GET /v1/fields |
+| `sends:create` | Envoyer, suivre un envoi, lire les catalogues. | POST /v1/messages POST /v1/messages/whatsapp POST /v1/messages/rcs POST /v1/sends GET /v1/sends/{sendId} GET /v1/templates GET /v1/scenarios GET /v1/rcs-messages |
+| `conversations:read` | Lire les conversations, leurs messages et les fichiers reçus. | GET /v1/conversations GET /v1/conversations/{conversationId} GET /v1/conversations/{conversationId}/messages GET /v1/messages/{messageId} GET /v1/messages/{messageId}/media |
+| `templates:write` | Créer des modèles et suivre leur validation par Meta. | POST /v1/templates GET /v1/templates/{name} |
+| `contacts:admin` | Créer des champs personnalisés et effacer une fiche pour de vrai (RGPD). | DELETE /v1/contacts/{contactId} POST /v1/fields |
+| `webhooks:write` | Gérer les webhooks sortants, lire et rejouer leur journal (il porte des données de contacts). | GET /v1/webhooks POST /v1/webhooks GET /v1/webhooks/{webhookId} PATCH /v1/webhooks/{webhookId} POST /v1/webhooks/{webhookId}/rotate-secret DELETE /v1/webhooks/{webhookId} POST /v1/webhooks/{webhookId}/test GET /v1/webhooks/{webhookId}/deliveries POST /v1/webhooks/deliveries/{deliveryId}/replay POST /v1/webhooks/{webhookId}/replay-failures |
+
+| Statut | Code | Cause |
+| --- | --- | --- |
+| 401 | `unauthorized` | Clé absente, mal formée, inconnue ou révoquée. |
+| 403 | `missing_scope` | Droit manquant. |
+| 403 | `tenant_locked` | Espace suspendu. La clé reste valide. |
+
+> **Note**
+>
+> Les droits d’une clé se fixent à sa création. Pour un droit de plus : une nouvelle clé.
+
+<a id="debit"></a>
+
+## Débit
+
+| Plafond par défaut, par espace | Valeur |
+| --- | --- |
+| Requêtes par minute | 60 |
+| Requêtes par heure | 1000 |
+
+- Partagé par toutes les clés de l’espace et le serveur MCP.
+- Un appel compte pour un, quel que soit son volume (50 fiches en un lot : un appel).
+- Plafond différent pour un espace : sur demande.
+
+Chaque réponse comptée porte le compteur le plus proche de son plafond :
+
+_En-têtes de réponse_
+
+```
+x-ratelimit-limit: 60
+x-ratelimit-remaining: 57
+x-ratelimit-reset: 1790000000
+```
+
+| En-tête | Sens |
+| --- | --- |
+| `x-ratelimit-reset` | Heure de remise à zéro, en secondes depuis 1970. |
+| `retry-after` | Sur un 429 : secondes avant la remise à zéro de la fenêtre pleine (minute ou heure, nommée dans le message). |
+
+- Au dépassement : 429 `rate_limited`. Un appel refusé ne compte pas.
+- Clé inconnue (401) : aucun de ces en-têtes.
+
+<a id="quotas"></a>
+
+En plus du débit, un quota QUOTIDIEN par espace compte le travail DEMANDÉ (un destinataire écarté ensuite compte quand même) :
+
+| Quota par défaut, par espace et par jour | Valeur |
+| --- | --- |
+| Envois : destinataires d’un envoi, et messages libres WhatsApp ou RCS | 2000 |
+| Fiches écrites (une par fiche d’un lot) | 20000 |
+
+- Remise à zéro à minuit, heure de Paris.
+- Une requête qui dépasserait le quota est refusée en entier : 429 `quota_exceeded`, avec retry-after jusqu’à minuit. Un lot plus petit peut encore passer.
+- Un nouvel appel avec la même clé d’idempotence ne compte pas, qu’il rejoue un envoi fini ou tombe sur un envoi en cours (409). Un envoi refusé par le quota libère sa clé.
+- Les lectures, les catalogues et les campagnes lancées depuis la console n’ont pas de quota. Le serveur MCP non plus, sauf l’envoi d’un modèle, qui compte dans les envois.
+- Quota différent pour un espace : sur demande.
+
+> **Note**
+>
+> Compteurs tenus en base et partagés par toutes les copies du serveur : un déploiement ne les remet pas à zéro.
+
+<a id="erreurs"></a>
+
+## Erreurs
+
+Forme d’un refus :
+
+_JSON_
+
+```
+{
+  "error": "fenêtre de 24 h fermée : cette personne n’a pas écrit récemment. Utilisez un template (POST /v1/sends).",
+  "code": "window_closed"
+}
+```
+
+- error : phrase en français, pour un humain. code : identifiant stable, pour un programme.
+- Un refus porte le même code partout, en erreur comme en motif d’écart d’un envoi.
+- Corps JSON lisible mais mal formé : invalid_body, champ fautif dans le message. Clé de fiche absente ou illisible : invalid_recipient, invalid_phone.
+
+| Statut | Sens |
+| --- | --- |
+| 400 | Corps invalide. |
+| 401 | Clé absente ou invalide. |
+| 403 | Droit manquant, ou espace suspendu. |
+| 404 | Fiche, envoi ou cible introuvable. |
+| 409 | L’état de la fiche ou de l’espace interdit l’opération : désabonnée, bloquée, sans consentement, clés contradictoires, canal ou numéro absent, nom de scénario ambigu, clé d’idempotence en cours. |
+| 422 | Corps valide, mais l’envoi est impossible en l’état : fenêtre fermée, cible non envoyable, catégorie illisible, fiche sans numéro, numéro injoignable en RCS, clé d’idempotence déjà utilisée, refus de Meta. |
+| 429 | Débit ou quota quotidien dépassé. |
+
+Chaque code, quand il arrive et quoi faire, avec les erreurs de Meta : [le catalogue des erreurs](https://console.messagingme.app/developers/api/errors.md).
+
+> **Attention**
+>
+> Un JSON illisible est lu comme un objet vide : le refus nomme ce qui manque, pas la syntaxe. Toujours envoyer Content-Type: application/json.
+
+---
+
+<!-- Version Markdown de https://console.messagingme.app/developers/api/errors, générée depuis la page (npm run doc:md). English: https://console.messagingme.app/developers/api/errors.en.md -->
+
+# Catalogue des erreurs
+
+Toute réponse d’erreur de l’API porte un corps JSON avec error, une phrase en français pour un humain, et code, un identifiant stable pour un programme. Branchez-vous sur code, jamais sur la phrase.
+
+<a id="forme"></a>
+
+## La forme d’une erreur
+
+_JSON_
+
+```
+{
+  "error": "fenêtre de 24 h fermée : cette personne n’a pas écrit récemment. Utilisez un template (POST /v1/sends).",
+  "code": "window_closed"
+}
+```
+
+- `metaCode` : sur meta_rejected seulement, le numéro d’erreur de Meta (voir plus bas), ou null quand Meta n’en donne pas.
+- `upgradeUrl` : sur un 402, la page où l’offre de l’espace se change.
+- `retry-after` : sur un 429, l’en-tête qui dit combien de secondes attendre.
+
+> **Attention**
+>
+> Un 5xx peut arriver sans ce corps : une page d’erreur générique le remplace parfois en chemin. Traitez-le comme internal_error : réessayez avec un délai qui grandit, et rejouez un envoi avec la même clé d’idempotence.
+
+<a id="codes"></a>
+
+## Les codes de l’API
+
+Un même refus porte le même code partout. Certains arrivent aussi en motif d’écart d’un destinataire de [POST /v1/sends](https://console.messagingme.app/developers/api/sends.md#envoi) : l’envoi part pour les autres.
+
+<a id="invalid_body"></a>
+
+### `invalid_body` 400
+
+Corps mal formé. Le message nomme le champ fautif.
+
+Que faire : Corriger le champ que le message nomme. Toujours envoyer Content-Type: application/json.
+
+<a id="invalid_recipient"></a>
+
+### `invalid_recipient` 400, aussi motif d’écart
+
+Aucune clé de fiche (contactId, externalId, phone, bsuid).
+
+Que faire : Désigner la personne par au moins une clé : contactId, externalId, phone ou bsuid.
+
+<a id="invalid_phone"></a>
+
+### `invalid_phone` 400, aussi motif d’écart
+
+Numéro illisible.
+
+Que faire : Écrire le numéro au format international, indicatif compris (+33612345678).
+
+<a id="unauthorized"></a>
+
+### `unauthorized` 401
+
+Clé absente, mal formée, inconnue ou révoquée.
+
+Que faire : Vérifier l’en-tête Authorization: Bearer mba_… ; si la clé a été révoquée, en créer une dans Developers > Clés d’API.
+
+<a id="missing_scope"></a>
+
+### `missing_scope` 403
+
+La clé n’a pas le droit que la route exige.
+
+Que faire : Créer une clé qui porte le droit de la route (la liste des droits est sur la page Authentification).
+
+<a id="tenant_locked"></a>
+
+### `tenant_locked` 403
+
+Espace suspendu : la clé est valide, mais l’espace ne peut plus rien lire ni envoyer par l’API. Inutile de refaire une clé.
+
+Que faire : Inutile de refaire une clé : un admin regarde dans la console pourquoi l’espace est suspendu.
+
+<a id="unknown_contact"></a>
+
+### `unknown_contact` 404, aussi motif d’écart
+
+Aucune fiche ne correspond, et la route n’en crée pas.
+
+Que faire : Créer la fiche d’abord (POST /v1/contacts), ou vérifier la clé donnée.
+
+<a id="duplicate"></a>
+
+### `duplicate` motif d’écart seulement
+
+Le même destinataire figure deux fois dans l’envoi.
+
+Que faire : Retirer le doublon de la liste des destinataires ; il n’a reçu qu’un message.
+
+<a id="identity_conflict"></a>
+
+### `identity_conflict` 409, aussi motif d’écart
+
+Les clés données désignent deux fiches différentes, ou cet identifiant externe est déjà porté par une autre fiche. Rien n’est écrit.
+
+Que faire : Ne donner qu’une clé, ou corriger l’identifiant externe porté par l’autre fiche : rien n’a été écrit.
+
+<a id="blocked_contact"></a>
+
+### `blocked_contact` 409, aussi motif d’écart
+
+Fiche bloquée.
+
+Que faire : Un admin débloque la fiche dans la console, s’il le faut.
+
+<a id="opted_out"></a>
+
+### `opted_out` 409, aussi motif d’écart
+
+Désabonné, en général, ou du RCS pour un envoi RCS.
+
+Que faire : Ne plus écrire à cette personne : elle a dit STOP. L’API ne la réabonne pas ; seuls un opérateur ou la personne elle-même le peuvent.
+
+<a id="no_consent"></a>
+
+### `no_consent` 409, aussi motif d’écart
+
+Consentement manquant : envoi marketing vers qui n’est pas opted_in, ou RCS libre vers qui n’a ni consenti ni écrit.
+
+Que faire : Poser sur la fiche le consentement recueilli (consent, consentSource) avant un envoi marketing.
+
+<a id="window_closed"></a>
+
+### `window_closed` 422, aussi motif d’écart
+
+Fenêtre de 24 h fermée : seul un template peut partir.
+
+Que faire : Envoyer un modèle approuvé (POST /v1/sends) : un message libre ne part que dans les 24 h qui suivent le dernier message de la personne.
+
+<a id="missing_variable"></a>
+
+### `missing_variable` motif d’écart seulement
+
+Une variable manque pour ce destinataire, sans valeur de repli.
+
+Que faire : Remplir la variable sur la fiche, ou donner une valeur de repli (fallback) au paramètre.
+
+<a id="no_phone"></a>
+
+### `no_phone` 422, aussi motif d’écart
+
+Fiche sans numéro, alors que le RCS l’exige.
+
+Que faire : Ajouter un numéro à la fiche.
+
+<a id="rcs_unreachable"></a>
+
+### `rcs_unreachable` 422
+
+Ce numéro n’est pas joignable en RCS (appris d’un envoi précédent).
+
+Que faire : Le numéro n’a pas RCS : passer par WhatsApp.
+
+<a id="rcs_not_enabled"></a>
+
+### `rcs_not_enabled` 409
+
+Le canal RCS n’est pas actif sur cet espace.
+
+Que faire : Envoyer en WhatsApp, ou faire activer le RCS de l’espace.
+
+<a id="no_whatsapp_number"></a>
+
+### `no_whatsapp_number` 409
+
+Aucun numéro WhatsApp sur cet espace.
+
+Que faire : Un admin connecte un numéro WhatsApp à l’espace depuis l’Accueil de la console.
+
+<a id="number_unlinked"></a>
+
+### `number_unlinked` 409
+
+Le numéro WhatsApp de l’espace est délié depuis l’Accueil : rien ne part par WhatsApp tant qu’un administrateur ne l’a pas relié. Rendu par POST /v1/messages/whatsapp, et par POST /v1/sends quand le premier message part en WhatsApp.
+
+Que faire : Un admin relie le numéro depuis l’Accueil de la console.
+
+<a id="number_suspended"></a>
+
+### `number_suspended` 409
+
+L’abonnement du numéro WhatsApp fourni est impayé depuis 7 jours, ou terminé : rien ne part par WhatsApp tant qu’il n’est pas renouvelé. Rendu par POST /v1/messages/whatsapp, et par POST /v1/sends quand le premier message part en WhatsApp.
+
+Que faire : Régler l’abonnement du numéro dans la console : les envois repartent au paiement.
+
+<a id="scenario_not_found"></a>
+
+### `scenario_not_found` 404
+
+Scénario introuvable.
+
+Que faire : Lire le catalogue (GET /v1/scenarios) et utiliser un code de scénario existant.
+
+<a id="node_not_found"></a>
+
+### `node_not_found` 404
+
+Bloc introuvable.
+
+Que faire : Lire le catalogue (GET /v1/scenarios) : le bloc n’existe pas dans la version publiée du scénario.
+
+<a id="template_not_found"></a>
+
+### `template_not_found` 404
+
+Template absent, ou pas encore approuvé.
+
+Que faire : Lire le catalogue (GET /v1/templates) ; un modèle en attente de Meta n’y figure qu’une fois approuvé.
+
+<a id="rcs_message_not_found"></a>
+
+### `rcs_message_not_found` 404
+
+Message RCS introuvable dans la bibliothèque.
+
+Que faire : Lire la bibliothèque (GET /v1/rcs-messages) et utiliser un nom existant.
+
+<a id="send_not_found"></a>
+
+### `send_not_found` 404
+
+Envoi inconnu.
+
+Que faire : Vérifier le sendId rendu par POST /v1/sends.
+
+<a id="meta_rejected"></a>
+
+### `meta_rejected` 422
+
+Meta a refusé la demande : son motif suit « Meta: », et metaCode porte le numéro d’erreur de Meta (null s’il n’en donne pas).
+
+Que faire : Chercher metaCode dans les erreurs de Meta, plus bas sur cette page, et appliquer son geste.
+
+<a id="invalid_header_media"></a>
+
+### `invalid_header_media` 422
+
+Le fichier d’en-tête d’un modèle n’a pas pu être pris à son adresse : son motif suit.
+
+Que faire : Servir le fichier d’en-tête à une adresse https publique, au bon type et sous la taille admise.
+
+<a id="meta_auth_failed"></a>
+
+### `meta_auth_failed` 409
+
+Meta refuse le jeton de l’espace : reconnectez le compte WhatsApp depuis la console.
+
+Que faire : Un admin clique « Renouveler la connexion Meta » sur l’Accueil de la console.
+
+<a id="field_exists"></a>
+
+### `field_exists` 409
+
+Un champ porte déjà cette clé, ou le libellé est celui d’un champ de base.
+
+Que faire : Réutiliser le champ existant (GET /v1/fields), ou choisir un autre libellé.
+
+<a id="webhook_not_found"></a>
+
+### `webhook_not_found` 404
+
+Adresse de webhook inconnue de cet espace.
+
+Que faire : Vérifier l’identifiant de l’adresse (GET /v1/webhooks).
+
+<a id="delivery_not_found"></a>
+
+### `delivery_not_found` 404
+
+Envoi de webhook inconnu.
+
+Que faire : Vérifier l’identifiant dans le journal de l’adresse (GET /v1/webhooks/{webhookId}/deliveries).
+
+<a id="delivery_not_replayable"></a>
+
+### `delivery_not_replayable` 409
+
+Envoi inconnu de cet espace, encore en cours, ou un essai : rien à rejouer.
+
+Que faire : Attendre la fin des réessais ; un essai ne se rejoue pas.
+
+<a id="webhooks_unavailable"></a>
+
+### `webhooks_unavailable` 503
+
+L’instance ne sait pas chiffrer les secrets : réessayez plus tard.
+
+Que faire : Réessayer plus tard.
+
+<a id="template_rejected"></a>
+
+### `template_rejected` 422
+
+Le modèle est refusé avant Meta (un lien n’a pas pu être tracé) : son motif suit.
+
+Que faire : Corriger le modèle selon le motif donné, puis le recréer.
+
+<a id="conversation_not_found"></a>
+
+### `conversation_not_found` 404
+
+Conversation inconnue de cet espace.
+
+Que faire : Vérifier l’identifiant (GET /v1/conversations).
+
+<a id="message_not_found"></a>
+
+### `message_not_found` 404
+
+Message inconnu de cet espace.
+
+Que faire : Vérifier l’identifiant du message (GET /v1/conversations/{conversationId}/messages).
+
+<a id="invalid_cursor"></a>
+
+### `invalid_cursor` 400
+
+Curseur illisible : renvoyez tel quel le nextCursor d’une page.
+
+Que faire : Renvoyer tel quel le nextCursor de la page précédente.
+
+<a id="no_media"></a>
+
+### `no_media` 404
+
+Ce message ne porte aucun fichier reçu.
+
+Que faire : Lire le type du message avant de demander son fichier.
+
+<a id="media_expired"></a>
+
+### `media_expired` 410
+
+Meta ne garde un fichier reçu que 7 jours.
+
+Que faire : Trop tard pour ce fichier : le télécharger dès l’événement message.received.
+
+<a id="media_unavailable"></a>
+
+### `media_unavailable` 422
+
+Meta n’a pas rendu le fichier, ou il est trop lourd : réessayez.
+
+Que faire : Réessayer un peu plus tard.
+
+<a id="scenario_ambiguous"></a>
+
+### `scenario_ambiguous` 409
+
+Plusieurs scénarios portent ce nom : utilisez le code scn_.
+
+Que faire : Désigner le scénario par son code scn_… plutôt que par son nom.
+
+<a id="unsendable_target"></a>
+
+### `unsendable_target` 422
+
+La cible ne peut pas partir ainsi. Le message dit pourquoi.
+
+Que faire : Lire le motif, puis choisir une cible envoyable : un modèle approuvé, un scénario publié.
+
+<a id="template_category_unknown"></a>
+
+### `template_category_unknown` 422
+
+Catégorie du template illisible chez Meta : l’envoi est refusé plutôt que deviné.
+
+Que faire : Réessayer plus tard ; si cela dure, vérifier le modèle dans le WhatsApp Manager.
+
+<a id="idempotency_key_required"></a>
+
+### `idempotency_key_required` 400
+
+Clé d’idempotence absente (en-tête ou corps).
+
+Que faire : Ajouter l’en-tête Idempotency-Key (ou idempotencyKey dans le corps).
+
+<a id="idempotency_in_progress"></a>
+
+### `idempotency_in_progress` 409
+
+Un envoi avec cette clé est en cours.
+
+Que faire : Attendre la fin du premier appel, puis rejouer avec la même clé : il rendra le même résultat.
+
+<a id="idempotency_key_reused"></a>
+
+### `idempotency_key_reused` 422
+
+Cette clé a déjà servi pour un autre corps.
+
+Que faire : Prendre une clé neuve pour un corps différent.
+
+<a id="rate_limited"></a>
+
+### `rate_limited` 429
+
+Débit dépassé, ici ou chez Meta (limite ou panne passagère de Meta) : attendez la durée de retry-after.
+
+Que faire : Attendre retry-after secondes, puis réessayer.
+
+<a id="quota_exceeded"></a>
+
+### `quota_exceeded` 429
+
+Quota quotidien de l’espace atteint (envois ou fiches écrites), ou dépassé par ce lot : retry-after donne l’attente jusqu’à minuit, heure de Paris. Un lot plus petit peut encore passer.
+
+Que faire : Attendre la remise à zéro que donne retry-after (minuit, heure de Paris), ou envoyer un lot plus petit.
+
+<a id="plan_feature_unavailable"></a>
+
+### `plan_feature_unavailable` 402
+
+Cette fonction n’est pas comprise dans l’offre de l’espace : upgradeUrl mène à la page de l’offre.
+
+Que faire : Changer d’offre sur la page que donne upgradeUrl.
+
+<a id="plan_limit_reached"></a>
+
+### `plan_limit_reached` 402, aussi motif d’écart
+
+Une limite de l’offre de l’espace est atteinte (contacts créés, modèles du mois…) : upgradeUrl mène à la page de l’offre. Les réponses dans la fenêtre de 24 h ne sont jamais concernées.
+
+Que faire : Changer d’offre sur la page que donne upgradeUrl, ou attendre la remise à zéro de la limite.
+
+<a id="route_not_found"></a>
+
+### `route_not_found` 404
+
+Aucune route à cette adresse pour cette méthode : vérifiez la méthode et le chemin dans le contrat OpenAPI.
+
+Que faire : Vérifier la méthode et le chemin dans le contrat OpenAPI (GET /openapi.json).
+
+<a id="internal_error"></a>
+
+### `internal_error` 500
+
+Panne de notre côté, ou Meta injoignable. Réessayez ; un envoi se rejoue avec la même clé d’idempotence. Un 5xx peut arriver sans ce corps (page d’erreur générique).
+
+Que faire : Réessayer, avec un délai qui grandit ; un envoi se rejoue sans doublon avec la même clé d’idempotence.
+
+<a id="meta"></a>
+
+## Les erreurs de Meta
+
+Meta refuse parfois un message pour une raison qui lui est propre. Son numéro d’erreur arrive à quatre endroits :
+
+- `metaCode` d’un refus 422 meta_rejected, quand Meta refuse sur le moment ;
+- `data.meta_code` de l’événement message.failed, quand le message échoue après être parti ;
+- `error.code` d’un message lu par GET /v1/messages/{messageId} ;
+- `error.metaCode` d’un destinataire dans le suivi d’un envoi (GET /v1/sends/{sendId}).
+
+Les codes ci-dessous sont ceux qui concernent un espace Messaging Me. La liste complète est dans la documentation de la Cloud API de Meta.
+
+### Le destinataire
+
+<a id="meta-131047"></a>
+
+#### `131047`
+
+Plus de 24 h depuis le dernier message de la personne : la fenêtre est fermée.
+
+Que faire : Envoyer un modèle approuvé (POST /v1/sends) au lieu d’un message libre.
+
+Ce que Messaging Me fait déjà : Quand elle le sait, l’API refuse avant Meta : window_closed.
+
+<a id="meta-131026"></a>
+
+#### `131026`
+
+Message non délivrable : le numéro n’est pas sur WhatsApp, la personne n’a pas accepté les conditions de WhatsApp, ou son application est trop ancienne.
+
+Que faire : Passer par un autre canal (RCS, e-mail), ou demander à la personne de mettre WhatsApp à jour.
+
+Ce que Messaging Me fait déjà : Une campagne à plusieurs canaux passe au suivant. Sinon, quand le réessai est actif (la case de la campagne, ou le réglage de l’espace pour un envoi de l’API), elle retente une fois, puis marque le contact injoignable sur WhatsApp.
+
+<a id="meta-131049"></a>
+
+#### `131049`
+
+Message marketing non délivré : Meta limite le marketing que chaque personne reçoit, pour préserver l’engagement.
+
+Que faire : Ne pas réessayer tout de suite : attendre au moins 24 h. Meta ne dit pas quand la limite se lève.
+
+Ce que Messaging Me fait déjà : Quand le réessai est actif (la case de la campagne, ou le réglage de l’espace pour un envoi de l’API), il est retenté le lendemain matin.
+
+<a id="meta-131050"></a>
+
+#### `131050`
+
+La personne a refusé, dans WhatsApp, les messages marketing de votre entreprise.
+
+Que faire : Ne pas réessayer, et ne plus lui envoyer de marketing.
+
+<a id="meta-131021"></a>
+
+#### `131021`
+
+L’expéditeur et le destinataire sont le même numéro.
+
+Que faire : Envoyer à un autre numéro que celui de l’espace.
+
+<a id="meta-130497"></a>
+
+#### `130497`
+
+Le compte ne peut pas écrire aux personnes de ce pays.
+
+Que faire : Ce destinataire n’est pas joignable par ce compte : vérifier les pays autorisés dans la politique de Meta.
+
+### Les modèles
+
+<a id="meta-132000"></a>
+
+#### `132000`
+
+Le nombre de paramètres ne correspond pas au modèle.
+
+Que faire : Donner une valeur à chaque {{n}} du modèle, ni plus ni moins (params de POST /v1/sends).
+
+<a id="meta-132001"></a>
+
+#### `132001`
+
+Le modèle n’existe pas dans cette langue, ou il n’est pas approuvé.
+
+Que faire : Vérifier le nom, la langue et le statut du modèle (GET /v1/templates/{name}).
+
+<a id="meta-132012"></a>
+
+#### `132012`
+
+Un paramètre n’a pas le format que le modèle attend.
+
+Que faire : Respecter le format défini dans le modèle : texte, devise, date, fichier de l’en-tête.
+
+<a id="meta-132015"></a>
+
+#### `132015`
+
+Modèle mis en pause par Meta pour mauvaise qualité.
+
+Que faire : Le modifier pour améliorer sa qualité, puis renvoyer une fois réapprouvé. L’événement template.status_changed le signale.
+
+<a id="meta-132016"></a>
+
+#### `132016`
+
+Modèle désactivé pour de bon, après des pauses répétées.
+
+Que faire : Créer un nouveau modèle, au contenu différent.
+
+<a id="meta-132018"></a>
+
+#### `132018`
+
+Les paramètres du modèle ne passent pas la validation de Meta.
+
+Que faire : Lire le détail de l’erreur, corriger les paramètres et renvoyer. Un modèle accepté à la création peut encore être refusé ainsi à l’envoi.
+
+### Le contenu et les fichiers
+
+<a id="meta-100"></a>
+
+#### `100`
+
+Paramètre invalide dans la demande.
+
+Que faire : Lire le message de Meta, qui nomme le champ, et corriger la demande.
+
+<a id="meta-131008"></a>
+
+#### `131008`
+
+Paramètre obligatoire manquant.
+
+Que faire : Compléter le corps selon le format de Meta (POST /v1/messages).
+
+<a id="meta-131009"></a>
+
+#### `131009`
+
+Valeur de paramètre non valide : un titre de bouton trop long, une adresse mal formée…
+
+Que faire : Lire le message de Meta, qui nomme la valeur, et la corriger.
+
+<a id="meta-131051"></a>
+
+#### `131051`
+
+Type de message non pris en charge.
+
+Que faire : Utiliser un type que WhatsApp accepte : texte, image, document, modèle…
+
+<a id="meta-131052"></a>
+
+#### `131052`
+
+Le fichier envoyé par la personne n’a pas pu être téléchargé.
+
+Que faire : Demander à la personne de le renvoyer.
+
+<a id="meta-131053"></a>
+
+#### `131053`
+
+Le dépôt d’un fichier chez Meta a échoué : type ou taille refusés.
+
+Que faire : Vérifier le type et la taille du fichier, puis renvoyer.
+
+### Le débit et la qualité
+
+<a id="meta-130429"></a>
+
+#### `130429`
+
+Débit d’envoi du numéro dépassé.
+
+Que faire : Étaler les envois et réessayer quelques secondes plus tard.
+
+Ce que Messaging Me fait déjà : Rejouée seule ; une campagne se met en pause et repart d’elle-même.
+
+<a id="meta-131048"></a>
+
+#### `131048`
+
+Envois restreints pour ce numéro : trop de messages bloqués ou signalés comme spam.
+
+Que faire : Regarder la qualité du numéro dans le WhatsApp Manager, revoir le ciblage et le contenu avant de relancer.
+
+Ce que Messaging Me fait déjà : Une campagne se met en pause qualité, que rien ne lève automatiquement.
+
+<a id="meta-131056"></a>
+
+#### `131056`
+
+Trop de messages du même numéro vers le même destinataire en peu de temps.
+
+Que faire : Attendre avant de réécrire à ce destinataire ; les autres ne sont pas touchés.
+
+Ce que Messaging Me fait déjà : Messaging Me la rejoue seul plusieurs fois avant d’annoncer l’échec.
+
+<a id="meta-4"></a>
+
+#### `4`
+
+Le plafond d’appels de l’application chez Meta est atteint.
+
+Que faire : Ralentir, puis réessayer plus tard.
+
+Ce que Messaging Me fait déjà : Messaging Me la rejoue seul plusieurs fois avant d’annoncer l’échec.
+
+<a id="meta-80007"></a>
+
+#### `80007`
+
+Le plafond d’appels du compte WhatsApp est atteint.
+
+Que faire : Ralentir, puis réessayer plus tard.
+
+### Le compte et la connexion
+
+<a id="meta-190"></a>
+
+#### `190`
+
+Le jeton d’accès de l’espace a expiré ou a été révoqué.
+
+Que faire : Un admin clique « Renouveler la connexion Meta » sur l’Accueil de la console.
+
+Ce que Messaging Me fait déjà : Par l’API, il sort en 409 meta_auth_failed, sur toute route.
+
+<a id="meta-10"></a>
+
+#### `10`
+
+Une permission manque ou a été retirée sur le compte WhatsApp.
+
+Que faire : Renouveler la connexion Meta en acceptant toutes les permissions demandées.
+
+<a id="meta-131042"></a>
+
+#### `131042`
+
+Problème de moyen de paiement sur le compte WhatsApp.
+
+Que faire : Ajouter ou corriger la carte dans le Business Manager (Facturation) : Meta l’exige pour ce qu’il facture, à commencer par les modèles, quelle que soit l’offre Messaging Me.
+
+<a id="meta-368"></a>
+
+#### `368`
+
+Compte restreint ou désactivé pour non-respect des règles de Meta.
+
+Que faire : Lire l’avis dans le WhatsApp Manager et faire appel si besoin : rien ne repartira avant la levée.
+
+<a id="meta-131031"></a>
+
+#### `131031`
+
+Compte verrouillé par Meta, ou vérification échouée (code PIN à deux étapes faux).
+
+Que faire : Vérifier l’état du compte dans le WhatsApp Manager ; pour le PIN, le reposer.
+
+### L’enregistrement du numéro
+
+<a id="meta-133006"></a>
+
+#### `133006`
+
+Le numéro doit être vérifié avant d’être enregistré.
+
+Que faire : Finir la vérification du numéro (code par SMS ou par appel) depuis la console.
+
+<a id="meta-133016"></a>
+
+#### `133016`
+
+Trop de tentatives d’enregistrement du numéro en peu de temps.
+
+Que faire : Attendre le déblocage, jusqu’à 72 h, avant de réessayer.
+
+<a id="meta-136024"></a>
+
+#### `136024`
+
+Le numéro est déjà vérifié : Meta refuse une nouvelle demande de code.
+
+Que faire : Passer directement à l’enregistrement, sans redemander de code.
+
+### Les pannes passagères
+
+<a id="meta-131000"></a>
+
+#### `131000`
+
+Échec inconnu chez Meta.
+
+Que faire : Réessayer ; s’il persiste sur le même message, changer le contenu.
+
+Ce que Messaging Me fait déjà : Le dépôt d’un fichier est réessayé seul : environ un sur dix échoue ainsi.
+
+<a id="meta-131016"></a>
+
+#### `131016`
+
+Service de Meta momentanément indisponible.
+
+Que faire : Réessayer plus tard.
+
+Ce que Messaging Me fait déjà : Messaging Me la rejoue seul plusieurs fois avant d’annoncer l’échec.
+
+<a id="meta-1"></a>
+
+#### `1`
+
+Erreur inconnue de l’API de Meta, souvent passagère.
+
+Que faire : Réessayer plus tard.
+
+Ce que Messaging Me fait déjà : Messaging Me la rejoue seul plusieurs fois avant d’annoncer l’échec.
+
+<a id="meta-2"></a>
+
+#### `2`
+
+Service de l’API de Meta momentanément indisponible.
+
+Que faire : Réessayer dans quelques minutes.
+
+Ce que Messaging Me fait déjà : Messaging Me la rejoue seul plusieurs fois avant d’annoncer l’échec.
+
+---
+
+<!-- Version Markdown de https://console.messagingme.app/developers/mcp, générée depuis la page (npm run doc:md). English: https://console.messagingme.app/developers/mcp.en.md -->
+
+# Serveur MCP
+
+Brancher un assistant (Claude, ou tout client compatible MCP) sur l’espace, sans intégration à développer.
+
+## Adresse
+
+_Adresse_
+
+```
+https://api.messagingme.app/mcp
+```
+
+_Commande à copier_
+
+```
+claude mcp add --transport http mba https://api.messagingme.app/mcp --header "Authorization: Bearer VOTRE_CLE"
+```
+
+Remplacer VOTRE_CLE par une clé d’API avec un droit MCP. [Créer une clé](https://console.messagingme.app/developers/keys)
+
+## Connecter un autre client (ChatGPT, Cursor, VS Code, Lovable)
+
+- Ajoutez un serveur MCP distant (ou un connecteur) à l’adresse https://api.messagingme.app/mcp, sans clé, avec l’authentification OAuth : le client ouvre notre page d’autorisation, où un administrateur de l’espace se connecte et choisit l’espace.
+- La page dit d’où vient le nom du client : vérifié pour Claude, publié par son domaine pour un client qui a une fiche d’identité (ChatGPT), non vérifié pour un client qui s’enregistre (Cursor, VS Code).
+- Le client reçoit son code sur une adresse https, ou sur localhost et 127.0.0.1 : un retour par un schéma d’application (cursor://) est refusé.
+
+## Ce que l’assistant peut faire
+
+Une clé en lecture seule ne voit pas les outils qui écrivent.
+
+Les outils marqués « connexion OAuth requise » agissent au nom d’une personne : une clé d’API ne les voit pas. Ils s’ouvrent quand Claude se connecte à l’espace avec l’accord d’un administrateur, qui signe ce qu’ils font.
+
+| Outil | Droit | Ce qu’il fait |
+| --- | --- | --- |
+| list_conversations | mcp:read | Les conversations, la plus active en premier. |
+| get_conversation | mcp:read | Le détail d’un fil, et surtout si la fenêtre de 24 h est ouverte. |
+| send_message | mcp:write | Envoyer dans la fenêtre de 24 h une image, un document, un lieu, des boutons, une liste ou un bouton lien, au format de Meta. |
+| list_templates | mcp:read | Les modèles WhatsApp de l’espace, avec leur langue, leur catégorie et leur statut chez Meta. |
+| create_template | mcp:write connexion OAuth requise | Créer un modèle au format de Meta et le soumettre à sa validation ; une image d’en-tête se donne par son adresse. |
+| send_template_to_contact | mcp:write connexion OAuth requise | Envoyer un modèle approuvé à une personne, même hors de la fenêtre de 24 h, avec les règles des envois (consentement, STOP, modèles du mois). |
+| get_template_status | mcp:read | Le statut d’un modèle chez Meta, langue par langue, avec le motif d’un refus. |
+| get_message_status | mcp:read | Le statut de livraison d’un message envoyé : envoyé, distribué, lu ou en échec, avec le motif de Meta. |
+| get_messages | mcp:read | Les 50 derniers messages d’un fil, du plus ancien au plus récent, et before pour remonter plus loin. |
+| search_contacts | mcp:read | Chercher un contact par nom ou par numéro, avec sa dernière analyse. |
+| get_contact | mcp:read | La fiche d’un contact à partir de son numéro, avec sa dernière analyse et le résumé de celle-ci. |
+| list_members | mcp:read | Les membres de l’espace, pour pouvoir leur confier un fil. |
+| reply_in_open_window | mcp:write | Répondre, uniquement si la fenêtre de 24 h est ouverte. |
+| tag_conversation | mcp:write | Poser des tags sur le contact d’un fil. |
+| assign_conversation | mcp:write | Confier un fil à un membre, ou le libérer. |
+| get_plan | mcp:read | L’offre de l’espace, ses limites et ce qui en est consommé, avec le lien pour passer en Pro. |
+| list_widgets | mcp:read | Les widgets WhatsApp de l’espace, avec la balise à coller sur le site. |
+| list_scenarios | mcp:read | Les scénarios, et lesquels sont publiés : un widget ne démarre qu’un scénario publié. |
+| create_widget | mcp:write | Créer un widget WhatsApp, avec les contrôles de l’écran, et recevoir sa balise. |
+| update_widget | mcp:write | Modifier un widget ; sa balise ne change jamais. |
+| list_agents | mcp:read | Les agents IA, leur statut, et ce qui manque encore avant de pouvoir les activer. |
+| get_agent | mcp:read | Un agent IA : sa fiche, son modèle, ses outils, sa connaissance, ce qui lui manque, et les modèles proposés avec leur prix. |
+| create_agent | mcp:write connexion OAuth requise | Créer un agent IA en brouillon. Le premier agent d’un espace demande un peu de crédit. |
+| update_agent | mcp:write connexion OAuth requise | Modifier la fiche d’un agent IA (objectif, ton, transferts, règles d’arrêt) et son modèle, journalisé au nom de la personne. |
+| set_agent_tools | mcp:write connexion OAuth requise | Ajouter et activer les quatre outils sûrs d’un agent IA (terminer, chercher, lire le contact, passer la main). |
+| activate_agent | mcp:write connexion OAuth requise | Activer un agent IA complet, ou le désactiver. Il répond dans un scénario publié, ou s’il est choisi pour répondre au client. |
+| test_agent | mcp:write connexion OAuth requise | Essayer un agent IA sur une conversation fictive. Chaque essai est débité du crédit. |
+| list_knowledge | mcp:read | Les fiches de connaissance d’un agent IA, avec leur provenance. |
+| add_knowledge | mcp:write connexion OAuth requise | Ajouter des fiches de connaissance écrites, 50 au plus par appel. |
+| delete_knowledge | mcp:write connexion OAuth requise | Supprimer des fiches de connaissance ; leur contenu reste dans l’historique. |
+| preview_site | mcp:read connexion OAuth requise | Lire un site depuis le serveur et voir ce qu’un import en ferait, sans rien écrire. |
+| import_site | mcp:write connexion OAuth requise | Importer les pages d’un site en connaissance ; une page relue remplace ses fiches. |
+| import_document_text | mcp:write connexion OAuth requise | Importer le texte d’un document sous son nom, rangé comme un document déposé. |
+| set_transfer_mode | mcp:write connexion OAuth requise | Régler ce que les agents IA promettent de la disponibilité de l’équipe quand ils passent la main. |
+| set_default_responder | mcp:write connexion OAuth requise | Choisir qui répond au client (à un nouveau contact, et à tout message que personne ne tient) : l’agent de Meta, un agent IA actif, un scénario publié, l’équipe, ou votre application (une adresse de webhooks sortants). Hors du mode agent de Meta, celui-ci reste en veille. |
+| get_credit | mcp:read | Le solde du crédit IA et ses derniers mouvements. |
+| buy_credit | mcp:write connexion OAuth requise | Ouvrir le paiement d’une recharge, montant hors taxe ; la personne paie elle-même sur la page de Stripe. |
+| start_whatsapp_connection | mcp:write connexion OAuth requise | Donner le lien qui ouvre la connexion du numéro WhatsApp, sans passer par la console, valable une heure : numéro fourni ou apporté. |
+| get_number_subscription | mcp:read | L’abonnement du numéro fourni : son statut, la fin de la période payée et le numéro. |
+| resubscribe_number | mcp:write connexion OAuth requise | Renouveler l’abonnement du numéro quand il est impayé ou terminé : le portail de Stripe, ou un nouveau paiement qui rend le même numéro. |
+| return_number_at_plan_end | mcp:write connexion OAuth requise | Choisir de rendre le numéro fourni à la fin du Pro, ou de le garder à 3,50 € HT par mois sur la même carte. |
+| manage_number_subscription | mcp:write connexion OAuth requise | Ouvrir le portail de Stripe pour l’abonnement du numéro : carte, factures, résiliation. |
+| watch_whatsapp_connection | mcp:write connexion OAuth requise | Suivre la connexion du numéro jusqu’au bout : numéro attribué, code de vérification à lire à la personne, numéro connecté. |
+| create_webhook_endpoint | mcp:write connexion OAuth requise | Inscrire l’adresse HTTPS de l’application qui recevra les événements choisis (webhook sortant, signé) ; le secret de signature est montré une seule fois. |
+| list_webhook_endpoints | mcp:read connexion OAuth requise | Les adresses de webhooks sortants, leurs types d’événements et leur état, et la limite de l’offre. |
+| get_webhook_deliveries | mcp:read connexion OAuth requise | Le journal d’une adresse : chaque envoi, son statut, la réponse de l’application et le corps envoyé. |
+| replay_webhook_delivery | mcp:write connexion OAuth requise | Rejouer un envoi terminé : même corps, même identifiant d’événement. |
+| send_test_event | mcp:write connexion OAuth requise | Envoyer tout de suite un événement d’essai signé à une adresse, et lire ce que l’application a répondu. |
+
+## Ce qu’il ne fait pas
+
+- **Pas de campagne.** Il envoie un modèle à une personne à la fois, connecté en votre nom ; il ne lance pas d’envoi de masse.
+- **Hors de la fenêtre de 24 h, seul un modèle approuvé part.** Un message libre est refusé, avec la raison ; un modèle approuvé part par send_template_to_contact.
+- **Numéro WhatsApp délié, rien ne part.** L’outil refuse, avec la raison, jusqu’à ce qu’un administrateur relie le numéro depuis l’Accueil.
+- **Les automations ne se déclenchent pas.** Un tag posé par l’assistant classe le contact, sans réveiller les automations qui écoutent ce tag.
+- **Activer un agent IA ne le fait pas répondre.** Créé et activé par l’assistant, il parle aux clients dans un scénario publié qui le contient, ou une fois choisi pour répondre au client (set_default_responder, mode « agent ») : il répond alors à tout message que personne ne tient, et l’agent de Meta, s’il est allumé, reste en veille.
+- **L’accès passe par une clé ou par une connexion OAuth.** L’une comme l’autre porte l’espace et les droits. Couper un assistant : révoquer sa clé ou son autorisation dans « Clés d’API ».

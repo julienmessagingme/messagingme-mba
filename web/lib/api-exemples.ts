@@ -153,6 +153,25 @@ export const EXEMPLES_CORPS = {
     route: 'POST /v1/messages/whatsapp',
     corps: { externalId: 'crm-7781', text: 'Votre commande 8412 est prête, vous pouvez passer la retirer.' },
   },
+  // La page Démarrer (lot 17) : la réponse à son propre message, la fenêtre de 24 h ouverte, désignée par le numéro.
+  premiereReponse: {
+    route: 'POST /v1/messages/whatsapp',
+    corps: { phone: '+33612345678', text: 'Bien reçu, merci ! Nous revenons vers vous dans la journée.' },
+  },
+  // La page Démarrer (lot 17) : le premier modèle, vers son propre numéro. `confirmation_commande` a deux variables
+  // (`EXEMPLES_REPONSES.templates`) : deux paramètres, sans variable par destinataire.
+  premierModele: {
+    route: 'POST /v1/sends',
+    corps: {
+      idempotencyKey: 'premier-envoi-1',
+      target: { template: { name: 'confirmation_commande', language: 'fr' } },
+      recipients: [{ phone: '+33612345678' }],
+      params: [
+        { position: 1, source: { type: 'attribute', key: 'name' }, fallback: 'Bonjour' },
+        { position: 2, source: { type: 'literal', value: '8412' } },
+      ],
+    },
+  },
   // Le corps de Meta tel quel (lot 13, domaine 2) : deux boutons de réponse.
   messageMeta: {
     route: 'POST /v1/messages',

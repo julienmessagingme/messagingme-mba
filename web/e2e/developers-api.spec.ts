@@ -37,6 +37,7 @@ async function sansSession(page: Page) {
  */
 const SECTIONS: Record<CleDePage, string[]> = {
   accueil: ['Premier appel', 'Tous les endpoints', 'Adresse de base', 'Authentification'],
+  quickstart: ['1. Créer son espace et brancher son numéro', '2. Créer une clé d’API', '3. Recevoir les événements', '4. Un premier envoi', 'Ensuite'],
   sdk: ['Installation', 'Un premier appel', 'Les erreurs', 'Vérifier un webhook'],
   contacts: [],
   messages: ['Message ou envoi'],
@@ -47,9 +48,12 @@ const SECTIONS: Record<CleDePage, string[]> = {
   catalogs: [],
   concepts: ['Désigner une personne', 'Consentement et STOP', 'La fenêtre de 24 h', 'Idempotence'],
   'per-contact': ['1 L’adresse et l’en-tête', '3 La clé d’idempotence', '6 Éprouver l’appel'],
+  'meta-pitfalls': ['La fenêtre de 24 h', 'Les modèles et leur validation', 'Ce que Meta facture', 'La carte dans le Business Manager', 'Le consentement et STOP', 'La qualité du numéro', 'Le débit', 'La limite marketing par personne', 'Le nom affiché', 'Le numéro injoignable', 'Les fichiers'],
+  nextjs: ['Le prompt à coller', 'Installation', 'Le client', 'Envoyer un modèle', 'Recevoir les webhooks', 'Essayer'],
   events: ['Ce que la console remonte', 'Délais', 'Les événements', 'Les attributs de la fiche'],
   webhooks: ['L’enveloppe', 'Vérifier la signature', 'Réponse et réessais', 'Les événements', 'Mon application répond'],
   reference: ['Authentification et droits', 'Débit', 'Erreurs'],
+  errors: ['La forme d’une erreur', 'Les codes de l’API', 'Les erreurs de Meta'],
   mcp: ['Adresse', 'Ce que l’assistant peut faire', 'Ce qu’il ne fait pas'],
 };
 const titresDe = (cle: CleDePage): string[] => [
@@ -61,7 +65,7 @@ const titresDe = (cle: CleDePage): string[] => [
  * Les commandes `curl` complètes, par page : une par route (plus le premier appel, les exemples de cibles et le
  * guide). Le compte EXACT garde qu'aucune ne se perd et qu'aucune ne s'ajoute sans qu'on le voie.
  */
-const COMMANDES: Partial<Record<CleDePage, number>> = { accueil: 1, contacts: 7, messages: 3, conversations: 5, sends: 3, templates: 2, 'webhook-endpoints': 4, catalogs: 3, 'per-contact': 1 };
+const COMMANDES: Partial<Record<CleDePage, number>> = { accueil: 1, quickstart: 4, contacts: 7, messages: 3, conversations: 5, sends: 3, templates: 2, 'webhook-endpoints': 4, catalogs: 3, 'per-contact': 1 };
 
 const OUTILS_TIERS = /custom_id|Universal Channel|Brevo|Salesforce|SFMC|Splio|HubSpot|Klaviyo|Braze|Zapier|smsmode|uchat/i;
 
@@ -147,10 +151,10 @@ test.describe('Developers : la documentation de l’API, page par page', () => {
     await expect(page.locator('h1')).toHaveText(pageDoc('concepts').titre[0]);
   });
 
-  test('🔴 chaque code d’erreur est au catalogue de la Référence, chaque événement sur la page Événements', async ({ page }) => {
+  test('🔴 chaque code d’erreur est au catalogue des erreurs, chaque événement sur la page Événements', async ({ page }) => {
     await avecSession(page);
-    await page.goto(pageDoc('reference').href);
-    for (const c of CODES_DOCUMENTES) await expect(page.getByTestId('doc-api').getByTestId(`code-${c.code}`)).toBeVisible();
+    await page.goto(pageDoc('errors').href);
+    for (const c of CODES_DOCUMENTES) await expect(page.getByTestId('doc-api').getByTestId(`catalogue-${c.code}`)).toBeVisible();
     await page.goto(pageDoc('events').href);
     for (const e of EVENEMENTS_SIGNAUX) await expect(page.getByTestId('doc-api').getByTestId(`signal-${e.nom}`)).toBeVisible();
   });

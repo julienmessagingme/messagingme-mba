@@ -2275,12 +2275,12 @@ scénario, comment importer des contacts.
   peuvent plus mentir** : ils vivent dans un module que la page affiche et qu'un test passe aux validateurs
   des routes.
   ⚠️ Elle ne nomme aucun outil tiers : elle sert à tous les intégrateurs.
-  🔴 **Depuis la refonte du 2026-09-25 (lots 1 et 2), elle tient en dix pages publiques** : Accueil
-  (`/developers/api` : le premier appel complet et sa réponse, puis l'index des douze endpoints, l'adresse et la
-  clé), Contacts, Messages (les deux messages simples, et un tableau qui les distingue de l'envoi), Envois
-  (`/developers/api/sends` : cible, destinataires, paramètres, message d'ouverture, catégorie, suivi), Catalogues,
-  Concepts, un guide « Un appel par contact », Événements, Authentification, limites et erreurs (adresse
-  inchangée, `/developers/api/reference`), et Serveur MCP. Chaque route suit le même patron : méthode et chemin,
+  🔴 **Depuis la refonte du 2026-09-25 (lots 1 et 2), elle est découpée en pages publiques** : Accueil
+  (`/developers/api` : le premier appel complet et sa réponse, puis l'index des endpoints, l'adresse et la clé),
+  Démarrer, SDK TypeScript, une page par ressource (Contacts, Messages, Conversations, Envois, Modèles, Gérer les
+  webhooks, Catalogues), Concepts, des guides (« Un appel par contact », « Les pièges de Meta », la recette Next.js),
+  Événements, Webhooks sortants, Authentification, limites et erreurs (adresse inchangée, `/developers/api/reference`),
+  le Catalogue des erreurs, et Serveur MCP. La liste qui fait foi est la carte de la doc (`web/lib/doc-api-pages.ts`). Chaque route suit le même patron : méthode et chemin,
   une phrase, le droit, le tableau de ses champs (type, obligation, description), la commande curl, la réponse,
   ses erreurs propres, peu de notes. Chaque page de ressource s'ouvre sur « Sur cette page ». Les anciennes
   ancres renvoient à leur nouvelle adresse. Toujours lisible sans compte, et dans la console pour un admin, en
@@ -2299,6 +2299,21 @@ scénario, comment importer des contacts.
   comprise). Aucune dépendance, Node 20 ou plus. La Documentation API lui consacre une page (Démarrer > SDK
   TypeScript) et `llms.txt` le cite. Une version publiée ne change plus ; une nouvelle se publie à la main, après le
   déploiement de l'API.
+- ✅ **Toute erreur de l'API porte un code stable** (lot 17, 2026-10-12) : à côté de la phrase pour un humain (`error`),
+  un `code` pour un programme, sur toute réponse d'erreur de `/v1`, y compris une panne (`internal_error`), une adresse
+  inconnue (`route_not_found`) et un refus de Meta : `meta_rejected` avec le numéro d'erreur de Meta (`metaCode`), ou
+  `rate_limited` quand Meta est seulement saturé ou en panne passagère (à réessayer), ou `meta_auth_failed` quand le
+  compte est à reconnecter.
+- ✅ **La documentation pour développeurs** (lot 17, 2026-10-12) : une page **Démarrer** (de l'inscription au premier
+  message envoyé par l'API, puis au premier modèle), **Les pièges de Meta** (fenêtre de 24 h, modèles et validation,
+  ce que Meta facture, carte dans le Business Manager, consentement, qualité, débit, limite marketing, fichiers),
+  **une recette Next.js** (un prompt à coller dans Claude Code ou Cursor, et le code qu'il doit produire, compilé par la
+  CI contre le SDK, comme les exemples de la page SDK) et un **Catalogue des erreurs** (chacun de nos codes avec quand il
+  arrive et quoi faire, puis les erreurs de Meta qui concernent un espace, avec ce que Messaging Me fait déjà de
+  lui-même). **Pour les modèles** (Claude, ChatGPT, Cursor) : chaque page existe en Markdown, en français
+  (`/developers/api/contacts.md`) et en anglais (`.en.md`), et `https://console.messagingme.app/llms.txt` les liste,
+  avec la doc entière en un fichier par langue (`llms-full.txt`, `llms-full.en.txt`). Le Markdown est tiré des pages
+  elles-mêmes, et la CI refuse une page changée sans lui.
 
 ### Ce que la console remonte vers l'outil du client (Paramètres > Intégrations)
 

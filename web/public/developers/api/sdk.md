@@ -1,0 +1,117 @@
+<!-- Version Markdown de https://console.messagingme.app/developers/api/sdk, générée depuis la page (npm run doc:md). English: https://console.messagingme.app/developers/api/sdk.en.md -->
+
+# SDK TypeScript
+
+Le client TypeScript de l’API : des appels typés par chemin et par méthode, des erreurs typées, et la vérification de signature des webhooks sortants. Ses types sont générés depuis le [contrat OpenAPI](https://console.messagingme.app/developers/api.md#openapi) : un chemin, un corps ou une réponse qui n’existent pas ne compilent pas.
+
+<a id="installation"></a>
+
+## Installation
+
+_Installation_
+
+```
+npm install github:julienmessagingme/messagingme-sdk#v0.1.0
+```
+
+- Aucune dépendance. Node 20 ou plus, Deno, Bun, et les environnements qui exposent fetch et Web Crypto.
+- Paquet ESM seulement : il s’importe par import, pas par require.
+- L’installation depuis GitHub demande git sur la machine (une image Docker minimale ne l’a pas toujours).
+- Une version publiée ne change plus : la version suit l’étiquette après le #.
+
+<a id="premier-appel"></a>
+
+## Un premier appel
+
+La clé d’API (`mba_…`) se crée dans la console, Developers > Clés d’API. Gardez-la côté serveur. Le client appelle l’API de production ; `baseUrl` en désigne une autre.
+
+_TypeScript_
+
+```
+import { createClient } from '@messagingme/sdk';
+
+const api = createClient({ apiKey: process.env.MESSAGINGME_API_KEY! });
+
+// Créer une fiche, ou la mettre à jour si elle existe.
+const { contactId, status } = await api.POST('/v1/contacts', {
+  body: { phone: '+33612345678', name: 'Camille Roy', consent: 'opted_in', consentSource: 'formulaire-site' },
+});
+
+// Lire une fiche : les paramètres de chemin passent par path.
+const fiche = await api.GET('/v1/contacts/{contactId}', { path: { contactId } });
+
+// Les conversations qui attendent une réponse, par pages : query.
+const page = await api.GET('/v1/conversations', { query: { needsReply: true, limit: 20 } });
+
+// Un envoi, rejouable sans doublon avec la même clé d’idempotence. Ici un modèle sans variable :
+// avec variables, ajoutez params (voir Envois).
+const envoi = await api.POST('/v1/sends', {
+  body: {
+    target: { template: { name: 'confirmation_commande', language: 'fr' } },
+    recipients: [{ phone: '+33612345678' }],
+  },
+  idempotencyKey: 'commande-7781',
+});
+```
+
+Les droits de chaque route : [Authentification, limites et erreurs](https://console.messagingme.app/developers/api/reference.md#authentification).
+
+<a id="erreurs"></a>
+
+## Les erreurs
+
+Toute réponse hors 2xx lève `ApiError`, avec le statut, le code de l’API et, quand l’API le dit, le délai à attendre. Le SDK ne relance rien de lui-même.
+
+_TypeScript_
+
+```
+import { ApiError } from '@messagingme/sdk';
+
+try {
+  await api.POST('/v1/messages/whatsapp', { body: { contactId, text: 'Bonjour' } });
+} catch (e) {
+  if (e instanceof ApiError) {
+    if (e.code === 'window_closed') { /* la personne n’a pas écrit depuis 24 h : passer par un modèle */ }
+    if (e.code === 'meta_rejected') { /* Meta a refusé : son numéro est dans e.body, champ metaCode (131047…) */ }
+    if (e.status === 429 && e.retryAfter !== null) { /* attendre e.retryAfter secondes */ }
+  }
+  throw e;
+}
+```
+
+- `code` est posé sur toute réponse d’erreur de l’API ; il vaut null quand une page d’erreur générique a remplacé la réponse en chemin (un 5xx).
+- Sur meta_rejected, le corps (`e.body`) porte aussi `metaCode`, le numéro d’erreur de Meta : [les erreurs de Meta](https://console.messagingme.app/developers/api/errors.md#meta).
+- `upgradeUrl` est posé sur un 402 (plan_feature_unavailable, plan_limit_reached) : la page où l’offre se change.
+
+<a id="webhook"></a>
+
+## Vérifier un webhook
+
+Passez le corps BRUT, tel que reçu : la signature porte sur ses octets. Le format est décrit dans [Webhooks sortants](https://console.messagingme.app/developers/api/webhooks.md#signature).
+
+_TypeScript_
+
+```
+import { verifyWebhook, WebhookVerificationError } from '@messagingme/sdk';
+
+// Une route qui reçoit les webhooks sortants (ici avec l’API Request standard).
+export async function POST(req: Request) {
+  const body = await req.text();
+  try {
+    const event = await verifyWebhook({ secret: process.env.MESSAGINGME_WEBHOOK_SECRET!, headers: req.headers, body });
+    if (event.type === 'message.received') console.log(event.data.text);
+    return new Response(null, { status: 204 });
+  } catch (e) {
+    if (e instanceof WebhookVerificationError) return new Response(null, { status: 401 });
+    throw e;
+  }
+}
+```
+
+- Pendant une rotation de secret, l’ancien signe encore 24 h : passez les deux, secret: [nouveau, ancien].
+- Un horodatage à plus de 5 minutes est refusé (toleranceSeconds pour changer).
+- Un même événement peut arriver deux fois (réessai, rejeu) : dédoublonnez par event.id, égal à l’en-tête webhook-id.
+
+> **Obligatoire**
+>
+> Un secret vide ou illisible lève une TypeError : c’est une erreur de configuration, pas une signature fausse. Ne la transformez pas en 401.

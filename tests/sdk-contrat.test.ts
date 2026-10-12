@@ -34,10 +34,12 @@ describe('le contrat et les types du SDK sont ceux du code', () => {
     }
   }, 120_000);
 
-  it('la page SDK de la doc et le README installent la version de sdk/package.json', () => {
-    // Monter la version sans les toucher ferait installer l'ancienne aux intégrateurs, sans aucune erreur.
+  it('la doc (page SDK, recette Next.js) et le README installent la version de sdk/package.json', () => {
+    // Monter la version sans les toucher ferait installer l'ancienne aux intégrateurs, sans aucune erreur. La doc lit
+    // la version à un seul endroit (lot 17) : `web/lib/exemples-code.ts`.
     const { version } = JSON.parse(lire('sdk/package.json')) as { version: string };
-    expect(lire('web/app/developers/api/sdk/page.tsx')).toContain(`const VERSION_SDK = '${version}';`);
+    expect(lire('web/lib/exemples-code.ts')).toContain(`export const VERSION_SDK = '${version}';`);
+    expect(lire('web/app/developers/api/sdk/page.tsx')).not.toMatch(/const VERSION_SDK = '/);
     expect(lire('sdk/README.md')).toContain(`messagingme-sdk#v${version}`);
   });
 
