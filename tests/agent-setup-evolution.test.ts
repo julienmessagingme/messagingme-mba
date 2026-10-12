@@ -69,6 +69,26 @@ describe('la butée', () => {
     expect(consigne).toContain('LE POINT OUVERT : mission');
   });
 
+  it('🔴 au point des moments, la consigne dit qu’ils vont UN PAR UN dans `bascules`, pas dans `reponses`', () => {
+    // Mesuré le 2026-10-12 (agent SMATIS, deux moments cités) : sans cette ligne, le modèle les rangeait dans la
+    // réponse texte du point, 5 fois sur 5. La liste restait vide, le serveur ne reprenait aucun moment un par un,
+    // et le second était perdu.
+    const ouvertSurLesMoments: EtatEntretien = {
+      poses: ['mission', 'perimetre', 'connaissance', 'aboutissements', 'bascules'],
+      reponses: ['mission', 'perimetre', 'connaissance', 'aboutissements'].map((point) => ({ point, valeur: 'x' })),
+    };
+    const consigne = consigneDuTour(ouvertSurLesMoments, INVENTAIRE_VIDE);
+    expect(consigne).toContain('LE POINT OUVERT : bascules');
+    expect(consigne).toMatch(/UNE entrée par moment dans `bascules`/);
+    expect(consigne).toMatch(/pas dans `reponses`/);
+    // Aussi quand les moments sont le point SUIVANT : le client peut les citer en répondant au point d'avant.
+    const avantLesMoments: EtatEntretien = {
+      poses: ['mission', 'perimetre', 'connaissance', 'aboutissements'],
+      reponses: ['mission', 'perimetre', 'connaissance'].map((point) => ({ point, valeur: 'x' })),
+    };
+    expect(consigneDuTour(avantLesMoments, INVENTAIRE_VIDE)).toMatch(/UNE entrée par moment dans `bascules`/);
+  });
+
   it('la consigne d’évolution arrive jusqu’au mandat envoyé au modèle', () => {
     // Un faux câblage ne dit rien du vrai : on vérifie le message RÉELLEMENT construit.
     const m = construireMessages(CTX(), [{ role: 'user', content: 'bonjour' }], entretienComplet());

@@ -1104,6 +1104,12 @@ Le nom ne part que pour désigner un outil parmi plusieurs. Les quatre appelants
 d'aide, récap, traduction) déclarent chacun un seul outil et prennent le PREMIER appel de son nom : un fournisseur
 peut en rendre plusieurs.
 
+🔴 **Les moments de l'entretien de construction se reprennent aussi depuis `reponses`.** Le serveur prend les moments
+un par un depuis la liste `bascules` ; un modèle les range souvent dans la réponse texte du point, une entrée par
+moment (GLM 4.7 à chaque fois, Haiku 4.5 une fois sur deux, mesuré le 2026-10-12). `momentsDesReponses` les reprend,
+sur le SEUL tour qui répond à la question des moments et tant que la liste n'a rien tenu : une réponse « d'avance »
+ou réécrite ferait sinon naître un moment jamais cité, ou rouvrirait un entretien fini.
+
 **Le catalogue proposé au client** est une liste CHOISIE (`src/agent/modeles.ts`), intersectée avec le
 catalogue réel du Gateway et tarifée en direct. Deux critères pour y entrer : le modèle sait **appeler des
 outils** (sinon il n'a pas une réponse dégradée, il en a une INVENTÉE) et il parle correctement français.

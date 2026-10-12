@@ -346,12 +346,8 @@ export const SCHEMA_PROPOSITION = {
         properties: {
           point: { type: 'string', enum: [...CODES_POINTS] },
           valeur: { type: 'string', maxLength: BORNES_PROPOSITION.valeur, description: 'Sa réponse, dans tes mots, en une phrase.' },
-          action: {
-            type: 'string',
-            enum: [...ACTIONS],
-            description: 'Pour un point de bascule UNIQUEMENT : ce que l’agent fait à ce moment-là. '
-              + '« continuer » veut dire qu’il continue simplement à répondre, et c’est une réponse complète.',
-          },
+          // Pas de champ `action` ici : `propositionSchema` ne le lit pas (il partait à la poubelle), et l'annoncer
+          // envoyait les moments dans `reponses` au lieu de `bascules` (mesuré le 2026-10-12).
         },
         required: ['point', 'valeur'],
       },

@@ -168,6 +168,17 @@ export function consigneDuTour(
     `La question, à reformuler dans le fil de ce qu'il vient de dire : « ${ouvert.question} »`,
     `Exemples à TRADUIRE dans son métier, jamais à réciter : ${pistesDe(ouvert)}.`,
   ];
+  /**
+   * 🔴 Les moments vont dans `bascules`, et c'est le serveur qui les reprend un par un. Mesuré le 2026-10-12 : sans
+   * cette ligne, le modèle les rangeait dans la réponse texte du point (5 fois sur 5), la liste restait vide, et un
+   * second moment cité était perdu. Aussi quand les moments sont le point suivant : le client peut les citer en
+   * répondant au point d'avant.
+   */
+  if (ouvert.collecteDesMoments || suivant?.collecteDesMoments) {
+    lignes.push('Les MOMENTS qu’il cite vont dans le champ `bascules` : UNE entrée par moment dans `bascules`, dans '
+      + 'ses mots (« le client veut prendre rendez-vous »), et pas dans `reponses`. S’il en cite deux, tu rends deux '
+      + 'entrées : c’est cette liste que le serveur reprend un par un.');
+  }
   const deja = etat.reponses.find((r) => r.point === ouvert.code && r.valeur.trim() !== '');
   if (deja) {
     lignes.push(`Il a DÉJÀ dit quelque chose là-dessus : « ${deja.valeur} ». Ne repose pas la question : `

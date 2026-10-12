@@ -408,6 +408,72 @@ describe('conversation de construction', () => {
     expect(cap.appels).toHaveLength(0);
   });
 
+  /** L'état de l'agent SMATIS au tour 12 : le point des moments vient d'être posé, rien n'y est encore répondu. */
+  const OUVERT_SUR_LES_MOMENTS: EntretienComplet = {
+    messages: [], auteurs: [], poses: BASE.slice(0, BASE.indexOf('bascules') + 1),
+    reponses: toutesLesReponses().slice(0, BASE.indexOf('bascules')), bascules: [],
+  };
+
+  it('🔴 des moments rangés dans `reponses` au lieu de `bascules` sont repris un par un quand même', async () => {
+    // Julien, 2026-10-12 (agent SMATIS) : deux moments cités, une seule question posée. Le modèle les rangeait dans
+    // la réponse texte du point, une entrée par moment (mesuré sur Haiku 4.5 et GLM 4.7), et la liste restait
+    // vide : le serveur ne reprenait rien, et le second moment était perdu.
+    const r = reponse(JSON.stringify({
+      message: 'Deux moments notés, on les prend un par un ?',
+      reponses: [
+        { point: 'bascules', valeur: 'Quand le client veut parler à un conseiller' },
+        { point: 'bascules', valeur: 'Quand le client a une question sur son dossier.' },
+      ],
+      fiche: {},
+    }));
+    const a = app({ reponse: r, entretien: OUVERT_SUR_LES_MOMENTS });
+    const res = await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().couverture.manquants.slice(0, 2)).toEqual(['bascule_1_action', 'bascule_2_action']);
+    expect(a.entretiens.ecrits.at(-1)!.bascules.map((b) => b.moment)).toEqual([
+      'Quand le client veut parler à un conseiller',
+      'Quand le client a une question sur son dossier',
+    ]);
+  });
+
+  it('une réponse « aucun » au point des moments n’invente pas de moment', async () => {
+    const r = reponse(JSON.stringify({
+      message: 'Entendu, aucun pour l’instant ?',
+      reponses: [{ point: 'bascules', valeur: 'Aucun moment particulier pour l’instant' }],
+      fiche: {},
+    }));
+    const a = app({ reponse: r, entretien: OUVERT_SUR_LES_MOMENTS });
+    const res = await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+    expect(res.statusCode).toBe(200);
+    expect(a.entretiens.ecrits.at(-1)!.bascules).toEqual([]);
+  });
+
+  it('🔴 un entretien FINI ne se rouvre pas sur une réponse aux moments renvoyée par le modèle', async () => {
+    // Un modèle renvoie souvent toutes ses réponses. Sans la borne du point ouvert, celle-ci ferait naître un moment
+    // et rouvrirait un entretien terminé, avec une question sur un moment que le client n'a jamais cité.
+    const r = reponse(JSON.stringify({
+      message: 'Noté.',
+      reponses: [{ point: 'bascules', valeur: 'Quand le client demande un devis' }],
+      fiche: {},
+    }));
+    const a = app({ reponse: r, entretien: ENTRETIEN_FINI });
+    const res = await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+    expect(res.json().couverture.manquants).toEqual([]);
+    expect(a.entretiens.ecrits.at(-1)!.bascules).toEqual([]);
+  });
+
+  it('une liste déjà tenue n’est pas regrossie par une réponse texte réécrite au tour suivant', async () => {
+    const tenu: EntretienComplet = { ...OUVERT_SUR_LES_MOMENTS, bascules: [{ moment: 'le client veut parler à un conseiller' }] };
+    const r = reponse(JSON.stringify({
+      message: 'Noté ?',
+      reponses: [{ point: 'bascules', valeur: 'Quand un client demande un conseiller' }],
+      fiche: {},
+    }));
+    const a = app({ reponse: r, entretien: tenu });
+    await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+    expect(a.entretiens.ecrits.at(-1)!.bascules.map((b) => b.moment)).toEqual(['le client veut parler à un conseiller']);
+  });
+
   it('🔴 CHAQUE moment cité ouvre SA question, et l’entretien ne peut pas finir sans', async () => {
     // Julien, 2026-08-31 : « il faut que tu prennes 1 par 1, je dis bien 1 par 1 ». Il avait cité deux moments
     // dans la même phrase (prendre rendez-vous -> un outil ; donner l'adresse -> un scénario) et le second

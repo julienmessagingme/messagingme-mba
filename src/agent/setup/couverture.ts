@@ -407,6 +407,25 @@ export function fusionnerBascules(etat: readonly Bascule[], nouvelles: readonly 
   return out;
 }
 
+/** Une réponse au point des moments qui dit qu'il n'y en a pas : elle couvre le point, elle n'est pas un moment. */
+const SANS_MOMENT = /^\s*(aucun|aucune|rien|non\b|jamais|pas\s+de|pas\s+pour|pas\s+encore)/i;
+
+/**
+ * 🔴 Les moments que le modèle a rangés dans `reponses` au lieu de `bascules`, une entrée par moment. Mesuré le
+ * 2026-10-12 : GLM 4.7 le fait à chaque fois, Haiku 4.5 une fois sur deux, consigne explicite comprise ; sans
+ * cette reprise, la liste restait vide et le second moment cité était perdu. L'appelant ne s'en sert que sur le tour
+ * où le client répond à la question des moments, et tant que la liste n'a jamais rien tenu : un modèle « répond
+ * d'avance » ou renvoie toutes ses réponses, ce qui ferait sinon naître un moment que le client n'a jamais cité,
+ * un moment en double, ou rouvrirait un entretien fini.
+ */
+export function momentsDesReponses(reponses: readonly Reponse[]): Bascule[] {
+  return reponses
+    .filter((r) => PAR_CODE.get(r.point)?.collecteDesMoments === true)
+    .map((r) => r.valeur.trim().replace(/[.;!]+$/, '').trim())
+    .filter((moment) => moment !== '' && !SANS_MOMENT.test(moment))
+    .map((moment) => ({ moment }));
+}
+
 /**
  * L'ordre du jour tel qu'il part dans le prompt, entier et avec ce qui est déjà su : le modèle doit voir
  * qu'une réponse donnée rend une question inutile à reposer telle quelle, et revenir sur un point contredit.

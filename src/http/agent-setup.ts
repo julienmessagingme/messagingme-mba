@@ -13,8 +13,8 @@ import {
   assainirProposition, differences, propositionSchema, OUTIL_PROPOSER, SCHEMA_PROPOSITION,
 } from '../agent/setup/proposition';
 import {
-  agendaEffectif, fusionner, fusionnerBascules, manquesDeCouverture, poseUneQuestion, prochainPoint,
-  urlDeConnaissance,
+  agendaEffectif, fusionner, fusionnerBascules, manquesDeCouverture, momentsDesReponses, poseUneQuestion,
+  prochainPoint, urlDeConnaissance,
 } from '../agent/setup/couverture';
 import { bornerPourModele, ENTRETIEN_VIERGE, type EntretienComplet, type EntretienStore, type TourEntretien } from '../agent/setup/entretien-store';
 import { espaceVerifie, estUuid } from './scope';
@@ -453,7 +453,13 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     const reponses = fusionner(avant.reponses, propose.data.reponses);
     // Les bascules vivent à part : elles sont une liste (un moment, une action, un moyen), pas une réponse à
     // un point. C'est ce qui permet de les prendre une par une au lieu de les écraser l'une sur l'autre.
-    const listeBascules = fusionnerBascules(avant.bascules ?? [], propose.data.bascules ?? []);
+    // Le modèle range souvent les moments dans `reponses` : repris de là sur le seul tour où le client répond à la
+    // question des moments, et tant que la liste n'a jamais rien tenu (`momentsDesReponses` dit pourquoi ces deux
+    // bornes : une réponse « d'avance » ou réécrite ferait sinon naître un moment jamais cité, ou en double).
+    const reprendreDesReponses = pointDuTour?.collecteDesMoments === true
+      && (propose.data.bascules ?? []).length === 0 && (avant.bascules ?? []).length === 0;
+    const basculesDuTour = reprendreDesReponses ? momentsDesReponses(propose.data.reponses) : propose.data.bascules ?? [];
+    const listeBascules = fusionnerBascules(avant.bascules ?? [], basculesDuTour);
     const poses = pointDuTour && !avant.poses.includes(pointDuTour.code)
       ? [...avant.poses, pointDuTour.code]
       : avant.poses;
