@@ -731,7 +731,10 @@ diverge. La bascule est franche, et le retour arrière est la restauration du du
   managé Scaleway), parce que la limite tombera sur la base avant l'API : sa garde refuse aujourd'hui toute adresse
   Supabase, à adapter pour une base jetable nommée. Le plafond global (`API_PLAFOND_GLOBAL_PAR_10S`, valeur
   intérimaire posée sur l'infrastructure actuelle) se repose alors à 70 % de la capacité mesurée, et
-  `DB_POOL_RECEPTION_MAX` se revoit : à 1 ms, chaque connexion accuse dix fois plus de webhooks qu'à 10 ms.
+  `DB_POOL_RECEPTION_MAX` se revoit : à 1 ms, chaque connexion accuse dix fois plus de webhooks qu'à 10 ms. ⚠️ Sur
+  l'infrastructure actuelle, la borne était le pool de l'API (150 appels/s tenus, 200 en p95 de 9 s) et la file des
+  statuts se vidait à environ 11 accusés par seconde : deux chiffres faits de latence, que la cible change, à
+  remesurer avant de régler la concurrence de `webhook-status` ou la taille des pools.
 
 **Les deux workers**
 - Tuer le worker d'analyse ne ralentit ni les entrants ni les campagnes.

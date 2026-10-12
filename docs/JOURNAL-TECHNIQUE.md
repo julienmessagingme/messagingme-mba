@@ -27,6 +27,20 @@ Meta par seconde.
 - Relecture du correctif : aucun rouge ; jaunes corrigés avant le push (commentaires périmés, le récit sorti du
   manuel, la reconnaissance exacte du refus de la plateforme, l'épreuve sautée qui le dit).
 
+Second banc (`244f0bc4`, clés chauffées, paliers 150, 200 et 250) :
+
+- **La capacité est 150 appels/s, et la falaise est franche** : à 150, p95 de 146 ms ; à 200, p95 de 9,4 s (92 % des
+  prises de connexion de l'API sur pool plein, jusqu'à 1,3 s d'attente) ; à 250, des milliers de délais dépassés.
+  Ce qui borne est le pool de l'API à 10 ms de la base (dix connexions, plusieurs instructions par appel), pas le
+  processeur : la cible Scaleway, à environ 1 ms, déplace cette borne d'un ordre de grandeur.
+- **La réception tient avec quatre connexions** : la même rafale de 300 accusés par seconde, p50 112 ms, p95 475 ms,
+  pire 665 ms, aucune erreur (contre 7,3 s de p95 avec deux).
+- **« Free d'abord » tient** : plafond à 700 par 10 s et 105 appels/s offerts, 1 902 refus de la plateforme sur
+  3 012 appels Free, 5 sur 3 036 appels payants. L'alerte du plafond global est partie (1 273 Free, 5 payants).
+- **La file des statuts se vide à environ 11 accusés par seconde** (un à la fois, à 10 ms de la base) : 215 s de
+  retard après la rafale, alerte comprise. Sans conséquence aujourd'hui ; à recalibrer sur la cible avec sa latence.
+- Les quatre sortes d'alertes de la veille ont été vues sur les deux bancs, sur Telegram, préfixées « BANC ».
+
 ## 2026-10-12 : les protections de la tenue en charge (lot 14, livraison A)
 
 Cinq protections avant l'ouverture du site (spec `docs/superpowers/specs/2026-10-12-tenue-en-charge-design.md`) : le
