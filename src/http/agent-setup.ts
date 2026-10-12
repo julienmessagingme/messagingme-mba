@@ -10,7 +10,7 @@ import {
 } from '../agent/setup/piece-jointe';
 import { construireMessages, inventaireDe, MAX_CARACTERES_MESSAGE, type ContexteConstruction } from '../agent/setup/conversation';
 import {
-  assainirProposition, BORNES_PROPOSITION, differences, propositionSchema, OUTIL_PROPOSER, SCHEMA_PROPOSITION,
+  assainirProposition, differences, propositionSchema, OUTIL_PROPOSER, SCHEMA_PROPOSITION,
 } from '../agent/setup/proposition';
 import {
   champScenario, scenarioDuMoyen, scenariosAPoser, scenariosDesMoments, situationDuMoment,
@@ -78,6 +78,12 @@ export interface AgentSetupRouteDeps {
    * en silence, ce que le client avait justement signalé.
    */
   importerSiteDeLEntretien(tenantId: string, agentId: string, url: string): Promise<IssueImportEntretien>;
+  /**
+   * Les scénarios EN LIGNE de l'espace (id, nom) : la question du moyen d'un moment « scénario » les liste, et seuls eux
+   * peuvent être visés par l'outil que l'entretien propose (`scenariosDesMoments`). Lus au seul tour POST, pas dans
+   * `etatCourant` : l'ouverture de l'onglet, les suggestions et la pièce jointe n'en ont pas besoin.
+   */
+  scenariosEnLigne(tenantId: string): Promise<Array<{ id: string; nom: string }>>;
   /** L'entretien persisté. Requis : un entretien sans mémoire redeviendrait non déterministe sans que personne
    *  ne le voie. */
   entretiens: EntretienStore;
@@ -369,6 +375,8 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     }
     const parse = corpsSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'message requis (texte non vide)' });
+    // Avant le point du tour : la question du moyen d'un moment « scénario » les liste.
+    ctx.etat.scenarios = await deps.scenariosEnLigne(ctx.tenant);
 
     const avant = (await ctx.entretiens.lire(ctx.tenant, ctx.agentId)) ?? ENTRETIEN_VIERGE;
     /**
@@ -483,19 +491,24 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
       if (choisie) momentVise.action = choisie;
     }
     /**
-     * Au tour qui demande le moyen du moment N : un moment « scénario » dont le client NOMME un scénario en ligne prend
-     * son nom exact (le modèle le paraphrase, et la paraphrase ne se rapproche plus de rien) ; sinon, faute de moyen
-     * rendu par le modèle, la réponse du client. C'est ce moyen que `scenariosDesMoments` rapproche (Julien, 2026-10-12).
+     * LE NOM D'UN SCÉNARIO RECONNU NE BOUGE PLUS (Julien, 2026-10-12). Au tour qui demande le moyen du moment N, un
+     * moment « scénario » dont le client NOMME un scénario en ligne prend son nom exact : le modèle le paraphrase, et la
+     * paraphrase ne se rapproche plus de rien. Aux autres tours, le modèle renvoie souvent la bascule entière avec un
+     * moyen reformulé, que `fusionnerBascules` recopie : un moyen qui désignait déjà un scénario est alors rétabli.
+     * ⚠️ Le message brut du client ne devient jamais un moyen : le moyen part dans la consigne du tour (`ordreDuJour`),
+     * hors du bloc de données, et une réponse comme « c'est quoi ? » fermerait le point sans réponse.
      */
-    const momentDuMoyen = vise?.quoi === 'moyen' ? listeBascules[vise.index] : undefined;
-    if (momentDuMoyen) {
-      const nomme = momentDuMoyen.action === 'scenario'
-        ? scenarioDuMoyen(parse.data.message, ctx.etat.scenarios ?? [])
-        : null;
-      const dit = parse.data.message.trim().slice(0, BORNES_PROPOSITION.moyen);
-      if (nomme) momentDuMoyen.moyen = nomme.nom;
-      else if (!momentDuMoyen.moyen?.trim() && dit !== '') momentDuMoyen.moyen = dit;
-    }
+    const scenariosEnLigne = ctx.etat.scenarios ?? [];
+    listeBascules.forEach((b, i) => {
+      if (b.action !== 'scenario') return;
+      if (vise?.quoi === 'moyen' && vise.index === i) {
+        const nomme = scenarioDuMoyen(parse.data.message, scenariosEnLigne);
+        if (nomme) b.moyen = nomme.nom;
+        return;
+      }
+      const ancien = (avant.bascules ?? [])[i];
+      if (ancien?.moyen && b.moyen !== ancien.moyen && scenarioDuMoyen(ancien.moyen, scenariosEnLigne)) b.moyen = ancien.moyen;
+    });
     const poses = pointDuTour && !avant.poses.includes(pointDuTour.code)
       ? [...avant.poses, pointDuTour.code]
       : avant.poses;

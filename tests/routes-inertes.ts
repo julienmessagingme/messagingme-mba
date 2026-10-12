@@ -85,7 +85,7 @@ export const requetesInertes: Pick<AgentRequetesRouteDeps, 'brancheeSurConsentem
 
 export const assistantAgentInerte: Pick<AgentSetupRouteDeps,
   'emailsDesMembres' | 'depenses' | 'plafondEuros' | 'tauxEurParDollar' | 'ecrireFichesDocument' | 'entretiens' | 'modeleVision'
-  | 'importerSiteDeLEntretien'> = {
+  | 'importerSiteDeLEntretien' | 'scenariosEnLigne'> = {
   // Absente : « auteur inconnu » partout, c'est-à-dire aucune adresse résolue.
   emailsDesMembres: async () => ({}),
   // Absent : pas de plafond. Un plafond à 0 dit la même chose, et le compteur n'est alors jamais lu.
@@ -96,6 +96,8 @@ export const assistantAgentInerte: Pick<AgentSetupRouteDeps,
   ecrireFichesDocument: neDevraitPasEtreAppelee('ecrireFichesDocument'),
   // Inerte : l'import part en tâche de fond, son issue ne change rien au tour.
   importerSiteDeLEntretien: async () => ({ issue: 'deja_la' }),
+  // Aucun scénario en ligne : la question du moyen dit qu'il faut le créer, rien n'est proposé.
+  scenariosEnLigne: async () => [],
   entretiens: {
     lire: async () => null,
     ecrire: neDevraitPasEtreAppelee('entretiens.ecrire'),

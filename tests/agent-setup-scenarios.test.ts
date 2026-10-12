@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   champScenario, scenarioDuMoyen, scenariosAPoser, scenariosDesMoments, situationDuMoment,
 } from '../src/agent/setup/scenarios';
-import { agendaEffectif, type Inventaire } from '../src/agent/setup/couverture';
+import { agendaEffectif, MAX_SCENARIOS_LISTES, type Inventaire } from '../src/agent/setup/couverture';
 
 /**
  * Le scénario d'un moment, choisi dans l'entretien de construction et posé par « Enregistrer » (décision de Julien du
@@ -34,6 +34,23 @@ describe('scenarioDuMoyen', () => {
     expect(scenarioDuMoyen('rendez-vous', EN_LIGNE)).toBeNull();
     // Deux noms contenus dans la réponse : aucun non plus.
     expect(scenarioDuMoyen('SMATIS Devis (flow) ou Prise de rendez-vous', [DEVIS, RDV])).toBeNull();
+  });
+
+  it('🔴 noms emboîtés : la phrase qui cite le nom complet désigne le nom complet', () => {
+    // « Devis » et « SMATIS Devis (flow) » dans le même espace : la phrase de l'essai de Julien ne proposait rien.
+    const COURT = { id: '66666666-6666-4666-8666-666666666666', nom: 'Devis' };
+    expect(scenarioDuMoyen('lancer le scénario SMATIS Devis (flow)', [COURT, DEVIS])).toBe(DEVIS);
+    expect(scenarioDuMoyen('le scénario Devis', [COURT, DEVIS])).toBe(COURT);
+  });
+
+  it('🔴 une réponse courte ou un fragment de mot ne désigne rien', () => {
+    const ORIENTATION = { id: '77777777-7777-4777-8777-777777777777', nom: 'Orientation' };
+    expect(scenarioDuMoyen('rien', [ORIENTATION])).toBeNull();
+    expect(scenarioDuMoyen('ok', [{ id: 'b', nom: 'Booking' }])).toBeNull();
+    // « devis » n'est pas un mot de « devisage » : en mots entiers seulement.
+    expect(scenarioDuMoyen('devis', [{ id: 'd', nom: 'Devisage' }])).toBeNull();
+    // Un mot court, même entier, ne désigne pas un nom qui le contient : « si » dans « Rappel si absent ».
+    expect(scenarioDuMoyen('si', [{ id: 'r', nom: 'Rappel si absent' }])).toBeNull();
   });
 
   it('une réponse vide ou étrangère ne désigne rien', () => {
@@ -76,6 +93,7 @@ describe('situationDuMoment', () => {
     expect(situationDuMoment('le client a une question sur son dossier')).toBe('a une question sur son dossier');
     expect(situationDuMoment('il veut prendre rendez-vous')).toBe('veut prendre rendez-vous');
     expect(situationDuMoment('demande de devis')).toBe('demande de devis');
+    expect(situationDuMoment('l’utilisateur veut un rappel')).toBe('veut un rappel');
   });
 });
 
@@ -92,6 +110,17 @@ describe('la question du moyen d’un moment « scénario »', () => {
     expect(q).toMatch(/Vos scénarios en ligne/);
     expect(q).toContain('SMATIS Devis (flow)');
     expect(q).toContain('Prise de rendez-vous');
+    // Jamais un cul-de-sac : la liste n'est pas la seule issue.
+    expect(q).toMatch(/Ou décrivez ce qu’il devra faire/);
+  });
+
+  it('une longue liste est plafonnée', () => {
+    // Quarante noms, en dur : un compte dérivé de la constante suivrait la constante, et ne verrait pas le plafond sauter.
+    const quarante = Array.from({ length: 40 }, (_, i) => `Scénario ${i + 1}`);
+    const q = question(quarante);
+    expect(q).toContain('Scénario 1,');
+    expect(q).not.toContain('Scénario 40');
+    expect(q).toContain(`${40 - MAX_SCENARIOS_LISTES} autres`);
   });
 
   it('sans scénario en ligne, dit qu’il faut le créer et laisse une autre issue', () => {

@@ -106,9 +106,9 @@ function app(opts: {
         fiche: { ...ficheVide(), objectif: 'Aider.' },
         outils: opts.outils ?? [],
         titresConnaissance: ['La piscine'],
-        ...(opts.scenarios ? { scenarios: opts.scenarios } : {}),
       }
       : null),
+    scenariosEnLigne: async () => opts.scenarios ?? [],
     entretiens,
     importerSiteDeLEntretien: async (_t: string, _a: string, url: string) => {
       cap.imports.push(url);
@@ -883,6 +883,30 @@ describe('conversation de construction', () => {
       const res = await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: choix });
       expect(res.json().changements.some((c: { champ: string }) => c.champ.startsWith('scenario.'))).toBe(false);
       expect(res.json().message).toContain(`l’outil qui lance « ${DEVIS.nom} » est déjà là`);
+    });
+
+    it('🔴 un écho du modèle aux tours suivants ne remplace pas le nom d’un scénario déjà reconnu', async () => {
+      // Le modèle renvoie souvent la bascule entière avec un moyen reformulé (relevé en revue le 2026-10-12) : sans
+      // garde, le nom exact disparaissait et la ligne du diff avec lui.
+      const fini: EntretienComplet = { ...ENTRETIEN_FINI, poses: [...BASE, 'bascule_1_action', 'bascule_1_moyen'],
+        bascules: [{ moment: MOMENT, action: 'scenario', moyen: DEVIS.nom }] };
+      const echo = reponse(JSON.stringify({
+        message: 'Très bien.', reponses: [],
+        bascules: [{ moment: MOMENT, action: 'scenario', moyen: 'le parcours de devis' }],
+      }));
+      const a = app({ reponse: echo, entretien: fini, scenarios: [DEVIS] });
+      const res = await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+      expect(a.entretiens.ecrits.at(-1)!.bascules[0]!.moyen).toBe(DEVIS.nom);
+      expect(res.json().changements.map((c: { champ: string }) => c.champ)).toContain(`scenario.${DEVIS.id}`);
+    });
+
+    it('🔴 la réponse brute du client ne devient pas un moyen : le point reste ouvert', async () => {
+      // Elle partirait dans la consigne du tour, hors du bloc de données, et « c'est quoi ? » fermerait le point.
+      const muet = reponse(JSON.stringify({ message: 'D’accord.', reponses: [] }));
+      const a = app({ reponse: muet, entretien: SUR_LE_MOYEN, scenarios: [DEVIS] });
+      const res = await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: { message: 'c’est quoi un scénario ?' } });
+      expect(a.entretiens.ecrits.at(-1)!.bascules[0]!.moyen).toBeUndefined();
+      expect(res.json().couverture.manquants).toEqual(['bascule_1_moyen']);
     });
 
     it('pendant l’entretien, rien n’est proposé ; après, la ligne revient à chaque tour tant que l’outil n’est pas posé', async () => {

@@ -44,7 +44,7 @@ describe('restreindreProposition, les scénarios', () => {
     expect(r.scenarios).toEqual([{ ...DEVIS, situation: 'demande un devis pour sa toiture' }]);
   });
 
-  it('🔴 un scénario sans ligne de diff ne part pas : poser un outil qui envoie exige un geste sur sa ligne', () => {
+  it('🔴 un scénario sans ligne de diff ne part pas, même proposé', () => {
     expect(restreindreProposition(PROPOSITION, [], new Map()).scenarios).toEqual([]);
   });
 });
@@ -83,6 +83,13 @@ describe('appliquerProposition, les scénarios', () => {
     expect(ajouts.map((a) => a.body)).toEqual([
       { handler: 'lancer_scenario', name: 'lancer_prise_de_rdv_2', cible: { workflowId: RDV.workflowId } },
     ]);
+  });
+
+  it('un « $& » tapé par le client reste du texte, la consigne reste complète', async () => {
+    await posee({ fiche: {}, outils: [], scenarios: [{ ...DEVIS, situation: 'paie 5 $& plus' }] });
+    const mots = etat.appels.find((a) => a.method === 'PATCH')!;
+    expect(String(mots.body!.description)).toContain('paie 5 $& plus');
+    expect(String(mots.body!.description)).not.toContain(PLACEHOLDER);
   });
 
   it('sans scénario ni outil, n’appelle rien', async () => {

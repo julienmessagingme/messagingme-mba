@@ -1659,7 +1659,7 @@ async function main(): Promise<void> {
       etatCourant: async (tenant, agentId) => {
         const fiche = await agentStore.complet(tenant, agentId);
         if (!fiche) return null;
-        const [outils, fiches, sources, catalogue, offrables, scenarios] = await Promise.all([
+        const [outils, fiches, sources, catalogue, offrables] = await Promise.all([
           toolCatalog.listToutes(tenant, agentId),
           knowledgeStore.lister(tenant, agentId),
           // Les sources déclarées de l'espace, branchées sur cet agent ou non, pour répondre « vous avez
@@ -1672,9 +1672,6 @@ async function main(): Promise<void> {
           // Ce que le catalogue permet de lui offrir : la règle unique, que l'assistant ne recalcule pas. Il écarte
           // seulement ce que le catalogue marque `nomPris` (0211).
           toolCatalog.offrablesPour(tenant, consommateurAgent(agentId)),
-          // Les scénarios que l'entretien liste et que l'outil « Lancer un scénario » qu'il propose peut viser : ceux EN
-          // LIGNE, la règle du sélecteur de l'onglet Outils (`estEnLigne`, un graphe publié non vide).
-          workflowStore.listResume(tenant),
         ]);
         return {
           label: fiche.label,
@@ -1709,7 +1706,6 @@ async function main(): Promise<void> {
           // `branche` se lit sur les consommateurs de la définition : seul le catalogue connaît les outils
           // non branchés, justement ceux que l'assistant peut proposer de brancher, s'ils sont offrables.
           catalogue: catalogueBranchable(catalogue, offrables, agentId),
-          scenarios: scenarios.filter((w) => w.nodeCount > 0).map((w) => ({ id: w.id, nom: w.name })),
         };
       },
       /**
@@ -1724,6 +1720,10 @@ async function main(): Promise<void> {
       // de connaissance : mêmes gardes d'adresse, même découpage, même journal.
       importerSiteDeLEntretien: (tenant, agentId, url) =>
         importerLeSiteDeLEntretien(connaissanceDeLaConsole, tenant, agentId, url),
+      // Les scénarios que l'entretien liste et que l'outil « Lancer un scénario » qu'il propose peut viser : ceux EN
+      // LIGNE, la règle du sélecteur de l'onglet Outils (`estEnLigne`, un graphe publié non vide). Lus au seul tour POST.
+      scenariosEnLigne: async (tenant) =>
+        (await workflowStore.listResume(tenant)).filter((w) => w.nodeCount > 0).map((w) => ({ id: w.id, nom: w.name })),
       ecrireFichesDocument: (tenant, agentId, nom, fiches) =>
         knowledgeStore.remplacerSource(tenant, agentId, { type: 'document', nom }, fiches),
       // L'entretien est tenu par le serveur : conversation persistante entre deux visites, et séquence des

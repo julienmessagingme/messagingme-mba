@@ -184,8 +184,9 @@ export function restreindreProposition(
       (n) => !avantDe.has(`outil.${n}.rattachement`) || gardees.has(`outil.${n}.rattachement`),
     ),
     /**
-     * 🔴 UN SCÉNARIO NE PART QUE SI SA LIGNE EST GARDÉE, et sans ligne il ne part pas : poser un outil qui envoie des
-     * messages facturés exige un geste du client sur CETTE ligne, pas l'absence d'un refus.
+     * 🔴 UN SCÉNARIO NE PART QUE SI SA LIGNE EST GARDÉE, et sans ligne il ne part pas. ⚠️ Gardée par défaut, comme
+     * toutes les lignes du diff (`Diff`, `web/components/AgentConstruction.tsx`) : « Enregistrer » pose donc chaque
+     * scénario proposé. Ce qui borne le geste, c'est que l'outil naît éteint et sans autonomie.
      */
     scenarios: (proposition.scenarios ?? []).flatMap((sc) => {
       const garde = gardees.get(`scenario.${sc.workflowId}`);
@@ -377,7 +378,8 @@ export async function appliquerProposition(
       const cree = await ajouterOutil(tenantId, agentId, 'lancer_scenario', { name, cible: { workflowId: sc.workflowId } });
       await patchOutil(tenantId, agentId, cree.id, {
         title: `Lancer « ${sc.nom} »`.slice(0, 120),
-        description: textes.quand[0].replace(PLACEHOLDER, situation).slice(0, 2000),
+        // Un remplaçant en fonction : une chaîne interpréterait les `$&` ou `$'` que le client aurait tapés.
+        description: textes.quand[0].replace(PLACEHOLDER, () => situation).slice(0, 2000),
         nePasUtiliser: textes.pasQuand[0],
       });
     }

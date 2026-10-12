@@ -59,6 +59,9 @@ export interface Inventaire {
 
 export const INVENTAIRE_VIDE: Inventaire = { outilsApi: [], systemesApi: [], mcp: [], outilsMcp: [] };
 
+/** Combien de scénarios la question du moyen nomme ; au-delà, « et N autres ». */
+export const MAX_SCENARIOS_LISTES = 15;
+
 /** Une énumération lisible, « a, b et c ». */
 function enumerer(noms: readonly string[]): string {
   if (noms.length <= 1) return noms[0] ?? '';
@@ -274,8 +277,13 @@ export function agendaEffectif(etat: EtatEntretien, inv: Inventaire = INVENTAIRE
 function moyenDemande(action: Action, inv: Inventaire): string {
   if (action === 'scenario') {
     const enLigne = inv.scenarios ?? [];
+    // Bornée : la liste part dans la consigne du tour, et un espace peut en avoir des dizaines. Toujours une autre
+    // issue que la liste, jamais un cul-de-sac.
+    const montres = enLigne.length > MAX_SCENARIOS_LISTES
+      ? [...enLigne.slice(0, MAX_SCENARIOS_LISTES), `${enLigne.length - MAX_SCENARIOS_LISTES} autres`]
+      : enLigne;
     return enLigne.length > 0
-      ? `lequel doit-il lancer ? Vos scénarios en ligne : ${enumerer(enLigne)}.`
+      ? `lequel doit-il lancer ? Vos scénarios en ligne : ${enumerer(montres)}. Ou décrivez ce qu’il devra faire.`
       : 'AUCUN scénario n’est en ligne dans votre espace : créez-le dans le menu Scénarios, ou décrivez ce qu’il devra '
         + 'faire, ou choisissez autre chose pour ce moment.';
   }

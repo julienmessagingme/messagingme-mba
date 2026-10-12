@@ -17,25 +17,38 @@ function normaliser(texte: string): string {
     .replace(/[«»"“”'’]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+/** `mot` figure dans `texte` en mots entiers : « devis » est dans « un devis », pas dans « devisage ». Textes normalisés. */
+function contientEnMots(texte: string, mot: string): boolean {
+  const echappe = mot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^a-z0-9])${echappe}($|[^a-z0-9])`).test(texte);
+}
+
+/** En deçà, une réponse (« ok », « rien », « si ») se retrouve dans trop de noms pour en désigner un. */
+const REPONSE_MIN_POUR_UN_FRAGMENT = 4;
+
 /**
- * Le scénario que le client désigne : celui dont le nom est sa réponse, sinon le SEUL dont le nom est contenu dans sa
- * réponse (« lancer le scénario SMATIS Devis (flow) »), sinon le SEUL dont le nom contient sa réponse (« devis »).
- * Deux candidats à la même étape : aucun, on ne devine pas lequel.
+ * Le scénario que le client désigne, en mots entiers :
+ *  1. celui dont le nom EST sa réponse ;
+ *  2. sinon celui dont le nom est CONTENU dans sa réponse (« lancer le scénario SMATIS Devis (flow) ») ; plusieurs
+ *     noms contenus, on garde celui qui contient les autres (« SMATIS Devis (flow) » et « Devis » : le premier) ;
+ *  3. sinon, pour une réponse d'au moins quatre caractères, le SEUL dont le nom contient sa réponse (« devis »).
+ * Deux candidats qui restent : aucun, on ne devine pas lequel.
  */
 export function scenarioDuMoyen(moyen: string, scenarios: readonly ScenarioEnLigne[]): ScenarioEnLigne | null {
   const dit = normaliser(moyen);
   if (dit === '') return null;
   const avecNom = scenarios.map((s) => ({ s, n: normaliser(s.nom) })).filter((x) => x.n !== '');
-  for (const correspond of [
-    (n: string) => n === dit,
-    (n: string) => dit.includes(n),
-    (n: string) => n.includes(dit),
-  ]) {
-    const trouves = avecNom.filter((x) => correspond(x.n));
-    if (trouves.length === 1) return trouves[0]!.s;
-    if (trouves.length > 1) return null;
+  const exacts = avecNom.filter((x) => x.n === dit);
+  if (exacts.length > 0) return exacts.length === 1 ? exacts[0]!.s : null;
+  const contenus = avecNom.filter((x) => contientEnMots(dit, x.n));
+  if (contenus.length > 0) {
+    // Un nom contenu dans un autre nom contenu n'est que son fragment : il ne compte pas.
+    const englobants = contenus.filter((x) => !contenus.some((y) => y !== x && y.n !== x.n && contientEnMots(y.n, x.n)));
+    return englobants.length === 1 ? englobants[0]!.s : null;
   }
-  return null;
+  if (dit.length < REPONSE_MIN_POUR_UN_FRAGMENT) return null;
+  const contenants = avecNom.filter((x) => contientEnMots(x.n, dit));
+  return contenants.length === 1 ? contenants[0]!.s : null;
 }
 
 /** Un moment confié à un scénario reconnu ; `dejaVise` : un outil `lancer_scenario` de l'agent le vise déjà. */
@@ -81,7 +94,7 @@ export const champScenario = (workflowId: string): string => `scenario.${workflo
 export function situationDuMoment(moment: string): string {
   const sans = moment.trim()
     .replace(/^(quand|lorsque|si|dès que|des que)\s+/i, '')
-    .replace(/^(le|un|ce|notre|votre)\s+(client|contact|prospect|visiteur)\s+/i, '')
+    .replace(/^(l['’]|(le|la|un|une|ce|cette|notre|votre)\s+)(client|cliente|contact|prospect|visiteur|utilisateur|utilisatrice|personne)\s+/i, '')
     .replace(/^(qu'il|qu’il|il)\s+/i, '')
     .replace(/[.!?\s]+$/, '');
   return sans === '' ? moment.trim() : sans;

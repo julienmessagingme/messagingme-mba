@@ -1131,12 +1131,16 @@ le process de l'API, elle se perd si l'API redémarre pendant le parcours : l'ad
 pré-rempli par `/setup/suggestions`, et l'import s'y relance d'un geste.
 
 🔴 **Le scénario d'un moment se choisit dans l'entretien, et sa cible vient de la liste RÉELLE** (décision de Julien,
-2026-10-12, `src/agent/setup/scenarios.ts`). `etatCourant` porte les scénarios en ligne de l'espace (`listResume`
-filtré sur un graphe non vide, la règle `estEnLigne` du sélecteur de l'onglet Outils) et le `workflowId` des outils
-`lancer_scenario` de l'agent. La question du moyen d'un moment « scénario » les liste par leur nom. Au tour qui la
-pose, un scénario NOMMÉ par le client (`scenarioDuMoyen` : nom exact normalisé, sinon un seul nom contenu dans la
-réponse, sinon une réponse contenue dans un seul nom ; deux candidats = aucun) devient le moyen sous son nom exact,
-parce que le modèle le paraphrase. Hors entretien, à chaque tour comme le diff, `scenariosDesMoments` rapproche chaque
+2026-10-12, `src/agent/setup/scenarios.ts`). Le tour POST lit les scénarios en ligne de l'espace (dépendance
+`scenariosEnLigne`, `listResume` filtré sur un graphe non vide, la règle `estEnLigne` du sélecteur de l'onglet Outils ;
+pas dans `etatCourant`, que l'ouverture de l'onglet appelle aussi), et `etatCourant` porte le `workflowId` des outils
+`lancer_scenario` de l'agent. La question du moyen d'un moment « scénario » les liste par leur nom (quinze au plus, et
+toujours « ou décrivez »). Au tour qui la pose, un scénario NOMMÉ par le client (`scenarioDuMoyen`, en mots entiers :
+nom exact normalisé, sinon le nom contenu dans la réponse, le plus englobant si plusieurs, sinon pour une réponse d'au
+moins quatre caractères un seul nom qui la contient ; deux candidats = aucun) devient le moyen sous son nom exact,
+parce que le modèle le paraphrase ; aux autres tours, un moyen qui désignait déjà un scénario est rétabli si le modèle
+le reformule. ⚠️ Le message brut du client ne devient jamais un moyen : il partirait dans la consigne du tour, hors du
+bloc de données. Hors entretien, à chaque tour comme le diff, `scenariosDesMoments` rapproche chaque
 moment « scénario » et écarte ceux que l'agent vise déjà ; chacun devient une ligne `scenario.<workflowId>` dont le
 texte est la SITUATION (`situationDuMoment`), et `proposition.scenarios` porte la cible. La console
 (`appliquerProposition`) pose l'outil par `POST .../tools` avec `cible: { workflowId }`, un nom `lancer_<nom>` suffixé
