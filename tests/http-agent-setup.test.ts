@@ -199,7 +199,9 @@ describe('conversation de construction', () => {
     expect(second).not.toContain('tu es en ÉVOLUTION');
 
     const body = res.json();
-    expect(body.message).toBe('Voici votre agent.');
+    // Le message de la SYNTHÈSE, suivi du bloc « Pour finir » que le serveur ajoute au tour qui ferme l'entretien.
+    expect(body.message.split('\n\nPour finir :')[0]).toBe('Voici votre agent.');
+    expect(body.message).toContain('\n\nPour finir :\n1. Relisez la proposition');
     // 🔴 LE DIFF VIENT DE LA SYNTHÈSE : trois champs, pas le seul ton du premier appel.
     expect(body.changements.map((c: { champ: string }) => c.champ).sort())
       .toEqual(['fiche.nom', 'fiche.objectif', 'fiche.ton']);
@@ -209,7 +211,8 @@ describe('conversation de construction', () => {
     const ecrit = entretiens.ecrits[0]!;
     expect(ecrit.reponses.find((r) => r.point === DERNIER)?.valeur).toBe('tutoiement et phrases courtes');
     // Et c'est le message de la SYNTHÈSE que le fil garde, pas celui du premier appel.
-    expect(ecrit.messages.at(-1)).toMatchObject({ role: 'assistant', content: 'Voici votre agent.' });
+    expect(ecrit.messages.at(-1)!.role).toBe('assistant');
+    expect(String(ecrit.messages.at(-1)!.content).split('\n\nPour finir :')[0]).toBe('Voici votre agent.');
   });
 
   it('🔴 un tour d’ÉVOLUTION ne déclenche AUCUNE synthèse', async () => {
@@ -254,7 +257,8 @@ describe('conversation de construction', () => {
     });
     const res = await srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
     expect(res.statusCode).toBe(200);
-    expect(res.json().message).toBe('Parfait.');
+    // La synthèse a échoué : c'est le message du PREMIER appel qui reste, suivi du bloc de fin.
+    expect(res.json().message.split('\n\nPour finir :')[0]).toBe('Parfait.');
     expect(res.json().changements.map((c: { champ: string }) => c.champ)).toEqual(['fiche.ton']);
   });
 

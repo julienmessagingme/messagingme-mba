@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: bc34d2
+source_empreinte: 16b7ee
 ---
 # Construire un agent IA
 
@@ -47,13 +47,20 @@ Serveur MCP), il crée l'agent, lit votre site, le teste et l'active, avec les m
 modifications apparaissent dans l'onglet Historique de l'agent, « par Claude ».
 
 **Commencez par lui parler.** Le premier onglet n'est pas un formulaire vide mais une conversation :
-décrivez votre métier, et l'assistant fait le tour du sujet en neuf points, une question à la fois (ce que
-l'agent est là pour faire, ce dont il ne parle jamais, d'où viennent ses réponses de fond, quand un humain
-reprend, sous quel nom il se présente, comment il parle). Tant qu'un point n'a pas été tranché, il ne vous
-montre rien et vous dit combien il en reste. Il ne change **rien** tout seul : il propose, et l'écran
-affiche ligne par ligne ce que cela changerait, avec la valeur d'avant barrée. Chaque règle se garde, se
-corrige sur place ou se jette séparément. Vous pouvez lui joindre un document ou une photo (une grille de
-tarifs, par exemple) : le texte en est extrait et découpé en fiches de connaissance.
+décrivez votre métier, et l'assistant fait le tour du sujet point par point, une question à la fois (ce que
+l'agent est là pour faire, ce dont il ne parle jamais, d'où viennent ses réponses de fond, les moments où il
+doit faire autre chose que répondre, quand il lâche un contact silencieux, quand un humain reprend, sous quel
+nom il se présente, s'il annonce être une IA, comment il parle). Si vous citez plusieurs moments d'un coup, il
+les reprend un par un. Tant qu'un point n'a pas été tranché, il ne vous montre rien et vous dit combien il en
+reste. Il ne change **rien** tout seul : il propose, et l'écran affiche ligne par ligne ce que cela changerait,
+avec la valeur d'avant barrée. Chaque règle se garde, se corrige sur place ou se jette séparément. Vous pouvez
+lui joindre un document ou une photo (une grille de tarifs, par exemple) : le texte en est extrait et découpé en
+fiches de connaissance.
+
+**À la fin de l'entretien, suivez la liste « Pour finir ».** Elle dit, dans l'ordre, ce qu'il reste à faire
+pour votre agent : appliquer la proposition, importer votre site dans Base de connaissance, brancher le
+connecteur qu'un moment demande, vérifier son modèle dans l'onglet Modèle, le tester, puis l'activer. Une
+étape déjà faite n'y figure pas.
 
 **Sa base de connaissance est la seule chose dont il a le droit de se servir.** Sur une question qu'aucune
 fiche ne couvre, il n'invente pas : il sort du bloc par « Aucune source ». Une base vide fait donc un agent

@@ -23,6 +23,7 @@ import { moisDe, resteDuBudget, MESSAGE_PLAFOND, type DepenseStore } from '../as
 import { microEurosDepuisDollars } from '../agent/devise';
 import { direPanneModele } from '../llm/errors';
 import { journaliser } from '../lib/journal';
+import { blocDeFin } from '../agent/setup/fin';
 
 /**
  * La conversation de construction d'un agent : elle propose, le client corrige.
@@ -496,7 +497,8 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
      * message suivant relancerait une synthèse. Il complète le premier appel : on n'en garde que le message et les
      * champs. Tout échec retombe sur la proposition du premier appel, jamais une erreur.
      */
-    if (!enEntretien && avancement(avant, ctx.etat).manquants.length > 0) {
+    const vientDeFinir = !enEntretien && avancement(avant, ctx.etat).manquants.length > 0;
+    if (vientDeFinir) {
       try {
         if (await budgetOuvert(deps, ctx.tenant)) {
           const seconde = await deps.completer({
@@ -542,6 +544,26 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
       }
     }
 
+    /** Le diff montré au client, calculé une fois : le bloc de fin en dépend, la réponse aussi. */
+    const changements = enEntretien ? [] : differences(ctx.etat, propositionFinale);
+    /**
+     * Le bloc « Pour finir », ajouté au tour qui FERME l'entretien (la même transition que la synthèse) et écrit par
+     * le serveur sur l'état réel (`blocDeFin`) : appliquer, la connaissance à importer, les outils à brancher, le
+     * modèle, Tester, Activer. Avant lui, le dernier message ne disait rien de la suite (Julien, 2026-10-12).
+     */
+    if (vientDeFinir) {
+      const inv = inventaireDe(ctx.etat);
+      message = `${message}\n\n${blocDeFin({
+        aAppliquer: changements.length > 0,
+        connaissanceUrl: propositionFinale.connaissanceUrl ?? avant.connaissanceUrl ?? urlDeConnaissance(etatApres),
+        fichesDeConnaissance: ctx.etat.titresConnaissance.length,
+        bascules: listeBascules,
+        outilsApi: inv.outilsApi.length,
+        outilsMcp: inv.outilsMcp.length,
+        modele: ctx.etat.modele ?? null,
+      })}`;
+    }
+
     const apres: EntretienComplet = {
       // 🔴 `filComplet`, jamais `historique` : c'est la ligne qui décide si le fil perdure ou se fait amputer par
       // sa propre sauvegarde.
@@ -584,7 +606,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
         outilsBranches: brancheables(ctx.etat.catalogue, propositionFinale.outilsBranches, false),
         outilsDebranches: brancheables(ctx.etat.catalogue, propositionFinale.outilsDebranches, true),
       },
-      changements: enEntretien ? [] : differences(ctx.etat, propositionFinale),
+      changements,
       usage: { tokensIn, tokensOut },
     });
   });

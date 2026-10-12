@@ -1675,6 +1675,8 @@ async function main(): Promise<void> {
         ]);
         return {
           label: fiche.label,
+          // Nommé dans le bloc « Pour finir » de l'entretien (`blocDeFin`) : le modèle est posé à la création.
+          modele: fiche.modele,
           // Le régime d'annonce d'IA, que l'entretien pose : il vient de l'espace, pas de la fiche (la
           // question règle la politique de la marque, pas celle de ce robot-là).
           mentionIaFrequence: (await settingsStore.get(tenant)).mentionIaFrequence ?? 'session',

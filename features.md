@@ -3252,11 +3252,19 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
 
 - ✅ **C'est le PREMIER onglet d'un agent** (2026-08-31) : on ouvre une conversation, pas un formulaire vide.
   Deux exemples cliquables pour démarrer (« il répond aux questions sur nos séjours et prend des rendez-vous »).
-- ✅ **L'assistant fait le tour du sujet en NEUF points**, dans cet ordre : ce que l'agent est là pour faire,
+- ✅ **L'assistant fait le tour du sujet point par point**, dans cet ordre : ce que l'agent est là pour faire,
   ce dont il ne parle jamais, **d'où viennent ses réponses de fond**, à quoi ressemble une conversation qui
-  finit bien, ce qu'il doit faire quand il ne s'agit plus seulement de répondre, quand un humain reprend,
-  **sous quel nom il se présente**, et comment il parle. Une question à la fois, avec des possibilités à
-  choisir plutôt qu'une page blanche.
+  finit bien, ce qu'il doit faire quand il ne s'agit plus seulement de répondre, au bout de combien de temps il
+  lâche un contact qui ne répond plus, quand un humain reprend, **sous quel nom il se présente**, s'il annonce
+  qu'il est une IA, et comment il parle. Une question à la fois, avec des possibilités à choisir plutôt qu'une
+  page blanche.
+- ✅ **Chaque moment cité est repris un par un** (2026-10-12). Citer deux moments dans la même phrase (« quand le
+  client veut parler à un conseiller, quand il a une question sur son dossier ») ouvre une question pour chacun :
+  le second n'est plus perdu.
+- ✅ **À la fin, il dit ce qu'il reste à faire** (2026-10-12), sous la forme d'une liste numérotée « Pour finir » :
+  appliquer la proposition, importer le site donné dans Base de connaissance, brancher le connecteur qu'un moment
+  demande, vérifier le modèle de l'agent (posé à la création, changeable dans l'onglet Modèle), le tester, puis
+  l'activer. La liste se calcule sur l'état réel de l'agent : une étape déjà faite n'y figure pas.
 - ✅ **Il pose vraiment toutes les questions** (2026-08-31). Avant, il décidait lui-même de ce qu'il avait
   couvert, et il sautait régulièrement le ton, l'identité et la base de connaissance. Un point n'est
   maintenant considéré comme vu que s'il vous a été **réellement posé**. Si vous y aviez déjà répondu en

@@ -207,6 +207,8 @@ export interface ContexteConstruction extends EtatCourant {
    * serveur (le préfixe du nom exposé, réécrit par le client et tronqué, ne prouve rien). Absent = vide.
    */
   sources?: Array<{ id: string; label: string; kind: 'http' | 'mcp'; status: string }>;
+  /** Le modèle de l'agent, nommé dans le bloc de fin de l'entretien (`blocDeFin`). Absent = « vérifiez-le ». */
+  modele?: string;
 }
 
 /**
