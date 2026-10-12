@@ -1,20 +1,5 @@
 # todo.md : backlog
 
-## 🟡 Relier l'Inbox au desk Aircall (question de Julien du 2026-10-12, en attente de sa décision)
-
-Le souhait : transférer les conversations vers le desk Aircall, et que les réponses des collaborateurs Aircall
-repartent par Messaging Me. Ce qu'on a établi en lisant la documentation d'Aircall :
-- le desk d'Aircall ne montre que les messages reçus sur un numéro WhatsApp **branché chez Aircall** ;
-- aucune API ne permet d'y injecter des messages venus d'ailleurs ;
-- envoyer depuis Aircall exige une ligne WhatsApp Aircall (`lineId`) ;
-- les rappels de message d'Aircall portent le texte, pas l'agent qui a répondu.
-
-Deux options, à trancher par Julien :
-1. **Le numéro branché chez Aircall**, éventuellement les deux applications sur le même compte WhatsApp Business :
-   à vérifier avec le support partenaire d'Aircall (proposé : rédiger la question pour eux).
-2. **Notre Inbox pour les messages, Aircall pour les appels** : clic pour appeler, fiches de contexte, un WhatsApp
-   après un appel manqué.
-
 ## 🟡 Lot 14, la tenue en charge : ce que la spec laisse hors périmètre (2026-10-12)
 
 - **La durée limite des requêtes** (`statement_timeout`) sur le pool applicatif : à juger sur la mesure du banc (B). Le
