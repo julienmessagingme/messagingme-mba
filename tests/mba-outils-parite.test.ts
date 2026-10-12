@@ -5,75 +5,26 @@ import { vueOutilMba, type ContexteVue } from '../src/mba/vue-outils';
 import { outilsAPublier } from '../src/mba/outils-a-publier';
 import { HANDLERS_MAISON_MBA, typeDeLaCible, type CibleMaison, type HandlerMaisonMba } from '../src/mba/outils-maison';
 import { BORNES_OUTIL_MBA, TYPES_SAISISSABLES } from '../src/http/mba-outils';
+import { TYPES_OUTIL_MBA } from '../web/lib/partage/outils-mba';
+import { LONGUEUR_MAX_ETIQUETTE } from '../src/crm/poser-etiquette';
 import { NOM_CONNECTEUR_RELAIS } from '../src/mba/publication';
 import { METHODES, risqueSelonMethode } from '../src/agent/http-cible';
 import type { OutilComplet } from '../src/agent/catalog';
 
-/**
- * LA PARITÉ ENTRE LE SERVEUR ET L'ÉCRAN DE L'ONGLET « OUTILS » DE L'AGENT DE META (spec 2026-09-21, § 3).
- *
- * 🔴 CE QUE CE FICHIER PROTÈGE : quatre listes vivent en double, et chacune ne casse que par son ÉCART.
- * `web/lib/api-mba-outils.ts` se déclare le miroir de `src/mba/vue-outils.ts` ; `ChoixTypeOutil.tsx` propose des
- * types que `src/http/mba-outils.ts` doit accepter ; et « ✓ Chez Meta » n'est vrai que si `publiable` dit la même
- * chose que `outilsAPublier`. Le lot 3 ajoute « bloc » et « scénario » aux quatre endroits : sans ce test, en
- * oublier un compilerait.
- */
+/** Le contrat partagé couvre les formes ; ces tests gardent les règles exécutées aux frontières. */
 const racine = resolve(__dirname, '..');
 const lire = (chemin: string): string => readFileSync(resolve(racine, chemin), 'utf8');
-
-/** Les littéraux `'xxx'` d'un `export type Nom = ...` qui tient sur une ligne. */
-function unionSurUneLigne(src: string, nom: string): string[] {
-  const m = new RegExp(`export type ${nom} = ([^;\\n]+);`).exec(src);
-  expect(m, `export type ${nom} introuvable`).not.toBeNull();
-  return [...m![1]!.matchAll(/'([a-z_]+)'/g)].map((x) => x[1]!).sort();
-}
-
-/** Les `type: 'xxx'` d'une union d'objets écrite sur plusieurs lignes, jusqu'à la ligne vide qui la clôt. */
-function typesDUnionDObjets(src: string, nom: string): string[] {
-  const debut = src.indexOf(`export type ${nom} =`);
-  expect(debut, `export type ${nom} introuvable`).toBeGreaterThanOrEqual(0);
-  const bloc = src.slice(debut, src.indexOf('\n\n', debut));
-  return [...bloc.matchAll(/type: '([a-z_]+)'/g)].map((x) => x[1]!).sort();
-}
-
-/** Les noms de champs d'une `export interface`, commentaires retirés. */
-function champsDInterface(src: string, nom: string): string[] {
-  const debut = src.indexOf(`export interface ${nom} {`);
-  expect(debut, `export interface ${nom} introuvable`).toBeGreaterThanOrEqual(0);
-  const corps = src.slice(debut, src.indexOf('\n}', debut)).replace(/\/\*[\s\S]*?\*\//g, '');
-  return [...corps.matchAll(/^\s+([a-zA-Z]+)\??:/gm)].map((x) => x[1]!).sort();
-}
 
 const WF = '11111111-1111-4111-8111-111111111111';
 const CODE = `nod_abc_${'A'.repeat(26)}`;
 
-const serveurVue = lire('src/mba/vue-outils.ts');
-const serveurMaison = lire('src/mba/outils-maison.ts');
-const web = lire('web/lib/api-mba-outils.ts');
-const choix = lire('web/components/mba-outils/ChoixTypeOutil.tsx');
-
-describe('les types, des deux côtés', () => {
-  it('🔴 le type d’un outil est le même union au serveur et à l’écran', () => {
-    expect(unionSurUneLigne(web, 'TypeOutilMba')).toEqual(unionSurUneLigne(serveurMaison, 'TypeOutilMba'));
+describe('le contrat partagé des outils de Meta', () => {
+  it('la route accepte exactement les types proposés par le contrat', () => {
+    expect(TYPES_SAISISSABLES).toEqual(TYPES_OUTIL_MBA);
   });
 
-  it('🔴 la ligne d’un outil porte les mêmes champs des deux côtés', () => {
-    // C'est ce qui a manqué à `publiable` : un champ ajouté d'un seul côté vaut `undefined` de l'autre, sans erreur.
-    expect(champsDInterface(web, 'OutilMbaVue')).toEqual(champsDInterface(serveurVue, 'OutilMbaVue'));
-    expect(typesDUnionDObjets(web, 'CibleVue')).toEqual(typesDUnionDObjets(serveurVue, 'CibleVue'));
-    expect(champsDInterface(web, 'OutilMcpProposable')).toEqual(champsDInterface(serveurVue, 'OutilMcpProposable'));
-  });
-
-  it('🔴 ce que l’écran SAISIT est exactement ce que la route accepte', () => {
-    expect(typesDUnionDObjets(web, 'CibleSaisie')).toEqual([...TYPES_SAISISSABLES].sort());
-  });
-
-  it('🔴 tout type PROPOSÉ à l’écran est accepté par la route : sinon, un bouton qui rend 400', () => {
-    const m = /TYPES_PROPOSES: readonly TypeOutilMba\[\] = \[([^\]]*)\]/.exec(choix);
-    expect(m).not.toBeNull();
-    const proposes = [...m![1]!.matchAll(/'([a-z_]+)'/g)].map((x) => x[1]!);
-    expect(proposes.length).toBeGreaterThan(0);
-    for (const type of proposes) expect(TYPES_SAISISSABLES).toContain(type);
+  it('la borne des étiquettes reste celle du CRM', () => {
+    expect(BORNES_OUTIL_MBA.tag).toBe(LONGUEUR_MAX_ETIQUETTE);
   });
 
   it('🔴 chaque geste maison se CRÉE depuis l’écran', () => {
@@ -88,17 +39,8 @@ describe('les types, des deux côtés', () => {
   });
 });
 
-describe('les constantes recopiées dans l’écran', () => {
+describe('les autres constantes recopiées dans l’écran', () => {
   const ecranLib = lire('web/lib/mba-outils.ts');
-
-  it('🔴 les bornes de la saisie sont celles de la route', () => {
-    // Plus basses à l'écran, un client ne pourrait pas écrire ce que la route accepte ; plus hautes, il écrirait
-    // pour recevoir un 400.
-    const m = /export const BORNES_OUTIL = (\{[^}]*\})/.exec(ecranLib);
-    expect(m).not.toBeNull();
-    const ecran = Object.fromEntries([...m![1]!.matchAll(/(\w+):\s*(\d+)/g)].map((x) => [x[1]!, Number(x[2])]));
-    expect(ecran).toEqual({ ...BORNES_OUTIL_MBA });
-  });
 
   it('🔴 les méthodes dites « irréversibles » à l’écran sont celles que le serveur range ainsi', () => {
     // Sinon l'écran annoncerait un appel sans danger que le serveur traite comme irréversible, ou l'inverse.

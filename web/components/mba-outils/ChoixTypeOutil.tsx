@@ -5,12 +5,13 @@ import { useEffect, useState } from 'react';
 import { listUserFields } from '@/lib/api';
 import { listRequetes } from '@/lib/api-agent-requetes';
 import type { TypeOutilMba } from '@/lib/api-mba-outils';
+import { TYPES_OUTIL_MBA } from '@/lib/partage/outils-mba';
 import { textesDuType, type ConsommateurOutil } from '@/lib/mba-outils';
 import { IconeOutil } from '@/components/IconeOutil';
 import { useT } from '@/lib/i18n';
 
-/** Les types proposés, dans l'ordre du croquis de Julien (2026-09-21). */
-export const TYPES_PROPOSES: readonly TypeOutilMba[] = ['tag', 'champ', 'bloc', 'scenario', 'connecteur'];
+/** Les types proposés dans l'ordre du contrat partagé. */
+export const TYPES_PROPOSES = TYPES_OUTIL_MBA;
 
 /**
  * « QUEL OUTIL AJOUTER ? » (spec 2026-09-21-outils-maison-mba, § 9.4).

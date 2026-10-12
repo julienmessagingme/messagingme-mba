@@ -1,50 +1,10 @@
-import type { OutilComplet, OutilBibliotheque, RisqueOutil } from '../agent/catalog';
+import type { OutilComplet, OutilBibliotheque } from '../agent/catalog';
 import { messageInappelable } from '../agent/catalog';
 import { entryNode } from '../workflow/engine';
 import type { WorkflowGraph } from '../workflow/graph';
-import { blocSeul, lireCibleMaison, nomDuBlocParCode, typeDeLaCible, type TypeOutilMba } from './outils-maison';
-
-/**
- * La ligne d'un outil dans l'onglet « Outils » de l'agent de Meta. Ce qui manque se dit (champ supprimé, appel
- * supprimé, outil illisible) : un outil dont la cible a disparu refuse à chaque appel, et personne ne le saurait.
- * Un outil illisible ne part plus chez Meta (`publiable`), un champ supprimé si. Un appel utilisé ne peut pas être
- * supprimé (`on delete restrict`) : cette branche est une défense. `actif` voyage aussi : le départ d'un
- * collaborateur éteint ses consentements, et l'écran doit proposer de rallumer l'outil.
- */
-export type CibleVue =
-  | { type: 'tag'; tag: string }
-  | { type: 'champ'; champ: string; valeurs: string[] }
-  | { type: 'bloc'; workflowId: string; code: string; scenario: string | null; bloc: string | null }
-  | { type: 'scenario'; workflowId: string; scenario: string | null }
-  | { type: 'connecteur'; requeteId: string; libelle: string | null }
-  | { type: 'mcp'; sourceId: string | null; serveur: string | null }
-  | { type: 'inconnu' };
-
-export interface OutilMbaVue {
-  id: string;
-  name: string;
-  title: string;
-  description: string;
-  nePasUtiliser: string;
-  /** `mcp` n'est pas un `TypeOutilMba` : un outil MCP ne se CRÉE pas dans cet onglet, il vient de la bibliothèque. */
-  type: TypeOutilMba | 'mcp' | 'inconnu';
-  cible: CibleVue;
-  /** Pourquoi la cible n'existe plus, ou `null`. Texte du serveur, affiché tel quel. */
-  cibleManquante: string | null;
-  /** Les agents IA qui partagent cet outil (connecteur et MCP). */
-  aussiUtilisePar: string[];
-  actif: boolean;
-  /**
-   * Ce que l'outil peut faire (`agent_tools.risk`). L'écran le dit pour `irreversible` : l'agent de Meta appelle
-   * sans aucune validation humaine.
-   */
-  risque: RisqueOutil;
-  /**
-   * Cet outil part-il chez Meta quand il est actif ? La réponse de `outilsAPublier`, redite pour l'écran (sinon une
-   * ligne jamais publiée s'afficherait « ✓ Chez Meta ») ; parité tenue par `tests/mba-outils-parite.test.ts`.
-   */
-  publiable: boolean;
-}
+import { blocSeul, lireCibleMaison, nomDuBlocParCode, typeDeLaCible } from './outils-maison';
+import type { OutilMbaVue, OutilMcpProposable } from '../../web/lib/partage/outils-mba';
+export type { CibleVue, OutilMbaVue, OutilMcpProposable } from '../../web/lib/partage/outils-mba';
 
 export interface ContexteVue {
   requetes: ReadonlyMap<string, { label: string }>;
@@ -59,17 +19,6 @@ export interface ContexteVue {
 /** Les agents IA qui se servent aussi d'un outil de la bibliothèque, par leur nom. */
 function agentsDe(o: OutilBibliotheque | undefined): string[] {
   return (o?.consommateurs ?? []).filter((c) => c.agentId !== null).map((c) => c.agentLabel ?? 'un agent IA');
-}
-
-/** Un outil MCP de la bibliothèque, tel que l'onglet le propose à l'agent de Meta. */
-export interface OutilMcpProposable {
-  id: string;
-  name: string;
-  title: string;
-  description: string;
-  serveur: string | null;
-  risque: RisqueOutil;
-  aussiUtilisePar: string[];
 }
 
 /**

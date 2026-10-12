@@ -9,12 +9,10 @@
 
 import type { Geste } from './gestes';
 import type { CibleOutilAgent } from './outils-maison';
+import type { RisqueOutil } from '../../web/lib/partage/risque-outil';
+export type { RisqueOutil } from '../../web/lib/partage/risque-outil';
 
 export type OrigineOutil = 'mba' | 'http' | 'mcp';
-
-/** `irreversible` n'est pas refusé en bloc : c'est le drapeau `autonome`, posé outil par outil par un
- *  administrateur, qui décide. */
-export type RisqueOutil = 'read' | 'write' | 'irreversible';
 
 /**
  * Qui a déclenché un appel de connecteur, liste fermée gardée par un CHECK en base. À ne pas confondre avec

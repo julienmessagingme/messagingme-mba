@@ -9,8 +9,10 @@ import { espaceVerifie, estUuid } from './scope';
 import { blocSeul, type BlocPropose, type CibleMaison } from '../mba/outils-maison';
 import { outilsMcpProposables, vueOutilMba, SCENARIO_VIDE, type ContexteVue } from '../mba/vue-outils';
 import { entryNode } from '../workflow/engine';
-import { LONGUEUR_MAX_ETIQUETTE } from '../crm/poser-etiquette';
 import type { WorkflowGraph } from '../workflow/graph';
+import { BORNES_OUTIL_MBA, TYPES_OUTIL_MBA } from '../../web/lib/partage/outils-mba';
+import type { CibleSaisie, TextesOutil, TypeOutilMba } from '../../web/lib/partage/outils-mba';
+export { BORNES_OUTIL_MBA } from '../../web/lib/partage/outils-mba';
 
 /**
  * L'onglet « Outils » de l'agent de Meta : il ne parle que des outils de cet agent (la bibliothèque de l'espace
@@ -18,8 +20,6 @@ import type { WorkflowGraph } from '../workflow/graph';
  * catalogue (`src/mba/outils-maison.ts`) et le risque d'un connecteur se dérive de la méthode de sa requête :
  * le navigateur ne choisit ni l'un ni l'autre (`.strict()` refuse les clés en trop).
  */
-interface TextesOutil { name: string; title: string; description: string; nePasUtiliser: string }
-
 export interface MbaOutilsDeps {
   repo: { getTenantPhoneNumberId(tenantId: string): Promise<string | null> };
   /** Les outils du consommateur `mba:<numéro>`, actifs ou non. */
@@ -65,32 +65,30 @@ export interface MbaOutilsDeps {
 const NOM = z.string().trim().regex(/^[a-z0-9_]{1,64}$/, 'nom technique au format [a-z0-9_], 64 caractères au plus');
 const texte = (max: number) => z.string().trim().min(1).max(max);
 
-/**
- * Les bornes de la saisie, appliquées aussi par l'écran avant l'envoi (`BORNES_OUTIL`) pour dire ce qui manque
- * au lieu d'un 400 ; `tests/mba-outils-parite.test.ts` tient les deux listes égales.
- */
-export const BORNES_OUTIL_MBA = { titre: 120, texte: 2000, tag: LONGUEUR_MAX_ETIQUETTE, champ: 64, valeur: 120, valeurs: 50 } as const;
 const B = BORNES_OUTIL_MBA;
 
 /** La cible saisie à l'écran. `connecteur` désigne un appel ; les autres deviennent un `binding` maison. */
 const cibleSaisieSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('tag'), tag: z.string().trim().min(1).max(B.tag) }).strict(),
+  z.object({ type: z.literal(TYPES_OUTIL_MBA[0]), tag: z.string().trim().min(1).max(B.tag) }).strict(),
   z.object({
-    type: z.literal('champ'),
+    type: z.literal(TYPES_OUTIL_MBA[1]),
     champ: z.string().trim().min(1).max(B.champ),
     valeurs: z.array(z.string().trim().min(1).max(B.valeur)).max(B.valeurs).default([]),
   }).strict(),
-  z.object({ type: z.literal('bloc'), workflowId: z.string().uuid(), code: z.string().min(1).max(128) }).strict(),
-  z.object({ type: z.literal('scenario'), workflowId: z.string().uuid() }).strict(),
-  z.object({ type: z.literal('connecteur'), requeteId: z.string().uuid() }).strict(),
+  z.object({ type: z.literal(TYPES_OUTIL_MBA[2]), workflowId: z.string().uuid(), code: z.string().min(1).max(128) }).strict(),
+  z.object({ type: z.literal(TYPES_OUTIL_MBA[3]), workflowId: z.string().uuid() }).strict(),
+  z.object({ type: z.literal(TYPES_OUTIL_MBA[4]), requeteId: z.string().uuid() }).strict(),
 ]);
-type CibleSaisie = z.infer<typeof cibleSaisieSchema>;
+type CibleValidee = z.infer<typeof cibleSaisieSchema>;
+type MemeCible = [CibleValidee] extends [CibleSaisie] ? [CibleSaisie] extends [CibleValidee] ? true : false : false;
+type VerifierCible<T extends true> = T;
+type _CibleConforme = VerifierCible<MemeCible>;
 
 /**
  * Les types qu'une création accepte, lus sur le schéma. L'écran en propose un sous-ensemble ; un type proposé que
  * la route refuserait serait un bouton qui rend 400 (`tests/mba-outils-parite.test.ts`).
  */
-export const TYPES_SAISISSABLES: readonly string[] = cibleSaisieSchema.options.map((o) => o.shape.type.value);
+export const TYPES_SAISISSABLES: readonly TypeOutilMba[] = cibleSaisieSchema.options.map((o) => o.shape.type.value);
 
 const creationSchema = z.object({
   name: NOM, title: texte(B.titre), description: texte(B.texte), nePasUtiliser: texte(B.texte), cible: cibleSaisieSchema,

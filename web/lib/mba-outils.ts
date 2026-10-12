@@ -1,5 +1,6 @@
 import type { GestePublication } from './api-agent-tools';
 import type { OutilMbaVue, TypeOutilMba } from './api-mba-outils';
+import { BORNES_OUTIL_MBA } from './partage/outils-mba';
 import { normaliserCodeSortie } from './agent-sorties';
 import type { SigneOutil } from './signes-outils';
 
@@ -60,11 +61,8 @@ export function valeursPermises(texte: string): string[] {
   return [...new Set(texte.split('\n').map((v) => v.trim()).filter((v) => v !== ''))];
 }
 
-/**
- * Les bornes de la route (`BORNES_OUTIL_MBA`, `src/http/mba-outils.ts`), appliquées AVANT l'envoi pour dire ce
- * qui manque au lieu d'un 400. `tests/mba-outils-parite.test.ts` tient les deux listes égales.
- */
-export const BORNES_OUTIL = { titre: 120, texte: 2000, tag: 64, champ: 64, valeur: 120, valeurs: 50 } as const;
+/** Bornes communes appliquées avant l'envoi ; la route les valide à nouveau. */
+export const BORNES_OUTIL = BORNES_OUTIL_MBA;
 
 /**
  * Le connecteur unique de Messaging Me chez Meta. Recopie de `NOM_CONNECTEUR_RELAIS` (`src/mba/publication.ts`),

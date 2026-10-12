@@ -5,6 +5,9 @@ import { walk } from '../workflow/engine';
 import type { WorkflowGraph, WorkflowNode } from '../workflow/graph';
 import { CODE_BLOC_RE, summarize } from '../workflow/node-list';
 import { LONGUEUR_MAX_ETIQUETTE } from '../crm/poser-etiquette';
+import { BORNES_OUTIL_MBA } from '../../web/lib/partage/outils-mba';
+import type { BlocPropose, TypeOutilMba } from '../../web/lib/partage/outils-mba';
+export type { BlocPropose, TypeOutilMba } from '../../web/lib/partage/outils-mba';
 
 /**
  * Les gestes de l'agent de Meta : ce que le relais exécute lui-même, sans système tiers.
@@ -16,9 +19,6 @@ import { LONGUEUR_MAX_ETIQUETTE } from '../crm/poser-etiquette';
 export const HANDLERS_MAISON_MBA = ['tag_fixe', 'champ_fixe', 'bloc_fixe', 'scenario_fixe'] as const;
 export type HandlerMaisonMba = (typeof HANDLERS_MAISON_MBA)[number];
 
-/** Le type d'un outil tel que l'écran le montre. `connecteur` n'est pas un geste maison : il appelle un tiers. */
-export type TypeOutilMba = 'tag' | 'champ' | 'bloc' | 'scenario' | 'connecteur';
-
 /**
  * `.strict()` : le `binding` est un jsonb que rien d'autre ne contraint. Une clé en trop veut dire qu'une autre
  * écriture l'a produit, et un outil qu'on ne comprend pas ne s'exécute pas.
@@ -27,8 +27,8 @@ export const cibleMaisonSchema = z.discriminatedUnion('handler', [
   z.object({ handler: z.literal('tag_fixe'), tag: z.string().trim().min(1).max(LONGUEUR_MAX_ETIQUETTE) }).strict(),
   z.object({
     handler: z.literal('champ_fixe'),
-    champ: z.string().trim().min(1).max(64),
-    valeurs: z.array(z.string().trim().min(1).max(120)).max(50),
+    champ: z.string().trim().min(1).max(BORNES_OUTIL_MBA.champ),
+    valeurs: z.array(z.string().trim().min(1).max(BORNES_OUTIL_MBA.valeur)).max(BORNES_OUTIL_MBA.valeurs),
   }).strict(),
   // Un bloc se désigne par son code public (`nod_…`), pas par l'identifiant du nœud : le code survit à la
   // réécriture du graphe par l'éditeur, et c'est lui que vise l'API publique (`/v1/sends`).
@@ -177,10 +177,6 @@ export function blocSeul(
 export function nomDuBlocParCode(graph: WorkflowGraph, code: string): string | null {
   const n = noeudDuCode(graph, code);
   return n ? nomDuBloc(n) : null;
-}
-
-export interface BlocPropose {
-  workflowId: string; scenario: string; code: string; nom: string; type: string; envoyable: boolean; raison: string | null;
 }
 
 /**
