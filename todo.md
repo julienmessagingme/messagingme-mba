@@ -1,5 +1,14 @@
 # todo.md : backlog
 
+## 🟡 Lot 10, le plugin Claude Code : ce qui reste hors périmètre (2026-10-12)
+
+- **La skill d'import de contacts** (un fichier en vrac : analyse, correspondance des champs, import).
+- **Cursor et les autres clients** : le plugin ne sert que Claude Code ; les skills au format `SKILL.md` serviraient
+  aussi Cursor.
+- **Un serveur qui refuse un outil appelé avant son étape** (la troisième couche du plan) : `get_setup_state` conseille
+  sans bloquer.
+- **La licence du plugin**, à trancher avec celle du SDK (section ci-dessous) : le dépôt public n'en porte aucune.
+
 ## 🟡 Lot 14, la tenue en charge : ce que la spec laisse hors périmètre (2026-10-12)
 
 - **La durée limite des requêtes** (`statement_timeout`) sur le pool applicatif : à juger sur la mesure du banc (B). Le

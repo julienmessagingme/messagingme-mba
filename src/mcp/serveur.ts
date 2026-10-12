@@ -88,7 +88,9 @@ export async function traiterMessage(deps: DepsMcp, ctx: ContexteMcp, message: u
         instructions:
           'Outils de la console Messaging Me (WhatsApp). Pour répondre à une conversation : list_conversations, puis '
           + 'get_conversation pour savoir si la fenêtre de 24 h est ouverte avant toute tentative de réponse. Un outil que '
-          + 'l’offre de l’espace ne comprend pas reste listé et refuse avec le lien de l’offre : le dire à la personne.',
+          + 'l’offre de l’espace ne comprend pas reste listé et refuse avec le lien de l’offre : le dire à la personne. Pour '
+          + 'mettre un espace en service, ou reprendre une mise en service, commence par get_setup_state : il dit ce qui est '
+          + 'fait et l’étape suivante.',
       });
     }
     case 'ping':

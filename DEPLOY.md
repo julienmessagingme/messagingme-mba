@@ -262,6 +262,20 @@ intégrateurs des types pour des routes encore en 404. Donc, quand un lot change
 Une version déjà publiée ne bouge plus : si son contenu change sans montée de version, le run échoue sans rien pousser.
 Le run n'a d'effet que si le secret `SDK_DEPLOY_KEY` existe (commande de création dans `wip.md`, lot 16).
 
+## 🔴 Le plugin Claude Code se publie APRÈS le déploiement de l'API, à la main
+
+Ses skills nomment des outils du serveur MCP : publié avant le `up` de l'API qui les porte, le plugin les appellerait
+en vain. Donc, quand `plugin/` change :
+
+1. monter la version de `plugin/.claude-plugin/plugin.json` (Claude Code fige une installation sur elle : sans montée,
+   personne ne reçoit le changement), et relancer `npm run plugin:generer` si la FAQ a bougé ;
+2. déployer l'API comme d'habitude si un outil a changé ;
+3. seulement ensuite : `gh workflow run plugin.yml --ref main`, puis lire le run.
+
+Une version déjà publiée ne bouge plus, comme pour le SDK. Le run n'a d'effet que si le secret `PLUGIN_DEPLOY_KEY`
+existe : le dépôt `julienmessagingme/messagingme-plugin` et sa clé de déploiement en écriture se créent une fois, par
+Julien (commandes dans le journal, lot 10).
+
 ## ⚠️ Deux gestes qu'on oublie, et leur symptôme
 
 **`up -d --build` OBLIGATOIRE dès que `web/next.config.mjs` bouge.** Les `rewrites` sont **gelés au build** de

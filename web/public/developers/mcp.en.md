@@ -50,6 +50,7 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 | tag_conversation | mcp:write | Add tags to a thread’s contact. |
 | assign_conversation | mcp:write | Assign a thread to a member, or release it. |
 | get_plan | mcp:read | The workspace plan, its limits and current usage, with the link to upgrade. |
+| get_setup_state | mcp:read | Where the workspace setup stands (number, AI agent, responder, bubble, credit, plan), and the next step with its tools. Call it first to set up a workspace, or to resume. |
 | list_widgets | mcp:read | The workspace’s WhatsApp widgets, with the tag to paste on the site. |
 | list_scenarios | mcp:read | Scenarios, and which are published: a widget only starts a published scenario. |
 | create_widget | mcp:write | Create a WhatsApp widget, with the screen’s checks, and get its tag. |

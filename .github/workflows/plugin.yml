@@ -1,0 +1,121 @@
+name: Plugin Claude Code (publication)
+
+# 🔴 LE PLUGIN SE PUBLIE DANS SON PROPRE DEPOT (lot 10, decision de Julien du 2026-10-12), sur le modele du SDK : le
+# dossier `plugin/` part tel quel vers `julienmessagingme/messagingme-plugin`, etiquete `v<version>` de
+# `plugin/.claude-plugin/plugin.json`. On l'installe dans Claude Code par
+# `/plugin marketplace add julienmessagingme/messagingme-plugin`, puis `/plugin install messagingme@messagingme`.
+#
+# 🔴 A LA MAIN, APRES LE DEPLOIEMENT DE L'API : `gh workflow run plugin.yml --ref main`. Jamais sur un push : les skills
+# nomment des outils du serveur MCP (`get_setup_state`), qu'un plugin publie avant le `up` de l'API appellerait en vain.
+#
+# 🔴 DEUX JOBS, ET SEUL LE SECOND VOIT LA CLE : le premier execute du code tiers (`npm ci`, vitest) sans aucun secret et
+# ne produit RIEN ; le second n'installe rien, extrait `plugin/` du commit lui-meme et pousse. Un paquet npm compromis
+# ne peut donc ni lire la cle, ni glisser un fichier (un crochet, par exemple) dans ce qui part chez les utilisateurs :
+# le contenu publie ne passe jamais par le dossier ou `npm ci` a tourne.
+#
+# ⚠️ INERTE SANS LE SECRET `PLUGIN_DEPLOY_KEY` (cle de deploiement en ECRITURE sur le depot dedie, creee par Julien) : le
+# job le dit et s'arrete en vert.
+#
+# ⚠️ UNE VERSION PUBLIEE NE BOUGE PLUS, et c'est ce qui livre les mises a jour : Claude Code fige une installation sur
+# `version` jusqu'a son changement. Si l'etiquette existe et que le contenu differe, le job ECHOUE sans rien pousser
+# (monter la version de `plugin.json`) ; si le contenu est le meme, il ne fait rien.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugin-publication
+  cancel-in-progress: false
+
+jobs:
+  construire:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      # Un plugin qui cite un outil absent, pre-autorise une ecriture, ou porte une FAQ en retard sur sa source ne part pas.
+      - name: Verifier le plugin
+        run: npx vitest run tests/plugin.test.ts tests/plugin-faq.test.ts tests/mcp-mise-en-service.test.ts
+
+  publier:
+    needs: construire
+    runs-on: ubuntu-latest
+    steps:
+      - name: La cle de publication est-elle posee ?
+        id: cle
+        env:
+          CLE: ${{ secrets.PLUGIN_DEPLOY_KEY }}
+        run: |
+          if [ -z "$CLE" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::PLUGIN_DEPLOY_KEY absent : rien n'est publie (le depot messagingme-plugin et sa cle se creent une fois)."
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      # `plugin/` du commit verifie par le premier job (`github.sha`), sans rien installer.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.cle.outputs.present == 'true'
+        with:
+          ref: ${{ github.sha }}
+          path: source
+          persist-credentials: false
+          sparse-checkout: plugin
+      - name: Pousser vers messagingme-plugin
+        if: steps.cle.outputs.present == 'true'
+        env:
+          CLE: ${{ secrets.PLUGIN_DEPLOY_KEY }}
+          SOURCE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p ~/.ssh
+          # Sans retour chariot : posée depuis PowerShell, la clé peut arriver en CRLF, qu'OpenSSH ne lit pas.
+          printf '%s\n' "$CLE" | tr -d '\r' > ~/.ssh/cle_plugin
+          if ! ssh-keygen -y -P '' -f ~/.ssh/cle_plugin > ~/.ssh/cle_plugin.pub 2>/dev/null; then
+            echo "::error::PLUGIN_DEPLOY_KEY illisible, ou protégée par une phrase de passe : la recréer sans phrase de passe."
+            exit 1
+          fi
+          echo "::notice::empreinte de la clé lue : $(ssh-keygen -lf ~/.ssh/cle_plugin.pub)"
+          # Le manifeste et le serveur doivent etre la : sans eux, le plugin publie serait vide.
+          test -f source/plugin/.claude-plugin/plugin.json && test -f source/plugin/.claude-plugin/marketplace.json && test -f source/plugin/.mcp.json
+          # La cle d'hote publiee par GitHub (`gh api meta`), ecrite en dur : jamais de confiance au premier contact.
+          printf '%s\n' 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > ~/.ssh/hote_github
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/cle_plugin -o IdentitiesOnly=yes -o UserKnownHostsFile=$HOME/.ssh/hote_github -o StrictHostKeyChecking=yes"
+          VERSION=$(node -p "require('./source/plugin/.claude-plugin/plugin.json').version")
+          git clone --quiet git@github.com:julienmessagingme/messagingme-plugin.git depot
+          cd depot
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config core.autocrlf false
+          if git rev-parse --verify --quiet origin/main >/dev/null; then git checkout --quiet -B main origin/main; else git checkout --quiet --orphan main; fi
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -r ../source/plugin/. .
+          git add -A
+          CHANGE=1; if git diff --cached --quiet; then CHANGE=0; fi
+          ETIQUETTE=0; if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then ETIQUETTE=1; fi
+          if [ "$ETIQUETTE" = 1 ] && [ "$CHANGE" = 1 ]; then
+            echo "::error::v$VERSION est deja publiee avec un autre contenu : rien n'est pousse. Monter la version de plugin/.claude-plugin/plugin.json."
+            exit 1
+          fi
+          if [ "$CHANGE" = 1 ]; then
+            git commit --quiet -m "v$VERSION (messagingme-mba ${SOURCE:0:8})"
+            git push --quiet origin main
+            echo "::notice::main publie (v$VERSION, source ${SOURCE:0:8})"
+          else
+            echo "::notice::rien de neuf a publier (v$VERSION)"
+          fi
+          if [ "$ETIQUETTE" = 0 ]; then
+            git tag "v$VERSION"
+            git push --quiet origin "v$VERSION"
+            echo "::notice::etiquette v$VERSION posee"
+          fi
+          rm -f ~/.ssh/cle_plugin

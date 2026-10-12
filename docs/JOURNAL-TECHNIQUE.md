@@ -6,6 +6,38 @@
 > tranchent, jamais ce fichier.
 
 
+## 2026-10-12 : le plugin Claude Code, livraison A (lot 10)
+
+Décisions de Julien en deux rondes de questions : le plugin publié comme le SDK dans
+`julienmessagingme/messagingme-plugin`, le serveur MCP sans clé, `/messagingme:demarrer` et trois skills en anglais
+(mise en service, règles de WhatsApp, FAQ), un outil de lecture « où en est l'espace » pour reprendre une session
+coupée, la FAQ en français et en anglais en une source publiée partout, et le plugin à la place de `claude mcp add`
+(livraison B). Spec `docs/superpowers/specs/2026-10-12-plugin-claude-code-design.md`, plan
+`docs/superpowers/plans/2026-10-12-plugin-claude-code.md`.
+
+- Lu avant d'écrire, dans la doc de Claude Code : un dépôt peut être catalogue et plugin à la fois (source `"./"`), le
+  point d'entrée est une skill réservée à la personne, la version fige les installations, un catalogue tiers ne se met
+  pas à jour tout seul, et 🔴 rien ne dit que l'autorisation par `/mcp` vaut pour un serveur fourni par un plugin :
+  l'installation de Julien le prouvera avant la livraison B. `claude plugin validate` passe sur le catalogue et le
+  manifeste.
+- La FAQ du plan du 2 octobre disait les réponses dans les 24 h gratuites chez Meta : faux depuis le 2026-10-01. La
+  source neuve ne porte aucun prix de Meta et nomme, pour chaque réponse, ce qui fait foi.
+- Relecture : un rouge, corrigé avant le push. La FAQ disait « deux limites » d'envoi et « sans plafond en Pro » en
+  oubliant le quota du jour de l'API (2 000 envois par espace dans toutes les offres, `QUOTAS_API_DEFAUT`, aucune autre
+  valeur en production) : un développeur en Pro aurait conçu une app refusée en 429 dès le 2 001e envoi. La FAQ dit
+  désormais les trois limites, tirées du code. Jaunes corrigés avant le push : un répondeur choisi (agent de Meta,
+  scénario, application), même gelé par l'offre, saute les étapes de l'agent IA au lieu d'en faire créer un ; le
+  brouillon en cours passe avant l'agent désactivé ; un numéro à activer a son étape, sans outil ; la skill reprend un
+  numéro fourni sans reposer la question ; les pannes de lecture laissent une trace ; les tests dérivent leurs exceptions
+  du code et cherchent un prix de Meta dans toutes les skills ; et l'action publie `plugin/` extrait du commit, jamais
+  le dossier où `npm ci` a tourné (un paquet compromis aurait pu y glisser un crochet).
+- Le dépôt public et sa clé se créent une fois, par Julien (PowerShell) :
+  `gh repo create julienmessagingme/messagingme-plugin --public`, puis
+  `ssh-keygen -t ed25519 -N '""' -C "publication messagingme-plugin" -f "$env:TEMP\cle_plugin"`,
+  `gh repo deploy-key add "$env:TEMP\cle_plugin.pub" --repo julienmessagingme/messagingme-plugin --title "publication depuis messagingme-mba" --allow-write`,
+  `Get-Content "$env:TEMP\cle_plugin" -Raw | gh secret set PLUGIN_DEPLOY_KEY --repo julienmessagingme/messagingme-mba`,
+  `Remove-Item "$env:TEMP\cle_plugin", "$env:TEMP\cle_plugin.pub"`.
+
 ## 2026-10-12 : neuf refactors d'architecture, chacun rendu à son module (session ChatGPT)
 
 Une série de refactors internes issus d'audits « improve-codebase-architecture », menée dans une session ChatGPT du

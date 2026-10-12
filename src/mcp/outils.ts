@@ -27,6 +27,7 @@ import type { ReponseEnvoi } from '../http/v1-sends';
 import type { VueOffre } from '../offres/vue';
 import type { SourceOffres } from '../offres/offre.pg';
 import type { Fonction } from '../offres/offres';
+import { OUTILS_DE_L_ETAPE, lireMiseEnService } from './mise-en-service';
 
 export { RefusOutil } from './saisie';
 
@@ -785,6 +786,32 @@ export const OUTILS: OutilMcp[] = [
     entree: { type: 'object', properties: {} },
     async executer(deps, tenantId) {
       return deps.offre.vue(tenantId);
+    },
+  },
+  /**
+   * OÙ EN EST LA MISE EN SERVICE (lot 10) : la première lecture de la skill de mise en service du plugin Claude Code,
+   * et de tout client qui reprend une session coupée. La règle de l'étape suivante est dans `./mise-en-service`.
+   */
+  {
+    ...ficheOutilMcp('get_setup_state'),
+    fonction: null,
+    description:
+      'Où en est la mise en service de l’espace, en un appel : à appeler EN PREMIER pour mettre un espace en service ou '
+      + 'reprendre une mise en service interrompue. Rend l’offre (offre), le crédit IA (credit_eur), le numéro WhatsApp '
+      + '(connecte, a_activer, chiffres, fourni, abonnement), les agents IA (actifs, a_completer avec nb_manques, '
+      + 'desactives), qui répond au client (repondeur.mode, tel que l’offre le laisse jouer), les bulles (actives, total), '
+      + 'et etape_suivante avec outils_suggeres : '
+      + Object.entries(OUTILS_DE_L_ETAPE).map(([e, o]) => (o.length ? `${e} (${o.join(', ')})` : e)).join(', ') + '. '
+      + 'activer_numero : le numéro est relié mais Meta ne l’a pas activé, à finir dans l’Accueil de la console '
+      + '(« Activer le numéro »). Un répondeur déjà choisi (repondeur.mode_choisi : agent de Meta, scénario, application) '
+      + 'saute les étapes de l’agent IA et du répondeur : ne pas le changer sans la demande de la personne. avertissements : '
+      + 'numero_a_activer, credit_epuise (un agent IA ne répond plus : buy_credit), repondeur_gele_par_l_offre (le répondeur '
+      + 'choisi est gelé par l’offre actuelle), lecture_manquee:<source> (cette partie n’a pas pu être lue : l’étape '
+      + 'qu’elle aurait dite est sautée). L’outil ne fait que lire.',
+    annotations: lecture('Lire où en est la mise en service'),
+    entree: { type: 'object', properties: {} },
+    async executer(deps, tenantId) {
+      return lireMiseEnService(deps, tenantId);
     },
   },
   // L'agent IA, sa connaissance et le crédit (lot 8a) : leur fichier, `src/mcp/outils-agent.ts`.

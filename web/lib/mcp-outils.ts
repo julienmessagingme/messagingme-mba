@@ -26,6 +26,7 @@ const TEXTES_MCP = {
   tag_conversation: ['Poser des tags sur le contact d’un fil.', 'Add tags to a thread’s contact.'],
   assign_conversation: ['Confier un fil à un membre, ou le libérer.', 'Assign a thread to a member, or release it.'],
   get_plan: ['L’offre de l’espace, ses limites et ce qui en est consommé, avec le lien pour passer en Pro.', 'The workspace plan, its limits and current usage, with the link to upgrade.'],
+  get_setup_state: ['Où en est la mise en service de l’espace (numéro, agent IA, répondeur, bulle, crédit, offre), et l’étape suivante avec ses outils. À appeler en premier pour mettre un espace en service, ou reprendre.', 'Where the workspace setup stands (number, AI agent, responder, bubble, credit, plan), and the next step with its tools. Call it first to set up a workspace, or to resume.'],
   list_widgets: ['Les widgets WhatsApp de l’espace, avec la balise à coller sur le site.', 'The workspace’s WhatsApp widgets, with the tag to paste on the site.'],
   list_scenarios: ['Les scénarios, et lesquels sont publiés : un widget ne démarre qu’un scénario publié.', 'Scenarios, and which are published: a widget only starts a published scenario.'],
   create_widget: ['Créer un widget WhatsApp, avec les contrôles de l’écran, et recevoir sa balise.', 'Create a WhatsApp widget, with the screen’s checks, and get its tag.'],

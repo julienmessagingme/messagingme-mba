@@ -50,6 +50,7 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 | tag_conversation | mcp:write | Poser des tags sur le contact d’un fil. |
 | assign_conversation | mcp:write | Confier un fil à un membre, ou le libérer. |
 | get_plan | mcp:read | L’offre de l’espace, ses limites et ce qui en est consommé, avec le lien pour passer en Pro. |
+| get_setup_state | mcp:read | Où en est la mise en service de l’espace (numéro, agent IA, répondeur, bulle, crédit, offre), et l’étape suivante avec ses outils. À appeler en premier pour mettre un espace en service, ou reprendre. |
 | list_widgets | mcp:read | Les widgets WhatsApp de l’espace, avec la balise à coller sur le site. |
 | list_scenarios | mcp:read | Les scénarios, et lesquels sont publiés : un widget ne démarre qu’un scénario publié. |
 | create_widget | mcp:write | Créer un widget WhatsApp, avec les contrôles de l’écran, et recevoir sa balise. |

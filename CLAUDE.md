@@ -69,6 +69,11 @@ local avant de pousser.
 propose les 31 variables du `.env.example` RACINE (le backend), même avec `site` pour Root Directory : on les
 supprime toutes. Les docs API et MCP de la console, vers lesquelles elle pointe, sont PUBLIQUES depuis le 2026-09-25.
 
+🔴 **LE PLUGIN CLAUDE CODE (`plugin/`) SE PUBLIE À LA MAIN, APRÈS L'API, ET SA VERSION MONTE À CHAQUE FOIS** (lot 10) :
+`gh workflow run plugin.yml --ref main` après le `up` qui porte les outils que ses skills nomment ; sans montée de
+`plugin.json`, personne ne reçoit le changement (`DEPLOY.md`). Sa FAQ s'écrit dans `scripts/plugin/faq.ts`, jamais dans
+la skill générée (`npm run plugin:generer`).
+
 🔴 **UN PUSH DE LA VITRINE SEULE LANCE LA CI DE LA RACINE** (lot 18, 2026-10-12) : `tests/vitrine-developpeurs.test.ts`
 lit `site/` (les chiffres de l'offre, la commande Claude Code, les outils du terminal, l'exemple du SDK, les liens), donc
 `ci.yml` n'ignore plus `site/**`. Il s'annonce aux sessions voisines comme un push de code. Seul un push de `.md` ne

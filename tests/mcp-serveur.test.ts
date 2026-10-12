@@ -255,6 +255,8 @@ describe('serveur MCP : protocole', () => {
     // En Base, list_conversations refuse : « commence par » enverrait chaque session vers un refus.
     expect(instructions).not.toMatch(/Commence par list_conversations/);
     expect(instructions).toMatch(/offre/);
+    // Le plugin et tout client qui reprend une mise en service (lot 10) partent de là.
+    expect(instructions).toMatch(/commence par get_setup_state/);
     await server.close();
   });
 

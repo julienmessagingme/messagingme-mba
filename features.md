@@ -4194,6 +4194,13 @@ compatible MCP, directement sur son espace, **sans développer d'intégration**.
 coûté un dépôt entier pour UN partenaire, le serveur MCP rend la console joignable par tout ce qui parle ce
 protocole, pour un seul travail.
 
+🚧 **Le plugin Claude Code** (lot 10, 2026-10-12, publié après l'installation d'essai de Julien) : deux commandes
+dans Claude Code (`/plugin marketplace add julienmessagingme/messagingme-plugin`, puis `/plugin install
+messagingme@messagingme`) branchent le serveur sans clé et apportent `/messagingme:demarrer`, qui mène pas à pas
+jusqu'à un agent IA qui répond sur WhatsApp et une bulle sur le site, en reprenant une session coupée là où elle
+s'était arrêtée. Il porte aussi les règles de WhatsApp et la FAQ, la même que celle de la vitrine. Côté serveur, l'outil
+`get_setup_state` dit en un appel où en est la mise en service d'un espace et l'étape suivante, pour tout client MCP.
+
 **Comment ça s'utilise.** Menu **Developers > Serveur MCP**. L'écran donne l'adresse
 (`https://api.messagingme.app/mcp`), la commande à copier, la liste des outils et ce que le serveur ne fait
 pas. L'accès passe par une **clé d'API** portant les droits `mcp:read` et/ou `mcp:write`, créée dans

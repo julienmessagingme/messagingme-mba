@@ -18,6 +18,7 @@ export const CATALOGUE_MCP = {
   create_widget: { scope: 'mcp:write' },
   update_widget: { scope: 'mcp:write' },
   get_plan: { scope: 'mcp:read' },
+  get_setup_state: { scope: 'mcp:read' },
   list_agents: { scope: 'mcp:read' },
   get_agent: { scope: 'mcp:read' },
   create_agent: { scope: 'mcp:write', exigePersonne: true },

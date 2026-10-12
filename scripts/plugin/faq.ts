@@ -1,0 +1,170 @@
+/**
+ * LA FAQ DE MESSAGING ME POUR LES DÉVELOPPEURS (lot 10) : UNE source, en français et en anglais. `npm run plugin:generer`
+ * l'écrit dans la skill `faq` du plugin Claude Code (`plugin/skills/faq/SKILL.md`) et dans le bloc FAQ des deux pages
+ * développeurs de la vitrine ; `tests/plugin-faq.test.ts` refait les sorties et exige l'égalité au caractère près.
+ *
+ * 🔴 CHAQUE RÉPONSE NOMME SA SOURCE (`source`), relue au moment de l'écrire. Les chiffres de nos offres viennent du code,
+ * jamais recopiés. Les tarifs de Meta ne portent AUCUN chiffre (décision du lot 17) : ils changent plusieurs fois par an,
+ * et notre fiche produit (`brain/MESSAGINGME.md`, § tarifs) est la seule référence avant d'en écrire un mot.
+ */
+import { DROITS } from '../../src/offres/offres';
+import { PRIX_NUMERO_HT_CENTIMES } from '../../src/stripe/abonnement';
+import { QUOTAS_API_DEFAUT } from '../../src/api/quotas';
+
+export interface EntreeFaq {
+  /** L'ancre, stable : la vitrine et la skill la portent. */
+  id: string;
+  question: { fr: string; en: string };
+  reponse: { fr: string; en: string };
+  /** Ce qui fait foi pour la réponse : un fichier du dépôt, une fiche d'aide, la fiche produit. */
+  source: string;
+}
+
+const prix = (centimes: number, langue: 'fr' | 'en'): string => {
+  const e = (centimes / 100).toFixed(2);
+  return langue === 'fr' ? `${e.replace('.', ',')} € HT` : `€${e} excl. VAT`;
+};
+const NUMERO_FR = `${prix(PRIX_NUMERO_HT_CENTIMES, 'fr')} par mois`;
+const NUMERO_EN = `${prix(PRIX_NUMERO_HT_CENTIMES, 'en')} a month`;
+const nombre = (n: number, langue: 'fr' | 'en'): string =>
+  langue === 'fr' ? n.toLocaleString('fr-FR').replace(/\u202f/g, ' ') : n.toLocaleString('en-US');
+/** Les modèles par mois d'une offre, dits depuis `DROITS` : `null` (sans limite) se dit, il ne devient jamais « 0 ». */
+const modeles = (limite: number | null, langue: 'fr' | 'en'): string => limite === null
+  ? (langue === 'fr' ? 'sans plafond de notre part' : 'no cap from us')
+  : (langue === 'fr' ? `${nombre(limite, 'fr')} modèles par mois` : `${nombre(limite, 'en')} templates a month`);
+const UTILISATEURS_FREE = DROITS.base.limites.utilisateurs;
+const UTILISATEURS_PRO = DROITS.pro.limites.utilisateurs;
+const INCLUS_FR = DROITS.pro.limites.numeroInclus ? ', inclus dans le Pro' : '';
+const INCLUS_EN = DROITS.pro.limites.numeroInclus ? ', included in Pro' : '';
+/** Le quota d'envois du jour de l'API, par espace, dans toutes les offres (le défaut ; la production n'en pose pas d'autre). */
+const QUOTA_ENVOIS = QUOTAS_API_DEFAUT.envois;
+const GRILLE_META = 'https://developers.facebook.com/docs/whatsapp/pricing';
+
+export const FAQ: readonly EntreeFaq[] = [
+  {
+    id: 'api-officielle',
+    question: { fr: 'C’est l’API officielle de WhatsApp ?', en: 'Is this the official WhatsApp API?' },
+    reponse: {
+      fr: 'Oui : la WhatsApp Business Platform de Meta. Messaging Me est Tech Provider de Meta, sans aucune automatisation de WhatsApp Web. Le compte WhatsApp Business est dans votre Business Manager et reste à vous.',
+      en: 'Yes: Meta’s WhatsApp Business Platform. Messaging Me is a Meta Tech Provider, with no WhatsApp Web automation. The WhatsApp Business account lives in your Business Manager and stays yours.',
+    },
+    source: 'src/http/embedded-signup.ts (connexion par l’Embedded Signup de Meta) ; brain/MESSAGINGME.md',
+  },
+  {
+    id: 'nom-affiche',
+    question: { fr: 'Mon nom d’entreprise s’affiche mal sur WhatsApp.', en: 'My business name shows up wrong on WhatsApp.' },
+    reponse: {
+      fr: 'C’est le nom d’affichage WhatsApp, distinct du nom de votre espace. Il se change dans votre Business Manager, et Meta relit chaque changement : pendant la relecture, ou après un refus, WhatsApp peut afficher le numéro à la place.',
+      en: 'That is the WhatsApp display name, separate from your workspace name. You change it in your Business Manager, and Meta reviews every change: during the review, or after a rejection, WhatsApp may show the number instead.',
+    },
+    source: 'docs/aide/fiches/connecter-mon-numero-whatsapp.md',
+  },
+  {
+    id: 'fenetre-24-heures',
+    question: { fr: 'Mon message n’est pas parti.', en: 'My message was not sent.' },
+    reponse: {
+      fr: 'Passé 24 heures sans message de la personne, seul un modèle approuvé par Meta peut partir (send_template_to_contact). Dans les 24 heures qui suivent son dernier message, une réponse libre part (reply_in_open_window). get_conversation dit si la fenêtre est ouverte.',
+      en: 'After 24 hours without a message from the person, only a template approved by Meta can be sent (send_template_to_contact). Within 24 hours of their last message, a free-form reply goes out (reply_in_open_window). get_conversation tells whether the window is open.',
+    },
+    source: 'docs/aide/fiches/la-fenetre-de-24-heures.md',
+  },
+  {
+    id: 'ce-que-meta-facture',
+    question: { fr: 'Pourquoi Meta me demande une carte, et que facture-t-il ?', en: 'Why does Meta ask for a card, and what does it charge?' },
+    reponse: {
+      fr: `Meta facture directement votre entreprise, sur le moyen de paiement de votre Business Manager : les modèles, et depuis le 1er octobre 2026 les réponses dans la fenêtre de 24 heures aussi, selon sa grille et le pays de la personne. Messaging Me ne touche pas à ces frais. La grille de Meta : ${GRILLE_META}`,
+      en: `Meta bills your business directly, on the payment method of your Business Manager: templates, and since October 1, 2026 replies within the 24-hour window too, according to its rate card and the person’s country. Messaging Me never touches these fees. Meta’s rate card: ${GRILLE_META}`,
+    },
+    source: 'brain/MESSAGINGME.md, § Pricing WhatsApp (fin de la fenêtre de service gratuite le 2026-10-01)',
+  },
+  {
+    id: 'modele-refuse',
+    question: { fr: 'Mon modèle a été refusé.', en: 'My template was rejected.' },
+    reponse: {
+      fr: 'Claude lit le motif du refus (get_template_status), propose une version corrigée et la soumet de nouveau (create_template). Meta peut aussi changer la catégorie d’un modèle : list_templates montre celle qui s’applique.',
+      en: 'Claude reads the rejection reason (get_template_status), suggests a corrected version and submits it again (create_template). Meta may also change a template’s category: list_templates shows the one that applies.',
+    },
+    source: 'docs/aide/fiches/faire-approuver-un-modele.md ; src/mcp/outils-modeles.ts',
+  },
+  {
+    id: 'agent-muet',
+    question: { fr: 'Mon agent IA ne répond plus.', en: 'My AI agent stopped answering.' },
+    reponse: {
+      fr: 'Trois causes. Le crédit IA est épuisé : get_credit, puis buy_credit. L’agent a été désactivé, ou n’est plus celui qui répond : get_setup_state le dit. Quelqu’un a répondu à la main, Claude compris (reply_in_open_window) : répondre prend la conversation, et l’agent se tait jusqu’à ce qu’elle lui revienne, d’elle-même après un délai sans nouvelle réponse, ou tout de suite par « Rendre la main » dans l’Inbox de la console.',
+      en: 'Three causes. The AI credit is used up: get_credit, then buy_credit. The agent was deactivated, or is no longer the one answering: get_setup_state tells. Someone replied by hand, Claude included (reply_in_open_window): replying takes over the conversation, and the agent stays silent until it gets it back, on its own after a delay without a new reply, or right away with “Hand back” in the console Inbox.',
+    },
+    source: 'docs/aide/fiches/recharger-le-credit-ia.md ; docs/aide/fiches/repondre-dans-l-inbox.md (le délai, « Rendre la main ») ; src/mcp/outils.ts (reply_in_open_window prend le fil) ; src/mcp/mise-en-service.ts',
+  },
+  {
+    id: 'code-de-verification',
+    question: { fr: 'Le code de vérification n’arrive pas.', en: 'The verification code does not arrive.' },
+    reponse: {
+      fr: 'Avec un numéro fourni par Messaging Me, le code est capté pour vous et Claude l’affiche (watch_whatsapp_connection). Avec votre numéro, demandez l’appel plutôt que le SMS quand Meta laisse le choix. Meta ne tolère que dix demandes de code par numéro sur 72 heures.',
+      en: 'With a number provided by Messaging Me, the code is captured for you and Claude shows it (watch_whatsapp_connection). With your own number, ask for a call rather than an SMS when Meta offers the choice. Meta allows only ten code requests per number over 72 hours.',
+    },
+    source: 'docs/aide/fiches/connecter-mon-numero-whatsapp.md',
+  },
+  {
+    id: 'numero-dans-l-application',
+    question: { fr: 'Puis-je garder ce numéro dans l’application WhatsApp ?', en: 'Can I keep this number in the WhatsApp app?' },
+    reponse: {
+      fr: 'Non : un numéro branché sur l’API quitte l’application WhatsApp. Prenez un numéro dédié, le vôtre ou un numéro fourni.',
+      en: 'No: a number connected to the API leaves the WhatsApp app. Use a dedicated number, your own or a provided one.',
+    },
+    source: 'plan privé, décisions du 2026-10-02 (pas de coexistence)',
+  },
+  {
+    id: 'numero-fourni',
+    question: { fr: 'Le numéro fourni m’appartient-il ?', en: 'Do I own the provided number?' },
+    reponse: {
+      fr: `Non : il est loué ${NUMERO_FR}${INCLUS_FR}. Un numéro que vous apportez reste à vous.`,
+      en: `No: it is rented for ${NUMERO_EN}${INCLUS_EN}. A number you bring stays yours.`,
+    },
+    source: 'src/stripe/abonnement.ts (PRIX_NUMERO_HT_CENTIMES) ; src/offres/offres.ts (numeroInclus)',
+  },
+  {
+    id: 'combien-de-messages',
+    question: { fr: 'Combien de messages puis-je envoyer ?', en: 'How many messages can I send?' },
+    reponse: {
+      fr: `Trois limites. Celle de l’offre : ${modeles(DROITS.base.limites.envoisModelesMois, 'fr')} en Free, ${modeles(DROITS.pro.limites.envoisModelesMois, 'fr')} en Pro ; les réponses dans la fenêtre de 24 heures n’y comptent jamais. Celle de l’API, dans toutes les offres : ${nombre(QUOTA_ENVOIS, 'fr')} envois par jour et par espace, modèles et messages libres compris, relevable sur demande ; au-delà, le refus quota_exceeded jusqu’au lendemain. Et celle de Meta, qui fixe ce qu’un numéro peut envoyer et l’augmente avec sa qualité.`,
+      en: `Three limits. The plan’s: ${modeles(DROITS.base.limites.envoisModelesMois, 'en')} on Free, ${modeles(DROITS.pro.limites.envoisModelesMois, 'en')} on Pro; replies within the 24-hour window never count. The API’s, on every plan: ${nombre(QUOTA_ENVOIS, 'en')} sends a day per workspace, templates and free-form messages included, raised on request; beyond it, the quota_exceeded refusal until the next day. And Meta’s, which sets what a number can send and raises it with its quality.`,
+    },
+    source: 'src/offres/offres.ts (DROITS) ; src/api/quotas.ts (QUOTAS_API_DEFAUT) ; docs/aide/fiches/choisir-mon-offre.md',
+  },
+  {
+    id: 'ajouter-un-collegue',
+    question: { fr: 'Comment ajouter un collègue ?', en: 'How do I add a colleague?' },
+    reponse: {
+      fr: `Depuis la console, par une invitation. ${UTILISATEURS_FREE} utilisateur en Free, ${UTILISATEURS_PRO} en Pro, selon le devis en Entreprise.`,
+      en: `From the console, with an invitation. ${UTILISATEURS_FREE} user on Free, ${UTILISATEURS_PRO} on Pro, per quote on Enterprise.`,
+    },
+    source: 'src/offres/offres.ts (DROITS) ; docs/aide/fiches/inviter-mon-equipe-et-gerer-les-acces.md',
+  },
+  {
+    id: 'resilier',
+    question: { fr: 'Comment résilier, et que devient le numéro ?', en: 'How do I cancel, and what happens to the number?' },
+    reponse: {
+      fr: `Le Pro et le numéro fourni se gèrent dans le portail de Stripe, depuis la page Offre de la console ou par Claude (manage_number_subscription). À la fin d’un Pro, le numéro fourni passe à ${NUMERO_FR} sur la même carte, sauf si vous choisissez de le rendre (return_number_at_plan_end).`,
+      en: `Pro and the provided number are managed in the Stripe portal, from the console Plan page or through Claude (manage_number_subscription). When Pro ends, the provided number moves to ${NUMERO_EN} on the same card, unless you choose to give it back (return_number_at_plan_end).`,
+    },
+    source: 'docs/aide/fiches/choisir-mon-offre.md ; src/mcp/outils-numero.ts',
+  },
+  {
+    id: 'mettre-a-jour-le-plugin',
+    question: { fr: 'Comment mettre à jour le plugin ?', en: 'How do I update the plugin?' },
+    reponse: {
+      fr: 'Il ne se met pas à jour tout seul. Dans Claude Code : /plugin, onglet Marketplaces, messagingme, « Update marketplace » (ou « Enable auto-update » pour la suite). En terminal : claude plugin update messagingme@messagingme. Le nouveau code se charge à la session suivante, ou après /reload-plugins.',
+      en: 'It does not update on its own. In Claude Code: /plugin, Marketplaces tab, messagingme, “Update marketplace” (or “Enable auto-update” from then on). In a terminal: claude plugin update messagingme@messagingme. The new code loads in the next session, or after /reload-plugins.',
+    },
+    source: 'documentation de Claude Code (plugins, mises à jour), lue le 2026-10-12',
+  },
+  {
+    id: 'serveur-ajoute-a-la-main',
+    question: { fr: 'J’avais déjà ajouté le serveur à la main : que faire ?', en: 'I had already added the server by hand: what now?' },
+    reponse: {
+      fr: 'Si vous aviez tapé claude mcp add pour le serveur messagingme, Claude voit chaque outil en double. Retirez l’ancien (claude mcp remove messagingme) : le plugin apporte le sien.',
+      en: 'If you had run claude mcp add for the messagingme server, Claude sees every tool twice. Remove the old one (claude mcp remove messagingme): the plugin brings its own.',
+    },
+    source: 'web/lib/demarrer.ts (commandeMcp, l’ancienne commande du tunnel)',
+  },
+];

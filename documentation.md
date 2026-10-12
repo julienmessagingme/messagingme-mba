@@ -3990,6 +3990,26 @@ Ajouté par le lot 4 de l'API publique :
     espace empêche deux gestes simultanés. ⚠️ Fenêtre acceptée : le numéro et le compte de l'espace sont en cache
     60 s par processus (`NUMERO_ESPACE_TTL_MS`) et le jeton 5 min ; un envoi du worker peut encore partir de l'ancien
     numéro dans la minute qui suit.
+52. **La mise en service se LIT en un appel, et ne bloque rien** (lot 10). `get_setup_state` (`src/mcp/mise-en-service.ts`)
+    assemble ce que les outils voisins lisent déjà (offre, crédit, numéro, agents et leurs manques, répondeur, bulles),
+    sans dépendance neuve, et rend l'étape suivante avec ses outils (`OUTILS_DE_L_ETAPE`, un nom inconnu ne compile pas).
+    Trois règles le rendent sûr : 🔴 **un répondeur CHOISI n'est jamais défait** (agent de Meta, scénario,
+    application, lus sur le mode ÉCRIT, même gelé par l'offre, qui le dit par `repondeur_gele_par_l_offre`) : il saute
+    les étapes de l'agent IA et du répondeur ; 🔴 **une source en panne rend `null` et `lecture_manquee:<source>`**
+    (et une trace au journal), l'étape qu'elle aurait dite est sautée, l'outil n'échoue jamais en entier ; et rien n'est
+    refusé ailleurs (la « troisième couche » du plan, un outil refusé avant son étape, est hors
+    du lot). La consigne d'initialisation du serveur le nomme pour toute mise en service.
+53. **Le plugin Claude Code vit dans `plugin/`, se publie à la main, et sa FAQ a une seule source** (lot 10).
+    `plugin/` est copié tel quel dans `julienmessagingme/messagingme-plugin` par `.github/workflows/plugin.yml`, sur le
+    modèle du SDK (deux jobs, seul le second voit `PLUGIN_DEPLOY_KEY` et publie `plugin/` extrait du commit lui-même,
+    jamais le dossier où `npm ci` a tourné ; une version publiée ne bouge plus), APRÈS le `up`
+    de l'API qui porte les outils que ses skills nomment. `tests/plugin.test.ts` tient les manifestes (même nom partout,
+    serveur = l'API publique sans clé), chaque outil cité par une skill, et `allowed-tools` (lectures et attente du
+    numéro seulement, sous leur nom complet `mcp__plugin_messagingme_messagingme__<outil>`). La FAQ s'écrit dans
+    `scripts/plugin/faq.ts`, chaque réponse avec sa source et les chiffres de nos offres tirés du code, aucun prix de
+    Meta ; `npm run plugin:generer` l'écrit dans la skill `faq` (et dans la vitrine quand ses pages portent les marques),
+    et `tests/plugin-faq.test.ts` exige l'égalité. ⚠️ Un push des seuls `.md` de `plugin/` ne lance pas la CI
+    (`paths-ignore`) : `plugin.yml` rejoue ces tests avant toute publication.
 
 ### Sur le code
 
