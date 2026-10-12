@@ -108,6 +108,11 @@ nginx**, `/r/`, `/m/` et `/mcp` y vont directement, tout le reste va à `mba-web
 - 🔴 **un conteneur de FRONT n'est plus sur le chemin critique de réception des messages clients**. Avant,
   le webhook de Meta traversait `mba-web` : si le site tombait, plus aucun message entrant n'arrivait.
 
+🔴 **LES RÉGLAGES DE CHARGE SONT PROVISOIRES JUSQU'À LA BASCULE SCALEWAY** (plafond global dans `.env.prod`, tailles de
+pools, concurrence des statuts) : mesurés sur le VPS et la base de Londres, ils se remesurent sur la cible avec
+`scripts/banc-api.sh` contre une base jetable de l'offre choisie, AVANT d'ouvrir le site. Le tableau et la méthode :
+`docs/ARCHITECTURE-CIBLE.md` § 7.8.
+
 ⚠️ **`NEXT_PUBLIC_API_URL` est FIGÉE AU BUILD** côté Vercel : la changer sans redéployer ne fait rien, en
 silence. Même piège que `BACKEND_URL` sur l'image Docker.
 

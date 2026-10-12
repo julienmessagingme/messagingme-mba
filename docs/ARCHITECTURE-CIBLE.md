@@ -554,6 +554,59 @@ Cloudflare de demain.
 - **`engageme.messagingme.app` reste hors de Cloudflare.** Le frontend continue d'utiliser les protections
   Vercel. Il est faux de dessiner Cloudflare devant les trois domaines pour simplifier un questionnaire.
 
+### 7.8 La tenue en charge (lot 14) : ce qui vaut partout, ce qui se remesure à la bascule
+
+Le lot 14 (spec `docs/superpowers/specs/2026-10-12-tenue-en-charge-design.md`) a posé des protections et les a
+réglées par la MESURE, sur l'infrastructure actuelle : le VPS d'OVH et la base Supabase Micro de Londres, à 10 ms. 🔴
+**Ses mécanismes valent partout ; ses CHIFFRES ne valent que pour cette infrastructure.** À la cible, on refait la
+mesure avant d'ouvrir le site, et on repose les chiffres. Rien de ce qui suit ne se recopie sans ce banc.
+
+**Les mécanismes, à garder tels quels** (le détail : `documentation.md`, § 7 et « Surveillance ») :
+- le **plafond de toute la plateforme** sur `/v1` et `/mcp`, « Free d'abord » (`src/auth/plafond-global.ts`) :
+  compté dans `compteurs_debit`, donc **global quel que soit le nombre de copies d'API**, et c'est ce qui le rend
+  compatible avec l'autoscaling ;
+- le **pool réservé à la réception de Meta** (`creerPoolReception`) : les webhooks n'attendent jamais `/v1`, `/mcp`
+  ni la console ;
+- la **purge des conversations** par lots enchaînés, sans plafond journalier ;
+- la **veille de charge** (quatre alertes Telegram : file en retard, réception lente, base saturée, plafond atteint),
+  qui lit `pool_attentes` PAR NOM de processus : à la cible, chaque copie doit garder un nom distinct (`API_COPIE`,
+  étape 7 du § 10), sinon leurs attentes se confondent ; le pool de réception s'écrit sous `<nom>-reception` ;
+- la **jauge du budget d'équipe Vercel** (`/ops` et alertes à 80 % et 95 %) : indépendante de l'hébergeur, elle
+  demande seulement `VERCEL_API_TOKEN` et `VERCEL_TEAM_ID` dans les secrets du worker principal et de l'API.
+
+**Les réglages PROVISOIRES, à reposer sur la cible :**
+
+| Réglage | Valeur actuelle | Où | Pourquoi cette valeur | À la bascule |
+| --- | --- | --- | --- | --- |
+| `API_PLAFOND_GLOBAL_PAR_10S` | 1050 (105 appels/s) | `.env.prod`, posé le 2026-10-12 sur décision de Julien | 70 % des 150 appels/s tenus au banc | Le reporter dans les secrets de la cible, PUIS le remesurer et le reposer à 70 % de la nouvelle capacité |
+| `API_PLAFOND_GLOBAL_PART_FREE` | 50 (%) | défaut du code | décision de Julien (Free d'abord) | Inchangé, sauf décision |
+| `DB_POOL_MAX` (API) | 10 | `docker-compose.yml` | budget du pooler Supabase (§ 7.5) | Recalculé sur l'offre choisie (§ 7.5) |
+| `DB_POOL_RECEPTION_MAX` | 4 | `docker-compose.yml`, minimum tenu par `tests/budget-pooler.test.ts` | à 10 ms, deux connexions accusaient environ 150 webhooks/s | À 1 ms, chaque connexion en accuse environ dix fois plus : remesurer avant d'y toucher |
+| `API_KEY_PREFILTRE_MAX` | 600 / min | défaut du code | après un démarrage, chaque clé repasse une fois par ce budget | Indépendant de la latence ; il est PAR COPIE, donc N copies en font N fois 600 |
+| Concurrence de `webhook-status` | 1 | `src/worker.ts` | protège la base | Mesurée à environ 11 accusés/s à 10 ms : à remesurer, à relever seulement sur un chiffre |
+
+**Les chiffres de référence, mesurés le 2026-10-12** (`docs/JOURNAL-TECHNIQUE.md`, même date) : 150 appels/s tenus
+(p95 de 146 ms), 200 en rupture (p95 de 9,4 s), une rafale de 300 accusés/s absorbée par quatre connexions (p95 de
+475 ms, contre 7,3 s avec deux), « Free d'abord » vérifié (1 902 refus Free contre 5 payants), la file des statuts à
+environ 11 accusés/s. 🔴 **Ce qui bornait, c'est le pool de l'API multiplié par la latence** (dix connexions,
+plusieurs instructions par appel, 10 ms chacune), pas le processeur. À 1 ms dans la même région, cette borne recule
+d'un ordre de grandeur, et c'est la BASE qui deviendra la limite. D'où la règle du banc ci-dessous.
+
+**Comment remesurer sur la cible :**
+1. Le banc est `scripts/banc-api.sh` (montage, quatre épreuves, démontage) et `scripts/banc-api.mts` (la mesure).
+   `BANC_DELAI_MS` règle la latence simulée (environ 1 à la cible), `BANC_PLAFOND_10S` la valeur du plafond éprouvée.
+2. 🔴 **Contre une base jetable de l'OFFRE CHOISIE, pas un Postgres local** : un Postgres sur la machine du banc
+   mesurerait l'API et cacherait la base, qui sera la limite. Créer une instance jetable de la même offre (Supabase
+   Pro : un projet jetable ; Scaleway : une base managée jetable, même gamme), dans la région PAR.
+3. Deux adaptations du banc, à faire à ce moment-là : il monte aujourd'hui son propre Postgres en conteneur
+   (prévoir de lui passer l'adresse d'une base existante), et sa garde refuse toute adresse contenant « supabase »
+   pour protéger la production (l'assouplir pour une base jetable nommée explicitement, jamais pour la production).
+4. Faire tourner l'API et le worker du banc comme ils tourneront en vrai (conteneurs Scaleway, réseau privé), avec
+   les tailles de pool de la cible.
+5. Reposer `API_PLAFOND_GLOBAL_PAR_10S` à 70 % de la capacité mesurée, revoir `DB_POOL_RECEPTION_MAX` et la
+   concurrence de `webhook-status` sur leurs chiffres, consigner la mesure au journal technique, et mettre ce
+   tableau à jour.
+
 ---
 
 ## 8. Le connecteur HubSpot : sa propre base, et il dort quand personne ne s'en sert
@@ -664,7 +717,8 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
 1. Créer le projet, le réseau privé et tous les composants dans **une seule région, PAR**.
 2. Créer la base managée, relever son nombre de connexions, **créer l'endpoint privé**, et refaire le calcul
    du §7.5 avec le vrai chiffre : mesurer (la sonde), puis mettre à jour les constantes de
-   `tests/budget-pooler.test.ts` et les tailles de chaque service.
+   `tests/budget-pooler.test.ts` et les tailles de chaque service (dont `DB_POOL_RECEPTION_MAX`, § 7.8). Reporter
+   dans les secrets de la cible les réglages de charge provisoires de `.env.prod` (`API_PLAFOND_GLOBAL_PAR_10S`, § 7.8).
 3. ~~Créer l'Object Storage privé~~ : reporté au lot des fichiers, APRÈS la bascule (§6).
 4. `npm run migrate` sur la base neuve. Vérifier `schema_migrations` et la présence de `french_sans_accent`.
 5. **Fenêtre de maintenance**, puis `pg_dump` / `pg_restore` des données.
@@ -686,7 +740,8 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
     anciens `/r/`, `/m/` et `/mcp` vers la nouvelle API, le reste du site vers `engageme.messagingme.app`
     (l'ancien conteneur `mba-web` disparaît).
 11. ~~Le connecteur HubSpot~~ : déjà parti, à l'étape 0 (§8).
-12. Dérouler les **tests d'acceptation du §11**.
+12. Dérouler les **tests d'acceptation du §11**, dont le banc de l'API rejoué sur la cible (§ 7.8) : 🔴 **le site
+    ne s'ouvre pas au public avant**, et le plafond global se repose sur sa mesure.
 13. **Ne couper OVH qu'après une période d'observation et un retour arrière ÉPROUVÉ**, pas seulement écrit.
 
 **Ce qu'on garde à Supabase le temps de vérifier** : rien. Une base lue par deux endroits est une base qui

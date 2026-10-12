@@ -2729,8 +2729,10 @@ d'autant. `CF-Connecting-IP` ne deviendra lisible qu'avec une origine qui ne ré
   pour un plafond au plus égal. Une offre illisible compte comme payante. Refus : 429 `rate_limited`, `Retry-After`
   jusqu'à la fin de la fenêtre, message « la plateforme est saturée » ; une part Free arrondie à 0 refuse tout Free sans
   compter. Les refus s'agrègent en mémoire et s'écrivent toutes les 2 s (`api.global-refus|free` et `|payant`, fenêtres
-  d'une minute gardées dix), lus par la veille de charge. **`0` éteint** (le défaut) : la valeur se pose sur la mesure du
-  banc. La clé du relais du Meta Business Agent n'y entre pas (elle n'atteint pas `PlafondEspace`).
+  d'une minute gardées dix), lus par la veille de charge. **`0` éteint** (le défaut du code). La production porte une
+  valeur PROVISOIRE dans `.env.prod`, mesurée au banc sur l'infrastructure actuelle, à reposer à la bascule Scaleway
+  (`docs/ARCHITECTURE-CIBLE.md`, § 7.8). La clé du relais du Meta Business Agent n'y entre pas (elle n'atteint pas
+  `PlafondEspace`).
 - **Les quotas QUOTIDIENS par espace** (`src/api/quotas.ts`, migration 0208, décision du 2026-10-04) : le plafond
   compte des appels, le quota le TRAVAIL d'un jour civil de Paris, en deux familles, les envois (`sends.create` en
   destinataires, `messages.send`) et les fiches (`contacts.batch` en fiches, `contacts.upsert`). Défauts

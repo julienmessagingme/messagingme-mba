@@ -2248,8 +2248,9 @@ scénario, comment importer des contacts.
   minute ou l'heure qui est pleine. L'exploitation peut régler le plafond d'un espace précis sans toucher les
   autres. L'agent de Meta n'est jamais privé de ses outils par un intégrateur qui charge l'API : sa clé a son
   propre compteur.
-- 🚧 **Plafond de toute la plateforme, Free d'abord** (lot 14, 2026-10-12, ÉTEINT jusqu'à la mesure de capacité) : un
-  plafond commun à tous les espaces sur l'API publique et le serveur MCP, par tranche de 10 secondes. Quand la
+- ✅ **Plafond de toute la plateforme, Free d'abord** (lot 14, 2026-10-12) : un plafond commun à tous les espaces sur
+  l'API publique et le serveur MCP, 105 appels par seconde pour l'instant (valeur provisoire, mesurée sur
+  l'infrastructure actuelle et à remesurer sur Scaleway). Quand la
   plateforme approche de sa limite, les espaces de l'offre Base reçoivent le refus en premier (au-delà de leur part,
   la moitié par défaut) ; Pro et Entreprise gardent le reste. Le refus est le même 429 `rate_limited`, avec
   `Retry-After` et un message qui dit que la plateforme est saturée : le geste de l'intégrateur ne change pas.
