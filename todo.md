@@ -30,10 +30,6 @@ l'écran et en Telegram, boucle de purge bornée. Restent :
 - **Réserver la portée npm `@messagingme`** (une organisation npm gratuite, rien à y publier) : un `npm i @messagingme/sdk`
   tapé par erreur ne doit jamais trouver le paquet d'un tiers. Le SDK s'installe depuis GitHub
   (`julienmessagingme/messagingme-sdk`) ; une nouvelle version se publie à la main après le `up` de l'API (`DEPLOY.md`).
-- 🟡 **Le README du SDK n'est pas tenu égal aux exemples compilés.** Depuis le lot 17, les exemples de la page « SDK
-  TypeScript » vivent dans `web/lib/exemples-code.ts` et `tests/doc-exemples-compiles.test.ts` les compile contre
-  `sdk/src` ; le README (`sdk/README.md`) garde ses propres blocs, et le README publié (`v0.1.0`) envoie un modèle sans
-  `params`. À corriger avec la 0.2.0 : le README reprend les blocs du module (ou un test les compare).
 
 ## 🟡 Lot 17, la doc pour développeurs : ce qui reste hors périmètre (2026-10-12)
 

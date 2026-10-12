@@ -45,6 +45,10 @@ l'inscription, aucun prix de Meta, la règle « une route, sa page » tenue par 
   « ce que Messaging Me fait déjà » précisés (le réessai dépend de la case de la campagne ou du réglage de l'espace), un
   espace entre deux codes voisins dans le Markdown, la CI de la console qui voit `web/public/`, et « pendant 24 h » au
   lieu de « jamais deux fois ».
+- SDK 0.2.0, sur l'accord de Julien du même jour : `ApiError.metaCode`, la recette et la page SDK repassées à
+  `e.metaCode`, le README qui reprend mot pour mot les exemples compilés (un test le tient ; la 0.1.0 publiée envoyait un
+  modèle à deux variables sans `params`), et les déclarations recopiées dans `tests/sdk-publie/` construites par la même
+  commande que l'action, puis comparées à celles de l'étiquette publiée.
 
 ## 2026-10-11 : un seul contrat pour les messages interactifs
 

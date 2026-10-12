@@ -55,6 +55,13 @@ describe('le code montré par la doc compile contre le SDK publié', () => {
     expect(readFileSync(join(racine, 'tests', 'sdk-publie', 'version.txt'), 'utf8').trim()).toBe(VERSION_SDK);
   });
 
+  it('le README du SDK reprend les exemples compilés, mot pour mot', () => {
+    // Le README part avec chaque version publiée : un exemple qu'il réécrirait à côté du module échapperait à la
+    // compilation ci-dessous (la 0.1.0 publiée envoyait un modèle à deux variables sans params).
+    const readme = readFileSync(join(racine, 'sdk', 'README.md'), 'utf8').replace(/\r\n/g, '\n');
+    for (const [cle, e] of Object.entries(EXEMPLES_SDK)) expect(readme, cle).toContain(e.code);
+  });
+
   it('les exemples de la page SDK', () => {
     expect(compiler(Object.values(EXEMPLES_SDK))).toBe('');
   }, 60_000);

@@ -11,7 +11,7 @@ The TypeScript client of the API: calls typed by path and method, typed errors, 
 _Installation_
 
 ```
-npm install github:julienmessagingme/messagingme-sdk#v0.1.0
+npm install github:julienmessagingme/messagingme-sdk#v0.2.0
 ```
 
 - No dependency. Node 20 or later, Deno, Bun, and runtimes that expose fetch and Web Crypto.
@@ -47,7 +47,7 @@ const page = await api.GET('/v1/conversations', { query: { needsReply: true, lim
 // avec variables, ajoutez params (voir Envois).
 const envoi = await api.POST('/v1/sends', {
   body: {
-    target: { template: { name: 'confirmation_commande', language: 'fr' } },
+    target: { template: { name: 'bienvenue', language: 'fr' } },
     recipients: [{ phone: '+33612345678' }],
   },
   idempotencyKey: 'commande-7781',
@@ -72,7 +72,7 @@ try {
 } catch (e) {
   if (e instanceof ApiError) {
     if (e.code === 'window_closed') { /* la personne n’a pas écrit depuis 24 h : passer par un modèle */ }
-    if (e.code === 'meta_rejected') { /* Meta a refusé : son numéro est dans e.body, champ metaCode (131047…) */ }
+    if (e.code === 'meta_rejected') { /* Meta a refusé : e.metaCode dit pourquoi (131047, 132000…) */ }
     if (e.status === 429 && e.retryAfter !== null) { /* attendre e.retryAfter secondes */ }
   }
   throw e;
@@ -80,7 +80,7 @@ try {
 ```
 
 - `code` is set on every API error response; it is null when a generic error page replaced the response on the way (a 5xx).
-- On meta_rejected, the body (`e.body`) also carries `metaCode`, Meta’s error number: [Meta errors](https://console.messagingme.app/developers/api/errors.en.md#meta).
+- `metaCode` carries Meta’s error number on meta_rejected (since version 0.2.0): [Meta errors](https://console.messagingme.app/developers/api/errors.en.md#meta).
 - `upgradeUrl` is set on a 402 (plan_feature_unavailable, plan_limit_reached): the page where the plan is changed.
 
 <a id="webhook"></a>

@@ -21,7 +21,7 @@ import type { Bilingue } from './api-exemples';
  * `tests/sdk-contrat.test.ts` les compare, comme celle du README. Monter la version du SDK sans toucher cette ligne ferait
  * installer l'ancienne.
  */
-export const VERSION_SDK = '0.1.0';
+export const VERSION_SDK = '0.2.0';
 
 export interface ExempleCode {
   /** Le chemin du fichier dans le projet de l'intégrateur, affiché en légende ; aussi son chemin dans le projet de test. */
@@ -56,7 +56,7 @@ export const EXEMPLES_SDK = {
       '// avec variables, ajoutez params (voir Envois).',
       "const envoi = await api.POST('/v1/sends', {",
       '  body: {',
-      "    target: { template: { name: 'confirmation_commande', language: 'fr' } },",
+      "    target: { template: { name: 'bienvenue', language: 'fr' } },",
       "    recipients: [{ phone: '+33612345678' }],",
       '  },',
       "  idempotencyKey: 'commande-7781',",
@@ -74,7 +74,7 @@ export const EXEMPLES_SDK = {
       '} catch (e) {',
       '  if (e instanceof ApiError) {',
       "    if (e.code === 'window_closed') { /* la personne n’a pas écrit depuis 24 h : passer par un modèle */ }",
-      "    if (e.code === 'meta_rejected') { /* Meta a refusé : son numéro est dans e.body, champ metaCode (131047…) */ }",
+      "    if (e.code === 'meta_rejected') { /* Meta a refusé : e.metaCode dit pourquoi (131047, 132000…) */ }",
       '    if (e.status === 429 && e.retryAfter !== null) { /* attendre e.retryAfter secondes */ }',
       '  }',
       '  throw e;',
@@ -142,9 +142,8 @@ export const RECETTE_NEXTJS = {
       '    return Response.json({ sendId: envoi.sendId, skipped: envoi.skipped });',
       '  } catch (e) {',
       '    if (e instanceof ApiError) {',
-      '      // e.code est stable (voir le catalogue des erreurs) ; sur meta_rejected, le corps porte aussi metaCode.',
-      "      const metaCode = typeof e.body === 'object' && e.body !== null && 'metaCode' in e.body ? e.body.metaCode : null;",
-      '      return Response.json({ code: e.code, metaCode, error: e.message }, { status: e.status });',
+      '      // e.code est stable (voir le catalogue des erreurs) ; e.metaCode porte le numéro de Meta sur meta_rejected.',
+      '      return Response.json({ code: e.code, metaCode: e.metaCode, error: e.message }, { status: e.status });',
       '    }',
       '    throw e;',
       '  }',
@@ -190,8 +189,8 @@ export const PROMPT_NEXTJS: Bilingue = [
     '1. installe le SDK : npm install github:julienmessagingme/messagingme-sdk#v{VERSION} ;',
     '2. crée lib/messagingme.ts (le client, côté serveur seulement) ;',
     '3. crée la route POST /api/confirmation qui envoie le modèle « confirmation_commande » (deux variables : le nom',
-    '   du contact, puis le numéro de commande) avec une clé d’idempotence tirée du numéro de commande, et renvoie code',
-    '   et metaCode (lu dans le corps de l’erreur) en cas d’erreur ;',
+    '   du contact, puis le numéro de commande) avec une clé d’idempotence tirée du numéro de commande, et renvoie',
+    '   e.code et e.metaCode en cas d’erreur ;',
     '4. crée la route POST /api/webhooks/messagingme qui vérifie la signature avec verifyWebhook sur le corps brut',
     '   et répond 204 ;',
     '5. ajoute MESSAGINGME_API_KEY et MESSAGINGME_WEBHOOK_SECRET à .env.local, sans valeur réelle dans le code.',
@@ -203,8 +202,8 @@ export const PROMPT_NEXTJS: Bilingue = [
     '1. install the SDK: npm install github:julienmessagingme/messagingme-sdk#v{VERSION};',
     '2. create lib/messagingme.ts (the client, server-side only);',
     '3. create the POST /api/confirmation route that sends the “confirmation_commande” template (two variables: the',
-    '   contact name, then the order number) with an idempotency key taken from the order number, and returns code and',
-    '   metaCode (read from the error body) on error;',
+    '   contact name, then the order number) with an idempotency key taken from the order number, and returns e.code and',
+    '   e.metaCode on error;',
     '4. create the POST /api/webhooks/messagingme route that verifies the signature with verifyWebhook on the raw body',
     '   and answers 204;',
     '5. add MESSAGINGME_API_KEY and MESSAGINGME_WEBHOOK_SECRET to .env.local, with no real value in the code.',

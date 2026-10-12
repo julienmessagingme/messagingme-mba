@@ -12,7 +12,7 @@ Documentation de l'API : https://console.messagingme.app/developers/api
 ## Installation
 
 ```bash
-npm install github:julienmessagingme/messagingme-sdk#v0.1.0
+npm install github:julienmessagingme/messagingme-sdk#v0.2.0
 ```
 
 ## Un premier appel
@@ -29,16 +29,17 @@ const { contactId, status } = await api.POST('/v1/contacts', {
   body: { phone: '+33612345678', name: 'Camille Roy', consent: 'opted_in', consentSource: 'formulaire-site' },
 });
 
-// Lire une fiche : les paramètres de chemin passent par `path`.
+// Lire une fiche : les paramètres de chemin passent par path.
 const fiche = await api.GET('/v1/contacts/{contactId}', { path: { contactId } });
 
-// Les conversations qui attendent une réponse, par pages : `query`.
+// Les conversations qui attendent une réponse, par pages : query.
 const page = await api.GET('/v1/conversations', { query: { needsReply: true, limit: 20 } });
 
-// Un envoi, rejouable sans doublon avec la même clé d'idempotence.
+// Un envoi, rejouable sans doublon avec la même clé d’idempotence. Ici un modèle sans variable :
+// avec variables, ajoutez params (voir Envois).
 const envoi = await api.POST('/v1/sends', {
   body: {
-    target: { template: { name: 'confirmation_commande', language: 'fr' } },
+    target: { template: { name: 'bienvenue', language: 'fr' } },
     recipients: [{ phone: '+33612345678' }],
   },
   idempotencyKey: 'commande-7781',
@@ -57,7 +58,8 @@ try {
   await api.POST('/v1/messages/whatsapp', { body: { contactId, text: 'Bonjour' } });
 } catch (e) {
   if (e instanceof ApiError) {
-    if (e.code === 'window_closed') { /* la personne n'a pas écrit depuis 24 h : passer par un modèle */ }
+    if (e.code === 'window_closed') { /* la personne n’a pas écrit depuis 24 h : passer par un modèle */ }
+    if (e.code === 'meta_rejected') { /* Meta a refusé : e.metaCode dit pourquoi (131047, 132000…) */ }
     if (e.status === 429 && e.retryAfter !== null) { /* attendre e.retryAfter secondes */ }
   }
   throw e;
@@ -76,7 +78,7 @@ Passez le corps BRUT, tel que reçu : la signature porte sur ses octets.
 ```ts
 import { verifyWebhook, WebhookVerificationError } from '@messagingme/sdk';
 
-// Next.js (route handler)
+// Une route qui reçoit les webhooks sortants (ici avec l’API Request standard).
 export async function POST(req: Request) {
   const body = await req.text();
   try {
@@ -94,6 +96,13 @@ Pendant une rotation de secret, l'ancien signe encore 24 h : passez les deux, `s
 horodatage à plus de 5 minutes est refusé (`toleranceSeconds` pour changer). Un même événement peut arriver deux fois
 (réessai, rejeu) : dédoublonnez par `event.id`, égal à l'en-tête `webhook-id`. Un secret vide ou illisible lève une
 `TypeError` : c'est une erreur de configuration, pas une signature fausse.
+
+## Versions
+
+- **0.2.0** : `ApiError.metaCode`, le numéro d'erreur de Meta sur `meta_rejected`. L'API pose désormais un `code` sur
+  toute réponse d'erreur JSON : `code === null` ne veut plus dire « panne », il ne reste qu'une page d'erreur générique
+  remplaçant un 5xx en chemin. Pour réessayer, regardez `status >= 500`, `internal_error` ou `rate_limited`.
+- **0.1.0** : première version.
 
 ## Licence
 

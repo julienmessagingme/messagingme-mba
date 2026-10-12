@@ -76,7 +76,10 @@ export type RequestOptions<P extends PathsWith<M>, M extends HttpMethod> = ([Req
 type Arguments<P extends PathsWith<M>, M extends HttpMethod> = {} extends RequestOptions<P, M> ? [options?: RequestOptions<P, M>] : [options: RequestOptions<P, M>];
 /** Un code d'erreur de l'API (`invalid_body`, `window_closed`…). */
 export type ErrorCode = NonNullable<components['schemas']['Error']['code']>;
-/** Une réponse hors 2xx. `code` est `null` sur une panne générique (JSON illisible, erreur interne, réponse non JSON). */
+/**
+ * Une réponse hors 2xx. `code` est `null` quand la réponse n'est pas un JSON de l'API : la page d'erreur générique qui
+ * remplace parfois un 5xx en chemin. Toute réponse d'erreur JSON de `/v1` porte un `code`.
+ */
 export declare class ApiError extends Error {
     readonly status: number;
     readonly code: ErrorCode | null;
@@ -86,6 +89,8 @@ export declare class ApiError extends Error {
     readonly upgradeUrl: string | null;
     /** Le corps reçu, tel quel (l'objet JSON, ou le texte s'il n'en était pas un). */
     readonly body: unknown;
+    /** Sur `meta_rejected` : le numéro d'erreur de Meta (131047…), `null` s'il n'en donne pas ou sur un autre code. */
+    readonly metaCode: number | null;
     readonly name = "ApiError";
     constructor(status: number, code: ErrorCode | null, message: string, 
     /** Secondes à attendre avant de réessayer (`Retry-After`), sur un 429 surtout ; `null` si l'API ne le dit pas. */
@@ -93,7 +98,9 @@ export declare class ApiError extends Error {
     /** Sur un 402 : la page où l'offre se change. */
     upgradeUrl: string | null, 
     /** Le corps reçu, tel quel (l'objet JSON, ou le texte s'il n'en était pas un). */
-    body: unknown);
+    body: unknown, 
+    /** Sur `meta_rejected` : le numéro d'erreur de Meta (131047…), `null` s'il n'en donne pas ou sur un autre code. */
+    metaCode?: number | null);
 }
 export interface ClientOptions {
     /** La clé d'API (`mba_…`), créée dans la console (Developers > Clés d'API). */

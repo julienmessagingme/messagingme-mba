@@ -15,11 +15,11 @@ _Prompt_
 ```
 Branche Messaging Me (WhatsApp) dans ce projet Next.js (App Router), en suivant la recette
 https://console.messagingme.app/developers/api/guides/nextjs.md :
-1. installe le SDK : npm install github:julienmessagingme/messagingme-sdk#v0.1.0 ;
+1. installe le SDK : npm install github:julienmessagingme/messagingme-sdk#v0.2.0 ;
 2. crée lib/messagingme.ts (le client, côté serveur seulement) ;
 3. crée la route POST /api/confirmation qui envoie le modèle « confirmation_commande » (deux variables : le nom
-   du contact, puis le numéro de commande) avec une clé d’idempotence tirée du numéro de commande, et renvoie code
-   et metaCode (lu dans le corps de l’erreur) en cas d’erreur ;
+   du contact, puis le numéro de commande) avec une clé d’idempotence tirée du numéro de commande, et renvoie
+   e.code et e.metaCode en cas d’erreur ;
 4. crée la route POST /api/webhooks/messagingme qui vérifie la signature avec verifyWebhook sur le corps brut
    et répond 204 ;
 5. ajoute MESSAGINGME_API_KEY et MESSAGINGME_WEBHOOK_SECRET à .env.local, sans valeur réelle dans le code.
@@ -33,7 +33,7 @@ N’invente aucune route ni aucun champ : ils sont dans https://api.messagingme.
 _Commande_
 
 ```
-npm install github:julienmessagingme/messagingme-sdk#v0.1.0
+npm install github:julienmessagingme/messagingme-sdk#v0.2.0
 ```
 
 Deux variables dans `.env.local` : la clé d’API (Developers > Clés d’API, droit sends:create) et le secret de l’adresse de webhook, donné une seule fois à sa création.
@@ -93,9 +93,8 @@ export async function POST(req: Request) {
     return Response.json({ sendId: envoi.sendId, skipped: envoi.skipped });
   } catch (e) {
     if (e instanceof ApiError) {
-      // e.code est stable (voir le catalogue des erreurs) ; sur meta_rejected, le corps porte aussi metaCode.
-      const metaCode = typeof e.body === 'object' && e.body !== null && 'metaCode' in e.body ? e.body.metaCode : null;
-      return Response.json({ code: e.code, metaCode, error: e.message }, { status: e.status });
+      // e.code est stable (voir le catalogue des erreurs) ; e.metaCode porte le numéro de Meta sur meta_rejected.
+      return Response.json({ code: e.code, metaCode: e.metaCode, error: e.message }, { status: e.status });
     }
     throw e;
   }
@@ -103,7 +102,7 @@ export async function POST(req: Request) {
 ```
 
 - Un destinataire désabonné ou sans consentement n’est pas une erreur : il revient dans `skipped`, avec son motif.
-- Une erreur porte `code` (le catalogue : [codes de l’API](https://console.messagingme.app/developers/api/errors.md#codes)) et, sur [`meta_rejected`](https://console.messagingme.app/developers/api/errors.md#meta_rejected), un champ `metaCode` dans son corps (e.body).
+- Une erreur porte `code` (le catalogue : [codes de l’API](https://console.messagingme.app/developers/api/errors.md#codes)) et, sur [`meta_rejected`](https://console.messagingme.app/developers/api/errors.md#meta_rejected), le numéro de Meta : `e.metaCode`.
 
 <a id="webhook"></a>
 

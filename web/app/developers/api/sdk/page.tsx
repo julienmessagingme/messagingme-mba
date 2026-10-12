@@ -68,7 +68,7 @@ function Contenu() {
         <Bloc legende="TypeScript">{EXEMPLES_SDK.erreurs.code}</Bloc>
         <Liste>
           <li><C>code</C>{t(' est posé sur toute réponse d’erreur de l’API ; il vaut null quand une page d’erreur générique a remplacé la réponse en chemin (un 5xx).', ' is set on every API error response; it is null when a generic error page replaced the response on the way (a 5xx).')}</li>
-          <li>{t('Sur meta_rejected, le corps (', 'On meta_rejected, the body (')}<C>e.body</C>{t(') porte aussi ', ') also carries ')}<C>metaCode</C>{t(', le numéro d’erreur de Meta : ', ', Meta’s error number: ')}<LienDoc page="errors" ancre="meta">{t('les erreurs de Meta', 'Meta errors')}</LienDoc>.</li>
+          <li><C>metaCode</C>{t(' porte le numéro d’erreur de Meta sur meta_rejected (depuis la version 0.2.0) : ', ' carries Meta’s error number on meta_rejected (since version 0.2.0): ')}<LienDoc page="errors" ancre="meta">{t('les erreurs de Meta', 'Meta errors')}</LienDoc>.</li>
           <li><C>upgradeUrl</C>{t(' est posé sur un 402 (plan_feature_unavailable, plan_limit_reached) : la page où l’offre se change.', ' is set on a 402 (plan_feature_unavailable, plan_limit_reached): the page where the plan is changed.')}</li>
         </Liste>
       </Section>

@@ -69,7 +69,7 @@ function Recette() {
           <li>
             {t('Une erreur porte ', 'An error carries ')}<C>code</C>{t(' (le catalogue : ', ' (the catalog: ')}
             <LienDoc page="errors" ancre="codes">{t('codes de l’API', 'API codes')}</LienDoc>{t(') et, sur ', ') and, on ')}
-            <LienErreur code="meta_rejected" />{t(', un champ ', ', a ')}<C>metaCode</C>{t(' dans son corps (e.body).', ' field in its body (e.body).')}
+            <LienErreur code="meta_rejected" />{t(', le numéro de Meta : ', ', Meta’s number: ')}<C>e.metaCode</C>.
           </li>
         </Liste>
       </Section>
