@@ -1,4 +1,3 @@
-import './charger-env';
 import { config } from './config';
 import { PgBossQueue } from './queue/pgboss';
 import { pool, mesureAttentePool } from './db/pool';
@@ -118,7 +117,11 @@ import { PgAbonnementsOffreStore } from './offres/abonnements-offre.pg';
 import { commissionPour } from './offres/commission';
 import { DROITS } from './offres/offres';
 
-async function main(): Promise<void> {
+/**
+ * Démarre l’orchestration du worker. L’appelant garde la responsabilité du chargement d’environnement
+ * et des erreurs de démarrage.
+ */
+export async function demarrerWorker(): Promise<void> {
   // Le worker est la seule instance qui dépile, et son rôle principal la seule qui supervise : c'est lui qui récupère les
   // jobs expirés et qui écoute les notifications (sans réveil, une rafale d'entrants se viderait à la cadence
   // de l'horloge). L'API ne fait qu'empiler. `flowIntervalSeconds: 60` espace la maintenance « flow » (défaut
@@ -1867,9 +1870,3 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`messagingme-mba worker démarré (files: ${files.join(', ')})${dryRun ? ' [DRY_RUN]' : ''}`);
 }
-
-main().catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error(err);
-  process.exit(1);
-});

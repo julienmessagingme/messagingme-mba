@@ -43,7 +43,7 @@ services:
       args:
         REVISION: ${REVISION:-inconnue}
     container_name: mba-worker
-    command: ["npx", "tsx", "src/worker.ts"]
+    command: ["npx", "tsx", "src/worker-cli.ts"]
     env_file: .env.prod
     restart: unless-stopped
     # 🔴 LE POINT QUI COMPTE POUR R4. C'est ici que tournent les runs de campagne : sans ce délai, un
@@ -73,7 +73,7 @@ services:
       args:
         REVISION: ${REVISION:-inconnue}
     container_name: mba-worker-analyse
-    command: ["npx", "tsx", "src/worker.ts"]
+    command: ["npx", "tsx", "src/worker-cli.ts"]
     env_file: .env.prod
     restart: unless-stopped
     environment:
