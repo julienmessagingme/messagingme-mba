@@ -455,3 +455,36 @@ export async function importerSite(
   }
   return { ok: true, valeur: { url, ecrites, retirees, importees, ecartees, restantes, tronquees, plafond: MAX_FICHES_PAR_PAGE } };
 }
+
+/** Ce que l'import du site de l'entretien a fait, pour le journal et pour le message du tour. */
+export type IssueImportEntretien =
+  | { issue: 'importe'; ecrites: number; pages: number }
+  | { issue: 'deja_la' }
+  | { issue: 'refuse'; raison: string };
+
+/**
+ * 🔴 L'import du site que le client donne pendant l'entretien de construction (décision de Julien, 2026-10-12) :
+ * quand il ouvre l'onglet Base de connaissance, ses fiches sont déjà là. Le site est parcouru (`apercuSite`) puis ses
+ * pages importées (`importerSite`) : les deux mêmes fonctions que l'onglet et le MCP, donc les mêmes gardes (adresse
+ * publique vérifiée sur son texte puis sur sa résolution, même origine, plafond de pages, échéance).
+ * ⚠️ Rien n'est relu si une fiche vient déjà de ce site : un import fait à la main avant l'entretien a pu être
+ * corrigé, et relire une adresse remplace ses fiches, corrections comprises.
+ */
+export async function importerLeSiteDeLEntretien(
+  deps: DepsConnaissance, tenantId: string, agentId: string, url: string,
+): Promise<IssueImportEntretien> {
+  let origine: string;
+  try { origine = new URL(url).origin; } catch { return { issue: 'refuse', raison: 'adresse illisible' }; }
+  const memeOrigine = (u: string | null): boolean => {
+    if (!u) return false;
+    try { return new URL(u).origin === origine; } catch { return false; }
+  };
+  if ((await deps.connaissance.lister(tenantId, agentId)).some((f) => memeOrigine(f.sourceUrl))) return { issue: 'deja_la' };
+  const apercu = await apercuSite(deps, tenantId, agentId, { url });
+  if (!apercu.ok) return { issue: 'refuse', raison: apercu.erreur };
+  const pages = apercu.valeur.pages.map((p) => p.url);
+  if (pages.length === 0) return { issue: 'refuse', raison: 'aucune page lisible' };
+  const fait = await importerSite(deps, tenantId, agentId, { url, pages });
+  if (!fait.ok) return { issue: 'refuse', raison: fait.erreur };
+  return { issue: 'importe', ecrites: fait.valeur.ecrites, pages: fait.valeur.importees.length };
+}

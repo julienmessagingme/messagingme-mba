@@ -24,6 +24,7 @@ import { microEurosDepuisDollars } from '../agent/devise';
 import { direPanneModele } from '../llm/errors';
 import { journaliser } from '../lib/journal';
 import { blocDeFin } from '../agent/setup/fin';
+import type { IssueImportEntretien } from '../agent/connaissance';
 
 /**
  * La conversation de construction d'un agent : elle propose, le client corrige.
@@ -68,6 +69,12 @@ export interface AgentSetupRouteDeps {
   ecrireFichesDocument(
     tenantId: string, agentId: string, nom: string, fiches: Array<{ titre: string; corps: string }>,
   ): Promise<{ retirees: number; ecrites: number } | null>;
+  /**
+   * Importe le site que le client vient de donner (`importerLeSiteDeLEntretien`, décision de Julien du 2026-10-12) :
+   * appelé en tâche de fond, sans que le tour l'attende. Requis : absent, l'onglet Base de connaissance resterait vide
+   * en silence, ce que le client avait justement signalé.
+   */
+  importerSiteDeLEntretien(tenantId: string, agentId: string, url: string): Promise<IssueImportEntretien>;
   /** L'entretien persisté. Requis : un entretien sans mémoire redeviendrait non déterministe sans que personne
    *  ne le voie. */
   entretiens: EntretienStore;
@@ -555,6 +562,22 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
       }
     }
 
+    /**
+     * 🔴 L'adresse du site vient d'être donnée (ou changée) : son import part en TÂCHE DE FOND (Julien, 2026-10-12),
+     * pour que l'onglet Base de connaissance ait ses fiches quand le client l'ouvre. Le tour ne l'attend pas (un
+     * parcours prend jusqu'à trente secondes) ; son issue va au journal, et le message le dit au client.
+     */
+    const adresseRetenue = propositionFinale.connaissanceUrl ?? avant.connaissanceUrl;
+    const importLance = Boolean(adresseRetenue && adresseRetenue !== avant.connaissanceUrl);
+    if (adresseRetenue && importLance) {
+      const { tenant, agentId } = ctx;
+      void deps.importerSiteDeLEntretien(tenant, agentId, adresseRetenue)
+        .then((r) => journaliser(r.issue === 'refuse' ? 'warn' : 'info', 'agent_setup_import_site', { tenantId: tenant, agentId, ...r }))
+        .catch((err) => journaliser('error', 'agent_setup_import_site_echec', { tenantId: tenant, agentId, err }));
+      message = `${message}\n\nJ’importe les pages de ${adresseRetenue} dans votre base de connaissance : elles seront `
+        + 'dans l’onglet « Base de connaissance » d’ici une minute, à relire et corriger si besoin.';
+    }
+
     /** Le diff montré au client, calculé une fois : le bloc de fin en dépend, la réponse aussi. */
     const changements = enEntretien ? [] : differences(ctx.etat, propositionFinale);
     /**
@@ -572,6 +595,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
         outilsApi: inv.outilsApi.length,
         outilsMcp: inv.outilsMcp.length,
         modele: ctx.etat.modele ?? null,
+        importEnCours: importLance,
       })}`;
     }
 
@@ -588,9 +612,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
        * On garde l'ancienne adresse quand le tour n'en apporte pas : donnée au point `connaissance`, bien avant la
        * fin de l'entretien, l'écraser la perdrait dès la question suivante.
        */
-      ...(propositionFinale.connaissanceUrl ?? avant.connaissanceUrl
-        ? { connaissanceUrl: propositionFinale.connaissanceUrl ?? avant.connaissanceUrl }
-        : {}),
+      ...(adresseRetenue ? { connaissanceUrl: adresseRetenue } : {}),
     };
     await ctx.entretiens.ecrire(ctx.tenant, ctx.agentId, apres);
 

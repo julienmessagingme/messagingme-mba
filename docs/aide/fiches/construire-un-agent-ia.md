@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: c79f3b
+source_empreinte: 31e470
 ---
 # Construire un agent IA
 
@@ -51,7 +51,8 @@ décrivez votre métier, et l'assistant fait le tour du sujet point par point, u
 l'agent est là pour faire, ce dont il ne parle jamais, d'où viennent ses réponses de fond, les moments où il
 doit faire autre chose que répondre, quand il lâche un contact silencieux, quand un humain reprend, sous quel
 nom il se présente, s'il annonce être une IA, comment il parle). Si vous citez plusieurs moments d'un coup, il
-les reprend un par un. Tant qu'un point n'a pas été tranché, il ne vous montre rien et vous dit combien il en
+les reprend un par un. Quand vous lui donnez l'adresse de votre site, il en importe les pages tout seul : elles
+vous attendent dans l'onglet Base de connaissance. Tant qu'un point n'a pas été tranché, il ne vous montre rien et vous dit combien il en
 reste. Il ne change **rien** tout seul : il propose, et l'écran affiche ligne par ligne ce que cela changerait,
 avec la valeur d'avant barrée. Chaque règle se garde, se corrige sur place ou se jette séparément. Vous pouvez
 lui joindre un document ou une photo (une grille de tarifs, par exemple) : le texte en est extrait et découpé en

@@ -3263,6 +3263,10 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
   client veut parler à un conseiller, quand il a une question sur son dossier ») ouvre une question pour chacun :
   le second n'est plus perdu. Une réponse à la liste des choix (« 4 », « passer la main à un humain ») est retenue
   du premier coup, et un moment ne se crée plus en double quand l'assistant le reformule.
+- ✅ **Le site donné pendant l'entretien s'importe tout seul** (2026-10-12). Dès que vous donnez l'adresse de votre
+  site, ses pages sont lues et découpées en fiches en arrière-plan, avec les mêmes contrôles que l'import de l'onglet :
+  quand vous ouvrez Base de connaissance, elles y sont, à relire et corriger. Un site que vous aviez déjà importé à la
+  main n'est pas relu, pour ne pas écraser vos corrections.
 - ✅ **À la fin, il dit ce qu'il reste à faire** (2026-10-12), sous la forme d'une liste numérotée « Pour finir » :
   enregistrer la proposition (bouton « Enregistrer »), importer le site donné dans Base de connaissance, brancher le connecteur qu'un moment
   demande, vérifier le modèle de l'agent (posé à la création, changeable dans l'onglet Modèle), le tester, puis

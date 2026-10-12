@@ -19,6 +19,8 @@ export interface EntreeFin {
   outilsMcp: number;
   /** Le modèle de l'agent, s'il est connu. */
   modele: string | null;
+  /** L'import du site donné vient de partir, sur ce même tour : ses fiches arrivent, il reste à les relire. */
+  importEnCours?: boolean;
 }
 
 export const TITRE_FIN = 'Pour finir :';
@@ -34,7 +36,9 @@ export function etapesDeFin(e: EntreeFin): string[] {
     out.push('Relisez la proposition ci-dessous : chaque ligne se garde, se corrige ou se jette. Cliquez ensuite sur '
       + `« ${BOUTON_ENREGISTRER} » : rien n’est écrit dans les onglets tant que vous ne l’avez pas fait.`);
   }
-  if (e.fichesDeConnaissance === 0) {
+  if (e.importEnCours && e.connaissanceUrl) {
+    out.push(`Base de connaissance : relisez les fiches importées de ${e.connaissanceUrl} une fois l’import fini.`);
+  } else if (e.fichesDeConnaissance === 0) {
     out.push(e.connaissanceUrl
       ? `Base de connaissance : importez les pages de ${e.connaissanceUrl}.`
       : 'Base de connaissance : ajoutez des fiches ou un document, sinon l’agent transmettra toutes les questions '

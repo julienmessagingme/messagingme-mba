@@ -89,7 +89,10 @@ function app(opts: {
   /** Une écriture de dépense qui LÈVE : notre panne, jamais celle du fournisseur de modèle. */
   depensesEchouent?: boolean;
 } = {}) {
-  const cap = { appels: [] as Array<{ modele: string; messages: Array<ChatMessage | ChatMessageImage>; toolChoice: string }> };
+  const cap = {
+    appels: [] as Array<{ modele: string; messages: Array<ChatMessage | ChatMessageImage>; toolChoice: string }>,
+    imports: [] as string[],
+  };
   let rang = 0;
   const entretiens = new FakeEntretiens(opts.entretien ?? null);
   const deps: AgentSetupRouteDeps = {
@@ -103,6 +106,10 @@ function app(opts: {
       }
       : null),
     entretiens,
+    importerSiteDeLEntretien: async (_t: string, _a: string, url: string) => {
+      cap.imports.push(url);
+      return { issue: 'importe' as const, ecrites: 3, pages: 1 };
+    },
     // 🔴 Le faux ECRIT PAR SOURCE, comme le vrai : une piece jointe REMPLACE les fiches que le meme
     // fichier avait produites, et elles portent sa provenance. Un faux qui creerait des fiches anonymes
     // une par une n'exercerait plus le chemin reel.
@@ -476,6 +483,28 @@ describe('conversation de construction', () => {
     const a = app({ reponse: r, entretien: tenu });
     await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
     expect(a.entretiens.ecrits.at(-1)!.bascules.map((b) => b.moment)).toEqual(['le client veut parler à un conseiller']);
+  });
+
+  it('🔴 l’adresse du site, donnée pour la première fois, lance son import et le message le dit', async () => {
+    // Julien, 2026-10-12 : l'onglet Base de connaissance doit avoir ses fiches quand le client l'ouvre.
+    const r = reponse(JSON.stringify({
+      message: 'Noté, à quoi ressemble une conversation réussie ?', reponses: [], fiche: {},
+      connaissanceUrl: 'https://www.smatis.fr/',
+    }));
+    const a = app({ reponse: r, entretien: OUVERT_SUR_LES_MOMENTS });
+    const res = await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: { message: 'https://www.smatis.fr/' } });
+    expect(res.statusCode).toBe(200);
+    expect(a.cap.imports).toEqual(['https://www.smatis.fr/']);
+    expect(res.json().message).toContain('J’importe les pages de https://www.smatis.fr/ dans votre base de connaissance');
+    expect(a.entretiens.ecrits.at(-1)!.connaissanceUrl).toBe('https://www.smatis.fr/');
+  });
+
+  it('la même adresse au tour suivant ne relance pas l’import', async () => {
+    const r = reponse(JSON.stringify({ message: 'Noté ?', reponses: [], fiche: {}, connaissanceUrl: 'https://www.smatis.fr/' }));
+    const a = app({ reponse: r, entretien: { ...OUVERT_SUR_LES_MOMENTS, connaissanceUrl: 'https://www.smatis.fr/' } });
+    const res = await a.srv.inject({ method: 'POST', url: url('t1'), ...h(adminTok), payload: bonjour });
+    expect(a.cap.imports).toEqual([]);
+    expect(res.json().message).not.toContain('J’importe');
   });
 
   /** Le tour qui demande l'ACTION du premier moment (agent SMATIS, 2026-10-12). */

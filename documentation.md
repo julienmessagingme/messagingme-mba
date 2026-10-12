@@ -1117,6 +1117,14 @@ d'un moyen. Au tour qui demande l'action du moment N, si le modèle n'a rien ren
 point qui les recueille, même sans réponse texte (2026-10-12, agent SMATIS : trois fois la même question, un moment
 en double).
 
+🔴 **Le site donné pendant l'entretien s'importe en TÂCHE DE FOND** (décision de Julien, 2026-10-12). Au tour où
+l'adresse retenue change, la route lance `importerLeSiteDeLEntretien` sans l'attendre (un parcours prend jusqu'à 30 s),
+journalise son issue (`agent_setup_import_site`) et l'annonce dans le message. Elle passe par `apercuSite` puis
+`importerSite`, donc par les gardes de l'onglet (adresse publique, même origine, plafond, échéance). ⚠️ Rien n'est relu
+si une fiche vient déjà de ce site : relire une adresse remplace ses fiches, corrections comprises. ⚠️ Lancée dans
+le process de l'API, elle se perd si l'API redémarre pendant le parcours : l'adresse reste dans le champ de l'onglet,
+pré-rempli par `/setup/suggestions`, et l'import s'y relance d'un geste.
+
 **Le catalogue proposé au client** est une liste CHOISIE (`src/agent/modeles.ts`), intersectée avec le
 catalogue réel du Gateway et tarifée en direct. Deux critères pour y entrer : le modèle sait **appeler des
 outils** (sinon il n'a pas une réponse dégradée, il en a une INVENTÉE) et il parle correctement français.

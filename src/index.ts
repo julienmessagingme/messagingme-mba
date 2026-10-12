@@ -187,7 +187,7 @@ import { creerPayeurAutorise, type CreditPaiementRouteDeps } from './http/credit
 import type { AgentsRouteDeps } from './http/agents';
 import type { AgentTestRouteDeps } from './http/agent-test';
 import type { AgentKnowledgeRouteDeps } from './http/agent-knowledge';
-import type { DepsConnaissance } from './agent/connaissance';
+import { importerLeSiteDeLEntretien, type DepsConnaissance } from './agent/connaissance';
 import type { Origine } from './reglages/historique';
 import { creerOffreDeBienvenue } from './account/offre-bienvenue';
 import { creerGelMembres } from './offres/membres';
@@ -1712,6 +1712,10 @@ async function main(): Promise<void> {
         Object.fromEntries((await userStore.list(tenant)).map((u) => [u.id, u.email])),
       // Les pièces jointes écrivent des fiches de connaissance par le même store que l'onglet Connaissance :
       // ce que le client joint y reste relisible et modifiable.
+      // Le site donné pendant l'entretien s'importe tout seul (Julien, 2026-10-12), par le MÊME objet que l'onglet Base
+      // de connaissance : mêmes gardes d'adresse, même découpage, même journal.
+      importerSiteDeLEntretien: (tenant, agentId, url) =>
+        importerLeSiteDeLEntretien(connaissanceDeLaConsole, tenant, agentId, url),
       ecrireFichesDocument: (tenant, agentId, nom, fiches) =>
         knowledgeStore.remplacerSource(tenant, agentId, { type: 'document', nom }, fiches),
       // L'entretien est tenu par le serveur : conversation persistante entre deux visites, et séquence des
