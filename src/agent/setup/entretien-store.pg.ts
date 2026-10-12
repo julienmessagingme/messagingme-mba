@@ -11,23 +11,31 @@ export class PgEntretienStore implements EntretienStore {
   constructor(private readonly pool: Pool) {}
 
   async lire(tenantId: string, agentId: string): Promise<EntretienComplet | null> {
-    const res = await this.pool.query<{ messages: unknown; reponses: unknown; poses: unknown; bascules: unknown; auteurs: unknown }>(
-      `select messages, reponses, poses, bascules, auteurs from agent_setup_conversations where agent_id = $2 and tenant_id = $1`,
+    const res = await this.pool.query<{
+      messages: unknown; reponses: unknown; poses: unknown; bascules: unknown; auteurs: unknown; connaissance_url: string | null;
+    }>(
+      `select messages, reponses, poses, bascules, auteurs, connaissance_url
+         from agent_setup_conversations where agent_id = $2 and tenant_id = $1`,
       [tenantId, agentId],
     );
     const r = res.rows[0];
-    return r ? lireEtat(r) : null;
+    if (!r) return null;
+    // 🔴 `null` en base veut dire « absente » : le schéma de relecture refuse un `null`, et un refus fait retomber
+    // l'entretien sur le VIERGE, donc perdre toute la conversation. La colonne n'entre que si elle porte une adresse.
+    const { connaissance_url: adresse, ...etat } = r;
+    return lireEtat(adresse === null ? etat : { ...etat, connaissanceUrl: adresse });
   }
 
   async ecrire(tenantId: string, agentId: string, etat: EntretienComplet): Promise<void> {
     // Une seule ligne par agent : l'upsert réécrit la même, et son tableau `messages` porte tout le fil.
     await this.pool.query(
-      `insert into agent_setup_conversations (agent_id, tenant_id, messages, reponses, poses, bascules, auteurs, updated_at)
-       values ($2, $1, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, now())
+      `insert into agent_setup_conversations
+         (agent_id, tenant_id, messages, reponses, poses, bascules, auteurs, connaissance_url, updated_at)
+       values ($2, $1, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8, now())
        on conflict (agent_id) do update
          set messages = excluded.messages, reponses = excluded.reponses,
              poses = excluded.poses, bascules = excluded.bascules,
-             auteurs = excluded.auteurs, updated_at = now()
+             auteurs = excluded.auteurs, connaissance_url = excluded.connaissance_url, updated_at = now()
        where agent_setup_conversations.tenant_id = $1`,
       [
         tenantId,
@@ -39,6 +47,9 @@ export class PgEntretienStore implements EntretienStore {
         JSON.stringify(etat.poses),
         JSON.stringify(etat.bascules ?? []),
         JSON.stringify(etat.auteurs ?? []),
+        // L'adresse donnée au point `connaissance` (0228). La route la reporte d'un tour à l'autre (`avant`), donc
+        // l'écrire telle quelle ne l'efface jamais par omission.
+        etat.connaissanceUrl ?? null,
       ],
     );
   }
