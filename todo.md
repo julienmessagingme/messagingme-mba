@@ -1538,6 +1538,18 @@ qui attend quelqu'un, et il garderait la conversation visible.
 conversation qu'un scénario mène n'est pas une ligne de travail). C'est la DESTINATION de la reprise qui est
 discutable, pas le filtre.
 
+## 🟠 Les audits d'architecture des 11 et 12 octobre : ce qui reste ouvert (2026-10-12)
+
+Audits « improve-codebase-architecture » menés dans une session ChatGPT, rapports NON versionnés : ce qui compte est
+recopié ici. Onze refactors internes en sont sortis, tous livrés et déployés (journal technique, 2026-10-10 à 12),
+sans changement produit ni migration. ⚠️ Les audits ne sont PAS clos :
+
+- **Ré-audit du 2026-10-11** : réduire l'interface de `construireSocle` (`src/socle.ts`). Piste SPÉCULATIVE, non
+  faite ; ne pas l'ouvrir sans pouvoir dire quelle interface rétrécit, et pour quel appelant.
+- **Audit du 2026-10-12** : seule la préparation d'une campagne a été traitée (`be24529c`). Restent À EXAMINER (rien
+  n'est décidé) : le cycle de vie des formulaires WhatsApp, les chemins JSON dupliqués, le contrat des déclencheurs
+  d'automation, les clés de champs de l'import CSV.
+
 ## 🟠 Le rapport d'architecture du 2026-10-02 : huit pistes restantes sur neuf (2026-10-03)
 
 Une revue de profondeur sur les zones les plus modifiées des deux semaines précédentes, rendue en HTML dans le
@@ -1548,13 +1560,16 @@ gros dépôts, gardes de consentement en flèches nommées, émission décidée 
 **La piste 1 est faite et déployée** : la règle unique du catalogue d'outils (offrable, appelable, publiable),
 `880b624d`, `b8760b6b`, `d101358e`, journal du 2026-10-02 et 03.
 
+**Les pistes 3 et 5 sont faites et déployées le 2026-10-12** (série de refactors d'architecture, journal du
+2026-10-12) : des pistes listées ci-dessous, seule la 7 reste ouverte, plus les jaunes des pistes 4 et 6.
+
 **Les huit restantes**, de la plus forte à la plus spéculative :
 
-3. **L'accès publicitaire d'un espace, lié une fois** (à explorer). Chaque appel Graph ajouté se câble trois fois
-   (client, flèche de `src/index.ts` autour d'`accesPub`, dépendance de route), et `src/worker.ts` déchiffre le
-   jeton lui-même, hors de la règle « le jeton ne sort en clair que par `jetonClair` » (`src/pubs/connexion.ts`).
-   Rendre un accès déjà lié au compte publicitaire, construit dans le socle. À trancher en passant :
-   `noterSiRefus` ne marque un jeton refusé que sur la connexion, pas sur la création ni la publication.
+3. ✅ **L'accès publicitaire d'un espace, lié une fois : FAIT le 2026-10-12** (`6da9ca80`, `c233bd62`). Le jeton
+   n'est lu et déchiffré que par `src/pubs/connexion.ts` (construit dans le socle, pour l'API comme pour le worker),
+   qui ne le rend jamais comme donnée (`appelerMeta`) et mémorise les vrais refus sur TOUS les parcours, création et
+   publication comprises (la question `noterSiRefus` est donc tranchée). Les opérations du compte vivent dans
+   `src/pubs/acces-publicitaire.ts`, plus dans `src/index.ts`.
 4. ✅ **Un point d'entrée par type de lancement de scénario : FAIT le 2026-10-04** (`b6e674ac`, plan
    `docs/superpowers/plans/2026-10-04-lancements-de-scenario.md`). Les sept lancements passent par
    `src/workflow/lancements.ts` (type fermé, table `POLITIQUE_DE_LANCEMENT`), l'exécuteur n'a plus que
@@ -1569,10 +1584,9 @@ gros dépôts, gardes de consentement en flèches nommées, émission décidée 
      l'enregistrement pour un déclencheur qui n'est pas un message.
    - 🟡 **Un commentaire de la console cite encore `ignoreHumanControl`** (`web/app/inbox/page.tsx`, vers la ligne
      2374) : à corriger au prochain passage dans ce fichier (le toucher seul republie la console).
-5. **La réception RCS en module, comme sa jumelle WhatsApp** (à explorer). `onMo` (`src/index.ts`, rcsCallback)
-   enchaîne STOP, opt-out, signal, journal, contact, automation et scénario dans une flèche qu'aucun test
-   n'exécute (le test la remplace par un faux) ; la jumelle WhatsApp est un module (`src/webhooks/inbound.ts`).
-   Peu modifiée : le coût est un risque sur le consentement, pas une fréquence.
+5. ✅ **La réception RCS en module : FAIT le 2026-10-12** (`c3fa7a73`). `src/rcs/message-entrant.ts`
+   (`traiterMessageEntrantRcs`) porte l'ordre STOP, Inbox, fiche et automation, signal de réponse, scénario, et
+   `tests/rcs-message-entrant.test.ts` l'exécute ; `src/index.ts` ne fait plus que le câbler.
 6. ✅ **Un seul geste « poser une étiquette » : FAIT le 2026-10-04** (`93e321b5`, plan
    `docs/superpowers/plans/2026-10-04-poser-une-etiquette.md`). `src/crm/poser-etiquette.ts` remplace
    `src/agent/poser-tag.ts` ; l'agent, le bloc de scénario, le widget, l'outil MCP `tag_conversation` et la fiche

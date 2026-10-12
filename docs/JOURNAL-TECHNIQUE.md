@@ -6,6 +6,44 @@
 > tranchent, jamais ce fichier.
 
 
+## 2026-10-12 : neuf refactors d'architecture, chacun rendu à son module (session ChatGPT)
+
+Une série de refactors internes issus d'audits « improve-codebase-architecture », menée dans une session ChatGPT du
+10 au 12 octobre. Onze commits en tout ; les deux du 2026-10-11 (orchestration de la publication Meta, contrat des
+messages interactifs) ont leur entrée plus bas, les neuf autres sont ici. Aucun ne change le produit, aucun n'ajoute
+de migration ; chacun a passé ses tests, le typage et la CI (unitaires, intégration, sécurité, plus le job web quand la
+console changeait). Le dernier, `be24529c`, a passé [son run](https://github.com/julienmessagingme/messagingme-mba/actions/runs/38286474172)
+(trois jobs verts, relus job par job), puis a été déployé : API saine, les deux workers sur `be24529c`, les six
+contrôles HTTP publics passés (d'après la session qui a déployé).
+
+- `132fccef` (2026-10-10) : les transitions des abonnements Pro et numéro fourni quittent la route Stripe pour
+  `src/stripe/traitement-abonnements.ts` ; la route garde signature, mode, recharge et HTTP. Acquittement, rejeu et
+  effets inchangés.
+- `6da9ca80` : le jeton publicitaire n'est plus lu ni déchiffré que par `src/pubs/connexion.ts`, pour l'API et le
+  worker ; les refus réels sont mémorisés sur tous les parcours (publication, pause, routage, suivi, création,
+  vidéo, audience), qui ne résolvent plus le jeton chacun de leur côté.
+- `52808d07` : `src/worker.ts` exporte `demarrerWorker()` et ne démarre plus rien à l'import ; `src/worker-cli.ts`
+  est la nouvelle entrée (`package.json`, `docker-compose.yml`).
+- `c233bd62` : les opérations du compte publicitaire quittent `src/index.ts` pour `src/pubs/acces-publicitaire.ts`.
+- `c3fa7a73` : le traitement d'un message RCS entrant quitte `src/index.ts` pour `src/rcs/message-entrant.ts`, ordre
+  conservé (STOP, Inbox, fiche et automation, signal, scénario) et enfin exécuté par un test.
+- `4d48c36b` : le contrat de l'onglet Outils de l'agent de Meta passe dans `web/lib/partage/outils-mba.ts` ; route,
+  vue serveur et console ne le recopient plus.
+- `a43c7cbf` : le catalogue MCP (droit, personne requise) passe dans `web/lib/partage/catalogue-mcp.ts` ; les handlers
+  l'étalent, la documentation le lit, un test vérifie la correspondance avec les outils chargés.
+- `d2c6bcd9` : les actions du journal d'audit et leurs libellés passent dans `web/lib/partage/actions-journal.ts` ;
+  le serveur en dérive ce qu'il écrit, la console et le CSV en lisent les libellés.
+- `be24529c` : les validations et lectures de la création d'une campagne passent dans
+  `src/http/preparation-campagne.ts`, sans écriture ; `src/campaign/create.ts` garde la transaction. Ajout de
+  `GLOSSARY.md` (vocabulaire des campagnes).
+
+Ce ne sont PAS les lots « suppressions sûres » (`d5c290ed`) et « partage serveur/console » (`54f9fa46`) de l'audit
+de simplicité, terminés le 2026-10-09 avant cette série. Les pistes 3 et 5 du rapport d'architecture du 2026-10-02
+sont fermées par `6da9ca80`, `c233bd62` et `c3fa7a73` ; ce que les audits des 11 et 12 octobre laissent ouvert est
+dans `todo.md`. La documentation n'avait été mise à jour que par les deux commits du 2026-10-11 : le reste a été
+rattrapé le même soir.
+
+
 ## 2026-10-12 : la section développeurs de la vitrine (lot 18)
 
 Décisions de Julien en deux rondes de questions : une page pour les vibe coders (Claude Code, Cursor, Lovable), en

@@ -127,7 +127,10 @@ Sur le réseau Docker `mcp-robot_default` du VPS :
 | `mba-worker` | pg-boss (les files) plus une quinzaine de balayeurs. **Aucune adresse, personne ne l'appelle** | |
 | `mba-web` | Next.js, l'ancienne console | `:3000` |
 
-Le worker voyage avec l'API : il lit la base et travaille.
+Le worker voyage avec l'API : il lit la base et travaille. Son point d'entrée est `src/worker-cli.ts` (`npm run
+worker` et la commande des conteneurs `mba-worker*`), qui charge l'environnement puis appelle `demarrerWorker()`.
+`src/worker.ts` n'a AUCUN effet de bord à l'import : un test peut l'importer sans démarrer les files ni les
+minuteries (`tests/worker-import.test.ts`). Lancer `src/worker.ts` directement ne démarre donc rien.
 
 ### Stack
 
@@ -391,6 +394,16 @@ POST /campaigns/:id/run  -> job `campaign-run` (expiration DIMENSIONNÉE au volu
          et relit la fiche : purge, STOP ou blocage posés depuis -> écarté (`skipped`), rien ne part
        envoi, puis résultat persisté HORS du catch d'envoi
 ```
+
+**La création se fait en deux temps, lecture puis écriture.** `preparerCampagne` (`src/http/preparation-campagne.ts`)
+porte TOUTES les validations et lectures de `POST /tenants/:tenantId/campaigns` : canal, scénario et son ouverture,
+appartenance à l'espace (numéro, agent RCS, modèle e-mail, webhook), étages et leur normalisation, plafond de
+destinataires, résolution de l'audience. Il n'écrit rien et rend soit l'entrée figée, soit le refus HTTP.
+`src/campaign/create.ts` écrit ensuite la campagne et ses destinataires dans une transaction ; la route ne garde que
+l'authentification, la réponse et l'avertissement de palier. 🔴 Quatre audiences à ne pas confondre : **absente** =
+tous les contacts de l'espace ; **liste explicitement vide** = refusée, jamais « tous » ; **filtrée** (`contactTarget`)
+= résolue une fois, bornée au plafond ; **au fil de l'eau** = aucune audience initiale, les contacts arrivent par
+webhook entrant. Le vocabulaire (campagne, audience, étage, au fil de l'eau) est défini dans `GLOSSARY.md`.
 
 🔴 **Le claim atomique par destinataire est la seule garantie anti-double-envoi.** Ni la file ni le verrou ne
 la donnent : aucune file de ce dépôt ne déduplique quoi que ce soit (voir § 6).
@@ -802,6 +815,10 @@ connecteur, mais le relais exécute son geste lui-même. Les invariants :
   exposée par une ligne de consentement `mba:<numéro>` née active au nom de l'administrateur qui crée. La cible
   (l'étiquette, le champ, le bloc, le scénario) vit dans `binding`, validée à CHAQUE lecture par `cibleMaisonSchema`
   (`src/mba/outils-maison.ts`, `.strict()`) : une cible illisible n'est ni publiée ni exécutée.
+- **Le contrat de l'onglet Outils est partagé** (`web/lib/partage/outils-mba.ts`, plus `risque-outil.ts` pour le
+  niveau de risque) : types d'outil, formes de cible saisie et affichée, vue d'un outil et bornes des textes, lus par
+  la route (`src/http/mba-outils.ts`), la vue serveur (`src/mba/vue-outils.ts`) et la console. Les handlers et la
+  présentation restent chacun de leur côté ; aucun des trois ne recopie le contrat.
 - **Les handlers sont À PART de ceux des agents IA** (`tag_fixe`, `champ_fixe`… contre `poser_tag`…), et un test
   tient leur disjonction : un outil de l'agent de Meta qui atteindrait un agent IA serait refusé, pas joué.
 - **Jamais proposé ni rattachable à un agent IA** : `listCatalogue` l'exclut, `rattacherConsommateur` refuse un
@@ -1961,8 +1978,11 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   et les gestes de `/ops` qui touchent un espace (`makeTraceOps`, `src/audit/journal.ts` : offre, verrou, crédit, clé du
   modèle révoquée, connexion publicitaire, balayage du risque, ouverture d'une session d'observation ; l'adresse de
   l'exploitant pour acteur, l'espace pour cible, jamais la note). Le rejeu des files d'échec, commun à tous les espaces,
-  et les LECTURES de `/ops` n'y entrent pas. 🔴 Chaque action a son libellé dans la console (`ACTIONS_JOURNAL`,
-  `web/lib/journal.ts`) : `tests/journal-libelles.test.ts` l'exige.
+  et les LECTURES de `/ops` n'y entrent pas. 🔴 Le vocabulaire des actions est UN catalogue,
+  `web/lib/partage/actions-journal.ts` : chaque clé porte son libellé français et anglais, le serveur en dérive le type
+  `AuditAction` qu'il a le droit d'écrire, la console et l'export CSV en lisent les libellés (`ACTIONS_JOURNAL`). Une
+  action nouvelle ne compile donc pas sans ses deux libellés ; une ancienne ligne dont l'action n'y figure plus reste
+  lisible (la colonne est un texte libre). `tests/journal-libelles.test.ts` tient le reste.
 
 ### Les identifiants publics
 
@@ -2631,8 +2651,12 @@ l'activer, et d'ouvrir une recharge du crédit.
   refus est mot pour mot celui d'un outil inconnu. La raison : une clé `mcp:write` peut être branchée comme connecteur
   d'un agent qui lit des messages de clients, et une injection y modifierait un agent ou ouvrirait un paiement. Toutes
   les écritures de l'agent le portent ; ses lectures (`list_agents`, `get_agent`, `list_knowledge`, `get_credit`)
-  restent lisibles par une clé, comme `get_number_subscription` (un statut et une échéance, rien qui engage). La
-  répartition est tenue par `tests/mcp-agent.test.ts` et `tests/mcp-numero.test.ts`.
+  restent lisibles par une clé, comme `get_number_subscription` (un statut et une échéance, rien qui engage). Le
+  droit (`mcp:read` / `mcp:write`) et l'exigence d'une personne de chaque outil se déclarent UNE fois, dans
+  `web/lib/partage/catalogue-mcp.ts`, que les handlers étalent (`ficheOutilMcp`) et que la documentation publique lit ;
+  les textes français et anglais restent dans la documentation, les handlers dans `src/mcp/`. La répartition est
+  tenue par `tests/mcp-agent.test.ts` et `tests/mcp-numero.test.ts`, la correspondance entre le catalogue et les outils
+  réellement chargés par `tests/mcp-doc-parite.test.ts`.
   `preview_site` est une lecture (`mcp:read`) qui exige une personne, et la seule lecture en monde ouvert : il lit un
   site tiers. La sonde 15 de l'auto-attaque le vérifie sur le serveur construit.
 - **Une seule vérité** : chaque outil appelle la fonction de la console (`src/agent/gestion.ts`, `connaissance.ts`,
@@ -3289,6 +3313,11 @@ injectable : aucun test n'appelle Stripe.
   second événement de la même session). Une panne de base rend 5xx et Stripe rejoue ; une session illisible rend
   422 pour la même raison. La réponse part dès la transaction passée : la remontée du plafond Vercel suit sans
   être attendue par Stripe (suivie par l'arrêt propre du processus, `travauxEnVol`).
+  🔴 **La route ne garde que le protocole** : signature, enveloppe, contrôle du mode, recharge du crédit IA et
+  traduction en réponse HTTP. Les événements d'ABONNEMENT (le Pro et le numéro fourni) sont reconnus, interprétés et
+  appliqués par `creerTraitementAbonnements` (`src/stripe/traitement-abonnements.ts`, `tests/traitement-abonnements.test.ts`),
+  qui rend une issue que la route traduit. Une panne inattendue y remonte pour que Stripe rejoue ; un espace supprimé
+  (23503) est définitif : alerte puis acquittement.
 - Le retour de Stripe se fait sur la page Crédit IA de la console (`APP_URL/parametres/credit`) et ne crédite
   rien : il relit le solde et l'historique, et reconnaît l'arrivée à la ligne `achat` postérieure au départ vers
   Stripe (`achatArriveDepuis`, `web/lib/api-credit.ts`), dès la première lecture : un solde comparé à lui-même ne
@@ -3505,8 +3534,8 @@ reste une panne.
 **Ce qui reste chez les tiers, et ce qui est gardé.**
 - **Stripe** : le client et les abonnements restent ; la clé restreinte ne résilie pas, Julien le fait à la main avec
   les liens montrés par le bilan et la réponse. Une facture payée ou une session rejouée pour un espace disparu rend
-  200 et prévient Julien sur Telegram avec le lien de l'abonnement (`src/http/credit-stripe.ts`, 23503) ; une recharge
-  payée pour un espace disparu aussi (à rembourser).
+  200 et prévient Julien sur Telegram avec le lien de l'abonnement (`src/stripe/traitement-abonnements.ts`, 23503) ;
+  une recharge payée pour un espace disparu aussi (à rembourser, `src/http/credit-stripe.ts`).
 - **Meta**, quand ses étapes sont sautées (partagé, jeton global) ou en échec : l'agent, sa liste, l'abonnement du
   compte à notre app restent, à défaire à la main.
 - **DIDWW**, quand le numéro sort en `bloque` : à résilier à la main.
@@ -4039,8 +4068,12 @@ démarre plus. ⚠️ Depuis `web/lib`, la console l'importe en RELATIF : des te
 serveur ne connaît pas l'alias. Ce qu'il porte : les champs d'adresse (`champs-url`), l'URL de bouton envoyable
 (`button-url`), l'identifiant de bouton de carrousel, la joignabilité WhatsApp, les types et la forme des événements
 d'une conversation, les modes du répondeur et son mode effectif, les niveaux et codes du risque, les bornes et le
-parseur de durée de la vidéo publicitaire, et le contrat des messages interactifs de l'agent de Meta
-(`messages-interactifs`). Une copie qui reste ailleurs (une liste de libellés d'écran, une règle
+parseur de durée de la vidéo publicitaire, le contrat des messages interactifs de l'agent de Meta
+(`messages-interactifs`), le contrat de l'onglet Outils de l'agent de Meta et le niveau de risque d'un outil
+(`outils-mba`, `risque-outil`), les faits mécaniques du catalogue MCP (`catalogue-mcp` : droit et personne requise de
+chaque outil) et le vocabulaire du journal d'audit avec ses libellés (`actions-journal`). 🔴 Pour ces valeurs (types,
+bornes, droits, libellés), le fichier est la SOURCE : ce manuel dit où elles vivent, il ne les recopie pas. Une copie
+qui reste ailleurs (une liste de libellés d'écran, une règle
 liée à la base ou à `zod`) garde son test de parité.
 
 ### Backend
@@ -4117,7 +4150,11 @@ liée à la base ou à `zod`) garde son test de parité.
 | `src/meta/graph.ts` -> `appelGraph` | l'appel Graph authentifié des clients WhatsApp (modèles, flows, lecture du numéro, ajout et vérification d'un numéro, média entrant) : `Bearer`, `fetch` injectable, `MetaApiError` si non-2xx. ⚠️ Ni `ClientGraph.call` (plafond de durée, `ErreurGraph`), ni `MbaClient`, ni le transport des envois |
 | `src/campaign/enqueue.ts` -> `relanceurDeCampagnes` | l'enfilement d'un run au débit RÉSOLU sur la configuration du process : les relances du worker (hors planification et reprise après plafond, qui résolvent le débit dans leur balayage) et l'envoi de l'API publique |
 | `src/stats/chiffrage.ts` -> `creerChiffrage` | 🔴 toutes les lectures de COÛT de la console (statistiques, fiche de campagne, bilan contact) : le tarif Meta et son cache (60 s, un par process, `null` jamais mémorisé), la marge, la classification RCS simple ou conversationnel (`repartirRcs`) et la lecture des liens tracés d'un scénario (`liensDesTemplates`), écrites une fois. La racine le construit et passe ses membres aux routes ; `tests/chiffrage.test.ts` l'exécute contre de faux dépôts |
-| `src/pubs/connexion.ts` -> `creerConnexionPub` | la connexion publicitaire d'un espace : jeton chiffré au repos et déchiffré à la demande, connexion concurrente, révocation (Meta d'abord, puis la base), état du compte en cache 2 min, dépôt de jeton par `/ops` |
+| `src/pubs/connexion.ts` -> `creerConnexionPub` | 🔴 la connexion publicitaire d'un espace, et le SEUL endroit où son jeton est lu et déchiffré, pour l'API comme pour le worker (construite une fois par `construireSocle`) : jeton chiffré au repos, connexion concurrente, révocation (Meta d'abord, puis la base), état du compte en cache 2 min, dépôt de jeton par `/ops`. Le jeton ne sort jamais comme donnée : un appelant reçoit `appelerMeta`, une opération qui le consomme et mémorise les vrais refus de Meta. Trois accès : `avecJeton` (le jeton seul), `avecConfiguration` (jeton, compte publicitaire et Page, `ConnexionPubIncomplete` sans eux), `siConnecte` (le worker : seule l'absence de connexion est absorbée) |
+| `src/pubs/acces-publicitaire.ts` -> `creerAccesPublicitaire` | les opérations du compte publicitaire, toutes authentifiées par la connexion ci-dessus : création et publication d'une publicité, pause, vidéos, audiences. `src/index.ts` lui fournit ses dépendances et n'en porte aucune ; les modules métier (`creation.ts`, `video.ts`, `routage.ts`, `suivi.ts`) gardent leurs règles. `tests/pubs-acces-publicitaire.test.ts` |
+| `src/rcs/message-entrant.ts` -> `traiterMessageEntrantRcs` | 🔴 le traitement d'une réponse RCS, une fois le rappel smsmode authentifié par la route, dans cet ordre : STOP (opt-out et signal) avant toute autre écriture, Inbox, fiche contact puis automation, signal de réponse, reprise du scénario. Automations et scénario sont secondaires : leur panne ne fait pas rejouer un rappel dont l'opt-out et l'Inbox sont écrits. `src/index.ts` ne fait que le câbler ; `tests/rcs-message-entrant.test.ts` exécute l'ordre |
+| `src/stripe/traitement-abonnements.ts` -> `creerTraitementAbonnements` | le cycle de vie des abonnements Stripe (le Pro, le numéro fourni) : classement des événements, lecture de leurs objets, transitions, effets rejouables. La route `credit-stripe.ts` garde signature, mode, recharge du crédit IA et HTTP (§ 8, la recharge par Stripe) |
+| `src/http/preparation-campagne.ts` -> `preparerCampagne` | toutes les validations et lectures de la création d'une campagne, sans aucune écriture ; `src/campaign/create.ts` écrit (§ 4.2) |
 | `src/inbox/fil.ts` -> `creerControleDuFil` | 🔴 le contrôle du fil : les gestes qui confient, reprennent ou passent une conversation (agent de Meta, scénario, équipe), l'ordre « Meta d'abord, la colonne ensuite », les gardes (agent allumé, `only`, fil de test, parcours en attente, détenteur relu avant Meta, opérateur épargné par un démarrage du client), l'événement `message_sans_suite` et la marque d'escalade. Seul appelant de `setControlOwner`, `demanderReleaseMba`, `consommerReleaseMba` et du `release` de Meta ; `tests/fil.test.ts` exécute sa table |
 | `src/inbox/delai-reprise.ts` -> `repriseDue`, `delaiHumainMs` | 🔴 le délai de reprise d'un fil tenu, une seule règle pour le balayage (`runControlSweep`) et la remise « personne ne suit » (`remettreSiPersonneNeSuit`) : escalade sans réponse jamais échue, délai nul ou absent = jamais, fil non daté échu ; le réglage de l'espace prime sur `CONTROL_HUMAN_TIMEOUT_MS`. Sans la fenêtre de service, que seul le balayage lit ; `tests/fil-delai-reprise.test.ts` |
 | `src/mba/liste.ts` -> `creerListeDeLAgent` | 🔴 la liste de l'agent de Meta (`mba_liste`, migration 0195) : ajouter (Meta puis la ligne, défait si la ligne échoue), retirer (Meta puis la ligne, un rejeu, un 404 vaut retrait, une panne de la table lève), retirer avant un modèle sous les deux formes du numéro (`formesDuNumero`, `RetraitDeLaListeRefuse`), lire qui y est, faire sortir le moins actif quand la liste du numéro atteint le plafond de Meta (`PLAFOND_LISTE`, 20). Seul appelant des routes `allowlist` de Meta ; `tests/mba-liste.test.ts` |
@@ -4212,6 +4249,7 @@ Une livraison ne « met pas à jour tous les fichiers ». Elle choisit selon la 
 | une limite ou un travail futur confirmé | `todo.md` |
 | le récit d'une livraison, une mesure ponctuelle, un incident | `docs/JOURNAL-TECHNIQUE.md` |
 | les commandes, les règles de travail | `CLAUDE.md` |
+| le vocabulaire du domaine (définitions, sans code ni chemin) | `GLOSSARY.md` |
 
 ### 🔴 Ce qui n'entre PAS dans ce manuel
 
