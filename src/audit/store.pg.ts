@@ -1,4 +1,7 @@
 import type { Pool } from 'pg';
+import type { AuditAction } from '../../web/lib/partage/actions-journal';
+
+export type { AuditAction } from '../../web/lib/partage/actions-journal';
 
 /**
  * Journal d'audit des actions sensibles.
@@ -8,176 +11,12 @@ import type { Pool } from 'pg';
  * numéro au moment d'une purge réinscrirait la personne dans une table faite pour ne jamais être modifiée.
  */
 
-export type AuditAction =
-  | 'contact.created'
-  | 'contact.imported'
-  | 'contact.purged'
-  | 'contact.optin'
-  | 'contact.optout'
-  // Mise en ligne d'un scénario : `workflows` ne garde que la date de publication, qui a cliqué est ici.
-  | 'workflow.published'
-  /**
-   * Effacement du contenu d'une conversation, irréversible : il ferme aussi la fenêtre de 24 h (calculée sur les
-   * entrants), ce que l'écran doit annoncer. La ligne ne porte que l'identifiant interne et le nombre de messages.
-   */
-  | 'conversation.effacee'
-  /**
-   * Les accès : qui a nommé un admin, créé une clé d'API ou révoqué un compte.
-   * `audit_log.action` est un `text` libre, sans CHECK : ce type est la seule garde contre une faute de frappe, qui
-   * s'écrirait en base puis manquerait à l'écran pour toujours. Pas de `numero.deconnecte` : aucune route ne détache
-   * un numéro, l'action ne serait jamais écrite.
-   */
-  | 'utilisateur.invite'
-  | 'utilisateur.role_change'
-  | 'utilisateur.desactive'
-  | 'utilisateur.retire'
-  /**
-   * Uniquement sur un compte qui existe : `audit_log.tenant_id` est NOT NULL, une tentative sur une adresse inconnue
-   * n'a nulle part où s'écrire. L'écran doit le dire, sinon on y lirait « aucune tentative ».
-   */
-  | 'connexion.echouee'
-  | 'cle_api.creee'
-  | 'cle_api.revoquee'
-  /**
-   * L'OAuth devant `/mcp` (migration 0204) : une personne admin autorise Claude dans son espace, ou un admin
-   * révoque une autorisation depuis la console. Le détail ne porte ni jeton, ni code, ni empreinte, seulement le
-   * client et les droits. La révocation par le client lui-même (`POST /oauth/revoke`) n'est pas tracée : elle ne
-   * connaît que le jeton, pas l'espace.
-   */
-  | 'oauth.autorise'
-  | 'oauth.revoque'
-  /**
-   * Les portes vers l'extérieur, en deux familles de sens opposés.
-   * Un webhook est une porte d'entrée que nous exposons : le risque est l'ingestion par qui connaît l'adresse, et la
-   * suppression, qui tarit une campagne vivante. Un connecteur est la sortie : il porte l'adresse du système du
-   * client et son secret, changer son adresse change la destination de tout ce qui part.
-   * `webhook.secret_change` couvre pose et retrait ; `detail.pose` dit lequel.
-   */
-  | 'webhook.cree'
-  | 'webhook.modifie'
-  | 'webhook.supprime'
-  | 'webhook.secret_change'
-  | 'connecteur.cree'
-  | 'connecteur.modifie'
-  | 'connecteur.supprime'
-  | 'numero.connecte'
-  /** Un compte WhatsApp revenu de la fenêtre Meta SANS numéro, relié à l'espace avec son jeton (lot 3b). */
-  | 'compte.relie_sans_numero'
-  /** Le numéro a été activé depuis la console (vérification par code si besoin, puis register Cloud API). */
-  | 'numero.active'
-  /**
-   * Le numéro a été délié puis relié depuis l'Accueil : rien n'est détaché chez Meta ni supprimé chez nous. La cible
-   * est l'espace (le geste porte sur tous ses numéros), le détail ne porte que des comptes de campagnes.
-   */
-  | 'numero.delie'
-  | 'numero.relie'
-  /**
-   * « Déconnecter le numéro » : le numéro quitte l'espace pour de bon. Le détail porte les identifiants Meta du numéro et du
-   * compte, et les étapes jouées ; jamais le numéro affiché.
-   */
-  | 'numero.deconnecte'
-  | 'contact.exporte'
-  /**
-   * La connexion publicitaire : ce geste pose un jeton qui permet de dépenser l'argent du client chez Meta. Qui a
-   * connecté, choisi le compte ou déconnecté est la première question le jour où une pub tourne sans qu'on s'y
-   * attende. Le détail ne porte ni le jeton ni son empreinte, seulement des identifiants Meta et des comptes.
-   */
-  | 'pubs.connectee'
-  | 'pubs.actifs_choisis'
-  | 'pubs.deconnectee'
-  /**
-   * Créer et publier sont deux lignes : créer ne dépense rien (tout naît en pause chez Meta), publier engage le
-   * budget du client. C'est la seconde qui répond à « qui a décidé que cette campagne dépenserait, et quand ».
-   */
-  | 'pubs.creee'
-  | 'pubs.publiee'
-  /** La pause se trace aussi : c'est souvent le geste qu'on cherche à dater (« pourquoi ma campagne s'est arrêtée »). */
-  | 'pubs.pausee'
-  | 'pubs.reprise'
-  | 'pubs.archivee'
-  | 'pubs.desarchivee'
-  /**
-   * Le branchement d'un outil qui reçoit les signaux : par lui, des données de contacts quittent l'espace. Le détail
-   * ne porte jamais les clés, et ni lui ni la cible ne nomment l'outil (ce journal est un écran de la marque).
-   */
-  | 'integration.branchee'
-  | 'integration.modifiee'
-  | 'integration.debranchee'
-  /**
-   * Les webhooks sortants (lot 12) : une adresse de l'application du client reçoit des données de contacts. Le détail
-   * porte l'adresse et les types, jamais le secret (ni à la création, ni à la rotation).
-   */
-  | 'evenements.adresse_creee'
-  | 'evenements.adresse_modifiee'
-  | 'evenements.adresse_supprimee'
-  | 'evenements.secret_tourne'
-  // Un envoi rejoué par Claude (lot 13, domaine 4) : il repart vers l'application avec le même corps.
-  | 'evenements.envoi_rejoue'
-  /**
-   * L'APP SALESFORCE (plan 2026-09-26, lot L1). Ces actions NOMMENT l'outil (décision de Julien du 2026-09-26 : le
-   * journal nomme l'outil) : relier une org fait sortir des données de contacts vers le système du client, et
-   * l'admin doit pouvoir lire lequel. Le détail ne porte jamais le secret de l'org : l'org et le genre (sandbox),
-   * les noms des champs de consentement, l'option du résumé.
-   */
-  | 'salesforce.allumee'
-  | 'salesforce.eteinte'
-  | 'salesforce.connectee'
-  | 'salesforce.modifiee'
-  | 'salesforce.deconnectee'
-  /**
-   * L'espace renommé. Détail vide, ni l'ancien nom ni le nouveau : un nom d'espace peut être l'identité d'une
-   * personne (« Espace de Jean Dupont »), et l'écrire sous une autre clé que `nom` contournerait `CLES_INTERDITES`.
-   */
-  | 'espace.renomme'
-  /**
-   * Le second facteur. Il appartient à l'identité : chaque ligne est écrite dans chaque espace de la personne, sous
-   * son compte de cet espace.
-   * 🔴 Le détail ne porte jamais le code ni le secret, seulement l'étape. `mfa.echec` s'écrit sans être attendu,
-   * comme `connexion.echouee` : attendre ferait varier la durée de réponse selon l'existence d'une ligne.
-   * `mfa.reinitialise` porte l'admin qui a agi (ou aucun acteur, depuis l'exploitation) et vise le membre.
-   */
-  | 'mfa.active'
-  | 'mfa.code_secours_utilise'
-  | 'mfa.echec'
-  | 'mfa.reinitialise'
-  | 'mfa.codes_regeneres'
-  | 'mfa.desactive'
-  /**
-   * Les limites de l'API publique de l'espace changées depuis `/ops` (plafond d'appels, quotas quotidiens). Acteur :
-   * l'adresse de l'exploitant. Détail : ce qui a bougé et sa valeur d'avant, jamais la note, écrite pour nous.
-   */
-  | 'api.limites_modifiees'
-  /**
-   * Les réglages sensibles du client (lot 5 du bilan des audits). Une boîte d'envoi porte un mot de passe, le canal RCS
-   * une clé : leur détail n'en porte jamais, seulement l'hôte, le port et si le mot de passe a changé. La mention IA et le
-   * modèle d'un agent portent leur valeur d'avant et d'après, ce qu'un auditeur demande.
-   */
-  | 'email.boite_ajoutee'
-  | 'email.boite_modifiee'
-  | 'email.boite_supprimee'
-  | 'rcs.canal_active'
-  | 'rcs.canal_desactive'
-  | 'ia.mention_reglee'
-  | 'agent.modele_change'
-  | 'agent.mention_modifiee'
-  /**
-   * Les gestes de Messaging Me dans un espace, depuis `/ops` (`makeTraceOps`) : l'acteur est l'adresse de l'exploitant,
-   * la cible l'espace. La note de l'exploitant n'y entre jamais : texte libre, écrite pour nous, elle reste dans le
-   * journal du conteneur.
-   */
-  | 'ops.offre_posee'
-  | 'ops.verrou'
-  | 'ops.cle_modele_revoquee'
-  | 'ops.credit_ajoute'
-  | 'ops.pub_connectee'
-  | 'ops.risque_balaye'
-  | 'ops.espace_observe';
-
 export interface AuditEntry {
   id: string;
   at: string;
   actorEmail: string | null;
-  action: AuditAction;
+  /** Une ancienne ligne peut porter une action inconnue du catalogue actuel. */
+  action: string;
   targetKind: string;
   targetId: string;
   detail: Record<string, unknown>;
@@ -291,7 +130,7 @@ export class PgAuditStore {
       id: r.id,
       at: r.at.toISOString(),
       actorEmail: r.actor_email,
-      action: r.action as AuditAction,
+      action: r.action,
       targetKind: r.target_kind,
       targetId: r.target_id,
       detail: r.detail ?? {},

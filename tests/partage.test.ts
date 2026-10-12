@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, posix } from 'node:path';
+import ts from 'typescript';
 
 /**
  * LE CODE PARTAGÉ ENTRE LE SERVEUR ET LA CONSOLE (`web/lib/partage/`, audit de simplicité du 2026-10-09, lot B).
@@ -18,8 +19,23 @@ const lireArbre = (dir: string): string[] => readdirSync(join(RACINE, dir)).flat
   const rel = posix.join(dir, n);
   return statSync(join(RACINE, rel)).isDirectory() ? lireArbre(rel) : /\.tsx?$/.test(n) ? [rel] : [];
 });
-const imports = (fichier: string): string[] =>
-  [...readFileSync(join(RACINE, fichier), 'utf8').matchAll(/(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g)].map((m) => m[1]!);
+const imports = (fichier: string): string[] => {
+  const source = ts.createSourceFile(fichier, readFileSync(join(RACINE, fichier), 'utf8'), ts.ScriptTarget.Latest, true);
+  const chemins: string[] = [];
+  function parcourir(noeud: ts.Node): void {
+    if ((ts.isImportDeclaration(noeud) || ts.isExportDeclaration(noeud))
+      && noeud.moduleSpecifier && ts.isStringLiteral(noeud.moduleSpecifier)) {
+      chemins.push(noeud.moduleSpecifier.text);
+    }
+    if (ts.isCallExpression(noeud) && noeud.expression.kind === ts.SyntaxKind.ImportKeyword
+      && noeud.arguments[0] && ts.isStringLiteral(noeud.arguments[0])) {
+      chemins.push(noeud.arguments[0].text);
+    }
+    ts.forEachChild(noeud, parcourir);
+  }
+  parcourir(source);
+  return chemins;
+};
 
 describe('le dossier partagé entre le serveur et la console', () => {
   const partages = lireArbre('web/lib/partage');
