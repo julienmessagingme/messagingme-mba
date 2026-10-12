@@ -143,8 +143,8 @@ import { resolutionPublique } from './lib/adresse-privee';
 import { FILE_EVENEMENTS_ENVOI, appelProduction } from './evenements/envoi';
 import type { DepsGestionEvenements } from './evenements/gestion';
 import { PgBrouillonsPubStore } from './pubs/brouillons.pg';
-import { creerLaPublicite, publierLaPublicite, type DemandeCreation } from './pubs/creation';
-import { entonnoir, ISSUES_NON_PRISES_EN_CHARGE } from './pubs/entonnoir';
+import type { DemandeCreation } from './pubs/creation';
+import { creerAccesPublicitaire } from './pubs/acces-publicitaire';
 import { PgAgentSessionStore } from './agent/session-store.pg';
 import { PgMcpStore } from './agent/mcp/store.pg';
 import { PgEntretienStore } from './agent/setup/entretien-store.pg';
@@ -485,6 +485,12 @@ async function main(): Promise<void> {
   }, tenant, messageId, conversationId);
 
   const brouillonsPub = new PgBrouillonsPubStore(pool);
+  const accesPublicitaire = creerAccesPublicitaire({
+    connexion: connexionPub,
+    meta: clientCreationPubs,
+    publicites,
+    numeroWhatsApp: async (tenantId) => (await phoneStatusStore.getPhoneNumber(tenantId))?.displayPhoneNumber ?? null,
+  });
 
   // Envoi d'email auth (liens reset/invitation) : seulement si Resend est configuré, sinon undefined.
   const sendAuthEmail = config.RESEND_API_KEY
@@ -2077,122 +2083,8 @@ async function main(): Promise<void> {
 
       publicites,
       brouillons: brouillonsPub,
-
-      /**
-       * Créer une publicité chez Meta, en pause. Ce câblage ne fait que lier (connexion, jeton de Page, deux
-       * objets) : la séquence et son rattrapage vivent dans `src/pubs/creation.ts`, exécutés contre de faux
-       * objets, chemins d'échec compris.
-       */
-      creerPub: async (t: string, d: Omit<DemandeCreation, 'comptePubId' | 'pageId' | 'numeroWhatsApp'>) => {
-        return connexionPub.avecConfiguration(t, async ({ comptePubId, pageId, appelerMeta }) => {
-          // Le jeton de Page ne sert qu'à la créa et n'est jamais stocké. Meta l'exige pour ce guide sans dire
-          // s'il le faut partout : repli sur le jeton du client, et le refus de Meta sera lisible.
-          const jetonCrea = await appelerMeta((jeton) => clientCreationPubs.jetonDePage(pageId, jeton));
-          /**
-           * Le numéro est facultatif chez Meta, on le pose quand on le connaît : sans lui, Meta choisit le
-           * numéro de la Page, qui peut ne pas être celui de cet espace, et les prospects écriraient à un
-           * numéro dont aucun webhook ne nous parviendrait. Meta l'attend en chiffres, sans le `+` de l'E.164.
-           */
-          const affiche = (await phoneStatusStore.getPhoneNumber(t))?.displayPhoneNumber ?? null;
-          const numeroWhatsApp = affiche === null ? null : affiche.replace(/[^0-9]/g, '');
-          return creerLaPublicite(
-            { ...d, comptePubId, pageId, numeroWhatsApp },
-            {
-              televerserImage: (b64) => appelerMeta((jeton) => clientCreationPubs.televerserImage(comptePubId, jeton, b64)),
-              etatVideo: (videoId) => appelerMeta((jeton) => clientCreationPubs.etatVideo(videoId, jeton)),
-              vignetteVideo: (videoId) => appelerMeta((jeton) => clientCreationPubs.vignetteVideo(comptePubId, jeton, videoId)),
-              etatAudiences: (ids) => appelerMeta((jeton) => clientCreationPubs.etatAudiences(comptePubId, ids, jeton)),
-              creerCampagne: (p) => appelerMeta((jeton) => clientCreationPubs.creerCampagne(comptePubId, jeton, p)),
-              creerEnsemble: (p) => appelerMeta((jeton) => clientCreationPubs.creerEnsemble(comptePubId, jeton, p)),
-              creerCrea: (p) => appelerMeta((jeton) => clientCreationPubs.creerCrea(comptePubId, jetonCrea ?? jeton, p)),
-              creerPub: (p) => appelerMeta((jeton) => clientCreationPubs.creerPub(comptePubId, jeton, p)),
-              supprimerCampagne: (id) => appelerMeta((jeton) => clientCreationPubs.supprimerCampagne(id, jeton)),
-            },
-            {
-              ouvrir: (v) => publicites.ouvrir(t, v),
-              noterIds: (id, v) => publicites.noterIds(t, id, v),
-              marquerEtat: (id, etatPub) => publicites.marquerEtat(t, id, etatPub),
-              memoriserPub: (adId, campagneId) => publicites.memoriserPub(t, adId, campagneId),
-              creerAutomation: (id, v) => publicites.creerAutomation(t, id, v),
-              supprimerAutomation: (id) => publicites.supprimerAutomation(t, id),
-            },
-          );
-        });
-      },
-
-      /**
-       * Le dépôt d'une vidéo, sur le compte publicitaire de l'espace, avec le jeton du client (la vidéo appartient
-       * au compte, pas à la Page). Les octets ne font que traverser : `transfererMorceauVideo` les relaie en flux.
-       */
-      videos: {
-        demarrer: async (t: string, taille: number) => {
-          return connexionPub.avecConfiguration(t, ({ comptePubId, appelerMeta }) =>
-            appelerMeta((jeton) => clientCreationPubs.demarrerDepotVideo(comptePubId, jeton, taille)));
-        },
-        transferer: async (t: string, m: { sessionId: string; debut: number; taille: number; octets: AsyncIterable<Uint8Array> }) => {
-          return connexionPub.avecConfiguration(t, ({ comptePubId, appelerMeta }) =>
-            appelerMeta((jeton) => clientCreationPubs.transfererMorceauVideo(comptePubId, jeton, m)));
-        },
-        terminer: async (t: string, sessionId: string) => {
-          await connexionPub.avecConfiguration(t, ({ comptePubId, appelerMeta }) =>
-            appelerMeta((jeton) => clientCreationPubs.terminerDepotVideo(comptePubId, jeton, sessionId)));
-        },
-        etat: async (t: string, videoId: string) => connexionPub.avecConfiguration(t, ({ appelerMeta }) =>
-          appelerMeta((jeton) => clientCreationPubs.etatVideo(videoId, jeton))),
-      },
-      audiences: async (t: string) => {
-        return connexionPub.avecConfiguration(t, ({ comptePubId, appelerMeta }) =>
-          appelerMeta((jeton) => clientCreationPubs.audiences(comptePubId, jeton)));
-      },
-
-      /** Publier : l'automation d'abord, Meta ensuite. L'ordre vit dans `publierLaPublicite`. */
-      publierPub: async (t: string, publiciteId: string) => {
-        const pub = await publicites.lire(t, publiciteId);
-        if (pub === null) throw new Error('cette publicité n’existe pas');
-        await connexionPub.avecJeton(t, (appelerMeta) => publierLaPublicite(
-          publiciteId,
-          { campagneId: pub.campagneId, ensembleId: pub.ensembleId, pubId: pub.pubId, etat: pub.etat, destination: pub.destination },
-          { allumer: (objetId) => appelerMeta((jeton) => clientCreationPubs.changerStatut(objetId, jeton, 'ACTIVE')) },
-          {
-            allumerAutomation: (id) => publicites.allumerAutomation(t, id),
-            marquerPubliee: (id) => publicites.marquerEtat(t, id, 'publiee'),
-          },
-        ));
-      },
-
-      /**
-       * La page d'une publicité : ce qu'on sait d'elle, et son entonnoir. Aucun appel à Meta : les chiffres
-       * viennent du balayage (toutes les quinze minutes), pour que l'affichage ne dépende pas de Meta.
-       */
-      lirePub: async (t: string, publiciteId: string) => {
-        const publicite = await publicites.lire(t, publiciteId);
-        if (publicite === null) return null;
-        const comptes = await publicites.comptesDeLaCampagne(t, publicite.campagneId, ISSUES_NON_PRISES_EN_CHARGE);
-        return {
-          publicite,
-          entonnoir: entonnoir({
-            depense: publicite.depense, clics: publicite.clics,
-            impressions: publicite.impressions, couverture: publicite.couverture, ...comptes,
-          }),
-        };
-      },
-
-      /**
-       * Pause et reprise, sur la campagne seulement, chez Meta.
-       * 🔴 La campagne est l'interrupteur (Meta met en pause tout ce qu'elle contient) : toucher aussi
-       * l'ensemble et la publicité ferait trois façons d'échouer à mi-chemin sur le bouton d'arrêt d'une
-       * dépense. L'automation n'est pas touchée : un prospect qui a cliqué juste avant la pause peut écrire
-       * plus tard, et son lead a été payé.
-       */
-      basculerPub: async (t: string, publiciteId: string, actif: boolean) => {
-        const pub = await publicites.lire(t, publiciteId);
-        if (pub === null) throw new Error('cette publicité n’existe pas');
-        await connexionPub.avecJeton(t, (appelerMeta) =>
-          appelerMeta((jeton) => clientCreationPubs.changerStatut(pub.campagneId, jeton, actif ? 'ACTIVE' : 'PAUSED')));
-        // Meta vient d'accepter : on l'écrit tout de suite, sinon l'écran afficherait « Diffuse » sur une
-        // campagne qu'on vient d'arrêter, jusqu'au balayage suivant, et le client recliquerait.
-        await publicites.noterStatutMeta(t, publiciteId, actif ? 'ACTIVE' : 'PAUSED');
-      },
+      // Ces cas d'usage et l'accès au compte Meta sont possédés par `src/pubs/acces-publicitaire.ts`.
+      ...accesPublicitaire,
     },
     account: {
       numeros: phoneStatusStore,
