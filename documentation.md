@@ -1097,6 +1097,13 @@ imbriquée, tourne rarement) et `AGENT_MODEL` (le runtime, à chaque message). L
 sans les deux : le repli sur `LLM_MODEL` donnerait à un agent l'identifiant de l'ANALYSE de conversation,
 servie en direct par Anthropic, que le Gateway ne connaît pas.
 
+🔴 **Une sortie structurée passe par UN outil imposé, et il part en `tool_choice: 'required'`**
+(`GatewayChatClient.completer`). Le Gateway choisit lui-même le fournisseur d'un modèle : il sert `zai/glm-4.7`
+depuis Bedrock, qui IGNORE le choix nommé et répond en texte, quand il respecte `required` (mesuré le 2026-10-12).
+Le nom ne part que pour désigner un outil parmi plusieurs. Les quatre appelants (assistant de construction, bot
+d'aide, récap, traduction) déclarent chacun un seul outil et prennent le PREMIER appel de son nom : un fournisseur
+peut en rendre plusieurs.
+
 **Le catalogue proposé au client** est une liste CHOISIE (`src/agent/modeles.ts`), intersectée avec le
 catalogue réel du Gateway et tarifée en direct. Deux critères pour y entrer : le modèle sait **appeler des
 outils** (sinon il n'a pas une réponse dégradée, il en a une INVENTÉE) et il parle correctement français.

@@ -96,6 +96,38 @@ describe('GatewayChatClient (tâche 14)', () => {
     expect(corps.tools?.[0]?.function?.parameters).toEqual({ type: 'object', properties: {} });
   });
 
+  it('🔴 un SEUL outil imposé part en `required`, pas par son nom', async () => {
+    // Mesuré le 2026-10-12 : le Gateway sert `zai/glm-4.7` depuis Bedrock, qui ignore le choix NOMMÉ (0 appel
+    // d'outil sur 9, une réponse en texte à la place) et respecte `required` (3 sur 3). Avec un seul outil déclaré,
+    // les deux disent la même chose. C'était le refus « l'assistant n'a pas rendu de proposition exploitable ».
+    const t = new FauxTransport([ok(REPONSE_REELLE)]);
+    await new GatewayChatClient('cle', t).completer({
+      tenantId: 't-banc',
+      modele: 'zai/glm-4.7',
+      messages: [{ role: 'user', content: 'x' }],
+      outils: [{ name: 'proposer', description: 'rend la réponse', parameters: { type: 'object', properties: {} } }],
+      toolChoice: 'proposer',
+    });
+    expect((t.appels[0]?.body as { tool_choice?: unknown }).tool_choice).toBe('required');
+  });
+
+  it('parmi PLUSIEURS outils, l’outil imposé reste désigné par son nom', async () => {
+    // `required` laisserait le modèle choisir n'importe lequel : seul le nom désigne celui qu'on impose.
+    const t = new FauxTransport([ok(REPONSE_REELLE)]);
+    await new GatewayChatClient('cle', t).completer({
+      tenantId: 't-banc',
+      modele: 'm',
+      messages: [{ role: 'user', content: 'x' }],
+      outils: [
+        { name: 'proposer', description: 'rend la réponse', parameters: { type: 'object', properties: {} } },
+        { name: 'chercher', description: 'cherche', parameters: { type: 'object', properties: {} } },
+      ],
+      toolChoice: 'proposer',
+    });
+    expect((t.appels[0]?.body as { tool_choice?: unknown }).tool_choice)
+      .toEqual({ type: 'function', function: { name: 'proposer' } });
+  });
+
   it('sans outil, la clé tools est ABSENTE du corps (et non un tableau vide)', async () => {
     const t = new FauxTransport([ok(REPONSE_REELLE)]);
     await new GatewayChatClient('cle', t).completer({ tenantId: 't-banc', modele: 'm', messages: [{ role: 'user', content: 'x' }] });

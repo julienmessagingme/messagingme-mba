@@ -154,8 +154,16 @@ export class GatewayChatClient {
               : {}),
             // Forme Chat Completions du choix d'outil forcé. Ignoré si aucun outil n'est déclaré : envoyer
             // `tool_choice` sans `tools` fait refuser le corps en 400 chez plusieurs fournisseurs.
+            // 🔴 Un SEUL outil déclaré part en `required` : le Gateway sert `zai/glm-4.7` depuis Bedrock, qui ignore
+            // le choix NOMMÉ et répond en texte (0 appel d'outil sur 9, mesuré le 2026-10-12), quand `required` est
+            // respecté (3 sur 3, comme `zai/glm-4.7-flash` et `google/gemini-2.5-flash`). Parmi plusieurs outils,
+            // seul le nom désigne celui qu'on impose.
             ...(input.toolChoice && input.outils?.length
-              ? { tool_choice: { type: 'function', function: { name: input.toolChoice } } }
+              ? {
+                tool_choice: input.outils.length === 1 && input.outils[0]?.name === input.toolChoice
+                  ? 'required'
+                  : { type: 'function', function: { name: input.toolChoice } },
+              }
               : {}),
           },
           { authorization: `Bearer ${cle}` },
