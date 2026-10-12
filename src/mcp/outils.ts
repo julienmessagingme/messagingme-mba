@@ -1,3 +1,4 @@
+import { ficheOutilMcp, MAX_MESSAGES_MCP as LIMITE_MESSAGES_MCP, type ScopeMcp } from '../../web/lib/partage/catalogue-mcp';
 import type { ConversationSummary, ConversationMessage, ListConversationsOptions, ControlOwner } from '../inbox/store.pg';
 import type { AnalyseEtResume, ContactRow, ContactFilters } from '../crm/contact-store.pg';
 import { repondreAvecUnMessage, repondreDansLaFenetre, type ConversationsRepondre, type DepsRepondre, type ResultatReponse } from '../inbox/repondre';
@@ -44,7 +45,7 @@ export { RefusOutil } from './saisie';
  */
 
 /** Le scope de clé d'API qu'un outil exige. Deux seulement : lire, et écrire. */
-export type ScopeMcp = 'mcp:read' | 'mcp:write';
+export type { ScopeMcp } from '../../web/lib/partage/catalogue-mcp';
 
 export interface DepsMcp extends DepsRepondre {
   /** L'offre de l'espace (`OffresEnCache`, lot 6, B2a) : la fonction de chaque outil s'y vérifie avant de l'exécuter. */
@@ -313,16 +314,16 @@ const CONVERSATION_ID: ProprieteEntree = {
 
 /**
  * Le nombre de messages que `get_messages` rend, au plus et par défaut : les plus RÉCENTS. Décision de Julien du
- * 2026-10-03, « c'est déjà bien assez ». Exportée pour que le test des bornes la lise.
+ * 2026-10-03, « c'est déjà bien assez ». La borne vient du catalogue partagé.
  */
-export const MAX_MESSAGES_MCP = 50;
+export const MAX_MESSAGES_MCP = LIMITE_MESSAGES_MCP;
 
 /** Les annotations d'une lecture : rien n'est touché, ni dans l'espace ni au-dehors. */
 const lecture = (title: string): AnnotationsMcp => ({ title, readOnlyHint: true, openWorldHint: false });
 
 export const OUTILS: OutilMcp[] = [
   {
-    nom: 'list_conversations',
+    ...ficheOutilMcp('list_conversations'),
     // Lire les fils est ouvert dans toutes les offres (décision de Julien du 2026-10-08, lot 13) : seul l'écran Inbox,
     // et les outils qui ÉCRIVENT dans un fil, restent dans l'offre de l'Inbox.
     fonction: null,
@@ -337,7 +338,6 @@ export const OUTILS: OutilMcp[] = [
       + 'celles que l’équipe a marquées urgentes y passent en tête). '
       + 'Les conversations ARCHIVÉES depuis l’Inbox ne sont pas listées : elles existent toujours, elles '
       + 'sont simplement rangées, et un message du contact les fait revenir.',
-    scope: 'mcp:read',
     annotations: lecture('Lister les conversations'),
     entree: {
       type: 'object',
@@ -366,13 +366,12 @@ export const OUTILS: OutilMcp[] = [
     },
   },
   {
-    nom: 'get_conversation',
+    ...ficheOutilMcp('get_conversation'),
     fonction: null,
     description:
       'Détail d’une conversation : le contact, qui la tient, à qui elle est confiée, et surtout si la '
       + 'fenêtre de service de 24 h est OUVERTE. Hors de cette fenêtre, WhatsApp interdit tout message libre : '
       + 'appelle cet outil avant d’essayer de répondre.',
-    scope: 'mcp:read',
     annotations: lecture('Lire une conversation'),
     entree: {
       type: 'object',
@@ -397,13 +396,12 @@ export const OUTILS: OutilMcp[] = [
     },
   },
   {
-    nom: 'get_messages',
+    ...ficheOutilMcp('get_messages'),
     fonction: null,
     description:
       `Les messages les plus RÉCENTS d’une conversation, ${MAX_MESSAGES_MCP} au plus, rendus du plus ancien au plus `
       + 'récent. tronque = vrai : le fil a des messages plus anciens que ceux rendus, et before les lit (repasser la '
       + 'valeur before rendue pour remonter d’une page).',
-    scope: 'mcp:read',
     annotations: lecture('Lire les derniers messages'),
     entree: {
       type: 'object',
@@ -447,13 +445,12 @@ export const OUTILS: OutilMcp[] = [
     },
   },
   {
-    nom: 'get_message_status',
+    ...ficheOutilMcp('get_message_status'),
     fonction: null,
     description:
       'Le statut de livraison d’un message ENVOYÉ, par son identifiant de Meta (wamid…, celui que rend l’envoi) : sent, '
       + 'delivered, read ou failed, null tant qu’aucun accusé n’est arrivé, et toujours null pour un message reçu. En '
       + 'échec, le code et le motif de Meta.',
-    scope: 'mcp:read',
     annotations: lecture('Lire le statut d’un message'),
     entree: {
       type: 'object',
@@ -474,14 +471,13 @@ export const OUTILS: OutilMcp[] = [
     },
   },
   {
-    nom: 'search_contacts',
+    ...ficheOutilMcp('search_contacts'),
     fonction: null,
     description:
       'Cherche des contacts par nom ou par numéro. Une requête composée de chiffres est comprise comme une '
       + 'recherche de numéro, sinon comme une recherche de nom. Chaque contact porte sa dernière analyse '
       + '(last_analysis : intention, sentiment, satisfaction et urgence sur 10, résolue, sujet ; null s’il n’a jamais '
       + 'été analysé), sans le résumé : get_contact le rend.',
-    scope: 'mcp:read',
     annotations: lecture('Chercher des contacts'),
     entree: {
       type: 'object',
@@ -505,11 +501,10 @@ export const OUTILS: OutilMcp[] = [
     },
   },
   {
-    nom: 'get_contact',
+    ...ficheOutilMcp('get_contact'),
     fonction: null,
     description: 'La fiche d’un contact à partir de son numéro : international avec ou sans « + » (+33612345678, 33612345678), ou national (06 12 34 56 78). '
       + 'Elle porte la dernière analyse de ses conversations et son résumé (last_analysis, null s’il n’a jamais été analysé).',
-    scope: 'mcp:read',
     annotations: lecture('Lire la fiche d’un contact'),
     entree: {
       type: 'object',
@@ -527,12 +522,11 @@ export const OUTILS: OutilMcp[] = [
     },
   },
   {
-    nom: 'list_members',
+    ...ficheOutilMcp('list_members'),
     fonction: null,
     description:
       'Les membres de l’espace, avec leur identifiant. À appeler avant assign_conversation, qui a besoin de '
       + 'cet identifiant et non du nom.',
-    scope: 'mcp:read',
     annotations: lecture('Lister les membres'),
     entree: {
       type: 'object',
@@ -551,7 +545,7 @@ export const OUTILS: OutilMcp[] = [
     },
   },
   {
-    nom: 'reply_in_open_window',
+    ...ficheOutilMcp('reply_in_open_window'),
     // Répondre dans la fenêtre de 24 h est ouvert dans toutes les offres (décision de Julien du 2026-10-08), comme
     // `POST /v1/messages/whatsapp` : seuls étiqueter et affecter, gestes d'équipe, restent dans l'offre de l'Inbox.
     fonction: null,
@@ -560,7 +554,6 @@ export const OUTILS: OutilMcp[] = [
       + 'ouverte (le contact a écrit récemment). Hors fenêtre, l’appel est refusé : WhatsApp exige alors un '
       + 'template approuvé, qui n’est pas exposé ici. Envoyer PREND le fil : le scénario cesse d’avancer sur '
       + 'ce contact tant qu’un opérateur ne rend pas la main.',
-    scope: 'mcp:write',
     // Le monde ouvert : un message part chez une personne, et ne se reprend pas. Destructrice : l'envoi PREND le fil,
     // le scénario cesse d'avancer, ce qui n'est pas un simple ajout.
     annotations: { title: 'Répondre dans la fenêtre de 24 h', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -585,7 +578,7 @@ export const OUTILS: OutilMcp[] = [
     },
   },
   {
-    nom: 'send_message',
+    ...ficheOutilMcp('send_message'),
     // Comme `reply_in_open_window` : une réponse dans la fenêtre de 24 h, ouverte dans toutes les offres.
     fonction: null,
     description:
@@ -594,7 +587,6 @@ export const OUTILS: OutilMcp[] = [
       + 'interactive (button : 3 boutons de réponse au plus ; list ; cta_url : un bouton lien). UNIQUEMENT dans la '
       + 'fenêtre de 24 h (get_conversation le dit). Pour un simple texte, reply_in_open_window suffit. Envoyer PREND le '
       + 'fil, comme reply_in_open_window.',
-    scope: 'mcp:write',
     annotations: { title: 'Envoyer un message au format de Meta', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     entree: {
       type: 'object',
@@ -619,13 +611,12 @@ export const OUTILS: OutilMcp[] = [
     },
   },
   {
-    nom: 'tag_conversation',
+    ...ficheOutilMcp('tag_conversation'),
     fonction: 'inbox',
     description:
       'Pose un ou plusieurs tags sur le contact d’une conversation, et les ajoute à la liste des tags de l’espace. '
       + '⚠️ Les automations qui écoutent la pose de tag ne sont PAS déclenchées par cet outil : un tag posé ici '
       + 'classe, il n’envoie rien.',
-    scope: 'mcp:write',
     // Ajouter n'écrase rien, et reposer un tag déjà là ne change rien.
     annotations: { title: 'Poser des tags', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     entree: {
@@ -653,12 +644,11 @@ export const OUTILS: OutilMcp[] = [
     },
   },
   {
-    nom: 'assign_conversation',
+    ...ficheOutilMcp('assign_conversation'),
     fonction: 'inbox',
     description:
       'Confie une conversation à un membre de l’espace, ou la libère avec member_id = null. L’identifiant '
       + 'de membre vient de list_members.',
-    scope: 'mcp:write',
     // Destructrice : elle REMPLACE l'assignation en place, qui n'est gardée nulle part ailleurs.
     annotations: { title: 'Confier une conversation', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     entree: {
@@ -695,7 +685,7 @@ export const OUTILS: OutilMcp[] = [
    * personne d'un jeton est relu à chaque appel).
    */
   {
-    nom: 'list_widgets',
+    ...ficheOutilMcp('list_widgets'),
     fonction: null,
     description:
       `Les widgets WhatsApp de l’espace (${LIMITE_WIDGETS_PAR_ESPACE} au plus) : des bulles posées sur un site, qui `
@@ -704,7 +694,6 @@ export const OUTILS: OutilMcp[] = [
       + 'l’adresse de son script, le lien wa.me de la bulle (waMeUrl ; null = la bulle s’affiche grisée, aucun '
       + 'numéro WhatsApp n’est relié), et scenarioSupprime (vrai = son scénario a été supprimé, il ne démarre plus '
       + 'rien : en désigner un autre avec update_widget).',
-    scope: 'mcp:read',
     annotations: lecture('Lister les widgets'),
     entree: { type: 'object', properties: {} },
     async executer(deps, tenantId) {
@@ -712,13 +701,12 @@ export const OUTILS: OutilMcp[] = [
     },
   },
   {
-    nom: 'list_scenarios',
+    ...ficheOutilMcp('list_scenarios'),
     fonction: null,
     description:
       'Les scénarios de l’espace, le plus récent en premier : identifiant (id), nom, et publie (vrai = il a une '
       + 'version publiée, donc il peut démarrer). Un widget au devenir « scenario » ne peut désigner qu’un scénario '
       + 'publié : create_widget et update_widget refusent les autres.',
-    scope: 'mcp:read',
     annotations: lecture('Lister les scénarios'),
     entree: {
       type: 'object',
@@ -736,7 +724,7 @@ export const OUTILS: OutilMcp[] = [
     },
   },
   {
-    nom: 'create_widget',
+    ...ficheOutilMcp('create_widget'),
     fonction: null,
     description:
       'Crée un widget WhatsApp : une bulle à poser sur un site, qui ouvre WhatsApp avec la phrase déjà écrite. Le '
@@ -746,7 +734,6 @@ export const OUTILS: OutilMcp[] = [
       + 'fermante </body>, sur chaque page où la bulle doit apparaître. Elle se charge sans ralentir la page et ne '
       + `change jamais. ${LIMITE_WIDGETS_PAR_ESPACE} widgets au plus par espace. Les contrôles sont ceux de l’écran `
       + 'de la console : un refus dit sa raison.',
-    scope: 'mcp:write',
     // Ni destructrice ni idempotente : chaque appel qui réussit crée un widget de plus.
     annotations: { title: 'Créer un widget', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     entree: { type: 'object', properties: CHAMPS_WIDGET, required: ['nom', 'phrase'], additionalProperties: false },
@@ -758,13 +745,12 @@ export const OUTILS: OutilMcp[] = [
     },
   },
   {
-    nom: 'update_widget',
+    ...ficheOutilMcp('update_widget'),
     fonction: null,
     description:
       'Modifie un widget : seuls les champs fournis changent, null efface un champ facultatif. Son code, donc la '
       + 'balise déjà posée sur le site, ne change jamais. Les contrôles sont ceux de la création. Un widget dont le '
       + 'scénario a été supprimé reste modifiable sans en choisir un autre.',
-    scope: 'mcp:write',
     // Destructrice : elle écrase les champs fournis, et `actif: false` éteint une bulle publique.
     annotations: { title: 'Modifier un widget', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     entree: {
@@ -788,14 +774,13 @@ export const OUTILS: OutilMcp[] = [
     },
   },
   {
-    nom: 'get_plan',
+    ...ficheOutilMcp('get_plan'),
     fonction: null,
     description:
       'L’offre de l’espace (free, pro ou entreprise) : les fonctions qu’elle ouvre, ses limites (null = sans limite) et '
       + 'ce qui en est consommé (contacts créés, automations allumées, membres, modèles envoyés ce mois-ci), plus le lien '
       + 'upgradeUrl pour passer en Pro. À lire quand un geste est refusé avec plan_limit_reached ou '
       + 'plan_feature_unavailable : les réponses dans la fenêtre de 24 h ne sont jamais limitées.',
-    scope: 'mcp:read',
     annotations: lecture('Lire l’offre'),
     entree: { type: 'object', properties: {} },
     async executer(deps, tenantId) {

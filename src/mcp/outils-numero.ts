@@ -1,3 +1,4 @@
+import { ficheOutilMcp } from '../../web/lib/partage/catalogue-mcp';
 import type { AnnotationsMcp, DepsMcp, OutilMcp, PersonneMcp } from './outils';
 import { RefusOutil, valeurOuRefus } from './saisie';
 import { MESSAGE_OPERATIONS_LOURDES } from '../auth/plafond-partage';
@@ -133,15 +134,13 @@ function vueEtat(e: EtatConnexion): Record<string, unknown> {
 
 export const OUTILS_NUMERO: OutilMcp[] = [
   {
-    nom: 'return_number_at_plan_end',
+    ...ficheOutilMcp('return_number_at_plan_end'),
     fonction: null,
     description:
       'Choisit ce que devient le numéro WhatsApp fourni à la FIN du Pro de l’espace : rendre = true le rend (ses envois '
       + 'sont coupés à la fin du Pro, puis il est libéré 7 jours après) ; rendre = false le garde, à 3,50 € HT par mois sur '
       + 'la même carte que le Pro. Réversible tant que le Pro court ; refusé sans Pro en cours. Ne le faire que sur la '
       + 'demande explicite de la personne.',
-    scope: 'mcp:write',
-    exigePersonne: true,
     annotations: ecriture('Rendre le numéro à la fin du Pro', true),
     entree: {
       type: 'object',
@@ -159,13 +158,12 @@ export const OUTILS_NUMERO: OutilMcp[] = [
     },
   },
   {
-    nom: 'get_number_subscription',
+    ...ficheOutilMcp('get_number_subscription'),
     fonction: null,
     description:
       'L’abonnement du numéro WhatsApp fourni (3,50 € HT par mois) : son statut (actif, en_retard après un paiement échoué, '
       + 'resilie), la fin de la période payée, et le numéro. `abonnement: null` : l’espace n’a pas de numéro fourni payé. '
       + '`inclus_dans_le_pro: true` : le Pro de l’espace inclut le numéro, il n’y a rien à payer.',
-    scope: 'mcp:read',
     annotations: { title: 'Lire l’abonnement du numéro', readOnlyHint: true, openWorldHint: false },
     entree: { type: 'object', properties: {}, additionalProperties: false },
     async executer(deps: DepsMcp, tenantId) {
@@ -186,13 +184,11 @@ export const OUTILS_NUMERO: OutilMcp[] = [
     },
   },
   {
-    nom: 'manage_number_subscription',
+    ...ficheOutilMcp('manage_number_subscription'),
     fonction: null,
     description:
       'Rend l’adresse du portail client de Stripe pour l’abonnement du numéro : changer de carte, lire les factures, '
       + 'résilier. À donner à la personne : le geste reste le sien. Compte dans les opérations lourdes de l’espace.',
-    scope: 'mcp:write',
-    exigePersonne: true,
     // Monde ouvert : une session est créée chez Stripe. Une de plus à chaque appel.
     annotations: { title: 'Gérer l’abonnement du numéro', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     entree: { type: 'object', properties: {}, additionalProperties: false },
@@ -204,15 +200,13 @@ export const OUTILS_NUMERO: OutilMcp[] = [
     },
   },
   {
-    nom: 'resubscribe_number',
+    ...ficheOutilMcp('resubscribe_number'),
     fonction: null,
     description:
       'Renouvelle l’abonnement du numéro WhatsApp fourni quand il est impayé ou terminé, et rend l’adresse à donner à la '
       + 'personne. Impayé (en retard, ou suspendu faute de paiement) : le portail de Stripe, pour payer la facture ouverte '
       + 'ou changer de carte. Terminé, numéro encore gardé : un nouveau paiement, qui rend le MÊME numéro sans refaire la '
       + 'fenêtre de Meta. Résiliation programmée : le portail, pour l’annuler. Compte dans les opérations lourdes de l’espace.',
-    scope: 'mcp:write',
-    exigePersonne: true,
     // Monde ouvert : une session est créée chez Stripe.
     annotations: { title: 'Renouveler l’abonnement du numéro', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     entree: { type: 'object', properties: {}, additionalProperties: false },
@@ -242,7 +236,7 @@ export const OUTILS_NUMERO: OutilMcp[] = [
     },
   },
   {
-    nom: 'start_whatsapp_connection',
+    ...ficheOutilMcp('start_whatsapp_connection'),
     fonction: null,
     description:
       'Rend le lien qui ouvre la page de connexion du numéro WhatsApp de l’espace, sans passer par la console, valable '
@@ -251,8 +245,6 @@ export const OUTILS_NUMERO: OutilMcp[] = [
       + 'vérification arrive ici par watch_whatsapp_connection. `apporte` : son propre numéro ; demande-lui d’abord '
       + 's’il sert dans l’application WhatsApp, car la fenêtre de Meta le refuserait tant qu’il n’en est pas retiré. '
       + 'Refusé si l’espace a déjà un numéro connecté.',
-    scope: 'mcp:write',
-    exigePersonne: true,
     // Il ne touche rien chez un tiers et ne crée rien : un lien signé de plus à chaque appel.
     annotations: ecriture('Ouvrir la connexion du numéro WhatsApp', false),
     entree: {
@@ -283,7 +275,7 @@ export const OUTILS_NUMERO: OutilMcp[] = [
     },
   },
   {
-    nom: 'watch_whatsapp_connection',
+    ...ficheOutilMcp('watch_whatsapp_connection'),
     fonction: null,
     description:
       `Attend le prochain changement de la connexion du numéro (numéro attribué, code de vérification reçu, numéro `
@@ -291,8 +283,6 @@ export const OUTILS_NUMERO: OutilMcp[] = [
       + 'par l’appel précédent (etat_connu) pour n’être réveillé que par du neuf ; sans elle, l’état est rendu tout de '
       + 'suite. Quand `code` est présent, lis-le à la personne : elle le recopie dans la fenêtre de Meta. Rappelle-le '
       + 'jusqu’à `connecte: true`.',
-    scope: 'mcp:write',
-    exigePersonne: true,
     // Écriture parce qu'il rend un code de vérification, pas parce qu'il modifie quoi que ce soit.
     annotations: ecriture('Suivre la connexion du numéro WhatsApp', true),
     entree: {

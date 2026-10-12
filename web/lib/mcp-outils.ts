@@ -1,70 +1,71 @@
-/**
- * Ce que l'écran « Serveur MCP » annonce aux intégrateurs.
- *
- * Simple donnée, dans `lib/` et pas dans la page : c'est ce qui permet à un test du serveur
- * (`tests/mcp-doc-parite.test.ts`) de lire cette liste et de la comparer au catalogue réel de
- * `src/mcp/outils.ts`. Sans cette garde, la page promettrait un jour un outil retiré, ou tairait un outil
- * ajouté, et personne ne s'en apercevrait avant qu'un intégrateur ne s'en plaigne.
- */
+import { ficheOutilMcp, MAX_FICHES_PAR_AJOUT, MAX_MESSAGES_MCP, type NomOutilMcp, type ScopeMcp } from './partage/catalogue-mcp';
+
+/** Les mots de la page MCP ; les droits et la présence OAuth viennent du catalogue partagé. */
 export interface OutilDocumente {
-  nom: string;
-  scope: 'mcp:read' | 'mcp:write';
-  /** Description bilingue, passée telle quelle au traducteur de l'écran. */
-  quoi: [string, string];
-  /**
-   * L'outil agit au nom d'une personne : une clé d'API ne le voit pas, seule une connexion OAuth l'ouvre (l'écran le
-   * dit). Miroir de `exigePersonne` côté serveur, tenu par `tests/mcp-doc-parite.test.ts`.
-   */
+  nom: NomOutilMcp;
+  scope: ScopeMcp;
+  quoi: readonly [string, string];
   oauth?: true;
 }
 
-export const OUTILS_MCP: OutilDocumente[] = [
-  { nom: 'list_conversations', scope: 'mcp:read', quoi: ['Les conversations, la plus active en premier.', 'Conversations, most recently active first.'] },
-  { nom: 'get_conversation', scope: 'mcp:read', quoi: ['Le détail d’un fil, et surtout si la fenêtre de 24 h est ouverte.', 'Thread details, and whether the 24 h window is open.'] },
-  { nom: 'send_message', scope: 'mcp:write', quoi: ['Envoyer dans la fenêtre de 24 h une image, un document, un lieu, des boutons, une liste ou un bouton lien, au format de Meta.', 'Send within the 24-hour window an image, a document, a location, buttons, a list or a link button, in Meta’s format.'] },
-  { nom: 'list_templates', scope: 'mcp:read', quoi: ['Les modèles WhatsApp de l’espace, avec leur langue, leur catégorie et leur statut chez Meta.', 'The workspace’s WhatsApp templates, with their language, category and status at Meta.'] },
-  { nom: 'create_template', scope: 'mcp:write', oauth: true, quoi: ['Créer un modèle au format de Meta et le soumettre à sa validation ; une image d’en-tête se donne par son adresse.', 'Create a template in Meta’s format and submit it for review; a header image is given by its address.'] },
-  { nom: 'send_template_to_contact', scope: 'mcp:write', oauth: true, quoi: ['Envoyer un modèle approuvé à une personne, même hors de la fenêtre de 24 h, avec les règles des envois (consentement, STOP, modèles du mois).', 'Send an approved template to one person, even outside the 24-hour window, with the sends rules (consent, STOP, monthly templates).'] },
-  { nom: 'get_template_status', scope: 'mcp:read', quoi: ['Le statut d’un modèle chez Meta, langue par langue, avec le motif d’un refus.', 'A template’s status at Meta, language by language, with the reason for a rejection.'] },
-  { nom: 'get_message_status', scope: 'mcp:read', quoi: ['Le statut de livraison d’un message envoyé : envoyé, distribué, lu ou en échec, avec le motif de Meta.', 'The delivery status of a sent message: sent, delivered, read or failed, with Meta’s reason.'] },
-  { nom: 'get_messages', scope: 'mcp:read', quoi: ['Les 50 derniers messages d’un fil, du plus ancien au plus récent, et before pour remonter plus loin.', 'The last 50 messages of a thread, oldest first, and before to go further back.'] },
-  { nom: 'search_contacts', scope: 'mcp:read', quoi: ['Chercher un contact par nom ou par numéro, avec sa dernière analyse.', 'Find a contact by name or number, with their latest analysis.'] },
-  { nom: 'get_contact', scope: 'mcp:read', quoi: ['La fiche d’un contact à partir de son numéro, avec sa dernière analyse et le résumé de celle-ci.', 'A contact record from its number, with their latest analysis and its summary.'] },
-  { nom: 'list_members', scope: 'mcp:read', quoi: ['Les membres de l’espace, pour pouvoir leur confier un fil.', 'Workspace members, to assign threads to them.'] },
-  { nom: 'reply_in_open_window', scope: 'mcp:write', quoi: ['Répondre, uniquement si la fenêtre de 24 h est ouverte.', 'Reply, only while the 24 h window is open.'] },
-  { nom: 'tag_conversation', scope: 'mcp:write', quoi: ['Poser des tags sur le contact d’un fil.', 'Add tags to a thread’s contact.'] },
-  { nom: 'assign_conversation', scope: 'mcp:write', quoi: ['Confier un fil à un membre, ou le libérer.', 'Assign a thread to a member, or release it.'] },
-  { nom: 'get_plan', scope: 'mcp:read', quoi: ['L’offre de l’espace, ses limites et ce qui en est consommé, avec le lien pour passer en Pro.', 'The workspace plan, its limits and current usage, with the link to upgrade.'] },
-  { nom: 'list_widgets', scope: 'mcp:read', quoi: ['Les widgets WhatsApp de l’espace, avec la balise à coller sur le site.', 'The workspace’s WhatsApp widgets, with the tag to paste on the site.'] },
-  { nom: 'list_scenarios', scope: 'mcp:read', quoi: ['Les scénarios, et lesquels sont publiés : un widget ne démarre qu’un scénario publié.', 'Scenarios, and which are published: a widget only starts a published scenario.'] },
-  { nom: 'create_widget', scope: 'mcp:write', quoi: ['Créer un widget WhatsApp, avec les contrôles de l’écran, et recevoir sa balise.', 'Create a WhatsApp widget, with the screen’s checks, and get its tag.'] },
-  { nom: 'update_widget', scope: 'mcp:write', quoi: ['Modifier un widget ; sa balise ne change jamais.', 'Edit a widget; its tag never changes.'] },
-  { nom: 'list_agents', scope: 'mcp:read', quoi: ['Les agents IA, leur statut, et ce qui manque encore avant de pouvoir les activer.', 'AI agents, their status, and what is still missing before they can be activated.'] },
-  { nom: 'get_agent', scope: 'mcp:read', quoi: ['Un agent IA : sa fiche, son modèle, ses outils, sa connaissance, ce qui lui manque, et les modèles proposés avec leur prix.', 'An AI agent: its profile, model, tools, knowledge, what it lacks, and the offered models with their price.'] },
-  { nom: 'create_agent', scope: 'mcp:write', oauth: true, quoi: ['Créer un agent IA en brouillon. Le premier agent d’un espace demande un peu de crédit.', 'Create a draft AI agent. A workspace’s first agent needs a little credit.'] },
-  { nom: 'update_agent', scope: 'mcp:write', oauth: true, quoi: ['Modifier la fiche d’un agent IA (objectif, ton, transferts, règles d’arrêt) et son modèle, journalisé au nom de la personne.', 'Edit an AI agent’s profile (goal, tone, handovers, stop rules) and its model, logged under the person’s name.'] },
-  { nom: 'set_agent_tools', scope: 'mcp:write', oauth: true, quoi: ['Ajouter et activer les quatre outils sûrs d’un agent IA (terminer, chercher, lire le contact, passer la main).', 'Add and enable an AI agent’s four safe tools (finish, search, read the contact, hand over).'] },
-  { nom: 'activate_agent', scope: 'mcp:write', oauth: true, quoi: ['Activer un agent IA complet, ou le désactiver. Il répond dans un scénario publié, ou s’il est choisi pour répondre au client.', 'Activate a complete AI agent, or deactivate it. It answers in a published scenario, or if chosen to answer the customer.'] },
-  { nom: 'test_agent', scope: 'mcp:write', oauth: true, quoi: ['Essayer un agent IA sur une conversation fictive. Chaque essai est débité du crédit.', 'Try an AI agent on a mock conversation. Each try is charged to the credit.'] },
-  { nom: 'list_knowledge', scope: 'mcp:read', quoi: ['Les fiches de connaissance d’un agent IA, avec leur provenance.', 'An AI agent’s knowledge entries, with their source.'] },
-  { nom: 'add_knowledge', scope: 'mcp:write', oauth: true, quoi: ['Ajouter des fiches de connaissance écrites, 50 au plus par appel.', 'Add written knowledge entries, up to 50 per call.'] },
-  { nom: 'delete_knowledge', scope: 'mcp:write', oauth: true, quoi: ['Supprimer des fiches de connaissance ; leur contenu reste dans l’historique.', 'Delete knowledge entries; their content stays in the history.'] },
-  { nom: 'preview_site', scope: 'mcp:read', oauth: true, quoi: ['Lire un site depuis le serveur et voir ce qu’un import en ferait, sans rien écrire.', 'Read a site from the server and see what an import would make of it, without writing anything.'] },
-  { nom: 'import_site', scope: 'mcp:write', oauth: true, quoi: ['Importer les pages d’un site en connaissance ; une page relue remplace ses fiches.', 'Import a site’s pages as knowledge; a page read again replaces its entries.'] },
-  { nom: 'import_document_text', scope: 'mcp:write', oauth: true, quoi: ['Importer le texte d’un document sous son nom, rangé comme un document déposé.', 'Import a document’s text under its name, filed like an uploaded document.'] },
-  { nom: 'set_transfer_mode', scope: 'mcp:write', oauth: true, quoi: ['Régler ce que les agents IA promettent de la disponibilité de l’équipe quand ils passent la main.', 'Set what AI agents promise about team availability when they hand over.'] },
-  { nom: 'set_default_responder', scope: 'mcp:write', oauth: true, quoi: ['Choisir qui répond au client (à un nouveau contact, et à tout message que personne ne tient) : l’agent de Meta, un agent IA actif, un scénario publié, l’équipe, ou votre application (une adresse de webhooks sortants). Hors du mode agent de Meta, celui-ci reste en veille.', 'Choose who answers the customer (a new contact, and every message nobody handles): Meta’s agent, an active AI agent, a published scenario, the team, or your app (an outgoing webhook address). Outside Meta’s agent mode, it stays on standby.'] },
-  { nom: 'get_credit', scope: 'mcp:read', quoi: ['Le solde du crédit IA et ses derniers mouvements.', 'The AI credit balance and its latest movements.'] },
-  { nom: 'buy_credit', scope: 'mcp:write', oauth: true, quoi: ['Ouvrir le paiement d’une recharge, montant hors taxe ; la personne paie elle-même sur la page de Stripe.', 'Open a top-up payment, amount before tax; the person pays on the Stripe page themselves.'] },
-  { nom: 'start_whatsapp_connection', scope: 'mcp:write', oauth: true, quoi: ['Donner le lien qui ouvre la connexion du numéro WhatsApp, sans passer par la console, valable une heure : numéro fourni ou apporté.', 'Give the link that opens the WhatsApp number connection, without the console, valid for one hour: provided or own number.'] },
-  { nom: 'get_number_subscription', scope: 'mcp:read', quoi: ['L’abonnement du numéro fourni : son statut, la fin de la période payée et le numéro.', 'The provided number’s subscription: its status, the end of the paid period and the number.'] },
-  { nom: 'resubscribe_number', scope: 'mcp:write', oauth: true, quoi: ['Renouveler l’abonnement du numéro quand il est impayé ou terminé : le portail de Stripe, ou un nouveau paiement qui rend le même numéro.', 'Renew the number subscription when it is overdue or ended: the Stripe portal, or a new payment that restores the same number.'] },
-  { nom: 'return_number_at_plan_end', scope: 'mcp:write', oauth: true, quoi: ['Choisir de rendre le numéro fourni à la fin du Pro, ou de le garder à 3,50 € HT par mois sur la même carte.', 'Choose to give back the provided number when Pro ends, or keep it at €3.50 excl. VAT a month on the same card.'] },
-  { nom: 'manage_number_subscription', scope: 'mcp:write', oauth: true, quoi: ['Ouvrir le portail de Stripe pour l’abonnement du numéro : carte, factures, résiliation.', 'Open the Stripe portal for the number subscription: card, invoices, cancellation.'] },
-  { nom: 'watch_whatsapp_connection', scope: 'mcp:write', oauth: true, quoi: ['Suivre la connexion du numéro jusqu’au bout : numéro attribué, code de vérification à lire à la personne, numéro connecté.', 'Follow the number connection to the end: number assigned, verification code to read out, number connected.'] },
-  { nom: 'create_webhook_endpoint', scope: 'mcp:write', oauth: true, quoi: ['Inscrire l’adresse HTTPS de l’application qui recevra les événements choisis (webhook sortant, signé) ; le secret de signature est montré une seule fois.', 'Register the HTTPS address of the app that will receive the chosen events (signed outgoing webhook); the signing secret is shown only once.'] },
-  { nom: 'list_webhook_endpoints', scope: 'mcp:read', oauth: true, quoi: ['Les adresses de webhooks sortants, leurs types d’événements et leur état, et la limite de l’offre.', 'The outgoing webhook endpoints, their event types and status, and the plan limit.'] },
-  { nom: 'get_webhook_deliveries', scope: 'mcp:read', oauth: true, quoi: ['Le journal d’une adresse : chaque envoi, son statut, la réponse de l’application et le corps envoyé.', 'An endpoint’s log: each delivery, its status, the app’s answer and the body sent.'] },
-  { nom: 'replay_webhook_delivery', scope: 'mcp:write', oauth: true, quoi: ['Rejouer un envoi terminé : même corps, même identifiant d’événement.', 'Replay a finished delivery: same body, same event id.'] },
-  { nom: 'send_test_event', scope: 'mcp:write', oauth: true, quoi: ['Envoyer tout de suite un événement d’essai signé à une adresse, et lire ce que l’application a répondu.', 'Send a signed test event to an address right away, and read what the app answered.'] },
-];
+/** Chaque outil du catalogue doit recevoir ses deux textes ; l'ordre est celui de la page publique. */
+const TEXTES_MCP = {
+  list_conversations: ['Les conversations, la plus active en premier.', 'Conversations, most recently active first.'],
+  get_conversation: ['Le détail d’un fil, et surtout si la fenêtre de 24 h est ouverte.', 'Thread details, and whether the 24 h window is open.'],
+  send_message: ['Envoyer dans la fenêtre de 24 h une image, un document, un lieu, des boutons, une liste ou un bouton lien, au format de Meta.', 'Send within the 24-hour window an image, a document, a location, buttons, a list or a link button, in Meta’s format.'],
+  list_templates: ['Les modèles WhatsApp de l’espace, avec leur langue, leur catégorie et leur statut chez Meta.', 'The workspace’s WhatsApp templates, with their language, category and status at Meta.'],
+  create_template: ['Créer un modèle au format de Meta et le soumettre à sa validation ; une image d’en-tête se donne par son adresse.', 'Create a template in Meta’s format and submit it for review; a header image is given by its address.'],
+  send_template_to_contact: ['Envoyer un modèle approuvé à une personne, même hors de la fenêtre de 24 h, avec les règles des envois (consentement, STOP, modèles du mois).', 'Send an approved template to one person, even outside the 24-hour window, with the sends rules (consent, STOP, monthly templates).'],
+  get_template_status: ['Le statut d’un modèle chez Meta, langue par langue, avec le motif d’un refus.', 'A template’s status at Meta, language by language, with the reason for a rejection.'],
+  get_message_status: ['Le statut de livraison d’un message envoyé : envoyé, distribué, lu ou en échec, avec le motif de Meta.', 'The delivery status of a sent message: sent, delivered, read or failed, with Meta’s reason.'],
+  get_messages: [`Les ${MAX_MESSAGES_MCP} derniers messages d’un fil, du plus ancien au plus récent, et before pour remonter plus loin.`, `The last ${MAX_MESSAGES_MCP} messages of a thread, oldest first, and before to go further back.`],
+  search_contacts: ['Chercher un contact par nom ou par numéro, avec sa dernière analyse.', 'Find a contact by name or number, with their latest analysis.'],
+  get_contact: ['La fiche d’un contact à partir de son numéro, avec sa dernière analyse et le résumé de celle-ci.', 'A contact record from its number, with their latest analysis and its summary.'],
+  list_members: ['Les membres de l’espace, pour pouvoir leur confier un fil.', 'Workspace members, to assign threads to them.'],
+  reply_in_open_window: ['Répondre, uniquement si la fenêtre de 24 h est ouverte.', 'Reply, only while the 24 h window is open.'],
+  tag_conversation: ['Poser des tags sur le contact d’un fil.', 'Add tags to a thread’s contact.'],
+  assign_conversation: ['Confier un fil à un membre, ou le libérer.', 'Assign a thread to a member, or release it.'],
+  get_plan: ['L’offre de l’espace, ses limites et ce qui en est consommé, avec le lien pour passer en Pro.', 'The workspace plan, its limits and current usage, with the link to upgrade.'],
+  list_widgets: ['Les widgets WhatsApp de l’espace, avec la balise à coller sur le site.', 'The workspace’s WhatsApp widgets, with the tag to paste on the site.'],
+  list_scenarios: ['Les scénarios, et lesquels sont publiés : un widget ne démarre qu’un scénario publié.', 'Scenarios, and which are published: a widget only starts a published scenario.'],
+  create_widget: ['Créer un widget WhatsApp, avec les contrôles de l’écran, et recevoir sa balise.', 'Create a WhatsApp widget, with the screen’s checks, and get its tag.'],
+  update_widget: ['Modifier un widget ; sa balise ne change jamais.', 'Edit a widget; its tag never changes.'],
+  list_agents: ['Les agents IA, leur statut, et ce qui manque encore avant de pouvoir les activer.', 'AI agents, their status, and what is still missing before they can be activated.'],
+  get_agent: ['Un agent IA : sa fiche, son modèle, ses outils, sa connaissance, ce qui lui manque, et les modèles proposés avec leur prix.', 'An AI agent: its profile, model, tools, knowledge, what it lacks, and the offered models with their price.'],
+  create_agent: ['Créer un agent IA en brouillon. Le premier agent d’un espace demande un peu de crédit.', 'Create a draft AI agent. A workspace’s first agent needs a little credit.'],
+  update_agent: ['Modifier la fiche d’un agent IA (objectif, ton, transferts, règles d’arrêt) et son modèle, journalisé au nom de la personne.', 'Edit an AI agent’s profile (goal, tone, handovers, stop rules) and its model, logged under the person’s name.'],
+  set_agent_tools: ['Ajouter et activer les quatre outils sûrs d’un agent IA (terminer, chercher, lire le contact, passer la main).', 'Add and enable an AI agent’s four safe tools (finish, search, read the contact, hand over).'],
+  activate_agent: ['Activer un agent IA complet, ou le désactiver. Il répond dans un scénario publié, ou s’il est choisi pour répondre au client.', 'Activate a complete AI agent, or deactivate it. It answers in a published scenario, or if chosen to answer the customer.'],
+  test_agent: ['Essayer un agent IA sur une conversation fictive. Chaque essai est débité du crédit.', 'Try an AI agent on a mock conversation. Each try is charged to the credit.'],
+  list_knowledge: ['Les fiches de connaissance d’un agent IA, avec leur provenance.', 'An AI agent’s knowledge entries, with their source.'],
+  add_knowledge: [`Ajouter des fiches de connaissance écrites, ${MAX_FICHES_PAR_AJOUT} au plus par appel.`, `Add written knowledge entries, up to ${MAX_FICHES_PAR_AJOUT} per call.`],
+  delete_knowledge: ['Supprimer des fiches de connaissance ; leur contenu reste dans l’historique.', 'Delete knowledge entries; their content stays in the history.'],
+  preview_site: ['Lire un site depuis le serveur et voir ce qu’un import en ferait, sans rien écrire.', 'Read a site from the server and see what an import would make of it, without writing anything.'],
+  import_site: ['Importer les pages d’un site en connaissance ; une page relue remplace ses fiches.', 'Import a site’s pages as knowledge; a page read again replaces its entries.'],
+  import_document_text: ['Importer le texte d’un document sous son nom, rangé comme un document déposé.', 'Import a document’s text under its name, filed like an uploaded document.'],
+  set_transfer_mode: ['Régler ce que les agents IA promettent de la disponibilité de l’équipe quand ils passent la main.', 'Set what AI agents promise about team availability when they hand over.'],
+  set_default_responder: ['Choisir qui répond au client (à un nouveau contact, et à tout message que personne ne tient) : l’agent de Meta, un agent IA actif, un scénario publié, l’équipe, ou votre application (une adresse de webhooks sortants). Hors du mode agent de Meta, celui-ci reste en veille.', 'Choose who answers the customer (a new contact, and every message nobody handles): Meta’s agent, an active AI agent, a published scenario, the team, or your app (an outgoing webhook address). Outside Meta’s agent mode, it stays on standby.'],
+  get_credit: ['Le solde du crédit IA et ses derniers mouvements.', 'The AI credit balance and its latest movements.'],
+  buy_credit: ['Ouvrir le paiement d’une recharge, montant hors taxe ; la personne paie elle-même sur la page de Stripe.', 'Open a top-up payment, amount before tax; the person pays on the Stripe page themselves.'],
+  start_whatsapp_connection: ['Donner le lien qui ouvre la connexion du numéro WhatsApp, sans passer par la console, valable une heure : numéro fourni ou apporté.', 'Give the link that opens the WhatsApp number connection, without the console, valid for one hour: provided or own number.'],
+  get_number_subscription: ['L’abonnement du numéro fourni : son statut, la fin de la période payée et le numéro.', 'The provided number’s subscription: its status, the end of the paid period and the number.'],
+  resubscribe_number: ['Renouveler l’abonnement du numéro quand il est impayé ou terminé : le portail de Stripe, ou un nouveau paiement qui rend le même numéro.', 'Renew the number subscription when it is overdue or ended: the Stripe portal, or a new payment that restores the same number.'],
+  return_number_at_plan_end: ['Choisir de rendre le numéro fourni à la fin du Pro, ou de le garder à 3,50 € HT par mois sur la même carte.', 'Choose to give back the provided number when Pro ends, or keep it at €3.50 excl. VAT a month on the same card.'],
+  manage_number_subscription: ['Ouvrir le portail de Stripe pour l’abonnement du numéro : carte, factures, résiliation.', 'Open the Stripe portal for the number subscription: card, invoices, cancellation.'],
+  watch_whatsapp_connection: ['Suivre la connexion du numéro jusqu’au bout : numéro attribué, code de vérification à lire à la personne, numéro connecté.', 'Follow the number connection to the end: number assigned, verification code to read out, number connected.'],
+  create_webhook_endpoint: ['Inscrire l’adresse HTTPS de l’application qui recevra les événements choisis (webhook sortant, signé) ; le secret de signature est montré une seule fois.', 'Register the HTTPS address of the app that will receive the chosen events (signed outgoing webhook); the signing secret is shown only once.'],
+  list_webhook_endpoints: ['Les adresses de webhooks sortants, leurs types d’événements et leur état, et la limite de l’offre.', 'The outgoing webhook endpoints, their event types and status, and the plan limit.'],
+  get_webhook_deliveries: ['Le journal d’une adresse : chaque envoi, son statut, la réponse de l’application et le corps envoyé.', 'An endpoint’s log: each delivery, its status, the app’s answer and the body sent.'],
+  replay_webhook_delivery: ['Rejouer un envoi terminé : même corps, même identifiant d’événement.', 'Replay a finished delivery: same body, same event id.'],
+  send_test_event: ['Envoyer tout de suite un événement d’essai signé à une adresse, et lire ce que l’application a répondu.', 'Send a signed test event to an address right away, and read what the app answered.'],
+} satisfies Record<NomOutilMcp, readonly [string, string]>;
+
+export const OUTILS_MCP: OutilDocumente[] = (Object.keys(TEXTES_MCP) as NomOutilMcp[]).map((nom) => {
+  const fiche = ficheOutilMcp(nom);
+  return {
+    nom,
+    scope: fiche.scope,
+    ...('exigePersonne' in fiche ? { oauth: true as const } : {}),
+    quoi: TEXTES_MCP[nom],
+  };
+});

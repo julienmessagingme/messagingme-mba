@@ -1,3 +1,4 @@
+import { ficheOutilMcp } from '../../web/lib/partage/catalogue-mcp';
 import type { AnnotationsMcp, DepsMcp, OutilMcp } from './outils';
 import { RefusOutil, entierBorne } from './saisie';
 import { MESSAGE_OPERATIONS_LOURDES } from '../auth/plafond-partage';
@@ -38,13 +39,12 @@ const lecture = (title: string): AnnotationsMcp => ({ title, readOnlyHint: true,
 
 export const OUTILS_MODELES: OutilMcp[] = [
   {
-    nom: 'list_templates',
+    ...ficheOutilMcp('list_templates'),
     fonction: null,
     description:
       'Les modèles WhatsApp de l’espace, chacun avec sa langue, sa catégorie (utility, marketing…) et son statut chez Meta '
       + '(approved, pending, rejected, paused…). Seul un modèle approved peut partir. Pour le motif d’un refus : '
       + 'get_template_status.',
-    scope: 'mcp:read',
     annotations: lecture('Lister les modèles'),
     entree: {
       type: 'object',
@@ -64,13 +64,12 @@ export const OUTILS_MODELES: OutilMcp[] = [
     },
   },
   {
-    nom: 'get_template_status',
+    ...ficheOutilMcp('get_template_status'),
     fonction: null,
     description:
       'Le statut d’un modèle chez Meta, langue par langue (approved, pending, rejected…), avec le motif d’un refus '
       + '(rejectedReason, null sans motif). À lire après create_template : la validation prend de quelques minutes à '
       + 'quelques heures.',
-    scope: 'mcp:read',
     annotations: lecture('Lire le statut d’un modèle'),
     entree: {
       type: 'object',
@@ -90,7 +89,7 @@ export const OUTILS_MODELES: OutilMcp[] = [
     },
   },
   {
-    nom: 'create_template',
+    ...ficheOutilMcp('create_template'),
     fonction: null,
     description:
       'Crée un modèle WhatsApp et le soumet à la validation de Meta, au FORMAT DE META : { name (minuscules, chiffres et _, '
@@ -102,14 +101,6 @@ export const OUTILS_MODELES: OutilMcp[] = [
       + '(60 caractères, sans variable). BUTTONS (10 au plus, texte de 25 caractères) : QUICK_REPLY, ou URL (2 au plus, '
       + 'adresse https sans {{1}}, tracée par nous). Rend le statut initial (souvent pending) : suivre avec '
       + 'get_template_status. Compte dans les opérations lourdes de l’espace.',
-    scope: 'mcp:write',
-    /**
-     * 🔴 Une PERSONNE (jeton OAuth), jamais une clé d'API (décision de Julien du 2026-10-09) : un Claude branché sur des
-     * conversations de clients pourrait, sur l'injection d'un message, créer des modèles en boucle jusqu'au plafond du
-     * compte WhatsApp, et bloquer ensuite la création depuis la console. L'API (`POST /v1/templates`) reste aux clés
-     * `templates:write`, un droit qu'on donne en connaissance de cause.
-     */
-    exigePersonne: true,
     // Monde ouvert : le modèle part chez Meta et y reste (le supprimer est un autre geste, depuis la console).
     annotations: { title: 'Créer un modèle', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     entree: {
@@ -137,7 +128,7 @@ export const OUTILS_MODELES: OutilMcp[] = [
     },
   },
   {
-    nom: 'send_template_to_contact',
+    ...ficheOutilMcp('send_template_to_contact'),
     fonction: null,
     description:
       'Envoie un modèle WhatsApp APPROUVÉ à UNE personne, même hors de la fenêtre de 24 h, par le même chemin que '
@@ -146,12 +137,6 @@ export const OUTILS_MODELES: OutilMcp[] = [
       + 'contact_id ; un numéro inconnu crée sa fiche. values : une valeur par variable {{1}}, {{2}}… du corps, dans '
       + 'l’ordre. idempotency_key : une clé choisie pour CET envoi (un appel rejoué avec la même clé ne renvoie rien, '
       + 'pendant 24 h). L’envoi part dans la minute : rend send_id. Compte dans les opérations lourdes de l’espace.',
-    scope: 'mcp:write',
-    /**
-     * 🔴 Une PERSONNE, comme `create_template` (décision de Julien du 2026-10-09) : un Claude branché sur des
-     * conversations de clients pourrait, sur l'injection d'un message, envoyer des modèles facturés à des contacts.
-     */
-    exigePersonne: true,
     // Monde ouvert : un message part chez une personne. Idempotent : la même clé ne renvoie rien. Pas destructeur : un
     // modèle ne prend pas le fil.
     annotations: { title: 'Envoyer un modèle à un contact', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },

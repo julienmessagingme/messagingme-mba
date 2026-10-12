@@ -13,6 +13,8 @@ import { journaliser } from '../lib/journal';
 import { refus, type Issue } from '../lib/issue';
 import { octetsDepuisDataUrl } from '../rcs/image';
 import { estUuid } from '../http/scope';
+import { MAX_FICHES_PAR_AJOUT } from '../../web/lib/partage/catalogue-mcp';
+export { MAX_FICHES_PAR_AJOUT } from '../../web/lib/partage/catalogue-mcp';
 
 /**
  * LA BASE DE CONNAISSANCE D'UN AGENT IA : l'écrire à la main, la fabriquer depuis un site ou un document, en retirer
@@ -80,8 +82,7 @@ export const saisieDeTexteDocument = z.object({
   texte: z.string().refine((t) => t.trim() !== ''),
 });
 
-/** Plusieurs fiches tapées d'un coup : 50 au plus, un geste qu'on relit encore (outil `add_knowledge`). */
-export const MAX_FICHES_PAR_AJOUT = 50;
+/** Plusieurs fiches tapées d'un coup : la même limite que celle annoncée par `add_knowledge`. */
 /** La liste d'un ajout, lue avant ses fiches : son refus dit le nombre permis, celui d'une fiche ce qui lui manque. */
 export const saisieDeListeDeFiches = z.array(z.unknown()).min(1).max(MAX_FICHES_PAR_AJOUT);
 

@@ -1,3 +1,4 @@
+import { ficheOutilMcp } from '../../web/lib/partage/catalogue-mcp';
 import type { DepsMcp, OutilMcp } from './outils';
 import { RefusOutil, entierBorne, valeurOuRefus } from './saisie';
 import { MESSAGE_OPERATIONS_LOURDES } from '../auth/plafond-partage';
@@ -24,7 +25,7 @@ export interface DepsEvenementsMcp {
 
 export const OUTILS_EVENEMENTS: OutilMcp[] = [
   {
-    nom: 'create_webhook_endpoint',
+    ...ficheOutilMcp('create_webhook_endpoint'),
     fonction: null,
     description:
       'Inscrit une adresse HTTPS de l’application (un webhook sortant) : Messaging Me y enverra en POST, signés au format '
@@ -33,8 +34,6 @@ export const OUTILS_EVENEMENTS: OutilMcp[] = [
       + 'seule fois : le ranger dans une variable d’environnement de l’application (jamais dans le code) pour vérifier '
       + 'l’en-tête webhook-signature. Sans types précisés : tous, sauf les accusés de livraison. La limite d’adresses '
       + 'actives dépend de l’offre (refus plan_limit_reached).',
-    scope: 'mcp:write',
-    exigePersonne: true,
     // Ni destructrice ni idempotente : chaque appel qui réussit crée une adresse de plus.
     annotations: { title: 'Créer un webhook sortant', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     entree: {
@@ -64,14 +63,12 @@ export const OUTILS_EVENEMENTS: OutilMcp[] = [
     },
   },
   {
-    nom: 'send_test_event',
+    ...ficheOutilMcp('send_test_event'),
     fonction: null,
     description:
       'Envoie tout de suite un événement d’essai (type test), signé, à une adresse créée par create_webhook_endpoint, et '
       + 'rend ce que l’application a répondu (code HTTP et début de la réponse). Sert à vérifier que l’application reçoit '
       + 'et vérifie la signature. Écrit dans le journal de l’adresse. Compte dans les opérations lourdes de l’espace.',
-    scope: 'mcp:write',
-    exigePersonne: true,
     // Monde ouvert : un appel part vers l'application du client.
     annotations: { title: 'Envoyer un essai de webhook', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     entree: {
@@ -95,18 +92,16 @@ export const OUTILS_EVENEMENTS: OutilMcp[] = [
    * et `POST /v1/webhooks/deliveries/{id}/replay`, avec les MÊMES vues (`webhookV1`, `deliveryV1`).
    */
   {
-    nom: 'list_webhook_endpoints',
+    ...ficheOutilMcp('list_webhook_endpoints'),
     fonction: null,
     description:
       'Les adresses de webhooks sortants de l’espace (url, types d’événements cochés, active ou en pause, envois en '
       + 'réessai et en échec), la limite d’adresses actives de l’offre (null = sans limite) et les types disponibles. Le '
       + 'secret n’est jamais relu : il n’est montré qu’à la création.',
-    scope: 'mcp:read',
     /**
      * Une PERSONNE, comme la console, qui réserve cette liste aux admins : l'adresse d'un outil sans code (Make, Zapier,
      * n8n) porte son jeton dans le chemin, et une clé `mcp:read` confiée à un agent tiers la lirait.
      */
-    exigePersonne: true,
     annotations: { title: 'Lister les webhooks sortants', readOnlyHint: true, openWorldHint: false },
     entree: { type: 'object', properties: {}, additionalProperties: false },
     async executer(deps: DepsMcp, tenantId) {
@@ -119,16 +114,14 @@ export const OUTILS_EVENEMENTS: OutilMcp[] = [
     },
   },
   {
-    nom: 'get_webhook_deliveries',
+    ...ficheOutilMcp('get_webhook_deliveries'),
     fonction: null,
     description:
       'Le journal d’une adresse de webhooks sortants, du plus récent au plus ancien : chaque envoi avec son type, son '
       + 'statut (pending, delivered, failed), ses tentatives, le dernier code et la dernière réponse de l’application, et '
       + 'le corps envoyé (il porte des données de contacts). before (une date ISO) pour la page suivante, que rend '
       + 'next_before.',
-    scope: 'mcp:read',
     // Le corps des événements porte des numéros et des messages de contacts : une personne, jamais une clé.
-    exigePersonne: true,
     annotations: { title: 'Lire le journal d’un webhook', readOnlyHint: true, openWorldHint: false },
     entree: {
       type: 'object',
@@ -152,14 +145,12 @@ export const OUTILS_EVENEMENTS: OutilMcp[] = [
     },
   },
   {
-    nom: 'replay_webhook_delivery',
+    ...ficheOutilMcp('replay_webhook_delivery'),
     fonction: null,
     description:
       'Rejoue un envoi terminé (livré ou en échec) d’une adresse de webhooks sortants : il repart avec le même corps et '
       + 'le même identifiant d’événement (l’application dédoublonne), et ses 24 h de réessais repartent. Un envoi encore en '
       + 'cours ou un essai ne se rejoue pas.',
-    scope: 'mcp:write',
-    exigePersonne: true,
     // Renvoie vers l'application du client ; le même identifiant d'événement : rejouer deux fois est sans effet de plus
     // pour une application qui dédoublonne.
     annotations: { title: 'Rejouer un envoi de webhook', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
