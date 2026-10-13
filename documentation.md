@@ -619,10 +619,10 @@ datées de l'ouverture de la session ou après (`dejaAnnonce`, `src/agent/brain.
 🔴 **CE QUI VARIE DANS LE TEMPS SE DIT DANS LES DEUX SENS, À CHAQUE TOUR**, parce que cette mémoire rend au modèle
 ses propres phrases d'hier. La disponibilité de l'équipe (`promptSysteme`, `src/agent/prompt.ts`) est écrite
 joignable OU fermée dès que l'espace a un mode (`agent_transfert_mode`, `always` par défaut), suivie d'une phrase
-qui déclare périmé tout message plus ancien annonçant une disponibilité ou une date de reprise. Muette aux heures
-ouvrées, la consigne laissait le modèle répéter « l'équipe reprendra mardi 6 octobre », lu dans sa mémoire, une
-semaine plus tard. ⚠️ L'heure courante n'y entre pas : elle changerait la consigne à chaque minute, dont le début
-est servi par le cache (`agent-cache:`).
+qui déclare périmé tout message plus ancien annonçant une autre disponibilité de l'équipe ou une autre date de
+reprise. Une consigne muette laisse le modèle répéter la date de reprise périmée que sa mémoire lui rend.
+⚠️ L'heure courante n'y entre pas : elle changerait la consigne à chaque minute, dont le début est servi par le
+cache (`agent-cache:`).
 
 🔴 **QUI RÉPOND AU CLIENT** (`src/repondeur/`, RC6, plan `docs/superpowers/plans/2026-10-06-rc6-qui-repond.md` ; le
 lot 5 en posait la moitié agent IA, spec `docs/superpowers/specs/2026-10-04-repondeur-par-defaut-design.md`) : un seul

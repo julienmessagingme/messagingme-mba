@@ -25,7 +25,7 @@ export interface ContexteAgent {
   contenu: FicheAgentContenu;
   /** Le contact est-il connu du mini-CRM ? Change ce que l'agent peut faire, il doit le savoir. */
   contactConnu: boolean;
-  /** L'équipe est-elle joignable en ce moment, et sinon quand reprend-elle ? Absente = disponible. */
+  /** L'équipe est-elle joignable en ce moment, et sinon quand reprend-elle ? Absente : la consigne n'en dit rien, comme avant le réglage ; présente, elle est dite dans les deux sens. */
   equipe?: EquipePourPrompt;
 }
 
@@ -96,7 +96,7 @@ export function promptSysteme(ctx: ContexteAgent): string {
             : 'Si tu passes la main à un humain, écris ta phrase AVANT d’appeler l’outil, et n’annonce ni conseiller ni délai : dis simplement que la demande est transmise.',
           'Sa demande sera vue par l’équipe dans tous les cas : tu ne mens pas en disant qu’elle est transmise.',
         ]),
-      'Si un message plus ancien de cette conversation annonce une autre disponibilité ou une date de reprise, il est périmé : ne le répète pas, seule cette consigne fait foi.',
+      'Si un message plus ancien de cette conversation annonce une autre disponibilité de l’équipe, ou une autre date de reprise de l’équipe, il est périmé : ne le répète pas, seule cette consigne fait foi.',
     ].join('\n'));
   }
 

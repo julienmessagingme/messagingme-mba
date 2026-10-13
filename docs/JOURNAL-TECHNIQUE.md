@@ -6,6 +6,24 @@
 > tranchent, jamais ce fichier.
 
 
+## 2026-10-13 : l'agent IA annonçait une réouverture vieille d'une semaine, en heures ouvrées
+
+Sur l'espace Groupama, à 11 h 57 un mardi, pendant les horaires, l'agent IA a répondu à une demande de conseiller :
+« notre équipe n'est pas disponible en ce moment, mais elle reprendra mardi 6 octobre à 9 h ». La disponibilité est
+pourtant recalculée à chaque tour (`lireContexteAvecReglages`) : rejouée avec les horaires de l'espace, elle rendait
+« joignable » à 11 h 51 comme à 11 h 57. La cause : la consigne (`promptSysteme`) ne parlait de l'équipe que fermée, et
+la mémoire de trente jours rendait au modèle sa phrase du lundi 5 octobre à 19 h 22, juste ce soir-là avec les horaires
+de l'époque (le mardi ouvrait alors à 9 h). Rien ne la contredisait : il l'a répétée mot pour mot.
+
+`ef1d81ec` dit l'équipe joignable ou fermée dès que l'espace a un mode, et déclare périmé tout message plus ancien qui
+annonce une autre disponibilité ou une autre date de reprise ; sans heure courante, qui changerait la consigne à chaque
+minute et casserait son cache. Tests vérifiés dans les deux sens (le cas « joignable » et la phrase sur le périmé
+échouent sans le correctif), suite unitaire verte, CI verte sur ses trois tâches, relecture sans rouge. Déployé le jour
+même sur `mba-api`, `mba-worker` et `mba-worker-analyse`. Les jaunes de la relecture suivent dans le commit d'après :
+deux tests resserrés, la phrase sur le périmé restreinte à l'équipe (elle visait aussi une promesse d'opérateur ou une
+campagne), et des commentaires qui disaient encore « absente vaut disponible ». Essai réel dû : redemander un conseiller
+pendant les horaires sur la conversation de test qui porte la phrase du 5 octobre.
+
 ## 2026-10-13 : l'essai 99, trois défauts de la mise en service par Claude, et le code promo du numéro fourni
 
 - L'essai réel 99 de Julien (espace neuf, plugin dans un Claude Code lancé depuis PowerShell, `engageme` retiré) :

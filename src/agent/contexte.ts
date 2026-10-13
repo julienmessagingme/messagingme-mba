@@ -21,7 +21,7 @@ export interface DepsContexteAgent {
   politiqueMentionIa?(tenantId: string): Promise<FrequenceMentionIa | null>;
   /**
    * L'équipe est-elle joignable, et sinon quand reprend-elle : réglage d'espace, lu ici pour que le bac à sable
-   * et la production produisent la même phrase. Absente : l'équipe est réputée joignable.
+   * et la production produisent la même phrase. Absente : la consigne n'en dit rien, et le tour la tient pour joignable.
    */
   disponibiliteEquipe?(tenantId: string): Promise<EquipePourPrompt | null>;
 }
@@ -44,7 +44,8 @@ export async function lireContexteAgent(
     // La politique face à un contact inconnu vient de la fiche, jamais de l'appelant : le bac à sable montre
     // ainsi le même refus d'outil que la production.
     contactInconnu: fiche.contactInconnu,
-    // `?? undefined` et non `?? { disponible: true }` : le champ absent veut déjà dire « joignable ».
+    // `?? undefined` et non `?? { disponible: true }` : absent, la consigne reste celle d'avant le réglage, muette ;
+    // `{ disponible: true }` la ferait dire « joignable ».
     equipe: (deps.disponibiliteEquipe ? await deps.disponibiliteEquipe(tenantId) : null) ?? undefined,
   };
 }

@@ -78,7 +78,7 @@ export interface ContexteAgentComplet {
   plafonds: { maxAppelsOutils: number; budgetMicroEur: number };
   /** Ce que l'agent a le droit de faire face à un contact inconnu. Vient de sa fiche, jamais de l'appelant. */
   contactInconnu: ContexteAppel['contactInconnu'];
-  /** L'équipe est-elle joignable, et sinon quand reprend-elle ? Absente = disponible. */
+  /** L'équipe est-elle joignable, et sinon quand reprend-elle ? Absente : la consigne n'en dit rien, et le tour la tient pour joignable (`equipeMuette`). */
   equipe?: EquipePourPrompt;
 }
 

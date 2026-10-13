@@ -181,6 +181,7 @@ describe('promptSysteme : la disponibilité de l’équipe', () => {
     // C'est ce qui rend ce champ sûr sur un chemin que chaque message de contact emprunte : un câblage qui
     // ne le fournit pas produit le prompt d'hier, au caractère près.
     expect(promptSysteme(CTX())).not.toContain('JOIGNABLE');
+    expect(promptSysteme(CTX())).not.toContain('périmé');
   });
 
   it('🔴 équipe DISPONIBLE : c’est DIT, et ce qu’un message plus ancien annonçait est périmé', () => {
@@ -189,6 +190,7 @@ describe('promptSysteme : la disponibilité de l’équipe', () => {
     const p = bloc({ disponible: true, reouverture: null });
     expect(p).toContain('L’ÉQUIPE EST JOIGNABLE EN CE MOMENT.');
     expect(p).not.toContain('N’EST PAS JOIGNABLE');
+    expect(p).not.toContain('AVANT d’appeler l’outil');
     expect(p).toContain('il est périmé : ne le répète pas');
   });
 

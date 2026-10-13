@@ -25,8 +25,8 @@ export function estModeTransfert(v: unknown): v is ModeTransfert {
 }
 
 /**
- * La disponibilité telle que le tour la transporte, la date déjà écrite en français. Absente = disponible :
- * un câblage qui l'oublie garde le comportement d'origine.
+ * La disponibilité telle que le tour la transporte, la date déjà écrite en français. Absente : la consigne n'en
+ * dit rien et le tour la tient pour joignable, donc un câblage qui l'oublie garde le comportement d'origine.
  */
 export interface EquipePourPrompt {
   disponible: boolean;
