@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs';
 import { test, expect, type Page } from '@playwright/test';
-import { repondre } from './aide/confirmation';
 
 /**
  * LA DOUBLE AUTHENTIFICATION, CÔTÉ CONSOLE (plan `docs/superpowers/plans/2026-09-25-mfa-admins.md`, tâche 8).
@@ -465,11 +464,15 @@ test.describe('Équipe : réinitialiser le facteur d’un membre', () => {
     { id: 'u-invite', email: 'invite@e2e.test', name: null, role: 'agent', disabled: false, pending: true, createdAt: '2026-09-01T00:00:00.000Z', lastLoginAt: null },
   ];
 
-  test('🔴 confirmée, elle part ; refusée, rien ne part ; le 409 dit « le support »', async ({ page }) => {
-    const appels = await monter(page, (chemin, methode) => {
+  test('🔴 le mot de passe d’abord ; annulée, rien ne part ; faux, la fenêtre le dit ; le 409 dit « le support »', async ({ page }) => {
+    const appels = await monter(page, (chemin, methode, corps) => {
       if (chemin === '/tenants/t-e2e/users' && methode === 'GET') return { body: { users: USERS } };
       if (chemin === '/tenants/t-e2e/nom') return { body: { nom: 'Espace E2E' } };
-      if (chemin === '/tenants/t-e2e/users/u-agent/mfa' && methode === 'DELETE') return { body: { id: 'u-agent', mfaReinitialise: true } };
+      if (chemin === '/tenants/t-e2e/users/u-agent/mfa' && methode === 'DELETE') {
+        return corps?.motDePasse === 'bon-mot-de-passe'
+          ? { body: { id: 'u-agent', mfaReinitialise: true } }
+          : { status: 403, body: { error: 'Mot de passe incorrect.' } };
+      }
       if (chemin === '/tenants/t-e2e/users/u-ailleurs/mfa' && methode === 'DELETE') {
         return { status: 409, body: { error: 'Ce membre a aussi un compte dans un autre espace : sa double authentification se réinitialise par le support.' } };
       }
@@ -482,17 +485,28 @@ test.describe('Équipe : réinitialiser le facteur d’un membre', () => {
     await expect(page.getByTestId('membre-mfa-u-invite')).toHaveCount(0);
 
     const reinitialisations = (): Appel[] => appels.filter((a) => a.methode === 'DELETE' && a.chemin.endsWith('/mfa'));
+    const fenetre = page.getByTestId('demande-mot-de-passe');
     await page.getByTestId('membre-mfa-u-agent').click();
-    await repondre(page, false, 'agent@e2e.test');
+    await expect(fenetre).toContainText('agent@e2e.test');
+    await fenetre.getByTestId('demande-mot-de-passe-annuler').click();
+    await expect(fenetre).toHaveCount(0);
     expect(reinitialisations()).toHaveLength(0);
 
+    // Sans mot de passe, le bouton ne part pas ; faux, la fenêtre reste ouverte et le dit.
     await page.getByTestId('membre-mfa-u-agent').click();
-    await repondre(page, true, /Retirer la double authentification|Remove two-factor authentication/);
+    await expect(fenetre.getByTestId('demande-mot-de-passe-confirmer')).toBeDisabled();
+    await fenetre.getByTestId('demande-mot-de-passe-champ').fill('pas-le-bon');
+    await fenetre.getByTestId('demande-mot-de-passe-confirmer').click();
+    await expect(fenetre.getByTestId('demande-mot-de-passe-erreur')).toHaveText(/Mot de passe incorrect|Wrong password/);
+    await fenetre.getByTestId('demande-mot-de-passe-champ').fill('bon-mot-de-passe');
+    await fenetre.getByTestId('demande-mot-de-passe-confirmer').click();
+    await expect(fenetre).toHaveCount(0);
     await expect(page.getByTestId('admin-info')).toContainText('agent@e2e.test');
-    expect(reinitialisations().map((a) => a.chemin)).toEqual(['/tenants/t-e2e/users/u-agent/mfa']);
+    expect(reinitialisations().map((a) => a.corps)).toEqual([{ motDePasse: 'pas-le-bon' }, { motDePasse: 'bon-mot-de-passe' }]);
 
     await page.getByTestId('membre-mfa-u-ailleurs').click();
-    await repondre(page, true);
+    await fenetre.getByTestId('demande-mot-de-passe-champ').fill('bon-mot-de-passe');
+    await fenetre.getByTestId('demande-mot-de-passe-confirmer').click();
     await expect(page.getByTestId('admin-erreur')).toHaveText(/Cette personne a un accès à un autre espace : la réinitialisation passe par le support\.|This person has access to another workspace/);
   });
 });
@@ -515,10 +529,39 @@ test.describe('Compte & équipe : la double authentification des administrateurs
     await caseExige.check();
     await expect(carte.getByTestId('securite-espace-message')).toContainText(/prochaine connexion|next sign-in/);
     await expect(caseExige).toBeChecked();
-    await caseExige.uncheck();
+    // Décocher affaiblit l'espace : la fenêtre du mot de passe d'abord, et la case ne bouge qu'une fois le serveur d'accord.
+    await caseExige.click();
+    const fenetre = page.getByTestId('demande-mot-de-passe');
+    await expect(fenetre).toBeVisible();
+    await expect(caseExige).toBeChecked();
+    await fenetre.getByTestId('demande-mot-de-passe-champ').fill('mon-mot-de-passe');
+    await fenetre.getByTestId('demande-mot-de-passe-confirmer').click();
+    await expect(fenetre).toHaveCount(0);
     await expect(carte.getByTestId('securite-espace-message')).toContainText(/au choix|Left to/);
+    await expect(caseExige).not.toBeChecked();
     expect(appelsVers(appels, '/tenants/t-e2e/second-facteur').filter((a) => a.methode === 'PUT').map((a) => a.corps))
-      .toEqual([{ exigePourLesAdmins: true }, { exigePourLesAdmins: false }]);
+      .toEqual([{ exigePourLesAdmins: true }, { exigePourLesAdmins: false, motDePasse: 'mon-mot-de-passe' }]);
+  });
+
+  test('🔴 décocher avec un mot de passe faux : la fenêtre le dit, la case reste cochée ; annuler ne change rien', async ({ page }) => {
+    const appels = await monter(page, (chemin, methode) => {
+      if (chemin === '/tenants/t-e2e/users' && methode === 'GET') return { body: { users: [] } };
+      if (chemin === '/tenants/t-e2e/nom') return { body: { nom: 'Espace E2E' } };
+      if (chemin === '/tenants/t-e2e/second-facteur' && methode === 'GET') return { body: { exigePourLesAdmins: true } };
+      if (chemin === '/tenants/t-e2e/second-facteur' && methode === 'PUT') return { status: 403, body: { error: 'Mot de passe incorrect.' } };
+      return undefined;
+    }, SESSION_E2E);
+    await page.goto('/admin');
+    const caseExige = page.getByTestId('securite-espace-second-facteur');
+    const fenetre = page.getByTestId('demande-mot-de-passe');
+    await caseExige.click();
+    await fenetre.getByTestId('demande-mot-de-passe-champ').fill('faux');
+    await fenetre.getByTestId('demande-mot-de-passe-confirmer').click();
+    await expect(fenetre.getByTestId('demande-mot-de-passe-erreur')).toHaveText(/Mot de passe incorrect|Wrong password/);
+    await fenetre.getByTestId('demande-mot-de-passe-annuler').click();
+    await expect(fenetre).toHaveCount(0);
+    await expect(caseExige).toBeChecked();
+    expect(appelsVers(appels, '/tenants/t-e2e/second-facteur').filter((a) => a.methode === 'PUT')).toHaveLength(1);
   });
 
   test('un refus du serveur remet la case comme avant, et le dit', async ({ page }) => {

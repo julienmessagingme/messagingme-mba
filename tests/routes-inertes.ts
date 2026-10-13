@@ -466,7 +466,7 @@ export const membresInertes: Pick<UsersRouteDeps, 'audit' | 'createInviteToken' 
   appUrl: '',
 };
 
-export const membresDepInertes: Pick<MembresDep, 'createPending' | 'setName' | 'getTenantName' | 'setTenantName' | 'getSecondFacteurAdmins' | 'setSecondFacteurAdmins'> = {
+export const membresDepInertes: Pick<MembresDep, 'createPending' | 'setName' | 'getTenantName' | 'setTenantName' | 'getSecondFacteurAdmins' | 'setSecondFacteurAdmins' | 'getPasswordHash'> = {
   createPending: neDevraitPasEtreAppelee('createPending'),
   setName: neDevraitPasEtreAppelee('setName'),
   // Absente : phrase générique dans l'e-mail d'invitation.
@@ -474,6 +474,7 @@ export const membresDepInertes: Pick<MembresDep, 'createPending' | 'setName' | '
   setTenantName: neDevraitPasEtreAppelee('setTenantName'),
   getSecondFacteurAdmins: neDevraitPasEtreAppelee('getSecondFacteurAdmins'),
   setSecondFacteurAdmins: neDevraitPasEtreAppelee('setSecondFacteurAdmins'),
+  getPasswordHash: neDevraitPasEtreAppelee('getPasswordHash'),
 };
 
 export const scenariosDepInerte: Pick<ScenariosDep, 'publish' | 'ensureTestToken'> = {

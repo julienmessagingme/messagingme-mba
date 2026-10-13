@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
+import { hashPasswordSync } from '../src/auth/password';
 import type { UsersRouteDeps } from '../src/http/users';
 import type { OpsRouteDeps } from '../src/http/ops';
 import type { AuditSink } from '../src/audit/journal';
@@ -17,8 +18,13 @@ const SECRET = 'test-secret-users-mfa';
 const ADMIN = '11111111-1111-4111-8111-111111111111';
 const MEMBRE = '22222222-2222-4222-8222-222222222222';
 const MULTI = '33333333-3333-4333-8333-333333333333';
+/** L'admin qui réinitialise a un mot de passe (`pw`) ; `SANS_MDP` est un admin entré par Google seul. */
+const HASH_ADMIN = hashPasswordSync('pw');
+const SANS_MDP = '55555555-5555-4555-8555-555555555555';
+const MDP = { 'content-type': 'application/json' };
+const avecMdp = (motDePasse: unknown = 'pw') => ({ payload: { motDePasse } as object });
 const INCONNU = '44444444-4444-4444-8444-444444444444';
-const h = (t: string) => ({ headers: { authorization: `Bearer ${t}` } });
+const h = (t: string) => ({ headers: { ...MDP, authorization: `Bearer ${t}` } });
 /** L'exploitant, et sa session gagnée une fois par le vrai parcours (`tests/acces-ops.ts`), au même secret. */
 const acces = accesOps({ auth: { secret: SECRET } });
 const ops: Record<string, string> = {};
@@ -48,6 +54,7 @@ function app() {
       setRole: async () => 'ok',
       setDisabled: async () => 'ok',
       deleteUser: async () => 'ok',
+      getPasswordHash: async (userId: string) => (userId === ADMIN ? HASH_ADMIN : null),
     },
     mfa,
   };
@@ -75,7 +82,7 @@ const jeton = (userId: string, role: string, tenantId = 't1') => signSession({ u
 describe('DELETE /tenants/:tenantId/users/:userId/mfa', () => {
   it('un admin réinitialise le facteur d’un membre de SON espace, et le journal nomme l’acteur et la cible', async () => {
     const { server, mfa, journal } = app();
-    const res = await server.inject({ method: 'DELETE', url: `/tenants/t1/users/${MEMBRE}/mfa`, ...h(await jeton(ADMIN, 'admin')) });
+    const res = await server.inject({ method: 'DELETE', url: `/tenants/t1/users/${MEMBRE}/mfa`, ...h(await jeton(ADMIN, 'admin')), ...avecMdp() });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ id: MEMBRE, mfaReinitialise: true });
     expect(mfa.estActif('membre@x.fr')).toBe(false);
@@ -85,7 +92,7 @@ describe('DELETE /tenants/:tenantId/users/:userId/mfa', () => {
 
   it('🔴 refusé (409) si la personne a un compte dans un AUTRE espace : son facteur reste en place', async () => {
     const { server, mfa, journal } = app();
-    const res = await server.inject({ method: 'DELETE', url: `/tenants/t1/users/${MULTI}/mfa`, ...h(await jeton(ADMIN, 'admin')) });
+    const res = await server.inject({ method: 'DELETE', url: `/tenants/t1/users/${MULTI}/mfa`, ...h(await jeton(ADMIN, 'admin')), ...avecMdp() });
     expect(res.statusCode).toBe(409);
     expect(mfa.estActif('multi@x.fr')).toBe(true);
     expect(journal).toEqual([]);
@@ -108,8 +115,40 @@ describe('DELETE /tenants/:tenantId/users/:userId/mfa', () => {
   it('un membre inconnu ou un identifiant mal formé : 404, jamais un 500', async () => {
     const { server } = app();
     const tok = await jeton(ADMIN, 'admin');
-    expect((await server.inject({ method: 'DELETE', url: `/tenants/t1/users/${INCONNU}/mfa`, ...h(tok) })).statusCode).toBe(404);
-    expect((await server.inject({ method: 'DELETE', url: '/tenants/t1/users/pas-un-uuid/mfa', ...h(tok) })).statusCode).toBe(404);
+    expect((await server.inject({ method: 'DELETE', url: `/tenants/t1/users/${INCONNU}/mfa`, ...h(tok), ...avecMdp() })).statusCode).toBe(404);
+    expect((await server.inject({ method: 'DELETE', url: '/tenants/t1/users/pas-un-uuid/mfa', ...h(tok), ...avecMdp() })).statusCode).toBe(404);
+    await server.close();
+  });
+
+  it('🔴 sans le mot de passe de l’admin, ou avec un faux : 403, et le facteur reste en place (décision du 2026-10-13)', async () => {
+    const { server, mfa, journal } = app();
+    const tok = await jeton(ADMIN, 'admin');
+    for (const corps of [{}, avecMdp(''), avecMdp('pas-le-bon'), avecMdp(42)]) {
+      const res = await server.inject({ method: 'DELETE', url: `/tenants/t1/users/${MEMBRE}/mfa`, ...h(tok), ...corps });
+      expect(res.statusCode, JSON.stringify(corps)).toBe(403);
+    }
+    expect(mfa.estActif('membre@x.fr')).toBe(true);
+    expect(journal).toEqual([]);
+    await server.close();
+  });
+
+  it('un admin sans mot de passe (Google seul) en pose un d’abord : 409, rien n’est retiré', async () => {
+    const { server, mfa } = app();
+    const res = await server.inject({ method: 'DELETE', url: `/tenants/t1/users/${MEMBRE}/mfa`, ...h(await jeton(SANS_MDP, 'admin')), ...avecMdp() });
+    expect(res.statusCode).toBe(409);
+    expect(res.json<{ error: string }>().error).toContain('mot de passe');
+    expect(mfa.estActif('membre@x.fr')).toBe(true);
+    await server.close();
+  });
+
+  it('🔴 cinq essais par minute : le sixième est refusé (429), même avec le bon mot de passe', async () => {
+    const { server, mfa } = app();
+    const tok = await jeton(ADMIN, 'admin');
+    for (let i = 0; i < 5; i++) {
+      expect((await server.inject({ method: 'DELETE', url: `/tenants/t1/users/${MEMBRE}/mfa`, ...h(tok), ...avecMdp('faux') })).statusCode).toBe(403);
+    }
+    expect((await server.inject({ method: 'DELETE', url: `/tenants/t1/users/${MEMBRE}/mfa`, ...h(tok), ...avecMdp() })).statusCode).toBe(429);
+    expect(mfa.estActif('membre@x.fr')).toBe(true);
     await server.close();
   });
 });

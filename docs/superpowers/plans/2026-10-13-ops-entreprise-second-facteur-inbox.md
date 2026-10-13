@@ -39,6 +39,10 @@ passer un espace de test en Entreprise depuis /ops, puis le ramener en Base.
    que la pastille) ; « À traiter » et un nom passent en gras quand il en reste. Titres « Conversations » et
    « Affectation » en corps normal, gras et foncés. Une API ancienne rend des zéros : rien en gras, aucune casse.
 
+7. **Suite (décision de Julien, même jour, après la relecture)** : décocher l'exigence et réinitialiser le facteur
+   d'un autre membre redemandent le mot de passe de l'admin (`motDePasseConfirme`, cinq essais par minute) ; la
+   console passe par une fenêtre « Votre mot de passe » (`DemandeMotDePasse`), qui garde un mot de passe faux à l'écran.
+
 ## Tests attendus
 
 - Routes d'authentification : admin d'un espace qui n'exige pas = session directe (connexion, inscription,

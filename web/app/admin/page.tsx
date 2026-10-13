@@ -13,6 +13,7 @@ import { Bouton } from '@/components/Bouton';
 import { TitrePage } from '@/components/TitrePage';
 import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
+import { DemandeMotDePasse } from '@/components/DemandeMotDePasse';
 
 export default function AdminPage() {
   return <AppShell active="admin">{(session) => <AdminInner session={session} />}</AppShell>;
@@ -25,6 +26,8 @@ function AdminInner({ session }: { session: Session }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** Le membre dont l'admin s'apprête à réinitialiser le facteur : la fenêtre du mot de passe est ouverte pour lui. */
+  const [aReinitialiser, setAReinitialiser] = useState<AdminUser | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -110,21 +113,29 @@ function AdminInner({ session }: { session: Session }) {
    * ⚠️ Le 409 n'est pas une panne : la personne a aussi un compte dans un AUTRE espace, et son facteur vaut
    * là-bas aussi. L'admin d'ici n'en décide pas, le support si.
    */
-  async function reinitialiserMfa(u: AdminUser) {
-    if (!(await confirmer({
-      titre: t('Réinitialiser la double authentification', 'Reset two-factor authentication'),
-      message: t(`Retirer la double authentification de ${u.email} ?\nSi l’espace l’exige de ses administrateurs, un administrateur la configurera de nouveau à sa prochaine connexion.`, `Remove two-factor authentication from ${u.email}?\nIf the workspace requires it of its administrators, an administrator will set it up again at their next sign-in.`),
-      confirmer: t('Réinitialiser', 'Reset'),
-    }))) return;
+  /**
+   * 🔴 Le mot de passe de l'admin est redemandé avant (décision de Julien du 2026-10-13) : une session restée ouverte
+   * ne retire pas le facteur d'un collègue en un clic. Un mot de passe faux (403) se redit dans la fenêtre, qui reste
+   * ouverte ; le reste la ferme et s'affiche sur la page.
+   */
+  async function reinitialiserMfa(u: AdminUser, motDePasse: string): Promise<string | null> {
     setError(null);
     setInfo(null);
     try {
-      await reinitialiserSecondFacteur(session.tenantId, u.id);
+      await reinitialiserSecondFacteur(session.tenantId, u.id, motDePasse);
+      setAReinitialiser(null);
       setInfo(t(`Double authentification réinitialisée pour ${u.email}.`, `Two-factor authentication reset for ${u.email}.`));
+      return null;
     } catch (err) {
+      if (err instanceof ApiError && err.status === 403) return t('Mot de passe incorrect.', 'Wrong password.');
+      if (err instanceof ApiError && err.status === 429) return err.message;
+      setAReinitialiser(null);
       setError(err instanceof ApiError && err.status === 409
-        ? t('Cette personne a un accès à un autre espace : la réinitialisation passe par le support.', 'This person has access to another workspace: the reset goes through support.')
+        ? (err.message.includes('mot de passe')
+          ? t('Posez d’abord un mot de passe sur votre compte (Mon compte), puis recommencez.', 'Set a password on your account first (My account), then try again.')
+          : t('Cette personne a un accès à un autre espace : la réinitialisation passe par le support.', 'This person has access to another workspace: the reset goes through support.'))
         : err instanceof Error ? err.message : t('Réinitialisation impossible', 'Unable to reset'));
+      return null;
     }
   }
 
@@ -136,6 +147,15 @@ function AdminInner({ session }: { session: Session }) {
 
       <EspaceCard tenantId={session.tenantId} />
       <SecuriteEspaceCard tenantId={session.tenantId} />
+      {aReinitialiser && (
+        <DemandeMotDePasse
+          titre={t('Réinitialiser la double authentification', 'Reset two-factor authentication')}
+          message={t(`Retirer la double authentification de ${aReinitialiser.email} ?\nSi l’espace l’exige de ses administrateurs, un administrateur la configurera de nouveau à sa prochaine connexion.`, `Remove two-factor authentication from ${aReinitialiser.email}?\nIf the workspace requires it of its administrators, an administrator will set it up again at their next sign-in.`)}
+          libelleConfirmer={t('Réinitialiser', 'Reset')}
+          onConfirmer={(mdp) => reinitialiserMfa(aReinitialiser, mdp)}
+          onAnnuler={() => setAReinitialiser(null)}
+        />
+      )}
 
       <InviteCard tenantId={session.tenantId} onInvited={load} />
 
@@ -217,7 +237,7 @@ function AdminInner({ session }: { session: Session }) {
                             son porteur), ni sur une invitation en attente, qui n'a pas encore de facteur. */}
                         {!isSelf && !u.pending && (
                           <button
-                            onClick={() => { void reinitialiserMfa(u); }}
+                            onClick={() => setAReinitialiser(u)}
                             data-testid={`membre-mfa-${u.id}`}
                             className="text-ink-500 hover:text-ink-900"
                           >
@@ -417,6 +437,8 @@ function SecuriteEspaceCard({ tenantId }: { tenantId: string }) {
   const [lecture, setLecture] = useState<'en_cours' | 'ok' | 'absente' | 'erreur'>('en_cours');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  /** La fenêtre du mot de passe, ouverte par un décochage. */
+  const [demandeMdp, setDemandeMdp] = useState(false);
 
   useEffect(() => {
     let vivant = true;
@@ -441,24 +463,48 @@ function SecuriteEspaceCard({ tenantId }: { tenantId: string }) {
 
   if (lecture === 'absente') return null;
 
-  async function basculer(valeur: boolean) {
+  const messageOk = (exigee: boolean): string => (exigee
+    ? t('Exigée : chaque administrateur qui ne l’a pas encore la configurera à sa prochaine connexion.', 'Required: each administrator who does not have it yet will set it up at their next sign-in.')
+    : t('Laissée au choix de chaque administrateur, depuis Mon compte.', 'Left to each administrator, from My account.'));
+
+  /** Cocher renforce l'espace : tout de suite, la case suit le geste et un refus la remet comme avant. */
+  async function exiger() {
     if (busy) return;
-    const avant = exige;
     setBusy(true);
     setMsg(null);
-    // La case suit le geste tout de suite, puis l'état EFFECTIF rendu par le serveur ; un refus la remet comme avant.
-    setExige(valeur);
+    setExige(true);
     try {
-      const r = await poserSecondFacteurEspace(tenantId, valeur);
+      const r = await poserSecondFacteurEspace(tenantId, true);
       setExige(r.exigePourLesAdmins);
-      setMsg({ kind: 'ok', text: r.exigePourLesAdmins
-        ? t('Exigée : chaque administrateur qui ne l’a pas encore la configurera à sa prochaine connexion.', 'Required: each administrator who does not have it yet will set it up at their next sign-in.')
-        : t('Laissée au choix de chaque administrateur, depuis Mon compte.', 'Left to each administrator, from My account.') });
+      setMsg({ kind: 'ok', text: messageOk(r.exigePourLesAdmins) });
     } catch (err) {
-      setExige(avant);
+      setExige(false);
       setMsg({ kind: 'err', text: err instanceof Error ? err.message : t('Enregistrement impossible', 'Unable to save') });
     } finally {
       setBusy(false);
+    }
+  }
+
+  /**
+   * 🔴 Décocher l'affaiblit : le mot de passe d'abord (décision de Julien du 2026-10-13). La case ne bouge qu'une fois
+   * le serveur d'accord ; un mot de passe faux se redit dans la fenêtre, qui reste ouverte.
+   */
+  async function liberer(motDePasse: string): Promise<string | null> {
+    setMsg(null);
+    try {
+      const r = await poserSecondFacteurEspace(tenantId, false, motDePasse);
+      setExige(r.exigePourLesAdmins);
+      setDemandeMdp(false);
+      setMsg({ kind: 'ok', text: messageOk(r.exigePourLesAdmins) });
+      return null;
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 403) return t('Mot de passe incorrect.', 'Wrong password.');
+      if (err instanceof ApiError && err.status === 429) return err.message;
+      setDemandeMdp(false);
+      setMsg({ kind: 'err', text: err instanceof ApiError && err.status === 409
+        ? t('Posez d’abord un mot de passe sur votre compte (Mon compte), puis recommencez.', 'Set a password on your account first (My account), then try again.')
+        : err instanceof Error ? err.message : t('Enregistrement impossible', 'Unable to save') });
+      return null;
     }
   }
 
@@ -473,7 +519,7 @@ function SecuriteEspaceCard({ tenantId }: { tenantId: string }) {
             data-testid="securite-espace-second-facteur"
             checked={exige}
             disabled={busy}
-            onChange={(e) => { void basculer(e.target.checked); }}
+            onChange={(e) => { if (e.target.checked) void exiger(); else setDemandeMdp(true); }}
             className="mt-0.5 h-4 w-4 shrink-0"
           />
           <span className="space-y-1">
@@ -486,6 +532,15 @@ function SecuriteEspaceCard({ tenantId }: { tenantId: string }) {
             </span>
           </span>
         </label>
+      )}
+      {demandeMdp && (
+        <DemandeMotDePasse
+          titre={t('Ne plus exiger la double authentification', 'Stop requiring two-factor authentication')}
+          message={t('Les administrateurs qui l’ont gardent leur code ; les autres ne seront plus tenus de la configurer.', 'Administrators who have it keep their code; the others will no longer have to set it up.')}
+          libelleConfirmer={t('Ne plus exiger', 'Stop requiring')}
+          onConfirmer={liberer}
+          onAnnuler={() => setDemandeMdp(false)}
+        />
       )}
       {msg && (
         <p data-testid="securite-espace-message" className={`rounded-controle px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}>{msg.text}</p>

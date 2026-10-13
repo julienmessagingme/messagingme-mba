@@ -1,8 +1,10 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { DuplicateEmailError } from '../user/store.pg';
 import type { UserRow, UserMutation } from '../user/store.pg';
 import type { Guard } from '../auth/middleware';
+import { verifyPassword } from '../auth/password';
+import { RateLimiter } from '../auth/rate-limit';
 import { renderInvitationEmail } from '../support/email-templates';
 import { espaceVerifie, estUuid } from './scope';
 import type { IssueReinitialisation } from '../auth/mfa-store.pg';
@@ -62,6 +64,8 @@ export interface MembresDep {
   getSecondFacteurAdmins(tenantId: string): Promise<boolean | null>;
   /** Pose ce réglage. `false` = espace inconnu. */
   setSecondFacteurAdmins(tenantId: string, exige: boolean): Promise<boolean>;
+  /** Le hash du mot de passe d'un compte (celui de son identité), `null` s'il n'en a pas (compte Google seul). */
+  getPasswordHash(userId: string): Promise<string | null>;
 }
 
 /**
@@ -84,7 +88,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * partagée avec l'inscription : les deux écrivains publics de `tenants.name` refusent la même chose.
  */
 const nomEspaceSchema = z.object({ nom: nomEspace });
-const secondFacteurSchema = z.object({ exigePourLesAdmins: z.boolean() }).strict();
+const secondFacteurSchema = z.object({ exigePourLesAdmins: z.boolean(), motDePasse: z.string().max(1024).optional() }).strict();
 
 /**
  * Gestion des comptes (onglet Admin). Le groupe est réservé aux admins via `garde`
@@ -94,6 +98,29 @@ const secondFacteurSchema = z.object({ exigePourLesAdmins: z.boolean() }).strict
 export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde: Guard): void {
   const journal = makeJournal(deps.audit);
   const opts = { preHandler: garde };
+
+  /**
+   * 🔴 AFFAIBLIR LA SÉCURITÉ DE L'ESPACE REDEMANDE LE MOT DE PASSE DE L'ADMIN (décision de Julien du 2026-10-13) :
+   * décocher l'exigence du second facteur, et réinitialiser celui d'un autre membre. Une session volée (un poste
+   * resté ouvert) ne fait ni l'un ni l'autre en un clic. Même règle que Mon compte (`/auth/mfa/moi/enroler`) : un
+   * compte sans mot de passe (Google seul) en pose un d'abord, et un mot de passe faux rend 403, jamais 401, qui
+   * ferait perdre la session à la console. Cinq essais par minute et par compte : sans plafond, la session volée
+   * pourrait deviner le mot de passe, qui vaut plus qu'elle. Rend `true` si la suite peut continuer.
+   */
+  const essaisMotDePasse = new RateLimiter(5, 60_000);
+  async function motDePasseConfirme(req: FastifyRequest, reply: FastifyReply): Promise<boolean> {
+    const userId = req.auth?.userId;
+    if (!userId) { reply.code(401).send({ error: 'authentification requise' }); return false; }
+    if (!essaisMotDePasse.take(userId)) { reply.code(429).send({ error: 'Trop d’essais : réessayez dans une minute.' }); return false; }
+    const hash = await deps.users.getPasswordHash(userId);
+    if (hash === null) { reply.code(409).send({ error: 'Posez d’abord un mot de passe sur votre compte.' }); return false; }
+    const saisi = (req.body as { motDePasse?: unknown } | null | undefined)?.motDePasse;
+    if (typeof saisi !== 'string' || saisi === '' || !(await verifyPassword(saisi, hash))) {
+      reply.code(403).send({ error: 'Mot de passe incorrect.' });
+      return false;
+    }
+    return true;
+  }
 
   app.get('/tenants/:tenantId/users', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
@@ -227,7 +254,8 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
 
   /**
    * Réinitialiser le second facteur d'un membre (téléphone perdu, codes épuisés) : il repassera par l'enrôlement
-   * s'il est admin, et se connectera sans code sinon.
+   * s'il est admin d'un espace qui l'exige, et se connectera sans code sinon. Le mot de passe de l'admin qui le fait
+   * est redemandé (`motDePasseConfirme`).
    * 🔴 Refusé (409) si la personne a un compte dans un autre espace : le facteur appartient à l'identité, le retirer
    * d'ici l'affaiblirait chez un autre client ; ce cas passe par l'exploitation (`POST /ops/mfa/reinitialiser`).
    * Pas sur soi-même : une session volée ne doit pas pouvoir retirer le facteur de son porteur.
@@ -240,6 +268,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     }
     // Un identifiant mal formé partirait dans un `where id = $1` sur une colonne `uuid` : 22P02, donc un 500.
     if (!estUuid(userId)) return reply.code(404).send({ error: 'Utilisateur inconnu.' });
+    if (!(await motDePasseConfirme(req, reply))) return reply;
     const issue = await deps.mfa.reinitialiserDansEspace(tenant, userId);
     if (issue === 'not_found') return reply.code(404).send({ error: 'Utilisateur inconnu.' });
     if (issue === 'autres_espaces') {
@@ -304,6 +333,8 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     if (avant === null) return reply.code(404).send({ error: 'espace inconnu' });
     // Rien n'a changé : ni écriture ni ligne de journal, qui est un registre de changements.
     if (avant === exige) return reply.code(200).send({ exigePourLesAdmins: exige });
+    // Décocher affaiblit l'espace : le mot de passe d'abord. Cocher le renforce, et ne demande rien.
+    if (!exige && !(await motDePasseConfirme(req, reply))) return reply;
     if (!(await deps.users.setSecondFacteurAdmins(tenant, exige))) return reply.code(404).send({ error: 'espace inconnu' });
     await journal(tenant, req, exige ? 'espace.second_facteur_exige' : 'espace.second_facteur_libre', { kind: 'tenant', id: tenant });
     return reply.code(200).send({ exigePourLesAdmins: exige });

@@ -602,9 +602,15 @@ export function renommerEspace(tenantId: string, nom: string): Promise<{ nom: st
 export function lireSecondFacteurEspace(tenantId: string): Promise<{ exigePourLesAdmins: boolean }> {
   return request(`/tenants/${tenantId}/second-facteur`);
 }
-/** Pose ce réglage ; le serveur rend l'état effectif. */
-export function poserSecondFacteurEspace(tenantId: string, exigePourLesAdmins: boolean): Promise<{ exigePourLesAdmins: boolean }> {
-  return request(`/tenants/${tenantId}/second-facteur`, { method: 'PUT', body: JSON.stringify({ exigePourLesAdmins }) });
+/**
+ * Pose ce réglage ; le serveur rend l'état effectif. Décocher (`false`) exige le mot de passe de l'admin (403 sans lui,
+ * ou faux ; 409 pour un compte sans mot de passe). Cocher ne demande rien.
+ */
+export function poserSecondFacteurEspace(tenantId: string, exigePourLesAdmins: boolean, motDePasse?: string): Promise<{ exigePourLesAdmins: boolean }> {
+  return request(`/tenants/${tenantId}/second-facteur`, {
+    method: 'PUT',
+    body: JSON.stringify(motDePasse === undefined ? { exigePourLesAdmins } : { exigePourLesAdmins, motDePasse }),
+  });
 }
 /**
  * Accepte une invitation : pose le mot de passe, puis la même porte que la connexion. Une session directe pour un
@@ -626,6 +632,7 @@ export function deleteUser(tenantId: string, userId: string): Promise<{ id: stri
  * Retire le second facteur d'un membre (téléphone perdu, codes épuisés). 409 si la personne a un compte dans un
  * autre espace : ce cas passe par le support.
  */
-export function reinitialiserSecondFacteur(tenantId: string, userId: string): Promise<{ id: string; mfaReinitialise: boolean }> {
-  return request(`/tenants/${tenantId}/users/${userId}/mfa`, { method: 'DELETE' });
+/** Le mot de passe de l'admin qui le fait est exigé (403 sans lui, ou faux ; 409 pour un compte sans mot de passe). */
+export function reinitialiserSecondFacteur(tenantId: string, userId: string, motDePasse: string): Promise<{ id: string; mfaReinitialise: boolean }> {
+  return request(`/tenants/${tenantId}/users/${userId}/mfa`, { method: 'DELETE', body: JSON.stringify({ motDePasse }) });
 }

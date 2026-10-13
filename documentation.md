@@ -2540,7 +2540,10 @@ extérieure, seulement d'une propriété que nous choisissons.
 facteur, reçoit `{ enrolToken }` ; les autres reçoivent la suite d'avant (session si un espace, jeton de choix sinon).
 Cette règle s'écrit UNE fois (`facteurExigeSql`, `src/auth/facteur-exige.ts`), lue par `findIdentity` (`facteurExige`)
 et par l'état du facteur (`obligatoire`), que lisent l'inscription, l'invitation et Mon compte. Le réglage se pose dans
-Compte & équipe (`GET` et `PUT /tenants/:tenantId/second-facteur`, module `admin`, tracé au journal). Mon compte refuse
+Compte & équipe (`GET` et `PUT /tenants/:tenantId/second-facteur`, module `admin`, tracé au journal). Ce qui
+AFFAIBLIT l'espace redemande le mot de passe de l'admin qui le fait (`motDePasseConfirme`, `src/http/users.ts`) :
+décocher l'exigence, réinitialiser le facteur d'un autre membre ; 403 sans lui ou faux, 409 pour un compte sans mot de
+passe, cinq essais par minute et par compte. Mon compte refuse
 de retirer le facteur d'un admin d'un espace qui l'exige et d'une adresse de `OPS_EMAILS` (`raison` : `espace` ou
 `exploitation`). La connexion, l'inscription (elle crée un admin d'un espace qui n'exige rien, donc rend la session) et
 l'invitation acceptée passent toutes par là ; `/auth/google` non, par décision de Julien,

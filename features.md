@@ -139,7 +139,9 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
     les espaces qui existaient. Cochée, elle vaut pour TOUS les administrateurs de l'espace : chacun, s'il ne l'a pas
     encore, la configure à sa prochaine connexion par mot de passe, et ne peut plus la retirer. Les sessions déjà
     ouvertes continuent, et la connexion Google ne la demande pas, ce que la carte dit en clair. Chaque changement
-    apparaît dans le journal des actions. Réservé aux administrateurs.
+    apparaît dans le journal des actions. Réservé aux administrateurs. **Décocher redemande le mot de passe** de
+    l'administrateur (un compte entré par Google seul en pose un d'abord) : un poste resté ouvert ne retire pas la
+    protection en un clic. Cocher ne demande rien.
   - **À la connexion**, après le mot de passe, une étape « code » : le code de l'application, ou un code de
     secours dans le même champ. Aucune session ni aucune liste d'espaces n'existe avant : le choix de l'espace
     vient après le code. Un code faux laisse sur l'étape ; une étape expirée (5 minutes) ramène au formulaire.
@@ -160,7 +162,8 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   - Essai réel fait par Julien le 2026-09-27 : enrôlement à la connexion, connexion par code, connexion par code
     de secours puis ce même code refusé.
   - **Compte & équipe** : un administrateur réinitialise le second facteur d'un autre membre (téléphone perdu),
-    après confirmation. Refusé si la personne a aussi un compte dans un autre espace : ce cas passe par le support.
+    après avoir redonné son propre mot de passe (depuis le 2026-10-13). Refusé si la personne a aussi un compte dans
+    un autre espace : ce cas passe par le support.
   - **Journal des actions** : activation, désactivation, réinitialisation, codes régénérés, code de secours utilisé
     et code refusé. Jamais de code ni de secret dans le détail.
 - ✅ **Renommer l'espace** (2026-09-25) : une carte « Espace » en tête de **Compte & équipe** montre le nom de

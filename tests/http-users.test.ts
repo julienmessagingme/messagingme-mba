@@ -7,6 +7,7 @@ import type { UserRow } from '../src/user/store.pg';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { MembresDep, UsersRouteDeps } from '../src/http/users';
 import { detailSansDonneesPersonnelles } from '../src/audit/store.pg';
+import { hashPasswordSync } from '../src/auth/password';
 import { membresDepInertes, membresInertes } from './routes-inertes';
 
 const SECRET = 'test-secret';
@@ -538,12 +539,14 @@ describe('users route : le nom de l’espace', () => {
 
 describe('users route : le second facteur des admins, au choix de l’espace (migration 0230)', () => {
   interface Trace { ecrits: Array<{ tenant: string; exige: boolean }>; audit: Array<{ action: string; target: { kind: string; id: string }; detail: Record<string, unknown> }> }
-  function appReglage(actuel: boolean | null = false) {
+  const HASH = hashPasswordSync('pw');
+  function appReglage(actuel: boolean | null = false, hash: string | null = HASH) {
     const trace: Trace = { ecrits: [], audit: [] };
     const { server } = app({
       users: {
         getSecondFacteurAdmins: async () => actuel,
         setSecondFacteurAdmins: async (tenant, exige) => { trace.ecrits.push({ tenant, exige }); return true; },
+        getPasswordHash: async () => hash,
       },
       audit: async (_t, _acteur, action, target, detail) => { trace.audit.push({ action, target, detail: detail ?? {} }); },
     });
@@ -565,9 +568,31 @@ describe('users route : le second facteur des admins, au choix de l’espace (mi
     expect(off.trace.ecrits).toEqual([{ tenant: 't1', exige: true }]);
     expect(off.trace.audit).toEqual([{ action: 'espace.second_facteur_exige', target: { kind: 'tenant', id: 't1' }, detail: {} }]);
     const on = appReglage(true);
-    expect((await on.server.inject(poser(adminTok, { exigePourLesAdmins: false }))).statusCode).toBe(200);
+    expect((await on.server.inject(poser(adminTok, { exigePourLesAdmins: false, motDePasse: 'pw' }))).statusCode).toBe(200);
     expect(on.trace.ecrits).toEqual([{ tenant: 't1', exige: false }]);
     expect(on.trace.audit.map((a) => a.action)).toEqual(['espace.second_facteur_libre']);
+  });
+
+  it('🔴 décocher sans le mot de passe, ou avec un faux : 403, rien n’est écrit (décision du 2026-10-13)', async () => {
+    const { server, trace } = appReglage(true);
+    for (const corps of [{ exigePourLesAdmins: false }, { exigePourLesAdmins: false, motDePasse: '' }, { exigePourLesAdmins: false, motDePasse: 'faux' }]) {
+      expect((await server.inject(poser(adminTok, corps))).statusCode, JSON.stringify(corps)).toBe(403);
+    }
+    expect(trace.ecrits).toEqual([]);
+    expect(trace.audit).toEqual([]);
+  });
+
+  it('cocher ne demande aucun mot de passe : renforcer l’espace n’a rien à confirmer', async () => {
+    const { server, trace } = appReglage(false, null);
+    expect((await server.inject(poser(adminTok, { exigePourLesAdmins: true }))).statusCode).toBe(200);
+    expect(trace.ecrits).toEqual([{ tenant: 't1', exige: true }]);
+  });
+
+  it('un admin sans mot de passe (Google seul) qui décoche : 409, il en pose un d’abord', async () => {
+    const { server, trace } = appReglage(true, null);
+    const res = await server.inject(poser(adminTok, { exigePourLesAdmins: false, motDePasse: 'pw' }));
+    expect(res.statusCode).toBe(409);
+    expect(trace.ecrits).toEqual([]);
   });
 
   it('un réglage inchangé ne réécrit rien et ne journalise rien', async () => {
@@ -595,7 +620,7 @@ describe('users route : le second facteur des admins, au choix de l’espace (mi
 
   it('🔴 400 : un booléen strict et rien d’autre ; rien n’est écrit', async () => {
     const { server, trace } = appReglage();
-    for (const corps of [{}, { exigePourLesAdmins: 'true' }, { exigePourLesAdmins: 1 }, { exigePourLesAdmins: null }, { exigePourLesAdmins: true, autre: 1 }]) {
+    for (const corps of [{}, { exigePourLesAdmins: 'true' }, { exigePourLesAdmins: 1 }, { exigePourLesAdmins: null }, { exigePourLesAdmins: true, autre: 1 }, { exigePourLesAdmins: false, motDePasse: 42 }]) {
       expect((await server.inject(poser(adminTok, corps))).statusCode, JSON.stringify(corps)).toBe(400);
     }
     expect(trace.ecrits).toEqual([]);

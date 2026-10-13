@@ -19,6 +19,9 @@
   un facteur actif, qui continuent de le donner.
 - /ops pose désormais l'Entreprise à l'écran (la route existait depuis le lot 6, sans bouton). Inbox : non-lues de
   « À traiter » et par membre dans les compteurs du menu, titres des sections en 16 px gras.
+- La relecture a relevé qu'une session admin volée pouvait décocher l'exigence en un clic, comme elle pouvait déjà
+  réinitialiser le facteur d'un collègue. Julien a choisi de fermer les deux : ces deux gestes redemandent le mot de
+  passe de l'admin, cinq essais par minute ; cocher ne demande rien.
 
 ## 2026-10-13 : l'agent annonce le conseiller, et les horaires se règlent depuis Claude Code (essai 99, suite)
 
