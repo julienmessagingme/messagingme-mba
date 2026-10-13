@@ -20,6 +20,7 @@ export const CARTE_CONSOLE: EcranAide[] = [
   {"cle":"contacts","href":"/contacts","fr":"mini-CRM","en":"mini-CRM","acces":"admin","chemin":[]},
   {"cle":"dashboard-quali","href":"/dashboard/quali","fr":"Analyse des conversations","en":"Conversation analysis","acces":"admin","chemin":[]},
   {"cle":"dashboard-tableaux","href":"/dashboard/tableaux","fr":"Mes tableaux","en":"My reports","acces":"admin","chemin":[]},
+  {"cle":"email-accounts","href":"/settings/email","fr":"SMTP email","en":"SMTP email","acces":"admin","chemin":["Tools"]},
   {"cle":"email-templates","href":"/email-templates","fr":"Modèles","en":"Templates","acces":"admin","chemin":["Contenu","Email"]},
   {"cle":"fields","href":"/fields","fr":"Champs","en":"Fields","acces":"admin","chemin":["Contenu","Bibliothèque"]},
   {"cle":"flows","href":"/flows","fr":"Formulaires","en":"Forms","acces":"admin","chemin":["Contenu","WhatsApp"]},
