@@ -68,6 +68,15 @@ export const TYPES_DOCUMENTES: readonly TypeDocumente[] = [
     champs: ['template', 'status', 'reason'],
   },
   {
+    type: 'agent.action',
+    quand: [
+      'Un agent IA a déclenché une de vos actions en pleine conversation (une fois par jour, par contact et par action) : les champs recueillis sont dans fields.',
+      'An AI agent triggered one of your actions during a conversation (once a day per contact and action): the collected fields are in fields.',
+    ],
+    champs: ['contact', 'conversation_id', 'agent', 'action', 'fields', 'channel'],
+    decocheParDefaut: true,
+  },
+  {
     type: 'conversation.needs_reply',
     quand: [
       'Mode « mon application répond » : un message attend la réponse de votre application, à l’adresse désignée par le répondeur.',

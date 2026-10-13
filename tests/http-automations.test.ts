@@ -29,6 +29,8 @@ const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity |
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
 const VALID = { name: 'Demande RDV', triggerKind: 'keyword', triggerConfig: { keywords: ['rdv'] }, workflowId: 'wf1' };
+/** Une action d'agent IA de t1 (l'outil qui la porte), pour le déclencheur `agent_action`. */
+const ACTION_T1 = '0b7e2c1a-4d5e-4f60-8a9b-1c2d3e4f5a6b';
 
 function app(over: Partial<AutomationsDep> = {}) {
   const cap = {
@@ -48,6 +50,7 @@ function app(over: Partial<AutomationsDep> = {}) {
     },
     // wf1 appartient à t1 ; tout le reste est refusé (scénario d'un autre client ou inexistant).
     workflowBelongsToTenant: async (wfId, tenant) => wfId === 'wf1' && tenant === 't1',
+    actionsDeLEspace: async (tenant) => (tenant === 't1' ? [{ id: ACTION_T1, nom: 'résiliation', agentId: 'ag1', agent: 'Accueil' }] : []),
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, automations: deps }), cap };
 }
@@ -116,6 +119,9 @@ describe('routes automations', () => {
       { ...VALID, triggerKind: 'conversation_analyzed', triggerConfig: { filtres: [{ cle: 'analyse_urgence', op: 'gte', valeur: '42' }] } },
       { ...VALID, triggerKind: 'conversation_analyzed', triggerConfig: { filtres: [{ cle: 'analyse_le', op: 'newer_than_days', valeur: '3' }] } },
       { ...VALID, triggerKind: 'conversation_analyzed', triggerConfig: { filtres: Array.from({ length: 11 }, () => ({ cle: 'analyse_resolue', op: 'is_false' })) } },
+      // Une action de l'agent sans action : partirait sur toutes les actions de l'espace.
+      { ...VALID, triggerKind: 'agent_action', triggerConfig: {} },
+      { ...VALID, triggerKind: 'agent_action', triggerConfig: { actionId: 'résiliation' } },
     ];
     for (const payload of bad) {
       const res = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload });
@@ -139,6 +145,8 @@ describe('routes automations', () => {
       { ...VALID, triggerKind: 'analyse_devient', triggerConfig: { cle: 'analyse_urgence', op: 'gte', valeur: '7' } },
       { ...VALID, triggerKind: 'analyse_devient', triggerConfig: { cle: 'analyse_resolue', op: 'is_false' } },
       { ...VALID, triggerKind: 'conversation_analyzed', triggerConfig: { sentiment: 'negatif', filtres: [{ cle: 'analyse_urgence', op: 'gte', valeur: '7' }, { cle: 'analyse_satisfaction', op: 'empty' }] } },
+      // Une action de l'agent IA (2026-10-13), désignée par l'outil qui la porte.
+      { ...VALID, triggerKind: 'agent_action', triggerConfig: { actionId: ACTION_T1 } },
     ];
     for (const payload of ok) {
       const res = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload });
@@ -232,6 +240,16 @@ describe('routes automations', () => {
     const del = await server.inject({ method: 'DELETE', url: '/tenants/t1/automations/a1', ...h(agentTok) });
     expect([post.statusCode, patch.statusCode, del.statusCode]).toEqual([403, 403, 403]);
     expect([cap.created, cap.updated, cap.removed]).toEqual([[], [], []]);
+    await server.close();
+  });
+
+  it('🔴 le menu du déclencheur « action de l’agent IA » : les actions de l’espace de l’URL, lisibles par un agent', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/automations/actions-agent', ...h(agentTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ actions: [{ id: ACTION_T1, nom: 'résiliation', agentId: 'ag1', agent: 'Accueil' }] });
+    const autre = await server.inject({ method: 'GET', url: '/tenants/AUTRE/automations/actions-agent', ...h(adminTok) });
+    expect(autre.statusCode).toBe(403);
     await server.close();
   });
 

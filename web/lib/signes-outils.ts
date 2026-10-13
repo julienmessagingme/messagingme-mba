@@ -43,6 +43,8 @@ export function signeDuHandler(handler: string): SigneOutil | null {
     case 'escalader': return 'humain';
     case 'marquer_urgent': return 'urgent';
     case 'terminer': return 'fin';
+    // Une action part vers l'application du client, comme l'appel d'un connecteur : même famille d'actes.
+    case 'declencher_action': return 'connecteur';
     default: return null;
   }
 }

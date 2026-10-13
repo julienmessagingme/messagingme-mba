@@ -7,7 +7,8 @@ import type { AutomationEvent } from './match';
  * 🔴 Émission limitée aux chemins unitaires (bloc Action, édition d'une fiche) : un import CSV ou une action
  * en masse n'émettent pas, sinon un tag sur 5 000 contacts déclencherait 5 000 messages facturés. Pour une
  * liste, c'est la campagne. Seule exception : le balayage du risque de désengagement publie `risque_eleve`,
- * sur un passage en élevé seulement et au plus 200 par nuit et par espace.
+ * sur un passage en élevé seulement et au plus 200 par nuit et par espace. Une action de l'agent IA (`agent_action`)
+ * est un démarrage unitaire : un contact, une fois par jour et par action.
  */
 
 /** Ce qui transite dans la file. `tenantId` porté explicitement : le worker ne le déduit de rien d'autre. */
@@ -86,6 +87,12 @@ export function parseAutomationEventJob(raw: unknown): AutomationEventJob | null
     const valeur = typeof e.valeur === 'string' ? e.valeur.trim() : '';
     if (automationId === '' || valeur === '') return null;
     return { tenantId: j.tenantId, event: { kind: 'avant_date', waId, automationId, valeur } };
+  }
+  if (e.kind === 'agent_action') {
+    // L'action est le seul discriminant : un événement anonyme pourrait déclencher les automations d'une autre action.
+    const actionId = typeof e.actionId === 'string' ? e.actionId.trim() : '';
+    if (actionId === '') return null;
+    return { tenantId: j.tenantId, event: { kind: 'agent_action', waId, actionId } };
   }
   if (e.kind === 'risque_eleve') {
     // Le contact suffit : le passage a déjà été constaté (et plafonné) par le balayage qui publie.

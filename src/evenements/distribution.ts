@@ -65,19 +65,22 @@ async function adressesServies(deps: DepsDistributionEspace, tenantId: string): 
 }
 
 /**
- * Un événement d'ESPACE, sans contact (lot 13, domaine 3, livraison C : `template.status_changed`) : figé, écrit une
- * fois par adresse qui a coché son type, puis enfilé. `ev.id` doit être stable pour un même fait : la ligne d'envoi
- * est unique par (adresse, événement), donc un fait redélivré ne part pas deux fois. Rend le nombre d'envois neufs.
+ * Un événement qui ne naît pas d'un signal (lot 13, domaine 3, livraison C : `template.status_changed`, sans contact ;
+ * les actions de l'agent IA, `agent.action`, avec le sien) : figé, écrit une fois par adresse qui a coché son type, puis
+ * enfilé. `ev.id` doit être stable pour un même fait : la ligne d'envoi est unique par (adresse, événement), donc un fait
+ * redélivré ne part pas deux fois. Rend le nombre d'envois neufs.
  */
 export async function distribuerEvenementEspace(
   deps: DepsDistributionEspace,
   tenantId: string,
-  ev: { id: string; type: TypeAbonnable; le: string; data: Record<string, unknown> },
+  ev: { id: string; type: TypeAbonnable; le: string; data: Record<string, unknown>; contactId?: string | null },
 ): Promise<number> {
   const destinataires = (await adressesServies(deps, tenantId)).filter((a) => a.types.includes(ev.type));
   if (destinataires.length === 0) return 0;
   const corps = JSON.stringify(enveloppe({ id: ev.id, type: ev.type, le: ev.le, tenantId, data: ev.data }));
-  const lignes = destinataires.map((a): LigneEnvoi => ({ tenantId, adresseId: a.id, evenementId: ev.id, type: ev.type, contactId: null, corps }));
+  const lignes = destinataires.map((a): LigneEnvoi => ({
+    tenantId, adresseId: a.id, evenementId: ev.id, type: ev.type, contactId: ev.contactId ?? null, corps,
+  }));
   const neufs = await deps.creerEnvois(lignes);
   for (const neuf of neufs) await deps.enfiler({ tenantId, envoiId: neuf.id, tentative: 0 }, prioriteDuType(neuf.type));
   return neufs.length;

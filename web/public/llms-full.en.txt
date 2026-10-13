@@ -3111,6 +3111,7 @@ Each address picks its types. Delivery receipts are unchecked by default: a camp
 | `conversation.analyzed` | A conversation analysis is ready (Pro and Enterprise plans). | contact, conversation_id, intent, sentiment, satisfaction, urgency, resolved, topic, action_suggestion, handled_by, exchanges_count, summary |
 | `contact.risk_changed` | A contact’s disengagement risk changed level (nightly run). | contact, level, previous_level, score, reasons |
 | `template.status_changed` | Meta ruled on one of your templates (approved, rejected, paused, disabled). No contact data. | template, status, reason |
+| `agent.action` | An AI agent triggered one of your actions during a conversation (once a day per contact and action): the collected fields are in fields. (unchecked by default) | contact, conversation_id, agent, action, fields, channel |
 | `conversation.needs_reply` | “My app answers” mode: a message awaits your app’s answer, at the address set as the responder. | contact, conversation_id, channel, message_id, message_type, text, transcription, reply_with |
 | `test` | The “Send a test” button, or the send_test_event MCP tool. | message |
 

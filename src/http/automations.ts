@@ -7,7 +7,8 @@ import { CLES_FILTRABLES, estCleFiltrable, lireFiltreFiche } from '../crm/filtre
 import { coerceConfigAvantDate, UNITES_DELAI, DELAI_MAX_MINUTES } from '../automation/avant-date';
 import type { AutomationRow, AutomationTriggerKind } from '../automation/match';
 import type { AutomationInput } from '../automation/store.pg';
-import { espaceVerifie, nonEmpty } from './scope';
+import type { ActionDeLEspace } from '../agent/actions.pg';
+import { espaceVerifie, estUuid, nonEmpty } from './scope';
 
 export interface AutomationsDep {
   list(tenantId: string): Promise<AutomationRow[]>;
@@ -20,6 +21,8 @@ export interface AutomationsDep {
 
 export interface AutomationRouteDeps {
   automations: AutomationsDep;
+  /** Les actions des agents IA de l'espace (`PgActionsAgent.listerDeLEspace`), pour le déclencheur `agent_action`. */
+  actionsDeLEspace(tenantId: string): Promise<ActionDeLEspace[]>;
   /** Le scénario ciblé appartient-il bien à ce tenant ? Garde d'appartenance (comme la campagne workflow). */
   workflowBelongsToTenant(workflowId: string, tenantId: string): Promise<boolean>;
 }
@@ -135,6 +138,12 @@ function validateTriggerConfig(kind: AutomationTriggerKind, cfg: Record<string, 
     }
     return null;
   }
+  if (kind === 'agent_action') {
+    // Sans action, l'automation partirait sur toutes les actions de l'espace : on refuse plutôt que de deviner. Une action
+    // d'un autre espace ne correspondrait jamais (les événements sont ceux de l'espace) : la forme suffit.
+    if (!estUuid(cfg.actionId)) return 'actionId requis pour un déclencheur « action de l’agent IA » (l’identifiant de l’action)';
+    return null;
+  }
   if (kind === 'webhook') {
     // Fermé ici : les automations `webhook` sont possédées par un webhook entrant (écran Tools > Webhooks) et
     // exclues de cette liste. En créer une ici ferait une automation active que son écran ne montre pas.
@@ -224,6 +233,13 @@ export function registerAutomations(app: FastifyInstance, deps: AutomationRouteD
   app.get('/tenants/:tenantId/automations', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     return reply.code(200).send({ automations: await deps.automations.list(tenant) });
+  });
+
+  // Le menu du déclencheur « action de l'agent IA » : les actions posées sur les agents de l'espace. Lecture ouverte à
+  // tout compte authentifié, comme la liste des automations.
+  app.get('/tenants/:tenantId/automations/actions-agent', opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    return reply.code(200).send({ actions: await deps.actionsDeLEspace(tenant) });
   });
 
   app.post('/tenants/:tenantId/automations', opts, async (req, reply) => {

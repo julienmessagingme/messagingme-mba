@@ -59,11 +59,11 @@ const P = (
 });
 
 /**
- * Les neuf outils maison. `envoyer_bloc` et `lancer_scenario` sont déclarés irréversibles : un message parti ne se
+ * Les dix outils maison. `envoyer_bloc` et `lancer_scenario` sont déclarés irréversibles : un message parti ne se
  * rappelle pas et il est facturé, donc le tronc commun les refuse tant que le client n'a pas coché l'autonomie sur
  * l'outil.
  *
- * 🔴 QUATRE D'ENTRE EUX AGISSENT SUR UNE CIBLE FIXÉE PAR L'ADMINISTRATEUR (RC4, alignés sur l'agent de Meta) : un tag,
+ * 🔴 CINQ D'ENTRE EUX AGISSENT SUR UNE CIBLE FIXÉE PAR L'ADMINISTRATEUR (RC4, alignés sur l'agent de Meta) : un tag,
  * un champ, un bloc, un scénario par outil, dans `binding` (`cibleOutilAgentSchema`). Le modèle ne décide que du
  * moment et, pour un champ, de la valeur ; il ne désigne jamais la cible.
  */
@@ -235,6 +235,25 @@ export const OUTILS_MAISON: readonly OutilCatalogue[] = [
     risk: 'irreversible',
     params: [],
   },
+  {
+    // Les actions (plan docs/superpowers/plans/2026-10-13-actions-agent.md) : l'action est FIXÉE à la pose (`binding` :
+    // son nom, sa consigne, ses champs) ; le modèle ne décide que du moment et des valeurs recueillies, toutes
+    // facultatives. Une écriture : elle fait partir le webhook `agent.action` vers l'application du client
+    // (`src/agent/actions.ts`), et le tour CONTINUE (aucun drapeau d'arrêt).
+    handler: 'declencher_action',
+    nomDefaut: 'mba_declencher_action',
+    titre: { fr: 'Déclencher une action', en: 'Trigger an action' },
+    description: {
+      fr: 'Déclenche l’action prévue pour cet outil vers l’application de l’entreprise, avec les informations recueillies auprès du contact. Tu continues la conversation ensuite.',
+      en: 'Triggers the action planned for this tool towards the business’s application, with the information collected from the contact. You carry on the conversation afterwards.',
+    },
+    nePasUtiliser: {
+      fr: 'Ne pas l’appeler tant que le contact n’a pas clairement exprimé cette demande.',
+      en: 'Do not call it until the contact has clearly expressed this request.',
+    },
+    risk: 'write',
+    params: [],
+  },
 ];
 
 /**
@@ -245,6 +264,28 @@ export const OUTILS_MAISON: readonly OutilCatalogue[] = [
  * en trop veut dire qu'une autre écriture l'a produit, et un outil qu'on ne comprend pas ne s'exécute pas.
  */
 export const BORNES_CIBLE = { tag: LONGUEUR_MAX_ETIQUETTE, champ: 64, valeur: 120, valeurs: 50 } as const;
+
+/** Les types d'un champ d'action (décision de Julien du 2026-10-13) ; tous facultatifs. */
+export const TYPES_CHAMP_ACTION = ['texte', 'nombre', 'date', 'email', 'liste'] as const;
+export type TypeChampAction = (typeof TYPES_CHAMP_ACTION)[number];
+/** Les bornes d'une action. `parAgent` : au plus 10 actions par agent (décision de Julien), tenu à la pose. */
+export const BORNES_ACTION = {
+  nom: 60, consigne: 600, champs: 10, code: 40, libelle: 80, valeurs: 20, valeur: 60, parAgent: 10,
+  /** La longueur d'une valeur que le modèle remplit, annoncée dans la description du champ (`FORMAT_DU_CHAMP`). */
+  texte: 1000,
+} as const;
+/** Le code d'un champ : le nom du paramètre que le modèle remplit, et la clé de `fields` dans le webhook. */
+export const CODE_CHAMP_ACTION_RE = /^[a-z][a-z0-9_]{0,39}$/;
+
+const champActionSchema = z.object({
+  code: z.string().regex(CODE_CHAMP_ACTION_RE),
+  libelle: z.string().trim().min(1).max(BORNES_ACTION.libelle),
+  type: z.enum(TYPES_CHAMP_ACTION),
+  valeurs: z.array(z.string().trim().min(1).max(BORNES_ACTION.valeur)).min(1).max(BORNES_ACTION.valeurs).optional(),
+}).strict().refine((c) => (c.type === 'liste') === (c.valeurs !== undefined), {
+  message: 'une liste porte ses valeurs, et seule une liste en porte',
+});
+export type ChampAction = z.infer<typeof champActionSchema>;
 export const cibleOutilAgentSchema = z.discriminatedUnion('handler', [
   z.object({ handler: z.literal('poser_tag'), tag: z.string().trim().min(1).max(BORNES_CIBLE.tag) }).strict(),
   z.object({
@@ -256,6 +297,13 @@ export const cibleOutilAgentSchema = z.discriminatedUnion('handler', [
   // du graphe par l'éditeur.
   z.object({ handler: z.literal('envoyer_bloc'), workflowId: z.string().uuid(), code: z.string().regex(CODE_BLOC_RE) }).strict(),
   z.object({ handler: z.literal('lancer_scenario'), workflowId: z.string().uuid() }).strict(),
+  z.object({
+    handler: z.literal('declencher_action'),
+    nom: z.string().trim().min(1).max(BORNES_ACTION.nom),
+    consigne: z.string().trim().max(BORNES_ACTION.consigne),
+    champs: z.array(champActionSchema).max(BORNES_ACTION.champs)
+      .refine((cs) => new Set(cs.map((c) => c.code)).size === cs.length, { message: 'deux champs portent le même code' }),
+  }).strict(),
 ]);
 export type CibleOutilAgent = z.infer<typeof cibleOutilAgentSchema>;
 export type HandlerACible = CibleOutilAgent['handler'];
@@ -329,7 +377,21 @@ export function outilExpose(outil: OutilDefini, sorties: readonly SortieAgent[])
  */
 function motsExposes(outil: OutilDefini): string {
   const refus = outil.nePasUtiliser.trim();
-  return refus === '' ? outil.description : `${outil.description}\n\nNE PAS l’appeler : ${refus}`;
+  const base = refus === '' ? outil.description : `${outil.description}\n\nNE PAS l’appeler : ${refus}`;
+  return base + consigneDeLAction(outil);
+}
+
+/**
+ * Le nom et la consigne d'une action (quand l'utiliser, quoi dire au contact ensuite), dits au modèle avec l'outil :
+ * ils viennent de la cible, que l'administrateur écrit, pas de la description du catalogue.
+ */
+function consigneDeLAction(outil: OutilDefini): string {
+  if (handlerMaison(outil) !== 'declencher_action') return '';
+  const cible = lireCibleOutilAgent(outil.binding);
+  if (cible?.handler !== 'declencher_action') return '';
+  const consigne = cible.consigne.trim();
+  return `\n\nAction : ${cible.nom}.${consigne === '' ? '' : ` ${consigne}`}`
+    + '\nAprès l’appel, dis au contact ce que la consigne prévoit, puis continue la conversation.';
 }
 
 /** Les outils qu'on envoie au modèle. Ceux qui n'ont aucune valeur possible sont retirés, pas offerts vides. */
@@ -365,10 +427,36 @@ export function paramsEffectifs(outil: Pick<OutilDefini, 'origin' | 'binding' | 
  * validation de `executeTool` (règle « toute borne appliquée est annoncée »). Une liste vide = toute valeur.
  */
 function avecValeursDuChamp(binding: unknown, handler: string, params: ParamOutil[]): ParamOutil[] {
+  if (handler === 'declencher_action') return paramsDeLAction(binding);
   if (handler !== 'ecrire_variable') return params;
   const cible = lireCibleOutilAgent(binding);
   if (cible?.handler !== 'ecrire_variable' || cible.valeurs.length === 0) return params;
   return params.map((p) => (p.name === 'valeur' ? { ...p, enum: [...cible.valeurs] } : p));
+}
+
+/** Ce que le format d'un champ ajoute à son libellé, pour le modèle : le handler refuse ce qui ne le respecte pas. */
+const FORMAT_DU_CHAMP: Readonly<Record<TypeChampAction, string>> = {
+  texte: ` (${BORNES_ACTION.texte} caractères au plus)`, nombre: ' (un nombre)', date: ' (une date au format AAAA-MM-JJ)',
+  email: ' (une adresse e-mail)', liste: '',
+};
+
+/**
+ * 🔴 LES PARAMÈTRES D'UNE ACTION, dérivés de sa cible et jamais stockés (comme les valeurs d'un champ fixé) : un par
+ * champ, TOUS facultatifs (décision de Julien), nombre en nombre, liste en énumération, et le format d'une date ou d'un
+ * e-mail dit dans la description. Une cible illisible ne donne aucun paramètre, et l'outil est retiré
+ * (`paramsAvecDerivations`).
+ */
+function paramsDeLAction(binding: unknown): ParamOutil[] {
+  const cible = lireCibleOutilAgent(binding);
+  if (cible?.handler !== 'declencher_action') return [];
+  return cible.champs.map((c): ParamOutil => ({
+    name: c.code,
+    type: c.type === 'nombre' ? 'number' : 'string',
+    source: 'modele',
+    required: false,
+    description: `${c.libelle}${FORMAT_DU_CHAMP[c.type]}`,
+    ...(c.type === 'liste' && c.valeurs ? { enum: [...c.valeurs] } : {}),
+  }));
 }
 
 /** Les paramètres d'un outil, énumérations dérivées appliquées et imposés annoncés requis, ou `null` si une

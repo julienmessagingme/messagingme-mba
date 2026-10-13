@@ -75,6 +75,9 @@ import { creerTravailSignauxBatch } from './signaux/travail-batch';
 import { creerResolveurHttp } from './agent/resolvers/http';
 import { creerResolveurMcp } from './agent/resolvers/mcp';
 import { creerResolveurMba } from './agent/resolvers/mba';
+import { declencherAction } from './agent/actions';
+import { PgActionsAgent } from './agent/actions.pg';
+import { contactPublic } from './evenements/types';
 import { creerGestesEnvoiAgent } from './agent/gestes-envoi';
 import { creerEscaladeVersHumain } from './agent/escalade';
 import { automatique } from './inbox/evenements';
@@ -1760,7 +1763,31 @@ export async function demarrerWorker(): Promise<void> {
 
     // Les vrais outils maison, à comparer à `resolvers/simulation.ts` (bac à sable) : ici chaque dépendance
     // touche le monde réel.
+    const actionsAgent = new PgActionsAgent(pool);
     const resolveurMba = creerResolveurMba({
+      // Les actions de l'agent (plan du 2026-10-13) : une fois par jour, par contact et par action, puis le webhook
+      // `agent.action` (la distribution d'espace, comme `template.status_changed`), la frise et l'automation
+      // `agent_action`, un démarrage unitaire comme la pose d'un tag.
+      declencherAction: (input) => declencherAction({
+        conversationId: (t, waId) => envoisEvenements.conversationDuContact(t, waId),
+        fuseau: async (t) => (await settingsStore.get(t)).timezone,
+        reserver: (l) => actionsAgent.reserver(l),
+        annuler: (t, id) => actionsAgent.annuler(t, id),
+        fiche: async (t, waId) => {
+          const f = await signauxStore.ficheParWaId(t, waId);
+          return f === null ? null : contactPublic(f);
+        },
+        distribuer: (t, ev) => distribuerEvenementEspace(depsDistributionEspace, t, ev),
+        // La cause nomme l'agent et l'action, comme celle d'une escalade (`causeAgentIa`).
+        noterFrise: async (t, conversationId, a) => inboxStore.noterActionAgent(
+          t, conversationId, `${await causeAgentIa(t, a.agentId)}, action « ${a.nom} »`,
+        ),
+        publierAutomation: async (ev) => {
+          await enfilerEvenementAutomation(queue, {
+            tenantId: ev.tenantId, event: { kind: 'agent_action', waId: ev.waId, actionId: ev.actionId },
+          } satisfies AutomationEventJob);
+        },
+      }, input),
       envoyerBloc: gestesEnvoiAgent.envoyerBloc,
       lancerScenario: gestesEnvoiAgent.lancerScenario,
       escaladerVersHumain,

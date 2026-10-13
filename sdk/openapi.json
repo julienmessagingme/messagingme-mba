@@ -6132,7 +6132,8 @@
                           "contact.opted_out",
                           "conversation.analyzed",
                           "contact.risk_changed",
-                          "template.status_changed"
+                          "template.status_changed",
+                          "agent.action"
                         ]
                       }
                     },
@@ -6149,7 +6150,8 @@
                           "contact.opted_out",
                           "conversation.analyzed",
                           "contact.risk_changed",
-                          "template.status_changed"
+                          "template.status_changed",
+                          "agent.action"
                         ]
                       }
                     }
@@ -6245,7 +6247,7 @@
                   },
                   "types": {
                     "minItems": 1,
-                    "maxItems": 9,
+                    "maxItems": 10,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -6258,7 +6260,8 @@
                         "contact.opted_out",
                         "conversation.analyzed",
                         "contact.risk_changed",
-                        "template.status_changed"
+                        "template.status_changed",
+                        "agent.action"
                       ]
                     }
                   }
@@ -6635,7 +6638,7 @@
                   },
                   "types": {
                     "minItems": 1,
-                    "maxItems": 9,
+                    "maxItems": 10,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -6648,7 +6651,8 @@
                         "contact.opted_out",
                         "conversation.analyzed",
                         "contact.risk_changed",
-                        "template.status_changed"
+                        "template.status_changed",
+                        "agent.action"
                       ]
                     }
                   },
@@ -9562,6 +9566,213 @@
                       "template",
                       "status",
                       "reason"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "type",
+                  "created_at",
+                  "workspace_id",
+                  "data"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Acknowledged. Anything else is retried for 24 hours."
+          }
+        }
+      }
+    },
+    "agent.action": {
+      "post": {
+        "summary": "An AI agent triggered one of your actions during a conversation (once a day per contact and action).",
+        "description": "Sent to every webhook endpoint subscribed to this type. Signed per Standard Webhooks.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "webhook-id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The event id (evt_…), stable across retries."
+          },
+          {
+            "name": "webhook-timestamp",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unix time in seconds; reject a timestamp more than 5 minutes away."
+          },
+          {
+            "name": "webhook-signature",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "v1,<base64 HMAC-SHA256 of id.timestamp.body>, keyed with the base64-decoded part of the secret after whsec_; during a rotation, two signatures separated by a space."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "evt_ followed by 32 hex characters; stable across retries and replays. Also sent in webhook-id."
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "agent.action"
+                  },
+                  "created_at": {
+                    "type": "string",
+                    "description": "ISO 8601 date-time"
+                  },
+                  "workspace_id": {
+                    "type": "string",
+                    "description": "The workspace (tenant) ID."
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "contact": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "phone": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "name": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "external_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "opted_out": {
+                                "type": "object",
+                                "properties": {
+                                  "whatsapp": {
+                                    "type": "boolean"
+                                  },
+                                  "rcs": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "whatsapp",
+                                  "rcs"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "phone",
+                              "name",
+                              "external_id",
+                              "opted_out"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "conversation_id": {
+                        "type": "string"
+                      },
+                      "agent": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id"
+                        ]
+                      },
+                      "action": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "The action’s ID: stable when the action is renamed."
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name"
+                        ]
+                      },
+                      "fields": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            }
+                          ]
+                        },
+                        "description": "The fields the agent collected, by code; a field the contact did not give is absent. Dates are YYYY-MM-DD."
+                      },
+                      "channel": {
+                        "type": "string",
+                        "const": "whatsapp"
+                      }
+                    },
+                    "required": [
+                      "contact",
+                      "conversation_id",
+                      "agent",
+                      "action",
+                      "fields",
+                      "channel"
                     ]
                   }
                 },

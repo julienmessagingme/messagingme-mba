@@ -80,6 +80,18 @@ const DONNEES: Readonly<Record<TypeEvenement, { resume: string; donnees: z.ZodOb
       reason: z.string().nullable(),
     }),
   },
+  'agent.action': {
+    resume: 'An AI agent triggered one of your actions during a conversation (once a day per contact and action).',
+    donnees: z.object({
+      contact: contactPublic.nullable(),
+      conversation_id: z.string(),
+      agent: z.object({ id: z.string() }),
+      action: z.object({ id: z.string().describe('The action’s ID: stable when the action is renamed.'), name: z.string() }),
+      fields: z.record(z.string(), z.union([z.string(), z.number()]))
+        .describe('The fields the agent collected, by code; a field the contact did not give is absent. Dates are YYYY-MM-DD.'),
+      channel: z.literal('whatsapp'),
+    }),
+  },
   'conversation.needs_reply': {
     resume: 'Your application should reply.',
     destinataires: 'Sent only to the endpoint designated as the responder (the workspace answers through your application), whether or not it subscribed to this type.',

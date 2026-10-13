@@ -101,6 +101,7 @@ Chaque adresse choisit ses types. Les accusés de livraison sont décochés par 
 | `conversation.analyzed` | L’analyse d’une conversation est prête (offres Pro et Entreprise). | contact, conversation_id, intent, sentiment, satisfaction, urgency, resolved, topic, action_suggestion, handled_by, exchanges_count, summary |
 | `contact.risk_changed` | Le risque de désengagement d’un contact a changé de niveau (calcul de nuit). | contact, level, previous_level, score, reasons |
 | `template.status_changed` | Meta a tranché sur un de vos modèles (approuvé, refusé, en pause, désactivé). Aucune donnée de contact. | template, status, reason |
+| `agent.action` | Un agent IA a déclenché une de vos actions en pleine conversation (une fois par jour, par contact et par action) : les champs recueillis sont dans fields. (décoché par défaut) | contact, conversation_id, agent, action, fields, channel |
 | `conversation.needs_reply` | Mode « mon application répond » : un message attend la réponse de votre application, à l’adresse désignée par le répondeur. | contact, conversation_id, channel, message_id, message_type, text, transcription, reply_with |
 | `test` | Le bouton « Envoyer un essai », ou l’outil MCP send_test_event. | message |
 

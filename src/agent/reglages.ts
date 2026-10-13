@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { OutilComplet } from './catalog';
 import { NomOutilDejaPris, OutilNonActivable } from './catalog';
 import {
-  exigeUneCible, handlerMaison, lireCibleOutilAgent, outilMaison, paramsInitiaux,
+  BORNES_ACTION, exigeUneCible, handlerMaison, lireCibleOutilAgent, outilMaison, paramsInitiaux,
   type CibleOutilAgent, type HandlerACible,
 } from './outils-maison';
 import { estModeTransfert, MODES_TRANSFERT, type ModeTransfert } from './disponibilite-equipe';
@@ -38,6 +38,7 @@ export const CIBLE_REQUISE: Readonly<Record<HandlerACible, string>> = {
   ecrire_variable: 'cible requise : le champ à renseigner, et au plus 50 valeurs permises',
   envoyer_bloc: 'cible requise : le scénario et le code du bloc à envoyer',
   lancer_scenario: 'cible requise : le scénario à lancer',
+  declencher_action: `cible requise : le nom de l’action, sa consigne, et au plus ${BORNES_ACTION.champs} champs (code, libellé, type texte, nombre, date, email ou liste avec ses valeurs)`,
 };
 
 /**
@@ -48,7 +49,7 @@ export const CIBLE_REQUISE: Readonly<Record<HandlerACible, string>> = {
  * ce qu'elle vise dans l'espace (champ, bloc, scénario) est vérifiée par la route, qui en a les dépôts.
  */
 export async function ajouterOutilMaison(
-  outils: Pick<OutilsAgentDep, 'ajouter'>, tenantId: string, agentId: string, handler: string, nom?: string, saisieCible?: unknown,
+  outils: Pick<OutilsAgentDep, 'ajouter' | 'listToutes'>, tenantId: string, agentId: string, handler: string, nom?: string, saisieCible?: unknown,
 ): Promise<Issue<OutilComplet>> {
   const modele = outilMaison(handler);
   if (!modele) return refus(400, 'outil inconnu');
@@ -56,6 +57,14 @@ export async function ajouterOutilMaison(
   if (exigeUneCible(modele.handler)) {
     cible = lireCibleSaisie(modele.handler, saisieCible);
     if (!cible) return refus(400, CIBLE_REQUISE[modele.handler]);
+  }
+  // Au plus 10 actions par agent (décision de Julien du 2026-10-13). Lu avant l'écriture : deux poses simultanées
+  // peuvent en faire onze, ce qui ne casse rien (le plafond borne la liste que le modèle lit, pas un coût).
+  if (modele.handler === 'declencher_action') {
+    const poses = await outils.listToutes(tenantId, agentId);
+    if (poses.filter((o) => handlerMaison(o) === 'declencher_action').length >= BORNES_ACTION.parAgent) {
+      return refus(409, `au plus ${BORNES_ACTION.parAgent} actions par agent : supprimer une action avant d’en ajouter une`);
+    }
   }
   try {
     const outil = await outils.ajouter(tenantId, agentId, {

@@ -25,8 +25,14 @@ export const TYPES_ABONNABLES = [
   // Lot 13, domaine 3, livraison C : Meta a tranché sur un modèle (approuvé, refusé, en pause…). Pas un signal de
   // contact : il naît du webhook de Meta au niveau du compte WhatsApp (`src/webhooks/statuts-modeles.ts`).
   'template.status_changed',
+  // Les actions de l'agent IA (plan 2026-10-13) : un agent a déclenché une action définie par le client, en pleine
+  // conversation (`src/agent/actions.ts`). Il ne naît pas d'un signal : il part directement, à la distribution d'espace.
+  'agent.action',
 ] as const;
 export type TypeAbonnable = (typeof TYPES_ABONNABLES)[number];
+
+/** Une action de l'agent IA vers l'application du client : décochée par défaut, on s'y abonne exprès. */
+export const TYPE_ACTION_AGENT = 'agent.action' satisfies TypeAbonnable;
 
 /** Le statut d'un modèle tranché par Meta : un événement d'ESPACE, sans contact. */
 export const TYPE_STATUT_MODELE = 'template.status_changed' satisfies TypeAbonnable;
@@ -62,7 +68,11 @@ export const TYPE_DU_SIGNAL: Readonly<Record<NomEvenement, TypeAbonnable>> = {
  * Décochés à la création d'une adresse : une campagne en produit jusqu'à trois par destinataire, et une application
  * qui ne les attend pas recevrait des milliers d'appels d'un coup. Le client les coche s'il en veut.
  */
-export const TYPES_DECOCHES_PAR_DEFAUT: ReadonlySet<TypeAbonnable> = new Set(['message.delivered', 'message.read', 'message.failed']);
+export const TYPES_DECOCHES_PAR_DEFAUT: ReadonlySet<TypeAbonnable> = new Set([
+  'message.delivered', 'message.read', 'message.failed',
+  // Une application qui ne connaît pas les actions de l'agent ne doit pas en recevoir sans les avoir demandées.
+  'agent.action',
+]);
 
 /** Le préfixe d'un identifiant d'événement : `evt_` puis l'identifiant stable du signal (32 caractères hexadécimaux). */
 export const PREFIXE_EVENEMENT = 'evt_';
@@ -105,7 +115,8 @@ export interface Enveloppe {
   data: Record<string, unknown>;
 }
 
-function contactPublic(c: SignalComplet['contact']): ContactPublic {
+/** La fiche telle qu'elle part dans un événement : un seul endroit, pour que deux événements ne la disent pas autrement. */
+export function contactPublic(c: SignalComplet['contact']): ContactPublic {
   return {
     id: c.contactId,
     phone: c.telephone,
@@ -180,6 +191,7 @@ export const CHAMPS_DU_TYPE: Readonly<Record<TypeEvenement, readonly string[]>> 
   ],
   'contact.risk_changed': ['contact', 'level', 'previous_level', 'score', 'reasons'],
   'template.status_changed': ['template', 'status', 'reason'],
+  'agent.action': ['contact', 'conversation_id', 'agent', 'action', 'fields', 'channel'],
   'conversation.needs_reply': ['contact', 'conversation_id', 'channel', 'message_id', 'message_type', 'text', 'transcription', 'reply_with'],
   test: ['message'],
 };
@@ -205,4 +217,28 @@ export function donneesStatutModele(s: StatutModeleRecu): Record<string, unknown
 /** Le contenu de l'événement d'essai : aucune donnée de contact. */
 export function donneesEssai(): Record<string, unknown> {
   return { message: 'Événement d’essai envoyé depuis Messaging Me.' };
+}
+
+/** Ce qu'une action de l'agent fait partir (`src/agent/actions.ts`), avant d'être figé dans l'enveloppe. */
+export interface ActionAgentEmise {
+  contact: ContactPublic | null;
+  conversationId: string;
+  agentId: string;
+  /** L'identifiant de l'outil de l'agent qui porte l'action : stable au renommage, c'est lui que l'application garde. */
+  actionId: string;
+  nom: string;
+  /** Les champs recueillis, par code ; un champ que le contact n'a pas donné est absent. */
+  champs: Readonly<Record<string, string | number>>;
+}
+
+/** Le contenu de `agent.action`. Le seul constructeur : le contrat OpenAPI fait passer sa sortie dans son schéma. */
+export function donneesActionAgent(a: ActionAgentEmise): Record<string, unknown> {
+  return {
+    contact: a.contact,
+    conversation_id: a.conversationId,
+    agent: { id: a.agentId },
+    action: { id: a.actionId, name: a.nom },
+    fields: { ...a.champs },
+    channel: 'whatsapp',
+  };
 }

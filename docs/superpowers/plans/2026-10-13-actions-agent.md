@@ -38,6 +38,16 @@ résilier » à un agent qui porte l'action, le webhook arrive à une adresse d'
 L'outil « Déclencher une action » dans la fiche de l'agent (nom, consigne, champs et leurs types), le menu
 d'automation « Action déclenchée », la frise de l'Inbox. Poussée APRÈS le `up` de A (la route de la liste).
 
+Laissés par la relecture de A, à traiter ici :
+- La carte de l'action prévient quand aucune adresse de webhook n'est abonnée à `agent.action` (décoché par défaut) :
+  l'agent dirait sinon « c'est enregistré » sans que rien ne parte vers l'application.
+- Le menu d'automation dit que seul un scénario fait d'actions (tag, e-mail) laisse l'agent continuer : un scénario
+  qui ouvre par un message est refusé hors fenêtre, un modèle coupe l'agent.
+- Le modèle ne connaît pas la date du jour : sans elle, « demain » ou « fin du mois » donnent une date réelle mais
+  fausse dans un champ date. La dire dans le contexte du tour (⚠️ `src/agent/prompt.ts` est en cours chez une autre
+  session au 2026-10-13 : s'aligner avant d'y toucher).
+- Retirer l'exception `PAS_ENCORE_A_L_ECRAN` de `tests/web-agent-outils.test.ts`.
+
 ## Livraison C : Claude Code
 
 `set_agent_action` et `delete_agent_action` (personne requise, toutes offres), `get_conversation` qui rend les

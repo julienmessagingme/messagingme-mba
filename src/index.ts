@@ -1,4 +1,5 @@
 import './charger-env';
+import { PgActionsAgent } from './agent/actions.pg';
 import { messagesInteractifsDuFormulaire } from './mba/messages-interactifs';
 import { buildServer } from './server';
 import { config } from './config';
@@ -2309,6 +2310,8 @@ async function main(): Promise<void> {
       automations: automationStore,
       // 🔴 Un tenant ne peut cibler que ses propres scénarios (même garde que la campagne workflow).
       workflowBelongsToTenant: async (wfId, tenant) => (await workflowStore.getById(wfId, tenant)) !== null,
+      // Le menu du déclencheur « action de l'agent IA » (plan du 2026-10-13).
+      actionsDeLEspace: (tenant) => new PgActionsAgent(pool).listerDeLEspace(tenant),
     },
     // Chaîne WhatsApp (Channels Me) : publier un post dont le bouton démarre un scénario.
     channelsMe: {

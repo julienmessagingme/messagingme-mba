@@ -1063,6 +1063,35 @@ restent disjoints de ceux de l'agent de Meta (`tag_fixe`…), seuls les champs s
   ci-dessous).
 - Les deux outils qui envoient sont `irreversible` : sans l'autonomie cochée, le tronc commun refuse chaque appel.
 
+🔴 **LES ACTIONS D'UN AGENT IA (`declencher_action`, plan `docs/superpowers/plans/2026-10-13-actions-agent.md`).** Un
+cinquième outil à cible : `{ nom, consigne, champs }`, chaque champ `{ code, libelle, type, valeurs? }` (types texte,
+nombre, date, email, liste), au plus `BORNES_ACTION.champs` champs et `BORNES_ACTION.parAgent` actions par agent
+(compté à la pose, `ajouterOutilMaison`). Les invariants :
+- **Les paramètres sont DÉRIVÉS des champs** (`paramsDeLAction` dans `avecValeursDuChamp`), un par champ, TOUS
+  facultatifs, jamais stockés ; le nom et la consigne de l'action sont dits au modèle dans la description exposée.
+- **Un format faux est rendu au modèle** (`valeursDesChamps`, `src/agent/actions.ts`) : une date qui n'est pas un
+  `AAAA-MM-JJ` réel, un e-mail invalide, un nombre illisible, une valeur hors liste. Un champ absent ou vide est absent.
+- 🔴 **Une fois par jour, par contact et par action, tenu par la BASE** (`agent_actions_une_par_jour`, migration 0232,
+  `PgActionsAgent.reserver` en `on conflict do nothing`), le jour lu dans le fuseau de l'espace. Déjà partie : le
+  modèle lit `deja_declenchee_aujourdhui` ; une information donnée APRÈS le premier déclenchement ne part pas.
+- **L'ordre de `declencherAction`** : la réservation, puis le webhook `agent.action` (la distribution d'espace,
+  `distribuerEvenementEspace`) ; si son écriture échoue, la réservation est rendue et l'erreur remonte. Puis la frise
+  (`action_agent`, la cause nomme l'agent et l'action) et l'automation `agent_action` (`{ actionId }`), qui ne
+  défont rien : le webhook est déjà enfilé.
+- 🔴 **L'identifiant d'événement vient de la CLÉ NATURELLE** (`idEvenementAction` : action, contact, jour), jamais de
+  la ligne réservée, et « déjà partie » REJOUE la distribution sous ce même identifiant : un processus tué entre la
+  réservation et le webhook se répare au rappel suivant, et rien ne part deux fois (une ligne d'envoi déjà là ne
+  repart pas, une ligne jamais tentée est réenfilée et le job en trop se trouve périmé).
+- **Le tour CONTINUE** (aucun drapeau d'arrêt) : le modèle reçoit la consigne et écrit sa phrase au contact. Le bac à
+  sable juge les valeurs comme en production et ne fait rien partir.
+- Le menu du déclencheur d'automation lit `GET /tenants/:tenantId/automations/actions-agent`. Les lignes
+  d'`agent_actions` s'effacent en cascade avec la conversation (index `agent_actions_conversation_fk_idx`, 0233),
+  l'outil, l'agent ou l'espace. Une valeur texte fait au plus `BORNES_ACTION.texte` caractères, borne annoncée au
+  modèle dans la description du champ.
+- ⚠️ Le déclencheur `agent_action` démarre son scénario comme `tag_added` : la fenêtre n'y est prouvée que par un
+  message entrant, donc un scénario qui OUVRE par un message de session est refusé, et un scénario qui ouvre par un
+  modèle coupe le parcours de l'agent. Seul un scénario fait d'actions (tag, e-mail) laisse l'agent continuer.
+
 🔴 **Le modèle ne choisit jamais une cible.** Sur un connecteur API client, l'adresse est figée sur la source,
 le gabarit est écrit par un administrateur, et `construireCible` vérifie que l'URL finale reste SOUS l'adresse
 de base, segment par segment, après encodage. Le `wa_id` vient du TOUR, pas de la projection du contact : la
@@ -2175,7 +2204,8 @@ d'envoi, dans le même ordre (`cree_le, id`) côté distribution et côté envoi
 (`src/evenements/signature.ts`, tenue par le vecteur publié). Purges : le journal par l'offre (balayage de rétention
 générale) et les envois d'un contact par `PgContactStore.purgeMany`. Le mode « Application » du répondeur écrit ses
 lignes `conversation.needs_reply` hors du bus (sans abonnement, vers l'adresse désignée seule) et les enfile en priorité 2,
-devant les autres envois (§ 4.4). Un événement d'ESPACE, sans contact, passe par `distribuerEvenementEspace` : les mêmes
+devant les autres envois (§ 4.4). Une action de l'agent IA (`agent.action`, décochée par défaut) passe aussi par
+`distribuerEvenementEspace`, avec son contact (`contactId` de la ligne d'envoi, pour la purge). Un événement d'ESPACE, sans contact, passe par `distribuerEvenementEspace` : les mêmes
 adresses servies (`adressesServies`, le même gel par l'offre), une ligne par adresse qui a coché son type. C'est le
 chemin de `template.status_changed` (lot 13, domaine 3, livraison C) : le champ `message_template_status_update` de
 Meta, au niveau du COMPTE, devient une source `template_status` du découpage (`parse.ts`, clé

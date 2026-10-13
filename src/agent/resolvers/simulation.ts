@@ -4,6 +4,7 @@ import type { KnowledgeStore } from '../knowledge';
 import type { RequeteConnecteur, RequeteStore, VariableDeclaree } from '../requetes';
 import { chercherConnaissance, type RechercheSemantique } from './connaissance';
 import { cibleLue, refusCible, terminerAvec } from './mba';
+import { valeursDesChamps } from '../actions';
 
 /**
  * Le résolveur du bac à sable, quand le client parle à son agent depuis la console : un outil qui lit
@@ -196,6 +197,14 @@ export function creerResolveurSimulation(deps: DepsResolveurSimulation): Resolve
       // Aucune conversation réelle à marquer : rien n'est écrit, et l'agent continue, comme en production.
       case 'marquer_urgent':
         return simule('le marquage urgent de la conversation');
+      // Les valeurs jugées comme en production (une date illisible refuse ici aussi) ; aucun webhook ne part.
+      case 'declencher_action': {
+        const cible = cibleLue({ outil });
+        if (cible?.handler !== 'declencher_action') return refusCible({ outil }, 'declencher_action');
+        const lues = valeursDesChamps(cible.champs, args);
+        if (!lues.ok) return { ok: false, contenu: { erreur: lues.erreur }, erreur: lues.erreur };
+        return simule(`l’action « ${cible.nom} »`, { champs: lues.valeurs, ...(cible.consigne.trim() === '' ? {} : { consigne: cible.consigne.trim() }) });
+      }
 
       default:
         return { ok: false, contenu: { erreur: `outil maison inconnu : ${handler || '(handler absent)'}` }, erreur: 'handler inconnu' };

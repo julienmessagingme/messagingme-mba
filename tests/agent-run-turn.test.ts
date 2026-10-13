@@ -659,7 +659,7 @@ describe('runTurn : la sortie et son dernier message', () => {
     timeoutMs: 8000, maxBytes: 16384, autonome: false,
   };
   const RESOLVEUR_MBA = creerResolveurMba({
-    envoyerBloc: async () => ({ ok: true }), lancerScenario: async () => ({ ok: true }), escaladerVersHumain: async () => true, marquerUrgente: async () => true, poserTag: async () => {},
+    envoyerBloc: async () => ({ ok: true }), lancerScenario: async () => ({ ok: true }), escaladerVersHumain: async () => true, marquerUrgente: async () => true, declencherAction: async () => 'declenchee', poserTag: async () => {},
     ecrireChamp: async () => {}, lireAnalyse: async () => null, connaissance: { chercher: async () => [] },
   });
 
@@ -728,6 +728,7 @@ describe('runTurn : marquer la conversation urgente, puis continuer', () => {
     const resolveur = creerResolveurMba({
       envoyerBloc: async () => ({ ok: true }), lancerScenario: async () => ({ ok: true }), escaladerVersHumain: async () => true, poserTag: async () => {},
       marquerUrgente: async (i) => { journal.push(`urgent:${i.tenantId}:${i.waId}:${i.agentId}`); return true; },
+      declencherAction: async () => 'declenchee',
       ecrireChamp: async () => {}, lireAnalyse: async () => null, connaissance: { chercher: async () => [] },
     });
     let n = 0;
@@ -786,6 +787,7 @@ describe('runTurn : lancer un scénario, puis se taire', () => {
     const journal: string[] = [];
     const resolveur = creerResolveurMba({
       envoyerBloc: async () => ({ ok: true }), escaladerVersHumain: async () => true, marquerUrgente: async () => true,
+      declencherAction: async () => 'declenchee',
       poserTag: async () => {}, ecrireChamp: async () => {}, lireAnalyse: async () => null, connaissance: { chercher: async () => [] },
       lancerScenario: async (i) => { journal.push(`lance:${i.workflowId}:${i.runId}:${i.sessionId}:${i.waId}`); return lancement; },
     });

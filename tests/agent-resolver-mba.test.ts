@@ -38,6 +38,7 @@ function harnais(over: Partial<DepsResolveurMba> = {}) {
     lancerScenario: async (i) => { journal.push(`scenario:${i.workflowId}:${i.runId}:${i.sessionId}`); return { ok: true }; },
     escaladerVersHumain: async (i) => { journal.push(`escalade:${i.waId}:${i.sessionId}:${i.agentId}`); return true; },
     marquerUrgente: async (i) => { journal.push(`urgent:${i.tenantId}:${i.waId}:${i.agentId}`); return true; },
+    declencherAction: async (i) => { journal.push(`action:${i.actionId}:${i.nom}`); return 'declenchee'; },
     poserTag: async (_t, _w, tag) => { journal.push(`tag:${tag}`); },
     ecrireChamp: async (_t, _w, cle, valeur) => { journal.push(`champ:${cle}=${valeur}`); },
     lireAnalyse: async (t, w) => { journal.push(`analyse:${t}:${w}`); return null; },

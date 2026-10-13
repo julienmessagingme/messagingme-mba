@@ -29,6 +29,8 @@ import {
  * - `analyse_devient` : un champ de la dernière analyse se met à correspondre à un filtre (le sentiment devient
  *   négatif, l'urgence passe à 7 ou plus). Constaté à l'écriture de la copie sur la fiche, ancienne et nouvelle
  *   valeurs dans la même transaction, jamais par un balayage : un événement par analyse d'un contact.
+ * - `agent_action` : un agent IA a déclenché une action (`src/agent/actions.ts`), au plus une fois par jour, par contact
+ *   et par action. Se règle par l'identifiant de l'outil qui porte l'action, stable au renommage.
  */
 export {
   AUTOMATION_TRIGGER_KINDS, OPERATEURS_CONVERSATION_ANALYSEE, OPERATEURS_DEVIENT, type AutomationTriggerKind,
@@ -149,7 +151,9 @@ export type AutomationEvent =
    */
   | { kind: 'avant_date'; waId: string; automationId: string; valeur: string }
   /** Le contact vient de passer en risque de désengagement élevé (balayage de nuit). */
-  | { kind: 'risque_eleve'; waId: string };
+  | { kind: 'risque_eleve'; waId: string }
+  /** Un agent IA a déclenché une action (`actionId` : l'outil qui la porte) dans la conversation de ce contact. */
+  | { kind: 'agent_action'; waId: string; actionId: string };
 
 /**
  * Un filtre de dernière analyse écrit dans une config (`{cle, op, valeur}`), relu par la règle des filtres de
@@ -240,6 +244,13 @@ export function matchesTrigger(a: AutomationRow, ev: AutomationEvent): boolean {
     // webhooks de l'espace.
     const attendu = String(a.triggerConfig.webhookId ?? '').trim();
     return attendu !== '' && attendu === ev.webhookId;
+  }
+  if (a.triggerKind === 'agent_action') {
+    if (ev.kind !== 'agent_action') return false;
+    // Égalité stricte sur l'identifiant de l'action. Non configurée : n'attrape rien, plutôt que partir sur toutes les
+    // actions de tous les agents de l'espace.
+    const attendue = String(a.triggerConfig.actionId ?? '').trim();
+    return attendue !== '' && attendue === ev.actionId;
   }
   if (a.triggerKind === 'avant_date') {
     if (ev.kind !== 'avant_date') return false;

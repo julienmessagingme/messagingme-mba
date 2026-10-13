@@ -42,6 +42,7 @@ function harnais(rendu: FicheTrouvee[] | (() => never)) {
     envoyerBloc: async () => ({ ok: true }), lancerScenario: async () => ({ ok: true }),
     escaladerVersHumain: async () => true,
     marquerUrgente: async () => true,
+    declencherAction: async () => 'declenchee',
     poserTag: async () => {},
     ecrireChamp: async () => {},
     lireAnalyse: async () => null,

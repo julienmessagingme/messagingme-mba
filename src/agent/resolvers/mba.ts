@@ -3,6 +3,7 @@ import type { KnowledgeStore } from '../knowledge';
 import { chercherConnaissance, type RechercheSemantique } from './connaissance';
 import type { AnalyseEtResume } from '../../crm/contact-store.pg';
 import { lireCibleOutilAgent, type CibleOutilAgent, type HandlerACible } from '../outils-maison';
+import { valeursDesChamps, type IssueAction, type ValeursAction } from '../actions';
 
 /**
  * Le résolveur des outils maison : une table `handler` vers fonction TypeScript, sans réseau.
@@ -47,6 +48,15 @@ export interface DepsResolveurMba {
    * aucune conversation pour ce contact. Requise : un câblage qui l'oublierait ne compile pas.
    */
   marquerUrgente(input: { tenantId: string; waId: string; agentId: string }): Promise<boolean>;
+
+  /**
+   * Déclenche l'action fixée (`mba_declencher_action`, plan du 2026-10-13) : une fois par jour, par contact et par action,
+   * le webhook `agent.action`, la frise et l'automation (`declencherAction`, `src/agent/actions.ts`). `actionId` : l'outil
+   * qui porte l'action. Requise : un câblage qui l'oublierait ne compile pas.
+   */
+  declencherAction(input: {
+    tenantId: string; waId: string; agentId: string; actionId: string; nom: string; champs: ValeursAction;
+  }): Promise<IssueAction>;
 
   /** Pose un tag sur le contact (`mba_poser_tag`). */
   poserTag(tenantId: string, waId: string, tag: string): Promise<void>;
@@ -217,6 +227,32 @@ const HANDLERS: Record<string, Handler> = {
     return res.ok
       ? { contenu: { lance: true }, scenarioLance: true }
       : echec(res.raison ?? 'le scénario n’a pas pu être lancé');
+  },
+
+  /**
+   * 🔴 L'ACTION FIXÉE par l'administrateur (sa cible : nom, consigne, champs), jamais choisie par le modèle, qui ne
+   * fournit que les valeurs recueillies. Le tour CONTINUE (aucun drapeau d'arrêt) : le modèle lit la consigne et écrit sa
+   * phrase au contact. Déjà partie aujourd'hui pour ce contact : il le lit et le dit, rien ne repart.
+   */
+  declencher_action: async (entree, deps) => {
+    const cible = cibleLue(entree);
+    if (cible?.handler !== 'declencher_action') return refusCible(entree, 'declencher_action');
+    const lues = valeursDesChamps(cible.champs, entree.args);
+    if (!lues.ok) return echec(lues.erreur);
+    const { ctx } = entree;
+    const issue = await deps.declencherAction({
+      tenantId: ctx.tenantId, waId: ctx.waId, agentId: ctx.agentId, actionId: entree.outil.id, nom: cible.nom, champs: lues.valeurs,
+    });
+    if (issue === 'aucune_conversation') return echec('aucune conversation pour ce contact : l’action n’est pas partie');
+    if (issue === 'deja') {
+      return {
+        contenu: {
+          deja_declenchee_aujourdhui: true,
+          note: 'Cette action est déjà partie aujourd’hui pour ce contact, avec les informations recueillies à ce moment-là : dis-lui que sa demande est bien enregistrée. Une information donnée depuis ne part pas par cette action.',
+        },
+      };
+    }
+    return { contenu: { declenchee: true, ...(cible.consigne.trim() === '' ? {} : { consigne: cible.consigne.trim() }) } };
   },
 
   /**

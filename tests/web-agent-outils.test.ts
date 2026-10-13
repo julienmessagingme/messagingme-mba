@@ -79,9 +79,16 @@ describe('RC4 : la console et le catalogue serveur disent la même chose', () =>
     expect([...TOUJOURS_LA].sort()).toEqual(sansCible.sort());
   });
 
+  /**
+   * ⚠️ UNE EXCEPTION DATÉE, À RETIRER AVEC LA LIVRAISON B du plan `docs/superpowers/plans/2026-10-13-actions-agent.md` :
+   * l'action de l'agent existe côté serveur (livraison A) avant sa carte, parce qu'un écran qui pose un outil que l'API
+   * déployée ne connaît pas encore casse dès le push (Vercel publie la console à chaque push).
+   */
+  const PAS_ENCORE_A_L_ECRAN: readonly string[] = ['declencher_action'];
   it('🔴 les cartes à cible posent exactement les handlers à cible du serveur', () => {
-    expect(Object.values(HANDLER_DU_TYPE).sort()).toEqual([...HANDLERS_A_CIBLE].sort());
-    for (const h of HANDLERS_A_CIBLE) expect(typeDuHandler(h), h).not.toBeNull();
+    const attendus = HANDLERS_A_CIBLE.filter((h) => !PAS_ENCORE_A_L_ECRAN.includes(h));
+    expect(Object.values(HANDLER_DU_TYPE).sort()).toEqual([...attendus].sort());
+    for (const h of attendus) expect(typeDuHandler(h), h).not.toBeNull();
   });
 
   it('chaque outil du catalogue a son dessin : aucune ligne sans icône', () => {

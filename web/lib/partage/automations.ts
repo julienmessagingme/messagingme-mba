@@ -10,7 +10,7 @@
  */
 export const AUTOMATION_TRIGGER_KINDS = [
   'keyword', 'new_contact', 'tag_added', 'conversation_analyzed', 'hubspot_deal_stage', 'webhook', 'avant_date', 'ctwa_ad',
-  'risque_eleve', 'analyse_devient',
+  'risque_eleve', 'analyse_devient', 'agent_action',
 ] as const;
 export type AutomationTriggerKind = (typeof AUTOMATION_TRIGGER_KINDS)[number];
 

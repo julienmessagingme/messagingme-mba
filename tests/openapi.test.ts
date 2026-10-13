@@ -10,7 +10,7 @@ import { STATUT_PAR_CODE } from '../src/api/erreurs';
 import { modulesDeRoutes } from '../src/server';
 import {
   CHAMPS_DU_TYPE, TYPES_ABONNABLES, TYPE_BESOIN_REPONSE, TYPE_DU_SIGNAL, TYPE_ESSAI, donneesDuSignal, donneesEssai,
-  donneesStatutModele, enveloppe, type TypeEvenement,
+  donneesActionAgent, donneesStatutModele, enveloppe, type TypeEvenement,
 } from '../src/evenements/types';
 import { creerDemandeALApplication } from '../src/evenements/besoin-reponse';
 import { RAISONS_RISQUE } from '../src/engagement/risque';
@@ -228,6 +228,13 @@ describe('🔴 les événements du contrat sont ceux que le serveur envoie', () 
       {
         type: 'template.status_changed',
         data: donneesStatutModele({ event: 'REJECTED', message_template_id: '1489201163476524', message_template_name: 'commande_prete', message_template_language: 'fr', reason: 'INVALID_FORMAT' }),
+      },
+      {
+        type: 'agent.action',
+        data: donneesActionAgent({
+          contact: { id: ID, phone: '+33612345678', name: 'Camille', external_id: null, opted_out: { whatsapp: false, rcs: false } },
+          conversationId: ID, agentId: ID, actionId: ID, nom: 'résiliation', champs: { contrat: '12345', mois: 3 },
+        }),
       },
       { type: TYPE_BESOIN_REPONSE, data: await donneesDeLaDemande() },
       { type: TYPE_ESSAI, data: donneesEssai() },

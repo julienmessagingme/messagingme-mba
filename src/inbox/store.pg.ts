@@ -595,6 +595,22 @@ export class PgInboxStore implements InboxStore {
   }
 
   /**
+   * Note dans la frise qu'un agent IA a déclenché une action (`action_agent`, migration 0232) : `cause` la nomme
+   * (« automatique : action « résiliation » »). Un événement seul, comme `noterSortieAgent`. 🔴 Scopé espace : une
+   * conversation d'un autre espace n'écrit rien.
+   */
+  async noterActionAgent(tenantId: string, conversationId: string, cause: string): Promise<void> {
+    const auteur = colonnesAuteur({ cause });
+    await this.pool.query(
+      `insert into conversation_evenements (tenant_id, conversation_id, type, cause)
+       select $1, c.id, 'action_agent', $3::text
+         from conversations c
+        where c.tenant_id = $1 and c.id = $2`,
+      [tenantId, conversationId, auteur.cause],
+    );
+  }
+
+  /**
    * Pose le détenteur du fil. Rend true si la bascule a eu lieu, false si la garde l'a refusée ou si l'état
    * était déjà celui visé (jamais une erreur).
    *
