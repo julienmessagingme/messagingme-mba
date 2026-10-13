@@ -4452,6 +4452,27 @@ fonctions de la console, avec les mêmes contrôles : l'agent se retrouve à l'i
   client ») : il répond alors à tout message que personne ne tient, et l'agent de Meta, s'il est allumé, reste en veille.
   Les descriptions des outils le disent à Claude, qui n'annoncera pas en service un agent qui n'est ni l'un ni l'autre.
 
+### Les chiffres de l'espace, pour les graphiques de Claude (2026-10-13)
+
+**À quoi ça sert.** On demande à Claude « fais-moi un graphique de mes envois du mois » ou « comment évolue la
+satisfaction de mes clients » : il lit des chiffres agrégés de l'espace, jamais un message ni un contact un par un, et
+dessine comme il l'entend. Ce sont les chiffres de l'écran Statistiques, sur les mêmes périodes (du, au, 366 jours au
+plus), en séries par jour, semaine ou mois.
+
+- ✅ **`get_message_stats`, toutes les offres** : les modèles envoyés, livrés, lus, en échec et sans accusé. En Free,
+  c'est tout, sur les 30 derniers jours (une période plus ancienne est refusée avec le lien de l'offre Pro). En Pro et
+  en Entreprise, en plus : les modèles par catégorie, les messages échangés et de service, le service par origine (IA,
+  scénario, humain), les contacts et le coût estimé (une estimation, la facture fait foi).
+- ✅ **Dans le Pro et l'Entreprise** : `get_campaign_stats` (les campagnes de la période avec leur coût estimé, leurs
+  clics et les erreurs de Meta, ou l'entonnoir d'une campagne), `get_conversation_insights` (sentiment, intentions,
+  résolution, sujets, et la satisfaction et l'urgence moyennes sur 12 mois) et `get_ai_stats` (le coût des tours
+  d'agent IA sur le crédit, la traduction n'y étant pas, les messages écrits par l'IA, les demandes ouvertes pour
+  l'équipe et les actions déclenchées). En Free, ils refusent avec le lien de l'offre.
+- ✅ **Toute clé de lecture les lit** (`mcp:read`), sans personne connectée : une application peut aussi en faire un
+  tableau de bord. Pour comparer deux périodes, Claude appelle deux fois.
+- ⚠️ La maille « jour » couvre 92 jours au plus (au-delà, la réponse serait trop longue pour un modèle) ; sans maille
+  demandée, Claude reçoit la semaine. Un message effacé par la durée de conservation ne compte plus.
+
 ## Plafonds d'usage (visible seulement si on force)
 
 Rien à régler côté client, mais deux messages peuvent apparaître, et le support doit savoir que ce ne sont

@@ -4117,6 +4117,9 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 | get_template_status | mcp:read | A template’s status at Meta, language by language, with the reason for a rejection. |
 | get_message_status | mcp:read | The delivery status of a sent message: sent, delivered, read or failed, with Meta’s reason. |
 | get_message_stats | mcp:read | Message figures as chart-ready series: templates sent, delivered, read, failed; with the plan’s statistics, categories, exchanges, contacts and estimated cost. |
+| get_campaign_stats | mcp:read | The period’s campaigns with their estimated cost, clicks and Meta errors, or one campaign’s funnel. |
+| get_conversation_insights | mcp:read | What the analysis understood of conversations: sentiment, intents, resolution, topics, and satisfaction and urgency over time. |
+| get_ai_stats | mcp:read | AI agent figures: cost of agent turns on the credit, messages written by AI, requests opened for the team and actions triggered. |
 | get_messages | mcp:read | The last 50 messages of a thread, oldest first, and before to go further back. |
 | search_contacts | mcp:read | Find a contact by name or number, with their latest analysis. |
 | get_contact | mcp:read | A contact record from its number, with their latest analysis and its summary. |

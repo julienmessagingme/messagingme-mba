@@ -2,9 +2,15 @@ import { ficheOutilMcp } from '../../web/lib/partage/catalogue-mcp';
 import type { OutilMcp, ProprieteEntree } from './outils';
 import { RefusOutil } from './saisie';
 import { addDays, inclusiveDays, parseRange, todayParis, STATS_TZ, type DateRange } from '../stats/range';
-import type { DailyPoint, DashboardStats, FiltreCampagneOuTemplate, StatutsModelesJour } from '../stats/store.pg';
-import { round2, type CostSeries } from '../stats/cost';
+import type {
+  ActionsAgentJour, CampaignFunnel, DailyPoint, DashboardStats, ErrorBreakdownRow, FiltreCampagneOuTemplate, StatutsModelesJour,
+} from '../stats/store.pg';
+import { round2, type CostSeries, type CoutParCampagne } from '../stats/cost';
 import type { CoutMessages } from '../stats/cout-messages';
+import type { CoutIa } from '../stats/cout-ia';
+import type { ConversationAnalysisSummary, JourAnalyse } from '../stats/conversation-stats.pg';
+import { eurosDepuisMicro } from '../agent/devise';
+import { estUuid } from '../http/scope';
 import { adresseOffre } from '../offres/refus';
 
 /**
@@ -25,10 +31,22 @@ export interface DepsChiffresMcp {
   stats: {
     getDashboard(tenantId: string, range: DateRange): Promise<DashboardStats>;
     statutsDesModelesParJour(tenantId: string, range: DateRange): Promise<StatutsModelesJour[]>;
+    getCampaignFunnel(tenantId: string, campaignId: string): Promise<CampaignFunnel>;
+    getErrorBreakdown(tenantId: string, range: DateRange, templateName?: string): Promise<ErrorBreakdownRow[]>;
+    ficheCampagne(tenantId: string, campaignId: string): Promise<{ id: string; nom: string; template: string | null; workflowId: string | null } | null>;
+    demandesEquipeParJour(tenantId: string, range: DateRange): Promise<DailyPoint[]>;
+    actionsAgentParJour(tenantId: string, range: DateRange): Promise<ActionsAgentJour[]>;
+  };
+  /** L'analyse des conversations de la console (`PgConversationStatsStore`). */
+  conversationStats: {
+    getSummary(tenantId: string, range: DateRange): Promise<ConversationAnalysisSummary>;
+    joursAnalyse(tenantId: string, range: DateRange): Promise<JourAnalyse[]>;
   };
   /** Les coûts de la route de la console (`src/stats/chiffrage.ts`). */
   getCostSeries(tenantId: string, range: DateRange, filter: FiltreCampagneOuTemplate): Promise<CostSeries>;
   getCoutMessages(tenantId: string, range: DateRange): Promise<CoutMessages>;
+  getCoutParCampagne(tenantId: string, range: DateRange, opts: { inclureArchivees: boolean }): Promise<CoutParCampagne>;
+  getCoutIa(tenantId: string, range: DateRange): Promise<CoutIa>;
 }
 
 export const MAILLES = ['jour', 'semaine', 'mois'] as const;
@@ -92,6 +110,14 @@ function joursDe(range: DateRange): string[] {
 export type LigneSerie = { periode: string } & Record<string, number>;
 
 /**
+ * Un coût par clic ou par engagement est un TARIF : sous l'euro, quatre décimales, comme la console (`fmtCost`,
+ * `web/lib/format.ts`). Au centime, 0,0425 € deviendrait 0,04 €.
+ */
+function prixUnitaire(n: number): number {
+  return n !== 0 && Math.abs(n) < 1 ? Math.round(n * 10_000) / 10_000 : round2(n);
+}
+
+/**
  * Les séries par jour ramenées à la maille : chaque colonne de `sommes` s'additionne, chaque colonne de `niveaux`
  * (un stock, les contacts) garde la valeur du DERNIER jour de la maille. La série est dense : une maille sans donnée
  * vaut 0, jamais une ligne absente (un graphique la lirait comme un trou).
@@ -101,7 +127,12 @@ export function aLaMaille(
   sommes: Record<string, ReadonlyArray<DailyPoint>>, niveaux: Record<string, ReadonlyArray<DailyPoint>> = {},
 ): LigneSerie[] {
   const lignes = new Map<string, LigneSerie>();
-  const index = (serie: ReadonlyArray<DailyPoint>): Map<string, number> => new Map(serie.map((p) => [p.date, p.count]));
+  // Une date peut revenir (une ligne par jour ET par action) : elle s'additionne, sinon la dernière écraserait les autres.
+  const index = (serie: ReadonlyArray<DailyPoint>): Map<string, number> => {
+    const m = new Map<string, number>();
+    for (const p of serie) m.set(p.date, (m.get(p.date) ?? 0) + p.count);
+    return m;
+  };
   const s = Object.entries(sommes).map(([nom, serie]) => [nom, index(serie)] as const);
   const n = Object.entries(niveaux).map(([nom, serie]) => [nom, index(serie)] as const);
   for (const jour of joursDe(range)) {
@@ -225,6 +256,192 @@ export const OUTILS_CHIFFRES: OutilMcp[] = [
           'cout_estime : les prix de l’écran Statistiques, une estimation (la facture fait foi). series : les modèles '
             + 'seulement ; periode.total y ajoute le service et le RCS ; non_chiffrables : des envois sans prix connu, '
             + 'absents du coût.',
+        ],
+      };
+    },
+  },
+  {
+    ...ficheOutilMcp('get_campaign_stats'),
+    fonction: 'statistiques',
+    description:
+      'Les chiffres des campagnes. Sans campaign_id : les campagnes de la période (du, au), chacune avec ses envois '
+      + '(et parmi eux les facturables), ses clics, ses engagements et son coût ESTIMÉ (une estimation, la facture fait foi), et les erreurs '
+      + 'de Meta par code et par modèle. Avec campaign_id : l’entonnoir de toute la campagne (envoyés, livrés, lus, '
+      + 'réponses, réponses par bouton, clics, échecs, sans accusé, contacts visés), la période étant alors ignorée. '
+      + 'Les mêmes chiffres que l’écran Statistiques de la console. Aucune donnée personnelle.',
+    annotations: { title: 'Lire les chiffres des campagnes', readOnlyHint: true, openWorldHint: false },
+    entree: {
+      type: 'object',
+      properties: {
+        du: ENTREE_PERIODE.du!, au: ENTREE_PERIODE.au!,
+        campaign_id: { type: 'string', format: 'uuid', minLength: 1, maxLength: 100, description: 'Une campagne de l’espace : son entonnoir.' },
+      },
+      additionalProperties: false,
+    },
+    async executer(deps, tenantId, args) {
+      const c = deps.chiffres;
+      if (args.campaign_id !== undefined && args.campaign_id !== null && args.campaign_id !== '') {
+        const id = String(args.campaign_id);
+        const fiche = estUuid(id) ? await c.stats.ficheCampagne(tenantId, id) : null;
+        if (!fiche) throw new RefusOutil('campagne introuvable dans cet espace');
+        const f = await c.stats.getCampaignFunnel(tenantId, id);
+        return {
+          campagne: { id: fiche.id, nom: fiche.nom, modele: fiche.template, scenario: fiche.workflowId !== null },
+          entonnoir: {
+            envoyes: f.sent, livres: f.delivered, lus: f.read, reponses: f.replied, reponses_boutons: f.buttonReplies,
+            clics: f.urlClicks, echecs: f.failed, sans_accuse: f.sansAccuse, contacts_vises: f.contactsVises,
+          },
+          par_canal: f.parCanal.map((p) => ({
+            canal: p.canal, envois: p.envois, reussis: p.reussis, livres: p.delivres, lus: p.lus, reponses: p.repondus,
+            sans_accuse: p.sansAccuse,
+          })),
+          a_savoir: [
+            'L’entonnoir couvre toute la campagne, pas une période. livres compte aussi les lus ; clics vaut null quand le '
+              + 'modèle n’a pas de lien tracé.',
+          ],
+        };
+      }
+      const { range } = lirePeriode({ du: args.du, au: args.au });
+      const [cout, erreurs] = await Promise.all([
+        c.getCoutParCampagne(tenantId, range, { inclureArchivees: false }),
+        c.stats.getErrorBreakdown(tenantId, range),
+      ]);
+      const parCode = new Map<number, { total: number; par_modele: Map<string, number> }>();
+      for (const e of erreurs) {
+        const ligne = parCode.get(e.code) ?? { total: 0, par_modele: new Map<string, number>() };
+        ligne.total += e.count;
+        // Une campagne RCS porte un nom de modèle vide, pas null.
+        const modele = e.templateName || '(sans modèle)';
+        ligne.par_modele.set(modele, (ligne.par_modele.get(modele) ?? 0) + e.count);
+        parCode.set(e.code, ligne);
+      }
+      return {
+        periode: { du: range.from, au: range.to, fuseau: STATS_TZ },
+        campagnes: cout.lignes.map((l) => ({
+          campaign_id: l.campaignId, nom: l.nom, modele: l.template, envoyes: l.envois, envois_facturables: l.envoyes,
+          cout_estime: l.cout === null ? null : round2(l.cout), clics: l.clics,
+          cout_par_clic: l.coutParClic === null ? null : prixUnitaire(l.coutParClic),
+          engagements: l.engagements ?? null,
+          cout_par_engagement: l.coutParEngagement === undefined || l.coutParEngagement === null ? null : prixUnitaire(l.coutParEngagement),
+        })),
+        devise: cout.currency,
+        tarifs_connus: cout.hasRates,
+        tronque: cout.tronque,
+        erreurs: [...parCode.entries()]
+          .sort((a, b) => b[1].total - a[1].total)
+          .map(([code, v]) => ({ code, total: v.total, par_modele: [...v.par_modele.entries()].map(([modele, n]) => ({ modele, n })) })),
+        a_savoir: [
+          'cout_estime : les prix de l’écran Statistiques, une estimation (la facture fait foi), sur les envois '
+            + 'facturables ; null sans prix connu ou quand la conservation a effacé les envois.',
+          'envoyes : les personnes touchées sur la période, facturable ou non (une campagne RCS ou à scénario peut n’avoir '
+            + 'aucun envoi facturable).',
+          'clics : comptés par modèle ; deux campagnes du même modèle partagent leurs clics, ne pas les additionner.',
+          'campagnes : sans les campagnes archivées ; erreurs : toutes les campagnes, archivées comprises, par code puis par modèle.',
+        ],
+      };
+    },
+  },
+  {
+    ...ficheOutilMcp('get_conversation_insights'),
+    fonction: 'statistiques',
+    description:
+      'Ce que l’analyse a compris des conversations de la période : le nombre de conversations analysées, le sentiment '
+      + '(positif, neutre, négatif), les intentions, les conversations résolues, qui les a traitées, les actions '
+      + 'suggérées et les sujets les plus fréquents ; et, en série par maille, les conversations analysées et la '
+      + 'satisfaction et l’urgence moyennes (sur 10). La série remonte jusqu’à 12 mois (des agrégats sans donnée '
+      + 'personnelle) ; la synthèse couvre ce que la conservation garde. Les mêmes chiffres que l’écran Analyse.',
+    annotations: { title: 'Lire l’analyse des conversations', readOnlyHint: true, openWorldHint: false },
+    entree: { type: 'object', properties: { ...ENTREE_PERIODE }, additionalProperties: false },
+    async executer(deps, tenantId, args) {
+      const { range, maille } = lirePeriode(args);
+      const c = deps.chiffres;
+      const [synthese, jours] = await Promise.all([
+        c.conversationStats.getSummary(tenantId, range), c.conversationStats.joursAnalyse(tenantId, range),
+      ]);
+      // Une moyenne se re-agrège par sa somme et son nombre de mesures, jamais en moyenne de moyennes (0155).
+      const pond = (cle: 'satisfaction' | 'urgence'): DailyPoint[] => jours
+        .filter((j) => j[cle] !== null)
+        .map((j) => ({ date: j.jour, count: (j[cle] ?? 0) * j.mesurees }));
+      const series = aLaMaille(range, maille, {
+        conversations: jours.map((j) => ({ date: j.jour, count: j.conversations })),
+        mesurees: jours.map((j) => ({ date: j.jour, count: j.mesurees })),
+        satisfaction: pond('satisfaction'),
+        urgence: pond('urgence'),
+      }).map((l) => ({
+        periode: l.periode,
+        conversations: l.conversations ?? 0,
+        mesurees: l.mesurees ?? 0,
+        satisfaction: (l.mesurees ?? 0) > 0 ? round2((l.satisfaction ?? 0) / (l.mesurees ?? 1)) : null,
+        urgence: (l.mesurees ?? 0) > 0 ? round2((l.urgence ?? 0) / (l.mesurees ?? 1)) : null,
+      }));
+      return {
+        periode: { du: range.from, au: range.to, maille, fuseau: STATS_TZ },
+        analyse_active: synthese.enabled,
+        synthese: {
+          conversations: synthese.total,
+          sentiment: synthese.sentiment,
+          intentions: synthese.intent,
+          resolution: synthese.resolution,
+          traitees_par: synthese.handledBy,
+          echanges: synthese.exchanges,
+          actions_suggerees: synthese.actions,
+          sujets: synthese.topTopics,
+        },
+        series,
+        a_savoir: [
+          'satisfaction et urgence : sur 10, moyennes des conversations qui portent les notes (mesurees) ; null sans mesure.',
+          synthese.retentionDays > 0
+            ? `La synthèse couvre les conversations encore gardées (${synthese.retentionDays} jours) ; la série remonte plus loin.`
+            : 'La synthèse couvre les conversations analysées de la période (aucune n’est effacée dans cet espace).',
+          'La première et la dernière maille peuvent être partielles : la période va de du à au.',
+        ],
+      };
+    },
+  },
+  {
+    ...ficheOutilMcp('get_ai_stats'),
+    fonction: 'statistiques',
+    description:
+      'Les chiffres des agents IA sur la période : le coût des tours d’agent IA sur le crédit (en euros, sessions et '
+      + 'jetons ; la traduction n’y est pas), les messages écrits par l’IA (agent IA, agent de Meta, assistant branché '
+      + 'par MCP), les demandes ouvertes pour l’équipe par maille, et les actions déclenchées (par maille et par action). '
+      + 'Le coût et les messages sont ceux de l’écran Statistiques de la console.',
+    annotations: { title: 'Lire les chiffres des agents IA', readOnlyHint: true, openWorldHint: false },
+    entree: { type: 'object', properties: { ...ENTREE_PERIODE }, additionalProperties: false },
+    async executer(deps, tenantId, args) {
+      const { range, maille } = lirePeriode(args);
+      const c = deps.chiffres;
+      const [coutIa, tableau, demandes, actions] = await Promise.all([
+        c.getCoutIa(tenantId, range), c.stats.getDashboard(tenantId, range),
+        c.stats.demandesEquipeParJour(tenantId, range), c.stats.actionsAgentParJour(tenantId, range),
+      ]);
+      const parAction = new Map<string, { nom: string; total: number }>();
+      for (const a of actions) {
+        const l = parAction.get(a.actionId) ?? { nom: a.nom, total: 0 };
+        l.total += a.n;
+        parAction.set(a.actionId, l);
+      }
+      return {
+        periode: { du: range.from, au: range.to, maille, fuseau: STATS_TZ },
+        credit_des_tours_d_agent: {
+          eur: eurosDepuisMicro(coutIa.coutMicroEur), sessions: coutIa.sessions,
+          jetons_entree: coutIa.tokensEntree, jetons_sortie: coutIa.tokensSortie,
+        },
+        messages_ia: { ...tableau.serviceIaDetail, total: tableau.serviceParOrigine.ia },
+        demandes_pour_l_equipe: aLaMaille(range, maille, { demandes }),
+        actions: {
+          series: aLaMaille(range, maille, { declenchees: actions.map((a) => ({ date: a.date, count: a.n })) }),
+          par_action: [...parAction.entries()].map(([id, v]) => ({ action_id: id, nom: v.nom, total: v.total })),
+        },
+        a_savoir: [
+          'messages_ia : sur la période entière (agent IA, agent de Meta, assistant MCP) ; pour une série, appeler mois par mois.',
+          'demandes_pour_l_equipe : une conversation confiée à l’équipe (un agent IA, l’agent de Meta ou un scénario '
+            + 'qui passe la main), ou rouverte par le contact après « Traité » ou en réponse à une campagne confiée à '
+            + 'l’Inbox. Les fils de test n’y sont pas.',
+          'credit_des_tours_d_agent : ce que les tours d’agent IA ont coûté sur le crédit prépayé de l’espace, au tarif '
+            + 'de son offre. La traduction des conversations et les essais « Tester » sont débités du même crédit sans '
+            + 'être comptés ici : l’historique du crédit, dans la console (Crédit IA), les montre.',
+          'Une conversation effacée par la conservation emporte ses passages et ses actions.',
         ],
       };
     },

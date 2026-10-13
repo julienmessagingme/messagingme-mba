@@ -645,7 +645,11 @@ describe('serveur MCP : cohérence du catalogue', () => {
     // 2026-10-08) : les créer, suivre leur validation, les lister, et en envoyer un à UN contact, réservé à une personne
     // connectée. Ce test est là pour que chaque ajout soit une décision explicite (il faudra le modifier) et non un
     // glissement.
-    const noms = OUTILS.map((o) => o.nom);
+    // Une seule exception, décidée par Julien le 2026-10-13 : LIRE les chiffres des campagnes, sans rien envoyer.
+    const lecture = OUTILS.find((o) => o.nom === 'get_campaign_stats')!;
+    expect(lecture.annotations.readOnlyHint).toBe(true);
+    expect(lecture.scope).toBe('mcp:read');
+    const noms = OUTILS.map((o) => o.nom).filter((n) => n !== 'get_campaign_stats');
     expect(noms.join(' ')).not.toMatch(/campaign|campagne|broadcast/i);
     expect(noms.filter((n) => /template/i.test(n)).sort())
       .toEqual(['create_template', 'get_template_status', 'list_templates', 'send_template_to_contact']);
@@ -896,12 +900,14 @@ describe('🔴 get_contact cherche la fiche au format de la fiche (essai réel d
 // du 2026-10-08) : seuls étiqueter et affecter, gestes d'équipe, restent dans l'offre de l'Inbox.
 const FONCTION_DES_OUTILS: Readonly<Record<string, string>> = {
   tag_conversation: 'inbox', assign_conversation: 'inbox',
+  // Les chiffres du Pro (2026-10-13) : la fonction statistiques ; get_message_stats reste ouvert (l'essentiel en Free).
+  get_campaign_stats: 'statistiques', get_conversation_insights: 'statistiques', get_ai_stats: 'statistiques',
 };
 
 describe('serveur MCP : les outils et l’offre (lot 6, B2a)', () => {
   const base = { offreDe: async () => ({ offre: 'base' as const, droits: DROITS.base, retourEnBaseLe: null }) };
 
-  it('🔴 chaque outil déclare sa fonction : étiqueter et affecter, aucune pour les autres', () => {
+  it('🔴 chaque outil déclare sa fonction : étiqueter, affecter et les chiffres du Pro, aucune pour les autres', () => {
     for (const o of OUTILS) expect([o.nom, o.fonction]).toEqual([o.nom, FONCTION_DES_OUTILS[o.nom] ?? null]);
   });
 

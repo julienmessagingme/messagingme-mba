@@ -14,6 +14,7 @@ import { DROITS, GRACE_RETOUR_BASE_JOURS } from '../offres/offres';
 import type { NodeEventCount } from '../workflow/node-events.pg';
 import type { EnvoisCampagneRow } from './cout-campagne';
 import type { CanalEtage } from '../campaign/etages';
+import { TYPES_OUVERTURE } from './performance';
 
 export interface DailyPoint {
   date: string; // 'YYYY-MM-DD' (Europe/Paris)
@@ -151,6 +152,15 @@ export interface StatutsModelesJour {
   lus: number;
   echecs: number;
   sansAccuse: number;
+}
+
+/** Les actions des agents IA parties un jour, par action (`actionsAgentParJour`). */
+export interface ActionsAgentJour {
+  date: string;
+  /** L'outil qui porte l'action. */
+  actionId: string;
+  nom: string;
+  n: number;
 }
 
 export interface DashboardStats {
@@ -527,6 +537,48 @@ export class PgStatsStore {
       serviceParOrigine,
       serviceIaDetail,
     };
+  }
+
+  /**
+   * Les demandes ouvertes pour l'équipe, par jour (`get_ai_stats`) : les ouvertures de l'écran Performance
+   * (`TYPES_OUVERTURE`). Un agent IA ou un scénario qui passe la main écrit `escaladee`, l'agent de Meta
+   * `passee_par_mba` : compter `escaladee` seul oubliait toutes ses passations. `escaladee` couvre aussi un contact qui
+   * rouvre une conversation traitée ou qui répond à une campagne confiée à l'Inbox. Les fils de test n'y sont pas.
+   * Filtré sur l'espace, la conversation jointe dans le même espace ; un événement part avec sa conversation quand la
+   * conservation l'efface.
+   */
+  async demandesEquipeParJour(tenantId: string, range: DateRange): Promise<DailyPoint[]> {
+    const { from, to } = range;
+    const res = await this.pool.query<{ d: string; n: number }>(
+      `with ${BOUNDS_CTE}
+       select to_char(date_trunc('day', e.at at time zone $4), 'YYYY-MM-DD') d, count(*)::int as n
+       from conversation_evenements e
+       join conversations c on c.id = e.conversation_id and c.tenant_id = $1, bounds b
+       where e.tenant_id = $1 and not c.is_test and e.type = any($5::text[])
+         and e.at >= b.start_ts and e.at < b.end_ts
+       group by 1 order by 1`,
+      [tenantId, from, to, TZ, [...TYPES_OUVERTURE]],
+    );
+    return res.rows.map((r) => ({ date: r.d, count: Number(r.n) }));
+  }
+
+  /**
+   * Les actions déclenchées par les agents IA, par jour et par action (`get_ai_stats`, `agent_actions`, migration
+   * 0232). Filtré sur l'espace, l'outil joint dans le même espace ; le nom vient de la cible. Une action supprimée part
+   * avec ses lignes (cascade), une action partie avec sa conversation quand la conservation l'efface.
+   */
+  async actionsAgentParJour(tenantId: string, range: DateRange): Promise<ActionsAgentJour[]> {
+    const { from, to } = range;
+    const res = await this.pool.query<{ d: string; tool_id: string; nom: string; n: number }>(
+      `with ${BOUNDS_CTE}
+       select to_char(date_trunc('day', a.at at time zone $4), 'YYYY-MM-DD') d, a.tool_id,
+              coalesce(t.binding->>'nom', t.name) as nom, count(*)::int as n
+       from agent_actions a join agent_tools t on t.id = a.tool_id and t.tenant_id = a.tenant_id, bounds b
+       where a.tenant_id = $1 and a.at >= b.start_ts and a.at < b.end_ts
+       group by 1, 2, 3 order by 1, 3`,
+      [tenantId, from, to, TZ],
+    );
+    return res.rows.map((r) => ({ date: r.d, actionId: r.tool_id, nom: r.nom, n: Number(r.n) }));
   }
 
   /**

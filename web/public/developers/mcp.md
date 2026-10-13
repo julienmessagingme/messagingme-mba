@@ -65,6 +65,9 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 | get_template_status | mcp:read | Le statut d’un modèle chez Meta, langue par langue, avec le motif d’un refus. |
 | get_message_status | mcp:read | Le statut de livraison d’un message envoyé : envoyé, distribué, lu ou en échec, avec le motif de Meta. |
 | get_message_stats | mcp:read | Les chiffres des messages en séries pour un graphique : modèles envoyés, livrés, lus, en échec ; avec les statistiques de l’offre, les catégories, les échanges, les contacts et le coût estimé. |
+| get_campaign_stats | mcp:read | Les campagnes de la période avec leur coût estimé, leurs clics et les erreurs de Meta, ou l’entonnoir d’une campagne. |
+| get_conversation_insights | mcp:read | Ce que l’analyse a compris des conversations : sentiment, intentions, résolution, sujets, et la satisfaction et l’urgence par maille. |
+| get_ai_stats | mcp:read | Les chiffres des agents IA : coût des tours d’agent sur le crédit, messages écrits par l’IA, demandes ouvertes pour l’équipe et actions déclenchées. |
 | get_messages | mcp:read | Les 50 derniers messages d’un fil, du plus ancien au plus récent, et before pour remonter plus loin. |
 | search_contacts | mcp:read | Chercher un contact par nom ou par numéro, avec sa dernière analyse. |
 | get_contact | mcp:read | La fiche d’un contact à partir de son numéro, avec sa dernière analyse et le résumé de celle-ci. |

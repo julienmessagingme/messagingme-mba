@@ -26,6 +26,23 @@ Pro, et compare aux chiffres de l'écran Statistiques.
 (transferts, actions déclenchées) ; `features.md` (la section du serveur MCP) et le plugin (0.1.6, la liste des outils
 de la skill de mise en service si elle les cite).
 
+Écarts décidés en cours de route (2026-10-13) :
+- Livraison A : la relecture a trouvé que le tableau de bord comptait deux fois une campagne à scénario (sa ligne
+  `wf-...` et le modèle de son parcours) ; corrigé dans `getDashboard` et la lecture neuve, par la garde des envois
+  facturables. La maille « jour » est bornée à 92 jours.
+- Livraison B : les messages écrits par l'IA sont rendus sur la période entière (le tableau de bord ne les a pas par
+  jour) ; une troisième lecture neuve n'en valait pas la peine, Claude appelle mois par mois pour une série. Le
+  plugin ne change pas : sa skill ne cite pas ces outils, la liste vient du serveur.
+- La frise (`conversation_evenements`) n'a pas d'index sur le type : `demandesEquipeParJour` la parcourt (184 lignes
+  en production le 2026-10-13, moins d'une milliseconde). Un index `(tenant_id, type, at)` le jour où elle grossit.
+- Livraison B, relecture : les « passages à l'équipe » ne lisaient que `escaladee` et oubliaient les passations de
+  l'agent de Meta (`passee_par_mba`, 7 sur 20 dans l'espace le plus actif en production) ; ils deviennent les demandes
+  ouvertes pour l'équipe (`TYPES_OUVERTURE` de l'écran Performance, sans les fils de test). Le crédit consommé ne
+  comptait que les tours d'agent : la clé le dit (`credit_des_tours_d_agent`), la traduction étant débitée à part,
+  comme la console l'écrit. `aLaMaille` additionne une date qui revient (deux actions le même jour s'écrasaient).
+  `get_conversation_insights` suit la décision « Pro et Entreprise : tout », alors que l'écran Analyse de la console
+  est réservé à l'Entreprise : à trancher avec le découpage Pro/Entreprise.
+
 ## Tests attendus
 
 - La maille : une semaine et un mois re-sommés ; une moyenne pondérée par `mesurees` (le cas 1 mesure de 9 et 9 de 3).

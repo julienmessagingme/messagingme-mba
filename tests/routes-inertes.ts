@@ -678,7 +678,18 @@ export const mcpChiffresInertes: Pick<DepsMcp, 'chiffres'> = {
         serviceParOrigine: { ia: 0, scenario: 0, humain: 0, indeterminee: 0 }, serviceIaDetail: { agent: 0, mba: 0, mcp: 0 },
       }),
       statutsDesModelesParJour: async () => [],
+      getCampaignFunnel: neDevraitPasEtreAppelee('chiffres.getCampaignFunnel'),
+      getErrorBreakdown: async () => [],
+      ficheCampagne: async () => null,
+      demandesEquipeParJour: async () => [],
+      actionsAgentParJour: async () => [],
     },
+    conversationStats: {
+      getSummary: neDevraitPasEtreAppelee('chiffres.getSummary'),
+      joursAnalyse: async () => [],
+    },
+    getCoutParCampagne: async () => ({ lignes: [], tronque: false, currency: null, hasRates: false }),
+    getCoutIa: async () => ({ coutMicroEur: 0, tokensEntree: 0, tokensSortie: 0, sessions: 0, tours: [], tronque: false }),
     getCostSeries: async () => ({
       marketing: [], utility: [], total: 0, hasRates: false, currency: null, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0,
     }),
