@@ -20,13 +20,14 @@ const SECRET = 'test-secret-please-change';
 const ADMIN: AuthUser = { id: 'u1', tenantId: 't1', email: 'a@b.co', role: 'admin', passwordHash: hashPasswordSync('pw') };
 
 /**
- * ADMIN passe par le second facteur comme en production (`tests/mfa.ts`) : la « connexion » de ces tests est donc
- * le parcours ENTIER, mot de passe puis enrôlement, et c'est à son terme que la dernière connexion s'horodate.
+ * ADMIN passe par le second facteur comme en production (`tests/mfa.ts`), dans un espace qui l'exige (migration
+ * 0230) : la « connexion » de ces tests est donc le parcours ENTIER, mot de passe puis enrôlement, et c'est à son
+ * terme que la dernière connexion s'horodate.
  */
 let mfa = new MfaEnMemoire();
 /** Les faux de l'adresse, avec un magasin du second facteur NEUF à chaque serveur. */
 function faux(): { users: UtilisateursFaux; mfa: MfaEnMemoire } {
-  mfa = new MfaEnMemoire(comptesDe([ADMIN]));
+  mfa = new MfaEnMemoire(comptesDe([ADMIN]), [ADMIN.tenantId]);
   return { users: new UtilisateursFaux([ADMIN], mfa), mfa };
 }
 

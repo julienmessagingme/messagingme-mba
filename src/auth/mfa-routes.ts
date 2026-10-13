@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { Guard } from './middleware';
+import { estAdresseOps, type Guard } from './middleware';
 import type { EtatMfa, MfaStore } from './mfa-store.pg';
 import { RateLimiter } from './rate-limit';
 import { MESSAGE_CODE_INVALIDE } from '../../web/lib/partage/textes-serveur';
@@ -15,9 +15,15 @@ export type ActionMfa = 'mfa.active' | 'mfa.code_secours_utilise' | 'mfa.echec' 
 export interface MfaRouteDeps {
   secret: string;
   /**
-   * Le magasin du second facteur. Absent : ces routes répondent 503, et la connexion d'un admin rend un jeton
-   * d'étape que rien n'honore, donc aucune session d'admin sans second facteur. L'absence ferme, jamais
-   * n'ouvre.
+   * Les adresses qui ouvrent `/ops` (`OPS_EMAILS`). Absent ou vide : aucune connexion d'exploitation ne
+   * s'ouvre, et la garde de `/ops` (`makeRequireOps`, qui lit la même liste) refuse tout. Lue ici aussi : une adresse
+   * d'exploitation ne retire pas son facteur depuis Mon compte, quel que soit le réglage de ses espaces.
+   */
+  opsEmails?: readonly string[];
+  /**
+   * Le magasin du second facteur. Absent : ces routes répondent 503, et la connexion d'un admin tenu au facteur rend
+   * un jeton d'étape que rien n'honore, donc aucune session d'admin sans second facteur dans un espace qui l'exige.
+   * L'absence ferme, jamais n'ouvre.
    */
   mfa?: MfaStore;
   /**
@@ -217,16 +223,26 @@ export function registerMfa(app: FastifyInstance, deps: MfaRouteDeps, garde: Gua
 
   const opts = { preHandler: garde };
 
-  /** L'état, pour la page Compte. `obligatoire` dit si la désactivation sera refusée. */
+  /**
+   * Pourquoi le facteur de cette identité ne peut pas être retiré, ou `null`. `exploitation` d'abord : une adresse de
+   * `OPS_EMAILS` garde son facteur quel que soit le réglage de ses espaces, sans quoi le retirer d'ici couperait
+   * l'accès à `/ops` (sa garde relit le facteur à chaque requête). `espace` : admin d'un espace qui l'exige.
+   */
+  const raisonObligatoire = (etat: EtatMfa): 'exploitation' | 'espace' | null =>
+    estAdresseOps(deps.opsEmails, etat.email) ? 'exploitation' : etat.obligatoire ? 'espace' : null;
+
+  /** L'état, pour la page Compte. `obligatoire` dit si la désactivation sera refusée, `raison` pourquoi. */
   app.get('/auth/mfa/moi', opts, async (req, reply) => {
     const ok = await etatDeLaSession(req, reply);
     if (!ok) return reply;
     const { etat } = ok;
+    const raison = raisonObligatoire(etat);
     return reply.code(200).send({
       actif: etat.secret !== null,
       activeLe: etat.activeLe?.toISOString() ?? null,
       codesSecoursRestants: etat.secret === null ? 0 : etat.codesSecoursRestants,
-      obligatoire: etat.obligatoire,
+      obligatoire: raison !== null,
+      raison,
     });
   });
 
@@ -281,14 +297,18 @@ export function registerMfa(app: FastifyInstance, deps: MfaRouteDeps, garde: Gua
   });
 
   /**
-   * Désactive le facteur. 🔴 Refusé à un admin, où qu'il le soit : le facteur est obligatoire pour lui. Un code
+   * Désactive le facteur. 🔴 Refusé à un admin d'un espace qui l'exige, et à une adresse d'exploitation
+   * (`raisonObligatoire`). Accepté à un admin d'un espace qui ne l'exige pas (décision de Julien du 2026-10-13). Un code
    * est exigé, pour la même raison que la régénération.
    */
   app.post('/auth/mfa/moi/desactiver', opts, async (req, reply) => {
     const ok = await etatDeLaSession(req, reply);
     if (!ok) return reply;
-    if (ok.etat.obligatoire) {
-      return reply.code(403).send({ error: 'La double authentification est obligatoire pour les administrateurs.' });
+    const raison = raisonObligatoire(ok.etat);
+    if (raison !== null) {
+      return reply.code(403).send({ error: raison === 'exploitation'
+        ? 'La double authentification est obligatoire pour l’exploitation.'
+        : 'Un espace dont vous êtes administrateur exige la double authentification : elle ne peut pas être désactivée.' });
     }
     if (!essais.take(ok.etat.identityId)) return reply.code(429).send({ error: MESSAGE_TROP });
     if (ok.etat.secret === null) return reply.code(409).send({ error: 'La double authentification n’est pas active.' });

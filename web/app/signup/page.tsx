@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { signup, isLoginChoice, type EtapeSecondFacteur, type SuiteConnexion } from '@/lib/api';
+import { signup, isLoginChoice, estEtapeSecondFacteur, type EtapeSecondFacteur, type SuiteConnexion } from '@/lib/api';
 import { saveSession } from '@/lib/session';
 import { Logo } from '@/components/Logo';
 import { GoogleButton } from '@/components/GoogleButton';
@@ -25,8 +25,8 @@ export default function SignupPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   /**
-   * L'espace est créé, son administrateur pose son second facteur (ou donne son code si l'adresse en a déjà
-   * un). Aucune session avant.
+   * L'espace est créé, et la réponse est d'ordinaire la session : un espace neuf n'exige pas le second facteur. Une
+   * étape seulement si l'adresse en a déjà un (son code) ou est admin d'un autre espace qui l'exige (l'enrôlement).
    */
   const [etape, setEtape] = useState<EtapeSecondFacteur | null>(null);
   /**
@@ -53,7 +53,8 @@ export default function SignupPage() {
     try {
       const res = await signup({ workspaceName: workspaceName.trim(), email: email.trim(), password, name: name.trim() || undefined });
       setPassword('');
-      setEtape(res);
+      if (estEtapeSecondFacteur(res)) setEtape(res);
+      else entrer(res);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Inscription impossible', 'Sign-up failed'));
     } finally {

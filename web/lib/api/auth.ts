@@ -31,7 +31,7 @@ export type SuiteConnexion = LoginResult | LoginChoice;
  * LE SECOND FACTEUR, AVANT TOUTE SESSION (plan du 2026-09-25). Aucun de ces jetons n'ouvre quoi que ce soit : il
  * ne vaut que pour l'étape suivante, et le serveur le refuse comme session.
  * - `mfaToken` : l'identité a un facteur actif, on demande son code ;
- * - `enrolToken` : administrateur sans facteur, il en pose un avant d'entrer.
+ * - `enrolToken` : administrateur d'un espace qui exige le second facteur, sans facteur : il en pose un avant d'entrer.
  */
 export type EtapeSecondFacteur = { mfaToken: string } | { enrolToken: string };
 /** Le login rend une session, un choix d'espace, ou une étape du second facteur. */
@@ -51,11 +51,13 @@ export function login(email: string, password: string): Promise<LoginOutcome> {
   return request<LoginOutcome>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }, 'etape');
 }
 /**
- * Inscription libre : crée un espace dont on devient administrateur. Jamais de session directe : l'enrôlement du
- * second facteur d'abord (ou son code, si l'adresse en a déjà un).
+ * Inscription libre : crée un espace dont on devient administrateur. Un espace neuf n'exige pas le second facteur
+ * (décision de Julien du 2026-10-13) : la réponse est la session. Une étape seulement si l'adresse a déjà un facteur
+ * (son code) ou est admin d'un autre espace qui l'exige (l'enrôlement). Une API antérieure rend toujours une étape :
+ * les deux formes se lisent, ce qui laisse la console partir avant l'API.
  */
-export function signup(input: { workspaceName: string; email: string; password: string; name?: string }): Promise<EtapeSecondFacteur> {
-  return request<EtapeSecondFacteur>('/auth/signup', { method: 'POST', body: JSON.stringify(input) });
+export function signup(input: { workspaceName: string; email: string; password: string; name?: string }): Promise<EtapeSecondFacteur | SuiteConnexion> {
+  return request<EtapeSecondFacteur | SuiteConnexion>('/auth/signup', { method: 'POST', body: JSON.stringify(input) });
 }
 
 // --- Second facteur : les étapes de la connexion (sans session) -----------------------------------------------
@@ -102,8 +104,10 @@ export interface EtatSecondFacteur {
   actif: boolean;
   activeLe: string | null;
   codesSecoursRestants: number;
-  /** Administrateur quelque part : la désactivation lui est refusée. */
+  /** Admin d'un espace qui l'exige, ou adresse d'exploitation : la désactivation lui est refusée. */
   obligatoire: boolean;
+  /** Pourquoi elle est obligatoire. Absent d'une API antérieure au 2026-10-13. */
+  raison?: 'espace' | 'exploitation' | null;
 }
 export function lireSecondFacteur(): Promise<EtatSecondFacteur> {
   return request('/auth/mfa/moi');

@@ -1,6 +1,6 @@
 ---
 source_section: Comptes & authentification
-source_empreinte: c14ada
+source_empreinte: 7fe793
 ---
 # Inviter mon équipe, et gérer les accès
 
@@ -37,13 +37,16 @@ page qui donne tout pour piloter l'espace depuis Claude Code : les deux commande
 (puis /mcp dans Claude Code pour valider la connexion), la clé de votre application, montrée une seule fois, et
 /messagingme:demarrer, qui lance la mise en service.
 
-**La double authentification** ajoute un code au mot de passe. Elle est obligatoire pour les administrateurs :
-à la première connexion (ou à l'inscription), vous scannez un QR code avec une application d'authentification
-(Google Authenticator, Microsoft Authenticator…), vous saisissez le premier code, puis vous recevez **dix codes
-de secours** à conserver. Ils ne seront plus affichés, et chacun ne sert qu'une fois. Ensuite, chaque connexion
-par mot de passe demande le code de l'application, ou un code de secours dans le même champ ; une connexion
-Google n'en demande pas. Les agents et managers peuvent l'activer depuis « Mon compte » (menu du compte, en
-haut à droite), après avoir redonné leur mot de passe ; chacun y régénère aussi ses codes de secours. Après cinq
+**La double authentification** ajoute un code au mot de passe. Chacun peut l'activer depuis « Mon compte » (menu
+du compte, en haut à droite), après avoir redonné son mot de passe. Un administrateur peut aussi l'**exiger de tous
+les administrateurs** de l'espace : dans Compte & équipe, carte « Sécurité de l'espace », case « Exiger la double
+authentification pour tous les administrateurs ». Elle est décochée à la création de l'espace. Cochée, chaque
+administrateur qui ne l'a pas encore la configure à sa prochaine connexion par mot de passe, et ne peut plus la
+retirer ; une connexion Google n'en demande pas. Pour la configurer, vous scannez un QR code avec une application
+d'authentification (Google Authenticator, Microsoft Authenticator…), vous saisissez le premier code, puis vous
+recevez **dix codes de secours** à conserver. Ils ne seront plus affichés, et chacun ne sert qu'une fois. Ensuite,
+chaque connexion par mot de passe demande le code de l'application, ou un code de secours dans le même champ ;
+chacun régénère ses codes de secours depuis « Mon compte ». Après cinq
 codes faux de suite, le code de l'application est bloqué un moment (quinze minutes, puis davantage) ; un code de
 secours reste accepté pendant ce temps. **Téléphone perdu** : un autre administrateur la réinitialise depuis Compte &
 équipe ; si la personne a aussi accès à un autre espace, c'est le support qui s'en charge.

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
-import { listUsers, inviteMember, setUserRole, setUserDisabled, deleteUser, renommerMembre, lireNomEspace, renommerEspace, reinitialiserSecondFacteur, type AdminUser, type UserRole } from '@/lib/api';
+import { listUsers, inviteMember, setUserRole, setUserDisabled, deleteUser, renommerMembre, lireNomEspace, renommerEspace, reinitialiserSecondFacteur, lireSecondFacteurEspace, poserSecondFacteurEspace, type AdminUser, type UserRole } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import { inputCls } from '@/lib/ui';
@@ -103,8 +103,9 @@ function AdminInner({ session }: { session: Session }) {
   }
 
   /**
-   * Retire le second facteur d'un membre (téléphone perdu, codes épuisés). Un administrateur le reposera à sa
-   * prochaine connexion ; un agent ou un manager se connectera sans code.
+   * Retire le second facteur d'un membre (téléphone perdu, codes épuisés). Si l'espace exige la double
+   * authentification de ses administrateurs, un administrateur la reposera à sa prochaine connexion ; sinon, la
+   * personne se connectera sans code.
    *
    * ⚠️ Le 409 n'est pas une panne : la personne a aussi un compte dans un AUTRE espace, et son facteur vaut
    * là-bas aussi. L'admin d'ici n'en décide pas, le support si.
@@ -112,7 +113,7 @@ function AdminInner({ session }: { session: Session }) {
   async function reinitialiserMfa(u: AdminUser) {
     if (!(await confirmer({
       titre: t('Réinitialiser la double authentification', 'Reset two-factor authentication'),
-      message: t(`Retirer la double authentification de ${u.email} ?\nUn administrateur devra la configurer de nouveau à sa prochaine connexion.`, `Remove two-factor authentication from ${u.email}?\nAn administrator will have to set it up again at their next sign-in.`),
+      message: t(`Retirer la double authentification de ${u.email} ?\nSi l’espace l’exige de ses administrateurs, un administrateur la configurera de nouveau à sa prochaine connexion.`, `Remove two-factor authentication from ${u.email}?\nIf the workspace requires it of its administrators, an administrator will set it up again at their next sign-in.`),
       confirmer: t('Réinitialiser', 'Reset'),
     }))) return;
     setError(null);
@@ -134,6 +135,7 @@ function AdminInner({ session }: { session: Session }) {
       {info && <p className="rounded-controle bg-succes-50 px-3 py-2 text-sm text-succes-800" data-testid="admin-info">{info}</p>}
 
       <EspaceCard tenantId={session.tenantId} />
+      <SecuriteEspaceCard tenantId={session.tenantId} />
 
       <InviteCard tenantId={session.tenantId} onInvited={load} />
 
@@ -397,6 +399,98 @@ function EspaceCard({ tenantId }: { tenantId: string }) {
         <p data-testid="espace-message" className={`rounded-controle px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}>{msg.text}</p>
       )}
     </form>
+  );
+}
+
+/**
+ * LA DOUBLE AUTHENTIFICATION DES ADMINISTRATEURS, AU CHOIX DE L'ESPACE (migration 0230, décision de Julien du
+ * 2026-10-13). Désactivée à la création d'un espace : c'était le premier geste demandé à qui venait de créer le sien.
+ * Cochée, elle vaut pour TOUS les administrateurs de l'espace : chacun, s'il n'en a pas, la configure à sa prochaine
+ * connexion par mot de passe, et ne peut plus la retirer. Une connexion Google ne la demande pas (choix du même jour),
+ * et l'écran le dit : sans cette phrase, on croirait l'espace protégé contre ce qui ne l'est pas.
+ *
+ * ⚠️ LA ROUTE PEUT MANQUER (console publiée avant l'API) : la carte se cache, il n'y a rien à régler.
+ */
+function SecuriteEspaceCard({ tenantId }: { tenantId: string }) {
+  const t = useT();
+  const [exige, setExige] = useState<boolean | null>(null);
+  const [lecture, setLecture] = useState<'en_cours' | 'ok' | 'absente' | 'erreur'>('en_cours');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  useEffect(() => {
+    let vivant = true;
+    lireSecondFacteurEspace(tenantId)
+      .then((r) => {
+        if (!vivant) return;
+        // Une réponse sans booléen ne dit rien du réglage : la carte se cache plutôt que d'afficher une case fausse.
+        if (typeof r.exigePourLesAdmins !== 'boolean') { setLecture('absente'); return; }
+        setExige(r.exigePourLesAdmins);
+        setLecture('ok');
+      })
+      .catch((err: unknown) => {
+        if (!vivant || estAnnulation(err)) return;
+        if (routeInconnue(err)) { setLecture('absente'); return; }
+        setLecture('erreur');
+        setMsg({ kind: 'err', text: err instanceof Error ? err.message : t('Lecture du réglage impossible', 'Unable to read the setting') });
+      });
+    return () => { vivant = false; };
+    // `t` suit la langue : relire le réglage pour un changement de langue n'aurait aucun sens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId]);
+
+  if (lecture === 'absente') return null;
+
+  async function basculer(valeur: boolean) {
+    if (busy) return;
+    const avant = exige;
+    setBusy(true);
+    setMsg(null);
+    // La case suit le geste tout de suite, puis l'état EFFECTIF rendu par le serveur ; un refus la remet comme avant.
+    setExige(valeur);
+    try {
+      const r = await poserSecondFacteurEspace(tenantId, valeur);
+      setExige(r.exigePourLesAdmins);
+      setMsg({ kind: 'ok', text: r.exigePourLesAdmins
+        ? t('Exigée : chaque administrateur qui ne l’a pas encore la configurera à sa prochaine connexion.', 'Required: each administrator who does not have it yet will set it up at their next sign-in.')
+        : t('Laissée au choix de chaque administrateur, depuis Mon compte.', 'Left to each administrator, from My account.') });
+    } catch (err) {
+      setExige(avant);
+      setMsg({ kind: 'err', text: err instanceof Error ? err.message : t('Enregistrement impossible', 'Unable to save') });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div data-testid="securite-espace-carte" className="space-y-3 rounded-carte border border-ink-200 bg-white p-5">
+      <div className="text-sm font-semibold text-ink-900">{t('Sécurité de l’espace', 'Workspace security')}</div>
+      {lecture === 'en_cours' && <Squelette forme="carte" />}
+      {lecture === 'ok' && exige !== null && (
+        <label className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            data-testid="securite-espace-second-facteur"
+            checked={exige}
+            disabled={busy}
+            onChange={(e) => { void basculer(e.target.checked); }}
+            className="mt-0.5 h-4 w-4 shrink-0"
+          />
+          <span className="space-y-1">
+            <span className="block text-sm font-medium text-ink-900">{t('Exiger la double authentification pour tous les administrateurs', 'Require two-factor authentication for all administrators')}</span>
+            <span className="block text-xs text-ink-500">
+              {t(
+                'Chaque administrateur de l’espace donne alors un code d’application en plus de son mot de passe, et ne peut plus le retirer. Ceux qui ne l’ont pas encore la configurent à leur prochaine connexion. Les sessions déjà ouvertes continuent, et la connexion avec Google ne la demande pas.',
+                'Every administrator of the workspace then gives an app code in addition to their password, and can no longer remove it. Those who do not have it yet set it up at their next sign-in. Sessions already open carry on, and signing in with Google does not ask for it.',
+              )}
+            </span>
+          </span>
+        </label>
+      )}
+      {msg && (
+        <p data-testid="securite-espace-message" className={`rounded-controle px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}>{msg.text}</p>
+      )}
+    </div>
   );
 }
 

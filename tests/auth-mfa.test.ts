@@ -16,8 +16,13 @@ import { MfaEnMemoire, UtilisateursFaux, comptesDe, connecter, identiteDe, passe
 /**
  * LA DOUBLE AUTHENTIFICATION DES ADMINISTRATEURS (plan `docs/superpowers/plans/2026-09-25-mfa-admins.md`).
  *
- * 🔴 L'INVARIANT : aucune session d'admin sans second facteur, sauf par Google. Chaque test de garde ci-dessous a
- * été vérifié dans les DEUX sens (le défaut remis, l'échec constaté avec son symptôme, puis restauré).
+ * 🔴 L'INVARIANT : aucune session d'admin sans second facteur DANS UN ESPACE QUI L'EXIGE, sauf par Google. Chaque test
+ * de garde ci-dessous a été vérifié dans les DEUX sens (le défaut remis, l'échec constaté avec son symptôme, puis
+ * restauré).
+ *
+ * ⚠️ Depuis le 2026-10-13, l'exigence est un réglage de l'espace (migration 0230), faux par défaut. Les cas d'origine
+ * portent sur l'espace `t1`, qui l'EXIGE ici (`serveur`) : c'est le cas qu'ils exercent. Le défaut (aucune exigence)
+ * a sa propre section, « le second facteur, au choix de l'espace ».
  */
 
 const SECRET = 'test-secret-mfa';
@@ -28,8 +33,8 @@ const AGENT: AuthUser = { id: 'u-agent', tenantId: 't1', email: 'agent@x.fr', ro
 
 interface Journal { identityId: string; action: ActionMfa; detail?: Record<string, unknown> }
 
-function serveur(users: AuthUser[] = [ADMIN, AGENT], over: Partial<AuthRouteDeps> = {}) {
-  const mfa = new MfaEnMemoire(comptesDe(users));
+function serveur(users: AuthUser[] = [ADMIN, AGENT], over: Partial<AuthRouteDeps> = {}, espacesExigeants: string[] = ['t1']) {
+  const mfa = new MfaEnMemoire(comptesDe(users), espacesExigeants);
   const journal: Journal[] = [];
   const deps: AuthRouteDeps = {
     users: new UtilisateursFaux(users, mfa),
@@ -362,8 +367,18 @@ describe('inscription et invitation passent par la même porte', () => {
     await app.close();
   });
 
+  it('🔴 une inscription par une adresse déjà admin d’un espace qui l’exige, sans facteur, enrôle avant toute session', async () => {
+    // Sinon la session du nouvel espace ouvrirait ensuite l'espace exigeant par « changer d'espace », sans facteur.
+    const mfa = new MfaEnMemoire(comptesDe([ADMIN]), ['t1']);
+    const { app } = serveur([ADMIN], { mfa, users: new UtilisateursFaux([ADMIN], mfa), ...inscription(mfa, { 'admin@x.fr': hashPasswordSync('motdepasse-longue') }) });
+    const res = await post(app, '/auth/signup', { workspaceName: 'Deuxième', email: 'admin@x.fr', password: 'motdepasse-longue' });
+    expect(res.statusCode).toBe(201);
+    expect(Object.keys(res.json())).toEqual(['enrolToken']);
+    await app.close();
+  });
+
   it('🔴 une invitation d’ADMIN acceptée rend un `enrolToken`, pas une session', async () => {
-    const mfa = new MfaEnMemoire([{ userId: 'u-inv', tenantId: 't1', role: 'admin', email: 'inv@x.fr' }]);
+    const mfa = new MfaEnMemoire([{ userId: 'u-inv', tenantId: 't1', role: 'admin', email: 'inv@x.fr' }], ['t1']);
     const { app } = serveur([], {
       mfa,
       comptes: {
@@ -380,11 +395,11 @@ describe('inscription et invitation passent par la même porte', () => {
     await app.close();
   });
 
-  it('🔴 une invitation d’AGENT pour une personne déjà admin ailleurs enrôle aussi (l’obligation suit l’identité)', async () => {
+  it('🔴 une invitation d’AGENT pour une personne déjà admin d’un espace qui l’exige enrôle aussi (l’obligation suit l’identité)', async () => {
     const mfa = new MfaEnMemoire([
       { userId: 'u-inv', tenantId: 't1', role: 'agent', email: 'inv@x.fr' },
       { userId: 'u-inv-2', tenantId: 't2', role: 'admin', email: 'inv@x.fr' },
-    ]);
+    ], ['t2']);
     const { app } = serveur([], {
       mfa,
       comptes: {
@@ -437,7 +452,7 @@ describe('/auth/mfa/moi (avec une session)', () => {
   it('l’enrôlement volontaire d’un agent, puis la désactivation par un code', async () => {
     const { app, mfa, jeton, journal } = await sessionDe('agent@x.fr');
     const etat = (await app.inject({ method: 'GET', url: '/auth/mfa/moi', headers: bearer(jeton) })).json();
-    expect(etat).toEqual({ actif: false, activeLe: null, codesSecoursRestants: 0, obligatoire: false });
+    expect(etat).toEqual({ actif: false, activeLe: null, codesSecoursRestants: 0, obligatoire: false, raison: null });
     // Le mot de passe est exigé : faux, 403 et aucun secret posé ; juste, le secret.
     mfa.motsDePasse.set(identiteDe('agent@x.fr'), HASH);
     const faux = await post(app, '/auth/mfa/moi/enroler', { motDePasse: 'pas-le-bon' }, bearer(jeton));
@@ -480,6 +495,90 @@ describe('/auth/mfa/moi (avec une session)', () => {
   it('l’enrôlement volontaire est refusé quand un facteur est déjà actif', async () => {
     const { app, jeton } = await sessionDe('admin@x.fr');
     expect((await post(app, '/auth/mfa/moi/enroler', {}, bearer(jeton))).statusCode).toBe(409);
+    await app.close();
+  });
+});
+
+describe('le second facteur, au choix de l’espace (décision de Julien du 2026-10-13)', () => {
+  it('🔴 un admin d’un espace qui n’exige rien entre avec son mot de passe : une session, aucune étape', async () => {
+    const { app } = serveur([ADMIN, AGENT], {}, []);
+    const res = await login(app, 'admin@x.fr');
+    expect(res.statusCode).toBe(200);
+    expect(await verifySession(res.json<{ token: string }>().token, SECRET)).toMatchObject({ userId: 'u-admin', role: 'admin' });
+    await app.close();
+  });
+
+  it('🔴 l’exigence se lit à CHAQUE connexion : l’espace l’active, le même admin doit poser son facteur', async () => {
+    const { app, mfa } = serveur([ADMIN, AGENT], {}, []);
+    expect(Object.keys((await login(app, 'admin@x.fr')).json())).toContain('token');
+    mfa.espacesExigeants.add('t1');
+    expect(Object.keys((await login(app, 'admin@x.fr')).json())).toEqual(['enrolToken']);
+    await app.close();
+  });
+
+  it('un facteur actif est demandé quel que soit le réglage : qui l’a posé le garde', async () => {
+    const { app, mfa } = serveur([ADMIN, AGENT], {}, []);
+    mfa.poserFacteur('admin@x.fr');
+    expect(Object.keys((await login(app, 'admin@x.fr')).json())).toEqual(['mfaToken']);
+    await app.close();
+  });
+
+  it('🔴 une invitation d’ADMIN dans un espace qui n’exige rien rend la session', async () => {
+    const mfa = new MfaEnMemoire([{ userId: 'u-inv', tenantId: 't1', role: 'admin', email: 'inv@x.fr' }]);
+    const { app } = serveur([], {
+      mfa,
+      comptes: {
+        setPassword: async () => true,
+        getSessionUser: async () => ({ tenantId: 't1', role: 'admin', email: 'inv@x.fr' }),
+      },
+      tokens: { create: async () => 'x', consume: async () => 'u-inv' },
+    }, []);
+    const res = await post(app, '/auth/invitations/accept', { token: 'BON', password: 'motdepasse-longue' });
+    expect(res.statusCode).toBe(200);
+    expect(await verifySession(res.json<{ token: string }>().token, SECRET)).toMatchObject({ userId: 'u-inv', role: 'admin' });
+    await app.close();
+  });
+
+  it('🔴 un admin d’un espace qui n’exige rien retire son facteur depuis Mon compte, contre un code', async () => {
+    const { app, mfa } = serveur([ADMIN, AGENT], {}, []);
+    mfa.poserFacteur('admin@x.fr');
+    const jeton = (await connecter(app, mfa, 'admin@x.fr', 'pw')).json<{ token: string }>().token;
+    const etat = (await app.inject({ method: 'GET', url: '/auth/mfa/moi', headers: bearer(jeton) })).json();
+    expect(etat).toMatchObject({ actif: true, obligatoire: false, raison: null });
+    const res = await post(app, '/auth/mfa/moi/desactiver', { code: mfa.codeSuivant('admin@x.fr') }, bearer(jeton));
+    expect(res.statusCode).toBe(200);
+    expect(mfa.estActif('admin@x.fr')).toBe(false);
+    await app.close();
+  });
+
+  it('🔴 dans un espace qui l’exige, Mon compte dit pourquoi et refuse le retrait', async () => {
+    const { app, mfa } = serveur();
+    const jeton = (await connecter(app, mfa, 'admin@x.fr', 'pw')).json<{ token: string }>().token;
+    expect((await app.inject({ method: 'GET', url: '/auth/mfa/moi', headers: bearer(jeton) })).json()).toMatchObject({ obligatoire: true, raison: 'espace' });
+    const res = await post(app, '/auth/mfa/moi/desactiver', { code: mfa.codeSuivant('admin@x.fr') }, bearer(jeton));
+    expect(res.statusCode).toBe(403);
+    expect(res.json<{ error: string }>().error).toContain('exige');
+    expect(mfa.estActif('admin@x.fr')).toBe(true);
+    await app.close();
+  });
+
+  it('🔴 une adresse d’exploitation garde son facteur, même dans un espace qui n’exige rien', async () => {
+    const { app, mfa } = serveur([ADMIN, AGENT], { opsEmails: ['agent@x.fr'] }, []);
+    mfa.poserFacteur('agent@x.fr');
+    const jeton = (await connecter(app, mfa, 'agent@x.fr', 'pw')).json<{ token: string }>().token;
+    expect((await app.inject({ method: 'GET', url: '/auth/mfa/moi', headers: bearer(jeton) })).json()).toMatchObject({ obligatoire: true, raison: 'exploitation' });
+    const res = await post(app, '/auth/mfa/moi/desactiver', { code: mfa.codeSuivant('agent@x.fr') }, bearer(jeton));
+    expect(res.statusCode).toBe(403);
+    expect(res.json<{ error: string }>().error).toContain('exploitation');
+    expect(mfa.estActif('agent@x.fr')).toBe(true);
+    await app.close();
+  });
+
+  it('🔴 la connexion d’exploitation exige toujours le facteur, même dans un espace qui n’exige rien', async () => {
+    const { app } = serveur([ADMIN, AGENT], { opsEmails: ['admin@x.fr'] }, []);
+    const res = await post(app, '/auth/login', { email: 'admin@x.fr', password: 'pw', ops: true });
+    expect(res.statusCode).toBe(200);
+    expect(Object.keys(res.json())).toEqual(['enrolToken']);
     await app.close();
   });
 });

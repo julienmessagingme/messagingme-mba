@@ -250,7 +250,7 @@ function InboxInner({ session }: { session: Session }) {
    * sélection faite dans un autre dossier ferait ranger des lignes qu'on ne voit plus.
    */
   const [cochees, setCochees] = useState<Set<string>>(new Set());
-  const [compteurs, setCompteurs] = useState<CompteursInbox>({ tout: 0, aTraiter: 0, urgentes: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] });
+  const [compteurs, setCompteurs] = useState<CompteursInbox>({ tout: 0, aTraiter: 0, aTraiterNonLues: 0, urgentes: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] });
   const [rangementEnCours, setRangementEnCours] = useState(false);
   /**
    * Qui voit la charge par collaborateur.
@@ -352,6 +352,13 @@ function InboxInner({ session }: { session: Session }) {
     }
   }, [session.tenantId]);
   useEffect(() => { void rechargerCompteur(); }, [rechargerCompteur, conversations]);
+  // Un fil vient d'être ouvert, donc lu : le gras du menu (les non-lues, 2026-10-13) s'éteint tout de suite, sans
+  // attendre le prochain rafraîchissement de la liste. Le serveur a invalidé son cache des compteurs à la lecture.
+  useEffect(() => {
+    const surLecture = (): void => { void rechargerCompteur(); };
+    window.addEventListener(UNREAD_CHANGED_EVENT, surLecture);
+    return () => window.removeEventListener(UNREAD_CHANGED_EVENT, surLecture);
+  }, [rechargerCompteur]);
 
   useEffect(() => {
     void reload();

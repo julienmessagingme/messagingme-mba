@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import { enTransaction } from '../db/transaction';
 import { encryptSecret, decryptSecret } from '../crypto/secretbox';
 import { estUuid } from '../http/scope';
+import { facteurExigeSql } from './facteur-exige';
 
 /**
  * Le second facteur d'une identité. 🔴 Il vit sur `identities`, pas sur `users` : c'est la personne qui a un
@@ -20,7 +21,10 @@ export interface EtatMfa {
   /** Le secret d'un enrôlement en cours, en base32. */
   secretEnAttente: string | null;
   codesSecoursRestants: number;
-  /** L'identité a-t-elle un compte `admin` actif quelque part ? C'est ce qui rend le facteur obligatoire. */
+  /**
+   * L'identité a-t-elle un compte `admin` actif dans un espace qui EXIGE le second facteur (`facteurExigeSql`, migration
+   * 0230) ? C'est ce qui rend le facteur obligatoire. Avant le 2026-10-13, tout admin l'était.
+   */
   obligatoire: boolean;
   /** Fin du blocage du code de l'application après une série d'échecs ; les codes de secours restent acceptés. */
   bloqueJusqua: Date | null;
@@ -81,7 +85,7 @@ interface LigneEtat {
 const SELECT_ETAT = `
   select i.id, i.email, i.mfa_secret_enc, i.mfa_active_le, i.mfa_dernier_pas, i.mfa_secret_attente_enc, i.mfa_bloque_jusqua,
          (select count(*) from mfa_codes_secours c where c.identity_id = i.id and c.utilise_le is null)::int as codes_restants,
-         exists (select 1 from users a where a.identity_id = i.id and a.role = 'admin' and a.disabled_at is null) as obligatoire
+         ${facteurExigeSql('i.id')} as obligatoire
     from identities i`;
 
 export class PgMfaStore implements MfaStore {

@@ -39,6 +39,9 @@ const CATALOGUE_ACTIONS_AUDIT = {
   // Compte & équipe : le détail est VIDE. Un nom d'espace peut porter le nom d'une personne (inscription par
   // Google) ou un numéro, et ce journal n'en garde aucun (`src/audit/store.pg.ts`).
   'espace.renomme': ['Espace renommé', 'Workspace renamed'],
+  // Le second facteur des admins, au choix de l'espace (migration 0230). Le détail est vide : l'action dit le sens.
+  'espace.second_facteur_exige': ['Double authentification exigée des administrateurs', 'Two-factor authentication required for administrators'],
+  'espace.second_facteur_libre': ['Double authentification laissée au choix des administrateurs', 'Two-factor authentication left to administrators'],
   // La double authentification (plan du 2026-09-25). Le détail ne porte ni code ni secret, seulement l'étape
   // d'un refus (`connexion`, `activation`, `codes`, `desactivation`).
   'mfa.active': ['Double authentification activée', 'Two-factor authentication enabled'],

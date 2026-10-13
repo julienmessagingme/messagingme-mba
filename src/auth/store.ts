@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { facteurExigeSql } from './facteur-exige';
 
 export interface AuthUser {
   id: string;
@@ -32,6 +33,11 @@ export interface EmailIdentity {
    * « non ».
    */
   mfaActif: boolean;
+  /**
+   * L'identité est-elle tenue de poser un second facteur (admin dans un espace qui l'exige, `facteurExigeSql`) ? Sans
+   * facteur actif, la connexion rend alors un enrôlement. Requis, pour la même raison que `mfaActif`.
+   */
+  facteurExige: boolean;
   /** Espaces accessibles. Jamais vide : une identité sans compte actif n'est pas rendue. */
   comptes: CompteAccessible[];
 }
@@ -54,6 +60,7 @@ export class PgUserAuthStore implements UserAuthStore {
       identity_id: string;
       password_hash: string | null;
       mfa_actif: boolean;
+      facteur_exige: boolean;
       user_id: string;
       tenant_id: string;
       tenant_name: string;
@@ -64,6 +71,7 @@ export class PgUserAuthStore implements UserAuthStore {
       // `disabled_at is null` : un compte révoqué ne s'authentifie pas ; si tous le sont, rien n'est rendu, comme
       // pour une adresse inconnue. Trié par nom d'espace : l'ordre de l'écran de choix reste stable.
       `select i.id as identity_id, i.password_hash, (i.mfa_active_le is not null) as mfa_actif,
+              ${facteurExigeSql('i.id')} as facteur_exige,
               u.id as user_id, u.tenant_id, t.name as tenant_name, u.email, u.role
          from identities i
          join users u on u.identity_id = i.id
@@ -79,6 +87,7 @@ export class PgUserAuthStore implements UserAuthStore {
       identityId: premiere.identity_id,
       passwordHash: hash,
       mfaActif: premiere.mfa_actif,
+      facteurExige: premiere.facteur_exige,
       comptes: res.rows.map((r) => ({
         id: r.user_id, tenantId: r.tenant_id, tenantName: r.tenant_name, email: r.email, role: r.role,
       })),

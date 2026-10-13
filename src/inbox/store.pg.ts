@@ -73,6 +73,11 @@ export interface CompteursInbox {
   /** Toutes les conversations non archivées de l'espace. */
   tout: number;
   aTraiter: number;
+  /**
+   * Celles de « À traiter » qui ont un message entrant pas encore ouvert (`UNREAD_SQL`, le même « non lu » que la
+   * pastille) : le menu met « À traiter » en gras tant qu'il en reste (décision de Julien du 2026-10-13).
+   */
+  aTraiterNonLues: number;
   /** Non archivées et marquées urgentes (migration 0216). Elles sont aussi comptées dans `tout`. */
   urgentes: number;
   signalees: number;
@@ -81,8 +86,11 @@ export interface CompteursInbox {
   traitees: number;
   /** Non archivées et confiées à personne. */
   nonAffectees: number;
-  /** Tous les membres de l'espace, y compris ceux qui n'ont aucune conversation. */
-  parMembre: Array<{ userId: string; nom: string; n: number }>;
+  /**
+   * Tous les membres de l'espace, y compris ceux qui n'ont aucune conversation. `nonLues` : celles qui lui sont
+   * affectées et ont un message entrant pas encore ouvert ; son nom passe en gras tant qu'il en reste.
+   */
+  parMembre: Array<{ userId: string; nom: string; n: number; nonLues: number }>;
 }
 
 /** Options de lecture de l'inbox, toutes optionnelles : sans elles, la première page. */
@@ -1113,11 +1121,12 @@ export class PgInboxStore implements InboxStore {
    */
   async compterConversations(tenantId: string): Promise<CompteursInbox> {
     const res = await this.pool.query<{
-      tout: string; a_traiter: string; urgentes: string; signalees: string; archivees: string; traitees: string; non_affectees: string;
+      tout: string; a_traiter: string; a_traiter_non_lues: string; urgentes: string; signalees: string; archivees: string; traitees: string; non_affectees: string;
     }>(
       `select
          count(*) filter (where c.archived_at is null)::text as tout,
          count(*) filter (where c.archived_at is null and ${A_TRAITER_SQL})::text as a_traiter,
+         count(*) filter (where c.archived_at is null and ${A_TRAITER_SQL} and ${UNREAD_SQL})::text as a_traiter_non_lues,
          count(*) filter (where c.archived_at is null and c.urgente_le is not null)::text as urgentes,
          count(*) filter (where c.archived_at is null and (c.signalee_le is not null or exists (
            select 1 from conversation_analysis a where a.conversation_id = c.id and a.abusive)))::text as signalees,
@@ -1133,9 +1142,10 @@ export class PgInboxStore implements InboxStore {
      * La charge par membre : tous les membres de l'espace, y compris à zéro (c'est l'information cherchée).
      * Tri par nombre puis par nom, pour que deux membres à égalité ne changent pas de place.
      */
-    const membres = await this.pool.query<{ user_id: string; nom: string | null; email: string; n: string }>(
+    const membres = await this.pool.query<{ user_id: string; nom: string | null; email: string; n: string; non_lues: string }>(
       `select u.id as user_id, u.name as nom, u.email,
-              count(c.id) filter (where c.archived_at is null and ct.blocked_at is null)::text as n
+              count(c.id) filter (where c.archived_at is null and ct.blocked_at is null)::text as n,
+              count(c.id) filter (where c.archived_at is null and ct.blocked_at is null and ${UNREAD_SQL})::text as non_lues
          from users u
          left join conversations c on c.assigned_to = u.id and c.tenant_id = $1
          left join contacts ct on ct.id = c.contact_id
@@ -1149,13 +1159,14 @@ export class PgInboxStore implements InboxStore {
     return {
       tout: Number(r?.tout ?? 0),
       aTraiter: Number(r?.a_traiter ?? 0),
+      aTraiterNonLues: Number(r?.a_traiter_non_lues ?? 0),
       urgentes: Number(r?.urgentes ?? 0),
       signalees: Number(r?.signalees ?? 0),
       archivees: Number(r?.archivees ?? 0),
       traitees: Number(r?.traitees ?? 0),
       nonAffectees: Number(r?.non_affectees ?? 0),
       // Le nom affichable, jamais vide : un membre sans nom se reconnaît à son e-mail.
-      parMembre: membres.rows.map((m) => ({ userId: m.user_id, nom: m.nom ?? m.email, n: Number(m.n) })),
+      parMembre: membres.rows.map((m) => ({ userId: m.user_id, nom: m.nom ?? m.email, n: Number(m.n), nonLues: Number(m.non_lues) })),
     };
   }
 

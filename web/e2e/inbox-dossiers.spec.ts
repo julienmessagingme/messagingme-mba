@@ -28,14 +28,14 @@ const COMPTEURS = {
 
 type Appel = { method: string; url: string };
 
-async function mock(page: import('@playwright/test').Page, session: typeof ADMIN, appels: Appel[] = []) {
+async function mock(page: import('@playwright/test').Page, session: typeof ADMIN, appels: Appel[] = [], compteurs: unknown = COMPTEURS) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), session);
   await page.route('**/api/backend/**', async (route) => {
     const req = route.request();
     const url = req.url();
     appels.push({ method: req.method(), url });
     const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
-    if (/\/conversations\/counts/.test(url)) return json(COMPTEURS);
+    if (/\/conversations\/counts/.test(url)) return json(compteurs);
     if (/\/(archive|unarchive)$/.test(url)) return json({ archived: true });
     if (/\/conversations\?|\/conversations$/.test(url)) return json({ conversations: CONVERSATIONS });
     if (url.includes('/unread-count')) return json({ count: 0 });
@@ -49,6 +49,43 @@ async function mock(page: import('@playwright/test').Page, session: typeof ADMIN
 }
 
 test.describe('Inbox : le menu de dossiers', () => {
+  test('🔴 « À traiter » et un collaborateur passent en GRAS tant qu’il leur reste une non lue (Julien, 2026-10-13)', async ({ page }) => {
+    await mock(page, ADMIN, [], {
+      ...COMPTEURS, aTraiterNonLues: 1,
+      parMembre: [{ userId: 'u-jean', nom: 'Jean', n: 1, nonLues: 1 }, { userId: 'u-marie', nom: 'Marie', n: 0, nonLues: 0 }],
+    });
+    await page.goto('/inbox');
+    // ⚠️ `toHaveCSS`, qui réessaie, et jamais un `evaluate` de `getComputedStyle` : une ligne du menu est recréée à
+    // chaque rendu (`Entree` est déclarée dans le rendu), et un nœud détaché rend un style calculé VIDE.
+    await expect(page.getByTestId('dossier-aTraiter')).toHaveAttribute('data-non-lues', 'true');
+    await expect(page.getByTestId('dossier-aTraiter')).toHaveCSS('font-weight', '700');
+    await expect(page.getByTestId('dossier-membre-u-jean')).toHaveAttribute('data-non-lues', 'true');
+    await expect(page.getByTestId('dossier-membre-u-jean')).toHaveCSS('font-weight', '700');
+    // Témoins : ce qui n'a rien de non lu reste au poids ordinaire, sinon le gras ne dirait rien.
+    await expect(page.getByTestId('dossier-membre-u-marie')).not.toHaveAttribute('data-non-lues', 'true');
+    await expect(page.getByTestId('dossier-membre-u-marie')).not.toHaveCSS('font-weight', '700');
+    await expect(page.getByTestId('dossier-toutes')).not.toHaveAttribute('data-non-lues', 'true');
+  });
+
+  test('une API qui ne rend pas encore les non-lues : rien en gras, le menu reste entier', async ({ page }) => {
+    await mock(page, ADMIN);
+    await page.goto('/inbox');
+    await expect(page.getByTestId('dossier-n-aTraiter')).toHaveText('(1)');
+    await expect(page.getByTestId('dossier-aTraiter')).not.toHaveAttribute('data-non-lues', 'true');
+    await expect(page.getByTestId('dossier-membre-u-jean')).not.toHaveAttribute('data-non-lues', 'true');
+  });
+
+  test('🔴 les titres « Conversations » et « Affectation » sont plus gros et plus gras que les lignes', async ({ page }) => {
+    await mock(page, ADMIN);
+    await page.goto('/inbox');
+    // Les lignes sont en 14 px ; les titres passent au-dessus (16 px) et en gras. Ils étaient en 12 px, gris.
+    await expect(page.getByTestId('dossier-toutes')).toHaveCSS('font-size', '14px');
+    for (const id of ['inbox-titre-conversations', 'inbox-titre-affectation']) {
+      await expect(page.getByTestId(id)).toHaveCSS('font-size', '16px');
+      await expect(page.getByTestId(id)).toHaveCSS('font-weight', '700');
+    }
+  });
+
   test('🔴 la bordure de la colonne des dossiers tombe sous le trait vertical de l’entête, et le mobile ne déborde pas', async ({ page }) => {
     // Julien, 2026-09-25 : la bordure était nettement à gauche du trait qui ferme la zone du logo.
     await mock(page, ADMIN);

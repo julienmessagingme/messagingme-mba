@@ -71,26 +71,44 @@ export function InboxDossiers({ dossier, compteurs, peutVoirAffectation, onChang
 }) {
   const t = useT();
 
-  /** Une ligne du menu. `cible` est le dossier qu'elle ouvre, `cle` sert aux tests et à rien d'autre. */
-  const Entree = ({ cle, label, n, cible }: { cle: string; label: string; n: number; cible: DossierInbox }) => (
-    <button
-      type="button"
-      data-testid={`dossier-${cle}`}
-      aria-current={memeDossier(dossier, cible) ? 'true' : undefined}
-      onClick={() => onChange(cible)}
-      className={`flex w-full items-center gap-2 rounded-controle px-2.5 py-1.5 text-left text-sm transition-colors duration-150 ${
-        memeDossier(dossier, cible) ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100 hover:text-ink-900'
-      }`}
-    >
-      <span className="truncate">{label}</span>
-      <span data-testid={`dossier-n-${cle}`} className="ml-auto shrink-0 text-xs tabular-nums text-ink-500">({n})</span>
-    </button>
-  );
+  /**
+   * Une ligne du menu. `cible` est le dossier qu'elle ouvre, `cle` sert aux tests et à rien d'autre.
+   *
+   * `nonLues` : comme dans une boîte mail, la ligne passe en GRAS tant que le dossier contient une conversation au
+   * message entrant pas encore ouvert (décision de Julien du 2026-10-13, pour « À traiter » et les collaborateurs).
+   * Le gras s'éteint quand quelqu'un de l'équipe a ouvert le fil : le « lu » est celui de la pastille, commun à tous.
+   */
+  const Entree = ({ cle, label, n, cible, nonLues = 0 }: { cle: string; label: string; n: number; cible: DossierInbox; nonLues?: number }) => {
+    const actif = memeDossier(dossier, cible);
+    const gras = nonLues > 0;
+    return (
+      <button
+        type="button"
+        data-testid={`dossier-${cle}`}
+        data-non-lues={gras ? 'true' : undefined}
+        aria-current={actif ? 'true' : undefined}
+        aria-label={gras ? `${label} (${n}), ${t(`${nonLues} non lue${nonLues > 1 ? 's' : ''}`, `${nonLues} unread`)}` : undefined}
+        onClick={() => onChange(cible)}
+        className={`flex w-full items-center gap-2 rounded-controle px-2.5 py-1.5 text-left text-sm transition-colors duration-150 ${
+          actif ? 'bg-brand-50 font-medium text-brand-700' : 'text-ink-500 hover:bg-ink-100 hover:text-ink-900'
+        } ${gras ? `font-bold ${actif ? '' : 'text-ink-900'}` : ''}`}
+      >
+        <span className="truncate">{label}</span>
+        <span data-testid={`dossier-n-${cle}`} className={`ml-auto shrink-0 text-xs tabular-nums ${gras ? 'font-bold text-ink-900' : 'text-ink-500'}`}>({n})</span>
+      </button>
+    );
+  };
+
+  /**
+   * Les titres des deux sections. 🔴 PLUS GROS ET PLUS GRAS QUE LES LIGNES (Julien, 2026-10-13) : en petit gris, on
+   * ne distinguait pas « Affectation » de « Conversations », et ils se lisaient comme deux lignes de plus.
+   */
+  const titreSection = 'px-2.5 pb-1 text-base font-bold text-ink-900';
 
   return (
     <nav data-testid="inbox-dossiers" aria-label={t('Dossiers', 'Folders')} className="flex flex-col gap-4">
       <div className="flex flex-col gap-0.5">
-        <p className="px-2.5 pb-1 text-xs font-medium text-ink-500">
+        <p className={titreSection} data-testid="inbox-titre-conversations">
           {t('Conversations', 'Conversations')}
         </p>
         {/* Les libellés viennent de `libelleDossier`, jamais réécrits ici : c'est la même phrase que le titre
@@ -105,13 +123,14 @@ export function InboxDossiers({ dossier, compteurs, peutVoirAffectation, onChang
           ['signalees', compteurs.signalees],
           ['archivees', compteurs.archivees],
         ] as const).map(([cle, n]) => (
-          <Entree key={cle} cle={cle} label={libelleDossier(cle, compteurs, t)} n={n} cible={cle} />
+          <Entree key={cle} cle={cle} label={libelleDossier(cle, compteurs, t)} n={n} cible={cle}
+            nonLues={cle === 'aTraiter' ? compteurs.aTraiterNonLues : 0} />
         ))}
       </div>
 
       {peutVoirAffectation && (
         <div className="flex flex-col gap-0.5">
-          <p className="px-2.5 pb-1 text-xs font-medium text-ink-500">
+          <p className={titreSection} data-testid="inbox-titre-affectation">
             {t('Affectation', 'Assignment')}
           </p>
           <Entree cle="nonAffectees" label={libelleDossier('nonAffectees', compteurs, t)} n={compteurs.nonAffectees} cible="nonAffectees" />
@@ -119,7 +138,7 @@ export function InboxDossiers({ dossier, compteurs, peutVoirAffectation, onChang
               un manager, et ne le montrer que lorsqu'il a du travail le rendrait invisible au moment précis
               où on le cherche. */}
           {compteurs.parMembre.map((m) => (
-            <Entree key={m.userId} cle={`membre-${m.userId}`} label={m.nom} n={m.n} cible={{ membre: m.userId }} />
+            <Entree key={m.userId} cle={`membre-${m.userId}`} label={m.nom} n={m.n} cible={{ membre: m.userId }} nonLues={m.nonLues} />
           ))}
         </div>
       )}

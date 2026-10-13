@@ -1,7 +1,7 @@
 ---
 ecran: inbox
 source_section: Inbox
-source_empreinte: 426208
+source_empreinte: 69adda
 ---
 # Répondre à un client dans l'Inbox
 
@@ -26,6 +26,10 @@ la conversation ouverte à droite.
   avez signalées vous-même.
 - **Archivé** : ce que vous avez rangé. Contrairement à « Traité », une conversation archivée n'apparaît
   plus dans « Tout ».
+
+**Ce qui est en gras** : « À traiter », et le nom d'un collaborateur dans « Affectation », passent en gras tant
+qu'ils contiennent une conversation dont le dernier message du client n'a pas encore été ouvert. Le gras s'éteint
+dès que quelqu'un de l'équipe ouvre le fil.
 
 **Quand vous ouvrez une conversation**, le bas de la colonne des conversations montre son détail : qui est la
 personne (nom, téléphone, e-mail, ses tags, si elle s'est désabonnée ou si elle est bloquée), le résumé de

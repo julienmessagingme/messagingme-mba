@@ -1157,7 +1157,8 @@ async function main(): Promise<void> {
       googleClientId: config.GOOGLE_CLIENT_ID,
       verifyGoogle: (idToken) => verifyGoogleIdToken(idToken, config.GOOGLE_CLIENT_ID),
       ...(sendAuthEmail ? { sendEmail: sendAuthEmail } : {}),
-      // Le second facteur : obligatoire pour les admins, à la connexion, à l'inscription et à l'invitation.
+      // Le second facteur : exigé des admins d'un espace qui l'exige (`facteurExigeSql`), à la connexion, à l'inscription
+      // et à l'invitation ; toujours exigé de l'exploitation.
       mfa: mfaStore,
       opsEmails,
       auditMfa: async (identityId, action, detail) => { await auditParIdentite(identityId, action, detail); },

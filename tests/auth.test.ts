@@ -128,9 +128,10 @@ describe('POST /auth/login — plusieurs espaces pour une adresse', () => {
   ];
   // L'inbox est montée pour éprouver le refus BOUT EN BOUT sur une vraie route gardée : sans elle, le
   // serveur répondrait 404 et le test ne prouverait rien de l'authentification.
-  // Un magasin NEUF par serveur : chaque test repart d'une adresse sans facteur, donc d'un enrôlement.
-  let mfaDeux = new MfaEnMemoire(comptesDe(deuxEspaces));
-  const appDeux = () => (mfaDeux = new MfaEnMemoire(comptesDe(deuxEspaces)), buildServer({
+  // Un magasin NEUF par serveur : chaque test repart d'une adresse sans facteur, donc d'un enrôlement, puisque
+  // `t-alpha`, où l'adresse est admin, EXIGE le second facteur (migration 0230).
+  let mfaDeux = new MfaEnMemoire(comptesDe(deuxEspaces), ['t-alpha']);
+  const appDeux = () => (mfaDeux = new MfaEnMemoire(comptesDe(deuxEspaces), ['t-alpha']), buildServer({
     queue: new FakeQueue(),
     auth: { users: new UtilisateursFaux(deuxEspaces, mfaDeux), secret: SECRET, mfa: mfaDeux },
     inbox: {
@@ -151,7 +152,7 @@ describe('POST /auth/login — plusieurs espaces pour une adresse', () => {
    */
   const choisir = (app: ReturnType<typeof buildServer>) => connecter(app, mfaDeux, 'a@b.co', 'pw');
 
-  it('🔴 le mot de passe seul ne rend NI session NI liste d’espaces quand l’adresse est admin quelque part', async () => {
+  it('🔴 le mot de passe seul ne rend NI session NI liste d’espaces quand l’adresse est admin d’un espace qui l’exige', async () => {
     const a = appDeux();
     const b = (await login(a)).json<Record<string, unknown>>();
     expect(Object.keys(b)).toEqual(['enrolToken']);

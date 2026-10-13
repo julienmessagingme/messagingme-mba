@@ -314,9 +314,10 @@ describe.skipIf(!url)('compteurs du menu de dossiers', () => {
     // C'est ce qui répond à la question du manager : un collaborateur sans conversation est une
     // information, et ne le montrer que lorsqu'il en a le rendrait invisible au moment où on le cherche.
     const c = await store.compterConversations(tenantId);
+    // Aucun message dans ce décor : rien de non lu (le cas a son propre test, « le gras du menu »).
     expect(c.parMembre).toEqual([
-      { userId: jean, nom: 'Jean', n: 2 },
-      { userId: marie, nom: 'Marie', n: 0 },
+      { userId: jean, nom: 'Jean', n: 2, nonLues: 0 },
+      { userId: marie, nom: 'Marie', n: 0, nonLues: 0 },
     ]);
   });
 
@@ -369,6 +370,57 @@ describe.skipIf(!url)('compteurs du menu de dossiers', () => {
     }
   });
 
+  /**
+   * LE GRAS DU MENU (décision de Julien du 2026-10-13) : « À traiter » et le nom d'un collaborateur passent en gras
+   * tant qu'il leur reste une conversation au message entrant pas encore ouvert. Le même « non lu » que la pastille
+   * (`UNREAD_SQL`), et il s'éteint quand quelqu'un ouvre le fil.
+   */
+  it('🔴 les non-lues de « À traiter » et de chaque membre, éteintes par l’ouverture du fil', async () => {
+    const t3 = (await pool.query<{ id: string }>(
+      `insert into tenants (name) values ('itest-inbox-gras') returning id`,
+    )).rows[0]!.id;
+    try {
+      const store3 = new PgInboxStore(pool);
+      const paul = (await pool.query<{ id: string }>(
+        `insert into users (tenant_id, email, name, password_hash, role) values ($1, 'paul@itest.test', 'Paul', 'x', 'agent') returning id`,
+        [t3],
+      )).rows[0]!.id;
+      const poser = async (waId: string, opts: { affectee?: string; lue?: boolean; archivee?: boolean }): Promise<string> => {
+        const ct = (await pool.query<{ id: string }>(
+          `insert into contacts (tenant_id, phone_e164) values ($1, $2) returning id`, [t3, `+${waId}`],
+        )).rows[0]!.id;
+        // Tenue par un humain, le contact a parlé en dernier : elle est « À traiter ».
+        const conv = (await pool.query<{ id: string }>(
+          `insert into conversations (tenant_id, wa_id, contact_id, last_message_at, last_direction, control_owner, assigned_to, archived_at)
+           values ($1, $2, $3, now(), 'in', 'app_human', $4, ${opts.archivee ? 'now()' : 'null'}) returning id`,
+          [t3, waId, ct, opts.affectee ?? null],
+        )).rows[0]!.id;
+        await pool.query(
+          `insert into conversation_messages (conversation_id, direction, type, body) values ($1, 'in', 'text', 'bonjour')`,
+          [conv],
+        );
+        if (opts.lue) await store3.markConversationRead(t3, conv);
+        return conv;
+      };
+      const aOuvrir = await poser('33800000001', { affectee: paul });   // non lue, à Paul
+      await poser('33800000002', { affectee: paul, lue: true });        // lue, à Paul
+      await poser('33800000003', {});                                   // non lue, à personne
+      await poser('33800000004', { affectee: paul, archivee: true });   // rangée : ne compte pas
+
+      const avant = await store3.compterConversations(t3);
+      expect(avant.aTraiter).toBe(3);
+      expect(avant.aTraiterNonLues).toBe(2);
+      expect(avant.parMembre).toEqual([{ userId: paul, nom: 'Paul', n: 2, nonLues: 1 }]);
+
+      await store3.markConversationRead(t3, aOuvrir);
+      const apres = await store3.compterConversations(t3);
+      expect(apres.aTraiterNonLues).toBe(1);
+      expect(apres.parMembre).toEqual([{ userId: paul, nom: 'Paul', n: 2, nonLues: 0 }]);
+    } finally {
+      await pool.query('delete from tenants where id = $1', [t3]);
+    }
+  });
+
   it('🔴 un AUTRE espace ne voit rien de celui-ci', async () => {
     // Le pooler est superuser, la RLS est contournée : le `tenant_id` de chaque requête est LE contrôle.
     const autre = (await pool.query<{ id: string }>(
@@ -376,7 +428,7 @@ describe.skipIf(!url)('compteurs du menu de dossiers', () => {
     )).rows[0]!.id;
     try {
       const c = await store.compterConversations(autre);
-      expect(c).toEqual({ tout: 0, aTraiter: 0, urgentes: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] });
+      expect(c).toEqual({ tout: 0, aTraiter: 0, aTraiterNonLues: 0, urgentes: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] });
     } finally {
       await pool.query('delete from tenants where id = $1', [autre]);
     }

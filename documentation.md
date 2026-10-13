@@ -2374,7 +2374,7 @@ par défaut, `mmhs` TOUJOURS qualifié) et que toutes ses transactions passent p
 | Plafonds de débit | routes authentifiées | l'épuisement par un client, volontaire ou non |
 | Session d'exploitation (`makeRequireOps`, `src/auth/middleware.ts`) | `/ops` | l'exploitation cross-tenant par qui n'est pas une adresse de `OPS_EMAILS` avec son second facteur |
 | Jeton d'accès OAuth (`mbo_`) dans `makeRequireApiKey`, relu en base à chaque appel | `/mcp` ; `/v1` et le relais le refusent faute de leurs droits | un Claude dont l'autorisation est révoquée ou échue, ou dont la personne n'est plus admin ou est désactivée |
-| Second facteur (`apresLeMotDePasse`, `src/auth/routes.ts`) | connexion par mot de passe, inscription, invitation acceptée, et toute connexion d'exploitation (Google compris) | une session d'admin, ou d'exploitation, ouverte avec le seul mot de passe |
+| Second facteur (`apresLeMotDePasse`, `src/auth/routes.ts`) | connexion par mot de passe, inscription, invitation acceptée, et toute connexion d'exploitation (Google compris) | une session d'admin d'un espace qui l'exige (`facteurExigeSql`), ou d'exploitation, ouverte avec le seul mot de passe |
 | `urlRecuperable` + `resolutionPublique` | toute URL saisie par un client | le SSRF vers le réseau interne |
 | `analyserChampsUrl` à la création, `remplirChampsUrl` au clic (`src/links/champs-url.ts`) | destination d'un bouton « Lien » à champs du contact (§ 10) | une valeur de fiche, écrite par le contact, qui ferait de `/r/` un redirecteur ouvert |
 | `lireCorpsBorne` | toute réponse distante | l'épuisement mémoire par un corps géant |
@@ -2532,12 +2532,18 @@ conteneur le dira en refusant de démarrer plutôt qu'en silence. La CI le véri
 c'est le SEUL de ses contrôles de sécurité qui bloque : il ne dépend d'aucune base de vulnérabilités
 extérieure, seulement d'une propriété que nous choisissons.
 
-🔴 **AUCUNE SESSION D'ADMIN SANS SECOND FACTEUR, SAUF PAR GOOGLE** (plan
-`docs/superpowers/plans/2026-09-25-mfa-admins.md`). Après le mot de passe, `apresLeMotDePasse`
-(`src/auth/routes.ts`) décide avant tout accès : une identité qui a un facteur actif reçoit `{ mfaToken }`, quel
-que soit son rôle ; une identité qui a au moins un compte `admin` actif et aucun facteur reçoit `{ enrolToken }` ;
-les autres reçoivent la suite d'avant (session si un espace, jeton de choix sinon). La connexion, l'inscription
-(elle crée un admin) et l'invitation acceptée passent toutes par là ; `/auth/google` non, par décision de Julien,
+🔴 **AUCUNE SESSION D'ADMIN SANS SECOND FACTEUR DANS UN ESPACE QUI L'EXIGE, SAUF PAR GOOGLE** (plan
+`docs/superpowers/plans/2026-09-25-mfa-admins.md`, puis le réglage par espace du 2026-10-13). Après le mot de passe,
+`apresLeMotDePasse` (`src/auth/routes.ts`) décide avant tout accès : une identité qui a un facteur actif reçoit
+`{ mfaToken }`, quel que soit son rôle ou le réglage ; une identité qui a un compte `admin` actif dans un espace dont
+`tenants.second_facteur_admins` est vrai (migration 0230, faux par défaut et pour les espaces existants), et aucun
+facteur, reçoit `{ enrolToken }` ; les autres reçoivent la suite d'avant (session si un espace, jeton de choix sinon).
+Cette règle s'écrit UNE fois (`facteurExigeSql`, `src/auth/facteur-exige.ts`), lue par `findIdentity` (`facteurExige`)
+et par l'état du facteur (`obligatoire`), que lisent l'inscription, l'invitation et Mon compte. Le réglage se pose dans
+Compte & équipe (`GET` et `PUT /tenants/:tenantId/second-facteur`, module `admin`, tracé au journal). Mon compte refuse
+de retirer le facteur d'un admin d'un espace qui l'exige et d'une adresse de `OPS_EMAILS` (`raison` : `espace` ou
+`exploitation`). La connexion, l'inscription (elle crée un admin d'un espace qui n'exige rien, donc rend la session) et
+l'invitation acceptée passent toutes par là ; `/auth/google` non, par décision de Julien,
 SAUF pour une connexion d'exploitation (`ops: true`), où Google prouve l'adresse et jamais le second facteur.
 Les deux jetons d'étape suivent le modèle du jeton de choix : un `kind` à eux, la liste SIGNÉE des comptes, ni
 `tenantId` ni `role` à la racine, et `verifySession` refuse tout jeton qui porte un `kind`. ⚠️ **AUCUN

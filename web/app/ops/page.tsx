@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { DailyChart } from '@/components/DailyChart';
 import { getOpsOverview, getOpsStockage, getOpsVercel, type JaugeVercel, observerTenant, lireGrillePrixOps, ecrireGrillePrixOps, loginOps, loginOpsGoogle, estEtapeSecondFacteur, type OpsOverview,
   lireNumerosFournis, declarerNumeroFourni, type ReserveNumerosOps, lirePlafondApiOps, type PlafondApiOps, type FenetrePlafondOps,
+  lireOffreOps, ecrireOffreOps, type OffreEntrepriseOps,
   lireSuppressionOps, supprimerEspaceOps, type BilanSuppressionOps, type EtapePrevueOps, type SuppressionEspaceOps, type EtapeSuppressionNom,
   type TenantOverviewRow, type QueueLoadRow, type QueueGroupLoadRow, type QueueLatenceRow, type LatenceHttpRow, type WorkerHeartbeat, type PoolInstantane,
   type PoolAttentePoint, type GrillePrix, type EtapeSecondFacteur, type SessionOpsOuverte, type TacheFondRow, type MesureStockage } from '@/lib/api';
@@ -27,6 +28,7 @@ import { alerte, brand, danger, ink, succes } from '@/lib/couleurs';
 import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
 import { Nd } from '@/components/Nd';
+import { lireConservation, conservationPeutPurger } from '@/lib/ops-offre';
 
 /**
  * LA CONSOLE D'EXPLOITATION, NOMINATIVE (plan `docs/superpowers/plans/2026-09-28-ops-nominatif.md`).
@@ -49,6 +51,7 @@ export default function OpsPage() {
   /** L'espace dont on ouvre le bilan de suppression (RC8). */
   const [aSupprimer, setASupprimer] = useState<{ id: string; nom: string } | null>(null);
   const [quotasDe, setQuotasDe] = useState<{ id: string; nom: string } | null>(null);
+  const [offreDe, setOffreDe] = useState<{ id: string; nom: string; membres: number } | null>(null);
 
   useEffect(() => {
     // Relue ici et pas au rendu : le stockage du navigateur n'existe pas côté serveur. `getSessionOps` efface au
@@ -201,11 +204,13 @@ export default function OpsPage() {
               onObserver={(id, nom) => { void observer(id, nom); }}
               onSupprimer={(id, nom) => setASupprimer({ id, nom })}
               onQuotas={(id, nom) => setQuotasDe({ id, nom })}
+              onOffre={(id, nom, membres) => setOffreDe({ id, nom, membres })}
               tenants={data.tenants}
             />
           </>
         ) : null}
         {quotasDe && <QuotasApi jeton={session.token} tenantId={quotasDe.id} nom={quotasDe.nom} onFermer={() => setQuotasDe(null)} />}
+        {offreDe && <OffreEspace jeton={session.token} tenantId={offreDe.id} nom={offreDe.nom} membres={offreDe.membres} onFermer={() => setOffreDe(null)} />}
         {aSupprimer && (
           <SuppressionEspace
             jeton={session.token}
@@ -1386,11 +1391,167 @@ function QuotasApi({ jeton, tenantId, nom, onFermer }: { jeton: string; tenantId
   );
 }
 
-function TenantTable({ tenants, onObserver, onSupprimer, onQuotas }: {
+/**
+ * L'OFFRE ENTREPRISE D'UN ESPACE, POSÉE PAR L'EXPLOITATION (demande de Julien du 2026-10-13 ; route du lot 6,
+ * `src/http/ops-offre.ts`). L'Entreprise est sur devis : elle se pose ici après signature, avec sa limite
+ * d'utilisateurs, et se retire de même pour ramener l'espace en Base. La note est obligatoire (au moins trois
+ * caractères, `MIN_NOTE` du serveur), et la trace porte l'adresse de l'exploitant.
+ *
+ * 🔴 LA CONSERVATION N'EST ENVOYÉE QUE SI ON COCHE « La changer » : absente, la route la laisse telle quelle, parce
+ * qu'une valeur plus basse lance la purge irréversible des conversations plus anciennes. Un raccourcissement l'annonce
+ * en rouge avant l'enregistrement.
+ */
+function OffreEspace({ jeton, tenantId, nom, membres, onFermer }: { jeton: string; tenantId: string; nom: string; membres: number; onFermer: () => void }) {
+  const t = useT();
+  const [etat, setEtat] = useState<OffreEntrepriseOps | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [entreprise, setEntreprise] = useState(false);
+  const [sansLimite, setSansLimite] = useState(false);
+  const [utilisateurs, setUtilisateurs] = useState('');
+  const [changerConservation, setChangerConservation] = useState(false);
+  const [conservation, setConservation] = useState('');
+  const [note, setNote] = useState('');
+  const [envoi, setEnvoi] = useState(false);
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  const remplir = (r: OffreEntrepriseOps): void => {
+    setEtat(r);
+    setEntreprise(r.entreprise);
+    setSansLimite(r.entreprise && r.utilisateurs === null);
+    setUtilisateurs(String(r.utilisateurs ?? r.utilisateursProposes));
+    setChangerConservation(false);
+    setConservation(r.conservationJours === null ? '' : String(r.conservationJours));
+  };
+
+  useEffect(() => {
+    let vivant = true;
+    lireOffreOps(jeton, tenantId)
+      .then((r) => { if (vivant) remplir(r); })
+      .catch((e: unknown) => { if (vivant) setErreur(e instanceof Error ? e.message : t('Lecture impossible', 'Read failed')); });
+    return () => { vivant = false; };
+  }, [jeton, tenantId, t]);
+
+  const limite = sansLimite ? null : (/^[0-9]+$/.test(utilisateurs.trim()) ? Number(utilisateurs.trim()) : NaN);
+  const limiteValide = !entreprise || limite === null || (Number.isInteger(limite) && limite >= 1 && limite <= 10_000);
+  const nouvelleConservation = changerConservation ? lireConservation(conservation) : undefined;
+  const conservationValide = nouvelleConservation !== 'invalide';
+  const purge = etat !== null && nouvelleConservation !== undefined && nouvelleConservation !== 'invalide'
+    && conservationPeutPurger(etat.conservationJours, nouvelleConservation);
+  const noteValide = note.trim().length >= 3;
+  const pret = etat !== null && limiteValide && conservationValide && noteValide && !envoi;
+
+  async function enregistrer() {
+    if (!pret) return;
+    setEnvoi(true);
+    setMsg(null);
+    try {
+      const r = await ecrireOffreOps(jeton, tenantId, {
+        entreprise,
+        // Hors Entreprise, la limite ne veut rien dire : elle repart à « sans limite ».
+        utilisateurs: entreprise ? limite : null,
+        ...(nouvelleConservation !== undefined ? { conservationJours: nouvelleConservation } : {}),
+        note: note.trim(),
+      });
+      remplir(r);
+      setNote('');
+      setMsg({ kind: 'ok', text: r.entreprise
+        ? t('Espace passé en Entreprise.', 'Workspace moved to Enterprise.')
+        : t('Espace hors Entreprise : il suit son offre en ligne (Base ou Pro).', 'Workspace out of Enterprise: it follows its online plan (Base or Pro).') });
+    } catch (e) {
+      setMsg({ kind: 'err', text: e instanceof Error ? e.message : t('Enregistrement impossible', 'Unable to save') });
+    } finally {
+      setEnvoi(false);
+    }
+  }
+
+  const conservationLue = (j: number | null): string => (j === null
+    ? t('défaut de l’instance', 'instance default')
+    : j === 0 ? t('jamais purgées', 'never purged') : t(`${j} jours`, `${j} days`));
+
+  return (
+    <Modale titre={t('Offre Entreprise', 'Enterprise plan')} sousTitre={nom} testId="offre-modale" onClose={onFermer}
+      pied={etat ? (
+        <Bouton enCours={envoi} disabled={!pret} onClick={() => { void enregistrer(); }} data-testid="offre-enregistrer">
+          {t('Enregistrer', 'Save')}
+        </Bouton>
+      ) : undefined}
+    >
+      {erreur ? (
+        <p className="text-xs text-danger">{erreur}</p>
+      ) : !etat ? (
+        <Squelette forme="lignes" lignes={4} />
+      ) : (
+        <div className="grid gap-4 text-sm">
+          <p className="text-xs text-ink-500" data-testid="offre-actuelle">
+            {etat.entreprise
+              ? t(`Actuellement en Entreprise, ${etat.utilisateurs === null ? 'sans limite d’utilisateurs' : `${etat.utilisateurs} utilisateurs au plus`}. Conversations : ${conservationLue(etat.conservationJours)}.`,
+                `Currently on Enterprise, ${etat.utilisateurs === null ? 'no user limit' : `${etat.utilisateurs} users at most`}. Conversations: ${conservationLue(etat.conservationJours)}.`)
+              : t(`Actuellement hors Entreprise (offre en ligne). Conversations : ${conservationLue(etat.conservationJours)}.`,
+                `Currently not on Enterprise (online plan). Conversations: ${conservationLue(etat.conservationJours)}.`)}
+          </p>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={entreprise} onChange={(e) => setEntreprise(e.target.checked)} data-testid="offre-entreprise" className="h-4 w-4" />
+            <span className="font-medium text-ink-900">{t('Offre Entreprise', 'Enterprise plan')}</span>
+          </label>
+          {entreprise && (
+            <div className="grid gap-2 pl-6">
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={sansLimite} onChange={(e) => setSansLimite(e.target.checked)} data-testid="offre-sans-limite" className="h-4 w-4" />
+                <span className="text-ink-900">{t('Sans limite d’utilisateurs', 'No user limit')}</span>
+              </label>
+              {!sansLimite && (
+                <label className="grid gap-1">
+                  <span className="text-xs font-medium text-ink-500">{t('Utilisateurs au plus', 'Users at most')}</span>
+                  <input className={`${inputCls} w-32`} inputMode="numeric" value={utilisateurs} onChange={(e) => setUtilisateurs(e.target.value)} data-testid="offre-utilisateurs" />
+                  {!limiteValide && <span className="text-xs text-danger-700">{t('Un entier de 1 à 10 000.', 'A whole number from 1 to 10,000.')}</span>}
+                </label>
+              )}
+            </div>
+          )}
+          {etat.entreprise && !entreprise && (
+            <p className="rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700" data-testid="offre-retour-base">
+              {t(`L’espace suivra son offre en ligne. En Base, seuls 1 utilisateur et 1 administrateur restent actifs (il en compte ${membres}) : les autres sont bloqués tout de suite. Et 30 jours après, les conversations de plus de 30 jours sont effacées, sans retour. En Pro : 3 utilisateurs, 2 administrateurs, 90 jours.`,
+                `The workspace will follow its online plan. On Base, only 1 user and 1 administrator stay active (it has ${membres}): the others are blocked at once. And 30 days later, conversations older than 30 days are erased, for good. On Pro: 3 users, 2 administrators, 90 days.`)}
+            </p>
+          )}
+          <div className="grid gap-2">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={changerConservation} onChange={(e) => setChangerConservation(e.target.checked)} data-testid="offre-changer-conservation" className="h-4 w-4" />
+              <span className="text-ink-900">{t('Changer la conservation des conversations', 'Change conversation retention')}</span>
+            </label>
+            {changerConservation && (
+              <label className="grid gap-1 pl-6">
+                <span className="text-xs font-medium text-ink-500">{t('Jours (0 = jamais purgées, vide = défaut de l’instance)', 'Days (0 = never purged, empty = instance default)')}</span>
+                <input className={`${inputCls} w-32`} inputMode="numeric" value={conservation} onChange={(e) => setConservation(e.target.value)} data-testid="offre-conservation" />
+                {!conservationValide && <span className="text-xs text-danger-700">{t('Un entier de 0 à 3 650, ou vide.', 'A whole number from 0 to 3,650, or empty.')}</span>}
+              </label>
+            )}
+            {purge && (
+              <p className="rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700" data-testid="offre-purge">
+                {t('Cette conservation peut être plus courte que l’actuelle : les conversations plus anciennes seront effacées au prochain passage de la purge. C’est irréversible.',
+                  'This retention may be shorter than the current one: older conversations will be erased at the next purge run. This cannot be undone.')}
+              </p>
+            )}
+          </div>
+          <label className="grid gap-1">
+            <span className="text-xs font-medium text-ink-900">{t('Note (obligatoire) : pourquoi ce changement', 'Note (required): why this change')}</span>
+            <input className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} data-testid="offre-note" placeholder={t('Devis signé le…', 'Quote signed on…')} />
+          </label>
+          {msg && (
+            <p data-testid="offre-message" className={`rounded-controle px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}>{msg.text}</p>
+          )}
+        </div>
+      )}
+    </Modale>
+  );
+}
+
+function TenantTable({ tenants, onObserver, onSupprimer, onQuotas, onOffre }: {
   tenants: TenantOverviewRow[];
   onObserver: (id: string, nom: string) => void;
   onSupprimer: (id: string, nom: string) => void;
   onQuotas: (id: string, nom: string) => void;
+  onOffre: (id: string, nom: string, membres: number) => void;
 }) {
   const t = useT();
   const { locale } = useLocale();
@@ -1432,6 +1593,13 @@ function TenantTable({ tenants, onObserver, onSupprimer, onQuotas }: {
                   className="ml-3 mt-1 text-xs font-medium text-brand-600 underline decoration-dotted hover:text-brand-700"
                 >
                   {t('quotas API', 'API quotas')}
+                </button>
+                <button
+                  onClick={() => onOffre(tn.id, tn.name, tn.users)}
+                  data-testid={`offre-${tn.id}`}
+                  className="ml-3 mt-1 text-xs font-medium text-brand-600 underline decoration-dotted hover:text-brand-700"
+                >
+                  {t('offre', 'plan')}
                 </button>
                 {/* Ouvre le bilan : rien n'est supprimé avant la saisie du nom. */}
                 <button

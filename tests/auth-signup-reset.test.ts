@@ -26,7 +26,7 @@ function app(over: Partial<Omit<AuthRouteDeps, 'comptes'>> & { comptes?: Partial
   const deps: AuthRouteDeps = {
     users: {
       findIdentity: async (email: string): Promise<EmailIdentity | null> => (email === 'known@x.fr'
-        ? { identityId: identiteDe(email), passwordHash: KNOWN_HASH, mfaActif: false, comptes: [{ id: 'u1', tenantId: 't1', tenantName: 'Espace 1', email, role: 'admin' }] }
+        ? { identityId: identiteDe(email), passwordHash: KNOWN_HASH, mfaActif: false, facteurExige: false, comptes: [{ id: 'u1', tenantId: 't1', tenantName: 'Espace 1', email, role: 'admin' }] }
         : null),
     },
     secret: SECRET,
@@ -55,19 +55,16 @@ function app(over: Partial<Omit<AuthRouteDeps, 'comptes'>> & { comptes?: Partial
 }
 
 describe('POST /auth/signup', () => {
-  it('🔴 crée un espace + admin, et n’ouvre la session qu’APRÈS l’enrôlement (201 + enrolToken, puis token)', async () => {
+  it('🔴 crée un espace + admin, et ouvre la session TOUT DE SUITE : un espace neuf n’exige pas le second facteur', async () => {
     const { server, cap } = app();
     const res = await server.inject({ method: 'POST', url: '/auth/signup', ...j, payload: { workspaceName: 'Mon Espace', email: 'A@X.fr', password: 'motdepasse-longue', name: 'Jean' } });
     expect(res.statusCode).toBe(201);
-    // L'inscription crée un ADMIN : aucune session tant que le second facteur n'est pas posé.
-    expect(Object.keys(res.json())).toEqual(['enrolToken']);
+    // Décision de Julien du 2026-10-13 : le second facteur n'est plus le premier geste demandé à qui crée son espace.
     expect(cap.created).toEqual([{ name: 'Mon Espace', email: 'a@x.fr' }]); // email normalisé
-    const suite = await passerLeSecondFacteur(server, res, cap.mfa, 'a@x.fr');
-    expect(suite.statusCode).toBe(200);
-    const body = suite.json<{ token: string; user: { role: string; tenantId: string }; codesSecours: string[] }>();
+    const body = res.json<{ token: string; user: { role: string; tenantId: string }; enrolToken?: string }>();
+    expect(body.enrolToken).toBeUndefined();
     expect(body.token).toBeTruthy();
     expect(body.user).toMatchObject({ role: 'admin', tenantId: 'tNew' });
-    expect(body.codesSecours).toHaveLength(10);
     await server.close();
   });
   it('email déjà pris -> 409', async () => {

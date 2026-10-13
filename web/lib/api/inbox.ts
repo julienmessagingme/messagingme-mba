@@ -397,6 +397,8 @@ export function listBlockedContacts(tenantId: string): Promise<{ contacts: Block
 export interface CompteursInbox {
   tout: number;
   aTraiter: number;
+  /** Celles de « À traiter » au message entrant pas encore ouvert : le menu met le dossier en gras tant qu'il en reste. */
+  aTraiterNonLues: number;
   /** Marquées urgentes et non archivées (migration 0216). Elles sont AUSSI dans `tout`. */
   urgentes: number;
   signalees: number;
@@ -404,18 +406,22 @@ export interface CompteursInbox {
   /** Marquées « Traité » et non archivées. Elles sont AUSSI dans `tout`. */
   traitees: number;
   nonAffectees: number;
-  parMembre: Array<{ userId: string; nom: string; n: number }>;
+  /** `nonLues` : ses conversations au message entrant pas encore ouvert ; son nom passe en gras tant qu'il en reste. */
+  parMembre: Array<{ userId: string; nom: string; n: number; nonLues: number }>;
 }
 
-/** Les compteurs du menu. Une réponse mal formée rend des zéros : un menu sans chiffres reste un menu. */
+/**
+ * Les compteurs du menu. Une réponse mal formée rend des zéros : un menu sans chiffres reste un menu. Une API qui ne
+ * rend pas encore les non-lues (console publiée avant son déploiement) rend donc zéro : rien en gras, rien de cassé.
+ */
 export async function countConversationsParDossier(tenantId: string): Promise<CompteursInbox> {
   const r = await request<Partial<CompteursInbox>>(`/tenants/${tenantId}/conversations/counts`);
   const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
   return {
-    tout: n(r?.tout), aTraiter: n(r?.aTraiter), urgentes: n(r?.urgentes), signalees: n(r?.signalees),
+    tout: n(r?.tout), aTraiter: n(r?.aTraiter), aTraiterNonLues: n(r?.aTraiterNonLues), urgentes: n(r?.urgentes), signalees: n(r?.signalees),
     archivees: n(r?.archivees), traitees: n(r?.traitees), nonAffectees: n(r?.nonAffectees),
     // Vérifié et non casté : ce tableau vient du réseau, et l'écran fait `.map` dessus pendant le rendu.
-    parMembre: Array.isArray(r?.parMembre) ? r.parMembre : [],
+    parMembre: Array.isArray(r?.parMembre) ? r.parMembre.map((m) => ({ ...m, nonLues: n((m as { nonLues?: unknown }).nonLues) })) : [],
   };
 }
 

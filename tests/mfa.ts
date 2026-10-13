@@ -33,12 +33,24 @@ interface EtatFaux {
   bloqueJusqua: Date | null;
 }
 
-/** Un magasin du second facteur en mémoire, fidèle aux CONDITIONS du vrai (activation unique, pas croissant). */
+/**
+ * Un magasin du second facteur en mémoire, fidèle aux CONDITIONS du vrai (activation unique, pas croissant).
+ * `espacesExigeants` : les espaces qui exigent le second facteur de leurs admins (`tenants.second_facteur_admins`,
+ * migration 0230). Vide par défaut, comme un espace qui vient de naître : un admin n'y est tenu à rien.
+ */
 export class MfaEnMemoire implements MfaStore {
   private readonly etats = new Map<string, EtatFaux>();
   /** Le hash du mot de passe de chaque identité, pour l'enrôlement depuis Mon compte. */
   readonly motsDePasse = new Map<string, string>();
-  constructor(private readonly liste: CompteFaux[] = []) {}
+  readonly espacesExigeants: Set<string>;
+  constructor(private readonly liste: CompteFaux[] = [], espacesExigeants: Iterable<string> = []) {
+    this.espacesExigeants = new Set(espacesExigeants);
+  }
+
+  /** La même règle que `facteurExigeSql` : un compte admin actif dans un espace qui l'exige. */
+  exige(identityId: string): boolean {
+    return this.comptesDe(identityId).some((c) => c.role === 'admin' && !c.disabled && this.espacesExigeants.has(c.tenantId));
+  }
 
   ajouterCompte(c: CompteFaux): void {
     this.liste.push(c);
@@ -69,7 +81,7 @@ export class MfaEnMemoire implements MfaStore {
       dernierPas: e.dernierPas,
       secretEnAttente: e.attente,
       codesSecoursRestants: [...e.codes.values()].filter((d) => d === null).length,
-      obligatoire: comptes.some((c) => c.role === 'admin' && !c.disabled),
+      obligatoire: this.exige(identityId),
       bloqueJusqua: e.bloqueJusqua,
     };
   }
@@ -193,6 +205,7 @@ export class UtilisateursFaux implements UserAuthStore {
       identityId: identiteDe(email),
       passwordHash: hash,
       mfaActif: this.mfa?.estActif(email) ?? false,
+      facteurExige: this.mfa?.exige(identiteDe(email)) ?? false,
       comptes: trouves.map((u) => ({ id: u.id, tenantId: u.tenantId, tenantName: `Espace ${u.tenantId}`, email: u.email, role: u.role })),
     };
   }

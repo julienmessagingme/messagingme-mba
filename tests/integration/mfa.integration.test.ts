@@ -67,8 +67,9 @@ describe.skipIf(!url)('le second facteur, en base', () => {
     const email = `mfa.actif.${suffixe}@exemple.fr`;
     const { userId, identityId } = await espace('itest-mfa-actif', email);
     const avant = await mfa.lireParCompte(userId);
-    expect(avant).toMatchObject({ identityId, secret: null, activeLe: null, dernierPas: null, codesSecoursRestants: 0, obligatoire: true });
-    expect(await auth.findIdentity(email)).toMatchObject({ identityId, mfaActif: false });
+    // Un espace neuf n'exige pas le second facteur (migration 0230, défaut faux) : ni l'état, ni la connexion.
+    expect(avant).toMatchObject({ identityId, secret: null, activeLe: null, dernierPas: null, codesSecoursRestants: 0, obligatoire: false });
+    expect(await auth.findIdentity(email)).toMatchObject({ identityId, mfaActif: false, facteurExige: false });
 
     const secret = genererSecret();
     await mfa.poserSecretEnAttente(identityId, secret);
@@ -148,8 +149,31 @@ describe.skipIf(!url)('le second facteur, en base', () => {
     expect((await mfa.comptes(a.identityId)).map((c) => c.tenantId).sort()).toEqual([a.tenantId, b.tenantId].sort());
   });
 
+  it('🔴 l’obligation suit le réglage de l’espace, pour la connexion comme pour l’état, et seulement ses ADMINS', async () => {
+    const email = `mfa.reglage.${suffixe}@exemple.fr`;
+    const { tenantId, userId, identityId } = await espace('itest-mfa-reglage', email);
+    expect(await users.getSecondFacteurAdmins(tenantId)).toBe(false);
+    expect(await users.setSecondFacteurAdmins(tenantId, true)).toBe(true);
+    expect(await users.getSecondFacteurAdmins(tenantId)).toBe(true);
+    expect((await mfa.lire(identityId))!.obligatoire).toBe(true);
+    expect(await auth.findIdentity(email)).toMatchObject({ facteurExige: true });
+    // Un agent du même espace n'y est pas tenu.
+    await pool.query(`update users set role = 'agent' where id = $1`, [userId]);
+    expect((await mfa.lire(identityId))!.obligatoire).toBe(false);
+    expect(await auth.findIdentity(email)).toMatchObject({ facteurExige: false });
+    await pool.query(`update users set role = 'admin' where id = $1`, [userId]);
+    // Et le réglage retiré, plus rien n'est exigé.
+    expect(await users.setSecondFacteurAdmins(tenantId, false)).toBe(true);
+    expect((await mfa.lire(identityId))!.obligatoire).toBe(false);
+    expect(await auth.findIdentity(email)).toMatchObject({ facteurExige: false });
+    // Un espace inconnu : null en lecture, false en écriture.
+    expect(await users.getSecondFacteurAdmins('00000000-0000-0000-0000-000000000000')).toBeNull();
+    expect(await users.setSecondFacteurAdmins('00000000-0000-0000-0000-000000000000', true)).toBe(false);
+  });
+
   it('une identité d’un seul espace se réinitialise, et l’obligation suit les comptes admin ACTIFS', async () => {
     const { tenantId, userId, identityId } = await espace('itest-mfa-seul', `mfa.seul.${suffixe}@exemple.fr`);
+    await users.setSecondFacteurAdmins(tenantId, true);
     await facteurActif(identityId);
     expect(await mfa.reinitialiserDansEspace(tenantId, userId)).toBe('ok');
     expect(await mfa.lire(identityId)).toMatchObject({ secret: null, codesSecoursRestants: 0, obligatoire: true });

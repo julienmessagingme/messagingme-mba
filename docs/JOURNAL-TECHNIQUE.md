@@ -6,6 +6,20 @@
 > tranchent, jamais ce fichier.
 
 
+## 2026-10-13 : le second facteur des administrateurs au choix de l'espace, l'offre Entreprise dans /ops, le gras de l'Inbox
+
+- Demandes de Julien du jour : imposée à tout admin, la double authentification pesait sur la création de l'espace
+  (« trop chiant à la création de l'espace »). Elle devient un réglage de l'espace (case dans Compte & équipe), qui
+  vaut alors pour TOUS ses admins ; /ops garde la sienne. Ses trois choix : faux partout, espaces existants compris ;
+  Google non concerné ; le gras de l'Inbox suit les conversations NON LUES (le « lu » de la pastille, commun à
+  l'équipe).
+- Migration 0230 (`tenants.second_facteur_admins boolean not null default false`), poussée SEULE (29c3103c) parce que
+  la connexion la lit à chaque login, appliquée après sa CI verte, sans transaction longue ni verrou sur `tenants`.
+  Relue en base : booléen, non nul, défaut `false` ; 8 espaces, aucun n'exige ; 142 identités, aucune tenue, 3 avec
+  un facteur actif, qui continuent de le donner.
+- /ops pose désormais l'Entreprise à l'écran (la route existait depuis le lot 6, sans bouton). Inbox : non-lues de
+  « À traiter » et par membre dans les compteurs du menu, titres des sections en 16 px gras.
+
 ## 2026-10-13 : l'agent annonce le conseiller, et les horaires se règlent depuis Claude Code (essai 99, suite)
 
 - Suite de l'essai 99 : au « je voudrais parler à un humain » du client, l'agent a répondu « Bien sûr ! 😊 » et passé

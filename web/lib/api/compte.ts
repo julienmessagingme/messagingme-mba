@@ -464,6 +464,33 @@ export function lirePlafondApiOps(sessionOps: string, tenantId: string): Promise
   return appelOps(sessionOps, `/ops/plafond-api/${encodeURIComponent(tenantId)}`);
 }
 
+/**
+ * L'Entreprise d'un espace telle que l'exploitation l'a posée (`GET /ops/offre/:tenantId`, lot 6). `utilisateurs` : la
+ * limite, `null` = sans limite. `conservationJours` : `null` = le défaut de l'instance, 0 = jamais purgée.
+ */
+export interface OffreEntrepriseOps {
+  tenantId: string;
+  entreprise: boolean;
+  utilisateurs: number | null;
+  conservationJours: number | null;
+  /** La limite que l'écran propose quand on pose l'Entreprise (10). */
+  utilisateursProposes: number;
+}
+
+export function lireOffreOps(sessionOps: string, tenantId: string): Promise<OffreEntrepriseOps> {
+  return appelOps(sessionOps, `/ops/offre/${encodeURIComponent(tenantId)}`);
+}
+
+/**
+ * Pose ou retire l'Entreprise. 🔴 `conservationJours` ABSENT = inchangée : la route ne réécrit la conservation que si on
+ * la donne, parce qu'une valeur plus basse lance la purge irréversible des conversations plus anciennes.
+ */
+export function ecrireOffreOps(sessionOps: string, tenantId: string, corps: {
+  entreprise: boolean; utilisateurs: number | null; conservationJours?: number | null; note: string;
+}): Promise<OffreEntrepriseOps> {
+  return appelOps(sessionOps, `/ops/offre/${encodeURIComponent(tenantId)}`, { method: 'PUT', corps });
+}
+
 /** Retrouve le numéro chez DIDWW, le branche sur le trunk de l'Asterisk, puis l'inscrit dans la réserve. */
 export function declarerNumeroFourni(sessionOps: string, numero: string, note: string): Promise<{ cree: boolean }> {
   return appelOps(sessionOps, '/ops/numeros-fournis', { method: 'POST', corps: { numero, note } });
@@ -570,6 +597,14 @@ export function lireNomEspace(tenantId: string, refus401: Refus401 = 'session'):
 /** Renomme l'espace. Le serveur rend le nom EFFECTIF (rogné), c'est lui que l'écran affiche. */
 export function renommerEspace(tenantId: string, nom: string): Promise<{ nom: string }> {
   return request(`/tenants/${tenantId}/nom`, { method: 'PATCH', body: JSON.stringify({ nom }) });
+}
+/** L'espace exige-t-il la double authentification de ses administrateurs (migration 0230) ? Réservé aux admins. */
+export function lireSecondFacteurEspace(tenantId: string): Promise<{ exigePourLesAdmins: boolean }> {
+  return request(`/tenants/${tenantId}/second-facteur`);
+}
+/** Pose ce réglage ; le serveur rend l'état effectif. */
+export function poserSecondFacteurEspace(tenantId: string, exigePourLesAdmins: boolean): Promise<{ exigePourLesAdmins: boolean }> {
+  return request(`/tenants/${tenantId}/second-facteur`, { method: 'PUT', body: JSON.stringify({ exigePourLesAdmins }) });
 }
 /**
  * Accepte une invitation : pose le mot de passe, puis la même porte que la connexion. Une session directe pour un

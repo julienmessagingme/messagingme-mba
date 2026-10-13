@@ -15,11 +15,6 @@ import { journaliser } from '../lib/journal';
 
 export interface AuthRouteDeps extends MfaRouteDeps {
   /**
-   * Les adresses qui ouvrent `/ops` (`OPS_EMAILS`). Absent ou vide : aucune connexion d'exploitation ne
-   * s'ouvre, et la garde de `/ops` (`makeRequireOps`, qui lit la même liste) refuse tout.
-   */
-  opsEmails?: readonly string[];
-  /**
    * Journal d'audit des connexions échouées ; absent : aucune trace. Écrit seulement pour un compte qui existe :
    * `audit_log.tenant_id` est NOT NULL, une tentative sur une adresse inconnue n'a nulle part où s'écrire, et
    * l'écran doit le dire. Sûr sur ce chemin non authentifié grâce au frein placé avant (dix tentatives par
@@ -135,9 +130,10 @@ async function suiteDeConnexion(deps: AuthRouteDeps, etape: EtapeConnexion, opti
 /**
  * Le second facteur, après le mot de passe et avant tout accès : connexion, inscription et invitation
  * acceptée passent par ici.
- *  - facteur actif : `{ mfaToken }`, quel que soit le rôle ;
- *  - admin quelque part sans facteur : `{ enrolToken }`, il doit en poser un avant d'entrer ;
- *  - sinon : la suite de connexion.
+ *  - facteur actif : `{ mfaToken }`, quel que soit le rôle ou le réglage de l'espace ;
+ *  - admin d'un espace qui EXIGE le second facteur, sans facteur (`facteurExigeSql`, décision de Julien du
+ *    2026-10-13) : `{ enrolToken }`, il doit en poser un avant d'entrer ;
+ *  - sinon : la suite de connexion. Un admin d'un espace qui ne l'exige pas entre avec son seul mot de passe.
  *
  * 🔴 Aucune session ni liste d'espaces avant le code : le jeton d'étape porte la suite prévue, signée. Aucun
  * interrupteur pour sauter cette étape, jamais : ce serait une porte en production (les tests passent par le
@@ -292,10 +288,11 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
       const ops = await entreeOps(deps, etape, identite.mfaActif);
       return reply.code(ops.code).send(ops.corps);
     }
-    // `comptes` ne porte que les comptes actifs (`findIdentity`) : un admin révoqué n'oblige plus à rien.
+    // Calculé en base sur les comptes actifs (`facteurExigeSql`) : un admin révoqué n'oblige plus à rien, et un admin
+    // d'un espace qui n'exige pas le second facteur non plus.
     return reply.code(200).send(await apresLeMotDePasse(deps, etape, {
       actif: identite.mfaActif,
-      obligatoire: identite.comptes.some((c) => c.role === 'admin'),
+      obligatoire: identite.facteurExige,
     }));
   });
 
@@ -382,10 +379,11 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     return reply.code(201).send({ token: jwt, user: { email: identity.email, role: 'admin', tenantId }, isNew: true });
   });
 
-  // Inscription libre : crée un nouvel espace et son admin, puis passe par le second facteur avant la session.
+  // Inscription libre : crée un nouvel espace et son admin, puis la porte du second facteur (la session pour un espace
+  // neuf, qui n'exige rien ; un code ou un enrôlement si l'identité a un facteur, ou y est tenue ailleurs).
   app.post('/auth/signup', async (req, reply) => {
-    // Sans magasin du second facteur, l'inscription ne pourrait pas enrôler l'admin qu'elle crée : refus avant
-    // de créer quoi que ce soit.
+    // Sans magasin du second facteur, l'inscription ne pourrait pas lire l'état du facteur de l'identité qu'elle crée
+    // (`lireParCompte`), donc ni son code ni son obligation ailleurs : refus avant de créer quoi que ce soit.
     if (!deps.comptes?.createTenantWithAdmin || !deps.mfa || !deps.comptes.motDePasseDeLAdresse) return reply.code(503).send({ error: 'inscription indisponible' });
     const b = (req.body ?? {}) as { workspaceName?: unknown; email?: unknown; password?: unknown; name?: unknown };
     const email = str(b.email).trim().toLowerCase();
@@ -417,12 +415,13 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     }
     try {
       const { tenantId, userId } = await deps.comptes.createTenantWithAdmin(workspaceName, { email, name, passwordHash: await hashPassword(password) }, 'console');
-      // L'inscription crée un admin : elle rend un jeton d'enrôlement, jamais une session ; une identité qui a
-      // déjà un facteur actif donne son code.
+      // L'inscription crée un admin d'un espace qui n'exige pas le second facteur (défaut de la migration 0230) : elle
+      // rend la session, sauf si l'identité a déjà un facteur actif (son code) ou est admin d'un AUTRE espace qui
+      // l'exige (l'enrôlement). La console lit les deux formes (`web/app/signup/page.tsx`).
       const facteur = await deps.mfa.lireParCompte(userId);
       if (!facteur) throw new Error('inscription : le compte créé n’a pas d’identité');
       const etape: EtapeConnexion = { identityId: facteur.identityId, email, comptes: [{ userId, tenantId, role: 'admin' }] };
-      return reply.code(201).send(await apresLeMotDePasse(deps, etape, { actif: facteur.secret !== null, obligatoire: true }));
+      return reply.code(201).send(await apresLeMotDePasse(deps, etape, { actif: facteur.secret !== null, obligatoire: facteur.obligatoire }));
     } catch (err) {
       if (err instanceof DuplicateEmailError) return reply.code(409).send({ error: 'un compte existe déjà avec cet email' });
       throw err;
@@ -493,8 +492,8 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     if (!facteur) return reply.code(400).send({ error: 'invitation invalide ou expirée' });
     await deps.comptes.setPassword(userId, await hashPassword(password));
     // Accepter une invitation, c'est se connecter pour la première fois : même porte que la connexion. Une
-    // invitation d'admin (ou une identité déjà admin ailleurs) enrôle d'abord ; une identité qui a déjà un
-    // facteur donne son code.
+    // invitation d'admin dans un espace qui exige le second facteur (ou une identité déjà admin d'un tel espace)
+    // enrôle d'abord : le compte invité est actif, `obligatoire` le compte. Une identité qui a un facteur donne son code.
     const etape: EtapeConnexion = {
       identityId: facteur.identityId,
       email: su.email,
@@ -502,7 +501,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     };
     return reply.code(200).send(await apresLeMotDePasse(deps, etape, {
       actif: facteur.secret !== null,
-      obligatoire: facteur.obligatoire || su.role === 'admin',
+      obligatoire: facteur.obligatoire,
     }));
   });
 

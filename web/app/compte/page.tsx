@@ -246,7 +246,9 @@ function DoubleAuthentification() {
               )}
             </div>
             {etat.obligatoire && (
-              <p className="text-xs text-ink-500" data-testid="mfa-obligatoire">{t('Obligatoire pour les administrateurs : elle ne peut pas être désactivée.', 'Required for administrators: it cannot be disabled.')}</p>
+              <p className="text-xs text-ink-500" data-testid="mfa-obligatoire">{etat.raison === 'exploitation'
+                ? t('Obligatoire pour l’exploitation : elle ne peut pas être désactivée.', 'Required for operations: it cannot be disabled.')
+                : t('Un espace dont vous êtes administrateur l’exige : elle ne peut pas être désactivée.', 'A workspace you administer requires it: it cannot be disabled.')}</p>
             )}
           </>
         ) : (

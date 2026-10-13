@@ -264,7 +264,7 @@ export const champsInertes: Pick<FieldsRouteDeps, 'tenantCode' | 'contacts'> = {
 export const priseDeFilSansEffet = async (): Promise<void> => {};
 
 /** `compterConversations` absente : la route rendait ces zéros. */
-export const COMPTEURS_VIDES = { tout: 0, aTraiter: 0, urgentes: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] };
+export const COMPTEURS_VIDES = { tout: 0, aTraiter: 0, aTraiterNonLues: 0, urgentes: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] };
 
 export const inboxInerte: Pick<InboxRouteDeps,
   'audit' | 'lireMediaMessage' | 'agentsPeuventPrendre' | 'takeControl' | 'filTenuParLApplication' | 'reprendreLaMain' | 'releaseControl'
@@ -466,12 +466,14 @@ export const membresInertes: Pick<UsersRouteDeps, 'audit' | 'createInviteToken' 
   appUrl: '',
 };
 
-export const membresDepInertes: Pick<MembresDep, 'createPending' | 'setName' | 'getTenantName' | 'setTenantName'> = {
+export const membresDepInertes: Pick<MembresDep, 'createPending' | 'setName' | 'getTenantName' | 'setTenantName' | 'getSecondFacteurAdmins' | 'setSecondFacteurAdmins'> = {
   createPending: neDevraitPasEtreAppelee('createPending'),
   setName: neDevraitPasEtreAppelee('setName'),
   // Absente : phrase générique dans l'e-mail d'invitation.
   getTenantName: async () => null,
   setTenantName: neDevraitPasEtreAppelee('setTenantName'),
+  getSecondFacteurAdmins: neDevraitPasEtreAppelee('getSecondFacteurAdmins'),
+  setSecondFacteurAdmins: neDevraitPasEtreAppelee('setSecondFacteurAdmins'),
 };
 
 export const scenariosDepInerte: Pick<ScenariosDep, 'publish' | 'ensureTestToken'> = {

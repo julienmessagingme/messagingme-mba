@@ -535,3 +535,76 @@ describe('users route : le nom de l’espace', () => {
     expect(trace.ecrits).toEqual([]);
   });
 });
+
+describe('users route : le second facteur des admins, au choix de l’espace (migration 0230)', () => {
+  interface Trace { ecrits: Array<{ tenant: string; exige: boolean }>; audit: Array<{ action: string; target: { kind: string; id: string }; detail: Record<string, unknown> }> }
+  function appReglage(actuel: boolean | null = false) {
+    const trace: Trace = { ecrits: [], audit: [] };
+    const { server } = app({
+      users: {
+        getSecondFacteurAdmins: async () => actuel,
+        setSecondFacteurAdmins: async (tenant, exige) => { trace.ecrits.push({ tenant, exige }); return true; },
+      },
+      audit: async (_t, _acteur, action, target, detail) => { trace.audit.push({ action, target, detail: detail ?? {} }); },
+    });
+    return { server, trace };
+  }
+  const poser = (tok: string, corps: unknown, tenant = 't1') =>
+    ({ method: 'PUT' as const, url: `/tenants/${tenant}/second-facteur`, ...h(tok), payload: corps as object });
+
+  it('un admin lit le réglage de son espace', async () => {
+    const { server } = appReglage(true);
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/second-facteur', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ exigePourLesAdmins: true });
+  });
+
+  it('🔴 un admin l’active puis le retire : écrit, rendu, et chaque sens a sa ligne de journal', async () => {
+    const off = appReglage(false);
+    expect((await off.server.inject(poser(adminTok, { exigePourLesAdmins: true }))).json()).toEqual({ exigePourLesAdmins: true });
+    expect(off.trace.ecrits).toEqual([{ tenant: 't1', exige: true }]);
+    expect(off.trace.audit).toEqual([{ action: 'espace.second_facteur_exige', target: { kind: 'tenant', id: 't1' }, detail: {} }]);
+    const on = appReglage(true);
+    expect((await on.server.inject(poser(adminTok, { exigePourLesAdmins: false }))).statusCode).toBe(200);
+    expect(on.trace.ecrits).toEqual([{ tenant: 't1', exige: false }]);
+    expect(on.trace.audit.map((a) => a.action)).toEqual(['espace.second_facteur_libre']);
+  });
+
+  it('un réglage inchangé ne réécrit rien et ne journalise rien', async () => {
+    const { server, trace } = appReglage(true);
+    expect((await server.inject(poser(adminTok, { exigePourLesAdmins: true }))).statusCode).toBe(200);
+    expect(trace.ecrits).toEqual([]);
+    expect(trace.audit).toEqual([]);
+  });
+
+  it('🔴 un AGENT et un MANAGER ne lisent ni ne changent rien : 403, aucune écriture', async () => {
+    const managerTok = await signSession({ userId: 'u3', tenantId: 't1', role: 'manager' }, SECRET);
+    const { server, trace } = appReglage();
+    for (const tok of [agentTok, managerTok]) {
+      expect((await server.inject(poser(tok, { exigePourLesAdmins: true }))).statusCode).toBe(403);
+      expect((await server.inject({ method: 'GET', url: '/tenants/t1/second-facteur', ...h(tok) })).statusCode).toBe(403);
+    }
+    expect(trace.ecrits).toEqual([]);
+  });
+
+  it('🔴 isolation : un admin de t1 ne touche pas au réglage de t2', async () => {
+    const { server, trace } = appReglage();
+    expect((await server.inject(poser(adminTok, { exigePourLesAdmins: true }, 't2'))).statusCode).toBe(403);
+    expect(trace.ecrits).toEqual([]);
+  });
+
+  it('🔴 400 : un booléen strict et rien d’autre ; rien n’est écrit', async () => {
+    const { server, trace } = appReglage();
+    for (const corps of [{}, { exigePourLesAdmins: 'true' }, { exigePourLesAdmins: 1 }, { exigePourLesAdmins: null }, { exigePourLesAdmins: true, autre: 1 }]) {
+      expect((await server.inject(poser(adminTok, corps))).statusCode, JSON.stringify(corps)).toBe(400);
+    }
+    expect(trace.ecrits).toEqual([]);
+  });
+
+  it('espace introuvable : 404, rien n’est écrit', async () => {
+    const { server, trace } = appReglage(null);
+    expect((await server.inject(poser(adminTok, { exigePourLesAdmins: true }))).statusCode).toBe(404);
+    expect((await server.inject({ method: 'GET', url: '/tenants/t1/second-facteur', ...h(adminTok) })).statusCode).toBe(404);
+    expect(trace.ecrits).toEqual([]);
+  });
+});

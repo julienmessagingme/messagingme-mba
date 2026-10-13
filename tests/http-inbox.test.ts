@@ -1149,7 +1149,7 @@ describe('marquer « Traité », à la main (migration 0160)', () => {
         marquerTraitee: async () => true,
         compterConversations: async () => {
           lectures += 1;
-          return { tout: 1, aTraiter: 0, urgentes: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] };
+          return { tout: 1, aTraiter: 0, aTraiterNonLues: 0, urgentes: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] };
         },
       },
     });

@@ -249,7 +249,23 @@ test.describe('Enrôlement obligatoire d’un administrateur', () => {
     await expect(page.getByText('La double authentification est déjà active. Reconnectez-vous.')).toBeVisible();
   });
 
-  test('🔴 inscription : l’espace créé passe par l’enrôlement avant le tunnel de la Base', async ({ page }) => {
+  test('🔴 inscription : un espace neuf n’exige rien, la session ouvre directement le tunnel de la Base', async ({ page }) => {
+    // Décision de Julien du 2026-10-13 : le second facteur n'est plus le premier geste demandé à qui crée son espace.
+    const appels = await monter(page, (chemin) => {
+      if (chemin === '/auth/signup') return { status: 201, body: SESSION_ADMIN };
+      return undefined;
+    });
+    await page.goto('/signup');
+    await page.getByPlaceholder(/Mon entreprise|My company/).fill('Mon espace');
+    await page.locator('input[type="email"]').fill('a@b.co');
+    await page.locator('input[type="password"]').fill('motdepasse-long');
+    await page.getByRole('button', { name: /Créer mon espace|Create my workspace/ }).click();
+    await page.waitForURL('**/connecter-whatsapp?suite=demarrer', { timeout: 15_000 });
+    expect(await sessionEnregistree(page)).not.toBeNull();
+    expect(appelsVers(appels, '/auth/mfa/enroler')).toHaveLength(0);
+  });
+
+  test('🔴 inscription : une adresse admin d’un espace qui l’exige passe par l’enrôlement avant le tunnel de la Base', async ({ page }) => {
     const appels = await monter(page, (chemin) => {
       if (chemin === '/auth/signup') return { status: 201, body: { enrolToken: 'jeton-enrol' } };
       if (chemin === '/auth/mfa/enroler') return { body: CLE };
@@ -392,12 +408,26 @@ test.describe('Mon compte : la double authentification', () => {
     expect(appelsVers(appels, '/auth/mfa/moi/codes').map((a) => a.corps)).toEqual([{ code: '000000' }, { code: '123456' }]);
   });
 
-  test('🔴 un administrateur ne peut pas la désactiver : aucun bouton, et la raison', async ({ page }) => {
-    await monter(page, (chemin, methode) => (chemin === '/auth/mfa/moi' && methode === 'GET' ? { body: ACTIF_ADMIN } : undefined), SESSION_E2E);
+  test('🔴 un administrateur d’un espace qui l’exige ne peut pas la désactiver : aucun bouton, et la raison', async ({ page }) => {
+    await monter(page, (chemin, methode) => (chemin === '/auth/mfa/moi' && methode === 'GET' ? { body: { ...ACTIF_ADMIN, raison: 'espace' } } : undefined), SESSION_E2E);
     await page.goto('/compte');
     await expect(page.getByTestId('mfa-regenerer')).toBeVisible();
     await expect(page.getByTestId('mfa-desactiver')).toHaveCount(0);
-    await expect(page.getByTestId('mfa-obligatoire')).toHaveText(/Obligatoire pour les administrateurs|Required for administrators/);
+    await expect(page.getByTestId('mfa-obligatoire')).toHaveText(/l’exige|requires it/);
+  });
+
+  test('🔴 une adresse d’exploitation : aucun bouton, et la raison dit l’exploitation', async ({ page }) => {
+    await monter(page, (chemin, methode) => (chemin === '/auth/mfa/moi' && methode === 'GET' ? { body: { ...ACTIF_ADMIN, raison: 'exploitation' } } : undefined), SESSION_E2E);
+    await page.goto('/compte');
+    await expect(page.getByTestId('mfa-desactiver')).toHaveCount(0);
+    await expect(page.getByTestId('mfa-obligatoire')).toHaveText(/exploitation|operations/);
+  });
+
+  test('un administrateur d’un espace qui ne l’exige pas peut la désactiver', async ({ page }) => {
+    await monter(page, (chemin, methode) => (chemin === '/auth/mfa/moi' && methode === 'GET' ? { body: { ...ACTIF_ADMIN, obligatoire: false, raison: null } } : undefined), SESSION_E2E);
+    await page.goto('/compte');
+    await expect(page.getByTestId('mfa-desactiver')).toBeVisible();
+    await expect(page.getByTestId('mfa-obligatoire')).toHaveCount(0);
   });
 
   test('« Mon compte » est dans le menu du compte, pour un agent aussi, et mène à la double authentification', async ({ page }) => {
@@ -464,5 +494,57 @@ test.describe('Équipe : réinitialiser le facteur d’un membre', () => {
     await page.getByTestId('membre-mfa-u-ailleurs').click();
     await repondre(page, true);
     await expect(page.getByTestId('admin-erreur')).toHaveText(/Cette personne a un accès à un autre espace : la réinitialisation passe par le support\.|This person has access to another workspace/);
+  });
+});
+
+test.describe('Compte & équipe : la double authentification des administrateurs, au choix de l’espace', () => {
+  test('🔴 cocher l’exige pour tous les administrateurs, décocher la laisse au choix ; chaque geste part et se lit', async ({ page }) => {
+    const appels = await monter(page, (chemin, methode, corps) => {
+      if (chemin === '/tenants/t-e2e/users' && methode === 'GET') return { body: { users: [] } };
+      if (chemin === '/tenants/t-e2e/nom') return { body: { nom: 'Espace E2E' } };
+      if (chemin === '/tenants/t-e2e/second-facteur' && methode === 'GET') return { body: { exigePourLesAdmins: false } };
+      if (chemin === '/tenants/t-e2e/second-facteur' && methode === 'PUT') return { body: { exigePourLesAdmins: corps?.exigePourLesAdmins } };
+      return undefined;
+    }, SESSION_E2E);
+    await page.goto('/admin');
+    const carte = page.getByTestId('securite-espace-carte');
+    const caseExige = carte.getByTestId('securite-espace-second-facteur');
+    await expect(caseExige).not.toBeChecked();
+    // La phrase qui dit ce que le réglage ne couvre pas : sans elle, on croirait Google concerné.
+    await expect(carte).toContainText(/Google/);
+    await caseExige.check();
+    await expect(carte.getByTestId('securite-espace-message')).toContainText(/prochaine connexion|next sign-in/);
+    await expect(caseExige).toBeChecked();
+    await caseExige.uncheck();
+    await expect(carte.getByTestId('securite-espace-message')).toContainText(/au choix|Left to/);
+    expect(appelsVers(appels, '/tenants/t-e2e/second-facteur').filter((a) => a.methode === 'PUT').map((a) => a.corps))
+      .toEqual([{ exigePourLesAdmins: true }, { exigePourLesAdmins: false }]);
+  });
+
+  test('un refus du serveur remet la case comme avant, et le dit', async ({ page }) => {
+    await monter(page, (chemin, methode) => {
+      if (chemin === '/tenants/t-e2e/users' && methode === 'GET') return { body: { users: [] } };
+      if (chemin === '/tenants/t-e2e/nom') return { body: { nom: 'Espace E2E' } };
+      if (chemin === '/tenants/t-e2e/second-facteur' && methode === 'GET') return { body: { exigePourLesAdmins: false } };
+      if (chemin === '/tenants/t-e2e/second-facteur' && methode === 'PUT') return { status: 403, body: { error: 'Réservé aux administrateurs.' } };
+      return undefined;
+    }, SESSION_E2E);
+    await page.goto('/admin');
+    const carte = page.getByTestId('securite-espace-carte');
+    await carte.getByTestId('securite-espace-second-facteur').click();
+    await expect(carte.getByTestId('securite-espace-message')).toContainText('Réservé aux administrateurs.');
+    await expect(carte.getByTestId('securite-espace-second-facteur')).not.toBeChecked();
+  });
+
+  test('l’API pas encore déployée : la carte se cache, le reste de la page est là', async ({ page }) => {
+    await monter(page, (chemin, methode) => {
+      if (chemin === '/tenants/t-e2e/users' && methode === 'GET') return { body: { users: [] } };
+      if (chemin === '/tenants/t-e2e/nom') return { body: { nom: 'Espace E2E' } };
+      if (chemin === '/tenants/t-e2e/second-facteur') return { status: 404, body: { message: 'Route GET:/x not found', error: 'Not Found', statusCode: 404 } };
+      return undefined;
+    }, SESSION_E2E);
+    await page.goto('/admin');
+    await expect(page.getByTestId('espace-nom')).toHaveValue('Espace E2E');
+    await expect(page.getByTestId('securite-espace-carte')).toHaveCount(0);
   });
 });

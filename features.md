@@ -131,20 +131,29 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
 ## Comptes & authentification
 
 - ✅ **Double authentification** (2026-09-26) : un code d'application d'authentification (six chiffres, renouvelés
-  toutes les 30 secondes) en plus du mot de passe. **Obligatoire pour les administrateurs**, facultative pour les
-  agents et managers. **Une connexion Google suffit**, sans code.
+  toutes les 30 secondes) en plus du mot de passe. **Au choix de l'espace pour ses administrateurs** depuis le
+  2026-10-13 (elle était obligatoire pour eux, et c'était le premier geste demandé à qui venait de créer son espace),
+  facultative pour chacun sinon. **Une connexion Google suffit**, sans code.
+  - **L'interrupteur de l'espace** : une carte « Sécurité de l'espace » de **Compte & équipe** porte la case « Exiger
+    la double authentification pour tous les administrateurs ». Décochée à la création d'un espace, et décochée pour
+    les espaces qui existaient. Cochée, elle vaut pour TOUS les administrateurs de l'espace : chacun, s'il ne l'a pas
+    encore, la configure à sa prochaine connexion par mot de passe, et ne peut plus la retirer. Les sessions déjà
+    ouvertes continuent, et la connexion Google ne la demande pas, ce que la carte dit en clair. Chaque changement
+    apparaît dans le journal des actions. Réservé aux administrateurs.
   - **À la connexion**, après le mot de passe, une étape « code » : le code de l'application, ou un code de
     secours dans le même champ. Aucune session ni aucune liste d'espaces n'existe avant : le choix de l'espace
     vient après le code. Un code faux laisse sur l'étape ; une étape expirée (5 minutes) ramène au formulaire.
-  - **Un administrateur sans second facteur le pose avant d'entrer**, à la connexion, à l'inscription comme à
-    l'acceptation d'une invitation d'administrateur : un QR code à scanner (dessiné dans le navigateur), la clé à
+  - **Un administrateur d'un espace qui l'exige, sans second facteur, le pose avant d'entrer**, à la connexion, à
+    l'inscription comme à l'acceptation d'une invitation d'administrateur. Créer un espace n'en demande plus : la
+    session s'ouvre directement. L'enrôlement : un QR code à scanner (dessiné dans le navigateur), la clé à
     saisir à la main, le premier code, puis **dix codes de secours** montrés une seule fois (Copier, Télécharger en
     `.txt`, et une case « J'ai conservé ces codes » avant de continuer). Chaque code de secours ne sert qu'une
     fois ; quand l'un a servi, l'écran dit combien il en reste.
   - **Mon compte** (menu du compte en haut à droite, pour tous les rôles) montre l'état (date d'activation, codes
     de secours restants) et permet d'activer, de régénérer les codes et de désactiver, ces deux derniers gestes
     contre un code. Activer demande d'abord le **mot de passe**, pour qu'une session volée ne puisse pas poser son
-    propre facteur. La désactivation n'est pas proposée à un administrateur.
+    propre facteur. La désactivation n'est pas proposée à un administrateur d'un espace qui l'exige, ni à une adresse
+    d'exploitation, et l'écran dit laquelle des deux raisons s'applique.
   - **Après 5 codes faux de suite**, le code de l'application est bloqué 15 minutes, puis 30, et ainsi de suite
     jusqu'à 24 heures ; un code de secours reste accepté pendant le blocage, et un bon code remet le compteur à
     zéro. Le blocage tient même après un redémarrage du serveur.
@@ -1431,6 +1440,11 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   libellé nu laisse croire que le chiffre n'a pas chargé, et on va vérifier pour rien.
   ⚠️ **Les compteurs portent sur TOUT l'espace, pas sur la page affichée** : ils ne descendent pas quand vous
   faites défiler la liste.
+  ✅ **« À traiter » et le nom d'un collaborateur passent en GRAS** (2026-10-13) tant qu'ils contiennent une
+  conversation au message entrant pas encore ouvert, comme une boîte mail. Le gras s'éteint dès que quelqu'un de
+  l'équipe a ouvert le fil (le « lu » est commun à l'équipe, celui de la pastille). Les titres des deux sections,
+  **Conversations** et **Affectation**, sont désormais plus gros et en gras : en petit gris, on ne les distinguait
+  pas des lignes.
   🔴 **Le compteur « À traiter » peut avoir BAISSÉ** chez un espace qui a des contacts bloqués : il les
   comptait alors que la liste ne les montre pas, donc il pouvait annoncer plus de conversations qu'il n'y en
   avait à l'écran. C'est corrigé, le compteur et la liste disent enfin la même chose.
@@ -2898,6 +2912,12 @@ boîte par sous-menu.
   journal), et l'observation d'un espace (la session d'observation elle-même porte l'adresse de
   l'observateur). La note reste demandée là où elle l'était : elle dit POURQUOI, l'adresse dit QUI.
 - ✅ **Un lien « Exploitation » dans le menu du compte**, visible seulement pour une adresse de la liste.
+- ✅ **Passer un espace en Entreprise** (2026-10-13) : un lien « offre » sur la ligne de l'espace ouvre une fenêtre
+  qui dit son offre actuelle, puis pose l'Entreprise (sur devis, après signature) avec sa limite d'utilisateurs (10
+  proposés, ou sans limite), ou la retire pour ramener l'espace à son offre en ligne. Une note est obligatoire, et la
+  trace porte l'adresse de l'exploitant. La conservation des conversations ne change que si l'on coche « la
+  changer » ; une durée plus courte que l'actuelle s'annonce en rouge, parce qu'elle efface sans retour les
+  conversations plus anciennes au prochain passage de la purge.
 - ✅ **Les numéros fournis** (lot 3a, 2026-10-05) : un numéro acheté chez DIDWW se déclare
   dans la carte « Numéros fournis » ; le serveur le branche sur l'Asterisk et l'ajoute à la réserve. Quand Meta appelle
   ce numéro pour le vérifier, le code qu'il dicte est capté automatiquement et s'affiche en face du numéro, avec ce qui

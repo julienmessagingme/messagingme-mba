@@ -58,6 +58,10 @@ export interface MembresDep {
   getTenantName(tenantId: string): Promise<string | null>;
   /** Renomme l'espace (`tenants.name`). `false` = espace inconnu. */
   setTenantName(tenantId: string, nom: string): Promise<boolean>;
+  /** L'espace exige-t-il le second facteur de ses admins ? `null` = espace inconnu. */
+  getSecondFacteurAdmins(tenantId: string): Promise<boolean | null>;
+  /** Pose ce réglage. `false` = espace inconnu. */
+  setSecondFacteurAdmins(tenantId: string, exige: boolean): Promise<boolean>;
 }
 
 /**
@@ -80,6 +84,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * partagée avec l'inscription : les deux écrivains publics de `tenants.name` refusent la même chose.
  */
 const nomEspaceSchema = z.object({ nom: nomEspace });
+const secondFacteurSchema = z.object({ exigePourLesAdmins: z.boolean() }).strict();
 
 /**
  * Gestion des comptes (onglet Admin). Le groupe est réservé aux admins via `garde`
@@ -274,5 +279,33 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
      */
     await journal(tenant, req, 'espace.renomme', { kind: 'tenant', id: tenant });
     return reply.code(200).send({ nom });
+  });
+
+  /**
+   * LE SECOND FACTEUR DES ADMINS, AU CHOIX DE L'ESPACE (migration 0230, décision de Julien du 2026-10-13). Réservé aux
+   * admins par la garde du groupe, comme le nom de l'espace. Activé, chaque admin de l'espace sans facteur en pose un
+   * à sa prochaine connexion par mot de passe (`facteurExigeSql`) ; les sessions déjà ouvertes vont à leur terme, et
+   * une connexion Google n'en demande pas (choix de Julien du même jour). Désactivé, plus rien n'est imposé : qui a
+   * un facteur continue de donner son code, et peut le retirer depuis Mon compte.
+   */
+  app.get('/tenants/:tenantId/second-facteur', opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const exige = await deps.users.getSecondFacteurAdmins(tenant);
+    if (exige === null) return reply.code(404).send({ error: 'espace inconnu' });
+    return reply.code(200).send({ exigePourLesAdmins: exige });
+  });
+
+  app.put('/tenants/:tenantId/second-facteur', opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const corps = secondFacteurSchema.safeParse(req.body ?? {});
+    if (!corps.success) return reply.code(400).send({ error: 'exigePourLesAdmins (booléen) requis' });
+    const exige = corps.data.exigePourLesAdmins;
+    const avant = await deps.users.getSecondFacteurAdmins(tenant);
+    if (avant === null) return reply.code(404).send({ error: 'espace inconnu' });
+    // Rien n'a changé : ni écriture ni ligne de journal, qui est un registre de changements.
+    if (avant === exige) return reply.code(200).send({ exigePourLesAdmins: exige });
+    if (!(await deps.users.setSecondFacteurAdmins(tenant, exige))) return reply.code(404).send({ error: 'espace inconnu' });
+    await journal(tenant, req, exige ? 'espace.second_facteur_exige' : 'espace.second_facteur_libre', { kind: 'tenant', id: tenant });
+    return reply.code(200).send({ exigePourLesAdmins: exige });
   });
 }

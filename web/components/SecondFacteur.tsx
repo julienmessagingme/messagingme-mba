@@ -73,7 +73,7 @@ export function EtapesSecondFacteur<S = SuiteConnexion>({ etape, onSuite, onReto
         <EtapeCode<S> mfaToken={etape.mfaToken} onSuite={onSuite} onRetour={onRetour} abandon={abandon} />
       ) : (
         <Enrolement
-          intro={introEnrolement ?? t('Obligatoire pour les administrateurs : scannez ce code avec votre application d’authentification.', 'Required for administrators: scan this code with your authenticator app.')}
+          intro={introEnrolement ?? t('Votre espace exige la double authentification de ses administrateurs : scannez ce code avec votre application d’authentification.', 'Your workspace requires two-factor authentication for its administrators: scan this code with your authenticator app.')}
           demarrer={() => enrolerConnexion(etape.enrolToken)}
           activer={(code: string) => activerConnexion<S>(etape.enrolToken, code)}
           onActive={onSuite}

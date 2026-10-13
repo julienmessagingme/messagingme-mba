@@ -141,6 +141,19 @@ export class PgUserStore {
     return (res.rowCount ?? 0) > 0;
   }
 
+  /** L'espace exige-t-il le second facteur de ses admins (migration 0230) ? `null` = espace inconnu. */
+  async getSecondFacteurAdmins(tenantId: string): Promise<boolean | null> {
+    const res = await this.pool.query<{ second_facteur_admins: boolean }>(
+      `select second_facteur_admins from tenants where id = $1`, [tenantId]);
+    return res.rows[0]?.second_facteur_admins ?? null;
+  }
+
+  /** Pose le réglage (Compte & équipe). `false` = espace inconnu : rien n'a été écrit. */
+  async setSecondFacteurAdmins(tenantId: string, exige: boolean): Promise<boolean> {
+    const res = await this.pool.query(`update tenants set second_facteur_admins = $2 where id = $1`, [tenantId, exige]);
+    return (res.rowCount ?? 0) > 0;
+  }
+
   async list(tenantId: string): Promise<UserRow[]> {
     const res = await this.pool.query<{ id: string; email: string; name: string | null; role: string; code: string | null; disabled_at: Date | null; pending: boolean; created_at: Date; last_login_at: Date | null }>(
       // `pending` veut dire « n'a jamais accepté son invitation » et se lit sur `last_login_at`, jamais sur
