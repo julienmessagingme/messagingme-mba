@@ -1,7 +1,7 @@
 ---
 ecran: automations
 source_section: Automation (menu « Automation ») | Rappels avant ou après une date (menu Automation) | Automatisations (menu « Scénario », ex-« Flow »)
-source_empreinte: eda598 | 08adbf | 6803cd
+source_empreinte: b29338 | 08adbf | 6803cd
 ---
 # Lancer un scénario tout seul, sans campagne
 
@@ -32,6 +32,10 @@ clair, le scénario visé, et si c'est allumé ou non.
 - **Le contact arrive d'une publicité WhatsApp** : l'identifiant de la publicité est facultatif. Laissé vide,
   le scénario part pour toute personne arrivant par une publicité, **sauf celles que vous pilotez depuis
   l'écran Publicités** : ces campagnes-là disent elles-mêmes qui répond à leurs prospects.
+- **Un agent IA déclenche une action** : vous choisissez l'action, parmi celles de vos agents IA (onglet Outils de
+  l'agent, « Déclencher une action »). Ce déclencheur n'apparaît que si un agent porte une action. Le scénario part
+  pendant que l'agent parle au client : faites-le d'actions (poser un tag, prévenir l'équipe par e-mail), car un
+  scénario qui écrit au client est refusé, ou interrompt l'agent.
 - **Le risque de désengagement d'un contact devient élevé** : rien à régler. Le calcul de nuit fait passer un
   contact en risque élevé, et le scénario part pour lui, une seule fois : un contact qui reste en risque élevé
   ne relance rien la nuit suivante, et un même contact ne relance pas le scénario avant 30 jours, même s'il

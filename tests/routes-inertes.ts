@@ -607,7 +607,10 @@ export const mcpAgentInerte: Pick<DepsMcp, 'agentIa'> = {
       listToutes: async () => [],
       ajouter: neDevraitPasEtreAppelee('outils.ajouter'),
       activer: neDevraitPasEtreAppelee('outils.activer'),
+      patch: neDevraitPasEtreAppelee('outils.patch'),
+      detacher: neDevraitPasEtreAppelee('outils.detacher'),
     },
+    actions: { listerDeLaConversation: async () => [] },
     reglages: {
       get: async () => ({ agentTransfertMode: null }),
       setAgentTransfertMode: neDevraitPasEtreAppelee('setAgentTransfertMode'),

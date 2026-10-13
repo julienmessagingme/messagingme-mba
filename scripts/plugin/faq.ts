@@ -106,6 +106,15 @@ export const FAQ: readonly EntreeFaq[] = [
     source: 'docs/aide/fiches/recharger-le-credit-ia.md ; docs/aide/fiches/repondre-dans-l-inbox.md (le délai, « Rendre la main ») ; src/mcp/outils.ts (reply_in_open_window prend le fil) ; src/mcp/mise-en-service.ts',
   },
   {
+    id: 'agent-actions',
+    question: { fr: 'Mon agent IA peut-il agir dans mon application ?', en: 'Can my AI agent act in my application?' },
+    reponse: {
+      fr: 'Oui, par une action : set_agent_action la pose sur l’agent, avec une consigne (quand la déclencher, quoi dire au client ensuite) et ce qu’il recueille (un numéro de contrat, une date, un motif), tout facultatif. Quand le client fait la demande, l’agent lui répond ce que prévoit la consigne et continue, et votre application reçoit le webhook agent.action, une fois par jour au plus par contact et par action. Ce type est décoché par défaut : cochez-le sur l’adresse qui sert déjà votre application (console, Developers > Webhooks sortants), ou créez-en une (create_webhook_endpoint). Sans application, une automation de la console peut partir de l’action.',
+      en: 'Yes, through an action: set_agent_action adds it to the agent, with an instruction (when to trigger it, what to tell the customer next) and what it collects (a contract number, a date, a reason), all optional. When the customer makes the request, the agent answers what the instruction says and carries on, and your application receives the agent.action webhook, at most once a day per contact and per action. This type is unchecked by default: tick it on the address that already serves your application (console, Developers > Webhooks sortants), or create one (create_webhook_endpoint). Without an application, a console automation can start from the action.',
+    },
+    source: 'src/agent/actions.ts ; src/mcp/outils-agent.ts (set_agent_action) ; docs/superpowers/specs/2026-10-13-actions-agent-design.md',
+  },
+  {
     id: 'code-de-verification',
     question: { fr: 'Le code de vérification n’arrive pas.', en: 'The verification code does not arrive.' },
     reponse: {

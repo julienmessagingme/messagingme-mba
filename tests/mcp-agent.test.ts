@@ -96,6 +96,9 @@ const FICHE_COMPLETE = {
   sorties: [{ code: 'besoin_cerne', label: 'Besoin cerné' }],
 };
 
+/** L'identifiant de la n-ième action posée par le faux catalogue : un UUID, comme `delete_agent_action` l'exige. */
+const ID_ACTION = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+
 const outil = (handler: string, actif: boolean): OutilComplet => ({
   ...SANS_MCP, ...AUCUN_GESTE(),
   id: `id-${handler}`, tenantId: 't1', origin: 'mba', name: `mba_${handler}`,
@@ -172,6 +175,9 @@ function monter(o: Options & { envoyerModele?: DepsMcp['envoyerModele']; usage?:
     historique: [] as LigneHistorique[],
     ajouts: [] as string[],
     activations: [] as Array<{ id: string; par: string }>,
+    /** Les modifications d'outils (la cible d'une action, son titre) et les retraits. */
+    patchesOutils: [] as Array<{ id: string; patch: Record<string, unknown> }>,
+    retraits: [] as string[],
     fichesCreees: [] as Array<{ tenant: string; fiche: FicheAEcrire }>,
     supprimees: [] as string[],
     journal: [] as Array<{ tenant: string; cible: string; acteurId: string | null }>,
@@ -312,15 +318,36 @@ function monter(o: Options & { envoyerModele?: DepsMcp['envoyerModele']; usage?:
       ajouter: async (_t, id, x) => {
         cap.ajouts.push(x.handler);
         if (id !== AG) return null;
-        const neuf = outil(x.handler, false);
+        // Comme la pose du serveur : le nom donné, la cible dans `binding` ; une action a son propre identifiant.
+        const neuf: OutilComplet = {
+          ...outil(x.handler, false), name: x.name,
+          ...(x.cible ? { binding: { ...x.cible } } : {}),
+          ...(x.handler === 'declencher_action' ? { id: ID_ACTION(poses.length) } : {}),
+        };
         poses.push(neuf);
         return neuf;
       },
       activer: async (_t, _a, id, actif, par) => {
         cap.activations.push({ id, par });
-        return { ...outil(id.replace(/^id-/, ''), actif), id };
+        const pose = poses.find((p) => p.id === id);
+        return pose ? { ...pose, actif } : { ...outil(id.replace(/^id-/, ''), actif), id };
+      },
+      patch: async (_t, _a, id, patch) => {
+        cap.patchesOutils.push({ id, patch: patch as Record<string, unknown> });
+        const pose = poses.find((p) => p.id === id);
+        if (!pose) return null;
+        Object.assign(pose, patch.title !== undefined ? { title: patch.title } : {}, patch.cible ? { binding: { ...patch.cible } } : {});
+        return pose;
+      },
+      detacher: async (_t, _a, id) => {
+        cap.retraits.push(id);
+        const i = poses.findIndex((p) => p.id === id);
+        if (i < 0) return false;
+        poses.splice(i, 1);
+        return true;
       },
     },
+    actions: { listerDeLaConversation: async () => [] },
     reglages: {
       get: async () => ({ agentTransfertMode: 'business_hours' }),
       setAgentTransfertMode: async (t, mode) => { cap.modes.push({ tenant: t, mode }); },
@@ -448,6 +475,8 @@ const ARGS: Record<string, Record<string, unknown>> = {
   import_document_text: { agent_id: AG, nom: 'Tarifs.txt', texte: 'Le cottage deux personnes coûte 89 euros la nuit, petit-déjeuner compris, toute l’année.' },
   set_transfer_mode: { mode: 'never' },
   set_business_hours: { hours: SEMAINE },
+  set_agent_action: { agent_id: AG, nom: 'Résiliation', champs: [{ code: 'contrat', libelle: 'Numéro de contrat', type: 'texte' }] },
+  delete_agent_action: { agent_id: AG, action_id: '55555555-5555-4555-8555-555555555555' },
   set_default_responder: { agent_id: AG },
   get_credit: {},
   buy_credit: { offre: 'refill_50' },
@@ -457,7 +486,7 @@ const ARGS: Record<string, Record<string, unknown>> = {
 const touche = (cap: ReturnType<typeof monter>['cap']) => Object.entries(cap).filter(([, v]) => v.length > 0).map(([k]) => k);
 
 describe('🔴 la personne requise : une clé d’API ne voit ni n’appelle les outils qui écrivent au nom de quelqu’un', () => {
-  it('dix-huit outils : quatre lectures sans personne, quatorze outils qui l’exigent (le répondeur et les horaires compris)', () => {
+  it('vingt outils : quatre lectures sans personne, seize outils qui l’exigent (le répondeur, les horaires et les actions compris)', () => {
     const agent = OUTILS.filter((o) => Object.hasOwn(ARGS, o.nom));
     expect(agent.map((o) => o.nom).sort()).toEqual(Object.keys(ARGS).sort());
     expect(agent.filter((o) => o.exigePersonne !== true).map((o) => o.nom).sort())
@@ -636,6 +665,89 @@ describe('les outils de l’agent appellent les fonctions de la console, dans l�
       { code: 'terminer', nom: 'mba_terminer', actif: true },
       { code: 'chercher_connaissance', nom: 'mba_chercher_connaissance', actif: true },
     ]);
+    await server.close();
+  });
+
+  it('🔴 set_agent_action : une action neuve, posée sous la garde du serveur, nommée, ACTIVÉE au nom de la personne', async () => {
+    const { server, cap } = monter();
+    const r = await appeler(server, JETON.brut, 'set_agent_action', {
+      agent_id: AG, nom: 'Résiliation', consigne: 'Dis-lui que c’est noté.',
+      champs: [
+        { code: 'contrat', libelle: 'Numéro de contrat', type: 'texte' },
+        { code: 'motif', libelle: 'Motif', type: 'liste', valeurs: ['prix', 'autre'] },
+      ],
+    });
+    expect(r.isError, r.texte).toBe(false);
+    expect(cap.ajouts).toEqual(['declencher_action']);
+    expect(cap.activations).toEqual([{ id: ID_ACTION(0), par: PERSONNE }]);
+    expect(cap.patchesOutils).toEqual([{ id: ID_ACTION(0), patch: { title: 'Résiliation' } }]);
+    expect(r.json().action).toEqual({
+      action_id: ID_ACTION(0), nom_technique: 'action_resiliation', actif: true, nom: 'Résiliation', consigne: 'Dis-lui que c’est noté.',
+      champs: [
+        { code: 'contrat', libelle: 'Numéro de contrat', type: 'texte' },
+        { code: 'motif', libelle: 'Motif', type: 'liste', valeurs: ['prix', 'autre'] },
+      ],
+    });
+    expect(r.json().webhook).toContain('agent.action');
+    // get_agent la rend dans « actions », avec son identifiant, et plus parmi les outils.
+    const agent = (await appeler(server, JETON.brut, 'get_agent', { agent_id: AG })).json();
+    expect(agent.actions.map((a: { action_id: string }) => a.action_id)).toEqual([ID_ACTION(0)]);
+    expect(agent.outils.some((o: { code: string }) => o.code === 'declencher_action')).toBe(false);
+    await server.close();
+  });
+
+  it('🔴 set_agent_action : une cible que le serveur refuse ne pose rien ; modifier vise une ACTION de cet agent, et garde son état', async () => {
+    const { server, cap } = monter({ outilsPoses: [outil('terminer', true)] });
+    // Une liste sans valeurs : le schéma du serveur la refuse, rien n'est posé.
+    const refuse = await appeler(server, JETON.brut, 'set_agent_action', {
+      agent_id: AG, nom: 'Résiliation', champs: [{ code: 'motif', libelle: 'Motif', type: 'liste' }],
+    });
+    expect(refuse.isError).toBe(true);
+    expect(refuse.texte).toMatch(/^cible requise/);
+    expect(cap.ajouts).toEqual([]);
+    // Un outil qui n'est pas une action ne se modifie pas par là.
+    const pasUneAction = await appeler(server, JETON.brut, 'set_agent_action', { agent_id: AG, action_id: 'id-terminer', nom: 'X' });
+    expect(pasUneAction.isError).toBe(true);
+    expect(cap.patchesOutils).toEqual([]);
+    // Une action posée, puis modifiée sur son seul nom : le titre change, la consigne et les champs RESTENT (sinon
+    // l'application recevrait des fields vides, sans erreur), et l'activation ne bouge pas.
+    await appeler(server, JETON.brut, 'set_agent_action', { ...ARGS.set_agent_action, consigne: 'Dis-lui que c’est noté.' });
+    cap.activations.length = 0;
+    const m = await appeler(server, JETON.brut, 'set_agent_action', { agent_id: AG, action_id: ID_ACTION(1), nom: 'Résiliation du contrat' });
+    expect(m.isError, m.texte).toBe(false);
+    expect(cap.activations).toEqual([]);
+    expect(m.json().action).toMatchObject({
+      action_id: ID_ACTION(1), nom: 'Résiliation du contrat', consigne: 'Dis-lui que c’est noté.',
+      champs: [{ code: 'contrat', libelle: 'Numéro de contrat', type: 'texte' }],
+    });
+    // Des champs DONNÉS remplacent la liste entière, y compris par une liste vide.
+    const vide = await appeler(server, JETON.brut, 'set_agent_action', { agent_id: AG, action_id: ID_ACTION(1), nom: 'Résiliation', champs: [] });
+    expect(vide.json().action).toMatchObject({ champs: [], consigne: 'Dis-lui que c’est noté.' });
+    // Un refus dit la règle violée : deux champs du même code.
+    const doublon = await appeler(server, JETON.brut, 'set_agent_action', {
+      agent_id: AG, nom: 'X', champs: [{ code: 'a', libelle: 'A', type: 'texte' }, { code: 'a', libelle: 'B', type: 'texte' }],
+    });
+    expect(doublon.texte).toContain('deux champs portent le même code');
+    await server.close();
+  });
+
+  it('🔴 delete_agent_action : retire une action de cet agent, et jamais un autre outil', async () => {
+    // Un outil qui n'est pas une action, sous un VRAI identifiant : c'est le filtre sur le handler qui doit le refuser,
+    // pas la forme de l'identifiant (relecture de la livraison C).
+    const TERMINER = '66666666-6666-4666-8666-666666666666';
+    const { server, cap } = monter({ outilsPoses: [{ ...outil('terminer', true), id: TERMINER }] });
+    const pasUneAction = await appeler(server, JETON.brut, 'delete_agent_action', { agent_id: AG, action_id: TERMINER });
+    expect(pasUneAction.isError).toBe(true);
+    expect(cap.retraits).toEqual([]);
+    const posee = (await appeler(server, JETON.brut, 'set_agent_action', ARGS.set_agent_action)).json().action.action_id as string;
+    // L'action d'un AUTRE agent : introuvable sur celui-ci.
+    const ailleurs = await appeler(server, JETON.brut, 'delete_agent_action', { agent_id: '77777777-7777-4777-8777-777777777777', action_id: posee });
+    expect(ailleurs.isError).toBe(true);
+    expect(cap.retraits).toEqual([]);
+    const r = await appeler(server, JETON.brut, 'delete_agent_action', { agent_id: AG, action_id: posee });
+    expect(r.isError, r.texte).toBe(false);
+    expect(r.json()).toEqual({ supprimee: true });
+    expect(cap.retraits).toEqual([posee]);
     await server.close();
   });
 

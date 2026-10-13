@@ -969,6 +969,10 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   ne relance pas le scénario avant 30 jours**, même s'il ressort puis repasse en risque élevé. Un contact
   désabonné ou bloqué ne déclenche rien. Le contact n'a pas écrit : le scénario doit commencer par un envoi de
   template. L'écran le dit avant la création.
+- ✅ **Un déclencheur « un agent IA déclenche une action »** (2026-10-13), offert dès qu'un agent porte une action :
+  on choisit l'action, et le scénario part chaque fois qu'un agent la déclenche, une fois par jour au plus par
+  contact. ⚠️ Il part **pendant que l'agent parle au client** : choisissez un scénario fait d'actions (poser un tag,
+  prévenir l'équipe par e-mail). Un scénario qui écrit au client est refusé, ou interrompt l'agent. L'écran le dit.
 - ✅ **Un déclencheur « la dernière analyse d'un contact change »** (2026-10-02, chantier « Tout sur la fiche »,
   lot 3) : on choisit un champ de l'analyse et ce qu'il doit devenir, par exemple « le sentiment devient
   négatif », « l'urgence passe à 7 ou plus », « la demande devient non résolue », « l'intention devient
@@ -2436,6 +2440,9 @@ scénario, comment importer des contacts.
   contact. Coché par défaut sur une adresse neuve ; une adresse existante le coche elle-même. L'application Meta est
   abonnée au champ `message_template_status_update` depuis le 2026-10-09 (geste dans le tableau de bord de Meta) :
   sans cet abonnement, rien n'arriverait.
+- ✅ **Les actions de vos agents IA** (2026-10-13) : `agent.action` part quand un agent déclenche une action
+  (voir « Déclencher une action » dans la section Agent IA), avec l'action (identifiant, nom), les champs recueillis
+  (`fields`, par code), la fiche du contact et la conversation. Décoché par défaut : une adresse le coche elle-même.
 - ✅ **Le secret de signature est montré une seule fois**, à la création ou au renouvellement ; l'ancien signe
   encore 24 h après un renouvellement, le temps de mettre à jour l'application.
 - ✅ **Réessais pendant 24 h** (30 s, 2 min, 10 min, 30 min, puis toutes les heures) tant que l'adresse ne répond
@@ -3232,8 +3239,9 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
     peut pas le donner. Au bac à sable, il est simulé.
 - ✅ **« Ajouter un outil » ouvre la grille « Quel outil ajouter ? »**, la même que chez l'agent de Meta, avec
   ses six cartes : **Poser un tag**, **Enregistrer une information**, **Envoyer un bloc**, **Lancer un
-  scénario**, **Appeler un connecteur API**, **Appeler un outil MCP**. Une carte sans rien à choisir est grisée,
-  avec le lien vers l'écran où le créer (aucun appel déclaré, aucun champ dans le mini-CRM, aucun outil MCP).
+  scénario**, **Appeler un connecteur API**, **Appeler un outil MCP** ; plus une septième, propre à l'agent IA,
+  **Déclencher une action** (2026-10-13). Une carte sans rien à choisir est grisée, avec le lien vers l'écran où
+  le créer (aucun appel déclaré, aucun champ dans le mini-CRM, aucun outil MCP).
 - ✅ **Le tag, l'information, le bloc et le scénario sont FIXÉS par vous**, comme chez l'agent de Meta : un outil
   par tag, par champ, par bloc, par scénario. L'agent ne décide que du **moment**, et pour une information, de
   la **valeur**, bornée à la liste des valeurs permises si vous en donnez une. Il ne peut donc ni inventer un
@@ -3249,6 +3257,19 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
     conversation et l'agent se retire** : il n'écrit plus rien, aucune sortie de son bloc n'est empruntée, et sa
     session se clôt. Un scénario dépublié ou supprimé, ou un contact désabonné, est refusé, et l'agent continue
     la conversation. L'agent ne peut pas relancer le scénario où il parle.
+- ✅ **Déclencher une action** (écriture, 2026-10-13, toutes les offres) : quand le client fait une demande que
+  vous avez décrite (« je veux résilier »), l'agent recueille ce qu'il peut, lui dit ce que prévoit votre consigne
+  (« c'est noté, vous recevrez une confirmation par e-mail sous 48 h ») et **continue la conversation**, et votre
+  application reçoit l'événement « Action de l'agent IA » (`agent.action`) pour faire le travail. Une action a un
+  nom, une consigne (quand la déclencher, quoi dire ensuite) et jusqu'à 10 champs (texte, nombre, date, e-mail,
+  liste de valeurs), **tous facultatifs** : l'agent part avec ce qu'il a. Une date ou un e-mail mal formés lui
+  sont renvoyés, et il redemande. **Une fois par jour au plus**, par contact et par action : redemandée le même
+  jour, l'agent dit au client que c'est déjà enregistré. Au plus 10 actions par agent. Le **code** d'un champ est
+  la clé que votre application lit : il suit le libellé tant que le champ est neuf, plus ensuite. ⚠️ L'événement
+  est décoché par défaut : sans adresse de webhook qui l'a coché, rien ne part vers l'application, et la carte le
+  dit. Sans application, une automation peut partir de l'action. L'action déclenchée s'inscrit dans la frise du
+  panneau Détail de l'Inbox. Au bac à sable, elle est simulée. Depuis Claude Code : `set_agent_action` et
+  `delete_agent_action`, et `get_conversation` montre les actions d'une conversation.
 - ✅ **La liste des outils posés**, au format des lignes de l'agent de Meta : titre et ce que l'outil vise, son
   type, son état (actif ou inactif) avec « Activer » / « Désactiver », « Modifier » et « Supprimer ». Les appels
   de connecteur API et les outils MCP y entrent comme les autres. La ligne dit aussi ce qui empêche un outil de

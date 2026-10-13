@@ -4144,6 +4144,8 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 | import_document_text | mcp:write OAuth connection required | Import a document’s text under its name, filed like an uploaded document. |
 | set_transfer_mode | mcp:write OAuth connection required | Set what AI agents promise about team availability when they hand over. |
 | set_business_hours | mcp:write OAuth connection required | Set the workspace’s opening hours and time zone: the ones AI agents announce outside hours. |
+| set_agent_action | mcp:write OAuth connection required | Create or edit an AI agent action: what it collects and sends to your app (agent.action webhook) when the customer makes a request, once a day per contact. |
+| delete_agent_action | mcp:write OAuth connection required | Delete an AI agent action. |
 | set_default_responder | mcp:write OAuth connection required | Choose who answers the customer (a new contact, and every message nobody handles): Meta’s agent, an active AI agent, a published scenario, the team, or your app (an outgoing webhook address). Outside Meta’s agent mode, it stays on standby. |
 | get_credit | mcp:read | The AI credit balance and its latest movements. |
 | buy_credit | mcp:write OAuth connection required | Open a top-up payment, amount before tax; the person pays on the Stripe page themselves. |

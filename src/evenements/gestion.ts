@@ -48,7 +48,7 @@ export const REJEU_ECHECS_MAX = 500;
 /** Une page du journal. */
 export const JOURNAL_PAGE_MAX = 100;
 
-/** Les types d'une adresse créée sans les préciser (l'outil MCP) : tous, sauf les accusés de livraison. */
+/** Les types d'une adresse créée sans les préciser (l'outil MCP) : tous, sauf les accusés de livraison et `agent.action`. */
 export const TYPES_PAR_DEFAUT: readonly TypeAbonnable[] = TYPES_ABONNABLES.filter((t) => !TYPES_DECOCHES_PAR_DEFAUT.has(t));
 
 const types = z.array(z.enum(TYPES_ABONNABLES)).min(1).max(TYPES_ABONNABLES.length)

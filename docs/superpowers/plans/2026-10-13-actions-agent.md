@@ -47,6 +47,13 @@ la note du menu d'automation (seul un scénario fait d'actions laisse l'agent co
 `set_agent_action` et `delete_agent_action` (personne requise, toutes offres), `get_conversation` qui rend les
 actions, la skill et la FAQ (plugin 0.1.5), `features.md` et sa fiche d'aide.
 
+Fait le 2026-10-13 (plugin 0.1.5) : les deux outils, `get_agent` et `get_conversation`, la section « Actions » de la
+skill de mise en service, l'entrée « agent-actions » de la FAQ, `features.md` et les fiches « construire un agent
+IA » et « déclencher un scénario automatiquement ».
+
+Reporté de la relecture de C : `nomTechniqueDAction` (`src/agent/reglages.ts`) recopie la normalisation de la console
+(`normaliserNomOutil`) avec un préfixe `action_` ; à rapatrier dans `web/lib/partage/` au prochain passage.
+
 Reporté de la relecture de A : le modèle ne connaît pas la date du jour ; sans elle, « demain » ou « fin du mois »
 donnent une date réelle mais fausse dans un champ date. La dire dans le contexte du tour (⚠️ `src/agent/prompt.ts`
 était en cours chez une autre session le 2026-10-13 : s'aligner avant d'y toucher).

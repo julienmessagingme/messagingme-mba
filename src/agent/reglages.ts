@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { OutilComplet } from './catalog';
 import { NomOutilDejaPris, OutilNonActivable } from './catalog';
 import {
-  BORNES_ACTION, exigeUneCible, handlerMaison, lireCibleOutilAgent, outilMaison, paramsInitiaux,
+  BORNES_ACTION, cibleOutilAgentSchema, exigeUneCible, handlerMaison, lireCibleOutilAgent, outilMaison, paramsInitiaux,
   type CibleOutilAgent, type HandlerACible,
 } from './outils-maison';
 import { estModeTransfert, MODES_TRANSFERT, type ModeTransfert } from './disponibilite-equipe';
@@ -21,6 +21,8 @@ import type { OutilsAgentDep } from '../http/agent-tools';
 
 /** Ce que l'ajout d'outils sûrs lit et écrit du catalogue de l'agent (`PgToolCatalog`). */
 export type OutilsSurs = Pick<OutilsAgentDep, 'listToutes' | 'ajouter' | 'activer'>;
+/** Ce que le réglage d'une action lit et écrit en plus : la modifier et la retirer (`PgToolCatalog`). */
+export type OutilsActions = OutilsSurs & Pick<OutilsAgentDep, 'patch' | 'detacher'>;
 
 /**
  * La cible saisie pour un outil maison, lue contre le schéma du catalogue, `handler` imposé par l'outil et jamais par
@@ -191,4 +193,101 @@ export async function reglerHeuresOuverture(
   await reglages.setBusinessHours(tenantId, hours);
   if (avecFuseau) await reglages.setTimezone(tenantId, fuseau);
   return { ok: true, valeur: { hours, ...(avecFuseau ? { timezone: fuseau } : {}) } };
+}
+
+/** Le nom technique d'un outil (`agent_tools.name`, `^[a-z0-9_]{1,64}$`), l'alphabet que le modèle appelle. */
+const MAX_NOM_OUTIL = 64;
+
+/**
+ * Le nom technique d'une action neuve, tiré de son nom (« Résiliation » donne `action_resiliation`) et libre parmi les
+ * outils de l'agent : deux actions d'un même agent ne peuvent pas porter le même nom (0211).
+ */
+export function nomTechniqueDAction(nom: string, pris: readonly string[]): string {
+  const slug = nom.normalize('NFD').replace(/\p{M}+/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const racine = `action_${slug === '' ? 'client' : slug}`.slice(0, MAX_NOM_OUTIL);
+  if (!pris.includes(racine)) return racine;
+  for (let i = 2; ; i += 1) {
+    const suffixe = `_${i}`;
+    const candidat = `${racine.slice(0, MAX_NOM_OUTIL - suffixe.length)}${suffixe}`;
+    if (!pris.includes(candidat)) return candidat;
+  }
+}
+
+/** Ce qu'un agent tiers donne pour une action : la cible, et l'action existante à modifier s'il y en a une. */
+export interface SaisieAction {
+  actionId?: string;
+  nom: unknown;
+  consigne?: unknown;
+  champs?: unknown;
+}
+
+/**
+ * 🔴 CRÉER OU MODIFIER UNE ACTION D'UN AGENT IA depuis Claude Code (`set_agent_action`, plan du 2026-10-13, livraison
+ * C), par les MÊMES gardes que la console : la cible lue par `lireCibleSaisie` (le schéma du serveur, `.strict()`), la
+ * pose par `ajouterOutilMaison` (le plafond de 10 actions par agent), la modification sous le handler de l'outil.
+ *
+ * Une action neuve est ACTIVÉE au nom de `personne` (le consentement que la base exige), comme `ajouterOutilsSurs` :
+ * dans le parcours de Claude Code, un espace Free n'a pas de console pour le faire. Une action modifiée garde son état.
+ * Écart assumé à « un outil à cible reste un geste d'écran » (`OUTILS_SURS`) : décision de Julien du 2026-10-13.
+ */
+export async function reglerAction(
+  outils: OutilsActions, tenantId: string, agentId: string, saisie: SaisieAction, personne: string,
+): Promise<Issue<OutilComplet>> {
+  if (!estUuid(agentId)) return refus(404, 'agent introuvable');
+  const poses = await outils.listToutes(tenantId, agentId);
+  const existante = saisie.actionId === undefined
+    ? undefined
+    : poses.find((o) => o.id === saisie.actionId && handlerMaison(o) === 'declencher_action');
+  if (saisie.actionId !== undefined && !existante) {
+    return refus(404, 'action introuvable sur cet agent (list_agents, puis get_agent pour ses actions)');
+  }
+  // 🔴 EN MODIFICATION, CE QUI N'EST PAS DONNÉ RESTE (relecture de la livraison C) : une consigne ou des champs absents
+  // ne s'effacent pas. Sinon, changer un mot de la consigne viderait les champs, et l'application recevrait des `fields`
+  // vides, sans erreur nulle part. Des `champs` DONNÉS remplacent la liste entière.
+  const lue = existante ? lireCibleOutilAgent(existante.binding) : null;
+  const ancienne = lue?.handler === 'declencher_action' ? lue : null;
+  const lu = cibleOutilAgentSchema.safeParse({
+    handler: 'declencher_action',
+    nom: saisie.nom,
+    consigne: saisie.consigne ?? ancienne?.consigne ?? '',
+    champs: saisie.champs ?? ancienne?.champs ?? [],
+  });
+  if (!lu.success || lu.data.handler !== 'declencher_action') {
+    // Le détail de Zod, comme la route de la console : Claude n'a pas l'écran qui le dit avant.
+    const detail = lu.success ? '' : lu.error.issues.map((i) => `${i.path.join('.') || '(racine)'} : ${i.message}`).join(' ; ');
+    return refus(400, detail === '' ? CIBLE_REQUISE.declencher_action : `${CIBLE_REQUISE.declencher_action} (${detail})`);
+  }
+  const cible = lu.data;
+
+  if (existante) {
+    const modifiee = await outils.patch(tenantId, agentId, existante.id, { cible, title: cible.nom });
+    return modifiee ? { ok: true, valeur: modifiee } : refus(404, 'action introuvable');
+  }
+
+  if (personne === '') return refus(403, 'activation impossible sans utilisateur identifié');
+  const nom = nomTechniqueDAction(cible.nom, poses.map((o) => o.name));
+  const ajoutee = await ajouterOutilMaison(outils, tenantId, agentId, 'declencher_action', nom, cible);
+  if (!ajoutee.ok) return ajoutee;
+  // Le titre de la console est le nom de l'action : la liste des outils la montre ainsi, comme une action posée à l'écran.
+  await outils.patch(tenantId, agentId, ajoutee.valeur.id, { title: cible.nom });
+  let active: OutilComplet | null;
+  try {
+    active = await outils.activer(tenantId, agentId, ajoutee.valeur.id, true, personne);
+  } catch (err) {
+    if (err instanceof OutilNonActivable) return refus(409, err.raison);
+    throw err;
+  }
+  return active ? { ok: true, valeur: active } : refus(404, 'action introuvable');
+}
+
+/** Supprime une action d'un agent (`delete_agent_action`). Seule une action se supprime par là, jamais un autre outil. */
+export async function supprimerAction(
+  outils: Pick<OutilsActions, 'listToutes' | 'detacher'>, tenantId: string, agentId: string, actionId: string,
+): Promise<Issue<{ supprimee: true }>> {
+  if (!estUuid(agentId) || !estUuid(actionId)) return refus(404, 'action introuvable');
+  const poses = await outils.listToutes(tenantId, agentId);
+  if (!poses.some((o) => o.id === actionId && handlerMaison(o) === 'declencher_action')) {
+    return refus(404, 'action introuvable sur cet agent');
+  }
+  return (await outils.detacher(tenantId, agentId, actionId)) ? { ok: true, valeur: { supprimee: true } } : refus(404, 'action introuvable');
 }

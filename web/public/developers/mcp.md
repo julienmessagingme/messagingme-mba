@@ -92,6 +92,8 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 | import_document_text | mcp:write connexion OAuth requise | Importer le texte d’un document sous son nom, rangé comme un document déposé. |
 | set_transfer_mode | mcp:write connexion OAuth requise | Régler ce que les agents IA promettent de la disponibilité de l’équipe quand ils passent la main. |
 | set_business_hours | mcp:write connexion OAuth requise | Régler les heures d’ouverture de l’espace et son fuseau : celles que les agents IA annoncent hors des heures. |
+| set_agent_action | mcp:write connexion OAuth requise | Créer ou modifier une action d’un agent IA : ce qu’il recueille et envoie à votre application (webhook agent.action) quand le client fait une demande, une fois par jour et par contact. |
+| delete_agent_action | mcp:write connexion OAuth requise | Supprimer une action d’un agent IA. |
 | set_default_responder | mcp:write connexion OAuth requise | Choisir qui répond au client (à un nouveau contact, et à tout message que personne ne tient) : l’agent de Meta, un agent IA actif, un scénario publié, l’équipe, ou votre application (une adresse de webhooks sortants). Hors du mode agent de Meta, celui-ci reste en veille. |
 | get_credit | mcp:read | Le solde du crédit IA et ses derniers mouvements. |
 | buy_credit | mcp:write connexion OAuth requise | Ouvrir le paiement d’une recharge, montant hors taxe ; la personne paie elle-même sur la page de Stripe. |

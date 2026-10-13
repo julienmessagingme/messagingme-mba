@@ -35,6 +35,8 @@ export const CATALOGUE_MCP = {
   import_document_text: { scope: 'mcp:write', exigePersonne: true },
   set_transfer_mode: { scope: 'mcp:write', exigePersonne: true },
   set_business_hours: { scope: 'mcp:write', exigePersonne: true },
+  set_agent_action: { scope: 'mcp:write', exigePersonne: true },
+  delete_agent_action: { scope: 'mcp:write', exigePersonne: true },
   get_credit: { scope: 'mcp:read' },
   buy_credit: { scope: 'mcp:write', exigePersonne: true },
   return_number_at_plan_end: { scope: 'mcp:write', exigePersonne: true },

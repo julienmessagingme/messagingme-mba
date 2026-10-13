@@ -3,7 +3,7 @@ import type { DepsMcp, OutilMcp } from './outils';
 import { RefusOutil, entierBorne, valeurOuRefus } from './saisie';
 import { MESSAGE_OPERATIONS_LOURDES } from '../auth/plafond-partage';
 import type { AuditSink } from '../audit/journal';
-import { TYPES_ABONNABLES } from '../evenements/types';
+import { TYPES_ABONNABLES, TYPES_DECOCHES_PAR_DEFAUT } from '../evenements/types';
 import { creerAdresse, envoyerEssai, lireJournal, rejouerEnvoi, type DepsGestionEvenements } from '../evenements/gestion';
 import { deliveryV1, webhookV1 } from '../http/v1-webhooks';
 
@@ -32,7 +32,8 @@ export const OUTILS_EVENEMENTS: OutilMcp[] = [
       + 'Standard Webhooks, les événements choisis (message reçu, lien cliqué, désabonnement, conversation analysée…), et '
       + 'les réessaiera pendant 24 h tant qu’elle ne répond pas 2xx. Rend l’adresse et son secret (whsec_…), montré UNE '
       + 'seule fois : le ranger dans une variable d’environnement de l’application (jamais dans le code) pour vérifier '
-      + 'l’en-tête webhook-signature. Sans types précisés : tous, sauf les accusés de livraison. La limite d’adresses '
+      + 'l’en-tête webhook-signature. Sans types précisés : tous, sauf les accusés de livraison et les actions des agents '
+      + 'IA (agent.action). La limite d’adresses '
       + 'actives dépend de l’offre (refus plan_limit_reached).',
     // Ni destructrice ni idempotente : chaque appel qui réussit crée une adresse de plus.
     annotations: { title: 'Créer un webhook sortant', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -42,7 +43,7 @@ export const OUTILS_EVENEMENTS: OutilMcp[] = [
         url: { type: 'string', minLength: 9, maxLength: 2048, pattern: '^https://', description: 'L’adresse de l’application, en HTTPS, joignable depuis Internet.' },
         types: {
           type: 'array', minItems: 1, maxItems: TYPES_ABONNABLES.length, items: { type: 'string', enum: [...TYPES_ABONNABLES] },
-          description: 'Les événements à recevoir, chacun une fois. Absent : tous, sauf message.delivered, message.read et message.failed.',
+          description: `Les événements à recevoir, chacun une fois. Absent : tous, sauf ${[...TYPES_DECOCHES_PAR_DEFAUT].join(', ')}.`,
         },
         description: { type: 'string', maxLength: 200, description: 'Un nom lisible dans la console (facultatif).' },
       },

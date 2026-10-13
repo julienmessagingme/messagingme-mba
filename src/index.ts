@@ -2768,6 +2768,8 @@ async function main(): Promise<void> {
           essai: essaiDeLaConsole,
           paiement: paiementDeLaConsole,
           outils: toolCatalog,
+          // Les actions parties dans une conversation, pour `get_conversation` (actions de l'agent IA, livraison C).
+          actions: new PgActionsAgent(pool),
           reglages: settingsStore,
           repondeur: repondeurDeLaConsole,
         },

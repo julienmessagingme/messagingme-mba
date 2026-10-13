@@ -11,7 +11,7 @@ import { BORNES_OUTIL } from '../web/lib/mba-outils';
 import {
   BORNES_ACTION, BORNES_CIBLE, CODE_CHAMP_ACTION_RE, HANDLERS_A_CIBLE, OUTILS_MAISON, TYPES_CHAMP_ACTION,
 } from '../src/agent/outils-maison';
-import { lireCibleSaisie } from '../src/agent/reglages';
+import { lireCibleSaisie, nomTechniqueDAction } from '../src/agent/reglages';
 
 /**
  * Le nom exposé d'un outil, normalisé côté navigateur, et sa parité avec ce que le serveur accepte.
@@ -134,6 +134,10 @@ describe('RC4 : la console et le catalogue serveur disent la même chose', () =>
     }
     expect(codeLibre('motif', ['motif', 'motif_2'])).toBe('motif_3');
     expect(codeLibre('', [])).toBe('champ');
+    // Le nom technique d'une action neuve posée par Claude Code suit la même règle d'unicité.
+    expect(nomTechniqueDAction('Résiliation', [])).toBe('action_resiliation');
+    expect(nomTechniqueDAction('Résiliation', ['action_resiliation'])).toBe('action_resiliation_2');
+    expect(nomTechniqueDAction('###', [])).toBe('action_client');
   });
 
   it('une action incomplète est dite avant le serveur : nom, libellé, liste sans valeurs, code en double', () => {

@@ -48,6 +48,9 @@ export { RefusOutil } from './saisie';
 /** Le scope de clé d'API qu'un outil exige. Deux seulement : lire, et écrire. */
 export type { ScopeMcp } from '../../web/lib/partage/catalogue-mcp';
 
+/** Les actions d'agent IA rendues par `get_conversation` : les plus récentes, la conversation en porte peu. */
+export const ACTIONS_DE_LA_CONVERSATION = 10;
+
 export interface DepsMcp extends DepsRepondre {
   /** L'offre de l'espace (`OffresEnCache`, lot 6, B2a) : la fonction de chaque outil s'y vérifie avant de l'exécuter. */
   offres: SourceOffres;
@@ -372,7 +375,8 @@ export const OUTILS: OutilMcp[] = [
     description:
       'Détail d’une conversation : le contact, qui la tient, à qui elle est confiée, et surtout si la '
       + 'fenêtre de service de 24 h est OUVERTE. Hors de cette fenêtre, WhatsApp interdit tout message libre : '
-      + 'appelle cet outil avant d’essayer de répondre.',
+      + 'appelle cet outil avant d’essayer de répondre. agent_actions : les dernières actions qu’un agent IA y a '
+      + `déclenchées (${ACTIONS_DE_LA_CONVERSATION} au plus, la plus récente d’abord), avec les champs recueillis.`,
     annotations: lecture('Lire une conversation'),
     entree: {
       type: 'object',
@@ -382,9 +386,10 @@ export const OUTILS: OutilMcp[] = [
     async executer(deps, tenantId, args) {
       const id = texteObligatoire(args, 'conversation_id', 100);
       const ctx = await contexteOuRefus(deps, tenantId, id);
-      const [owner, assignee] = await Promise.all([
+      const [owner, assignee, actions] = await Promise.all([
         deps.inbox.getControlOwner(tenantId, ctx.waId),
         deps.inbox.getAssignee(tenantId, id),
+        deps.agentIa.actions.listerDeLaConversation(tenantId, id, ACTIONS_DE_LA_CONVERSATION),
       ]);
       return {
         conversation_id: id,
@@ -393,6 +398,7 @@ export const OUTILS: OutilMcp[] = [
         last_inbound_at: ctx.lastInboundAt,
         handled_by: owner ?? null,
         assigned_to: assignee ?? null,
+        agent_actions: actions.map((a) => ({ action_id: a.actionId, name: a.nom, at: a.at, fields: a.champs })),
       };
     },
   },

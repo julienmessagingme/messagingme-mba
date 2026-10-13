@@ -1,6 +1,15 @@
 import type { Pool } from 'pg';
 import type { ReservationAction } from './actions';
 
+/** Une action partie dans une conversation, telle que `get_conversation` la rend. */
+export interface ActionDeLaConversation {
+  /** L'outil qui porte l'action. */
+  actionId: string;
+  nom: string;
+  at: string;
+  champs: Record<string, unknown>;
+}
+
 /** Une action de l'espace, telle que le menu du déclencheur d'automation la propose. */
 export interface ActionDeLEspace {
   /** L'outil qui porte l'action : la configuration du déclencheur le garde (`{ actionId }`). */
@@ -44,6 +53,23 @@ export class PgActionsAgent {
       [tenantId],
     );
     return res.rows;
+  }
+
+  /**
+   * Les dernières actions parties dans une conversation, la plus récente d'abord (`get_conversation`). 🔴 Filtré sur
+   * l'espace ; l'outil est joint dans le même espace. Servi par `agent_actions_conversation_idx`.
+   */
+  async listerDeLaConversation(tenantId: string, conversationId: string, limite: number): Promise<ActionDeLaConversation[]> {
+    const res = await this.pool.query<{ actionId: string; nom: string; at: Date; champs: Record<string, unknown> }>(
+      `select a.tool_id as "actionId", coalesce(t.binding->>'nom', t.name) as nom, a.at, a.champs
+         from agent_actions a
+         join agent_tools t on t.id = a.tool_id and t.tenant_id = a.tenant_id
+        where a.tenant_id = $1 and a.conversation_id = $2
+        order by a.at desc
+        limit $3`,
+      [tenantId, conversationId, limite],
+    );
+    return res.rows.map((r) => ({ actionId: r.actionId, nom: r.nom, at: r.at.toISOString(), champs: r.champs }));
   }
 
   /** Rend une réservation dont le webhook n'a pas pu s'écrire. Filtré sur l'espace. */

@@ -222,6 +222,27 @@ describe('serveur MCP : autorisation', () => {
     await server.close();
   });
 
+  it('🔴 get_conversation rend les actions d’agent IA de CETTE conversation, lues sur l’espace de la clé', async () => {
+    const lues: string[] = [];
+    const { server } = app({
+      agentIa: {
+        ...mcpAgentInerte.agentIa,
+        actions: {
+          listerDeLaConversation: async (tenant, conversationId, limite) => {
+            lues.push(`${tenant}:${conversationId}:${limite}`);
+            return [{ actionId: 'tool-1', nom: 'Résiliation', at: '2026-10-13T10:00:00.000Z', champs: { contrat: '12345' } }];
+          },
+        },
+      },
+    });
+    const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('get_conversation', { conversation_id: 'cv1' }) });
+    expect(JSON.parse(contenu(res).texte).agent_actions).toEqual([
+      { action_id: 'tool-1', name: 'Résiliation', at: '2026-10-13T10:00:00.000Z', fields: { contrat: '12345' } },
+    ]);
+    expect(lues).toEqual(['t1:cv1:10']);
+    await server.close();
+  });
+
   it('🔴 un identifiant de conversation d’un AUTRE espace se refuse comme un inexistant', async () => {
     // IDOR : la garde est le scope tenant du store, et le message ne doit pas confirmer que l'identifiant
     // existe ailleurs. Les deux cas rendent exactement la même phrase.
@@ -677,6 +698,9 @@ describe('serveur MCP : cohérence du catalogue', () => {
       set_transfer_mode: [true, true, false],
       // Les heures d'ouverture REMPLACENT celles d'avant ; les rejouer ne change rien.
       set_business_hours: [true, true, false],
+      // Les actions de l'agent (2026-10-13) : modifier REMPLACE la cible, et sans action_id chaque appel en crée une.
+      set_agent_action: [true, false, false],
+      delete_agent_action: [true, true, false],
       // Le répondeur (lot 5) : il peut éteindre l'agent de Meta chez Meta, pour tous les contacts de l'espace.
       set_default_responder: [true, true, true],
       buy_credit: [false, false, true],

@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: 01856a
+source_empreinte: 470d7a
 ---
 # Construire un agent IA
 
@@ -92,8 +92,8 @@ l'agent de Meta. En tête, **« Toujours là »** : les gestes propres à l'agen
 fiche du contact, marquer la conversation urgente), avec les mêmes commandes que vos outils : « Activer » pose
 l'outil puis l'active, « Désactiver » le désactive, « Modifier » ouvre ses consignes, et la croix le supprime. Puis **« Ajouter un outil »** ouvre la grille « Quel outil ajouter ? » :
 poser un tag, enregistrer une information, envoyer un bloc, lancer un scénario, appeler un connecteur API,
-appeler un outil MCP. Enfin, la liste des outils posés, chacun avec son état (« Actif » ou « Inactif »), « Activer » ou
-« Désactiver », « Modifier » et la croix qui supprime. Quatre choses à retenir :
+appeler un outil MCP, et déclencher une action, propre à l'agent IA. Enfin, la liste des outils posés, chacun avec son état (« Actif » ou « Inactif »), « Activer » ou
+« Désactiver », « Modifier » et la croix qui supprime. Cinq choses à retenir :
 
 - **Le tag, l'information, le bloc et le scénario sont choisis par vous**, un par outil : l'agent ne décide que
   du moment, et pour une information, de la valeur (bornée à la liste que vous donnez, si vous en donnez une).
@@ -110,6 +110,14 @@ appeler un outil MCP. Enfin, la liste des outils posés, chacun avec son état (
   cochez « autoriser l'agent à faire ça seul », sinon chaque appel est refusé, et la ligne de l'outil le dit.
 - **Les mots comptent beaucoup.** « Quand l'appeler » et « quand NE PAS l'appeler » sont deux champs
   séparés, et ce sont eux que le modèle lit pour décider.
+- **Une action fait agir votre application.** « Déclencher une action » : vous la nommez (« Résiliation »), vous
+  écrivez sa consigne (quand la déclencher, et ce que l'agent dit ensuite au client) et les informations qu'il
+  recueille, jusqu'à dix, toutes facultatives (texte, nombre, date, e-mail ou liste de valeurs). Quand le client
+  fait la demande, l'agent lui répond ce que prévoit la consigne et continue, et votre application reçoit
+  l'événement « Action de l'agent IA », une fois par jour au plus par contact et par action. Cet événement est
+  décoché par défaut : cochez-le sur une adresse dans Developers > Webhooks sortants, sinon rien ne part, et la
+  carte de l'action vous le rappelle. Le code d'un champ est la clé que votre application lit : ne le changez plus
+  une fois l'application branchée. Une automation peut aussi partir de l'action (menu Automation).
 
 **Les règles d'arrêt dessinent les sorties du bloc.** Une règle d'arrêt, c'est « quand l'agent a fini de
 faire ça, il sort par là » : vous lui donnez un code et un libellé, et chacune devient une sortie à relier

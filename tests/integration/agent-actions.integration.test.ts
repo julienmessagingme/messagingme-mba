@@ -95,6 +95,15 @@ describe.skipIf(!url)('les actions de l’agent IA (Postgres)', () => {
     expect(await actions.listerDeLEspace(autreTenantId)).toEqual([]);
   });
 
+  it('🔴 les actions d’une conversation, la plus récente d’abord, nommées par leur cible, et rien pour un autre espace', async () => {
+    const lues = await actions.listerDeLaConversation(tenantId, conversationId, 2);
+    expect(lues).toHaveLength(2);
+    expect(lues.every((a) => a.actionId === toolId && a.nom === 'résiliation')).toBe(true);
+    expect(lues[0]!.at >= lues[1]!.at).toBe(true);
+    expect(lues[0]!.champs).toEqual({ contrat: '12345', mois: 3 });
+    expect(await actions.listerDeLaConversation(autreTenantId, conversationId, 10)).toEqual([]);
+  });
+
   it('🔴 l’action s’efface avec sa conversation (les champs sont des données du contact)', async () => {
     await pool.query('delete from conversations where id = $1', [conversationId]);
     const reste = (await pool.query<{ n: string }>('select count(*) as n from agent_actions where tenant_id = $1', [tenantId])).rows[0]!.n;

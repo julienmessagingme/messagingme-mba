@@ -12,13 +12,20 @@ import {
   importerTexteDocument, supprimerFiches, type DepsConnaissance,
 } from '../agent/connaissance';
 import { MAX_CARACTERES_MESSAGE_ESSAI, MAX_MESSAGES_ESSAI, ROLES_ESSAI, essayerAgent, type DepsEssai } from '../agent/essai';
-import { OUTILS_SURS, ajouterOutilsSurs, HHMM, reglerHeuresOuverture, reglerModeTransfert, type OutilsSurs } from '../agent/reglages';
+import {
+  OUTILS_SURS, ajouterOutilsSurs, HHMM, reglerAction, reglerHeuresOuverture, reglerModeTransfert, supprimerAction,
+  type OutilsActions,
+} from '../agent/reglages';
+import type { ActionDeLaConversation } from '../agent/actions.pg';
 import { MODES_TRANSFERT, MODE_TRANSFERT_DEFAUT, type ModeTransfert } from '../agent/disponibilite-equipe';
 import { BORNES_FICHE, CODE_SORTIE_RE, MAX_SORTIES, type FicheAgentContenu } from '../agent/fiche';
 import { MODELES_CHOISIS, MODELE_AGENT_CLAUDE_CODE, type ModeleProposable } from '../agent/modeles';
 import { MAX_CORPS, MAX_TITRE } from '../agent/scrape';
 import { PAGES_MAX } from '../agent/crawl';
-import { handlerMaison, outilMaison } from '../agent/outils-maison';
+import {
+  BORNES_ACTION, CODE_CHAMP_ACTION_RE, TYPES_CHAMP_ACTION, handlerMaison, lireCibleOutilAgent, outilMaison,
+} from '../agent/outils-maison';
+import type { OutilComplet } from '../agent/catalog';
 import { PLAFOND_GATEWAY_MIN_DOLLARS, eurosDepuisMicro } from '../agent/devise';
 import type { LigneHistorique } from '../agent/credits';
 import { ouvrirPaiement, type DepsPaiement } from '../stripe/paiement';
@@ -72,8 +79,10 @@ export interface DepsAgentMcp {
   essai: DepsEssai;
   /** Le paiement de la console : mêmes offres fermées, même prix relu chez Stripe, même règle du mode test. */
   paiement: DepsPaiement;
-  /** Le catalogue d'outils de l'agent (`PgToolCatalog`). */
-  outils: OutilsSurs;
+  /** Le catalogue d'outils de l'agent (`PgToolCatalog`) : poser, activer, modifier et retirer. */
+  outils: OutilsActions;
+  /** Les actions parties dans une conversation (`PgActionsAgent`), pour `get_conversation`. */
+  actions: { listerDeLaConversation(tenantId: string, conversationId: string, limite: number): Promise<ActionDeLaConversation[]> };
   /** Les réglages de l'espace (`PgSettingsStore`) : le mode de transfert des agents IA, lu et écrit. */
   reglages: {
     get(tenantId: string): Promise<{ agentTransfertMode: ModeTransfert | null }>;
@@ -102,6 +111,27 @@ const SANS_SCENARIO_MUET = 'Un agent actif ne répond à aucun client de lui-mê
 const DESACTIVER_SUR_DEMANDE = 'Désactiver un agent le COUPE dans les scénarios publiés qui le contiennent, et lui '
   + 'retire le rôle de répondeur de l’espace : ses contacts n’ont plus de réponse. Ne le faire que sur la demande '
   + 'explicite de la personne, jamais pour faire passer une modification refusée.';
+
+/** Une action d'un agent, telle que Claude la lit : sa cible en clair, et son identifiant pour la modifier. */
+function vueAction(o: OutilComplet): Record<string, unknown> {
+  const cible = lireCibleOutilAgent(o.binding);
+  return {
+    action_id: o.id,
+    nom_technique: o.name,
+    actif: o.actif,
+    ...(cible?.handler === 'declencher_action'
+      ? { nom: cible.nom, consigne: cible.consigne, champs: cible.champs }
+      : { illisible: true }),
+  };
+}
+
+/** Ce qu'il faut savoir avant de poser une action : sans adresse abonnée, rien ne part vers l'application. */
+const ACTION_WEBHOOK = 'L’action part vers l’application du client par le webhook agent.action (champs dans fields, '
+  + 'par code), DÉCOCHÉ par défaut. Si une adresse sert déjà l’application (list_webhook_endpoints), y ajouter le type '
+  + 'agent.action, dans la console (Developers > Webhooks sortants) ou par PATCH /v1/webhooks/{id} avec la liste '
+  + 'complète de ses types, plutôt que d’en créer une seconde (elle aurait un autre secret) ; sinon, '
+  + 'create_webhook_endpoint avec le type agent.action. Sans adresse abonnée, rien ne part, mais une automation de la '
+  + 'console peut encore partir de l’action.';
 
 /** Ce qu'un outil coûteux dit de son plafond, une fois pour toutes les descriptions. */
 const LOURDE = 'Compte dans les opérations lourdes de l’espace, plafonnées par minute (comme dans la console).';
@@ -182,7 +212,8 @@ export const OUTILS_AGENT: OutilMcp[] = [
       + 'version de sa fiche (fiche_version, à rendre à update_agent), ce que les agents de l’espace peuvent promettre '
       + 'de la disponibilité de l’équipe (transfer_mode), ses outils maison et le nombre de ses connecteurs, son nombre '
       + 'de fiches de connaissance, ce qui manque avant son activation (manques) et ce qui avertit sans bloquer, et les '
-      + 'modèles proposés avec leur prix en euros par million de jetons, commission comprise.',
+      + 'modèles proposés avec leur prix en euros par million de jetons, commission comprise. Ses actions '
+      + '(set_agent_action) sont dans actions, avec leur action_id, leur consigne et leurs champs.',
     annotations: lecture('Lire un agent IA'),
     entree: { type: 'object', properties: { agent_id: AGENT_ID }, required: ['agent_id'] },
     async executer(deps, tenantId, args) {
@@ -198,10 +229,13 @@ export const OUTILS_AGENT: OutilMcp[] = [
       ]);
       // Les outils maison par leur code ; les connecteurs sont seulement comptés (Claude ne les règle pas).
       const maison = outils.filter((o) => handlerMaison(o) !== '');
+      const estAction = (o: OutilComplet): boolean => handlerMaison(o) === 'declencher_action';
       return {
         agent: vueAgent(agent),
         transfer_mode: reglages.agentTransfertMode ?? MODE_TRANSFERT_DEFAUT,
-        outils: maison.map((o) => ({ code: handlerMaison(o), nom: o.name, titre: o.title, actif: o.actif })),
+        outils: maison.filter((o) => !estAction(o)).map((o) => ({ code: handlerMaison(o), nom: o.name, titre: o.title, actif: o.actif })),
+        // Les actions à part, avec leur cible : c'est ce que set_agent_action modifie.
+        actions: maison.filter(estAction).map(vueAction),
         connecteurs: outils.length - maison.length,
         fiches_connaissance: lint?.etat.fichesConnaissance ?? null,
         manques: lint?.manques ?? null,
@@ -341,6 +375,95 @@ export const OUTILS_AGENT: OutilMcp[] = [
       const id = texteObligatoire(args, 'agent_id', 100);
       const actifs = valeurOuRefus(await ajouterOutilsSurs(deps.agentIa.outils, tenantId, id, args.outils, signataire(personne)));
       return { outils: actifs.map((o) => ({ code: handlerMaison(o), nom: o.name, actif: o.actif })) };
+    },
+  },
+  {
+    ...ficheOutilMcp('set_agent_action'),
+    // Toutes les offres, Free comprise (décision de Julien du 2026-10-13) : un espace sans console n'a que ce chemin.
+    fonction: null,
+    description:
+      'Crée une ACTION sur un agent IA, ou la modifie (action_id, rendu par get_agent). Quand le client exprime la '
+      + 'demande décrite par la consigne (« je veux résilier »), l’agent recueille les champs qu’il peut, TOUS '
+      + 'facultatifs, dit au client ce que prévoit la consigne, puis continue la conversation ; l’action part une fois '
+      + 'par jour au plus, par contact et par action. Les champs : un code (la clé dans fields, à ne plus changer une '
+      + 'fois l’application branchée), un libellé (ce que l’agent demande), un type (texte, nombre, date au format '
+      + 'AAAA-MM-JJ, email, ou liste avec ses valeurs). Une action neuve est créée ACTIVE, à votre nom. En '
+      + 'modification, consigne et champs ABSENTS restent inchangés, et des champs DONNÉS remplacent la liste entière ; '
+      + `l’action garde son état. Au plus ${BORNES_ACTION.parAgent} actions par agent. ` + ACTION_WEBHOOK,
+    // Destructrice : modifier remplace la cible. Non idempotente : sans action_id, chaque appel crée une action.
+    annotations: ecriture('Créer ou modifier une action d’un agent IA', true, false, false),
+    entree: {
+      type: 'object',
+      properties: {
+        agent_id: AGENT_ID,
+        action_id: {
+          type: 'string', format: 'uuid', minLength: 1, maxLength: 100,
+          description: 'Pour MODIFIER une action existante : son action_id (get_agent). Absent, une action neuve est créée.',
+        },
+        nom: {
+          type: 'string', minLength: 1, maxLength: BORNES_ACTION.nom,
+          description: 'Le nom de l’action (« Résiliation »), lu par l’agent et par l’application (action.name).',
+        },
+        consigne: {
+          type: 'string', maxLength: BORNES_ACTION.consigne,
+          description: 'Quand la déclencher, et ce que l’agent dit ensuite au client (« Dis-lui que sa demande est '
+            + 'enregistrée et qu’il recevra une confirmation par e-mail sous 48 h »). En modification : absent = inchangé.',
+        },
+        champs: {
+          type: 'array', maxItems: BORNES_ACTION.champs,
+          description: 'Les informations que l’agent recueille, toutes facultatives pour lui, aux codes distincts. Vide : '
+            + 'l’action part sans champ. En modification : absent = inchangé, donné = remplace la liste entière.',
+          items: {
+            type: 'object',
+            properties: {
+              code: {
+                type: 'string', pattern: CODE_CHAMP_ACTION_RE.source, maxLength: BORNES_ACTION.code,
+                description: 'La clé du champ dans fields (numero_contrat) : une lettre minuscule, puis lettres, chiffres ou _.',
+              },
+              libelle: { type: 'string', minLength: 1, maxLength: BORNES_ACTION.libelle, description: 'Ce que l’agent demande (Numéro de contrat).' },
+              type: { type: 'string', enum: [...TYPES_CHAMP_ACTION], description: 'texte, nombre, date, email ou liste.' },
+              valeurs: {
+                type: 'array', minItems: 1, maxItems: BORNES_ACTION.valeurs,
+                items: { type: 'string', minLength: 1, maxLength: BORNES_ACTION.valeur },
+                description: 'Les valeurs permises, pour une liste seulement.',
+              },
+            },
+            required: ['code', 'libelle', 'type'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['agent_id', 'nom'],
+    },
+    async executer(deps, tenantId, args, personne) {
+      const id = texteObligatoire(args, 'agent_id', 100);
+      const actionId = typeof args.action_id === 'string' && args.action_id.trim() !== '' ? args.action_id.trim() : undefined;
+      const action = valeurOuRefus(await reglerAction(deps.agentIa.outils, tenantId, id, {
+        ...(actionId !== undefined ? { actionId } : {}), nom: args.nom, consigne: args.consigne, champs: args.champs,
+      }, signataire(personne)));
+      return { action: vueAction(action), webhook: ACTION_WEBHOOK };
+    },
+  },
+  {
+    ...ficheOutilMcp('delete_agent_action'),
+    fonction: null,
+    description:
+      'Supprime une action d’un agent IA (action_id, rendu par get_agent) : l’agent ne la déclenche plus, et une '
+      + 'automation qui partait de cette action ne part plus, et son historique dans les conversations (get_conversation) '
+      + 'part avec elle. Les webhooks déjà envoyés restent chez l’application. Seule une action se supprime par cet outil.',
+    annotations: ecriture('Supprimer une action d’un agent IA', true, true, false),
+    entree: {
+      type: 'object',
+      properties: {
+        agent_id: AGENT_ID,
+        action_id: { type: 'string', format: 'uuid', minLength: 1, maxLength: 100, description: 'L’action_id de l’action (get_agent).' },
+      },
+      required: ['agent_id', 'action_id'],
+    },
+    async executer(deps, tenantId, args) {
+      const id = texteObligatoire(args, 'agent_id', 100);
+      const actionId = texteObligatoire(args, 'action_id', 100);
+      return valeurOuRefus(await supprimerAction(deps.agentIa.outils, tenantId, id, actionId));
     },
   },
   {
