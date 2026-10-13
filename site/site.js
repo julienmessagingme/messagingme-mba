@@ -103,8 +103,8 @@
     t.classList.remove('joue', 'sortie');
     void t.offsetWidth;
     t.classList.add('joue');
-    minuteries.push(setTimeout(function () { t.classList.add('sortie'); }, 12000));
-    minuteries.push(setTimeout(tour, 12600));
+    minuteries.push(setTimeout(function () { t.classList.add('sortie'); }, 13000));
+    minuteries.push(setTimeout(tour, 13600));
   }
   new IntersectionObserver(function (e) {
     if (e[0].isIntersecting && !actif) { actif = true; tour(); }

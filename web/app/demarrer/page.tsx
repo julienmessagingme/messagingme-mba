@@ -7,16 +7,15 @@ import { TitrePage, IntroPage } from '@/components/TitrePage';
 import { Bouton, classesBouton } from '@/components/Bouton';
 import { Bloc } from '@/components/doc-api/elements';
 import type { Session } from '@/lib/session';
-import { useLocale, useT } from '@/lib/i18n';
+import { useT } from '@/lib/i18n';
 import { API_SCOPES_PAR_DEFAUT, createApiKey, getAccountStatus, type AccountStatusResponse } from '@/lib/api';
-import { BASE } from '@/lib/http';
-import { API_PUBLIQUE, CLE_SUITE, commandeMcp, promptDeDemarrage, SUITE_DEMARRER, VARIABLE_CLE } from '@/lib/demarrer';
+import { CLE_SUITE, COMMANDE_DEMARRAGE, COMMANDES_PLUGIN, SERVEUR_PLUGIN_MCP, SUITE_DEMARRER, VARIABLE_CLE } from '@/lib/demarrer';
 
 /**
  * LA PAGE FINALE DU TUNNEL DE LA BASE (lot 19, plan `docs/superpowers/plans/2026-10-08-tunnel-de-la-base.md`) : un
  * espace qui vient de naître y trouve tout pour vivre dans Claude Code, dans l'ordre où il s'en sert. Le numéro (connecté,
- * ou à connecter maintenant ou plus tard), la commande qui branche le serveur MCP, la clé de son application, et le
- * prompt à coller. La logique est dans `lib/demarrer.ts`.
+ * ou à connecter maintenant ou plus tard), les deux commandes qui installent le plugin Claude Code (lot 10, B), la clé de
+ * son application, et `/messagingme:demarrer`, qui lance la mise en service. La logique est dans `lib/demarrer.ts`.
  */
 export default function DemarrerPage() {
   return <AppShell active="accueil">{(session) => <Demarrer session={session} />}</AppShell>;
@@ -24,7 +23,6 @@ export default function DemarrerPage() {
 
 function Demarrer({ session }: { session: Session }) {
   const t = useT();
-  const { locale } = useLocale();
   const tenantId = session.tenantId;
   const isAdmin = session.role === 'admin';
   const [compte, setCompte] = useState<AccountStatusResponse | null>(null);
@@ -49,16 +47,10 @@ function Demarrer({ session }: { session: Session }) {
     }
   };
 
-  // 🔴 L'ADRESSE MCP EST CELLE DE L'API (`BASE`), jamais celle de la console, où `/mcp` rend 404, ni le domaine de la
-  // page quand `BASE` est relative (contrairement à `/developers/mcp`) : cf. `API_PUBLIQUE`.
-  const origineApi = BASE.startsWith('http') ? BASE : API_PUBLIQUE;
-  const commande = commandeMcp(origineApi);
-  const prompt = promptDeDemarrage({ langue: locale === 'en' ? 'en' : 'fr', docApi: `${window.location.origin}/developers/api`, numeroConnecte: connecte });
-
   return (
     <div className="mx-auto max-w-formulaire">
       <TitrePage>{t('Votre espace est prêt', 'Your workspace is ready')}</TitrePage>
-      <IntroPage>{t('Tout pour piloter WhatsApp depuis Claude Code, en trois copier-coller.', 'Everything to run WhatsApp from Claude Code, in three copy-pastes.')}</IntroPage>
+      <IntroPage>{t('Tout pour piloter WhatsApp depuis Claude Code, en quelques copier-coller.', 'Everything to run WhatsApp from Claude Code, in a few copy-pastes.')}</IntroPage>
 
       <section className="mt-6 rounded-carte border border-ink-200 bg-white p-5" data-testid="demarrer-numero">
         <h2 className="text-base font-semibold text-ink-900">{t('Votre numéro WhatsApp', 'Your WhatsApp number')}</h2>
@@ -79,14 +71,17 @@ function Demarrer({ session }: { session: Session }) {
       </section>
 
       <section className="mt-4 space-y-3 rounded-carte border border-ink-200 bg-white p-5">
-        <h2 className="text-base font-semibold text-ink-900">{t('1. Brancher Claude Code', '1. Connect Claude Code')}</h2>
+        <h2 className="text-base font-semibold text-ink-900">{t('1. Installer le plugin dans Claude Code', '1. Install the Claude Code plugin')}</h2>
         <p className="text-sm text-ink-500">
           {t(
-            'À lancer dans un terminal, sans clé à coller. Puis, dans Claude Code, tapez /mcp, choisissez messagingme et validez la connexion dans la page qui s’ouvre.',
-            'Run it in a terminal, no key to paste. Then, in Claude Code, type /mcp, pick messagingme and approve the connection on the page that opens.',
+            `Dans Claude Code, ouvert dans le dossier de votre application : ces deux commandes, l’une après l’autre, sans clé à coller. Puis tapez /mcp, choisissez ${SERVEUR_PLUGIN_MCP}, puis Authenticate, et validez la connexion dans la page qui s’ouvre.`,
+            `In Claude Code, opened in your application’s folder: these two commands, one after the other, no key to paste. Then type /mcp, pick ${SERVEUR_PLUGIN_MCP}, then Authenticate, and approve the connection on the page that opens.`,
           )}
         </p>
-        <Bloc legende={t('Commande', 'Command')} testid="demarrer-commande" testidCopier="demarrer-copier-commande">{commande}</Bloc>
+        {/* Une commande par bloc : collées ensemble, Claude Code n'en lancerait qu'une. */}
+        {COMMANDES_PLUGIN.map((c, i) => (
+          <Bloc key={c} legende={t(`Commande ${i + 1}`, `Command ${i + 1}`)} testid={`demarrer-commande-${i + 1}`} testidCopier={`demarrer-copier-commande-${i + 1}`}>{c}</Bloc>
+        ))}
       </section>
 
       <section className="mt-4 space-y-3 rounded-carte border border-ink-200 bg-white p-5">
@@ -116,9 +111,14 @@ function Demarrer({ session }: { session: Session }) {
       </section>
 
       <section className="mt-4 space-y-3 rounded-carte border border-ink-200 bg-white p-5">
-        <h2 className="text-base font-semibold text-ink-900">{t('3. Le premier message à Claude', '3. Your first message to Claude')}</h2>
-        <p className="text-sm text-ink-500">{t('À coller dans Claude Code, dans le dossier de votre application.', 'Paste it in Claude Code, in your application’s folder.')}</p>
-        <Bloc legende={t('Prompt', 'Prompt')} testid="demarrer-prompt" testidCopier="demarrer-copier-prompt">{prompt}</Bloc>
+        <h2 className="text-base font-semibold text-ink-900">{t('3. Lancer la mise en service', '3. Start the setup')}</h2>
+        <p className="text-sm text-ink-500">
+          {t(
+            'Dans Claude Code : Claude lit où en est votre espace, puis vous mène du numéro à l’agent IA et à la bulle sur votre site. Une session coupée reprend où elle s’était arrêtée.',
+            'In Claude Code: Claude reads where your workspace stands, then takes you from the number to the AI agent and the bubble on your site. An interrupted session resumes where it stopped.',
+          )}
+        </p>
+        <Bloc legende={t('Dans Claude Code', 'In Claude Code')} testid="demarrer-lancement" testidCopier="demarrer-copier-lancement">{COMMANDE_DEMARRAGE}</Bloc>
       </section>
 
       <Link href="/accueil" className="mt-6 inline-block text-sm font-semibold text-ink-900 underline" data-testid="demarrer-accueil">

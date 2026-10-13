@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { COMMANDES_PLUGIN } from '../lib/demarrer';
 import { OUTILS_MCP } from '../lib/mcp-outils';
 
 /**
@@ -48,6 +49,9 @@ test.describe('Developers : le serveur MCP', () => {
     await page.route('**/api/backend/**', (route) => route.fulfill({ status: 401, contentType: 'application/json', body: '{}' }));
     await page.goto('/developers/mcp');
     await expect(page.getByRole('heading', { name: 'Serveur MCP', exact: true })).toBeVisible();
+    // Le plugin Claude Code d'abord (lot 10, B), avec les commandes que le plugin publie.
+    await expect(page.getByTestId('mcp-plugin-1')).toContainText(COMMANDES_PLUGIN[0]);
+    await expect(page.getByTestId('mcp-plugin-2')).toContainText(COMMANDES_PLUGIN[1]);
     await expect(page.getByTestId('mcp-adresse')).toContainText('/mcp');
     await expect(page.getByText(/claude mcp add --transport http/)).toBeVisible();
     await expect(page.getByTestId('mcp-sans-cle')).toHaveCount(0);

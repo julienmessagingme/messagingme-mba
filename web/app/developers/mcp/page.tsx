@@ -8,6 +8,7 @@ import { useT } from '@/lib/i18n';
 import { OUTILS_MCP } from '@/lib/mcp-outils';
 import { listApiKeys } from '@/lib/api';
 import { BASE } from '@/lib/http';
+import { COMMANDE_DEMARRAGE, COMMANDES_PLUGIN, SERVEUR_PLUGIN_MCP } from '@/lib/demarrer';
 import type { Session } from '@/lib/session';
 
 /**
@@ -77,6 +78,21 @@ function McpInner({ session }: { session: Session | null }) {
           )}
         </p>
       </EnTetePage>
+
+      {/* Le plugin d'abord (lot 10, B) : pour Claude Code, il branche ce serveur sans clé et apporte la mise en service. La
+          commande `claude mcp add` ci-dessous reste pour qui ne veut que le serveur, ou une connexion par clé. */}
+      <Section titre={t('Claude Code : le plugin', 'Claude Code: the plugin')}>
+        <p>
+          {t(
+            `Le plus simple dans Claude Code : le plugin Messaging Me branche ce serveur sans clé, puis ${COMMANDE_DEMARRAGE} met l’espace en service pas à pas (numéro, agent IA, bulle, test). Les deux commandes, l’une après l’autre, puis /mcp, ${SERVEUR_PLUGIN_MCP} et Authenticate. Avec le plugin, n’ajoutez pas aussi la commande à clé ci-dessous : Claude Code garderait ce serveur-là, qui n’ouvre pas les outils de mise en service.`,
+            `The simplest way in Claude Code: the Messaging Me plugin connects this server with no key, then ${COMMANDE_DEMARRAGE} sets the workspace up step by step (number, AI agent, bubble, test). The two commands, one after the other, then /mcp, ${SERVEUR_PLUGIN_MCP} and Authenticate. With the plugin, do not also add the key-based command below: Claude Code would keep that server, which does not open the setup tools.`,
+          )}
+        </p>
+        {COMMANDES_PLUGIN.map((c, i) => (
+          <Bloc key={c} legende={t(`Commande ${i + 1}`, `Command ${i + 1}`)} testid={`mcp-plugin-${i + 1}`}>{c}</Bloc>
+        ))}
+        <Bloc legende={t('Puis, dans Claude Code', 'Then, in Claude Code')} testid="mcp-plugin-demarrage">{COMMANDE_DEMARRAGE}</Bloc>
+      </Section>
 
       <Section titre={t('Adresse', 'Endpoint')}>
         <Bloc legende={t('Adresse', 'Endpoint')} testid="mcp-adresse">{`${origine}/mcp`}</Bloc>

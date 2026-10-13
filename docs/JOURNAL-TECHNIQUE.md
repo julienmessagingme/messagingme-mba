@@ -6,6 +6,24 @@
 > tranchent, jamais ce fichier.
 
 
+## 2026-10-13 : le plugin Claude Code, publié et essayé ; livraison B (lot 10)
+
+- Le dépôt public et sa clé créés par Julien, la v0.1.0 publiée par `plugin.yml` (deux jobs verts, `833ec32`, huit
+  fichiers, `claude plugin validate` passe sur le dépôt publié).
+- L'essai de Julien, dans un dossier vide et le plugin installé en portée locale : 🔴 **l'autorisation par `/mcp` d'un
+  serveur fourni par un plugin MARCHE** (« Authentication successful. Connected to plugin:messagingme:messagingme »),
+  ce que la doc de Claude Code ne garantissait pas. `/messagingme:demarrer` a chargé la skill de mise en service (ses
+  neuf outils pré-autorisés), lu l'état de l'espace en un appel, et respecté le répondeur choisi (« un scénario, c'est
+  vous qui l'avez choisi, je n'y touche donc pas »).
+- Mesuré au passage : le serveur du plugin n'apparaissait d'abord pas, parce que Julien avait déjà `engageme`, branché
+  à la main à la même adresse ; le journal de Claude Code dit « Suppressing plugin MCP server … duplicates
+  manually-configured "engageme" ». Pas d'outils en double, donc : la réponse de la FAQ qui l'annonçait était fausse,
+  corrigée en 0.1.1. Pour l'essai, `engageme` coupé dans ce seul dossier.
+- Livraison B : la page `/demarrer`, les deux pages développeurs (étapes, terminal, FAQ générée avec son balisage
+  `FAQPage`), le bloc de l'accueil et l'écran Serveur MCP montrent les commandes du plugin, depuis une seule constante
+  de la console que `tests/plugin.test.ts` tient égale aux manifestes. Le prompt à coller et la commande `claude mcp add`
+  du tunnel sont retirés. e2e de `/demarrer` et de la doc MCP lancées en local (11 sur 11).
+
 ## 2026-10-12 : le plugin Claude Code, livraison A (lot 10)
 
 Décisions de Julien en deux rondes de questions : le plugin publié comme le SDK dans

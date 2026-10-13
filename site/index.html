@@ -545,8 +545,8 @@
         </div>
       </div>
       <!-- L'appel reprend web/lib/api-exemples.ts (messageWhatsapp), celui que la doc publie et que la suite
-           racine valide contre la route ; la commande Claude Code est celle du tunnel (commandeMcp,
-           web/lib/demarrer.ts), et tests/vitrine-developpeurs.test.ts la tient égale. -->
+           racine valide contre la route ; les commandes Claude Code sont celles du plugin (COMMANDES_PLUGIN,
+           web/lib/demarrer.ts), et tests/vitrine-developpeurs.test.ts les tient égales. -->
       <pre class="code" aria-label="Exemples de branchement"><code><span class="c"># Envoyer un message par l’API</span>
 curl -X POST https://api.messagingme.app/v1/messages/whatsapp \
   -H "Authorization: Bearer mba_xxxxxxxxxxxxxxxx" \
@@ -554,8 +554,9 @@ curl -X POST https://api.messagingme.app/v1/messages/whatsapp \
   -d '{"externalId":"crm-7781",
        "text":"Votre commande 8412 est prête, vous pouvez passer la retirer."}'
 
-<span class="c"># Brancher Claude Code sur votre espace</span>
-claude mcp add --transport http messagingme https://api.messagingme.app/mcp</code></pre>
+<span class="c"># Brancher Claude Code : le plugin Messaging Me</span>
+/plugin marketplace add julienmessagingme/messagingme-plugin
+/plugin install messagingme@messagingme</code></pre>
     </div>
   </section>
 </main>

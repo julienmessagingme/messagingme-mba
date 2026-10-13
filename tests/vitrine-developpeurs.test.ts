@@ -5,7 +5,8 @@ import { DROITS, PRIX_PRO_HT_CENTIMES } from '../src/offres/offres';
 import { CODE_RE } from '../src/http/widget-public';
 import { PRIX_NUMERO_HT_CENTIMES } from '../src/stripe/abonnement';
 import { adresseDuScript, baliseDuScript } from '../src/widgets/adresses';
-import { API_PUBLIQUE, commandeMcp } from '../web/lib/demarrer';
+import { API_PUBLIQUE, COMMANDE_DEMARRAGE, COMMANDES_PLUGIN, SERVEUR_PLUGIN_MCP } from '../web/lib/demarrer';
+import { MARQUE_DEBUT } from '../scripts/plugin/generer';
 import { EXEMPLES_SDK, VERSION_SDK } from '../web/lib/exemples-code';
 import { CATALOGUE_MCP } from '../web/lib/partage/catalogue-mcp';
 
@@ -78,18 +79,29 @@ describe('les chiffres de l’offre sont ceux du code', () => {
   }
 });
 
-describe('la commande qui branche Claude Code est celle du tunnel', () => {
-  it('toute commande `claude mcp add` publiée sur la vitrine est `commandeMcp` sur l’API publique', () => {
-    const attendue = commandeMcp(API_PUBLIQUE);
+describe('les commandes qui branchent Claude Code sont celles du plugin (lot 10, B)', () => {
+  for (const [langue, html] of Object.entries(PAGES)) {
+    it(`page ${langue} : les deux commandes, puis le lancement, une par bloc (collées ensemble, Claude Code n’en lancerait qu’une)`, () => {
+      const blocs = Object.fromEntries(parAttribut(html, 'data-commande').map((b) => [b.valeur, texte(b.contenu).trim()]));
+      expect(blocs).toEqual({ 'plugin-1': COMMANDES_PLUGIN[0], 'plugin-2': COMMANDES_PLUGIN[1], demarrage: COMMANDE_DEMARRAGE });
+      expect(texte(parAttribut(html, 'data-commande-terminal')[0]?.contenu ?? '')).toBe(COMMANDE_DEMARRAGE);
+      // Le nom que /mcp affiche pour le serveur du plugin.
+      expect(parAttribut(html, 'data-serveur').map((b) => texte(b.contenu))).toEqual([SERVEUR_PLUGIN_MCP]);
+    });
+  }
+
+  it('toute ligne `/plugin` de la vitrine est une commande du plugin, et plus aucun bloc de code ne montre `claude mcp add`', () => {
     let vues = 0;
     for (const page of pagesHtml()) {
-      for (const m of texte(lire(page)).matchAll(/claude mcp add[^\n]*/g)) {
-        expect(m[0].trim(), page).toBe(attendue);
+      const html = lire(page);
+      for (const m of texte(html).matchAll(/^\s*(\/plugin [^\n]*?)\s*$/gm)) {
+        expect([...COMMANDES_PLUGIN] as string[], page).toContain(m[1]!);
         vues++;
       }
+      for (const bloc of html.matchAll(/<pre[^>]*>([\s\S]*?)<\/pre>/g)) expect(texte(bloc[1]!), page).not.toContain('claude mcp add');
     }
-    // Les deux pages et le bloc de l'accueil : une commande disparue ne doit pas rendre ce test vide.
-    expect(vues).toBeGreaterThanOrEqual(3);
+    // Deux par page développeurs, deux à l'accueil : une commande disparue ne doit pas rendre ce test vide.
+    expect(vues).toBeGreaterThanOrEqual(6);
   });
 
   it('aucun lien vers `/mcp` sur le domaine de la console, où il rend 404', () => {
@@ -110,7 +122,9 @@ describe('le terminal montre de vrais outils et la vraie balise', () => {
         expect(outils, `${o} manque à la séance`).toContain(o);
         return outils.indexOf(o);
       };
-      expect(rang('create_agent')).toBe(0);
+      // La mise en service du plugin lit d'abord où en est l'espace.
+      expect(rang('get_setup_state')).toBe(0);
+      expect(rang('create_agent')).toBeGreaterThan(rang('get_setup_state'));
       // L'import du site range ses fiches dans l'agent : après sa création.
       expect(rang('import_site')).toBeGreaterThan(rang('create_agent'));
       // L'activation refuse un agent sans fiche complète ni outil actif (`activate_agent`, src/mcp/outils-agent.ts).
@@ -188,6 +202,12 @@ describe('les liens entre les pages', () => {
 });
 
 describe('ce que lisent les moteurs et les modèles', () => {
+  it('les deux pages portent la FAQ générée (son contenu est tenu par tests/plugin-faq.test.ts)', () => {
+    for (const html of Object.values(PAGES)) expect(html).toContain(MARQUE_DEBUT);
+    expect(lire('llms.txt')).toContain('https://app.messagingme.fr/developpeurs/#faq');
+    expect(lire('llms.txt')).toContain('https://github.com/julienmessagingme/messagingme-plugin');
+  });
+
   it('le plan du site et `llms.txt` citent les deux pages', () => {
     for (const fichier of ['sitemap.xml', 'llms.txt']) {
       expect(lire(fichier), fichier).toContain(ADRESSE_FR);

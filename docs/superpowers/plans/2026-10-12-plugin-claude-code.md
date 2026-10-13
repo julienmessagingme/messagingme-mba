@@ -86,6 +86,9 @@ Poussée APRÈS la publication et l'installation réussie de A.
    `commandeMcp` à `COMMANDES_PLUGIN` et exige la FAQ égale à la source.
 3. **La doc MCP** de la console nomme le plugin et garde `claude mcp add` pour qui ne veut que le serveur.
 4. Relecture, push, CI des deux côtés, publication Vercel, `curl` des pages, et `/demarrer` regardée en production.
+   🔴 Une fiche d'aide a changé (`inviter-mon-equipe-et-gerer-les-acces.md`) : sur le VPS, `git pull`, construire l'image
+   de `mba-api`, puis `npm run aide:charger` dans elle (`DEPLOY.md`), sinon le bot d'aide répond avec l'ancien texte.
+   Puis publier le plugin 0.1.1 (`gh workflow run plugin.yml --ref main`), sans attendre : B ne change pas l'API.
 5. **Les docs** : `features.md`, `documentation.md`, le journal, le plan privé.
 
 ## Ordre de mise en ligne

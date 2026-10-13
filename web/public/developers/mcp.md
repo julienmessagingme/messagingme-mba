@@ -4,6 +4,28 @@
 
 Brancher un assistant (Claude, ou tout client compatible MCP) sur l’espace, sans intégration à développer.
 
+## Claude Code : le plugin
+
+Le plus simple dans Claude Code : le plugin Messaging Me branche ce serveur sans clé, puis /messagingme:demarrer met l’espace en service pas à pas (numéro, agent IA, bulle, test). Les deux commandes, l’une après l’autre, puis /mcp, plugin:messagingme:messagingme et Authenticate. Avec le plugin, n’ajoutez pas aussi la commande à clé ci-dessous : Claude Code garderait ce serveur-là, qui n’ouvre pas les outils de mise en service.
+
+_Commande 1_
+
+```
+/plugin marketplace add julienmessagingme/messagingme-plugin
+```
+
+_Commande 2_
+
+```
+/plugin install messagingme@messagingme
+```
+
+_Puis, dans Claude Code_
+
+```
+/messagingme:demarrer
+```
+
 ## Adresse
 
 _Adresse_

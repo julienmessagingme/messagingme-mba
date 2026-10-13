@@ -907,6 +907,19 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .dev-installation{margin-bottom:16px}
 .dev-exemple figcaption{margin:0 0 10px;font-family:var(--mono);font-size:.78rem;color:var(--code-muted)}
 @media (max-width:960px){.dev-deux{grid-template-columns:minmax(0,1fr);gap:36px}}
+/* La FAQ (lot 10), générée depuis scripts/plugin/faq.ts : une question par ligne, la réponse dépliée sous elle. */
+.dev-faq{margin-top:28px;max-width:56em;border-top:1px solid var(--line)}
+.dev-faq details{border-bottom:1px solid var(--line)}
+.dev-faq summary{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;cursor:pointer;list-style:none;font-weight:700;font-size:1.05rem}
+.dev-faq summary::-webkit-details-marker{display:none}
+.dev-faq summary::after{content:"+";flex:none;color:var(--action-ink);font-size:1.3rem;font-weight:500;transition:transform .2s}
+.dev-faq details[open] summary::after{transform:rotate(45deg)}
+.dev-faq summary:focus-visible{outline:2px solid var(--action);outline-offset:4px;border-radius:6px}
+.dev-faq p{margin:0 0 20px;max-width:46em;color:var(--muted);text-wrap:pretty}
+.dev-faq code{font-family:var(--mono);font-size:.88em;color:var(--code-ink);background:rgb(255 255 255 / .08);padding:.1em .4em;border-radius:6px;overflow-wrap:anywhere}
+.dev-faq a{color:var(--action-ink);overflow-wrap:anywhere}
+.dev-pas .code + .dev-copier{margin-top:-4px}
+
 /* L'offre gratuite en cinq cases, puis le Pro en une ligne. */
 .dev-grille{list-style:none;margin:36px 0 0;padding:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px}
 .dev-grille li{padding:22px;border-radius:16px;background:var(--surface);border:1px solid var(--line);color:var(--muted);font-size:.95rem}

@@ -8,7 +8,7 @@ De l’inscription au premier message envoyé par l’API, avec votre propre té
 
 ## 1. Créer son espace et brancher son numéro
 
-Inscrivez-vous sur `https://console.messagingme.app/signup`. La console enchaîne : connecter un numéro WhatsApp (le vôtre, par la fenêtre de Meta, ou un numéro fourni), puis une page qui donne la commande pour brancher Claude Code et le premier message à lui écrire.
+Inscrivez-vous sur `https://console.messagingme.app/signup`. La console enchaîne : connecter un numéro WhatsApp (le vôtre, par la fenêtre de Meta, ou un numéro fourni), puis une page qui donne les deux commandes qui installent le plugin Claude Code, la clé de votre application, et /messagingme:demarrer, qui lance la mise en service.
 
 Sans numéro branché, rien ne part : [`no_whatsapp_number`](https://console.messagingme.app/developers/api/errors.md#no_whatsapp_number).
 

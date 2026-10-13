@@ -162,9 +162,9 @@ export const FAQ: readonly EntreeFaq[] = [
     id: 'serveur-ajoute-a-la-main',
     question: { fr: 'J’avais déjà ajouté le serveur à la main : que faire ?', en: 'I had already added the server by hand: what now?' },
     reponse: {
-      fr: 'Si vous aviez tapé claude mcp add pour le serveur messagingme, Claude voit chaque outil en double. Retirez l’ancien (claude mcp remove messagingme) : le plugin apporte le sien.',
-      en: 'If you had run claude mcp add for the messagingme server, Claude sees every tool twice. Remove the old one (claude mcp remove messagingme): the plugin brings its own.',
+      fr: 'Branché sans clé (autorisé par /mcp) : rien à faire. Claude Code garde le vôtre et met celui du plugin de côté, sans outil en double. Branché avec une clé d’API : retirez-le (claude mcp remove suivi de son nom). Une clé n’ouvre pas les outils de mise en service, et c’est pourtant ce serveur-là que Claude Code garderait.',
+      en: 'Connected without a key (authorized through /mcp): nothing to do. Claude Code keeps yours and sets the plugin’s aside, with no duplicate tools. Connected with an API key: remove it (claude mcp remove followed by its name). A key does not open the setup tools, and yet Claude Code would keep that server.',
     },
-    source: 'web/lib/demarrer.ts (commandeMcp, l’ancienne commande du tunnel)',
+    source: 'Claude Code, journal de débogage lu le 2026-10-13 (« Suppressing plugin MCP server … duplicates manually-configured »)',
   },
 ];

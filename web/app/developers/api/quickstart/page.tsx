@@ -34,8 +34,8 @@ function Demarrer() {
         <p>
           {t('Inscrivez-vous sur ', 'Sign up at ')}<C>https://console.messagingme.app/signup</C>
           {t(
-            '. La console enchaîne : connecter un numéro WhatsApp (le vôtre, par la fenêtre de Meta, ou un numéro fourni), puis une page qui donne la commande pour brancher Claude Code et le premier message à lui écrire.',
-            '. The console chains the steps: connect a WhatsApp number (yours, through Meta’s window, or a provided number), then a page with the command to connect Claude Code and the first message to write to it.',
+            '. La console enchaîne : connecter un numéro WhatsApp (le vôtre, par la fenêtre de Meta, ou un numéro fourni), puis une page qui donne les deux commandes qui installent le plugin Claude Code, la clé de votre application, et /messagingme:demarrer, qui lance la mise en service.',
+            '. The console chains the steps: connect a WhatsApp number (yours, through Meta’s window, or a provided number), then a page with the two commands that install the Claude Code plugin, your application’s key, and /messagingme:demarrer, which starts the setup.',
           )}
         </p>
         <p className="text-sm text-ink-500">

@@ -168,7 +168,7 @@ De l’inscription au premier message envoyé par l’API, avec votre propre té
 
 ## 1. Créer son espace et brancher son numéro
 
-Inscrivez-vous sur `https://console.messagingme.app/signup`. La console enchaîne : connecter un numéro WhatsApp (le vôtre, par la fenêtre de Meta, ou un numéro fourni), puis une page qui donne la commande pour brancher Claude Code et le premier message à lui écrire.
+Inscrivez-vous sur `https://console.messagingme.app/signup`. La console enchaîne : connecter un numéro WhatsApp (le vôtre, par la fenêtre de Meta, ou un numéro fourni), puis une page qui donne les deux commandes qui installent le plugin Claude Code, la clé de votre application, et /messagingme:demarrer, qui lance la mise en service.
 
 Sans numéro branché, rien ne part : [`no_whatsapp_number`](https://console.messagingme.app/developers/api/errors.md#no_whatsapp_number).
 
@@ -4054,6 +4054,28 @@ Ce que Messaging Me fait déjà : Messaging Me la rejoue seul plusieurs fois ava
 # Serveur MCP
 
 Brancher un assistant (Claude, ou tout client compatible MCP) sur l’espace, sans intégration à développer.
+
+## Claude Code : le plugin
+
+Le plus simple dans Claude Code : le plugin Messaging Me branche ce serveur sans clé, puis /messagingme:demarrer met l’espace en service pas à pas (numéro, agent IA, bulle, test). Les deux commandes, l’une après l’autre, puis /mcp, plugin:messagingme:messagingme et Authenticate. Avec le plugin, n’ajoutez pas aussi la commande à clé ci-dessous : Claude Code garderait ce serveur-là, qui n’ouvre pas les outils de mise en service.
+
+_Commande 1_
+
+```
+/plugin marketplace add julienmessagingme/messagingme-plugin
+```
+
+_Commande 2_
+
+```
+/plugin install messagingme@messagingme
+```
+
+_Puis, dans Claude Code_
+
+```
+/messagingme:demarrer
+```
 
 ## Adresse
 

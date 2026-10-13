@@ -8,6 +8,17 @@
 - **Un serveur qui refuse un outil appelé avant son étape** (la troisième couche du plan) : `get_setup_state` conseille
   sans bloquer.
 - **La licence du plugin**, à trancher avec celle du SDK (section ci-dessous) : le dépôt public n'en porte aucune.
+- **Être trouvé dans Claude Code sans ajouter notre catalogue** (question de Julien du 2026-10-13) : l'onglet Discover
+  ne liste que les catalogues ajoutés, et par défaut seul celui d'Anthropic (`claude-plugins-official`, accès par un
+  contact partenaire). La voie ouverte : le répertoire de claude.ai (`claude.ai/directory/manage`, compte payant,
+  revue et scan de sécurité à chaque version), le plugin ET le connecteur MCP soumis à part, depuis la même
+  organisation. Bloquant avant d'y aller : une licence, une politique de confidentialité, un contact support, un
+  README qui décrit les données échangées, trois exemples d'usage, un compte de test peuplé ; et une question à
+  `mcp-review@anthropic.com` sur la règle « ni publicité ni contenu sponsorisé » face à nos envois de modèles
+  marketing.
+- **L'installation en une commande** (`/plugin install messagingme --marketplace julienmessagingme/messagingme-plugin`) :
+  demande Claude Code 2.1.275 ou plus ; les pages gardent les deux commandes tant que les versions plus anciennes
+  circulent.
 
 ## 🟡 Lot 14, la tenue en charge : ce que la spec laisse hors périmètre (2026-10-12)
 

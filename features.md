@@ -179,11 +179,11 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   passe) et en devient l'**admin**. Elle enchaîne sur le **tunnel de l'offre Free** (2026-10-08), sans passer par
   l'accueil : la page du numéro WhatsApp (le sien ou un numéro fourni, avec « Plus tard » pour la sauter), puis la
   **page finale `/demarrer`**, qui donne tout pour vivre dans Claude Code : le numéro (affiché, ou « Connecter mon
-  numéro »), la **commande qui branche Claude Code** (sans clé : la connexion à l'espace se valide ensuite
-  par `/mcp` dans Claude Code), **« Créer la clé de mon application »** (droits par défaut, montrée une seule fois, en ligne de
-  `.env` sous `MESSAGINGME_API_KEY`), et le **premier message à coller** dans Claude Code (le serveur à utiliser, la
-  clé jamais dans le code, la documentation de l'API, et le numéro à brancher s'il ne l'est pas). La suite survit
-  au paiement d'un numéro fourni.
+  numéro »), les **deux commandes qui installent le plugin Claude Code** (sans clé : la connexion à l'espace se valide
+  ensuite par `/mcp` dans Claude Code), **« Créer la clé de mon application »** (droits par défaut, montrée une seule
+  fois, en ligne de `.env` sous `MESSAGINGME_API_KEY`), et **`/messagingme:demarrer`**, qui lance la mise en service
+  (lot 10, 2026-10-13 : le plugin remplace la commande `claude mcp add` et le premier message à coller). La suite
+  survit au paiement d'un numéro fourni.
 - ✅ **Se connecter avec Google** (bouton sur `/login`, `/signup`, `/invite`) : vérif du jeton côté serveur ;
   liaison **par email** (compte existant -> connexion ; email inconnu -> crée un espace et prend le même tunnel
   qu'un signup).
@@ -4194,12 +4194,15 @@ compatible MCP, directement sur son espace, **sans développer d'intégration**.
 coûté un dépôt entier pour UN partenaire, le serveur MCP rend la console joignable par tout ce qui parle ce
 protocole, pour un seul travail.
 
-🚧 **Le plugin Claude Code** (lot 10, 2026-10-12, publié après l'installation d'essai de Julien) : deux commandes
+✅ **Le plugin Claude Code** (lot 10, publié le 2026-10-13, `julienmessagingme/messagingme-plugin`) : deux commandes
 dans Claude Code (`/plugin marketplace add julienmessagingme/messagingme-plugin`, puis `/plugin install
 messagingme@messagingme`) branchent le serveur sans clé et apportent `/messagingme:demarrer`, qui mène pas à pas
 jusqu'à un agent IA qui répond sur WhatsApp et une bulle sur le site, en reprenant une session coupée là où elle
 s'était arrêtée. Il porte aussi les règles de WhatsApp et la FAQ, la même que celle de la vitrine. Côté serveur, l'outil
 `get_setup_state` dit en un appel où en est la mise en service d'un espace et l'étape suivante, pour tout client MCP.
+La page `/demarrer`, les pages développeurs de la vitrine et l'écran Serveur MCP montrent ses commandes ; un serveur
+déjà branché à la main à la même adresse est gardé par Claude Code, qui met celui du plugin de côté (aucun outil en
+double). Le plugin ne se met pas à jour tout seul chez les gens : la FAQ dit comment.
 
 **Comment ça s'utilise.** Menu **Developers > Serveur MCP**. L'écran donne l'adresse
 (`https://api.messagingme.app/mcp`), la commande à copier, la liste des outils et ce que le serveur ne fait

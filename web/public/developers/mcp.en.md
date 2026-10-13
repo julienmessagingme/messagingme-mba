@@ -4,6 +4,28 @@
 
 Connect an assistant (Claude, or any MCP-compatible client) to the workspace, with no integration to build.
 
+## Claude Code: the plugin
+
+The simplest way in Claude Code: the Messaging Me plugin connects this server with no key, then /messagingme:demarrer sets the workspace up step by step (number, AI agent, bubble, test). The two commands, one after the other, then /mcp, plugin:messagingme:messagingme and Authenticate. With the plugin, do not also add the key-based command below: Claude Code would keep that server, which does not open the setup tools.
+
+_Command 1_
+
+```
+/plugin marketplace add julienmessagingme/messagingme-plugin
+```
+
+_Command 2_
+
+```
+/plugin install messagingme@messagingme
+```
+
+_Then, in Claude Code_
+
+```
+/messagingme:demarrer
+```
+
 ## Endpoint
 
 _Endpoint_

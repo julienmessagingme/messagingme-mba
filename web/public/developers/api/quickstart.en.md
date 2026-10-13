@@ -8,7 +8,7 @@ From sign-up to the first message sent through the API, with your own phone to c
 
 ## 1. Create your workspace and connect your number
 
-Sign up at `https://console.messagingme.app/signup`. The console chains the steps: connect a WhatsApp number (yours, through Meta’s window, or a provided number), then a page with the command to connect Claude Code and the first message to write to it.
+Sign up at `https://console.messagingme.app/signup`. The console chains the steps: connect a WhatsApp number (yours, through Meta’s window, or a provided number), then a page with the two commands that install the Claude Code plugin, your application’s key, and /messagingme:demarrer, which starts the setup.
 
 With no number connected, nothing goes out: [`no_whatsapp_number`](https://console.messagingme.app/developers/api/errors.en.md#no_whatsapp_number).
 

@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { OUTILS } from '../src/mcp/outils';
 import { CATALOGUE_MCP } from '../web/lib/partage/catalogue-mcp';
-import { API_PUBLIQUE } from '../web/lib/demarrer';
+import { API_PUBLIQUE, COMMANDE_DEMARRAGE, COMMANDES_PLUGIN, SERVEUR_PLUGIN_MCP } from '../web/lib/demarrer';
 import { AVERTISSEMENTS, OUTILS_DE_L_ETAPE, etatMiseEnService } from '../src/mcp/mise-en-service';
 import { STATUT_PAR_CODE } from '../src/api/erreurs';
 import { OUTILS_SURS } from '../src/agent/reglages';
@@ -44,6 +44,22 @@ describe('les manifestes', () => {
     const mcp = json<{ mcpServers: Record<string, { type: string; url: string; headers?: unknown }> }>('.mcp.json');
     expect(Object.keys(mcp.mcpServers)).toEqual([NOM]);
     expect(mcp.mcpServers[NOM]).toEqual({ type: 'http', url: `${API_PUBLIQUE}/mcp` });
+  });
+});
+
+describe('🔴 ce que la console et la vitrine font taper (lot 10, B) est ce que le plugin publie', () => {
+  it('les deux commandes, le lancement et le nom du serveur dans /mcp viennent des manifestes', () => {
+    const plugin = json<{ name: string; repository: string }>('.claude-plugin/plugin.json');
+    const catalogue = json<{ name: string }>('.claude-plugin/marketplace.json');
+    const [serveur] = Object.keys(json<{ mcpServers: Record<string, unknown> }>('.mcp.json').mcpServers);
+    const depot = new URL(plugin.repository).pathname.replace(/^\/|\.git$/g, '');
+    expect(COMMANDES_PLUGIN).toEqual([`/plugin marketplace add ${depot}`, `/plugin install ${plugin.name}@${catalogue.name}`]);
+    expect(COMMANDE_DEMARRAGE).toBe(`/${plugin.name}:demarrer`);
+    expect(SKILLS.map((s) => s.nom)).toContain('demarrer');
+    expect(SERVEUR_PLUGIN_MCP).toBe(`plugin:${plugin.name}:${serveur}`);
+    // Le README publié dit les mêmes.
+    const lisezmoi = readFileSync(resolve(PLUGIN, 'README.md'), 'utf8');
+    for (const c of [...COMMANDES_PLUGIN, COMMANDE_DEMARRAGE, SERVEUR_PLUGIN_MCP]) expect(lisezmoi, c).toContain(c);
   });
 });
 
