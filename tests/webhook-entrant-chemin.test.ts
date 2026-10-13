@@ -3,9 +3,7 @@ import { parseChemin, cheminValide, litChemin, estScalaire, valeurTexte, LONGUEU
 import { coerceMapping, extraireDuPayload, cibleValide, refDeChamp, MAX_REGLES } from '../src/webhook-entrant/mapping';
 
 /**
- * ⚠️ VECTEUR D'OR, à garder IDENTIQUE dans `web/lib/chemin-json.test.ts`. Le front FABRIQUE ces chemins depuis
- * l'arbre affiché, ce module les LIT, et les deux ne partagent aucun paquet. C'est ce jeu commun qui garantit
- * qu'un chemin cliqué dans l'écran est un chemin lisible par le serveur.
+ * Les chemins historiques restent lisibles après le partage de la grammaire avec la console.
  */
 const PAYLOAD_OR = {
   client: { tel: '+33612345678', nom: 'Marie Durand', actif: true, note: null },

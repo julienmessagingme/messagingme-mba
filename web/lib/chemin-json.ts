@@ -2,17 +2,13 @@
  * Transforme un payload JSON reçu d'un outil tiers en ARBRE affichable, où chaque feuille porte le chemin
  * qui permettra de la relire côté serveur (`client.tel`, `lignes[0].prix`).
  *
- * ⚠️ GRAMMAIRE DUPLIQUÉE avec `src/webhook-entrant/chemin.ts`, qui LIT ces chemins pendant que ce module les
- * FABRIQUE. Les deux ne partagent aucun paquet (le front a son propre tsconfig). Un même jeu de chemins d'or
- * est figé dans les tests des DEUX côtés : c'est lui qui garde l'invariant. Filet supplémentaire : la route
- * de configuration REFUSE un chemin qu'elle ne sait pas lire, donc une divergence sort en 4xx visible au lieu
- * de produire un mapping muet.
+ * La grammaire de ces chemins vit dans `partage/chemin-json.ts`, également lue par le serveur.
  *
  * Module PUR : aucun React, aucun appel réseau. Testé par la suite unitaire du front.
  */
 
-/** Une clé adressable ne contient ni point, ni crochet. Une clé qui en contient est INATTEIGNABLE. */
-const CLE_ADRESSABLE = /^[^.[\]]+$/;
+import { cheminPourCle, cheminPourIndex, estScalaire } from './partage/chemin-json';
+export { estScalaire };
 
 /** Au-delà, on ne déplie plus : un payload profond rendrait l'écran illisible avant d'être utile. */
 export const PROFONDEUR_MAX = 8;
@@ -33,12 +29,6 @@ export interface NoeudJson {
   /** Attachable à un champ : valeur SCALAIRE, et chemin adressable. */
   attachable: boolean;
   enfants: NoeudJson[];
-}
-
-/** Même définition que `estScalaire` côté serveur : ce qui se stocke dans un champ de contact. */
-export function estScalaire(v: unknown): v is string | number | boolean {
-  if (typeof v === 'string' || typeof v === 'boolean') return true;
-  return typeof v === 'number' && Number.isFinite(v);
 }
 
 /** Aperçu court d'une valeur, pour la colonne de droite de l'arbre. */
@@ -83,14 +73,14 @@ function enfantsDe(valeur: unknown, base: string | null, profondeur: number): No
   if (profondeur >= PROFONDEUR_MAX) return [];
 
   if (Array.isArray(valeur)) {
-    return valeur.slice(0, ELEMENTS_MAX).map((v, i) => noeud(`[${i}]`, base === null ? null : `${base}[${i}]`, v, profondeur));
+    return valeur.slice(0, ELEMENTS_MAX).map((v, i) => noeud(`[${i}]`, cheminPourIndex(base, i), v, profondeur));
   }
 
   if (valeur !== null && typeof valeur === 'object') {
     return Object.entries(valeur as Record<string, unknown>).map(([cle, v]) => {
       // Clé inadressable (elle contient un point ou un crochet), ou parent déjà perdu : aucun chemin. Le
       // noeud reste AFFICHÉ, pour que l'utilisateur voie ce qu'il a reçu au lieu de chercher une clé absente.
-      const chemin = base === null || !CLE_ADRESSABLE.test(cle) ? null : (base === '' ? cle : `${base}.${cle}`);
+      const chemin = cheminPourCle(base, cle);
       return noeud(cle, chemin, v, profondeur);
     });
   }

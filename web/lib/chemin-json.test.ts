@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { arbreDuPayload, cheminsAttachables, apercuValeur, ELEMENTS_MAX, PROFONDEUR_MAX } from './chemin-json';
+import { arbreDuPayload, cheminsAttachables, valeursParChemin, apercuValeur, ELEMENTS_MAX, PROFONDEUR_MAX } from './chemin-json';
+import { cheminValide, litChemin, LONGUEUR_CHEMIN_MAX } from './partage/chemin-json';
 
 /**
- * ⚠️ VECTEUR D'OR, à garder IDENTIQUE dans `tests/webhook-entrant-chemin.test.ts`. Ce module FABRIQUE les
- * chemins, le serveur les LIT, et les deux ne partagent aucun paquet. C'est ce jeu commun qui garantit qu'un
- * chemin cliqué dans l'écran est un chemin lisible par le serveur.
+ * Exemple de payload tiers pour vérifier le trajet complet : chemin proposé puis valeur relue.
  */
 const PAYLOAD_OR = {
   client: { tel: '+33612345678', nom: 'Marie Durand', actif: true, note: null },
@@ -16,8 +15,14 @@ const CHEMINS_OR = ['client.tel', 'client.nom', 'client.actif', 'lignes[0].prix'
 
 describe('arbre JSON : les chemins fabriqués', () => {
   it('🔴 produit EXACTEMENT les chemins que le serveur sait lire', () => {
-    const attachables = cheminsAttachables(arbreDuPayload(PAYLOAD_OR));
+    const noeuds = arbreDuPayload(PAYLOAD_OR);
+    const attachables = cheminsAttachables(noeuds);
+    const valeurs = valeursParChemin(noeuds);
     for (const c of CHEMINS_OR) expect(attachables, c).toContain(c);
+    for (const c of attachables) {
+      expect(cheminValide(c), c).toBe(true);
+      expect(litChemin(PAYLOAD_OR, c), c).toEqual(valeurs.get(c));
+    }
   });
 
   it('🔴 une clé contenant un point n’est JAMAIS proposée', () => {
@@ -41,6 +46,19 @@ describe('arbre JSON : les chemins fabriqués', () => {
     // Sinon on proposerait `x` pour `{"a.b": {"x": 1}}`, qui pointe ailleurs dans le payload.
     const arbre = arbreDuPayload({ 'a.b': { x: 1, y: { z: 2 } }, ok: { x: 3 } });
     expect(cheminsAttachables(arbre)).toEqual(['ok.x']);
+  });
+
+  it('un chemin trop long reste visible, mais ne peut pas être attaché', () => {
+    const cle = 'x'.repeat(LONGUEUR_CHEMIN_MAX + 1);
+    const noeud = arbreDuPayload({ [cle]: 'valeur' })[0];
+    expect(noeud?.cle).toBe(cle);
+    expect(noeud?.chemin).toBe('');
+    expect(noeud?.attachable).toBe(false);
+
+    const parent = 'x'.repeat(LONGUEUR_CHEMIN_MAX);
+    const enfant = arbreDuPayload({ [parent]: { y: 1 } })[0]?.enfants[0];
+    expect(enfant?.cle).toBe('y');
+    expect(enfant?.attachable).toBe(false);
   });
 
   it('un objet et un tableau ne sont pas attachables, leurs feuilles le sont', () => {
