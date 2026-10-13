@@ -26,7 +26,13 @@
   plus son libellé, c'est la clé que l'application lit ; avertissement sans adresse abonnée), le déclencheur dans
   Automations (qui dit que seul un scénario fait d'actions laisse l'agent continuer). Poussée après le déploiement
   de A, la console publiant à chaque push.
-- Reste : la livraison C (Claude Code), la date du jour dite au modèle pour les champs date, et l'essai réel.
+- Livraison C (4d456594, plugin 0.1.5) : `set_agent_action` et `delete_agent_action`, les actions dans `get_agent`
+  et `get_conversation`, la skill, la FAQ, `features.md` et deux fiches (rechargées). Sa relecture a trouvé un rouge :
+  modifier une action sans redonner consigne et champs les effaçait, donc l'application aurait reçu des `fields`
+  vides sans aucune erreur ; corrigé avant le push (ce qui n'est pas donné reste), test vérifié dans les deux sens.
+- Un incident : 8c204ee4 a rendu `main` rouge sur `tests/web-vouvoiement.test.ts` (un « Dis-lui » dans un
+  placeholder de la console), le lot n'ayant pas passé la suite racine entière ; corrigé par 864787ca.
+- Reste : la date du jour dite au modèle pour les champs date, et les essais réels 108 et 109.
 
 ## 2026-10-13 : le second facteur des administrateurs au choix de l'espace, l'offre Entreprise dans /ops, le gras de l'Inbox
 
