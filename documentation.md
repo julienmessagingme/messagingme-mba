@@ -1506,6 +1506,15 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   course : son `on conflict` porte le prédicat exact de l'index) et `designation` (la frise et le journal disent
   « Répondeur automatique ») la voient. `tests/workflow-store-systeme.test.ts` inventorie les méthodes de la classe :
   une méthode ajoutée doit y être rangée, filtrée ou non.
+- **Les dossiers** (0229, `src/dossiers/`, routes `src/http/dossiers.ts`) : `dossiers` (`type` scenario | template,
+  `nom` de 1 à 60 caractères par `char_length`, unique par espace et par type sur `lower(nom)`), `workflows.dossier_id`
+  (nullable, `on delete set null`, index partiel `workflows_dossier_idx`) et `template_dossiers` (un template se range
+  par son NOM, clé `(tenant_id, template_name)`, `on delete cascade`). Un niveau, deux listes séparées, 50 dossiers au
+  plus par type (tenu par `PgDossierStore.creer`). 🔴 L'isolation est dans le magasin : chaque requête porte
+  `tenant_id = $1`, un dossier n'est accepté que de l'espace ET du type demandés (`ranger` rend `dossier_inconnu`), et
+  le scénario système n'est ni rangé ni lu (`systeme is null`). La liste des scénarios et celle des templates ne
+  portent pas le dossier : `GET /dossiers?type=` rend les dossiers et le rangement, la console fusionne (elle tolère le
+  404 du routeur, `routeInconnue`). La copie d'un scénario et la suppression d'un template suivent dans la console.
 - 🔴 **Un run endormi est CLOS par le démarrage suivant, pas préservé.** `closeActiveByWaId` couvre `waiting`
   ET `sleeping` et efface `resume_at`. Sans les deux, une automation lancerait un second parcours en parallèle
   et les deux écriraient au réveil.

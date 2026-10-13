@@ -78,7 +78,7 @@
   parties) ; le scénario système n'est pas rangé ; un rangement vers « Sans dossier » retire les lignes de templates.
 - **Console** (`web/e2e/dossiers.spec.ts`) : sur chaque page, filtrer par onglet, créer, renommer, supprimer (avec
   confirmation), « Déplacer vers… » à l'unité et en masse ; un template à deux langues se range d'un geste ; la copie
-  d'un scénario rangé reste dans son dossier ; un non-admin voit les onglets sans aucun geste d'écriture ; une route
+  d'un scénario rangé reste dans son dossier ; une route
   absente (404) laisse la page telle qu'avant.
 
 ## Review Focus
@@ -108,4 +108,4 @@ vérifiables par test ; la migration et l'isolation entre espaces sont les deux 
 
 **L'essai réel qui clôt le lot** : Julien crée deux dossiers sur la page Scénarios de son espace, y range des
 scénarios à l'unité et en masse, renomme puis supprime un dossier ; même chose sur la page Templates avec un template
-qui a deux langues ; un membre non admin ne voit que les onglets.
+qui a deux langues.

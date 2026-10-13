@@ -15,6 +15,11 @@ export const LIMITES_TEMPLATE = {
   carteCorps: 160,
 } as const;
 
+/** Un nombre écrit comme l'écran le lit, « 1 024 » (espace entre les milliers) : le message suit la constante. */
+export function enClair(n: number): string {
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
 /** Ce qu'il reste à `texte` avant `max` : négatif quand il déborde. */
 export function caracteresRestants(texte: string, max: number): number {
   return max - texte.length;

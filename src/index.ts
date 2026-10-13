@@ -11,6 +11,7 @@ import { pool, mesureAttentePool, creerPoolReception, mesureAttenteReception } f
 import { construireSocle } from './socle';
 import { PgContactHistoryStore } from './crm/contact-history.pg';
 import { PgTagStore } from './crm/tag-store.pg';
+import { PgDossierStore } from './dossiers/store.pg';
 import { ensureField, ensureFieldByKey, WHATSAPP_OPTIN_FIELD_KEY, WHATSAPP_OPTIN_FIELD_LABEL } from './crm/fields';
 import { PgCampaignDraftStore } from './campaign/draft-store.pg';
 import type { ConversationMessage } from './inbox/store.pg';
@@ -1915,6 +1916,7 @@ async function main(): Promise<void> {
     },
     media: mediaClient,
     tags: tagStore,
+    dossiers: new PgDossierStore(pool),
     fields: {
       fields: fieldStore,
       tenantCode: (tenant) => resolveTenantCode(pool, tenant),

@@ -1,7 +1,7 @@
 ---
 ecran: workflows
 source_section: Automatisations (menu « Scénario », ex-« Flow »)
-source_empreinte: 5653a5
+source_empreinte: 6803cd
 ---
 # Créer un scénario
 
@@ -53,3 +53,8 @@ qui précède ce bloc n'est pas rejoué : les tags et les champs de ces étapes 
 
 Le petit bouton à côté, en haut à gauche de chaque bloc, **copie son code** : c'est lui qu'on colle dans un « Aller
 à », ou dans un appel à l'API. Il reste grisé tant que le bloc n'est pas enregistré, le temps d'une seconde.
+
+**Ranger vos scénarios dans des dossiers.** Au-dessus de la liste, les onglets « Tous », « Sans dossier » et vos
+dossiers filtrent ce que vous voyez. « + Dossier » en crée un ; « Déplacer vers… », dans le menu ⋯ d'un scénario ou
+après en avoir coché plusieurs, les y range. Supprimer un dossier ne supprime pas ses scénarios : ils repassent dans
+« Sans dossier ».

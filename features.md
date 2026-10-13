@@ -451,6 +451,10 @@ En haut de l'onglet **Historique** d'une fiche contact, deux chiffres face à fa
   le pied de page, le texte de chaque bouton et celui de chaque carte d'un carousel, aux limites de Meta (titre et
   pied 60, corps 1 024, bouton 25, carte 160). Un corps trop long passe en rouge (« 6 caractères de trop ») et
   « Créer le template » se bloque en le disant, au lieu d'un refus de Meta après sa revue.
+- ✅ **Des dossiers pour ranger les templates** (2026-10-13), comme ceux des scénarios mais séparés d'eux : la même
+  barre d'onglets au-dessus de la liste, « + Dossier », et « Déplacer vers… » sur une ligne ou sur une sélection (cases
+  à cocher). Un template se range par son **nom** : toutes ses langues suivent, et cocher une langue coche le template
+  entier. Meta ne voit rien de ces dossiers, qui vivent dans Messaging Me ; supprimer un template le sort de son dossier.
 - ✅ **Les clics sur les boutons de lien sont comptés** (2026-08-20) : tu saisis **ton** lien normalement. Au
   moment de la soumission à Meta, le serveur le remplace par une adresse à nous qui compte le clic puis redirige
   vers ta page. **La console te remontre toujours TON lien**, partout où elle affiche un template, donc rien ne
@@ -623,6 +627,13 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 ## Automatisations (menu « Scénario », ex-« Flow »)
 
+- ✅ **Des dossiers pour ranger les scénarios** (2026-10-13). Au-dessus de la liste, une barre d'onglets « Tous · Sans
+  dossier · <vos dossiers> » filtre ce qu'on voit, chaque onglet avec son nombre de scénarios ; l'onglet choisi est
+  retenu par le navigateur. « + Dossier » en crée un (60 caractères, un nom unique, 50 dossiers au plus). On range par
+  **« Déplacer vers… »**, dans le menu ⋯ d'un scénario ou sur une sélection de plusieurs, et la copie d'un scénario
+  rangé reste dans son dossier. Sur l'onglet d'un dossier, son menu le renomme ou le supprime : ce qu'il contient
+  n'est pas supprimé, il repasse dans « Sans dossier ». Un seul niveau de dossiers, un dossier par scénario. Comme
+  toute la page, réservé aux administrateurs.
 - ✅ **Brouillon et bouton « Publier »** (2026-09-01). Modifier un scénario ne change plus rien pour les
   contacts tant qu'on n'a pas publié.
   - L'éditeur enregistre toujours tout seul, mais ce qu'il enregistre est un **brouillon**. Avant, la moindre

@@ -45,6 +45,7 @@ import { registerAgentSetup } from './http/agent-setup';
 import { registerAgentTest } from './http/agent-test';
 import { registerMedia } from './http/media';
 import { registerTags } from './http/tags';
+import { registerDossiers, type DossiersRouteDeps } from './http/dossiers';
 import { registerFields } from './http/fields';
 import { registerSupport } from './http/support';
 import { registerContactVitrine } from './http/contact-vitrine';
@@ -319,6 +320,8 @@ export interface ServerDeps {
   media?: MediaRouteDeps;
   /** Gestion des tags (menu Contenu), réservé aux admins. */
   tags?: TagsRouteDeps;
+  /** Les dossiers qui rangent les scénarios et les templates : lecture à l'espace, écritures aux admins. */
+  dossiers?: DossiersRouteDeps;
   /** Gestion des user fields (menu Contenu), réservé aux admins. */
   fields?: FieldsRouteDeps;
   /** Formulaire de support (envoi email via Resend), tout compte authentifié. */
@@ -737,6 +740,7 @@ export function modulesDeRoutes(
     entree('agentTest', 'tenant', deps.agentTest, (app, d, g) => registerAgentTest(app, d, g.admin)),
     entree('media', 'tenant', deps.media, (app, d, g) => registerMedia(app, d, g.admin)),
     entree('tags', 'tenant', deps.tags, (app, d, g) => registerTags(app, d, g.admin)),
+    entree('dossiers', 'tenant', deps.dossiers, (app, d, g) => registerDossiers(app, d, g.auth)),
     entree('fields', 'tenant', deps.fields, (app, d, g) => registerFields(app, d, g.admin)),
     entree('support', 'tenant', deps.support, (app, d, g) => registerSupport(app, d, g.auth)),
     entree('aide', 'tenant', deps.aide, (app, d, g) => registerAide(app, d, g.auth), toutes('aide')),

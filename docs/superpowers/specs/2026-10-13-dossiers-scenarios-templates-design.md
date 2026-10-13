@@ -70,7 +70,10 @@ Sur la page Scénarios et la page Templates, la même barre (un composant partag
 - « Déplacer vers… » dans le menu ⋯ de chaque ligne et dans la barre de sélection : une liste des dossiers, plus
   « Sans dossier ». La page Templates gagne pour cela la sélection par case à cocher de la page Scénarios.
 
-Un membre non admin voit les onglets et filtre, sans « + Dossier », « Renommer », « Supprimer » ni « Déplacer vers… ».
+Ces deux pages sont réservées aux administrateurs dans la console (`accesAutorise`, `web/lib/nav.ts` : un manager
+n'ouvre que les écrans de conformité, un agent l'Inbox). Le serveur refuse de toute façon chaque écriture à un
+non-admin. (Corrigé le 2026-10-13 en écrivant les e2e : la première version promettait des onglets visibles à un
+non-admin, sur des pages qu'il n'ouvre pas.)
 
 ## Tests attendus
 
@@ -79,7 +82,7 @@ Un membre non admin voit les onglets et filtre, sans « + Dossier », « Renomme
   sort de son dossier ; duplication qui garde le dossier ; non-admin refusé en écriture.
 - Intégration (CI) : la migration relue en base (contraintes sous leur nom, `confdeltype` des deux clés étrangères).
 - Console : e2e de la barre (filtrer, créer, renommer, supprimer), de « Déplacer vers… » à l'unité et en masse sur les
-  deux pages, et de l'absence des gestes d'écriture pour un non-admin.
+  deux pages.
 
 ## Ordre de déploiement
 
@@ -95,4 +98,4 @@ qui demandent l'œil du relecteur.
 
 **L'essai réel qui clôt le lot** : Julien crée deux dossiers sur la page Scénarios de son espace, y range des scénarios
 à l'unité et en masse, renomme puis supprime un dossier ; même chose sur la page Templates avec un template qui a deux
-langues ; un membre non admin ne voit que les onglets.
+langues.

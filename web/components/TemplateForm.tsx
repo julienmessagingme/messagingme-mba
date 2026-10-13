@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { CompteurCaracteres } from '@/components/CompteurCaracteres';
-import { caracteresRestants, LIMITES_TEMPLATE } from '@/lib/template-limites';
+import { caracteresRestants, enClair, LIMITES_TEMPLATE } from '@/lib/template-limites';
 import { WhatsAppPreview } from '@/components/WhatsAppPreview';
 import { FlowBuilder } from '@/components/FlowBuilder';
 import {
@@ -297,7 +297,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
     ...(body.trim() === '' ? [t('le corps du message', 'the message body')] : []),
     // Meta refuse un corps plus long, mais seulement après l'aller-retour de sa revue : on le dit avant l'envoi.
     ...(caracteresRestants(body, LIMITES_TEMPLATE.corps) < 0
-      ? [t(`un corps de 1 024 caractères au plus (il en fait ${body.length})`, `a body of 1,024 characters at most (it has ${body.length})`)]
+      ? [t(`un corps de ${enClair(LIMITES_TEMPLATE.corps)} caractères au plus (il en fait ${body.length})`, `a body of ${LIMITES_TEMPLATE.corps.toLocaleString('en-US')} characters at most (it has ${body.length})`)]
       : []),
     ...(headerUploading ? [t('l’en-tête est encore en cours d’envoi', 'the header is still uploading')] : []),
     ...(!headerReady && !headerUploading
@@ -395,7 +395,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
                 <option value="VIDEO">{t('Vidéo', 'Video')}</option>
               </select>
               {headerType === 'TEXT' && (
-                <div className="min-w-0 flex-1">
+                <div className="min-w-[12rem] flex-1">
                   <input value={headerText} onChange={(e) => setHeaderText(e.target.value)} maxLength={LIMITES_TEMPLATE.entete} placeholder={t('Titre fixe (60 car. max, sans variable)', 'Fixed title (60 char. max, no variable)')} className={`${inputCls} w-full`} data-testid="template-entete-texte" />
                   <CompteurCaracteres reste={caracteresRestants(headerText, LIMITES_TEMPLATE.entete)} testId="template-entete-reste" />
                 </div>
@@ -424,7 +424,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
           <div className="mt-3">
             <label className="mb-1 block text-sm font-medium text-ink-900">{t('Pied de page (optionnel)', 'Footer (optional)')}</label>
             <input value={footer} onChange={(e) => setFooter(e.target.value)} maxLength={LIMITES_TEMPLATE.pied} placeholder={t('Petit texte en bas (60 car. max, sans variable)', 'Small text at the bottom (60 char. max, no variable)')} className={inputCls} data-testid="template-pied" />
-            {footer !== '' && <CompteurCaracteres reste={caracteresRestants(footer, LIMITES_TEMPLATE.pied)} testId="template-pied-reste" />}
+            <CompteurCaracteres reste={caracteresRestants(footer, LIMITES_TEMPLATE.pied)} testId="template-pied-reste" />
           </div>
 
           <div className="mt-2">

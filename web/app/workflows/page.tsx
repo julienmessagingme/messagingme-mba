@@ -18,6 +18,8 @@ import { Modale } from '@/components/Modale';
 import { VoileMenu } from '@/components/Flottant';
 import { Squelette } from '@/components/Squelette';
 import { erreurDeChargement } from '@/lib/http';
+import { BarreDossiers, comptesDesOnglets, DeplacerVers, dossierCommun, useDossiers } from '@/components/BarreDossiers';
+import { ranger, SANS_DOSSIER } from '@/lib/api/dossiers';
 
 export default function WorkflowsPage() {
   // Suspense : useSearchParams (deep-link ?open=) exige une frontière Suspense au build (Next 15).
@@ -78,6 +80,16 @@ function WorkflowsInner({ session }: { session: Session }) {
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<WorkflowSummary | null>(null);
   const [renameVal, setRenameVal] = useState('');
+  /**
+   * LES DOSSIERS (décision de Julien du 2026-10-13) : la barre filtre la liste, et « Déplacer vers… » range une ligne ou
+   * une sélection. La liste des scénarios ne change pas : le rangement vient de la route des dossiers.
+   */
+  const dossiers = useDossiers(session.tenantId, 'scenario');
+  const admin = session.role === 'admin';
+  const visibles = dossiers.filtrer(workflows, (w) => w.id);
+  /** Les scénarios à déplacer, quand la fenêtre « Déplacer vers… » est ouverte. */
+  const [aDeplacer, setADeplacer] = useState<string[] | null>(null);
+  const rangeable = admin && dossiers.disponible;
   // Lien de test (Lot F) : jeton stable + lien wa.me + QR (rendu en data-URL par la lib, aucun appel réseau).
   const [testing, setTesting] = useState<{
     wf: WorkflowSummary;
@@ -259,10 +271,30 @@ function WorkflowsInner({ session }: { session: Session }) {
     setError(null);
     setBusy(true);
     try {
-      await duplicateWorkflow(session.tenantId, w.id);
-      await load();
+      const copie = await duplicateWorkflow(session.tenantId, w.id);
+      // La copie suit l'original dans son dossier. Un échec ici la laisse « Sans dossier » : rien de perdu.
+      const dossier = dossiers.vue.rangement[w.id];
+      if (dossier) await ranger(session.tenantId, 'scenario', [copie.id], dossier).catch(() => 0);
+      await Promise.all([load(), dossiers.recharger()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Duplication impossible', 'Unable to duplicate'));
+    } finally {
+      setBusy(false);
+    }
+  }
+  /** Range les scénarios de la fenêtre « Déplacer vers… » dans un dossier, ou dans « Sans dossier ». */
+  async function deplacer(dossierId: string | null) {
+    const ids = aDeplacer ?? [];
+    setADeplacer(null);
+    if (ids.length === 0) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await ranger(session.tenantId, 'scenario', ids, dossierId);
+      setSelection(new Set());
+      await dossiers.recharger();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Déplacement impossible', 'Unable to move'));
     } finally {
       setBusy(false);
     }
@@ -410,12 +442,26 @@ function WorkflowsInner({ session }: { session: Session }) {
         <Bouton onClick={create} disabled={newName.trim() === ''}>{t('Créer un scénario', 'Create a scenario')}</Bouton>
       </div>
 
+      {dossiers.disponible && (
+        <BarreDossiers
+          tenantId={session.tenantId} type="scenario" admin={admin} vue={dossiers.vue} onglet={dossiers.onglet}
+          comptes={comptesDesOnglets(workflows, (w) => w.id, dossiers.vue)}
+          // Changer d'onglet vide la sélection : on ne garde pas cochées des lignes qu'on ne voit plus.
+          onChoisir={(o) => { dossiers.setOnglet(o); setSelection(new Set()); }}
+          onChange={dossiers.recharger}
+        />
+      )}
+
       <div className="overflow-hidden rounded-carte border border-ink-200 bg-white">
-        <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">{t('Scénarios', 'Scenarios')} ({workflows.length})</div>
+        <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">{t('Scénarios', 'Scenarios')} ({visibles.length})</div>
         {loading ? (
           <Squelette forme="lignes" className="px-5 py-6" />
         ) : workflows.length === 0 ? (
           <p className="px-5 py-6 text-sm text-ink-500">{t('Aucun scénario : créez-en un ci-dessus.', 'No scenarios yet: create one above.')}</p>
+        ) : visibles.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-ink-500" data-testid="workflows-dossier-vide">{dossiers.onglet === SANS_DOSSIER
+            ? t('Tous vos scénarios sont rangés dans un dossier.', 'All your scenarios are in a folder.')
+            : t('Aucun scénario dans ce dossier : « Déplacer vers… », dans le menu ⋯ d’un scénario, l’y range.', 'No scenario in this folder: “Move to…”, in a scenario’s ⋯ menu, puts it here.')}</p>
         ) : (
           <>
           {/*
@@ -434,6 +480,11 @@ function WorkflowsInner({ session }: { session: Session }) {
                 <button onClick={() => setSelection(new Set())} className="text-sm text-ink-500 hover:text-ink-900">
                   {t('Annuler', 'Cancel')}
                 </button>
+                {rangeable && (
+                  <Bouton variante="secondaire" taille="petite" disabled={busy} data-testid="workflows-deplacer-selection" onClick={() => setADeplacer([...selection])}>
+                    {t('Déplacer vers…', 'Move to…')}
+                  </Bouton>
+                )}
                 <button
                   onClick={() => { void removeSelection(); }}
                   disabled={busy}
@@ -455,8 +506,8 @@ function WorkflowsInner({ session }: { session: Session }) {
                     type="checkbox"
                     aria-label={t('Tout sélectionner', 'Select all')}
                     data-testid="workflows-tout-cocher"
-                    checked={workflows.length > 0 && selection.size === workflows.length}
-                    onChange={(e) => setSelection(e.target.checked ? new Set(workflows.map((w) => w.id)) : new Set())}
+                    checked={visibles.length > 0 && selection.size === visibles.length}
+                    onChange={(e) => setSelection(e.target.checked ? new Set(visibles.map((w) => w.id)) : new Set())}
                   />
                 </th>
                 <th className="px-5 py-2 font-medium">{t('Nom', 'Name')}</th>
@@ -466,7 +517,7 @@ function WorkflowsInner({ session }: { session: Session }) {
               </tr>
             </thead>
             <tbody>
-              {workflows.map((w, i) => (
+              {visibles.map((w, i) => (
                 <tr key={w.id} className="border-b border-ink-50 last:border-0">
                   <td className="w-10 px-3 py-3">
                     <input
@@ -526,11 +577,14 @@ function WorkflowsInner({ session }: { session: Session }) {
                               au lieu de le corriger.
                             */}
                             <div className={`absolute right-0 z-20 w-44 overflow-hidden rounded-controle border border-ink-200 bg-white py-1 text-left text-sm shadow-mm-md ${
-                              workflows.length > 3 && i >= workflows.length - 2 ? 'bottom-full mb-1' : 'mt-1'
+                              visibles.length > 3 && i >= visibles.length - 2 ? 'bottom-full mb-1' : 'mt-1'
                             }`}>
                               <button onClick={() => { void openTest(w); }} data-testid={`workflow-test-${w.id}`} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Tester le scénario', 'Test scenario')}</button>
                               <button onClick={() => startRename(w)} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Renommer', 'Rename')}</button>
                               <button onClick={() => duplicate(w)} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Dupliquer', 'Duplicate')}</button>
+                              {rangeable && (
+                                <button onClick={() => { setMenuFor(null); setADeplacer([w.id]); }} data-testid={`workflow-deplacer-${w.id}`} className="block w-full px-4 py-2 text-left hover:bg-ink-50">{t('Déplacer vers…', 'Move to…')}</button>
+                              )}
                               <div className="my-1 border-t border-ink-100" />
                               <button onClick={() => remove(w)} className="block w-full px-4 py-2 text-left text-danger hover:bg-danger-50">{t('Supprimer', 'Delete')}</button>
                             </div>
@@ -548,6 +602,13 @@ function WorkflowsInner({ session }: { session: Session }) {
       </div>
 
       {panneauDeTest}
+
+      {aDeplacer && (
+        <DeplacerVers
+          dossiers={dossiers.vue.dossiers} combien={aDeplacer.length} actuel={dossierCommun(aDeplacer, dossiers.vue)}
+          onChoisir={(d) => { void deplacer(d); }} onClose={() => setADeplacer(null)}
+        />
+      )}
 
       {renaming && (
         <Modale titre={t('Renommer le scénario', 'Rename scenario')} taille="petite" onClose={() => setRenaming(null)}>

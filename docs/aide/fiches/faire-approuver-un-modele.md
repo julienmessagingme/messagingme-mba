@@ -1,7 +1,7 @@
 ---
 ecran: templates
 source_section: Templates WhatsApp (menu Contenu)
-source_empreinte: 8f3d15
+source_empreinte: cde114
 ---
 # Créer un modèle et le faire approuver
 
@@ -14,6 +14,9 @@ soixante caractères et n'acceptent pas de variable. Sous chaque champ limité, 
 caractères il vous reste : le corps en accepte 1 024, le texte d'un bouton 25. Un corps trop long passe en rouge,
 et le modèle ne part pas tant qu'il dépasse. Vous pouvez aussi créer un carousel : un message d'introduction
 commun, puis de deux à dix cartes avec image (160 caractères de texte chacune), chacune portant les mêmes boutons.
+
+Pour vous y retrouver, rangez vos modèles dans des dossiers : les onglets au-dessus de la liste filtrent, et
+« Déplacer vers… » range une ligne ou les modèles cochés. Un modèle se range avec toutes ses langues.
 
 Vous choisissez la langue dans une liste, puis vous soumettez. WhatsApp répond en général en quelques
 minutes, parfois quelques heures. L'écran suit le statut pour vous.

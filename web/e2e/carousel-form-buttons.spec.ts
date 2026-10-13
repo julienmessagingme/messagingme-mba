@@ -89,4 +89,12 @@ test.describe('Templates : boutons d’un carousel, carte par carte', () => {
     await page.getByPlaceholder(/Texte du bouton/).nth(0).fill('Réserver');
     await expect(page.getByTestId('carousel-bouton-reste-0-0')).toHaveText('17 caractères restants');
   });
+
+  test('🔴 le message d’introduction compte ses 1 024 caractères et bloque au-delà', async ({ page }) => {
+    // L'éditeur porte le nom « Corps du message », comme celui du template simple ; son libellé visible dit « Message d'introduction ».
+    const corps = page.getByRole('textbox', { name: /Corps du message/i });
+    await corps.fill('a'.repeat(1030));
+    await expect(page.getByTestId('template-corps-reste')).toHaveText('6 caractères de trop');
+    await expect(page.getByTestId('carousel-manques')).toContainText('1 024 caractères au plus (il en fait 1030)');
+  });
 });

@@ -133,4 +133,16 @@ test.describe('les champs du template disent ce qui leur reste', () => {
     await expect(page.getByTestId('template-manques')).toContainText('1 024 caractères au plus (il en fait 1030)');
     await expect(page.getByRole('button', { name: /Créer le template|Create template/ })).toBeDisabled();
   });
+
+  test('🔴 la borne exacte : 1 024 passe, 1 025 bloque', async ({ page }) => {
+    await ouvrirFormulaire(page);
+    await page.getByTestId('template-nom').fill('promo_borne');
+    const corps = page.getByRole('textbox', { name: /Corps du message/i });
+    await corps.fill('a'.repeat(1024));
+    await expect(page.getByTestId('template-corps-reste')).toHaveText('0 caractère restant');
+    await expect(page.getByTestId('template-manques')).toHaveCount(0);
+    await corps.fill('a'.repeat(1025));
+    await expect(page.getByTestId('template-corps-reste')).toHaveText('1 caractère de trop');
+    await expect(page.getByTestId('template-manques')).toContainText('1 024 caractères au plus (il en fait 1025)');
+  });
 });
