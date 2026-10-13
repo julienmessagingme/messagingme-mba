@@ -262,13 +262,12 @@ describe('ongletDeLaPage', () => {
      *
      * - `admin` : la surface d'exploitation, atteinte par son adresse et jamais par un menu client. L'y
      *   ajouter pour faire taire ce test la rendrait visible à tous les clients.
-     * - `email-accounts` : atteinte par le MENU DU COMPTE (`AccountMenu`, « Boîtes email »), en haut à
-     *   droite. Elle règle un compte, pas le produit : sa place n'est pas dans la barre.
      * - `compte` : le mot de passe et la double authentification de la personne, hors barre par nature. On y
      *   entre par le MENU DU COMPTE (« Mon compte », posé le 2026-09-26), pour tous les rôles.
      */
     // `outils-espace` n'y est plus : `/outils` renvoie vers l'onglet du MBA et ne porte plus d'AppShell (2026-09-21).
-    const horsNav = new Set(['admin', 'email-accounts', 'compte']);
+    // `email-accounts` n'y est plus : elle est dans Tools, sous le nom « SMTP email » (2026-10-13).
+    const horsNav = new Set(['admin', 'compte']);
     for (const cle of clesTab.filter((c) => !horsNav.has(c))) {
       const dedans = ONGLETS.filter((o) => reels[o].includes(cle));
       expect(dedans, `« ${cle} » est dans ${dedans.length} onglet(s), il en faut exactement un`).toHaveLength(1);
@@ -385,7 +384,7 @@ describe('la barre selon l’offre', () => {
 
   it('🔴 une Base : tous les écrans des fonctions gardées sont grisés, et eux seuls', () => {
     const grises = verrouillees(navPourOffre(toutes(), new Set()));
-    expect(grises.sort()).toEqual(['chaine', 'dashboard-quali', 'dashboard-tableaux', 'email-templates', 'flows', 'inbox', 'mba-settings',
+    expect(grises.sort()).toEqual(['chaine', 'dashboard-quali', 'dashboard-tableaux', 'email-accounts', 'email-templates', 'flows', 'inbox', 'mba-settings',
       'perf-synthese', 'publicites', 'quanti-couts', 'quanti-funnel', 'quanti-messages', 'quanti-performance', 'rcs-messages', 'workflows'].sort());
   });
 

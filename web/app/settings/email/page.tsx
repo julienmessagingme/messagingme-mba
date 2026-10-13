@@ -18,7 +18,7 @@ import { erreurDeChargement } from '@/lib/http';
 import { Icone } from '@/components/Icone';
 
 /**
- * Écran « Boîtes email » (menu Compte, admin-only) : connecte une ou plusieurs boîtes SMTP, utilisées par le
+ * Écran « SMTP email » (menu Tools, admin-only ; « Boîtes email » du menu du compte jusqu'au 2026-10-13) : connecte une ou plusieurs boîtes SMTP, utilisées par le
  * node « Envoi de mail » des scénarios. Le mot de passe est chiffré côté serveur et n'est JAMAIS renvoyé : le
  * champ reste vide à l'édition, `hasPassword` sert juste d'indice « déjà défini ».
  */
@@ -131,7 +131,7 @@ function EmailAccountsInner({ session }: { session: Session }) {
   return (
     <div className="max-w-formulaire space-y-6">
       <div>
-        <TitrePage>{t('Boîtes email (SMTP)', 'Email accounts (SMTP)')}</TitrePage>
+        <TitrePage>{t('SMTP email', 'SMTP email')}</TitrePage>
         <IntroPage>
           {t(
             'Elles envoient les mails du bloc « Envoi de mail » des scénarios. Le mot de passe est chiffré et ne se réaffiche plus une fois enregistré.',

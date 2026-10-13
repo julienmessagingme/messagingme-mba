@@ -174,12 +174,6 @@ export function navPourRole(items: NavEntree[], role: string): NavEntree[] {
   return garder(items);
 }
 
-/**
- * LES ÉCRANS HORS DE LA BARRE QUI DÉPENDENT D'UNE FONCTION (lot 6) : atteints par le menu du compte, ils n'ont pas
- * d'entrée où porter leur fonction. Les boîtes e-mail vivent dans le module que le serveur garde par `email`.
- */
-const FONCTION_HORS_BARRE: Readonly<Record<string, FonctionOffre>> = { 'email-accounts': 'email' };
-
 function entreeDe(items: NavEntree[], key: string): NavEntree | null {
   for (const item of items) {
     if (item.key === key) return item;
@@ -192,7 +186,7 @@ function entreeDe(items: NavEntree[], key: string): NavEntree | null {
 /** La fonction qu'exige la page `key` (lot 6), `null` pour une page ouverte à toutes les offres ou inconnue. */
 export function fonctionDeLaPage(items: NavEntree[], key: string): FonctionOffre | null {
   const entree = entreeDe(items, key);
-  return entree ? (entree.fonction ?? null) : (FONCTION_HORS_BARRE[key] ?? null);
+  return entree?.fonction ?? null;
 }
 
 /**
@@ -398,6 +392,10 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
       // seraient indistinguables a la lecture. « Connecteurs » dit la meme chose que « Connecteurs API »
       // juste au-dessus : on va chercher ailleurs.
       { key: 'connecteurs-mcp', href: '/connecteurs-mcp', label: t('Connecteurs MCP', 'MCP connectors') },
+      // Sous Tools depuis le 2026-10-13 (demande de Julien), renommée « SMTP email » : elle vivait dans le menu du
+      // compte, en haut à droite, sous le nom « Boîtes email », alors qu'elle branche l'espace sur un service
+      // extérieur comme les connecteurs voisins. L'adresse `/settings/email` ne bouge pas.
+      { key: 'email-accounts', href: '/settings/email', label: t('SMTP email', 'SMTP email'), fonction: 'email' },
       // Sous Tools depuis le 2026-10-06 (demande de Julien, RC1) : le widget est un outil posé sur le site du
       // client. L'adresse `/widgets` ne bouge pas.
       { key: 'widgets', href: '/widgets', label: t('Widget WhatsApp', 'WhatsApp widget') },

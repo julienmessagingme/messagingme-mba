@@ -54,7 +54,7 @@ export const NODE_ORDER: WorkflowNodeType[] = ['template', 'quick_message', 'que
 // finirait en erreur.
 export const RCS_NODE_ORDER: WorkflowNodeType[] = ['rcs_message'];
 
-// Bloc Email : présenté à part et GRISÉ tant qu'aucune boîte SMTP n'est connectée (Compte > Boîtes email).
+// Bloc Email : présenté à part et GRISÉ tant qu'aucune boîte SMTP n'est connectée (Tools > SMTP email).
 // Même doctrine que RCS_NODE_ORDER : le bloc se prépare, mais ne peut rien envoyer sans boîte derrière.
 export const EMAIL_NODE_ORDER: WorkflowNodeType[] = ['email'];
 
@@ -85,7 +85,7 @@ export const RCS_GATE_TITRE: [string, string] = [
   'Available once your RCS agent is filed and approved',
 ];
 export const EMAIL_GATE_TITRE: [string, string] = [
-  'Disponible dès qu’une boîte email est connectée (menu Compte > Boîtes email)',
+  'Disponible dès qu’une boîte email est connectée (menu Tools > SMTP email)',
   'Available once an email mailbox is connected (Account menu > Email accounts)',
 ];
 export const AGENT_GATE_TITRE: [string, string] = [

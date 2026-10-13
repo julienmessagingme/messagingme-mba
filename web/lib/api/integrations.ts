@@ -356,7 +356,7 @@ export function createWorkflowTestLink(tenantId: string, workflowId: string): Pr
   return request(`/tenants/${tenantId}/workflows/${workflowId}/test-link`, { method: 'POST' });
 }
 
-// --- Email : boîtes SMTP du node « Envoi de mail » (Compte > Boîtes email, admin-only) ---
+// --- Email : boîtes SMTP du node « Envoi de mail » (Tools > SMTP email, admin-only) ---
 
 export interface EmailAccount {
   id: string;

@@ -63,7 +63,7 @@ Le reste de ses prérogatives n'est toujours pas décidé.
 **Console** : **Accueil · mini-CRM · Campagnes · Chaîne · Scénario · Automation · AI Agent (MBA / Other AI
 agent) · Contenu (Templates WhatsApp / Formulaires WhatsApp / Modèles
 d'email / Messages RCS / Blocs / Étiquettes / Champs, rangés par canal depuis le 2026-09-02 : WhatsApp /
-RCS / Email / Bibliothèque) · Tools (Webhooks / Connecteurs API / Connecteurs MCP / Outils)**, puis, collés **en bas** de la barre,
+RCS / Email / Bibliothèque) · Tools (Webhooks / Connecteurs API / Connecteurs MCP / SMTP email / Widget WhatsApp)**, puis, collés **en bas** de la barre,
 **Paramètres (Général / Crédit IA) · Support · Developers (Documentation API / Clés d'API / Serveur MCP)**.
 ⚠️ **Paramètres et Support sont descendus en bas le 2026-09-08** : ils ne servent pas le travail quotidien,
 ils le règlent, comme Developers. Aucune adresse n'a changé.
@@ -98,8 +98,9 @@ propre menu de dossiers, façon boîte mail.
 - ✅ **La barre a TROIS niveaux**, portés par Contenu (Contenu > WhatsApp > Templates). « AI Agent » en a eu un
   troisième (MBA > guide / paramètres) du 2026-09-01 au 2026-09-29 ; il est redevenu plat avec le retrait du guide.
 Les groupes **AI Agent**, **Contenu**, **Tools**, **Paramètres**, **Sécurité**, **Analytics** et **Developers** sont **repliables** (clic sur l'en-tête, chevron) : ouverts d'office quand on est sur une de leurs pages, sinon repliés.
-Agent : **Inbox** seule. Menu **Compte** en haut à droite (**toggle langue FR/EN**, Compte & équipe, **Boîtes email**, Abonnement*, Billing*,
-Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveur (preHandler), l'UI ne fait que masquer.
+Agent : **Inbox** seule. Menu **Compte** en haut à droite (**toggle langue FR/EN**, Compte & équipe, **Abonnement** avec l'offre de l'espace
+(Free, Pro ou Entreprise), qui mène à la page Offre, **Billing**, qui ouvre le portail de Stripe pour les factures
+(un espace qui n'a rien payé par carte le dit), Déconnexion ; depuis le 2026-10-13). RBAC = barrière serveur (preHandler), l'UI ne fait que masquer.
 - ✅ **Interface bilingue FR/EN COMPLÈTE** : un toggle dans le menu Compte bascule TOUTE l'interface en anglais
   (mémorisé par navigateur, défaut français), **y compris les dates (« Today/Yesterday/12 July 2026 »), les
   nombres (« 1,000 »), les paliers d'envoi (« 1,000 customers / 24 h », « Unlimited ») et les pourcentages**. Le
@@ -611,12 +612,13 @@ En haut de l'onglet **Historique** d'une fiche contact, deux chiffres face à fa
   qui remplit les fiches, il faut le construire ici. Rien n'est supprimé automatiquement : un formulaire que
   Meta ne liste plus est signalé, la suppression reste une décision manuelle.
 
-## E-mail (menu Compte > Boîtes email, menu Contenu > Modèles d'email)
+## E-mail (menu Tools > SMTP email, menu Contenu > Modèles d'email)
 
 Troisième canal, réservé aux scénarios : il n'existe ni campagne e-mail ni inbox e-mail. Un bloc
 de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
-- ✅ **Connecter sa boîte** (menu **Compte** en haut à droite > **Boîtes email**, admin) : on
+- ✅ **Connecter sa boîte** (menu **Tools** > **SMTP email**, admin ; c'était « Boîtes email », dans le menu du
+  compte en haut à droite, jusqu'au 2026-10-13) : on
   déclare une ou plusieurs boîtes SMTP (nom d'affichage, serveur, port, identifiant, mot de
   passe, adresse d'expéditeur, nom d'expéditeur, adresse de réponse). Le mot de passe est
   **chiffré chez nous et jamais réaffiché** : un champ laissé vide à l'édition veut dire
@@ -629,8 +631,8 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   que les templates WhatsApp et les messages RCS, avec la même liste de champs de base et de
   champs perso. On ne recopie jamais `{{prenom}}` à la main.
 - ✅ **Le bloc « Envoi de mail » dans un scénario** : il est présenté **à part dans la palette
-  et grisé tant qu'aucune boîte n'est connectée**, avec l'infobulle qui renvoie à Compte >
-  Boîtes email. Même doctrine que le bloc RCS : un bloc qui ne peut rien envoyer ne doit pas
+  et grisé tant qu'aucune boîte n'est connectée**, avec l'infobulle qui renvoie à Tools >
+  SMTP email. Même doctrine que le bloc RCS : un bloc qui ne peut rien envoyer ne doit pas
   être proposé comme s'il le pouvait.
 - ✅ **Jusqu'à 3 destinataires** (2026-08-25) : on choisit le champ qui porte l'adresse, et on
   peut en ajouter deux autres. Le premier part en « À », les suivants **en copie cachée** : les
@@ -4456,6 +4458,5 @@ Les envois WhatsApp ne sont pas concernés : leur débit se règle campagne par 
   sur la livraison des messages de l'agent). L'allumage se fait par l'interrupteur du bloc Meta Business Agent
   de l'Accueil, ou par celui de l'onglet Aperçu : les deux allument l'agent chez Meta PUIS pour la plateforme
   (qui ne lui confie des conversations qu'à ce moment-là), et la mise en service par l'Assistant aussi.
-- 🔲 **Abonnement / Billing** (Stripe) : menus câblés (désactivés), intégration hors lot.
 - 🔲 **Rapport mensuel auto** : score agent + stats campagnes.
 - Hors V1 (discipline anti tailor-made) : multicanal, segments avancés, A/B testing.

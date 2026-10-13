@@ -1,6 +1,6 @@
 ---
 source_section: Navigation (trois onglets en haut, barre latérale par onglet)
-source_empreinte: db148c
+source_empreinte: 8585d6
 ---
 # Me repérer dans la console
 
@@ -11,8 +11,8 @@ les résultats.
 **Console**, pour tout ce qui se règle : Accueil, mini-CRM, Campagnes, Chaîne, Scénario, Automation,
 AI Agent (MBA, qui ouvre les paramètres de l'agent de Meta ; Other AI agent, qui ouvre vos agents IA), Contenu
 (rangé par canal : WhatsApp, RCS, Email, puis la Bibliothèque avec vos blocs, vos étiquettes et vos champs)
-et Tools (Webhooks, Connecteurs API, Connecteurs MCP). Collés en bas de la barre, parce qu'ils ne servent
-pas le travail quotidien mais le règlent : **Paramètres** (Général, et Crédit IA pour recharger le crédit
+et Tools (Webhooks, Connecteurs API, Connecteurs MCP, SMTP email pour la boîte qui envoie vos e-mails, Widget
+WhatsApp). Collés en bas de la barre, parce qu'ils ne servent pas le travail quotidien mais le règlent : **Paramètres** (Général, et Crédit IA pour recharger le crédit
 de l'espace), **Support** et **Developers**.
 
 **Inbox**, pour répondre : cet onglet n'a aucune barre de navigation, il porte son propre menu de dossiers,
@@ -29,8 +29,9 @@ favori ou l'envoyer à un collègue, elle rouvre la même page.
 l'Inbox serait lui promettre deux portes fermées.
 
 **Le menu Compte, en haut à droite**, porte ce qui vous concerne vous plutôt que votre espace : la bascule
-de langue, Mon compte (pour changer votre mot de passe), Compte & équipe, Boîtes email et la déconnexion.
-L'abonnement et la facturation y figurent grisés, ils ne sont pas encore ouverts.
+de langue, Mon compte (pour changer votre mot de passe), Compte & équipe et la déconnexion. Pour un
+administrateur, **Abonnement** montre l'offre de l'espace (Free, Pro ou Entreprise) et ouvre la page Offre, et
+**Billing** ouvre le portail de Stripe, où vous retrouvez vos factures.
 
 **La bascule FR/EN change toute l'interface**, y compris les dates, les nombres et les pourcentages. Elle est
 mémorisée par navigateur, elle vaut donc pour vous et pas pour vos collègues, et elle est aussi disponible

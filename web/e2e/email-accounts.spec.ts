@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { repondre } from './aide/confirmation';
 
 /**
- * Écran « Boîtes email » (menu Compte > Boîtes email, admin-only) : un admin connecte une boîte SMTP, la voit
+ * Écran « SMTP email » (menu Tools > SMTP email, admin-only) : un admin connecte une boîte SMTP, la voit
  * listée, l'édite sans jamais voir le mot de passe pré-rempli, envoie un test, et supprime une boîte. Backend
  * intercepté, aucune base (même pattern que les autres E2E de la console, cf. workflow-rcs-node.spec.ts).
  */

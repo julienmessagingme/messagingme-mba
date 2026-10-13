@@ -930,7 +930,7 @@ export function ConfigPanel({
                 {emailAccounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
               </select>
               {emailAccounts.length === 0 && (
-                <p className="mt-1 text-xs text-ink-500">{t('Aucune boîte connectée : connectez-en une depuis le menu Compte > Boîtes email.', 'No mailbox connected yet: connect one from the Account menu > Email accounts.')}</p>
+                <p className="mt-1 text-xs text-ink-500">{t('Aucune boîte connectée : connectez-en une depuis le menu Tools > SMTP email.', 'No mailbox connected yet: connect one from the Tools menu > SMTP email.')}</p>
               )}
             </div>
             <div>

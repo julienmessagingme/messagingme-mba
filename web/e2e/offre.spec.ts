@@ -33,7 +33,7 @@ const CHECKOUT = 'https://checkout.stripe.com/c/pay/cs_e2e';
 const PORTAIL = 'https://billing.stripe.com/p/session/e2e';
 
 type Reponse = { status: number; corps: unknown };
-async function monter(page: Page, offre: unknown, o: { paiement?: Reponse; suspendu?: boolean } = {}) {
+async function monter(page: Page, offre: unknown, o: { paiement?: Reponse; portail?: Reponse; suspendu?: boolean } = {}) {
   const appels: string[] = [];
   const paiements: unknown[] = [];
   const rendus: unknown[] = [];
@@ -55,7 +55,7 @@ async function monter(page: Page, offre: unknown, o: { paiement?: Reponse; suspe
       paiements.push(req.postDataJSON());
       return o.paiement ? json(o.paiement.corps, o.paiement.status) : json({ url: CHECKOUT, portail: false });
     }
-    if (req.method() === 'POST' && chemin.endsWith('/offre/portail')) return json({ url: PORTAIL });
+    if (req.method() === 'POST' && chemin.endsWith('/offre/portail')) return o.portail ? json(o.portail.corps, o.portail.status) : json({ url: PORTAIL });
     if (req.method() === 'PUT' && chemin.endsWith('/offre/numero')) {
       const corps = req.postDataJSON() as { rendre: boolean };
       rendus.push(corps);
@@ -247,5 +247,43 @@ test.describe('une Entreprise, et une API sans la route', () => {
     await expect(page.getByTestId('contacts-ajouter-menu')).toBeVisible();
     await expect(page.locator('[data-testid^="nav-verrou-"]')).toHaveCount(0);
     await expect(page.getByTestId('onglet-inbox')).toHaveAttribute('href', '/inbox');
+  });
+});
+
+test.describe('Le menu du compte : l’offre et les factures (demande de Julien, 2026-10-13)', () => {
+  test('🔴 « Abonnement » dit l’offre de l’espace et mène à la page Offre', async ({ page }) => {
+    await monter(page, vue('pro'));
+    await page.goto('/accueil');
+    await page.getByTestId('menu-compte').click();
+    await expect(page.getByTestId('menu-abonnement-offre')).toHaveText('Pro');
+    await page.getByTestId('menu-abonnement').click();
+    await page.waitForURL('**/offre');
+  });
+
+  for (const [o, nom] of [['free', 'Free'], ['entreprise', 'Entreprise']] as const) {
+    test(`« Abonnement » en ${nom}`, async ({ page }) => {
+      await monter(page, vue(o));
+      await page.goto('/accueil');
+      await page.getByTestId('menu-compte').click();
+      await expect(page.getByTestId('menu-abonnement-offre')).toHaveText(nom);
+    });
+  }
+
+  test('« Billing » d’un espace qui n’a rien payé par carte : le menu le dit, la page ne bouge pas', async ({ page }) => {
+    await monter(page, vue('free'), { portail: { status: 409, corps: { error: 'Cet espace n’a aucun abonnement à gérer.', code: 'aucun_abonnement' } } });
+    await page.goto('/accueil');
+    await page.getByTestId('menu-compte').click();
+    await page.getByTestId('menu-billing').click();
+    await expect(page.getByTestId('menu-billing-erreur')).toContainText(/rien payé par carte|not paid anything/);
+    await expect(page).toHaveURL(/\/accueil/);
+  });
+
+  test('🔴 « Billing » ouvre le portail de Stripe de l’espace', async ({ page }) => {
+    const { appels } = await monter(page, vue('pro'));
+    await page.goto('/accueil');
+    await page.getByTestId('menu-compte').click();
+    await page.getByTestId('menu-billing').click();
+    await page.waitForURL(PORTAIL);
+    expect(appels.filter((a) => a.endsWith('/offre/portail'))).toEqual(['POST /api/backend/tenants/t-e2e/offre/portail']);
   });
 });

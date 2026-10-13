@@ -6,6 +6,10 @@ import { saveSession, pageDArrivee, type Session } from '@/lib/session';
 import { getMe, getEspaces, changerEspace, type EspaceDuCompte } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { Icone } from '@/components/Icone';
+import { useOffre } from '@/lib/use-offre';
+import { nomDeLOffre } from '@/lib/offre';
+import { portailPro } from '@/lib/api/offre';
+import { ApiError } from '@/lib/http';
 
 /** Initiales pour la pastille (nom si dispo, sinon partie locale de l'email). */
 function initials(email: string): string {
@@ -25,8 +29,8 @@ function libelleRole(role: string, t: (fr: string, en: string) => string): strin
 
 /**
  * Menu « Compte » en dropdown, à droite du header. Clic-dehors + Échap pour fermer. Items rôle-aware :
- * admin -> Compte (gestion équipe), Abonnement + Billing (désactivés, câblage Stripe hors lot), Déconnexion ;
- * agent -> Déconnexion seule. Pour tous, « Changer d'espace » juste au-dessus de Déconnexion quand l'adresse en ouvre
+ * admin -> Compte (gestion équipe), Abonnement (l'offre de l'espace, vers la page Offre) et Billing (le portail de
+ * Stripe, pour les factures), Déconnexion ; agent -> Déconnexion seule. Pour tous, « Changer d'espace » juste au-dessus de Déconnexion quand l'adresse en ouvre
  * plusieurs, et le nom de l'espace actuel en tête. Tailwind pur, aucune dépendance.
  */
 export function AccountMenu({ session, onLogout }: { session: Session; onLogout: () => void }) {
@@ -48,6 +52,33 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
   const [bascule, setBascule] = useState<string | null>(null);
   const [erreurBascule, setErreurBascule] = useState<string | null>(null);
   const demande = useRef(false);
+  /**
+   * L'offre de l'espace (Free, Pro ou Entreprise), affichée à côté de « Abonnement » (demande de Julien du 2026-10-13).
+   * La même lecture que la barre (`useOffre`, une par minute au plus) : ouvrir le menu ne coûte aucun appel de plus.
+   * Admins seuls, comme l'entrée. Inconnue (API plus ancienne, panne) : l'entrée reste, sans nom d'offre.
+   */
+  const vueOffre = useOffre(isAdmin ? session.tenantId : null);
+  const [factures, setFactures] = useState(false);
+  const [erreurFactures, setErreurFactures] = useState<string | null>(null);
+
+  /**
+   * « Billing » : le portail de Stripe de l'espace (factures, carte, résiliation), la même route que « Gérer mon
+   * abonnement » de la page Offre (`POST /offre/portail`, admins seuls). La console redirige vers l'adresse rendue. Un
+   * espace qui n'a jamais rien payé en ligne n'a pas de client Stripe : le serveur le dit (409), le menu aussi.
+   */
+  async function ouvrirFactures(): Promise<void> {
+    setFactures(true);
+    setErreurFactures(null);
+    try {
+      const r = await portailPro(session.tenantId);
+      window.location.assign(r.url);
+    } catch (e) {
+      setFactures(false);
+      setErreurFactures(e instanceof ApiError && e.status === 409
+        ? t('Aucune facture en ligne : cet espace n’a encore rien payé par carte.', 'No online invoice: this workspace has not paid anything by card yet.')
+        : e instanceof Error ? e.message : t('Ouverture des factures impossible.', 'Could not open the invoices.'));
+    }
+  }
 
   useEffect(() => {
     if (!open || demande.current || session.observation) return;
@@ -91,13 +122,6 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
       document.removeEventListener('keydown', onKey);
     };
   }, [open]);
-
-  const disabledItem = (label: string) => (
-    <div className="flex cursor-not-allowed items-center justify-between px-3 py-2 text-sm text-ink-500" title={t('Bientôt disponible', 'Coming soon')}>
-      {label}
-      <span className="rounded-controle bg-ink-100 px-1.5 py-0.5 text-xs text-ink-500">{t('bientôt', 'soon')}</span>
-    </div>
-  );
 
   return (
     <div className="relative" ref={ref}>
@@ -147,9 +171,16 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
           {isAdmin && (
             <>
               <Link href="/admin" onClick={() => setOpen(false)} className="block px-3 py-2 text-sm text-ink-900 hover:bg-ink-50">{t('Compte & équipe', 'Account & team')}</Link>
-              <Link href="/settings/email" onClick={() => setOpen(false)} className="block px-3 py-2 text-sm text-ink-900 hover:bg-ink-50">{t('Boîtes email', 'Email accounts')}</Link>
-              {disabledItem(t('Abonnement', 'Subscription'))}
-              {disabledItem(t('Billing', 'Billing'))}
+              <Link href="/offre" onClick={() => setOpen(false)} data-testid="menu-abonnement" className="flex items-center justify-between px-3 py-2 text-sm text-ink-900 hover:bg-ink-50">
+                {t('Abonnement', 'Subscription')}
+                {vueOffre && (
+                  <span data-testid="menu-abonnement-offre" className="rounded-controle bg-brand-50 px-1.5 py-0.5 text-xs font-medium text-brand-700">{nomDeLOffre(vueOffre.offre, t)}</span>
+                )}
+              </Link>
+              <button type="button" onClick={() => { void ouvrirFactures(); }} disabled={factures} data-testid="menu-billing" className="block w-full px-3 py-2 text-left text-sm text-ink-900 hover:bg-ink-50 disabled:text-ink-500">
+                {factures ? t('Ouverture des factures…', 'Opening invoices…') : t('Billing', 'Billing')}
+              </button>
+              {erreurFactures && <p data-testid="menu-billing-erreur" className="px-3 pb-2 text-xs text-danger-700">{erreurFactures}</p>}
             </>
           )}
           {/* Changer d'espace : seulement si l'adresse en ouvre un autre. Aucune preuve redemandée (décision de Julien) :
