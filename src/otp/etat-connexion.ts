@@ -15,8 +15,9 @@ export interface EtatConnexion {
   /**
    * Le numéro WhatsApp relié à l'espace, en chiffres (`''` si son affichage est inconnu). `aActiver` : relié, mais Meta
    * ne l'a pas encore activé (`status` lu et différent de `CONNECTED`, la règle de l'Accueil) ; il n'est pas « connecté ».
+   * `paiementBloque` : Meta bloque le compte pour son moyen de paiement (migration 0231, relevé du balayage des statuts).
    */
-  connecte: { chiffres: string; aActiver: boolean } | null;
+  connecte: { chiffres: string; aActiver: boolean; paiementBloque?: boolean } | null;
   /** L'abonnement du numéro fourni (livraison B) : son statut et la fin de la période payée, `null` sans abonnement. */
   abonnement: { statut: StatutAbonnement; periodeFin: string | null } | null;
   /** Un Pro vivant couvre l'espace (lot 6, B2b) : le numéro fourni y est inclus, la page l'obtient sans payer. */
@@ -25,7 +26,7 @@ export interface EtatConnexion {
 
 export interface DepsEtatConnexion {
   numeros: Pick<PgNumerosFournisStore, 'numeroDeLEspace' | 'codeDeLEspace'>;
-  numeroConnecte(tenantId: string): Promise<{ chiffres: string; aActiver: boolean } | null>;
+  numeroConnecte(tenantId: string): Promise<{ chiffres: string; aActiver: boolean; paiementBloque?: boolean } | null>;
   abonnements: Pick<PgAbonnementsNumeroStore, 'deLEspace'>;
   /** Le Pro de l'espace (lot 6, B2b, `PgAbonnementsOffreStore.vivant`). */
   pro: { vivant(tenantId: string): Promise<boolean> };

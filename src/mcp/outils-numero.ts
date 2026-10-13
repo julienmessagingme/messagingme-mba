@@ -1,5 +1,6 @@
 import { ficheOutilMcp } from '../../web/lib/partage/catalogue-mcp';
 import { ETAPES_NUMERO_FOURNI } from '../../web/lib/partage/etapes-numero-fourni';
+import { ETAPES_CARTE_META, PREREQUIS_META } from '../../web/lib/partage/etapes-meta';
 import type { AnnotationsMcp, DepsMcp, OutilMcp, PersonneMcp } from './outils';
 import { RefusOutil, valeurOuRefus } from './saisie';
 import { MESSAGE_OPERATIONS_LOURDES } from '../auth/plafond-partage';
@@ -116,13 +117,24 @@ const SI_ELLE_REVIENT = ' Si elle revient avant la fin, rappelle-lui où elle en
 const numerotees = (etapes: readonly string[]): string => etapes.map((t, i) => `${i + 1}) ${t}`).join(' ');
 
 /**
+ * Ce qu'il faut chez Meta, dit AVANT le lien et sans poser de question (le guide « compte Meta », décision de Julien du
+ * 2026-10-13) : la même source que l'encadré de la page (`PREREQUIS_META`).
+ */
+const prerequis = (etapes: ReadonlyArray<{ fr: string }>): string =>
+  'Avant le lien, dis-lui en quelques lignes ce qu’il faut chez Meta, sans lui poser de question sur ces prérequis : '
+  + `${numerotees(etapes.map((e) => e.fr))} `;
+/** Au numéro fourni, le dernier prérequis (un numéro libre, sinon on en fournit un) n'a plus de sens : il vient d'en choisir un. */
+const PREREQUIS_FOURNI = prerequis(PREREQUIS_META.slice(0, 2));
+const PREREQUIS_APPORTE = prerequis(PREREQUIS_META);
+
+/**
  * La consigne du numéro fourni : les étapes de la page (`ETAPES_NUMERO_FOURNI`, la même source), encadrées par le lien
  * et le paiement avant, et par le retour vers Claude après « Finish » (essai 99, ordre de Julien). En Pro (J4 de la
  * relecture de B2b), le numéro est inclus : la page l'obtient sans payer, et Claude n'annonce pas un prix qu'elle ne
  * demande pas.
  */
 const consigneFourni = (inclusDansLePro: boolean): string =>
-  LIEN_EN_ENTIER + 'Il ouvre la page de connexion de son numéro, sans se connecter, pendant une heure. Donne-lui ces '
+  PREREQUIS_FOURNI + LIEN_EN_ENTIER + 'Il ouvre la page de connexion de son numéro, sans se connecter, pendant une heure. Donne-lui ces '
   + 'étapes, numérotées, une par ligne, dans sa langue ; la page affiche les mêmes : '
   + numerotees([
     'Cliquer sur le lien.',
@@ -136,7 +148,7 @@ const consigneFourni = (inclusDansLePro: boolean): string =>
   + SI_ELLE_REVIENT;
 
 const CONSIGNES = {
-  apporte: LIEN_EN_ENTIER + 'Il ouvre la page de connexion de son numéro, sans se connecter, pendant une '
+  apporte: PREREQUIS_APPORTE + LIEN_EN_ENTIER + 'Il ouvre la page de connexion de son numéro, sans se connecter, pendant une '
     + 'heure. Sur la page : la fenêtre de Meta, son numéro, et le code qu’elle reçoit elle-même. Appelle ensuite '
     + 'watch_whatsapp_connection pour savoir quand le numéro est connecté.' + SI_ELLE_REVIENT,
 } as const;
@@ -154,9 +166,10 @@ function suiteDe(e: EtatConnexion): string {
   }
   if (e.connecte) {
     // Le crédit offert est écrit après la liaison, une fois Meta interrogé (relecture du lot) : quelques secondes.
-    return 'Le numéro est connecté : le branchement est fini. Relis get_setup_state avant d’annoncer la suite : la '
-      + 'connexion change l’état de l’espace. Le crédit offert au premier numéro arrive quelques secondes après : s’il '
-      + 'est encore à 0, relis une fois quelques secondes plus tard avant d’en parler.';
+    return 'Le numéro est connecté : le branchement est fini. Dis-lui tout de suite d’ajouter sa carte chez Meta, sans '
+      + `laquelle les modèles ne partent pas : ${numerotees(ETAPES_CARTE_META.map((e) => e.fr))} Relis ensuite `
+      + 'get_setup_state avant d’annoncer la suite : la connexion change l’état de l’espace. Le crédit offert au premier '
+      + 'numéro arrive quelques secondes après : s’il est encore à 0, relis une fois quelques secondes plus tard.';
   }
   if (e.code) {
     return 'Écris ce code en entier à la personne, en texte simple : elle le saisit dans la fenêtre de Meta (il s’affiche '

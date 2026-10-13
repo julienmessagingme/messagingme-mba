@@ -31,6 +31,7 @@ import { apiDeLaSession } from '@/lib/api/connexion-numero';
 import { lireHubspotActif, affichageHubspotAccueil } from '@/lib/hubspot-actif';
 import { useInstallationHubspot } from '@/lib/hubspot-installation';
 import { Bouton } from '@/components/Bouton';
+import { ETAPES_CARTE_META } from '@/lib/partage/etapes-meta';
 import { TitrePage } from '@/components/TitrePage';
 import { Icone } from '@/components/Icone';
 import { Modale } from '@/components/Modale';
@@ -633,6 +634,18 @@ function AccueilInner({ session }: { session: Session }) {
                   onActive={() => { setAvertissementsConnexion([]); setLoading(true); void load(); void loadAccount(); }}
                 />
               )}
+              {/* Meta bloque le compte pour son moyen de paiement (erreur 141006, migration 0231) : les modèles ne
+                  partent pas. Le bandeau tombe de lui-même au prochain relevé, une fois la carte posée. */}
+              {account?.hasNumber && !account.delieLe && account.paiementMetaBloque === true && (
+                <div data-testid="carte-meta-a-regler" className="mt-3 rounded-controle bg-alerte-50 px-3 py-3 text-xs text-alerte-700">
+                  <div className="text-sm font-semibold">
+                    {t('Ajoutez votre carte chez Meta : vos modèles ne partent pas', 'Add your card at Meta: your templates are not sent')}
+                  </div>
+                  <ol className="mt-2 list-decimal space-y-1 pl-5">
+                    {ETAPES_CARTE_META.map((e) => <li key={e.fr}>{t(e.fr, e.en)}</li>)}
+                  </ol>
+                </div>
+              )}
               {account?.hasNumber && (
                 <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3 border-t border-ink-100 pt-3 text-xs">
                   <div>
@@ -650,8 +663,8 @@ function AccueilInner({ session }: { session: Session }) {
                 </div>
               )}
               {/* Statut du compte WhatsApp Business : MM Lite (demande fondateur), revue Meta, vérification
-                  d'entreprise, business propriétaire, et renvoi HONNÊTE vers le Business Manager pour le moyen
-                  de paiement (non lisible via l'API WhatsApp avec notre token). */}
+                  d'entreprise, business propriétaire, et le moyen de paiement : Meta dit seulement s'il bloque le
+                  compte (erreur 141006, migration 0231), jamais la carte elle-même, d'où le renvoi vers sa facturation. */}
               {account?.hasNumber && (
                 <div data-testid="waba-status-panel" className="mt-4 border-t border-ink-100 pt-3">
                   <div className="mb-2 text-xs font-medium text-ink-500">{t('Compte WhatsApp Business', 'WhatsApp Business account')}</div>
@@ -671,7 +684,11 @@ function AccueilInner({ session }: { session: Session }) {
                     >
                       {t('Business Manager Meta', 'Meta Business Manager')}
                     </a>
-                    {t(" (non exposé par l’API WhatsApp).", ' (not exposed by the WhatsApp API).')}
+                    {account.paiementMetaBloque === true
+                      ? t(' : Meta signale un problème de carte.', ': Meta reports a card problem.')
+                      : account.paiementMetaBloque === false
+                        ? t(' : aucun blocage signalé par Meta.', ': no block reported by Meta.')
+                        : '.'}
                   </p>
                 </div>
               )}

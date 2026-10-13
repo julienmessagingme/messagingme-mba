@@ -58,6 +58,11 @@ export interface AccountStatusResponse {
   verifiedName: string | null;
   /** Santé WABA (health_status.can_send_message). null = inconnu. */
   wabaHealthStatus: string | null;
+  /**
+   * Le compte WhatsApp est bloqué chez Meta pour son moyen de paiement (erreur 141006 de `health_status`) : l'Accueil
+   * dit d'ajouter la carte. null = inconnu.
+   */
+  paiementMetaBloque: boolean | null;
   /** Revue du compte WABA (account_review_status). null = inconnu. */
   accountReviewStatus: string | null;
   /** Vérification d'entreprise (business_verification_status). null = inconnu. */
@@ -148,6 +153,7 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
         throughputLevel: null,
         verifiedName: null,
         wabaHealthStatus: null,
+        paiementMetaBloque: null,
         accountReviewStatus: null,
         businessVerificationStatus: null,
         marketingMessagesLiteApiStatus: null,
@@ -199,6 +205,7 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
       throughputLevel: frais?.throughputLevel ?? pn.throughputLevel ?? null,
       verifiedName: frais?.verifiedName ?? pn.verifiedName ?? null,
       wabaHealthStatus: frais?.wabaHealthStatus ?? pn.wabaHealthStatus ?? null,
+      paiementMetaBloque: frais?.wabaPaiementBloque ?? pn.wabaPaiementBloque ?? null,
       accountReviewStatus: frais?.accountReviewStatus ?? pn.accountReviewStatus ?? null,
       businessVerificationStatus: frais?.businessVerificationStatus ?? pn.businessVerificationStatus ?? null,
       marketingMessagesLiteApiStatus: frais?.marketingMessagesLiteApiStatus ?? pn.marketingMessagesLiteApiStatus ?? null,

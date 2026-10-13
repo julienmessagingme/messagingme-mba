@@ -26,6 +26,18 @@ test.describe('Accueil : panneau statut WhatsApp Business (F2)', () => {
     await expect(panel.getByText('Vérification d’entreprise')).toBeVisible();
   });
 
+  test('🔴 le compte bloqué pour sa carte chez Meta : le bandeau et ses étapes ; sinon, rien', async ({ page }) => {
+    await mockAccueil(page, { account: { ...defaultAccount, paiementMetaBloque: true } });
+    const bandeau = page.getByTestId('carte-meta-a-regler');
+    await expect(bandeau).toBeVisible();
+    await expect(bandeau).toContainText('Ajoutez votre carte chez Meta');
+    await expect(bandeau).toContainText('Paramètres de paiement');
+    await page.goto('about:blank');
+    await mockAccueil(page);
+    await expect(page.getByTestId('waba-status-panel')).toBeVisible();
+    await expect(page.getByTestId('carte-meta-a-regler')).toHaveCount(0);
+  });
+
   test('bloc paiement : renvoi honnête vers le Business Manager (lien billing_hub)', async ({ page }) => {
     await mockAccueil(page);
     const link = page.getByTestId('waba-status-panel').getByRole('link', { name: 'Business Manager Meta' });

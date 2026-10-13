@@ -805,7 +805,7 @@ export const OUTILS: OutilMcp[] = [
       + 'activer_numero : le numéro est relié mais Meta ne l’a pas activé, à finir dans l’Accueil de la console '
       + '(« Activer le numéro »). Un répondeur déjà choisi (repondeur.mode_choisi : agent de Meta, scénario, application) '
       + 'saute les étapes de l’agent IA et du répondeur : ne pas le changer sans la demande de la personne. avertissements : '
-      + 'numero_a_activer, credit_epuise (un agent IA ne répond plus : buy_credit), repondeur_gele_par_l_offre (le répondeur '
+      + 'numero_a_activer, credit_epuise (un agent IA ne répond plus : buy_credit), repondeur_gele_par_l_offre, carte_meta_a_regler (Meta bloque le compte pour sa carte ; etapes_carte_meta donne le chemin à suivre) (le répondeur '
       + 'choisi est gelé par l’offre actuelle), lecture_manquee:<source> (cette partie n’a pas pu être lue : l’étape '
       + 'qu’elle aurait dite est sautée). L’outil ne fait que lire.',
     annotations: lecture('Lire où en est la mise en service'),

@@ -2255,7 +2255,7 @@ automations, servis par le principal) : ça tient parce que `enqueue` crée sa f
 | `analysis/sweep` | réclame les conversations closes à analyser |
 | `automation/date-sweep` | déclencheur « X avant ou après la date d'un champ » |
 | `engagement/balayage` | le risque de désengagement, une fois par nuit (3 h à 6 h, heure de Paris) et par espace : relit les faits par lots, écrit le niveau, émet les signaux sur un CHANGEMENT de niveau et l'événement d'automation `risque_eleve` sur un PASSAGE en élevé. Aussi à la demande, pour un espace : `POST /ops/risque/:tenantId` |
-| `account/status-sweep` | statut et qualité des numéros Meta |
+| `account/status-sweep` | statut et qualité des numéros Meta, et le blocage pour moyen de paiement (`waba_paiement_bloque`, 0231) |
 | rattrapage HubSpot | relance les marques restées sur un numéro reconnecté |
 | purge des payloads webhook | rétention du dernier payload d'un webhook entrant |
 | purge des événements Meta | `WEBHOOK_EVENTS_RETENTION_DAYS` |
@@ -3196,6 +3196,16 @@ l'Asterisk du VPS (`ops/otp-asterisk/`) décroche, enregistre, puis poste l'enre
   Les plages du pare-feu et celles de la section `identify` restent identiques, et l'IAX2 (chargé par défaut par
   l'image, 4569/udp) reste déchargé : `tests/otp-asterisk-config.test.ts` tient les deux. ⚠️ `pjsip.conf` (les
   identifiants) n'est pas versionné : un correctif qui le touche s'applique aussi à la main sur le VPS.
+- 🔴 **Le blocage pour moyen de paiement chez Meta** (le guide « compte Meta », migration 0231). Dans notre montage
+  (Tech Provider), Meta facture le client sur la carte de son compte WhatsApp ; sans carte valable, `health_status`
+  rend `can_send_message: BLOCKED` avec, sur l'entité WABA, l'erreur 141006 (mesuré le 2026-10-13 ;
+  `primary_funding_id` est réservé aux BSP et refusé en erreur 10). `getWabaHealth` (`src/meta/phone-number.ts`) en
+  tire `paiementBloque` (`CODES_PAIEMENT_META`), le pull le transporte, `saveStatus` l'écrit dans
+  `phone_numbers.waba_paiement_bloque` (null = pas encore lu), au balayage des statuts et à chaque Accueil.
+  L'Accueil en fait un bandeau, `get_setup_state` l'avertissement `carte_meta_a_regler` avec `etapes_carte_meta`. Les
+  textes viennent de `web/lib/partage/etapes-meta.ts` (`PREREQUIS_META`, dits aussi par la page « Connecter WhatsApp »
+  et la consigne de `start_whatsapp_connection` ; `ETAPES_CARTE_META`), et la fiche `ce-qu-il-faut-chez-meta` les
+  reprend mot pour mot (`tests/etapes-meta.test.ts`).
 - 🔴 **Le numéro fourni côté client** (lot 3b, `src/http/numero-fourni.ts`, page `/connecter-whatsapp`). En
   Embedded Signup v4, rien ne fait sauter l'écran du numéro de la fenêtre de Meta : le client y TAPE le numéro que la
   page lui attribue, choisit la vérification par SMS (« Text message ») de préférence, et recopie le code que la
@@ -4146,8 +4156,9 @@ destinataires e-mail (`blocs`), les sorties du bloc agent et la règle du code d
 fichiers, consignes et prix de l'agent de Meta (`agent-meta`), les plafonds de pièce jointe de l'assistant
 (`piece-jointe`), les déclencheurs d'automation et leurs opérateurs (`automations`), les étapes du guide Salesforce
 (`salesforce`), les bornes d'une publicité (`publicite`), les codes d'une analyse (`analyse`), le motif d'une pastille
-`{{nom}}` (`pastille`), le nom de paramètre d'une Fonction JS (`fonction-js`), et les étapes du numéro fourni que
-la page affiche et que Claude redit (`etapes-numero-fourni`). 🔴 Pour ces valeurs (types, bornes,
+`{{nom}}` (`pastille`), le nom de paramètre d'une Fonction JS (`fonction-js`), les étapes du numéro fourni que
+la page affiche et que Claude redit (`etapes-numero-fourni`), et ce qu'il faut chez Meta, les prérequis et le chemin
+de la carte (`etapes-meta`). 🔴 Pour ces valeurs (types, bornes,
 droits, libellés), le fichier est la SOURCE : ce manuel dit où elles vivent, il ne les recopie pas. Une copie qui reste
 ailleurs (une liste de libellés d'écran, une règle liée à la base ou à `zod`, une logique qui entraînerait le serveur
 avec elle) garde son test de parité.

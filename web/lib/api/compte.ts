@@ -58,6 +58,8 @@ export interface AccountStatusResponse {
   throughputLevel: string | null;
   verifiedName: string | null;
   wabaHealthStatus: string | null;
+  /** Bloqué chez Meta pour le moyen de paiement ; absent tant que l'API ne le rend pas. */
+  paiementMetaBloque?: boolean | null;
   accountReviewStatus: string | null;
   businessVerificationStatus: string | null;
   /** Onboarding API MM Lite (marketing_messages_lite_api_status). null = non communiqué par Meta. */

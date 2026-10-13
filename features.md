@@ -1907,6 +1907,22 @@ scénario, comment importer des contacts.
   Domaine `messagingme.app` **vérifié** (hors mode test) : les emails partent réellement (support, invitations,
   réinitialisation de mot de passe).
 
+## Ce qu'il faut chez Meta (avant de connecter un numéro)
+
+- ✅ **Les prérequis, dits avant toute fenêtre de Meta** (le guide « compte Meta », 2026-10-13) : sur la page
+  « Connecter WhatsApp », un encadré « Avant de commencer, chez Meta » donne les trois conditions : un compte Meta
+  Business (le portefeuille d'entreprise, où l'on entre par un profil Facebook ou un compte Meta géré), comment le
+  créer pas à pas sur business.facebook.com, et un numéro qui ne sert pas dans l'application WhatsApp. Claude Code dit
+  la même chose avant de donner le lien de connexion, sans poser de question, et la vitrine le rappelle dans ses étapes
+  et sa FAQ.
+- ✅ **La carte chez Meta, juste après la connexion.** Dans notre montage, Meta facture le client directement : sans
+  carte valable (Visa ou Mastercard), seules les réponses dans la fenêtre de 24 heures partent, les modèles sont
+  bloqués. Messaging Me le détecte (la santé du compte, relue en général toutes les 20 minutes, et à chaque ouverture
+  de l'Accueil) : l'Accueil affiche un bandeau « Ajoutez votre carte chez Meta » avec le pas-à-pas complet, et Claude
+  le dit avec les mêmes étapes. Le bandeau disparaît de lui-même une fois la carte posée.
+- Ces textes sont écrits une seule fois : la page, l'Accueil, Claude, la FAQ du plugin et de la vitrine, et la fiche
+  du bot d'aide disent la même chose.
+
 ## Accueil (1re entrée du menu)
 
 - ✅ **La pastille du numéro** (2026-09-08) : la photo de profil WhatsApp du numéro s'affiche à côté de lui, celle que Meta montre dans le Business Manager et que voient vos destinataires. ⚠️ **Rien ne s'affiche tant qu'aucune photo n'est posée** sur le profil WhatsApp du numéro, et c'est le cas ordinaire au début : un cadre vide se lirait comme un chargement en échec.

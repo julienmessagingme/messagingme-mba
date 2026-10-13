@@ -1804,6 +1804,15 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       const kept = (await store.getPhoneNumber(tId))!;
       expect(kept.marketingMessagesLiteApiStatus).toBe('ONBOARDED');
       expect(kept.ownerBusinessName).toBe('Messaging Me');
+      // 0231 : le blocage pour moyen de paiement. Null au départ ; vrai s'écrit ; FAUX remplace vrai (la carte posée) ;
+      // un patch sans le champ ne remplace rien.
+      expect((await store.getPhoneNumber(tId))!.wabaPaiementBloque).toBeNull();
+      await store.saveStatus(pId, { wabaPaiementBloque: true });
+      expect((await store.getPhoneNumber(tId))!.wabaPaiementBloque).toBe(true);
+      await store.saveStatus(pId, { wabaPaiementBloque: false });
+      expect((await store.getPhoneNumber(tId))!.wabaPaiementBloque).toBe(false);
+      await store.saveStatus(pId, { status: 'CONNECTED' });
+      expect((await store.getPhoneNumber(tId))!.wabaPaiementBloque).toBe(false);
     } finally {
       await pool.query('delete from phone_numbers where id = $1', [pId]);
       await pool.query('delete from waba where id = $1', [wId]);

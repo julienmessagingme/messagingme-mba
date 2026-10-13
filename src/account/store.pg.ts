@@ -13,13 +13,13 @@ export class PgPhoneStatusStore {
       name_status: string | null; code_verification_status: string | null; throughput_level: string | null; verified_name: string | null;
       waba_health_status: string | null; account_review_status: string | null; business_verification_status: string | null;
       marketing_messages_lite_api_status: string | null; owner_business_name: string | null; hubspot_connected: boolean;
-      hubspot_paused_at: string | null; delie_le: Date | null;
+      hubspot_paused_at: string | null; delie_le: Date | null; waba_paiement_bloque: boolean | null;
     }>(
       `select id, display_phone_number, status, quality_rating, messaging_limit_tier,
               name_status, code_verification_status, throughput_level, verified_name,
               waba_health_status, account_review_status, business_verification_status,
               marketing_messages_lite_api_status, owner_business_name, hubspot_connected,
-              hubspot_paused_at::text as hubspot_paused_at, delie_le
+              hubspot_paused_at::text as hubspot_paused_at, delie_le, waba_paiement_bloque
          from phone_numbers where tenant_id = $1 order by created_at limit 1`,
       [tenantId],
     );
@@ -43,6 +43,7 @@ export class PgPhoneStatusStore {
           hubspotConnected: r.hubspot_connected,
           hubspotPausedAt: r.hubspot_paused_at,
           delieLe: r.delie_le ? r.delie_le.toISOString() : null,
+          wabaPaiementBloque: r.waba_paiement_bloque,
         }
       : null;
   }
@@ -58,7 +59,7 @@ export class PgPhoneStatusStore {
       status?: string; qualityRating?: string; messagingLimitTier?: string;
       nameStatus?: string; codeVerificationStatus?: string; throughputLevel?: string; verifiedName?: string;
       wabaHealthStatus?: string; accountReviewStatus?: string; businessVerificationStatus?: string;
-      marketingMessagesLiteApiStatus?: string; ownerBusinessName?: string;
+      marketingMessagesLiteApiStatus?: string; ownerBusinessName?: string; wabaPaiementBloque?: boolean;
     },
   ): Promise<void> {
     await this.pool.query(
@@ -75,6 +76,8 @@ export class PgPhoneStatusStore {
          business_verification_status = coalesce($11, business_verification_status),
          marketing_messages_lite_api_status = coalesce($12, marketing_messages_lite_api_status),
          owner_business_name = coalesce($13, owner_business_name),
+         -- Un booléen : faux remplace vrai (la carte posée), seul l'absent (null) garde le dernier relevé (0231).
+         waba_paiement_bloque = coalesce($14, waba_paiement_bloque),
          -- Horodate le RELEVÉ, pas la modification : c'est ce qui fait tourner le tourniquet du balayage
          -- (lot 7). Un pull qui ne change rien doit quand même faire passer ce numéro en queue, sinon les
          -- numéros stables seraient relus en boucle et les autres jamais.
@@ -94,6 +97,7 @@ export class PgPhoneStatusStore {
         patch.businessVerificationStatus ?? null,
         patch.marketingMessagesLiteApiStatus ?? null,
         patch.ownerBusinessName ?? null,
+        patch.wabaPaiementBloque ?? null,
       ],
     );
   }

@@ -11,6 +11,8 @@ export interface PhoneNumberRecord {
   throughputLevel: string | null;
   verifiedName: string | null;
   wabaHealthStatus: string | null;
+  /** Bloqué chez Meta pour le moyen de paiement (migration 0231) ; null = pas encore lu. */
+  wabaPaiementBloque?: boolean | null;
   accountReviewStatus: string | null;
   businessVerificationStatus: string | null;
   marketingMessagesLiteApiStatus: string | null;

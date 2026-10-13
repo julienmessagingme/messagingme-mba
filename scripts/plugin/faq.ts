@@ -10,6 +10,7 @@
 import { DROITS } from '../../src/offres/offres';
 import { PRIX_NUMERO_HT_CENTIMES } from '../../src/stripe/abonnement';
 import { QUOTAS_API_DEFAUT } from '../../src/api/quotas';
+import { ETAPES_CARTE_META, PREREQUIS_META } from '../../web/lib/partage/etapes-meta';
 
 export interface EntreeFaq {
   /** L'ancre, stable : la vitrine et la skill la portent. */
@@ -39,6 +40,9 @@ const INCLUS_EN = DROITS.pro.limites.numeroInclus ? ', included in Pro' : '';
 /** Le quota d'envois du jour de l'API, par espace, dans toutes les offres (le défaut ; la production n'en pose pas d'autre). */
 const QUOTA_ENVOIS = QUOTAS_API_DEFAUT.envois;
 const GRILLE_META = 'https://developers.facebook.com/docs/whatsapp/pricing';
+/** Les étapes chez Meta, de la même source que la console et que Claude (`web/lib/partage/etapes-meta.ts`). */
+const enUnBloc = (etapes: ReadonlyArray<{ fr: string; en: string }>, langue: 'fr' | 'en'): string =>
+  etapes.map((e, i) => `${i + 1}) ${e[langue]}`).join(' ');
 
 export const FAQ: readonly EntreeFaq[] = [
   {
@@ -49,6 +53,12 @@ export const FAQ: readonly EntreeFaq[] = [
       en: 'Yes: Meta’s WhatsApp Business Platform. Messaging Me is a Meta Tech Provider, with no WhatsApp Web automation. The WhatsApp Business account lives in your Business Manager and stays yours.',
     },
     source: 'src/http/embedded-signup.ts (connexion par l’Embedded Signup de Meta) ; brain/MESSAGINGME.md',
+  },
+  {
+    id: 'compte-meta',
+    question: { fr: 'Que faut-il chez Meta avant de commencer ?', en: 'What do I need at Meta before I start?' },
+    reponse: { fr: enUnBloc(PREREQUIS_META, 'fr'), en: enUnBloc(PREREQUIS_META, 'en') },
+    source: 'web/lib/partage/etapes-meta.ts (doc Embedded Signup de Meta, aide « Créer un portefeuille business », relues le 2026-10-13)',
   },
   {
     id: 'nom-affiche',
@@ -72,10 +82,10 @@ export const FAQ: readonly EntreeFaq[] = [
     id: 'ce-que-meta-facture',
     question: { fr: 'Pourquoi Meta me demande une carte, et que facture-t-il ?', en: 'Why does Meta ask for a card, and what does it charge?' },
     reponse: {
-      fr: `Meta facture directement votre entreprise, sur le moyen de paiement de votre Business Manager : les modèles, et depuis le 1er octobre 2026 les réponses dans la fenêtre de 24 heures aussi, selon sa grille et le pays de la personne. Messaging Me ne touche pas à ces frais. La grille de Meta : ${GRILLE_META}`,
-      en: `Meta bills your business directly, on the payment method of your Business Manager: templates, and since October 1, 2026 replies within the 24-hour window too, according to its rate card and the person’s country. Messaging Me never touches these fees. Meta’s rate card: ${GRILLE_META}`,
+      fr: `Meta facture directement votre entreprise, sur le moyen de paiement de votre Business Manager : les modèles, et depuis le 1er octobre 2026 les réponses dans la fenêtre de 24 heures aussi, selon sa grille et le pays de la personne. Messaging Me ne touche pas à ces frais. La grille de Meta : ${GRILLE_META}. Pour ajouter la carte : ${enUnBloc(ETAPES_CARTE_META, 'fr')}`,
+      en: `Meta bills your business directly, on the payment method of your Business Manager: templates, and since October 1, 2026 replies within the 24-hour window too, according to its rate card and the person’s country. Messaging Me never touches these fees. Meta’s rate card: ${GRILLE_META}. To add the card: ${enUnBloc(ETAPES_CARTE_META, 'en')}`,
     },
-    source: 'brain/MESSAGINGME.md, § Pricing WhatsApp (fin de la fenêtre de service gratuite le 2026-10-01)',
+    source: 'brain/MESSAGINGME.md, § Pricing WhatsApp (fin de la fenêtre de service gratuite le 2026-10-01) ; web/lib/partage/etapes-meta.ts (aide Meta 488291839463771, relue le 2026-10-13)',
   },
   {
     id: 'modele-refuse',

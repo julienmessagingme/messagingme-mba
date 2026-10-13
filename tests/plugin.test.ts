@@ -83,7 +83,8 @@ describe('les skills', () => {
       ? Object.entries(o).flatMap(([k, v]) => [k, ...clesRendues(Array.isArray(v) ? v[0] : v)]) : [];
     const exemple = etatMiseEnService({
       offre: { offre: 'free', fonctions: [] }, soldeMicroEur: 0,
-      numero: { fourni: '+44', code: null, connecte: { chiffres: '44', aActiver: false }, abonnement: null, inclusDansLePro: false },
+      // Bloqué pour sa carte : l'exemple rend aussi `etapes_carte_meta`, que la skill nomme.
+      numero: { fourni: '+44', code: null, connecte: { chiffres: '44', aActiver: false, paiementBloque: true }, abonnement: null, inclusDansLePro: false },
       agents: [{ id: 'a', label: 'A', status: 'draft', nbManques: 1 }, { id: 'b', label: 'B', status: 'active', nbManques: null },
         { id: 'c', label: 'C', status: 'disabled', nbManques: null }],
       reglages: { mbaEnabled: false, repondeurMode: 'equipe', repondeurAgentId: null, repondeurWorkflowId: null, repondeurAdresseId: null },

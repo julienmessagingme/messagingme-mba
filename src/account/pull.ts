@@ -23,6 +23,8 @@ export type PullResult =
       businessVerificationStatus?: string;
       marketingMessagesLiteApiStatus?: string;
       ownerBusinessName?: string;
+      /** Bloqué chez Meta pour le moyen de paiement (migration 0231). Absent = inconnu, rien n'est écrit. */
+      wabaPaiementBloque?: boolean;
     }
   | { ok: false; authError: boolean };
 
@@ -49,6 +51,7 @@ export function pullFromInfo(info: PhoneNumberInfo, waba?: WabaInfo): PullResult
     ...(waba?.businessVerificationStatus !== undefined ? { businessVerificationStatus: waba.businessVerificationStatus } : {}),
     ...(waba?.marketingMessagesLiteApiStatus !== undefined ? { marketingMessagesLiteApiStatus: waba.marketingMessagesLiteApiStatus } : {}),
     ...(waba?.ownerBusinessName !== undefined ? { ownerBusinessName: waba.ownerBusinessName } : {}),
+    ...(waba?.paiementBloque !== undefined ? { wabaPaiementBloque: waba.paiementBloque } : {}),
   };
 }
 

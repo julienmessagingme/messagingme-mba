@@ -8,6 +8,24 @@ import { appelGraph } from './graph';
  */
 const proprietaireSchema = z.object({ owner_business_info: z.object({ id: z.string().regex(/^\d+$/) }) });
 
+/**
+ * Les codes d'erreur de `health_status` qui disent « moyen de paiement » sur l'entité WABA. Mesuré le 2026-10-13 sur
+ * quatre comptes sans carte valable : 141006, « There is an error with the payment method. This will block business
+ * initiated conversations » (les modèles ne partent plus, les réponses de service si).
+ */
+export const CODES_PAIEMENT_META: readonly number[] = [141006];
+
+/** La forme de `health_status` en objet, lue par `safeParse` : un champ inattendu ne casse pas la santé du compte. */
+const santeSchema = z.object({
+  health_status: z.object({
+    can_send_message: z.string().optional(),
+    entities: z.array(z.object({
+      entity_type: z.string(),
+      errors: z.array(z.object({ error_code: z.number() })).optional(),
+    })).optional(),
+  }),
+});
+
 /** Champs de statut d'un numéro renvoyés par `GET /{phone_number_id}`. Tout optionnel (Meta peut omettre). */
 export interface PhoneNumberInfo {
   status?: string;
@@ -37,6 +55,11 @@ export interface WabaInfo {
   ownerBusinessName?: string;
   /** Son identifiant : c'est lui qui porte les plafonds de l'agent de Meta (`agent_budget`), et que Meta facture. */
   ownerBusinessId?: string;
+  /**
+   * Le compte est-il bloqué pour son moyen de paiement (`CODES_PAIEMENT_META` sur l'entité WABA) ? Absent quand
+   * `health_status` n'est pas un objet lisible : inconnu, jamais « pas de souci ».
+   */
+  paiementBloque?: boolean;
 }
 
 /** Client Graph en lecture d'un numéro WhatsApp (statut du compte sur l'Accueil). Lève MetaApiError si non-2xx. */
@@ -100,8 +123,17 @@ export class MetaPhoneNumberClient {
       | null;
     const hs = json?.health_status;
     const healthStatus = typeof hs === 'string' ? hs : hs?.can_send_message;
+    const sante = santeSchema.safeParse(json);
+    // Sans entités, Meta ne dit pas pourquoi : « disponible » vaut faux, tout le reste reste inconnu (relecture du lot).
+    const entites = sante.success ? sante.data.health_status.entities : undefined;
+    const paiementBloque = !sante.success
+      ? undefined
+      : entites === undefined
+        ? (sante.data.health_status.can_send_message === 'AVAILABLE' ? false : undefined)
+        : entites.some((e) => e.entity_type === 'WABA' && (e.errors ?? []).some((x) => CODES_PAIEMENT_META.includes(x.error_code)));
     return {
       healthStatus,
+      ...(paiementBloque !== undefined ? { paiementBloque } : {}),
       accountReviewStatus: json?.account_review_status,
       businessVerificationStatus: json?.business_verification_status,
       marketingMessagesLiteApiStatus: json?.marketing_messages_lite_api_status,

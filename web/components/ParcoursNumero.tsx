@@ -6,6 +6,7 @@ import { useT } from '@/lib/i18n';
 import { useConnexionNumero } from '@/lib/connexion-numero';
 import type { ApiConnexionNumero } from '@/lib/api/connexion-numero';
 import { ETAPES_NUMERO_FOURNI } from '@/lib/partage/etapes-numero-fourni';
+import { PREREQUIS_META } from '@/lib/partage/etapes-meta';
 
 /**
  * LE PARCOURS DE CONNEXION DU NUMÉRO (lot 3b, sorti de `/connecter-whatsapp` au lot 3c pour servir aussi `/brancher`).
@@ -148,6 +149,13 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
 
   return (
     <>
+      {/* Ce qu'il faut chez Meta, avant toute fenêtre de Meta : la même source que Claude (guide « compte Meta »). */}
+      <div data-testid="prerequis-meta" className="mt-6 rounded-carte border border-ink-200 bg-ink-50 p-5">
+        <div className="text-sm font-semibold text-ink-900">{t('Avant de commencer, chez Meta', 'Before you start, at Meta')}</div>
+        <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-ink-700">
+          {PREREQUIS_META.map((e) => <li key={e.fr}>{t(e.fr, e.en)}</li>)}
+        </ol>
+      </div>
       {choix === null ? (
         <div className="mt-6 grid gap-3 sm:grid-cols-2">
           <button type="button" data-testid="choix-fourni" onClick={() => setChoix('fourni')} className="rounded-carte border border-ink-200 bg-white p-5 text-left hover:border-ink-400">

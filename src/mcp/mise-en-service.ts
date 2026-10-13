@@ -1,4 +1,5 @@
 import type { NomOutilMcp } from '../../web/lib/partage/catalogue-mcp';
+import { ETAPES_CARTE_META } from '../../web/lib/partage/etapes-meta';
 import { modeEffectif, sousLOffre, type ModeRepondeur, type ReglageDuRepondeur } from '../repondeur/mode';
 import { manquesDeLAgent, type DepsGestionAgents } from '../agent/gestion';
 import { eurosDepuisMicro } from '../agent/devise';
@@ -41,7 +42,9 @@ export const OUTILS_DE_L_ETAPE = {
 export type EtapeMiseEnService = keyof typeof OUTILS_DE_L_ETAPE;
 
 /** Les avertissements que l'outil peut rendre ; `lecture_manquee` porte la source après un deux-points. */
-export const AVERTISSEMENTS = ['numero_a_activer', 'credit_epuise', 'repondeur_gele_par_l_offre', 'lecture_manquee'] as const;
+export const AVERTISSEMENTS = [
+  'numero_a_activer', 'credit_epuise', 'repondeur_gele_par_l_offre', 'carte_meta_a_regler', 'lecture_manquee',
+] as const;
 
 /** Ce que l'outil lit, une source par champ ; `null` = la lecture a échoué. */
 export interface LecturesMiseEnService {
@@ -70,6 +73,8 @@ export interface EtatMiseEnService {
   outils_suggeres: readonly NomOutilMcp[];
   /** Ceux d'`AVERTISSEMENTS`, `lecture_manquee:<source>` pour une lecture qui a échoué. */
   avertissements: string[];
+  /** Avec `carte_meta_a_regler` seulement : le chemin chez Meta, la même source que l'Accueil (`ETAPES_CARTE_META`). */
+  etapes_carte_meta?: string[];
 }
 
 export function etatMiseEnService(l: LecturesMiseEnService): EtatMiseEnService {
@@ -87,6 +92,9 @@ export function etatMiseEnService(l: LecturesMiseEnService): EtatMiseEnService {
     abonnement: l.numero.abonnement?.statut ?? null,
   };
   if (numero?.a_activer) avertissements.push('numero_a_activer');
+  // Connecté mais bloqué chez Meta pour sa carte : les modèles ne partent pas (erreur 141006, guide « compte Meta »).
+  const carteARegler = numero?.connecte === true && l.numero?.connecte?.paiementBloque === true;
+  if (carteARegler) avertissements.push('carte_meta_a_regler');
 
   const agents = l.agents === null ? null : {
     actifs: l.agents.filter((a) => a.status === 'active').map((a) => ({ id: a.id, label: a.label })),
@@ -134,6 +142,7 @@ export function etatMiseEnService(l: LecturesMiseEnService): EtatMiseEnService {
     etape_suivante: etape,
     outils_suggeres: OUTILS_DE_L_ETAPE[etape],
     avertissements,
+    ...(carteARegler ? { etapes_carte_meta: ETAPES_CARTE_META.map((e) => e.fr) } : {}),
   };
 }
 

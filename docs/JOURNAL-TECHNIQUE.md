@@ -23,6 +23,20 @@
   réinitialiser le facteur d'un collègue. Julien a choisi de fermer les deux : ces deux gestes redemandent le mot de
   passe de l'admin, cinq essais par minute ; cocher ne demande rien.
 
+## 2026-10-13 : le guide « compte Meta », et des comptes bloqués pour leur carte
+
+- Décisions de Julien du jour : le lot 11 (facturer les messages de service) est RETIRÉ, Meta facturant le client
+  directement (modèle Tech Provider) ; ce qu'il en reste devient le guide « compte Meta », dit partout, pas-à-pas
+  complet chez nous : un compte Meta Business (portefeuille d'entreprise) avant de connecter un numéro, puis la carte
+  chez Meta.
+- Mesuré en lecture seule chez Meta : `primary_funding_id` est réservé aux BSP (erreur 10) ; `health_status` se lit et
+  dit la raison, l'erreur 141006 sur l'entité WABA (« error with the payment method », les modèles bloqués). Quatre
+  comptes sur quatre la portaient (des comptes clients) : aucun modèle ne pouvait en partir.
+- Migration 0231 (`phone_numbers.waba_paiement_bloque`) poussée seule et appliquée avant le code. Le balayage des
+  statuts et l'Accueil l'écrivent ; l'Accueil affiche un bandeau, `get_setup_state` un avertissement avec les étapes ;
+  la page « Connecter WhatsApp » dit les prérequis ; la skill (plugin 0.1.4), la FAQ, la vitrine et une fiche neuve
+  du bot d'aide disent la même chose, depuis `web/lib/partage/etapes-meta.ts`.
+
 ## 2026-10-13 : l'agent annonce le conseiller, et les horaires se règlent depuis Claude Code (essai 99, suite)
 
 - Suite de l'essai 99 : au « je voudrais parler à un humain » du client, l'agent a répondu « Bien sûr ! 😊 » et passé

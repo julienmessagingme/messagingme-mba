@@ -19,6 +19,7 @@ function rec(over: Partial<PhoneNumberRecord> = {}): PhoneNumberRecord {
     wabaHealthStatus: null, accountReviewStatus: null, businessVerificationStatus: null,
     marketingMessagesLiteApiStatus: null, ownerBusinessName: null, hubspotConnected: true, hubspotPausedAt: null,
     delieLe: null,
+    wabaPaiementBloque: null,
     ...over,
   };
 }
@@ -59,6 +60,13 @@ describe('computeAccountStatus', () => {
 
 // --- Mapping du pull (anti faux-vert : la qualité UNKNOWN doit ÉCRASER l'ancienne, pas être omise) ---
 describe('pullFromInfo / pullFromError', () => {
+  it('🔴 la raison du blocage voyage avec la santé du compte, vrai comme faux', () => {
+    expect(pullFromInfo({ status: 'CONNECTED' }, { healthStatus: 'BLOCKED', paiementBloque: true })).toMatchObject({ wabaPaiementBloque: true });
+    expect(pullFromInfo({ status: 'CONNECTED' }, { healthStatus: 'AVAILABLE', paiementBloque: false })).toMatchObject({ wabaPaiementBloque: false });
+    // Inconnue : rien n'est écrit, le dernier relevé reste (coalesce).
+    expect(pullFromInfo({ status: 'CONNECTED' }, { healthStatus: 'AVAILABLE' })).not.toHaveProperty('wabaPaiementBloque');
+  });
+
   it('inclut TOUJOURS qualityRating, y compris UNKNOWN (dégradation doit écraser en base)', () => {
     const r = pullFromInfo({ status: 'CONNECTED', qualityRating: undefined, messagingLimitTier: 'TIER_1K' });
     expect(r).toMatchObject({ ok: true, status: 'CONNECTED', qualityRating: 'UNKNOWN', messagingLimitTier: 'TIER_1K' });
@@ -149,6 +157,41 @@ describe('MetaPhoneNumberClient.getWabaHealth', () => {
     const { fn } = makeFetch([{ ok: true, status: 200, json: { health_status: 'AVAILABLE' } }]);
     const waba = await new MetaPhoneNumberClient('tok', 'v25.0', fn).getWabaHealth('WABA1');
     expect(waba.healthStatus).toBe('AVAILABLE');
+    // Une chaîne ne dit pas la raison : inconnue, jamais « pas de souci de carte ».
+    expect(waba.paiementBloque).toBeUndefined();
+  });
+
+  it('🔴 la raison « moyen de paiement » (141006) sur l’entité WABA : le corps mesuré le 2026-10-13', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: { health_status: {
+      can_send_message: 'BLOCKED',
+      entities: [
+        { entity_type: 'WABA', id: '1118096921152299', can_send_message: 'BLOCKED', errors: [{
+          error_code: 141006,
+          error_description: 'There is an error with the payment method. This will block business initiated conversations.',
+          possible_solution: 'There was an error with your payment method. Please add a new payment method to the account.',
+        }] },
+        { entity_type: 'BUSINESS', id: '1', can_send_message: 'AVAILABLE' },
+        { entity_type: 'APP', id: '2', can_send_message: 'AVAILABLE' },
+      ],
+    } } }]);
+    const waba = await new MetaPhoneNumberClient('tok', 'v25.0', fn).getWabaHealth('WABA1');
+    expect(waba).toMatchObject({ healthStatus: 'BLOCKED', paiementBloque: true });
+  });
+
+  it('🟡 un objet sans entités : inconnu s’il est bloqué (jamais un faux « pas de souci »), faux s’il est disponible', async () => {
+    const bloque = makeFetch([{ ok: true, status: 200, json: { health_status: { can_send_message: 'BLOCKED' } } }]);
+    expect((await new MetaPhoneNumberClient('tok', 'v25.0', bloque.fn).getWabaHealth('WABA1')).paiementBloque).toBeUndefined();
+    const dispo = makeFetch([{ ok: true, status: 200, json: { health_status: { can_send_message: 'AVAILABLE' } } }]);
+    expect((await new MetaPhoneNumberClient('tok', 'v25.0', dispo.fn).getWabaHealth('WABA1')).paiementBloque).toBe(false);
+  });
+
+  it('un compte disponible, ou bloqué pour une autre raison : pas bloqué pour paiement', async () => {
+    const dispo = makeFetch([{ ok: true, status: 200, json: { health_status: { can_send_message: 'AVAILABLE', entities: [{ entity_type: 'WABA', id: '1', can_send_message: 'AVAILABLE' }] } } }]);
+    expect((await new MetaPhoneNumberClient('tok', 'v25.0', dispo.fn).getWabaHealth('WABA1')).paiementBloque).toBe(false);
+    const autre = makeFetch([{ ok: true, status: 200, json: { health_status: { can_send_message: 'BLOCKED', entities: [
+      { entity_type: 'WABA', id: '1', can_send_message: 'BLOCKED', errors: [{ error_code: 141010, error_description: 'autre' }] },
+    ] } } }]);
+    expect((await new MetaPhoneNumberClient('tok', 'v25.0', autre.fn).getWabaHealth('WABA1')).paiementBloque).toBe(false);
   });
 });
 
@@ -191,6 +234,18 @@ function app(over: Partial<Omit<AccountRouteDeps, 'numeros'>> & { numeros?: Part
 }
 
 describe('route account-status', () => {
+  it('🔴 le paiement bloqué chez Meta : lu frais, écrit, et rendu à l’Accueil ; sinon le dernier connu', async () => {
+    const { server, saved } = app({ pullStatus: async () => ({ ok: true, status: 'CONNECTED', qualityRating: 'GREEN', wabaPaiementBloque: true }) });
+    const body = (await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) })).json<{ paiementMetaBloque: boolean | null }>();
+    expect(body.paiementMetaBloque).toBe(true);
+    expect(saved[0]!.patch).toMatchObject({ wabaPaiementBloque: true });
+    await server.close();
+    // Meta injoignable : le dernier relevé fait foi.
+    const repli = app({ numeros: { getPhoneNumber: async () => rec({ wabaPaiementBloque: true }) }, pullStatus: async () => ({ ok: false, authError: false }) });
+    expect((await repli.server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) })).json<{ paiementMetaBloque: boolean | null }>().paiementMetaBloque).toBe(true);
+    await repli.server.close();
+  });
+
   it('admin + pull vert -> 200 dot=green + persiste la qualité', async () => {
     const { server, saved } = app();
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
