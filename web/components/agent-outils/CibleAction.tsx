@@ -103,7 +103,7 @@ export function CibleAction({ tenantId, valeur, onChange }: {
         <textarea className={`${inputCls} mt-1`} rows={3} data-testid="agent-action-consigne" value={valeur.consigne}
           maxLength={BORNES_ACTION.consigne}
           placeholder={t(
-            'Ex : quand le client veut résilier. Dis-lui que sa demande est enregistrée et qu’il recevra une confirmation par e-mail sous 48 h.',
+            'Ex : quand le client veut résilier. L’agent lui répond que sa demande est enregistrée et qu’il recevra une confirmation par e-mail sous 48 h.',
             'E.g. when the customer wants to cancel. Tell them the request is recorded and they will get an email confirmation within 48 h.',
           )}
           onChange={(e) => onChange({ ...valeur, consigne: e.target.value })} />
