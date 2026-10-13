@@ -4,7 +4,7 @@ import {
   validerModification, versMetaCreation, versMetaModification, type MessageInteractif,
 } from '../src/mba/messages-interactifs';
 import { MetaApiError } from '../src/meta/errors';
-import { TITRE_SKILL_RE } from '../src/http/mba';
+import { TITRE_SKILL_RE } from '../web/lib/partage/agent-meta';
 
 /**
  * La validation des messages interactifs AVANT l'appel à Meta, et la lecture de ce que Meta rend. Les règles

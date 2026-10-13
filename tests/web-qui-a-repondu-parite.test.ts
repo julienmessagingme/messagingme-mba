@@ -22,7 +22,7 @@ import { repondeursDe, REPONDEURS } from '../web/lib/qui-a-repondu';
  * `mcp` est un agent IA, `campagne` n'est pas un repondeur). Aucun de ses cas ne pouvait voir une origine
  * MANQUANTE, parce qu'ils nomment tous l'origine qu'ils testent. Celui-ci ne teste aucun comportement : il
  * teste la COUVERTURE. Il vit dans `tests/` et non dans `web/lib/` parce qu'il traverse la frontiere
- * serveur/front, comme les autres paritees du depot (`web-rcs-limits-parity`, `web-agent-sorties-parity`).
+ * serveur/front.
  *
  * ⚠️ IL SE DÉRIVE, IL NE SE RECOPIE PAS : la liste vient d'`ORIGINES`. Une huitième origine ajoutée demain
  * fait tomber ce test tant qu'elle n'a pas été TRANCHÉE, badge ou absence assumée.

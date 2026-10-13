@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { RcsOutbound, RcsSuggestion } from './types';
+import { RCS_TEXTE_MAX } from '../../web/lib/partage/rcs';
 
 /**
  * Validation d'un message RCS reçu du client (assistant de campagne, bloc de scénario, bibliothèque), en une
@@ -7,10 +8,6 @@ import type { RcsOutbound, RcsSuggestion } from './types';
  * dépassement fait refuser l'envoi entier, mieux vaut le refuser à la saisie. Union fermée : un `kind`
  * inconnu ne traverse jamais jusqu'au provider ; toujours `safeParse` chez l'appelant.
  */
-/** Longueur maximale d'un message RCS texte, exportée pour que la route d'envoi de l'Inbox borne la réponse
- *  libre avec la même valeur. */
-export const RCS_TEXTE_MAX = 3072;
-
 const libelle = z.string().min(1).max(25);
 const postback = z.string().min(1);
 

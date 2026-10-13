@@ -5,14 +5,12 @@
  * Paramètres > Intégrations et la page de connexion les appellent ; aucune ne refait le calcul à sa façon.
  */
 
+import { ETAPES_GUIDE, type EtapeGuide } from './partage/salesforce';
+
 export type EtatOrgSalesforce = 'connexion' | 'connectee' | 'en_pause' | 'coupee';
 
-/** Les étapes du guide, ancres de la page tuto. Miroir de `ETAPES_GUIDE` (`src/salesforce/connexion.ts`), parité tenue par un test. */
-export const ETAPES_GUIDE_SALESFORCE = ['adresse', 'package', 'utilisateur', 'run-as', 'droits', 'org'] as const;
-export type EtapeGuideSalesforce = (typeof ETAPES_GUIDE_SALESFORCE)[number];
-
 export interface ManqueSalesforce {
-  etape: EtapeGuideSalesforce;
+  etape: EtapeGuide;
   message: string;
 }
 
@@ -95,7 +93,7 @@ export function phraseEtatOrg(org: OrgSalesforceVue | null, t: (fr: string, en: 
 }
 
 /** Le lien du guide pour une étape : chaque manque rendu par le serveur y renvoie. */
-export const lienEtape = (etape: EtapeGuideSalesforce): string => `/tuto-salesforce#${etape}`;
+export const lienEtape = (etape: EtapeGuide): string => `/tuto-salesforce#${etape}`;
 
 /**
  * Lit le corps d'un refus de connexion (422) : des manques, ou une panne passagère. Un corps d'une autre forme
@@ -108,6 +106,6 @@ export function lireRefusConnexion(corps: unknown): { manques: ManqueSalesforce[
   if (!Array.isArray(c.manques)) return null;
   const manques = c.manques.filter((m): m is ManqueSalesforce =>
     !!m && typeof m === 'object' && typeof (m as ManqueSalesforce).message === 'string'
-    && (ETAPES_GUIDE_SALESFORCE as readonly string[]).includes((m as ManqueSalesforce).etape));
+    && (ETAPES_GUIDE as readonly string[]).includes((m as ManqueSalesforce).etape));
   return manques.length > 0 ? { manques } : null;
 }

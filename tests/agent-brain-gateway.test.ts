@@ -4,7 +4,7 @@ import type { ChatMessage, ReponseChat } from '../src/agent/llm/chat-client';
 import type { JournalAppels, OutilDefini, ToolCatalog } from '../src/agent/catalog';
 import type { ResolveurOutil } from '../src/agent/executor';
 import { ficheVide } from '../src/agent/fiche';
-import { SORTIE_PLAFOND } from '../src/agent/sorties';
+import { SORTIE_PLAFOND } from '../web/lib/partage/sorties-agent';
 import { TourInterrompu } from '../src/agent/brain';
 import { outilMaison, paramsInitiaux } from '../src/agent/outils-maison';
 import { creerResolveurSimulation } from '../src/agent/resolvers/simulation';

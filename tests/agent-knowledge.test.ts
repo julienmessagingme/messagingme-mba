@@ -4,7 +4,7 @@ import {
   COUVERTURE_MIN, MIN_TERMES_COMMUNS, PROXIMITE_TITRE_MIN,
   ficheEstPertinente, termesDeRecherche, type FicheTrouvee,
 } from '../src/agent/knowledge';
-import { SORTIE_SANS_SOURCE } from '../src/agent/sorties';
+import { SORTIE_SANS_SOURCE } from '../web/lib/partage/sorties-agent';
 import type { ContexteAppel } from '../src/agent/executor';
 import type { OutilDefini } from '../src/agent/catalog';
 import { SANS_MCP } from './outils-mcp';

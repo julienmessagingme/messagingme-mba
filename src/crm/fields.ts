@@ -1,6 +1,9 @@
 import type { UserFieldDef, UserFieldType } from './types';
 import { normaliserDate } from './date-iso';
 import { estCleReservee } from './champs-fiche';
+import {
+  SOCLE_FIELDS, SYSTEM_FIELD_KEYS as CLES_SYSTEME, SYSTEM_FIELD_LABELS, USER_FIELD_KINDS,
+} from '../../web/lib/partage/champs';
 
 const COMBINING_MARKS = /[̀-ͯ]/g;
 
@@ -15,7 +18,7 @@ export function slugify(label: string): string {
   return s || 'field';
 }
 
-export const USER_FIELD_TYPES: readonly UserFieldType[] = ['text', 'number', 'date', 'datetime', 'boolean', 'url'];
+export const USER_FIELD_TYPES: readonly UserFieldType[] = USER_FIELD_KINDS;
 
 export function isUserFieldType(t: string): t is UserFieldType {
   return (USER_FIELD_TYPES as readonly string[]).includes(t);
@@ -75,34 +78,23 @@ export function canonicalizeFieldValue(type: UserFieldType, value: string): stri
 }
 
 /**
- * Clés des champs de base (« système ») : toujours proposés, ni supprimables ni renommables. Attributs du
- * contact (name/phone/bsuid/wa_id, hors `contacts.fields`) et champs socles (prenom/email). Miroir :
- * `web/lib/fields.ts` (SYSTEM_FIELDS). Sert de garde sur PATCH/DELETE d'un user field.
+ * Clés des champs de base (« système », partagées avec la console) : toujours proposés, ni supprimables ni
+ * renommables. Sert de garde sur PATCH/DELETE d'un user field.
  */
-export const SYSTEM_FIELD_KEYS: readonly string[] = ['name', 'phone', 'bsuid', 'wa_id', 'prenom', 'email'];
+export const SYSTEM_FIELD_KEYS: readonly string[] = CLES_SYSTEME;
 
 export function isSystemFieldKey(key: string): boolean {
   return (SYSTEM_FIELD_KEYS as readonly string[]).includes(key);
 }
 
 /**
- * Libellés des champs de base, dans les deux langues (miroir de `web/lib/fields.ts` SYSTEM_FIELD_META, tenu par
- * un test). Les clés sont anglaises et l'écran affiche du français : sans cette liste, créer « Nom » (slug `nom`)
- * produirait un doublon visible dans tous les sélecteurs, et qu'aucun chemin d'écriture ne remplirait.
+ * Slugs interdits à la création et au renommage : les clés système, plus le slug de chaque libellé de base dans
+ * les deux langues. Les clés sont anglaises et l'écran affiche du français : sans les libellés, créer « Nom » (slug
+ * `nom`) produirait un doublon visible dans tous les sélecteurs, et qu'aucun chemin d'écriture ne remplirait.
  */
-export const SYSTEM_FIELD_LABELS: readonly string[] = [
-  'Nom', 'Name',
-  'Prénom', 'First name',
-  'Téléphone', 'Phone',
-  'BSUID',
-  'WhatsApp ID',
-  'Email',
-];
-
-/** Slugs interdits à la création et au renommage : les clés système, plus le slug de chaque libellé de base. */
 const SLUGS_RESERVES: ReadonlySet<string> = new Set([
   ...SYSTEM_FIELD_KEYS,
-  ...SYSTEM_FIELD_LABELS.map((l) => slugify(l)),
+  ...Object.values(SYSTEM_FIELD_LABELS).flat().map((l) => slugify(l)),
 ]);
 
 /**
@@ -117,15 +109,11 @@ export function isReservedFieldLabel(label: string): boolean {
 }
 
 /**
- * Champs socles : les deux seuls champs système stockés dans `contacts.fields` (les autres sont des attributs).
+ * Le champ socle correspondant à cette clé, ou undefined si ce n'en est pas un. Les champs socles
+ * (`SOCLE_FIELDS`, partagés avec la console) sont les deux seuls champs système stockés dans `contacts.fields`.
  * Aucun chemin d'inscription ne les crée : ils sont matérialisés à la première écriture (cf. `http/contacts.ts`),
  * sans quoi saisir un prénom sur un espace neuf rendrait « champ inconnu ».
  */
-export const SOCLE_FIELDS: ReadonlyArray<{ key: string; label: string; type: UserFieldType }> = [
-  { key: 'prenom', label: 'Prénom', type: 'text' },
-  { key: 'email', label: 'Email', type: 'text' },
-];
-/** Le champ socle correspondant à cette clé, ou undefined si ce n'en est pas un. */
 export function socleField(key: string): { key: string; label: string; type: UserFieldType } | undefined {
   return SOCLE_FIELDS.find((f) => f.key === key);
 }

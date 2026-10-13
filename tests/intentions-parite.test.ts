@@ -3,14 +3,14 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { INTENTS } from '../src/analysis/schema';
 import { buildPrompt } from '../src/analysis/engine';
-import { INTENTIONS, libelleIntention } from '../web/lib/intentions';
+import { libelleIntention } from '../web/lib/intentions';
 
 /**
  * LES INTENTIONS : UNE LISTE QUI FAIT FOI, ET TOUT CE QUI LA NOMME.
  *
- * 🔴 CE QUE CE FICHIER TIENT, ET QU'AUCUN COMPILATEUR NE VOIT. `INTENTS` (`src/analysis/schema.ts`) est
- * nommée ailleurs sous des formes qu'aucun type ne relie : le CHECK en base, le texte du prompt, le SQL des
- * statistiques, la copie de la console (qui n'importe jamais `src/`). Chacune est plausible seule, c'est
+ * 🔴 CE QUE CE FICHIER TIENT, ET QU'AUCUN COMPILATEUR NE VOIT. `INTENTS` (partagée par le serveur et la console,
+ * `web/lib/partage/analyse.ts`) est nommée ailleurs sous des formes qu'aucun type ne relie : le CHECK en base, le
+ * texte du prompt, le SQL des statistiques, les libellés de la console. Chacune est plausible seule, c'est
  * leur ÉGALITÉ qui porte l'invariant. Une valeur que le schéma accepte et que le CHECK refuse fait échouer
  * l'INSERT de l'analyse, et le job la rejoue, appel au modèle compris, jusqu'à la DLQ.
  *
@@ -91,13 +91,7 @@ describe('les intentions : la synthèse du serveur compte chacune', () => {
   });
 });
 
-describe('les intentions : la console connaît les mêmes, et sait les nommer', () => {
-  it('🔴 la copie de la console est INTENTS, dans le même ordre', () => {
-    // L'ordre compte : c'est l'ordre FIXE des barres. Un ordre différent ne casserait rien, il ferait
-    // seulement diverger deux listes qu'on croirait identiques.
-    expect([...INTENTIONS]).toEqual([...INTENTS]);
-  });
-
+describe('les intentions : la console sait les nommer', () => {
   it('🔴 chaque intention a un libellé français ET anglais, jamais sa clé brute', () => {
     const fr = (f: string): string => f;
     const en = (f: string, e?: string): string => e ?? f;

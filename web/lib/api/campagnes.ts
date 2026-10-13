@@ -250,10 +250,10 @@ export function deactivateRcsChannel(tenantId: string): Promise<{ active: false 
   return request<{ active: false }>(`/tenants/${tenantId}/rcs/channel`, { method: 'DELETE' });
 }
 
-// Modèle du message RCS : dans `./rcs-types`, module PUR, pour que la bascule TEXTE/CARTE (`./rcs`) soit
-// testable depuis la suite racine sans tirer `window`. Ré-exporté ici : les écrans l'importent toujours d'`api`.
-export type { RcsSuggestion, RcsCard, RcsOutbound } from '../rcs-types';
-import type { RcsOutbound } from '../rcs-types';
+// Modèle du message RCS : partagé avec le serveur (`../partage/rcs`). Ré-exporté ici : les écrans l'importent
+// toujours d'`api`.
+export type { RcsSuggestion, RcsCard, RcsOutbound } from '../partage/rcs';
+import type { RcsOutbound } from '../partage/rcs';
 
 export interface RcsMessage {
   id: string;

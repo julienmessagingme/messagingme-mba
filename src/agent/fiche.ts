@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import { CODE_SORTIE_RE, LONGUEUR_CODE_SORTIE, MAX_SORTIES } from '../../web/lib/partage/sorties-agent';
+
+/** La règle du code d'une règle d'arrêt est partagée avec la console, qui l'applique sous les yeux du client. */
+export { CODE_SORTIE_RE, MAX_SORTIES, normaliserCodeSortie } from '../../web/lib/partage/sorties-agent';
 
 /**
  * La fiche d'un agent : tout ce que le client décrit de son agent, et rien d'autre.
@@ -10,13 +14,6 @@ import { z } from 'zod';
  */
 
 /**
- * Le code d'une règle d'arrêt. Même alphabet que les noms d'outils, parce qu'il finit dans un handle d'arête
- * `sortie:<code>` du builder. Ni souligné en tête ni en queue : `normaliserCodeSortie` ne peut pas en
- * produire, donc un tel code serait impossible à taper ou à reproduire.
- */
-export const CODE_SORTIE_RE = /^[a-z0-9](?:[a-z0-9_]{0,30}[a-z0-9])?$/;
-
-/**
  * Les bornes de longueur des champs de la fiche, en un seul endroit, exportées pour que l'assistant de
  * construction les annonce au modèle. Déclarées avant `sortieAgentSchema`, qui les lit à l'évaluation du
  * module (zone morte temporelle d'un `const`).
@@ -25,30 +22,9 @@ export const BORNES_FICHE = {
   nom: 80, objectif: 4000, ton: 1000, personnalite: 1000, reglesTransfert: 4000,
   /** Le libellé d'une règle d'arrêt. */
   label: 60,
-  /** Le code d'une règle d'arrêt : la longueur maximale que `CODE_SORTIE_RE` ci-dessus laisse passer. */
-  code: 32,
+  /** Le code d'une règle d'arrêt : la longueur maximale que `CODE_SORTIE_RE` laisse passer. */
+  code: LONGUEUR_CODE_SORTIE,
 } as const;
-
-/**
- * Ramène un code libre vers ce que `CODE_SORTIE_RE` accepte. Rend une chaîne vide quand il ne reste rien
- * d'exploitable, pour que l'appelant écarte l'entrée.
- *
- * C'est l'autorité ; `web/lib/agent-sorties.ts` en est la copie (pas de code serveur dans le bundle client),
- * et `tests/web-agent-code-sortie-parity.test.ts` compare les deux. Un code déjà valide ressort inchangé,
- * sinon rouvrir une fiche déplacerait ses codes et les arêtes du builder désigneraient des sorties disparues.
- */
-export function normaliserCodeSortie(brut: string): string {
-  return brut
-    // Retrait des marques diacritiques : un accent ne passe pas dans un handle d'arête, la lettre, si.
-    .normalize('NFD').replace(/\p{Diacritic}/gu, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9_]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, BORNES_FICHE.code)
-    // Le `slice` peut laisser un souligné final : on le retire après, sinon un code tronqué sortirait avec
-    // une terminaison que personne n'a écrite.
-    .replace(/_+$/g, '');
-}
 
 /**
  * Une règle d'arrêt : « quand l'agent a fini de faire ça, il sort par là ». La fiche est la seule source de
@@ -59,10 +35,6 @@ export const sortieAgentSchema = z.object({
   code: z.string().regex(CODE_SORTIE_RE),
   label: z.string().trim().min(1).max(BORNES_FICHE.label),
 });
-
-/** Plafond de règles d'arrêt. Au-delà, le bloc devient illisible dans le builder, et le modèle choisit mal
- *  dans une énumération trop large. */
-export const MAX_SORTIES = 12;
 
 /**
  * Les champs de la fiche, sans défaut. Les deux schémas ci-dessous en dérivent, pour qu'une lecture et un

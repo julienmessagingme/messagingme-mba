@@ -6,9 +6,9 @@ import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from '@/components/MbaNotice';
 import {
   parlerAuConstructeur, lireEntretien, effacerEntretien, joindrePiece, restreindreProposition,
-  TAILLE_DOCUMENT_MAX, TAILLE_IMAGE_MAX,
   type Changement, type PropositionConstruction, type TourConstruction,
 } from '@/lib/api-agent-setup';
+import { TAILLE_DOCUMENT_MAX, TAILLE_IMAGE_MAX } from '@/lib/partage/piece-jointe';
 import { Bouton } from '@/components/Bouton';
 import { Icone } from '@/components/Icone';
 import { useConfirmation } from '@/components/Confirmation';

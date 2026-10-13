@@ -2,16 +2,13 @@
  * LES CODES D'UNE ANALYSE DE CONVERSATION, CÔTÉ CONSOLE : sentiment, action suggérée, « traitée par », et leurs
  * libellés. Les intentions ont leur propre module (`@/lib/intentions`).
  *
- * 🔴 MIROIRS DE `SENTIMENTS`, `ACTIONS` et `HANDLED_BY` (`src/analysis/schema.ts`), ET C'EST UN TEST QUI LES
- * TIENT : la console n'importe jamais `src/`, et `tests/analyse-libelles-parite.test.ts` (à la RACINE, parce que
- * seul `ci.yml` tourne sur un changement de `src/`) exige des listes identiques et un libellé par valeur.
+ * Les codes sont partagés avec le serveur (`./partage/analyse`) ; `tests/analyse-libelles-parite.test.ts` (à la
+ * RACINE, parce que seul `ci.yml` tourne sur un changement de `src/`) exige un libellé par valeur.
  *
  * Un seul module pour les écrans qui les nomment : l'Analyse des conversations et la section « Dernière analyse »
  * de la fiche contact. La carte d'analyse portait sa propre copie.
  */
-export const SENTIMENTS = ['positif', 'neutre', 'negatif'] as const;
-export const ACTIONS = ['creer_devis', 'rappeler', 'relancer', 'escalader', 'aucune'] as const;
-export const TRAITE_PAR = ['humain', 'automatise', 'mba'] as const;
+export { ACTIONS, SENTIMENTS } from './partage/analyse';
 
 type Tr = (fr: string, en?: string) => string;
 

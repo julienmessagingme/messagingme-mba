@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { systemFieldCode, FRONT_SYSTEM_FIELD_KEYS } from '../web/lib/codes';
+import { systemFieldCode } from '../web/lib/codes';
+import { SYSTEM_FIELD_KEYS } from '../web/lib/partage/champs';
 import { resolveFieldKey } from '../src/ids/resolve';
 import type { FieldLister } from '../src/ids/resolve';
-import { SYSTEM_FIELD_KEYS } from '../src/crm/fields';
 
 /**
  * Le générateur de codes de champs système est côté FRONT (la page Champs les affiche), le LECTEUR est côté
@@ -29,17 +29,10 @@ describe('systemFieldCode (générateur front)', () => {
 });
 
 describe('aller-retour générateur front -> résolveur serveur', () => {
-  // LE test qui compte. Les deux listes de champs système, celle du front et celle du serveur, n'ont aucun
-  // lien de compilation. En ajouter un d'un seul côté produirait un code affiché à un client d'API que notre
-  // propre API refuserait, en silence. Cette assertion est ce qui l'empêche.
-  it('les listes de champs système du front et du serveur sont IDENTIQUES', () => {
-    expect([...FRONT_SYSTEM_FIELD_KEYS].sort()).toEqual([...SYSTEM_FIELD_KEYS].sort());
-  });
-
+  // Les clés des champs système sont partagées (`web/lib/partage/champs.ts`) ; le format du code, lui, est écrit
+  // d'un côté (`systemFieldCode`) et lu de l'autre (`SYS_RE`) : c'est ce couple que ce test fait dialoguer.
   it('TOUT code produit par le front est résolu par le serveur, sur la bonne clé', async () => {
-    // On itère la liste FRONT (celle qui alimente réellement la page Champs), pas la liste serveur : sinon un
-    // champ ajouté au front seul ne serait jamais testé, ce qui est exactement le cas qu'on veut attraper.
-    for (const key of FRONT_SYSTEM_FIELD_KEYS) {
+    for (const key of SYSTEM_FIELD_KEYS) {
       const code = systemFieldCode('k7m2p3', key);
       await expect(resolveFieldKey('t1', code, noFields)).resolves.toEqual({ ok: true, key, type: 'text', known: true });
     }

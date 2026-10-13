@@ -8,10 +8,14 @@ import { premiereReponse } from '@/lib/apercu-reponse';
 import {
   creerPub, creerBrouillon, majBrouillon, supprimerBrouillon,
   demarrerDepotVideo, envoyerMorceauVideo, terminerDepotVideo, lireEtatVideo, listerAudiences,
-  TAILLE_VISUEL_MAX, TYPES_VISUEL, AGE_MIN_BAS, AGE_MIN_HAUT, AGE_MAX, BOUTONS_PUB, BOUTON_PUB_DEFAUT, boutonConnu,
-  type AudiencePub, type BoutonPub, type BrouillonPubComplet, type DestinationPub, type FormulaireBrouillonPub,
+  boutonConnu, libelleBouton,
+  type AudiencePub, type BrouillonPubComplet, type DestinationPub, type FormulaireBrouillonPub,
   type FormulaireCreationPub, type ListeAudiencesPub,
 } from '@/lib/api-pubs';
+import {
+  AGE_MAX_ADVANTAGE, AGE_MIN_ADVANTAGE_BAS, AGE_MIN_ADVANTAGE_HAUT, BOUTONS_PUB, BOUTON_PUB_DEFAUT, TAILLE_VISUEL_PUB_MAX,
+  TYPES_VISUEL_PUB, type BoutonPub,
+} from '@/lib/partage/publicite';
 import {
   cadrageDe, dureeDuFichier, dureeRetenue, morceauSuivant, refusVideo, TAILLE_VIDEO_MAX, DUREE_VIDEO_MAX_S, type RefusVideo,
 } from '@/lib/pub-video';
@@ -177,9 +181,9 @@ export function PubFormulaire({
    * VIDE plutôt que de le corriger en silence, et la création demande de choisir.
    */
   const [ageMin, setAgeMin] = useState(() => {
-    if (brouillon === null) return String(AGE_MIN_BAS);
+    if (brouillon === null) return String(AGE_MIN_ADVANTAGE_BAS);
     const n = Number(brouillon.ageMin);
-    return Number.isInteger(n) && n >= AGE_MIN_BAS && n <= AGE_MIN_HAUT ? String(n) : '';
+    return Number.isInteger(n) && n >= AGE_MIN_ADVANTAGE_BAS && n <= AGE_MIN_ADVANTAGE_HAUT ? String(n) : '';
   });
   const [destination, setDestination] = useState<DestinationPub>(brouillon?.destination ?? 'scenario');
   const [workflowId, setWorkflowId] = useState(brouillon?.workflowId ?? '');
@@ -524,11 +528,11 @@ export function PubFormulaire({
 
   async function choisirImage(f: File): Promise<void> {
     setErreur(null);
-    if (!(TYPES_VISUEL as readonly string[]).includes(f.type)) {
+    if (!(TYPES_VISUEL_PUB as readonly string[]).includes(f.type)) {
       setErreur(t('Le visuel doit être un JPEG ou un PNG.', 'The image must be a JPEG or a PNG.'));
       return;
     }
-    if (f.size > TAILLE_VISUEL_MAX) {
+    if (f.size > TAILLE_VISUEL_PUB_MAX) {
       setErreur(t('Le visuel dépasse 5 Mo.', 'The image is over 5 MB.'));
       return;
     }
@@ -550,7 +554,7 @@ export function PubFormulaire({
   ): FormulaireBrouillonPub {
     return {
       nom, titre, texte, accueil, messagePreRempli,
-      budgetTotal, debut, fin, pays, ageMin, ageMax: String(AGE_MAX), tagQualification, destination,
+      budgetTotal, debut, fin, pays, ageMin, ageMax: String(AGE_MAX_ADVANTAGE), tagQualification, destination,
       workflowId: workflowId === '' ? null : workflowId,
       ...(aEnvoyer === undefined ? {} : { image: aEnvoyer }),
       ...(videoEnvoyee === undefined ? {} : { video: videoEnvoyee }),
@@ -639,8 +643,8 @@ export function PubFormulaire({
       return;
     }
     const age = Number(ageMin);
-    if (!Number.isInteger(age) || age < AGE_MIN_BAS || age > AGE_MIN_HAUT) {
-      setErreur(t(`Choisissez un âge minimum entre ${AGE_MIN_BAS} et ${AGE_MIN_HAUT} ans.`, `Choose a minimum age between ${AGE_MIN_BAS} and ${AGE_MIN_HAUT}.`));
+    if (!Number.isInteger(age) || age < AGE_MIN_ADVANTAGE_BAS || age > AGE_MIN_ADVANTAGE_HAUT) {
+      setErreur(t(`Choisissez un âge minimum entre ${AGE_MIN_ADVANTAGE_BAS} et ${AGE_MIN_ADVANTAGE_HAUT} ans.`, `Choose a minimum age between ${AGE_MIN_ADVANTAGE_BAS} and ${AGE_MIN_ADVANTAGE_HAUT}.`));
       return;
     }
     const budget = Number(budgetTotal);
@@ -661,7 +665,7 @@ export function PubFormulaire({
       villes: [],
       // `ageMax` est fixé par Meta avec Advantage+ ; il part quand même, parce que l'API d'avant cette règle
       // l'exige encore pendant la fenêtre de déploiement.
-      ageMin: age, ageMax: AGE_MAX,
+      ageMin: age, ageMax: AGE_MAX_ADVANTAGE,
       destination,
       workflowId: destination === 'scenario' ? workflowId : null,
       tagQualification: tagQualification.trim() === '' ? null : tagQualification.trim(),
@@ -749,7 +753,7 @@ export function PubFormulaire({
         id="pub-bouton" className={champ} value={bouton} onChange={(e) => setBouton(boutonConnu(e.target.value))}
         data-testid="pub-bouton"
       >
-        {BOUTONS_PUB.map((b) => <option key={b.type} value={b.type}>{t(b.fr, b.en)}</option>)}
+        {BOUTONS_PUB.map((b) => <option key={b} value={b}>{t(libelleBouton(b).fr, libelleBouton(b).en)}</option>)}
       </select>
       <p className="mt-1 text-xs text-ink-500">
         {t('Quel que soit le libellé, un appui sur le bouton ouvre la conversation WhatsApp avec vous.',
@@ -884,21 +888,21 @@ export function PubFormulaire({
           <label className={label} htmlFor="pub-age-min">{t('Âge minimum', 'Minimum age')}</label>
           <select id="pub-age-min" className={champ} value={ageMin} onChange={(e) => setAgeMin(e.target.value)}>
             {ageMin === '' && <option value="">{t('Choisir…', 'Choose…')}</option>}
-            {Array.from({ length: AGE_MIN_HAUT - AGE_MIN_BAS + 1 }, (_, i) => AGE_MIN_BAS + i).map((a) => (
+            {Array.from({ length: AGE_MIN_ADVANTAGE_HAUT - AGE_MIN_ADVANTAGE_BAS + 1 }, (_, i) => AGE_MIN_ADVANTAGE_BAS + i).map((a) => (
               <option key={a} value={String(a)}>{a}</option>
             ))}
           </select>
         </div>
         <div>
           <p className={label}>{t('Âge maximum', 'Maximum age')}</p>
-          <p className="mt-1 px-1 py-2 text-sm text-ink-900" data-testid="pub-age-max">{t(`${AGE_MAX} ans`, `${AGE_MAX}`)}</p>
+          <p className="mt-1 px-1 py-2 text-sm text-ink-900" data-testid="pub-age-max">{t(`${AGE_MAX_ADVANTAGE} ans`, `${AGE_MAX_ADVANTAGE}`)}</p>
         </div>
       </div>
       <p className="mt-1 text-xs text-ink-500" data-testid="pub-advantage-age">
         {/* 🔴 La règle est de Meta, pas de nous : on la dit là où elle contraint, pour qu'un « pourquoi pas 30 ans ? »
             ait sa réponse sous les yeux. */}
-        {t(`Advantage+ est laissé à Meta, qui n’accepte qu’un âge minimum entre ${AGE_MIN_BAS} et ${AGE_MIN_HAUT} ans et fixe le maximum à ${AGE_MAX}.`,
-           `Advantage+ is left to Meta, which only accepts a minimum age between ${AGE_MIN_BAS} and ${AGE_MIN_HAUT} and sets the maximum to ${AGE_MAX}.`)}
+        {t(`Advantage+ est laissé à Meta, qui n’accepte qu’un âge minimum entre ${AGE_MIN_ADVANTAGE_BAS} et ${AGE_MIN_ADVANTAGE_HAUT} ans et fixe le maximum à ${AGE_MAX_ADVANTAGE}.`,
+           `Advantage+ is left to Meta, which only accepts a minimum age between ${AGE_MIN_ADVANTAGE_BAS} and ${AGE_MIN_ADVANTAGE_HAUT} and sets the maximum to ${AGE_MAX_ADVANTAGE}.`)}
       </p>
 
       <SectionAudiences

@@ -1,77 +1,31 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { TAILLE_VISUEL_PUB_MAX, TYPES_VISUEL_PUB } from '../src/meta/pubs-creation';
-import {
-  TAILLE_VISUEL_MAX, TYPES_VISUEL, AGE_MAX, AGE_MIN_BAS, AGE_MIN_HAUT, enPauseChezMeta, lienGestionnaireMeta,
-  BOUTONS_PUB as BOUTONS_ECRAN, BOUTON_PUB_DEFAUT as BOUTON_DEFAUT_ECRAN, boutonConnu, libelleBouton,
-  archivable, estArchivee, phasePub,
-} from '../web/lib/api-pubs';
+import { enPauseChezMeta, lienGestionnaireMeta, boutonConnu, libelleBouton, archivable, estArchivee, phasePub } from '../web/lib/api-pubs';
 import { ISSUES_NON_PRISES_EN_CHARGE } from '../src/pubs/entonnoir';
-import {
-  AGE_MAX_ADVANTAGE, AGE_MIN_ADVANTAGE_BAS, AGE_MIN_ADVANTAGE_HAUT,
-  BOUTONS_PUB as BOUTONS_SERVEUR, BOUTON_PUB_DEFAUT as BOUTON_DEFAUT_SERVEUR,
-} from '../src/meta/pubs-payloads';
+import { BOUTONS_PUB, TYPES_VISUEL_PUB } from '../web/lib/partage/publicite';
 
 /**
- * LES BORNES DU VISUEL D'UNE PUBLICITÉ, DES DEUX CÔTÉS.
- *
- * L'écran refuse AVANT de téléverser (attendre cinq mégaoctets pour se faire dire non est une mauvaise
- * expérience, et la limite de corps de la route couperait de toute façon), le serveur refuse en dernier
- * ressort. Deux chiffres qui divergent donnent le pire des deux : un écran qui promet ce que le serveur
- * refuse, avec un 400 que personne ne relie à la promesse. Même patron que les autres tests de parité du
- * dépôt.
- *
- * 🔴 C'EST L'ÉCART QUI PORTE L'INVARIANT, PAS CHAQUE CONSTANTE. Prise seule, chacune est plausible : cinq
- * mégaoctets ici, six là, personne ne sursaute en relisant l'un des deux fichiers. Ce genre d'invariant
- * n'est visible dans aucun des deux, et ne tient donc que dans un test.
+ * LES BORNES DU VISUEL D'UNE PUBLICITÉ, l'âge et les boutons sont partagés par l'écran et le serveur
+ * (`web/lib/partage/publicite.ts`) : il n'y a plus de copie à comparer. Reste ce que le partage ne garantit pas.
  */
-describe('parité des bornes du visuel publicitaire', () => {
-  it('l’écran et le serveur annoncent le MÊME poids maximum', () => {
-    expect(TAILLE_VISUEL_MAX).toBe(TAILLE_VISUEL_PUB_MAX);
-  });
-
-  it('l’écran et le serveur acceptent les MÊMES types', () => {
-    expect([...TYPES_VISUEL]).toEqual([...TYPES_VISUEL_PUB]);
-  });
-
-  it('🔴 ni SVG ni GIF, des deux côtés : ce fichier part chez un tiers sous l’identité du client', () => {
-    // Un SVG est un document exécutable. Le laisser entrer par le côté où la garde est la plus faible
-    // suffirait : c'est le serveur qui décide, et l'écran ne doit pas lui promettre autre chose.
-    for (const liste of [[...TYPES_VISUEL], [...TYPES_VISUEL_PUB]]) {
-      expect(liste).not.toContain('image/svg+xml');
-      expect(liste).not.toContain('image/gif');
-    }
+describe('les types de visuel acceptés', () => {
+  it('🔴 ni SVG ni GIF : ce fichier part chez un tiers sous l’identité du client', () => {
+    // Un SVG est un document exécutable : l'écran ne doit pas le promettre, et le serveur le refuse.
+    expect([...TYPES_VISUEL_PUB]).not.toContain('image/svg+xml');
+    expect([...TYPES_VISUEL_PUB]).not.toContain('image/gif');
   });
 });
 
 /**
- * LES BORNES DE L'ÂGE, DES DEUX CÔTÉS (migration 0187). Celles de la vidéo sont partagées
- * (`web/lib/partage/pub-video.ts`) et n'ont plus de copie à comparer.
+ * LES BOUTONS D'UNE PUBLICITÉ : la liste FERMÉE est partagée (écrite comme une hypothèse que l'essai réel tranche),
+ * l'écran y ajoute les libellés que Meta affiche.
  */
-describe('parité des bornes de l’âge', () => {
-  it('les mêmes bornes d’âge qu’Advantage+ impose', () => {
-    expect([AGE_MIN_BAS, AGE_MIN_HAUT, AGE_MAX]).toEqual([AGE_MIN_ADVANTAGE_BAS, AGE_MIN_ADVANTAGE_HAUT, AGE_MAX_ADVANTAGE]);
-  });
-});
-
-/**
- * LES BOUTONS D'UNE PUBLICITÉ, DES DEUX CÔTÉS.
- *
- * 🔴 La liste FERMÉE vit au serveur (`BOUTONS_PUB`, écrite comme une hypothèse que l'essai réel tranche) ; l'écran en
- * porte une copie avec les libellés. Un type que l'écran propose et que le serveur refuse ferait un 400 sur un choix
- * offert ; un type que le serveur accepte et que l'écran ne propose pas serait un choix mort.
- */
-describe('parité des boutons de la publicité', () => {
-  it('🔴 les MÊMES types, dans le MÊME ordre, et le même défaut', () => {
-    expect(BOUTONS_ECRAN.map((b) => b.type)).toEqual([...BOUTONS_SERVEUR]);
-    expect(BOUTON_DEFAUT_ECRAN).toBe(BOUTON_DEFAUT_SERVEUR);
-  });
-
+describe('les boutons de la publicité', () => {
   it('chaque type a un libellé dans les deux langues, et les libellés retenus le 2026-09-28', () => {
-    for (const b of BOUTONS_ECRAN) {
-      expect(b.fr.trim(), b.type).not.toBe('');
-      expect(b.en.trim(), b.type).not.toBe('');
+    for (const b of BOUTONS_PUB) {
+      expect(libelleBouton(b).fr.trim(), b).not.toBe('');
+      expect(libelleBouton(b).en.trim(), b).not.toBe('');
     }
     expect(libelleBouton('WHATSAPP_MESSAGE').fr).toBe('Envoyer un message WhatsApp');
     expect(libelleBouton('GET_QUOTE').fr).toBe('Obtenir un devis');

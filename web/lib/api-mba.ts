@@ -130,10 +130,6 @@ export interface PlafondMba { unite: UniteBudget; fenetre: FenetreBudget; max: n
  */
 export interface EtatPlafondMba { plafond: PlafondMba | null; autres: number; entreprise?: string | null }
 
-/** Prix publics de Meta pour une ESTIMATION (doc « non-template messages ») ; la facture fait foi. */
-export const PRIX_JETONS_USD_PAR_MILLION = 2;
-export const PRIX_REPONSE_USD = { min: 0.04, max: 0.05 } as const;
-
 /** Le serveur résout lui-même le compte WhatsApp et son Business Manager : aucun numéro ici. 409 sans compte relié. */
 export function getPlafondMba(tenantId: string): Promise<EtatPlafondMba> {
   return request<EtatPlafondMba>(`/tenants/${tenantId}/mba-budget`);

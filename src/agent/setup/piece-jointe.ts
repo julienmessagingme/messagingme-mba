@@ -23,10 +23,8 @@ export interface PieceJointeReconnue {
   mime: string;
 }
 
-/** Plafonds, les nôtres : les octets traversent notre API, l'extraction tourne dans le process, et une
- *  image part chez un fournisseur qui la facture. */
-export const TAILLE_DOCUMENT_MAX = 8 * 1024 * 1024;
-export const TAILLE_IMAGE_MAX = 5 * 1024 * 1024;
+/** Les plafonds de poids, partagés avec l'écran qui refuse avant de téléverser. */
+export { TAILLE_DOCUMENT_MAX, TAILLE_IMAGE_MAX } from '../../../web/lib/partage/piece-jointe';
 
 /** Sous ce seuil, un morceau n'a qu'un titre et une bribe : du bruit pour la recherche. Même seuil que le
  *  découpage d'une page web. */

@@ -3,7 +3,8 @@
 import { useT } from '@/lib/i18n';
 import { PhoneFrame } from '@/components/PhoneFrame';
 import type { ReponsePrevue } from '@/lib/apercu-reponse';
-import { libelleBouton, BOUTON_PUB_DEFAUT, type BoutonPub } from '@/lib/api-pubs';
+import { libelleBouton } from '@/lib/api-pubs';
+import { BOUTON_PUB_DEFAUT, type BoutonPub } from '@/lib/partage/publicite';
 
 /**
  * L'état du TROISIÈME écran : ce que le prospect recevra en réponse.

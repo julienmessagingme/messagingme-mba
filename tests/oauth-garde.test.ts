@@ -9,7 +9,7 @@ import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { AccesOauthLookup, AccesOauthResolu } from '../src/oauth/store.pg';
 import type { ApiUsageGuard, DemandeUsage } from '../src/api/usage-guard';
 import type { MbaRelaisDeps } from '../src/http/mba-relais';
-import { DROIT_RELAIS } from '../src/mba/cle-relais';
+import { DROIT_RELAIS } from '../web/lib/partage/droits-api';
 import { FakeQueue } from './fake-queue';
 import { cleApiDeTest } from './aide/cle-api';
 import { plafondsDeTest } from './aide/plafonds';

@@ -1,4 +1,7 @@
-export type UserFieldType = 'text' | 'number' | 'date' | 'datetime' | 'boolean' | 'url';
+import type { UserFieldKind } from '../../web/lib/partage/champs';
+
+/** Les types d'un champ perso, partagés avec la console. */
+export type UserFieldType = UserFieldKind;
 
 export interface UserFieldDef {
   key: string;

@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Guard } from './middleware';
 import type { EtatMfa, MfaStore } from './mfa-store.pg';
 import { RateLimiter } from './rate-limit';
+import { MESSAGE_CODE_INVALIDE } from '../../web/lib/partage/textes-serveur';
 import { verifyPassword } from './password';
 import { verifyMfa, verifyEnrolement, type EtapeConnexion, type MoyenFacteur } from './token';
 import {
@@ -39,8 +40,6 @@ export interface OptionsSuite { ttlChoix?: string; facteur?: MoyenFacteur }
  */
 export type SuiteDeConnexion = (etape: EtapeConnexion, options?: OptionsSuite) => Promise<Record<string, unknown>>;
 
-/** 🔴 Un seul message pour un code faux, rejoué ou hors fenêtre : les distinguer dirait lequel a été juste. */
-export const MESSAGE_CODE_INVALIDE = 'Code invalide ou expiré.';
 const MESSAGE_ETAPE_EXPIREE = 'Cette étape a expiré, reconnectez-vous.';
 const MESSAGE_TROP = 'Trop de tentatives, réessayez dans une minute.';
 const MESSAGE_INDISPONIBLE = 'Double authentification indisponible.';

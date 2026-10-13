@@ -4,7 +4,7 @@ import { accesOps, ADRESSE_OPS } from './acces-ops';
 import { FakeQueue } from './fake-queue';
 import { sha256Hex } from '../src/lib/signature';
 import { config } from '../src/config';
-import { DROIT_RELAIS } from '../src/mba/cle-relais';
+import { DROIT_RELAIS } from '../web/lib/partage/droits-api';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { PlafondApiStore, ReglagePlafondApi } from '../src/auth/plafond-espace';
 import type { MbaRelaisDeps } from '../src/http/mba-relais';

@@ -5,7 +5,8 @@ import { useT } from '@/lib/i18n';
 import { cardCls } from '@/lib/ui';
 import { MbaNotice } from './MbaNotice';
 import { fileToDataUrl } from '@/lib/image';
-import { MBA_FILE_ACCEPT, MBA_FILE_MAX_BYTES, mbaFileExtensionOk, mbaFileFormatConditionnel, mbaFileSizeOk } from '@/lib/mba-files';
+import { MBA_FILE_ACCEPT, mbaFileFormatConditionnel } from '@/lib/mba-files';
+import { MAX_FICHIER, extensionCoherente, tailleFichierOk } from '@/lib/partage/agent-meta';
 import { deleteMbaFile, listMbaFiles, uploadMbaFile, type MbaFile } from '@/lib/api-mba';
 import { BoutonConfirme } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
@@ -40,17 +41,17 @@ export function MbaFilesPanel({ tenantId, phoneNumberId }: { tenantId: string; p
   async function envoyer(f: File): Promise<void> {
     setErr('');
     // Refusé côté client : inutile de faire monter jusqu'à 27 Mo de base64 pour se faire jeter en 400.
-    if (!mbaFileExtensionOk(f.name, f.type)) {
+    if (!extensionCoherente(f.name, f.type)) {
       setErr(t(
         'Format non accepté par Meta, ou nom de fichier incohérent avec son contenu. Formats acceptés : PDF, Word, PNG, JPG, CSV, Excel.',
         'Format not accepted by Meta, or file name inconsistent with its content. Accepted: PDF, Word, PNG, JPG, CSV, Excel.',
       ));
       return;
     }
-    if (!mbaFileSizeOk(f.size)) {
+    if (!tailleFichierOk(f.size)) {
       setErr(t(
-        `Fichier trop lourd (maximum ${Math.round(MBA_FILE_MAX_BYTES / 1024 / 1024)} Mo).`,
-        `File too large (maximum ${Math.round(MBA_FILE_MAX_BYTES / 1024 / 1024)} MB).`,
+        `Fichier trop lourd (maximum ${Math.round(MAX_FICHIER / 1024 / 1024)} Mo).`,
+        `File too large (maximum ${Math.round(MAX_FICHIER / 1024 / 1024)} MB).`,
       ));
       return;
     }

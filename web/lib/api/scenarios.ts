@@ -9,6 +9,7 @@
  */
 
 import { request } from '../http';
+import type { WorkflowNodeType } from '../partage/blocs';
 
 // --- Flows (constructeur de formulaire RICHE : texte / image / champ) ---
 
@@ -129,13 +130,12 @@ export function refreshFlows(tenantId: string): Promise<FlowRefreshReport> {
 // contact. Action synchrone non bloquante, comme `tag` ou `action`.
 // `aller_a` : « Aller à » (RC5). `data.cible` = le code public (`nod_…`) d'un bloc de n'importe quel scenario de
 // l'espace, `data.cibleLibelle` = son nom tel que l'ecran l'a choisi (« Menu principal, Question 2 »). Aucune sortie.
-// ⚠️ CETTE LISTE EST UN MIROIR de `WORKFLOW_NODE_TYPES` (`src/workflow/graph.ts`), qui FAIT AUTORITE : un
-// type present d'un seul cote produit soit un bloc que le serveur refuse d'enregistrer, soit un bloc que
-// l'ecran ne sait pas rendre. `tests/web-node-types-parity.test.ts` casse des que les deux divergent.
+// La liste des types est partagée avec le serveur (`../partage/blocs`) : `NODE_META` est typé dessus.
+export type { WorkflowNodeType } from '../partage/blocs';
+
 /** Résultat d'un essai de « Fonction JS » : ce que le bac à sable a produit, ou la faute du client. */
 export interface EssaiJs { ok: boolean; valeur: string; erreur?: string }
 
-export type WorkflowNodeType = 'template' | 'quick_message' | 'inbox' | 'flow' | 'question' | 'tag' | 'field' | 'condition' | 'action' | 'wait' | 'mba_handoff' | 'mba_disable' | 'rcs_message' | 'email' | 'agent' | 'http' | 'js' | 'aller_a' | 'vers_mba';
 export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType;

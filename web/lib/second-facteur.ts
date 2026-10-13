@@ -1,21 +1,16 @@
 /**
  * LE SECOND FACTEUR, CÔTÉ CONSOLE : ce qui se calcule sans écran (plan `docs/superpowers/plans/2026-09-25-mfa-admins.md`).
  *
- * Module PUR, sans import : `lib/http.ts` le lit pour reconnaître un code refusé, et un import dans l'autre sens
- * ferait une boucle.
+ * Module PUR, qui n'importe que le dossier partagé : `lib/http.ts` le lit pour reconnaître un code refusé, et un
+ * import dans l'autre sens ferait une boucle.
  */
+import { MESSAGE_CODE_INVALIDE } from './partage/textes-serveur';
 
 /**
- * CE QUE LE SERVEUR ÉCRIT QUAND UN CODE EST REFUSÉ (`MESSAGE_CODE_INVALIDE`, `src/auth/mfa-routes.ts`).
- *
- * 🔴 C'EST LA SEULE CHOSE QUI DISTINGUE CE 401 D'UNE SESSION TOMBÉE : même statut, et le corps ne porte qu'un
- * texte. Sans elle, un code mal tapé sur la page Compte viderait la session et renverrait à la connexion. La
- * frontière de build interdit d'importer le serveur : la constante est recopiée, et
- * `tests/web-second-facteur-parite.test.ts` tient les deux égales.
+ * Le corps d'une réponse dit-il « code refusé » ? 🔴 C'EST LA SEULE CHOSE QUI DISTINGUE CE 401 D'UNE SESSION
+ * TOMBÉE : même statut, et le corps ne porte que le texte que le serveur écrit (`MESSAGE_CODE_INVALIDE`, partagé
+ * avec lui). Sans elle, un code mal tapé sur la page Compte viderait la session et renverrait à la connexion.
  */
-export const MESSAGE_CODE_INVALIDE = 'Code invalide ou expiré.';
-
-/** Le corps d'une réponse dit-il « code refusé » ? */
 export function estCorpsCodeRefuse(corps: unknown): boolean {
   return (corps as { error?: unknown } | null)?.error === MESSAGE_CODE_INVALIDE;
 }

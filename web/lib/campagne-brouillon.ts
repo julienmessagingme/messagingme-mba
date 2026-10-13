@@ -4,7 +4,7 @@ import { audienceInitiale } from './audience';
 import type { CanalPremier, FormuleCanal, TroisiemeNiveau } from './campagne-chaine';
 import { DEBIT_DEFAUT, debitBorne } from './campagne-chaine';
 import { filtresRepris } from './contact-filters';
-import type { RcsSuggestion } from './rcs-types';
+import type { RcsSuggestion } from './partage/rcs';
 import { carrouselDepuis, type CarrouselRcs } from './rcs-carrousel';
 import type { VarRow } from './variables-template';
 

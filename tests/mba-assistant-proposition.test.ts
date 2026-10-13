@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { estSuppression, MAX_QUAND, propositionMbaSchema, type Operation } from '../src/mba/assistant/proposition';
-import { DESCRIPTION_SKILL_MAX } from '../src/http/mba';
+import { DESCRIPTION_SKILL_MAX } from '../web/lib/partage/agent-meta';
 
 /**
  * LA FRONTIÈRE DE CE QUE L'ASSISTANT DU MBA PEUT PROPOSER.

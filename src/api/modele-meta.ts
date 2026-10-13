@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { isValidTemplateLanguage } from '../meta/languages';
+import { isValidTemplateLanguage } from '../../web/lib/partage/langues-modeles';
 import { isSendableButtonUrl } from '../../web/lib/partage/button-url';
 import type { CreateTemplateInput, TemplateButton } from '../meta/templates';
 

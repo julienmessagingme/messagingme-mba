@@ -149,7 +149,7 @@ export const REFUS_SCENARIOS_HORS_OFFRE = 'offre Free : les scénarios du client
 /**
  * Le motif d'une session d'agent IA close parce que l'agent a lancé un scénario (RC4). Écrit dans
  * `agent_sessions.sortie`, mais PAS un handle du bloc : aucune arête ne part par lui, d'où sa place ici et non dans
- * `src/agent/sorties.ts`.
+ * `web/lib/partage/sorties-agent.ts`.
  */
 export const MOTIF_SCENARIO_LANCE = 'scenario_lance';
 

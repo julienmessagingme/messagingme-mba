@@ -1,7 +1,7 @@
 /**
  * La clé que Meta présente au relais : une clé d'API de l'espace, droit `mba:relais`, nommée « Agent de Meta ».
  *
- * 🔴 Ce droit n'est pas attribuable depuis l'écran (`VALID_API_SCOPES` ne le contient pas) : son porteur peut
+ * 🔴 Ce droit n'est pas attribuable depuis l'écran (`API_SCOPES` ne le contient pas) : son porteur peut
  * appeler les outils de l'espace au nom de n'importe quel contact. Seule la publication en crée une.
  * Meta ne rend jamais la clé et nous n'en gardons que l'empreinte (`tenant_settings.mba_relais_cle_id`) ; Meta
  * exige `auth_config` à chaque écriture du connecteur, donc toute écriture pose une clé neuve.
@@ -11,9 +11,9 @@
  */
 import type { AuditSink } from '../audit/journal';
 import { messageDe } from '../lib/erreur';
+import { DROIT_RELAIS } from '../../web/lib/partage/droits-api';
 
 export const NOM_CLE_RELAIS = 'Agent de Meta';
-export const DROIT_RELAIS = 'mba:relais';
 
 export interface DepsCleRelais {
   /** Crée une clé d'API de l'espace, droit `mba:relais`. La valeur claire n'existe qu'ici, une fois. */

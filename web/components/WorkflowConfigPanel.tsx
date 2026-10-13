@@ -3,7 +3,8 @@
 import type { TemplateSummary, FlowSummary, TagCount, UserFieldDef, EmailAccount, EmailTemplate, RcsMessage, WorkflowNodeType } from '@/lib/api';
 import type { AgentResume } from '@/lib/api-agent';
 import { useT } from '@/lib/i18n';
-import { MAX_DESTINATAIRES_EMAIL, nodeMetaOf } from '@/lib/nodeMeta';
+import { nodeMetaOf } from '@/lib/nodeMeta';
+import { MAX_DESTINATAIRES_EMAIL } from '@/lib/partage/blocs';
 import { emailResolvableFields } from '@/lib/fields';
 import { carouselOutputs } from '@/lib/carousel-outputs';
 import { versBrouillonRcs, maxTexteRcs, MAX_BOUTONS_CARTE, MAX_BOUTONS_RCS } from '@/lib/rcs';
@@ -20,40 +21,7 @@ import { essayerFonctionJs, type EssaiJs } from '@/lib/api';
 import { useState } from 'react';
 import { Bouton } from '@/components/Bouton';
 import { Icone } from '@/components/Icone';
-
-/**
- * LA SOURCE « MAINTENANT ». ⚠️ C'est la clé QUE LE DÉPÔT EMPLOIE DÉJÀ (`sel === 'now'` dans
- * `web/lib/variables-template.ts`, `{ type: 'now' }` dans `src/crm/template.ts`), pas une nouvelle : en
- * créer une seconde sous un autre nom donnerait deux notions pour la même chose. Miroir de
- * `CHAMP_MAINTENANT` (`src/workflow/fonction-js.ts`), le front et l'API étant deux projets séparés.
- */
-const CHAMP_MAINTENANT = 'now';
-
-/**
- * Le nom que portera le paramètre de la fonction, ou `null` quand la clé ne peut pas en être un.
- *
- * ⚠️ MIROIR de `nomDeParametreSur` (`src/workflow/fonction-js.ts`), et la règle doit rester la MÊME des
- * deux côtés : l'écran annoncerait sinon un nom que le moteur n'injecte pas. Une clé de champ comme
- * « mail pro » ou « class » est valide côté contact et illégale comme paramètre JavaScript.
- */
-function nomParametreJs(cle: string | undefined): string | null {
-  /**
-   * 🔴 `now` N EST PAS UNE EXCEPTION, ET L EN FAIRE UNE FAISAIT MENTIR L ECRAN. Cette copie ecartait
-   * `CHAMP_MAINTENANT`, alors que le moteur (`nomDeParametreSur`) l accepte : il injecte donc bien un
-   * parametre `now` que cet ecran annoncait comme inexistant. Le front envoie d ailleurs `champSource`
-   * BRUT a la route d essai, donc l essai et la production etaient d accord entre eux, et seul l affichage
-   * etait faux. Un ecran qui promet MOINS que le moteur n est pas inoffensif : il fait ecrire `valeur` a
-   * quelqu un qui aurait ecrit `now`, et surtout il rend cette copie non miroir de son original.
-   */
-  if (!cle || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(cle)) return null;
-  const RESERVES = new Set(['valeur', 'arguments', 'await', 'break', 'case', 'catch', 'class', 'const',
-    'continue', 'debugger', 'default', 'delete', 'do', 'else', 'enum', 'eval', 'export', 'extends', 'false',
-    'finally', 'for', 'function', 'if', 'implements', 'import', 'in', 'instanceof', 'interface', 'let',
-    'new', 'null', 'package', 'private', 'protected', 'public', 'return', 'static', 'super', 'switch',
-    'this', 'throw', 'true', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield']);
-  return RESERVES.has(cle) ? null : cle;
-}
-
+import { CHAMP_MAINTENANT, nomDeParametreSur } from '@/lib/partage/fonction-js';
 
 /**
  * Le panneau de DROITE : la configuration du bloc sélectionné, un cas par nature de bloc.
@@ -1171,7 +1139,7 @@ function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch, 
         noms, donc les blocs déjà écrits avec `valeur` continuent de marcher.
       */}
       <div className="font-mono text-xs leading-tight text-ink-500">
-        function ({nomParametreJs(champSource) ?? 'valeur'}) {'{'}
+        function ({nomDeParametreSur(champSource) ?? 'valeur'}) {'{'}
       </div>
       {/* ⚠️ LE RETRAIT EST SUR L'ENVELOPPE, PAS SUR LE CHAMP. `ml-3` posé sur un élément déjà en `w-full`
           S'AJOUTE à sa largeur (une marge n'entre jamais dans le calcul de `width`, quel que soit le
@@ -1195,10 +1163,10 @@ function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch, 
       <div className="font-mono text-xs leading-tight text-ink-500">{'}'}</div>
       <p className="text-xs text-ink-500">
         {t('Écrivez seulement l’intérieur : la valeur du champ arrive dans', 'Write only the inside: the field value comes in as')}
-        {' '}<code>{nomParametreJs(champSource) ?? 'valeur'}</code>
+        {' '}<code>{nomDeParametreSur(champSource) ?? 'valeur'}</code>
         {/* ⚠️ On NOMME les deux : un bloc écrit avant aujourd'hui emploie `valeur`, et il continue de
             marcher. Le taire ferait croire qu'il faut tout réécrire. */}
-        {nomParametreJs(champSource) && <>{' '}({t('ou', 'or')} <code>valeur</code>)</>}
+        {nomDeParametreSur(champSource) && <>{' '}({t('ou', 'or')} <code>valeur</code>)</>}
         , {t('et il faut', 'and you must')} <code>return</code> {t('le résultat.', 'the result.')}
       </p>
 

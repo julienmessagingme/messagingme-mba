@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { buildServer, CORPS_OPAQUE_5XX } from '../src/server';
+import { buildServer } from '../src/server';
+import { CORPS_OPAQUE_5XX } from '../web/lib/partage/textes-serveur';
 import { FakeQueue } from './fake-queue';
 import { GardeUsageMemoire } from './aide/usage';
 import { sha256Hex } from '../src/lib/signature';
@@ -16,8 +17,8 @@ import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
  * Un programme qui intègre l'API se branche sur `code`, jamais sur la phrase. Quatre réponses en sortaient sans : le
  * refus de Meta relancé jusqu'au gestionnaire commun, la panne, les refus de forme de Fastify (type de contenu sans
  * analyseur, corps trop gros), et la route inconnue. Elles le portent désormais, SUR `/v1` SEULEMENT : les routes de la
- * console gardent `{ error }` seul (leur écran lit la phrase, et le texte opaque des 5xx est tenu par
- * `tests/corps-opaque-parite.test.ts`). Une erreur de Meta est classée comme partout (`src/api/refus-meta.ts`).
+ * console gardent `{ error }` seul (leur écran lit la phrase, et reconnaît le texte opaque des 5xx, partagé avec le
+ * serveur). Une erreur de Meta est classée comme partout (`src/api/refus-meta.ts`).
  */
 
 class Cles implements ApiKeyLookup {

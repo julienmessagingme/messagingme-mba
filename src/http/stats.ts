@@ -16,15 +16,14 @@ import type { ConversationAnalysisSummary, AnalyzedConversationRow, AnalyzedConv
 import { espaceVerifie, estUuid } from './scope';
 import type { NodeEventCount } from '../workflow/node-events.pg';
 import type { CompteurClic } from '../links/mesures';
-import { INTENTS as INTENTS_ANALYSE } from '../analysis/schema';
+import { ACTIONS as ACTIONS_ANALYSE, INTENTS as INTENTS_ANALYSE, SENTIMENTS as SENTIMENTS_ANALYSE } from '../analysis/schema';
 
 // Valeurs d'enum admises pour les filtres de la liste quali : on ne passe au store que des valeurs valides (pas
-// d'injection de filtre), NULL = « pas de filtre ». Les intentions dérivent du schéma de l'analyse (une copie en
-// dur ignorerait des valeurs et rendrait tout sous un filtre affiché) ; sentiments et actions restent des
-// miroirs de `src/analysis/schema.ts`.
-const SENTIMENTS = new Set(['positif', 'neutre', 'negatif']);
+// d'injection de filtre), NULL = « pas de filtre ». Toutes dérivent du schéma de l'analyse : une copie en dur
+// ignorerait des valeurs et rendrait tout sous un filtre affiché.
+const SENTIMENTS = new Set<string>(SENTIMENTS_ANALYSE);
 const INTENTS = new Set<string>(INTENTS_ANALYSE);
-const ACTIONS = new Set(['creer_devis', 'rappeler', 'relancer', 'escalader', 'aucune']);
+const ACTIONS = new Set<string>(ACTIONS_ANALYSE);
 const inSet = (s: Set<string>, v: unknown): string | undefined => (typeof v === 'string' && s.has(v) ? v : undefined);
 
 /**

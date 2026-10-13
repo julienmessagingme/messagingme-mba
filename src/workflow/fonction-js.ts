@@ -1,4 +1,5 @@
 import { getQuickJS } from 'quickjs-emscripten';
+import { nomDeParametreSur } from '../../web/lib/partage/fonction-js';
 
 /**
  * Exécuter du JavaScript écrit par un client, sur notre infrastructure.
@@ -46,33 +47,6 @@ function enTexte(v: unknown): string {
  * Ne lève jamais : faute de frappe, exception, dépassement de temps ressortent en `{ok: false, erreur}`. Un
  * parcours ne s'arrête pas parce qu'une transformation a raté, et l'écran de mise au point veut le message.
  */
-/**
- * La source « maintenant ». `now` est la clé déjà utilisée ailleurs (`ParamSource` dans `src/crm/template.ts`,
- * le sélecteur de variables `web/lib/variables-template.ts`) : pas de seconde notion sous un autre nom.
- *
- * La mise en forme diffère exprès : `formatNow` rend « 12/04/2026 » pour un message, que `new Date` ne relit
- * pas ; le bloc JS reçoit l'ISO UTC, la seule forme qu'un script relit sans ambiguïté.
- *
- * Un champ personnalisé nommé « now » serait masqué par celui-ci : le système gagne.
- */
-export const CHAMP_MAINTENANT = 'now';
-
-/**
- * Un nom de paramètre JavaScript sûr, ou `null`. Le nom vient d'une clé de champ créée par le client
- * (« mail pro », « date-naissance », « class ») : l'injecter tel quel produirait une erreur de syntaxe sur un
- * code pourtant correct.
- */
-export function nomDeParametreSur(cle: string | undefined): string | null {
-  if (!cle || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(cle)) return null;
-  // Les mots réservés, plus `valeur` qui est déjà pris : un doublon de paramètre est une erreur de syntaxe.
-  const RESERVES = new Set(['valeur', 'arguments', 'await', 'break', 'case', 'catch', 'class', 'const',
-    'continue', 'debugger', 'default', 'delete', 'do', 'else', 'enum', 'eval', 'export', 'extends', 'false',
-    'finally', 'for', 'function', 'if', 'implements', 'import', 'in', 'instanceof', 'interface', 'let',
-    'new', 'null', 'package', 'private', 'protected', 'public', 'return', 'static', 'super', 'switch',
-    'this', 'throw', 'true', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield']);
-  return RESERVES.has(cle) ? null : cle;
-}
-
 export async function executerFonctionJs(
   code: string,
   valeur: string,

@@ -6,7 +6,7 @@ import type { ClesFiche, ModeCreation, ResolutionFiche } from '../src/api/fiche'
 import { GardeUsageMemoire } from './aide/usage';
 import type { PreHandler } from '../src/auth/middleware';
 import type { OrigineMessage } from '../src/inbox/origine';
-import { RCS_TEXTE_MAX } from '../src/rcs/schema';
+import { RCS_TEXTE_MAX } from '../web/lib/partage/rcs';
 
 /**
  * `POST /v1/messages/rcs` (spec 2026-09-24, § 4). La route ne décide que de la FICHE (la trouver, un numéro,

@@ -1,6 +1,6 @@
 import type { WorkflowEdge, WorkflowGraph } from '../workflow/graph';
 import type { SortieAgent } from '../agent/agent-store';
-import { SORTIE_HUMAIN, SORTIE_TIMEOUT } from '../agent/sorties';
+import { SORTIE_HUMAIN, SORTIE_TIMEOUT } from '../../web/lib/partage/sorties-agent';
 
 /**
  * LE GRAPHE DU RÉPONDEUR (lot 5, spec `docs/superpowers/specs/2026-10-04-repondeur-par-defaut-design.md`, § 4).

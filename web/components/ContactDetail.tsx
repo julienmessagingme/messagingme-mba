@@ -191,7 +191,7 @@ export function ContactDetail({
   const defByKey = new Map(userFields.map((d) => [d.key, d]));
   // Les champs SOCLE ont leur ligne DÉDIÉE dans le bloc fixe ci-dessus (toujours visible, même vide) : les
   // exclure d'ici, sinon ils s'afficheraient deux fois dès qu'ils sont remplis, et seraient re-proposés à
-  // l'ajout alors qu'ils sont déjà là. Source unique : `SOCLE_CLES`, miroir de `SOCLE_FIELDS` côté serveur.
+  // l'ajout alors qu'ils sont déjà là. Source unique : `SOCLE_CLES`, dérivée de `SOCLE_FIELDS` (partagé avec le serveur).
   const fieldEntries = Object.entries(contact.fields ?? {}).filter(([k, v]) => !SOCLE_CLES.includes(k) && v != null && String(v).trim() !== '');
   const filledKeys = new Set([...fieldEntries.map(([k]) => k), ...SOCLE_CLES]);
   const addable = userFields.filter((d) => !filledKeys.has(d.key));
@@ -285,7 +285,7 @@ export function ContactDetail({
    * Il y avait ici un contournement : créer le user field avant d'écrire, parce que la route répondait « champ
    * inconnu : prenom » sur un espace neuf. Il ne pouvait PAS marcher, et masquait pourquoi : la création d'un
    * champ dont la clé est celle d'un champ de base est refusée en 409, et le `catch` l'avalait en silence. Le
-   * serveur matérialise désormais le champ socle à la première écriture (cf. `src/crm/fields.ts` SOCLE_FIELDS).
+   * serveur matérialise désormais le champ socle à la première écriture (cf. `SOCLE_FIELDS`, `web/lib/partage/champs.ts`).
    */
   async function saveSocleField(key: string, value: string): Promise<boolean> {
     const v = value.trim();
@@ -630,7 +630,7 @@ export function ContactDetail({
         <EditableField value={contact.profileName ?? ''} busy={busy} onSave={(v) => apply({ profileName: v.trim() === '' ? null : v.trim() })} />
         <span className="text-ink-500">{t('Prénom', 'First name')}</span>
         <EditableField value={fieldValue(contact, 'prenom') ?? ''} type="text" busy={busy} onSave={(v) => saveSocleField('prenom', v)} onDelete={() => apply({ removeFields: ['prenom'] })} />
-        {/* Email : champ SOCLE au même titre que Prénom (cf. `SOCLE_FIELDS`, src/crm/fields.ts), donc TOUJOURS
+        {/* Email : champ SOCLE au même titre que Prénom (cf. `SOCLE_FIELDS`, web/lib/partage/champs.ts), donc TOUJOURS
             présent sur la fiche, même vide. Il n'apparaissait qu'une fois rempli, et il n'était même pas
             proposé à l'ajout : la liste des champs ajoutables vient de `user_fields`, où un champ socle
             n'existe pas tant que personne ne l'a écrit. Un contact sans email était donc impossible à

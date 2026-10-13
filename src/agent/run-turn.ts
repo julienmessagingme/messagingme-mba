@@ -4,7 +4,7 @@ import { TourInterrompu } from './brain';
 import type { FicheAgent } from './agent-store';
 import type { AgentSession, AgentSessionStatus, AgentSessionStore } from './session-store';
 import type { AgentTurnJob } from './turn-job';
-import { SORTIE_ECHEC, SORTIE_PLAFOND } from './sorties';
+import { SORTIE_ECHEC, SORTIE_PLAFOND } from '../../web/lib/partage/sorties-agent';
 import { restToState } from '../workflow/executor';
 import type { SendRefusal } from '../workflow/executor';
 import type { RunState } from '../workflow/run-store.pg';

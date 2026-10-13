@@ -1,14 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { ACTIONS, HANDLED_BY, SENTIMENTS } from '../src/analysis/schema';
+import { ACTIONS, HANDLED_BY, SENTIMENTS } from '../web/lib/partage/analyse';
 import * as console_ from '../web/lib/analyse';
 
 /**
  * LES CODES D'UNE ANALYSE CÔTÉ CONSOLE SONT CEUX DU SCHÉMA, ET CHACUN A SON LIBELLÉ (Tout sur la fiche, lot 1).
  *
- * La console n'importe jamais `src/` : `web/lib/analyse.ts` porte sa copie de `SENTIMENTS`, `ACTIONS` et
- * `HANDLED_BY`. Une valeur ajoutée au schéma sans libellé s'afficherait en code brut sur la fiche. Il vit à la
+ * Les codes sont partagés (`web/lib/partage/analyse.ts`), leurs libellés vivent dans `web/lib/analyse.ts`. Une valeur
+ * ajoutée sans libellé s'afficherait en code brut sur la fiche. Il vit à la
  * RACINE : seul `ci.yml` tourne sur un changement de `src/`, et c'est là que la liste change.
  */
 const RACINE = resolve(__dirname, '..');
@@ -17,12 +17,6 @@ const fr = (f: string): string => f;
 const en = (f: string, e?: string): string => e ?? f;
 
 describe('les codes d’une analyse : la console connaît ceux du schéma', () => {
-  it('🔴 les trois listes de la console sont celles du schéma, dans le même ordre', () => {
-    expect([...console_.SENTIMENTS]).toEqual([...SENTIMENTS]);
-    expect([...console_.ACTIONS]).toEqual([...ACTIONS]);
-    expect([...console_.TRAITE_PAR]).toEqual([...HANDLED_BY]);
-  });
-
   it('🔴 chaque valeur a un libellé français ET anglais, jamais sa clé brute', () => {
     const paires: Array<[readonly string[], (v: string, t: typeof en) => string]> = [
       [SENTIMENTS, console_.sentimentLabel], [ACTIONS, console_.actionLabel], [HANDLED_BY, console_.traiteParLabel],

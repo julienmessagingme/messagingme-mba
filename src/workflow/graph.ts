@@ -2,7 +2,11 @@
  * Modèle du graphe d'un workflow (bot builder). Pur : parsing, validation, sanitisation, aucune IO.
  * Un workflow = des blocs (nodes) reliés par des arêtes (edges) ; l'exécuteur interprète `data` selon le type.
  */
+import { WORKFLOW_NODE_TYPES, type WorkflowNodeType } from '../../web/lib/partage/blocs';
 
+export type { WorkflowNodeType } from '../../web/lib/partage/blocs';
+
+// Les types de bloc (`WORKFLOW_NODE_TYPES`) sont partagés avec la console. Ce que chacun fait ici :
 // `action` = bloc unifié (tag, champ) via `data.actionKind` ; `tag`/`field` restent lus pour les scénarios
 // existants, la palette ne crée plus que `action`.
 // `inbox` = « Assigner à un agent » : le scénario s'arrête et la conversation passe à un humain (« À traiter »).
@@ -28,8 +32,6 @@
 // répondeur, et répond tout de suite au dernier message du client ; éteint, la conversation va à l'équipe. Aucune
 // sortie. 🔴 Un type NEUF, et pas `mba_handoff` réveillé : des scénarios publiés en contiennent peut-être encore, et
 // leur comportement (passe-plat) changerait en silence.
-export const WORKFLOW_NODE_TYPES = ['template', 'quick_message', 'inbox', 'flow', 'question', 'tag', 'field', 'condition', 'action', 'wait', 'mba_handoff', 'mba_disable', 'rcs_message', 'email', 'agent', 'http', 'js', 'aller_a', 'vers_mba'] as const;
-export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number];
 export function isWorkflowNodeType(t: unknown): t is WorkflowNodeType {
   return typeof t === 'string' && (WORKFLOW_NODE_TYPES as readonly string[]).includes(t);
 }

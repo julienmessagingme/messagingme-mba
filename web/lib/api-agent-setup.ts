@@ -220,16 +220,6 @@ export async function lireEntretien(
   return request(`/tenants/${tenantId}/agents/${agentId}/setup`);
 }
 
-/**
- * Plafonds de poids d'une pièce jointe, en octets.
- *
- * ⚠️ Ils DOUBLENT ceux de `src/agent/setup/piece-jointe.ts`, et `tests/web-piece-jointe-parity.test.ts` casse
- * s'ils divergent. L'écran doit annoncer le même chiffre que celui sur lequel le serveur refuse : sinon on
- * promet 20 Mo et on rend un 413 que personne ne comprend.
- */
-export const TAILLE_DOCUMENT_MAX = 8 * 1024 * 1024;
-export const TAILLE_IMAGE_MAX = 5 * 1024 * 1024;
-
 /** Ce que le serveur a fait d'une pièce jointe. */
 export interface PieceJointeImportee {
   fiches: number;

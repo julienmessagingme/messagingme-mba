@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { zipSync, strToU8 } from 'fflate';
-import { reconnaitre, extraireTexte, texteEnFiches, TAILLE_DOCUMENT_MAX } from '../src/agent/setup/piece-jointe';
+import { reconnaitre, extraireTexte, texteEnFiches, TAILLE_DOCUMENT_MAX, TAILLE_IMAGE_MAX } from '../src/agent/setup/piece-jointe';
 import { MAX_CORPS, MAX_FICHES_PAR_PAGE, MAX_TITRE } from '../src/agent/scrape';
 import { CORPS_MAX, chercherConnaissance } from '../src/agent/resolvers/connaissance';
 
@@ -171,6 +171,10 @@ describe('découpage en fiches', () => {
 
   it('le plafond de poids est exporté, pour que la route et l’écran annoncent le MÊME chiffre', () => {
     expect(TAILLE_DOCUMENT_MAX).toBe(8 * 1024 * 1024);
+  });
+
+  it('une image est plus serrée qu’un document : elle part chez un fournisseur qui la facture', () => {
+    expect(TAILLE_IMAGE_MAX).toBeLessThan(TAILLE_DOCUMENT_MAX);
   });
 });
 

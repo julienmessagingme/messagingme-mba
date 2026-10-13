@@ -5,7 +5,7 @@ import { Logo } from '@/components/Logo';
 import { LocaleToggle } from '@/components/LocaleToggle';
 import { useT } from '@/lib/i18n';
 import { TitrePage } from '@/components/TitrePage';
-import type { EtapeGuideSalesforce } from '@/lib/salesforce';
+import type { EtapeGuide } from '@/lib/partage/salesforce';
 
 /**
  * LE GUIDE DE CONNEXION SALESFORCE (plan 2026-09-26, lot L1). Page PUBLIQUE, sans session, sur le modèle de
@@ -21,7 +21,7 @@ import type { EtapeGuideSalesforce } from '@/lib/salesforce';
 export default function TutoSalesforcePage() {
   const t = useT();
 
-  const steps: Array<{ id: EtapeGuideSalesforce; title: string; body: string; sub?: string[] }> = [
+  const steps: Array<{ id: EtapeGuide; title: string; body: string; sub?: string[] }> = [
     {
       id: 'package',
       title: t('Installer le package Messaging Me', 'Install the Messaging Me package'),

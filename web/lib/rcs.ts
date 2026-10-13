@@ -1,4 +1,4 @@
-import type { RcsOutbound, RcsSuggestion } from './rcs-types';
+import { RCS_TEXTE_MAX, type RcsOutbound, type RcsSuggestion } from './partage/rcs';
 import { boutonPret } from './rcs-boutons';
 
 /**
@@ -22,7 +22,7 @@ export interface BrouillonRcs {
 
 export const MAX_BOUTONS_RCS = 11;
 /** Bornes de l'API smsmode. Un texte de carte est plus court qu'un texte nu : c'est leur champ, pas un choix. */
-export const MAX_TEXTE_RCS = 3072;
+export const MAX_TEXTE_RCS = RCS_TEXTE_MAX;
 export const MAX_TEXTE_RCS_AVEC_IMAGE = 2000;
 
 /** Plafond applicable au texte selon qu'il y a un visuel ou non. */

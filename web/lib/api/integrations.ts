@@ -10,11 +10,13 @@
 
 import { request } from '../http';
 import type { UserFieldKind } from '../field-kinds';
+import type { ApiScope } from '../partage/droits-api';
+import type { AutomationTriggerKind as TypeDeDeclencheur } from '../partage/automations';
 
 // --- Clés d'API (surface publique /v1) ---
 
-/** Droits reconnus. La parité avec `VALID_API_SCOPES` (`src/http/api-keys.ts`) est tenue par `tests/api-droits-parite.test.ts`. */
-export const API_SCOPES = ['contacts:write', 'contacts:read', 'sends:create', 'mcp:read', 'mcp:write', 'conversations:read', 'templates:write', 'webhooks:write', 'contacts:admin'] as const;
+// Droits reconnus, plafond de clés actives et droit du relais : partagés avec le serveur.
+export { API_SCOPES, MAX_CLES_API_ACTIVES, DROIT_RELAIS, type ApiScope } from '../partage/droits-api';
 /**
  * Ce qui est COCHÉ D'AVANCE à la création d'une clé.
  *
@@ -22,19 +24,7 @@ export const API_SCOPES = ['contacts:write', 'contacts:read', 'sends:create', 'm
  * que deux droits ; laisser ce geste tel quel aurait donné à toute clé neuve le droit d'ENVOYER des
  * WhatsApp au nom du client, sans que personne ne l'ait décidé. Ouvrir MCP doit rester une case qu'on coche.
  */
-export const API_SCOPES_PAR_DEFAUT = ['contacts:write', 'sends:create'] as const;
-export type ApiScope = (typeof API_SCOPES)[number];
-/**
- * Au plus dix clés actives par espace, la clé du relais de l'agent de Meta mise à part. Le serveur refuse la
- * onzième en 409 ; l'écran le dit avant. Parité avec `MAX_CLES_API_ACTIVES` (`src/http/api-keys.ts`) tenue par
- * `tests/api-droits-parite.test.ts`.
- */
-export const MAX_CLES_API_ACTIVES = 10;
-/**
- * Le droit de la clé que la publication pose chez Meta (`src/mba/cle-relais.ts`) : absent d'`API_SCOPES`, il n'est
- * attribuable par personne, et cette clé ne compte pas dans le plafond. Parité tenue par `tests/api-droits-parite.test.ts`.
- */
-export const DROIT_RELAIS = 'mba:relais';
+export const API_SCOPES_PAR_DEFAUT = ['contacts:write', 'sends:create'] as const satisfies readonly ApiScope[];
 
 export interface ApiKeyRow {
   id: string;
@@ -95,7 +85,7 @@ export function debrancherIntegrationBatch(tenantId: string): Promise<EtatIntegr
   return request<EtatIntegrationBatch>(`/tenants/${tenantId}/integrations/batch`, { method: 'DELETE' });
 }
 
-// Types de champ perso : source runtime `USER_FIELD_KINDS` + type dérivé, dans `./field-kinds` (module PUR).
+// Types de champ perso : `USER_FIELD_KINDS` et son type, partagés avec le serveur (`../partage/champs`).
 // Ré-exportés ici pour ne pas casser les imports existants (`import { UserFieldKind } from '@/lib/api'`).
 export { USER_FIELD_KINDS } from '../field-kinds';
 export type { UserFieldKind } from '../field-kinds';
@@ -249,25 +239,14 @@ export function deconnecterNumero(tenantId: string): Promise<{
 // --- Automations (Lot E : déclencher un scénario sur un événement) ---
 
 /**
- * Types de déclencheur proposés à la création. Miroir de `AUTOMATION_TRIGGER_KINDS` serveur, MOINS `webhook`.
- *
- * ⚠️ `webhook` est absent VOLONTAIREMENT : ces automations sont possédées par leur webhook entrant, l'écran
- * Automation ne les liste pas et la route refuse d'en créer (migration 0074). L'ajouter ici offrirait dans le
- * menu un type que le serveur rejette en 400.
+ * Types de déclencheur que l'écran manipule : ceux du serveur (partagés), MOINS `webhook`. ⚠️ `webhook` est absent
+ * VOLONTAIREMENT : ces automations sont possédées par leur webhook entrant, l'écran Automation ne les liste pas et la
+ * route refuse d'en créer (migration 0074).
  */
-export const TYPES_DECLENCHEUR = [
-  'keyword', 'new_contact', 'tag_added', 'conversation_analyzed', 'hubspot_deal_stage', 'avant_date', 'ctwa_ad', 'risque_eleve',
-  'analyse_devient',
-] as const;
-export type AutomationTriggerKind = (typeof TYPES_DECLENCHEUR)[number];
+export type AutomationTriggerKind = Exclude<TypeDeDeclencheur, 'webhook'>;
 
-/**
- * Les opérateurs qu'acceptent les deux déclencheurs nés d'une analyse. Miroirs de `OPERATEURS_DEVIENT` et
- * `OPERATEURS_CONVERSATION_ANALYSEE` (`src/automation/match.ts`), tenus par `tests/web-automations-parite.test.ts` :
- * proposer un opérateur que la route refuse ferait échouer la création en 400.
- */
-export const OPERATEURS_DEVIENT = ['in', 'gte', 'lte', 'is_true', 'is_false'] as const;
-export const OPERATEURS_CONVERSATION_ANALYSEE = ['in', 'gte', 'lte', 'is_true', 'is_false', 'empty', 'not_empty'] as const;
+/** Les opérateurs qu'acceptent les deux déclencheurs nés d'une analyse, partagés avec la route qui les valide. */
+export { OPERATEURS_CONVERSATION_ANALYSEE, OPERATEURS_DEVIENT } from '../partage/automations';
 
 export interface Automation {
   id: string;

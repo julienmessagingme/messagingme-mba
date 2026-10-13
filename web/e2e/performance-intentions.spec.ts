@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { INTENTIONS } from '../lib/intentions';
+import { INTENTS } from '../lib/partage/analyse';
 
 /**
  * LA COLONNE DE DROITE DE LA SYNTHESE : les intentions, leurs sujets, et le chemin vers l ecran d analyse.
@@ -66,7 +66,7 @@ test.describe('Performance Lab : les intentions et leurs sujets', () => {
     await mock(page);
     await page.goto('/performance');
     await expect(page.getByTestId('carte-intentions')).toBeVisible();
-    for (const i of INTENTIONS) {
+    for (const i of INTENTS) {
       await expect(page.getByTestId(`intention-${i}`)).toBeVisible();
     }
   });

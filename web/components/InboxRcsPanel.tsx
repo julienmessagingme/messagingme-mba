@@ -8,7 +8,7 @@ import { RcsPreview } from '@/components/RcsPreview';
 import { RcsCarouselPreview } from '@/components/RcsCarouselPreview';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
-import { RCS_TEXTE_MAX } from '@/lib/rcs-limits';
+import { RCS_TEXTE_MAX } from '@/lib/partage/rcs';
 import { Bouton } from '@/components/Bouton';
 import { Modale } from '@/components/Modale';
 

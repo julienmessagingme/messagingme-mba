@@ -5,7 +5,7 @@ import { RateLimiter } from '../src/auth/rate-limit';
 import {
   PlafondEspace, ReglagesPlafondEnCache, SANS_REGLAGE, PLAFOND_API_DEFAUT, type ReglagePlafondApi,
 } from '../src/auth/plafond-espace';
-import { DROIT_RELAIS } from '../src/mba/cle-relais';
+import { DROIT_RELAIS } from '../web/lib/partage/droits-api';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';

@@ -11,7 +11,7 @@ import type { ContactRow } from '../src/crm/contact-store.pg';
 import type { AnalyseDeFiche } from '../src/analysis/fiche';
 import { OUTILS } from '../src/mcp/outils';
 import * as catalogue from '../src/mcp/outils';
-import { VALID_API_SCOPES } from '../src/http/api-keys';
+import { API_SCOPES } from '../web/lib/partage/droits-api';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE, NumeroSuspenduError, MESSAGE_NUMERO_SUSPENDU } from '../src/meta/numero-delie';
 import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpMessagesInertes, mcpOffreInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
@@ -622,10 +622,10 @@ describe('serveur MCP : cohérence du catalogue', () => {
   });
 
   it('🔴 chaque scope d’outil est un scope de clé RÉELLEMENT attribuable', () => {
-    // Un outil rattaché à un scope absent de `VALID_API_SCOPES` serait invisible pour toujours : aucune
+    // Un outil rattaché à un scope absent d'`API_SCOPES` serait invisible pour toujours : aucune
     // clé ne pourrait le porter, et rien ne le signalerait.
     for (const o of OUTILS) {
-      expect(VALID_API_SCOPES as readonly string[], `outil « ${o.nom} »`).toContain(o.scope);
+      expect(API_SCOPES as readonly string[], `outil « ${o.nom} »`).toContain(o.scope);
     }
   });
 

@@ -17,7 +17,7 @@ import { resizeToDataUrl, fileToDataUrl } from '@/lib/image';
 import { isSendableButtonUrl } from '@/lib/partage/button-url';
 import { useLocale, useT } from '@/lib/i18n';
 import { categorieTemplate } from '@/lib/format';
-import { META_TEMPLATE_LANGUAGES } from '@/lib/languages';
+import { META_TEMPLATE_LANGUAGES } from '@/lib/partage/langues-modeles';
 import { inputCls } from '@/lib/ui';
 import { ListeManques } from '@/components/ListeManques';
 import { Field } from '@/components/Field';

@@ -1,5 +1,6 @@
 import type { WorkflowNodeType } from './api';
 import type { NomIcone } from './icones';
+import { SORTIE_ECHEC, SORTIE_HUMAIN, SORTIE_PLAFOND, SORTIE_SANS_SOURCE, SORTIE_TIMEOUT } from './partage/sorties-agent';
 
 // Métadonnées d'affichage des types de node (blocs). Les libellés portent les DEUX langues ([fr, en]) :
 // c'est une constante module (useT inappelable ici), résolue au rendu via t(...meta.label). Partagé par
@@ -76,12 +77,6 @@ export const HTTP_GATE_TITRE: [string, string] = [
   'Available once you declare a call in Tools > API connectors',
 ];
 
-/** Nombre maximal de destinataires d'un bloc « Envoi de mail ». ⚠️ MIROIR de MAX_DESTINATAIRES_EMAIL
- *  (src/workflow/engine.ts), qui fait AUTORITÉ : c'est lui qui tronque, le bouton « + » n'est qu'un confort.
- *  La valeur est recopiée plutôt qu'importée pour ne pas tirer du code serveur dans le bundle client ;
- *  `tests/web-email-recipients-parity.test.ts` casse dès que les deux divergent. */
-export const MAX_DESTINATAIRES_EMAIL = 3;
-
 // Infobulles des deux blocs GATÉS, définies ICI parce qu'elles sont affichées à DEUX endroits : la palette et
 // le menu qui s'ouvre quand on tire un fil. Les recopier d'un côté à l'autre est exactement la faute qui a
 // rendu ces deux blocs inatteignables au fil (la palette a été mise à jour, le menu oublié).
@@ -102,22 +97,21 @@ export const AGENT_GATE_TITRE: [string, string] = [
  * Les sorties que la PLATEFORME pose elle-même sur un bloc agent, toujours présentes, par opposition aux
  * règles d'arrêt que le client déclare sur la fiche de son agent.
  *
- * ⚠️ MIROIR de `src/agent/sorties.ts` et du handle `timeout` du bloc Question. Les codes sont recopiés
- * plutôt qu'importés pour ne pas tirer du code serveur dans le bundle client, comme
- * `MAX_DESTINATAIRES_EMAIL` ci-dessus ; `tests/web-agent-sorties-parity.test.ts` casse dès qu'ils divergent.
+ * Les codes sont partagés avec le tour qui les emprunte (`./partage/sorties-agent`) : une sortie dessinée sous un
+ * autre nom ne correspondrait à aucune arête.
  *
  * `timeout` n'a PAS de préfixe `sortie:`, et c'est voulu : c'est le même handle que le bloc Question, pour
  * qu'il n'y ait qu'un seul vocabulaire dans le builder.
  */
 export const AGENT_SORTIES_RESERVEES: Array<{ handle: string; icone: NomIcone; label: [string, string]; aide: [string, string] }> = [
   {
-    handle: 'timeout',
+    handle: SORTIE_TIMEOUT,
     icone: 'chrono',
     label: ['Pas de réponse', 'No reply'],
     aide: ['Le contact ne répond plus depuis le délai réglé sur la fiche', 'The contact has gone silent for the delay set on the agent'],
   },
   {
-    handle: 'sortie:sans_source',
+    handle: `sortie:${SORTIE_SANS_SOURCE}`,
     icone: 'connaissance',
     label: ['Aucune source', 'No source'],
     aide: [
@@ -126,7 +120,7 @@ export const AGENT_SORTIES_RESERVEES: Array<{ handle: string; icone: NomIcone; l
     ],
   },
   {
-    handle: 'sortie:humain',
+    handle: `sortie:${SORTIE_HUMAIN}`,
     icone: 'humain',
     label: ['Transfert à un humain', 'Handed to a human'],
     aide: [
@@ -135,7 +129,7 @@ export const AGENT_SORTIES_RESERVEES: Array<{ handle: string; icone: NomIcone; l
     ],
   },
   {
-    handle: 'sortie:plafond',
+    handle: `sortie:${SORTIE_PLAFOND}`,
     icone: 'refuse',
     label: ['Plafond atteint', 'Cap reached'],
     aide: ['Tours, appels d’outils ou budget épuisés', 'Turns, tool calls or budget exhausted'],
@@ -143,7 +137,7 @@ export const AGENT_SORTIES_RESERVEES: Array<{ handle: string; icone: NomIcone; l
   {
     // Pas de ⚠ ici : c'est déjà le glyphe de la pastille « ne mène nulle part », qui s'affiche sur la même
     // carte. Deux sens pour un même signe à trois lignes d'écart se lisent mal.
-    handle: 'sortie:echec',
+    handle: `sortie:${SORTIE_ECHEC}`,
     icone: 'echec',
     label: ['Échec technique', 'Technical failure'],
     aide: ['Le modèle ou un envoi a échoué : prévoir un repli', 'The model or a send failed: plan a fallback'],

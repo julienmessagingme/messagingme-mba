@@ -1,4 +1,5 @@
-import { PRIX_JETONS_USD_PAR_MILLION, PRIX_REPONSE_USD, type UniteBudget } from './api-mba';
+import type { UniteBudget } from './api-mba';
+import { PRIX_JETONS_USD_PAR_MILLION, PRIX_MESSAGE_AGENT_USD } from './partage/agent-meta';
 
 /**
  * CE QUE BORNE UN PLAFOND DE L'AGENT DE META, selon son unité. Module PUR.
@@ -28,5 +29,5 @@ export function estimationPlafond(unite: UniteBudget, max: number): EstimationPl
     const usd = (max / 1_000_000) * PRIX_JETONS_USD_PAR_MILLION;
     return { portee: 'business_manager', minUsd: usd, maxUsd: usd };
   }
-  return { portee: 'conversation', minUsd: max * PRIX_REPONSE_USD.min, maxUsd: max * PRIX_REPONSE_USD.max };
+  return { portee: 'conversation', minUsd: max * PRIX_MESSAGE_AGENT_USD.min, maxUsd: max * PRIX_MESSAGE_AGENT_USD.max };
 }

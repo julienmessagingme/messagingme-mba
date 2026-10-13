@@ -17,12 +17,13 @@
  * accolade qui vit à l'intérieur d'un texte (`"Bonjour {{prenom}}"`) est parfaitement légitime.
  */
 
-/** Le MÊME motif que le serveur (`VARIABLE` dans `src/agent/requete-http.ts`) et que l'éditeur de messages
- *  (`NAMED_VAR_RE`). Leur égalité est tenue par `tests/connecteur-pastilles-parite.test.ts`. */
-export const PASTILLE = /\{\{\s*([\w.-]+)\s*\}\}/g;
+import { MOTIF_PASTILLE } from './partage/pastille';
+
+/** Le motif partagé avec le serveur (`VARIABLE` dans `src/agent/requete-http.ts`) et l'éditeur de messages. */
+export const PASTILLE = new RegExp(MOTIF_PASTILLE, 'g');
 
 /** Version ancrée, pour lire le gabarit caractère par caractère sans recopier le motif. */
-const PASTILLE_ANCREE = /\{\{\s*([\w.-]+)\s*\}\}/y;
+const PASTILLE_ANCREE = new RegExp(MOTIF_PASTILLE, 'y');
 
 /** Tous les noms de pastilles d'un texte, sans doublon et dans l'ordre d'apparition. */
 export function pastillesDe(texte: string): string[] {

@@ -1,21 +1,9 @@
 /**
- * Règles de titre d'une compétence MBA.
- *
- * ⚠️ DUPLIQUÉ du serveur (`src/http/mba.ts`, `TITRE_SKILL_RE`), délibérément et sur le modèle de
- * `button-url.ts` : les deux builds ne partagent aucun module. La copie existe pour refuser une saisie
- * invalide sans aller-retour réseau, pas pour remplacer le contrôle serveur. `tests/web-mba-parity.test.ts`
- * casse dès que les deux définitions divergent.
+ * La mise en forme du titre d'une consigne (« skill ») de l'agent de Meta, côté console. La règle qu'il doit
+ * respecter et ses bornes sont partagées avec le serveur (`./partage/agent-meta` : `titreSkillValide`,
+ * `TITRE_SKILL_MAX`) ; ce module ramène une saisie libre vers elle, sans aller-retour réseau.
  */
-
-/** Minuscules, chiffres et tirets, sans tiret aux extrémités, 64 caractères au plus. */
-export const SKILL_TITLE_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-export const SKILL_TITLE_MAX = 64;
-export const SKILL_DESCRIPTION_MAX = 1024;
-export const SKILL_BODY_MAX = 20000;
-
-export function isValidSkillTitle(title: string): boolean {
-  return title.length > 0 && title.length <= SKILL_TITLE_MAX && SKILL_TITLE_RE.test(title);
-}
+import { TITRE_SKILL_MAX } from './partage/agent-meta';
 
 /** Accents retirés, minuscules, séparateurs réduits à un tiret unique, tirets de tête retirés, longueur bornée. */
 function base(raw: string): string {
@@ -25,7 +13,7 @@ function base(raw: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+/, '')
-    .slice(0, SKILL_TITLE_MAX);
+    .slice(0, TITRE_SKILL_MAX);
 }
 
 /**

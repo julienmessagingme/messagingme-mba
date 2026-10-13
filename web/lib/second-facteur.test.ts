@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { MESSAGE_CODE_INVALIDE, estCorpsCodeRefuse, grouperCle, texteCodesSecours } from './second-facteur';
+import { estCorpsCodeRefuse, grouperCle, texteCodesSecours } from './second-facteur';
+import { MESSAGE_CODE_INVALIDE } from './partage/textes-serveur';
 import { ApiError, request } from './http';
 import { ACTIONS_JOURNAL } from './journal';
 

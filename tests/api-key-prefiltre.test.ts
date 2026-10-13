@@ -4,7 +4,7 @@ import { makeRequireApiKey } from '../src/auth/api-key';
 import { RateLimiter } from '../src/auth/rate-limit';
 import { sha256Hex } from '../src/lib/signature';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
-import { DROIT_RELAIS } from '../src/mba/cle-relais';
+import { DROIT_RELAIS } from '../web/lib/partage/droits-api';
 import { plafondsDeTest } from './aide/plafonds';
 import { aucunJetonOauth } from './aide/cle-api';
 import { schema } from '../src/config';

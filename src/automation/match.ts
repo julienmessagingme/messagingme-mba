@@ -2,6 +2,9 @@ import type { ConditionGroup } from '../workflow/conditions';
 import type { AnalyseDeFiche } from '../analysis/fiche';
 import { estCleFiltrable, evaluerFiltreFiche, lireFiltreFiche, type FiltreFiche } from '../crm/filtre-fiche';
 import type { TypeDeLancementAutomatisme } from '../workflow/lancements';
+import {
+  AUTOMATION_TRIGGER_KINDS, OPERATEURS_CONVERSATION_ANALYSEE, OPERATEURS_DEVIENT, type AutomationTriggerKind,
+} from '../../web/lib/partage/automations';
 
 /**
  * Décide si un événement déclenche une automation, plus le garde-fou anti-rebond. Module pur, testable sans
@@ -9,7 +12,8 @@ import type { TypeDeLancementAutomatisme } from '../workflow/lancements';
  */
 
 /**
- * Types de déclencheur livrés, liste fermée : une valeur inconnue en base ne déclenche jamais rien.
+ * Types de déclencheur livrés (`AUTOMATION_TRIGGER_KINDS`, partagés avec l'écran), liste fermée : une valeur inconnue
+ * en base ne déclenche jamais rien. Ce que chacun écoute :
  *
  * - `tag_added` passe par la file `automation-event` (seuls les chemins unitaires émettent, voir
  *   `event-job.ts`).
@@ -26,8 +30,9 @@ import type { TypeDeLancementAutomatisme } from '../workflow/lancements';
  *   négatif, l'urgence passe à 7 ou plus). Constaté à l'écriture de la copie sur la fiche, ancienne et nouvelle
  *   valeurs dans la même transaction, jamais par un balayage : un événement par analyse d'un contact.
  */
-export const AUTOMATION_TRIGGER_KINDS = ['keyword', 'new_contact', 'tag_added', 'conversation_analyzed', 'hubspot_deal_stage', 'webhook', 'avant_date', 'ctwa_ad', 'risque_eleve', 'analyse_devient'] as const;
-export type AutomationTriggerKind = (typeof AUTOMATION_TRIGGER_KINDS)[number];
+export {
+  AUTOMATION_TRIGGER_KINDS, OPERATEURS_CONVERSATION_ANALYSEE, OPERATEURS_DEVIENT, type AutomationTriggerKind,
+} from '../../web/lib/partage/automations';
 export function isAutomationTriggerKind(v: unknown): v is AutomationTriggerKind {
   return typeof v === 'string' && (AUTOMATION_TRIGGER_KINDS as readonly string[]).includes(v);
 }
@@ -145,14 +150,6 @@ export type AutomationEvent =
   | { kind: 'avant_date'; waId: string; automationId: string; valeur: string }
   /** Le contact vient de passer en risque de désengagement élevé (balayage de nuit). */
   | { kind: 'risque_eleve'; waId: string };
-
-/**
- * Les opérateurs d'un « devient » : ceux des filtres de contacts, moins ceux qui ne décrivent pas un changement
- * (« vide », « renseigné », « analysée depuis moins de N jours »).
- */
-export const OPERATEURS_DEVIENT = ['in', 'gte', 'lte', 'is_true', 'is_false'] as const;
-/** Les opérateurs des filtres de « conversation analysée » : tous, moins l'ancienneté, l'analyse ayant lieu maintenant. */
-export const OPERATEURS_CONVERSATION_ANALYSEE = ['in', 'gte', 'lte', 'is_true', 'is_false', 'empty', 'not_empty'] as const;
 
 /**
  * Un filtre de dernière analyse écrit dans une config (`{cle, op, valeur}`), relu par la règle des filtres de

@@ -3,7 +3,7 @@ import { walk, entryNode, nextNode, nextNodeByHandle, nextNodeSansHandle, waitMo
 import type { WalkStep } from './engine';
 import type { WorkflowAction, WalkRest, WorkflowButton, SendEmailAction, QuestionRow, LienBouton } from './engine';
 import type { WorkflowGraph, WorkflowNode, WorkflowNodeType } from './graph';
-import { CHAMP_MAINTENANT } from './fonction-js';
+import { CHAMP_MAINTENANT } from '../../web/lib/partage/fonction-js';
 import { renderText } from '../crm/render';
 import { besoinsDesClauses, clausesDuBloc, type BesoinsContexte, type EvalContext } from './conditions';
 import type { RunState, WorkflowRunRow, RunChannel, RunStatus } from './run-store.pg';
@@ -15,7 +15,7 @@ import { aDesLiensTracables } from '../links/rcs-liens';
 import type { AgentSessionStatus, AgentSessionStore } from '../agent/session-store';
 
 import { BAIL_AVANCE_S, renouvelerLeBail, type GardeDuTour } from './bail-avance';
-import { SORTIE_TIMEOUT } from '../agent/sorties';
+import { SORTIE_TIMEOUT } from '../../web/lib/partage/sorties-agent';
 import type { AgentTurnJob } from '../agent/turn-job';
 import { MOTIF_DESABONNE } from '../campaign/guardrails';
 import { messageDe, texteDe } from '../lib/erreur';

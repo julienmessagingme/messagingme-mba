@@ -793,8 +793,8 @@ connecteur chez Meta, `EngageMe`, dont l'adresse est `PUBLIC_API_URL` + `/mba/re
 - **Seules les variables `modele` sont déclarées chez Meta** et lues dans le corps (`lireValeursModele`, Zod) ;
   les autres viennent du mini-CRM, dans `creerAppelConnecteur`, avec la lecture `entier` (réponse complète,
   bornée) et le journal sous l'appelant `mba`. Un échec métier rend 200 `{ succes: false, erreur }`.
-- **La clé « Agent de Meta »** est une clé d'API de l'espace au droit `mba:relais`, absent de
-  `VALID_API_SCOPES` : aucun écran ne l'attribue. `tenant_settings.mba_relais_cle_id` retient celle qui est
+- **La clé « Agent de Meta »** est une clé d'API de l'espace au droit `mba:relais`, absent d'`API_SCOPES`
+  (`web/lib/partage/droits-api.ts`) : aucun écran ne l'attribue. `tenant_settings.mba_relais_cle_id` retient celle qui est
   chez Meta (Meta ne rend jamais un secret) ; toute écriture du connecteur pose une clé NEUVE dans l'ordre
   de `src/mba/cle-relais.ts` (créer, écrire chez Meta, retenir après l'accusé, révoquer TOUTE autre clé
   `mba:relais` de l'espace ; après un échec, plus aucune n'est retenue, donc la publication suivante en
@@ -2934,7 +2934,7 @@ outil qui reçoit les signaux (la table de son adaptateur, dans `src/signaux/`),
 de réinitialisation (`auth_tokens`), les secrets de webhook entrant, les codes de secours du second facteur
 (`mfa_codes_secours`, sha256), les jetons et codes OAuth (`oauth_autorisations`, `oauth_codes`, sha256).
 
-**Au plus dix clés d'API actives par espace** (`MAX_CLES_API_ACTIVES`, `src/http/api-keys.ts`) : la onzième
+**Au plus dix clés d'API actives par espace** (`MAX_CLES_API_ACTIVES`, `web/lib/partage/droits-api.ts`) : la onzième
 est refusée en 409, les révoquées ne comptent pas, la clé du relais de l'agent de Meta non plus. C'est une borne
 d'exposition (moins de secrets oubliés chez d'anciens intégrateurs), pas de débit : le plafond de l'API est
 déjà commun à toutes les clés de l'espace. 🔴 Le compte et l'insertion se font sous un verrou consultatif par
@@ -4098,10 +4098,18 @@ d'une conversation, les modes du répondeur et son mode effectif, les niveaux et
 parseur de durée de la vidéo publicitaire, le contrat des messages interactifs de l'agent de Meta
 (`messages-interactifs`), le contrat de l'onglet Outils de l'agent de Meta et le niveau de risque d'un outil
 (`outils-mba`, `risque-outil`), les faits mécaniques du catalogue MCP (`catalogue-mcp` : droit et personne requise de
-chaque outil) et le vocabulaire du journal d'audit avec ses libellés (`actions-journal`). 🔴 Pour ces valeurs (types,
-bornes, droits, libellés), le fichier est la SOURCE : ce manuel dit où elles vivent, il ne les recopie pas. Une copie
-qui reste ailleurs (une liste de libellés d'écran, une règle
-liée à la base ou à `zod`) garde son test de parité.
+chaque outil), le vocabulaire du journal d'audit avec ses libellés (`actions-journal`), et depuis le 2026-10-13 : le
+message RCS et sa borne de texte (`rcs`), les langues d'un modèle (`langues-modeles`), les types de champ, les champs
+de base et socle (`champs`), les textes que la console reconnaît dans une réponse (`textes-serveur` : corps opaque d'un
+5xx, refus d'un code de second facteur), les droits d'une clé d'API (`droits-api`), les types de bloc et le plafond de
+destinataires e-mail (`blocs`), les sorties du bloc agent et la règle du code d'une règle d'arrêt (`sorties-agent`), les
+fichiers, consignes et prix de l'agent de Meta (`agent-meta`), les plafonds de pièce jointe de l'assistant
+(`piece-jointe`), les déclencheurs d'automation et leurs opérateurs (`automations`), les étapes du guide Salesforce
+(`salesforce`), les bornes d'une publicité (`publicite`), les codes d'une analyse (`analyse`), le motif d'une pastille
+`{{nom}}` (`pastille`) et le nom de paramètre d'une Fonction JS (`fonction-js`). 🔴 Pour ces valeurs (types, bornes,
+droits, libellés), le fichier est la SOURCE : ce manuel dit où elles vivent, il ne les recopie pas. Une copie qui reste
+ailleurs (une liste de libellés d'écran, une règle liée à la base ou à `zod`, une logique qui entraînerait le serveur
+avec elle) garde son test de parité.
 
 ### Backend
 
@@ -4233,7 +4241,7 @@ liée à la base ou à `zod`) garde son test de parité.
 | `web/lib/api-champs.ts` | les tableaux de champs de chaque corps de requête, les cibles d'un envoi et les sources de `params`. 🔴 `tests/api-champs-parite.test.ts` les tient égaux aux schémas zod des routes, dans les deux sens : clés, obligation dérivée du schéma, type, valeurs d'énumération, clés refusées, et sort d'une clé inconnue. `params` est éprouvé par `validateParamMapping`. ⚠️ Aucun code d'erreur dans ses textes : un code se cite par `<Code>` |
 | `web/lib/api-doc-endpoints.ts` | l'index des douze endpoints, source unique de l'index de l'Accueil de la doc, du « Sur cette page », de l'en-tête de chaque route et du tableau des droits. 🔴 `tests/api-doc-endpoints.test.ts` monte l'entrée `v1` du registre du serveur et compare méthodes, chemins et droits dans les deux sens |
 | `web/components/doc-api/` | `CadreDoc` : le cadre de chaque page de doc ; il décide console ou public une fois pour toutes, porte la navigation et suit l'ancre après le rendu. `elements.tsx` : titre, route avec badge de méthode, bloc avec Copier, encadrés, lien typé vers une ancre déclarée, et `ADRESSE_API`, dérivée de `BASE`, définie ici seulement ; `Route` prend la clé d'un endpoint ; `Champs`, `Erreurs` et `Refus` lisent le statut d'un code dans la table (`statutDe`), jamais écrit à la main |
-| `web/lib/intentions.ts` | 🔴 la SEULE copie des intentions d'une conversation analysée côté console : la liste, l'ordre d'affichage (fixe, `autre` en dernier) et les libellés, pour la carte du Performance Lab ET l'Analyse des conversations. Miroir de `INTENTS` (`src/analysis/schema.ts`), tenu par `tests/intentions-parite.test.ts` (à la racine : seul `ci.yml` tourne quand `src/` change). Une intention absente d'une API plus ancienne vaut zéro (`comptesParIntention`) |
+| `web/lib/intentions.ts` | 🔴 les libellés des intentions d'une conversation analysée, et leurs comptes dans l'ordre d'affichage (fixe, `autre` en dernier), pour la carte du Performance Lab ET l'Analyse des conversations. La liste est `INTENTS`, partagée avec le serveur (`web/lib/partage/analyse.ts`) ; un libellé par valeur est exigé par `tests/intentions-parite.test.ts` (à la racine : seul `ci.yml` tourne quand `src/` change). Une intention absente d'une API plus ancienne vaut zéro (`comptesParIntention`) |
 | `web/lib/erreurs-livraison.ts` | l'ORIGINE d'une ligne du journal des erreurs de livraison, en mots (canal et provenance d'un message libre non délivré), et l'export CSV de ce journal : les mêmes mots à l'écran et dans l'export |
 | `web/lib/chemin-json.ts` | le miroir de `src/webhook-entrant/chemin.ts` : mêmes chemins d'or dans les deux jeux de tests |
 | `web/lib/contact-filters.ts` | les filtres du mini-CRM, miroir du parse serveur |
@@ -4251,9 +4259,10 @@ liée à la base ou à `zod`) garde son test de parité.
 | `src/agent/devise.ts` | LES DEUX SENS de la conversion dollars/micro-euros : le coût d'un appel, et le plafond d'une clé du Gateway |
 | `src/agent/llm/cles-gateway.ts` | les deux appels Vercel du provisionnement, qui n'ont ni le même hôte ni la même authentification |
 
-⚠️ **Un miroir front/serveur n'est pas une copie tolérée, c'est un contrat gardé par un test de parité.** La
-frontière de build interdit de partager un module ; le test compare les DEUX implémentations sur une table de
-cas qui doit contenir une valeur INCONNUE.
+⚠️ **Une règle PURE ne se recopie plus de part et d'autre de la frontière : elle va dans `web/lib/partage/`.** Un
+miroir front/serveur qui reste (règle liée à `zod` ou à la base, logique qui entraînerait le serveur) n'est pas une
+copie tolérée, c'est un contrat gardé par un test de parité, qui compare les DEUX implémentations sur une table de
+cas contenant une valeur INCONNUE.
 
 ⚠️ **Un DTO recopié de part et d'autre de cette frontière** (`ConsommationAgent`, `ModeleProposable`) est la
 convention du dépôt pour une forme simple. Renommer un champ d'un seul côté ne casse aucun compilateur, ça

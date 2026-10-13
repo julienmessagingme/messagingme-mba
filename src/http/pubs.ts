@@ -3,10 +3,8 @@ import { z } from 'zod';
 import { forbidNonAdmin, gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
 import { espaceVerifie } from './scope';
 import { sansPrefixeAct, type ActifsAccordes, type EtatComptePub } from '../meta/pubs';
-import {
-  TAILLE_VISUEL_PUB_MAX, TYPES_VISUEL_PUB,
-  type DepotVideo, type EtatVideo, type ListeAudiencesPub,
-} from '../meta/pubs-creation';
+import { type DepotVideo, type EtatVideo, type ListeAudiencesPub } from '../meta/pubs-creation';
+import { TAILLE_VISUEL_PUB_MAX, TYPES_VISUEL_PUB } from '../../web/lib/partage/publicite';
 import {
   AGE_MAX_ADVANTAGE, AGE_MIN_ADVANTAGE_BAS, AGE_MIN_ADVANTAGE_HAUT, BOUTON_PUB_DEFAUT, BOUTONS_PUB,
 } from '../meta/pubs-payloads';

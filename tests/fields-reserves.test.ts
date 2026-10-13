@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { isReservedFieldLabel, SYSTEM_FIELD_KEYS } from '../src/crm/fields';
+import { SYSTEM_FIELD_LABELS } from '../web/lib/partage/champs';
 
 /**
  * Un champ perso ne doit pas pouvoir porter le libellé d'un champ de BASE.
@@ -53,6 +54,12 @@ describe('libellés réservés aux champs de base', () => {
     }
   });
 
-  // Le test ANTI-DÉRIVE (les libellés du serveur couvrent ceux que le front affiche) vit dans
-  // `tests/web-system-field-labels-parity.test.ts`, à côté des autres `web-*-parity`.
+  it('🔴 chaque libellé de base affiché par la console est réservé, dans les DEUX langues', () => {
+    // Les libellés sont partagés (`web/lib/partage/champs.ts`) : la console les affiche, le serveur refuse qu'un
+    // champ perso porte l'un d'eux, sinon il fabriquerait un doublon indiscernable.
+    for (const [cle, [fr, en]] of Object.entries(SYSTEM_FIELD_LABELS)) {
+      expect(isReservedFieldLabel(fr), `${cle} : « ${fr} »`).toBe(true);
+      expect(isReservedFieldLabel(en), `${cle} : « ${en} »`).toBe(true);
+    }
+  });
 });

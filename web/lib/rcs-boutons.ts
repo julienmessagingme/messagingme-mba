@@ -1,4 +1,4 @@
-import type { RcsSuggestion } from './rcs-types';
+import type { RcsSuggestion } from './partage/rcs';
 import type { NomIcone } from './icones';
 
 /**

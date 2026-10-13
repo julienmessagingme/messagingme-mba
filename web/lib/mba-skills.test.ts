@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { isValidSkillTitle, slugSkillTitle, slugSkillTitleFrappe, SKILL_TITLE_MAX } from './mba-skills';
+import { slugSkillTitle, slugSkillTitleFrappe } from './mba-skills';
+import { TITRE_SKILL_MAX, titreSkillValide } from './partage/agent-meta';
 
 describe('slugSkillTitleFrappe : la mise en forme pendant la frappe', () => {
   it('🔴 conserve le séparateur entre deux frappes, sinon les mots se collent', () => {
@@ -35,23 +36,23 @@ describe('slugSkillTitle', () => {
     expect(slugSkillTitle('-abc-')).toBe('abc');
     // Une saisie longue est coupée à la limite : la coupe ne doit pas laisser un tiret final, qui serait
     // refusé par le serveur alors que l'écran vient d'écrire ce texte lui-même.
-    const long = slugSkillTitle(`${'a'.repeat(SKILL_TITLE_MAX - 1)} suite`);
-    expect(long.length).toBeLessThanOrEqual(SKILL_TITLE_MAX);
+    const long = slugSkillTitle(`${'a'.repeat(TITRE_SKILL_MAX - 1)} suite`);
+    expect(long.length).toBeLessThanOrEqual(TITRE_SKILL_MAX);
     expect(long.endsWith('-')).toBe(false);
   });
 });
 
-describe('isValidSkillTitle', () => {
+describe('titreSkillValide', () => {
   it('accepte le format de Meta et refuse le reste', () => {
-    expect(isValidSkillTitle('politique-de-retour')).toBe(true);
-    expect(isValidSkillTitle('Politique')).toBe(false);
-    expect(isValidSkillTitle('avec espace')).toBe(false);
-    expect(isValidSkillTitle('avec_underscore')).toBe(false);
-    expect(isValidSkillTitle('')).toBe(false);
+    expect(titreSkillValide('politique-de-retour')).toBe(true);
+    expect(titreSkillValide('Politique')).toBe(false);
+    expect(titreSkillValide('avec espace')).toBe(false);
+    expect(titreSkillValide('avec_underscore')).toBe(false);
+    expect(titreSkillValide('')).toBe(false);
   });
 
   it('refuse au-delà de la longueur maximale', () => {
-    expect(isValidSkillTitle('a'.repeat(SKILL_TITLE_MAX))).toBe(true);
-    expect(isValidSkillTitle('a'.repeat(SKILL_TITLE_MAX + 1))).toBe(false);
+    expect(titreSkillValide('a'.repeat(TITRE_SKILL_MAX))).toBe(true);
+    expect(titreSkillValide('a'.repeat(TITRE_SKILL_MAX + 1))).toBe(false);
   });
 });

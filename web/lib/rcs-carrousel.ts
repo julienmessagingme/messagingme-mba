@@ -1,4 +1,4 @@
-import type { RcsCard, RcsOutbound, RcsSuggestion } from './rcs-types';
+import type { RcsCard, RcsOutbound, RcsSuggestion } from './partage/rcs';
 import { boutonPret } from './rcs-boutons';
 import { MAX_BOUTONS_CARTE, MAX_TEXTE_RCS_AVEC_IMAGE } from './rcs';
 

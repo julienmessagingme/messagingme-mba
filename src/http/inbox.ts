@@ -3,7 +3,7 @@ import type { Guard, PreHandler } from '../auth/middleware';
 import type { ConversationSummary, ConversationMessage, ListConversationsOptions, CompteursInbox } from '../inbox/store.pg';
 import type { OutboundCarouselCard } from '../meta/template-components';
 import { espaceVerifie, nonEmpty, estUuid } from './scope';
-import { RCS_TEXTE_MAX } from '../rcs/schema';
+import { RCS_TEXTE_MAX } from '../../web/lib/partage/rcs';
 import { peutEcrire, peutAffecter, peutPrendre } from '../inbox/assignment';
 import { gardeEtendue } from '../auth/middleware';
 import { cacheCourt } from '../lib/cache-court';

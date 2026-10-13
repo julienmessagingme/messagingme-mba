@@ -1,7 +1,7 @@
 import { creerUnModele, refusDesChamps, type TemplateRouteDeps } from '../http/templates';
 import { MetaApiError } from '../meta/errors';
 import { MediaUploadError } from '../meta/media';
-import { isValidTemplateLanguage } from '../meta/languages';
+import { isValidTemplateLanguage } from '../../web/lib/partage/langues-modeles';
 import type { CodeApi } from './erreurs';
 import { classerErreurMeta } from './refus-meta';
 import { versModeleConsole, type ModeleMeta } from './modele-meta';

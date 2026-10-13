@@ -2,6 +2,7 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { useT } from '@/lib/i18n';
+import { MOTIF_PASTILLE } from '@/lib/partage/pastille';
 
 /** API impérative : insérer du texte (emoji) ou une variable (chip `{{n}}`) au curseur. */
 export interface VariableBodyEditorHandle {
@@ -33,8 +34,8 @@ interface Props {
 
 /** Positions Meta `{{1}}`, `{{2}}`… Défaut historique. */
 const VAR_RE = /\{\{\s*(\d+)\s*\}\}/g;
-/** Variables NOMMÉES `{{prenom}}` : celles d'un message RCS et d'un modèle d'email. */
-export const NAMED_VAR_RE = /\{\{\s*([\w.-]+)\s*\}\}/g;
+/** Variables NOMMÉES `{{prenom}}` : celles d'un message RCS et d'un modèle d'email (motif partagé avec le serveur). */
+export const NAMED_VAR_RE = new RegExp(MOTIF_PASTILLE, 'g');
 const CHIP_CLASS = 'mx-0.5 inline-flex items-center rounded-controle bg-brand-100 px-1.5 py-0.5 text-sm font-medium text-brand-700 align-baseline';
 
 function escapeHtml(s: string): string {

@@ -67,7 +67,7 @@ export interface DetailConversation {
     /** La fiche du mini-CRM, `null` quand la conversation n'y est rattachée à aucune (ou à une fiche supprimée). */
     contactId: string | null;
     waId: string;
-    /** Les champs système `name`, `prenom`, `phone`, `email` (`SYSTEM_FIELD_KEYS`, `src/crm/fields.ts`). */
+    /** Les champs système `name`, `prenom`, `phone`, `email` (`SYSTEM_FIELD_KEYS`, `./champs`). */
     nom: string | null;
     prenom: string | null;
     telephone: string | null;

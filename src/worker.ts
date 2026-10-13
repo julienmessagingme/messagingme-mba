@@ -21,7 +21,7 @@ import { runCampaignScheduleSweep } from './campaign/schedule-sweep';
 import { runCampaignRepriseSweep } from './campaign/reprise-sweep';
 import { runWorkflowWakeSweep } from './workflow/wake-sweep';
 import { runTourBloqueSweep } from './agent/tour-bloque-sweep';
-import { SORTIE_ECHEC } from './agent/sorties';
+import { SORTIE_ECHEC } from '../web/lib/partage/sorties-agent';
 import { runRetrySweep } from './campaign/retry-sweep';
 import { fenetreDeRattrapageOuverte } from './lib/heures-ouvrees';
 import { creerNoteurJoignabilite } from './contacts/joignabilite.pg';

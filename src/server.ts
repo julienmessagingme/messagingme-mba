@@ -80,7 +80,7 @@ import { registerMcp } from './http/mcp';
 import { registerOauth, type OauthRouteDeps } from './http/oauth';
 import { registerOauthConsentement, type OauthConsentementRouteDeps } from './http/oauth-consentement';
 import { registerMbaRelais, type MbaRelaisDeps } from './http/mba-relais';
-import { DROIT_RELAIS } from './mba/cle-relais';
+import { DROIT_RELAIS } from '../web/lib/partage/droits-api';
 import type { CablageMcp } from './mcp/outils';
 import { registerHubspotImport } from './http/hubspot-import';
 import { registerHubspotPipelines } from './http/hubspot-pipelines';
@@ -171,6 +171,7 @@ import { memoireDesPleines, type CompteurDebit } from './db/debit';
 import { CompteurDebitMemoire } from './db/debit.memoire';
 import { MESSAGE_OPERATIONS_LOURDES, PlafondPartage } from './auth/plafond-partage';
 import { journaliser } from './lib/journal';
+import { CORPS_OPAQUE_5XX } from '../web/lib/partage/textes-serveur';
 
 export interface ServerDeps {
   /**
@@ -839,7 +840,7 @@ export function modulesDeRoutes(
       if (v1.mcp) registerMcp(app, { ...v1.mcp, couteux: g.plafondCouteux }, [requireApiKey], usageApi, baseOauthApi);
       // Le relais du Meta Business Agent : le même `requireApiKey`, qui reconnaît sa clé à son droit et la
       // compte par clé, hors du plafond de l'espace. Ce droit, seule la publication l'attribue (`DROIT_RELAIS`,
-      // absent de `VALID_API_SCOPES`) : la même constante que celle qui crée la clé, un littéral recopié ici
+      // absent d'`API_SCOPES`) : la même constante que celle qui crée la clé, un littéral recopié ici
       // enverrait tous les appels en 403 le jour où l'un des deux change.
       if (v1.mbaRelais) registerMbaRelais(app, v1.mbaRelais, [requireApiKey, requireScope(DROIT_RELAIS)]);
     }),
@@ -858,12 +859,6 @@ export function modulesDeRoutes(
     }),
   ];
 }
-
-/**
- * Le corps d'une réponse 5xx : opaque, rien de l'erreur interne n'en sort. Exporté pour
- * `tests/corps-opaque-parite.test.ts`, qui le tient égal à ce que la console reconnaît (`web/lib/http.ts`).
- */
-export const CORPS_OPAQUE_5XX = 'Internal Server Error';
 
 /** Une adresse de l'API publique : `/v1/...`, requête comprise (`req.url` porte la chaîne de requête). */
 function estAdresseV1(url: string): boolean {
@@ -994,7 +989,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
    *
    * 🔴 SOUS `/v1`, TOUTE ERREUR PORTE AUSSI UN `code` DE LA TABLE (lot 17) : un programme se branche sur `code`, jamais
    * sur la phrase, et ces réponses-là étaient les seules à n'en pas porter. Les routes de la console gardent `{ error }`
-   * seul : leur écran lit la phrase, et le texte opaque des 5xx est reconnu par elle (`tests/corps-opaque-parite.test.ts`).
+   * seul : leur écran lit la phrase, et reconnaît le texte opaque des 5xx (`CORPS_OPAQUE_5XX`, partagé avec elle).
    * `tests/v1-erreurs-code.test.ts` tient les deux sens.
    */
   app.setErrorHandler((err: FastifyError, req: FastifyRequest, reply: FastifyReply) => {
@@ -1044,7 +1039,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       journaliser('error', 'unhandled_route_error', { method: req.method, url: req.url, tenantId: req.auth?.tenantId ?? null, err });
     }
     // Ce texte a un lecteur : la console le reconnaît et le remplace par une phrase traduite
-    // (`OPAQUE_DU_SERVEUR`, `web/lib/http.ts`). Les deux se tiennent par `tests/corps-opaque-parite.test.ts`.
+    // (`CORPS_OPAQUE_5XX`, partagé avec elle).
     const error = code < 500 ? err.message : CORPS_OPAQUE_5XX;
     if (surV1 && code < 500 && code !== 429 && !String(err.code ?? '').startsWith('FST_ERR_')) {
       // Un 4xx qu'aucune route n'a nommé et qui ne vient pas de Fastify : il porte un code quand même (la règle de `/v1`),

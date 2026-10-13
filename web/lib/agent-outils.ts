@@ -5,7 +5,7 @@
  * (`^[a-z0-9_]{1,64}$`, charset commun à OpenAI et Gemini) et la route le rejoue en 400. Sans normalisation
  * côté navigateur, le client tape « Poser un tag », reçoit un refus technique sur un champ qu'il croyait bon,
  * et n'a aucun moyen de deviner l'alphabet attendu. On lui applique donc la règle SOUS SES YEUX, comme pour
- * les codes de règles d'arrêt (`web/lib/agent-sorties.ts`).
+ * les codes de règles d'arrêt (`web/lib/partage/sorties-agent.ts`).
  *
  * ⚠️ Ce n'est PAS la même règle que celle des codes de sortie : celle-là interdit le tiret bas aux extrémités
  * et s'arrête à 32 caractères, parce qu'un code de sortie devient un handle d'arête. Les mélanger ferait

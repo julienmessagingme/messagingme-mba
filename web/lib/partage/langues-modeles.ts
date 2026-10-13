@@ -1,17 +1,19 @@
 /**
- * Langues de template WhatsApp proposées dans le sélecteur (création de template).
- * Sous-ensemble utile des locales Meta « Supported languages » : marchés réellement visés par les clients MBA
- * en tête (fr / en / es / pt / de / it / nl / ar), puis les principales autres. Le `code` est le code Meta EXACT
- * (envoyé tel quel à l'API Graph) ; le `label` est l'autonyme (nom de la langue dans sa langue), lisible en FR comme en EN.
+ * Les langues d'un modèle WhatsApp : celles que la console propose à la création, et les seules que le serveur
+ * accepte (`isValidTemplateLanguage`). Sous-ensemble utile des locales Meta « Supported languages » : marchés
+ * réellement visés par les clients en tête (fr / en / es / pt / de / it / nl / ar), puis les principales autres.
+ * Le `code` est le code Meta EXACT (envoyé tel quel à l'API Graph) ; le `label` est l'autonyme (nom de la langue dans
+ * sa langue), lisible en français comme en anglais.
  *
- * ⚠️ GARDER SYNCHRONISÉ avec `src/meta/languages.ts` (TEMPLATE_LANGUAGE_CODES, whitelist serveur) : mêmes codes.
+ * Ne s'applique qu'à la création : à l'édition la langue est immuable, et d'anciens modèles ont pu être créés hors
+ * liste.
  */
 export interface TemplateLanguage {
   code: string;
   label: string;
 }
 
-export const META_TEMPLATE_LANGUAGES: TemplateLanguage[] = [
+export const META_TEMPLATE_LANGUAGES: readonly TemplateLanguage[] = [
   { code: 'fr', label: 'Français' },
   { code: 'en', label: 'English' },
   { code: 'en_US', label: 'English (US)' },
@@ -52,3 +54,7 @@ export const META_TEMPLATE_LANGUAGES: TemplateLanguage[] = [
   { code: 'zh_HK', label: '中文 (香港)' },
   { code: 'zh_TW', label: '中文 (繁體)' },
 ];
+
+export function isValidTemplateLanguage(code: string): boolean {
+  return META_TEMPLATE_LANGUAGES.some((l) => l.code === code);
+}

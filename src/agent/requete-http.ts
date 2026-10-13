@@ -9,13 +9,14 @@
  */
 
 import { VARIABLE_DE_CHEMIN } from './http-cible';
+import { MOTIF_PASTILLE } from '../../web/lib/partage/pastille';
 
-/** Variables nommées `{{ville}}`. Même motif que l'éditeur de la console (`web/components/VariableBodyEditor`),
- *  pour que ce qui s'écrit à l'écran soit exactement ce qui se substitue ici. */
-const VARIABLE = /\{\{\s*([\w.-]+)\s*\}\}/g;
+/** Variables nommées `{{ville}}`, selon le motif partagé avec la console : ce qui s'écrit à l'écran est exactement ce
+ *  qui se substitue ici. */
+const VARIABLE = new RegExp(MOTIF_PASTILLE, 'g');
 
 /** Une chaîne qui n'est que `{{ville}}`, sans rien autour : c'est elle qui prend la valeur typée. */
-const VARIABLE_SEULE = /^\{\{\s*([\w.-]+)\s*\}\}$/;
+const VARIABLE_SEULE = new RegExp(`^${MOTIF_PASTILLE}$`);
 
 export type ValeurVariable = string | number | boolean | null;
 

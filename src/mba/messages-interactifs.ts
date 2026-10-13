@@ -33,7 +33,7 @@ export const CONSIGNE_MAX = CONSIGNE_MESSAGE_MAX;
 export const octets = octetsUtf8;
 
 /**
- * 🔴 LE TITRE EST UN SLUG, comme celui d'une consigne (`TITRE_SKILL_RE`, `src/http/mba.ts`, que
+ * 🔴 LE TITRE EST UN SLUG, comme celui d'une consigne (`TITRE_SKILL_RE`, `web/lib/partage/agent-meta.ts`, que
  * `tests/mba-messages-interactifs.test.ts` garde identique) : minuscules, chiffres et tirets, sans tiret au début ni
  * à la fin. Mesuré le 2026-10-07 : Meta refuse en 400 tout autre titre (« title must contain only lowercase letters,
  * numbers, and hyphens »), et le compte en octets (40 « é » comptent 71).

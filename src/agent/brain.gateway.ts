@@ -9,7 +9,7 @@ import type { FrequenceMentionIa } from './agent-store';
 import { outilsExposes } from './outils-maison';
 import { blocResultatOutil, ressembleAUnBlocOutil, promptSysteme, type ContexteAgent } from './prompt';
 import type { EquipePourPrompt } from './disponibilite-equipe';
-import { SORTIE_PLAFOND } from './sorties';
+import { SORTIE_PLAFOND } from '../../web/lib/partage/sorties-agent';
 import { prixClientMicroEur } from './devise';
 
 /**

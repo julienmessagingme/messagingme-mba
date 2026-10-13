@@ -1,5 +1,5 @@
 import { ficheEstPertinente, type FicheTrouvee, type KnowledgeStore } from '../knowledge';
-import { SORTIE_SANS_SOURCE } from '../sorties';
+import { SORTIE_SANS_SOURCE } from '../../../web/lib/partage/sorties-agent';
 import { messageDe } from '../../lib/erreur';
 import type { Scores, Vecteurs } from '../llm/recherche-client';
 

@@ -10,6 +10,7 @@ import { formatMaintenant } from '../agent/variables';
 // La normalisation d'une étiquette vit dans le geste de pose (`src/crm/poser-etiquette.ts`) : la copie de travail doit
 // voir la même valeur que celle que l'exécuteur écrira sur le contact.
 import { normaliserEtiquette } from '../crm/poser-etiquette';
+import { MAX_DESTINATAIRES_EMAIL } from '../../web/lib/partage/blocs';
 
 /**
  * Moteur d'exécution d'un workflow, pur (aucune IO). Un run avance de bloc en bloc : les blocs synchrones
@@ -26,11 +27,6 @@ export interface WorkflowButton { type: string; text: string }
 export type EmailRecipient =
   | { kind: 'literal'; value: string }
   | { kind: 'field'; field: string };
-
-/** Nombre maximal de destinataires d'un bloc « Envoi de mail ». Borné ici, côté moteur : `parseGraph` ne
- *  regarde pas `data`, donc un graphe fabriqué à la main passerait autant d'adresses qu'il veut. Le surplus
- *  est tronqué (un refus ferait du bloc un no-op muet). */
-export const MAX_DESTINATAIRES_EMAIL = 3;
 
 /** Action « Envoi de mail » : boîte SMTP + modèle + destinataires (ids/valeurs opaques), consommée par
  *  l'executor. `to` est une liste (1 à 3) jamais vide : le premier part en « À », les suivants en copie

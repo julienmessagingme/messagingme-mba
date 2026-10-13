@@ -8,7 +8,7 @@ import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
 import { waIdOf } from '../crm/identity';
 import type { ConversationsRepondre } from '../inbox/repondre';
 import { envoyerRcsLibre, type DepsRcsLibre, type RefusRcsLibre } from '../rcs/envoyer-libre';
-import { RCS_TEXTE_MAX } from '../rcs/schema';
+import { RCS_TEXTE_MAX } from '../../web/lib/partage/rcs';
 import { INCONNUE_POUR_UN_MESSAGE, type ReponseMessageSimple } from './v1-messages';
 import { messageDe } from '../lib/erreur';
 import { auteurDeLEnvoi, type AuteurDuChangement } from '../inbox/evenements';

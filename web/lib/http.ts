@@ -11,6 +11,7 @@
 import { getSession, clearSession } from './session';
 import { LOCALE_STORAGE_KEY, type Locale } from './locale';
 import { estCorpsCodeRefuse } from './second-facteur';
+import { CORPS_OPAQUE_5XX } from './partage/textes-serveur';
 import { ACCES_SUSPENDU_EVENT, OFFRE_REFUSEE_EVENT, estAccesSuspendu, lireRefusOffre } from './offre';
 
 /**
@@ -41,7 +42,7 @@ export const BASE = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/+$/, '') 
  * ⚠️ Ne traduit QUE les replis d'`attempt` (session expirée, « Erreur N », l'incident d'un 5xx) ; ceux de
  * `requestBlob` (« session expirée », « média indisponible ») restent en français. Un message d'erreur venu du
  * serveur (`body.error`) passe tel quel, rédigé en français côté API : c'est la limite connue, notée dans
- * `todo.md`. Seule exception, le corps opaque d'une panne (`OPAQUE_DU_SERVEUR`), remplacé par la phrase
+ * `todo.md`. Seule exception, le corps opaque d'une panne (`CORPS_OPAQUE_5XX`), remplacé par la phrase
  * traduite de `messageDErreur`.
  */
 export function langue(): Locale {
@@ -214,13 +215,6 @@ function signalerRefusOffre(corps: unknown): void {
 }
 
 /**
- * Ce que le gestionnaire global de l'API écrit sur SA panne (`CORPS_OPAQUE_5XX`, `src/server.ts`) : opaque, et
- * en anglais. Recopié ici parce que la frontière de build interdit d'importer le serveur ; la parité est tenue
- * par `tests/corps-opaque-parite.test.ts`.
- */
-export const OPAQUE_DU_SERVEUR = 'Internal Server Error';
-
-/**
  * LE MESSAGE D'UN CHARGEMENT QUI A ÉCHOUÉ, pour l'écran : celui de l'erreur quand elle en porte un, sinon
  * « Chargement impossible ». La phrase de repli était recopiée à trente et un endroits, en trois anglais
  * différents ; elle vit ici. `t` est celui de l'écran appelant (`useT()` est un hook, inappelable ici).
@@ -243,7 +237,7 @@ export function erreurDeChargement(err: unknown, t: (fr: string, en?: string) =>
  */
 export function messageDErreur(status: number, corps: unknown, lang: Locale): string {
   const ecrit = (corps as { error?: unknown } | null)?.error;
-  if (typeof ecrit === 'string' && ecrit.trim() !== '' && ecrit !== OPAQUE_DU_SERVEUR) return ecrit;
+  if (typeof ecrit === 'string' && ecrit.trim() !== '' && ecrit !== CORPS_OPAQUE_5XX) return ecrit;
   if (status >= 500) {
     return lang === 'en'
       ? `Something went wrong on our side (error ${status}). Try again in a moment.`

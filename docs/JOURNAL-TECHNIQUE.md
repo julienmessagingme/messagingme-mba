@@ -6,6 +6,31 @@
 > tranchent, jamais ce fichier.
 
 
+## 2026-10-13 : les copies serveur / console rendues au dossier partagé (audit ponytail, point 1)
+
+L'audit « ponytail » du dépôt (fait en conversation, sans rapport versionné) classait en premier les règles écrites
+deux fois, côté serveur et côté console, et tenues alignées par un test de parité. Plan
+`docs/superpowers/plans/2026-10-13-copies-vers-le-partage.md`. Quinze règles pures vivent désormais une seule fois dans
+`web/lib/partage/` (la liste est dans `documentation.md` § 13) : le message RCS, les langues d'un modèle, les champs,
+les textes que la console reconnaît, les droits d'une clé d'API, les types de bloc, les sorties d'agent, les règles de
+l'agent de Meta, la pièce jointe, les déclencheurs d'automation, les étapes Salesforce, les bornes d'une publicité, les
+codes d'une analyse, le motif d'une pastille et le nom de paramètre d'une Fonction JS.
+
+- **L'estimation de l'audit était fausse, et le lot B du 2026-10-09 l'avait déjà écrit.** L'audit annonçait environ
+  1 500 lignes en moins ; le lot en retire environ 500 nettes (13 fichiers de test de parité supprimés, 4 réécrits sous un
+  autre nom, 6 réduits, des copies de la console supprimées, 15 petits modules partagés ajoutés). Sur les 43 tests de parité, la plupart gardent
+  autre chose qu'une copie : des libellés d'écran, la documentation publique, la base et ses migrations, ou les vraies
+  routes montées (OAuth, widgets). Ceux-là restent, comme les paires que le lot B avait écartées.
+- **Aucun cas de comportement n'est perdu** : ceux qu'éprouvaient les tests supprimés (pas de langue en double, le droit
+  du relais non attribuable, un document plus lourd qu'une image, ni SVG ni GIF, un libellé de base réservé dans les
+  deux langues, la troncature d'un code de sortie) sont réécrits contre la règle unique. Les deux gardes réécrites (les
+  libellés réservés, le motif des pastilles) ont été vérifiées dans les deux sens : rouges code cassé, vertes restauré.
+- **Mesures** : les deux typages, 11 964 tests unitaires à la racine et 997 dans `web/`, le lint de la console et
+  l'auto-attaque (1 707 sondes). Un premier passage de la suite racine a rendu deux échecs de minutage
+  (`latence-http`, `mcp-agent`), verts seuls trois fois sur trois et verts au passage complet suivant ; la référence
+  (`0d202af0`, sans le lot) est verte. Aucune migration, aucun contrat HTTP changé.
+
+
 ## 2026-10-13 : le plugin Claude Code, publié et essayé ; livraison B (lot 10)
 
 - Le dépôt public et sa clé créés par Julien, la v0.1.0 publiée par `plugin.yml` (deux jobs verts, `833ec32`, huit

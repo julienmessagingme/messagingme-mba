@@ -3,6 +3,15 @@
  * texte exact envoyé à Meta aux exemples de sa documentation, sans réseau. Source : la page Meta « Publicités
  * clic vers WhatsApp », relue en ligne ; un corpus téléchargé vieillit sans le dire.
  */
+import {
+  AGE_MAX_ADVANTAGE, AGE_MIN_ADVANTAGE_BAS, AGE_MIN_ADVANTAGE_HAUT, type BoutonPub,
+} from '../../web/lib/partage/publicite';
+
+/** Les bornes d'âge et la liste des boutons sont partagées avec la console (`web/lib/partage/publicite.ts`). */
+export {
+  AGE_MAX_ADVANTAGE, AGE_MIN_ADVANTAGE_BAS, AGE_MIN_ADVANTAGE_HAUT, BOUTONS_PUB, BOUTON_PUB_DEFAUT, estBoutonPub,
+  type BoutonPub,
+} from '../../web/lib/partage/publicite';
 
 /**
  * L'objectif de campagne. `OUTCOME_ENGAGEMENT` est le seul des quatre objectifs clic vers WhatsApp qui accepte
@@ -28,32 +37,10 @@ export const STATUT_PAUSE = 'PAUSED';
 export const STATUT_ACTIF = 'ACTIVE';
 
 /**
- * 🔴 HYPOTHÈSE QUE L'ESSAI RÉEL TRANCHE, ÉCRITE ICI ET NULLE PART AILLEURS : les boutons qu'une créa
- * Click-to-WhatsApp accepte (`call_to_action.type`).
- *
- * Seul `WHATSAPP_MESSAGE` est documenté par Meta côté API pour cette destination. Les neuf autres viennent de ce
- * que le Gestionnaire de publicités propose pour une destination WhatsApp (relevé le 2026-09-28) : rien ne dit
- * que l'API les accepte sur `link_data` et `video_data`. La liste est FERMÉE (la route la tient en énumération
- * Zod, création et brouillon) ; si Meta refuse un type à la première création réelle, son message s'affiche
- * (422, `src/http/pubs.ts`) et c'est cette liste, seule, qui perd le type refusé. La console en tient une copie
- * avec les libellés (`web/lib/api-pubs.ts`), en parité par `tests/web-pubs-parity.test.ts`.
- *
+ * Le bouton de la créa (`BOUTONS_PUB`, la liste FERMÉE partagée, écrite comme une hypothèse que l'essai réel tranche).
  * Seul `type` change d'un bouton à l'autre : `value`, le lien et `page_welcome_message` restent ceux du bouton
  * WhatsApp, puisque le clic ouvre toujours la conversation.
  */
-export const BOUTONS_PUB = [
-  'WHATSAPP_MESSAGE', 'LEARN_MORE', 'GET_QUOTE', 'BOOK_NOW', 'CONTACT_US',
-  'SHOP_NOW', 'ORDER_NOW', 'SIGN_UP', 'SUBSCRIBE', 'APPLY_NOW',
-] as const;
-export type BoutonPub = (typeof BOUTONS_PUB)[number];
-
-/** Le bouton d'une publicité qui ne dit rien de plus : le seul que Meta documente pour Click-to-WhatsApp. */
-export const BOUTON_PUB_DEFAUT: BoutonPub = 'WHATSAPP_MESSAGE';
-
-/** Une valeur lue ailleurs (base, ancien brouillon) est-elle un bouton de la liste ? */
-export function estBoutonPub(v: unknown): v is BoutonPub {
-  return typeof v === 'string' && (BOUTONS_PUB as readonly string[]).includes(v);
-}
 
 /** Ce que l'écran a saisi, déjà validé, tel que la création le consomme. */
 export interface FormulairePub {
@@ -97,12 +84,9 @@ export interface FormulairePub {
  * Advantage+ audience est laissé à Meta (décision de Julien, 2026-09-28), et depuis Graph v23 ce réglage doit
  * être EXPLICITE dans `targeting_automation.advantage_audience`. L'omettre était un défaut : Meta l'active alors
  * en silence, ou refuse la création quand l'âge n'est pas au défaut. Avec `1`, Meta n'accepte `age_min` qu'entre
- * 18 et 25 ans et fixe `age_max` à 65.
+ * 18 et 25 ans et fixe `age_max` à 65 (les bornes partagées `AGE_*_ADVANTAGE`).
  */
 export const ADVANTAGE_AUDIENCE = 1;
-export const AGE_MIN_ADVANTAGE_BAS = 18;
-export const AGE_MIN_ADVANTAGE_HAUT = 25;
-export const AGE_MAX_ADVANTAGE = 65;
 
 /**
  * 🔴 Le budget en unités mineures de la devise du compte : Meta compte en centimes pour tous les montants de

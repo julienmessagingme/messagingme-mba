@@ -2,7 +2,7 @@ import type { CreateCampaignInput, EtageCreation } from './api/campagnes';
 import type { CampaignCategory } from './api/campagnes';
 import type { ContactFilters } from './contact-filters';
 import { cibleDeCreation, type SelectionDestinataires } from './audience';
-import type { RcsOutbound, RcsSuggestion } from './rcs-types';
+import type { RcsOutbound, RcsSuggestion } from './partage/rcs';
 import { maxTexteRcs, versMessageRcs } from './rcs';
 import type { CarrouselRcs } from './rcs-carrousel';
 import { boutonPret } from './rcs-boutons';

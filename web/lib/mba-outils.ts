@@ -1,7 +1,7 @@
 import type { GestePublication } from './api-agent-tools';
 import type { OutilMbaVue, TypeOutilMba } from './api-mba-outils';
 import { BORNES_OUTIL_MBA } from './partage/outils-mba';
-import { normaliserCodeSortie } from './agent-sorties';
+import { normaliserCodeSortie } from './partage/sorties-agent';
 import type { SigneOutil } from './signes-outils';
 
 /**

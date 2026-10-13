@@ -3,7 +3,7 @@ import { creerResolveurSimulation } from '../src/agent/resolvers/simulation';
 import type { EntreeResolveur } from '../src/agent/executor';
 import type { OutilDefini } from '../src/agent/catalog';
 import type { FicheTrouvee, KnowledgeStore } from '../src/agent/knowledge';
-import { SORTIE_SANS_SOURCE } from '../src/agent/sorties';
+import { SORTIE_SANS_SOURCE } from '../web/lib/partage/sorties-agent';
 import { SANS_MCP } from './outils-mcp';
 import { AUCUN_GESTE } from './gestes';
 

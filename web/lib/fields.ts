@@ -1,10 +1,10 @@
 import type { ParamSource, UserFieldDef } from './api';
-import { FRONT_SYSTEM_FIELD_KEYS } from './codes';
+import { SOCLE_FIELDS, SYSTEM_FIELD_KEYS as CLES_SYSTEME, SYSTEM_FIELD_LABELS, type SystemFieldKey } from './partage/champs';
 
 /**
  * Champs de BASE (« système ») : toujours proposés comme source de variable, toujours présents dans Contenu > Champs,
- * NON supprimables/renommables. Miroir de `src/crm/fields.ts` (SYSTEM_FIELD_KEYS) côté serveur ; l'ordre = l'ordre
- * d'affichage. Chaque champ porte la `source` qui dit comment la variable se résout par contact :
+ * NON supprimables/renommables. Clés, ordre d'affichage et libellés sont partagés avec le serveur
+ * (`./partage/champs`). Chaque champ porte la `source` qui dit comment la variable se résout par contact :
  *  - attribut name/phone/bsuid/wa_id -> lu hors `contacts.fields` (profil, numéro, BSUID, wa_id dérivé) ;
  *  - champ prenom/email -> lu dans `contacts.fields` (valeur posée par import/inbox).
  */
@@ -19,20 +19,21 @@ export interface SystemField {
   source: ParamSource;
 }
 
-/** Libellé + source de variable de chaque champ système. Typé en `Record` sur la liste de clés PURE : ajouter
- *  une clé à `FRONT_SYSTEM_FIELD_KEYS` sans lui donner de libellé ici ne compile pas. */
-const SYSTEM_FIELD_META: Record<(typeof FRONT_SYSTEM_FIELD_KEYS)[number], Omit<SystemField, 'key'>> = {
-  name: { label: ['Nom', 'Name'], source: { type: 'attribute', key: 'name' } },
-  prenom: { label: ['Prénom', 'First name'], source: { type: 'field', key: 'prenom' } },
-  phone: { label: ['Téléphone', 'Phone'], source: { type: 'attribute', key: 'phone' } },
-  bsuid: { label: ['BSUID', 'BSUID'], source: { type: 'attribute', key: 'bsuid' } },
-  wa_id: { label: ['WhatsApp ID', 'WhatsApp ID'], source: { type: 'attribute', key: 'wa_id' } },
-  email: { label: ['Email', 'Email'], source: { type: 'field', key: 'email' } },
+/** Source de variable de chaque champ système. Typé en `Record` sur les clés partagées : une clé ajoutée sans sa
+ *  source ne compile pas. */
+const SOURCE_DU_CHAMP: Record<SystemFieldKey, ParamSource> = {
+  name: { type: 'attribute', key: 'name' },
+  prenom: { type: 'field', key: 'prenom' },
+  phone: { type: 'attribute', key: 'phone' },
+  bsuid: { type: 'attribute', key: 'bsuid' },
+  wa_id: { type: 'attribute', key: 'wa_id' },
+  email: { type: 'field', key: 'email' },
 };
 
-/** CONSTRUIT à partir de la liste pure, dans son ordre. C'est ce qui rend le test de `web/lib/codes.ts`
- *  représentatif de ce que la page Champs affiche réellement : une seule source de vérité, pas deux. */
-export const SYSTEM_FIELDS: SystemField[] = FRONT_SYSTEM_FIELD_KEYS.map((key) => ({ key, ...SYSTEM_FIELD_META[key] }));
+/** CONSTRUIT à partir de la liste partagée, dans son ordre : c'est ce que la page Champs affiche. */
+export const SYSTEM_FIELDS: SystemField[] = CLES_SYSTEME.map((key) => ({
+  key, label: [...SYSTEM_FIELD_LABELS[key]], source: SOURCE_DU_CHAMP[key],
+}));
 
 export const SYSTEM_FIELD_KEYS: readonly string[] = SYSTEM_FIELDS.map((f) => f.key);
 
@@ -45,15 +46,12 @@ export function isSystemFieldKey(key: string): boolean {
 export { WHATSAPP_OPTIN_FIELD_KEY } from './flow-mapping';
 
 /**
- * Champs SOCLE : des champs de base stockés dans `contacts.fields`, que le serveur MATÉRIALISE à la première
- * écriture (miroir de `SOCLE_FIELDS`, src/crm/fields.ts). Ils n'existent donc pas dans `user_fields` tant que
- * personne ne les a remplis, ce qui les rendait invisibles ET non ajoutables sur une fiche contact vierge :
- * un contact sans email était impossible à compléter depuis sa fiche (signalé par Julien le 2026-08-25).
- * Ils ont désormais leur ligne dédiée sur la fiche, toujours affichée, même vide.
- *
- * `tests/web-socle-fields-parity.test.ts` casse si les deux listes divergent.
+ * Clés des champs SOCLE (`SOCLE_FIELDS`, partagés avec le serveur, qui les MATÉRIALISE à la première écriture). Ils
+ * n'existent donc pas dans `user_fields` tant que personne ne les a remplis, ce qui les rendait invisibles ET non
+ * ajoutables sur une fiche contact vierge : un contact sans email était impossible à compléter depuis sa fiche
+ * (signalé par Julien le 2026-08-25). Ils ont désormais leur ligne dédiée sur la fiche, toujours affichée, même vide.
  */
-export const SOCLE_CLES: readonly string[] = ['prenom', 'email'];
+export const SOCLE_CLES: readonly string[] = SOCLE_FIELDS.map((f) => f.key);
 
 /**
  * Identifiant WhatsApp d'un contact. Il n'est PAS stocké : il est DÉRIVÉ, exactement comme le fait la

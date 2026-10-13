@@ -7,6 +7,7 @@ import { messageDe } from '../lib/erreur';
 import { fetchPublic } from '../lib/connexion-publique';
 import { lireOctetsBornes } from '../lib/corps-borne';
 import { typeImage } from '../rcs/image';
+import { TAILLE_VISUEL_PUB_MAX } from '../../web/lib/partage/publicite';
 
 /**
  * Pilotage d'une publicité par l'API Marketing de Meta : la créer, la publier, la mettre en pause, et suivre ce
@@ -367,19 +368,6 @@ function parPaquets<T>(liste: readonly T[], taille: number): T[][] {
   for (let i = 0; i < liste.length; i += taille) out.push(liste.slice(i, i + taille));
   return out;
 }
-
-/**
- * Types de fichier acceptés pour le visuel : une garde de sécurité, ce qui part d'ici va chez un tiers sous
- * l'identité du client.
- */
-export const TYPES_VISUEL_PUB = ['image/jpeg', 'image/png'] as const;
-
-/**
- * Plafond de taille du visuel d'une publicité, en octets. Nom long exprès : le dépôt porte déjà plusieurs
- * `TAILLE_IMAGE_MAX` aux valeurs différentes. Bas devant ce que Meta accepte (30 Mo) : au-delà de quelques
- * mégaoctets, on n'achète qu'un téléversement lent sur une route HTTP que l'utilisateur attend.
- */
-export const TAILLE_VISUEL_PUB_MAX = 5 * 1024 * 1024;
 
 export class MetaPubsCreationClient extends ClientGraph {
   /**

@@ -906,7 +906,7 @@ Relecture du lot « outils proposés » (`1b62b2fe`) : 0 rouge, 8 jaunes, dont d
 - **L'écriture du plafond ne laisse aucune trace** dans le journal d'audit, et remplacer un plafond posé ailleurs
   (`autres`, rendu par la route) ne se fait pas confirmer.
 - **L'estimation de coût repose sur le prix public** (2 $ le million de jetons, 4 à 5 cents la réponse,
-  `PRIX_MESSAGE_AGENT_USD` et `web/lib/api-mba.ts`, tenus égaux par `tests/mba-prix-parite.test.ts`) : à confronter
+  `PRIX_MESSAGE_AGENT_USD`, partagé par le serveur et la console dans `web/lib/partage/agent-meta.ts`) : à confronter
   à la facture de Meta avec Julien. Aucune API ne rend la consommation de l'agent (mesuré le 2026-10-02).
 - **La carte « Agent de Meta » de Performance Lab s'affiche aussi pour un espace sans agent de Meta**, avec des zéros.
 
@@ -1557,6 +1557,25 @@ qui attend quelqu'un, et il garderait la conversation visible.
 ⚠️ Ne PAS régler ça en changeant `A_TRAITER` : ce dossier exclut `app_workflow` pour une bonne raison (une
 conversation qu'un scénario mène n'est pas une ligne de travail). C'est la DESTINATION de la reprise qui est
 discutable, pas le filtre.
+
+## 🟡 L'audit ponytail du 2026-10-13 : ce qui reste après le point 1
+
+Un audit de sur-ingénierie de tout le dépôt, fait en conversation (aucun rapport versionné, d'où cette copie). Le point
+1 est fait (journal du 2026-10-13 ; gain réel environ 500 lignes, pas les 1 500 annoncés). Restent, chacun petit :
+
+2. **`web/lib/campaign-eligibility.ts` recopie l'analyse d'ouverture du moteur** (`scanOpening`,
+   `entryNode`, `actionOf`, `quickMessageNonBloquant`, `src/workflow/engine.ts`). Une seule version pure dans
+   `web/lib/partage/` supprimerait la copie et son test de parité. ⚠️ À vérifier d'abord : la version serveur prend un
+   paramètre `depuis` et un `EvalContext` ; le lot B avait écarté les conditions de scénario pour la même raison.
+3. **La route `POST /channels-me/links/:id/disable` n'a aucun appelant dans la console** (seul `/enable` sert), ni
+   `eteindreLienChaine` (`web/lib/api-chaine.ts`) hors de son test. La retirer, ou lui donner son bouton : à trancher.
+4. **`src/crm/lists-gate.ts` et son test** portent un `enabled && !paused` utilisé à deux endroits de
+   `src/http/hubspot-import.ts` : une constante locale suffit.
+5. **Une vingtaine de réexportations de passage** vers `web/lib/partage/` (dont celles des refactors de ChatGPT :
+   `src/http/mba-outils.ts`, `src/mba/vue-outils.ts`, `web/lib/api-mba-outils.ts`, `web/lib/journal.ts`...) : importer
+   directement. ⚠️ Celles d'un module de domaine qui a beaucoup de lecteurs (`src/rcs/types.ts`, `src/agent/fiche.ts`,
+   `src/automation/match.ts`, `src/meta/pubs-payloads.ts`) sont gardées exprès : elles évitent de réécrire leurs
+   imports.
 
 ## 🟠 Les audits d'architecture des 11 et 12 octobre : ce qui reste ouvert (2026-10-12)
 
@@ -2443,9 +2462,8 @@ premier (`getHandle`), donc la seconde ligne tire sa flèche depuis celle du hau
 reliées. C'est exactement la famille du défaut corrigé le 2026-08-29, et `humain` est un nom parfaitement
 naturel pour une règle d'arrêt.
 
-`sortiesDuBloc` ne filtre que les codes vides. La liste réservée existe côté serveur
-([src/agent/sorties.ts](src/agent/sorties.ts)), et la parité code front / serveur a déjà ses tests
-(`tests/web-agent-code-sortie-parity.test.ts`).
+`sortiesDuBloc` ne filtre que les codes vides. La liste réservée est partagée par le serveur et la console
+([web/lib/partage/sorties-agent.ts](web/lib/partage/sorties-agent.ts)), avec la règle du code.
 
 **Le choix est produit, pas technique**, d'où le report :
 - soit **refuser le code à l'enregistrement** (`ficheAgentSchema` réserve les quatre noms). Propre, mais une

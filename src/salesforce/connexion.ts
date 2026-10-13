@@ -3,6 +3,7 @@ import { resolutionPublique, type VerdictResolution } from '../lib/adresse-prive
 import { SalesforceApiError, VERSION_API_SALESFORCE, type ClientSalesforce } from './client';
 import { lireMyDomain } from './my-domain';
 import type { DebutConnexion, IssueDebutConnexion, VueOrgSalesforce } from './store.pg';
+import type { EtapeGuide } from '../../web/lib/partage/salesforce';
 
 /**
  * RELIER UN ESPACE À UNE ORG SALESFORCE, et l'en délier (plan 2026-09-26, lot L1 ; spec, § « La connexion »).
@@ -27,12 +28,8 @@ export const NAMESPACE_PACKAGE = 'engagemeapp';
 /** La plus ancienne version du package que ce serveur sait servir. */
 export const VERSION_PACKAGE_MIN = '0.1';
 
-/**
- * Les étapes du guide, dans l'ordre où l'admin les fait. Chacune est une ANCRE de la page tuto
- * (`web/app/tuto-salesforce`) : la parité est tenue par un test, sinon les liens des manques mourraient en silence.
- */
-export const ETAPES_GUIDE = ['adresse', 'package', 'utilisateur', 'run-as', 'droits', 'org'] as const;
-export type EtapeGuide = (typeof ETAPES_GUIDE)[number];
+/** Les étapes du guide, partagées avec la console qui en fait les liens vers les ancres de la page tuto. */
+export { ETAPES_GUIDE, type EtapeGuide } from '../../web/lib/partage/salesforce';
 
 export interface Manque {
   etape: EtapeGuide;

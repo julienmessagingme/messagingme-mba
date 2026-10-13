@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useT } from '@/lib/i18n';
 import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from './MbaNotice';
-import { isValidSkillTitle, slugSkillTitle, slugSkillTitleFrappe, SKILL_BODY_MAX, SKILL_DESCRIPTION_MAX, SKILL_TITLE_MAX } from '@/lib/mba-skills';
+import { slugSkillTitle, slugSkillTitleFrappe } from '@/lib/mba-skills';
+import { CORPS_SKILL_MAX, DESCRIPTION_SKILL_MAX, TITRE_SKILL_MAX, titreSkillValide } from '@/lib/partage/agent-meta';
 import { createMbaSkill, deleteMbaSkill, listMbaSkills, updateMbaSkill, type MbaSkill } from '@/lib/api-mba';
 import { Bouton } from '@/components/Bouton';
 import { BoutonConfirme } from '@/components/Confirmation';
@@ -72,7 +73,7 @@ export function MbaSkillsPanel({ tenantId, phoneNumberId }: { tenantId: string; 
   // Le titre affiché peut porter un tiret final PENDANT la frappe (le séparateur qu'on vient de taper). La
   // validité et l'envoi portent donc sur la forme DÉFINITIVE, pas sur ce qui est à l'écran à l'instant t.
   const titreEnvoye = edition === null ? '' : slugSkillTitle(edition.title);
-  const titreValide = edition !== null && isValidSkillTitle(titreEnvoye);
+  const titreValide = edition !== null && titreSkillValide(titreEnvoye);
 
   return (
     <div className="space-y-5">
@@ -128,7 +129,7 @@ export function MbaSkillsPanel({ tenantId, phoneNumberId }: { tenantId: string; 
             </span>
             <input
               className={`${inputCls} mt-1.5 font-mono`}
-              maxLength={SKILL_TITLE_MAX}
+              maxLength={TITRE_SKILL_MAX}
               data-testid="mba-skill-title"
               value={edition.title}
               onChange={(e) => setEdition({ ...edition, title: slugSkillTitleFrappe(e.target.value) })}
@@ -148,7 +149,7 @@ export function MbaSkillsPanel({ tenantId, phoneNumberId }: { tenantId: string; 
             </span>
             <input
               className={`${inputCls} mt-1.5`}
-              maxLength={SKILL_DESCRIPTION_MAX}
+              maxLength={DESCRIPTION_SKILL_MAX}
               data-testid="mba-skill-description"
               value={edition.description}
               onChange={(e) => setEdition({ ...edition, description: e.target.value })}
@@ -163,12 +164,12 @@ export function MbaSkillsPanel({ tenantId, phoneNumberId }: { tenantId: string; 
             <textarea
               className={`${inputCls} mt-1.5`}
               rows={8}
-              maxLength={SKILL_BODY_MAX}
+              maxLength={CORPS_SKILL_MAX}
               data-testid="mba-skill-body"
               value={edition.skill}
               onChange={(e) => setEdition({ ...edition, skill: e.target.value })}
             />
-            <span className="mt-1 block text-right text-xs text-ink-500">{edition.skill.length} / {SKILL_BODY_MAX}</span>
+            <span className="mt-1 block text-right text-xs text-ink-500">{edition.skill.length} / {CORPS_SKILL_MAX}</span>
           </label>
 
           <div className="mt-5 flex justify-end gap-2">

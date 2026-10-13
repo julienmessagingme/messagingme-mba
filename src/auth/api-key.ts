@@ -6,7 +6,7 @@ import { sha256Hex } from '../lib/signature';
 import { ClesResolues, consommerAvecEntetes, consommerEnSilence, type RateLimiter } from './rate-limit';
 import type { PlafondEspace } from './plafond-espace';
 import { refuser } from '../api/erreurs';
-import { DROIT_RELAIS } from '../mba/cle-relais';
+import { DROIT_RELAIS } from '../../web/lib/partage/droits-api';
 import type { AccesOauthLookup } from '../oauth/store.pg';
 import { formeDeJeton, PREFIXE_ACCES } from '../oauth/jetons';
 import { LimiteOffreError, STATUT_REFUS_OFFRE, corpsRefusLimite } from '../offres/refus';

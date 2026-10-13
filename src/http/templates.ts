@@ -5,7 +5,7 @@ import type { MetaTemplateClient, CreateTemplateInput, TemplateButton, CarouselC
 import type { CampaignStatus } from '../campaign/types';
 import { parseParamHints, countTemplateVariables } from '../crm/template';
 import type { ParamSource } from '../crm/template';
-import { isValidTemplateLanguage } from '../meta/languages';
+import { isValidTemplateLanguage } from '../../web/lib/partage/langues-modeles';
 import { isSendableButtonUrl } from '../../web/lib/partage/button-url';
 import { boutonsTracables, appliquerLiens, cleBouton, codeDuLienTrace, rehabillerBoutons } from '../links/rewrite';
 import { porteDesChamps, refusChampsUrl } from '../links/champs-url';

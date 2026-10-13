@@ -21,7 +21,8 @@ import { BoutonPdf } from './BoutonPdf';
 import { phraseResumeAbsent } from '@/lib/resume-conversation';
 import { toCsv, downloadCsv } from '@/lib/csv';
 import { entetesQuali, ligneQuali } from '@/lib/quali-export';
-import { INTENTIONS, comptesParIntention, estIntention, libelleIntention } from '@/lib/intentions';
+import { comptesParIntention, estIntention, libelleIntention } from '@/lib/intentions';
+import { INTENTS } from '@/lib/partage/analyse';
 import { ACTIONS, SENTIMENTS, actionLabel, sentimentBadge, sentimentLabel, traiteParLabel } from '@/lib/analyse';
 import { Bouton } from '@/components/Bouton';
 import { danger, ink, succes } from '@/lib/couleurs';
@@ -538,7 +539,7 @@ function QualiTable({ tenantId, range, sujet, onSujet, intentionInitiale, journe
         </select>
         <select value={intent} onChange={(e) => setIntent(e.target.value)} className={SELECT} data-testid="quali-filtre-intent">
           <option value="">{t('Intention : toutes', 'Intent: all')}</option>
-          {INTENTIONS.map((i) => <option key={i} value={i}>{libelleIntention(i, t)}</option>)}
+          {INTENTS.map((i) => <option key={i} value={i}>{libelleIntention(i, t)}</option>)}
         </select>
         <select value={action} onChange={(e) => setAction(e.target.value)} className={SELECT}>
           <option value="">{t('Action : toutes', 'Action: all')}</option>

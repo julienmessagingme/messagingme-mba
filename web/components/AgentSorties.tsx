@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useT } from '@/lib/i18n';
 import { inputClsAuto } from '@/lib/ui';
 import type { SortieAgent } from '@/lib/api-agent';
-import { MAX_SORTIES, normaliserCodeSortie } from '@/lib/agent-sorties';
+import { MAX_SORTIES, normaliserCodeSortie } from '@/lib/partage/sorties-agent';
 import { Bouton } from '@/components/Bouton';
 import { Icone } from '@/components/Icone';
 
@@ -16,7 +16,7 @@ import { Icone } from '@/components/Icone';
  * découvrir la règle par un message d'erreur, on la lui applique en direct : ce qu'il tape est normalisé sous
  * ses yeux, et le libellé, lui, reste libre. C'est le libellé que le builder affiche.
  *
- * La règle du code elle-même vit dans `web/lib/agent-sorties.ts`, avec son test de parité serveur.
+ * La règle du code elle-même est partagée avec le serveur (`web/lib/partage/sorties-agent.ts`).
  */
 export function CodeSortieInput({ sorties, busy, onChange }: {
   sorties: SortieAgent[];

@@ -1,5 +1,5 @@
 import type { AgentSessionStore } from './session-store';
-import { SORTIE_HUMAIN } from './sorties';
+import { SORTIE_HUMAIN } from '../../web/lib/partage/sorties-agent';
 
 /**
  * L'escalade d'une conversation d'agent vers un humain : clore la session, sortir du bloc, puis basculer le

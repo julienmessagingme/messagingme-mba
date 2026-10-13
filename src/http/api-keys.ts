@@ -1,27 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import type { ApiKeyRow, PlafondCles } from '../auth/api-key-store.pg';
-import { DROIT_RELAIS } from '../mba/cle-relais';
+import { API_SCOPES, DROIT_RELAIS, MAX_CLES_API_ACTIVES } from '../../web/lib/partage/droits-api';
 import { espaceVerifie, nonEmpty } from './scope';
 import { makeJournal, type AuditSink } from '../audit/journal';
 
-/**
- * Les droits qu'une clé d'API peut porter (sous-ensemble non vide). `mcp:read` et `mcp:write` sont séparés des
- * autres : une clé donnée à un agent tiers pour lire l'Inbox n'emporte pas le droit d'écrire, et le serveur MCP
- * ne liste même pas les outils hors des scopes de la clé.
- */
-export const VALID_API_SCOPES = ['contacts:write', 'contacts:read', 'sends:create', 'mcp:read', 'mcp:write', 'conversations:read', 'templates:write', 'webhooks:write', 'contacts:admin'] as const;
-
-/**
- * Au plus dix clés actives par espace (décision de Julien, 2026-10-04). Chaque clé active est un secret confié à
- * quelqu'un : la borne limite les clés oubliées chez d'anciens intégrateurs, et révoquer en libère une place.
- * ⚠️ Ce n'est PAS un limiteur de débit : le plafond de l'API est déjà commun à toutes les clés de l'espace.
- * La clé du relais de l'agent de Meta n'y compte pas : la publication la pose, le client ne la crée pas, et elle
- * ne doit ni lui prendre une place ni être refusée par lui. Les clés déjà au-delà ne sont pas révoquées : seule
- * la création est refusée.
- * La parité avec l'écran est tenue par `tests/api-droits-parite.test.ts`.
- */
-export const MAX_CLES_API_ACTIVES = 10;
+/** Les droits et le plafond de clés actives sont partagés avec la console (`web/lib/partage/droits-api.ts`). */
 const PLAFOND_CLES: PlafondCles = { max: MAX_CLES_API_ACTIVES, horsDroit: DROIT_RELAIS };
 
 export interface ApiKeysRouteDeps {
@@ -55,7 +39,7 @@ export function registerApiKeys(app: FastifyInstance, deps: ApiKeysRouteDeps, ga
     if (!nonEmpty(b.name)) return reply.code(400).send({ error: 'name requis' });
     const scopes = Array.isArray(b.scopes) ? [...new Set(b.scopes.map(String))] : [];
     if (scopes.length === 0) return reply.code(400).send({ error: 'au moins un scope requis' });
-    const invalid = scopes.filter((s) => !(VALID_API_SCOPES as readonly string[]).includes(s));
+    const invalid = scopes.filter((s) => !(API_SCOPES as readonly string[]).includes(s));
     if (invalid.length > 0) return reply.code(400).send({ error: `scope(s) inconnu(s) : ${invalid.join(', ')}` });
     const creee = await deps.cles.creerSousPlafond(tenant, b.name.trim().slice(0, 100), scopes, PLAFOND_CLES);
     if (!creee) {

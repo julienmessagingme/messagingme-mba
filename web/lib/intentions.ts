@@ -1,27 +1,22 @@
 /**
- * LES INTENTIONS D'UNE CONVERSATION ANALYSÉE, CÔTÉ CONSOLE : la liste, l'ordre d'affichage et les libellés.
+ * LES INTENTIONS D'UNE CONVERSATION ANALYSÉE, CÔTÉ CONSOLE : leurs libellés et leurs comptes dans l'ordre d'affichage.
  *
- * 🔴 MIROIR DE `INTENTS` (`src/analysis/schema.ts`), ET C'EST UN TEST QUI LE TIENT, PAS CE COMMENTAIRE. La
- * console n'importe jamais `src/` (`tests/ci-decoupage.test.ts`) : la liste existe donc en deux exemplaires,
- * et `tests/intentions-parite.test.ts` (à la RACINE, parce que seul `ci.yml` tourne sur un changement de
- * `src/`) exige qu'ils soient identiques, dans le même ordre, et que chaque valeur ait son libellé.
- *
- * ⚠️ L'ORDRE EST CELUI DE L'AFFICHAGE, ET IL EST FIXE : un classement par volume ferait danser les barres
- * d'une période à l'autre, et l'œil prendrait ce mouvement pour une information. `autre` reste la dernière.
+ * La liste et son ordre (celui de l'affichage, FIXE) sont partagés avec le serveur (`INTENTS`, `./partage/analyse`) ;
+ * `tests/intentions-parite.test.ts` (à la RACINE, parce que seul `ci.yml` tourne sur un changement de `src/`) exige que
+ * chaque valeur ait son libellé.
  *
  * Un seul module pour les deux écrans qui les nomment (la carte du Performance Lab et l'Analyse des
  * conversations) : chacun portait sa copie de la liste et des libellés.
  */
-export const INTENTIONS = [
-  'demande_devis', 'sav', 'reclamation', 'information', 'prise_rdv', 'achat', 'suivi_commande', 'retour', 'autre',
-] as const;
-export type Intention = (typeof INTENTIONS)[number];
+import { INTENTS, type Intent } from './partage/analyse';
+
+export type Intention = Intent;
 
 type Tr = (fr: string, en?: string) => string;
 
 /** Une valeur venue d'une adresse ou du réseau est-elle une intention connue de CETTE console ? */
 export function estIntention(v: string): v is Intention {
-  return (INTENTIONS as readonly string[]).includes(v);
+  return (INTENTS as readonly string[]).includes(v);
 }
 
 /**
@@ -56,5 +51,5 @@ export function libelleIntention(i: string, t: Tr): string {
 export function comptesParIntention(
   intent: Partial<Record<Intention, number>> | null | undefined,
 ): Array<{ intention: Intention; n: number }> {
-  return INTENTIONS.map((intention) => ({ intention, n: intent?.[intention] ?? 0 }));
+  return INTENTS.map((intention) => ({ intention, n: intent?.[intention] ?? 0 }));
 }

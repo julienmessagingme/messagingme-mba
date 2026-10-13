@@ -1,6 +1,7 @@
 'use client';
 
 import { request } from './http';
+import { BOUTON_PUB_DEFAUT, estBoutonPub, type BoutonPub } from './partage/publicite';
 
 /**
  * Publicités Click-to-WhatsApp : la CONNEXION d'un espace à son compte publicitaire Meta (lot 2).
@@ -239,61 +240,35 @@ export interface FormulaireCreationPub {
 }
 
 /**
- * LES BOUTONS D'UNE PUBLICITÉ, AVEC LEUR LIBELLÉ : la seule table des libellés, pour le choix et pour l'aperçu.
- *
- * 🔴 LA LISTE DES TYPES DOIT ÉGALER CELLE DU SERVEUR (`BOUTONS_PUB`, `src/meta/pubs-payloads.ts`), dans le même
- * ordre, et c'est `tests/web-pubs-parity.test.ts` qui le tient. C'est côté serveur qu'elle est écrite comme une
- * HYPOTHÈSE : seul le bouton WhatsApp est documenté par Meta pour cette destination, les autres viennent du
- * Gestionnaire, et l'essai réel tranche. Les libellés sont ceux que Meta affiche.
+ * LE LIBELLÉ DE CHAQUE BOUTON D'UNE PUBLICITÉ, tel que Meta l'affiche : la seule table des libellés, pour le choix et
+ * pour l'aperçu. La liste des types (et leur ordre) est partagée avec le serveur (`./partage/publicite`) ; le `Record`
+ * la couvre, donc un bouton ajouté sans libellé ne compile pas.
  */
-export const BOUTONS_PUB = [
-  { type: 'WHATSAPP_MESSAGE', fr: 'Envoyer un message WhatsApp', en: 'Send WhatsApp message' },
-  { type: 'LEARN_MORE', fr: 'En savoir plus', en: 'Learn more' },
-  { type: 'GET_QUOTE', fr: 'Obtenir un devis', en: 'Get quote' },
-  { type: 'BOOK_NOW', fr: 'Réserver', en: 'Book now' },
-  { type: 'CONTACT_US', fr: 'Nous contacter', en: 'Contact us' },
-  { type: 'SHOP_NOW', fr: 'Acheter', en: 'Shop now' },
-  { type: 'ORDER_NOW', fr: 'Commander', en: 'Order now' },
-  { type: 'SIGN_UP', fr: 'S’inscrire', en: 'Sign up' },
-  { type: 'SUBSCRIBE', fr: 'S’abonner', en: 'Subscribe' },
-  { type: 'APPLY_NOW', fr: 'Postuler', en: 'Apply now' },
-] as const;
-export type BoutonPub = (typeof BOUTONS_PUB)[number]['type'];
-
-/** Le bouton quand rien n'est choisi : le bouton WhatsApp, le seul que Meta documente pour cette destination. */
-export const BOUTON_PUB_DEFAUT: BoutonPub = 'WHATSAPP_MESSAGE';
+const LIBELLES_BOUTON: Record<BoutonPub, { fr: string; en: string }> = {
+  WHATSAPP_MESSAGE: { fr: 'Envoyer un message WhatsApp', en: 'Send WhatsApp message' },
+  LEARN_MORE: { fr: 'En savoir plus', en: 'Learn more' },
+  GET_QUOTE: { fr: 'Obtenir un devis', en: 'Get quote' },
+  BOOK_NOW: { fr: 'Réserver', en: 'Book now' },
+  CONTACT_US: { fr: 'Nous contacter', en: 'Contact us' },
+  SHOP_NOW: { fr: 'Acheter', en: 'Shop now' },
+  ORDER_NOW: { fr: 'Commander', en: 'Order now' },
+  SIGN_UP: { fr: 'S’inscrire', en: 'Sign up' },
+  SUBSCRIBE: { fr: 'S’abonner', en: 'Subscribe' },
+  APPLY_NOW: { fr: 'Postuler', en: 'Apply now' },
+};
 
 /**
  * Un bouton lu ailleurs (un brouillon, une API d'avant ce lot qui ne le rend pas) : le sien s'il est dans la liste,
  * sinon le défaut. Un brouillon ne dépense rien, et l'écran montre, dans le choix comme dans l'aperçu, ce qui partira.
  */
 export function boutonConnu(v: unknown): BoutonPub {
-  return BOUTONS_PUB.find((b) => b.type === v)?.type ?? BOUTON_PUB_DEFAUT;
+  return estBoutonPub(v) ? v : BOUTON_PUB_DEFAUT;
 }
 
 /** Le libellé d'un bouton, dans les deux langues : c'est ce que le prospect lit sur la publicité. */
 export function libelleBouton(type: BoutonPub): { fr: string; en: string } {
-  const b = BOUTONS_PUB.find((x) => x.type === type) ?? BOUTONS_PUB[0];
-  return { fr: b.fr, en: b.en };
+  return { ...LIBELLES_BOUTON[estBoutonPub(type) ? type : BOUTON_PUB_DEFAUT] };
 }
-
-/**
- * ADVANTAGE+ AUDIENCE, LAISSÉ À META (décision de Julien, 2026-09-28) : il n'accepte qu'un âge minimum entre 18 et
- * 25 ans et fixe le maximum à 65. Parité tenue avec `src/meta/pubs-payloads.ts` par `tests/web-pubs-parity.test.ts`.
- */
-export const AGE_MIN_BAS = 18;
-export const AGE_MIN_HAUT = 25;
-export const AGE_MAX = 65;
-
-/**
- * LES BORNES DU VISUEL, ANNONCÉES PAR L'ÉCRAN.
- *
- * 🔴 ELLES DOIVENT ÉGALER CELLES DU SERVEUR (`TAILLE_VISUEL_PUB_MAX`, `TYPES_VISUEL_PUB`), et c'est un test
- * de parité qui le tient (`tests/web-pubs-parity.test.ts`). Deux chiffres qui divergent donnent le pire des
- * deux : un écran qui promet ce que le serveur refuse, avec un 413 ou un 400 que personne ne relie à la
- * promesse. L'écran refuse AVANT de téléverser, le serveur refuse en dernier ressort, et lui seul protège.
- */
-export const TAILLE_VISUEL_MAX = 5 * 1024 * 1024;
 
 /**
  * UNE PUBLICITÉ EST À L'ARRÊT CHEZ META QUAND ON A **LU** UN STATUT QUI N'EST PAS `ACTIVE`.
@@ -330,7 +305,6 @@ export function lienGestionnaireMeta(comptePubId: string | null, campagneId: str
   return 'https://business.facebook.com/adsmanager/manage/campaigns'
     + `?act=${encodeURIComponent(nu)}&selected_campaign_ids=${encodeURIComponent(campagneId)}`;
 }
-export const TYPES_VISUEL = ['image/jpeg', 'image/png'] as const;
 
 const basePubs = (tenantId: string): string => `/tenants/${tenantId}/pubs`;
 
