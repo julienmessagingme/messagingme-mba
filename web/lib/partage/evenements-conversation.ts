@@ -6,8 +6,8 @@
  */
 
 /**
- * Les types, dans l'ordre du cadrage. Miroir du CHECK en vigueur, celui de 0217, tenu par
- * `tests/migration-0217.test.ts` ; les douze premiers sont ceux de 0192, les deux suivants ceux de 0194.
+ * Les types, dans l'ordre du cadrage. Miroir du CHECK en vigueur, celui de 0232, tenu par
+ * `tests/migration-0232.test.ts` ; les douze premiers sont ceux de 0192, les deux suivants ceux de 0194.
  *
  * Les deux derniers (0194) datent ce que le Quantitatif > Performance mesure : `escaladee`, une demande s'ouvre pour
  * l'équipe, soit qu'un robot lui passe la main (un scénario ou un agent IA, drapeau d'escalade ou non, et la réponse à
@@ -26,11 +26,14 @@
  * Celui de 0217 : `mba_indisponible`, le bloc « Envoyer au MBA » d'un scénario a trouvé l'agent de Meta éteint, et la
  * conversation est allée à l'équipe (`PgInboxStore.noterMbaIndisponible`). Il n'ouvre ni ne ferme de demande : c'est
  * la bascule qui suit.
+ *
+ * Celui de 0232 : `action_agent`, un agent IA a déclenché une action vers l'application du client (le webhook
+ * `agent.action`) ; la cause nomme l'agent et l'action. Il n'ouvre ni ne ferme de demande : l'agent continue.
  */
 export const TYPES_EVENEMENT = [
   'assignee', 'desassignee', 'prise_mba', 'rendue_mba', 'passee_par_mba',
   'traitee', 'non_traitee', 'archivee', 'desarchivee', 'signalee', 'designalee', 'rouverte',
-  'escaladee', 'rendue_scenario', 'sortie_agent', 'urgente', 'urgence_levee', 'mba_indisponible',
+  'escaladee', 'rendue_scenario', 'sortie_agent', 'urgente', 'urgence_levee', 'mba_indisponible', 'action_agent',
 ] as const;
 export type TypeEvenement = (typeof TYPES_EVENEMENT)[number];
 

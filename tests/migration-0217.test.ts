@@ -90,7 +90,8 @@ describe('migration 0217', () => {
     const pose = instructions[i + 1] ?? '';
     expect(pose).toMatch(/^alter table conversation_evenements add constraint conversation_evenements_type_check check \(type in \(/);
     const types = [...pose.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
-    expect(types).toEqual([...TYPES_EVENEMENT]);
+    // 0232 le repose avec `action_agent` en dernier (`tests/migration-0232.test.ts`) : 0217 garde la liste d'alors.
+    expect(types).toEqual(TYPES_EVENEMENT.filter((t) => t !== 'action_agent'));
     expect(types.at(-1)).toBe('mba_indisponible');
   });
 

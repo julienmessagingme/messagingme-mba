@@ -118,6 +118,9 @@ export function libelleEvenement(e: EvenementConversation, t: T): string {
     // La cause nomme la règle d'arrêt (« automatique : règle d'arrêt rdv_pris ») : la phrase dit seulement le geste.
     case 'sortie_agent':
       return t('L’agent IA a terminé', 'The AI agent finished');
+    // La cause nomme l'agent et l'action (« automatique : agent IA Sophie, action résiliation ») : la phrase dit le geste.
+    case 'action_agent':
+      return t('Action déclenchée par l’agent IA', 'Action triggered by the AI agent');
     // L'origine dit qui (« par Marie », ou la cause « automatique : agent IA Sophie ») ; une urgence levée par « Traité »
     // ou l'archivage porte le même auteur que le geste, dont la ligne est juste au-dessus.
     case 'urgente':
