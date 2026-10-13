@@ -1,4 +1,5 @@
 import { ficheOutilMcp } from '../../web/lib/partage/catalogue-mcp';
+import { ETAPES_NUMERO_FOURNI } from '../../web/lib/partage/etapes-numero-fourni';
 import type { AnnotationsMcp, DepsMcp, OutilMcp, PersonneMcp } from './outils';
 import { RefusOutil, valeurOuRefus } from './saisie';
 import { MESSAGE_OPERATIONS_LOURDES } from '../auth/plafond-partage';
@@ -99,24 +100,80 @@ function signataire(personne: PersonneMcp | null): string {
 }
 
 /**
- * La consigne du numéro fourni. En Pro (J4 de la relecture de B2b), le numéro est inclus : la page l'obtient sans payer,
- * et Claude ne doit pas annoncer un prix que la page ne demande pas.
+ * La personne ne voit pas le résultat d'un outil : le lien n'existe pour elle que recopié. À l'essai réel 99
+ * (2026-10-13), Claude a écrit « j'ai généré le lien » sans le lien, puis l'a donné dans un bloc de code, qu'un terminal
+ * ne replie pas et coupe au bord de l'écran.
+ */
+const LIEN_EN_ENTIER = 'Écris ce lien EN ENTIER à la personne, en texte simple sur sa propre ligne : elle ne voit pas le '
+  + 'résultat de cet outil, un résumé (« j’ai généré le lien ») ne lui donne rien, et un bloc de code le couperait dans '
+  + 'un terminal. Dis-lui de garder la page ouverte jusqu’au bout. ';
+
+/** Si la personne revient avant la fin (essai 99) : lui redire où elle en est, puis attendre à nouveau. */
+const SI_ELLE_REVIENT = ' Si elle revient avant la fin, rappelle-lui où elle en est (la page du lien, la fenêtre de Meta, '
+  + 'le numéro) avant d’attendre à nouveau.';
+
+/** Des étapes numérotées sur une ligne : Claude les remet une par ligne, dans la langue de la personne. */
+const numerotees = (etapes: readonly string[]): string => etapes.map((t, i) => `${i + 1}) ${t}`).join(' ');
+
+/**
+ * La consigne du numéro fourni : les étapes de la page (`ETAPES_NUMERO_FOURNI`, la même source), encadrées par le lien
+ * et le paiement avant, et par le retour vers Claude après « Finish » (essai 99, ordre de Julien). En Pro (J4 de la
+ * relecture de B2b), le numéro est inclus : la page l'obtient sans payer, et Claude n'annonce pas un prix qu'elle ne
+ * demande pas.
  */
 const consigneFourni = (inclusDansLePro: boolean): string =>
-  'Donne ce lien à la personne : il ouvre la page de connexion de son numéro, sans se connecter, pendant une '
-  + (inclusDansLePro
-    ? 'heure. Sur la page : le numéro est inclus dans son Pro, « Obtenir mon numéro », puis le numéro s’affiche ; '
-    : 'heure. Sur la page : « Payer 3,50 € HT par mois », puis le numéro s’affiche ; ')
-  + 'ensuite la fenêtre de Meta, « Enter a '
-  + 'new phone number », le numéro affiché, et la vérification par appel (« Phone call ») si Meta laisse choisir ; '
-  + 'sinon Meta envoie un SMS, qui arrive aussi. Appelle ensuite watch_whatsapp_connection : le code '
-  + 'arrivera ici, lis-le-lui pour qu’elle le recopie dans la fenêtre de Meta.';
+  LIEN_EN_ENTIER + 'Il ouvre la page de connexion de son numéro, sans se connecter, pendant une heure. Donne-lui ces '
+  + 'étapes, numérotées, une par ligne, dans sa langue ; la page affiche les mêmes : '
+  + numerotees([
+    'Cliquer sur le lien.',
+    inclusDansLePro
+      ? '« Obtenir mon numéro » : il est inclus dans son Pro, rien à payer ; le numéro s’affiche sur la page.'
+      : '« Payer 3,50 € HT par mois » ; une fois le paiement confirmé, le numéro s’affiche sur la page.',
+    ...ETAPES_NUMERO_FOURNI.map((e) => e.fr),
+    'Revenir te voir seulement une fois l’écran « Finish » passé.',
+  ])
+  + ' Appelle ensuite watch_whatsapp_connection : le code arrivera aussi ici, écris-le-lui en entier dès qu’il arrive.'
+  + SI_ELLE_REVIENT;
 
 const CONSIGNES = {
-  apporte: 'Donne ce lien à la personne : il ouvre la page de connexion de son numéro, sans se connecter, pendant une '
+  apporte: LIEN_EN_ENTIER + 'Il ouvre la page de connexion de son numéro, sans se connecter, pendant une '
     + 'heure. Sur la page : la fenêtre de Meta, son numéro, et le code qu’elle reçoit elle-même. Appelle ensuite '
-    + 'watch_whatsapp_connection pour savoir quand le numéro est connecté.',
+    + 'watch_whatsapp_connection pour savoir quand le numéro est connecté.' + SI_ELLE_REVIENT,
 } as const;
+
+const RAPPEL_ATTENTE = 'Rappelle watch_whatsapp_connection avec etat_connu égal à cette empreinte pour attendre la suite.';
+
+/**
+ * Ce que Claude dit ensuite, selon l'étape. À l'essai 99, il attendait en silence pendant que la personne ne savait plus
+ * où aller, et annonçait le crédit lu avant la connexion (0 €) alors que le crédit offert venait d'arriver.
+ */
+function suiteDe(e: EtatConnexion): string {
+  if (e.connecte?.aActiver) {
+    return 'Le numéro est relié, mais Meta ne l’a pas encore activé : la vérification n’est pas allée au bout. Dis-le à la '
+      + 'personne : elle peut la terminer dans l’Accueil de la console (« Activer le numéro »).';
+  }
+  if (e.connecte) {
+    // Le crédit offert est écrit après la liaison, une fois Meta interrogé (relecture du lot) : quelques secondes.
+    return 'Le numéro est connecté : le branchement est fini. Relis get_setup_state avant d’annoncer la suite : la '
+      + 'connexion change l’état de l’espace. Le crédit offert au premier numéro arrive quelques secondes après : s’il '
+      + 'est encore à 0, relis une fois quelques secondes plus tard avant d’en parler.';
+  }
+  if (e.code) {
+    return 'Écris ce code en entier à la personne, en texte simple : elle le saisit dans la fenêtre de Meta (il s’affiche '
+      + `aussi sur la page), puis va jusqu’au dernier écran, « Finish ». ${RAPPEL_ATTENTE}`;
+  }
+  if (e.fourni) {
+    return `Le numéro ${e.fourni} est attribué. Redonne à la personne les étapes de la page si elle ne les a plus : `
+      + `${numerotees(ETAPES_NUMERO_FOURNI.map((x) => x.fr))} Le code arrivera aussi ici. ${RAPPEL_ATTENTE}`;
+  }
+  if (e.abonnement?.statut === 'actif') {
+    // Payé, mais la réserve s'est vidée entre-temps : la page dit « en préparation », Claude aussi.
+    return 'Le paiement est reçu, mais le numéro est encore en préparation : la page l’affichera dès qu’il est prêt. '
+      + `Dis-le à la personne, sans lui redonner le lien. ${RAPPEL_ATTENTE}`;
+  }
+  return 'Rien n’a encore bougé. Si la personne revient sans avoir avancé, redonne-lui le lien en entier et ses étapes '
+    + `(start_whatsapp_connection en rend un neuf si l’heure est passée). ${RAPPEL_ATTENTE}`;
+}
 
 /** L'état tel que Claude le lit. Le code en clair n'y figure qu'à part (`code`), quand il est arrivé. */
 function vueEtat(e: EtatConnexion): Record<string, unknown> {
@@ -313,12 +370,7 @@ export const OUTILS_NUMERO: OutilMcp[] = [
             etat: vueEtat(e),
             code: e.code?.code ?? null,
             empreinte,
-            suite: e.connecte?.aActiver
-              ? 'Le numéro est relié, mais Meta ne l’a pas encore activé : la vérification n’est pas allée au bout. Dis-le à la '
-                + 'personne : elle peut la terminer dans l’Accueil de la console (« Activer le numéro »).'
-              : e.connecte
-                ? 'Le numéro est connecté : le branchement est fini.'
-                : 'Rappelle watch_whatsapp_connection avec etat_connu égal à cette empreinte pour attendre la suite.',
+            suite: suiteDe(e),
           };
         }
         await deps.numero.attendre(PAS_ATTENTE_MS);

@@ -266,7 +266,9 @@ export interface DemandeAbonnement {
  * nôtre). Les métadonnées `tenant_id` et `produit: numero` sont posées sur la session ET sur l'abonnement
  * (`subscription_data`) : le webhook relit la première à la confirmation, et les factures des renouvellements portent
  * les secondes (`parent.subscription_details.metadata`). ⚠️ Pas de `invoice_creation` : en mode abonnement, Stripe émet
- * la facture lui-même et refuse ce paramètre. Pas de code promo : rien n'a été décidé pour le numéro.
+ * la facture lui-même et refuse ce paramètre. Le champ « code promo » est ouvert aux deux produits (le numéro depuis la
+ * décision de Julien du 2026-10-13) : un code se crée dans le tableau de bord, donc par nous seuls, et chacun se restreint
+ * à son produit chez Stripe (le compte est partagé).
  */
 export async function creerSessionAbonnement(transport: TransportStripe, d: DemandeAbonnement): Promise<{ id: string; url: string }> {
   return appeler(transport, 'abonnement', '/checkout/sessions', {
@@ -284,12 +286,11 @@ export async function creerSessionAbonnement(transport: TransportStripe, d: Dema
     'metadata[produit]': d.produit,
     'subscription_data[metadata][tenant_id]': d.tenantId,
     'subscription_data[metadata][produit]': d.produit,
-    // Le Pro (lot 6, B1) : sa périodicité, et le code promo ouvert (l'essai réel se paie par un code à 100 % que Julien
-    // crée ; un code ne se crée que dans le tableau de bord, donc par nous seuls). Le numéro n'en a toujours pas.
-    ...(d.produit === 'pro' ? {
-      allow_promotion_codes: 'true',
-      ...(d.periodicite ? { 'metadata[periodicite]': d.periodicite, 'subscription_data[metadata][periodicite]': d.periodicite } : {}),
-    } : {}),
+    allow_promotion_codes: 'true',
+    // Le Pro (lot 6, B1) : sa périodicité, que le webhook relit à la création.
+    ...(d.produit === 'pro' && d.periodicite
+      ? { 'metadata[periodicite]': d.periodicite, 'subscription_data[metadata][periodicite]': d.periodicite }
+      : {}),
     client_reference_id: d.tenantId,
     success_url: d.urlSucces,
     cancel_url: d.urlAbandon,

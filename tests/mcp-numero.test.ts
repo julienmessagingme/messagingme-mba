@@ -73,6 +73,18 @@ describe('start_whatsapp_connection', () => {
     expect(outil('start_whatsapp_connection').description).toMatch(/Pro/);
   });
 
+  it('🔴 essai 99 : la consigne exige le lien EN ENTIER, hors bloc de code, et la page gardée ouverte jusqu’au bout', async () => {
+    for (const mode of ['fourni', 'apporte'] as const) {
+      const { deps } = monter(() => VIDE);
+      const r = await outil('start_whatsapp_connection').executer(deps, 't1', { mode }, PERSONNE) as Record<string, string>;
+      // Claude avait écrit « j'ai généré le lien » sans le lien : la personne ne voit pas le résultat de l'outil.
+      expect(r.consigne).toMatch(/en entier/i);
+      expect(r.consigne).toMatch(/bloc de code/);
+      expect(r.consigne).toMatch(/ouverte jusqu’au bout/);
+      expect(r.consigne).toMatch(/fenêtre de Meta/);
+    }
+  });
+
   it('le mode apporté est porté par le jeton, et sa consigne parle de l’application WhatsApp', async () => {
     const { deps } = monter(() => VIDE);
     const r = await outil('start_whatsapp_connection').executer(deps, 't1', { mode: 'apporte' }, PERSONNE) as Record<string, string>;
@@ -121,6 +133,44 @@ describe('watch_whatsapp_connection', () => {
 
   it('le délai passe sous les 45 s du proxy de l’API, avec de la marge', () => {
     expect(DELAI_ATTENTE_MS).toBeLessThanOrEqual(30_000);
+  });
+
+  it('🔴 essai 99 : numéro attribué sans code, la suite dit où être (la page, la fenêtre de Meta, CE numéro)', async () => {
+    const { deps } = monter(() => ATTRIBUE);
+    const r = await outil('watch_whatsapp_connection').executer(deps, 't1', {}, PERSONNE) as Record<string, unknown>;
+    expect(String(r.suite)).toMatch(/\+441235619343/);
+    expect(String(r.suite)).toMatch(/fenêtre de Meta/);
+    expect(String(r.suite)).toMatch(/etat_connu/);
+  });
+
+  it('🔴 essai 99 : le code arrivé, la suite dit de le lire à la personne pour la fenêtre de Meta', async () => {
+    const { deps } = monter(() => AVEC_CODE);
+    const r = await outil('watch_whatsapp_connection').executer(deps, 't1', {}, PERSONNE) as Record<string, unknown>;
+    expect(r.code).toBe('123456');
+    expect(String(r.suite)).toMatch(/code/);
+    expect(String(r.suite)).toMatch(/fenêtre de Meta/);
+  });
+
+  it('🔴 essai 99 : connecté, la suite fait relire get_setup_state (Claude annonçait 0 € après le crédit offert)', async () => {
+    const { deps } = monter(() => ({ ...ATTRIBUE, connecte: { chiffres: '441235619343', aActiver: false } }));
+    const r = await outil('watch_whatsapp_connection').executer(deps, 't1', {}, PERSONNE) as Record<string, unknown>;
+    expect(String(r.suite)).toMatch(/get_setup_state/);
+    // Le crédit offert est écrit quelques secondes APRÈS la liaison (relecture du lot) : une seconde lecture.
+    expect(String(r.suite)).toMatch(/quelques secondes/);
+  });
+
+  it('🟡 payé, la réserve vidée entre-temps : la suite dit « en préparation », jamais « rien n’a bougé »', async () => {
+    const { deps } = monter(() => ({ ...VIDE, abonnement: { statut: 'actif', periodeFin: '2026-11-13T09:00:00.000Z' } }));
+    const r = await outil('watch_whatsapp_connection').executer(deps, 't1', {}, PERSONNE) as Record<string, unknown>;
+    expect(String(r.suite)).toMatch(/préparation/);
+    expect(String(r.suite)).not.toMatch(/Rien n’a encore bougé/);
+  });
+
+  it('rien encore : la suite dit de redonner le lien et ses étapes si la personne revient', async () => {
+    const { deps } = monter(() => VIDE);
+    const r = await outil('watch_whatsapp_connection').executer(deps, 't1', {}, PERSONNE) as Record<string, unknown>;
+    expect(String(r.suite)).toMatch(/lien/);
+    expect(String(r.suite)).toMatch(/etat_connu/);
   });
 
   it('🔴 relié mais pas encore activé par Meta : ni « connecté » ni « fini », et Claude le dit', async () => {

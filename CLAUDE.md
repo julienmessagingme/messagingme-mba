@@ -374,8 +374,8 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
   (`creerAssureurDeCle`, SANS que le GET du fil l'attende : une ouverture en vol par espace). ⚠️ Le plafond Vercel reste le cumul acheté au coût BRUT : notre solde mord avant lui.
   🔴 **LE CRÉDIT ENTRE PAR TROIS PORTES, ET LE PLAFOND VERCEL SUIT LES TROIS** (2026-09-29) : l'**achat** Stripe
   (webhook signé, une fois par session, `src/http/credit-stripe.ts`, migration 0191), la **recharge** manuelle
-  (`/ops`), et le crédit **offert** (`CREDIT_OFFERT_MICRO_EUR`, 5 € par défaut) à la connexion du PREMIER numéro
-  WhatsApp, dans la transaction de `linkTenant`, une fois par espace et jamais deux fois pour un numéro
+  (`/ops`), et le crédit **offert** (`CREDIT_OFFERT_MICRO_EUR`, son défaut dans `src/config.ts`) à la connexion du PREMIER numéro
+  WhatsApp, quand Meta le dit vérifié (`offrirCredit`, après `linkTenant`), une fois par espace et jamais deux fois pour un numéro
   (`credits_offerts`). Plus à la création d'un espace : sans preuve, l'offre s'y récoltait par script et vidait le
   plafond d'équipe Vercel. Chaque porte appelle `remonterPlafondApresRecharge` après sa transaction.
   ⚠️ `TRADUCTION_MODELE` vide = traduction ÉTEINTE, et l'écran le dit avec la cause `instance` (rien à

@@ -1,7 +1,7 @@
 ---
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
-source_empreinte: 1c3699
+source_empreinte: 69abba
 ---
 # Connecter mon numéro WhatsApp, et lire son état
 
@@ -15,11 +15,14 @@ déjà commencé une première fois, recommencer fonctionne : vous n'avez rien �
 s'affiche (code expiré, compte non partagé, plusieurs numéros à départager), pas un message d'erreur opaque.
 **Vous n'avez pas de numéro ?** Le lien « Pas de numéro ? Nous vous en fournissons un » ouvre la page « Connecter
 WhatsApp » : « Fournissez-moi un numéro » vous propose un numéro britannique dédié à 3,50 € HT par mois. Vous payez sur
-la page de Stripe, puis le numéro s'affiche ; vous le tapez dans la fenêtre de Meta, en choisissant la vérification par
-appel si Meta vous laisse le choix (sinon, son SMS arrive aussi). « Gérer mon abonnement », sur cette page, ouvre le portail de Stripe (carte, factures, résiliation) ; depuis
-Claude Code, demandez-le à Claude. Le code de Meta s'affiche sur la page en quelques secondes :
-recopiez-le dans la fenêtre, et le numéro est connecté. Si Meta refuse ce numéro, « En obtenir un autre » vous en
-donne un nouveau.
+la page de Stripe (un code promo s'y saisit, si nous vous en avons remis un), puis le numéro s'affiche. Ensuite,
+dans l'ordre : « Ouvrir la fenêtre de Meta » ; à l'écran du numéro, « Enter a new phone number », le pays GB (+44),
+puis les chiffres qui suivent +44 ; la vérification par SMS (« Text message ») si Meta vous laisse le choix ; le code
+s'affiche sur la page en quelques secondes, recopiez-le dans la fenêtre ; sans code au bout de 45 secondes, attendez
+que Meta propose de le renvoyer et essayez l'autre méthode ; enfin, allez jusqu'au dernier écran de Meta (« Finish »),
+qui termine la connexion. Si Meta refuse ce numéro, « En obtenir un autre » vous en donne un nouveau. « Gérer mon
+abonnement », sur cette page, ouvre le portail de Stripe (carte, factures, résiliation) ; depuis Claude Code,
+demandez-le à Claude.
 
 **Si l'abonnement du numéro fourni tombe.** Un renouvellement qui échoue vous laisse 7 jours pour régler : un bandeau,
 sur toutes les pages, donne la date de la coupure, et « Régler » ouvre le portail de Stripe. Passé ce délai, ou à la

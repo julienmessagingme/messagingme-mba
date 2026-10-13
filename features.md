@@ -1996,11 +1996,13 @@ scénario, comment importer des contacts.
 - ✅ **Un numéro fourni pour qui n'en a pas** (lot 3b, LIVE et éprouvé le 2026-10-06) : sur l'Accueil d'un
   espace sans numéro, « Pas de numéro ? Nous vous en fournissons un » mène à la page « Connecter WhatsApp ».
   « Fournissez-moi un numéro » se paie d'abord (3,50 € HT par mois, abonnement Stripe, lot 3c) : « Payer » mène à la
-  page de paiement de Stripe, et le numéro britannique dédié de notre réserve n'est attribué qu'une fois le paiement
-  confirmé ; la page l'affiche alors, avec un bouton Copier ; le client le tape dans la fenêtre de Meta (« Enter a new phone number ») et choisit la vérification par
-  appel si Meta le laisse choisir ; sinon Meta envoie un SMS, que la ligne fixe britannique lit à voix haute ; dans les
-  deux cas, le code est capté par notre serveur et s'affiche sur la page en quelques secondes ; le client
-  le recopie, et le numéro est connecté comme un autre. Si Meta refuse ce numéro, « En obtenir un autre » en donne un
+  page de paiement de Stripe (code promo accepté), et le numéro britannique dédié de notre réserve n'est attribué qu'une fois le paiement
+  confirmé ; la page l'affiche alors, avec un bouton Copier ; le client le tape dans la fenêtre de Meta (« Enter a new phone number », le pays GB +44, puis les chiffres qui
+  suivent +44) et choisit la vérification par SMS (« Text message ») si Meta le laisse choisir, que la ligne fixe
+  britannique lit à voix haute ; par appel comme par SMS, le code est capté par notre serveur et s'affiche sur la page
+  en quelques secondes, et le client le recopie. Sans code au bout de 45 secondes, il le redemande dans la fenêtre de
+  Meta par l'autre méthode. Il va enfin jusqu'au dernier écran de Meta (« Finish »), et le numéro est connecté comme un
+  autre. La page et Claude donnent les mêmes étapes, écrites une seule fois. Si Meta refuse ce numéro, « En obtenir un autre » en donne un
   nouveau ; « Abandonner » le rend à la réserve (si l'abonnement court encore, la page dit qu'il continue jusqu'à sa
   résiliation), et un numéro rendu va d'abord à un abonné qui attend le sien. Payé mais la réserve vide : la page dit
   « en préparation », et le numéro arrive dès que Julien en déclare un ; un paiement neuf n'est pas ouvert sur un

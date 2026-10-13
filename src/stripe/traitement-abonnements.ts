@@ -298,7 +298,8 @@ export function creerTraitementAbonnements(deps: DepsTraitementAbonnements) {
     if (e.type === 'checkout.session.completed') {
       const lu = sessionNumeroSchema.safeParse(e.objet);
       if (!lu.success) return illisible(e, 'numero');
-      if (lu.data.payment_status !== 'paid') return ACQUITTE;
+      // Un code promo à 100 % rend `no_payment_required` : le numéro est dû comme après un paiement (comme le Pro).
+      if (lu.data.payment_status !== 'paid' && lu.data.payment_status !== 'no_payment_required') return ACQUITTE;
       await enregistrerNumero({
         tenantId: lu.data.metadata.tenant_id,
         abonnementId: idDe(lu.data.subscription),

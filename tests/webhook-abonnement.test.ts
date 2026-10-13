@@ -110,6 +110,12 @@ describe('le webhook Stripe et l’abonnement du numéro', () => {
     expect(cap.alertes).toEqual([]);
   });
 
+  it('🔴 un code promo à 100 % (« no_payment_required ») attribue aussi le numéro, comme un paiement', async () => {
+    const { srv, cap } = monter();
+    await envoyer(srv, evenement(sessionAbonnement({ payment_status: 'no_payment_required' }), 'checkout.session.completed'));
+    expect(cap.enregistres).toEqual([{ tenantId: T1, abonnementId: 'sub_1', livemode: true, periodeFin: null }]);
+  });
+
   it('une session pas encore payée, ou qui n’est pas la nôtre : rien', async () => {
     const { srv, cap } = monter();
     await envoyer(srv, evenement(sessionAbonnement({ payment_status: 'unpaid' }), 'checkout.session.completed'));

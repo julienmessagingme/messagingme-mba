@@ -216,14 +216,15 @@ describe('l’abonnement du numéro fourni (lot 3c, livraison B)', () => {
       'metadata[produit]': 'numero',
       'subscription_data[metadata][tenant_id]': TENANT,
       'subscription_data[metadata][produit]': 'numero',
+      allow_promotion_codes: 'true',
       client_reference_id: TENANT,
       success_url: 'https://console.exemple/brancher?abonnement=recu',
       cancel_url: 'https://console.exemple/brancher?abonnement=abandon',
     });
     // Une facture est émise par l'abonnement lui-même : `invoice_creation` est refusé par Stripe en mode abonnement.
     expect(a.corps.has('invoice_creation[enabled]')).toBe(false);
-    // Le numéro n'a pas de code promo : rien n'a été décidé pour lui.
-    expect(a.corps.has('allow_promotion_codes')).toBe(false);
+    // Le numéro n'a pas de périodicité : seul le Pro en porte une.
+    expect(a.corps.has('metadata[periodicite]')).toBe(false);
   });
 
   it('🔴 la session du Pro (lot 6, B1) : produit pro et sa périodicité, sur la session ET l’abonnement, code promo ouvert', async () => {

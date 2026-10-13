@@ -85,7 +85,7 @@ test('🔴 numéro fourni : il s’affiche, puis le code capté apparaît sans r
   await page.getByTestId('choix-fourni').click();
   await page.getByTestId('obtenir-numero').click();
   await expect(page.getByTestId('numero-fourni')).toHaveText('+441235619343');
-  await expect(page.getByTestId('code-capte')).toContainText('En attente de l’appel de Meta');
+  await expect(page.getByTestId('code-capte')).toContainText('En attente du code de Meta');
   // La page lit le code toutes les 3 secondes : il arrive sans geste du client.
   await expect(page.getByTestId('code-capte')).toContainText('345679', { timeout: 12_000 });
   await expect(page.getByTestId('ouvrir-fenetre-meta')).toBeEnabled();
@@ -229,7 +229,7 @@ test('🟡 « Remplacer » : une lecture partie avant ne réaffiche pas l’anci
   await page.waitForTimeout(500);
   await expect(page.getByTestId('numero-fourni')).toHaveText(B);
   await expect(page.getByTestId('code-capte')).not.toContainText('111111');
-  await expect(page.getByTestId('code-capte')).toContainText('En attente de l’appel de Meta');
+  await expect(page.getByTestId('code-capte')).toContainText('En attente du code de Meta');
 });
 
 test('payé, mais la réserve était vide : « en préparation »', async ({ page }) => {

@@ -6,6 +6,28 @@
 > tranchent, jamais ce fichier.
 
 
+## 2026-10-13 : l'essai 99, trois défauts de la mise en service par Claude, et le code promo du numéro fourni
+
+- L'essai réel 99 de Julien (espace neuf, plugin dans un Claude Code lancé depuis PowerShell, `engageme` retiré) :
+  autorisation par `/mcp`, `/messagingme:demarrer`, numéro fourni payé, numéro britannique connecté et vérifié par Meta.
+- Trouvé en route : la réserve de numéros fournis était VIDE (un attribué, un bloqué) ; tout nouvel inscrit qui
+  choisissait un numéro fourni était refusé avant le paiement. Julien en a déclaré un dans `/ops`.
+- Trois défauts de Claude pendant la connexion. Il a écrit « j'ai généré le lien » sans le lien (la personne ne voit
+  pas le résultat d'un outil, et la skill disait de ne jamais recopier une sortie d'outil) ; redemandé, il l'a donné
+  dans un bloc de code, qu'un terminal coupe au bord de l'écran ; il a attendu en silence sans redire où aller ; une
+  fois le numéro connecté, il a annoncé un crédit de 0 € lu au début, alors que le crédit offert (1 €) venait d'arriver
+  (08 h 11 UTC, relu en base). Corrigés côté serveur (la `consigne` et la `suite` des deux outils, tenues par
+  `tests/mcp-numero.test.ts`, vérifiés dans les deux sens), et dans la skill du plugin, publiée en 0.1.2.
+- Les étapes du numéro fourni, une fois payé, sont désormais écrites UNE fois (`web/lib/partage/etapes-numero-fourni.ts`) :
+  la page du parcours les affiche, et Claude les redit, encadrées par le lien et le paiement avant, et « revenir le voir
+  seulement après Finish » après. Ordre et choix de Julien après l'essai : la fenêtre de Meta, le pays GB (+44) puis le
+  numéro sans le +44, « Text message » de préférence (la page demandait l'appel), le code, l'autre méthode après 45 s
+  sans code, jusqu'à « Finish ».
+- La page de Stripe du numéro fourni n'avait pas de champ « code promo » (« rien n'a été décidé pour le numéro ») :
+  ouvert sur décision de Julien, et une session `no_payment_required` attribue désormais le numéro.
+- Remarqué : réinstallé depuis l'application de bureau, le plugin est resté en 0.1.0 (le cache n'avait pas relu le
+  dépôt après la publication de la 0.1.1).
+
 ## 2026-10-13 : les copies serveur / console rendues au dossier partagé (audit ponytail, point 1)
 
 L'audit « ponytail » du dépôt (fait en conversation, sans rapport versionné) classait en premier les règles écrites

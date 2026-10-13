@@ -2416,7 +2416,7 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
   (`customer.subscription.deleted`, raison `impaye` si Stripe dit `payment_failed` ou `payment_disputed`) le termine, et
   `finir` dit si c'est la première fin (un rejeu ne réalerte pas).
   ⚠️ **Le compte Stripe est partagé avec d'autres activités** : tout code promo actif sans restriction de produit
-  s'applique au Pro, et à la recharge, qui crédite le montant AVANT remise. Restreindre chaque code à ses produits se
+  s'applique au Pro, au numéro fourni, et à la recharge, qui crédite le montant AVANT remise. Restreindre chaque code à ses produits se
   fait chez Stripe.
   🔴 Chaque écriture vide le cache de l'offre de la copie qui reçoit ; les autres copies suivent en 30 s au plus.
 - 🔴 **Une offre illisible laisse tout passer** : `OffresEnCache` rend alors les droits de l'Entreprise, sans les
@@ -3168,7 +3168,9 @@ l'Asterisk du VPS (`ops/otp-asterisk/`) décroche, enregistre, puis poste l'enre
   identifiants) n'est pas versionné : un correctif qui le touche s'applique aussi à la main sur le VPS.
 - 🔴 **Le numéro fourni côté client** (lot 3b, `src/http/numero-fourni.ts`, page `/connecter-whatsapp`). En
   Embedded Signup v4, rien ne fait sauter l'écran du numéro de la fenêtre de Meta : le client y TAPE le numéro que la
-  page lui attribue, choisit la vérification par appel, et recopie le code que la page affiche. Aucune de ces routes
+  page lui attribue, choisit la vérification par SMS (« Text message ») de préférence, et recopie le code que la
+  page affiche. Les étapes affichées sont aussi celles que redisent les outils MCP : une seule source,
+  `ETAPES_NUMERO_FOURNI` (`web/lib/partage/etapes-numero-fourni.ts`), tenue par `tests/etapes-numero-fourni.test.ts`. Aucune de ces routes
   ne parle à Meta : la fenêtre vérifie, `/embedded-signup/complete` relie et active comme pour un numéro apporté.
   L'attribution (`attribuer`) prend un `libre` en `for update skip locked` et pose ensemble statut, espace et heure ;
   l'index `numeros_fournis_un_par_espace` tient deux demandes du même espace. Le code d'un espace (`codeDeLEspace`) ne
@@ -3186,6 +3188,12 @@ l'Asterisk du VPS (`ops/otp-asterisk/`) décroche, enregistre, puis poste l'enre
   session de la console. L'état de la connexion (`lireEtatConnexion`, `src/otp/etat-connexion.ts`) est la MÊME
   lecture pour la page (`GET /tenants/:tenantId/connexion-numero`) et pour `watch_whatsapp_connection`, qui rend la
   main au plus tard à 25 s : le proxy de `api.messagingme.app` coupe une réponse à 45 (`proxy_read_timeout`).
+  Ce que les deux outils disent à Claude est écrit pour une personne qui ne voit pas leurs résultats : la `consigne`
+  exige le lien EN ENTIER, en texte simple (un bloc de code est coupé par un terminal), et la page gardée ouverte ; la
+  `suite` (`suiteDe`, `src/mcp/outils-numero.ts`) dit, selon l'étape, où la personne doit être (la page, la fenêtre de
+  Meta, le numéro attribué ; payé sans numéro, « en préparation »), puis, une fois connecté, fait relire
+  `get_setup_state` : le crédit offert y apparaît quelques secondes après la liaison, écrit quand Meta dit le numéro
+  vérifié (`offrirCredit`).
   🔴 **L'abonnement du numéro fourni** (lot 3c, livraison B, migration 0214, `src/stripe/abonnement.ts`,
   `src/stripe/abonnements.pg.ts`). 3,50 € HT par mois en abonnement Stripe (`STRIPE_PRIX_NUMERO`, relu chez Stripe
   avant chaque paiement : récurrent, mensuel, euros, 350 centimes). `POST /tenants/:tenantId/numero-fourni/abonnement`
@@ -3197,6 +3205,8 @@ l'Asterisk du VPS (`ops/otp-asterisk/`) décroche, enregistre, puis poste l'enre
   transaction ; l'ordre d'arrivée ne change pas l'état final (une facture payée arrivée d'abord enregistre depuis
   `parent.subscription_details.metadata`), `resilie` est terminal, la fin de période ne recule jamais. Un second
   abonnement vivant pour un espace (deux onglets) échoue sur `abonnements_numero_un_par_espace` et prévient Julien.
+  Le champ « code promo » de la page de Stripe est ouvert (décision de Julien du 2026-10-13) ; une session
+  `no_payment_required` (code à 100 %) enregistre l'abonnement et attribue le numéro comme un paiement.
   ⚠️ La session et la facture du MÊME abonnement arrivées ensemble peuvent aussi heurter cet index (il n'arbitre pas
   le `on conflict`) : `enregistrer` réessaie une fois quand la ligne de CET abonnement existe. Un événement rejoué pour
   un abonnement résilié n'attribue rien et ne prévient personne (`etat: 'resilie'`).
@@ -4106,7 +4116,8 @@ destinataires e-mail (`blocs`), les sorties du bloc agent et la règle du code d
 fichiers, consignes et prix de l'agent de Meta (`agent-meta`), les plafonds de pièce jointe de l'assistant
 (`piece-jointe`), les déclencheurs d'automation et leurs opérateurs (`automations`), les étapes du guide Salesforce
 (`salesforce`), les bornes d'une publicité (`publicite`), les codes d'une analyse (`analyse`), le motif d'une pastille
-`{{nom}}` (`pastille`) et le nom de paramètre d'une Fonction JS (`fonction-js`). 🔴 Pour ces valeurs (types, bornes,
+`{{nom}}` (`pastille`), le nom de paramètre d'une Fonction JS (`fonction-js`), et les étapes du numéro fourni que
+la page affiche et que Claude redit (`etapes-numero-fourni`). 🔴 Pour ces valeurs (types, bornes,
 droits, libellés), le fichier est la SOURCE : ce manuel dit où elles vivent, il ne les recopie pas. Une copie qui reste
 ailleurs (une liste de libellés d'écran, une règle liée à la base ou à `zod`, une logique qui entraînerait le serveur
 avec elle) garde son test de parité.
