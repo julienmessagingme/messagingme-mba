@@ -74,17 +74,29 @@ export function promptSysteme(ctx: ContexteAgent): string {
   ].join('\n'));
 
   /**
-   * L'équipe n'est pas joignable : l'agent doit le savoir avant de passer la main. Dans la consigne et pas dans
+   * L'équipe est-elle joignable : l'agent doit le savoir avant de passer la main. Dans la consigne et pas dans
    * le résultat de l'outil, puisque l'escalade arrête le tour. La date est déjà écrite
    * (`prochaineOuverture`), le modèle ne la calcule pas.
+   * 🔴 DITE DANS LES DEUX SENS, avec la phrase sur le périmé. L'agent garde trente jours de mémoire : sa phrase
+   * « l'équipe reprendra mardi 6 octobre » écrite hors horaires y reste, et une consigne muette aux heures
+   * ouvrées l'a laissé la répéter une semaine plus tard (Groupama, 2026-10-13). ⚠️ Pas d'heure courante ici :
+   * elle changerait la consigne à chaque minute, dont le début est servi par le cache (`agent-cache:`).
    */
-  if (ctx.equipe && !ctx.equipe.disponible) {
+  if (ctx.equipe) {
     blocs.push([
-      'L’ÉQUIPE N’EST PAS JOIGNABLE EN CE MOMENT.',
-      ctx.equipe.reouverture !== null
-        ? `Si tu passes la main à un humain, écris ta phrase AVANT d’appeler l’outil, et n’annonce pas un conseiller tout de suite : dis, dans tes mots et dans ton ton, que l’équipe reprendra ${ctx.equipe.reouverture}.`
-        : 'Si tu passes la main à un humain, écris ta phrase AVANT d’appeler l’outil, et n’annonce ni conseiller ni délai : dis simplement que la demande est transmise.',
-      'Sa demande sera vue par l’équipe dans tous les cas : tu ne mens pas en disant qu’elle est transmise.',
+      ...(ctx.equipe.disponible
+        ? [
+          'L’ÉQUIPE EST JOIGNABLE EN CE MOMENT.',
+          'Si tu passes la main à un humain, tu peux dire qu’un conseiller va reprendre la conversation.',
+        ]
+        : [
+          'L’ÉQUIPE N’EST PAS JOIGNABLE EN CE MOMENT.',
+          ctx.equipe.reouverture !== null
+            ? `Si tu passes la main à un humain, écris ta phrase AVANT d’appeler l’outil, et n’annonce pas un conseiller tout de suite : dis, dans tes mots et dans ton ton, que l’équipe reprendra ${ctx.equipe.reouverture}.`
+            : 'Si tu passes la main à un humain, écris ta phrase AVANT d’appeler l’outil, et n’annonce ni conseiller ni délai : dis simplement que la demande est transmise.',
+          'Sa demande sera vue par l’équipe dans tous les cas : tu ne mens pas en disant qu’elle est transmise.',
+        ]),
+      'Si un message plus ancien de cette conversation annonce une autre disponibilité ou une date de reprise, il est périmé : ne le répète pas, seule cette consigne fait foi.',
     ].join('\n'));
   }
 

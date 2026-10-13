@@ -183,8 +183,19 @@ describe('promptSysteme : la disponibilité de l’équipe', () => {
     expect(promptSysteme(CTX())).not.toContain('JOIGNABLE');
   });
 
-  it('équipe DISPONIBLE : rien n’est dit non plus', () => {
-    expect(bloc({ disponible: true, reouverture: null })).not.toContain('JOIGNABLE');
+  it('🔴 équipe DISPONIBLE : c’est DIT, et ce qu’un message plus ancien annonçait est périmé', () => {
+    // Le silence d'avant le 2026-10-13 laissait le modèle répéter, aux heures ouvrées, sa phrase de la veille au
+    // soir restée dans sa mémoire de trente jours : « l'équipe reprendra mardi 6 octobre à 9 h », le 13.
+    const p = bloc({ disponible: true, reouverture: null });
+    expect(p).toContain('L’ÉQUIPE EST JOIGNABLE EN CE MOMENT.');
+    expect(p).not.toContain('N’EST PAS JOIGNABLE');
+    expect(p).toContain('il est périmé : ne le répète pas');
+  });
+
+  it('🔴 équipe FERMÉE : la phrase sur le périmé y est aussi', () => {
+    // Une conversation peut aussi traverser deux fermetures : la date de la première ne vaut plus à la seconde.
+    expect(bloc({ disponible: false, reouverture: 'lundi 21 septembre à 9 h' })).toContain('il est périmé : ne le répète pas');
+    expect(bloc({ disponible: false, reouverture: null })).toContain('il est périmé : ne le répète pas');
   });
 
   it('🔴 équipe FERMÉE avec une date : la date est DONNÉE, le modèle ne la calcule pas', () => {
