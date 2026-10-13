@@ -97,3 +97,40 @@ test.describe('le formulaire de template dit pourquoi il refuse', () => {
     await expect(page.getByTestId('template-manques')).not.toContainText(/bouton 1/);
   });
 });
+
+/**
+ * LE COMPTEUR DE CARACTÈRES RESTANTS (demande de Julien du 2026-10-13) : un champ borné coupait la frappe à sa limite
+ * sans rien dire. Les limites sont celles de Meta (`web/lib/template-limites.ts`).
+ */
+test.describe('les champs du template disent ce qui leur reste', () => {
+  test('🔴 un bouton de réponse rapide compte ses 25 caractères', async ({ page }) => {
+    await ouvrirFormulaire(page);
+    await page.getByRole('button', { name: /^Réponse rapide$|^Quick reply$/ }).click();
+    await expect(page.getByTestId('template-bouton-reste-0')).toHaveText('25 caractères restants');
+    await page.getByTestId('template-bouton-texte-0').fill('Je suis intéressé');
+    await expect(page.getByTestId('template-bouton-reste-0')).toHaveText('8 caractères restants');
+    await page.getByTestId('template-bouton-texte-0').fill('a'.repeat(25));
+    await expect(page.getByTestId('template-bouton-reste-0')).toHaveText('0 caractère restant');
+  });
+
+  test('le titre et le pied de page comptent leurs 60 caractères', async ({ page }) => {
+    await ouvrirFormulaire(page);
+    await page.getByTestId('template-entete-type').selectOption('TEXT');
+    await page.getByTestId('template-entete-texte').fill('Offre d’automne');
+    await expect(page.getByTestId('template-entete-reste')).toHaveText('45 caractères restants');
+    await page.getByTestId('template-pied').fill('Répondez STOP pour arrêter');
+    await expect(page.getByTestId('template-pied-reste')).toHaveText('34 caractères restants');
+  });
+
+  test('🔴 un corps de plus de 1 024 caractères passe en rouge et bloque « Créer », en le disant', async ({ page }) => {
+    await ouvrirFormulaire(page);
+    await page.getByTestId('template-nom').fill('promo_longue');
+    const corps = page.getByRole('textbox', { name: /Corps du message/i });
+    await corps.fill('a'.repeat(1000));
+    await expect(page.getByTestId('template-corps-reste')).toHaveText('24 caractères restants');
+    await corps.fill('a'.repeat(1030));
+    await expect(page.getByTestId('template-corps-reste')).toHaveText('6 caractères de trop');
+    await expect(page.getByTestId('template-manques')).toContainText('1 024 caractères au plus (il en fait 1030)');
+    await expect(page.getByRole('button', { name: /Créer le template|Create template/ })).toBeDisabled();
+  });
+});

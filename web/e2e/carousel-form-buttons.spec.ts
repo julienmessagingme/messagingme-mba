@@ -80,4 +80,13 @@ test.describe('Templates : boutons d’un carousel, carte par carte', () => {
     await page.getByRole('button', { name: 'Retirer' }).first().click();
     await expect(page.getByPlaceholder('https://exemple.fr/cette-carte')).toHaveCount(0);
   });
+
+  test('le texte d’une carte compte ses 160 caractères, et chaque bouton ses 25', async ({ page }) => {
+    // Demande de Julien du 2026-10-13 : les champs bornés disent ce qui leur reste. 160 pour le texte d'une carte (Meta).
+    await page.getByTestId('carousel-carte-texte-0').fill('Notre chalet face au lac');
+    await expect(page.getByTestId('carousel-carte-reste-0')).toHaveText('136 caractères restants');
+    await page.getByRole('button', { name: 'Lien', exact: true }).click();
+    await page.getByPlaceholder(/Texte du bouton/).nth(0).fill('Réserver');
+    await expect(page.getByTestId('carousel-bouton-reste-0-0')).toHaveText('17 caractères restants');
+  });
 });

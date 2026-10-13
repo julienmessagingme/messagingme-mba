@@ -3,6 +3,8 @@
 import { useRef, useState } from 'react';
 import { createTemplate, uploadMedia, type TemplateButtonInput } from '@/lib/api';
 import { resizeToDataUrl } from '@/lib/image';
+import { CompteurCaracteres } from '@/components/CompteurCaracteres';
+import { caracteresRestants, LIMITES_TEMPLATE } from '@/lib/template-limites';
 import { CarouselPreview } from '@/components/CarouselPreview';
 import { useTemplateBody, TemplateBodyField, TemplateVariableExamples, unmappedVariablesMessage } from '@/components/TemplateBodyField';
 import { isSendableButtonUrl } from '@/lib/partage/button-url';
@@ -119,6 +121,10 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
   const manques: string[] = [
     ...(name.trim() === '' ? [t('le nom du carousel', 'the carousel name')] : []),
     ...(body.trim() === '' ? [t('le corps du message', 'the message body')] : []),
+    // Meta refuse un corps plus long, mais seulement après l'aller-retour de sa revue : on le dit avant l'envoi.
+    ...(caracteresRestants(body, LIMITES_TEMPLATE.corps) < 0
+      ? [t(`un corps de 1 024 caractères au plus (il en fait ${body.length})`, `a body of 1,024 characters at most (it has ${body.length})`)]
+      : []),
     ...(cards.length < 2 ? [t('au moins deux cartes', 'at least two cards')] : []),
     ...cards.flatMap((c, i) => {
       const rang = i + 1;
@@ -190,6 +196,7 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
         <input value={name} onChange={(e) => setName(e.target.value)} className={`${inputClsAuto} w-full max-w-sm`} placeholder="promo_selection" />
       </div>
       <TemplateBodyField
+        max={LIMITES_TEMPLATE.corps}
         state={bodyState}
         label={t("Message d’introduction (commun)", 'Introduction message (shared)')}
         placeholder={t('Bonjour [Prénom], découvrez notre sélection 🎉', 'Hello [First name], discover our selection 🎉')}
@@ -264,7 +271,10 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
                 onChange={(e) => onFile(i, e.target.files?.[0])}
               />
               {c.error && <p className="text-xs text-danger">{c.error}</p>}
-              <input value={c.body} onChange={(e) => setCard(i, { body: e.target.value })} className={`${inputClsAuto} w-full`} placeholder={t('Texte de la carte (optionnel)', 'Card text (optional)')} />
+              <div>
+                <input value={c.body} onChange={(e) => setCard(i, { body: e.target.value })} maxLength={LIMITES_TEMPLATE.carteCorps} className={`${inputClsAuto} w-full`} placeholder={t('Texte de la carte (optionnel)', 'Card text (optional)')} data-testid={`carousel-carte-texte-${i}`} />
+                {c.body !== '' && <CompteurCaracteres reste={caracteresRestants(c.body, LIMITES_TEMPLATE.carteCorps)} testId={`carousel-carte-reste-${i}`} />}
+              </div>
               {layout.map((type, j) => (
                 <div key={j} className="space-y-1.5 rounded-controle bg-ink-50 p-2">
                   <div className="text-xs font-medium text-ink-500">
@@ -273,10 +283,11 @@ export function CarouselForm({ tenantId, onCreated }: { tenantId: string; onCrea
                   <input
                     value={c.buttons[j]?.text ?? ''}
                     onChange={(e) => setCardButton(i, j, { text: e.target.value })}
-                    maxLength={25}
+                    maxLength={LIMITES_TEMPLATE.bouton}
                     className={`${inputClsAuto} w-full`}
                     placeholder={t('Texte du bouton (25 car. max)', 'Button text (25 char. max)')}
                   />
+                  <CompteurCaracteres reste={caracteresRestants(c.buttons[j]?.text ?? '', LIMITES_TEMPLATE.bouton)} testId={`carousel-bouton-reste-${i}-${j}`} />
                   {type === 'URL' && (
                     <>
                       <input

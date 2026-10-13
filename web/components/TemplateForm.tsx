@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { CompteurCaracteres } from '@/components/CompteurCaracteres';
+import { caracteresRestants, LIMITES_TEMPLATE } from '@/lib/template-limites';
 import { WhatsAppPreview } from '@/components/WhatsAppPreview';
 import { FlowBuilder } from '@/components/FlowBuilder';
 import {
@@ -293,6 +295,10 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
   const manques: string[] = [
     ...(name.trim() === '' ? [t('le nom du template', 'the template name')] : []),
     ...(body.trim() === '' ? [t('le corps du message', 'the message body')] : []),
+    // Meta refuse un corps plus long, mais seulement après l'aller-retour de sa revue : on le dit avant l'envoi.
+    ...(caracteresRestants(body, LIMITES_TEMPLATE.corps) < 0
+      ? [t(`un corps de 1 024 caractères au plus (il en fait ${body.length})`, `a body of 1,024 characters at most (it has ${body.length})`)]
+      : []),
     ...(headerUploading ? [t('l’en-tête est encore en cours d’envoi', 'the header is still uploading')] : []),
     ...(!headerReady && !headerUploading
       ? [headerType === 'TEXT'
@@ -389,7 +395,10 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
                 <option value="VIDEO">{t('Vidéo', 'Video')}</option>
               </select>
               {headerType === 'TEXT' && (
-                <input value={headerText} onChange={(e) => setHeaderText(e.target.value)} maxLength={60} placeholder={t('Titre fixe (60 car. max, sans variable)', 'Fixed title (60 char. max, no variable)')} className={`${inputCls} flex-1`} />
+                <div className="min-w-0 flex-1">
+                  <input value={headerText} onChange={(e) => setHeaderText(e.target.value)} maxLength={LIMITES_TEMPLATE.entete} placeholder={t('Titre fixe (60 car. max, sans variable)', 'Fixed title (60 char. max, no variable)')} className={`${inputCls} w-full`} data-testid="template-entete-texte" />
+                  <CompteurCaracteres reste={caracteresRestants(headerText, LIMITES_TEMPLATE.entete)} testId="template-entete-reste" />
+                </div>
               )}
               {(headerType === 'IMAGE' || headerType === 'VIDEO') && (
                 <>
@@ -406,6 +415,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
           <div className="mt-3">
             <TemplateBodyField
               state={bodyState}
+              max={LIMITES_TEMPLATE.corps}
               label={t('Corps du message', 'Message body')}
               placeholder={t('Bonjour [Prénom], voici notre offre 🎉', 'Hello [First name], here is our offer 🎉')}
             />
@@ -413,7 +423,8 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
 
           <div className="mt-3">
             <label className="mb-1 block text-sm font-medium text-ink-900">{t('Pied de page (optionnel)', 'Footer (optional)')}</label>
-            <input value={footer} onChange={(e) => setFooter(e.target.value)} maxLength={60} placeholder={t('Petit texte en bas (60 car. max, sans variable)', 'Small text at the bottom (60 char. max, no variable)')} className={inputCls} />
+            <input value={footer} onChange={(e) => setFooter(e.target.value)} maxLength={LIMITES_TEMPLATE.pied} placeholder={t('Petit texte en bas (60 car. max, sans variable)', 'Small text at the bottom (60 char. max, no variable)')} className={inputCls} data-testid="template-pied" />
+            {footer !== '' && <CompteurCaracteres reste={caracteresRestants(footer, LIMITES_TEMPLATE.pied)} testId="template-pied-reste" />}
           </div>
 
           <div className="mt-2">
@@ -447,10 +458,11 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
                     <input
                       value={b.text}
                       onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
-                      maxLength={25}
+                      maxLength={LIMITES_TEMPLATE.bouton}
                       className={`${inputCls} w-full`}
                       placeholder={t('Texte affiché sur le bouton (25 car. max)', 'Text shown on the button (25 char. max)')}
                     />
+                    <CompteurCaracteres reste={caracteresRestants(b.text, LIMITES_TEMPLATE.bouton)} testId={`template-bouton-reste-${i}`} />
                     <select
                       value={b.flowId ?? ''}
                       onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, flowId: e.target.value } : x)))}
@@ -469,7 +481,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
                       <input
                         value={b.text}
                         onChange={(e) => setButtons(buttons.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
-                        maxLength={25}
+                        maxLength={LIMITES_TEMPLATE.bouton}
                         data-testid={`template-bouton-texte-${i}`}
                         className={`${inputCls} flex-1`}
                         placeholder={t('Texte du bouton (25 car. max)', 'Button text (25 char. max)')}
@@ -500,6 +512,10 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
                         </div>
                       )}
                       <button type="button" onClick={() => setButtons(buttons.filter((_, j) => j !== i))} className="shrink-0 text-ink-400 hover:text-danger-600" aria-label={t('Retirer', 'Remove')}><Icone nom="fermer" taille="petite" /></button>
+                    </div>
+                    {/* Sous le libellé, décalé de la largeur de son étiquette, comme l'exemple d'adresse ci-dessous. */}
+                    <div className="pl-[4.375rem]">
+                      <CompteurCaracteres reste={caracteresRestants(b.text, LIMITES_TEMPLATE.bouton)} testId={`template-bouton-reste-${i}`} />
                     </div>
                     {b.type === 'URL' && exempleUrl(b.url ?? '') !== null && (
                       <p className="mt-1 break-all pl-[4.375rem] text-xs text-ink-500" data-testid={`template-bouton-url-exemple-${i}`}>

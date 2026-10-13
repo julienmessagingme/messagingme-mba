@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { CompteurCaracteres } from '@/components/CompteurCaracteres';
+import { caracteresRestants } from '@/lib/template-limites';
 import { VariableBodyEditor, type VariableBodyEditorHandle } from '@/components/VariableBodyEditor';
 import { listUserFields, type UserFieldDef, type ParamSource, type TemplateParamHint } from '@/lib/api';
 import { SelecteurEmojis } from '@/components/SelecteurEmojis';
@@ -190,12 +192,17 @@ export function unmappedVariablesMessage(unmapped: number[], t: (fr: string, en?
 }
 
 /** Éditeur du corps : chips de variables, « Variable » (rattache un champ + remplit l'exemple), emojis. */
-export function TemplateBodyField({ state, label, placeholder, hint }: {
+export function TemplateBodyField({ state, label, placeholder, hint, max }: {
   state: TemplateBodyState;
   label: string;
   placeholder: string;
   /** Ligne d'aide sous l'éditeur. Absente -> la phrase standard sur « Variable ». */
   hint?: string;
+  /**
+   * La longueur que Meta accepte pour ce corps (`LIMITES_TEMPLATE`) : le compteur la montre en permanence. Elle ne
+   * bride pas la frappe, l'éditeur portant des jetons de variable ; le formulaire refuse l'envoi au-delà.
+   */
+  max?: number;
 }) {
   const t = useT();
   const [emojiOpen, setEmojiOpen] = useState(false);
@@ -254,6 +261,7 @@ export function TemplateBodyField({ state, label, placeholder, hint }: {
         {emojiOpen && <SelecteurEmojis onPick={(e) => state.editorRef.current?.insertToken(e)} onClose={() => setEmojiOpen(false)} />}
         {fieldPickerOpen && <FieldPicker options={fieldOptions} onPick={insertVariable} onClose={() => setFieldPickerOpen(false)} />}
       </div>
+      {max !== undefined && <CompteurCaracteres reste={caracteresRestants(state.body, max)} testId="template-corps-reste" />}
       <p className="mt-1 text-xs text-ink-500">
         {hint ?? t('« Variable » insère un champ du contact (nom, prénom, email…) : l’exemple exigé par Meta se remplit tout seul.', '“Variable” inserts a contact field (name, first name, email…): the example required by Meta fills in automatically.')}
       </p>

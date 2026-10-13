@@ -8,6 +8,7 @@ import { MAX_PHRASE, MAX_TEXTE_POST, type LienChaine } from '@/lib/api-chaine';
 import {
   entoure, insere, MARQUEURS, type Edition, type Marqueur, type StyleBarre,
 } from '@/lib/chaine-mise-en-forme';
+import { CompteurCaracteres } from '@/components/CompteurCaracteres';
 import { SelecteurEmojis } from '@/components/SelecteurEmojis';
 import { ChampImageHebergee } from '@/components/ChampImageHebergee';
 import {
@@ -153,16 +154,7 @@ export function ChaineComposeur(props: ChaineComposeurProps) {
           placeholder={t('Ce que vos abonnés vont lire…', 'What your subscribers will read…')}
           data-testid="chaine-texte"
         />
-        {reste !== null ? (
-          <span
-            className={`mt-1 block text-xs tabular-nums ${reste < 0 ? 'text-danger' : 'text-ink-500'}`}
-            data-testid="chaine-texte-reste"
-          >
-            {reste < 0
-              ? t(`${-reste} caractères de trop`, `${-reste} characters too many`)
-              : t(`${reste} caractères restants`, `${reste} characters left`)}
-          </span>
-        ) : null}
+        <CompteurCaracteres reste={reste} testId="chaine-texte-reste" />
       </div>
 
       <div className="block">
@@ -359,13 +351,7 @@ function CreationLien({
             'This is the message the subscriber sends when tapping the button. Shorter reads better.',
           )}
         </span>
-        {reste !== null ? (
-          <span className={`mt-1 block text-xs tabular-nums ${reste < 0 ? 'text-danger' : 'text-ink-500'}`}>
-            {reste < 0
-              ? t(`${-reste} caractères de trop`, `${-reste} characters too many`)
-              : t(`${reste} caractères restants`, `${reste} characters left`)}
-          </span>
-        ) : null}
+        <CompteurCaracteres reste={reste} />
       </label>
 
       {erreur ? <p className="text-xs text-danger" data-testid="chaine-lien-erreur">{erreur}</p> : null}

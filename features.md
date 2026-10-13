@@ -447,6 +447,10 @@ En haut de l'onglet **Historique** d'une fiche contact, deux chiffres face à fa
   toutes les cartes + 2-10 cartes image, texte de carte optionnel, boutons identiques sur toutes les cartes).
   Soumission à validation Meta, suivi du statut. En-tête texte et pied de page : 60 caractères max, sans
   variable (l'en-tête texte accepte un titre fixe uniquement).
+- ✅ **Chaque champ limité dit ce qui lui reste** (2026-10-13) : « 45 caractères restants » sous le titre, le corps,
+  le pied de page, le texte de chaque bouton et celui de chaque carte d'un carousel, aux limites de Meta (titre et
+  pied 60, corps 1 024, bouton 25, carte 160). Un corps trop long passe en rouge (« 6 caractères de trop ») et
+  « Créer le template » se bloque en le disant, au lieu d'un refus de Meta après sa revue.
 - ✅ **Les clics sur les boutons de lien sont comptés** (2026-08-20) : tu saisis **ton** lien normalement. Au
   moment de la soumission à Meta, le serveur le remplace par une adresse à nous qui compte le clic puis redirige
   vers ta page. **La console te remontre toujours TON lien**, partout où elle affiche un template, donc rien ne

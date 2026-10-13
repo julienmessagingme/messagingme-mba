@@ -1,7 +1,7 @@
 ---
 ecran: templates
 source_section: Templates WhatsApp (menu Contenu)
-source_empreinte: c7e348
+source_empreinte: 8f3d15
 ---
 # Créer un modèle et le faire approuver
 
@@ -10,8 +10,10 @@ obligé pour écrire à quelqu'un qui ne vous a pas répondu récemment.
 
 Vous le composez dans l'écran Modèles. Un modèle simple porte un corps de texte, éventuellement un en-tête
 (texte, image ou vidéo), un pied de page, et des boutons. L'en-tête texte et le pied de page sont limités à
-soixante caractères et n'acceptent pas de variable. Vous pouvez aussi créer un carousel : un message
-d'introduction commun, puis de deux à dix cartes avec image, chacune portant les mêmes boutons.
+soixante caractères et n'acceptent pas de variable. Sous chaque champ limité, un compteur dit combien de
+caractères il vous reste : le corps en accepte 1 024, le texte d'un bouton 25. Un corps trop long passe en rouge,
+et le modèle ne part pas tant qu'il dépasse. Vous pouvez aussi créer un carousel : un message d'introduction
+commun, puis de deux à dix cartes avec image (160 caractères de texte chacune), chacune portant les mêmes boutons.
 
 Vous choisissez la langue dans une liste, puis vous soumettez. WhatsApp répond en général en quelques
 minutes, parfois quelques heures. L'écran suit le statut pour vous.
