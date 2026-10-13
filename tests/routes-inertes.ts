@@ -669,6 +669,26 @@ export const mcpMessagesInertes: Pick<DepsMcp, 'messagesApi' | 'envoyerMessage' 
   },
 };
 
+/** Les chiffres de l'espace, pour les montages qui n'en parlent pas : des séries vides. */
+export const mcpChiffresInertes: Pick<DepsMcp, 'chiffres'> = {
+  chiffres: {
+    stats: {
+      getDashboard: async () => ({
+        contacts: [], contactsActifs: [], templates: { utility: [], marketing: [] }, exchanged: [], service: [],
+        serviceParOrigine: { ia: 0, scenario: 0, humain: 0, indeterminee: 0 }, serviceIaDetail: { agent: 0, mba: 0, mcp: 0 },
+      }),
+      statutsDesModelesParJour: async () => [],
+    },
+    getCostSeries: async () => ({
+      marketing: [], utility: [], total: 0, hasRates: false, currency: null, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0,
+    }),
+    getCoutMessages: async () => ({
+      templates: { marketing: 0, utility: 0 }, service: { envoyes: 0, factures: 0, cout: 0, parMois: [] },
+      rcs: { simple: 0, conversationnel: 0, cout: 0 }, total: 0, currency: null, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0,
+    }),
+  },
+};
+
 /**
  * Les webhooks sortants du MCP (lot 12), pour les montages qui n'en parlent pas : toute ÉCRITURE lève, et les lectures
  * rendent un espace sans adresse.

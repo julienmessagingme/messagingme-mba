@@ -1,0 +1,232 @@
+import { ficheOutilMcp } from '../../web/lib/partage/catalogue-mcp';
+import type { OutilMcp, ProprieteEntree } from './outils';
+import { RefusOutil } from './saisie';
+import { addDays, inclusiveDays, parseRange, todayParis, STATS_TZ, type DateRange } from '../stats/range';
+import type { DailyPoint, DashboardStats, FiltreCampagneOuTemplate, StatutsModelesJour } from '../stats/store.pg';
+import { round2, type CostSeries } from '../stats/cost';
+import type { CoutMessages } from '../stats/cout-messages';
+import { adresseOffre } from '../offres/refus';
+
+/**
+ * LES CHIFFRES DE L'ESPACE POUR CLAUDE CODE (plan `docs/superpowers/plans/2026-10-13-donnees-graphiques-mcp.md`).
+ *
+ * 🔴 DES AGRÉGATS, JAMAIS UNE PERSONNE : aucun outil d'ici ne rend un message, un contact ou une conversation un par un.
+ * 🔴 LES MÊMES CHIFFRES QUE L'ÉCRAN STATISTIQUES : chaque outil appelle les fonctions de la route de la console
+ * (`src/http/stats.ts`), sur les mêmes périodes (`parseRange`, heure de Paris, 366 jours au plus). Seule la maille
+ * (semaine, mois) est calculée ici, depuis les séries par jour.
+ *
+ * L'OFFRE : un espace sans la fonction `statistiques` (le Free) ne lit que l'essentiel de `get_message_stats`, sur la
+ * fenêtre de sa conservation (30 jours) ; le découpage entre Pro et Entreprise se fera en changeant la fonction d'un
+ * outil (décision de Julien du 2026-10-13).
+ */
+
+export interface DepsChiffresMcp {
+  /** Le dépôt des statistiques de la console (`PgStatsStore`). */
+  stats: {
+    getDashboard(tenantId: string, range: DateRange): Promise<DashboardStats>;
+    statutsDesModelesParJour(tenantId: string, range: DateRange): Promise<StatutsModelesJour[]>;
+  };
+  /** Les coûts de la route de la console (`src/stats/chiffrage.ts`). */
+  getCostSeries(tenantId: string, range: DateRange, filter: FiltreCampagneOuTemplate): Promise<CostSeries>;
+  getCoutMessages(tenantId: string, range: DateRange): Promise<CoutMessages>;
+}
+
+export const MAILLES = ['jour', 'semaine', 'mois'] as const;
+export type Maille = (typeof MAILLES)[number];
+
+/**
+ * Au-delà, une série au jour est trop longue pour être lue par un modèle (366 jours au jour, en Pro : plus de 200 Ko de
+ * JSON) : une maille `jour` explicite est refusée, et sans maille donnée, la semaine est prise. Annoncé dans le schéma.
+ */
+export const MAX_JOURS_MAILLE_JOUR = 92;
+
+/** L'entrée commune des outils de chiffres. */
+export const ENTREE_PERIODE: Record<string, ProprieteEntree> = {
+  du: {
+    type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+    description: 'Le premier jour (AAAA-MM-JJ, heure de Paris), avec au. Absents tous les deux : les 30 derniers jours.',
+  },
+  au: {
+    type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+    description: 'Le dernier jour, inclus (AAAA-MM-JJ), au plus aujourd’hui ; 366 jours au plus depuis du.',
+  },
+  maille: {
+    type: 'string', enum: [...MAILLES],
+    description: `jour, semaine (du lundi) ou mois (civil) : chaque ligne de la série couvre une maille. jour au plus `
+      + `${MAX_JOURS_MAILLE_JOUR} jours ; absente, jour jusqu’à ${MAX_JOURS_MAILLE_JOUR} jours, semaine au-delà.`,
+  },
+};
+
+/** La période et la maille d'un appel, lues comme la console lit les siennes. Un refus dit quoi corriger. */
+export function lirePeriode(args: Record<string, unknown>): { range: DateRange; maille: Maille } {
+  const absente = args.maille === undefined || args.maille === null || args.maille === '';
+  if (!absente && (typeof args.maille !== 'string' || !(MAILLES as readonly string[]).includes(args.maille))) {
+    throw new RefusOutil(`maille : ${MAILLES.join(', ')}`);
+  }
+  const r = parseRange({ from: args.du, to: args.au });
+  if ('error' in r) throw new RefusOutil(r.error.replace(/\bfrom\b/g, 'du').replace(/\bto\b/g, 'au').replace('YYYY-MM-DD', 'AAAA-MM-JJ'));
+  const longue = inclusiveDays(r.range.from, r.range.to) > MAX_JOURS_MAILLE_JOUR;
+  if (absente) return { range: r.range, maille: longue ? 'semaine' : 'jour' };
+  if (args.maille === 'jour' && longue) {
+    throw new RefusOutil(`la maille jour couvre ${MAX_JOURS_MAILLE_JOUR} jours au plus : choisir semaine ou mois`);
+  }
+  return { range: r.range, maille: args.maille as Maille };
+}
+
+/** La maille d'un jour : le jour lui-même, le lundi de sa semaine, ou son mois (`AAAA-MM`). */
+export function cleDeMaille(jour: string, maille: Maille): string {
+  if (maille === 'jour') return jour;
+  if (maille === 'mois') return jour.slice(0, 7);
+  const [y, m, d] = jour.split('-').map(Number) as [number, number, number];
+  const decalage = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7;
+  return addDays(jour, -decalage);
+}
+
+/** Les jours de la période, du premier au dernier inclus. */
+function joursDe(range: DateRange): string[] {
+  const jours: string[] = [];
+  for (let j = range.from; j <= range.to; j = addDays(j, 1)) jours.push(j);
+  return jours;
+}
+
+export type LigneSerie = { periode: string } & Record<string, number>;
+
+/**
+ * Les séries par jour ramenées à la maille : chaque colonne de `sommes` s'additionne, chaque colonne de `niveaux`
+ * (un stock, les contacts) garde la valeur du DERNIER jour de la maille. La série est dense : une maille sans donnée
+ * vaut 0, jamais une ligne absente (un graphique la lirait comme un trou).
+ */
+export function aLaMaille(
+  range: DateRange, maille: Maille,
+  sommes: Record<string, ReadonlyArray<DailyPoint>>, niveaux: Record<string, ReadonlyArray<DailyPoint>> = {},
+): LigneSerie[] {
+  const lignes = new Map<string, LigneSerie>();
+  const index = (serie: ReadonlyArray<DailyPoint>): Map<string, number> => new Map(serie.map((p) => [p.date, p.count]));
+  const s = Object.entries(sommes).map(([nom, serie]) => [nom, index(serie)] as const);
+  const n = Object.entries(niveaux).map(([nom, serie]) => [nom, index(serie)] as const);
+  for (const jour of joursDe(range)) {
+    const cle = cleDeMaille(jour, maille);
+    let ligne = lignes.get(cle);
+    if (!ligne) {
+      ligne = { periode: cle } as LigneSerie;
+      for (const [nom] of s) ligne[nom] = 0;
+      for (const [nom] of n) ligne[nom] = 0;
+      lignes.set(cle, ligne);
+    }
+    for (const [nom, valeurs] of s) ligne[nom] = (ligne[nom] ?? 0) + (valeurs.get(jour) ?? 0);
+    for (const [nom, valeurs] of n) {
+      const v = valeurs.get(jour);
+      if (v !== undefined) ligne[nom] = v;
+    }
+  }
+  return [...lignes.values()];
+}
+
+/** La somme d'une colonne sur toute la série. */
+function total(lignes: readonly LigneSerie[], colonne: string): number {
+  return lignes.reduce((acc, l) => acc + (l[colonne] ?? 0), 0);
+}
+
+/** Une série par jour tirée d'une colonne des statuts. */
+function colonne(statuts: readonly StatutsModelesJour[], nom: keyof Omit<StatutsModelesJour, 'date'>): DailyPoint[] {
+  return statuts.map((s) => ({ date: s.date, count: s[nom] }));
+}
+
+const A_SAVOIR_MODELES = [
+  'envoyes : les modèles partis (marketing et utilitaires), comptés comme le tableau de bord de la console ; livres '
+    + 'compte aussi les lus.',
+  'sans_accuse : aucun statut de Meta (un modèle hors campagne n’en reçoit que depuis le 2026-10-09).',
+  'echecs : pour une campagne, refusés à l’envoi ou annoncés en échec par Meta, et alors hors des envoyés ; pour un '
+    + 'modèle hors campagne, annoncés en échec, et alors compris dans les envoyés.',
+  'La première et la dernière maille peuvent être partielles : la période va de du à au.',
+  'Un message effacé par la durée de conservation de l’offre ne compte plus.',
+];
+
+export const OUTILS_CHIFFRES: OutilMcp[] = [
+  {
+    ...ficheOutilMcp('get_message_stats'),
+    // Toutes les offres : l'essentiel pour le Free, le reste pour qui a les statistiques (décision du 2026-10-13).
+    fonction: null,
+    description:
+      'Les chiffres des messages de l’espace, en séries prêtes pour un graphique (une ligne par maille) et leurs '
+      + 'totaux : les MODÈLES envoyés, livrés, lus, en échec et sans accusé. Avec les statistiques de l’offre (Pro, '
+      + 'Entreprise), en plus : les modèles par catégorie, les messages échangés et de service, le service par origine '
+      + '(IA, scénario, humain), les contacts (cumulés, actifs) et le coût ESTIMÉ (les prix de l’écran Statistiques : '
+      + 'une estimation, la facture fait foi). Les mêmes chiffres que l’écran Statistiques de la console. Sans les '
+      + 'statistiques (Free) : '
+      + 'l’essentiel seulement, sur les 30 derniers jours ; une période plus ancienne est refusée avec le lien de '
+      + 'l’offre Pro. Pour comparer deux périodes, appeler deux fois. Aucune donnée personnelle.',
+    annotations: { title: 'Lire les chiffres des messages', readOnlyHint: true, openWorldHint: false },
+    entree: { type: 'object', properties: { ...ENTREE_PERIODE }, additionalProperties: false },
+    async executer(deps, tenantId, args) {
+      const { range, maille } = lirePeriode(args);
+      const offre = await deps.offres.offreDe(tenantId);
+      const complet = offre.droits.fonctions.has('statistiques');
+      if (!complet) {
+        const jours = offre.droits.limites.conservationJours;
+        const aujourdhui = todayParis();
+        const premier = addDays(aujourdhui, -(jours - 1));
+        if (range.from < premier) {
+          throw new RefusOutil(
+            `Votre offre lit les ${jours} derniers jours (du ${premier} au ${aujourdhui}). `
+            + `Passez en Pro pour remonter plus loin : ${adresseOffre()}`,
+          );
+        }
+      }
+      const c = deps.chiffres;
+      const statuts = await c.stats.statutsDesModelesParJour(tenantId, range);
+      const series = aLaMaille(range, maille, {
+        envoyes: colonne(statuts, 'envoyes'), livres: colonne(statuts, 'livres'), lus: colonne(statuts, 'lus'),
+        echecs: colonne(statuts, 'echecs'), sans_accuse: colonne(statuts, 'sansAccuse'),
+      });
+      const periode = { du: range.from, au: range.to, maille, fuseau: STATS_TZ };
+      const modeles = {
+        series,
+        totaux: Object.fromEntries(['envoyes', 'livres', 'lus', 'echecs', 'sans_accuse'].map((k) => [k, total(series, k)])),
+      };
+      if (!complet) {
+        return { periode, detail: 'essentiel', modeles, a_savoir: A_SAVOIR_MODELES };
+      }
+
+      const [tableau, cout, coutPeriode] = await Promise.all([
+        c.stats.getDashboard(tenantId, range),
+        c.getCostSeries(tenantId, range, {}),
+        c.getCoutMessages(tenantId, range),
+      ]);
+      const parCategorie = aLaMaille(range, maille, { marketing: tableau.templates.marketing, utility: tableau.templates.utility });
+      const messages = aLaMaille(range, maille, { echanges: tableau.exchanged, service: tableau.service });
+      const contacts = aLaMaille(range, maille, {}, { cumules: tableau.contacts, actifs: tableau.contactsActifs });
+      const coutSeries = aLaMaille(range, maille, { marketing: cout.marketing, utility: cout.utility })
+        .map((l) => ({ ...l, marketing: round2(l.marketing ?? 0), utility: round2(l.utility ?? 0) }));
+      return {
+        periode,
+        detail: 'complet',
+        modeles,
+        modeles_par_categorie: parCategorie,
+        messages,
+        service_par_origine: tableau.serviceParOrigine,
+        service_ia: tableau.serviceIaDetail,
+        contacts,
+        cout_estime: {
+          estimation: true,
+          devise: coutPeriode.currency ?? cout.currency,
+          // Faux : la grille des prix n'est pas connue, et les séries valent 0 sans que ce soit un coût nul.
+          tarifs_connus: cout.hasRates,
+          // Les modèles seulement ; `periode.total` ajoute le service et le RCS.
+          series: coutSeries,
+          periode: {
+            modeles: coutPeriode.templates, service: coutPeriode.service, rcs: coutPeriode.rcs, total: coutPeriode.total,
+          },
+          non_chiffrables: coutPeriode.nonChiffrables,
+        },
+        a_savoir: [
+          ...A_SAVOIR_MODELES,
+          'contacts : un stock, la valeur du dernier jour de chaque maille.',
+          'cout_estime : les prix de l’écran Statistiques, une estimation (la facture fait foi). series : les modèles '
+            + 'seulement ; periode.total y ajoute le service et le RCS ; non_chiffrables : des envois sans prix connu, '
+            + 'absents du coût.',
+        ],
+      };
+    },
+  },
+];

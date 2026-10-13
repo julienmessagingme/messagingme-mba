@@ -64,6 +64,7 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 | send_template_to_contact | mcp:write OAuth connection required | Send an approved template to one person, even outside the 24-hour window, with the sends rules (consent, STOP, monthly templates). |
 | get_template_status | mcp:read | A template’s status at Meta, language by language, with the reason for a rejection. |
 | get_message_status | mcp:read | The delivery status of a sent message: sent, delivered, read or failed, with Meta’s reason. |
+| get_message_stats | mcp:read | Message figures as chart-ready series: templates sent, delivered, read, failed; with the plan’s statistics, categories, exchanges, contacts and estimated cost. |
 | get_messages | mcp:read | The last 50 messages of a thread, oldest first, and before to go further back. |
 | search_contacts | mcp:read | Find a contact by name or number, with their latest analysis. |
 | get_contact | mcp:read | A contact record from its number, with their latest analysis and its summary. |

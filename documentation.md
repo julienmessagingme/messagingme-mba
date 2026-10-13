@@ -180,7 +180,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **Canal e-mail** | troisième canal, SMTP par workspace | `src/email/` | `/email-templates` | `email_accounts`, `email_templates` | |
 | **Formulaires (Flows)** | les WhatsApp Flows et leur mapping vers les fiches | `src/flow/`, `src/meta/flow-json.ts` | `/flows` | `flows` | |
 | **Analyse de conversation** | ce que le LLM comprend d'un fil clos | `src/analysis/` | `/dashboard`, `/performance` | `conversation_analysis` | `analyze-conversation`, `push-analysis` |
-| **Statistiques** | volumes, funnel, erreurs, coût | `src/stats/` | `/dashboard` | lecture seule | |
+| **Statistiques** | volumes, funnel, erreurs, coût ; les mêmes fonctions servent les chiffres de Claude Code (`get_message_stats`, `src/mcp/outils-chiffres.ts` : maille calculée depuis les séries par jour, l'essentiel et 30 jours sans la fonction `statistiques`) | `src/stats/`, `src/mcp/outils-chiffres.ts` | `/dashboard` | lecture seule | |
 | **Liens tracés** | compter les clics sur les boutons URL d'un template | `src/links/` | | `tracked_links`, `tracked_link_clicks` | |
 | **Webhooks entrants** | un tiers poste du JSON, on en fait un contact et un événement | `src/webhook-entrant/` | `/webhooks` | `webhooks` | |
 | **Webhooks sortants** | l'application du client reçoit les événements, signés et réessayés 24 h (§ 6) | `src/evenements/`, `src/http/evenements.ts`, `src/mcp/outils-evenements.ts` | `/developers/evenements` | `adresses_evenements`, `envois_evenements` | `evenements-distribution`, `evenements-envoi` |

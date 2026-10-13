@@ -6,6 +6,7 @@ export const CATALOGUE_MCP = {
   get_conversation: { scope: 'mcp:read' },
   get_messages: { scope: 'mcp:read' },
   get_message_status: { scope: 'mcp:read' },
+  get_message_stats: { scope: 'mcp:read' },
   search_contacts: { scope: 'mcp:read' },
   get_contact: { scope: 'mcp:read' },
   list_members: { scope: 'mcp:read' },

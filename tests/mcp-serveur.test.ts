@@ -14,7 +14,7 @@ import * as catalogue from '../src/mcp/outils';
 import { API_SCOPES } from '../web/lib/partage/droits-api';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE, NumeroSuspenduError, MESSAGE_NUMERO_SUSPENDU } from '../src/meta/numero-delie';
-import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpMessagesInertes, mcpOffreInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { creerPoseEtiquette, LONGUEUR_MAX_ETIQUETTE } from '../src/crm/poser-etiquette';
 import { DROITS } from '../src/offres/offres';
 import { MetaTemplateClient, type FetchLike, type TemplateSummary } from '../src/meta/templates';
@@ -120,6 +120,7 @@ function app(
     ...mcpAgentInerte,
     ...mcpNumeroInerte,
     ...mcpEvenementsInertes,
+    ...mcpChiffresInertes,
     ...mcpMessagesInertes,
     ...mcpOffreInerte,
     ...reste,
@@ -240,6 +241,17 @@ describe('serveur MCP : autorisation', () => {
       { action_id: 'tool-1', name: 'Résiliation', at: '2026-10-13T10:00:00.000Z', fields: { contrat: '12345' } },
     ]);
     expect(lues).toEqual(['t1:cv1:10']);
+    await server.close();
+  });
+
+  it('🔴 get_message_stats : une clé de LECTURE le voit et l’appelle, et il rend la période et ses séries', async () => {
+    const { server } = app();
+    const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_LECTURE), payload: appeler('get_message_stats', { maille: 'semaine' }) });
+    const r = contenu(res);
+    expect(r.isError, r.texte).toBeFalsy();
+    const corps = JSON.parse(r.texte);
+    expect(corps.periode).toMatchObject({ maille: 'semaine', fuseau: 'Europe/Paris' });
+    expect(corps.modeles.totaux).toEqual({ envoyes: 0, livres: 0, lus: 0, echecs: 0, sans_accuse: 0 });
     await server.close();
   });
 

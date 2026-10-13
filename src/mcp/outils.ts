@@ -21,6 +21,7 @@ import { RefusOutil, entierBorne, texteObligatoire, valeurOuRefus } from './sais
 import { decoderCurseur, encoderCurseur, type DepotConversationsV1 } from '../api/conversations-v1';
 import { OUTILS_AGENT, type DepsAgentMcp } from './outils-agent';
 import { OUTILS_EVENEMENTS, type DepsEvenementsMcp } from './outils-evenements';
+import { OUTILS_CHIFFRES, type DepsChiffresMcp } from './outils-chiffres';
 import { OUTILS_NUMERO, type DepsNumeroMcp } from './outils-numero';
 import { OUTILS_MODELES, type DepsModelesMcp } from './outils-modeles';
 import type { ReponseEnvoi } from '../http/v1-sends';
@@ -92,6 +93,8 @@ export interface DepsMcp extends DepsRepondre {
   numero: DepsNumeroMcp;
   /** Les webhooks sortants (lot 12) : la MÊME gestion que la route de la console (`src/index.ts`), et son audit. */
   evenements: DepsEvenementsMcp;
+  /** Les chiffres de l'espace (2026-10-13) : les MÊMES fonctions que la route des statistiques de la console. */
+  chiffres: DepsChiffresMcp;
   /** L'offre de l'espace (lot 6) : la MÊME vue que la console (`GET /tenants/:tenantId/offre`), pour `get_plan`. */
   offre: { vue(tenantId: string): Promise<VueOffre> };
   /** Un message par son identifiant public (lot 13) : la MÊME lecture que `GET /v1/messages/{id}`, pour `get_message_status`. */
@@ -828,6 +831,8 @@ export const OUTILS: OutilMcp[] = [
   ...OUTILS_EVENEMENTS,
   // Les modèles (lot 13, domaine 3) : leur fichier, `src/mcp/outils-modeles.ts`.
   ...OUTILS_MODELES,
+  // Les chiffres de l'espace, pour les graphiques de Claude (2026-10-13) : leur fichier, `src/mcp/outils-chiffres.ts`.
+  ...OUTILS_CHIFFRES,
 ];
 
 /**

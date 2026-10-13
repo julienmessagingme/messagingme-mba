@@ -2760,6 +2760,8 @@ async function main(): Promise<void> {
         scenarios: workflowStore,
         // Les webhooks sortants : la MÊME gestion que la route, et le même audit.
         evenements: { gestion: gestionEvenements, audit: auditSink },
+        // Les chiffres de l'espace (2026-10-13) : les MÊMES fonctions que la route des statistiques de la console.
+        chiffres: { stats: statsStore, getCostSeries: chiffrage.getCostSeries, getCoutMessages: chiffrage.getCoutMessages },
         // L'agent IA et le crédit : les MÊMES objets que leurs routes. Seul le journal des suppressions de
         // connaissance change, pour signer l'origine `mcp`.
         agentIa: {

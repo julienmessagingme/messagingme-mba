@@ -137,6 +137,22 @@ export interface VolumesParCanal {
   rcs: VolumeCanal;
 }
 
+/**
+ * Les modèles envoyés d'une journée et ce que Meta en a dit (`statutsDesModelesParJour`). `envoyes` est la population
+ * EXACTE des modèles du tableau de bord (`getDashboard`, catégories marketing et utility) ; `livres` compte les lus ;
+ * `sansAccuse` n'ont reçu aucun statut de Meta (un accusé « sent » en est un). `echecs` : pour une campagne, refusés à
+ * l'envoi ou annoncés en échec (hors des envoyés), datés comme l'écran des erreurs (`INSTANT_ECHEC_SQL`) ; pour un
+ * modèle seul, annoncés en échec (dans les envoyés, comme le tableau de bord les compte).
+ */
+export interface StatutsModelesJour {
+  date: string;
+  envoyes: number;
+  livres: number;
+  lus: number;
+  echecs: number;
+  sansAccuse: number;
+}
+
 export interface DashboardStats {
   /** Cumulatif : total de contacts à chaque jour (dense, une valeur/jour, reporte les jours sans ajout). */
   contacts: DailyPoint[];
@@ -433,6 +449,10 @@ export class PgStatsStore {
          from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
          where c.tenant_id = $1 and r.status = 'sent' and r.sent_at >= b.start_ts and r.sent_at < b.end_ts
            and c.channel = 'whatsapp'
+           -- Une campagne à SCÉNARIO n'envoie pas de modèle par sa ligne (message_id wf-...) : le modèle que son
+           -- parcours envoie est compté par le fil, plus bas. La compter ici la comptait deux fois (relecture du lot
+           -- des chiffres, 2026-10-13) ; la même garde que les envois facturables.
+           and nullif(c.template_name, '') is not null
            and (r.delivery_status is null or r.delivery_status <> 'failed')
          group by d, c.category
          union all
@@ -507,6 +527,68 @@ export class PgStatsStore {
       serviceParOrigine,
       serviceIaDetail,
     };
+  }
+
+  /**
+   * 🔴 LES MODÈLES ENVOYÉS ET LEURS ACCUSÉS, PAR JOUR (lot « chiffres pour Claude Code », 2026-10-13) : l'essentiel
+   * que lit `get_message_stats`, toutes offres. La population des envois est celle de `getDashboard` (mêmes gardes,
+   * même anti double-compte) : le total des `envoyes` égale la somme des modèles du tableau de bord sur la plage.
+   * Les accusés viennent de `campaign_recipients.delivery_status` pour une campagne et de `conversation_messages.statut`
+   * (0225, depuis le 2026-10-09) pour un modèle du fil, celui d'un scénario compris : avant, il compte « sans accusé ».
+   * La ligne d'une campagne à scénario n'est pas un modèle (`template_name` vide) : son modèle est celui du fil. Un
+   * message effacé par la durée de conservation ne compte plus. Filtré sur l'espace dans chaque branche.
+   */
+  async statutsDesModelesParJour(tenantId: string, range: DateRange): Promise<StatutsModelesJour[]> {
+    const { from, to } = range;
+    const res = await this.pool.query<{
+      d: string; envoyes: string; livres: string; lus: string; echecs: string; sans_accuse: string;
+    }>(
+      `with ${BOUNDS_CTE}
+       select d, sum(envoyes)::int as envoyes, sum(livres)::int as livres, sum(lus)::int as lus,
+              sum(echecs)::int as echecs, sum(sans_accuse)::int as sans_accuse
+       from (
+         select to_char(date_trunc('day', r.sent_at at time zone $4), 'YYYY-MM-DD') d,
+                count(*) as envoyes,
+                count(*) filter (where r.delivery_status in ('delivered', 'read')) as livres,
+                count(*) filter (where r.delivery_status = 'read') as lus,
+                0 as echecs,
+                count(*) filter (where r.delivery_status is null) as sans_accuse
+         from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
+         where c.tenant_id = $1 and r.status = 'sent' and r.sent_at >= b.start_ts and r.sent_at < b.end_ts
+           and c.channel = 'whatsapp' and nullif(c.template_name, '') is not null
+           and (r.delivery_status is null or r.delivery_status <> 'failed')
+         group by 1
+         union all
+         select to_char(date_trunc('day', ${INSTANT_ECHEC_SQL} at time zone $4), 'YYYY-MM-DD') d,
+                0, 0, 0, count(*), 0
+         from campaign_recipients r join campaigns c on c.id = r.campaign_id, bounds b
+         where c.tenant_id = $1 and c.channel = 'whatsapp' and nullif(c.template_name, '') is not null
+           and (${RECIPIENT_FAILED_SQL})
+           and ${INSTANT_ECHEC_SQL} >= b.start_ts and ${INSTANT_ECHEC_SQL} < b.end_ts
+         group by 1
+         union all
+         select to_char(date_trunc('day', m.created_at at time zone $4), 'YYYY-MM-DD') d,
+                count(*),
+                count(*) filter (where m.statut in ('delivered', 'read')),
+                count(*) filter (where m.statut = 'read'),
+                count(*) filter (where m.statut = 'failed'),
+                count(*) filter (where m.statut is null)
+         from conversation_messages m join conversations cv on cv.id = m.conversation_id, bounds b
+         where cv.tenant_id = $1 and not cv.is_test and m.direction = 'out' and m.type = 'template'
+           and m.template_category in ('marketing', 'utility') and m.created_at >= b.start_ts and m.created_at < b.end_ts
+           -- Le même anti double-compte que le tableau de bord : un modèle de campagne est déjà compté au-dessus.
+           and not exists (
+             select 1 from campaign_recipients r2 join campaigns c2 on c2.id = r2.campaign_id
+             where c2.tenant_id = cv.tenant_id and r2.message_id = m.meta_message_id
+           )
+         group by 1
+       ) x group by d order by d`,
+      [tenantId, from, to, TZ],
+    );
+    return res.rows.map((r) => ({
+      date: r.d, envoyes: Number(r.envoyes), livres: Number(r.livres), lus: Number(r.lus),
+      echecs: Number(r.echecs), sansAccuse: Number(r.sans_accuse),
+    }));
   }
 
   /**
