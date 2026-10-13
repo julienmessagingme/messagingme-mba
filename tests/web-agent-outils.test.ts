@@ -1,12 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
-  HANDLER_DU_TYPE, MAX_NOM_OUTIL, TOUJOURS_LA, cibleDeLOutil, corpsDeLaCible, normaliserNomOutil, typeDuHandler,
+  BORNES_ACTION as BORNES_ACTION_ECRAN, CODE_CHAMP_ACTION_RE as CODE_CHAMP_ACTION_RE_ECRAN, HANDLER_DU_TYPE, MAX_NOM_OUTIL,
+  TOUJOURS_LA, TYPES_CHAMP_ACTION as TYPES_CHAMP_ACTION_ECRAN, cibleDeLOutil, codeLibre, corpsDeLaCible, manqueDeLAction,
+  normaliserCodeChamp, normaliserNomOutil, typeDuHandler,
   type CibleSaisieAgent,
 } from '../web/lib/agent-outils';
 import { signeDuHandler } from '../web/lib/signes-outils';
 import { BORNES_OUTIL } from '../web/lib/mba-outils';
-import { BORNES_CIBLE, HANDLERS_A_CIBLE, OUTILS_MAISON } from '../src/agent/outils-maison';
+import {
+  BORNES_ACTION, BORNES_CIBLE, CODE_CHAMP_ACTION_RE, HANDLERS_A_CIBLE, OUTILS_MAISON, TYPES_CHAMP_ACTION,
+} from '../src/agent/outils-maison';
 import { lireCibleSaisie } from '../src/agent/reglages';
 
 /**
@@ -79,16 +83,68 @@ describe('RC4 : la console et le catalogue serveur disent la même chose', () =>
     expect([...TOUJOURS_LA].sort()).toEqual(sansCible.sort());
   });
 
-  /**
-   * ⚠️ UNE EXCEPTION DATÉE, À RETIRER AVEC LA LIVRAISON B du plan `docs/superpowers/plans/2026-10-13-actions-agent.md` :
-   * l'action de l'agent existe côté serveur (livraison A) avant sa carte, parce qu'un écran qui pose un outil que l'API
-   * déployée ne connaît pas encore casse dès le push (Vercel publie la console à chaque push).
-   */
-  const PAS_ENCORE_A_L_ECRAN: readonly string[] = ['declencher_action'];
   it('🔴 les cartes à cible posent exactement les handlers à cible du serveur', () => {
-    const attendus = HANDLERS_A_CIBLE.filter((h) => !PAS_ENCORE_A_L_ECRAN.includes(h));
-    expect(Object.values(HANDLER_DU_TYPE).sort()).toEqual([...attendus].sort());
-    for (const h of attendus) expect(typeDuHandler(h), h).not.toBeNull();
+    expect(Object.values(HANDLER_DU_TYPE).sort()).toEqual([...HANDLERS_A_CIBLE].sort());
+    for (const h of HANDLERS_A_CIBLE) expect(typeDuHandler(h), h).not.toBeNull();
+  });
+
+  it('🔴 l’action : les types de champ, les bornes et l’alphabet du code de l’écran sont ceux du serveur', () => {
+    expect([...TYPES_CHAMP_ACTION_ECRAN]).toEqual([...TYPES_CHAMP_ACTION]);
+    const { parAgent: _parAgent, texte: _texte, ...bornesDeLaCible } = BORNES_ACTION;
+    expect({ ...BORNES_ACTION_ECRAN }).toEqual(bornesDeLaCible);
+    expect(CODE_CHAMP_ACTION_RE_ECRAN.source).toBe(CODE_CHAMP_ACTION_RE.source);
+  });
+
+  it('🔴 ce que l’écran envoie pour une action est ce que le serveur accepte', () => {
+    const saisie = {
+      type: 'action' as const, nom: ' Résiliation ', consigne: 'Dis-lui que c’est noté.',
+      champs: [
+        { code: 'contrat', libelle: ' Numéro de contrat ', type: 'texte' as const, valeurs: [] },
+        { code: 'motif', libelle: 'Motif', type: 'liste' as const, valeurs: ['prix', ' ', 'autre'] },
+      ],
+    };
+    expect(manqueDeLAction(saisie)).toBeNull();
+    const lue = lireCibleSaisie('declencher_action', corpsDeLaCible(saisie));
+    expect(lue).toEqual({
+      handler: 'declencher_action', nom: 'Résiliation', consigne: 'Dis-lui que c’est noté.',
+      champs: [
+        { code: 'contrat', libelle: 'Numéro de contrat', type: 'texte' },
+        { code: 'motif', libelle: 'Motif', type: 'liste', valeurs: ['prix', 'autre'] },
+      ],
+    });
+    // Relue depuis le binding, l'action redonne la même saisie (au rognage près) : l'écran de modification ne perd rien.
+    expect(cibleDeLOutil(lue as unknown as Record<string, unknown>)).toEqual({
+      type: 'action', nom: 'Résiliation', consigne: 'Dis-lui que c’est noté.',
+      champs: [
+        { code: 'contrat', libelle: 'Numéro de contrat', type: 'texte', valeurs: [] },
+        { code: 'motif', libelle: 'Motif', type: 'liste', valeurs: ['prix', 'autre'] },
+      ],
+    });
+  });
+
+  it('le code d’un champ, tiré de son libellé, est un code que le serveur accepte, et libre dans la liste', () => {
+    expect(normaliserCodeChamp('Numéro de contrat')).toBe('numero_de_contrat');
+    expect(normaliserCodeChamp('2e adresse !')).toBe('e_adresse');
+    expect(normaliserCodeChamp('###')).toBe('');
+    // Tapé dans le champ du code, le tiret bas final reste : « ref_ » mène à « ref_client ».
+    expect(normaliserCodeChamp('ref_', true)).toBe('ref_');
+    expect(normaliserCodeChamp('ref_')).toBe('ref');
+    for (const brut of ['Numéro de contrat', 'É-mail', 'x'.repeat(80)]) {
+      expect(CODE_CHAMP_ACTION_RE.test(normaliserCodeChamp(brut)), brut).toBe(true);
+    }
+    expect(codeLibre('motif', ['motif', 'motif_2'])).toBe('motif_3');
+    expect(codeLibre('', [])).toBe('champ');
+  });
+
+  it('une action incomplète est dite avant le serveur : nom, libellé, liste sans valeurs, code en double', () => {
+    const ok = { type: 'action' as const, nom: 'A', consigne: '', champs: [] };
+    expect(manqueDeLAction(ok)).toBeNull();
+    expect(manqueDeLAction({ ...ok, nom: ' ' })).not.toBeNull();
+    const champ = { code: 'c', libelle: 'C', type: 'texte' as const, valeurs: [] };
+    expect(manqueDeLAction({ ...ok, champs: [{ ...champ, libelle: '' }] })).not.toBeNull();
+    expect(manqueDeLAction({ ...ok, champs: [{ ...champ, type: 'liste' }] })).not.toBeNull();
+    expect(manqueDeLAction({ ...ok, champs: [champ, champ] })).not.toBeNull();
+    expect(manqueDeLAction({ ...ok, champs: [{ ...champ, code: 'Code' }] })).not.toBeNull();
   });
 
   it('chaque outil du catalogue a son dessin : aucune ligne sans icône', () => {

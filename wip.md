@@ -53,6 +53,13 @@ robot passe la main à un humain, envoyés par une tâche du worker à la Conver
 - **Mesure 0a** (avant le plan) : un événement d'essai avec ce jeton, lu côté serveur sans jamais l'afficher.
 - **Mesure 0b** : au premier vrai clic sur une publicité Groupama (aucune arrivée sur l'espace à l'écriture de la spec).
 
+## LES ACTIONS DE L'AGENT IA (A ET B LIVRÉES LE 2026-10-13, C EN COURS)
+
+Plan : [docs/superpowers/plans/2026-10-13-actions-agent.md](docs/superpowers/plans/2026-10-13-actions-agent.md). Le
+moteur et la console sont en production ; reste la livraison C (Claude Code : `set_agent_action`,
+`delete_agent_action`, les actions dans `get_conversation`, skill et FAQ, `features.md` et sa fiche), la date du jour
+dite au modèle, et l'essai réel 108.
+
 ## CE QUI ATTEND UN ESSAI RÉEL
 
 🔴 **La liste unique et à jour des essais réels de Julien vit dans `docs/prive/ESSAIS-REELS.md`** (2026-10-09, à sa

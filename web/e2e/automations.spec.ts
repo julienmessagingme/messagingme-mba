@@ -432,3 +432,62 @@ test.describe('Automation : déclencheur « risque élevé »', () => {
     await expect(page.getByText('le risque de désengagement d’un contact devient élevé')).toBeVisible();
   });
 });
+
+/**
+ * 🔴 Déclencheur « un agent IA déclenche une action » (plan du 2026-10-13). Offert seulement quand un agent porte une
+ * action ; la config désigne l'action par l'outil qui la porte ; l'écran dit que le scénario part PENDANT que l'agent
+ * parle (seul un scénario fait d'actions le laisse continuer).
+ */
+test.describe('Automation : déclencheur « action d’un agent IA »', () => {
+  const ACTION = { id: '0b7e2c1a-4d5e-4f60-8a9b-1c2d3e4f5a6b', nom: 'Résiliation', agentId: 'ag1', agent: 'Accueil' };
+  async function monter(page: import('@playwright/test').Page, posted: Array<Record<string, unknown>>, actions: unknown[], listees: unknown[] = []) {
+    await page.addInitScript((sess) => window.localStorage.setItem('mba.session', JSON.stringify(sess)), SESSION);
+    await page.route('**/api/backend/**', async (route) => {
+      const req = route.request();
+      const url = req.url();
+      const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+      if (url.endsWith('/automations') && req.method() === 'POST') {
+        posted.push(req.postDataJSON() as Record<string, unknown>);
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 'a1' }) });
+      }
+      if (url.endsWith('/automations/actions-agent')) return json({ actions });
+      if (url.endsWith('/automations')) return json({ automations: listees });
+      if (url.endsWith('/workflows')) return json({ workflows: [WF] });
+      if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+      return json({});
+    });
+    await page.goto('/automations');
+  }
+
+  test('🔴 l’action choisie part dans la config, et l’écran dit que le scénario part pendant que l’agent parle', async ({ page }) => {
+    const posted: Array<Record<string, unknown>> = [];
+    await monter(page, posted, [ACTION]);
+    await page.getByTestId('automation-add').click();
+    await page.getByTestId('automation-name').fill('Résiliation : prévenir l’équipe');
+    await page.getByTestId('automation-trigger').selectOption('agent_action');
+    await expect(page.getByTestId('config-agent-action')).toContainText('pendant que l’agent parle au client');
+    await expect(page.getByTestId('config-agent-action')).toContainText('scénario fait d’actions');
+    await page.getByTestId('automation-workflow').selectOption('wf1');
+    // Sans action choisie, rien ne part.
+    await expect(page.getByTestId('automation-submit')).toBeDisabled();
+    await page.getByTestId('automation-action').selectOption(ACTION.id);
+    await page.getByTestId('automation-submit').click();
+
+    await expect.poll(() => posted.length, { timeout: 10_000 }).toBe(1);
+    expect(posted[0]).toMatchObject({ triggerKind: 'agent_action', triggerConfig: { actionId: ACTION.id }, enabled: false });
+  });
+
+  test('une automation existante se lit en clair : l’agent et l’action, par leurs noms', async ({ page }) => {
+    const listee = { id: 'a9', name: 'Résiliation', enabled: false, triggerKind: 'agent_action', triggerConfig: { actionId: ACTION.id }, conditionGroup: null, workflowId: 'wf1', startNodeId: null, cooldownSeconds: null };
+    await monter(page, [], [ACTION], [listee]);
+    await expect(page.getByText('l’agent IA Accueil déclenche l’action « Résiliation »')).toBeVisible();
+  });
+
+  test('aucune action posée : l’option n’existe pas', async ({ page }) => {
+    await monter(page, [], []);
+    // La liste des actions est lue avec celle des automations : son état vide prouve que la lecture a eu lieu.
+    await expect(page.getByText('Aucune automation')).toBeVisible();
+    await page.getByTestId('automation-add').click();
+    await expect(page.getByTestId('automation-trigger').locator('option[value="agent_action"]')).toHaveCount(0);
+  });
+});

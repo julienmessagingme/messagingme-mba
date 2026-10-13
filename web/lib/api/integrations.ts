@@ -275,6 +275,11 @@ export interface AutomationInput {
 export function listAutomations(tenantId: string): Promise<{ automations: Automation[] }> {
   return request(`/tenants/${tenantId}/automations`);
 }
+/** Une action d'un agent IA de l'espace, pour le déclencheur `agent_action` (son `id` est celui de l'outil qui la porte). */
+export interface ActionAgentMenu { id: string; nom: string; agentId: string; agent: string }
+export function listActionsAgent(tenantId: string): Promise<{ actions: ActionAgentMenu[] }> {
+  return request(`/tenants/${tenantId}/automations/actions-agent`);
+}
 export function createAutomation(tenantId: string, input: AutomationInput): Promise<{ id: string }> {
   return request(`/tenants/${tenantId}/automations`, { method: 'POST', body: JSON.stringify(input) });
 }

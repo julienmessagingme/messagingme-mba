@@ -8,6 +8,7 @@ import type { TypeOutilMba } from '@/lib/api-mba-outils';
 import { TYPES_OUTIL_MBA } from '@/lib/partage/outils-mba';
 import { textesDuType, type ConsommateurOutil } from '@/lib/mba-outils';
 import { IconeOutil } from '@/components/IconeOutil';
+import { TEXTES_ACTION } from '@/lib/agent-outils';
 import { useT } from '@/lib/i18n';
 
 /** Les types proposés dans l'ordre du contrat partagé. */
@@ -24,16 +25,22 @@ export const TYPES_PROPOSES = TYPES_OUTIL_MBA;
  * déclarer ce qu'il a déjà.
  */
 type Compte = number | null | 'erreur';
-export function ChoixTypeOutil({ tenantId, onChoisir, onAnnuler, mcpDisponibles, onChoisirMcp, pour = 'mba' }: {
+export function ChoixTypeOutil({ tenantId, onChoisir, onAnnuler, mcpDisponibles, onChoisirMcp, onChoisirAction, pour = 'mba' }: {
   tenantId: string; onChoisir: (type: TypeOutilMba) => void; onAnnuler: () => void;
   /** Combien d'outils MCP enregistrés l'agent n'a pas encore. Lu par la liste de l'onglet. */
   mcpDisponibles: number;
   onChoisirMcp: () => void;
   /**
-   * Qui reçoit l'outil (RC4) : l'agent de Meta, ou un agent IA, dont l'onglet Outils reprend cette grille. Seuls les
-   * MOTS des cartes changent (`textesDuType`) ; les cartes, leur ordre et leurs liens sont les mêmes.
+   * Qui reçoit l'outil (RC4) : l'agent de Meta, ou un agent IA, dont l'onglet Outils reprend cette grille. Les MOTS
+   * des cartes changent (`textesDuType`) ; les cartes, leur ordre et leurs liens sont les mêmes, sauf « Déclencher une
+   * action », que seul un agent IA reçoit (`onChoisirAction`).
    */
   pour?: ConsommateurOutil;
+  /**
+   * « Déclencher une action » (plan du 2026-10-13), propre à l'agent IA : comme la case MCP, ce n'est pas un
+   * `TypeOutilMba`, l'agent de Meta n'a pas cet outil. Absente, la case n'est pas montrée.
+   */
+  onChoisirAction?: () => void;
 }) {
   const t = useT();
   const [appels, setAppels] = useState<Compte>(null);
@@ -101,6 +108,17 @@ export function ChoixTypeOutil({ tenantId, onChoisir, onAnnuler, mcpDisponibles,
             </div>
           );
         })}
+        {pour === 'agent' && onChoisirAction && (
+          <div className="rounded-carte border border-ink-200 p-4 hover:border-brand-300 hover:bg-brand-50">
+            <button type="button" data-testid="mba-type-action" onClick={onChoisirAction} className="block w-full text-left">
+              <span className="flex items-center gap-2 text-sm font-semibold text-ink-900">
+                <IconeOutil signe="connecteur" className="text-ink-400" />
+                <span className="min-w-0 truncate">{t(TEXTES_ACTION.titre[0], TEXTES_ACTION.titre[1])}</span>
+              </span>
+              <span className="mt-1 block text-xs text-ink-500">{t(TEXTES_ACTION.aide[0], TEXTES_ACTION.aide[1])}</span>
+            </button>
+          </div>
+        )}
         {/* 🔴 LA SIXIÈME CASE (Julien, 2026-10-02 : « il faut qu'on ait la capacité de rajouter un MCP via une case quand
             tu cliques sur Ajouter un outil »). Elle n'est pas un `TypeOutilMba` : un outil MCP ne se crée pas ici, il
             vient d'un serveur déclaré et enregistré dans Tools > Connecteurs MCP ; la case ouvre la liste de ceux que

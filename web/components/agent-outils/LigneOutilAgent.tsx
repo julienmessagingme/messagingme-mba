@@ -16,6 +16,8 @@ export function badgeDeLOutil(o: OutilAgent): { signe: SigneOutil | null; mot: r
   if (o.origin === 'mcp') return { signe: 'connecteur', mot: ['MCP', 'MCP'] };
   const handler = String(o.binding.handler ?? '');
   const type = typeDuHandler(handler);
+  // L'action est propre à l'agent IA : son badge n'est pas dans la grille de l'agent de Meta.
+  if (type === 'action') return { signe: signeDuHandler(handler), mot: ['Action', 'Action'] };
   if (type !== null) return { signe: textesDuType(type, 'agent').signe, mot: textesDuType(type, 'agent').badge };
   // Un handler que cette console ne connaît pas : aucun dessin plutôt qu'un dessin qui affirmerait une nature.
   return { signe: signeDuHandler(handler), mot: ['Inconnu', 'Unknown'] };

@@ -58,6 +58,11 @@ function libelleCible(o: OutilAgent, noms: Noms, t: Traduire): string {
       const nom = noms.scenarios.get(c.workflowId);
       return nom ? t(`Scénario : ${nom}`, `Scenario: ${nom}`) : t('Scénario supprimé ou dépublié', 'Deleted or unpublished scenario');
     }
+    case 'action': {
+      const n = c.champs.length;
+      const champs = n === 0 ? '' : t(` (${n} champ${n > 1 ? 's' : ''})`, ` (${n} field${n > 1 ? 's' : ''})`);
+      return c.nom ? t(`Action : ${c.nom}${champs}`, `Action: ${c.nom}${champs}`) : t('Action à nommer', 'Action to name');
+    }
   }
 }
 
@@ -69,7 +74,7 @@ function libelleCible(o: OutilAgent, noms: Noms, t: Traduire): string {
  *    ou Désactiver, Modifier pour leurs réglages, et la croix qui supprime.
  *  - **« Ajouter un outil »** ouvre la grille « Quel outil ajouter ? » de l'agent de Meta (`ChoixTypeOutil`, ses six
  *    cartes) : un tag, une information, un bloc ou un scénario FIXÉS par l'administrateur, un appel de Connecteurs API,
- *    un outil MCP.
+ *    un outil MCP ; plus « Déclencher une action », propre à l'agent IA (plan du 2026-10-13).
  *  - **La liste des outils posés**, au format des lignes de l'agent de Meta, connecteurs API et outils MCP compris :
  *    les sections « Vos systèmes » et « Vos serveurs MCP » ont disparu en tant que sections.
  *
@@ -267,7 +272,8 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
           {mode.vue === 'choix' && (
             <ChoixTypeOutil pour="agent" tenantId={tenantId} onAnnuler={() => setMode({ vue: 'liste' })}
               onChoisir={(type) => setMode(type === 'connecteur' ? { vue: 'connecteur' } : { vue: 'form', type })}
-              mcpDisponibles={mcpARattacher.length} onChoisirMcp={() => setMode({ vue: 'mcp' })} />
+              mcpDisponibles={mcpARattacher.length} onChoisirMcp={() => setMode({ vue: 'mcp' })}
+              onChoisirAction={() => setMode({ vue: 'form', type: 'action' })} />
           )}
 
           {mode.vue === 'mcp' && (
@@ -313,8 +319,8 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
 
           {liste.length === 0 ? (
             <p data-testid="outils-vide" className="text-sm text-ink-500">
-              {t('Aucun autre outil : « Ajouter un outil » propose un tag, une information, un bloc, un scénario, un connecteur API ou un outil MCP.',
-                'No other tool: “Add a tool” offers a tag, a detail, a block, a scenario, an API connector or an MCP tool.')}
+              {t('Aucun autre outil : « Ajouter un outil » propose un tag, une information, un bloc, un scénario, une action, un connecteur API ou un outil MCP.',
+                'No other tool: “Add a tool” offers a tag, a detail, a block, a scenario, an action, an API connector or an MCP tool.')}
             </p>
           ) : (
             <ul className="divide-y divide-ink-100 rounded-carte border border-ink-200 bg-white">

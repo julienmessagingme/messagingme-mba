@@ -1088,6 +1088,10 @@ nombre, date, email, liste), au plus `BORNES_ACTION.champs` champs et `BORNES_AC
   d'`agent_actions` s'effacent en cascade avec la conversation (index `agent_actions_conversation_fk_idx`, 0233),
   l'outil, l'agent ou l'espace. Une valeur texte fait au plus `BORNES_ACTION.texte` caractères, borne annoncée au
   modèle dans la description du champ.
+- **La console** pose l'action par la carte « Déclencher une action » de l'onglet Outils (`CibleAction.tsx`), propre à
+  l'agent IA (la grille partagée avec l'agent de Meta ne la montre qu'avec `onChoisirAction`). 🔴 Le code d'un champ
+  ENREGISTRÉ ne suit plus son libellé : c'est la clé que l'application du client lit dans `fields`. La carte prévient
+  quand aucune adresse de webhook n'est abonnée à `agent.action`.
 - ⚠️ Le déclencheur `agent_action` démarre son scénario comme `tag_added` : la fenêtre n'y est prouvée que par un
   message entrant, donc un scénario qui OUVRE par un message de session est refusé, et un scénario qui ouvre par un
   modèle coupe le parcours de l'agent. Seul un scénario fait d'actions (tag, e-mail) laisse l'agent continuer.

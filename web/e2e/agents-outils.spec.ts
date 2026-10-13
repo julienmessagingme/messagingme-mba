@@ -7,8 +7,9 @@ import { repondre } from './aide/confirmation';
  * Ce qu'on vérifie vraiment ici :
  *  - « Toujours là » : les commandes de la liste pour chaque geste propre à l'agent IA ; « Activer » POSE l'outil s'il
  *    manque puis l'ACTIVE, « Désactiver » le désactive sans le retirer, la croix le supprime après confirmation ;
- *  - « Quel outil ajouter ? » : la grille de l'agent de Meta, ses six cartes, et une CIBLE fixée par l'administrateur
- *    pour le tag, l'information, le bloc et le scénario ; l'outil naît inactif ;
+ *  - « Quel outil ajouter ? » : la grille de l'agent de Meta, ses six cartes plus « Déclencher une action » (propre à
+ *    l'agent IA), et une CIBLE fixée par l'administrateur pour le tag, l'information, le bloc, le scénario et l'action ;
+ *    l'outil naît inactif ;
  *  - la liste des outils posés, au format des lignes de l'agent de Meta, connecteurs API et outils MCP compris ;
  *  - ce que l'agent IA a en plus est gardé : l'autonomie d'une action irréversible (un troisième geste), les gestes du
  *    moment, et le schéma RÉEL envoyé au modèle, parce que ce sont les mots du client qui pilotent l'appel de fonction.
@@ -34,6 +35,7 @@ const CATALOGUE = [
   modele('ecrire_variable', 'Enregistrer une information sur le contact', 'write', [{ name: 'valeur', edition: 'aucune' }]),
   modele('envoyer_bloc', 'Envoyer un bloc de votre scénario', 'irreversible'),
   modele('lancer_scenario', 'Lancer un scénario', 'irreversible'),
+  modele('declencher_action', 'Déclencher une action', 'write'),
 ];
 
 const base = {
@@ -266,12 +268,90 @@ test.describe('Agents IA : « Toujours là »', () => {
   });
 });
 
+/** Une adresse de webhook abonnée à `agent.action` : l'écran de l'action ne prévient plus. */
+const abonner = (page: import('@playwright/test').Page) => page.route('**/evenements/adresses', (r) => r.fulfill({
+  status: 200, contentType: 'application/json',
+  body: JSON.stringify({
+    adresses: [{ id: 'a1', url: 'https://app.exemple.test/hook', description: '', types: ['agent.action'], active: true }],
+    limite: null, types: ['agent.action'], typesParDefaut: [], chiffrementPret: true,
+  }),
+}));
+
+test.describe('Agents IA : « Déclencher une action »', () => {
+  test('🔴 poser une action : nom, consigne, champs typés au code tiré du libellé ; elle part avec sa cible et naît inactive', async ({ page }) => {
+    const appels: Appel[] = [];
+    await mock(page, appels, []);
+    await onglet(page);
+    await page.getByTestId('agent-outils-ajouter').click();
+    await page.getByTestId('mba-type-action').click();
+    // Aucune adresse abonnée à `agent.action` : l'écran le dit, sinon l'agent annoncerait une demande partie nulle part.
+    await expect(page.getByTestId('agent-action-sans-adresse')).toBeVisible();
+    await page.getByTestId('agent-action-nom').fill('Résiliation');
+    // Le titre et le nom technique suivent le nom de l'action.
+    await expect(page.getByTestId('agent-outil-form-titre')).toHaveValue('Résiliation');
+    await expect(page.getByTestId('agent-outil-form-nom')).toHaveValue('resiliation');
+    await page.getByTestId('agent-action-consigne').fill('Quand le client veut résilier. Dis-lui que la demande est enregistrée.');
+    await page.getByTestId('agent-action-champ-ajouter').click();
+    await page.getByTestId('agent-action-champ-libelle-0').fill('Numéro de contrat');
+    await expect(page.getByTestId('agent-action-champ-code-0')).toHaveValue('numero_de_contrat');
+    await page.getByTestId('agent-action-champ-ajouter').click();
+    await page.getByTestId('agent-action-champ-libelle-1').fill('Motif');
+    await page.getByTestId('agent-action-champ-type-1').selectOption('liste');
+    // Une liste sans valeurs ne part pas.
+    await expect(page.getByTestId('agent-outil-form-enregistrer')).toBeDisabled();
+    await expect(page.getByTestId('agent-outil-form-manque')).toContainText('Une liste porte ses valeurs');
+    await page.getByTestId('agent-action-champ-valeurs-1').fill('prix, déménagement, autre');
+    await page.getByTestId('agent-outil-form-enregistrer').click();
+
+    await expect.poll(() => postsOutil(appels).map((a) => a.body), { timeout: 5000 }).toEqual([{
+      handler: 'declencher_action', name: 'resiliation',
+      cible: {
+        nom: 'Résiliation', consigne: 'Quand le client veut résilier. Dis-lui que la demande est enregistrée.',
+        champs: [
+          { code: 'numero_de_contrat', libelle: 'Numéro de contrat', type: 'texte' },
+          { code: 'motif', libelle: 'Motif', type: 'liste', valeurs: ['prix', 'déménagement', 'autre'] },
+        ],
+      },
+    }]);
+    expect(appels.some((a) => /activation$/.test(a.url))).toBe(false);
+    await expect(page.getByTestId('outil-cible-n1')).toHaveText('Action : Résiliation (2 champs)');
+    await expect(page.getByTestId('outil-etat-n1')).toContainText('Inactif');
+  });
+
+  test('🔴 le code d’un champ déjà enregistré ne suit plus son libellé : c’est la clé que l’application lit', async ({ page }) => {
+    const ACTION = {
+      ...base, id: 'o9', name: 'resiliation', title: 'Résiliation', risk: 'write',
+      binding: { handler: 'declencher_action', nom: 'Résiliation', consigne: '', champs: [{ code: 'contrat', libelle: 'Contrat', type: 'texte' }] },
+      expose: { name: 'resiliation', description: 'Déclenche.', parameters: SCHEMA },
+    };
+    const appels: Appel[] = [];
+    await mock(page, appels, [ACTION]);
+    await abonner(page);
+    await onglet(page);
+    await expect(page.getByTestId('outil-cible-o9')).toHaveText('Action : Résiliation (1 champ)');
+    // L'absence d'avertissement ne prouve rien tant que les adresses n'ont pas été lues.
+    const adressesLues = page.waitForResponse('**/evenements/adresses');
+    await page.getByTestId('outil-modifier-o9').click();
+    await adressesLues;
+    await expect(page.getByTestId('agent-action-nom')).toHaveValue('Résiliation');
+    // Une adresse abonnée : pas d'avertissement.
+    await expect(page.getByTestId('agent-action')).toBeVisible();
+    await expect(page.getByTestId('agent-action-sans-adresse')).toHaveCount(0);
+    await page.getByTestId('agent-action-champ-libelle-0').fill('Numéro de contrat');
+    await expect(page.getByTestId('agent-action-champ-code-0')).toHaveValue('contrat');
+    await page.getByTestId('agent-outil-form-enregistrer').click();
+    await expect.poll(() => appels.find((a) => a.method === 'PATCH')?.body, { timeout: 5000 }).toMatchObject({
+      cible: { nom: 'Résiliation', consigne: '', champs: [{ code: 'contrat', libelle: 'Numéro de contrat', type: 'texte' }] },
+    });
+  });
+});
+
 test.describe('Agents IA : « Quel outil ajouter ? »', () => {
-  test('🔴 la grille de l’agent de Meta, ses six cartes, et aucun mot sur l’agent de Meta', async ({ page }) => {
+  test('🔴 la grille de l’agent de Meta, ses six cartes plus l’action, et aucun mot sur l’agent de Meta', async ({ page }) => {
     await mock(page, [], []);
     await onglet(page);
     await page.getByTestId('agent-outils-ajouter').click();
-    for (const type of ['tag', 'champ', 'bloc', 'scenario', 'connecteur', 'mcp']) {
+    for (const type of ['tag', 'champ', 'bloc', 'scenario', 'connecteur', 'mcp', 'action']) {
       await expect(page.getByTestId(`mba-type-${type}`)).toBeVisible();
     }
     await expect(page.getByTestId('mba-types')).not.toContainText('agent de Meta');

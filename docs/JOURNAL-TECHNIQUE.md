@@ -6,6 +6,28 @@
 > tranchent, jamais ce fichier.
 
 
+## 2026-10-13 : les actions de l'agent IA, le moteur et la console (livraisons 0, A et B)
+
+- Décisions de Julien du jour (grill) : une action est un outil de chaque agent IA, 10 au plus ; des champs typés
+  (texte, nombre, date, e-mail, liste), tous facultatifs ; l'agent dit au client une phrase guidée par la consigne
+  puis continue, sans confirmation ; une fois par JOUR, par contact et par action ; effets : webhook `agent.action`,
+  trace dans la conversation, déclencheur d'automation ; toutes les offres, Free comprise.
+- Migration 0232 (table `agent_actions`, unicité `(tool_id, wa_id, jour)`, quatre cascades, CHECK de la frise
+  relâché à `action_agent`) poussée seule (cc66f135), appliquée après sa CI verte, sans transaction longue ni verrou,
+  relue en base point par point.
+- Livraison A (6a448e39) : l'outil `declencher_action`, ses paramètres dérivés des champs, la réservation du jour,
+  le webhook (décoché par défaut), la frise, le déclencheur `agent_action` et la route du menu. La relecture n'a
+  trouvé aucun rouge ; ses jaunes peu coûteux ont été corrigés avant le push, dont l'identifiant d'événement tiré de
+  la clé naturelle (action, contact, jour), avec un rejeu idempotent sur « déjà partie » : un processus tué entre la
+  réservation et le webhook se répare au rappel suivant. Migration 0233 (index concurrent de la cascade sur
+  `conversation_id`) appliquée au déploiement, `indisvalid` relu. Un jaune écarté : « `conversationDuContact` ignore
+  le canal » ne tient pas, `conversations.channel` a été retirée par 0058.
+- Livraison B : la carte « Déclencher une action » (nom, consigne, champs ; le code d'un champ enregistré ne suit
+  plus son libellé, c'est la clé que l'application lit ; avertissement sans adresse abonnée), le déclencheur dans
+  Automations (qui dit que seul un scénario fait d'actions laisse l'agent continuer). Poussée après le déploiement
+  de A, la console publiant à chaque push.
+- Reste : la livraison C (Claude Code), la date du jour dite au modèle pour les champs date, et l'essai réel.
+
 ## 2026-10-13 : le second facteur des administrateurs au choix de l'espace, l'offre Entreprise dans /ops, le gras de l'Inbox
 
 - Demandes de Julien du jour : imposée à tout admin, la double authentification pesait sur la création de l'espace

@@ -196,6 +196,8 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     await expect(page.getByTestId('mba-type-champ')).toBeEnabled();
     await expect(page.getByTestId('mba-type-connecteur')).toBeDisabled();
     await expect(page.getByTestId('mba-type-connecteur-lien')).toHaveAttribute('href', '/connecteurs');
+    // « Déclencher une action » est propre à l'agent IA : l'agent de Meta n'a pas cet outil.
+    await expect(page.getByTestId('mba-type-action')).toHaveCount(0);
   });
 
   test('🔴 Ajouter > Connecteur API : l’appel d’abord, Enregistrer crée PUIS publie', async ({ page }) => {

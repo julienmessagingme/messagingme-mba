@@ -9,6 +9,7 @@ import {
   listUserFields, estEnLigne,
   type Automation, type AutomationTriggerKind, type WorkflowSummary, type HubspotDealPipeline, type UserFieldDef,
 } from '@/lib/api';
+import { listActionsAgent, type ActionAgentMenu } from '@/lib/api/integrations';
 import { Bouton } from '@/components/Bouton';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
 import { BoutonConfirme } from '@/components/Confirmation';
@@ -94,16 +95,25 @@ function AutomationsInner({ session }: { session: Session }) {
   // `avant` au départ : c'est ce que ce déclencheur a toujours fait, et une automation existante rouverte
   // sans `sens` doit se réafficher telle qu'elle est, pas telle qu'on la préférerait aujourd'hui.
   const [sensDate, setSensDate] = useState<'avant' | 'apres'>('avant');
+  // « Un agent IA déclenche une action » (plan du 2026-10-13) : les actions des agents de l'espace, et celle choisie.
+  const [actionsAgent, setActionsAgent] = useState<ActionAgentMenu[]>([]);
+  // Une lecture ratée n'est pas « aucune action » : une automation existante ne se dit alors pas « supprimée ».
+  const [actionsIllisibles, setActionsIllisibles] = useState(false);
+  const [actionId, setActionId] = useState('');
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [a, w, f] = await Promise.all([
+      const [a, w, f, actions] = await Promise.all([
         listAutomations(session.tenantId),
         listWorkflows(session.tenantId),
         listUserFields(session.tenantId),
+        // Au mieux : une lecture ratée retire seulement ce déclencheur du menu.
+        listActionsAgent(session.tenantId).then((r) => (Array.isArray(r?.actions) ? r.actions : null)).catch(() => null),
       ]);
       setItems(a.automations);
+      setActionsAgent(actions ?? []);
+      setActionsIllisibles(actions === null);
       setWorkflows(w.workflows);
       // Normalisation au bord du réseau : une 200 sans le champ attendu poserait `undefined` dans un état
       // typé tableau, et le premier `.map` démonterait l'écran entier.
@@ -186,6 +196,7 @@ function AutomationsInner({ session }: { session: Session }) {
     }
     if (triggerKind === 'analyse_devient') return devient ? { cle: devient.key, op: devient.op, valeur: devient.value } : {};
     if (triggerKind === 'avant_date') return { fieldKey: dateField, delai, unite, sens: sensDate };
+    if (triggerKind === 'agent_action') return { actionId };
     if (triggerKind === 'hubspot_deal_stage') {
       const [pipelineId = '', stageId = ''] = dealStageKey.split('::');
       return { pipelineId, stageId, ...(etapeChoisie ? { stageLabel: etapeChoisie.label } : {}) };
@@ -201,7 +212,7 @@ function AutomationsInner({ session }: { session: Session }) {
     setCreating(false); setEnEdition(null); setName(''); setKeywords(''); setTag(''); setWorkflowId(''); setDealStageKey('');
     setMode('contains'); setSentiment('negatif'); setUnresolvedOnly(false); setTriggerKind('keyword'); setAdId('');
     setFiltreDevient(null); setFiltresAnalyse([]); setAntiRebond(null);
-    setDateField(''); setDelai(2); setUnite('heures'); setSensDate('avant');
+    setDateField(''); setDelai(2); setUnite('heures'); setSensDate('avant'); setActionId('');
   }
 
   /**
@@ -242,6 +253,7 @@ function AutomationsInner({ session }: { session: Session }) {
       setSensDate(c.sens === 'apres' ? 'apres' : 'avant');
     }
     if (a.triggerKind === 'hubspot_deal_stage') setDealStageKey(`${texte(c.pipelineId)}::${texte(c.stageId)}`);
+    if (a.triggerKind === 'agent_action') setActionId(texte(c.actionId));
     // Le formulaire vit en haut de l'écran : une ligne cliquée plus bas le laisserait hors de vue.
     requestAnimationFrame(() => formulaire.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
@@ -340,6 +352,13 @@ function AutomationsInner({ session }: { session: Session }) {
       return `${String(c.delai ?? '')} ${String(c.unite ?? '')} ${sens} « ${champ} »`;
     }
     if (a.triggerKind === 'risque_eleve') return t('le risque de désengagement d’un contact devient élevé', 'a contact’s disengagement risk becomes high');
+    if (a.triggerKind === 'agent_action') {
+      const action = actionsAgent.find((x) => x.id === a.triggerConfig.actionId);
+      if (action) return t(`l’agent IA ${action.agent} déclenche l’action « ${action.nom} »`, `AI agent ${action.agent} triggers the action “${action.nom}”`);
+      return actionsIllisibles
+        ? t('un agent IA déclenche une action', 'an AI agent triggers an action')
+        : t('une action d’agent IA supprimée', 'a deleted AI agent action');
+    }
     if (a.triggerKind === 'hubspot_deal_stage') {
       // Le libellé n'est qu'un souvenir de ce qui a été choisi : s'il manque (automation créée par API), on
       // le dit plutôt que d'afficher un identifiant opaque qui ne parlerait à personne.
@@ -356,7 +375,9 @@ function AutomationsInner({ session }: { session: Session }) {
     && (triggerKind !== 'tag_added' || tag.trim() !== '')
     && (triggerKind !== 'hubspot_deal_stage' || dealStageKey !== '')
     && (triggerKind !== 'avant_date' || (dateField !== '' && Number.isInteger(delai) && delai > 0))
-    && (triggerKind !== 'analyse_devient' || devient !== null);
+    && (triggerKind !== 'analyse_devient' || devient !== null)
+    // L'action doit exister : un identifiant d'action supprimée passerait la forme et ne partirait jamais.
+    && (triggerKind !== 'agent_action' || actionsAgent.some((x) => x.id === actionId));
 
   return (
     <div className="space-y-5 p-4">
@@ -413,6 +434,10 @@ function AutomationsInner({ session }: { session: Session }) {
               <option value="avant_date">{t('un délai avant ou après une date enregistrée', 'a delay before or after a stored date')}</option>
               <option value="ctwa_ad">{t('le contact arrive d’une publicité WhatsApp', 'the contact comes from a WhatsApp ad')}</option>
               <option value="risque_eleve">{t('le risque de désengagement d’un contact devient élevé', 'a contact’s disengagement risk becomes high')}</option>
+              {/* Offert dès qu'un agent IA porte une action (et toujours pour une automation qui en a déjà une). */}
+              {(actionsAgent.length > 0 || triggerKind === 'agent_action') && (
+                <option value="agent_action">{t('un agent IA déclenche une action', 'an AI agent triggers an action')}</option>
+              )}
               {/* Offert seulement si l'API décrit les champs de la fiche : elle seule sait appliquer ce déclencheur. */}
               {champsDevient.length > 0 && (
                 <option value="analyse_devient">{t('la dernière analyse d’un contact change (ex. le sentiment devient négatif)', 'a contact’s latest analysis changes (e.g. sentiment becomes negative)')}</option>
@@ -441,6 +466,27 @@ function AutomationsInner({ session }: { session: Session }) {
               <p>
                 {t('Le contact n’a pas écrit : le scénario doit commencer par un envoi de template.',
                     'The contact has not written: the scenario must start with a template send.')}
+              </p>
+            </div>
+          )}
+          {/* L'ACTION D'UN AGENT IA : le scénario démarre pendant que l'agent parle au client (relecture de la livraison
+              A). La fenêtre n'est prouvée que par un message entrant : un scénario qui écrit au client est refusé, ou
+              coupe l'agent s'il ouvre par un modèle. Seul un scénario fait d'actions laisse l'agent continuer. */}
+          {triggerKind === 'agent_action' && (
+            <div data-testid="config-agent-action">
+              <label className="mb-1 block text-sm font-medium text-ink-900">{t('Quelle action', 'Which action')}</label>
+              <select value={actionId} onChange={(e) => setActionId(e.target.value)} data-testid="automation-action" className={inputCls}>
+                <option value="">{t('Choisir une action', 'Pick an action')}</option>
+                {actionId !== '' && !actionsAgent.some((x) => x.id === actionId) && (
+                  <option value={actionId} disabled>
+                    {actionsIllisibles ? t('Action (liste illisible)', 'Action (list unreadable)') : t('Action supprimée', 'Deleted action')}
+                  </option>
+                )}
+                {actionsAgent.map((x) => <option key={x.id} value={x.id}>{`${x.agent} : ${x.nom}`}</option>)}
+              </select>
+              <p className="mt-1 text-xs text-ink-500">
+                {t('Le scénario part une fois par jour au plus, par contact et par action, pendant que l’agent parle au client. Choisissez un scénario fait d’actions (poser un tag, prévenir l’équipe par e-mail) : un scénario qui écrit au client est refusé, ou interrompt l’agent.',
+                    'The scenario runs at most once a day, per contact and per action, while the agent is talking to the customer. Pick a scenario made of actions (add a tag, alert the team by email): a scenario that writes to the customer is refused, or interrupts the agent.')}
               </p>
             </div>
           )}

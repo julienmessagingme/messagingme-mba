@@ -7,9 +7,10 @@ import { Bouton } from '@/components/Bouton';
 import { CibleBloc, CibleChamp, CibleScenario, CibleTag } from '@/components/mba-outils/CiblesOutil';
 import { BORNES_OUTIL, consigneIncomplete, textesDuType } from '@/lib/mba-outils';
 import {
-  HANDLER_DU_TYPE, cibleComplete, cibleDeLOutil, corpsDeLaCible, normaliserNomOutil,
+  HANDLER_DU_TYPE, TEXTES_ACTION, cibleComplete, cibleDeLOutil, corpsDeLaCible, manqueDeLAction, normaliserNomOutil,
   type CibleSaisieAgent, type TypeACible,
 } from '@/lib/agent-outils';
+import { CibleAction } from './CibleAction';
 import {
   ajouterOutil, autonomieOutil, patchOutil, type GesteMoment, type ModeleOutil, type OutilAgent,
 } from '@/lib/api-agent-tools';
@@ -22,6 +23,7 @@ function cibleVide(type: TypeACible): CibleSaisieAgent {
     case 'champ': return { type: 'champ', champ: '', valeurs: [] };
     case 'bloc': return { type: 'bloc', workflowId: '', code: '' };
     case 'scenario': return { type: 'scenario', workflowId: '' };
+    case 'action': return { type: 'action', nom: '', consigne: '', champs: [] };
   }
 }
 
@@ -62,7 +64,8 @@ export function FormulaireOutilAgent({
   onAutonomie: (v: boolean) => void;
 }) {
   const t = useT();
-  const textes = textesDuType(type, 'agent');
+  // L'action est propre à l'agent IA : ses mots ne sont pas dans la grille de l'agent de Meta.
+  const textes = type === 'action' ? TEXTES_ACTION : textesDuType(type, 'agent');
   const depart = (outil ? cibleDeLOutil(outil.binding) : null) ?? cibleVide(type);
   const [cible, setCible] = useState<CibleSaisieAgent>(depart);
   // La cible d'origine : on ne la renvoie que si elle a CHANGÉ (un champ supprimé du mini-CRM ne doit pas faire
@@ -84,8 +87,10 @@ export function FormulaireOutilAgent({
     if (!nomTouche) setName(normaliserNomOutil(v));
   };
 
+  const manqueAction = cible.type === 'action' ? manqueDeLAction(cible) : null;
   const manque: string | null =
-    !cibleComplete(cible) ? t('Choisissez ce que vise l’outil.', 'Pick what the tool targets.')
+    manqueAction !== null ? t(manqueAction[0], manqueAction[1])
+    : !cibleComplete(cible) ? t('Choisissez ce que vise l’outil.', 'Pick what the tool targets.')
       : horsBornes(cible) ? t(
         `Trop long : un tag fait ${BORNES_OUTIL.tag} caractères au plus, une liste ${BORNES_OUTIL.valeurs} valeurs de ${BORNES_OUTIL.valeur} caractères.`,
         `Too long: a tag is at most ${BORNES_OUTIL.tag} characters, a list ${BORNES_OUTIL.valeurs} values of ${BORNES_OUTIL.valeur} characters.`)
@@ -157,6 +162,14 @@ export function FormulaireOutilAgent({
           onChange={(workflowId, code, nom) => {
             setCible({ type: 'bloc', workflowId, code });
             if (title.trim() === '' && nom !== '') changerTitre(nom);
+          }} />
+      )}
+      {cible.type === 'action' && (
+        <CibleAction tenantId={tenantId} valeur={cible}
+          onChange={(c) => {
+            // Le titre suit le nom de l'action tant qu'on ne l'a pas écrit autrement.
+            if (c.nom !== cible.nom && (title.trim() === '' || title === cible.nom)) changerTitre(c.nom);
+            setCible(c);
           }} />
       )}
       {cible.type === 'scenario' && (
