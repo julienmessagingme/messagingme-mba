@@ -6,6 +6,22 @@
 > tranchent, jamais ce fichier.
 
 
+## 2026-10-13 : l'agent annonce le conseiller, et les horaires se règlent depuis Claude Code (essai 99, suite)
+
+- Suite de l'essai 99 : au « je voudrais parler à un humain » du client, l'agent a répondu « Bien sûr ! 😊 » et passé
+  la main sans rien annoncer. Cause produit : équipe joignable, la consigne disait « tu peux dire qu'un conseiller va
+  reprendre ». Décision de Julien : la consigne de base, pour tous les agents, l'EXIGE, avant l'appel de l'outil
+  (`tests/agent-prompt.test.ts`). Dans un scénario, cette phrase reste jetée quand la branche `humain` parle.
+- La skill demandait les horaires sans rien en faire, et aucun outil ne réglait les heures d'ouverture : un espace
+  Free, sans console, ne pouvait que choisir le mode. Outil `set_business_hours` (toutes offres, personne requise),
+  par les validateurs de la route de la console, sortis dans `reglerHeuresOuverture` ; la skill (plugin 0.1.3) règle
+  les heures puis le mode. Décision de Julien : Claude Code d'abord, l'entretien de l'assistant de la console plus tard.
+- Relecture sans rouge. La skill pose désormais `escalader` d'office (une consigne qui annonce un conseiller sans
+  outil pour transférer mentirait), et `get_setup_state` propose les deux outils des horaires à l'étape
+  `completer_agent`.
+- Écarté pour l'instant, décision de Julien : un outil pour rendre la main à l'agent après une réponse de Claude
+  (`reply_in_open_window` prend le fil, et seule la reprise automatique, 2 h par défaut, le rend à un espace Free).
+
 ## 2026-10-13 : l'agent IA annonçait une réouverture vieille d'une semaine, en heures ouvrées
 
 Sur l'espace Groupama, à 11 h 57 un mardi, pendant les horaires, l'agent IA a répondu à une demande de conseiller :

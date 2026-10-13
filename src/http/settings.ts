@@ -1,12 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import type { TenantSettings, MbaHandoffMode } from '../settings/store.pg';
-import type { BusinessHours, DayHours } from '../workflow/conditions';
+import type { BusinessHours } from '../workflow/conditions';
 import { withinBusinessHours } from '../workflow/conditions';
 import { espaceVerifie } from './scope';
 import { estFrequenceMention, FREQUENCES_MENTION_IA, type FrequenceMentionIa } from '../agent/agent-store';
 import { MODE_TRANSFERT_DEFAUT, type ModeTransfert } from '../agent/disponibilite-equipe';
-import { reglerModeTransfert } from '../agent/reglages';
+import { isValidTimeZone, normalizeBusinessHours, reglerModeTransfert } from '../agent/reglages';
 import { corpsDuRefus } from '../lib/issue';
 import { valideGrille, BORNES_GRILLE } from '../stats/prix';
 import { messageDe } from '../lib/erreur';
@@ -79,34 +79,6 @@ export interface SettingsRouteDeps {
      */
     listerPourConformite(tenantId: string): Promise<Array<{ id: string; label: string; status: string; mentionIa: string }>>;
   };
-}
-
-/** Fuseau IANA valide ? (Intl throw sur un identifiant inconnu.) */
-function isValidTimeZone(tz: unknown): tz is string {
-  if (typeof tz !== 'string' || tz.trim() === '') return false;
-  try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return true; } catch { return false; }
-}
-
-const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
-/** Normalise/valide les heures d'ouverture d'un corps hostile : 7 jours '0'..'6', HH:MM valides, close > open si
- *  ouvert. null si invalide (une plage cassée est rejetée, pas silencieusement corrigée). */
-function normalizeBusinessHours(raw: unknown): BusinessHours | null {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const r = raw as Record<string, unknown>;
-  const out: BusinessHours = {};
-  for (let d = 0; d <= 6; d += 1) {
-    const day = r[String(d)];
-    if (!day || typeof day !== 'object') return null;
-    const dd = day as Record<string, unknown>;
-    const closed = dd.closed === true;
-    if (closed) { out[String(d)] = { closed: true, open: '', close: '' }; continue; }
-    const open = String(dd.open ?? '');
-    const close = String(dd.close ?? '');
-    if (!HHMM.test(open) || !HHMM.test(close)) return null;
-    if (close <= open) return null; // plage vide/inversée -> refus
-    out[String(d)] = { closed: false, open, close } satisfies DayHours;
-  }
-  return out;
 }
 
 /**

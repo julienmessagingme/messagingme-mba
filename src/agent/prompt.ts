@@ -87,7 +87,10 @@ export function promptSysteme(ctx: ContexteAgent): string {
       ...(ctx.equipe.disponible
         ? [
           'L’ÉQUIPE EST JOIGNABLE EN CE MOMENT.',
-          'Si tu passes la main à un humain, tu peux dire qu’un conseiller va reprendre la conversation.',
+          // « tu peux dire » laissait « Bien sûr ! 😊 » pour toute réponse (essai réel 99, 2026-10-13).
+          'Si tu passes la main à un humain, écris ta phrase AVANT d’appeler l’outil : dis, dans tes mots et dans ton ton, '
+            + 'qu’un conseiller va reprendre la conversation ici même. Un simple accord ne suffit pas : le client doit savoir '
+            + 'que quelqu’un arrive.',
         ]
         : [
           'L’ÉQUIPE N’EST PAS JOIGNABLE EN CE MOMENT.',

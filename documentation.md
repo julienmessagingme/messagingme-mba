@@ -622,7 +622,11 @@ joignable OU fermée dès que l'espace a un mode (`agent_transfert_mode`, `alway
 qui déclare périmé tout message plus ancien annonçant une autre disponibilité de l'équipe ou une autre date de
 reprise. Une consigne muette laisse le modèle répéter la date de reprise périmée que sa mémoire lui rend.
 ⚠️ L'heure courante n'y entre pas : elle changerait la consigne à chaque minute, dont le début est servi par le
-cache (`agent-cache:`).
+cache (`agent-cache:`). Équipe joignable, l'agent DOIT annoncer, avant d'appeler l'outil, qu'un conseiller reprend la
+conversation ici même ; dans un scénario, la branche `humain` parle à sa place et cette phrase est jetée
+(`src/agent/brain.gateway.ts`). Le mode et les heures d'ouverture se règlent aussi depuis Claude (`set_transfer_mode`,
+`set_business_hours`, toutes offres, une personne requise), les heures par les validateurs de la route de la console
+(`reglerHeuresOuverture`, `src/agent/reglages.ts`).
 
 🔴 **QUI RÉPOND AU CLIENT** (`src/repondeur/`, RC6, plan `docs/superpowers/plans/2026-10-06-rc6-qui-repond.md` ; le
 lot 5 en posait la moitié agent IA, spec `docs/superpowers/specs/2026-10-04-repondeur-par-defaut-design.md`) : un seul

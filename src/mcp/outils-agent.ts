@@ -1,4 +1,5 @@
 import { ficheOutilMcp } from '../../web/lib/partage/catalogue-mcp';
+import type { BusinessHours } from '../workflow/conditions';
 import type { AnnotationsMcp, DepsMcp, OutilMcp, PersonneMcp, ProprieteEntree } from './outils';
 import { RefusOutil, entierBorne, texteObligatoire, valeurOuRefus } from './saisie';
 import { MESSAGE_OPERATIONS_LOURDES } from '../auth/plafond-partage';
@@ -11,7 +12,7 @@ import {
   importerTexteDocument, supprimerFiches, type DepsConnaissance,
 } from '../agent/connaissance';
 import { MAX_CARACTERES_MESSAGE_ESSAI, MAX_MESSAGES_ESSAI, ROLES_ESSAI, essayerAgent, type DepsEssai } from '../agent/essai';
-import { OUTILS_SURS, ajouterOutilsSurs, reglerModeTransfert, type OutilsSurs } from '../agent/reglages';
+import { OUTILS_SURS, ajouterOutilsSurs, HHMM, reglerHeuresOuverture, reglerModeTransfert, type OutilsSurs } from '../agent/reglages';
 import { MODES_TRANSFERT, MODE_TRANSFERT_DEFAUT, type ModeTransfert } from '../agent/disponibilite-equipe';
 import { BORNES_FICHE, CODE_SORTIE_RE, MAX_SORTIES, type FicheAgentContenu } from '../agent/fiche';
 import { MODELES_CHOISIS, MODELE_AGENT_CLAUDE_CODE, type ModeleProposable } from '../agent/modeles';
@@ -77,6 +78,8 @@ export interface DepsAgentMcp {
   reglages: {
     get(tenantId: string): Promise<{ agentTransfertMode: ModeTransfert | null }>;
     setAgentTransfertMode(tenantId: string, mode: ModeTransfert): Promise<void>;
+    setBusinessHours(tenantId: string, hours: BusinessHours): Promise<void>;
+    setTimezone(tenantId: string, tz: string): Promise<void>;
   };
   /** Le répondeur de l'espace : le MÊME objet que la route de la console (`PUT .../agents/repondeur`). */
   repondeur: DepsReglageRepondeur;
@@ -686,6 +689,45 @@ export const OUTILS_AGENT: OutilMcp[] = [
     },
     async executer(deps, tenantId, args) {
       return { mode: valeurOuRefus(await reglerModeTransfert(deps.agentIa.reglages, tenantId, args.mode)) };
+    },
+  },
+  {
+    ...ficheOutilMcp('set_business_hours'),
+    // Ouvert à toutes les offres, comme set_transfer_mode : un espace Free, sans console, n'a que ce chemin
+    // (essai réel 99, 2026-10-13).
+    fonction: null,
+    description:
+      'Règle les heures d’ouverture de l’espace : les sept jours, de « 0 » (dimanche) à « 6 » (samedi), chacun '
+      + '{ "closed": true } ou { "open": "09:00", "close": "18:00" } (une plage par jour, close après open), et, si '
+      + 'timezone est donné, son fuseau IANA (Europe/Paris…). Ce sont les heures que les agents IA annoncent quand le mode '
+      + 'de transfert est business_hours (set_transfer_mode) : hors de ces heures, ils disent quand l’équipe reprend. '
+      + 'Ce sont aussi celles du bloc Condition des scénarios, des campagnes limitées aux heures ouvrées et du passage de '
+      + 'main de l’agent de Meta réglé sur les horaires. Elles remplacent les précédentes : lis get_agent pour les heures '
+      + 'actuelles avant de les changer.',
+    annotations: ecriture('Régler les heures d’ouverture', true, true, false),
+    entree: {
+      type: 'object',
+      properties: {
+        hours: {
+          type: 'object',
+          description: 'Les sept jours, clés « 0 » (dimanche) à « 6 » (samedi).',
+          properties: Object.fromEntries(['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'].map((nom, j) => [String(j), {
+            type: 'object',
+            description: `Le ${nom}.`,
+            properties: {
+              closed: { type: 'boolean', description: 'true : fermé ce jour-là.' },
+              open: { type: 'string', pattern: HHMM.source, description: 'Ouverture, HH:MM.' },
+              close: { type: 'string', pattern: HHMM.source, description: 'Fermeture, HH:MM, après open.' },
+            },
+          }])),
+          required: ['0', '1', '2', '3', '4', '5', '6'],
+        },
+        timezone: { type: 'string', description: 'Fuseau IANA, par exemple Europe/Paris ; absent, celui de l’espace reste.' },
+      },
+      required: ['hours'],
+    },
+    async executer(deps, tenantId, args) {
+      return valeurOuRefus(await reglerHeuresOuverture(deps.agentIa.reglages, tenantId, args.hours, args.timezone));
     },
   },
   {

@@ -608,6 +608,8 @@ export const mcpAgentInerte: Pick<DepsMcp, 'agentIa'> = {
     reglages: {
       get: async () => ({ agentTransfertMode: null }),
       setAgentTransfertMode: neDevraitPasEtreAppelee('setAgentTransfertMode'),
+      setBusinessHours: neDevraitPasEtreAppelee('setBusinessHours'),
+      setTimezone: neDevraitPasEtreAppelee('setTimezone'),
     },
     repondeur: repondeurInerte,
   },

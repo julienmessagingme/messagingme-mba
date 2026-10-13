@@ -180,6 +180,8 @@ function monter(o: Options & { envoyerModele?: DepsMcp['envoyerModele']; usage?:
     debits: [] as Array<{ tenant: string; montant: number; note: string }>,
     payeurs: [] as string[],
     modes: [] as Array<{ tenant: string; mode: ModeTransfert }>,
+    heures: [] as Array<{ tenant: string; heures: Record<string, unknown> }>,
+    fuseaux: [] as Array<{ tenant: string; fuseau: string }>,
     oublis: [] as string[],
     allumages: [] as string[],
     vidages: [] as string[],
@@ -322,6 +324,8 @@ function monter(o: Options & { envoyerModele?: DepsMcp['envoyerModele']; usage?:
     reglages: {
       get: async () => ({ agentTransfertMode: 'business_hours' }),
       setAgentTransfertMode: async (t, mode) => { cap.modes.push({ tenant: t, mode }); },
+      setBusinessHours: async (t, heures) => { cap.heures.push({ tenant: t, heures }); },
+      setTimezone: async (t, fuseau) => { cap.fuseaux.push({ tenant: t, fuseau }); },
     },
     repondeur: {
       agents: { complet: (t, id) => gestion.agents.complet(t, id) },
@@ -421,6 +425,13 @@ const OUTILS_DU_NUMERO = new Set([...OUTILS_NUMERO, ...OUTILS_EVENEMENTS, ...OUT
 const EXIGENT_PERSONNE = OUTILS.filter((o) => o.exigePersonne === true && !OUTILS_DU_NUMERO.has(o.nom)).map((o) => o.nom);
 
 /** Des arguments valides pour chaque outil de l'agent : ce qu'un appel qui passerait la garde ferait. */
+/** Une semaine d'ouverture : fermé le dimanche et le samedi, 9 h à 18 h en semaine. */
+const SEMAINE = {
+  0: { closed: true }, 1: { open: '09:00', close: '18:00' }, 2: { open: '09:00', close: '18:00' },
+  3: { open: '09:00', close: '18:00' }, 4: { open: '09:00', close: '18:00' }, 5: { open: '09:00', close: '18:00' },
+  6: { closed: true },
+};
+
 const ARGS: Record<string, Record<string, unknown>> = {
   list_agents: {},
   get_agent: { agent_id: AG },
@@ -436,6 +447,7 @@ const ARGS: Record<string, Record<string, unknown>> = {
   import_site: { agent_id: AG, url: 'https://exemple.fr/tarifs' },
   import_document_text: { agent_id: AG, nom: 'Tarifs.txt', texte: 'Le cottage deux personnes coûte 89 euros la nuit, petit-déjeuner compris, toute l’année.' },
   set_transfer_mode: { mode: 'never' },
+  set_business_hours: { hours: SEMAINE },
   set_default_responder: { agent_id: AG },
   get_credit: {},
   buy_credit: { offre: 'refill_50' },
@@ -445,7 +457,7 @@ const ARGS: Record<string, Record<string, unknown>> = {
 const touche = (cap: ReturnType<typeof monter>['cap']) => Object.entries(cap).filter(([, v]) => v.length > 0).map(([k]) => k);
 
 describe('🔴 la personne requise : une clé d’API ne voit ni n’appelle les outils qui écrivent au nom de quelqu’un', () => {
-  it('dix-sept outils : quatre lectures sans personne, treize outils qui l’exigent (le répondeur compris, lot 5)', () => {
+  it('dix-huit outils : quatre lectures sans personne, quatorze outils qui l’exigent (le répondeur et les horaires compris)', () => {
     const agent = OUTILS.filter((o) => Object.hasOwn(ARGS, o.nom));
     expect(agent.map((o) => o.nom).sort()).toEqual(Object.keys(ARGS).sort());
     expect(agent.filter((o) => o.exigePersonne !== true).map((o) => o.nom).sort())
@@ -706,6 +718,23 @@ describe('les outils de l’agent appellent les fonctions de la console, dans l�
     expect((await appeler(server, JETON.brut, 'set_transfer_mode', { mode: 'parfois' })).texte).toBe('mode requis (always | business_hours | never)');
     expect((await appeler(server, JETON.brut, 'set_transfer_mode', { mode: 'never' })).json()).toEqual({ mode: 'never' });
     expect(cap.modes).toEqual([{ tenant: 't1', mode: 'never' }]);
+    await server.close();
+  });
+
+  it('🔴 set_business_hours : les heures et le fuseau de l’espace du jeton ; une plage fausse est refusée sans rien écrire', async () => {
+    const { server, cap } = monter();
+    const inversee = { ...SEMAINE, 1: { open: '18:00', close: '09:00' } };
+    expect((await appeler(server, JETON.brut, 'set_business_hours', { hours: inversee })).texte).toMatch(/hours invalide/);
+    expect((await appeler(server, JETON.brut, 'set_business_hours', { hours: SEMAINE, timezone: 'Lune/Base' })).texte).toMatch(/timezone/);
+    expect(cap.heures).toEqual([]);
+    expect(cap.fuseaux).toEqual([]);
+    const r = (await appeler(server, JETON.brut, 'set_business_hours', { hours: SEMAINE, timezone: 'Europe/Paris' })).json();
+    expect(r).toMatchObject({ timezone: 'Europe/Paris' });
+    expect(cap.heures).toHaveLength(1);
+    expect(cap.heures[0]!.tenant).toBe('t1');
+    // Le dimanche fermé reste fermé ; le lundi garde sa plage.
+    expect(cap.heures[0]!.heures).toMatchObject({ 0: { closed: true }, 1: { closed: false, open: '09:00', close: '18:00' } });
+    expect(cap.fuseaux).toEqual([{ tenant: 't1', fuseau: 'Europe/Paris' }]);
     await server.close();
   });
 

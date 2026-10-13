@@ -190,8 +190,20 @@ describe('promptSysteme : la disponibilité de l’équipe', () => {
     const p = bloc({ disponible: true, reouverture: null });
     expect(p).toContain('L’ÉQUIPE EST JOIGNABLE EN CE MOMENT.');
     expect(p).not.toContain('N’EST PAS JOIGNABLE');
-    expect(p).not.toContain('AVANT d’appeler l’outil');
+    // Le corps du cas fermé ne s'y glisse pas (« AVANT d'appeler l'outil » vaut désormais pour les deux cas).
+    expect(p).not.toContain('n’annonce pas un conseiller tout de suite');
+    expect(p).not.toContain('n’annonce ni conseiller ni délai');
     expect(p).toContain('il est périmé : ne le répète pas');
+  });
+
+  it('🔴 équipe DISPONIBLE : l’agent DOIT annoncer le conseiller, avant d’appeler l’outil (essai réel 99)', () => {
+    // « tu peux dire » laissait le modèle répondre « Bien sûr ! 😊 » à « je voudrais parler à un humain » : le
+    // client ne savait pas qu'un conseiller allait reprendre. Comme quand l'équipe est fermée, la phrase s'écrit AVANT
+    // l'outil, qui arrête le tour.
+    const p = bloc({ disponible: true, reouverture: null });
+    expect(p).toContain('AVANT d’appeler l’outil');
+    expect(p).toContain('qu’un conseiller va reprendre la conversation ici même');
+    expect(p).not.toContain('tu peux dire');
   });
 
   it('🔴 équipe FERMÉE : la phrase sur le périmé y est aussi', () => {

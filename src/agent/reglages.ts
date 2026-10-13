@@ -6,6 +6,7 @@ import {
   type CibleOutilAgent, type HandlerACible,
 } from './outils-maison';
 import { estModeTransfert, MODES_TRANSFERT, type ModeTransfert } from './disponibilite-equipe';
+import type { BusinessHours, DayHours } from '../workflow/conditions';
 import { refus, type Issue } from '../lib/issue';
 import { estUuid } from '../http/scope';
 import type { OutilsAgentDep } from '../http/agent-tools';
@@ -133,4 +134,52 @@ export async function reglerModeTransfert(
   if (!estModeTransfert(mode)) return refus(400, `mode requis (${MODES_TRANSFERT.join(' | ')})`);
   await reglages.setAgentTransfertMode(tenantId, mode);
   return { ok: true, valeur: mode };
+}
+
+/** Fuseau IANA valide ? (Intl throw sur un identifiant inconnu.) */
+export function isValidTimeZone(tz: unknown): tz is string {
+  if (typeof tz !== 'string' || tz.trim() === '') return false;
+  try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return true; } catch { return false; }
+}
+
+export const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+/** Normalise/valide les heures d'ouverture d'un corps hostile : 7 jours '0'..'6', HH:MM valides, close > open si
+ *  ouvert. null si invalide (une plage cassée est rejetée, pas silencieusement corrigée). */
+export function normalizeBusinessHours(raw: unknown): BusinessHours | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const out: BusinessHours = {};
+  for (let d = 0; d <= 6; d += 1) {
+    const day = r[String(d)];
+    if (!day || typeof day !== 'object') return null;
+    const dd = day as Record<string, unknown>;
+    const closed = dd.closed === true;
+    if (closed) { out[String(d)] = { closed: true, open: '', close: '' }; continue; }
+    const open = String(dd.open ?? '');
+    const close = String(dd.close ?? '');
+    if (!HHMM.test(open) || !HHMM.test(close)) return null;
+    if (close <= open) return null; // plage vide/inversée -> refus
+    out[String(d)] = { closed: false, open, close } satisfies DayHours;
+  }
+  return out;
+}
+
+/**
+ * Les heures d'ouverture de l'espace, et son fuseau s'il est donné : la route de la console (`PATCH .../settings/
+ * business-hours`) et l'outil MCP `set_business_hours` passent par les mêmes validateurs. Ce sont les heures que les
+ * agents IA annoncent en `business_hours` (`disponibiliteEquipe`), et celles du bloc Condition des scénarios. Rien
+ * n'est écrit si l'une des deux valeurs est fausse.
+ */
+export async function reglerHeuresOuverture(
+  reglages: { setBusinessHours(tenantId: string, hours: BusinessHours): Promise<void>; setTimezone(tenantId: string, tz: string): Promise<void> },
+  tenantId: string, heures: unknown, fuseau: unknown,
+): Promise<Issue<{ hours: BusinessHours; timezone?: string }>> {
+  const hours = normalizeBusinessHours(heures);
+  if (hours === null) return refus(400, 'hours invalide (7 jours de « 0 » à « 6 », HH:MM, close après open)');
+  // Absent ou nul : le fuseau de l'espace reste (un modèle envoie volontiers `null` pour « rien »).
+  const avecFuseau = fuseau !== undefined && fuseau !== null;
+  if (avecFuseau && !isValidTimeZone(fuseau)) return refus(400, 'timezone IANA invalide (ex. Europe/Paris)');
+  await reglages.setBusinessHours(tenantId, hours);
+  if (avecFuseau) await reglages.setTimezone(tenantId, fuseau);
+  return { ok: true, valeur: { hours, ...(avecFuseau ? { timezone: fuseau } : {}) } };
 }

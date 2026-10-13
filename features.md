@@ -117,6 +117,10 @@ Déconnexion ; *désactivés, câblage Stripe hors lot). RBAC = barrière serveu
   **fuseau horaire** de l'espace et les **heures d'ouverture**
   jour par jour (heure de début, heure de fin, ou « fermé »). C'est la base sur laquelle s'appuient les conditions
   de temps des scénarios (l'heure qu'il est, le jour de la semaine, « dans les heures d'ouverture »).
+  Depuis Claude Code (2026-10-13), la mise en service demande si l'équipe reprend à heures fixes, à toute heure ou
+  jamais, et règle les heures d'ouverture et ce que l'agent promet (`set_business_hours`, `set_transfer_mode`) :
+  un espace sans console y a accès. Quand l'équipe est joignable, l'agent qui répond seul annonce toujours qu'un
+  conseiller reprend la conversation ici même (dans un scénario, c'est le bloc suivant qui parle).
   **Les heures d'ouverture s'enregistrent d'elles-mêmes** (2026-10-05), comme le fuseau : chaque modification part
   moins d'une seconde après la dernière, sans bouton, et l'état affiché à côté du titre dit « enregistrement… »,
   « enregistré » ou « erreur », avec un « réessayer ». Il fallait auparavant cliquer « Enregistrer les horaires », et

@@ -90,9 +90,12 @@ describe('les skills', () => {
       widgets: [{ id: 'w', nom: 'W', actif: true }],
     });
     const arguments_ = OUTILS.flatMap((o) => Object.keys((o.entree as { properties?: object }).properties ?? {}));
+    // Les valeurs permises d'un argument (le mode `business_hours` de set_transfer_mode, par exemple).
+    const valeurs = OUTILS.flatMap((o) => Object.values((o.entree as { properties?: Record<string, { enum?: unknown[] }> }).properties ?? {})
+      .flatMap((p) => (p.enum ?? []).filter((v): v is string => typeof v === 'string')));
     const connus = new Set<string>([
       ...Object.keys(CATALOGUE_MCP), ...Object.keys(OUTILS_DE_L_ETAPE), ...AVERTISSEMENTS, ...clesRendues(exemple),
-      ...arguments_, ...OUTILS_SURS, ...Object.keys(STATUT_PAR_CODE),
+      ...arguments_, ...valeurs, ...OUTILS_SURS, ...Object.keys(STATUT_PAR_CODE),
     ]);
     for (const s of SKILLS) {
       for (const m of s.corps.matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)) expect(connus.has(m[1]!), `${s.nom} : ${m[1]}`).toBe(true);

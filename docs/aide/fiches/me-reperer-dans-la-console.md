@@ -1,6 +1,6 @@
 ---
 source_section: Navigation (trois onglets en haut, barre latérale par onglet)
-source_empreinte: 5055d3
+source_empreinte: db148c
 ---
 # Me repérer dans la console
 
@@ -38,7 +38,9 @@ avant de vous connecter.
 
 **Paramètres > Général** porte le fuseau horaire de votre espace et vos heures d'ouverture, jour par jour, avec une
 heure de début, une heure de fin, ou « fermé ». C'est la base sur laquelle s'appuient toutes les conditions
-de temps de vos scénarios et l'option qui limite une campagne à vos heures d'ouverture. Les horaires
+de temps de vos scénarios et l'option qui limite une campagne à vos heures d'ouverture. Quand la promesse de transfert de vos
+agents IA suit vos heures d'ouverture, ce sont aussi elles qui décident de ce qu'ils annoncent en passant la main ;
+depuis Claude Code, Claude peut les régler pour vous. Les horaires
 s'enregistrent d'eux-mêmes, sans bouton, moins d'une seconde après chaque modification : à côté du titre,
 « enregistré » vous le confirme, et en cas d'échec un « réessayer » renvoie la semaine. Un jour dont l'heure de
 fin précède l'heure de début est signalé en rouge, et rien n'est enregistré tant qu'il n'est pas corrigé. Un

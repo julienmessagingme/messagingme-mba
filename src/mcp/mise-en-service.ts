@@ -28,7 +28,10 @@ export const OUTILS_DE_L_ETAPE = {
   // Relié, mais Meta ne l'a pas encore activé : la vérification se finit dans l'Accueil de la console, aucun outil.
   activer_numero: [],
   creer_agent: ['create_agent'],
-  completer_agent: ['get_agent', 'update_agent', 'preview_site', 'import_site', 'add_knowledge', 'import_document_text', 'set_agent_tools'],
+  completer_agent: [
+    'get_agent', 'update_agent', 'preview_site', 'import_site', 'add_knowledge', 'import_document_text', 'set_agent_tools',
+    'set_business_hours', 'set_transfer_mode',
+  ],
   activer_agent: ['activate_agent'],
   choisir_repondeur: ['set_default_responder'],
   poser_bulle: ['create_widget'],

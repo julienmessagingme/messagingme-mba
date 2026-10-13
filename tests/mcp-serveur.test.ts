@@ -675,6 +675,8 @@ describe('serveur MCP : cohérence du catalogue', () => {
       import_site: [true, true, true],
       import_document_text: [true, true, false],
       set_transfer_mode: [true, true, false],
+      // Les heures d'ouverture REMPLACENT celles d'avant ; les rejouer ne change rien.
+      set_business_hours: [true, true, false],
       // Le répondeur (lot 5) : il peut éteindre l'agent de Meta chez Meta, pour tous les contacts de l'espace.
       set_default_responder: [true, true, true],
       buy_credit: [false, false, true],
