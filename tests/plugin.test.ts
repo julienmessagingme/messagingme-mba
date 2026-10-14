@@ -27,7 +27,7 @@ const SKILLS = readdirSync(resolve(PLUGIN, 'skills')).map((nom) => {
 });
 
 describe('la fiche du répertoire de Claude (spec 2026-10-14-repertoire-claude-design.md)', () => {
-  const manifeste = () => json<Record<string, string>>('.claude-plugin/plugin.json');
+  const manifeste = () => json<Record<string, string> & { icon: string }>('.claude-plugin/plugin.json');
 
   it('🔴 le manifeste porte la licence, l’icône et les liens que la fiche du répertoire exige, en https', () => {
     // La licence est BLOQUANTE à la soumission ; le reste alimente la fiche (Claude Code ignore ces champs).
