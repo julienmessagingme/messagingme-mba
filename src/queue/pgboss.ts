@@ -152,6 +152,26 @@ export function sendOptions(opts: { expireInSeconds?: number; groupId?: string; 
 /** Les messages de `Contractor.check()` de pg-boss : un schéma absent, ou à une autre version que celle du code. */
 const SCHEMA_PAS_PRET = /pg-boss is not installed|pg-boss database requires migrations/;
 
+/**
+ * Les attentes avant chaque nouvelle tentative d'ouvrir l'écouteur au démarrage : trois, puis le sondage seul.
+ *
+ * pg-boss rouvre lui-même un écouteur établi qui tombe (`listen` de `pg-boss/dist/db.js`, attente doublée jusqu'à
+ * 30 s), mais pas un écouteur dont la PREMIÈRE ouverture échoue : `Notifier.start` avertit, puis l'instance sonde
+ * seule jusqu'au redémarrage du processus (un pooler saturé pendant un déploiement suffit).
+ */
+export const ATTENTES_ECOUTE_MS: readonly number[] = [1_000, 5_000, 15_000];
+
+/**
+ * L'avertissement de pg-boss quand l'ouverture de l'écouteur a ÉCHOUÉ (le `catch` de `Notifier.start`, le seul qui
+ * porte `error`). Les autres `listen_notify_unavailable` (base sans LISTEN) ne se retentent pas.
+ */
+export function estEchecEcoute(avertissement: unknown): boolean {
+  if (typeof avertissement !== 'object' || avertissement === null || !('data' in avertissement)) return false;
+  const { data } = avertissement;
+  return typeof data === 'object' && data !== null && 'type' in data && data.type === 'listen_notify_unavailable'
+    && 'error' in data;
+}
+
 type OptsPoolPropre = PgBossPoolOpts & PgBossMaintenanceOpts & PgBossNotifyOpts & { retryLimit?: number };
 
 /** Implémentation durable via pg-boss. Chaque file a une dead-letter queue `<name>-dlq` et un retryLimit. */
@@ -169,6 +189,12 @@ export class PgBossQueue implements Queue {
   private readonly retryLimit: number;
   /** `false` = instance sur un pool PRÊTÉ, qui ne migre jamais le schéma : son échec au démarrage le dit. */
   private readonly migre: boolean;
+  /** L'écoute est demandée : sa première ouverture se retente au démarrage (`start`, `ATTENTES_ECOUTE_MS`). */
+  private readonly ecoute: boolean;
+  /** Le dernier démarrage de pg-boss a-t-il vu l'écouteur échouer ? */
+  private ecouteRatee = false;
+  /** Tant qu'une tentative suit, l'échec de l'écouteur n'est pas remis aux observateurs (`onWarning`). */
+  private taireEchecEcoute = false;
 
   /**
    * Sur une chaîne de connexion, pg-boss ouvre SON pool (le worker : il dépile, supervise, écoute, et migre).
@@ -188,6 +214,7 @@ export class PgBossQueue implements Queue {
   constructor(connexion: string | PoolPrete, schema = 'pgboss', opts: OptsPoolPropre = {}) {
     this.retryLimit = opts.retryLimit ?? 5;
     this.migre = typeof connexion === 'string';
+    this.ecoute = typeof connexion === 'string' && opts.ecouteNotifications === true;
     this.boss = new PgBoss(
       typeof connexion === 'string'
         ? {
@@ -215,6 +242,7 @@ export class PgBossQueue implements Queue {
             ...maintenanceOptions({ supervise: false }),
           },
     );
+    if (this.ecoute) this.boss.on('warning', (avertissement: unknown) => { if (estEchecEcoute(avertissement)) this.ecouteRatee = true; });
   }
 
   /**
@@ -228,10 +256,39 @@ export class PgBossQueue implements Queue {
   /**
    * Branche un observateur sur les avertissements de pg-boss, surtout `listen_notify_unavailable` : l'écouteur n'a
    * pas pu s'établir et l'instance retombe en silence sur le sondage seul. Sans lui, on croirait les entrants
-   * réveillés à l'instant.
+   * réveillés à l'instant. Cet échec n'est remis qu'après la dernière tentative de `start`.
    */
   onWarning(cb: (avertissement: unknown) => void): void {
-    this.boss.on('warning', cb);
+    this.boss.on('warning', (avertissement: unknown) => {
+      if (this.taireEchecEcoute && estEchecEcoute(avertissement)) return;
+      cb(avertissement);
+    });
+  }
+
+  /**
+   * Démarre pg-boss, et le relance tant que son écouteur échoue à s'ouvrir (`ATTENTES_ECOUTE_MS`) : chaque nouvelle
+   * tentative se journalise, seul l'échec de la dernière atteint `onWarning`. À appeler avant tout `work`.
+   */
+  async start(): Promise<void> {
+    if (this.started) return;
+    try {
+      for (let essai = 0; ; essai++) {
+        // Seul l'échec de la DERNIÈRE tentative atteint les observateurs : une alerte pour un écouteur rouvert
+        // trois secondes plus tard serait fausse.
+        this.taireEchecEcoute = this.ecoute && essai < ATTENTES_ECOUTE_MS.length;
+        this.ecouteRatee = false;
+        await this.demarrer();
+        if (!this.ecouteRatee || essai >= ATTENTES_ECOUTE_MS.length) break;
+        // Une trace même quand la suivante réussit : un écouteur qui échoue puis passe dit un pooler saturé.
+        journaliser('warn', 'pgboss_ecoute_nouvelle_tentative', { essai: essai + 1, attenteMs: ATTENTES_ECOUTE_MS[essai] });
+        // Avant tout `work` (le worker démarre la file puis enregistre ses traitements) : arrêter ne coupe rien.
+        await this.boss.stop({ graceful: false });
+        await new Promise((r) => setTimeout(r, ATTENTES_ECOUTE_MS[essai]));
+      }
+    } finally {
+      this.taireEchecEcoute = false;
+    }
+    this.started = true;
   }
 
   /**
@@ -240,8 +297,7 @@ export class PgBossQueue implements Queue {
    * pousse à rallumer la migration sur l'API ; on dit plutôt qui migre. L'échec reste un échec : le processus
    * s'arrête et son hôte le relance, ce qui revient à attendre le worker.
    */
-  async start(): Promise<void> {
-    if (this.started) return;
+  private async demarrer(): Promise<void> {
     try {
       await this.boss.start();
     } catch (err) {
@@ -254,7 +310,6 @@ export class PgBossQueue implements Queue {
       }
       throw err;
     }
-    this.started = true;
   }
 
   async stop(): Promise<void> {
@@ -378,7 +433,9 @@ export class PgBossQueue implements Queue {
     // `batchSize: 1` garde l'invariant par job (un throw ne fait pas échouer un lot, ni rejouer des jobs réussis).
     // Cadences, filet et rafale viennent de `names.ts`, source unique : une file ajoutée sans y penser retombe sur
     // un défaut sûr. Le filet (`notifyPollingIntervalSeconds`) est sûr parce que `pollingIntervalSeconds` ne bouge
-    // pas : pg-boss y retombe seul si l'écouteur meurt. Concurrence par groupe : voir `workConcurrencyOptions`.
+    // pas : pg-boss y retombe seul si l'écouteur n'a pas pu s'ouvrir (après les tentatives de `ATTENTES_ECOUTE_MS`),
+    // et rouvre seul celui qui tombe.
+    // Concurrence par groupe : voir `workConcurrencyOptions`.
     //
     // 🔴 VIDAGE CONTINU (`FILES_VIDEES_EN_CONTINU`, `names.ts`) : la file est enregistrée boucle par boucle, pour en
     // connaître chaque identifiant, et chaque message traité les réveille toutes. Le plafond par contact

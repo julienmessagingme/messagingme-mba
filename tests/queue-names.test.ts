@@ -197,7 +197,8 @@ describe('cadence de polling par file', () => {
     // modele `somme(concurrence / cadence)`.
     //
     // ⚠️ Ce qui rend le relachement sur, ce n'est PAS ce filet mais `pollingIntervalSeconds`, teste juste
-    // au-dessus : pg-boss reevalue `isNotifyActive()` a chaque tour et y retombe seul si l'ecouteur meurt.
+    // au-dessus : pg-boss reevalue `isNotifyActive()` a chaque tour et y retombe seul si l'ecouteur n'a pas pu
+    // s'ouvrir (un ecouteur etabli qui tombe compte encore comme actif pendant que pg-boss le rouvre).
     // La version precedente de ce test figeait l'inverse (« le filet vaut la cadence de base »), sur une
     // lecture fausse de pg-boss, et c'est cette precaution mal fondee qui a coute les deux tiers du trafic.
     const wrapper = sansCommentaires(readFileSync(new URL('../src/queue/pgboss.ts', import.meta.url), 'utf8'));
@@ -225,8 +226,8 @@ describe('cadence de polling par file', () => {
 
   it('⚠️ le filet ne touche PAS la cadence de base, qui reste le comportement de repli', () => {
     // Les deux valeurs partent ensemble a pg-boss et ne disent pas la meme chose : la base est ce qui
-    // s'applique quand l'ecouteur est MORT, le filet ce qui s'applique quand il est VIVANT. Les confondre est
-    // exactement l'erreur qu'on repare.
+    // s'applique quand l'ecouteur n'a PAS PU S'OUVRIR, le filet ce qui s'applique quand il est ouvert (ou en
+    // reprise). Les confondre est exactement l'erreur qu'on repare.
     expect(pollingSecondsFor('webhook')).toBe(2);
     expect(pollingSecondsFor('agent-turn')).toBe(2);
   });

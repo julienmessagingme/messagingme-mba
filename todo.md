@@ -11,8 +11,11 @@ jetable, copie identique à la production). Restent :
   `scripts/exercice-restauration.sh` contre une sauvegarde de la base managée, réécrire la section de `DEPLOY.md`, et
   retirer la tâche planifiée du VPS une fois les sauvegardes de Scaleway relevées. Les extensions `vector`, `pg_trgm`
   et `unaccent` se créent avant la restauration (un dump par schémas ne les porte pas).
-- 🟡 **L'écouteur `LISTEN` de pg-boss ne se rouvre pas** si sa première ouverture échoue : le sondage de secours prend
-  le relais (de la latence, aucune perte). Une nouvelle tentative et un test coupure puis reconnexion.
+- 🟡 **La reprise d'un écouteur établi qui tombe n'est éprouvée par aucun test** : elle appartient à pg-boss
+  (`listen` de `pg-boss/dist/db.js`, lu le 2026-10-14). Un test d'intégration qui coupe la connexion d'écoute
+  (`pg_terminate_backend`) et mesure le réveil garderait une montée de version de pg-boss ; il ne tourne qu'en CI.
+  Même chose pour l'arrêt puis le redémarrage d'une même instance, sur lequel repose la nouvelle tentative au
+  démarrage (`PgBossQueue.start`) : sûr à la lecture de pg-boss 12.25.1, jamais exécuté sur un vrai Postgres.
 
 ## 🟠 Lot 6 du bilan des audits : ce qui reste après la CSP de la console (2026-10-14)
 
@@ -1122,6 +1125,10 @@ pas qu'il est nul.
 inférence OpenAI en France, Messaging Me doit pouvoir appeler directement un déploiement Azure OpenAI régional
 France. Le choix est posé manuellement par l'exploitation pour l'espace ; il n'y a pas de toggle dans
 l'interface client. Source d'architecture et limites : `docs/ARCHITECTURE-CIBLE.md`, §2.1.
+
+**Décisions de Julien du 2026-10-14 :** le lot se fait APRÈS la bascule Scaleway ; aucune ressource Azure n'existe
+encore (pré-câblage et tests sur des faux, l'option reste « architecturée, non activée » jusqu'à l'essai réel) ;
+l'authentification se fait par CLÉ D'API, chiffrée en base comme nos autres secrets et posée depuis `/ops`.
 
 **Aujourd'hui ce n'est PAS vrai en production.** `GatewayChatClient`, le catalogue, les clés par espace et le
 coût sont spécifiques à Vercel. La documentation RSSI doit dire « option architecturée, non activée » jusqu'à

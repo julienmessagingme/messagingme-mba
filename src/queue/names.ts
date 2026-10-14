@@ -114,7 +114,9 @@ export function seuilRafalePour(nom: string): number {
  * `concurrence / pollingIntervalSeconds`, et les files à forte concurrence tapaient la base à vide plusieurs fois
  * par seconde (principale cause d'egress). Ce filet ne coûte aucune latence : `worker.notify()` annule le sommeil
  * en cours. Le repli est automatique : pg-boss réévalue `isNotifyActive()` à chaque tour et retombe sur
- * `pollingIntervalSeconds` si l'écouteur meurt. ⚠️ « Aucune latence » tant qu'un réveil arrive : une notification
+ * `pollingIntervalSeconds` si l'écouteur n'a pas pu s'ouvrir (après les nouvelles tentatives de `PgBossQueue.start`).
+ * Un écouteur établi qui tombe compte encore comme actif : pg-boss le rouvre, puis réveille les boucles, et ce filet
+ * s'applique pendant la coupure. ⚠️ « Aucune latence » tant qu'un réveil arrive : une notification
  * ne réveille chaque boucle que pour UNE lecture, et ce qui reste en file attend ce filet (`FILES_VIDEES_EN_CONTINU`).
  */
 export const SONDAGE_FILET_NOTIFIE = 60;

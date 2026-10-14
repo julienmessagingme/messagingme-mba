@@ -2137,7 +2137,11 @@ seconde, pas `1 / cadence`. `agent-turn` (concurrence 12, cadence 2 s) tapait ai
 seconde pour une file vide. C'est pourquoi le FILET de sondage, celui qui s'applique quand la notification
 est vivante, vaut `SONDAGE_FILET_NOTIFIE` (60 s) et non la cadence de base : la notification annule le
 sommeil du worker à l'instant (vérifié dans la source de pg-boss et mesuré à 37 ms sur 102 jobs réels), et
-`pollingIntervalSeconds` reste le repli automatique si l'écouteur meurt. Seule `webhook` a un filet court
+`pollingIntervalSeconds` reste le repli automatique quand l'écouteur n'a PAS PU S'OUVRIR : sa première ouverture se
+retente trois fois au démarrage (`ATTENTES_ECOUTE_MS`, `PgBossQueue.start`, avant tout traitement enregistré), et
+seul le dernier échec alerte. Un écouteur établi qui tombe, lui, est rouvert par pg-boss (attente doublée jusqu'à
+30 s), qui réveille alors toutes les boucles des files notifiées ; pendant la coupure, le filet s'applique toujours,
+pas la cadence de base. Seule `webhook` a un filet court
 (`FILETS_NOTIFIES`, 5 s), la ceinture du vidage continu ci-dessous ; `agent-turn` garde 60 s, ses douze boucles
 rendraient un filet court coûteux.
 

@@ -5,6 +5,29 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-14 : l'écouteur de pg-boss se retente au démarrage (lot 2 du bilan)
+
+- **Le défaut** : pg-boss rouvre seul un écouteur `LISTEN` établi qui tombe (`listen` de `pg-boss/dist/db.js`, attente
+  doublée jusqu'à 30 s, puis réveil de toutes les boucles), mais si la PREMIÈRE ouverture échoue, `Notifier.start`
+  avertit et ne réessaie jamais : le worker sonde seul jusqu'à son redémarrage. Un pooler saturé pendant un
+  déploiement suffit à le provoquer.
+- **Le correctif** : `PgBossQueue.start` relance pg-boss tant que l'écouteur échoue, trois fois (1 s, 5 s, 15 s),
+  AVANT que le worker n'enregistre le moindre traitement (vérifié dans `src/worker.ts`), donc sans rien couper. Seul
+  l'échec de la dernière tentative atteint l'alerte. L'objet qui porte l'écouteur est privé dans pg-boss : la relance
+  complète est la seule prise, et son arrêt ferme le pool que le démarrage rouvre (source lue).
+- **Un texte faux corrigé au passage, à cinq endroits** (`documentation.md`, deux commentaires de `src/queue/`, deux
+  de `tests/queue-names.test.ts`) :
+  « pg-boss retombe sur la cadence de base si l'écouteur meurt ». Un écouteur établi qui tombe compte encore comme
+  actif pendant sa reprise, et c'est le filet qui s'applique ; la cadence de base ne sert qu'à un écouteur jamais
+  ouvert.
+- **Les limites assumées** : chaque nouvelle tentative se journalise (`pgboss_ecoute_nouvelle_tentative`), même quand
+  la suivante réussit, parce qu'elle dit un pooler saturé. Une relance dont le démarrage lève fait sortir le worker,
+  que Compose relance (avant, il restait en sondage seul). Au pire, le démarrage prend environ 53 s (21 s d'attente
+  et quatre délais de connexion), sous le seuil de silence d'un worker (180 s). Après la dernière tentative, l'écouteur
+  reste absent jusqu'au redémarrage, avec une seule alerte.
+- Plan : `docs/superpowers/plans/2026-10-14-ecouteur-demarrage.md`. La reprise d'un écouteur établi reste sans test
+  (`todo.md`).
+
 ## 2026-10-14 : le webhook entrant écrit le contact malgré un champ invalide (lot 2 du bilan)
 
 - **Le défaut** : une seule valeur refusée (une date ambiguë, du texte dans un champ nombre) faisait échouer l'appel
