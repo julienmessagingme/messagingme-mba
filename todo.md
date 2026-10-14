@@ -1,5 +1,25 @@
 # todo.md : backlog
 
+## 🔴 Lot 2 du bilan des audits : la reprise après sinistre, ce qui reste (2026-10-14)
+
+L'exercice de restauration est fait et réussi (`DEPLOY.md` § Restauration : 29 secrets sur 29 déchiffrés sur une copie
+jetable, copie identique à la production). Restent :
+
+- 🔴 **Julien : recopier `ENCRYPTION_KEY` hors du VPS, et la prouver.** La copie « au coffre » du 2026-09-23 est
+  introuvable : le seul exemplaire est `.env.prod`. La recopier dans un gestionnaire de mots de passe, puis comparer son
+  empreinte à celle de la production (procédure dans `DEPLOY.md` ; l'empreinte de référence n'est pas dans le dépôt).
+  AVANT la bascule Scaleway, où la clé doit être reposée à l'identique.
+- 🔴 **Julien : planifier `scripts/sauvegarde-base.sh`** (la ligne de crontab est dans `DEPLOY.md`). Une seule
+  sauvegarde existe, celle de l'exercice.
+- **À la bascule Scaleway** (lot 6 du plan `docs/superpowers/plans/2026-10-14-avant-bascule-scaleway.md`) : rejouer
+  `scripts/exercice-restauration.sh` contre une sauvegarde de la base managée, réécrire la section de `DEPLOY.md`, et
+  retirer la tâche planifiée du VPS une fois les sauvegardes de Scaleway relevées. Les extensions `vector`, `pg_trgm`
+  et `unaccent` se créent avant la restauration (un dump par schémas ne les porte pas).
+- **Décision de Julien : le webhook entrant qui perd tout le contact pour un seul champ invalide** (plus bas, § webhooks
+  entrants).
+- 🟡 **L'écouteur `LISTEN` de pg-boss ne se rouvre pas** si sa première ouverture échoue : le sondage de secours prend
+  le relais (de la latence, aucune perte). Une nouvelle tentative et un test coupure puis reconnexion.
+
 ## 🟠 Lot 6 du bilan des audits : ce qui reste après la CSP de la console (2026-10-14)
 
 La première livraison (plan `docs/superpowers/plans/2026-10-14-lot6-csp-console.md`) autorise l'API dans `connect-src`,

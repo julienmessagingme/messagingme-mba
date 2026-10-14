@@ -355,52 +355,59 @@ prolonge la contention). Ce n'est pas lié au code déployé.
 
 ## Restauration / reprise après sinistre (DR) — item 4.13
 
-⚠️ **Runbook écrit, DRILL À FAIRE (accès dashboard Supabase requis).** L'app est stateless hors base : tout
-l'état vit dans le projet Supabase `npdqnrirxhqsyyvtvtjz`. La reprise = restaurer la base + repointer l'app.
+L'app est stateless hors base : tout l'état vit dans le projet Supabase `npdqnrirxhqsyyvtvtjz`, jusqu'à la bascule vers
+la base managée de Scaleway (qui porte ses propres sauvegardes : cette section se réécrit à ce moment-là, lot 6 de
+`docs/superpowers/plans/2026-10-14-avant-bascule-scaleway.md`). La reprise = restaurer la base + repointer l'app.
 
 ### Ce qu'il faut sauvegarder (deux choses distinctes)
-1. **La base** (Supabase) : porte les 4 schémas d'UN SEUL projet : `public` (tables mba + schema_migrations),
-   `pgboss` (files), `mmhs` (connecteur mm-hubspot, lu en cross-schéma par mba) et, depuis la migration 0183,
-   `salesforce` (l'app Salesforce, lu et écrit par son seul store, sans clé étrangère vers `public`). Un restore
-   physique/PITR restaure **les 4 ENSEMBLE** à l'instant T (on ne PITR pas un schéma seul).
+1. **La base** : CINQ schémas d'un seul projet, `public` (tables mba + `schema_migrations`), `pgboss` (files), `mmhs`
+   et `pgboss_mmhs` (le connecteur mm-hubspot), `salesforce` (l'app Salesforce, sans clé étrangère vers `public`).
 2. **Les secrets, HORS base et HORS git** : `.env.prod` sur le VPS (`AUTH_SECRET`, `META_ACCESS_TOKEN`,
-   `ENCRYPTION_KEY`…) + celui de mm-hubspot. 🔴 **Sans `ENCRYPTION_KEY`, `waba_credentials` (tokens/PIN business ES,
-   AES-256-GCM) est INDÉCHIFFRABLE même après un restore parfait de la base**, et `salesforce.orgs.secret_entrant_chiffre`
-   aussi : chaque org Salesforce reliée devrait alors être reconnectée. Sauvegarder cette clé SÉPARÉMENT de
-   la base (un backup DB seul ne suffit pas). `AUTH_SECRET` perdu = toutes les sessions JWT invalidées (re-login).
+   `ENCRYPTION_KEY`…) + celui de mm-hubspot. 🔴 **Sans `ENCRYPTION_KEY`, tous les secrets chiffrés en base sont
+   INDÉCHIFFRABLES même après une restauration parfaite** : jetons et PIN des numéros (`waba_credentials`), mots de
+   passe SMTP, seconds facteurs, jetons RCS, Channels Me et publicité, clés d'IA par espace, secrets Salesforce.
+   `AUTH_SECRET` perdu = toutes les sessions invalidées (reconnexion). 🔴 **La copie de la clé hors du VPS se PROUVE
+   par son empreinte** (les 16 premiers caractères du SHA-256 de la valeur, calculés de chaque côté) : une copie
+   « au coffre » déclarée le 2026-09-23 s'est révélée introuvable le 2026-10-14.
 
-### RPO (perte max) — dépend du plan Supabase, À RELEVER au dashboard (Database > Backups)
-- **PITR** activé -> RPO ~2 min. **Daily** (Pro, rétention ~7 j) -> RPO ~24 h. **Free** sans backup planifié ->
-  RPO = PERTE TOTALE (seul un `pg_dump` manuel sauve). ⚠️ **Étape 1 du drill = ouvrir le dashboard et relever le
-  plan réel** (l'org est invisible au MCP Supabase, non déterminable d'ici).
+### Les sauvegardes, d'ici la bascule
+Le plan de sauvegarde du projet Supabase n'a jamais été relevé : on le tient pour nul. **`scripts/sauvegarde-base.sh`**
+fait chaque nuit un `pg_dump` des cinq schémas (format `custom`, ~24 Mo, ~10 s) dans `/home/ubuntu/sauvegardes-mba`
+(fichiers lisibles du seul propriétaire, gardés 7 jours), relit la table des matières de la copie, et ne passe jamais
+le mot de passe en argument. Planification (geste de Julien, persistance système) :
 
-### Deux chemins de restauration
-- **(a) Sinistre total** : restore Supabase natif, vers un **NOUVEAU projet** (JAMAIS in-place sur la prod : le
-  restore Supabase est destructif). Ramène les 4 schémas à l'instant T.
-- **(b) Dégât localisé** (une table écrasée) : `pg_dump`/`pg_restore` d'un schéma via le **pooler session mode**
-  `aws-1-eu-west-2.pooler.supabase.com:5432` (le host direct `db.<ref>.supabase.co` est IPv6-only, injoignable).
-  Non fourni par le plan : dump à lancer soi-même, read-only, hors pic (consomme une session du budget « Pool Size »).
+```bash
+( crontab -l 2>/dev/null; echo '17 3 * * * sh /home/ubuntu/mba/scripts/sauvegarde-base.sh >> /home/ubuntu/sauvegardes-mba/journal.log 2>&1' ) | crontab -
+```
+
+⚠️ **RPO 24 h, et la sauvegarde vit sur le VPS** : elle protège d'une erreur sur la base (une table écrasée, une
+migration fautive), pas d'une perte du serveur. Elle se lit par le pooler en mode SESSION (`DATABASE_URL`, 5432 ; le
+mode transaction ne supporte pas `pg_dump`), TLS vérifié par `certs/supabase-pooler-ca.crt`.
+
+### Restaurer
+- **Sur une base neuve** (sinistre, ou bascule) : `vector`, `pg_trgm` et `unaccent` se créent AVANT `pg_restore`, car
+  un dump par schémas ne porte pas les extensions (vérifié : aucune valeur par défaut ni fonction de nos schémas
+  n'appelle le schéma `extensions` de Supabase). Puis `pg_restore --no-owner --no-privileges` ; la seule erreur
+  attendue est `schema "public" already exists`.
+- **Dégât localisé** : `pg_restore --table` ou `--schema` de la sauvegarde vers une base jetable, puis recopie ciblée.
+  JAMAIS de restauration en place sur la production.
+- ⚠️ **Migrations FORWARD-ONLY** (`db/migrate.ts`, aucun `*.down.sql`) : une migration destructrice ne se défait pas
+  par le code, seulement par une restauration de données ou une migration compensatoire écrite à la main.
 
 ### Remise en service de l'app (RTO)
-Restore vers un nouveau projet -> l'host du pooler change. Dans `.env.prod` (mba **ET** mm-hubspot) : mettre à jour
-`DATABASE_URL` (5432), `APP_DATABASE_URL` (6543), et vérifier `DB_SSL_CA_FILE` (même CA Supabase, même chaîne
-`*.pooler.supabase.com` -> bundle inchangé). Puis `docker compose up -d --force-recreate` (env_file rechargé à la
-recréation seulement). Le schéma `pgboss` revient avec la base ; s'il manquait, le WORKER le recréerait au boot
-(l'API l'attend, elle ne le crée pas) ; NPM route déjà ; l'app est redéployable en minutes depuis
-git. ⚠️ **Migrations FORWARD-ONLY** (`db/migrate.ts`, aucun `*.down.sql`) : une migration destructrice (ex. un DROP)
-ne se défait PAS par le code -> seule issue = restore de données OU migration compensatoire écrite à la main.
+Nouvelle base -> nouvelle adresse. Dans `.env.prod` (mba **ET** mm-hubspot) : `DATABASE_URL`, `APP_DATABASE_URL`,
+`DB_SSL_CA_FILE` ; puis `docker compose up -d --force-recreate` (l'env n'est relu qu'à la recréation). Le schéma
+`pgboss` revient avec la base. Un `mba-api` de test sur une copie ne démarre que si `pgboss` y est à sa version ; un
+worker sur une copie ne tourne qu'en `DRY_RUN=true` (sinon il reprend les campagnes et ENVOIE).
 
-### Drill (à faire UNE fois, non destructif — cible JETABLE, jamais la prod)
-1. Relever le plan de backup au dashboard (fixe le RPO théorique).
-2. Restaurer le dernier backup vers un **projet neuf** ; **chronométrer** le temps total = **RTO réel**.
-3. Comparer l'horodatage de la donnée la plus récente restaurée à l'instant du sinistre simulé = **RPO réel**.
-4. Sur la cible : `schema_migrations` contient la dernière migration (**0044**) ; comptes tenants/contacts/campaigns
-   cohérents ; `mmhs.portals` présent ; booter un `mba-api` de TEST pointé dessus (`DATABASE_URL` isolé, **jamais la
-   prod**) -> il démarre si le schéma `pgboss` restauré est à la version de son pg-boss. ⚠️ Il ne le crée ni ne le
-   migre plus (2026-09-28) : s'il refuse de démarrer, c'est le schéma qui manque ou diffère, et seul un worker le
-   répare, à ne démarrer sur une copie qu'en `DRY_RUN=true` (sinon il reprend les campagnes et ENVOIE).
-5. Drill de la clé : redéchiffrer une ligne `waba_credentials` avec l'`ENCRYPTION_KEY` sauvegardée à part (sans elle,
-   échec attendu -> prouve le gotcha).
-6. Consigner ici les chiffres RÉELS (RPO/RTO mesurés) + `dernière vérif DR : <date>` (re-tester périodiquement).
+### L'exercice (non destructif, cible JETABLE, jamais la prod)
+**`scripts/exercice-restauration.sh`** restaure la dernière sauvegarde dans un Postgres 17 jetable (`mba-exercice-pg`,
+écoute `127.0.0.1:55432` seulement), puis `scripts/exercice-dechiffrer.ts` (dans l'image de l'API) relit la copie et
+déchiffre TOUS ses secrets avec la clé de production ; tout disparaît à la fin, même en cas d'échec. Le refaire après
+chaque changement d'hébergement de la base, et au moins une fois par trimestre.
 
-**Dernière vérif DR : jamais (drill à réaliser).**
+**Dernière vérif DR : 2026-10-14, réussie.** Sauvegarde 9 s (24 Mo) ; base jetable prête en 3 s (16 s avec le
+téléchargement de l'image) ; restauration 4 s ; relecture et déchiffrement 2 s : **29 secrets sur 29** déchiffrés
+(16 colonnes), **0 sur 29** avec une clé fausse (le test distingue la clé). Copie identique à la production : neuf
+tables comptées à l'identique, dernière migration et dernier message identiques à la microseconde. Hors données, le RTO
+réel se mesure à la bascule (création de la base cible, recréation des conteneurs).

@@ -5,6 +5,27 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-14 : le premier exercice de restauration, et une clé dont la copie n'existait plus (lot 2 du bilan)
+
+- **Le constat de départ** : le plan de sauvegarde du projet Supabase n'avait jamais été relevé (le bilan le tenait pour
+  nul : une perte du projet était une perte totale), et l'exercice de restauration n'avait jamais été joué. Julien
+  bascule vers la base managée de Scaleway dans trois jours ; d'ici là, une sauvegarde quotidienne maison sur le VPS
+  (sa décision), qui protège d'une erreur sur la base, pas d'une perte du serveur.
+- **La sauvegarde** (`scripts/sauvegarde-base.sh`) : `pg_dump` des cinq schémas par le pooler en mode session, TLS
+  vérifié, mot de passe par l'environnement et jamais en argument ; 24 Mo en 9 s ; table des matières relue ; 7 jours
+  gardés. La première a été prise pour l'exercice ; la tâche planifiée est un geste de Julien.
+- **L'exercice** (`scripts/exercice-restauration.sh`, accord de Julien pour le conteneur) : Postgres 17 jetable sur
+  `127.0.0.1:55432`, restauration en 4 s, puis `scripts/exercice-dechiffrer.ts` déchiffre tous les secrets de la copie
+  avec la clé de production : 29 sur 29 (16 colonnes trouvées par leur nom), 0 sur 29 avec une clé fausse. Neuf tables
+  comptées à l'identique de la production, dernier message identique à la microseconde. Tout est supprimé à la fin.
+- **Ce que l'exercice a appris pour la bascule** : un dump par schémas ne porte pas les extensions (`vector`,
+  `pg_trgm`, `unaccent` se créent avant la restauration), et aucune valeur par défaut ni fonction de nos schémas
+  n'appelle le schéma `extensions` propre à Supabase (vérifié en lecture seule), donc la restauration tient sur un
+  Postgres ordinaire.
+- 🔴 **Ce qu'il a révélé** : la copie d'`ENCRYPTION_KEY` déclarée « au coffre » le 2026-09-23 est introuvable. Le seul
+  exemplaire est `.env.prod` ; Julien la recopie, et la copie se prouve par son empreinte comparée à celle de la
+  production. Une déclaration n'est pas une preuve : celle-ci avait tenu trois semaines dans le bilan et les mémoires.
+
 ## 2026-10-14 : le collecteur des rapports CSP des vrais navigateurs (lot 6, B3)
 
 Plan `docs/superpowers/plans/2026-10-14-lot6-collecteur-csp.md`. Décision de Julien du jour : une table agrégée.
