@@ -1,6 +1,7 @@
 import { normalizePhone } from './phone';
-import { slugify, validateFieldValue, canonicalizeFieldValue } from './fields';
+import { validateFieldValue, canonicalizeFieldValue } from './fields';
 import { estCleReservee } from './champs-fiche';
+import { cleChampCsv } from '../../web/lib/partage/cle-champ';
 import type { UserFieldStore } from './fields';
 import type { ColumnMapping, ImportReport, UserFieldDef } from './types';
 import type { CountryCode } from 'libphonenumber-js';
@@ -90,6 +91,10 @@ export interface ImportDeps {
   defaultCountry?: CountryCode;
 }
 
+type ColonneImport =
+  | { header: string; target: 'phone' | 'name' | 'ignore' }
+  | { header: string; target: 'custom'; key: string };
+
 /**
  * Applique un mapping à des lignes CSV : normalise le téléphone (clé de dédup),
  * écrit les attributs standard + les champs perso, enregistre les nouveaux user fields,
@@ -106,21 +111,26 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
   };
   // Une colonne qui prendrait la clé d'un champ FIXE de la fiche (`analyse_sentiment`, `external_id`...) est
   // écartée et le rapport le dit : sinon elle créerait un champ perso qui se confondrait avec le champ fixe.
-  const cols = Object.entries(input.mapping.columns).filter(([header, m]) => {
-    if (m.target !== 'custom') return true;
-    const key = m.key ?? slugify(header);
-    if (!estCleReservee(key)) return true;
-    signaler(1, `colonne « ${header} » ignorée : « ${key} » est un champ réservé de la fiche`);
-    return false;
-  });
+  const cols: ColonneImport[] = [];
+  for (const [header, m] of Object.entries(input.mapping.columns)) {
+    if (m.target !== 'custom') {
+      cols.push({ header, target: m.target });
+      continue;
+    }
+    const key = cleChampCsv(header, m.key);
+    if (estCleReservee(key)) {
+      signaler(1, `colonne « ${header} » ignorée : « ${key} » est un champ réservé de la fiche`);
+      continue;
+    }
+    cols.push({ header, target: 'custom', key });
+  }
 
   // 1) Enregistrer une fois les champs perso mappés qui n'existent pas encore, et repérer
   //    les collisions (plusieurs en-têtes -> même clé) pour les signaler (perte silencieuse).
   const keyToHeaders = new Map<string, string[]>();
-  for (const [header, m] of cols) {
-    if (m.target === 'custom') {
-      const key = m.key ?? slugify(header);
-      keyToHeaders.set(key, [...(keyToHeaders.get(key) ?? []), header]);
+  for (const col of cols) {
+    if (col.target === 'custom') {
+      keyToHeaders.set(col.key, [...(keyToHeaders.get(col.key) ?? []), col.header]);
     }
   }
   for (const [key, headers] of keyToHeaders) {
@@ -148,21 +158,20 @@ export async function importContacts(input: ImportInput, deps: ImportDeps): Prom
     let profileName: string | null = null;
     const fields: Record<string, string> = {};
 
-    for (const [header, m] of cols) {
-      const val = (row[header] ?? '').trim();
+    for (const col of cols) {
+      const val = (row[col.header] ?? '').trim();
       // Garder la première valeur non vide : une 2e colonne mappée (ex. Mobile vide après Telephone) n'écrase
       // pas un numéro ou un nom déjà trouvé.
-      if (m.target === 'phone') {
+      if (col.target === 'phone') {
         if (val && !phoneRaw) phoneRaw = val;
-      } else if (m.target === 'name') {
+      } else if (col.target === 'name') {
         if (val && profileName === null) profileName = val;
-      } else if (m.target === 'custom') {
-        const key = m.key ?? slugify(header);
-        if (val && fields[key] === undefined) {
+      } else if (col.target === 'custom') {
+        if (val && fields[col.key] === undefined) {
           // Canonicalise selon le type déclaré ; une valeur non valide pour le type est conservée brute (l'import
           // ne rejette pas une ligne sur un champ perso).
-          const type = defsByKey.get(key)?.type ?? 'text';
-          fields[key] = validateFieldValue(type, val) ? canonicalizeFieldValue(type, val) : val;
+          const type = defsByKey.get(col.key)?.type ?? 'text';
+          fields[col.key] = validateFieldValue(type, val) ? canonicalizeFieldValue(type, val) : val;
         }
       }
       // 'ignore' -> rien

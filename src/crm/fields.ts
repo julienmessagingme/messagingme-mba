@@ -1,22 +1,11 @@
 import type { UserFieldDef, UserFieldType } from './types';
 import { normaliserDate } from './date-iso';
 import { estCleReservee } from './champs-fiche';
+import { slugify } from '../../web/lib/partage/cle-champ';
+export { slugify } from '../../web/lib/partage/cle-champ';
 import {
   SOCLE_FIELDS, SYSTEM_FIELD_KEYS as CLES_SYSTEME, SYSTEM_FIELD_LABELS, USER_FIELD_KINDS,
 } from '../../web/lib/partage/champs';
-
-const COMBINING_MARKS = /[̀-ͯ]/g;
-
-/** Label -> key slug : minuscules, sans accents, séparateurs -> `_`. */
-export function slugify(label: string): string {
-  const s = label
-    .normalize('NFD')
-    .replace(COMBINING_MARKS, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  return s || 'field';
-}
 
 export const USER_FIELD_TYPES: readonly UserFieldType[] = USER_FIELD_KINDS;
 

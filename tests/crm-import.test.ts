@@ -97,6 +97,29 @@ describe('importContacts', () => {
     expect(report.errors.map((e) => e.reason).join(' ')).toMatch(/analyse_sentiment.*réservé/);
   });
 
+  it('résout la clé une fois : repli sur l’en-tête, clé explicite conservée, collision et champ réservé signalés', async () => {
+    const contacts = new FakeContactStore();
+    const userFields = new FakeFieldStore();
+    const mappingPrecis: ColumnMapping = { columns: {
+      tel: { target: 'phone' },
+      'Ville de résidence': { target: 'custom', key: '' },
+      'Ville résidence': { target: 'custom', key: 'ville_de_residence' },
+      'Code client': { target: 'custom', key: 'crmClient' },
+      Sentiment: { target: 'custom', key: 'analyse_sentiment' },
+    } };
+    const report = await importContacts({
+      rows: [{ tel: '0612345678', 'Ville de résidence': 'Lyon', 'Ville résidence': 'Paris', 'Code client': 'A-9', Sentiment: 'positif' }],
+      mapping: mappingPrecis, tenantId: 't1', optIn: false, autorite: 'import',
+    }, { contacts, userFields });
+
+    expect(contacts.byPhone.get('t1|+33612345678')?.fields).toEqual({ ville_de_residence: 'Lyon', crmClient: 'A-9' });
+    expect(userFields.defs.map((d) => d.key)).toEqual(['ville_de_residence', 'crmClient']);
+    expect(report.errors.map((e) => e.reason)).toEqual([
+      expect.stringContaining('analyse_sentiment'),
+      expect.stringContaining('colonnes fusionnées sur la clé "ville_de_residence"'),
+    ]);
+  });
+
   it('tags : appliqués à tous les contacts importés', async () => {
     const contacts = new FakeContactStore();
     const userFields = new FakeFieldStore();

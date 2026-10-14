@@ -1604,9 +1604,10 @@ sans changement produit ni migration. ⚠️ Les audits ne sont PAS clos :
 
 - **Ré-audit du 2026-10-11** : réduire l'interface de `construireSocle` (`src/socle.ts`). Piste SPÉCULATIVE, non
   faite ; ne pas l'ouvrir sans pouvoir dire quelle interface rétrécit, et pour quel appelant.
-- **Audit du 2026-10-12** : la préparation d'une campagne (`be24529c`) et la grammaire des chemins JSON de webhook
-  (partagée entre console et serveur le 2026-10-13) sont traitées. Restent À EXAMINER (rien n'est décidé) : le cycle de
-  vie des formulaires WhatsApp, le contrat des déclencheurs d'automation et les clés de champs de l'import CSV.
+- **Audit du 2026-10-12** : la préparation d'une campagne (`be24529c`), la grammaire des chemins JSON de webhook
+  (partagée entre console et serveur le 2026-10-13) et les clés de champs de l'import CSV (contrat et dérivation
+  partagés le 2026-10-14) sont traitées. Restent À EXAMINER (rien n'est décidé) : le cycle de vie des formulaires
+  WhatsApp et le contrat des déclencheurs d'automation.
 
 ## 🟠 Le rapport d'architecture du 2026-10-02 : huit pistes restantes sur neuf (2026-10-03)
 

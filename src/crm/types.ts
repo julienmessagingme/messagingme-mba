@@ -1,4 +1,6 @@
 import type { UserFieldKind } from '../../web/lib/partage/champs';
+import type { CsvColumnTarget } from '../../web/lib/partage/cle-champ';
+export type { CsvColumnChoice as ColumnChoice, CsvColumnMapping as ColumnMapping } from '../../web/lib/partage/cle-champ';
 
 /** Les types d'un champ perso, partagés avec la console. */
 export type UserFieldType = UserFieldKind;
@@ -12,12 +14,7 @@ export interface UserFieldDef {
 }
 
 /** Cible d'une colonne CSV : attribut standard, champ perso, ou ignorée. */
-export type ColumnTargetKind = 'phone' | 'name' | 'custom' | 'ignore';
-
-export interface ColumnMapping {
-  /** header CSV -> { cible, key du champ perso si custom } */
-  columns: Record<string, { target: ColumnTargetKind; key?: string }>;
-}
+export type ColumnTargetKind = CsvColumnTarget;
 
 export interface ImportReport {
   created: number;

@@ -326,10 +326,10 @@ export interface ImportReport {
   errors: Array<{ line: number; reason: string }>;
 }
 
-export type ColumnTarget = 'phone' | 'name' | 'custom' | 'ignore';
-export interface ColumnMapping {
-  columns: Record<string, { target: ColumnTarget; key?: string }>;
-}
+export type {
+  CsvColumnTarget as ColumnTarget, CsvColumnChoice as ColumnChoice, CsvColumnMapping as ColumnMapping,
+} from '../partage/cle-champ';
+import type { CsvColumnMapping as ColumnMapping } from '../partage/cle-champ';
 export interface ImportPreview {
   headers: string[];
   sampleRows: Array<Record<string, string>>;

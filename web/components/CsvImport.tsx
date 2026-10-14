@@ -6,6 +6,7 @@ import { previewImport, importCsv, type ImportReport, type ImportPreview, type C
 import { inputCls } from '@/lib/ui';
 import { Bouton } from '@/components/Bouton';
 import { Icone } from '@/components/Icone';
+import { slugify } from '@/lib/partage/cle-champ';
 
 // --- Import CSV avec mapping des colonnes (composant partagé Contacts + Campagne) ---
 
@@ -14,15 +15,6 @@ import { Icone } from '@/components/Icone';
 // non la colonne) est gérée à part par une case à cocher. Les CATEGORIES (avec labels traduits)
 // sont construites DANS CsvImport car useT() est inappelable au niveau module.
 const PRESET_KEYS = ['prenom', 'email', 'ville', 'societe'];
-
-function slug(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-}
 
 interface Choice {
   /** Importer cette colonne ? (case à cocher) */
@@ -59,7 +51,7 @@ function buildMapping(headers: string[], choices: Record<string, Choice>): Colum
     if (!c.include) columns[h] = { target: 'ignore' };
     else if (c.choice === 'phone') columns[h] = { target: 'phone' };
     else if (c.choice === 'name') columns[h] = { target: 'name' };
-    else if (c.choice === 'custom') columns[h] = { target: 'custom', key: slug(c.customKey) || slug(h) };
+    else if (c.choice === 'custom') columns[h] = { target: 'custom', key: c.customKey.trim() ? slugify(c.customKey) : slugify(h) };
     else columns[h] = { target: 'custom', key: c.choice };
   }
   return { columns };
@@ -157,7 +149,7 @@ export function CsvImport({ tenantId, requireTag = false, onImported, onBusyChan
       const next: Choice = { ...cur, ...patch };
       // En passant sur « Champ perso… », pré-remplir le nom du champ (slug de l'en-tête) pour
       // qu'il soit éditable, plutôt qu'un champ vide.
-      if (patch.choice === 'custom' && next.customKey.trim() === '') next.customKey = slug(header);
+      if (patch.choice === 'custom' && next.customKey.trim() === '') next.customKey = slugify(header);
       return { ...prev, [header]: next };
     });
   }

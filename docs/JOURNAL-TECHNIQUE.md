@@ -5,6 +5,14 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-14 : les clés de champs de l'import CSV
+
+La console et le serveur dérivent désormais les clés avec la même règle dans `web/lib/partage/cle-champ.ts` ; le type
+du mapping aperçu/import y vit aussi. Une clé explicite reste exacte pour viser un champ existant ; si elle est absente
+ou vide, l'en-tête fournit le slug (avec `field` en repli). L'import résout chaque clé une fois par colonne, avant de
+signaler les collisions, créer les définitions et écrire les valeurs. Le comportement des colonnes réservées et la
+priorité à la première valeur non vide restent inchangés. Pas de migration.
+
 
 ## 2026-10-13 : « SMTP email » dans Tools, l'offre et les factures dans le menu du compte
 
