@@ -99,6 +99,21 @@ describe('MetaClientFactory (B1 : câblage par tenant)', () => {
     expect(invalidated).toEqual([]);
   });
 
+  it('🔴 MM API allumée : un 134101 repart par /messages, et le modèle ne consomme qu’UNE unité du mois, jeton intact', async () => {
+    const t = new FakeTransport([
+      { status: 400, json: { error: { code: 134101, type: 'OAuthException', message: '(#134101) Your template is still syncing' } } },
+      { status: 200, json: { messages: [{ id: 'wamid.cloud' }] } },
+    ]);
+    const { resolver: r, invalidated } = resolver({ tenants: { tA: 'wA' }, creds: { wA: { businessTokenEnc: 'enc:TOK_A', tokenStatus: 'active' } } });
+    let unites = 0;
+    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: true, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide, quotaModeles: { consommer: async () => { unites += 1; return { ok: true as const }; } } });
+    const r1 = await (await f.senderForTenant('tA', 'pnA')).sendMarketing({ to: '33600000001', template: { name: 'promo', language: 'fr' } });
+    expect(r1).toEqual({ messageId: 'wamid.cloud' });
+    expect(t.bearers).toHaveLength(2);
+    expect(unites).toBe(1);
+    expect(invalidated).toEqual([]);
+  });
+
   it('intercepteur : en SOMMEIL (wabaId null), une 401 n\'invalide rien', async () => {
     const t = new FakeTransport([{ status: 401, json: { error: { code: 190, type: 'OAuthException', message: 'x' } } }]);
     const { resolver: r, invalidated } = resolver({ tenants: { tA: 'wA' }, creds: {} }); // pas de credentials -> fallback

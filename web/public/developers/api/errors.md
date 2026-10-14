@@ -584,6 +584,8 @@ Le modèle a été créé, ou réutilisé après 7 jours sans envoi, il y a moin
 
 Que faire : Attendre 10 minutes, puis renvoyer.
 
+Ce que Messaging Me fait déjà : Messaging Me renvoie aussitôt le message par la Cloud API, au même prix : vous ne le verrez que si ce second envoi échoue aussi.
+
 <a id="meta-134102"></a>
 
 #### `134102`

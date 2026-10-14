@@ -18,11 +18,14 @@ export interface MetaClientOpts {
    * Envois marketing par la Marketing Messages API, ex-MM Lite, `/marketing_messages` (true), ou par `/messages`
    * (false, défaut). Allumé, TOUT modèle marketing y part, que le compte ait signé ses conditions ou non : Meta
    * repasse lui-même un compte non activé par la Cloud API (`product_policy`, plan du 2026-10-14). Un refus de la
-   * MM API (134100 catégorie non marketing, 134101 modèle en synchronisation, 134102 modèle indisponible) reste un
-   * échec d'envoi, sans repli de notre côté : choix de Julien.
+   * MM API (134100 catégorie non marketing, 134102 modèle indisponible) reste un échec d'envoi ; seul 134101 (modèle
+   * en synchronisation) repart par la Cloud API : choix de Julien.
    */
   marketingViaLite?: boolean;
 }
+
+/** Le refus de la MM API pour un modèle que Meta synchronise encore : le seul qui repart par la Cloud API. */
+const CODE_MM_EN_SYNCHRONISATION = 134101;
 
 function templatePayload(tpl: TemplateSpec): Record<string, unknown> {
   return {
@@ -242,15 +245,21 @@ export class MetaClient {
     }
     // `to` prime si les deux sont fournis (spec Meta).
     const target = params.to ? { to: params.to } : { recipient: params.recipient };
-    // 🔴 `product_policy` est le défaut de Meta, posé quand même : c'est lui qui laisse partir le marketing d'un compte
-    // qui n'a pas signé les conditions de la MM API. Un changement de défaut chez Meta couperait sinon ces comptes.
-    const json = await this.call(this.marketingViaLite ? 'marketing_messages' : 'messages', {
-      messaging_product: 'whatsapp',
-      ...target,
-      type: 'template',
-      template: templatePayload(params.template),
-      ...(this.marketingViaLite ? { product_policy: 'CLOUD_API_FALLBACK' } : {}),
-    });
-    return { messageId: this.messageId(json) };
+    const corps = { messaging_product: 'whatsapp', ...target, type: 'template', template: templatePayload(params.template) };
+    if (!this.marketingViaLite) return { messageId: this.messageId(await this.call('messages', corps)) };
+    try {
+      // 🔴 `product_policy` est le défaut de Meta, posé quand même : c'est lui qui laisse partir le marketing d'un compte
+      // qui n'a pas signé les conditions de la MM API. Un changement de défaut chez Meta couperait sinon ces comptes.
+      return { messageId: this.messageId(await this.call('marketing_messages', { ...corps, product_policy: 'CLOUD_API_FALLBACK' })) };
+    } catch (err) {
+      // 134101 : modèle créé, ou réutilisé après 7 jours sans envoi, il y a moins de 10 minutes, que Meta synchronise
+      // encore. Refus synchrone, rien n'est parti : le même modèle repart aussitôt par la Cloud API, au même prix (choix
+      // de Julien, 2026-10-14). Sans ce repli, une campagne sur un modèle dormant perdait ses 10 premières minutes et se
+      // mettait en pause au 20e échec. 134100 et 134102 restent des échecs.
+      if (!(err instanceof MetaApiError) || err.code !== CODE_MM_EN_SYNCHRONISATION) throw err;
+      // eslint-disable-next-line no-console
+      console.warn(`sendMarketing : « ${params.template.name} » en synchronisation chez Meta (134101), envoyé par la Cloud API`);
+      return { messageId: this.messageId(await this.call('messages', corps)) };
+    }
   }
 }

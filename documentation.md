@@ -4150,9 +4150,10 @@ Ajouté par le lot 4 de l'API publique :
    `campaign.category` : c'est un choix de CONSENTEMENT, « Marketing » par défaut dans l'assistant, qu'un modèle
    utility peut porter, et `/marketing_messages` refuse tout modèle non marketing (134100). Le statut du compte n'est
    PAS lu : l'envoi pose `product_policy: CLOUD_API_FALLBACK`, et Meta repasse lui-même par la Cloud API un compte
-   qui n'a pas signé les conditions. Un refus de la MM API est un échec d'envoi, sans repli de notre côté, et jamais
-   rejoué (`TERMINAUX_MEME_EN_5XX`, 134102 arrivant en HTTP 500) : 134100, 134101 (modèle créé, ou réutilisé après
-   7 jours sans envoi, il y a moins de 10 minutes), 134102. Les accusés de ces envois portent `marketing_lite`, et
+   qui n'a pas signé les conditions. Ses refus ne sont jamais rejoués (`TERMINAUX_MEME_EN_5XX`, 134102 arrivant en
+   HTTP 500). 134100 et 134102 sont des échecs d'envoi ; 134101 (modèle créé, ou réutilisé après 7 jours sans envoi,
+   il y a moins de 10 minutes) repart aussitôt par `/messages` dans `sendMarketing`, une seule unité du quota du mois
+   (choix de Julien, sans quoi une campagne sur un modèle dormant se mettait en pause). Les accusés de ces envois portent `marketing_lite`, et
    `pricing_analytics` `MARKETING_LITE`, que `parsePricing` compte dans `marketing` (même prix).
 55. **Un jeton d'espace n'est déclaré mort que sur le code 190 ou un HTTP 401** (`isMetaAuthError`, que
    `pullFromError` importe). Jamais sur le seul type `OAuthException`, que Meta pose sur la plupart de ses refus

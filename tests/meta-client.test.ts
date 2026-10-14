@@ -203,10 +203,35 @@ describe('MetaClient.sendMarketing', () => {
     expect(t.requests[0]!.body).not.toHaveProperty('product_policy');
   });
 
-  it('marketingViaLite=true : un refus de la MM API (134101) reste un échec, sans second appel', async () => {
-    const t = new FakeTransport([{ status: 400, json: { error: { code: 134101, message: '(#134101) Your template is still syncing' } } }]);
-    await expect(liteClient(t).sendMarketing({ to: '33600000000', template: { name: 'promo', language: 'fr' } })).rejects.toMatchObject({ name: 'MetaApiError', code: 134101 });
-    expect(t.requests).toHaveLength(1);
+  it('🔴 marketingViaLite=true : 134101 (modèle en synchronisation) repart aussitôt par /messages, même modèle, sans product_policy', async () => {
+    const t = new FakeTransport([
+      { status: 400, json: { error: { code: 134101, type: 'OAuthException', message: '(#134101) Your template is still syncing' } } },
+      okBody('wamid.cloud'),
+    ]);
+    const r = await liteClient(t).sendMarketing({ recipient: 'US.123', template: { name: 'promo', language: 'fr' } });
+    expect(r).toEqual({ messageId: 'wamid.cloud' });
+    expect(t.requests.map((q) => q.url)).toEqual([
+      'https://graph.facebook.com/v25.0/123/marketing_messages',
+      'https://graph.facebook.com/v25.0/123/messages',
+    ]);
+    expect(t.requests[1]!.body).toEqual({ messaging_product: 'whatsapp', recipient: 'US.123', type: 'template', template: { name: 'promo', language: { code: 'fr' } } });
+  });
+
+  it('marketingViaLite=true : 134100 et 134102 restent des échecs, sans second appel', async () => {
+    for (const [status, code] of [[400, 134100], [500, 134102]] as const) {
+      const t = new FakeTransport([{ status, json: { error: { code, message: `(#${code})` } } }]);
+      await expect(liteClient(t).sendMarketing({ to: '33600000000', template: { name: 'promo', language: 'fr' } })).rejects.toMatchObject({ name: 'MetaApiError', code });
+      expect(t.requests, String(code)).toHaveLength(1);
+    }
+  });
+
+  it('marketingViaLite=true : si le repli par /messages échoue à son tour, c’est SON erreur qui remonte', async () => {
+    const t = new FakeTransport([
+      { status: 400, json: { error: { code: 134101, message: '(#134101)' } } },
+      { status: 400, json: { error: { code: 131047, message: 'Re-engagement message' } } },
+    ]);
+    await expect(liteClient(t).sendMarketing({ to: '33600000000', template: { name: 'promo', language: 'fr' } })).rejects.toMatchObject({ code: 131047 });
+    expect(t.requests).toHaveLength(2);
   });
 
   it('vers un to (E.164) -> body avec to', async () => {

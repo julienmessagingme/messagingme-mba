@@ -119,6 +119,7 @@ export const ERREURS_META = [
     code: 134101, groupe: 'modele',
     sens: ['Le modèle a été créé, ou réutilisé après 7 jours sans envoi, il y a moins de 10 minutes : Meta le synchronise encore.', 'The template was created, or reused after 7 days without sending, less than 10 minutes ago: Meta is still syncing it.'],
     geste: ['Attendre 10 minutes, puis renvoyer.', 'Wait 10 minutes, then send again.'],
+    chezNous: ['Messaging Me renvoie aussitôt le message par la Cloud API, au même prix : vous ne le verrez que si ce second envoi échoue aussi.', 'Messaging Me immediately sends the message through the Cloud API instead, at the same price: you only see it if that second send fails too.'],
   },
   {
     code: 134102, groupe: 'modele',

@@ -32,10 +32,12 @@ Tout le reste (utility, messages de service, agent, réponses libres) reste sur 
 3. **Un refus de la MM API compte en échec**, comme toute erreur d'envoi (134100, 134101, 134102) : aucun repli de
    notre côté.
 
-⚠️ **Le choix 3 a été pris sur « modèle créé il y a moins de 10 minutes ».** La doc de Meta étend 134101 au
-premier envoi d'un modèle resté 7 jours sans servir : une campagne sur un tel modèle perdrait ses destinataires des
-10 premières minutes, et se mettrait en pause après 20 échecs. À reconfirmer par Julien AVANT l'allumage (le lot
-déployé éteint ne change rien).
+⚠️ **Le choix 3 a été pris sur « modèle créé il y a moins de 10 minutes », puis amendé par Julien le même jour.**
+La doc de Meta étend 134101 au premier envoi d'un modèle resté 7 jours sans servir : une campagne sur un tel modèle
+aurait perdu ses destinataires des 10 premières minutes, et se serait mise en pause après 20 échecs. **Décision :
+134101 seul repart aussitôt par la Cloud API** (même modèle, même prix, Meta n'avait rien envoyé), dans
+`MetaClient.sendMarketing`, donc pour les trois chemins ; 134100 et 134102 restent des échecs. Le modèle ne consomme
+qu'une unité du quota du mois. Limite : un futur modèle GIF ne pourra pas se replier, la Cloud API refusant les GIF.
 
 ## Trouvé par la relecture, corrigé dans le lot
 

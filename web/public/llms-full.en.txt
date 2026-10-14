@@ -3854,6 +3854,8 @@ The template was created, or reused after 7 days without sending, less than 10 m
 
 What to do: Wait 10 minutes, then send again.
 
+What Messaging Me already does: Messaging Me immediately sends the message through the Cloud API instead, at the same price: you only see it if that second send fails too.
+
 <a id="meta-134102"></a>
 
 #### `134102`
