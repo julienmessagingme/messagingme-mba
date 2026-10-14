@@ -1,5 +1,24 @@
 # todo.md : backlog
 
+## 🟡 Dossiers, second facteur, Inbox, menu du compte : ce qui reste (2026-10-13)
+
+- **Le rangement d'un template supprimé se nettoie côté serveur** : `DELETE /templates/:name` ne retire pas sa ligne de
+  `template_dossiers` ; la console le fait après la suppression, sans conséquence si elle échoue (un nom orphelin ne
+  s'affiche nulle part), mais un appel direct à l'API laisse la ligne.
+- **La lecture des dossiers de scénarios est ouverte à toute session de l'espace**, alors que la page Scénarios est
+  réservée aux admins : décision de la spec, à confirmer avec Julien.
+- **Le compteur de caractères des templates** n'est pas relié à son champ (`aria-describedby`) : un lecteur d'écran ne
+  l'annonce pas.
+- **Les compteurs du menu de l'Inbox font deux lectures de non-lus de plus** (`UNREAD_SQL`, servi par l'index partiel
+  0092) : à remesurer au banc avant la bascule Scaleway ; `scripts/banc-trente-espaces.mts` mesure encore l'ancienne
+  requête.
+- **Essai 99 : `import_site` échoue sur la page d'accueil d'un site** (`https://www.verifiermondevis.fr/`, avec ou sans
+  barre finale, seule ou dans une liste) en « échec interne de l'outil », alors que les autres pages passent.
+- **Aucun outil MCP ne rend la main à l'agent IA** une fois qu'un humain a répondu : `reply_in_open_window` prend le fil,
+  `assign_conversation` ne touche que le membre.
+- **La limite d'un corps de template MARKETING chez Meta** (550 caractères, affirmée par un tiers, non confirmée par la
+  doc de Meta) : le compteur reste à 1 024 ; un essai de soumission ne se fait qu'avec l'accord de Julien.
+
 ## 🟡 Lot 10, le plugin Claude Code : ce qui reste hors périmètre (2026-10-12)
 
 - **La skill d'import de contacts** (un fichier en vrac : analyse, correspondance des champs, import).

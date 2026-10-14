@@ -339,7 +339,10 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
   `gh run view <id> --json jobs`, job par job, jamais sur le code de sortie du watch.
   ⚠️ **LA CI EST DÉCOUPÉE EN DEUX WORKFLOWS, et l'asymétrie est voulue** : `ci-web.yml` ne part que sur `web/**`, `ci.yml`
   garde un `paths-ignore` et jamais un filtre positif, parce que des tests de la racine LISENT `web/`
-  (`tests/ci-decoupage.test.ts`). ⚠️ Un job `integration` ou `securite` rouge sur `toomanyrequests` (Docker Hub refuse
+  (`tests/ci-decoupage.test.ts`). 🔴 **D'où la règle : un lot qui ne touche que `web/` lance quand même la suite
+  racine ENTIÈRE avant de pousser** (`tests/aide-carte.test.ts` exige `npm run aide:carte` après toute retouche de
+  `web/lib/nav.ts`, `tests/web-vouvoiement.test.ts` refuse un tutoiement dans la console).
+  ⚠️ Un job `integration` ou `securite` rouge sur `toomanyrequests` (Docker Hub refuse
   le tirage anonyme) n'a RIEN vérifié : relancer, ne jamais déployer sur ce rouge-là ni le lire comme un succès.
   ⚠️ Un push qui ne touche QUE des `.md` ne déclenche AUCUN run (`paths-ignore`, pour le quota) : l'absence
   de run sur `HEAD` n'est donc pas un échec, c'est le dernier commit DE CODE qu'il faut regarder.

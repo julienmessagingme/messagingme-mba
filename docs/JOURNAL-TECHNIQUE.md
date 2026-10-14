@@ -6,6 +6,17 @@
 > tranchent, jamais ce fichier.
 
 
+## 2026-10-13 : « SMTP email » dans Tools, l'offre et les factures dans le menu du compte
+
+- Demandes de Julien du jour : « Boîtes email », dans le menu du compte en haut à droite, devient « SMTP email » dans
+  Tools (l'adresse `/settings/email` ne change pas) ; « Abonnement » dit l'offre de l'espace (Free, Pro ou Entreprise) et
+  mène à la page Offre ; « Billing » ouvre le portail de Stripe (la route de « Gérer mon abonnement », déjà en
+  production). Console seule, c2ddd7b9.
+- Incident : `main` rouge le temps du correctif. L'entrée ajoutée à la barre rendait périmée la carte que lit le bot
+  d'aide (`src/aide/carte-console.ts`), et `tests/aide-carte.test.ts`, un test serveur, l'a vue : le lot avait été
+  testé comme « console seule ». Corrigé par 1082c36a (`npm run aide:carte`, une ligne), déployé avec les deux fiches
+  d'aide. La règle est passée dans `CLAUDE.md` (§ la CI découpée) : un lot `web/` lance la suite racine entière.
+
 ## 2026-10-13 : les actions de l'agent IA, le moteur et la console (livraisons 0, A et B)
 
 - Décisions de Julien du jour (grill) : une action est un outil de chaque agent IA, 10 au plus ; des champs typés
