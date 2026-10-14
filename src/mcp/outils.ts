@@ -165,13 +165,15 @@ export interface SchemaEntree {
 /**
  * Les annotations MCP d'un outil (spécification 2025-06-18), rendues par `tools/list` : un client y lit s'il peut
  * appeler sans demander. `readOnlyHint` vaut « le scope est `mcp:read` » (tenu par `tests/mcp-serveur.test.ts`).
- * 🔴 Une ÉCRITURE déclare `destructiveHint` et `idempotentHint`, et le type l'exige : absentes, la spécification fait
- * supposer `destructiveHint: true` et `idempotentHint: false`, donc un client demanderait confirmation pour poser un
- * tag. `openWorldHint` : l'outil touche-t-il quelqu'un hors de l'espace (un message part chez une personne) ?
+ * 🔴 Une ÉCRITURE déclare `destructiveHint: true`, et le type l'exige : c'est la règle du répertoire de Claude
+ * (« destructiveHint: true for tools that modify or delete data », décision de Julien du 2026-10-14,
+ * `tests/mcp-repertoire.test.ts`), et dans claude.ai chaque écriture demande donc une confirmation, poser un tag
+ * compris. `idempotentHint` reste décidé outil par outil. `openWorldHint` : l'outil touche-t-il quelqu'un hors de
+ * l'espace (un message part chez une personne) ?
  */
 export type AnnotationsMcp = { title: string; openWorldHint: boolean } & (
   | { readOnlyHint: true }
-  | { readOnlyHint: false; destructiveHint: boolean; idempotentHint: boolean }
+  | { readOnlyHint: false; destructiveHint: true; idempotentHint: boolean }
 );
 
 /** La personne qui a autorisé un jeton OAuth (migration 0204). Une clé d'API n'en a pas. */
@@ -264,59 +266,58 @@ async function analysesOuRien(deps: DepsMcp, tenantId: string, ids: string[]): P
 const CHAMPS_WIDGET = {
   nom: {
     type: 'string', minLength: 1, maxLength: MAX_NOM_WIDGET,
-    description: 'Le nom du widget, pour s’y retrouver dans la console. Le visiteur ne le voit jamais.',
+    description: 'The widget name, to find it in the console. Visitors never see it.',
   },
   phrase: {
     type: 'string', minLength: 1, maxLength: MAX_PHRASE_WIDGET,
-    description: 'Le message pré-rempli que le VISITEUR enverra lui-même en cliquant la bulle (exemple : « Bonjour, je '
-      + 'viens de la page tarifs »). C’est lui qui reconnaît les conversations du widget, donc il lui est propre : '
-      + 'refusé s’il contient, ou s’il est contenu dans, celui d’un autre widget ou d’un lien de chaîne, ou s’il '
-      + 'apparaît déjà dans des conversations ordinaires. La casse, les accents et la ponctuation finale ne '
-      + 'distinguent pas deux phrases.',
+    description: 'The prefilled message the VISITOR sends themselves by clicking the bubble (example: "Hello, I come '
+      + 'from the pricing page"). It is what identifies the widget\'s conversations, so it is unique to it: refused if '
+      + 'it contains, or is contained in, the phrase of another widget or of a WhatsApp Channel link, or if it already '
+      + 'appears in ordinary conversations. Case, accents and final punctuation do not distinguish two phrases.',
   },
   devenir: {
     type: ['string', 'null'], enum: ['mba', 'scenario', null],
-    description: 'Qui répond aux conversations du widget. null (défaut) : comme les autres conversations, le réglage '
-      + 'de l’espace décide. « mba » : le répondeur automatique de l’espace, celui que set_default_responder a '
-      + 'choisi (agent de Meta, agent IA, scénario ou équipe). « scenario » : un scénario démarre à l’arrivée du '
-      + 'message, il exige workflowId. Un agent IA répond aux conversations d’un widget en étant le répondeur de '
-      + 'l’espace, pas par ce champ.',
+    description: 'Who answers the widget\'s conversations. null (default): as for other conversations, the workspace '
+      + 'setting decides. "mba": the workspace\'s automatic responder, the one set_default_responder chose (Meta '
+      + 'Business Agent, AI agent, scenario or team). "scenario": a scenario starts when the message arrives; it '
+      + 'requires workflowId. An AI agent answers a widget\'s conversations by being the workspace\'s responder, not '
+      + 'through this field.',
   },
   workflowId: {
     type: ['string', 'null'], format: 'uuid',
-    description: 'Avec devenir « scenario » seulement : l’identifiant d’un scénario de l’espace qui a une version '
-      + 'PUBLIÉE (list_scenarios, publie = true).',
+    description: 'With devenir "scenario" only: the id of a workspace scenario that has a PUBLISHED version '
+      + '(list_scenarios, publie = true).',
   },
   couleur: {
     type: 'string', pattern: MOTIF_COULEUR,
-    description: 'La couleur de la bulle, six chiffres hexadécimaux (défaut #25d366, le vert de WhatsApp).',
+    description: 'The bubble color, six hexadecimal digits (default #25d366, the WhatsApp green).',
   },
   position: {
     type: 'string', enum: [...POSITIONS_WIDGET],
-    description: 'Le coin de l’écran où la bulle se pose (défaut bas_droite).',
+    description: 'The screen corner where the bubble sits (default bas_droite).',
   },
   libelle: {
     type: ['string', 'null'], maxLength: MAX_LIBELLE_WIDGET,
-    description: 'Un texte court affiché à côté de la bulle, ou null pour aucun.',
+    description: 'A short text shown next to the bubble, or null for none.',
   },
   avatarUrl: {
     type: ['string', 'null'], maxLength: MAX_AVATAR_URL, pattern: `^${DEBUT_AVATAR}`,
-    description: 'L’adresse https:// d’une image affichée dans la bulle, ou null pour aucune.',
+    description: 'The https:// address of an image shown in the bubble, or null for none.',
   },
   actif: {
     type: 'boolean',
-    description: 'false éteint la bulle sans qu’il faille retirer la balise du site ; true la rallume (défaut true).',
+    description: 'false turns the bubble off without removing the tag from the site; true turns it back on (default true).',
   },
   maxParHeure: {
     type: ['integer', 'null'], minimum: 1, maximum: MAX_PAR_HEURE_WIDGET,
-    description: 'Le nombre de scénarios que ce widget peut démarrer par heure (la phrase est publique, n’importe '
-      + 'qui peut l’envoyer en rafale), ou null pour le plafond de l’instance.',
+    description: 'How many scenarios this widget can start per hour (the phrase is public, anyone can send it in '
+      + 'bursts), or null for the instance cap.',
   },
 } satisfies Record<ChampWidget, ProprieteEntree>;
 
 /** L'identifiant de conversation, tel que cinq outils le lisent (`texteObligatoire(args, 'conversation_id', 100)`). */
 const CONVERSATION_ID: ProprieteEntree = {
-  type: 'string', minLength: 1, maxLength: 100, description: 'Identifiant rendu par list_conversations.',
+  type: 'string', minLength: 1, maxLength: 100, description: 'The id returned by list_conversations.',
 };
 
 /**
@@ -339,18 +340,17 @@ export const OUTILS: OutilMcp[] = [
      * conclurait qu'une conversation rangée n'existe pas.
      */
     description:
-      'Liste les conversations WhatsApp de l’espace, la plus récemment active en premier. Utilise `a_traiter` '
-      + 'pour ne voir que celles dont le scénario ne s’occupe plus et qui attendent une réponse humaine '
-      + '(une conversation qu’un opérateur a marquée « Traité » n’y figure plus, jusqu’au prochain message du contact ; '
-      + 'celles que l’équipe a marquées urgentes y passent en tête). '
-      + 'Les conversations ARCHIVÉES depuis l’Inbox ne sont pas listées : elles existent toujours, elles '
-      + 'sont simplement rangées, et un message du contact les fait revenir.',
-    annotations: lecture('Lister les conversations'),
+      'Lists the workspace\'s WhatsApp conversations, most recently active first. `a_traiter` keeps only those the '
+      + 'scenario no longer handles and that await a human reply (a conversation an operator marked "Done" leaves '
+      + 'this list until the contact\'s next message; those the team marked urgent come first). '
+      + 'Conversations ARCHIVED from the Inbox are not listed: they still exist, they are only filed away, and a '
+      + 'message from the contact brings them back.',
+    annotations: lecture('List conversations'),
     entree: {
       type: 'object',
       properties: {
-        limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Nombre de conversations (1 à 200, défaut 50).' },
-        a_traiter: { type: 'boolean', description: 'Ne garder que les conversations à traiter.' },
+        limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Number of conversations (1 to 200, default 50).' },
+        a_traiter: { type: 'boolean', description: 'true keeps only the conversations to handle.' },
       },
     },
     async executer(deps, tenantId, args) {
@@ -376,11 +376,11 @@ export const OUTILS: OutilMcp[] = [
     ...ficheOutilMcp('get_conversation'),
     fonction: null,
     description:
-      'Détail d’une conversation : le contact, qui la tient, à qui elle est confiée, et surtout si la '
-      + 'fenêtre de service de 24 h est OUVERTE. Hors de cette fenêtre, WhatsApp interdit tout message libre : '
-      + 'appelle cet outil avant d’essayer de répondre. agent_actions : les dernières actions qu’un agent IA y a '
-      + `déclenchées (${ACTIONS_DE_LA_CONVERSATION} au plus, la plus récente d’abord), avec les champs recueillis.`,
-    annotations: lecture('Lire une conversation'),
+      'Details of a conversation: the contact, who handles it, who it is assigned to, and above all whether the '
+      + '24-hour customer service window is OPEN. Outside this window, WhatsApp forbids any free-form message: this '
+      + 'tool tells whether a reply can go out, before one is attempted. agent_actions: the latest actions an AI agent '
+      + `triggered in it (${ACTIONS_DE_LA_CONVERSATION} at most, most recent first), with the collected fields.`,
+    annotations: lecture('Read a conversation'),
     entree: {
       type: 'object',
       properties: { conversation_id: CONVERSATION_ID },
@@ -409,21 +409,21 @@ export const OUTILS: OutilMcp[] = [
     ...ficheOutilMcp('get_messages'),
     fonction: null,
     description:
-      `Les messages les plus RÉCENTS d’une conversation, ${MAX_MESSAGES_MCP} au plus, rendus du plus ancien au plus `
-      + 'récent. tronque = vrai : le fil a des messages plus anciens que ceux rendus, et before les lit (repasser la '
-      + 'valeur before rendue pour remonter d’une page).',
-    annotations: lecture('Lire les derniers messages'),
+      `The MOST RECENT messages of a conversation, ${MAX_MESSAGES_MCP} at most, returned from oldest to newest. `
+      + 'tronque = true: the thread has messages older than those returned, and before reads them (the returned '
+      + 'before value, passed back, goes up one page).',
+    annotations: lecture('Read the latest messages'),
     entree: {
       type: 'object',
       properties: {
         conversation_id: CONVERSATION_ID,
         limit: {
           type: 'integer', minimum: 1, maximum: MAX_MESSAGES_MCP,
-          description: `Nombre de messages les plus récents à rendre (1 à ${MAX_MESSAGES_MCP}, défaut ${MAX_MESSAGES_MCP}).`,
+          description: `Number of most recent messages to return (1 to ${MAX_MESSAGES_MCP}, default ${MAX_MESSAGES_MCP}).`,
         },
         before: {
           type: 'string', minLength: 1, maxLength: 200,
-          description: 'Le before rendu par l’appel précédent, tel quel : les messages ANTÉRIEURS à cette page.',
+          description: 'The before returned by the previous call, unchanged: the messages EARLIER than that page.',
         },
       },
       required: ['conversation_id'],
@@ -458,14 +458,14 @@ export const OUTILS: OutilMcp[] = [
     ...ficheOutilMcp('get_message_status'),
     fonction: null,
     description:
-      'Le statut de livraison d’un message ENVOYÉ, par son identifiant de Meta (wamid…, celui que rend l’envoi) : sent, '
-      + 'delivered, read ou failed, null tant qu’aucun accusé n’est arrivé, et toujours null pour un message reçu. En '
-      + 'échec, le code et le motif de Meta.',
-    annotations: lecture('Lire le statut d’un message'),
+      'The delivery status of a SENT message, by its Meta id (wamid..., the one the send returns): sent, delivered, '
+      + 'read or failed; null as long as no receipt has arrived, and always null for a received message. On failure, '
+      + 'Meta\'s code and reason.',
+    annotations: lecture('Read a message status'),
     entree: {
       type: 'object',
       properties: {
-        message_id: { type: 'string', minLength: 1, maxLength: 200, description: 'L’identifiant du message : wamid… (celui de Meta) ou msg_… (pour un message sans identifiant de Meta).' },
+        message_id: { type: 'string', minLength: 1, maxLength: 200, description: 'The message id: wamid... (Meta\'s) or msg_... (for a message without a Meta id).' },
       },
       required: ['message_id'],
     },
@@ -484,16 +484,15 @@ export const OUTILS: OutilMcp[] = [
     ...ficheOutilMcp('search_contacts'),
     fonction: null,
     description:
-      'Cherche des contacts par nom ou par numéro. Une requête composée de chiffres est comprise comme une '
-      + 'recherche de numéro, sinon comme une recherche de nom. Chaque contact porte sa dernière analyse '
-      + '(last_analysis : intention, sentiment, satisfaction et urgence sur 10, résolue, sujet ; null s’il n’a jamais '
-      + 'été analysé), sans le résumé : get_contact le rend.',
-    annotations: lecture('Chercher des contacts'),
+      'Searches contacts by name or by number. A query made of digits is read as a number search, otherwise as a '
+      + 'name search. Each contact carries its latest analysis (last_analysis: intent, sentiment, satisfaction and '
+      + 'urgency out of 10, resolved, topic; null if it was never analyzed), without the summary: get_contact returns it.',
+    annotations: lecture('Search contacts'),
     entree: {
       type: 'object',
       properties: {
-        query: { type: 'string', minLength: 1, maxLength: 120, description: 'Nom (ou fragment) ou suite de chiffres du numéro.' },
-        limit: { type: 'integer', minimum: 1, maximum: 100, description: 'Nombre de contacts (1 à 100, défaut 20).' },
+        query: { type: 'string', minLength: 1, maxLength: 120, description: 'A name (or part of one) or a sequence of digits of the number.' },
+        limit: { type: 'integer', minimum: 1, maximum: 100, description: 'Number of contacts (1 to 100, default 20).' },
       },
       required: ['query'],
     },
@@ -513,12 +512,13 @@ export const OUTILS: OutilMcp[] = [
   {
     ...ficheOutilMcp('get_contact'),
     fonction: null,
-    description: 'La fiche d’un contact à partir de son numéro : international avec ou sans « + » (+33612345678, 33612345678), ou national (06 12 34 56 78). '
-      + 'Elle porte la dernière analyse de ses conversations et son résumé (last_analysis, null s’il n’a jamais été analysé).',
-    annotations: lecture('Lire la fiche d’un contact'),
+    description: 'A contact\'s record from their number: international with or without "+" (+33612345678, 33612345678), '
+      + 'or national (06 12 34 56 78). It carries the latest analysis of their conversations and its summary '
+      + '(last_analysis, null if they were never analyzed).',
+    annotations: lecture('Read a contact record'),
     entree: {
       type: 'object',
-      properties: { phone: { type: 'string', minLength: 1, maxLength: 32, description: 'Numéro au format E.164, avec l’indicatif.' } },
+      properties: { phone: { type: 'string', minLength: 1, maxLength: 32, description: 'Number in E.164 format, with the country code.' } },
       required: ['phone'],
     },
     async executer(deps, tenantId, args) {
@@ -535,13 +535,12 @@ export const OUTILS: OutilMcp[] = [
     ...ficheOutilMcp('list_members'),
     fonction: null,
     description:
-      'Les membres de l’espace, avec leur identifiant. À appeler avant assign_conversation, qui a besoin de '
-      + 'cet identifiant et non du nom.',
-    annotations: lecture('Lister les membres'),
+      'The workspace members, with their id. assign_conversation takes this id, not the name.',
+    annotations: lecture('List members'),
     entree: {
       type: 'object',
       properties: {
-        limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Nombre de membres (1 à 200, défaut 100).' },
+        limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Number of members (1 to 200, default 100).' },
       },
     },
     /**
@@ -560,18 +559,18 @@ export const OUTILS: OutilMcp[] = [
     // `POST /v1/messages/whatsapp` : seuls étiqueter et affecter, gestes d'équipe, restent dans l'offre de l'Inbox.
     fonction: null,
     description:
-      'Envoie un message texte dans une conversation, UNIQUEMENT si la fenêtre de service de 24 h est '
-      + 'ouverte (le contact a écrit récemment). Hors fenêtre, l’appel est refusé : WhatsApp exige alors un '
-      + 'template approuvé, qui n’est pas exposé ici. Envoyer PREND le fil : le scénario cesse d’avancer sur '
-      + 'ce contact tant qu’un opérateur ne rend pas la main.',
+      'Sends a text message in a conversation, ONLY while the 24-hour customer service window is open (the contact '
+      + 'wrote recently). Outside the window, the call is refused: WhatsApp then requires an approved template, which '
+      + 'this tool does not send. Sending TAKES OVER the conversation: the scenario stops advancing on this contact '
+      + 'until an operator hands it back.',
     // Le monde ouvert : un message part chez une personne, et ne se reprend pas. Destructrice : l'envoi PREND le fil,
     // le scénario cesse d'avancer, ce qui n'est pas un simple ajout.
-    annotations: { title: 'Répondre dans la fenêtre de 24 h', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    annotations: { title: 'Reply in the 24-hour window', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     entree: {
       type: 'object',
       properties: {
         conversation_id: CONVERSATION_ID,
-        text: { type: 'string', minLength: 1, maxLength: 4096, description: 'Le message, tel que le contact le lira.' },
+        text: { type: 'string', minLength: 1, maxLength: 4096, description: 'The message, as the contact will read it.' },
       },
       required: ['conversation_id', 'text'],
     },
@@ -592,21 +591,21 @@ export const OUTILS: OutilMcp[] = [
     // Comme `reply_in_open_window` : une réponse dans la fenêtre de 24 h, ouverte dans toutes les offres.
     fonction: null,
     description:
-      'Envoie dans une conversation un message au FORMAT DE META (l’objet message de la Cloud API, sans destinataire) : '
-      + 'text, image, video, audio, document (médias par une URL https publique, link), location, reaction, ou '
-      + 'interactive (button : 3 boutons de réponse au plus ; list ; cta_url : un bouton lien). UNIQUEMENT dans la '
-      + 'fenêtre de 24 h (get_conversation le dit). Pour un simple texte, reply_in_open_window suffit. Envoyer PREND le '
-      + 'fil, comme reply_in_open_window.',
-    annotations: { title: 'Envoyer un message au format de Meta', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+      'Sends a message in a conversation in META\'S FORMAT (the Cloud API message object, without recipient): text, '
+      + 'image, video, audio, document (media through a public https URL, link), location, reaction, or interactive '
+      + '(button: 3 reply buttons at most; list; cta_url: one link button). ONLY within the 24-hour window '
+      + '(get_conversation tells whether it is open). For plain text, reply_in_open_window is enough. Sending TAKES '
+      + 'OVER the conversation, as with reply_in_open_window.',
+    annotations: { title: 'Send a message in Meta\'s format', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     entree: {
       type: 'object',
       properties: {
         conversation_id: CONVERSATION_ID,
         message: {
           type: 'object',
-          description: 'L’objet message de Meta sans destinataire, par exemple { "type": "image", "image": { "link": '
-            + '"https://…", "caption": "…" } }. Les bornes sont celles de Meta (texte 4 096 caractères, légende 1 024, '
-            + 'titre de bouton 20, 10 lignes de liste) ; un champ inconnu est refusé.',
+          description: 'Meta\'s message object without recipient, for example { "type": "image", "image": { "link": '
+            + '"https://...", "caption": "..." } }. The limits are Meta\'s (text 4,096 characters, caption 1,024, button '
+            + 'title 20, 10 list rows); an unknown field is refused.',
         },
       },
       required: ['conversation_id', 'message'],
@@ -624,18 +623,19 @@ export const OUTILS: OutilMcp[] = [
     ...ficheOutilMcp('tag_conversation'),
     fonction: 'inbox',
     description:
-      'Pose un ou plusieurs tags sur le contact d’une conversation, et les ajoute à la liste des tags de l’espace. '
-      + '⚠️ Les automations qui écoutent la pose de tag ne sont PAS déclenchées par cet outil : un tag posé ici '
-      + 'classe, il n’envoie rien.',
-    // Ajouter n'écrase rien, et reposer un tag déjà là ne change rien.
-    annotations: { title: 'Poser des tags', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      'Adds one or more tags to the contact of a conversation, and adds them to the workspace\'s tag list. '
+      + '⚠️ Automations that listen for a tag being added are NOT triggered by this tool: a tag added here '
+      + 'classifies, it sends nothing.',
+    // Ajouter n'écrase rien, et reposer un tag déjà là ne change rien (idempotente). Destructrice pour la règle du
+    // répertoire de Claude (voir `AnnotationsMcp`) : elle écrit sur la fiche.
+    annotations: { title: 'Add tags', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     entree: {
       type: 'object',
       properties: {
         conversation_id: CONVERSATION_ID,
         tags: {
           type: 'array', items: { type: 'string', minLength: 1, maxLength: LONGUEUR_MAX_ETIQUETTE }, minItems: 1, maxItems: 10,
-          description: 'Les tags à ajouter (1 à 10, 64 caractères au plus chacun).',
+          description: 'The tags to add (1 to 10, 64 characters at most each).',
         },
       },
       required: ['conversation_id', 'tags'],
@@ -657,15 +657,15 @@ export const OUTILS: OutilMcp[] = [
     ...ficheOutilMcp('assign_conversation'),
     fonction: 'inbox',
     description:
-      'Confie une conversation à un membre de l’espace, ou la libère avec member_id = null. L’identifiant '
-      + 'de membre vient de list_members.',
+      'Assigns a conversation to a workspace member, or releases it with member_id = null. The member id comes from '
+      + 'list_members.',
     // Destructrice : elle REMPLACE l'assignation en place, qui n'est gardée nulle part ailleurs.
-    annotations: { title: 'Confier une conversation', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    annotations: { title: 'Assign a conversation', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     entree: {
       type: 'object',
       properties: {
         conversation_id: CONVERSATION_ID,
-        member_id: { type: ['string', 'null'], description: 'Identifiant du membre, ou null pour libérer la conversation.' },
+        member_id: { type: ['string', 'null'], description: 'The member id, or null to release the conversation.' },
       },
       required: ['conversation_id', 'member_id'],
     },
@@ -698,13 +698,13 @@ export const OUTILS: OutilMcp[] = [
     ...ficheOutilMcp('list_widgets'),
     fonction: null,
     description:
-      `Les widgets WhatsApp de l’espace (${LIMITE_WIDGETS_PAR_ESPACE} au plus) : des bulles posées sur un site, qui `
-      + 'ouvrent WhatsApp avec un message pré-rempli. Chacun porte son identifiant (id, pour update_widget), son nom, '
-      + 'sa phrase, qui répond (devenir, workflowId), s’il est actif, la balise à coller sur le site (balise) et '
-      + 'l’adresse de son script, le lien wa.me de la bulle (waMeUrl ; null = la bulle s’affiche grisée, aucun '
-      + 'numéro WhatsApp n’est relié), et scenarioSupprime (vrai = son scénario a été supprimé, il ne démarre plus '
-      + 'rien : en désigner un autre avec update_widget).',
-    annotations: lecture('Lister les widgets'),
+      `The workspace's WhatsApp widgets (${LIMITE_WIDGETS_PAR_ESPACE} at most): chat bubbles placed on a site, which `
+      + 'open WhatsApp with a prefilled message. Each one carries its id (for update_widget), its name, its phrase, who '
+      + 'answers (devenir, workflowId), whether it is active, the tag to paste on the site (balise) and the address of '
+      + 'its script, the bubble\'s wa.me link (waMeUrl; null = the bubble shows greyed out, no WhatsApp number is '
+      + 'connected), and scenarioSupprime (true = its scenario was deleted, it no longer starts anything; update_widget '
+      + 'designates another one).',
+    annotations: lecture('List widgets'),
     entree: { type: 'object', properties: {} },
     async executer(deps, tenantId) {
       return listerEnVue(deps.widgets, tenantId);
@@ -714,13 +714,13 @@ export const OUTILS: OutilMcp[] = [
     ...ficheOutilMcp('list_scenarios'),
     fonction: null,
     description:
-      'Les scénarios de l’espace, le plus récent en premier : identifiant (id), nom, et publie (vrai = il a une '
-      + 'version publiée, donc il peut démarrer). Un widget au devenir « scenario » ne peut désigner qu’un scénario '
-      + 'publié : create_widget et update_widget refusent les autres.',
-    annotations: lecture('Lister les scénarios'),
+      'The workspace scenarios, most recent first: id, name (nom), and publie (true = it has a published version, so '
+      + 'it can start). A widget with devenir "scenario" can only designate a published scenario: create_widget and '
+      + 'update_widget refuse the others.',
+    annotations: lecture('List scenarios'),
     entree: {
       type: 'object',
-      properties: { limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Nombre de scénarios (1 à 200, défaut 100).' } },
+      properties: { limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Number of scenarios (1 to 200, default 100).' } },
     },
     /** Borné comme `list_members`, et pour la même raison : `tronque` dit qu'il en reste. */
     async executer(deps, tenantId, args) {
@@ -737,15 +737,16 @@ export const OUTILS: OutilMcp[] = [
     ...ficheOutilMcp('create_widget'),
     fonction: null,
     description:
-      'Crée un widget WhatsApp : une bulle à poser sur un site, qui ouvre WhatsApp avec la phrase déjà écrite. Le '
-      + 'visiteur clique, puis ENVOIE lui-même la phrase : c’est lui qui ouvre la conversation, sans modèle approuvé, '
-      + 'et la phrase dit qu’il vient de ce widget (son contact reçoit l’étiquette widget-<code>, devenir décide qui '
-      + 'répond). Rend le widget, dont sa balise (balise) : la coller dans le code HTML du site, juste avant la balise '
-      + 'fermante </body>, sur chaque page où la bulle doit apparaître. Elle se charge sans ralentir la page et ne '
-      + `change jamais. ${LIMITE_WIDGETS_PAR_ESPACE} widgets au plus par espace. Les contrôles sont ceux de l’écran `
-      + 'de la console : un refus dit sa raison.',
-    // Ni destructrice ni idempotente : chaque appel qui réussit crée un widget de plus.
-    annotations: { title: 'Créer un widget', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      'Creates a WhatsApp widget: a bubble to place on a site, which opens WhatsApp with the phrase already written. '
+      + 'The visitor clicks, then SENDS the phrase themselves: the visitor opens the conversation, with no approved '
+      + 'template, and the phrase tells that they come from this widget (their contact gets the tag widget-<code>, '
+      + 'devenir decides who answers). Returns the widget, including its tag (balise): it goes in the site\'s HTML '
+      + 'code, just before the closing </body> tag, on every page where the bubble should appear. It loads without '
+      + `slowing the page down and never changes. ${LIMITE_WIDGETS_PAR_ESPACE} widgets at most per workspace. The `
+      + 'checks are those of the console screen: a refusal states its reason.',
+    // Non idempotente : chaque appel qui réussit crée un widget de plus. Destructrice pour la règle du répertoire de
+    // Claude (voir `AnnotationsMcp`).
+    annotations: { title: 'Create a widget', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     entree: { type: 'object', properties: CHAMPS_WIDGET, required: ['nom', 'phrase'], additionalProperties: false },
     async executer(deps, tenantId, args) {
       // La vue AVANT l'écriture, comme la route : une panne de la lecture du numéro après coup rendrait une erreur
@@ -758,17 +759,17 @@ export const OUTILS: OutilMcp[] = [
     ...ficheOutilMcp('update_widget'),
     fonction: null,
     description:
-      'Modifie un widget : seuls les champs fournis changent, null efface un champ facultatif. Son code, donc la '
-      + 'balise déjà posée sur le site, ne change jamais. Les contrôles sont ceux de la création. Un widget dont le '
-      + 'scénario a été supprimé reste modifiable sans en choisir un autre.',
+      'Edits a widget: only the fields provided change, null clears an optional field. Its code, and so the tag '
+      + 'already placed on the site, never changes. The checks are those of creation. A widget whose scenario was '
+      + 'deleted stays editable without choosing another one.',
     // Destructrice : elle écrase les champs fournis, et `actif: false` éteint une bulle publique.
-    annotations: { title: 'Modifier un widget', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    annotations: { title: 'Edit a widget', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     entree: {
       type: 'object',
       properties: {
         widget_id: {
           type: 'string', format: 'uuid', minLength: 1, maxLength: 100,
-          description: 'L’identifiant (id) rendu par list_widgets ou create_widget.',
+          description: 'The id returned by list_widgets or create_widget.',
         },
         ...CHAMPS_WIDGET,
       },
@@ -787,11 +788,11 @@ export const OUTILS: OutilMcp[] = [
     ...ficheOutilMcp('get_plan'),
     fonction: null,
     description:
-      'L’offre de l’espace (free, pro ou entreprise) : les fonctions qu’elle ouvre, ses limites (null = sans limite) et '
-      + 'ce qui en est consommé (contacts créés, automations allumées, membres, modèles envoyés ce mois-ci), plus le lien '
-      + 'upgradeUrl pour passer en Pro. À lire quand un geste est refusé avec plan_limit_reached ou '
-      + 'plan_feature_unavailable : les réponses dans la fenêtre de 24 h ne sont jamais limitées.',
-    annotations: lecture('Lire l’offre'),
+      'The workspace plan (free, pro or entreprise): the features it includes, its limits (null = no limit) and what '
+      + 'is used of them (contacts created, automations on, members, templates sent this month), plus the upgradeUrl '
+      + 'link to the Pro plan. It explains an action refused with plan_limit_reached or plan_feature_unavailable; '
+      + 'replies within the 24-hour window are never limited.',
+    annotations: lecture('Read the plan'),
     entree: { type: 'object', properties: {} },
     async executer(deps, tenantId) {
       return deps.offre.vue(tenantId);
@@ -805,19 +806,20 @@ export const OUTILS: OutilMcp[] = [
     ...ficheOutilMcp('get_setup_state'),
     fonction: null,
     description:
-      'Où en est la mise en service de l’espace, en un appel : à appeler EN PREMIER pour mettre un espace en service ou '
-      + 'reprendre une mise en service interrompue. Rend l’offre (offre), le crédit IA (credit_eur), le numéro WhatsApp '
-      + '(connecte, a_activer, chiffres, fourni, abonnement), les agents IA (actifs, a_completer avec nb_manques, '
-      + 'desactives), qui répond au client (repondeur.mode, tel que l’offre le laisse jouer), les bulles (actives, total), '
-      + 'et etape_suivante avec outils_suggeres : '
+      'Where the workspace setup stands, in one call: the starting point to set up a workspace or to resume an '
+      + 'interrupted setup. Returns the plan (offre), the AI credit (credit_eur), the WhatsApp number (connecte, '
+      + 'a_activer, chiffres, fourni, abonnement), the AI agents (actifs, a_completer with nb_manques, desactives), who '
+      + 'answers the customer (repondeur.mode, as the plan lets it act), the bubbles (actives, total), and '
+      + 'etape_suivante with outils_suggeres: '
       + Object.entries(OUTILS_DE_L_ETAPE).map(([e, o]) => (o.length ? `${e} (${o.join(', ')})` : e)).join(', ') + '. '
-      + 'activer_numero : le numéro est relié mais Meta ne l’a pas activé, à finir dans l’Accueil de la console '
-      + '(« Activer le numéro »). Un répondeur déjà choisi (repondeur.mode_choisi : agent de Meta, scénario, application) '
-      + 'saute les étapes de l’agent IA et du répondeur : ne pas le changer sans la demande de la personne. avertissements : '
-      + 'numero_a_activer, credit_epuise (un agent IA ne répond plus : buy_credit), repondeur_gele_par_l_offre, carte_meta_a_regler (Meta bloque le compte pour sa carte ; etapes_carte_meta donne le chemin à suivre) (le répondeur '
-      + 'choisi est gelé par l’offre actuelle), lecture_manquee:<source> (cette partie n’a pas pu être lue : l’étape '
-      + 'qu’elle aurait dite est sautée). L’outil ne fait que lire.',
-    annotations: lecture('Lire où en est la mise en service'),
+      + 'activer_numero: the number is connected but Meta has not activated it; this is finished in the console Home '
+      + '("Activate the number"). A responder already chosen (repondeur.mode_choisi: Meta Business Agent, scenario, '
+      + 'application) skips the AI agent and responder steps: it is the person\'s choice, and only their request changes '
+      + 'it. avertissements: numero_a_activer, credit_epuise (an AI agent no longer answers: buy_credit), '
+      + 'repondeur_gele_par_l_offre (the chosen responder is frozen by the current plan), carte_meta_a_regler (Meta '
+      + 'blocks the account over its card; etapes_carte_meta gives the steps to follow), lecture_manquee:<source> (this '
+      + 'part could not be read: the step it would have given is skipped). The tool only reads.',
+    annotations: lecture('Read the setup state'),
     entree: { type: 'object', properties: {} },
     async executer(deps, tenantId) {
       return lireMiseEnService(deps, tenantId);

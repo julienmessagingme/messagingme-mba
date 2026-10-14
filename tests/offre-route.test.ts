@@ -88,6 +88,7 @@ describe('l’outil MCP get_plan', () => {
   it('sa description nomme les deux codes de refus et la fenêtre de 24 h', () => {
     expect(outil!.description).toContain('plan_limit_reached');
     expect(outil!.description).toContain('plan_feature_unavailable');
-    expect(outil!.description).toContain('24 h');
+    // En anglais depuis le 2026-10-14 (répertoire de Claude).
+    expect(outil!.description).toContain('24-hour window');
   });
 });

@@ -28,24 +28,24 @@ export const OUTILS_EVENEMENTS: OutilMcp[] = [
     ...ficheOutilMcp('create_webhook_endpoint'),
     fonction: null,
     description:
-      'Inscrit une adresse HTTPS de l’application (un webhook sortant) : Messaging Me y enverra en POST, signés au format '
-      + 'Standard Webhooks, les événements choisis (message reçu, lien cliqué, désabonnement, conversation analysée…), et '
-      + 'les réessaiera pendant 24 h tant qu’elle ne répond pas 2xx. Rend l’adresse et son secret (whsec_…), montré UNE '
-      + 'seule fois : le ranger dans une variable d’environnement de l’application (jamais dans le code) pour vérifier '
-      + 'l’en-tête webhook-signature. Sans types précisés : tous, sauf les accusés de livraison et les actions des agents '
-      + 'IA (agent.action). La limite d’adresses '
-      + 'actives dépend de l’offre (refus plan_limit_reached).',
-    // Ni destructrice ni idempotente : chaque appel qui réussit crée une adresse de plus.
-    annotations: { title: 'Créer un webhook sortant', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      'Registers an HTTPS address of the application (an outgoing webhook): Messaging Me will send it the chosen events '
+      + 'by POST, signed in the Standard Webhooks format (message received, link clicked, unsubscribe, conversation '
+      + 'analyzed...), and will retry them for 24 hours as long as it does not answer 2xx. Returns the endpoint and its '
+      + 'secret (whsec_...), shown ONLY ONCE: it belongs in an environment variable of the application (never in the '
+      + 'code), to verify the webhook-signature header. Without types given: all, except delivery receipts and AI agent '
+      + 'actions (agent.action). The limit of active endpoints depends on the plan (refusal plan_limit_reached).',
+    // Non idempotente : chaque appel qui réussit crée une adresse de plus. Destructrice pour la règle du répertoire de
+    // Claude (voir `AnnotationsMcp`).
+    annotations: { title: 'Create an outgoing webhook', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     entree: {
       type: 'object',
       properties: {
-        url: { type: 'string', minLength: 9, maxLength: 2048, pattern: '^https://', description: 'L’adresse de l’application, en HTTPS, joignable depuis Internet.' },
+        url: { type: 'string', minLength: 9, maxLength: 2048, pattern: '^https://', description: 'The application\'s address, in HTTPS, reachable from the Internet.' },
         types: {
           type: 'array', minItems: 1, maxItems: TYPES_ABONNABLES.length, items: { type: 'string', enum: [...TYPES_ABONNABLES] },
-          description: `Les événements à recevoir, chacun une fois. Absent : tous, sauf ${[...TYPES_DECOCHES_PAR_DEFAUT].join(', ')}.`,
+          description: `The events to receive, each one once. Absent: all, except ${[...TYPES_DECOCHES_PAR_DEFAUT].join(', ')}.`,
         },
-        description: { type: 'string', maxLength: 200, description: 'Un nom lisible dans la console (facultatif).' },
+        description: { type: 'string', maxLength: 200, description: 'A readable name in the console (optional).' },
       },
       required: ['url'],
       additionalProperties: false,
@@ -67,15 +67,16 @@ export const OUTILS_EVENEMENTS: OutilMcp[] = [
     ...ficheOutilMcp('send_test_event'),
     fonction: null,
     description:
-      'Envoie tout de suite un événement d’essai (type test), signé, à une adresse créée par create_webhook_endpoint, et '
-      + 'rend ce que l’application a répondu (code HTTP et début de la réponse). Sert à vérifier que l’application reçoit '
-      + 'et vérifie la signature. Écrit dans le journal de l’adresse. Compte dans les opérations lourdes de l’espace.',
-    // Monde ouvert : un appel part vers l'application du client.
-    annotations: { title: 'Envoyer un essai de webhook', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      'Immediately sends a signed test event (type test) to an endpoint created by create_webhook_endpoint, and returns '
+      + 'what the application answered (HTTP code and start of the response). It checks that the application receives '
+      + 'the event and verifies the signature. Writes to the endpoint\'s log. Counts toward the workspace\'s heavy '
+      + 'operations.',
+    // Monde ouvert : un appel part vers l'application du client. Destructrice pour la règle du répertoire de Claude.
+    annotations: { title: 'Send a webhook test', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     entree: {
       type: 'object',
       properties: {
-        adresse_id: { type: 'string', format: 'uuid', minLength: 1, maxLength: 100, description: 'L’identifiant (id) rendu par create_webhook_endpoint.' },
+        adresse_id: { type: 'string', format: 'uuid', minLength: 1, maxLength: 100, description: 'The id returned by create_webhook_endpoint.' },
       },
       required: ['adresse_id'],
       additionalProperties: false,
@@ -96,14 +97,14 @@ export const OUTILS_EVENEMENTS: OutilMcp[] = [
     ...ficheOutilMcp('list_webhook_endpoints'),
     fonction: null,
     description:
-      'Les adresses de webhooks sortants de l’espace (url, types d’événements cochés, active ou en pause, envois en '
-      + 'réessai et en échec), la limite d’adresses actives de l’offre (null = sans limite) et les types disponibles. Le '
-      + 'secret n’est jamais relu : il n’est montré qu’à la création.',
+      'The workspace\'s outgoing webhook endpoints (url, event types checked, active or paused, deliveries being '
+      + 'retried and failed), the plan\'s limit of active endpoints (null = no limit) and the available types. The '
+      + 'secret is never read back: it is shown only at creation.',
     /**
      * Une PERSONNE, comme la console, qui réserve cette liste aux admins : l'adresse d'un outil sans code (Make, Zapier,
      * n8n) porte son jeton dans le chemin, et une clé `mcp:read` confiée à un agent tiers la lirait.
      */
-    annotations: { title: 'Lister les webhooks sortants', readOnlyHint: true, openWorldHint: false },
+    annotations: { title: 'List outgoing webhooks', readOnlyHint: true, openWorldHint: false },
     entree: { type: 'object', properties: {}, additionalProperties: false },
     async executer(deps: DepsMcp, tenantId) {
       const g = deps.evenements.gestion;
@@ -118,18 +119,17 @@ export const OUTILS_EVENEMENTS: OutilMcp[] = [
     ...ficheOutilMcp('get_webhook_deliveries'),
     fonction: null,
     description:
-      'Le journal d’une adresse de webhooks sortants, du plus récent au plus ancien : chaque envoi avec son type, son '
-      + 'statut (pending, delivered, failed), ses tentatives, le dernier code et la dernière réponse de l’application, et '
-      + 'le corps envoyé (il porte des données de contacts). before (une date ISO) pour la page suivante, que rend '
-      + 'next_before.',
+      'The log of an outgoing webhook endpoint, most recent first: each delivery with its type, its status (pending, '
+      + 'delivered, failed), its attempts, the application\'s last code and last response, and the body sent (it '
+      + 'carries contact data). before (an ISO date) gives the next page, which next_before returns.',
     // Le corps des événements porte des numéros et des messages de contacts : une personne, jamais une clé.
-    annotations: { title: 'Lire le journal d’un webhook', readOnlyHint: true, openWorldHint: false },
+    annotations: { title: 'Read a webhook log', readOnlyHint: true, openWorldHint: false },
     entree: {
       type: 'object',
       properties: {
-        adresse_id: { type: 'string', format: 'uuid', minLength: 1, maxLength: 100, description: 'L’identifiant de l’adresse (list_webhook_endpoints).' },
-        before: { type: 'string', format: 'date-time', maxLength: 40, description: 'Les envois créés avant cette date (next_before de la page précédente).' },
-        limit: { type: 'integer', minimum: 1, maximum: 100, description: 'Nombre d’envois (1 à 100, défaut 20).' },
+        adresse_id: { type: 'string', format: 'uuid', minLength: 1, maxLength: 100, description: 'The endpoint id (list_webhook_endpoints).' },
+        before: { type: 'string', format: 'date-time', maxLength: 40, description: 'The deliveries created before this date (next_before of the previous page).' },
+        limit: { type: 'integer', minimum: 1, maximum: 100, description: 'Number of deliveries (1 to 100, default 20).' },
       },
       required: ['adresse_id'],
       additionalProperties: false,
@@ -149,16 +149,16 @@ export const OUTILS_EVENEMENTS: OutilMcp[] = [
     ...ficheOutilMcp('replay_webhook_delivery'),
     fonction: null,
     description:
-      'Rejoue un envoi terminé (livré ou en échec) d’une adresse de webhooks sortants : il repart avec le même corps et '
-      + 'le même identifiant d’événement (l’application dédoublonne), et ses 24 h de réessais repartent. Un envoi encore en '
-      + 'cours ou un essai ne se rejoue pas.',
+      'Replays a finished delivery (delivered or failed) of an outgoing webhook endpoint: it goes out again with the '
+      + 'same body and the same event id (the application deduplicates), and its 24 hours of retries start again. A '
+      + 'delivery still in progress or a test is not replayed.',
     // Renvoie vers l'application du client ; le même identifiant d'événement : rejouer deux fois est sans effet de plus
-    // pour une application qui dédoublonne.
-    annotations: { title: 'Rejouer un envoi de webhook', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    // pour une application qui dédoublonne. Destructrice pour la règle du répertoire de Claude.
+    annotations: { title: 'Replay a webhook delivery', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     entree: {
       type: 'object',
       properties: {
-        envoi_id: { type: 'string', format: 'uuid', minLength: 1, maxLength: 100, description: 'L’identifiant d’un envoi (get_webhook_deliveries).' },
+        envoi_id: { type: 'string', format: 'uuid', minLength: 1, maxLength: 100, description: 'The id of a delivery (get_webhook_deliveries).' },
       },
       required: ['envoi_id'],
       additionalProperties: false,

@@ -25,13 +25,18 @@ de Julien (les pages légales ne partent qu'après sa validation). L'essai réel
    (`web/lib/mcp-outils.ts`, ses propres textes, inchangée), les espaces qui ont déjà le serveur (aucune
    réautorisation : seuls les textes changent).
 
-## Livraison B : les pages légales (après validation de Julien)
+## Livraison B : les pages légales (après validation de Julien, AVEC la bascule Scaleway)
 
-1. Brouillons dans `docs/prive/` : politique de confidentialité et conditions d'utilisation de Messaging Me, éditeur
-   SmartLink, FR et EN ; sources : `brain/MESSAGINGME.md` (conformité), les sous-traitants et durées réels lus dans le
-   code et `documentation.md`. Julien les valide.
-2. Puis les pages `site/confidentialite/`, `site/en/privacy/`, `site/conditions/`, `site/en/terms/`, avec `sitemap.xml`,
-   JSON-LD et pied de page de toutes les pages pointant vers elles.
+1. Brouillons dans `docs/prive/pages-legales/` (faits : 2026-10-14) : politique de confidentialité et conditions
+   d'utilisation avec, en annexe, l'accord de traitement de l'article 28 ; éditeur Messaging Me SAS ; hébergement
+   d'après la bascule (Scaleway Paris, sauvegardes 7 jours en France, Cloudflare, Vercel). Julien valide le français,
+   puis Claude écrit l'anglais.
+2. Les engagements d'hébergement (Scaleway Paris, disque chiffré, base joignable du seul réseau privé, sauvegardes de
+   7 jours en France) ont été vérifiés par la session de la bascule ; décision de Julien du 2026-10-14 : ils restent
+   tels quels, sans phrase de transition ni report. La bascule les rend vrais : l'effacement de l'ancien hébergement
+   (`docs/ARCHITECTURE-CIBLE.md` § 10, étape 13) et l'expiration des sauvegardes manuelles (même document, § 7.2).
+3. Le jour de la bascule : les pages `site/confidentialite/`, `site/en/privacy/`, `site/conditions/`, `site/en/terms/`,
+   avec `sitemap.xml`, JSON-LD et le pied de page de toutes les pages pointant vers elles.
 
 ## Livraison C : le plugin 0.2.0
 
@@ -52,8 +57,9 @@ de Julien (les pages légales ne partent qu'après sa validation). L'essai réel
 
 ## Ordre de déploiement
 
-A (API, puis le plugin qui n'en dépend pas) ; B seulement après validation, la vitrine se publiant au push ; C après B
-(ses liens doivent répondre) ; D ; puis Julien soumet le connecteur, ensuite le plugin.
+A dès sa relecture (elle ne dépend pas de l'hébergement) ; B validée, puis publiée le jour de la bascule Scaleway (la
+vitrine se publie au push) ; C après B (ses liens doivent répondre) ; D ; puis Julien soumet le connecteur, ensuite le
+plugin.
 
 ## L'essai réel qui clôt
 

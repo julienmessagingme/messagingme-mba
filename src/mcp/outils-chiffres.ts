@@ -58,20 +58,24 @@ export type Maille = (typeof MAILLES)[number];
  */
 export const MAX_JOURS_MAILLE_JOUR = 92;
 
-/** L'entrée commune des outils de chiffres. */
+/**
+ * L'entrée commune des outils de chiffres. Les descriptions disent « the first day » et « the last day » plutôt que
+ * les noms `du` et `au` : `du` est un mot français que `tests/mcp-repertoire.test.ts` refuse dans un texte.
+ */
 export const ENTREE_PERIODE: Record<string, ProprieteEntree> = {
   du: {
     type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$',
-    description: 'Le premier jour (AAAA-MM-JJ, heure de Paris), avec au. Absents tous les deux : les 30 derniers jours.',
+    description: 'The first day (YYYY-MM-DD, Paris time), given together with the last day. Both absent: the last 30 days.',
   },
   au: {
     type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$',
-    description: 'Le dernier jour, inclus (AAAA-MM-JJ), au plus aujourd’hui ; 366 jours au plus depuis du.',
+    description: 'The last day, included (YYYY-MM-DD), today at the latest; 366 days at most from the first day.',
   },
   maille: {
     type: 'string', enum: [...MAILLES],
-    description: `jour, semaine (du lundi) ou mois (civil) : chaque ligne de la série couvre une maille. jour au plus `
-      + `${MAX_JOURS_MAILLE_JOUR} jours ; absente, jour jusqu’à ${MAX_JOURS_MAILLE_JOUR} jours, semaine au-delà.`,
+    description: `jour (day), semaine (week, from Monday) or mois (calendar month): each row of the series covers one `
+      + `of them. jour for ${MAX_JOURS_MAILLE_JOUR} days at most; absent: jour up to ${MAX_JOURS_MAILLE_JOUR} days, `
+      + 'semaine beyond.',
   },
 };
 
@@ -179,15 +183,14 @@ export const OUTILS_CHIFFRES: OutilMcp[] = [
     // Toutes les offres : l'essentiel pour le Free, le reste pour qui a les statistiques (décision du 2026-10-13).
     fonction: null,
     description:
-      'Les chiffres des messages de l’espace, en séries prêtes pour un graphique (une ligne par maille) et leurs '
-      + 'totaux : les MODÈLES envoyés, livrés, lus, en échec et sans accusé. Avec les statistiques de l’offre (Pro, '
-      + 'Entreprise), en plus : les modèles par catégorie, les messages échangés et de service, le service par origine '
-      + '(IA, scénario, humain), les contacts (cumulés, actifs) et le coût ESTIMÉ (les prix de l’écran Statistiques : '
-      + 'une estimation, la facture fait foi). Les mêmes chiffres que l’écran Statistiques de la console. Sans les '
-      + 'statistiques (Free) : '
-      + 'l’essentiel seulement, sur les 30 derniers jours ; une période plus ancienne est refusée avec le lien de '
-      + 'l’offre Pro. Pour comparer deux périodes, appeler deux fois. Aucune donnée personnelle.',
-    annotations: { title: 'Lire les chiffres des messages', readOnlyHint: true, openWorldHint: false },
+      'The workspace\'s message figures, as chart-ready series (one row per maille: day, week or month) and their totals: TEMPLATES '
+      + 'sent, delivered, read, failed and without receipt. With the plan\'s statistics (Pro, Enterprise), in addition: '
+      + 'templates by category, messages exchanged and service messages, service by origin (AI, scenario, human), '
+      + 'contacts (cumulative, active) and the ESTIMATED cost (the prices of the Statistics screen: an estimate, the '
+      + 'invoice prevails). The same figures as the console\'s Statistics screen. Without statistics (Free): the '
+      + 'essentials only, over the last 30 days; an older period is refused with the link to the Pro plan. Comparing '
+      + 'two periods takes two calls. No personal data.',
+    annotations: { title: 'Read message figures', readOnlyHint: true, openWorldHint: false },
     entree: { type: 'object', properties: { ...ENTREE_PERIODE }, additionalProperties: false },
     async executer(deps, tenantId, args) {
       const { range, maille } = lirePeriode(args);
@@ -264,17 +267,18 @@ export const OUTILS_CHIFFRES: OutilMcp[] = [
     ...ficheOutilMcp('get_campaign_stats'),
     fonction: 'statistiques',
     description:
-      'Les chiffres des campagnes. Sans campaign_id : les campagnes de la période (du, au), chacune avec ses envois '
-      + '(et parmi eux les facturables), ses clics, ses engagements et son coût ESTIMÉ (une estimation, la facture fait foi), et les erreurs '
-      + 'de Meta par code et par modèle. Avec campaign_id : l’entonnoir de toute la campagne (envoyés, livrés, lus, '
-      + 'réponses, réponses par bouton, clics, échecs, sans accusé, contacts visés), la période étant alors ignorée. '
-      + 'Les mêmes chiffres que l’écran Statistiques de la console. Aucune donnée personnelle.',
-    annotations: { title: 'Lire les chiffres des campagnes', readOnlyHint: true, openWorldHint: false },
+      'Campaign figures. Without campaign_id: the campaigns of the period (first and last day), each with its sends '
+      + '(and among them the billable ones), its clicks, its engagements and its ESTIMATED cost (an estimate, the '
+      + 'invoice prevails), and Meta\'s errors by code and by template. With campaign_id: the funnel of the whole '
+      + 'campaign (sent, delivered, read, replies, replies by button, clicks, failures, without receipt, targeted '
+      + 'contacts), the period then being ignored. The same figures as the console\'s Statistics screen. No personal '
+      + 'data.',
+    annotations: { title: 'Read campaign figures', readOnlyHint: true, openWorldHint: false },
     entree: {
       type: 'object',
       properties: {
         du: ENTREE_PERIODE.du!, au: ENTREE_PERIODE.au!,
-        campaign_id: { type: 'string', format: 'uuid', minLength: 1, maxLength: 100, description: 'Une campagne de l’espace : son entonnoir.' },
+        campaign_id: { type: 'string', format: 'uuid', minLength: 1, maxLength: 100, description: 'A campaign of the workspace: its funnel.' },
       },
       additionalProperties: false,
     },
@@ -345,12 +349,12 @@ export const OUTILS_CHIFFRES: OutilMcp[] = [
     ...ficheOutilMcp('get_conversation_insights'),
     fonction: 'statistiques',
     description:
-      'Ce que l’analyse a compris des conversations de la période : le nombre de conversations analysées, le sentiment '
-      + '(positif, neutre, négatif), les intentions, les conversations résolues, qui les a traitées, les actions '
-      + 'suggérées et les sujets les plus fréquents ; et, en série par maille, les conversations analysées et la '
-      + 'satisfaction et l’urgence moyennes (sur 10). La série remonte jusqu’à 12 mois (des agrégats sans donnée '
-      + 'personnelle) ; la synthèse couvre ce que la conservation garde. Les mêmes chiffres que l’écran Analyse.',
-    annotations: { title: 'Lire l’analyse des conversations', readOnlyHint: true, openWorldHint: false },
+      'What the analysis understood of the period\'s conversations: the number of analyzed conversations, sentiment '
+      + '(positive, neutral, negative), intents, resolved conversations, who handled them, suggested actions and the '
+      + 'most frequent topics; and, as a series per maille, the analyzed conversations and the average '
+      + 'satisfaction and urgency (out of 10). The series goes back up to 12 months (aggregates without personal '
+      + 'data); the summary covers what retention keeps. The same figures as the Analysis screen.',
+    annotations: { title: 'Read the conversation analysis', readOnlyHint: true, openWorldHint: false },
     entree: { type: 'object', properties: { ...ENTREE_PERIODE }, additionalProperties: false },
     async executer(deps, tenantId, args) {
       const { range, maille } = lirePeriode(args);
@@ -402,11 +406,11 @@ export const OUTILS_CHIFFRES: OutilMcp[] = [
     ...ficheOutilMcp('get_ai_stats'),
     fonction: 'statistiques',
     description:
-      'Les chiffres des agents IA sur la période : le coût des tours d’agent IA sur le crédit (en euros, sessions et '
-      + 'jetons ; la traduction n’y est pas), les messages écrits par l’IA (agent IA, agent de Meta, assistant branché '
-      + 'par MCP), les demandes ouvertes pour l’équipe par maille, et les actions déclenchées (par maille et par action). '
-      + 'Le coût et les messages sont ceux de l’écran Statistiques de la console.',
-    annotations: { title: 'Lire les chiffres des agents IA', readOnlyHint: true, openWorldHint: false },
+      'AI agent figures over the period: the cost of AI agent turns on the credit (in euros, sessions and tokens; '
+      + 'translation is not included), the messages written by AI (AI agent, Meta Business Agent, assistant connected '
+      + 'through MCP), the requests opened for the team per maille, and the actions triggered (per maille and '
+      + 'per action). The cost and the messages are those of the console\'s Statistics screen.',
+    annotations: { title: 'Read AI agent figures', readOnlyHint: true, openWorldHint: false },
     entree: { type: 'object', properties: { ...ENTREE_PERIODE }, additionalProperties: false },
     async executer(deps, tenantId, args) {
       const { range, maille } = lirePeriode(args);

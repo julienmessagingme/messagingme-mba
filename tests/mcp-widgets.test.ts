@@ -178,10 +178,11 @@ describe('le catalogue', () => {
   });
 
   it('la description de create_widget dit quoi faire de la balise, et que le visiteur écrit la phrase', () => {
+    // En anglais depuis le 2026-10-14 (répertoire de Claude).
     const d = OUTILS.find((o) => o.nom === 'create_widget')!.description;
     expect(d).toContain('</body>');
-    expect(d).toMatch(/visiteur/);
-    expect(d).toContain(`${LIMITE_WIDGETS_PAR_ESPACE} widgets au plus`);
+    expect(d).toMatch(/visitor/);
+    expect(d).toContain(`${LIMITE_WIDGETS_PAR_ESPACE} widgets at most`);
   });
 });
 

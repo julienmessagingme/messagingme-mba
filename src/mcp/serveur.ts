@@ -21,6 +21,17 @@ const VERSIONS_CONNUES = new Set(['2024-11-05', '2025-03-26', '2025-06-18']);
 
 export const SERVEUR_INFO = { name: 'messagingme-mba', title: 'Messaging Me', version: '1.0.0' } as const;
 
+/**
+ * Les instructions envoyées à chaque `initialize`. En anglais, comme les titres et descriptions des outils (décision
+ * de Julien du 2026-10-14, pour le répertoire de Claude) : `tests/mcp-repertoire.test.ts` le tient.
+ */
+export const INSTRUCTIONS_MCP =
+  'Tools of the Messaging Me console (WhatsApp). To reply to a conversation: list_conversations, then '
+  + 'get_conversation, which tells whether the 24-hour customer service window is open before any reply is attempted. '
+  + 'A tool that the workspace plan does not include stays listed and refuses with the plan link, which explains the '
+  + 'refusal. To set up a workspace, or to resume a setup, get_setup_state is the starting point: it tells what is '
+  + 'done and the next step.';
+
 /** Codes d'erreur JSON-RPC 2.0. Les seuls dont ce serveur a besoin. */
 const ERREUR = { PARSE: -32700, REQUETE_INVALIDE: -32600, METHODE_INCONNUE: -32601, PARAMS_INVALIDES: -32602, INTERNE: -32603 } as const;
 
@@ -85,12 +96,7 @@ export async function traiterMessage(deps: DepsMcp, ctx: ContexteMcp, message: u
         // viendra jamais.
         capabilities: { tools: { listChanged: false } },
         serverInfo: SERVEUR_INFO,
-        instructions:
-          'Outils de la console Messaging Me (WhatsApp). Pour répondre à une conversation : list_conversations, puis '
-          + 'get_conversation pour savoir si la fenêtre de 24 h est ouverte avant toute tentative de réponse. Un outil que '
-          + 'l’offre de l’espace ne comprend pas reste listé et refuse avec le lien de l’offre : le dire à la personne. Pour '
-          + 'mettre un espace en service, ou reprendre une mise en service, commence par get_setup_state : il dit ce qui est '
-          + 'fait et l’étape suivante.',
+        instructions: INSTRUCTIONS_MCP,
       });
     }
     case 'ping':

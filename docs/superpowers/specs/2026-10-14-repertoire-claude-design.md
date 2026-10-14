@@ -41,8 +41,12 @@ le trouve dans la bibliothèque de Claude.
 - **Compte de test** : l'espace réel « MessagingMeEmbdedded » et son numéro, une fois sa connexion Meta renouvelée,
   peuplé, et dont tous les contacts sont nos propres téléphones : un relecteur qui envoie n'écrit qu'à nous.
 - **Pages légales** : Claude rédige une politique de confidentialité et des conditions d'utilisation propres au
-  produit, au nom de SmartLink, en français et en anglais sur la vitrine ; Julien (ou son juriste) les valide AVANT
-  leur mise en ligne.
+  produit, en français et en anglais sur la vitrine ; Julien les valide AVANT leur mise en ligne. L'éditeur est
+  **Messaging Me SAS** (RCS Paris 948 692 231), « SmartLink » restant le nom de marque sur les fiches ; le
+  correspondant pour les données est Julien (julien@messagingme.fr) ; l'accord de traitement de l'article 28 du RGPD
+  est une annexe des conditions, pas un document à part ; la responsabilité et la résiliation sont rédigées par
+  Claude. **Elles décrivent l'hébergement d'après la bascule chez Scaleway et se mettent en ligne avec elle** (Julien :
+  « le temps de tout envoyer, on sera sur Scaleway »).
 - **Fiches en anglais.** **Titres et descriptions des 56 outils MCP en anglais.**
 
 ## Ce qui change

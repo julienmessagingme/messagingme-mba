@@ -285,11 +285,12 @@ describe('serveur MCP : protocole', () => {
     const { server } = app();
     const res = await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: rpc('initialize', { protocolVersion: '2025-03-26' }) });
     const instructions = res.json<{ result: { instructions: string } }>().result.instructions;
-    // En Base, list_conversations refuse : « commence par » enverrait chaque session vers un refus.
-    expect(instructions).not.toMatch(/Commence par list_conversations/);
-    expect(instructions).toMatch(/offre/);
+    // En Base, list_conversations refuse : « commence par » enverrait chaque session vers un refus. Les instructions
+    // sont en anglais depuis le 2026-10-14 (répertoire de Claude) : la même garde, dans les deux tournures.
+    expect(instructions).not.toMatch(/(start|begin) with list_conversations|list_conversations is the starting point/i);
+    expect(instructions).toMatch(/plan does not include .* refuses with the plan link/);
     // Le plugin et tout client qui reprend une mise en service (lot 10) partent de là.
-    expect(instructions).toMatch(/commence par get_setup_state/);
+    expect(instructions).toMatch(/get_setup_state is the starting point/);
     await server.close();
   });
 
@@ -687,6 +688,10 @@ describe('serveur MCP : cohérence du catalogue', () => {
    */
   it('🔴 chaque écriture porte les valeurs DÉCIDÉES dans le plan (destructive, idempotent, monde ouvert)', () => {
     // Recopiées du plan 2026-10-03-mcp-remise-d-aplomb : changer une valeur est une décision, pas un glissement.
+    // 🔴 La PREMIÈRE valeur (destructive) vaut `true` pour TOUTE écriture depuis le 2026-10-14 : c'est la règle du
+    // répertoire de Claude (« destructiveHint: true for tools that modify or delete data »), décision de Julien
+    // (spec 2026-10-14-repertoire-claude-design.md), que le type `AnnotationsMcp` impose. Les deux autres restent
+    // celles du plan, outil par outil.
     const ecritures = Object.fromEntries(OUTILS.filter((o) => !o.annotations.readOnlyHint).map((o) => [
       o.nom,
       o.annotations.readOnlyHint ? null : [o.annotations.destructiveHint, o.annotations.idempotentHint, o.annotations.openWorldHint],
@@ -695,19 +700,19 @@ describe('serveur MCP : cohérence du catalogue', () => {
       reply_in_open_window: [true, false, true],
       // Comme reply_in_open_window : un message part chez une personne, et prend le fil (lot 13, domaine 2).
       send_message: [true, false, true],
-      tag_conversation: [false, true, false],
+      tag_conversation: [true, true, false],
       assign_conversation: [true, true, false],
-      create_widget: [false, false, false],
+      create_widget: [true, false, false],
       update_widget: [true, true, false],
       // L'agent IA et le crédit : la table de la spec du lot 8a (2026-10-03-mcp-agent-ia-design.md, section 1).
-      create_agent: [false, false, true],
+      create_agent: [true, false, true],
       update_agent: [true, true, false],
-      set_agent_tools: [false, true, false],
+      set_agent_tools: [true, true, false],
       activate_agent: [true, true, false],
       // Monde ouvert depuis le 2026-10-05 (décision de Julien) : un connecteur GET qui intègre y interroge pour de
       // vrai le système du client.
-      test_agent: [false, false, true],
-      add_knowledge: [false, false, false],
+      test_agent: [true, false, true],
+      add_knowledge: [true, false, false],
       delete_knowledge: [true, true, false],
       import_site: [true, true, true],
       import_document_text: [true, true, false],
@@ -719,25 +724,25 @@ describe('serveur MCP : cohérence du catalogue', () => {
       delete_agent_action: [true, true, false],
       // Le répondeur (lot 5) : il peut éteindre l'agent de Meta chez Meta, pour tous les contacts de l'espace.
       set_default_responder: [true, true, true],
-      buy_credit: [false, false, true],
+      buy_credit: [true, false, true],
       // La connexion du numéro (lot 3c) : un lien signé de plus à chaque appel, et une attente qui ne change rien.
-      start_whatsapp_connection: [false, false, false],
-      watch_whatsapp_connection: [false, true, false],
+      start_whatsapp_connection: [true, false, false],
+      watch_whatsapp_connection: [true, true, false],
       // L'abonnement du numéro (lot 3c, livraison B) : une session du portail est créée chez Stripe à chaque appel.
-      manage_number_subscription: [false, false, true],
+      manage_number_subscription: [true, false, true],
       // Lot 4 : une session de Stripe de plus à chaque appel, comme le portail.
-      resubscribe_number: [false, false, true],
+      resubscribe_number: [true, false, true],
       // Lot 6, B2b : un choix en base, réversible tant que le Pro court ; rien chez Stripe.
-      return_number_at_plan_end: [false, true, false],
+      return_number_at_plan_end: [true, true, false],
       // Lot 12 : une adresse de plus à chaque appel ; l'essai part vers l'application du client.
-      create_webhook_endpoint: [false, false, false],
-      send_test_event: [false, false, true],
+      create_webhook_endpoint: [true, false, false],
+      send_test_event: [true, false, true],
       // Lot 13, domaine 4 : l'envoi repart vers l'application, avec le même identifiant d'événement.
-      replay_webhook_delivery: [false, true, true],
+      replay_webhook_delivery: [true, true, true],
       // Lot 13, domaine 3 : un modèle de plus chez Meta à chaque appel, qui y reste.
-      create_template: [false, false, true],
+      create_template: [true, false, true],
       // Livraison B : un message part chez une personne ; la même clé d'idempotence ne renvoie rien ; le fil n'est pas pris.
-      send_template_to_contact: [false, true, true],
+      send_template_to_contact: [true, true, true],
     });
     // Une lecture ne touche personne hors de l'espace, à UNE exception nommée : `preview_site` va lire un site tiers.
     const lecturesEnMondeOuvert = OUTILS.filter((x) => x.annotations.readOnlyHint && x.annotations.openWorldHint).map((o) => o.nom);

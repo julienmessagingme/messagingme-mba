@@ -89,7 +89,8 @@ describe('start_whatsapp_connection', () => {
     const { deps } = monter(() => VIDE);
     const r = await outil('start_whatsapp_connection').executer(deps, 't1', { mode: 'apporte' }, PERSONNE) as Record<string, string>;
     expect((await verifyLienNumero(r.url!.split('#')[1]!, SECRET))?.mode).toBe('apporte');
-    expect(outil('start_whatsapp_connection').description).toMatch(/application WhatsApp/);
+    // La description est en anglais depuis le 2026-10-14 (répertoire de Claude).
+    expect(outil('start_whatsapp_connection').description).toMatch(/WhatsApp app/);
   });
 
   it('🔴 refuse quand un numéro est déjà connecté, et un mode inconnu', async () => {

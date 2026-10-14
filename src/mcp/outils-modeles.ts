@@ -34,7 +34,7 @@ function phraseDeRefus(r: ReponseEnvoi): string {
  */
 const VALEUR_ACCEPTEE = /^(?!.*[\n\t])(?!.* {5,}).*$/s;
 
-const NOM = { type: 'string' as const, minLength: 1, maxLength: BORNES_MODELE.nom, pattern: '^[a-z0-9_]+$', description: 'Le nom du modèle (minuscules, chiffres et _).' };
+const NOM = { type: 'string' as const, minLength: 1, maxLength: BORNES_MODELE.nom, pattern: '^[a-z0-9_]+$', description: 'The template name (lowercase letters, digits and _).' };
 const lecture = (title: string): AnnotationsMcp => ({ title, readOnlyHint: true, openWorldHint: false });
 
 export const OUTILS_MODELES: OutilMcp[] = [
@@ -42,14 +42,14 @@ export const OUTILS_MODELES: OutilMcp[] = [
     ...ficheOutilMcp('list_templates'),
     fonction: null,
     description:
-      'Les modèles WhatsApp de l’espace, chacun avec sa langue, sa catégorie (utility, marketing…) et son statut chez Meta '
-      + '(approved, pending, rejected, paused…). Seul un modèle approved peut partir. Pour le motif d’un refus : '
-      + 'get_template_status.',
-    annotations: lecture('Lister les modèles'),
+      'The workspace\'s WhatsApp templates, each with its language, its category (utility, marketing...) and its '
+      + 'status at Meta (approved, pending, rejected, paused...). Only an approved template can be sent. The reason for '
+      + 'a rejection: get_template_status.',
+    annotations: lecture('List templates'),
     entree: {
       type: 'object',
       properties: {
-        limit: { type: 'integer', minimum: 1, maximum: 500, description: 'Nombre de modèles (1 à 500, défaut 100).' },
+        limit: { type: 'integer', minimum: 1, maximum: 500, description: 'Number of templates (1 to 500, default 100).' },
       },
     },
     async executer(deps: DepsMcp, tenantId, args) {
@@ -67,15 +67,15 @@ export const OUTILS_MODELES: OutilMcp[] = [
     ...ficheOutilMcp('get_template_status'),
     fonction: null,
     description:
-      'Le statut d’un modèle chez Meta, langue par langue (approved, pending, rejected…), avec le motif d’un refus '
-      + '(rejectedReason, null sans motif). À lire après create_template : la validation prend de quelques minutes à '
-      + 'quelques heures.',
-    annotations: lecture('Lire le statut d’un modèle'),
+      'A template\'s status at Meta, language by language (approved, pending, rejected...), with the reason for a '
+      + 'rejection (rejectedReason, null without a reason). It follows up create_template: Meta\'s review takes from a '
+      + 'few minutes to a few hours.',
+    annotations: lecture('Read a template status'),
     entree: {
       type: 'object',
       properties: {
         name: NOM,
-        language: { type: 'string', minLength: 2, maxLength: 20, description: 'Une seule langue (fr, en_US…). Absent : toutes.' },
+        language: { type: 'string', minLength: 2, maxLength: 20, description: 'A single language (fr, en_US...). Absent: all.' },
       },
       required: ['name'],
       additionalProperties: false,
@@ -92,25 +92,26 @@ export const OUTILS_MODELES: OutilMcp[] = [
     ...ficheOutilMcp('create_template'),
     fonction: null,
     description:
-      'Crée un modèle WhatsApp et le soumet à la validation de Meta, au FORMAT DE META : { name (minuscules, chiffres et _, '
-      + '512 au plus), language (fr, en_US…), category (UTILITY ou MARKETING), components }. Chaque composant au plus une '
-      + 'fois. HEADER : format TEXT avec text (60 caractères, sans variable), ou IMAGE, VIDEO, DOCUMENT avec '
-      + 'example.header_url : [« https://… »] (2 000 caractères, sans redirection ; image JPEG ou PNG de 5 Mo, vidéo MP4 ou '
-      + 'document PDF de 16 Mo ; le fichier est téléchargé et déposé chez Meta). BODY obligatoire (1 024 caractères ; '
-      + 'variables {{1}}, {{2}}… contiguës, avec example.body_text : [[une valeur par variable, 200 caractères]]). FOOTER '
-      + '(60 caractères, sans variable). BUTTONS (10 au plus, texte de 25 caractères) : QUICK_REPLY, ou URL (2 au plus, '
-      + 'adresse https sans {{1}}, tracée par nous). Rend le statut initial (souvent pending) : suivre avec '
-      + 'get_template_status. Compte dans les opérations lourdes de l’espace.',
+      'Creates a WhatsApp template and submits it to Meta\'s review, in META\'S FORMAT: { name (lowercase letters, '
+      + 'digits and _, 512 at most), language (fr, en_US...), category (UTILITY or MARKETING), components }. Each '
+      + 'component at most once. HEADER: format TEXT with text (60 characters, no variable), or IMAGE, VIDEO, DOCUMENT '
+      + 'with example.header_url: ["https://..."] (2,000 characters, no redirect; JPEG or PNG image of 5 MB, MP4 video '
+      + 'or PDF document of 16 MB; the file is downloaded and uploaded to Meta). BODY required (1,024 characters; '
+      + 'variables {{1}}, {{2}}... contiguous, with example.body_text: [[one value per variable, 200 characters]]). '
+      + 'FOOTER (60 characters, no variable). BUTTONS (10 at most, text of 25 characters): QUICK_REPLY, or URL (2 at '
+      + 'most, https address without {{1}}, tracked by us). Returns the initial status (often pending), which '
+      + 'get_template_status follows up. Counts toward the workspace\'s heavy operations.',
     // Monde ouvert : le modèle part chez Meta et y reste (le supprimer est un autre geste, depuis la console).
-    annotations: { title: 'Créer un modèle', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    // Destructrice pour la règle du répertoire de Claude (voir `AnnotationsMcp`).
+    annotations: { title: 'Create a template', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     entree: {
       type: 'object',
       properties: {
         template: {
           type: 'object',
-          description: 'Le corps de Meta, par exemple { "name": "commande_prete", "language": "fr", "category": "UTILITY", '
-            + '"components": [{ "type": "BODY", "text": "Bonjour {{1}}, votre commande est prête.", "example": '
-            + '{ "body_text": [["Marie"]] } }] }. Un champ inconnu est refusé.',
+          description: 'Meta\'s body, for example { "name": "order_ready", "language": "en", "category": "UTILITY", '
+            + '"components": [{ "type": "BODY", "text": "Hello {{1}}, your order is ready.", "example": '
+            + '{ "body_text": [["Marie"]] } }] }. An unknown field is refused.',
         },
       },
       required: ['template'],
@@ -131,29 +132,30 @@ export const OUTILS_MODELES: OutilMcp[] = [
     ...ficheOutilMcp('send_template_to_contact'),
     fonction: null,
     description:
-      'Envoie un modèle WhatsApp APPROUVÉ à UNE personne, même hors de la fenêtre de 24 h, par le même chemin que '
-      + 'POST /v1/sends : consentement (un modèle marketing ne part que vers qui a consenti), STOP, numéro délié ou '
-      + 'suspendu, modèles du mois de l’offre. La personne se désigne par phone (avec l’indicatif : +33612345678) ou '
-      + 'contact_id ; un numéro inconnu crée sa fiche. values : une valeur par variable {{1}}, {{2}}… du corps, dans '
-      + 'l’ordre. idempotency_key : une clé choisie pour CET envoi (un appel rejoué avec la même clé ne renvoie rien, '
-      + 'pendant 24 h). L’envoi part dans la minute : rend send_id. Compte dans les opérations lourdes de l’espace.',
-    // Monde ouvert : un message part chez une personne. Idempotent : la même clé ne renvoie rien. Pas destructeur : un
-    // modèle ne prend pas le fil.
-    annotations: { title: 'Envoyer un modèle à un contact', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      'Sends an APPROVED WhatsApp template to ONE person, even outside the 24-hour window, through the same path as '
+      + 'POST /v1/sends: consent (a marketing template only goes to people who consented), STOP, number unlinked or '
+      + 'suspended, the plan\'s monthly templates. The person is designated by phone (with the country code: '
+      + '+33612345678) or contact_id; an unknown number creates its contact record. values: one value per variable '
+      + '{{1}}, {{2}}... of the body, in order. idempotency_key: a key chosen for THIS send (a call replayed with the '
+      + 'same key sends nothing again, for 24 hours). The send goes out within the minute: returns send_id. Counts '
+      + 'toward the workspace\'s heavy operations.',
+    // Monde ouvert : un message part chez une personne. Idempotent : la même clé ne renvoie rien. Un modèle ne prend
+    // pas le fil, mais l'outil est destructeur pour la règle du répertoire de Claude (voir `AnnotationsMcp`).
+    annotations: { title: 'Send a template to a contact', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     entree: {
       type: 'object',
       properties: {
         name: NOM,
-        language: { type: 'string', minLength: 2, maxLength: 20, description: 'La langue du modèle (fr, en_US…).' },
-        phone: { type: 'string', pattern: '^\\+[1-9][0-9]{7,14}$', description: 'Le numéro avec l’indicatif du pays. Ou contact_id.' },
-        contact_id: { type: 'string', format: 'uuid', minLength: 36, maxLength: 36, description: 'L’identifiant d’une fiche. Ou phone.' },
+        language: { type: 'string', minLength: 2, maxLength: 20, description: 'The template language (fr, en_US...).' },
+        phone: { type: 'string', pattern: '^\\+[1-9][0-9]{7,14}$', description: 'The number with the country code. Or contact_id.' },
+        contact_id: { type: 'string', format: 'uuid', minLength: 36, maxLength: 36, description: 'The id of a contact record. Or phone.' },
         values: {
           type: 'array', maxItems: 50,
           items: { type: 'string', minLength: 1, maxLength: 1024, pattern: VALEUR_ACCEPTEE.source },
-          description: 'Une valeur par variable du corps, dans l’ordre ({{1}} puis {{2}}…), sans retour à la ligne, sans '
-            + 'tabulation et sans plus de quatre espaces de suite (Meta les refuse). Vide si le corps n’en a pas.',
+          description: 'One value per body variable, in order ({{1}} then {{2}}...), without line breaks, tabs or more '
+            + 'than four spaces in a row (Meta refuses them). Empty if the body has none.',
         },
-        idempotency_key: { type: 'string', minLength: 1, maxLength: CLE_IDEMPOTENCE_MAX, description: 'Une clé propre à cet envoi (un UUID par exemple).' },
+        idempotency_key: { type: 'string', minLength: 1, maxLength: CLE_IDEMPOTENCE_MAX, description: 'A key specific to this send (a UUID for example).' },
       },
       required: ['name', 'language', 'idempotency_key'],
       additionalProperties: false,

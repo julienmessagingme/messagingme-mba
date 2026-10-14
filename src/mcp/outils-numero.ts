@@ -92,8 +92,9 @@ export const PAS_ATTENTE_MS = 2_000;
 /** La forme d'une empreinte (`empreinteEtat`) : seize chiffres hexadécimaux. */
 const EMPREINTE_RE = /^[0-9a-f]{16}$/;
 
+/** Une écriture est toujours `destructiveHint: true` (règle du répertoire de Claude, voir `AnnotationsMcp`). */
 const ecriture = (title: string, idempotentHint: boolean): AnnotationsMcp =>
-  ({ title, readOnlyHint: false, destructiveHint: false, idempotentHint, openWorldHint: false });
+  ({ title, readOnlyHint: false, destructiveHint: true, idempotentHint, openWorldHint: false });
 
 function signataire(personne: PersonneMcp | null): string {
   if (personne === null) throw new RefusOutil('connexion OAuth requise : cet outil agit au nom d’une personne');
@@ -207,14 +208,14 @@ export const OUTILS_NUMERO: OutilMcp[] = [
     ...ficheOutilMcp('return_number_at_plan_end'),
     fonction: null,
     description:
-      'Choisit ce que devient le numéro WhatsApp fourni à la FIN du Pro de l’espace : rendre = true le rend (ses envois '
-      + 'sont coupés à la fin du Pro, puis il est libéré 7 jours après) ; rendre = false le garde, à 3,50 € HT par mois sur '
-      + 'la même carte que le Pro. Réversible tant que le Pro court ; refusé sans Pro en cours. Ne le faire que sur la '
-      + 'demande explicite de la personne.',
-    annotations: ecriture('Rendre le numéro à la fin du Pro', true),
+      'Chooses what becomes of the provided WhatsApp number at the END of the workspace\'s Pro plan: rendre = true '
+      + 'gives it back (its sends are cut when Pro ends, then it is released 7 days later); rendre = false keeps it, at '
+      + '€3.50 excl. VAT a month on the same card as Pro. Reversible while Pro runs; refused without a running Pro. '
+      + 'This choice belongs to the person and is made at their explicit request.',
+    annotations: ecriture('Give back the number when Pro ends', true),
     entree: {
       type: 'object',
-      properties: { rendre: { type: 'boolean', description: 'true : rendre le numéro à la fin du Pro ; false : le garder.' } },
+      properties: { rendre: { type: 'boolean', description: 'true: give the number back when Pro ends; false: keep it.' } },
       required: ['rendre'],
       additionalProperties: false,
     },
@@ -231,10 +232,11 @@ export const OUTILS_NUMERO: OutilMcp[] = [
     ...ficheOutilMcp('get_number_subscription'),
     fonction: null,
     description:
-      'L’abonnement du numéro WhatsApp fourni (3,50 € HT par mois) : son statut (actif, en_retard après un paiement échoué, '
-      + 'resilie), la fin de la période payée, et le numéro. `abonnement: null` : l’espace n’a pas de numéro fourni payé. '
-      + '`inclus_dans_le_pro: true` : le Pro de l’espace inclut le numéro, il n’y a rien à payer.',
-    annotations: { title: 'Lire l’abonnement du numéro', readOnlyHint: true, openWorldHint: false },
+      'The subscription of the provided WhatsApp number (€3.50 excl. VAT a month): its status (actif, en_retard after '
+      + 'a failed payment, resilie), the end of the paid period, and the number. `abonnement: null`: the workspace has '
+      + 'no paid provided number. `inclus_dans_le_pro: true`: the workspace\'s Pro plan includes the number, there is '
+      + 'nothing to pay.',
+    annotations: { title: 'Read the number subscription', readOnlyHint: true, openWorldHint: false },
     entree: { type: 'object', properties: {}, additionalProperties: false },
     async executer(deps: DepsMcp, tenantId) {
       // L'état calculé est un complément : une lecture qui échoue ne prive pas Claude du statut (jaune 7 de A).
@@ -257,10 +259,11 @@ export const OUTILS_NUMERO: OutilMcp[] = [
     ...ficheOutilMcp('manage_number_subscription'),
     fonction: null,
     description:
-      'Rend l’adresse du portail client de Stripe pour l’abonnement du numéro : changer de carte, lire les factures, '
-      + 'résilier. À donner à la personne : le geste reste le sien. Compte dans les opérations lourdes de l’espace.',
-    // Monde ouvert : une session est créée chez Stripe. Une de plus à chaque appel.
-    annotations: { title: 'Gérer l’abonnement du numéro', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      'Returns the URL of the Stripe customer portal for the number subscription: change card, read invoices, '
+      + 'cancel. The person acts on that page themselves. Counts toward the workspace\'s heavy operations.',
+    // Monde ouvert : une session est créée chez Stripe. Une de plus à chaque appel. Destructrice pour la règle du
+    // répertoire de Claude (voir `AnnotationsMcp`).
+    annotations: { title: 'Manage the number subscription', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     entree: { type: 'object', properties: {}, additionalProperties: false },
     async executer(deps: DepsMcp, tenantId, _args, personne) {
       const payeur = signataire(personne);
@@ -273,12 +276,12 @@ export const OUTILS_NUMERO: OutilMcp[] = [
     ...ficheOutilMcp('resubscribe_number'),
     fonction: null,
     description:
-      'Renouvelle l’abonnement du numéro WhatsApp fourni quand il est impayé ou terminé, et rend l’adresse à donner à la '
-      + 'personne. Impayé (en retard, ou suspendu faute de paiement) : le portail de Stripe, pour payer la facture ouverte '
-      + 'ou changer de carte. Terminé, numéro encore gardé : un nouveau paiement, qui rend le MÊME numéro sans refaire la '
-      + 'fenêtre de Meta. Résiliation programmée : le portail, pour l’annuler. Compte dans les opérations lourdes de l’espace.',
-    // Monde ouvert : une session est créée chez Stripe.
-    annotations: { title: 'Renouveler l’abonnement du numéro', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      'Renews the subscription of the provided WhatsApp number when it is unpaid or ended, and returns the URL the '
+      + 'person uses. Unpaid (late, or suspended for non-payment): the Stripe portal, to pay the open invoice or change '
+      + 'card. Ended, number still held: a new payment, which gives back the SAME number without going through Meta\'s '
+      + 'window again. Cancellation scheduled: the portal, to undo it. Counts toward the workspace\'s heavy operations.',
+    // Monde ouvert : une session est créée chez Stripe. Destructrice pour la règle du répertoire de Claude.
+    annotations: { title: 'Renew the number subscription', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     entree: { type: 'object', properties: {}, additionalProperties: false },
     async executer(deps: DepsMcp, tenantId, _args, personne) {
       const payeur = signataire(personne);
@@ -309,18 +312,18 @@ export const OUTILS_NUMERO: OutilMcp[] = [
     ...ficheOutilMcp('start_whatsapp_connection'),
     fonction: null,
     description:
-      'Rend le lien qui ouvre la page de connexion du numéro WhatsApp de l’espace, sans passer par la console, valable '
-      + 'une heure : la personne y fait la fenêtre de Meta. `fourni` : on lui fournit un numéro dédié (3,50 € HT par mois, '
-      + 'payé sur la page avant d’être attribué ; inclus, sans rien payer, pour un espace en Pro), dont le code de '
-      + 'vérification arrive ici par watch_whatsapp_connection. `apporte` : son propre numéro ; demande-lui d’abord '
-      + 's’il sert dans l’application WhatsApp, car la fenêtre de Meta le refuserait tant qu’il n’en est pas retiré. '
-      + 'Refusé si l’espace a déjà un numéro connecté.',
+      'Returns the link that opens the connection page of the workspace\'s WhatsApp number, without going through the '
+      + 'console, valid for one hour: the person goes through Meta\'s window there. `fourni`: a dedicated number is '
+      + 'provided (€3.50 excl. VAT a month, paid on the page before it is assigned; included, with nothing to pay, for '
+      + 'a workspace on Pro), whose verification code arrives here through watch_whatsapp_connection. `apporte`: the '
+      + 'person\'s own number; Meta\'s window refuses a number still used in the WhatsApp app until it is removed from '
+      + 'it. Refused if the workspace already has a connected number.',
     // Il ne touche rien chez un tiers et ne crée rien : un lien signé de plus à chaque appel.
-    annotations: ecriture('Ouvrir la connexion du numéro WhatsApp', false),
+    annotations: ecriture('Open the WhatsApp number connection', false),
     entree: {
       type: 'object',
       properties: {
-        mode: { type: 'string', enum: ['fourni', 'apporte'], description: 'fourni : un numéro que nous fournissons ; apporte : le numéro de la personne.' },
+        mode: { type: 'string', enum: ['fourni', 'apporte'], description: 'fourni: a number we provide; apporte: the person\'s own number.' },
       },
       required: ['mode'],
       additionalProperties: false,
@@ -348,19 +351,19 @@ export const OUTILS_NUMERO: OutilMcp[] = [
     ...ficheOutilMcp('watch_whatsapp_connection'),
     fonction: null,
     description:
-      `Attend le prochain changement de la connexion du numéro (numéro attribué, code de vérification reçu, numéro `
-      + `connecté) et rend l’état, au plus tard au bout de ${DELAI_ATTENTE_MS / 1000} secondes. Passe l’empreinte rendue `
-      + 'par l’appel précédent (etat_connu) pour n’être réveillé que par du neuf ; sans elle, l’état est rendu tout de '
-      + 'suite. Quand `code` est présent, lis-le à la personne : elle le recopie dans la fenêtre de Meta. Rappelle-le '
-      + 'jusqu’à `connecte: true`.',
+      'Waits for the next change in the number connection (number assigned, verification code received, number '
+      + `connected) and returns the state, after ${DELAI_ATTENTE_MS / 1000} seconds at most. With the fingerprint `
+      + 'returned by the previous call (etat_connu), only something new wakes it up; without it, the state is returned '
+      + 'at once. When `code` is present, it is the code the person copies into Meta\'s window. Successive calls follow '
+      + 'the connection until `connecte: true`.',
     // Écriture parce qu'il rend un code de vérification, pas parce qu'il modifie quoi que ce soit.
-    annotations: ecriture('Suivre la connexion du numéro WhatsApp', true),
+    annotations: ecriture('Follow the WhatsApp number connection', true),
     entree: {
       type: 'object',
       properties: {
         etat_connu: {
           type: 'string', maxLength: 16, pattern: EMPREINTE_RE.source,
-          description: 'L’empreinte rendue par l’appel précédent ; absente au premier appel.',
+          description: 'The fingerprint returned by the previous call; absent on the initial call.',
         },
       },
       additionalProperties: false,

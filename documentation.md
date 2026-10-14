@@ -2845,6 +2845,12 @@ l'activer, et d'ouvrir une recharge du crédit.
   réellement chargés par `tests/mcp-doc-parite.test.ts`.
   `preview_site` est une lecture (`mcp:read`) qui exige une personne, et la seule lecture en monde ouvert : il lit un
   site tiers. La sonde 15 de l'auto-attaque le vérifie sur le serveur construit.
+- **Les règles du répertoire de Claude** (2026-10-14) : toute écriture porte `destructiveHint: true`, imposé par le type
+  `AnnotationsMcp` (claude.ai demande alors une confirmation à chaque écriture) ; les titres, descriptions,
+  descriptions des paramètres et `INSTRUCTIONS_MCP` sont en anglais et décrivent ce que fait l'outil sans dicter de
+  conduite à Claude ; les refus et les valeurs rendues restent en français. `tests/mcp-repertoire.test.ts` tient les
+  trois règles. ⚠️ Un texte à la fois rendu et décrit existe en deux langues (`ACTION_WEBHOOK`, `ACTION_WEBHOOK_EN`),
+  et le même test exige qu'ils citent les mêmes repères.
 - **Une seule vérité** : chaque outil appelle la fonction de la console (`src/agent/gestion.ts`, `connaissance.ts`,
   `essai.ts`, `reglages.ts`, `src/stripe/paiement.ts`), sur les MÊMES objets que les routes (`src/index.ts`,
   `agentsDeLaConsole` et ses voisins). Un refus devient un refus d'outil avec la phrase de l'écran, suivie de ses
