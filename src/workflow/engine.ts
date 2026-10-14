@@ -11,6 +11,8 @@ import { formatMaintenant } from '../agent/variables';
 // voir la même valeur que celle que l'exécuteur écrira sur le contact.
 import { normaliserEtiquette } from '../crm/poser-etiquette';
 import { MAX_DESTINATAIRES_EMAIL } from '../../web/lib/partage/blocs';
+import { blocDuCode as blocDuCodePartage, cibleDuSaut as cibleDuSautPartage, entreeDuGraphe, scannerOuverture } from '../../web/lib/partage/ouverture-scenario';
+import type { AnalyseOuverture } from '../../web/lib/partage/ouverture-scenario';
 
 /**
  * Moteur d'exécution d'un workflow, pur (aucune IO). Un run avance de bloc en bloc : les blocs synchrones
@@ -86,144 +88,31 @@ export interface QuestionRow {
 
 /** Ce que l'ouverture d'un scénario contient, en un seul parcours (séparer les deux questions posées sur
  *  l'ouverture dupliquerait la traversée et ses règles). */
-export interface OpeningScan {
-  /** Un message de session (message rapide / formulaire) part-il avant tout template ? */
-  sessionOpen: boolean;
-  /**
-   * Un bloc RCS configuré ouvre-t-il le scénario ? C'est une ouverture légale à froid, comme un template : la
-   * fenêtre de 24 h est une contrainte de WhatsApp, et le RCS ne passe pas par WhatsApp.
-   */
-  rcsOpen: boolean;
-  /** Le 1er template atteignable (parcours en largeur : l'ordre reflète la proximité de l'entrée). */
-  firstTemplate: WorkflowNode | null;
-  /** Plusieurs templates différents peuvent ouvrir (branches d'une condition) -> aucune ouverture unique. */
-  ambiguousTemplate: boolean;
-  /** Une attente est traversée avant le 1er template : rien ne part au lancement. */
-  waitBeforeTemplate: boolean;
-  /** Un template d'ouverture atteint n'a pas de nom : rien ne partirait sur cette branche, et le destinataire
-   *  serait pourtant compté « envoyé ». Distinct de `firstTemplate === null` (aucun template du tout). */
-  unnamedOpeningTemplate: boolean;
-  /**
-   * Les cibles des blocs « Aller à » atteints AVANT tout envoi et qui ne sont pas dans ce graphe (un autre scénario,
-   * un bloc disparu, ou aucune cible : `''`). Ce qui part alors se joue dans un autre graphe, que cet examen, pur, ne
-   * lit pas : une ouverture qui en contient ne se juge pas d'ici (campagne, API publique). Un saut vers un bloc de ce
-   * même graphe, lui, est suivi comme une flèche.
-   */
-  sautsHorsScenario: string[];
-}
+export type OpeningScan = AnalyseOuverture<WorkflowNode>;
 
-/** Le code visé par un bloc « Aller à » (`data.cible`), `''` s'il n'en vise aucun. Lu défensivement : `data` est opaque. */
+/** Le code visé par un bloc « Aller à » (`data.cible`), ou `''` s'il n'en vise aucun. */
 export function cibleDuSaut(node: WorkflowNode): string {
-  return typeof node.data.cible === 'string' ? node.data.cible.trim() : '';
+  return cibleDuSautPartage(node);
 }
 
-/**
- * Le bloc de CE graphe qui porte ce code public (`data.code`), ou `null`. C'est ce qui décide qu'un saut reste dans le
- * même scénario : le graphe joué (le publié, ou le brouillon figé d'un test) fait foi, jamais une autre version.
- */
+/** Le bloc de ce graphe qui porte un code public, ou `null` : le graphe joué fait foi. */
 export function blocDuCode(graph: WorkflowGraph, code: string): WorkflowNode | null {
-  if (code === '') return null;
-  return graph.nodes.find((n) => n.data.code === code) ?? null;
+  return blocDuCodePartage(graph, code);
 }
 
 /**
- * Explore, depuis l'entrée, tout ce qui est atteignable avant le premier envoi. Les blocs synchrones sont
- * traversés, un bloc `condition` explore toutes ses sorties (`sortiesDeCondition`), `template` et `inbox` arrêtent
- * leur branche.
- *
- * En largeur (file, pas pile) : « le premier template » doit être le plus proche de l'entrée, sinon le
- * mapping de variables d'une campagne viserait un template arbitraire selon l'ordre d'insertion des blocs.
- *
- * `depuis` : le bloc d'où partir, pour la cible `node` de l'API publique (`ouvertureApi`) ; absent, on part
- * de l'entrée. Le miroir `web/lib/campaign-eligibility.ts` n'a pas de point de départ et ne doit pas en
- * avoir. Un `depuis` absent du graphe rend un examen vide : rien n'ouvre.
+ * Explore en largeur depuis l'entrée, ou depuis un bloc choisi par l'API publique (`depuis`).
+ * Le parcours est commun avec la console ; le moteur garde la définition d'un envoi effectif.
  */
 export function scanOpening(graph: WorkflowGraph, depuis?: string): OpeningScan {
-  const out: OpeningScan = { sessionOpen: false, rcsOpen: false, firstTemplate: null, ambiguousTemplate: false, waitBeforeTemplate: false, unnamedOpeningTemplate: false, sautsHorsScenario: [] };
-  const entry = depuis ?? entryNode(graph);
-  if (!entry) return out;
-  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
-  const seen = new Set<string>();
-  const queue: string[] = [entry];
-  const noms = new Set<string>();
-  while (queue.length > 0) {
-    const id = queue.shift()!;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    const node = byId.get(id);
-    if (!node) continue;
-    if (node.type === 'inbox' || node.type === 'vers_mba') continue; // terminal, comme dans `walk`
-    if (node.type === 'template') {
-      // Ouverture légale et bloquante : on ne va pas au-delà. Deux branches qui ouvrent sur des templates de
-      // noms différents rendent l'ouverture ambiguë (quel template la campagne devrait-elle paramétrer ?).
-      const nom = String(node.data.templateName ?? '').trim();
-      if (nom !== '') noms.add(nom);
-      else out.unnamedOpeningTemplate = true;
-      if (!out.firstTemplate) out.firstTemplate = node;
-      out.ambiguousTemplate = noms.size > 1;
-      continue;
-    }
-    if (node.type === 'flow' || node.type === 'quick_message') {
-      const a = actionOf(node);
-      if (a && (a.kind === 'sendFlow' || a.kind === 'sendQuickMessage')) out.sessionOpen = true;
-      continue; // bloc bloquant non configuré (pas d'action) : pas une ouverture, et on ne va pas au-delà
-    }
-    if (node.type === 'question') {
-      // Message de session comme un message rapide (la liste interactive est soumise à la fenêtre de 24 h) :
-      // une question ne peut pas ouvrir une campagne.
-      const a = actionOf(node);
-      if (a) { out.sessionOpen = true; continue; }
-      // Non configuré = passe-plat dans `walk` : l'analyse doit suivre le même parcours que le moteur.
-      const suite = nextNode(graph, id);
-      if (suite) queue.push(suite);
-      continue;
-    }
-    if (node.type === 'agent') {
-      // L'agent envoie du texte libre : un message de session, qui bloque l'exploration puisque `walk` s'y
-      // arrête. Sans ce cas, « agent puis template » serait vu comme ouvrant sur le template, et au lancement
-      // rien ne partirait alors que les destinataires seraient comptés touchés.
-      if (String(node.data.agentId ?? '').trim() !== '') { out.sessionOpen = true; continue; }
-      // Non configuré = passe-plat dans `walk` : l'analyse doit suivre le même parcours que le moteur.
-      const suite = nextNode(graph, id);
-      if (suite) queue.push(suite);
-      continue;
-    }
-    if (node.type === 'rcs_message') {
-      // Ouverture à froid légale. `waitBeforeTemplate` est déjà juste ici (parcours en largeur) : une attente
-      // placée avant ce bloc empêche tout départ au lancement.
-      if (String(node.data.text ?? '').trim() !== '' && !out.waitBeforeTemplate) out.rcsOpen = true;
-      // On explore au-delà : la sortie « non joignable » mène souvent au template de repli, que la campagne
-      // doit savoir paramétrer.
-      for (const h of ['sent', 'unreachable']) {
-        const c = nextNodeByHandle(graph, id, h);
-        if (c) queue.push(c);
-      }
-      continue;
-    }
-    if (node.type === 'wait') out.waitBeforeTemplate = true; // traversé, mais rien ne partira au lancement
-    if (node.type === 'condition') {
-      // Chaque famille dans son ordre, puis « Sinon », qui retombe sur la 1re arête quand il n'est pas relié (le
-      // repli d'avant les familles, inchangé). Un bloc d'avant RC5 rend `true` puis `false` : même parcours qu'avant.
-      for (const h of sortiesDeCondition(node)) {
-        const c = nextNodeByHandle(graph, id, h) ?? (h === SORTIE_SINON ? nextNode(graph, id) : null);
-        if (c) queue.push(c);
-      }
-      continue;
-    }
-    if (node.type === 'aller_a') {
-      // Même parcours que `walk` : une cible de ce graphe se suit comme une flèche ; une cible ailleurs (ou absente)
-      // est notée, l'ouverture se jouant alors hors de ce graphe.
-      const cible = cibleDuSaut(node);
-      const ici = blocDuCode(graph, cible);
-      if (ici) queue.push(ici.id);
-      else out.sautsHorsScenario.push(cible);
-      continue;
-    }
-    // tag / field / action / wait : bloc synchrone -> explorer la suite
-    const nx = nextNode(graph, id);
-    if (nx) queue.push(nx);
-  }
-  return out;
+  return scannerOuverture<WorkflowNode>(graph, {
+    depuis,
+    envoieSession: (node) => node.type === 'agent'
+      ? String(node.data.agentId ?? '').trim() !== ''
+      : actionOf(node) !== null,
+    sortiesDeCondition,
+    sortieSinon: SORTIE_SINON,
+  });
 }
 
 /**
@@ -601,17 +490,7 @@ export interface WalkResult {
 
 /** Bloc d'entrée d'un workflow = un bloc sans arête entrante (racine). Défaut : le 1er bloc. null si vide. */
 export function entryNode(graph: WorkflowGraph): string | null {
-  if (graph.nodes.length === 0) return null;
-  const hasIncoming = new Set(graph.edges.map((e) => e.target));
-  // Un bloc visé par un « Aller à » de CE scénario a une entrée, même sans flèche : sinon une sous-routine créée avant
-  // le vrai premier bloc deviendrait l'entrée de la campagne, de l'automation et de l'API (relecture de RC5 B).
-  for (const n of graph.nodes) {
-    if (n.type !== 'aller_a') continue;
-    const vise = blocDuCode(graph, cibleDuSaut(n));
-    if (vise) hasIncoming.add(vise.id);
-  }
-  const root = graph.nodes.find((n) => !hasIncoming.has(n.id));
-  return (root ?? graph.nodes[0]!).id;
+  return entreeDuGraphe(graph)?.id ?? null;
 }
 
 /** Le bloc suivant (cible de la 1re arête sortante). null s'il n'y en a pas. */

@@ -2,7 +2,6 @@ import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import { ReconsentRequiredError } from '../crm/hubspot-service';
 import type { HubspotList } from '../crm/hubspot-service';
-import { listsGateOpen } from '../crm/lists-gate';
 import type { ImportReport } from '../crm/types';
 import { espaceVerifie, nonEmpty } from './scope';
 
@@ -30,7 +29,7 @@ export function registerHubspotImport(app: FastifyInstance, deps: HubspotImportR
     // Indisponible : on ne touche pas le connecteur (aucun appel réseau). La pause se distingue du réglage éteint
     // (`reason: 'paused'`) pour un message honnête.
     const { enabled, paused } = await deps.listsAccess(tenant);
-    if (!listsGateOpen(enabled, paused)) {
+    if (!enabled || paused) {
       return reply.code(200).send({ available: false, ...(enabled && paused ? { reason: 'paused' as const } : {}) });
     }
     const q = (req.query as { query?: unknown }).query;
@@ -48,7 +47,7 @@ export function registerHubspotImport(app: FastifyInstance, deps: HubspotImportR
   app.post('/tenants/:tenantId/hubspot/import', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { enabled, paused } = await deps.listsAccess(tenant);
-    if (!listsGateOpen(enabled, paused)) {
+    if (!enabled || paused) {
       return enabled && paused
         ? reply.code(409).send({ error: 'synchronisation HubSpot en pause', reason: 'paused' as const })
         : reply.code(409).send({ error: 'import HubSpot désactivé' });

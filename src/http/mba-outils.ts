@@ -12,7 +12,6 @@ import { entryNode } from '../workflow/engine';
 import type { WorkflowGraph } from '../workflow/graph';
 import { BORNES_OUTIL_MBA, TYPES_OUTIL_MBA } from '../../web/lib/partage/outils-mba';
 import type { CibleSaisie, TextesOutil, TypeOutilMba } from '../../web/lib/partage/outils-mba';
-export { BORNES_OUTIL_MBA } from '../../web/lib/partage/outils-mba';
 
 /**
  * L'onglet « Outils » de l'agent de Meta : il ne parle que des outils de cet agent (la bibliothèque de l'espace

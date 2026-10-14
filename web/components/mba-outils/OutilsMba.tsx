@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { apercuPublicationMba, publierChezMeta, type GestePublication } from '@/lib/api-agent-tools';
 import {
   listerMcpProposablesMba, listerOutilsMba, proposerMcpMba, reactiverOutilMba, retirerOutilMba,
-  type OutilMbaVue, type OutilMcpProposable, type TypeOutilMba,
 } from '@/lib/api-mba-outils';
+import type { OutilMbaVue, OutilMcpProposable, TypeOutilMba } from '@/lib/partage/outils-mba';
 import {
   TEXTES_PAR_TYPE, chezMetaSansLigne, effacementsImprevus, etatsChezMeta, type EtatChezMeta,
 } from '@/lib/mba-outils';

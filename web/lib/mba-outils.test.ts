@@ -3,7 +3,7 @@ import {
   etatsChezMeta, effacementsImprevus, nomTechniqueDepuisTitre, consigneIncomplete, TEXTES_PAR_TYPE, PLACEHOLDER,
   chezMetaSansLigne, valeursPermises,
 } from './mba-outils';
-import type { OutilMbaVue } from './api-mba-outils';
+import type { OutilMbaVue } from './partage/outils-mba';
 
 /**
  * Les aides pures de l'onglet « Outils » de l'agent de Meta (spec 2026-09-21-outils-maison-mba, § 9).

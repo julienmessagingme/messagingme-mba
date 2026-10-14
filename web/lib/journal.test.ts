@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { lignesJournalCsv, resumeDetail, ACTIONS_JOURNAL } from './journal';
+import { lignesJournalCsv, resumeDetail } from './journal';
+import { ACTIONS_JOURNAL } from './partage/actions-journal';
 import { toCsv } from './csv';
 import type { AuditEntry } from './api';
 

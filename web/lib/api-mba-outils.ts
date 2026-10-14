@@ -1,6 +1,5 @@
 import { request } from './http';
 import type { BlocPropose, CibleSaisie, OutilMbaVue, OutilMcpProposable, TextesOutil } from './partage/outils-mba';
-export type { TypeOutilMba, CibleVue, CibleSaisie, OutilMbaVue, BlocPropose, TextesOutil, OutilMcpProposable } from './partage/outils-mba';
 
 const base = (tenantId: string): string => `/tenants/${tenantId}/mba-outils`;
 

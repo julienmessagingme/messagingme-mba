@@ -4271,7 +4271,9 @@ démarre plus. ⚠️ Depuis `web/lib`, la console l'importe en RELATIF : des te
 serveur ne connaît pas l'alias. Ce qu'il porte : les champs d'adresse (`champs-url`), l'URL de bouton envoyable
 (`button-url`), l'identifiant de bouton de carrousel, la joignabilité WhatsApp, les types et la forme des événements
 d'une conversation, les modes du répondeur et son mode effectif, les niveaux et codes du risque, les bornes et le
-parseur de durée de la vidéo publicitaire, le contrat des messages interactifs de l'agent de Meta
+parseur de durée de la vidéo publicitaire, le parcours d'ouverture d'un scénario
+(`ouverture-scenario`, commun au moteur et à la console ; leurs lectures d'un bloc configuré et des sorties de
+condition gardent un test de parité), le contrat des messages interactifs de l'agent de Meta
 (`messages-interactifs`), le contrat de l'onglet Outils de l'agent de Meta et le niveau de risque d'un outil
 (`outils-mba`, `risque-outil`), les faits mécaniques du catalogue MCP (`catalogue-mcp` : droit et personne requise de
 chaque outil), le vocabulaire du journal d'audit avec ses libellés (`actions-journal`), et depuis le 2026-10-13 : le

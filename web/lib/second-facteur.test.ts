@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { estCorpsCodeRefuse, grouperCle, texteCodesSecours } from './second-facteur';
 import { MESSAGE_CODE_INVALIDE } from './partage/textes-serveur';
 import { ApiError, request } from './http';
-import { ACTIONS_JOURNAL } from './journal';
+import { ACTIONS_JOURNAL } from './partage/actions-journal';
 
 describe('second facteur : ce qui se calcule sans écran', () => {
   it('la clé à saisir se lit par groupes de quatre', () => {

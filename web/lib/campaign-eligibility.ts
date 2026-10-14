@@ -12,11 +12,12 @@
  * désigne le template à paramétrer. Il ne remplace PAS la garde serveur (`POST /campaigns` refuse en 400) :
  * c'est de la prévention d'UI, la garde serveur reste le contrôle.
  *
- * ⚠️ Cette règle est le MIROIR de `scanOpening` (`src/workflow/engine.ts`) : les deux builds ne partagent
- * aucun module. `tests/web-campaign-eligibility.test.ts` compare les deux implémentations sur les mêmes
- * graphes et casse dès qu'elles divergent.
+ * Le parcours d'ouverture est partagé avec le moteur. Le test de parité vérifie encore que les deux lectures
+ * d'un bloc configuré et des sorties de condition donnent le même résultat.
  */
 import { sortiesDeCondition, SORTIE_SINON } from './condition-familles';
+import { blocDuCode as blocDuCodePartage, cibleDuSaut, entreeDuGraphe, scannerOuverture } from './partage/ouverture-scenario';
+import type { AnalyseOuverture } from './partage/ouverture-scenario';
 
 /** Forme minimale d'un bloc, structurelle : `WorkflowNode` de `./api` la satisfait sans import. */
 export interface GraphNodeLike {
@@ -31,33 +32,20 @@ export interface GraphLike {
   edges: { source: string; target: string; id?: string; sourceHandle?: string | null }[];
 }
 
-/** Bloc d'entrée d'un graphe = un bloc SANS arête entrante (défaut : le 1er bloc). null si le graphe est vide.
- *  Miroir de `entryNode` côté serveur (src/workflow/engine.ts). */
+/** Bloc d'entrée commun avec le moteur : sans arête entrante, sinon le premier ; `null` si vide. */
 export function entryNodeOf(graph: GraphLike): GraphNodeLike | null {
-  if (graph.nodes.length === 0) return null;
-  const hasIncoming = new Set(graph.edges.map((e) => e.target));
-  // Un bloc visé par un « Aller à » de CE scénario a une entrée, même sans flèche (miroir de `entryNode`, RC5 B).
-  for (const n of graph.nodes) {
-    if (n.type !== 'aller_a') continue;
-    const vise = blocViseIci(graph, n);
-    if (vise) hasIncoming.add(vise.id);
-  }
-  return graph.nodes.find((n) => !hasIncoming.has(n.id)) ?? graph.nodes[0] ?? null;
+  return entreeDuGraphe(graph);
 }
 
 const cible = (g: GraphLike, id: string): string | null => g.edges.find((e) => e.source === id)?.target ?? null;
 
 /**
  * Le bloc de CE graphe que vise un « Aller à » (RC5), ou `null` (un autre scénario, un bloc disparu, aucune cible).
- * Miroir de `blocDuCode(graph, cibleDuSaut(node))` côté serveur : le code visé est `data.cible`, comparé au code public
- * des blocs (`data.code`).
+ * Le code visé est `data.cible`, comparé au code public des blocs (`data.code`) par le module partagé.
  */
 export function blocViseIci(g: GraphLike, node: GraphNodeLike): GraphNodeLike | null {
-  const code = typeof node.data.cible === 'string' ? node.data.cible.trim() : '';
-  if (code === '') return null;
-  return g.nodes.find((n) => n.data.code === code) ?? null;
+  return blocDuCodePartage(g, cibleDuSaut(node));
 }
-const cibleDuSaut = (node: GraphNodeLike): string => (typeof node.data.cible === 'string' ? node.data.cible.trim() : '');
 const cibleParSortie = (g: GraphLike, id: string, handle: string): string | null =>
   g.edges.find((e) => e.source === id && e.sourceHandle === handle)?.target ?? null;
 
@@ -93,110 +81,15 @@ function messageNonBloquant(node: GraphNodeLike): boolean {
   return raw.every((q) => String(q ?? '').trim() === '');
 }
 
-export interface OpeningScan {
-  /** Un message de SESSION part-il avant tout template ? */
-  sessionOpen: boolean;
-  /**
-   * Un bloc RCS CONFIGURÉ ouvre-t-il le scénario ? C'est une ouverture LÉGALE À FROID, au même titre qu'un
-   * template et à la différence d'un message de session : la fenêtre de 24 h est une contrainte de WhatsApp,
-   * et le RCS ne passe pas par WhatsApp.
-   *
-   * 🔴 Vécu le 2026-08-24 : un scénario commençant par un bloc RCS n'apparaissait PAS dans le sélecteur de
-   * l'Inbox quand la fenêtre était fermée, c'est-à-dire précisément là où il était le plus utile. La règle
-   * « seul un template peut ouvrir à froid » avait été écrite quand WhatsApp était le seul canal.
-   */
-  rcsOpen: boolean;
-  /** Le 1er template atteignable (parcours en largeur depuis l'entrée). */
-  firstTemplate: GraphNodeLike | null;
-  /** Plusieurs templates DIFFÉRENTS peuvent ouvrir -> aucune ouverture unique à paramétrer. */
-  ambiguousTemplate: boolean;
-  /** Une ATTENTE est traversée avant le 1er template : rien ne partirait au lancement. */
-  waitBeforeTemplate: boolean;
-  /** Un template d'ouverture atteint n'a PAS de nom : sur cette branche, rien ne partirait. */
-  unnamedOpeningTemplate: boolean;
-  /**
-   * Les cibles des « Aller à » atteints avant tout envoi et qui ne sont PAS dans ce graphe (un autre scénario, un bloc
-   * disparu, aucune cible). L'ouverture se joue alors ailleurs : on ne la juge pas d'ici. Miroir du serveur.
-   */
-  sautsHorsScenario: string[];
-}
+export type OpeningScan = AnalyseOuverture<GraphNodeLike>;
 
-/** Miroir exact de `scanOpening` côté serveur. Parcours en LARGEUR : « le premier template » doit être le plus
- *  proche de l'entrée, pas le premier inséré dans le tableau de blocs. */
+/** Analyse commune avec le moteur, depuis l'entrée du graphe. */
 export function scanOpening(graph: GraphLike): OpeningScan {
-  const out: OpeningScan = { sessionOpen: false, rcsOpen: false, firstTemplate: null, ambiguousTemplate: false, waitBeforeTemplate: false, unnamedOpeningTemplate: false, sautsHorsScenario: [] };
-  const entry = entryNodeOf(graph);
-  if (!entry) return out;
-  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
-  const seen = new Set<string>();
-  const queue: string[] = [entry.id];
-  const noms = new Set<string>();
-  while (queue.length > 0) {
-    const id = queue.shift()!;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    const node = byId.get(id);
-    if (!node) continue;
-    if (node.type === 'inbox' || node.type === 'vers_mba') continue;
-    if (node.type === 'template') {
-      const nom = String(node.data.templateName ?? '').trim();
-      if (nom !== '') noms.add(nom);
-      else out.unnamedOpeningTemplate = true;
-      if (!out.firstTemplate) out.firstTemplate = node;
-      out.ambiguousTemplate = noms.size > 1;
-      continue;
-    }
-    if (node.type === 'flow' || node.type === 'quick_message') {
-      if (envoieVraiment(node)) out.sessionOpen = true;
-      continue;
-    }
-    if (node.type === 'question') {
-      // Message de SESSION : soumis a la fenetre de 24 h, donc il ne peut pas ouvrir une campagne.
-      // Non configure = PASSE-PLAT, comme dans `walk` : l'analyse doit voir le meme parcours que le
-      // moteur, sinon l'editeur juge un scenario sur un chemin qui n'existe pas a l'execution.
-      if (envoieVraiment(node)) { out.sessionOpen = true; continue; }
-      const suite = cible(graph, id);
-      if (suite) queue.push(suite);
-      continue;
-    }
-    if (node.type === 'agent') {
-      // L'agent envoie du texte libre : message de SESSION, et il BLOQUE l'exploration puisque le moteur s'y
-      // arrete. Miroir exact du serveur, y compris le passe-plat quand il n'est pas configure.
-      if (envoieVraiment(node)) { out.sessionOpen = true; continue; }
-      const suite = cible(graph, id);
-      if (suite) queue.push(suite);
-      continue;
-    }
-    if (node.type === 'rcs_message') {
-      // Miroir exact du serveur : ouverture à froid légale, et on explore au-delà pour retrouver le template
-      // de repli branché sur « non joignable ».
-      if (String(node.data.text ?? '').trim() !== '' && !out.waitBeforeTemplate) out.rcsOpen = true;
-      for (const h of ['sent', 'unreachable']) {
-        const c = cibleParSortie(graph, id, h);
-        if (c) queue.push(c);
-      }
-      continue;
-    }
-    if (node.type === 'wait') out.waitBeforeTemplate = true;
-    if (node.type === 'condition') {
-      // Miroir exact du serveur : chaque famille dans l'ordre, puis « Sinon », qui retombe sur la 1re arête.
-      for (const h of sortiesDeCondition(node)) {
-        const c = cibleParSortie(graph, id, h) ?? (h === SORTIE_SINON ? cible(graph, id) : null);
-        if (c) queue.push(c);
-      }
-      continue;
-    }
-    if (node.type === 'aller_a') {
-      // Miroir exact du serveur : une cible de ce graphe se suit comme une flèche, une autre est notée.
-      const ici = blocViseIci(graph, node);
-      if (ici) queue.push(ici.id);
-      else out.sautsHorsScenario.push(cibleDuSaut(node));
-      continue;
-    }
-    const nx = cible(graph, id);
-    if (nx) queue.push(nx);
-  }
-  return out;
+  return scannerOuverture(graph, {
+    envoieSession: envoieVraiment,
+    sortiesDeCondition,
+    sortieSinon: SORTIE_SINON,
+  });
 }
 
 /** Le template que la campagne enverra en ouverture, donc celui dont on mappe les variables. null si le

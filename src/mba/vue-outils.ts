@@ -4,7 +4,6 @@ import { entryNode } from '../workflow/engine';
 import type { WorkflowGraph } from '../workflow/graph';
 import { blocSeul, lireCibleMaison, nomDuBlocParCode, typeDeLaCible } from './outils-maison';
 import type { OutilMbaVue, OutilMcpProposable } from '../../web/lib/partage/outils-mba';
-export type { CibleVue, OutilMbaVue, OutilMcpProposable } from '../../web/lib/partage/outils-mba';
 
 export interface ContexteVue {
   requetes: ReadonlyMap<string, { label: string }>;

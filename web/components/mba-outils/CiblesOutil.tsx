@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { estEnLigne, listTags, listUserFields, listWorkflows, type TagCount, type UserFieldDef, type WorkflowSummary } from '@/lib/api';
 import { listRequetes, type RequeteApi } from '@/lib/api-agent-requetes';
-import { listerBlocsMba, type BlocPropose } from '@/lib/api-mba-outils';
+import { listerBlocsMba } from '@/lib/api-mba-outils';
+import type { BlocPropose } from '@/lib/partage/outils-mba';
 import { BORNES_OUTIL, METHODES_IRREVERSIBLES, valeursPermises, type ConsommateurOutil } from '@/lib/mba-outils';
 import { inputCls } from '@/lib/ui';
 import { useT } from '@/lib/i18n';

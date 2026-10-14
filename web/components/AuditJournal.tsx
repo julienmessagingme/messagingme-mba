@@ -6,7 +6,8 @@ import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import { cardCls, inputCls } from '@/lib/ui';
 import { toCsv, downloadCsv } from '@/lib/csv';
-import { ACTIONS_JOURNAL, resumeDetail, lignesJournalCsv } from '@/lib/journal';
+import { resumeDetail, lignesJournalCsv } from '@/lib/journal';
+import { ACTIONS_JOURNAL } from '@/lib/partage/actions-journal';
 import { Bouton } from '@/components/Bouton';
 import { Squelette } from '@/components/Squelette';
 

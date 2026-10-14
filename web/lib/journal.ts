@@ -7,7 +7,6 @@ import type { AuditEntry } from './api';
  * export qui ne correspond plus à ce qu'on a sous les yeux ne sert plus de preuve.
  */
 
-export { ACTIONS_JOURNAL } from './partage/actions-journal';
 
 /** Détail compact : « created 2 · optIn oui ». Rien à interpréter, ce sont des compteurs et des drapeaux. */
 export function resumeDetail(detail: Record<string, unknown>, oui: string, non: string): string {

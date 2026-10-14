@@ -1601,24 +1601,21 @@ qui attend quelqu'un, et il garderait la conversation visible.
 conversation qu'un scénario mène n'est pas une ligne de travail). C'est la DESTINATION de la reprise qui est
 discutable, pas le filtre.
 
-## 🟡 L'audit ponytail du 2026-10-13 : ce qui reste après le point 1
+## 🟢 L'audit ponytail du 2026-10-13 : quatre petits sujets revus le 2026-10-14
 
 Un audit de sur-ingénierie de tout le dépôt, fait en conversation (aucun rapport versionné, d'où cette copie). Le point
-1 est fait (journal du 2026-10-13 ; gain réel environ 500 lignes, pas les 1 500 annoncés). Restent, chacun petit :
+1 est fait (journal du 2026-10-13 ; gain réel environ 500 lignes, pas les 1 500 annoncés). Suite des quatre sujets :
 
-2. **`web/lib/campaign-eligibility.ts` recopie l'analyse d'ouverture du moteur** (`scanOpening`,
-   `entryNode`, `actionOf`, `quickMessageNonBloquant`, `src/workflow/engine.ts`). Une seule version pure dans
-   `web/lib/partage/` supprimerait la copie et son test de parité. ⚠️ À vérifier d'abord : la version serveur prend un
-   paramètre `depuis` et un `EvalContext` ; le lot B avait écarté les conditions de scénario pour la même raison.
-3. **La route `POST /channels-me/links/:id/disable` n'a aucun appelant dans la console** (seul `/enable` sert), ni
-   `eteindreLienChaine` (`web/lib/api-chaine.ts`) hors de son test. La retirer, ou lui donner son bouton : à trancher.
-4. **`src/crm/lists-gate.ts` et son test** portent un `enabled && !paused` utilisé à deux endroits de
-   `src/http/hubspot-import.ts` : une constante locale suffit.
-5. **Une vingtaine de réexportations de passage** vers `web/lib/partage/` (dont celles des refactors de ChatGPT :
-   `src/http/mba-outils.ts`, `src/mba/vue-outils.ts`, `web/lib/api-mba-outils.ts`, `web/lib/journal.ts`...) : importer
-   directement. ⚠️ Celles d'un module de domaine qui a beaucoup de lecteurs (`src/rcs/types.ts`, `src/agent/fiche.ts`,
-   `src/automation/match.ts`, `src/meta/pubs-payloads.ts`) sont gardées exprès : elles évitent de réécrire leurs
-   imports.
+2. **Analyse d'ouverture réunie** dans `web/lib/partage/ouverture-scenario.ts` : entrée, sauts et parcours en
+   largeur sont communs à l'API et à la console. `depuis` reste disponible côté serveur. Le test de parité reste
+   nécessaire pour la lecture des blocs configurés et des sorties de condition, qui appartiennent à leurs modules.
+3. **Route de désactivation conservée sans bouton**, décision produit de Julien le 2026-10-14. La console ne l'appelle
+   pas ; l'API garde l'action et ses tests.
+4. **`lists-gate.ts` retiré** : les deux routes HubSpot lisent directement `!enabled || paused` ; leurs tests HTTP
+   couvrent les réponses et l'absence d'appel au connecteur quand l'accès est fermé.
+5. **Réexportations de passage retirées** dans `src/http/mba-outils.ts`, `src/mba/vue-outils.ts`,
+   `web/lib/api-mba-outils.ts` et `web/lib/journal.ts` ; leurs lecteurs importent le contrat partagé directement.
+   Les autres réexportations qui servent de façade métier restent à leur place.
 
 ## 🟠 Les audits d'architecture des 11 et 12 octobre : ce qui reste ouvert (2026-10-12)
 

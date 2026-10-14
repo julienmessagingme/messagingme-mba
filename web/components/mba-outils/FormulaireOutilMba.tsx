@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import {
-  creerOutilMba, modifierOutilMba, type CibleSaisie, type OutilMbaVue, type TypeOutilMba,
+  creerOutilMba, modifierOutilMba,
 } from '@/lib/api-mba-outils';
+import type { CibleSaisie, OutilMbaVue, TypeOutilMba } from '@/lib/partage/outils-mba';
 import { BORNES_OUTIL, TEXTES_PAR_TYPE, consigneIncomplete, nomTechniqueDepuisTitre } from '@/lib/mba-outils';
 import { CibleBloc, CibleChamp, CibleConnecteur, CibleScenario, CibleTag } from './CiblesOutil';
 import { inputCls } from '@/lib/ui';

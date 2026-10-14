@@ -234,9 +234,9 @@ describe('sessionMessageAfterRcs', () => {
 });
 
 describe('parité front / serveur du parcours d’ouverture', () => {
-  // Les deux implémentations vivent de part et d'autre d'une frontière de build (Next / API) et ne partagent
-  // aucun module. Si elles divergent, le sélecteur propose un scénario que le serveur refuse au clic, ou cache
-  // un scénario parfaitement valide. Ce test compare les DEUX sur les mêmes graphes.
+  // Le parcours est partagé ; les lecteurs d'un bloc configuré et des sorties de condition restent propres
+  // au moteur et à la console. Leur divergence proposerait un scénario refusé au clic, ou cacherait un
+  // scénario valide. Les mêmes graphes vérifient ces deux lectures.
   const cas: Array<[string, GraphLike]> = [
     ['template seul', g([TPL('t')])],
     ['action puis template', g([n('a', 'action', { actionKind: 'add_tag', tag: 'v' }), TPL('t')], [e('a', 't')])],

@@ -5,7 +5,7 @@ import {
   listerAutorisations, ouvrirConsentement, personneDe, peutAutoriserDirectement, revoquerAutorisation,
 } from './oauth';
 import type { Session } from './session';
-import { ACTIONS_JOURNAL } from './journal';
+import { ACTIONS_JOURNAL } from './partage/actions-journal';
 
 /**
  * LA PAGE DE CONSENTEMENT DE CLAUDE ET LA LISTE DES APPLICATIONS AUTORISÉES, CE QUI SE VÉRIFIE SANS ÉCRAN.
