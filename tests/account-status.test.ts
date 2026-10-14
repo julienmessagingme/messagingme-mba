@@ -394,6 +394,20 @@ describe('route account-status', () => {
     await server.close();
   });
 
+  it('lit le portail EN MÊME TEMPS que le numéro : l’attente du connecteur ne s’ajoute pas à celle de la base', async () => {
+    // Le portail ne répond qu'une fois le numéro demandé : lus l'un après l'autre, la route attendrait sans fin.
+    let numeroDemande!: () => void;
+    const demande = new Promise<void>((r) => { numeroDemande = r; });
+    const { server } = app({
+      hubspotPortal: () => demande.then(() => ({ connected: true, hubId: '139615673', hubDomain: null, listsScopeGranted: false })),
+      numeros: { getPhoneNumber: async () => { numeroDemande(); return rec(); } },
+    });
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ hubspotPortal: { connected: boolean } }>().hubspotPortal.connected).toBe(true);
+    await server.close();
+  }, 3_000);
+
   it('hubspotPortal par défaut non connecté ; un échec de lecture NE casse pas la route (best-effort)', async () => {
     const { server } = app({ hubspotPortal: async () => { throw new Error('connecteur injoignable'); } });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });

@@ -39,6 +39,16 @@ l'implémenteur. Restent :
   seulement) attend aussi une montée de version majeure.
 
 
+## 🟡 Lot 1 de la bascule, le portail HubSpot lu par le connecteur : ce que la relecture laisse (2026-10-14)
+
+- 🟡 **Un état « inconnu » distinct de « non connecté » à l'écran.** Quand le connecteur ne répond pas, l'Accueil dit
+  « HubSpot non connecté, aucun portail n'est relié » avec le bouton « Connecter HubSpot », et cache la synchro et la
+  déconnexion complète (`web/app/accueil/page.tsx`) ; la carte des Paramètres dit « Aucun portail HubSpot relié » et
+  déverrouille l'interrupteur (`web/components/ReglageHubspot.tsx`). Rien de destructeur (l'extinction relit côté
+  serveur et répond 503 ou 409, « Connecter » ne fait qu'une réinstallation), mais l'écran invite à agir sur une
+  fausse base pendant un hoquet. Il faudrait que `GET /account-status` et `GET /settings` disent « on ne sait pas »
+  au lieu de `connected: false`, et que les deux écrans l'affichent.
+
 ## 🟡 Dossiers, second facteur, Inbox, menu du compte : ce qui reste (2026-10-13)
 
 - **Le rangement d'un template supprimé se nettoie côté serveur** : `DELETE /templates/:name` ne retire pas sa ligne de

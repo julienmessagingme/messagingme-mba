@@ -109,7 +109,8 @@ describe('le lien du portail HubSpot voyage avec les reglages', () => {
     // remonte (relecture du lot 7) : un `catch(() => false)` global laissait eteindre l'interrupteur HubSpot
     // par-dessus un portail relie. L'affichage la rattrape lui-meme (test ci-dessous).
     const src = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
-    expect(src).toContain('const lirePortailHubspot = (tenant: string) => lireHubspotPortal(hubspotSuppression, tenant);');
+    // Sa trace, qui relance la panne, est gardée par tests/hubspot-portail.test.ts.
+    expect(src).toContain('const lirePortailHubspot = (tenant: string) => lireHubspotPortal(hubspotSuppression, tenant).catch(');
     expect(src).toMatch(/hubspotPortalConnecte: \(tenant\) => lirePortailHubspot\(tenant\)\.then\(\(p\) => p\.connected\),/);
     expect(src, 'le repli global est revenu').not.toMatch(/hubspotPortalConnecte:[^\n]*catch/);
     // La suppression d'un espace : une panne du connecteur est « on ne sait pas », jamais « pas relie ».

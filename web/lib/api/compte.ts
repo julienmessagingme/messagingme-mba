@@ -77,7 +77,7 @@ export interface AccountStatusResponse {
   hubspotConnected: boolean;
   /** Instant de pause de la synchro (F3-a). null = jamais activé OU actif ; non-null + hubspotConnected=false = en pause. */
   hubspotPausedAt: string | null;
-  /** Portail HubSpot lié au tenant (mmhs.tenant_portals). connected=false -> proposer « Connecter HubSpot ».
+  /** Portail HubSpot lié au tenant, lu par le connecteur. connected=false -> proposer « Connecter HubSpot ».
    *  listsScopeGranted -> le portail a accordé crm.lists.read (import de listes sans re-consentement). */
   hubspotPortal: { connected: boolean; hubId?: string; hubDomain?: string | null; listsScopeGranted?: boolean };
   /**

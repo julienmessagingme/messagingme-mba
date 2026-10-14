@@ -37,21 +37,28 @@ export interface ConnectorDeps {
 
 export interface HubspotList { listId: string; name: string; size: number | null; processingType: string }
 
-/** POST signé (x-mm-service-signature) vers le connecteur, retry borné sur 429/5xx/réseau ; 409 reconsent -> terminal. */
-async function callService<T>(deps: ConnectorDeps, path: string, body: unknown): Promise<T> {
+/**
+ * POST signé (x-mm-service-signature) vers le connecteur, retry borné sur 429/5xx/réseau ; 409 reconsent -> terminal.
+ * Avec `delaiMs` : un seul essai, sous cette échéance (une lecture qui sert un affichage n'attend pas les reprises).
+ */
+async function callService<T>(deps: ConnectorDeps, path: string, body: unknown, delaiMs?: number): Promise<T> {
   const fullUrl = `${deps.baseUrl}${path}`;
   // Chemin signé = pathname de l'URL complète (robuste à un éventuel préfixe de proxy), tel que mm-hubspot voit req.url.
   const signedPath = new URL(fullUrl).pathname;
-  return withRetry(async () => {
+  const appel = async (): Promise<T> => {
     const raw = JSON.stringify(body);
     // ts + nonce frais à chaque tentative : le vérificateur mm-hubspot rejette un ts hors fenêtre.
     const sig = signRequest(deps.secret, { ts: Date.now(), nonce: randomBytes(8).toString('hex'), method: 'POST', path: signedPath, body: raw });
-    const res = await deps.transport.post(fullUrl, body, { 'x-mm-service-signature': sig });
+    const entetes = { 'x-mm-service-signature': sig };
+    const res = delaiMs === undefined
+      ? await deps.transport.post(fullUrl, body, entetes)
+      : await deps.transport.post(fullUrl, body, entetes, { signal: AbortSignal.timeout(delaiMs) });
     if (res.status >= 200 && res.status < 300) return res.json as T;
     const j = res.json as { error?: string; reconsentUrl?: string } | undefined;
     if (res.status === 409 && j?.error === 'reconsent_required') throw new ReconsentRequiredError(j.reconsentUrl);
     throw new HubspotServiceError(res.status, j?.error, res.status === 429 || res.status >= 500);
-  });
+  };
+  return delaiMs === undefined ? withRetry(appel) : appel();
 }
 
 /**
@@ -79,6 +86,9 @@ export async function flagContactUnreachable(deps: ConnectorDeps, tenantId: stri
   }
 }
 
+/** L'échéance d'une lecture du portail : deux requêtes indexées chez le connecteur, quelques millisecondes d'habitude. */
+export const DELAI_PORTAIL_MS = 3_000;
+
 /** La réponse de `POST /service/portal`, validée : rien d'autre ne passe. */
 const reponsePortail = z.union([
   z.object({ connected: z.literal(false) }),
@@ -95,10 +105,12 @@ const reponsePortail = z.union([
  * - injoignable, délai, signature refusée, 404 (connecteur pas encore à jour), 5xx, réponse invalide : une ERREUR,
  *   jamais `connected: false`. Chaque consommateur décide : l'interrupteur refuse (503), la suppression d'un espace
  *   rend « on ne sait pas », l'écran du compte affiche « non connecté ».
+ * Un seul essai, sous `DELAI_PORTAIL_MS` : l'Accueil et les réglages l'attendent, et un connecteur figé les aurait tenus
+ * jusqu'à deux minutes et demie (30 s par essai, cinq essais). L'interrupteur répond alors 503, et l'on réessaie.
  */
 export async function lireHubspotPortal(deps: ConnectorDeps | null, tenantId: string): Promise<HubspotPortalLink> {
   if (deps === null) return { connected: false };
-  const reponse = reponsePortail.safeParse(await callService<unknown>(deps, '/service/portal', { tenantId }));
+  const reponse = reponsePortail.safeParse(await callService<unknown>(deps, '/service/portal', { tenantId }, DELAI_PORTAIL_MS));
   if (!reponse.success) throw new HubspotServiceError(502, 'reponse_invalide', false);
   return reponse.data;
 }

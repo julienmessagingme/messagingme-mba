@@ -139,10 +139,12 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
     const tenant = espaceVerifie(req);
 
     // Portail HubSpot du tenant, lu par le connecteur. Au mieux : un échec (connecteur injoignable) ne fait jamais
-    // échouer la route -> on retombe sur « non connecté », comme le pull. Ce n'est qu'un affichage.
-    const hubspotPortal = await deps.hubspotPortal(tenant).catch(() => ({ connected: false as const }));
-
-    const pn = await deps.numeros.getPhoneNumber(tenant);
+    // échouer la route -> on retombe sur « non connecté », comme le pull. Ce n'est qu'un affichage. Lu EN MÊME TEMPS
+    // que le numéro : l'attente du connecteur ne s'ajoute pas à celle de la base.
+    const [hubspotPortal, pn] = await Promise.all([
+      deps.hubspotPortal(tenant).catch(() => ({ connected: false as const })),
+      deps.numeros.getPhoneNumber(tenant),
+    ]);
     if (!pn) {
       const body: AccountStatusResponse = {
         hasNumber: false,

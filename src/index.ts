@@ -921,9 +921,14 @@ async function main(): Promise<void> {
   /**
    * Le portail HubSpot relié à un espace, lu PAR LE CONNECTEUR (lot 1 de la bascule Scaleway) : plus de lecture
    * cross-schéma de `mmhs`, qui aurait rendu `42P01` une fois ce schéma sur sa propre base. Sans connecteur
-   * configuré : « pas relié ». Toute panne du connecteur LÈVE ; chaque consommateur ci-dessous décide.
+   * configuré : « pas relié ». Toute panne du connecteur LÈVE ; chaque consommateur ci-dessous décide. Elle laisse une
+   * trace : l'écran l'avale en « non connecté », et un secret tourné d'un seul côté le dirait sinon à tous les espaces
+   * reliés, en silence.
    */
-  const lirePortailHubspot = (tenant: string) => lireHubspotPortal(hubspotSuppression, tenant);
+  const lirePortailHubspot = (tenant: string) => lireHubspotPortal(hubspotSuppression, tenant).catch((err: unknown) => {
+    journaliser('warn', 'hubspot_portail_illisible', { err, tenantId: tenant });
+    throw err;
+  });
   /**
    * 🔴 Le jeton que les appels chez Meta prendraient pour cet espace, relu par le MÊME résolveur qu'eux : sans jeton
    * propre, ils partiraient avec le nôtre, et les gestes qui désabonnent ou éteignent sont sautés. Lu par la suppression

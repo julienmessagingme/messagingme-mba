@@ -12,13 +12,13 @@ import type { HttpResponse } from '../src/meta/http';
  * connecteur le dit ; toute panne est une ERREUR.
  */
 function connecteur(reponses: HttpResponse[]) {
-  const appels: Array<{ url: string; body: unknown; signature: string | undefined }> = [];
+  const appels: Array<{ url: string; body: unknown; signature: string | undefined; echeance: AbortSignal | undefined }> = [];
   const deps: ConnectorDeps = {
     baseUrl: 'http://mm-hubspot-api:8096',
     secret: 'secret-du-canal',
     transport: {
-      post: async (url, body, headers) => {
-        appels.push({ url, body, signature: headers['x-mm-service-signature'] });
+      post: async (url, body, headers, opts) => {
+        appels.push({ url, body, signature: headers['x-mm-service-signature'], echeance: opts?.signal });
         return reponses.shift() ?? { status: 500, json: null };
       },
     },
@@ -62,12 +62,23 @@ describe('lireHubspotPortal : le portail lu par le connecteur', () => {
     }
   });
 
-  it('🔴 un connecteur en panne (5xx répétés) est une ERREUR, après les reprises', async () => {
+  it('🔴 un connecteur en panne (5xx) est une ERREUR, en UN essai sous échéance : l’Accueil n’attend pas les reprises', async () => {
     const panne = Array.from({ length: 6 }, () => ({ status: 503, json: null }));
     const { deps, appels } = connecteur(panne);
     await expect(lireHubspotPortal(deps, 't1')).rejects.toBeInstanceOf(HubspotServiceError);
-    expect(appels.length).toBeGreaterThan(1);
-  }, 15_000);
+    expect(appels).toHaveLength(1);
+    expect(appels[0]!.echeance).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe('le câblage de la lecture du portail', () => {
+  const INDEX = readFileSync(resolve(__dirname, '..', 'src', 'index.ts'), 'utf8');
+
+  it('🔴 une lecture qui échoue laisse une trace, puis remonte : l’écran l’avale en « non connecté »', () => {
+    expect(INDEX).toMatch(
+      /lireHubspotPortal\(hubspotSuppression, tenant\)\.catch\(\(err: unknown\) => \{\s*journaliser\('warn', 'hubspot_portail_illisible', \{ err, tenantId: tenant \}\);\s*throw err;\s*\}\)/,
+    );
+  });
 });
 
 describe('plus aucune lecture du schéma du connecteur dans le code de Messaging Me', () => {
@@ -76,8 +87,11 @@ describe('plus aucune lecture du schéma du connecteur dans le code de Messaging
     return statSync(chemin).isDirectory() ? fichiers(chemin) : chemin.endsWith('.ts') ? [chemin] : [];
   });
 
-  it('🔴 aucun `from mmhs.` ni `join mmhs.` dans src/ : une fois `mmhs` sur sa propre base, ce serait `42P01`', () => {
-    const lus = fichiers(resolve(__dirname, '..', 'src')).filter((f) => /\b(from|join)\s+mmhs\./i.test(readFileSync(f, 'utf8')));
+  it('🔴 aucune mention de `mmhs.` hors commentaire dans src/ : une fois `mmhs` sur sa propre base, ce serait `42P01`', () => {
+    // Toute forme compte (lecture, écriture, jointure par virgule) ; seules les lignes de commentaire sont laissées.
+    const commentaire = /^\s*(\/\/|\/\*|\*)/;
+    const lus = fichiers(resolve(__dirname, '..', 'src')).filter((f) => readFileSync(f, 'utf8').split('\n')
+      .some((ligne) => /\bmmhs\./i.test(ligne) && !commentaire.test(ligne)));
     expect(lus).toEqual([]);
   });
 });

@@ -41,11 +41,11 @@ Les lots 1, 2 et 7 partent dès maintenant. Les lots 3 à 6 partent quand Julien
 ✅ **Déployé le 2026-10-14** : mm-hubspot `44c742e` d'abord (la route), Messaging Me `bfa345b0` ensuite, relu sans
 rouge. Prouvé dans les deux sens par une sonde du vrai code en production : avant la route, une erreur 404 (jamais
 « pas relié ») ; après, le portail cobaye exact pour l'espace relié et « pas relié » pour un témoin. Reste l'essai à
-l'écran (Accueil et Paramètres de l'espace relié). Jaunes de la relecture, pour le lot suivant : un délai court sans
-reprise pour l'écran et les réglages (un connecteur figé les ferait attendre jusqu'à 155 s) ; une trace quand la
-lecture échoue ; un état « inconnu » distinct de « non connecté » à l'écran ; les textes qui décrivent encore
-l'ancienne lecture (`src/http/settings.ts`, `web/lib/api/compte.ts`) ; la garde de test élargie à toute mention de
-`mmhs.` hors commentaire.
+l'écran (Accueil et Paramètres de l'espace relié). Jaunes de la relecture faits le même jour, à relire avec le lot
+suivant : un seul essai sous 3 s pour l'écran et les réglages (un connecteur figé les aurait tenus jusqu'à 155 s), le
+portail lu en parallèle du numéro, une trace `hubspot_portail_illisible` quand la lecture échoue, les textes qui
+décrivaient l'ancienne lecture, la garde de test élargie à toute mention de `mmhs.` hors commentaire. Reste un état
+« inconnu » distinct de « non connecté » à l'écran (`todo.md`).
 
 **Pourquoi** (§8) : une fois `mmhs` sur une autre base, la lecture cross-schéma rend `42P01`, que deux
 consommateurs traduisent en « aucun portail relié ». L'interrupteur laisserait alors éteindre HubSpot par-dessus
@@ -169,6 +169,13 @@ workflow du même modèle, dans son dépôt. `HUBSPOT_SERVICE_URL` de Messaging 
 publique : le canal service passe par Internet, signé et horodaté, et ce passage s'éprouve. Sa forme, décidée le
 2026-10-14 (§8) : son API en conteneur privé derrière Cloudflare, avec le jeton d'origine, comme `api.` ; son worker
 en troisième conteneur borné sur la machine des workers, sans les secrets de Messaging Me.
+
+⚠️ **Depuis le lot 1, l'écran du compte et les réglages lisent le portail PAR LE CONNECTEUR.** Pendant la répétition,
+chaque arrêt ou redéploiement du connecteur, un retour arrière sous `44c742e`, ou un `SERVICE_SECRET` changé d'un seul
+côté fait dire « non connecté » à l'espace relié et refuser en 503 l'extinction de l'interrupteur, le temps qu'il
+dure ; la trace `hubspot_portail_illisible` le dit dans les journaux de l'API. Le canal passé par Internet s'éprouve
+donc aussi par la sonde du lot 1 (le vrai code, comparé à la vérité de `mmhs`), avant et après la bascule de
+`HUBSPOT_SERVICE_URL`.
 
 ## Lot 6 : la reprise après sinistre
 

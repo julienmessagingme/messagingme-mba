@@ -61,8 +61,8 @@ export interface SettingsRouteDeps {
   /**
    * Un portail HubSpot est-il lié à cet espace ? Seul signal qui dise si la source HubSpot d'une campagne
    * est possible : `hubspotListsEnabled` dit si le client la veut, et un client qui délie son portail garde
-   * l'interrupteur allumé. Lecture locale (schéma `mmhs` de la même base, jointure indexée sur
-   * `tenant_id`), pas un appel au connecteur.
+   * l'interrupteur allumé. Lue PAR LE CONNECTEUR (`lireHubspotPortal`, un seul essai sous une échéance de
+   * quelques secondes) : une panne du connecteur ralentit donc `GET /settings` d'autant, au plus.
    * Requise : optionnelle, elle vaudrait `undefined`, donc « pas connecté » sur un câblage qui l'oublie.
    * 🔴 Elle lève sur une vraie panne de lecture, et chaque lecteur choisit son repli : l'affichage
    * (`GET /settings`) la lit « pas relié », l'extinction de l'interrupteur la refuse (503), sinon on
