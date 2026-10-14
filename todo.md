@@ -39,6 +39,15 @@ l'implémenteur. Restent :
   seulement) attend aussi une montée de version majeure.
 
 
+## 🟡 Lot 4 de la bascule, le banc à Amsterdam : ce qu'il laisse (2026-10-14)
+
+- 🟡 **Le plafond global ne garde pas la latence au-delà de la capacité.** Posé à 2 100 par 10 s, avec 315 appels/s
+  tentés, « Free d'abord » tient mais le p95 monte à 20 s, contre 217 ms à 300 appels/s sans plafond
+  (`docs/JOURNAL-TECHNIQUE.md`, 2026-10-14). Un refus ne coûte pas d'écriture ; la cause probable est la ligne UNIQUE
+  du compteur global (`CLE_GLOBALE`, `api.zz-plateforme` dans `compteurs_debit`), écrite par chaque appel accepté. À prouver d'abord (attente
+  de verrous sur cette ligne pendant l'épreuve), puis, si c'est elle, répartir le compteur sur plusieurs lignes par
+  fenêtre et sommer à la lecture. Sans urgence : le trafic réel est très en dessous de 200 appels/s.
+
 ## 🟡 Lot 1 de la bascule, le portail HubSpot lu par le connecteur : ce que la relecture laisse (2026-10-14)
 
 - 🟡 **Un état « inconnu » distinct de « non connecté » à l'écran.** Quand le connecteur ne répond pas, l'Accueil dit

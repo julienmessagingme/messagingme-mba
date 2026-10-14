@@ -5,6 +5,34 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-14 : le banc de l'API à Amsterdam, et ce qui arrive encore sur `mba.` (lots 4 et 7 de la bascule)
+
+- **Le montage** : `scripts/banc-api.sh` sur une base EXISTANTE (`BANC_BASE_FICHIER`, `57764621`), la base managée
+  jetable `mm-banc` d'Amsterdam (DB-DEV-M, 3 vCPU partagés, 4 Go, 150 connexions par défaut), base `banc` (celle que la
+  garde positive des bancs accepte), TLS vérifié, environ 1 ms. L'API et le worker principal du banc tournent en
+  conteneurs sur la machine des workers (PLAY2-NANO, 2 vCPU), avec les pools de production (API 10 plus réception 4,
+  worker 8 plus 2). Les résultats restent sur la machine : `/home/ubuntu/banc-api14/resultats-20261014T191631Z`.
+- **Les paliers** (100 espaces, trafic mêlé, 5 webhooks/s) : p95 de `/v1` et `/mcp` à 46 ms (50 appels/s), 58 (100),
+  75 (150), 92 (200), 217 (300), puis rupture à 400 (6,9 s), sans aucun 5xx. **Capacité C = 300 appels/s par copie**,
+  le double de Londres (150). La borne est le pool de l'API : 285 483 prises de connexion sur 367 757 ont attendu un
+  pool plein (pire 1,9 s), quand le processeur plafonnait à 53 % pour l'API et 15 % pour le worker. Des copies en plus
+  ajoutent donc de la capacité, jusqu'à la limite de la base, que ce banc n'a pas atteinte.
+- **La réception de Meta** reste à 24 ms au p95 même en rupture : son pool réservé tient. Une rafale de 300 accusés/s
+  pendant 10 s passe à 83 ms au p95 (475 ms à Londres, avec le même pool de quatre connexions).
+- **La file des statuts** (`webhook-status`, concurrence 1) : 2 790 accusés traités en 100 s, soit **27,8 par seconde**
+  (environ 11 à Londres), lu dans les horodatages de pg-boss. La veille a sonné « file en retard » (71 s) pendant
+  l'écoulement, comme attendu.
+- **Le plafond global** posé à 2 100 par 10 s (70 % de C), puis un palier à 315 appels/s : « Free d'abord » tenu
+  (6 048 refus Free sur 8 648, aucun payant refusé), mais **p95 de 20 s**, contre 217 ms à 300 appels/s sans plafond.
+  Un refus ne coûte pas d'écriture (servi par la mémoire, compté par lots toutes les deux secondes) ; la cause probable
+  est la ligne UNIQUE du compteur global, écrite par chaque appel accepté, donc environ 210 écritures par seconde sur
+  la même ligne. Non prouvé : à mesurer avant de compter sur le plafond au-delà de 200 appels/s (`todo.md`).
+- **Ce qui arrive encore sur `mba.`** (un mois de journaux du proxy, du 13 septembre au 14 octobre) : le webhook de
+  Meta (tout son trafic, rien n'arrive sur `api.`), le MCP de Claude Desktop de Julien (repointé sur `api.` le même
+  jour), deux sondes UptimeRobot et le contrôle de fumée. L'ancienne console n'est plus ouverte depuis le 2 octobre, et
+  aucun média `/m/` n'a été servi en un mois. Chaque e-mail du produit tirait son logo de `mba.` : passé sur la
+  console (`f8db19fd`), à déployer avant la suppression.
+
 ## 2026-10-14 : l'autonomie d'un outil tombe quand sa requête le rend irréversible
 
 - **Le défaut** (orange du 2026-10-05) : passer une requête de connecteur de POST à DELETE montait bien ses outils à
