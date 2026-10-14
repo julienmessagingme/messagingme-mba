@@ -2442,7 +2442,10 @@ premier tour qui arrive pendant qu'elle tourne encore est sauté et journalisé.
   cache des files (un `select` par minute), les `send`, et au premier enfilement de chaque file sa création et ses
   réglages (`createQueue`, puis `updateQueue` pour le réveil, le battement et le délai de rejeu). Conséquence : **une copie de l'API ne coûte plus aucune
   session**, quel que soit leur nombre. `pool_attentes` (ligne `api`, ou `api-<copie>` quand `API_COPIE` nomme une
-  copie parmi plusieurs) mesure ce pool. ⚠️ Un `send` part sur une connexion
+  copie parmi plusieurs, ou `api-<fin du nom d'hôte>` quand elle vaut `auto`, pour des copies identiques qu'aucun
+  réglage ne distingue : `src/ops/nom-copie.ts`) mesure ce pool. `/ops` n'en montre que les processus qui ont écrit
+  récemment (`silenceMax` de `lireDernieresMinutes`, `src/ops/pool-attentes.pg.ts`), sinon chaque copie recyclée y
+  resterait affichée. ⚠️ Un `send` part sur une connexion
   prise au pool, jamais sur celle d'une transaction ouverte : enfiler DANS une transaction (`enTransaction`) n'y
   inscrirait pas la tâche (comme avant) et prendrait une SECONDE connexion au même pool. Aucun code ne le fait
   (l'opt-out annonce après le `commit`).

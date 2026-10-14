@@ -671,12 +671,16 @@ workers de Messaging Me, dans un troisième conteneur borné, sans les mots de p
 joint en direct. Le filtre lui est ajouté après lecture de ses journaux ; Messaging Me l'appelle par le réseau Docker
 interne, que le filtre ne touche pas.
 
-⚠️ **Le préalable bloquant de cette étape** : `mba` lit le schéma `mmhs` en cross-schéma, en un seul point
-(`getHubspotPortal`, `src/account/store.pg.ts`, le portail lié à un espace) qui a deux consommateurs : l'écran du
-compte et l'interrupteur HubSpot des réglages (`hubspotPortalConnecte`, `src/index.ts`). 🔴 Ce second-là traduit
-`42P01` (schéma absent) en « aucun portail relié » : une fois `mmhs` sur une autre base, il affirmerait EN SILENCE
-qu'aucun espace n'a de portail, et laisserait éteindre HubSpot par-dessus un portail relié. Ce point doit donc
-passer par un appel au connecteur AVANT la répétition, en lot à part.
+✅ **Le préalable bloquant de cette étape, levé le 2026-10-14 (lot 1)** : `mba` lisait le schéma `mmhs` en
+cross-schéma, en un seul point (`getHubspotPortal`, `src/account/store.pg.ts`, le portail lié à un espace) qui avait
+deux consommateurs : l'écran du compte et l'interrupteur HubSpot des réglages (`hubspotPortalConnecte`, `src/index.ts`).
+🔴 Ce second-là traduisait `42P01` (schéma absent) en « aucun portail relié » : une fois `mmhs` sur une autre base, il
+aurait affirmé EN SILENCE qu'aucun espace n'a de portail, et laissé éteindre HubSpot par-dessus un portail relié.
+Depuis le lot 1, `lireHubspotPortal` appelle `POST /service/portal` du connecteur (mm-hubspot `44c742e`, Messaging Me
+`bfa345b0`), réponse validée par Zod ; une panne du connecteur est une erreur, jamais « pas relié », et un test refuse
+toute lecture de `mmhs.` dans `src/`. ⚠️ Contrepartie : l'écran du compte et les réglages dépendent désormais du
+connecteur. Une panne de celui-ci, un retour arrière sous `44c742e` ou une rotation de son secret d'un seul côté les
+fait dire « non connecté », et l'extinction de l'interrupteur répond 503.
 
 Ce qui suit est le raisonnement d'origine, toujours juste sur le fond ; seule sa conclusion « c'est la présence de
 clients réels qui déclenche » est remplacée par la décision ci-dessus.
@@ -704,8 +708,8 @@ portail, lui payer une machine pour libérer quelques connexions serait absurde 
 c'est une variable d'environnement. Le jour où il porte de vrais clients, il prend sa machine et le couplage
 disparaît pour toujours. ~~C'est la présence de clients réels qui déclenche, pas la bascule Scaleway.~~ Remplacé par la décision du 2026-10-04, en tête de ce paragraphe.
 
-⚠️ Vérifier avant, dans les deux cas : `mba` lit `mmhs` en cross-schéma aujourd'hui (voir `CLAUDE.md`), il
-faut savoir OÙ et remplacer ces lectures par un appel.
+✅ Vérifié et fait le 2026-10-14 (lot 1) : `mba` ne lit plus `mmhs` en cross-schéma, il appelle le connecteur
+(`POST /service/portal`).
 
 **b) L'endormir (l'économie, en bonus).** Un conteneur serverless peut descendre à zéro copie et se réveiller
 à la première requête. Zéro portail branché, zéro copie, zéro connexion ; un client s'y branche, ça se
@@ -756,7 +760,8 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    `pgcrypto` ne sert qu'à `gen_random_uuid()`, natif depuis PostgreSQL 13. ✅ **Prouvé le 2026-10-14 sur la base
    jetable d'Amsterdam** : les migrations y ont créé `vector` (pgvector 0.8.2), `pg_trgm`, `unaccent` et `pgcrypto`.
 3. **Le connecteur HubSpot tourne déjà chez Scaleway, sur sa propre base** (étape 0 ci-dessous), et `mba` ne lit plus
-   `mmhs` en cross-schéma (§8).
+   `mmhs` en cross-schéma (§8). ✅ La seconde moitié est faite (lot 1, 2026-10-14) ; la première attend la répétition
+   (lot 5).
 4. **Les fichiers RCS restent en base pour la bascule** (décidé le 2026-10-04) : ils partent dans le dump et sortent
    vers l'Object Storage APRÈS, en lot séparé (§6).
 5. **Le chemin de déploiement existe** (§10 bis), et il a servi à la répétition HubSpot (étape 0) avant de servir à

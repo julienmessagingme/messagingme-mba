@@ -38,6 +38,15 @@ Les lots 1, 2 et 7 partent dès maintenant. Les lots 3 à 6 partent quand Julien
 
 ## Lot 1 : HubSpot, le portail lu par le connecteur
 
+✅ **Déployé le 2026-10-14** : mm-hubspot `44c742e` d'abord (la route), Messaging Me `bfa345b0` ensuite, relu sans
+rouge. Prouvé dans les deux sens par une sonde du vrai code en production : avant la route, une erreur 404 (jamais
+« pas relié ») ; après, le portail cobaye exact pour l'espace relié et « pas relié » pour un témoin. Reste l'essai à
+l'écran (Accueil et Paramètres de l'espace relié). Jaunes de la relecture, pour le lot suivant : un délai court sans
+reprise pour l'écran et les réglages (un connecteur figé les ferait attendre jusqu'à 155 s) ; une trace quand la
+lecture échoue ; un état « inconnu » distinct de « non connecté » à l'écran ; les textes qui décrivent encore
+l'ancienne lecture (`src/http/settings.ts`, `web/lib/api/compte.ts`) ; la garde de test élargie à toute mention de
+`mmhs.` hors commentaire.
+
 **Pourquoi** (§8) : une fois `mmhs` sur une autre base, la lecture cross-schéma rend `42P01`, que deux
 consommateurs traduisent en « aucun portail relié ». L'interrupteur laisserait alors éteindre HubSpot par-dessus
 un portail relié, en silence.
@@ -74,7 +83,11 @@ l'interrupteur rendrait 503 pendant la fenêtre.
 
 ## Lot 2 : trois petits lots de code
 
-✅ **Écrit le 2026-10-14**, chaque règle testée dans les deux sens, à déployer sur le VPS après la relecture du lot.
+✅ **Déployé sur le VPS le 2026-10-14** (`e9be2d39`), relu sans rouge : les deux workers tournent à 1 Go et 1 CPU,
+leur tas V8 plafonne à 524 Mo (Node le cale sur la moitié de la limite), contrôle de fumée vert. Reste des jaunes
+de la relecture : relire le `RestartCount` des workers le 2026-10-15 (la mesure n'a duré que 32 minutes, les
+travaux de nuit n'y étaient pas) ; vérifier sur les vrais noms d'hôte de Scaleway, au premier essai à deux copies,
+que la FIN du nom (`API_COPIE=auto`) distingue bien les copies, sinon passer à une empreinte du nom entier.
 
 **2a. Les gardes des bancs deviennent positives** (§7.8, point 3). Une aide unique, appelée par les cinq bancs
 (`banc-api.mts`, `banc-charge.mts`, `banc-deux-api.mts`, `banc-deux-api-2.mts`, `banc-trente-espaces.mts`), qui
@@ -102,7 +115,11 @@ code.
 ✅ **Éprouvé le 2026-10-14 à Amsterdam**, sur la base jetable : le premier déploiement a construit et poussé l'image,
 joué les 234 migrations, démarré les deux workers et passé l'API sur l'image ; l'API privée refuse tout appel sans
 jeton. Restent : l'appel avec le jeton d'origine (clé `cloudflare-origine`), la mesure d'une requête de 23 Mo, et le
-tunnel de `npm run migrations` (éprouvé à la main pour les tests d'intégration).
+tunnel de `npm run migrations` (éprouvé à la main pour les tests d'intégration). ⚠️ Deux jaunes de la relecture, à
+fermer avant que le workflow serve la production : un worker qui échoue à démarrer laisse les deux workers sur
+l'image neuve et l'API sur l'ancienne, sans retour automatique (on relance le workflow sur l'ancien commit) ; et le
+compose et le `.env` de la machine sont remplacés AVANT le `pull`, donc un `pull` refusé laisse un `IMAGE_TAG` qui
+ne décrit plus les conteneurs.
 
 **Pourquoi** : §10 bis, plus les étapes 1, 6 et 7 du §10, faites une première fois avant le jour J.
 
