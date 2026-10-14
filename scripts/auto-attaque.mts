@@ -68,6 +68,7 @@ import type { StripeWebhookRouteDeps } from '../src/http/credit-stripe';
 import type { ResendWebhookRouteDeps } from '../src/http/webhook-resend';
 import type { OtpPontRouteDeps } from '../src/http/otp-pont';
 import type { ContactVitrineDeps } from '../src/http/contact-vitrine';
+import type { CspRapportsDeps } from '../src/http/csp-rapports';
 import type { OpenapiRouteDeps } from '../src/http/openapi';
 import { contratOpenapi } from '../src/api/openapi';
 import type { FastifyInstance } from 'fastify';
@@ -358,6 +359,12 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
     enabled: false,
     envoyer: async () => { throw new Error('auto-attaque : le formulaire de contact n’envoie rien'); },
   } satisfies ContactVitrineDeps,
+  // Les rapports CSP de la console : publics par nature, ils n'ont aucune autorité à tromper. Sa fausse autorité est
+  // un magasin qui n'écrit RIEN : une sonde qui l'atteindrait ne laisserait aucune ligne, même avec une page autorisée.
+  cspRapports: {
+    origines: ['https://console.sonde.invalid'],
+    noter: async () => undefined,
+  } satisfies CspRapportsDeps,
   // Le contrat OpenAPI : un document public, sans autorité à tromper ni effet. Le vrai contrat, construit en mémoire.
   openapi: { contrat: contratOpenapi } satisfies OpenapiRouteDeps,
 };
@@ -522,6 +529,9 @@ const OUVERTES: ReadonlyArray<{ motif: RegExp; raison: string }> = [
   { motif: /^\/auth\/choose-workspace$/, raison: 'entrée : autorisé par un jeton de choix signé, pas par une session' },
   // Le formulaire de contact de la vitrine : un visiteur n'a par définition aucun compte.
   { motif: /^\/vitrine\/contact$/, raison: 'formulaire de contact public de la vitrine' },
+  // Les rapports CSP : un navigateur les poste sans session ni cookie. La route ne rend jamais rien (204) et ne retient
+  // que les pages de nos origines, sans donnée personnelle.
+  { motif: /^\/csp-rapports$/, raison: 'rapports CSP des navigateurs de la console, sans réponse ni donnée personnelle' },
   // L'OAuth devant `/mcp` : par construction, personne n'a encore de jeton quand il les appelle. Chacune est autorisée
   // par ce qu'elle reçoit (une demande signée, un code, un jeton, une preuve Google signée), attaqué par la sonde 14.
   { motif: /^\/\.well-known\/oauth-(protected-resource(\/mcp)?|authorization-server)$/, raison: 'métadonnées OAuth publiques (RFC 9728, RFC 8414)' },

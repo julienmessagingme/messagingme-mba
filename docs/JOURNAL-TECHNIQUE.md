@@ -5,6 +5,27 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-14 : le collecteur des rapports CSP des vrais navigateurs (lot 6, B3)
+
+Plan `docs/superpowers/plans/2026-10-14-lot6-collecteur-csp.md`. Décision de Julien du jour : une table agrégée.
+
+- **Pourquoi** : les e2e ne voient que ce qu'ils dessinent et simulent les tiers ; la feuille de style de Google Sign-In
+  n'est apparue qu'en ouvrant la vraie page de connexion. Les navigateurs des clients disent le reste.
+- **La route** : `POST /csp-rapports`, classe `anonyme`, 204 sans corps à tout corps lu, corps borné à 32 Ko, plafond
+  de débit global compté par rapport, arrêt au premier échec de la base. Elle lit les deux formats (`report-uri`,
+  Reporting API) et ne retient que les pages de nos origines (`CORS_ORIGINS`, `APP_URL`, et la console du VPS que plus
+  aucune variable ne nommait : ses rapports auraient été écartés), sur une liste fermée de règles, réduites à la règle,
+  l'origine bloquée, le chemin sans requête ni identifiant, et la disposition.
+- **Ce que la relecture a fait dire** : n'importe qui peut poster un faux rapport déclarant une page de la console ; la
+  table bornée ne grossit pas, mais elle peut se remplir de bruit. Une table pleine, ou des premières vues en rafale,
+  rendent la lecture invalide (`documentation.md`).
+- **La table** : `csp_rapports` (migration 0236), une ligne par combinaison avec un compteur, bornée à 500 combinaisons
+  par l'insertion elle-même ; aucune donnée d'espace ni de personne, donc ni `tenant_id` ni purge.
+- **L'auto-attaque l'a vue tout de suite** : une route sans session qui répond, absente de la liste `OUVERTES`, est une
+  trouvaille ; elle y entre avec sa raison écrite.
+- **La CI** : le scan des failles critiques de l'image de la console devient bloquant (première mesure : 0 critique).
+- La console y pointera (`report-uri`) dans un commit suivant, APRÈS le déploiement de l'API.
+
 ## 2026-10-14 : la CI bloque sur les failles des dépendances de production, avec des exceptions datées (lot 6, B2)
 
 Plan `docs/superpowers/plans/2026-10-14-lot6-seuils-ci.md`.

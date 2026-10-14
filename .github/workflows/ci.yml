@@ -39,8 +39,8 @@ jobs:
   # 🔴 SECURITE : CE QUI BLOQUE, ET CE QUI RESTE UNE TRACE (plan RSSI du 2026-09-09 ; seuils du lot 6 du bilan des
   # audits, livraison B2). BLOQUENT : les failles hautes et critiques des dependances de PRODUCTION de l API et de la
   # console (`scripts/audit-production.ts`, exceptions datees dans `scripts/audit-exceptions.json`), les failles
-  # critiques de l image de l API, et l uid des deux images. RESTENT UNE TRACE : gitleaks, semgrep, l audit complet
-  # (developpement compris) et les failles hautes des images. Un controle ne bloque que sur un perimetre qu on sait
+  # critiques des images de l API et de la console, et l uid des deux images. RESTENT UNE TRACE : gitleaks, semgrep,
+  # l audit complet (developpement compris) et les failles hautes des images. Un controle ne bloque que sur un perimetre qu on sait
   # tenir : un job qui casse au premier CVE transitif d un outil de build est un job qu on desactive au bout de deux
   # jours. La regle et la procedure d exception : `documentation.md` § les controles de securite de la CI.
   #
@@ -117,8 +117,10 @@ jobs:
         run: docker build -f web/Dockerfile -t mba-web:ci .
       - name: Image de la console, failles hautes et critiques (trivy, trace)
         continue-on-error: true
-        # ⚠️ Pas encore de seuil bloquant : il se pose, comme pour l API, une fois la premiere mesure lue a zero.
         run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$HOME/.cache/trivy:/root/.cache/trivy" "$TRIVY" image --severity HIGH,CRITICAL --ignore-unfixed --scanners vuln mba-web:ci
+      - name: Image de la console, failles critiques (trivy, bloquant)
+        # Pose une fois la premiere mesure lue a zero (2026-10-14 : 12 hautes, 0 critique), comme pour l API.
+        run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$HOME/.cache/trivy:/root/.cache/trivy" "$TRIVY" image --severity CRITICAL --ignore-unfixed --exit-code 1 --scanners vuln mba-web:ci
       - name: L image de la console ne tourne PAS en root
         run: |
           test "$(docker run --rm mba-web:ci id -u)" = "1000"

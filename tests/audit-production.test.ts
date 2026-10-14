@@ -62,10 +62,12 @@ describe('la CI tient ses seuils', () => {
     const api = etape('Dependances de PRODUCTION de l API (npm audit, bloquant)');
     const console_ = etape('Dependances de PRODUCTION de la console (npm audit, bloquant)');
     const image = etape('Image de l API, failles critiques (trivy, bloquant)');
-    for (const bloc of [api, console_, image]) expect(bloc).not.toContain('continue-on-error');
+    const imageConsole = etape('Image de la console, failles critiques (trivy, bloquant)');
+    for (const bloc of [api, console_, image, imageConsole]) expect(bloc).not.toContain('continue-on-error');
     expect(api).toContain('npx tsx scripts/audit-production.ts .');
     expect(console_).toContain('npx tsx scripts/audit-production.ts web');
     expect(image).toMatch(/--severity CRITICAL .*--exit-code 1 .*mba-api:ci/);
+    expect(imageConsole).toMatch(/--severity CRITICAL .*--exit-code 1 .*mba-web:ci/);
   });
 });
 

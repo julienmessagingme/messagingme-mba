@@ -7,19 +7,17 @@ fait échouer tout e2e qui viole la CSP et joue la suite dans les deux topologie
 pour l'instant, un jeton Docker Hub (posé par Julien, branché au lot B1), et les contrôles de CI laissés au choix de
 l'implémenteur. Restent :
 
-- **Le collecteur des rapports CSP des vrais navigateurs** (une table agrégée, livraison B3), puis quelques jours d'observation, puis le
-  passage en blocage : la clé `Content-Security-Policy-Report-Only` de `web/next.config.mjs` devient
-  `Content-Security-Policy`. Les e2e simulent le SDK Meta : seul un vrai navigateur dira ce qu'il charge pendant une
-  connexion de numéro.
+- **Brancher la console sur le collecteur, observer, puis passer en blocage.** Le collecteur existe côté API (livraison
+  B3, plan `docs/superpowers/plans/2026-10-14-lot6-collecteur-csp.md`, table `csp_rapports`) ; la directive `report-uri`
+  de `web/next.config.mjs` y pointera APRÈS son déploiement. Puis quelques jours d'observation (lire `csp_rapports` en
+  lecture seule, dont une vraie connexion de numéro : les e2e simulent le SDK Meta), puis la clé
+  `Content-Security-Policy-Report-Only` devient `Content-Security-Policy`.
 - **Avant le blocage, l'aperçu d'un modèle à en-tête vidéo** : `TemplatePreview` passe à `<video>` une adresse du CDN de
   Meta (`headerMediaUrl`), que `media-src 'self' blob:` refuse ; aucun e2e ne la charge. Mesurer les hôtes qui la
   servent, puis les nommer dans `media-src` (`tests/web-csp-media.test.ts` fixe la directive à l'exact, à mettre à
   jour avec).
 - **Les nonces** (retirer `'unsafe-inline'` des scripts), écartés pour l'instant : ils imposent le rendu à la demande
   de chaque page sur Vercel, qui sert aujourd'hui des pages statiques.
-- **Le seuil critique de l'image de la console** : la livraison B2 (plan `docs/superpowers/plans/2026-10-14-lot6-seuils-ci.md`)
-  la construit et la scanne en trace ; l'étape bloquante se pose (comme pour l'API) dès que la première mesure de la
-  CI se lit à zéro failles critiques avec correctif.
 - **Les deux exceptions de l'audit** (`scripts/audit-exceptions.json`, la copie de postcss embarquée dans next 15)
   échoient le 2026-12-14 : passer à next 16 d'ici là, ou les revoir. vitest 5 (failles critiques en développement
   seulement) attend aussi une montée de version majeure.

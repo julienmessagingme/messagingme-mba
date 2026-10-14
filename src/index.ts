@@ -10,6 +10,7 @@ import { sendTelegram } from './ops/telegram';
 import { creerAlertesReserve } from './http/numero-fourni';
 import { PgBossQueue } from './queue/pgboss';
 import { pool, mesureAttentePool, creerPoolReception, mesureAttenteReception } from './db/pool';
+import { PgCspRapportsStore } from './csp/store.pg';
 import { construireSocle } from './socle';
 import { PgContactHistoryStore } from './crm/contact-history.pg';
 import { PgTagStore } from './crm/tag-store.pg';
@@ -301,6 +302,7 @@ async function main(): Promise<void> {
   const apiKeyStore = new PgApiKeyStore(pool);
   const oauthStore = new PgOauthStore(pool);
   const reportStore = new PgWorkflowReportStore(pool);
+  const cspRapports = new PgCspRapportsStore(pool);
   // L'email de l'acteur est résolu ICI, une fois, et écrit en clair dans le journal : une jointure sur `users`
   // rendrait l'historique illisible au premier départ d'un collaborateur.
   const auditSink: AuditSink = async (tenant, actor, action, target, detail) => {
@@ -2560,6 +2562,17 @@ async function main(): Promise<void> {
           replyTo: repondreA,
         });
       },
+    },
+    // Les rapports CSP ne comptent que venant d'une page de la console : celles de `CORS_ORIGINS` et d'`APP_URL`, plus la
+    // console du VPS, que plus aucune variable ne nomme depuis qu'`APP_URL` est passée sur `console.` (2026-10-06).
+    // `URL.canParse` : une `APP_URL` mal formée ne doit pas empêcher l'API de démarrer pour un collecteur.
+    cspRapports: {
+      origines: [...new Set([
+        ...config.CORS_ORIGINS.split(',').map((o) => o.trim()).filter((o) => o !== ''),
+        ...(URL.canParse(config.APP_URL) ? [new URL(config.APP_URL).origin] : []),
+        'https://mba.messagingme.app',
+      ])],
+      noter: (r) => cspRapports.noter(r),
     },
     apiKeys: {
       audit: auditSink,

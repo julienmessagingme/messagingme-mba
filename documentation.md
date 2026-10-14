@@ -2611,6 +2611,20 @@ imposée à tous les specs par `tests/e2e-garde-csp.test.ts`), et la CI front jo
 `web/scripts/verifier-base-api.mjs` vérifie que le build de production scelle l'adresse ET que sa CSP autorise son
 origine. ⚠️ Playwright ne vérifie pas le CORS d'une réponse interceptée : celui-là ne tient qu'à `CORS_ORIGINS`.
 
+🔴 **CE QUE LES VRAIS NAVIGATEURS SIGNALENT SE LIT DANS `csp_rapports`** (migration 0236). Les e2e ne voient que ce
+qu'ils dessinent et simulent les tiers (SDK Meta, Google Sign-In) : seuls les navigateurs des clients disent ce qu'une
+vraie session charge. Ils postent à `POST /csp-rapports` (`src/http/csp-rapports.ts`, classe `anonyme`), qui répond 204
+sans corps à tout corps lu (413 au-delà de 32 Ko, 415 pour un autre type) et ne retient (`src/csp/rapports.ts`) que les
+rapports d'une page de nos origines (`CORS_ORIGINS`, `APP_URL` et la console du VPS, `src/index.ts`), d'une règle de la
+liste fermée `DIRECTIVES_CSP`, réduits à la règle, l'ORIGINE bloquée (ou son mot-clé), le CHEMIN de la page sans
+requête et identifiants masqués, et la disposition : rien de personnel. Une ligne par combinaison, avec un compteur ;
+la table s'arrête à `MAX_LIGNES_CSP` combinaisons (`src/csp/store.pg.ts`), un plafond de débit global compté par rapport
+borne l'écriture, et elle se vide à la main après la bascule.
+⚠️ **Elle se lit en lecture seule avant de passer en blocage, et deux signes rendent la lecture invalide** : n'importe
+qui peut poster un faux rapport déclarant une page de la console, donc une table PLEINE (`MAX_LIGNES_CSP` lignes) ou des
+`premier_vu` tous en rafale disent du bruit, pas la console (vider et réobserver) ; et le plafond atteint fait lire sans
+écrire, donc un trou dans les dates n'est pas une absence de violation.
+
 ⚠️ **`Referrer-Policy: no-referrer` sur l'API ferme une fuite RÉELLE**, la seule de cette liste :
 `/r/<code>/<jeton>` identifie un destinataire, et un référent le livrerait au site de destination.
 
@@ -2628,11 +2642,10 @@ l'API comme pour celle de la console (`mba-web`), et ce contrôle bloque.
 `codeql.yml`). Un contrôle ne bloque que sur un périmètre qu'on sait tenir ; le reste laisse une trace datée, lue à
 chaque lot qui touche aux dépendances.
 - **Bloquent** : les failles hautes et critiques des dépendances de PRODUCTION de l'API et de la console
-  (`scripts/audit-production.ts`, une étape par dossier), les failles critiques avec correctif de l'image de l'API
-  (trivy épinglé par empreinte), et l'uid des deux images.
+  (`scripts/audit-production.ts`, une étape par dossier), les failles critiques avec correctif des images de l'API et
+  de la console (trivy épinglé par empreinte), et l'uid des deux images.
 - **Laissent une trace** : gitleaks, semgrep, l'audit complet (développement compris), les failles hautes des images,
-  et CodeQL (`security-extended`, alertes dans l'onglet Security de GitHub). Les failles critiques de l'image de la
-  console bloqueront une fois leur première mesure lue à zéro.
+  et CodeQL (`security-extended`, alertes dans l'onglet Security de GitHub).
 - **Une faille sans correctif accessible** (une version majeure à franchir, un paquet embarqué par un autre) s'inscrit
   dans `scripts/audit-exceptions.json` : l'identifiant GHSA de l'avis, le dossier, le paquet, la raison (pourquoi elle
   n'est pas exploitable chez nous) et une échéance, deux mois au plus. Passé ce jour, l'avis bloque de nouveau : on

@@ -49,6 +49,7 @@ import { registerDossiers, type DossiersRouteDeps } from './http/dossiers';
 import { registerFields } from './http/fields';
 import { registerSupport } from './http/support';
 import { registerContactVitrine } from './http/contact-vitrine';
+import { registerCspRapports } from './http/csp-rapports';
 import { registerAide, type AideRouteDeps } from './http/aide';
 import { registerContacts } from './http/contacts';
 import { registerWorkflowReports } from './http/workflow-reports';
@@ -149,6 +150,7 @@ import type { TagsRouteDeps } from './http/tags';
 import type { FieldsRouteDeps } from './http/fields';
 import type { SupportRouteDeps } from './http/support';
 import type { ContactVitrineDeps } from './http/contact-vitrine';
+import type { CspRapportsDeps } from './http/csp-rapports';
 import type { ContactsRouteDeps } from './http/contacts';
 import type { AccountRouteDeps } from './http/account';
 import type { MeRouteDeps } from './http/me';
@@ -332,6 +334,8 @@ export interface ServerDeps {
   support?: SupportRouteDeps;
   /** Formulaire de contact de la vitrine (app.messagingme.fr) : public, même envoi que le support. */
   contactVitrine?: ContactVitrineDeps;
+  /** Le collecteur des rapports de violation de la CSP de la console (lot 6) : public, il ne rend jamais rien. */
+  cspRapports?: CspRapportsDeps;
   /** Le contrat OpenAPI de l'API publique (lot 16), `GET /openapi.json` : public, sans donnée d'espace. */
   openapi?: OpenapiRouteDeps;
   /** Le bot d'aide de la console : il explique et il emmène, il n'écrit jamais rien. */
@@ -696,6 +700,8 @@ export function modulesDeRoutes(
     entree('auth', 'anonyme', deps.auth, (app, d, g) => registerAuth(app, d, g.auth, debit)),
     // Le formulaire de contact de la vitrine : public par nature, son plafond et son pot de miel sont dans le module.
     entree('contactVitrine', 'anonyme', deps.contactVitrine, (app, d) => registerContactVitrine(app, d)),
+    // Les rapports CSP des navigateurs de la console : publics par nature, bornés et sans réponse (le module le dit).
+    entree('cspRapports', 'anonyme', deps.cspRapports, (app, d) => registerCspRapports(app, d)),
     // L'OAuth devant `/mcp` : public par nature, personne n'a encore de jeton. Ses plafonds sont dans le module, et
     // il ne monte rien sans `PUBLIC_API_URL` : l'émetteur annoncé serait l'adresse de la console.
     entree('oauth', 'anonyme', deps.oauth, (app, d) => registerOauth(app, d, baseOauthApi, debit)),
