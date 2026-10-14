@@ -10,8 +10,9 @@
 > (§6) et **Cloudflare Pro retenu pour la cible** (§7.7).
 
 🔴 **DEPUIS LE 2026-09-25, LA VITRINE PUBLIQUE L'ANNONCE COMME FAIT.** Le pied de page de
-`app.messagingme.fr` (`site/index.html`, classe `heberge`) affiche « Vos données hébergées en France
-chez Scaleway », sur décision de Julien (« tu fais comme si c'était fait »). Or la base tourne encore sur
+`app.messagingme.fr` (`site/index.html`, classe `heberge`) affiche « Vos données hébergées dans l'Union
+européenne, chez Scaleway » (« en France » jusqu'au 2026-10-14, quand la cible est passée de Paris à Amsterdam,
+§10 étape 1), sur décision de Julien (« tu fais comme si c'était fait »). Or la base tourne encore sur
 `aws-1-eu-west-2`, à Londres. Cette bascule n'est donc plus seulement une architecture cible : c'est une
 promesse publique, et chaque semaine sans migration la rend fausse un peu plus longtemps. Si la bascule est
 abandonnée ou repoussée sans date, la pastille se retire, elle ne se reformule pas.
@@ -78,7 +79,7 @@ ferme de ce document.
                                   Scaleway Serverless Container, API
                                   PRIVÉ, min 1 copie, max fixé par le budget de connexions
                                                        |
-                                     Private Network (VPC), région PAR
+                                     Private Network (VPC), région AMS (nl-ams)
              +---------------------------+-------------+---------------+
              |                           |                             |
      PostgreSQL managé           worker PRINCIPAL               worker ANALYSE
@@ -104,7 +105,7 @@ connexions de pg-boss) : c'est le chantier `docs/superpowers/plans/2026-09-28-ap
 remplace l'ancienne borne de DEUX copies. Le maximum de l'autoscaler reste un NOMBRE, mais il se déduit du seul
 budget de connexions de la base (§7.5), plus du code. Le worker, lui, reste UN exemplaire par rôle (§5).
 
-🔴 **La base part AVEC le calcul, jamais après.** Calcul à Paris et base à Londres, chaque requête traverse
+🔴 **La base part AVEC le calcul, jamais après.** Calcul à Amsterdam et base à Londres, chaque requête traverse
 internet. L'aller-retour est aujourd'hui de 11 ms mesurés ; entre deux fournisseurs il serait bien pire, et il
 serait payé sur chacune des 131 transactions par minute mesurées AU REPOS, avant tout client. **Le calcul et
 la base dans la même région, toujours.** Déménager l'un sans l'autre est un pas en arrière.
@@ -128,7 +129,7 @@ vers Azure, ni Azure Foundry Agent Service : l'orchestration, les outils, la mé
 les conversations et les fichiers restent dans Messaging Me sur Scaleway.
 
 ```text
-worker Messaging Me, Scaleway France
+worker Messaging Me, Scaleway Amsterdam (UE)
              |
              +-- route ordinaire --> Vercel AI Gateway --> modèles autorisés
              |
@@ -462,7 +463,7 @@ d'endpoint ne se desserre pas.
 ✅ **Mieux, vérifié le 2026-10-14 sur la base jetable `mm-banc`** : créée avec `init-endpoints` privé seul, une base n'a
 JAMAIS d'endpoint public, donc rien à supprimer (relu : une seule adresse, privée). À la création, aussi
 `encryption.enabled=true` (disque chiffré) et `backup-same-region=true` : par défaut, Scaleway range les sauvegardes
-dans une AUTRE région, ce qui démentirait « données hébergées en France ».
+dans une AUTRE région, ce qui démentirait l'hébergement promis « sauvegardes comprises », à Amsterdam.
 ⚠️ **Toute sauvegarde manuelle (`rdb backup create`) ou instantané (`rdb snapshot create`) de la base se crée avec
 une expiration (`expires-at`) à 7 jours au plus.** La rétention automatique est de 7 jours (réglage par défaut, relu
 sur `mm-banc` le 2026-10-14), et la politique de confidentialité promet qu'une donnée effacée quitte les sauvegardes
@@ -634,7 +635,7 @@ d'un ordre de grandeur, et c'est la BASE qui deviendra la limite. D'où la règl
    `BANC_DELAI_MS` règle la latence simulée (environ 1 à la cible), `BANC_PLAFOND_10S` la valeur du plafond éprouvée.
 2. 🔴 **Contre une base jetable de l'OFFRE CHOISIE, pas un Postgres local** : un Postgres sur la machine du banc
    mesurerait l'API et cacherait la base, qui sera la limite. Créer une base managée Scaleway jetable, de la même
-   gamme que la production (l'offre est tranchée depuis le 2026-10-14, §13), dans la région PAR.
+   gamme que la production (l'offre est tranchée depuis le 2026-10-14, §13), dans la région AMS (`nl-ams`).
 3. Deux adaptations du banc, à faire à ce moment-là : il monte aujourd'hui son propre Postgres en conteneur
    (prévoir de lui passer l'adresse d'une base existante), et sa garde refuse toute adresse contenant « supabase »
    pour protéger la production (l'assouplir pour une base jetable nommée explicitement, jamais pour la production).
@@ -763,7 +764,7 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    de Meta repointé sur `api.`, et plus rien d'attendu sur `mba.` dans les journaux du proxy.
 7. **Chaque conteneur de worker porte une limite de mémoire et de processeur** (§2), éprouvée d'abord sur le VPS.
 8. **La version de PostgreSQL et les extensions** : la production est en 17.6. ✅ **PostgreSQL 17 est proposé à
-   Paris** (lu par la CLI le 2026-10-14, fin de support dans trois ans) : l'export se restaure dans la même version
+   Amsterdam** (lu par la CLI le 2026-10-14, comme à Paris le matin ; fin de support dans trois ans) : l'export se restaure dans la même version
    majeure. `pg_trgm`, `unaccent`, `pgvector` (0.8.1 en 17), `pgcrypto` et `uuid-ossp` figurent dans la liste des
    extensions des bases managées (documentation de Scaleway, revue le 2025-09-17). Reste à le prouver par
    `npm run migrate` sur une base jetable, nos migrations créant elles-mêmes leurs extensions (`create extension`).
@@ -780,7 +781,9 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    qu'aux étapes 1, 2, 4, 5 et 8, sur ce seul produit ; puis vérifier dans `pg_stat_activity` de la base Messaging Me
    qu'il n'y ouvre plus aucune session, et qu'une synchronisation réelle passe dans les deux sens. Ce qui a coincé
    s'écrit ici avant le jour J.
-1. Créer le projet, le réseau privé et tous les composants dans **une seule région, PAR**.
+1. Créer le projet, le réseau privé et tous les composants dans **une seule région, AMS (`nl-ams`)** : décidé par
+   Julien le 2026-10-14, Paris refusant toute nouvelle machine à un compte neuf (quotas à 0, rupture de stock
+   confirmée par le support). ✅ Fait ce jour-là, avec la base jetable et la machine des essais (`DEPLOY.md`).
 2. Créer la base managée, relever son nombre de connexions, **créer l'endpoint privé**, et refaire le calcul
    du §7.5 avec le vrai chiffre : mesurer (la sonde), puis mettre à jour les constantes de
    `tests/budget-pooler.test.ts` et les tailles de chaque service (dont `DB_POOL_RECEPTION_MAX`, § 7.8). Reporter
@@ -795,8 +798,8 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    chaque conteneur borné en mémoire et en processeur (§2). ⚠️ **La machine de production est une PRO2-XXS** (2 vCPU,
    8 Go, décidé par Julien le 2026-10-14) : les essais tournent sur une PLAY2-NANO, et DEV1 comme PLAY2 sont des gammes
    « développement », sans engagement de service, que Scaleway ne destine pas à la production. Le passage se fait
-   machine arrêtée (changement de type), AVANT le jour J. La passerelle est en zone `fr-par-2` (rupture de stock du
-   modèle VPC-GW-S en `fr-par-1` le 2026-10-14) : la machine la rejoint dans la même zone.
+   machine arrêtée (changement de type), AVANT le jour J. La passerelle et la machine des essais
+   sont en zone `nl-ams-2`, où la PRO2-XXS est en stock (relu le 2026-10-14).
 7. Déployer l'API : conteneur **privé**, **min 1 / max donné par le budget du §7.5**, rattaché au réseau privé,
    secrets fournis par le gestionnaire de secrets de Scaleway (jamais dans l'image), contrôle de vie léger qui ne
    dépend pas de la base, délai d'arrêt très en deçà du bail de la clé d'idempotence (§3.5). ⚠️ **Le nom de chaque
@@ -836,14 +839,15 @@ geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose bu
 - **Un workflow GitHub Actions lancé à la main** (`workflow_dispatch`, comme `plugin.yml`), derrière un environnement
   `scaleway` qui exige l'approbation de Julien. Jamais sur une pull request : le dépôt est public. ⚠️ Pas
   `production` : GitHub ne distingue pas la casse, et ce nom est déjà pris par Vercel, sans aucune protection.
-- **Il construit l'image et la pousse dans le registre de conteneurs Scaleway** (privé, `fr-par`), étiquetée par le
+- **Il construit l'image et la pousse dans le registre de conteneurs Scaleway** (privé, `nl-ams`), étiquetée par le
   commit (`REVISION`). La documentation de Scaleway ne propose pas de déploiement au push comme Vercel : le chemin
   qu'elle documente est ce workflow (vérifié le 2026-10-14).
 - **La migration se lance depuis le réseau privé**, sur la machine des workers, la base n'ayant plus d'endpoint
   public (§7.2). La règle « avant ou après le déploiement » du `CLAUDE.md` ne change pas ; « construire l'image
   avant de migrer » devient « migrer depuis l'image qu'on va déployer ».
-- **Puis l'API passe sur la nouvelle image et les workers redémarrent dessus.** Le retour arrière redéploie l'image
-  précédente, gardée au registre, sous la même vérification qu'aujourd'hui contre ce que les migrations appliquées
+- **Puis les workers redémarrent sur la nouvelle image, et l'API ne passe dessus qu'une fois chaque worker démarré**
+  (une montée de pg-boss se déploie worker d'abord). Le retour arrière est le même workflow lancé sur un commit
+  antérieur, dont l'image est gardée au registre, sous la même vérification qu'aujourd'hui contre ce que les migrations appliquées
   depuis ont resserré.
 - **Une clé Scaleway propre au workflow**, distincte de celle du poste de Julien, limitée au registre, au conteneur
   de l'API et à l'accès à la machine des workers (par le bastion de la Public Gateway), rangée dans les secrets de
@@ -872,6 +876,11 @@ geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose bu
 - Toute règle de débit Pro réellement activée est testée sur ses chemins exacts ; un dépassement est visible
   dans Security Events et ne touche aucun webhook, callback RCS, relais MBA/HubSpot, lien `/r/` ni média `/m/`.
 - Un échantillon de faux positifs est relu avant de passer une règle sensible en blocage.
+- 🔴 **Une requête de 23 Mo arrive jusqu'au conteneur de l'API**, à travers Cloudflare : `POST
+  /tenants/:tenantId/media` reçoit déjà des corps jusqu'à 24 Mo (vidéo d'en-tête d'un modèle, en base64), et la
+  documentation de Scaleway ne donne aucun plafond pour les conteneurs (les 6 Mio qui circulent concernent les
+  Functions). Si la porte coupe plus bas, la création d'un modèle à vidéo casse en silence, et le dépôt passe par une
+  URL signée vers le bucket (relevé par la session des médias des messages rapides, le 2026-10-14).
 
 **Ce qui doit rester fermé**
 - La base n'a plus d'endpoint public ; ni elle ni Redis (s'il existe) ne sont joignables d'Internet.
@@ -1001,6 +1010,10 @@ Aucun de ces choix ne doit être remplacé par une valeur technique arbitraire.
     production) avant le jour J (§10, étape 6).
 18. **Le chemin des secrets de production** : tranché par Julien le 2026-10-14, posés une fois par Julien, jamais par
     GitHub ; le déploiement ne change que l'image (§10 bis).
+19. **La région de la cible** : tranché par Julien le 2026-10-14, **Amsterdam** (`nl-ams`, zone `nl-ams-2` pour les
+    machines), et non Paris, qui refusait toute nouvelle machine à un compte neuf. Les données restent dans l'Union
+    européenne, et la vitrine dit « hébergées dans l'Union européenne, chez Scaleway ». Une dizaine de
+    millisecondes de plus pour un client en France ; l'API et la base restent côte à côte.
 
 ---
 

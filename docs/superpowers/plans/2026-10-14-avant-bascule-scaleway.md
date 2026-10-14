@@ -101,7 +101,7 @@ code.
 
 **Tâches**
 - Avec l'accord de Julien, ressource par ressource (environ 70 € par mois aux petites tailles, prix relevés le
-  2026-10-14) : le réseau privé à Paris, la Public Gateway S et son bastion, le registre privé, l'espace de
+  2026-10-14) : le réseau privé à Amsterdam (`nl-ams` : Paris refusait toute nouvelle machine), la Public Gateway S et son bastion, le registre privé, l'espace de
   conteneurs privé rattaché au réseau privé, la machine des workers sans adresse publique, une base jetable de la
   gamme visée, sur disque bloc, avec le chiffrement du disque activé (une option de Scaleway, à cocher à la création).
 - La connexion à la base chiffrée ET vérifiée : `DB_SSL_CA_FILE` avec le certificat de Scaleway (le code le prévoit
@@ -114,11 +114,12 @@ code.
   (§10 bis) : sans lui, on ne saurait plus d'un poste ce qui est appliqué en production.
 - Le workflow `deploy-scaleway.yml` : `workflow_dispatch` seul, environnement `scaleway` (approbation de
   Julien). Il construit l'image avec `REVISION`, la pousse au registre, migre depuis la machine des workers par le
-  bastion, déploie l'API, puis redémarre les workers sur la même image. Le retour arrière est le même workflow
+  bastion, redémarre les workers sur la même image, puis déploie l'API une fois chaque worker démarré. Le retour arrière est le même workflow
   lancé sur un commit antérieur.
 - Une application IAM `github-deploy` (registre et conteneurs, rien d'autre) et une clé SSH pour le bastion, posées
   par Julien dans les secrets de l'environnement `scaleway` : Claude ne voit jamais ces secrets.
 - Le jeton d'origine (§7.3) : le conteneur est privé, et le format exact du jeton se relit ce jour-là.
+- La taille maximale d'une requête vers le conteneur : une requête de 23 Mo, à travers Cloudflare (§11).
 
 **Tests attendus** : un test lit le workflow et refuse tout autre déclencheur que `workflow_dispatch`, ainsi que
 l'absence de l'environnement `scaleway` (le dépôt est public).
