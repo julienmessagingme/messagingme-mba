@@ -31,7 +31,7 @@ par ses déploiements habituels.
 | 4 | Le banc de charge sur la cible et le budget de connexions | 3 | non |
 | 5 | La répétition : mm-hubspot chez Scaleway, sur sa propre base | 1 et 3 | oui, le connecteur |
 | 6 | La reprise après sinistre, réécrite et chronométrée | 3, puis 5 | non |
-| 7 | Supprimer `mba.messagingme.app` : le webhook de Meta sur `api.`, puis le nom | rien | oui, le webhook de Meta |
+| 7 | Une seule adresse pour l'API : `mba.messagingme.app` supprimé, le relais `/api/backend` de la console retiré | rien | oui, le webhook de Meta |
 | J | La séquence du §10, quelques jours après le lot 5, jamais le même jour | tous | oui |
 
 Les lots 1, 2 et 7 partent dès maintenant. Les lots 3 à 6 partent quand Julien a validé les ressources.
@@ -161,8 +161,12 @@ VPS, avant la bascule, retire une étape au jour J.
 3. Les configurations MCP qui visent `mba.` (dont celle du poste de Julien) passent sur `https://api.messagingme.app/mcp`.
 4. Une fois les journaux muets : l'hôte NPM de `mba.` retiré, l'enregistrement DNS supprimé chez Cloudflare (Julien),
    le conteneur `mba-web` arrêté.
-5. `CLAUDE.md`, `documentation.md` et `brain/INFRA.md` disent l'état nouveau : leurs passages sur le routage par
-   chemin de `mba.` deviennent faux à cet instant, pas avant.
+5. Le relais attrape-tout `/api/backend/:path*` de la console (`web/next.config.mjs`) est retiré EN PRODUCTION
+   (§13, point 14), après lecture des journaux de Vercel : aucun appel attendu dessus, en particulier d'anciens
+   webhooks entrants `/w/` donnés à des clients. Seulement quand `NEXT_PUBLIC_API_URL` est posée : la topologie de
+   même origine des e2e et du développement garde son relais. `/r/` et `/m/` restent.
+6. `CLAUDE.md`, `documentation.md` et `brain/INFRA.md` disent l'état nouveau : leurs passages sur le routage par
+   chemin de `mba.` et sur l'attrape-tout de la console deviennent faux à cet instant, pas avant.
 
 **Assumé par Julien** : les liens `/r/` et visuels `/m/` déjà envoyés sous `mba.` cessent de répondre, sans
 redirection.
@@ -183,6 +187,6 @@ arrière ÉPROUVÉ.
 | 4 | En direct | parce que c'est une mesure, pas une construction | les deux bancs rejoués sur la cible, chiffres au journal |
 | 5 | En direct, pas à pas avec Julien | parce que ce sont des opérations d'infrastructure, une ressource facturée à la fois | une synchronisation réelle dans les deux sens (une analyse poussée vers HubSpot, une étape de vente qui revient), et plus aucune session du connecteur dans `pg_stat_activity` de Supabase |
 | 6 | En direct | parce que la preuve est une restauration, pas du code | une restauration chronométrée, les secrets relus |
-| 7 | En direct, pas à pas avec Julien | parce que c'est de la configuration, et que le changement du webhook de Meta se surveille en direct | un vrai message WhatsApp entrant traité juste après le changement du webhook, puis `mba.` qui ne répond plus |
+| 7 | En direct, pas à pas avec Julien | parce que c'est de la configuration, et que le changement du webhook de Meta se surveille en direct | un vrai message WhatsApp entrant traité juste après le changement du webhook, puis `mba.` qui ne répond plus, et `console.messagingme.app/api/backend/live` qui ne relaie plus rien |
 
 Aucun workflow multi-agents : rien ici n'est un balayage mécanique à grande échelle.

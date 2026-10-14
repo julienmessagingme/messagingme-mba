@@ -542,7 +542,15 @@ Cloudflare de demain.
 ### 7.7 Deux vérités sur Cloudflare à ne pas perdre
 
 - **La console n'est PAS derrière Cloudflare** : `engageme.messagingme.app` pointe directement sur Vercel
-  (vérifié par DNS le 2026-09-21). On ne met pas Cloudflare devant Vercel pour rendre un schéma vrai.
+  (vérifié par DNS le 2026-09-21). On ne met pas Cloudflare devant Vercel pour rendre un schéma vrai, et Vercel
+  déconseille tout proxy devant lui : son pare-feu et sa protection contre les attaques perdraient la vue du trafic
+  ([guide de Vercel](https://vercel.com/kb/guide/cloudflare-with-vercel)). La console ne sert que du code : aucune
+  route serveur, aucun secret (vérifié le 2026-10-14). Son bouclier propre est la CSP, à passer du mode rapport au
+  mode blocage (lot 6 des audits).
+  🔴 **Son relais `/api/backend/*` vers l'API est RETIRÉ en production** (décidé par Julien le 2026-10-14). La console
+  appelle `api.` directement (`NEXT_PUBLIC_API_URL`) ; ce rewrite attrape-tout faisait d'elle une seconde adresse de
+  toute l'API, `/ops` compris, dont les appels arrivaient chez Cloudflare depuis les adresses de Vercel, donc sans
+  le client réel. Restent `/r/` et `/m/`, qui servent des liens déjà livrés.
 - **L'adresse que Cloudflare annonce pour le client (`CF-Connecting-IP`) n'est fiable que si l'origine refuse
   tout ce qui ne vient pas de Cloudflare.** Sinon quiconque joint l'origine en direct l'invente. Notre code ne
   s'y fie nulle part (Fastify est construit sans `trustProxy`) : la règle vaut pour le jour où il s'y fierait.
@@ -950,6 +958,8 @@ Aucun de ces choix ne doit être remplacé par une valeur technique arbitraire.
 13. **`mba.messagingme.app`** : tranché par Julien le 2026-10-14, **supprimé avant la bascule, sans redirection**.
     Les anciens liens `/r/` et `/m/` qui le portent cassent, c'est accepté. Une seule adresse de production :
     `api.messagingme.app` (§10, étape 10).
+14. **Le relais `/api/backend` de la console** : tranché par Julien le 2026-10-14, **retiré en production avec le
+    lot 7**, après lecture des journaux de Vercel ; `/r/` et `/m/` restent (§7.7).
 
 ---
 
