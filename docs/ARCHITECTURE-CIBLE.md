@@ -650,6 +650,15 @@ RÉPÉTITION, quelques jours avant le jour J de Messaging Me (§10, étape 0).**
 - 🔴 **jamais le même jour que la bascule de la base principale** (audit du 2026-10-02) : deux déménagements à la
   fois, un incident devient impossible à attribuer et à annuler.
 
+🔴 **Sa forme chez Scaleway, décidée par Julien le 2026-10-14** : sa porte suit la règle de l'API (derrière
+Cloudflare, conteneur privé, jeton d'origine posé par Cloudflare). HubSpot l'appelle pour l'installation, les webhooks
+et la carte du CRM : c'est une seconde porte publique, sous son propre nom. Son worker tourne sur la machine des
+workers de Messaging Me, dans un troisième conteneur borné, sans les mots de passe de Messaging Me ; sa base reste à lui.
+⚠️ **Et sur le VPS, dès le lot 7** : `mm-hubspot.messagingme.app` passe bien par Cloudflare au DNS (vérifié le
+2026-10-14), mais le filtre « seul Cloudflare » de NPM ne couvre que `api.` et `mba.` : qui connaît l'adresse du VPS le
+joint en direct. Le filtre lui est ajouté après lecture de ses journaux ; Messaging Me l'appelle par le réseau Docker
+interne, que le filtre ne touche pas.
+
 ⚠️ **Le préalable bloquant de cette étape** : `mba` lit le schéma `mmhs` en cross-schéma, en un seul point
 (`getHubspotPortal`, `src/account/store.pg.ts`, le portail lié à un espace) qui a deux consommateurs : l'écran du
 compte et l'interrupteur HubSpot des réglages (`hubspotPortalConnecte`, `src/index.ts`). 🔴 Ce second-là traduit
@@ -960,6 +969,10 @@ Aucun de ces choix ne doit être remplacé par une valeur technique arbitraire.
     `api.messagingme.app` (§10, étape 10).
 14. **Le relais `/api/backend` de la console** : tranché par Julien le 2026-10-14, **retiré en production avec le
     lot 7**, après lecture des journaux de Vercel ; `/r/` et `/m/` restent (§7.7).
+15. **La forme du connecteur HubSpot chez Scaleway** : tranché par Julien le 2026-10-14. Sa porte suit la règle de
+    l'API, son worker tourne sur la machine des workers dans un conteneur borné, sa base reste à lui (§8).
+16. **Le filtre « seul Cloudflare » sur `mm-hubspot.messagingme.app`** : tranché par Julien le 2026-10-14, posé sur le
+    VPS dès le lot 7, sans attendre la bascule (§8).
 
 ---
 

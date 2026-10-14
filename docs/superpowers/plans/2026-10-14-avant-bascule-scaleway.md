@@ -31,7 +31,7 @@ par ses déploiements habituels.
 | 4 | Le banc de charge sur la cible et le budget de connexions | 3 | non |
 | 5 | La répétition : mm-hubspot chez Scaleway, sur sa propre base | 1 et 3 | oui, le connecteur |
 | 6 | La reprise après sinistre, réécrite et chronométrée | 3, puis 5 | non |
-| 7 | Une seule adresse pour l'API : `mba.messagingme.app` supprimé, le relais `/api/backend` de la console retiré | rien | oui, le webhook de Meta |
+| 7 | Une seule adresse pour l'API (`mba.` supprimé, relais de la console retiré), et mm-hubspot réservé à Cloudflare | rien | oui, le webhook de Meta |
 | J | La séquence du §10, quelques jours après le lot 5, jamais le même jour | tous | oui |
 
 Les lots 1, 2 et 7 partent dès maintenant. Les lots 3 à 6 partent quand Julien a validé les ressources.
@@ -141,7 +141,9 @@ connexions sorties du budget de la base principale avant le calcul définitif.
 **Tâches** : sa base managée (endpoint privé) et ses migrations ; l'export des schémas `mmhs` et `pgboss_mmhs`
 depuis Supabase, puis leur restauration ; son `DATABASE_URL` basculé ; son API et son worker déployés par un
 workflow du même modèle, dans son dépôt. `HUBSPOT_SERVICE_URL` de Messaging Me pointe alors sur une adresse
-publique : le canal service passe par Internet, signé et horodaté, et ce passage s'éprouve.
+publique : le canal service passe par Internet, signé et horodaté, et ce passage s'éprouve. Sa forme, décidée le
+2026-10-14 (§8) : son API en conteneur privé derrière Cloudflare, avec le jeton d'origine, comme `api.` ; son worker
+en troisième conteneur borné sur la machine des workers, sans les secrets de Messaging Me.
 
 ## Lot 6 : la reprise après sinistre
 
@@ -165,8 +167,11 @@ VPS, avant la bascule, retire une étape au jour J.
    (§13, point 14), après lecture des journaux de Vercel : aucun appel attendu dessus, en particulier d'anciens
    webhooks entrants `/w/` donnés à des clients. Seulement quand `NEXT_PUBLIC_API_URL` est posée : la topologie de
    même origine des e2e et du développement garde son relais. `/r/` et `/m/` restent.
-6. `CLAUDE.md`, `documentation.md` et `brain/INFRA.md` disent l'état nouveau : leurs passages sur le routage par
-   chemin de `mba.` et sur l'attrape-tout de la console deviennent faux à cet instant, pas avant.
+6. Le filtre « seul Cloudflare » du proxy NPM est étendu à `mm-hubspot.messagingme.app` (§13, point 16), après
+   lecture de ses journaux. Messaging Me l'appelle par le réseau Docker interne, que le filtre ne touche pas.
+7. `CLAUDE.md`, `documentation.md` et `brain/INFRA.md` disent l'état nouveau : leurs passages sur le routage par
+   chemin de `mba.`, sur l'attrape-tout de la console et sur l'accès à mm-hubspot deviennent faux à cet instant, pas
+   avant.
 
 **Assumé par Julien** : les liens `/r/` et visuels `/m/` déjà envoyés sous `mba.` cessent de répondre, sans
 redirection.
@@ -187,6 +192,6 @@ arrière ÉPROUVÉ.
 | 4 | En direct | parce que c'est une mesure, pas une construction | les deux bancs rejoués sur la cible, chiffres au journal |
 | 5 | En direct, pas à pas avec Julien | parce que ce sont des opérations d'infrastructure, une ressource facturée à la fois | une synchronisation réelle dans les deux sens (une analyse poussée vers HubSpot, une étape de vente qui revient), et plus aucune session du connecteur dans `pg_stat_activity` de Supabase |
 | 6 | En direct | parce que la preuve est une restauration, pas du code | une restauration chronométrée, les secrets relus |
-| 7 | En direct, pas à pas avec Julien | parce que c'est de la configuration, et que le changement du webhook de Meta se surveille en direct | un vrai message WhatsApp entrant traité juste après le changement du webhook, puis `mba.` qui ne répond plus, et `console.messagingme.app/api/backend/live` qui ne relaie plus rien |
+| 7 | En direct, pas à pas avec Julien | parce que c'est de la configuration, et que le changement du webhook de Meta se surveille en direct | un vrai message WhatsApp entrant traité juste après le changement du webhook, puis `mba.` qui ne répond plus, `console.messagingme.app/api/backend/live` qui ne relaie plus rien, et un appel direct au VPS sur `mm-hubspot.` refusé |
 
 Aucun workflow multi-agents : rien ici n'est un balayage mécanique à grande échelle.
