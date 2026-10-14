@@ -98,7 +98,7 @@ export function OpsEmailsCard({ token }: { token: string }) {
       <div className="rounded-carte border border-ink-200 bg-white p-5">
         <h2 className="text-sm font-semibold text-ink-900">{t('E-mails', 'E-mails')}</h2>
         <p className="mt-1 text-xs text-ink-500">
-          {t('Indisponible sur cette instance : l’API n’a pas encore la route.', 'Unavailable on this instance: the API does not have the route yet.')}
+          {t('Section pas encore disponible : l’API de ce serveur n’a pas les e-mails du produit.', 'Section not available yet: this server’s API does not have product e-mails.')}
         </p>
       </div>
     );
