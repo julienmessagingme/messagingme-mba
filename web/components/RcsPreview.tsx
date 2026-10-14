@@ -3,6 +3,7 @@
 import { ICONE_KIND } from '@/lib/rcs-boutons';
 import { MAX_BOUTONS_CARTE, type BrouillonRcs } from '@/lib/rcs';
 import { useT } from '@/lib/i18n';
+import { imageDessinable } from '@/lib/image-dessinable';
 import { Icone } from '@/components/Icone';
 
 /**
@@ -21,6 +22,7 @@ import { Icone } from '@/components/Icone';
 export function RcsPreview({ brouillon, vide, sansFond = false }: { brouillon: BrouillonRcs; vide?: string; sansFond?: boolean }) {
   const t = useT();
   const avecImage = brouillon.imageUrl.trim() !== '';
+  const image = imageDessinable(brouillon.imageUrl);
   const remplis = brouillon.suggestions.filter((s) => s.text.trim() !== '');
   const dansLaCarte = avecImage ? remplis.slice(0, MAX_BOUTONS_CARTE) : [];
   const enPastilles = avecImage ? remplis.slice(MAX_BOUTONS_CARTE) : remplis;
@@ -28,16 +30,18 @@ export function RcsPreview({ brouillon, vide, sansFond = false }: { brouillon: B
   return (
     <div className={sansFond ? '' : 'rounded-carte bg-ink-50 p-3'}>
       <div className="max-w-[85%] overflow-hidden rounded-carte bg-navy-50">
-        {avecImage && (
+        {/* La carte garde sa forme dès qu'une adresse est posée (les boutons en dépendent) ; l'image ne se dessine
+            que pour une adresse https (`imageDessinable`), sinon sa place reste vide. */}
+        {avecImage && (image !== null ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={brouillon.imageUrl.trim()}
+            src={image}
             alt={t('Aperçu de l’image', 'Image preview')}
             referrerPolicy="no-referrer"
             data-testid="rcs-preview-image"
             className="aspect-video w-full bg-ink-100 object-cover"
           />
-        )}
+        ) : <div className="aspect-video w-full bg-ink-100" data-testid="rcs-preview-image-absente" />)}
         <div data-testid="rcs-preview-text" className="whitespace-pre-wrap px-3 py-2 text-sm text-ink-900">
           {brouillon.text.trim() || <span className="italic text-ink-500">{vide ?? t('Votre message…', 'Your message…')}</span>}
         </div>

@@ -325,7 +325,9 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
   build && npm run start'`, l'environnement étant celui de `playwright.config.ts`), puis d'attendre que le
   port 3000 réponde : `reuseExistingServer` vaut `!CI`, donc hors CI Playwright RÉUTILISE ce serveur et la
   suite part en quelques secondes. ⚠️ Penser au bundle : `next start` sert `.next`, donc après une mutation
-  il faut tuer le serveur, reconstruire et le relancer, sinon on mesure l'ancien code.
+  il faut tuer le serveur, reconstruire et le relancer, sinon on mesure l'ancien code. ⚠️ Pour la topologie
+  Vercel, le serveur se construit avec `NEXT_PUBLIC_API_URL=http://127.0.0.1:3000/api/backend` et la suite se
+  lance avec `E2E_TOPOLOGIE=vercel` : un serveur proxy réutilisé ferait mesurer la topologie proxy deux fois.
   ⚠️ **ET LE VERDICT SE LIT DANS LA SORTIE, PAS DANS `$?`.** Ce timeout a été observé avec un code de
   sortie à 0, mais la commande passait par `| tail` : le 0 était celui du PIPE et ne dit rien de Playwright.
   L'affirmation « `playwright test` rend 0 sur ce timeout » n'est donc PAS établie, et elle a été retirée

@@ -12,7 +12,12 @@ import { defineConfig, devices } from '@playwright/test';
  * ⚠️ Playwright ne vérifie pas le CORS d'une réponse interceptée (mesuré) : il reste à la charge de `CORS_ORIGINS`.
  */
 const API_VERCEL = 'http://127.0.0.1:3000/api/backend';
-const vercel = process.env.E2E_TOPOLOGIE === 'vercel';
+const topologie = process.env.E2E_TOPOLOGIE ?? 'proxy';
+// Une valeur inconnue (casse, faute de frappe) ferait tourner la topologie proxy sous le nom de l'autre, vert et muet.
+if (topologie !== 'proxy' && topologie !== 'vercel') {
+  throw new Error(`E2E_TOPOLOGIE vaut « ${topologie} » : seules « proxy » et « vercel » existent.`);
+}
+const vercel = topologie === 'vercel';
 
 export default defineConfig({
   testDir: './e2e',

@@ -10,6 +10,10 @@ Julien :
   passage en blocage : la clé `Content-Security-Policy-Report-Only` de `web/next.config.mjs` devient
   `Content-Security-Policy`. Les e2e simulent le SDK Meta : seul un vrai navigateur dira ce qu'il charge pendant une
   connexion de numéro.
+- **Avant le blocage, l'aperçu d'un modèle à en-tête vidéo** : `TemplatePreview` passe à `<video>` une adresse du CDN de
+  Meta (`headerMediaUrl`), que `media-src 'self' blob:` refuse ; aucun e2e ne la charge. Mesurer les hôtes qui la
+  servent, puis les nommer dans `media-src` (`tests/web-csp-media.test.ts` fixe la directive à l'exact, à mettre à
+  jour avec).
 - **Les nonces** (retirer `'unsafe-inline'` des scripts) : ils imposent le rendu à la demande de chaque page sur Vercel,
   qui sert aujourd'hui des pages statiques.
 - **Le quota anonyme de Docker Hub en CI** (`toomanyrequests` sur `integration` et `securite`) : un jeton en lecture

@@ -41,6 +41,13 @@ describe('les deux moitiés de la CI', () => {
     expect(jobsDe(ci)).not.toContain('web');
   });
 
+  it('🔴 la console se joue dans les DEUX topologies livrées, et la jambe `vercel` le sait', () => {
+    // Sans la variable, les deux jambes de la matrice tourneraient en proxy, vertes : la topologie de
+    // `console.messagingme.app` ne serait plus exercée, sans que rien ne le dise (lot 6 du bilan des audits).
+    expect(ciWeb).toMatch(/^\s+topologie: \[proxy, vercel\]$/m);
+    expect(ciWeb).toMatch(/^\s+E2E_TOPOLOGIE: \$\{\{ matrix\.topologie \}\}$/m);
+  });
+
   it('🔴 les trois autres jobs sont restés, aucun n’a disparu dans le déménagement', () => {
     // Un découpage qui perd un job en route ne se voit pas : il ne reste qu'un check vert de moins, sur une
     // page que personne ne compte.

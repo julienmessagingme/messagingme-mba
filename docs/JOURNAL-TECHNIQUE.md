@@ -47,6 +47,13 @@ Plan `docs/superpowers/plans/2026-10-14-lot6-csp-console.md`.
 - **Ce que la garde a trouvé dans les e2e** : la vignette de `ChampImageHebergee` dessinait n'importe quelle adresse
   tapée, `http` compris, que la CSP refuse (et qu'une page en https ne charge pas). Elle ne se dessine plus que pour
   une adresse https ; « Retirer » reste.
+- **Les jaunes de la relecture, poussés à la suite** : la garde écoute désormais le CONTEXTE (`context.on('console')`),
+  qui reçoit aussi le premier chargement d'une fenêtre surgissante ; `tests/e2e-garde-csp.test.ts` refuse en plus un
+  spec qui ouvrirait son propre contexte ; une `E2E_TOPOLOGIE` inconnue fait échouer la configuration au lieu de
+  jouer la topologie proxy sous un autre nom, et `tests/ci-decoupage.test.ts` exige la matrice et sa variable ; la
+  règle « image dessinable » (https seulement) vit dans `web/lib/image-dessinable.ts`, partagée par
+  `ChampImageHebergee` et `RcsPreview`. L'aperçu d'un modèle à en-tête vidéo (CDN de Meta, refusé par `media-src`)
+  est noté pour le passage en blocage, sans élargir la directive tant que ses hôtes ne sont pas mesurés.
 - **Le reste** : `verifier-base-api.mjs` vérifie aussi la CSP du build de production ; trivy est épinglé (0.74.0, par
   empreinte), le commentaire qui disait le dépôt privé est corrigé.
 

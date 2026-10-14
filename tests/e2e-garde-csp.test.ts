@@ -26,12 +26,14 @@ describe('la garde de la CSP dans les e2e', () => {
     expect(tous.length).toBeGreaterThan(100);
   });
 
-  it('🔴 chaque spec importe `test` de la garde, aucun de `@playwright/test`', () => {
+  it('🔴 chaque spec importe `test` de la garde, aucun de `@playwright/test`, et aucun n’ouvre son propre contexte', () => {
     const fautifs = tous.filter((f) => {
       const source = readFileSync(f, 'utf8');
       const deLaGarde = /^import \{[^}]*\btest\b[^}]*\} from '(\.\/|(\.\.\/)+)aide\/test';$/m.test(source);
       const direct = /^import \{[^}]*\btest\b[^}]*\} from '@playwright\/test';$/m.test(source);
-      return !deLaGarde || direct;
+      // Un contexte ouvert par le spec lui-même n'est pas celui que la garde écoute.
+      const contextePropre = /\bnewContext\(/.test(source);
+      return !deLaGarde || direct || contextePropre;
     }).map((f) => relative(E2E, f));
     expect(fautifs).toEqual([]);
   });

@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { uploadRcsMedia } from '@/lib/api';
+import { imageDessinable } from '@/lib/image-dessinable';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { Bouton } from '@/components/Bouton';
@@ -88,12 +89,8 @@ export function ChampImageHebergee({
 
   const douteuse = avertirExtension && valeur.trim() !== '' && !IMAGE_RE.test(valeur.trim());
   const aUneImage = valeur.trim() !== '';
-  /**
-   * La vignette ne se dessine que pour une adresse https : c'est la seule que la CSP de la console laisse charger
-   * (`img-src`, `next.config.mjs`), et une page servie en https ne charge pas une image en http. Une adresse en http
-   * garde son bouton « Retirer » ; c'est l'écran appelant qui dit si elle sera refusée.
-   */
-  const vignette = /^https:\/\//i.test(valeur.trim()) ? valeur.trim() : null;
+  // La vignette ne se dessine que pour une adresse https (`imageDessinable`) ; une autre garde son bouton « Retirer ».
+  const vignette = imageDessinable(valeur);
 
   const retirer = (
     <button
