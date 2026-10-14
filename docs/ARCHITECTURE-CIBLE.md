@@ -481,9 +481,12 @@ Meta, opérateur RCS, client /v1
   le sien). **Disponible sur l'offre gratuite de Cloudflare**, dix règles actives, vérifié le 2026-09-21.
   Variante si l'on veut le jeton masqué dans l'interface : un Cloudflare Worker avec un secret (offre payante
   des Workers, qui n'est PAS Cloudflare Pro). Pas de Worker si la règle suffit.
-- ⚠️ **Le format exact du jeton côté Scaleway est à relire le jour du chantier** : la documentation annonce une
-  migration de l'authentification des conteneurs privés vers IAM, donc le jeton est vraisemblablement une clé
-  IAM à droits restreints, à faire tourner comme telle.
+- ✅ **Le format du jeton, relu le 2026-10-14** ([Scaleway : de JWT à IAM pour les conteneurs
+  privés](https://www.scaleway.com/en/docs/serverless-containers/how-to/migrate-jwt-to-iam-authentication/)) : la clé
+  SECRÈTE d'une application IAM dédiée (par exemple `cloudflare-origine`), dont la seule policy est
+  `ContainersPrivateAccess` sur le projet, envoyée dans `X-Auth-Token` ; sans elle, le conteneur répond 403. Les jetons
+  JWT d'avant sont dépréciés (création coupée en 2026). Julien crée l'application et sa clé (la clé de Claude n'a aucun
+  droit IAM), et la pose dans la règle Cloudflare ; une clé IAM expire au plus tard en un an : sa rotation se note.
 
 ### 7.4 Les workers sortent par une Public Gateway, et n'entrent par rien
 
@@ -836,6 +839,10 @@ geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose bu
 - **Une clé Scaleway propre au workflow**, distincte de celle du poste de Julien, limitée au registre, au conteneur
   de l'API et à l'accès à la machine des workers (par le bastion de la Public Gateway), rangée dans les secrets de
   l'environnement `production`.
+- 🔴 **Les secrets de production ne transitent JAMAIS par GitHub** (décidé par Julien le 2026-10-14) : Julien les pose
+  une fois, par une commande qui lit son presse-papiers sans rien afficher, dans les variables secrètes du conteneur de
+  l'API et dans un fichier réservé à l'administrateur sur la machine des workers. Le workflow ne change que l'IMAGE ; sa
+  clé n'a aucun droit de lecture sur les secrets.
 - ⚠️ **La base ne se lit plus depuis un poste.** Aujourd'hui le `DATABASE_URL` du poste EST la production ; sans
   endpoint public, il faut un tunnel par le bastion. `npm run migrations` et les sondes en lecture seule sont à
   adapter, et c'est un gain : la production cesse d'être à une variable d'environnement d'une commande lancée par
@@ -983,6 +990,8 @@ Aucun de ces choix ne doit être remplacé par une valeur technique arbitraire.
     VPS dès le lot 7, sans attendre la bascule (§8).
 17. **La machine des workers** : tranché par Julien le 2026-10-14, PLAY2-NANO pendant les essais, PRO2-XXS (gamme
     production) avant le jour J (§10, étape 6).
+18. **Le chemin des secrets de production** : tranché par Julien le 2026-10-14, posés une fois par Julien, jamais par
+    GitHub ; le déploiement ne change que l'image (§10 bis).
 
 ---
 
