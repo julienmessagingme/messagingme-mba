@@ -1,7 +1,6 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 import type { DecryptedEmailAccount } from './types';
 import type { Socket } from 'node:net';
-import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 import { ouvrirSocketPublique } from '../lib/connexion-publique';
 
 export interface SmtpMessage {
@@ -34,8 +33,8 @@ export function buildTransport(
     port: account.port,
     secure: account.secure,
     auth: { user: account.username, pass: account.password },
-    getSocket: (_options: SMTPTransport.Options, rappel: (err: Error | null, socketOptions: unknown) => void) => {
-      ouvrir(hote, account.port).then((connection) => rappel(null, { connection }), (err: Error) => rappel(err, null));
+    getSocket: (_options, rappel) => {
+      ouvrir(hote, account.port).then((connection) => rappel(null, { connection }), (err: Error) => rappel(err));
     },
   });
 }

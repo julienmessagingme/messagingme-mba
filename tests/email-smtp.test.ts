@@ -105,6 +105,9 @@ describe('buildTransport : la connexion passe par la socket vérifiée', () => {
   let port = 0;
   let connexions = 0;
   const recus: string[] = [];
+  /** Les destinataires annoncés (`RCPT TO`) et les lignes du message reçu, pour juger la copie cachée. */
+  const destinataires: string[] = [];
+  const message: string[] = [];
   beforeAll(async () => {
     serveur = createServer((s) => {
       connexions += 1;
@@ -120,8 +123,9 @@ describe('buildTransport : la connexion passe par la socket vérifiée', () => {
           const ligne = tampon.slice(0, fin);
           tampon = tampon.slice(fin + 2);
           fin = tampon.indexOf('\r\n');
-          if (enDonnees) { if (ligne === '.') { enDonnees = false; dire('250 accepte'); } continue; }
+          if (enDonnees) { if (ligne === '.') { enDonnees = false; dire('250 accepte'); } else message.push(ligne); continue; }
           recus.push(ligne.split(' ')[0]!.toUpperCase());
+          if (/^RCPT TO:/i.test(ligne)) destinataires.push(ligne.slice('RCPT TO:'.length).trim());
           if (/^EHLO/i.test(ligne)) s.write('250-faux.smtp\r\n250 AUTH PLAIN\r\n');
           else if (/^AUTH/i.test(ligne)) dire('235 ok');
           else if (/^DATA/i.test(ligne)) { enDonnees = true; dire('354 envoyez'); }
@@ -147,6 +151,27 @@ describe('buildTransport : la connexion passe par la socket vérifiée', () => {
     await sendSmtpEmail(transport, boite(), { to: 'x@ex.fr', subject: 'S', text: 'corps' });
     expect(connexions).toBe(avant + 1);
     expect(recus).toEqual(expect.arrayContaining(['EHLO', 'AUTH', 'MAIL', 'RCPT', 'DATA']));
+  });
+
+  it('🔴 la copie cachée part en destinataires SMTP, jamais dans le message écrit (le vrai transport)', async () => {
+    // Les tests de `sendSmtpEmail` regardent ce que nous REMETTONS à nodemailer ; celui-ci lit ce que le serveur
+    // REÇOIT. Un en-tête Bcc ou un « À » élargi exposerait les clients les uns aux autres (décision du 2026-08-25).
+    // ⚠️ Pas `streamTransport` pour ça : il garde l'en-tête Bcc à dessein (`keepBcc`), le transport SMTP non.
+    destinataires.length = 0;
+    message.length = 0;
+    const ouvrir = (hote: string, p: number) => ouvrirSocketPublique(hote, p, {
+      resoudre: (h, rappel) => rappel(null, h === 'smtp.client.test' ? [{ address: '127.0.0.1', family: 4 }] : []),
+      estInterdite: () => false,
+    });
+    await sendSmtpEmail(buildTransport(boite(), ouvrir), boite(), {
+      to: 'seul@ex.fr', bcc: ['b1@ex.fr', 'b2@ex.fr'], subject: 'S', text: 'corps',
+    });
+    expect(destinataires).toEqual(expect.arrayContaining(['<seul@ex.fr>', '<b1@ex.fr>', '<b2@ex.fr>']));
+    const ecrit = message.join('\n');
+    expect(ecrit).toMatch(/^To: seul@ex\.fr$/m);
+    expect(ecrit).not.toMatch(/^bcc:/im);
+    expect(ecrit).not.toContain('b1@ex.fr');
+    expect(ecrit).not.toContain('b2@ex.fr');
   });
 
   it('🔴 par défaut, un hôte interne est refusé AVANT toute connexion, et le refus se reconnaît', async () => {

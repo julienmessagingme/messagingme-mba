@@ -80,6 +80,15 @@ jobs:
         run: |
           pipx install semgrep || pip install semgrep
           semgrep --config=p/typescript --config=p/secrets --error --quiet --metrics=off src web/lib web/app
+      # L image de node (le build) et celle de trivy viennent de Docker Hub : avec le compte de Julien (jeton en lecture
+      # seule), pas le quota anonyme partage par les runners de GitHub, qui rendait ce job rouge (`toomanyrequests`).
+      # Posee JUSTE AVANT leur seul consommateur : les scripts d installation des etapes d avant ne voient pas
+      # l identifiant. Jeton expire, revoque ou secret absent : cette etape echoue en le disant.
+      - name: Connexion a Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Image Docker (trivy)
         continue-on-error: true
         # 🔴 EPINGLE PAR VERSION ET PAR EMPREINTE, jamais `latest` : ce conteneur recoit la socket Docker du runner,
@@ -126,6 +135,11 @@ jobs:
         # 2026-09-02, `extension "vector" is not available` sur l'image nue. La production (Supabase) a
         # l'extension DISPONIBLE (`vector` 0.8.2, verifie en base) : c'est la CI qu'on aligne sur elle.
         image: pgvector/pgvector:pg16
+        # Tirée avec le compte Docker Hub de Julien (jeton en lecture seule), pas en anonyme : le quota anonyme,
+        # partagé par les runners de GitHub, rendait ce job rouge (`toomanyrequests`) sans qu'il ait rien vérifié.
+        credentials:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: postgres

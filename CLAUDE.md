@@ -344,8 +344,11 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
   (`tests/ci-decoupage.test.ts`). 🔴 **D'où la règle : un lot qui ne touche que `web/` lance quand même la suite
   racine ENTIÈRE avant de pousser** (`tests/aide-carte.test.ts` exige `npm run aide:carte` après toute retouche de
   `web/lib/nav.ts`, `tests/web-vouvoiement.test.ts` refuse un tutoiement dans la console).
-  ⚠️ Un job `integration` ou `securite` rouge sur `toomanyrequests` (Docker Hub refuse
-  le tirage anonyme) n'a RIEN vérifié : relancer, ne jamais déployer sur ce rouge-là ni le lire comme un succès.
+  ⚠️ Un job `integration` ou `securite` rouge sur `toomanyrequests` (quota de Docker Hub) n'a RIEN vérifié :
+  relancer, ne jamais déployer sur ce rouge-là ni le lire comme un succès. Ces deux jobs tirent avec le compte
+  de Julien (secrets `DOCKERHUB_USERNAME` et `DOCKERHUB_TOKEN`, jeton en lecture seule) : un rouge `unauthorized`
+  ou `Username/Password required` dit un jeton expiré ou révoqué, ou un secret absent ou mal nommé ; Julien
+  renouvelle le jeton dans Docker Hub puis dans le secret.
   ⚠️ Un push qui ne touche QUE des `.md` ne déclenche AUCUN run (`paths-ignore`, pour le quota) : l'absence
   de run sur `HEAD` n'est donc pas un échec, c'est le dernier commit DE CODE qu'il faut regarder.
   🔴 **ET CE PUSH-LÀ PEUT QUAND MÊME CASSER LA CI DU SUIVANT** : `tests/aide-proposer.test.ts` lit les sections de

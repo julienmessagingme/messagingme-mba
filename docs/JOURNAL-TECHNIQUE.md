@@ -5,6 +5,34 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-14 : les dépendances de production vulnérables, et la CI tire de Docker Hub avec un compte (lot 6, B1)
+
+Plan `docs/superpowers/plans/2026-10-14-lot6-dependances.md`.
+
+- **Ce que la CI disait sans que personne ne le lise** : `npm audit` remontait des failles de gravité haute dans les
+  dépendances de production (fastify, fast-uri, nodemailer côté API ; next, sharp, source-map-js côté console). Le
+  contrôle est en `continue-on-error`, et son `bash -e` s'arrêtait après l'audit de l'API : celui de la console ne
+  tournait jamais.
+- **Les versions** : chaque fois la plus ancienne qui corrige, publiée depuis au moins deux semaines. fastify 5.12.5,
+  fast-uri 3.1.8, nodemailer 10.0.13, next 15.5.27, sharp 0.35.5, source-map-js 1.2.2. `npm audit --omit=dev` est à zéro
+  côté API ; côté console restent la copie de postcss embarquée dans next et un avis modéré sur next (next 16).
+- **nodemailer 10** embarque ses propres types : `@types/nodemailer` part, et le rappel de `getSocket` est inféré (il
+  déclarait `unknown`, que les nouveaux types refusent ; l'erreur ne passe plus `null` en second argument). Le dialogue
+  SMTP réel de `tests/email-smtp.test.ts` (socket vérifiée, refus d'un hôte interne) passe sur la nouvelle version.
+  L'avis « fuite d'identifiants SMTP entre espaces » (cache DNS partagé, `servername`) ne semble pas nous toucher : nous
+  ouvrons la socket nous-mêmes et ne posons pas `servername`.
+- **Docker Hub** : `securite` (`docker/login-action`) et `integration` (`credentials` du service pgvector) tirent avec
+  le compte de Julien, jeton en lecture seule dans `DOCKERHUB_USERNAME` et `DOCKERHUB_TOKEN`. Le quota anonyme,
+  partagé par les runners de GitHub, avait rendu ces jobs rouges trois fois la semaine précédente.
+- **La copie cachée, enfin jugée sur le vrai transport** : un test fait recevoir un envoi avec `bcc` par le faux serveur
+  SMTP local et vérifie que les adresses cachées partent en `RCPT TO` et nulle part dans le message. Vu rouge en
+  élargissant le « À ». ⚠️ Écrit d'abord sur `streamTransport`, il échouait sur le code juste : ce transport (comme
+  `json` et `sendmail`) garde l'en-tête Bcc À DESSEIN (`keepBcc`), le transport SMTP non. Un invariant de livraison se
+  juge sur le transport de production, jamais sur un transport de commodité.
+- **Piège rencontré** : `npm audit fix --omit=dev` retire AUSSI les dépendances de développement de `node_modules`
+  (tailwind, eslint), sans toucher le verrou : la construction échoue alors sur `Cannot find module 'tailwindcss'`. Un
+  `npm ci` depuis le verrou répare.
+
 ## 2026-10-14 : les clés de champs de l'import CSV
 
 La console et le serveur dérivent désormais les clés avec la même règle dans `web/lib/partage/cle-champ.ts` ; le type

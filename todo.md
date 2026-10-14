@@ -3,10 +3,11 @@
 ## 🟠 Lot 6 du bilan des audits : ce qui reste après la CSP de la console (2026-10-14)
 
 La première livraison (plan `docs/superpowers/plans/2026-10-14-lot6-csp-console.md`) autorise l'API dans `connect-src`,
-fait échouer tout e2e qui viole la CSP et joue la suite dans les deux topologies. Restent, chacun sur une décision de
-Julien :
+fait échouer tout e2e qui viole la CSP et joue la suite dans les deux topologies. Décisions de Julien du 2026-10-14 : un collecteur en table, pas de nonces
+pour l'instant, un jeton Docker Hub (posé par Julien, branché au lot B1), et les contrôles de CI laissés au choix de
+l'implémenteur. Restent :
 
-- **Le collecteur des rapports CSP des vrais navigateurs** (où les garder), puis quelques jours d'observation, puis le
+- **Le collecteur des rapports CSP des vrais navigateurs** (une table agrégée, livraison B3), puis quelques jours d'observation, puis le
   passage en blocage : la clé `Content-Security-Policy-Report-Only` de `web/next.config.mjs` devient
   `Content-Security-Policy`. Les e2e simulent le SDK Meta : seul un vrai navigateur dira ce qu'il charge pendant une
   connexion de numéro.
@@ -14,12 +15,13 @@ Julien :
   Meta (`headerMediaUrl`), que `media-src 'self' blob:` refuse ; aucun e2e ne la charge. Mesurer les hôtes qui la
   servent, puis les nommer dans `media-src` (`tests/web-csp-media.test.ts` fixe la directive à l'exact, à mettre à
   jour avec).
-- **Les nonces** (retirer `'unsafe-inline'` des scripts) : ils imposent le rendu à la demande de chaque page sur Vercel,
-  qui sert aujourd'hui des pages statiques.
-- **Le quota anonyme de Docker Hub en CI** (`toomanyrequests` sur `integration` et `securite`) : un jeton en lecture
-  seule dans deux secrets GitHub, posé par Julien, ou des miroirs.
-- **Les contrôles de CI** : l'image `mba-web` scannée par trivy, CodeQL (gratuit, le dépôt est public), Dependabot en
-  mises à jour de sécurité, des seuils bloquants écrits avec une procédure d'exception datée.
+- **Les nonces** (retirer `'unsafe-inline'` des scripts), écartés pour l'instant : ils imposent le rendu à la demande
+  de chaque page sur Vercel, qui sert aujourd'hui des pages statiques.
+- **Les contrôles de CI (livraison B2)** : `npm audit` bloquant sur les dépendances de PRODUCTION (API et console, chacune
+  dans son étape : un `bash -e` faisait sauter celle de la console), trivy bloquant en CRITICAL, l'image `mba-web`
+  scannée, CodeQL ; une procédure d'exception datée. Exceptions connues : la copie de postcss embarquée dans next et un
+  avis modéré sur next (next 16), vitest en développement (vitest 5). Pas de Dependabot : ses PR ne cadrent pas avec le
+  travail direct sur `main`, et l'audit bloquant couvre le besoin.
 
 
 ## 🟡 Dossiers, second facteur, Inbox, menu du compte : ce qui reste (2026-10-13)
