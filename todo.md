@@ -524,13 +524,13 @@ son heure, ou jusqu'à la connexion du numéro. Correction prévue : porter l'id
 jeton du lien (`signLienNumero`) et exiger dans la garde `adminOuLien` qu'elle ne soit pas révoquée. Dit dans
 `features.md` en attendant.
 
-## 🟠 Connecteurs : l'autonomie d'un outil ne suit pas le risque monté par sa requête (relecture de `099fd6c1`, 2026-10-05)
+## 🟡 Connecteurs : ce que la relecture de `099fd6c1` laisse, l'autonomie qui suit le risque étant faite (2026-10-14)
 
-- **Un connecteur monté à `irreversible` garde son autonomie** : depuis RC4 (2026-10-06), la ligne d'un connecteur
-  irréversible le dit et « Modifier » offre la case. Reste à faire tomber `autonome` des outils montés à
-  `irreversible` par un changement de méthode, dans la même transaction (`PgRequeteStore.patch`) : un consentement
-  posé sur un outil `write` (la route l'accepte sur tout risque) ne doit pas passer en silence à une action devenue
-  irréversible (même règle que le rafraîchissement MCP).
+- 🟡 **Même défaut côté MCP, par un autre geste** : `PgMcpStore.reglerOutil` (`src/agent/mcp/store.pg.ts`, route
+  `src/http/agent-mcp.ts`) laisse le client régler le risque d'un outil MCP (le monter, ou le baisser puis le remonter)
+  sans toucher à ses liaisons : une autonomie ancienne revient alors en silence. Peu probable (geste explicite sur le
+  sélecteur, la case n'existe qu'en irréversible). Correctif : lire l'ancien risque, envelopper dans `enTransaction`
+  avec `verrouillerDefinitions([outilId])`, et faire tomber l'autonomie à toute montée vers `irreversible`.
 - 🟡 Une fenêtre reste ouverte sur le risque, de l'ordre de la milliseconde : la création d'un outil lit la méthode
   AVANT sa transaction (`POST .../tools/connecteur`), et ni l'insertion ni le patch ne voient l'écriture non validée
   de l'autre. La fermer : dans la transaction de `creerOutilConnecteur`, lire la méthode de la requête `for share`

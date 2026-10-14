@@ -213,6 +213,19 @@ export class PgRequeteStore implements RequeteStore {
           where tenant_id = $1 and id = any($2::uuid[]) and risk = any($4::text[])`,
         [tenantId, aMonter, plancher, sous],
       );
+      /**
+       * 🔴 Et l'autonomie TOMBE quand la montée rend l'outil irréversible : elle avait été cochée sur une écriture
+       * (la route l'accepte sur tout risque), et l'exécuteur ne la lit que sur un outil irréversible. Sans ça, un
+       * POST autonome passé en DELETE agissait sans personne, au nom d'un oui donné pour autre chose. Même règle
+       * que le rafraîchissement MCP (`src/agent/mcp/store.pg.ts`) : `autonome_par` reste, pour l'instruction.
+       */
+      if (plancher === 'irreversible' && aMonter.length > 0) {
+        await client.query(
+          `update agent_tool_consommateurs set autonome = false, updated_at = now()
+            where tenant_id = $1 and tool_id = any($2::uuid[]) and autonome`,
+          [tenantId, aMonter],
+        );
+      }
       return true;
     });
     if (!ecrite) return null;

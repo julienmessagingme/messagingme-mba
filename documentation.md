@@ -1130,6 +1130,9 @@ activation et leur autonomie, et republier chez Meta.
 la garde d'autonomie sur une action irréversible. Il SUIT la méthode quand la requête en change :
 `PgRequeteStore.patch` monte au nouveau plancher, dans la transaction de l'écriture, les outils branchés qui sont en
 dessous, et ne redescend jamais les autres (rien ne distingue un risque dérivé d'un risque monté par le client).
+🔴 Une montée qui rend un outil IRRÉVERSIBLE fait tomber son autonomie, dans la même transaction (`autonome = false`
+sur `agent_tool_consommateurs`, `autonome_par` gardé pour l'instruction) : le oui avait été donné pour une écriture,
+et l'exécuteur ne lit l'autonomie que sur un outil irréversible. Même règle que le rafraîchissement MCP.
 ⚠️ Un connecteur irréversible, né sur un DELETE ou monté par un changement de méthode, est refusé à chaque appel d'un
 agent IA (étape 2 de l'exécuteur) tant que l'autonomie n'est pas cochée : depuis RC4, sa ligne le dit, et « Modifier »
 offre la case.

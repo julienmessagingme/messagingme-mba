@@ -2508,6 +2508,9 @@ scénario, comment importer des contacts.
   (`/commandes/{{ref}}`, insérées par les mêmes pastilles que partout ailleurs). Les **en-têtes** portent eux
   aussi des variables. ⚠️ Une valeur qui vaut « . » ou « .. » est refusée : elle déplacerait l'appel dans le
   chemin. Le bouton « Essayer » montre ce qui est PARTI, en-têtes compris, sans jamais le secret de la source.
+  ⚠️ Passer une requête en **DELETE** rend ses outils **irréversibles** : chacun doit recevoir sa case d'autonomie
+  pour agir seul, en connaissance de cause. Une autonomie posée avant, sur une écriture (possible seulement par
+  l'API), tombe au passage (2026-10-14).
 - ✅ **Envoyer des données**, ce qui manquait : des **paramètres d'URL**, et surtout un **corps de requête**,
   saisissable de deux façons au choix : une **liste de champs** (aucune accolade à écrire) ou du **JSON brut**
   (collez l'exemple de votre documentation et remplacez les valeurs par des variables). La bascule de la liste

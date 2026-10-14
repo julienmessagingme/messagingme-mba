@@ -5,6 +5,21 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-14 : l'autonomie d'un outil tombe quand sa requête le rend irréversible
+
+- **Le défaut** (orange du 2026-10-05) : passer une requête de connecteur de POST à DELETE montait bien ses outils à
+  `irreversible`, dans la transaction de `PgRequeteStore.patch`, mais gardait leur autonomie. L'exécuteur ne lit
+  l'autonomie que sur un outil irréversible : un oui donné pour une écriture autorisait donc un effacement, sans
+  personne. ⚠️ Pas atteignable depuis la console (la case d'autonomie n'y existe que sur un outil déjà irréversible) :
+  seulement par un appel direct à l'API, qui accepte l'autonomie sur tout risque. C'est un durcissement.
+- **Le correctif** : la même transaction pose `autonome = false` sur les consommateurs des outils montés à
+  `irreversible`, et garde `autonome_par` (qui avait dit oui), comme le rafraîchissement MCP. Une montée à `write`
+  n'y touche pas : l'autonomie n'y est pas lue. Plan : `docs/superpowers/plans/2026-10-14-autonomie-suit-le-risque.md`.
+- **Les preuves** : un test unitaire lit ce qui part vers la base (trois mutations vérifiées, dont le filtre d'espace), un test d'intégration
+  relit `agent_tool_consommateurs` sur le Postgres de la CI, sur une requête qui porte un outil monté et un outil déjà
+  irréversible (seul le premier perd son autonomie). Le même défaut reste côté MCP, par le réglage du risque d'un outil
+  (`todo.md`).
+
 ## 2026-10-14 : l'écouteur de pg-boss se retente au démarrage (lot 2 du bilan)
 
 - **Le défaut** : pg-boss rouvre seul un écouteur `LISTEN` établi qui tombe (`listen` de `pg-boss/dist/db.js`, attente

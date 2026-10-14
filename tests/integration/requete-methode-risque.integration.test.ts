@@ -28,6 +28,7 @@ describe.skipIf(!url)('le risque des outils suit la méthode de leur requête (P
   let tenantId: string;
   let agentId: string;
   let sourceId: string;
+  let userId: string;
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: url, ssl: pgSsl(), max: 4 });
@@ -50,9 +51,18 @@ describe.skipIf(!url)('le risque des outils suit la méthode de leur requête (P
        values ($1, 'http', 'itest-source', 'https://exemple.test/api', 'none', 'active') returning id`,
       [tenantId],
     )).rows[0]!.id;
+
+    // `autonome_par` est une clé étrangère vers `users` (`atc_autonome_humain_chk` exige qui a coché).
+    userId = (await pool.query<{ id: string }>(
+      `insert into users (tenant_id, email, role, password_hash)
+       values ($1, 'itest-requete-autonomie@example.test', 'admin', 'x') returning id`,
+      [tenantId],
+    )).rows[0]!.id;
   });
 
   afterAll(async () => {
+    // Les liaisons d'abord : une autonomie restée cochée ne dépend ainsi d'aucun ordre de cascade vers `users`.
+    if (tenantId) await pool.query('delete from agent_tool_consommateurs where tenant_id = $1', [tenantId]);
     if (tenantId) await pool.query('delete from tenants where id = $1', [tenantId]);
     await pool.end();
   });
@@ -123,5 +133,36 @@ describe.skipIf(!url)('le risque des outils suit la méthode de leur requête (P
     await requetes.patch(tenantId, visee, { methode: 'DELETE' });
     expect(await risque(oVise)).toBe('irreversible');
     expect(await risque(oVoisin)).toBe('read');
+  });
+
+  /** L'autonomie de l'outil pour l'agent, relue dans la table que l'exécuteur lit (par le catalogue). */
+  const autonomie = async (outilId: string): Promise<{ autonome: boolean; autonome_par: string | null } | undefined> =>
+    (await pool.query<{ autonome: boolean; autonome_par: string | null }>(
+      'select autonome, autonome_par from agent_tool_consommateurs where tenant_id = $1 and tool_id = $2',
+      [tenantId, outilId],
+    )).rows[0];
+
+  it('🔴 un POST coché autonome puis passé en DELETE PERD son autonomie, et garde qui l’avait cochée', async () => {
+    // Le oui avait été donné pour une écriture ; l'exécuteur ne lit l'autonomie que sur un outil irréversible.
+    const r = await requete('ecrire autonome puis effacer', 'POST');
+    const o = await outil(r, 'ecrire_autonome_puis_effacer', 'write');
+    expect(await catalogue.autonomie(tenantId, agentId, o, true, userId)).not.toBeNull();
+    expect((await autonomie(o))?.autonome).toBe(true);
+    await requetes.patch(tenantId, r, { methode: 'DELETE' });
+    expect(await risque(o)).toBe('irreversible');
+    expect(await autonomie(o)).toEqual({ autonome: false, autonome_par: userId });
+  });
+
+  it('🔴 sur UNE requête passée en DELETE, seul l’outil MONTÉ perd son autonomie, pas celui déjà irréversible', async () => {
+    // Le oui donné sur l'outil déjà irréversible l'a été en connaissance de cause : rien ne l'a rendu plus dangereux.
+    // Échoue sans le correctif (l'outil monté resterait autonome) comme avec un correctif trop large (les deux).
+    const r = await requete('ecrire et effacer', 'POST');
+    const monte = await outil(r, 'ecrire_qui_devient_effacer', 'write');
+    const deja = await outil(r, 'effacer_deja', 'irreversible');
+    await catalogue.autonomie(tenantId, agentId, monte, true, userId);
+    await catalogue.autonomie(tenantId, agentId, deja, true, userId);
+    expect(await requetes.patch(tenantId, r, { methode: 'DELETE' })).not.toBeNull();
+    expect((await autonomie(monte))?.autonome).toBe(false);
+    expect((await autonomie(deja))?.autonome).toBe(true);
   });
 });
