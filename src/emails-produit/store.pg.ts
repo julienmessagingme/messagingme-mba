@@ -1,4 +1,7 @@
 import type { Pool } from 'pg';
+import { BOUNDS_CTE, STATS_TZ } from '../stats/range';
+import { TYPES_OUVERTURE } from '../stats/performance';
+import { FENETRE_JOURS } from './accompagnement';
 import type { CategorieCoupable, Langue, TexteEmail } from './catalogue';
 
 /**
@@ -237,6 +240,98 @@ export class PgEmailsProduitStore {
       [tenantId, seuil],
     );
     return res.rows[0]?.generation ?? null;
+  }
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // Livraison C : l'accompagnement, le récapitulatif, et le plafond des transferts.
+  // ---------------------------------------------------------------------------------------------------------------
+
+  /**
+   * Les espaces créés depuis moins de `FENETRE_JOURS` jours, et leur premier numéro WhatsApp encore relié (tous espaces :
+   * le balayage les relit). Un espace verrouillé (sa suppression a commencé) n'en est pas : rien ne part vers lui.
+   */
+  async espacesRecents(): Promise<Array<{ tenantId: string; creeLe: Date; numeroDepuis: Date | null }>> {
+    const res = await this.pool.query<{ id: string; created_at: Date; numero_depuis: Date | null }>(
+      `select t.id, t.created_at,
+              (select min(p.created_at) from phone_numbers p where p.tenant_id = t.id and p.delie_le is null) as numero_depuis
+         from tenants t
+        where t.created_at > now() - make_interval(days => $1) and t.status <> 'locked'`,
+      [FENETRE_JOURS],
+    );
+    return res.rows.map((r) => ({ tenantId: r.id, creeLe: r.created_at, numeroDepuis: r.numero_depuis }));
+  }
+
+  /** L'espace a-t-il déjà reçu ou envoyé un message, fils de test exclus ? */
+  async aDesMessages(tenantId: string): Promise<boolean> {
+    const res = await this.pool.query<{ oui: boolean }>(
+      `select exists (select 1 from conversation_messages m join conversations c on c.id = m.conversation_id
+                       where c.tenant_id = $1 and not c.is_test) as oui`,
+      [tenantId],
+    );
+    return res.rows[0]?.oui === true;
+  }
+
+  /**
+   * Les chiffres d'une semaine `[du, au]` (jours de Paris, bornes comprises, la borne des statistiques) pour le
+   * récapitulatif : les messages WhatsApp reçus et envoyés (un envoi de campagne compte une fois, il n'est écrit qu'une
+   * fois dans le fil), les conversations où il s'en est échangé, les demandes ouvertes pour l'équipe (les ouvertures de
+   * l'écran Performance, `TYPES_OUVERTURE`), fils de test exclus, et le crédit IA restant.
+   */
+  async recapDeLaSemaine(tenantId: string, du: string, au: string): Promise<{
+    messagesRecus: number; messagesEnvoyes: number; conversations: number; demandes: number; creditMicroEur: number;
+  }> {
+    const res = await this.pool.query<{ recus: number; envoyes: number; conversations: number; demandes: number; credit: string | null }>(
+      `with ${BOUNDS_CTE},
+       messages as (
+         select m.direction, m.conversation_id
+           from conversation_messages m
+           join conversations c on c.id = m.conversation_id and c.tenant_id = $1, bounds b
+          where not c.is_test and m.channel = 'whatsapp' and m.created_at >= b.start_ts and m.created_at < b.end_ts
+       )
+       select (select count(*) from messages where direction = 'in')::int as recus,
+              (select count(*) from messages where direction = 'out')::int as envoyes,
+              (select count(distinct conversation_id) from messages)::int as conversations,
+              (select count(*) from conversation_evenements e
+                 join conversations c on c.id = e.conversation_id and c.tenant_id = $1, bounds b
+                where e.tenant_id = $1 and not c.is_test and e.type = any($5::text[])
+                  and e.at >= b.start_ts and e.at < b.end_ts)::int as demandes,
+              (select solde_micro_eur from agent_credits where tenant_id = $1) as credit`,
+      [tenantId, du, au, STATS_TZ, [...TYPES_OUVERTURE]],
+    );
+    const r = res.rows[0];
+    return {
+      messagesRecus: r?.recus ?? 0, messagesEnvoyes: r?.envoyes ?? 0, conversations: r?.conversations ?? 0,
+      demandes: r?.demandes ?? 0, creditMicroEur: Number(r?.credit ?? 0),
+    };
+  }
+
+  /** Les espaces qui ne sont pas verrouillés (le récapitulatif : rien ne part vers un espace en cours de suppression). */
+  async espacesOuverts(): Promise<string[]> {
+    const res = await this.pool.query<{ id: string }>(`select id from tenants where status <> 'locked' order by created_at`);
+    return res.rows.map((r) => r.id);
+  }
+
+  /** L'occasion est-elle déjà réservée pour ce modèle dans l'espace ? Le préfixe de l'index unique la sert. */
+  async occasionReservee(tenantId: string, cle: string, occasion: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `select 1 from emails_produit_envois where tenant_id = $1 and cle = $2 and occasion = $3 limit 1`,
+      [tenantId, cle, occasion],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Les passages à l'équipe déjà écrits aujourd'hui (jour de Paris) pour l'espace : le plafond de Julien (dix par jour,
+   * 2026-10-14). Une occasion est un passage, quel que soit le nombre d'admins prévenus.
+   */
+  async transfertsDuJour(tenantId: string): Promise<number> {
+    const res = await this.pool.query<{ n: number }>(
+      `select count(distinct occasion)::int as n from emails_produit_envois
+        where tenant_id = $1 and cle = 'transfert_equipe'
+          and cree_le >= date_trunc('day', now() at time zone 'Europe/Paris') at time zone 'Europe/Paris'`,
+      [tenantId],
+    );
+    return res.rows[0]?.n ?? 0;
   }
 
   /** Tous les espaces, pour le balayage des limites (chacun relu ensuite dans son espace). */

@@ -2931,7 +2931,16 @@ boîte par sous-menu.
   alors que le contact vient d'écrire, les administrateurs reçoivent un e-mail avec le nom du contact (ou son numéro
   masqué, jamais le texte des messages), l'heure où la fenêtre de 24 heures se ferme, et un bouton vers la conversation.
   Le lancement d'une campagne qui confie ses destinataires à l'équipe n'envoie aucun e-mail ; un destinataire qui
-  répond ensuite, et que le scénario passe à l'équipe, en envoie un, comme tout client qui attend.
+  répond ensuite, et que le scénario passe à l'équipe, en envoie un, comme tout client qui attend. **Au plus dix par
+  jour et par espace** (jour de Paris) : au-delà, les conversations attendent dans l'Inbox sans e-mail.
+- ✅ **Pour bien démarrer** (2026-10-14, des e-mails d'information) : la bienvenue, dans les deux jours qui suivent la
+  création de l'espace, puis trois relances, une fois chacune et dans la semaine qui suit ce qui la déclenche : le
+  numéro WhatsApp pas connecté au bout de 24 heures, aucun répondeur (ni agent IA, ni agent de Meta, ni scénario)
+  24 heures après sa connexion, aucun message reçu ni envoyé après sept jours de service. Chacune pointe vers la page de la
+  console qui règle la question, et rappelle que Claude peut le faire.
+- ✅ **Le récapitulatif de la semaine, en offre Free** (2026-10-14, un e-mail d'information) : le lundi à partir de
+  9 h, les messages WhatsApp reçus et envoyés de la semaine écoulée, les conversations, celles confiées à l'équipe et
+  le crédit IA restant, avec ce que l'offre Pro ajoute. Une semaine sans aucun message n'envoie rien.
 - ✅ **Mon compte, « E-mails de Messaging Me »** : la langue des e-mails, et deux familles qu'on peut couper ou
   rétablir (les conversations qui attendent l'équipe, les e-mails d'information). Chacun de ces e-mails porte aussi un
   lien pour ne plus les recevoir. Les alertes de service (crédit, numéro, limites) partent toujours.

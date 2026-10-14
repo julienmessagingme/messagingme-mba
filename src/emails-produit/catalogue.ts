@@ -69,6 +69,7 @@ const LIEN_NUMERO: Variable = { description: 'La page « Connecter WhatsApp » d
 const DATE_LIBERATION: Variable = { description: 'Le jour où le numéro sera libéré', forme: 'date', exemple: '2026-11-02T10:00:00.000Z' };
 const LIEN_OFFRE: Variable = { description: 'La page Offre de la console', forme: 'lien', exemple: 'https://console.messagingme.app/offre' };
 const LIMITE: Variable = { description: 'La limite de l’offre Free', forme: 'texte', exemple: '1000' };
+const LIEN_CONSOLE: Variable = { description: 'L’accueil de la console', forme: 'lien', exemple: 'https://console.messagingme.app/accueil' };
 
 export const CATALOGUE = [
   {
@@ -420,6 +421,133 @@ export const CATALOGUE = [
           + 'is waiting for a reply.\n\nYou can reply freely until {{fin_fenetre}}. After that, WhatsApp only accepts an '
           + 'approved template.',
         bouton: { libelle: 'Open the conversation', lien: '{{lien_conversation}}' },
+      },
+    },
+  },
+  {
+    cle: 'bienvenue',
+    categorie: 'commercial',
+    nom: 'Bienvenue',
+    quand: 'Un espace vient d’être créé : à ses administrateurs connectés, dans les deux jours.',
+    variables: { lien_console: LIEN_CONSOLE },
+    textes: {
+      fr: {
+        sujet: 'Bienvenue sur Messaging Me',
+        corps: 'Bonjour,\n\nVotre espace {{espace}} est prêt. Trois étapes le mettent en service : connecter votre numéro '
+          + 'WhatsApp, construire un agent IA à partir de votre site pour qu’il réponde à vos clients, et poser la bulle '
+          + 'WhatsApp sur votre site.\n\nTout se fait depuis la console, ou en le demandant à Claude : il connaît chaque '
+          + 'étape et reprend là où vous en êtes.',
+        bouton: { libelle: 'Ouvrir la console', lien: '{{lien_console}}' },
+      },
+      en: {
+        sujet: 'Welcome to Messaging Me',
+        corps: 'Hello,\n\nYour {{espace}} workspace is ready. Three steps put it in service: connect your WhatsApp number, '
+          + 'build an AI agent from your website so it answers your customers, and add the WhatsApp bubble to your '
+          + 'website.\n\nEverything can be done from the console, or by asking Claude: it knows each step and picks up '
+          + 'where you left off.',
+        bouton: { libelle: 'Open the console', lien: '{{lien_console}}' },
+      },
+    },
+  },
+  {
+    cle: 'relance_numero',
+    categorie: 'commercial',
+    nom: 'Relance : numéro pas connecté',
+    quand: 'L’espace existe depuis 24 heures sans numéro WhatsApp. Une fois, dans la semaine qui suit.',
+    variables: { lien_numero: LIEN_NUMERO },
+    textes: {
+      fr: {
+        sujet: 'Votre numéro WhatsApp n’est pas encore connecté',
+        corps: 'Bonjour,\n\nL’espace {{espace}} n’a pas encore de numéro WhatsApp. C’est la première étape : sans numéro, '
+          + 'vos clients ne peuvent pas vous écrire.\n\nConnectez votre propre numéro, ou prenez un numéro fourni en '
+          + 'quelques minutes, depuis la page « Connecter WhatsApp » de la console, ou demandez-le à Claude.',
+        bouton: { libelle: 'Connecter WhatsApp', lien: '{{lien_numero}}' },
+      },
+      en: {
+        sujet: 'Your WhatsApp number is not connected yet',
+        corps: 'Hello,\n\nThe {{espace}} workspace does not have a WhatsApp number yet. It is the first step: without a '
+          + 'number, your customers cannot write to you.\n\nConnect your own number, or take a provided number in a few '
+          + 'minutes, from the “Connect WhatsApp” page of the console, or ask Claude.',
+        bouton: { libelle: 'Connect WhatsApp', lien: '{{lien_numero}}' },
+      },
+    },
+  },
+  {
+    cle: 'relance_repondeur',
+    categorie: 'commercial',
+    nom: 'Relance : aucun répondeur',
+    quand: 'Le numéro est connecté depuis 24 heures et aucun répondeur (agent IA, agent de Meta, scénario) n’est en place. Une fois, dans la semaine qui suit.',
+    variables: { lien_agents: { description: 'La page Agents IA de la console', forme: 'lien', exemple: 'https://console.messagingme.app/agents' } },
+    textes: {
+      fr: {
+        sujet: 'Votre numéro est connecté : qui répond à vos clients ?',
+        corps: 'Bonjour,\n\nLe numéro WhatsApp de l’espace {{espace}} est connecté, mais aucun répondeur automatique n’est '
+          + 'en place : chaque message attend que quelqu’un de votre équipe réponde.\n\nConstruisez un agent IA à partir de votre site '
+          + 'en quelques minutes, ou demandez-le à Claude : vos clients auront une réponse à toute heure.',
+        bouton: { libelle: 'Construire un agent IA', lien: '{{lien_agents}}' },
+      },
+      en: {
+        sujet: 'Your number is connected: who answers your customers?',
+        corps: 'Hello,\n\nThe WhatsApp number of the {{espace}} workspace is connected, but no automatic responder is in '
+          + 'place: every message waits for someone on your team to answer.\n\nBuild an AI agent from your website in a few '
+          + 'minutes, or ask Claude: your customers will get an answer at any hour.',
+        bouton: { libelle: 'Build an AI agent', lien: '{{lien_agents}}' },
+      },
+    },
+  },
+  {
+    cle: 'relance_silence',
+    categorie: 'commercial',
+    nom: 'Relance : aucun message en une semaine',
+    quand: 'Le numéro est en service depuis 7 jours et n’a reçu ni envoyé aucun message. Une fois, dans la semaine qui suit.',
+    variables: { lien_widgets: { description: 'La page Widgets de la console (la bulle WhatsApp)', forme: 'lien', exemple: 'https://console.messagingme.app/widgets' } },
+    textes: {
+      fr: {
+        sujet: 'Votre numéro WhatsApp n’a encore reçu aucun message',
+        corps: 'Bonjour,\n\nLe numéro WhatsApp de l’espace {{espace}} est en service depuis une semaine, mais il n’a encore '
+          + 'reçu ni envoyé aucun message.\n\nPour que vos clients vous écrivent, posez la bulle WhatsApp sur votre site, '
+          + 'ou partagez votre numéro. Claude peut créer la bulle et vous donner le code à coller.',
+        bouton: { libelle: 'Poser la bulle WhatsApp', lien: '{{lien_widgets}}' },
+      },
+      en: {
+        sujet: 'Your WhatsApp number has not received any message yet',
+        corps: 'Hello,\n\nThe WhatsApp number of the {{espace}} workspace has been in service for a week, but it has not '
+          + 'received or sent any message yet.\n\nFor your customers to write to you, add the WhatsApp bubble to your '
+          + 'website, or share your number. Claude can create the bubble and give you the code to paste.',
+        bouton: { libelle: 'Add the WhatsApp bubble', lien: '{{lien_widgets}}' },
+      },
+    },
+  },
+  {
+    cle: 'recap_semaine',
+    categorie: 'commercial',
+    nom: 'Récapitulatif de la semaine (Free)',
+    quand: 'Le lundi à partir de 9 h (Paris, rattrapé le mardi), aux espaces Free, pour la semaine écoulée. Rien si elle est vide.',
+    variables: {
+      semaine_du: { description: 'Le lundi de la semaine écoulée', forme: 'date', exemple: '2026-10-05T10:00:00.000Z' },
+      messages_recus: { description: 'Les messages reçus dans la semaine', forme: 'texte', exemple: '42' },
+      messages_envoyes: { description: 'Les messages envoyés dans la semaine', forme: 'texte', exemple: '57' },
+      conversations: { description: 'Les conversations actives dans la semaine', forme: 'texte', exemple: '18' },
+      demandes: { description: 'Les conversations confiées à l’équipe dans la semaine', forme: 'texte', exemple: '3' },
+      credit: { description: 'Le crédit IA restant', forme: 'euros', exemple: '3420000' },
+      lien_offre: LIEN_OFFRE,
+    },
+    textes: {
+      fr: {
+        sujet: 'Votre semaine sur WhatsApp : {{messages_recus}} messages reçus',
+        corps: 'Bonjour,\n\nLa semaine du {{semaine_du}} pour l’espace {{espace}} :\n{{messages_recus}} messages reçus, '
+          + '{{messages_envoyes}} envoyés, {{conversations}} conversations, dont {{demandes}} confiées à votre équipe.\n'
+          + 'Crédit IA restant : {{credit}}.\n\nL’offre Pro ajoute les statistiques détaillées, l’Inbox de l’équipe et '
+          + 'les scénarios, sans limite de modèles ni de contacts.',
+        bouton: { libelle: 'Voir les offres', lien: '{{lien_offre}}' },
+      },
+      en: {
+        sujet: 'Your week on WhatsApp: {{messages_recus}} messages received',
+        corps: 'Hello,\n\nThe week of {{semaine_du}} for the {{espace}} workspace:\n{{messages_recus}} messages received, '
+          + '{{messages_envoyes}} sent, {{conversations}} conversations, {{demandes}} of them handed to your team.\n'
+          + 'AI credit left: {{credit}}.\n\nThe Pro plan adds detailed statistics, the team Inbox and scenarios, with no '
+          + 'template or contact limit.',
+        bouton: { libelle: 'See plans', lien: '{{lien_offre}}' },
       },
     },
   },

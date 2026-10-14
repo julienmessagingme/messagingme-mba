@@ -298,6 +298,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
    */
   const prevenirEquipe = creerPrevenirEquipe({
     contexte: (t, w) => inboxStore.contexteDuPassage(t, w),
+    transfertsDuJour: (t) => emailsProduit.transfertsDuJour(t),
     emettre: (e) => emetteurEmails.emettre(e),
     lienConversation: (id) => `${console_}/inbox?c=${encodeURIComponent(id)}`,
   });

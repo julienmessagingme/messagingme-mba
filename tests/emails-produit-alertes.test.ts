@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   ATTENTE_RECENTE_MS, balayerLimites, creerAlerteCreditBas, creerPaiementRefuse, creerPrevenirEquipe, numeroMasque,
-  seuilAtteint, SEUIL_CREDIT_BAS_MICRO_EUR, type ContextePassage, type DepsLimites,
+  PLAFOND_TRANSFERTS_JOUR, seuilAtteint, SEUIL_CREDIT_BAS_MICRO_EUR, type ContextePassage, type DepsLimites,
 } from '../src/emails-produit/alertes';
 import type { Emission } from '../src/emails-produit/emission';
 import { PgCreditStore } from '../src/agent/credits.pg';
@@ -194,9 +194,12 @@ describe('les limites du Free', () => {
 
 describe('la conversation passée à l’équipe', () => {
   const MAINTENANT = new Date('2026-10-14T10:00:00Z');
-  function prevenir(c: ContextePassage | null) {
+  function prevenir(c: ContextePassage | null, dejaCeJour = 0) {
     const e = emetteur();
-    const p = creerPrevenirEquipe({ contexte: async () => c, emettre: e.emettre, lienConversation: (id) => `https://c/inbox?c=${id}`, now: () => MAINTENANT });
+    const p = creerPrevenirEquipe({
+      contexte: async () => c, transfertsDuJour: async () => dejaCeJour, emettre: e.emettre,
+      lienConversation: (id) => `https://c/inbox?c=${id}`, now: () => MAINTENANT,
+    });
     return { p, e };
   }
   const contexte = (o: Partial<ContextePassage> = {}): ContextePassage => ({
@@ -230,8 +233,18 @@ describe('la conversation passée à l’équipe', () => {
     await p('t1', '33612345678');
     expect(e.emissions[0]!.valeurs.contact).toBe('+33 •• •• •• 78');
     expect(numeroMasque('12')).toBe('••••');
-    const enPanne = creerPrevenirEquipe({ contexte: async () => { throw new Error('base'); }, emettre: async () => ({ destinataires: 0, reserves: 0 }), lienConversation: () => '' });
+    const enPanne = creerPrevenirEquipe({ contexte: async () => { throw new Error('base'); }, transfertsDuJour: async () => 0, emettre: async () => ({ destinataires: 0, reserves: 0 }), lienConversation: () => '' });
     await expect(enPanne('t1', 'w')).resolves.toBeUndefined();
+  });
+
+  it('🔴 au-delà de dix passages dans la journée, plus aucun e-mail (décision du 2026-10-14)', async () => {
+    expect(PLAFOND_TRANSFERTS_JOUR).toBe(10);
+    const sous = prevenir(contexte(), PLAFOND_TRANSFERTS_JOUR - 1);
+    await sous.p('t1', '33612345678');
+    expect(sous.e.emissions).toHaveLength(1);
+    const au = prevenir(contexte(), PLAFOND_TRANSFERTS_JOUR);
+    await au.p('t1', '33612345678');
+    expect(au.e.emissions).toHaveLength(0);
   });
 
   it('le texte dit l’heure de fin de la fenêtre, dans la langue et le fuseau', () => {

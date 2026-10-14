@@ -2240,7 +2240,23 @@ modifiés dans `/ops` (rétablir supprime la ligne), `emails_produit_interrupteu
     démarrage unitaire, `politique.publieLesEtiquettes` ; jamais un démarrage de masse, un réveil ni un saut). 🔴 Il
     n'écrit que si le contact a écrit depuis moins de quinze minutes
     (`ATTENTE_RECENTE_MS`) : c'est la garde contre le démarrage d'une campagne et les réveils en masse ; occasion : le
-    dernier message du contact, donc deux passages pour le même message n'envoient qu'un e-mail.
+    dernier message du contact, donc deux passages pour le même message n'envoient qu'un e-mail. Au-delà de
+    `PLAFOND_TRANSFERTS_JOUR` passages dans le jour de Paris pour l'espace (`transfertsDuJour` compte les OCCASIONS
+    réservées, pas les destinataires), plus rien ce jour-là. ⚠️ Le compte précède la réservation sans verrou : deux
+    passages simultanés au bord du plafond peuvent le dépasser de peu, ce qui est accepté.
+- **L'accompagnement** (`src/emails-produit/accompagnement.ts`, balayage `emails-produit-accompagnement`, trente
+  minutes, des modèles `commercial`) : la bienvenue (moins de 48 h après la création), puis trois relances à occasion
+  fixe, donc une fois chacune : le numéro absent après 24 h, le répondeur effectif `equipe` (`modeEffectif` sous
+  l'offre, `sousLOffre`, comme la console) 24 h après le PREMIER numéro encore relié, aucun message (fils de test exclus) après sept jours. 🔴 Chaque relance ne part que dans
+  les `VALIDITE_JOURS` qui suivent son déclencheur, et seuls les espaces créés depuis moins de `FENETRE_JOURS` sont lus
+  (`espacesRecents`) : un espace déjà au-delà ne reçoit rien le jour où le code arrive. Un espace verrouillé (sa
+  suppression a commencé) n'est lu ni ici ni par le récapitulatif (`espacesOuverts`).
+- **Le récapitulatif de la semaine** (même balayage) : le lundi à partir de 9 h de Paris et le mardi
+  (`semaineARecapituler`, `null` les autres jours), la semaine du lundi au dimanche qui précède, pour les seuls espaces
+  dont l'offre est `base` ; occasion `semaine:<lundi>`, lue AVANT de compter (`occasionReservee`), donc le mardi
+  rattrape un lundi manqué sans doubler ni recompter. `recapDeLaSemaine` compte sur la borne des
+  statistiques (`BOUNDS_CTE`, `STATS_TZ`) les messages WhatsApp du fil (un envoi de campagne y est écrit une fois) et
+  les demandes de l'écran Performance (`TYPES_OUVERTURE`), fils de test exclus. Une semaine sans message n'écrit rien.
 
 ### Les webhooks sortants : une tentative par job, comptée dans la ligne
 

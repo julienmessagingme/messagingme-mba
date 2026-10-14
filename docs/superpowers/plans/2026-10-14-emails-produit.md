@@ -60,6 +60,18 @@ L'essai réel qui clôt le lot est en bas.
 2. Le balayage des relances (numéro à 24 h, répondeur à 24 h, silence à 7 jours) et du récapitulatif Free (lundi 9 h
    Paris, rien si la semaine est vide), clés d'occasion en base.
 
+Écarts décidés pendant la livraison C (2026-10-14) :
+- La bienvenue part du même balayage que les relances (toutes les trente minutes, dans les 48 h qui suivent la
+  création) plutôt que du geste d'inscription : un seul chemin quel que soit celui qui crée l'espace (console, Google,
+  Claude), et sans dépendance de plus dans la création d'un espace.
+- Chaque relance ne part que dans les sept jours qui suivent son déclencheur, et le balayage ne lit que les espaces
+  créés depuis moins de trente jours. Mesuré par une sonde en lecture seule avant le déploiement : sans cette borne,
+  cinq espaces en service depuis 2 à 22 jours recevaient la relance du répondeur le jour même.
+- Le récapitulatif part le lundi à partir de 9 h et le mardi seulement (rattrapage) : le premier déploiement, un
+  mercredi, n'envoie pas celui de la semaine d'avant.
+- Au plus dix e-mails de passage à l'équipe par espace et par jour de Paris (décision de Julien le même jour), sans
+  migration : le compte se lit dans le journal des envois.
+
 ## Tests attendus
 
 - Dédoublonnage : deux émissions de la même occasion donnent une ligne et un envoi ; un échec Resend se rejoue.

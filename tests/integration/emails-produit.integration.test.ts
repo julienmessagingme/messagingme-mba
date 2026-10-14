@@ -23,6 +23,8 @@ describe.skipIf(!url)('le journal des e-mails du produit (Postgres réel)', () =
   let store: PgEmailsProduitStore;
   let tenantId = '';
   let autreTenantId = '';
+  /** Les espaces que la livraison C crée dans ses propres cas, effacés à la fin. */
+  const espacesC: string[] = [];
   const identites: Record<string, string> = {};
   const suffixe = randomUUID().slice(0, 8);
 
@@ -53,7 +55,7 @@ describe.skipIf(!url)('le journal des e-mails du produit (Postgres réel)', () =
 
   afterAll(async () => {
     if (pool) {
-      for (const t of [tenantId, autreTenantId]) if (t) await pool.query('delete from tenants where id = $1', [t]);
+      for (const t of [tenantId, autreTenantId, ...espacesC]) if (t) await pool.query('delete from tenants where id = $1', [t]);
       await pool.query('delete from identities where id = any($1::uuid[])', [Object.values(identites)]);
       await pool.end();
     }
@@ -203,5 +205,108 @@ describe.skipIf(!url)('le journal des e-mails du produit (Postgres réel)', () =
       [tenantId, wa],
     );
     expect(ev.rowCount).toBe(1);
+  });
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // Livraison C : l'accompagnement, le récapitulatif, le plafond des transferts (aucune migration)
+  // ---------------------------------------------------------------------------------------------------------------
+
+  const espaceC = async (nom: string): Promise<string> => {
+    const id = (await pool.query<{ id: string }>(`insert into tenants (name) values ($1) returning id`, [`itest-emails-c-${nom}`])).rows[0]!.id;
+    espacesC.push(id);
+    return id;
+  };
+
+  it('les espaces récents : créés depuis moins de trente jours, avec la date de leur PREMIER numéro', async () => {
+    const neuf = await espaceC('neuf');
+    const avecNumero = await espaceC('numero');
+    const ancien = await espaceC('ancien');
+    await pool.query(`update tenants set created_at = now() - interval '40 days' where id = $1`, [ancien]);
+    const waba = `waba-itest-c-${suffixe}`;
+    await pool.query(`insert into waba (id, tenant_id, name) values ($1, $2, 'itest')`, [waba, avecNumero]);
+    await pool.query(
+      `insert into phone_numbers (id, tenant_id, waba_id, display_phone_number, status, created_at) values
+         ($1, $3, $4, '+33600000961', 'CONNECTED', timestamptz '2026-10-10 08:00:00+00'),
+         ($2, $3, $4, '+33600000962', 'CONNECTED', timestamptz '2026-10-12 08:00:00+00')`,
+      [`pn-itest-c1-${suffixe}`, `pn-itest-c2-${suffixe}`, avecNumero, waba],
+    );
+    const recents = await store.espacesRecents();
+    const de = (t: string) => recents.find((r) => r.tenantId === t);
+    expect(de(neuf)).toMatchObject({ numeroDepuis: null });
+    expect(de(neuf)!.creeLe).toBeInstanceOf(Date);
+    expect(de(avecNumero)!.numeroDepuis).toEqual(new Date('2026-10-10T08:00:00Z'));
+    expect(de(ancien)).toBeUndefined();
+    // Un espace verrouillé (sa suppression a commencé) n'est ni récent ni ouvert ; un numéro délié ne compte plus.
+    const verrouille = await espaceC('verrouille');
+    await pool.query(`update tenants set status = 'locked' where id = $1`, [verrouille]);
+    await pool.query(`update phone_numbers set delie_le = now() where id = $1`, [`pn-itest-c1-${suffixe}`]);
+    const apres = await store.espacesRecents();
+    expect(apres.find((r) => r.tenantId === verrouille)).toBeUndefined();
+    expect(apres.find((r) => r.tenantId === avecNumero)!.numeroDepuis).toEqual(new Date('2026-10-12T08:00:00Z'));
+    const ouverts = await store.espacesOuverts();
+    expect(ouverts).toContain(neuf);
+    expect(ouverts).not.toContain(verrouille);
+  });
+
+  it('🔴 le récapitulatif : la semaine de PARIS, WhatsApp seul, sans les fils de test, les demandes de Performance, et rien d’un autre espace', async () => {
+    const t = await espaceC('recap');
+    const voisin = await espaceC('recap-voisin');
+    const conv = async (tenant: string, wa: string, test = false) => (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, last_message_at, is_test) values ($1, $2, now(), $3) returning id`, [tenant, wa, test],
+    )).rows[0]!.id;
+    const a = await conv(t, '33600000971');
+    const b = await conv(t, '33600000972');
+    const essai = await conv(t, '33600000973', true);
+    const ailleurs = await conv(voisin, '33600000971');
+    expect(await store.aDesMessages(t)).toBe(false);
+    // La semaine du 2026-10-05 au 2026-10-11 à Paris (heure d'été) : du 04 à 22:00 UTC au 11 à 22:00 UTC.
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, channel, body, created_at) values
+         ($1, 'in',  'whatsapp', 'dans la semaine',          timestamptz '2026-10-05 08:00:00+00'),
+         ($1, 'out', 'whatsapp', 'réponse',                  timestamptz '2026-10-05 08:01:00+00'),
+         ($2, 'in',  'whatsapp', 'dimanche 23:30 à Paris',   timestamptz '2026-10-11 21:30:00+00'),
+         ($2, 'out', 'rcs',      'un message RCS',           timestamptz '2026-10-06 08:00:00+00'),
+         ($2, 'in',  'whatsapp', 'lundi 00:30 à Paris',      timestamptz '2026-10-11 22:30:00+00'),
+         ($2, 'in',  'whatsapp', 'dimanche d''avant',        timestamptz '2026-10-04 21:30:00+00'),
+         ($3, 'in',  'whatsapp', 'fil de test',              timestamptz '2026-10-06 08:00:00+00'),
+         ($4, 'in',  'whatsapp', 'autre espace',             timestamptz '2026-10-06 08:00:00+00')`,
+      [a, b, essai, ailleurs],
+    );
+    await pool.query(
+      `insert into conversation_evenements (tenant_id, conversation_id, type, at) values
+         ($1, $2, 'escaladee',      timestamptz '2026-10-06 09:00:00+00'),
+         ($1, $3, 'passee_par_mba', timestamptz '2026-10-07 09:00:00+00'),
+         ($1, $2, 'traitee',        timestamptz '2026-10-06 10:00:00+00'),
+         ($1, $2, 'escaladee',      timestamptz '2026-10-12 09:00:00+00'),
+         ($1, $4, 'escaladee',      timestamptz '2026-10-06 09:00:00+00')`,
+      [t, a, b, essai],
+    );
+    await pool.query(`insert into agent_credits (tenant_id, solde_micro_eur) values ($1, 1234567)`, [t]);
+    expect(await store.aDesMessages(t)).toBe(true);
+    expect(await store.recapDeLaSemaine(t, '2026-10-05', '2026-10-11')).toEqual({
+      messagesRecus: 2, messagesEnvoyes: 1, conversations: 2, demandes: 2, creditMicroEur: 1234567,
+    });
+    // Un espace sans crédit ni message rend des zéros, pas une erreur.
+    const vide = await espaceC('recap-vide');
+    expect(await store.recapDeLaSemaine(vide, '2026-10-05', '2026-10-11')).toEqual({
+      messagesRecus: 0, messagesEnvoyes: 0, conversations: 0, demandes: 0, creditMicroEur: 0,
+    });
+    expect(await store.aDesMessages(vide)).toBe(false);
+  });
+
+  it('🔴 les transferts du jour : un par passage (pas par admin prévenu), depuis minuit à Paris, et dans CET espace', async () => {
+    const t = await espaceC('plafond');
+    const deux = [identites.admin!, identites.jamais!];
+    await store.reserver({ tenantId: t, cle: 'transfert_equipe', occasion: 'attente:c1:1', identites: deux, valeurs: {} });
+    await store.reserver({ tenantId: t, cle: 'transfert_equipe', occasion: 'attente:c2:1', identites: deux, valeurs: {} });
+    const [hier] = await store.reserver({ tenantId: t, cle: 'transfert_equipe', occasion: 'attente:c3:1', identites: [identites.admin!], valeurs: {} });
+    await pool.query(`update emails_produit_envois set cree_le = now() - interval '2 days' where id = $1`, [hier]);
+    await store.reserver({ tenantId: t, cle: 'credit_epuise', occasion: 'jour:x', identites: deux, valeurs: {} });
+    await store.reserver({ tenantId: autreTenantId, cle: 'transfert_equipe', occasion: 'attente:c9:1', identites: [identites.autre!], valeurs: {} });
+    expect(await store.transfertsDuJour(t)).toBe(2);
+    // L'occasion réservée se lit dans son espace, pour son modèle.
+    expect(await store.occasionReservee(t, 'transfert_equipe', 'attente:c1:1')).toBe(true);
+    expect(await store.occasionReservee(t, 'credit_epuise', 'attente:c1:1')).toBe(false);
+    expect(await store.occasionReservee(autreTenantId, 'transfert_equipe', 'attente:c1:1')).toBe(false);
   });
 });

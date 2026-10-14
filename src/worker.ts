@@ -81,7 +81,7 @@ import { contactPublic } from './evenements/types';
 import { creerGestesEnvoiAgent } from './agent/gestes-envoi';
 import { creerEscaladeVersHumain } from './agent/escalade';
 import { automatique } from './inbox/evenements';
-import { modeEffectif, standbyPourNous } from './repondeur/mode';
+import { modeEffectif, sousLOffre, standbyPourNous } from './repondeur/mode';
 import { PgConversationAnalysisStore } from './analysis/store.pg';
 import { analyzeConversationJob } from './analysis/job';
 import { analyseDeLaConversation } from './analysis/fiche';
@@ -119,6 +119,7 @@ import { creerAvisAbonnement } from './numero/avis-abonnement';
 import { creerClientDidww } from './didww/client';
 import { creerTravailEmail, reprendreLesEnvois } from './emails-produit/envoi';
 import { balayerLimites } from './emails-produit/alertes';
+import { balayerAccompagnement, balayerRecap } from './emails-produit/accompagnement';
 import { PgOffresStore } from './offres/offre.pg';
 import { moisDeParis } from './offres/compteurs';
 import { FILE_EMAILS_PRODUIT } from './emails-produit/emission';
@@ -909,6 +910,33 @@ export async function demarrerWorker(): Promise<void> {
     pageOffre: `${config.APP_URL.trim().replace(/\/+$/, '')}/offre`,
     moisDeParis: () => moisDeParis(Date.now()),
   }), { enEchec: echecDeBalayage('emails-produit-limites', 'sweeper:emails-produit-limites') });
+  /**
+   * L'accompagnement (lot 7, livraison C) : la bienvenue, les trois relances et le récapitulatif de la semaine du Free.
+   * Des e-mails `commercial`, que la désinscription coupe. Toutes les trente minutes ; chacun a son occasion en base.
+   */
+  const consoleEmails = config.APP_URL.trim().replace(/\/+$/, '');
+  taches.programmer('emails-produit-accompagnement', 30 * 60_000, async () => {
+    const accompagnes = await balayerAccompagnement({
+      espacesRecents: () => emailsProduit.espacesRecents(),
+      // Sous l'offre, comme la console et `get_setup_state` : un Pro repassé en Free n'a plus son scénario.
+      modeRepondeur: async (t) => modeEffectif(sousLOffre(await settingsStore.get(t), (await offres.offreDe(t)).droits.fonctions)),
+      aDesMessages: (t) => emailsProduit.aDesMessages(t),
+      emettre: (e) => emetteurEmails.emettre(e),
+      pages: {
+        console: `${consoleEmails}/accueil`, numero: `${consoleEmails}/connecter-whatsapp`, agents: `${consoleEmails}/agents`,
+        widgets: `${consoleEmails}/widgets`, offre: `${consoleEmails}/offre`,
+      },
+    });
+    const recaps = await balayerRecap({
+      espaces: () => emailsProduit.espacesOuverts(),
+      estFree: async (t) => (await offres.offreDe(t)).offre === 'base',
+      dejaEnvoye: (t, occasion) => emailsProduit.occasionReservee(t, 'recap_semaine', occasion),
+      recap: (t, du, au) => emailsProduit.recapDeLaSemaine(t, du, au),
+      emettre: (e) => emetteurEmails.emettre(e),
+      pageOffre: `${consoleEmails}/offre`,
+    });
+    return accompagnes + recaps;
+  }, { enEchec: echecDeBalayage('emails-produit-accompagnement', 'sweeper:emails-produit-accompagnement') });
 
   // File analyze-conversation : inerte tant que CONVERSATION_ANALYSIS_ENABLED != 'true' (aucun worker, aucun
   // balayage, aucun appel LLM).

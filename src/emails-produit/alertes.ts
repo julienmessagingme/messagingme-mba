@@ -185,6 +185,12 @@ export async function balayerLimites(d: DepsLimites): Promise<number> {
  * message : c'est cela, et seulement cela, qui mérite un e-mail.
  */
 export const ATTENTE_RECENTE_MS = 15 * 60 * 1000;
+/**
+ * Au plus dix e-mails de passage à l'équipe par espace et par jour (Paris), décision de Julien du 2026-10-14 : une
+ * campagne dont le scénario passe chaque réponse à l'équipe en ferait un par réponse. Au-delà, plus rien ce jour-là ;
+ * les conversations restent dans « À traiter ».
+ */
+export const PLAFOND_TRANSFERTS_JOUR = 10;
 /** La fenêtre de service de WhatsApp : 24 heures depuis le dernier message du client. */
 export const FENETRE_MS = 24 * 60 * 60 * 1000;
 
@@ -207,6 +213,8 @@ export function numeroMasque(waId: string): string {
 
 export function creerPrevenirEquipe(d: {
   contexte(tenantId: string, waId: string): Promise<ContextePassage | null>;
+  /** Les passages déjà écrits aujourd'hui pour l'espace (`PLAFOND_TRANSFERTS_JOUR`). */
+  transfertsDuJour(tenantId: string): Promise<number>;
   emettre: Emettre;
   /** L'adresse de la conversation dans l'Inbox de la console. */
   lienConversation(conversationId: string): string;
@@ -219,6 +227,10 @@ export function creerPrevenirEquipe(d: {
       const maintenant = (d.now ? d.now() : new Date()).getTime();
       const depuis = maintenant - c.dernierEntrantLe.getTime();
       if (depuis > ATTENTE_RECENTE_MS || depuis < -60_000) return;
+      if ((await d.transfertsDuJour(tenantId)) >= PLAFOND_TRANSFERTS_JOUR) {
+        journaliser('info', 'passage_equipe_plafond_atteint', { tenantId });
+        return;
+      }
       await d.emettre({
         cle: 'transfert_equipe', tenantId, a: 'admins',
         // Le message qui attend : deux passages pour le même message n'envoient qu'un e-mail.
