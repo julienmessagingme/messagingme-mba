@@ -459,6 +459,10 @@ documentation le 2026-09-21.)
 créer l'endpoint privé, basculer les programmes dessus, puis **supprimer** l'endpoint public. ⚠️ Une liste
 d'adresses autorisées sur l'endpoint public n'est pas équivalente : elle se desserre par erreur, une absence
 d'endpoint ne se desserre pas.
+✅ **Mieux, vérifié le 2026-10-14 sur la base jetable `mm-banc`** : créée avec `init-endpoints` privé seul, une base n'a
+JAMAIS d'endpoint public, donc rien à supprimer (relu : une seule adresse, privée). À la création, aussi
+`encryption.enabled=true` (disque chiffré) et `backup-same-region=true` : par défaut, Scaleway range les sauvegardes
+dans une AUTRE région, ce qui démentirait « données hébergées en France ».
 
 ### 7.3 Cloudflare reste la SEULE porte de l'API
 
@@ -781,7 +785,11 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    grandissant.** C'est un argument pour basculer TÔT : à 30 Go il faudra de la réplication logique, donc un
    chantier au lieu d'une commande. Sortir les fichiers de la base (§6) garde ce luxe plus longtemps.
 6. Poser la **Public Gateway**, puis déployer les deux rôles de worker sur UNE instance sans adresse publique,
-   chaque conteneur borné en mémoire et en processeur (§2).
+   chaque conteneur borné en mémoire et en processeur (§2). ⚠️ **La machine de production est une PRO2-XXS** (2 vCPU,
+   8 Go, décidé par Julien le 2026-10-14) : les essais tournent sur une PLAY2-NANO, et DEV1 comme PLAY2 sont des gammes
+   « développement », sans engagement de service, que Scaleway ne destine pas à la production. Le passage se fait
+   machine arrêtée (changement de type), AVANT le jour J. La passerelle est en zone `fr-par-2` (rupture de stock du
+   modèle VPC-GW-S en `fr-par-1` le 2026-10-14) : la machine la rejoint dans la même zone.
 7. Déployer l'API : conteneur **privé**, **min 1 / max donné par le budget du §7.5**, rattaché au réseau privé,
    secrets fournis par le gestionnaire de secrets de Scaleway (jamais dans l'image), contrôle de vie léger qui ne
    dépend pas de la base, délai d'arrêt très en deçà du bail de la clé d'idempotence (§3.5). ⚠️ **Le nom de chaque
@@ -973,6 +981,8 @@ Aucun de ces choix ne doit être remplacé par une valeur technique arbitraire.
     l'API, son worker tourne sur la machine des workers dans un conteneur borné, sa base reste à lui (§8).
 16. **Le filtre « seul Cloudflare » sur `mm-hubspot.messagingme.app`** : tranché par Julien le 2026-10-14, posé sur le
     VPS dès le lot 7, sans attendre la bascule (§8).
+17. **La machine des workers** : tranché par Julien le 2026-10-14, PLAY2-NANO pendant les essais, PRO2-XXS (gamme
+    production) avant le jour J (§10, étape 6).
 
 ---
 
