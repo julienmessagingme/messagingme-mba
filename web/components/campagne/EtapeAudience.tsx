@@ -5,9 +5,10 @@ import { CsvImport } from '@/components/CsvImport';
 import { HubspotListImport } from '@/components/HubspotListImport';
 import { fmtNum } from '@/lib/format';
 import {
-  auFilDeLEau, filtresDesImportes, nbRetenus, selectionTout,
+  auFilDeLEau, filtresDesImportes,
   type AudienceChoix, type SourceAudience,
 } from '@/lib/audience';
+import { nbRetenus, selectionTout } from '@/lib/selection-contacts';
 import { ListeDestinataires, useContactsFiltres, type RestaurationSelection } from '@/components/campagne/ListeDestinataires';
 import { SourceWebhook } from '@/components/campagne/SourceWebhook';
 import type { CapacitesEspace, EtatCampagne, ReferencesContenu } from '@/components/campagne/AssistantCampagne';

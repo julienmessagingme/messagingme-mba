@@ -4,7 +4,7 @@ import {
   type ContexteDeCreation, type EtatPourCreation,
 } from './campagne-creation';
 import type { EtageAssistant } from './campagne-chaine';
-import { selectionTout, selectionVide } from './audience';
+import { selectionTout, selectionVide } from './selection-contacts';
 import type { CarrouselRcs } from './rcs-carrousel';
 
 /**

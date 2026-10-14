@@ -19,6 +19,7 @@ import {
   type BulkAction,
 } from '@/lib/api';
 import { filtersActive } from '@/lib/contact-filters';
+import { basculerContact, basculerLignesAffichees, cibleContacts, estRetenu, nbRetenus, selectionTout, selectionVide } from '@/lib/selection-contacts';
 import { ContactFilterPanel } from '@/components/ContactFilterPanel';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
@@ -35,13 +36,6 @@ import { avisStopsGardes, quiLeveUnStop } from '@/lib/stops-gardes';
 
 export default function ContactsPage() {
   return <AppShell active="contacts">{(session) => <ContactsInner session={session} />}</AppShell>;
-}
-
-/** Bascule un id dans un Set (retourne un NOUVEAU Set pour React). */
-function toggleSet(set: Set<string>, id: string): Set<string> {
-  const next = new Set(set);
-  if (next.has(id)) next.delete(id); else next.add(id);
-  return next;
 }
 
 function ContactsInner({ session }: { session: Session }) {
@@ -63,10 +57,8 @@ function ContactsInner({ session }: { session: Session }) {
   const [showFilters, setShowFilters] = useState(false);
   const active = useMemo(() => filtersActive(filters), [filters]);
 
-  // Sélection. 'ids' = cases cochées (`selected`) ; 'all' = tous les correspondants, `excluded` = décochés.
-  const [allMode, setAllMode] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  // La politique de remise à zéro au changement de filtres appartient à cet écran.
+  const [selection, setSelection] = useState(selectionVide);
   // Action en masse ouverte (modale). null = fermée.
   const [action, setAction] = useState<ActionCrm | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -112,7 +104,7 @@ function ContactsInner({ session }: { session: Session }) {
 
   // Changement de filtres -> la sélection précédente n'a plus de sens (jeu de résultats différent) : reset.
   const filtersKey = useMemo(() => JSON.stringify(filters), [filters]);
-  useEffect(() => { setAllMode(false); setSelected(new Set()); setExcluded(new Set()); }, [filtersKey]);
+  useEffect(() => { setSelection(selectionVide()); }, [filtersKey]);
 
   // Définitions user fields + tags existants (fiche + filtres + actions) : chargés une fois.
   useEffect(() => {
@@ -131,24 +123,18 @@ function ContactsInner({ session }: { session: Session }) {
 
   // ---- Sélection ----
   const loadedIds = useMemo(() => contacts.map((c) => c.id), [contacts]);
-  const isRowChecked = (id: string) => (allMode ? !excluded.has(id) : selected.has(id));
-  const selectedCount = allMode ? Math.max((total ?? loadedIds.length) - excluded.size, 0) : selected.size;
+  const isRowChecked = (id: string) => estRetenu(selection, id);
+  const selectedCount = nbRetenus(selection, total ?? loadedIds.length);
   const allLoadedChecked = loadedIds.length > 0 && loadedIds.every((id) => isRowChecked(id));
   const moreThanLoaded = total != null && total > loadedIds.length;
 
-  function toggleRow(id: string) {
-    if (allMode) setExcluded((prev) => toggleSet(prev, id));
-    else setSelected((prev) => toggleSet(prev, id));
-  }
-  function toggleHeader() {
-    if (allMode) { clearSelection(); return; }
-    setSelected(allLoadedChecked ? new Set() : new Set(loadedIds));
-  }
-  function selectAllMatching() { setAllMode(true); setSelected(new Set()); setExcluded(new Set()); }
-  function clearSelection() { setAllMode(false); setSelected(new Set()); setExcluded(new Set()); }
+  function toggleRow(id: string) { setSelection((current) => basculerContact(current, id)); }
+  function toggleHeader() { setSelection((current) => basculerLignesAffichees(current, loadedIds)); }
+  function selectAllMatching() { setSelection(selectionTout()); }
+  function clearSelection() { setSelection(selectionVide()); }
 
   // Cible d'action : par ids cochés, OU par filtres + exclusions (jamais un payload massif d'UUID).
-  const currentTarget = (): BulkTarget => (allMode ? { filters, excludeIds: [...excluded] } : { ids: [...selected] });
+  const currentTarget = () => cibleContacts(selection, filters);
 
   /** `avis` : ce que l'action a gardé en l'état et que l'opérateur doit savoir (des fiches restées en STOP). */
   async function onActionDone(affected: number, avis: string | null) {
@@ -263,7 +249,7 @@ function ContactsInner({ session }: { session: Session }) {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-carte border border-brand-200 bg-brand-50/50 px-4 py-2.5">
           <div className="flex flex-wrap items-center gap-3 text-sm text-ink-900">
             <span className="font-medium">{t(`${selectedCount} sélectionné(s)`, `${selectedCount} selected`)}</span>
-            {!allMode && moreThanLoaded && allLoadedChecked && (
+            {!selection.toutFiltre && moreThanLoaded && allLoadedChecked && (
               <button onClick={selectAllMatching} className="text-brand-600 hover:underline" data-testid="contacts-select-all-matching">
                 {t(`Sélectionner les ${total} contacts correspondants`, `Select all ${total} matching contacts`)}
               </button>
@@ -304,7 +290,7 @@ function ContactsInner({ session }: { session: Session }) {
         isRowChecked={isRowChecked}
         onToggleRow={toggleRow}
         onToggleHeader={toggleHeader}
-        headerChecked={allMode || allLoadedChecked}
+        headerChecked={selection.toutFiltre || allLoadedChecked}
       />
 
       {action && (

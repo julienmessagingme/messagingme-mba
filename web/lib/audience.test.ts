@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  audienceEnFiltres, audienceInitiale, auFilDeLEau, cibleDeCreation, estRetenu, filtresDesImportes,
-  libelleAudience, nbRetenus, selectionTout, selectionVide,
+  audienceEnFiltres, audienceInitiale, auFilDeLEau, cibleDeCreation, filtresDesImportes,
+  libelleAudience,
 } from './audience';
+import { estRetenu, nbRetenus, selectionTout, selectionVide } from './selection-contacts';
 
 /**
  * QUI REÇOIT UNE CAMPAGNE.

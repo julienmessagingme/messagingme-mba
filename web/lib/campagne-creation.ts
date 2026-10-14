@@ -1,7 +1,8 @@
 import type { CreateCampaignInput, EtageCreation } from './api/campagnes';
 import type { CampaignCategory } from './api/campagnes';
 import type { ContactFilters } from './contact-filters';
-import { cibleDeCreation, type SelectionDestinataires } from './audience';
+import { cibleDeCreation } from './audience';
+import type { SelectionContacts } from './selection-contacts';
 import type { RcsOutbound, RcsSuggestion } from './partage/rcs';
 import { maxTexteRcs, versMessageRcs } from './rcs';
 import type { CarrouselRcs } from './rcs-carrousel';
@@ -168,7 +169,7 @@ export interface ContexteDeCreation {
    * ensemble : `toutFiltre` vise ce que les filtres décrivent moins les exclusions, son contraire vise
    * une liste. Les séparer ferait envoyer les filtres d'une sélection qu'on n'a pas faite.
    */
-  selection: SelectionDestinataires;
+  selection: SelectionContacts;
   /**
    * LE NOMBRE DE VARIABLES `{{n}}` DU MODÈLE DE CHAQUE ÉTAGE, PAR RANG.
    *

@@ -5,7 +5,7 @@ import { ContactFilterPanel } from '@/components/ContactFilterPanel';
 import { contactIdentity, queryContacts, countContacts, type Contact, type ContactFilters, type UserFieldDef } from '@/lib/api';
 import { filtersActive } from '@/lib/contact-filters';
 import { useT } from '@/lib/i18n';
-import { estRetenu, nbRetenus, type SelectionDestinataires } from '@/lib/audience';
+import { basculerContact, estRetenu, nbRetenus, selectionTout, selectionVide, type SelectionContacts } from '@/lib/selection-contacts';
 import { Bouton } from '@/components/Bouton';
 
 /**
@@ -60,8 +60,8 @@ export function useContactsFiltres(opts: {
   filtres: ContactFilters;
   /** Faux quand un autre panneau est affiché (import de fichier, HubSpot) : rien à charger. */
   actif: boolean;
-  selection: SelectionDestinataires;
-  onSelection: (s: SelectionDestinataires) => void;
+  selection: SelectionContacts;
+  onSelection: (s: SelectionContacts) => void;
   /**
    * La sélection d'un brouillon repris, dans une REF que ce chargement CONSOMME (il la remet à `null`).
    * Absente = comportement normal. Elle servait à la reprise d'un brouillon dans l'ancien formulaire.
@@ -170,8 +170,8 @@ export function ListeDestinataires({
   page: PageDeContacts;
   filtres: ContactFilters;
   onFiltres: (f: ContactFilters) => void;
-  selection: SelectionDestinataires;
-  onSelection: (s: SelectionDestinataires) => void;
+  selection: SelectionContacts;
+  onSelection: (s: SelectionContacts) => void;
   userFields: UserFieldDef[];
   tagSuggestions: string[];
   bandeaux?: ReactNode;
@@ -182,18 +182,7 @@ export function ListeDestinataires({
   // Un filtre est actif dès qu'une clé est posée -> distingue « aucun résultat » de « aucun contact ».
   const filtresPoses = filtersActive(filtres);
 
-  /** Décocher une ligne l'EXCLUT en mode « tout », la retire de la liste sinon. Jamais les deux. */
-  const basculer = (id: string): void => {
-    if (selection.toutFiltre) {
-      const n = new Set(selection.exclus);
-      if (n.has(id)) n.delete(id); else n.add(id);
-      onSelection({ ...selection, exclus: n });
-      return;
-    }
-    const n = new Set(selection.selected);
-    if (n.has(id)) n.delete(id); else n.add(id);
-    onSelection({ ...selection, selected: n });
-  };
+  const basculer = (id: string): void => onSelection(basculerContact(selection, id));
 
   return (
     <div className="w-full">
@@ -223,7 +212,7 @@ export function ListeDestinataires({
             {/* « Tout sélectionner » retient l'INTENTION : aucun identifiant n'est rapatrié. */}
             <button
               type="button"
-              onClick={() => onSelection({ toutFiltre: true, selected: new Set(), exclus: new Set() })}
+              onClick={() => onSelection(selectionTout())}
               className="rounded-controle border border-brand-300 bg-brand-50 px-2 py-0.5 font-medium text-brand-700 hover:bg-brand-100"
             >
               {t(`Tout sélectionner (${total})`, `Select all (${total})`)}
@@ -232,7 +221,7 @@ export function ListeDestinataires({
         )}
         <Bouton variante="secondaire"
           type="button"
-          onClick={() => onSelection({ toutFiltre: false, selected: new Set(), exclus: new Set() })}
+          onClick={() => onSelection(selectionVide())}
         >
           {t('Vider', 'Clear')}
         </Bouton>

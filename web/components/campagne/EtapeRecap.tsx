@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { countContacts, createCampaign, runCampaign } from '@/lib/api';
 import { fmtNum } from '@/lib/format';
 import { DEBIT_MAX, DEBIT_MIN, type EtageAssistant } from '@/lib/campagne-chaine';
-import { audienceEnFiltres, auFilDeLEau, libelleAudience, nbRetenus } from '@/lib/audience';
+import { audienceEnFiltres, auFilDeLEau, libelleAudience } from '@/lib/audience';
+import { nbRetenus } from '@/lib/selection-contacts';
 import {
   LIBELLE_CANAL, champEmailEffectif, repartitionPrevue,
   type MesuresAudience,

@@ -1,14 +1,11 @@
 import { filtersActive, type BulkTarget, type ContactFilters } from './contact-filters';
+import { cibleContacts, selectionTout, type SelectionContacts } from './selection-contacts';
 
 /**
  * QUI REÇOIT UNE CAMPAGNE, en fonctions PURES et en UN SEUL exemplaire.
  *
- * 🔴 POURQUOI CE FICHIER EXISTE (2026-09-13). Deux écrans désignent aujourd'hui les destinataires d'une
- * campagne : l'ancien formulaire, alors en service, et l'étape Audience de l'assistant. Chacun portait sa
- * propre traduction « ce que j'ai coché » -> « ce que la requête emporte », et l'assistant n'en portait
- * qu'une moitié (les filtres, jamais une liste). Deux traductions d'une même notion, c'est une
- * divergence programmée : le jour où l'une gagne un cas, l'autre envoie à une population différente
- * sans que rien ne le dise. Elles n'en font plus qu'une, ici, exerçable en quelques millisecondes.
+ * La sélection commune au CRM et à la campagne vit dans `selection-contacts.ts`. Ce module garde les
+ * décisions propres à la campagne : source de l'audience, prévision et forme de la création.
  *
  * ⚠️ MODULE PUR (ni React, ni `@/`) : les seuls tests du front qui tournent hors navigateur sont ceux de
  * `lib/**` (`web/vitest.config.ts` les y borne). Une règle qui décide de QUI reçoit un message n'a pas
@@ -25,25 +22,6 @@ import { filtersActive, type BulkTarget, type ContactFilters } from './contact-f
  * l'état NORMAL, pas un échec.
  */
 export type SourceAudience = 'crm' | 'fichier' | 'hubspot' | 'webhook';
-
-/**
- * CE QUI EST COCHÉ, EN DEUX MODES QUI NE SE MÉLANGENT PAS.
- *
- * 🔴 `toutFiltre` RETIENT UNE INTENTION, PAS UNE LISTE, et c'est ce qui retire le piège des grosses
- * sélections. « Tout sélectionner » rapatriait jusqu'à 100 000 identifiants dans le navigateur puis les
- * renvoyait tous dans la requête, plafonnée à 1 Mo : la création échouait vers 25 000 contacts, donc
- * bien AVANT la limite que l'écran annonçait, et sans rien dire.
- *
- * ⚠️ `selected` NE VAUT QUE HORS `toutFiltre`, et `exclus` QUE DEDANS. Les lire tous les deux en même
- * temps donnerait deux réponses à la question « qui est retenu ? ».
- */
-export interface SelectionDestinataires {
-  toutFiltre: boolean;
-  /** Les lignes cochées, quand on désigne une liste. Bornée : on ne coche que ce qui est affiché. */
-  selected: Set<string>;
-  /** Les lignes décochées, quand on vise « tout ce qui correspond ». */
-  exclus: Set<string>;
-}
 
 /** L'audience complète : d'où elle vient, ce qui la filtre, et ce qui a été coché dedans. */
 export interface AudienceChoix {
@@ -66,17 +44,7 @@ export interface AudienceChoix {
    * d'un second analyseur, et c'est là que les deux divergent.
    */
   filtres: ContactFilters;
-  selection: SelectionDestinataires;
-}
-
-/** « Tout ce qui correspond aux filtres », sans exclusion. */
-export function selectionTout(): SelectionDestinataires {
-  return { toutFiltre: true, selected: new Set(), exclus: new Set() };
-}
-
-/** Aucune ligne cochée, en mode liste. */
-export function selectionVide(): SelectionDestinataires {
-  return { toutFiltre: false, selected: new Set(), exclus: new Set() };
+  selection: SelectionContacts;
 }
 
 /**
@@ -104,22 +72,6 @@ export function auFilDeLEau(a: Pick<AudienceChoix, 'source'>): boolean {
   return a.source === 'webhook';
 }
 
-/** Une ligne affichée est-elle retenue ? En mode « tout », tout l'est sauf ce qui a été exclu. */
-export function estRetenu(sel: SelectionDestinataires, id: string): boolean {
-  return sel.toutFiltre ? !sel.exclus.has(id) : sel.selected.has(id);
-}
-
-/**
- * COMBIEN DE DESTINATAIRES, RÉELLEMENT.
- *
- * ⚠️ En mode « tout ce qui correspond », c'est le total SERVEUR moins les exclusions : le navigateur ne
- * connaît pas la liste, il en connaît le cardinal. Lire `selected.size` dans ce mode rendrait zéro, et
- * l'écran annoncerait « prêt à lancer à 0 destinataire » sur une campagne qui vise tout l'espace.
- */
-export function nbRetenus(sel: SelectionDestinataires, total: number | null): number {
-  return sel.toutFiltre ? Math.max(0, (total ?? 0) - sel.exclus.size) : sel.selected.size;
-}
-
 /**
  * L'AUDIENCE SE DÉCRIT-ELLE ENTIÈREMENT PAR SES FILTRES ?
  *
@@ -128,7 +80,7 @@ export function nbRetenus(sel: SelectionDestinataires, total: number | null): nu
  * ce côté-là. Les lecteurs de cette fonction (la prévision du récapitulatif) doivent alors dire « je ne
  * sais pas » plutôt que de rendre un chiffre voisin, qui serait cru parce qu'il est plausible.
  */
-export function audienceEnFiltres(sel: SelectionDestinataires): boolean {
+export function audienceEnFiltres(sel: SelectionContacts): boolean {
   return sel.toutFiltre && sel.exclus.size === 0;
 }
 
@@ -138,13 +90,12 @@ export type CibleDestinataires = { contactIds: string[] } | { contactTarget: Bul
 /**
  * CE QUE LA CRÉATION EMPORTE : une intention, ou une liste.
  *
- * 🔴 UNE SEULE TRADUCTION POUR LES DEUX ÉCRANS. C'est la dernière décision avant des messages réels, et
- * elle tenait en un ternaire recopié : l'assistant n'en avait gardé que la branche « filtres », donc
- * cocher des lignes n'y changeait rien du tout. Le serveur, lui, refuse de recevoir les deux.
+ * La sélection est traduite une fois en `BulkTarget` partagé avec le CRM. Ici, seule l'enveloppe
+ * attendue par la création de campagne change ; le serveur refuse de recevoir les deux formes.
  */
-export function cibleDeCreation(sel: SelectionDestinataires, filtres: ContactFilters): CibleDestinataires {
-  if (!sel.toutFiltre) return { contactIds: [...sel.selected] };
-  return { contactTarget: { filters: filtres, excludeIds: [...sel.exclus] } };
+export function cibleDeCreation(sel: SelectionContacts, filtres: ContactFilters): CibleDestinataires {
+  const cible = cibleContacts(sel, filtres);
+  return 'ids' in cible ? { contactIds: cible.ids } : { contactTarget: cible };
 }
 
 /**

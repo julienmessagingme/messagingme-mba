@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { brouillonDeLEtat, etatDeBrouillon, type EtatBrouillon } from './campagne-brouillon';
-import { audienceInitiale, selectionVide } from './audience';
+import { audienceInitiale } from './audience';
+import { selectionVide } from './selection-contacts';
 
 /**
  * CE QUE CES CAS PROTÈGENT : LE TRAVAIL EN COURS DE QUELQU'UN.
