@@ -375,7 +375,8 @@ la base managée de Scaleway (qui porte ses propres sauvegardes : cette section 
 Le plan de sauvegarde du projet Supabase n'a jamais été relevé : on le tient pour nul. **`scripts/sauvegarde-base.sh`**
 fait chaque nuit un `pg_dump` des cinq schémas (format `custom`, ~24 Mo, ~10 s) dans `/home/ubuntu/sauvegardes-mba`
 (fichiers lisibles du seul propriétaire, gardés 7 jours), relit la table des matières de la copie, et ne passe jamais
-le mot de passe en argument. Planification (geste de Julien, persistance système) :
+le mot de passe en argument. Planification (geste de Julien, persistance système ; posée le 2026-10-14, chaque nuit à
+3 h 17 UTC) :
 
 ```bash
 ( crontab -l 2>/dev/null; echo '17 3 * * * sh /home/ubuntu/mba/scripts/sauvegarde-base.sh >> /home/ubuntu/sauvegardes-mba/journal.log 2>&1' ) | crontab -

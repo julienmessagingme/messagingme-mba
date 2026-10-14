@@ -5,8 +5,6 @@
 L'exercice de restauration est fait et réussi (`DEPLOY.md` § Restauration : 29 secrets sur 29 déchiffrés sur une copie
 jetable, copie identique à la production). Restent :
 
-- 🔴 **Julien : planifier `scripts/sauvegarde-base.sh`** (la ligne de crontab est dans `DEPLOY.md`). Une seule
-  sauvegarde existe, celle de l'exercice.
 - **À la bascule Scaleway** (lot 6 du plan `docs/superpowers/plans/2026-10-14-avant-bascule-scaleway.md`) : rejouer
   `scripts/exercice-restauration.sh` contre une sauvegarde de la base managée, réécrire la section de `DEPLOY.md`, et
   retirer la tâche planifiée du VPS une fois les sauvegardes de Scaleway relevées. Les extensions `vector`, `pg_trgm`
