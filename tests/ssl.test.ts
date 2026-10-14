@@ -90,13 +90,6 @@ describe('pgSsl, base jointe par son adresse IP', () => {
     expect(r.checkServerIdentity?.('localhost', certificat('DNS:localhost'))).toBeInstanceOf(Error);
   });
 
-  it('une adresse IPv6 entre crochets se compare sans eux', () => {
-    process.env['DB_SSL_CA_FILE'] = caPath;
-    const r = pgSsl('postgres://u:p@[fd00::5]:5432/rdb') as PgSslConfig;
-    expect(r.checkServerIdentity).toBeTypeOf('function');
-    expect(r.checkServerIdentity?.('localhost', certificat('IP Address:FD00:0:0:0:0:0:0:5'))).toBeUndefined();
-  });
-
   it('l’adresse passée par l’appelant prime sur DATABASE_URL', () => {
     process.env['DB_SSL_CA_FILE'] = caPath;
     process.env['DATABASE_URL'] = 'postgres://u:p@172.16.0.3:5432/rdb';

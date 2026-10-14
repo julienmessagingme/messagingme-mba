@@ -9,11 +9,14 @@ export interface PgSslConfig {
   checkServerIdentity?: (nom: string, cert: PeerCertificate) => Error | undefined;
 }
 
-/** L'hôte d'une chaîne de connexion, sans les crochets d'une adresse IPv6 ; null si elle est absente ou illisible. */
+/**
+ * L'hôte d'une chaîne de connexion ; null si elle est absente ou illisible. Une adresse IPv6 garde ses crochets, donc
+ * le contrôle par défaut : le Node de production (22) ne sait pas la rapprocher d'un certificat (mesuré le 2026-10-14).
+ */
 function hoteDe(url: string | undefined): string | null {
   if (!url) return null;
   try {
-    return new URL(url).hostname.replace(/^\[|\]$/g, '');
+    return new URL(url).hostname;
   } catch {
     return null;
   }
