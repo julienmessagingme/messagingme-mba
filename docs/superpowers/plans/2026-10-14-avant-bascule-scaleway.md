@@ -152,9 +152,9 @@ l'absence de l'environnement `scaleway` (le dépôt est public).
 
 ✅ **Banc rejoué le 2026-10-14** sur la base jetable d'Amsterdam (DB-DEV-M, 150 connexions), base `banc`, chiffres au
 journal technique : 300 appels/s par copie d'API, réception de Meta à 24 ms en rupture, file des statuts à
-27,8 accusés/s, `API_PLAFOND_GLOBAL_PAR_10S=2100` à poser au jour J. Restent : la gamme de la base de production, que
-Julien choisit sur ces chiffres et leur prix ; le budget de connexions, recalculé sur le `max_connections` relu à la
-création de cette base (`tests/budget-pooler.test.ts`) ; le second banc (`banc-deux-api-2.mts`), à rejouer sur le
+27,8 accusés/s, `API_PLAFOND_GLOBAL_PAR_10S=2100` à poser au jour J. La gamme de la base de production est choisie par
+Julien le même jour : DB-PRO2-XXS, DB-POP2-2C-8G si rupture (§13, point 9). Restent : le budget de connexions,
+recalculé sur le `max_connections` relu à la création de cette base (`tests/budget-pooler.test.ts`) ; le second banc (`banc-deux-api-2.mts`), à rejouer sur le
 conteneur serverless lui-même plutôt que sur la machine, son épreuve d'arrêt étant ce que l'autoscaling fera.
 
 **Pourquoi** (§7.5, §7.8) : les chiffres d'aujourd'hui, mesurés à Londres à 10 ms, ne survivent pas au déménagement.

@@ -1014,7 +1014,10 @@ Aucun de ces choix ne doit être remplacé par une valeur technique arbitraire.
    modèles décident ; la documentation commerciale doit nommer le périmètre réellement testé.
 9. **La base de la cible** : tranché par Julien le 2026-10-14, **le PostgreSQL managé de Scaleway**, Supabase Pro
    écarté. C'est ce que promet la vitrine (« chez Scaleway »), le calcul et la base restent chez le même hébergeur, et
-   rien de propre à Supabase n'est utilisé (§4).
+   rien de propre à Supabase n'est utilisé (§4). **Sa gamme**, tranchée par Julien le 2026-10-14 sur les chiffres du
+   banc (§7.8) : **DB-PRO2-XXS** (2 vCPU, 8 Go, environ 43 € par mois), gamme production ; **DB-POP2-2C-8G** (mêmes
+   caractéristiques, environ 55 € par mois) si la PRO2-XXS, en stock faible à Amsterdam, est refusée à la création. La
+   performance n'a pas décidé (la DB-DEV-M d'essai a tout tenu sans saturer) : l'engagement de service, si.
 10. **Le déclenchement d'un déploiement** : tranché par Julien le 2026-10-14, **à la main, avec son approbation**
     (§10 bis). Un déploiement au push ferait partir l'API avant sa relecture et avant sa migration.
 11. **Les machines des workers** : tranché par Julien le 2026-10-14, **une seule**, chaque conteneur borné (§2).
