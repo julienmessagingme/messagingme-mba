@@ -204,6 +204,48 @@ export class PgEmailsProduitStore {
   }
 
   // ---------------------------------------------------------------------------------------------------------------
+  // Les alertes de la livraison B : leurs occasions et leurs états.
+  // ---------------------------------------------------------------------------------------------------------------
+
+  /** Le dernier mouvement POSITIF du crédit de l'espace (recharge, achat, offert) : l'occasion de l'alerte du crédit bas. */
+  async dernierCreditRecu(tenantId: string): Promise<string | null> {
+    const res = await this.pool.query<{ id: string }>(
+      `select id from agent_credit_mouvements where tenant_id = $1 and delta_micro_eur > 0 order by at desc, id desc limit 1`,
+      [tenantId],
+    );
+    return res.rows[0]?.id ?? null;
+  }
+
+  /**
+   * L'état d'un seuil d'un espace (migration 0235). `atteint` vrai : rend la nouvelle génération seulement si CETTE
+   * instruction a fait passer le seuil de non atteint à atteint (gardée par `not atteint`, une seule copie la gagne),
+   * `null` sinon. Faux : le relâche, et rend `null`.
+   */
+  async franchir(tenantId: string, seuil: string, atteint: boolean): Promise<number | null> {
+    if (!atteint) {
+      await this.pool.query(
+        `update emails_produit_seuils set atteint = false, maj_le = now() where tenant_id = $1 and seuil = $2 and atteint`,
+        [tenantId, seuil],
+      );
+      return null;
+    }
+    const res = await this.pool.query<{ generation: number }>(
+      `insert into emails_produit_seuils (tenant_id, seuil, atteint, generation) values ($1, $2, true, 1)
+       on conflict (tenant_id, seuil) do update set atteint = true, generation = emails_produit_seuils.generation + 1, maj_le = now()
+         where not emails_produit_seuils.atteint
+       returning generation`,
+      [tenantId, seuil],
+    );
+    return res.rows[0]?.generation ?? null;
+  }
+
+  /** Tous les espaces, pour le balayage des limites (chacun relu ensuite dans son espace). */
+  async espaces(): Promise<string[]> {
+    const res = await this.pool.query<{ id: string }>(`select id from tenants order by created_at`);
+    return res.rows.map((r) => r.id);
+  }
+
+  // ---------------------------------------------------------------------------------------------------------------
   // La personne : sa langue et ses désinscriptions (pas d'espace : une adresse vaut pour tous ses espaces).
   // ---------------------------------------------------------------------------------------------------------------
 

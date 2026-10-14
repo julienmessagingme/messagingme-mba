@@ -88,6 +88,7 @@ export const TACHES_PAR_ROLE: Record<string, Appartenance> = {
   'compteurs-debit': 'principal',
   'consommation-vercel': 'principal',
   'emails-produit-reprise': 'principal',
+  'emails-produit-limites': 'principal',
   'files-echec': 'principal',
   'handoff-mba': 'principal',
   'idempotence-api': 'principal',

@@ -9,7 +9,22 @@ import type { LigneHistorique, MouvementLu, RaisonMouvement } from './credits';
  * le journal ensemble, sans état intermédiaire. Une ligne de solde par workspace, clé `tenant_id`.
  */
 export class PgCreditStore {
-  constructor(private readonly pool: Pool) {}
+  /**
+   * `surDebit` : appelé après chaque débit avec le solde d'avant et d'après (lot 7, l'alerte du crédit bas, câblée par
+   * le socle). Il ne doit jamais lever : un débit écrit ne se défait pas parce qu'une alerte tombe. REQUIS, `null`
+   * écrit en toutes lettres là où l'alerte n'a pas lieu d'être : un câblage qui l'oublierait ne compilerait pas, au lieu
+   * de couper l'alerte en silence.
+   */
+  constructor(
+    private readonly pool: Pool,
+    private readonly surDebit: ((tenantId: string, avantMicroEur: number, apresMicroEur: number) => Promise<void>) | null,
+  ) {}
+
+  /** Le débit est écrit : l'alerte voit le solde d'avant et d'après, et rien de ce qu'elle fait ne remonte. */
+  private async apresDebit(tenantId: string, montant: number, apres: number): Promise<void> {
+    if (this.surDebit === null) return;
+    await this.surDebit(tenantId, apres + montant, apres).catch(() => {});
+  }
 
   async solde(tenantId: string): Promise<number> {
     const res = await this.pool.query<{ solde_micro_eur: string }>(
@@ -25,7 +40,9 @@ export class PgCreditStore {
     // Un débit nul ou négatif n'est pas écrit : il ne doit pas devenir un rechargement déguisé.
     const montant = Math.max(0, Math.round(montantMicroEur));
     if (montant === 0) return this.solde(tenantId);
-    return bouger(this.pool, tenantId, -montant, 'conso', contexte ?? {});
+    const apres = await bouger(this.pool, tenantId, -montant, 'conso', contexte ?? {});
+    await this.apresDebit(tenantId, montant, apres);
+    return apres;
   }
 
   /**
@@ -67,7 +84,9 @@ export class PgCreditStore {
        select solde_micro_eur from solde`,
       [tenantId, -montant],
     );
-    return Number(res.rows[0]?.solde_micro_eur ?? 0);
+    const apres = Number(res.rows[0]?.solde_micro_eur ?? 0);
+    await this.apresDebit(tenantId, montant, apres);
+    return apres;
   }
 
   /**

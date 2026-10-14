@@ -272,6 +272,7 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
     livemode: true,
     paiements: { crediterPaiement: async () => 'espace_inconnu' },
     apresCredit: async () => undefined,
+    paiementRefuse: async () => undefined,
     numero: {
       enregistrer: async () => ({ etat: 'doublon' as const }), majStatut: async () => null, alerter: async () => undefined,
       noterFinPrevue: async () => false, reprendreCampagnes: async () => undefined,

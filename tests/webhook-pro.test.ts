@@ -36,6 +36,8 @@ function monter(o: { connus?: string[]; issue?: IssueEnregistrementPro; panne?: 
     credits: 0,
     passages: [] as string[],
     finsDuPro: [] as FinDuPro[],
+    /** Les e-mails de paiement refusé demandés (lot 7). */
+    paiementsRefuses: [] as Array<{ tenantId: string; offre: string; factureId: string }>,
   };
   const connus = new Set(o.connus ?? []);
   const finis = new Set<string>();
@@ -44,6 +46,7 @@ function monter(o: { connus?: string[]; issue?: IssueEnregistrementPro; panne?: 
     livemode: true,
     paiements: { crediterPaiement: async () => { cap.credits += 1; return 'credite'; } },
     apresCredit: async () => {},
+    paiementRefuse: async (p) => { cap.paiementsRefuses.push({ tenantId: p.tenantId, offre: p.offre, factureId: p.factureId }); },
     numero: stripeNumeroInerte,
     pro: {
       enregistrer: async (a) => { if (o.panne !== undefined) throw o.panne; cap.enregistres.push(a); const neuf = !connus.has(a.abonnementId); connus.add(a.abonnementId); return o.issue ?? { etat: 'enregistre', tenantId: T1, nouveau: neuf }; },
@@ -155,6 +158,8 @@ describe('le webhook Stripe et le Pro', () => {
     await envoyer(srv, evenement(facturePro(), 'invoice.payment_failed'));
     expect(cap.statuts).toEqual([{ abonnementId: 'sub_pro', statut: 'en_retard', periodeFin: null, finEchouee: new Date(FIN * 1000) }]);
     expect(cap.alertes).toHaveLength(1);
+    // Et les admins de l'espace, par e-mail (lot 7), une fois par facture.
+    expect(cap.paiementsRefuses).toEqual([{ tenantId: T1, offre: 'pro', factureId: expect.stringMatching(/^in_/) }]);
   });
 
   it('🔴 la résiliation programmée et la périodicité changée au portail : notées, sans rien finir', async () => {

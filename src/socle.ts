@@ -80,6 +80,7 @@ import { creerAlerteCreditEpuise } from './repondeur/alerte-credit';
 import { creerEnvoyeurProduit } from './support/resend';
 import { PgEmailsProduitStore } from './emails-produit/store.pg';
 import { creerEmetteurEmails, FILE_EMAILS_PRODUIT } from './emails-produit/emission';
+import { creerAlerteCreditBas, creerPaiementRefuse, creerPrevenirEquipe } from './emails-produit/alertes';
 import { PgOffresStore } from './offres/offre.pg';
 import { OffresEnCache } from './offres/cache';
 import { QuotaModeles } from './offres/compteurs';
@@ -250,7 +251,56 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const rechercheSemantique = creerRechercheSemantique();
   const toolCatalog = new PgToolCatalog(pool);
   const journalAppels = new PgJournalAppels(pool);
-  const credits = new PgCreditStore(pool);
+  /**
+   * LES E-MAILS DU PRODUIT (lot 7, `src/emails-produit/`) : l'émetteur réserve une ligne du journal par destinataire
+   * (le dédoublonnage, en base) puis enfile un job `emails-produit` ; le worker envoie par l'expéditeur unique, borné.
+   * L'API et le worker émettent tous deux (une alerte de crédit part du démarreur du répondeur comme du tour d'un
+   * agent) : c'est pourquoi ils vivent dans le socle. Sans Resend, l'expéditeur vaut `null` et la file note `ignore`.
+   */
+  const emailsProduit = new PgEmailsProduitStore(pool);
+  const emetteurEmails = creerEmetteurEmails({
+    adminsConnectes: (t) => emailsProduit.adminsConnectes(t),
+    reserver: (e) => emailsProduit.reserver(e),
+    fuseau: async (t) => (await settingsStore.get(t)).timezone,
+    enfiler: (job) => queue.enqueue(FILE_EMAILS_PRODUIT, job, { groupId: job.tenantId }),
+  });
+  const envoyeurProduit = config.RESEND_API_KEY ? creerEnvoyeurProduit(config.RESEND_API_KEY, `Messaging Me <${config.SUPPORT_FROM}>`) : null;
+  /** Les pages de la console vers lesquelles les e-mails du produit renvoient. */
+  const console_ = config.APP_URL.trim().replace(/\/+$/, '');
+  const pageCredit = `${console_}/parametres/credit`;
+  /**
+   * Le crédit IA, et l'alerte du crédit BAS (lot 7, livraison B) sur chaque débit qui passe sous 0,50 € : tous les
+   * débits passent par ce magasin (agent, traduction, essais, recherche, transcription), donc l'alerte ne peut en manquer
+   * aucun. Son occasion est le dernier crédit reçu : une recharge la réarme.
+   */
+  const alerteCreditBas = creerAlerteCreditBas({
+    emettre: (e) => emetteurEmails.emettre(e),
+    dernierCreditRecu: (t) => emailsProduit.dernierCreditRecu(t),
+    pageCredit,
+  });
+  const credits = new PgCreditStore(pool, (t, avant, apres) => alerteCreditBas.surDebit(t, avant, apres));
+  /**
+   * Le paiement refusé du Pro ou du numéro fourni (lot 7, livraison B), une fois par facture : le webhook de Stripe le
+   * déclenche, dans l'API.
+   */
+  const paiementRefuse = creerPaiementRefuse({
+    emettre: (e) => emetteurEmails.emettre(e),
+    pageNumero: `${console_}/connecter-whatsapp`,
+    pageOffre: `${console_}/offre`,
+    // Lu à l'appel (le magasin des abonnements est construit plus bas) : la coupure que montre aussi le bandeau.
+    coupureDuNumero: async (t) => (await abonnementsDuNumero.etatDeLEspace(t))?.coupureLe ?? null,
+  });
+  /**
+   * La conversation passée à l'équipe (lot 7, livraison B) : appelée par les TROIS chemins d'un robot qui passe la main
+   * (agent IA et passation de l'agent de Meta dans le worker, bloc d'un scénario dans l'exécuteur), seulement quand la
+   * bascule a eu lieu ; elle-même n'écrit que si le contact vient d'écrire (`ATTENTE_RECENTE_MS`), ce qui écarte le
+   * démarrage d'une campagne et les réveils en masse.
+   */
+  const prevenirEquipe = creerPrevenirEquipe({
+    contexte: (t, w) => inboxStore.contexteDuPassage(t, w),
+    emettre: (e) => emetteurEmails.emettre(e),
+    lienConversation: (id) => `${console_}/inbox?c=${encodeURIComponent(id)}`,
+  });
   const agentSources = new PgSourceStore(pool);
   // Les requêtes de connecteur : un appel mis au point une fois dans la bibliothèque de l'espace, que l'outil d'un
   // agent, un bloc de scénario ou la poussée d'un opt-out désigne au lieu de le redécrire.
@@ -373,28 +423,13 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const runStore = new PgWorkflowRunStore(pool);
 
   /**
-   * LES E-MAILS DU PRODUIT (lot 7, `src/emails-produit/`) : l'émetteur réserve une ligne du journal par destinataire
-   * (le dédoublonnage, en base) puis enfile un job `emails-produit` ; le worker envoie par l'expéditeur unique, borné.
-   * L'API et le worker émettent tous deux (une alerte de crédit part du démarreur du répondeur comme du tour d'un
-   * agent) : c'est pourquoi ils vivent dans le socle. Sans Resend, l'expéditeur vaut `null` et la file note `ignore`.
-   */
-  const emailsProduit = new PgEmailsProduitStore(pool);
-  const emetteurEmails = creerEmetteurEmails({
-    adminsConnectes: (t) => emailsProduit.adminsConnectes(t),
-    reserver: (e) => emailsProduit.reserver(e),
-    fuseau: async (t) => (await settingsStore.get(t)).timezone,
-    enfiler: (job) => queue.enqueue(FILE_EMAILS_PRODUIT, job, { groupId: job.tenantId }),
-  });
-  const envoyeurProduit = config.RESEND_API_KEY ? creerEnvoyeurProduit(config.RESEND_API_KEY, `Messaging Me <${config.SUPPORT_FROM}>`) : null;
-
-  /**
    * L'alerte de crédit épuisé (`src/repondeur/alerte-credit.ts`) : une par jour et par admin, tenue par le journal des
    * e-mails du produit. Le démarreur du répondeur la déclenche, le tour d'un agent aussi (worker).
    */
   const alerteCredit = creerAlerteCreditEpuise({
     fuseau: async (t) => (await settingsStore.get(t)).timezone,
     emettre: (e) => emetteurEmails.emettre(e),
-    pageCredit: `${config.APP_URL.trim().replace(/\/+$/, '')}/parametres/credit`,
+    pageCredit,
   });
 
   /**
@@ -465,7 +500,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const workflowRuntime = buildWorkflowRuntime({
     pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
     rcsProvider: config.RCS_PROVIDER,
-    emailTemplates, emailResolver, numeroDeLEspace, runStore, fil, offres,
+    emailTemplates, emailResolver, numeroDeLEspace, runStore, fil, offres, prevenirEquipe,
   });
 
   /**
@@ -508,7 +543,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     credits, agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver,
     wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, numeroBloqueDeLEspace, esCredentialsStore, metaCredentials, metaFactory, listeDeLAgent,
     connexionsPub, connexionPub, publicites, clientPubs, clientCreationPubs, workflowRuntime, fil, alerteCredit, offres, quotaModeles,
-    emailsProduit, emetteurEmails, envoyeurProduit,
+    emailsProduit, emetteurEmails, envoyeurProduit, paiementRefuse, prevenirEquipe,
   };
 }
 

@@ -28,7 +28,7 @@ describe.skipIf(!url)('solde prépayé d un workspace (Postgres)', () => {
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: url, ssl: pgSsl(), max: 8 });
-    credits = new PgCreditStore(pool);
+    credits = new PgCreditStore(pool, null);
     tenantId = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-credits') returning id`)).rows[0]!.id;
     autreTenantId = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-credits-autre') returning id`)).rows[0]!.id;
   });

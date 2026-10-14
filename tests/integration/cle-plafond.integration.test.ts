@@ -34,7 +34,7 @@ describe.skipIf(!url)('le plafond de la clé de modèle (Postgres)', () => {
     pool = new Pool({ connectionString: url, ssl: pgSsl(), max: 8 });
     // Chiffrement identité : ce fichier ne teste pas le chiffrement, il teste le plafond.
     cles = new PgCleGatewayStore(pool, (s) => s, (s) => s);
-    credits = new PgCreditStore(pool);
+    credits = new PgCreditStore(pool, null);
   });
   afterAll(async () => { if (t) await pool.query('delete from tenants where id = $1', [t]); await pool.end(); });
   beforeEach(async () => {

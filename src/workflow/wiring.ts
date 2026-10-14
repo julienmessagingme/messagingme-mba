@@ -106,6 +106,11 @@ export interface WorkflowRuntimeDeps {
   fil: ControleDuFil;
   /** L'offre de l'espace (`OffresEnCache` du socle) : le gel des démarrages au retour en Base (lot 6, B2a). */
   offres: SourceOffres;
+  /**
+   * Prévenir les admins qu'une conversation attend l'équipe (lot 7, `creerPrevenirEquipe`). Requise : un câblage qui
+   * l'oublierait ne préviendrait jamais personne, en silence. Elle n'écrit que si le contact vient d'écrire.
+   */
+  prevenirEquipe(tenantId: string, waId: string): Promise<void>;
 }
 
 /** `buildWorkflowRuntime` construit l'exécuteur et ce qui l'accompagne, une fois par process (les caches vivent dedans). */
@@ -361,7 +366,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // Un run qui atteint un bloc `inbox` remonte la conversation à un humain, seulement si le fil était encore aux
     // robots, puis pose l'affectataire désigné par le bloc. `escalade` est relayé, jamais décidé ici : c'est
     // l'exécuteur qui sait si quelqu'un attend une réponse.
-    escalateToHuman: async (tenant, waId, assigneA, escalade, workflowId) => {
+    escalateToHuman: async (tenant, waId, assigneA, escalade, workflowId, prevenir) => {
       // La cause que la frise du panneau Détail affiche à la place d'un auteur : le NOM du scénario, pour le passage
       // à l'équipe (l'événement `escaladee`, migration 0194, qui ouvre une demande du Quantitatif > Performance) et
       // pour l'affectation. Lu à CHAQUE passage : depuis le 2026-09-29, tout passage d'un robot à l'équipe écrit
@@ -373,8 +378,12 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       // automatique »).
       const designe = await workflowStore.designation(workflowId, tenant).catch(() => null);
       const cause = automatique(designationDuScenario(designe, workflowId));
-      await fil.passerAUnHumain(tenant, waId, { escalade, cause });
+      const bascule = await fil.passerAUnHumain(tenant, waId, { escalade, cause });
       if (assigneA) await inboxStore.setAssigneeByWaId(tenant, waId, assigneA, cause);
+      // L'e-mail aux admins (lot 7) : seulement si le fil a vraiment basculé, que quelqu'un attend (`escalade`), et que
+      // l'exécuteur l'autorise (`prevenir` : jamais d'un démarrage de masse, d'un réveil ni d'un saut). `prevenirEquipe`
+      // vérifie en plus que le contact vient d'écrire.
+      if (bascule && escalade && prevenir) await deps.prevenirEquipe(tenant, waId);
     },
     // Le bloc agent : sans ces deux dépendances, il est traversé comme un passe-plat, sans que l'agent parle.
     // Elles vont par paire : une session sans tour resterait vivante et muette, un tour sans session

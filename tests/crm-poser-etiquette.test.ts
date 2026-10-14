@@ -201,6 +201,8 @@ function socle(deja: string[] = []) {
     rcsProvider: 'fake', emailTemplates: inerte, emailResolver: inerte, numeroDeLEspace: async () => null, runStore: inerte,
     fil: inerte,
     offres: offresToutOuvert,
+    // Le lot 7 : ces bancs ne testent pas l’e-mail aux admins.
+    prevenirEquipe: async () => {},
   });
   const publiees = () => file.map((j) => {
     expect(j.name).toBe(AUTOMATION_EVENT_QUEUE);

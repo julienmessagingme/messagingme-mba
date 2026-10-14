@@ -33,6 +33,8 @@ function cablage(lectures: { recu?: () => Promise<Date | null>; langue?: () => P
     workflowStore: inerte, metaCredentials: inerte, metaFactory: inerte, rcsProvider: 'fake', emailTemplates: inerte,
     emailResolver: inerte, numeroDeLEspace: async () => null, runStore: inerte, fil: inerte,
     offres: offresToutOuvert,
+    // Le lot 7 : ces bancs ne testent pas l’e-mail aux admins.
+    prevenirEquipe: async () => {},
   });
   // `deps` est privé à l'exécuteur : on lit la dépendance que le câblage lui a donnée.
   const { evalContext } = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;

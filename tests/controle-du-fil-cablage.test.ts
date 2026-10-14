@@ -78,6 +78,7 @@ describe('le balayage réclame l’âge, et le câblage le transmet', () => {
  */
 function cablageDuScenario(
   lireNom: () => Promise<{ nom: string; systeme: 'repondeur' | null } | null> = async () => ({ nom: 'Bienvenue', systeme: null }),
+  bascule = true,
 ) {
   const appels: unknown[][] = [];
   const inerte = {} as never;
@@ -89,13 +90,36 @@ function cablageDuScenario(
     workflowStore: { designation: async (id: string, t: string) => { appels.push(['nom', id, t]); return lireNom(); } } as never,
     metaCredentials: inerte, metaFactory: inerte, rcsProvider: 'fake', emailTemplates: inerte, emailResolver: inerte,
     numeroDeLEspace: async () => null, runStore: inerte,
-    fil: { passerAUnHumain: async (...a: unknown[]) => { appels.push(['passer', ...a]); return true; } } as never,
+    fil: { passerAUnHumain: async (...a: unknown[]) => { appels.push(['passer', ...a]); return bascule; } } as never,
     offres: offresToutOuvert,
+    // L'e-mail aux admins (lot 7) : la demande est notée, ce qu'elle décide ensuite est `tests/emails-produit-alertes.test.ts`.
+    prevenirEquipe: async (...a: unknown[]) => { appels.push(['prevenir', ...a]); },
   });
   // `deps` est privé à l'exécuteur : on lit la dépendance que le câblage lui a donnée, sans monter un parcours entier.
   const { escalateToHuman } = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
   return { escalateToHuman, appels };
 }
+
+describe('le câblage d’un scénario ne prévient les admins que d’un vrai passage avec quelqu’un qui attend (lot 7)', () => {
+  it('🔴 sans escalade (réveil, échec d’un parcours) ou sans bascule (le fil n’était plus aux robots) : aucun e-mail', async () => {
+    const sansEscalade = cablageDuScenario();
+    await sansEscalade.escalateToHuman('t1', 'w', null, false, 'wf-1', true);
+    expect(sansEscalade.appels.some((a) => a[0] === 'prevenir')).toBe(false);
+    const sansBascule = cablageDuScenario(undefined, false);
+    await sansBascule.escalateToHuman('t1', 'w', null, true, 'wf-1', true);
+    expect(sansBascule.appels.some((a) => a[0] === 'prevenir')).toBe(false);
+  });
+
+  it('🔴 un démarrage de masse, un réveil ou un saut (`prevenir` faux) : aucun e-mail, même avec escalade et bascule', async () => {
+    // Le démarrage d'une campagne « modèle puis passer à un humain » : l'exécuteur passe
+    // `politique.publieLesEtiquettes`, faux pour une campagne. Sans ce drapeau, un destinataire qui aurait écrit dans
+    // le quart d'heure recevrait un e-mail par admin, au lancement.
+    const masse = cablageDuScenario();
+    await masse.escalateToHuman('t1', 'w', null, true, 'wf-1', false);
+    expect(masse.appels.some((a) => a[0] === 'prevenir')).toBe(false);
+    expect(masse.appels.some((a) => a[0] === 'passer')).toBe(true);
+  });
+});
 
 describe('le câblage d’un scénario nomme le scénario à CHAQUE passage à l’équipe (0194, 2026-09-29)', () => {
   it('🔴 sans marque d’escalade ni affectataire, la cause nomme quand même le scénario', async () => {
@@ -103,7 +127,7 @@ describe('le câblage d’un scénario nomme le scénario à CHAQUE passage à l
     // qu'avec une escalade ou un affectataire afficherait « scénario wf-1 » pour un scénario qui passe la main sans
     // rien avoir envoyé.
     const { escalateToHuman, appels } = cablageDuScenario();
-    await escalateToHuman('t1', '33600000001', null, false, 'wf-1');
+    await escalateToHuman('t1', '33600000001', null, false, 'wf-1', true);
     expect(appels).toEqual([
       ['nom', 'wf-1', 't1'],
       ['passer', 't1', '33600000001', { escalade: false, cause: 'automatique : scénario Bienvenue' }],
@@ -115,10 +139,12 @@ describe('le câblage d’un scénario nomme le scénario à CHAQUE passage à l
     // fermée, envoi refusé à la reprise) ne le pose pas, parce que personne n'attend à cet instant. Écrire
     // `escalade: true` dans le câblage rendrait tous les fils collants, y compris ceux que personne n'attend.
     const { escalateToHuman, appels } = cablageDuScenario();
-    await escalateToHuman('t1', 'w', 'u-marie', true, 'wf-1');
+    await escalateToHuman('t1', 'w', 'u-marie', true, 'wf-1', true);
     expect(appels.slice(1)).toEqual([
       ['passer', 't1', 'w', { escalade: true, cause: 'automatique : scénario Bienvenue' }],
       ['affecter', 't1', 'w', 'u-marie', 'automatique : scénario Bienvenue'],
+      // Quelqu'un attend et le fil a basculé : les admins sont prévenus (lot 7).
+      ['prevenir', 't1', 'w'],
     ]);
   });
 
@@ -126,15 +152,15 @@ describe('le câblage d’un scénario nomme le scénario à CHAQUE passage à l
     // Le magasin le cache à toutes ses lectures publiques : lu par `getById`, il serait introuvable, et la frise
     // dirait « scénario <uuid> » quand l'agent répondeur passe la main à l'équipe.
     const { escalateToHuman, appels } = cablageDuScenario(async () => ({ nom: 'Répondeur automatique', systeme: 'repondeur' }));
-    await escalateToHuman('t1', 'w', null, false, 'wf-sys');
+    await escalateToHuman('t1', 'w', null, false, 'wf-sys', true);
     expect(appels.at(-1)).toEqual(['passer', 't1', 'w', { escalade: false, cause: 'automatique : Répondeur automatique' }]);
   });
 
   it('un scénario introuvable, ou une lecture en panne, ne bloque rien : il est dit par son identifiant', async () => {
     for (const lireNom of [async () => null, async () => { throw new Error('base indisponible'); }]) {
       const { escalateToHuman, appels } = cablageDuScenario(lireNom);
-      await escalateToHuman('t1', 'w', null, true, 'wf-1');
-      expect(appels.at(-1)).toEqual(['passer', 't1', 'w', { escalade: true, cause: 'automatique : scénario wf-1' }]);
+      await escalateToHuman('t1', 'w', null, true, 'wf-1', true);
+      expect(appels.find((a) => a[0] === 'passer')).toEqual(['passer', 't1', 'w', { escalade: true, cause: 'automatique : scénario wf-1' }]);
     }
   });
 });
@@ -157,6 +183,8 @@ describe('le câblage d’un scénario confie le message « à côté » au rép
       numeroDeLEspace: async () => null, runStore: inerte,
       fil: { remettreSiPersonneNeSuit: async (...a: unknown[]) => { appels.push(a); } } as never,
       offres: offresToutOuvert,
+      // Le lot 7 : ces bancs ne testent pas l’e-mail aux admins.
+      prevenirEquipe: async () => {},
     });
     const { confierAuRepondeur } = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
     await confierAuRepondeur('t1', '33600000001', 'wamid.C');
@@ -180,13 +208,15 @@ describe('l’escalade est posée par les DEUX câblages, pas seulement par l’
     // Sans accolades : la flèche rend la promesse de la bascule. La cause nomme l'agent (migration 0194), par la même
     // fonction que l'urgence posée par un agent IA (RC2, migration 0216).
     expect(worker).toMatch(/escalateToHuman: async \(t, waId, agentId\) => fil\.passerAUnHumain\(t, waId, \{\s*escalade: true,\s*cause: await causeAgentIa\(t, agentId\),/);
+    // Et seul un vrai passage prévient les admins par e-mail (lot 7), le verdict toujours rendu.
+    expect(worker).toMatch(/cause: await causeAgentIa\(t, agentId\),\s*\}\)\.then\(async \(bascule\) => \{[\s\S]{0,300}?if \(bascule\) await prevenirEquipe\(t, waId\);\s*return bascule;\s*\}\),/);
     expect(worker).toMatch(/const causeAgentIa = async \(t: string, agentId: string\): Promise<string> =>\s*automatique\(`agent IA /);
   });
 
   it('🔴 et la passation de l’agent de Meta passe, elle, par `marquerEscalade`', () => {
     // Elle doit CRÉER la conversation si la passation arrive avant l'écho de l'agent : c'est un upsert, pas
     // une prise de fil conditionnelle (`ControleDuFil.agentDeMetaPasseLaMain`).
-    expect(worker).toContain('marquerEscalade: fil.agentDeMetaPasseLaMain,');
+    expect(worker).toMatch(/marquerEscalade: async \(t, w\) => \{\s*if \(await fil\.agentDeMetaPasseLaMain\(t, w\)\) await prevenirEquipe\(t, w\);\s*\},/);
   });
 });
 

@@ -700,9 +700,12 @@ export class PgInboxStore implements InboxStore {
    *
    * `cause` REQUISE. L'événement `passee_par_mba` ne s'écrit que si quelque chose change (fil qui n'était pas à
    * l'équipe, ou escalade pas encore posée) : un `control_passed` redélivré ne double pas la ligne.
+   *
+   * Rend `true` si CETTE passation a écrit l'événement (lot 7) : c'est elle, et elle seule, qui prévient l'équipe par
+   * e-mail. Un `control_passed` redélivré rend `false`.
    */
-  async marquerEscalade(tenantId: string, waId: string, cause: string): Promise<void> {
-    await this.pool.query(
+  async marquerEscalade(tenantId: string, waId: string, cause: string): Promise<boolean> {
+    const res = await this.pool.query<{ passee: boolean }>(
       // Upsert : pas de sous-select verrouillé possible, l'état d'avant est lu dans l'instantané de la requête
       // (toutes les parties d'un WITH partagent le même), donc avant l'upsert. Une conversation neuve n'y est
       // pas : la passation s'écrit quand même, c'en est une.
@@ -730,10 +733,12 @@ export class PgInboxStore implements InboxStore {
              (case when avant.traitee_le is not null then 'non_traitee' end)
            ) as e(type)
           where e.type is not null
+         returning type
        )
-       select id from maj`,
+       select maj.id, exists (select 1 from evenement where type = 'passee_par_mba') as passee from maj`,
       [tenantId, waId, borner(cause)],
     );
+    return res.rows[0]?.passee === true;
   }
 
   /**
@@ -1599,6 +1604,28 @@ export class PgInboxStore implements InboxStore {
       `update conversations set last_read_at = now() where id = $1 and tenant_id = $2`,
       [conversationId, tenantId],
     );
+  }
+
+  /**
+   * Ce que l'e-mail « une conversation attend votre équipe » lit (lot 7, livraison B) : la conversation, le nom de profil
+   * du contact, et son dernier message WhatsApp. Scopé à l'espace, la fiche jointe dans le même espace. `null` si la
+   * conversation n'existe pas dans cet espace.
+   */
+  async contexteDuPassage(tenantId: string, waId: string): Promise<{
+    conversationId: string; nom: string | null; waId: string; dernierEntrantLe: Date | null;
+  } | null> {
+    const res = await this.pool.query<{ id: string; wa_id: string; profile_name: string | null; dernier_in: Date | null }>(
+      `select c.id, c.wa_id, ct.profile_name,
+              (select max(m.created_at) from conversation_messages m
+                where m.conversation_id = c.id and m.direction = 'in' and m.channel = 'whatsapp') as dernier_in
+         from conversations c
+         left join contacts ct on ct.id = c.contact_id and ct.tenant_id = c.tenant_id
+        where c.tenant_id = $1 and c.wa_id = $2`,
+      [tenantId, waId],
+    );
+    const r = res.rows[0];
+    if (!r) return null;
+    return { conversationId: r.id, nom: r.profile_name, waId: r.wa_id, dernierEntrantLe: r.dernier_in };
   }
 
   /**

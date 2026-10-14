@@ -27,6 +27,8 @@ function monter(o: { connus?: string[]; issue?: IssueEnregistrement; livemode?: 
     reprises: [] as string[],
     /** La fin de la période facturée que chaque échec transmet (lot 4, rouge 2 de la relecture). */
     finsEchouees: [] as Array<Date | null>,
+    /** Les e-mails de paiement refusé demandés (lot 7). */
+    paiementsRefuses: [] as Array<{ tenantId: string; offre: string; factureId: string }>,
   };
   const connus = new Set(o.connus ?? []);
   const deps: StripeWebhookRouteDeps = {
@@ -34,6 +36,7 @@ function monter(o: { connus?: string[]; issue?: IssueEnregistrement; livemode?: 
     livemode: o.livemode ?? true,
     paiements: { crediterPaiement: async () => { cap.credits += 1; return 'credite'; } },
     apresCredit: async () => {},
+    paiementRefuse: async (p) => { cap.paiementsRefuses.push(p); },
     numero: {
       enregistrer: async (a) => {
         if (o.enregistrerLeve) throw o.enregistrerLeve;
@@ -151,9 +154,12 @@ describe('le webhook Stripe et l’abonnement du numéro', () => {
     await envoyer(connu.srv, evenement(facture(), 'invoice.payment_failed'));
     expect(connu.cap.statuts.map((s) => s.statut)).toEqual(['en_retard']);
     expect(connu.cap.alertes).toHaveLength(1);
+    // Et les admins de l'espace, par e-mail (lot 7), avec la facture qui en fait l'occasion.
+    expect(connu.cap.paiementsRefuses).toEqual([{ tenantId: T1, offre: 'numero', factureId: expect.stringMatching(/^in_/) }]);
     const inconnu = monter();
     await envoyer(inconnu.srv, evenement(facture(), 'invoice.payment_failed'));
     expect(inconnu.cap.alertes).toEqual([]);
+    expect(inconnu.cap.paiementsRefuses).toEqual([]);
   });
 
   it('🔴 un échec transmet la fin de la période facturée : rejoué APRÈS le paiement de la même facture, il ne repose rien', async () => {

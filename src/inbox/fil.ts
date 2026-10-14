@@ -130,7 +130,7 @@ export interface DepsControleDuFil {
      * `app_human` plus la marque d'escalade, en upsert : la passation peut précéder l'écho qui crée la conversation.
      * `cause` : ce que la frise du panneau Détail dit de la passation.
      */
-    marquerEscalade(tenantId: string, waId: string, cause: string): Promise<void>;
+    marquerEscalade(tenantId: string, waId: string, cause: string): Promise<boolean>;
     /**
      * Ce que la remise « personne ne suit » lit du fil : son détenteur, le temps écoulé depuis `control_changed_at`
      * (`null` = non daté), et s'il porte une escalade sans réponse. L'absence de conversation vaut `app_workflow`.
@@ -350,8 +350,11 @@ export interface ControleDuFil {
    * faire attendre.
    */
   passerAUnHumain(tenantId: string, waId: string, opts: { escalade: boolean; cause: string }): Promise<boolean>;
-  /** L'agent de Meta passe la main à l'équipe (`control_passed`) : `app_human` et escalade. */
-  agentDeMetaPasseLaMain(tenantId: string, waId: string): Promise<void>;
+  /**
+   * L'agent de Meta passe la main à l'équipe (`control_passed`) : `app_human` et escalade. Rend `true` si cette
+   * passation est neuve (son événement écrit), `false` pour un `control_passed` redélivré.
+   */
+  agentDeMetaPasseLaMain(tenantId: string, waId: string): Promise<boolean>;
   /**
    * Un entrant arrive en `standby` : l'agent de Meta tient le fil, Meta fait autorité, y compris contre un
    * opérateur. Sauf après une escalade, que seul un `standby` plus récent qu'elle lève (et efface).

@@ -57,14 +57,38 @@ export function dateLisible(iso: string, langue: Langue, fuseau: string): string
   }
 }
 
-/** Les valeurs prêtes à écrire : les dates mises en forme, rien d'autre. Toujours en clair, jamais échappées. */
+/** Le jour et l'heure (heure et minutes), dans la langue et le fuseau ; une valeur illisible reste telle quelle. */
+export function dateHeureLisible(iso: string, langue: Langue, fuseau: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const o: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' };
+  const locale = langue === 'en' ? 'en-GB' : 'fr-FR';
+  try {
+    return d.toLocaleString(locale, { ...o, timeZone: fuseau });
+  } catch {
+    return d.toLocaleString(locale, { ...o, timeZone: DEFAULT_TIMEZONE });
+  }
+}
+
+/** Un montant en micro-euros, en euros à deux décimales, dans la langue ; une valeur illisible reste telle quelle. */
+export function eurosLisibles(microEur: string, langue: Langue): string {
+  const n = Number(microEur);
+  if (!Number.isFinite(n)) return microEur;
+  return new Intl.NumberFormat(langue === 'en' ? 'en-GB' : 'fr-FR', { style: 'currency', currency: 'EUR' }).format(n / 1_000_000);
+}
+
+/** Les valeurs prêtes à écrire : les dates et les montants mis en forme, rien d'autre. En clair, jamais échappées. */
 function valeursEcrites(m: ModeleEmail, valeurs: Valeurs, langue: Langue): Map<string, string> {
   const fuseau = valeurs[CLE_FUSEAU] || DEFAULT_TIMEZONE;
   const permises = variablesDe(m);
   const ecrites = new Map<string, string>();
   for (const [nom, v] of Object.entries(permises)) {
     const brute = valeurs[nom] ?? '';
-    ecrites.set(nom, v.forme === 'date' && brute !== '' ? dateLisible(brute, langue, fuseau) : brute);
+    if (brute === '') ecrites.set(nom, brute);
+    else if (v.forme === 'date') ecrites.set(nom, dateLisible(brute, langue, fuseau));
+    else if (v.forme === 'date_heure') ecrites.set(nom, dateHeureLisible(brute, langue, fuseau));
+    else if (v.forme === 'euros') ecrites.set(nom, eurosLisibles(brute, langue));
+    else ecrites.set(nom, brute);
   }
   return ecrites;
 }

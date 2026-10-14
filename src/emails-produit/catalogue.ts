@@ -32,7 +32,8 @@ export function estCoupable(c: Categorie): c is CategorieCoupable {
  */
 export interface Variable {
   readonly description: string;
-  readonly forme: 'texte' | 'date' | 'lien';
+  /** `date_heure` : le jour et l'heure ; `euros` : un montant en micro-euros, écrit dans la langue de la personne. */
+  readonly forme: 'texte' | 'date' | 'date_heure' | 'lien' | 'euros';
   readonly exemple: string;
 }
 
@@ -66,6 +67,8 @@ export const VARIABLES_COMMUNES: Readonly<Record<string, Variable>> = {
 
 const LIEN_NUMERO: Variable = { description: 'La page « Connecter WhatsApp » de la console', forme: 'lien', exemple: 'https://console.messagingme.app/connecter-whatsapp' };
 const DATE_LIBERATION: Variable = { description: 'Le jour où le numéro sera libéré', forme: 'date', exemple: '2026-11-02T10:00:00.000Z' };
+const LIEN_OFFRE: Variable = { description: 'La page Offre de la console', forme: 'lien', exemple: 'https://console.messagingme.app/offre' };
+const LIMITE: Variable = { description: 'La limite de l’offre Free', forme: 'texte', exemple: '1000' };
 
 export const CATALOGUE = [
   {
@@ -218,6 +221,205 @@ export const CATALOGUE = [
           + 'page of the console, or ask Claude: its sends will stop at the end of the Pro, then it will be released 7 days '
           + 'later.',
         bouton: { libelle: 'Open the “Plan” page', lien: '{{lien_offre}}' },
+      },
+    },
+  },
+  {
+    cle: 'credit_bas',
+    categorie: 'service',
+    nom: 'Crédit IA presque épuisé',
+    quand: 'Un débit fait passer le crédit IA sous 0,50 €. Une fois par recharge.',
+    variables: {
+      solde: { description: 'Le crédit restant', forme: 'euros', exemple: '420000' },
+      lien_credit: { description: 'La page Crédit IA de la console', forme: 'lien', exemple: 'https://console.messagingme.app/parametres/credit' },
+    },
+    textes: {
+      fr: {
+        sujet: 'Crédit IA bientôt épuisé : il reste {{solde}}',
+        corps: 'Bonjour,\n\nLe crédit IA de l’espace {{espace}} passe sous 0,50 € : il reste {{solde}}. Quand il sera à zéro, '
+          + 'vos agents IA, dont le répondeur automatique, ne répondront plus, et les messages iront dans « À traiter » de '
+          + 'l’Inbox.\n\nRechargez dès maintenant pour qu’ils continuent sans interruption.',
+        bouton: { libelle: 'Recharger le crédit IA', lien: '{{lien_credit}}' },
+      },
+      en: {
+        sujet: 'AI credit running low: {{solde}} left',
+        corps: 'Hello,\n\nThe AI credit of the {{espace}} workspace has dropped below €0.50: {{solde}} left. When it reaches '
+          + 'zero, your AI agents, including the automatic responder, will stop replying, and messages will go to “To do” '
+          + 'in the Inbox.\n\nTop up now so they keep going without interruption.',
+        bouton: { libelle: 'Top up AI credit', lien: '{{lien_credit}}' },
+      },
+    },
+  },
+  {
+    cle: 'paiement_refuse_numero',
+    categorie: 'service',
+    nom: 'Paiement refusé : numéro fourni',
+    quand: 'Le paiement du renouvellement du numéro fourni échoue. Une fois par facture.',
+    variables: {
+      date_coupure: { description: 'Le jour où les envois seront coupés sans paiement', forme: 'date', exemple: '2026-10-21T10:00:00.000Z' },
+      lien_numero: LIEN_NUMERO,
+    },
+    textes: {
+      fr: {
+        sujet: 'Le paiement de votre numéro WhatsApp a échoué',
+        corps: 'Bonjour,\n\nLe paiement du renouvellement du numéro WhatsApp fourni à l’espace {{espace}} a échoué. Notre '
+          + 'prestataire de paiement va réessayer dans les prochains jours.\n\nSans paiement, les envois du numéro seront '
+          + 'coupés le {{date_coupure}} (réponses de l’Inbox, campagnes, scénarios, agents IA et API). Mettez à jour votre '
+          + 'carte depuis la page « Connecter WhatsApp » de la console (« Gérer mon abonnement »), ou demandez-le à Claude.',
+        bouton: { libelle: 'Mettre à jour ma carte', lien: '{{lien_numero}}' },
+      },
+      en: {
+        sujet: 'The payment for your WhatsApp number failed',
+        corps: 'Hello,\n\nThe renewal payment for the WhatsApp number provided to the {{espace}} workspace failed. Our '
+          + 'payment provider will try again over the next few days.\n\nWithout payment, the number’s sends will stop on '
+          + '{{date_coupure}} (Inbox replies, campaigns, scenarios, AI agents and API). Update your card from the “Connect '
+          + 'WhatsApp” page of the console (“Manage my subscription”), or ask Claude.',
+        bouton: { libelle: 'Update my card', lien: '{{lien_numero}}' },
+      },
+    },
+  },
+  {
+    cle: 'paiement_refuse_pro',
+    categorie: 'service',
+    nom: 'Paiement refusé : offre Pro',
+    quand: 'Le paiement du renouvellement de l’offre Pro échoue. Une fois par facture.',
+    variables: {
+      lien_offre: { description: 'La page Offre de la console', forme: 'lien', exemple: 'https://console.messagingme.app/offre' },
+    },
+    textes: {
+      fr: {
+        sujet: 'Le paiement de votre offre Pro a échoué',
+        corps: 'Bonjour,\n\nLe paiement du renouvellement de l’offre Pro de l’espace {{espace}} a échoué. Notre prestataire '
+          + 'de paiement va réessayer dans les prochains jours.\n\nSans paiement, l’espace repassera en offre Free, avec '
+          + 'ses limites. Mettez à jour votre carte depuis la page « Offre » de la console, ou demandez-le à Claude.',
+        bouton: { libelle: 'Mettre à jour ma carte', lien: '{{lien_offre}}' },
+      },
+      en: {
+        sujet: 'The payment for your Pro plan failed',
+        corps: 'Hello,\n\nThe renewal payment for the Pro plan of the {{espace}} workspace failed. Our payment provider '
+          + 'will try again over the next few days.\n\nWithout payment, the workspace will go back to the Free plan, with '
+          + 'its limits. Update your card from the “Plan” page of the console, or ask Claude.',
+        bouton: { libelle: 'Update my card', lien: '{{lien_offre}}' },
+      },
+    },
+  },
+  {
+    cle: 'limite_modeles_80',
+    categorie: 'service',
+    nom: 'Offre Free : 80 % des modèles du mois',
+    quand: 'Un espace Free a envoyé 80 % des modèles de son mois. Une fois par mois.',
+    variables: { limite: LIMITE, lien_offre: LIEN_OFFRE },
+    textes: {
+      fr: {
+        sujet: 'Vous avez envoyé 80 % des modèles de votre mois',
+        corps: 'Bonjour,\n\nL’espace {{espace}} a envoyé 80 % des {{limite}} modèles WhatsApp que l’offre Free permet ce '
+          + 'mois-ci. Au-delà, les envois de modèles seront refusés jusqu’au mois prochain ; les réponses dans les 24 heures '
+          + 'qui suivent un message du client restent possibles.\n\nL’offre Pro n’a pas cette limite.',
+        bouton: { libelle: 'Voir les offres', lien: '{{lien_offre}}' },
+      },
+      en: {
+        sujet: 'You have sent 80% of this month’s templates',
+        corps: 'Hello,\n\nThe {{espace}} workspace has sent 80% of the {{limite}} WhatsApp templates the Free plan allows this '
+          + 'month. Beyond that, template sends will be refused until next month; replies within 24 hours of a customer '
+          + 'message remain possible.\n\nThe Pro plan has no such limit.',
+        bouton: { libelle: 'See plans', lien: '{{lien_offre}}' },
+      },
+    },
+  },
+  {
+    cle: 'limite_modeles_100',
+    categorie: 'service',
+    nom: 'Offre Free : modèles du mois épuisés',
+    quand: 'Un espace Free a envoyé tous les modèles de son mois. Une fois par mois.',
+    variables: { limite: LIMITE, lien_offre: LIEN_OFFRE },
+    textes: {
+      fr: {
+        sujet: 'Limite atteinte : vos modèles WhatsApp ne partent plus ce mois-ci',
+        corps: 'Bonjour,\n\nL’espace {{espace}} a envoyé les {{limite}} modèles WhatsApp que l’offre Free permet ce mois-ci : '
+          + 'les envois de modèles (campagnes, relances, scénarios) sont refusés jusqu’au mois prochain. Les réponses dans '
+          + 'les 24 heures qui suivent un message du client restent possibles.\n\nPassez en Pro pour envoyer sans cette '
+          + 'limite, tout de suite.',
+        bouton: { libelle: 'Passer en Pro', lien: '{{lien_offre}}' },
+      },
+      en: {
+        sujet: 'Limit reached: your WhatsApp templates no longer go out this month',
+        corps: 'Hello,\n\nThe {{espace}} workspace has sent the {{limite}} WhatsApp templates the Free plan allows this month: '
+          + 'template sends (campaigns, follow-ups, scenarios) are refused until next month. Replies within 24 hours of a '
+          + 'customer message remain possible.\n\nUpgrade to Pro to send without this limit, right away.',
+        bouton: { libelle: 'Upgrade to Pro', lien: '{{lien_offre}}' },
+      },
+    },
+  },
+  {
+    cle: 'limite_contacts_80',
+    categorie: 'service',
+    nom: 'Offre Free : 80 % des contacts',
+    quand: 'Un espace Free atteint 80 % de sa limite de contacts. Une fois à chaque franchissement.',
+    variables: { limite: LIMITE, lien_offre: LIEN_OFFRE },
+    textes: {
+      fr: {
+        sujet: 'Vous approchez de votre limite de contacts',
+        corps: 'Bonjour,\n\nL’espace {{espace}} a créé 80 % des {{limite}} contacts que l’offre Free permet. Au-delà, il ne '
+          + 'sera plus possible d’en créer ni d’en importer. Un contact qui vous écrit le premier n’est jamais refusé ni '
+          + 'compté.\n\nL’offre Pro n’a pas cette limite.',
+        bouton: { libelle: 'Voir les offres', lien: '{{lien_offre}}' },
+      },
+      en: {
+        sujet: 'You are close to your contact limit',
+        corps: 'Hello,\n\nThe {{espace}} workspace has created 80% of the {{limite}} contacts the Free plan allows. Beyond '
+          + 'that, creating or importing contacts will no longer be possible. A contact who writes to you first is never '
+          + 'refused nor counted.\n\nThe Pro plan has no such limit.',
+        bouton: { libelle: 'See plans', lien: '{{lien_offre}}' },
+      },
+    },
+  },
+  {
+    cle: 'limite_contacts_100',
+    categorie: 'service',
+    nom: 'Offre Free : limite de contacts atteinte',
+    quand: 'Un espace Free atteint sa limite de contacts. Une fois à chaque franchissement.',
+    variables: { limite: LIMITE, lien_offre: LIEN_OFFRE },
+    textes: {
+      fr: {
+        sujet: 'Limite atteinte : vous ne pouvez plus créer de contacts',
+        corps: 'Bonjour,\n\nL’espace {{espace}} a atteint les {{limite}} contacts que l’offre Free permet : créer ou importer '
+          + 'un contact est refusé. Un contact qui vous écrit le premier n’est jamais refusé ni compté.\n\nPassez en Pro '
+          + 'pour ne plus avoir de limite de contacts, tout de suite.',
+        bouton: { libelle: 'Passer en Pro', lien: '{{lien_offre}}' },
+      },
+      en: {
+        sujet: 'Limit reached: you can no longer create contacts',
+        corps: 'Hello,\n\nThe {{espace}} workspace has reached the {{limite}} contacts the Free plan allows: creating or '
+          + 'importing a contact is refused. A contact who writes to you first is never refused nor counted.\n\nUpgrade '
+          + 'to Pro to have no contact limit, right away.',
+        bouton: { libelle: 'Upgrade to Pro', lien: '{{lien_offre}}' },
+      },
+    },
+  },
+  {
+    cle: 'transfert_equipe',
+    categorie: 'transfert',
+    nom: 'Une conversation attend l’équipe',
+    quand: 'Un agent IA, l’agent de Meta ou un scénario passe la main à l’équipe alors que le contact vient d’écrire.',
+    variables: {
+      contact: { description: 'Le nom du contact, ou son numéro masqué', forme: 'texte', exemple: 'Camille D.' },
+      fin_fenetre: { description: 'La fin de la fenêtre de 24 heures pour répondre librement', forme: 'date_heure', exemple: '2026-10-15T09:30:00.000Z' },
+      lien_conversation: { description: 'La conversation dans l’Inbox', forme: 'lien', exemple: 'https://console.messagingme.app/inbox?c=exemple' },
+    },
+    textes: {
+      fr: {
+        sujet: 'Une conversation attend votre équipe : {{contact}}',
+        corps: 'Bonjour,\n\nLa conversation avec {{contact}} vient d’être confiée à l’équipe de l’espace {{espace}} : le '
+          + 'contact attend une réponse.\n\nVous pouvez lui répondre librement jusqu’au {{fin_fenetre}}. Passé ce délai, '
+          + 'WhatsApp n’accepte plus qu’un modèle validé.',
+        bouton: { libelle: 'Ouvrir la conversation', lien: '{{lien_conversation}}' },
+      },
+      en: {
+        sujet: 'A conversation is waiting for your team: {{contact}}',
+        corps: 'Hello,\n\nThe conversation with {{contact}} has just been handed to the {{espace}} workspace team: the contact '
+          + 'is waiting for a reply.\n\nYou can reply freely until {{fin_fenetre}}. After that, WhatsApp only accepts an '
+          + 'approved template.',
+        bouton: { libelle: 'Open the conversation', lien: '{{lien_conversation}}' },
       },
     },
   },

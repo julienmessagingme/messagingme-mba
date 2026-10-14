@@ -118,6 +118,9 @@ import { PgLiberationStore } from './numero/liberation.pg';
 import { creerAvisAbonnement } from './numero/avis-abonnement';
 import { creerClientDidww } from './didww/client';
 import { creerTravailEmail, reprendreLesEnvois } from './emails-produit/envoi';
+import { balayerLimites } from './emails-produit/alertes';
+import { PgOffresStore } from './offres/offre.pg';
+import { moisDeParis } from './offres/compteurs';
 import { FILE_EMAILS_PRODUIT } from './emails-produit/emission';
 import { adressesPubliques } from './lib/adresses-publiques';
 import { creerPierreTombale } from './ops/espaces-supprimes.pg';
@@ -204,7 +207,7 @@ export async function demarrerWorker(): Promise<void> {
     heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
     journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub, connexionPub,
     publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, alerteCredit, numeroBloqueDeLEspace, offres,
-    emailsProduit, emetteurEmails, envoyeurProduit,
+    emailsProduit, emetteurEmails, envoyeurProduit, prevenirEquipe, quotaModeles,
   } = construireSocle({ pool, queue, config });
   // La commission sur le crédit IA, celle de l'offre de l'espace (lot 6, C) : le cerveau des tours d'agent la lit.
   const commissionDeLEspace = commissionPour(offres);
@@ -530,7 +533,11 @@ export async function demarrerWorker(): Promise<void> {
       },
       // Bascules de contrôle et messages de l'agent de Meta.
       handover: {
-        marquerEscalade: fil.agentDeMetaPasseLaMain,
+        // Une passation NEUVE de l'agent de Meta prévient aussi les admins par e-mail (lot 7) ; un `control_passed`
+        // redélivré, non.
+        marquerEscalade: async (t, w) => {
+          if (await fil.agentDeMetaPasseLaMain(t, w)) await prevenirEquipe(t, w);
+        },
         // `origine: 'mba'` et pas `'ia'` : les deux valeurs restent distinctes en base pour dire laquelle a parlé ;
         // le regroupement en un thème « IA » se fait à l'affichage (`THEME_DE_ORIGINE`).
         recordAgentMessage: (t, w, body, messageId) =>
@@ -880,6 +887,28 @@ export async function demarrerWorker(): Promise<void> {
     if (n > 0) console.log(`emails-produit-reprise: ${n} envoi(s) remis en file`);
     return n;
   }, { immediat: true, enEchec: echecDeBalayage('emails-produit-reprise', 'sweeper:emails-produit-reprise') });
+  /**
+   * Les limites du Free (lot 7, livraison B) : à 80 % puis à 100 % des modèles du mois (une fois par mois) et des
+   * contacts (une fois par franchissement, migration 0235), un e-mail aux admins, celui de 100 % avec « Passer en Pro ».
+   * Les offres sans limite sont passées sans rien lire de plus.
+   */
+  const usageDesOffres = new PgOffresStore(pool);
+  taches.programmer('emails-produit-limites', 30 * 60_000, () => balayerLimites({
+    espaces: () => emailsProduit.espaces(),
+    limites: async (t) => {
+      const l = (await offres.offreDe(t)).droits.limites;
+      return { modelesMois: l.envoisModelesMois, contacts: l.contacts };
+    },
+    modelesDuMois: async (t) => {
+      const e = await quotaModeles.etatDuMois(t);
+      return e === null ? null : e.max - e.reste;
+    },
+    contactsCrees: async (t) => (await usageDesOffres.usage(t)).contacts,
+    franchir: (t, seuil, atteint) => emailsProduit.franchir(t, seuil, atteint),
+    emettre: (e) => emetteurEmails.emettre(e),
+    pageOffre: `${config.APP_URL.trim().replace(/\/+$/, '')}/offre`,
+    moisDeParis: () => moisDeParis(Date.now()),
+  }), { enEchec: echecDeBalayage('emails-produit-limites', 'sweeper:emails-produit-limites') });
 
   // File analyze-conversation : inerte tant que CONVERSATION_ANALYSIS_ENABLED != 'true' (aucun worker, aucun
   // balayage, aucun appel LLM).
@@ -1769,6 +1798,11 @@ export async function demarrerWorker(): Promise<void> {
       escalateToHuman: async (t, waId, agentId) => fil.passerAUnHumain(t, waId, {
         escalade: true,
         cause: await causeAgentIa(t, agentId),
+      }).then(async (bascule) => {
+        // L'agent IA qui passe la main prévient les admins par e-mail (lot 7), seulement si le fil a vraiment basculé.
+        // Sans accolades autour de la flèche : le verdict de la bascule est RENDU (`tests/agent-disponibilite-cablage.test.ts`).
+        if (bascule) await prevenirEquipe(t, waId);
+        return bascule;
       }),
     });
 

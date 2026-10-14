@@ -14,6 +14,7 @@ function creer(over: Partial<DepsTraitementAbonnements> = {}) {
   return creerTraitementAbonnements({
     numero: stripeNumeroInerte,
     pro: stripeProInerte,
+    paiementRefuse: async () => {},
     now: () => 1_790_000_000_000,
     ...over,
   });

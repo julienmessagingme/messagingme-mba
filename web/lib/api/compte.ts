@@ -685,7 +685,7 @@ export interface ModeleEmailOps {
   categorie: 'service' | 'transfert' | 'commercial';
   nom: string;
   quand: string;
-  variables: Array<{ nom: string; description: string; forme: 'texte' | 'date' | 'lien' }>;
+  variables: Array<{ nom: string; description: string; forme: 'texte' | 'date' | 'date_heure' | 'lien' | 'euros' }>;
   actif: boolean;
   interrupteur: { par: string; le: string } | null;
   textes: Record<'fr' | 'en', { origine: TexteEmailOps; modifie: (TexteEmailOps & { par: string; le: string }) | null }>;

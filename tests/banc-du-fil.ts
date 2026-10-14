@@ -85,10 +85,16 @@ export function depotEnMemoire(initial: Record<string, Partial<EtatDuFil>> = {})
       return null;
     },
     estConversationDeTest: async (_t, waId) => lignes.get(waId)?.test === true,
+    // Rend `true` quand la passation est neuve, comme le dépôt : fil qui n'était pas à l'équipe, ou escalade pas posée.
     marquerEscalade: async (_t, waId) => {
       const l = lignes.get(waId);
-      if (l) { l.owner = 'app_human'; l.escaladeeLe = new Date(); l.changedAt = new Date(); return; }
+      if (l) {
+        const neuve = l.owner !== 'app_human' || l.escaladeeLe === null;
+        l.owner = 'app_human'; l.escaladeeLe = new Date(); l.changedAt = new Date();
+        return neuve;
+      }
       lignes.set(waId, { owner: 'app_human', escaladeeLe: new Date(), test: false, marque: null, enVol: null, changedAt: new Date() });
+      return true;
     },
     etatDuFil: async (_t, waId) => {
       const l = lignes.get(waId);

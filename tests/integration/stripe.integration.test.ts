@@ -45,7 +45,7 @@ describe.skipIf(!url)('la recharge Stripe, en base', () => {
 
   it('🔴 un paiement livré DEUX fois ne crédite qu’une fois, avec UNE ligne `achat`', async () => {
     const store = new PgStripeStore(poolA);
-    const credits = new PgCreditStore(poolA);
+    const credits = new PgCreditStore(poolA, null);
     const avant = await credits.solde(tenantId);
     const p = paiement();
     expect(await store.crediterPaiement(p)).toBe('credite');
@@ -60,7 +60,7 @@ describe.skipIf(!url)('la recharge Stripe, en base', () => {
   it('🔴 DIX livraisons SIMULTANÉES, sur deux copies, créditent une seule fois', async () => {
     const a = new PgStripeStore(poolA);
     const b = new PgStripeStore(poolB);
-    const credits = new PgCreditStore(poolA);
+    const credits = new PgCreditStore(poolA, null);
     const avant = await credits.solde(tenantId);
     const p = paiement({ offre: 'refill_100', creditMicroEur: 100_000_000, htCentimes: 10_000 });
     const issues = await Promise.all(Array.from({ length: 10 }, (_, i) => (i % 2 === 0 ? a : b).crediterPaiement(p)));
@@ -108,7 +108,7 @@ describe.skipIf(!url)('la recharge Stripe, en base', () => {
   it('🔴 un achat porte SA session sur son mouvement ; l’historique rend son paiement et sa facture, dans l’espace', async () => {
     // Migration 0193 : le lien « Facture » de la page Crédit IA suit cette colonne, jamais la note.
     const store = new PgStripeStore(poolA);
-    const credits = new PgCreditStore(poolA);
+    const credits = new PgCreditStore(poolA, null);
     const avecFacture = paiement({ factureId: 'in_itest_facture' });
     const sansFacture = paiement();
     await store.crediterPaiement(avecFacture);

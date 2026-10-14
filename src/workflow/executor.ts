@@ -282,8 +282,13 @@ export interface WorkflowExecutorDeps {
    * panneau Détail de l'Inbox affiche à côté du passage à l'équipe et de l'affectation qu'il pose (« automatique :
    * scénario Bienvenue », migrations 0192 et 0194) : un affectataire nommé par un bloc n'a pas d'auteur humain, et
    * chaque passage, `escalade` ou non, ouvre une demande du Quantitatif > Performance.
+   *
+   * `prevenir` (lot 7) : ce passage peut-il écrire aux admins « une conversation attend votre équipe » ? Vrai pour la
+   * réponse d'un contact et pour un démarrage UNITAIRE (`politique.publieLesEtiquettes`, la même politique que les
+   * événements d'automation) ; faux pour un démarrage de masse (campagne, « Aller à » de masse), un réveil ou un saut,
+   * qui tombent pour des milliers de contacts à la fois. Requis : chaque appel décide, aucun n'hérite d'un défaut.
    */
-  escalateToHuman(tenantId: string, waId: string, assigneA: string | null, escalade: boolean, workflowId: string): Promise<void>;
+  escalateToHuman(tenantId: string, waId: string, assigneA: string | null, escalade: boolean, workflowId: string, prevenir: boolean): Promise<void>;
   /**
    * Joue un appel de la bibliothèque (Tools > Connecteurs API) pour ce contact, et rend ce qu'il faut ranger
    * dans un champ. Injectée, comme tout ce qui touche le réseau. Absente -> le bloc « Appel HTTP » ne fait
@@ -869,7 +874,7 @@ export class WorkflowExecutor {
       await this.deps.runs.setState(run.id, { currentNode: null, status: 'inbox' });
       // Aucun affectataire (aucun bloc « passer à un humain » atteint) et aucune escalade : c'est un réveil,
       // le contact n'attend rien à cet instant.
-      await this.deps.escalateToHuman(tenantId, waId, null, false, run.workflowId);
+      await this.deps.escalateToHuman(tenantId, waId, null, false, run.workflowId, false);
       return false;
     }
     // Refus au réveil sans qu'aucun message ne parte : laisser le run en attente le ferait repartir au bloc
@@ -883,7 +888,7 @@ export class WorkflowExecutor {
         if (!(await this.ecrireSiVivant(tenantId, run.id, { currentNode: null, status: 'inbox' }))) return false;
         // Sans bloc « passer à un humain » : pas d'affectataire (pot commun), et pas d'escalade au réveil
         // (voir `escalateToHuman`).
-        await this.deps.escalateToHuman(tenantId, waId, null, false, run.workflowId);
+        await this.deps.escalateToHuman(tenantId, waId, null, false, run.workflowId, false);
         return false;
       }
     }
@@ -891,7 +896,7 @@ export class WorkflowExecutor {
     // regarder le ressusciterait avec son échéance.
     if (!(await this.ecrireSiVivant(tenantId, run.id, { ...restToState(rest, this.now()), channel: canal }))) return false;
     if (rest.status === 'inbox') {
-      await this.deps.escalateToHuman(tenantId, waId, rest.assigneA ?? null, true, run.workflowId);
+      await this.deps.escalateToHuman(tenantId, waId, rest.assigneA ?? null, true, run.workflowId, false);
     }
     if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, waId);
     // « Envoyer au MBA » au réveil, après l'écriture qui a clos ce parcours : jamais de second rendu.
@@ -1146,7 +1151,7 @@ export class WorkflowExecutor {
         // eslint-disable-next-line no-console
         console.error(`journal de l’échec de saut ignoré pour ${contact.waId}:`, messageDe(err));
       }
-      await this.deps.escalateToHuman(tenantId, contact.waId, null, false, origine.workflowId);
+      await this.deps.escalateToHuman(tenantId, contact.waId, null, false, origine.workflowId, false);
       return raison;
     };
     if (depart.sauts > MAX_SAUTS_SANS_PAUSE) {
@@ -1328,7 +1333,7 @@ export class WorkflowExecutor {
     // campagne, un scénario qui ouvre sur « passer à un humain » ferait sinon un fil collant par destinataire
     // qui n'a rien reçu, donc n'attend rien. La conversation passe quand même à `app_human`.
     if (rest.status === 'inbox') {
-      await this.deps.escalateToHuman(tenantId, contact.waId, rest.assigneA ?? null, partis > 0, workflowId);
+      await this.deps.escalateToHuman(tenantId, contact.waId, rest.assigneA ?? null, partis > 0, workflowId, politique.publieLesEtiquettes);
     }
     if (rest.status === 'done') await this.rendreLaMainAMba(tenantId, contact.waId);
     // « Envoyer au MBA » dès le démarrage : aucun parcours n'est créé (`done`), le contact va à l'agent de Meta.
@@ -1654,7 +1659,7 @@ export class WorkflowExecutor {
         // collant : le contact vient d'écrire, « À traiter » le porte déjà. Le cas nominal pose déjà le drapeau
         // (`src/worker.ts`) ; ceci rattrape un processus mort entre les deux gestes.
         const finDeliberee = session?.status === 'sortie';
-        await this.deps.escalateToHuman(tenantId, waId, null, finDeliberee, run.workflowId);
+        await this.deps.escalateToHuman(tenantId, waId, null, finDeliberee, run.workflowId, true);
         return;
       }
       /**
@@ -1728,7 +1733,7 @@ export class WorkflowExecutor {
         console.error(`workflow ${run.workflowId}: le bouton « ${buttonPayload} » du bloc ${run.currentNode} ne mène nulle part, ${waId} a cliqué et n'a rien reçu`);
         // Pas d'escalade : le contact vient de cliquer, `last_direction` est entrant et « À traiter » porte déjà
         // la conversation. Le drapeau n'ajouterait que la collance.
-        await this.deps.escalateToHuman(tenantId, waId, null, false, run.workflowId);
+        await this.deps.escalateToHuman(tenantId, waId, null, false, run.workflowId, true);
       } else {
         // (a) : son message part aussi chez l'agent de Meta, qui y répond. Seulement un vrai message WhatsApp :
         // cette branche reçoit aussi des réactions et des rapports RCS, qui ne sont pas des messages du client. Une
@@ -1755,13 +1760,13 @@ export class WorkflowExecutor {
         await ecrire({ currentNode: null, status: 'inbox', lastMessageId: messageId });
         // Aucun bloc n'a demandé la remontée : pas d'affectataire. Pas d'escalade : le contact vient d'écrire,
         // « À traiter » le porte déjà (même raison qu'au bouton sans suite).
-        await this.deps.escalateToHuman(tenantId, waId, null, false, run.workflowId);
+        await this.deps.escalateToHuman(tenantId, waId, null, false, run.workflowId, true);
         return;
       }
     }
     const ecrit = await ecrire({ ...restToState(rest, this.now()), lastMessageId: messageId, channel: canal });
     if (rest.status === 'inbox') {
-      await this.deps.escalateToHuman(tenantId, waId, rest.assigneA ?? null, true, run.workflowId);
+      await this.deps.escalateToHuman(tenantId, waId, rest.assigneA ?? null, true, run.workflowId, true);
     }
     /**
      * « Aller à » vers un autre scénario, après l'écriture qui a clos CE parcours, et seulement si elle a réussi : perdue,

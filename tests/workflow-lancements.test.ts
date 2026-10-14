@@ -284,6 +284,8 @@ function poseDuCablage() {
     rcsProvider: 'fake', emailTemplates: inerte, emailResolver: inerte, numeroDeLEspace: async () => null, runStore: inerte,
     fil: inerte,
     offres: offresToutOuvert,
+    // Le lot 7 : ces bancs ne testent pas l’e-mail aux admins.
+    prevenirEquipe: async () => {},
   });
   // `deps` est privé à l'exécuteur : on lit les dépendances que le câblage lui a données.
   const { applyTag, emitTagAdded } = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
@@ -524,6 +526,8 @@ describe('buildWorkflowRuntime rend des lancements construits sur son propre ex�
       metaCredentials: inerte, metaFactory: inerte, rcsProvider: 'fake', emailTemplates: inerte, emailResolver: inerte,
       numeroDeLEspace: async () => null, runStore: inerte, fil: inerte,
       offres: offresToutOuvert,
+      // Le lot 7 : ces bancs ne testent pas l’e-mail aux admins.
+      prevenirEquipe: async () => {},
     });
     const demarrer = vi.spyOn(executor, 'demarrer').mockResolvedValue(true);
     expect(await lancements.lancer({ type: 'inbox', tenantId: 't9', workflowId: 'wf-modele', waId: WA, fenetreOuverte: true })).toBe(true);

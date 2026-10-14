@@ -45,6 +45,15 @@ L'essai réel qui clôt le lot est en bas.
    avec la fin de la fenêtre de 24 h ; jamais un chemin de masse (réponse à une campagne confiée à l'Inbox, réouverture
    par le contact).
 
+Écarts décidés pendant la livraison B (2026-10-14) :
+- Une migration de plus, 0235 (`emails_produit_seuils`), poussée seule et appliquée avant le code : « une fois par
+  franchissement » pour les contacts demande de savoir qu'un seuil est déjà atteint.
+- Le passage à l'équipe n'écrit que si le contact a écrit depuis moins de quinze minutes : le bloc d'un scénario passe
+  aussi la main au démarrage d'une campagne (un modèle puis « passer à un humain ») et aux réveils, qui tombent pour des
+  milliers de contacts à la fois. Ce qui reste est exactement « un client attend maintenant ».
+- La passation de l'agent de Meta rend désormais si elle est neuve (`marquerEscalade`) : un `control_passed`
+  redélivré n'envoie rien.
+
 ## Livraison C : les commerciaux
 
 1. Bienvenue à l'inscription d'un espace.

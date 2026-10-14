@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgEmailsProduitStore } from '../../src/emails-produit/store.pg';
+import { PgInboxStore } from '../../src/inbox/store.pg';
 
 // Ne PAS lancer ce fichier en local : le DATABASE_URL du .env local pointe sur la base de PRODUCTION.
 const url = process.env.DATABASE_URL ?? '';
@@ -142,5 +143,65 @@ describe.skipIf(!url)('le journal des e-mails du produit (Postgres réel)', () =
     await pool.query('delete from tenants where id = $1', [t]);
     const reste = await pool.query('select 1 from emails_produit_envois where tenant_id = $1', [t]);
     expect(reste.rowCount).toBe(0);
+  });
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // Livraison B (migration 0235)
+  // ---------------------------------------------------------------------------------------------------------------
+
+  it('🔴 un seuil : trois copies le franchissent ensemble, UNE gagne ; rester au-dessus ne rend rien ; relâché puis refranchi, génération 2', async () => {
+    const prises = await Promise.all([1, 2, 3].map(() => store.franchir(tenantId, 'contacts_80', true)));
+    expect(prises.filter((g) => g !== null)).toEqual([1]);
+    expect(await store.franchir(tenantId, 'contacts_80', true)).toBeNull();
+    expect(await store.franchir(tenantId, 'contacts_80', false)).toBeNull();
+    expect(await store.franchir(tenantId, 'contacts_80', true)).toBe(2);
+    // L'état est celui de CET espace.
+    expect(await store.franchir(autreTenantId, 'contacts_80', true)).toBe(1);
+  });
+
+  it('le dernier crédit reçu : le dernier mouvement POSITIF de l’espace, jamais un débit ni un autre espace', async () => {
+    expect(await store.dernierCreditRecu(tenantId)).toBeNull();
+    const recharge = (await pool.query<{ id: string }>(
+      `insert into agent_credit_mouvements (tenant_id, delta_micro_eur, raison, note, at) values ($1, 2000000, 'achat', 'itest', now() - interval '1 hour') returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    await pool.query(`insert into agent_credit_mouvements (tenant_id, delta_micro_eur, raison, note) values ($1, -150000, 'conso', 'itest')`, [tenantId]);
+    await pool.query(`insert into agent_credit_mouvements (tenant_id, delta_micro_eur, raison, note) values ($1, 5000000, 'achat', 'itest')`, [autreTenantId]);
+    expect(await store.dernierCreditRecu(tenantId)).toBe(recharge);
+  });
+
+  it('🔴 le contexte d’un passage : le nom de profil, le dernier message WhatsApp du contact, et rien d’un autre espace', async () => {
+    const wa = '33600000951';
+    const contact = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, profile_name) values ($1, $2, 'Camille') returning id`, [tenantId, `+${wa}`],
+    )).rows[0]!.id;
+    const conv = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, contact_id, last_message_at) values ($1, $2, $3, now()) returning id`, [tenantId, wa, contact],
+    )).rows[0]!.id;
+    await pool.query(
+      `insert into conversation_messages (conversation_id, direction, channel, body, created_at) values
+         ($1, 'in', 'whatsapp', 'bonjour', timestamptz '2026-10-14 09:00:00+00'),
+         ($1, 'in', 'rcs', 'rcs plus tard', timestamptz '2026-10-14 09:30:00+00'),
+         ($1, 'out', 'whatsapp', 'réponse', timestamptz '2026-10-14 09:40:00+00')`,
+      [conv],
+    );
+    const inbox = new PgInboxStore(pool);
+    expect(await inbox.contexteDuPassage(tenantId, wa)).toEqual({
+      conversationId: conv, nom: 'Camille', waId: wa, dernierEntrantLe: new Date('2026-10-14T09:00:00Z'),
+    });
+    expect(await inbox.contexteDuPassage(autreTenantId, wa)).toBeNull();
+  });
+
+  it('🔴 la passation de l’agent de Meta rend vrai quand elle est neuve, faux quand le même control_passed est redélivré', async () => {
+    const inbox = new PgInboxStore(pool);
+    const wa = '33600000952';
+    expect(await inbox.marquerEscalade(tenantId, wa, 'automatique : agent de Meta')).toBe(true);
+    expect(await inbox.marquerEscalade(tenantId, wa, 'automatique : agent de Meta')).toBe(false);
+    const ev = await pool.query(
+      `select 1 from conversation_evenements e join conversations c on c.id = e.conversation_id
+        where c.tenant_id = $1 and c.wa_id = $2 and e.type = 'passee_par_mba'`,
+      [tenantId, wa],
+    );
+    expect(ev.rowCount).toBe(1);
   });
 });

@@ -2919,8 +2919,19 @@ boîte par sous-menu.
   se sont déjà connectés (une invitation pas encore acceptée ne reçoit rien), dans la langue de chacun, celle qu'il a
   choisie dans la console (français par défaut). Un e-mail raté chez le prestataire d'envoi est réessayé, et le même
   e-mail ne part jamais deux fois pour la même occasion.
-- ✅ **Ce qui part aujourd'hui** : le crédit IA épuisé (une fois par jour au plus), le numéro fourni suspendu, le
-  rappel deux jours avant sa libération, sa libération, et l'annonce de la suite du numéro à la fin du Pro.
+- ✅ **Les alertes de service** :
+  - le crédit IA presque épuisé (sous 0,50 €, une fois par recharge), puis épuisé (une fois par jour au plus) ;
+  - un paiement refusé du Pro ou du numéro fourni, dès le premier échec et une fois par facture, avec la date où les
+    envois du numéro seraient coupés ;
+  - le numéro fourni suspendu, le rappel deux jours avant sa libération, sa libération, et l'annonce de la suite du
+    numéro à la fin du Pro ;
+  - en offre Free, 80 % puis 100 % des modèles du mois (une fois par mois) et des contacts (une fois à chaque
+    franchissement) ; l'alerte de 100 % propose de passer en Pro.
+- ✅ **Une conversation attend l'équipe** : quand un agent IA, l'agent de Meta ou un scénario passe la main à l'équipe
+  alors que le contact vient d'écrire, les administrateurs reçoivent un e-mail avec le nom du contact (ou son numéro
+  masqué, jamais le texte des messages), l'heure où la fenêtre de 24 heures se ferme, et un bouton vers la conversation.
+  Le lancement d'une campagne qui confie ses destinataires à l'équipe n'envoie aucun e-mail ; un destinataire qui
+  répond ensuite, et que le scénario passe à l'équipe, en envoie un, comme tout client qui attend.
 - ✅ **Mon compte, « E-mails de Messaging Me »** : la langue des e-mails, et deux familles qu'on peut couper ou
   rétablir (les conversations qui attendent l'équipe, les e-mails d'information). Chacun de ces e-mails porte aussi un
   lien pour ne plus les recevoir. Les alertes de service (crédit, numéro, limites) partent toujours.

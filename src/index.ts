@@ -246,7 +246,7 @@ async function main(): Promise<void> {
     agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
     numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, connexionPub, publicites,
     clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, offres, quotaModeles,
-    emailsProduit, envoyeurProduit,
+    emailsProduit, envoyeurProduit, paiementRefuse,
   } = construireSocle({ pool, queue, config });
 
   /**
@@ -1421,6 +1421,8 @@ async function main(): Promise<void> {
         secret: config.STRIPE_WEBHOOK_SECRET,
         livemode: estCleLive(config.STRIPE_SECRET_KEY),
         paiements: stripeStore,
+        // L'e-mail aux admins d'un renouvellement refusé (lot 7), une fois par facture.
+        paiementRefuse,
         // 🔴 Le plafond de la clé de modèle suit l'achat, exactement comme après une recharge par `/ops` : sinon le
         // client paie et Vercel le coupe au plafond d'avant. La route répond sans l'attendre : l'arrêt du processus,
         // lui, l'attend (`travauxEnVol`), pour ne pas couper l'appel à Vercel en route.

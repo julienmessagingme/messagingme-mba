@@ -629,6 +629,8 @@ function cablage(opts: { dryRun?: boolean; numero?: string | null; templates?: T
     rcsProvider: 'fake', emailTemplates: inerte, emailResolver: inerte,
     numeroDeLEspace: async () => (opts.numero === undefined ? 'pn-1' : opts.numero), runStore: inerte, fil: inerte,
     offres: offresToutOuvert,
+    // Le lot 7 : ces bancs ne testent pas l’e-mail aux admins.
+    prevenirEquipe: async () => {},
   });
   // `deps` est privé à l'exécuteur : on lit les dépendances que le câblage lui a données.
   const deps = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;

@@ -30,6 +30,11 @@ export interface DepsTraitementAbonnements {
     surPassageEnPro(tenantId: string): Promise<void>;
     surFinDuPro(f: FinDuPro): Promise<unknown>;
   };
+  /**
+   * L'e-mail aux admins d'un renouvellement refusé (lot 7, livraison B), une fois par facture : Stripe réessaie la même
+   * facture, et chaque essai raté redonne un `invoice.payment_failed`. Ne lève jamais (`creerPaiementRefuse`).
+   */
+  paiementRefuse(p: { tenantId: string; offre: 'pro' | 'numero'; factureId: string }): Promise<void>;
   now?: () => number;
 }
 
@@ -277,6 +282,8 @@ export function creerTraitementAbonnements(deps: DepsTraitementAbonnements) {
       if (a) {
         deps.pro.invalider(a.tenantId);
         await deps.pro.alerter(`Renouvellement du Pro échoué : espace ${a.tenantId} (${a.abonnementId}). Stripe réessaie ; sans paiement, l'espace reviendra en Free.`);
+        // Seulement un Pro EN RETARD : un échec livré après la fin (Stripe ne garantit pas l'ordre) ne prévient pas.
+        if (a.statut === 'en_retard') await deps.paiementRefuse({ tenantId: a.tenantId, offre: 'pro', factureId: lu.data.id });
       }
       return ACQUITTE;
     }
@@ -344,6 +351,9 @@ export function creerTraitementAbonnements(deps: DepsTraitementAbonnements) {
       const a = await deps.numero.majStatut(abonnementId, 'en_retard', null, finFacture);
       if (a) {
         await deps.numero.alerter(`Renouvellement du numéro échoué : espace ${a.tenantId} (${a.abonnementId}). Stripe réessaie ; sans paiement, ses envois seront coupés 7 jours après le premier échec.`);
+        // Seulement un abonnement EN RETARD : un échec livré après la résiliation (Stripe ne garantit pas l'ordre) ne
+        // prévient pas d'une coupure, le numéro l'est déjà.
+        if (a.statut === 'en_retard') await deps.paiementRefuse({ tenantId: a.tenantId, offre: 'numero', factureId: lu.data.id });
       }
       return ACQUITTE;
     }

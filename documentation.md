@@ -2227,6 +2227,20 @@ modifiés dans `/ops` (rétablir supprime la ligne), `emails_produit_interrupteu
   dont le GET n'écrit rien et le POST (celui du bouton et de `List-Unsubscribe-Post`) coupe une catégorie pour une
   personne ; « Mon compte » la rétablit (`/tenants/:tenantId/moi/emails`).
 - La rétention garde le journal treize mois ; il part en cascade avec l'espace et l'identité.
+- **Les alertes** (`src/emails-produit/alertes.ts`) décident qu'un e-mail part, et de son occasion :
+  - le crédit bas, par le crochet `surDebit` du magasin du crédit (tous les débits y passent), sur le seul débit qui
+    franchit 0,50 € ; occasion : le dernier mouvement positif du crédit, qu'une recharge renouvelle ;
+  - le paiement refusé, par le traitement des abonnements de Stripe (`paiementRefuse`) ; occasion : la facture ;
+  - les limites du Free, par le balayage `emails-produit-limites` (trente minutes) : les modèles du mois (occasion :
+    le mois de Paris) et les contacts (occasion : la génération du franchissement, `emails_produit_seuils`, migration
+    0235, posée par une instruction gardée par `not atteint`) ; seul le seuil le plus haut franchi s'écrit ;
+  - le passage à l'équipe (`prevenirEquipe`, construit par le socle), appelé par les trois chemins d'un robot qui passe
+    la main et seulement si la bascule a eu lieu (`passerAUnHumain` et `marquerEscalade` rendent ce verdict) ; pour un
+    scénario, seulement avec `escalade` et si l'exécuteur le permet (`prevenir` : la réponse d'un contact ou un
+    démarrage unitaire, `politique.publieLesEtiquettes` ; jamais un démarrage de masse, un réveil ni un saut). 🔴 Il
+    n'écrit que si le contact a écrit depuis moins de quinze minutes
+    (`ATTENTE_RECENTE_MS`) : c'est la garde contre le démarrage d'une campagne et les réveils en masse ; occasion : le
+    dernier message du contact, donc deux passages pour le même message n'envoient qu'un e-mail.
 
 ### Les webhooks sortants : une tentative par job, comptée dans la ligne
 

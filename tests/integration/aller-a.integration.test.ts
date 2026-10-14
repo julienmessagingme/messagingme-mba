@@ -43,6 +43,8 @@ describe.skipIf(!url)('« Aller à » (Postgres)', () => {
       settingsStore: inerte, workflowStore: wfStore(), metaCredentials: inerte, metaFactory: inerte, rcsProvider: 'fake',
       emailTemplates: inerte, emailResolver: inerte, numeroDeLEspace: async () => null, runStore: new PgWorkflowRunStore(pool), fil: inerte,
       offres: offresToutOuvert,
+      // Le lot 7 : ces bancs ne testent pas l’e-mail aux admins.
+      prevenirEquipe: async () => {},
     });
     deps = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
   });

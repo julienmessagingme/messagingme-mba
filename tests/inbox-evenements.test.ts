@@ -254,7 +254,7 @@ describe('le contrôle du fil dit qui demande chaque bascule', () => {
 
   it('la passation de l’agent de Meta porte sa cause jusqu’au dépôt', async () => {
     const causes: string[] = [];
-    const b = bancDuFil({ depot: { marquerEscalade: async (_t, _w, cause) => { causes.push(cause); } } });
+    const b = bancDuFil({ depot: { marquerEscalade: async (_t, _w, cause) => { causes.push(cause); return true; } } });
     await b.fil.agentDeMetaPasseLaMain('t1', 'w');
     expect(causes).toEqual(['automatique : agent de Meta']);
   });
