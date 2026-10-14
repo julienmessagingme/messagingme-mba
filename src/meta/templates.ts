@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { appelGraph } from './graph';
+import { MetaApiError } from './errors';
+
+/** Les champs de la liste des modèles, sans la durée de validité (relue sans elle si Meta la refusait). */
+const CHAMPS_LISTE = 'id,name,status,category,language,components';
 import { FLOW_ENTRY_SCREEN } from './flow-json';
 import type { OutboundCarouselCard } from './template-components';
 
@@ -42,6 +46,11 @@ export interface CreateTemplateInput {
   buttons?: TemplateButton[];
   /** Template CAROUSEL : corps commun (`body`) + 2-10 cartes. Exclut `buttons` (boutons par carte). */
   carousel?: { cards: CarouselCard[] };
+  /**
+   * Durée de validité (`message_send_ttl_seconds`), bornée par catégorie (`dureeValide`, `web/lib/partage/duree-validite.ts`).
+   * Absente, rien n'est envoyé et Meta applique son défaut : un modèle créé sans la régler part comme avant le lot.
+   */
+  ttlSecondes?: number;
 }
 
 export interface TemplateSummary {
@@ -73,6 +82,8 @@ export interface TemplateSummary {
   /** true si l'édition en place ne perd rien (cf. `isSimpleEditable`) : Meta remplace tous les components.
    *  L'UI et la route PATCH bloquent l'édition si `editable` est false. */
   editable: boolean;
+  /** Durée de validité lue chez Meta (`message_send_ttl_seconds`). Absente : jamais réglée, ou effacée par un reclassement. */
+  ttlSecondes?: number;
 }
 
 /** Le statut d'une langue d'un modèle chez Meta (lot 13, domaine 3), avec le motif d'un refus (`null` sans motif). */
@@ -306,6 +317,7 @@ export class MetaTemplateClient {
         category: input.category,
         language: input.language,
         components: buildComponents(input),
+        ...(input.ttlSecondes !== undefined ? { message_send_ttl_seconds: input.ttlSecondes } : {}),
       }),
     })) as { id?: string; status?: string; category?: string };
     return { id: json.id ?? '', status: json.status ?? 'PENDING', category: typeof json.category === 'string' ? json.category : input.category };
@@ -338,13 +350,31 @@ export class MetaTemplateClient {
     return out;
   }
 
-  /** Liste tous les templates du WABA avec leur statut, en suivant `paging.next` (plafond de 20 pages). */
+  /**
+   * Liste tous les templates du WABA avec leur statut, en suivant `paging.next` (plafond de 20 pages).
+   *
+   * 🔴 Un champ que Meta ne connaîtrait pas fait échouer TOUTE la liste (erreur 100), et avec elle l'écran des modèles,
+   * les campagnes et les scénarios, qui la lisent pour envoyer. `message_send_ttl_seconds` est nommé par la référence
+   * « Message Template API » ; s'il était refusé quand même, la liste est relue sans lui : on perd l'affichage de la
+   * durée, jamais les envois.
+   */
   async list(wabaId: string): Promise<TemplateSummary[]> {
+    try {
+      return await this.listePar(wabaId, `${CHAMPS_LISTE},message_send_ttl_seconds`);
+    } catch (err) {
+      if (!(err instanceof MetaApiError) || err.code !== 100) throw err;
+      // eslint-disable-next-line no-console
+      console.warn(`templates : liste refusée avec la durée de validité (${err.message}), relue sans elle`);
+      return this.listePar(wabaId, CHAMPS_LISTE);
+    }
+  }
+
+  private async listePar(wabaId: string, champs: string): Promise<TemplateSummary[]> {
     const out: TemplateSummary[] = [];
-    let next: string | null = this.url(wabaId, '?fields=id,name,status,category,language,components&limit=100');
+    let next: string | null = this.url(wabaId, `?fields=${champs}&limit=100`);
     for (let page = 0; page < 20 && next; page++) {
       const json = (await this.call(next, { method: 'GET' })) as {
-        data?: Array<{ id?: string; name?: string; status?: string; category?: string; language?: string; components?: unknown }>;
+        data?: Array<{ id?: string; name?: string; status?: string; category?: string; language?: string; components?: unknown; message_send_ttl_seconds?: unknown }>;
         paging?: { next?: string };
       };
       for (const t of json.data ?? []) {
@@ -367,6 +397,7 @@ export class MetaTemplateClient {
           isCarousel: carousel !== undefined,
           ...(carousel ? { carousel } : {}),
           editable: isSimpleEditable(t.components),
+          ...(typeof t.message_send_ttl_seconds === 'number' && Number.isInteger(t.message_send_ttl_seconds) ? { ttlSecondes: t.message_send_ttl_seconds } : {}),
         });
       }
       next = json.paging?.next ?? null;
@@ -380,12 +411,16 @@ export class MetaTemplateClient {
    */
   async update(
     templateId: string,
-    input: { category?: 'MARKETING' | 'UTILITY' } & ComponentInput,
+    input: { category?: 'MARKETING' | 'UTILITY'; ttlSecondes?: number } & ComponentInput,
   ): Promise<{ success: boolean }> {
     const json = (await this.call(`${this.baseUrl}/${this.version}/${templateId}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...(input.category ? { category: input.category } : {}), components: buildComponents(input) }),
+      body: JSON.stringify({
+        ...(input.category ? { category: input.category } : {}),
+        components: buildComponents(input),
+        ...(input.ttlSecondes !== undefined ? { message_send_ttl_seconds: input.ttlSecondes } : {}),
+      }),
     })) as { success?: boolean };
     return { success: json.success ?? false };
   }

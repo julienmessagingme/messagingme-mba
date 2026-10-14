@@ -468,6 +468,13 @@ En haut de l'onglet **Historique** d'une fiche contact, deux chiffres face à fa
   le pied de page, le texte de chaque bouton et celui de chaque carte d'un carousel, aux limites de Meta (titre et
   pied 60, corps 1 024, bouton 25, carte 160). Un corps trop long passe en rouge (« 6 caractères de trop ») et
   « Créer le template » se bloque en le disant, au lieu d'un refus de Meta après sa revue.
+- ✅ **La durée de validité** (2026-10-14) : combien de temps WhatsApp essaie de livrer le message avant de
+  l'abandonner, à choisir dans une liste sous la catégorie. Marketing : 12 h, 24 h, 48 h, 7 jours ou 30 jours (le
+  défaut), pour qu'une promo n'arrive pas après la fin de l'offre. Utilitaire : 1 h, 6 h, 12 h ou 30 jours (le
+  défaut), pour qu'un rappel n'arrive pas après le rendez-vous. Passé ce délai, le message est abandonné sans
+  accusé de livraison. Sans y toucher, rien ne change.
+  ⚠️ Pour un modèle marketing, Meta ne l'applique qu'aux envois par la Marketing Messages API ; si Meta reclasse
+  le modèle dans une autre catégorie, la durée est effacée et revient au défaut.
 - ✅ **Des dossiers pour ranger les templates** (2026-10-13), comme ceux des scénarios mais séparés d'eux : la même
   barre d'onglets au-dessus de la liste, « + Dossier », et « Déplacer vers… » sur une ligne ou sur une sélection (cases
   à cocher). Un template se range par son **nom** : toutes ses langues suivent, et cocher une langue coche le template

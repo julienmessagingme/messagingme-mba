@@ -18,6 +18,7 @@ import { isSendableButtonUrl } from '@/lib/partage/button-url';
 import { useLocale, useT } from '@/lib/i18n';
 import { categorieTemplate } from '@/lib/format';
 import { META_TEMPLATE_LANGUAGES } from '@/lib/partage/langues-modeles';
+import { DUREES_VALIDITE, DUREE_PAR_DEFAUT, dureeAffichee, dureeValide, libelleDuree, type CategorieModele } from '@/lib/partage/duree-validite';
 import { inputCls } from '@/lib/ui';
 import { ListeManques } from '@/components/ListeManques';
 import { Field } from '@/components/Field';
@@ -72,6 +73,19 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
   const isEdit = !!initial && !duplique;
   const [name, setName] = useState(duplique && initial ? `${initial.name}_copie` : initial?.name ?? '');
   const [category, setCategory] = useState<'MARKETING' | 'UTILITY'>((initial?.category?.toUpperCase() as 'MARKETING' | 'UTILITY') ?? 'MARKETING');
+  // Durée de validité (plan du 2026-10-14) : celle lue chez Meta, ou le défaut. Une copie la reprend aussi.
+  // 🔴 Seulement pour une catégorie marketing ou utilitaire : un modèle d'AUTHENTIFICATION (la liste de Meta en
+  // contient) n'a pas de durées proposées, et les lire faisait planter la page au clic sur « Modifier » ou « Dupliquer ».
+  const categorieTtl: CategorieModele | null = category === 'MARKETING' || category === 'UTILITY' ? category : null;
+  const [ttl, setTtl] = useState<number>(() => {
+    const c = initial?.category?.toUpperCase();
+    return dureeAffichee(c === 'UTILITY' ? 'UTILITY' : 'MARKETING', initial?.ttlSecondes);
+  });
+  const changerCategorie = (c: CategorieModele): void => {
+    setCategory(c);
+    // Une durée qui ne vaut pas pour la nouvelle catégorie (Meta la refuserait) revient au défaut.
+    setTtl((d) => (dureeValide(c, d) ? d : DUREE_PAR_DEFAUT[c]));
+  };
   const [language, setLanguage] = useState(initial?.language ?? 'fr');
   // Corps + variables (chips, sélecteur de champ, exemples, indices) : logique PARTAGÉE avec le carousel.
   const bodyState = useTemplateBody(tenantId, { ...(initial?.body ? { body: initial.body } : {}), ...(initial?.example ? { example: initial.example } : {}) });
@@ -230,6 +244,10 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
       const paramHints: TemplateParamHint[] = canon.paramHints;
       const header = buildHeader();
       const foot = footer.trim() || undefined;
+      // 🔴 Le défaut n'envoie rien : un modèle dont on ne touche pas la durée part comme avant. Seule exception, l'édition
+      // d'un modèle qui avait une autre durée : il faut alors envoyer le défaut pour l'effacer chez Meta.
+      const ttlAvant = isEdit ? initial?.ttlSecondes : undefined;
+      const envoyerTtl = categorieTtl !== null && (ttl !== DUREE_PAR_DEFAUT[categorieTtl] || (ttlAvant !== undefined && ttlAvant !== ttl));
       if (isEdit && initial) {
         // name/language immuables : on édite le template résolu par son nom+langue côté serveur.
         await updateTemplate(tenantId, initial.name, {
@@ -241,6 +259,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
           ...(example ? { example } : {}),
           ...(buttons.length > 0 ? { buttons } : {}),
           ...(paramHints.length > 0 ? { paramHints } : {}),
+          ...(envoyerTtl ? { ttlSecondes: ttl } : {}),
         });
         setOk(t('Modifications envoyées. Le template repasse en validation Meta.', 'Changes sent. The template goes back to Meta for review.'));
         onCreated();
@@ -259,6 +278,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
         ...(example ? { example } : {}),
         ...(buttons.length > 0 ? { buttons } : {}),
         ...(paramHints.length > 0 ? { paramHints } : {}),
+        ...(envoyerTtl ? { ttlSecondes: ttl } : {}),
       });
       setOk(`${t('Template soumis (statut', 'Template submitted (status')} : ${res.status}). ${t('Il passe en revue Meta.', 'It goes through Meta review.')}`);
       setName('');
@@ -268,6 +288,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
       setHeaderText('');
       clearHeaderMedia();
       setFooter('');
+      if (categorieTtl !== null) setTtl(DUREE_PAR_DEFAUT[categorieTtl]);
       onCreated({ name: metaName, language, status: res.status });
     } catch (err) {
       setError(err instanceof Error ? err.message : isEdit ? t('Modification impossible', 'Update failed') : t('Création impossible', 'Creation failed'));
@@ -362,7 +383,7 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label={t('Catégorie', 'Category')}>
-              <select value={category} onChange={(e) => setCategory(e.target.value as 'MARKETING' | 'UTILITY')} className={inputCls}>
+              <select value={category} onChange={(e) => changerCategorie(e.target.value as CategorieModele)} className={inputCls}>
                 <option value="MARKETING">{categorieTemplate('MARKETING', locale)}</option>
                 <option value="UTILITY">{categorieTemplate('UTILITY', locale)}</option>
               </select>
@@ -379,6 +400,25 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
               </select>
             </Field>
           </div>
+
+          {categorieTtl !== null && (
+            <Field label={t('Durée de validité', 'Validity period')}>
+              <select value={ttl} onChange={(e) => setTtl(Number(e.target.value))} data-testid="template-duree" className={inputCls}>
+                {/* Filet : une durée réglée hors de l'éditeur reste affichée, au lieu d'être remplacée en silence. */}
+                {!DUREES_VALIDITE[categorieTtl].some((d) => d.secondes === ttl) && (
+                  <option value={ttl}>{libelleDuree(ttl, locale)}</option>
+                )}
+                {DUREES_VALIDITE[categorieTtl].map((d) => (
+                  <option key={d.secondes} value={d.secondes}>{t(d.libelle[0], d.libelle[1])}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-ink-500">
+                {categorieTtl === 'MARKETING'
+                  ? t('Passé ce délai, un message que WhatsApp n’a pas pu livrer est abandonné, sans accusé de livraison : une promo ne part pas après la fin de l’offre. Meta ne l’applique qu’aux envois par la Marketing Messages API.', 'After this period, a message WhatsApp could not deliver is dropped, with no delivery receipt: a promotion does not arrive after the offer ends. Meta only applies it to sends through the Marketing Messages API.')
+                  : t('Passé ce délai, un message que WhatsApp n’a pas pu livrer est abandonné, sans accusé de livraison : un rappel n’arrive pas après le rendez-vous.', 'After this period, a message WhatsApp could not deliver is dropped, with no delivery receipt: a reminder does not arrive after the appointment.')}
+              </p>
+            </Field>
+          )}
 
           <div className="mt-3">
             <label className="mb-1 block text-sm font-medium text-ink-900">{t('En-tête (optionnel)', 'Header (optional)')}</label>

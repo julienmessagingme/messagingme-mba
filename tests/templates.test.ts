@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { MetaTemplateClient } from '../src/meta/templates';
@@ -416,6 +416,102 @@ describe('MetaTemplateClient.list (id + buttons + example + isCarousel + editabl
     expect(all[1]!.buttons).toBeUndefined();
     expect(all[2]).toMatchObject({ id: 'T3', isCarousel: false, editable: false }); // header MÉDIA -> non éditable (handle non récupérable)
     expect(all[3]).toMatchObject({ id: 'T4', editable: true, headerText: 'Titre', footer: 'À bientôt' }); // header TEXTE + footer -> éditable + projetés
+  });
+});
+
+/**
+ * LA DURÉE DE VALIDITÉ (plan du 2026-10-14) : `message_send_ttl_seconds` chez Meta. 🔴 Absente, RIEN n'est envoyé :
+ * un modèle créé sans la régler part exactement comme avant le lot.
+ */
+describe('la durée de validité d’un modèle', () => {
+  const corps = (calls: Array<{ init: RequestInit }>, i: number) => JSON.parse(calls[i]!.init.body as string) as Record<string, unknown>;
+
+  it('🔴 sans durée, ni la création ni l’édition n’envoient message_send_ttl_seconds', async () => {
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 't', status: 'PENDING' } }, { ok: true, status: 200, json: { success: true } }]);
+    const client = new MetaTemplateClient('tok', 'v23.0', fn);
+    await client.create('waba1', { name: 'p', category: 'MARKETING', language: 'fr', body: 'x' });
+    await client.update('TID', { category: 'MARKETING', body: 'x' });
+    expect(corps(calls, 0)).not.toHaveProperty('message_send_ttl_seconds');
+    expect(corps(calls, 1)).not.toHaveProperty('message_send_ttl_seconds');
+  });
+
+  it('avec une durée, la création et l’édition l’envoient telle quelle', async () => {
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 't', status: 'PENDING' } }, { ok: true, status: 200, json: { success: true } }]);
+    const client = new MetaTemplateClient('tok', 'v23.0', fn);
+    await client.create('waba1', { name: 'p', category: 'UTILITY', language: 'fr', body: 'x', ttlSecondes: 3_600 });
+    await client.update('TID', { category: 'UTILITY', body: 'x', ttlSecondes: -1 });
+    expect(corps(calls, 0)).toMatchObject({ message_send_ttl_seconds: 3_600 });
+    expect(corps(calls, 1)).toMatchObject({ message_send_ttl_seconds: -1 });
+  });
+
+  it('la liste demande le champ et le relit ; absent ou illisible, rien', async () => {
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { data: [
+      { id: '1', name: 'a', status: 'APPROVED', category: 'UTILITY', language: 'fr', message_send_ttl_seconds: 3_600 },
+      { id: '2', name: 'b', status: 'APPROVED', category: 'MARKETING', language: 'fr' },
+      { id: '3', name: 'c', status: 'APPROVED', category: 'MARKETING', language: 'fr', message_send_ttl_seconds: '86400' },
+    ] } }]);
+    const [a, b, c] = await new MetaTemplateClient('tok', 'v23.0', fn).list('waba1');
+    expect(decodeURIComponent(calls[0]!.url)).toContain('message_send_ttl_seconds');
+    expect(a!.ttlSecondes).toBe(3_600);
+    expect(b).not.toHaveProperty('ttlSecondes');
+    expect(c).not.toHaveProperty('ttlSecondes');
+  });
+
+  it('🔴 si Meta refusait le champ (erreur 100), la liste est relue SANS lui : les envois qui la lisent ne tombent pas', async () => {
+    const avertir = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { fn, calls } = makeFetch([
+        { ok: false, status: 400, json: { error: { code: 100, message: '(#100) Tried accessing nonexisting field (message_send_ttl_seconds)' } } },
+        { ok: true, status: 200, json: { data: [{ id: '1', name: 'a', status: 'APPROVED', category: 'UTILITY', language: 'fr' }] } },
+      ]);
+      const liste = await new MetaTemplateClient('tok', 'v23.0', fn).list('waba1');
+      expect(liste.map((t) => t.name)).toEqual(['a']);
+      expect(calls).toHaveLength(2);
+      expect(decodeURIComponent(calls[1]!.url)).not.toContain('message_send_ttl_seconds');
+      expect(decodeURIComponent(calls[1]!.url)).toContain('fields=id,name,status,category,language,components');
+    } finally {
+      avertir.mockRestore();
+    }
+  });
+
+  it('un autre refus de la liste (jeton mort) remonte tel quel, sans seconde lecture', async () => {
+    const { fn, calls } = makeFetch([{ ok: false, status: 401, json: { error: { code: 190, message: 'token' } } }]);
+    await expect(new MetaTemplateClient('tok', 'v23.0', fn).list('waba1')).rejects.toMatchObject({ code: 190 });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('🔴 POST : une durée hors des bornes de Meta pour la catégorie -> 400 lisible, aucun appel Meta', async () => {
+    for (const [category, ttlSecondes, attendu] of [
+      ['MARKETING', 3_600, '12 heures à 30 jours'], ['UTILITY', 86_400, '30 secondes à 12 heures'], ['UTILITY', '3600', '30 secondes'],
+    ] as const) {
+      const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 't', status: 'PENDING' } }]);
+      const a = app(fn);
+      const res = await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category, language: 'fr', body: 'x', ttlSecondes } });
+      expect(res.statusCode, `${category} ${ttlSecondes}`).toBe(400);
+      expect(res.json<{ error: string }>().error).toContain(attendu);
+      expect(calls).toHaveLength(0);
+      await a.close();
+    }
+  });
+
+  it('POST : une durée valide part chez Meta ; sans durée, le corps n’en porte aucune', async () => {
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { id: 't', status: 'PENDING' } }]);
+    const a = app(fn);
+    expect((await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'p', category: 'MARKETING', language: 'fr', body: 'x', ttlSecondes: 604_800 } })).statusCode).toBe(201);
+    expect((await a.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: { name: 'q', category: 'MARKETING', language: 'fr', body: 'x' } })).statusCode).toBe(201);
+    expect(corps(calls, 0)).toMatchObject({ message_send_ttl_seconds: 604_800 });
+    expect(corps(calls, 1)).not.toHaveProperty('message_send_ttl_seconds');
+    await a.close();
+  });
+
+  it('PATCH : la durée part avec l’édition', async () => {
+    const existant = { id: 'TID', name: 'promo', status: 'APPROVED', category: 'UTILITY', language: 'fr', components: [{ type: 'BODY', text: 'Ancien' }], message_send_ttl_seconds: 3_600 };
+    const { fn, calls } = makeFetch([{ ok: true, status: 200, json: { data: [existant] } }, { ok: true, status: 200, json: { success: true } }]);
+    const a = app(fn);
+    const res = await a.inject({ method: 'PATCH', url: '/tenants/t1/templates/promo', ...h(token), payload: { language: 'fr', category: 'UTILITY', body: 'Nouveau', ttlSecondes: -1 } });
+    expect(res.statusCode).toBe(200);
+    expect(corps(calls, 1)).toMatchObject({ message_send_ttl_seconds: -1 });
+    await a.close();
   });
 });
 

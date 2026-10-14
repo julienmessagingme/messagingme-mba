@@ -4246,6 +4246,17 @@ Ajouté par le lot 4 de l'API publique :
     serveur configuré à la main à la même adresse** (mesuré le 2026-10-13 dans son journal : « Suppressing plugin MCP
     server … duplicates manually-configured ») : les outils gardent alors le nom du serveur de la personne, et les
     `allowed-tools` du plugin ne s'appliquent plus. Rien n'est en double.
+56. **La durée de validité d'un modèle (`message_send_ttl_seconds`) a ses bornes dans `web/lib/partage/duree-validite.ts`**
+    (plan du 2026-10-14) : la console y prend ses durées proposées, la route (`parseTemplateFields`) y prend les bornes de
+    Meta par catégorie (marketing de 12 h à 30 jours, utility de 30 s à 12 h ou `-1` pour 30 jours) et refuse en 400 ce
+    que Meta refuserait. 🔴 **Le défaut n'envoie rien** : sans durée choisie, le corps envoyé à Meta est celui d'avant le
+    lot ; à l'édition seulement, revenir au défaut depuis une autre durée envoie le défaut, pour l'effacer chez Meta.
+    ⚠️ `MetaTemplateClient.list` DEMANDE le champ : un champ que Meta ne connaîtrait pas ferait échouer toute la liste
+    (erreur 100), donc l'écran des modèles, les campagnes et les scénarios qui la lisent pour envoyer. Sur une erreur 100,
+    la liste est donc relue sans lui (on perd l'affichage de la durée, jamais les envois). L'éditeur n'affiche le champ
+    que pour marketing et utilitaire : la liste contient aussi des modèles d'authentification. Meta n'applique la durée
+    d'un modèle marketing qu'aux envois par la Marketing Messages API (invariant 54), et l'efface quand il reclasse un
+    modèle.
 
 ### Sur le code
 

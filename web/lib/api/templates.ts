@@ -47,6 +47,8 @@ export interface TemplateSummary {
   carousel?: { cards: Array<{ mediaUrl?: string; mediaFormat?: 'IMAGE' | 'VIDEO'; body?: string; buttons?: TemplateButtonInput[] }> };
   /** true = template limité à BODY(+BUTTONS) : seul cas éditable sans perte (header/footer/carousel bloqués). */
   editable?: boolean;
+  /** Durée de validité lue chez Meta, en secondes. Absente : jamais réglée, ou effacée par un reclassement. */
+  ttlSecondes?: number;
 }
 export interface TemplateButtonInput {
   type: 'QUICK_REPLY' | 'URL' | 'FLOW';
@@ -79,6 +81,8 @@ export interface CreateTemplateInput {
   carousel?: { cards: CarouselCardInput[] };
   /** Indices « variable {{n}} -> champ » posés via le sélecteur (pour pré-remplir la campagne). */
   paramHints?: TemplateParamHint[];
+  /** Durée de validité en secondes (`web/lib/partage/duree-validite.ts`). Absente : le défaut de Meta, rien envoyé. */
+  ttlSecondes?: number;
 }
 /** Indice de mapping variable -> champ posé au design d'un template. */
 export interface TemplateParamHint {
@@ -101,6 +105,8 @@ export interface UpdateTemplateInput {
   footer?: string;
   buttons?: TemplateButtonInput[];
   paramHints?: TemplateParamHint[];
+  /** Durée de validité en secondes (`web/lib/partage/duree-validite.ts`). Absente : le défaut de Meta, rien envoyé. */
+  ttlSecondes?: number;
 }
 export function updateTemplate(tenantId: string, name: string, input: UpdateTemplateInput): Promise<{ success: boolean; status: string }> {
   return request(`/tenants/${tenantId}/templates/${encodeURIComponent(name)}`, { method: 'PATCH', body: JSON.stringify(input) });

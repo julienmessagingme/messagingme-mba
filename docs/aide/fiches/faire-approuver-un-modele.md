@@ -1,7 +1,7 @@
 ---
 ecran: templates
 source_section: Templates WhatsApp (menu Contenu)
-source_empreinte: cde114
+source_empreinte: 5241a0
 ---
 # Créer un modèle et le faire approuver
 
@@ -14,6 +14,12 @@ soixante caractères et n'acceptent pas de variable. Sous chaque champ limité, 
 caractères il vous reste : le corps en accepte 1 024, le texte d'un bouton 25. Un corps trop long passe en rouge,
 et le modèle ne part pas tant qu'il dépasse. Vous pouvez aussi créer un carousel : un message d'introduction
 commun, puis de deux à dix cartes avec image (160 caractères de texte chacune), chacune portant les mêmes boutons.
+
+**La durée de validité**, sous la catégorie, dit combien de temps WhatsApp essaie de livrer le message avant de
+l'abandonner : de 12 heures à 30 jours pour un modèle marketing, de 1 à 12 heures pour un modèle utilitaire, et
+30 jours si vous n'y touchez pas. Un message abandonné ne reçoit aucun accusé de livraison. Une promo n'arrive plus après la fin de l'offre, un rappel plus après le
+rendez-vous. Pour un modèle marketing, Meta ne l'applique qu'aux envois par son API Marketing Messages ; et si Meta
+change la catégorie du modèle, la durée revient à 30 jours.
 
 Pour vous y retrouver, rangez vos modèles dans des dossiers : les onglets au-dessus de la liste filtrent, et
 « Déplacer vers… » range une ligne ou les modèles cochés. Un modèle se range avec toutes ses langues.

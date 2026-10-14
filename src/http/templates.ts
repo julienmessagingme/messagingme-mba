@@ -7,6 +7,7 @@ import { parseParamHints, countTemplateVariables } from '../crm/template';
 import type { ParamSource } from '../crm/template';
 import { isValidTemplateLanguage } from '../../web/lib/partage/langues-modeles';
 import { isSendableButtonUrl } from '../../web/lib/partage/button-url';
+import { dureeValide, type CategorieModele } from '../../web/lib/partage/duree-validite';
 import { boutonsTracables, appliquerLiens, cleBouton, codeDuLienTrace, rehabillerBoutons } from '../links/rewrite';
 import { porteDesChamps, refusChampsUrl } from '../links/champs-url';
 import { analyserChampsUrl } from '../../web/lib/partage/champs-url';
@@ -308,7 +309,7 @@ function validButtons(v: unknown): v is TemplateButton[] | undefined {
 }
 
 /** Champs qui déterminent les components d'un template (partagés create + edit ; name/language exclus). */
-type TemplateFields = Pick<CreateTemplateInput, 'category' | 'header' | 'body' | 'example' | 'footer' | 'buttons' | 'carousel'>;
+type TemplateFields = Pick<CreateTemplateInput, 'category' | 'header' | 'body' | 'example' | 'footer' | 'buttons' | 'carousel' | 'ttlSecondes'>;
 
 const HEADER_MAX = 60;
 const FOOTER_MAX = 60;
@@ -399,6 +400,15 @@ function parseTemplateFields(b: Record<string, unknown>): { error: string } | { 
     return { error: 'chaque exemple de variable doit être non vide (Meta rejette un exemple vide)' };
   }
 
+  // Durée de validité (plan du 2026-10-14) : absente, rien n'est envoyé et Meta garde son défaut. Donnée, elle doit
+  // tenir dans les bornes de Meta pour la catégorie, sinon Meta refuserait le modèle entier.
+  const ttlRaw = b.ttlSecondes;
+  if (ttlRaw !== undefined && ttlRaw !== null && (typeof ttlRaw !== 'number' || !dureeValide(b.category as CategorieModele, ttlRaw))) {
+    return { error: b.category === 'MARKETING'
+      ? 'durée de validité invalide : de 12 heures à 30 jours pour un modèle marketing'
+      : 'durée de validité invalide : de 30 secondes à 12 heures, ou 30 jours, pour un modèle utilitaire' };
+  }
+
   return {
     fields: {
       category: b.category as 'MARKETING' | 'UTILITY',
@@ -408,6 +418,7 @@ function parseTemplateFields(b: Record<string, unknown>): { error: string } | { 
       ...(varCount > 0 ? { example: example.slice(0, varCount) } : {}),
       // Un carousel a ses boutons par carte : on ignore d'éventuels boutons top-level s'il est présent.
       ...(carousel ? { carousel } : Array.isArray(b.buttons) ? { buttons: b.buttons as TemplateButton[] } : {}),
+      ...(typeof ttlRaw === 'number' ? { ttlSecondes: ttlRaw } : {}),
     },
   };
 }
@@ -546,6 +557,7 @@ export function registerTemplates(app: FastifyInstance, deps: TemplateRouteDeps,
       ...(t.footer ? { footer: t.footer } : {}),
       ...(t.example ? { example: t.example } : {}),
       ...(t.buttons ? { buttons: t.buttons } : {}),
+      ...(t.ttlSecondes !== undefined ? { ttlSecondes: t.ttlSecondes } : {}),
     }));
     if ('refus' in issue) return reply.code(422).send({ error: issue.refus });
     await saveHintsSafe(deps, tenant, name, language, b.paramHints);

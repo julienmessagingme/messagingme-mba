@@ -1,7 +1,7 @@
 ---
 ecran: templates
 source_section: Templates WhatsApp (menu Contenu)
-source_empreinte: cde114
+source_empreinte: 5241a0
 ---
 # Modèle ou scénario, lequel choisir
 
