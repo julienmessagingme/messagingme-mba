@@ -256,8 +256,10 @@ jobs:
             etat=$(jq -r '.status' <<< "$reponse")
             image=$(jq -r '.image' <<< "$reponse")
             echo "conteneur : $etat ($image)"
+            # Une erreur ne compte que sur la NOUVELLE image : celle d'avant (l'image provisoire du premier
+            # deploiement, ou une version cassee qu'on remplace) peut rester affichee le temps que la mise a jour parte.
             case "$etat" in
-              error) echo "::error::le conteneur refuse l'image : $(jq -r '.error_message' <<< "$reponse")"; exit 1 ;;
+              error) if [ "$image" = "$cible" ] && { [ -n "$en_cours" ] || [ "$i" -ge 6 ]; }; then echo "::error::le conteneur refuse l'image : $(jq -r '.error_message' <<< "$reponse")"; exit 1; fi ;;
               updating|creating|upgrading) en_cours=1 ;;
               ready) if [ "$image" = "$cible" ] && { [ -n "$en_cours" ] || [ "$i" -ge 6 ]; }; then exit 0; fi ;;
             esac

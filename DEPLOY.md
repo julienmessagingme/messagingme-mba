@@ -429,7 +429,7 @@ matin est supprimé. Le réseau privé et la base sont RÉGIONAUX : une ressourc
 |---|---|---|---|
 | VPC et réseau privé | `mm-vpc`, `mm-prive` | `nl-ams` | 172.16.0.0/22, adresses attribuées par l'IPAM |
 | Registre privé | `rg.nl-ams.scw.cloud/messagingme` | `nl-ams` | image `mba:<sha complet>` |
-| Espace de conteneurs | `messagingme` | `nl-ams` | le conteneur de l'API s'y crée une fois, privé, rattaché à `mm-prive` |
+| Espace de conteneurs | `messagingme` | `nl-ams` | le conteneur de l'API `mba-api` y est créé : privé, rattaché à `mm-prive`, 2 Go et 1 120 mvCPU, de 0 à 1 copie pendant les essais |
 | Passerelle | `mm-passerelle` (VPC-GW-S) | `nl-ams-2` | bastion SSH sur le port 61000, NAT et route par défaut vers `mm-prive` |
 | Base JETABLE | `mm-banc` (PostgreSQL 17, DB-DEV-M) | `nl-ams` | adresse privée seule, disque chiffré, sauvegardes en région ; mot de passe dans Secret Manager `mm-banc-db-admin` ; à supprimer après les lots 3 et 4 |
 | Machine des workers | `mm-workers` (PLAY2-NANO, Ubuntu 24.04) | `nl-ams-2` | sans adresse publique, disque de 20 Go ; Docker et Compose posés au premier démarrage (cloud-init) ; PRO2-XXS avant le jour J |
@@ -458,6 +458,11 @@ privées par `scaleway-cli ipam ip list private-network-id=<mm-prive> region=nl-
    migration le lit par `docker run --env-file`, qui les garde, quand compose les retire. Le workflow refuse le
    fichier sinon.
 5. Les variables secrètes du conteneur de l'API.
+
+⚠️ **Jusqu'au jour J, les gestes 4 et 5 portent une configuration d'ESSAI**, posée par Claude le 2026-10-14 : la base
+jetable, des secrets JETABLES (générés pour l'occasion, jamais affichés) et `DRY_RUN=true`, sans aucune valeur de
+production. Au jour J, Julien la remplace par celle de production, sur la machine ET dans le conteneur : les deux
+partagent `ENCRYPTION_KEY` et `AUTH_SECRET`, et une différence entre eux casse le déchiffrement ou les sessions.
 6. Une application IAM `cloudflare-origine`, avec `ContainersPrivateAccess` pour seul droit : sa clé secrète va dans
    la règle Cloudflare qui écrase `X-Auth-Token` (`docs/ARCHITECTURE-CIBLE.md` §7.3).
 
@@ -506,4 +511,12 @@ redémarré pendant 30 secondes. `tests/deploy-scaleway.test.ts` le tient.
 - `vpc-gw` n'a pas de sous-commande `wait` (relire par `get`), et `rdb instance get` répond « transient state »
   tant que la base se crée.
 - **Le certificat de la base se met dans l'image**, comme celui de Supabase (`certs/`, `DB_SSL_CA_FILE`) : c'est un
-  certificat public. Qu'il couvre l'adresse PRIVÉE se vérifie au premier essai, jamais par `DB_SSL_INSECURE`.
+  certificat public, PROPRE À CHAQUE BASE (auto-signé, valable dix ans), lu par `scaleway-cli rdb instance
+  get-certificate`. Celui de la base jetable (`certs/scaleway-mm-banc.crt`) couvre son adresse PRIVÉE, vérifié le
+  2026-10-14 ; il cite aussi une adresse publique sur laquelle rien ne répond (la base n'a aucune entrée publique).
+  Celui de la production s'ajoute avant le jour J. Jamais `DB_SSL_INSECURE`.
+- **Le conteneur de l'API ne se crée que sur une image qui EXISTE** : le registre étant vide avant le premier
+  déploiement, `mba-api` a été créé le 2026-10-14 sur une image publique provisoire (`nginx:alpine`), que le premier
+  lancement du workflow remplace ; le workflow ignore l'erreur de l'image qu'il remplace. `PORT` est réservé (Scaleway
+  le pose, égal au port déclaré), la mémoire s'écrit en Go (`memory-limit-bytes=2GB`), et une sonde de santé
+  déclarée exige tous ses réglages (seuil, intervalle, délai) : sans eux, la sonde par défaut, en TCP sur le port.

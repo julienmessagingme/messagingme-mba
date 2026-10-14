@@ -154,6 +154,13 @@ describe('le workflow de déploiement Scaleway', () => {
       .toBeLessThan(WORKFLOW.indexOf('- name: L\'API passe sur la nouvelle image'));
   });
 
+  it('⚠️ une erreur du conteneur ne compte que sur la NOUVELLE image', () => {
+    // L'image provisoire du premier déploiement, ou une version cassée qu'on remplace, peut rester affichée en erreur
+    // le temps que la mise à jour parte : s'arrêter là ferait échouer le déploiement même qui la répare.
+    expect(etape('L\'API passe sur la nouvelle image'))
+      .toMatch(/error\) if \[ "\$image" = "\$cible" \] && \{ \[ -n "\$en_cours" \] \|\| \[ "\$i" -ge 6 \]; \}; then/);
+  });
+
   it('⚠️ la clé SSH et les empreintes perdent leurs retours chariot, et la connexion muette reste ouverte', () => {
     const ssh = etape('Ouvrir le chemin SSH, par le bastion de la passerelle');
     expect(ssh).toContain(`printf '%s\\n' "$CLE_SSH" | tr -d '\\r' > ~/.ssh/deploiement`);
