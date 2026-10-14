@@ -8,6 +8,7 @@ import { coerceConfigAvantDate, UNITES_DELAI, DELAI_MAX_MINUTES } from '../autom
 import type { AutomationRow, AutomationTriggerKind } from '../automation/match';
 import type { AutomationInput } from '../automation/store.pg';
 import type { ActionDeLEspace } from '../agent/actions.pg';
+import type { UserFieldDef } from '../crm/types';
 import { espaceVerifie, estUuid, nonEmpty } from './scope';
 
 export interface AutomationsDep {
@@ -23,6 +24,8 @@ export interface AutomationRouteDeps {
   automations: AutomationsDep;
   /** Les actions des agents IA de l'espace (`PgActionsAgent.listerDeLEspace`), pour le déclencheur `agent_action`. */
   actionsDeLEspace(tenantId: string): Promise<ActionDeLEspace[]>;
+  /** Les définitions de champs de l'espace : un rappel ne peut lire qu'un champ date et heure existant. */
+  champsDeLEspace(tenantId: string): Promise<Array<Pick<UserFieldDef, 'key' | 'type'>>>;
   /** Le scénario ciblé appartient-il bien à ce tenant ? Garde d'appartenance (comme la campagne workflow). */
   workflowBelongsToTenant(workflowId: string, tenantId: string): Promise<boolean>;
 }
@@ -154,6 +157,24 @@ function validateTriggerConfig(kind: AutomationTriggerKind, cfg: Record<string, 
   return null;
 }
 
+/** Les références vivantes ne peuvent pas être validées par la seule forme du JSON. */
+async function validateTriggerReferences(
+  tenant: string,
+  kind: AutomationTriggerKind,
+  cfg: Record<string, unknown>,
+  deps: AutomationRouteDeps,
+): Promise<string | null> {
+  if (kind === 'avant_date') {
+    const champ = (await deps.champsDeLEspace(tenant)).find((f) => f.key === cfg.fieldKey);
+    if (!champ) return 'fieldKey inconnu pour cet espace';
+    if (champ.type !== 'datetime') return 'fieldKey doit désigner un champ « date et heure »';
+  }
+  if (kind === 'agent_action' && !(await deps.actionsDeLEspace(tenant)).some((a) => a.id === cfg.actionId)) {
+    return 'actionId inconnu pour cet espace';
+  }
+  return null;
+}
+
 /** Corps commun création/modification. Renvoie l'erreur (400) ou l'input normalisé. */
 function parseBody(body: unknown, partial: boolean): { error: string } | { input: Partial<AutomationInput> } {
   const b = (body ?? {}) as Record<string, unknown>;
@@ -253,6 +274,8 @@ export function registerAutomations(app: FastifyInstance, deps: AutomationRouteD
     if (!(await deps.workflowBelongsToTenant(input.workflowId, tenant))) {
       return reply.code(400).send({ error: 'workflowId inconnu pour ce tenant' });
     }
+    const reference = await validateTriggerReferences(tenant, input.triggerKind, input.triggerConfig, deps);
+    if (reference) return reply.code(400).send({ error: reference });
     const boucle = refuseIfLoopy(input.triggerKind, input.cooldownSeconds);
     if (boucle) return reply.code(400).send({ error: boucle });
     const { id } = await deps.automations.create(tenant, input);
@@ -269,12 +292,23 @@ export function registerAutomations(app: FastifyInstance, deps: AutomationRouteD
     if (parsed.input.workflowId !== undefined && !(await deps.workflowBelongsToTenant(parsed.input.workflowId, tenant))) {
       return reply.code(400).send({ error: 'workflowId inconnu pour ce tenant' });
     }
-    // Garde anti-boucle sur l'état effectif après ce PATCH. On ne relit l'automation courante que si le corps ne
-    // suffit pas : modifier le type sans le délai, ou le délai sans le type, ouvre la boucle aussi sûrement.
-    if (parsed.input.triggerKind !== undefined || parsed.input.cooldownSeconds !== undefined) {
-      const besoinRelecture = parsed.input.triggerKind === undefined || parsed.input.cooldownSeconds === undefined;
-      const courant = besoinRelecture ? await deps.automations.getById(id, tenant) : null;
-      if (besoinRelecture && !courant) return reply.code(404).send({ error: 'automation inconnue' });
+    // Relire l'état quand le corps ne suffit pas : un changement de délai peut rouvrir une boucle, et une
+    // activation seule ne doit pas ranimer une référence supprimée depuis l'enregistrement précédent.
+    const verifieBoucle = parsed.input.triggerKind !== undefined || parsed.input.cooldownSeconds !== undefined;
+    const besoinRelecture = (verifieBoucle && (parsed.input.triggerKind === undefined || parsed.input.cooldownSeconds === undefined))
+      || (parsed.input.enabled === true && parsed.input.triggerKind === undefined);
+    const courant = besoinRelecture ? await deps.automations.getById(id, tenant) : null;
+    if (besoinRelecture && !courant) return reply.code(404).send({ error: 'automation inconnue' });
+    if (parsed.input.triggerKind !== undefined || parsed.input.enabled === true) {
+      const reference = await validateTriggerReferences(
+        tenant,
+        (parsed.input.triggerKind ?? courant!.triggerKind),
+        (parsed.input.triggerConfig ?? courant!.triggerConfig),
+        deps,
+      );
+      if (reference) return reply.code(400).send({ error: reference });
+    }
+    if (verifieBoucle) {
       const kindEffectif = parsed.input.triggerKind ?? courant?.triggerKind;
       const cooldownEffectif = parsed.input.cooldownSeconds !== undefined ? parsed.input.cooldownSeconds : courant?.cooldownSeconds;
       const boucle = refuseIfLoopy(kindEffectif, cooldownEffectif);

@@ -32,7 +32,10 @@ const VALID = { name: 'Demande RDV', triggerKind: 'keyword', triggerConfig: { ke
 /** Une action d'agent IA de t1 (l'outil qui la porte), pour le déclencheur `agent_action`. */
 const ACTION_T1 = '0b7e2c1a-4d5e-4f60-8a9b-1c2d3e4f5a6b';
 
-function app(over: Partial<AutomationsDep> = {}) {
+function app(
+  over: Partial<AutomationsDep> = {},
+  refs: Partial<Pick<AutomationRouteDeps, 'actionsDeLEspace' | 'champsDeLEspace'>> = {},
+) {
   const cap = {
     created: [] as Array<{ tenant: string; input: AutomationInput }>,
     updated: [] as Array<{ id: string; tenant: string; patch: Partial<AutomationInput> }>,
@@ -51,6 +54,8 @@ function app(over: Partial<AutomationsDep> = {}) {
     // wf1 appartient à t1 ; tout le reste est refusé (scénario d'un autre client ou inexistant).
     workflowBelongsToTenant: async (wfId, tenant) => wfId === 'wf1' && tenant === 't1',
     actionsDeLEspace: async (tenant) => (tenant === 't1' ? [{ id: ACTION_T1, nom: 'résiliation', agentId: 'ag1', agent: 'Accueil' }] : []),
+    champsDeLEspace: async (tenant) => (tenant === 't1' ? [{ key: 'rdv', type: 'datetime' }, { key: 'ville', type: 'text' }] : []),
+    ...refs,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, automations: deps }), cap };
 }
@@ -154,6 +159,46 @@ describe('routes automations', () => {
     }
     expect(cap.created).toHaveLength(ok.length); // dérivé de la liste : ajouter un cas ne fait plus mentir le compte
     expect(cap.created.every((c) => c.input.enabled === false)).toBe(true); // toujours créées désactivées
+    await server.close();
+  });
+
+  it('une date doit désigner un champ date et heure de cet espace, à la création comme en modification', async () => {
+    const { server, cap } = app();
+    const date = (fieldKey: string) => ({ ...VALID, triggerKind: 'avant_date', triggerConfig: { fieldKey, delai: 2, unite: 'heures' } });
+    const inconnue = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload: date('absent') });
+    const mauvaisType = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload: date('ville') });
+    const valide = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload: date('rdv') });
+    const patch = await server.inject({ method: 'PATCH', url: '/tenants/t1/automations/a1', ...h(adminTok), payload: { triggerKind: 'avant_date', triggerConfig: date('ville').triggerConfig } });
+    expect([inconnue.statusCode, mauvaisType.statusCode, valide.statusCode, patch.statusCode]).toEqual([400, 400, 201, 400]);
+    expect(inconnue.json().error).toContain('inconnu');
+    expect(mauvaisType.json().error).toContain('date et heure');
+    expect(cap.created).toHaveLength(1);
+    expect(cap.updated).toEqual([]);
+    await server.close();
+  });
+
+  it('une action UUID absente de cet espace ne crée ni ne modifie une automation muette', async () => {
+    const { server, cap } = app();
+    const cfg = { actionId: '77777777-7777-4777-8777-777777777777' };
+    const post = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload: { ...VALID, triggerKind: 'agent_action', triggerConfig: cfg } });
+    const patch = await server.inject({ method: 'PATCH', url: '/tenants/t1/automations/a1', ...h(adminTok), payload: { triggerKind: 'agent_action', triggerConfig: cfg } });
+    expect([post.statusCode, patch.statusCode]).toEqual([400, 400]);
+    expect(post.json().error).toContain('cet espace');
+    expect(cap.created).toEqual([]);
+    expect(cap.updated).toEqual([]);
+    await server.close();
+  });
+
+  it('réactiver une référence supprimée est refusé, mais la désactivation reste possible', async () => {
+    const courante = { id: 'a1', tenantId: 't1', name: 'Rappel', enabled: false, triggerKind: 'avant_date' as const,
+      triggerConfig: { fieldKey: 'supprime', delai: 2, unite: 'heures' }, conditionGroup: null, workflowId: 'wf1',
+      startNodeId: null, cooldownSeconds: null, maxFiresPerHour: null, possedePar: null };
+    const { server, cap } = app({ getById: async () => courante });
+    const activer = await server.inject({ method: 'PATCH', url: '/tenants/t1/automations/a1', ...h(adminTok), payload: { enabled: true } });
+    const desactiver = await server.inject({ method: 'PATCH', url: '/tenants/t1/automations/a1', ...h(adminTok), payload: { enabled: false } });
+    expect([activer.statusCode, desactiver.statusCode]).toEqual([400, 200]);
+    expect(cap.updated).toHaveLength(1);
+    expect(cap.updated[0]?.patch).toEqual({ enabled: false });
     await server.close();
   });
 

@@ -2312,6 +2312,7 @@ async function main(): Promise<void> {
       workflowBelongsToTenant: async (wfId, tenant) => (await workflowStore.getById(wfId, tenant)) !== null,
       // Le menu du déclencheur « action de l'agent IA » (plan du 2026-10-13).
       actionsDeLEspace: (tenant) => new PgActionsAgent(pool).listerDeLEspace(tenant),
+      champsDeLEspace: (tenant) => fieldStore.list(tenant),
     },
     // Chaîne WhatsApp (Channels Me) : publier un post dont le bouton démarre un scénario.
     channelsMe: {

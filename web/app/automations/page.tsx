@@ -389,13 +389,12 @@ function AutomationsInner({ session }: { session: Session }) {
             'Start a scenario on an event, without a campaign. Never on a conversation an operator has taken over.',
           )}
         </IntroPage>
-        {/* Deux familles de déclencheurs, et la différence change ce que le scénario a le droit d'envoyer.
-            Le dire ici évite la promesse fausse « le client vient toujours d'écrire », qui n'était vraie que
-            tant que seuls le mot-clé et le nouveau contact existaient. */}
+        {/* La fenêtre WhatsApp dépend du message reçu, pas seulement du nom du déclencheur : mot-clé et nouveau
+            contact peuvent aussi venir de RCS, tandis qu'une publicité WhatsApp suit bien un message entrant. */}
         <p className="mt-2 max-w-prose text-xs text-ink-500">
           {t(
-            'Mot-clé et nouveau contact suivent un message reçu : le scénario peut commencer par un message rapide ou un formulaire. Les autres déclencheurs arrivent à froid : il doit commencer par un template, sinon rien ne part.',
-            'Keyword and new contact follow an incoming message: the scenario may start with a quick message or a form. The other triggers happen cold: it must start with a template, otherwise nothing goes out.',
+            'Pour un mot-clé, un nouveau contact ou une arrivée depuis une publicité WhatsApp, si le client vient d’écrire sur WhatsApp, le scénario peut commencer par un message rapide ou un formulaire. Pour les autres événements, il doit commencer par un template.',
+            'For a keyword, new contact or arrival from a WhatsApp ad, if the customer has just written on WhatsApp, the scenario may start with a quick message or a form. For other events, it must start with a template.',
           )}
         </p>
       </div>
