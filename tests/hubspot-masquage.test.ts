@@ -103,14 +103,18 @@ describe('le lien du portail HubSpot voyage avec les reglages', () => {
     expect(src, 'un `?` la rendrait oubliable').not.toMatch(/hubspotPortalConnecte\?/);
   });
 
-  it('🔴 le cablage retombe sur `false` quand le schema du connecteur n existe pas, et SEULEMENT dans ce cas', () => {
-    // Le cas attendu n'est pas un hoquet reseau : c'est une base sans le schema `mmhs` (instance sans
-    // connecteur, base de CI), donc `42P01`. Repondre « connecte » y offrirait une source impossible.
-    // ⚠️ Toute AUTRE erreur remonte (relecture du lot 7) : un `catch(() => false)` global laissait eteindre
-    // l'interrupteur HubSpot par-dessus un portail relie. L'affichage la rattrape lui-meme (test ci-dessous).
+  it('🔴 le cablage lit le portail par le CONNECTEUR et laisse remonter toute panne', () => {
+    // Lot 1 de la bascule Scaleway : plus de lecture cross-schema de `mmhs`, donc plus de cas `42P01`. Sans
+    // connecteur configure, `lireHubspotPortal` rend « pas relie » (aucun portail ne peut l'etre). ⚠️ Toute panne
+    // remonte (relecture du lot 7) : un `catch(() => false)` global laissait eteindre l'interrupteur HubSpot
+    // par-dessus un portail relie. L'affichage la rattrape lui-meme (test ci-dessous).
     const src = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
-    expect(src).toMatch(/hubspotPortalConnecte:[^\n]*getHubspotPortal\(tenant\)[^\n]*\.catch\(\(err: unknown\) => \{\s*if \([^\n]*err\.code === '42P01'\) return false;\s*throw err;\s*\}\)/);
-    expect(src, 'le repli global est revenu').not.toMatch(/hubspotPortalConnecte:[^\n]*catch\(\(\) => false\)/);
+    expect(src).toContain('const lirePortailHubspot = (tenant: string) => lireHubspotPortal(hubspotSuppression, tenant);');
+    expect(src).toMatch(/hubspotPortalConnecte: \(tenant\) => lirePortailHubspot\(tenant\)\.then\(\(p\) => p\.connected\),/);
+    expect(src, 'le repli global est revenu').not.toMatch(/hubspotPortalConnecte:[^\n]*catch/);
+    // La suppression d'un espace : une panne du connecteur est « on ne sait pas », jamais « pas relie ».
+    expect(src).toContain('const hubspot = await lirePortailHubspot(tenant).then((p) => p.connected).catch(() => null);');
+    expect(src).toContain('hubspotPortal: lirePortailHubspot,');
   });
 
   it('🔴 une PANNE de lecture du portail ne fait pas tomber les reglages : l affichage la lit « pas relie », comme avant', async () => {

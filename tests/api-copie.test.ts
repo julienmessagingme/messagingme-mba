@@ -45,6 +45,9 @@ describe('API_COPIE', () => {
   it('🔴 les attentes de pool et les alertes de l’API passent par ce nom, jamais par un nom en dur', () => {
     expect(SOURCE).toContain('viderVersLaBase(poolAttentesStore, mesureAttentePool, NOM_API,');
     expect(SOURCE).not.toContain("mesureAttentePool, 'api',");
+    // La carte instantanée de /ops porte le même nom que sa courbe.
+    expect(SOURCE).toContain('process: NOM_API,');
+    expect(SOURCE).not.toContain("process: 'api',");
     expect(SOURCE).not.toContain('[mba-api]');
     expect(SOURCE).toContain('sendTelegram(`[mba-${NOM_API}] ${m}`)');
   });

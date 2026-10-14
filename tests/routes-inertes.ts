@@ -62,9 +62,11 @@ const neDevraitPasEtreAppelee = (nom: string) => (): never => {
 /** `audit` absent : le journal d'actions restait muet. */
 export const journalMuet: AuditSink = async () => {};
 
-export const compteInerte: Pick<AccountRouteDeps, 'photoNumero'> = {
+export const compteInerte: Pick<AccountRouteDeps, 'photoNumero' | 'hubspotPortal'> = {
   // Absente : pas de pastille.
   photoNumero: async () => null,
+  // Aucun portail HubSpot relié.
+  hubspotPortal: async () => ({ connected: false }),
 };
 
 export const aideInerte: Pick<AideRouteDeps, 'recap'> = {

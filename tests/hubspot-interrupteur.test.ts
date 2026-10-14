@@ -159,11 +159,11 @@ function compte(over: Partial<AccountRouteDeps> = {}) {
       getPhoneNumber: async () => null,
       saveStatus: async () => {},
       setHubspotConnected: async () => ({ updated: false, resumedFrom: null }),
-      getHubspotPortal: async () => ({ connected: true, hubId: '1', hubDomain: 'acme.hubspot.com' }),
       disconnectHubspotTenant: async (tenant) => { appels.push(`base:${tenant}`); return { updated: false }; },
     },
     pullStatus: async () => null,
     enqueueHubspotCatchup: async () => {},
+    hubspotPortal: async () => ({ connected: true, hubId: '1', hubDomain: 'acme.hubspot.com' }),
     disconnectHubspot: async (tenant) => { appels.push(`connecteur:${tenant}`); return { disconnected: true, revoked: true }; },
     ...over,
   };

@@ -1,9 +1,11 @@
 /**
  * Client du canal service vers le connecteur mm-hubspot : appel signé (`callService`), import de listes,
- * déconnexion d'un portail, signalement d'un contact injoignable, lecture des étapes de deal.
+ * déconnexion d'un portail, signalement d'un contact injoignable, lecture des étapes de deal et du portail relié.
  */
 import { randomBytes } from 'node:crypto';
+import { z } from 'zod';
 import { signRequest } from '../lib/signature';
+import type { HubspotPortalLink } from '../account/types';
 import { withRetry } from '../meta/http';
 import type { HttpTransport } from '../meta/http';
 import { importContacts } from './import';
@@ -75,6 +77,30 @@ export async function flagContactUnreachable(deps: ConnectorDeps, tenantId: stri
     if (err instanceof HubspotServiceError && err.status === 404) return { flagged: false }; // portail non lié : rien à marquer
     throw err;
   }
+}
+
+/** La réponse de `POST /service/portal`, validée : rien d'autre ne passe. */
+const reponsePortail = z.union([
+  z.object({ connected: z.literal(false) }),
+  z.object({ connected: z.literal(true), hubId: z.string().min(1), hubDomain: z.string().nullable(), listsScopeGranted: z.boolean() }),
+]);
+
+/**
+ * Le portail HubSpot relié à un espace, lu PAR LE CONNECTEUR (`POST /service/portal`, lot 1 de la bascule Scaleway).
+ * On le lisait en cross-schéma dans `mmhs`, dans la même base ; une fois ce schéma sur sa propre base, la lecture
+ * rendrait `42P01`, que les consommateurs traduisaient en « aucun portail relié ». Le contrat :
+ * - aucun connecteur configuré (`deps` null, `HUBSPOT_SERVICE_URL` vide) : `{ connected: false }`, sans appel. C'est
+ *   le remplaçant légitime de `42P01` : sans connecteur, aucun portail ne peut être relié ;
+ * - le connecteur répond : sa réponse, validée par Zod ;
+ * - injoignable, délai, signature refusée, 404 (connecteur pas encore à jour), 5xx, réponse invalide : une ERREUR,
+ *   jamais `connected: false`. Chaque consommateur décide : l'interrupteur refuse (503), la suppression d'un espace
+ *   rend « on ne sait pas », l'écran du compte affiche « non connecté ».
+ */
+export async function lireHubspotPortal(deps: ConnectorDeps | null, tenantId: string): Promise<HubspotPortalLink> {
+  if (deps === null) return { connected: false };
+  const reponse = reponsePortail.safeParse(await callService<unknown>(deps, '/service/portal', { tenantId }));
+  if (!reponse.success) throw new HubspotServiceError(502, 'reponse_invalide', false);
+  return reponse.data;
 }
 
 export interface HubspotDealStage { id: string; label: string; closed: boolean }

@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from 'pg';
 import { enTransaction } from '../db/transaction';
-import type { PhoneNumberRecord, HubspotPortalLink } from './types';
+import type { PhoneNumberRecord } from './types';
 
 /** Accès en lecture/écriture au statut d'un numéro (page Accueil : numéro + pastille de statut). */
 export class PgPhoneStatusStore {
@@ -153,24 +153,6 @@ export class PgPhoneStatusStore {
       await this.recomputeCampaignsPaused(client, tenantId);
       return { updated: (r.rowCount ?? 0) > 0 };
     });
-  }
-
-  /**
-   * Portail HubSpot lié à cet espace, lu dans le schéma `mmhs` du connecteur (même base), en lecture seule.
-   * `{ connected: false }` si aucun portail n'est mappé.
-   */
-  async getHubspotPortal(tenantId: string): Promise<HubspotPortalLink> {
-    const res = await this.pool.query<{ hub_id: string; hub_domain: string | null; granted_scopes: string[] | null }>(
-      `select p.hub_id, p.hub_domain, p.granted_scopes
-         from mmhs.tenant_portals tp
-         join mmhs.portals p on p.hub_id = tp.hub_id
-        where tp.tenant_id = $1
-        limit 1`,
-      [tenantId],
-    );
-    const r = res.rows[0];
-    if (!r) return { connected: false };
-    return { connected: true, hubId: r.hub_id, hubDomain: r.hub_domain, listsScopeGranted: (r.granted_scopes ?? []).includes('crm.lists.read') };
   }
 
   /**

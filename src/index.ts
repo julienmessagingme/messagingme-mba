@@ -75,7 +75,7 @@ import { connecter as connecterSalesforce, deconnecter as deconnecterSalesforce 
 import type { SalesforceRouteDeps } from './http/salesforce';
 import { signalDeLAccuse, signalDuClic } from './signaux/emetteur';
 import { plafondLePlusBas } from './campaign/pacing';
-import { fetchHubspotLists, importHubspotList, disconnectHubspot, fetchHubspotDealStages } from './crm/hubspot-service';
+import { fetchHubspotLists, importHubspotList, disconnectHubspot, fetchHubspotDealStages, lireHubspotPortal } from './crm/hubspot-service';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { MetaMediaClient } from './meta/media';
 import { pullFromInfo, pullFromError } from './account/pull';
@@ -919,6 +919,12 @@ async function main(): Promise<void> {
     ? { baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }
     : null;
   /**
+   * Le portail HubSpot relié à un espace, lu PAR LE CONNECTEUR (lot 1 de la bascule Scaleway) : plus de lecture
+   * cross-schéma de `mmhs`, qui aurait rendu `42P01` une fois ce schéma sur sa propre base. Sans connecteur
+   * configuré : « pas relié ». Toute panne du connecteur LÈVE ; chaque consommateur ci-dessous décide.
+   */
+  const lirePortailHubspot = (tenant: string) => lireHubspotPortal(hubspotSuppression, tenant);
+  /**
    * 🔴 Le jeton que les appels chez Meta prendraient pour cet espace, relu par le MÊME résolveur qu'eux : sans jeton
    * propre, ils partiraient avec le nôtre, et les gestes qui désabonnent ou éteignent sont sautés. Lu par la suppression
    * d'un espace et par « Déconnecter le numéro ».
@@ -936,10 +942,8 @@ async function main(): Promise<void> {
     bilan: (tenant) => magasinSuppression.bilan(tenant),
     contexte: async (tenant) => {
       const { jeton, wabaId } = await jetonMetaDeLEspace(tenant);
-      // Le schéma du connecteur absent (`42P01`) veut dire « pas relié » ; toute autre erreur, « on ne sait pas ».
-      const hubspot = await phoneStatusStore.getHubspotPortal(tenant).then((p) => p.connected).catch((err: unknown) => (
-        typeof err === 'object' && err !== null && 'code' in err && err.code === '42P01' ? false : null
-      ));
+      // Connecteur injoignable : « on ne sait pas » (null), jamais « pas relié ».
+      const hubspot = await lirePortailHubspot(tenant).then((p) => p.connected).catch(() => null);
       return {
         meta: { jeton, wabaId },
         hubspot,
@@ -1508,17 +1512,12 @@ async function main(): Promise<void> {
       // Canal RCS allumé dès qu'un agent est rattaché au tenant : l'interface suit l'état réel du dépôt.
       rcs: workflowRuntime.rcsStack.agents,
       /**
-       * Un portail HubSpot est-il lié à cet espace ? Lecture locale : le mapping vit dans le schéma `mmhs` de
-       * la même base (jointure indexée sur `tenant_id`), pas un aller-retour vers le connecteur.
-       * 🔴 `42P01 -> false`, et seulement lui : c'est une base sans schéma `mmhs` (instance sans connecteur,
-       * base de CI), où aucun portail ne peut être relié. Toute autre erreur remonte : l'affichage la lit « pas
-       * relié », l'extinction de l'interrupteur la refuse en 503, pour ne pas éteindre HubSpot par-dessus un
-       * portail relié.
+       * Un portail HubSpot est-il lié à cet espace ? Lu par le connecteur (`lirePortailHubspot`). Sans connecteur
+       * configuré, « pas relié » : aucun portail ne peut l'être. 🔴 Toute panne du connecteur REMONTE : l'affichage
+       * la lit « pas relié », l'extinction de l'interrupteur la refuse en 503, pour ne pas éteindre HubSpot
+       * par-dessus un portail relié.
        */
-      hubspotPortalConnecte: (tenant) => phoneStatusStore.getHubspotPortal(tenant).then((p) => p.connected).catch((err: unknown) => {
-        if (typeof err === 'object' && err !== null && 'code' in err && err.code === '42P01') return false;
-        throw err;
-      }),
+      hubspotPortalConnecte: (tenant) => lirePortailHubspot(tenant).then((p) => p.connected),
       // Applique le choix chez Meta immédiatement. Mêmes helpers que le balayage horaire, pour que « je viens
       // de choisir » et « l'heure a changé » écrivent exactement la même chose.
       applyMbaHandoffEnabled: (tenant, enabled) => ecrireHandoffEnabled(
@@ -2131,6 +2130,7 @@ async function main(): Promise<void> {
     },
     account: {
       numeros: phoneStatusStore,
+      hubspotPortal: lirePortailHubspot,
       /**
        * La pastille du numéro, relue et jamais stockée : l'URL que Meta rend est signée et expire. Derrière
        * un micro-cache de dix minutes, très en deçà de sa durée de vie : l'Accueil est la page la plus
@@ -2401,7 +2401,7 @@ async function main(): Promise<void> {
        * est un `waitingCount` non nul : quelqu'un attend.
        */
       etatPoolInstantane: () => ({
-        process: 'api',
+        process: NOM_API,
         total: pool.totalCount,
         libres: pool.idleCount,
         enAttente: pool.waitingCount,

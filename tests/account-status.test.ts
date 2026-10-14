@@ -255,7 +255,6 @@ function app(over: Partial<Omit<AccountRouteDeps, 'numeros'>> & { numeros?: Part
       getPhoneNumber: async () => rec(),
       saveStatus: async (id, patch) => { saved.push({ id, patch }); },
       setHubspotConnected: async (id, tenant, connected) => { hubspotCalls.push({ id, tenant, connected }); return { updated: true, resumedFrom: null }; },
-      getHubspotPortal: async () => ({ connected: false }),
       disconnectHubspotTenant: async (tenant) => { disconnectTenantCalls.push(tenant); return { updated: true }; },
       ...numeros,
     },
@@ -388,7 +387,7 @@ describe('route account-status', () => {
   });
 
   it('expose hubspotPortal : portail lié -> connected + hubDomain', async () => {
-    const { server } = app({ numeros: { getHubspotPortal: async () => ({ connected: true, hubId: '139615673', hubDomain: 'acme.hubspot.com' }) } });
+    const { server } = app({ hubspotPortal: async () => ({ connected: true, hubId: '139615673', hubDomain: 'acme.hubspot.com' }) });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
     const body = res.json<{ hubspotPortal: { connected: boolean; hubId?: string; hubDomain?: string | null } }>();
     expect(body.hubspotPortal).toEqual({ connected: true, hubId: '139615673', hubDomain: 'acme.hubspot.com' });
@@ -396,7 +395,7 @@ describe('route account-status', () => {
   });
 
   it('hubspotPortal par défaut non connecté ; un échec de lecture NE casse pas la route (best-effort)', async () => {
-    const { server } = app({ numeros: { getHubspotPortal: async () => { throw new Error('mmhs down'); } } });
+    const { server } = app({ hubspotPortal: async () => { throw new Error('connecteur injoignable'); } });
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ hubspotPortal: { connected: boolean } }>().hubspotPortal).toEqual({ connected: false });

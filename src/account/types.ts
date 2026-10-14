@@ -26,7 +26,8 @@ export interface PhoneNumberRecord {
 }
 
 /**
- * Lien vers le portail HubSpot de l'espace (`mmhs.tenant_portals`). `connected=false` : aucun portail installé.
+ * Lien vers le portail HubSpot de l'espace, lu par le connecteur (`lireHubspotPortal`, `POST /service/portal`).
+ * `connected=false` : aucun portail installé.
  * `hubDomain` peut être null (portail ancien ou domaine non renvoyé) : l'UI retombe sur `hubId`.
  */
 export interface HubspotPortalLink {

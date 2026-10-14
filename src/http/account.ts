@@ -20,6 +20,11 @@ export interface AccountRouteDeps {
   pullStatus(phoneNumberId: string, tenantId: string): Promise<PullResult | null>;
   /** Enfile le rattrapage HubSpot (best-effort) à la reprise après pause. No-op si le pipeline analyse/push est inerte. */
   enqueueHubspotCatchup(tenantId: string): Promise<void>;
+  /**
+   * Le portail HubSpot relié à l'espace, lu par le connecteur (`lireHubspotPortal`). Une panne lève : cette route
+   * l'affiche « non connecté », ce qui n'est qu'un affichage.
+   */
+  hubspotPortal(tenantId: string): Promise<HubspotPortalLink>;
   /** Déconnexion complète : délie le portail HubSpot côté connecteur (mm-hubspot révoque le token si dernier tenant).
   *  Optionnel : absent si le canal service n'est pas configuré -> la route répond 503. À appeler avant le reset local. */
   disconnectHubspot?(tenantId: string): Promise<{ disconnected: boolean; revoked: boolean }>;
@@ -34,8 +39,6 @@ export interface NumerosDep {
   /** Active/coupe/pause la synchro HubSpot d'un numéro (scopé tenant). `updated=false` si le numéro n'appartient pas
   *  au tenant ; `resumedFrom` non-null = on vient de reprendre depuis une pause -> déclencher le rattrapage. */
   setHubspotConnected(phoneNumberId: string, tenantId: string, connected: boolean): Promise<{ updated: boolean; resumedFrom: string | null }>;
-  /** Portail HubSpot lié à ce tenant (lecture cross-schema mmhs). `{ connected: false }` si aucun mapping. */
-  getHubspotPortal(tenantId: string): Promise<HubspotPortalLink>;
   /** Reflet local de la déconnexion : coupe hubspot_connected de tous les numéros du tenant (après succès connecteur). */
   disconnectHubspotTenant(tenantId: string): Promise<{ updated: boolean }>;
 }
@@ -80,7 +83,7 @@ export interface AccountStatusResponse {
   hubspotConnected: boolean;
   /** Instant de pause : non-null + hubspotConnected=false -> « en pause » (vs « jamais activé » si null). */
   hubspotPausedAt: string | null;
-  /** Portail HubSpot lié au tenant (mmhs.tenant_portals). Sert à afficher le portail branché ou le CTA « Connecter HubSpot ». */
+  /** Portail HubSpot lié au tenant, lu par le connecteur. Sert à afficher le portail branché ou le CTA « Connecter HubSpot ». */
   hubspotPortal: HubspotPortalLink;
   /**
    * Instant où le numéro a été délié de l'espace (ISO). `null` = relié, ou aucun numéro.
@@ -135,9 +138,9 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
   app.get('/tenants/:tenantId/account-status', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
 
-    // Portail HubSpot du tenant (lecture cross-schema mmhs). Au mieux : un échec (mmhs indisponible, colonne
-    // pas encore migrée) ne fait jamais échouer la route -> on retombe sur « non connecté », comme le pull.
-    const hubspotPortal = await deps.numeros.getHubspotPortal(tenant).catch(() => ({ connected: false as const }));
+    // Portail HubSpot du tenant, lu par le connecteur. Au mieux : un échec (connecteur injoignable) ne fait jamais
+    // échouer la route -> on retombe sur « non connecté », comme le pull. Ce n'est qu'un affichage.
+    const hubspotPortal = await deps.hubspotPortal(tenant).catch(() => ({ connected: false as const }));
 
     const pn = await deps.numeros.getPhoneNumber(tenant);
     if (!pn) {
