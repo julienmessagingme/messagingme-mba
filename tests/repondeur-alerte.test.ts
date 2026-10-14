@@ -1,86 +1,116 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { creerAlerteCreditEpuise, jourDans, messageAlerte, type DepsAlerteCredit } from '../src/repondeur/alerte-credit';
+import { creerAlerteCreditEpuise, jourDans } from '../src/repondeur/alerte-credit';
+import { creerEmetteurEmails, type JobEmail } from '../src/emails-produit/emission';
 import { capturerJournal } from './journal';
 
 /**
- * L'ALERTE DE CRÉDIT ÉPUISÉ (lot 5, A8). 🔴 Le « une par jour » est tenu par la BASE (la clé primaire de
- * `repondeur_alertes_credit`), pas par la mémoire : plusieurs copies de l'API et des workers voient passer les messages
- * d'un espace à sec. Seule l'insertion qui a PRIS la ligne du jour envoie. Ce que fait vraiment l'`on conflict` :
- * `tests/integration/repondeur.integration.test.ts`, en CI (cas 5 de la revue).
+ * L'ALERTE DE CRÉDIT ÉPUISÉ (lot 5, A8 ; par les e-mails du produit depuis le lot 7). 🔴 Le « une par jour » est tenu
+ * par la BASE : l'occasion est le jour, et le journal (migration 0234, contrainte unique) n'en réserve qu'une par admin.
+ * Plusieurs copies de l'API et des workers voient passer les messages d'un espace à sec. Ce que fait vraiment
+ * l'`on conflict` : `tests/integration/emails-produit.integration.test.ts`, en CI.
  */
 
 afterEach(() => { vi.restoreAllMocks(); });
 
-/** Une mémoire partagée par plusieurs « copies » : la table, avec sa clé primaire (espace, jour). */
-function base() {
+/** Le journal partagé par plusieurs « copies » : la contrainte unique (espace, modèle, personne, occasion). */
+function journalPartage() {
   const lignes = new Set<string>();
-  return { lignes, marquerLeJour: async (t: string, jour: string) => { const k = `${t}/${jour}`; if (lignes.has(k)) return false; lignes.add(k); return true; } };
+  const jobs: JobEmail[] = [];
+  return {
+    lignes,
+    jobs,
+    reserver: async (e: { tenantId: string; cle: string; occasion: string; identites: string[] }) => {
+      const ids: string[] = [];
+      for (const i of e.identites) {
+        const k = `${e.tenantId}/${e.cle}/${i}/${e.occasion}`;
+        if (lignes.has(k)) continue;
+        lignes.add(k);
+        ids.push(`00000000-0000-4000-8000-${String(lignes.size).padStart(12, '0')}`);
+      }
+      return ids;
+    },
+  };
 }
 
-function alerte(o: { base?: ReturnType<typeof base>; envoyer?: DepsAlerteCredit['envoyer'] | 'aucun'; admins?: string[]; maintenant?: string; fuseau?: string } = {}) {
-  const envois: Array<{ to: string; subject: string; text: string }> = [];
-  const b = o.base ?? base();
-  const a = creerAlerteCreditEpuise({
-    marquerLeJour: b.marquerLeJour,
+function alerte(o: { journal?: ReturnType<typeof journalPartage>; admins?: string[]; maintenant?: string; fuseau?: string } = {}) {
+  const j = o.journal ?? journalPartage();
+  const emetteur = creerEmetteurEmails({
+    adminsConnectes: async () => o.admins ?? ['id-admin-a', 'id-admin-b'],
+    reserver: j.reserver,
     fuseau: async () => o.fuseau ?? 'Europe/Paris',
-    admins: async () => o.admins ?? ['a@exemple.test', 'b@exemple.test'],
-    envoyer: o.envoyer === 'aucun' ? null : (o.envoyer ?? (async (m) => { envois.push(m); })),
+    enfiler: async (job) => { j.jobs.push(job); },
+  });
+  const a = creerAlerteCreditEpuise({
+    fuseau: async () => o.fuseau ?? 'Europe/Paris',
+    emettre: (e) => emetteur.emettre(e),
     pageCredit: 'https://console.exemple.test/parametres/credit',
     now: () => new Date(o.maintenant ?? '2026-10-05T10:00:00.000Z'),
   });
-  return { a, envois, b };
+  return { a, j };
 }
 
 describe('l’alerte de crédit épuisé', () => {
-  it('🔴 deux copies, le même jour : UNE insertion prend, UN envoi par admin ; le lendemain, de nouveau', async () => {
-    const commune = base();
-    const copieA = alerte({ base: commune });
-    const copieB = alerte({ base: commune });
+  it('🔴 deux copies, le même jour : UNE réservation par admin, UN job chacune ; le lendemain, de nouveau', async () => {
+    const commun = journalPartage();
+    const copieA = alerte({ journal: commun });
+    const copieB = alerte({ journal: commun });
     await Promise.all([copieA.a.alerter('t1'), copieB.a.alerter('t1'), copieA.a.alerter('t1')]);
-    expect([...copieA.envois, ...copieB.envois].map((e) => e.to).sort()).toEqual(['a@exemple.test', 'b@exemple.test']);
-    const lendemain = alerte({ base: commune, maintenant: '2026-10-06T10:00:00.000Z' });
-    await lendemain.a.alerter('t1');
-    expect(lendemain.envois).toHaveLength(2);
+    expect(commun.jobs).toHaveLength(2);
+    expect([...commun.lignes].sort()).toEqual([
+      't1/credit_epuise/id-admin-a/jour:2026-10-05', 't1/credit_epuise/id-admin-b/jour:2026-10-05',
+    ]);
+    await alerte({ journal: commun, maintenant: '2026-10-06T10:00:00.000Z' }).a.alerter('t1');
+    expect(commun.jobs).toHaveLength(4);
     // Un autre espace a sa propre journée.
-    const autre = alerte({ base: commune });
-    await autre.a.alerter('t2');
-    expect(autre.envois).toHaveLength(2);
+    await alerte({ journal: commun }).a.alerter('t2');
+    expect(commun.jobs).toHaveLength(6);
   });
 
-  it('le jour est celui du FUSEAU de l’espace : 23 h 30 à Paris le 5, c’est déjà le 6 à Tokyo', () => {
+  it('le jour est celui du FUSEAU de l’espace : 23 h 30 à Paris le 5, c’est déjà le 6 à Tokyo', async () => {
     const instant = new Date('2026-10-05T21:30:00.000Z');
     expect(jourDans('Europe/Paris', instant)).toBe('2026-10-05');
     expect(jourDans('Asia/Tokyo', instant)).toBe('2026-10-06');
     // Un fuseau illisible retombe sur celui du serveur, sans lever.
     expect(jourDans('Pas/Un_Fuseau', instant)).toBe('2026-10-05');
+    const { a, j } = alerte({ fuseau: 'Asia/Tokyo', maintenant: '2026-10-05T21:30:00.000Z' });
+    await a.alerter('t1');
+    expect([...j.lignes][0]).toMatch(/jour:2026-10-06$/);
   });
 
-  it('🔴 sans Resend : journalisé, rien d’envoyé, et rien n’échoue', async () => {
-    const { a, b } = alerte({ envoyer: 'aucun' });
+  it('🔴 la réservation porte le lien de recharge et le fuseau, et rien d’autre : aucune donnée de contact', async () => {
+    const vues: Array<Record<string, string>> = [];
+    const emetteur = creerEmetteurEmails({
+      adminsConnectes: async () => ['id-admin-a'],
+      reserver: async (e) => { vues.push(e.valeurs); return ['00000000-0000-4000-8000-000000000001']; },
+      fuseau: async () => 'Europe/Paris',
+      enfiler: async () => {},
+    });
+    await creerAlerteCreditEpuise({ fuseau: async () => 'Europe/Paris', emettre: (e) => emetteur.emettre(e), pageCredit: 'https://x.test/credit' }).alerter('t1');
+    expect(vues).toEqual([{ lien_credit: 'https://x.test/credit', _fuseau: 'Europe/Paris' }]);
+  });
+
+  it('🔴 personne à prévenir : journalisé, rien de réservé, et rien n’échoue', async () => {
+    const { a, j } = alerte({ admins: [] });
     const { resultat, lignes } = await capturerJournal(() => a.alerter('t1'));
     expect(resultat).toBeUndefined();
-    expect(b.lignes.size, 'la journée est prise : le journal ne se répète pas à chaque message').toBe(1);
-    expect(lignes.some((l) => l.msg === 'alerte_credit_sans_resend')).toBe(true);
+    expect(j.lignes.size).toBe(0);
+    expect(lignes.some((l) => l.msg === 'email_produit_sans_destinataire')).toBe(true);
   });
 
-  it('un envoi refusé n’empêche pas les autres admins, et une base en panne ne fait rien tomber', async () => {
+  it('une mise en file ratée laisse la réservation au balayage, et une base en panne ne fait rien tomber', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    const recus: string[] = [];
-    const { a } = alerte({ envoyer: async (m) => { if (m.to.startsWith('a@')) throw new Error('adresse refusée'); recus.push(m.to); } });
-    await a.alerter('t1');
-    expect(recus).toEqual(['b@exemple.test']);
+    const commun = journalPartage();
+    const emetteur = creerEmetteurEmails({
+      adminsConnectes: async () => ['id-admin-a'], reserver: commun.reserver, fuseau: async () => 'Europe/Paris',
+      enfiler: async () => { throw new Error('file injoignable'); },
+    });
+    await expect(creerAlerteCreditEpuise({ fuseau: async () => 'Europe/Paris', emettre: (e) => emetteur.emettre(e), pageCredit: 'x' }).alerter('t1'))
+      .resolves.toBeUndefined();
+    expect(commun.lignes.size, 'la réservation est faite : le balayage la reprendra').toBe(1);
     const enPanne = creerAlerteCreditEpuise({
-      marquerLeJour: async () => { throw new Error('pooler injoignable'); }, fuseau: async () => 'Europe/Paris',
-      admins: async () => [], envoyer: null, pageCredit: 'x',
+      fuseau: async () => { throw new Error('pooler injoignable'); }, emettre: async () => ({ destinataires: 0, reserves: 0 }), pageCredit: 'x',
     });
     await expect(enPanne.alerter('t1')).resolves.toBeUndefined();
-  });
-
-  it('le message dit quoi faire, avec le lien de recharge, et aucune donnée de contact', () => {
-    const m = messageAlerte('https://console.exemple.test/parametres/credit');
-    expect(m.subject).toMatch(/Crédit IA épuisé/);
-    expect(m.text).toContain('https://console.exemple.test/parametres/credit');
-    expect(m.html).toContain('href="https://console.exemple.test/parametres/credit"');
-    expect(`${m.subject}${m.text}${m.html}`).not.toMatch(/[\u2013\u2014]/);
   });
 });

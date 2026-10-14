@@ -4,6 +4,7 @@ import { messagesInteractifsDuFormulaire } from './mba/messages-interactifs';
 import { buildServer } from './server';
 import { config } from './config';
 import { adressesPubliques } from './lib/adresses-publiques';
+import { lireJetonDesinscription } from './emails-produit/desinscription';
 import { surveillerOps } from './ops/tentatives';
 import { sendTelegram } from './ops/telegram';
 import { creerAlertesReserve } from './http/numero-fourni';
@@ -245,6 +246,7 @@ async function main(): Promise<void> {
     agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
     numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, connexionPub, publicites,
     clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, offres, quotaModeles,
+    emailsProduit, envoyeurProduit,
   } = construireSocle({ pool, queue, config });
 
   /**
@@ -2493,6 +2495,22 @@ async function main(): Promise<void> {
     },
     // L'état de l'abonnement du numéro (lot 4), pour le bandeau de la console : la seule lecture.
     abonnementNumero: { etat: (tenant) => abonnementsNumero.etatDeLEspace(tenant) },
+    /**
+     * Les e-mails du produit (lot 7) : la section « E-mails » de `/ops`, le webhook signé de Resend (sans secret, il
+     * refuse tout), le lien de désinscription (signé par `AUTH_SECRET`, pour ce seul usage) et les préférences de la
+     * personne connectée.
+     */
+    opsEmails: { store: emailsProduit, envoyer: envoyeurProduit },
+    resendWebhook: {
+      secret: config.RESEND_WEBHOOK_SECRET,
+      noterEvenement: (resendId, ev, le) => emailsProduit.noterEvenementResend(resendId, ev, le),
+      desinscrireDesCommerciaux: (identityId) => emailsProduit.desinscrire(identityId, 'commercial'),
+    },
+    desinscriptionEmails: {
+      lire: (jeton) => lireJetonDesinscription(jeton, config.AUTH_SECRET),
+      desinscrire: (identityId, categorie) => emailsProduit.desinscrire(identityId, categorie),
+    },
+    emailsMoi: { store: emailsProduit },
     // La réserve de numéros fournis (lot 3a). Sans clé DIDWW ou sans trunk, la déclaration rend 503 et la lecture marche.
     opsNumeros: {
       numeros: numerosFournis,

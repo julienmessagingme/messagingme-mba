@@ -328,6 +328,12 @@ export const schema = z.object({
   SUPPORT_FROM: z.string().default('onboarding@resend.dev'),
   /** Destinataire des messages du formulaire de support. Vide -> support indisponible (503). */
   SUPPORT_TO: z.string().default(''),
+  /**
+   * Le secret de signature du webhook de Resend (`whsec_...`, lot 7) : ce que deviennent les e-mails du produit
+   * (livrés, ouverts, cliqués, rebonds, plaintes), pour les chiffres de `/ops`. Vide -> la route refuse tout (401), les
+   * e-mails partent quand même. Posé par Julien dans `.env.prod`, jamais par Claude.
+   */
+  RESEND_WEBHOOK_SECRET: z.string().default(''),
   /** Client OAuth Google (public) pour « se connecter avec Google ». Vide -> bouton Google masqué (pas de crash). */
   GOOGLE_CLIENT_ID: z.string().default(''),
   /**

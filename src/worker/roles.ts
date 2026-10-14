@@ -50,6 +50,8 @@ export const FILES_PAR_ROLE: Record<NomDeFile, Appartenance> = {
   // Les webhooks sortants (lot 12) : l'application d'un client attend derrière.
   'evenements-distribution': 'principal',
   'evenements-envoi': 'principal',
+  // Les e-mails du produit (lot 7) : une alerte de crédit ou de numéro attend derrière.
+  'emails-produit': 'principal',
   // L'analyse et ce qu'elle alimente : personne n'attend derrière, et c'est ce qui appelle les modèles.
   'analyze-conversation': 'analyse',
   'push-analysis': 'analyse',
@@ -85,6 +87,7 @@ export const TACHES_PAR_ROLE: Record<string, Appartenance> = {
   'campagnes-reprise-plafond': 'principal',
   'compteurs-debit': 'principal',
   'consommation-vercel': 'principal',
+  'emails-produit-reprise': 'principal',
   'files-echec': 'principal',
   'handoff-mba': 'principal',
   'idempotence-api': 'principal',

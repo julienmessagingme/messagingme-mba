@@ -7,7 +7,6 @@ import { PgWorkflowStore } from '../../src/workflow/store.pg';
 import { PgWorkflowRunStore } from '../../src/workflow/run-store.pg';
 import { PgInboxStore } from '../../src/inbox/store.pg';
 import { PgListeStore } from '../../src/mba/liste.pg';
-import { PgAlertesCreditStore } from '../../src/repondeur/alerte-credit';
 import { PgContactStore } from '../../src/crm/contact-store.pg';
 import { PgAdressesEvenementsStore, PgEnvoisEvenementsStore } from '../../src/evenements/store.pg';
 
@@ -22,7 +21,8 @@ const url = process.env.DATABASE_URL ?? '';
  *    lit « Équipe »), la règle de mode de `setMbaEnabled`, et la réclamation atomique du scénario répondeur ;
  *  - le scénario système : une ligne par espace même sous deux démarrages simultanés, invisible de toutes les lectures
  *    publiques, et sans gêner un scénario du client qui porterait le même nom ;
- *  - 🔴 l'alerte de crédit : une insertion par espace et par jour, quel que soit le nombre de copies (cas 5 de la revue) ;
+ *  - (l'alerte de crédit, une par admin et par jour quel que soit le nombre de copies, cas 5 de la revue : depuis le lot 7,
+ *    elle est tenue par le journal des e-mails du produit, `tests/integration/emails-produit.integration.test.ts`) ;
  *  - la frise : `sortie_agent` s'écrit sous le CHECK élargi, avec sa cause, dans le bon espace ;
  *  - le parcours naît en ayant reçu son message déclencheur (`last_message_id`).
  *
@@ -246,19 +246,6 @@ describe.skipIf(!url)('le répondeur par défaut (Postgres)', () => {
       const { id } = await runs.start(tenantId, sys, WA, null, { currentNode: 'agent', status: 'waiting', lastMessageId: 'wamid.declencheur' }, graphe);
       expect(await runs.byId(tenantId, id)).toMatchObject({ lastMessageId: 'wamid.declencheur', grapheFige: graphe });
     });
-  });
-
-  it('🔴 l’alerte de crédit : une ligne par espace et par jour, quel que soit le nombre de copies (cas 5)', async () => {
-    const alertes = new PgAlertesCreditStore(pool);
-    const prises = await Promise.all([1, 2, 3].map(() => alertes.marquerLeJour(tenantId, '2026-10-05')));
-    expect(prises.filter(Boolean)).toHaveLength(1);
-    expect(await alertes.marquerLeJour(tenantId, '2026-10-06')).toBe(true);
-    expect(await alertes.marquerLeJour(autreTenantId, '2026-10-05')).toBe(true);
-    // Les admins ACTIFS de l'espace, et eux seuls.
-    await pool.query(`insert into users (tenant_id, email, role, password_hash) values ($1, 'itest-rep-admin@example.test', 'admin', 'x'), ($1, 'itest-rep-agent@example.test', 'agent', 'x')`, [tenantId]);
-    await pool.query(`insert into users (tenant_id, email, role, password_hash, disabled_at) values ($1, 'itest-rep-parti@example.test', 'admin', 'x', now())`, [tenantId]);
-    expect(await alertes.admins(tenantId)).toEqual(['itest-rep-admin@example.test']);
-    expect(await alertes.admins(autreTenantId)).toEqual([]);
   });
 
   it('🔴 la frise : `sortie_agent` passe le CHECK élargi, avec sa règle dans la cause, et dans son espace seulement', async () => {

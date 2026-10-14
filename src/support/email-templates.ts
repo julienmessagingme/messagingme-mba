@@ -26,15 +26,29 @@ export interface BrandedEmailInput {
   title: string;
   /** Corps HTML déjà échappé et construit par l'appelant (peut contenir des <p>, <strong>...). */
   bodyHtml: string;
-  /** Libellé du bouton d'action (sera échappé). */
-  ctaLabel: string;
+  /** Libellé du bouton d'action (sera échappé). Le bouton n'est rendu qu'avec son libellé ET son adresse. */
+  ctaLabel?: string;
   /** URL cible du bouton (sera échappée en attribut). */
-  ctaUrl: string;
+  ctaUrl?: string;
   /** Texte de prévisualisation (aperçu dans la boîte de réception). Facultatif. */
   preheader?: string;
   /** Ligne de pied additionnelle (ex. durée de validité du lien). Facultatif, sera échappée. */
   footnote?: string;
+  /**
+   * La langue du document et ses deux phrases fixes (le repli du bouton, la mention du pied), échappées. Absente : le
+   * français tutoyé de l'invitation. Les e-mails du produit (lot 7) passent les leurs, au vouvoiement ou en anglais.
+   */
+  phrases?: { lang: 'fr' | 'en'; secours: string; pied: string };
+  /** Un lien de désinscription en pied (e-mails commerciaux et de transfert, lot 7). Texte et adresse échappés. */
+  desinscription?: { texte: string; url: string };
 }
+
+/** Les phrases fixes de l'invitation, d'avant le lot 7. */
+const PHRASES_INVITATION = {
+  lang: 'fr' as const,
+  secours: 'Si le bouton ne fonctionne pas, copie ce lien dans ton navigateur :',
+  pied: "Messaging Me, Business Agent WhatsApp. Si tu n'attendais pas ce message, tu peux l'ignorer.",
+};
 
 /**
  * Shell HTML à la marque. 🔴 `bodyHtml` est inséré tel quel : l'appelant échappe les données non fiables qu'il y met
@@ -42,14 +56,17 @@ export interface BrandedEmailInput {
  */
 export function renderBrandedEmail(input: BrandedEmailInput): string {
   const { title, bodyHtml, ctaLabel, ctaUrl, preheader, footnote } = input;
+  const phrases = input.phrases ?? PHRASES_INVITATION;
   const safeTitle = escapeHtml(title);
-  const safeCtaLabel = escapeHtml(ctaLabel);
-  const safeCtaUrl = escapeHtml(ctaUrl);
   const pre = preheader ? escapeHtml(preheader) : '';
   const foot = footnoteBlock(footnote);
+  const bouton = ctaLabel && ctaUrl ? blocBouton(escapeHtml(ctaLabel), escapeHtml(ctaUrl), escapeHtml(phrases.secours)) : '';
+  const desinscription = input.desinscription
+    ? `<p style="margin:8px 0 0 0;font-family:${FONT};font-size:12px;line-height:18px;color:${MUTED};"><a href="${escapeHtml(input.desinscription.url)}" target="_blank" style="color:${MUTED};text-decoration:underline;">${escapeHtml(input.desinscription.texte)}</a></p>`
+    : '';
 
   return `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml" lang="fr">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="${phrases.lang}">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -97,7 +114,26 @@ ${pre ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hid
             <div style="font-family:${FONT};font-size:15px;line-height:23px;color:${INK};">${bodyHtml}</div>
           </td>
         </tr>
-        <!-- Bouton CTA (table-based) -->
+${bouton}
+        <!-- Pied -->
+        <tr>
+          <td style="padding:20px 32px 28px 32px;border-top:1px solid ${BORDER};background-color:${CARD_BG};">
+            ${foot}
+            <p style="margin:0;font-family:${FONT};font-size:12px;line-height:18px;color:${MUTED};">${escapeHtml(phrases.pied)}</p>
+            ${desinscription}
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>`;
+}
+
+/** Le bouton (en table, pas de <button>) et son repli en lien clair. Les trois valeurs arrivent échappées. */
+function blocBouton(safeCtaLabel: string, safeCtaUrl: string, secours: string): string {
+  return `        <!-- Bouton CTA (table-based) -->
         <tr>
           <td style="padding:20px 32px 8px 32px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0">
@@ -112,22 +148,9 @@ ${pre ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hid
         <!-- Repli lien en clair -->
         <tr>
           <td style="padding:12px 32px 24px 32px;">
-            <p style="margin:0;font-family:${FONT};font-size:12px;line-height:18px;color:${MUTED};">Si le bouton ne fonctionne pas, copie ce lien dans ton navigateur :<br /><a href="${safeCtaUrl}" target="_blank" style="color:${BLUE};text-decoration:underline;word-break:break-all;">${safeCtaUrl}</a></p>
+            <p style="margin:0;font-family:${FONT};font-size:12px;line-height:18px;color:${MUTED};">${secours}<br /><a href="${safeCtaUrl}" target="_blank" style="color:${BLUE};text-decoration:underline;word-break:break-all;">${safeCtaUrl}</a></p>
           </td>
-        </tr>
-        <!-- Pied -->
-        <tr>
-          <td style="padding:20px 32px 28px 32px;border-top:1px solid ${BORDER};background-color:${CARD_BG};">
-            ${foot}
-            <p style="margin:0;font-family:${FONT};font-size:12px;line-height:18px;color:${MUTED};">Messaging Me, Business Agent WhatsApp. Si tu n'attendais pas ce message, tu peux l'ignorer.</p>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>
-</body>
-</html>`;
+        </tr>`;
 }
 
 /** Bloc de note de pied (durée de validité...) : rendu seulement si fourni. */

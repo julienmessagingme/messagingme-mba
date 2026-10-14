@@ -2913,7 +2913,24 @@ boîte par sous-menu.
   qu'il ne s'est rien passé.
 - ✅ **Export CSV** des deux journaux.
 
+## Les e-mails de Messaging Me aux administrateurs
+
+- ✅ **Un seul chemin pour tous les e-mails envoyés aux espaces** (2026-10-14) : ils partent aux administrateurs qui
+  se sont déjà connectés (une invitation pas encore acceptée ne reçoit rien), dans la langue de chacun, celle qu'il a
+  choisie dans la console (français par défaut). Un e-mail raté chez le prestataire d'envoi est réessayé, et le même
+  e-mail ne part jamais deux fois pour la même occasion.
+- ✅ **Ce qui part aujourd'hui** : le crédit IA épuisé (une fois par jour au plus), le numéro fourni suspendu, le
+  rappel deux jours avant sa libération, sa libération, et l'annonce de la suite du numéro à la fin du Pro.
+- ✅ **Mon compte, « E-mails de Messaging Me »** : la langue des e-mails, et deux familles qu'on peut couper ou
+  rétablir (les conversations qui attendent l'équipe, les e-mails d'information). Chacun de ces e-mails porte aussi un
+  lien pour ne plus les recevoir. Les alertes de service (crédit, numéro, limites) partent toujours.
+
 ## Exploitation `/ops` (interne, hors console client)
+
+- ✅ **La section « E-mails »** (lot 7, 2026-10-14) : chaque e-mail que le produit envoie aux espaces, avec ses
+  chiffres du mois (envoyés, échecs, ouverts, cliqués), un interrupteur, et ses textes français et anglais à modifier
+  (sujet, texte, bouton, avec les variables proposées), un aperçu et un essai envoyé à sa propre adresse. Une note dit
+  pourquoi chaque changement ; une variable inconnue est refusée avant d'être enregistrée.
 
 - ✅ **Prévenu avant que ça casse** (lot 14, 2026-10-12) : une alerte Telegram quand une file de travail prend du
   retard (une minute sur la réception des messages, cinq ailleurs), quand la réception des messages de Meta ralentit,

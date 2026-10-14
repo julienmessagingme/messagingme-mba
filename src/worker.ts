@@ -117,8 +117,9 @@ import { PgAbonnementsNumeroStore } from './stripe/abonnements.pg';
 import { PgLiberationStore } from './numero/liberation.pg';
 import { creerAvisAbonnement } from './numero/avis-abonnement';
 import { creerClientDidww } from './didww/client';
-import { PgAlertesCreditStore } from './repondeur/alerte-credit';
-import { ResendClient } from './support/resend';
+import { creerTravailEmail, reprendreLesEnvois } from './emails-produit/envoi';
+import { FILE_EMAILS_PRODUIT } from './emails-produit/emission';
+import { adressesPubliques } from './lib/adresses-publiques';
 import { creerPierreTombale } from './ops/espaces-supprimes.pg';
 import { PgAbonnementsOffreStore } from './offres/abonnements-offre.pg';
 import { commissionPour } from './offres/commission';
@@ -203,6 +204,7 @@ export async function demarrerWorker(): Promise<void> {
     heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
     journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub, connexionPub,
     publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, alerteCredit, numeroBloqueDeLEspace, offres,
+    emailsProduit, emetteurEmails, envoyeurProduit,
   } = construireSocle({ pool, queue, config });
   // La commission sur le crédit IA, celle de l'offre de l'espace (lot 6, C) : le cerveau des tours d'agent la lit.
   const commissionDeLEspace = commissionPour(offres);
@@ -852,6 +854,33 @@ export async function demarrerWorker(): Promise<void> {
     log: (m) => console.warn(m),
   }), { concurrency: 8, groupConcurrency: 4 });
 
+  /**
+   * Les e-mails du produit (lot 7, `src/emails-produit/`) : un job = une tentative d'un envoi du journal, qui relit
+   * l'interrupteur, la désinscription, la langue et le texte de `/ops` au moment d'envoyer. Groupés par espace. La
+   * reprise, toutes les cinq minutes, remet en file les envois jamais enfilés et ceux dont l'heure du prochain essai
+   * est passée : c'est le seul moteur des réessais (pas de job différé).
+   */
+  const enfilerEmail = (job: { envoiId: string; tenantId: string; tentative: number }) =>
+    queue.enqueue(FILE_EMAILS_PRODUIT, job, { groupId: job.tenantId });
+  await queue.work(FILE_EMAILS_PRODUIT, creerTravailEmail({
+    pourEnvoi: (t, id) => emailsProduit.pourEnvoi(t, id),
+    prendre: (t, id, tentative) => emailsProduit.prendre(t, id, tentative),
+    noterEnvoye: (t, id, resendId) => emailsProduit.noterEnvoye(t, id, resendId),
+    noterEchec: (t, id, raison, le) => emailsProduit.noterEchec(t, id, raison, le),
+    noterIgnore: (t, id, raison) => emailsProduit.noterIgnore(t, id, raison),
+    actif: (cle) => emailsProduit.actif(cle),
+    texteModifie: (cle, langue) => emailsProduit.texteModifie(cle, langue),
+    envoyer: envoyeurProduit,
+    secretDesinscription: config.AUTH_SECRET,
+    baseApi: adressesPubliques(config.APP_URL, config.PUBLIC_API_URL).avecPrefixe,
+  }), { concurrency: 2, groupConcurrency: 1 });
+  taches.programmer('emails-produit-reprise', 5 * 60_000, async () => {
+    const n = await reprendreLesEnvois({ aReprendre: (l) => emailsProduit.aReprendre(l), enfiler: enfilerEmail });
+    // eslint-disable-next-line no-console
+    if (n > 0) console.log(`emails-produit-reprise: ${n} envoi(s) remis en file`);
+    return n;
+  }, { immediat: true, enEchec: echecDeBalayage('emails-produit-reprise', 'sweeper:emails-produit-reprise') });
+
   // File analyze-conversation : inerte tant que CONVERSATION_ANALYSIS_ENABLED != 'true' (aucun worker, aucun
   // balayage, aucun appel LLM).
   if (config.CONVERSATION_ANALYSIS_ENABLED === 'true') {
@@ -1070,13 +1099,9 @@ export async function demarrerWorker(): Promise<void> {
   // La clé DIDWW du worker (livraison B) : la même que l'API, limitée à l'adresse du VPS. Absente, une libération qui
   // doit résilier échoue, se signale, et se rejoue.
   const clientDidww = config.DIDWW_API_KEY ? creerClientDidww({ cle: config.DIDWW_API_KEY, url: config.DIDWW_API_URL }) : null;
-  const adminsDesEspaces = new PgAlertesCreditStore(pool);
+  // Les avis passent par les e-mails du produit (lot 7) : réservés au journal, envoyés par la file `emails-produit`.
   const mailsAbonnement = creerAvisAbonnement({
-    admins: (t) => adminsDesEspaces.admins(t),
-    fuseau: async (t) => (await settingsStore.get(t)).timezone,
-    envoyer: config.RESEND_API_KEY
-      ? async (m) => { await new ResendClient(config.RESEND_API_KEY).send({ from: `Messaging Me <${config.SUPPORT_FROM}>`, ...m }); }
-      : null,
+    emettre: (e) => emetteurEmails.emettre(e),
     pageNumero: `${config.APP_URL.trim().replace(/\/+$/, '')}/connecter-whatsapp`,
     pageOffre: `${config.APP_URL.trim().replace(/\/+$/, '')}/offre`,
     avisDejaParti: (abonnementId, avis) => abonnementsDuNumero.avisDejaParti(abonnementId, avis),
@@ -1412,6 +1437,8 @@ export async function demarrerWorker(): Promise<void> {
     const joursJournal = (o: keyof typeof DROITS): number => DROITS[o].limites.journalWebhooksJours ?? 36_500;
     await etape('webhooks-sortants', 'envoi(s) de webhook sortant effacé(s) (durée de l’offre)',
       () => envoisEvenements.purger({ base: joursJournal('base'), pro: joursJournal('pro'), entreprise: joursJournal('entreprise') }));
+    // Le journal des e-mails du produit (lot 7) : treize mois, pour comparer un mois à celui de l'an passé.
+    await etape('emails-produit', 'envoi(s) d’e-mail du produit effacé(s) (au-delà de 13 mois)', () => emailsProduit.purgerAnciens());
     // Les étapes sont indépendantes et chacune a déjà journalisé et alerté ; la passe lève à la fin pour que la
     // mesure de `/ops` la compte en échec au lieu d'afficher « succès, 0 ligne ».
     if (enEchec.length > 0) throw new Error(`étape(s) en échec : ${enEchec.join(', ')}`);

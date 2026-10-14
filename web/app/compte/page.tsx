@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import {
   changePassword, lireSecondFacteur, enrolerMoi, activerMoi, regenererCodesSecours, desactiverSecondFacteur, estCodeRefuse,
-  type EtatSecondFacteur, type CleTotp,
+  lirePreferencesEmails, ecrirePreferencesEmails,
+  type EtatSecondFacteur, type CleTotp, type PreferencesEmails,
 } from '@/lib/api';
 import { getSession, type Session } from '@/lib/session';
 import { useT, useLocale } from '@/lib/i18n';
@@ -72,7 +73,87 @@ function Compte({ session }: { session: Session }) {
 
       {/* En observation, la session n'a pas d'identité à elle : rien à montrer. */}
       {!getSession()?.observation && <DoubleAuthentification />}
+      {!getSession()?.observation && <EmailsDuProduit tenantId={session.tenantId} />}
     </div>
+  );
+}
+
+/** Une réponse du serveur qui a bien la forme attendue : une API plus ancienne, ou une réponse vide, masque la section. */
+function estPreferences(p: unknown): p is PreferencesEmails {
+  const o = p as Partial<PreferencesEmails> | null;
+  return o !== null && typeof o === 'object' && (o.langue === 'fr' || o.langue === 'en')
+    && typeof o.commerciaux === 'boolean' && typeof o.transferts === 'boolean';
+}
+
+/**
+ * LES E-MAILS DE MESSAGING ME POUR LA PERSONNE CONNECTÉE (lot 7) : leur langue, et les deux familles qu'elle peut
+ * couper (les e-mails d'information, les transferts d'une conversation à l'équipe) ; un lien de désinscription d'un
+ * e-mail coupe la même chose, ici on la rétablit. Les alertes de service (crédit, numéro, limites) partent toujours,
+ * et la phrase le dit. Masquée si l'API n'a pas encore la route.
+ */
+function EmailsDuProduit({ tenantId }: { tenantId: string }) {
+  const t = useT();
+  const [prefs, setPrefs] = useState<PreferencesEmails | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [enCours, setEnCours] = useState(false);
+
+  useEffect(() => {
+    let vivant = true;
+    lirePreferencesEmails(tenantId)
+      .then((p) => { if (vivant && estPreferences(p)) setPrefs(p); })
+      .catch(() => { /* masquée : une API plus ancienne n'a pas la route */ });
+    return () => { vivant = false; };
+  }, [tenantId]);
+
+  async function changer(maj: Partial<PreferencesEmails>): Promise<void> {
+    setEnCours(true);
+    setErreur(null);
+    try {
+      const p = await ecrirePreferencesEmails(tenantId, maj);
+      if (estPreferences(p)) setPrefs(p);
+    } catch (err) {
+      setErreur(err instanceof Error ? err.message : t('Enregistrement impossible.', 'Could not save.'));
+    } finally {
+      setEnCours(false);
+    }
+  }
+
+  if (prefs === null) return null;
+  return (
+    <section className="mt-6 max-w-md space-y-4 rounded-carte border border-ink-200 bg-white p-6" data-testid="emails-bloc">
+      <h2 className="text-sm font-semibold text-ink-900">{t('E-mails de Messaging Me', 'Messaging Me e-mails')}</h2>
+      <div>
+        <label htmlFor="emails-langue" className="mb-1 block text-sm font-medium text-ink-900">{t('Langue des e-mails', 'E-mail language')}</label>
+        <select
+          id="emails-langue" value={prefs.langue} disabled={enCours} className={inputCls} data-testid="emails-langue"
+          onChange={(e) => { void changer({ langue: e.target.value === 'en' ? 'en' : 'fr' }); }}
+        >
+          <option value="fr">Français</option>
+          <option value="en">English</option>
+        </select>
+      </div>
+      <label className="flex items-start gap-2 text-sm text-ink-900">
+        <input
+          type="checkbox" className="mt-1" checked={prefs.transferts} disabled={enCours} data-testid="emails-transferts"
+          onChange={(e) => { void changer({ transferts: e.target.checked }); }}
+        />
+        <span>{t('Me prévenir quand une conversation attend l’équipe', 'Tell me when a conversation is waiting for the team')}</span>
+      </label>
+      <label className="flex items-start gap-2 text-sm text-ink-900">
+        <input
+          type="checkbox" className="mt-1" checked={prefs.commerciaux} disabled={enCours} data-testid="emails-commerciaux"
+          onChange={(e) => { void changer({ commerciaux: e.target.checked }); }}
+        />
+        <span>{t('Recevoir les e-mails d’information (bienvenue, conseils, récapitulatif)', 'Receive news e-mails (welcome, tips, summary)')}</span>
+      </label>
+      <p className="text-xs text-ink-500">
+        {t(
+          'Les alertes de service (crédit IA, numéro, limites de l’offre) partent toujours aux administrateurs : elles disent quand un geste est nécessaire.',
+          'Service alerts (AI credit, number, plan limits) are always sent to administrators: they say when action is needed.',
+        )}
+      </p>
+      {erreur && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{erreur}</p>}
+    </section>
   );
 }
 

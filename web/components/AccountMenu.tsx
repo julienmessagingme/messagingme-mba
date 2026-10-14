@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { saveSession, pageDArrivee, type Session } from '@/lib/session';
-import { getMe, getEspaces, changerEspace, type EspaceDuCompte } from '@/lib/api';
+import { getMe, getEspaces, changerEspace, ecrirePreferencesEmails, type EspaceDuCompte } from '@/lib/api';
 import { useT, useLocale } from '@/lib/i18n';
 import { Icone } from '@/components/Icone';
 import { useOffre } from '@/lib/use-offre';
@@ -144,14 +144,19 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
             {actuel && <div className="truncate text-xs text-ink-700" data-testid="menu-espace-actuel">{actuel.tenantName}</div>}
             <div className="text-xs text-ink-500">{libelleRole(session.role, t)}</div>
           </div>
-          {/* Langue de l'interface (FR/EN), mémorisée par navigateur. */}
+          {/* Langue de l'interface (FR/EN), mémorisée par navigateur. Le serveur la retient aussi pour les e-mails du
+              produit (lot 7) : sur ce geste seulement, et sans attendre ni rien dire si l'API ne l'a pas encore. Pas
+              en observation : cette session n'a pas d'identité à elle. */}
           <div className="flex items-center justify-between border-b border-ink-100 px-3 py-2">
             <span className="text-xs text-ink-500">{t('Langue', 'Language')}</span>
             <div className="inline-flex overflow-hidden rounded-controle border border-ink-200 text-xs">
               {(['fr', 'en'] as const).map((l) => (
                 <button
                   key={l}
-                  onClick={() => setLocale(l)}
+                  onClick={() => {
+                    setLocale(l);
+                    if (!session.observation) void ecrirePreferencesEmails(session.tenantId, { langue: l }).catch(() => {});
+                  }}
                   aria-pressed={locale === l}
                   className={`px-2 py-0.5 font-medium transition-colors duration-150 ${locale === l ? 'bg-brand-600 text-white' : 'text-ink-500 hover:bg-ink-50'}`}
                 >

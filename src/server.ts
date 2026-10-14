@@ -113,6 +113,10 @@ import { registerOffre, type OffreRouteDeps } from './http/offre';
 import { registerOffrePaiement, type OffrePaiementRouteDeps } from './http/offre-paiement';
 import { registerOpsOffre, type OpsOffreDeps } from './http/ops-offre';
 import { registerOpsNumeros, type OpsNumerosDeps } from './http/ops-numeros';
+import { registerOpsEmails, type OpsEmailsDeps } from './http/ops-emails';
+import { registerResendWebhook, type ResendWebhookRouteDeps } from './http/webhook-resend';
+import { registerDesinscriptionEmails, type DesinscriptionRouteDeps } from './http/emails-desinscription';
+import { registerEmailsMoi, type EmailsMoiDeps } from './http/emails-moi';
 import { registerOpsSuppression, type OpsSuppressionDeps } from './http/ops-suppression';
 import { registerOtpPont, type OtpPontRouteDeps } from './http/otp-pont';
 import { MetaApiError } from './meta/errors';
@@ -449,6 +453,14 @@ export interface ServerDeps {
   offrePaiement?: OffrePaiementRouteDeps;
   /** La suppression définitive d'un espace par l'exploitation (RC8, `/ops/espaces/:tenantId`). */
   opsSuppression?: OpsSuppressionDeps;
+  /** Les e-mails du produit dans `/ops` (lot 7, `/ops/emails`). */
+  opsEmails?: OpsEmailsDeps;
+  /** Le webhook signé de Resend (lot 7, `/webhooks/resend`) : livrés, ouverts, cliqués, rebonds, plaintes. */
+  resendWebhook?: ResendWebhookRouteDeps;
+  /** Le lien de désinscription des e-mails du produit (lot 7, `/e/desinscription/:code`). */
+  desinscriptionEmails?: DesinscriptionRouteDeps;
+  /** La langue et les abonnements de la personne connectée (lot 7, `/tenants/:tenantId/moi/emails`). */
+  emailsMoi?: EmailsMoiDeps;
 }
 
 /**
@@ -661,11 +673,15 @@ export function modulesDeRoutes(
     entree('opsOffre', 'session-ops', deps.opsOffre, (app, d, g) => registerOpsOffre(app, d, g.ops)),
     // La réserve de numéros fournis (lot 3a) : même autorité que `/ops`, dans un module à part.
     entree('opsNumeros', 'session-ops', deps.opsNumeros, (app, d, g) => registerOpsNumeros(app, d, g.ops)),
+    // Les e-mails du produit (lot 7) : leurs textes, interrupteurs et chiffres, pour tous les espaces.
+    entree('opsEmails', 'session-ops', deps.opsEmails, (app, d, g) => registerOpsEmails(app, d, g.ops)),
     // La suppression définitive d'un espace (RC8) : même autorité que `/ops`, dans un module à part.
     entree('opsSuppression', 'session-ops', deps.opsSuppression, (app, d, g) => registerOpsSuppression(app, d, g.ops)),
     // Redirection des liens tracés : publique (un destinataire clique depuis WhatsApp, sans session), montée
     // avant les gardes d'auth.
     entree('links', 'code-url', deps.links, (app, d) => registerLinks(app, d)),
+    // Le lien de désinscription d'un e-mail du produit (lot 7) : le jeton signé de l'adresse, pour une catégorie.
+    entree('desinscriptionEmails', 'code-url', deps.desinscriptionEmails, (app, d) => registerDesinscriptionEmails(app, d)),
     // Le script de la bulle WhatsApp : public aussi (le navigateur d'un visiteur le charge depuis le site d'un
     // client), autorisé par le code opaque de l'URL. Une balise posée est une porte à sens unique.
     entree('widgetPublic', 'code-url', deps.widgetPublic, (app, d) => registerWidgetPublic(app, d)),
@@ -709,6 +725,8 @@ export function modulesDeRoutes(
     entree('hubspotEvents', 'signature-service', deps.hubspotEvents, (app, d) => registerHubspotEvents(app, d)),
     // Le webhook de Stripe : autorité = la signature du corps brut, vérifiée dans le module avant toute lecture.
     entree('stripeWebhook', 'signature-service', deps.stripeWebhook, (app, d) => registerStripeWebhook(app, d)),
+    // Ce que deviennent les e-mails du produit (lot 7), signé par Resend (Svix).
+    entree('resendWebhook', 'signature-service', deps.resendWebhook, (app, d) => registerResendWebhook(app, d)),
     // Le pont du code (lot 3a) : l'Asterisk du VPS y poste chaque enregistrement, signé avec `OTP_PONT_SECRET`.
     entree('otpPont', 'signature-service', deps.otpPont, (app, d) => registerOtpPont(app, d)),
     entree('stats', 'tenant', deps.stats, (app, d, g) => registerStats(app, d, g.admin), fonctionDesStatistiques),
@@ -857,6 +875,8 @@ export function modulesDeRoutes(
      * par sa clé). Leur autorité est celle de la connexion, `deps.auth`, lue au montage : `buildServer` refuse de
      * démarrer un module d'espace sans elle, elle est donc là chaque fois que ce module se monte.
      */
+    // La langue et les abonnements d'e-mails de la personne connectée (lot 7), pour « Mon compte ».
+    entree('emailsMoi', 'tenant', deps.emailsMoi, (app, d, g) => registerEmailsMoi(app, d, g.auth)),
     entree('me', 'tenant', deps.me, (app, d, g) => {
       registerMe(app, d, g.auth);
       if (deps.auth) registerEspaces(app, deps.auth, g.auth);

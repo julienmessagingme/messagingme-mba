@@ -638,3 +638,83 @@ export function deleteUser(tenantId: string, userId: string): Promise<{ id: stri
 export function reinitialiserSecondFacteur(tenantId: string, userId: string, motDePasse: string): Promise<{ id: string; mfaReinitialise: boolean }> {
   return request(`/tenants/${tenantId}/users/${userId}/mfa`, { method: 'DELETE', body: JSON.stringify({ motDePasse }) });
 }
+
+// ------------------------------------------------------------------------------------------------------------------
+// Les e-mails du produit (lot 7)
+// ------------------------------------------------------------------------------------------------------------------
+
+/** La langue des e-mails de la personne connectée, et ses deux abonnements (`/tenants/:tenantId/moi/emails`). */
+export interface PreferencesEmails {
+  langue: 'fr' | 'en';
+  /** Les e-mails d'information de Messaging Me (bienvenue, conseils, récapitulatif). */
+  commerciaux: boolean;
+  /** Les e-mails « une conversation attend votre équipe ». */
+  transferts: boolean;
+}
+
+export function lirePreferencesEmails(tenantId: string): Promise<PreferencesEmails> {
+  return request<PreferencesEmails>(`/tenants/${tenantId}/moi/emails`);
+}
+
+export function ecrirePreferencesEmails(tenantId: string, maj: Partial<PreferencesEmails>): Promise<PreferencesEmails> {
+  return request<PreferencesEmails>(`/tenants/${tenantId}/moi/emails`, { method: 'PUT', body: JSON.stringify(maj) });
+}
+
+/** Un texte d'e-mail : un sujet, des paragraphes séparés par une ligne vide, un bouton facultatif. */
+export interface TexteEmailOps {
+  sujet: string;
+  corps: string;
+  bouton: { libelle: string; lien: string } | null;
+}
+
+export interface ChiffresEmailOps {
+  emis: number;
+  envoyes: number;
+  echecs: number;
+  ignores: number;
+  livres: number;
+  ouverts: number;
+  cliques: number;
+  rebonds: number;
+  plaintes: number;
+}
+
+/** Un modèle d'e-mail du produit, tel que la section « E-mails » de `/ops` le lit. */
+export interface ModeleEmailOps {
+  cle: string;
+  categorie: 'service' | 'transfert' | 'commercial';
+  nom: string;
+  quand: string;
+  variables: Array<{ nom: string; description: string; forme: 'texte' | 'date' | 'lien' }>;
+  actif: boolean;
+  interrupteur: { par: string; le: string } | null;
+  textes: Record<'fr' | 'en', { origine: TexteEmailOps; modifie: (TexteEmailOps & { par: string; le: string }) | null }>;
+  chiffres: ChiffresEmailOps;
+}
+
+export function lireEmailsOps(sessionOps: string): Promise<{ modeles: ModeleEmailOps[]; essaiPossible: boolean }> {
+  return appelOps(sessionOps, '/ops/emails');
+}
+
+/** Enregistrer un texte. `note` est OBLIGATOIRE : elle dit pourquoi, le serveur signe de l'adresse de l'exploitant. */
+export function ecrireTexteEmailOps(sessionOps: string, cle: string, langue: 'fr' | 'en', texte: TexteEmailOps, note: string): Promise<{ ok: true }> {
+  return appelOps(sessionOps, `/ops/emails/${encodeURIComponent(cle)}/${langue}`, { method: 'PUT', corps: { ...texte, note } });
+}
+
+export function retablirTexteEmailOps(sessionOps: string, cle: string, langue: 'fr' | 'en', note: string): Promise<{ ok: true; etait: boolean }> {
+  return appelOps(sessionOps, `/ops/emails/${encodeURIComponent(cle)}/${langue}/retablir`, { method: 'POST', corps: { note } });
+}
+
+export function poserInterrupteurEmailOps(sessionOps: string, cle: string, actif: boolean, note: string): Promise<{ ok: true; actif: boolean }> {
+  return appelOps(sessionOps, `/ops/emails/${encodeURIComponent(cle)}/actif`, { method: 'PUT', corps: { actif, note } });
+}
+
+/** L'aperçu d'un brouillon (ou du texte en vigueur sans `texte`), rendu avec les valeurs d'exemple. N'écrit rien. */
+export function apercuEmailOps(sessionOps: string, cle: string, langue: 'fr' | 'en', texte?: TexteEmailOps): Promise<{ sujet: string; text: string; html: string }> {
+  return appelOps(sessionOps, `/ops/emails/${encodeURIComponent(cle)}/apercu`, { method: 'POST', corps: { langue, ...(texte ? { texte } : {}) } });
+}
+
+/** L'essai, envoyé à l'adresse de l'exploitant connecté et à elle seule. */
+export function essaiEmailOps(sessionOps: string, cle: string, langue: 'fr' | 'en', texte?: TexteEmailOps): Promise<{ ok: true; a: string }> {
+  return appelOps(sessionOps, `/ops/emails/${encodeURIComponent(cle)}/essai`, { method: 'POST', corps: { langue, ...(texte ? { texte } : {}) } });
+}

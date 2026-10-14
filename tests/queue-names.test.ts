@@ -8,6 +8,7 @@ import {
 import { FILE_SIGNAUX_BATCH } from '../src/signaux/batch';
 import { FILE_EVENEMENTS_DISTRIBUTION } from '../src/evenements/distribution';
 import { FILE_EVENEMENTS_ENVOI } from '../src/evenements/envoi';
+import { FILE_EMAILS_PRODUIT } from '../src/emails-produit/emission';
 
 /**
  * Garde-fou anti-drift : /ops, pg-boss et le worker doivent voir la MÊME liste de files. Si on ajoute une file
@@ -42,6 +43,7 @@ describe('queue names (source unique)', () => {
       if (name === 'FILE_SIGNAUX_BATCH') return FILE_SIGNAUX_BATCH;
       if (name === 'FILE_EVENEMENTS_DISTRIBUTION') return FILE_EVENEMENTS_DISTRIBUTION;
       if (name === 'FILE_EVENEMENTS_ENVOI') return FILE_EVENEMENTS_ENVOI;
+      if (name === 'FILE_EMAILS_PRODUIT') return FILE_EMAILS_PRODUIT;
       throw new Error(`constante de file inconnue du test : ${name} (ajoute sa résolution ici)`);
     });
     const worked = [...new Set([...literals, ...resolved])];
@@ -64,6 +66,7 @@ describe('queue names (source unique)', () => {
       FILE_SIGNAUX_BATCH,
       FILE_EVENEMENTS_DISTRIBUTION,
       FILE_EVENEMENTS_ENVOI,
+      FILE_EMAILS_PRODUIT,
     };
     const resolus = new Set([...literals, ...viaConst.map((n) => RESOLUTION[n] ?? n)]);
     for (const q of BASE_QUEUES) {

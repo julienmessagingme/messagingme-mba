@@ -65,6 +65,7 @@ import type { PreHandler } from '../src/auth/middleware';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { HubspotEventRouteDeps } from '../src/http/hubspot-events';
 import type { StripeWebhookRouteDeps } from '../src/http/credit-stripe';
+import type { ResendWebhookRouteDeps } from '../src/http/webhook-resend';
 import type { OtpPontRouteDeps } from '../src/http/otp-pont';
 import type { ContactVitrineDeps } from '../src/http/contact-vitrine';
 import type { OpenapiRouteDeps } from '../src/http/openapi';
@@ -292,6 +293,18 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
   } satisfies OtpPontRouteDeps,
   // La réserve de numéros fournis : même session d'exploitation que `/ops`, vérifiée avant toute dépendance.
   opsNumeros: inconnu('opsNumeros'),
+  // Les e-mails du produit dans /ops (lot 7) : même session d'exploitation, vérifiée avant toute dépendance.
+  opsEmails: inconnu('opsEmails'),
+  // Le lien de désinscription (lot 7) : la vérification du jeton est la dépendance que la sonde 11 atteint ; elle ne
+  // reconnaît aucun code, donc rien ne se désinscrit.
+  desinscriptionEmails: inconnu('desinscriptionEmails'),
+  // Le webhook de Resend (lot 7) : un VRAI secret (au format Svix), et un journal qui ne note rien. Une signature
+  // fausse ou absente doit tomber avant lui (sonde 12).
+  resendWebhook: {
+    secret: `whsec_${Buffer.from(SECRET_SERVICE, 'hex').toString('base64')}`,
+    noterEvenement: async () => { throw new Error('auto-attaque : le journal n’est jamais atteint'); },
+    desinscrireDesCommerciaux: async () => { throw new Error('auto-attaque : aucune désinscription'); },
+  } satisfies ResendWebhookRouteDeps,
   // Clé d'API : aucune clé ne se résout. `inconnu()` étant une fonction, donc une valeur vraie, les quatre
   // montages de l'entrée (`/v1`, les envois, `/mcp`, le relais du Meta Business Agent) ont bien lieu.
   v1: inconnu('v1'),

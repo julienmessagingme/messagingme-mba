@@ -29,6 +29,7 @@ import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
 import { Nd } from '@/components/Nd';
 import { lireConservation, conservationPeutPurger } from '@/lib/ops-offre';
+import { OpsEmailsCard } from '@/components/OpsEmailsCard';
 
 /**
  * LA CONSOLE D'EXPLOITATION, NOMINATIVE (plan `docs/superpowers/plans/2026-09-28-ops-nominatif.md`).
@@ -199,6 +200,8 @@ export default function OpsPage() {
             <GrillePrixCard token={session.token} />
 
             <NumerosFournisCard token={session.token} />
+
+            <OpsEmailsCard token={session.token} />
 
             <TenantTable
               onObserver={(id, nom) => { void observer(id, nom); }}

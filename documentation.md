@@ -150,7 +150,8 @@ minuteries (`tests/worker-import.test.ts`). Lancer `src/worker.ts` directement n
   points sont du SVG écrit à la main.
 - **Auth** : JWT (jose HS256), scrypt asynchrone, session dans un en-tête `Authorization`, jamais un cookie.
 - **E-mail** : deux chemins sans rapport. **Resend** pour les mails du produit (support, formulaire de contact de
-  la vitrine, invitation, réinitialisation), destinataire et expéditeur fixés côté serveur. **nodemailer / SMTP par workspace** pour le
+  la vitrine, invitation, réinitialisation, et les e-mails aux admins des espaces de `src/emails-produit/`, § 6),
+  destinataire et expéditeur fixés côté serveur. **nodemailer / SMTP par workspace** pour le
   CANAL e-mail du builder, boîte déclarée par le client, mot de passe chiffré au repos.
 
 ### Comment le navigateur trouve l'API
@@ -173,8 +174,9 @@ Où regarder avant de modifier quoi que ce soit.
 | **Scénarios** | le graphe, son moteur pur, l'exécution par contact | `src/workflow/` | `/workflows` | `workflows`, `workflow_runs`, `workflow_node_events` | `wake-sweep` |
 | **Automations** | déclencher un scénario sur un événement | `src/automation/` | `/automations` | `automations`, `automation_fires` | `automation-event`, `date-sweep` |
 | **Inbox** | la conversation, son détenteur, son affectation, l'archivage | `src/inbox/` | `/inbox` | `conversations`, `conversation_messages` | `control-sweep` |
+| **E-mails du produit** | les e-mails aux admins des espaces (alertes, puis transferts et commerciaux), leurs textes et chiffres dans `/ops` | `src/emails-produit/`, `src/http/ops-emails.ts`, `src/http/webhook-resend.ts` | `/ops`, `/compte` | `emails_produit_envois`, `emails_produit_textes`, `emails_produit_interrupteurs`, `emails_produit_desinscriptions`, `identities.langue` | `emails-produit`, `emails-produit-reprise` |
 | **Traduction** | lire les entrants dans sa langue, traduire un sortant avant l'envoi | `src/traduction/` | `/inbox` | `conversation_messages` (`traduction`), `contacts` (`langue_detectee`) | |
-| **Agent IA** | un bloc de scénario qui tient la conversation seul, avec des outils, ou le répondeur de l'espace (§ 4.4) | `src/agent/`, `src/repondeur/` | `/agents` | `agents`, `agent_tools`, `agent_tool_consommateurs`, `agent_sessions`, `agent_knowledge`, `agent_credits`, `repondeur_alertes_credit` | `agent-turn` |
+| **Agent IA** | un bloc de scénario qui tient la conversation seul, avec des outils, ou le répondeur de l'espace (§ 4.4) | `src/agent/`, `src/repondeur/` | `/agents` | `agents`, `agent_tools`, `agent_tool_consommateurs`, `agent_sessions`, `agent_knowledge`, `agent_credits` (`repondeur_alertes_credit` n'est plus écrite depuis la migration 0234) | `agent-turn` |
 | **Meta Business Agent** | l'agent de META (pas le nôtre) : activation, passage de main, consignes et messages interactifs (vivent chez Meta, aucune table chez nous) | `src/mba/` | `/mba` | `tenant_settings` | `handoff-sweep` |
 | **Canal RCS** | deuxième canal, agent de marque chez smsmode | `src/rcs/`, `src/channels-me/` | `/rcs-messages`, `/chaine` | `rcs_agents`, `rcs_media` | |
 | **Canal e-mail** | troisième canal, SMTP par workspace | `src/email/` | `/email-templates` | `email_accounts`, `email_templates` | |
@@ -722,11 +724,12 @@ webhooks sortants, `repondeur_adresse_id`, 0224). Les invariants :
   d'emoji, une réaction peut arriver sans identifiant.
   Le contrôle du fil se construit avant l'exécuteur : le socle branche le démarreur par une liaison tardive qui LÈVE
   tant qu'elle n'est pas faite (`src/socle.ts`, tenue par `tests/socle.test.ts`).
-- **L'alerte de crédit épuisé** (`src/repondeur/alerte-credit.ts`) : un e-mail Resend aux admins actifs de l'espace,
-  avec le lien de recharge, une fois par jour du fuseau de l'espace au plus. 🔴 Le « une par jour » est la clé
-  primaire de `repondeur_alertes_credit` : seule l'insertion qui prend la journée envoie, quelle que soit la copie.
-  Le démarreur la déclenche, et le tour de tout agent qui sort faute de CRÉDIT (le solde, ou le plafond de la clé
-  chez le Gateway), jamais sur un plafond de conversation. Sans Resend : journalisée, rien ne part, rien n'échoue.
+- **L'alerte de crédit épuisé** (`src/repondeur/alerte-credit.ts`) : un e-mail du produit (modèle `credit_epuise`,
+  § 6) aux admins déjà connectés de l'espace, avec le lien de recharge, une fois par jour du fuseau de l'espace au
+  plus. 🔴 Le « une par jour » est l'occasion `jour:AAAA-MM-JJ` du journal des envois, unique par personne : une
+  seule réservation, quelle que soit la copie. Le démarreur la déclenche, et le tour de tout agent qui sort faute de
+  CRÉDIT (le solde, ou le plafond de la clé chez le Gateway), jamais sur un plafond de conversation.
+  `repondeur_alertes_credit` (migration 0209) n'est plus écrite depuis la migration 0234.
 - RCS : hors périmètre, le répondeur ne répond qu'aux entrants WhatsApp.
 
 ⚠️ **LE FOURNISSEUR IA N'EST PAS ENCORE INTERCHANGEABLE.** `GatewayChatClient`, le catalogue, le coût rendu
@@ -2198,6 +2201,33 @@ scelle et libère SANS jeton : une copie ancienne qui vivrait plus d'un bail à 
 écraser le scellement de celle-ci. Impossible avec une seule copie (`stop_grace_period` de 30 s, très en deçà du
 bail) ; un déploiement progressif à plusieurs copies doit garder son délai d'arrêt sous le bail.
 
+### Les e-mails du produit : la réservation est le dédoublonnage, le balayage est le réessai
+
+`src/emails-produit/` (migration 0234). Le **catalogue** des modèles vit dans le code (clé, catégorie `service`,
+`transfert` ou `commercial`, variables, textes d'origine FR et EN) ; `emails_produit_textes` ne garde que les textes
+modifiés dans `/ops` (rétablir supprime la ligne), `emails_produit_interrupteurs` les modèles coupés.
+
+- **L'émetteur** (`creerEmetteurEmails`, construit dans le socle, utilisé par l'API et le worker) réserve une ligne
+  d'`emails_produit_envois` par destinataire, unique sur `(tenant_id, cle, identity_id, occasion)`, puis enfile un
+  job `emails-produit` par ligne CRÉÉE. 🔴 Le dédoublonnage est cette contrainte : aucune file ne déduplique. Les
+  destinataires `admins` sont les admins actifs DÉJÀ connectés (`last_login_at` posé).
+- **Le travail** (`creerTravailEmail`) fait UNE tentative : il relit, AU MOMENT D'ENVOYER, l'interrupteur, la
+  désinscription de la personne (qui ne coupe jamais un modèle `service`), sa langue (`identities.langue`), son
+  appartenance active à l'espace et le texte de `/ops`. Il PREND l'envoi (`prendre` : bon numéro de tentative, et un
+  bail de dix minutes dans `prochain_essai_le`), envoie par l'expéditeur unique (`creerEnvoyeurProduit`, borné à 30 s),
+  garde l'identifiant Resend et vide les valeurs. Un 429, un 5xx ou une panne réseau laissent `a_envoyer` avec l'heure
+  du prochain essai (5 min, 15 min, 1 h, 3 h) ; un autre 4xx ou le cinquième échec passent `echec`.
+- **La reprise** (`emails-produit-reprise`, toutes les cinq minutes) remet en file les lignes `a_envoyer` créées
+  depuis plus de cinq minutes dont l'heure est passée : les mises en file perdues, les réessais et les baux échus. Son
+  `where` reprend le prédicat de l'index partiel `emails_produit_envois_a_envoyer_idx`.
+- **Le webhook de Resend** (`/webhooks/resend`, signature Svix vérifiée sur le corps brut, `RESEND_WEBHOOK_SECRET`)
+  date la livraison, l'ouverture, le clic, le rebond ou la plainte sur la ligne de l'identifiant Resend ; une plainte
+  désinscrit la personne des commerciaux. Ce sont les chiffres du mois de `/ops`.
+- **La désinscription** : un lien signé (`/e/desinscription/:code`, HMAC dérivé d'`AUTH_SECRET` pour ce seul usage),
+  dont le GET n'écrit rien et le POST (celui du bouton et de `List-Unsubscribe-Post`) coupe une catégorie pour une
+  personne ; « Mon compte » la rétablit (`/tenants/:tenantId/moi/emails`).
+- La rétention garde le journal treize mois ; il part en cascade avec l'espace et l'identité.
+
 ### Les webhooks sortants : une tentative par job, comptée dans la ligne
 
 Deux files, branchées sur le bus des signaux (`creerEmetteur`, une destination de plus, qui n'enfile que les signaux
@@ -3353,7 +3383,8 @@ l'Asterisk du VPS (`ops/otp-asterisk/`) décroche, enregistre, puis poste l'enre
   `deLEspace`) et ne fait que des gestes, chacun noté une fois dans `abonnements_numero_avis` APRÈS avoir réussi (un
   envoi raté se rejoue ; un paiement efface les avis de suspension, pour qu'une seconde suspension prévienne) :
   l'alerte Telegram et l'e-mail aux admins à la suspension, le rappel 2 jours avant la libération, la libération
-  elle-même à J+7 puis son alerte et son e-mail (`src/numero/avis-abonnement.ts`, Resend, chaque admin actif), et la
+  elle-même à J+7 puis son alerte et son e-mail (`src/numero/avis-abonnement.ts`, un e-mail du produit aux admins déjà
+  connectés, § 6 ; l'avis se note dès que son émission est réservée), et la
   levée des pauses `numero_suspendu` des espaces qui ne sont plus suspendus.
   🔴 **La libération** (`PgLiberationStore.liberer`, `src/numero/liberation.pg.ts`) tient l'abonnement (`for update
   skip locked`), le numéro fourni et le délié dans UNE transaction, appel DIDWW compris (`ClientDidww.resilier`,

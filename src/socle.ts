@@ -76,8 +76,10 @@ import { PgVerrousCourts } from './db/verrous-courts.pg';
 import { PgCompteurDebit } from './db/debit.pg';
 import { creerDemarreurRepondeur, type DemarreurRepondeur } from './repondeur/demarrer';
 import { creerDemarreurScenario, type DemarreurScenario } from './repondeur/scenario';
-import { PgAlertesCreditStore, creerAlerteCreditEpuise } from './repondeur/alerte-credit';
-import { ResendClient } from './support/resend';
+import { creerAlerteCreditEpuise } from './repondeur/alerte-credit';
+import { creerEnvoyeurProduit } from './support/resend';
+import { PgEmailsProduitStore } from './emails-produit/store.pg';
+import { creerEmetteurEmails, FILE_EMAILS_PRODUIT } from './emails-produit/emission';
 import { PgOffresStore } from './offres/offre.pg';
 import { OffresEnCache } from './offres/cache';
 import { QuotaModeles } from './offres/compteurs';
@@ -371,18 +373,27 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const runStore = new PgWorkflowRunStore(pool);
 
   /**
-   * L'alerte de crédit épuisé (`src/repondeur/alerte-credit.ts`) : une par jour et par espace, tenue en base, aux admins
-   * de l'espace par Resend (le canal des e-mails transactionnels, même expéditeur que les liens de connexion). Sans
-   * Resend, elle se journalise seulement. Le démarreur du répondeur la déclenche, le tour d'un agent aussi (worker).
+   * LES E-MAILS DU PRODUIT (lot 7, `src/emails-produit/`) : l'émetteur réserve une ligne du journal par destinataire
+   * (le dédoublonnage, en base) puis enfile un job `emails-produit` ; le worker envoie par l'expéditeur unique, borné.
+   * L'API et le worker émettent tous deux (une alerte de crédit part du démarreur du répondeur comme du tour d'un
+   * agent) : c'est pourquoi ils vivent dans le socle. Sans Resend, l'expéditeur vaut `null` et la file note `ignore`.
    */
-  const alertesCredit = new PgAlertesCreditStore(pool);
-  const alerteCredit = creerAlerteCreditEpuise({
-    marquerLeJour: (t, jour) => alertesCredit.marquerLeJour(t, jour),
+  const emailsProduit = new PgEmailsProduitStore(pool);
+  const emetteurEmails = creerEmetteurEmails({
+    adminsConnectes: (t) => emailsProduit.adminsConnectes(t),
+    reserver: (e) => emailsProduit.reserver(e),
     fuseau: async (t) => (await settingsStore.get(t)).timezone,
-    admins: (t) => alertesCredit.admins(t),
-    envoyer: config.RESEND_API_KEY
-      ? async (m) => { await new ResendClient(config.RESEND_API_KEY).send({ from: `Messaging Me <${config.SUPPORT_FROM}>`, ...m }); }
-      : null,
+    enfiler: (job) => queue.enqueue(FILE_EMAILS_PRODUIT, job, { groupId: job.tenantId }),
+  });
+  const envoyeurProduit = config.RESEND_API_KEY ? creerEnvoyeurProduit(config.RESEND_API_KEY, `Messaging Me <${config.SUPPORT_FROM}>`) : null;
+
+  /**
+   * L'alerte de crédit épuisé (`src/repondeur/alerte-credit.ts`) : une par jour et par admin, tenue par le journal des
+   * e-mails du produit. Le démarreur du répondeur la déclenche, le tour d'un agent aussi (worker).
+   */
+  const alerteCredit = creerAlerteCreditEpuise({
+    fuseau: async (t) => (await settingsStore.get(t)).timezone,
+    emettre: (e) => emetteurEmails.emettre(e),
     pageCredit: `${config.APP_URL.trim().replace(/\/+$/, '')}/parametres/credit`,
   });
 
@@ -497,6 +508,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     credits, agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver,
     wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, numeroBloqueDeLEspace, esCredentialsStore, metaCredentials, metaFactory, listeDeLAgent,
     connexionsPub, connexionPub, publicites, clientPubs, clientCreationPubs, workflowRuntime, fil, alerteCredit, offres, quotaModeles,
+    emailsProduit, emetteurEmails, envoyeurProduit,
   };
 }
 
