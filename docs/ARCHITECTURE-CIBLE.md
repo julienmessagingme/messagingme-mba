@@ -733,9 +733,11 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    Messaging Me. Au 2026-10-14, aucun workflow ne déploie quoi que ce soit chez Scaleway.
 6. **Le routage de `mba.messagingme.app` a une maison hors d'OVH** (étape 10) : le webhook de Meta arrive par lui.
 7. **Chaque conteneur de worker porte une limite de mémoire et de processeur** (§2), éprouvée d'abord sur le VPS.
-8. **La version de PostgreSQL et pgvector, lues chez Scaleway** : la production est en 17.6. Une base en 17 (les
-   versions se lisent par `scw rdb engine list`) ; sinon, la restauration d'un export 17 sur une 16, que PostgreSQL
-   ne garantit pas, se prouve sur une base jetable AVANT le jour J.
+8. **La version de PostgreSQL et les extensions** : la production est en 17.6. ✅ **PostgreSQL 17 est proposé à
+   Paris** (lu par la CLI le 2026-10-14, fin de support dans trois ans) : l'export se restaure dans la même version
+   majeure. `pg_trgm`, `unaccent`, `pgvector` (0.8.1 en 17), `pgcrypto` et `uuid-ossp` figurent dans la liste des
+   extensions des bases managées (documentation de Scaleway, revue le 2025-09-17). Reste à le prouver par
+   `npm run migrate` sur une base jetable, nos migrations créant elles-mêmes leurs extensions (`create extension`).
 9. **La reprise après sinistre réécrite pour Scaleway** (`DEPLOY.md` décrit celle de Supabase) : sauvegardes de la
    base managée relevées, une restauration chronométrée sur une base jetable, et les secrets chiffrés relus avec la
    même `ENCRYPTION_KEY`.
