@@ -24,7 +24,13 @@ Plan `docs/superpowers/plans/2026-10-14-lot6-collecteur-csp.md`. Décision de Ju
 - **L'auto-attaque l'a vue tout de suite** : une route sans session qui répond, absente de la liste `OUVERTES`, est une
   trouvaille ; elle y entre avec sa raison écrite.
 - **La CI** : le scan des failles critiques de l'image de la console devient bloquant (première mesure : 0 critique).
-- La console y pointera (`report-uri`) dans un commit suivant, APRÈS le déploiement de l'API.
+- **En production le 2026-10-14** (`8479eba7`) : 0236 appliquée et relue en base (colonnes, `CHECK` sous leur nom, clé
+  primaire), quatre conteneurs relancés sans erreur. Essai par `curl` : un rapport d'une origine étrangère et un corps
+  illisible répondent 204 sans laisser de ligne ; un rapport d'essai de `console.` et un de `mba.` (par
+  `/api/backend`) sont stockés réduits (`/essai-collecteur`, sans son `?jeton`, et la seule origine bloquée). Puis la
+  console y pointe : `report-uri` dans `web/next.config.mjs`, sur la même base que `BASE`, et
+  `web/scripts/verifier-base-api.mjs` vérifie l'adresse de production au caractère près (une barre finale de trop la
+  fait échouer : le navigateur ne suit aucune redirection).
 
 ## 2026-10-14 : la CI bloque sur les failles des dépendances de production, avec des exceptions datées (lot 6, B2)
 

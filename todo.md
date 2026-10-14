@@ -7,11 +7,12 @@ fait échouer tout e2e qui viole la CSP et joue la suite dans les deux topologie
 pour l'instant, un jeton Docker Hub (posé par Julien, branché au lot B1), et les contrôles de CI laissés au choix de
 l'implémenteur. Restent :
 
-- **Brancher la console sur le collecteur, observer, puis passer en blocage.** Le collecteur existe côté API (livraison
-  B3, plan `docs/superpowers/plans/2026-10-14-lot6-collecteur-csp.md`, table `csp_rapports`) ; la directive `report-uri`
-  de `web/next.config.mjs` y pointera APRÈS son déploiement. Puis quelques jours d'observation (lire `csp_rapports` en
-  lecture seule, dont une vraie connexion de numéro : les e2e simulent le SDK Meta), puis la clé
-  `Content-Security-Policy-Report-Only` devient `Content-Security-Policy`.
+- **Observer, puis passer en blocage.** La console envoie ses rapports au collecteur depuis le 2026-10-14 (`report-uri`,
+  table `csp_rapports`, plan `docs/superpowers/plans/2026-10-14-lot6-collecteur-csp.md`). Lire la table en lecture seule
+  à partir du 2026-10-21, après au moins une vraie connexion ou un renouvellement de numéro (les e2e simulent le SDK
+  Meta) et en écartant les deux lignes d'essai `/essai-collecteur` ; une table pleine ou des premières vues en rafale
+  rendent la lecture invalide (`documentation.md`). Puis la clé `Content-Security-Policy-Report-Only` de
+  `web/next.config.mjs` devient `Content-Security-Policy`, et la table se vide.
 - **Avant le blocage, l'aperçu d'un modèle à en-tête vidéo** : `TemplatePreview` passe à `<video>` une adresse du CDN de
   Meta (`headerMediaUrl`), que `media-src 'self' blob:` refuse ; aucun e2e ne la charge. Mesurer les hôtes qui la
   servent, puis les nommer dans `media-src` (`tests/web-csp-media.test.ts` fixe la directive à l'exact, à mettre à

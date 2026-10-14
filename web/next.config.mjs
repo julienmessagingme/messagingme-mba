@@ -15,6 +15,14 @@ const backend = process.env.BACKEND_URL || 'http://localhost:8095';
 const brute = process.env.NEXT_PUBLIC_API_URL ?? '';
 const origineApi = /^https?:\/\//.test(brute) ? new URL(brute).origin : null;
 
+/**
+ * OÙ LES NAVIGATEURS ENVOIENT LEURS RAPPORTS DE VIOLATION : le collecteur de l'API (`POST /csp-rapports`), sur la même
+ * base que `BASE` (`lib/http.ts`) : `https://api.messagingme.app/csp-rapports` sur Vercel, `/api/backend/csp-rapports`
+ * sur le VPS. ⚠️ L'adresse doit être EXACTE : le navigateur l'envoie sans suivre de redirection, une barre de trop ou un
+ * `http` perdraient tous les rapports sans bruit. `scripts/verifier-base-api.mjs` la vérifie sur le build de Vercel.
+ */
+const rapportsCsp = `${brute.replace(/\/+$/, '') || '/api/backend'}/csp-rapports`;
+
 const nextConfig = {
   // Build autonome pour un conteneur léger (server.js + deps minimales).
   output: 'standalone',
@@ -32,9 +40,9 @@ const nextConfig = {
    * porte d entree du produit. Report-Only pose la meme politique et se contente de la SIGNALER : rien ne
    * casse, et on apprend ce qui la violerait vraiment.
    *
-   * ⚠️ POUR LA PASSER EN BLOCAGE, il faut d abord une destination de rapport (`report-to`) et quelques
-   * jours d observation. Sans cette etape, on ne saurait pas ce qu on est en train d interdire. Le jour ou
-   * on bascule, c est cette meme chaine qui devient `Content-Security-Policy`.
+   * ⚠️ POUR LA PASSER EN BLOCAGE, il faut quelques jours d observation des rapports (`report-uri`, lus dans
+   * `csp_rapports`). Sans cette etape, on ne saurait pas ce qu on est en train d interdire. Le jour ou on
+   * bascule, c est cette meme chaine qui devient `Content-Security-Policy`.
    *
    * ⚠️ `Strict-Transport-Security` n est PAS ici : Vercel le pose deja sur ce domaine (mesure le
    * 2026-09-10, `max-age=63072000`). Deux sources pour une meme valeur finissent par diverger.
@@ -64,6 +72,9 @@ const nextConfig = {
       "base-uri 'self'",
       "form-action 'self'",
       "frame-ancestors 'none'",
+      // `report-uri` et pas `report-to` : compris de tous les navigateurs, sans en-tête `Reporting-Endpoints` ni
+      // requête préliminaire CORS. Les rapports se lisent dans `csp_rapports` (documentation.md, la CSP de la console).
+      `report-uri ${rapportsCsp}`,
     ].join('; ');
     return [{
       source: '/:path*',

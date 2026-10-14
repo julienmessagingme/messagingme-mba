@@ -73,3 +73,12 @@ if (!connect.split(/\s+/).includes(origine)) {
   process.exit(1);
 }
 console.log(`OK : la CSP autorise « ${origine} » (${connect}).`);
+
+// Et elle envoie ses rapports au collecteur de CETTE API, à l'adresse exacte : le navigateur ne suit aucune redirection.
+const rapports = csp.value.split(';').map((d) => d.trim()).find((d) => d.startsWith('report-uri')) ?? '';
+const attenduRapports = `report-uri ${attendue.replace(/\/+$/, '')}/csp-rapports`;
+if (rapports !== attenduRapports) {
+  console.error(`ÉCHEC : la CSP envoie ses rapports à « ${rapports || 'nulle part'} », attendu « ${attenduRapports} ».`);
+  process.exit(1);
+}
+console.log(`OK : les rapports partent vers « ${attenduRapports.slice('report-uri '.length)} ».`);

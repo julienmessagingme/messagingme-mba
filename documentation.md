@@ -2613,7 +2613,10 @@ origine. ⚠️ Playwright ne vérifie pas le CORS d'une réponse interceptée :
 
 🔴 **CE QUE LES VRAIS NAVIGATEURS SIGNALENT SE LIT DANS `csp_rapports`** (migration 0236). Les e2e ne voient que ce
 qu'ils dessinent et simulent les tiers (SDK Meta, Google Sign-In) : seuls les navigateurs des clients disent ce qu'une
-vraie session charge. Ils postent à `POST /csp-rapports` (`src/http/csp-rapports.ts`, classe `anonyme`), qui répond 204
+vraie session charge. La directive `report-uri` de `web/next.config.mjs` les envoie au collecteur, sur la même base que
+`BASE` (`https://api.messagingme.app/csp-rapports` sur Vercel, vérifiée au caractère près par
+`web/scripts/verifier-base-api.mjs` : le navigateur ne suit aucune redirection ; `/api/backend/csp-rapports` sur le VPS).
+Ils postent à `POST /csp-rapports` (`src/http/csp-rapports.ts`, classe `anonyme`), qui répond 204
 sans corps à tout corps lu (413 au-delà de 32 Ko, 415 pour un autre type) et ne retient (`src/csp/rapports.ts`) que les
 rapports d'une page de nos origines (`CORS_ORIGINS`, `APP_URL` et la console du VPS, `src/index.ts`), d'une règle de la
 liste fermée `DIRECTIVES_CSP`, réduits à la règle, l'ORIGINE bloquée (ou son mot-clé), le CHEMIN de la page sans
