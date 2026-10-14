@@ -38,6 +38,26 @@ If you had added the same server by hand before (same address, any name), Claude
 plugin's aside: no duplicate tools, your authorization stays valid. To switch to the plugin's, remove the old one with
 `claude mcp remove` followed by its name.
 
+## Data and privacy
+
+The plugin runs no code on your machine: it contains instructions for Claude (skills and a command) and declares one
+remote server, the Messaging Me MCP server at `https://api.messagingme.app/mcp`. It talks to nothing else.
+
+- **Authorization.** You sign in to Messaging Me in your browser (OAuth), as an administrator of your workspace. No key
+  or secret is stored in your files, and you can revoke the access from the console at any time.
+- **What is sent.** When Claude calls a tool at your request, the server receives that call and its arguments (for
+  example the text of a message to send, the settings of an AI agent, or the address of a website to import as
+  knowledge). It does not receive your conversations with Claude.
+- **What comes back.** The data of your workspace that the tool returns: conversations and messages, contacts,
+  templates, AI agents, statistics. Actions that change your workspace (sending a message, activating an agent,
+  opening a payment page) are marked as such, and payments always happen on Stripe's page, by you.
+- **Before you start.** A Messaging Me account (created during the setup), and for WhatsApp a Facebook account and a
+  Meta business portfolio. Messages that Meta bills are charged by Meta to your WhatsApp Business account.
+
+Messaging Me is published by Messaging Me SAS (SmartLink), Paris. Privacy policy:
+https://www.messagingme.fr/privacy-policy/. Terms of use: https://www.messagingme.fr/terms-of-use/. Support:
+https://app.messagingme.fr/contact/.
+
 ## Documentation
 
 - API and MCP: https://console.messagingme.app/developers/api

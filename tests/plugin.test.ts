@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { OUTILS } from '../src/mcp/outils';
 import { CATALOGUE_MCP } from '../web/lib/partage/catalogue-mcp';
@@ -24,6 +24,33 @@ const SKILLS = readdirSync(resolve(PLUGIN, 'skills')).map((nom) => {
   const [, entete = '', corps = ''] = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(texte) ?? [];
   const champ = (c: string) => new RegExp(`^${c}: (.*)$`, 'm').exec(entete)?.[1]?.trim();
   return { nom, entete, corps, champ };
+});
+
+describe('la fiche du répertoire de Claude (spec 2026-10-14-repertoire-claude-design.md)', () => {
+  const manifeste = () => json<Record<string, string>>('.claude-plugin/plugin.json');
+
+  it('🔴 le manifeste porte la licence, l’icône et les liens que la fiche du répertoire exige, en https', () => {
+    // La licence est BLOQUANTE à la soumission ; le reste alimente la fiche (Claude Code ignore ces champs).
+    const p = manifeste();
+    expect(p.license).toBe('MIT');
+    expect(existsSync(resolve(PLUGIN, 'LICENSE'))).toBe(true);
+    expect(p.icon).toMatch(/^\.\/[a-z-]+\.(svg|png)$/);
+    expect(existsSync(resolve(PLUGIN, p.icon))).toBe(true);
+    expect(p.displayName).toBe('Messaging Me');
+    for (const champ of ['homepage', 'documentationUrl', 'supportUrl', 'privacyPolicyUrl', 'termsOfServiceUrl']) {
+      expect(p[champ], champ).toMatch(/^https:\/\/[a-z.]+\//);
+    }
+  });
+
+  it('le README dit ce que le plugin envoie et récupère, avec les mêmes liens, en plus de 40 mots hors code', () => {
+    const p = manifeste();
+    const lisezmoi = readFileSync(resolve(PLUGIN, 'README.md'), 'utf8');
+    const horsCode = lisezmoi.replace(/```[\s\S]*?```/g, '');
+    expect(horsCode.split(/\s+/).filter(Boolean).length).toBeGreaterThan(40);
+    expect(lisezmoi).toMatch(/^## Data and privacy$/m);
+    expect(lisezmoi).toContain(p.privacyPolicyUrl);
+    expect(lisezmoi).toContain(p.termsOfServiceUrl);
+  });
 });
 
 describe('les manifestes', () => {
