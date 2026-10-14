@@ -1,0 +1,195 @@
+name: Deploiement Scaleway (API et workers)
+
+# 🔴 A LA MAIN ET APPROUVE PAR JULIEN (docs/ARCHITECTURE-CIBLE.md §10 bis, decision du 2026-10-14) :
+# `gh workflow run deploy-scaleway.yml --ref main -f migration=aucune`, puis l'approbation de l'environnement
+# `production` dans GitHub. Jamais sur un push ni sur une pull request : le depot est public.
+#
+# 🔴 LES SECRETS DE PRODUCTION N'Y PASSENT JAMAIS (§13, point 18). Julien les pose une fois : variables secretes du
+# conteneur de l'API, fichier /opt/messagingme/.env.prod de la machine des workers. Ce workflow ne change que l'IMAGE.
+# Ses deux seuls secrets ouvrent le registre et le conteneur (SCW_SECRET_KEY, application IAM `github-deploy`, sans
+# aucun droit sur les secrets) et la machine des workers par le bastion (DEPLOY_SSH_KEY).
+# `tests/deploy-scaleway.test.ts` refuse tout autre secret.
+#
+# 🔴 DEUX JOBS, SUR LE MODELE DE `plugin.yml` : `construire` execute du code tiers (le `npm ci` du Dockerfile) sans
+# aucun secret et ne produit qu'un artefact (l'image et le compose des workers) ; `deployer` n'execute rien du depot,
+# il pousse cette image et deploie.
+#
+# ⚠️ LA MIGRATION SE CHOISIT A CHAQUE LANCEMENT (`migration` : aucune, avant, apres ; le menu s'ouvre sur « choisir »,
+# refuse), parce que « avant ou apres le deploiement » se decide sur « l'ancien code survit-il ? » (CLAUDE.md), jamais
+# par routine. Elle tourne sur la machine des workers, dans le reseau prive : la base n'a pas d'adresse publique.
+#
+# ⚠️ L'ORDRE : la migration « avant », puis les workers, puis l'API (une montee de version de pg-boss se deploie
+# worker d'abord, DEPLOY.md), puis la migration « apres ». Un retour arriere = le meme workflow sur un SHA plus ancien,
+# sous la verification de DEPLOY.md contre ce que les migrations appliquees depuis ont resserre.
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: 'SHA complet a deployer ; vide = la tete de main'
+        required: false
+        default: ''
+      migration:
+        description: 'Migration de la base : aucune, avant ou apres le deploiement (obligatoire)'
+        required: true
+        type: choice
+        options: [choisir, aucune, avant, apres]
+        default: choisir
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploiement-scaleway
+  cancel-in-progress: false
+
+env:
+  REGISTRE: rg.fr-par.scw.cloud/messagingme
+  IMAGE: mba
+
+jobs:
+  construire:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      sha: ${{ steps.rev.outputs.sha }}
+    env:
+      MIGRATION: ${{ inputs.migration }}
+    steps:
+      # 🔴 LE CHOIX DE LA MIGRATION EST OBLIGATOIRE (decision de Julien du 2026-10-14) : le menu s'ouvre sur
+      # « choisir », et partir sans choix est refuse ici, avant toute construction. Un oubli de migration « avant »
+      # rejouerait la panne du 2026-08-17 (`column ... does not exist` en boucle).
+      - name: La migration a ete choisie
+        run: |
+          case "$MIGRATION" in
+            aucune|avant|apres) echo "migration : $MIGRATION" ;;
+            *) echo "::error::choisis la migration (aucune, avant ou apres) : le deploiement ne part pas sans ce choix"; exit 1 ;;
+          esac
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      # 🔴 Le depot est public, et GitHub laisse recuperer par son SHA un commit venu d'une copie (fork) : on ne
+      # deploie qu'un commit de l'histoire de `main`.
+      - name: Le commit deploye appartient a main
+        id: rev
+        run: |
+          git fetch --quiet origin main
+          git merge-base --is-ancestor HEAD origin/main || { echo "::error::$(git rev-parse HEAD) n'est pas dans l'histoire de main"; exit 1; }
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "court=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+      # Aucun secret dans ce job : le `npm ci` du Dockerfile execute du code tiers.
+      - name: Construire l'image
+        run: docker build --build-arg "REVISION=${{ steps.rev.outputs.court }}" -t "$REGISTRE/$IMAGE:${{ steps.rev.outputs.sha }}" .
+      - name: Ranger l'image et le compose des workers
+        run: |
+          mkdir livraison
+          docker save "$REGISTRE/$IMAGE:${{ steps.rev.outputs.sha }}" | gzip > livraison/image.tar.gz
+          cp ops/scaleway/docker-compose.workers.yml livraison/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: livraison
+          path: livraison/
+          retention-days: 1
+
+  deployer:
+    needs: construire
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      SHA: ${{ needs.construire.outputs.sha }}
+      MIGRATION: ${{ inputs.migration }}
+      CONTENEUR: ${{ vars.SCALEWAY_CONTAINER_ID }}
+      BASTION: ${{ vars.SCALEWAY_BASTION }}
+      WORKERS: ${{ vars.SCALEWAY_WORKERS_IP }}
+    steps:
+      - name: La configuration est-elle complete ?
+        env:
+          CLE_SCW: ${{ secrets.SCW_SECRET_KEY }}
+          CLE_SSH: ${{ secrets.DEPLOY_SSH_KEY }}
+          CONNUS: ${{ vars.SCALEWAY_KNOWN_HOSTS }}
+        run: |
+          manque=""
+          for v in CLE_SCW CLE_SSH CONNUS CONTENEUR BASTION WORKERS SHA; do [ -n "${!v}" ] || manque="$manque $v"; done
+          if [ -n "$manque" ]; then echo "::error::configuration incomplete :$manque (DEPLOY.md, section Scaleway)"; exit 1; fi
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: livraison
+      - name: Pousser l'image dans le registre prive
+        env:
+          CLE_SCW: ${{ secrets.SCW_SECRET_KEY }}
+        run: |
+          gunzip -c image.tar.gz | docker load
+          printf '%s' "$CLE_SCW" | docker login rg.fr-par.scw.cloud -u nologin --password-stdin
+          docker push "$REGISTRE/$IMAGE:$SHA"
+          docker logout rg.fr-par.scw.cloud
+      - name: Ouvrir le chemin SSH, par le bastion de la passerelle
+        env:
+          CLE_SSH: ${{ secrets.DEPLOY_SSH_KEY }}
+          CONNUS: ${{ vars.SCALEWAY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$CLE_SSH" > ~/.ssh/deploiement
+          chmod 600 ~/.ssh/deploiement
+          printf '%s\n' "$CONNUS" > ~/.ssh/known_hosts
+          {
+            echo "Host bastion"
+            echo "  HostName ${BASTION%:*}"
+            echo "  Port ${BASTION##*:}"
+            echo "  User bastion"
+            echo "  IdentityFile ~/.ssh/deploiement"
+            echo "  StrictHostKeyChecking yes"
+            echo "Host workers"
+            echo "  HostName $WORKERS"
+            echo "  User root"
+            echo "  IdentityFile ~/.ssh/deploiement"
+            echo "  ProxyJump bastion"
+            echo "  StrictHostKeyChecking yes"
+          } > ~/.ssh/config
+      # La machine tire l'image avec SA PROPRE cle de lecture du registre (posee une fois par Julien) : la cle de ce
+      # workflow ne quitte jamais le runner.
+      #
+      # 🔴 LA SORTIE DE `migrate` NE REMONTE JAMAIS EN CLAIR : le journal d'un workflow d'un depot PUBLIC est lisible par
+      # tous, et une migration qui echoue sur des donnees reelles imprime l'erreur entiere de Postgres, `detail` compris
+      # (« Key (tenant_id, phone)=(…, +33…) already exists »). Le journal complet reste sur la machine, lisible par root
+      # seul ; ne remontent que les lignes `->` (le nom de chaque migration et son issue), le total, et le code, la
+      # table et la contrainte en cause. `tests/deploy-scaleway.test.ts` le tient.
+      - name: Migration avant le deploiement
+        if: env.MIGRATION == 'avant'
+        run: |
+          ssh workers "docker pull '$REGISTRE/$IMAGE:$SHA'"
+          ssh workers "umask 077; docker run --rm --env-file /opt/messagingme/.env.prod '$REGISTRE/$IMAGE:$SHA' npm run migrate > /root/migrate-$SHA.log 2>&1; c=\$?; grep -oE '^-> [^ ]+( \(hors transaction\))? \.\.\. (ok|ECHEC)?|^[0-9]+ migration\(s\) appliquée\(s\)$|^à jour, rien à appliquer$|^ +(code|table|constraint|schema|column): .*' /root/migrate-$SHA.log; [ \$c -eq 0 ] || echo \"migration en echec (code \$c) : journal complet sur la machine, /root/migrate-$SHA.log\"; exit \$c"
+      - name: Les workers passent sur la nouvelle image
+        run: |
+          scp docker-compose.workers.yml workers:/opt/messagingme/docker-compose.yml
+          ssh workers "cd /opt/messagingme && printf 'IMAGE_TAG=%s\n' '$SHA' > .env && docker compose pull && docker compose up -d && docker compose ps"
+      - name: L'API passe sur la nouvelle image
+        env:
+          CLE_SCW: ${{ secrets.SCW_SECRET_KEY }}
+        run: |
+          api="https://api.scaleway.com/containers/v1beta1/regions/fr-par/containers/$CONTENEUR"
+          cible="$REGISTRE/$IMAGE:$SHA"
+          curl -fsS -X PATCH -H "X-Auth-Token: $CLE_SCW" -H 'Content-Type: application/json' \
+            -d "{\"registry_image\":\"$cible\",\"redeploy\":true}" "$api" > /dev/null
+          # Juste apres le PATCH, l'ancienne revision peut encore se dire prete : on n'accepte « ready » que sur la
+          # nouvelle image, et apres un premier delai.
+          sleep 15
+          etat=""
+          for i in $(seq 1 60); do
+            reponse=$(curl -fsS -H "X-Auth-Token: $CLE_SCW" "$api")
+            etat=$(printf '%s' "$reponse" | jq -r '.status')
+            image=$(printf '%s' "$reponse" | jq -r '.registry_image')
+            echo "conteneur : $etat ($image)"
+            if [ "$etat" = "error" ]; then echo "::error::le conteneur refuse l'image : $(printf '%s' "$reponse" | jq -r '.error_message')"; exit 1; fi
+            if [ "$etat" = "ready" ] && [ "$image" = "$cible" ]; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::le conteneur de l'API n'est pas pret sur $cible apres 10 minutes"
+          exit 1
+      # Meme regle qu'avant le deploiement : le journal complet reste sur la machine.
+      - name: Migration apres le deploiement
+        if: env.MIGRATION == 'apres'
+        run: |
+          ssh workers "umask 077; docker run --rm --env-file /opt/messagingme/.env.prod '$REGISTRE/$IMAGE:$SHA' npm run migrate > /root/migrate-$SHA.log 2>&1; c=\$?; grep -oE '^-> [^ ]+( \(hors transaction\))? \.\.\. (ok|ECHEC)?|^[0-9]+ migration\(s\) appliquée\(s\)$|^à jour, rien à appliquer$|^ +(code|table|constraint|schema|column): .*' /root/migrate-$SHA.log; [ \$c -eq 0 ] || echo \"migration en echec (code \$c) : journal complet sur la machine, /root/migrate-$SHA.log\"; exit \$c"

@@ -375,8 +375,7 @@ la base managée de Scaleway (qui porte ses propres sauvegardes : cette section 
 Le plan de sauvegarde du projet Supabase n'a jamais été relevé : on le tient pour nul. **`scripts/sauvegarde-base.sh`**
 fait chaque nuit un `pg_dump` des cinq schémas (format `custom`, ~24 Mo, ~10 s) dans `/home/ubuntu/sauvegardes-mba`
 (fichiers lisibles du seul propriétaire, gardés 7 jours), relit la table des matières de la copie, et ne passe jamais
-le mot de passe en argument. Planification (geste de Julien, persistance système ; posée le 2026-10-14, chaque nuit à
-3 h 17 UTC) :
+le mot de passe en argument. Planification (geste de Julien, persistance système) :
 
 ```bash
 ( crontab -l 2>/dev/null; echo '17 3 * * * sh /home/ubuntu/mba/scripts/sauvegarde-base.sh >> /home/ubuntu/sauvegardes-mba/journal.log 2>&1' ) | crontab -
@@ -413,3 +412,59 @@ téléchargement de l'image) ; restauration 4 s ; relecture et déchiffrement 2 
 (16 colonnes), **0 sur 29** avec une clé fausse (le test distingue la clé). Copie identique à la production : neuf
 tables comptées à l'identique, dernière migration et dernier message identiques à la microseconde. Hors données, le RTO
 réel se mesure à la bascule (création de la base cible, recréation des conteneurs).
+
+## Scaleway (cible de la bascule) : le socle et le bouton de déploiement
+
+La cible et ses raisons : `docs/ARCHITECTURE-CIBLE.md` (§7, §10, §10 bis). Le plan : lot 3 de
+`docs/superpowers/plans/2026-10-14-avant-bascule-scaleway.md`. Ici, la seule procédure.
+
+### Ce qui existe (créé le 2026-10-14, projet « Messaging Me App », région `fr-par`)
+
+| Ressource | Nom | Zone | Note |
+|---|---|---|---|
+| VPC et réseau privé | `mm-vpc`, `mm-prive` | `fr-par` | 172.16.0.0/22 |
+| Registre privé | `rg.fr-par.scw.cloud/messagingme` | `fr-par` | image `mba:<sha complet>` |
+| Espace de conteneurs | `messagingme` | `fr-par` | le conteneur de l'API s'y crée une fois, privé, rattaché à `mm-prive` |
+| Passerelle | `mm-passerelle` (VPC-GW-S) | `fr-par-2` | bastion SSH sur le port 61000, NAT et route par défaut vers `mm-prive` |
+| Base JETABLE | `mm-banc` (PostgreSQL 17, DB-DEV-M) | `fr-par` | adresse privée seule, disque chiffré, sauvegardes en région ; mot de passe dans Secret Manager `mm-banc-db-admin` ; à supprimer après les lots 3 et 4 |
+| Machine des workers | `mm-workers` | `fr-par-2` | sans adresse publique ; PLAY2-NANO pour les essais, PRO2-XXS avant le jour J ; bloquée le 2026-10-14 par les quotas d'Instances à 0 |
+
+### Les gestes uniques de Julien (aucun secret ne passe par Claude ni par GitHub)
+
+1. Une application IAM `github-deploy` : `ContainerRegistryFullAccess` et `ContainersFullAccess` sur le projet,
+   RIEN sur Secret Manager ni sur IAM. Sa clé secrète devient le secret `SCW_SECRET_KEY` de l'environnement GitHub
+   `production` : `Get-Clipboard | gh secret set SCW_SECRET_KEY --env production`.
+2. Une paire de clés SSH dédiée au déploiement : la PUBLIQUE dans les clés SSH du projet AVANT la création de la
+   machine (Scaleway ne les injecte qu'au démarrage), la PRIVÉE en secret `DEPLOY_SSH_KEY` de `production`, puis
+   supprimée du poste.
+3. L'environnement GitHub `production`, avec Julien en relecteur obligatoire, et ses variables
+   `SCALEWAY_CONTAINER_ID`, `SCALEWAY_BASTION` (`<ip de la passerelle>:61000`), `SCALEWAY_WORKERS_IP` (l'adresse
+   PRIVÉE de la machine) et `SCALEWAY_KNOWN_HOSTS` (les empreintes du bastion et de la machine, relevées une fois).
+4. Sur la machine : `/opt/messagingme/.env.prod` (propriétaire root, droits 600) et une clé de LECTURE du registre
+   (`docker login rg.fr-par.scw.cloud -u nologin`) : la clé du workflow ne quitte jamais GitHub.
+5. Les variables secrètes du conteneur de l'API.
+6. Une application IAM `cloudflare-origine`, avec `ContainersPrivateAccess` pour seul droit : sa clé secrète va dans
+   la règle Cloudflare qui écrase `X-Auth-Token` (`docs/ARCHITECTURE-CIBLE.md` §7.3). Une clé IAM expire au plus
+   tard en un an.
+
+### Déployer, et revenir en arrière
+
+`gh workflow run deploy-scaleway.yml --ref main -f migration=aucune`, puis l'approbation dans GitHub. La migration se
+choisit à chaque fois (`aucune`, `avant`, `apres`), selon la règle « l'ancien code survit-il ? » de `CLAUDE.md` : le
+menu s'ouvre sur `choisir`, que le workflow refuse avant toute construction (décision de Julien du 2026-10-14). Un
+retour arrière : le même workflow avec `-f commit=<sha plus ancien>`, après la vérification contre ce que les
+migrations appliquées depuis ont resserré. Le workflow refuse un commit hors de l'histoire de `main` et une
+configuration incomplète ; l'ordre est la migration « avant », les workers, l'API, la migration « après ».
+`tests/deploy-scaleway.test.ts` le tient : déclenchement à la main seulement, deux secrets et pas un de plus, aucun
+secret dans la construction.
+
+### Les pièges relevés le 2026-10-14
+
+- **La CLI de Scaleway rend le code 0 même en ERREUR avec `-o json`** (rupture de stock, quota) : tester le
+  contenu de la réponse (`"message"`, `"error"`, absence d'`"id"`), jamais le seul code de sortie.
+- **Un compte neuf a ses quotas d'Instances à 0** et un modèle peut être en rupture dans une zone : la création
+  échoue sans rien facturer. L'onglet Quotas de l'Organization Dashboard le dit ; au-delà, un ticket au support.
+- `vpc-gw` n'a pas de sous-commande `wait` (relire par `get`), et `rdb instance get` répond « transient state »
+  tant que la base se crée.
+- **Le certificat de la base se met dans l'image**, comme celui de Supabase (`certs/`, `DB_SSL_CA_FILE`) : c'est un
+  certificat public. Qu'il couvre l'adresse PRIVÉE se vérifie au premier essai, jamais par `DB_SSL_INSECURE`.

@@ -1,0 +1,37 @@
+# La machine des workers chez Scaleway (docs/ARCHITECTURE-CIBLE.md §2 et §10 bis).
+#
+# 🔴 COPIE A CHAQUE DEPLOIEMENT par `.github/workflows/deploy-scaleway.yml` dans /opt/messagingme/docker-compose.yml :
+# c'est CE fichier qui fait foi, jamais une retouche sur la machine. L'image vient du registre prive et n'est jamais
+# construite sur la machine ; `IMAGE_TAG` (le SHA deploye) est ecrit dans /opt/messagingme/.env par le workflow.
+#
+# 🔴 LES SECRETS NE SONT PAS ICI : /opt/messagingme/.env.prod est pose une fois par Julien (proprietaire root, droits
+# 600), jamais par le workflow (§13, point 18).
+#
+# ⚠️ LES TAILLES DE POOL REPRENNENT CELLES DU COMPOSE DU VPS (`docker-compose.yml`), tant que le lot 4 du plan
+# `docs/superpowers/plans/2026-10-14-avant-bascule-scaleway.md` ne les a pas recalculees pour la base de Scaleway ;
+# `tests/budget-pooler.test.ts` devra alors lire aussi ce fichier. Les limites de memoire et de processeur de chaque
+# worker (la condition d'une machine unique, §2) arrivent avec le lot 2b, sur la mesure du VPS.
+services:
+  mba-worker:
+    image: rg.fr-par.scw.cloud/messagingme/mba:${IMAGE_TAG:?IMAGE_TAG absent de /opt/messagingme/.env}
+    container_name: mba-worker
+    command: ["npx", "tsx", "src/worker-cli.ts"]
+    env_file: .env.prod
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      WORKER_ROLE: principal
+      DB_POOL_MAX: "8"
+      PGBOSS_MAX: "2"
+
+  mba-worker-analyse:
+    image: rg.fr-par.scw.cloud/messagingme/mba:${IMAGE_TAG:?IMAGE_TAG absent de /opt/messagingme/.env}
+    container_name: mba-worker-analyse
+    command: ["npx", "tsx", "src/worker-cli.ts"]
+    env_file: .env.prod
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      WORKER_ROLE: analyse
+      DB_POOL_MAX: "3"
+      PGBOSS_MAX: "2"
