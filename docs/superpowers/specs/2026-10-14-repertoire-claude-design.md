@@ -38,8 +38,8 @@ le trouve dans la bibliothèque de Claude.
 
 - **Connecteur + plugin**, par le répertoire public ; pas de contact partenaire, notre place de marché reste en
   parallèle (une session sans compte claude.ai ne reçoit pas les plugins du répertoire).
-- **Compte de test** : l'espace réel « MessagingMeEmbdedded » et son numéro, une fois sa connexion Meta renouvelée,
-  peuplé, et dont tous les contacts sont nos propres téléphones : un relecteur qui envoie n'écrit qu'à nous.
+- **Compte de test** : l'espace réel « Messaging Me Tech SANDBOX » et son numéro (WABA de notre portefeuille, sur le
+  jeton global d'utilisateur système, qui n'expire jamais : rien à renouveler, mesuré le 2026-10-14), peuplé, et dont tous les contacts sont nos propres téléphones : un relecteur qui envoie n'écrit qu'à nous.
 - **Pages légales** : Claude rédige une politique de confidentialité et des conditions d'utilisation propres au
   produit, en français et en anglais sur la vitrine ; Julien les valide AVANT leur mise en ligne. L'éditeur est
   **Messaging Me SAS** (RCS Paris 948 692 231), « SmartLink » restant le nom de marque sur les fiches ; le

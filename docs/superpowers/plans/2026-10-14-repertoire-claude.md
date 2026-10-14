@@ -50,7 +50,7 @@ de Julien (les pages légales ne partent qu'après sa validation). L'essai réel
 
 ## Livraison D : l'espace de démo et le dossier de soumission
 
-1. Après le renouvellement Meta de « MessagingMeEmbdedded » : lecture seule de ses contacts (tous à nous), puis
+1. Sur « Messaging Me Tech SANDBOX » (aucune connexion à renouveler) : lecture seule de ses contacts (tous à nous), puis
    peuplement (agent IA avec connaissance, conversations, modèles approuvés, bulle, une adresse de webhook).
 2. Julien crée le compte du relecteur (adresse et mot de passe à lui, jamais dans la conversation).
 3. `docs/prive/` : les textes anglais des deux fiches (nom, accroche de 200 caractères, description de 2 000,

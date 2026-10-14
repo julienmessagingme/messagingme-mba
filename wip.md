@@ -72,8 +72,9 @@ Décision de Julien le 2026-10-14 : on reprend juste après la bascule Scaleway,
 3. l'espace de démo peuplé (livraison D), puis le compte du relecteur créé par Julien ;
 4. la soumission par Julien : le connecteur, puis le plugin. Les champs à recopier vivent dans `docs/prive/`.
 
-⚠️ Une échéance ne suit pas la bascule : la connexion Meta de l'espace de démo se renouvelle avant le 2026-10-16 à
-14 h 55, sinon la livraison D n'a plus de numéro sur lequel s'appuyer.
+L'espace de démo est « Messaging Me Tech SANDBOX ». Il n'a aucune connexion à renouveler (mesuré le 2026-10-14) : son
+WABA est dans NOTRE portefeuille, n'a pas de jeton propre et tourne sur le jeton global, un utilisateur système qui
+n'expire jamais. L'échéance du 16 octobre annoncée ici visait un ancien espace, absent de la base.
 
 ## CE QUI ATTEND UN ESSAI RÉEL
 
