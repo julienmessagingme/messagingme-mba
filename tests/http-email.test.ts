@@ -4,7 +4,8 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { EmailRoutesDeps, EmailAccountsDep, EmailTemplatesDep, EmailResolverDep } from '../src/http/email';
+import type { EmailRoutesDeps, EmailAccountsDep, EmailTemplatesDep } from '../src/http/email';
+import { EmailAccountResolver } from '../src/email/resolver';
 import type { EmailAccount, EmailAccountInput, EmailAccountUpdate, EmailTemplate, EmailTemplateInput, EmailTemplateUpdate } from '../src/email/types';
 import type { AuditSink } from '../src/audit/journal';
 
@@ -99,17 +100,19 @@ function fakeTemplatesStore(): { dep: EmailTemplatesDep; rows: Map<string, Email
   return { dep, rows };
 }
 
-/** Résolveur FACTICE : sert un transport dont `sendMail` est injectable (succès ou échec), sans jamais
- *  toucher le réseau. `as never` pour le cast de transport factice : même convention que tests/email-smtp.test.ts. */
-function fakeResolver(accountRows: Map<string, StoredAccount>, sendMail: (msg: unknown) => Promise<unknown>): { dep: EmailResolverDep; invalidated: string[] } {
+/** Vrai module d'envoi avec dépôt et transport factices : la route ne voit ni transport ni compte déchiffré. */
+function fakeResolver(accountRows: Map<string, StoredAccount>, sendMail: (msg: unknown) => Promise<unknown>): { dep: EmailRoutesDeps['resolver']; invalidated: string[] } {
   const invalidated: string[] = [];
-  const dep: EmailResolverDep = {
-    getTransport: async (tenantId, accountId) => {
+  const resolver = new EmailAccountResolver({
+    comptes: { getDecrypted: async (tenantId, accountId) => {
       const row = accountRows.get(accountId);
-      if (!row || row.tenantId !== tenantId) return null;
-      return { transport: { sendMail } as never, account: { ...row } };
-    },
-    invalidate: (accountId) => { invalidated.push(accountId); },
+      return row?.tenantId === tenantId ? { ...row } : null;
+    } },
+    buildTransport: () => ({ sendMail }) as never,
+  });
+  const dep: EmailRoutesDeps['resolver'] = {
+    prepareSend: (tenantId, accountId) => resolver.prepareSend(tenantId, accountId),
+    invalidate: (accountId) => { invalidated.push(accountId); resolver.invalidate(accountId); },
   };
   return { dep, invalidated };
 }

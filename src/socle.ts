@@ -311,7 +311,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const depotAide = new PgDepotAide(pool);
 
   /**
-   * Node « Envoi de mail » : boîtes SMTP et modèles (scopés tenant), résolveur de transport à cache par
+   * Node « Envoi de mail » : boîtes SMTP et modèles (scopés tenant), envoi préparé avec cache par
    * tenant+compte. Les routes e-mail de l'API l'invalident à chaque écriture d'un compte, et le runtime de scénario
    * reçoit la MÊME instance, pour que l'invalidation vaille aussi pour lui. Elle ne traverse pas jusqu'au worker :
    * un compte modifié y garde son ancien transport jusqu'à l'expiration du cache (cinq minutes).

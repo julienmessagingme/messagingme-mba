@@ -1,8 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { Transporter } from 'nodemailer';
 import type { Guard } from '../auth/middleware';
-import { sendSmtpEmail } from '../email/smtp';
+import type { EmailAccountResolver } from '../email/resolver';
 import { estRefusAdresseInterne } from '../lib/connexion-publique';
 import { espaceVerifie } from './scope';
 import { messageDe } from '../lib/erreur';
@@ -11,7 +10,6 @@ import type {
   EmailAccount,
   EmailAccountInput,
   EmailAccountUpdate,
-  DecryptedEmailAccount,
   EmailTemplate,
   EmailTemplateInput,
   EmailTemplateUpdate,
@@ -20,7 +18,7 @@ import type {
 /**
  * Routes des boîtes SMTP et modèles d'email (bloc « Envoi de mail »), admin : monté sur `g.admin` (la garde porte
  * l'auth et le rôle, `tests/role-admin.test.ts` le tient), l'étape d'espace vérifie l'espace de chaque route.
- * Le mot de passe SMTP n'est jamais renvoyé : seul `DecryptedEmailAccount`, jamais sérialisé ici, le porte.
+ * Le mot de passe SMTP reste dans le module d'envoi ; la route ne reçoit qu'une fonction d'envoi préparée.
  */
 
 const accountCreate = z.object({
@@ -67,17 +65,11 @@ export interface EmailTemplatesDep {
   softDelete(tenantId: string, id: string): Promise<boolean>;
 }
 
-export interface EmailResolverDep {
-  getTransport(tenantId: string, accountId: string): Promise<{ transport: Transporter; account: DecryptedEmailAccount } | null>;
-  /** Doit être appelée après toute écriture d'un compte (patch/delete) : le transport en cache porterait sinon
-   *  un mot de passe ou un hôte périmé. */
-  invalidate(accountId: string): void;
-}
-
 export interface EmailRoutesDeps {
   accounts: EmailAccountsDep;
   templates: EmailTemplatesDep;
-  resolver: EmailResolverDep;
+  /** Même instance que le scénario dans le processus : les écritures invalident son cache. */
+  resolver: Pick<EmailAccountResolver, 'prepareSend' | 'invalidate'>;
   /**
    * Le journal des actions (lot 5) : une boîte porte un mot de passe, l'ajouter, la modifier ou la retirer se trace. Le
    * détail ne porte que l'hôte, le port et si le mot de passe a changé, jamais l'identifiant ni le mot de passe.
@@ -138,10 +130,10 @@ export function registerEmailRoutes(app: FastifyInstance, deps: EmailRoutesDeps,
     const parsed = testSendBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'destinataire de test invalide' });
     const { id } = req.params as { id: string };
-    const resolved = await deps.resolver.getTransport(tenant, id);
-    if (!resolved) return reply.code(404).send({ error: 'compte introuvable' });
+    const send = await deps.resolver.prepareSend(tenant, id);
+    if (!send) return reply.code(404).send({ error: 'compte introuvable' });
     try {
-      await sendSmtpEmail(resolved.transport, resolved.account, {
+      await send({
         to: parsed.data.to,
         subject: 'Test MessagingMe',
         text: 'Ceci est un test de votre boîte SMTP.',

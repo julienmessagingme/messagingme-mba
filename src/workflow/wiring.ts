@@ -40,7 +40,6 @@ import { PgAgentSessionStore } from '../agent/session-store.pg';
 import { creerPoseEtiquette, normaliserEtiquette } from '../crm/poser-etiquette';
 import type { PgEmailTemplateStore } from '../email/template-store.pg';
 import type { EmailAccountResolver } from '../email/resolver';
-import { sendSmtpEmail } from '../email/smtp';
 import { renderText, contactVars } from '../crm/render';
 import { adressesDestinataires, type SendEmailAction } from './engine';
 import type { BesoinsContexte, EvalContext } from './conditions';
@@ -294,8 +293,8 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       console.error(`workflow sendEmail: modèle ${action.templateId} introuvable pour ${tenant}, envoi ignoré`);
       return 'le modèle de mail de ce bloc n’existe plus';
     }
-    const resolved = await emailResolver.getTransport(tenant, action.emailAccountId);
-    if (!resolved) {
+    const send = await emailResolver.prepareSend(tenant, action.emailAccountId);
+    if (!send) {
       // eslint-disable-next-line no-console
       console.error(`workflow sendEmail: boîte ${action.emailAccountId} introuvable pour ${tenant}, envoi ignoré`);
       return 'la boîte d’envoi de ce bloc n’existe plus, ou n’est pas choisie';
@@ -315,7 +314,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // 🔴 Le 1er en « À », les suivants en copie cachée : les destinataires peuvent être des clients, et les
     // mettre tous en « À » exposerait leurs adresses les uns aux autres (fuite de données personnelles).
     const [premier, ...caches] = adresses;
-    await sendSmtpEmail(resolved.transport, resolved.account, {
+    await send({
       to: premier as string,
       ...(caches.length > 0 ? { bcc: caches } : {}),
       subject: renderText(template.subject, vars, { html: false }),
