@@ -9,6 +9,14 @@ import { appelGraph } from './graph';
 const proprietaireSchema = z.object({ owner_business_info: z.object({ id: z.string().regex(/^\d+$/) }) });
 
 /**
+ * Le statut de la Marketing Messages API (ex-MM Lite) sur le WABA : une chaîne (`ELIGIBLE`, `ONBOARDED`...). Meta rend
+ * le même champ en objet `{ status, time }` au niveau du Business Manager : les deux formes sont acceptées.
+ */
+const statutMmSchema = z.object({
+  marketing_messages_onboarding_status: z.union([z.string().min(1), z.object({ status: z.string().min(1) })]),
+});
+
+/**
  * Les codes d'erreur de `health_status` qui disent « moyen de paiement » sur l'entité WABA. Mesuré le 2026-10-13 sur
  * quatre comptes sans carte valable : 141006, « There is an error with the payment method. This will block business
  * initiated conversations » (les modèles ne partent plus, les réponses de service si).
@@ -49,7 +57,10 @@ export interface WabaInfo {
   accountReviewStatus?: string;
   /** Vérification d'entreprise (`business_verification_status` : verified / not_verified / pending). */
   businessVerificationStatus?: string;
-  /** Statut d'onboarding de l'API MM Lite (`marketing_messages_lite_api_status` : ONBOARDED / ...). */
+  /**
+   * Statut de la Marketing Messages API (`marketing_messages_onboarding_status` : ELIGIBLE / ONBOARDED / ...). Le nom
+   * garde « Lite », comme la colonne `phone_numbers.marketing_messages_lite_api_status` où il s'écrit.
+   */
   marketingMessagesLiteApiStatus?: string;
   /** Nom du business propriétaire du WABA (`owner_business_info.name`). */
   ownerBusinessName?: string;
@@ -107,17 +118,27 @@ export class MetaPhoneNumberClient {
   }
 
   /**
-   * Santé du WABA, statut MM Lite et business propriétaire. `health_status` est un objet côté Graph : on en
-   * extrait `can_send_message`, en tolérant une chaîne selon la version. Lève MetaApiError si non-2xx.
+   * Santé du WABA, statut de la Marketing Messages API et business propriétaire. `health_status` est un objet côté
+   * Graph : on en extrait `can_send_message`, en tolérant une chaîne selon la version. Lève MetaApiError si la santé
+   * est refusée (non-2xx).
+   *
+   * 🔴 Le statut de la Marketing Messages API se lit dans un appel À PART. Meta refuse EN BLOC (erreur 100) un appel
+   * qui demande un champ indisponible, et l'ancien `marketing_messages_lite_api_status` est annoncé déprécié : dans
+   * le même appel, son retrait aurait emporté la santé du compte et le Business Manager propriétaire, que le plafond
+   * de l'agent lit par ici. Un échec de ce second appel rend un statut absent, que `saveStatus` ne retient pas.
    */
   async getWabaHealth(wabaId: string): Promise<WabaInfo> {
-    const fields = 'health_status,account_review_status,business_verification_status,marketing_messages_lite_api_status,owner_business_info';
-    const url = `${this.baseUrl}/${this.version}/${encodeURIComponent(wabaId)}?fields=${fields}`;
-    const json = (await appelGraph(this.fetchImpl, this.token, url, { method: 'GET' })) as
+    const base = `${this.baseUrl}/${this.version}/${encodeURIComponent(wabaId)}`;
+    const fields = 'health_status,account_review_status,business_verification_status,owner_business_info';
+    const [lu, luMm] = await Promise.all([
+      appelGraph(this.fetchImpl, this.token, `${base}?fields=${fields}`, { method: 'GET' }),
+      appelGraph(this.fetchImpl, this.token, `${base}?fields=marketing_messages_onboarding_status`, { method: 'GET' })
+        .catch(() => null),
+    ]);
+    const json = lu as
       | {
           health_status?: { can_send_message?: string } | string;
           account_review_status?: string; business_verification_status?: string;
-          marketing_messages_lite_api_status?: string;
           owner_business_info?: { name?: string; id?: string };
         }
       | null;
@@ -131,12 +152,14 @@ export class MetaPhoneNumberClient {
       : entites === undefined
         ? (sante.data.health_status.can_send_message === 'AVAILABLE' ? false : undefined)
         : entites.some((e) => e.entity_type === 'WABA' && (e.errors ?? []).some((x) => CODES_PAIEMENT_META.includes(x.error_code)));
+    const mm = statutMmSchema.safeParse(luMm);
+    const statutMm = mm.success ? mm.data.marketing_messages_onboarding_status : undefined;
     return {
       healthStatus,
       ...(paiementBloque !== undefined ? { paiementBloque } : {}),
       accountReviewStatus: json?.account_review_status,
       businessVerificationStatus: json?.business_verification_status,
-      marketingMessagesLiteApiStatus: json?.marketing_messages_lite_api_status,
+      marketingMessagesLiteApiStatus: typeof statutMm === 'string' ? statutMm : statutMm?.status,
       ownerBusinessName: json?.owner_business_info?.name,
       ownerBusinessId: (() => {
         const lu = proprietaireSchema.safeParse(json);

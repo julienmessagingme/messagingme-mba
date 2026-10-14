@@ -105,13 +105,15 @@ export type StatusTone = 'ok' | 'warn' | 'unknown';
 export interface StatusBadge { label: string; tone: StatusTone }
 
 /**
- * Onboarding de l'API MM Lite (marketing_messages_lite_api_status). `ONBOARDED` = approuvé (vert). Absence =
- * inconnu/non communiqué (gris), JAMAIS un faux "Non". Fonction pure -> testable.
+ * Onboarding de la Marketing Messages API, ex-MM Lite (marketing_messages_onboarding_status). `ONBOARDED` = approuvé
+ * (vert). `ELIGIBLE` = conditions pas encore signées : l'état ordinaire d'un compte, gris et jamais ambre, car rien
+ * n'attend. Absence = inconnu/non communiqué (gris), JAMAIS un faux "Non". Fonction pure -> testable.
  */
 export function mmLiteBadge(status: string | null | undefined, locale: Locale): StatusBadge {
   if (!status) return { label: locale === 'en' ? 'Not reported' : 'Non communiqué', tone: 'unknown' };
   const up = status.toUpperCase();
   if (up === 'ONBOARDED') return { label: locale === 'en' ? 'Approved' : 'Approuvé', tone: 'ok' };
+  if (up === 'ELIGIBLE') return { label: locale === 'en' ? 'Eligible, not enabled' : 'Éligible, non activée', tone: 'unknown' };
   const fr: Record<string, string> = { NOT_ONBOARDED: 'Non activé', IN_REVIEW: 'En revue', ONBOARDING: 'En cours' };
   const en: Record<string, string> = { NOT_ONBOARDED: 'Not enabled', IN_REVIEW: 'In review', ONBOARDING: 'In progress' };
   return { label: (locale === 'en' ? en : fr)[up] ?? status, tone: 'warn' };

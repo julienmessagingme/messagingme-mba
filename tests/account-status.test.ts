@@ -141,16 +141,47 @@ describe('MetaPhoneNumberClient.get', () => {
 });
 
 describe('MetaPhoneNumberClient.getWabaHealth', () => {
-  it('extrait can_send_message de l\'objet health_status + les statuts de revue + MM Lite + business proprio', async () => {
-    const { fn, calls } = makeFetch([
-      { ok: true, status: 200, json: { health_status: { can_send_message: 'AVAILABLE' }, account_review_status: 'APPROVED', business_verification_status: 'verified', marketing_messages_lite_api_status: 'ONBOARDED', owner_business_info: { name: 'Messaging Me', id: '103185632463539' } } },
-    ]);
+  /** Répond selon les champs demandés : la santé et le statut de la Marketing Messages API sont deux appels. */
+  function fetchParChamps(sante: { ok: boolean; status: number; json: unknown }, mm: { ok: boolean; status: number; json: unknown }) {
+    const calls: string[] = [];
+    const fn: FetchLike = async (url) => {
+      calls.push(String(url));
+      const r = String(url).includes('marketing_messages') ? mm : sante;
+      return { ok: r.ok, status: r.status, json: async () => r.json } as Response;
+    };
+    return { fn, calls };
+  }
+  const SANTE = { ok: true, status: 200, json: { health_status: { can_send_message: 'AVAILABLE' }, account_review_status: 'APPROVED', business_verification_status: 'verified', owner_business_info: { name: 'Messaging Me', id: '103185632463539' } } };
+
+  it('extrait can_send_message de l\'objet health_status + les statuts de revue + Marketing Messages API + business proprio', async () => {
+    const { fn, calls } = fetchParChamps(SANTE, { ok: true, status: 200, json: { marketing_messages_onboarding_status: 'ONBOARDED', id: 'WABA1' } });
     const waba = await new MetaPhoneNumberClient('tok', 'v25.0', fn).getWabaHealth('WABA1');
-    expect(waba).toMatchObject({ healthStatus: 'AVAILABLE', accountReviewStatus: 'APPROVED', businessVerificationStatus: 'verified', marketingMessagesLiteApiStatus: 'ONBOARDED', ownerBusinessName: 'Messaging Me' });
-    expect(calls[0]!.url).toContain('/v25.0/WABA1?fields=');
-    expect(calls[0]!.url).toContain('health_status');
-    expect(calls[0]!.url).toContain('marketing_messages_lite_api_status');
-    expect(calls[0]!.url).toContain('owner_business_info');
+    expect(waba).toMatchObject({ healthStatus: 'AVAILABLE', accountReviewStatus: 'APPROVED', businessVerificationStatus: 'verified', marketingMessagesLiteApiStatus: 'ONBOARDED', ownerBusinessName: 'Messaging Me', ownerBusinessId: '103185632463539' });
+    const sante = calls.find((u) => u.includes('health_status'))!;
+    expect(sante).toContain('/v25.0/WABA1?fields=');
+    expect(sante).toContain('owner_business_info');
+    // Le champ déprécié n'est plus demandé nulle part, et le statut ne voyage jamais avec la santé.
+    expect(calls.some((u) => u.includes('marketing_messages_lite_api_status'))).toBe(false);
+    expect(sante).not.toContain('marketing_messages');
+    expect(calls.find((u) => u.includes('marketing_messages'))).toContain('/v25.0/WABA1?fields=marketing_messages_onboarding_status');
+  });
+
+  it('un statut refusé par Meta (erreur 100) n\'emporte ni la santé ni le propriétaire', async () => {
+    const { fn } = fetchParChamps(SANTE, { ok: false, status: 400, json: { error: { code: 100, message: 'Tried accessing nonexisting field' } } });
+    const waba = await new MetaPhoneNumberClient('tok', 'v25.0', fn).getWabaHealth('WABA1');
+    expect(waba).toMatchObject({ healthStatus: 'AVAILABLE', ownerBusinessId: '103185632463539' });
+    expect(waba.marketingMessagesLiteApiStatus).toBeUndefined();
+  });
+
+  it('accepte le statut en objet { status, time }, la forme du Business Manager', async () => {
+    const { fn } = fetchParChamps(SANTE, { ok: true, status: 200, json: { marketing_messages_onboarding_status: { status: 'ELIGIBLE', time: '2026-10-14' } } });
+    const waba = await new MetaPhoneNumberClient('tok', 'v25.0', fn).getWabaHealth('WABA1');
+    expect(waba.marketingMessagesLiteApiStatus).toBe('ELIGIBLE');
+  });
+
+  it('une santé refusée reste une erreur (le jeton mort se voit toujours)', async () => {
+    const { fn } = fetchParChamps({ ok: false, status: 401, json: { error: { code: 190, message: 'token expiré' } } }, { ok: false, status: 401, json: null });
+    await expect(new MetaPhoneNumberClient('tok', 'v25.0', fn).getWabaHealth('WABA1')).rejects.toBeInstanceOf(MetaApiError);
   });
 
   it('tolère un health_status déjà en chaîne (selon version Graph)', async () => {

@@ -45,6 +45,10 @@ describe('mmLiteBadge', () => {
     expect(mmLiteBadge(null, 'fr')).toEqual({ label: 'Non communiqué', tone: 'unknown' });
     expect(mmLiteBadge(undefined, 'en')).toEqual({ label: 'Not reported', tone: 'unknown' });
   });
+  it('ELIGIBLE (conditions pas signées) -> libellé traduit, gris, jamais le mot brut en ambre', () => {
+    expect(mmLiteBadge('ELIGIBLE', 'fr')).toEqual({ label: 'Éligible, non activée', tone: 'unknown' });
+    expect(mmLiteBadge('eligible', 'en')).toEqual({ label: 'Eligible, not enabled', tone: 'unknown' });
+  });
   it('autre statut connu -> warn', () => {
     expect(mmLiteBadge('IN_REVIEW', 'fr')).toEqual({ label: 'En revue', tone: 'warn' });
     expect(mmLiteBadge('NOT_ONBOARDED', 'en')).toEqual({ label: 'Not enabled', tone: 'warn' });
