@@ -434,11 +434,12 @@ La cible et ses raisons : `docs/ARCHITECTURE-CIBLE.md` (§7, §10, §10 bis). Le
 
 1. Une application IAM `github-deploy` : `ContainerRegistryFullAccess` et `ContainersFullAccess` sur le projet,
    RIEN sur Secret Manager ni sur IAM. Sa clé secrète devient le secret `SCW_SECRET_KEY` de l'environnement GitHub
-   `production` : `Get-Clipboard | gh secret set SCW_SECRET_KEY --env production`.
+   `scaleway` : `Get-Clipboard | gh secret set SCW_SECRET_KEY --env scaleway`.
 2. Une paire de clés SSH dédiée au déploiement : la PUBLIQUE dans les clés SSH du projet AVANT la création de la
-   machine (Scaleway ne les injecte qu'au démarrage), la PRIVÉE en secret `DEPLOY_SSH_KEY` de `production`, puis
+   machine (Scaleway ne les injecte qu'au démarrage), la PRIVÉE en secret `DEPLOY_SSH_KEY` de `scaleway`, puis
    supprimée du poste.
-3. L'environnement GitHub `production`, avec Julien en relecteur obligatoire, et ses variables
+3. L'environnement GitHub `scaleway` (jamais `production`, piège plus bas), avec Julien en relecteur obligatoire,
+   limité à la branche `main`, et ses variables
    `SCALEWAY_CONTAINER_ID`, `SCALEWAY_BASTION` (`<ip de la passerelle>:61000`), `SCALEWAY_WORKERS_IP` (l'adresse
    PRIVÉE de la machine) et `SCALEWAY_KNOWN_HOSTS` (les empreintes du bastion et de la machine, relevées une fois).
 4. Sur la machine : `/opt/messagingme/.env.prod` (propriétaire root, droits 600) et une clé de LECTURE du registre
@@ -461,6 +462,10 @@ secret dans la construction.
 
 ### Les pièges relevés le 2026-10-14
 
+- 🔴 **L'environnement GitHub du déploiement s'appelle `scaleway`, JAMAIS `production`.** GitHub ne distingue pas
+  la casse des noms d'environnement, et `Production` existe déjà dans ce dépôt : Vercel l'a créé le 2026-09-03, sans
+  aucune règle de protection (l'API le rend quand on lui demande `production`, mesuré le 2026-10-14). Un job qui
+  s'y réfère part sans l'approbation de Julien, et un `--env production` y rangerait les secrets, sans erreur.
 - **La CLI de Scaleway rend le code 0 même en ERREUR avec `-o json`** (rupture de stock, quota) : tester le
   contenu de la réponse (`"message"`, `"error"`, absence d'`"id"`), jamais le seul code de sortie.
 - **Un compte neuf a ses quotas d'Instances à 0** et un modèle peut être en rupture dans une zone : la création

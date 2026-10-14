@@ -2,7 +2,7 @@ name: Deploiement Scaleway (API et workers)
 
 # 🔴 A LA MAIN ET APPROUVE PAR JULIEN (docs/ARCHITECTURE-CIBLE.md §10 bis, decision du 2026-10-14) :
 # `gh workflow run deploy-scaleway.yml --ref main -f migration=aucune`, puis l'approbation de l'environnement
-# `production` dans GitHub. Jamais sur un push ni sur une pull request : le depot est public.
+# `scaleway` dans GitHub. Jamais sur un push ni sur une pull request : le depot est public.
 #
 # 🔴 LES SECRETS DE PRODUCTION N'Y PASSENT JAMAIS (§13, point 18). Julien les pose une fois : variables secretes du
 # conteneur de l'API, fichier /opt/messagingme/.env.prod de la machine des workers. Ce workflow ne change que l'IMAGE.
@@ -97,7 +97,9 @@ jobs:
     needs: construire
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment: production
+    # PAS `production` : GitHub ne distingue pas la casse des noms d'environnement, et `Production` existe deja
+    # dans ce depot, cree par Vercel, sans aucune regle de protection. Ce job y partirait sans l'approbation de Julien.
+    environment: scaleway
     env:
       SHA: ${{ needs.construire.outputs.sha }}
       MIGRATION: ${{ inputs.migration }}

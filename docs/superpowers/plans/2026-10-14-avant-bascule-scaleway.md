@@ -112,16 +112,16 @@ code.
   (prérequis 8 du §10), `schema_migrations` et `french_sans_accent` se relisent.
 - Le tunnel par le bastion pour lire une base sans endpoint public, et `npm run migrations` qui passe par lui
   (§10 bis) : sans lui, on ne saurait plus d'un poste ce qui est appliqué en production.
-- Le workflow `deploy-scaleway.yml` : `workflow_dispatch` seul, environnement `production` (approbation de
+- Le workflow `deploy-scaleway.yml` : `workflow_dispatch` seul, environnement `scaleway` (approbation de
   Julien). Il construit l'image avec `REVISION`, la pousse au registre, migre depuis la machine des workers par le
   bastion, déploie l'API, puis redémarre les workers sur la même image. Le retour arrière est le même workflow
   lancé sur un commit antérieur.
 - Une application IAM `github-deploy` (registre et conteneurs, rien d'autre) et une clé SSH pour le bastion, posées
-  par Julien dans les secrets de l'environnement `production` : Claude ne voit jamais ces secrets.
+  par Julien dans les secrets de l'environnement `scaleway` : Claude ne voit jamais ces secrets.
 - Le jeton d'origine (§7.3) : le conteneur est privé, et le format exact du jeton se relit ce jour-là.
 
 **Tests attendus** : un test lit le workflow et refuse tout autre déclencheur que `workflow_dispatch`, ainsi que
-l'absence de l'environnement `production` (le dépôt est public).
+l'absence de l'environnement `scaleway` (le dépôt est public).
 
 ## Lot 4 : le banc sur la cible et le budget de connexions
 

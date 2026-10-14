@@ -58,8 +58,11 @@ describe('le workflow de déploiement Scaleway', () => {
     expect(WORKFLOW).not.toMatch(/:\s*write\b/);
   });
 
-  it('🔴 le job qui voit les secrets attend l’approbation de l’environnement `production`', () => {
-    expect(blocNiveau2(WORKFLOW, 'deployer')).toMatch(/^ {4}environment: production$/m);
+  // 🔴 Pas `production` : GitHub ne distingue pas la casse des noms d'environnement, et `Production` existe déjà dans
+  // ce dépôt, créé par Vercel le 2026-09-03, sans aucune règle de protection (l'API le rend quand on lui demande
+  // `production`, mesuré le 2026-10-14). Le job y partirait sans l'approbation de Julien, sans erreur ni avertissement.
+  it('🔴 le job qui voit les secrets attend l’approbation de l’environnement `scaleway`', () => {
+    expect(blocNiveau2(WORKFLOW, 'deployer')).toMatch(/^ {4}environment: scaleway$/m);
   });
 
   it('🔴 le job qui exécute le code tiers (la construction) ne voit AUCUN secret', () => {

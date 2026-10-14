@@ -826,7 +826,8 @@ GitHub reste la source, la CI ne change pas, la console reste sur Vercel et se p
 geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose build`, `migrate` et `up` sur le VPS).
 
 - **Un workflow GitHub Actions lancé à la main** (`workflow_dispatch`, comme `plugin.yml`), derrière un environnement
-  `production` qui exige l'approbation de Julien. Jamais sur une pull request : le dépôt est public.
+  `scaleway` qui exige l'approbation de Julien. Jamais sur une pull request : le dépôt est public. ⚠️ Pas
+  `production` : GitHub ne distingue pas la casse, et ce nom est déjà pris par Vercel, sans aucune protection.
 - **Il construit l'image et la pousse dans le registre de conteneurs Scaleway** (privé, `fr-par`), étiquetée par le
   commit (`REVISION`). La documentation de Scaleway ne propose pas de déploiement au push comme Vercel : le chemin
   qu'elle documente est ce workflow (vérifié le 2026-10-14).
@@ -838,7 +839,7 @@ geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose bu
   depuis ont resserré.
 - **Une clé Scaleway propre au workflow**, distincte de celle du poste de Julien, limitée au registre, au conteneur
   de l'API et à l'accès à la machine des workers (par le bastion de la Public Gateway), rangée dans les secrets de
-  l'environnement `production`.
+  l'environnement `scaleway`.
 - 🔴 **Les secrets de production ne transitent JAMAIS par GitHub** (décidé par Julien le 2026-10-14) : Julien les pose
   une fois, par une commande qui lit son presse-papiers sans rien afficher, dans les variables secrètes du conteneur de
   l'API et dans un fichier réservé à l'administrateur sur la machine des workers. Le workflow ne change que l'IMAGE ; sa
