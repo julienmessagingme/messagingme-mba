@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { creerEnvoiModeleInbox } from '../src/inbox/envoi-modele';
 import type { LienTrace } from '../src/links/tracked-links.pg';
-import type { TemplateSpec } from '../src/meta/types';
+import type { MarketingParams, TemplateSpec } from '../src/meta/types';
 
 /**
  * L'envoi manuel d'un template depuis l'Inbox porte les suffixes de ses boutons tracés.
@@ -18,16 +18,45 @@ function lien(over: Partial<LienTrace> = {}): LienTrace {
 
 function envoi(liens: () => Promise<LienTrace[]>, jeton: () => Promise<string | null> = async () => JETON) {
   const envoyes: Array<{ to: string; spec: TemplateSpec }> = [];
+  const marketing: MarketingParams[] = [];
   const lectures: Array<{ tenant: string; e164: string }> = [];
   const send = creerEnvoiModeleInbox({
-    client: async () => ({ sendTemplate: async (to, spec) => { envoyes.push({ to, spec }); return { messageId: 'wamid.1' }; } }),
+    client: async () => ({
+      sendTemplate: async (to, spec) => { envoyes.push({ to, spec }); return { messageId: 'wamid.1' }; },
+      sendMarketing: async (params) => { marketing.push(params); return { messageId: 'wamid.m' }; },
+    }),
     trackedLinks: {
       listByTemplates: async () => liens(),
       jetonPourE164: async (tenant, e164) => { lectures.push({ tenant, e164 }); return jeton(); },
     },
   });
-  return { send, envoyes, lectures };
+  return { send, envoyes, marketing, lectures };
 }
+
+/**
+ * LA MARKETING MESSAGES API (plan du 2026-10-14) : un modèle que l'écran déclare marketing part par `sendMarketing`,
+ * qui prend `/marketing_messages` quand `META_MM_LITE` est allumé ; le reste par `sendTemplate`.
+ */
+describe('envoi manuel d’un template depuis l’Inbox : la catégorie choisit l’envoi', () => {
+  it('🔴 marketing -> sendMarketing, même destinataire, mêmes composants (suffixes tracés compris)', async () => {
+    const { send, envoyes, marketing } = envoi(async () => [lien()]);
+    expect(await send('t1', 'pn1', '33612345678', { name: 'suivi', language: 'fr', bodyParams: ['Marie'], templateCategory: 'marketing' })).toBe('wamid.m');
+    expect(envoyes).toEqual([]);
+    expect(marketing).toEqual([{ to: '33612345678', template: { name: 'suivi', language: 'fr', components: [
+      { type: 'body', parameters: [{ type: 'text', text: 'Marie' }] },
+      { type: 'button', sub_type: 'url', index: '1', parameters: [{ type: 'text', text: JETON }] },
+    ] } }]);
+  });
+
+  it('utility, ou catégorie absente -> sendTemplate', async () => {
+    for (const categorie of [{ templateCategory: 'utility' as const }, {}]) {
+      const { send, envoyes, marketing } = envoi(async () => []);
+      expect(await send('t1', 'pn1', '33612345678', { name: 'suivi', language: 'fr', bodyParams: [], ...categorie })).toBe('wamid.1');
+      expect(envoyes).toHaveLength(1);
+      expect(marketing).toEqual([]);
+    }
+  });
+});
 
 const composantsUrl = (spec: TemplateSpec) => (spec.components ?? []).filter((c) => (c as { sub_type?: string }).sub_type === 'url');
 

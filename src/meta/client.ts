@@ -15,9 +15,11 @@ export interface MetaClientOpts {
   rateLimiter?: PorteDeDebit;
   retry?: RetryOpts;
   /**
-   * Envois marketing par l'endpoint MM Lite `/marketing_messages` (true) ou par `/messages` (false, défaut).
-   * MM Lite exige un onboarding du Business Manager, sans lequel il échoue en 131042 ; un template marketing
-   * s'envoie très bien par `/messages`, au tarif marketing.
+   * Envois marketing par la Marketing Messages API, ex-MM Lite, `/marketing_messages` (true), ou par `/messages`
+   * (false, défaut). Allumé, TOUT modèle marketing y part, que le compte ait signé ses conditions ou non : Meta
+   * repasse lui-même un compte non activé par la Cloud API (`product_policy`, plan du 2026-10-14). Un refus de la
+   * MM API (134100 catégorie non marketing, 134101 modèle en synchronisation, 134102 modèle indisponible) reste un
+   * échec d'envoi, sans repli de notre côté : choix de Julien.
    */
   marketingViaLite?: boolean;
 }
@@ -240,14 +242,14 @@ export class MetaClient {
     }
     // `to` prime si les deux sont fournis (spec Meta).
     const target = params.to ? { to: params.to } : { recipient: params.recipient };
-    // MM Lite (`/marketing_messages`) seulement si le BM est onboardé, sinon endpoint standard
-    // `/messages` (un template marketing s'envoie très bien par là, facturé au tarif marketing).
-    const endpoint = this.marketingViaLite ? 'marketing_messages' : 'messages';
-    const json = await this.call(endpoint, {
+    // 🔴 `product_policy` est le défaut de Meta, posé quand même : c'est lui qui laisse partir le marketing d'un compte
+    // qui n'a pas signé les conditions de la MM API. Un changement de défaut chez Meta couperait sinon ces comptes.
+    const json = await this.call(this.marketingViaLite ? 'marketing_messages' : 'messages', {
       messaging_product: 'whatsapp',
       ...target,
       type: 'template',
       template: templatePayload(params.template),
+      ...(this.marketingViaLite ? { product_policy: 'CLOUD_API_FALLBACK' } : {}),
     });
     return { messageId: this.messageId(json) };
   }

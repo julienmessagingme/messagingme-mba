@@ -116,6 +116,51 @@ function deps(over: Partial<DepsMoteurDeTest> & { recipients: RecipientStore }):
   };
 }
 
+/** Le template est marketing CHEZ META : c'est ce qui fait partir la campagne par `sendMarketing` (plan du 2026-10-14). */
+const MARKETING_CHEZ_META = async (): Promise<string> => 'marketing';
+
+/**
+ * LA CATÉGORIE DE META CHOISIT L'ENVOI, PAS CELLE DE LA CAMPAGNE (plan du 2026-10-14). `campaign.category` est un choix
+ * de consentement, « Marketing » par défaut dans l'assistant : un modèle de service laissé sur ce défaut partirait par
+ * `sendMarketing`, que la MM API refuse en bloc (134100) quand `META_MM_LITE` est allumé.
+ */
+describe('runCampaign : la catégorie du template chez Meta choisit sendMarketing ou sendTemplate', () => {
+  it('🔴 campagne marketing (consentement) d’un modèle utility chez Meta -> sendTemplate, jamais sendMarketing', async () => {
+    const sender = new FakeSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    const report = await lancerCampagne(campaign, deps({ recipients, sender, categorieDuModele: async () => 'utility' }));
+    expect(campaign.category).toBe('marketing');
+    expect(report).toMatchObject({ sent: 1, failed: 0 });
+    expect(sender.marketingCalls).toEqual([]);
+    expect(sender.templateCalls).toEqual(['+33611']);
+  });
+
+  it('campagne utility d’un modèle que Meta a reclassé marketing -> sendMarketing', async () => {
+    const sender = new FakeSender();
+    const recipients = new FakeRecipients([rec('r1', '+33611')]);
+    await lancerCampagne({ ...campaign, category: 'utility' }, deps({ recipients, sender, categorieDuModele: MARKETING_CHEZ_META }));
+    expect(sender.marketingCalls).toEqual(['+33611']);
+    expect(sender.templateCalls).toEqual([]);
+  });
+
+  it('catégorie illisible ou capacité absente -> sendTemplate, comme avant la MM API', async () => {
+    for (const lecture of [async (): Promise<string> => { throw new Error('Meta injoignable'); }, async () => null, undefined]) {
+      const sender = new FakeSender();
+      const recipients = new FakeRecipients([rec('r1', '+33611')]);
+      const report = await lancerCampagne(campaign, deps({ recipients, sender, ...(lecture ? { categorieDuModele: lecture } : {}) }));
+      expect(report).toMatchObject({ sent: 1, failed: 0 });
+      expect(sender.marketingCalls).toEqual([]);
+    }
+  });
+
+  it('la catégorie est lue UNE fois par run, sur le template de l’étage WhatsApp', async () => {
+    const lus: string[] = [];
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622'), rec('r3', '+33633')]);
+    await lancerCampagne(campaign, deps({ recipients, categorieDuModele: async (_t, nom, langue) => { lus.push(`${nom}/${langue}`); return 'marketing'; } }));
+    expect(lus).toEqual([`${campaign.templateName}/${campaign.templateLanguage}`]);
+  });
+});
+
 describe('runCampaign', () => {
   it('envoie à tous les pending, enregistre les message ids, statut completed', async () => {
     const sender = new FakeSender();
@@ -170,7 +215,7 @@ describe('runCampaign', () => {
     };
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622'), rec('r3', '+33633')]);
     const campaigns = new FakeCampaigns();
-    const report = await lancerCampagne(campaign, deps({ recipients, sender, campaigns }));
+    const report = await lancerCampagne(campaign, deps({ recipients, sender, campaigns, categorieDuModele: MARKETING_CHEZ_META }));
     expect(report).toMatchObject({ sent: 1, skipped: 2, failed: 0, paused: false });
     expect(recipients.results.get('r2')).toEqual({ status: 'skipped', error: limite.message });
     expect(recipients.results.get('r3')).toEqual({ status: 'skipped', error: limite.message });
@@ -195,7 +240,7 @@ describe('runCampaign', () => {
     const sender = new FakeSender();
     // r1 = numéro E.164 -> to ; r2 = BSUID -> recipient.
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', 'BSUID_xyz')]);
-    await lancerCampagne(campaign, deps({ recipients, sender }));
+    await lancerCampagne(campaign, deps({ recipients, sender, categorieDuModele: MARKETING_CHEZ_META }));
     expect(sender.marketingParams[0]).toMatchObject({ to: '+33611' });
     expect(sender.marketingParams[0]!.recipient).toBeUndefined();
     expect(sender.marketingParams[1]).toMatchObject({ recipient: 'BSUID_xyz' });
@@ -430,7 +475,7 @@ describe('runCampaign', () => {
     const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622')]);
     recipients.throwSentFor = new Set(['r1']); // le message part, mais l'écriture DB casse
     // L'erreur de persistance remonte (erreur dure) : on NE compte PAS r1 comme échec.
-    await expect(lancerCampagne(campaign, deps({ recipients, sender }))).rejects.toThrow(/db down/);
+    await expect(lancerCampagne(campaign, deps({ recipients, sender, categorieDuModele: MARKETING_CHEZ_META }))).rejects.toThrow(/db down/);
     expect(sender.marketingCalls).toContain('+33611'); // message réellement envoyé
     expect(recipients.results.get('r1')).toBeUndefined(); // ni 'sent' ni 'failed' persisté
   });

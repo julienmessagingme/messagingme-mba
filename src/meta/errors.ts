@@ -52,11 +52,16 @@ export function raisonDePause(err: unknown): RaisonDePause | undefined {
 const RETRYABLE_CODES = new Set<number>([1, 2, 4, 130429, 131016, 131048, 131056, 133016]);
 // Terminaux : rejouer ne sert à rien (param invalide, hors fenêtre, marché bloqué, auth).
 const TERMINAL_CODES = new Set<number>([100, 190, 131047, 131049, 131051, 131052, 131053]);
+// Les refus de la Marketing Messages API (catégorie non marketing, modèle en synchronisation, modèle indisponible) sont
+// définitifs, et Meta rend 134102 en HTTP 500 : la règle des 5xx les rejouerait quatre fois pour rien, en consommant
+// le débit du numéro. Ils passent donc AVANT elle (plan du 2026-10-14).
+const TERMINAUX_MEME_EN_5XX = new Set<number>([134100, 134101, 134102]);
 
 /** Décide si une réponse d'erreur Meta est rejouable. */
 export function classify(httpStatus: number, body: MetaErrorBody | null): boolean {
   if (httpStatus === 429) return true; // rate limit
   if (httpStatus === 408 || httpStatus === 425) return true; // timeout / too early : transitoires
+  if (body?.code !== undefined && TERMINAUX_MEME_EN_5XX.has(body.code)) return false;
   if (httpStatus >= 500) return true; // erreur serveur transitoire
   const code = body?.code;
   if (code !== undefined) {

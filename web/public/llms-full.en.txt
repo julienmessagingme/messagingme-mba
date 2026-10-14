@@ -3836,6 +3836,32 @@ The template parameters fail Meta’s validation.
 
 What to do: Read the error detail, fix the parameters and send again. A template accepted at creation can still be refused this way when sent.
 
+<a id="meta-134100"></a>
+
+#### `134100`
+
+The Marketing Messages API only accepts marketing category templates.
+
+What to do: Send again: Meta probably reclassified the template between the reading of its category and the send.
+
+What Messaging Me already does: Messaging Me reads the template category at Meta and only sends marketing templates through this API.
+
+<a id="meta-134101"></a>
+
+#### `134101`
+
+The template was created, or reused after 7 days without sending, less than 10 minutes ago: Meta is still syncing it.
+
+What to do: Wait 10 minutes, then send again.
+
+<a id="meta-134102"></a>
+
+#### `134102`
+
+The template is unavailable for the Marketing Messages API: its sync failed, or the account is not eligible.
+
+What to do: Check the WhatsApp account eligibility in WhatsApp Manager, then contact Meta support if it is fine.
+
 ### Content and files
 
 <a id="meta-100"></a>

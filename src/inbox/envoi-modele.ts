@@ -1,5 +1,5 @@
 import { buildTemplateComponents } from '../meta/template-components';
-import type { TemplateSpec } from '../meta/types';
+import { messagingTarget, type MarketingParams, type TemplateSpec } from '../meta/types';
 import type { InboxRouteDeps } from '../http/inbox';
 import type { PgTrackedLinkStore } from '../links/tracked-links.pg';
 import { suffixesPourUnEnvoi } from '../links/suffixes-envoi';
@@ -15,8 +15,14 @@ import { messageDe } from '../lib/erreur';
  * (`{numero_commande}`) se remplit avec SA fiche.
  */
 export interface DepsEnvoiModeleInbox {
-  /** Le client Meta du numéro de l'espace (jeton de l'espace, repli global). */
-  client(tenantId: string, phoneNumberId: string): Promise<{ sendTemplate(to: string, spec: TemplateSpec): Promise<{ messageId: string }> }>;
+  /**
+   * Le client Meta du numéro de l'espace (jeton de l'espace, repli global). `sendMarketing` porte un modèle déclaré
+   * marketing : c'est lui qui prend la Marketing Messages API quand `META_MM_LITE` est allumé (plan du 2026-10-14).
+   */
+  client(tenantId: string, phoneNumberId: string): Promise<{
+    sendTemplate(to: string, spec: TemplateSpec): Promise<{ messageId: string }>;
+    sendMarketing(params: MarketingParams): Promise<{ messageId: string }>;
+  }>;
   /** Les liens tracés du template, et le jeton public du contact. */
   trackedLinks: Pick<PgTrackedLinkStore, 'listByTemplates' | 'jetonPourE164'>;
 }
@@ -41,6 +47,9 @@ export function creerEnvoiModeleInbox(deps: DepsEnvoiModeleInbox): InboxRouteDep
       ...suffixes,
     });
     const spec = { name: tpl.name, language: tpl.language, ...(components.length > 0 ? { components } : {}) };
-    return (await client.sendTemplate(to, spec)).messageId;
+    const res = tpl.templateCategory === 'marketing'
+      ? await client.sendMarketing({ ...messagingTarget(to), template: spec })
+      : await client.sendTemplate(to, spec);
+    return res.messageId;
   };
 }

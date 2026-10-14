@@ -95,6 +95,9 @@ describe('pullFromInfo / pullFromError', () => {
   it('code 190 / HTTP 401 -> authError ; code 100 générique -> PAS authError (gris, pas rouge token)', () => {
     expect(pullFromError(new MetaApiError(401, { code: 190 }))).toEqual({ ok: false, authError: true });
     expect(pullFromError(new MetaApiError(400, { code: 100 }))).toEqual({ ok: false, authError: false });
+    // Le type OAuthException seul n'est pas un jeton mort : la carte du numéro ne passe pas au rouge pour un refus.
+    expect(pullFromError(new MetaApiError(400, { code: 100, type: 'OAuthException' }))).toEqual({ ok: false, authError: false });
+    expect(pullFromError(new MetaApiError(400, { code: 190, type: 'OAuthException' }))).toEqual({ ok: false, authError: true });
     expect(pullFromError(new Error('boom'))).toEqual({ ok: false, authError: false });
   });
 });

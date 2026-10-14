@@ -66,7 +66,10 @@ export function parsePricing(json: unknown): PricingSummary | null {
   let totalCost = 0;
   for (const raw of points) {
     const p = raw as { pricing_type?: unknown; pricing_category?: unknown; cost?: unknown; volume?: unknown };
-    const category = typeof p.pricing_category === 'string' ? p.pricing_category.toLowerCase() : '';
+    const lue = typeof p.pricing_category === 'string' ? p.pricing_category.toLowerCase() : '';
+    // Un envoi par la Marketing Messages API remonte en MARKETING_LITE, au même prix que le marketing de la Cloud API :
+    // compté à part, il laisserait les écrans de coût sans tarif marketing (`byCategory['marketing']`).
+    const category = lue === 'marketing_lite' ? 'marketing' : lue;
     if (!category) continue;
     // Seul le facturé (REGULAR) dérive un tarif effectif ; les FREE_* ont cost 0.
     if (p.pricing_type !== 'REGULAR') continue;

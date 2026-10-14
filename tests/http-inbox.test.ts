@@ -161,6 +161,26 @@ describe('inbox routes', () => {
     await a.close();
   });
 
+  it('🔴 POST send-template : la catégorie déclarée voyage jusqu’à l’envoi (c’est elle qui choisit la MM API), normalisée', async () => {
+    const recus: Array<Record<string, unknown>> = [];
+    const a = app({
+      inbox: { getConversationContext: async () => ({ waId: '33611', windowOpen: false, lastInboundAt: '2026-07-01T00:00:00.000Z' }) },
+      sendTemplateMessage: async (_t, _p, _to, tpl) => { recus.push(tpl as unknown as Record<string, unknown>); return 'wamid.TPL'; },
+    });
+    for (const templateCategory of ['MARKETING', 'utility', 'inconnue', undefined]) {
+      const res = await a.inject({
+        method: 'POST',
+        url: '/tenants/t1/conversations/c1/send-template',
+        ...auth(),
+        payload: { templateName: 'promo', language: 'fr', ...(templateCategory ? { templateCategory } : {}) },
+      });
+      expect(res.statusCode).toBe(200);
+    }
+    expect(recus.map((t) => t['templateCategory'])).toEqual(['marketing', 'utility', undefined, undefined]);
+    expect(recus.slice(2).every((t) => !('templateCategory' in t))).toBe(true);
+    await a.close();
+  });
+
   it('🔴 POST send-template : retrait de la liste de l’agent refusé -> erreur LISIBLE, rien de journalisé', async () => {
     // La fabrique Meta retire le contact de la liste de l'agent de Meta avant le modèle ; refusé, le modèle ne part
     // pas. 4xx et non 5xx (Cloudflare remplacerait le corps), avec la phrase qui dit quoi faire.

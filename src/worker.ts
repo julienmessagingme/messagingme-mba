@@ -743,6 +743,9 @@ export async function demarrerWorker(): Promise<void> {
           const mediaId = info.headerMediaUrl ? await prepareHeaderMedia(tenant, info.headerMediaUrl) : null;
           return { headerFormat: info.headerFormat, mediaId };
         },
+        // La catégorie du template chez Meta, par le même cache : elle choisit `sendMarketing` (plan du 2026-10-14).
+        categorieDuModele: async (tenant: string, name: string, language: string) =>
+          (await templateVarInfo(tenant, name, language))?.category ?? null,
         /**
          * Ce contact est joignable en WhatsApp. Dans le bloc non-DRY_RUN exprès : en DRY_RUN le faux sender réussit
          * toujours, et on écrirait « joignable » sur des numéros jamais sollicités (une mesure inventée est pire

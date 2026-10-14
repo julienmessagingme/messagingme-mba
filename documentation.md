@@ -3253,7 +3253,7 @@ constantes du bloc `constantes` en fin de `src/config.ts` depuis le 2026-09-25 :
 | Famille | Exemples | Ce qu'un mauvais réglage coûte |
 |---|---|---|
 | **Secrets obligatoires** | `AUTH_SECRET`, `META_APP_SECRET`, `DATABASE_URL`, `ENCRYPTION_KEY` | le boot échoue, ou une faille |
-| **Interrupteurs de fonctionnalité** | `META_ES_CONFIG_ID`, `AI_GATEWAY_API_KEY`, `DRY_RUN`, `CONVERSATION_ANALYSIS_ENABLED`, `OPS_EMAILS` | vide = la fonctionnalité est OFF, proprement (503 explicite, file non consommée, `/ops` fermé pour tous) |
+| **Interrupteurs de fonctionnalité** | `META_ES_CONFIG_ID`, `AI_GATEWAY_API_KEY`, `DRY_RUN`, `CONVERSATION_ANALYSIS_ENABLED`, `OPS_EMAILS`, et `META_MM_LITE` (`false` par défaut, § 12, invariant 54) | vide = la fonctionnalité est OFF, proprement (503 explicite, file non consommée, `/ops` fermé pour tous) |
 | **Capacité** | `DB_POOL_MAX`, `PGBOSS_MAX`, `RATE_LIMIT_*` | latence, saturation muette, ou coupure de service |
 | **Rétention** | `WEBHOOK_EVENTS_RETENTION_DAYS` | une réponse RGPD fausse |
 | **Paramètres commerciaux** | `EUR_PER_USD`, `CREDIT_OFFERT_MICRO_EUR` | ce qu'on facture, et ce qu'on offre (la commission vit dans la grille des offres, `src/offres/offres.ts`) |
@@ -4137,6 +4137,21 @@ Ajouté par le lot 4 de l'API publique :
    empreinte dans la liste de refus (§ du consentement). Il n'y a pas de route d'import d'un fichier : le lot
    `POST /v1/contacts/batch` reste à `MAX_BATCH` (relevé, il garderait plus longtemps la place lourde unique du
    processus, celle de `/v1/sends`), et la doc donne la recette d'un fichier envoyé en lots.
+54. **La Marketing Messages API (ex-MM Lite) tient à UN interrupteur, `META_MM_LITE`** (plan du 2026-10-14), éteint
+   par défaut. Allumé, TOUT modèle marketing part par `/marketing_messages` (`MetaClient.sendMarketing`) sur les
+   trois chemins : la campagne et le bloc de scénario (la catégorie LUE chez Meta, `categorieDuModele` et
+   `templateVarInfo`), l'Inbox (la catégorie déclarée par l'écran, tirée de la liste des modèles de Meta). 🔴 Jamais
+   `campaign.category` : c'est un choix de CONSENTEMENT, « Marketing » par défaut dans l'assistant, qu'un modèle
+   utility peut porter, et `/marketing_messages` refuse tout modèle non marketing (134100). Le statut du compte n'est
+   PAS lu : l'envoi pose `product_policy: CLOUD_API_FALLBACK`, et Meta repasse lui-même par la Cloud API un compte
+   qui n'a pas signé les conditions. Un refus de la MM API est un échec d'envoi, sans repli de notre côté, et jamais
+   rejoué (`TERMINAUX_MEME_EN_5XX`, 134102 arrivant en HTTP 500) : 134100, 134101 (modèle créé, ou réutilisé après
+   7 jours sans envoi, il y a moins de 10 minutes), 134102. Les accusés de ces envois portent `marketing_lite`, et
+   `pricing_analytics` `MARKETING_LITE`, que `parsePricing` compte dans `marketing` (même prix).
+55. **Un jeton d'espace n'est déclaré mort que sur le code 190 ou un HTTP 401** (`isMetaAuthError`, que
+   `pullFromError` importe). Jamais sur le seul type `OAuthException`, que Meta pose sur la plupart de ses refus
+   d'envoi (100, 132000, 4, 134101...) : l'intercepteur de la fabrique invalidait alors le jeton d'un espace entier
+   sur un simple refus, et coupait tous ses envois jusqu'à une reconnexion (vu le 2026-10-05).
 
 ### Sur les contrats externes
 

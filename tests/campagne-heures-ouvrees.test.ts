@@ -118,7 +118,8 @@ describe('campagne « uniquement pendant les heures ouvrées »', () => {
     const campaigns = new Campaigns();
     const report = await lancerCampagne(
       campagne({ businessHoursOnly: true }),
-      deps({ recipients, sender, campaigns, now: () => heure }, OUVERT),
+      // Template marketing CHEZ META : c'est ce qui fait partir la campagne par `sendMarketing` (plan du 2026-10-14).
+      deps({ recipients, sender, campaigns, now: () => heure, categorieDuModele: async () => 'marketing' }, OUVERT),
     );
 
     expect(sender.envoyes).toEqual(['+33611']); // le premier est parti, les deux autres non

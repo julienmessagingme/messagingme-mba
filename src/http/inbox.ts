@@ -37,6 +37,12 @@ export interface OutboundTemplate {
   headerFormat?: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
   /** Cartes d'un template carousel, visuels déjà re-téléversés (`mediaId`). Absent = template classique. */
   carousel?: { cards: OutboundCarouselCard[] };
+  /**
+   * La catégorie déclarée par l'écran. `marketing` fait partir le modèle par la Marketing Messages API quand
+   * `META_MM_LITE` est allumé (plan du 2026-10-14) ; absente ou `utility`, il part par `/messages`. Déclarée et non
+   * relue : une déclaration fausse ne fait pas pire qu'un refus de Meta (134100), ou qu'un envoi par la Cloud API.
+   */
+  templateCategory?: 'marketing' | 'utility';
 }
 
 /** Ce que les routes lisent et écrivent des conversations. */
@@ -223,8 +229,9 @@ export interface InboxRouteDeps extends DepsRepondre {
   estDesabonne(tenantId: string, waId: string): Promise<boolean>;
   /**
    * La catégorie réelle d'un modèle, telle que Meta la connaît ; `null` = indéterminable. 🔴 Jamais lue dans le
-   * corps : `templateCategory` vient du navigateur et ne sert qu'aux statistiques, s'en servir comme garde
-   * laisserait se déclarer « utility » pour écrire à un désabonné. Appelée seulement sur un contact désabonné.
+   * corps : `templateCategory` vient du navigateur et ne sert qu'aux statistiques et au choix de l'envoi (la
+   * Marketing Messages API, plan du 2026-10-14), s'en servir comme garde laisserait se déclarer « utility » pour écrire
+   * à un désabonné. Appelée seulement sur un contact désabonné.
    */
   categorieDuModele(tenantId: string, name: string, language: string): Promise<'marketing' | 'utility' | null>;
   /**
@@ -933,7 +940,8 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     const headerMediaUrl = nonEmpty(b.headerMediaUrl) ? b.headerMediaUrl : undefined;
     const headerFormat =
       b.headerFormat === 'IMAGE' || b.headerFormat === 'VIDEO' || b.headerFormat === 'DOCUMENT' ? b.headerFormat : undefined;
-    // Catégorie du template (pour les stats) : normalisée en minuscules marketing|utility.
+    // Catégorie du template, normalisée en minuscules marketing|utility : elle sert aux statistiques et choisit l'envoi
+    // (`marketing` -> Marketing Messages API quand l'interrupteur est allumé), JAMAIS le consentement.
     const catRaw = typeof b.templateCategory === 'string' ? b.templateCategory.toLowerCase() : '';
     const templateCategory = catRaw === 'marketing' || catRaw === 'utility' ? catRaw : null;
 
@@ -976,6 +984,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
       ...(headerMediaUrl ? { headerMediaUrl } : {}),
       ...(headerFormat ? { headerFormat } : {}),
       ...(carousel ? { carousel } : {}),
+      ...(templateCategory ? { templateCategory } : {}),
     });
     // Même prise de main que sur la réponse texte : un template envoyé à la main est un acte d'opérateur.
     await deps.takeControl(tenant, ctx.waId, parLaSession(req)).catch(() => {});

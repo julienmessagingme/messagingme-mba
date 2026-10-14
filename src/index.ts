@@ -543,8 +543,7 @@ async function main(): Promise<void> {
   /**
    * Micro-cache du catalogue des templates de `GET /v1/templates` : une minute, par espace et par WABA.
    * Route publique, donc appelable en boucle : sans cache, chaque appel relirait la liste complète du WABA
-   * chez Meta (jusqu'à vingt pages), épuiserait le quota de gestion du WABA, et `isMetaAuthError` prendrait
-   * ce refus pour une panne d'authentification, invalidant le jeton et bloquant les envois de l'espace.
+   * chez Meta (jusqu'à vingt pages) et épuiserait le quota de gestion du WABA.
    * Un échec de Meta n'est pas gardé (`list` lève, `cacheCourt` ne garde pas un rejet). Un espace sans WABA
    * n'y entre pas (la clé porte le WABA).
    */
@@ -1375,7 +1374,7 @@ async function main(): Promise<void> {
       /**
        * 🔴 La garde d'opt-out de l'envoi de modèle depuis l'Inbox, en deux morceaux : le statut du contact
        * (`estDesabonne`, branché par `depsRepondre`) et la catégorie réelle du modèle. Le `templateCategory` du
-       * corps vient du navigateur et ne sert qu'aux statistiques : s'en servir laisserait n'importe qui se
+       * corps vient du navigateur et ne sert qu'aux statistiques et au choix de l'envoi : s'en servir laisserait n'importe qui se
        * déclarer « utility ». `templateVarInfo` est la lecture du worker, avec son cache court.
        */
       categorieDuModele: async (tenant, name, language) => {

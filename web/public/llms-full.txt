@@ -3836,6 +3836,32 @@ Les paramètres du modèle ne passent pas la validation de Meta.
 
 Que faire : Lire le détail de l’erreur, corriger les paramètres et renvoyer. Un modèle accepté à la création peut encore être refusé ainsi à l’envoi.
 
+<a id="meta-134100"></a>
+
+#### `134100`
+
+La Marketing Messages API n’accepte que les modèles de catégorie marketing.
+
+Que faire : Renvoyer : le modèle a sans doute été reclassé par Meta entre la lecture de sa catégorie et l’envoi.
+
+Ce que Messaging Me fait déjà : Messaging Me lit la catégorie du modèle chez Meta et n’envoie par cette API que les modèles marketing.
+
+<a id="meta-134101"></a>
+
+#### `134101`
+
+Le modèle a été créé, ou réutilisé après 7 jours sans envoi, il y a moins de 10 minutes : Meta le synchronise encore.
+
+Que faire : Attendre 10 minutes, puis renvoyer.
+
+<a id="meta-134102"></a>
+
+#### `134102`
+
+Le modèle est indisponible pour la Marketing Messages API : sa synchronisation a échoué, ou le compte n’y est pas éligible.
+
+Que faire : Vérifier l’éligibilité du compte WhatsApp dans WhatsApp Manager, puis contacter le support de Meta si elle est bonne.
+
 ### Le contenu et les fichiers
 
 <a id="meta-100"></a>

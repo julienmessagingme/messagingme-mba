@@ -1,4 +1,4 @@
-import { MetaApiError } from '../meta/errors';
+import { isMetaAuthError } from '../meta/credentials';
 import type { PhoneNumberInfo, WabaInfo } from '../meta/phone-number';
 import { normalizeQuality } from './service';
 
@@ -56,10 +56,9 @@ export function pullFromInfo(info: PhoneNumberInfo, waba?: WabaInfo): PullResult
 }
 
 /**
- * Mappe une erreur d'appel en échec. authError = token invalide ou expiré : code Graph 190 (OAuthException) ou
- * HTTP 401. Le code 100 (« invalid parameter ») est générique et tombe en transitoire.
+ * Mappe une erreur d'appel en échec. authError = token invalide ou expiré, par la règle unique `isMetaAuthError`
+ * (code 190 ou HTTP 401). Tout autre refus, `OAuthException` compris, tombe en transitoire.
  */
 export function pullFromError(err: unknown): PullResult {
-  const authError = err instanceof MetaApiError && (err.code === 190 || err.httpStatus === 401 || err.type === 'OAuthException');
-  return { ok: false, authError };
+  return { ok: false, authError: isMetaAuthError(err) };
 }

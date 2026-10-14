@@ -16,8 +16,10 @@ export const schema = z.object({
   /** App ID Meta (public) : endpoint du resumable upload `/{appId}/uploads` (en-têtes média du carrousel). */
   META_APP_ID: z.string().default('988129420727963'),
   /**
-   * Router le marketing par MM Lite (`/marketing_messages`). Défaut 'false' : endpoint standard `/messages`.
-   * MM Lite exige un onboarding Business Manager, sans lui Meta rend 131042.
+   * Envoyer TOUT modèle marketing par la Marketing Messages API, ex-MM Lite (`/marketing_messages`), sur les trois
+   * chemins (campagne, bloc de scénario, Inbox). Défaut 'false' : `/messages`, partout. C'est l'interrupteur
+   * d'allumage ET de retour arrière (plan du 2026-10-14) : il se change dans `.env.prod`, puis `--force-recreate`
+   * de `mba-api` et `mba-worker`, qui construisent tous deux des clients d'envoi.
    */
   META_MM_LITE: z.string().default('false'),
   /** Configuration Embedded Signup (Facebook Login for Business) : l'id de configuration du dashboard Meta.

@@ -14,9 +14,16 @@ export class TokenInvalidError extends Error {
   }
 }
 
-/** Vrai si l'erreur Meta est une erreur d'auth (token mort). Règle unique, alignée sur pull.ts. */
+/**
+ * Vrai si l'erreur Meta dit un jeton mort : code 190, ou HTTP 401. Règle unique, que `pullFromError` importe.
+ *
+ * 🔴 JAMAIS LE SEUL TYPE `OAuthException` : Meta le pose sur la plupart de ses refus d'envoi (paramètre refusé 100,
+ * paramètres du modèle 132000, quota, refus de la Marketing Messages API 134101...). Le tenir pour une preuve
+ * invalidait le jeton d'un espace entier sur un simple refus, et coupait tous ses envois jusqu'à une reconnexion :
+ * c'est ce qu'a vécu « Test DIDWA claude code », marqué invalide le 2026-10-05 alors que Meta le disait valide.
+ */
 export function isMetaAuthError(err: unknown): boolean {
-  return err instanceof MetaApiError && (err.code === 190 || err.httpStatus === 401 || err.type === 'OAuthException');
+  return err instanceof MetaApiError && (err.code === 190 || err.httpStatus === 401);
 }
 
 export interface WabaCredential {

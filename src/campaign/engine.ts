@@ -186,6 +186,14 @@ export interface EngineDeps {
     language: string,
   ) => Promise<{ headerFormat: 'IMAGE' | 'VIDEO' | 'DOCUMENT'; mediaId: string | null } | null>;
   /**
+   * La catégorie que Meta donne au template (`marketing`, `utility`...), lue une fois par run. C'est ELLE qui choisit
+   * `sendMarketing`, donc la Marketing Messages API quand `META_MM_LITE` est allumé (plan du 2026-10-14), jamais
+   * `campaign.category` : celle-ci est un choix de CONSENTEMENT, coché à la main et « Marketing » par défaut dans
+   * l'assistant, qu'un modèle utility peut porter. Routée sur elle, une campagne de service laissée sur le défaut serait
+   * refusée en bloc (134100). Absente, illisible ou autre : `sendTemplate`, toujours sur `/messages`.
+   */
+  categorieDuModele?: (tenantId: string, name: string, language: string) => Promise<string | null>;
+  /**
    * Écrit la joignabilité WhatsApp d'un contact, ici toujours `true` : sans elle, personne n'écrirait jamais
    * « oui » (le balayage de relance n'écrit que « non ») et la péremption ne se rafraîchirait pas.
    *
@@ -440,6 +448,16 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       if (headerMedia) headerBlocked = headerMediaSendBlocker(headerMedia.headerFormat, headerMedia.mediaId ?? undefined);
     } catch {
       /* lecture best-effort : un template sans en-tête média ne doit jamais être bloqué par elle */
+    }
+  }
+
+  // La catégorie du template chez Meta, relue une fois par run : elle seule choisit l'envoi (`categorieDuModele`).
+  let categorieMeta: string | null = null;
+  if (etageWa && !etageWa.workflowId && deps.categorieDuModele) {
+    try {
+      categorieMeta = await deps.categorieDuModele(campaign.tenantId, etageWa.templateName, etageWa.templateLanguage);
+    } catch {
+      /* lecture best-effort : illisible, le template part par `sendTemplate`, comme avant la MM API */
     }
   }
 
@@ -782,9 +800,10 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
           }),
         };
         // Numéro E.164 -> `to`, BSUID -> `recipient` (source unique messagingTarget). sendTemplate route
-        // de la même façon en interne, donc l'utility passe l'identité brute.
+        // de la même façon en interne, donc l'utility passe l'identité brute. La catégorie de MÉTA choisit, pas
+        // celle de la campagne (`categorieDuModele`).
         res =
-          campaign.category === 'marketing'
+          categorieMeta === 'marketing'
             ? await deps.sender.sendMarketing({ ...messagingTarget(r.toE164), template: tpl })
             : await deps.sender.sendTemplate(r.toE164, tpl);
       }

@@ -79,7 +79,7 @@ describe('câblage des capacités du moteur de campagne', () => {
     expect(debut, 'le spread conditionnel des capacités doit exister').toBeGreaterThan(0);
     expect(fin).toBeGreaterThan(debut);
     const bloc = workerSansCommentaires.slice(debut, fin);
-    for (const capacite of ['boutonsTraces', 'jetonsPourContacts', 'getTemplateCarousel', 'getTemplateHeaderMedia']) {
+    for (const capacite of ['boutonsTraces', 'jetonsPourContacts', 'getTemplateCarousel', 'getTemplateHeaderMedia', 'categorieDuModele']) {
       expect(bloc, `${capacite} doit être dans le bloc gardé`).toContain(`${capacite}:`);
     }
   });

@@ -42,6 +42,7 @@ function fauxClient(appels: Appel[]): ClientDesEnvois {
   const noter = (methode: string) => async (...args: unknown[]) => { appels.push([methode, ...args]); return { messageId: MESSAGE_ID }; };
   return {
     sendTemplate: noter('sendTemplate'),
+    sendMarketing: noter('sendMarketing'),
     sendCtaUrl: noter('sendCtaUrl'),
     sendInteractive: noter('sendInteractive'),
     sendImage: noter('sendImage'),
@@ -183,6 +184,52 @@ describe('sendTemplate : la limite des modèles du mois atteinte', () => {
     const client: ClientDesEnvois = { ...fauxClient([]), sendTemplate: async () => { throw new Error('panne réseau'); } };
     const { envois } = monter({ clientWhatsApp: vi.fn(async () => client) });
     await expect(envois.sendTemplate(T, W, NOM, LANGUE, [], [])).rejects.toThrow('panne réseau');
+  });
+});
+
+/**
+ * LA MARKETING MESSAGES API (plan du 2026-10-14) : un modèle dont la catégorie LUE chez Meta est marketing part par
+ * `sendMarketing`, qui prend `/marketing_messages` quand `META_MM_LITE` est allumé ; tout le reste par `sendTemplate`,
+ * que la MM API refuserait (134100). Chaque branche lit sa propre catégorie.
+ */
+describe('sendTemplate : la catégorie lue choisit sendMarketing ou sendTemplate', () => {
+  for (const { branche, params } of BRANCHES) {
+    it(`🔴 branche ${branche} : marketing -> sendMarketing, même destinataire, même modèle, et le fil garde sa catégorie`, async () => {
+      const { envois, appels, journal } = monter({ templateVarInfo: vi.fn(async () => ({ ...LECTURE, category: 'marketing' })) });
+      expect(await envois.sendTemplate(T, W, NOM, LANGUE, [], params)).toEqual({ messageId: MESSAGE_ID });
+      expect(appels).toEqual([['sendMarketing', { to: W, template: { name: NOM, language: LANGUE } }]]);
+      expect(ligneDuFil(journal)).toMatchObject({ templateCategory: 'marketing', messageId: MESSAGE_ID });
+    });
+
+    it(`branche ${branche} : utility -> sendTemplate`, async () => {
+      const { envois, appels } = monter();
+      await envois.sendTemplate(T, W, NOM, LANGUE, [], params);
+      expect(appels).toEqual([['sendTemplate', W, { name: NOM, language: LANGUE }]]);
+    });
+
+    it(`🔴 branche ${branche} : la limite des modèles du mois vaut aussi pour un modèle marketing`, async () => {
+      const erreurs = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const client: ClientDesEnvois = { ...fauxClient([]), sendMarketing: async () => { throw new LimiteOffreError(T, 'envoisModelesMois', 1000); } };
+        const { envois, journal } = monter({ clientWhatsApp: vi.fn(async () => client), templateVarInfo: vi.fn(async () => ({ ...LECTURE, category: 'marketing' })) });
+        expect(await envois.sendTemplate(T, W, NOM, LANGUE, [], params)).toBe(`template « ${NOM} » : ${new LimiteOffreError(T, 'envoisModelesMois', 1000).message}`);
+        expect(journal).toEqual([]);
+      } finally {
+        erreurs.mockRestore();
+      }
+    });
+  }
+
+  it('un destinataire BSUID part en `recipient`, comme dans une campagne', async () => {
+    const { envois, appels } = monter({ templateVarInfo: vi.fn(async () => ({ ...LECTURE, category: 'marketing' })) });
+    await envois.sendTemplate(T, 'US.13491208655302741918', NOM, LANGUE, [], []);
+    expect(appels).toEqual([['sendMarketing', { recipient: 'US.13491208655302741918', template: { name: NOM, language: LANGUE } }]]);
+  });
+
+  it('une lecture en échec part par sendTemplate : sans catégorie lue, jamais la MM API', async () => {
+    const { envois, appels } = monter({ templateVarInfo: vi.fn(async () => { throw new Error('réseau'); }) });
+    await envois.sendTemplate(T, W, NOM, LANGUE, [], []);
+    expect(appels.map((a) => a[0])).toEqual(['sendTemplate']);
   });
 });
 

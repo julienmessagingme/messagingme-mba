@@ -173,11 +173,12 @@ const liteClient = (transport: HttpTransport) =>
   new MetaClient({ transport, token: 'TOK', phoneNumberId: '123', version: 'v25.0', marketingViaLite: true });
 
 describe('MetaClient.sendMarketing', () => {
-  it('par défaut -> endpoint standard /messages (MM Lite désactivé)', async () => {
+  it('par défaut -> endpoint standard /messages (MM Lite désactivé), sans product_policy', async () => {
     const t = new FakeTransport([okBody('wamid.3a')]);
     await client(t).sendMarketing({ to: '33600000000', template: { name: 'promo', language: 'fr' } });
     expect(t.requests[0]!.url).toBe('https://graph.facebook.com/v25.0/123/messages');
     expect(t.requests[0]!.body).toMatchObject({ to: '33600000000', type: 'template' });
+    expect(t.requests[0]!.body).not.toHaveProperty('product_policy');
   });
 
   it('marketingViaLite=true -> /marketing_messages avec recipient (BSUID)', async () => {
@@ -187,6 +188,25 @@ describe('MetaClient.sendMarketing', () => {
     expect(req.url).toBe('https://graph.facebook.com/v25.0/123/marketing_messages');
     expect(req.body).toMatchObject({ recipient: 'US.123', type: 'template' });
     expect(req.body).not.toHaveProperty('to');
+  });
+
+  it('🔴 marketingViaLite=true -> product_policy CLOUD_API_FALLBACK posé : un compte non activé repasse par la Cloud API', async () => {
+    const t = new FakeTransport([okBody('wamid.3b')]);
+    await liteClient(t).sendMarketing({ to: '33600000000', template: { name: 'promo', language: 'fr' } });
+    expect(t.requests[0]!.body).toMatchObject({ product_policy: 'CLOUD_API_FALLBACK', template: { name: 'promo', language: { code: 'fr' } } });
+  });
+
+  it('marketingViaLite=true ne touche pas sendTemplate : un modèle sans catégorie marketing reste sur /messages', async () => {
+    const t = new FakeTransport([okBody('wamid.3c')]);
+    await liteClient(t).sendTemplate('33600000000', { name: 'facture', language: 'fr' });
+    expect(t.requests[0]!.url).toBe('https://graph.facebook.com/v25.0/123/messages');
+    expect(t.requests[0]!.body).not.toHaveProperty('product_policy');
+  });
+
+  it('marketingViaLite=true : un refus de la MM API (134101) reste un échec, sans second appel', async () => {
+    const t = new FakeTransport([{ status: 400, json: { error: { code: 134101, message: '(#134101) Your template is still syncing' } } }]);
+    await expect(liteClient(t).sendMarketing({ to: '33600000000', template: { name: 'promo', language: 'fr' } })).rejects.toMatchObject({ name: 'MetaApiError', code: 134101 });
+    expect(t.requests).toHaveLength(1);
   });
 
   it('vers un to (E.164) -> body avec to', async () => {

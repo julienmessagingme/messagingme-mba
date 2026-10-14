@@ -123,10 +123,10 @@ export class MetaFlowClient {
     // Plafond par lecture : elle précède l'envoi d'un formulaire, qu'une lecture pendue retiendrait sans fin.
     const lus = await this.call(`${this.baseUrl}/${this.version}/${encodeURIComponent(flowId)}/assets`, { method: 'GET', signal: AbortSignal.timeout(DELAI_LECTURE_FLOW_MS) })
       .catch((err: unknown) => {
-        // 🔴 Jamais une `MetaApiError` hors d'ici : l'intercepteur de la fabrique (`guard`) prend tout refus de type
-        // `OAuthException` pour un jeton mort et invalide celui de l'espace, or Meta pose ce type sur un simple
-        // paramètre refusé (code 100). Une lecture accessoire ne doit pas couper tous les envois d'un espace ; un jeton
-        // réellement mort sera vu par l'envoi qui suit.
+        // 🔴 Jamais une `MetaApiError` hors d'ici : l'intercepteur de la fabrique (`guard`) invalide le jeton de l'espace
+        // sur une erreur d'authentification, et une lecture accessoire ne doit jamais couper tous les envois d'un espace.
+        // Depuis le 2026-10-14, `isMetaAuthError` ne tient plus le seul type `OAuthException` pour un jeton mort ;
+        // cette conversion reste, parce qu'une lecture n'a pas à juger le jeton : l'envoi qui suit le verra.
         throw new Error(`flow ${flowId} : lecture de ses fichiers refusée (${err instanceof MetaApiError ? `HTTP ${err.httpStatus}, code ${err.code ?? '?'}` : messageDe(err)})`);
       });
     const assets = assetsSchema.safeParse(lus);

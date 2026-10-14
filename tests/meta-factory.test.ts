@@ -85,6 +85,20 @@ describe('MetaClientFactory (B1 : câblage par tenant)', () => {
     expect(invalidated).toEqual(['wA']); // le WABA est marqué invalide (on n'enverra plus dessus)
   });
 
+  it('🔴 intercepteur : un refus d’envoi typé OAuthException (134101, MM API) laisse le WABA actif', async () => {
+    // Meta pose `OAuthException` sur ses refus d'envoi : sur un modèle marketing en synchronisation (134101), le jeton de
+    // l'espace était invalidé, et tous ses envois coupés jusqu'à une reconnexion.
+    const t = new FakeTransport([{ status: 400, json: { error: { code: 134101, type: 'OAuthException', message: '(#134101) Your template is still syncing' } } }]);
+    const { resolver: r, invalidated } = resolver({
+      tenants: { tA: 'wA' },
+      creds: { wA: { businessTokenEnc: 'enc:TOK_A', tokenStatus: 'active' } },
+    });
+    const f = factory(r, t);
+    const sender = await f.senderForTenant('tA', 'pnA');
+    await expect(sender.sendMarketing({ to: '33600000001', template: { name: 'promo', language: 'fr' } })).rejects.toMatchObject({ code: 134101 });
+    expect(invalidated).toEqual([]);
+  });
+
   it('intercepteur : en SOMMEIL (wabaId null), une 401 n\'invalide rien', async () => {
     const t = new FakeTransport([{ status: 401, json: { error: { code: 190, type: 'OAuthException', message: 'x' } } }]);
     const { resolver: r, invalidated } = resolver({ tenants: { tA: 'wA' }, creds: {} }); // pas de credentials -> fallback

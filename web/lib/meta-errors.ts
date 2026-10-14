@@ -10,8 +10,20 @@ import type { Locale } from './locale';
 
 const CODES: Record<string, [string, string]> = {
   '131042': [
-    "Éligibilité / facturation Meta. Le marketing via MM Lite exige un onboarding au niveau Business Manager. On envoie désormais par l’endpoint standard ; si ça persiste, vérifiez le moyen de paiement du WABA.",
-    'Meta eligibility / billing. Marketing through MM Lite requires Business Manager onboarding. We now send through the standard endpoint; if it persists, check the payment method on the WABA.',
+    "Moyen de paiement du compte WhatsApp chez Meta : carte absente ou refusée, ligne de crédit dépassée, devise ou fuseau non réglés. Vérifiez-le dans WhatsApp Manager, puis renvoyez.",
+    'Payment method of the WhatsApp account at Meta: card missing or declined, credit line exceeded, currency or time zone not set. Check it in WhatsApp Manager, then send again.',
+  ],
+  '134100': [
+    "La Marketing Messages API n’accepte que les modèles de catégorie marketing, et Meta classe ce modèle autrement.",
+    'The Marketing Messages API only accepts marketing category templates, and Meta classifies this template otherwise.',
+  ],
+  '134101': [
+    "Modèle créé, ou réutilisé après 7 jours sans envoi, il y a moins de 10 minutes : Meta le synchronise encore. Renvoyez dans 10 minutes.",
+    'Template created, or reused after 7 days without sending, less than 10 minutes ago: Meta is still syncing it. Send again in 10 minutes.',
+  ],
+  '134102': [
+    "Modèle indisponible pour la Marketing Messages API : sa synchronisation a échoué, ou le compte n’y est pas éligible.",
+    'Template unavailable for the Marketing Messages API: its sync failed, or the account is not eligible.',
   ],
   '131047': [
     "Fenêtre de service 24 h fermée : il faut passer par un template (pas un message libre).",

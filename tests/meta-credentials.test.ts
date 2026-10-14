@@ -141,9 +141,19 @@ describe('MetaCredentialsResolver (B1 : token Meta par tenant)', () => {
     await expect(copie.resolveForTenant('tA')).rejects.toBeInstanceOf(TokenInvalidError);
   });
 
-  it('isMetaAuthError : 190 / 401 / OAuthException = true ; 100 = false ; non-Meta = false', () => {
+  it('isMetaAuthError : 190 / 401 = true ; 100 = false ; non-Meta = false', () => {
     expect(isMetaAuthError(new MetaApiError(401, { code: 190, message: 'x' }))).toBe(true);
+    expect(isMetaAuthError(new MetaApiError(400, { code: 190, message: 'x', type: 'OAuthException' }))).toBe(true);
+    expect(isMetaAuthError(new MetaApiError(401, { message: 'x' }))).toBe(true);
     expect(isMetaAuthError(new MetaApiError(400, { code: 100, message: 'x' }))).toBe(false);
     expect(isMetaAuthError(new Error('réseau'))).toBe(false);
+  });
+
+  it('🔴 le seul type OAuthException ne prouve PAS un jeton mort : Meta le pose sur ses refus d’envoi', () => {
+    // Mesuré sur les pages de Meta : 100 (paramètre), 132000 (paramètres du modèle), 4 (quota), 134101 (Marketing
+    // Messages API, modèle en synchronisation). Les tenir pour un jeton mort coupait tous les envois d'un espace.
+    for (const [statut, code] of [[400, 100], [400, 132000], [400, 4], [400, 134101], [500, 134102]] as const) {
+      expect(isMetaAuthError(new MetaApiError(statut, { code, message: 'x', type: 'OAuthException' })), String(code)).toBe(false);
+    }
   });
 });

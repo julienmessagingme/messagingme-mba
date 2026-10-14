@@ -17,6 +17,12 @@ describe('classify', () => {
     expect(classify(400, { code: 130429 })).toBe(true);
     expect(classify(400, { code: 1 })).toBe(true);
   });
+  it('🔴 les refus de la Marketing Messages API ne sont jamais rejoués, même rendus en 5xx (134102 arrive en 500)', () => {
+    expect(classify(500, { code: 134102 })).toBe(false);
+    expect(classify(400, { code: 134101 })).toBe(false);
+    expect(classify(400, { code: 134100 })).toBe(false);
+    expect(classify(500, { code: 131000 })).toBe(true); // la règle des 5xx vaut toujours pour le reste
+  });
   it('131026 n est PAS rejouable : le numero n est pas un numero WhatsApp', () => {
     expect(classify(400, { code: 131026 })).toBe(false);
   });

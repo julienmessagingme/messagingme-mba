@@ -109,6 +109,22 @@ export const ERREURS_META = [
     sens: ['Les paramètres du modèle ne passent pas la validation de Meta.', 'The template parameters fail Meta’s validation.'],
     geste: ['Lire le détail de l’erreur, corriger les paramètres et renvoyer. Un modèle accepté à la création peut encore être refusé ainsi à l’envoi.', 'Read the error detail, fix the parameters and send again. A template accepted at creation can still be refused this way when sent.'],
   },
+  {
+    code: 134100, groupe: 'modele',
+    sens: ['La Marketing Messages API n’accepte que les modèles de catégorie marketing.', 'The Marketing Messages API only accepts marketing category templates.'],
+    geste: ['Renvoyer : le modèle a sans doute été reclassé par Meta entre la lecture de sa catégorie et l’envoi.', 'Send again: Meta probably reclassified the template between the reading of its category and the send.'],
+    chezNous: ['Messaging Me lit la catégorie du modèle chez Meta et n’envoie par cette API que les modèles marketing.', 'Messaging Me reads the template category at Meta and only sends marketing templates through this API.'],
+  },
+  {
+    code: 134101, groupe: 'modele',
+    sens: ['Le modèle a été créé, ou réutilisé après 7 jours sans envoi, il y a moins de 10 minutes : Meta le synchronise encore.', 'The template was created, or reused after 7 days without sending, less than 10 minutes ago: Meta is still syncing it.'],
+    geste: ['Attendre 10 minutes, puis renvoyer.', 'Wait 10 minutes, then send again.'],
+  },
+  {
+    code: 134102, groupe: 'modele',
+    sens: ['Le modèle est indisponible pour la Marketing Messages API : sa synchronisation a échoué, ou le compte n’y est pas éligible.', 'The template is unavailable for the Marketing Messages API: its sync failed, or the account is not eligible.'],
+    geste: ['Vérifier l’éligibilité du compte WhatsApp dans WhatsApp Manager, puis contacter le support de Meta si elle est bonne.', 'Check the WhatsApp account eligibility in WhatsApp Manager, then contact Meta support if it is fine.'],
+  },
   // Le contenu et les fichiers.
   {
     code: 100, groupe: 'contenu',

@@ -3,6 +3,7 @@ import { LimiteOffreError } from '../offres/refus';
 import { problemeLienBouton } from './engine';
 import { buildWorkflowTemplateComponents } from './template-send';
 import type { MetaClient } from '../meta/client';
+import { messagingTarget, type SendResult, type TemplateSpec } from '../meta/types';
 import { carouselSendBlocker, headerMediaSendBlocker } from '../meta/template-components';
 import { FLOW_ENTRY_SCREEN } from '../meta/flow-json';
 import type { OutboundCarouselCard } from '../meta/template-components';
@@ -61,7 +62,7 @@ export type TplInfo = {
 };
 
 /** Les méthodes du client Meta que ces envois appellent, et elles seules. */
-export type ClientDesEnvois = Pick<MetaClient, 'sendTemplate' | 'sendCtaUrl' | 'sendInteractive' | 'sendImage' | 'sendText' | 'sendList' | 'sendFlowMessage'>;
+export type ClientDesEnvois = Pick<MetaClient, 'sendTemplate' | 'sendMarketing' | 'sendCtaUrl' | 'sendInteractive' | 'sendImage' | 'sendText' | 'sendList' | 'sendFlowMessage'>;
 
 /** Ce dont les envois ont besoin, tout requis : un oubli ne compile pas. */
 export interface DepsEnvoisDeBloc {
@@ -109,6 +110,17 @@ async function modeleOuLimite<T>(name: string, waId: string, envoyer: () => Prom
     console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : ${err.message}`);
     return `template « ${name} » : ${err.message}`;
   }
+}
+
+/**
+ * Un modèle dont la catégorie lue chez Meta est marketing part par `sendMarketing` : c'est lui qui prend la Marketing
+ * Messages API quand `META_MM_LITE` est allumé (plan du 2026-10-14), comme le marketing d'une campagne. Catégorie
+ * absente ou autre : `sendTemplate`, toujours sur `/messages`, que la MM API refuserait (134100).
+ */
+function envoyerModele(client: ClientDesEnvois, waId: string, spec: TemplateSpec, categorie: string | undefined): Promise<SendResult> {
+  return categorie === 'marketing'
+    ? client.sendMarketing({ ...messagingTarget(waId), template: spec })
+    : client.sendTemplate(waId, spec);
 }
 
 export function creerEnvoisDeBloc(deps: DepsEnvoisDeBloc): EnvoisDeBloc {
@@ -179,7 +191,7 @@ export function creerEnvoisDeBloc(deps: DepsEnvoisDeBloc): EnvoisDeBloc {
           console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : variable(s) manquante(s) position(s) ${missing.join(',')}`);
           return `template « ${name} » : valeur manquante pour la ou les variables ${missing.map((p) => `{{${p}}}`).join(', ')}`;
         }
-        const res = await modeleOuLimite(name, waId, () => client.sendTemplate(waId, { name, language, ...(components.length > 0 ? { components } : {}) }));
+        const res = await modeleOuLimite(name, waId, () => envoyerModele(client, waId, { name, language, ...(components.length > 0 ? { components } : {}) }, luCampagne?.category));
         if (typeof res === 'string') return res;
         // 🔴 La catégorie vient de `luCampagne`, la lecture de cette branche : les deux branches doivent journaliser
         // la même chose. `luCampagne` null -> pas de catégorie, jamais une catégorie inventée, qui se facturerait au
@@ -232,7 +244,7 @@ export function creerEnvoisDeBloc(deps: DepsEnvoisDeBloc): EnvoisDeBloc {
         console.error(`workflow sendTemplate: « ${name} » non envoyé à ${waId} : variable(s) manquante(s) position(s) ${missing.join(',')}`);
         return `template « ${name} » : ce contact n'a pas de valeur pour la ou les variables ${missing.map((p) => `{{${p}}}`).join(', ')}`;
       }
-      const res = await modeleOuLimite(name, waId, () => client.sendTemplate(waId, { name, language, ...(components.length > 0 ? { components } : {}) }));
+      const res = await modeleOuLimite(name, waId, () => envoyerModele(client, waId, { name, language, ...(components.length > 0 ? { components } : {}) }, info.category));
       if (typeof res === 'string') return res;
       // Journalise le template dans le fil (best-effort), avec sa catégorie lue dans `info` : sans elle, l'envoi
       // compterait en volume mais pas dans le coût.

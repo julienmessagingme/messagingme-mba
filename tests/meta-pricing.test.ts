@@ -33,6 +33,20 @@ describe('parsePricing', () => {
     expect(p.totalCost).toBeCloseTo(2.2721, 4);
   });
 
+  it('🔴 MARKETING_LITE (Marketing Messages API) compte dans marketing : le tarif est recalculé sur le total', () => {
+    const p = parsePricing({ pricing_analytics: { data: [{ data_points: [
+      { pricing_category: 'MARKETING', pricing_type: 'REGULAR', volume: 10, cost: 1.0 },
+      { pricing_category: 'MARKETING_LITE', pricing_type: 'REGULAR', volume: 30, cost: 3.4 },
+    ] }] } })!;
+    expect(Object.keys(p.byCategory)).toEqual(['marketing']);
+    expect(p.byCategory.marketing?.volume).toBe(40);
+    expect(p.byCategory.marketing?.cost).toBeCloseTo(4.4, 6);
+    expect(p.byCategory.marketing?.ratePerMessage).toBeCloseTo(0.11, 6);
+    // Un compte qui n'envoie QUE par la MM API garde un tarif marketing.
+    const seul = parsePricing({ pricing_analytics: { data: [{ data_points: [{ pricing_category: 'MARKETING_LITE', pricing_type: 'REGULAR', volume: 4, cost: 0.4 }] }] } })!;
+    expect(seul.byCategory.marketing?.ratePerMessage).toBeCloseTo(0.1, 6);
+  });
+
   it('réponse malformée / vide -> null', () => {
     expect(parsePricing(null)).toBeNull();
     expect(parsePricing({})).toBeNull();
