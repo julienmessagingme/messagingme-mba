@@ -463,6 +463,10 @@ d'endpoint ne se desserre pas.
 JAMAIS d'endpoint public, donc rien à supprimer (relu : une seule adresse, privée). À la création, aussi
 `encryption.enabled=true` (disque chiffré) et `backup-same-region=true` : par défaut, Scaleway range les sauvegardes
 dans une AUTRE région, ce qui démentirait « données hébergées en France ».
+⚠️ **Toute sauvegarde manuelle (`rdb backup create`) ou instantané (`rdb snapshot create`) de la base se crée avec
+une expiration (`expires-at`) à 7 jours au plus.** La rétention automatique est de 7 jours (réglage par défaut, relu
+sur `mm-banc` le 2026-10-14), et la politique de confidentialité promet qu'une donnée effacée quitte les sauvegardes
+sous 7 jours : une copie gardée plus longtemps la démentirait.
 
 ### 7.3 Cloudflare reste la SEULE porte de l'API
 
@@ -813,6 +817,10 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
 12. Dérouler les **tests d'acceptation du §11**, dont le banc de l'API rejoué sur la cible (§ 7.8) : 🔴 **le site
     ne s'ouvre pas au public avant**, et le plafond global se repose sur sa mesure.
 13. **Ne couper OVH qu'après une période d'observation et un retour arrière ÉPROUVÉ**, pas seulement écrit.
+    🔴 **Puis effacer l'ancien hébergement**, dans cet ordre : la tâche planifiée de sauvegarde du VPS et ses copies,
+    le dump de bascule, le projet Supabase (Londres) avec ses sauvegardes, puis le VPS. La politique de
+    confidentialité promet « plus de Supabase ni d'OVH » : tant qu'une de ces copies existe, une donnée effacée chez
+    Scaleway y survit.
 
 **Ce qu'on garde à Supabase le temps de vérifier** : rien. Une base lue par deux endroits est une base qui
 diverge. La bascule est franche, et le retour arrière est la restauration du dump.
