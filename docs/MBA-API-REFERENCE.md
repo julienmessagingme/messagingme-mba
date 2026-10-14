@@ -457,6 +457,13 @@ Rien n'avait été relu chez Meta depuis le 26 août : les ajouts de ce document
   sans ces mots, elles sont passées en `active` : la consigne du devis ne collecte plus rien elle-même, elle appelle
   l'outil et relaie sa réponse, et c'est la description de l'outil qui nomme les champs. Les FAQ et la description
   d'un outil ne passent pas par cette revue. Un `PUT` relance la revue, rendue en 45 à 60 s environ.
+- **2026-10-14, ce que l'agent fait d'un PDF de connaissance (mesuré sur l'espace Groupama)** : envoyé par
+  `POST /files` (201, listé aussitôt), il n'a servi à rien tant que la consigne des garanties disait « réponds
+  uniquement à partir de tes questions fréquentes et de la fiche de l'entreprise » : une consigne qui NOMME ses
+  sources exclut les autres, fichiers compris. Le document nommé dans la consigne, l'agent l'a cité (« selon les
+  conditions générales de notre contrat ») dans une conversation sur deux. Six FAQ créées le même jour n'étaient pas
+  lues tout de suite : une seule servait au bout de quatre minutes, pas toutes après vingt. La même question rend des
+  réponses différentes d'une conversation à l'autre : juger sur plusieurs essais au bac à sable, jamais sur un seul.
 - **2026-09-30 et 2026-10-05, Agent Configuration Versions** : l'historique des configurations d'un numéro, le
   déploiement, le retour arrière et la copie depuis un autre numéro du même WABA par une seule requête, et des
   changements « retenus pour approbation » (`review_id`). Un `409` sur les écritures concurrentes des consignes.
