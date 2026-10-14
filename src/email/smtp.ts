@@ -33,7 +33,7 @@ export function buildTransport(
     port: account.port,
     secure: account.secure,
     auth: { user: account.username, pass: account.password },
-    getSocket: (_options, rappel) => {
+    getSocket: (_options: unknown, rappel: (err: Error | null, socketOptions?: { connection: Socket }) => void) => {
       ouvrir(hote, account.port).then((connection) => rappel(null, { connection }), (err: Error) => rappel(err));
     },
   });
