@@ -1,0 +1,16 @@
+[
+  {
+    "avis": "GHSA-6g55-p6wh-862q",
+    "dossier": "web",
+    "paquet": "postcss 8.4.31, la copie embarquée dans next 15",
+    "raison": "corrigé seulement avec next 16 ; postcss ne lit que notre propre CSS, au build, jamais une feuille fournie par un tiers",
+    "jusquau": "2026-12-14"
+  },
+  {
+    "avis": "GHSA-r28c-9q8g-f849",
+    "dossier": "web",
+    "paquet": "postcss 8.4.31, la copie embarquée dans next 15",
+    "raison": "corrigé seulement avec next 16 ; les cartes de source lues au build sont les nôtres",
+    "jusquau": "2026-12-14"
+  }
+]

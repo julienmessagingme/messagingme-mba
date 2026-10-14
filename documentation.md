@@ -2607,9 +2607,25 @@ origine. ⚠️ Playwright ne vérifie pas le CORS d'une réponse interceptée :
 🔴 **LE CONTENEUR TOURNE EN `node` (uid 1000), PAS EN ROOT** (2026-09-10). Ce qui le rend tenable est
 vérifié et non supposé : l'application n'écrit RIEN sur disque à l'exécution et le compose ne monte aucun
 volume. Le jour où un chemin écrira quelque chose, il lui faudra un répertoire possédé par `node`, et le
-conteneur le dira en refusant de démarrer plutôt qu'en silence. La CI le vérifie à chaque exécution, et
-c'est le SEUL de ses contrôles de sécurité qui bloque : il ne dépend d'aucune base de vulnérabilités
-extérieure, seulement d'une propriété que nous choisissons.
+conteneur le dira en refusant de démarrer plutôt qu'en silence. La CI le vérifie à chaque exécution, pour l'image de
+l'API comme pour celle de la console (`mba-web`), et ce contrôle bloque.
+
+🔴 **LES CONTRÔLES DE SÉCURITÉ DE LA CI : CE QUI BLOQUE, ET L'EXCEPTION DATÉE** (job `securite` de `ci.yml`, et
+`codeql.yml`). Un contrôle ne bloque que sur un périmètre qu'on sait tenir ; le reste laisse une trace datée, lue à
+chaque lot qui touche aux dépendances.
+- **Bloquent** : les failles hautes et critiques des dépendances de PRODUCTION de l'API et de la console
+  (`scripts/audit-production.ts`, une étape par dossier), les failles critiques avec correctif de l'image de l'API
+  (trivy épinglé par empreinte), et l'uid des deux images.
+- **Laissent une trace** : gitleaks, semgrep, l'audit complet (développement compris), les failles hautes des images,
+  et CodeQL (`security-extended`, alertes dans l'onglet Security de GitHub). Les failles critiques de l'image de la
+  console bloqueront une fois leur première mesure lue à zéro.
+- **Une faille sans correctif accessible** (une version majeure à franchir, un paquet embarqué par un autre) s'inscrit
+  dans `scripts/audit-exceptions.json` : l'identifiant GHSA de l'avis, le dossier, le paquet, la raison (pourquoi elle
+  n'est pas exploitable chez nous) et une échéance, deux mois au plus. Passé ce jour, l'avis bloque de nouveau : on
+  corrige, ou on renouvelle l'exception en relisant sa raison. Une exception qui ne sert plus est signalée à chaque
+  passage, à retirer. `tests/audit-production.test.ts` tient la règle et vérifie que les étapes bloquantes n'ont pas
+  de `continue-on-error`.
+- **Un rapport illisible** (registre de npm injoignable) bloque aussi : relancer, comme un `toomanyrequests`.
 
 🔴 **AUCUNE SESSION D'ADMIN SANS SECOND FACTEUR DANS UN ESPACE QUI L'EXIGE, SAUF PAR GOOGLE** (plan
 `docs/superpowers/plans/2026-09-25-mfa-admins.md`, puis le réglage par espace du 2026-10-13). Après le mot de passe,

@@ -1,0 +1,43 @@
+name: CodeQL
+
+# L'ANALYSE STATIQUE PROFONDE DU CODE (lot 6 du bilan des audits, livraison B2), gratuite parce que le dépôt est public.
+# Semgrep, dans `ci.yml`, reste le premier niveau rapide ; CodeQL suit les données d'une entrée jusqu'à son usage
+# (injection, SSRF, XSS) avec la suite `security-extended`. Ses alertes vont dans l'onglet Security de GitHub ; elles
+# ne bloquent rien, elles se lisent (`documentation.md` § les contrôles de sécurité de la CI).
+#
+# ⚠️ La configuration « par défaut » de GitHub est désactivée (`not-configured`, vérifié) : l'activer en plus de ce
+# fichier ferait refuser les analyses de l'un des deux.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+  schedule:
+    # Chaque lundi : une nouvelle requête de CodeQL peut trouver dans un code qui n'a pas bougé.
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyse:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          build-mode: none
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:javascript-typescript

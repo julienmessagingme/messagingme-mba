@@ -36,20 +36,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 🔴 SECURITE : QUATRE CONTROLES, AUCUN BLOQUANT POUR L INSTANT (plan RSSI du 2026-09-09, livre le
-  # 2026-09-10). Le plan le demande explicitement : « ne bloquer que sur des alertes comprises et
-  # qualifiees ». Un job qui casse le deploiement des le premier CVE transitif d une dependance de build
-  # est un job qu on desactive au bout de deux jours, et on se retrouve alors sans aucun controle.
-  #
-  # ⚠️ CE QU IL APPORTE DES MAINTENANT, meme en non bloquant : une TRACE datee et reguliere, qui est
-  # exactement ce qu un questionnaire RSSI demande de montrer. Le passage en bloquant se fera controle par
-  # controle, avec un seuil ecrit, quand on aura vu ce qu ils remontent vraiment.
+  # 🔴 SECURITE : CE QUI BLOQUE, ET CE QUI RESTE UNE TRACE (plan RSSI du 2026-09-09 ; seuils du lot 6 du bilan des
+  # audits, livraison B2). BLOQUENT : les failles hautes et critiques des dependances de PRODUCTION de l API et de la
+  # console (`scripts/audit-production.ts`, exceptions datees dans `scripts/audit-exceptions.json`), les failles
+  # critiques de l image de l API, et l uid des deux images. RESTENT UNE TRACE : gitleaks, semgrep, l audit complet
+  # (developpement compris) et les failles hautes des images. Un controle ne bloque que sur un perimetre qu on sait
+  # tenir : un job qui casse au premier CVE transitif d un outil de build est un job qu on desactive au bout de deux
+  # jours. La regle et la procedure d exception : `documentation.md` § les controles de securite de la CI.
   #
   # ⚠️ gitleaks tourne DEJA en pre-commit sur le poste de Julien (hook global). Ce n est pas un doublon :
   # un hook local protege une machine, pas le depot. Il ne voit ni un commit fait ailleurs, ni un
   # `--no-verify`, ni l historique.
   securite:
     runs-on: ubuntu-latest
+    env:
+      # 🔴 EPINGLE PAR VERSION ET PAR EMPREINTE, jamais `latest` : ce conteneur recoit la socket Docker du runner,
+      # et une etiquette mobile executerait ce que l editeur publie au moment du run, sans relecture. Monter de
+      # version = changer les deux, sur une version publiee depuis au moins deux semaines.
+      TRIVY: aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
     steps:
       - uses: actions/checkout@v5
         with:
@@ -66,44 +70,59 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Dependances vulnerables (npm audit, racine et front)
+      # Une etape par dossier : enchainees dans un meme `run`, le `bash -e` s arretait apres le premier audit en
+      # echec, et celui de la console ne tournait jamais.
+      - name: Dependances de PRODUCTION de l API (npm audit, bloquant)
+        run: npx tsx scripts/audit-production.ts .
+      - name: Dependances de PRODUCTION de la console (npm audit, bloquant)
+        run: npx tsx scripts/audit-production.ts web
+      - name: Toutes les dependances de l API, developpement compris (npm audit, trace)
         continue-on-error: true
-        run: |
-          echo "--- racine ---"
-          npm audit --audit-level=high
-          echo "--- web ---"
-          npm --prefix web audit --audit-level=high
+        run: npm audit --audit-level=high
+      - name: Toutes les dependances de la console, developpement compris (npm audit, trace)
+        continue-on-error: true
+        run: npm --prefix web audit --audit-level=high
       - name: Analyse statique (semgrep, regles publiques TypeScript)
         continue-on-error: true
-        # Regles publiques, sans compte ni jeton. Le depot etant public, CodeQL y serait gratuit ; il n est pas
-        # branche, semgrep couvre le besoin de premier niveau.
+        # Regles publiques, sans compte ni jeton : le premier niveau, rapide. L analyse plus profonde est CodeQL,
+        # dans son propre workflow (`codeql.yml`), gratuite parce que le depot est public.
         run: |
           pipx install semgrep || pip install semgrep
           semgrep --config=p/typescript --config=p/secrets --error --quiet --metrics=off src web/lib web/app
-      # L image de node (le build) et celle de trivy viennent de Docker Hub : avec le compte de Julien (jeton en lecture
-      # seule), pas le quota anonyme partage par les runners de GitHub, qui rendait ce job rouge (`toomanyrequests`).
-      # Posee JUSTE AVANT leur seul consommateur : les scripts d installation des etapes d avant ne voient pas
-      # l identifiant. Jeton expire, revoque ou secret absent : cette etape echoue en le disant.
+      # L image de node (les builds) et celle de trivy viennent de Docker Hub : avec le compte de Julien (jeton en
+      # lecture seule), pas le quota anonyme partage par les runners de GitHub, qui rendait ce job rouge
+      # (`toomanyrequests`). Posee JUSTE AVANT leurs consommateurs : les scripts d installation des etapes d avant ne
+      # voient pas l identifiant. Jeton expire, revoque ou secret absent : cette etape echoue en le disant.
       - name: Connexion a Docker Hub
         uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Image Docker (trivy)
+      - name: Image de l API (construction)
+        run: docker build -t mba-api:ci .
+      - name: Image de l API, failles hautes et critiques (trivy, trace)
         continue-on-error: true
-        # 🔴 EPINGLE PAR VERSION ET PAR EMPREINTE, jamais `latest` : ce conteneur recoit la socket Docker du runner,
-        # et une etiquette mobile executerait ce que l editeur publie au moment du run, sans relecture. Monter de
-        # version = changer les deux, sur une version publiee depuis au moins deux semaines.
-        run: |
-          docker build -t mba-api:ci .
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock             aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 image --severity HIGH,CRITICAL --ignore-unfixed --scanners vuln mba-api:ci
-      - name: L image ne tourne PAS en root
-        # 🔴 CELUI-CI BLOQUE, et c est le seul. Il ne depend d aucune base de vulnerabilites exterieure : il
-        # verifie une propriete que NOUS avons choisie et que nous pouvons tenir. Un `USER node` retire par
-        # megarde dans un futur Dockerfile passerait autrement inapercu jusqu au prochain audit.
+        run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$HOME/.cache/trivy:/root/.cache/trivy" "$TRIVY" image --severity HIGH,CRITICAL --ignore-unfixed --scanners vuln mba-api:ci
+      - name: Image de l API, failles critiques (trivy, bloquant)
+        # `--ignore-unfixed` : une faille sans correctif publie ne se corrige pas en reconstruisant, elle ne bloque pas.
+        run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$HOME/.cache/trivy:/root/.cache/trivy" "$TRIVY" image --severity CRITICAL --ignore-unfixed --exit-code 1 --scanners vuln mba-api:ci
+      - name: L image de l API ne tourne PAS en root
+        # 🔴 BLOQUANT, et sans base exterieure : il verifie une propriete que NOUS avons choisie et que nous pouvons
+        # tenir. Un `USER node` retire par megarde dans un futur Dockerfile passerait autrement inapercu.
         run: |
           test "$(docker run --rm mba-api:ci id -u)" = "1000"
-          echo "OK : le conteneur tourne en uid 1000 (node)"
+          echo "OK : le conteneur de l API tourne en uid 1000 (node)"
+      # La console du VPS (`mba-web`, qui sert encore `mba.messagingme.app`) : la console de Vercel n est pas une image.
+      - name: Image de la console (construction)
+        run: docker build -f web/Dockerfile -t mba-web:ci .
+      - name: Image de la console, failles hautes et critiques (trivy, trace)
+        continue-on-error: true
+        # ⚠️ Pas encore de seuil bloquant : il se pose, comme pour l API, une fois la premiere mesure lue a zero.
+        run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$HOME/.cache/trivy:/root/.cache/trivy" "$TRIVY" image --severity HIGH,CRITICAL --ignore-unfixed --scanners vuln mba-web:ci
+      - name: L image de la console ne tourne PAS en root
+        run: |
+          test "$(docker run --rm mba-web:ci id -u)" = "1000"
+          echo "OK : le conteneur de la console tourne en uid 1000 (node)"
 
   unit:
     runs-on: ubuntu-latest

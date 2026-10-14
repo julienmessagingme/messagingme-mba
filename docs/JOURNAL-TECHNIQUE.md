@@ -5,6 +5,25 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-14 : la CI bloque sur les failles des dépendances de production, avec des exceptions datées (lot 6, B2)
+
+Plan `docs/superpowers/plans/2026-10-14-lot6-seuils-ci.md`.
+
+- **Ce qui bloque désormais** : les failles hautes et critiques des dépendances de PRODUCTION de l'API et de la console
+  (`scripts/audit-production.ts`, une étape par dossier, ce qui ferme aussi le `bash -e` qui sautait la console), les
+  failles critiques avec correctif de l'image de l'API (trivy), et l'uid des images de l'API et de la console. Le reste
+  (gitleaks, semgrep, l'audit complet, les failles hautes des images) laisse une trace.
+- **L'exception datée** : `scripts/audit-exceptions.json`, une entrée par avis GHSA, avec son dossier, sa raison et une
+  échéance ; échue, elle bloque de nouveau, et une exception devenue inutile est signalée. Deux à l'ouverture, la copie
+  de postcss embarquée dans next 15 (GHSA-6g55-p6wh-862q, GHSA-r28c-9q8g-f849), jusqu'au 2026-12-14.
+- **CodeQL** tourne dans `codeql.yml` (`security-extended`, à chaque push de code et chaque lundi), gratuit parce que le
+  dépôt est public ; ses alertes vont dans l'onglet Security. Pas de Dependabot : ses PR ne cadrent pas avec le travail
+  direct sur `main`.
+- **L'image de la console** (`mba-web`) est construite et scannée en CI ; son seuil critique se pose une fois la
+  première mesure lue.
+- **Vérifié dans les deux sens** : une exception échue fait échouer le script réel ; un `continue-on-error` ajouté à une
+  étape bloquante fait échouer `tests/audit-production.test.ts`.
+
 ## 2026-10-14 : les dépendances de production vulnérables, et la CI tire de Docker Hub avec un compte (lot 6, B1)
 
 Plan `docs/superpowers/plans/2026-10-14-lot6-dependances.md`.

@@ -349,6 +349,9 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
   de Julien (secrets `DOCKERHUB_USERNAME` et `DOCKERHUB_TOKEN`, jeton en lecture seule) : un rouge `unauthorized`
   ou `Username/Password required` dit un jeton expiré ou révoqué, ou un secret absent ou mal nommé ; Julien
   renouvelle le jeton dans Docker Hub puis dans le secret.
+  🔴 **`securite` BLOQUE sur une faille haute ou critique d'une dépendance de PRODUCTION** (API ou console) : on met à
+  jour, ou on pose une exception DATÉE et motivée dans `scripts/audit-exceptions.json`, jamais un `continue-on-error`
+  (`tests/audit-production.test.ts` le refuse). La règle : `documentation.md` § les contrôles de sécurité de la CI.
   ⚠️ Un push qui ne touche QUE des `.md` ne déclenche AUCUN run (`paths-ignore`, pour le quota) : l'absence
   de run sur `HEAD` n'est donc pas un échec, c'est le dernier commit DE CODE qu'il faut regarder.
   🔴 **ET CE PUSH-LÀ PEUT QUAND MÊME CASSER LA CI DU SUIVANT** : `tests/aide-proposer.test.ts` lit les sections de

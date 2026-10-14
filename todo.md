@@ -17,11 +17,12 @@ l'implémenteur. Restent :
   jour avec).
 - **Les nonces** (retirer `'unsafe-inline'` des scripts), écartés pour l'instant : ils imposent le rendu à la demande
   de chaque page sur Vercel, qui sert aujourd'hui des pages statiques.
-- **Les contrôles de CI (livraison B2)** : `npm audit` bloquant sur les dépendances de PRODUCTION (API et console, chacune
-  dans son étape : un `bash -e` faisait sauter celle de la console), trivy bloquant en CRITICAL, l'image `mba-web`
-  scannée, CodeQL ; une procédure d'exception datée. Exceptions connues : la copie de postcss embarquée dans next et un
-  avis modéré sur next (next 16), vitest en développement (vitest 5). Pas de Dependabot : ses PR ne cadrent pas avec le
-  travail direct sur `main`, et l'audit bloquant couvre le besoin.
+- **Le seuil critique de l'image de la console** : la livraison B2 (plan `docs/superpowers/plans/2026-10-14-lot6-seuils-ci.md`)
+  la construit et la scanne en trace ; l'étape bloquante se pose (comme pour l'API) dès que la première mesure de la
+  CI se lit à zéro failles critiques avec correctif.
+- **Les deux exceptions de l'audit** (`scripts/audit-exceptions.json`, la copie de postcss embarquée dans next 15)
+  échoient le 2026-12-14 : passer à next 16 d'ici là, ou les revoir. vitest 5 (failles critiques en développement
+  seulement) attend aussi une montée de version majeure.
 
 
 ## 🟡 Dossiers, second facteur, Inbox, menu du compte : ce qui reste (2026-10-13)
