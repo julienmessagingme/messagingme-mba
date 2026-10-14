@@ -1,6 +1,7 @@
 # Vidéos et PDF dans le bloc « message rapide » (plan)
 
-**Statut : à valider par Julien.** Spec : [2026-10-14-medias-message-rapide-design.md](../specs/2026-10-14-medias-message-rapide-design.md),
+**Statut : validé par Julien le 2026-10-14, exécution native** (la session implémente chaque lot elle-même, un relecteur indépendant
+relit le lot fini), **après la bascule Scaleway**. Spec : [2026-10-14-medias-message-rapide-design.md](../specs/2026-10-14-medias-message-rapide-design.md),
 validée le 2026-10-14. Le plan la suit, il ne la répète pas : le pourquoi de chaque choix est dans la spec.
 
 **But :** le bloc « message rapide » porte une image, une vidéo MP4 ou un PDF, stockés dans un bucket privé, sous un

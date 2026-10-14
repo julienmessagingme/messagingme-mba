@@ -2416,6 +2416,12 @@ Ces points vivaient dans des sections de lots déployés. Ils n’ont rien à y 
 
 ## 🟠 Joindre un FICHIER à un message rapide (demandé par Julien le 2026-08-28)
 
+🔴 **CADUC DEPUIS LE 2026-10-14, NE PAS SUIVRE CE QUI SUIT.** Cadré à nouveau avec Julien : vidéo MP4 ET PDF, stockés
+dans le bucket du lot des fichiers et non en base, sous un quota par offre. Spec
+`docs/superpowers/specs/2026-10-14-medias-message-rapide-design.md`, plan `docs/superpowers/plans/2026-10-14-medias-message-rapide.md`
+(validé, exécution native APRÈS la bascule Scaleway). Le texte ci-dessous est gardé pour l'historique ; la tâche C7
+du plan le remplace par un simple renvoi.
+
 Aujourd'hui un bloc « message rapide » ne porte qu'une IMAGE (`data.imageUrl`, champ partagé avec le bloc RCS).
 Julien veut pouvoir y joindre un document (PDF, devis, plaquette). Ce n'est pas un champ de plus : la chaîne
 entière est aujourd'hui image-seulement, par construction et volontairement.
