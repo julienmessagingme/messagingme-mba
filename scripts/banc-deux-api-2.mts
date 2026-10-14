@@ -25,6 +25,7 @@ import { Pool } from 'pg';
 import { PgApiKeyStore } from '../src/auth/api-key-store.pg';
 import { PgWorkflowStore } from '../src/workflow/store.pg';
 import { DUREE_CLE_EN_COURS_MAX_MS } from '../src/api/idempotence';
+import { pgSsl } from '../src/db/ssl';
 import { exigerBaseJetable } from './garde-banc';
 
 const A = process.env.BANC_API_A ?? '';
@@ -95,7 +96,7 @@ const TELEPHONES = Array.from({ length: 5 }, (_, i) => `3361000${String(9001 + i
 interface Banc { pool: Pool; espace: string; cle: string; numero: string }
 
 async function preparer(): Promise<Banc> {
-  const pool = new Pool({ connectionString: URL_BASE, max: 2, application_name: 'banc2-script' });
+  const pool = new Pool({ connectionString: URL_BASE, max: 2, application_name: 'banc2-script', ssl: pgSsl(URL_BASE) });
   const espace = process.env.BANC_TENANT
     ?? (await pool.query<{ id: string }>('select id from tenants order by created_at limit 1')).rows[0]?.id;
   if (!espace) throw new Error('aucun espace en base : lancer `npm run seed` sur la base jetable d abord.');

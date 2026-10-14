@@ -27,7 +27,8 @@
  *
  * 🔴 CE QUE LE BANC NE REPRODUIT PAS : le pooler de Supabase (ses files d'attente muettes, son « Pool Size » partagé),
  * une base Micro peuplée, TLS, l'envoi réel chez Meta (`DRY_RUN=true`), les agents et l'analyse. Seul le délai réseau
- * vers la base est fidèle (`BANC_DELAI_MS`, 10 ms par défaut comme Londres, `tc netem`). La mesure est donc
+ * vers la base est fidèle (`BANC_DELAI_MS`, 10 ms par défaut comme Londres, `tc netem`). Sur une base existante
+ * (`BANC_BASE_FICHIER` de `banc-api.sh`, la cible), TLS et latence sont les vrais. La mesure est donc
  * OPTIMISTE, d'où les 70 %. 🔴 Elle décrit l'infrastructure où elle tourne : sur la cible Scaleway (Supabase Pro ou
  * PostgreSQL managé), le banc se rejoue avec sa latence et la valeur du plafond se repose (`docs/ARCHITECTURE-CIBLE.md`,
  * § 11).
@@ -41,6 +42,7 @@ import { PgCompteurDebit } from '../src/db/debit.pg';
 import { creerVeilleCharge } from '../src/ops/veille-charge';
 import { CLE_REFUS_GLOBAL, MESSAGE_PLATEFORME_SATUREE } from '../src/auth/plafond-global';
 import { sendTelegram } from '../src/ops/telegram';
+import { pgSsl } from '../src/db/ssl';
 import { exigerBaseJetable } from './garde-banc';
 
 const API = process.env.BANC_API ?? '';
@@ -313,7 +315,8 @@ async function plafond(pool: Pool): Promise<void> {
 
 async function main(): Promise<void> {
   garde();
-  const pool = new Pool({ connectionString: URL_BASE, max: 4 });
+  // Le TLS de l'application : rien sur le Postgres du banc (`DB_SSL=off`), vérifié sur une base managée.
+  const pool = new Pool({ connectionString: URL_BASE, max: 4, ssl: pgSsl(URL_BASE) });
   try {
     if (EPREUVE === 'semer') await semer(pool);
     else if (EPREUVE === 'paliers') await paliers(pool);

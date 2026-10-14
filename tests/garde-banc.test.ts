@@ -35,6 +35,24 @@ describe('la garde des bancs : seule une base qui se déclare jetable passe', ()
     expect(() => exigerBaseJetable(url)).not.toThrow();
   });
 
+  it('🔴 banc-api.sh passe par la garde AVANT tout ce qui touche la base : migrations, worker, API', () => {
+    const sh = readFileSync(resolve(__dirname, '..', 'scripts', 'banc-api.sh'), 'utf8');
+    const cli = readFileSync(resolve(__dirname, '..', 'scripts', 'garde-banc-cli.mts'), 'utf8');
+    expect(cli).toContain("exigerBaseJetable(process.env.DATABASE_URL ?? '');");
+    // La garde lit la MÊME adresse que ce qui suit : le fichier d'environnement du banc.
+    const garde = sh.indexOf('--env-file "$E" -v "$D/src-banc/scripts:/app/scripts:ro" \\\n  "$IMG" npx tsx scripts/garde-banc-cli.mts');
+    expect(garde, 'la garde n’est plus appelée sur le fichier du banc').toBeGreaterThan(0);
+    for (const suite of ['npm run migrate', '--name banc14-worker', '--name banc14-api']) {
+      expect(sh.indexOf(suite), `${suite} avant la garde`).toBeGreaterThan(garde);
+    }
+  });
+
+  it.each(['banc-api.mts', 'banc-deux-api-2.mts'])('%s joint sa base avec le TLS de l’application (une base managée l’exige)', (fichier) => {
+    const texte = readFileSync(resolve(__dirname, '..', 'scripts', fichier), 'utf8');
+    expect(texte).toContain("import { pgSsl } from '../src/db/ssl';");
+    expect(texte).toMatch(/new Pool\(\{ connectionString: URL_BASE,[^}]*ssl: pgSsl\(URL_BASE\) \}\)/);
+  });
+
   it.each(['banc-api.mts', 'banc-charge.mts', 'banc-deux-api.mts', 'banc-deux-api-2.mts', 'banc-trente-espaces.mts'])(
     '🔴 %s passe par la garde commune, et plus par l’ancienne garde « supabase »',
     (fichier) => {

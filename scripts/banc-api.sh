@@ -11,17 +11,24 @@
 #   BANC_PLAFOND_10S=N : la valeur du plafond global de l'épreuve « plafond » (sinon, celle que les paliers recommandent).
 #   BANC_DELAI_MS=N : l'aller-retour simulé vers la base (10 par défaut, comme Londres ; environ 1 pour une base de la
 #   même région chez Scaleway).
+#   BANC_BASE_FICHIER=chemin : une base EXISTANTE au lieu du Postgres en conteneur, pour rejouer le banc sur la cible
+#   (une base managée jetable, `docs/ARCHITECTURE-CIBLE.md` § 7.8). Le fichier, lisible par root seul, porte son
+#   adresse sur une ligne, jamais en argument (le mot de passe se lirait dans `ps`). Elle doit se déclarer jetable
+#   (`scripts/garde-banc.ts`), le TLS y est vérifié (`BANC_CA`, défaut `certs/scaleway-mm-banc.crt`, dans l'image), et
+#   sa latence est la vraie : `BANC_DELAI_MS` ne s'y applique pas.
 #   ⚠️ sudo efface l'environnement : ces variables se passent APRÈS sudo, `sudo BANC_PLAFOND_10S=700 bash banc-api.sh ...`.
 #
 # 🔴 NE TOUCHE PAS LA PRODUCTION : tout porte l'étiquette banc=api14 et le préfixe banc14-, sur un réseau à part
 # (banc14_net), sans aucun port publié, et le démontage passe par l'étiquette, jamais par un nom. La base est un
-# conteneur jetable, à BANC_DELAI_MS d'aller-retour (tc netem). Aucun secret de production n'entre, sauf le
-# jeton Telegram si BANC_TELEGRAM=1.
+# conteneur jetable, à BANC_DELAI_MS d'aller-retour (tc netem), ou une base existante que la garde des bancs accepte,
+# vérifiée AVANT tout ce qui la touche. Aucun secret de production n'entre, sauf le jeton Telegram si BANC_TELEGRAM=1.
 set -euo pipefail
 
 SHA="${1:?usage : sudo bash banc-api.sh <sha de main> [paliers]}"
 PALIERS="${2:-10,25,50,75,100,150}"
 DELAI_MS="${BANC_DELAI_MS:-10}"
+BASE_FICHIER="${BANC_BASE_FICHIER:-}"
+CA="${BANC_CA:-certs/scaleway-mm-banc.crt}"
 EPREUVES=",${3:-paliers,statuts,plafond},"
 D=/home/ubuntu/banc-api14
 IMG=banc-mba:api14
@@ -30,6 +37,7 @@ LBL=banc=api14
 R="$D/resultats-$(date -u +%Y%m%dT%H%M%SZ)"
 
 demonter() {
+  if [ -n "${E:-}" ]; then rm -f "$E"; fi
   if [ "${BANC_GARDER:-0}" = "1" ]; then echo "BANC_GARDER=1 : banc laissé en place (démontage : relancer sans, ou docker rm -f par l'étiquette $LBL)"; return; fi
   docker ps -aq --filter "label=$LBL" | xargs -r docker rm -f >/dev/null
   docker network rm "$NET" >/dev/null 2>&1 || true
@@ -38,26 +46,36 @@ demonter() {
 }
 trap demonter EXIT
 
-echo "== montage du banc sur $SHA (base à ${DELAI_MS} ms)"
+if [ -n "$BASE_FICHIER" ]; then echo "== montage du banc sur $SHA (base existante, sa vraie latence)"; else echo "== montage du banc sur $SHA (base à ${DELAI_MS} ms)"; fi
 rm -rf "$D/src-banc" && mkdir -p "$D" "$R"
 git clone -q https://github.com/julienmessagingme/messagingme-mba.git "$D/src-banc"
 git -C "$D/src-banc" checkout -q "$SHA"
 docker build -q -t "$IMG" "$D/src-banc" >/dev/null
 docker network create --label "$LBL" "$NET" >/dev/null
 
-PGPASS=$(openssl rand -hex 16)
-docker run -d --name banc14-postgres --label "$LBL" --network "$NET" --cap-add NET_ADMIN \
-  -e POSTGRES_PASSWORD="$PGPASS" pgvector/pgvector:pg16 >/dev/null
-until docker exec banc14-postgres pg_isready -U postgres >/dev/null 2>&1; do sleep 1; done
-docker exec banc14-postgres sh -c "apt-get update -qq >/dev/null && apt-get install -qq -y iproute2 >/dev/null && tc qdisc add dev eth0 root netem delay ${DELAI_MS}ms"
+if [ -n "$BASE_FICHIER" ]; then
+  URL_BASE=$(head -n 1 "$BASE_FICHIER")
+  [ -n "$URL_BASE" ] || { echo "BANC_BASE_FICHIER est vide"; exit 1; }
+  TLS="DB_SSL_CA_FILE=$CA"
+  CONTENEURS="banc14-api banc14-worker"
+else
+  PGPASS=$(openssl rand -hex 16)
+  docker run -d --name banc14-postgres --label "$LBL" --network "$NET" --cap-add NET_ADMIN \
+    -e POSTGRES_PASSWORD="$PGPASS" pgvector/pgvector:pg16 >/dev/null
+  until docker exec banc14-postgres pg_isready -U postgres >/dev/null 2>&1; do sleep 1; done
+  docker exec banc14-postgres sh -c "apt-get update -qq >/dev/null && apt-get install -qq -y iproute2 >/dev/null && tc qdisc add dev eth0 root netem delay ${DELAI_MS}ms"
+  URL_BASE="postgres://postgres:$PGPASS@banc14-postgres:5432/postgres"
+  TLS="DB_SSL=off"
+  CONTENEURS="banc14-api banc14-worker banc14-postgres"
+fi
 
 # Les secrets du banc : JETABLES, jamais affichés, effacés au démontage avec le dossier des sources.
 E="$D/src-banc/.env.banc"
 umask 077
 cat > "$E" <<EOF
 NODE_ENV=production
-DATABASE_URL=postgres://postgres:$PGPASS@banc14-postgres:5432/postgres
-DB_SSL=off
+DATABASE_URL=$URL_BASE
+$TLS
 AUTH_SECRET=$(openssl rand -hex 32)
 META_APP_SECRET=$(openssl rand -hex 32)
 ENCRYPTION_KEY=$(openssl rand -hex 32)
@@ -69,6 +87,9 @@ API_QUOTA_ENVOIS_JOUR=0
 API_QUOTA_FICHES_JOUR=0
 EOF
 
+# 🔴 La garde AVANT tout ce qui touche la base (migrations, worker, API) : seule une base jetable passe.
+docker run --rm --label "$LBL" --network "$NET" --env-file "$E" -v "$D/src-banc/scripts:/app/scripts:ro" \
+  "$IMG" npx tsx scripts/garde-banc-cli.mts
 docker run --rm --label "$LBL" --network "$NET" --env-file "$E" "$IMG" npm run migrate >"$R/migrate.log" 2>&1
 # Les tailles de pool de la production (docker-compose.yml) : le worker d'abord, il prépare pg-boss.
 docker run -d --name banc14-worker --label "$LBL" --network "$NET" --env-file "$E" \
@@ -95,7 +116,8 @@ jouer() {
 }
 
 # Le processeur des trois conteneurs, toutes les 10 s, pendant toute la mesure.
-( while true; do docker stats --no-stream --format '{{.Name}} {{.CPUPerc}} {{.MemUsage}}' banc14-api banc14-worker banc14-postgres 2>/dev/null | sed "s/^/$(date -u +%T) /"; sleep 10; done ) >"$R/cpu.log" &
+# shellcheck disable=SC2086 # CONTENEURS : une liste de noms, découpée à dessein.
+( while true; do docker stats --no-stream --format '{{.Name}} {{.CPUPerc}} {{.MemUsage}}' $CONTENEURS 2>/dev/null | sed "s/^/$(date -u +%T) /"; sleep 10; done ) >"$R/cpu.log" &
 STATS=$!
 
 echo "== semer"; jouer -e BANC_EPREUVE=semer | tee "$R/semer.log"
@@ -116,7 +138,7 @@ fi
 
 kill "$STATS" 2>/dev/null || true
 echo "== processeur (pic par conteneur)"
-for c in banc14-api banc14-worker banc14-postgres; do
+for c in $CONTENEURS; do
   echo "$c $(grep " $c " "$R/cpu.log" | awk '{gsub("%","",$3); if ($3+0 > m) m = $3+0} END {print m "%"}')"
 done | tee "$R/cpu-pic.log"
 docker logs banc14-api >"$R/api.log" 2>&1 || true
