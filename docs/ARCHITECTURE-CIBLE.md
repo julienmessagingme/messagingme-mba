@@ -753,27 +753,36 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    `if not exists`. Une base neuve obtient les mêmes objets (`CLAUDE.md`, section Déploiement).
 2. **pgvector existe chez la destination.** Seule extension non universelle dont ce produit dépend
    (`agent_knowledge.embedding`, fiches d'aide). `pg_trgm` et `unaccent` sont des contribs standard.
-   `pgcrypto` ne sert qu'à `gen_random_uuid()`, natif depuis PostgreSQL 13.
+   `pgcrypto` ne sert qu'à `gen_random_uuid()`, natif depuis PostgreSQL 13. ✅ **Prouvé le 2026-10-14 sur la base
+   jetable d'Amsterdam** : les migrations y ont créé `vector` (pgvector 0.8.2), `pg_trgm`, `unaccent` et `pgcrypto`.
 3. **Le connecteur HubSpot tourne déjà chez Scaleway, sur sa propre base** (étape 0 ci-dessous), et `mba` ne lit plus
    `mmhs` en cross-schéma (§8).
 4. **Les fichiers RCS restent en base pour la bascule** (décidé le 2026-10-04) : ils partent dans le dump et sortent
    vers l'Object Storage APRÈS, en lot séparé (§6).
 5. **Le chemin de déploiement existe** (§10 bis), et il a servi à la répétition HubSpot (étape 0) avant de servir à
-   Messaging Me. Au 2026-10-14, aucun workflow ne déploie quoi que ce soit chez Scaleway.
+   Messaging Me. ✅ **Il a servi une première fois le 2026-10-14** (lot 3), sur la base jetable : image construite et
+   poussée au registre d'Amsterdam, 234 migrations jouées depuis la machine, les deux workers démarrés sans
+   redémarrage, l'API passée sur l'image. Il reste à servir à la répétition HubSpot.
 6. **`mba.messagingme.app` est supprimé AVANT le jour J** (décidé par Julien le 2026-10-14, étape 10) : le webhook
    de Meta repointé sur `api.`, et plus rien d'attendu sur `mba.` dans les journaux du proxy.
 7. **Chaque conteneur de worker porte une limite de mémoire et de processeur** (§2), éprouvée d'abord sur le VPS.
+   ✅ **Posée le 2026-10-14** (lot 2b) : 1 Go et 1 processeur par worker, environ quatre fois le pic mesuré sur le
+   VPS (243 et 224 Mo), la même sur le VPS et chez Scaleway (`tests/deploy-scaleway.test.ts`).
 8. **La version de PostgreSQL et les extensions** : la production est en 17.6. ✅ **PostgreSQL 17 est proposé à
    Amsterdam** (lu par la CLI le 2026-10-14, comme à Paris le matin ; fin de support dans trois ans) : l'export se restaure dans la même version
    majeure. `pg_trgm`, `unaccent`, `pgvector` (0.8.1 en 17), `pgcrypto` et `uuid-ossp` figurent dans la liste des
-   extensions des bases managées (documentation de Scaleway, revue le 2025-09-17). Reste à le prouver par
-   `npm run migrate` sur une base jetable, nos migrations créant elles-mêmes leurs extensions (`create extension`).
+   extensions des bases managées (documentation de Scaleway, revue le 2025-09-17). ✅ **Prouvé le 2026-10-14** :
+   `npm run migrate` a joué les 234 migrations sur la base jetable (PostgreSQL 17.11), extensions comprises.
 9. **La reprise après sinistre réécrite pour Scaleway** (`DEPLOY.md` décrit celle de Supabase) : sauvegardes de la
    base managée relevées, une restauration chronométrée sur une base jetable, et les secrets chiffrés relus avec la
    même `ENCRYPTION_KEY`.
 10. **Les gardes des bancs ne reconnaissent plus la production à « supabase »** dans son adresse (§7.8, point 3).
+    ✅ **Fait le 2026-10-14** (lot 2a) : une garde POSITIVE commune aux cinq bancs (`scripts/garde-banc.ts`), qui
+    n'accepte qu'une base marquée « banc » ou « jetable » par son hôte ou son nom.
 11. **Le nom de chaque copie d'API dérivé du nom d'hôte** (étape 7) : `API_COPIE` est une variable fixe, donc la même
-    pour toutes les copies d'un conteneur serverless.
+    pour toutes les copies d'un conteneur serverless. ✅ **Fait le 2026-10-14** (lot 2c) : `API_COPIE=auto` tire le
+    nom de la fin du nom d'hôte (`src/ops/nom-copie.ts`), et `/ops` n'affiche plus une copie muette depuis quinze
+    minutes.
 
 **La séquence :**
 

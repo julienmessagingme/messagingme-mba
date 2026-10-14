@@ -74,6 +74,8 @@ l'interrupteur rendrait 503 pendant la fenêtre.
 
 ## Lot 2 : trois petits lots de code
 
+✅ **Écrit le 2026-10-14**, chaque règle testée dans les deux sens, à déployer sur le VPS après la relecture du lot.
+
 **2a. Les gardes des bancs deviennent positives** (§7.8, point 3). Une aide unique, appelée par les cinq bancs
 (`banc-api.mts`, `banc-charge.mts`, `banc-deux-api.mts`, `banc-deux-api-2.mts`, `banc-trente-espaces.mts`), qui
 n'accepte qu'une adresse dont le nom d'hôte ou le nom de base contient « banc » ou « jetable » (le banc du lot 14
@@ -96,6 +98,11 @@ actuel (`^[a-z0-9-]{0,20}$`) ; une copie muette disparaît de `/ops`.
 code.
 
 ## Lot 3 : le socle Scaleway et le chemin de déploiement
+
+✅ **Éprouvé le 2026-10-14 à Amsterdam**, sur la base jetable : le premier déploiement a construit et poussé l'image,
+joué les 234 migrations, démarré les deux workers et passé l'API sur l'image ; l'API privée refuse tout appel sans
+jeton. Restent : l'appel avec le jeton d'origine (clé `cloudflare-origine`), la mesure d'une requête de 23 Mo, et le
+tunnel de `npm run migrations` (éprouvé à la main pour les tests d'intégration).
 
 **Pourquoi** : §10 bis, plus les étapes 1, 6 et 7 du §10, faites une première fois avant le jour J.
 
