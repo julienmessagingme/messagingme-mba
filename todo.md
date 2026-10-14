@@ -39,6 +39,20 @@ l'implémenteur. Restent :
   seulement) attend aussi une montée de version majeure.
 
 
+## 🟡 Marketing Messages API et éditeur de modèles : ce qui reste (2026-10-14)
+
+Plans `docs/superpowers/plans/2026-10-14-mm-api-envoi.md` et `2026-10-14-duree-validite-modeles.md`.
+
+- **Le badge « API MM Lite » de l'Accueil ne traduit pas `PENDING_VALID_PAYMENT_METHOD`** (`mmLiteBadge`,
+  `web/lib/format.ts`) : Groupama PJ, test1310 et superchat voient le mot anglais brut, en ambre. Le traduire (« En
+  attente d'un moyen de paiement chez Meta »), et revoir les autres valeurs de `marketing_messages_onboarding_status`
+  que Meta peut rendre.
+- **Lot B, l'en-tête GIF (validé par Julien)** : Meta documente la CRÉATION (format `GIF`, un mp4 de 3,5 Mo au plus)
+  mais pas le paramètre d'ENVOI. D'abord le mesurer : un modèle GIF approuvé sur « Messaging Me Tech SANDBOX », un envoi
+  réel vers le téléphone de Julien, avec son accord. Ensuite seulement l'éditeur, les douze fichiers qui connaissent les
+  formats d'en-tête, et une garde : un modèle GIF ne part QUE par la MM API (la Cloud API le refuse), donc ni sur un
+  compte non activé ni par le repli de 134101.
+
 ## 🟡 Lot 4 de la bascule, le banc à Amsterdam : ce qu'il laisse (2026-10-14)
 
 - 🟡 **Le plafond global ne garde pas la latence au-delà de la capacité.** Posé à 2 100 par 10 s, avec 315 appels/s

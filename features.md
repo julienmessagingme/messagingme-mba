@@ -475,6 +475,12 @@ En haut de l'onglet **Historique** d'une fiche contact, deux chiffres face à fa
   accusé de livraison. Sans y toucher, rien ne change.
   ⚠️ Pour un modèle marketing, Meta ne l'applique qu'aux envois par la Marketing Messages API ; si Meta reclasse
   le modèle dans une autre catégorie, la durée est effacée et revient au défaut.
+- ✅ **Les modèles marketing partent par la Marketing Messages API de Meta** (2026-10-14), pour les comptes WhatsApp
+  activés sur cette API : c'est ce qui applique la durée de validité d'un modèle marketing. Les comptes non activés
+  continuent par l'envoi standard, sans rien perdre. L'activation fait partie de « Connecter WhatsApp » ; Meta ne
+  l'accorde qu'avec un moyen de paiement valide sur le compte, et le panneau de l'Accueil dit où en est chaque compte.
+  ⚠️ En Europe, Meta n'y apporte ni optimisation de la livraison ni mesure des clics : le gain est la durée de
+  validité, et bientôt l'en-tête GIF.
 - ✅ **Des dossiers pour ranger les templates** (2026-10-13), comme ceux des scénarios mais séparés d'eux : la même
   barre d'onglets au-dessus de la liste, « + Dossier », et « Déplacer vers… » sur une ligne ou sur une sélection (cases
   à cocher). Un template se range par son **nom** : toutes ses langues suivent, et cocher une langue coche le template

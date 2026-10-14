@@ -1,7 +1,7 @@
 ---
 ecran: templates
 source_section: Templates WhatsApp (menu Contenu)
-source_empreinte: 5241a0
+source_empreinte: 171721
 ---
 # Créer un modèle et le faire approuver
 

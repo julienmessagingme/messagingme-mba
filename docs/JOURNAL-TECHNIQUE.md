@@ -5,6 +5,39 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-14 : la Marketing Messages API en service, et la durée de validité des modèles
+
+Plans `docs/superpowers/plans/2026-10-14-mm-api-envoi.md` et `2026-10-14-duree-validite-modeles.md`, choix de Julien par
+questions. Quatre commits, tous verts en CI job par job :
+
+- **`09869cf4`** : le statut de la MM API se lit dans un appel À PART (`marketing_messages_onboarding_status`, l'ancien
+  champ étant annoncé déprécié) : un champ refusé (erreur 100) ne peut plus emporter la santé du compte ni le
+  propriétaire ; le badge traduit `ELIGIBLE`.
+- **`b34fcc90`** : l'interrupteur `META_MM_LITE` (tout le marketing par `/marketing_messages`, `product_policy:
+  CLOUD_API_FALLBACK`), sur la campagne, le bloc de scénario et l'Inbox. La relecture a trouvé deux rouges, corrigés
+  dans le lot : `isMetaAuthError` tenait le seul type `OAuthException` pour un jeton mort, et invalidait l'espace
+  entier sur un simple refus (le jeton de « Test DIDWA claude code » le 2026-10-05, celui de Spareka le 2026-10-12,
+  tous deux valides chez Meta) ; et la campagne routait sur sa catégorie de CONSENTEMENT, « Marketing » par défaut dans
+  l'assistant, de sorte qu'une campagne de service aurait été refusée en bloc (134100). Elle lit désormais la
+  catégorie chez Meta (`categorieDuModele`).
+- **`ad15c938`** : 134101 (modèle en synchronisation, aussi au premier envoi après 7 jours d'inactivité) repart par la
+  Cloud API, décision de Julien après la relecture de la doc de Meta.
+- **`b7813899`** : la durée de validité dans l'éditeur. Sa relecture a trouvé un rouge, corrigé dans le lot :
+  « Modifier » ou « Dupliquer » sur un modèle d'AUTHENTIFICATION faisait planter la page Modèles (« Application error »,
+  vérifié dans les deux sens par un e2e sur la console construite).
+
+**Déployé** sur le VPS jusqu'à `b7813899` (merge `--ff-only` sur ce commit, `up` en deux temps), fumée verte ; la session
+de la bascule a ensuite déployé `bfa345b0` par-dessus. **Allumé à 19 h 11 UTC** : `META_MM_LITE=true` ajouté à
+`.env.prod` (sauvegarde `.env.prod.avant-mm-lite-20261014` sur le VPS), trois conteneurs recréés sans build. Un `nano`
+resté ouvert sur `.env.prod` depuis 12 h 52 a d'abord été fermé (aucune modification en attente). **Essai réel à
+19 h 54** sur « Messaging Me Tech SANDBOX » : modèle en `marketing_lite`, réponse `btn:0`, message rapide en `service`
+par la Cloud API (essai 116 de `docs/prive/ESSAIS-REELS.md`).
+
+**Mesuré au passage** : la configuration Embedded Signup en service (`28360690800224915`) porte DÉJÀ la Marketing
+Messages API, contrairement à ce que disait son plan du 22 septembre ; trois comptes sont en
+`PENDING_VALID_PAYMENT_METHOD` (Meta attend une carte), deux `ONBOARDED`, deux `ELIGIBLE`. Décision de Julien : pas de
+réparation en base des deux jetons marqués invalides à tort ; Spareka se reconnectera, DIDWA reste tel quel.
+
 ## 2026-10-14 : le banc de l'API à Amsterdam, et ce qui arrive encore sur `mba.` (lots 4 et 7 de la bascule)
 
 - **Le montage** : `scripts/banc-api.sh` sur une base EXISTANTE (`BANC_BASE_FICHIER`, `57764621`), la base managée

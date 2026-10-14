@@ -4157,7 +4157,12 @@ Ajouté par le lot 4 de l'API publique :
    HTTP 500). 134100 et 134102 sont des échecs d'envoi ; 134101 (modèle créé, ou réutilisé après 7 jours sans envoi,
    il y a moins de 10 minutes) repart aussitôt par `/messages` dans `sendMarketing`, une seule unité du quota du mois
    (choix de Julien, sans quoi une campagne sur un modèle dormant se mettait en pause). Les accusés de ces envois portent `marketing_lite`, et
-   `pricing_analytics` `MARKETING_LITE`, que `parsePricing` compte dans `marketing` (même prix).
+   `pricing_analytics` `MARKETING_LITE`, que `parsePricing` compte dans `marketing` (même prix). **En production,
+   l'interrupteur est allumé** (`.env.prod`). Un compte s'ACTIVE chez Meta par le bouton « Connecter WhatsApp » (la
+   configuration Embedded Signup en service porte les deux produits, Cloud API ET Marketing Messages API, figés à sa
+   création) ou par WhatsApp Manager ; Meta n'active qu'avec un moyen de paiement valide. L'état se lit dans
+   `marketing_messages_onboarding_status` (`ELIGIBLE`, `PENDING_VALID_PAYMENT_METHOD`, `ONBOARDED`...), relevé avec la
+   santé du compte et affiché dans le panneau de l'Accueil.
 55. **Un jeton d'espace n'est déclaré mort que sur le code 190 ou un HTTP 401** (`isMetaAuthError`, que
    `pullFromError` importe). Jamais sur le seul type `OAuthException`, que Meta pose sur la plupart de ses refus
    d'envoi (100, 132000, 4, 134101...) : l'intercepteur de la fabrique invalidait alors le jeton d'un espace entier
