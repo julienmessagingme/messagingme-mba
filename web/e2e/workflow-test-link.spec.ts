@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * E2E « Tester le scénario » (Lot F) : le menu d'un scénario propose un test, qui affiche le jeton, le lien

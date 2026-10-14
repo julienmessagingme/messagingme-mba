@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * LE DÉFILEMENT DU FIL D'INBOX (lot 2 du plan post-audit, 2026-09-02).

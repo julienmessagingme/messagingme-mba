@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * LES PIÈCES JOINTES REÇUES DANS LE FIL (2026-09-19, demande de Julien : « dans les conversations on doit

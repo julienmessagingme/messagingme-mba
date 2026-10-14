@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * L'en-tête de l'aperçu WhatsApp doit porter le NOM VÉRIFIÉ du compte, celui que le destinataire lit en haut

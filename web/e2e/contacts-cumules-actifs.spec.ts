@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * LA BASCULE CUMULES / ACTIFS DE LA CARTE CONTACTS (demande de Julien du 2026-09-23).

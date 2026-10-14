@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 
 /**
  * E2E page Paramètres : le fuseau se règle (PATCH .../settings/timezone) et les heures d'ouverture

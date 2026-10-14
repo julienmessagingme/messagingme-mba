@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * E2E « Mes tableaux » : la mesure des CLICS SUR UN LIEN de template.

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Bloc « Envoi de mail » dans le builder : grisé sans boîte SMTP connectée (`emailEnabled`, dérivé de

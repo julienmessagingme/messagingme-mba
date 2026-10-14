@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 
 /**
  * LE PANNEAU DÉTAIL DE L'INBOX (cadrage du 2026-09-28) : la moitié basse de la colonne des conversations.

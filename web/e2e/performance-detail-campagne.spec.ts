@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * La FICHE d'une campagne, ouverte en cliquant une ligne du tableau du coût (demande de Julien du

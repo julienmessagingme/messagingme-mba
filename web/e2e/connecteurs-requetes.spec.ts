@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * METTRE AU POINT UN APPEL API, dans Tools > Connecteurs API.

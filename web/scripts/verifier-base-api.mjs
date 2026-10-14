@@ -7,13 +7,12 @@
  * déjà. Un build qui « passe » ne prouve donc rien du tout sur la valeur réellement embarquée : il prouve
  * que le code compile, pas que la console appellera la bonne adresse.
  *
- * 🔴 ET LA CONSOLE LIVRÉE N'EST PAS CELLE QUE LES E2E EXERCENT. Les specs Playwright interceptent
- * `**\/api\/backend\/**`, c'est-à-dire le chemin du proxy Next, celui de l'ancienne console servie par le
- * VPS. Depuis la bascule Vercel, le navigateur appelle `api.messagingme.app` en direct et ne traverse plus
- * ce proxy. Personne ne vérifiait la topologie réellement livrée.
+ * 🔴 ET LES E2E N'EXERCENT PAS CETTE VALEUR-LÀ. Leur topologie `vercel` construit la console avec une adresse
+ * d'API absolue mais factice (`playwright.config.ts`), qu'elles interceptent. La valeur de la production n'est
+ * vérifiée qu'ici.
  *
- * Ce script ferme ce trou pour le coût d'un `grep` : il construit la liste des fichiers JS du bundle client
- * et cherche la base attendue. Volontairement bête, sans dépendance, et il ne juge rien d'autre.
+ * Ce script le fait pour le coût d'un `grep` : il cherche la base attendue dans les fichiers JS du bundle client,
+ * puis son origine dans la CSP figée au build. Volontairement bête, sans dépendance, et il ne juge rien d'autre.
  *
  * Usage : node scripts/verifier-base-api.mjs https://api.messagingme.app
  */
@@ -58,3 +57,19 @@ if (porteur === undefined) {
 }
 
 console.log(`OK : « ${attendue} » est scellée dans le bundle (${porteur.replace(process.cwd(), '.')}).`);
+
+/**
+ * 🔴 ET LA CSP CONSTRUITE AVEC ELLE DOIT AUTORISER SON ORIGINE (lot 6 du bilan des audits). La console appelle l'API sur
+ * une autre origine que la sienne : sans elle dans `connect-src`, la politique passée en blocage couperait chaque
+ * appel. Les en-têtes sont figés au build dans `routes-manifest.json`, c'est ce que Vercel sert.
+ */
+const origine = new URL(attendue).origin;
+const manifeste = JSON.parse(readFileSync(join(process.cwd(), '.next', 'routes-manifest.json'), 'utf8'));
+const csp = (manifeste.headers ?? []).flatMap((r) => r.headers)
+  .find((h) => /^content-security-policy(-report-only)?$/i.test(h.key));
+const connect = csp?.value.split(';').map((d) => d.trim()).find((d) => d.startsWith('connect-src')) ?? '';
+if (!connect.split(/\s+/).includes(origine)) {
+  console.error(`ÉCHEC : la CSP du build n'autorise pas « ${origine} » (${connect || 'aucune directive connect-src'}).`);
+  process.exit(1);
+}
+console.log(`OK : la CSP autorise « ${origine} » (${connect}).`);

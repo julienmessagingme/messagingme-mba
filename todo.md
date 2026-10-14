@@ -1,5 +1,23 @@
 # todo.md : backlog
 
+## 🟠 Lot 6 du bilan des audits : ce qui reste après la CSP de la console (2026-10-14)
+
+La première livraison (plan `docs/superpowers/plans/2026-10-14-lot6-csp-console.md`) autorise l'API dans `connect-src`,
+fait échouer tout e2e qui viole la CSP et joue la suite dans les deux topologies. Restent, chacun sur une décision de
+Julien :
+
+- **Le collecteur des rapports CSP des vrais navigateurs** (où les garder), puis quelques jours d'observation, puis le
+  passage en blocage : la clé `Content-Security-Policy-Report-Only` de `web/next.config.mjs` devient
+  `Content-Security-Policy`. Les e2e simulent le SDK Meta : seul un vrai navigateur dira ce qu'il charge pendant une
+  connexion de numéro.
+- **Les nonces** (retirer `'unsafe-inline'` des scripts) : ils imposent le rendu à la demande de chaque page sur Vercel,
+  qui sert aujourd'hui des pages statiques.
+- **Le quota anonyme de Docker Hub en CI** (`toomanyrequests` sur `integration` et `securite`) : un jeton en lecture
+  seule dans deux secrets GitHub, posé par Julien, ou des miroirs.
+- **Les contrôles de CI** : l'image `mba-web` scannée par trivy, CodeQL (gratuit, le dépôt est public), Dependabot en
+  mises à jour de sécurité, des seuils bloquants écrits avec une procédure d'exception datée.
+
+
 ## 🟡 Dossiers, second facteur, Inbox, menu du compte : ce qui reste (2026-10-13)
 
 - **Le rangement d'un template supprimé se nettoie côté serveur** : `DELETE /templates/:name` ne retire pas sa ligne de

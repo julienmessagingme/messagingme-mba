@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Bloc RCS dans le builder : il s'ajoute depuis la palette, se configure (texte du message), rend ses DEUX

@@ -25,6 +25,31 @@ priorité à la première valeur non vide restent inchangés. Pas de migration.
   testé comme « console seule ». Corrigé par 1082c36a (`npm run aide:carte`, une ligne), déployé avec les deux fiches
   d'aide. La règle est passée dans `CLAUDE.md` (§ la CI découpée) : un lot `web/` lance la suite racine entière.
 
+## 2026-10-14 : la CSP de la console connaît l'API, et les e2e la surveillent (lot 6 du bilan des audits, première livraison)
+
+Plan `docs/superpowers/plans/2026-10-14-lot6-csp-console.md`.
+
+- **Le trou** : la console servie par Vercel appelle `api.messagingme.app` en direct, et sa CSP (en observation)
+  n'autorisait que `'self'` en `connect-src`, avec un commentaire qui affirmait que l'API passait toujours par le rewrite
+  de la même origine. Passée en blocage, elle aurait coupé chaque appel de la console. `connect-src` reçoit désormais
+  l'origine de `NEXT_PUBLIC_API_URL`, lue au build comme `BASE`.
+- **La garde** : Chromium écrit chaque violation de la CSP dans la console de la page, en observation comme en blocage,
+  et Playwright la reçoit (mesuré le jour même, avec un appel intercepté vers une autre origine). `web/e2e/aide/test.ts`
+  en fait une fixture automatique qui fait échouer le test ; les 175 specs importent ce `test`, et
+  `tests/e2e-garde-csp.test.ts` refuse un spec qui s'en passerait.
+- **Les deux topologies** : `E2E_TOPOLOGIE=vercel` construit la console avec une API absolue sur une autre origine
+  (`127.0.0.1` au lieu de `localhost`), que les 178 interceptions `**/api/backend/**` couvrent sans changement. La CI
+  front tourne en matrice `proxy` / `vercel`, en parallèle. Mesuré au passage : Playwright ne vérifie pas le CORS d'une
+  réponse interceptée, ni n'intercepte les requêtes préliminaires ; le CORS reste à `CORS_ORIGINS`.
+- **Ce que seul un vrai navigateur a vu** : la page de connexion de production, ouverte avant la livraison, signalait
+  deux violations, l'appel à `/auth/config` et la feuille de style de Google Sign-In (`style-src`), ajoutée à
+  l'adresse que Google documente. Les e2e simulent Google : c'est l'argument du collecteur de rapports.
+- **Ce que la garde a trouvé dans les e2e** : la vignette de `ChampImageHebergee` dessinait n'importe quelle adresse
+  tapée, `http` compris, que la CSP refuse (et qu'une page en https ne charge pas). Elle ne se dessine plus que pour
+  une adresse https ; « Retirer » reste.
+- **Le reste** : `verifier-base-api.mjs` vérifie aussi la CSP du build de production ; trivy est épinglé (0.74.0, par
+  empreinte), le commentaire qui disait le dépôt privé est corrigé.
+
 ## 2026-10-13 : les actions de l'agent IA, le moteur et la console (livraisons 0, A et B)
 
 - Décisions de Julien du jour (grill) : une action est un outil de chaque agent IA, 10 au plus ; des champs typés

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * E2E Chaîne (Channels Me) : publier un post dont le bouton démarre un scénario.

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Bloc « Agent IA » dans le builder : il est grisé tant qu'aucun agent n'est actif, il s'ajoute, on choisit

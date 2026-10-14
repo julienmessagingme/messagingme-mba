@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 import { COMMANDES_PLUGIN } from '../lib/demarrer';
 import { OUTILS_MCP } from '../lib/mcp-outils';
 

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * E2E détail de campagne : ce qui a été envoyé, et quand. Une campagne SCÉNARIO n'a pas de template propre,

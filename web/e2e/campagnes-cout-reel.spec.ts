@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * LE COUT DE L'ONGLET CAMPAGNES VIENT DU SERVEUR, IL NE S'INVENTE PLUS.

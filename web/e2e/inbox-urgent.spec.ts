@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * LE STATUT « URGENT » D'UNE CONVERSATION (RC2, migration 0216, plan docs/superpowers/plans/2026-10-06-rc2-statut-urgent.md).

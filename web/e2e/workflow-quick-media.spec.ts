@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Un visuel sur le bloc « message rapide ». Demandé par Julien le 2026-08-25 : le bloc ne savait envoyer que

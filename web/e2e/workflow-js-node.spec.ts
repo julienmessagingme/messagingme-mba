@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * E2E builder : le bloc « Fonction JS », ses deux demandes de Julien du 2026-09-11.

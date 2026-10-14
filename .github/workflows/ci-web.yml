@@ -45,6 +45,16 @@ concurrency:
 
 jobs:
   web:
+    # 🔴 LES DEUX TOPOLOGIES LIVREES, EN PARALLELE (lot 6 du bilan des audits). `proxy` : la console du VPS
+    # (`mba.`), qui appelle `/api/backend` sur sa propre origine. `vercel` : celle de `console.messagingme.app`,
+    # construite avec une adresse d'API absolue sur une AUTRE origine (`playwright.config.ts`). Les specs sont les
+    # memes ; la garde de la CSP (`e2e/aide/test.ts`) fait echouer celui qui la viole, dans l'une ou l'autre.
+    # Le build, le lint, tsc et vitest ne dependent pas de la topologie : ils ne tournent qu'une fois.
+    name: web (${{ matrix.topologie }})
+    strategy:
+      fail-fast: false
+      matrix:
+        topologie: [proxy, vercel]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -64,14 +74,18 @@ jobs:
       # tsc plante sur des types fantômes. Le build fait déjà le type-check ET la passe ESLint de Next
       # (qui n'échoue que sur des erreurs, pas des warnings). Aucun BACKEND_URL requis (fallback next.config.mjs).
       - name: Build Next (type-check + lint inclus)
+        if: matrix.topologie == 'proxy'
         run: npm run build
         env:
           NEXT_TELEMETRY_DISABLED: '1'
       - name: Lint (next/core-web-vitals)
+        if: matrix.topologie == 'proxy'
         run: npm run lint
       - name: Type-check exhaustif
+        if: matrix.topologie == 'proxy'
         run: npx tsc --noEmit
       - name: Tests unitaires front (vitest)
+        if: matrix.topologie == 'proxy'
         run: npm test
       # E2E : les appels /api/backend/* sont mockés par page.route -> aucun backend ni base requis. Le webServer
       # de Playwright build + sert le Next ; on installe juste le navigateur (avec ses deps système).
@@ -81,21 +95,22 @@ jobs:
         run: npm run test:e2e
         env:
           NEXT_TELEMETRY_DISABLED: '1'
-      # 🔴 LA TOPOLOGIE REELLEMENT LIVREE, QUE RIEN NE VERIFIAIT. Tout ce qui precede construit et exerce la
-      # console en mode PROXY : le build ci-dessus n'a pas `NEXT_PUBLIC_API_URL`, et les specs Playwright
-      # interceptent `/api/backend/**`, le chemin du proxy Next. Depuis la bascule Vercel, le navigateur
-      # appelle `api.messagingme.app` en DIRECT et ne traverse plus ce proxy : la console livree n'etait donc
-      # couverte par aucun test.
+          E2E_TOPOLOGIE: ${{ matrix.topologie }}
+      # 🔴 LA VALEUR REELLEMENT LIVREE. Les E2E de la topologie `vercel` exercent une adresse d'API absolue, mais
+      # factice (`127.0.0.1`). Ce build-ci pose celle de la production, et le script verifie qu'elle est scellee
+      # dans le bundle ET que la CSP servie autorise son origine.
       #
       # ⚠️ EN DERNIER, et ce n'est pas cosmetique : `npm run build` ecrase `.next`, et le serveur de
-      # Playwright reutilise ce repertoire. Construire en mode Vercel AVANT les E2E ferait appeler `api.` par
-      # la console, donc plus aucune interception, donc toutes les specs rouges.
+      # Playwright reutilise ce repertoire. Construire avec la vraie adresse AVANT les E2E ferait appeler `api.`
+      # par la console, donc plus aucune interception, donc toutes les specs rouges.
       - name: Build dans la topologie Vercel
+        if: matrix.topologie == 'vercel'
         run: npm run build
         env:
           NEXT_TELEMETRY_DISABLED: '1'
           NEXT_PUBLIC_API_URL: https://api.messagingme.app
       # Un build qui passe ne prouve QUE la compilation. La variable est figee AU BUILD : la changer sans
       # reconstruire ne fait rien, en silence. On verifie donc qu'elle est bien SCELLEE dans le bundle client.
-      - name: La base d API est scellee dans le bundle
+      - name: La base d API est scellee dans le bundle, et la CSP l autorise
+        if: matrix.topologie == 'vercel'
         run: node scripts/verifier-base-api.mjs https://api.messagingme.app

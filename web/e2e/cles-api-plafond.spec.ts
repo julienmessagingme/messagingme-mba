@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 
 /**
  * AU PLUS DIX CLÉS ACTIVES PAR ESPACE, VU DE LA CONSOLE (2026-10-04).

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * E2E inbox : le filtre « À traiter » ne montre que les conversations que le scénario ne gère plus

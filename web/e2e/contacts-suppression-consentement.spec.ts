@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * E2E mini-CRM : la SUPPRESSION d'un contact et la bascule de consentement.

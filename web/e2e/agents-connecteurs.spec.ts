@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * BRANCHER LE SYSTÈME DU CLIENT (lot L2), en DEUX endroits, et c'est le sujet :

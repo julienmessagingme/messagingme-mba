@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Accueil : activation du canal RCS, sous le numéro WhatsApp.

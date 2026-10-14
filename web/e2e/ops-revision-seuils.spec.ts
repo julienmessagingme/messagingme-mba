@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * `/ops` : la révision de l'API sous le titre, et le seuil de latence de CHAQUE file (lots 2 et 4 du plan de performance).

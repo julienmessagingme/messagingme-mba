@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 
 /**
  * L'APP SALESFORCE, vue de l'écran (plan 2026-09-26, lot L1) : la carte de Paramètres > Intégrations, la page de

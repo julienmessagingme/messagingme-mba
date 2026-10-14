@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 
 /**
  * LA DOUBLE AUTHENTIFICATION, CÔTÉ CONSOLE (plan `docs/superpowers/plans/2026-09-25-mfa-admins.md`, tâche 8).

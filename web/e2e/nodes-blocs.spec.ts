@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * E2E Contenu > Blocs : le tableau montre la colonne « Nom » (plus « Contenu »), et le nom libre d'un bloc s'affiche

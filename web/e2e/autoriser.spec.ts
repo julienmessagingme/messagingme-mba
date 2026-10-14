@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 
 /**
  * LE CONSENTEMENT DE CLAUDE (`/autoriser`, spec `docs/superpowers/specs/2026-10-03-oauth-mcp-design.md`, section 3).

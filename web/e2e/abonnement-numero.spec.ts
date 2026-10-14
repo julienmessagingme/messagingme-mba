@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 
 /**
  * L'ABONNEMENT DU NUMÉRO DANS LA CONSOLE (lot 4, livraison A) : le bandeau qui suit l'état sur chaque page, le

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * PARAMÈTRES S'OUVRE AUX MANAGERS POUR UN SEUL RÉGLAGE (2026-09-19, demande de Julien : « une option à la main

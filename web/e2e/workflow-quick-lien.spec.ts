@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Un BOUTON DE LIEN sur le bloc « message rapide ». Demandé par Julien le 2026-09-11 : « quand on fasse une

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Tools > Webhooks : recevoir un JSON d'un outil tiers et dire où va chaque valeur.

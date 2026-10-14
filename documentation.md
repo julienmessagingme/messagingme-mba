@@ -2558,6 +2558,15 @@ console est une application Next entière avec le SDK Meta et Google Sign-In : s
 signale. Les quatre autres en-têtes (anti-frame, `nosniff`, référent, capacités) sont enforçants des deux
 côtés.
 
+🔴 **LA CSP DE LA CONSOLE AUTORISE L'ORIGINE DE L'API QU'ELLE APPELLE, lue au build** : `connect-src` reçoit
+l'origine de `NEXT_PUBLIC_API_URL` quand elle est absolue (Vercel : `https://api.messagingme.app`), comme `BASE`
+dans `web/lib/http.ts` ; sans elle (console du VPS), `'self'` couvre le rewrite `/api/backend`. Trois contrôles la
+tiennent : chaque e2e échoue si une page viole la politique (`web/e2e/aide/test.ts`, une fixture automatique,
+imposée à tous les specs par `tests/e2e-garde-csp.test.ts`), et la CI front joue la suite dans les DEUX topologies
+(`E2E_TOPOLOGIE=vercel` : API absolue sur une autre origine, `web/playwright.config.ts`) ;
+`web/scripts/verifier-base-api.mjs` vérifie que le build de production scelle l'adresse ET que sa CSP autorise son
+origine. ⚠️ Playwright ne vérifie pas le CORS d'une réponse interceptée : celui-là ne tient qu'à `CORS_ORIGINS`.
+
 ⚠️ **`Referrer-Policy: no-referrer` sur l'API ferme une fuite RÉELLE**, la seule de cette liste :
 `/r/<code>/<jeton>` identifie un destinataire, et un référent le livrerait au site de destination.
 

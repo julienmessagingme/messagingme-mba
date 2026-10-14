@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 
 /**
  * LE BLOC « ALLER À » ET LE BOUTON « COPIER LE CODE » (RC5, livraison B), DE BOUT EN BOUT DANS L'ÉDITEUR.

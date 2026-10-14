@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * « OUVRIR LA CONVERSATION » DEPUIS LA FICHE D'UN CONTACT (demande de Julien du 2026-09-23).

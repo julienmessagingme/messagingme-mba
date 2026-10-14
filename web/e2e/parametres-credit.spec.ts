@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 
 /**
  * LA PAGE CRÉDIT IA : recharger par Stripe, revenir, et lire ce qui a fait bouger le solde.

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Contenu > Modèles d'email : un admin crée un modèle basique (nom, sujet, corps), le voit listé, insère une

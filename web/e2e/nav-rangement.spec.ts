@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Le rangement de la barre, revu le 2026-09-08 à la demande de Julien.

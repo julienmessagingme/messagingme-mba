@@ -75,16 +75,19 @@ jobs:
           npm --prefix web audit --audit-level=high
       - name: Analyse statique (semgrep, regles publiques TypeScript)
         continue-on-error: true
-        # Regles publiques, sans compte ni jeton : le depot est PRIVE, donc CodeQL demanderait GitHub
-        # Advanced Security, qui est payant. Semgrep couvre le meme besoin de premier niveau gratuitement.
+        # Regles publiques, sans compte ni jeton. Le depot etant public, CodeQL y serait gratuit ; il n est pas
+        # branche, semgrep couvre le besoin de premier niveau.
         run: |
           pipx install semgrep || pip install semgrep
           semgrep --config=p/typescript --config=p/secrets --error --quiet --metrics=off src web/lib web/app
       - name: Image Docker (trivy)
         continue-on-error: true
+        # 🔴 EPINGLE PAR VERSION ET PAR EMPREINTE, jamais `latest` : ce conteneur recoit la socket Docker du runner,
+        # et une etiquette mobile executerait ce que l editeur publie au moment du run, sans relecture. Monter de
+        # version = changer les deux, sur une version publiee depuis au moins deux semaines.
         run: |
           docker build -t mba-api:ci .
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock             aquasec/trivy:latest image --severity HIGH,CRITICAL --ignore-unfixed --scanners vuln mba-api:ci
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock             aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 image --severity HIGH,CRITICAL --ignore-unfixed --scanners vuln mba-api:ci
       - name: L image ne tourne PAS en root
         # 🔴 CELUI-CI BLOQUE, et c est le seul. Il ne depend d aucune base de vulnerabilites exterieure : il
         # verifie une propriete que NOUS avons choisie et que nous pouvons tenir. Un `USER node` retire par

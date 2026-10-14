@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 import { TREIZE_POUCES, pasDeDebordement, pasDeChevauchement } from './aide/largeur';
 import { TRADUCTION_STORAGE_KEY } from '../lib/traduction-lecture';
 

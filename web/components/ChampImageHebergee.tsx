@@ -88,6 +88,12 @@ export function ChampImageHebergee({
 
   const douteuse = avertirExtension && valeur.trim() !== '' && !IMAGE_RE.test(valeur.trim());
   const aUneImage = valeur.trim() !== '';
+  /**
+   * La vignette ne se dessine que pour une adresse https : c'est la seule que la CSP de la console laisse charger
+   * (`img-src`, `next.config.mjs`), et une page servie en https ne charge pas une image en http. Une adresse en http
+   * garde son bouton « Retirer » ; c'est l'écran appelant qui dit si elle sera refusée.
+   */
+  const vignette = /^https:\/\//i.test(valeur.trim()) ? valeur.trim() : null;
 
   const retirer = (
     <button
@@ -120,9 +126,9 @@ export function ChampImageHebergee({
           data-testid={`${testIdPrefix}-image-upload`}
           className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-controle border border-dashed border-ink-300 bg-ink-50 text-xs text-ink-500 hover:border-brand-400 disabled:cursor-not-allowed"
         >
-          {busy ? t('Envoi…', 'Uploading…') : aUneImage ? (
+          {busy ? t('Envoi…', 'Uploading…') : vignette !== null ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={valeur.trim()} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" />
+            <img src={vignette} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" />
           ) : t('Choisir une image', 'Choose an image')}
         </button>
       ) : (
@@ -138,13 +144,15 @@ export function ChampImageHebergee({
           </Bouton>
           {aUneImage && (
             <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={valeur.trim()}
-                alt=""
-                referrerPolicy="no-referrer"
-                className="h-9 w-14 shrink-0 rounded-controle border border-ink-200 bg-ink-50 object-cover"
-              />
+              {vignette !== null && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={vignette}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  className="h-9 w-14 shrink-0 rounded-controle border border-ink-200 bg-ink-50 object-cover"
+                />
+              )}
               {retirer}
             </>
           )}

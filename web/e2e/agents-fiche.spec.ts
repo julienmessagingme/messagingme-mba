@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Écran de réglage d'un agent IA : la liste, la création, les onglets, les règles d'arrêt et l'activation.

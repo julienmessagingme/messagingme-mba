@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Bloc QUESTION dans l'éditeur : une question au contact, avec un MENU déroulant de réponses, chacune reliable

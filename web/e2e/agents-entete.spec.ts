@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * L'en-tête identitaire de la fiche d'un agent IA, le menu passé en colonne, et le logo du modèle en liste.

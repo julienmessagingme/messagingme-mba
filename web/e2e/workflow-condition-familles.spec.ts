@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 
 /**
  * LE BLOC CONDITION À FAMILLES (RC5), DE BOUT EN BOUT DANS L'ÉDITEUR.

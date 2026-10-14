@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * E2E builder : un bloc « envoi de template » CLASSIQUE montre l'aperçu compact du message (demande de Julien

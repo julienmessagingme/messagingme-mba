@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * LA GRILLE DE PRIX SE REGLE DANS /ops, UNE FOIS, POUR TOUS LES ESPACES (lot 8 du 2026-09-23).

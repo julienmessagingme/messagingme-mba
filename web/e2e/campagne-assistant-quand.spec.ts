@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 import { poserFaux, ouvrirAssistant } from './aide/assistant';
 import { TREIZE_POUCES, empiles, pasDeDebordement, pasDeChevauchement } from './aide/largeur';
 

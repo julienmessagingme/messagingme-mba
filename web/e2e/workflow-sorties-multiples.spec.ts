@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * LES POINTS DE LIAISON : viser, et voir la flèche partir du bon endroit.

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * RC7 : un champ du contact dans l'adresse d'un bouton « Lien » (`https://client.fr/commande/{numero_commande}`).

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 
 /**
  * LA CONNEXION À LA CONSOLE D'EXPLOITATION (plan `docs/superpowers/plans/2026-09-28-ops-nominatif.md`).

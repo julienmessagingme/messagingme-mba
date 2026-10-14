@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 import { INTENTS } from '../lib/partage/analyse';
 
 /**

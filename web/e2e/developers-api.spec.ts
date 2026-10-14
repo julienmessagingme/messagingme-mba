@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 import { CODES_DOCUMENTES } from '../lib/api-exemples';
 import { EVENEMENTS_SIGNAUX } from '../lib/signaux-dictionnaire';
 import { ANCRES_DEPLACEES, PAGES_DOC, hrefDe, pageDoc, type CleDePage, type LienVers } from '../lib/doc-api-pages';

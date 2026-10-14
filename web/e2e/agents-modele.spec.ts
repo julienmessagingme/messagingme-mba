@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * L'onglet Modèle d'un agent : une LISTE DÉROULANTE, plus une saisie libre (2026-09-09, demande de Julien).

@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Route } from '@playwright/test';
+import { test, expect, type Page, type Route } from './aide/test';
 
 /**
  * L'ÉCRAN DES CONNECTEURS MCP.

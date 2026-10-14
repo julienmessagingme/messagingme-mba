@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * 1er E2E du builder de scénario : le node Condition s'ajoute, se configure (constructeur de clauses), rend ses DEUX

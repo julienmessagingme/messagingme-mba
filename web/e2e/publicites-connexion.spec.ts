@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * L'ÉCRAN « PUBLICITÉS » : ses quatre états, vus depuis le navigateur (lot 2 « Connecter »).

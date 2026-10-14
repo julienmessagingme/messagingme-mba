@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 
 /**
  * 🔴 UNE REQUÊTE DE FIL LENTE NE DOIT PAS ÊTRE RELANCÉE TOUTES LES 4 SECONDES (2026-09-13).

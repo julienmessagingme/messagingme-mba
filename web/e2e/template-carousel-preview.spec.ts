@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * E2E aperçu d'un template CAROUSEL déjà créé : cliquer sur son nom montre les vraies cartes (image, texte,

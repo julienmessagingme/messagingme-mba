@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 
 /**
  * CHANGER D'ESPACE SANS SE DÉCONNECTER (RC3), depuis le menu du compte.

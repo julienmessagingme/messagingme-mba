@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * LA CARTE « COUTS » DE LA SYNTHESE : trois chiffres, et le detail derriere un accordeon.

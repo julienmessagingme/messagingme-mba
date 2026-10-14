@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 
 /**
  * L'OFFRE DANS LA CONSOLE (lot 6, tâche 7). Une Base voit grisé ce que son offre n'ouvre pas (menus, onglets), n'ouvre

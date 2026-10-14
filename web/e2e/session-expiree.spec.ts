@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Session expirée pendant l'édition d'un scénario. Deux comportements verrouillés ensemble, parce qu'ils se

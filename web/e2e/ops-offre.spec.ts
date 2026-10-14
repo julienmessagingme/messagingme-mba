@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * L'offre Entreprise d'un espace, posée depuis `/ops` (demande de Julien du 2026-10-13 ; route du lot 6,

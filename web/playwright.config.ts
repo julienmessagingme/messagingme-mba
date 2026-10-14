@@ -3,7 +3,17 @@ import { defineConfig, devices } from '@playwright/test';
 /**
  * E2E du front mba. Les appels `/api/backend/*` sont INTERCEPTÉS par page.route dans chaque spec (aucun backend
  * ni base requis) : le webServer ne sert que le Next buildé. BACKEND_URL n'est jamais atteint (fallback build).
+ *
+ * 🔴 DEUX TOPOLOGIES, celles qui sont livrées. Par défaut, celle du VPS : la console appelle `/api/backend` sur sa
+ * propre origine. Avec `E2E_TOPOLOGIE=vercel`, celle de `console.messagingme.app` : la console est construite avec une
+ * adresse d'API ABSOLUE sur une AUTRE origine que la page (`127.0.0.1` n'est pas `localhost`), comme Vercel appelle
+ * `api.messagingme.app`. Le chemin garde son `/api/backend`, donc les interceptions `**\/api/backend/**` des specs la
+ * couvrent telles quelles ; ce qui change est l'origine, que la CSP doit autoriser (`e2e/aide/test.ts`).
+ * ⚠️ Playwright ne vérifie pas le CORS d'une réponse interceptée (mesuré) : il reste à la charge de `CORS_ORIGINS`.
  */
+const API_VERCEL = 'http://127.0.0.1:3000/api/backend';
+const vercel = process.env.E2E_TOPOLOGIE === 'vercel';
+
 export default defineConfig({
   testDir: './e2e',
   timeout: 30_000,
@@ -25,6 +35,9 @@ export default defineConfig({
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
-    env: { NEXT_TELEMETRY_DISABLED: '1', BACKEND_URL: 'http://127.0.0.1:9', NODE_ENV: 'production' },
+    env: {
+      NEXT_TELEMETRY_DISABLED: '1', BACKEND_URL: 'http://127.0.0.1:9', NODE_ENV: 'production',
+      ...(vercel ? { NEXT_PUBLIC_API_URL: API_VERCEL } : {}),
+    },
   },
 });

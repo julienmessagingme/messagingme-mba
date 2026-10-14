@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * E2E « tester À PARTIR D'UN BLOC » (2026-09-16) : chaque bloc du constructeur porte un bouton lecture en

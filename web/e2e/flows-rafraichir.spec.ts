@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Écran Contenu > Formulaires WhatsApp, bouton « Rafraîchir » : va chercher les formulaires du compte

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 import { mockMba, TENANT } from './support/mba';
 import { repondreAutomatiquement } from './aide/confirmation';
 

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * E2E création d'un carousel : le message d'introduction porte des VARIABLES exactement comme un template

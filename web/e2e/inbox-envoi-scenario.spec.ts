@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * E2E : lancer un SCÉNARIO depuis l'Inbox. La règle métier est portée par la fenêtre de service de 24 h :

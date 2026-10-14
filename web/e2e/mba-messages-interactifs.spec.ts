@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 import { mockMba, appelsMba } from './support/mba';
 import { repondreSurPlace } from './aide/confirmation';
 

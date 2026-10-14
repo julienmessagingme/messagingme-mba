@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Inbox : la vignette porte DEUX gestes distincts. La zone ouvre la conversation (comme avant), le NOM ouvre

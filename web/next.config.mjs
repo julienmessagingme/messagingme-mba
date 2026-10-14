@@ -6,6 +6,15 @@ const dirname = path.dirname(fileURLToPath(import.meta.url));
 /** @type {import('next').NextConfig} */
 const backend = process.env.BACKEND_URL || 'http://localhost:8095';
 
+/**
+ * L'ORIGINE DE L'API QUAND LE NAVIGATEUR L'APPELLE EN DIRECT, lue sur la MÊME variable que `BASE` (`lib/http.ts`) et
+ * figée au même moment, le build. Sur Vercel, `NEXT_PUBLIC_API_URL` vaut `https://api.messagingme.app` : la console
+ * appelle une AUTRE origine que la sienne, que `connect-src 'self'` ne couvre pas. Sans la variable (VPS), l'API passe
+ * par le rewrite `/api/backend` de la même origine, et `'self'` suffit. Une valeur relative reste sur la même origine.
+ */
+const brute = process.env.NEXT_PUBLIC_API_URL ?? '';
+const origineApi = /^https?:\/\//.test(brute) ? new URL(brute).origin : null;
+
 const nextConfig = {
   // Build autonome pour un conteneur léger (server.js + deps minimales).
   output: 'standalone',
@@ -37,15 +46,19 @@ const nextConfig = {
       // politique OBSERVABLE plutot que bruyante ; c est le premier relachement a retirer le jour ou on
       // passera aux nonces.
       "script-src 'self' 'unsafe-inline' https://connect.facebook.net https://accounts.google.com",
-      "style-src 'self' 'unsafe-inline'",
+      // La feuille de style du bouton Google Sign-In, à l'adresse que Google documente pour une CSP. Vue dans un vrai
+      // navigateur sur la page de connexion : les e2e simulent Google et ne la chargent jamais.
+      "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
       "img-src 'self' data: blob: https:",
       // L'apercu d'une video de publicite lit le fichier choisi par une adresse locale `blob:`. Sans cette ligne,
       // `media-src` retombe sur `default-src 'self'`, qui ne couvre pas `blob:` : la future CSP bloquante
       // couperait l'apercu, et la politique actuelle le signalerait a chaque video choisie.
       "media-src 'self' blob:",
-      // `connect-src` : l API passe par le rewrite same-origin, donc `'self'` suffit pour elle. Les deux
-      // origines externes sont celles de l embarquement Meta et de la connexion Google.
-      "connect-src 'self' https://graph.facebook.com https://accounts.google.com",
+      // `connect-src` : l'API (son origine quand la console l'appelle en direct, cf. `origineApi`), puis
+      // l'embarquement Meta et la connexion Google. 🔴 Sans l'origine de l'API, cette politique passée en blocage
+      // couperait chaque appel de la console servie par Vercel. `e2e/aide/test.ts` fait échouer tout e2e qui la
+      // viole, et la CI les joue dans les DEUX topologies.
+      `connect-src 'self'${origineApi ? ` ${origineApi}` : ''} https://graph.facebook.com https://accounts.google.com`,
       "frame-src https://connect.facebook.net https://accounts.google.com https://business.facebook.com",
       "font-src 'self' data:",
       "base-uri 'self'",

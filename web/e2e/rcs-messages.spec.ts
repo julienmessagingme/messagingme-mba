@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Contenu > Messages RCS : composer un message avec ses boutons, le voir dans l'aperçu, et l'enregistrer.

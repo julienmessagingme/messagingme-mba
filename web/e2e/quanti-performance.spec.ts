@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * QUANTITATIF > PERFORMANCE : le temps de réponse et de résolution de l'équipe (cadrage du 2026-09-29).

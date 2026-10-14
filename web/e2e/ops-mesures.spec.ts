@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 
 /**
  * LES TÂCHES DE FOND ET LE STOCKAGE, SUR `/ops` (audit de performance du 2026-10-02, § 9 et § 11).

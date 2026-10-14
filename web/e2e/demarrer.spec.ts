@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 import { mockAccueil } from './support/accueil';
 import { COMMANDE_DEMARRAGE, COMMANDES_PLUGIN } from '../lib/demarrer';
 

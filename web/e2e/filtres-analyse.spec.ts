@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 
 /**
  * Les filtres de la DERNIÈRE ANALYSE (lot 2b « Tout sur la fiche ») : la liste des contacts, le ciblage d'une

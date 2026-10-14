@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * E2E builder : (1) le panneau de droite ne permet PLUS de changer la nature d'un bloc, (2) tirer une flèche

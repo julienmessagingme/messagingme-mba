@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * La page de synthèse du Performance Lab, et son nuage « satisfaction x urgence » (lot F du 2026-09-08).

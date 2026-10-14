@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Un bouton proposé au contact mais branché sur RIEN est un trou de montage : il tape, et il ne reçoit rien.

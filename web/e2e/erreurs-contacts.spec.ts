@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Un clic sur une ligne d'erreur ouvre LA LISTE DES CONTACTS TOUCHÉS (Console > Sécurité > Journal des

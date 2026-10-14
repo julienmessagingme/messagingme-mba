@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * RANGER LA CONVERSATION OUVERTE dans un dossier (2026-09-09, demande de Julien).

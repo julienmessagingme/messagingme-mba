@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 import { mockMba, appelsMba } from './support/mba';
 
 /** Sites web, fichiers de connaissance, numéros de test : trois ressources simples, trois refus utiles. */

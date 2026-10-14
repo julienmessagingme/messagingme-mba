@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 // La fenêtre d'observation se DÉRIVE du délai de rejeu du client HTTP, elle ne se devine pas.
 import { RETRY_DELAY_MS } from '../lib/http';
 import { repondre } from './aide/confirmation';

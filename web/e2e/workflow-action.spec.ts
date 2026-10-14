@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * E2E builder : le bloc « Action » s'ajoute (par défaut « ajouter un tag »), on change la sous-action, et

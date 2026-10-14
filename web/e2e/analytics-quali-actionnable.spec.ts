@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Analytics QUALITATIF : rendre le tableau actionnable (demande de Julien du 2026-09-01).

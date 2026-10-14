@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Le plafond et les quotas de l'API d'un espace, lisibles dans `/ops` (`GET /ops/plafond-api/:tenantId`).

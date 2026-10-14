@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * E2E Automation (Lot E) : créer une automation « mot-clé » depuis l'écran, et vérifier qu'elle part

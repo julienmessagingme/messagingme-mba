@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * E2E Analytics : les filtres « campagnes » et « templates » acceptent PLUSIEURS valeurs, et la série est

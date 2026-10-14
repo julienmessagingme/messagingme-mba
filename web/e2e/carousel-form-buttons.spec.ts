@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * E2E création d'un carousel : les boutons se saisissent CARTE PAR CARTE (texte et lien différents), seule

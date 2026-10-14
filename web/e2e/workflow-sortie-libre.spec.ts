@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * La sortie « Toute autre réponse » : ce que le contact envoie quand il ÉCRIT au lieu de taper un bouton.

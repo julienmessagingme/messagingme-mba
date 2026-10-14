@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 
 /**
  * LA JAUGE DU BUDGET D'ÉQUIPE VERCEL, SUR `/ops` (lot 14, A). À 100 %, chaque bot de chaque client se tait : la carte

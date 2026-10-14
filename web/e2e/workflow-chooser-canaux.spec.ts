@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Le menu qui s'ouvre en tirant un fil doit proposer les MÊMES blocs que la palette, RCS et email compris.

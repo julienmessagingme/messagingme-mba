@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * E2E builder : la palette n'offre plus de bloc « retour au MBA », et le bloc qui passe le fil à un humain

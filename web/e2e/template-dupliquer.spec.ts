@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * Duplication d'un template. Le piège que ce test verrouille : le formulaire s'ouvre PRÉ-REMPLI d'un template

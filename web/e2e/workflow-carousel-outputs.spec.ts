@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * E2E builder : un bloc « envoi de template » qui envoie un CAROUSEL expose UNE SORTIE PAR BOUTON DE CARTE.

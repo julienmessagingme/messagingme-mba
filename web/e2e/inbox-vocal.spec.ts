@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './aide/test';
 
 /**
  * UN VOCAL DANS LE FIL (2026-09-09, demande de Julien).

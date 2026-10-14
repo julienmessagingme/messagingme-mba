@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './aide/test';
 
 /**
  * L'écran Automation et la dernière analyse (lot 3 de « Tout sur la fiche ») : le déclencheur « un champ
