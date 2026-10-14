@@ -33,6 +33,12 @@ export interface DestinationLien {
   destination: string;
 }
 
+/** Identité du clic et valeurs utilisables dans une destination à champs. */
+export interface ResolutionJetonLien {
+  contactId: string;
+  champs: Record<string, string | null> | null;
+}
+
 export class PgTrackedLinkStore {
   constructor(private readonly pool: Pool) {}
 
@@ -131,37 +137,29 @@ export class PgTrackedLinkStore {
   }
 
   /**
-   * Résout un jeton public en identifiant de contact, dans un espace donné.
-   *
-   * 🔴 `tenant_id = $1` bien que le jeton soit unique globalement : l'espace vient du lien cliqué, et sans ce
-   * filtre un jeton d'un autre client se verrait attribuer ce clic.
-   * La purge efface le jeton d'un contact anonymisé : ses clics futurs redeviennent anonymes (droit à
-   * l'effacement).
+   * Un seul jeton, une seule lecture pour l'identité et les champs d'une destination dynamique.
+   * 🔴 L'espace vient du lien cliqué : sans `tenant_id`, on pourrait attribuer un clic ou remplir une URL avec
+   * la fiche d'un autre client. Une fiche masquée reste attribuable, mais ne prête plus ses valeurs. La purge
+   * efface le jeton : ses clics futurs redeviennent anonymes.
    */
-  async contactParJeton(tenantId: string, jeton: string): Promise<string | null> {
-    const res = await this.pool.query<{ id: string }>(
-      `select id from contacts where tenant_id = $1 and jeton_public = $2`,
-      [tenantId, jeton],
-    );
-    return res.rows[0]?.id ?? null;
-  }
-
-  /**
-   * Les valeurs qu'un contact offre à l'adresse d'un bouton à champs (`valeursDeLaFiche`), retrouvé par son jeton
-   * public. `null` = aucun contact actif de cet espace ne porte ce jeton.
-   *
-   * 🔴 `tenant_id = $1`, l'espace du LIEN cliqué, jamais un espace venu de l'URL : sans ce filtre, le jeton d'un
-   * contact d'un autre client ferait écrire SA fiche dans l'adresse. Une fiche supprimée (`deleted_at`) ne prête
-   * plus ses valeurs ; une fiche purgée n'a plus de jeton.
-   */
-  async champsParJeton(tenantId: string, jeton: string): Promise<Record<string, string | null> | null> {
-    const res = await this.pool.query<{ profile_name: string | null; phone_e164: string | null; fields: Record<string, unknown> | null }>(
-      `select profile_name, phone_e164, fields from contacts
-        where tenant_id = $1 and jeton_public = $2 and deleted_at is null`,
+  async resoudreJeton(tenantId: string, jeton: string, avecChamps: boolean): Promise<ResolutionJetonLien | null> {
+    if (!avecChamps) {
+      const res = await this.pool.query<{ id: string }>(
+        `select id from contacts where tenant_id = $1 and jeton_public = $2`,
+        [tenantId, jeton],
+      );
+      return res.rows[0] ? { contactId: res.rows[0].id, champs: null } : null;
+    }
+    const res = await this.pool.query<{
+      id: string; deleted_at: Date | null; profile_name: string | null;
+      phone_e164: string | null; fields: Record<string, unknown> | null;
+    }>(
+      `select id, deleted_at, profile_name, phone_e164, fields from contacts
+        where tenant_id = $1 and jeton_public = $2`,
       [tenantId, jeton],
     );
     const r = res.rows[0];
-    return r ? valeursDeLaFiche(r) : null;
+    return r ? { contactId: r.id, champs: r.deleted_at === null ? valeursDeLaFiche(r) : null } : null;
   }
 
   /**

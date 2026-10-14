@@ -311,10 +311,10 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect((await store.jetonsPourContacts(tenantId, [contactId], fabriquerJeton)).get(contactId)).toBe(jeton);
 
     // 2. Il se résout dans SON espace, et seulement là : l'espace vient du lien cliqué, pas de l'URL.
-    expect(await store.contactParJeton(tenantId, jeton)).toBe(contactId);
+    expect(await store.resoudreJeton(tenantId, jeton, false)).toEqual({ contactId, champs: null });
     const autreEspace = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-jeton-2') returning id`)).rows[0]!.id;
     try {
-      expect(await store.contactParJeton(autreEspace, jeton), 'un jeton d’un autre espace ne doit rien résoudre').toBeNull();
+      expect(await store.resoudreJeton(autreEspace, jeton, false), 'un jeton d’un autre espace ne doit rien résoudre').toBeNull();
     } finally {
       await pool.query('delete from tenants where id = $1', [autreEspace]).catch(() => {});
     }
@@ -356,7 +356,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     const jeton = (await store.jetonsPourContacts(tenantId, [contactId], fabriquerJeton)).get(contactId)!;
 
     // Les champs de la fiche, plus `nom` (le nom du profil) et `telephone`.
-    const valeurs = await store.champsParJeton(tenantId, jeton);
+    const valeurs = (await store.resoudreJeton(tenantId, jeton, true))?.champs;
     expect(valeurs).not.toBeNull();
     // Recopiée dans un objet ordinaire : la table rendue est sans prototype.
     expect({ ...valeurs }).toMatchObject({ prenom: 'Julie', numero_commande: 'A1234', age: '30', nom: 'Julie' });
@@ -365,15 +365,15 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     // Un AUTRE espace ne lit jamais cette fiche, même avec le bon jeton.
     const autre = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-champs-autre') returning id`)).rows[0]!.id;
     try {
-      expect(await store.champsParJeton(autre, jeton), 'la fiche d’un autre espace ne doit jamais se lire').toBeNull();
+      expect(await store.resoudreJeton(autre, jeton, true), 'la fiche d’un autre espace ne doit jamais se lire').toBeNull();
     } finally {
       await pool.query('delete from tenants where id = $1', [autre]).catch(() => {});
     }
     // Un jeton inconnu ne lit rien.
-    expect(await store.champsParJeton(tenantId, fabriquerJeton())).toBeNull();
+    expect(await store.resoudreJeton(tenantId, fabriquerJeton(), true)).toBeNull();
     // Une fiche supprimée ne prête plus ses valeurs.
     await pool.query(`update contacts set deleted_at = now() where id = $1 and tenant_id = $2`, [contactId, tenantId]);
-    expect(await store.champsParJeton(tenantId, jeton)).toBeNull();
+    expect(await store.resoudreJeton(tenantId, jeton, true)).toEqual({ contactId, champs: null });
 
     // Déconfirmer un lien le retire de ce que lisent l'envoi et les mesures, sans casser la redirection.
     const nom = `champs.itest.${Date.now()}`;

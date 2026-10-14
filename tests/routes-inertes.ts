@@ -323,11 +323,9 @@ export const inboxDepInerte: Pick<InboxDep,
 /** `campagneVivante` absente : aucune garde, donc aucune campagne au fil de l'eau n'était vue. */
 export const aucuneCampagneVivante = async (): Promise<string | null> => null;
 
-export const liensInertes: Pick<LiensDep, 'contactParJeton' | 'champsParJeton'> = {
-  // Absente : les clics restaient anonymes.
-  contactParJeton: async () => null,
-  // Aucune fiche : les champs d'une destination sont retirés (et une destination sans champ ne l'appelle jamais).
-  champsParJeton: async () => null,
+export const liensInertes: Pick<LiensDep, 'resoudreJeton'> = {
+  // Aucun contact : clic anonyme et champs d'une destination retirés.
+  resoudreJeton: async () => null,
 };
 
 export const relaisMbaInerte: Pick<MbaRelaisDeps, 'journaliserForme' | 'resolveurMcp'> = {

@@ -3,7 +3,7 @@ import { isSendableButtonUrl } from '../../web/lib/partage/button-url';
 import { estClicAutomatique } from '../links/clic-automatique';
 import { estJeton } from '../links/jeton-contact';
 import { porteDesChamps, remplirChampsUrl } from '../links/champs-url';
-import type { DestinationLien } from '../links/tracked-links.pg';
+import type { DestinationLien, ResolutionJetonLien } from '../links/tracked-links.pg';
 import { journaliser } from '../lib/journal';
 import { escapeHtml as echappe } from '../crm/render';
 import type { TravauxEnVol } from '../lib/en-vol';
@@ -25,16 +25,11 @@ export interface LiensDep {
    */
   recordClick(code: string, tenantId: string, contactId?: string | null): Promise<void>;
   /**
-   * Résout un jeton public en identifiant de contact, dans l'espace du lien. `null` = jeton inconnu.
-   * 🔴 `tenantId` vient du lien, pas de l'URL : le contact d'un autre espace ne s'attribue pas ce clic.
+   * Résout le jeton une seule fois pour attribuer le clic et, si besoin, remplir la destination.
+   * L'espace vient du lien, jamais de l'URL. Une fiche masquée reste attribuable mais ne prête plus ses champs.
+   * Sans champ dans l'URL, la lecture ne charge pas la fiche complète.
    */
-  contactParJeton(tenantId: string, jeton: string): Promise<string | null>;
-  /**
-   * Les valeurs de la fiche qui porte ce jeton, pour remplir les champs `{cle}` d'une destination (`remplirChampsUrl`).
-   * `null` = jeton inconnu dans cet espace. Appelée seulement si la destination porte des champs.
-   * 🔴 `tenantId` vient du lien, pas de l'URL : la fiche d'un autre espace ne s'écrit jamais dans l'adresse.
-   */
-  champsParJeton(tenantId: string, jeton: string): Promise<Record<string, string | null> | null>;
+  resoudreJeton(tenantId: string, jeton: string, avecChamps: boolean): Promise<ResolutionJetonLien | null>;
 }
 
 export interface LinksRouteDeps {
@@ -94,19 +89,34 @@ export function registerLinks(app: FastifyInstance, deps: LinksRouteDeps): void 
       return reply.code(422).type('text/html; charset=utf-8').send(pageErreur('Lien invalide', "La destination de ce lien n'est pas une adresse valide."));
     }
 
-    // Le clic est compté avant la redirection, sans la bloquer en cas d'échec. On ne compte que les clics crédibles
-    // mais on redirige toujours : Meta clique chaque bouton URL pendant la revue du template (`estClicAutomatique`).
-    if (!estClicAutomatique({
+    // Un robot ne compte pas, mais une destination à champs se remplit tout de même. Un clic humain vers une
+    // destination à champs ne résout le jeton qu'une fois, pour les deux usages.
+    const automatique = estClicAutomatique({
       userAgent: req.headers['user-agent'],
       referer: req.headers.referer,
       parametres: req.query as Record<string, unknown> | null,
-    })) {
-      // Qui a cliqué : résolu seulement si l'URL portait un jeton bien formé (cette route reçoit aussi des robots).
-      let contactId: string | null = null;
-      if (estJeton(jeton)) {
-        // L'espace vient du lien, jamais de l'URL. Un échec de résolution ne bloque rien : le clic compte sans auteur.
-        contactId = await deps.liens.contactParJeton(lien.tenantId, jeton).catch(() => null);
+    });
+    const avecChamps = porteDesChamps(lien.destination);
+    let resolution: ResolutionJetonLien | null = null;
+    if (estJeton(jeton) && (!automatique || avecChamps)) {
+      try {
+        resolution = await deps.liens.resoudreJeton(lien.tenantId, jeton, avecChamps);
+      } catch (err) {
+        // Un échec de lecture des champs ne doit pas perdre l'attribution si une lecture légère fonctionne encore.
+        // Le repli ne coûte une seconde requête que sur ce chemin d'erreur ; la redirection reste toujours un 302.
+        if (avecChamps) {
+          journaliser('error', 'champs_lien_non_lus', { err, code: normalise, tenantId: lien.tenantId });
+          if (!automatique) {
+            resolution = await deps.liens.resoudreJeton(lien.tenantId, jeton, false).catch(() => null);
+          }
+        }
       }
+    }
+
+    // Le clic est compté avant la redirection, sans la bloquer en cas d'échec. Meta clique chaque bouton URL
+    // pendant la revue du template : ses clics automatiques ne sont jamais comptés.
+    if (!automatique) {
+      const contactId = resolution?.contactId ?? null;
       try {
         await deps.liens.recordClick(normalise, lien.tenantId, contactId);
       } catch (err) {
@@ -130,17 +140,9 @@ export function registerLinks(app: FastifyInstance, deps: LinksRouteDeps): void 
     // clique, robot compris (le comptage seul dépend de `estClicAutomatique`). Sans champ : la destination telle
     // quelle, sans aucune lecture de plus. Jeton absent, `anon`, inconnu ou lecture en échec : les champs sont retirés.
     let location = lien.destination;
-    if (porteDesChamps(lien.destination)) {
-      let valeurs: Record<string, string | null> | null = null;
-      if (estJeton(jeton)) {
-        try {
-          valeurs = await deps.liens.champsParJeton(lien.tenantId, jeton);
-        } catch (err) {
-          journaliser('error', 'champs_lien_non_lus', { err, code: normalise, tenantId: lien.tenantId });
-        }
-      }
+    if (avecChamps) {
       try {
-        location = remplirChampsUrl(lien.destination, valeurs);
+        location = remplirChampsUrl(lien.destination, resolution?.champs ?? null);
       } catch (err) {
         // `encodeURIComponent` lève sur un demi-substitut isolé : jamais de 5xx ici, les champs sont retirés (sans
         // valeur, rien n'est encodé).

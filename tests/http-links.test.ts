@@ -179,7 +179,7 @@ describe('redirection publique /r/:code', () => {
 
   it('🔴 un clic ATTRIBUÉ remonte comme signal, dans l’espace du LIEN', async () => {
     const jeton = 'abcdefghjkmnpqrs';
-    const { server, cap } = app({ contactParJeton: async (t, j) => (t === 't1' && j === jeton ? 'contact-1' : null) });
+    const { server, cap } = app({ resoudreJeton: async (t, j) => (t === 't1' && j === jeton ? { contactId: 'contact-1', champs: null } : null) });
     const res = await server.inject({ method: 'GET', url: `/r/${CODE}/${jeton}` });
     expect(res.statusCode).toBe(302);
     expect(cap.signaux).toEqual([{ tenantId: 't1', contactId: 'contact-1', code: CODE }]);
@@ -195,14 +195,16 @@ describe('redirection publique /r/:code', () => {
   });
 
   it('🔴 un clic de robot ne remonte pas non plus', async () => {
-    const { server, cap } = app({ contactParJeton: async () => 'contact-1' });
+    let lectures = 0;
+    const { server, cap } = app({ resoudreJeton: async () => { lectures++; return { contactId: 'contact-1', champs: null }; } });
     await server.inject({ method: 'GET', url: `/r/${CODE}/abcdefghjkmnpqrs`, headers: { 'user-agent': 'facebookexternalhit/1.1' } });
     expect(cap.signaux).toEqual([]);
+    expect(lectures).toBe(0); // URL fixe : le robot n'a besoin ni d'auteur ni de champs.
     await server.close();
   });
 
   it('🔴 un signal en panne REDIRIGE quand même', async () => {
-    const { server } = app({ contactParJeton: async () => 'contact-1', signalerClic: async () => { throw new Error('file pleine'); } });
+    const { server } = app({ resoudreJeton: async () => ({ contactId: 'contact-1', champs: null }), signalerClic: async () => { throw new Error('file pleine'); } });
     const res = await server.inject({ method: 'GET', url: `/r/${CODE}/abcdefghjkmnpqrs` });
     expect(res.statusCode).toBe(302);
     expect(res.headers.location).toBe('https://client.fr/promo');
@@ -211,7 +213,7 @@ describe('redirection publique /r/:code', () => {
 
   it('🔴 la redirection n’ATTEND PAS le signal : une file lente ne retarde aucun clic', async () => {
     // Un signal qui ne se termine jamais : si la route l'attendait, `inject` ne rendrait jamais la main.
-    const { server } = app({ contactParJeton: async () => 'contact-1', signalerClic: () => new Promise<void>(() => {}) });
+    const { server } = app({ resoudreJeton: async () => ({ contactId: 'contact-1', champs: null }), signalerClic: () => new Promise<void>(() => {}) });
     const res = await server.inject({ method: 'GET', url: `/r/${CODE}/abcdefghjkmnpqrs` });
     expect(res.statusCode).toBe(302);
     await server.close();
@@ -223,7 +225,7 @@ describe('redirection publique /r/:code', () => {
     let finir: () => void = () => {};
     const signal = new Promise<void>((r) => { finir = r; });
     const enVol = creerTravauxEnVol();
-    const { server } = app({ contactParJeton: async () => 'contact-1', signalerClic: () => signal, enVol });
+    const { server } = app({ resoudreJeton: async () => ({ contactId: 'contact-1', champs: null }), signalerClic: () => signal, enVol });
     expect((await server.inject({ method: 'GET', url: `/r/${CODE}/abcdefghjkmnpqrs` })).statusCode).toBe(302);
     expect(await enVol.attendre(0), 'le signal est encore en vol, et l’arrêt le sait').toBe(1);
     finir();
@@ -242,12 +244,13 @@ describe('RC7 : une destination à champs se remplit AU CLIC avec la fiche de ce
    * c'est ce qui rend visible une lecture faite dans le mauvais espace. Chaque lecture est notée.
    */
   function appChamps(destination: string, fiches: Record<string, Record<string, string | null>> = {}, over: Partial<LiensDep> = {}) {
-    const lectures: Array<{ tenantId: string; jeton: string }> = [];
+    const lectures: Array<{ tenantId: string; jeton: string; avecChamps: boolean }> = [];
     const { server, cap } = app({
       getByCode: async (code) => (code === CODE ? { tenantId: 't1', destination } : null),
-      champsParJeton: async (tenantId, jeton) => {
-        lectures.push({ tenantId, jeton });
-        return fiches[`${tenantId}:${jeton}`] ?? null;
+      resoudreJeton: async (tenantId, jeton, avecChamps) => {
+        lectures.push({ tenantId, jeton, avecChamps });
+        const champs = fiches[`${tenantId}:${jeton}`];
+        return champs ? { contactId: 'contact-1', champs } : null;
       },
       ...over,
     });
@@ -256,12 +259,14 @@ describe('RC7 : une destination à champs se remplit AU CLIC avec la fiche de ce
   const humain = { 'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/151.0.0.0 Mobile Safari/537.36' };
 
   it('🔴 un champ présent est remplacé par la valeur de la fiche, lue dans l’espace du LIEN', async () => {
-    const { server, lectures } = appChamps(COMMANDE, { [`t1:${JETON}`]: { numero_commande: 'A1234' } });
+    const { server, cap, lectures } = appChamps(COMMANDE, { [`t1:${JETON}`]: { numero_commande: 'A1234' } });
     const res = await server.inject({ method: 'GET', url: `/r/${CODE}/${JETON}`, headers: humain });
     expect(res.statusCode).toBe(302);
     expect(res.headers.location).toBe('https://client.fr/commande/A1234');
     expect(res.headers['cache-control']).toBe('no-store');
-    expect(lectures).toEqual([{ tenantId: 't1', jeton: JETON }]);
+    expect(lectures).toEqual([{ tenantId: 't1', jeton: JETON, avecChamps: true }]);
+    expect(cap.clics).toHaveLength(1);
+    expect(cap.signaux).toEqual([{ tenantId: 't1', contactId: 'contact-1', code: CODE }]);
     await server.close();
   });
 
@@ -294,7 +299,7 @@ describe('RC7 : une destination à champs se remplit AU CLIC avec la fiche de ce
     const res = await server.inject({ method: 'GET', url: `/r/${CODE}/${JETON_AUTRE}`, headers: humain });
     expect(res.statusCode).toBe(302);
     expect(res.headers.location).toBe('https://client.fr/commande/');
-    expect(lectures).toEqual([{ tenantId: 't1', jeton: JETON_AUTRE }]);
+    expect(lectures).toEqual([{ tenantId: 't1', jeton: JETON_AUTRE, avecChamps: true }]);
     await server.close();
   });
 
@@ -328,11 +333,29 @@ describe('RC7 : une destination à champs se remplit AU CLIC avec la fiche de ce
   });
 
   it('🔴 une lecture de fiche en échec : champ retiré, 302 quand même (jamais de 5xx), et une trace', async () => {
-    const { server } = appChamps(COMMANDE, {}, { champsParJeton: async () => { throw new Error('base indisponible'); } });
+    const { server } = appChamps(COMMANDE, {}, { resoudreJeton: async () => { throw new Error('base indisponible'); } });
     const { resultat: res, lignes } = await capturerJournal(() => server.inject({ method: 'GET', url: `/r/${CODE}/${JETON}` }));
     expect(res.statusCode).toBe(302);
     expect(res.headers.location).toBe('https://client.fr/commande/');
     expect(lignes.find((l) => l.msg === 'champs_lien_non_lus')).toMatchObject({ lvl: 'error', code: CODE, tenantId: 't1' });
+    await server.close();
+  });
+
+  it('un échec de lecture des champs garde le clic attribué si la lecture légère réussit', async () => {
+    const lectures: boolean[] = [];
+    const { server, cap } = appChamps(COMMANDE, {}, {
+      resoudreJeton: async (_tenantId, _jeton, avecChamps) => {
+        lectures.push(avecChamps);
+        if (avecChamps) throw new Error('champs indisponibles');
+        return { contactId: 'contact-1', champs: null };
+      },
+    });
+    const res = await server.inject({ method: 'GET', url: `/r/${CODE}/${JETON}`, headers: humain });
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toBe('https://client.fr/commande/');
+    expect(lectures).toEqual([true, false]);
+    expect(cap.clics).toHaveLength(1);
+    expect(cap.signaux).toEqual([{ tenantId: 't1', contactId: 'contact-1', code: CODE }]);
     await server.close();
   });
 
@@ -345,25 +368,25 @@ describe('RC7 : une destination à champs se remplit AU CLIC avec la fiche de ce
     await server.close();
   });
 
-  it('🔴 une destination FIXE redirige exactement comme avant, sans aucune lecture de fiche', async () => {
+  it('🔴 une destination FIXE redirige exactement comme avant, sans lire les champs', async () => {
     for (const url of [`/r/${CODE}`, `/r/${CODE}/${JETON}`, `/r/${CODE}/anon`]) {
       const { server, lectures } = appChamps('https://client.fr/promo', { [`t1:${JETON}`]: { numero_commande: 'A1234' } });
       const res = await server.inject({ method: 'GET', url });
       expect(res.statusCode, url).toBe(302);
       expect(res.headers.location, url).toBe('https://client.fr/promo');
-      expect(lectures, url).toEqual([]);
+      expect(lectures, url).toEqual(url.endsWith(`/${JETON}`) ? [{ tenantId: 't1', jeton: JETON, avecChamps: false }] : []);
       await server.close();
     }
   });
 
-  it('🔴 une destination écrite avant ce lot qui ne se laisse pas analyser repart TELLE QUELLE, sans lecture', async () => {
+  it('🔴 une destination écrite avant ce lot qui ne se laisse pas analyser repart TELLE QUELLE, sans lire les champs', async () => {
     // Porte à sens unique : une accolade dans l'hôte, orpheline ou mêlée à `{{1}}` n'a jamais été un champ.
     for (const destination of ['https://{x}.client.fr/a', 'https://client.fr/a}b', 'https://client.fr/{{1}}/b', 'https://client.fr/{}']) {
       const { server, lectures } = appChamps(destination, { [`t1:${JETON}`]: { x: 'evil.com' } });
       const res = await server.inject({ method: 'GET', url: `/r/${CODE}/${JETON}` });
       expect(res.statusCode, destination).toBe(302);
       expect(res.headers.location, destination).toBe(destination);
-      expect(lectures, destination).toEqual([]);
+      expect(lectures, destination).toEqual([{ tenantId: 't1', jeton: JETON, avecChamps: false }]);
       await server.close();
     }
   });
