@@ -59,6 +59,22 @@ Plan : [docs/superpowers/plans/2026-10-13-actions-agent.md](docs/superpowers/pla
 moteur, la console et Claude Code (plugin 0.1.5) sont livrés ; restent la date du jour dite au modèle (pour les
 champs date) et l'essai réel 108.
 
+## LE RÉPERTOIRE DE CLAUDE (EN PAUSE JUSQU'À LA BASCULE SCALEWAY)
+
+Plan : [docs/superpowers/plans/2026-10-14-repertoire-claude.md](docs/superpowers/plans/2026-10-14-repertoire-claude.md).
+Livrés : les outils MCP en anglais et annotés (livraison A, en production), le plugin 0.2.0 sur `main` (licence,
+icône, liens légaux, section « Data and privacy »), pas encore publié dans le dépôt public (qui sert la 0.1.5).
+Décision de Julien le 2026-10-14 : on reprend juste après la bascule Scaleway, dans cet ordre :
+
+1. les pages légales, françaises et anglaises, mises en ligne sur www.messagingme.fr (Geoffrey a les fichiers) ;
+2. la publication du plugin 0.2.0 (`gh workflow run plugin.yml --ref main`), pas avant : ses liens viseraient des
+   pages absentes ;
+3. l'espace de démo peuplé (livraison D), puis le compte du relecteur créé par Julien ;
+4. la soumission par Julien : le connecteur, puis le plugin. Les champs à recopier vivent dans `docs/prive/`.
+
+⚠️ Une échéance ne suit pas la bascule : la connexion Meta de l'espace de démo se renouvelle avant le 2026-10-16 à
+14 h 55, sinon la livraison D n'a plus de numéro sur lequel s'appuyer.
+
 ## CE QUI ATTEND UN ESSAI RÉEL
 
 🔴 **La liste unique et à jour des essais réels de Julien vit dans `docs/prive/ESSAIS-REELS.md`** (2026-10-09, à sa
