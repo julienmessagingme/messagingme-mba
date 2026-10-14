@@ -29,10 +29,11 @@ de Julien (les pages légales ne partent qu'après sa validation). L'essai réel
 
 1. Brouillons dans `docs/prive/pages-legales/` (faits : 2026-10-14) : politique de confidentialité et conditions
    d'utilisation avec, en annexe, l'accord de traitement de l'article 28 ; éditeur Messaging Me SAS ; hébergement
-   d'après la bascule (Scaleway Paris, sauvegardes 7 jours en France, Cloudflare, Vercel). Julien valide le français,
+   d'après la bascule (Scaleway dans l'Union européenne, à Amsterdam depuis la décision du 2026-10-14 ; sauvegardes
+   de 7 jours dans la même région ; Cloudflare, Vercel). Julien valide le français,
    puis Claude écrit l'anglais.
-2. Les engagements d'hébergement (Scaleway Paris, disque chiffré, base joignable du seul réseau privé, sauvegardes de
-   7 jours en France) ont été vérifiés par la session de la bascule ; décision de Julien du 2026-10-14 : ils restent
+2. Les engagements d'hébergement (Scaleway dans l'Union européenne, disque chiffré, base joignable du seul réseau
+   privé, sauvegardes de 7 jours dans la même région) ont été vérifiés par la session de la bascule ; décision de Julien du 2026-10-14 : ils restent
    tels quels, sans phrase de transition ni report. La bascule les rend vrais : l'effacement de l'ancien hébergement
    (`docs/ARCHITECTURE-CIBLE.md` § 10, étape 13) et l'expiration des sauvegardes manuelles (même document, § 7.2).
 3. Le jour de la bascule : les pages `site/confidentialite/`, `site/en/privacy/`, `site/conditions/`, `site/en/terms/`,
