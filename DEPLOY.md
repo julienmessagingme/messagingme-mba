@@ -419,35 +419,51 @@ réel se mesure à la bascule (création de la base cible, recréation des conte
 La cible et ses raisons : `docs/ARCHITECTURE-CIBLE.md` (§7, §10, §10 bis). Le plan : lot 3 de
 `docs/superpowers/plans/2026-10-14-avant-bascule-scaleway.md`. Ici, la seule procédure.
 
-### Ce qui existe (créé le 2026-10-14, projet « Messaging Me App », région `fr-par`)
+🔴 **TOUT EST À AMSTERDAM (`nl-ams`), PAS À PARIS** (décision de Julien du 2026-10-14). Paris refusait toute nouvelle
+machine à un compte neuf (quotas à 0, puis rupture de stock confirmée par le support) ; ce qui y avait été créé le
+matin est supprimé. Le réseau privé et la base sont RÉGIONAUX : une ressource créée hors de `nl-ams` ne les verrait pas.
+
+### Ce qui existe (créé le 2026-10-14, projet « Messaging Me App », région `nl-ams`)
 
 | Ressource | Nom | Zone | Note |
 |---|---|---|---|
-| VPC et réseau privé | `mm-vpc`, `mm-prive` | `fr-par` | 172.16.0.0/22 |
-| Registre privé | `rg.fr-par.scw.cloud/messagingme` | `fr-par` | image `mba:<sha complet>` |
-| Espace de conteneurs | `messagingme` | `fr-par` | le conteneur de l'API s'y crée une fois, privé, rattaché à `mm-prive` |
-| Passerelle | `mm-passerelle` (VPC-GW-S) | `fr-par-2` | bastion SSH sur le port 61000, NAT et route par défaut vers `mm-prive` |
-| Base JETABLE | `mm-banc` (PostgreSQL 17, DB-DEV-M) | `fr-par` | adresse privée seule, disque chiffré, sauvegardes en région ; mot de passe dans Secret Manager `mm-banc-db-admin` ; à supprimer après les lots 3 et 4 |
-| Machine des workers | `mm-workers` | `fr-par-2` | sans adresse publique ; PLAY2-NANO pour les essais, PRO2-XXS avant le jour J ; bloquée le 2026-10-14 par les quotas d'Instances à 0 |
+| VPC et réseau privé | `mm-vpc`, `mm-prive` | `nl-ams` | 172.16.0.0/22, adresses attribuées par l'IPAM |
+| Registre privé | `rg.nl-ams.scw.cloud/messagingme` | `nl-ams` | image `mba:<sha complet>` |
+| Espace de conteneurs | `messagingme` | `nl-ams` | le conteneur de l'API s'y crée une fois, privé, rattaché à `mm-prive` |
+| Passerelle | `mm-passerelle` (VPC-GW-S) | `nl-ams-2` | bastion SSH sur le port 61000, NAT et route par défaut vers `mm-prive` |
+| Base JETABLE | `mm-banc` (PostgreSQL 17, DB-DEV-M) | `nl-ams` | adresse privée seule, disque chiffré, sauvegardes en région ; mot de passe dans Secret Manager `mm-banc-db-admin` ; à supprimer après les lots 3 et 4 |
+| Machine des workers | `mm-workers` (PLAY2-NANO, Ubuntu 24.04) | `nl-ams-2` | sans adresse publique, disque de 20 Go ; Docker et Compose posés au premier démarrage (cloud-init) ; PRO2-XXS avant le jour J |
+
+Les identifiants se lisent par `scaleway-cli <produit> ... list` dans la région ou la zone ci-dessus, et les adresses
+privées par `scaleway-cli ipam ip list private-network-id=<mm-prive> region=nl-ams`.
 
 ### Les gestes uniques de Julien (aucun secret ne passe par Claude ni par GitHub)
 
-1. Une application IAM `github-deploy` : `ContainerRegistryFullAccess` et `ContainersFullAccess` sur le projet,
-   RIEN sur Secret Manager ni sur IAM. Sa clé secrète devient le secret `SCW_SECRET_KEY` de l'environnement GitHub
-   `scaleway` : `Get-Clipboard | gh secret set SCW_SECRET_KEY --env scaleway`.
-2. Une paire de clés SSH dédiée au déploiement : la PUBLIQUE dans les clés SSH du projet AVANT la création de la
-   machine (Scaleway ne les injecte qu'au démarrage), la PRIVÉE en secret `DEPLOY_SSH_KEY` de `scaleway`, puis
-   supprimée du poste.
-3. L'environnement GitHub `scaleway` (jamais `production`, piège plus bas), avec Julien en relecteur obligatoire,
-   limité à la branche `main`, et ses variables
-   `SCALEWAY_CONTAINER_ID`, `SCALEWAY_BASTION` (`<ip de la passerelle>:61000`), `SCALEWAY_WORKERS_IP` (l'adresse
-   PRIVÉE de la machine) et `SCALEWAY_KNOWN_HOSTS` (les empreintes du bastion et de la machine, relevées une fois).
-4. Sur la machine : `/opt/messagingme/.env.prod` (propriétaire root, droits 600) et une clé de LECTURE du registre
-   (`docker login rg.fr-par.scw.cloud -u nologin`) : la clé du workflow ne quitte jamais GitHub.
+1. ✅ Une application IAM `github-deploy` : `ContainerRegistryFullAccess` et `ContainersFullAccess` sur le projet,
+   RIEN sur Secret Manager ni sur IAM. Sa clé secrète est le secret `SCW_SECRET_KEY` de l'environnement GitHub
+   `scaleway` : `gh secret set SCW_SECRET_KEY --env scaleway --body (Get-Clipboard)`.
+2. ✅ Une paire de clés SSH dédiée au déploiement (`github-deploy-scaleway`) : la PUBLIQUE dans les clés SSH du projet
+   AVANT la création de la machine (Scaleway ne les injecte qu'au premier démarrage), la PRIVÉE en secret
+   `DEPLOY_SSH_KEY` de `scaleway`, puis effacée du poste. ⚠️ Le bastion ne connaît une clé ajoutée au projet qu'après
+   `scaleway-cli vpc-gw gateway refresh-ssh-keys <passerelle> zone=nl-ams-2`.
+3. ✅ L'environnement GitHub `scaleway` (jamais `production`, piège plus bas), avec Julien en relecteur obligatoire,
+   limité à la branche `main`, et ses variables `SCALEWAY_BASTION` (`<ip de la passerelle>:61000`),
+   `SCALEWAY_WORKERS_IP` (l'adresse PRIVÉE de la machine), `SCALEWAY_KNOWN_HOSTS` et, une fois le conteneur créé,
+   `SCALEWAY_CONTAINER_ID`. `SCALEWAY_KNOWN_HOSTS` porte une ligne par hôte, au format de `known_hosts` :
+   `[<ip de la passerelle>]:61000 ssh-ed25519 …` pour le bastion, `<ip privée> ssh-ed25519 …` pour la machine,
+   relevées à la première connexion depuis le poste et comparées aux empreintes annoncées.
+4. Sur la machine : une clé de LECTURE du registre (application IAM `workers-registre`, `ContainerRegistryReadOnly`
+   sur le projet), posée par `docker login rg.nl-ams.scw.cloud -u nologin` (la clé du workflow ne quitte jamais
+   GitHub) ; puis `/opt/messagingme/.env.prod` (propriétaire root, droits 600), ses valeurs SANS guillemets : la
+   migration le lit par `docker run --env-file`, qui les garde, quand compose les retire. Le workflow refuse le
+   fichier sinon.
 5. Les variables secrètes du conteneur de l'API.
 6. Une application IAM `cloudflare-origine`, avec `ContainersPrivateAccess` pour seul droit : sa clé secrète va dans
-   la règle Cloudflare qui écrase `X-Auth-Token` (`docs/ARCHITECTURE-CIBLE.md` §7.3). Une clé IAM expire au plus
-   tard en un an.
+   la règle Cloudflare qui écrase `X-Auth-Token` (`docs/ARCHITECTURE-CIBLE.md` §7.3).
+
+⚠️ **Chaque clé d'API Scaleway a une date d'expiration** (`github-deploy`, `workers-registre`, `cloudflare-origine`),
+lisible dans IAM, onglet API keys : la renouveler AVANT, sinon le déploiement, la mise à jour des workers ou l'accès de
+Cloudflare s'arrêtent ce jour-là.
 
 ### Déployer, et revenir en arrière
 
@@ -455,10 +471,17 @@ La cible et ses raisons : `docs/ARCHITECTURE-CIBLE.md` (§7, §10, §10 bis). Le
 choisit à chaque fois (`aucune`, `avant`, `apres`), selon la règle « l'ancien code survit-il ? » de `CLAUDE.md` : le
 menu s'ouvre sur `choisir`, que le workflow refuse avant toute construction (décision de Julien du 2026-10-14). Un
 retour arrière : le même workflow avec `-f commit=<sha plus ancien>`, après la vérification contre ce que les
-migrations appliquées depuis ont resserré. Le workflow refuse un commit hors de l'histoire de `main` et une
-configuration incomplète ; l'ordre est la migration « avant », les workers, l'API, la migration « après ».
-`tests/deploy-scaleway.test.ts` le tient : déclenchement à la main seulement, deux secrets et pas un de plus, aucun
-secret dans la construction.
+migrations appliquées depuis ont resserré. Le workflow refuse un commit hors de l'histoire de `main`, une
+configuration incomplète et un `.env.prod` absent ou à guillemets ; l'ordre est la migration « avant », les workers,
+l'API, la migration « après ». L'API ne change d'image que si chaque worker a annoncé son démarrage puis n'a pas
+redémarré pendant 30 secondes. `tests/deploy-scaleway.test.ts` le tient.
+
+**Après un déploiement, les gestes qui restent à la main** (ceux de la section du VPS) :
+- le contrôle de fumée public, `node scripts/fumee.mjs`, depuis le poste (il vise encore `mba.` : à repointer sur
+  `api.` au lot 7) ;
+- `npm run oauth:fiches`, depuis le poste ;
+- si un fichier de `docs/aide/fiches/` a bougé, `aide:charger` sur la machine, avec l'image déployée :
+  `ssh -J bastion@<ip de la passerelle>:61000 root@<ip privée> "docker run --rm --env-file /opt/messagingme/.env.prod rg.nl-ams.scw.cloud/messagingme/mba:<sha> npm run aide:charger"`.
 
 ### Les pièges relevés le 2026-10-14
 
@@ -466,10 +489,20 @@ secret dans la construction.
   la casse des noms d'environnement, et `Production` existe déjà dans ce dépôt : Vercel l'a créé le 2026-09-03, sans
   aucune règle de protection (l'API le rend quand on lui demande `production`, mesuré le 2026-10-14). Un job qui
   s'y réfère part sans l'approbation de Julien, et un `--env production` y rangerait les secrets, sans erreur.
+- 🔴 **Les journaux des workers ne s'impriment jamais dans le workflow** : ils portent des données de clients, et le
+  journal d'un dépôt public est lisible par tous. Ils se lisent sur la machine, par le bastion (`docker logs
+  mba-worker`).
 - **La CLI de Scaleway rend le code 0 même en ERREUR avec `-o json`** (rupture de stock, quota) : tester le
-  contenu de la réponse (`"message"`, `"error"`, absence d'`"id"`), jamais le seul code de sortie.
-- **Un compte neuf a ses quotas d'Instances à 0** et un modèle peut être en rupture dans une zone : la création
-  échoue sans rien facturer. L'onglet Quotas de l'Organization Dashboard le dit ; au-delà, un ticket au support.
+  contenu de la réponse (`"error"`, absence d'`"id"`), jamais le seul code de sortie. Et une suppression RÉUSSIE
+  répond `"message": "... successfully deleted"` : un contrôle sur `"message"` seul la prend pour une erreur (vécu).
+  `instance private-nic create` range l'identifiant sous `private_nic.id`, pas à la racine.
+- **L'API des conteneurs est en `v1`** (champ `image`, route `/redeploy`) : la `v1beta1` n'a pas de `/redeploy`
+  (mesuré sans clé le 2026-10-14 : 404 en `v1beta1`, 401 en `v1`).
+- **Un compte neuf avait ses quotas d'Instances à 0 dans les trois zones de Paris**, ouverts ailleurs, et le support
+  a répondu rupture de stock à Paris : c'est ce qui a envoyé la cible à Amsterdam. L'onglet Quotas de l'Organization
+  Dashboard les montre (décocher « Show used quotas only », sinon la liste est vide).
+- **Le bastion reste ouvert à toutes les adresses** (`0.0.0.0/0`) : les exécuteurs de GitHub n'ont pas d'adresses
+  fixes. Il n'accepte que des clés SSH, celles du projet.
 - `vpc-gw` n'a pas de sous-commande `wait` (relire par `get`), et `rdb instance get` répond « transient state »
   tant que la base se crée.
 - **Le certificat de la base se met dans l'image**, comme celui de Supabase (`certs/`, `DB_SSL_CA_FILE`) : c'est un

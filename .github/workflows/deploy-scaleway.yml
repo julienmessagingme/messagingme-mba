@@ -19,8 +19,12 @@ name: Deploiement Scaleway (API et workers)
 # par routine. Elle tourne sur la machine des workers, dans le reseau prive : la base n'a pas d'adresse publique.
 #
 # ⚠️ L'ORDRE : la migration « avant », puis les workers, puis l'API (une montee de version de pg-boss se deploie
-# worker d'abord, DEPLOY.md), puis la migration « apres ». Un retour arriere = le meme workflow sur un SHA plus ancien,
-# sous la verification de DEPLOY.md contre ce que les migrations appliquees depuis ont resserre.
+# worker d'abord, DEPLOY.md), puis la migration « apres ». L'API n'est touchee que si chaque worker a annonce son
+# demarrage sans redemarrer. Un retour arriere = le meme workflow sur un SHA plus ancien, sous la verification de
+# DEPLOY.md contre ce que les migrations appliquees depuis ont resserre.
+#
+# ⚠️ AMSTERDAM (`nl-ams`), decision de Julien du 2026-10-14 : Paris refusait toute nouvelle machine (rupture de
+# stock). Le registre et l'API doivent etre dans la meme region que le reseau prive et la base : le test le tient.
 on:
   workflow_dispatch:
     inputs:
@@ -42,8 +46,15 @@ concurrency:
   group: deploiement-scaleway
   cancel-in-progress: false
 
+# `bash` nomme explicitement : GitHub ajoute alors `-o pipefail`. Sans lui, `docker save | gzip` qui echoue range une
+# archive vide et le job continue.
+defaults:
+  run:
+    shell: bash
+
 env:
-  REGISTRE: rg.fr-par.scw.cloud/messagingme
+  REGION: nl-ams
+  REGISTRE: rg.nl-ams.scw.cloud/messagingme
   IMAGE: mba
 
 jobs:
@@ -92,6 +103,7 @@ jobs:
           name: livraison
           path: livraison/
           retention-days: 1
+          if-no-files-found: error
 
   deployer:
     needs: construire
@@ -124,18 +136,21 @@ jobs:
           CLE_SCW: ${{ secrets.SCW_SECRET_KEY }}
         run: |
           gunzip -c image.tar.gz | docker load
-          printf '%s' "$CLE_SCW" | docker login rg.fr-par.scw.cloud -u nologin --password-stdin
+          printf '%s' "$CLE_SCW" | docker login rg.$REGION.scw.cloud -u nologin --password-stdin
           docker push "$REGISTRE/$IMAGE:$SHA"
-          docker logout rg.fr-par.scw.cloud
+          docker logout rg.$REGION.scw.cloud
+      # Les retours chariot sont retires : une cle collee depuis Windows en porte, et OpenSSH la refuse alors
+      # (« invalid format ») sans dire pourquoi. Les sondes de vie gardent ouverte une connexion muette (la migration
+      # ecrit dans un fichier, pas dans la session).
       - name: Ouvrir le chemin SSH, par le bastion de la passerelle
         env:
           CLE_SSH: ${{ secrets.DEPLOY_SSH_KEY }}
           CONNUS: ${{ vars.SCALEWAY_KNOWN_HOSTS }}
         run: |
           install -m 700 -d ~/.ssh
-          printf '%s\n' "$CLE_SSH" > ~/.ssh/deploiement
+          printf '%s\n' "$CLE_SSH" | tr -d '\r' > ~/.ssh/deploiement
           chmod 600 ~/.ssh/deploiement
-          printf '%s\n' "$CONNUS" > ~/.ssh/known_hosts
+          printf '%s\n' "$CONNUS" | tr -d '\r' > ~/.ssh/known_hosts
           {
             echo "Host bastion"
             echo "  HostName ${BASTION%:*}"
@@ -149,7 +164,23 @@ jobs:
             echo "  IdentityFile ~/.ssh/deploiement"
             echo "  ProxyJump bastion"
             echo "  StrictHostKeyChecking yes"
+            echo "Host *"
+            echo "  IdentitiesOnly yes"
+            echo "  ServerAliveInterval 30"
+            echo "  ServerAliveCountMax 20"
           } > ~/.ssh/config
+      # Le meme fichier est lu par deux chemins qui ne le lisent pas pareil : compose (les workers) retire les
+      # guillemets d'une valeur, `docker run --env-file` (la migration) les garde. Une valeur entre guillemets donnerait
+      # aux deux une configuration differente : refusee ici, avant tout changement. Rien n'en est imprime.
+      - name: Le fichier de secrets de la machine est present, et sans guillemets
+        run: |
+          ssh workers 'bash -s' <<'SCRIPT'
+          f=/opt/messagingme/.env.prod
+          [ -s "$f" ] || { echo "::error::$f absent ou vide sur la machine (DEPLOY.md, section Scaleway)"; exit 1; }
+          if grep -qE "^[A-Za-z_][A-Za-z0-9_]*=[\"']" "$f"; then
+            echo "::error::$f porte une valeur entre guillemets : docker run --env-file la garderait telle quelle (DEPLOY.md)"; exit 1
+          fi
+          SCRIPT
       # La machine tire l'image avec SA PROPRE cle de lecture du registre (posee une fois par Julien) : la cle de ce
       # workflow ne quitte jamais le runner.
       #
@@ -161,34 +192,78 @@ jobs:
       - name: Migration avant le deploiement
         if: env.MIGRATION == 'avant'
         run: |
-          ssh workers "docker pull '$REGISTRE/$IMAGE:$SHA'"
+          ssh workers "docker pull --quiet '$REGISTRE/$IMAGE:$SHA'"
           ssh workers "umask 077; docker run --rm --env-file /opt/messagingme/.env.prod '$REGISTRE/$IMAGE:$SHA' npm run migrate > /root/migrate-$SHA.log 2>&1; c=\$?; grep -oE '^-> [^ ]+( \(hors transaction\))? \.\.\. (ok|ECHEC)?|^[0-9]+ migration\(s\) appliquée\(s\)$|^à jour, rien à appliquer$|^ +(code|table|constraint|schema|column): .*' /root/migrate-$SHA.log; [ \$c -eq 0 ] || echo \"migration en echec (code \$c) : journal complet sur la machine, /root/migrate-$SHA.log\"; exit \$c"
+      # 🔴 L'API NE PASSE SUR CETTE IMAGE QUE SI CHAQUE WORKER A ANNONCE SON DEMARRAGE (la ligne de `src/worker.ts`)
+      # PUIS N'A PAS REDEMARRE pendant 30 secondes. Les journaux des workers portent des donnees de clients : ils ne
+      # sont jamais imprimes ici, seulement comptes (`grep -c`, sortie jetee ; pas `grep -q`, qui s'arrete au premier
+      # trouve, coupe `docker logs` et fait echouer le pipeline sous `pipefail`). Les images de plus d'une semaine que
+      # plus aucun conteneur n'utilise sont effacees (le registre les garde pour un retour arriere).
       - name: Les workers passent sur la nouvelle image
         run: |
           scp docker-compose.workers.yml workers:/opt/messagingme/docker-compose.yml
-          ssh workers "cd /opt/messagingme && printf 'IMAGE_TAG=%s\n' '$SHA' > .env && docker compose pull && docker compose up -d && docker compose ps"
+          ssh workers "bash -s -- '$SHA'" <<'SCRIPT'
+          set -euo pipefail
+          cd /opt/messagingme
+          printf 'IMAGE_TAG=%s\n' "$1" > .env
+          docker compose pull --quiet
+          docker compose up -d --remove-orphans
+          for service in mba-worker mba-worker-analyse; do
+            id=$(docker compose ps -q "$service")
+            [ -n "$id" ] || { echo "::error::$service ne tourne pas"; docker compose ps; exit 1; }
+            pret=""
+            for i in $(seq 1 30); do
+              if docker logs "$id" 2>&1 | grep -cF 'messagingme-mba worker démarré' > /dev/null; then pret=1; break; fi
+              sleep 5
+            done
+            [ -n "$pret" ] || { echo "::error::$service n'a pas annonce son demarrage en 150 s (son journal se lit sur la machine)"; docker compose ps; exit 1; }
+          done
+          avant=$(docker inspect -f '{{.Name}} {{.RestartCount}}' $(docker compose ps -q))
+          sleep 30
+          apres=$(docker inspect -f '{{.Name}} {{.RestartCount}}' $(docker compose ps -q))
+          etats=$(docker inspect -f '{{.State.Status}}' $(docker compose ps -q) | sort -u)
+          if [ "$avant" != "$apres" ] || [ "$etats" != "running" ]; then
+            echo "::error::un worker redemarre ou s'arrete (journal sur la machine)"; docker compose ps; exit 1
+          fi
+          docker image prune -af --filter "until=168h" > /dev/null
+          docker compose ps
+          SCRIPT
+      # API des conteneurs `v1` (la `v1beta1` portait `registry_image` et un drapeau `redeploy`) : un PATCH de `image`
+      # deploie la nouvelle image ; la meme image se redeploie par `/redeploy`. On n'accepte « ready » que sur la
+      # nouvelle image, et apres avoir vu le deploiement en cours ou attendu une minute.
       - name: L'API passe sur la nouvelle image
         env:
           CLE_SCW: ${{ secrets.SCW_SECRET_KEY }}
         run: |
-          api="https://api.scaleway.com/containers/v1beta1/regions/fr-par/containers/$CONTENEUR"
+          api="https://api.scaleway.com/containers/v1/regions/$REGION/containers/$CONTENEUR"
           cible="$REGISTRE/$IMAGE:$SHA"
-          curl -fsS -X PATCH -H "X-Auth-Token: $CLE_SCW" -H 'Content-Type: application/json' \
-            -d "{\"registry_image\":\"$cible\",\"redeploy\":true}" "$api" > /dev/null
-          # Juste apres le PATCH, l'ancienne revision peut encore se dire prete : on n'accepte « ready » que sur la
-          # nouvelle image, et apres un premier delai.
-          sleep 15
-          etat=""
-          for i in $(seq 1 60); do
-            reponse=$(curl -fsS -H "X-Auth-Token: $CLE_SCW" "$api")
-            etat=$(printf '%s' "$reponse" | jq -r '.status')
-            image=$(printf '%s' "$reponse" | jq -r '.registry_image')
+          appel() {
+            local sortie
+            sortie=$(curl -sS --fail-with-body --retry 3 --retry-delay 5 --connect-timeout 10 --max-time 60 \
+              -H "X-Auth-Token: $CLE_SCW" -H 'Content-Type: application/json' "$@") \
+              || { echo "::error::l'API de Scaleway refuse : $sortie" >&2; return 1; }
+            printf '%s' "$sortie"
+          }
+          actuelle=$(appel "$api" | jq -r '.image')
+          if [ "$actuelle" = "$cible" ]; then
+            appel -X POST -d '{}' "$api/redeploy" > /dev/null
+          else
+            appel -X PATCH -d "{\"image\":\"$cible\"}" "$api" > /dev/null
+          fi
+          en_cours=""
+          for i in $(seq 1 72); do
+            reponse=$(appel "$api")
+            etat=$(jq -r '.status' <<< "$reponse")
+            image=$(jq -r '.image' <<< "$reponse")
             echo "conteneur : $etat ($image)"
-            if [ "$etat" = "error" ]; then echo "::error::le conteneur refuse l'image : $(printf '%s' "$reponse" | jq -r '.error_message')"; exit 1; fi
-            if [ "$etat" = "ready" ] && [ "$image" = "$cible" ]; then exit 0; fi
+            case "$etat" in
+              error) echo "::error::le conteneur refuse l'image : $(jq -r '.error_message' <<< "$reponse")"; exit 1 ;;
+              updating|creating|upgrading) en_cours=1 ;;
+              ready) if [ "$image" = "$cible" ] && { [ -n "$en_cours" ] || [ "$i" -ge 6 ]; }; then exit 0; fi ;;
+            esac
             sleep 10
           done
-          echo "::error::le conteneur de l'API n'est pas pret sur $cible apres 10 minutes"
+          echo "::error::le conteneur de l'API n'est pas pret sur $cible apres 12 minutes"
           exit 1
       # Meme regle qu'avant le deploiement : le journal complet reste sur la machine.
       - name: Migration apres le deploiement
