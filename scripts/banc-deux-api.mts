@@ -44,6 +44,7 @@
  */
 import { Pool } from 'pg';
 import { PgApiKeyStore } from '../src/auth/api-key-store.pg';
+import { exigerBaseJetable } from './garde-banc';
 
 const A = process.env.BANC_API_A ?? '';
 const B = process.env.BANC_API_B ?? '';
@@ -54,9 +55,8 @@ const PLAFOND_MINUTE = Number(process.env.BANC_PLAFOND_MINUTE ?? 60);
 if (process.env.BANC_CONFIRME !== '1') {
   throw new Error('BANC_CONFIRME=1 manquant : ce banc cree une cle, en revoque une et sature un plafond.');
 }
-// La production vit sur le pooler Supabase, comme le dit la garde de `banc-charge.mts`.
-if (URL_BASE === '') throw new Error('DATABASE_URL manquant');
-if (/supabase/i.test(URL_BASE)) throw new Error('DATABASE_URL ressemble a la PRODUCTION : banc interdit.');
+// Seule une base qui se declare jetable passe (scripts/garde-banc.ts).
+exigerBaseJetable(URL_BASE);
 for (const [nom, url] of [['BANC_API_A', A], ['BANC_API_B', B]] as const) {
   if (url === '') throw new Error(`${nom} manquant`);
   if (/messagingme\.app/i.test(url)) throw new Error(`${nom} ressemble a la PRODUCTION : banc interdit.`);

@@ -58,6 +58,23 @@ describe.skipIf(!url)('attentes du pool (Postgres)', () => {
     expect([...minutes].sort()).toEqual(minutes);
   });
 
+  it('🔴 un processus muet depuis plus que le délai disparaît, un processus actif garde tout son historique', async () => {
+    // Lot 2c de la bascule : une copie de l'API recyclée par l'autoscaling ne se signalera plus jamais, et `/ops`
+    // ne doit pas accumuler sa courbe. Le processus actif a un point vieux d'une heure : il doit rester visible.
+    const muet = `${processus}-muet`;
+    const actif = `${processus}-actif`;
+    await pool.query(
+      `insert into pool_attentes (process, minute, echantillons, attentes, max_ms, somme_ms)
+       values ($1, date_trunc('minute', now()) - interval '60 minutes', 1, 0, 1, 1),
+              ($2, date_trunc('minute', now()) - interval '60 minutes', 1, 0, 1, 1),
+              ($2, date_trunc('minute', now()), 1, 0, 1, 1)`,
+      [muet, actif],
+    );
+    const points = await store.lireDernieresMinutes(180, 15);
+    expect(points.some((p) => p.process === muet)).toBe(false);
+    expect(points.filter((p) => p.process === actif)).toHaveLength(2);
+  });
+
   it('la purge efface les vieilles minutes et épargne les récentes', async () => {
     await pool.query(
       `insert into pool_attentes (process, minute, echantillons, attentes, max_ms, somme_ms)

@@ -58,6 +58,7 @@ import { createHmac, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { signSession } from '../src/auth/token';
 import { PgHttpLatencesStore } from '../src/ops/latence-http.pg';
+import { exigerBaseJetable } from './garde-banc';
 
 const API = process.env.BANC_API ?? '';
 const URL_BASE = process.env.DATABASE_URL ?? '';
@@ -82,8 +83,7 @@ const SEUIL_P95_INBOX_MS = 800;
 const SLO_ENTRANT_MS = 30_000;
 
 if (process.env.BANC_CONFIRME !== '1') throw new Error('BANC_CONFIRME=1 manquant : ce banc sature une API et ses workers.');
-if (URL_BASE === '') throw new Error('DATABASE_URL manquant');
-if (/supabase/i.test(URL_BASE)) throw new Error('DATABASE_URL ressemble a la PRODUCTION : banc interdit.');
+exigerBaseJetable(URL_BASE);
 if (API === '') throw new Error('BANC_API manquant');
 if (/messagingme\.app/i.test(API)) throw new Error('BANC_API ressemble a la PRODUCTION : banc interdit.');
 if (SECRET_AUTH === '' || SECRET_META === '') throw new Error('AUTH_SECRET et META_APP_SECRET du banc requis (sessions et signatures).');

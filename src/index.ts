@@ -57,6 +57,8 @@ import { envoyerRcsLibre, phraseOperateur, type DepsRcsLibre } from './rcs/envoy
 import { PLAFOND_CONTACTS_ERREUR } from './http/stats';
 import { viderVersLaBase } from './ops/pool-attentes.pg';
 import { viderLatencesVersLaBase } from './ops/latence-http.pg';
+import { nomDeCopie } from './ops/nom-copie';
+import { hostname } from 'node:os';
 import { PgStockageStore } from './ops/stockage.pg';
 import { creerSurveillanceWorkers } from './ops/surveillance-workers';
 import { MesureLatenceHttp } from './ops/latence-http';
@@ -199,8 +201,11 @@ import { commissionPour } from './offres/commission';
 import { surFinDuPro, surPassageEnPro, type DepsNumeroInclus } from './offres/numero-inclus';
 import { contratOpenapi } from './api/openapi';
 
-/** Le nom de cette copie de l'API dans `/ops` et dans ses alertes : `api` seule, `api-<copie>` à plusieurs (`API_COPIE`). */
-const NOM_API = config.API_COPIE === '' ? 'api' : `api-${config.API_COPIE}`;
+/**
+ * Le nom de cette copie de l'API dans `/ops` et dans ses alertes : `api` seule, `api-<copie>` à plusieurs, et
+ * `API_COPIE=auto` le tire du nom d'hôte, distinct pour chaque copie d'un autoscaling (`src/ops/nom-copie.ts`).
+ */
+const NOM_API = nomDeCopie(config.API_COPIE, hostname());
 
 async function main(): Promise<void> {
   /**

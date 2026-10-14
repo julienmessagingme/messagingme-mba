@@ -21,8 +21,8 @@
  * - `plafond` : un palier au-dessus du plafond global, l'API relancée avec `API_PLAFOND_GLOBAL_PAR_10S` posé : les Free
  *   doivent recevoir le 429 de la plateforme en premier, et la ligne chaude du compteur se mesure.
  *
- * 🔴 IL NE TOUCHE JAMAIS LA PRODUCTION : `BANC_CONFIRME=1` est exigé, une `DATABASE_URL` de Supabase est refusée, et
- * l'API visée doit répondre sur un nom du banc. Le montage, la mesure et le démontage sont dans `scripts/banc-api.sh`,
+ * 🔴 IL NE TOUCHE JAMAIS LA PRODUCTION : `BANC_CONFIRME=1` est exigé, seule une `DATABASE_URL` qui se déclare
+ * jetable passe (`scripts/garde-banc.ts`), et l'API visée doit répondre sur un nom du banc. Le montage, la mesure et le démontage sont dans `scripts/banc-api.sh`,
  * lancé par Julien (son accord à ce moment-là) ; tous les conteneurs portent l'étiquette `banc=api14`.
  *
  * 🔴 CE QUE LE BANC NE REPRODUIT PAS : le pooler de Supabase (ses files d'attente muettes, son « Pool Size » partagé),
@@ -41,6 +41,7 @@ import { PgCompteurDebit } from '../src/db/debit.pg';
 import { creerVeilleCharge } from '../src/ops/veille-charge';
 import { CLE_REFUS_GLOBAL, MESSAGE_PLATEFORME_SATUREE } from '../src/auth/plafond-global';
 import { sendTelegram } from '../src/ops/telegram';
+import { exigerBaseJetable } from './garde-banc';
 
 const API = process.env.BANC_API ?? '';
 const URL_BASE = process.env.DATABASE_URL ?? '';
@@ -62,8 +63,7 @@ const SEUIL_P95_RECEPTION_MS = 2_000;
 
 function garde(): void {
   if (process.env.BANC_CONFIRME !== '1') throw new Error('BANC_CONFIRME=1 requis : ce banc sème cent espaces.');
-  if (/supabase/i.test(URL_BASE)) throw new Error('DATABASE_URL ressemble à la PRODUCTION (supabase) : refusé.');
-  if (URL_BASE === '') throw new Error('DATABASE_URL manquant');
+  exigerBaseJetable(URL_BASE);
   if (!/^http:\/\/banc14-/.test(API)) throw new Error('BANC_API doit viser un conteneur du banc (http://banc14-...)');
   if (SECRET_BANC.length < 32 || SECRET_META === '') throw new Error('BANC_SECRET (32+) et META_APP_SECRET requis');
 }

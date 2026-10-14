@@ -25,6 +25,7 @@ import { Pool } from 'pg';
 import { PgApiKeyStore } from '../src/auth/api-key-store.pg';
 import { PgWorkflowStore } from '../src/workflow/store.pg';
 import { DUREE_CLE_EN_COURS_MAX_MS } from '../src/api/idempotence';
+import { exigerBaseJetable } from './garde-banc';
 
 const A = process.env.BANC_API_A ?? '';
 const B = process.env.BANC_API_B ?? '';
@@ -36,8 +37,7 @@ const POOL_MAX = Number(process.env.BANC_POOL_MAX ?? 3);
 const SCHEMA_BOSS = process.env.PGBOSS_SCHEMA ?? 'pgboss';
 
 if (process.env.BANC_CONFIRME !== '1') throw new Error('BANC_CONFIRME=1 manquant : ce banc envoie, arrete des copies et sature un pool.');
-if (URL_BASE === '') throw new Error('DATABASE_URL manquant');
-if (/supabase/i.test(URL_BASE)) throw new Error('DATABASE_URL ressemble a la PRODUCTION : banc interdit.');
+exigerBaseJetable(URL_BASE);
 for (const [nom, url] of [['BANC_API_A', A], ['BANC_API_B', B]] as const) {
   if (url === '') throw new Error(`${nom} manquant`);
   if (/messagingme\.app/i.test(url)) throw new Error(`${nom} ressemble a la PRODUCTION : banc interdit.`);

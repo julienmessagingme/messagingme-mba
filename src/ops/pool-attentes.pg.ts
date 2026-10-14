@@ -40,16 +40,22 @@ export class PgPoolAttentesStore {
     );
   }
 
-  /** Les dernières minutes, du plus ancien au plus récent (l'ordre où une courbe se dessine). */
-  async lireDernieresMinutes(minutes = 180): Promise<PointAttente[]> {
+  /**
+   * Les dernières minutes, du plus ancien au plus récent (l'ordre où une courbe se dessine), des seuls processus qui
+   * se sont signalés dans les `silenceMax` dernières minutes. Une copie de l'API recyclée par l'autoscaling ne se
+   * signalera plus jamais : sans ce filtre, chacune laisserait sa courbe dans `/ops` (lot 2c de la bascule). Un
+   * processus vivant garde tout son historique.
+   */
+  async lireDernieresMinutes(minutes = 180, silenceMax = 15): Promise<PointAttente[]> {
     const res = await this.pool.query<{
       process: string; minute: Date; echantillons: string; attentes: string; max_ms: string; max_attente_ms: string; somme_ms: string;
     }>(
       `select process, minute, echantillons::text, attentes::text, max_ms::text, max_attente_ms::text, somme_ms::text
          from pool_attentes
         where minute > now() - make_interval(mins => $1::int)
+          and process in (select process from pool_attentes where minute > now() - make_interval(mins => $2::int))
         order by minute asc`,
-      [Math.max(1, Math.min(minutes, 1440))],
+      [Math.max(1, Math.min(minutes, 1440)), Math.max(1, Math.min(silenceMax, 1440))],
     );
     return res.rows.map((r) => {
       const echantillons = Number(r.echantillons);

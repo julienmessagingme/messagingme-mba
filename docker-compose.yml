@@ -62,6 +62,13 @@ services:
       # Ses tailles, explicites comme celles de chaque service (budget : `tests/budget-pooler.test.ts`).
       DB_POOL_MAX: "8"
       PGBOSS_MAX: "2"
+    # 🔴 SES LIMITES (lot 2b de la bascule, docs/ARCHITECTURE-CIBLE.md §2) : la condition pour que les deux workers
+    # partagent une machine chez Scaleway sans qu'une fuite de l'un emporte l'autre. Mesuré le 2026-10-14 sur ce VPS,
+    # 32 minutes après un redémarrage : pic 243 Mo, processeur moyen environ 1 %. Une mesure courte, d'où la marge :
+    # 1 Go, environ quatre fois le pic. Une limite trop basse fait tuer le worker en boucle : l'alerte « redémarre en
+    # boucle » de `/ops` le dirait. `ops/scaleway/docker-compose.workers.yml` porte les mêmes (test).
+    mem_limit: 1g
+    cpus: 1.0
     networks: [mcp-robot_default]
 
   # LE SECOND WORKER (2026-10-03) : l'analyse des conversations et ce qu'elle alimente, isolée du chemin chaud.
@@ -86,6 +93,9 @@ services:
       DB_POOL_MAX: "3"
       PGBOSS_MAX: "2"
     stop_grace_period: 30s
+    # Ses limites, sur la même mesure que le principal (pic 224 Mo le 2026-10-14) et la même marge.
+    mem_limit: 1g
+    cpus: 1.0
     networks: [mcp-robot_default]
 
   mba-web:

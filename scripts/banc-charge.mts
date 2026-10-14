@@ -7,8 +7,8 @@
  * le worker meurt au milieu d'un envoi.
  *
  * 🔴 IL NE TOUCHE JAMAIS LA PRODUCTION, et ce n'est pas une intention, c'est vérifié deux fois avant la
- * première écriture : la chaîne de connexion ne doit pas ressembler à celle de Supabase, et `BANC_CONFIRME=1`
- * doit être posé explicitement. Sans les deux, le script s'arrête sans rien écrire. Il crée des milliers de
+ * première écriture : la base doit se déclarer jetable par son hôte ou son nom (`scripts/garde-banc.ts`), et
+ * `BANC_CONFIRME=1` doit être posé explicitement. Sans les deux, le script s'arrête sans rien écrire. Il crée des milliers de
  * contacts et une campagne : le lancer par erreur sur la base des clients serait une catastrophe.
  *
  * 🔴 ET IL N'ENVOIE RIEN À META. Il se joue avec `DRY_RUN=true` côté worker : le sender de démo rend un
@@ -26,6 +26,7 @@ import '../src/charger-env';
 import { Client } from 'pg';
 import { pgSsl } from '../src/db/ssl';
 import { PgBossQueue } from '../src/queue/pgboss';
+import { exigerBaseJetable } from './garde-banc';
 
 const url = process.env.DATABASE_URL ?? '';
 const ESPACE = 'banc-de-charge';
@@ -34,12 +35,9 @@ function garde(): void {
   if (process.env.BANC_CONFIRME !== '1') {
     throw new Error('BANC_CONFIRME=1 requis : ce banc crée des milliers de lignes, il ne se lance pas par accident.');
   }
-  // La production vit sur le pooler Supabase. Toute chaîne qui y ressemble est refusée, quelle que soit la
-  // valeur de BANC_CONFIRME : les deux gardes sont indépendantes, et c'est le but.
-  if (/supabase|pooler\.supabase\.com/i.test(url)) {
-    throw new Error('DATABASE_URL ressemble à la PRODUCTION (supabase). Ce banc ne tourne que sur une base jetable.');
-  }
-  if (url === '') throw new Error('DATABASE_URL manquant');
+  // Seule une base qui se déclare jetable passe, quelle que soit la valeur de BANC_CONFIRME : les deux gardes sont
+  // indépendantes, et c'est le but (scripts/garde-banc.ts).
+  exigerBaseJetable(url);
 }
 
 async function client(): Promise<Client> {

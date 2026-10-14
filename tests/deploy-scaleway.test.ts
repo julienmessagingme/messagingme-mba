@@ -224,6 +224,19 @@ describe('le compose de la machine des workers', () => {
     }
   });
 
+  it('🔴 chaque worker porte une limite de mémoire et de processeur, la même sur le VPS et chez Scaleway', () => {
+    // Lot 2b : la condition pour que les deux workers partagent une machine (docs/ARCHITECTURE-CIBLE.md §2). Sans
+    // limite, une fuite de l'un emporte l'autre ; des limites différentes des deux côtés ne seraient plus éprouvées.
+    for (const service of ['mba-worker', 'mba-worker-analyse']) {
+      const vps = blocNiveau2(COMPOSE_VPS, service);
+      const scaleway = blocNiveau2(COMPOSE_SCALEWAY, service);
+      expect(valeur(vps, 'mem_limit'), `${service} mem_limit (VPS)`).toMatch(/^\d+[mg]$/);
+      expect(Number(valeur(vps, 'cpus')), `${service} cpus (VPS)`).toBeGreaterThan(0);
+      expect(valeur(scaleway, 'mem_limit'), `${service} mem_limit`).toBe(valeur(vps, 'mem_limit'));
+      expect(valeur(scaleway, 'cpus'), `${service} cpus`).toBe(valeur(vps, 'cpus'));
+    }
+  });
+
   it('⚠️ les deux rôles, avec les tailles de pool du VPS tant que le lot 4 ne les a pas recalculées', () => {
     // Deux fichiers qui portent les mêmes nombres dérivent dès que l'un bouge seul : ce cas casse le jour où le
     // budget du VPS change sans celui de Scaleway, et se réécrit le jour où le lot 4 pose ceux de Scaleway.

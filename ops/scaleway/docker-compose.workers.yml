@@ -12,7 +12,8 @@
 # ⚠️ LES TAILLES DE POOL REPRENNENT CELLES DU COMPOSE DU VPS (`docker-compose.yml`), tant que le lot 4 du plan
 # `docs/superpowers/plans/2026-10-14-avant-bascule-scaleway.md` ne les a pas recalculees pour la base de Scaleway ;
 # `tests/budget-pooler.test.ts` devra alors lire aussi ce fichier. Les limites de memoire et de processeur de chaque
-# worker (la condition d'une machine unique, §2) arrivent avec le lot 2b, sur la mesure du VPS.
+# worker (la condition d'une machine unique, §2) sont celles du VPS, mesurees le 2026-10-14 (lot 2b, le detail est
+# dans `docker-compose.yml`) ; `tests/deploy-scaleway.test.ts` les tient egales.
 #
 # ⚠️ Les journaux tournent (5 fichiers de 10 Mo par worker) : sans cette limite, le pilote `json-file` de Docker les
 # garde sans fin et finit par remplir le disque de 20 Go.
@@ -33,6 +34,8 @@ services:
       WORKER_ROLE: principal
       DB_POOL_MAX: "8"
       PGBOSS_MAX: "2"
+    mem_limit: 1g
+    cpus: 1.0
 
   mba-worker-analyse:
     image: rg.nl-ams.scw.cloud/messagingme/mba:${IMAGE_TAG:?IMAGE_TAG absent de /opt/messagingme/.env}
@@ -50,3 +53,5 @@ services:
       WORKER_ROLE: analyse
       DB_POOL_MAX: "3"
       PGBOSS_MAX: "2"
+    mem_limit: 1g
+    cpus: 1.0
