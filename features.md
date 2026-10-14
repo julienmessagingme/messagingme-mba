@@ -2168,6 +2168,14 @@ scénario, comment importer des contacts.
   rappels envoyés un mois à côté sans que rien ne le signale. Le refus dit quoi envoyer à la place. Une date
   **sans heure** dans un champ date et heure est refusée pour la même raison : un rappel réglé « 2 h avant »
   partirait à 22 h la veille.
+- ✅ **Une valeur refusée ne fait plus perdre le contact** (2026-10-14). Avant, une seule valeur illisible (une
+  date ambiguë, un nombre qui n'en est pas un) faisait échouer l'appel ENTIER : ni le contact, ni ses autres
+  champs, ni le scénario. Désormais le contact est écrit avec son téléphone, son nom et tous les champs valables,
+  le scénario part, et la réponse renvoyée à l'outil tiers nomme chaque champ laissé de côté avec sa raison
+  (`champsRefuses`). ⚠️ Sur un contact déjà connu, la valeur refusée n'est pas écrite et l'ANCIENNE reste : un report
+  de rendez-vous envoyé avec une date ambiguë garde l'ancienne date, et le scénario qui confirme le rendez-vous
+  l'affiche. L'API publique, elle, garde le refus entier : un intégrateur qui programme son appel corrige sa valeur
+  et relance.
 - ✅ **Un tableau se pointe élément par élément** : `lignes[0].prix` désigne le premier article, pas la liste.
   Une valeur qui désigne un **ensemble** (objet ou tableau) est refusée à la configuration, avec le message qui
   dit quoi faire : un ensemble écrit dans un champ rendrait la variable **vide** dans un template, sans erreur.
@@ -2175,8 +2183,8 @@ scénario, comment importer des contacts.
   clé d'API. Facultatif parce qu'un formulaire de site ne sait souvent pas en poser, et l'exiger fermerait la
   porte au cas le plus simple. L'adresse elle-même est déjà une clé (26 caractères tirés au sort).
 - ✅ **Le tiers ne reçoit jamais d'erreur pour un refus métier.** Un appel bien formé rend toujours un succès,
-  dont le corps dit ce qui s'est passé : contact créé / retrouvé / absent, nombre de champs écrits, scénario
-  lancé ou non, et les chemins du mapping qui n'ont rien rendu sur cet appel. Un outil tiers qui reçoit une
+  dont le corps dit ce qui s'est passé : contact créé / retrouvé / absent, nombre de champs écrits, champs
+  refusés, scénario lancé ou non, et les chemins du mapping qui n'ont rien rendu sur cet appel. Un outil tiers qui reçoit une
   erreur réessaie en boucle, et beaucoup désactivent le webhook après quelques échecs.
 - **Ce qui est conservé** : seulement le **dernier** contenu reçu, jamais un historique, et il est effacé
   automatiquement après 7 jours sans appel. Un bouton « oublier ce contenu » l'efface tout de suite. Le JSON

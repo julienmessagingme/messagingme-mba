@@ -368,7 +368,8 @@ la base managée de Scaleway (qui porte ses propres sauvegardes : cette section 
    passe SMTP, seconds facteurs, jetons RCS, Channels Me et publicité, clés d'IA par espace, secrets Salesforce.
    `AUTH_SECRET` perdu = toutes les sessions invalidées (reconnexion). 🔴 **La copie de la clé hors du VPS se PROUVE
    par son empreinte** (les 16 premiers caractères du SHA-256 de la valeur, calculés de chaque côté) : une copie
-   « au coffre » déclarée le 2026-09-23 s'est révélée introuvable le 2026-10-14.
+   « au coffre » déclarée le 2026-09-23 s'est révélée introuvable le 2026-10-14 ; recopiée par Julien dans son
+   gestionnaire de mots de passe le même jour, empreinte identique à celle de la production.
 
 ### Les sauvegardes, d'ici la bascule
 Le plan de sauvegarde du projet Supabase n'a jamais été relevé : on le tient pour nul. **`scripts/sauvegarde-base.sh`**

@@ -1248,14 +1248,15 @@ async function main(): Promise<void> {
             ...(entree.name ? { name: entree.name } : {}),
             ...(entree.optIn ? { optIn: true, optInSource: entree.optInSource } : {}),
           }],
-          { contacts: contactStore, fields: fieldStore },
+          // Un champ invalide ne fait plus perdre le contact (décision de Julien du 2026-10-14) : il est laissé de côté et nommé.
+          { contacts: contactStore, fields: fieldStore, champsInvalides: 'ignorer' },
         );
         // Un seul item entré, donc un seul résultat. L'absence de résultat serait un bug d'`upsertContactsFromApi`,
         // pas un cas métier : on le traite comme un refus plutôt que de laisser passer un succès imaginaire.
         if (!res) return { statut: 'error' as const, raison: 'contact non écrit' };
         return res.status === 'error'
           ? { statut: 'error' as const, ...(res.reason ? { raison: res.reason } : {}) }
-          : { statut: res.status };
+          : { statut: res.status, ...(res.champsRefuses ? { champsRefuses: res.champsRefuses } : {}) };
       },
       publish: async (tenantId, event) => {
         await enfilerEvenementAutomation(queue, { tenantId, event } satisfies AutomationEventJob);

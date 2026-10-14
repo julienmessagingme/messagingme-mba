@@ -128,6 +128,11 @@ export interface ApiUpsertOutcome {
   reason?: string;
   /** La limite de contacts de l'offre atteinte (lot 6) : sa valeur, pour un refus 402 qui la dit. */
   limite?: number;
+  /**
+   * Les champs refusés et laissés de côté, chacun avec sa raison, quand l'appelant a choisi `champsInvalides: 'ignorer'`
+   * (le webhook entrant) : le contact est écrit avec le reste.
+   */
+  champsRefuses?: string[];
 }
 
 /** Les étiquettes d'une fiche reçue par l'API, nettoyées comme toute pose (`nettoyerEtiquettes`) et bornées à 50. */
@@ -215,6 +220,14 @@ export async function upsertContactsFromApi(
      * Injectable pour que les tests fassent varier la borne.
      */
     maxChampsParEspace?: number;
+    /**
+     * Ce que devient un contact dont UN champ est invalide (du texte dans un champ nombre). `refuser` (défaut, la
+     * création à la main) : rien n'est écrit, la raison revient. `ignorer` (le webhook entrant, décision de Julien du
+     * 2026-10-14) : le contact est écrit avec le téléphone, le nom et les champs valides, les refusés reviennent dans
+     * `champsRefuses`. Un outil tiers lit une réponse 200 comme un succès : avec `refuser`, le contact s'y perdait sans
+     * bruit.
+     */
+    champsInvalides?: 'refuser' | 'ignorer';
   },
 ): Promise<ApiUpsertOutcome[]> {
   // Upsert d'un lot de contacts désignés par leur numéro (webhook entrant, création à la main dans la
@@ -226,7 +239,7 @@ export async function upsertContactsFromApi(
   // Deux temps : la validation reste séquentielle (cache de définitions partagé, création possible au
   // passage), les écritures partent par vagues, là où était le coût (un aller-retour par upsert).
   const out: ApiUpsertOutcome[] = [];
-  const aEcrire: Array<{ index: number; upsert: Parameters<PgContactStore['upsertByPhoneReturningId']>[0] }> = [];
+  const aEcrire: Array<{ index: number; upsert: Parameters<PgContactStore['upsertByPhoneReturningId']>[0]; champsRefuses: string[] }> = [];
   for (let i = 0; i < items.length; i += 1) {
     const item = items[i]!;
     const p = normalizePhone(String(item.phone ?? ''), deps.defaultCountry ?? 'FR');
@@ -235,10 +248,22 @@ export async function upsertContactsFromApi(
       continue;
     }
 
-    const prep = await preparer(item.fields);
-    if (!prep.ok) {
-      out.push({ index: i, status: 'error', reason: prep.raison });
-      continue;
+    // Champ par champ quand les invalides s'ignorent : chacun passe par les mêmes règles, et un refus n'emporte que lui.
+    let valeurs: Record<string, string> = {};
+    const champsRefuses: string[] = [];
+    if (deps.champsInvalides === 'ignorer') {
+      for (const [ref, valeur] of Object.entries(item.fields ?? {})) {
+        const un = await preparer({ [ref]: valeur });
+        if (un.ok) Object.assign(valeurs, un.valeurs);
+        else champsRefuses.push(un.raison);
+      }
+    } else {
+      const prep = await preparer(item.fields);
+      if (!prep.ok) {
+        out.push({ index: i, status: 'error', reason: prep.raison });
+        continue;
+      }
+      valeurs = prep.valeurs;
     }
 
     const name = typeof item.name === 'string' && item.name.trim() !== '' ? item.name.trim().slice(0, 200) : null;
@@ -249,21 +274,25 @@ export async function upsertContactsFromApi(
         tenantId,
         phoneE164: p.e164,
         profileName: name,
-        fields: prep.valeurs,
+        fields: valeurs,
         optInStatus: item.optIn === true ? 'opted_in' : 'unknown',
         ...(item.optIn === true ? { optInSource: item.optInSource ?? 'api' } : {}),
         ...(normalizeTags(item.tags).length > 0 ? { tags: normalizeTags(item.tags) } : {}),
         ...(bsuid !== null ? { bsuid } : {}),
       },
+      champsRefuses,
     });
   }
 
   for (let d = 0; d < aEcrire.length; d += ECRITURES_EN_VOL) {
     const vague = aEcrire.slice(d, d + ECRITURES_EN_VOL);
-    const resultats = await Promise.all(vague.map(async ({ index, upsert }): Promise<ApiUpsertOutcome> => {
+    const resultats = await Promise.all(vague.map(async ({ index, upsert, champsRefuses }): Promise<ApiUpsertOutcome> => {
       try {
         const res = await deps.contacts.upsertByPhoneReturningId(upsert);
-        return { index, status: res.created ? 'created' : 'updated', contactId: res.id };
+        return {
+          index, status: res.created ? 'created' : 'updated', contactId: res.id,
+          ...(champsRefuses.length > 0 ? { champsRefuses } : {}),
+        };
       } catch (err) {
         // La limite de contacts de l'offre (lot 6) : refusée à SA ligne, avec la phrase et la limite ; les autres passent.
         if (err instanceof LimiteOffreError) return { index, status: 'error', reason: err.message, limite: err.max };

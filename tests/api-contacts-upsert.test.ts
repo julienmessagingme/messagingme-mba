@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { upsertContactsFromApi } from '../src/api/contacts-upsert';
 import { LimiteOffreError } from '../src/offres/refus';
 import type { PgContactStore } from '../src/crm/contact-store.pg';
@@ -139,5 +140,70 @@ describe('upsert API : la limite de contacts de l’offre', () => {
     expect(out[0]).toMatchObject({ status: 'created' });
     expect(out[1]).toMatchObject({ status: 'error', limite: 100 });
     expect(out[1]?.reason).toMatch(/Limite de votre offre atteinte : 100 contacts/);
+  });
+});
+
+describe('un champ invalide : refusé par défaut, laissé de côté pour le webhook entrant', () => {
+  const defs = [
+    { key: 'age', label: 'Âge', type: 'number' },
+    { key: 'ville', label: 'Ville', type: 'text' },
+    { key: 'rdv', label: 'Rendez-vous', type: 'date' },
+  ] as UserFieldDef[];
+
+  it('par défaut (la création à la main), le contact entier est refusé, avec la raison', async () => {
+    const { d, ecrits } = deps(defs);
+    const [r] = await upsertContactsFromApi('t1', [{ phone: '+33612345678', fields: { age: 'abc', ville: 'Lyon' } }], d);
+    expect(r).toMatchObject({ status: 'error' });
+    expect(r?.reason).toMatch(/age/);
+    expect(ecrits).toEqual([]);
+  });
+
+  it('🔴 avec `ignorer` (le webhook entrant), le contact est écrit avec le reste et le champ refusé est nommé', async () => {
+    // Décision de Julien du 2026-10-14 : un outil tiers lit un 200 comme un succès ; le contact s'y perdait sans bruit.
+    const { d, ecrits } = deps(defs);
+    const [r] = await upsertContactsFromApi('t1', [{ phone: '+33612345678', name: 'Léa', fields: { age: 'abc', ville: 'Lyon' } }],
+      { ...d, champsInvalides: 'ignorer' });
+    expect(r).toMatchObject({ status: 'created', contactId: 'c1' });
+    expect(r?.champsRefuses).toHaveLength(1);
+    expect(r?.champsRefuses?.[0]).toMatch(/age/);
+    expect(ecrits[0]?.fields).toEqual({ ville: 'Lyon' });
+    expect(ecrits[0]?.profileName).toBe('Léa');
+  });
+
+  it('avec `ignorer` et des champs tous valides, aucune liste de refus', async () => {
+    const { d } = deps(defs);
+    const [r] = await upsertContactsFromApi('t1', [{ phone: '+33612345678', fields: { age: '42' } }], { ...d, champsInvalides: 'ignorer' });
+    expect(r).toMatchObject({ status: 'created' });
+    expect(r).not.toHaveProperty('champsRefuses');
+  });
+
+  it('🔴 le câblage : le webhook entrant, et lui seul, écrit avec `ignorer`', () => {
+    // Les tests de route passent par un faux `ecrireContact` : sans cette lecture, retirer l'option du câblage ne ferait
+    // rien échouer, et la création à la main garde le refus (une personne la corrige à l'écran).
+    const index = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
+    const bloc = index.slice(index.indexOf('ecrireContact: async (tenant, entree) => {'));
+    expect(bloc.slice(0, 1200)).toMatch(/champsInvalides: 'ignorer'/);
+    expect(index.match(/champsInvalides: 'ignorer'/g)).toHaveLength(1);
+    // Et la liste des refus remonte jusqu'à la route : sans elle, la réponse dirait « N champs » sans rien des refus.
+    expect(bloc.slice(0, 1600)).toMatch(/champsRefuses: res\.champsRefuses/);
+  });
+
+  it('avec `ignorer` et tous les champs refusés, le contact est écrit sans champ et chaque refus est nommé', async () => {
+    const { d, ecrits } = deps(defs);
+    const [r] = await upsertContactsFromApi('t1', [{ phone: '+33612345678', fields: { age: 'abc', rdv: '03/04/2026' } }],
+      { ...d, champsInvalides: 'ignorer' });
+    expect(r).toMatchObject({ status: 'created' });
+    expect(r?.champsRefuses).toHaveLength(2);
+    expect(ecrits[0]?.fields).toEqual({});
+  });
+
+  it('avec `ignorer` et le plafond de champs atteint, le champ inconnu est refusé, le champ déclaré passe', async () => {
+    const { d, ecrits } = deps(defs);
+    const [r] = await upsertContactsFromApi('t1', [{ phone: '+33612345678', fields: { ville: 'Lyon', couleur: 'bleu' } }],
+      { ...d, champsInvalides: 'ignorer', maxChampsParEspace: 3 });
+    expect(r).toMatchObject({ status: 'created' });
+    expect(r?.champsRefuses).toHaveLength(1);
+    expect(r?.champsRefuses?.[0]).toMatch(/plafond/);
+    expect(ecrits[0]?.fields).toEqual({ ville: 'Lyon' });
   });
 });

@@ -1501,6 +1501,14 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   2026-09-26 : c'est l'opérateur qui le demande, pour tout le fichier). Un upsert qui redit `opted_in` sur une fiche
   déjà `opted_in` garde la source d'origine. Le bloc « Action » d'un scénario (`setOptInByWaId`, autorité
   `scenario`) lève un STOP (décision de Julien du 2026-10-03).
+- **Une valeur de champ invalide refuse la fiche entière, sauf au webhook entrant** (décision de Julien du
+  2026-10-14). `upsertContactsFromApi` prend `champsInvalides` : `refuser` par défaut (création à la main), `ignorer`
+  au seul câblage du webhook (`src/index.ts`, tenu par `tests/api-contacts-upsert.test.ts`), qui écrit le téléphone,
+  le nom et les champs valables et rend les refusés dans `champsRefuses`. Un outil tiers ne voit pas notre écran :
+  perdre le contact pour une date ambiguë coûtait plus que l'écrire sans elle. ⚠️ Sur une fiche existante, un champ
+  refusé garde son ANCIENNE valeur (la fusion `contacts.fields || excluded.fields` de l'upsert) et le scénario part
+  quand même : une variable périmée, pas une variable vide (celle-ci ne part jamais, `resolveTemplateParams` la rend
+  dans `missing`, `src/crm/template.ts`).
 - **Dans `/v1/contacts/batch`, les éléments d'une même personne s'écrivent DANS L'ORDRE** : deux éléments qui
   partagent une clé normalisée forment une chaîne séquentielle (`enChaines`, `src/api/contacts-v1.ts`), les
   chaînes partant par vagues bornées. En parallèle, le second pouvait se résoudre avant que le premier ait

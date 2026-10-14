@@ -5,18 +5,12 @@
 L'exercice de restauration est fait et réussi (`DEPLOY.md` § Restauration : 29 secrets sur 29 déchiffrés sur une copie
 jetable, copie identique à la production). Restent :
 
-- 🔴 **Julien : recopier `ENCRYPTION_KEY` hors du VPS, et la prouver.** La copie « au coffre » du 2026-09-23 est
-  introuvable : le seul exemplaire est `.env.prod`. La recopier dans un gestionnaire de mots de passe, puis comparer son
-  empreinte à celle de la production (procédure dans `DEPLOY.md` ; l'empreinte de référence n'est pas dans le dépôt).
-  AVANT la bascule Scaleway, où la clé doit être reposée à l'identique.
 - 🔴 **Julien : planifier `scripts/sauvegarde-base.sh`** (la ligne de crontab est dans `DEPLOY.md`). Une seule
   sauvegarde existe, celle de l'exercice.
 - **À la bascule Scaleway** (lot 6 du plan `docs/superpowers/plans/2026-10-14-avant-bascule-scaleway.md`) : rejouer
   `scripts/exercice-restauration.sh` contre une sauvegarde de la base managée, réécrire la section de `DEPLOY.md`, et
   retirer la tâche planifiée du VPS une fois les sauvegardes de Scaleway relevées. Les extensions `vector`, `pg_trgm`
   et `unaccent` se créent avant la restauration (un dump par schémas ne les porte pas).
-- **Décision de Julien : le webhook entrant qui perd tout le contact pour un seul champ invalide** (plus bas, § webhooks
-  entrants).
 - 🟡 **L'écouteur `LISTEN` de pg-boss ne se rouvre pas** si sa première ouverture échoue : le sondage de secours prend
   le relais (de la latence, aucune perte). Une nouvelle tentative et un test coupure puis reconnexion.
 
@@ -2658,14 +2652,9 @@ sur le rappel smsmode, et un plafond par code existant le protège : `src/http/r
 - **Aucun appel d'un VRAI outil du marché.** L'arbre de mapping est éprouvé sur des payloads fabriqués. Ce
   que Zapier, Make ou HubSpot envoient réellement (enveloppes, tableaux imbriqués, clés à points) n'a pas été
   regardé. À faire au premier branchement client, en gardant le payload sous les yeux.
-- **Un type de valeur invalide fait échouer l'appel ENTIER.** `upsertContactsFromApi` refuse l'enregistrement
-  dès qu'une valeur ne passe pas la validation de son champ (du texte dans un champ nombre) : le téléphone est
-  perdu avec. Seule la LONGUEUR est filtrée en amont. Le corriger demanderait soit une écriture partielle dans
-  le chemin partagé (qui servirait aussi l'API publique et l'import), soit une validation par type dans la
-  route, donc une seconde copie des règles. À trancher si le cas se présente vraiment.
 - **Pas de journal des appels.** On garde le DERNIER payload, jamais un historique (choix RGPD). Un
   intégrateur qui débogue « mon 3e appel n'a rien fait » n'a donc rien à regarder. Un journal des RÉSULTATS
-  sans les corps (horodatage, contact, champs, scénario) serait le bon compromis, il n'est pas fait.
+  sans les corps (horodatage, contact, champs, champs refusés, scénario) serait le bon compromis, il n'est pas fait.
 - **Le plafond de débit est en mémoire du process.** Comme celui de `/v1`. À plusieurs instances d'API, le
   plafond réel est multiplié par leur nombre. Sans objet aujourd'hui (une seule instance).
 - **Un webhook désactivé rend 404, pas 410.** Un outil tiers ne peut donc pas distinguer « supprimé » de

@@ -58,7 +58,12 @@ export interface WebhookEntrantRouteDeps {
       /** D'où vient ce consentement, pour la trace : `webhook:<nom>`. */
       optInSource: string;
     },
-  ): Promise<{ statut: 'created' | 'updated' | 'error'; raison?: string }>;
+  ): Promise<{
+    statut: 'created' | 'updated' | 'error';
+    raison?: string;
+    /** Les champs invalides laissés de côté, le contact étant écrit avec le reste (chacun avec sa raison). */
+    champsRefuses?: string[];
+  }>;
   /** Publie l'événement d'automation (file). C'est le worker qui décide ensuite quoi déclencher. */
   publish(tenantId: string, ev: { kind: 'webhook'; waId: string; webhookId: string }): Promise<void>;
   /** Plafond de débit par webhook. Absent -> plafond par défaut (voir `registerWebhookEntrant`). */
@@ -83,6 +88,12 @@ interface Compte {
   raison?: string;
   /** Chemins du mapping qui n'ont rien rendu sur cet appel. */
   ignores?: string[];
+  /**
+   * Les champs dont la valeur a été refusée (du texte dans un champ nombre), chacun avec sa raison : le contact est écrit
+   * avec le reste et le scénario part quand même. Un 200 se lit comme un succès : sans cette liste, l'intégrateur ne
+   * saurait pas qu'une valeur est restée en route.
+   */
+  champsRefuses?: string[];
 }
 
 export function registerWebhookEntrant(app: FastifyInstance, deps: WebhookEntrantRouteDeps): void {
@@ -220,7 +231,8 @@ export function registerWebhookEntrant(app: FastifyInstance, deps: WebhookEntran
     }
 
     compte.contact = res.statut === 'created' ? 'cree' : 'trouve';
-    compte.champs = Object.keys(ex.champs).length;
+    compte.champs = Object.keys(ex.champs).length - (res.champsRefuses?.length ?? 0);
+    if (res.champsRefuses && res.champsRefuses.length > 0) compte.champsRefuses = res.champsRefuses;
     // « publié », pas « lancé » : les garde-fous de `runAutomations` (contact bloqué, anti-rebond, condition,
     // plafond horaire) s'appliquent ensuite. Un parcours en cours ne bloque rien : le suivant le clôt (`runFrom`).
     if (hook.automationId !== null) compte.scenario = 'publie';

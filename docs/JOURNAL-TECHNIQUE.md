@@ -5,6 +5,23 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-14 : le webhook entrant écrit le contact malgré un champ invalide (lot 2 du bilan)
+
+- **Le défaut** : une seule valeur refusée (une date ambiguë, du texte dans un champ nombre) faisait échouer l'appel
+  ENTIER du webhook entrant ; le téléphone, le nom, les autres champs et le scénario étaient perdus avec elle. Noté dès
+  le lot des webhooks entrants (2026-08-23), « à trancher si le cas se présente », relevé par le bilan des audits.
+- **La décision de Julien** : écrire le reste. Le contact part avec ses champs valables, le scénario démarre, et la
+  réponse rendue à l'outil tiers nomme chaque champ laissé de côté avec sa raison (`champsRefuses`). La création à la
+  main garde le refus entier, comme l'API publique, qui passe par un autre chemin.
+- **Une décision du 2026-08-23 renversée** : le lot des webhooks entrants gardait le refus complet pour une valeur
+  invalide par son TYPE (« une erreur de configuration », qu'un refus silencieux empêcherait de corriger). Ce qui
+  compense la décision, c'est `champsRefuses` : le refus n'est plus silencieux, il voyage dans la réponse avec sa
+  raison. Il ne vit que là (ni la console ni un journal ne le gardent, cf. `todo.md`, le journal des résultats).
+- ⚠️ **Le revers** : sur une fiche existante, le champ refusé garde son ancienne valeur, et le scénario part avec elle.
+- **La forme** : une option `champsInvalides` sur `upsertContactsFromApi`, `refuser` par défaut, `ignorer` au seul
+  câblage du webhook. Plan : `docs/superpowers/plans/2026-10-14-webhook-ecriture-partielle.md`. Les tests vérifiés
+  dans les deux sens : l'écriture partielle, le refus entier par défaut, le câblage, la route.
+
 ## 2026-10-14 : le premier exercice de restauration, et une clé dont la copie n'existait plus (lot 2 du bilan)
 
 - **Le constat de départ** : le plan de sauvegarde du projet Supabase n'avait jamais été relevé (le bilan le tenait pour

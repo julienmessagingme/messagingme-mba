@@ -237,15 +237,30 @@ describe('webhook entrant : ce qu’il écrit', () => {
     await server.close();
   });
 
-  it('🔴 une valeur refusée par la validation de champ -> 200 avec la raison, PAS une erreur', async () => {
-    // Le tiers ne doit pas réessayer en boucle pour une valeur qui sera toujours refusée.
+  it('🔴 un contact refusé (limite de l’offre, identifiant déjà pris) -> 200 avec la raison, PAS une erreur', async () => {
+    // Le tiers ne doit pas réessayer en boucle pour un refus qui se répétera. Un champ invalide ne mène plus ici : il est
+    // laissé de côté (cas suivant).
     const { server, cap } = app(HOOK, {
-      ecrireContact: async () => ({ statut: 'error', raison: 'valeur invalide pour « reference » (number)' }),
+      ecrireContact: async () => ({ statut: 'error', raison: 'Limite de votre offre atteinte : 100 contacts' }),
     });
     const res = await post(server, CORPS);
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).raison).toMatch(/valeur invalide/);
+    expect(JSON.parse(res.body).raison).toMatch(/Limite de votre offre/);
     expect(cap.appels[0]?.cree).toBe(false);
+    await server.close();
+  });
+
+  it('🔴 un champ refusé laisse le contact écrit : la réponse le nomme, et le scénario part quand même', async () => {
+    // Décision de Julien du 2026-10-14 : un 200 se lit comme un succès, un contact perdu pour une valeur ne se voyait pas.
+    const { server, cap } = app({ ...HOOK, automationId: 'wf1' }, {
+      ecrireContact: async () => ({ statut: 'created', champsRefuses: ['« reference » : valeur invalide (number)'] }),
+    });
+    const res = await post(server, CORPS);
+    expect(res.statusCode).toBe(200);
+    const corps = JSON.parse(res.body);
+    expect(corps).toMatchObject({ contact: 'cree', champs: 0, scenario: 'publie', champsRefuses: ['« reference » : valeur invalide (number)'] });
+    expect(corps).not.toHaveProperty('raison');
+    expect(cap.publies).toHaveLength(1);
     await server.close();
   });
 
