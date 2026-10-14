@@ -30,6 +30,13 @@ VPS**, où des copies se partageraient la même machine. Ce qui reste est donc l
 séquence du §10 : les conteneurs (minimum 1 copie), le budget recalculé sur la vraie base (§7.5), le nom de chaque
 copie dans `/ops` (§10, étape 7), et le second banc rejoué sur la cible (§11).
 
+✅ **Mis à jour le 2026-10-14 : quatre décisions de Julien, et ce que ce document ne disait pas.** La base est le
+PostgreSQL managé de Scaleway, sans haute disponibilité au départ ; les deux workers partagent UNE machine, chaque
+conteneur borné ; un déploiement se déclenche à la main, avec l'approbation de Julien (§13). Relevé en ouvrant le
+compte Scaleway, et ajouté aux prérequis du §10 : le chemin de déploiement après la bascule n'existait nulle part
+(§10 bis), le routage de `mba.messagingme.app` n'avait pas de maison hors d'OVH (étape 10), les workers n'ont aucune
+limite de ressources, et les gardes des bancs reconnaissent la production à son adresse Supabase.
+
 ---
 
 ## 1. La règle qui gouverne tout : deux tiers, deux besoins OPPOSÉS
@@ -75,7 +82,8 @@ ferme de ce document.
              +---------------------------+-------------+---------------+
              |                           |                             |
      PostgreSQL managé           worker PRINCIPAL               worker ANALYSE
-     endpoint privé seul         (instance privée)             (instance privée)
+     endpoint privé seul         (conteneur borné)             (conteneur borné)
+                                 [ UNE instance privée, sans adresse publique ]
                                              \                     /
                                           Public Gateway (sortie seule, §7.4)
                                           vers Meta, fournisseurs IA, HubSpot
@@ -100,6 +108,16 @@ budget de connexions de la base (§7.5), plus du code. Le worker, lui, reste UN 
 internet. L'aller-retour est aujourd'hui de 11 ms mesurés ; entre deux fournisseurs il serait bien pire, et il
 serait payé sur chacune des 131 transactions par minute mesurées AU REPOS, avant tout client. **Le calcul et
 la base dans la même région, toujours.** Déménager l'un sans l'autre est un pas en arrière.
+
+🔴 **Les deux workers partagent UNE machine : décidé par Julien le 2026-10-14.** L'isolation qu'apportent les deux
+rôles est celle des PROCESSUS : un plantage, un redémarrage ou une analyse qui occupe le processeur ne touchent pas
+le principal (un processus Node ne fait qu'une chose à la fois), et elle tient sur une machine. Une seconde machine
+n'ajouterait que la survie à une panne de la machine elle-même, qui ne protège pas le chemin critique : la machine du
+principal qui tombe arrête les entrants dans les deux cas, et un worker arrêté ne perd rien, l'API ayant déjà rangé
+le message dans la file. 🔴 **La condition : chaque conteneur porte une limite de mémoire et de processeur.**
+`docker-compose.yml` n'en pose AUCUNE au 2026-10-14 : une fuite de l'analyse peut aujourd'hui vider la mémoire de la
+machine et emporter le principal. Séparer les machines reste un changement de déploiement (même image,
+`WORKER_ROLE=analyse`), le jour où la mesure le demande.
 
 ### 2.1 Deux routes IA, choisies manuellement — aucune bascule automatique
 
@@ -596,11 +614,15 @@ d'un ordre de grandeur, et c'est la BASE qui deviendra la limite. D'où la règl
 1. Le banc est `scripts/banc-api.sh` (montage, quatre épreuves, démontage) et `scripts/banc-api.mts` (la mesure).
    `BANC_DELAI_MS` règle la latence simulée (environ 1 à la cible), `BANC_PLAFOND_10S` la valeur du plafond éprouvée.
 2. 🔴 **Contre une base jetable de l'OFFRE CHOISIE, pas un Postgres local** : un Postgres sur la machine du banc
-   mesurerait l'API et cacherait la base, qui sera la limite. Créer une instance jetable de la même offre (Supabase
-   Pro : un projet jetable ; Scaleway : une base managée jetable, même gamme), dans la région PAR.
+   mesurerait l'API et cacherait la base, qui sera la limite. Créer une base managée Scaleway jetable, de la même
+   gamme que la production (l'offre est tranchée depuis le 2026-10-14, §13), dans la région PAR.
 3. Deux adaptations du banc, à faire à ce moment-là : il monte aujourd'hui son propre Postgres en conteneur
    (prévoir de lui passer l'adresse d'une base existante), et sa garde refuse toute adresse contenant « supabase »
    pour protéger la production (l'assouplir pour une base jetable nommée explicitement, jamais pour la production).
+   🔴 **Et cette garde ne protège plus RIEN après la bascule** (relevé le 2026-10-14) : l'adresse de la production ne
+   contiendra plus « supabase ». Les CINQ bancs la portent (`banc-api.mts`, `banc-charge.mts`, `banc-deux-api.mts`,
+   `banc-deux-api-2.mts`, `banc-trente-espaces.mts`) : elle devient une garde POSITIVE, qui n'accepte qu'une base dont
+   le nom la dit jetable, AVANT le jour J (prérequis du §10).
 4. Faire tourner l'API et le worker du banc comme ils tourneront en vrai (conteneurs Scaleway, réseau privé), avec
    les tailles de pool de la cible.
 5. Reposer `API_PLAFOND_GLOBAL_PAR_10S` à 70 % de la capacité mesurée, revoir `DB_POOL_RECEPTION_MAX` et la
@@ -707,6 +729,19 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    `mmhs` en cross-schéma (§8).
 4. **Les fichiers RCS restent en base pour la bascule** (décidé le 2026-10-04) : ils partent dans le dump et sortent
    vers l'Object Storage APRÈS, en lot séparé (§6).
+5. **Le chemin de déploiement existe** (§10 bis), et il a servi à la répétition HubSpot (étape 0) avant de servir à
+   Messaging Me. Au 2026-10-14, aucun workflow ne déploie quoi que ce soit chez Scaleway.
+6. **Le routage de `mba.messagingme.app` a une maison hors d'OVH** (étape 10) : le webhook de Meta arrive par lui.
+7. **Chaque conteneur de worker porte une limite de mémoire et de processeur** (§2), éprouvée d'abord sur le VPS.
+8. **La version de PostgreSQL et pgvector, lues chez Scaleway** : la production est en 17.6. Une base en 17 (les
+   versions se lisent par `scw rdb engine list`) ; sinon, la restauration d'un export 17 sur une 16, que PostgreSQL
+   ne garantit pas, se prouve sur une base jetable AVANT le jour J.
+9. **La reprise après sinistre réécrite pour Scaleway** (`DEPLOY.md` décrit celle de Supabase) : sauvegardes de la
+   base managée relevées, une restauration chronométrée sur une base jetable, et les secrets chiffrés relus avec la
+   même `ENCRYPTION_KEY`.
+10. **Les gardes des bancs ne reconnaissent plus la production à « supabase »** dans son adresse (§7.8, point 3).
+11. **Le nom de chaque copie d'API dérivé du nom d'hôte** (étape 7) : `API_COPIE` est une variable fixe, donc la même
+    pour toutes les copies d'un conteneur serverless.
 
 **La séquence :**
 
@@ -725,7 +760,8 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    🔴 **À notre taille (30 Mo), quelques minutes de fenêtre suffisent, et c'est un luxe qu'on perd en
    grandissant.** C'est un argument pour basculer TÔT : à 30 Go il faudra de la réplication logique, donc un
    chantier au lieu d'une commande. Sortir les fichiers de la base (§6) garde ce luxe plus longtemps.
-6. Poser la **Public Gateway**, puis déployer les deux rôles de worker sur des instances sans adresse publique.
+6. Poser la **Public Gateway**, puis déployer les deux rôles de worker sur UNE instance sans adresse publique,
+   chaque conteneur borné en mémoire et en processeur (§2).
 7. Déployer l'API : conteneur **privé**, **min 1 / max donné par le budget du §7.5**, rattaché au réseau privé,
    secrets fournis par le gestionnaire de secrets de Scaleway (jamais dans l'image), contrôle de vie léger qui ne
    dépend pas de la base, délai d'arrêt très en deçà du bail de la clé d'idempotence (§3.5). ⚠️ **Le nom de chaque
@@ -739,6 +775,11 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
 10. Garder `mba.messagingme.app` : `/api/backend/webhooks/meta` vers la nouvelle API (préfixe retiré), les
     anciens `/r/`, `/m/` et `/mcp` vers la nouvelle API, le reste du site vers `engageme.messagingme.app`
     (l'ancien conteneur `mba-web` disparaît).
+    ⚠️ **Où vit ce routage, ce document ne le disait pas** (relevé le 2026-10-14) : aujourd'hui c'est le proxy NPM du
+    VPS OVH (`documentation.md`), qui disparaît à l'étape 13, et le laisser sur OVH garderait OVH sur le chemin de
+    chaque message entrant. Proposition, à valider au chantier : chez Cloudflare, déjà devant `mba.`, une réécriture
+    qui retire `/api/backend`, une redirection du reste vers la console, et `mba.` déclaré comme second domaine du
+    conteneur de l'API, avec le même jeton d'origine qu'`api.` (§7.3). Rien ne change chez Meta.
 11. ~~Le connecteur HubSpot~~ : déjà parti, à l'étape 0 (§8).
 12. Dérouler les **tests d'acceptation du §11**, dont le banc de l'API rejoué sur la cible (§ 7.8) : 🔴 **le site
     ne s'ouvre pas au public avant**, et le plafond global se repose sur sa mesure.
@@ -746,6 +787,35 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
 
 **Ce qu'on garde à Supabase le temps de vérifier** : rien. Une base lue par deux endroits est une base qui
 diverge. La bascule est franche, et le retour arrière est la restauration du dump.
+
+---
+
+## 10 bis. Après la bascule : déployer une évolution
+
+Décidé par Julien le 2026-10-14 : **un déploiement se déclenche à la main, et attend son approbation.** Le dépôt
+GitHub reste la source, la CI ne change pas, la console reste sur Vercel et se publie seule au push. Seul change le
+geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose build`, `migrate` et `up` sur le VPS).
+
+- **Un workflow GitHub Actions lancé à la main** (`workflow_dispatch`, comme `plugin.yml`), derrière un environnement
+  `production` qui exige l'approbation de Julien. Jamais sur une pull request : le dépôt est public.
+- **Il construit l'image et la pousse dans le registre de conteneurs Scaleway** (privé, `fr-par`), étiquetée par le
+  commit (`REVISION`). La documentation de Scaleway ne propose pas de déploiement au push comme Vercel : le chemin
+  qu'elle documente est ce workflow (vérifié le 2026-10-14).
+- **La migration se lance depuis le réseau privé**, sur la machine des workers, la base n'ayant plus d'endpoint
+  public (§7.2). La règle « avant ou après le déploiement » du `CLAUDE.md` ne change pas ; « construire l'image
+  avant de migrer » devient « migrer depuis l'image qu'on va déployer ».
+- **Puis l'API passe sur la nouvelle image et les workers redémarrent dessus.** Le retour arrière redéploie l'image
+  précédente, gardée au registre, sous la même vérification qu'aujourd'hui contre ce que les migrations appliquées
+  depuis ont resserré.
+- **Une clé Scaleway propre au workflow**, distincte de celle du poste de Julien, limitée au registre, au conteneur
+  de l'API et à l'accès à la machine des workers (par le bastion de la Public Gateway), rangée dans les secrets de
+  l'environnement `production`.
+- ⚠️ **La base ne se lit plus depuis un poste.** Aujourd'hui le `DATABASE_URL` du poste EST la production ; sans
+  endpoint public, il faut un tunnel par le bastion. `npm run migrations` et les sondes en lecture seule sont à
+  adapter, et c'est un gain : la production cesse d'être à une variable d'environnement d'une commande lancée par
+  erreur.
+
+`DEPLOY.md` se réécrit avec ce chemin, et la répétition HubSpot (étape 0) en est le premier usage.
 
 ---
 
@@ -782,8 +852,8 @@ diverge. La bascule est franche, et le retour arrière est la restauration du du
 - **Le banc de l'API publique rejoué sur la cible** (`scripts/banc-api.sh`, lot 14) : cent espaces, paliers de débit
   sur `/v1` et `/mcp` avec webhooks de Meta, rafale d'accusés, plafond global allumé. Sur le VPS et la base de Londres
   (10 ms), il a tenu 150 appels/s sans casser. À la cible, il se rejoue avec la latence de la région
-  (`BANC_DELAI_MS`, environ 1) et, mieux, contre une base jetable de l'OFFRE CHOISIE (Supabase Pro ou PostgreSQL
-  managé Scaleway), parce que la limite tombera sur la base avant l'API : sa garde refuse aujourd'hui toute adresse
+  (`BANC_DELAI_MS`, environ 1) et, mieux, contre une base jetable de l'OFFRE CHOISIE (PostgreSQL managé
+  Scaleway, §13), parce que la limite tombera sur la base avant l'API : sa garde refuse aujourd'hui toute adresse
   Supabase, à adapter pour une base jetable nommée. Le plafond global (`API_PLAFOND_GLOBAL_PAR_10S`, valeur
   intérimaire posée sur l'infrastructure actuelle) se repose alors à 70 % de la capacité mesurée, et
   `DB_POOL_RECEPTION_MAX` se revoit : à 1 ms, chaque connexion accuse dix fois plus de webhooks qu'à 10 ms. ⚠️ Sur
@@ -856,7 +926,9 @@ Aucun de ces choix ne doit être remplacé par une valeur technique arbitraire.
 4 bis. **Où se fait l'autoscaling** : tranché par Julien le 2026-10-03, **à Scaleway**. Pas de seconde copie fixe
    sur le VPS (elle n'y créerait aucune capacité, toutes les copies partageant la même machine).
 5. **Le niveau de disponibilité** acheté pour la base (développement, production, haute disponibilité) au
-   premier client important.
+   premier client important. ✅ **Tranché par Julien le 2026-10-14 : pas de haute disponibilité au jour J** (une
+   machine, sauvegardes quotidiennes, restauration chronométrée, §10 prérequis 9), la haute disponibilité au premier
+   client qui l'exige.
 6. **L'utilité réelle des règles de rate limiting Cloudflare Pro.** Candidats : un fusible large sur l'API
    externe (`/v1` et `/mcp`) et les chemins anonymes d'authentification qui écrivent. Ne les activer qu'avec
    des seuils mesurés tolérant les IP d'entreprise partagées ; ne jamais limiter `/auth/config`.
@@ -865,6 +937,14 @@ Aucun de ces choix ne doit être remplacé par une valeur technique arbitraire.
 8. **Le périmètre exact d'une option IA France.** Tours conversationnels seulement, ou également construction,
    embeddings, reranking, transcription, traduction et analyses. Le prix et la disponibilité régionale des
    modèles décident ; la documentation commerciale doit nommer le périmètre réellement testé.
+9. **La base de la cible** : tranché par Julien le 2026-10-14, **le PostgreSQL managé de Scaleway**, Supabase Pro
+   écarté. C'est ce que promet la vitrine (« chez Scaleway »), le calcul et la base restent chez le même hébergeur, et
+   rien de propre à Supabase n'est utilisé (§4).
+10. **Le déclenchement d'un déploiement** : tranché par Julien le 2026-10-14, **à la main, avec son approbation**
+    (§10 bis). Un déploiement au push ferait partir l'API avant sa relecture et avant sa migration.
+11. **Les machines des workers** : tranché par Julien le 2026-10-14, **une seule**, chaque conteneur borné (§2).
+12. **Les dates**, encore ouvertes : la répétition HubSpot, puis la fenêtre du jour J, puis la durée d'observation
+    avant de couper OVH (étape 13).
 
 ---
 
