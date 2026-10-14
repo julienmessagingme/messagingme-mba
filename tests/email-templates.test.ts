@@ -24,6 +24,11 @@ describe('renderBrandedEmail (shell réutilisable)', () => {
     expect(html).not.toContain('<button');
   });
 
+  it('🔴 son logo est servi par la console, jamais par mba. (supprimé au lot 7 de la bascule)', () => {
+    expect(html).toContain('src="https://console.messagingme.app/logo.png"');
+    expect(html).not.toContain('mba.messagingme.app/logo');
+  });
+
   it('porte l\'identité de marque (wordmark + tagline)', () => {
     expect(html).toContain('Messaging Me');
     expect(html).toContain('Business Agent');

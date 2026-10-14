@@ -18,8 +18,11 @@ const CARD_BG = '#ffffff';
 const BORDER = '#e6e9f0';
 const FONT = "-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 
-/** URL publique du logo rasterisé (PNG, servi par le front). Gmail rend le PNG ; l'alt couvre le blocage d'images. */
-const LOGO_URL = 'https://mba.messagingme.app/logo.png';
+/**
+ * URL publique du logo rasterisé (PNG, servi par la console sur Vercel). Gmail rend le PNG ; l'alt couvre le blocage
+ * d'images. Jamais sur `mba.messagingme.app`, supprimé avant la bascule Scaleway (lot 7) : chaque e-mail perdrait son logo.
+ */
+const LOGO_URL = 'https://console.messagingme.app/logo.png';
 
 export interface BrandedEmailInput {
   /** Titre affiché en gros dans le corps (déjà lisible en clair, sera échappé). */
@@ -172,7 +175,7 @@ export interface InvitationEmailInput {
   inviterName?: string | null;
   /** Nom de l'espace de travail (tenant). Vide/null -> phrase générique sans nom d'espace. */
   workspaceName?: string | null;
-  /** Lien d'acceptation (choix du mot de passe), ex. https://mba.messagingme.app/invite/<token>. */
+  /** Lien d'acceptation (choix du mot de passe), ex. https://console.messagingme.app/invite/<token>. */
   acceptUrl: string;
   /** Rôle attribué à l'invité ('admin' | 'agent'). */
   role: string;
