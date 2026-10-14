@@ -66,7 +66,9 @@ prévenue le 2026-10-14 (aucun changement pour la bascule, une mesure à faire, 
 
 ### Le bucket
 
-- **Object Storage Scaleway, région `fr-par`, privé**, créé par Julien (créer chez Scaleway lui revient). Une clé IAM
+- **Object Storage Scaleway, région `nl-ams` (Amsterdam, comme toute la cible depuis le 2026-10-14), privé**, créé
+  par Julien (créer chez Scaleway lui revient). La CLI garde `fr-par` par défaut : la région se passe à chaque
+  commande, sinon le bucket naît à Paris et les fichiers sortent de la région promise. Une clé IAM
   d'application limitée à CE bucket (lire, écrire, effacer), posée par Julien dans les secrets de la cible. Si l'IAM
   ne sait borner qu'au projet, une politique de bucket restreint la clé (à mesurer, § 6).
 - **Clé d'objet** : `tenants/<tenant_id>/<code>.<ext>`. Le préfixe par espace rend l'effacement d'un espace possible
