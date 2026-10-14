@@ -731,7 +731,8 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    vers l'Object Storage APRÈS, en lot séparé (§6).
 5. **Le chemin de déploiement existe** (§10 bis), et il a servi à la répétition HubSpot (étape 0) avant de servir à
    Messaging Me. Au 2026-10-14, aucun workflow ne déploie quoi que ce soit chez Scaleway.
-6. **Le routage de `mba.messagingme.app` a une maison hors d'OVH** (étape 10) : le webhook de Meta arrive par lui.
+6. **`mba.messagingme.app` est supprimé AVANT le jour J** (décidé par Julien le 2026-10-14, étape 10) : le webhook
+   de Meta repointé sur `api.`, et plus rien d'attendu sur `mba.` dans les journaux du proxy.
 7. **Chaque conteneur de worker porte une limite de mémoire et de processeur** (§2), éprouvée d'abord sur le VPS.
 8. **La version de PostgreSQL et les extensions** : la production est en 17.6. ✅ **PostgreSQL 17 est proposé à
    Paris** (lu par la CLI le 2026-10-14, fin de support dans trois ans) : l'export se restaure dans la même version
@@ -774,14 +775,12 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
 9. Brancher Cloudflare : pendant la validation du certificat chez Scaleway, l'enregistrement peut rester en
    « DNS only » ; ensuite, proxy activé, règle du jeton d'origine posée, et **vérifier que l'appel direct au
    conteneur est refusé**. ⚠️ Le webhook de Meta n'a rien à reconfigurer, c'est tout l'intérêt d'avoir un NOM.
-10. Garder `mba.messagingme.app` : `/api/backend/webhooks/meta` vers la nouvelle API (préfixe retiré), les
-    anciens `/r/`, `/m/` et `/mcp` vers la nouvelle API, le reste du site vers `engageme.messagingme.app`
-    (l'ancien conteneur `mba-web` disparaît).
-    ⚠️ **Où vit ce routage, ce document ne le disait pas** (relevé le 2026-10-14) : aujourd'hui c'est le proxy NPM du
-    VPS OVH (`documentation.md`), qui disparaît à l'étape 13, et le laisser sur OVH garderait OVH sur le chemin de
-    chaque message entrant. Proposition, à valider au chantier : chez Cloudflare, déjà devant `mba.`, une réécriture
-    qui retire `/api/backend`, une redirection du reste vers la console, et `mba.` déclaré comme second domaine du
-    conteneur de l'API, avec le même jeton d'origine qu'`api.` (§7.3). Rien ne change chez Meta.
+10. ~~Garder `mba.messagingme.app`~~ : 🔴 **supprimé, décidé par Julien le 2026-10-14** (« pas plusieurs adresses
+    de production »), et AVANT la bascule, sur le VPS : le webhook de Meta passe sur
+    `https://api.messagingme.app/webhooks/meta` (un champ de l'app Meta, posé par Julien), les configurations MCP sur
+    `api.`, puis le nom disparaît (proxy NPM, DNS, conteneur `mba-web`). Les liens `/r/` et les visuels `/m/` déjà
+    envoyés sous `mba.` cessent de répondre : **assumé par Julien**, qui a écarté la redirection. Il ne reste qu'une
+    adresse de production, `api.messagingme.app`, et l'étape ne coûte plus rien au jour J.
 11. ~~Le connecteur HubSpot~~ : déjà parti, à l'étape 0 (§8).
 12. Dérouler les **tests d'acceptation du §11**, dont le banc de l'API rejoué sur la cible (§ 7.8) : 🔴 **le site
     ne s'ouvre pas au public avant**, et le plafond global se repose sur sa mesure.
@@ -826,8 +825,9 @@ geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose bu
 **Le chemin public**
 - `https://api.messagingme.app/live` répond, à travers Cloudflare.
 - Le nom technique du conteneur, appelé en direct sans le jeton d'origine, **refuse**.
-- `mba.messagingme.app/api/backend/webhooks/meta`, les anciens `/r/` et `/m/` fonctionnent toujours.
-- Les Managed Rules Cloudflare sont actives sur `api.` et `mba.`, avec leur configuration exportée ou capturée.
+- Le webhook de Meta arrive sur `api.messagingme.app/webhooks/meta`, et `mba.messagingme.app` ne répond plus
+  (supprimé, §10 étape 10).
+- Les Managed Rules Cloudflare sont actives sur `api.`, avec leur configuration exportée ou capturée.
 - Toute règle de débit Pro réellement activée est testée sur ses chemins exacts ; un dépassement est visible
   dans Security Events et ne touche aucun webhook, callback RCS, relais MBA/HubSpot, lien `/r/` ni média `/m/`.
 - Un échantillon de faux positifs est relu avant de passer une règle sensible en blocage.
@@ -947,6 +947,9 @@ Aucun de ces choix ne doit être remplacé par une valeur technique arbitraire.
 11. **Les machines des workers** : tranché par Julien le 2026-10-14, **une seule**, chaque conteneur borné (§2).
 12. **Les dates**, encore ouvertes : la répétition HubSpot, puis la fenêtre du jour J, puis la durée d'observation
     avant de couper OVH (étape 13).
+13. **`mba.messagingme.app`** : tranché par Julien le 2026-10-14, **supprimé avant la bascule, sans redirection**.
+    Les anciens liens `/r/` et `/m/` qui le portent cassent, c'est accepté. Une seule adresse de production :
+    `api.messagingme.app` (§10, étape 10).
 
 ---
 
