@@ -8,12 +8,13 @@ numéro est connecté par l'une des deux voies, l'autre bouton disparaît. Le lo
 (`1111567578708598`) branché par `/multi_webhook` À CÔTÉ de UChat, un message reçu chez nous. Ce numéro n'est
 rattaché à aucun espace : ses messages sont rangés puis ignorés jusqu'au lot 2. Prouvé à la main le 2026-10-15 avec la clé d'un numéro : l'envoi
 d'un modèle par `waba-v2.360dialog.io/messages` ET par MM Lite (`/marketing_messages`) arrive (brain, LEARNINGS).
-- **Lot 2, le transport d'envoi.** Un fournisseur par WABA (`meta` ou `360dialog`) et la clé d'API du numéro
-  chiffrée à côté du jeton (migration). Dans la fabrique (`src/meta/factory.ts`), un client 360dialog : autre hôte,
-  en-tête `D360-API-KEY`, chemins sans version ni `phone_number_id` ; modèles (`/v1/configs/templates`), médias et
-  Flows ont leurs équivalents à adapter un par un. Les gardes de la fabrique (STOP, délié, suspendu, quota) restent
-  communes. C'est seulement là qu'un numéro 360dialog peut se rattacher à un espace : avant, l'agent et l'Inbox
-  répondraient par Meta, qui refuse.
+- **Lot 2, livraison A, EN PRODUCTION depuis le 2026-10-15** (`0629d674`, migration 0239) : envoi libre et MM Lite
+  par 360dialog, médias reçus et téléversés, `POST /ops/360dialog/:tenantId`, et la clé jamais rendue à ce qui parle à
+  Graph. Aucun numéro rattaché : Julien garde le numéro d'essai sur UChat. Restent, selon le plan
+  `docs/superpowers/plans/2026-10-15-360dialog-lot2-envoi.md` : **B** les modèles (statuts RELEVÉS, en-tête par URL),
+  **C** les Flows (sous `/flows/...`), **D** la console qui masque l'agent de Meta et la reconnexion Meta, et décide du
+  sort de notre destination de webhook à la suppression d'un espace. ⚠️ À mesurer avant un vrai client : un 401 de
+  360dialog pour un compte sans MM Lite invaliderait la clé.
 - **Lot 3, le bouton.** Integrated Onboarding de 360dialog (compte partenaire, `partner_id`, URL de retour). Au retour
   ou au webhook partenaire : le canal, puis la clé d'API par la Partner API (🔴 en créer une RÉVOQUE les précédentes,
   une seule fois et chiffrée tout de suite), puis le webhook du numéro posé par nous (le corps de
