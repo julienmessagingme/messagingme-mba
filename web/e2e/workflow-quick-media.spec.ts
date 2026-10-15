@@ -1,4 +1,5 @@
 import { test, expect } from './aide/test';
+import { TREIZE_POUCES, pasDeChevauchement } from './aide/largeur';
 
 /**
  * Un visuel sur le bloc « message rapide ». Demandé par Julien le 2026-08-25 : le bloc ne savait envoyer que
@@ -98,6 +99,23 @@ test.describe('Éditeur : le visuel dans la miniature du bloc', () => {
     const vignette = page.getByTestId('node-visuel');
     await expect(vignette).toHaveCount(1);
     await expect(vignette).toHaveAttribute('src', 'https://mba.messagingme.app/m/abc.png');
+  });
+});
+
+/**
+ * 🔴 ON ÉCRIT SUR TOUTE LA LARGEUR DU CHAMP (Julien, 2026-10-15 : « pas large, on peut pas écrire au-dessus du bouton
+ * + Variable »). Les boutons étaient posés DANS le champ, qui leur réservait 7 rem de marge droite, dans un panneau de
+ * 280 px : il restait une colonne de quelques mots. Les deux causes sont tenues ici, à l'écran de référence.
+ */
+test.describe('Bloc message rapide : le champ du texte', () => {
+  test('🔴 les boutons Variable et emoji sont hors du champ, et le champ a la largeur du panneau', async ({ page }) => {
+    await page.setViewportSize(TREIZE_POUCES);
+    await mockBuilder(page, []);
+    await page.goto('/workflows?open=wf1');
+    await page.locator('.react-flow__node').first().click();
+    await pasDeChevauchement(page, ['quick-node-body', 'quick-node-body-variable', 'quick-node-body-emoji']);
+    const champ = await page.getByTestId('quick-node-body').boundingBox();
+    expect(champ!.width).toBeGreaterThanOrEqual(300);
   });
 });
 

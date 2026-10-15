@@ -238,9 +238,10 @@ export function TemplateBodyField({ state, label, placeholder, hint, max }: {
           labelOf={(nom) => state.varLabels[Number(nom) - 1]}
           onChange={state.setBody}
           placeholder={placeholder}
-          className={`${inputCls} pr-28`}
+          className={inputCls}
         />
-        <div className="absolute bottom-2 right-2 flex items-center gap-1">
+        {/* Sous le champ, jamais dedans : même raison que `ChampCorpsVariables`. */}
+        <div className="mt-1 flex items-center justify-end gap-1">
           <button
             type="button"
             onClick={() => { setFieldPickerOpen((o) => !o); setEmojiOpen(false); }}

@@ -769,7 +769,8 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
           )}
         </div>
 
-        <div className="rounded-carte border border-ink-200 bg-white p-4 lg:w-[280px] lg:shrink-0 lg:overflow-y-auto">
+        {/* 360 px : à 280, le message d'un bloc s'écrivait sur une colonne de quelques mots (2026-10-15). */}
+        <div className="rounded-carte border border-ink-200 bg-white p-4 lg:w-[360px] lg:shrink-0 lg:overflow-y-auto">
           {!selected ? (
             <p className="text-sm text-ink-500">{t('Cliquez sur un bloc pour le configurer. Tirez une flèche depuis le point d’un bloc : lâchez-la sur un autre bloc pour les relier, ou dans le vide pour créer un bloc. Le ✕ en coin d’un bloc le supprime.', "Click a block to configure it. Drag an arrow from a block's dot: drop it on another block to connect, or in empty space to create a new block. The ✕ in a block's corner deletes it.")}</p>
           ) : (

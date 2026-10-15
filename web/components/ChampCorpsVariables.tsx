@@ -70,9 +70,12 @@ export function ChampCorpsVariables({
           onChange={onChange}
           placeholder={placeholder ?? t('Votre message…', 'Your message…')}
           testId={testId}
-          className={`${inputCls} ${compact ? 'min-h-[5rem] pr-24' : 'pr-28'}`}
+          className={compact ? `${inputCls} min-h-[5rem]` : inputCls}
         />
-        <div className="absolute bottom-2 right-2 flex items-center gap-1">
+        {/* Les boutons SOUS le champ, jamais dedans : posés par-dessus, ils lui réservaient une marge droite de
+            7 rem sur toute sa hauteur, et dans le panneau d'un scénario il ne restait qu'une colonne de quelques
+            mots pour écrire (2026-10-15). */}
+        <div className="mt-1 flex items-center justify-end gap-1">
           <SelecteurVariable
             fields={fields}
             testId={`${testId}-variable`}

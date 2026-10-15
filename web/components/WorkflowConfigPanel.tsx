@@ -1146,7 +1146,7 @@ function FonctionJs({ tenantId, code, champSource, champCible, fields, onPatch, 
       {/* ⚠️ LE RETRAIT EST SUR L'ENVELOPPE, PAS SUR LE CHAMP. `ml-3` posé sur un élément déjà en `w-full`
           S'AJOUTE à sa largeur (une marge n'entre jamais dans le calcul de `width`, quel que soit le
           `box-sizing`) : mesuré le 2026-09-11, le champ débordait de 12 px de son parent dans un panneau qui
-          en fait 280, ce qui y faisait apparaître une barre de défilement horizontale. Un conteneur qui
+          en faisait alors 280, ce qui y faisait apparaître une barre de défilement horizontale. Un conteneur qui
           porte le `pl-3` donne le même décalage visuel sans toucher à la largeur. */}
       <div className="pl-3">
         <textarea
