@@ -206,8 +206,11 @@ d'abord ; après restauration, les secrets chiffrés relus avec la même `ENCRYP
 ⏳ **Commencé le 2026-10-14.** Un mois de journaux lu (journal technique, même date) : y arrivent encore le webhook de
 Meta, deux sondes UptimeRobot et le contrôle de fumée ; le MCP de Claude Desktop de Julien est repointé sur `api.` ; le
 logo de chaque e-mail, qui venait de `mba.`, est passé sur la console (`f8db19fd`, à déployer avant la suppression).
-Restent, dans l'ordre : le webhook de Meta et UptimeRobot (Julien), des journaux muets quelques jours, une
-vérification chez Meta qu'aucun modèle approuvé ne porte un bouton en `mba.…/r/`, puis la suppression.
+✅ **Le webhook de Meta est passé sur `api.` le 2026-10-15** (Julien) : la vérification de Meta puis le premier
+message entrant sont arrivés par `api.`, le message dans l'Inbox à la seconde de son arrivée, et plus aucun appel
+de Meta sur `mba.` ensuite. Restent, dans l'ordre : UptimeRobot (Julien), des journaux muets quelques jours, une vérification chez Meta
+qu'aucun modèle approuvé ne porte un bouton en `mba.…/r/`, puis la suppression, avec la sonde de l'ancienne
+adresse dans `scripts/fumee.mjs` et `DEPLOY.md`.
 
 **Pourquoi** : décision de Julien du 2026-10-14, une seule adresse de production (§13, point 13). Le faire sur le
 VPS, avant la bascule, retire une étape au jour J.

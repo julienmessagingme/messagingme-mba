@@ -112,7 +112,8 @@ toute adresse MCP donnée à un intégrateur se dérive de `BASE` (l'API), jamai
 ⚠️ **`mba.messagingme.app` porte un routage par CHEMIN dans NPM** (`advanced_config` du proxy host 21), et
 c'est ce qui rend la migration sans risque : `/api/backend/*` va à `mba-api` **avec le préfixe retiré par
 nginx**, `/r/`, `/m/` et `/mcp` y vont directement, tout le reste va à `mba-web`. Conséquences :
-- **le webhook Meta répond à son adresse ACTUELLE, pour toujours**, sans rien reconfigurer chez Meta ;
+- **l'ancienne adresse du webhook Meta route encore** (`/api/backend/webhooks/meta`), mais Meta appelle
+  `api.messagingme.app/webhooks/meta` depuis le 2026-10-15 ;
 - les liens tracés et visuels RCS déjà envoyés continuent de résoudre ;
 - 🔴 **un conteneur de FRONT n'est plus sur le chemin critique de réception des messages clients**. Avant,
   le webhook de Meta traversait `mba-web` : si le site tombait, plus aucun message entrant n'arrivait.

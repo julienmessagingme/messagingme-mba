@@ -842,7 +842,7 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    conteneur est refusé**. ⚠️ Le webhook de Meta n'a rien à reconfigurer, c'est tout l'intérêt d'avoir un NOM.
 10. ~~Garder `mba.messagingme.app`~~ : 🔴 **supprimé, décidé par Julien le 2026-10-14** (« pas plusieurs adresses
     de production »), et AVANT la bascule, sur le VPS : le webhook de Meta passe sur
-    `https://api.messagingme.app/webhooks/meta` (un champ de l'app Meta, posé par Julien), les configurations MCP sur
+    `https://api.messagingme.app/webhooks/meta` (un champ de l'app Meta, posé par Julien ; ✅ fait le 2026-10-15, vérifié par un vrai message entrant), les configurations MCP sur
     `api.`, puis le nom disparaît (proxy NPM, DNS, conteneur `mba-web`). Les liens `/r/` et les visuels `/m/` déjà
     envoyés sous `mba.` cessent de répondre : **assumé par Julien**, qui a écarté la redirection. Il ne reste qu'une
     adresse de production, `api.messagingme.app`, et l'étape ne coûte plus rien au jour J.

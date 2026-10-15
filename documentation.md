@@ -94,14 +94,13 @@ console.messagingme.app   api.messagingme.app   mba.messagingme.app
 cliquent un lien tracé et l'opérateur télécom ne connaissent que cette étiquette. Déménager l'API vers un
 autre hébergeur ne coûte qu'un enregistrement DNS.
 
-🔴 **MAIS ÉTEINDRE OVH NE SE RÉSUME PAS À CE CHANGEMENT DE DNS.** Meta appelle toujours
-`mba.messagingme.app/api/backend/webhooks/meta`, et `mba.` EST le VPS. Les anciens `/r/`, `/m/` et `/mcp` y
-vivent aussi. Repointer seulement `api.` couperait le webhook entrant et toutes les adresses déjà
-distribuées. Ce qu'il faut faire AVANT, dans cet ordre : déplacer le routage de compatibilité de `mba.` vers
-un point d'entrée indépendant du VPS (règle Cloudflare ou équivalent) qui retire le préfixe `/api/backend/`
-vers `api.`, y route `/r/`, `/m/` et `/mcp`, et redirige le reste vers `engageme.`. Cette voie a un RETOUR
-ARRIÈRE et ne demande aucun geste chez Meta. Reconfigurer le webhook chez Meta est possible mais se fait sans
-filet : le temps que Meta reprenne l'adresse, les messages entrants tombent.
+🔴 **MAIS ÉTEINDRE OVH NE SE RÉSUME PAS À CE CHANGEMENT DE DNS.** `mba.` EST le VPS, et y répondent encore les
+anciens `/r/`, `/m/` et `/mcp` déjà distribués, plus l'ancienne console. Meta, lui, appelle
+`api.messagingme.app/webhooks/meta` depuis le 2026-10-15 (avant : `mba.messagingme.app/api/backend/webhooks/meta`).
+Le nom `mba.` est supprimé AVANT la bascule, une fois ses journaux muets (décision du 2026-10-14,
+`docs/ARCHITECTURE-CIBLE.md` § 13) : les liens `/r/` et `/m/` déjà envoyés sous ce nom cessent alors de répondre,
+ce que Julien a assumé en écartant la redirection. Changer l'URL de rappel chez Meta est sans perte : Meta vérifie
+la nouvelle adresse avant de l'enregistrer, et rejoue pendant 7 jours un envoi en échec.
 
 **Le routage par chemin de `mba.`** (`advanced_config` du proxy host NPM 21) : `/api/backend/*` va à
 `mba-api` **avec le préfixe retiré par nginx** (`rewrite`), `/r/`, `/m/` et `/mcp` y vont directement, tout le

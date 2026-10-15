@@ -237,7 +237,9 @@ node scripts/fumee.mjs
 
 Depuis le poste, PAS depuis le VPS : ce qu'on veut savoir, c'est ce que voit un client, à travers Cloudflare
 et NPM. Il vérifie les six chemins qui portent vraiment quelque chose, dont **le webhook Meta à l'adresse que
-Meta appelle réellement** (`mba.messagingme.app/api/backend/webhooks/meta`, pas `api.`).
+Meta appelle réellement** : `api.messagingme.app/webhooks/meta` depuis le 2026-10-15. L'ancienne,
+`mba.messagingme.app/api/backend/webhooks/meta`, reste sondée jusqu'à la suppression de `mba.` (son libellé dans
+le script la dit encore « actuelle » jusque-là).
 
 ⚠️ **Ce n'est pas une formalité.** Le 502 par IP périmée est INTERMITTENT : absent au premier déploiement de
 la journée, présent au second, sur exactement la même commande. Un conteneur `healthy` et un appel interne en

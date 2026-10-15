@@ -5,6 +5,24 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-15 : le webhook de Meta passe sur `api.messagingme.app` (lot 7 de la bascule)
+
+- **Le geste** : Julien remplace l'URL de rappel de l'app Meta « Messaging Me MBA » (cas d'usage WhatsApp, page
+  Configuration) : `https://mba.messagingme.app/api/backend/webhooks/meta` devient
+  `https://api.messagingme.app/webhooks/meta`, avec le même jeton de vérification et les mêmes champs abonnés.
+- **Vérifié avant** : sur `mba.`, Meta passait déjà par Cloudflare (adresses Cloudflare comme client dans les
+  journaux de NPM), et `api.` est dans la même zone ; `api.` refusait un jeton faux et un envoi non signé (403). Le
+  code ne pose aucune adresse de rappel par compte WhatsApp (`override_callback_uri`) : celle de l'app vaut pour tous
+  les numéros, Groupama compris.
+- **La preuve** : la vérification de Meta (`facebookplatform/1.0`) à 10:35:50 UTC, en 200 sur l'hôte NPM de `api.` ;
+  le premier envoi à 10:36:28, en 200, et le message de Julien dans l'Inbox à la même seconde ; plus aucun appel de
+  Meta sur `mba.` ensuite.
+- **À savoir pour les règles Cloudflare** : ce premier envoi portait l'agent `facebookexternalua`, quand ceux reçus
+  sur `mba.` portaient `Webhooks/1.1`. Une règle qui exempte Meta d'un défi se fonde donc sur le chemin
+  (`/webhooks/meta`), jamais sur l'agent ; la signature reste vérifiée par l'application.
+- **Retour arrière** : remettre l'ancienne URL dans le même champ, `mba.` la route encore ; Meta rejoue pendant
+  7 jours un envoi en échec.
+
 ## 2026-10-15 : la reprise après sinistre éprouvée chez Scaleway, sur la base du connecteur (lot 6 de la bascule)
 
 - **Le chemin** : une sauvegarde logique manuelle de `mm-hubspot-db` (14 s, 63 Ko), une instance jetable
