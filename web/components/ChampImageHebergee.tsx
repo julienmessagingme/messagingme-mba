@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { uploadRcsMedia } from '@/lib/api';
 import { imageDessinable } from '@/lib/image-dessinable';
+import { typesAcceptes, plafondPour, extensionDouteuse, genreDeLAdresse, estMov, type Accepte } from '@/lib/champ-fichier';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { Bouton } from '@/components/Bouton';
@@ -27,13 +28,11 @@ import { Bouton } from '@/components/Bouton';
  * lit avant de décider s'il peut s'en servir.
  */
 
-/** Extensions acceptées par l'opérateur RCS. Contrôlé ICI aussi parce qu'un `.webp` passe la validation
- *  d'URL et se fait refuser à l'ENVOI, c'est-à-dire devant un client. */
-const IMAGE_RE = /\.(jpe?g|png|gif)(\?.*)?$/i;
-const TAILLE_MAX = 2 * 1024 * 1024;
+/** Les types, plafonds et extensions acceptés vivent dans `lib/champ-fichier.ts`, testés : une extension refusée à
+ *  l'ENVOI (un `.webp` pour l'opérateur RCS) l'est devant un client, donc on avertit dès la saisie. */
 
 export function ChampImageHebergee({
-  tenantId, valeur, onChange, testIdPrefix = 'rcs-message', compact = false, avertirExtension = true, apparence = 'ligne',
+  tenantId, valeur, onChange, testIdPrefix = 'rcs-message', compact = false, avertirExtension = true, apparence = 'ligne', accepte = 'image',
 }: {
   tenantId: string;
   valeur: string;
@@ -53,6 +52,11 @@ export function ChampImageHebergee({
    * autres écrans et leurs specs visent ce rendu-là.
    */
   apparence?: 'ligne' | 'tuile';
+  /**
+   * Ce que le champ accepte (spec médias, § 3.6) : `image` (défaut, tous les écrans RCS et de campagne) ou
+   * `image-video-pdf`, le bloc « message rapide », qui part en WhatsApp (JPEG, PNG, MP4, PDF, sans GIF).
+   */
+  accepte?: Accepte;
 }) {
   const t = useT();
   const [busy, setBusy] = useState(false);
@@ -62,9 +66,24 @@ export function ChampImageHebergee({
 
   async function televerser(file: File) {
     setErreur(null);
-    // Poids vérifié AVANT la lecture : inutile d'encoder 20 Mo en base64 pour se les faire refuser ensuite.
-    if (file.size > TAILLE_MAX) {
-      setErreur(t('Image trop lourde : 2 Mo maximum.', 'Image too large: 2 MB maximum.'));
+    // Type et poids vérifiés AVANT la lecture : inutile d'encoder 16 Mo en base64 pour se les faire refuser ensuite.
+    const plafond = plafondPour(file.type, accepte);
+    if (plafond === 0 && accepte !== 'image' && estMov(file.type)) {
+      setErreur(t(
+        'Cette vidéo est au format MOV (celui de l’iPhone), que WhatsApp n’accepte pas. Convertissez-la en MP4 H.264 (profil Main) avec votre logiciel de montage ou un convertisseur, puis déposez le fichier .mp4.',
+        'This video is in MOV format (the iPhone one), which WhatsApp does not accept. Convert it to H.264 MP4 (Main profile) with your editing software or a converter, then upload the .mp4 file.',
+      ));
+      return;
+    }
+    if (plafond === 0) {
+      setErreur(accepte === 'image'
+        ? t('Format non accepté : JPEG, PNG ou GIF.', 'Format not accepted: JPEG, PNG or GIF.')
+        : t('Format non accepté : image JPEG ou PNG, vidéo MP4 ou PDF.', 'Format not accepted: JPEG or PNG image, MP4 video or PDF.'));
+      return;
+    }
+    if (file.size > plafond) {
+      const mo = Math.round(plafond / (1024 * 1024));
+      setErreur(t(`Fichier trop lourd : ${mo} Mo maximum.`, `File too large: ${mo} MB maximum.`));
       return;
     }
     setBusy(true);
@@ -87,10 +106,13 @@ export function ChampImageHebergee({
     }
   }
 
-  const douteuse = avertirExtension && valeur.trim() !== '' && !IMAGE_RE.test(valeur.trim());
+  const douteuse = avertirExtension && extensionDouteuse(valeur, accepte);
   const aUneImage = valeur.trim() !== '';
+  // Une vidéo ou un PDF n'ont pas de vignette (leur adresse n'est pas publique) : le genre se dit en toutes lettres.
+  const genre = genreDeLAdresse(valeur);
   // La vignette ne se dessine que pour une adresse https (`imageDessinable`) ; une autre garde son bouton « Retirer ».
-  const vignette = imageDessinable(valeur);
+  const vignette = genre === 'image' ? imageDessinable(valeur) : null;
+  const choisir = accepte === 'image' ? t('Choisir une image', 'Choose an image') : t('Choisir un fichier', 'Choose a file');
 
   const retirer = (
     <button
@@ -108,7 +130,9 @@ export function ChampImageHebergee({
       onChange={(e) => onChange(e.target.value)}
       data-testid={`${testIdPrefix}-image`}
       className={classe}
-      placeholder={t('…ou collez l’adresse d’une image déjà en ligne', '…or paste the URL of an image already online')}
+      placeholder={accepte === 'image'
+        ? t('…ou collez l’adresse d’une image déjà en ligne', '…or paste the URL of an image already online')
+        : t('…ou collez l’adresse d’un fichier déjà en ligne', '…or paste the URL of a file already online')}
     />
   );
 
@@ -126,7 +150,7 @@ export function ChampImageHebergee({
           {busy ? t('Envoi…', 'Uploading…') : vignette !== null ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={vignette} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" />
-          ) : t('Choisir une image', 'Choose an image')}
+          ) : choisir}
         </button>
       ) : (
         <div className="flex items-center gap-2">
@@ -137,10 +161,15 @@ export function ChampImageHebergee({
             data-testid={`${testIdPrefix}-image-upload`}
             className="shrink-0"
           >
-            {busy ? t('Envoi…', 'Uploading…') : t('Choisir une image', 'Choose an image')}
+            {busy ? t('Envoi…', 'Uploading…') : choisir}
           </Bouton>
           {aUneImage && (
             <>
+              {genre !== 'image' && (
+                <span className="shrink-0 text-sm text-ink-700" data-testid={`${testIdPrefix}-fichier-genre`}>
+                  {genre === 'video' ? t('Vidéo jointe', 'Video attached') : t('PDF joint', 'PDF attached')}
+                </span>
+              )}
               {vignette !== null && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -158,7 +187,7 @@ export function ChampImageHebergee({
       <input
         ref={fichierRef}
         type="file"
-        accept="image/jpeg,image/png,image/gif"
+        accept={typesAcceptes(accepte)}
         data-testid={`${testIdPrefix}-image-file`}
         className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) void televerser(f); }}
@@ -174,7 +203,9 @@ export function ChampImageHebergee({
       {erreur && <p className="mt-1 text-xs text-danger-700" data-testid={`${testIdPrefix}-image-error`}>{erreur}</p>}
       {douteuse && (
         <p className="mt-1 text-xs text-alerte-700" data-testid={`${testIdPrefix}-image-warn`}>
-          {t('Cette adresse ne finit pas par .jpg, .png ou .gif : l’opérateur refusera l’envoi.', 'This URL does not end in .jpg, .png or .gif: the carrier will refuse the send.')}
+          {accepte === 'image'
+            ? t('Cette adresse ne finit pas par .jpg, .png ou .gif : l’opérateur refusera l’envoi.', 'This URL does not end in .jpg, .png or .gif: the carrier will refuse the send.')
+            : t('Cette adresse ne finit pas par .jpg, .png, .mp4 ou .pdf : l’envoi sera refusé.', 'This URL does not end in .jpg, .png, .mp4 or .pdf: the send will be refused.')}
         </p>
       )}
     </div>

@@ -19,9 +19,15 @@ const AVEC_MESSAGE_RAPIDE: Graph = {
   edges: [],
 };
 
-async function mockBuilder(page: import('@playwright/test').Page, saved: Graph[]) {
+/** Un message rapide SANS bouton : son texte part seul (4 096 caractères), ou en légende d'un fichier (1 024). */
+const SANS_BOUTON: Graph = {
+  nodes: [{ id: 'n1', type: 'quick_message', position: { x: 0, y: 0 }, data: { wfType: 'quick_message', body: 'Voici le document' } }],
+  edges: [],
+};
+
+async function mockBuilder(page: import('@playwright/test').Page, saved: Graph[], graphe: Graph = AVEC_MESSAGE_RAPIDE) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
-  const wf = { id: 'wf1', name: 'Scénario E2E', graph: AVEC_MESSAGE_RAPIDE, createdAt: '', updatedAt: '' };
+  const wf = { id: 'wf1', name: 'Scénario E2E', graph: graphe, createdAt: '', updatedAt: '' };
   await page.route('**/api/backend/**', async (route) => {
     const req = route.request();
     const url = req.url();
@@ -32,7 +38,7 @@ async function mockBuilder(page: import('@playwright/test').Page, saved: Graph[]
       return json({ ok: true });
     }
     if (/\/workflows\/wf1$/.test(url)) return json({ workflow: wf });
-    if (url.endsWith('/workflows')) return json({ workflows: [{ id: 'wf1', name: 'Scénario E2E', graph: AVEC_MESSAGE_RAPIDE }] });
+    if (url.endsWith('/workflows')) return json({ workflows: [{ id: 'wf1', name: 'Scénario E2E', graph: graphe }] });
     if (url.includes('/email/accounts')) return json({ accounts: [] });
     if (url.includes('/email/templates')) return json({ templates: [] });
     if (url.includes('/templates')) return json({ templates: [] });
@@ -92,5 +98,26 @@ test.describe('Éditeur : le visuel dans la miniature du bloc', () => {
     const vignette = page.getByTestId('node-visuel');
     await expect(vignette).toHaveCount(1);
     await expect(vignette).toHaveAttribute('src', 'https://mba.messagingme.app/m/abc.png');
+  });
+});
+
+/**
+ * 🔴 UNE VIDÉO OU UN PDF SUR LE BLOC (spec médias du 2026-10-14, lot C). Leur adresse n'est pas publique : la miniature
+ * dit le genre au lieu d'une vignette cassée ; l'aide dit qu'ils ne partent qu'en WhatsApp ; et le texte, devenu une
+ * légende, est borné à 1 024 caractères comme Meta le fait.
+ */
+test.describe('Bloc message rapide : vidéo et PDF', () => {
+  test('🔴 un PDF s’annonce sur la miniature, l’aide dit « WhatsApp seulement », et le texte passe à 1 024', async ({ page }) => {
+    await mockBuilder(page, [], SANS_BOUTON);
+    await page.goto('/workflows?open=wf1');
+    await page.locator('.react-flow__node').first().click();
+    await expect(page.getByText(/\/ 4096$/)).toBeVisible();
+    await page.getByTestId('quick-node-image').fill('https://api.e2e.test/m/abcdefghjkmnpqrstvwxyz0123.pdf');
+    await page.getByTestId('quick-node-image').blur();
+    await expect(page.getByTestId('node-fichier')).toHaveText('PDF joint');
+    await expect(page.getByTestId('node-visuel')).toHaveCount(0);
+    await expect(page.getByText(/ne partent qu’en WhatsApp/)).toBeVisible();
+    await expect(page.getByText(/\/ 1024$/)).toBeVisible();
+    await expect(page.getByTestId('quick-node-image-warn')).toHaveCount(0);
   });
 });

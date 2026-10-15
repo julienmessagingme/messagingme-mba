@@ -15,6 +15,7 @@ import { ouvreUneSortie } from '@/lib/rcs-boutons';
 import { sortiesDuBloc, type EmailRecipientData } from '@/lib/workflow-canevas';
 import { brand, ink } from '@/lib/couleurs';
 import { Icone, type NomIcone } from '@/components/Icone';
+import { genreDeLAdresse } from '@/lib/champ-fichier';
 
 /**
  * Ce qui est DESSINÉ sur le canevas : la carte d'un bloc et la flèche entre deux blocs.
@@ -368,7 +369,13 @@ function WFNode({ id, data, selected }: NodeProps) {
           pour savoir lequel l'a. Même champ (`imageUrl`) pour le message rapide et le message RCS, donc un
           seul aperçu ici. `no-referrer` comme pour les cartes de carousel : l'hébergeur du client n'a pas à
           savoir d'où on regarde. */}
-      {visuel !== '' && (
+      {/* Une vidéo ou un PDF n'ont pas d'adresse publique (spec médias, § 3.2) : le genre se dit en toutes lettres. */}
+      {visuel !== '' && genreDeLAdresse(visuel) !== 'image' && (
+        <div className="border-t border-ink-200 px-2 py-1.5 text-[11px] font-medium text-ink-700" data-testid="node-fichier">
+          {genreDeLAdresse(visuel) === 'video' ? t('Vidéo jointe', 'Video attached') : t('PDF joint', 'PDF attached')}
+        </div>
+      )}
+      {visuel !== '' && genreDeLAdresse(visuel) === 'image' && (
         <div className="border-t border-ink-200 p-1.5" style={{ backgroundColor: '#efeae2' }}>
           <div className="flex h-16 w-full items-center justify-center overflow-hidden rounded-controle bg-ink-100 text-[9px] text-ink-500">
             {/* eslint-disable-next-line @next/next/no-img-element */}

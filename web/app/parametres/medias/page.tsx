@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
-import { listerMediatheque, supprimerDeLaMediatheque, type FichierMediatheque } from '@/lib/api';
+import { listerMediatheque, supprimerDeLaMediatheque, ouvrirFichierMediatheque, type FichierMediatheque } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
 import { useConfirmation } from '@/components/Confirmation';
@@ -47,6 +47,27 @@ function MediasInner({ session }: { session: Session }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * Une vidéo ou un PDF n'ont pas d'adresse publique : la console les télécharge sous session, puis les ENREGISTRE.
+   * ⚠️ Pas de `window.open` : appelé après un `await`, il est bloqué par Safari (et par les autres dès que le
+   * téléchargement dure), sans que la page puisse le savoir. Un lien `download` cliqué par le code ne l'est pas.
+   */
+  async function ouvrir(f: FichierMediatheque) {
+    setError(null);
+    try {
+      const adresse = URL.createObjectURL(await ouvrirFichierMediatheque(session.tenantId, f.code));
+      const lien = document.createElement('a');
+      lien.href = adresse;
+      lien.download = f.nom ?? `${f.code}.${f.mime === 'video/mp4' ? 'mp4' : 'pdf'}`;
+      document.body.appendChild(lien);
+      lien.click();
+      lien.remove();
+      setTimeout(() => URL.revokeObjectURL(adresse), 60_000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Ouverture impossible', 'Unable to open'));
+    }
+  }
 
   async function supprimer(f: FichierMediatheque) {
     const nom = f.nom ?? t('ce fichier', 'this file');
@@ -119,8 +140,14 @@ function MediasInner({ session }: { session: Session }) {
                 <tr key={f.code} className="border-b border-ink-50 last:border-0" data-testid="medias-ligne">
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-3">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={f.url} alt="" className="h-10 w-10 shrink-0 rounded-controle border border-ink-200 object-cover" />
+                      {f.mime.startsWith('image/') ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={f.url} alt="" className="h-10 w-10 shrink-0 rounded-controle border border-ink-200 object-cover" />
+                      ) : (
+                        <button type="button" onClick={() => void ouvrir(f)} data-testid="medias-ouvrir" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-controle border border-ink-200 bg-ink-50 text-[10px] font-semibold text-ink-700 hover:border-brand-400">
+                          {f.mime === 'video/mp4' ? t('Vidéo', 'Video') : 'PDF'}
+                        </button>
+                      )}
                       <span className="font-medium text-ink-900">{f.nom ?? f.code}</span>
                     </div>
                   </td>

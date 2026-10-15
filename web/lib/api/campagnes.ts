@@ -8,7 +8,7 @@
  * `lib/api.ts` reste le point d'entree et reexporte tout, donc AUCUN des 67 importeurs ne change.
  */
 
-import { request } from '../http';
+import { request, requestBlob } from '../http';
 import type { BulkTarget } from '../contact-filters';
 import type { CanalEtage } from '../campagne-chaine';
 
@@ -316,7 +316,7 @@ export function resolveTemplateParamsForConversation(
 export interface RcsMedia {
   id: string;
   code: string;
-  mime: 'image/jpeg' | 'image/png' | 'image/gif';
+  mime: 'image/jpeg' | 'image/png' | 'image/gif' | 'video/mp4' | 'application/pdf';
   taille: number;
   nom: string | null;
   createdAt: string;
@@ -349,6 +349,11 @@ export function listerMediatheque(tenantId: string): Promise<{ fichiers: Fichier
  */
 export function supprimerDeLaMediatheque(tenantId: string, code: string): Promise<void> {
   return request<void>(`/tenants/${tenantId}/rcs/media/${code}`, { method: 'DELETE' });
+}
+
+/** Un fichier de l'espace, sous session : une vidéo ou un PDF n'ont pas d'adresse publique (spec médias, § 3.2). */
+export function ouvrirFichierMediatheque(tenantId: string, code: string): Promise<Blob> {
+  return requestBlob(`/tenants/${tenantId}/rcs/media/${code}/fichier`);
 }
 
 /** Agents RCS du tenant (sélecteur de l'assistant de campagne). Liste vide = canal RCS non configuré. */

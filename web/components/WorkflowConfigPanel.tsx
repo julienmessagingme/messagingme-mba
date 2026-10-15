@@ -501,28 +501,30 @@ export function ConfigPanel({
                 label={t('Message', 'Message')}
                 placeholder={t('Votre message…', 'Your message…')}
                 testId="quick-node-body"
-                // ⚠️ LE PLAFOND DÉPEND DES BOUTONS, et ce n'est pas un détail d'affichage : avec des réponses
-                // rapides OU un bouton de lien, le message part en INTERACTIF, que Meta borne à 1024
-                // caractères ; sans aucun bouton, il part en texte simple, borné à 4096. Un seul chiffre
-                // affiché serait faux la moitié du temps.
-                max={lienActif || qr.some((x) => x.trim() !== '') ? 1024 : 4096}
+                // ⚠️ LE PLAFOND DÉPEND DES BOUTONS ET DU FICHIER, et ce n'est pas un détail d'affichage : avec des
+                // réponses rapides OU un bouton de lien, le message part en INTERACTIF, que Meta borne à 1024
+                // caractères ; avec un fichier sans bouton, le texte devient sa LÉGENDE, bornée à 1024 aussi (spec
+                // médias, § 3.4). Sans rien de tout ça, texte simple, borné à 4096. Le moteur refuse le même dépassement.
+                max={lienActif || qr.some((x) => x.trim() !== '') || String(d.imageUrl ?? '').trim() !== '' ? 1024 : 4096}
                 compact
               />
             </div>
-            {/* MÊME composant et MÊME champ (`imageUrl`) que le bloc RCS : un seul téléversement, un seul
-                format de stockage, et le visuel sert aux DEUX canaux. En WhatsApp il devient l'en-tête du
-                message interactif ; sur un parcours RCS, la carte du message. */}
+            {/* MÊME composant et MÊME champ (`imageUrl`) que le bloc RCS : un seul téléversement, un seul format de
+                stockage. Le champ porte aussi une vidéo ou un PDF (spec médias, § 3.3) : l'extension de l'adresse le dit.
+                En WhatsApp le fichier devient l'en-tête du message interactif ; sur un parcours RCS, une image devient
+                la carte du message, une vidéo ou un PDF font refuser l'envoi (ils ne partent qu'en WhatsApp). */}
             <div>
-              <label className="mb-1 block text-xs font-medium text-ink-500">{t('Image (facultatif)', 'Image (optional)')}</label>
+              <label className="mb-1 block text-xs font-medium text-ink-500">{t('Image, vidéo ou PDF (facultatif)', 'Image, video or PDF (optional)')}</label>
               <ChampImageHebergee
                 tenantId={tenantId}
                 valeur={(d.imageUrl as string) ?? ''}
                 onChange={(imageUrl) => onPatch({ imageUrl })}
                 testIdPrefix="quick-node"
+                accepte="image-video-pdf"
                 compact
               />
               <p className="mt-1 text-xs text-ink-500">
-                {t('2 Mo maximum.', '2 MB maximum.')}
+                {t('Image JPEG ou PNG (2 Mo), vidéo MP4 en H.264 ou PDF (16 Mo). La vidéo et le PDF ne partent qu’en WhatsApp.', 'JPEG or PNG image (2 MB), H.264 MP4 video or PDF (16 MB). Video and PDF only go out on WhatsApp.')}
               </p>
             </div>
             {/* BOUTON DE LIEN. 🔴 EXCLUSIF DES RÉPONSES RAPIDES, et ce n'est pas notre choix : chez Meta,
