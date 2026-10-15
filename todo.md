@@ -4,7 +4,9 @@
 
 Le but de Julien : à côté de « Connecter votre numéro WhatsApp », un bouton « Onboard with 360dialog » ; dès qu'un
 numéro est connecté par l'une des deux voies, l'autre bouton disparaît. Le lot 1 (la réception,
-`src/webhooks/receiver-360dialog.ts`) est fait. Prouvé à la main le 2026-10-15 avec la clé d'un numéro : l'envoi
+`src/webhooks/receiver-360dialog.ts`) est fait, et prouvé en production le soir même : premier numéro
+(`1111567578708598`) branché par `/multi_webhook` À CÔTÉ de UChat, un message reçu chez nous. Ce numéro n'est
+rattaché à aucun espace : ses messages sont rangés puis ignorés jusqu'au lot 2. Prouvé à la main le 2026-10-15 avec la clé d'un numéro : l'envoi
 d'un modèle par `waba-v2.360dialog.io/messages` ET par MM Lite (`/marketing_messages`) arrive (brain, LEARNINGS).
 - **Lot 2, le transport d'envoi.** Un fournisseur par WABA (`meta` ou `360dialog`) et la clé d'API du numéro
   chiffrée à côté du jeton (migration). Dans la fabrique (`src/meta/factory.ts`), un client 360dialog : autre hôte,
