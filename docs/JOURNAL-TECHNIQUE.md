@@ -5,6 +5,21 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-15 : la reprise après sinistre éprouvée chez Scaleway, sur la base du connecteur (lot 6 de la bascule)
+
+- **Le chemin** : une sauvegarde logique manuelle de `mm-hubspot-db` (14 s, 63 Ko), une instance jetable
+  `mm-restauration` (DB-DEV-S, adresse privée, 250 s), la restauration, puis une vérification dans l'image du
+  connecteur sur la machine des workers, en lecture seule.
+- **Ce qui a coincé, deux fois sans aucune erreur** : la restauration vers une base qui n'existait pas encore, puis
+  vers une base existante mais sur une instance sans l'utilisateur `mmhs_admin`, propriétaire de chaque objet de la
+  sauvegarde, ont toutes deux rendu `ready` en laissant une base vide. Avec la base créée et l'utilisateur présent,
+  la restauration a pris 28 s : `mmhs` (8 tables) et `pgboss_mmhs` (12 tables).
+- **Les preuves** : 20 tables et 247 lignes identiques à la source ; les 2 jetons HubSpot du portail cobaye
+  déchiffrés avec la clé du connecteur, aucun avec une clé fausse (le test distingue la clé). L'instance jetable est
+  supprimée ; la sauvegarde manuelle expire le 2026-10-17.
+- **Ce que la procédure en garde** : vérifier par le catalogue après chaque restauration, et prévoir qu'une nouvelle
+  instance change d'adresse et de certificat, donc d'image (`DEPLOY.md`, reprise après sinistre, section Scaleway).
+
 ## 2026-10-15 : le connecteur HubSpot déménage chez Scaleway (lot 5 de la bascule, la répétition)
 
 - **La préparation, sans coupure** : la base `mm-hubspot-db` (DB-DEV-S, adresse privée seule), le conteneur privé

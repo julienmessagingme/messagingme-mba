@@ -790,7 +790,10 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    `npm run migrate` a joué les 234 migrations sur la base jetable (PostgreSQL 17.11), extensions comprises.
 9. **La reprise après sinistre réécrite pour Scaleway** (`DEPLOY.md` décrit celle de Supabase) : sauvegardes de la
    base managée relevées, une restauration chronométrée sur une base jetable, et les secrets chiffrés relus avec la
-   même `ENCRYPTION_KEY`.
+   même `ENCRYPTION_KEY`. ✅ **Éprouvée le 2026-10-15 sur la base du connecteur** (lot 6, `DEPLOY.md`) : 28 s de
+   restauration, 2 jetons sur 2 relus. ⚠️ Scaleway déclare une restauration réussie même quand elle n'a rien écrit
+   (base cible absente, propriétaire d'origine absent) : la vérification par le catalogue fait partie de la procédure.
+   À refaire sur la base de production de Messaging Me, dès sa création.
 10. **Les gardes des bancs ne reconnaissent plus la production à « supabase »** dans son adresse (§7.8, point 3).
     ✅ **Fait le 2026-10-14** (lot 2a) : une garde POSITIVE commune aux cinq bancs (`scripts/garde-banc.ts`), qui
     n'accepte qu'une base marquée « banc » ou « jetable » par son hôte ou son nom.

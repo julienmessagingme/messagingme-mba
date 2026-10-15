@@ -192,6 +192,11 @@ donc aussi par la sonde du lot 1 (le vrai code, comparé à la vérité de `mmhs
 
 ## Lot 6 : la reprise après sinistre
 
+✅ **Fait le 2026-10-15 sur la base du connecteur.** Sauvegarde manuelle (14 s), instance jetable (250 s), restauration
+(28 s), vérification (3 s) : comptes identiques à la source, 2 jetons HubSpot sur 2 déchiffrés, 0 avec une clé fausse.
+La procédure est dans `DEPLOY.md`, avec son piège : sans base cible ou sans le propriétaire d'origine, la restauration
+se dit réussie et n'écrit rien. Reste : la rejouer sur la base de production de Messaging Me, dès sa création.
+
 **Tâches** : la section de `DEPLOY.md` réécrite pour la base managée (sauvegardes automatiques, rétention,
 instantané manuel avant le jour J) ; une restauration chronométrée sur une base jetable, celle du connecteur
 d'abord ; après restauration, les secrets chiffrés relus avec la même `ENCRYPTION_KEY`.

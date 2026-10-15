@@ -414,6 +414,33 @@ téléchargement de l'image) ; restauration 4 s ; relecture et déchiffrement 2 
 tables comptées à l'identique, dernière migration et dernier message identiques à la microseconde. Hors données, le RTO
 réel se mesure à la bascule (création de la base cible, recréation des conteneurs).
 
+### Chez Scaleway (le connecteur depuis le 2026-10-15, Messaging Me au jour J)
+
+La base managée porte ses propres sauvegardes : des sauvegardes LOGIQUES automatiques, une par jour, gardées 7 jours,
+dans la région (`backup_schedule` de l'instance, la première 24 h après sa création), et des sauvegardes manuelles
+(`scaleway-cli rdb backup create instance-id=<base> database-name=rdb name=<nom> expires-at=<date> region=nl-ams`).
+Les instantanés de bloc (`rdb snapshot create`, puis `rdb snapshot restore` qui crée une instance) existent aussi,
+non éprouvés.
+
+**Restaurer une sauvegarde logique**, la procédure éprouvée le 2026-10-15 sur la base du connecteur :
+1. Une instance de même moteur dans `mm-prive` (adresse privée seule), qui porte les MÊMES UTILISATEURS que la
+   source (`mmhs_admin` pour le connecteur), puisque la sauvegarde leur attribue chaque objet.
+2. La base cible CRÉÉE d'abord (`rdb database create`), puis les droits de l'utilisateur dessus (`rdb privilege set
+   ... permission=all`) : la restauration écrit DANS une base existante.
+3. `scaleway-cli rdb backup restore <sauvegarde> instance-id=<cible> database-name=<base> region=nl-ams --wait`.
+4. 🔴 **Vérifier par le catalogue** (`pg_namespace`, `pg_class`) que les schémas sont là : sans la base cible ou sans
+   le propriétaire d'origine, Scaleway déclare la restauration `ready` SANS RIEN AVOIR ÉCRIT (vécu deux fois le
+   2026-10-15). Puis compter table par table contre la source, et déchiffrer les secrets avec la même
+   `ENCRYPTION_KEY` (pour le connecteur, ses jetons HubSpot ; pour Messaging Me, `scripts/exercice-dechiffrer.ts`).
+5. Remettre en service : une nouvelle instance a une NOUVELLE ADRESSE et un NOUVEAU CERTIFICAT. Le certificat vit dans
+   l'image (`certs/`, `DB_SSL_CA_FILE`) : le committer et redéployer par le workflow, puis changer `DATABASE_URL` dans
+   les variables secrètes du conteneur et dans le `.env.prod` de la machine, et recréer les workers.
+
+**Dernière vérif DR chez Scaleway : 2026-10-15, réussie, sur la base du connecteur** (63 Ko). Sauvegarde manuelle
+14 s ; instance jetable prête en 250 s ; restauration 28 s ; vérification 3 s : 20 tables et 247 lignes identiques à
+la source, **2 jetons HubSpot sur 2** déchiffrés avec la clé du connecteur, **0 sur 2** avec une clé fausse. Le
+chemin des données tient en cinq minutes à cette taille ; le redéploiement pour le nouveau certificat s'y ajoute.
+
 ## Scaleway (cible de la bascule) : le socle et le bouton de déploiement
 
 La cible et ses raisons : `docs/ARCHITECTURE-CIBLE.md` (§7, §10, §10 bis). Le plan : lot 3 de
