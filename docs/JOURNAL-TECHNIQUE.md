@@ -5,6 +5,35 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-15 : vidéo et PDF dans le bloc « message rapide », et la médiathèque (lots B et C des médias)
+
+- **La décision** : Julien veut des vidéos et des PDF dans le bloc, et la livraison sans attendre la bascule Scaleway ;
+  les fichiers restent EN BASE (`rcs_media.bytes`) jusqu'au lot A (bucket), qui garde sa place après la bascule. Spec et
+  plan `2026-10-14-medias-message-rapide`, révisés le 2026-10-15.
+- **Lot B, le stock** : quota par offre (Free 0, Pro 100 Mo, Entreprise 500 Mo), dépôt sous verrou d'espace avec
+  empreinte, suppression refusée tant qu'un contenu cite le fichier puis douce 30 jours, purge dans la rétention
+  générale, module ouvert au Pro (il exigeait le RCS : l'image du bloc était refusée en 402 à tout espace Pro), écran
+  Paramètres > Médiathèque. Relu : 0 rouge, 9 jaunes, dont un pool de l'API qui pouvait geler sur dix suppressions
+  simultanées (la vérification prenait une seconde connexion sous le verrou), corrigé avant de livrer.
+- **Lot C, vidéo et PDF** : type tranché sur les octets, encodage d'une vidéo lu au dépôt (H.264, AAC, jamais High avec
+  images B), MOV d'iPhone refusé en le nommant, `/m/` réservé aux images, lecture (espace, code) pour l'envoi, en-tête
+  typé et `sendMedia`, texte borné à 1 024 avec un fichier, refus nommé sur un parcours RCS. Relu : 0 rouge, 9 jaunes,
+  dont un repli de la préparation qui appelait `fetch` nu sur une adresse saisie par le client (hérité de l'ancien
+  chemin des images) : il passe désormais par le téléchargement gardé des en-têtes de modèle.
+- **0237, poussée seule** (`3afa6c35`) : `supprime_le` et `empreinte`, nullables (l'ancien code dépose sans empreinte
+  entre le `migrate` et le `up`). Mesuré avant : 31 fichiers, 13,8 Mo, un espace, **5 groupes de doublons**, d'où
+  aucun index unique (il aurait fait échouer la migration). Relue en base : colonnes, 31 empreintes au bon format, CHECK
+  inchangé ; le vrai store passé contre la production en lecture seule (les lectures exécutées, les écritures sous
+  `EXPLAIN`), `utilisations` trouvant un vrai scénario. Empreintes rejouées après le `up` : aucune à rattraper.
+- **0238, poussée seule** (`3f570f07`) : le CHECK des types élargi à `video/mp4` et `application/pdf`, nom
+  `rcs_media_mime_check` LU en base avant le `drop`, `lock_timeout` de 5 s. Relue : une seule contrainte, cinq types.
+- **Le transport, mesuré** : un corps de 23 Mo traverse Cloudflare et le proxy du VPS (401 de notre API en 3,5 s).
+  La même mesure reste due sur le conteneur Scaleway avant la bascule.
+- **L'ordre** : migration seule, puis le serveur (CI lue job par job, `up` des services NOMMÉS, `mm-hubspot` laissé
+  arrêté), puis l'écran, poussé après l'API qui porte ses routes. Fiches d'aide rechargées (`aide:charger`).
+- **Ce qui reste** : le lot A après la bascule (`todo.md`) ; le refus d'une vidéo ou d'un PDF collés dans un bloc
+  `rcs_message` (jaune n° 5 du lot C) ; les essais réels (`docs/prive/ESSAIS-REELS.md`, § 7).
+
 ## 2026-10-15 : le webhook de Meta passe sur `api.messagingme.app` (lot 7 de la bascule)
 
 - **Le geste** : Julien remplace l'URL de rappel de l'app Meta « Messaging Me MBA » (cas d'usage WhatsApp, page
