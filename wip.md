@@ -80,12 +80,23 @@ Décision de Julien le 2026-10-14 : on reprend juste après la bascule Scaleway,
 1. les pages légales, françaises et anglaises, mises en ligne sur www.messagingme.fr (Geoffrey a les fichiers) ;
 2. la publication du plugin 0.2.0 (`gh workflow run plugin.yml --ref main`), pas avant : ses liens viseraient des
    pages absentes ;
-3. l'espace de démo peuplé (livraison D), puis le compte du relecteur créé par Julien ;
+3. ✅ l'espace de démo peuplé (livraison D, 2026-10-15) et le compte du relecteur créé par Julien ;
 4. la soumission par Julien : le connecteur, puis le plugin. Les champs à recopier vivent dans `docs/prive/`.
 
-L'espace de démo est « Messaging Me Tech SANDBOX ». Il n'a aucune connexion à renouveler (mesuré le 2026-10-14) : son
-WABA est dans NOTRE portefeuille, n'a pas de jeton propre et tourne sur le jeton global, un utilisateur système qui
-n'expire jamais. L'échéance du 16 octobre annoncée ici visait un ancien espace, absent de la base.
+L'espace de démo est « Messaging Me demo » (ex « Espace de Test superchat », +33 5 25 68 02 47), PAS la sandbox, qui
+porte des contacts tiers et le travail des prospects (décision de Julien, 2026-10-15). Son jeton propre est un
+utilisateur système qui n'expire jamais. Rempli le 2026-10-15 par nos propres outils MCP, signés par son
+administrateur (autorisation révoquée ensuite) : un agent IA actif et répondant de l'espace, la vitrine importée,
+deux modèles approuvés, une bulle, 10 € de crédit IA. Reste : des conversations depuis nos téléphones
+(`docs/prive/ESSAIS-REELS.md`).
+
+## LOT 6 : LES CAS D'USAGE, LES TARIFS ET LES INDUSTRIES (CADRÉ LE 2026-10-15)
+
+Spec : [docs/superpowers/specs/2026-10-15-cas-d-usage-design.md](docs/superpowers/specs/2026-10-15-cas-d-usage-design.md),
+plan : [docs/superpowers/plans/2026-10-15-cas-d-usage.md](docs/superpowers/plans/2026-10-15-cas-d-usage.md). Sept cas
+d'usage, la page des tarifs et la rubrique « Industries » (première : Claude Code et Codex), en français et en
+anglais, avec un film par cas, en trois livraisons. Précédé de l'audit SEO de la vitrine
+(`docs/prive/2026-10-15-audit-seo-vitrine.md`) et d'un geste de Julien : la Search Console et Bing Webmaster Tools.
 
 ## CE QUI ATTEND UN ESSAI RÉEL
 
