@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFile } from 'node:fs/promises';
-import { filtersActive, filtresRepris } from './contact-filters';
+import { filtersActive, filtresRepris, type ContactFilters } from './contact-filters';
 
 /**
  * `filtresRepris` : des filtres reconstruits depuis une source OPAQUE.
@@ -61,39 +60,25 @@ describe('filtresRepris', () => {
     expect(filtresRepris({ tags: [3, null] }).tags).toBeUndefined();
   });
 
-  /**
-   * 🔴 LA LISTE DES MEMBRES EST TENUE À LA MAIN, ET RIEN DANS LE LANGAGE NE LA TIENT ALIGNÉE.
-   *
-   * Tous les membres de `ContactFilters` sont OPTIONNELS : en oublier un dans `filtresRepris` reste un
-   * `ContactFilters` parfaitement valide pour le compilateur. Le symptôme serait muet et lointain : le
-   * nouveau filtre s'enregistrerait dans le brouillon et disparaîtrait à la reprise, donc la campagne
-   * viserait une autre population que celle qu'on a laissée à l'écran.
-   *
-   * Ce test DÉRIVE la liste de l'interface elle-même, il ne la recopie pas : recopier ne ferait que déplacer
-   * la dérive d'un fichier à l'autre. Même idiome que `web/lib/manques-cablage.test.ts`.
-   */
-  it('🔴 CHAQUE membre de ContactFilters est repris, la liste ne peut pas dériver', async () => {
-    const source = await readFile(new URL('./contact-filters.ts', import.meta.url), 'utf8');
-    const interfaceContactFilters = source.slice(
-      source.indexOf('export interface ContactFilters {'),
-      source.indexOf('}', source.indexOf('export interface ContactFilters {')),
-    );
-    const membres = [...interfaceContactFilters.matchAll(/^\s{2}(\w+)\?:/gm)].map((m) => m[1]!);
-    expect(membres.length, 'l’interface n’a pas été lue : ce test ne garde plus rien').toBeGreaterThan(5);
-
-    // ⚠️ LES COMMENTAIRES SONT RETIRÉS AVANT DE CHERCHER. Sans ça, un membre seulement CITÉ dans une note
-    // (« on ne reprend pas encore X ») passerait pour repris, et le garde-fou annoncerait une garantie qu'il
-    // n'apporte pas. Et on cherche le NOM, pas une forme précise : les membres à valeurs fermées se lisent
-    // `o.tagMode`, les autres passent par une aide `texte('nameSearch')`. Imposer une écriture unique serait
-    // contraindre le code pour arranger son test.
-    const corps = source
-      .slice(source.indexOf('export function filtresRepris'), source.indexOf('/** Encode des ContactFilters'))
-      .replace(/\/\*[\s\S]*?\*\//g, ' ')
-      .replace(/\/\/.*/g, ' ');
-    for (const membre of membres) {
-      expect(corps, `« ${membre} » n’est pas repris : il se perdra à la reprise d’un brouillon de campagne, en silence`)
-        .toMatch(new RegExp(`\\b${membre}\\b`));
+  it('🔴 reprend chaque critère du contrat partagé depuis un brouillon', () => {
+    // Required force à compléter ce cas lorsqu'un nouveau critère entre dans le contrat.
+    const tous: Required<ContactFilters> = {
+      tags: ['vip'], tagMode: 'or', tagsExclude: ['spam'], optIn: 'opted_in',
+      phonePrefix: '+336', phoneContains: '42', nameSearch: 'Marc',
+      joignabiliteWhatsApp: 'connu_injoignable', risque: 'eleve',
+      fieldFilters: [{ key: 'ville', op: 'eq', value: 'Lyon' }],
+    };
+    expect(filtresRepris(tous)).toEqual(tous);
+    for (const [critere, valeur] of Object.entries(tous)) {
+      if (critere === 'tagMode') continue; // modifie les tags, ne filtre pas seul
+      expect(filtersActive({ [critere]: valeur }), critere).toBe(true);
     }
+  });
+
+  it('un champ vide ou sans clé ne rend pas le ciblage actif', () => {
+    expect(filtersActive({ fieldFilters: [{ key: 'ville', op: 'eq', value: '' }] })).toBe(false);
+    expect(filtersActive({ fieldFilters: [{ key: '', op: 'eq', value: 'Lyon' }] })).toBe(false);
+    expect(filtersActive({ fieldFilters: [{ key: 'ville', op: 'empty', value: '' }] })).toBe(true);
   });
 
   it('🔴 le niveau de risque d’un brouillon est repris, un niveau inconnu est jeté (l’écran le montre absent)', () => {

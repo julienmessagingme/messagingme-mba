@@ -1,4 +1,7 @@
 import type { AnalyseDeFiche } from '../analysis/fiche';
+import { OPERATEURS_FICHE_SEULS, type OperateurFicheSeul } from '../../web/lib/partage/contact-filters';
+export { OPERATEURS_FICHE_SEULS } from '../../web/lib/partage/contact-filters';
+export type { OperateurFicheSeul } from '../../web/lib/partage/contact-filters';
 import { champFiche, type ChampFiche, type CleFicheFixe } from './champs-fiche';
 
 /**
@@ -15,9 +18,6 @@ import { champFiche, type ChampFiche, type CleFicheFixe } from './champs-fiche';
  * qui reçoit une clé d'analyse la cherche dans le jsonb, où elle n'est jamais : il ne trouve personne.
  */
 
-/** Les opérateurs qu'un champ perso (jsonb, texte) ne connaît pas : ils n'ont de sens que sur une colonne typée. */
-export const OPERATEURS_FICHE_SEULS = ['in', 'gte', 'lte', 'is_true', 'is_false', 'newer_than_days'] as const;
-export type OperateurFicheSeul = (typeof OPERATEURS_FICHE_SEULS)[number];
 export type OperateurFiche = OperateurFicheSeul | 'empty' | 'not_empty';
 
 export function estOperateurFicheSeul(op: unknown): op is OperateurFicheSeul {

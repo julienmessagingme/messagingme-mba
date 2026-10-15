@@ -231,7 +231,7 @@ describe('POST /tenants/:tenantId/contacts/import', { timeout: 30_000 }, () => {
     await app.close();
   });
 
-  it('GET contacts?risque=eleve -> chemin requêtable, avec le niveau (un critère oublié dans hasFilters ne filtrerait RIEN)', async () => {
+  it('GET contacts?risque=eleve -> chemin requêtable, avec le niveau', async () => {
     const cap: QueryCapture = { queryFilters: [], countFilters: [], idsFilters: [] };
     const app = inject(new FakeContacts(), new FakeFields(), cap);
     const res = await app.inject({ method: 'GET', url: '/tenants/t1/contacts?risque=eleve', headers: { authorization: `Bearer ${token}` } });
@@ -264,6 +264,18 @@ describe('POST /tenants/:tenantId/contacts/import', { timeout: 30_000 }, () => {
     // Aucun filtre valide -> chemin historique listContacts (Julie), queryContacts jamais appelé.
     expect(res.json<{ contacts: Array<{ profileName: string }> }>().contacts[0]?.profileName).toBe('Julie');
     expect(cap.queryFilters).toHaveLength(0);
+    await app.close();
+  });
+
+  it('GET contacts avec un filtre de champ sans valeur garde le chemin sans filtre', async () => {
+    const cap: QueryCapture = { queryFilters: [], countFilters: [], idsFilters: [] };
+    const app = inject(new FakeContacts(), new FakeFields(), cap);
+    const fields = encodeURIComponent(JSON.stringify([{ key: 'ville', op: 'eq', value: '' }]));
+    const res = await app.inject({ method: 'GET', url: `/tenants/t1/contacts?fields=${fields}`, headers: { authorization: `Bearer ${token}` } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ contacts: Array<{ profileName: string }> }>().contacts[0]?.profileName).toBe('Julie');
+    expect(cap.queryFilters).toEqual([]);
+    expect(cap.countFilters).toEqual([]);
     await app.close();
   });
 

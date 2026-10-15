@@ -1,64 +1,13 @@
-// Types + sérialisation des filtres de contacts. Module PUR (aucune dépendance React/Next/navigateur au
-// chargement) -> testable en unitaire depuis la suite racine (tests/web-contact-filters.test.ts) et importé
-// par web/lib/api.ts. `filtersToQuery` est le MIROIR de `parseFilters` côté serveur (src/http/import.ts) :
-// tout nouvel opérateur / critère doit être ajouté aux DEUX bouts en même temps (sinon filtre silencieusement
-// no-op). Le test anti-drift verrouille ce contrat.
+// Reprise des brouillons et sérialisation des filtres de contacts. Le contrat pur partagé avec le serveur
+// (types, opérateurs et noms des query params) vit dans `partage/contact-filters`.
 
-import { estNiveauRisque, type NiveauRisque } from './risque';
-
-/** Opérateurs de filtre sur un champ perso. `eq`/`contains`/`not_contains` exigent une valeur ;
- *  `empty`/`not_empty` n'en prennent pas. Miroir de `ContactFieldOp` côté serveur. */
-export type ContactFieldOp = 'eq' | 'contains' | 'not_contains' | 'empty' | 'not_empty';
-
-/**
- * Les opérateurs des champs de la DERNIÈRE ANALYSE (colonnes typées de la fiche), qu'un champ perso ne connaît pas.
- * Miroir de `OPERATEURS_FICHE_SEULS` (`src/crm/filtre-fiche.ts`), tenu par `tests/filtre-fiche.test.ts`. Quels
- * opérateurs pour quel champ : la route `champs-fiche` le dit, l'écran n'en garde aucune copie.
- */
-export const OPERATEURS_FICHE_SEULS = ['in', 'gte', 'lte', 'is_true', 'is_false', 'newer_than_days'] as const;
-export type OperateurFicheSeul = (typeof OPERATEURS_FICHE_SEULS)[number];
-
-/** Un filtre sur la valeur d'un champ : perso (jsonb, texte) ou de la dernière analyse. `value` ignorée pour
- *  `empty`/`not_empty`/`is_true`/`is_false`. */
-export interface ContactFieldFilter { key: string; op: ContactFieldOp | OperateurFicheSeul; value: string }
-
-/** Critères composables de la « Liste de contacts » (source de campagne) et du mini-CRM. Tous optionnels. */
-export interface ContactFilters {
-  tags?: string[];
-  tagMode?: 'and' | 'or';
-  /** « Ne possède pas » : exclut tout contact portant au moins un de ces tags. */
-  tagsExclude?: string[];
-  optIn?: 'opted_in' | 'opted_out' | 'unknown';
-  phonePrefix?: string;
-  phoneContains?: string;
-  nameSearch?: string;
-  /**
-   * Joignabilité WhatsApp MÉMORISÉE (migration 0133). `connu_injoignable` = « écarte ceux qu'on SAIT
-   * injoignables ». ⚠️ Un INCONNU n'est pas un injoignable : un contact jamais sollicité reste dans
-   * l'audience, sinon le filtre viderait la liste de tout client qui démarre.
-   */
-  joignabiliteWhatsApp?: 'connu_injoignable';
-  /**
-   * Le niveau de risque de désengagement CALCULÉ (lot 7). Une fiche jamais calculée n'est dans aucun niveau.
-   * ⚠️ Le serveur REFUSE (400) une valeur hors des quatre niveaux, il ne l'ignore pas : ignorée, « élevé »
-   * rendrait tout l'espace.
-   */
-  risque?: NiveauRisque;
-  fieldFilters?: ContactFieldFilter[];
-}
-
-/** Cible d'une action en masse : ids explicites, OU filtres re-résolus côté serveur (+ exclusions des lignes décochées). */
-export type BulkTarget = { ids: string[] } | { filters: ContactFilters; excludeIds?: string[] };
-
-/** Un filtre est-il posé ? (distingue « aucun résultat » de « aucun contact du tout », et gate le chemin
- *  requêtable vs la liste par défaut). Partagé par le mini-CRM et la sélection de destinataires de campagne. */
-export function filtersActive(f: ContactFilters): boolean {
-  return Boolean(
-    f.tags?.length || f.tagsExclude?.length || f.optIn || f.phonePrefix || f.phoneContains || f.nameSearch ||
-    f.joignabiliteWhatsApp || f.risque ||
-    f.fieldFilters?.some((ff) => ff.op === 'empty' || ff.op === 'not_empty' || ff.op === 'is_true' || ff.op === 'is_false' || ff.value.trim() !== ''),
-  );
-}
+import { estNiveauRisque } from './risque';
+import {
+  CONTACT_FIELD_OPS, CONTACT_FILTER_QUERY_KEYS, OPERATEURS_FICHE_SEULS,
+  type ContactFieldOp, type ContactFieldFilter, type ContactFilters, type OperateurFicheSeul,
+} from './partage/contact-filters';
+export { filtersActive, OPERATEURS_FICHE_SEULS } from './partage/contact-filters';
+export type { ContactFieldOp, ContactFieldFilter, ContactFilters, BulkTarget, OperateurFicheSeul } from './partage/contact-filters';
 
 /**
  * Des `ContactFilters` reconstruits depuis une source OPAQUE, membre par membre.
@@ -83,7 +32,7 @@ export function filtresRepris(v: unknown): ContactFilters {
   };
   // 🔴 Les opérateurs de la dernière analyse en font partie : un brouillon repris qui les jetterait perdrait son
   // filtre d'analyse, et sa campagne partirait à une audience plus large que celle qu'on avait construite.
-  const ops: ReadonlyArray<ContactFieldOp | OperateurFicheSeul> = ['eq', 'contains', 'not_contains', 'empty', 'not_empty', ...OPERATEURS_FICHE_SEULS];
+  const ops: ReadonlyArray<ContactFieldOp | OperateurFicheSeul> = [...CONTACT_FIELD_OPS, ...OPERATEURS_FICHE_SEULS];
   const champs = (Array.isArray(o.fieldFilters) ? (o.fieldFilters as unknown[]) : [])
     .filter((x): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x))
     // `value` est requis MÊME pour `empty`/`not_empty`, qui l'ignorent : le type le déclare non optionnel, et
@@ -107,15 +56,16 @@ export function filtresRepris(v: unknown): ContactFilters {
 /** Encode des ContactFilters en query string (miroir de parseFilters côté serveur, src/http/import.ts). */
 export function filtersToQuery(f: ContactFilters): URLSearchParams {
   const qs = new URLSearchParams();
-  if (f.tags && f.tags.length > 0) qs.set('tags', f.tags.join(','));
-  if (f.tagMode === 'or') qs.set('tagMode', 'or');
-  if (f.tagsExclude && f.tagsExclude.length > 0) qs.set('tagsExclude', f.tagsExclude.join(','));
-  if (f.optIn) qs.set('optIn', f.optIn);
-  if (f.phonePrefix) qs.set('phonePrefix', f.phonePrefix);
-  if (f.phoneContains) qs.set('phoneContains', f.phoneContains);
-  if (f.nameSearch) qs.set('nameSearch', f.nameSearch);
-  if (f.joignabiliteWhatsApp) qs.set('joignabilite', f.joignabiliteWhatsApp);
-  if (f.risque) qs.set('risque', f.risque);
-  if (f.fieldFilters && f.fieldFilters.length > 0) qs.set('fields', JSON.stringify(f.fieldFilters));
+  const k = CONTACT_FILTER_QUERY_KEYS;
+  if (f.tags && f.tags.length > 0) qs.set(k.tags, f.tags.join(','));
+  if (f.tagMode === 'or') qs.set(k.tagMode, 'or');
+  if (f.tagsExclude && f.tagsExclude.length > 0) qs.set(k.tagsExclude, f.tagsExclude.join(','));
+  if (f.optIn) qs.set(k.optIn, f.optIn);
+  if (f.phonePrefix) qs.set(k.phonePrefix, f.phonePrefix);
+  if (f.phoneContains) qs.set(k.phoneContains, f.phoneContains);
+  if (f.nameSearch) qs.set(k.nameSearch, f.nameSearch);
+  if (f.joignabiliteWhatsApp) qs.set(k.joignabiliteWhatsApp, f.joignabiliteWhatsApp);
+  if (f.risque) qs.set(k.risque, f.risque);
+  if (f.fieldFilters && f.fieldFilters.length > 0) qs.set(k.fieldFilters, JSON.stringify(f.fieldFilters));
   return qs;
 }

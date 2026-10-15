@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
-  CLES_FILTRABLES, OPERATEURS_FICHE_SEULS, clauseFiltreFiche, evaluerFiltreFiche, lireFiltreFiche, operateursDuChamp,
+  CLES_FILTRABLES, clauseFiltreFiche, evaluerFiltreFiche, lireFiltreFiche, operateursDuChamp,
   texteDeLaCopie,
 } from '../src/crm/filtre-fiche';
 import { CHAMPS_FICHE_FIXES, champFiche } from '../src/crm/champs-fiche';
-import { OPERATEURS_FICHE_SEULS as OPERATEURS_CONSOLE } from '../web/lib/contact-filters';
 import type { AnalyseDeFiche } from '../src/analysis/fiche';
 
 /**
@@ -44,10 +43,6 @@ describe('les champs filtrables et leurs opérateurs', () => {
     expect(operateursDuChamp(champFiche('analyse_urgence')!)).toEqual(['gte', 'lte', 'empty', 'not_empty']);
     expect(operateursDuChamp(champFiche('analyse_resolue')!)).toEqual(['is_true', 'is_false', 'empty', 'not_empty']);
     expect(operateursDuChamp(champFiche('analyse_le')!)).toEqual(['newer_than_days', 'empty', 'not_empty']);
-  });
-
-  it('la console et le serveur connaissent les mêmes opérateurs de colonne', () => {
-    expect([...OPERATEURS_CONSOLE]).toEqual([...OPERATEURS_FICHE_SEULS]);
   });
 });
 

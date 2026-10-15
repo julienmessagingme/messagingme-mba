@@ -5,6 +5,7 @@ import { importContacts } from '../crm/import';
 import type { ContactStore, ImportDeps } from '../crm/import';
 import type { ColumnMapping } from '../crm/types';
 import type { ContactRow, ContactFilters, ContactFieldFilter } from '../crm/contact-store.pg';
+import { CONTACT_FILTER_QUERY_KEYS, filtersActive } from '../../web/lib/partage/contact-filters';
 import { gardeEtendue } from '../auth/middleware';
 import type { Guard, PreHandler } from '../auth/middleware';
 import { espaceVerifie } from './scope';
@@ -38,36 +39,31 @@ export interface ImportRouteDeps extends ImportDeps {
 *  Seule exception à « ignoré » : un `risque` hors des quatre niveaux est refusé (400, `FiltreContactInvalide`).
 *  Exporté pour le test de round-trip anti-drift (filtersToQuery côté web <-> parseFilters ici). */
 export function parseFilters(q: Record<string, unknown>): ContactFilters {
+  const k = CONTACT_FILTER_QUERY_KEYS;
   const csv = (v: unknown): string[] =>
     typeof v === 'string' ? v.split(',') : [];
   // Les filtres de champ arrivent ici en JSON dans un query param : illisible -> ignoré (donnée externe).
   let parsed: unknown = null;
-  if (typeof q.fields === 'string' && q.fields.trim() !== '') {
-    try { parsed = JSON.parse(q.fields) as unknown; } catch { /* filtre de champ illisible -> ignoré (donnée externe) */ }
+  const champs = q[k.fieldFilters];
+  if (typeof champs === 'string' && champs.trim() !== '') {
+    try { parsed = JSON.parse(champs) as unknown; } catch { /* filtre de champ illisible -> ignoré (donnée externe) */ }
   }
   // 🔴 HORS du `try` : un filtre d'analyse invalide lève `FiltreContactInvalide` (400), qu'un `catch` avalerait en
   // « aucun filtre », donc en tout l'espace.
   const fieldFilters: ContactFieldFilter[] = Array.isArray(parsed) ? normalizeFieldFilters(parsed) : [];
   return buildContactFilters({
-    tags: csv(q.tags),
-    tagMode: q.tagMode,
-    tagsExclude: csv(q.tagsExclude),
-    optIn: q.optIn,
-    phonePrefix: q.phonePrefix,
-    phoneContains: q.phoneContains,
-    nameSearch: q.nameSearch,
-    joignabilite: q.joignabilite,
+    tags: csv(q[k.tags]),
+    tagMode: q[k.tagMode],
+    tagsExclude: csv(q[k.tagsExclude]),
+    optIn: q[k.optIn],
+    phonePrefix: q[k.phonePrefix],
+    phoneContains: q[k.phoneContains],
+    nameSearch: q[k.nameSearch],
+    joignabilite: q[k.joignabiliteWhatsApp],
     // Une valeur hors des quatre niveaux lève `FiltreContactInvalide` (400), jamais ignorée : cf. `risqueFiltre`.
-    risque: q.risque,
+    risque: q[k.risque],
     fieldFilters,
   });
-}
-
-/** Un des filtres avancés est-il posé ? (sinon on garde le chemin `listContacts` historique, avec `tag`.) */
-function hasFilters(f: ContactFilters): boolean {
-  // 🔴 Tout nouveau critère entre ici aussi : un critère oublié n'échoue pas, il retombe sur la liste par défaut,
-  // donc il s'affiche coché et ne filtre rien.
-  return Boolean(f.tags?.length || f.tagsExclude?.length || f.optIn || f.phonePrefix || f.phoneContains || f.nameSearch || f.joignabiliteWhatsApp || f.risque || f.fieldFilters?.length);
 }
 
 /** Construit un mapping par défaut depuis la reconnaissance de colonnes. */
@@ -105,7 +101,7 @@ export function registerImport(app: FastifyInstance, deps: ImportRouteDeps, gard
     const filters = parseFilters(q);
     // Filtres avancés posés -> chemin requêtable (query + total pour le compteur). Sinon on garde le
     // chemin historique `listContacts` (avec le paramètre `tag` simple), rétro-compatible.
-    if (hasFilters(filters)) {
+    if (filtersActive(filters)) {
       const [contacts, total] = await Promise.all([
         deps.contacts.query(effectiveTenant, filters, limit, offset),
         deps.contacts.count(effectiveTenant, filters),
