@@ -418,6 +418,8 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
     { key: 'parametres-groupe', label: t('Paramètres', 'Settings'), icone: icons.settings, children: [
       { key: 'parametres', href: '/parametres', label: t('Général', 'General') },
       { key: 'parametres-credit', href: '/parametres/credit', label: t('Crédit IA', 'AI credit') },
+      // Les fichiers que les messages envoient (spec médias du 2026-10-14) : la jauge du quota, la liste, la suppression.
+      { key: 'parametres-medias', href: '/parametres/medias', label: t('Médiathèque', 'Media library'), fonction: 'scenarios' },
       // L'offre de l'espace (lot 6) : la grille, ce qui est consommé, et « Passer en Pro ».
       { key: 'offre', href: '/offre', label: t('Offre', 'Plan') },
     ] },

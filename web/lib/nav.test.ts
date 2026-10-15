@@ -105,12 +105,13 @@ describe('le rangement du 2026-09-29', () => {
   });
 
   // L'Offre (lot 6, 2026-10-07) s'y ajoute après le Crédit IA : c'est aussi un réglage de l'ESPACE.
-  it('🔴 « Paramètres » est un GROUPE du bloc bas : Général, Crédit IA et Offre', () => {
+  it('🔴 « Paramètres » est un GROUPE du bloc bas : Général, Crédit IA, Médiathèque et Offre', () => {
     const groupe = arbresNav(t).adminBas.find((e) => e.label === 'Paramètres');
     expect(groupe?.href).toBeUndefined();
     expect((groupe?.children ?? []).map(feuille)).toEqual([
       { key: 'parametres', href: '/parametres', label: 'Général', enfants: 0 },
       { key: 'parametres-credit', href: '/parametres/credit', label: 'Crédit IA', enfants: 0 },
+      { key: 'parametres-medias', href: '/parametres/medias', label: 'Médiathèque', enfants: 0 },
       { key: 'offre', href: '/offre', label: 'Offre', enfants: 0 },
     ]);
   });
@@ -385,7 +386,7 @@ describe('la barre selon l’offre', () => {
   it('🔴 une Base : tous les écrans des fonctions gardées sont grisés, et eux seuls', () => {
     const grises = verrouillees(navPourOffre(toutes(), new Set()));
     expect(grises.sort()).toEqual(['chaine', 'dashboard-quali', 'dashboard-tableaux', 'email-accounts', 'email-templates', 'flows', 'inbox', 'mba-settings',
-      'perf-synthese', 'publicites', 'quanti-couts', 'quanti-funnel', 'quanti-messages', 'quanti-performance', 'rcs-messages', 'workflows'].sort());
+      'parametres-medias', 'perf-synthese', 'publicites', 'quanti-couts', 'quanti-funnel', 'quanti-messages', 'quanti-performance', 'rcs-messages', 'workflows'].sort());
   });
 
   it('un Pro : le quantitatif s’ouvre, la Synthèse, l’analyse, Mes tableaux et le RCS restent grisés', () => {

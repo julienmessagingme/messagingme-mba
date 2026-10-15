@@ -333,6 +333,24 @@ export function uploadRcsMedia(tenantId: string, dataUrl: string, nom: string | 
   });
 }
 
+/** Un fichier de la médiathèque, avec son adresse publique (spec médias, lot B). */
+export interface FichierMediatheque extends RcsMedia {
+  url: string;
+}
+
+/** La médiathèque de l'espace : ses fichiers, ce qu'ils pèsent, et le quota de l'offre (`null` = sans limite). */
+export function listerMediatheque(tenantId: string): Promise<{ fichiers: FichierMediatheque[]; occupation: number; quota: number | null }> {
+  return request<{ fichiers: FichierMediatheque[]; occupation: number; quota: number | null }>(`/tenants/${tenantId}/rcs/media`);
+}
+
+/**
+ * Supprime un fichier. Refusé en 409 (`code: 'media_utilise'`, la liste dans `utilisations`) tant qu'un scénario, un
+ * message RCS ou une campagne en cours le cite : `utilisationsDuRefus` (`web/lib/medias.ts`) la lit.
+ */
+export function supprimerDeLaMediatheque(tenantId: string, code: string): Promise<void> {
+  return request<void>(`/tenants/${tenantId}/rcs/media/${code}`, { method: 'DELETE' });
+}
+
 /** Agents RCS du tenant (sélecteur de l'assistant de campagne). Liste vide = canal RCS non configuré. */
 export function listRcsAgents(tenantId: string): Promise<{ agents: RcsAgent[] }> {
   return request<{ agents: RcsAgent[] }>(`/tenants/${tenantId}/rcs-agents`);

@@ -31,6 +31,7 @@ export const CARTE_CONSOLE: EcranAide[] = [
   {"cle":"offre","href":"/offre","fr":"Offre","en":"Plan","acces":"admin","chemin":["Paramètres"]},
   {"cle":"parametres","href":"/parametres","fr":"Général","en":"General","acces":"encadrement","chemin":["Paramètres"]},
   {"cle":"parametres-credit","href":"/parametres/credit","fr":"Crédit IA","en":"AI credit","acces":"admin","chemin":["Paramètres"]},
+  {"cle":"parametres-medias","href":"/parametres/medias","fr":"Médiathèque","en":"Media library","acces":"admin","chemin":["Paramètres"]},
   {"cle":"perf-synthese","href":"/performance","fr":"Synthèse","en":"Summary","acces":"admin","chemin":[]},
   {"cle":"publicites","href":"/publicites","fr":"Publicités","en":"Ads","acces":"admin","chemin":[]},
   {"cle":"quanti-couts","href":"/dashboard/couts","fr":"Coûts","en":"Costs","acces":"admin","chemin":["Quantitatif"]},
