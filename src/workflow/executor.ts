@@ -16,6 +16,7 @@ import type { AgentSessionStatus, AgentSessionStore } from '../agent/session-sto
 
 import { BAIL_AVANCE_S, renouvelerLeBail, type GardeDuTour } from './bail-avance';
 import { SORTIE_TIMEOUT } from '../../web/lib/partage/sorties-agent';
+import { SORTIE_FORMULAIRE_REMPLI } from '../../web/lib/partage/sorties-formulaire';
 import type { AgentTurnJob } from '../agent/turn-job';
 import { MOTIF_DESABONNE } from '../campaign/guardrails';
 import { messageDe, texteDe } from '../lib/erreur';
@@ -1544,10 +1545,14 @@ export class WorkflowExecutor {
    * `entrant.reaction` = le message est une réaction (un emoji, ou son retrait), lu sur son TYPE par la porte Meta.
    * Sur un bloc agent, elle ne réveille pas l'agent ; ailleurs, elle n'est jamais transmise comme un message « à
    * côté ». Défaut : pas une réaction (les portes RCS et les reprises internes n'en portent jamais).
+   *
+   * `entrant.formulaire` = le message est un formulaire renvoyé (`nfm_reply`), lu sur son contenu par la porte Meta.
+   * Sur un bloc Formulaire, il prend la sortie « Formulaire rempli » ; n'importe quel formulaire compte, y compris un
+   * formulaire de WhatsApp Manager, qui n'a pas notre `_ref` (décision de Julien du 2026-10-15).
    */
   async advance(
     tenantId: string, waId: string, messageId: string, buttonPayload: string | null = null, canalRetour: RunChannel = 'whatsapp',
-    entrant: { reaction: boolean } = { reaction: false },
+    entrant: { reaction: boolean; formulaire?: boolean } = { reaction: false },
   ): Promise<void> {
     const run = await this.deps.runs.findWaitingByWaId(tenantId, waId);
     if (!run || run.lastMessageId === messageId) return; // dédup at-least-once
@@ -1639,13 +1644,14 @@ export class WorkflowExecutor {
     // Mesure de la réponse, rattachée au bloc qui l'attendait, avant toute décision de routage : ce qui compte
     // est ce que le contact a fait (un bouton non câblé reste un clic). `handle` distingue le choix (`btn:<i>`, ou
     // le handle carte/bouton d'un carousel) ; pas de payload = le contact a écrit. Les blocs RCS sont exclus :
-    // leur reprise est l'issue d'un envoi, pas une réponse.
+    // leur reprise est l'issue d'un envoi, pas une réponse. Un formulaire renvoyé se mesure sous `rempli` : son
+    // payload est le JSON de la réponse, jusqu'à 2 000 caractères, qui s'affichait comme un « choix » illisible.
     if (run.currentNode && courant?.type !== 'rcs_message' && !sortieAgent) {
       const aClique = typeof buttonPayload === 'string' && buttonPayload !== '';
       await this.mesurer(
         tenantId, run.workflowId, run.currentNode, waId,
         aClique ? 'reply_button' : 'reply_text',
-        aClique ? buttonPayload : undefined,
+        entrant.formulaire === true ? SORTIE_FORMULAIRE_REMPLI : aClique ? buttonPayload : undefined,
       );
     }
     // Bloc agent : le contact répond pendant une conversation que l'agent tient, on n'entre pas dans le
@@ -1716,7 +1722,13 @@ export class WorkflowExecutor {
     }
     // Bloc RCS : `sent` et `unreachable` qualifient la livraison, les boutons la réponse. Un clic prime donc
     // sur `sent` ; sans clic, on reprend par `sent`.
-    const handle = courant?.type === 'rcs_message' ? (buttonPayload ?? 'sent') : buttonPayload;
+    // Bloc Formulaire : deux issues seulement. Le formulaire renvoyé prend `rempli` ; tout le reste, bouton d'un ancien
+    // message compris (il ne nomme aucune sortie de ce bloc), suit l'arête libre, « Toute autre réponse ».
+    const handle = courant?.type === 'rcs_message'
+      ? (buttonPayload ?? 'sent')
+      : courant?.type === 'flow'
+        ? (entrant.formulaire === true ? SORTIE_FORMULAIRE_REMPLI : null)
+        : buttonPayload;
     const sortieTypee = graph && run.currentNode
       ? graph.edges.some((e) => e.source === run.currentNode && (e.sourceHandle === 'sent' || e.sourceHandle === 'unreachable'))
       : false;

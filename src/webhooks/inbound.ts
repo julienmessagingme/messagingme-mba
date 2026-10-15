@@ -20,6 +20,9 @@ export interface InboundMessage {
   type: string;
   body: string | null;
   buttonPayload: string | null;
+  /** Un formulaire renvoyé (`nfm_reply`) : sur un bloc Formulaire, il prend la sortie « Formulaire rempli ». Lu sur
+   *  le contenu, jamais deviné depuis `buttonPayload`, qui porte alors le JSON de la réponse. Absent sinon. */
+  formulaire?: true;
   profileName: string | null;
   /**
    * `field` du change source : `'messages'` pour un vrai entrant, `'standby'` quand une autre app (le Meta
@@ -121,7 +124,7 @@ function str(v: unknown): string | null {
  * est rendu à part de `body`, qui garde la légende ou un libellé de type (lu par l'aperçu de l'Inbox,
  * l'historique de l'agent et l'analyse).
  */
-function contentOf(msg: Record<string, unknown>): { body: string | null; buttonPayload: string | null; media?: { id: string; mime: string | null; nom?: string | null } } {
+function contentOf(msg: Record<string, unknown>): { body: string | null; buttonPayload: string | null; formulaire?: true; media?: { id: string; mime: string | null; nom?: string | null } } {
   const type = str(msg['type']) ?? '';
   if (type === 'text') return { body: str(asRecord(msg['text'])['body']), buttonPayload: null };
   if (type === 'button') {
@@ -141,6 +144,7 @@ function contentOf(msg: Record<string, unknown>): { body: string | null; buttonP
       return {
         body: str(nfm['body']) ?? str(nfm['name']) ?? '[formulaire]',
         buttonPayload: typeof rj === 'string' ? rj.slice(0, 2000) : str(nfm['name']),
+        formulaire: true,
       };
     }
     // Sous-type interactif inconnu : ne pas perdre le fait qu'il y a eu une interaction.
@@ -187,7 +191,7 @@ export function extractInbound(payload: unknown): InboundMessage[] {
         const messageId = str(msg['id']);
         const waId = str(msg['from']) ?? fallbackWaId;
         if (!messageId || !waId) continue;
-        const { body, buttonPayload, media } = contentOf(msg);
+        const { body, buttonPayload, formulaire, media } = contentOf(msg);
         // `timestamp` est une chaîne de secondes chez Meta. Illisible ou absent : on n'invente pas de date.
         const secondes = Number(str(msg['timestamp']) ?? '');
         const envoyeLe = Number.isFinite(secondes) && secondes > 0 ? new Date(secondes * 1000) : undefined;
@@ -198,6 +202,7 @@ export function extractInbound(payload: unknown): InboundMessage[] {
           type: str(msg['type']) ?? 'unknown',
           body,
           buttonPayload,
+          ...(formulaire ? { formulaire } : {}),
           profileName,
           field,
           ...(referralOf(msg) ? { referral: referralOf(msg)! } : {}),

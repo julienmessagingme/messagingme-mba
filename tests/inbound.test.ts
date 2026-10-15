@@ -91,6 +91,17 @@ describe('extractInbound', () => {
     expect(r[0]).toMatchObject({ type: 'interactive', body: 'Formulaire envoyé', buttonPayload: '{"date":"2026-08-01"}' });
   });
 
+  it('🔴 un formulaire renvoyé se DIT formulaire (sortie « Formulaire rempli »), un bouton ou un texte non', () => {
+    const [formulaire, bouton, texte] = extractInbound(payload([
+      { id: 'wamid.5b', from: '33611', type: 'interactive', interactive: { type: 'nfm_reply', nfm_reply: { name: 'flow', response_json: '{"a":1}' } } },
+      { id: 'wamid.5c', from: '33611', type: 'interactive', interactive: { button_reply: { id: 'btn:0', title: 'Oui' } } },
+      { id: 'wamid.5d', from: '33611', type: 'text', text: { body: 'bonjour' } },
+    ]));
+    expect(formulaire!.formulaire).toBe(true);
+    expect(bouton!.formulaire).toBeUndefined();
+    expect(texte!.formulaire).toBeUndefined();
+  });
+
   it('sous-type interactif inconnu -> [interactif] (pas de perte silencieuse)', () => {
     const r = extractInbound(payload([{ id: 'wamid.6', from: '33611', type: 'interactive', interactive: { type: 'mystery' } }]));
     expect(r[0]).toMatchObject({ body: '[interactif]', buttonPayload: null });

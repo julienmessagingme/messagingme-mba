@@ -15,8 +15,11 @@ export interface WorkflowAdvanceDeps {
    * `entrant.reaction` : le message est une réaction (un emoji posé sur un de nos messages, ou son retrait), lu sur
    * son TYPE. Un agent IA en pleine conversation ne lui répond pas (`WorkflowExecutor.advance`, relecture du lot 5,
    * J1) : son `buttonPayload` est l'identifiant du message visé, qui ne dit rien de ce qu'il est.
+   *
+   * `entrant.formulaire` : le message est un formulaire renvoyé (`nfm_reply`). Sur un bloc Formulaire, il prend la
+   * sortie « Formulaire rempli » ; son `buttonPayload` est le JSON de la réponse, qui ne nomme aucune sortie.
    */
-  advance(tenantId: string, waId: string, messageId: string, buttonPayload: string | null, entrant: { reaction: boolean }): Promise<boolean | void>;
+  advance(tenantId: string, waId: string, messageId: string, buttonPayload: string | null, entrant: { reaction: boolean; formulaire: boolean }): Promise<boolean | void>;
   /**
    * Consigne un échec d'avance là où quelqu'un le verra : l'isolation par message reste, mais un acquittement
    * silencieux laisserait le contact bloqué sur son bloc sans rejeu ni trace. Optionnelle et best-effort :
@@ -68,7 +71,7 @@ export async function processWorkflowAdvance(entrants: readonly EntrantRattache[
     if (m.field && m.field !== 'messages') continue;
     // Isolation par message : une erreur sur un contact ne prive pas les autres du même webhook.
     try {
-      if ((await deps.advance(tenantId, m.waId, m.messageId, m.buttonPayload, { reaction: m.type === 'reaction' })) === true) {
+      if ((await deps.advance(tenantId, m.waId, m.messageId, m.buttonPayload, { reaction: m.type === 'reaction', formulaire: m.formulaire === true })) === true) {
         parParcours.add(m.messageId);
       }
     } catch (err) {

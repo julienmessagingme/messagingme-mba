@@ -78,6 +78,15 @@ describe('walk : ce qui bloque le parcours selon que MBA est allumé', () => {
     expect(walk(flow, 'n1', undefined, { mbaActif: true }).rest).toEqual({ status: 'waiting', nodeId: 'n1' });
   });
 
+  it('🔴 MBA allumé : un formulaire NON configuré traversé suit « Toute autre réponse », jamais « Formulaire rempli »', () => {
+    // Rien n'est parti, donc rien n'a pu être rempli. La 1re arête venue serait ici `rempli`.
+    const vide: WorkflowGraph = {
+      nodes: [noeud('n1', 'flow', {}), noeud('ok', 'tag', { tag: 'rempli' }), noeud('autre', 'tag', { tag: 'autre' })],
+      edges: [{ id: 'e1', source: 'n1', target: 'ok', sourceHandle: 'rempli' }, { id: 'e2', source: 'n1', target: 'autre' }],
+    };
+    expect(walk(vide, 'n1', undefined, { mbaActif: true }).actions.map((a) => a.nodeId)).toEqual(['autre']);
+  });
+
   it('un message rapide sans bouton continue dans les DEUX cas (règle historique inchangée)', () => {
     const rapide = graphe(
       [noeud('n1', 'quick_message', { body: 'coucou', quickReplies: [] }), noeud('n2', 'tag', { tag: 'vu' })],

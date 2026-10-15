@@ -1845,3 +1845,90 @@ describe('bloc « Appel HTTP » à l’exécution', () => {
     expect(calls).toContain('field:statut=expédiée');
   });
 });
+
+/**
+ * 🔴 LE BLOC FORMULAIRE A DEUX SORTIES (Julien, 2026-10-15) : « Formulaire rempli » et « Toute autre réponse ». Avant,
+ * sa sortie unique recevait tout, un « bonjour » écrit à la place du formulaire comme le formulaire rempli. La règle
+ * est celle d'un bouton : la poignée `rempli`, sinon l'arête libre, sinon le parcours s'arrête. Un montage d'avant
+ * (une seule flèche, libre) continue donc de tout recevoir.
+ */
+describe('advance : le bloc Formulaire, « Formulaire rempli » et « Toute autre réponse »', () => {
+  const REPONSE = JSON.stringify({ _ref: 'f-ref', nom: 'Dupont' });
+  const FORMULAIRE = { reaction: false, formulaire: true };
+  const blocs = [
+    n('f', 'flow', { flowId: 'fl1', flowName: 'RDV' }),
+    n('ok', 'action', { actionKind: 'add_tag', tag: 'rempli' }),
+    n('autre', 'action', { actionKind: 'add_tag', tag: 'autre' }),
+  ];
+  const lesDeux: WorkflowGraph = { nodes: blocs, edges: [eh('e1', 'f', 'ok', 'rempli'), e('e2', 'f', 'autre')] };
+  const enAttente = (runs: FakeRuns) => {
+    runs.run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'f', status: 'waiting', lastMessageId: null, grapheFige: null };
+  };
+
+  it('🔴 un formulaire rempli prend « Formulaire rempli »', async () => {
+    const { ex, runs, calls } = make(lesDeux);
+    enAttente(runs);
+    await ex.advance('t1', '33600', 'm1', REPONSE, 'whatsapp', FORMULAIRE);
+    expect(calls).toEqual(['tag:rempli']);
+  });
+
+  it('🔴 un message écrit à la place prend « Toute autre réponse »', async () => {
+    const { ex, runs, calls } = make(lesDeux);
+    enAttente(runs);
+    await ex.advance('t1', '33600', 'm1', null);
+    expect(calls).toEqual(['tag:autre']);
+  });
+
+  it('un bouton d’un ancien message ne choisit pas de branche ici : « Toute autre réponse »', async () => {
+    const { ex, runs, calls } = make(lesDeux);
+    enAttente(runs);
+    await ex.advance('t1', '33600', 'm1', 'btn:0');
+    expect(calls).toEqual(['tag:autre']);
+  });
+
+  it('🔴 un montage d’avant (une seule flèche, libre) reçoit toujours le formulaire rempli', async () => {
+    const { ex, runs, calls } = make({ nodes: blocs, edges: [e('e2', 'f', 'autre')] });
+    enAttente(runs);
+    await ex.advance('t1', '33600', 'm1', REPONSE, 'whatsapp', FORMULAIRE);
+    expect(calls).toEqual(['tag:autre']);
+  });
+
+  it('seul « Formulaire rempli » est relié et le contact écrit : le parcours s’arrête et rend la main', async () => {
+    const rendus: string[] = [];
+    const { ex, runs, calls } = make({ nodes: blocs, edges: [eh('e1', 'f', 'ok', 'rempli')] }, {
+      mbaActifPour: async () => true,
+      releaseToMba: async (_t: string, w: string) => { rendus.push(w); },
+    });
+    enAttente(runs);
+    await ex.advance('t1', '33600', 'm1', null);
+    expect(calls).toEqual([]);
+    expect(runs.run).toMatchObject({ status: 'done', currentNode: null });
+    expect(rendus).toEqual(['33600']);
+  });
+
+  it('la mesure d’un formulaire rempli porte la poignée `rempli`, jamais le JSON de la réponse', async () => {
+    const mesures: Array<{ kind: string; handle?: string }> = [];
+    const { ex, runs } = make(lesDeux, {
+      recordNodeEvent: async (ev) => { mesures.push({ kind: ev.kind, ...(ev.handle ? { handle: ev.handle } : {}) }); },
+    });
+    enAttente(runs);
+    await ex.advance('t1', '33600', 'm1', REPONSE, 'whatsapp', FORMULAIRE);
+    expect(mesures[0]).toEqual({ kind: 'reply_button', handle: 'rempli' });
+  });
+
+  it('sur un MODÈLE à bouton formulaire, le formulaire renvoyé suit l’arête libre, et se mesure aussi `rempli`', async () => {
+    // Le routage `rempli` n'existe que sur le bloc Formulaire ; la mesure, elle, ne garde jamais le JSON.
+    const mesures: Array<{ kind: string; handle?: string }> = [];
+    const g: WorkflowGraph = {
+      nodes: [n('tpl', 'template', { templateName: 'rdv', templateButtons: [{ type: 'FLOW', text: 'Ouvrir' }] }), ...blocs.slice(1)],
+      edges: [e('e2', 'tpl', 'autre')],
+    };
+    const { ex, runs, calls } = make(g, {
+      recordNodeEvent: async (ev) => { mesures.push({ kind: ev.kind, ...(ev.handle ? { handle: ev.handle } : {}) }); },
+    });
+    runs.run = { id: 'r1', workflowId: 'wf1', tenantId: 't1', waId: '33600', currentNode: 'tpl', status: 'waiting', lastMessageId: null, grapheFige: null };
+    await ex.advance('t1', '33600', 'm1', REPONSE, 'whatsapp', FORMULAIRE);
+    expect(calls).toEqual(['tag:autre']);
+    expect(mesures[0]).toEqual({ kind: 'reply_button', handle: 'rempli' });
+  });
+});

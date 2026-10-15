@@ -506,6 +506,13 @@ négation) se séparent, et c'est exactement celui qu'on n'écrit pas parce qu'i
 numérotation : filtrer avant renuméroterait, et le contact partirait dans la mauvaise branche. Supprimer une
 ligne depuis le panneau passe par un événement que le BUILDER traite, parce que lui seul voit les arêtes.
 
+🔴 **Le bloc Formulaire a deux sorties** : `rempli` (`SORTIE_FORMULAIRE_REMPLI`, `web/lib/partage/sorties-formulaire.ts`)
+et l'arête libre, « Toute autre réponse ». La réception marque un `nfm_reply` (`InboundMessage.formulaire`), jamais
+déduit du `buttonPayload`, qui porte alors le JSON de la réponse ; n'importe quel formulaire renvoyé compte. Sur ce
+bloc, `advance` ignore tout autre payload (un bouton d'un ancien message ne nomme aucune de ses sorties) : `rempli`,
+sinon l'arête libre, sinon l'arrêt. Un formulaire renvoyé passe donc par l'arête libre quand `rempli` n'est pas
+reliée, ce qui garde intacts les montages d'une seule flèche. Sa mesure porte `rempli`, pas le JSON.
+
 🔴 **Le bloc Condition a des FAMILLES** (RC5, `src/workflow/conditions.ts`). `data.familles` : 10 au plus, chacune
 `{ code, nom, groupe }`, son groupe de clauses en ET ou en OU. Le moteur les teste dans l'ordre et suit la PREMIÈRE
 vraie, sinon « Sinon » (`sortieDeCondition`). Une famille sort par une poignée tirée de son CODE, jamais de sa place

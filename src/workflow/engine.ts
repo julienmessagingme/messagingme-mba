@@ -821,7 +821,9 @@ export function walk(graph: WorkflowGraph, startNodeId: string, ctx?: EvalContex
       // continue, l'agent de Meta répondant à sa place.
       const continuer = !etapeOffreUnChoix(a) && (opts?.mbaActif === true || a?.kind === 'sendQuickMessage');
       if (continuer) {
-        current = nextNode(graph, current);
+        // Un formulaire traversé n'a rien envoyé, donc rien n'a pu être rempli : « Toute autre réponse » (l'arête
+        // libre), jamais la 1re arête venue, qui peut être « Formulaire rempli ».
+        current = node.type === 'flow' ? nextNodeSansHandle(graph, current) : nextNode(graph, current);
         continue;
       }
       return { actions, rest: { status: 'waiting', nodeId: current } };
