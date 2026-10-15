@@ -18,6 +18,17 @@
 | CI | lue job par job sur `gh run view <id> --json jobs`, jamais sur le code de sortie du watch ; un rouge `toomanyrequests` (Docker Hub) n'a rien vérifié ; un rouge `unauthorized` sur la connexion à Docker Hub = jeton expiré ou révoqué, ou secret absent (CLAUDE.md) |
 | Le récit | les lots déployés sont sortis de ce fichier le 2026-10-10, texte d'origine, vers [docs/JOURNAL-TECHNIQUE.md](docs/JOURNAL-TECHNIQUE.md) ; les essais dus vivent dans `docs/prive/ESSAIS-REELS.md`, les restes dans [todo.md](todo.md) |
 
+## LA BASCULE SCALEWAY (EN COURS)
+
+L'état de chaque lot se lit dans [le plan avant la bascule](docs/superpowers/plans/2026-10-14-avant-bascule-scaleway.md),
+la séquence du jour J dans [docs/ARCHITECTURE-CIBLE.md](docs/ARCHITECTURE-CIBLE.md) § 10, le récit dans le journal. Ce
+qui reste avant le jour J, au 2026-10-15 :
+- un premier déploiement par le workflow avec la taille déclarée (`ops/scaleway/conteneur-api.json`), approuvé par
+  Julien, puis le second banc sur le conteneur serverless (l'essai réel qui clôt le plan du 2026-10-15) ;
+- le script des secrets de production, lancé par Julien la veille ;
+- la date ;
+- la suppression de `mba.`, une fois ses journaux muets quelques jours (lot 7).
+
 ## TOUT SUR LA FICHE (LOTS 1 À 3 DÉPLOYÉS ET ESSAYÉS ; LOT 4 EN COURS)
 
 Spec `docs/superpowers/specs/2026-09-30-fiche-unique-design.md`, plan
