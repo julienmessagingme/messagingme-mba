@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { DROITS, droitsDe, FONCTIONS, type Fonction, type Limites, type Offre } from '../src/offres/offres';
+import { phraseLimite } from '../src/offres/refus';
+
+const MO = 1024 * 1024;
 
 /**
  * LA GRILLE DES OFFRES (lot 6, spec `docs/superpowers/specs/2026-10-07-offres-et-limites-design.md`, § 1). Le tableau de
@@ -10,14 +13,17 @@ const GRILLE: Record<Offre, Limites> = {
   base: {
     utilisateurs: 1, admins: 1, contacts: 100, envoisModelesMois: 1000, automations: 10, suppressionsJour: 10,
     adressesWebhook: 1, journalWebhooksJours: 3, conservationJours: 30, commissionPct: 50, badge: true, numeroInclus: false,
+    stockageOctets: 0,
   },
   pro: {
     utilisateurs: 3, admins: 2, contacts: null, envoisModelesMois: null, automations: null, suppressionsJour: null,
     adressesWebhook: 5, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 10, badge: false, numeroInclus: true,
+    stockageOctets: 100 * MO,
   },
   entreprise: {
     utilisateurs: null, admins: null, contacts: null, envoisModelesMois: null, automations: null, suppressionsJour: null,
     adressesWebhook: null, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 10, badge: false, numeroInclus: true,
+    stockageOctets: 500 * MO,
   },
 };
 
@@ -41,6 +47,15 @@ describe('la grille des offres', () => {
   it('l\'Entreprise ouvre toutes les fonctions', () => {
     expect([...DROITS.entreprise.fonctions].sort()).toEqual([...FONCTIONS].sort());
     expect(FONCTIONS).toHaveLength(PRO.length + ENTREPRISE_SEULE.length);
+  });
+});
+
+describe('le quota de stockage de la médiathèque (spec médias, § 2.1)', () => {
+  it('🔴 la phrase de refus parle de fichiers et de suppression, jamais de « passer en Pro » (le Pro a lui-même un quota)', () => {
+    const p = phraseLimite('stockageOctets', 100 * MO);
+    expect(p).toContain('100 Mo');
+    expect(p).toMatch(/supprim/i);
+    expect(p).not.toMatch(/Passez en Pro/);
   });
 });
 

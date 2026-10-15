@@ -43,6 +43,11 @@ export interface Limites {
   commissionPct: number;
   badge: boolean;
   numeroInclus: boolean;
+  /**
+   * Le poids total des fichiers de la médiathèque (images, vidéos, PDF), en octets (spec médias du 2026-10-14, § 2.1).
+   * Un espace au-dessus (changement d'offre) garde ses fichiers et continue d'envoyer : seul un nouveau dépôt est refusé.
+   */
+  stockageOctets: number | null;
 }
 
 export interface Droits {
@@ -60,6 +65,9 @@ export interface SurchargeEntreprise {
   conservationJours: number | null;
 }
 
+/** Un mégaoctet, l'unité des quotas de stockage (la même que les plafonds de dépôt, `src/rcs/image.ts`). */
+const MO = 1024 * 1024;
+
 const FONCTIONS_PRO: readonly Fonction[] = [
   'inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines',
 ];
@@ -70,6 +78,7 @@ export const DROITS: Readonly<Record<Offre, Droits>> = {
     limites: {
       utilisateurs: 1, admins: 1, contacts: 100, envoisModelesMois: 1000, automations: 10, suppressionsJour: 10,
       adressesWebhook: 1, journalWebhooksJours: 3, conservationJours: 30, commissionPct: 50, badge: true, numeroInclus: false,
+      stockageOctets: 0,
     },
   },
   pro: {
@@ -77,6 +86,7 @@ export const DROITS: Readonly<Record<Offre, Droits>> = {
     limites: {
       utilisateurs: 3, admins: 2, contacts: null, envoisModelesMois: null, automations: null, suppressionsJour: null,
       adressesWebhook: 5, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 10, badge: false, numeroInclus: true,
+      stockageOctets: 100 * MO,
     },
   },
   entreprise: {
@@ -84,6 +94,7 @@ export const DROITS: Readonly<Record<Offre, Droits>> = {
     limites: {
       utilisateurs: null, admins: null, contacts: null, envoisModelesMois: null, automations: null, suppressionsJour: null,
       adressesWebhook: null, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 10, badge: false, numeroInclus: true,
+      stockageOctets: 500 * MO,
     },
   },
 };

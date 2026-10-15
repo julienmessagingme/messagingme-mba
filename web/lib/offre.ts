@@ -30,11 +30,19 @@ export const LIMITES_NOMBRE = [
 ] as const;
 export type LimiteNombre = (typeof LIMITES_NOMBRE)[number];
 
+/**
+ * Les limites qu'une API plus ancienne ne porte pas encore : absentes, elles ne rendent pas la vue illisible (la console est
+ * publiée avant l'API), la ligne est seulement masquée. Le quota de la médiathèque (spec médias du 2026-10-14) en est une.
+ */
+export const LIMITES_TOLERANTES = ['stockageOctets'] as const;
+
 export interface LimitesOffre extends Record<LimiteNombre, number | null> {
   conservationJours: number;
   commissionPct: number;
   badge: boolean;
   numeroInclus: boolean;
+  /** En octets. `undefined` : une API qui ne le porte pas encore. */
+  stockageOctets?: number | null;
 }
 
 export interface UsageOffre {
@@ -84,6 +92,7 @@ function lireLimites(v: unknown): LimitesOffre | null {
   return {
     ...(Object.fromEntries(LIMITES_NOMBRE.map((k) => [k, v[k]])) as Record<LimiteNombre, number | null>),
     conservationJours: v.conservationJours, commissionPct: v.commissionPct, badge: v.badge, numeroInclus: v.numeroInclus,
+    ...(entierOuNul(v.stockageOctets) ? { stockageOctets: v.stockageOctets } : {}),
   };
 }
 

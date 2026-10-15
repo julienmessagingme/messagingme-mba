@@ -7,7 +7,8 @@ import {
   typeImage, extensionDe, mimeDeExtension, octetsDepuisDataUrl, urlImageRcs, TAILLE_IMAGE_MAX,
 } from '../src/rcs/image';
 import type { MimeImage } from '../src/rcs/image';
-import type { RcsMediaFichier } from '../src/rcs/media-store.pg';
+import type { RcsMediaFichier, IssueSuppression } from '../src/rcs/media-store.pg';
+import { LimiteOffreError } from '../src/offres/refus';
 
 /** Signatures REELLES, suivies de remplissage : `typeImage` ne lit que les premiers octets. */
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(16, 7)]);
@@ -70,8 +71,12 @@ async function jeton(role: 'admin' | 'agent'): Promise<string> {
   return signSession({ userId: 'u1', tenantId: 't1', role }, SECRET);
 }
 
-function appWith(stocke: { bytes: Buffer; mime: MimeImage } | null) {
+function appWith(
+  stocke: { bytes: Buffer; mime: MimeImage } | null,
+  o: { quotaAtteint?: boolean; suppression?: IssueSuppression } = {},
+) {
   const crees: Array<{ mime: MimeImage; taille: number; nom: string | null }> = [];
+  const supprimes: Array<{ tenant: string; code: string }> = [];
   const app = buildServer({
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
@@ -79,17 +84,79 @@ function appWith(stocke: { bytes: Buffer; mime: MimeImage } | null) {
       medias: {
         getByCode: async (code): Promise<RcsMediaFichier | null> => (code === CODE && stocke ? stocke : null),
       },
-      create: async (_t, input) => {
+      create: async (t, input) => {
+        if (o.quotaAtteint) throw new LimiteOffreError(t, 'stockageOctets', 100 * 1024 * 1024);
         crees.push({ mime: input.mime, taille: input.bytes.length, nom: input.nom });
         return {
           media: { id: 'm1', code: CODE, mime: input.mime, taille: input.bytes.length, nom: input.nom, createdAt: '' },
           url: urlImageRcs('https://mba.messagingme.app', CODE, input.mime),
+          existant: false,
         };
+      },
+      lister: async () => ({
+        fichiers: [{ id: 'm1', code: CODE, mime: 'image/png' as const, taille: 1234, nom: 'visuel.png', createdAt: '2026-10-15T00:00:00.000Z', url: `https://mba.messagingme.app/m/${CODE}.png` }],
+        occupation: 1234,
+        quota: 100 * 1024 * 1024,
+      }),
+      supprimer: async (tenant, code) => {
+        supprimes.push({ tenant, code });
+        return o.suppression ?? { issue: 'supprime' };
       },
     },
   });
-  return { app, crees };
+  return { app, crees, supprimes };
 }
+
+describe('La médiathèque : quota, liste, suppression (spec médias, lot B)', () => {
+  const entetes = async (role: 'admin' | 'agent') => ({ 'content-type': 'application/json', authorization: `Bearer ${await jeton(role)}` });
+
+  it('🔴 un dépôt au-delà du quota rend le refus de l’offre (402, plan_limit_reached), pas une erreur serveur', async () => {
+    const { app, crees } = appWith(null, { quotaAtteint: true });
+    const r = await app.inject({
+      method: 'POST', url: '/tenants/t1/rcs/media', headers: await entetes('admin'),
+      payload: { dataUrl: `data:image/png;base64,${PNG.toString('base64')}` },
+    });
+    expect(r.statusCode).toBe(402);
+    expect(r.json()).toMatchObject({ code: 'plan_limit_reached', limite: 'stockageOctets' });
+    expect(crees).toHaveLength(0);
+  });
+
+  it('liste les fichiers avec leur adresse, l’occupation et le quota, pour tout membre de l’espace', async () => {
+    const { app } = appWith(null);
+    const r = await app.inject({ method: 'GET', url: '/tenants/t1/rcs/media', headers: { authorization: `Bearer ${await jeton('agent')}` } });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toMatchObject({ occupation: 1234, quota: 100 * 1024 * 1024, fichiers: [{ code: CODE, nom: 'visuel.png' }] });
+  });
+
+  it('supprime un fichier inutilisé (204), dans l’espace de la session', async () => {
+    const { app, supprimes } = appWith(null);
+    const r = await app.inject({ method: 'DELETE', url: `/tenants/t1/rcs/media/${CODE}`, headers: { authorization: `Bearer ${await jeton('admin')}` } });
+    expect(r.statusCode).toBe(204);
+    expect(supprimes).toEqual([{ tenant: 't1', code: CODE }]);
+  });
+
+  it('🔴 refuse de supprimer un fichier encore utilisé (409), en disant ce qui l’utilise', async () => {
+    const { app } = appWith(null, { suppression: { issue: 'utilise', utilisations: [{ lieu: 'scenario', nom: 'Bienvenue' }] } });
+    const r = await app.inject({ method: 'DELETE', url: `/tenants/t1/rcs/media/${CODE}`, headers: { authorization: `Bearer ${await jeton('admin')}` } });
+    expect(r.statusCode).toBe(409);
+    expect(r.json()).toMatchObject({ code: 'media_utilise', utilisations: [{ lieu: 'scenario', nom: 'Bienvenue' }] });
+  });
+
+  it('rend 404 pour un fichier introuvable, et pour un code mal formé sans toucher au store', async () => {
+    const { app, supprimes } = appWith(null, { suppression: { issue: 'introuvable' } });
+    const h = { authorization: `Bearer ${await jeton('admin')}` };
+    expect((await app.inject({ method: 'DELETE', url: `/tenants/t1/rcs/media/${CODE}`, headers: h })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'DELETE', url: '/tenants/t1/rcs/media/pas-un-code', headers: h })).statusCode).toBe(404);
+    expect(supprimes).toHaveLength(1);
+  });
+
+  it('réserve la suppression aux admins', async () => {
+    const { app, supprimes } = appWith(null);
+    const r = await app.inject({ method: 'DELETE', url: `/tenants/t1/rcs/media/${CODE}`, headers: { authorization: `Bearer ${await jeton('agent')}` } });
+    expect(r.statusCode).toBe(403);
+    expect(supprimes).toHaveLength(0);
+  });
+});
 
 describe('Televerser un visuel RCS', () => {
   it('accepte une image et rend son ADRESSE PUBLIQUE, avec la bonne extension', async () => {

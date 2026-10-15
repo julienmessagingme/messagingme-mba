@@ -44,7 +44,7 @@ function fonctionDemandee(): FonctionOffre | null {
 /** Les limites montrées dans la grille, dans cet ordre. Les webhooks sortants y entrent avec leur écran (lot 12). */
 const LIGNES_LIMITES = [
   'utilisateurs', 'contacts', 'envoisModelesMois', 'automations', 'suppressionsJour', 'adressesWebhook', 'journalWebhooksJours',
-  'conservationJours', 'commissionPct', 'numeroInclus', 'badge',
+  'stockageOctets', 'conservationJours', 'commissionPct', 'numeroInclus', 'badge',
 ] as const satisfies ReadonlyArray<keyof LimitesOffre>;
 
 /**
@@ -115,6 +115,7 @@ function OffreInner({ session }: { session: Session }) {
     suppressionsJour: t('Contacts supprimés par jour', 'Contacts deleted per day'),
     adressesWebhook: t('Adresses de webhook sortant actives', 'Active outgoing webhook addresses'),
     journalWebhooksJours: t('Journal des webhooks sortants', 'Outgoing webhook log'),
+    stockageOctets: t('Fichiers de la médiathèque', 'Media library files'),
     conservationJours: t('Conservation des conversations', 'Conversation retention'),
     commissionPct: t('Commission sur le crédit IA', 'Commission on AI credit'),
     numeroInclus: t('Numéro WhatsApp inclus', 'WhatsApp number included'),
@@ -124,7 +125,9 @@ function OffreInner({ session }: { session: Session }) {
   const valeurLimite = (l: LimitesOffre, k: (typeof LIGNES_LIMITES)[number]): string => {
     const v = l[k];
     if (typeof v === 'boolean') return v ? t('Oui', 'Yes') : t('Non', 'No');
+    if (v === undefined) return '';
     if (v === null) return t('Sans limite', 'Unlimited');
+    if (k === 'stockageOctets') return v === 0 ? t('Aucun', 'None') : `${Math.round(v / (1024 * 1024))} Mo`;
     if (k === 'conservationJours') return v === 0 ? t('Sans limite', 'Unlimited') : t(`${v} jours`, `${v} days`);
     if (k === 'journalWebhooksJours') return t(`${v} jours`, `${v} days`);
     if (k === 'commissionPct') return `${v} %`;
@@ -318,7 +321,7 @@ function OffreInner({ session }: { session: Session }) {
                 ))}
               </tr>
             ))}
-            {LIGNES_LIMITES.map((k) => (
+            {LIGNES_LIMITES.filter((k) => vue.grille.free.limites[k] !== undefined).map((k) => (
               <tr key={k} className="border-b border-ink-100 last:border-0">
                 <td className="px-4 py-2 text-ink-900">{libelleLimite(k)}</td>
                 {NOMS_OFFRES.map((o) => (

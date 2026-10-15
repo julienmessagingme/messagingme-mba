@@ -22,6 +22,17 @@ const BASE = {
 };
 
 describe('lireVueOffre', () => {
+  it('lit le quota de stockage de la médiathèque quand l’API le porte', () => {
+    const v = lireVueOffre({ ...BASE, limites: { ...limites(100), stockageOctets: 0 } });
+    expect(v!.limites.stockageOctets).toBe(0);
+  });
+
+  it('🔴 une API qui ne porte pas encore le quota de stockage se lit quand même : la console est publiée avant l’API', () => {
+    const v = lireVueOffre(BASE);
+    expect(v).not.toBeNull();
+    expect(v!.limites.stockageOctets).toBeUndefined();
+  });
+
   it('lit une vue complète, fonctions en ensembles', () => {
     const v = lireVueOffre(BASE);
     expect(v).not.toBeNull();

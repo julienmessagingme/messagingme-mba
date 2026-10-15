@@ -10,7 +10,7 @@ import { refus, type Refus } from '../lib/issue';
 export const STATUT_REFUS_OFFRE = 402;
 
 /** Les limites qu'un geste peut atteindre (les autres se lisent sans refuser). */
-export type NomLimite = Extract<keyof Limites, 'utilisateurs' | 'admins' | 'contacts' | 'envoisModelesMois' | 'automations' | 'suppressionsJour' | 'adressesWebhook'>;
+export type NomLimite = Extract<keyof Limites, 'utilisateurs' | 'admins' | 'contacts' | 'envoisModelesMois' | 'automations' | 'suppressionsJour' | 'adressesWebhook' | 'stockageOctets'>;
 
 /** Une limite de l'offre est atteinte : levée par le magasin ou la fabrique, traduite en 402 par l'appelant. */
 export class LimiteOffreError extends Error {
@@ -35,6 +35,7 @@ const LIBELLE_LIMITE: Record<NomLimite, (max: number) => string> = {
   automations: (m) => `${m} automations`,
   suppressionsJour: (m) => `${m} suppressions de contacts par jour`,
   adressesWebhook: (m) => `${m} adresse${m > 1 ? 's' : ''} de webhook sortant actives`,
+  stockageOctets: (m) => `${Math.round(m / (1024 * 1024))} Mo de fichiers dans la médiathèque`,
 };
 
 /** La page de l'offre dans la console. */
@@ -43,6 +44,10 @@ export function adresseOffre(): string {
 }
 
 export function phraseLimite(limite: NomLimite, max: number): string {
+  // Le Pro a lui-même un quota de stockage : « passez en Pro » serait faux pour lui. Ce qui libère, c'est de supprimer.
+  if (limite === 'stockageOctets') {
+    return `Limite de votre offre atteinte : ${LIBELLE_LIMITE[limite](max)}. Supprimez des fichiers inutilisés, ou changez d’offre : ${adresseOffre()}`;
+  }
   return `Limite de votre offre atteinte : ${LIBELLE_LIMITE[limite](max)}. Passez en Pro pour la lever : ${adresseOffre()}`;
 }
 

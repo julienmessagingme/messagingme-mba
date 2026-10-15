@@ -2308,16 +2308,25 @@ async function main(): Promise<void> {
       }, tenant, mo),
     },
     /**
-     * Visuels des messages RCS. Le téléversement rend directement l'URL publique : l'opérateur télécom va
-     * chercher l'image lui-même.
+     * La médiathèque (visuels RCS et fichiers du bloc « message rapide »). Le téléversement rend directement l'URL
+     * publique : l'opérateur télécom va chercher l'image lui-même. Le quota est celui de l'offre de l'espace (spec médias).
      */
     rcsMedia: {
       medias: rcsMediaStore,
       create: async (tenant, input) => {
-        const code = newMediaCode();
-        const media = await rcsMediaStore.create(tenant, { ...input, code });
-        return { media, url: urlImageRcs(adressesApi.racine, code, input.mime) };
+        const quota = (await offres.offreDe(tenant)).droits.limites.stockageOctets;
+        const { media, existant } = await rcsMediaStore.deposer(tenant, { ...input, code: newMediaCode() }, quota);
+        return { media, existant, url: urlImageRcs(adressesApi.racine, media.code, media.mime) };
       },
+      lister: async (tenant) => {
+        const [fichiers, occupation, offre] = await Promise.all([rcsMediaStore.lister(tenant), rcsMediaStore.occupation(tenant), offres.offreDe(tenant)]);
+        return {
+          fichiers: fichiers.map((f) => ({ ...f, url: urlImageRcs(adressesApi.racine, f.code, f.mime) })),
+          occupation,
+          quota: offre.droits.limites.stockageOctets,
+        };
+      },
+      supprimer: (tenant, code) => rcsMediaStore.supprimer(tenant, code),
     },
     // Le dépôt lui-même : la route n'en appelle que `list`, `create`, `update` et `remove`, en méthodes.
     rcsMessages: rcsMessageStore,

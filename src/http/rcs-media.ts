@@ -1,10 +1,10 @@
 import type { FastifyInstance } from 'fastify';
-import { forbidNonAdmin } from '../auth/middleware';
-import type { Guard } from '../auth/middleware';
+import { forbidNonAdmin, gardeEtendue } from '../auth/middleware';
+import type { Guard, PreHandler } from '../auth/middleware';
 import { espaceVerifie } from './scope';
 import { typeImage, octetsDepuisDataUrl, mimeDeExtension, TAILLE_IMAGE_MAX } from '../rcs/image';
 import type { MimeImage } from '../rcs/image';
-import type { RcsMediaResume, RcsMediaFichier } from '../rcs/media-store.pg';
+import type { RcsMediaResume, RcsMediaFichier, IssueSuppression } from '../rcs/media-store.pg';
 
 /** Une image de 2 Mo pèse ~2,7 Mo en base64. On laisse 4 Mo de marge, et pas plus : ce corps est en mémoire. */
 const TAILLE_MAX_CORPS = 4 * 1024 * 1024;
@@ -19,20 +19,28 @@ export interface RcsMediasDep {
 
 export interface RcsMediaRouteDeps {
   medias: RcsMediasDep;
-  /** Enregistre un visuel déjà validé et rend son résumé + son URL publique. */
-  create(tenantId: string, input: { mime: MimeImage; bytes: Buffer; nom: string | null }): Promise<{ media: RcsMediaResume; url: string }>;
+  /**
+   * Dépose un visuel déjà validé sous le quota de l'offre de l'espace, et rend son résumé + son URL publique. Un fichier
+   * identique déjà présent rend sa fiche (`existant`). Quota dépassé : `LimiteOffreError`, traduite en 402 par le serveur.
+   */
+  create(tenantId: string, input: { mime: MimeImage; bytes: Buffer; nom: string | null }): Promise<{ media: RcsMediaResume; url: string; existant: boolean }>;
+  /** La médiathèque de l'espace : ses fichiers vivants avec leur adresse, ce qu'ils pèsent, et le quota (`null` = sans limite). */
+  lister(tenantId: string): Promise<{ fichiers: Array<RcsMediaResume & { url: string }>; occupation: number; quota: number | null }>;
+  /** Suppression douce, refusée tant que le fichier sert (spec médias, § 2.4). */
+  supprimer(tenantId: string, code: string): Promise<IssueSuppression>;
 }
 
 /**
- * Visuels des messages RCS : téléversement (admin) et service du fichier (public : l'opérateur télécom va
- * chercher l'image à son adresse, sans session).
+ * La médiathèque : téléversement (admin), liste (tout membre), suppression (admin), et service du fichier (public :
+ * l'opérateur télécom va chercher l'image à son adresse, sans session). Le dépôt sert le bloc « message rapide » des
+ * scénarios autant que le RCS : le module exige les scénarios (spec médias du 2026-10-14, § 2.3).
  * 🔴 Le type servi est celui déduit de la signature du fichier, jamais celui déclaré par le navigateur (sinon
  * l'hébergeur d'images devient hébergeur de pages) : trois formats, `nosniff`, `inline` avec un nom neutre.
  */
-export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, garde: Guard): void {
+export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, garde: Guard, limiteCouteuse?: PreHandler): void {
   const opts = { preHandler: garde };
 
-  app.post('/tenants/:tenantId/rcs/media', { ...opts, bodyLimit: TAILLE_MAX_CORPS }, async (req, reply) => {
+  app.post('/tenants/:tenantId/rcs/media', { ...gardeEtendue(garde, limiteCouteuse), bodyLimit: TAILLE_MAX_CORPS }, async (req, reply) => {
     const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
 
@@ -50,8 +58,24 @@ export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, 
     if (!mime) return reply.code(415).send({ error: 'format non accepté : seuls JPEG, PNG et GIF sont hébergeables' });
 
     const nom = typeof body.nom === 'string' && body.nom.trim() !== '' ? body.nom.trim().slice(0, 120) : null;
-    const { media, url } = await deps.create(tenant, { mime, bytes, nom });
-    return reply.code(201).send({ media, url });
+    const { media, url, existant } = await deps.create(tenant, { mime, bytes, nom });
+    return reply.code(201).send({ media, url, existant });
+  });
+
+  app.get('/tenants/:tenantId/rcs/media', opts, async (req) => deps.lister(espaceVerifie(req)));
+
+  app.delete('/tenants/:tenantId/rcs/media/:code', opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    if (forbidNonAdmin(req, reply)) return;
+    const { code } = req.params as { code: string };
+    // Forme du code vérifiée avant la base : un code mal formé ne désigne aucun fichier.
+    if (!CODE_RE.test(code)) return reply.code(404).send({ error: 'introuvable' });
+    const issue = await deps.supprimer(tenant, code);
+    if (issue.issue === 'introuvable') return reply.code(404).send({ error: 'introuvable' });
+    if (issue.issue === 'utilise') {
+      return reply.code(409).send({ error: 'ce fichier est encore utilisé', code: 'media_utilise', utilisations: issue.utilisations });
+    }
+    return reply.code(204).send();
   });
 
   /**

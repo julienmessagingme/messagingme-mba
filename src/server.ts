@@ -721,7 +721,7 @@ export function modulesDeRoutes(
     // Visuels RCS : monté avec `auth` alors qu'il porte aussi une route publique `/m/<code>.<ext>`. Les gardes
     // sont posées par route (`preHandler`), donc la lecture reste ouverte : l'opérateur télécom télécharge
     // l'image sans session.
-    entree('rcsMedia', 'tenant', deps.rcsMedia, (app, d, g) => registerRcsMedia(app, d, g.auth), toutes('rcs')),
+    entree('rcsMedia', 'tenant', deps.rcsMedia, (app, d, g) => registerRcsMedia(app, d, g.auth, g.limiteCouteuse), toutes('scenarios')),
     // Templates : la liste (GET) reste lisible par l'agent, l'inbox en a besoin pour envoyer un template hors
     // fenêtre 24 h. La création (POST) reste admin-only via `forbidNonAdmin` dans le handler.
     entree('templates', 'tenant', deps.templates, (app, d, g) => registerTemplates(app, d, g.auth)),

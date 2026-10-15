@@ -5,6 +5,7 @@ import { construireSocle } from './socle';
 import { fabriquerJeton } from './links/jeton-contact';
 import { RETENTION_ESSAIS_JOURS } from './agent/test-runs';
 import { PgNumerosFournisStore, RETENTION_CODES_VERIFICATION_JOURS } from './otp/store.pg';
+import { PgRcsMediaStore, GRACE_SUPPRESSION_JOURS } from './rcs/media-store.pg';
 import { RETENTION_LATENCES_JOURS } from './ops/latence-http';
 import { RETENTION_REFUS_ANS } from './crm/refus-effaces';
 import { MesureTaches, RETENTION_TACHES_JOURS } from './ops/mesure-taches';
@@ -227,6 +228,9 @@ export async function demarrerWorker(): Promise<void> {
   };
   // Les appels captés par le pont du code (lot 3a) : le worker ne fait que les purger (balayage de rétention).
   const numerosFournisStore = new PgNumerosFournisStore(pool);
+  // La médiathèque : le worker n'en fait que purger les fichiers supprimés (rétention générale).
+  const mediatheque = new PgRcsMediaStore(pool);
+  const PURGE_MEDIAS_PAR_LOT = 50;
 
   // Heartbeat : le worker écrit un signal de vie best-effort, dont /ops/overview lit l'âge. Il prouve que le
   // process tourne (event loop non bloquée), pas que pg-boss dépile : pour des files gelées, c'est le backlog
@@ -1499,6 +1503,10 @@ export async function demarrerWorker(): Promise<void> {
       () => envoisEvenements.purger({ base: joursJournal('base'), pro: joursJournal('pro'), entreprise: joursJournal('entreprise') }));
     // Le journal des e-mails du produit (lot 7) : treize mois, pour comparer un mois à celui de l'an passé.
     await etape('emails-produit', 'envoi(s) d’e-mail du produit effacé(s) (au-delà de 13 mois)', () => emailsProduit.purgerAnciens());
+    // Les fichiers supprimés de la médiathèque, au-delà de leur grâce (spec médias, § 2.4) : `/m/` les sert jusque-là, pour un
+    // visuel RCS que l'opérateur télécharge tard. Par petits lots : une ligne peut porter une vidéo de 16 Mo.
+    await etape('medias', `fichier(s) supprimé(s) de la médiathèque effacé(s) (au-delà de ${GRACE_SUPPRESSION_JOURS} j)`,
+      () => purgerJusquAEpuisement(() => mediatheque.purgerSupprimes(PURGE_MEDIAS_PAR_LOT), { taille: PURGE_MEDIAS_PAR_LOT, budgetMs: 60_000 }));
     // Les étapes sont indépendantes et chacune a déjà journalisé et alerté ; la passe lève à la fin pour que la
     // mesure de `/ops` la compte en échec au lieu d'afficher « succès, 0 ligne ».
     if (enEchec.length > 0) throw new Error(`étape(s) en échec : ${enEchec.join(', ')}`);

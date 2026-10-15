@@ -23,7 +23,9 @@ const gardes = (): ModuleMonte[] => modulesDeRoutes(toutBouchonne, usage).filter
 
 /** La correspondance validée (plan, tâche 3 ; statistiques : décision de Julien du 2026-10-07). */
 const ATTENDU: Record<string, string> = {
-  rcsMessages: 'rcs', rcsChannel: 'rcs', rcsMedia: 'rcs',
+  rcsMessages: 'rcs', rcsChannel: 'rcs',
+  // La médiathèque sert le bloc « message rapide » des scénarios autant que le RCS : le Pro y dépose (spec médias, § 2.3).
+  rcsMedia: 'scenarios',
   integrationBatch: 'crm', salesforce: 'crm', hubspotImport: 'crm', hubspotInstall: 'crm', hubspotPipelines: 'crm',
   inbox: 'inbox', stats: 'partagé', flows: 'scenarios (écritures)', workflows: 'scenarios (écritures)',
   mbaPublication: 'agent_meta', mbaOutils: 'agent_meta', mba: 'agent_meta',
@@ -83,6 +85,12 @@ describe('les fonctions gardées par l’offre', () => {
     for (const r of inbox) expect(r.statut).not.toBe(402);
     const crm = await appeler(gardes().find((m) => m.nom === 'hubspotImport')!, source('pro'));
     for (const r of crm) expect(r.statut).toBe(402);
+  });
+
+  it('🔴 un espace Pro dépose dans la médiathèque : le bloc « message rapide » de ses scénarios en a besoin (spec médias, § 2.3)', async () => {
+    const medias = await appeler(gardes().find((m) => m.nom === 'rcsMedia')!, source('pro'));
+    expect(medias.length).toBeGreaterThan(0);
+    for (const r of medias) expect(r.statut, `${r.methode} ${r.chemin}`).not.toBe(402);
   });
 
   it('🔴 un espace Entreprise passe tout', async () => {

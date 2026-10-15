@@ -95,8 +95,8 @@ clé au bucket par l'IAM, sinon par une politique de bucket, et le vérifier (la
    `NomLimite` l'inclut, `phraseLimite` le dit en Mo.
    Tests : les trois offres ; la vue de l'offre et `get_plan` le montrent ; `corpsRefusLimite` sur cette limite.
 2. **Migration B et store** (`db/migrations/`, `src/rcs/media-store.pg.ts`). Migration AVANT le code :
-   `supprime_le timestamptz`, `empreinte text`, index unique partiel `(tenant_id, empreinte) where supprime_le is
-   null`. Store :
+   `supprime_le timestamptz`, `empreinte text`, sans index unique (5 groupes de doublons en production, mesuré le
+   2026-10-15 : le verrou d'espace tient l'unicité). Store :
    - `deposer(tenant, fichier)` : empreinte connue -> la fiche existante ; sinon contrôle rapide du quota, objet au
      bucket, puis transaction sous `pg_advisory_xact_lock` (contrôle exact, insertion), refus -> objet effacé et
      `LimiteOffreError('stockageOctets', max)` ;

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { FONCTIONS, DROITS } from '../src/offres/offres';
 import { grilleDesOffres } from '../src/offres/vue';
-import { FONCTIONS_OFFRE, LIMITES_NOMBRE, NOMS_OFFRES, lireVueOffre } from '../web/lib/offre';
+import { FONCTIONS_OFFRE, LIMITES_NOMBRE, LIMITES_TOLERANTES, NOMS_OFFRES, lireVueOffre } from '../web/lib/offre';
 
 /**
  * LES NOMS DE L'OFFRE RECOPIÉS DANS LA CONSOLE (lot 6, tâche 7), qui ne peut pas importer le serveur. Les VALEURS de la
@@ -19,7 +19,7 @@ describe('la console et le serveur nomment l’offre de la même façon', () => 
 
   it('🔴 les limites : chaque clé du serveur est lue, et la grille réelle passe la validation de la console', () => {
     const cles = Object.keys(DROITS.base.limites).sort();
-    expect([...LIMITES_NOMBRE, 'conservationJours', 'commissionPct', 'badge', 'numeroInclus'].sort()).toEqual(cles);
+    expect([...LIMITES_NOMBRE, ...LIMITES_TOLERANTES, 'conservationJours', 'commissionPct', 'badge', 'numeroInclus'].sort()).toEqual(cles);
     const vue = {
       offre: 'free', fonctions: [], limites: { ...DROITS.base.limites },
       usage: { envoisModelesMois: 0, contacts: 0, automations: 0, membres: 1 }, grille: grilleDesOffres(), upgradeUrl: 'https://x/offre',

@@ -158,8 +158,9 @@ sans appel au bucket, et le seuil rouge (`SEUIL_FICHIERS_EN_BASE_OCTETS`, 500 Mo
 
 ### 2.2 Un même fichier ne compte qu'une fois
 
-Colonne `empreinte` (SHA-256 des octets), unique par espace parmi les fichiers non supprimés (index partiel). Déposer
-à nouveau un fichier identique rend la fiche existante, sans rien consommer, même au-dessus du quota. Sans ça, une
+Colonne `empreinte` (SHA-256 des octets). Déposer à nouveau un fichier identique rend la fiche vivante existante, sans
+rien consommer, même au-dessus du quota. **Pas d'index unique** : la production porte déjà 5 groupes de doublons (mesuré le
+2026-10-15), qui feraient échouer sa création ; c'est le verrou d'espace du dépôt qui tient l'unicité. Sans ça, une
 même vidéo posée dans trois scénarios coûterait trois fois son poids.
 
 ### 2.3 Le dépôt s'ouvre au Pro
