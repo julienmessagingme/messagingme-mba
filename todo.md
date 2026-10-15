@@ -194,10 +194,10 @@ l'écran et en Telegram, boucle de purge bornée. Restent :
   devient réel : exposer « jeton propre » dans `account-status` et n'offrir le bouton qu'à ces espaces.
 - Le refus d'un second numéro nomme l'identifiant Meta du numéro déjà là, pas le numéro affiché.
 
-## 🟡 Sortis de `wip.md` le 2026-10-10 : deux restes
+## 🟡 Sorti de `wip.md` le 2026-10-10 : un reste
 
-- **Les médias RCS hors de Postgres** : APRÈS la bascule Scaleway, en lot séparé (décidé le 2026-10-04,
-  `docs/prive/AUDIT-PERFORMANCE-COMPLET-2026-10-02.md` § 6). Leur volume est suivi dans `/ops` (rouge à 500 Mo).
+(Le second, les médias hors de Postgres, est devenu le lot A des médias, plus bas.)
+
 - **La section des connexions échouées doit dire qu'elle ne montre que les tentatives sur des comptes existants.**
   `audit_log.tenant_id` est NOT NULL : une tentative sur une adresse inconnue n'appartient à aucun espace et ne peut pas
   s'écrire. Sans cette phrase, on lira « aucune tentative » alors qu'il y en a eu.
@@ -2462,7 +2462,26 @@ Les lots B (médiathèque, quota, suppression) et C (vidéo et PDF dans le bloc 
 2026-10-15 avec les fichiers EN BASE (`rcs_media.bytes`), décision de Julien. Reste le lot A, à faire APRÈS la bascule :
 bucket privé en `nl-ams`, recopie de TOUT ce que la table porte (images, vidéos, PDF), retrait de la colonne en deux
 temps, effacement des objets à la suppression d'un espace. Plan `docs/superpowers/plans/2026-10-14-medias-message-rapide.md`,
-section « Lot A », à relire contre le code du moment avant d'écrire une ligne.
+section « Lot A », à relire contre le code du moment avant d'écrire une ligne. Décidé le 2026-10-04
+(`docs/prive/AUDIT-PERFORMANCE-COMPLET-2026-10-02.md` § 6) ; le volume de la table est suivi dans `/ops` (rouge à 500 Mo).
+
+Ce que les relectures des lots B et C laissent, aucun ne casse la production :
+
+- **Un `.mp4` ou un `.pdf` collé dans un bloc « Message RCS » n'est pas refusé** (jaune n° 5 du lot C) :
+  `rcsOutboundOf` (`src/workflow/executor.ts`) le transmet comme une image de carte, quand le message rapide refuse
+  déjà vidéo et PDF sur un parcours RCS (`genreParAdresse`). Même refus nommé à poser à la construction du message.
+- **Le dépôt lit jusqu'à 24 Mo AVANT la garde d'authentification** : la garde est un `preHandler`, qui tourne après
+  la lecture du corps, donc un anonyme fait lire 23 Mo avant son 401 (mesuré : 3,5 s). Une garde en `onRequest`
+  refuserait avant la lecture, pour les seules routes à gros corps.
+- **Le neuvième chemin d'adresse saisie par un client manque à l'inventaire** de `tests/lib-adresse-privee.test.ts` :
+  `prepareFichier` (`src/meta/template-media.ts`) passe par `telecharger`, câblé sur `telechargerEnteteProduction`
+  (`src/workflow/wiring.ts`). Garde en place, mais rien ne la tient si le câblage change.
+- **Course entre dédoublonnage et suppression** (jaune n° 6 du lot B) : un dépôt dédoublonné rend le code d'un
+  fichier existant ; supprimé avant que le bloc soit enregistré, ce fichier n'est cité par rien, donc la suppression
+  passe, et le bloc pointe un fichier en grâce, purgé 30 jours plus tard (l'envoi est alors refusé).
+  Fenêtre étroite : deux personnes, le même fichier, la même minute.
+- **Avant la bascule, mesurer qu'un corps de 23 Mo traverse le conteneur Scaleway** : sa limite de corps n'est pas
+  trouvée dans la doc. Il traverse aujourd'hui Cloudflare puis NPM jusqu'à l'API du VPS.
 
 ## 🔴 Agent IA : les lots NON développés (L3, L4, L6, L7), du cadrage du 2026-08-23
 

@@ -445,6 +445,9 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
   **jeton de garde** (sinon le porteur d'un bail périmé supprime le verrou de celui qui l'a repris), et un
   **drapeau de relance** (sinon le travail arrivé pendant le run est perdu). Réécrire le même verrou ailleurs
   se fait sur ces trois pièces, pas sur deux.
+- 🔴 **Sous un verrou consultatif, toute requête de l'opération passe par le client qui tient le verrou, jamais
+  par `this.pool`** : N appels concurrents tenant chacun une connexion et en attendant une seconde gèlent le pool,
+  et un faux pool de test n'a pas de limite. Revenu en revue le 2026-10-15 (`utilisations(tenant, code, q)`).
 - 🔴 **AVANT DE COMMITER, ÉNUMÉRER LES DÉPENDANTS DE CE QU'ON A CHANGÉ** (2026-09-04). La seule des règles de
   ce bloc qui soit VÉRIFIABLE de l'extérieur : Julien peut réclamer la liste. Pour chaque symbole, constante ou
   requête touchée : qui la LIT, qui suppose son ancienne valeur, quelle constante d'un AUTRE fichier doit lui
