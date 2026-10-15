@@ -126,6 +126,8 @@ export function refreshFlows(tenantId: string): Promise<FlowRefreshReport> {
 // `question` : pose une question au contact, avec un MENU de reponses (liste interactive WhatsApp) ou
 // sans menu. Il attend TOUJOURS une reponse, et il est le seul bloc a porter en plus une echeance.
 // Sorties : `row:<i>` par ligne du menu, `timeout` a l'echeance, et l'arete libre pour une reponse ecrite.
+// `flow` : envoie un formulaire WhatsApp et attend. Sorties : `rempli` quand le contact le renvoie, l'arete libre
+// pour toute autre reponse (et pour le formulaire renvoye si `rempli` n'est reliee a rien).
 // `http` : joue un appel DEJA mis au point dans Tools > Connecteurs API et range sa reponse dans un champ du
 // contact. Action synchrone non bloquante, comme `tag` ou `action`.
 // `aller_a` : « Aller à » (RC5). `data.cible` = le code public (`nod_…`) d'un bloc de n'importe quel scenario de

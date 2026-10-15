@@ -1,7 +1,7 @@
 ---
 ecran: workflows
 source_section: Automatisations (menu « Scénario », ex-« Flow »)
-source_empreinte: fc81a4
+source_empreinte: c472c4
 ---
 # Créer un scénario
 
@@ -19,6 +19,9 @@ Les blocs que vous utiliserez le plus :
   Paramètres > Médiathèque.
 - **Question** : une question avec un menu de réponses, ou une question ouverte. Le scénario attend la
   réponse avant de continuer.
+- **Formulaire** : envoie un formulaire WhatsApp et attend. Il a deux sorties : « Formulaire rempli » quand le
+  contact le renvoie (ses réponses remplissent sa fiche), « Toute autre réponse » quand il écrit à la place. Tant
+  que « Formulaire rempli » n'est reliée à rien, le formulaire renvoyé passe par « Toute autre réponse ».
 - **Action** : agit sur la fiche du contact, par exemple poser ou retirer un tag, remplir un champ.
 - **Condition** : aiguille le contact selon son état (ses tags, ses champs, sa dernière analyse, l'heure…). Vous
   pouvez y créer jusqu'à dix familles, chacune nommée et avec ses propres conditions : le contact suit la première

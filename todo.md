@@ -2488,6 +2488,13 @@ Ce que les relectures des lots B et C laissent, aucun ne casse la production :
 - **Avant la bascule, mesurer qu'un corps de 23 Mo traverse le conteneur Scaleway** : sa limite de corps n'est pas
   trouvée dans la doc. Il traverse aujourd'hui Cloudflare puis NPM jusqu'à l'API du VPS.
 
+## 🟡 Bloc Formulaire à deux sorties : ce que la relecture laisse (2026-10-15)
+
+- **Un `nfm_reply` n'est peut-être pas toujours un formulaire** : le message d'adresse natif de WhatsApp (réservé à
+  l'Inde aujourd'hui) répondrait aussi en `nfm_reply`, non vérifié. `src/webhooks/inbound.ts` le marquerait
+  `formulaire`, donc « Formulaire rempli » sur un bloc Formulaire. Sans effet tant que le produit ne l'envoie pas ;
+  à trancher sur `nfm_reply.name` si on l'ouvre un jour.
+
 ## 🔴 Agent IA : les lots NON développés (L3, L4, L6, L7), du cadrage du 2026-08-23
 
 ⚠️ **CE TITRE A DIT « L2 à L7 » JUSQU'AU 2026-09-11**, alors que L2 est livré et déployé depuis le

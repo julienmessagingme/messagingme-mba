@@ -931,7 +931,10 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 - ✅ **Bloc « formulaire » ENVOIE vraiment** (2026-07-17, fini le blocage silencieux) : le bloc envoie le
   formulaire choisi en message WhatsApp interactif, avec un **texte d'accroche** et un **libellé de bouton**
   personnalisables (pré-rempli avec le bouton du formulaire). Quand le contact soumet, ses réponses remplissent
-  sa fiche et le scénario avance. Comme le message rapide, il peut désormais **ouvrir un scénario** (2026-08-02) :
+  sa fiche et le scénario avance. Il a **deux sorties** (2026-10-15) : « Formulaire rempli » quand le contact
+  renvoie le formulaire, « Toute autre réponse » quand il écrit à la place. Tant que « Formulaire rempli » n'est
+  reliée à rien, le formulaire renvoyé passe par « Toute autre réponse » : un bloc monté avant garde sa flèche, qui
+  continue de tout recevoir. Comme le message rapide, il peut désormais **ouvrir un scénario** (2026-08-02) :
   l'enregistrement n'est plus refusé. Le constructeur se contente d'un avertissement jaune sur le **premier bloc**
   du scénario, qui rappelle qu'un scénario n'ouvrant pas par un envoi de template ne pourra pas partir en
   campagne (mais reste parfaitement utilisable quand le contact vient d'écrire).

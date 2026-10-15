@@ -12,6 +12,7 @@
 import type { Locale } from './locale';
 import { NODE_META } from './nodeMeta';
 import { sortiesDeCondition } from './condition-familles';
+import { SORTIE_FORMULAIRE_REMPLI } from './partage/sorties-formulaire';
 import type { WorkflowNodeType } from './api';
 
 /** Libellé du TYPE de bloc, dans la langue voulue. Une seule source : `NODE_META`, déjà en paires [fr, en]. */
@@ -159,6 +160,7 @@ export function libelleHandle(handle: string, boutons: string[], locale: Locale)
     if (texte) return guillemets(texte, locale);
     return locale === 'en' ? `Link ${i + 1}` : `Lien ${i + 1}`;
   }
+  if (handle === SORTIE_FORMULAIRE_REMPLI) return locale === 'en' ? 'Form submitted' : 'Formulaire rempli';
   return handle;
 }
 
@@ -311,9 +313,11 @@ const LIBELLES_NATURE: Record<string, [string, string]> = {
   reply_text: ['A répondu (sans cliquer)', 'Replied (without tapping)'],
 };
 
-/** Libellé d'une mesure qui porte sur un BOUTON précis. `null` si la nature n'en est pas une. */
-function libelleAvecBouton(kind: string, bouton: string, locale: Locale): string | null {
+/** Libellé d'une mesure qui porte sur un BOUTON précis. `null` si la nature n'en est pas une. `handle` : la sortie
+ *  `rempli` du bloc Formulaire n'est pas un clic, le contact a renvoyé le formulaire. */
+function libelleAvecBouton(kind: string, bouton: string, locale: Locale, handle?: string): string | null {
   const en = locale === 'en';
+  if (kind === 'reply_button' && handle === SORTIE_FORMULAIRE_REMPLI) return en ? 'Submitted the form' : 'A renvoyé le formulaire';
   if (kind === 'reply_button') return en ? `Tapped ${bouton}` : `A cliqué ${bouton}`;
   if (kind === 'url_click') return en ? `Clicked the link ${bouton}` : `A cliqué sur le lien ${bouton}`;
   return null;
@@ -348,7 +352,7 @@ export function mesuresDisponibles(bloc: BlocMesurable, locale: Locale, estPremi
   ];
   const choix: MesureDispo[] = bloc.choix.map((c) => ({
     cle: `${bloc.id}|reply_button|${c.handle}`,
-    label: libelleAvecBouton('reply_button', c.label, locale)!,
+    label: libelleAvecBouton('reply_button', c.label, locale, c.handle)!,
     kind: 'reply_button',
     handle: c.handle,
   }));
@@ -457,7 +461,7 @@ function libelleDeCle(cle: string, locale: Locale): string {
   const [, kind = '', handle = ''] = cle.split('|');
   if (LIBELLES_NATURE[kind]) return libelleNature(kind, locale);
   // Sans les compteurs de la période, on n'a plus le TEXTE du bouton : son numéro reste juste et lisible.
-  return libelleAvecBouton(kind, libelleHandle(handle, [], locale), locale) ?? cle;
+  return libelleAvecBouton(kind, libelleHandle(handle, [], locale), locale, handle) ?? cle;
 }
 
 export interface GroupeTableau {

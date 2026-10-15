@@ -103,6 +103,11 @@ describe('les choix proposés à la mesure', () => {
     expect(libelleHandle('card:0:btn:2', [], 'fr')).toBe('Carte 1, bouton 3');
     expect(libelleHandle('autre_chose', [], 'fr')).toBe('autre_chose');
   });
+
+  it('la sortie `rempli` du bloc Formulaire se lit « Formulaire rempli »', () => {
+    expect(libelleHandle('rempli', [], 'fr')).toBe('Formulaire rempli');
+    expect(libelleHandle('rempli', [], 'en')).toBe('Form submitted');
+  });
 });
 
 describe('les mesures proposées sur un bloc', () => {
@@ -111,6 +116,16 @@ describe('les mesures proposées sur un bloc', () => {
   it('🔴 « a répondu sans cliquer » est proposé MÊME sur un bloc à boutons', () => {
     // Et surtout sur un bloc sans choix, où c'est la seule mesure d'engagement possible.
     expect(mesuresDisponibles(bloc, 'fr').map((m) => m.kind)).toContain('reply_text');
+  });
+
+  it('le formulaire renvoyé se mesure « A renvoyé le formulaire » : le contact n’a rien cliqué', () => {
+    const formulaire = blocsDuScenario({
+      nodes: [n('f', 'flow', { flowId: 'fl1', flowName: 'RDV' }), n('t', 'tag', {})],
+      edges: [{ source: 'f', target: 't', sourceHandle: 'rempli' }],
+    }, 'fr')[0]!;
+    const rempli = mesuresDisponibles(formulaire, 'fr').find((m) => m.handle === 'rempli');
+    expect(rempli?.label).toBe('A renvoyé le formulaire');
+    expect(mesuresDisponibles(formulaire, 'en').find((m) => m.handle === 'rempli')?.label).toBe('Submitted the form');
   });
 
   it('un choix donne une mesure par bouton', () => {

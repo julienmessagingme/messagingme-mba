@@ -11,6 +11,7 @@ import { AGENT_SORTIES_RESERVEES, nodeMetaOf } from '@/lib/nodeMeta';
 import { famillesDeCondition, nomDeFamille, poigneeDeFamille, SORTIE_SINON } from '@/lib/condition-familles';
 import { carouselOutputs } from '@/lib/carousel-outputs';
 import { SORTIE_LIBRE } from '@/lib/workflow-sorties';
+import { SORTIE_FORMULAIRE_REMPLI } from '@/lib/partage/sorties-formulaire';
 import { ouvreUneSortie } from '@/lib/rcs-boutons';
 import { sortiesDuBloc, type EmailRecipientData } from '@/lib/workflow-canevas';
 import { brand, ink } from '@/lib/couleurs';
@@ -250,6 +251,7 @@ function WFNode({ id, data, selected }: NodeProps) {
   const isRcs = wfType === 'rcs_message';
   const isQuestion = wfType === 'question';
   const isAgent = wfType === 'agent';
+  const isFlow = wfType === 'flow';
   // « Aller à » (RC5) : aucune sortie, la suite est là où il mène. « Envoyer au MBA » (RC6) non plus : le parcours finit,
   // l'agent de Meta prend la conversation, et le moteur ne suivrait aucune flèche tirée d'ici.
   const isAllerA = wfType === 'aller_a' || wfType === 'vers_mba';
@@ -609,6 +611,22 @@ function WFNode({ id, data, selected }: NodeProps) {
             <Icone nom="echec" taille="mini" />
             <span className="truncate">{t('Sinon', 'Otherwise')}</span>
             <Handle type="source" id={SORTIE_SINON} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-danger" title={t('Sinon (aucune famille n’est vraie)', 'Otherwise (no group is true)')} />
+          </div>
+        </div>
+      ) : isFlow ? (
+        // Bloc FORMULAIRE (Julien, 2026-10-15) : le formulaire renvoyé prend « Formulaire rempli » ; tout le reste, et
+        // le formulaire lui-même quand cette sortie n'est reliée à rien, prend « Toute autre réponse » (l'arête libre,
+        // donc la flèche d'un bloc monté avant ce jour). Le moteur route sur la même constante.
+        <div className="border-t border-ink-200">
+          <div className="relative flex items-center gap-1 px-2 py-1 text-[10px] text-ink-900">
+            <Icone nom="formulaire" taille="mini" />
+            <span className="truncate">{t('Formulaire rempli', 'Form submitted')}</span>
+            <Handle type="source" id={SORTIE_FORMULAIRE_REMPLI} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={t('Le contact a renvoyé le formulaire', 'The contact submitted the form')} />
+          </div>
+          <div className="relative flex items-center gap-1 border-t border-ink-100 px-2 py-1 text-[10px] text-ink-900">
+            <Icone nom="modifier" taille="mini" />
+            <span className="truncate">{t('Toute autre réponse', 'Any other reply')}</span>
+            <Handle type="source" id={SORTIE_LIBRE} position={Position.Right} className="!h-2.5 !w-2.5 !border-2 !border-white !bg-brand-500" title={t('Le contact écrit au lieu de remplir le formulaire', 'The contact writes instead of filling in the form')} />
           </div>
         </div>
       ) : isAllerA ? (
