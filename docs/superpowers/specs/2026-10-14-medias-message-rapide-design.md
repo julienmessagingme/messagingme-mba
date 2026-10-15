@@ -4,6 +4,30 @@ Cadrage du 2026-10-14 avec Julien, en deux rondes de questions. Remplace la fich
 un message rapide » (2026-08-28), écrite AVANT la décision de sortir les fichiers de Postgres (2026-09-21) : elle
 prévoyait d'ajouter le PDF dans `rcs_media.bytes`, ce que cette spec écarte.
 
+## 🔴 Révision du 2026-10-15 : B et C avant la bascule, fichiers en base
+
+**Décision de Julien : on déploie sans attendre la bascule Scaleway.** Les lots B (le stock) et C (vidéo et PDF) se
+font tout de suite, et **les fichiers restent en base** (`rcs_media.bytes`) jusqu'au lot A, qui garde sa place APRÈS
+la bascule. Aucun bucket n'est créé d'ici là.
+
+Pourquoi c'est tenable : tous les espaces sont des espaces de test sauf Groupama PJ, donc peu de fichiers entreront
+en base d'ici la bascule, et la carte « Stockage en base » de `/ops` (rouge au-delà de 500 Mo) dit si le volume
+déborde. Le coût accepté : ces fichiers partent dans la copie de la base du jour J, puis le lot A les déplace.
+
+Ce qui change dans les lots B et C, et seulement là :
+- **dépôt** : une transaction sous verrou d'espace (quota, empreinte, insertion des octets), sans objet à déposer ni
+  à effacer ;
+- **purge des fichiers supprimés** : elle efface les lignes, les octets partent avec elles ;
+- **suppression d'un espace** : inchangée, la cascade emporte les fichiers ;
+- **préparation d'un envoi** : elle lit les octets en base par (espace, code) ;
+- **transport du dépôt** (§ 3.7) : la mesure porte d'abord sur le chemin ACTUEL (Cloudflare puis le proxy du VPS),
+  par une requête de 23 Mo vers la route de dépôt avant de livrer le lot C. Celle du conteneur Scaleway reste due
+  avant la bascule (session de migration).
+
+Le lot A, après la bascule, remplace ces lectures et écritures par le magasin d'objets et recopie TOUT ce que la
+table porte (images, vidéos, PDF). Le reste de cette spec vaut tel quel, en lisant « au bucket » comme « là où
+vivent les fichiers » pour B et C.
+
 ## Le problème
 
 Le bloc « message rapide » d'un scénario ne porte qu'une IMAGE (`data.imageUrl`, 2 Mo, champ partagé avec le bloc

@@ -1,16 +1,32 @@
 # Vidéos et PDF dans le bloc « message rapide » (plan)
 
 **Statut : validé par Julien le 2026-10-14, exécution native** (la session implémente chaque lot elle-même, un relecteur indépendant
-relit le lot fini), **après la bascule Scaleway**. Spec : [2026-10-14-medias-message-rapide-design.md](../specs/2026-10-14-medias-message-rapide-design.md),
+relit le lot fini). **Révisé le 2026-10-15 : lots B puis C TOUT DE SUITE, fichiers en base ; lot A après la bascule**
+(section suivante). Spec : [2026-10-14-medias-message-rapide-design.md](../specs/2026-10-14-medias-message-rapide-design.md),
 validée le 2026-10-14. Le plan la suit, il ne la répète pas : le pourquoi de chaque choix est dans la spec.
 
-**But :** le bloc « message rapide » porte une image, une vidéo MP4 ou un PDF, stockés dans un bucket privé, sous un
-quota par offre.
+**But :** le bloc « message rapide » porte une image, une vidéo MP4 ou un PDF, sous un quota par offre, stockés en
+base jusqu'au lot A, puis dans un bucket privé.
 
-🔴 **S'EXÉCUTE APRÈS LA BASCULE SCALEWAY**, en trois lots dans l'ordre A, B, C, chacun déployé seul. Écrit le
-2026-10-14 sur `origin/main` à `e489bb37` : au démarrage de chaque lot, relire ses fichiers sur origin (le code aura
-bougé, les commandes de déploiement seront celles de la cible, `DEPLOY.md` à jour) et corriger le plan avant d'écrire
-une ligne.
+Trois lots, chacun déployé seul. Au démarrage de chaque lot, relire ses fichiers sur origin (le code bouge vite) et
+corriger le plan avant d'écrire une ligne.
+
+## Révision du 2026-10-15 : l'ordre devient B, C, puis A après la bascule
+
+Décision de Julien (spec, § « Révision du 2026-10-15 ») : on n'attend pas la bascule, les fichiers restent dans
+`rcs_media.bytes` jusqu'au lot A. Ce qui change dans les tâches ci-dessous :
+- **B2** : le dépôt est UNE transaction sous `pg_advisory_xact_lock` (empreinte connue -> fiche existante ; sinon
+  contrôle du quota et insertion des octets). Ni objet à déposer, ni objet à effacer sur refus.
+- **B4** : la purge efface les lignes supprimées depuis plus de 30 jours, rien d'autre.
+- **C2** : la mesure du transport porte sur le chemin ACTUEL : une requête de 23 Mo vers la route de dépôt, à
+  travers Cloudflare et le proxy du VPS, AVANT de livrer C. Un refus du proxy (413) fait passer C2 par un plafond
+  plus bas ou par un réglage du proxy, à décider avec Julien sur la mesure.
+- **C3** : `prepareFichier` lit les octets en base par (espace, code), sans magasin d'objets.
+- **Lot A**, APRÈS la bascule : sa recopie (A3) déplace TOUT ce que la table porte, vidéos et PDF compris, et la
+  tâche A2 bascule les écritures du dépôt (B2) vers le magasin.
+
+Les points de revue 1 à 5 restent valables. Le déploiement de B et C sur le VPS s'annonce à la session de migration
+avant chaque `up`.
 
 ## Contraintes communes
 
