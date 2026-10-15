@@ -443,6 +443,17 @@ non éprouvés.
 la source, **2 jetons HubSpot sur 2** déchiffrés avec la clé du connecteur, **0 sur 2** avec une clé fausse. Le
 chemin des données tient en cinq minutes à cette taille ; le redéploiement pour le nouveau certificat s'y ajoute.
 
+**Puis le même jour, sur les VRAIES données de Messaging Me** : copiées de Supabase dans une base `repetition` de
+l'instance de production (`mm-prod-db`), sauvegardées par Scaleway (15 s, 24,7 Mo), restaurées dans une base jetable
+créée AVEC l'utilisateur `mba_admin` (propriétaire de chaque objet de la copie) et une base cible créée d'abord :
+base jetable prête en 192 s, restauration 16 s, vérification 6 s. Le catalogue porte les 124 tables et les
+extensions (`vector`, `pg_trgm`, `unaccent` : la sauvegarde logique de Scaleway les recrée), les comptes sont
+identiques table par table (55 089 lignes), **30 secrets sur 30** se déchiffrent avec la vraie clé, **0 sur 30**
+avec une fausse. Le contrôle de déchiffrement d'une base de Scaleway ne passe pas par `exercice-dechiffrer.ts`, dont
+la garde n'accepte qu'une base locale « exercice » : une copie dont la garde n'accepte qu'une adresse privée de
+Scaleway et un nom de base jetable, et dont le certificat se lit en clair (l'image de l'API tourne sous un
+utilisateur non root : un certificat en 600 rend EACCES).
+
 ## Scaleway (cible de la bascule) : le socle et le bouton de déploiement
 
 La cible et ses raisons : `docs/ARCHITECTURE-CIBLE.md` (§7, §10, §10 bis). Le plan : lot 3 de
@@ -461,6 +472,7 @@ matin est supprimé. Le réseau privé et la base sont RÉGIONAUX : une ressourc
 | Espace de conteneurs | `messagingme` | `nl-ams` | le conteneur de l'API `mba-api` y est créé : privé, rattaché à `mm-prive`, 2 Go et 1 120 mvCPU, de 0 à 1 copie pendant les essais |
 | Passerelle | `mm-passerelle` (VPC-GW-S) | `nl-ams-2` | bastion SSH sur le port 61000, NAT et route par défaut vers `mm-prive` |
 | Base JETABLE | `mm-banc` (PostgreSQL 17, DB-DEV-M) | `nl-ams` | adresse privée seule, disque chiffré, sauvegardes en région ; mot de passe dans Secret Manager `mm-banc-db-admin` ; à supprimer après les lots 3 et 4 |
+| Base de PRODUCTION | `mm-prod-db` (PostgreSQL 17, DB-PRO2-XXS, créée le 2026-10-15) | `nl-ams` | adresse privée seule (172.16.0.8), disque bloc chiffré de 20 Go, sauvegardes quotidiennes en région gardées 7 jours ; 200 connexions dont 3 réservées ; mot de passe de `mba_admin` dans Secret Manager `mm-prod-db-admin` ; VIDE jusqu'au jour J, les données arrivent dans `rdb` |
 | Machine des workers | `mm-workers` (PLAY2-NANO, Ubuntu 24.04) | `nl-ams-2` | sans adresse publique, disque de 20 Go ; Docker et Compose posés au premier démarrage (cloud-init) ; PRO2-XXS avant le jour J |
 
 Les identifiants se lisent par `scaleway-cli <produit> ... list` dans la région ou la zone ci-dessus, et les adresses

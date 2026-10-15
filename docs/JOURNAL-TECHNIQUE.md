@@ -5,6 +5,26 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-15 : la base de production créée, la répétition générale des données et la restauration sur vraies données
+
+- **La base** (accord de Julien) : `mm-prod-db`, DB-PRO2-XXS acceptée sans repli, PostgreSQL 17.11, prête en 162 s.
+  Une seule adresse, privée (172.16.0.8) ; l'adresse publique que nomme son certificat (51.158.240.160) ne répond ni
+  en 5432 ni en 443. `max_connections` 200 dont 3 réservées ; les cinq extensions du produit proposées ; `rdb`
+  appartient à `_rdb_superadmin`, mais `mba_admin` peut y créer dans `public`. Mot de passe généré et rangé au coffre
+  sans être affiché.
+- **La répétition générale** : un script de Julien a posé l'adresse de Supabase et la clé sur la machine des
+  workers (empreinte de la clé vérifiée contre la copie prouvée) ; de là, `pg_dump` des trois schémas de Messaging Me
+  (24 Mo, 7 s) et `pg_restore` dans une base `repetition` de l'instance (5 s), 20 s en tout avec les comptes et le
+  déchiffrement. Premier passage : le déchiffrement n'a pas démarré, le certificat de la base en 600 étant illisible
+  pour l'utilisateur non root de l'image de l'API (EACCES) ; rejouée en entier avec le certificat en 644 : 124 tables
+  identiques, 30 secrets sur 30.
+- **La restauration sur vraies données** : sauvegarde Scaleway de `repetition` (15 s), base jetable créée avec
+  `mba_admin` et base cible créée d'abord, restauration 16 s ; catalogue complet, comptes identiques, 30 secrets
+  sur 30 et 0 avec une clé fausse.
+- **Le nettoyage** : base jetable, sauvegarde manuelle et base `repetition` supprimées, fichier de l'adresse et de la
+  clé effacé de la machine. Le jour J, la copie porte le schéma : `npm run migrate` se joue après, et ne doit rien
+  appliquer (§10, étape 4).
+
 ## 2026-10-15 : vidéo et PDF dans le bloc « message rapide », et la médiathèque (lots B et C des médias)
 
 - **La décision** : Julien veut des vidéos et des PDF dans le bloc, et la livraison sans attendre la bascule Scaleway ;

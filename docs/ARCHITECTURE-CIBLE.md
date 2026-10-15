@@ -793,7 +793,9 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    même `ENCRYPTION_KEY`. ✅ **Éprouvée le 2026-10-15 sur la base du connecteur** (lot 6, `DEPLOY.md`) : 28 s de
    restauration, 2 jetons sur 2 relus. ⚠️ Scaleway déclare une restauration réussie même quand elle n'a rien écrit
    (base cible absente, propriétaire d'origine absent) : la vérification par le catalogue fait partie de la procédure.
-   À refaire sur la base de production de Messaging Me, dès sa création.
+   ✅ **Refaite le même jour sur les vraies données de Messaging Me**, copiées dans l'instance de production neuve :
+   sauvegarde 15 s, restauration 16 s, 124 tables et 55 089 lignes identiques, 30 secrets sur 30 relus (0 avec une
+   clé fausse). À rejouer après la bascule sur la base en service, puis chaque trimestre (`DEPLOY.md`).
 10. **Les gardes des bancs ne reconnaissent plus la production à « supabase »** dans son adresse (§7.8, point 3).
     ✅ **Fait le 2026-10-14** (lot 2a) : une garde POSITIVE commune aux cinq bancs (`scripts/garde-banc.ts`), qui
     n'accepte qu'une base marquée « banc » ou « jetable » par son hôte ou son nom.
@@ -818,9 +820,19 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    du §7.5 avec le vrai chiffre : mesurer (la sonde), puis mettre à jour les constantes de
    `tests/budget-pooler.test.ts` et les tailles de chaque service (dont `DB_POOL_RECEPTION_MAX`, § 7.8). Reporter
    dans les secrets de la cible les réglages de charge provisoires de `.env.prod` (`API_PLAFOND_GLOBAL_PAR_10S`, § 7.8).
+   ✅ **Base créée le 2026-10-15, avant le jour J** (`mm-prod-db`, DB-PRO2-XXS, accord de Julien) : une seule adresse,
+   privée (172.16.0.8), disque chiffré, `max_connections` relu à 200 dont 3 réservées au superutilisateur. Restent le
+   calcul du §7.5 sur ce chiffre et les réglages de charge.
 3. ~~Créer l'Object Storage privé~~ : reporté au lot des fichiers, APRÈS la bascule (§6).
-4. `npm run migrate` sur la base neuve. Vérifier `schema_migrations` et la présence de `french_sans_accent`.
+4. Sur la base neuve, créer `vector`, `pg_trgm` et `unaccent`, puis l'étape 5 : la copie porte le SCHÉMA avec les
+   données (répétition du 2026-10-15), donc `npm run migrate`, joué APRÈS, ne doit rien appliquer (même dernière
+   migration que la source). Vérifier `schema_migrations` et la présence de `french_sans_accent`.
 5. **Fenêtre de maintenance**, puis `pg_dump` / `pg_restore` des données.
+   ✅ **Répétée le 2026-10-15, sans toucher au trafic** : depuis la machine des workers (l'adresse de Supabase et la
+   clé posées par un script de Julien, effacées après), `pg_dump` des schémas `public`, `pgboss` et `salesforce` (24 Mo,
+   7 s), puis `pg_restore --no-owner --no-privileges` dans une base séparée de l'instance de production (5 s) ; seule
+   erreur, l'attendue (`schema "public" already exists`) ; 124 tables identiques à la source, 30 secrets sur 30 relus.
+   Les données tiennent donc en moins d'une minute : la fenêtre se mesure sur le reste (arrêt, déploiement, essais).
    🔴 **À notre taille (30 Mo), quelques minutes de fenêtre suffisent, et c'est un luxe qu'on perd en
    grandissant.** C'est un argument pour basculer TÔT : à 30 Go il faudra de la réplication logique, donc un
    chantier au lieu d'une commande. Sortir les fichiers de la base (§6) garde ce luxe plus longtemps.

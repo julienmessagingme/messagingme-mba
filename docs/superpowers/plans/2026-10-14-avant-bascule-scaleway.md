@@ -157,6 +157,9 @@ Julien le même jour : DB-PRO2-XXS, DB-POP2-2C-8G si rupture (§13, point 9). Re
 recalculé sur le `max_connections` relu à la création de cette base (`tests/budget-pooler.test.ts`) ; le second banc (`banc-deux-api-2.mts`), à rejouer sur le
 conteneur serverless lui-même plutôt que sur la machine, son épreuve d'arrêt étant ce que l'autoscaling fera.
 
+✅ **La base de production existe depuis le 2026-10-15** (`mm-prod-db`, DB-PRO2-XXS, accord de Julien) :
+`max_connections` relu, 200 dont 3 réservées. Le budget de connexions se recalcule sur ce chiffre.
+
 **Pourquoi** (§7.5, §7.8) : les chiffres d'aujourd'hui, mesurés à Londres à 10 ms, ne survivent pas au déménagement.
 
 **Tâches** : relever le nombre de connexions de la base jetable ; mettre à jour `tests/budget-pooler.test.ts` et
@@ -195,7 +198,9 @@ donc aussi par la sonde du lot 1 (le vrai code, comparé à la vérité de `mmhs
 ✅ **Fait le 2026-10-15 sur la base du connecteur.** Sauvegarde manuelle (14 s), instance jetable (250 s), restauration
 (28 s), vérification (3 s) : comptes identiques à la source, 2 jetons HubSpot sur 2 déchiffrés, 0 avec une clé fausse.
 La procédure est dans `DEPLOY.md`, avec son piège : sans base cible ou sans le propriétaire d'origine, la restauration
-se dit réussie et n'écrit rien. Reste : la rejouer sur la base de production de Messaging Me, dès sa création.
+se dit réussie et n'écrit rien. ✅ **Rejouée le même jour sur les vraies données de Messaging Me** : la répétition
+générale du jour J (copie de Supabase dans une base séparée de l'instance de production, 7 s puis 5 s), sauvegardée
+par Scaleway, restaurée dans une base jetable (16 s) : 124 tables et 55 089 lignes identiques, 30 secrets sur 30.
 
 **Tâches** : la section de `DEPLOY.md` réécrite pour la base managée (sauvegardes automatiques, rétention,
 instantané manuel avant le jour J) ; une restauration chronométrée sur une base jetable, celle du connecteur
