@@ -5,6 +5,33 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-15 : le conteneur de l'API déclaré dans le dépôt, et le budget de connexions de Scaleway
+
+- **Le plan** : `docs/superpowers/plans/2026-10-15-jour-j-conteneur-et-budget.md`, validé par Julien, qui a retenu 3
+  copies au plus (le budget en permet 6, deux versions comptées pendant un déploiement).
+- **Le fichier** `ops/scaleway/conteneur-api.json` : 1 à 3 copies, 1 120 mvCPU, 2 Go, seuil de 50 requêtes
+  simultanées, sonde de vie HTTP sur `/live`, pools 10 et 4, `API_COPIE=auto`, plafond global à 3 500. Le workflow
+  l'envoie dans le MÊME appel que la nouvelle image, en complétant les variables déjà posées.
+- **Mesuré avant d'écrire** : un PATCH du conteneur le redéploie même à valeurs identiques (`max_scale` 1 reposé à 1 :
+  « updating » aussitôt, de nouveau prêt en 10 s). D'où un seul appel, et plus de `/redeploy`.
+- **Corrigé au codage** : `DB_SSL_CA_FILE` sort du fichier déclaré, car il va avec l'adresse de la base et l'aurait
+  cassée sur le conteneur d'essai, qui parle encore à `mm-banc`.
+- **Le budget** (`tests/deploy-scaleway.test.ts`), deux versions pleines comptées pendant un déploiement :
+  2 x 3 x 14 + 17 + 10 = 111 connexions pour 197. Vérifié dans les deux sens : 7 copies refusées et 6 acceptées (la
+  frontière du calcul), minimum à 0, sonde TCP ou incomplète, clé de trop dans le fichier, `DB_SSL_CA_FILE`, nom de
+  copie fixe, pool de 4, variables remplacées au lieu de complétées, chacun refusé. Les deux programmes `jq` du workflow
+  s'exécutent en CI. Le certificat de la base de production (`certs/scaleway-mm-prod.crt`) entre dans l'image.
+- **Joué sur la vraie API avant de pousser** : le corps exact, sans l'image, sur le conteneur d'essai. Accepté ; la sonde
+  TCP REMPLACÉE par la sonde HTTP ; les variables existantes gardées et les quatre ajoutées ; les secrets intacts ;
+  aucune variable réservée (`PORT`, `SCW_*`) dans la lecture. Le minimum remis à 0 ensuite : le prochain déploiement,
+  approuvé par Julien, le passera à 1. Le workflow relit désormais le conteneur prêt et échoue sur un écart avec le
+  fichier (jugé sur la vraie lecture : non conforme à minimum 0, conforme à 1).
+- **La relecture** : aucun rouge ; ses jaunes traités dans le lot (deux versions au budget, règle du script des secrets,
+  doc périmée, extrapolation nommée, tests resserrés).
+- **Un incident de poste, sans suite** : en alignant les fichiers sur origin, `git show origin/main:.github/...` a été
+  réécrit par Git Bash en liste de chemins, a échoué, et la redirection avait déjà vidé le workflow dans l'arbre
+  partagé ; restauré depuis origin quelques minutes après, identique, rien de perdu.
+
 ## 2026-10-15 : la machine des workers en PRO2-XXS, et le banc sur la vraie gamme (lot 4 de la bascule)
 
 - **La machine** (accord de Julien) : `mm-workers` passée de PLAY2-NANO à PRO2-XXS. Arrêt 25 s, changement de

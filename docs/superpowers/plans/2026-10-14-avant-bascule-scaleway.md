@@ -154,7 +154,7 @@ l'absence de l'environnement `scaleway` (le dépôt est public).
 journal technique : 300 appels/s par copie d'API, réception de Meta à 24 ms en rupture, file des statuts à
 27,8 accusés/s, `API_PLAFOND_GLOBAL_PAR_10S=2100` à poser au jour J. La gamme de la base de production est choisie par
 Julien le même jour : DB-PRO2-XXS, DB-POP2-2C-8G si rupture (§13, point 9). Restent : le budget de connexions,
-recalculé sur le `max_connections` relu à la création de cette base (`tests/budget-pooler.test.ts`) ; le second banc (`banc-deux-api-2.mts`), à rejouer sur le
+recalculé sur le `max_connections` relu à la création de cette base (fait le 2026-10-15, `tests/deploy-scaleway.test.ts`) ; le second banc (`banc-deux-api-2.mts`), à rejouer sur le
 conteneur serverless lui-même plutôt que sur la machine, son épreuve d'arrêt étant ce que l'autoscaling fera.
 
 ✅ **La base de production existe depuis le 2026-10-15** (`mm-prod-db`, DB-PRO2-XXS, accord de Julien) :
@@ -163,11 +163,13 @@ conteneur serverless lui-même plutôt que sur la machine, son épreuve d'arrêt
 ✅ **Banc rejoué le 2026-10-15 sur la vraie gamme** (base de production DB-PRO2-XXS, dans une base `banc` supprimée
 après ; machine des workers passée en PRO2-XXS le même jour) : aucun palier n'a cassé jusqu'à 500 appels/s par copie
 (p95 194 ms), réception de Meta entre 14 et 20 ms, rafale d'accusés à 49 ms ; `API_PLAFOND_GLOBAL_PAR_10S=3500` au
-jour J. Restent : le budget de connexions sur 200, et le second banc sur le conteneur serverless.
+jour J. ✅ Le budget de connexions sur 200 est fait le même jour (`ops/scaleway/conteneur-api.json`, tenu par
+`tests/deploy-scaleway.test.ts`, plan `2026-10-15-jour-j-conteneur-et-budget.md`). Reste : le second banc sur le
+conteneur serverless.
 
 **Pourquoi** (§7.5, §7.8) : les chiffres d'aujourd'hui, mesurés à Londres à 10 ms, ne survivent pas au déménagement.
 
-**Tâches** : relever le nombre de connexions de la base jetable ; mettre à jour `tests/budget-pooler.test.ts` et
+**Tâches** : relever le nombre de connexions de la base jetable ; mettre à jour le budget (`tests/deploy-scaleway.test.ts` pour Scaleway) et
 les tailles de pool ; rejouer `scripts/banc-api.sh` avec la latence de la région, et le second banc
 (`scripts/banc-deux-api-2.mts`, ses cinq épreuves) ; reposer `API_PLAFOND_GLOBAL_PAR_10S` à 70 % de la capacité
 mesurée ; revoir `DB_POOL_RECEPTION_MAX` et la concurrence de `webhook-status` ; proposer à Julien la taille de la

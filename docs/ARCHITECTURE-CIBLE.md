@@ -77,7 +77,7 @@ ferme de ce document.
                                   jeton d'origine injecté par Cloudflare (§7.3)
                                                        |
                                   Scaleway Serverless Container, API
-                                  PRIVÉ, min 1 copie, max fixé par le budget de connexions
+                                  PRIVÉ, de 1 à 3 copies (Julien), sous le budget de connexions
                                                        |
                                      Private Network (VPC), région AMS (nl-ams)
              +---------------------------+-------------+---------------+
@@ -102,8 +102,9 @@ chemin coûte des rejeux de Meta et une réponse en retard au client.
 🔴 **L'API s'autoscale sans plafond de copies imposé par le code : décidé par Julien le 2026-09-28.** Plus rien
 de ce qu'une copie garde en mémoire ne doit devenir faux avec N copies (verrous, anti-rejeu, plafonds de débit,
 connexions de pg-boss) : c'est le chantier `docs/superpowers/plans/2026-09-28-api-multi-instances.md`, qui
-remplace l'ancienne borne de DEUX copies. Le maximum de l'autoscaler reste un NOMBRE, mais il se déduit du seul
-budget de connexions de la base (§7.5), plus du code. Le worker, lui, reste UN exemplaire par rôle (§5).
+remplace l'ancienne borne de DEUX copies. Le maximum de l'autoscaler reste un NOMBRE, borné par le seul budget de
+connexions de la base (§7.5), plus par le code ; sous cette borne, il se décide (3, Julien, 2026-10-15). Le worker,
+lui, reste UN exemplaire par rôle (§5).
 
 🔴 **La base part AVEC le calcul, jamais après.** Calcul à Amsterdam et base à Londres, chaque requête traverse
 internet. L'aller-retour est aujourd'hui de 11 ms mesurés ; entre deux fournisseurs il serait bien pire, et il
@@ -539,6 +540,14 @@ MESURE avec la sonde décrite en tête du test, puisqu'un réglage enregistré n
 connexions en mode SESSION (écoute, supervision, migration) : la cible doit offrir des connexions directes aux
 workers, pas seulement un pooler en mode transaction.
 
+✅ **Chez Scaleway, le calcul est un test depuis le 2026-10-15** (`tests/deploy-scaleway.test.ts`), sur les chiffres
+relus à la création de la base de production : 200 connexions, dont 3 réservées. Les workers (compose de la machine :
+8 + 2 + 1 et 3 + 2 + 1, soit 17), une marge de 10, et chaque copie d'API pleine (10 + 4 de réception), COMPTÉE DEUX
+FOIS : pendant un déploiement, l'ancienne version sert jusqu'à ce que la nouvelle soit prête, et rien ne dit que le
+maximum borne la somme des deux. Le budget en permet donc 6 ; **Julien en a retenu 3** (environ 1 500 appels/s,
+EXTRAPOLÉ du banc d'une seule copie, à remesurer sur le conteneur serverless). Le maximum et les pools se déclarent
+dans `ops/scaleway/conteneur-api.json`, que le workflow applique puis RELIT : le test lit ce que la production reçoit.
+
 ### 7.6 Les webhooks de statut ne subissent JAMAIS les quotas des clients
 
 Le même limiteur de clé API protège volontairement `/v1/*`, `/mcp` et le relais d'outils du MBA
@@ -616,9 +625,9 @@ mesure avant d'ouvrir le site, et on repose les chiffres. Rien de ce qui suit ne
 
 | Réglage | Valeur actuelle | Où | Pourquoi cette valeur | À la bascule |
 | --- | --- | --- | --- | --- |
-| `API_PLAFOND_GLOBAL_PAR_10S` | 1050 (105 appels/s) | `.env.prod`, posé le 2026-10-12 sur décision de Julien | 70 % des 150 appels/s tenus au banc | ✅ **3500, remesuré sur la vraie gamme le 2026-10-15** (70 % d'au moins 500 appels/s ; 2100 la veille sur la base d'essai) : à poser dans les secrets de la cible au jour J |
+| `API_PLAFOND_GLOBAL_PAR_10S` | 1050 (105 appels/s) | `.env.prod`, posé le 2026-10-12 sur décision de Julien | 70 % des 150 appels/s tenus au banc | ✅ **3500, remesuré sur la vraie gamme le 2026-10-15** (70 % d'au moins 500 appels/s d'UNE copie ; 2100 la veille sur la base d'essai) : déclaré dans `ops/scaleway/conteneur-api.json`, appliqué par le workflow, jamais posé par le script des secrets ; il vaut pour toute la plateforme, quel que soit le nombre de copies |
 | `API_PLAFOND_GLOBAL_PART_FREE` | 50 (%) | défaut du code | décision de Julien (Free d'abord) | Inchangé, sauf décision |
-| `DB_POOL_MAX` (API) | 10 | `docker-compose.yml` | budget du pooler Supabase (§ 7.5) | Recalculé sur l'offre choisie (§ 7.5) |
+| `DB_POOL_MAX` (API) | 10 | `docker-compose.yml` | budget du pooler Supabase (§ 7.5) | ✅ **10 par copie à la cible** (2026-10-15) : déclaré dans `ops/scaleway/conteneur-api.json`, tenu par le budget de `tests/deploy-scaleway.test.ts` |
 | `DB_POOL_RECEPTION_MAX` | 4 | `docker-compose.yml`, minimum tenu par `tests/budget-pooler.test.ts` | à 10 ms, deux connexions accusaient environ 150 webhooks/s | ✅ **4 suffit à la cible** : une rafale de 300 accusés/s y passe à 83 ms au p95 (2026-10-14), à 49 ms sur la vraie gamme (2026-10-15) |
 | `API_KEY_PREFILTRE_MAX` | 600 / min | défaut du code | après un démarrage, chaque clé repasse une fois par ce budget | Indépendant de la latence ; il est PAR COPIE, donc N copies en font N fois 600 |
 | Concurrence de `webhook-status` | 1 | `src/worker.ts` | protège la base | Mesurée à environ 11 accusés/s à 10 ms, puis **27,8 accusés/s à la cible** (2026-10-14) : la relever se décide sur ce chiffre |
@@ -825,11 +834,12 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    confirmée par le support). ✅ Fait ce jour-là, avec la base jetable et la machine des essais (`DEPLOY.md`).
 2. Créer la base managée, relever son nombre de connexions, **créer l'endpoint privé**, et refaire le calcul
    du §7.5 avec le vrai chiffre : mesurer (la sonde), puis mettre à jour les constantes de
-   `tests/budget-pooler.test.ts` et les tailles de chaque service (dont `DB_POOL_RECEPTION_MAX`, § 7.8). Reporter
-   dans les secrets de la cible les réglages de charge provisoires de `.env.prod` (`API_PLAFOND_GLOBAL_PAR_10S`, § 7.8).
+   `tests/budget-pooler.test.ts` et les tailles de chaque service (dont `DB_POOL_RECEPTION_MAX`, § 7.8).
    ✅ **Base créée le 2026-10-15, avant le jour J** (`mm-prod-db`, DB-PRO2-XXS, accord de Julien) : une seule adresse,
-   privée (172.16.0.8), disque chiffré, `max_connections` relu à 200 dont 3 réservées au superutilisateur. Restent le
-   calcul du §7.5 sur ce chiffre et les réglages de charge.
+   privée (172.16.0.8), disque chiffré, `max_connections` relu à 200 dont 3 réservées au superutilisateur. Le calcul
+   du §7.5 et les réglages de charge sont faits le même jour, dans `ops/scaleway/conteneur-api.json` (tenu par
+   `tests/deploy-scaleway.test.ts`) : pools, nom des copies et `API_PLAFOND_GLOBAL_PAR_10S` en viennent, JAMAIS du
+   `.env.prod` du VPS ni du script des secrets, et le jour J se termine par un lancement du workflow (§10 bis).
 3. ~~Créer l'Object Storage privé~~ : reporté au lot des fichiers, APRÈS la bascule (§6).
 4. Sur la base neuve, créer `vector`, `pg_trgm` et `unaccent`, puis l'étape 5 : la copie porte le SCHÉMA avec les
    données (répétition du 2026-10-15), donc `npm run migrate`, joué APRÈS, ne doit rien appliquer (même dernière
@@ -851,12 +861,16 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    sont en zone `nl-ams-2`, où la PRO2-XXS est en stock (relu le 2026-10-14).
    ✅ **Passée en PRO2-XXS le 2026-10-15** (accord de Julien) : 52 s de coupure, les trois conteneurs repartis seuls,
    le worker du connecteur en mode complet.
-7. Déployer l'API : conteneur **privé**, **min 1 / max donné par le budget du §7.5**, rattaché au réseau privé,
+7. Déployer l'API : conteneur **privé**, **de 1 à 3 copies (décision de Julien), sous le budget du §7.5**, rattaché au réseau privé,
    secrets fournis par le gestionnaire de secrets de Scaleway (jamais dans l'image), contrôle de vie léger qui ne
    dépend pas de la base, délai d'arrêt très en deçà du bail de la clé d'idempotence (§3.5). ⚠️ **Le nom de chaque
    copie dans `/ops`** (`API_COPIE`) : si l'hébergeur donne la même configuration à toutes les copies, leurs
    attentes de pool se fondront dans une seule courbe ; dériver alors le nom du nom d'hôte de la copie (petit lot
    de code à prévoir avant, `src/index.ts`).
+   ✅ **Déclaré dans le dépôt le 2026-10-15** (`ops/scaleway/conteneur-api.json`, appliqué par le workflow à chaque
+   déploiement, avec l'image) : de 1 à 3 copies (Julien), 1 120 mvCPU et 2 Go, sonde de vie HTTP sur `/live` (et non
+   plus TCP), `API_COPIE=auto`, pools 10 et 4, plafond global à 3 500. Les variables déclarées COMPLÈTENT celles du
+   script de Julien, sans les remplacer.
 8. **Supprimer l'endpoint public de la base.**
 9. Brancher Cloudflare : pendant la validation du certificat chez Scaleway, l'enregistrement peut rester en
    « DNS only » ; ensuite, proxy activé, règle du jeton d'origine posée, et **vérifier que l'appel direct au
@@ -905,8 +919,9 @@ geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose bu
   l'environnement `scaleway`.
 - 🔴 **Les secrets de production ne transitent JAMAIS par GitHub** (décidé par Julien le 2026-10-14) : Julien les pose
   une fois, par une commande qui lit son presse-papiers sans rien afficher, dans les variables secrètes du conteneur de
-  l'API et dans un fichier réservé à l'administrateur sur la machine des workers. Le workflow ne change que l'IMAGE ; sa
-  clé n'a aucun droit de lecture sur les secrets.
+  l'API et dans un fichier réservé à l'administrateur sur la machine des workers. Le workflow ne change que l'IMAGE et
+  la taille DÉCLARÉE du conteneur (`ops/scaleway/conteneur-api.json`, sans secret) ; sa clé n'a aucun droit de lecture
+  sur les secrets.
 - ⚠️ **La base ne se lit plus depuis un poste.** Aujourd'hui le `DATABASE_URL` du poste EST la production ; sans
   endpoint public, il faut un tunnel par le bastion. `npm run migrations` et les sondes en lecture seule sont à
   adapter, et c'est un gain : la production cesse d'être à une variable d'environnement d'une commande lancée par
@@ -1063,7 +1078,7 @@ Aucun de ces choix ne doit être remplacé par une valeur technique arbitraire.
 17. **La machine des workers** : tranché par Julien le 2026-10-14, PLAY2-NANO pendant les essais, PRO2-XXS (gamme
     production) avant le jour J (§10, étape 6).
 18. **Le chemin des secrets de production** : tranché par Julien le 2026-10-14, posés une fois par Julien, jamais par
-    GitHub ; le déploiement ne change que l'image (§10 bis).
+    GitHub ; le déploiement ne change que l'image et la taille déclarée du conteneur, sans secret (§10 bis).
 19. **La région de la cible** : tranché par Julien le 2026-10-14, **Amsterdam** (`nl-ams`, zone `nl-ams-2` pour les
     machines), et non Paris, qui refusait toute nouvelle machine à un compte neuf. Les données restent dans l'Union
     européenne, et la vitrine dit « hébergées dans l'Union européenne, chez Scaleway ». Une dizaine de

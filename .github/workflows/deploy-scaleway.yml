@@ -5,7 +5,8 @@ name: Deploiement Scaleway (API et workers)
 # `scaleway` dans GitHub. Jamais sur un push ni sur une pull request : le depot est public.
 #
 # 🔴 LES SECRETS DE PRODUCTION N'Y PASSENT JAMAIS (§13, point 18). Julien les pose une fois : variables secretes du
-# conteneur de l'API, fichier /opt/messagingme/.env.prod de la machine des workers. Ce workflow ne change que l'IMAGE.
+# conteneur de l'API, fichier /opt/messagingme/.env.prod de la machine des workers. Ce workflow ne change que l'IMAGE,
+# et la TAILLE declaree du conteneur de l'API (`ops/scaleway/conteneur-api.json` : copies, sonde, pools), sans secret.
 # Ses deux seuls secrets ouvrent le registre et le conteneur (SCW_SECRET_KEY, application IAM `github-deploy`, sans
 # aucun droit sur les secrets) et la machine des workers par le bastion (DEPLOY_SSH_KEY).
 # `tests/deploy-scaleway.test.ts` refuse tout autre secret.
@@ -97,7 +98,7 @@ jobs:
         run: |
           mkdir livraison
           docker save "$REGISTRE/$IMAGE:${{ steps.rev.outputs.sha }}" | gzip > livraison/image.tar.gz
-          cp ops/scaleway/docker-compose.workers.yml livraison/
+          cp ops/scaleway/docker-compose.workers.yml ops/scaleway/conteneur-api.json livraison/
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: livraison
@@ -228,9 +229,11 @@ jobs:
           docker image prune -af --filter "until=168h" > /dev/null
           docker compose ps
           SCRIPT
-      # API des conteneurs `v1` (la `v1beta1` portait `registry_image` et un drapeau `redeploy`) : un PATCH de `image`
-      # deploie la nouvelle image ; la meme image se redeploie par `/redeploy`. On n'accepte « ready » que sur la
-      # nouvelle image, et apres avoir vu le deploiement en cours ou attendu une minute.
+      # API des conteneurs `v1` (la `v1beta1` portait `registry_image` et un drapeau `redeploy`). La TAILLE declaree
+      # (`ops/scaleway/conteneur-api.json`) part avec l'image, en UN appel : tout PATCH redeploie, meme a valeurs
+      # identiques (mesure le 2026-10-15), d'ou plus de `/redeploy`. Ses variables COMPLETENT celles deja posees (le
+      # script de Julien pose les autres, dont l'adresse de la base), jamais ne les remplacent. On n'accepte « ready »
+      # que sur la nouvelle image, et apres avoir vu le deploiement en cours ou attendu une minute.
       - name: L'API passe sur la nouvelle image
         env:
           CLE_SCW: ${{ secrets.SCW_SECRET_KEY }}
@@ -244,13 +247,13 @@ jobs:
               || { echo "::error::l'API de Scaleway refuse : $sortie" >&2; return 1; }
             printf '%s' "$sortie"
           }
-          actuelle=$(appel "$api" | jq -r '.image')
-          if [ "$actuelle" = "$cible" ]; then
-            appel -X POST -d '{}' "$api/redeploy" > /dev/null
-          else
-            appel -X PATCH -d "{\"image\":\"$cible\"}" "$api" > /dev/null
-          fi
+          actuel=$(appel "$api")
+          corps=$(jq -c --argjson actuel "$actuel" --arg image "$cible" \
+            '. + {image: $image, environment_variables: (($actuel.environment_variables // {}) + .environment_variables)}' \
+            conteneur-api.json)
+          appel -X PATCH -d "$corps" "$api" > /dev/null
           en_cours=""
+          pret=""
           for i in $(seq 1 72); do
             reponse=$(appel "$api")
             etat=$(jq -r '.status' <<< "$reponse")
@@ -261,12 +264,17 @@ jobs:
             case "$etat" in
               error) if [ "$image" = "$cible" ] && { [ -n "$en_cours" ] || [ "$i" -ge 6 ]; }; then echo "::error::le conteneur refuse l'image : $(jq -r '.error_message' <<< "$reponse")"; exit 1; fi ;;
               updating|creating|upgrading) en_cours=1 ;;
-              ready) if [ "$image" = "$cible" ] && { [ -n "$en_cours" ] || [ "$i" -ge 6 ]; }; then exit 0; fi ;;
+              ready) if [ "$image" = "$cible" ] && { [ -n "$en_cours" ] || [ "$i" -ge 6 ]; }; then pret=1; break; fi ;;
             esac
             sleep 10
           done
-          echo "::error::le conteneur de l'API n'est pas pret sur $cible apres 12 minutes"
-          exit 1
+          [ -n "$pret" ] || { echo "::error::le conteneur de l'API n'est pas pret sur $cible apres 12 minutes"; exit 1; }
+          # La taille RELUE : le test du budget lit le fichier, le conteneur doit porter ce que le fichier declare.
+          conforme=$(jq -r --argjson reel "$reponse" '[(.min_scale == $reel.min_scale), (.max_scale == $reel.max_scale),
+            (.liveness_probe.http.path == $reel.liveness_probe.http.path),
+            (.environment_variables | to_entries | all(.value == $reel.environment_variables[.key]))] | all' conteneur-api.json)
+          [ "$conforme" = "true" ] || { echo "::error::le conteneur ne porte pas la taille declaree (ops/scaleway/conteneur-api.json)"; exit 1; }
+          echo "taille relue : conforme a ops/scaleway/conteneur-api.json"
       # Meme regle qu'avant le deploiement : le journal complet reste sur la machine.
       - name: Migration apres le deploiement
         if: env.MIGRATION == 'apres'

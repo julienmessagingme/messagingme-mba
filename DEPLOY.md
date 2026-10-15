@@ -469,7 +469,7 @@ matin est supprimé. Le réseau privé et la base sont RÉGIONAUX : une ressourc
 |---|---|---|---|
 | VPC et réseau privé | `mm-vpc`, `mm-prive` | `nl-ams` | 172.16.0.0/22, adresses attribuées par l'IPAM |
 | Registre privé | `rg.nl-ams.scw.cloud/messagingme` | `nl-ams` | image `mba:<sha complet>` |
-| Espace de conteneurs | `messagingme` | `nl-ams` | le conteneur de l'API `mba-api` y est créé : privé, rattaché à `mm-prive`, 2 Go et 1 120 mvCPU, de 0 à 1 copie pendant les essais |
+| Espace de conteneurs | `messagingme` | `nl-ams` | le conteneur de l'API `mba-api` y est créé : privé, rattaché à `mm-prive` ; sa TAILLE se déclare dans `ops/scaleway/conteneur-api.json` (de 1 à 3 copies, décision de Julien du 2026-10-15 ; 1 120 mvCPU et 2 Go ; sonde HTTP sur `/live` ; pools et plafond), que le workflow applique à chaque déploiement en complétant les variables du script sans les remplacer. ⚠️ Le minimum à 1 garde aussi le conteneur d'ESSAI allumé (environ 40 € par mois) dès le prochain déploiement |
 | Passerelle | `mm-passerelle` (VPC-GW-S) | `nl-ams-2` | bastion SSH sur le port 61000, NAT et route par défaut vers `mm-prive` |
 | Base JETABLE | `mm-banc` (PostgreSQL 17, DB-DEV-M) | `nl-ams` | adresse privée seule, disque chiffré, sauvegardes en région ; mot de passe dans Secret Manager `mm-banc-db-admin` ; à supprimer après les lots 3 et 4 |
 | Base de PRODUCTION | `mm-prod-db` (PostgreSQL 17, DB-PRO2-XXS, créée le 2026-10-15) | `nl-ams` | adresse privée seule (172.16.0.8), disque bloc chiffré de 20 Go, sauvegardes quotidiennes en région gardées 7 jours ; 200 connexions dont 3 réservées ; mot de passe de `mba_admin` dans Secret Manager `mm-prod-db-admin` ; VIDE jusqu'au jour J, les données arrivent dans `rdb` |
@@ -500,6 +500,12 @@ privées par `scaleway-cli ipam ip list private-network-id=<mm-prive> region=nl-
    fichier sinon.
 5. Les variables secrètes du conteneur de l'API.
 
+🔴 **Le script des secrets ne pose JAMAIS `DB_POOL_MAX`, `DB_POOL_RECEPTION_MAX`, `API_COPIE` ni
+`API_PLAFOND_GLOBAL_PAR_10S`**, ni en clair ni en secret : ils viennent de `ops/scaleway/conteneur-api.json`, que le
+workflow applique à chaque déploiement, et le jour J se termine donc par un lancement du workflow. La même clé posée
+des deux côtés n'a pas de comportement documenté. ⚠️ La fusion est ADDITIVE : retirer une clé du fichier ne la retire
+pas du conteneur, il faut l'y effacer à la main.
+
 ⚠️ **Jusqu'au jour J, les gestes 4 et 5 portent une configuration d'ESSAI**, posée par Claude le 2026-10-14 : la base
 jetable, des secrets JETABLES (générés pour l'occasion, jamais affichés) et `DRY_RUN=true`, sans aucune valeur de
 production. Au jour J, Julien la remplace par celle de production, sur la machine ET dans le conteneur : les deux
@@ -520,7 +526,12 @@ retour arrière : le même workflow avec `-f commit=<sha plus ancien>`, après l
 migrations appliquées depuis ont resserré. Le workflow refuse un commit hors de l'histoire de `main`, une
 configuration incomplète et un `.env.prod` absent ou à guillemets ; l'ordre est la migration « avant », les workers,
 l'API, la migration « après ». L'API ne change d'image que si chaque worker a annoncé son démarrage puis n'a pas
-redémarré pendant 30 secondes. `tests/deploy-scaleway.test.ts` le tient.
+redémarré pendant 30 secondes. Elle reçoit dans le MÊME appel sa taille déclarée (`ops/scaleway/conteneur-api.json` :
+copies, processeur, mémoire, sonde HTTP sur `/live`, pools, nom des copies, plafond global), ses variables COMPLÉTANT
+celles du script, et le workflow la RELIT une fois prête : un écart avec le fichier le fait échouer.
+`tests/deploy-scaleway.test.ts` le tient, budget de connexions compris. ⚠️ Un retour arrière réapplique le fichier DE
+CE COMMIT ; un commit antérieur au 2026-10-15 n'a pas ce fichier, et la construction échoue franchement sur sa copie,
+avant de toucher à quoi que ce soit.
 
 **Après un déploiement, les gestes qui restent à la main** (ceux de la section du VPS) :
 - le contrôle de fumée public, `node scripts/fumee.mjs`, depuis le poste (il vise encore `mba.` : à repointer sur
@@ -567,8 +578,10 @@ redémarré pendant 30 secondes. `tests/deploy-scaleway.test.ts` le tient.
   contenu de la réponse (`"error"`, absence d'`"id"`), jamais le seul code de sortie. Et une suppression RÉUSSIE
   répond `"message": "... successfully deleted"` : un contrôle sur `"message"` seul la prend pour une erreur (vécu).
   `instance private-nic create` range l'identifiant sous `private_nic.id`, pas à la racine.
-- **L'API des conteneurs est en `v1`** (champ `image`, route `/redeploy`) : la `v1beta1` n'a pas de `/redeploy`
-  (mesuré sans clé le 2026-10-14 : 404 en `v1beta1`, 401 en `v1`).
+- **L'API des conteneurs est en `v1`** : la `v1beta1` n'a pas de `/redeploy` (mesuré sans clé le 2026-10-14 : 404 en
+  `v1beta1`, 401 en `v1`). Le workflow ne s'en sert plus : un PATCH redéploie même à valeurs identiques (mesuré le
+  2026-10-15), donc l'image et la taille partent en un seul PATCH. Un objet `liveness_probe` envoyé REMPLACE l'ancien
+  (la sonde TCP par défaut est devenue HTTP, mesuré le même jour sur le conteneur d'essai).
 - **Un compte neuf avait ses quotas d'Instances à 0 dans les trois zones de Paris**, ouverts ailleurs, et le support
   a répondu rupture de stock à Paris : c'est ce qui a envoyé la cible à Amsterdam. L'onglet Quotas de l'Organization
   Dashboard les montre (décocher « Show used quotas only », sinon la liste est vide).
@@ -580,7 +593,8 @@ redémarré pendant 30 secondes. `tests/deploy-scaleway.test.ts` le tient.
   certificat public, PROPRE À CHAQUE BASE (auto-signé, valable dix ans), lu par `scaleway-cli rdb instance
   get-certificate`. Celui de la base jetable (`certs/scaleway-mm-banc.crt`) couvre son adresse PRIVÉE, vérifié le
   2026-10-14 ; il cite aussi une adresse publique sur laquelle rien ne répond (la base n'a aucune entrée publique).
-  Celui de la production s'ajoute avant le jour J. Jamais `DB_SSL_INSECURE`.
+  Celui de la production (`certs/scaleway-mm-prod.crt`, 172.16.0.8) y est depuis le 2026-10-15, ouvert par
+  `tests/deploy-scaleway.test.ts`. Jamais `DB_SSL_INSECURE`.
 - **Le conteneur de l'API ne se crée que sur une image qui EXISTE** : le registre étant vide avant le premier
   déploiement, `mba-api` a été créé le 2026-10-14 sur une image publique provisoire (`nginx:alpine`), que le premier
   lancement du workflow remplace ; le workflow ignore l'erreur de l'image qu'il remplace. `PORT` est réservé (Scaleway

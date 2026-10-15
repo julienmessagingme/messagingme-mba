@@ -9,9 +9,9 @@
 # 600), jamais par le workflow (§13, point 18). Ses valeurs s'ecrivent SANS guillemets : `docker run --env-file` (la
 # migration) les garde tels quels, quand compose les retire.
 #
-# ⚠️ LES TAILLES DE POOL REPRENNENT CELLES DU COMPOSE DU VPS (`docker-compose.yml`), tant que le lot 4 du plan
-# `docs/superpowers/plans/2026-10-14-avant-bascule-scaleway.md` ne les a pas recalculees pour la base de Scaleway ;
-# `tests/budget-pooler.test.ts` devra alors lire aussi ce fichier. Les limites de memoire et de processeur de chaque
+# ⚠️ LES TAILLES DE POOL REPRENNENT CELLES DU COMPOSE DU VPS (`docker-compose.yml`). Le budget de connexions de la
+# base de production (200) compte chaque service de ce fichier avec les copies d'API de `conteneur-api.json`, dans
+# `tests/deploy-scaleway.test.ts` (2026-10-15) : un service ajoute ici y entre seul. Les limites de memoire et de processeur de chaque
 # worker (la condition d'une machine unique, §2) sont celles du VPS, mesurees le 2026-10-14 (lot 2b, le detail est
 # dans `docker-compose.yml`) ; `tests/deploy-scaleway.test.ts` les tient egales.
 #

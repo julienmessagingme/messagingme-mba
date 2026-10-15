@@ -1,0 +1,14 @@
+{
+  "min_scale": 1,
+  "max_scale": 3,
+  "mvcpu_limit": 1120,
+  "memory_limit_bytes": 2000000000,
+  "scaling_option": { "concurrent_requests_threshold": 50 },
+  "liveness_probe": { "failure_threshold": 30, "interval": "10s", "timeout": "1s", "http": { "path": "/live" } },
+  "environment_variables": {
+    "DB_POOL_MAX": "10",
+    "DB_POOL_RECEPTION_MAX": "4",
+    "API_COPIE": "auto",
+    "API_PLAFOND_GLOBAL_PAR_10S": "3500"
+  }
+}

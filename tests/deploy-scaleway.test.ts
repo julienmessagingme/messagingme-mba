@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { X509Certificate } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { schema } from '../src/config';
+import { ECRITURES_EN_VOL } from '../src/api/contacts-upsert';
 
 /**
  * LE BOUTON DE DÉPLOIEMENT DE SCALEWAY, ET CE QU'IL N'A PAS LE DROIT DE DEVENIR (docs/ARCHITECTURE-CIBLE.md §10 bis).
@@ -161,6 +165,22 @@ describe('le workflow de déploiement Scaleway', () => {
       .toMatch(/error\) if \[ "\$image" = "\$cible" \] && \{ \[ -n "\$en_cours" \] \|\| \[ "\$i" -ge 6 \]; \}; then/);
   });
 
+  it('🔴 la taille DÉCLARÉE du conteneur part avec l’image, et ses variables COMPLÈTENT celles posées sans les remplacer', () => {
+    // Un PATCH des seules variables déclarées effacerait celles que pose le script de Julien (dont l'adresse de la
+    // base) : l'API repartirait sans sa configuration. Et tout PATCH redéploie, même à valeurs identiques (mesuré le
+    // 2026-10-15) : l'image et la taille partent en un seul appel, sans `/redeploy` qui se heurterait au déploiement.
+    const api = etape('L\'API passe sur la nouvelle image');
+    expect(api).toContain('conteneur-api.json');
+    expect(api).toContain('($actuel.environment_variables // {}) + .environment_variables');
+    expect(api).toContain('appel -X PATCH -d "$corps" "$api"');
+    expect(api).not.toContain('/redeploy');
+    expect(etape('Ranger l\'image et le compose des workers')).toContain('ops/scaleway/conteneur-api.json livraison/');
+    // Et le conteneur prêt se RELIT contre le fichier : sans cela, « le test lit ce que la production reçoit » serait
+    // une promesse, pas une vérification.
+    expect(api).toContain('--argjson reel "$reponse"');
+    expect(api).toContain('le conteneur ne porte pas la taille declaree');
+  });
+
   it('⚠️ la clé SSH et les empreintes perdent leurs retours chariot, et la connexion muette reste ouverte', () => {
     const ssh = etape('Ouvrir le chemin SSH, par le bastion de la passerelle');
     expect(ssh).toContain(`printf '%s\\n' "$CLE_SSH" | tr -d '\\r' > ~/.ssh/deploiement`);
@@ -186,7 +206,7 @@ describe('le workflow de déploiement Scaleway', () => {
     expect(valeur(env, 'REGISTRE')).toBe(`rg.${region}.scw.cloud/messagingme`);
     expect(WORKFLOW).toContain('https://api.scaleway.com/containers/v1/regions/$REGION/containers/$CONTENEUR');
     expect(WORKFLOW).toContain('docker login rg.$REGION.scw.cloud');
-    // L'API `v1` : `image`, et `/redeploy` pour la même image. L'ancienne version bêta portait d'autres noms de
+    // L'API `v1` : un PATCH qui porte `image` et la taille déclarée. L'ancienne version bêta portait d'autres noms de
     // champs ; seul le CODE compte ici, pas les commentaires qui la citent.
     const code = WORKFLOW.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
     expect(code).not.toMatch(/v1beta1|registry_image/);
@@ -248,5 +268,113 @@ describe('le compose de la machine des workers', () => {
         expect(valeur(scaleway, cle), `${service} ${cle}`).toBe(valeur(vps, cle));
       }
     }
+  });
+});
+
+/**
+ * LE CONTENEUR DE L'API CHEZ SCALEWAY ET LE BUDGET DE CONNEXIONS (§ 7.5 de `docs/ARCHITECTURE-CIBLE.md`, plan du
+ * 2026-10-15). Sans pooler devant la base, chaque copie d'API ouvre ses pools en connexions RÉELLES : au pire, pendant
+ * un déploiement, deux versions de toutes les copies que l'autoscaler peut allumer, pleines, plus les workers, plus la
+ * marge, doivent tenir dans la base.
+ */
+describe('le conteneur de l’API chez Scaleway et le budget de connexions', () => {
+  const CONTENEUR = JSON.parse(lire('ops/scaleway/conteneur-api.json'));
+  const env = CONTENEUR.environment_variables as Record<string, string>;
+  /** Relus à la création de la base de production `mm-prod-db` (DB-PRO2-XXS), le 2026-10-15. */
+  const MAX_CONNECTIONS = 200;
+  const RESERVEES_SUPERUTILISATEUR = 3;
+  /** Migrations, sondes, sauvegardes et console d'administration. */
+  const MARGE = 10;
+  // TOUS les services du compose de la machine comptent, pas seulement ceux qu'on connaît aujourd'hui. Un worker : son
+  // pool, son pg-boss, et une connexion d'écoute des notifications.
+  const SERVICES = [...blocRacine(COMPOSE_SCALEWAY, 'services').matchAll(/^ {2}([a-z0-9-]+):$/gm)].map((m) => m[1]!);
+  const workers = SERVICES.reduce((n, s) => {
+    const bloc = blocNiveau2(COMPOSE_SCALEWAY, s);
+    return n + Number(valeur(bloc, 'DB_POOL_MAX')) + Number(valeur(bloc, 'PGBOSS_MAX')) + 1;
+  }, 0);
+  // Une copie d'API : son pool applicatif (qui porte aussi ses enfilements) et celui de la réception de Meta.
+  const parCopie = Number(env.DB_POOL_MAX) + Number(env.DB_POOL_RECEPTION_MAX);
+
+  it('🔴 chaque service de la machine déclare ses pools, et tous entrent au budget', () => {
+    expect(SERVICES).toEqual(expect.arrayContaining(['mba-worker', 'mba-worker-analyse']));
+    for (const s of SERVICES) {
+      const bloc = blocNiveau2(COMPOSE_SCALEWAY, s);
+      expect(valeur(bloc, 'DB_POOL_MAX'), `${s} sans DB_POOL_MAX`).toBeDefined();
+      expect(valeur(bloc, 'PGBOSS_MAX'), `${s} sans PGBOSS_MAX`).toBeDefined();
+    }
+  });
+
+  it('🔴 le pire cas tient dans la base PENDANT un déploiement : deux versions pleines, les workers, la marge', () => {
+    // Pendant une mise à jour, l'ancienne version sert jusqu'à ce que la nouvelle soit prête (Scaleway, « Concepts »),
+    // et rien ne dit que `max_scale` borne la somme des deux : le pire cas compte DEUX fois les copies. Il en permet 6.
+    const total = 2 * CONTENEUR.max_scale * parCopie + workers + MARGE;
+    expect(total, `2 x ${CONTENEUR.max_scale} copies x ${parCopie} + ${workers} (workers) + ${MARGE} (marge)`)
+      .toBeLessThanOrEqual(MAX_CONNECTIONS - RESERVEES_SUPERUTILISATEUR);
+  });
+
+  it('🔴 une copie toujours allumée, et ses pools tiennent la console comme la réception de Meta', () => {
+    // Un minimum à 0 ferait attendre le démarrage (plusieurs secondes, `tsx`) au premier webhook après un silence.
+    expect(CONTENEUR.min_scale).toBeGreaterThanOrEqual(1);
+    expect(CONTENEUR.max_scale).toBeGreaterThanOrEqual(CONTENEUR.min_scale);
+    // Même règle que sur le VPS (`tests/budget-pooler.test.ts`) : un lot lourd ne doit pas prendre tout le pool.
+    expect(Number(env.DB_POOL_MAX)).toBeGreaterThan(ECRITURES_EN_VOL * schema.shape.API_MAX_LOURDES_SIMULTANEES.parse(undefined));
+    expect(Number(env.DB_POOL_RECEPTION_MAX)).toBeGreaterThanOrEqual(4);
+    // Un nom fixe fondrait les attentes de pool de toutes les copies dans une seule courbe de `/ops` (lot 2c).
+    expect(env.API_COPIE).toBe('auto');
+  });
+
+  it('⚠️ la sonde de vie interroge l’application, pas seulement son port, avec tous ses réglages', () => {
+    // Une sonde TCP dit « prêt » dès que le port s'ouvre, même quand l'application ne répond pas. Et une sonde à qui il
+    // manque un réglage est gardée par défaut, en silence (`DEPLOY.md`).
+    expect(CONTENEUR.liveness_probe.http?.path).toBe('/live');
+    expect(CONTENEUR.liveness_probe.tcp).toBeUndefined();
+    for (const r of ['failure_threshold', 'interval', 'timeout']) expect(CONTENEUR.liveness_probe[r], r).toBeDefined();
+  });
+
+  it('🔴 le fichier ne porte ni secret ni réglage propre à un environnement : le dépôt est public', () => {
+    // Le jq du workflow envoie le fichier ENTIER dans le PATCH : une clé de plus partirait telle quelle. Et l'adresse
+    // de la base et son certificat (`DB_SSL_CA_FILE`) changent d'un environnement à l'autre : ils restent au script.
+    expect(Object.keys(CONTENEUR).sort()).toEqual(['environment_variables', 'liveness_probe', 'max_scale',
+      'memory_limit_bytes', 'min_scale', 'mvcpu_limit', 'scaling_option']);
+    expect(Object.keys(env).sort()).toEqual(['API_COPIE', 'API_PLAFOND_GLOBAL_PAR_10S', 'DB_POOL_MAX', 'DB_POOL_RECEPTION_MAX']);
+  });
+
+  it('⚠️ le certificat de la base de production entre dans l’image, sans clé, valable pour son adresse', () => {
+    const pem = lire('certs/scaleway-mm-prod.crt');
+    expect(pem).not.toMatch(/PRIVATE KEY/);
+    const certificat = new X509Certificate(pem);
+    expect(certificat.checkIP('172.16.0.8')).toBe('172.16.0.8');
+    expect(Date.parse(certificat.validTo) - Date.now(), 'certificat de mm-prod-db à renouveler (rdb instance get-certificate)')
+      .toBeGreaterThan(365 * 24 * 3600 * 1000);
+  });
+
+  // Les deux programmes jq du workflow, EXÉCUTÉS tels que GitHub les lance (jq est sur le runner de la CI ; absent d'un
+  // poste Windows, ces deux cas s'y sautent). Un opérande inversé passerait une recherche de texte, pas ceci.
+  const jqPresent = spawnSync('jq', ['--version']).status === 0;
+  const programme = (motif: RegExp) => motif.exec(etape('L\'API passe sur la nouvelle image'))?.[1] ?? '';
+  const jq = (args: string[]) => spawnSync('jq', args, { input: lire('ops/scaleway/conteneur-api.json'), encoding: 'utf8' });
+
+  it.skipIf(!jqPresent)('🔴 la fusion, exécutée : les variables posées ailleurs survivent, le fichier l’emporte, rien de secret ne repart', () => {
+    const fusion = programme(/--arg image "\$cible" \\\n\s+'([^']+)'/);
+    expect(fusion).not.toBe('');
+    const actuel = { image: 'ancienne', environment_variables: { DB_SSL_CA_FILE: '/app/certs/x.crt', DB_POOL_MAX: '8' },
+      secret_environment_variables: [{ key: 'DATABASE_URL', hashed_value: 'h' }] };
+    const r = jq(['-c', '--argjson', 'actuel', JSON.stringify(actuel), '--arg', 'image', 'neuve', fusion]);
+    expect(r.status, r.stderr).toBe(0);
+    const corps = JSON.parse(r.stdout);
+    expect(corps.image).toBe('neuve');
+    expect(corps.environment_variables.DB_SSL_CA_FILE).toBe('/app/certs/x.crt');
+    expect(corps.environment_variables.DB_POOL_MAX).toBe(env.DB_POOL_MAX);
+    expect(corps.secret_environment_variables).toBeUndefined();
+  });
+
+  it.skipIf(!jqPresent)('🔴 la relecture, exécutée : conforme si le conteneur porte le fichier, non conforme sinon', () => {
+    const relecture = programme(/--argjson reel "\$reponse" '([^']+)' conteneur-api\.json/);
+    expect(relecture).not.toBe('');
+    const juge = (reel: unknown) => jq(['-r', '--argjson', 'reel', JSON.stringify(reel), relecture]).stdout.trim();
+    const porte = { ...CONTENEUR, environment_variables: { ...env, NODE_ENV: 'production' } };
+    expect(juge(porte)).toBe('true');
+    expect(juge({ ...porte, min_scale: 0 })).toBe('false');
+    expect(juge({ ...porte, environment_variables: { ...porte.environment_variables, DB_POOL_MAX: '8' } })).toBe('false');
   });
 });
