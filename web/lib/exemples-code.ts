@@ -21,7 +21,7 @@ import type { Bilingue } from './api-exemples';
  * `tests/sdk-contrat.test.ts` les compare, comme celle du README. Monter la version du SDK sans toucher cette ligne ferait
  * installer l'ancienne.
  */
-export const VERSION_SDK = '0.2.0';
+export const VERSION_SDK = '0.3.0';
 
 export interface ExempleCode {
   /** Le chemin du fichier dans le projet de l'intégrateur, affiché en légende ; aussi son chemin dans le projet de test. */
@@ -174,6 +174,12 @@ export const RECETTE_NEXTJS = {
     ),
   },
 } as const satisfies Record<string, ExempleCode>;
+
+/**
+ * Les extraits des pages « cas d'usage » de la vitrine (lot 6), compilés comme les autres par
+ * `tests/doc-exemples-compiles.test.ts` et affichés tels quels (`data-exemple="cas.<clé>"`, `tests/vitrine-pages.test.ts`).
+ */
+export const EXEMPLES_CAS = {} as const satisfies Record<string, ExempleCode>;
 
 /** Les variables d'environnement de la recette (`.env.local`), jamais compilées. */
 export const ENV_NEXTJS = lignes('MESSAGINGME_API_KEY=mba_...', 'MESSAGINGME_WEBHOOK_SECRET=whsec_...');

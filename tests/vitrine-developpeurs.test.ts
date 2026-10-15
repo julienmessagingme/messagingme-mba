@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { DROITS, PRIX_PRO_HT_CENTIMES } from '../src/offres/offres';
 import { CODE_RE } from '../src/http/widget-public';
 import { PRIX_NUMERO_HT_CENTIMES } from '../src/stripe/abonnement';
@@ -9,6 +9,7 @@ import { API_PUBLIQUE, COMMANDE_DEMARRAGE, COMMANDES_PLUGIN, SERVEUR_PLUGIN_MCP 
 import { MARQUE_DEBUT } from '../scripts/plugin/generer';
 import { EXEMPLES_SDK, VERSION_SDK } from '../web/lib/exemples-code';
 import { CATALOGUE_MCP } from '../web/lib/partage/catalogue-mcp';
+import { SITE, lire, pagesHtml, parAttribut, texte } from './vitrine-lecture';
 
 /**
  * LA SECTION DÉVELOPPEURS DE LA VITRINE DIT CE QUE LE PRODUIT FAIT (lot 18). La vitrine est du HTML statique, publiée par
@@ -19,40 +20,10 @@ import { CATALOGUE_MCP } from '../web/lib/partage/catalogue-mcp';
  * ⚠️ C'est parce qu'il lit `site/` que `ci.yml` ne l'ignore plus : un push de la vitrine seule lance la CI.
  */
 
-const SITE = resolve(__dirname, '..', 'site');
 const FR = 'developpeurs/index.html';
 const EN = 'en/developers/index.html';
 const ADRESSE_FR = 'https://app.messagingme.fr/developpeurs/';
 const ADRESSE_EN = 'https://app.messagingme.fr/en/developers/';
-
-const lire = (chemin: string): string => readFileSync(join(SITE, chemin), 'utf8');
-
-function pagesHtml(dossier = SITE, prefixe = ''): string[] {
-  return readdirSync(dossier).flatMap((nom) => {
-    const complet = join(dossier, nom);
-    const relatif = prefixe ? `${prefixe}/${nom}` : nom;
-    if (statSync(complet).isDirectory()) return pagesHtml(complet, relatif);
-    return nom.endsWith('.html') ? [relatif] : [];
-  });
-}
-
-/** Le texte tel que le visiteur le lit : balises retirées, entités décodées. */
-function texte(html: string): string {
-  return html
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, '&');
-}
-
-/** Le contenu de chaque élément qui porte l'attribut `attr`, par valeur d'attribut. */
-function parAttribut(html: string, attr: string): Array<{ valeur: string; contenu: string }> {
-  const re = new RegExp(`<(\\w+)[^>]*\\s${attr}="([^"]+)"[^>]*>([\\s\\S]*?)</\\1>`, 'g');
-  return [...html.matchAll(re)].map((m) => ({ valeur: m[2]!, contenu: m[3]! }));
-}
 
 const PAGES = { fr: lire(FR), en: lire(EN) };
 

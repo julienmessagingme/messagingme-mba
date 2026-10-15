@@ -15,7 +15,7 @@ _Prompt_
 ```
 Branche Messaging Me (WhatsApp) dans ce projet Next.js (App Router), en suivant la recette
 https://console.messagingme.app/developers/api/guides/nextjs.md :
-1. installe le SDK : npm install github:julienmessagingme/messagingme-sdk#v0.2.0 ;
+1. installe le SDK : npm install github:julienmessagingme/messagingme-sdk#v0.3.0 ;
 2. crée lib/messagingme.ts (le client, côté serveur seulement) ;
 3. crée la route POST /api/confirmation qui envoie le modèle « confirmation_commande » (deux variables : le nom
    du contact, puis le numéro de commande) avec une clé d’idempotence tirée du numéro de commande, et renvoie
@@ -33,7 +33,7 @@ N’invente aucune route ni aucun champ : ils sont dans https://api.messagingme.
 _Commande_
 
 ```
-npm install github:julienmessagingme/messagingme-sdk#v0.2.0
+npm install github:julienmessagingme/messagingme-sdk#v0.3.0
 ```
 
 Deux variables dans `.env.local` : la clé d’API (Developers > Clés d’API, droit sends:create) et le secret de l’adresse de webhook, donné une seule fois à sa création.

@@ -15,7 +15,7 @@ _Prompt_
 ```
 Connect Messaging Me (WhatsApp) to this Next.js project (App Router), following the recipe
 https://console.messagingme.app/developers/api/guides/nextjs.en.md:
-1. install the SDK: npm install github:julienmessagingme/messagingme-sdk#v0.2.0;
+1. install the SDK: npm install github:julienmessagingme/messagingme-sdk#v0.3.0;
 2. create lib/messagingme.ts (the client, server-side only);
 3. create the POST /api/confirmation route that sends the “confirmation_commande” template (two variables: the
    contact name, then the order number) with an idempotency key taken from the order number, and returns e.code and
@@ -33,7 +33,7 @@ Do not invent any route or field: they are in https://api.messagingme.app/openap
 _Command_
 
 ```
-npm install github:julienmessagingme/messagingme-sdk#v0.2.0
+npm install github:julienmessagingme/messagingme-sdk#v0.3.0
 ```
 
 Two variables in `.env.local`: the API key (Developers > API keys, sends:create scope) and the webhook endpoint secret, shown only once when it is created.

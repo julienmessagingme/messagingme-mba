@@ -1213,6 +1213,90 @@ export interface webhooks {
         patch?: never;
         trace?: never;
     };
+    "agent.action": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * An AI agent triggered one of your actions during a conversation (once a day per contact and action).
+         * @description Sent to every webhook endpoint subscribed to this type. Signed per Standard Webhooks.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    /** @description The event id (evt_…), stable across retries. */
+                    "webhook-id": string;
+                    /** @description Unix time in seconds; reject a timestamp more than 5 minutes away. */
+                    "webhook-timestamp": string;
+                    /** @description v1,<base64 HMAC-SHA256 of id.timestamp.body>, keyed with the base64-decoded part of the secret after whsec_; during a rotation, two signatures separated by a space. */
+                    "webhook-signature": string;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description evt_ followed by 32 hex characters; stable across retries and replays. Also sent in webhook-id. */
+                        id: string;
+                        /** @constant */
+                        type: "agent.action";
+                        /** @description ISO 8601 date-time */
+                        created_at: string;
+                        /** @description The workspace (tenant) ID. */
+                        workspace_id: string;
+                        data: {
+                            contact: {
+                                id: string;
+                                phone: string | null;
+                                name: string | null;
+                                external_id: string | null;
+                                opted_out: {
+                                    whatsapp: boolean;
+                                    rcs: boolean;
+                                };
+                            } | null;
+                            conversation_id: string;
+                            agent: {
+                                id: string;
+                            };
+                            action: {
+                                /** @description The action’s ID: stable when the action is renamed. */
+                                id: string;
+                                name: string;
+                            };
+                            /** @description The fields the agent collected, by code; a field the contact did not give is absent. Dates are YYYY-MM-DD. */
+                            fields: {
+                                [key: string]: string | number;
+                            };
+                            /** @constant */
+                            channel: "whatsapp";
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Acknowledged. Anything else is retried for 24 hours. */
+                "2XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "conversation.needs_reply": {
         parameters: {
             query?: never;
@@ -3811,8 +3895,8 @@ export interface operations {
                         }[];
                         /** @description The plan’s maximum number of endpoints; null: unlimited. */
                         limit: number | null;
-                        types: ("message.received" | "message.delivered" | "message.read" | "message.failed" | "link.clicked" | "contact.opted_out" | "conversation.analyzed" | "contact.risk_changed" | "template.status_changed")[];
-                        defaultTypes: ("message.received" | "message.delivered" | "message.read" | "message.failed" | "link.clicked" | "contact.opted_out" | "conversation.analyzed" | "contact.risk_changed" | "template.status_changed")[];
+                        types: ("message.received" | "message.delivered" | "message.read" | "message.failed" | "link.clicked" | "contact.opted_out" | "conversation.analyzed" | "contact.risk_changed" | "template.status_changed" | "agent.action")[];
+                        defaultTypes: ("message.received" | "message.delivered" | "message.read" | "message.failed" | "link.clicked" | "contact.opted_out" | "conversation.analyzed" | "contact.risk_changed" | "template.status_changed" | "agent.action")[];
                     };
                 };
             };
@@ -3868,7 +3952,7 @@ export interface operations {
                 "application/json": {
                     url: string;
                     description?: string;
-                    types?: ("message.received" | "message.delivered" | "message.read" | "message.failed" | "link.clicked" | "contact.opted_out" | "conversation.analyzed" | "contact.risk_changed" | "template.status_changed")[];
+                    types?: ("message.received" | "message.delivered" | "message.read" | "message.failed" | "link.clicked" | "contact.opted_out" | "conversation.analyzed" | "contact.risk_changed" | "template.status_changed" | "agent.action")[];
                 };
             };
         };
@@ -4126,7 +4210,7 @@ export interface operations {
             content: {
                 "application/json": {
                     description?: string;
-                    types?: ("message.received" | "message.delivered" | "message.read" | "message.failed" | "link.clicked" | "contact.opted_out" | "conversation.analyzed" | "contact.risk_changed" | "template.status_changed")[];
+                    types?: ("message.received" | "message.delivered" | "message.read" | "message.failed" | "link.clicked" | "contact.opted_out" | "conversation.analyzed" | "contact.risk_changed" | "template.status_changed" | "agent.action")[];
                     active?: boolean;
                 };
             };

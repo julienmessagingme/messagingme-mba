@@ -12,7 +12,7 @@ Documentation de l'API : https://console.messagingme.app/developers/api
 ## Installation
 
 ```bash
-npm install github:julienmessagingme/messagingme-sdk#v0.2.0
+npm install github:julienmessagingme/messagingme-sdk#v0.3.0
 ```
 
 ## Un premier appel
@@ -99,6 +99,8 @@ horodatage à plus de 5 minutes est refusé (`toleranceSeconds` pour changer). U
 
 ## Versions
 
+- **0.3.0** : les types de l'événement `agent.action`, envoyé quand un agent IA déclenche une de vos actions
+  pendant une conversation (son identifiant, son nom et les champs recueillis, par code).
 - **0.2.0** : `ApiError.metaCode`, le numéro d'erreur de Meta sur `meta_rejected`. L'API pose désormais un `code` sur
   toute réponse d'erreur JSON : `code === null` ne veut plus dire « panne », il ne reste qu'une page d'erreur générique
   remplaçant un 5xx en chemin. Pour réessayer, regardez `status >= 500`, `internal_error` ou `rate_limited`.
