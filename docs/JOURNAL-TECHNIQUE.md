@@ -5,6 +5,27 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-15 : le connecteur HubSpot déménage chez Scaleway (lot 5 de la bascule, la répétition)
+
+- **La préparation, sans coupure** : la base `mm-hubspot-db` (DB-DEV-S, adresse privée seule), le conteneur privé
+  `mm-hubspot-api` (toujours allumé, décision de Julien), le correctif TLS de Messaging Me recopié dans le connecteur
+  (sa base est jointe par une adresse IP, comme celle de Messaging Me le sera), un workflow de déploiement dans son
+  dépôt (mm-hubspot `9f04957`), et ses secrets posés par un script lancé par Julien, sans affichage.
+- **La coupure**, de 06 h 49 à environ 07 h 35 UTC : le connecteur arrêté sur le VPS, ses deux schémas exportés de
+  Supabase (2 s, 62 Ko) et importés dans la nouvelle base, en TLS vérifié ; comptes identiques des deux côtés, 20
+  tables et 244 lignes. Puis le déploiement, le domaine, la règle Cloudflare, et Messaging Me repointé sur l'adresse
+  publique du connecteur.
+- **Ce qui a coincé** (et allongé la coupure de 20 à 45 minutes) : la construction a échoué sur un `git fetch` sans
+  identifiants, le dépôt étant privé (`611c788`) ; le conteneur a refusé de démarrer, Git Bash ayant déformé le chemin
+  du certificat en `C:/Program Files/Git/app/...` ; le domaine, déclaré avant que le nom pointe vers un conteneur
+  prêt, est resté en erreur jusqu'à sa recréation.
+- **Les preuves** : `/health` du connecteur par Cloudflare ; l'appel direct au conteneur refusé (403) et un faux
+  jeton écrasé par Cloudflare ; la sonde du lot 1, par Internet, identique au portail cobaye ; aucune session du
+  connecteur chez Supabase (0 sur 18) ; la carte et la synchronisation vues dans HubSpot par Julien.
+- Au passage, Messaging Me tournait déjà sur `09e3623b`, construit et déployé par une session voisine la veille au
+  soir : les correctifs du lot 1 (lecture du portail en un essai sous 3 s) et le logo des e-mails servi par la
+  console sont donc en production depuis le 2026-10-14 à 19 h 32 UTC.
+
 ## 2026-10-14 : la Marketing Messages API en service, et la durée de validité des modèles
 
 Plans `docs/superpowers/plans/2026-10-14-mm-api-envoi.md` et `2026-10-14-duree-validite-modeles.md`, choix de Julien par

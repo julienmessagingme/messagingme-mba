@@ -488,6 +488,31 @@ redémarré pendant 30 secondes. `tests/deploy-scaleway.test.ts` le tient.
 - si un fichier de `docs/aide/fiches/` a bougé, `aide:charger` sur la machine, avec l'image déployée :
   `ssh -J bastion@<ip de la passerelle>:61000 root@<ip privée> "docker run --rm --env-file /opt/messagingme/.env.prod rg.nl-ams.scw.cloud/messagingme/mba:<sha> npm run aide:charger"`.
 
+### Le connecteur HubSpot chez Scaleway (lot 5, 2026-10-15)
+
+| Ressource | Nom | Note |
+|---|---|---|
+| Base | `mm-hubspot-db` (PostgreSQL 17, DB-DEV-S) | adresse privée seule (172.16.0.7), disque chiffré, sauvegardes en région ; mot de passe de `mmhs_admin` dans Secret Manager `mm-hubspot-db-admin` ; certificat dans `certs/` du dépôt du connecteur |
+| Conteneur de l'API | `mm-hubspot-api` | privé, 1 Go et 560 mvCPU, toujours une copie (min 1, max 1), port 8096 ; domaine `mm-hubspot.messagingme.app` |
+| Worker | `mm-hubspot-worker` sur `mm-workers` | `/opt/mm-hubspot` : le compose du dépôt du connecteur, `.env.prod` (root, 600) |
+| Cloudflare | `mm-hubspot` en CNAME vers le conteneur, nuage orange | règle « Jeton d'origine mm-hubspot » : `X-Auth-Token` = clé `cloudflare-origine`, posée en Set static (elle écrase celle d'un client) |
+
+- **Déployer** : `gh workflow run deploy-scaleway.yml -R julienmessagingme/mm-hubspot --ref main -f migration=aucune`,
+  après l'accord de Julien. Pas de bouton d'approbation : GitHub la réserve aux offres payantes sur un dépôt privé.
+- **Ses secrets** (base, `INGEST_SECRET`, `SERVICE_SECRET`, OAuth HubSpot, `ENCRYPTION_KEY`) ont été posés par un
+  script lancé par Julien, qui les lit sur le VPS et au coffre sans les afficher. Messaging Me l'appelle par son nom
+  public : `HUBSPOT_SERVICE_URL=https://mm-hubspot.messagingme.app`, `CONNECTOR_PUSH_URL=.../ingest` ; il rappelle
+  Messaging Me par `MBA_BASE_URL=https://api.messagingme.app`.
+- **Retour arrière, tant que le VPS le garde** : l'enregistrement `mm-hubspot` repasse en A vers l'adresse du VPS
+  (nuage orange), `sudo docker compose start` dans `/home/ubuntu/mm-hubspot`, et les deux adresses de Messaging Me
+  reprennent leur valeur interne (copie `.env.prod.avant-lot5-20261015`) avant un `--force-recreate`. Les données
+  écrites chez Scaleway entre-temps seraient perdues : les recopier d'abord.
+- **Les pièges du jour** : le domaine d'un conteneur se déclare APRÈS que le nom pointe vers lui ET que le
+  conteneur est prêt (déclaré avant, il passe en erreur, et il faut le supprimer puis le recréer) ; depuis Git Bash,
+  une valeur `/app/...` passée à `scaleway-cli` arrive en `C:/Program Files/Git/app/...` (`MSYS_NO_PATHCONV=1`) ; un
+  workflow d'un dépôt PRIVÉ ne peut pas `git fetch` après un checkout sans identifiants ; `container update` rend
+  les variables secrètes sous forme d'objet, et refuse toute modification tant que le conteneur redémarre.
+
 ### Les pièges relevés le 2026-10-14
 
 - 🔴 **L'environnement GitHub du déploiement s'appelle `scaleway`, JAMAIS `production`.** GitHub ne distingue pas

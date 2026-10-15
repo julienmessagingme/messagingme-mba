@@ -167,6 +167,12 @@ base et de la machine sur ces chiffres, avec leur prix. Tout se consigne au jour
 
 ## Lot 5 : la répétition, mm-hubspot chez Scaleway
 
+✅ **Fait le 2026-10-15.** Le connecteur tourne chez Scaleway : base `mm-hubspot-db`, conteneur privé derrière
+Cloudflare, worker sur la machine des workers. Données copiées à l'identique (20 tables, 244 lignes), plus aucune
+session chez Supabase, la sonde du lot 1 concorde par Internet, et Julien a vu la carte et la synchronisation dans
+HubSpot. Restent : la relecture du lot, puis, après quelques jours d'observation, le retrait du connecteur du VPS
+(`todo.md`).
+
 **Pourquoi** (§8, étape 0 du §10) : les gestes du jour J sur un produit qui peut se permettre un raté, et ses
 connexions sorties du budget de la base principale avant le calcul définitif.
 

@@ -675,10 +675,12 @@ RÉPÉTITION, quelques jours avant le jour J de Messaging Me (§10, étape 0).**
 Cloudflare, conteneur privé, jeton d'origine posé par Cloudflare). HubSpot l'appelle pour l'installation, les webhooks
 et la carte du CRM : c'est une seconde porte publique, sous son propre nom. Son worker tourne sur la machine des
 workers de Messaging Me, dans un troisième conteneur borné, sans les mots de passe de Messaging Me ; sa base reste à lui.
-⚠️ **Et sur le VPS, dès le lot 7** : `mm-hubspot.messagingme.app` passe bien par Cloudflare au DNS (vérifié le
-2026-10-14), mais le filtre « seul Cloudflare » de NPM ne couvre que `api.` et `mba.` : qui connaît l'adresse du VPS le
-joint en direct. Le filtre lui est ajouté après lecture de ses journaux ; Messaging Me l'appelle par le réseau Docker
-interne, que le filtre ne touche pas.
+✅ **En place depuis le 2026-10-15 (lot 5)** : base `mm-hubspot-db` (DB-DEV-S, adresse privée seule), conteneur privé
+`mm-hubspot-api` toujours allumé derrière Cloudflare (règle « Jeton d'origine mm-hubspot »), worker sur la machine des
+workers, déployés par le workflow du dépôt du connecteur (`DEPLOY.md`, section Scaleway).
+~~Sur le VPS, le filtre « seul Cloudflare » de NPM pour `mm-hubspot.`~~ : sans objet depuis le 2026-10-15, le connecteur
+a quitté le VPS. Son conteneur ne répond qu'avec le jeton que seul Cloudflare pose, et Messaging Me l'appelle par son
+nom public (`HUBSPOT_SERVICE_URL`, `CONNECTOR_PUSH_URL`).
 
 ✅ **Le préalable bloquant de cette étape, levé le 2026-10-14 (lot 1)** : `mba` lisait le schéma `mmhs` en
 cross-schéma, en un seul point (`getHubspotPortal`, `src/account/store.pg.ts`, le portail lié à un espace) qui avait
@@ -769,8 +771,7 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    `pgcrypto` ne sert qu'à `gen_random_uuid()`, natif depuis PostgreSQL 13. ✅ **Prouvé le 2026-10-14 sur la base
    jetable d'Amsterdam** : les migrations y ont créé `vector` (pgvector 0.8.2), `pg_trgm`, `unaccent` et `pgcrypto`.
 3. **Le connecteur HubSpot tourne déjà chez Scaleway, sur sa propre base** (étape 0 ci-dessous), et `mba` ne lit plus
-   `mmhs` en cross-schéma (§8). ✅ La seconde moitié est faite (lot 1, 2026-10-14) ; la première attend la répétition
-   (lot 5).
+   `mmhs` en cross-schéma (§8). ✅ Fait : la seconde moitié le 2026-10-14 (lot 1), la première le 2026-10-15 (lot 5).
 4. **Les fichiers RCS restent en base pour la bascule** (décidé le 2026-10-04) : ils partent dans le dump et sortent
    vers l'Object Storage APRÈS, en lot séparé (§6).
 5. **Le chemin de déploiement existe** (§10 bis), et il a servi à la répétition HubSpot (étape 0) avant de servir à
@@ -803,7 +804,10 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
 0. **Quelques jours avant, la répétition : le connecteur HubSpot** sur sa propre base Scaleway (§8). Les mêmes gestes
    qu'aux étapes 1, 2, 4, 5 et 8, sur ce seul produit ; puis vérifier dans `pg_stat_activity` de la base Messaging Me
    qu'il n'y ouvre plus aucune session, et qu'une synchronisation réelle passe dans les deux sens. Ce qui a coincé
-   s'écrit ici avant le jour J.
+   s'écrit ici avant le jour J. ✅ **Faite le 2026-10-15** (lot 5, journal technique du même jour). Ce qui a coincé, à
+   reprendre au jour J : le domaine se déclare une fois le nom pointé vers un conteneur PRÊT (déclaré avant, il reste
+   en erreur) ; une valeur en chemin Linux passée à la CLI de Scaleway depuis Git Bash est déformée sans bruit
+   (`MSYS_NO_PATHCONV=1`) ; et la coupure a duré 45 minutes au lieu de 20, la construction de l'image comprise.
 1. Créer le projet, le réseau privé et tous les composants dans **une seule région, AMS (`nl-ams`)** : décidé par
    Julien le 2026-10-14, Paris refusant toute nouvelle machine à un compte neuf (quotas à 0, rupture de stock
    confirmée par le support). ✅ Fait ce jour-là, avec la base jetable et la machine des essais (`DEPLOY.md`).

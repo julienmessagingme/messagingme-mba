@@ -1,5 +1,14 @@
 # todo.md : backlog
 
+## 🟡 Lot 5 de la bascule, le connecteur HubSpot chez Scaleway : ce qui reste (2026-10-15)
+
+- 🟡 **Retirer le connecteur du VPS après quelques jours d'observation** : ses deux conteneurs arrêtés, l'hôte NPM
+  `mm-hubspot.messagingme.app`, le dépôt nu `vps` (et le remote du même nom dans `~/mm-hubspot`), puis ses schémas
+  `mmhs` et `pgboss_mmhs` chez Supabase, figés depuis 06 h 49 UTC le 2026-10-15. Effacer ensuite les copies
+  `.env.prod.avant-lot5-20261015` et `.env.prod.avant-mm-lite-20261014` du VPS, qui portent des secrets.
+- 🟡 **Sa base passe en gamme production au premier vrai client HubSpot** (DB-DEV-S aujourd'hui, sans engagement de
+  service, choix de Julien pour un portail cobaye).
+
 ## 🔴 Lot 2 du bilan des audits : la reprise après sinistre, ce qui reste (2026-10-14)
 
 L'exercice de restauration est fait et réussi (`DEPLOY.md` § Restauration : 29 secrets sur 29 déchiffrés sur une copie
