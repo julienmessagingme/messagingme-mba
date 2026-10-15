@@ -16,7 +16,8 @@ function roundTrip(f: ContactFilters): ContactFilters {
 
 describe('filtersToQuery (web) <-> parseFilters (serveur) — round-trip', () => {
   it('jeu complet (tags, tagsExclude, optIn, phone, name, 3 ops de champ dont empty) survit intact', () => {
-    const f: ContactFilters = {
+    // Required force à compléter ce test si le contrat gagne un nouveau critère.
+    const f: Required<ContactFilters> = {
       tags: ['vip'],
       tagMode: 'or',
       tagsExclude: ['spam'],

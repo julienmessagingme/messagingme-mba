@@ -1,13 +1,16 @@
 import type { Pool } from 'pg';
 import { enTransaction } from '../db/transaction';
 import { PEREMPTION_WHATSAPP_MS } from '../../web/lib/partage/joignabilite';
+import type { ContactFilters, BulkTarget } from '../../web/lib/partage/contact-filters';
+export { CONTACT_FIELD_OPS, isContactFieldOp } from '../../web/lib/partage/contact-filters';
+export type { ContactFieldOp, ContactFieldFilter, ContactFilters, BulkTarget } from '../../web/lib/partage/contact-filters';
 import type { NiveauRisque, RaisonRisque } from '../engagement/risque';
 import type { ContactStore, ContactUpsert, ContactDeLot, LotContacts } from './import';
 import { classifyWaId, waIdOf } from './identity';
 import { messageDe } from '../lib/erreur';
 import type { LigneDeLaListe } from '../mba/liste';
 import type { CleFicheFixe } from './champs-fiche';
-import { clauseFiltreFiche, estCleFiltrable, estOperateurFicheSeul, type OperateurFicheSeul } from './filtre-fiche';
+import { clauseFiltreFiche, estCleFiltrable, estOperateurFicheSeul } from './filtre-fiche';
 import { COLONNES_ANALYSE_FICHE, analyseDeLaLigne, type AnalyseDeFiche, type LigneAnalyseFiche } from '../analysis/fiche';
 import { LimiteOffreError } from '../offres/refus';
 import {
@@ -171,24 +174,6 @@ export interface EditionFicheApi {
 /** Une violation d'index unique : un refus de saisie, pas une panne. */
 const estUnicite = (err: unknown): boolean => (err as { code?: string }).code === '23505';
 
-/** Opérateurs de filtre sur un champ perso (jsonb, valeur string). `eq`/`contains`/`not_contains` exigent
- *  une valeur ; `empty`/`not_empty` n'en prennent pas. */
-export type ContactFieldOp = 'eq' | 'contains' | 'not_contains' | 'empty' | 'not_empty';
-
-/** Whitelist des opérateurs de champ, partagée par le parsing des query params (GET) et du corps JSON (POST
- *  bulk) : pas de divergence entre les deux points d'entrée. */
-export const CONTACT_FIELD_OPS: readonly ContactFieldOp[] = ['eq', 'contains', 'not_contains', 'empty', 'not_empty'];
-export function isContactFieldOp(v: unknown): v is ContactFieldOp {
-  return typeof v === 'string' && (CONTACT_FIELD_OPS as readonly string[]).includes(v);
-}
-
-/**
- * Un filtre sur la valeur d'un champ. `value` ignorée pour `empty`/`not_empty`. Sur une clé de la dernière analyse
- * (`src/crm/filtre-fiche.ts`), la colonne de la fiche, avec les opérateurs de son type ; sur toute autre clé, le
- * jsonb des champs perso, avec les opérateurs texte.
- */
-export interface ContactFieldFilter { key: string; op: ContactFieldOp | OperateurFicheSeul; value: string }
-
 /**
  * Résolution d'un contact à partir d'un `wa_id` : E.164 exact (`'+' || wa_id`), sinon chiffres nus, sinon BSUID ;
  * un seul contact, préférence à la correspondance exacte. Attend `$1` = tenant, `$2` = wa_id, derrière un
@@ -200,40 +185,6 @@ export function matchWaIdPredicat(contact: string, waId: string): string {
 
 export const MATCH_BY_WAID_SQL = `and ${matchWaIdPredicat('', '$2')}
        order by (phone_e164 = '+' || $2) desc limit 1`;
-
-/** Critères composables de la « Liste de contacts » (source de campagne) et du mini-CRM, tous optionnels ; vides,
- *  aucun filtre (tous les contacts actifs du tenant, `deleted_at is null` toujours posé). */
-export interface ContactFilters {
-  tags?: string[];
-  /** 'and' (défaut) = contient tous les tags ; 'or' = en partage au moins un. */
-  tagMode?: 'and' | 'or';
-  /** Exclut tout contact portant au moins un de ces tags (« ne possède pas »). */
-  tagsExclude?: string[];
-  optIn?: 'opted_in' | 'opted_out' | 'unknown';
-  /** Préfixe E.164 ancré (ex. « +336 »). */
-  phonePrefix?: string;
-  /** Sous-chaîne de chiffres du numéro (ex. « 42 42 »). */
-  phoneContains?: string;
-  /** Recherche sur le nom de profil (insensible à la casse). */
-  nameSearch?: string;
-  /**
-   * Joignabilité WhatsApp mémorisée ; une seule valeur, `connu_injoignable` : « écarte ceux qu'on sait
-   * injoignables ». Un inconnu n'est pas un injoignable (même règle que `verdictWhatsApp`) : un contact jamais
-   * sollicité porte `null`, d'où `is not false` et jamais `is not true`. Pas de canal RCS ici : sa joignabilité
-   * vit dans un cache par agent (`src/rcs/reachability.ts`), et l'approcher autrement en ferait une seconde définition.
-   */
-  joignabiliteWhatsApp?: 'connu_injoignable';
-  /**
-   * Le niveau de risque de désengagement stocké. Une fiche jamais calculée (`risque_niveau` null) n'est dans aucun
-   * niveau, `inconnu` compris. Une valeur hors des quatre niveaux est refusée par `buildContactFilters`.
-   */
-  risque?: NiveauRisque;
-  fieldFilters?: ContactFieldFilter[];
-}
-
-/** Cible d'une action en masse : une liste d'ids explicites, ou un jeu de filtres re-résolu côté serveur (avec
- *  exclusions pour les lignes décochées d'un « tout sélectionner »), jamais 100k UUID en payload. */
-export type BulkTarget = { ids: string[] } | { filters: ContactFilters; excludeIds?: string[] };
 
 /** Mutation d'une action en masse. Valeur de champ déjà validée et canonicalisée en amont (route). */
 export interface BulkEdits {
