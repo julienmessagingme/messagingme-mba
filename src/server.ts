@@ -114,6 +114,7 @@ import { registerOpsPlafondApi } from './http/ops-plafond-api';
 import { registerOffre, type OffreRouteDeps } from './http/offre';
 import { registerOffrePaiement, type OffrePaiementRouteDeps } from './http/offre-paiement';
 import { registerOpsOffre, type OpsOffreDeps } from './http/ops-offre';
+import { registerOps360dialog, type Ops360dialogDeps } from './http/ops-360dialog';
 import { registerOpsNumeros, type OpsNumerosDeps } from './http/ops-numeros';
 import { registerOpsEmails, type OpsEmailsDeps } from './http/ops-emails';
 import { registerResendWebhook, type ResendWebhookRouteDeps } from './http/webhook-resend';
@@ -459,6 +460,8 @@ export interface ServerDeps {
   offre?: OffreRouteDeps;
   /** L'Entreprise posée par l'exploitation (lot 6, `/ops/offre/:tenantId`). */
   opsOffre?: OpsOffreDeps;
+  /** Rattacher un numéro 360dialog à un espace (`src/http/ops-360dialog.ts`). Même autorité que `/ops`. */
+  ops360dialog?: Ops360dialogDeps;
   /** Payer le Pro (lot 6, livraison B1) : admin, plafond coûteux, aucune garde d'offre (une Base doit pouvoir payer). */
   offrePaiement?: OffrePaiementRouteDeps;
   /** La suppression définitive d'un espace par l'exploitation (RC8, `/ops/espaces/:tenantId`). */
@@ -682,6 +685,8 @@ export function modulesDeRoutes(
     )),
     // L'Entreprise d'un espace (lot 6) : sur devis, posée par l'exploitation, dans un module à part.
     entree('opsOffre', 'session-ops', deps.opsOffre, (app, d, g) => registerOpsOffre(app, d, g.ops)),
+    // Le rattachement d'un numéro 360dialog : même session, module à part.
+    entree('ops360dialog', 'session-ops', deps.ops360dialog, (app, d, g) => registerOps360dialog(app, d, g.ops)),
     // La réserve de numéros fournis (lot 3a) : même autorité que `/ops`, dans un module à part.
     entree('opsNumeros', 'session-ops', deps.opsNumeros, (app, d, g) => registerOpsNumeros(app, d, g.ops)),
     // Les e-mails du produit (lot 7) : leurs textes, interrupteurs et chiffres, pour tous les espaces.

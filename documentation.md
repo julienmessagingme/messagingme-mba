@@ -304,8 +304,22 @@ dérivé de `D360_WEBHOOK_SECRET` (`src/webhooks/receiver-360dialog.ts`, classe 
 la variable). Deux invariants : 🔴 **chaque changement du corps doit porter le numéro de l'adresse** (lu par
 `valeurEffective`, comme le worker), sinon 403 et rien n'est versé, faute de quoi le secret d'un numéro écrirait au
 nom d'un autre ; un changement **sans numéro** (niveau WABA, statut d'un modèle) n'est pas versé. Le corps à poser
-chez 360dialog se calcule par `scripts/webhook-360dialog.mts`. L'ENVOI sur ces numéros ne passe pas encore par nous :
-un tel numéro ne se rattache à aucun espace tant que la fabrique d'envoi ne sait pas parler à 360dialog.
+chez 360dialog se calcule par `scripts/webhook-360dialog.mts`. Les statuts de modèle n'arrivent PAS par ce webhook
+(mesuré : un modèle approuvé n'y a rien envoyé) : ils se relèvent par `GET /v1/configs/templates`.
+
+**Envoyer depuis un numéro 360dialog : le fournisseur du compte, et une clé que Graph ne reçoit jamais.**
+`waba_credentials.fournisseur` (migration 0239) vaut `meta` ou `360dialog` ; pour `360dialog`, `business_token_enc`
+porte la clé d'API du NUMÉRO. 🔴 `resolveForTenant` et `resolveForWaba`, que lit tout ce qui parle à Graph, lèvent
+`CompteChez360dialog` pour un tel compte : un client Graph construit avec la clé l'enverrait chez Meta, et le 401
+l'invaliderait (tous les envois de l'espace coupés). Seules `resolvePourEnvoi` (la fabrique : `MetaClient` reçoit le
+fournisseur et parle à `waba-v2.360dialog.io` en `D360-API-KEY`, sur `/messages` et `/marketing_messages`) et
+`cle360dialog` (les médias : `Media360dialogClient`) la rendent, et `tests/inventaire-cle-360dialog.test.ts` tient la
+liste de leurs appelants. Ce qui reste Graph (statut du numéro, agent de Meta, tarif, et jusqu'aux livraisons B et C
+les modèles et les Flows) échoue donc FERMÉ pour un tel espace ; le tarif y est « absent », comme sans tarif. Un
+numéro 360dialog se rattache par `POST /ops/360dialog/:tenantId` (`src/http/ops-360dialog.ts`) : la clé collée, le
+numéro et le compte LUS par `/health_status`, les gardes de `linkTenant`, puis notre webhook posé en gardant les
+destinations existantes (`Config360dialogClient.poserWebhook`). Le numéro affiché, qu'aucune route ne rend avec la clé,
+est facultatif.
 
 
 ```

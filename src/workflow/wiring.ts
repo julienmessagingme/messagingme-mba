@@ -17,6 +17,7 @@ import { PgTenantSettingsStore } from '../settings/store.pg';
 import { PgCampaignRepo } from '../campaign/store.pg';
 import { modeleLuDe } from '../api/modele-envoi';
 import { MetaMediaClient } from '../meta/media';
+import { Media360dialogClient } from '../meta/media-360dialog';
 import { MetaClientFactory } from '../meta/factory';
 import { MetaCredentialsResolver } from '../meta/credentials';
 import { TemplateMediaPreparer } from '../meta/template-media';
@@ -208,8 +209,9 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // 🔴 Une adresse saisie par le client : le téléchargement gardé des en-têtes de modèle, jamais un fetch nu.
     telecharger: (format, url) => telechargerEnteteProduction(format, url),
     mediaClientFor: async (tenant) => {
-      const { token } = await metaCredentials.resolveForTenant(tenant);
-      return new MetaMediaClient(token, config.META_APP_ID, config.META_GRAPH_VERSION);
+      // Résolution d'ENVOI : un numéro 360dialog téléverse chez 360dialog, avec la clé que `resolveForTenant` refuse.
+      const { token, fournisseur } = await metaCredentials.resolvePourEnvoi(tenant);
+      return fournisseur === '360dialog' ? new Media360dialogClient(token) : new MetaMediaClient(token, config.META_APP_ID, config.META_GRAPH_VERSION);
     },
   });
   const prepareCarouselMedia = (tenant: string, cards: OutboundCarouselCard[]): Promise<OutboundCarouselCard[]> =>

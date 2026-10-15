@@ -91,11 +91,13 @@ export class MetaClientFactory {
   async clientForTenant(tenantId: string, phoneNumberId: string): Promise<MetaClient> {
     // Avant le jeton : un numéro délié ne coûte ni la résolution du jeton ni un appel à Meta.
     await this.verifierNumero(phoneNumberId);
-    const resolu = await this.o.resolver.resolveForTenant(tenantId);
-    const { token } = resolu;
+    // La seule résolution qui rend une clé 360dialog : l'envoi sait lui parler (`MetaClient`, `fournisseur`).
+    const resolu = await this.o.resolver.resolvePourEnvoi(tenantId);
+    const { token, fournisseur } = resolu;
     const client = new MetaClient({
       transport: this.o.transport,
       token,
+      fournisseur,
       phoneNumberId,
       version: this.o.version,
       marketingViaLite: this.o.marketingViaLite,
@@ -135,7 +137,11 @@ export class MetaClientFactory {
     return this.pour(tenantId, (token) => new MbaClient(token));
   }
 
-  /** Un client construit avec le jeton de l'espace, et enveloppé de l'intercepteur (`guard`). */
+  /**
+   * Un client construit avec le jeton de l'espace, et enveloppé de l'intercepteur (`guard`). 🔴 Un client GRAPH : pour
+   * un compte 360dialog, `resolveForTenant` lève `CompteChez360dialog` et rien n'est construit, donc rien ne part chez
+   * Meta avec sa clé (le balayage du statut des numéros, l'agent de Meta, le chiffrage échouent fermés).
+   */
   private async pour<T extends object>(tenantId: string, fabrique: (token: string) => T): Promise<T> {
     const resolu = await this.o.resolver.resolveForTenant(tenantId);
     return this.guard(fabrique(resolu.token), resolu);

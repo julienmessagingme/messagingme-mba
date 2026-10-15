@@ -78,6 +78,9 @@ import { plafondLePlusBas } from './campaign/pacing';
 import { fetchHubspotLists, importHubspotList, disconnectHubspot, fetchHubspotDealStages, lireHubspotPortal } from './crm/hubspot-service';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { MetaMediaClient } from './meta/media';
+import { Media360dialogClient } from './meta/media-360dialog';
+import { Config360dialogClient } from './meta/config-360dialog';
+import { enteteDuNumero } from './webhooks/receiver-360dialog';
 import { pullFromInfo, pullFromError } from './account/pull';
 import { makeDbReadinessCheck } from './db/readiness';
 import { lanceurBalayageRisque } from './engagement/cablage';
@@ -139,7 +142,7 @@ import { deconnecterNumero } from './account/deconnexion-numero';
 import { programmerLaFinDuNumero } from './numero/fin-abonnement';
 import type { ContexteTiers } from './ops/suppression-espace';
 import type { OpsSuppressionDeps } from './http/ops-suppression';
-import { TokenInvalidError } from './meta/credentials';
+import { CompteChez360dialog, TokenInvalidError } from './meta/credentials';
 import { lireMediaRecu } from './inbox/media-entrant';
 import { PgConversationsV1 } from './api/conversations-v1.pg';
 import type { DepsRepondre } from './inbox/repondre';
@@ -492,6 +495,14 @@ async function main(): Promise<void> {
   // Clients Meta phone/pricing/templates/flows : résolus par tenant via metaFactory. `media` reste global :
   // endpoint /{appId}/uploads app-scoped.
   const mediaClient = new MetaMediaClient(config.META_ACCESS_TOKEN, config.META_APP_ID, config.META_GRAPH_VERSION);
+  // Les médias REÇUS, par espace : un numéro 360dialog se lit chez 360dialog avec sa clé, que notre jeton global ne
+  // remplace pas ; les autres gardent le jeton global, comme avant.
+  const mediasRecus = {
+    telechargerEntrant: async (mediaId: string, tailleMaxOctets: number, tenant: string) => {
+      const cle = await metaCredentials.cle360dialog(tenant);
+      return cle ? new Media360dialogClient(cle).telechargerEntrant(mediaId, tailleMaxOctets) : mediaClient.telechargerEntrant(mediaId, tailleMaxOctets);
+    },
+  };
   // La lecture des fils par l'API et par Claude (lot 13) : un magasin en lecture seule, filtré sur l'espace.
   const conversationsV1 = new PgConversationsV1(pool);
   /**
@@ -501,7 +512,7 @@ async function main(): Promise<void> {
    */
   const lireMediaMessage = (tenant: string, messageId: string, conversationId?: string) => lireMediaRecu({
     messages: inboxStore,
-    media: mediaClient,
+    media: mediasRecus,
     tailleMaxOctets: config.MEDIA_ENTRANT_TAILLE_MAX_KO * 1024,
   }, tenant, messageId, conversationId);
 
@@ -527,7 +538,14 @@ async function main(): Promise<void> {
   const chiffrage = creerChiffrage({
     stats: statsStore,
     waba: repo,
-    meta: metaFactory,
+    // Le tarif vient de Graph : pour un compte 360dialog, que Graph ne voit pas, il est « absent » (`null`, comme un
+    // espace sans tarif), jamais une erreur qui casserait l'onglet Campagnes.
+    meta: {
+      pricingClientForTenant: (tenant) => metaFactory.pricingClientForTenant(tenant).catch((err: unknown) => {
+        if (err instanceof CompteChez360dialog) return { getPricingAnalytics: async () => null };
+        throw err;
+      }),
+    },
     historique: contactHistoryStore,
     scenarios: workflowStore,
     liens: trackedLinkStore,
@@ -939,7 +957,9 @@ async function main(): Promise<void> {
       const r = await metaCredentials.resolveForTenant(tenant);
       return r.chiffre !== null ? { jeton: 'propre', wabaId: r.wabaId } : { jeton: 'global', wabaId: null };
     } catch (err) {
-      if (!(err instanceof TokenInvalidError)) throw err;
+      // Un compte 360dialog n'a pas de jeton Meta : comme un jeton invalide, les gestes chez Meta sont sautés et le reste
+      // de la suppression se fait (sinon un espace 360dialog ne pourrait plus être effacé, effacement RGPD compris).
+      if (!(err instanceof TokenInvalidError) && !(err instanceof CompteChez360dialog)) throw err;
       return { jeton: 'invalide', wabaId: null };
     }
   };
@@ -1118,6 +1138,21 @@ async function main(): Promise<void> {
     // La vue de l'offre pour la console, et l'Entreprise posée par l'exploitation (lot 6).
     offre: { vue: vueOffre },
     opsOffre: { store: offresStore, invalider: (tenant) => offres.invalider(tenant), audit: auditSink },
+    // Rattacher un numéro 360dialog (lot 2, livraison A) : les gardes de l'Embedded Signup, la clé chiffrée comme un
+    // jeton, et notre webhook posé à côté des destinations existantes.
+    ops360dialog: {
+      config: (cle) => new Config360dialogClient(cle),
+      espaceExiste: async (tenant) => ((await pool.query('select 1 from tenants where id = $1', [tenant])).rowCount ?? 0) > 0,
+      lierNumero: (input) => esCredentialsStore.linkTenant(input),
+      saveCredentials: (waba, tenant, enc, pin, fournisseur) => esCredentialsStore.saveCredentials(waba, tenant, enc, pin, fournisseur),
+      chiffrer: (cle) => encryptSecret(cle, config.ENCRYPTION_KEY),
+      destination: (phoneNumberId) => config.D360_WEBHOOK_SECRET ? {
+        name: 'messagingme',
+        url: `${adressesPubliques(config.APP_URL, config.PUBLIC_API_URL).avecPrefixe}/webhooks/360dialog/${phoneNumberId}`,
+        headers: { Authorization: enteteDuNumero(config.D360_WEBHOOK_SECRET, phoneNumberId) },
+      } : null,
+      audit: auditSink,
+    },
     offrePaiement: {
       ouvrir: (tenant, periodicite, payeur) => ouvrirPro(proDeLaConsole, tenant, periodicite, payeur),
       portail: (tenant, payeur) => ouvrirPortailPro(proDeLaConsole, tenant, payeur),
@@ -1300,7 +1335,7 @@ async function main(): Promise<void> {
             traducteur,
             rangerTraduction: (t, m2, texte, langue) => traductionStore.ranger(t, null, [{ messageId: m2, texte, langue }]),
           } : {}),
-          media: mediaClient,
+          media: mediasRecus,
           // Le transport du modèle (120 s), pas le transport général (30 s) : un fichier de 2 Mo part en base64
           // (2,7 Mo à téléverser), et le défaut couperait les transcriptions les plus longues.
           transport: new FetchTransport(HTTP_TIMEOUT_MODELE_MS),

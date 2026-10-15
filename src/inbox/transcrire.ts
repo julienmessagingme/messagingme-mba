@@ -67,7 +67,8 @@ export interface DepsTranscrire {
   };
   /** Range la traduction à côté du message, comme pour un message texte. Absente -> on ne range rien. */
   rangerTraduction?(tenantId: string, messageId: string, texte: string, langue: LangueConsole): Promise<void>;
-  media: { telechargerEntrant(mediaId: string, tailleMaxOctets: number): Promise<{ bytes: Buffer; mime: string | null }> };
+  /** L'espace en troisième : un numéro 360dialog se lit avec SA clé (`mediasRecus`, `src/index.ts`). */
+  media: { telechargerEntrant(mediaId: string, tailleMaxOctets: number, tenantId: string): Promise<{ bytes: Buffer; mime: string | null }> };
   transport: HttpTransport;
   /**
    * 🔴 LE CRÉDIT DU CLIENT PAIE LA TRANSCRIPTION (lot 6, livraison C), au tarif de son offre : sans solde, rien ne part ;
@@ -135,7 +136,7 @@ export async function transcrireMessage(
   // Le crédit d'abord, avant même de télécharger : sans crédit, rien ne part (lot 6, C).
   if (!((await deps.facturation.solde(tenantId)) > 0)) throw new CreditEpuise();
 
-  const fichier = await deps.media.telechargerEntrant(msg.mediaId, deps.tailleMaxOctets).catch((err: unknown) => {
+  const fichier = await deps.media.telechargerEntrant(msg.mediaId, deps.tailleMaxOctets, tenantId).catch((err: unknown) => {
     throw estMediaExpireChezMeta(err) ? new MediaExpire() : err;
   });
   const mime = msg.mediaMime ?? fichier.mime;

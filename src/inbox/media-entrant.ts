@@ -92,7 +92,8 @@ export interface DepsLireMediaRecu {
     /** 🔴 Le message, relu dans l'espace appelant : c'est là que se joue l'isolation entre clients. */
     lireMessagePourTranscription(tenantId: string, messageId: string, conversationId?: string): Promise<MessageAvecMedia | null>;
   };
-  media: { telechargerEntrant(mediaId: string, tailleMaxOctets: number): Promise<{ bytes: Buffer; mime: string | null }> };
+  /** L'espace en troisième : un numéro 360dialog se lit avec SA clé (`mediasRecus`, `src/index.ts`). */
+  media: { telechargerEntrant(mediaId: string, tailleMaxOctets: number, tenantId: string): Promise<{ bytes: Buffer; mime: string | null }> };
   tailleMaxOctets: number;
 }
 
@@ -110,7 +111,7 @@ export async function lireMediaRecu(
   const msg = await deps.messages.lireMessagePourTranscription(tenantId, messageId, conversationId);
   if (!msg?.mediaId) return null;
   if (msg.mediaExpire) throw new MediaExpire();
-  const f = await deps.media.telechargerEntrant(msg.mediaId, deps.tailleMaxOctets).catch((err: unknown) => {
+  const f = await deps.media.telechargerEntrant(msg.mediaId, deps.tailleMaxOctets, tenantId).catch((err: unknown) => {
     throw estMediaExpireChezMeta(err) ? new MediaExpire() : err;
   });
   // Le mime du message d'abord : c'est celui que WhatsApp a annoncé, et Meta ne le rend pas toujours.

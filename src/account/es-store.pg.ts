@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { enTransaction } from '../db/transaction';
 import { offrirAuNumeroVerifie } from '../agent/credits.pg';
+import type { Fournisseur, WabaCredential } from '../meta/credentials';
 
 /**
  * 🔴 Un WABA, un numéro ou des credentials appartiennent déjà à un autre espace : on refuse de les réaffecter en
@@ -150,14 +151,19 @@ export class PgEmbeddedSignupStore {
    * 🔴 L'état suit le JETON, pas le WABA : un jeton neuf (une reconnexion) repart `active`, sinon un WABA marqué
    * invalide le resterait après avoir été reconnecté. Le même chiffré réécrit garde son état.
    */
-  async saveCredentials(wabaId: string, tenantId: string, businessTokenEnc: string, pinEnc: string | null): Promise<void> {
+  async saveCredentials(
+    wabaId: string, tenantId: string, businessTokenEnc: string, pinEnc: string | null,
+    /** `360dialog` : `businessTokenEnc` est la clé d'API du numéro (rattachement par `/ops`). Réécrit à chaque appel. */
+    fournisseur: Fournisseur = 'meta',
+  ): Promise<void> {
     // Même garde entre espaces que linkTenant : le token d'un WABA d'un autre espace ne se réattribue pas.
     const res = await this.pool.query(
-      `insert into waba_credentials (waba_id, tenant_id, business_token_enc, pin_enc)
-       values ($1, $2, $3, $4)
+      `insert into waba_credentials (waba_id, tenant_id, business_token_enc, pin_enc, fournisseur)
+       values ($1, $2, $3, $4, $5)
        on conflict (waba_id) do update set
          tenant_id = excluded.tenant_id,
          business_token_enc = excluded.business_token_enc,
+         fournisseur = excluded.fournisseur,
          pin_enc = coalesce(excluded.pin_enc, waba_credentials.pin_enc),
          token_status = case when waba_credentials.business_token_enc = excluded.business_token_enc
                              then waba_credentials.token_status else 'active' end,
@@ -165,7 +171,7 @@ export class PgEmbeddedSignupStore {
                                  then waba_credentials.token_invalid_at else null end,
          updated_at = now()
        where waba_credentials.tenant_id = excluded.tenant_id`,
-      [wabaId, tenantId, businessTokenEnc, pinEnc],
+      [wabaId, tenantId, businessTokenEnc, pinEnc, fournisseur],
     );
     if ((res.rowCount ?? 0) === 0) throw new TenantConflictError('waba_credentials', wabaId);
   }
@@ -187,13 +193,13 @@ export class PgEmbeddedSignupStore {
    * Lit le token business chiffré d'un WABA et son état. null si aucun credential (numéro branché à la main) :
    * l'appelant retombe sur le token global.
    */
-  async getCredentialsByWaba(wabaId: string): Promise<{ businessTokenEnc: string; tokenStatus: 'active' | 'invalid' } | null> {
-    const res = await this.pool.query<{ business_token_enc: string; token_status: 'active' | 'invalid' }>(
-      `select business_token_enc, token_status from waba_credentials where waba_id = $1`,
+  async getCredentialsByWaba(wabaId: string): Promise<WabaCredential | null> {
+    const res = await this.pool.query<{ business_token_enc: string; token_status: 'active' | 'invalid'; fournisseur: Fournisseur }>(
+      `select business_token_enc, token_status, fournisseur from waba_credentials where waba_id = $1`,
       [wabaId],
     );
     const r = res.rows[0];
-    return r ? { businessTokenEnc: r.business_token_enc, tokenStatus: r.token_status } : null;
+    return r ? { businessTokenEnc: r.business_token_enc, tokenStatus: r.token_status, fournisseur: r.fournisseur } : null;
   }
 
   /**

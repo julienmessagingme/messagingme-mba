@@ -104,6 +104,7 @@ const CATALOGUE_ACTIONS_AUDIT = {
   'ops.pub_connectee': ['Connexion publicitaire posée par Messaging Me', 'Ads connection set by Messaging Me'],
   'ops.risque_balaye': ['Risque de désengagement recalculé par Messaging Me', 'Disengagement risk recomputed by Messaging Me'],
   'ops.espace_observe': ['Espace observé par Messaging Me (lecture seule)', 'Workspace viewed by Messaging Me (read-only)'],
+  'ops.numero_rattache': ['Numéro WhatsApp rattaché par Messaging Me', 'WhatsApp number connected by Messaging Me'],
 } as const satisfies Record<string, readonly [string, string]>;
 
 /** Une nouvelle action doit porter ses deux libellés avant de pouvoir être écrite. */

@@ -2065,7 +2065,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       await pool.query(`insert into waba (id, tenant_id, name) values ($1, $2, 'w') on conflict (id) do nothing`, [wabaId, tenantId]);
       await es.saveCredentials(wabaId, tenantId, 'enc:TOK_LIVE', null);
       // Lecture par WABA : token chiffré + état 'active' par défaut (migration 0043).
-      expect(await es.getCredentialsByWaba(wabaId)).toEqual({ businessTokenEnc: 'enc:TOK_LIVE', tokenStatus: 'active' });
+      expect(await es.getCredentialsByWaba(wabaId)).toEqual({ businessTokenEnc: 'enc:TOK_LIVE', tokenStatus: 'active', fournisseur: 'meta' });
       // markTokenInvalid : bascule 'invalid' + pose token_invalid_at, idempotent (garde la 1re date).
       await es.markTokenInvalid(wabaId, 'enc:TOK_LIVE');
       const after = await es.getCredentialsByWaba(wabaId);
@@ -2077,6 +2077,27 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       expect(secondAt).toEqual(firstAt);
       // WABA inconnu -> null (déclenche le fallback token global côté résolveur).
       expect(await es.getCredentialsByWaba('waba-inexistant')).toBeNull();
+    } finally {
+      await pool.query('delete from waba_credentials where waba_id = $1', [wabaId]);
+      await pool.query('delete from waba where id = $1', [wabaId]);
+    }
+  });
+
+  /**
+   * 360dialog (lot 2, livraison A, migration 0239) : le fournisseur s'écrit avec la clé, se relit, et une reconnexion
+   * par l'Embedded Signup (appel à quatre arguments) le ramène à `meta`, puisque le jeton est alors un jeton Meta.
+   */
+  it('PgEmbeddedSignupStore : le fournisseur 360dialog s’écrit, se relit, et une reconnexion Meta le remet à meta', async () => {
+    const es = new PgEmbeddedSignupStore(pool, SANS_CREDIT_OFFERT);
+    const wabaId = 'waba-fournisseur-360';
+    try {
+      await pool.query(`insert into waba (id, tenant_id, name) values ($1, $2, 'w') on conflict (id) do nothing`, [wabaId, tenantId]);
+      await es.saveCredentials(wabaId, tenantId, 'enc:CLE_D360', null, '360dialog');
+      expect(await es.getCredentialsByWaba(wabaId)).toEqual({ businessTokenEnc: 'enc:CLE_D360', tokenStatus: 'active', fournisseur: '360dialog' });
+      await es.saveCredentials(wabaId, tenantId, 'enc:TOK_META', null);
+      expect((await es.getCredentialsByWaba(wabaId))?.fournisseur).toBe('meta');
+      // Le CHECK de la colonne refuse un fournisseur inconnu.
+      await expect(pool.query(`update waba_credentials set fournisseur = 'autre' where waba_id = $1`, [wabaId])).rejects.toThrow();
     } finally {
       await pool.query('delete from waba_credentials where waba_id = $1', [wabaId]);
       await pool.query('delete from waba where id = $1', [wabaId]);
@@ -2096,7 +2117,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       await es.saveCredentials(wabaId, tenantId, 'enc:ANCIEN', null);
       await es.saveCredentials(wabaId, tenantId, 'enc:NEUF', null); // la reconnexion
       await es.markTokenInvalid(wabaId, 'enc:ANCIEN'); // le 190 d'une copie restée sur l'ancien jeton
-      expect(await es.getCredentialsByWaba(wabaId)).toEqual({ businessTokenEnc: 'enc:NEUF', tokenStatus: 'active' });
+      expect(await es.getCredentialsByWaba(wabaId)).toEqual({ businessTokenEnc: 'enc:NEUF', tokenStatus: 'active', fournisseur: 'meta' });
       await es.markTokenInvalid(wabaId, 'enc:NEUF'); // le jeton courant, lui, se condamne
       expect((await es.getCredentialsByWaba(wabaId))?.tokenStatus).toBe('invalid');
       // Une nouvelle reconnexion : le jeton neuf repart actif, sans date d'invalidation.

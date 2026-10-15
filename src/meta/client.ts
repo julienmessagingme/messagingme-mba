@@ -5,6 +5,10 @@ import type { MetaErrorBody } from './errors';
 import { messagingTarget } from './types';
 import type { SendResult, TemplateSpec, MarketingParams } from './types';
 import { FLOW_ENTRY_SCREEN } from './flow-json';
+import type { Fournisseur } from './credentials';
+
+/** L'hôte de 360dialog, qui relaie l'API Cloud de Meta : mêmes corps, chemins sans version ni numéro. */
+export const HOTE_360DIALOG = 'https://waba-v2.360dialog.io';
 
 export interface MetaClientOpts {
   transport: HttpTransport;
@@ -22,6 +26,11 @@ export interface MetaClientOpts {
    * en synchronisation) repart par la Cloud API : choix de Julien.
    */
   marketingViaLite?: boolean;
+  /**
+   * `360dialog` : `token` est la clé d'API du NUMÉRO, envoyée en `D360-API-KEY` à `HOTE_360DIALOG`, sur `/messages` et
+   * `/marketing_messages` (mesuré le 2026-10-15, `product_policy` compris). Absent : Meta.
+   */
+  fournisseur?: Fournisseur;
 }
 
 /** Le refus de la MM API pour un modèle que Meta synchronise encore : le seul qui repart par la Cloud API. */
@@ -64,12 +73,14 @@ export class MetaClient {
   private readonly rateLimiter: PorteDeDebit | undefined;
   private readonly retry: RetryOpts | undefined;
   private readonly marketingViaLite: boolean;
+  private readonly fournisseur: Fournisseur;
 
   constructor(opts: MetaClientOpts) {
     this.transport = opts.transport;
     this.token = opts.token;
     this.phoneNumberId = opts.phoneNumberId;
-    this.base = opts.baseUrl ?? 'https://graph.facebook.com';
+    this.fournisseur = opts.fournisseur ?? 'meta';
+    this.base = opts.baseUrl ?? (this.fournisseur === '360dialog' ? HOTE_360DIALOG : 'https://graph.facebook.com');
     this.version = opts.version ?? 'v25.0';
     this.rateLimiter = opts.rateLimiter;
     this.retry = opts.retry;
@@ -77,15 +88,19 @@ export class MetaClient {
   }
 
   private url(path: string): string {
+    // Chez 360dialog, la clé désigne le numéro : ni version ni identifiant dans le chemin.
+    if (this.fournisseur === '360dialog') return `${this.base}/${path}`;
     return `${this.base}/${this.version}/${this.phoneNumberId}/${path}`;
+  }
+
+  private authentification(): Record<string, string> {
+    return this.fournisseur === '360dialog' ? { 'D360-API-KEY': this.token } : { Authorization: `Bearer ${this.token}` };
   }
 
   private async call(path: string, body: unknown): Promise<unknown> {
     return withRetry(async () => {
       if (this.rateLimiter) await this.rateLimiter.acquire();
-      const res = await this.transport.post(this.url(path), body, {
-        Authorization: `Bearer ${this.token}`,
-      });
+      const res = await this.transport.post(this.url(path), body, this.authentification());
       if (res.status < 200 || res.status >= 300) {
         const errBody = (res.json as { error?: MetaErrorBody } | null)?.error ?? null;
         throw new MetaApiError(res.status, errBody, parseRetryAfter(res.headers));

@@ -14,6 +14,22 @@ export class TokenInvalidError extends Error {
   }
 }
 
+/** Par où passent les appels d'un compte WhatsApp (`waba_credentials.fournisseur`, migration 0239). */
+export type Fournisseur = 'meta' | '360dialog';
+
+/**
+ * Le compte passe par 360dialog : sa clé ne parle qu'à `waba-v2.360dialog.io`. Levée par `resolveForTenant` et
+ * `resolveForWaba`, que lisent tous ceux qui parlent à Graph : la clé ne leur est JAMAIS rendue, sans quoi un appel
+ * Graph partirait avec elle et son 401 l'invaliderait (coupant tous les envois). Seule la voie d'envoi
+ * (`resolvePourEnvoi`) la lit. Ce n'est pas une erreur d'authentification : rien n'est invalidé.
+ */
+export class CompteChez360dialog extends Error {
+  constructor(readonly wabaId: string) {
+    super(`le compte WhatsApp ${wabaId} passe par 360dialog : aucun appel direct à Meta`);
+    this.name = 'CompteChez360dialog';
+  }
+}
+
 /**
  * Vrai si l'erreur Meta dit un jeton mort : code 190, ou HTTP 401. Règle unique, que `pullFromError` importe.
  *
@@ -29,6 +45,8 @@ export function isMetaAuthError(err: unknown): boolean {
 export interface WabaCredential {
   businessTokenEnc: string;
   tokenStatus: 'active' | 'invalid';
+  /** Absent : `meta` (les fixtures d'avant 0239). Le magasin réel le lit toujours. */
+  fournisseur?: Fournisseur;
 }
 
 /** Ce dont le résolveur a besoin, injecté (testable sans DB ni réseau). */
@@ -71,8 +89,13 @@ export interface ResolvedToken {
  * Résout le token d'un tenant, avec un cache court par WABA (déchiffrer à chaque message coûte). Un WABA sans
  * credentials -> token global ; un WABA 'invalid' -> TokenInvalidError ; sinon déchiffrement.
  */
+/** Une résolution pour l'ENVOI : la clé d'un compte 360dialog y est rendue, avec son fournisseur. */
+export interface ResolvedEnvoi extends ResolvedToken {
+  fournisseur: Fournisseur;
+}
+
 export class MetaCredentialsResolver {
-  private readonly cache = new Map<string, { token: string; chiffre: string; at: number }>();
+  private readonly cache = new Map<string, { token: string; chiffre: string; fournisseur: Fournisseur; at: number }>();
   private readonly ttl: number;
   private readonly now: () => number;
 
@@ -81,23 +104,61 @@ export class MetaCredentialsResolver {
     this.now = deps.now ?? ((): number => Date.now());
   }
 
+  /** Le jeton Meta d'un espace. 🔴 Lève `CompteChez360dialog` pour un compte 360dialog (voir la classe). */
   async resolveForTenant(tenantId: string): Promise<ResolvedToken> {
     const wabaId = await this.deps.getWabaIdForTenant(tenantId);
     if (!wabaId) return { token: this.deps.fallbackToken, wabaId: null, chiffre: null };
     return this.resolveForWaba(wabaId);
   }
 
+  /** Le jeton Meta d'un compte. 🔴 Lève `CompteChez360dialog` pour un compte 360dialog (voir la classe). */
   async resolveForWaba(wabaId: string): Promise<ResolvedToken> {
+    const { fournisseur, ...resolu } = await this.lire(wabaId);
+    if (fournisseur === '360dialog') throw new CompteChez360dialog(wabaId);
+    return resolu;
+  }
+
+  /**
+   * La résolution de la voie d'envoi (`MetaClientFactory`) : la seule qui rend une clé 360dialog, avec son fournisseur
+   * pour que l'appelant construise le bon client. Sans compte propre : le jeton global, fournisseur `meta`.
+   */
+  async resolvePourEnvoi(tenantId: string): Promise<ResolvedEnvoi> {
+    const wabaId = await this.deps.getWabaIdForTenant(tenantId);
+    if (!wabaId) return { token: this.deps.fallbackToken, wabaId: null, chiffre: null, fournisseur: 'meta' };
+    return this.lire(wabaId);
+  }
+
+  /**
+   * La clé 360dialog d'un espace, `null` s'il passe par Meta : l'aiguillage des médias reçus. 🔴 N'échoue jamais : la
+   * lecture d'un média d'un espace Meta passait par le jeton global sans lire ses identifiants, et une lecture en échec
+   * (jeton invalide, chiffré illisible, base) ne doit pas la casser. `null`, journalisé : le chemin Meta d'avant.
+   */
+  async cle360dialog(tenantId: string): Promise<string | null> {
+    try {
+      const r = await this.resolvePourEnvoi(tenantId);
+      return r.fournisseur === '360dialog' ? r.token : null;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      if (!(err instanceof TokenInvalidError)) console.error(`cle360dialog ignorée pour ${tenantId}:`, messageDe(err));
+      return null;
+    }
+  }
+
+  private async lire(wabaId: string): Promise<ResolvedEnvoi> {
     const cached = this.cache.get(wabaId);
-    if (cached && this.now() - cached.at < this.ttl) return { token: cached.token, wabaId, chiffre: cached.chiffre };
+    if (cached && this.now() - cached.at < this.ttl) {
+      return { token: cached.token, wabaId, chiffre: cached.chiffre, fournisseur: cached.fournisseur };
+    }
 
     const cred = await this.deps.credentials.getCredentialsByWaba(wabaId);
-    if (!cred) return { token: this.deps.fallbackToken, wabaId: null, chiffre: null }; // pas de credentials propres
+    // Pas de credentials propres : le jeton global, qui ne vaut que chez Meta.
+    if (!cred) return { token: this.deps.fallbackToken, wabaId: null, chiffre: null, fournisseur: 'meta' };
     if (cred.tokenStatus === 'invalid') throw new TokenInvalidError(wabaId);
 
     const token = this.deps.decrypt(cred.businessTokenEnc);
-    this.cache.set(wabaId, { token, chiffre: cred.businessTokenEnc, at: this.now() });
-    return { token, wabaId, chiffre: cred.businessTokenEnc };
+    const fournisseur = cred.fournisseur ?? 'meta';
+    this.cache.set(wabaId, { token, chiffre: cred.businessTokenEnc, fournisseur, at: this.now() });
+    return { token, wabaId, chiffre: cred.businessTokenEnc, fournisseur };
   }
 
   /**
