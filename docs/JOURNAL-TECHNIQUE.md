@@ -5,6 +5,26 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-15 : le bloc Formulaire a deux sorties, « Formulaire rempli » et « Toute autre réponse »
+
+- **La demande** (Julien) : la sortie unique du bloc recevait toute réponse, un « bonjour » écrit à la place du
+  formulaire comme le formulaire rempli. Deux décisions : un formulaire renvoyé suit « Toute autre réponse » tant que
+  « Formulaire rempli » n'est pas reliée ; n'importe quel formulaire renvoyé compte. Plan
+  `2026-10-15-formulaire-deux-sorties`.
+- **Mesuré avant** (sonde en lecture seule) : 6 blocs Formulaire en production, tous dans la SANDBOX, chacun avec une
+  seule flèche libre ou aucune, et aucun parcours en attente dessus. D'où l'absence de migration : leur flèche devient
+  « Toute autre réponse » et continue de tout recevoir.
+- **Le code** : la réception marque un `nfm_reply` (`formulaire`), `advance` route sur `rempli` puis l'arête libre puis
+  l'arrêt, et n'écoute plus aucun autre payload sur ce bloc. La mesure d'un formulaire renvoyé porte `rempli` au lieu
+  du JSON de la réponse (jusqu'à 2 000 caractères, qui s'affichait comme un « choix »), sur tout bloc. Un bloc
+  formulaire non configuré traversé (agent de Meta allumé) suit l'arête libre, jamais la première venue.
+- **Relu** : 0 rouge, 4 jaunes. Deux corrigés avant de livrer (le libellé « A cliqué Formulaire rempli » devenu « A
+  renvoyé le formulaire », le comportement sur un bloc modèle à bouton formulaire tenu par un test vérifié dans les deux
+  sens) ; un dans `todo.md` (un `nfm_reply` d'adresse, réservé à l'Inde) ; le dernier était déjà fait.
+- **L'ordre** : le serveur seul (`abf9213a`, suite entière sur cette moitié, CI lue job par job, `up` des quatre
+  services nommés, `mm-hubspot` laissé arrêté, contrôle de fumée vert, aucune erreur dans les journaux), puis l'écran
+  (`bfdc125e`), poussé après le déploiement. Essai réel dû : `docs/prive/ESSAIS-REELS.md`, § 7.
+
 ## 2026-10-15 : le conteneur de l'API déclaré dans le dépôt, et le budget de connexions de Scaleway
 
 - **Le plan** : `docs/superpowers/plans/2026-10-15-jour-j-conteneur-et-budget.md`, validé par Julien, qui a retenu 3
