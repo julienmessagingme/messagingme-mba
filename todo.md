@@ -2456,39 +2456,13 @@ Ces points vivaient dans des sections de lots déployés. Ils n’ont rien à y 
   le point `quel_outil` de l'entretien pose la question au bon endroit, c'est-à-dire dans la QUESTION et non
   sur une ligne de diff dont ça changerait la clé. À rouvrir seulement si l'usage montre que ça manque encore.
 
-## 🟠 Joindre un FICHIER à un message rapide (demandé par Julien le 2026-08-28)
+## 🟠 Médias, lot A : les fichiers sortent de Postgres APRÈS la bascule Scaleway
 
-🔴 **CADUC DEPUIS LE 2026-10-14, NE PAS SUIVRE CE QUI SUIT.** Cadré à nouveau avec Julien : vidéo MP4 ET PDF, stockés
-dans le bucket du lot des fichiers et non en base, sous un quota par offre. Spec
-`docs/superpowers/specs/2026-10-14-medias-message-rapide-design.md`, plan `docs/superpowers/plans/2026-10-14-medias-message-rapide.md`
-(validé, exécution native APRÈS la bascule Scaleway). Le texte ci-dessous est gardé pour l'historique ; la tâche C7
-du plan le remplace par un simple renvoi.
-
-Aujourd'hui un bloc « message rapide » ne porte qu'une IMAGE (`data.imageUrl`, champ partagé avec le bloc RCS).
-Julien veut pouvoir y joindre un document (PDF, devis, plaquette). Ce n'est pas un champ de plus : la chaîne
-entière est aujourd'hui image-seulement, par construction et volontairement.
-
-Ce qu'il faut, dans l'ordre :
-
-1. **Migration** (la médiathèque refuse tout le reste en base) : `rcs_media.mime` porte
-   `check (mime in ('image/jpeg','image/png','image/gif'))`. À élargir, avec un plafond de poids propre au
-   document (les octets vivent dans Postgres : 5 Mo maximum, pas les 100 Mo que Meta accepterait).
-2. **Signature du fichier** : `src/rcs/image.ts` lit la signature réelle des octets et c'est ELLE qui décide du
-   type servi (un PDF renommé en `.png` est refusé). Il faut la même chose pour `%PDF-`, jamais faire confiance
-   au type annoncé par le navigateur : ces fichiers sont servis sur une URL PUBLIQUE.
-3. **Route publique de service** : elle sert aujourd'hui `inline` avec un nom neutre (le nom d'origine en dirait
-   trop sur le client). Pour un document, décider `attachment` + nom, sachant que WhatsApp affiche le nom qu'on
-   passe à l'ENVOI, pas celui de l'URL : le nom neutre peut donc rester.
-4. **Envoi WhatsApp** : téléverser chez Meta (`uploadForSend` est déjà générique sur le mime) puis, selon que le
-   bloc porte des boutons ou non, un en-tête `document` sur le message interactif, ou un message `document`
-   avec `filename` et légende. `sendInteractive` n'expose aujourd'hui qu'un en-tête image.
-5. **Canal RCS** : un document n'a pas d'équivalent dans une carte RCS. Décider la dégradation (envoyer le
-   texte seul ? un lien ?) et la DIRE dans l'écran, sinon le client croira que la pièce jointe part sur les
-   deux canaux.
-6. **Écran** : champ de téléversement à côté de l'image, aperçu WhatsApp, et la pièce jointe visible dans la
-   miniature du bloc (comme le visuel depuis le 2026-08-28).
-
-Deux à trois heures, sur le chemin d'ENVOI en production : à faire d'un bloc, pas en passant.
+Les lots B (médiathèque, quota, suppression) et C (vidéo et PDF dans le bloc « message rapide ») sont livrés le
+2026-10-15 avec les fichiers EN BASE (`rcs_media.bytes`), décision de Julien. Reste le lot A, à faire APRÈS la bascule :
+bucket privé en `nl-ams`, recopie de TOUT ce que la table porte (images, vidéos, PDF), retrait de la colonne en deux
+temps, effacement des objets à la suppression d'un espace. Plan `docs/superpowers/plans/2026-10-14-medias-message-rapide.md`,
+section « Lot A », à relire contre le code du moment avant d'écrire une ligne.
 
 ## 🔴 Agent IA : les lots NON développés (L3, L4, L6, L7), du cadrage du 2026-08-23
 

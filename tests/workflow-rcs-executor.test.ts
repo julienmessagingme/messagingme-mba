@@ -580,6 +580,15 @@ describe('message rapide à visuel sur un parcours RCS', () => {
     expect(msg.suggestions).toHaveLength(2); // les boutons restent SOUS le message, comme avant
   });
 
+  it('🔴 une VIDÉO ou un PDF ne partent qu’en WhatsApp : sur un parcours RCS, le bloc refuse, rien ne part (spec médias, § 3.5)', async () => {
+    for (const ext of ['mp4', 'pdf']) {
+      const g = grapheQuick({ body: 'Le document', quickReplies: ['Oui'], imageUrl: `https://api.messagingme.app/m/abcdefghjkmnpqrstvwxyz0123.${ext}` });
+      const { provider, executor } = monter(g, [], true, 'r', undefined, 'rcs');
+      await executor.advance('t1', '33600000002', `mo-${ext}`, 'btn:0', 'rcs');
+      expect(provider.sent).toHaveLength(0);
+    }
+  });
+
   it('sans visuel -> texte, exactement comme avant (aucun changement pour les montages existants)', async () => {
     const g = grapheQuick({ body: 'Ca vous va ?', quickReplies: ['Oui'] });
     const { provider, executor } = monter(g, [], true, 'r', undefined, 'rcs');

@@ -24,6 +24,7 @@ import {
   type DepartDuParcours, type PolitiqueDeLancement, type TypeDeLancement,
 } from './lancements';
 import { MAX_SAUTS_SANS_PAUSE, nomDuBloc } from './aller-a';
+import { genreParAdresse } from '../medias/fichier';
 
 /**
  * Résultat d'un démarrage : `true` = parti, une chaîne = pas parti, avec la raison exacte (pour que la
@@ -523,6 +524,12 @@ export class WorkflowExecutor {
     // branche du scénario.
     const probleme = a.lien ? problemeLienBouton(a.lien) : null;
     if (probleme) return probleme;
+    // Une vidéo ou un PDF ne partent qu'en WhatsApp (spec médias, § 3.5) : leur adresse n'est pas publique, et une carte
+    // RCS ne porte pas de document. Refus nommé AVANT la carte, plutôt qu'un message amputé de son fichier.
+    const genre = a.mediaUrl ? genreParAdresse(a.mediaUrl) : null;
+    if (genre === 'video' || genre === 'document') {
+      return 'la vidéo et le PDF ne partent qu’en WhatsApp : ce message rapide ne peut pas partir sur un parcours RCS';
+    }
     const suggestions: RcsSuggestion[] = a.lien
       ? [{ kind: 'openUrl' as const, text: a.lien.texte.trim().slice(0, 20), url: a.lien.url.trim(), postbackData: 'lien' }]
       : a.buttons

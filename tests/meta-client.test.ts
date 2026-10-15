@@ -94,10 +94,21 @@ describe('MetaClient.sendInteractive', () => {
     // templates qui tourne déjà en production : un lien ferait dépendre la livraison de l'accessibilité de
     // notre hébergement au moment où Meta va le chercher.
     const t = new FakeTransport([okBody('wamid.h')]);
-    await client(t).sendInteractive('33600000000', 'Regarde ça', [{ text: 'Oui' }], 'MEDIA_42');
+    await client(t).sendInteractive('33600000000', 'Regarde ça', [{ text: 'Oui' }], { type: 'image', id: 'MEDIA_42' });
     const body = t.requests[0]!.body as { interactive: Record<string, unknown> };
     expect(body.interactive.header).toEqual({ type: 'image', image: { id: 'MEDIA_42' } });
     expect(body.interactive.body).toEqual({ text: 'Regarde ça' });
+  });
+
+  it('🔴 une vidéo ou un PDF deviennent l’en-tête du message à réponses rapides (spec médias, § 3.4)', async () => {
+    const t = new FakeTransport([okBody('wamid.v'), okBody('wamid.d'), okBody('wamid.c')]);
+    await client(t).sendInteractive('33600000000', 'La démo', [{ text: 'Oui' }], { type: 'video', id: 'MEDIA_V' });
+    await client(t).sendInteractive('33600000000', 'Le devis', [{ text: 'Oui' }], { type: 'document', id: 'MEDIA_D', filename: 'devis.pdf' });
+    await client(t).sendCtaUrl('33600000000', 'La plaquette', { texte: 'Site', url: 'https://x.fr' }, { type: 'document', id: 'MEDIA_P', filename: 'plaquette.pdf' });
+    const entete = (i: number) => (t.requests[i]!.body as { interactive: { header: unknown } }).interactive.header;
+    expect(entete(0)).toEqual({ type: 'video', video: { id: 'MEDIA_V' } });
+    expect(entete(1)).toEqual({ type: 'document', document: { id: 'MEDIA_D', filename: 'devis.pdf' } });
+    expect(entete(2)).toEqual({ type: 'document', document: { id: 'MEDIA_P', filename: 'plaquette.pdf' } });
   });
 
   it('sans visuel, AUCUN en-tête n est posé (les montages existants ne changent pas)', async () => {
@@ -294,12 +305,12 @@ describe('MetaClient throttling', () => {
   });
 });
 
-describe('MetaClient.sendImage', () => {
+describe('MetaClient.sendMedia', () => {
   it('🔴 image légendée : le seul chemin quand il y a un visuel mais AUCUN bouton', async () => {
     // Un message interactif exige au moins un bouton. Sans ce chemin, un bloc « message rapide » portant un
     // visuel et aucune réponse rapide serait parti en texte nu, et l'image aurait disparu sans un mot.
     const t = new FakeTransport([okBody('wamid.img')]);
-    const res = await client(t).sendImage('33600000000', 'MEDIA_7', 'Notre nouvelle offre');
+    const res = await client(t).sendMedia('33600000000', { type: 'image', id: 'MEDIA_7' }, 'Notre nouvelle offre');
     expect(res.messageId).toBe('wamid.img');
     expect(t.requests[0]!.body).toMatchObject({
       messaging_product: 'whatsapp',
@@ -311,9 +322,17 @@ describe('MetaClient.sendImage', () => {
 
   it('légende vide -> champ caption ABSENT (Meta refuse une légende vide)', async () => {
     const t = new FakeTransport([okBody('wamid.img2')]);
-    await client(t).sendImage('33600000000', 'MEDIA_8', '   ');
+    await client(t).sendMedia('33600000000', { type: 'image', id: 'MEDIA_8' }, '   ');
     const body = t.requests[0]!.body as { image: Record<string, unknown> };
     expect(body.image).toEqual({ id: 'MEDIA_8' });
+  });
+
+  it('🔴 une vidéo légendée, et un PDF légendé qui garde son nom de fichier (sans bouton : spec médias, § 3.4)', async () => {
+    const t = new FakeTransport([okBody('wamid.v'), okBody('wamid.d')]);
+    await client(t).sendMedia('33600000000', { type: 'video', id: 'MEDIA_V' }, 'La démo');
+    await client(t).sendMedia('33600000000', { type: 'document', id: 'MEDIA_D', filename: 'devis.pdf' }, 'Votre devis');
+    expect(t.requests[0]!.body).toMatchObject({ type: 'video', video: { id: 'MEDIA_V', caption: 'La démo' } });
+    expect(t.requests[1]!.body).toMatchObject({ type: 'document', document: { id: 'MEDIA_D', caption: 'Votre devis', filename: 'devis.pdf' } });
   });
 });
 
@@ -387,14 +406,16 @@ describe('MetaClient.sendList', () => {
  */
 describe('MetaClient : le corps exact de chaque envoi `messages`', () => {
   const cas: Array<[string, (c: MetaClient, to: string) => Promise<unknown>, string]> = [
-    ['sendInteractive', (c, to) => c.sendInteractive(to, 'Corps', [{ text: 'Oui' }, { text: ' ' }, { text: 'Non' }], 'MEDIA_1'),
+    ['sendInteractive', (c, to) => c.sendInteractive(to, 'Corps', [{ text: 'Oui' }, { text: ' ' }, { text: 'Non' }], { type: 'image', id: 'MEDIA_1' }),
       '"type":"interactive","interactive":{"type":"button","header":{"type":"image","image":{"id":"MEDIA_1"}},"body":{"text":"Corps"},"action":{"buttons":[{"type":"reply","reply":{"id":"btn:0","title":"Oui"}},{"type":"reply","reply":{"id":"btn:2","title":"Non"}}]}}'],
     ['sendCtaUrl', (c, to) => c.sendCtaUrl(to, 'Corps', { texte: ' Voir le site ', url: ' https://x.fr/a ' }),
       '"type":"interactive","interactive":{"type":"cta_url","body":{"text":"Corps"},"action":{"name":"cta_url","parameters":{"display_text":"Voir le site","url":"https://x.fr/a"}}}'],
     ['sendList', (c, to) => c.sendList(to, 'Q', 'Voir', [{ title: 'A', description: 'd' }]),
       '"type":"interactive","interactive":{"type":"list","body":{"text":"Q"},"action":{"button":"Voir","sections":[{"rows":[{"id":"row:0","title":"A","description":"d"}]}]}}'],
-    ['sendImage', (c, to) => c.sendImage(to, 'MEDIA_2', 'Légende'),
+    ['sendMedia', (c, to) => c.sendMedia(to, { type: 'image', id: 'MEDIA_2' }, 'Légende'),
       '"type":"image","image":{"id":"MEDIA_2","caption":"Légende"}'],
+    ['sendMedia (document)', (c, to) => c.sendMedia(to, { type: 'document', id: 'MEDIA_3', filename: 'devis.pdf' }, 'Légende'),
+      '"type":"document","document":{"id":"MEDIA_3","caption":"Légende","filename":"devis.pdf"}'],
     ['sendFlowMessage', (c, to) => c.sendFlowMessage(to, { body: 'B', flowId: 'F1', cta: 'Ouvrir', flowToken: 'tok' }),
       '"type":"interactive","interactive":{"type":"flow","body":{"text":"B"},"action":{"name":"flow","parameters":{"flow_message_version":"3","flow_token":"tok","flow_id":"F1","flow_cta":"Ouvrir","flow_action":"navigate","flow_action_payload":{"screen":"FORM"}}}}'],
     ['sendTemplate', (c, to) => c.sendTemplate(to, { name: 'welcome', language: 'fr' }),

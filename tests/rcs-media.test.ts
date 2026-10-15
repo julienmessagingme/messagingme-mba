@@ -7,6 +7,7 @@ import {
   typeImage, extensionDe, mimeDeExtension, octetsDepuisDataUrl, urlImageRcs, TAILLE_IMAGE_MAX,
 } from '../src/rcs/image';
 import type { MimeImage } from '../src/rcs/image';
+import { urlFichier, type MimeFichier } from '../src/medias/fichier';
 import type { RcsMediaFichier, IssueSuppression } from '../src/rcs/media-store.pg';
 import { LimiteOffreError } from '../src/offres/refus';
 
@@ -73,9 +74,9 @@ async function jeton(role: 'admin' | 'agent'): Promise<string> {
 
 function appWith(
   stocke: { bytes: Buffer; mime: MimeImage } | null,
-  o: { quotaAtteint?: boolean; suppression?: IssueSuppression } = {},
+  o: { quotaAtteint?: boolean; suppression?: IssueSuppression; prive?: { bytes: Buffer; mime: MimeFichier; nom: string | null } } = {},
 ) {
-  const crees: Array<{ mime: MimeImage; taille: number; nom: string | null }> = [];
+  const crees: Array<{ mime: MimeFichier; taille: number; nom: string | null }> = [];
   const supprimes: Array<{ tenant: string; code: string }> = [];
   const app = buildServer({
     queue: new FakeQueue(),
@@ -89,7 +90,7 @@ function appWith(
         crees.push({ mime: input.mime, taille: input.bytes.length, nom: input.nom });
         return {
           media: { id: 'm1', code: CODE, mime: input.mime, taille: input.bytes.length, nom: input.nom, createdAt: '' },
-          url: urlImageRcs('https://mba.messagingme.app', CODE, input.mime),
+          url: urlFichier('https://mba.messagingme.app', CODE, input.mime),
           existant: false,
         };
       },
@@ -102,6 +103,7 @@ function appWith(
         supprimes.push({ tenant, code });
         return o.suppression ?? { issue: 'supprime' };
       },
+      lire: async (tenant, code) => (tenant === 't1' && code === CODE && o.prive ? o.prive : null),
     },
   });
   return { app, crees, supprimes };
@@ -173,7 +175,21 @@ describe('Televerser un visuel RCS', () => {
   });
 
   // 🔴 Le type REEL prime sur le type annonce : ici un PDF se presente en `image/png`.
-  it('REFUSE un fichier qui n est pas une image, meme s il se declare comme telle', async () => {
+  it('REFUSE un fichier qui n est pas un type accepte, meme s il se declare image', async () => {
+    const { app, crees } = appWith(null);
+    const HTML = Buffer.from('<!doctype html><script>alert(1)</script>', 'ascii');
+    const r = await app.inject({
+      method: 'POST',
+      url: '/tenants/t1/rcs/media',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${await jeton('admin')}` },
+      payload: { dataUrl: `data:image/png;base64,${HTML.toString('base64')}`, nom: 'piege.png' },
+    });
+    expect(r.statusCode).toBe(415);
+    expect(crees).toHaveLength(0);
+  });
+
+  // Depuis le lot C, un PDF est accepte : deguise en PNG, il reste un PDF (son type REEL), jamais une image servie par /m/.
+  it('un PDF qui se declare image est range comme PDF, son type reel', async () => {
     const { app, crees } = appWith(null);
     const r = await app.inject({
       method: 'POST',
@@ -181,8 +197,8 @@ describe('Televerser un visuel RCS', () => {
       headers: { 'content-type': 'application/json', authorization: `Bearer ${await jeton('admin')}` },
       payload: { dataUrl: `data:image/png;base64,${PDF.toString('base64')}`, nom: 'piege.png' },
     });
-    expect(r.statusCode).toBe(415);
-    expect(crees).toHaveLength(0);
+    expect(r.statusCode).toBe(201);
+    expect(crees.map((c) => c.mime)).toEqual(['application/pdf']);
   });
 
   it('REFUSE une image trop lourde', async () => {
@@ -241,5 +257,88 @@ describe('Servir un visuel RCS (route PUBLIQUE)', () => {
     ]) {
       expect((await app.inject({ method: 'GET', url })).statusCode).toBe(404);
     }
+  });
+});
+
+/** Un MP4 minimal, boîte par boîte (les mêmes que `tests/medias-fichier.test.ts`). */
+const u32 = (n: number) => { const b = Buffer.alloc(4); b.writeUInt32BE(n); return b; };
+const boite = (type: string, ...contenus: Buffer[]): Buffer => { const c = Buffer.concat(contenus); return Buffer.concat([u32(8 + c.length), Buffer.from(type, 'ascii'), c]); };
+const pleine = (type: string, ...c: Buffer[]) => boite(type, Buffer.alloc(4), ...c);
+const mp4 = (codec: string) => Buffer.concat([
+  boite('ftyp', Buffer.from('isom', 'ascii'), u32(512)),
+  boite('moov', boite('trak', boite('mdia',
+    pleine('hdlr', Buffer.alloc(4), Buffer.from('vide', 'ascii'), Buffer.alloc(12)),
+    boite('minf', boite('stbl', pleine('stsd', u32(1), boite(codec, Buffer.alloc(78), boite('avcC', Buffer.from([1, 77, 0, 31]))))))))),
+]);
+
+describe('La médiathèque accepte la vidéo MP4 et le PDF (spec médias, lot C)', () => {
+  const poster = async (app: ReturnType<typeof appWith>['app'], mime: string, octets: Buffer, nom?: string) => app.inject({
+    method: 'POST', url: '/tenants/t1/rcs/media',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${await jeton('admin')}` },
+    payload: { dataUrl: `data:${mime};base64,${octets.toString('base64')}`, ...(nom !== undefined ? { nom } : {}) },
+  });
+
+  it('accepte un MP4 en H.264 et un PDF, chacun sous son type RÉEL', async () => {
+    const { app, crees } = appWith(null);
+    expect((await poster(app, 'video/mp4', mp4('avc1'), 'demo.mp4')).statusCode).toBe(201);
+    expect((await poster(app, 'application/pdf', PDF, 'devis.pdf')).statusCode).toBe(201);
+    expect(crees.map((c) => c.mime)).toEqual(['video/mp4', 'application/pdf']);
+  });
+
+  it('🔴 refuse le HEVC d’un iPhone (415), avec la raison qui dit quoi faire', async () => {
+    const { app, crees } = appWith(null);
+    const r = await poster(app, 'video/mp4', mp4('hvc1'));
+    expect(r.statusCode).toBe(415);
+    expect(r.json().error).toMatch(/HEVC/);
+    expect(crees).toHaveLength(0);
+  });
+
+  it('16 Mo pour une vidéo ou un PDF, 2 Mo pour une image', async () => {
+    const { app, crees } = appWith(null);
+    const gros = Buffer.concat([PDF, Buffer.alloc(16 * 1024 * 1024, 1)]);
+    expect((await poster(app, 'application/pdf', gros)).statusCode).toBe(413);
+    expect(crees).toHaveLength(0);
+  });
+
+  it('🔴 point de revue 5 : un nom hostile est nettoyé (ni chemin, ni caractère de contrôle, borné)', async () => {
+    const { app, crees } = appWith(null);
+    await poster(app, 'application/pdf', PDF, '..\\..\\/etc/pass\u0000wd.pdf');
+    await poster(app, 'application/pdf', PDF, 'x'.repeat(300));
+    expect(crees[0]!.nom).toBe('passwd.pdf');
+    expect(crees[1]!.nom).toHaveLength(120);
+  });
+
+  it('🔴 /m/ ne sert JAMAIS une vidéo ni un PDF : leur adresse n’est pas publique', async () => {
+    const { app } = appWith({ bytes: PDF, mime: 'application/pdf' as never });
+    expect((await app.inject({ method: 'GET', url: `/m/${CODE}.pdf` })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: `/m/${CODE}.mp4` })).statusCode).toBe(404);
+  });
+
+  it('ouvre un fichier de l’espace sous session, en pièce jointe pour un PDF, avec nosniff', async () => {
+    const { app } = appWith(null, { prive: { bytes: PDF, mime: 'application/pdf', nom: 'devis.pdf' } });
+    const r = await app.inject({ method: 'GET', url: `/tenants/t1/rcs/media/${CODE}/fichier`, headers: { authorization: `Bearer ${await jeton('agent')}` } });
+    expect(r.statusCode).toBe(200);
+    expect(r.headers['content-type']).toBe('application/pdf');
+    expect(r.headers['x-content-type-options']).toBe('nosniff');
+    expect(String(r.headers['content-disposition'])).toMatch(/^attachment/);
+    expect(r.rawPayload.equals(PDF)).toBe(true);
+    const absent = await app.inject({ method: 'GET', url: '/tenants/t1/rcs/media/00000000000000000000000000/fichier', headers: { authorization: `Bearer ${await jeton('agent')}` } });
+    expect(absent.statusCode).toBe(404);
+  });
+});
+
+describe('🔴 un MOV d’iPhone est refusé en le NOMMANT (relecture du lot C, n° 3)', () => {
+  it('415 avec la marche à suivre vers le MP4', async () => {
+    const { app, crees } = appWith(null);
+    const mov = Buffer.concat([Buffer.from([0, 0, 0, 20]), Buffer.from('ftypqt  ', 'ascii'), Buffer.alloc(12)]);
+    const r = await app.inject({
+      method: 'POST', url: '/tenants/t1/rcs/media',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${await jeton('admin')}` },
+      payload: { dataUrl: `data:video/quicktime;base64,${mov.toString('base64')}` },
+    });
+    expect(r.statusCode).toBe(415);
+    expect(r.json().error).toMatch(/MOV/);
+    expect(r.json().error).toMatch(/MP4/);
+    expect(crees).toHaveLength(0);
   });
 });

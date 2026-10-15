@@ -39,6 +39,22 @@ function templatePayload(tpl: TemplateSpec): Record<string, unknown> {
  * Client typé des API de messagerie Meta pour un numéro (phone_number_id). Débit et rejeux appliqués à chaque
  * appel ; transport injecté.
  */
+/**
+ * Le fichier d'un message (en-tête d'un interactif, ou message média seul), par identifiant Meta (`uploadForSend`). Seul un
+ * document porte un nom : WhatsApp l'affiche, et son extension choisit l'icône chez le contact.
+ */
+export interface EnTeteMedia {
+  type: 'image' | 'video' | 'document';
+  id: string;
+  filename?: string;
+}
+
+/** `{ type: 'video', video: { id } }` : la forme qu'attend Meta, la même en en-tête et en message seul. */
+function enTeteMeta(e: EnTeteMedia): { type: EnTeteMedia['type'] } & Partial<Record<EnTeteMedia['type'], { id: string; filename?: string }>> {
+  const objet = { id: e.id, ...(e.type === 'document' && e.filename ? { filename: e.filename } : {}) };
+  return { type: e.type, [e.type]: objet };
+}
+
 export class MetaClient {
   private readonly transport: HttpTransport;
   private readonly token: string;
@@ -119,10 +135,10 @@ export class MetaClient {
    * Message interactif à boutons de réponse (hors template), `to` en E.164 ou BSUID. Les titres vides sont filtrés
    * en préservant l'index d'origine dans `reply.id` (`btn:<i>`), pour que la branche par bouton reste stable.
    * Limites Meta : 3 boutons, titre de 20 caractères.
-   * `mediaId` = visuel d'en-tête, un identifiant Meta et non un lien : la livraison ne dépend alors pas de
-   * l'accessibilité de notre hébergement au moment où Meta va le chercher.
+   * `enTete` = image, vidéo ou document d'en-tête, par identifiant Meta et non par lien : la livraison ne dépend alors
+   * pas de l'accessibilité de notre hébergement au moment où Meta va le chercher.
    */
-  async sendInteractive(to: string, body: string, buttons: { text: string }[], mediaId?: string): Promise<SendResult> {
+  async sendInteractive(to: string, body: string, buttons: { text: string }[], enTete?: EnTeteMedia): Promise<SendResult> {
     const replyButtons = buttons
       .map((b, i) => ({ type: 'reply' as const, reply: { id: `btn:${i}`, title: b.text.trim().slice(0, 20) } }))
       .filter((b) => b.reply.title !== '')
@@ -131,7 +147,7 @@ export class MetaClient {
       type: 'interactive',
       interactive: {
         type: 'button',
-        ...(mediaId ? { header: { type: 'image', image: { id: mediaId } } } : {}),
+        ...(enTete ? { header: enTeteMeta(enTete) } : {}),
         body: { text: body },
         action: { buttons: replyButtons },
       },
@@ -144,12 +160,12 @@ export class MetaClient {
    * rapide ne peut pas porter d'adresse. Meta n'envoie aucun webhook au clic : le bloc n'a pas de sortie et le
    * parcours continue tout de suite. Libellé borné à 20 caractères, sinon Meta refuse le message entier.
    */
-  async sendCtaUrl(to: string, body: string, lien: { texte: string; url: string }, mediaId?: string): Promise<SendResult> {
+  async sendCtaUrl(to: string, body: string, lien: { texte: string; url: string }, enTete?: EnTeteMedia): Promise<SendResult> {
     return this.envoyer(to, {
       type: 'interactive',
       interactive: {
         type: 'cta_url',
-        ...(mediaId ? { header: { type: 'image', image: { id: mediaId } } } : {}),
+        ...(enTete ? { header: enTeteMeta(enTete) } : {}),
         body: { text: body },
         action: {
           name: 'cta_url',
@@ -193,13 +209,16 @@ export class MetaClient {
   }
 
   /**
-   * Image seule, légende facultative : un message interactif exige au moins un bouton, donc un bloc qui porte un
-   * visuel sans réponse rapide n'a pas d'autre chemin (sinon le visuel disparaîtrait en silence).
+   * Image, vidéo ou document seul, légende facultative : un message interactif exige au moins un bouton, donc un bloc
+   * qui porte un fichier sans réponse rapide n'a pas d'autre chemin (sinon le fichier disparaîtrait en silence). Une
+   * légende vide est omise (Meta la refuse) ; un document garde son nom (`filename`).
    */
-  async sendImage(to: string, mediaId: string, caption?: string): Promise<SendResult> {
+  async sendMedia(to: string, enTete: EnTeteMedia, legende?: string): Promise<SendResult> {
+    const { type, ...objet } = enTeteMeta(enTete);
+    const media = objet[type]!;
     return this.envoyer(to, {
-      type: 'image',
-      image: { id: mediaId, ...(caption && caption.trim() !== '' ? { caption } : {}) },
+      type,
+      [type]: { id: media.id, ...(legende && legende.trim() !== '' ? { caption: legende } : {}), ...(media.filename ? { filename: media.filename } : {}) },
     });
   }
 

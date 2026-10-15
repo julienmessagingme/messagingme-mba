@@ -746,6 +746,18 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   qu'un scénario se monte une fois pour les deux canaux. Une adresse vide, mal formée ou porteuse d'une
   variable **fait refuser l'envoi** au lieu de laisser partir le message sans son bouton, et l'écran la
   signale dès la saisie.
+- ✅ **Le bloc « message rapide » accepte une vidéo ou un PDF** (2026-10-15), en plus d'une image. Vidéo MP4
+  encodée en H.264 ou PDF, 16 Mo chacun ; image JPEG ou PNG, 2 Mo. Avec des boutons, le fichier part en en-tête
+  du message ; sans bouton, en vidéo ou en document légendé, le PDF sous son nom d'origine. Le texte est alors
+  limité à 1 024 caractères (la limite de WhatsApp pour une légende), et l'écran le compte. **Une vidéo d'iPhone
+  (au format MOV, ou encodée en HEVC) est refusée au dépôt**, avec la marche à suivre (la convertir en MP4 H.264) :
+  WhatsApp ne la livrerait pas. **La vidéo et le PDF ne partent qu'en WhatsApp** : sur un parcours
+  RCS, le bloc refuse d'envoyer et dit pourquoi, plutôt que de partir sans son fichier.
+- ✅ **La médiathèque** (Paramètres > Médiathèque, 2026-10-15) : les fichiers que vos messages envoient, ce
+  qu'ils pèsent face au quota de votre offre (Pro 100 Mo, Entreprise 500 Mo ; un même fichier ne compte qu'une
+  fois), et leur suppression. Un fichier qu'utilise encore un scénario, un message RCS, une campagne en cours ou
+  un brouillon de campagne ne se supprime pas : l'écran dit ce qui l'utilise. Un fichier supprimé reste lisible
+  30 jours par les messages déjà partis. Le Pro peut désormais déposer une image dans un bloc « message rapide ».
 - ✅ **Le bloc « message rapide » accepte une image** (2026-08-25). Même champ et même téléversement que le
   bloc RCS : un seul visuel, qui sert aux DEUX canaux. En WhatsApp il part en en-tête du message, au-dessus du
   texte et des boutons ; sur un parcours RCS, le message devient une carte qui porte l'image. Sans aucune

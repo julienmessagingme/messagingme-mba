@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { TemplateMediaPreparer } from '../src/meta/template-media';
 import type { TemplateMediaDeps } from '../src/meta/template-media';
 
@@ -11,11 +12,15 @@ import type { TemplateMediaDeps } from '../src/meta/template-media';
 interface Journal {
   numeros: number;
   telecharges: string[];
+  /** Les téléchargements GARDÉS (`telecharger`, https et adresse publique), « FORMAT adresse ». */
+  gardes: string[];
   televerses: Array<{ pn: string; mime: string }>;
 }
 
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]);
+
 function preparer(over: Partial<TemplateMediaDeps> & { pn?: string | null } = {}) {
-  const j: Journal = { numeros: 0, telecharges: [], televerses: [] };
+  const j: Journal = { numeros: 0, telecharges: [], gardes: [], televerses: [] };
   let horloge = 1_000_000;
   const deps: TemplateMediaDeps = {
     getPhoneNumberId: async () => { j.numeros += 1; return over.pn === undefined ? 'PN-1' : over.pn; },
@@ -29,6 +34,9 @@ function preparer(over: Partial<TemplateMediaDeps> & { pn?: string | null } = {}
       j.telecharges.push(url);
       return { ok: true, headers: new Headers({ 'content-type': 'image/png' }), arrayBuffer: async () => new ArrayBuffer(4) } as Response;
     },
+    // Par défaut, aucune fiche dans la médiathèque de l'espace : le téléchargement gardé s'applique.
+    lireFichier: async () => null,
+    telecharger: async (format, url) => { j.gardes.push(`${format} ${url}`); return { octets: PNG, mime: 'image/png' }; },
     now: () => horloge,
     ...over,
   };
@@ -116,6 +124,86 @@ describe('TemplateMediaPreparer.prepare (cartes de carousel)', () => {
     const { p, j } = preparer();
     await p.prepare('t1', [{ mediaUrl: 'https://cdn.meta/commun.jpg' }]);
     expect(await p.prepareOne('t1', 'https://cdn.meta/commun.jpg')).toBe('MID-1');
+    expect(j.televerses).toHaveLength(1);
+  });
+});
+
+describe('TemplateMediaPreparer.prepareFichier (le fichier du bloc « message rapide », spec médias § 3.2)', () => {
+  const CODE = 'abcdefghjkmnpqrstvwxyz0123';
+  const fiche = (mime: string, nom: string | null) => async (tenant: string, code: string) =>
+    tenant === 't1' && code === CODE ? { bytes: Buffer.from('octets'), mime, nom } : null;
+
+  it('🔴 une adresse /m/ de l’espace se lit DIRECTEMENT dans sa médiathèque, sans aucun appel HTTP', async () => {
+    const { p, j } = preparer({ lireFichier: fiche('video/mp4', 'demo.mp4') });
+    expect(await p.prepareFichier('t1', `https://api.messagingme.app/m/${CODE}.mp4`)).toEqual({ mediaId: 'MID-1', type: 'video', nom: 'demo.mp4' });
+    expect(j.telecharges).toEqual([]);
+    expect(j.televerses).toEqual([{ pn: 'PN-1', mime: 'video/mp4' }]);
+  });
+
+  it('un PDF devient un document, et garde son nom', async () => {
+    const { p } = preparer({ lireFichier: fiche('application/pdf', 'devis.pdf') });
+    expect(await p.prepareFichier('t1', `https://api.messagingme.app/m/${CODE}.pdf`)).toMatchObject({ type: 'document', nom: 'devis.pdf' });
+  });
+
+  it('🔴 point de revue 3 : une adresse /m/ sur un ANCIEN nom d’hôte se reconnaît à son chemin', async () => {
+    const { p, j } = preparer({ lireFichier: fiche('application/pdf', 'devis.pdf') });
+    expect(await p.prepareFichier('t1', `https://mba.messagingme.app/m/${CODE}.pdf`)).toMatchObject({ type: 'document' });
+    expect(j.telecharges).toEqual([]);
+  });
+
+  it('🔴 le code d’un AUTRE espace n’est pas lu dans sa médiathèque : le téléchargement gardé s’applique, et une vidéo y échoue', async () => {
+    const lus: string[] = [];
+    const { p, j } = preparer({
+      lireFichier: async (tenant, code) => { lus.push(`${tenant}/${code}`); return null; },
+      telecharger: async (format, url) => { j.gardes.push(`${format} ${url}`); return { refus: 'le serveur du fichier a répondu HTTP 404' }; },
+    });
+    expect(await p.prepareFichier('t2', `https://api.messagingme.app/m/${CODE}.mp4`)).toBeNull();
+    expect(lus).toEqual([`t2/${CODE}`]);
+    expect(j.gardes).toEqual([`VIDEO https://api.messagingme.app/m/${CODE}.mp4`]);
+    expect(j.televerses).toEqual([]);
+  });
+
+  it('🔴 une adresse saisie par le client passe par le téléchargement GARDÉ, jamais par un fetch nu (relecture du lot C, n° 1)', async () => {
+    const { p, j } = preparer();
+    expect(await p.prepareFichier('t1', 'https://exemple.fr/visuel.png')).toEqual({ mediaId: 'MID-1', type: 'image', nom: null });
+    expect(j.gardes).toEqual(['IMAGE https://exemple.fr/visuel.png']);
+    expect(j.telecharges).toEqual([]);
+  });
+
+  it('🔴 une vidéo externe passe aussi la lecture de son encodage : un HEVC n’est pas téléversé (n° 2)', async () => {
+    const u32 = (n: number) => { const b = Buffer.alloc(4); b.writeUInt32BE(n); return b; };
+    const boite = (t: string, ...c: Buffer[]) => { const x = Buffer.concat(c); return Buffer.concat([u32(8 + x.length), Buffer.from(t, 'ascii'), x]); };
+    const pleine = (t: string, ...c: Buffer[]) => boite(t, Buffer.alloc(4), ...c);
+    const hevc = Buffer.concat([boite('ftyp', Buffer.from('isom', 'ascii'), u32(1)), boite('moov', boite('trak', boite('mdia',
+      pleine('hdlr', Buffer.alloc(4), Buffer.from('vide', 'ascii'), Buffer.alloc(12)),
+      boite('minf', boite('stbl', pleine('stsd', u32(1), boite('hvc1', Buffer.alloc(78))))))))]);
+    const { p, j } = preparer({ telecharger: async () => ({ octets: hevc, mime: 'video/mp4' }) });
+    expect(await p.prepareFichier('t1', 'https://exemple.fr/demo.mp4')).toBeNull();
+    expect(j.televerses).toEqual([]);
+  });
+
+  it('🔴 le cache porte l’ESPACE : un même numéro rattaché à un autre espace ne réutilise pas son identifiant (n° 6)', async () => {
+    const { p, j } = preparer({ lireFichier: fiche('application/pdf', 'devis.pdf'), telecharger: async () => ({ refus: 'HTTP 404' }) });
+    expect(await p.prepareFichier('t1', `https://api.messagingme.app/m/${CODE}.pdf`)).toMatchObject({ mediaId: 'MID-1' });
+    expect(await p.prepareFichier('t2', `https://api.messagingme.app/m/${CODE}.pdf`)).toBeNull();
+    expect(j.televerses).toHaveLength(1);
+  });
+
+  it('🔴 en production, le téléchargement gardé est celui des en-têtes de modèle (fetchPublic et resolutionPublique)', () => {
+    const cablage = readFileSync(new URL('../src/workflow/wiring.ts', import.meta.url), 'utf8');
+    expect(cablage).toMatch(/telecharger:[^\n]*=>\s*telechargerEnteteProduction\(/);
+  });
+
+  it('un type que WhatsApp ne prend pas en en-tête est refusé, rien n’est téléversé', async () => {
+    const { p, j } = preparer({ lireFichier: fiche('text/html', null) });
+    expect(await p.prepareFichier('t1', `https://api.messagingme.app/m/${CODE}.png`)).toBeNull();
+    expect(j.televerses).toEqual([]);
+  });
+
+  it('cache par numéro et par adresse : une campagne ne téléverse pas la même vidéo par destinataire', async () => {
+    const { p, j } = preparer({ lireFichier: fiche('video/mp4', 'demo.mp4') });
+    await p.prepareFichier('t1', `https://api.messagingme.app/m/${CODE}.mp4`);
+    expect(await p.prepareFichier('t1', `https://api.messagingme.app/m/${CODE}.mp4`)).toEqual({ mediaId: 'MID-1', type: 'video', nom: 'demo.mp4' });
     expect(j.televerses).toHaveLength(1);
   });
 });

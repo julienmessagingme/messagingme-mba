@@ -121,6 +121,17 @@ describe.skipIf(!url)('le stock de la médiathèque', () => {
     expect(r.rowCount).toBe(0);
   });
 
+  it('🔴 lireDeLEspace (lot C) : le fichier de CET espace avec son nom, jamais celui d’un autre, servi pendant la grâce seulement', async () => {
+    const { media } = await deposer(t, fichier(500, 9));
+    expect(await store.lireDeLEspace(t, media.code)).toMatchObject({ mime: 'image/png', nom: 'visuel.png' });
+    expect((await store.lireDeLEspace(t, media.code))!.bytes.length).toBe(500);
+    expect(await store.lireDeLEspace(autre, media.code)).toBeNull();
+    await store.supprimer(t, media.code);
+    expect(await store.lireDeLEspace(t, media.code)).not.toBeNull();
+    await vieillir(media.code, GRACE_SUPPRESSION_JOURS + 1);
+    expect(await store.lireDeLEspace(t, media.code)).toBeNull();
+  });
+
   it('🔴 un espace ne supprime jamais le fichier d’un autre', async () => {
     const { media } = await deposer(autre, fichier(200, 5));
     expect(await store.supprimer(t, media.code)).toEqual({ issue: 'introuvable' });

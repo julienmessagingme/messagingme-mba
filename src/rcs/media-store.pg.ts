@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
-import type { MimeImage } from './image';
+import type { MimeFichier } from '../medias/fichier';
 import { enTransaction } from '../db/transaction';
 import { LimiteOffreError } from '../offres/refus';
 
@@ -8,7 +8,7 @@ import { LimiteOffreError } from '../offres/refus';
 export interface RcsMediaResume {
   id: string;
   code: string;
-  mime: MimeImage;
+  mime: MimeFichier;
   taille: number;
   nom: string | null;
   createdAt: string;
@@ -17,7 +17,7 @@ export interface RcsMediaResume {
 /** Un visuel servi : les octets et leur type réel (celui déduit à l'écriture, jamais un type déclaré). */
 export interface RcsMediaFichier {
   bytes: Buffer;
-  mime: MimeImage;
+  mime: MimeFichier;
 }
 
 /**
@@ -43,7 +43,7 @@ export const GRACE_SUPPRESSION_JOURS = 30;
 /** Le fichier vivant, ou supprimé depuis moins de la grâce : ce que `/m/` sert encore. */
 const SERVI = `(supprime_le is null or supprime_le > now() - make_interval(days => ${GRACE_SUPPRESSION_JOURS}))`;
 
-type Ligne = { id: string; code: string; mime: MimeImage; taille: number; nom: string | null; created_at: Date };
+type Ligne = { id: string; code: string; mime: MimeFichier; taille: number; nom: string | null; created_at: Date };
 const resume = (r: Ligne): RcsMediaResume => ({ id: r.id, code: r.code, mime: r.mime, taille: r.taille, nom: r.nom, createdAt: r.created_at.toISOString() });
 
 /**
@@ -62,7 +62,7 @@ export class PgRcsMediaStore {
    */
   async deposer(
     tenantId: string,
-    input: { code: string; mime: MimeImage; bytes: Buffer; nom: string | null },
+    input: { code: string; mime: MimeFichier; bytes: Buffer; nom: string | null },
     quota: number | null,
   ): Promise<{ media: RcsMediaResume; existant: boolean }> {
     const empreinte = createHash('sha256').update(input.bytes).digest('hex');
@@ -169,11 +169,24 @@ export class PgRcsMediaStore {
   }
 
   /**
+   * Le fichier d'un code DANS CET ESPACE, avec son nom, vivant ou supprimé depuis moins de la grâce (spec médias, § 3.2) :
+   * c'est par là que la préparation d'un envoi lit une vidéo ou un PDF, qui n'ont pas d'adresse publique, et que la
+   * console ouvre un fichier sous session. Un code d'un autre espace rend null, comme un code inconnu.
+   */
+  async lireDeLEspace(tenantId: string, code: string): Promise<(RcsMediaFichier & { nom: string | null }) | null> {
+    const { rows } = await this.pool.query<{ bytes: Buffer; mime: MimeFichier; nom: string | null }>(
+      `select bytes, mime, nom from rcs_media where tenant_id = $1 and code = $2 and ${SERVI}`,
+      [tenantId, code],
+    );
+    return rows[0] ? { bytes: rows[0].bytes, mime: rows[0].mime, nom: rows[0].nom } : null;
+  }
+
+  /**
    * Le fichier derrière un code, sans espace (route publique, appelée par l'opérateur), vivant ou supprimé depuis moins
    * de la grâce. null = code inconnu ou purgé : 404, sans dire si le code a existé.
    */
   async getByCode(code: string): Promise<RcsMediaFichier | null> {
-    const { rows } = await this.pool.query<{ bytes: Buffer; mime: MimeImage }>(
+    const { rows } = await this.pool.query<{ bytes: Buffer; mime: MimeFichier }>(
       `select bytes, mime from rcs_media where code = $1 and ${SERVI}`,
       [code],
     );

@@ -108,7 +108,7 @@ import { carouselSendBlocker } from './meta/template-components';
 import { creerEnvoiModeleInbox } from './inbox/envoi-modele';
 import { PgRcsMessageStore } from './rcs/message-store.pg';
 import { PgRcsMediaStore } from './rcs/media-store.pg';
-import { urlImageRcs } from './rcs/image';
+import { urlFichier } from './medias/fichier';
 import { newMediaCode } from './ids/code';
 import { verifierCleRcs } from './rcs/channel-info';
 import { fetchGet } from './lib/http-get';
@@ -2316,17 +2316,18 @@ async function main(): Promise<void> {
       create: async (tenant, input) => {
         const quota = (await offres.offreDe(tenant)).droits.limites.stockageOctets;
         const { media, existant } = await rcsMediaStore.deposer(tenant, { ...input, code: newMediaCode() }, quota);
-        return { media, existant, url: urlImageRcs(adressesApi.racine, media.code, media.mime) };
+        return { media, existant, url: urlFichier(adressesApi.racine, media.code, media.mime) };
       },
       lister: async (tenant) => {
         const [fichiers, occupation, offre] = await Promise.all([rcsMediaStore.lister(tenant), rcsMediaStore.occupation(tenant), offres.offreDe(tenant)]);
         return {
-          fichiers: fichiers.map((f) => ({ ...f, url: urlImageRcs(adressesApi.racine, f.code, f.mime) })),
+          fichiers: fichiers.map((f) => ({ ...f, url: urlFichier(adressesApi.racine, f.code, f.mime) })),
           occupation,
           quota: offre.droits.limites.stockageOctets,
         };
       },
       supprimer: (tenant, code) => rcsMediaStore.supprimer(tenant, code),
+      lire: (tenant, code) => rcsMediaStore.lireDeLEspace(tenant, code),
     },
     // Le dépôt lui-même : la route n'en appelle que `list`, `create`, `update` et `remove`, en méthodes.
     rcsMessages: rcsMessageStore,

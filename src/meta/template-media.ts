@@ -1,5 +1,6 @@
 import type { OutboundCarouselCard } from './template-components';
 import { texteDe } from '../lib/erreur';
+import { genreParAdresse, typeFichier, verifierVideo } from '../medias/fichier';
 
 /**
  * Prépare les visuels d'un template pour l'envoi : chaque image lue chez Meta est re-téléversée sur le numéro
@@ -14,6 +15,17 @@ export interface TemplateMediaDeps {
   getPhoneNumberId(tenantId: string): Promise<string | null>;
   /** Client d'upload résolu par tenant (token du tenant). */
   mediaClientFor(tenantId: string): Promise<{ uploadForSend(phoneNumberId: string, bytes: Buffer, mime: string): Promise<string> }>;
+  /**
+   * Le fichier de la médiathèque de CET espace derrière un code (`/m/<code>.<ext>`), ou null : un code d'un autre espace
+   * n'est jamais lu ici (spec médias, § 3.2). Les vidéos et les PDF ne sont pas servis publiquement : c'est le seul
+   * chemin par lequel ils partent.
+   */
+  lireFichier(tenantId: string, code: string): Promise<{ bytes: Buffer; mime: string; nom: string | null } | null>;
+  /**
+   * Le téléchargement GARDÉ d'une adresse saisie par un client (`telechargerEnteteProduction`, `src/api/entete-par-url.ts` :
+   * `fetchPublic`, `resolutionPublique`, sans redirection, lecture bornée au plafond du format). Un refus est une réponse.
+   */
+  telecharger(format: 'IMAGE' | 'VIDEO' | 'DOCUMENT', url: string): Promise<{ octets: Buffer; mime: string } | { refus: string }>;
   /** Téléchargement du visuel chez Meta. Injecté par les tests ; défaut : `fetch` global. */
   fetchImpl?: (url: string) => Promise<Response>;
   /** Horloge (tests du cache). Défaut : Date.now. */
@@ -22,6 +34,32 @@ export interface TemplateMediaDeps {
 
 /** Un media id vit 30 jours côté Meta : on le garde 7, large marge, et jamais au-delà d'un redémarrage. */
 const MEDIA_CACHE_MS = 7 * 86_400_000;
+
+/** Le fichier d'un bloc prêt pour l'envoi : son identifiant chez Meta, la forme de l'en-tête, et le nom d'un document. */
+export interface FichierPrepare {
+  mediaId: string;
+  type: 'image' | 'video' | 'document';
+  nom: string | null;
+}
+
+/** Le chemin d'une adresse de la médiathèque, quel que soit son nom d'hôte (`api.`, `mba.`, anciens noms) : le code. */
+const CHEMIN_MEDIATHEQUE = /^\/m\/([0-9a-hjkmnp-tv-z]{26})\.[a-z0-9]+$/i;
+function codeDeMediatheque(url: string): string | null {
+  try {
+    const m = CHEMIN_MEDIATHEQUE.exec(new URL(url).pathname);
+    return m ? m[1]!.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** La forme d'en-tête que WhatsApp accepte pour un type de fichier, ou null (refus). */
+function typeEnTete(mime: string): FichierPrepare['type'] | null {
+  if (mime === 'image/jpeg' || mime === 'image/png' || mime === 'image/gif') return 'image';
+  if (mime === 'video/mp4') return 'video';
+  if (mime === 'application/pdf') return 'document';
+  return null;
+}
 
 export class TemplateMediaPreparer {
   /**
@@ -76,6 +114,62 @@ export class TemplateMediaPreparer {
       return null;
     }
     return this.televerse(tenantId, pn, mediaUrl);
+  }
+
+  /** Cache du fichier d'un bloc : même clé que les visuels (numéro et chemin), le type et le nom en plus. */
+  private readonly fichiers = new Map<string, { at: number } & FichierPrepare>();
+
+  /**
+   * Le fichier d'un bloc « message rapide » prêt pour l'envoi, ou null (le bloc refuse alors en le nommant). Une adresse
+   * de la médiathèque se lit DIRECTEMENT par (espace, code), sans passer par HTTP : vidéos et PDF n'ont pas d'adresse
+   * publique, et une image y gagne un aller-retour par Cloudflare. Faute de fiche dans cet espace, ou pour une adresse
+   * étrangère, 🔴 l'adresse est saisie par le client : elle passe par le téléchargement GARDÉ (`telecharger`, https, adresse
+   * publique vérifiée à la connexion, sans redirection, lecture bornée), jamais par un `fetch` nu, et le type se tranche
+   * sur les octets, une vidéo lue comme au dépôt. Une image publique d'un autre espace marche comme avant. Ne lève jamais.
+   * La clé du cache porte l'ESPACE : un numéro rattaché à un autre espace ne réutilise pas un identifiant qui n'est pas
+   * le sien.
+   */
+  async prepareFichier(tenantId: string, url: string): Promise<FichierPrepare | null> {
+    if (url === '') return null;
+    const pn = await this.deps.getPhoneNumberId(tenantId);
+    if (!pn) {
+      // eslint-disable-next-line no-console
+      console.error('fichier du bloc : aucun numéro d’envoi pour le tenant, fichier non préparé');
+      return null;
+    }
+    const cle = `${tenantId}|${pn}|${url.split('?')[0]!}`;
+    const hit = this.fichiers.get(cle);
+    if (hit && this.now() - hit.at < MEDIA_CACHE_MS) return { mediaId: hit.mediaId, type: hit.type, nom: hit.nom };
+    try {
+      const code = codeDeMediatheque(url);
+      const local = code ? await this.deps.lireFichier(tenantId, code) : null;
+      let lu: { bytes: Buffer; mime: string; nom: string | null };
+      if (local) {
+        // Le type d'une fiche est celui lu à son dépôt, sur ses octets, et une vidéo y a déjà été lue.
+        lu = local;
+      } else {
+        const genre = genreParAdresse(url);
+        const telecharge = await this.deps.telecharger(genre === 'video' ? 'VIDEO' : genre === 'document' ? 'DOCUMENT' : 'IMAGE', url);
+        if ('refus' in telecharge) throw new Error(`téléchargement du fichier : ${telecharge.refus}`);
+        const mime = typeFichier(telecharge.octets);
+        if (mime === 'video/mp4') {
+          const raison = verifierVideo(telecharge.octets);
+          if (raison) throw new Error(raison);
+        }
+        lu = { bytes: telecharge.octets, mime: mime ?? '', nom: null };
+      }
+      const type = typeEnTete(lu.mime);
+      if (!type) throw new Error(`type de fichier non accepté par WhatsApp : ${lu.mime || 'inconnu'}`);
+      const media = await this.deps.mediaClientFor(tenantId);
+      const mediaId = await media.uploadForSend(pn, lu.bytes, lu.mime);
+      const pret: FichierPrepare = { mediaId, type, nom: lu.nom };
+      this.fichiers.set(cle, { at: this.now(), ...pret });
+      return pret;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("fichier du bloc : non préparé pour l'envoi:", texteDe(err));
+      return null;
+    }
   }
 
   /**

@@ -2,7 +2,8 @@ import type { WorkflowExecutorDeps } from './executor';
 import { LimiteOffreError } from '../offres/refus';
 import { problemeLienBouton } from './engine';
 import { buildWorkflowTemplateComponents } from './template-send';
-import type { MetaClient } from '../meta/client';
+import type { MetaClient, EnTeteMedia } from '../meta/client';
+import type { FichierPrepare } from '../meta/template-media';
 import { messagingTarget, type SendResult, type TemplateSpec } from '../meta/types';
 import { carouselSendBlocker, headerMediaSendBlocker } from '../meta/template-components';
 import { FLOW_ENTRY_SCREEN } from '../meta/flow-json';
@@ -61,8 +62,17 @@ export type TplInfo = {
   nonEnvoyable: string | null;
 };
 
+/** Meta : 1 024 caractères au plus pour la légende d'un fichier et pour le corps d'un message interactif. */
+export const TEXTE_MAX_AVEC_FICHIER_OU_BOUTON = 1024;
+
+/** Le nom sous lequel un PDF arrive chez le contact : le sien, avec l'extension que WhatsApp lit pour l'icône. */
+function nomDuDocument(nom: string | null): string {
+  const n = (nom ?? '').trim() || 'document';
+  return /\.pdf$/i.test(n) ? n : `${n}.pdf`;
+}
+
 /** Les méthodes du client Meta que ces envois appellent, et elles seules. */
-export type ClientDesEnvois = Pick<MetaClient, 'sendTemplate' | 'sendMarketing' | 'sendCtaUrl' | 'sendInteractive' | 'sendImage' | 'sendText' | 'sendList' | 'sendFlowMessage'>;
+export type ClientDesEnvois = Pick<MetaClient, 'sendTemplate' | 'sendMarketing' | 'sendCtaUrl' | 'sendInteractive' | 'sendMedia' | 'sendText' | 'sendList' | 'sendFlowMessage'>;
 
 /** Ce dont les envois ont besoin, tout requis : un oubli ne compile pas. */
 export interface DepsEnvoisDeBloc {
@@ -79,6 +89,11 @@ export interface DepsEnvoisDeBloc {
   /** Les visuels d'un template re-téléversés sur le numéro d'envoi (`meta/template-media.ts`). */
   prepareCarouselMedia(tenant: string, cards: OutboundCarouselCard[]): Promise<OutboundCarouselCard[]>;
   prepareHeaderMedia(tenant: string, mediaUrl: string): Promise<string | null>;
+  /**
+   * Le fichier du bloc « message rapide » (image, vidéo ou PDF) prêt pour l'envoi (`prepareFichier`, `meta/template-media.ts`) :
+   * une adresse de la médiathèque se lit par (espace, code), sans HTTP. null = non préparé, le bloc refuse.
+   */
+  prepareFichierDuBloc(tenant: string, url: string): Promise<FichierPrepare | null>;
   /** Les liens tracés d'un template, et le jeton public du contact écrit dans leur suffixe. */
   trackedLinks: Pick<PgTrackedLinkStore, 'listByTemplates' | 'jetonPourE164'>;
   /** Les indications « variable {{n}} -> champ » d'un template. */
@@ -124,7 +139,7 @@ function envoyerModele(client: ClientDesEnvois, waId: string, spec: TemplateSpec
 }
 
 export function creerEnvoisDeBloc(deps: DepsEnvoisDeBloc): EnvoisDeBloc {
-  const { dryRun, clientWhatsApp, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, trackedLinks, hintStore, contactStore, varsDuContact, inboxStore, ecranDEntree } = deps;
+  const { dryRun, clientWhatsApp, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, prepareFichierDuBloc, trackedLinks, hintStore, contactStore, varsDuContact, inboxStore, ecranDEntree } = deps;
 
   /**
    * Visuels d'un template prêts pour l'envoi (cartes de carousel et en-tête média), ou la raison du refus.
@@ -260,30 +275,36 @@ export function creerEnvoisDeBloc(deps: DepsEnvoisDeBloc): EnvoisDeBloc {
       // vit dans le moteur (`problemeLienBouton`), et l'écran la répète à la saisie.
       const problemeLien = lien ? problemeLienBouton(lien) : null;
       if (problemeLien) return problemeLien;
+      const url = mediaUrl ? mediaUrl.trim() : '';
+      const utilisables = buttons.some((b) => b.text.trim() !== '');
+      // Meta borne à 1 024 caractères la légende d'un fichier ET le corps d'un message interactif (boutons, lien) : au-delà,
+      // il rejette le message entier. Un bloc déjà enregistré échappe à la borne de l'éditeur, d'où ce refus nommé ici.
+      if ((url !== '' || utilisables || lien) && body.length > TEXTE_MAX_AVEC_FICHIER_OU_BOUTON) {
+        return 'le texte du bloc « message rapide » dépasse 1 024 caractères : avec un fichier ou des boutons, WhatsApp n’en accepte pas plus';
+      }
       const client = await clientWhatsApp(tenant, 'workflow sendQuickMessage', `message rapide non envoyé à ${waId}`);
       if (typeof client === 'string') return client;
       // `buttons` part entier : `sendInteractive` écarte les titres vides en préservant l'index d'origine dans
       // `btn:<i>`. Filtrer ici renumérotait, et une réponse placée après une case vide ne correspondait plus à
       // aucune branche.
       //
-      // Visuel : téléversé chez Meta et posé en en-tête, via le préparateur des visuels de template (cache par
-      // numéro et URL). Préparation ratée -> refus explicite, jamais un envoi sans l'image demandée.
-      let mediaId: string | undefined;
-      if (mediaUrl && mediaUrl.trim() !== '') {
-        const prepare = await prepareHeaderMedia(tenant, mediaUrl.trim());
-        if (!prepare) return 'le visuel du bloc « message rapide » n’a pas pu être préparé pour l’envoi';
-        mediaId = prepare;
+      // Fichier (image, vidéo ou PDF) : téléversé chez Meta et posé en en-tête (cache par numéro et adresse). Préparation
+      // ratée -> refus explicite, jamais un envoi sans le fichier demandé. Un document garde son nom.
+      let enTete: EnTeteMedia | undefined;
+      if (url !== '') {
+        const prepare = await prepareFichierDuBloc(tenant, url);
+        if (!prepare) return 'le fichier du bloc « message rapide » n’a pas pu être préparé pour l’envoi';
+        enTete = { type: prepare.type, id: prepare.mediaId, ...(prepare.type === 'document' ? { filename: nomDuDocument(prepare.nom) } : {}) };
       }
-      const utilisables = buttons.some((b) => b.text.trim() !== '');
       // Le bouton de lien passe en premier et ne cohabite pas avec des réponses rapides (`button` et `cta_url`
       // sont deux types de messages chez Meta ; le moteur vide déjà `buttons`). Un interactif exige un bouton :
-      // visuel sans bouton = image légendée ; ni visuel ni bouton = texte simple.
+      // fichier sans bouton = média légendé ; ni fichier ni bouton = texte simple.
       const res = lien
-        ? await client.sendCtaUrl(waId, body, lien, mediaId)
+        ? await client.sendCtaUrl(waId, body, lien, enTete)
         : utilisables
-          ? await client.sendInteractive(waId, body, buttons, mediaId)
-          : mediaId
-            ? await client.sendImage(waId, mediaId, body)
+          ? await client.sendInteractive(waId, body, buttons, enTete)
+          : enTete
+            ? await client.sendMedia(waId, enTete, body)
             : await client.sendText(waId, body);
       // Journalise le message rapide dans le fil de conversation (best-effort, ne casse jamais l'envoi Meta réussi).
       try { await inboxStore.recordOutboundByWaId(tenant, waId, { body, messageId: res.messageId, type: 'text', origine: 'scenario' }); } catch { /* best-effort */ }

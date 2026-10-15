@@ -575,6 +575,36 @@ variable propre, tout vit sur la fiche.
   bouton qui copie `data.code`, grisé tant que le bloc n'en a pas. Le code d'un bloc neuf arrive par la réponse du
   `PATCH` (`useEnregistrementScenario`, `surCodes`), recopiée sur la carte.
 
+#### Le fichier d'un message rapide, et la médiathèque
+
+Spec `docs/superpowers/specs/2026-10-14-medias-message-rapide-design.md`, plan du même jour.
+
+- **Le champ** : `data.imageUrl` du bloc porte une image, une vidéo MP4 ou un PDF, sous la forme `/m/<code>.<ext>` ;
+  l'extension dit le genre (`genreParAdresse`, `src/medias/fichier.ts`). Le nom du champ ment depuis la vidéo : les
+  graphes enregistrés le portent, le renommer les réécrirait tous.
+- **Le dépôt** (`POST /tenants/:tenantId/rcs/media`) : le type se tranche sur les octets (`typeFichier` ; un MOV ou un
+  3GP renommé est refusé), une vidéo est lue au dépôt (`verifierVideo` : H.264, son AAC unique, jamais le profil High
+  avec images B qu'Android ne lit pas), 2 Mo pour une image, 16 Mo pour une vidéo ou un PDF, nom nettoyé
+  (`nomDeFichier`). Le quota est une limite de l'offre (`Limites.stockageOctets`), vérifié sous verrou d'espace dans
+  `PgRcsMediaStore.deposer` ; un fichier identique (empreinte SHA-256) rend sa fiche sans rien consommer.
+- **Qui lit quoi** : `/m/` ne sert QUE les images (l'opérateur RCS les télécharge) ; une vidéo ou un PDF n'ont aucune
+  adresse publique. L'envoi les lit par (espace, code) (`TemplateMediaPreparer.prepareFichier` sur
+  `lireDeLEspace`), sans HTTP, puis les téléverse chez Meta (30 jours là-bas, cache de 7 jours par espace, numéro et
+  adresse). 🔴 Une adresse qui n'est pas une fiche de l'espace a été saisie par le client : elle passe par le
+  téléchargement gardé des en-têtes de modèle (`telechargerEnteteProduction` : `fetchPublic`, `resolutionPublique`, sans
+  redirection, lecture bornée), jamais par un `fetch` nu, et son type se relit sur les octets. La console ouvre un
+  fichier sous session (`GET /tenants/:tenantId/rcs/media/:code/fichier`) et l'enregistre (lien `download`).
+- **L'envoi** : l'en-tête d'un interactif est typé (`EnTeteMedia`), un fichier sans bouton part par `sendMedia` (le PDF
+  sous son nom), et le texte est borné à `TEXTE_MAX_AVEC_FICHIER_OU_BOUTON` (1 024, la légende de Meta) par un refus
+  nommé. Sur un parcours RCS, une vidéo ou un PDF font refuser le bloc (`envoyerQuickEnRcs`).
+- **Le stock** : la suppression est refusée tant que `utilisations` trouve le code (scénarios brouillon ET publié,
+  messages RCS vivants, campagnes non `completed` et étages de leur chaîne, brouillons de campagne), puis douce
+  pendant `GRACE_SUPPRESSION_JOURS` : `/m/` sert encore le fichier, pour un visuel RCS téléchargé tard. L'étape `medias`
+  de la rétention générale efface au-delà. 🔴 Les écrans qui téléversent sont inventoriés par
+  `tests/medias-lieux.test.ts` : un écran neuf qui pose `<ChampImageHebergee>` doit dire où son contenu est enregistré.
+- **Où vivent les octets** : dans `rcs_media.bytes`, jusqu'au lot A du plan, qui les sort vers un bucket APRÈS la
+  bascule Scaleway. La carte « octets en base » de `/ops` les compte.
+
 ### 4.4 Un agent IA répond
 
 ```
@@ -3854,7 +3884,7 @@ d'analyse relancent la leur après l'avoir journalisée et alertée (`enEchec` v
 la vectorisation et l'analyse des conversations, non : leurs échecs se lisent dans leurs alertes.
 
 **Les octets en base** (`GET /ops/stockage`, carte de `/ops`). La taille de la base, les plus grosses tables, et les
-trois familles de fichiers gardées dans Postgres : images RCS (`rcs_media.bytes`), visuels des brouillons de pub
+trois familles de fichiers gardées dans Postgres : la médiathèque (`rcs_media.bytes` : images, vidéos, PDF), visuels des brouillons de pub
 (`pubs_brouillons.visuel_octets`), Flows (`flows.elements`, images en base64 comprises). Rouge au-delà de
 `SEUIL_FICHIERS_EN_BASE_OCTETS` (500 Mo) de fichiers : le moment de les sortir vers un stockage objet. ⚠️ Mesure
 coûteuse (le catalogue entier, une demi-seconde) : sa propre route, lue à l'ouverture de l'écran, jamais dans la vue

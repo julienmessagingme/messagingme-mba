@@ -20,6 +20,8 @@ import { MetaMediaClient } from '../meta/media';
 import { MetaClientFactory } from '../meta/factory';
 import { MetaCredentialsResolver } from '../meta/credentials';
 import { TemplateMediaPreparer } from '../meta/template-media';
+import { PgRcsMediaStore } from '../rcs/media-store.pg';
+import { telechargerEnteteProduction } from '../api/entete-par-url';
 import type { OutboundCarouselCard } from '../meta/template-components';
 import { WorkflowExecutor } from './executor';
 import { creerLancements } from './lancements';
@@ -197,8 +199,14 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
    * média. Une seule implémentation (`meta/template-media.ts`), partagée avec l'API ; l'instance porte son
    * cache, créée une fois.
    */
+  // La médiathèque, lue par (espace, code) : c'est par là qu'une vidéo ou un PDF du bloc « message rapide » partent, sans
+  // adresse publique (spec médias, § 3.2).
+  const mediatheque = new PgRcsMediaStore(pool);
   const templateMedia = new TemplateMediaPreparer({
     getPhoneNumberId: (tenant) => numeroDeLEspace(tenant),
+    lireFichier: (tenant, code) => mediatheque.lireDeLEspace(tenant, code),
+    // 🔴 Une adresse saisie par le client : le téléchargement gardé des en-têtes de modèle, jamais un fetch nu.
+    telecharger: (format, url) => telechargerEnteteProduction(format, url),
     mediaClientFor: async (tenant) => {
       const { token } = await metaCredentials.resolveForTenant(tenant);
       return new MetaMediaClient(token, config.META_APP_ID, config.META_GRAPH_VERSION);
@@ -208,6 +216,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     templateMedia.prepare(tenant, cards);
   const prepareHeaderMedia = (tenant: string, mediaUrl: string): Promise<string | null> =>
     templateMedia.prepareOne(tenant, mediaUrl);
+  const prepareFichierDuBloc = (tenant: string, url: string) => templateMedia.prepareFichier(tenant, url);
 
   const templateVarInfo = async (tenant: string, name: string, language: string): Promise<TplInfo | null> => {
     const waba = await tenantWabaId(tenant);
@@ -254,7 +263,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   // exécuté par ses tests. Il reçoit d'ici ce qui est partagé : le client de l'espace (la réponse d'un agent IA
   // l'emprunte) et le cache des templates (les campagnes et l'API le lisent).
   const envois = creerEnvoisDeBloc({
-    dryRun, clientWhatsApp, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia,
+    dryRun, clientWhatsApp, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, prepareFichierDuBloc,
     trackedLinks, hintStore, contactStore, varsDuContact, inboxStore, ecranDEntree,
   });
 

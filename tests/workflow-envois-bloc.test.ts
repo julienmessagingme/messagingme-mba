@@ -45,7 +45,7 @@ function fauxClient(appels: Appel[]): ClientDesEnvois {
     sendMarketing: noter('sendMarketing'),
     sendCtaUrl: noter('sendCtaUrl'),
     sendInteractive: noter('sendInteractive'),
-    sendImage: noter('sendImage'),
+    sendMedia: noter('sendMedia'),
     sendText: noter('sendText'),
     sendList: noter('sendList'),
     sendFlowMessage: noter('sendFlowMessage'),
@@ -65,6 +65,7 @@ function monter(over: Partial<DepsEnvoisDeBloc> = {}) {
     templateVarInfo: vi.fn(async () => LECTURE),
     prepareCarouselMedia: vi.fn(async (_t: string, cartes: OutboundCarouselCard[]) => cartes.map((c) => ({ ...c, mediaId: 'media-carte' }))),
     prepareHeaderMedia: vi.fn(async () => 'media-entete'),
+    prepareFichierDuBloc: vi.fn(async () => ({ mediaId: 'media-entete', type: 'image' as const, nom: null })),
     trackedLinks: { listByTemplates: vi.fn(async () => []), jetonPourE164: vi.fn(async () => 'jeton-abc') },
     hintStore: { get: vi.fn(async () => []) },
     contactStore: { getResolvableByPhone: vi.fn(async () => null) },
@@ -513,7 +514,7 @@ describe('sendQuickMessage', () => {
   it('un bloc à lien et à visuel porte le visuel en en-tête du `cta_url`', async () => {
     const { envois, appels } = monter();
     await envois.sendQuickMessage(T, W, 'La brochure', [], 'https://console/v.jpg', LIEN);
-    expect(appels).toEqual([['sendCtaUrl', W, 'La brochure', LIEN, 'media-entete']]);
+    expect(appels).toEqual([['sendCtaUrl', W, 'La brochure', LIEN, { type: 'image', id: 'media-entete' }]]);
   });
 
   it('🔴 la branche à boutons reste atteignable, et la liste part ENTIÈRE', async () => {
@@ -531,29 +532,71 @@ describe('sendQuickMessage', () => {
     const boutons = [{ type: 'QUICK_REPLY', text: 'Oui' }];
     const { envois, appels } = monter();
     await envois.sendQuickMessage(T, W, 'Vous venez ?', boutons, 'https://console/v.jpg');
-    expect(appels).toEqual([['sendInteractive', W, 'Vous venez ?', boutons, 'media-entete']]);
+    expect(appels).toEqual([['sendInteractive', W, 'Vous venez ?', boutons, { type: 'image', id: 'media-entete' }]]);
   });
 
   it('un visuel sans bouton part en image légendée, l’adresse rognée', async () => {
     const { envois, deps, appels } = monter();
     await envois.sendQuickMessage(T, W, 'Notre affiche', [], '  https://console/v.jpg  ');
-    expect(deps.prepareHeaderMedia).toHaveBeenCalledWith(T, 'https://console/v.jpg');
-    expect(appels).toEqual([['sendImage', W, 'media-entete', 'Notre affiche']]);
+    expect(deps.prepareFichierDuBloc).toHaveBeenCalledWith(T, 'https://console/v.jpg');
+    expect(appels).toEqual([['sendMedia', W, { type: 'image', id: 'media-entete' }, 'Notre affiche']]);
   });
 
   it('ni visuel ni bouton utilisable : texte simple, et une adresse vide ne prépare rien', async () => {
     const { envois, deps, appels } = monter();
     await envois.sendQuickMessage(T, W, 'Bonjour', [{ type: 'QUICK_REPLY', text: '  ' }], '   ');
-    expect(deps.prepareHeaderMedia).not.toHaveBeenCalled();
+    expect(deps.prepareFichierDuBloc).not.toHaveBeenCalled();
     expect(appels).toEqual([['sendText', W, 'Bonjour']]);
   });
 
-  it('un visuel non préparé refuse, jamais un envoi sans l’image demandée', async () => {
-    const { envois, appels, journal } = monter({ prepareHeaderMedia: vi.fn(async () => null) });
+  it('un fichier non préparé refuse, jamais un envoi sans le fichier demandé', async () => {
+    const { envois, appels, journal } = monter({ prepareFichierDuBloc: vi.fn(async () => null) });
     expect(await envois.sendQuickMessage(T, W, 'Notre affiche', [], 'https://console/v.jpg'))
-      .toBe('le visuel du bloc « message rapide » n’a pas pu être préparé pour l’envoi');
+      .toBe('le fichier du bloc « message rapide » n’a pas pu être préparé pour l’envoi');
     expect(appels).toEqual([]);
     expect(journal).toEqual([]);
+  });
+});
+
+describe('sendQuickMessage : vidéo et PDF (spec médias, § 3.4)', () => {
+  const video = { mediaId: 'media-v', type: 'video' as const, nom: 'demo.mp4' };
+  const pdf = (nom: string | null) => ({ mediaId: 'media-d', type: 'document' as const, nom });
+
+  it('🔴 une vidéo sans bouton part en message vidéo légendé', async () => {
+    const { envois, appels } = monter({ prepareFichierDuBloc: vi.fn(async () => video) });
+    await envois.sendQuickMessage(T, W, 'La démo', [], 'https://api.messagingme.app/m/x.mp4');
+    expect(appels).toEqual([['sendMedia', W, { type: 'video', id: 'media-v' }, 'La démo']]);
+  });
+
+  it('🔴 un PDF avec des réponses rapides devient l’en-tête document, et garde son nom', async () => {
+    const boutons = [{ type: 'QUICK_REPLY', text: 'Oui' }];
+    const { envois, appels } = monter({ prepareFichierDuBloc: vi.fn(async () => pdf('devis.pdf')) });
+    await envois.sendQuickMessage(T, W, 'Votre devis', boutons, 'https://api.messagingme.app/m/x.pdf');
+    expect(appels).toEqual([['sendInteractive', W, 'Votre devis', boutons, { type: 'document', id: 'media-d', filename: 'devis.pdf' }]]);
+  });
+
+  it('un PDF sans nom part sous « document.pdf », un nom sans extension la reçoit', async () => {
+    for (const [nom, attendu] of [[null, 'document.pdf'], ['Plaquette 2026', 'Plaquette 2026.pdf'], ['offre.PDF', 'offre.PDF']] as const) {
+      const { envois, appels } = monter({ prepareFichierDuBloc: vi.fn(async () => pdf(nom)) });
+      await envois.sendQuickMessage(T, W, 'Le document', [], 'https://api.messagingme.app/m/x.pdf');
+      expect(appels).toEqual([['sendMedia', W, { type: 'document', id: 'media-d', filename: attendu }, 'Le document']]);
+    }
+  });
+
+  it('🔴 point de revue 2 : un texte de plus de 1 024 caractères avec un fichier joint REFUSE, au lieu d’un rejet de Meta', async () => {
+    const { envois, deps, appels } = monter({ prepareFichierDuBloc: vi.fn(async () => video) });
+    const r = await envois.sendQuickMessage(T, W, 'x'.repeat(1025), [], 'https://api.messagingme.app/m/x.mp4');
+    expect(r).toMatch(/1 024 caractères/);
+    expect(deps.clientWhatsApp).not.toHaveBeenCalled();
+    expect(appels).toEqual([]);
+  });
+
+  it('la même borne vaut avec des boutons, et un texte simple garde ses 4 096 caractères', async () => {
+    const boutons = [{ type: 'QUICK_REPLY', text: 'Oui' }];
+    expect(await monter().envois.sendQuickMessage(T, W, 'x'.repeat(1025), boutons)).toMatch(/1 024 caractères/);
+    const { envois, appels } = monter();
+    await envois.sendQuickMessage(T, W, 'x'.repeat(4000), []);
+    expect(appels).toEqual([['sendText', W, 'x'.repeat(4000)]]);
   });
 });
 
