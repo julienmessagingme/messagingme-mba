@@ -5,6 +5,26 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-15 : la machine des workers en PRO2-XXS, et le banc sur la vraie gamme (lot 4 de la bascule)
+
+- **La machine** (accord de Julien) : `mm-workers` passée de PLAY2-NANO à PRO2-XXS. Arrêt 25 s, changement de
+  gamme, redémarrage 12 s, SSH revenu en 15 s : 52 s de coupure. Même adresse privée, les trois conteneurs repartis
+  seuls (`unless-stopped`), aucun redémarrage en boucle, le worker du connecteur en mode complet ; ses événements
+  entrants ont attendu dans sa file.
+- **Le banc** (`scripts/banc-api.sh` sur `d4ba506d`, base `banc` de l'instance de production, supprimée après ; le
+  certificat de la base, pas encore dans le dépôt, ajouté aux sources avant la construction) : p95 de `/v1` et `/mcp`
+  à 44 ms (50 appels/s), 37 (100), 45 (150), 56 (200), 69 (300), 87 (400), 194 (500), aucun 5xx. **Aucun palier n'a
+  cassé** : une copie tient au moins 500 appels/s (300 la veille sur la base d'essai). La borne reste le pool de
+  l'API (420 305 prises sur 534 873 ont attendu, la pire 483 ms ; processeur à 61 % au pic). La réception de Meta
+  reste entre 14 et 20 ms au p95 ; une rafale de 300 accusés/s passe à 49 ms (83 la veille). Plafond global
+  recommandé : **3 500 par 10 s**.
+- **Le plafond posé à 3 500**, 525 appels/s tentés : « Free d'abord » tenu (8 886 refus Free, aucun payant), mais
+  p95 de 3,3 s (20 s la veille) : la ligne unique du compteur global reste la cause probable (`todo.md`).
+- **Ce qui a coincé** : un premier lancement depuis une session en `umask 077` a cloné des sources illisibles pour
+  l'utilisateur non root de l'image, et le banc s'est arrêté à sa garde (`ERR_MODULE_NOT_FOUND` sur
+  `garde-banc-cli.mts`), avant toute écriture ; relancé en `umask 022`. Le script devrait fixer son umask lui-même
+  (`todo.md`).
+
 ## 2026-10-15 : la base de production créée, la répétition générale des données et la restauration sur vraies données
 
 - **La base** (accord de Julien) : `mm-prod-db`, DB-PRO2-XXS acceptée sans repli, PostgreSQL 17.11, prête en 162 s.

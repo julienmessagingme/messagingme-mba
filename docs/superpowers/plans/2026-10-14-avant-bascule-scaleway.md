@@ -160,6 +160,11 @@ conteneur serverless lui-même plutôt que sur la machine, son épreuve d'arrêt
 ✅ **La base de production existe depuis le 2026-10-15** (`mm-prod-db`, DB-PRO2-XXS, accord de Julien) :
 `max_connections` relu, 200 dont 3 réservées. Le budget de connexions se recalcule sur ce chiffre.
 
+✅ **Banc rejoué le 2026-10-15 sur la vraie gamme** (base de production DB-PRO2-XXS, dans une base `banc` supprimée
+après ; machine des workers passée en PRO2-XXS le même jour) : aucun palier n'a cassé jusqu'à 500 appels/s par copie
+(p95 194 ms), réception de Meta entre 14 et 20 ms, rafale d'accusés à 49 ms ; `API_PLAFOND_GLOBAL_PAR_10S=3500` au
+jour J. Restent : le budget de connexions sur 200, et le second banc sur le conteneur serverless.
+
 **Pourquoi** (§7.5, §7.8) : les chiffres d'aujourd'hui, mesurés à Londres à 10 ms, ne survivent pas au déménagement.
 
 **Tâches** : relever le nombre de connexions de la base jetable ; mettre à jour `tests/budget-pooler.test.ts` et

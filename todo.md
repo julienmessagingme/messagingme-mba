@@ -69,7 +69,12 @@ Plans `docs/superpowers/plans/2026-10-14-mm-api-envoi.md` et `2026-10-14-duree-v
   (`docs/JOURNAL-TECHNIQUE.md`, 2026-10-14). Un refus ne coûte pas d'écriture ; la cause probable est la ligne UNIQUE
   du compteur global (`CLE_GLOBALE`, `api.zz-plateforme` dans `compteurs_debit`), écrite par chaque appel accepté. À prouver d'abord (attente
   de verrous sur cette ligne pendant l'épreuve), puis, si c'est elle, répartir le compteur sur plusieurs lignes par
-  fenêtre et sommer à la lecture. Sans urgence : le trafic réel est très en dessous de 200 appels/s.
+  fenêtre et sommer à la lecture. Sans urgence : le trafic réel est très en dessous de 200 appels/s. Rejoué sur la
+  vraie gamme le 2026-10-15 : plafond à 3 500 par 10 s, 525 appels/s tentés, p95 de 3,3 s, toujours ce symptôme.
+- 🟡 **`scripts/banc-api.sh` hérite de l'umask de l'appelant.** Lancé depuis une session en `umask 077`
+  (2026-10-15), il clone des sources illisibles pour l'utilisateur non root de l'image, et le banc s'arrête à sa garde
+  (`ERR_MODULE_NOT_FOUND` sur `garde-banc-cli.mts`). Poser `umask 022` avant le clone, `umask 077` restant pour le
+  fichier des secrets du banc.
 
 ## 🟡 Lot 1 de la bascule, le portail HubSpot lu par le connecteur : ce que la relecture laisse (2026-10-14)
 

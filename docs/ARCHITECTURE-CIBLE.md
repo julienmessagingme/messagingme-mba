@@ -616,10 +616,10 @@ mesure avant d'ouvrir le site, et on repose les chiffres. Rien de ce qui suit ne
 
 | Réglage | Valeur actuelle | Où | Pourquoi cette valeur | À la bascule |
 | --- | --- | --- | --- | --- |
-| `API_PLAFOND_GLOBAL_PAR_10S` | 1050 (105 appels/s) | `.env.prod`, posé le 2026-10-12 sur décision de Julien | 70 % des 150 appels/s tenus au banc | ✅ **2100, mesuré à la cible le 2026-10-14** (70 % de 300 appels/s) : à poser dans les secrets de la cible au jour J |
+| `API_PLAFOND_GLOBAL_PAR_10S` | 1050 (105 appels/s) | `.env.prod`, posé le 2026-10-12 sur décision de Julien | 70 % des 150 appels/s tenus au banc | ✅ **3500, remesuré sur la vraie gamme le 2026-10-15** (70 % d'au moins 500 appels/s ; 2100 la veille sur la base d'essai) : à poser dans les secrets de la cible au jour J |
 | `API_PLAFOND_GLOBAL_PART_FREE` | 50 (%) | défaut du code | décision de Julien (Free d'abord) | Inchangé, sauf décision |
 | `DB_POOL_MAX` (API) | 10 | `docker-compose.yml` | budget du pooler Supabase (§ 7.5) | Recalculé sur l'offre choisie (§ 7.5) |
-| `DB_POOL_RECEPTION_MAX` | 4 | `docker-compose.yml`, minimum tenu par `tests/budget-pooler.test.ts` | à 10 ms, deux connexions accusaient environ 150 webhooks/s | ✅ **4 suffit à la cible** : une rafale de 300 accusés/s y passe à 83 ms au p95 (2026-10-14) |
+| `DB_POOL_RECEPTION_MAX` | 4 | `docker-compose.yml`, minimum tenu par `tests/budget-pooler.test.ts` | à 10 ms, deux connexions accusaient environ 150 webhooks/s | ✅ **4 suffit à la cible** : une rafale de 300 accusés/s y passe à 83 ms au p95 (2026-10-14), à 49 ms sur la vraie gamme (2026-10-15) |
 | `API_KEY_PREFILTRE_MAX` | 600 / min | défaut du code | après un démarrage, chaque clé repasse une fois par ce budget | Indépendant de la latence ; il est PAR COPIE, donc N copies en font N fois 600 |
 | Concurrence de `webhook-status` | 1 | `src/worker.ts` | protège la base | Mesurée à environ 11 accusés/s à 10 ms, puis **27,8 accusés/s à la cible** (2026-10-14) : la relever se décide sur ce chiffre |
 
@@ -638,6 +638,13 @@ ajoutent de la capacité, jusqu'à la limite de la base, que ce banc n'a pas att
 statuts traite 27,8 accusés/s. ⚠️ Au-delà de la capacité, le plafond garde l'ordre (« Free d'abord » tenu) mais pas la
 latence : p95 de 20 s à 315 appels/s plafond posé, la ligne unique du compteur global en étant la cause probable
 (`todo.md`).
+
+✅ **Rejoué sur la vraie gamme le 2026-10-15** (`docs/JOURNAL-TECHNIQUE.md`, même date) : la base de production
+DB-PRO2-XXS (dans une base `banc`, supprimée après) et la machine des workers passée en PRO2-XXS. **Aucun palier n'a
+cassé jusqu'à 500 appels/s par copie** (p95 de 69 ms à 300, 87 ms à 400, 194 ms à 500, aucun 5xx) ; la borne reste
+le pool de l'API, le processeur plafonnant à 61 %. La réception de Meta tient entre 14 et 20 ms au p95, une rafale de
+300 accusés/s passe à 49 ms. Plafond posé à 3 500 par 10 s et 525 appels/s tentés : « Free d'abord » tenu (aucun
+payant refusé), p95 de 3,3 s, toujours le symptôme de la ligne unique du compteur.
 
 **Comment remesurer sur la cible :**
 1. Le banc est `scripts/banc-api.sh` (montage, quatre épreuves, démontage) et `scripts/banc-api.mts` (la mesure).
@@ -842,6 +849,8 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    « développement », sans engagement de service, que Scaleway ne destine pas à la production. Le passage se fait
    machine arrêtée (changement de type), AVANT le jour J. La passerelle et la machine des essais
    sont en zone `nl-ams-2`, où la PRO2-XXS est en stock (relu le 2026-10-14).
+   ✅ **Passée en PRO2-XXS le 2026-10-15** (accord de Julien) : 52 s de coupure, les trois conteneurs repartis seuls,
+   le worker du connecteur en mode complet.
 7. Déployer l'API : conteneur **privé**, **min 1 / max donné par le budget du §7.5**, rattaché au réseau privé,
    secrets fournis par le gestionnaire de secrets de Scaleway (jamais dans l'image), contrôle de vie léger qui ne
    dépend pas de la base, délai d'arrêt très en deçà du bail de la clé d'idempotence (§3.5). ⚠️ **Le nom de chaque
