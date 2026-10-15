@@ -1,5 +1,25 @@
 # todo.md : backlog
 
+## 🟡 Onboarder par 360dialog : les lots après la réception (2026-10-15)
+
+Le but de Julien : à côté de « Connecter votre numéro WhatsApp », un bouton « Onboard with 360dialog » ; dès qu'un
+numéro est connecté par l'une des deux voies, l'autre bouton disparaît. Le lot 1 (la réception,
+`src/webhooks/receiver-360dialog.ts`) est fait. Prouvé à la main le 2026-10-15 avec la clé d'un numéro : l'envoi
+d'un modèle par `waba-v2.360dialog.io/messages` ET par MM Lite (`/marketing_messages`) arrive (brain, LEARNINGS).
+- **Lot 2, le transport d'envoi.** Un fournisseur par WABA (`meta` ou `360dialog`) et la clé d'API du numéro
+  chiffrée à côté du jeton (migration). Dans la fabrique (`src/meta/factory.ts`), un client 360dialog : autre hôte,
+  en-tête `D360-API-KEY`, chemins sans version ni `phone_number_id` ; modèles (`/v1/configs/templates`), médias et
+  Flows ont leurs équivalents à adapter un par un. Les gardes de la fabrique (STOP, délié, suspendu, quota) restent
+  communes. C'est seulement là qu'un numéro 360dialog peut se rattacher à un espace : avant, l'agent et l'Inbox
+  répondraient par Meta, qui refuse.
+- **Lot 3, le bouton.** Integrated Onboarding de 360dialog (compte partenaire, `partner_id`, URL de retour). Au retour
+  ou au webhook partenaire : le canal, puis la clé d'API par la Partner API (🔴 en créer une RÉVOQUE les précédentes,
+  une seule fois et chiffrée tout de suite), puis le webhook du numéro posé par nous (le corps de
+  `scripts/webhook-360dialog.mts`), puis le rattachement comme `linkTenant`. Les deux boutons se masquent dès qu'un
+  numéro est connecté, quelle que soit la voie.
+- **À demander à 360dialog avant le lot 2** : l'agent de Meta (MBA) sur leurs numéros, qu'aucune clé ne permet
+  d'essayer ; et si la Multi-Partner Solution existe chez eux (elle garderait tout en direct chez Meta).
+
 ## 🟡 Lot 5 de la bascule, le connecteur HubSpot chez Scaleway : ce qui reste (2026-10-15)
 
 - 🟡 **Retirer le connecteur du VPS après quelques jours d'observation** : ses deux conteneurs arrêtés, l'hôte NPM

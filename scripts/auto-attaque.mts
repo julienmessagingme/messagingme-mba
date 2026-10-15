@@ -66,6 +66,7 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { HubspotEventRouteDeps } from '../src/http/hubspot-events';
 import type { StripeWebhookRouteDeps } from '../src/http/credit-stripe';
 import type { ResendWebhookRouteDeps } from '../src/http/webhook-resend';
+import type { Receiver360Deps } from '../src/webhooks/receiver-360dialog';
 import type { OtpPontRouteDeps } from '../src/http/otp-pont';
 import type { ContactVitrineDeps } from '../src/http/contact-vitrine';
 import type { CspRapportsDeps } from '../src/http/csp-rapports';
@@ -300,6 +301,9 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
   // Le lien de désinscription (lot 7) : la vérification du jeton est la dépendance que la sonde 11 atteint ; elle ne
   // reconnaît aucun code, donc rien ne se désinscrit.
   desinscriptionEmails: inconnu('desinscriptionEmails'),
+  // Les webhooks 360dialog : un VRAI secret, sans quoi la comparaison du Basic n'est jamais exercée. Un Basic faux ou
+  // absent doit tomber avant la file (sonde 12).
+  receiver360: { queue: new FakeQueue(), secret: SECRET_SERVICE } satisfies Receiver360Deps,
   // Le webhook de Resend (lot 7) : un VRAI secret (au format Svix), et un journal qui ne note rien. Une signature
   // fausse ou absente doit tomber avant lui (sonde 12).
   resendWebhook: {

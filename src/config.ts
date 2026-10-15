@@ -9,6 +9,12 @@ export const schema = z.object({
   PORT: z.coerce.number().default(8095),
   META_APP_SECRET: z.string().default(''),
   META_VERIFY_TOKEN: z.string().default(''),
+  /**
+   * La clé d'où se dérive le secret du webhook de CHAQUE numéro porté par 360dialog (`src/webhooks/receiver-360dialog.ts`).
+   * Vide : la route n'est pas montée (404). La changer révoque tous les webhooks 360dialog, à reposer par
+   * `scripts/webhook-360dialog.mts`. 🔴 Côté serveur uniquement.
+   */
+  D360_WEBHOOK_SECRET: z.string().default(''),
   /** Token d'accès Meta pour l'envoi outbound (worker campaign-run). */
   META_ACCESS_TOKEN: z.string().default(''),
   /** Version Graph API pour les appels d'envoi. */

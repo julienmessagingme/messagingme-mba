@@ -1430,6 +1430,10 @@ async function main(): Promise<void> {
     ...(config.OTP_PONT_SECRET ? {
       otpPont: { secret: config.OTP_PONT_SECRET, numeros: numerosFournis, transcrire: transcrireAppelOtp },
     } : {}),
+    // Les webhooks des numéros portés par 360dialog, montés seulement avec leur clé : sans elle, aucun Basic à vérifier.
+    ...(config.D360_WEBHOOK_SECRET ? {
+      receiver360: { queue: queueReception, secret: config.D360_WEBHOOK_SECRET },
+    } : {}),
     // Le webhook de Stripe, monté seulement avec son secret (une signature sans secret ne prouverait rien). La
     // configuration refuse de démarrer avec le secret sans la clé, ou l'inverse : monté, il connaît donc le mode.
     ...(config.STRIPE_WEBHOOK_SECRET ? {

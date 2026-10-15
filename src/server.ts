@@ -5,6 +5,7 @@ import { CODE_ABANDON, type MesureLatenceHttp } from './ops/latence-http';
 import type { FastifyInstance, FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { config } from './config';
 import { registerReceiver } from './webhooks/receiver';
+import { registerReceiver360, type Receiver360Deps } from './webhooks/receiver-360dialog';
 import { registerImport } from './http/import';
 import { registerCampaigns } from './http/campaigns';
 import { registerRcsMessages } from './http/rcs-messages';
@@ -282,6 +283,11 @@ export interface ServerDeps {
    */
   stripeWebhook?: StripeWebhookRouteDeps;
   /**
+   * Le webhook d'un numéro porté par 360dialog (`src/webhooks/receiver-360dialog.ts`) : un Basic propre au numéro,
+   * pas la signature de Meta. Monté seulement quand `D360_WEBHOOK_SECRET` est posé.
+   */
+  receiver360?: Receiver360Deps;
+  /**
    * Le pont du code de vérification des numéros fournis (lot 3a, `src/http/otp-pont.ts`). Signé par le script de
    * l'Asterisk, pas authentifié par un jeton : l'appelant est un service. Monté seulement quand le secret est posé.
    */
@@ -492,6 +498,7 @@ export type ClasseDAcces =
   /**
    * Une signature HMAC d'un service, avec un secret partagé : le connecteur HubSpot pousse ses événements ainsi
    * (`x-mm-service-signature`), et Stripe ses webhooks de paiement (`Stripe-Signature`, secret de la destination).
+   * 360dialog n'a pas de signature : il renvoie un Basic propre à chaque numéro, dérivé d'un secret à nous.
    * Pas `code-url` : leur adresse ne porte aucun code, et une adresse devinable ne suffit pas à autoriser un appel.
    * Une signature absente ou fausse rend 401.
    */
@@ -731,6 +738,8 @@ export function modulesDeRoutes(
     entree('hubspotEvents', 'signature-service', deps.hubspotEvents, (app, d) => registerHubspotEvents(app, d)),
     // Le webhook de Stripe : autorité = la signature du corps brut, vérifiée dans le module avant toute lecture.
     entree('stripeWebhook', 'signature-service', deps.stripeWebhook, (app, d) => registerStripeWebhook(app, d)),
+    // Les webhooks des numéros portés par 360dialog : autorité = le Basic du numéro, vérifié avant toute lecture.
+    entree('receiver360', 'signature-service', deps.receiver360, (app, d) => registerReceiver360(app, d)),
     // Ce que deviennent les e-mails du produit (lot 7), signé par Resend (Svix).
     entree('resendWebhook', 'signature-service', deps.resendWebhook, (app, d) => registerResendWebhook(app, d)),
     // Le pont du code (lot 3a) : l'Asterisk du VPS y poste chaque enregistrement, signé avec `OTP_PONT_SECRET`.

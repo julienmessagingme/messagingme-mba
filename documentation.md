@@ -298,6 +298,15 @@ enregistrent les deux formes. **Enregistrer n'est pas répondre.**
 `message.to` est le `wa_id`, `message.recipient` est le BSUID : les intervertir rattache le message de
 l'agent à un contact qui n'existe pas.
 
+**Un numéro porté par 360dialog (BSP) entre par une autre porte, puis rejoint la même file.** 360dialog relaie le
+format de Meta sans le signer : il appelle `POST /webhooks/360dialog/:phoneNumberId` avec un Basic propre au numéro,
+dérivé de `D360_WEBHOOK_SECRET` (`src/webhooks/receiver-360dialog.ts`, classe `signature-service`, non montée sans
+la variable). Deux invariants : 🔴 **chaque changement du corps doit porter le numéro de l'adresse** (lu par
+`valeurEffective`, comme le worker), sinon 403 et rien n'est versé, faute de quoi le secret d'un numéro écrirait au
+nom d'un autre ; un changement **sans numéro** (niveau WABA, statut d'un modèle) n'est pas versé. Le corps à poser
+chez 360dialog se calcule par `scripts/webhook-360dialog.mts`. L'ENVOI sur ces numéros ne passe pas encore par nous :
+un tel numéro ne se rattache à aucun espace tant que la fabrique d'envoi ne sait pas parler à 360dialog.
+
 
 ```
 Meta -> POST /webhooks/meta (mba-api)
