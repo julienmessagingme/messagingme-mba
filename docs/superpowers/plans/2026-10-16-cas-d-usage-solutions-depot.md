@@ -70,9 +70,9 @@ montre les pages neuves découvertes quelques jours après.
 
 ## Avant tout (Julien, et une vérification)
 
-- [ ] **Les conditions d'utilisation** : Julien choisit où elles vivent (la vitrine, ou www.messagingme.fr à côté de la
-  politique de confidentialité). Claude en propose un premier jet tiré du produit réel, Julien le relit, elles sont
-  publiées en français et en anglais.
+- [ ] **Les pages légales en ligne** : celles du 2026-10-14 (`docs/prive/pages-legales/`), que Geoffrey publie sur
+  www.messagingme.fr juste après la bascule Scaleway, en français et en anglais (décision du 2026-10-14, `wip.md`).
+  Seules les livraisons 0 et D en dépendent.
 - [ ] **L'adresse `security@messagingme.fr`** créée et lue (Julien).
 - [ ] **La vitrine anglaise de la session voisine** (`2026-10-16-vitrine-en-anglais.md`, lot 2) est sur `main` : ses
   en-têtes et pieds de page anglais sont la base de la tâche 4.
@@ -84,13 +84,17 @@ montre les pages neuves découvertes quelques jours après.
 
 ## Livraison 0 : la version 0.2.0 du plugin
 
+C'est la livraison C du [plan du répertoire de Claude](2026-10-14-repertoire-claude.md), en pause jusqu'à la bascule
+Scaleway : elle se fait UNE fois, là-bas ou ici, après la mise en ligne des pages légales. Les livraisons A à C n'en
+dépendent pas.
+
 ### Tâche 0 : des liens légaux qui répondent
 
 **Fichiers** : `plugin/.claude-plugin/plugin.json`, `scripts/plugin/` (la section « Data and privacy » si elle y est
 générée), `plugin/README.md`, `tests/plugin.test.ts`.
 
-- [ ] `privacyPolicyUrl` vers `https://www.messagingme.fr/politique-de-confidentialite/`, `termsOfServiceUrl` vers les
-  conditions publiées.
+- [ ] `privacyPolicyUrl` et `termsOfServiceUrl` vers les adresses que Geoffrey a publiées (les anglaises de préférence),
+  vérifiées en 200.
 - [ ] Test : `tests/plugin.test.ts` exige que ces deux adresses soient celles du manifeste et du README, identiques ; la
   vérification hebdomadaire des liens (tâche 9) les lira.
 - [ ] Publication : `gh workflow run plugin.yml --ref main`, puis le dépôt publié montre la 0.2.0 et sa licence.
@@ -243,7 +247,8 @@ entrée du journal égale `package.json` et `VERSION_SDK` ; la page SDK de la co
 
 ## Ordre de déploiement
 
-Aucune API, aucune migration. Avant tout, puis 0 (plugin 0.2.0), A, B, C (au rythme des films), D, E. Chaque push de
+Aucune API, aucune migration. A, B, C (au rythme des films) ; 0 (plugin 0.2.0) dès que les pages légales sont en
+ligne, après la bascule Scaleway ; puis D, E. Chaque push de
 `site/` publie la vitrine dès que Vercel a construit, après le oui de Julien. Le plugin et le SDK se publient à la main,
 APRÈS la vitrine qui porte les pages qu'ils lient. Les réglages GitHub (mots-clés, adresse du site, image d'aperçu,
 description du SDK en anglais, et l'adresse de site périmée du dépôt principal effacée) sont donnés à Julien en
@@ -251,7 +256,7 @@ commandes prêtes à coller, à la livraison D.
 
 ## Les gestes de Julien
 
-Les conditions d'utilisation (emplacement, relecture) ; `security@messagingme.fr` ; la Search Console et Bing Webmaster
+La mise en ligne des pages légales par Geoffrey (après la bascule) ; `security@messagingme.fr` ; la Search Console et Bing Webmaster
 Tools ; un `SCRIPT.md` validé par film ; les essais 98 et 121, ou le choix d'une ouverture du film 1 sans ces logos ; le
 oui sur chaque rendu avant un push de `site/` ; les réglages GitHub ; l'accord écrit d'un client avant de le citer ; la
 lecture en ligne de chaque livraison.

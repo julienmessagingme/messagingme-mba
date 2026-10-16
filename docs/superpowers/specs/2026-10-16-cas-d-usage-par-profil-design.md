@@ -17,7 +17,7 @@
 | Langues | Chaque page en français et en anglais, Solutions comprises |
 | Films | Un par cas ; les pages Solutions montrent ceux des cas qui les concernent |
 | Dépôt GitHub | Tout dans le dépôt du plugin : une commande par cas avec son code dans son dossier, un README qui montre, un journal des versions, la licence, les mots-clés, une image d'aperçu |
-| Dépôt plus fourni (quatrième ronde) | Oui, sans remplissage : en tête, l'animation téléphone et agenda tirée du film 1 ; les conditions d'utilisation s'écrivent ; un formulaire de bug sur GitHub et une page sécurité vers `security@messagingme.fr` |
+| Dépôt plus fourni (quatrième ronde) | Oui, sans remplissage : en tête, l'animation téléphone et agenda tirée du film 1 ; un formulaire de bug sur GitHub et une page sécurité vers `security@messagingme.fr` ; les conditions d'utilisation sont celles du 2026-10-14, publiées par Geoffrey |
 | Code de connexion par WhatsApp | Au backlog (`todo.md`) : la catégorie « authentification » de Meta n'est pas gérée |
 
 ## Les quatre profils, et ce dont ils ont besoin
@@ -230,10 +230,12 @@ et `llms.txt`. Les garde-fous à ajouter :
 
 - **Les liens « confidentialité » et « conditions d'utilisation » du plugin 0.2.0 rendent 404** :
   `https://www.messagingme.fr/privacy-policy/` et `/terms-of-use/` (`plugin/.claude-plugin/plugin.json`,
-  `plugin/README.md`). La politique de confidentialité est sur `/politique-de-confidentialite/` (200) ; aucune page de
-  conditions d'utilisation n'existe : **elles s'écrivent** (décision de Julien du 2026-10-16), en français et en
-  anglais, et servent aussi aux ventes par Stripe. À publier avant la 0.2.0, qui précède tout enrichissement du dépôt (le
-  dépôt publié est encore en 0.1.5, sans licence), et avant la soumission à l'annuaire de Claude.
+  `plugin/README.md`). **Les conditions d'utilisation, la politique de confidentialité et les mentions légales existent
+  déjà** : rédigées le 2026-10-14 pour l'annuaire de Claude (`docs/prive/pages-legales/`, plan
+  `2026-10-14-repertoire-claude.md`), en français et en anglais, elles couvrent le site et le produit, et Geoffrey les
+  publie sur www.messagingme.fr. L'ordre décidé par Julien le 2026-10-14 (`wip.md`) tient : juste après la bascule
+  Scaleway, ces pages en ligne, puis la publication du plugin 0.2.0 avec leurs adresses définitives. Elle précède tout
+  enrichissement du dépôt (le dépôt publié est encore en 0.1.5, sans licence).
 - **L'adresse de sécurité** `security@messagingme.fr`, que cite `SECURITY.md`, se crée et se lit (Julien) avant la
   publication qui l'ajoute.
 - **Le pied de page de la vitrine** lie `https://www.messagingme.fr/accueil/` et `/articles/`, qui rendent 404 ; le blog est
@@ -250,8 +252,8 @@ et `llms.txt`. Les garde-fous à ajouter :
   dans une même session ? La page Agences et la commande `agence` en dépendent.
 - Les catégories de modèle qu'accepte `create_template` pour une fin d'essai et une relance de paiement (utilitaire
   ou marketing, selon la grille de Meta), et ce que Meta facture pour chacune.
-- Où vivent les conditions d'utilisation (la vitrine, à côté des tarifs, ou www.messagingme.fr, à côté de la politique
-  de confidentialité), et qui les relit (Julien) ; Claude peut en proposer un premier jet tiré du produit réel.
+- Les adresses définitives des pages légales que Geoffrey publie (les anglaises de préférence, le plugin étant en
+  anglais), à reporter dans `plugin.json` et le README.
 - L'animation passe le proxy d'images de GitHub (5 Mio au plus) : essai sur un dépôt jetable avant de la figer ; sinon,
   l'affiche fixe du film.
 - Un client n'est cité sur une page de secteur (nom, logo, témoignage) qu'avec son accord écrit (Julien).

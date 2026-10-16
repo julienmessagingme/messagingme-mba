@@ -99,7 +99,8 @@ validées par Julien ; plan : [docs/superpowers/plans/2026-10-16-cas-d-usage-sol
 Fonctionnalités, Solutions (trois secteurs, deux métiers, les cas), Développeurs, Tarifs ; sept pages de cas, en
 français et en anglais, avec un film par cas. Le film 1 (prise de rendez-vous) est fait. Précédé de l'audit SEO de la
 vitrine (`docs/prive/2026-10-15-audit-seo-vitrine.md`) et d'un geste de Julien : la Search Console et Bing Webmaster
-Tools. À corriger d'abord : les liens de confidentialité et de conditions d'utilisation du plugin 0.2.0 (404).
+Tools. Les liens de confidentialité et de conditions du plugin 0.2.0 rendent 404 : ils prendront les adresses des pages
+légales que Geoffrey publie après la bascule (section du répertoire de Claude ci-dessus).
 
 ## LA VITRINE EN ANGLAIS : LES FILMS DE L'ACCUEIL ET DU RCS (EXPORTS EN COURS, 2026-10-16)
 
