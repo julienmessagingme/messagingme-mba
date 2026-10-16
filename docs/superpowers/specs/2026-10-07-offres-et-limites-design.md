@@ -1,5 +1,9 @@
 # Les offres et leurs limites (lot 6 de « Messaging Me pour Claude Code »)
 
+> 🔴 **Grille remplacée le 2026-10-16** par [la deuxième version](2026-10-16-offres-v2-design.md) (Free pilotée par
+> l'API et le MCP, Pro à sièges payants et essai, Entreprise qui seule ouvre l'analyse, les publicités et les chaînes).
+> Le mécanisme décrit ici (offre calculée, compteurs, gel) reste.
+
 Spec écrite le 2026-10-07 après le grill de Julien (cinq rondes, plus le design présenté en conversation), à relire par
 lui avant le plan. Plan de référence : `docs/prive/2026-10-02-engageme-claude-code.md`, section « Les offres ». Elle
 s'appuie sur les lots 3c et 4 (l'abonnement du numéro fourni, `abonnements_numero`, et son état calculé

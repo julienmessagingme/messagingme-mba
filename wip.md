@@ -101,6 +101,17 @@ français et en anglais, avec un film par cas. Le film 1 (prise de rendez-vous) 
 vitrine (`docs/prive/2026-10-15-audit-seo-vitrine.md`) et d'un geste de Julien : la Search Console et Bing Webmaster
 Tools. Les liens de confidentialité et de conditions du plugin 0.2.0 rendent 404 : ils prendront les adresses des pages
 légales que Geoffrey publie après la bascule (section du répertoire de Claude ci-dessus).
+Où on en est : livraison A en production (d8c0949a : le registre, la compilation par cas, le groupe « Recettes », l'en-tête
+et le pied de page générés). Les pages de secteur attendent leur contenu (Julien), la page des tarifs attend la nouvelle
+grille des offres (ci-dessous) : son brouillon français et anglais est dans le scratchpad de la session.
+
+## LES OFFRES, DEUXIÈME VERSION (CADRÉ LE 2026-10-16)
+
+Spec : [docs/superpowers/specs/2026-10-16-offres-v2-design.md](docs/superpowers/specs/2026-10-16-offres-v2-design.md), à la
+relecture de Julien ; plan à écrire ensuite. La Free se pilote par l'API et le MCP (console fermée sauf le numéro, les clés
+et l'offre), le Pro gagne les sièges payants et un essai de 14 jours avec carte, l'Entreprise seule ouvre l'analyse, les
+publicités, les chaînes, le CRM et le RCS, et promet la connexion SSO. Aucun client n'est en Pro (sonde du 2026-10-16) :
+aucune transition.
 
 ## CE QUI ATTEND UN ESSAI RÉEL
 
