@@ -119,6 +119,15 @@ describe('les liens et les fichiers', () => {
     expect(lire('en/index.html')).toContain('<script src="https://api.messagingme.app/widget/dyzfezy33kcx.js" async></script>');
   });
 
+  it('l’accueil anglais montre les films anglais, aucune page anglaise les films français de l’accueil', () => {
+    // Les films de l'accueil et du RCS existent dans les deux langues ; les courts films des fonctionnalités, pas encore.
+    for (const page of anglaises()) expect(lire(page), page).not.toMatch(/\/films\/film-(accueil|rcs)(-9x16)?\.(mp4|webp)/);
+    const accueil = lire('en/index.html');
+    for (const f of ['film-accueil-en', 'film-rcs-en']) {
+      for (const v of ['.mp4', '.webp', '-9x16.mp4', '-9x16.webp']) expect(accueil, f + v).toContain(`/films/${f}${v}`);
+    }
+  });
+
   it('aucun tiret long, ni cadratin ni demi-cadratin, dans aucune page', () => {
     for (const page of pagesHtml()) expect(lire(page), page).not.toMatch(/[–—]|&mdash;|&ndash;|&#821[12];/);
   });
