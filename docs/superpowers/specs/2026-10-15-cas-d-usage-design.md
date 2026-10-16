@@ -28,7 +28,7 @@ Le menu (2026-10-16) : **quatre entrées et un bouton**, le modèle de Twilio et
 
 | Français | Anglais | Ce qu'il contient |
 |---|---|---|
-| Fonctionnalités | (absent : ces pages n'existent qu'en français) | les six pages actuelles |
+| Fonctionnalités | Features | les six pages actuelles |
 | Solutions | Solutions | trois colonnes : **Par secteur** (Assurance, Tourisme, Enseignement supérieur), **Par métier** (SaaS et app builders, Agences), **Par cas d'usage** (les sept cas, puis « Tous les cas d'usage ») |
 | Développeurs | Developers | Démarrer avec Claude Code (`/developpeurs/`), Documentation de l'API, Serveur MCP, le plugin et le SDK sur GitHub |
 | Tarifs | Pricing | lien direct |
@@ -61,9 +61,17 @@ cas ; « piloter WhatsApp depuis Claude » devient une section de `/developpeurs
 est le cœur de `/solutions/agences/`. Le cas « une demande prise par l'agent IA arrive dans votre application » devient
 « prendre des rendez-vous », son exemple le plus parlant (le film 1), et perd son ancienne adresse.
 
-Redirections permanentes (`site/vercel.json`) : `/pricing/` vers `/tarifs/`, `/industries/` vers `/solutions/` (deux
-pages `noindex` en ligne aujourd'hui, liées par le menu). Aucune autre adresse de ce tableau n'est publiée au 2026-10-16
-(`site/sitemap.xml`) : elles se décident ici, une fois, et une adresse publiée ne se renomme plus sans redirection.
+**Toute la vitrine passe en anglais** (demande de Julien du 2026-10-16, menée par une autre session avec le menu
+actuel) : l'accueil `/en/`, les fonctionnalités `/en/features/<slug>/` (`whatsapp-and-rcs`, `campaigns-and-scenarios`,
+`whatsapp-channels`, `conversations-into-actions`, `click-to-whatsapp-ads`, `cost-control`), le contact `/en/contact/`,
+et, en attente comme leurs pages françaises (`noindex`), `/en/pricing/` et `/en/industries/`. La page anglaise des tarifs
+de ce lot remplace `/en/pricing/` à la même adresse. Une page anglaise ne lie que des pages anglaises, sauf le sélecteur
+de langue.
+
+Redirections permanentes (`site/vercel.json`) : `/pricing/` vers `/tarifs/`, `/industries/` vers `/solutions/` et
+`/en/industries/` vers `/en/solutions/` (des pages `noindex`, liées par le menu). Aucune autre adresse de ce tableau
+n'est publiée au 2026-10-16 (`site/sitemap.xml`) : elles se décident ici, une fois, et une adresse publiée ne se renomme
+plus sans redirection.
 
 ## L'anatomie d'une page de cas d'usage
 
@@ -81,8 +89,8 @@ pages `noindex` en ligne aujourd'hui, liées par le menu). Aucune autre adresse 
    s'il y a un agent. Chaque chiffre porte `data-offre`, comme sur la page développeurs.
 6. **Une courte FAQ** (trois à cinq questions réelles), balisée `FAQPage`.
 7. **Les liens** : vers les fonctionnalités et la page développeurs qu'il utilise, vers les tarifs, vers les cas
-   voisins ; et l'appel à l'action (commencer gratuitement, ou les commandes du plugin). Une page anglaise ne lie une
-   page française (une fonctionnalité, le contact) qu'avec `hreflang="fr"` et la mention « (in French) ».
+   voisins ; et l'appel à l'action (commencer gratuitement, ou les commandes du plugin). Une page anglaise lie les
+   pages anglaises (`/en/features/...`, `/en/contact/`).
 8. **Le guide et le code** : le guide de la doc (`data-guide`) et, quand le cas a une commande du plugin, son dossier sur
    GitHub (`data-recette`), tous deux dérivés du registre de la spec 6 bis.
 
