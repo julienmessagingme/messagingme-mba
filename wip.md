@@ -108,7 +108,8 @@ grille des offres (ci-dessous) : son brouillon français et anglais est dans le 
 ## LES OFFRES, DEUXIÈME VERSION (CADRÉ LE 2026-10-16)
 
 Spec : [docs/superpowers/specs/2026-10-16-offres-v2-design.md](docs/superpowers/specs/2026-10-16-offres-v2-design.md), à la
-relecture de Julien ; plan à écrire ensuite. La Free se pilote par l'API et le MCP (console fermée sauf le numéro, les clés
+validée par Julien ; plan : [docs/superpowers/plans/2026-10-16-offres-v2.md](docs/superpowers/plans/2026-10-16-offres-v2.md)
+(huit livraisons). La Free se pilote par l'API et le MCP (console fermée sauf le numéro, les clés
 et l'offre), le Pro gagne les sièges payants et un essai de 14 jours avec carte, l'Entreprise seule ouvre l'analyse, les
 publicités, les chaînes, le CRM et le RCS, et promet la connexion SSO. Aucun client n'est en Pro (sonde du 2026-10-16) :
 aucune transition.
