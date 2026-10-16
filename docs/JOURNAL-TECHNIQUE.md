@@ -5,6 +5,20 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-16 : les deux films de l'accueil en deux langues, sur la nouvelle musique
+
+- **La demande** (Julien) : refaire en anglais les films de l'accueil, et y mettre la nouvelle musique (Tech House
+  d'Aurec, son choix). Chaque film part désormais d'UNE source bilingue de l'atelier (`accueil.modele.html` et
+  `rcs.modele.html`, textes dans `textes.json`), la française régénérée à l'octet près avant le changement de musique.
+- **Le calage** : 128,0 BPM mesurés par autocorrélation à long décalage (les estimations courtes donnaient 127,6 et
+  127,725, soit 140 ms de dérive à 139 s), la phase prise sur les grappes de grosse caisse (165,223 s + k × 0,46875),
+  pas sur un estimateur qui basculait d'un demi-temps. Les temps forts tombent sur les impacts des deux films.
+- **Huit exports** (deux langues, 16:9 et 9:16, 60 i/s), deux à la fois au plus, chacun contrôlé par sa planche contact
+  et sa crête (entre -1,0 et -1,8 dB). Encodés pour la vitrine comme les précédents.
+- **La pose** : les anglais sous leur propre nom (`film-accueil-en`, `film-rcs-en`), cités par l'accueil anglais
+  seulement (`218ceb95`) ; les français sous le même nom, avec `?v=2` pour le cache d'un jour de `/films/` (ce commit).
+  `tests/vitrine-langues.test.ts` refuse un film français de l'accueil sur une page anglaise.
+
 ## 2026-10-16 : la vitrine en anglais, page par page
 
 - **La demande** (Julien) : tout le site en anglais derrière le drapeau anglais, qui était resté « bientôt ». Décisions :
