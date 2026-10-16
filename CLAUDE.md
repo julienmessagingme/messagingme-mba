@@ -619,6 +619,13 @@ sont servis à la RACINE, `/w/` vit sous le préfixe du proxy). Les deux variabl
 retombe alors sur l'ancien comportement : une variable dont l'oubli casse la production serait une mauvaise
 variable, surtout sur des adresses déjà parties dans des messages.
 
+🔴 **UN COMPTE 360DIALOG : SA CLÉ NE PART JAMAIS CHEZ GRAPH.** `resolveForTenant` et `resolveForWaba` lèvent
+`CompteChez360dialog` pour un compte `waba_credentials.fournisseur = '360dialog'` : un client Graph construit avec la
+clé l'enverrait chez Meta, et le 401 l'invaliderait (tous les envois de l'espace coupés). Un client qui sait parler à
+360dialog passe par `resolvePourEnvoi` (ou `cle360dialog`) et entre dans `tests/inventaire-cle-360dialog.test.ts`, avec
+sa raison. Chez 360dialog, seul un ENVOI juge la clé : une lecture de modèles ou de Flows n'invalide rien. Le détail :
+[documentation.md](documentation.md), § réception et envoi 360dialog.
+
 Conventions génériques (secrets serveur, `.env` non committé, Zod `safeParse` sur webhooks + JSON LLM, signature de webhook entrant, entrée LLM délimitée) : section « Conventions de code » du CLAUDE.md global. Spécifique à MBA :
 
 - **Isolation tenant = cas « accès médié par un serveur » du global** : `tenant_id=$1` sur CHAQUE requête. La connexion pooler est un rôle superuser, donc la RLS serait bypassée, le filtrage en code est le seul contrôle. IDOR = leçon convanalyzer.

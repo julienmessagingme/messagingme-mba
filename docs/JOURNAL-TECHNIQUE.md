@@ -5,6 +5,35 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-16 : un numéro porté par 360dialog sert un espace (réception, envoi, modèles, Flows, console, bouton)
+
+- **La question de Julien** : onboarder par un BSP, 360dialog, sans devenir partenaire. Mesuré d'abord à la main avec la
+  clé d'un numéro pris chez 360dialog et encore exploité par UChat : `POST /messages` et `POST /marketing_messages`
+  (MM Lite) livrent, sans Multi-Partner Solution. Le numéro d'essai est revenu à UChat seul à la fin (webhooks multiples
+  éteints, webhook simple d'origine intact).
+- **Lot 1, la réception** (`7f446c3f`) : `POST /webhooks/360dialog/:phoneNumberId`, Basic propre au numéro dérivé de
+  `D360_WEBHOOK_SECRET`, chaque changement doit porter le numéro de l'adresse. Prouvé par un vrai message, la
+  destination posée par `/multi_webhook` À CÔTÉ de UChat.
+- **Livraison A, l'envoi** (`0629d674`) : fournisseur du compte, clé jamais rendue à ce qui parle à Graph (le
+  balayage du statut des numéros l'aurait envoyée chez Meta, et le 401 l'aurait invalidée), envoi et MM Lite, médias
+  (le lien `lookaside.fbsbx.com` ne s'ouvre que réécrit sur `waba-v2.360dialog.io`, mesuré), `/ops/360dialog`.
+- **Livraisons B et C** (`f295c063`) : modèles derrière un contrat commun (pagination `limit`/`offset`, statut remis en
+  majuscules, `external_id`), Flows par une option `fournisseur`. Au passage, le visuel d'un modèle lu chez 360dialog
+  étant une URL publique quelconque, le préparateur des visuels ne garde le téléchargement direct que pour le CDN de
+  Meta. Mesuré : les statuts de modèle n'arrivent pas au webhook du numéro (modèle de mesure créé, approuvé, supprimé).
+- **Livraison D et lot 3** (`7aec7a6d` serveur, `332ad787` console) : Julien a RECADRÉ le lot 3 (pas d'onboarding
+  intégré, « nous payons 360dialog ») : le bouton « Onboard with 360dialog » colle la clé ; la console masque l'agent de
+  Meta, la reconnexion Meta, l'activation et la qualité ; `CompteChez360dialog` devient un 409 lisible ; l'Embedded
+  Signup est refusé sur un tel espace. Serveur déployé AVANT la console.
+- **Migration 0239** (`waba_credentials.fournisseur`, défaut `meta`, CHECK nommé) : image construite d'abord, 0239 seule
+  en attente dedans, `pg_stat_activity` sans transaction longue ni verrou, appliquée, relue en base (type, non nul,
+  défaut, contrainte et son prédicat, 6 lignes en `meta`), puis lue par le vrai code de la nouvelle image avant le `up`.
+- **Relectures** : une par lot, aucune rouge ; leurs jaunes utiles corrigés dans le lot, les autres au plan
+  `docs/superpowers/plans/2026-10-15-360dialog-lot2-envoi.md`. Suite e2e entière verte sur la console du lot.
+- **Ce qui reste** : les essais réels 122 à 124 (`docs/prive/ESSAIS-REELS.md`) ; mesurer sur un compte sans MM Lite le
+  code d'un refus marketing (un 401 invaliderait la clé) ; l'agent de Meta sur un numéro 360dialog, à demander à
+  360dialog.
+
 ## 2026-10-15 : le bloc Formulaire a deux sorties, « Formulaire rempli » et « Toute autre réponse »
 
 - **La demande** (Julien) : la sortie unique du bloc recevait toute réponse, un « bonjour » écrit à la place du
