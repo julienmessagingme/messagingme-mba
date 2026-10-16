@@ -10,12 +10,13 @@
 //
 // 🔴 Une page française retouchée se traduit ICI : le texte neuf entre dans un dictionnaire, puis on régénère. Retoucher
 // la page anglaise à la main serait défait à la génération suivante, et le test le refuse.
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { pageAvecEntete } from './entete';
 
 const ORIGINE = 'https://app.messagingme.fr';
+const SITE = fileURLToPath(new URL('../../site/', import.meta.url));
 
 /** Chaque page française et sa jumelle anglaise : les liens internes d'une page anglaise y passent. */
 export const JUMELLES: Readonly<Record<string, string>> = {
@@ -123,8 +124,15 @@ export function pageAnglaise(html: string, fr: string, entrees: readonly Entree[
   h = h.replace(/url\((['"]?)([^)'"]+)\1\)/g, (_, q: string, c: string) => `url(${q}${absolu(c)}${q})`);
   // La bulle : le widget anglais (« Got a question? ») remplace le français.
   h = h.split('https://api.messagingme.app/widget/ndabjvs20vc4.js').join('https://api.messagingme.app/widget/dyzfezy33kcx.js');
-  // Les deux films de l'accueil ont leur version anglaise, sans le `?v=` de la française.
-  h = h.replace(/\/films\/(film-accueil|film-rcs)(-9x16)?\.(mp4|webp)(\?v=\d+)?/g, '/films/$1-en$2.$3');
+  // Une image ou un film qui a sa version anglaise (`<nom>-en.<ext>`, `<nom>-en-9x16.<ext>`, à côté de la française) la
+  // prend, sans le `?v=` de la française ; les autres restent français.
+  h = h.replace(/\/(films|img)\/([\w-]+?)(-9x16)?\.(mp4|webp|png|jpg)(\?v=\d+)?(?=["')\s,])/g,
+    (tout, dossier: string, nom: string, vertical: string | undefined, ext: string) => {
+      const anglais = `${dossier}/${nom}-en${vertical ?? ''}.${ext}`;
+      return existsSync(SITE + anglais) ? `/${anglais}` : tout;
+    });
+  // La langue que le JSON-LD déclare, pour la page comme pour ses films.
+  h = h.replace(/"inLanguage": "fr-FR"/g, '"inLanguage": "en-US"');
 
   // 4. hreflang, réciproque dans les deux langues : `pageAvecEntete` y lit la jumelle du drapeau
   const bloc = [`fr" href="${ORIGINE}${fr}`, `en" href="${ORIGINE}${en}`, `x-default" href="${ORIGINE}${fr}`]
@@ -153,7 +161,7 @@ export function pageAnglaise(html: string, fr: string, entrees: readonly Entree[
 }
 
 function main(): void {
-  const site = fileURLToPath(new URL('../../site/', import.meta.url));
+  const site = SITE;
   const entrees = dictionnaires();
   const servies = new Set<Entree>();
   let reecrites = 0;

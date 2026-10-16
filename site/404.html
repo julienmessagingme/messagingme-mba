@@ -137,13 +137,23 @@
 
 <main>
   <section class="c-merci">
-    <div class="cadre">
+    <!-- Vercel ne sert qu'une 404 pour toutes les adresses : site.js montre l'anglais sous /en/. -->
+    <div class="cadre" data-langue="fr">
       <p class="f-surtitre">Erreur 404</p>
       <h1>Cette page n’existe pas.</h1>
       <p class="f-texte">Elle a peut-être changé d’adresse. Les fonctionnalités de Messaging Me sont dans le menu, ou repartez de l’accueil.</p>
       <div class="appels">
         <a class="bouton bouton-plein" href="/">Retour à l’accueil</a>
         <a class="bouton bouton-texte" href="/contact/">Nous écrire <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>
+      </div>
+    </div>
+    <div class="cadre" data-langue="en" lang="en" hidden>
+      <p class="f-surtitre">Error 404</p>
+      <h1>This page does not exist.</h1>
+      <p class="f-texte">It may have moved. Start again from the English home page, or write to us.</p>
+      <div class="appels">
+        <a class="bouton bouton-plein" href="/en/" hreflang="en">Back to home</a>
+        <a class="bouton bouton-texte" href="/en/contact/" hreflang="en">Write to us <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>
       </div>
     </div>
   </section>

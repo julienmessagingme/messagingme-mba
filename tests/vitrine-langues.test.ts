@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PAGES } from '../src/http/contact-vitrine';
 import { JUMELLES as PAIRES } from '../scripts/vitrine/anglais';
@@ -109,13 +109,37 @@ describe('les liens et les fichiers', () => {
     expect(lire('en/index.html')).toContain('<script src="https://api.messagingme.app/widget/dyzfezy33kcx.js" async></script>');
   });
 
-  it('l’accueil anglais montre les films anglais, aucune page anglaise les films français de l’accueil', () => {
-    // Les films de l'accueil et du RCS existent dans les deux langues ; les courts films des fonctionnalités, pas encore.
-    for (const page of anglaises()) expect(lire(page), page).not.toMatch(/\/films\/film-(accueil|rcs)(-9x16)?\.(mp4|webp)/);
-    const accueil = lire('en/index.html');
-    for (const f of ['film-accueil-en', 'film-rcs-en']) {
-      for (const v of ['.mp4', '.webp', '-9x16.mp4', '-9x16.webp']) expect(accueil, f + v).toContain(`/films/${f}${v}`);
+  it('une page anglaise ne cite aucune image ni aucun film français dont la version anglaise existe', () => {
+    // `<nom>-en.<ext>` (et `<nom>-en-9x16.<ext>`) à côté du français : l'outil de traduction les prend (anglais.ts).
+    for (const page of anglaises()) {
+      for (const [ref, dossier, nom, vertical, ext] of lire(page).matchAll(/\/(films|img)\/([\w-]+?)(-9x16)?\.(mp4|webp|png|jpg)/g)) {
+        if (nom!.endsWith('-en')) continue;
+        expect(existsSync(join(SITE, dossier!, `${nom}-en${vertical ?? ''}.${ext}`)), `${page} : ${ref}`).toBe(false);
+      }
     }
+  });
+
+  it('chaque image ou film anglais qui a son jumeau français sert sur une page anglaise', () => {
+    const cites = anglaises().map(lire).join('\n');
+    const versions = ['films', 'img'].flatMap((d) => readdirSync(join(SITE, d)).map((f) => `${d}/${f}`))
+      .filter((f) => /-en(-9x16)?\.\w+$/.test(f) && existsSync(join(SITE, f.replace(/-en(-9x16)?(\.\w+)$/, '$1$2'))));
+    expect(versions.length).toBeGreaterThanOrEqual(40);
+    for (const f of versions) expect(cites, f).toContain(`/${f}`);
+  });
+
+  it('une version verticale reste verticale (data-vertical, data-affiche-verticale)', () => {
+    for (const page of pagesHtml()) {
+      for (const [, attr, v] of lire(page).matchAll(/\s(data-vertical|data-affiche-verticale)="([^"]+)"/g)) {
+        expect(v, `${page} : ${attr}`).toMatch(/-9x16\.(mp4|webp)(\?v=\d+)?$/);
+      }
+    }
+  });
+
+  it('la 404 porte les deux langues, l’anglaise cachée, et site.js la montre sous /en/', () => {
+    const page = lire('404.html');
+    expect(page.match(/data-langue="fr"/g)).toHaveLength(1);
+    expect(page).toMatch(/<div class="cadre" data-langue="en" lang="en" hidden>/);
+    expect(lire('site.js')).toContain("location.pathname.indexOf('/en/') !== 0");
   });
 
   it('aucun tiret long, ni cadratin ni demi-cadratin, dans aucune page', () => {

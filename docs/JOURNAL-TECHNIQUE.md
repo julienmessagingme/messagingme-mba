@@ -5,6 +5,27 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-16 : la vitrine anglaise, lot 3 (l'outil dans le dépôt, les courts films, les écrans, la 404)
+
+- **L'outil** : `scripts/vitrine/anglais.ts` (`e97ad6b6`) reproduit à l'octet près les onze pages anglaises en ligne ;
+  les entrées de l'en-tête et du pied, que `entete.ts` génère désormais, sont sorties des dictionnaires. Le job `unit` a
+  été rouge une fois sur ce commit : le plan du lot, écrit pendant que la suite locale tournait déjà, n'avait pas été lu
+  par elle (`tests/plan-methode.test.ts`), corrigé par `0e523bce`.
+- **Les six courts films** passent au modèle bilingue de l'atelier, le français régénéré à l'octet près à chaque fois.
+  Ce que le relevé des textes affichés ne voyait pas, et qu'il a fallu chercher autrement : le français NU entre deux
+  balises (« et », « ou », « En », écarté comme trop court), les exposants (« 2<sup>e</sup> »), les initiales de la
+  marque (« VM »), les montants et séparateurs au format français, dans le HTML comme dans le code de format des
+  compteurs, la largeur d'une case dimensionnée pour « ET » (« AND » y était coupé), une date (« 31/10/2026 ») et une
+  phrase TAPÉE lettre à lettre par le script (« Appel du 12, a… »), visible un instant seulement. Deux contrôles le
+  couvrent désormais dans l'atelier (`restes-francais.cjs`, `chaines-du-code.cjs`).
+- **Trois exports relancés** parce qu'une correction était arrivée pendant qu'ils tournaient : un export lit sa page au
+  démarrage. Règle écrite dans le `CLAUDE.md` de l'atelier.
+- **Les 22 écrans** sont rendus par leurs recettes d'origine, retrouvées dans les transcriptions des 28 et 29 septembre,
+  chacune rejouée d'abord en français et comparée à l'image en ligne : quatre instants avaient glissé avec les retouches
+  des films (les écrans des publicités), recalés par mesure. La brique CRM française en ligne portait ENCORE le logo
+  Engage Me : elle est refaite avec le logo Messaging Me.
+- **La 404** porte les deux langues sur une seule page ; `site.js` montre l'anglais sous `/en/`.
+
 ## 2026-10-16 : les deux films de l'accueil en deux langues, sur la nouvelle musique
 
 - **La demande** (Julien) : refaire en anglais les films de l'accueil, et y mettre la nouvelle musique (Tech House

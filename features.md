@@ -29,9 +29,9 @@ webhook Meta, MCP). Rien de ce qui a été envoyé à un client ne cesse de fonc
 (`/en/features/…`, `/en/contact/`), et le drapeau anglais de l'en-tête mène à la jumelle de la page affichée, le
 français à l'inverse. Les chiffres et les opérateurs restent ceux de la France. Le formulaire de contact anglais
 répond en anglais (ses erreurs, sa page de remerciement), et l'équipe reçoit la demande avec la mention de la langue.
-Les liens vers le site institutionnel, qui n'existe qu'en français, le disent (« in French »). Les deux films de
-l'accueil (la plateforme, le RCS) existent dans les deux langues, sur une nouvelle musique ; les courts films des
-fonctionnalités restent en français sur les pages anglaises.
+Les liens vers le site institutionnel, qui n'existe qu'en français, le disent (« in French »). Les films (ceux de
+l'accueil, sur une nouvelle musique, et les six courts films des fonctionnalités) et les écrans de la console montrés
+sur les pages existent dans les deux langues. La page « introuvable » parle anglais sous `/en/`.
 
 ✅ **La vitrine a sa page développeurs** (2026-10-12, lot 18) : `app.messagingme.fr/developpeurs/`, et sa jumelle en
 anglais `/en/developers/`. Pour qui construit avec Claude Code, Cursor ou Lovable :

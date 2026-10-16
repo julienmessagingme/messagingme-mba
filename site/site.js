@@ -20,6 +20,15 @@
   });
 })();
 
+// La 404 sert toutes les adresses : sous /en/, elle montre son texte anglais (qui porte son propre lang="en" : l'en-tête
+// et le pied, eux, restent français) et son titre anglais.
+(function () {
+  var en = document.querySelector('[data-langue="en"]'), fr = document.querySelector('[data-langue="fr"]');
+  if (!en || !fr || location.pathname.indexOf('/en/') !== 0) return;
+  fr.hidden = true; en.hidden = false;
+  document.title = 'Page not found · Messaging Me';
+})();
+
 // Pages fonctionnalités. Chaque bloc ne fait rien si la page n'a pas l'élément qu'il vise.
 (function () {
   // Au téléphone, un film qui a une version verticale (data-vertical) la prend, avec son affiche. Même seuil que

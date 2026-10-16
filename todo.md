@@ -903,8 +903,6 @@ en production.
   (tout y est publié).
 - **Le widget en essai sur l'accueil** (`ndabjvs20vc4`) : le garder ou le retirer une fois l'essai réel fait. Depuis le
   2026-10-16, l'accueil anglais charge son jumeau `dyzfezy33kcx` (« Got a question? ») : la décision vaut pour les deux.
-- **Le lot 3 de la vitrine anglaise** : les six courts films des fonctionnalités et les captures d'écran en anglais
-  (les pages anglaises montrent aujourd'hui les versions françaises), puis la 404 en deux langues.
 
 ## 🟠 Suites de « approfondir la racine » (2026-09-27 et 28, plan `docs/superpowers/plans/2026-09-27-approfondir-la-racine.md`)
 
