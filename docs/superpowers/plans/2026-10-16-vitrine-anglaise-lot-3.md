@@ -5,10 +5,11 @@ anglaise. Suite du plan `2026-10-16-vitrine-en-anglais.md` (lots 1 et 2 en ligne
 
 ## Méthode de livraison
 
-**En direct, sans agent.** Des fichiers statiques de la vitrine et des films de l'atelier : aucun chemin que la
-production emprunte (ni envoi, ni donnée, ni API), réversibles par un retour arrière du commit. Les critères se
-vérifient par des tests (paires, fichiers, génération des pages anglaises) ET à l'œil (planches contact, rendu des
-pages), d'où un aperçu montré à Julien avant chaque push de `site/`.
+**En direct, sans agent**, parce que ce sont des fichiers statiques de la vitrine et des films de l'atelier : aucun
+chemin que la production emprunte (ni envoi, ni donnée, ni API), réversibles par un retour arrière du commit. Les
+critères se vérifient par des tests (paires, fichiers, génération des pages anglaises) ET à l'œil (planches contact,
+rendu des pages), d'où un aperçu montré à Julien avant chaque push de `site/`. L'essai réel qui clôt est celui de la
+dernière section : Julien parcourt les pages anglaises en production.
 
 ## Tâches
 
