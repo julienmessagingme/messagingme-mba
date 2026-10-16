@@ -84,6 +84,49 @@ describe('POST /vitrine/contact (formulaire de la vitrine)', () => {
     erreur.mockRestore();
   });
 
+  describe('la page anglaise (`langue=en`, site/en/contact/)', () => {
+    it('envoi réussi : merci en anglais, et le courriel dit la langue', async () => {
+      const { app, envois } = monter();
+      const res = await poster(app, champs({ langue: 'en' }));
+      expect(res.headers.location).toBe(`${VITRINE}/en/contact/thanks/`);
+      expect(envois[0]!.texte).toContain('Langue : anglais');
+    });
+
+    it('refus, pot de miel, plafond et panne reviennent sur les pages anglaises', async () => {
+      const { app } = monter();
+      expect((await poster(app, champs({ langue: 'en', email: 'non' }))).headers.location).toBe(`${VITRINE}/en/contact/?erreur=champs#formulaire`);
+      expect((await poster(app, champs({ langue: 'en', site: 'x' }))).headers.location).toBe(`${VITRINE}/en/contact/thanks/`);
+      for (let i = 0; i < 10; i++) await poster(app, champs({ langue: 'en' }));
+      expect((await poster(app, champs({ langue: 'en' }))).headers.location).toBe(`${VITRINE}/en/contact/?erreur=trop#formulaire`);
+
+      const coupe = monter({ enabled: false });
+      expect((await poster(coupe.app, champs({ langue: 'en' }))).headers.location).toBe(`${VITRINE}/en/contact/?erreur=envoi#formulaire`);
+
+      const erreur = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const panne = monter({ envoyer: async () => { throw new Error('Resend HTTP 500'); } });
+      expect((await poster(panne.app, champs({ langue: 'en' }))).headers.location).toBe(`${VITRINE}/en/contact/?erreur=envoi#formulaire`);
+      erreur.mockRestore();
+    });
+
+    it('une valeur hostile sur un formulaire refusé renvoie au formulaire français', async () => {
+      const { app } = monter();
+      const res = await poster(app, champs({ langue: 'https://ailleurs.example', email: 'non' }));
+      expect(res.headers.location).toBe(`${VITRINE}/contact/?erreur=champs#formulaire`);
+    });
+
+    it.each(['de', 'EN', '/en/', 'https://ailleurs.example'])('une autre valeur (%s) renvoie en français, sans ligne de langue', async (langue) => {
+      const { app, envois } = monter();
+      expect((await poster(app, champs({ langue }))).headers.location).toBe(`${VITRINE}/contact/merci/`);
+      expect(envois[0]!.texte).not.toContain('Langue');
+    });
+
+    it('la page française ne dit pas de langue', async () => {
+      const { app, envois } = monter();
+      await poster(app, champs());
+      expect(envois[0]!.texte).not.toContain('Langue');
+    });
+  });
+
   it('le lecteur de formulaire reste dans la portée de la route : ailleurs, un corps urlencoded est refusé', async () => {
     const app = Fastify({ logger: false });
     registerContactVitrine(app, { enabled: true, envoyer: async () => {} });

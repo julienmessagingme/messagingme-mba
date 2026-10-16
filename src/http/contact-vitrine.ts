@@ -24,6 +24,21 @@ export interface ContactVitrineDeps {
  */
 export const VITRINE = 'https://app.messagingme.fr';
 
+/**
+ * Les pages où renvoyer, par langue de la page qui a posté (`site/contact/`, `site/en/contact/`). Le champ caché
+ * `langue` ne CHOISIT qu'entre ces chemins écrits ici : il n'en compose aucun. Toute autre valeur, ou son absence,
+ * renvoie en français, comme avant que la vitrine ait une version anglaise.
+ */
+export const PAGES = {
+  fr: { formulaire: '/contact/', merci: '/contact/merci/' },
+  en: { formulaire: '/en/contact/', merci: '/en/contact/thanks/' },
+} as const;
+type Langue = keyof typeof PAGES;
+
+/** Lu à part de la demande : un formulaire anglais refusé doit revenir sur la page anglaise, avec son erreur. */
+const LangueDuFormulaire = z.object({ langue: z.literal('en') });
+const langueDe = (corps: unknown): Langue => (LangueDuFormulaire.safeParse(corps).success ? 'en' : 'fr');
+
 /** Un champ d'une ligne : les retours à la ligne et les blancs répétés deviennent une espace (il finit dans un sujet). */
 const uneLigne = (s: string): string => s.replace(/\s+/g, ' ').trim();
 
@@ -39,7 +54,7 @@ const Demande = z.object({
 export type DemandeContact = z.infer<typeof Demande>;
 
 /** Le courriel reçu par l'équipe. L'adresse est celle que le visiteur a TAPÉE : rien ne prouve qu'elle est à lui. */
-export function courrielDeContact(d: DemandeContact): { sujet: string; texte: string; repondreA: string } {
+export function courrielDeContact(d: DemandeContact, langue: Langue = 'fr'): { sujet: string; texte: string; repondreA: string } {
   return {
     sujet: `[Vitrine Messaging Me] ${d.nom}${d.societe ? `, ${d.societe}` : ''}`,
     texte: [
@@ -49,6 +64,8 @@ export function courrielDeContact(d: DemandeContact): { sujet: string; texte: st
       `Société : ${d.societe || 'non renseignée'}`,
       `E-mail : ${d.email} (saisi par le visiteur, non vérifié)`,
       `Téléphone : ${d.telephone || 'non renseigné'}`,
+      // Pour répondre dans sa langue : la page anglaise est la seule à le dire.
+      ...(langue === 'en' ? ['Langue : anglais (page anglaise de la vitrine)'] : []),
       '',
       d.message,
     ].join('\n'),
@@ -72,23 +89,26 @@ export function registerContactVitrine(app: FastifyInstance, deps: ContactVitrin
     });
 
     portee.post('/vitrine/contact', async (req, reply) => {
+      const langue = langueDe(req.body);
+      const pages = PAGES[langue];
       const vers = (chemin: string) => reply.redirect(`${vitrine}${chemin}`, 303);
+      const erreur = (code: 'champs' | 'trop' | 'envoi') => vers(`${pages.formulaire}?erreur=${code}#formulaire`);
 
       const lu = Demande.safeParse(req.body);
-      if (!lu.success) return vers('/contact/?erreur=champs#formulaire');
+      if (!lu.success) return erreur('champs');
       // Au robot, la même réponse qu'à un humain : lui dire qu'on l'a repéré lui apprendrait à contourner.
-      if (lu.data.site !== '') return vers('/contact/merci/');
-      if (!plafond.take('vitrine')) return vers('/contact/?erreur=trop#formulaire');
-      if (!deps.enabled) return vers('/contact/?erreur=envoi#formulaire');
+      if (lu.data.site !== '') return vers(pages.merci);
+      if (!plafond.take('vitrine')) return erreur('trop');
+      if (!deps.enabled) return erreur('envoi');
 
       try {
-        await deps.envoyer(courrielDeContact(lu.data));
-        return vers('/contact/merci/');
+        await deps.envoyer(courrielDeContact(lu.data, langue));
+        return vers(pages.merci);
       } catch (err) {
         // Journaliser avant de masquer, comme le support : une panne Resend et un bogue ne se lisent pas pareil.
         // eslint-disable-next-line no-console
         console.error(JSON.stringify({ lvl: 'error', msg: 'contact_vitrine_echec', err: texteDe(err) }));
-        return vers('/contact/?erreur=envoi#formulaire');
+        return erreur('envoi');
       }
     });
   });
