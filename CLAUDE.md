@@ -93,8 +93,10 @@ une page qui poste vers une route pas encore déployée aussi : l'API se déploi
 
 ⚠️ **L'en-tête et le pied de page de la vitrine ne se retouchent plus dans les pages** (2026-10-16) : ils se changent
 dans leurs gabarits (`scripts/vitrine/entete.<langue>.html`, `pied.<langue>.html`), puis `npm run vitrine:entete`
-réécrit chaque page ; `tests/vitrine-entete.test.ts` refuse une page qui diffère de sa génération. Un outil qui génère
-une page (une traduction, par exemple) se fait suivre de `npm run vitrine:entete`.
+réécrit chaque page ; `tests/vitrine-entete.test.ts` refuse une page qui diffère de sa génération. **Les pages
+anglaises non plus** (sauf `en/developers/`, écrite à la main) : elles se GÉNÈRENT depuis leur jumelle. Une phrase
+française changée entre dans un dictionnaire de `scripts/vitrine/anglais/`, puis `npm run vitrine:anglais` (qui écrit
+aussi leur en-tête) ; `tests/vitrine-anglais.test.ts` refuse une page retouchée, du français resté, une entrée morte.
 
 ⚠️ **Les images et les films de la vitrine restent un jour en cache chez le visiteur** (2026-10-08) :
 `max-age=86400` plus une semaine de `stale-while-revalidate` sur `/img/` et `/films/` (`site/vercel.json`). Un

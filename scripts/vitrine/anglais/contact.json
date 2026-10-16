@@ -1,0 +1,22 @@
+[
+ {"contexte":"<form class=\"c-form\" id=\"formulaire\" action=\"https://api.messagingme.app/vitrine/contact\" method=\"post\">","en":"<form class=\"c-form\" id=\"formulaire\" action=\"https://api.messagingme.app/vitrine/contact\" method=\"post\">\n      <input type=\"hidden\" name=\"langue\" value=\"en\">","optionnel":true},
+ {"fr":"Parlons de votre projet.","en":"Let us talk about your project."},
+ {"fr":"Une démo, une question sur WhatsApp ou le RCS, un devis&nbsp;: écrivez-nous, nous vous répondons par e-mail.","en":"A demo, a question about WhatsApp or RCS, a quote: write to us, and we will reply by email."},
+ {"fr":"Vous préférez l’e-mail&nbsp;?","en":"Prefer email?"},
+ {"fr":"Nom et prénom","en":"Full name"},
+ {"fr":"Société","en":"Company"},
+ {"fr":"(facultatif)","en":"(optional)"},
+ {"fr":"E-mail professionnel","en":"Work email"},
+ {"fr":"Téléphone","en":"Phone"},
+ {"fr":"Votre message","en":"Your message"},
+ {"fr":"Ne pas remplir ce champ","en":"Leave this field empty"},
+ {"fr":"Vos coordonnées servent uniquement à vous répondre.","en":"Your details are only used to reply to you."},
+ {"fr":"Envoyer","en":"Send"},
+ {"fr":"Une démo, une question sur WhatsApp ou le RCS, un devis : écrivez à l’équipe Messaging Me, nous vous répondons par e-mail.","en":"A demo, a question about WhatsApp or RCS, a quote: write to the Messaging Me team, and we will reply by email."},
+ {"fr":"Parlons de votre projet : une démo, une question, un devis.","en":"Let us talk about your project: a demo, a question, a quote."},
+ {"fr":"Message envoyé · Messaging Me","en":"Message sent · Messaging Me"},
+ {"fr":"Merci, votre message est parti.","en":"Thank you, your message has been sent."},
+ {"fr":"Nous vous répondons par e-mail, à l’adresse que vous nous avez donnée.","en":"We will reply by email, at the address you gave us."},
+ {"fr":"Découvrir les fonctionnalités","en":"Discover the features"},
+ {"fr":"Votre message est parti : nous vous répondons par e-mail.","en":"Your message has been sent: we will reply by email."}
+]

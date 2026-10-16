@@ -903,12 +903,6 @@ en production.
   (tout y est publié).
 - **Le widget en essai sur l'accueil** (`ndabjvs20vc4`) : le garder ou le retirer une fois l'essai réel fait. Depuis le
   2026-10-16, l'accueil anglais charge son jumeau `dyzfezy33kcx` (« Got a question? ») : la décision vaut pour les deux.
-- **La vitrine anglaise est générée par un outil qui vit hors du dépôt** (2026-10-16) : `traduire-page.cjs`,
-  `relier-fr.cjs` et leurs dictionnaires, dans le dossier temporaire de la session qui l'a écrite. Sans eux, une page
-  française retouchée se reporte à la main dans sa jumelle. Même cible que l'assembleur : `scripts/vitrine/`.
-  ⚠️ Depuis le générateur d'en-tête (`npm run vitrine:entete`, `tests/vitrine-entete.test.ts`), l'en-tête et le pied
-  de chaque page se GÉNÈRENT : l'outil ne doit plus traduire ce qui est entre leurs marques, ou faire suivre
-  `npm run vitrine:entete` après chaque page qu'il réécrit.
 - **Le lot 3 de la vitrine anglaise** : les six courts films des fonctionnalités et les captures d'écran en anglais
   (les pages anglaises montrent aujourd'hui les versions françaises), puis la 404 en deux langues.
 

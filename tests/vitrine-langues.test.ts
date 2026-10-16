@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { PAGES } from '../src/http/contact-vitrine';
+import { JUMELLES as PAIRES } from '../scripts/vitrine/anglais';
 import { ORIGINE_VITRINE, SITE, adresseDe, lire, pagesHtml } from './vitrine-lecture';
 
 /**
@@ -15,20 +16,9 @@ import { ORIGINE_VITRINE, SITE, adresseDe, lire, pagesHtml } from './vitrine-lec
  * chemin qui ne commence pas par `/`.
  */
 
-const JUMELLES: Record<string, string> = {
-  'index.html': 'en/index.html',
-  'fonctionnalites/whatsapp-et-rcs/index.html': 'en/features/whatsapp-and-rcs/index.html',
-  'fonctionnalites/campagnes-et-scenarios/index.html': 'en/features/campaigns-and-scenarios/index.html',
-  'fonctionnalites/chaines-whatsapp/index.html': 'en/features/whatsapp-channels/index.html',
-  'fonctionnalites/conversations-en-actions/index.html': 'en/features/conversations-into-actions/index.html',
-  'fonctionnalites/publicites-click-to-whatsapp/index.html': 'en/features/click-to-whatsapp-ads/index.html',
-  'fonctionnalites/pilotage-des-couts/index.html': 'en/features/cost-control/index.html',
-  'industries/index.html': 'en/industries/index.html',
-  'pricing/index.html': 'en/pricing/index.html',
-  'developpeurs/index.html': 'en/developers/index.html',
-  'contact/index.html': 'en/contact/index.html',
-  'contact/merci/index.html': 'en/contact/thanks/index.html',
-};
+/** Les paires de l'outil qui génère la vitrine anglaise, en fichiers de `site/` (`/contact/` -> `contact/index.html`). */
+const JUMELLES: Record<string, string> = Object.fromEntries(
+  Object.entries(PAIRES).map(([fr, en]) => [`${fr.slice(1)}index.html`, `${en.slice(1)}index.html`]));
 
 /** Le chemin qu'un lien vise : `index.html` -> `/`, `en/contact/index.html` -> `/en/contact/`. */
 const chemin = (page: string) => adresseDe(page).slice(ORIGINE_VITRINE.length);

@@ -23,7 +23,8 @@
     "sdk:contrat": "tsx scripts/sdk-contrat.ts",
     "sdk:construire": "tsc -p sdk/tsconfig.json",
     "plugin:generer": "tsx scripts/plugin/generer.ts",
-    "vitrine:entete": "tsx scripts/vitrine/entete.ts"
+    "vitrine:entete": "tsx scripts/vitrine/entete.ts",
+    "vitrine:anglais": "tsx scripts/vitrine/anglais.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",
