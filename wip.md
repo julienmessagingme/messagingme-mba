@@ -100,6 +100,14 @@ français et en anglais, avec un film par cas. Le film 1 (prise de rendez-vous) 
 vitrine (`docs/prive/2026-10-15-audit-seo-vitrine.md`) et d'un geste de Julien : la Search Console et Bing Webmaster
 Tools. À corriger d'abord : les liens de confidentialité et de conditions d'utilisation du plugin 0.2.0 (404).
 
+## LA VITRINE EN ANGLAIS : LES FILMS DE L'ACCUEIL ET DU RCS (EXPORTS EN COURS, 2026-10-16)
+
+Les pages anglaises sont en ligne (journal, 2026-10-16). Restent les deux films de l'accueil, refaits avec la nouvelle
+musique dans les deux langues depuis une source bilingue (`~/engageme-motion/engageme-accueil/` et `engageme-rcs/`,
+`accueil.modele.html`, `rcs.modele.html`, `textes.json`) : huit exports (deux langues, 16:9 et 9:16), deux à la fois
+au plus, puis l'encodage pour la vitrine. Les français remplacent les fichiers actuels de `site/films/` sous le même
+nom, avec un `?v=` incrémenté ; les anglais prennent leur propre nom, cité par `site/en/index.html` seulement.
+
 ## CE QUI ATTEND UN ESSAI RÉEL
 
 🔴 **La liste unique et à jour des essais réels de Julien vit dans `docs/prive/ESSAIS-REELS.md`** (2026-10-09, à sa
