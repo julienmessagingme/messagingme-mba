@@ -1,5 +1,14 @@
 # todo.md : backlog
 
+## 🟡 Le code de connexion par WhatsApp, les modèles « authentification » de Meta (2026-10-16)
+
+- **Le besoin** : le fondateur de SaaS veut envoyer un code de connexion ou de vérification par WhatsApp
+  (`docs/superpowers/specs/2026-10-16-cas-d-usage-par-profil-design.md`). `create_template` n'accepte aujourd'hui que
+  les catégories utilitaire et marketing.
+- **Ce qu'il faudrait** : la catégorie « authentification » de Meta (un modèle au texte imposé, avec le code et un bouton
+  pour le copier), son envoi par l'API avec le code en paramètre, et ce que Meta facture pour cette catégorie (lire
+  `brain/MESSAGINGME.md` avant d'affirmer un prix). Pas commencé.
+
 ## 🟡 Onboarder par 360dialog : les lots après la réception (2026-10-15)
 
 Le but de Julien : à côté de « Connecter votre numéro WhatsApp », un bouton « Onboard with 360dialog » ; dès qu'un
