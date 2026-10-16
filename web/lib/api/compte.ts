@@ -85,6 +85,12 @@ export interface AccountStatusResponse {
    * une API plus ancienne ne l'envoie pas, et l'absence veut dire « relié », ce qu'il était forcément.
    */
   delieLe?: string | null;
+  /**
+   * Par où passe le compte (lot 2, livraison D) : `meta` ou `360dialog`, `null` sans numéro. OPTIONNEL à la lecture :
+   * une API plus ancienne ne l'envoie pas, et l'absence veut dire « meta ». Sur `360dialog`, la console masque ce qui ne
+   * parle qu'à Meta (l'agent de Meta, la reconnexion Meta, l'activation, la qualité).
+   */
+  fournisseur?: 'meta' | '360dialog' | null;
   status: { dot: AccountDot; label: string; reason: string };
 }
 export function getAccountStatus(tenantId: string): Promise<AccountStatusResponse> {

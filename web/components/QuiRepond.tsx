@@ -29,8 +29,10 @@ import { Bouton } from '@/components/Bouton';
  * `version` : la page l'incrémente quand l'interrupteur de l'agent de Meta change, ce qui peut changer le mode.
  * `onChange` : appelé après un enregistrement, avec l'état relu (l'interrupteur suit si le choix a allumé l'agent).
  */
-export function QuiRepond({ tenantId, version = 0, onChange }: {
+export function QuiRepond({ tenantId, version = 0, onChange, sansAgentMeta = false }: {
   tenantId: string; version?: number; onChange?: (etat: EtatRepondeur) => void;
+  /** Compte relié par 360dialog (livraison D) : pas d'agent de Meta, sa position n'est pas proposée. */
+  sansAgentMeta?: boolean;
 }) {
   const t = useT();
   const confirmer = useConfirmation();
@@ -126,7 +128,8 @@ export function QuiRepond({ tenantId, version = 0, onChange }: {
       )}
       <fieldset className="flex flex-col gap-2" disabled={enCours}>
         <legend className="sr-only">{t('Qui répond au client', 'Who answers the customer')}</legend>
-        {MODES_REPONDEUR.map((mode) => {
+        {/* La position de l'agent de Meta reste montrée si c'est le mode en place : cacher l'état réel tromperait. */}
+        {MODES_REPONDEUR.filter((m) => !(sansAgentMeta && m === 'mba' && etat?.mode !== 'mba')).map((mode) => {
           const grisee = positionGrisee(mode, etat, t);
           return (
             <div key={mode} data-testid={`qui-repond-position-${mode}`} className="flex flex-col gap-1">

@@ -35,6 +35,7 @@ import { ETAPES_CARTE_META } from '@/lib/partage/etapes-meta';
 import { TitrePage } from '@/components/TitrePage';
 import { Icone } from '@/components/Icone';
 import { Modale } from '@/components/Modale';
+import { Connexion360dialog } from '@/components/Connexion360dialog';
 import { Squelette } from '@/components/Squelette';
 import { Nd } from '@/components/Nd';
 import { HorsOffre } from '@/components/HorsOffre';
@@ -219,13 +220,14 @@ function AccueilInner({ session }: { session: Session }) {
   const fermeMba = useFermeture(session.tenantId, 'agent_meta');
   useEffect(() => {
     const pn = account?.phoneNumberId;
-    if (!pn || fermeMba !== null) { setMbaReel(null); return; }
+    // Un compte 360dialog n'a pas d'agent de Meta : la route répondrait un refus à chaque ouverture de l'Accueil.
+    if (!pn || fermeMba !== null || account?.fournisseur === '360dialog') { setMbaReel(null); return; }
     let vivant = true;
     getMbaStatus(session.tenantId, pn)
       .then((s) => { if (vivant) setMbaReel(s); })
       .catch(() => { if (vivant) setMbaReel(null); });
     return () => { vivant = false; };
-  }, [session.tenantId, account?.phoneNumberId, fermeMba]);
+  }, [session.tenantId, account?.phoneNumberId, account?.fournisseur, fermeMba]);
 
   /**
    * Les messages ÉCRITS par l'agent de Meta, depuis toujours, dans son cadre (Julien, 2026-09-25). LA MÊME mesure
@@ -390,6 +392,10 @@ function AccueilInner({ session }: { session: Session }) {
     void loadAccount();
   });
   const rcs = useCanalRcs(session.tenantId);
+  // Le compte relié par 360dialog (livraison D) : la console masque ce qui ne parle qu'à Meta.
+  const est360 = account?.fournisseur === '360dialog';
+  // Après « Onboard with 360dialog » ou une clé recollée : relire le compte, comme après la fenêtre de Meta.
+  const recharger360 = (): void => { setAvertissementsConnexion([]); setConnexionRenouvelee(false); setLoading(true); void load(); void loadAccount(); };
   const affichageHubspot = account
     ? affichageHubspotAccueil({ actif: hubspotActif, aUnNumero: account.hasNumber, portailRelie: account.hubspotPortal?.connected === true })
     : 'rien';
@@ -455,7 +461,7 @@ function AccueilInner({ session }: { session: Session }) {
 
       {/* « Qui répond au client » (RC6) : admins seulement, comme le serveur. Le choisir peut allumer l'agent de Meta :
           l'interrupteur de sa carte suit l'état relu. */}
-      {isAdmin && <QuiRepond tenantId={session.tenantId} version={versionRepondeur} onChange={(e) => setMbaEnabled(e.mbaAllume)} />}
+      {isAdmin && <QuiRepond tenantId={session.tenantId} version={versionRepondeur} sansAgentMeta={account?.fournisseur === '360dialog'} onChange={(e) => setMbaEnabled(e.mbaAllume)} />}
 
       {loading ? (
         <Squelette forme="carte" />
@@ -464,6 +470,8 @@ function AccueilInner({ session }: { session: Session }) {
           {/* Carte Meta Business Agent, remontée en tête du dashboard, avec la reprise après opérateur juste
               en dessous du toggle (demande fondateur : les deux gouvernent qui répond au client).
               ⚠️ Le chiffre de l'agent est DANS le cadre depuis le 2026-09-25 (Julien), plus en dessous. */}
+          {/* Masquée pour un compte relié par 360dialog (livraison D) : l'agent de Meta ne s'y règle pas. */}
+          {!est360 && (
           <div data-testid="settings-card" className="flex flex-col rounded-carte border border-ink-200 bg-white p-5">
             <div className="mb-3 flex items-start gap-3">
               {/* Logo Meta Business Agent (produit Meta), et non notre logo MM : cette carte parle du MBA de Meta. */}
@@ -526,6 +534,7 @@ function AccueilInner({ session }: { session: Session }) {
               </div>
             )}
           </div>
+          )}
 
           {/* Invariant de cette cascade : « Aucun numéro » ne s'affiche QUE si account est chargé ET dit qu'il
               n'y en a pas. Tant qu'on ne sait pas, on le dit (chargement, puis erreur avec de quoi relancer).
@@ -566,7 +575,7 @@ function AccueilInner({ session }: { session: Session }) {
                   )}
                 </p>
               )}
-              <ConnectNumberZone isAdmin={isAdmin} connexion={connexionNumero} />
+              <ConnectNumberZone isAdmin={isAdmin} connexion={connexionNumero} tenantId={session.tenantId} onConnecte360={recharger360} />
               {/* 🔴 Le compte peut revenir de la fenêtre Meta SANS numéro (lot 3b) : l'espace n'a toujours pas de
                   numéro, donc c'est cette branche qui s'affiche, et l'avertissement qui dit quoi faire doit y être.
                   Sans lui, la fenêtre se fermait sans un mot. Titre neutre : rien n'est « connecté ». */}
@@ -604,7 +613,7 @@ function AccueilInner({ session }: { session: Session }) {
                 )}
                 <div>
                   <div className="font-mono text-lg font-semibold text-ink-900">
-                    {account?.number ? (account.number.startsWith('+') ? account.number : `+${account.number}`) : t('Aucun numéro', 'No number')}
+                    {account?.number ? (account.number.startsWith('+') ? account.number : `+${account.number}`) : est360 ? t('Numéro relié par 360dialog', 'Number linked through 360dialog') : t('Aucun numéro', 'No number')}
                   </div>
                   {account?.verifiedName && <div className="mt-0.5 text-xs text-ink-500">{account.verifiedName}</div>}
                 </div>
@@ -626,7 +635,7 @@ function AccueilInner({ session }: { session: Session }) {
               {/* ⚠️ `numberStatus !== null` AVANT tout : un statut qu'on n'a pas pu lire n'est pas un numéro
                   inactif. Affirmer une panne qu'on n'a pas constatée est le défaut que la cascade au-dessus
                   corrige déjà pour « Aucun numéro ». */}
-              {account?.hasNumber && account.numberStatus !== null && account.numberStatus !== 'CONNECTED' && (
+              {account?.hasNumber && !est360 && account.numberStatus !== null && account.numberStatus !== 'CONNECTED' && (
                 <ActiverNumeroZone
                   tenantId={session.tenantId}
                   isAdmin={isAdmin}
@@ -636,7 +645,7 @@ function AccueilInner({ session }: { session: Session }) {
               )}
               {/* Meta bloque le compte pour son moyen de paiement (erreur 141006, migration 0231) : les modèles ne
                   partent pas. Le bandeau tombe de lui-même au prochain relevé, une fois la carte posée. */}
-              {account?.hasNumber && !account.delieLe && account.paiementMetaBloque === true && (
+              {account?.hasNumber && !est360 && !account.delieLe && account.paiementMetaBloque === true && (
                 <div data-testid="carte-meta-a-regler" className="mt-3 rounded-controle bg-alerte-50 px-3 py-3 text-xs text-alerte-700">
                   <div className="text-sm font-semibold">
                     {t('Ajoutez votre carte chez Meta : vos modèles ne partent pas', 'Add your card at Meta: your templates are not sent')}
@@ -646,7 +655,7 @@ function AccueilInner({ session }: { session: Session }) {
                   </ol>
                 </div>
               )}
-              {account?.hasNumber && (
+              {account?.hasNumber && !est360 && (
                 <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3 border-t border-ink-100 pt-3 text-xs">
                   <div>
                     <div className="font-medium text-ink-500">{t('Qualité', 'Quality')}</div>
@@ -665,7 +674,7 @@ function AccueilInner({ session }: { session: Session }) {
               {/* Statut du compte WhatsApp Business : MM Lite (demande fondateur), revue Meta, vérification
                   d'entreprise, business propriétaire, et le moyen de paiement : Meta dit seulement s'il bloque le
                   compte (erreur 141006, migration 0231), jamais la carte elle-même, d'où le renvoi vers sa facturation. */}
-              {account?.hasNumber && (
+              {account?.hasNumber && !est360 && (
                 <div data-testid="waba-status-panel" className="mt-4 border-t border-ink-100 pt-3">
                   <div className="mb-2 text-xs font-medium text-ink-500">{t('Compte WhatsApp Business', 'WhatsApp Business account')}</div>
                   <div className="flex flex-wrap gap-x-8 gap-y-3 text-xs">
@@ -696,6 +705,8 @@ function AccueilInner({ session }: { session: Session }) {
                 <ConnexionMetaDuNumero
                   connexion={connexionNumero}
                   tenantId={session.tenantId}
+                  est360={est360}
+                  onRecolle={recharger360}
                   onDeconnecte={(r) => {
                     setConnexionRenouvelee(false);
                     setAvertissementsConnexion([]);
@@ -952,7 +963,9 @@ function BadgeField({ label, badge }: { label: string; badge: StatusBadge }) {
  * connexion, et deux copies auraient été deux fenêtres Meta à tenir alignées. Si META_ES_CONFIG_ID n'est pas posé
  * côté serveur, le bouton reste le placeholder « bientôt disponible ».
  */
-function ConnectNumberZone({ isAdmin, connexion }: { isAdmin: boolean; connexion: ConnexionNumero }) {
+function ConnectNumberZone({ isAdmin, connexion, tenantId, onConnecte360 }: {
+  isAdmin: boolean; connexion: ConnexionNumero; tenantId: string; onConnecte360: () => void;
+}) {
   const t = useT();
   const { cfg, busy, error, connect } = connexion;
   const ready = cfg?.enabled === true && isAdmin;
@@ -981,7 +994,7 @@ function ConnectNumberZone({ isAdmin, connexion }: { isAdmin: boolean; connexion
         </div>
       </div>
       {error && <p className="mt-3 rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700">{error}</p>}
-      <div className="mt-4 flex items-center gap-3 border-t border-ink-200 pt-3">
+      <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-ink-200 pt-3">
         {ready ? (
           <Bouton enCours={busy}
             type="button"
@@ -1003,6 +1016,9 @@ function ConnectNumberZone({ isAdmin, connexion }: { isAdmin: boolean; connexion
             <span className="text-xs text-ink-500">{isAdmin ? t('Disponible prochainement', 'Available soon') : t('Réservé aux admins', 'Admins only')}</span>
           </>
         )}
+        {/* Le lot 3 : la clé d'un numéro pris chez 360dialog. Toute la zone disparaît dès qu'un numéro est connecté,
+            par l'une ou l'autre voie : la règle est celle de la branche qui la monte (`!account.hasNumber`). */}
+        {isAdmin && <Connexion360dialog tenantId={tenantId} mode="connecter" onConnecte={onConnecte360} />}
       </div>
     </div>
   );
@@ -1031,16 +1047,19 @@ function ConnectNumberZone({ isAdmin, connexion }: { isAdmin: boolean; connexion
  * ⚠️ LA MÊME INSTANCE que la zone « Connecter » et le bloc « Canaux et services » (`connexionNumero`) : elle porte
  * l'écoute des messages de la fenêtre Meta, et une seconde instance les capterait de son côté.
  */
-function ConnexionMetaDuNumero({ connexion, tenantId, onDeconnecte }: {
+function ConnexionMetaDuNumero({ connexion, tenantId, est360, onRecolle, onDeconnecte }: {
   connexion: ConnexionNumero;
   tenantId: string;
+  /** Compte relié par 360dialog : pas de fenêtre de Meta à rouvrir, mais une clé à recoller. */
+  est360: boolean;
+  onRecolle: () => void;
   onDeconnecte: (r: { conversations: number; campagnesArretees: number; echecsMeta: number }) => void;
 }) {
   const t = useT();
   const [confirmer, setConfirmer] = useState(false);
   // « Renouveler » rouvre la fenêtre de Meta : sans inscription configurée sur l'instance, il n'a rien à ouvrir.
   // « Déconnecter » n'appelle pas la fenêtre, il reste.
-  const renouveler = connexion.cfg?.enabled === true;
+  const renouveler = connexion.cfg?.enabled === true && !est360;
   return (
     <div data-testid="connexion-meta" className="mt-4 border-t border-ink-100 pt-3">
       <div className="flex flex-wrap gap-2">
@@ -1049,6 +1068,7 @@ function ConnexionMetaDuNumero({ connexion, tenantId, onDeconnecte }: {
             {connexion.busy ? t('Connexion en cours…', 'Connecting…') : t('Renouveler la connexion Meta', 'Renew the Meta connection')}
           </Bouton>
         )}
+        {est360 && <Connexion360dialog tenantId={tenantId} mode="recoller" onConnecte={onRecolle} />}
         <Bouton data-testid="deconnecter-numero" variante="discret" type="button" disabled={connexion.busy} onClick={() => setConfirmer(true)}>
           {t('Déconnecter le numéro', 'Disconnect the number')}
         </Bouton>
@@ -1071,6 +1091,7 @@ function ConnexionMetaDuNumero({ connexion, tenantId, onDeconnecte }: {
       {confirmer && (
         <ConfirmationDeconnexion
           tenantId={tenantId}
+          est360={est360}
           onAnnuler={() => setConfirmer(false)}
           onFait={(r) => { setConfirmer(false); onDeconnecte(r); }}
         />
@@ -1087,8 +1108,10 @@ const chiffresDe = (texte: string): string => texte.replace(/[^0-9]/g, '');
  * puis le numéro à retaper. Irréversible (les conversations sont effacées), d'où la saisie plutôt qu'un simple clic.
  * Le serveur exige de son côté `{ confirme: true }` : un appel nu ne détache rien.
  */
-function ConfirmationDeconnexion({ tenantId, onAnnuler, onFait }: {
+function ConfirmationDeconnexion({ tenantId, est360 = false, onAnnuler, onFait }: {
   tenantId: string;
+  /** Compte relié par 360dialog : rien ne se passe chez Meta, la phrase ne lui parle pas d'une autorisation Meta. */
+  est360?: boolean;
   onAnnuler: () => void;
   onFait: (r: { conversations: number; campagnesArretees: number; echecsMeta: number }) => void;
 }) {
@@ -1143,7 +1166,9 @@ function ConfirmationDeconnexion({ tenantId, onAnnuler, onFait }: {
             `${bilan.campagnesArretees} running, scheduled or paused WhatsApp campaign(s) stop for good. An RCS campaign keeps going, without its WhatsApp fallback.`,
           )}</li>}
           {bilan.mbaAllume && <li>{t('L’agent de Meta est éteint, et l’équipe redevient celle qui répond.', 'Meta’s agent is turned off, and the team answers again.')}</li>}
-          <li>{bilan.partage
+          <li>{est360
+            ? t('Le numéro reste à votre compte 360dialog, et sa clé y reste valable : vous pourrez le relier de nouveau, ici ou ailleurs.', 'The number stays in your 360dialog account, and its key stays valid there: you can link it again, here or elsewhere.')
+            : bilan.partage
             ? t('Ce compte WhatsApp sert aussi un autre espace : rien n’est changé chez Meta.', 'This WhatsApp account also serves another workspace: nothing changes at Meta.')
             : bilan.jeton !== 'propre'
               ? t('Messaging Me ne peut pas se retirer de votre compte chez Meta (autorisation absente ou expirée) : vous pouvez retirer l’app dans le Business Manager de Meta.', 'Messaging Me cannot remove itself from your account at Meta (missing or expired authorization): you can remove the app in Meta’s Business Manager.')

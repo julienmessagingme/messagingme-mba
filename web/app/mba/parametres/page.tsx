@@ -79,6 +79,7 @@ function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean
   const [compte, setCompte] = useState<AccountStatusResponse | null>(null);
   const [status, setStatus] = useState<MbaStatus | null>(null);
   const [chargement, setChargement] = useState(true);
+  const [sans360, setSans360] = useState(false);
   const [err, setErr] = useState('');
 
   useEffect(() => {
@@ -90,6 +91,8 @@ function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean
       // pastille dit pourquoi). Le poser après aurait laissé l'en-tête muet sur le seul état où il informe.
       setCompte(c);
       if (!c.hasNumber || c.phoneNumberId === null) return;
+      // Un numéro relié par 360dialog n'a pas d'agent de Meta : aucune lecture, le bandeau le dit.
+      if (c.fournisseur === '360dialog') { setSans360(true); return; }
       setPhoneNumberId(c.phoneNumberId);
       const s = await getMbaStatus(tenantId, c.phoneNumberId);
       if (vivant) setStatus(s);
@@ -230,6 +233,7 @@ function MbaSettings({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean
 
   if (chargement) return coquille(<Squelette forme="carte" />);
   if (err !== '') return coquille(<MbaNotice kind="error" testid="mba-page-error">{err}</MbaNotice>);
+  if (sans360) return coquille(<MbaGateBanner reason="fournisseur" />);
   if (phoneNumberId === null) return coquille(<MbaGateBanner reason="no-number" />);
   if (status === null || !status.eligible) return coquille(<MbaGateBanner reason="not-eligible" />);
 

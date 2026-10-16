@@ -9,8 +9,28 @@ import { Icone } from '@/components/Icone';
  * précédente n'en connaissait qu'un : « aucun numéro rattaché » et « Meta n'a pas encore ouvert l'agent » ne se
  * règlent pas au même endroit, et les confondre envoie le client chercher au mauvais endroit.
  */
-export function MbaGateBanner({ reason }: { reason: 'no-number' | 'not-eligible' }) {
+export function MbaGateBanner({ reason }: { reason: 'no-number' | 'not-eligible' | 'fournisseur' }) {
   const t = useT();
+
+  // Un numéro relié par 360dialog (livraison D) : l'agent de Meta ne s'y configure pas, et rien ne l'ouvrira ici.
+  if (reason === 'fournisseur') {
+    return (
+      <div className="flex items-start gap-3 rounded-carte border border-ink-200 bg-white p-4" data-testid="mba-gate-fournisseur">
+        <div className="text-sm leading-relaxed text-ink-900">
+          <p className="font-semibold text-ink-900">{t('L’agent de Meta n’est pas disponible sur ce numéro', 'Meta’s agent is not available on this number')}</p>
+          <p className="mt-1">
+            {t(
+              'Votre numéro est relié par 360dialog : l’agent de Meta ne s’y configure pas depuis Messaging Me. Pour répondre automatiquement, utilisez un agent IA ou un scénario, depuis « Qui répond au client » sur l’Accueil.',
+              'Your number is linked through 360dialog: Meta’s agent is not configured on it from Messaging Me. To answer automatically, use an AI agent or a scenario, from “Who answers the customer” on the Home page.',
+            )}
+          </p>
+          <Link href="/accueil" className="mt-2 inline-block font-medium text-brand-600 hover:text-brand-700">
+            {t('Aller à l’Accueil', 'Go to Home')} →
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (reason === 'no-number') {
     return (

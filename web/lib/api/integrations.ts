@@ -165,6 +165,17 @@ export interface EsCompleteResult {
   sansNumero?: boolean;
   warnings?: string[];
 }
+/**
+ * Le bouton « Onboard with 360dialog » (lot 3) : la clé d'API d'un numéro pris chez 360dialog, que le serveur lit, relie
+ * et branche. La même route recolle une clé refusée. La clé n'est jamais relue ni renvoyée.
+ */
+export function connecter360dialog(
+  tenantId: string,
+  input: { cle: string; numeroAffiche?: string },
+): Promise<{ connected: boolean; wabaId: string; phoneNumberId: string; displayPhoneNumber: string | null }> {
+  return request(`/tenants/${tenantId}/360dialog/connecter`, { method: 'POST', body: JSON.stringify(input) });
+}
+
 /** `wabaId`/`phoneNumberId` FACULTATIFS : la popup ne les annonce pas sur un parcours déjà abouti chez Meta,
  *  le serveur les retrouve alors depuis le token (sinon le client resterait bloqué sans recours). */
 export function completeEmbeddedSignup(

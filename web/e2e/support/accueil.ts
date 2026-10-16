@@ -101,6 +101,11 @@ export async function mockAccueil(
      * /embedded-signup/complete`. Absente : `{}`, donc le bouton de connexion reste éteint.
      */
     inscription?: { complete: unknown; posts?: unknown[] };
+    /**
+     * Le bouton « Onboard with 360dialog » (lot 3) : `POST /360dialog/connecter` note son corps dans `posts`, puis rend
+     * `refus` (422) ou un succès, après quoi `account-status` rend `compteApres`. Absent : `{}`, comme toute route inconnue.
+     */
+    connexion360?: { posts: unknown[]; refus?: string; compteApres?: AccountFixture };
   } = {},
 ): Promise<void> {
   await page.addInitScript((s) => {
@@ -108,6 +113,8 @@ export async function mockAccueil(
   }, SESSION);
 
   const account = { ...defaultAccount, ...over.account };
+  // Le compte relu : il change après un « Onboard with 360dialog » réussi.
+  let compteCourant: AccountFixture = account;
   const settings = over.settings ?? { ...defaultSettings };
   // Copie : le mock la fait vivre (un `PUT /repondeur` la change), sans toucher l'objet du test.
   const quiRepond = over.quiRepond ? { ...over.quiRepond } : undefined;
@@ -263,7 +270,14 @@ export async function mockAccueil(
       over.inscription.posts?.push(route.request().postDataJSON());
       return json(over.inscription.complete);
     }
-    if (url.includes('/account-status')) return json(account);
+    if (over.connexion360 && route.request().method() === 'POST' && url.endsWith('/360dialog/connecter')) {
+      over.connexion360.posts.push(route.request().postDataJSON());
+      // 400 : le statut du serveur pour une clé refusée par 360dialog (`rattacher360dialog`).
+      if (over.connexion360.refus) return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: over.connexion360.refus }) });
+      if (over.connexion360.compteApres) compteCourant = { ...defaultAccount, ...over.connexion360.compteApres };
+      return json({ connected: true, wabaId: 'W360', phoneNumberId: 'PN360', displayPhoneNumber: null });
+    }
+    if (url.includes('/account-status')) return json(compteCourant);
     if (url.includes('/settings')) return json(settings); // GET + PUT + PATCH control-handback : même forme
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
     if (url.includes('/stats/templates')) return json({ breakdown: [], pricing: null });

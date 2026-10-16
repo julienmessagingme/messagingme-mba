@@ -211,7 +211,12 @@ export function CanauxServices(p: {
     }
     // Relié, mais Meta signale un problème : la phrase le dit, comme la pastille (ambre), plutôt qu'un « Relié »
     // tout court qui contredirait la carte du numéro, juste en dessous (`numeroASurveiller`).
-    if (numeroASurveiller(c)) return t(`Relié : ${numero}. Chez Meta : ${c.status.label}.`, `Linked: ${numero}. At Meta: ${c.status.label}.`);
+    // Un compte 360dialog : sa pastille ne vient pas de Meta, la phrase ne le lui attribue pas.
+    if (numeroASurveiller(c)) {
+      return c.fournisseur === '360dialog'
+        ? t(`Relié par 360dialog : ${numero}. ${c.status.label}.`, `Linked through 360dialog: ${numero}. ${c.status.label}.`)
+        : t(`Relié : ${numero}. Chez Meta : ${c.status.label}.`, `Linked: ${numero}. At Meta: ${c.status.label}.`);
+    }
     return t(`Relié : ${numero}.`, `Linked: ${numero}.`);
   };
 
