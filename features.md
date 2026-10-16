@@ -25,8 +25,14 @@ serveur MCP. Accroche : « La plateforme conversationnelle qui comprend chaque c
 répondre en parallèle, comme secours et pour toutes les adresses déjà distribuées (liens tracés, visuels RCS,
 webhook Meta, MCP). Rien de ce qui a été envoyé à un client ne cesse de fonctionner.
 
+✅ **La vitrine existe en anglais** (2026-10-16) : chaque page a sa jumelle sous `app.messagingme.fr/en/`
+(`/en/features/…`, `/en/contact/`), et le drapeau anglais de l'en-tête mène à la jumelle de la page affichée, le
+français à l'inverse. Les chiffres et les opérateurs restent ceux de la France. Le formulaire de contact anglais
+répond en anglais (ses erreurs, sa page de remerciement), et l'équipe reçoit la demande avec la mention de la langue.
+Les liens vers le site institutionnel, qui n'existe qu'en français, le disent (« in French »).
+
 ✅ **La vitrine a sa page développeurs** (2026-10-12, lot 18) : `app.messagingme.fr/developpeurs/`, et sa jumelle en
-anglais `/en/developers/`, la seule page anglaise de la vitrine. Pour qui construit avec Claude Code, Cursor ou Lovable :
+anglais `/en/developers/`. Pour qui construit avec Claude Code, Cursor ou Lovable :
 une séance Claude Code rejouée (l'agent IA, la lecture du site, la bulle WhatsApp), les trois étapes (créer son espace,
 brancher Claude Code en une commande, demander), le branchement par le code (API, SDK, webhooks signés) et ce que
 permet l'offre gratuite. « Développeurs », dans le menu de toutes les pages, y mène ; « Créer mon espace », en haut de

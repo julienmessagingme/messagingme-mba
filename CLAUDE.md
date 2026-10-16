@@ -81,8 +81,9 @@ lance rien.
 
 ⚠️ **La vitrine appelle UNE route de l'API** (2026-09-30) : son formulaire de contact (`site/contact/`) poste
 `POST /vitrine/contact` en formulaire HTML natif, et la route répond par une redirection 303 vers la vitrine, donc
-aucun CORS. Chaque adresse est écrite en dur chez l'autre : `api.messagingme.app` dans `site/contact/index.html`, la
-vitrine dans `VITRINE` (`src/http/contact-vitrine.ts`). Renommer l'une casse le formulaire sans erreur ailleurs, et
+aucun CORS. Chaque adresse est écrite en dur chez l'autre : `api.messagingme.app` dans `site/contact/index.html` et
+`site/en/contact/index.html`, la vitrine dans `VITRINE` et ses pages de retour, par langue, dans `PAGES`
+(`src/http/contact-vitrine.ts`). Renommer l'une casse le formulaire sans erreur ailleurs, et
 une page qui poste vers une route pas encore déployée aussi : l'API se déploie AVANT la vitrine.
 
 ⚠️ **Le référencement de la vitrine tient à des fichiers à tenir à jour** (2026-09-30) : `site/sitemap.xml`

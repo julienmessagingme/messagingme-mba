@@ -5,6 +5,34 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-16 : la vitrine en anglais, page par page
+
+- **La demande** (Julien) : tout le site en anglais derrière le drapeau anglais, qui était resté « bientôt ». Décisions :
+  on garde la France (chiffres, opérateurs), la une de l'accueil reste celle des deux iPhone, le drapeau change de langue
+  au clic. Plan `2026-10-16-vitrine-en-anglais`.
+- **La méthode** : chaque page anglaise est GÉNÉRÉE depuis la française par un outil hors dépôt (remplacement de
+  fragments exacts, du plus long au plus court, dans les nœuds de texte, les attributs lisibles et les chaînes du
+  JSON-LD, puis un détecteur de français restant). Seule `en/developers/` (lot 18) était écrite à la main ; son en-tête
+  et son pied ont été alignés sur les autres. Les pages françaises ont reçu leur bloc hreflang et un drapeau relié, et
+  deux liens morts du pied de page (`/accueil/` et `/articles/` de www.messagingme.fr, mesurés en 404) ont été corrigés.
+- **Le défaut trouvé à l'aperçu** : l'accueil français cite huit fichiers en chemin RELATIF (icône, police, logos des
+  IA, visuel RCS). Recopiés tels quels sous `/en/`, ils visaient `/en/favicon.svg` et ses voisins, qui n'existent pas ;
+  aucun test ne regardait les chemins relatifs. L'outil les rend absolus, et `tests/vitrine-langues.test.ts` refuse
+  tout chemin relatif sous `/en/` (vérifié dans les deux sens).
+- **Le formulaire** : la page anglaise poste `langue=en`, et `POST /vitrine/contact` choisit alors ses pages de retour
+  anglaises (`26a1787a`). L'ancienne API ignorait le champ : publier la page d'abord n'aurait rien cassé, le visiteur
+  serait seulement tombé sur le merci français. D'où l'ordre : l'API, puis le site.
+- **La bulle** : ses textes se règlent par widget dans la console. Un second widget de l'espace de la vitrine,
+  « Got a question? » (`dyzfezy33kcx`, même réglage que le français, réponse par le Meta Business Agent), est chargé
+  par l'accueil anglais.
+- **Relu** : 0 rouge, 4 jaunes, tous corrigés avant de pousser, chaque garde vérifiée dans les deux sens (panne
+  Resend en anglais, champ caché DANS le formulaire, pages de retour de l'API qui existent, aucun tiret long).
+- **Suite complète** : un seul échec, `tests/latence-http.test.ts` (durée mesurée sous charge), vert seul cinq fois
+  sur cinq, déjà relevé plus bas dans ce journal comme sensible à la charge.
+- **Les films** : ceux de l'accueil et du RCS sont refaits en anglais depuis une seule source bilingue, avec la
+  nouvelle musique (Tech House d'Aurec, calée à 128,0 BPM mesurés). Les pages anglaises montrent les films français
+  jusqu'à leur pose.
+
 ## 2026-10-16 : un numéro porté par 360dialog sert un espace (réception, envoi, modèles, Flows, console, bouton)
 
 - **La question de Julien** : onboarder par un BSP, 360dialog, sans devenir partenaire. Mesuré d'abord à la main avec la

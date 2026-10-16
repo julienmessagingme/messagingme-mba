@@ -126,8 +126,17 @@
     champs.forEach(function (c) { if (typeof brouillon[c.name] === 'string' && !c.value) c.value = brouillon[c.name]; });
   } catch (e) {}
   // Venu d'un bouton « Demander une démo » : le message est pré-rempli avec la fonctionnalité, si rien n'est déjà
-  // écrit. Seules les quatre pages connues : aucun texte n'est recopié de l'adresse.
-  var DEMOS = {
+  // écrit. Seules les quatre pages connues : aucun texte n'est recopié de l'adresse. La page anglaise
+  // (`<html lang="en">`) a ses phrases ; les clés restent les adresses françaises, que ses liens gardent.
+  var EN = document.documentElement.lang === 'en';
+  var DEMOS = EN ? {
+    'campagnes-et-scenarios': 'Campaigns and scenarios',
+    'publicites-click-to-whatsapp': 'Click-to-WhatsApp ads',
+    'chaines-whatsapp': 'WhatsApp Channels',
+    'conversations-en-actions': 'Conversation analysis',
+    'whatsapp-et-rcs': 'WhatsApp and RCS',
+    'pilotage-des-couts': 'Cost control'
+  } : {
     'campagnes-et-scenarios': 'Campagnes et scénarios',
     'publicites-click-to-whatsapp': 'Publicités Click-to-WhatsApp',
     'chaines-whatsapp': 'Chaînes WhatsApp',
@@ -137,14 +146,18 @@
   };
   var demo = DEMOS[new URLSearchParams(location.search).get('demo')];
   var message = form.querySelector('textarea[name="message"]');
-  if (demo && message && !message.value) message.value = 'Bonjour, je souhaite une démo de Messaging Me : ' + demo + '.';
+  if (demo && message && !message.value) message.value = EN ? 'Hello, I would like a demo of Messaging Me: ' + demo + '.' : 'Bonjour, je souhaite une démo de Messaging Me : ' + demo + '.';
   form.addEventListener('input', function () {
     var b = {};
     champs.forEach(function (c) { b[c.name] = c.value; });
     try { sessionStorage.setItem(CLE, JSON.stringify(b)); } catch (e) {}
   });
 
-  var MESSAGES = {
+  var MESSAGES = EN ? {
+    champs: 'A field is missing or invalid. Check the form, then send it again.',
+    trop: 'Lots of messages right now: try again in a few minutes, or write to us at ',
+    envoi: 'Your message could not be sent. Try again, or write to us at '
+  } : {
     champs: 'Un champ manque ou n’est pas valide. Vérifiez le formulaire, puis renvoyez-le.',
     trop: 'Beaucoup de messages en ce moment : réessayez dans quelques minutes, ou écrivez-nous à ',
     envoi: 'Votre message n’a pas pu partir. Réessayez, ou écrivez-nous à '

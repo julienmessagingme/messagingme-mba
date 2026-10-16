@@ -29,3 +29,14 @@
 ## Contact
 
 - [Demander une démo](https://app.messagingme.fr/contact/)
+
+## In English
+
+- [The Messaging Me platform](https://app.messagingme.fr/en/) : WhatsApp and RCS, campaigns and customer service in a single console; you choose who answers, and every conversation is qualified for your CRM.
+- [Campaigns and scenarios](https://app.messagingme.fr/en/features/campaigns-and-scenarios/)
+- [Click-to-WhatsApp ads](https://app.messagingme.fr/en/features/click-to-whatsapp-ads/)
+- [WhatsApp Channels](https://app.messagingme.fr/en/features/whatsapp-channels/)
+- [Conversation analysis](https://app.messagingme.fr/en/features/conversations-into-actions/)
+- [WhatsApp and RCS](https://app.messagingme.fr/en/features/whatsapp-and-rcs/)
+- [Cost control](https://app.messagingme.fr/en/features/cost-control/)
+- [Request a demo](https://app.messagingme.fr/en/contact/)

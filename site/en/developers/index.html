@@ -113,10 +113,23 @@
 <span class="sentinelle" aria-hidden="true"></span>
 <div class="barre">
 <header class="cadre entete">
-  <a class="marque" href="/" aria-label="Messaging Me, home (in French)"><img src="/messagingme-logo-blanc.png" alt="Messaging Me" width="185" height="22"></a>
+  <a class="marque" href="/en/" aria-label="Messaging Me, home"><img src="/messagingme-logo-blanc.png" alt="Messaging Me" width="185" height="22"></a>
   <details class="burger">
     <summary aria-label="Menu"><svg class="ic burger-ouvrir" aria-hidden="true"><use href="#i-list"/></svg><svg class="ic burger-fermer" aria-hidden="true"><use href="#i-x"/></svg></summary>
     <div class="burger-panneau">
+      <details class="burger-groupe">
+        <summary>Features<svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>
+        <div class="burger-liens">
+          <a href="/en/features/campaigns-and-scenarios/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span><span><strong>Campaigns and scenarios</strong><small>The push that opens a conversation</small></span></a>
+          <a href="/en/features/click-to-whatsapp-ads/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-megaphone"/></svg></span><span><strong>Click-to-WhatsApp ads</strong><small>The ad and its conversation, in one place</small></span></a>
+          <a href="/en/features/whatsapp-channels/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-broadcast"/></svg></span><span><strong>WhatsApp Channels</strong><small>Post to everyone, talk to each one</small></span></a>
+          <a href="/en/features/conversations-into-actions/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-list-checks"/></svg></span><span><strong>Conversation analysis</strong><small>Turned into actions in your CRM</small></span></a>
+          <a href="/en/features/whatsapp-and-rcs/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-arrows-left-right"/></svg></span><span><strong>WhatsApp and RCS</strong><small>Fallback in the direction you choose</small></span></a>
+          <a href="/en/features/cost-control/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-chart-line-up"/></svg></span><span><strong>Cost control</strong><small>Cost per engagement, cost per lead</small></span></a>
+        </div>
+      </details>
+      <a class="burger-ligne" href="/en/industries/">Industries</a>
+      <a class="burger-ligne" href="/en/pricing/">Pricing</a>
       <a class="burger-ligne" href="/en/developers/" aria-current="page">Developers</a>
       <div class="langues burger-langues" role="group" aria-label="Site language">
         <a class="langue" href="/developpeurs/" hreflang="fr" lang="fr" title="Version française"><svg aria-hidden="true"><use href="#drapeau-fr"/></svg><span class="masque">Version française de cette page</span></a>
@@ -126,6 +139,19 @@
     </div>
   </details>
   <nav class="nav" aria-label="Main">
+    <details class="menu">
+      <summary class="lien"><span class="menu-bureau">Features</span><svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>
+      <div class="menu-panneau">
+        <a href="/en/features/campaigns-and-scenarios/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span><span><strong>Campaigns and scenarios</strong><small>The push that opens a conversation</small></span></a>
+        <a href="/en/features/click-to-whatsapp-ads/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-megaphone"/></svg></span><span><strong>Click-to-WhatsApp ads</strong><small>The ad and its conversation, in one place</small></span></a>
+        <a href="/en/features/whatsapp-channels/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-broadcast"/></svg></span><span><strong>WhatsApp Channels</strong><small>Post to everyone, talk to each one</small></span></a>
+        <a href="/en/features/conversations-into-actions/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-list-checks"/></svg></span><span><strong>Conversation analysis</strong><small>Turned into actions in your CRM</small></span></a>
+        <a href="/en/features/whatsapp-and-rcs/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-arrows-left-right"/></svg></span><span><strong>WhatsApp and RCS</strong><small>Fallback in the direction you choose</small></span></a>
+        <a href="/en/features/cost-control/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-chart-line-up"/></svg></span><span><strong>Cost control</strong><small>Cost per engagement, cost per lead</small></span></a>
+      </div>
+    </details>
+    <a class="lien" href="/en/industries/">Industries</a>
+    <a class="lien" href="/en/pricing/">Pricing</a>
     <a class="lien nav-dev" href="/en/developers/" aria-current="page">Developers</a>
     <div class="nav-droite">
       <div class="langues" role="group" aria-label="Site language">
@@ -309,28 +335,37 @@ const envoi = await api.POST('/v1/sends', {
       <p class="pied-marque"><img src="/messagingme-logo-blanc.png" alt="Messaging Me" width="185" height="22"></p>
       <p class="pied-accroche">The conversational platform that understands every conversation.</p>
     </div>
-    <nav aria-label="Developers">
-      <h3>Developers</h3>
-      <ul>
-        <li><a href="https://console.messagingme.app/developers/api?lang=en">API documentation</a></li>
-        <li><a href="https://console.messagingme.app/developers/api/quickstart?lang=en">API quickstart</a></li>
-        <li><a href="https://console.messagingme.app/developers/mcp?lang=en">MCP server</a></li>
-        <li><a href="https://console.messagingme.app/developers/api/sdk?lang=en">TypeScript SDK</a></li>
-        <li><a href="https://console.messagingme.app/login?lang=en">Sign in</a></li>
-      </ul>
-    </nav>
     <nav aria-label="Messaging Me">
       <h3>Messaging Me</h3>
       <ul>
-        <li><a href="/" hreflang="fr">Website (in French)</a></li>
-        <li><a href="/contact/" hreflang="fr">Contact (in French)</a></li>
+        <li><a href="/en/features/campaigns-and-scenarios/">Campaigns and scenarios</a></li>
+        <li><a href="/en/features/click-to-whatsapp-ads/"><span style="white-space:nowrap">Click-to-WhatsApp</span> ads</a></li>
+        <li><a href="/en/features/whatsapp-channels/">WhatsApp Channels</a></li>
+        <li><a href="/en/features/conversations-into-actions/">Conversation analysis</a></li>
+        <li><a href="/en/features/whatsapp-and-rcs/">WhatsApp and RCS</a></li>
+        <li><a href="/en/features/cost-control/">Cost control</a></li>
+        <li><a href="https://console.messagingme.app/login?lang=en">Sign in</a></li>
+        <li><a href="https://console.messagingme.app/developers/api?lang=en">API documentation</a></li>
+        <li><a href="https://console.messagingme.app/developers/mcp?lang=en">MCP server</a></li>
       </ul>
     </nav>
-    <nav aria-label="Legal">
-      <h3>Legal</h3>
+    <nav aria-label="Messaging Me">
+      <h3>Website</h3>
+      <ul>
+        <li><a href="https://www.messagingme.fr/" hreflang="fr">Home (in French)</a></li>
+        <li><a href="https://www.messagingme.fr/a-propos/" hreflang="fr">About us (in French)</a></li>
+        <li><a href="https://www.messagingme.fr/services/" hreflang="fr">Services (in French)</a></li>
+        <li><a href="https://www.messagingme.fr/blog/" hreflang="fr">Blog (in French)</a></li>
+        <li><a href="/en/contact/">Contact</a></li>
+      </ul>
+    </nav>
+    <nav aria-label="Support">
+      <h3>Support</h3>
       <ul>
         <li><a href="https://www.messagingme.fr/politique-de-confidentialite/" hreflang="fr">Privacy policy (in French)</a></li>
+        <li><a href="https://www.messagingme.fr/politique-de-cookies-ue/" hreflang="fr">EU cookie policy (in French)</a></li>
         <li><a href="https://www.messagingme.fr/mentions-legales/" hreflang="fr">Legal notice (in French)</a></li>
+        <li><a href="https://www.messagingme.fr/faq/" hreflang="fr">FAQ (in French)</a></li>
       </ul>
     </nav>
     <div>
@@ -343,6 +378,7 @@ const envoi = await api.POST('/v1/sends', {
   </div>
   <div class="cadre pied-bas">
     <span>© 2026 Messaging Me</span>
+    <p class="heberge"><span class="drapeau" aria-hidden="true"></span><span class="heberge-texte">Your data hosted in the European Union, <span class="chez">with <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.605 11.11v5.72a1.77 1.77 0 01-1.54 1.69h-4a1.43 1.43 0 01-1.31-1.22 1.09 1.09 0 010-.18 1.37 1.37 0 011.37-1.36h1.74a1 1 0 001-1v-3.62a1.4 1.4 0 011.18-1.39h.17a1.37 1.37 0 011.39 1.36zm-6.46 1.74V9.26a1 1 0 011-1h1.85a1.37 1.37 0 001.37-1.37 1 1 0 000-.17 1.45 1.45 0 00-1.41-1.2h-3.96a1.81 1.81 0 00-1.58 1.66v5.7a1.37 1.37 0 001.37 1.37h.21a1.4 1.4 0 001.15-1.4zm12-4.29V20a4.53 4.53 0 01-4.15 4h-7.58a8.57 8.57 0 01-8.56-8.57V4.54A4.54 4.54 0 016.395 0h7.18a8.56 8.56 0 018.56 8.56zm-2.74 0a5.83 5.83 0 00-5.82-5.82h-7.19a1.79 1.79 0 00-1.8 1.8v10.89a5.83 5.83 0 005.82 5.8h7.44a1.79 1.79 0 001.54-1.48z"/></svg>Scaleway</span></span></p>
     <ul class="reseaux">
       <li><a href="https://www.instagram.com/messaging_me/" aria-label="Instagram"><svg class="ic" aria-hidden="true"><use href="#i-instagram"/></svg></a></li>
       <li><a href="https://www.facebook.com/messagingmefr" aria-label="Facebook"><svg class="ic" aria-hidden="true"><use href="#i-facebook"/></svg></a></li>
