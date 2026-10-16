@@ -5,8 +5,8 @@
 >
 > 🔴 **À NE PAS EXÉCUTER : le rangement a été revu le 2026-10-16** (rubrique « Solutions » à la place d'« Industries »,
 > sept pages de cas dont trois nouvelles, registre, dépôts : spec du lot 6 mise à jour et
-> [spec 6 bis](../specs/2026-10-16-cas-d-usage-par-profil-design.md)). Ce plan sera réécrit pour les deux specs ensemble
-> une fois qu'elles seront validées.
+> [spec 6 bis](../specs/2026-10-16-cas-d-usage-par-profil-design.md)). Il est remplacé par
+> [le plan du 2026-10-16](2026-10-16-cas-d-usage-solutions-depot.md).
 
 ## Méthode de livraison
 

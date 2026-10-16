@@ -94,7 +94,8 @@ deux modèles approuvés, une bulle, 10 € de crédit IA. Reste : des conversat
 
 Specs : [lot 6](docs/superpowers/specs/2026-10-15-cas-d-usage-design.md) (toutes les adresses, l'anatomie d'une page) et
 [lot 6 bis](docs/superpowers/specs/2026-10-16-cas-d-usage-par-profil-design.md) (les profils, le registre, les dépôts),
-en attente de la relecture de Julien ; le plan du 2026-10-15 est à réécrire pour les deux. Le menu devient
+validées par Julien ; plan : [docs/superpowers/plans/2026-10-16-cas-d-usage-solutions-depot.md](docs/superpowers/plans/2026-10-16-cas-d-usage-solutions-depot.md)
+(livraisons 0 à E). Le menu devient
 Fonctionnalités, Solutions (trois secteurs, deux métiers, les cas), Développeurs, Tarifs ; sept pages de cas, en
 français et en anglais, avec un film par cas. Le film 1 (prise de rendez-vous) est fait. Précédé de l'audit SEO de la
 vitrine (`docs/prive/2026-10-15-audit-seo-vitrine.md`) et d'un geste de Julien : la Search Console et Bing Webmaster
