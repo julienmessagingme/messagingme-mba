@@ -3,7 +3,7 @@ import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { ENTREES, PROFILS, entreesEnLigne } from '../web/lib/registre-vitrine';
 import { GROUPES_DOC, PAGES_DOC } from '../web/lib/doc-api-pages';
-import { SITE, ORIGINE_VITRINE, lire, pagesHtml } from './vitrine-lecture';
+import { SITE, lire, pagesHtml } from './vitrine-lecture';
 
 /**
  * LE REGISTRE DE LA VITRINE DIT CE QUI EXISTE, DANS LES DEUX SENS (lots 6 et 6 bis, spec
@@ -19,11 +19,20 @@ const RUBRIQUES = ['cas-d-usage', 'solutions', 'en/use-cases', 'en/solutions'];
 
 const fichierDe = (adresse: string): string => join(SITE, adresse, 'index.html');
 
-/** Les adresses citées par un lien de la vitrine, ramenées au chemin (`/cas-d-usage/x/`). */
-function liensDe(html: string): string[] {
-  return [...html.matchAll(/href="([^"#?]+)/g)]
-    .map((m) => m[1]!.replace(ORIGINE_VITRINE, ''))
-    .filter((h) => h.startsWith('/'));
+/**
+ * Ce que la vitrine publie et qui peut citer une page : chaque page, le plan du site et `llms.txt`. Lu BRUT : une
+ * adresse se cite sans barre finale, en absolu, dans un JSON-LD ou un `og:url`, et Vercel ramène chacune de ces formes à
+ * la page ; chercher l'adresse sans sa barre finale les attrape toutes, au risque d'un rouge de trop, jamais d'un vert.
+ */
+const PUBLIES = [...pagesHtml(), 'sitemap.xml', 'llms.txt'];
+
+/** Tous les fichiers sous une rubrique, en chemins relatifs à `site/`. */
+function fichiersSous(rubrique: string): string[] {
+  const dossier = join(SITE, rubrique);
+  if (!existsSync(dossier)) return [];
+  return readdirSync(dossier, { recursive: true, encoding: 'utf8' })
+    .map((p) => `${rubrique}/${p.split('\\').join('/')}`)
+    .filter((p) => !statSync(join(SITE, p)).isDirectory());
 }
 
 describe('le registre de la vitrine', () => {
@@ -75,23 +84,21 @@ describe('le registre de la vitrine', () => {
     }
   });
 
-  it('une entrée hors ligne n’a ni page ni lien entrant', () => {
+  it('une entrée hors ligne n’a ni page ni lien entrant, sous aucune forme', () => {
     const horsLigne = ENTREES.filter((e) => !e.enLigne).flatMap((e) => [e.fr.adresse, e.en.adresse]);
     for (const a of horsLigne) expect(existsSync(fichierDe(a)), a).toBe(false);
-    for (const page of pagesHtml()) {
-      const cites = liensDe(lire(page));
-      for (const a of horsLigne) expect(cites, `${page} lie ${a}, hors ligne`).not.toContain(a);
+    for (const fichier of PUBLIES) {
+      const brut = lire(fichier);
+      for (const a of horsLigne) expect(brut.includes(a.replace(/\/$/, '')), `${fichier} cite ${a}, hors ligne`).toBe(false);
     }
   });
 
-  it('toute page de cas ou de Solutions de site/ a son entrée', () => {
-    const connues = new Set(ENTREES.flatMap((e) => [e.fr.adresse, e.en.adresse]));
+  it('toute page sous une rubrique est le carrefour ou la page d’une entrée', () => {
+    const permis = new Set(ENTREES.flatMap((e) => [e.fr.adresse, e.en.adresse]).map((a) => `${a.slice(1)}index.html`));
     for (const rubrique of RUBRIQUES) {
-      const dossier = join(SITE, rubrique);
-      if (!existsSync(dossier)) continue;
-      for (const nom of readdirSync(dossier)) {
-        if (!statSync(join(dossier, nom)).isDirectory()) continue;
-        expect(connues, `site/${rubrique}/${nom}/ sans entrée au registre`).toContain(`/${rubrique}/${nom}/`);
+      for (const f of fichiersSous(rubrique).filter((x) => x.endsWith('.html'))) {
+        if (f === `${rubrique}/index.html`) continue;
+        expect(permis, `site/${f} n’est ni un carrefour ni la page d’une entrée du registre`).toContain(f);
       }
     }
   });

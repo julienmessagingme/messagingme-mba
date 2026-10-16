@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { lire, pagesHtml } from './vitrine-lecture';
-import { enteteVitrine, pageAvecEntete } from '../scripts/vitrine/entete';
+import { enteteVitrine, jumelleDe, normaliserGabarit, pageAvecEntete } from '../scripts/vitrine/entete';
 
 /**
  * L'EN-TÊTE ET LE PIED DE PAGE DE LA VITRINE S'ÉCRIVENT UNE FOIS (lots 6 et 6 bis, tâche 4 du plan
@@ -47,8 +47,26 @@ describe('le menu', () => {
     const entete = enteteVitrine('fr', '/fonctionnalites/whatsapp-et-rcs/', '/en/features/whatsapp-and-rcs/');
     expect(entete.match(/href="\/fonctionnalites\/whatsapp-et-rcs\/" aria-current="page"/g)).toHaveLength(2);
     expect(entete).toContain('<details class="burger-groupe" open>');
-    const accueil = enteteVitrine('fr', '/', '/en/');
-    expect(accueil).not.toContain('aria-current="page"');
-    expect(accueil).not.toContain('<details class="burger-groupe" open>');
+    for (const accueil of [enteteVitrine('fr', '/', '/en/'), enteteVitrine('en', '/en/', '/')]) {
+      expect(accueil).not.toContain('aria-current="page"');
+      expect(accueil).not.toContain('<details class="burger-groupe" open>');
+    }
+  });
+
+  it('insère la jumelle telle quelle, même avec un `$`', () => {
+    expect(enteteVitrine('fr', '/', '/en/$&/')).toContain('href="/en/$&/"');
+  });
+});
+
+describe('la page jumelle', () => {
+  it('se lit dans la page ; sans jumelle déclarée, le générateur refuse, sauf pour la page 404', () => {
+    const page = '<link rel="alternate" hreflang="en" href="https://app.messagingme.fr/en/contact/">';
+    expect(jumelleDe(page, 'contact/index.html')).toBe('/en/contact/');
+    expect(() => jumelleDe('<html></html>', 'contact/index.html')).toThrow(/jumelle/);
+    expect(jumelleDe('<html></html>', '404.html')).toBe('/en/');
+  });
+
+  it('un gabarit enregistré en CRLF est ramené en LF', () => {
+    expect(normaliserGabarit('<a>\r\n</a>\r\n')).toBe('<a>\n</a>');
   });
 });
