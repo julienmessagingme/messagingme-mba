@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 import { enTransaction } from '../db/transaction';
 import type { PhoneNumberRecord } from './types';
+import type { Fournisseur } from '../meta/credentials';
 
 /** Accès en lecture/écriture au statut d'un numéro (page Accueil : numéro + pastille de statut). */
 export class PgPhoneStatusStore {
@@ -14,13 +15,19 @@ export class PgPhoneStatusStore {
       waba_health_status: string | null; account_review_status: string | null; business_verification_status: string | null;
       marketing_messages_lite_api_status: string | null; owner_business_name: string | null; hubspot_connected: boolean;
       hubspot_paused_at: string | null; delie_le: Date | null; waba_paiement_bloque: boolean | null;
+      fournisseur: Fournisseur; token_status: string | null;
     }>(
-      `select id, display_phone_number, status, quality_rating, messaging_limit_tier,
-              name_status, code_verification_status, throughput_level, verified_name,
-              waba_health_status, account_review_status, business_verification_status,
-              marketing_messages_lite_api_status, owner_business_name, hubspot_connected,
-              hubspot_paused_at::text as hubspot_paused_at, delie_le, waba_paiement_bloque
-         from phone_numbers where tenant_id = $1 order by created_at limit 1`,
+      // Le fournisseur et l'état de l'identifiant viennent de `waba_credentials`, joints sur le compte ET l'espace : une
+      // lecture SQL, rien n'est déchiffré. Sans ligne (numéro branché à la main) : `meta`.
+      `select pn.id, pn.display_phone_number, pn.status, pn.quality_rating, pn.messaging_limit_tier,
+              pn.name_status, pn.code_verification_status, pn.throughput_level, pn.verified_name,
+              pn.waba_health_status, pn.account_review_status, pn.business_verification_status,
+              pn.marketing_messages_lite_api_status, pn.owner_business_name, pn.hubspot_connected,
+              pn.hubspot_paused_at::text as hubspot_paused_at, pn.delie_le, pn.waba_paiement_bloque,
+              coalesce(wc.fournisseur, 'meta') as fournisseur, wc.token_status
+         from phone_numbers pn
+         left join waba_credentials wc on wc.waba_id = pn.waba_id and wc.tenant_id = pn.tenant_id
+        where pn.tenant_id = $1 order by pn.created_at limit 1`,
       [tenantId],
     );
     const r = res.rows[0];
@@ -44,6 +51,8 @@ export class PgPhoneStatusStore {
           hubspotPausedAt: r.hubspot_paused_at,
           delieLe: r.delie_le ? r.delie_le.toISOString() : null,
           wabaPaiementBloque: r.waba_paiement_bloque,
+          fournisseur: r.fournisseur,
+          identifiantRefuse: r.token_status === 'invalid',
         }
       : null;
   }

@@ -1813,7 +1813,15 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       expect((await store.getPhoneNumber(tId))!.wabaPaiementBloque).toBe(false);
       await store.saveStatus(pId, { status: 'CONNECTED' });
       expect((await store.getPhoneNumber(tId))!.wabaPaiementBloque).toBe(false);
+      // 360dialog (livraison D) : sans ligne de jetons, `meta` ; la ligne du compte dit son fournisseur et sa clé refusée.
+      expect((await store.getPhoneNumber(tId))!).toMatchObject({ fournisseur: 'meta', identifiantRefuse: false });
+      await pool.query(
+        `insert into waba_credentials (waba_id, tenant_id, business_token_enc, fournisseur, token_status) values ($1, $2, 'enc', '360dialog', 'invalid')`,
+        [wId, tId],
+      );
+      expect((await store.getPhoneNumber(tId))!).toMatchObject({ fournisseur: '360dialog', identifiantRefuse: true });
     } finally {
+      await pool.query('delete from waba_credentials where waba_id = $1', [wId]);
       await pool.query('delete from phone_numbers where id = $1', [pId]);
       await pool.query('delete from waba where id = $1', [wId]);
       await pool.query('delete from tenants where id = $1', [tId]);

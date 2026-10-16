@@ -321,7 +321,13 @@ pour identifiant, statut remis en MAJUSCULES, jamais modifiable, pagination `lim
 téléchargement direct (`estCdnDeMeta`), une adresse `/m/` se lit dans la médiathèque de l'espace, tout le reste passe
 par le téléchargement GARDÉ. L'en-tête d'un modèle CRÉÉ sur un tel espace est une image de sa médiathèque (adresse `/m/`,
 la forme mesurée) ; une vidéo y est refusée. Ce qui reste Graph (statut du numéro, agent de Meta, tarif) échoue donc
-FERMÉ pour un tel espace ; le tarif y est « absent », comme sans tarif. Un
+FERMÉ pour un tel espace ; le tarif y est « absent », comme sans tarif, et toute autre route qui heurte
+`CompteChez360dialog` rend un 409 lisible (gestionnaire d'erreurs de `src/server.ts`), jamais un 500. `account-status`
+dit le `fournisseur` (lu en SQL avec le numéro, rien n'est déchiffré) ; pour 360dialog il n'interroge pas Meta, et sa
+pastille est grise « connecté », ou rouge quand la clé a été refusée. La connexion par Embedded Signup est REFUSÉE sur un
+tel espace (elle remplacerait sa clé par un jeton Meta). L'admin de l'espace relie un numéro, ou recolle sa clé, par
+`POST /tenants/:tenantId/360dialog/connecter` (le bouton « Onboard with 360dialog », `src/http/connexion-360dialog.ts`),
+la même logique que l'exploitation (`rattacher360dialog`, `src/account/rattacher-360dialog.ts`). Un
 numéro 360dialog se rattache par `POST /ops/360dialog/:tenantId` (`src/http/ops-360dialog.ts`) : la clé collée, le
 numéro et le compte LUS par `/health_status`, les gardes de `linkTenant`, puis notre webhook posé en gardant les
 destinations existantes (`Config360dialogClient.poserWebhook`). Le numéro affiché, qu'aucune route ne rend avec la clé,

@@ -45,6 +45,7 @@ function app(over: Partial<EmbeddedSignupRouteDeps> = {}) {
     meta: { ...metaInscriptionInerte, exchangeCode: async () => '', verifyWaba: async () => {}, getPhone: async () => ({ displayPhoneNumber: null, verifiedName: null, status: null }), subscribeApp: async () => {}, register: async () => {} },
     inscriptions: { linkTenant: async () => {}, lierCompteSansNumero: async () => {} },
     saveCredentials: async () => {},
+    fournisseurDeLEspace: async () => null,
     offrirCredit: async () => {},
     numeroDuTenant: async () => 'pn-1',
     etatNumero: async () => { throw new Error('non attendu dans ce test'); },

@@ -1,3 +1,5 @@
+import type { Fournisseur } from '../meta/credentials';
+
 /** Types de persistance du compte (numéro principal, lien portail HubSpot), hors de la couche HTTP. */
 /** Numéro principal de l'espace, avec le statut persisté (dernier pull connu). */
 export interface PhoneNumberRecord {
@@ -23,6 +25,10 @@ export interface PhoneNumberRecord {
   hubspotPausedAt: string | null;
   /** Instant où le numéro a été délié de l'espace (ISO). null = relié. */
   delieLe: string | null;
+  /** Par où passe le compte (`waba_credentials.fournisseur`, migration 0239). Absent : `meta`. */
+  fournisseur?: Fournisseur;
+  /** La clé ou le jeton du compte a été refusé (`token_status = 'invalid'`). Absent : non. */
+  identifiantRefuse?: boolean;
 }
 
 /**

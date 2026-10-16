@@ -35,6 +35,7 @@ function app(
   linkTenant?: EmbeddedSignupRouteDeps['inscriptions']['linkTenant'],
   offrirCredit?: EmbeddedSignupRouteDeps['offrirCredit'],
   lierCompteSansNumero?: EmbeddedSignupRouteDeps['inscriptions']['lierCompteSansNumero'],
+  fournisseurDeLEspace?: EmbeddedSignupRouteDeps['fournisseurDeLEspace'],
 ) {
   const cap: Cap = { exchanged: [], verifiedWaba: [], linked: [], subscribed: [], registered: [], saved: [], offerts: [], sansNumero: [] };
   const { configId = 'cfg-123', numeroDuTenant, ...meta } = over;
@@ -57,6 +58,7 @@ function app(
       lierCompteSansNumero: lierCompteSansNumero ?? (async (input) => { cap.sansNumero.push({ tenantId: input.tenantId, wabaId: input.wabaId }); }),
     },
     saveCredentials: async (wabaId, tenantId, token, pin) => { cap.saved.push({ wabaId, tenantId, token, pin }); },
+    fournisseurDeLEspace: fournisseurDeLEspace ?? (async () => null),
     offrirCredit: offrirCredit ?? (async (tenantId, phoneNumberId) => { cap.offerts.push({ tenantId, phoneNumberId }); }),
     // L'activation du numéro a son propre fichier (`tests/numero-activation.test.ts`). Ici, ces dépendances
     // LÈVENT au lieu de ne rien faire : si un chemin d'inscription se mettait à les appeler, il faut le voir,
@@ -114,6 +116,14 @@ describe('POST /embedded-signup/complete', () => {
     expect(cap.subscribed).toEqual(['waba-1']);
     expect(cap.registered).toHaveLength(0); // déjà connecté -> pas de register
     expect(cap.saved[0]).toMatchObject({ wabaId: 'waba-1', tenantId: 't1', token: 'BIZ_TOKEN', pin: null });
+    await server.close();
+  });
+
+  it('🔴 un espace relié par 360dialog : 409, rien n’est échangé, lié ni écrit (sa clé resterait sinon remplacée)', async () => {
+    const { server, cap } = app({}, undefined, undefined, undefined, async () => '360dialog');
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
+    expect(res.statusCode).toBe(409);
+    expect([cap.exchanged, cap.linked, cap.saved]).toEqual([[], [], []]);
     await server.close();
   });
 

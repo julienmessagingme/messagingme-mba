@@ -80,6 +80,7 @@ import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { MetaMediaClient } from './meta/media';
 import { Media360dialogClient } from './meta/media-360dialog';
 import { Config360dialogClient } from './meta/config-360dialog';
+import type { DepsRattachement360 } from './account/rattacher-360dialog';
 import { enteteDuNumero } from './webhooks/receiver-360dialog';
 import { pullFromInfo, pullFromError } from './account/pull';
 import { makeDbReadinessCheck } from './db/readiness';
@@ -552,6 +553,22 @@ async function main(): Promise<void> {
    * micro-cache et la marge. Construit une fois, donc un cache de tarifs par process ; le worker, qui
    * n'affiche aucun tarif, ne le construit pas. Tout vit dans `src/stats/chiffrage.ts`, exécuté par ses tests.
    */
+  /**
+   * Rattacher un numéro 360dialog (lot 2, livraison A, et lot 3) : les gardes de l'Embedded Signup, la clé chiffrée
+   * comme un jeton, et notre webhook posé à côté des destinations existantes. Partagé par `/ops` et par l'espace.
+   */
+  const rattachement360: DepsRattachement360 = {
+    config: (cle) => new Config360dialogClient(cle),
+    lierNumero: (input) => esCredentialsStore.linkTenant(input),
+    saveCredentials: (waba, tenant, enc, pin, fournisseur) => esCredentialsStore.saveCredentials(waba, tenant, enc, pin, fournisseur),
+    chiffrer: (cle) => encryptSecret(cle, config.ENCRYPTION_KEY),
+    destination: (phoneNumberId) => config.D360_WEBHOOK_SECRET ? {
+      name: 'messagingme',
+      url: `${adressesPubliques(config.APP_URL, config.PUBLIC_API_URL).avecPrefixe}/webhooks/360dialog/${phoneNumberId}`,
+      headers: { Authorization: enteteDuNumero(config.D360_WEBHOOK_SECRET, phoneNumberId) },
+    } : null,
+  };
+
   const chiffrage = creerChiffrage({
     stats: statsStore,
     waba: repo,
@@ -1158,18 +1175,12 @@ async function main(): Promise<void> {
     // Rattacher un numéro 360dialog (lot 2, livraison A) : les gardes de l'Embedded Signup, la clé chiffrée comme un
     // jeton, et notre webhook posé à côté des destinations existantes.
     ops360dialog: {
-      config: (cle) => new Config360dialogClient(cle),
+      ...rattachement360,
       espaceExiste: async (tenant) => ((await pool.query('select 1 from tenants where id = $1', [tenant])).rowCount ?? 0) > 0,
-      lierNumero: (input) => esCredentialsStore.linkTenant(input),
-      saveCredentials: (waba, tenant, enc, pin, fournisseur) => esCredentialsStore.saveCredentials(waba, tenant, enc, pin, fournisseur),
-      chiffrer: (cle) => encryptSecret(cle, config.ENCRYPTION_KEY),
-      destination: (phoneNumberId) => config.D360_WEBHOOK_SECRET ? {
-        name: 'messagingme',
-        url: `${adressesPubliques(config.APP_URL, config.PUBLIC_API_URL).avecPrefixe}/webhooks/360dialog/${phoneNumberId}`,
-        headers: { Authorization: enteteDuNumero(config.D360_WEBHOOK_SECRET, phoneNumberId) },
-      } : null,
       audit: auditSink,
     },
+    // Le bouton « Onboard with 360dialog » (lot 3) : la même logique, par l'admin de l'espace.
+    connexion360dialog: { ...rattachement360, audit: auditSink },
     offrePaiement: {
       ouvrir: (tenant, periodicite, payeur) => ouvrirPro(proDeLaConsole, tenant, periodicite, payeur),
       portail: (tenant, payeur) => ouvrirPortailPro(proDeLaConsole, tenant, payeur),
@@ -2058,6 +2069,7 @@ async function main(): Promise<void> {
         // pour le token et le PIN 2FA du numéro (un secret Meta).
         saveCredentials: (waba: string, tenant: string, token: string, pin: string | null) =>
           esCredentialsStore.saveCredentials(waba, tenant, encryptSecret(token, config.ENCRYPTION_KEY), pin === null ? null : encryptSecret(pin, config.ENCRYPTION_KEY)),
+        fournisseurDeLEspace: (tenant: string) => esCredentialsStore.fournisseurDeLEspace(tenant),
 
         // ----- « Activer le numéro » -----
         // 🔴 Le jeton ne sort pas d'ici : ces fonctions ne prennent qu'un `tenantId`, la route ne voit jamais

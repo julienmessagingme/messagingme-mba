@@ -8,18 +8,15 @@ numéro est connecté par l'une des deux voies, l'autre bouton disparaît. Le lo
 (`1111567578708598`) branché par `/multi_webhook` À CÔTÉ de UChat, un message reçu chez nous. Ce numéro n'est
 rattaché à aucun espace : ses messages sont rangés puis ignorés jusqu'au lot 2. Prouvé à la main le 2026-10-15 avec la clé d'un numéro : l'envoi
 d'un modèle par `waba-v2.360dialog.io/messages` ET par MM Lite (`/marketing_messages`) arrive (brain, LEARNINGS).
-- **Lot 2, livraison A, EN PRODUCTION depuis le 2026-10-15** (`0629d674`, migration 0239) : envoi libre et MM Lite
-  par 360dialog, médias reçus et téléversés, `POST /ops/360dialog/:tenantId`, et la clé jamais rendue à ce qui parle à
-  Graph. Aucun numéro rattaché : Julien garde le numéro d'essai sur UChat. Restent, selon le plan
-  `docs/superpowers/plans/2026-10-15-360dialog-lot2-envoi.md` : **B** les modèles (statuts RELEVÉS, en-tête par URL),
-  **C** les Flows (sous `/flows/...`), **D** la console qui masque l'agent de Meta et la reconnexion Meta, et décide du
-  sort de notre destination de webhook à la suppression d'un espace. ⚠️ À mesurer avant un vrai client : un 401 de
-  360dialog pour un compte sans MM Lite invaliderait la clé.
-- **Lot 3, le bouton.** Integrated Onboarding de 360dialog (compte partenaire, `partner_id`, URL de retour). Au retour
-  ou au webhook partenaire : le canal, puis la clé d'API par la Partner API (🔴 en créer une RÉVOQUE les précédentes,
-  une seule fois et chiffrée tout de suite), puis le webhook du numéro posé par nous (le corps de
-  `scripts/webhook-360dialog.mts`), puis le rattachement comme `linkTenant`. Les deux boutons se masquent dès qu'un
-  numéro est connecté, quelle que soit la voie.
+- **Lot 2, EN PRODUCTION** : A (`0629d674`, migration 0239 : envoi, MM Lite, médias, `/ops/360dialog`), B et C
+  (`f295c063` : modèles, Flows, visuel de modèle téléchargé par la voie gardée). Aucun numéro rattaché : Julien garde
+  le numéro d'essai sur UChat. Reste D (la console masque ce qui ne parle qu'à Meta) avec le lot 3. Ce qui reste ouvert
+  de B et C est au plan `docs/superpowers/plans/2026-10-15-360dialog-lot2-envoi.md`. ⚠️ À mesurer avant un vrai
+  client : un 401 de 360dialog pour un compte sans MM Lite invaliderait la clé (seul un envoi la juge).
+- **Lot 3, recadré par Julien le 2026-10-15** : pas d'onboarding intégré ni de compte partenaire (« nous payons
+  360dialog ») ; le bouton « Onboard with 360dialog » COLLE la clé d'API d'un numéro pris sur notre compte client
+  360dialog, par `POST /tenants/:tenantId/360dialog/connecter` (même logique que `/ops`). Les deux boutons se masquent
+  dès qu'un numéro est connecté, quelle que soit la voie ; « Recoller la clé 360dialog » répare une clé refusée.
 - **À demander à 360dialog avant le lot 2** : l'agent de Meta (MBA) sur leurs numéros, qu'aucune clé ne permet
   d'essayer ; et si la Multi-Partner Solution existe chez eux (elle garderait tout en direct chez Meta).
 

@@ -8,6 +8,7 @@ import { makeJournal, type AuditSink } from '../audit/journal';
 import { texteDe } from '../lib/erreur';
 import type { Prise, VerrousCourts } from '../db/verrous-courts';
 import type { BilanDeconnexion, IssueDeconnexion } from '../account/deconnexion-numero';
+import { CompteChez360dialog, type Fournisseur } from '../meta/credentials';
 
 /** Les appels Graph de l'inscription, faits avec le business token que le parcours vient d'obtenir. */
 export interface MetaInscriptionDep {
@@ -59,6 +60,12 @@ export interface EmbeddedSignupRouteDeps {
   offrirCredit(tenantId: string, phoneNumberId: string): Promise<void>;
   /** Persiste le token business (le câblage chiffre avant, la route ne voit jamais le stockage en clair). */
   saveCredentials(wabaId: string, tenantId: string, businessToken: string, pin: string | null): Promise<void>;
+  /**
+   * Par où passe le compte de l'espace (`waba_credentials.fournisseur`), `null` sans compte. 🔴 Un espace relié par
+   * 360dialog est REFUSÉ ici : `saveCredentials` remplacerait sa clé par un jeton Meta, et les envois partiraient chez
+   * Meta pour un numéro qui n'y est pas (lot 2, livraison D).
+   */
+  fournisseurDeLEspace(tenantId: string): Promise<Fournisseur | null>;
 
   // ----- « Activer le numéro » : finir chez nous ce que la fenêtre Meta a laissé en plan -----
   //
@@ -239,6 +246,9 @@ export function registerEmbeddedSignup(
     // configuration, et un client qui rouvre un parcours abouti n'obtient qu'un code. Absents -> retrouvés (1 bis).
     if (!nonEmpty(b.code)) return reply.code(400).send({ error: 'code requis' });
     const code = b.code.trim();
+    if ((await deps.fournisseurDeLEspace(tenant)) === '360dialog') {
+      return reply.code(409).send({ error: 'Le numéro de cet espace est relié par 360dialog : la connexion Meta le remplacerait. Déconnectez-le d’abord.' });
+    }
 
     // 1. Code -> business token. Échec = rien n'est rattaché (le code a un TTL de 30 s : re-cliquer suffit).
     let businessToken: string;
@@ -462,6 +472,8 @@ export function registerEmbeddedSignup(
     try {
       etat = await deps.etatNumero(tenant, phoneNumberId);
     } catch (err) {
+      // Un numéro relié par 360dialog n'a pas d'activation chez Meta : le 409 lisible du gestionnaire d'erreurs.
+      if (err instanceof CompteChez360dialog) throw err;
       const msg = texteDe(err);
       // eslint-disable-next-line no-console
       console.error(`numero/code: état illisible chez Meta (tenant ${tenant}, numéro ${phoneNumberId}) : ${msg}`);
@@ -516,6 +528,8 @@ export function registerEmbeddedSignup(
     try {
       etat = await deps.etatNumero(tenant, phoneNumberId);
     } catch (err) {
+      // Un numéro relié par 360dialog n'a pas d'activation chez Meta : le 409 lisible du gestionnaire d'erreurs.
+      if (err instanceof CompteChez360dialog) throw err;
       const msg = texteDe(err);
       // eslint-disable-next-line no-console
       console.error(`numero/activer: état illisible chez Meta (tenant ${tenant}, numéro ${phoneNumberId}) : ${msg}`);

@@ -189,9 +189,18 @@ export class PgEmbeddedSignupStore {
     if ((res.rowCount ?? 0) === 0) throw new TenantConflictError('waba_credentials', wabaId);
   }
 
+  /** Le fournisseur du compte de l'espace, `null` sans ligne. Filtré par espace : un seul compte par espace. */
+  async fournisseurDeLEspace(tenantId: string): Promise<Fournisseur | null> {
+    const res = await this.pool.query<{ fournisseur: Fournisseur }>(
+      `select fournisseur from waba_credentials where tenant_id = $1 order by updated_at desc limit 1`,
+      [tenantId],
+    );
+    return res.rows[0]?.fournisseur ?? null;
+  }
+
   /**
-   * Lit le token business chiffré d'un WABA et son état. null si aucun credential (numéro branché à la main) :
-   * l'appelant retombe sur le token global.
+   * Lit le token business chiffré d'un WABA, son état et son fournisseur. null si aucun credential (numéro branché à
+   * la main) : l'appelant retombe sur le token global.
    */
   async getCredentialsByWaba(wabaId: string): Promise<WabaCredential | null> {
     const res = await this.pool.query<{ business_token_enc: string; token_status: 'active' | 'invalid'; fournisseur: Fournisseur }>(

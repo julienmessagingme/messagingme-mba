@@ -60,6 +60,7 @@ function app(over: Partial<EmbeddedSignupRouteDeps> = {}) {
     },
     inscriptions: { linkTenant: async () => {}, lierCompteSansNumero: async () => {} },
     saveCredentials: async () => {},
+    fournisseurDeLEspace: async () => null,
     offrirCredit: async (_t, phoneNumberId) => { cap.offerts.push(phoneNumberId); },
     numeroDuTenant: async () => 'pn-1',
     etatNumero: async () => ({ status: 'PENDING', codeVerificationStatus: 'NOT_VERIFIED' }),

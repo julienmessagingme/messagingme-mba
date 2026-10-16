@@ -115,6 +115,7 @@ import { registerOffre, type OffreRouteDeps } from './http/offre';
 import { registerOffrePaiement, type OffrePaiementRouteDeps } from './http/offre-paiement';
 import { registerOpsOffre, type OpsOffreDeps } from './http/ops-offre';
 import { registerOps360dialog, type Ops360dialogDeps } from './http/ops-360dialog';
+import { registerConnexion360dialog, type Connexion360dialogDeps } from './http/connexion-360dialog';
 import { registerOpsNumeros, type OpsNumerosDeps } from './http/ops-numeros';
 import { registerOpsEmails, type OpsEmailsDeps } from './http/ops-emails';
 import { registerResendWebhook, type ResendWebhookRouteDeps } from './http/webhook-resend';
@@ -123,6 +124,7 @@ import { registerEmailsMoi, type EmailsMoiDeps } from './http/emails-moi';
 import { registerOpsSuppression, type OpsSuppressionDeps } from './http/ops-suppression';
 import { registerOtpPont, type OtpPontRouteDeps } from './http/otp-pont';
 import { MetaApiError } from './meta/errors';
+import { CompteChez360dialog } from './meta/credentials';
 import type { CodeApi } from './api/erreurs';
 import { classerErreurMeta } from './api/refus-meta';
 import { NumeroBloqueError } from './meta/numero-delie';
@@ -365,6 +367,8 @@ export interface ServerDeps {
   automations?: AutomationRouteDeps;
   /** Embedded Signup Meta (connexion du numéro, Tech Provider), réservé aux admins. */
   embeddedSignup?: EmbeddedSignupRouteDeps;
+  /** Le bouton « Onboard with 360dialog » : l'admin colle la clé d'un numéro 360dialog (`src/http/connexion-360dialog.ts`). */
+  connexion360dialog?: Connexion360dialogDeps;
   /** Le numéro fourni côté client (lot 3b) : un numéro de la réserve et le code capté, réservé aux admins. */
   numeroFourni?: NumeroFourniRouteDeps;
   /** L'état de l'abonnement du numéro fourni, lisible par tout membre (lot 4, le bandeau de la console). */
@@ -794,6 +798,8 @@ export function modulesDeRoutes(
     entree('widgets', 'tenant', deps.widgets, (app, d, g) => registerWidgets(app, d, g.admin)),
     // La page de connexion du numéro : `adminOuLien`, la session d'admin OU le lien que donne Claude Code (lot 3c).
     entree('embeddedSignup', 'tenant', deps.embeddedSignup, (app, d, g) => registerEmbeddedSignup(app, d, g.adminOuLien, g.admin, g.limiteCouteuse)),
+    // Coller la clé d'un numéro 360dialog (lot 3) : admin, et la limite coûteuse (chaque essai appelle 360dialog).
+    entree('connexion360dialog', 'tenant', deps.connexion360dialog, (app, d, g) => registerConnexion360dialog(app, d, g.admin, g.limiteCouteuse)),
     // Le portail de Stripe, lui, reste à la session d'admin : `g.admin`.
     entree('numeroFourni', 'tenant', deps.numeroFourni, (app, d, g) => registerNumeroFourni(app, d, g.adminOuLien, g.admin, g.limiteCouteuse)),
     // `auth` et non `admin` : un agent de l'Inbox doit savoir pourquoi ses réponses ne partent plus (lot 4).
@@ -1074,6 +1080,12 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     if (err.code === 'FST_ERR_CTP_BODY_TOO_LARGE') {
       const error = 'Fichier trop volumineux pour un seul envoi. Découpe-le en plusieurs fichiers plus petits et recommence.';
       return reply.code(413).send(surV1 ? { error, code: 'invalid_body' satisfies CodeApi } : { error });
+    }
+    // Une fonction qui ne parle qu'à Meta (l'agent de Meta, le statut du numéro, le tarif...) sur un espace dont le numéro
+    // est relié par 360dialog (`CompteChez360dialog`, la clé n'y part jamais) : un refus lisible, pas un 500 opaque.
+    if (err instanceof CompteChez360dialog) {
+      const error = 'Cette fonction n’est pas disponible pour un numéro relié par 360dialog.';
+      return reply.code(409).send(surV1 ? { error, code: codeParDefautV1(409) } : { error });
     }
     const code = err.statusCode ?? 500;
     // Journaliser avant de masquer : le corps des 5xx reste opaque (pas de fuite d'interne), mais l'exception

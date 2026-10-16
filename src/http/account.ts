@@ -5,6 +5,7 @@ import type { PullResult, PhoneStatusPatch } from '../account/pull';
 import type { PhoneNumberRecord, HubspotPortalLink } from '../account/types';
 import { espaceVerifie } from './scope';
 import { messageDe } from '../lib/erreur';
+import type { Fournisseur } from '../meta/credentials';
 
 // Ré-exportés : le serveur et les tests les importent par cette route.
 export type { PhoneNumberRecord, HubspotPortalLink } from '../account/types';
@@ -41,6 +42,16 @@ export interface NumerosDep {
   setHubspotConnected(phoneNumberId: string, tenantId: string, connected: boolean): Promise<{ updated: boolean; resumedFrom: string | null }>;
   /** Reflet local de la déconnexion : coupe hubspot_connected de tous les numéros du tenant (après succès connecteur). */
   disconnectHubspotTenant(tenantId: string): Promise<{ updated: boolean }>;
+}
+
+/**
+ * La pastille d'un compte relié par 360dialog : on ne lit ni sa qualité ni son statut chez Meta. Une clé refusée (un 401
+ * à l'envoi l'a invalidée) se dit en rouge, avec le geste qui la répare ; sinon « connecté », gris, jamais un faux vert.
+ */
+export function statut360dialog(cleRefusee: boolean): ReturnType<typeof computeAccountStatus> {
+  return cleRefusee
+    ? { dot: 'red', label: 'Clé 360dialog refusée', reason: 'La clé d’API du numéro a été refusée par 360dialog : collez la nouvelle clé depuis l’Accueil.' }
+    : { dot: 'grey', label: 'Compte connecté', reason: 'Numéro relié par 360dialog : sa qualité ne se lit pas depuis la console.' };
 }
 
 export interface AccountStatusResponse {
@@ -90,6 +101,8 @@ export interface AccountStatusResponse {
    * Délié, le numéro reste affiché : c'est ce qui permet de le relier d'un clic depuis l'Accueil.
    */
   delieLe: string | null;
+  /** Par où passe le compte : `meta` (Embedded Signup) ou `360dialog`. `null` sans numéro. La console masque ce qui ne peut pas marcher. */
+  fournisseur: Fournisseur | null;
   status: ReturnType<typeof computeAccountStatus>;
 }
 
@@ -168,17 +181,22 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
         hubspotPausedAt: null,
         hubspotPortal,
         delieLe: null,
+        fournisseur: null,
         status: { dot: 'grey', label: 'Aucun numéro', reason: "Aucun numéro WhatsApp n'est rattaché à ce compte." },
       };
       return reply.code(200).send(body);
     }
 
+    const fournisseur = pn.fournisseur ?? 'meta';
     // La pastille, en même temps que le pull (deux appels Meta indépendants, on ne les met pas en file).
     // `catch(() => null)` : voir la dépendance, une photo manquante ne vaut pas un Accueil en erreur.
-    const [pull, photo] = await Promise.all([
-      deps.pullStatus(pn.id, tenant),
-      deps.photoNumero(tenant, pn.id).catch(() => null),
-    ]);
+    // Un compte 360dialog n'interroge pas Meta (sa clé n'y part jamais) : ni pull ni photo.
+    const [pull, photo] = fournisseur === '360dialog'
+      ? [null, null]
+      : await Promise.all([
+        deps.pullStatus(pn.id, tenant),
+        deps.photoNumero(tenant, pn.id).catch(() => null),
+      ]);
     // Le pull frais est enregistré (en coalesce), sauf le numéro d'affichage, qui ne se réécrit pas d'ici.
     const frais = pull && pull.ok ? pull : undefined;
     if (frais) {
@@ -220,11 +238,12 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
       hubspotPausedAt: pn.hubspotPausedAt,
       hubspotPortal,
       delieLe: pn.delieLe,
+      fournisseur,
       // Délié, la pastille le dit, au lieu d'un « opérationnel » vrai chez Meta et faux chez nous : cet espace
       // n'envoie ni ne reçoit plus rien par ce numéro.
       status: pn.delieLe
         ? { dot: 'grey', label: 'Numéro délié', reason: 'Numéro délié de cet espace : aucun message WhatsApp ne part, et les messages reçus ne sont pas enregistrés.' }
-        : computeAccountStatus(signals),
+        : fournisseur === '360dialog' ? statut360dialog(pn.identifiantRefuse === true) : computeAccountStatus(signals),
     };
     return reply.code(200).send(body);
   });

@@ -266,6 +266,36 @@ function app(over: Partial<Omit<AccountRouteDeps, 'numeros'>> & { numeros?: Part
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, account: deps }), saved, hubspotCalls, catchupCalls, disconnectCalls, disconnectTenantCalls };
 }
 
+describe('route account-status, un compte relié par 360dialog (lot 2, livraison D)', () => {
+  it('🔴 aucun appel à Meta (ni statut ni photo), le fournisseur dit, et une pastille grise, jamais un faux vert', async () => {
+    let appelsMeta = 0;
+    const { server, saved } = app({
+      numeros: { getPhoneNumber: async () => rec({ fournisseur: '360dialog' }) },
+      pullStatus: async () => { appelsMeta += 1; return { ok: true, status: 'CONNECTED', qualityRating: 'GREEN' }; },
+      photoNumero: async () => { appelsMeta += 1; return 'https://photo'; },
+    });
+    const body = (await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) })).json<{ fournisseur: string; photoProfilUrl: string | null; status: { dot: string; label: string } }>();
+    expect(appelsMeta).toBe(0);
+    expect(saved).toEqual([]);
+    expect(body.fournisseur).toBe('360dialog');
+    expect(body.photoProfilUrl).toBeNull();
+    expect(body.status).toMatchObject({ dot: 'grey', label: 'Compte connecté' });
+    await server.close();
+  });
+
+  it('une clé refusée se dit en rouge ; un compte Meta dit « meta » ; sans numéro, null', async () => {
+    const refusee = app({ numeros: { getPhoneNumber: async () => rec({ fournisseur: '360dialog', identifiantRefuse: true }) } });
+    expect((await refusee.server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) })).json<{ status: { dot: string } }>().status.dot).toBe('red');
+    await refusee.server.close();
+    const meta = app();
+    expect((await meta.server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) })).json<{ fournisseur: string }>().fournisseur).toBe('meta');
+    await meta.server.close();
+    const sans = app({ numeros: { getPhoneNumber: async () => null } });
+    expect((await sans.server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) })).json<{ fournisseur: string | null }>().fournisseur).toBeNull();
+    await sans.server.close();
+  });
+});
+
 describe('route account-status', () => {
   it('🔴 le paiement bloqué chez Meta : lu frais, écrit, et rendu à l’Accueil ; sinon le dernier connu', async () => {
     const { server, saved } = app({ pullStatus: async () => ({ ok: true, status: 'CONNECTED', qualityRating: 'GREEN', wabaPaiementBloque: true }) });
