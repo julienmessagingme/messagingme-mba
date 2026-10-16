@@ -2,6 +2,11 @@
 
 > **Spec** : [docs/superpowers/specs/2026-10-15-cas-d-usage-design.md](../specs/2026-10-15-cas-d-usage-design.md)
 > (adresses, anatomie d'une page, films, garde-fous). Ce plan ne la recopie pas : il découpe en trois livraisons.
+>
+> 🔴 **À NE PAS EXÉCUTER : le rangement a été revu le 2026-10-16** (rubrique « Solutions » à la place d'« Industries »,
+> sept pages de cas dont trois nouvelles, registre, dépôts : spec du lot 6 mise à jour et
+> [spec 6 bis](../specs/2026-10-16-cas-d-usage-par-profil-design.md)). Ce plan sera réécrit pour les deux specs ensemble
+> une fois qu'elles seront validées.
 
 ## Méthode de livraison
 

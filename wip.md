@@ -90,13 +90,15 @@ administrateur (autorisation révoquée ensuite) : un agent IA actif et réponda
 deux modèles approuvés, une bulle, 10 € de crédit IA. Reste : des conversations depuis nos téléphones
 (`docs/prive/ESSAIS-REELS.md`).
 
-## LOT 6 : LES CAS D'USAGE, LES TARIFS ET LES INDUSTRIES (CADRÉ LE 2026-10-15)
+## LOT 6 ET 6 BIS : LES CAS D'USAGE, LA RUBRIQUE « SOLUTIONS », LES TARIFS ET LE DÉPÔT DU PLUGIN (CADRÉ LE 2026-10-15, REVU LE 2026-10-16)
 
-Spec : [docs/superpowers/specs/2026-10-15-cas-d-usage-design.md](docs/superpowers/specs/2026-10-15-cas-d-usage-design.md),
-plan : [docs/superpowers/plans/2026-10-15-cas-d-usage.md](docs/superpowers/plans/2026-10-15-cas-d-usage.md). Sept cas
-d'usage, la page des tarifs et la rubrique « Industries » (première : Claude Code et Codex), en français et en
-anglais, avec un film par cas, en trois livraisons. Précédé de l'audit SEO de la vitrine
-(`docs/prive/2026-10-15-audit-seo-vitrine.md`) et d'un geste de Julien : la Search Console et Bing Webmaster Tools.
+Specs : [lot 6](docs/superpowers/specs/2026-10-15-cas-d-usage-design.md) (toutes les adresses, l'anatomie d'une page) et
+[lot 6 bis](docs/superpowers/specs/2026-10-16-cas-d-usage-par-profil-design.md) (les profils, le registre, les dépôts),
+en attente de la relecture de Julien ; le plan du 2026-10-15 est à réécrire pour les deux. Le menu devient
+Fonctionnalités, Solutions (trois secteurs, deux métiers, les cas), Développeurs, Tarifs ; sept pages de cas, en
+français et en anglais, avec un film par cas. Le film 1 (prise de rendez-vous) est fait. Précédé de l'audit SEO de la
+vitrine (`docs/prive/2026-10-15-audit-seo-vitrine.md`) et d'un geste de Julien : la Search Console et Bing Webmaster
+Tools. À corriger d'abord : les liens de confidentialité et de conditions d'utilisation du plugin 0.2.0 (404).
 
 ## CE QUI ATTEND UN ESSAI RÉEL
 
