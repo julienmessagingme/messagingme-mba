@@ -39,6 +39,11 @@ const corpsSchema = z.object({
   entreprise: z.boolean(),
   utilisateurs: z.number().int().min(1).max(10_000).nullable(),
   conservationJours: z.number().int().min(0).max(3650).nullable().optional(),
+  // Spec offres v2 : les contacts créés et la commission d'une Entreprise, réglés sur devis. Facultatifs, absents =
+  // inchangés, `null` = le défaut (sans limite, 10 %). La commission est un ENTIER : la vue de la console refuse une
+  // décimale, et une vue illisible ouvre tout.
+  contacts: z.number().int().min(1).max(100_000_000).nullable().optional(),
+  commissionPct: z.number().int().min(0).max(100).nullable().optional(),
   note: z.string(),
 }).strict();
 
@@ -61,7 +66,7 @@ export function registerOpsOffre(app: FastifyInstance, deps: OpsOffreDeps, garde
     const lu = corpsSchema.safeParse(req.body ?? {});
     if (!lu.success) {
       return reply.code(400).send({
-        error: 'entreprise (booléen) et utilisateurs (entier positif ou null) requis, avec une note ; conservationJours (0 à 3650, ou null) facultatif, absent = inchangé',
+        error: 'entreprise (booléen) et utilisateurs (entier positif ou null) requis, avec une note ; facultatifs, absents = inchangés : conservationJours (0 à 3650, ou null), contacts (entier positif, ou null), commissionPct (entier de 0 à 100, ou null)',
       });
     }
     const note = lu.data.note.trim().slice(0, 500);
@@ -72,15 +77,19 @@ export function registerOpsOffre(app: FastifyInstance, deps: OpsOffreDeps, garde
     const ecriture: EcritureEntreprise = {
       entreprise: lu.data.entreprise, utilisateurs: lu.data.utilisateurs,
       ...(lu.data.conservationJours !== undefined ? { conservationJours: lu.data.conservationJours } : {}),
+      ...(lu.data.contacts !== undefined ? { contacts: lu.data.contacts } : {}),
+      ...(lu.data.commissionPct !== undefined ? { commissionPct: lu.data.commissionPct } : {}),
     };
     if (!(await deps.store.ecrireEntreprise(tenantId, ecriture))) return reply.code(404).send({ error: 'espace inconnu' });
-    // L'état RELU, pour la réponse et la trace : une conservation absente n'a pas été écrite.
-    const apres: ReglageEntreprise = (await deps.store.lireEntreprise(tenantId)) ?? { ...ecriture, conservationJours: avant.conservationJours };
+    // L'état RELU, pour la réponse et la trace : un réglage absent n'a pas été écrit.
+    const apres: ReglageEntreprise = (await deps.store.lireEntreprise(tenantId)) ?? { ...avant, ...ecriture };
     deps.invalider(tenantId);
     journaliser('warn', 'ops_offre', { tenantId, avant, apres, par: auteurOps(req), note, at: new Date().toISOString() });
     await tracer(tenantId, auteurOps(req), 'ops.offre_posee', {
       entreprise: apres.entreprise, utilisateurs: apres.utilisateurs, conservationJours: apres.conservationJours,
+      contacts: apres.contacts, commissionPct: apres.commissionPct,
       entrepriseAvant: avant.entreprise, utilisateursAvant: avant.utilisateurs, conservationJoursAvant: avant.conservationJours,
+      contactsAvant: avant.contacts, commissionPctAvant: avant.commissionPct,
     });
     return reply.code(200).send({ tenantId, ...apres, utilisateursProposes: UTILISATEURS_ENTREPRISE_PROPOSES });
   });

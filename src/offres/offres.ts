@@ -18,6 +18,8 @@ export function estOffre(v: unknown): v is Offre {
 export const FONCTIONS = [
   'inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines',
   'crm', 'rcs', 'performance_lab',
+  // La console elle-même (spec offres v2, 2026-10-16) : la Free se pilote par l'API et le MCP, jamais par la console.
+  'console',
 ] as const;
 export type Fonction = (typeof FONCTIONS)[number];
 
@@ -63,6 +65,10 @@ export interface SurchargeEntreprise {
    * le défaut de l'offre, `0` = jamais purgée. La vue de l'offre l'affiche telle que la purge la lit.
    */
   conservationJours: number | null;
+  /** Les contacts créés, réglés sur devis (spec offres v2) : absent ou `null` = le défaut de l'Entreprise (sans limite). */
+  contacts?: number | null;
+  /** La commission sur le crédit IA, négociée sur devis : un entier de 0 à 100 ; absent ou `null` = le défaut (10 %). */
+  commissionPct?: number | null;
 }
 
 /** Un mégaoctet, l'unité des quotas de stockage (la même que les plafonds de dépôt, `src/rcs/image.ts`). */
@@ -70,6 +76,7 @@ const MO = 1024 * 1024;
 
 const FONCTIONS_PRO: readonly Fonction[] = [
   'inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines',
+  'console',
 ];
 
 export const DROITS: Readonly<Record<Offre, Droits>> = {
@@ -121,6 +128,8 @@ export function droitsDe(offre: Offre, surcharge: SurchargeEntreprise | null): D
   if (offre === 'entreprise' && surcharge !== null) {
     limites.utilisateurs = surcharge.utilisateurs;
     if (surcharge.conservationJours !== null) limites.conservationJours = surcharge.conservationJours;
+    if (surcharge.contacts != null) limites.contacts = surcharge.contacts;
+    if (surcharge.commissionPct != null) limites.commissionPct = surcharge.commissionPct;
   }
   return { fonctions: new Set(d.fonctions), limites };
 }

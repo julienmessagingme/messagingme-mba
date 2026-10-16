@@ -1,5 +1,5 @@
 import { config } from '../config';
-import type { Fonction, Limites } from './offres';
+import { DROITS, type Fonction, type Limites, type Offre } from './offres';
 import { refus, type Refus } from '../lib/issue';
 
 /**
@@ -24,7 +24,7 @@ const LIBELLE_FONCTION: Record<Fonction, string> = {
   inbox: 'l’Inbox', scenarios: 'le constructeur de scénarios', statistiques: 'les statistiques',
   agent_meta: 'l’agent de Meta', aide: 'l’assistant d’aide', assistants: 'les assistants de configuration',
   analyse: 'l’analyse des conversations', publicites: 'les publicités', email: 'l’e-mail', chaines: 'les chaînes',
-  crm: 'les connecteurs CRM', rcs: 'le RCS', performance_lab: 'le Performance Lab',
+  crm: 'les connecteurs CRM', rcs: 'le RCS', performance_lab: 'le Performance Lab', console: 'la console complète',
 };
 
 const LIBELLE_LIMITE: Record<NomLimite, (max: number) => string> = {
@@ -43,17 +43,39 @@ export function adresseOffre(): string {
   return `${config.APP_URL.replace(/\/+$/, '')}/offre`;
 }
 
+/** Les offres, de la moins chère à la plus chère, et leur nom public. */
+const ORDRE: readonly Offre[] = ['base', 'pro', 'entreprise'];
+const NOM_OFFRE: Record<Offre, string> = { base: 'Free', pro: 'Pro', entreprise: 'Entreprise' };
+
+/**
+ * L'offre qui lève une limite (spec offres v2) : la première, après celle dont c'est la limite dans la grille, qui va plus
+ * haut. Le refus ne connaît pas l'offre de l'espace, mais la grille la dit : 100 contacts est la limite de la Free, 3
+ * utilisateurs celle du Pro. `null` pour une limite qui n'est pas dans la grille (une Entreprise réglée sur devis).
+ */
+function offreQuiLeve(limite: NomLimite, max: number): Offre | null {
+  const i = ORDRE.findIndex((o) => DROITS[o].limites[limite] === max);
+  if (i < 0) return null;
+  return ORDRE.slice(i + 1).find((o) => {
+    const v = DROITS[o].limites[limite];
+    return v === null || v > max;
+  }) ?? null;
+}
+
 export function phraseLimite(limite: NomLimite, max: number): string {
   // Le Pro a lui-même un quota de stockage : « passez en Pro » serait faux pour lui. Ce qui libère, c'est de supprimer.
   if (limite === 'stockageOctets') {
     return `Limite de votre offre atteinte : ${LIBELLE_LIMITE[limite](max)}. Supprimez des fichiers inutilisés, ou changez d’offre : ${adresseOffre()}`;
   }
-  return `Limite de votre offre atteinte : ${LIBELLE_LIMITE[limite](max)}. Passez en Pro pour la lever : ${adresseOffre()}`;
+  const o = offreQuiLeve(limite, max);
+  const suite = o === null ? 'Contactez-nous pour la relever' : `Passez en ${NOM_OFFRE[o]} pour la lever`;
+  return `Limite de votre offre atteinte : ${LIBELLE_LIMITE[limite](max)}. ${suite} : ${adresseOffre()}`;
 }
 
 export function corpsRefusFonction(fonction: Fonction): { error: string; code: 'plan_feature_unavailable'; fonction: Fonction; upgradeUrl: string } {
+  // L'offre la moins chère qui ouvre la fonction : le CRM n'est qu'en Entreprise, « passez en Pro » y serait faux.
+  const o = ORDRE.find((x) => DROITS[x].fonctions.has(fonction)) ?? 'pro';
   return {
-    error: `Votre offre ne comprend pas ${LIBELLE_FONCTION[fonction]}. Passez en Pro : ${adresseOffre()}`,
+    error: `Votre offre ne comprend pas ${LIBELLE_FONCTION[fonction]}. Passez en ${NOM_OFFRE[o]} : ${adresseOffre()}`,
     code: 'plan_feature_unavailable',
     fonction,
     upgradeUrl: adresseOffre(),

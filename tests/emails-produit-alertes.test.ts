@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
-  ATTENTE_RECENTE_MS, balayerLimites, creerAlerteCreditBas, creerPaiementRefuse, creerPrevenirEquipe, numeroMasque,
+  ATTENTE_RECENTE_MS, balayerLimites, creerAlerteCreditBas, creerPaiementRefuse, creerPrevenirEquipe, limitesAlertables, numeroMasque,
   PLAFOND_TRANSFERTS_JOUR, seuilAtteint, SEUIL_CREDIT_BAS_MICRO_EUR, type ContextePassage, type DepsLimites,
 } from '../src/emails-produit/alertes';
 import type { Emission } from '../src/emails-produit/emission';
@@ -89,6 +89,15 @@ describe('le paiement refusé', () => {
 });
 
 describe('les limites du Free', () => {
+  it('🔴 seule la Free reçoit ces alertes : leur texte dit « Offre Free… Passez en Pro » (spec offres v2, livraison 1)', () => {
+    // Une Entreprise peut désormais avoir une limite de contacts posée par /ops : sans cette garde, elle recevrait un
+    // e-mail qui la dit en Free. Les textes par offre arrivent à la livraison 5.
+    const limites = { envoisModelesMois: 1000, contacts: 20000 };
+    expect(limitesAlertables('base', limites)).toEqual({ modelesMois: 1000, contacts: 20000 });
+    expect(limitesAlertables('entreprise', limites)).toEqual({ modelesMois: null, contacts: null });
+    expect(limitesAlertables('pro', limites)).toEqual({ modelesMois: null, contacts: null });
+  });
+
   it('le seuil se compte à l’entier supérieur', () => {
     expect(seuilAtteint(79, 100, 80)).toBe(false);
     expect(seuilAtteint(80, 100, 80)).toBe(true);

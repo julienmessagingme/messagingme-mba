@@ -481,6 +481,12 @@ export interface OffreEntrepriseOps {
   entreprise: boolean;
   utilisateurs: number | null;
   conservationJours: number | null;
+  /**
+   * Les contacts créés et la commission réglés sur devis (spec offres v2) : `null` = le défaut (sans limite, 10 %).
+   * Absents sur une API plus ancienne (la console est publiée avant l'API) : lus comme `null`.
+   */
+  contacts?: number | null;
+  commissionPct?: number | null;
   /** La limite que l'écran propose quand on pose l'Entreprise (10). */
   utilisateursProposes: number;
 }
@@ -494,7 +500,8 @@ export function lireOffreOps(sessionOps: string, tenantId: string): Promise<Offr
  * la donne, parce qu'une valeur plus basse lance la purge irréversible des conversations plus anciennes.
  */
 export function ecrireOffreOps(sessionOps: string, tenantId: string, corps: {
-  entreprise: boolean; utilisateurs: number | null; conservationJours?: number | null; note: string;
+  entreprise: boolean; utilisateurs: number | null; conservationJours?: number | null;
+  contacts?: number | null; commissionPct?: number | null; note: string;
 }): Promise<OffreEntrepriseOps> {
   return appelOps(sessionOps, `/ops/offre/${encodeURIComponent(tenantId)}`, { method: 'PUT', corps });
 }

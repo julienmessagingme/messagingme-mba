@@ -1,5 +1,21 @@
 import { describe, it, expect } from 'vitest';
-import { lireConservation, conservationPeutPurger } from './ops-offre';
+import { lireConservation, conservationPeutPurger, lireContactsEntreprise, lireCommissionEntreprise } from './ops-offre';
+
+/** Les réglages de devis d'une Entreprise (spec offres v2) : vide = le défaut, sinon un entier dans ses bornes. */
+describe('les contacts et la commission saisis', () => {
+  it('contacts : vide = sans limite, un entier de 1 à 100 000 000 passe, le reste est refusé', () => {
+    expect(lireContactsEntreprise('')).toBeNull();
+    expect(lireContactsEntreprise(' 20000 ')).toBe(20000);
+    for (const s of ['0', '-5', '2.5', '100000001', 'beaucoup']) expect(lireContactsEntreprise(s), s).toBe('invalide');
+  });
+
+  it('commission : vide = 10 %, un entier de 0 à 100 passe, une décimale ou plus de 100 est refusée', () => {
+    expect(lireCommissionEntreprise('')).toBeNull();
+    expect(lireCommissionEntreprise('0')).toBe(0);
+    expect(lireCommissionEntreprise(' 7 ')).toBe(7);
+    for (const s of ['7.5', '7,5', '101', '-1', 'dix']) expect(lireCommissionEntreprise(s), s).toBe('invalide');
+  });
+});
 
 /** La fenêtre « Offre Entreprise » de `/ops` : ce qu'elle envoie de la conservation, et quand elle prévient d'une purge. */
 describe('la conservation saisie', () => {

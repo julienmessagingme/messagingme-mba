@@ -43,7 +43,7 @@ describe('creerVueOffre', () => {
 
   it('un Pro : ses fonctions dans l’ordre de la grille, et les modèles du mois non comptés (sans limite)', async () => {
     const v = await vue('pro', null)('t1');
-    expect(v.fonctions).toEqual(['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines']);
+    expect(v.fonctions).toEqual(['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines', 'console']);
     expect(v.usage.envoisModelesMois).toBeNull();
   });
 

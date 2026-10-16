@@ -33,6 +33,20 @@ describe('lireVueOffre', () => {
     expect(v!.limites.stockageOctets).toBeUndefined();
   });
 
+  it('🔴 une API qui ne connaît pas encore la fonction console : la console reste ouverte (elle est publiée avant l’API)', () => {
+    const sansConsole = FONCTIONS_OFFRE.filter((f) => f !== 'console');
+    const v = lireVueOffre({ ...BASE, grille: { ...BASE.grille, entreprise: { fonctions: sansConsole, limites: limites(null) } } });
+    expect(v!.fonctions.has('console')).toBe(true);
+    expect(v!.grille.free.fonctions.has('console')).toBe(true);
+  });
+
+  it('une API qui connaît la fonction console : la Free ne l’a pas, le Pro et l’Entreprise l’ont', () => {
+    const v = lireVueOffre({ ...BASE, grille: { ...BASE.grille, pro: { fonctions: [...PRO, 'console'], limites: limites(null) } } });
+    expect(v!.fonctions.has('console')).toBe(false);
+    expect(v!.grille.pro.fonctions.has('console')).toBe(true);
+    expect(v!.grille.entreprise.fonctions.has('console')).toBe(true);
+  });
+
   it('lit une vue complète, fonctions en ensembles', () => {
     const v = lireVueOffre(BASE);
     expect(v).not.toBeNull();

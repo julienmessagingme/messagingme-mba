@@ -27,9 +27,14 @@ export class PgOffresStore implements SourceOffres {
 
   /** Un espace inconnu est en Base : la fonction SQL le dit aussi. */
   async offreDe(tenantId: string): Promise<OffreEspace> {
-    const r = await this.pool.query<{ offre: string; entreprise_utilisateurs: number | null; conservation: number | null; dernier_fini: Date | null }>(
+    const r = await this.pool.query<{
+      offre: string; entreprise_utilisateurs: number | null; entreprise_contacts: number | null;
+      entreprise_commission_pct: number | null; conservation: number | null; dernier_fini: Date | null;
+    }>(
       `select offre_de_l_espace($1::uuid) as offre,
               (select t.entreprise_utilisateurs from tenants t where t.id = $1::uuid) as entreprise_utilisateurs,
+              (select t.entreprise_contacts from tenants t where t.id = $1::uuid) as entreprise_contacts,
+              (select t.entreprise_commission_pct from tenants t where t.id = $1::uuid) as entreprise_commission_pct,
               (select s.conversation_retention_days from tenant_settings s where s.tenant_id = $1::uuid) as conservation,
               (select max(a.fini_le) from abonnements_offre a where a.tenant_id = $1::uuid) as dernier_fini`,
       [tenantId],
@@ -39,7 +44,10 @@ export class PgOffresStore implements SourceOffres {
     return {
       offre,
       droits: droitsDe(offre, offre === 'entreprise'
-        ? { utilisateurs: l?.entreprise_utilisateurs ?? null, conservationJours: l?.conservation ?? null }
+        ? {
+          utilisateurs: l?.entreprise_utilisateurs ?? null, conservationJours: l?.conservation ?? null,
+          contacts: l?.entreprise_contacts ?? null, commissionPct: l?.entreprise_commission_pct ?? null,
+        }
         : null),
       retourEnBaseLe: offre === 'base' ? (l?.dernier_fini ?? null) : null,
     };
@@ -63,14 +71,23 @@ export class PgOffresStore implements SourceOffres {
 
   /** L'Entreprise d'un espace telle que l'exploitation l'a posée, `null` pour un espace inconnu. */
   async lireEntreprise(tenantId: string): Promise<ReglageEntreprise | null> {
-    const r = await this.pool.query<{ offre_entreprise: boolean; entreprise_utilisateurs: number | null; conversation_retention_days: number | null }>(
-      `select t.offre_entreprise, t.entreprise_utilisateurs, s.conversation_retention_days
+    const r = await this.pool.query<{
+      offre_entreprise: boolean; entreprise_utilisateurs: number | null; conversation_retention_days: number | null;
+      entreprise_contacts: number | null; entreprise_commission_pct: number | null;
+    }>(
+      `select t.offre_entreprise, t.entreprise_utilisateurs, s.conversation_retention_days,
+              t.entreprise_contacts, t.entreprise_commission_pct
          from tenants t left join tenant_settings s on s.tenant_id = t.id
         where t.id = $1`,
       [tenantId],
     );
     const l = r.rows[0];
-    return l ? { entreprise: l.offre_entreprise, utilisateurs: l.entreprise_utilisateurs, conservationJours: l.conversation_retention_days } : null;
+    return l
+      ? {
+        entreprise: l.offre_entreprise, utilisateurs: l.entreprise_utilisateurs, conservationJours: l.conversation_retention_days,
+        contacts: l.entreprise_contacts, commissionPct: l.entreprise_commission_pct,
+      }
+      : null;
   }
 
   /**
@@ -83,12 +100,15 @@ export class PgOffresStore implements SourceOffres {
     return enTransaction(this.pool, async (client) => {
       // La sortie de l'Entreprise est datée (migration 0221, lot 6, C) : la conservation de la Base n'y mord qu'après
       // 30 jours de grâce. Seulement au passage de l'Entreprise à la Base ; y rester ne repousse pas la date.
+      // Les contacts et la commission (spec offres v2) ne s'écrivent que DONNÉS : absents, ils restent tels quels.
       const maj = await client.query(
         `update tenants
             set offre_entreprise = $2, entreprise_utilisateurs = $3,
-                entreprise_quittee_le = case when offre_entreprise and not $2 then now() else entreprise_quittee_le end
+                entreprise_quittee_le = case when offre_entreprise and not $2 then now() else entreprise_quittee_le end,
+                entreprise_contacts = case when $4 then $5::int else entreprise_contacts end,
+                entreprise_commission_pct = case when $6 then $7::int else entreprise_commission_pct end
           where id = $1`,
-        [tenantId, r.entreprise, r.utilisateurs],
+        [tenantId, r.entreprise, r.utilisateurs, r.contacts !== undefined, r.contacts ?? null, r.commissionPct !== undefined, r.commissionPct ?? null],
       );
       if ((maj.rowCount ?? 0) === 0) return false;
       if (r.conservationJours === undefined) return true;
@@ -110,6 +130,10 @@ export interface EcritureEntreprise {
   entreprise: boolean;
   utilisateurs: number | null;
   conservationJours?: number | null;
+  /** Absent = inchangé, `null` = le défaut de l'Entreprise (sans limite). */
+  contacts?: number | null;
+  /** Absent = inchangée, `null` = le défaut (10 %). */
+  commissionPct?: number | null;
 }
 
 /** Ce que l'exploitation règle sur un espace (`/ops/offre/:tenantId`). `null` = sans limite, ou le défaut de l'instance. */
@@ -117,4 +141,6 @@ export interface ReglageEntreprise {
   entreprise: boolean;
   utilisateurs: number | null;
   conservationJours: number | null;
+  contacts: number | null;
+  commissionPct: number | null;
 }

@@ -114,6 +114,17 @@ export interface DepsLimites {
 }
 
 /** Le seuil atteint : `usage` vaut au moins `pct` % de `limite`, arrondi au supérieur (80 % de 100, c'est 80). */
+/**
+ * Les limites que surveille le balayage, selon l'offre (spec offres v2, livraison 1) : la Free seule, parce que le texte
+ * de ces e-mails dit « Offre Free… Passez en Pro ». Une Entreprise peut avoir une limite de contacts posée par /ops, et le
+ * Pro en aura une à la livraison 5 : leurs textes viennent avec elle. `null` = rien à surveiller.
+ */
+export function limitesAlertables(
+  offre: 'base' | 'pro' | 'entreprise', l: { envoisModelesMois: number | null; contacts: number | null },
+): { modelesMois: number | null; contacts: number | null } {
+  return offre === 'base' ? { modelesMois: l.envoisModelesMois, contacts: l.contacts } : { modelesMois: null, contacts: null };
+}
+
 export function seuilAtteint(usage: number, limite: number, pct: number): boolean {
   return limite > 0 && usage >= Math.ceil((limite * pct) / 100);
 }

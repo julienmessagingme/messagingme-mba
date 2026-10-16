@@ -347,7 +347,7 @@ export const OUTILS_CHIFFRES: OutilMcp[] = [
   },
   {
     ...ficheOutilMcp('get_conversation_insights'),
-    fonction: 'statistiques',
+    fonction: 'analyse',
     description:
       'What the analysis understood of the period\'s conversations: the number of analyzed conversations, sentiment '
       + '(positive, neutral, negative), intents, resolved conversations, who handled them, suggested actions and the '

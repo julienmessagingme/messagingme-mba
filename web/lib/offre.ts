@@ -12,7 +12,7 @@
 
 export const FONCTIONS_OFFRE = [
   'inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines',
-  'crm', 'rcs', 'performance_lab',
+  'crm', 'rcs', 'performance_lab', 'console',
 ] as const;
 export type FonctionOffre = (typeof FONCTIONS_OFFRE)[number];
 
@@ -121,8 +121,13 @@ export function lireVueOffre(brut: unknown): VueOffre | null {
     if (f === null || l === null) return null;
     grille[o] = { fonctions: f, limites: l };
   }
+  // 🔴 Une API qui ne connaît pas encore la fonction `console` (aucune offre de sa grille ne la porte) : la console est
+  // publiée avant l'API, et sans cette parade elle se fermerait à tout le monde, Pro et Entreprise compris.
+  const apiSansConsole = !NOMS_OFFRES.some((o) => grille[o]!.fonctions.has('console'));
+  const ouvrir = (f: ReadonlySet<FonctionOffre>): ReadonlySet<FonctionOffre> => (apiSansConsole ? new Set([...f, 'console' as const]) : f);
+  for (const o of NOMS_OFFRES) grille[o] = { ...grille[o]!, fonctions: ouvrir(grille[o]!.fonctions) };
   return {
-    offre, fonctions, limites,
+    offre, fonctions: ouvrir(fonctions), limites,
     usage: { envoisModelesMois: u.envoisModelesMois, contacts: u.contacts, automations: u.automations, membres: u.membres },
     grille: grille as VueOffre['grille'],
     prixPro: lirePrixPro(brut.prixPro),
@@ -178,6 +183,7 @@ export function libelleFonction(f: FonctionOffre, t: (fr: string, en: string) =>
     crm: ['Connecteurs CRM', 'CRM connectors'],
     rcs: ['RCS', 'RCS'],
     performance_lab: ['Performance Lab', 'Performance Lab'],
+    console: ['Console complète', 'Full console'],
   };
   const [fr, en] = libelles[f];
   return t(fr, en);

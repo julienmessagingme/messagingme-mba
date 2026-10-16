@@ -28,7 +28,7 @@ import { alerte, brand, danger, ink, succes } from '@/lib/couleurs';
 import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
 import { Nd } from '@/components/Nd';
-import { lireConservation, conservationPeutPurger } from '@/lib/ops-offre';
+import { lireConservation, conservationPeutPurger, lireContactsEntreprise, lireCommissionEntreprise } from '@/lib/ops-offre';
 import { OpsEmailsCard } from '@/components/OpsEmailsCard';
 
 /**
@@ -1413,6 +1413,10 @@ function OffreEspace({ jeton, tenantId, nom, membres, onFermer }: { jeton: strin
   const [utilisateurs, setUtilisateurs] = useState('');
   const [changerConservation, setChangerConservation] = useState(false);
   const [conservation, setConservation] = useState('');
+  // Spec offres v2 : les contacts et la commission du devis ne partent que si on coche « Régler », comme la conservation.
+  const [changerDevis, setChangerDevis] = useState(false);
+  const [contacts, setContacts] = useState('');
+  const [commission, setCommission] = useState('');
   const [note, setNote] = useState('');
   const [envoi, setEnvoi] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
@@ -1424,6 +1428,9 @@ function OffreEspace({ jeton, tenantId, nom, membres, onFermer }: { jeton: strin
     setUtilisateurs(String(r.utilisateurs ?? r.utilisateursProposes));
     setChangerConservation(false);
     setConservation(r.conservationJours === null ? '' : String(r.conservationJours));
+    setChangerDevis(false);
+    setContacts(r.contacts == null ? '' : String(r.contacts));
+    setCommission(r.commissionPct == null ? '' : String(r.commissionPct));
   };
 
   useEffect(() => {
@@ -1440,8 +1447,12 @@ function OffreEspace({ jeton, tenantId, nom, membres, onFermer }: { jeton: strin
   const conservationValide = nouvelleConservation !== 'invalide';
   const purge = etat !== null && nouvelleConservation !== undefined && nouvelleConservation !== 'invalide'
     && conservationPeutPurger(etat.conservationJours, nouvelleConservation);
+  const devis = entreprise && changerDevis;
+  const nouveauxContacts = devis ? lireContactsEntreprise(contacts) : undefined;
+  const nouvelleCommission = devis ? lireCommissionEntreprise(commission) : undefined;
+  const devisValide = nouveauxContacts !== 'invalide' && nouvelleCommission !== 'invalide';
   const noteValide = note.trim().length >= 3;
-  const pret = etat !== null && limiteValide && conservationValide && noteValide && !envoi;
+  const pret = etat !== null && limiteValide && conservationValide && devisValide && noteValide && !envoi;
 
   async function enregistrer() {
     if (!pret) return;
@@ -1453,6 +1464,9 @@ function OffreEspace({ jeton, tenantId, nom, membres, onFermer }: { jeton: strin
         // Hors Entreprise, la limite ne veut rien dire : elle repart à « sans limite ».
         utilisateurs: entreprise ? limite : null,
         ...(nouvelleConservation !== undefined ? { conservationJours: nouvelleConservation } : {}),
+        // `pret` a déjà écarté une saisie invalide (le compilateur le sait).
+        ...(nouveauxContacts !== undefined ? { contacts: nouveauxContacts } : {}),
+        ...(nouvelleCommission !== undefined ? { commissionPct: nouvelleCommission } : {}),
         note: note.trim(),
       });
       remplir(r);
@@ -1508,6 +1522,27 @@ function OffreEspace({ jeton, tenantId, nom, membres, onFermer }: { jeton: strin
                   <input className={`${inputCls} w-32`} inputMode="numeric" value={utilisateurs} onChange={(e) => setUtilisateurs(e.target.value)} data-testid="offre-utilisateurs" />
                   {!limiteValide && <span className="text-xs text-danger-700">{t('Un entier de 1 à 10 000.', 'A whole number from 1 to 10,000.')}</span>}
                 </label>
+              )}
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={changerDevis} onChange={(e) => setChangerDevis(e.target.checked)} data-testid="offre-changer-devis" className="h-4 w-4" />
+                <span className="text-ink-900">
+                  {t(`Régler les contacts et la commission du devis (actuellement : ${etat.contacts == null ? 'contacts sans limite' : `${etat.contacts} contacts`}, ${etat.commissionPct == null ? 'commission par défaut' : `${etat.commissionPct} %`})`,
+                    `Set the quote’s contacts and commission (now: ${etat.contacts == null ? 'no contact limit' : `${etat.contacts} contacts`}, ${etat.commissionPct == null ? 'default commission' : `${etat.commissionPct}%`})`)}
+                </span>
+              </label>
+              {changerDevis && (
+                <div className="grid gap-2 pl-6">
+                  <label className="grid gap-1">
+                    <span className="text-xs font-medium text-ink-500">{t('Contacts créés au plus (vide = sans limite)', 'Created contacts at most (empty = no limit)')}</span>
+                    <input className={`${inputCls} w-40`} inputMode="numeric" value={contacts} onChange={(e) => setContacts(e.target.value)} data-testid="offre-contacts" />
+                    {nouveauxContacts === 'invalide' && <span className="text-xs text-danger-700">{t('Un entier de 1 à 100 000 000, ou vide.', 'A whole number from 1 to 100,000,000, or empty.')}</span>}
+                  </label>
+                  <label className="grid gap-1">
+                    <span className="text-xs font-medium text-ink-500">{t('Commission sur le crédit IA, en % (vide = 10 %)', 'AI credit commission, in % (empty = 10%)')}</span>
+                    <input className={`${inputCls} w-24`} inputMode="numeric" value={commission} onChange={(e) => setCommission(e.target.value)} data-testid="offre-commission" />
+                    {nouvelleCommission === 'invalide' && <span className="text-xs text-danger-700">{t('Un entier de 0 à 100, ou vide.', 'A whole number from 0 to 100, or empty.')}</span>}
+                  </label>
+                </div>
               )}
             </div>
           )}

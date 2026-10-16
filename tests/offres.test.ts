@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { DROITS, droitsDe, FONCTIONS, type Fonction, type Limites, type Offre } from '../src/offres/offres';
-import { phraseLimite } from '../src/offres/refus';
+import { corpsRefusFonction, phraseLimite } from '../src/offres/refus';
 
 const MO = 1024 * 1024;
 
@@ -27,7 +27,7 @@ const GRILLE: Record<Offre, Limites> = {
   },
 };
 
-const PRO: Fonction[] = ['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines'];
+const PRO: Fonction[] = ['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines', 'console'];
 const ENTREPRISE_SEULE: Fonction[] = ['crm', 'rcs', 'performance_lab'];
 
 describe('la grille des offres', () => {
@@ -39,6 +39,12 @@ describe('la grille des offres', () => {
     expect([...DROITS.base.fonctions]).toEqual([]);
   });
 
+  it('la console n\'est ouverte qu\'au Pro et à l\'Entreprise : la Free se pilote par l\'API et le MCP (spec offres v2)', () => {
+    expect(DROITS.base.fonctions.has('console')).toBe(false);
+    expect(DROITS.pro.fonctions.has('console')).toBe(true);
+    expect(DROITS.entreprise.fonctions.has('console')).toBe(true);
+  });
+
   it('le Pro ouvre tout sauf le CRM, le RCS et le Performance Lab', () => {
     expect([...DROITS.pro.fonctions].sort()).toEqual([...PRO].sort());
     for (const f of ENTREPRISE_SEULE) expect(DROITS.pro.fonctions.has(f)).toBe(false);
@@ -47,6 +53,31 @@ describe('la grille des offres', () => {
   it('l\'Entreprise ouvre toutes les fonctions', () => {
     expect([...DROITS.entreprise.fonctions].sort()).toEqual([...FONCTIONS].sort());
     expect(FONCTIONS).toHaveLength(PRO.length + ENTREPRISE_SEULE.length);
+  });
+});
+
+describe('les refus nomment l’offre qui lève la limite ou ouvre la fonction (spec offres v2)', () => {
+  it('une limite de la Free renvoie au Pro', () => {
+    expect(phraseLimite('contacts', DROITS.base.limites.contacts!)).toMatch(/Passez en Pro/);
+    expect(phraseLimite('utilisateurs', DROITS.base.limites.utilisateurs!)).toMatch(/Passez en Pro/);
+  });
+
+  it('🔴 une limite du Pro renvoie à l’Entreprise, jamais au Pro', () => {
+    const p = phraseLimite('utilisateurs', DROITS.pro.limites.utilisateurs!);
+    expect(p).toMatch(/Entreprise/);
+    expect(p).not.toMatch(/Passez en Pro/);
+  });
+
+  it('une limite réglée sur devis (absente de la grille) renvoie à un échange, jamais au Pro', () => {
+    const p = phraseLimite('contacts', 123_456);
+    expect(p).toMatch(/Contactez-nous/);
+    expect(p).not.toMatch(/Passez en Pro/);
+  });
+
+  it('🔴 une fonction de l’Entreprise seule renvoie à l’Entreprise ; une fonction du Pro, au Pro', () => {
+    expect(corpsRefusFonction('crm').error).toMatch(/Entreprise/);
+    expect(corpsRefusFonction('crm').error).not.toMatch(/Passez en Pro/);
+    expect(corpsRefusFonction('inbox').error).toMatch(/Passez en Pro/);
   });
 });
 
@@ -77,9 +108,19 @@ describe('droitsDe', () => {
     expect(droitsDe('entreprise', { utilisateurs: null, conservationJours: null }).limites.conservationJours).toBe(DROITS.entreprise.limites.conservationJours);
   });
 
+  it('les contacts et la commission posés par l’exploitation sont ceux de l’Entreprise ; null ou absents gardent les défauts (spec offres v2)', () => {
+    const reglee = droitsDe('entreprise', { utilisateurs: null, conservationJours: null, contacts: 20000, commissionPct: 7 });
+    expect(reglee.limites.contacts).toBe(20000);
+    expect(reglee.limites.commissionPct).toBe(7);
+    const parDefaut = droitsDe('entreprise', { utilisateurs: null, conservationJours: null, contacts: null, commissionPct: null });
+    expect(parDefaut.limites.contacts).toBe(DROITS.entreprise.limites.contacts);
+    expect(parDefaut.limites.commissionPct).toBe(DROITS.entreprise.limites.commissionPct);
+  });
+
   it('la surcharge ne touche jamais la Base ni le Pro', () => {
     expect(droitsDe('base', { utilisateurs: 50, conservationJours: 365 })).toEqual(DROITS.base);
     expect(droitsDe('pro', { utilisateurs: 50, conservationJours: 365 })).toEqual(DROITS.pro);
+    expect(droitsDe('pro', { utilisateurs: 50, conservationJours: 365, contacts: 7, commissionPct: 1 })).toEqual(DROITS.pro);
   });
 
   it('les droits rendus ne partagent rien avec la grille : les modifier ne la change pas', () => {

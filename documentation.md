@@ -2608,7 +2608,16 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
   « Inclus dans l'offre ». 🔴 Une offre illisible ou une route absente (404) veut dire « inconnue », donc tout ouvert.
 - **L'Entreprise se pose dans `/ops`** (`PUT /ops/offre/:tenantId`, note obligatoire, trace `ops_offre` signée de son
   auteur), avec sa limite d'utilisateurs et `tenant_settings.conversation_retention_days`. 🔴 La conservation ABSENTE
-  du corps reste telle quelle : changer d'offre ne déclenche jamais la purge (irréversible) des conversations.
+  du corps reste telle quelle : changer d'offre ne déclenche jamais la purge (irréversible) des conversations. Deux
+  réglages de devis s'y ajoutent (spec offres v2, migration 0240) : les contacts créés (`tenants.entreprise_contacts`) et
+  la commission sur le crédit IA (`tenants.entreprise_commission_pct`, un ENTIER de 0 à 100) ; absents du corps,
+  inchangés ; `null`, le défaut de l'Entreprise (sans limite, 10 %). Une offre illisible se replie sur l'Entreprise PAR
+  DÉFAUT : une Entreprise négociée sous 10 % paie 10 % le temps de la panne.
+- **Les refus nomment l'offre qui lève la limite ou ouvre la fonction** (`src/offres/refus.ts`) : déduite de la grille
+  (l'offre dont c'est la limite, puis la suivante qui va plus haut ; l'offre la moins chère qui ouvre la fonction). Une
+  limite absente de la grille (une Entreprise réglée) dit « Contactez-nous ».
+- **La fonction `console`** (Pro et Entreprise, spec offres v2) dit si l'espace se pilote depuis la console. Une API qui
+  ne la connaît pas encore (aucune offre de sa grille ne la porte) laisse la console ouverte (`lireVueOffre`).
 - 🔴 **Le Pro se paie chez Stripe, et seul le webhook signé l'ouvre** (livraison B1). `POST /tenants/:tenantId/offre/paiement`
   (`{periodicite}`, admin, plafond coûteux, SANS garde d'offre puisque c'est une Base qui paie, `src/http/offre-paiement.ts`)
   ouvre une session Checkout en mode abonnement (`ouvrirPro`, `src/stripe/pro.ts`) sur `STRIPE_PRIX_PRO_MOIS` ou

@@ -22,7 +22,7 @@ class MagasinMemoire {
   readonly ecritures: Array<{ tenantId: string; reglage: EcritureEntreprise }> = [];
   readonly invalides: string[] = [];
   readonly audits: Array<{ tenant: string; acteur: { userId: string | null; email: string | null }; action: string; cible: { kind: string; id: string }; detail: Record<string, unknown> | undefined }> = [];
-  readonly reglages = new Map<string, ReglageEntreprise>([[T1, { entreprise: true, utilisateurs: null, conservationJours: null }]]);
+  readonly reglages = new Map<string, ReglageEntreprise>([[T1, { entreprise: true, utilisateurs: null, conservationJours: null, contacts: null, commissionPct: null }]]);
   deps(): OpsOffreDeps {
     const audits = this.audits;
     const audit: AuditSink = async (tenant, acteur, action, cible, detail) => { audits.push({ tenant, acteur, action, cible, detail }); };
@@ -34,7 +34,12 @@ class MagasinMemoire {
           if (!avant) return false;
           this.ecritures.push({ tenantId: t, reglage: r });
           // Comme `PgOffresStore.ecrireEntreprise` : une conservation absente n'est pas écrite.
-          this.reglages.set(t, { entreprise: r.entreprise, utilisateurs: r.utilisateurs, conservationJours: r.conservationJours === undefined ? avant.conservationJours : r.conservationJours });
+          this.reglages.set(t, {
+            entreprise: r.entreprise, utilisateurs: r.utilisateurs,
+            conservationJours: r.conservationJours === undefined ? avant.conservationJours : r.conservationJours,
+            contacts: r.contacts === undefined ? avant.contacts : r.contacts,
+            commissionPct: r.commissionPct === undefined ? avant.commissionPct : r.commissionPct,
+          });
           return true;
         },
       },
@@ -74,10 +79,10 @@ describe('la route d’exploitation /ops/offre/:tenantId', () => {
 
   it('GET rend le réglage et les 10 utilisateurs proposés ; 404 sur un espace inconnu ou mal formé', async () => {
     const { server, magasin } = monter();
-    magasin.reglages.set(T1, { entreprise: true, utilisateurs: 25, conservationJours: 180 });
+    magasin.reglages.set(T1, { entreprise: true, utilisateurs: 25, conservationJours: 180, contacts: null, commissionPct: null });
     const res = await server.inject({ method: 'GET', url: `/ops/offre/${T1}`, headers: ops });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ tenantId: T1, entreprise: true, utilisateurs: 25, conservationJours: 180, utilisateursProposes: 10 });
+    expect(res.json()).toEqual({ tenantId: T1, entreprise: true, utilisateurs: 25, conservationJours: 180, contacts: null, commissionPct: null, utilisateursProposes: 10 });
     expect((await server.inject({ method: 'GET', url: `/ops/offre/${INCONNU}`, headers: ops })).statusCode).toBe(404);
     expect((await server.inject({ method: 'GET', url: '/ops/offre/pas-un-uuid', headers: ops })).statusCode).toBe(404);
     await server.close();
@@ -108,15 +113,15 @@ describe('la route d’exploitation /ops/offre/:tenantId', () => {
       method: 'PUT', url: `/ops/offre/${T1}`, headers: ops, payload: BASE,
     }));
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ tenantId: T1, entreprise: false, utilisateurs: null, conservationJours: null, utilisateursProposes: 10 });
+    expect(res.json()).toEqual({ tenantId: T1, entreprise: false, utilisateurs: null, conservationJours: null, contacts: null, commissionPct: null, utilisateursProposes: 10 });
     expect(magasin.ecritures).toEqual([{ tenantId: T1, reglage: { entreprise: false, utilisateurs: null, conservationJours: null } }]);
     expect(magasin.invalides).toEqual([T1]);
     const traces = lignes.filter((l) => l.msg === 'ops_offre');
     expect(traces).toHaveLength(1);
     expect(traces[0]).toMatchObject({
       lvl: 'warn', tenantId: T1, note: 'essai ramené en Base', par: ADRESSE_OPS,
-      avant: { entreprise: true, utilisateurs: null, conservationJours: null },
-      apres: { entreprise: false, utilisateurs: null, conservationJours: null },
+      avant: { entreprise: true, utilisateurs: null, conservationJours: null, contacts: null, commissionPct: null },
+      apres: { entreprise: false, utilisateurs: null, conservationJours: null, contacts: null, commissionPct: null },
     });
     await server.close();
   });
@@ -125,26 +130,52 @@ describe('la route d’exploitation /ops/offre/:tenantId', () => {
     // Relecture finale du lot 6 : la conservation était requise et réécrite à chaque changement d'offre. Ramener un
     // espace en Base avec 30 jours lançait au balayage suivant la purge irréversible de ses conversations plus anciennes.
     const { server, magasin } = monter();
-    magasin.reglages.set(T1, { entreprise: true, utilisateurs: null, conservationJours: 0 });
+    magasin.reglages.set(T1, { entreprise: true, utilisateurs: null, conservationJours: 0, contacts: null, commissionPct: null });
     const res = await server.inject({
       method: 'PUT', url: `/ops/offre/${T1}`, headers: ops, payload: { entreprise: false, utilisateurs: null, note: 'essai ramené en Base' },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ entreprise: false, conservationJours: 0 });
+    expect(res.json()).toMatchObject({ entreprise: false, conservationJours: 0, contacts: null, commissionPct: null });
     expect(magasin.ecritures).toEqual([{ tenantId: T1, reglage: { entreprise: false, utilisateurs: null } }]);
-    expect(magasin.reglages.get(T1)).toEqual({ entreprise: false, utilisateurs: null, conservationJours: 0 });
+    expect(magasin.reglages.get(T1)).toEqual({ entreprise: false, utilisateurs: null, conservationJours: 0, contacts: null, commissionPct: null });
     await server.close();
   });
 
   it('PUT pose l’Entreprise avec sa limite d’utilisateurs et sa conservation', async () => {
     const { server, magasin } = monter();
-    magasin.reglages.set(T1, { entreprise: false, utilisateurs: null, conservationJours: null });
+    magasin.reglages.set(T1, { entreprise: false, utilisateurs: null, conservationJours: null, contacts: null, commissionPct: null });
     const res = await server.inject({
       method: 'PUT', url: `/ops/offre/${T1}`, headers: ops,
       payload: { entreprise: true, utilisateurs: 10, conservationJours: 365, note: 'devis signé' },
     });
     expect(res.statusCode).toBe(200);
-    expect(magasin.reglages.get(T1)).toEqual({ entreprise: true, utilisateurs: 10, conservationJours: 365 });
+    expect(magasin.reglages.get(T1)).toEqual({ entreprise: true, utilisateurs: 10, conservationJours: 365, contacts: null, commissionPct: null });
+    await server.close();
+  });
+
+  it('PUT règle les contacts et la commission d’une Entreprise ; absents, ils restent tels quels (spec offres v2)', async () => {
+    const { server, magasin } = monter();
+    const pose = await server.inject({
+      method: 'PUT', url: `/ops/offre/${T1}`, headers: ops,
+      payload: { entreprise: true, utilisateurs: null, contacts: 20000, commissionPct: 7, note: 'devis signé' },
+    });
+    expect(pose.statusCode).toBe(200);
+    expect(pose.json()).toMatchObject({ contacts: 20000, commissionPct: 7 });
+    const garde = await server.inject({
+      method: 'PUT', url: `/ops/offre/${T1}`, headers: ops, payload: { entreprise: true, utilisateurs: 12, note: 'trois de plus' },
+    });
+    expect(garde.statusCode).toBe(200);
+    expect(magasin.reglages.get(T1)).toMatchObject({ utilisateurs: 12, contacts: 20000, commissionPct: 7 });
+    await server.close();
+  });
+
+  it('🔴 PUT refuse une commission décimale ou hors de 0 à 100, et des contacts à 0 : 400, rien d’écrit', async () => {
+    const { server, magasin } = monter();
+    for (const extra of [{ commissionPct: 7.5 }, { commissionPct: -1 }, { commissionPct: 101 }, { contacts: 0 }, { contacts: 2.5 }]) {
+      const res = await server.inject({ method: 'PUT', url: `/ops/offre/${T1}`, headers: ops, payload: { ...BASE, ...extra } });
+      expect(res.statusCode, JSON.stringify(extra)).toBe(400);
+    }
+    expect(magasin.ecritures).toEqual([]);
     await server.close();
   });
 
@@ -174,8 +205,8 @@ describe('l’offre posée par l’exploitation, au journal des actions de l’e
     expect(magasin.audits).toEqual([{
       tenant: T1, acteur: { userId: null, email: ADRESSE_OPS }, action: 'ops.offre_posee', cible: { kind: 'tenant', id: T1 },
       detail: {
-        entreprise: false, utilisateurs: null, conservationJours: 365,
-        entrepriseAvant: true, utilisateursAvant: null, conservationJoursAvant: null,
+        entreprise: false, utilisateurs: null, conservationJours: 365, contacts: null, commissionPct: null,
+        entrepriseAvant: true, utilisateursAvant: null, conservationJoursAvant: null, contactsAvant: null, commissionPctAvant: null,
       },
     }]);
     expect(JSON.stringify(magasin.audits)).not.toContain(BASE.note);

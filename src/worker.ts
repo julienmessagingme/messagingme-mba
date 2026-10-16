@@ -119,7 +119,7 @@ import { PgLiberationStore } from './numero/liberation.pg';
 import { creerAvisAbonnement } from './numero/avis-abonnement';
 import { creerClientDidww } from './didww/client';
 import { creerTravailEmail, reprendreLesEnvois } from './emails-produit/envoi';
-import { balayerLimites } from './emails-produit/alertes';
+import { balayerLimites, limitesAlertables } from './emails-produit/alertes';
 import { balayerAccompagnement, balayerRecap } from './emails-produit/accompagnement';
 import { PgOffresStore } from './offres/offre.pg';
 import { moisDeParis } from './offres/compteurs';
@@ -904,8 +904,8 @@ export async function demarrerWorker(): Promise<void> {
   taches.programmer('emails-produit-limites', 30 * 60_000, () => balayerLimites({
     espaces: () => emailsProduit.espaces(),
     limites: async (t) => {
-      const l = (await offres.offreDe(t)).droits.limites;
-      return { modelesMois: l.envoisModelesMois, contacts: l.contacts };
+      const o = await offres.offreDe(t);
+      return limitesAlertables(o.offre, o.droits.limites);
     },
     modelesDuMois: async (t) => {
       const e = await quotaModeles.etatDuMois(t);

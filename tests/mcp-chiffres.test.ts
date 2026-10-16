@@ -263,10 +263,13 @@ describe('get_ai_stats', () => {
 });
 
 describe('le catalogue', () => {
-  it('🔴 les trois outils du Pro sont réservés aux statistiques de l’offre, en lecture, sans personne requise', () => {
-    for (const nom of ['get_campaign_stats', 'get_conversation_insights', 'get_ai_stats']) {
+  it('🔴 les trois outils du Pro sont réservés à leur fonction de l’offre, en lecture, sans personne requise', () => {
+    // Spec offres v2 : ce que l'analyse a compris suit la fonction `analyse` (l'Entreprise seule, à la livraison 5), pas
+    // les statistiques, sinon un Pro sans analyse recevrait des chiffres vides.
+    const attendue: Record<string, string> = { get_campaign_stats: 'statistiques', get_conversation_insights: 'analyse', get_ai_stats: 'statistiques' };
+    for (const nom of Object.keys(attendue)) {
       const o = OUTILS_CHIFFRES.find((x) => x.nom === nom)!;
-      expect(o.fonction, nom).toBe('statistiques');
+      expect(o.fonction, nom).toBe(attendue[nom]);
       expect(o.scope, nom).toBe('mcp:read');
       expect(o.exigePersonne, nom).toBeUndefined();
       expect(o.annotations.readOnlyHint, nom).toBe(true);

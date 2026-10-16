@@ -906,7 +906,8 @@ describe('🔴 get_contact cherche la fiche au format de la fiche (essai réel d
 const FONCTION_DES_OUTILS: Readonly<Record<string, string>> = {
   tag_conversation: 'inbox', assign_conversation: 'inbox',
   // Les chiffres du Pro (2026-10-13) : la fonction statistiques ; get_message_stats reste ouvert (l'essentiel en Free).
-  get_campaign_stats: 'statistiques', get_conversation_insights: 'statistiques', get_ai_stats: 'statistiques',
+  // Ce que l'analyse a compris suit la fonction analyse (spec offres v2).
+  get_campaign_stats: 'statistiques', get_conversation_insights: 'analyse', get_ai_stats: 'statistiques',
 };
 
 describe('serveur MCP : les outils et l’offre (lot 6, B2a)', () => {

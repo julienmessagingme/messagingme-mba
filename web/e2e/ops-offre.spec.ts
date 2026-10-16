@@ -53,6 +53,20 @@ test.describe('Ops : l’offre Entreprise d’un espace', () => {
     await expect(modale.getByTestId('offre-actuelle')).toContainText(/10 utilisateurs au plus|10 users at most/);
   });
 
+  test('🔴 les contacts et la commission du devis (spec offres v2) ne partent que si on coche « Régler »', async ({ page }) => {
+    const { modale, ecrits } = await ouvrir(page, { entreprise: true, utilisateurs: 10, conservationJours: null, contacts: null, commissionPct: null });
+    await modale.getByTestId('offre-changer-devis').check();
+    await modale.getByTestId('offre-commission').fill('7.5');
+    // Une commission décimale rendrait la vue illisible : rien ne part.
+    await modale.getByTestId('offre-note').fill('Devis signé');
+    await expect(modale.getByTestId('offre-enregistrer')).toBeDisabled();
+    await modale.getByTestId('offre-contacts').fill('20000');
+    await modale.getByTestId('offre-commission').fill('7');
+    await modale.getByTestId('offre-enregistrer').click();
+    await expect(modale.getByTestId('offre-message')).toBeVisible();
+    expect(ecrits).toEqual([{ entreprise: true, utilisateurs: 10, contacts: 20000, commissionPct: 7, note: 'Devis signé' }]);
+  });
+
   test('sans limite d’utilisateurs : `null` part', async ({ page }) => {
     const { modale, ecrits } = await ouvrir(page, { entreprise: false, utilisateurs: null, conservationJours: null });
     await modale.getByTestId('offre-entreprise').check();
