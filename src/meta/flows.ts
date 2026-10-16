@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import type { FetchLike } from './templates';
 import { appelGraph } from './graph';
-import { MetaApiError } from './errors';
+import { MetaApiError, type MetaErrorBody } from './errors';
+import { HOTE_360DIALOG } from './client';
+import type { Fournisseur } from './credentials';
 import { messageDe } from '../lib/erreur';
 import { buildFlowScreens } from './flow-json';
 import type { FlowScreenDef } from './flow-json';
@@ -49,22 +51,49 @@ const DELAI_LECTURE_FLOW_MS = 10_000;
  * `ecranDEntree`, refus de Graph compris ; la génération du flow_json est interne (buildFlowScreens).
  */
 export class MetaFlowClient {
+  private readonly baseUrl = 'https://graph.facebook.com';
+
   constructor(
     private readonly token: string,
     private readonly version = 'v23.0',
     private readonly flowJsonVersion = '7.2',
     private readonly fetchImpl: FetchLike = fetch,
-    private readonly baseUrl = 'https://graph.facebook.com',
+    /**
+     * `360dialog` (lot 2, livraison C) : `token` est la clé d'API du numéro, en `D360-API-KEY`, et tout passe sous
+     * `HOTE_360DIALOG/flows/...` (mesuré le 2026-10-15 ; `/{id}/assets` sans `/flows` y rend 404). Mêmes corps.
+     */
+    private readonly fournisseur: Fournisseur = 'meta',
   ) {}
 
-  private call(url: string, init: RequestInit): Promise<unknown> {
-    return appelGraph(this.fetchImpl, this.token, url, init);
+  /** La collection des flows du compte : `/{waba}/flows` chez Meta, `/flows` chez 360dialog (la clé désigne le compte). */
+  private urlCompte(wabaId: string): string {
+    return this.fournisseur === '360dialog' ? `${HOTE_360DIALOG}/flows` : `${this.baseUrl}/${this.version}/${wabaId}/flows`;
+  }
+
+  /** Un flow : `/{flow}` chez Meta (chemin inchangé), `/flows/{flow}` chez 360dialog, toujours encodé (la clé ne vise rien d'autre). */
+  private urlFlow(flowId: string, suite = ''): string {
+    return this.fournisseur === '360dialog'
+      ? `${HOTE_360DIALOG}/flows/${encodeURIComponent(flowId)}${suite}`
+      : `${this.baseUrl}/${this.version}/${flowId}${suite}`;
+  }
+
+  private async call(url: string, init: RequestInit): Promise<unknown> {
+    if (this.fournisseur !== '360dialog') return appelGraph(this.fetchImpl, this.token, url, init);
+    const res = await this.fetchImpl(url, {
+      ...init,
+      headers: { 'D360-API-KEY': this.token, ...(init.headers as Record<string, string> | undefined ?? {}) },
+      // Comme `Media360dialogClient` : une redirection emporterait la clé chez un autre hôte.
+      redirect: 'error',
+    });
+    const json = (await res.json().catch(() => null)) as { error?: MetaErrorBody } | null;
+    if (!res.ok) throw new MetaApiError(res.status, json?.error ?? null);
+    return json;
   }
 
   /** POST /{waba}/flows : name + categories:['LEAD_GENERATION'] + flow_json (en chaîne). Statut initial DRAFT. */
   async create(wabaId: string, input: CreateFlowInput): Promise<{ id: string; status: string }> {
     const flowJson = buildFlowScreens(input.name, input.screens, this.flowJsonVersion, input.ref, input.cta);
-    const json = (await this.call(`${this.baseUrl}/${this.version}/${wabaId}/flows`, {
+    const json = (await this.call(this.urlCompte(wabaId), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: input.name, categories: ['LEAD_GENERATION'], flow_json: JSON.stringify(flowJson) }),
@@ -85,7 +114,7 @@ export class MetaFlowClient {
     fd.append('asset_type', 'FLOW_JSON');
     fd.append('name', 'flow.json');
     fd.append('file', new Blob([JSON.stringify(flowJson)], { type: 'application/json' }), 'flow.json');
-    const json = (await this.call(`${this.baseUrl}/${this.version}/${flowId}/assets`, {
+    const json = (await this.call(this.urlFlow(flowId, '/assets'), {
       method: 'POST',
       body: fd,
     })) as { validation_errors?: Array<{ message?: string; error?: string }> };
@@ -95,17 +124,17 @@ export class MetaFlowClient {
 
   /** POST /{flow}/publish : DRAFT -> PUBLISHED, irréversible côté Meta. */
   async publish(flowId: string): Promise<void> {
-    await this.call(`${this.baseUrl}/${this.version}/${flowId}/publish`, { method: 'POST' });
+    await this.call(this.urlFlow(flowId, '/publish'), { method: 'POST' });
   }
 
   /** DELETE /{flow} : Meta n'autorise la suppression que sur un DRAFT. */
   async delete(flowId: string): Promise<void> {
-    await this.call(`${this.baseUrl}/${this.version}/${flowId}`, { method: 'DELETE' });
+    await this.call(this.urlFlow(flowId), { method: 'DELETE' });
   }
 
   /** POST /{flow}/deprecate : retire de l'usage un flow PUBLISHED, qui ne se supprime pas. */
   async deprecate(flowId: string): Promise<void> {
-    await this.call(`${this.baseUrl}/${this.version}/${flowId}/deprecate`, { method: 'POST' });
+    await this.call(this.urlFlow(flowId, '/deprecate'), { method: 'POST' });
   }
 
   /**
@@ -121,7 +150,7 @@ export class MetaFlowClient {
    */
   async ecranDEntree(flowId: string): Promise<string> {
     // Plafond par lecture : elle précède l'envoi d'un formulaire, qu'une lecture pendue retiendrait sans fin.
-    const lus = await this.call(`${this.baseUrl}/${this.version}/${encodeURIComponent(flowId)}/assets`, { method: 'GET', signal: AbortSignal.timeout(DELAI_LECTURE_FLOW_MS) })
+    const lus = await this.call(this.fournisseur === '360dialog' ? this.urlFlow(flowId, '/assets') : `${this.baseUrl}/${this.version}/${encodeURIComponent(flowId)}/assets`, { method: 'GET', signal: AbortSignal.timeout(DELAI_LECTURE_FLOW_MS) })
       .catch((err: unknown) => {
         // 🔴 Jamais une `MetaApiError` hors d'ici : l'intercepteur de la fabrique (`guard`) invalide le jeton de l'espace
         // sur une erreur d'authentification, et une lecture accessoire ne doit jamais couper tous les envois d'un espace.
@@ -132,7 +161,8 @@ export class MetaFlowClient {
     const assets = assetsSchema.safeParse(lus);
     const url = assets.success ? assets.data.data.find((a) => a.asset_type === 'FLOW_JSON')?.download_url : undefined;
     if (!url) throw new Error(`flow ${flowId} : aucun flow_json dans ses fichiers chez Meta`);
-    // Une adresse signée du CDN de Meta, servie sans jeton.
+    // Une adresse signée du CDN de Meta, servie sans jeton, chez 360dialog aussi (`mmg.whatsapp.net`, mesuré) : la clé
+    // n'y va jamais.
     const res = await this.fetchImpl(url, { method: 'GET', signal: AbortSignal.timeout(DELAI_LECTURE_FLOW_MS) });
     const lu = flowJsonSchema.safeParse(res.ok ? await res.json().catch(() => null) : null);
     const ecran = lu.success ? lu.data.screens[0]?.id : undefined;
@@ -143,7 +173,9 @@ export class MetaFlowClient {
   /** GET /{waba}/flows, en suivant paging.next. Non branché sur la route GET, qui sert le store local. */
   async list(wabaId: string): Promise<FlowSummary[]> {
     const out: FlowSummary[] = [];
-    let next: string | null = `${this.baseUrl}/${this.version}/${wabaId}/flows?fields=id,name,status,categories&limit=100`;
+    let next: string | null = this.fournisseur === '360dialog'
+      ? `${HOTE_360DIALOG}/flows?limit=100`
+      : `${this.baseUrl}/${this.version}/${wabaId}/flows?fields=id,name,status,categories&limit=100`;
     for (let page = 0; page < 20 && next; page++) {
       const json = (await this.call(next, { method: 'GET' })) as {
         data?: Array<{ id?: string; name?: string; status?: string; categories?: string[] }>;
@@ -153,6 +185,9 @@ export class MetaFlowClient {
         out.push({ id: f.id ?? '', name: f.name ?? '', status: f.status ?? '', categories: f.categories ?? [] });
       }
       next = json.paging?.next ?? null;
+      // 🔴 Chez 360dialog, une page suivante ne se suit que chez 360dialog : un `next` relayé de Graph emporterait la clé
+      // chez Meta, et son 401 l'invaliderait (tous les envois de l'espace coupés).
+      if (next !== null && this.fournisseur === '360dialog' && !next.startsWith(`${HOTE_360DIALOG}/`)) next = null;
     }
     return out;
   }

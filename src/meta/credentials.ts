@@ -20,8 +20,9 @@ export type Fournisseur = 'meta' | '360dialog';
 /**
  * Le compte passe par 360dialog : sa clé ne parle qu'à `waba-v2.360dialog.io`. Levée par `resolveForTenant` et
  * `resolveForWaba`, que lisent tous ceux qui parlent à Graph : la clé ne leur est JAMAIS rendue, sans quoi un appel
- * Graph partirait avec elle et son 401 l'invaliderait (coupant tous les envois). Seule la voie d'envoi
- * (`resolvePourEnvoi`) la lit. Ce n'est pas une erreur d'authentification : rien n'est invalidé.
+ * Graph partirait avec elle et son 401 l'invaliderait (coupant tous les envois). Seuls les clients qui savent parler à
+ * 360dialog la lisent, par `resolvePourEnvoi` (envoi, modèles, Flows, médias). Ce n'est pas une erreur
+ * d'authentification : rien n'est invalidé.
  */
 export class CompteChez360dialog extends Error {
   constructor(readonly wabaId: string) {
@@ -119,8 +120,8 @@ export class MetaCredentialsResolver {
   }
 
   /**
-   * La résolution de la voie d'envoi (`MetaClientFactory`) : la seule qui rend une clé 360dialog, avec son fournisseur
-   * pour que l'appelant construise le bon client. Sans compte propre : le jeton global, fournisseur `meta`.
+   * La résolution des clients qui savent parler à 360dialog (`MetaClientFactory` : envoi, modèles, Flows) : la seule qui
+   * rend une clé 360dialog, avec son fournisseur pour que l'appelant construise le bon client. Sans compte propre : le jeton global, fournisseur `meta`.
    */
   async resolvePourEnvoi(tenantId: string): Promise<ResolvedEnvoi> {
     const wabaId = await this.deps.getWabaIdForTenant(tenantId);

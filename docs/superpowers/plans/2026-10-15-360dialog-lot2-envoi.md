@@ -69,14 +69,38 @@ retirer est à décider avec D. L'essai de A ne porte donc que sur les messages 
 fonctionnalité sur `/marketing_messages` (compte sans MM Lite) ; l'intercepteur invaliderait alors la clé.
 
 **Livraison B : les modèles.** Liste, création, suppression, statut par `/v1/configs/templates`, derrière le contrat
-de `MetaTemplateClient`. Les statuts de modèle se RELÈVENT par `GET /v1/configs/templates` (la mesure a tranché :
-le webhook du numéro ne les reçoit pas). L'en-tête média se pose par une URL publique en `header_handle`.
+`ClientModeles` (extrait de `MetaTemplateClient`, un seul exemplaire des extracteurs : `resumeDuModele`). Pagination
+mesurée (`limit`/`offset`, `total`) ; le filtre par nom est refusé, on filtre chez nous ; `external_id` est
+l'identifiant de Meta ; statut remis en MAJUSCULES (tous les envois exigent `APPROVED`) ; jamais modifiable. Les statuts
+se lisent à chaque liste (la mesure a tranché : le webhook du numéro ne les reçoit pas) ; ⚠️ l'événement sortant
+`template.status_changed` ne part donc jamais pour un tel espace, il faudrait un relevé qui stocke le dernier statut. En
+même temps, 🔴 le visuel d'un modèle 360dialog étant une URL publique quelconque, le préparateur des visuels ne garde le
+téléchargement direct que pour le CDN de Meta, et fait passer tout le reste par le téléchargement GARDÉ. L'en-tête d'un
+modèle créé sur un tel espace est une image de sa médiathèque (`/m/`).
 
-**Livraison C : les Flows**, derrière le contrat de `MetaFlowClient`, dans la limite de ce que la mesure montre.
+**Livraison C : les Flows**, par une option `fournisseur` de `MetaFlowClient` (tout sous `/flows/...`, mesuré ; le JSON
+d'un Flow s'ouvre sans clé sur `mmg.whatsapp.net`), sans jamais suivre une page suivante hors de 360dialog. La
+suppression d'un formulaire n'est plus bloquée par la vérification de l'agent de Meta. B et C partent ensemble : ils
+touchent les mêmes fichiers (fabrique, résolveur, tests de la voie 360dialog). Chez 360dialog, une opération sur les
+modèles ou les Flows n'invalide JAMAIS la clé (pas d'intercepteur) : seul un envoi la juge.
 
-**Livraison D : la console.** `fournisseur` exposé par l'API du compte ; sur un espace 360dialog, la console masque
-l'agent de Meta, « Renouveler la connexion Meta » et la connexion par Embedded Signup. L'API d'abord, l'écran après
-son déploiement (CLAUDE.md, « un écran qui appelle une route neuve casse dès le push »).
+Ce que la relecture de B et C laisse ouvert (🟡) :
+- la liste des Flows s'arrête à 100 chez 360dialog (sa page suivante relaierait Graph) : suivre `paging.cursors.after`
+  sur `HOTE_360DIALOG` se mesure d'abord ;
+- `message_send_ttl_seconds` n'est pas mesuré à la création d'un modèle chez 360dialog (un 400 possible si la durée est
+  réglée) ;
+- l'en-tête d'un modèle 360dialog va dans la médiathèque : une offre Base (stockage 0) le refuse en 402, et supprimer
+  le fichier casse le modèle (la médiathèque ne connaît pas cet usage) ;
+- deux phrases parlent de Meta à un espace 360dialog (« reconnectez le compte WhatsApp », le refus d'édition) : avec D.
+
+**Livraison D : la console**, et **lot 3 recadré par Julien le 2026-10-15** : pas d'onboarding intégré ni de compte
+partenaire ; le bouton « Onboard with 360dialog » sert à COLLER la clé d'API d'un numéro pris sur notre compte client
+360dialog (« nous payons 360dialog »). Côté serveur : `fournisseur` exposé par `account-status` (lecture SQL, sans
+déchiffrer), pastille propre, `CompteChez360dialog` traduit en 409 par le gestionnaire d'erreurs, reconnexion par
+Embedded Signup refusée sur un espace 360dialog, et une route d'espace (admin) qui fait ce que fait `/ops/360dialog`
+(logique mise en commun). Côté console : le bouton dans `ConnectNumberZone`, qui disparaît déjà dès qu'un numéro est
+connecté ; l'agent de Meta, « Renouveler la connexion Meta » et l'activation masqués. L'API d'abord, l'écran après son
+déploiement (CLAUDE.md, « un écran qui appelle une route neuve casse dès le push »).
 
 ## Tests attendus
 

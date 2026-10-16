@@ -46,15 +46,15 @@ function preparer(over: Partial<TemplateMediaDeps> & { pn?: string | null } = {}
 describe('TemplateMediaPreparer.prepareOne', () => {
   it('télécharge le visuel et rend le media id du téléversement, avec le bon type MIME', async () => {
     const { p, j } = preparer();
-    expect(await p.prepareOne('t1', 'https://cdn.meta/a.jpg?sig=1')).toBe('MID-1');
-    expect(j.telecharges).toEqual(['https://cdn.meta/a.jpg?sig=1']);
+    expect(await p.prepareOne('t1', 'https://scontent.whatsapp.net/a.jpg?sig=1')).toBe('MID-1');
+    expect(j.telecharges).toEqual(['https://scontent.whatsapp.net/a.jpg?sig=1']);
     expect(j.televerses).toEqual([{ pn: 'PN-1', mime: 'image/png' }]);
   });
 
   it('cache par CHEMIN : la signature de l’URL change à chaque lecture du template, pas le visuel', async () => {
     const { p, j } = preparer();
-    await p.prepareOne('t1', 'https://cdn.meta/a.jpg?sig=1');
-    expect(await p.prepareOne('t1', 'https://cdn.meta/a.jpg?sig=CHANGEE')).toBe('MID-1');
+    await p.prepareOne('t1', 'https://scontent.whatsapp.net/a.jpg?sig=1');
+    expect(await p.prepareOne('t1', 'https://scontent.whatsapp.net/a.jpg?sig=CHANGEE')).toBe('MID-1');
     expect(j.televerses).toHaveLength(1); // une campagne de 5 000 destinataires ne téléverse pas 5 000 fois
   });
 
@@ -63,33 +63,69 @@ describe('TemplateMediaPreparer.prepareOne', () => {
     // l'ancien, et l'envoi échouerait sans que rien n'explique pourquoi.
     let pn = 'PN-1';
     const { p, j } = preparer({ getPhoneNumberId: async () => pn });
-    expect(await p.prepareOne('t1', 'https://cdn.meta/a.jpg')).toBe('MID-1');
+    expect(await p.prepareOne('t1', 'https://scontent.whatsapp.net/a.jpg')).toBe('MID-1');
     pn = 'PN-2';
-    expect(await p.prepareOne('t1', 'https://cdn.meta/a.jpg')).toBe('MID-2');
+    expect(await p.prepareOne('t1', 'https://scontent.whatsapp.net/a.jpg')).toBe('MID-2');
     expect(j.televerses).toEqual([{ pn: 'PN-1', mime: 'image/png' }, { pn: 'PN-2', mime: 'image/png' }]);
   });
 
   it('cache expiré (au-delà de 7 jours) -> re-téléversement', async () => {
     const { p, j, avance } = preparer();
-    await p.prepareOne('t1', 'https://cdn.meta/a.jpg');
+    await p.prepareOne('t1', 'https://scontent.whatsapp.net/a.jpg');
     avance(7 * 86_400_000 + 1);
-    await p.prepareOne('t1', 'https://cdn.meta/a.jpg');
+    await p.prepareOne('t1', 'https://scontent.whatsapp.net/a.jpg');
     expect(j.televerses).toHaveLength(2);
   });
 
   it('aucun numéro d’envoi -> null, sans rien télécharger', async () => {
     const { p, j } = preparer({ pn: null });
-    expect(await p.prepareOne('t1', 'https://cdn.meta/a.jpg')).toBeNull();
+    expect(await p.prepareOne('t1', 'https://scontent.whatsapp.net/a.jpg')).toBeNull();
     expect(j.telecharges).toHaveLength(0);
   });
 
   it('téléchargement refusé, ou téléversement en erreur -> null, JAMAIS d’exception', async () => {
     // L'appelant refuse l'envoi en nommant ce qui manque ; une exception ici ferait tomber tout le run.
     const refuse = preparer({ fetchImpl: async () => ({ ok: false, status: 403 } as Response) });
-    expect(await refuse.p.prepareOne('t1', 'https://cdn.meta/a.jpg')).toBeNull();
+    expect(await refuse.p.prepareOne('t1', 'https://scontent.whatsapp.net/a.jpg')).toBeNull();
 
     const casse = preparer({ mediaClientFor: async () => ({ uploadForSend: async () => { throw new Error('boom'); } }) });
-    expect(await casse.p.prepareOne('t1', 'https://cdn.meta/a.jpg')).toBeNull();
+    expect(await casse.p.prepareOne('t1', 'https://scontent.whatsapp.net/a.jpg')).toBeNull();
+  });
+
+  it('🔴 un visuel hors du CDN de Meta (modèle lu chez 360dialog) passe par le téléchargement GARDÉ, jamais par fetch', async () => {
+    // Chez 360dialog, le visuel d'un modèle est une URL publique posée par qui a créé le modèle (mesuré le 2026-10-15).
+    const { p, j } = preparer();
+    expect(await p.prepareOne('t1', 'https://chatbot.ewr1.vultrobjects.com/team/carburant.jpg')).toBe('MID-1');
+    expect(j.telecharges).toEqual([]);
+    expect(j.gardes).toEqual(['IMAGE https://chatbot.ewr1.vultrobjects.com/team/carburant.jpg']);
+    // Un faux CDN de Meta en http, ou un hôte qui ne fait que finir par le même texte, n'est pas le CDN.
+    for (const url of ['http://scontent.whatsapp.net/a.jpg', 'https://evilwhatsapp.net/a.jpg']) {
+      await p.prepareOne('t1', url);
+      expect(j.telecharges).toEqual([]);
+    }
+    expect(j.gardes).toHaveLength(3);
+  });
+
+  it('un visuel refusé par le téléchargement gardé, ou d’un type que WhatsApp refuse : null, rien de téléversé', async () => {
+    const refus = preparer({ telecharger: async () => ({ refus: 'adresse interne' }) });
+    expect(await refus.p.prepareOne('t1', 'https://exemple.fr/a.jpg')).toBeNull();
+    const mauvaisType = preparer({ telecharger: async () => ({ octets: Buffer.from('texte'), mime: 'text/plain' }) });
+    expect(await mauvaisType.p.prepareOne('t1', 'https://exemple.fr/a.jpg')).toBeNull();
+    expect([...refus.j.televerses, ...mauvaisType.j.televerses]).toEqual([]);
+  });
+
+  it('hors du CDN de Meta, la query fait partie de la clé du cache : deux images ne se confondent pas', async () => {
+    const { p, j } = preparer();
+    expect(await p.prepareOne('t1', 'https://cdn.ailleurs.example/media?f=a.jpg')).toBe('MID-1');
+    expect(await p.prepareOne('t1', 'https://cdn.ailleurs.example/media?f=b.jpg')).toBe('MID-2');
+    expect(j.televerses).toHaveLength(2);
+  });
+
+  it('une adresse de NOTRE médiathèque se lit dans la médiathèque de l’espace, sans HTTP', async () => {
+    const CODE = 'abcdefghjkmnpqrstvwxyz0123';
+    const { p, j } = preparer({ lireFichier: async (t, c) => (t === 't1' && c === CODE ? { bytes: PNG, mime: 'image/png', nom: null } : null) });
+    expect(await p.prepareOne('t1', `https://api.messagingme.app/m/${CODE}.png`)).toBe('MID-1');
+    expect([j.telecharges, j.gardes]).toEqual([[], []]);
   });
 
   it('URL vide -> null immédiat (handle non exploitable relu chez Meta)', async () => {
@@ -102,7 +138,7 @@ describe('TemplateMediaPreparer.prepareOne', () => {
 describe('TemplateMediaPreparer.prepare (cartes de carousel)', () => {
   it('rend chaque carte avec son media id, et ne résout le numéro QU’UNE fois pour tout le lot', async () => {
     const { p, j } = preparer();
-    const cartes = await p.prepare('t1', [{ mediaUrl: 'https://cdn.meta/a.jpg' }, { mediaUrl: 'https://cdn.meta/b.jpg' }]);
+    const cartes = await p.prepare('t1', [{ mediaUrl: 'https://scontent.whatsapp.net/a.jpg' }, { mediaUrl: 'https://scontent.whatsapp.net/b.jpg' }]);
     expect(cartes.map((c) => c.mediaId)).toEqual(['MID-1', 'MID-2']);
     expect(j.numeros).toBe(1);
   });
@@ -115,15 +151,15 @@ describe('TemplateMediaPreparer.prepare (cartes de carousel)', () => {
 
   it('aucun numéro d’envoi -> cartes rendues telles quelles, sans exception', async () => {
     const { p, j } = preparer({ pn: null });
-    const cartes = await p.prepare('t1', [{ mediaUrl: 'https://cdn.meta/a.jpg' }]);
+    const cartes = await p.prepare('t1', [{ mediaUrl: 'https://scontent.whatsapp.net/a.jpg' }]);
     expect(cartes[0]!.mediaId).toBeUndefined();
     expect(j.telecharges).toHaveLength(0);
   });
 
   it('un visuel partagé par une carte ET l’en-tête ne se téléverse qu’une fois (cache commun)', async () => {
     const { p, j } = preparer();
-    await p.prepare('t1', [{ mediaUrl: 'https://cdn.meta/commun.jpg' }]);
-    expect(await p.prepareOne('t1', 'https://cdn.meta/commun.jpg')).toBe('MID-1');
+    await p.prepare('t1', [{ mediaUrl: 'https://scontent.whatsapp.net/commun.jpg' }]);
+    expect(await p.prepareOne('t1', 'https://scontent.whatsapp.net/commun.jpg')).toBe('MID-1');
     expect(j.televerses).toHaveLength(1);
   });
 });

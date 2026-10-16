@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CompteChez360dialog } from '../meta/credentials';
 import {
   CONSIGNE_MESSAGE_MAX,
   ID_FORMULAIRE_MESSAGE_RE,
@@ -232,8 +233,8 @@ export async function messagesInteractifsDuFormulaire(
 ): Promise<string[]> {
   const pn = await deps.numero(tenantId);
   if (pn === null) return [];
-  const client = await deps.client(tenantId);
   try {
+    const client = await deps.client(tenantId);
     const reglages = await client.getSettings(pn);
     if (reglages === null || reglages === undefined) return [];
     return (await client.listMessagesInteractifs(pn)).filter((m) => m.formulaireId === flowId).map((m) => m.titre);
@@ -249,6 +250,8 @@ export async function messagesInteractifsDuFormulaire(
  * livraison A).
  */
 function estAbsenceDAgent(err: unknown): boolean {
+  // Un compte 360dialog n'a pas d'agent de Meta : le client n'est même pas construit (lot 2, livraison C).
+  if (err instanceof CompteChez360dialog) return true;
   const statut = (err as { httpStatus?: unknown } | null)?.httpStatus;
   return statut === 400 || statut === 403 || statut === 404;
 }

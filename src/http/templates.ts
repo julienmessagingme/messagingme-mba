@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { forbidNonAdmin } from '../auth/middleware';
 import type { Guard } from '../auth/middleware';
-import type { MetaTemplateClient, CreateTemplateInput, TemplateButton, CarouselCard, TemplateHeader, TemplateSummary } from '../meta/templates';
+import type { ClientModeles, CreateTemplateInput, TemplateButton, CarouselCard, TemplateHeader, TemplateSummary } from '../meta/templates';
 import type { CampaignStatus } from '../campaign/types';
 import { parseParamHints, countTemplateVariables } from '../crm/template';
 import type { ParamSource } from '../crm/template';
@@ -18,7 +18,7 @@ import { messageDe } from '../lib/erreur';
 export interface TemplateRouteDeps {
   meta: {
     /** Client templates Meta résolu par espace (token de l'espace, repli global en sommeil). */
-    templateClientForTenant(tenantId: string): Promise<MetaTemplateClient>;
+    templateClientForTenant(tenantId: string): Promise<ClientModeles>;
   };
   repo: {
     /** WABA du tenant (les templates sont au niveau WABA). */

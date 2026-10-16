@@ -13,9 +13,9 @@ import { join, relative, resolve } from 'node:path';
  */
 const AUTORISES: Record<string, string> = {
   'src/meta/credentials.ts': 'la définition, et `cle360dialog` bâtie sur `resolvePourEnvoi`',
-  'src/meta/factory.ts': '`clientForTenant` : `MetaClient` reçoit le fournisseur et parle à 360dialog',
+  'src/meta/factory.ts': 'envoi (`MetaClient`), modèles (`Template360dialogClient`) et Flows (`MetaFlowClient`) : chacun reçoit le fournisseur et parle à 360dialog',
   'src/workflow/wiring.ts': 'le téléversement des médias d’envoi : `Media360dialogClient` pour un compte 360dialog',
-  'src/index.ts': 'les médias reçus : `Media360dialogClient` pour un compte 360dialog',
+  'src/index.ts': 'les médias reçus (`Media360dialogClient`) et l’en-tête d’un modèle créé (médiathèque) pour un compte 360dialog',
 };
 
 const RACINE = resolve(__dirname, '..');

@@ -240,11 +240,11 @@ function mapButton(b: TemplateButton): Record<string, unknown> {
 }
 
 /** Les seuls champs qui déterminent les `components` Meta (partagé create + update ; name/language exclus). */
-type ComponentInput = Pick<CreateTemplateInput, 'header' | 'body' | 'example' | 'footer' | 'buttons' | 'carousel'>;
+export type ComponentInput = Pick<CreateTemplateInput, 'header' | 'body' | 'example' | 'footer' | 'buttons' | 'carousel'>;
 
 const hasVar = (s: string): boolean => /\{\{\s*\d+\s*\}\}/.test(s);
 
-function buildComponents(input: ComponentInput): unknown[] {
+export function buildComponents(input: ComponentInput): unknown[] {
   const components: unknown[] = [];
 
   // HEADER (ordre Meta : HEADER, BODY, FOOTER, BUTTONS). Hors carousel (le carousel a ses headers par carte).
@@ -288,7 +288,49 @@ function buildComponents(input: ComponentInput): unknown[] {
   return components;
 }
 
-export class MetaTemplateClient {
+/** Un modèle tel que la liste le rend, chez Meta comme chez 360dialog (mêmes `components`). */
+export interface ModeleBrut {
+  id?: string; name?: string; status?: string; category?: string; language?: string; components?: unknown; message_send_ttl_seconds?: unknown;
+}
+
+/** Le résumé d'un modèle, depuis ses `components` : le seul exemplaire des extracteurs, partagé par les deux clients. */
+export function resumeDuModele(t: ModeleBrut): TemplateSummary {
+  const carousel = carouselOf(t.components);
+  return {
+    id: t.id ?? '',
+    name: t.name ?? '',
+    status: t.status ?? '',
+    category: t.category ?? '',
+    language: t.language ?? '',
+    body: bodyOf(t.components),
+    headerFormat: headerFormatOf(t.components),
+    ...(headerTextOf(t.components) !== undefined ? { headerText: headerTextOf(t.components) } : {}),
+    // Seulement pour un en-tête média : sur un carousel, les visuels sont par carte (cf. `carouselOf`), et un
+    // en-tête top-level induirait l'envoi en erreur.
+    ...(!carousel && headerMediaUrlOf(t.components) !== undefined ? { headerMediaUrl: headerMediaUrlOf(t.components) } : {}),
+    ...(footerOf(t.components) !== undefined ? { footer: footerOf(t.components) } : {}),
+    ...(buttonsOf(t.components) ? { buttons: buttonsOf(t.components) } : {}),
+    ...(exampleOf(t.components) ? { example: exampleOf(t.components) } : {}),
+    isCarousel: carousel !== undefined,
+    ...(carousel ? { carousel } : {}),
+    editable: isSimpleEditable(t.components),
+    ...(typeof t.message_send_ttl_seconds === 'number' && Number.isInteger(t.message_send_ttl_seconds) ? { ttlSecondes: t.message_send_ttl_seconds } : {}),
+  };
+}
+
+/**
+ * Le contrat des modèles d'un espace (`MetaClientFactory.templateClientForTenant`) : `MetaTemplateClient` pour un compte
+ * Meta, `Template360dialogClient` pour un compte 360dialog. Les appelants ne savent pas lequel ils tiennent.
+ */
+export interface ClientModeles {
+  create(wabaId: string, input: CreateTemplateInput): Promise<{ id: string; status: string; category: string }>;
+  statutsDuNom(wabaId: string, name: string): Promise<StatutModele[]>;
+  list(wabaId: string): Promise<TemplateSummary[]>;
+  update(templateId: string, input: { category?: 'MARKETING' | 'UTILITY'; ttlSecondes?: number } & ComponentInput): Promise<{ success: boolean }>;
+  remove(wabaId: string, name: string): Promise<{ success: boolean }>;
+}
+
+export class MetaTemplateClient implements ClientModeles {
   constructor(
     private readonly token: string,
     private readonly version = 'v23.0',
@@ -373,33 +415,8 @@ export class MetaTemplateClient {
     const out: TemplateSummary[] = [];
     let next: string | null = this.url(wabaId, `?fields=${champs}&limit=100`);
     for (let page = 0; page < 20 && next; page++) {
-      const json = (await this.call(next, { method: 'GET' })) as {
-        data?: Array<{ id?: string; name?: string; status?: string; category?: string; language?: string; components?: unknown; message_send_ttl_seconds?: unknown }>;
-        paging?: { next?: string };
-      };
-      for (const t of json.data ?? []) {
-        const carousel = carouselOf(t.components);
-        out.push({
-          id: t.id ?? '',
-          name: t.name ?? '',
-          status: t.status ?? '',
-          category: t.category ?? '',
-          language: t.language ?? '',
-          body: bodyOf(t.components),
-          headerFormat: headerFormatOf(t.components),
-          ...(headerTextOf(t.components) !== undefined ? { headerText: headerTextOf(t.components) } : {}),
-          // Seulement pour un en-tête média : sur un carousel, les visuels sont par carte (cf. `carouselOf`), et un
-          // en-tête top-level induirait l'envoi en erreur.
-          ...(!carousel && headerMediaUrlOf(t.components) !== undefined ? { headerMediaUrl: headerMediaUrlOf(t.components) } : {}),
-          ...(footerOf(t.components) !== undefined ? { footer: footerOf(t.components) } : {}),
-          ...(buttonsOf(t.components) ? { buttons: buttonsOf(t.components) } : {}),
-          ...(exampleOf(t.components) ? { example: exampleOf(t.components) } : {}),
-          isCarousel: carousel !== undefined,
-          ...(carousel ? { carousel } : {}),
-          editable: isSimpleEditable(t.components),
-          ...(typeof t.message_send_ttl_seconds === 'number' && Number.isInteger(t.message_send_ttl_seconds) ? { ttlSecondes: t.message_send_ttl_seconds } : {}),
-        });
-      }
+      const json = (await this.call(next, { method: 'GET' })) as { data?: ModeleBrut[]; paging?: { next?: string } };
+      for (const t of json.data ?? []) out.push(resumeDuModele(t));
       next = json.paging?.next ?? null;
     }
     return out;

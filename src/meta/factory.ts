@@ -1,5 +1,6 @@
 import { MetaClient } from './client';
-import { MetaTemplateClient } from './templates';
+import { MetaTemplateClient, type ClientModeles } from './templates';
+import { Template360dialogClient } from './templates-360dialog';
 import { MetaFlowClient } from './flows';
 import { MetaPricingClient } from './pricing';
 import { MetaPhoneNumberClient } from './phone-number';
@@ -108,12 +109,25 @@ export class MetaClientFactory {
     return this.avantUnModele(this.guard(client, resolu), tenantId);
   }
 
-  templateClientForTenant(tenantId: string): Promise<MetaTemplateClient> {
-    return this.pour(tenantId, (token) => new MetaTemplateClient(token, this.o.version));
+  /**
+   * Les modèles de l'espace (lot 2, livraison B) : par la résolution d'ENVOI, qui rend la clé d'un compte 360dialog, et
+   * le client qui sait lui parler. Pour un compte Meta, rien ne change : même jeton, même repli.
+   */
+  async templateClientForTenant(tenantId: string): Promise<ClientModeles> {
+    const resolu = await this.o.resolver.resolvePourEnvoi(tenantId);
+    // 🔴 Chez 360dialog, pas d'intercepteur : un 401 sur une liste de modèles (le chemin de TOUT envoi de modèle) ou un
+    // refus de fonctionnalité qui en prendrait la forme ne doit pas invalider la clé et couper tous les envois. Seul un
+    // envoi juge la clé (`clientForTenant`). Le principe est celui de `MetaFlowClient.ecranDEntree`.
+    if (resolu.fournisseur === '360dialog') return new Template360dialogClient(resolu.token);
+    return this.guard(new MetaTemplateClient(resolu.token, this.o.version), resolu);
   }
 
-  flowClientForTenant(tenantId: string): Promise<MetaFlowClient> {
-    return this.pour(tenantId, (token) => new MetaFlowClient(token, this.o.version));
+  /** Les Flows de l'espace (livraison C) : même règle, `MetaFlowClient` reçoit le fournisseur. */
+  async flowClientForTenant(tenantId: string): Promise<MetaFlowClient> {
+    const resolu = await this.o.resolver.resolvePourEnvoi(tenantId);
+    const client = new MetaFlowClient(resolu.token, this.o.version, undefined, undefined, resolu.fournisseur);
+    // Comme les modèles : chez 360dialog, une opération sur les Flows n'invalide jamais la clé.
+    return resolu.fournisseur === '360dialog' ? client : this.guard(client, resolu);
   }
 
   pricingClientForTenant(tenantId: string): Promise<MetaPricingClient> {
@@ -140,7 +154,8 @@ export class MetaClientFactory {
   /**
    * Un client construit avec le jeton de l'espace, et enveloppé de l'intercepteur (`guard`). 🔴 Un client GRAPH : pour
    * un compte 360dialog, `resolveForTenant` lève `CompteChez360dialog` et rien n'est construit, donc rien ne part chez
-   * Meta avec sa clé (le balayage du statut des numéros, l'agent de Meta, le chiffrage échouent fermés).
+   * Meta avec sa clé (le statut du numéro, l'agent de Meta, le tarif échouent fermés). Modèles et Flows n'y passent plus :
+   * ils savent parler à 360dialog.
    */
   private async pour<T extends object>(tenantId: string, fabrique: (token: string) => T): Promise<T> {
     const resolu = await this.o.resolver.resolveForTenant(tenantId);

@@ -53,6 +53,22 @@ function codeDeMediatheque(url: string): string | null {
   }
 }
 
+/**
+ * Une adresse du CDN de Meta, la seule que le visuel d'un modèle lu CHEZ META peut porter : elle garde le `fetch`
+ * direct d'avant. 🔴 Chez 360dialog, le visuel d'un modèle est une URL publique quelconque, posée par qui a créé le
+ * modèle (un autre logiciel sur le numéro, mesuré le 2026-10-15) : elle passe par le téléchargement GARDÉ.
+ */
+export function estCdnDeMeta(url: string): boolean {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:') return false;
+    const h = u.hostname.toLowerCase();
+    return h === 'lookaside.fbsbx.com' || h.endsWith('.whatsapp.net') || h.endsWith('.fbcdn.net');
+  } catch {
+    return false;
+  }
+}
+
 /** La forme d'en-tête que WhatsApp accepte pour un type de fichier, ou null (refus). */
 function typeEnTete(mime: string): FichierPrepare['type'] | null {
   if (mime === 'image/jpeg' || mime === 'image/png' || mime === 'image/gif') return 'image';
@@ -80,16 +96,15 @@ export class TemplateMediaPreparer {
    * inutilisable.
    */
   private async televerse(tenantId: string, pn: string, mediaUrl: string): Promise<string | null> {
-    const cle = `${pn}|${mediaUrl.split('?')[0]!}`;
+    // Le chemin seul pour le CDN de Meta, dont la query n'est qu'une signature ; l'URL ENTIÈRE ailleurs (modèle
+    // 360dialog), où la query peut être ce qui distingue deux images.
+    const cle = `${pn}|${estCdnDeMeta(mediaUrl) ? mediaUrl.split('?')[0]! : mediaUrl}`;
     const hit = this.cache.get(cle);
     if (hit && this.now() - hit.at < MEDIA_CACHE_MS) return hit.id;
     const get = this.deps.fetchImpl ?? ((url: string) => fetch(url));
     try {
       const media = await this.deps.mediaClientFor(tenantId);
-      const res = await get(mediaUrl);
-      if (!res.ok) throw new Error(`téléchargement du visuel: HTTP ${res.status}`);
-      const mime = res.headers.get('content-type') ?? 'image/jpeg';
-      const bytes = Buffer.from(await res.arrayBuffer());
+      const { bytes, mime } = await this.lireVisuel(tenantId, mediaUrl, get);
       const id = await media.uploadForSend(pn, bytes, mime);
       this.cache.set(cle, { at: this.now(), id });
       return id;
@@ -98,6 +113,27 @@ export class TemplateMediaPreparer {
       console.error("média de template : visuel non préparé pour l'envoi:", texteDe(err));
       return null;
     }
+  }
+
+  /**
+   * Les octets d'un visuel de modèle : le CDN de Meta comme avant ; une adresse de NOTRE médiathèque, lue par (espace,
+   * code) ; toute autre adresse par le téléchargement gardé, le type tranché sur les octets. Lève en cas d'échec.
+   */
+  private async lireVisuel(tenantId: string, url: string, get: (url: string) => Promise<Response>): Promise<{ bytes: Buffer; mime: string }> {
+    if (estCdnDeMeta(url)) {
+      const res = await get(url);
+      if (!res.ok) throw new Error(`téléchargement du visuel: HTTP ${res.status}`);
+      return { bytes: Buffer.from(await res.arrayBuffer()), mime: res.headers.get('content-type') ?? 'image/jpeg' };
+    }
+    const code = codeDeMediatheque(url);
+    const local = code ? await this.deps.lireFichier(tenantId, code) : null;
+    if (local) return { bytes: local.bytes, mime: local.mime };
+    const genre = genreParAdresse(url);
+    const telecharge = await this.deps.telecharger(genre === 'video' ? 'VIDEO' : genre === 'document' ? 'DOCUMENT' : 'IMAGE', url);
+    if ('refus' in telecharge) throw new Error(`téléchargement du visuel : ${telecharge.refus}`);
+    const mime = typeFichier(telecharge.octets);
+    if (!mime || typeEnTete(mime) === null) throw new Error(`type de visuel non accepté par WhatsApp : ${mime ?? 'inconnu'}`);
+    return { bytes: telecharge.octets, mime };
   }
 
   /**

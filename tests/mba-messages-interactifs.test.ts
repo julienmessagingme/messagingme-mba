@@ -4,6 +4,7 @@ import {
   validerModification, versMetaCreation, versMetaModification, type MessageInteractif,
 } from '../src/mba/messages-interactifs';
 import { MetaApiError } from '../src/meta/errors';
+import { CompteChez360dialog } from '../src/meta/credentials';
 import { TITRE_SKILL_RE } from '../web/lib/partage/agent-meta';
 
 /**
@@ -157,6 +158,11 @@ describe('messagesInteractifsDuFormulaire : qui ouvre ce formulaire ?', () => {
   it('rend les titres des seuls messages qui ouvrent CE formulaire', async () => {
     const { deps } = avec({ liste: [msg('a', '42'), msg('b', '43'), msg('c', null), msg('d', '42')] });
     expect(await messagesInteractifsDuFormulaire(deps, 't1', '42')).toEqual(['a', 'd']);
+  });
+
+  it('⚠️ un espace 360dialog (pas d’agent de Meta : le client n’est même pas construit) n’est jamais bloqué', async () => {
+    const deps = { numero: async () => 'PN1', client: async (): Promise<never> => { throw new CompteChez360dialog('W1'); } };
+    expect(await messagesInteractifsDuFormulaire(deps, 't1', '42')).toEqual([]);
   });
 
   it('⚠️ un espace sans numéro, ou sans réglages d’agent chez Meta, n’est jamais bloqué', async () => {

@@ -1,10 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { MetaClientFactory } from '../src/meta/factory';
 import { CompteChez360dialog, MetaCredentialsResolver, TokenInvalidError, type CredentialsResolverDeps, type WabaCredential } from '../src/meta/credentials';
 import type { HttpTransport, HttpResponse } from '../src/meta/http';
 import { Media360dialogClient } from '../src/meta/media-360dialog';
 import { MediaTropGros, MediaUploadError } from '../src/meta/media';
 import { Cle360dialogRefusee, Config360dialogClient, Erreur360dialog } from '../src/meta/config-360dialog';
+import { Template360dialogClient } from '../src/meta/templates-360dialog';
+import { MetaTemplateClient } from '../src/meta/templates';
+import { MetaFlowClient } from '../src/meta/flows';
 
 /**
  * 360dialog, lot 2, livraison A : un numéro porté par 360dialog envoie par `waba-v2.360dialog.io` avec SA clé, et
@@ -139,18 +142,153 @@ describe('la fabrique envoie un espace 360dialog chez 360dialog', () => {
     expect(invalides).toEqual(['w360']);
   });
 
-  it('🔴 les clients Graph (statut du numéro, modèles, Flows, agent de Meta, tarifs) refusent un espace 360dialog, sans rien invalider', async () => {
+  it('🔴 les clients Graph (statut du numéro, agent de Meta, tarifs, inscription) refusent un espace 360dialog, sans rien invalider', async () => {
     const t = new TransportNotant();
     const { r, invalides } = resolveur(CREDS, TENANTS);
     const f = fabrique(r, t);
     for (const construire of [
-      () => f.phoneClientForTenant('t360'), () => f.templateClientForTenant('t360'), () => f.flowClientForTenant('t360'),
-      () => f.mbaClientForTenant('t360'), () => f.pricingClientForTenant('t360'), () => f.phoneRegisterClientForTenant('t360'),
+      () => f.phoneClientForTenant('t360'), () => f.mbaClientForTenant('t360'),
+      () => f.pricingClientForTenant('t360'), () => f.phoneRegisterClientForTenant('t360'),
     ]) {
       await expect(construire()).rejects.toBeInstanceOf(CompteChez360dialog);
     }
     expect(t.appels).toEqual([]);
     expect(invalides).toEqual([]);
+  });
+
+  it('🔴 un 401 sur la liste des modèles d’un espace 360dialog n’invalide PAS la clé (seul un envoi la juge)', async () => {
+    const { r, invalides } = resolveur(CREDS, TENANTS);
+    const f = fabrique(r, new TransportNotant());
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ meta: { developer_message: 'refus' } }), { status: 401 }));
+    try {
+      await expect((await f.templateClientForTenant('t360')).list('w360')).rejects.toMatchObject({ httpStatus: 401 });
+      await expect((await f.flowClientForTenant('t360')).list('w360')).rejects.toMatchObject({ httpStatus: 401 });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(invalides).toEqual([]);
+  });
+
+  it('modèles et Flows (livraisons B et C) : un espace 360dialog reçoit le client 360dialog, un espace Meta le client Meta', async () => {
+    const f = fabrique(resolveur(CREDS, TENANTS).r, new TransportNotant());
+    expect(await f.templateClientForTenant('t360')).toBeInstanceOf(Template360dialogClient);
+    expect(await f.templateClientForTenant('tMeta')).toBeInstanceOf(MetaTemplateClient);
+    expect(await f.templateClientForTenant('tMeta')).not.toBeInstanceOf(Template360dialogClient);
+  });
+});
+
+describe('les modèles d’un numéro 360dialog (livraison B)', () => {
+  const MODELE = (nom: string, statut: string, extra: Record<string, unknown> = {}) => ({
+    id: `d360-${nom}`, external_id: `meta-${nom}`, name: nom, language: 'fr', status: statut, category: 'MARKETING',
+    components: [
+      { type: 'HEADER', format: 'IMAGE', example: { header_handle: ['https://cdn.ailleurs.example/a.jpg'] } },
+      { type: 'BODY', text: 'Bonjour {{1}}' },
+    ],
+    ...extra,
+  });
+
+  it('la liste : identifiant de Meta, statut en MAJUSCULES, jamais modifiable, et la clé en D360-API-KEY', async () => {
+    const { appels, fetchImpl } = faussesReponses([{ status: 200, json: { waba_templates: [MODELE('promo', 'approved')], total: 1, count: 1 } }]);
+    const [m] = await new Template360dialogClient('CLE', fetchImpl).list('ignoré');
+    expect(m).toMatchObject({ id: 'meta-promo', name: 'promo', status: 'APPROVED', category: 'MARKETING', body: 'Bonjour {{1}}', headerFormat: 'IMAGE', headerMediaUrl: 'https://cdn.ailleurs.example/a.jpg', editable: false });
+    expect(appels[0]?.url).toBe('https://waba-v2.360dialog.io/v1/configs/templates?limit=100&offset=0');
+    expect((appels[0]?.init.headers as Record<string, string>)['D360-API-KEY']).toBe('CLE');
+    expect(appels[0]?.init.redirect).toBe('error');
+  });
+
+  it('la liste suit limit et offset jusqu’au total, et écarte une ligne illisible', async () => {
+    const page = (n: number, depart: number) => Array.from({ length: n }, (_, i) => MODELE(`m${depart + i}`, 'approved'));
+    const { appels, fetchImpl } = faussesReponses([
+      { status: 200, json: { waba_templates: [...page(99, 0), { name: 'sans statut' }], total: 130 } },
+      { status: 200, json: { waba_templates: page(30, 100), total: 130 } },
+    ]);
+    const liste = await new Template360dialogClient('CLE', fetchImpl).list('w');
+    expect(liste).toHaveLength(129);
+    expect(appels.map((a) => a.url.split('?')[1])).toEqual(['limit=100&offset=0', 'limit=100&offset=100']);
+  });
+
+  it('statutsDuNom : le nom exact seulement, le motif de refus lu, NONE ramené à null', async () => {
+    const { fetchImpl } = faussesReponses([{ status: 200, json: { waba_templates: [
+      MODELE('promo', 'rejected', { rejected_reason: 'INVALID_FORMAT' }), MODELE('promo2', 'approved'), MODELE('promo', 'approved', { language: 'en', rejected_reason: 'NONE' }),
+    ] } }]);
+    expect(await new Template360dialogClient('CLE', fetchImpl).statutsDuNom('w', 'promo')).toEqual([
+      { language: 'fr', status: 'REJECTED', category: 'MARKETING', rejectedReason: 'INVALID_FORMAT' },
+      { language: 'en', status: 'APPROVED', category: 'MARKETING', rejectedReason: null },
+    ]);
+  });
+
+  it('create : les components de Meta, la forme mesurée (allow_category_change), et l’identifiant de Meta rendu', async () => {
+    const { appels, fetchImpl } = faussesReponses([{ status: 201, json: { external_id: '940505762119231', status: 'pending', category: 'UTILITY' } }]);
+    const cree = await new Template360dialogClient('CLE', fetchImpl).create('w', { name: 'n', category: 'UTILITY', language: 'fr', body: 'Bonjour' });
+    expect(cree).toEqual({ id: '940505762119231', status: 'PENDING', category: 'UTILITY' });
+    expect(appels[0]?.init.method).toBe('POST');
+    expect(JSON.parse(String(appels[0]?.init.body))).toEqual({ name: 'n', category: 'UTILITY', language: 'fr', allow_category_change: true, components: [{ type: 'BODY', text: 'Bonjour' }] });
+  });
+
+  it('remove : DELETE par le nom encodé ; un refus de 360dialog devient une MetaApiError lisible', async () => {
+    const ok = faussesReponses([{ status: 200, json: { meta: { success: true } } }]);
+    expect(await new Template360dialogClient('CLE', ok.fetchImpl).remove('w', 'a b')).toEqual({ success: true });
+    expect(ok.appels[0]?.url).toBe('https://waba-v2.360dialog.io/v1/configs/templates/a%20b');
+    const refus = faussesReponses([{ status: 400, json: { meta: { developer_message: 'Invalid payload' } } }]);
+    await expect(new Template360dialogClient('CLE', refus.fetchImpl).remove('w', 'x')).rejects.toMatchObject({ httpStatus: 400, message: 'Invalid payload' });
+  });
+
+  it('update : refusé en 422, aucun appel', async () => {
+    await expect(new Template360dialogClient('CLE', faussesReponses([]).fetchImpl).update()).rejects.toMatchObject({ statusCode: 422 });
+  });
+});
+
+describe('les Flows d’un numéro 360dialog (livraison C)', () => {
+  const entree = { name: 'Formulaire', screens: [], ref: 'ref1' };
+
+  it('chaque méthode vise waba-v2.360dialog.io/flows..., avec la clé, sans Authorization ni redirection', async () => {
+    const { appels, fetchImpl } = faussesReponses([
+      { status: 200, json: { id: 'F1', success: true, validation_errors: [] } },
+      { status: 200, json: { success: true, validation_errors: [] } },
+      { status: 200, json: { success: true } },
+      { status: 200, json: { success: true } },
+      { status: 200, json: { success: true } },
+      { status: 200, json: { data: [{ id: 'F1', name: 'Formulaire', status: 'DRAFT', categories: ['OTHER'] }] } },
+    ]);
+    const c = new MetaFlowClient('CLE', 'v25.0', '7.2', fetchImpl, '360dialog');
+    await c.create('w', entree);
+    await c.updateDraft('F1', entree);
+    await c.publish('F1');
+    await c.deprecate('F1');
+    await c.delete('F1');
+    expect(await c.list('w')).toEqual([{ id: 'F1', name: 'Formulaire', status: 'DRAFT', categories: ['OTHER'] }]);
+    expect(appels.map((a) => `${a.init.method ?? 'GET'} ${a.url}`)).toEqual([
+      'POST https://waba-v2.360dialog.io/flows',
+      'POST https://waba-v2.360dialog.io/flows/F1/assets',
+      'POST https://waba-v2.360dialog.io/flows/F1/publish',
+      'POST https://waba-v2.360dialog.io/flows/F1/deprecate',
+      'DELETE https://waba-v2.360dialog.io/flows/F1',
+      'GET https://waba-v2.360dialog.io/flows?limit=100',
+    ]);
+    for (const a of appels) {
+      const h = a.init.headers as Record<string, string>;
+      expect(h['D360-API-KEY']).toBe('CLE');
+      expect(Object.keys(h).map((k) => k.toLowerCase())).not.toContain('authorization');
+      expect(a.init.redirect).toBe('error');
+    }
+  });
+
+  it('🔴 une page suivante relayée de Graph n’est jamais suivie avec la clé', async () => {
+    const { appels, fetchImpl } = faussesReponses([
+      { status: 200, json: { data: [{ id: 'F1' }], paging: { next: 'https://graph.facebook.com/v23.0/w/flows?after=X' } } },
+    ]);
+    await new MetaFlowClient('CLE', 'v25.0', '7.2', fetchImpl, '360dialog').list('w');
+    expect(appels).toHaveLength(1);
+  });
+
+  it('l’écran d’entrée : les fichiers lus avec la clé, le JSON téléchargé SANS (mesuré : il s’ouvre sans clé)', async () => {
+    const { appels, fetchImpl } = faussesReponses([
+      { status: 200, json: { data: [{ name: 'flow.json', asset_type: 'FLOW_JSON', download_url: 'https://mmg.whatsapp.net/flow.json' }] } },
+      { status: 200, json: { screens: [{ id: 'ECRAN' }] } },
+    ]);
+    expect(await new MetaFlowClient('CLE', 'v25.0', '7.2', fetchImpl, '360dialog').ecranDEntree('F1')).toBe('ECRAN');
+    expect(appels[0]?.url).toBe('https://waba-v2.360dialog.io/flows/F1/assets');
+    expect(appels[1]?.init.headers).toBeUndefined();
   });
 });
 

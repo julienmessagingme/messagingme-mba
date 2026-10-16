@@ -78,7 +78,7 @@ describe('câblage de /v1/templates', () => {
     // Livraison B : Claude envoie par le MÊME cœur que `POST /v1/sends`, sur les MÊMES dépendances.
     expect(source).toMatch(/sends: depsEnvois,/);
     expect(source).toMatch(/envoyerModele: \(tenant, corps, compter\) => lancerEnvoi\(depsEnvois, tenant, corps, undefined, compter\),/);
-    expect(source).toMatch(/telechargerEntete: telechargerEnteteProduction,\s*deposerEntete: \(octets, mime\) => mediaClient\.uploadImage\(octets, mime\),\s*placesEntete: placesDeTelechargement,/);
+    expect(source).toMatch(/telechargerEntete: telechargerEnteteProduction,\s*deposerEntete: enteteDeModele,\s*placesEntete: placesDeTelechargement,/);
   });
 });
 

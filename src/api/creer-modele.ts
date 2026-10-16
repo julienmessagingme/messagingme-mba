@@ -18,8 +18,11 @@ export interface DepsCreationModele {
   modeles: TemplateRouteDeps;
   /** Le téléchargement gardé d'une adresse saisie par un client : `telechargerEnteteProduction` en production. */
   telechargerEntete(format: FormatEntete, url: string): Promise<{ octets: Buffer; mime: string } | { refus: string }>;
-  /** Le dépôt chez Meta (Resumable Upload), qui rend le `header_handle` : le `uploadImage` de l'écran Modèles. */
-  deposerEntete(octets: Buffer, mime: string): Promise<string>;
+  /**
+   * Le dépôt de l'en-tête, qui rend le `header_handle` : le `uploadImage` de l'écran Modèles. L'espace décide où : chez Meta
+   * (upload résumable), ou, pour un compte 360dialog, la médiathèque de l'espace (une adresse publique).
+   */
+  deposerEntete(octets: Buffer, mime: string, tenantId: string): Promise<string>;
   /**
    * Les places d'en-tête de la copie (`placesDeTelechargement`) : une place est TENUE du téléchargement à la fin du dépôt
    * chez Meta, le fichier (jusqu'à 16 Mo) restant en mémoire jusque-là. `null` : toutes prises.
@@ -84,13 +87,13 @@ function refusDeLaConsole(r: { statut: 400 | 422; error: string }): RefusModele 
 }
 
 /** Télécharge l'en-tête et le dépose chez Meta en tenant une place de la copie : le handle, ou un refus. */
-async function deposerLEntete(deps: DepsCreationModele, format: FormatEntete, url: string): Promise<{ handle: string } | { refus: RefusModele }> {
+async function deposerLEntete(deps: DepsCreationModele, tenantId: string, format: FormatEntete, url: string): Promise<{ handle: string } | { refus: RefusModele }> {
   const rendre = deps.placesEntete.prendre();
   if (rendre === null) return { refus: OCCUPE };
   try {
     const fichier = await deps.telechargerEntete(format, url);
     if ('refus' in fichier) return { refus: { statut: 422, code: 'invalid_header_media', message: `en-tête : ${fichier.refus}` } };
-    return { handle: await deps.deposerEntete(fichier.octets, fichier.mime) };
+    return { handle: await deps.deposerEntete(fichier.octets, fichier.mime, tenantId) };
   } finally {
     rendre();
   }
@@ -108,7 +111,7 @@ export async function creerModeleDepuisMeta(deps: DepsCreationModele, tenantId: 
       // déposer jusqu'à 16 Mo pour rien. `creerUnModele` la rejoue : elle ne lit les champs que si une adresse en porte.
       const avant = await refusDesChamps(deps.modeles, tenantId, input);
       if (avant) return { refus: refusDeLaConsole(avant) };
-      const depot = await deposerLEntete(deps, enteteMedia.format, enteteMedia.url);
+      const depot = await deposerLEntete(deps, tenantId, enteteMedia.format, enteteMedia.url);
       if ('refus' in depot) return depot;
       complet = { ...input, header: { format: enteteMedia.format, handle: depot.handle } };
     }

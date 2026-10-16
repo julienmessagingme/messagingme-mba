@@ -314,8 +314,14 @@ porte la clé d'API du NUMÉRO. 🔴 `resolveForTenant` et `resolveForWaba`, que
 l'invaliderait (tous les envois de l'espace coupés). Seules `resolvePourEnvoi` (la fabrique : `MetaClient` reçoit le
 fournisseur et parle à `waba-v2.360dialog.io` en `D360-API-KEY`, sur `/messages` et `/marketing_messages`) et
 `cle360dialog` (les médias : `Media360dialogClient`) la rendent, et `tests/inventaire-cle-360dialog.test.ts` tient la
-liste de leurs appelants. Ce qui reste Graph (statut du numéro, agent de Meta, tarif, et jusqu'aux livraisons B et C
-les modèles et les Flows) échoue donc FERMÉ pour un tel espace ; le tarif y est « absent », comme sans tarif. Un
+liste de leurs appelants. Les **modèles** passent par `Template360dialogClient` (contrat `ClientModeles` : `external_id`
+pour identifiant, statut remis en MAJUSCULES, jamais modifiable, pagination `limit`/`offset`), les **Flows** par
+`MetaFlowClient` en fournisseur `360dialog` (tout sous `/flows/...`, aucune page suivante suivie hors de 360dialog).
+🔴 Le visuel d'un modèle lu chez 360dialog est une URL publique quelconque : à l'envoi, seul le CDN de Meta garde le
+téléchargement direct (`estCdnDeMeta`), une adresse `/m/` se lit dans la médiathèque de l'espace, tout le reste passe
+par le téléchargement GARDÉ. L'en-tête d'un modèle CRÉÉ sur un tel espace est une image de sa médiathèque (adresse `/m/`,
+la forme mesurée) ; une vidéo y est refusée. Ce qui reste Graph (statut du numéro, agent de Meta, tarif) échoue donc
+FERMÉ pour un tel espace ; le tarif y est « absent », comme sans tarif. Un
 numéro 360dialog se rattache par `POST /ops/360dialog/:tenantId` (`src/http/ops-360dialog.ts`) : la clé collée, le
 numéro et le compte LUS par `/health_status`, les gardes de `linkTenant`, puis notre webhook posé en gardant les
 destinations existantes (`Config360dialogClient.poserWebhook`). Le numéro affiché, qu'aucune route ne rend avec la clé,

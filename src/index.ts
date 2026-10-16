@@ -111,7 +111,7 @@ import { carouselSendBlocker } from './meta/template-components';
 import { creerEnvoiModeleInbox } from './inbox/envoi-modele';
 import { PgRcsMessageStore } from './rcs/message-store.pg';
 import { PgRcsMediaStore } from './rcs/media-store.pg';
-import { urlFichier } from './medias/fichier';
+import { typeFichier, urlFichier } from './medias/fichier';
 import { newMediaCode } from './ids/code';
 import { verifierCleRcs } from './rcs/channel-info';
 import { fetchGet } from './lib/http-get';
@@ -495,6 +495,23 @@ async function main(): Promise<void> {
   // Clients Meta phone/pricing/templates/flows : résolus par tenant via metaFactory. `media` reste global :
   // endpoint /{appId}/uploads app-scoped.
   const mediaClient = new MetaMediaClient(config.META_ACCESS_TOKEN, config.META_APP_ID, config.META_GRAPH_VERSION);
+  /**
+   * L'en-tête média d'un modèle créé, pour un espace (lot 2, livraison B). Chez Meta, l'upload résumable de notre appli
+   * (un handle `4::...`). Chez 360dialog, que cette appli ne sert pas, l'adresse publique d'une image de la médiathèque
+   * de l'espace : c'est la forme mesurée sur les modèles du numéro d'essai. `/m/` ne sert que des images : une vidéo est
+   * refusée. ⚠️ Supprimer ce fichier de la médiathèque casserait les envois futurs du modèle.
+   */
+  const enteteDeModele = async (octets: Buffer, mime: string, tenant: string): Promise<string> => {
+    if ((await metaCredentials.cle360dialog(tenant)) === null) return mediaClient.uploadImage(octets, mime);
+    // Le type lu sur les OCTETS, jamais le déclaré : `/m/` sert le type de la signature (`src/http/rcs-media.ts`).
+    const reel = typeFichier(octets);
+    if (reel !== 'image/png' && reel !== 'image/jpeg') {
+      throw Object.assign(new Error('sur ce numéro, l’en-tête d’un modèle ne peut être qu’une image (PNG ou JPEG)'), { statusCode: 422 });
+    }
+    const quota = (await offres.offreDe(tenant)).droits.limites.stockageOctets;
+    const { media } = await rcsMediaStore.deposer(tenant, { code: newMediaCode(), mime: reel, bytes: octets, nom: 'en-tête de modèle' }, quota);
+    return urlFichier(adressesApi.racine, media.code, media.mime);
+  };
   // Les médias REÇUS, par espace : un numéro 360dialog se lit chez 360dialog avec sa clé, que notre jeton global ne
   // remplace pas ; les autres gardent le jeton global, comme avant.
   const mediasRecus = {
@@ -1059,7 +1076,7 @@ async function main(): Promise<void> {
   const creationModeles: DepsCreationModele = {
     modeles: depsModeles,
     telechargerEntete: telechargerEnteteProduction,
-    deposerEntete: (octets, mime) => mediaClient.uploadImage(octets, mime),
+    deposerEntete: enteteDeModele,
     placesEntete: placesDeTelechargement,
   };
 
@@ -1974,7 +1991,7 @@ async function main(): Promise<void> {
       messagesInteractifsDuFormulaire: (tenant, flowId) => messagesInteractifsDuFormulaire(
         { numero: (x) => repo.getTenantPhoneNumberId(x), client: (x) => metaFactory.mbaClientForTenant(x) }, tenant, flowId),
     },
-    media: mediaClient,
+    media: { uploadImage: enteteDeModele },
     tags: tagStore,
     dossiers: new PgDossierStore(pool),
     fields: {
