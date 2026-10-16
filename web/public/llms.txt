@@ -25,6 +25,9 @@ Chaque page existe en français (.md) et en anglais (.en.md). Every page exists 
 - [Concepts](https://console.messagingme.app/developers/api/concepts.md): Les règles communes : désigner une personne, consentement et STOP, fenêtre de 24 h, idempotence. English: [Concepts](https://console.messagingme.app/developers/api/concepts.en.md)
 - [Brancher un outil qui appelle par contact](https://console.messagingme.app/developers/api/guides/per-contact.md): Brancher un outil qui appelle l’API une fois par contact. English: [Connecting a tool that calls per contact](https://console.messagingme.app/developers/api/guides/per-contact.en.md)
 - [Les pièges de Meta](https://console.messagingme.app/developers/api/guides/meta-pitfalls.md): Ce que Meta impose et qui surprend : fenêtre de 24 h, modèles, facturation, qualité, débit, consentement. English: [Meta pitfalls](https://console.messagingme.app/developers/api/guides/meta-pitfalls.en.md)
+
+## Recettes / Recipes
+
 - [Recette : Next.js](https://console.messagingme.app/developers/api/guides/nextjs.md): Une recette Next.js : envoyer un modèle et recevoir un webhook vérifié, avec le prompt à coller dans son assistant. English: [Recipe: Next.js](https://console.messagingme.app/developers/api/guides/nextjs.en.md)
 
 ## Plateforme / Platform

@@ -19,13 +19,15 @@ import type { Bilingue } from './api-exemples';
  * contrainte que `api-exemples.ts`, dont il ne tire qu'un type, effacé à la compilation).
  */
 
-export type GroupeDoc = 'demarrer' | 'reference-api' | 'guides' | 'plateforme';
+export type GroupeDoc = 'demarrer' | 'reference-api' | 'guides' | 'recettes' | 'plateforme';
 
 /** Les groupes de la navigation, dans leur ordre d'affichage. « Référence » ne désigne plus que les ressources. */
 export const GROUPES_DOC: ReadonlyArray<{ readonly cle: GroupeDoc; readonly titre: Bilingue }> = [
   { cle: 'demarrer', titre: ['Démarrer', 'Get started'] },
   { cle: 'reference-api', titre: ['Référence API', 'API reference'] },
   { cle: 'guides', titre: ['Guides', 'Guides'] },
+  // Le code d'un cas d'usage, de bout en bout (lots 6 et 6 bis) : un guide du registre de la vitrine y est rangé.
+  { cle: 'recettes', titre: ['Recettes', 'Recipes'] },
   { cle: 'plateforme', titre: ['Plateforme', 'Platform'] },
 ];
 
@@ -117,7 +119,7 @@ export const PAGES_DOC = [
   },
   {
     // La recette Next.js (lot 17) : un prompt à coller, et le code qu'il doit produire, compilé par la suite racine.
-    cle: 'nextjs', href: '/developers/api/guides/nextjs', fichier: 'web/app/developers/api/guides/nextjs/page.tsx', groupe: 'guides',
+    cle: 'nextjs', href: '/developers/api/guides/nextjs', fichier: 'web/app/developers/api/guides/nextjs/page.tsx', groupe: 'recettes',
     nav: ['Recette Next.js', 'Next.js recipe'], titre: ['Recette : Next.js', 'Recipe: Next.js'],
     ancres: ['prompt', 'installation', 'client', 'envoi', 'webhook', 'essayer'],
   },

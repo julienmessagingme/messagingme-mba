@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { EXEMPLES_SDK, RECETTE_NEXTJS, VERSION_SDK, type ExempleCode } from '../web/lib/exemples-code';
+import { EXEMPLES_CAS, EXEMPLES_SDK, RECETTE_NEXTJS, VERSION_SDK, type ExempleCode } from '../web/lib/exemples-code';
 
 /**
  * 🔴 LE CODE QUE LA DOC MONTRE COMPILE CONTRE LE SDK QUE LA DOC FAIT INSTALLER (lot 17 ; ferme le jaune « exemples non
@@ -50,6 +50,14 @@ function compiler(exemples: readonly ExempleCode[]): string {
   }
 }
 
+/**
+ * Les cas d'usage (lots 6 et 6 bis), chacun dans SON dossier : deux cas qui reçoivent un webhook écrivent le même
+ * chemin (`app/api/webhooks/messagingme/route.ts`), et compilés ensemble, le dernier écrit masquerait le premier.
+ */
+function compilerChaqueCas(cas: Readonly<Record<string, Readonly<Record<string, ExempleCode>>>>): Record<string, string> {
+  return Object.fromEntries(Object.entries(cas).map(([cle, parties]) => [cle, compiler(Object.values(parties))]));
+}
+
 describe('le code montré par la doc compile contre le SDK publié', () => {
   it('🔴 les déclarations recopiées sont celles de la version que la doc fait installer', () => {
     expect(readFileSync(join(racine, 'tests', 'sdk-publie', 'version.txt'), 'utf8').trim()).toBe(VERSION_SDK);
@@ -69,6 +77,20 @@ describe('le code montré par la doc compile contre le SDK publié', () => {
   it('la recette Next.js', () => {
     expect(compiler(Object.values(RECETTE_NEXTJS))).toBe('');
   }, 60_000);
+
+  it('chaque cas d’usage, dans son propre dossier', () => {
+    for (const [cle, erreurs] of Object.entries(compilerChaqueCas(EXEMPLES_CAS))) expect(erreurs, cle).toBe('');
+  }, 120_000);
+
+  it('garde de la garde : deux cas qui écrivent le même fichier ne se masquent pas', () => {
+    const faux: ExempleCode = { ...RECETTE_NEXTJS.envoi, code: RECETTE_NEXTJS.envoi.code.replace('envoi.sendId', 'envoi.sendIdentifiant') };
+    const resultats = compilerChaqueCas({
+      casFaux: { client: RECETTE_NEXTJS.client, envoi: faux },
+      casJuste: { client: RECETTE_NEXTJS.client, envoi: RECETTE_NEXTJS.envoi },
+    });
+    expect(resultats.casFaux).toMatch(/sendIdentifiant/);
+    expect(resultats.casJuste).toBe('');
+  }, 120_000);
 
   it('garde de la garde : un champ inventé ne compile pas', () => {
     const faux: ExempleCode = { ...RECETTE_NEXTJS.envoi, code: RECETTE_NEXTJS.envoi.code.replace('envoi.sendId', 'envoi.sendIdentifiant') };

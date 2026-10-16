@@ -91,6 +91,11 @@ une page qui poste vers une route pas encore déployée aussi : l'API se déploi
 `site/llms.txt`, et le bloc JSON-LD de chaque page (fil d'Ariane, fiche du film). `site/vercel.json` redirige
 `engageme-site.vercel.app`, `/index.html` et les adresses sans barre finale vers l'adresse canonique.
 
+⚠️ **L'en-tête et le pied de page de la vitrine ne se retouchent plus dans les pages** (2026-10-16) : ils se changent
+dans leurs gabarits (`scripts/vitrine/entete.<langue>.html`, `pied.<langue>.html`), puis `npm run vitrine:entete`
+réécrit chaque page ; `tests/vitrine-entete.test.ts` refuse une page qui diffère de sa génération. Un outil qui génère
+une page (une traduction, par exemple) se fait suivre de `npm run vitrine:entete`.
+
 ⚠️ **Les images et les films de la vitrine restent un jour en cache chez le visiteur** (2026-10-08) :
 `max-age=86400` plus une semaine de `stale-while-revalidate` sur `/img/` et `/films/` (`site/vercel.json`). Un
 fichier remplacé sous le MÊME nom prend donc un `?v=` incrémenté dans chaque page qui le cite, sinon qui l'a déjà vu

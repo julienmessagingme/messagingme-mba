@@ -176,10 +176,13 @@ export const RECETTE_NEXTJS = {
 } as const satisfies Record<string, ExempleCode>;
 
 /**
- * Les extraits des pages « cas d'usage » de la vitrine (lot 6), compilés comme les autres par
- * `tests/doc-exemples-compiles.test.ts` et affichés tels quels (`data-exemple="cas.<clé>"`, `tests/vitrine-pages.test.ts`).
+ * Le code des cas d'usage (lots 6 et 6 bis), par clé du registre (`web/lib/registre-vitrine.ts`) puis par partie, comme
+ * `RECETTE_NEXTJS`. Écrit une fois : le guide l'affiche, la page de la vitrine en montre un extrait
+ * (`data-exemple="cas.<clé>.<partie>"`), et `npm run plugin:generer` le recopie dans le dossier de la commande du
+ * plugin. `tests/doc-exemples-compiles.test.ts` compile chaque cas dans SON dossier, contre le SDK publié. Commentaires
+ * en anglais : ce code se lit aussi sur GitHub.
  */
-export const EXEMPLES_CAS = {} as const satisfies Record<string, ExempleCode>;
+export const EXEMPLES_CAS = {} as const satisfies Record<string, Record<string, ExempleCode>>;
 
 /** Les variables d'environnement de la recette (`.env.local`), jamais compilées. */
 export const ENV_NEXTJS = lignes('MESSAGINGME_API_KEY=mba_...', 'MESSAGINGME_WEBHOOK_SECRET=whsec_...');
