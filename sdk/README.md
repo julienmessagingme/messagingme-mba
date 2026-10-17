@@ -12,7 +12,7 @@ Documentation de l'API : https://console.messagingme.app/developers/api
 ## Installation
 
 ```bash
-npm install github:julienmessagingme/messagingme-sdk#v0.3.0
+npm install github:julienmessagingme/messagingme-sdk#v0.3.1
 ```
 
 ## Un premier appel
@@ -50,6 +50,9 @@ const envoi = await api.POST('/v1/sends', {
 
 Toute réponse hors 2xx lève `ApiError`, avec le statut, le code de l'API et, quand l'API le dit, le délai à attendre.
 Le SDK ne relance rien de lui-même.
+
+Un message WhatsApp ou RCS accepté peut répondre `journal: 'unrecorded'` avec son `messageId` : il est parti chez
+le fournisseur, mais son inscription dans l'Inbox n'a pas pu être confirmée. Ne le renvoyez pas.
 
 ```ts
 import { ApiError } from '@messagingme/sdk';
@@ -99,6 +102,7 @@ horodatage à plus de 5 minutes est refusé (`toleranceSeconds` pour changer). U
 
 ## Versions
 
+- **0.3.1** : les réponses des envois WhatsApp et RCS indiquent `journal` (`recorded` ou `unrecorded`).
 - **0.3.0** : les types de l'événement `agent.action`, envoyé quand un agent IA déclenche une de vos actions
   pendant une conversation (son identifiant, son nom et les champs recueillis, par code).
 - **0.2.0** : `ApiError.metaCode`, le numéro d'erreur de Meta sur `meta_rejected`. L'API pose désormais un `code` sur

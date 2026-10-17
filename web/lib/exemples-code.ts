@@ -21,7 +21,7 @@ import type { Bilingue } from './api-exemples';
  * `tests/sdk-contrat.test.ts` les compare, comme celle du README. Monter la version du SDK sans toucher cette ligne ferait
  * installer l'ancienne.
  */
-export const VERSION_SDK = '0.3.0';
+export const VERSION_SDK = '0.3.1';
 
 export interface ExempleCode {
   /** Le chemin du fichier dans le projet de l'intégrateur, affiché en légende ; aussi son chemin dans le projet de test. */
