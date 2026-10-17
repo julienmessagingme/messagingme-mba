@@ -32,17 +32,22 @@ export type LimiteNombre = (typeof LIMITES_NOMBRE)[number];
 
 /**
  * Les limites qu'une API plus ancienne ne porte pas encore : absentes, elles ne rendent pas la vue illisible (la console est
- * publiée avant l'API), la ligne est seulement masquée. Le quota de la médiathèque (spec médias du 2026-10-14) en est une.
+ * publiée avant l'API), la ligne est seulement masquée. Le quota de la médiathèque (spec médias du 2026-10-14) en est une,
+ * comme toutes les limites de l'API (spec offres v2). 🔴 Une limite neuve va ICI, jamais dans `LIMITES_NOMBRE` : absente
+ * d'une API plus ancienne, elle rendrait la vue illisible, donc tout ouvert, Free comprise.
  */
-export const LIMITES_TOLERANTES = ['stockageOctets'] as const;
+export const LIMITES_TOLERANTES = ['stockageOctets', 'clesApi', 'appelsMinute', 'appelsHeure', 'modelesJour', 'reponsesJour'] as const;
+type LimiteTolerante = (typeof LIMITES_TOLERANTES)[number];
 
-export interface LimitesOffre extends Record<LimiteNombre, number | null> {
+export interface LimitesOffre extends Record<LimiteNombre, number | null>, Partial<Record<LimiteTolerante, number | null>> {
   conservationJours: number;
   commissionPct: number;
   badge: boolean;
   numeroInclus: boolean;
   /** En octets. `undefined` : une API qui ne le porte pas encore. */
   stockageOctets?: number | null;
+  /** Les clés d'API actives que l'offre permet, `null` sans limite. `undefined` : une API qui ne le porte pas encore. */
+  clesApi?: number | null;
 }
 
 export interface UsageOffre {
@@ -92,7 +97,7 @@ function lireLimites(v: unknown): LimitesOffre | null {
   return {
     ...(Object.fromEntries(LIMITES_NOMBRE.map((k) => [k, v[k]])) as Record<LimiteNombre, number | null>),
     conservationJours: v.conservationJours, commissionPct: v.commissionPct, badge: v.badge, numeroInclus: v.numeroInclus,
-    ...(entierOuNul(v.stockageOctets) ? { stockageOctets: v.stockageOctets } : {}),
+    ...Object.fromEntries(LIMITES_TOLERANTES.filter((k) => entierOuNul(v[k])).map((k) => [k, v[k]])),
   };
 }
 

@@ -43,27 +43,17 @@ Authorization: Bearer mba_xxxxxxxxxxxxxxxx
 
 ## Débit
 
-| Plafond par défaut, par espace | Valeur |
-| --- | --- |
-| Requêtes par minute | 60 |
-| Requêtes par heure | 1000 |
-
+- Un plafond d’appels par minute et par heure, selon l’offre de l’espace.
 - Partagé par toutes les clés de l’espace et le serveur MCP.
 - Un appel compte pour un, quel que soit son volume (50 fiches en un lot : un appel).
-- Plafond différent pour un espace : sur demande.
+- Plafond relevé pour un espace : sur demande.
 
-Chaque réponse comptée porte le compteur le plus proche de son plafond :
-
-_En-têtes de réponse_
-
-```
-x-ratelimit-limit: 60
-x-ratelimit-remaining: 57
-x-ratelimit-reset: 1790000000
-```
+Chaque réponse comptée porte, en en-têtes, le compteur le plus proche de son plafond :
 
 | En-tête | Sens |
 | --- | --- |
+| `x-ratelimit-limit` | Le plafond de cette fenêtre (minute ou heure). |
+| `x-ratelimit-remaining` | Les appels qui restent dans cette fenêtre. |
 | `x-ratelimit-reset` | Heure de remise à zéro, en secondes depuis 1970. |
 | `retry-after` | Sur un 429 : secondes avant la remise à zéro de la fenêtre pleine (minute ou heure, nommée dans le message). |
 
@@ -72,18 +62,19 @@ x-ratelimit-reset: 1790000000
 
 <a id="quotas"></a>
 
-En plus du débit, un quota QUOTIDIEN par espace compte le travail DEMANDÉ (un destinataire écarté ensuite compte quand même) :
+En plus du débit, des quotas QUOTIDIENS par espace comptent le travail DEMANDÉ (un destinataire écarté ensuite compte quand même), en trois familles qui se comptent à part :
 
-| Quota par défaut, par espace et par jour | Valeur |
-| --- | --- |
-| Envois : destinataires d’un envoi, et messages libres WhatsApp ou RCS | 2000 |
-| Fiches écrites (une par fiche d’un lot) | 20000 |
+| Famille | Ce qu’elle compte | Quota par jour |
+| --- | --- | --- |
+| Modèles | Les destinataires d’un envoi, et l’envoi d’un modèle par le serveur MCP | Selon l’offre |
+| Réponses | Les messages libres WhatsApp ou RCS, dans la fenêtre de 24 h. Un envoi de modèles ne prend jamais leur place. | Selon l’offre |
+| Fiches | Les fiches écrites (une par fiche d’un lot) | 20000 |
 
 - Remise à zéro à minuit, heure de Paris.
 - Une requête qui dépasserait le quota est refusée en entier : 429 `quota_exceeded`, avec retry-after jusqu’à minuit. Un lot plus petit peut encore passer.
 - Un nouvel appel avec la même clé d’idempotence ne compte pas, qu’il rejoue un envoi fini ou tombe sur un envoi en cours (409). Un envoi refusé par le quota libère sa clé.
-- Les lectures, les catalogues et les campagnes lancées depuis la console n’ont pas de quota. Le serveur MCP non plus, sauf l’envoi d’un modèle, qui compte dans les envois.
-- Quota différent pour un espace : sur demande.
+- Les lectures, les catalogues et les campagnes lancées depuis la console n’ont pas de quota. Le serveur MCP non plus, sauf l’envoi d’un modèle, qui compte dans les modèles.
+- Quota relevé pour un espace : sur demande.
 
 > **Note**
 >

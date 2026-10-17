@@ -38,10 +38,14 @@ describe('la source', () => {
     }
   });
 
-  it('🔴 les limites d’envoi sont celles du code, l’offre ET le quota du jour de l’API', () => {
+  it('🔴 les limites d’envoi sont celles du code ; le quota du jour de l’API se dit SANS chiffre (une limite invisible, spec offres v2)', () => {
     const e = FAQ.find((x) => x.id === 'combien-de-messages')!;
-    expect(e.reponse.fr).toContain(QUOTAS_API_DEFAUT.envois.toLocaleString('fr-FR').replace(/\u202f/g, ' '));
-    expect(e.reponse.en).toContain(QUOTAS_API_DEFAUT.envois.toLocaleString('en-US'));
+    for (const quota of [DROITS.base.limites.modelesJour!, DROITS.base.limites.reponsesJour!, QUOTAS_API_DEFAUT.envois]) {
+      expect(e.reponse.fr).not.toContain(quota.toLocaleString('fr-FR').replace(/\u202f/g, ' '));
+      expect(e.reponse.en).not.toContain(quota.toLocaleString('en-US'));
+    }
+    expect(e.reponse.fr).toMatch(/modèles et les réponses se comptent à part/);
+    expect(e.reponse.en).toMatch(/templates and replies are counted separately/);
     expect(e.reponse.en).toContain('quota_exceeded');
     // Le Pro « sans plafond » ne se dit que si le code n'en pose aucun.
     expect(e.reponse.en.includes('no cap from us on Pro')).toBe(DROITS.pro.limites.envoisModelesMois === null);

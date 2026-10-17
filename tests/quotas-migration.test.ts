@@ -28,10 +28,28 @@ describe('migration 0208', () => {
   it('dans une transaction ordinaire : les deux colonnes entrent ensemble ou pas du tout', () => {
     expect(veutHorsTransaction(SQL)).toBe(false);
   });
+});
 
-  it('🔴 le magasin nomme exactement ces deux colonnes, en lecture comme en écriture', () => {
+/** LA MIGRATION 0241 (spec offres v2) : les modèles et les réponses ont chacun leur colonne, sur la même forme. */
+const SQL_0241 = lire('../db/migrations/0241_quotas_modeles_reponses.sql');
+const instructions0241 = decouperInstructions(SQL_0241)
+  .map(sansCommentaires)
+  .map((i) => i.replace(/\s+/g, ' ').replace(/;\s*$/, '').trim())
+  .filter((i) => i !== '');
+
+describe('migration 0241', () => {
+  it('🔴 deux colonnes entières, nullables, sans défaut, rejouables, chacune avec son CHECK > 0, sous un délai de verrou borné à la transaction', () => {
+    expect(instructions0241).toEqual([
+      "set local lock_timeout = '5s'",
+      'alter table tenant_settings add column if not exists api_quota_modeles_jour integer constraint tenant_settings_api_quota_modeles_jour_positif check (api_quota_modeles_jour > 0)',
+      'alter table tenant_settings add column if not exists api_quota_reponses_jour integer constraint tenant_settings_api_quota_reponses_jour_positif check (api_quota_reponses_jour > 0)',
+    ]);
+    expect(veutHorsTransaction(SQL_0241)).toBe(false);
+  });
+
+  it('🔴 le magasin nomme exactement les colonnes des trois familles, et plus celle des envois d’avant', () => {
     const magasin = lire('../src/auth/plafond-espace.pg.ts');
     const colonnes = [...new Set(magasin.match(/api_quota_[a-z_]+/g) ?? [])].sort();
-    expect(colonnes).toEqual(['api_quota_envois_jour', 'api_quota_fiches_jour']);
+    expect(colonnes).toEqual(['api_quota_fiches_jour', 'api_quota_modeles_jour', 'api_quota_reponses_jour']);
   });
 });

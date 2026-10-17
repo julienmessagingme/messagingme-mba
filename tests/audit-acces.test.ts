@@ -135,6 +135,7 @@ describe('les CLÉS D’API laissent une trace', () => {
         listByTenant: async () => [],
         revoke: async () => revoqueOk,
       },
+      limiteCles: async () => null,
     }, gardeQuiPose));
     await app.ready();
     return app;

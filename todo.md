@@ -1,5 +1,11 @@
 # todo.md : backlog
 
+## 🟡 Offres v2 : retirer la colonne du quota d'envois d'avant (2026-10-17)
+
+`tenant_settings.api_quota_envois_jour` (0208) n'est plus lue depuis la livraison 2 des offres v2 (les modèles et les
+réponses ont chacun leur colonne, 0241). Aucun espace n'y avait de valeur (sonde du 2026-10-17). Elle se retire par une
+migration APRÈS le déploiement de la livraison 2 : l'ancien code la nomme.
+
 ## 🟡 Le bloc Attente en secondes, « en train d'écrire… » compris (2026-10-16)
 
 - **Le besoin** : poser une pause de 1 à 59 s entre deux messages rapides d'un scénario, pour l'effet humain.

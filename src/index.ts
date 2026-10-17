@@ -2665,6 +2665,8 @@ async function main(): Promise<void> {
     apiKeys: {
       audit: auditSink,
       cles: apiKeyStore,
+      // Le plafond de clés actives vient de l'offre (spec offres v2), lue par la source en cache.
+      limiteCles: async (tenant) => (await offres.offreDe(tenant)).droits.limites.clesApi,
     },
     /**
      * L'OAuth devant `/mcp` (migration 0204) : les routes publiques et celles de la console partagent le même

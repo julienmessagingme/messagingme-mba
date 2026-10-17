@@ -109,7 +109,7 @@ import { LimiteOffreError, STATUT_REFUS_OFFRE, corpsRefusLimite } from './offres
 import { makeRequireApiKey, requireScope } from './auth/api-key';
 import { RateLimiter } from './auth/rate-limit';
 import { PlafondGlobal } from './auth/plafond-global';
-import { PlafondEspace, ReglagesPlafondEnCache, SANS_REGLAGE, type PlafondApiStore, type PlafondsParDefaut } from './auth/plafond-espace';
+import { PlafondEspace, ReglagesPlafondEnCache, SANS_REGLAGE, limitesApiDesOffres, type PlafondApiStore, type PlafondsParDefaut } from './auth/plafond-espace';
 import { registerOpsPlafondApi } from './http/ops-plafond-api';
 import { registerOffre, type OffreRouteDeps } from './http/offre';
 import { registerOffrePaiement, type OffrePaiementRouteDeps } from './http/offre-paiement';
@@ -685,7 +685,7 @@ export function modulesDeRoutes(
     entree('ops', 'session-ops', deps.ops, (app, d, g) => registerOps(app, { ...d, usage: usageApi }, g.ops)),
     // Le réglage du plafond de l'API d'un espace : même autorité que `/ops`, dans un module à part.
     entree('plafondApi', 'session-ops', deps.plafondApi, (app, d, g) => registerOpsPlafondApi(
-      app, { store: d, reglages: reglagesPlafond, defauts: defautsPlafond(), compteur: debit }, g.ops,
+      app, { store: d, reglages: reglagesPlafond, defauts: defautsPlafond(), offres: limitesApiDesOffres(deps.offres ?? toutOuvert), compteur: debit }, g.ops,
     )),
     // L'Entreprise d'un espace (lot 6) : sur devis, posée par l'exploitation, dans un module à part.
     entree('opsOffre', 'session-ops', deps.opsOffre, (app, d, g) => registerOpsOffre(app, d, g.ops)),
@@ -837,7 +837,7 @@ export function modulesDeRoutes(
         deps.offres ?? toutOuvert,
         debit,
       );
-      const plafondEspace = new PlafondEspace(defautsPlafond(), reglagesPlafond, debit, plafondGlobal);
+      const plafondEspace = new PlafondEspace(defautsPlafond(), reglagesPlafond, debit, plafondGlobal, limitesApiDesOffres(deps.offres ?? toutOuvert));
       const apiLimiter = new RateLimiter(config.API_KEY_RATE_LIMIT_MAX, config.API_KEY_RATE_LIMIT_WINDOW_MS);
       /**
        * Le pré-filtre : budget global des lookups spéculatifs. Sa clé est une constante
@@ -953,6 +953,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   const defauts = plafond.defauts();
   const usageApi = deps.usage ?? new GardeUsage(debit, {
     reglages: plafond.reglages,
+    offres: limitesApiDesOffres(deps.offres ?? toutOuvert),
     defauts: { envois: defauts.envoisJour, fiches: defauts.fichesJour },
     alerter: deps.alerter ?? ((texte) => journaliser('error', 'quota_api_alerte', { texte })),
   }, { maxLourdesSimultanees: config.API_MAX_LOURDES_SIMULTANEES });

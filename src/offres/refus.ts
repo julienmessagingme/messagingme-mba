@@ -10,7 +10,7 @@ import { refus, type Refus } from '../lib/issue';
 export const STATUT_REFUS_OFFRE = 402;
 
 /** Les limites qu'un geste peut atteindre (les autres se lisent sans refuser). */
-export type NomLimite = Extract<keyof Limites, 'utilisateurs' | 'admins' | 'contacts' | 'envoisModelesMois' | 'automations' | 'suppressionsJour' | 'adressesWebhook' | 'stockageOctets'>;
+export type NomLimite = Extract<keyof Limites, 'utilisateurs' | 'admins' | 'contacts' | 'envoisModelesMois' | 'automations' | 'suppressionsJour' | 'adressesWebhook' | 'stockageOctets' | 'clesApi'>;
 
 /** Une limite de l'offre est atteinte : levée par le magasin ou la fabrique, traduite en 402 par l'appelant. */
 export class LimiteOffreError extends Error {
@@ -36,6 +36,7 @@ const LIBELLE_LIMITE: Record<NomLimite, (max: number) => string> = {
   suppressionsJour: (m) => `${m} suppressions de contacts par jour`,
   adressesWebhook: (m) => `${m} adresse${m > 1 ? 's' : ''} de webhook sortant actives`,
   stockageOctets: (m) => `${Math.round(m / (1024 * 1024))} Mo de fichiers dans la médiathèque`,
+  clesApi: (m) => `${m} clés d’API actives (révoquez-en une pour en créer une autre ; la clé de l’agent de Meta ne compte pas)`,
 };
 
 /** La page de l'offre dans la console. */

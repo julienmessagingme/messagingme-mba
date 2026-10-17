@@ -223,9 +223,14 @@ describe('les bornes affichées sont celles des routes', () => {
     expect(cleIdempotence('k'.repeat(BORNES.cleIdempotence + 1), {}).ok).toBe(false);
   });
 
-  it('le plafond de l’espace affiché est le défaut de la configuration (minute ET heure)', () => {
-    expect({ minute: BORNES.plafondEspaceMinute, heure: BORNES.plafondEspaceHeure }).toEqual(PLAFOND_API_DEFAUT);
-    expect({ envois: BORNES.quotaEnvoisJour, fiches: BORNES.quotaFichesJour }).toEqual(QUOTAS_API_DEFAUT);
+  it('🔴 les plafonds d’appels et les quotas d’envoi ne sont pas dans la doc publique (limites invisibles, spec offres v2)', () => {
+    // Ils dépendent de l'offre : la doc dit le mécanisme (en-têtes, refus, familles), jamais un chiffre.
+    for (const cle of ['plafondEspaceMinute', 'plafondEspaceHeure', 'quotaEnvoisJour', 'quotaModelesJour', 'quotaReponsesJour']) {
+      expect(BORNES, cle).not.toHaveProperty(cle);
+    }
+    expect(Object.values(BORNES)).not.toContain(PLAFOND_API_DEFAUT.minute);
+    // Le quota de fiches, commun à toutes les offres, reste dit : c'est celui de la configuration.
+    expect(BORNES.quotaFichesJour).toBe(QUOTAS_API_DEFAUT.fiches);
   });
 
   it('longueurs de texte et d’identifiant externe : ce que les validateurs acceptent, pas un caractère de plus', () => {

@@ -13,17 +13,17 @@ const GRILLE: Record<Offre, Limites> = {
   base: {
     utilisateurs: 1, admins: 1, contacts: 100, envoisModelesMois: 1000, automations: 10, suppressionsJour: 10,
     adressesWebhook: 1, journalWebhooksJours: 3, conservationJours: 30, commissionPct: 50, badge: true, numeroInclus: false,
-    stockageOctets: 0,
+    stockageOctets: 0, clesApi: 2, appelsMinute: 30, appelsHeure: 500, modelesJour: 500, reponsesJour: 2000,
   },
   pro: {
     utilisateurs: 3, admins: 2, contacts: null, envoisModelesMois: null, automations: null, suppressionsJour: null,
     adressesWebhook: 5, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 10, badge: false, numeroInclus: true,
-    stockageOctets: 100 * MO,
+    stockageOctets: 100 * MO, clesApi: 10, appelsMinute: 60, appelsHeure: 1000, modelesJour: 2000, reponsesJour: 2000,
   },
   entreprise: {
     utilisateurs: null, admins: null, contacts: null, envoisModelesMois: null, automations: null, suppressionsJour: null,
     adressesWebhook: null, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 10, badge: false, numeroInclus: true,
-    stockageOctets: 500 * MO,
+    stockageOctets: 500 * MO, clesApi: null, appelsMinute: null, appelsHeure: null, modelesJour: null, reponsesJour: null,
   },
 };
 
@@ -66,6 +66,12 @@ describe('les refus nomment l’offre qui lève la limite ou ouvre la fonction (
     const p = phraseLimite('utilisateurs', DROITS.pro.limites.utilisateurs!);
     expect(p).toMatch(/Entreprise/);
     expect(p).not.toMatch(/Passez en Pro/);
+  });
+
+  it('les clés d’API : 2 en Free renvoient au Pro, 10 en Pro à l’Entreprise ; la phrase dit de révoquer', () => {
+    const free = phraseLimite('clesApi', DROITS.base.limites.clesApi!);
+    expect(free).toMatch(/2 clés d’API actives.*révoquez-en une.*Passez en Pro/);
+    expect(phraseLimite('clesApi', DROITS.pro.limites.clesApi!)).toMatch(/10 clés d’API actives.*Passez en Entreprise/);
   });
 
   it('une limite réglée sur devis (absente de la grille) renvoie à un échange, jamais au Pro', () => {

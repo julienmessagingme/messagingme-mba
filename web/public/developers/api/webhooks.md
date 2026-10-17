@@ -125,5 +125,5 @@ _POST /v1/messages/whatsapp_
 - Répondez 2xx tout de suite au webhook, puis envoyez la réponse : la conversation reste à votre application, hors de la file « À traiter » de l’équipe.
 - La fenêtre de 24 h s’applique : la réponse part tant que le client a écrit dans les 24 dernières heures.
 - Répondez à conversation.needs_reply seulement : si l’adresse reçoit aussi message.received, le même message y arrive deux fois, et une réponse aux deux partirait deux fois. La clé d’API doit porter le droit sends:create.
-- Ces réponses ne comptent pas dans le quota quotidien d’envois de l’API ; le plafond par minute s’applique.
+- Ces réponses ne comptent dans aucun quota quotidien de l’API ; le plafond par minute s’applique.
 - Aucun repli : si votre application ne répond pas, personne ne le fait à sa place. Une adresse en pause, supprimée ou au-delà de votre offre rend les messages à l’équipe.

@@ -161,7 +161,7 @@ _JSON_
 
 - Un élément refusé (mal formé, trop de champs ou de tags, champ ou tag inconnu) n’arrête pas les autres.
 - Les éléments qui désignent la même personne s’écrivent dans l’ordre du lot.
-- Importer un fichier : envoyez-le par lots de 50, comme ci-dessous (un module : fichier .mjs). Aux plafonds par défaut, 3000 fiches par minute, 50000 par heure et 20000 par jour. Un 429 n’a rien écrit : attendez Retry-After (jusqu’à minuit pour le quota du jour) et renvoyez le même lot. Un très gros fichier passe plus vite par l’import CSV de la console.
+- Importer un fichier : envoyez-le par lots de 50, comme ci-dessous (un module : fichier .mjs). Le débit dépend de l’offre de votre espace (les en-têtes x-ratelimit de chaque réponse le disent), et les fiches écrites ont un quota de 20000 par jour. Un 429 n’a rien écrit : attendez Retry-After (jusqu’à minuit pour le quota du jour) et renvoyez le même lot. Un très gros fichier passe plus vite par l’import CSV de la console.
 
 _Importer un CSV simple (phone,name), Node.js_
 

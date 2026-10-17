@@ -161,7 +161,7 @@ _JSON_
 
 - A refused item (malformed, too many fields or tags, unknown field or tag) does not stop the others.
 - Items that designate the same person are written in the order of the list.
-- Importing a file: send it in batches of 50, as below (a module: .mjs file). At the default limits, 3000 records per minute, 50000 per hour and 20000 per day. A 429 wrote nothing: wait for Retry-After (until midnight for the daily quota) and send the same records again. A very large file goes faster through the console’s CSV import.
+- Importing a file: send it in batches of 50, as below (a module: .mjs file). The rate depends on your workspace’s plan (the x-ratelimit headers of every response tell it), and written records have a quota of 20000 a day. A 429 wrote nothing: wait for Retry-After (until midnight for the daily quota) and send the same records again. A very large file goes faster through the console’s CSV import.
 
 _Importing a simple CSV (phone,name), Node.js_
 

@@ -485,7 +485,7 @@ export const CODES_DOCUMENTES = [
   { code: 'idempotency_in_progress', statut: 409, ecart: false, quoi: ['Un envoi avec cette clé est en cours.', 'A send with this key is in progress.'] },
   { code: 'idempotency_key_reused', statut: 422, ecart: false, quoi: ['Cette clé a déjà servi pour un autre corps.', 'This key was already used for a different body.'] },
   { code: 'rate_limited', statut: 429, ecart: false, quoi: ['Débit dépassé, ici ou chez Meta (limite ou panne passagère de Meta) : attendez la durée de retry-after.', 'Rate limit exceeded, here or at Meta (a temporary Meta limit or outage): wait for retry-after.'] },
-  { code: 'quota_exceeded', statut: 429, ecart: false, quoi: ['Quota quotidien de l’espace atteint (envois ou fiches écrites), ou dépassé par ce lot : retry-after donne l’attente jusqu’à minuit, heure de Paris. Un lot plus petit peut encore passer.', 'Daily workspace quota reached (sends or written contacts), or exceeded by this request: retry-after gives the wait until midnight, Paris time. A smaller request may still go through.'] },
+  { code: 'quota_exceeded', statut: 429, ecart: false, quoi: ['Quota quotidien de l’espace atteint (modèles, réponses ou fiches écrites), ou dépassé par ce lot : retry-after donne l’attente jusqu’à minuit, heure de Paris. Un lot plus petit peut encore passer.', 'Daily workspace quota reached (templates, replies or written contacts), or exceeded by this request: retry-after gives the wait until midnight, Paris time. A smaller request may still go through.'] },
   { code: 'plan_feature_unavailable', statut: 402, ecart: false, quoi: ['Cette fonction n’est pas comprise dans l’offre de l’espace : upgradeUrl mène à la page de l’offre.', 'This feature is not included in the workspace plan: upgradeUrl leads to the plan page.'] },
   { code: 'plan_limit_reached', statut: 402, ecart: true, quoi: ['Une limite de l’offre de l’espace est atteinte (contacts créés, modèles du mois…) : upgradeUrl mène à la page de l’offre. Les réponses dans la fenêtre de 24 h ne sont jamais concernées.', 'A workspace plan limit is reached (contacts created, templates this month…): upgradeUrl leads to the plan page. Replies within the 24-hour window are never affected.'] },
   { code: 'route_not_found', statut: 404, ecart: false, quoi: ['Aucune route à cette adresse pour cette méthode : vérifiez la méthode et le chemin dans le contrat OpenAPI.', 'No route at this address for this method: check the method and path in the OpenAPI contract.'] },
@@ -523,11 +523,11 @@ export const BORNES = {
   dureeIdempotenceHeures: 24,
   /** Le bail d'une clé EN COURS dont l'appel est mort en route (`DUREE_CLE_EN_COURS_MAX_MS`) : au-delà, elle se libère. */
   cleEnCoursMinutes: 5,
-  /** Le plafond de l'API PAR ESPACE (2026-09-25), tenus égaux à `PLAFOND_API_DEFAUT` par `tests/api-exemples.test.ts`. */
-  plafondEspaceMinute: 60,
-  plafondEspaceHeure: 1000,
-  /** Les quotas QUOTIDIENS par espace (2026-10-04), tenus égaux à `QUOTAS_API_DEFAUT` par `tests/api-exemples.test.ts`. */
-  quotaEnvoisJour: 2000,
+  /**
+   * Le quota QUOTIDIEN de fiches écrites par espace (2026-10-04), commun à toutes les offres, tenu égal à
+   * `QUOTAS_API_DEFAUT.fiches` par `tests/api-exemples.test.ts`. 🔴 Les plafonds d'appels et les quotas d'envoi n'ont
+   * pas de borne ici : ils dépendent de l'offre et ne paraissent pas dans la doc publique (spec offres v2).
+   */
   quotaFichesJour: 20000,
   /** Les tableaux de champs (`api-champs.ts`) : la source du consentement, et les variables d'un destinataire. */
   consentSource: 100,

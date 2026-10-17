@@ -454,17 +454,26 @@ export function lireNumerosFournis(sessionOps: string): Promise<ReserveNumerosOp
   return appelOps(sessionOps, '/ops/numeros-fournis');
 }
 
-/** Une fenêtre du plafond ou d'un quota d'un espace : son réglage, le défaut, et ce qui s'applique (`null` = aucun). */
+/**
+ * Une fenêtre du plafond ou d'un quota d'un espace : son réglage, le défaut de l'espace (son offre, sinon la
+ * configuration), et ce qui s'applique (`null` = aucun).
+ */
 export interface FenetrePlafondOps { reglage: number | null; defaut: number; effectif: number | null }
 
-/** Le plafond d'appels et les quotas du jour d'un espace, avec sa consommation (`GET /ops/plafond-api/:tenantId`). */
+/**
+ * Le plafond d'appels et les quotas du jour d'un espace, avec sa consommation (`GET /ops/plafond-api/:tenantId`). Les
+ * modèles et les réponses ont chacun leur quota depuis la spec offres v2 ; une API d'avant rend encore `envoisJour` et
+ * `envois` (la console est publiée avant l'API) : chaque ligne est donc facultative.
+ */
 export interface PlafondApiOps {
   tenantId: string;
   /** `null` = le compteur n'a pas répondu : consommation inconnue, surtout pas zéro. Absent d'une API d'avant. */
-  aujourdhui?: { jour: string; envois: number; fiches: number; remiseAZero: string } | null;
+  aujourdhui?: { jour: string; modeles?: number; reponses?: number; envois?: number; fiches: number; remiseAZero: string } | null;
   minute: FenetrePlafondOps;
   heure: FenetrePlafondOps;
-  envoisJour: FenetrePlafondOps;
+  modelesJour?: FenetrePlafondOps;
+  reponsesJour?: FenetrePlafondOps;
+  envoisJour?: FenetrePlafondOps;
   fichesJour: FenetrePlafondOps;
 }
 

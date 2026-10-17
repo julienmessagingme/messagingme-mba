@@ -6,6 +6,7 @@ import { CompteurDebitMemoire } from '../src/db/debit.memoire';
 import { memoireDesPleines, type CompteurDebit } from '../src/db/debit';
 import type { Offre } from '../src/offres/offres';
 import { capturerJournal } from './journal';
+import { sansLimiteDOffre } from './aide/plafonds';
 
 /**
  * 🔴 LE PLAFOND GLOBAL DE `/v1` ET `/mcp` (lot 14, A) : un compteur pour TOUTE la plateforme, Free d'abord.
@@ -41,7 +42,7 @@ function monter(o: {
   const now = () => t;
   const compteur = o.compteur ? o.compteur(now) : new CompteurDebitMemoire(now);
   const global = new PlafondGlobal({ parFenetre: o.parFenetre, partFreePct: o.partFree ?? 50 }, o.offres ?? parOffre, compteur);
-  const espace = new PlafondEspace({ minute: o.minute ?? 1000, heure: 100_000 }, { reglage: async () => SANS_REGLAGE }, compteur, global);
+  const espace = new PlafondEspace({ minute: o.minute ?? 1000, heure: 100_000 }, { reglage: async () => SANS_REGLAGE }, compteur, global, sansLimiteDOffre);
   return { espace, global, compteur, avancer: (ms: number) => { t += ms; } };
 }
 
@@ -84,7 +85,7 @@ describe('🔴 le plafond global, Free d’abord', () => {
     let t = 1_000_000;
     const base = new CompteurDebitMemoire(() => t);
     const copie = () => new PlafondEspace({ minute: 1000, heure: 100_000 }, { reglage: async () => SANS_REGLAGE }, base,
-      new PlafondGlobal({ parFenetre: 3, partFreePct: 50 }, parOffre, base));
+      new PlafondGlobal({ parFenetre: 3, partFreePct: 50 }, parOffre, base), sansLimiteDOffre);
     const a = copie();
     const b = copie();
     expect((await appel(a, 'pro1')).ok).toBe(true);
@@ -182,7 +183,7 @@ describe('🔴 le plafond global, Free d’abord', () => {
   it('les deux fenêtres de l’espace éteintes, la plateforme compte encore, sans en-têtes x-ratelimit', async () => {
     const base = new CompteurDebitMemoire(() => 1_000_000);
     const p = new PlafondEspace({ minute: 0, heure: 0 }, { reglage: async () => SANS_REGLAGE }, base,
-      new PlafondGlobal({ parFenetre: 1, partFreePct: 50 }, parOffre, base));
+      new PlafondGlobal({ parFenetre: 1, partFreePct: 50 }, parOffre, base), sansLimiteDOffre);
     const ok = await appel(p, 'pro1');
     expect(ok.ok).toBe(true);
     expect(Object.keys(ok.headers)).toEqual([]);

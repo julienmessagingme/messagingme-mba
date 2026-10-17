@@ -125,5 +125,5 @@ _POST /v1/messages/whatsapp_
 - Answer the webhook 2xx right away, then send the reply: the conversation stays with your app, out of the team’s “To handle” queue.
 - The 24-hour window applies: the reply goes out as long as the customer wrote in the last 24 hours.
 - Answer conversation.needs_reply only: if the address also receives message.received, the same message arrives twice, and answering both would reply twice. The API key needs the sends:create scope.
-- These replies do not count toward the API daily send quota; the per-minute cap applies.
+- These replies count toward no API daily quota; the per-minute cap applies.
 - No fallback: if your app does not answer, nobody does in its place. A paused or deleted address, or one beyond your plan, hands the messages back to the team.

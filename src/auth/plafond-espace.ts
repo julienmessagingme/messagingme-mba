@@ -3,6 +3,7 @@ import { refuserTropDeRequetes } from './rate-limit';
 import { restantDe, type CompteurDebit, type EtatFenetre, type VerdictDebit } from '../db/debit';
 import { journaliser } from '../lib/journal';
 import { FENETRE_GLOBALE_MS, MESSAGE_PLATEFORME_SATUREE, type PlafondGlobal } from './plafond-global';
+import type { Limites } from '../offres/offres';
 
 /**
  * Le plafond de l'API publique par espace, commun à toutes les clés d'un espace, `/v1` et `/mcp` confondus,
@@ -39,17 +40,22 @@ export const DUREE_CACHE_REGLAGE_MS = 30_000;
 
 /**
  * Le réglage d'un espace : son plafond d'appels (`tenant_settings.api_plafond_minute` et `_heure`, 0181) et ses quotas
- * quotidiens (`api_quota_envois_jour` et `api_quota_fiches_jour`, 0208, `src/api/quotas.ts`). `null` = le défaut de la
- * configuration. Une seule lecture par espace sert les deux : le limiteur d'appels et le garde d'usage.
+ * quotidiens (`api_quota_modeles_jour` et `api_quota_reponses_jour`, 0241 ; `api_quota_fiches_jour`, 0208 ;
+ * `src/api/quotas.ts`). `null` = le défaut de l'offre, sinon de la configuration (`valeurEffective`). Une seule lecture
+ * par espace sert les deux : le limiteur d'appels et le garde d'usage.
  */
 export interface ReglagePlafondApi {
   readonly minute: number | null;
   readonly heure: number | null;
-  readonly envoisJour: number | null;
+  readonly modelesJour: number | null;
+  readonly reponsesJour: number | null;
   readonly fichesJour: number | null;
 }
 
-export const SANS_REGLAGE: ReglagePlafondApi = { minute: null, heure: null, envoisJour: null, fichesJour: null };
+/** Les champs du réglage, dans l'ordre où `/ops` les montre et où l'audit les trace. */
+export const CHAMPS_REGLAGE = ['minute', 'heure', 'modelesJour', 'reponsesJour', 'fichesJour'] as const satisfies ReadonlyArray<keyof ReglagePlafondApi>;
+
+export const SANS_REGLAGE: ReglagePlafondApi = { minute: null, heure: null, modelesJour: null, reponsesJour: null, fichesJour: null };
 
 /**
  * Le réglage d'un espace qu'on n'a PAS PU lire (première lecture en échec, aucun réglage connu avant) : les mêmes
@@ -58,7 +64,7 @@ export const SANS_REGLAGE: ReglagePlafondApi = { minute: null, heure: null, envo
  * espace dont on a relevé le quota retomberait sinon au défaut, et son intégrateur, qui respecte `retry-after`,
  * s'arrêterait jusqu'à minuit pour une lecture ratée.
  */
-export const REGLAGE_INCONNU: ReglagePlafondApi = { minute: null, heure: null, envoisJour: null, fichesJour: null };
+export const REGLAGE_INCONNU: ReglagePlafondApi = { minute: null, heure: null, modelesJour: null, reponsesJour: null, fichesJour: null };
 
 /** Le réglage rendu est-il un repli sur une lecture ratée ? */
 export function estReglageInconnu(r: unknown): boolean {
@@ -71,7 +77,10 @@ export interface PlafondsAppelsParDefaut {
   readonly heure: number;
 }
 
-/** Les plafonds et les quotas quotidiens de la configuration. `0` = pas de quota. */
+/**
+ * Les plafonds et les quotas quotidiens de la configuration. `0` = pas de quota. `envoisJour` (`API_QUOTA_ENVOIS_JOUR`)
+ * est la configuration des DEUX familles d'envoi, modèles et réponses ; leurs valeurs par offre viennent de l'offre.
+ */
 export interface PlafondsParDefaut extends PlafondsAppelsParDefaut {
   readonly envoisJour: number;
   readonly fichesJour: number;
@@ -81,7 +90,7 @@ export interface PlafondsParDefaut extends PlafondsAppelsParDefaut {
 export interface PlafondApiStore {
   /** Le réglage de l'espace, ou `null` si l'espace n'existe pas. Un espace sans réglage rend `SANS_REGLAGE`. */
   lire(tenantId: string): Promise<ReglagePlafondApi | null>;
-  /** Écrit les quatre colonnes d'un coup (plafond et quotas). `false` si l'espace n'existe pas. */
+  /** Écrit les cinq colonnes d'un coup (plafond et quotas). `false` si l'espace n'existe pas. */
   ecrire(tenantId: string, reglage: ReglagePlafondApi): Promise<boolean>;
   /**
    * Laisse la trace DURABLE d'un changement, dans le journal d'audit de l'espace (`api.limites_modifiees`) : le
@@ -97,7 +106,7 @@ export interface PlafondApiStore {
  */
 export function detailDuChangement(avant: ReglagePlafondApi, apres: ReglagePlafondApi): Record<string, number | string> {
   const detail: Record<string, number | string> = { par: 'exploitation' };
-  for (const champ of ['minute', 'heure', 'envoisJour', 'fichesJour'] as const) {
+  for (const champ of CHAMPS_REGLAGE) {
     if (avant[champ] === apres[champ]) continue;
     detail[champ] = apres[champ] ?? 'défaut';
     detail[`${champ}Avant`] = avant[champ] ?? 'défaut';
@@ -107,6 +116,32 @@ export function detailDuChangement(avant: ReglagePlafondApi, apres: ReglagePlafo
 
 export interface LecteurReglagePlafond {
   reglage(tenantId: string): Promise<ReglagePlafondApi>;
+}
+
+/** Les plafonds d'appels et les quotas que l'offre de l'espace donne par défaut (spec offres v2) ; `null` = la configuration. */
+export type LimitesApiOffre = Readonly<Pick<Limites, 'appelsMinute' | 'appelsHeure' | 'modelesJour' | 'reponsesJour'>>;
+
+export const SANS_LIMITE_D_OFFRE: LimitesApiOffre = { appelsMinute: null, appelsHeure: null, modelesJour: null, reponsesJour: null };
+
+/** Les limites d'API de l'offre d'un espace, lues dans la source d'offres en cache (`OffresEnCache`). */
+export interface SourceLimitesApi {
+  limitesApi(tenantId: string): Promise<LimitesApiOffre>;
+}
+
+/** La source sur les offres du serveur : l'offre de l'espace et ses limites. */
+export function limitesApiDesOffres(offres: { offreDe(tenantId: string): Promise<{ readonly droits: { readonly limites: LimitesApiOffre } }> }): SourceLimitesApi {
+  return { limitesApi: async (tenantId) => (await offres.offreDe(tenantId)).droits.limites };
+}
+
+/**
+ * Ce qui s'applique à une fenêtre ou à un quota : le réglage de l'espace (`/ops`), sinon la valeur de son offre, sinon la
+ * configuration. 🔴 La configuration à 0 éteint AUSSI l'offre : c'est le levier d'urgence, il doit ouvrir tout le monde
+ * d'un `--force-recreate`. Un réglage d'espace, posé à la main pour un espace, reste appliqué. `0` = aucun plafond.
+ */
+export function valeurEffective(reglage: number | null, offre: number | null, configuration: number): number {
+  if (reglage !== null) return reglage;
+  if (configuration <= 0) return 0;
+  return offre ?? configuration;
 }
 
 /**
@@ -164,6 +199,7 @@ export class ReglagesPlafondEnCache implements LecteurReglagePlafond {
  */
 export class PlafondEspace {
   private dernierAvertissement = Number.NEGATIVE_INFINITY;
+  private dernierAvertissementOffre = Number.NEGATIVE_INFINITY;
 
   constructor(
     private readonly defauts: PlafondsAppelsParDefaut,
@@ -172,7 +208,23 @@ export class PlafondEspace {
     private readonly compteur: CompteurDebit,
     /** Le plafond de la plateforme (`plafond-global.ts`), compté dans la MÊME instruction que les deux fenêtres. */
     private readonly global: PlafondGlobal,
+    /** Les plafonds de l'offre de l'espace (spec offres v2), entre son réglage et la configuration. */
+    private readonly offres: SourceLimitesApi,
   ) {}
+
+  /** L'offre illisible ne coupe rien et ne relève rien : la configuration s'applique, l'incident se dit une fois par minute. */
+  private async limitesDeLOffre(tenantId: string): Promise<LimitesApiOffre> {
+    try {
+      return await this.offres.limitesApi(tenantId);
+    } catch (err) {
+      const t = Date.now();
+      if (t - this.dernierAvertissementOffre >= 60_000) {
+        this.dernierAvertissementOffre = t;
+        journaliser('warn', 'plafond_api_offre_illisible', { tenantId, err });
+      }
+      return SANS_LIMITE_D_OFFRE;
+    }
+  }
 
   /**
    * Compte un appel de l'espace et pose les en-têtes `x-ratelimit-*` ; `false` = refusé, le 429 est déjà
@@ -181,10 +233,10 @@ export class PlafondEspace {
    * est pleine rendrait un second 429.
    */
   async consommer(tenantId: string, reply: FastifyReply): Promise<boolean> {
-    const reglage = await this.reglages.reglage(tenantId);
+    const [reglage, offre] = await Promise.all([this.reglages.reglage(tenantId), this.limitesDeLOffre(tenantId)]);
     const fenetres = [
-      { nom: 'minute', dureeMs: FENETRE_MINUTE_MS, max: reglage.minute ?? this.defauts.minute },
-      { nom: 'heure', dureeMs: FENETRE_HEURE_MS, max: reglage.heure ?? this.defauts.heure },
+      { nom: 'minute', dureeMs: FENETRE_MINUTE_MS, max: valeurEffective(reglage.minute, offre.appelsMinute, this.defauts.minute) },
+      { nom: 'heure', dureeMs: FENETRE_HEURE_MS, max: valeurEffective(reglage.heure, offre.appelsHeure, this.defauts.heure) },
     ].filter((f) => f.max > 0);
     const plateforme = await this.global.fenetre(tenantId);
     if (fenetres.length === 0 && plateforme === null) return true;

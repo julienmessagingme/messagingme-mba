@@ -1349,8 +1349,14 @@ function QuotasApi({ jeton, tenantId, nom, onFermer }: { jeton: string; tenantId
   const compte = (f: FenetrePlafondOps, n: number | undefined) => (f.effectif === null
     ? <Nd titre={t('Quota désactivé : rien n’est compté', 'Quota disabled: nothing is counted')} />
     : conso(n));
+  // Les modèles et les réponses ont chacun leur quota (spec offres v2) ; une API d'avant ne rend que les envois.
+  const envois = etat ? [
+    { cle: 'modeles', nom: t('Modèles du jour', 'Templates today'), f: etat.modelesJour, n: etat.aujourdhui?.modeles },
+    { cle: 'reponses', nom: t('Réponses du jour', 'Replies today'), f: etat.reponsesJour, n: etat.aujourdhui?.reponses },
+    { cle: 'envois', nom: t('Envois du jour', 'Sends today'), f: etat.envoisJour, n: etat.aujourdhui?.envois },
+  ].flatMap((l) => (l.f ? [{ cle: l.cle, nom: l.nom, conso: compte(l.f, l.n), f: l.f }] : [])) : [];
   const lignes = etat ? [
-    { cle: 'envois', nom: t('Envois du jour', 'Sends today'), conso: compte(etat.envoisJour, etat.aujourdhui?.envois), f: etat.envoisJour },
+    ...envois,
     { cle: 'fiches', nom: t('Fiches du jour', 'Contacts today'), conso: compte(etat.fichesJour, etat.aujourdhui?.fiches), f: etat.fichesJour },
     { cle: 'minute', nom: t('Appels par minute', 'Calls per minute'), conso: null, f: etat.minute },
     { cle: 'heure', nom: t('Appels par heure', 'Calls per hour'), conso: null, f: etat.heure },

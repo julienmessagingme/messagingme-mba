@@ -29,10 +29,11 @@ export const API_KEY_PREFIX = 'mba_';
 
 /**
  * Le plafond d'une création : au plus `max` clés actives dans l'espace, sans compter celles qui portent
- * `horsDroit` (la clé du relais, posée par la publication et non par le client).
+ * `horsDroit` (la clé du relais, posée par la publication et non par le client). `max` vient de l'offre (spec offres
+ * v2) : `null` = sans limite (l'Entreprise), et rien n'est compté.
  */
 export interface PlafondCles {
-  max: number;
+  max: number | null;
   horsDroit: string;
 }
 
@@ -54,7 +55,7 @@ export class PgApiKeyStore implements ApiKeyLookup {
 
   /**
    * Sans plafond. La route de la console n'y a pas accès (son type ne porte que `creerSousPlafond`) ; en production,
-   * seule la publication du relais s'en sert (`src/mba/cle-relais.ts`).
+   * la publication du relais s'en sert (`src/mba/cle-relais.ts`), et `creerSousPlafond` quand l'offre est sans limite.
    */
   async create(tenantId: string, name: string, scopes: string[]): Promise<{ id: string; key: string }> {
     const { key, hash } = nouvelleCle();
@@ -70,13 +71,15 @@ export class PgApiKeyStore implements ApiKeyLookup {
    * `api_keys:`, pour ne pas sérialiser avec les bascules HubSpot, verrouillées sur l'identifiant nu de l'espace.
    */
   async creerSousPlafond(tenantId: string, name: string, scopes: string[], plafond: PlafondCles): Promise<{ id: string; key: string } | null> {
+    if (plafond.max === null) return this.create(tenantId, name, scopes);
+    const max = plafond.max;
     return enTransaction(this.pool, async (client) => {
       await client.query(`select pg_advisory_xact_lock(hashtext('api_keys:' || $1))`, [tenantId]);
       const actives = await client.query<{ n: number }>(
         `select count(*)::int as n from api_keys where tenant_id = $1 and revoked_at is null and not ($2 = any(scopes))`,
         [tenantId, plafond.horsDroit],
       );
-      if ((actives.rows[0]?.n ?? 0) >= plafond.max) return null;
+      if ((actives.rows[0]?.n ?? 0) >= max) return null;
       const { key, hash } = nouvelleCle();
       const res = await client.query<{ id: string }>(INSERER_CLE, [tenantId, hash, name, scopes]);
       return { id: res.rows[0]!.id, key };

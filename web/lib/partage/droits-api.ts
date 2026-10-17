@@ -16,11 +16,12 @@ export const API_SCOPES = [
 export type ApiScope = (typeof API_SCOPES)[number];
 
 /**
- * Au plus dix clés actives par espace (décision de Julien, 2026-10-04). Chaque clé active est un secret confié à
- * quelqu'un : la borne limite les clés oubliées chez d'anciens intégrateurs, et révoquer en libère une place.
+ * Le plafond de clés actives que la console suppose quand l'offre est inconnue (une panne, ou une API plus ancienne).
+ * Le vrai plafond vient de l'offre depuis la spec offres v2 (`Limites.clesApi` : 2 en Free, 10 en Pro, sans limite en
+ * Entreprise), et le serveur le tient en 402. Chaque clé active est un secret confié à quelqu'un : la borne limite les clés
+ * oubliées chez d'anciens intégrateurs, et révoquer en libère une place.
  * ⚠️ Ce n'est PAS un limiteur de débit : le plafond de l'API est déjà commun à toutes les clés de l'espace. La clé du
- * relais de l'agent de Meta n'y compte pas, et les clés déjà au-delà ne sont pas révoquées : seule la création est
- * refusée (409 au serveur, dit avant par l'écran).
+ * relais de l'agent de Meta n'y compte pas, et les clés déjà au-delà ne sont pas révoquées : seule la création est refusée.
  */
 export const MAX_CLES_API_ACTIVES = 10;
 

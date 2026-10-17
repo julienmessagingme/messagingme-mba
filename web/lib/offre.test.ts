@@ -27,6 +27,18 @@ describe('lireVueOffre', () => {
     expect(v!.limites.stockageOctets).toBe(0);
   });
 
+  it('lit le plafond de clés d’API quand l’API le porte, sans limite compris (spec offres v2)', () => {
+    expect(lireVueOffre({ ...BASE, limites: { ...limites(100), clesApi: 2 } })!.limites.clesApi).toBe(2);
+    expect(lireVueOffre({ ...BASE, limites: { ...limites(100), clesApi: null } })!.limites.clesApi).toBeNull();
+  });
+
+  it('🔴 un plafond de clés absent ou illisible ne rend pas la vue illisible : la ligne est seulement inconnue', () => {
+    expect(lireVueOffre(BASE)!.limites.clesApi).toBeUndefined();
+    const v = lireVueOffre({ ...BASE, limites: { ...limites(100), clesApi: 'deux' } });
+    expect(v).not.toBeNull();
+    expect(v!.limites.clesApi).toBeUndefined();
+  });
+
   it('🔴 une API qui ne porte pas encore le quota de stockage se lit quand même : la console est publiée avant l’API', () => {
     const v = lireVueOffre(BASE);
     expect(v).not.toBeNull();

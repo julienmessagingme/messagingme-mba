@@ -411,7 +411,7 @@ What to do: Wait retry-after seconds, then retry.
 
 ### `quota_exceeded` 429
 
-Daily workspace quota reached (sends or written contacts), or exceeded by this request: retry-after gives the wait until midnight, Paris time. A smaller request may still go through.
+Daily workspace quota reached (templates, replies or written contacts), or exceeded by this request: retry-after gives the wait until midnight, Paris time. A smaller request may still go through.
 
 What to do: Wait for the reset that retry-after gives (midnight, Paris time), or send fewer items in one call.
 

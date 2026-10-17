@@ -9,7 +9,6 @@
  */
 import { DROITS } from '../../src/offres/offres';
 import { PRIX_NUMERO_HT_CENTIMES } from '../../src/stripe/abonnement';
-import { QUOTAS_API_DEFAUT } from '../../src/api/quotas';
 import { ETAPES_CARTE_META, PREREQUIS_META } from '../../web/lib/partage/etapes-meta';
 
 export interface EntreeFaq {
@@ -37,8 +36,6 @@ const UTILISATEURS_FREE = DROITS.base.limites.utilisateurs;
 const UTILISATEURS_PRO = DROITS.pro.limites.utilisateurs;
 const INCLUS_FR = DROITS.pro.limites.numeroInclus ? ', inclus dans le Pro' : '';
 const INCLUS_EN = DROITS.pro.limites.numeroInclus ? ', included in Pro' : '';
-/** Le quota d'envois du jour de l'API, par espace, dans toutes les offres (le défaut ; la production n'en pose pas d'autre). */
-const QUOTA_ENVOIS = QUOTAS_API_DEFAUT.envois;
 const GRILLE_META = 'https://developers.facebook.com/docs/whatsapp/pricing';
 /** Les étapes chez Meta, de la même source que la console et que Claude (`web/lib/partage/etapes-meta.ts`). */
 const enUnBloc = (etapes: ReadonlyArray<{ fr: string; en: string }>, langue: 'fr' | 'en'): string =>
@@ -145,10 +142,11 @@ export const FAQ: readonly EntreeFaq[] = [
     id: 'combien-de-messages',
     question: { fr: 'Combien de messages puis-je envoyer ?', en: 'How many messages can I send?' },
     reponse: {
-      fr: `Trois limites. Celle de l’offre : ${modeles(DROITS.base.limites.envoisModelesMois, 'fr')} en Free, ${modeles(DROITS.pro.limites.envoisModelesMois, 'fr')} en Pro ; les réponses dans la fenêtre de 24 heures n’y comptent jamais. Celle de l’API, dans toutes les offres : ${nombre(QUOTA_ENVOIS, 'fr')} envois par jour et par espace, modèles et messages libres compris, relevable sur demande ; au-delà, le refus quota_exceeded jusqu’au lendemain. Et celle de Meta, qui fixe ce qu’un numéro peut envoyer et l’augmente avec sa qualité.`,
-      en: `Three limits. The plan’s: ${modeles(DROITS.base.limites.envoisModelesMois, 'en')} on Free, ${modeles(DROITS.pro.limites.envoisModelesMois, 'en')} on Pro; replies within the 24-hour window never count. The API’s, on every plan: ${nombre(QUOTA_ENVOIS, 'en')} sends a day per workspace, templates and free-form messages included, raised on request; beyond it, the quota_exceeded refusal until the next day. And Meta’s, which sets what a number can send and raises it with its quality.`,
+      fr: `Trois limites. Celle de l’offre : ${modeles(DROITS.base.limites.envoisModelesMois, 'fr')} en Free, ${modeles(DROITS.pro.limites.envoisModelesMois, 'fr')} en Pro ; les réponses dans la fenêtre de 24 heures n’y comptent jamais. Celle de l’API : un quota par jour et par espace, selon l’offre, où les modèles et les réponses se comptent à part (un envoi de modèles ne prend jamais la place des réponses), relevable sur demande ; au-delà, le refus quota_exceeded jusqu’au lendemain. Et celle de Meta, qui fixe ce qu’un numéro peut envoyer et l’augmente avec sa qualité.`,
+      en: `Three limits. The plan’s: ${modeles(DROITS.base.limites.envoisModelesMois, 'en')} on Free, ${modeles(DROITS.pro.limites.envoisModelesMois, 'en')} on Pro; replies within the 24-hour window never count. The API’s: a daily quota per workspace, set by the plan, where templates and replies are counted separately (sending templates never takes the room of replies), raised on request; beyond it, the quota_exceeded refusal until the next day. And Meta’s, which sets what a number can send and raises it with its quality.`,
     },
-    source: 'src/offres/offres.ts (DROITS) ; src/api/quotas.ts (QUOTAS_API_DEFAUT) ; docs/aide/fiches/choisir-mon-offre.md',
+    // Le quota du jour ne se chiffre pas : une limite invisible (spec offres v2), comme les plafonds d'appels.
+    source: 'src/offres/offres.ts (DROITS) ; src/api/quotas.ts (les familles du quota) ; docs/aide/fiches/choisir-mon-offre.md',
   },
   {
     id: 'ajouter-un-collegue',

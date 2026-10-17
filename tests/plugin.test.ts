@@ -134,9 +134,12 @@ describe('les skills', () => {
     for (const s of SKILLS) expect(s.corps, s.nom).not.toMatch(/\b0[,.]\d|\bcts?\b|centimes?|\bcents?\b|\$\s*\d|\d\s*\$/);
   });
 
-  it('le quota d’envois de l’API que dit la skill des règles est celui du code', () => {
+  it('🔴 la skill des règles dit le quota du jour de l’API sans le chiffrer (une limite invisible, spec offres v2)', () => {
     const corps = SKILLS.find((s) => s.nom === 'regles-whatsapp')!.corps;
-    expect(corps).toContain(`${QUOTAS_API_DEFAUT.envois.toLocaleString('en-US')} sends a day`);
+    expect(corps).not.toContain(`${QUOTAS_API_DEFAUT.envois.toLocaleString('en-US')} sends a day`);
+    expect(corps).not.toMatch(/\d[\d,]* (sends|templates|replies) a day/);
+    expect(corps).toMatch(/templates and free-form\s+replies are counted separately/i);
+    expect(corps).toContain('quota_exceeded');
   });
 
   it('🔴 les étapes nommées par la skill de mise en service sont celles de get_setup_state', async () => {

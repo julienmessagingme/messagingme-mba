@@ -99,11 +99,11 @@ Non : il est loué 3,50 € HT par mois, inclus dans le Pro. Un numéro que vous
 
 ## How many messages can I send?
 
-Three limits. The plan’s: 1,000 templates a month on Free, no cap from us on Pro; replies within the 24-hour window never count. The API’s, on every plan: 2,000 sends a day per workspace, templates and free-form messages included, raised on request; beyond it, the quota_exceeded refusal until the next day. And Meta’s, which sets what a number can send and raises it with its quality.
+Three limits. The plan’s: 1,000 templates a month on Free, no cap from us on Pro; replies within the 24-hour window never count. The API’s: a daily quota per workspace, set by the plan, where templates and replies are counted separately (sending templates never takes the room of replies), raised on request; beyond it, the quota_exceeded refusal until the next day. And Meta’s, which sets what a number can send and raises it with its quality.
 
 **FR · Combien de messages puis-je envoyer ?**
 
-Trois limites. Celle de l’offre : 1 000 modèles par mois en Free, sans plafond de notre part en Pro ; les réponses dans la fenêtre de 24 heures n’y comptent jamais. Celle de l’API, dans toutes les offres : 2 000 envois par jour et par espace, modèles et messages libres compris, relevable sur demande ; au-delà, le refus quota_exceeded jusqu’au lendemain. Et celle de Meta, qui fixe ce qu’un numéro peut envoyer et l’augmente avec sa qualité.
+Trois limites. Celle de l’offre : 1 000 modèles par mois en Free, sans plafond de notre part en Pro ; les réponses dans la fenêtre de 24 heures n’y comptent jamais. Celle de l’API : un quota par jour et par espace, selon l’offre, où les modèles et les réponses se comptent à part (un envoi de modèles ne prend jamais la place des réponses), relevable sur demande ; au-delà, le refus quota_exceeded jusqu’au lendemain. Et celle de Meta, qui fixe ce qu’un numéro peut envoyer et l’augmente avec sa qualité.
 
 ## How do I add a colleague?
 

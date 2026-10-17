@@ -33,6 +33,7 @@ function app(over: Partial<ApiKeysRouteDeps> = {}) {
       listByTenant: async (): Promise<ApiKeyRow[]> => [{ id: 'k1', name: 'CI', scopes: ['contacts:write'], createdAt: '2026-07-17T00:00:00.000Z', lastUsedAt: null, revokedAt: null }],
       revoke: async (_t, id) => { cap.revoked.push(id); return id === 'k1'; },
     },
+    limiteCles: async () => 10,
     ...over,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, apiKeys: deps }), cap };
@@ -48,29 +49,55 @@ describe('routes api-keys (admin)', () => {
     await server.close();
   });
 
-  it('🔴 la création passe le plafond de dix clés, la clé du relais mise à part', async () => {
-    const { server, cap } = app();
-    await server.inject({ method: 'POST', url: '/tenants/t1/api-keys', ...h(adminTok), payload: { name: 'X', scopes: ['contacts:write'] } });
-    expect(cap.plafonds).toEqual([{ max: 10, horsDroit: 'mba:relais' }]);
+  it('🔴 le plafond de clés est celui de l’offre de l’espace, la clé du relais mise à part (spec offres v2)', async () => {
+    const lues: string[] = [];
+    const free = app({ limiteCles: async (t) => { lues.push(t); return 2; } });
+    await free.server.inject({ method: 'POST', url: '/tenants/t1/api-keys', ...h(adminTok), payload: { name: 'X', scopes: ['contacts:write'] } });
+    expect(free.cap.plafonds).toEqual([{ max: 2, horsDroit: 'mba:relais' }]);
+    expect(lues).toEqual(['t1']);
+    await free.server.close();
+    // L'Entreprise est sans limite : le magasin ne compte pas.
+    const entreprise = app({ limiteCles: async () => null });
+    await entreprise.server.inject({ method: 'POST', url: '/tenants/t1/api-keys', ...h(adminTok), payload: { name: 'X', scopes: ['contacts:write'] } });
+    expect(entreprise.cap.plafonds).toEqual([{ max: null, horsDroit: 'mba:relais' }]);
+    await entreprise.server.close();
+  });
+
+  const plafondAtteint = (max: number, journal: string[]) => app({
+    audit: async (_t, _a, action) => { journal.push(action); },
+    cles: { creerSousPlafond: async () => null, listByTenant: async () => [], revoke: async () => false },
+    limiteCles: async () => max,
+  });
+
+  it('🔴 plafond de la Free atteint -> 402 de l’offre qui renvoie au Pro, aucune clé rendue, rien au journal', async () => {
+    const journal: string[] = [];
+    const { server } = plafondAtteint(2, journal);
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/api-keys', ...h(adminTok), payload: { name: 'X', scopes: ['contacts:write'] } });
+    expect(res.statusCode).toBe(402);
+    const corps = res.json<{ error: string; code: string; limite: string; max: number; upgradeUrl: string }>();
+    expect(corps).toMatchObject({ code: 'plan_limit_reached', limite: 'clesApi', max: 2 });
+    expect(corps.error).toMatch(/2 clés d’API actives.*révoquez-en une.*Passez en Pro/);
+    expect(corps.upgradeUrl).toMatch(/\/offre$/);
+    expect(corps).not.toHaveProperty('key');
+    expect(journal).toEqual([]);
     await server.close();
   });
 
-  it('🔴 plafond atteint -> 409 lisible, aucune clé rendue, rien au journal', async () => {
-    const journal: Array<string> = [];
-    const audit: AuditSink = async (_t, _a, action) => { journal.push(action); };
-    const { server } = app({
-      audit,
-      cles: {
-        creerSousPlafond: async () => null,
-        listByTenant: async () => [],
-        revoke: async () => false,
-      },
-    });
+  it('la 11e clé d’un Pro -> 402 qui renvoie à l’Entreprise', async () => {
+    const { server } = plafondAtteint(10, []);
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/api-keys', ...h(adminTok), payload: { name: 'X', scopes: ['contacts:write'] } });
-    expect(res.statusCode).toBe(409);
-    expect(res.json<{ error: string }>().error).toMatch(/10 clés actives au maximum.*révoquez-en une/);
-    expect(res.json()).not.toHaveProperty('key');
-    expect(journal).toEqual([]);
+    expect(res.statusCode).toBe(402);
+    expect(res.json<{ error: string }>().error).toMatch(/10 clés d’API actives.*Passez en Entreprise/);
+    await server.close();
+  });
+
+  it('une création réussie est tracée au journal, avec les droits accordés et jamais la clé', async () => {
+    const traces: Array<{ actor: unknown; action: string; detail: unknown }> = [];
+    const audit: AuditSink = async (_t, actor, action, _cible, detail) => { traces.push({ actor, action, detail }); };
+    const { server } = app({ audit });
+    await server.inject({ method: 'POST', url: '/tenants/t1/api-keys', ...h(adminTok), payload: { name: 'X', scopes: ['contacts:write'] } });
+    expect(traces).toEqual([{ actor: { userId: 'u1', email: null }, action: 'cle_api.creee', detail: { scopes: ['contacts:write'] } }]);
+    expect(JSON.stringify(traces)).not.toMatch(/mba_secret_shown_once/);
     await server.close();
   });
 

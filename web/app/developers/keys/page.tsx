@@ -15,6 +15,7 @@ import { Squelette } from '@/components/Squelette';
 import { Nd } from '@/components/Nd';
 import { erreurDeChargement } from '@/lib/http';
 import { listerAutorisations, personneDe, revoquerAutorisation, type AutorisationOauth } from '@/lib/oauth';
+import { useOffre } from '@/lib/use-offre';
 
 export default function ApiKeysPage() {
   return <AppShell active="api-keys">{(session) => <KeysInner session={session} />}</AppShell>;
@@ -25,6 +26,7 @@ function KeysInner({ session }: { session: Session }) {
   const confirmer = useConfirmation();
   const { locale } = useLocale();
   const [keys, setKeys] = useState<ApiKeyRow[]>([]);
+  const vue = useOffre(session.tenantId);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -116,7 +118,10 @@ function KeysInner({ session }: { session: Session }) {
   const active = keys.filter((k) => !k.revokedAt);
   // Le plafond ne compte pas la clé du relais, que la publication pose (même règle que le serveur).
   const activesComptees = active.filter((k) => !k.scopes.includes(DROIT_RELAIS)).length;
-  const plafondAtteint = activesComptees >= MAX_CLES_API_ACTIVES;
+  // Le plafond de l'offre (spec offres v2), `null` sans limite. Dix en repli tant que l'offre est inconnue ou qu'une API
+  // plus ancienne ne le porte pas : la console est publiée avant l'API, et le serveur reste la barrière.
+  const plafond = vue == null || vue.limites.clesApi === undefined ? MAX_CLES_API_ACTIVES : vue.limites.clesApi;
+  const plafondAtteint = plafond !== null && activesComptees >= plafond;
 
   return (
     <div className="max-w-formulaire space-y-6">
@@ -138,7 +143,9 @@ function KeysInner({ session }: { session: Session }) {
           {/* Le compte que le plafond regarde : la clé « Agent de Meta » n'y entre pas. */}
           {!loading && (
             <span className="text-xs tabular-nums text-ink-500" data-testid="compte-cles">
-              {t(`${activesComptees} sur ${MAX_CLES_API_ACTIVES} clés actives`, `${activesComptees} of ${MAX_CLES_API_ACTIVES} active keys`)}
+              {plafond === null
+                ? t(`${activesComptees} clé${activesComptees > 1 ? 's' : ''} active${activesComptees > 1 ? 's' : ''}`, `${activesComptees} active key${activesComptees === 1 ? '' : 's'}`)
+                : t(`${activesComptees} sur ${plafond} clés actives`, `${activesComptees} of ${plafond} active keys`)}
             </span>
           )}
         </div>
@@ -167,8 +174,8 @@ function KeysInner({ session }: { session: Session }) {
         {plafondAtteint && (
           <p className="mt-2 text-sm text-ink-500" data-testid="plafond-cles">
             {t(
-              `${MAX_CLES_API_ACTIVES} clés actives au maximum par espace (la clé « Agent de Meta » ne compte pas) : révoquez-en une pour en créer une autre.`,
-              `${MAX_CLES_API_ACTIVES} active keys at most per workspace (the “Agent de Meta” key does not count): revoke one to create another.`,
+              `${plafond} clés actives au maximum avec votre offre (la clé « Agent de Meta » ne compte pas) : révoquez-en une pour en créer une autre.`,
+              `${plafond} active keys at most on your plan (the “Agent de Meta” key does not count): revoke one to create another.`,
             )}
           </p>
         )}

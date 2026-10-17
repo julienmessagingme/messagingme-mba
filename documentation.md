@@ -759,7 +759,7 @@ webhooks sortants, `repondeur_adresse_id`, 0224). Les invariants :
   que l'application tient (`ControleDuFil.tenuParLApplication` : mode Application, fil `app_workflow`, et AUCUN
   parcours qui attend la réponse du contact, celui-là la réponse le coupe), elle ne prend PAS le fil (`filTenuParLApplication`
   dans `repondreDansLaFenetre`), sinon la conversation passerait à l'équipe au premier envoi ; et en mode Application
-  la route compte l'opération `messages.reponse_application`, hors du quota quotidien d'envois, sous le plafond par
+  la route compte l'opération `messages.reponse_application`, hors des quotas quotidiens, sous le plafond par
   minute.
 - **Le mode Équipe** : la remise passe le fil à l'équipe (`app_human`, pot commun) avec une demande ET la marque
   d'escalade, que la première réponse d'un humain efface : sans elle, le balayage rendrait aux robots, au bout du délai
@@ -885,7 +885,7 @@ connecteur chez Meta, `EngageMe`, dont l'adresse est `PUBLIC_API_URL` + `/mba/re
   de `src/mba/cle-relais.ts` (créer, écrire chez Meta, retenir après l'accusé, révoquer TOUTE autre clé
   `mba:relais` de l'espace ; après un échec, plus aucune n'est retenue, donc la publication suivante en
   repose une). Chaque création et révocation est auditée (`cle_api.creee`, `cle_api.revoquee`). Elle se crée
-  SANS plafond (`PgApiKeyStore.create`) et ne compte pas dans les dix clés actives de l'espace (§ 7).
+  SANS plafond (`PgApiKeyStore.create`) et ne compte pas dans les clés actives de l'espace (§ 7).
 - 🔴 **Une seule publication à la fois par espace** (`POST /mba-publication` rend 409 à la seconde) : deux
   poses de clé entrelacées se révoqueraient l'une l'autre. Le verrou est un verrou COURT en base
   (`mba-publication:<espace>`, `src/db/verrous-courts.ts`), donc commun à toutes les copies de l'API ; son jeton
@@ -3019,7 +3019,7 @@ Restent EN MÉMOIRE, par copie, délibérément :
 
 🔴 **LE COÛT : UNE ÉCRITURE PAR APPEL COMPTÉ, ET AUCUNE PAR REFUS RÉPÉTÉ.** Concernés : les routes de `/v1` et
 `/mcp` (le plafond, une instruction à deux lignes, plus l'usage, une instruction à deux lignes : deux allers-retours
-de plus par appel accepté, bornés par le plafond de l'espace, 60 par minute et 1 000 par heure par défaut), les
+de plus par appel accepté, bornés par le plafond de l'espace, celui de son offre), les
 routes coûteuses (gestes manuels, rares), les routes anonymes de la connexion (une par tentative), la demande
 de code d'un numéro, et chaque refus de `/ops`. Le plafond par utilisateur, qui voit passer toute la console, n'y
 passe PAS. Un refus coûte une écriture la première fois qu'une copie voit la fenêtre pleine, puis plus rien jusqu'à
@@ -3041,8 +3041,13 @@ d'autant. `CF-Connecting-IP` ne deviendra lisible qu'avec une origine qui ne ré
   qui l'épuise couperait tous les clients. ⚠️ Un démarrage oublie toutes les empreintes résolues : chaque clé et chaque
   jeton actifs repassent une fois par ce budget après chaque déploiement, qui doit donc couvrir en une minute ceux de
   tous les intégrateurs actifs (le pourquoi de 600 : `src/config.ts`). Puis le plafond de l'ESPACE (`src/auth/plafond-espace.ts`, 2026-09-25),
-  commun à toutes ses clés : deux fenêtres fixes qui s'appliquent ensemble (`API_PLAFOND_MINUTE`, défaut 60,
-  `API_PLAFOND_HEURE`, défaut 1 000), comptées toutes ou aucune, sur l'ESPACE d'une clé résolue (avant la lecture
+  commun à toutes ses clés : deux fenêtres fixes qui s'appliquent ensemble, comptées toutes ou aucune. Leur valeur
+  (`valeurEffective`, `src/auth/plafond-espace.ts`) : le réglage de l'espace, sinon celle de son offre
+  (`Limites.appelsMinute` et `appelsHeure`, `src/offres/offres.ts` : 30 et 500 en Free, 60 et 1 000 en Pro), sinon la
+  configuration (`API_PLAFOND_MINUTE`, défaut 60, `API_PLAFOND_HEURE`, défaut 1 000, celle de l'Entreprise) ; la
+  configuration à `0` éteint aussi l'offre, mais une valeur non nulle ne la bride pas (brider la plateforme est le rôle
+  du plafond global). L'offre se lit dans `OffresEnCache` ; illisible, la configuration
+  s'applique. Elles se comptent sur l'ESPACE d'une clé résolue (avant la lecture
   de la clé dès qu'elle est connue, l'espace étant retenu avec l'empreinte dans `ClesResolues` ; après la lecture
   la première fois). Une fausse clé n'entre donc jamais dans le compteur. Depuis le lot B, les fenêtres vivent dans
   le compteur PARTAGÉ (calées sur la minute et l'heure pleines, heure de la base) : le plafond est tenu au total des
@@ -3057,8 +3062,9 @@ d'autant. `CF-Connecting-IP` ne deviendra lisible qu'avec une origine qui ne ré
   la route pose dans le cache le réglage écrit (`poser`), qui reste le dernier réglage connu si une relecture
   échoue). Refus : 429 `rate_limited`, `Retry-After` = la fenêtre pleine qui se libère le
   plus tard, message qui la nomme avec son plafond ; les `x-ratelimit-*` décrivent la fenêtre la plus proche de
-  son plafond. `0` en configuration éteint la fenêtre pour les espaces sans réglage (levier d'urgence) ; un
-  réglage d'espace reste appliqué. ⚠️ Le cache du réglage, lui, reste par copie : un plafond relevé par `/ops`
+  son plafond. `0` en configuration éteint la fenêtre pour les espaces sans réglage, offre comprise (levier
+  d'urgence) ; un réglage d'espace reste appliqué. Le `GET` de `/ops` rend en `defaut` ce qui s'applique sans
+  réglage, donc la valeur de l'offre de l'espace. ⚠️ Le cache du réglage, lui, reste par copie : un plafond relevé par `/ops`
   s'applique tout de suite sur la copie qui a servi l'écriture, dans les 30 s sur les autres.
 - 🔴 **Le plafond de TOUTE la plateforme** (`src/auth/plafond-global.ts`, lot 14) : un compteur partagé par fenêtre de
   10 secondes, tous espaces, clés et jetons OAuth confondus (`api.zz-plateforme`, triée après celles de l'espace), compté dans la MÊME instruction
@@ -3073,13 +3079,17 @@ d'autant. `CF-Connecting-IP` ne deviendra lisible qu'avec une origine qui ne ré
   valeur PROVISOIRE dans `.env.prod`, mesurée au banc sur l'infrastructure actuelle, à reposer à la bascule Scaleway
   (`docs/ARCHITECTURE-CIBLE.md`, § 7.8). La clé du relais du Meta Business Agent n'y entre pas (elle n'atteint pas
   `PlafondEspace`).
-- **Les quotas QUOTIDIENS par espace** (`src/api/quotas.ts`, migration 0208, décision du 2026-10-04) : le plafond
-  compte des appels, le quota le TRAVAIL d'un jour civil de Paris, en deux familles, les envois (`sends.create` en
-  destinataires, `messages.send`) et les fiches (`contacts.batch` en fiches, `contacts.upsert`). Défauts
-  `API_QUOTA_ENVOIS_JOUR` et `API_QUOTA_FICHES_JOUR` (`QUOTAS_API_DEFAUT`, 2 000 et 20 000 ; `0` éteint, levier
-  d'urgence), réglage d'espace `tenant_settings.api_quota_envois_jour` et `_fiches_jour` (`null` = défaut, CHECK
-  > 0), lu dans le MÊME cache que le plafond et réglé par la même route `PUT /ops/plafond-api/:tenantId` (quatre
-  champs requis). Compté par le garde d'usage dans la MÊME opération que l'usage : refusé, rien n'est compté, et un
+- **Les quotas QUOTIDIENS par espace** (`src/api/quotas.ts`, migrations 0208 et 0241, décision du 2026-10-04, trois
+  familles depuis la spec offres v2) : le plafond compte des appels, le quota le TRAVAIL d'un jour civil de Paris, en
+  trois familles, les modèles (`sends.create` en destinataires, dont `send_template_to_contact` du MCP), les réponses
+  (`messages.send`) et les fiches (`contacts.batch` en fiches, `contacts.upsert`). 🔴 Les modèles et les réponses sont
+  deux familles pour qu'un envoi de modèles qui épuise la sienne ne bloque jamais une réponse. Valeur : le réglage
+  d'espace (`tenant_settings.api_quota_modeles_jour`, `_reponses_jour`, `_fiches_jour`, `null` = défaut, CHECK > 0),
+  sinon l'offre (`Limites.modelesJour` et `reponsesJour` : 500 et 2 000 en Free, 2 000 et 2 000 en Pro), sinon la
+  configuration (`API_QUOTA_ENVOIS_JOUR` pour les deux familles d'envoi, `API_QUOTA_FICHES_JOUR` ;
+  `QUOTAS_API_DEFAUT`, 2 000 et 20 000 ; `0` éteint, offre comprise, levier d'urgence). `api_quota_envois_jour`
+  (0208) n'est plus lue, à retirer par une migration suivante. Lu dans le MÊME cache que le plafond et réglé par la
+  même route `PUT /ops/plafond-api/:tenantId` (cinq champs requis). Compté par le garde d'usage dans la MÊME opération que l'usage : refusé, rien n'est compté, et un
   lot qui dépasserait est refusé en entier. La fenêtre est un jour de Paris (la date dans la clé, l'origine à son
   minuit, sa durée de 23, 24 ou 25 h : `origineMs` du compteur partagé), donc `Retry-After` dit l'attente jusqu'au
   minuit suivant. Refus : 429 `quota_exceeded`. Un envoi est compté APRÈS la clé d'idempotence : un rejeu ou un envoi en
@@ -3209,12 +3219,16 @@ outil qui reçoit les signaux (la table de son adaptateur, dans `src/signaux/`),
 de réinitialisation (`auth_tokens`), les secrets de webhook entrant, les codes de secours du second facteur
 (`mfa_codes_secours`, sha256), les jetons et codes OAuth (`oauth_autorisations`, `oauth_codes`, sha256).
 
-**Au plus dix clés d'API actives par espace** (`MAX_CLES_API_ACTIVES`, `web/lib/partage/droits-api.ts`) : la onzième
-est refusée en 409, les révoquées ne comptent pas, la clé du relais de l'agent de Meta non plus. C'est une borne
-d'exposition (moins de secrets oubliés chez d'anciens intégrateurs), pas de débit : le plafond de l'API est
-déjà commun à toutes les clés de l'espace. 🔴 Le compte et l'insertion se font sous un verrou consultatif par
-espace (`creerSousPlafond`, clé `api_keys:<espace>`) : sans lui, des créations simultanées dépassent le
-plafond. La route n'a accès qu'à cette création ; `create`, sans plafond, ne sert que la clé du relais.
+**Un plafond de clés d'API actives par offre** (`Limites.clesApi` : 2 en Free, 10 en Pro, sans limite en Entreprise ;
+spec offres v2) : la clé de trop est refusée en 402 `plan_limit_reached` (`limite: 'clesApi'`), les révoquées ne
+comptent pas, la clé du relais de l'agent de Meta non plus, et un espace au-delà (retour en Free) garde ses clés.
+C'est une borne d'exposition (moins de secrets oubliés chez d'anciens intégrateurs), pas de débit : le plafond de l'API
+est déjà commun à toutes les clés de l'espace. Toute création passe par `creerCleApi` (`src/auth/creer-cle.ts`) : les
+droits, le plafond de l'offre et la trace `cle_api.creee`, pour la route de la console (l'outil MCP de création de clé la reprendra).
+🔴 Le compte et l'insertion se font sous un verrou consultatif par espace (`creerSousPlafond`, clé
+`api_keys:<espace>`) : sans lui, des créations simultanées dépassent le plafond. Sans limite, rien n'est compté.
+`create`, sans plafond, sert la clé du relais. La console suppose dix (`MAX_CLES_API_ACTIVES`,
+`web/lib/partage/droits-api.ts`) tant que l'offre est inconnue.
 
 🔴 **`/ops` EST NOMINATIF, AVEC SECOND FACTEUR** (plan `docs/superpowers/plans/2026-09-28-ops-nominatif.md`).
 Plus de jeton partagé : `OPS_TOKEN` n'existe plus, et il n'y a aucun accès de secours. `OPS_EMAILS` (des

@@ -53,6 +53,13 @@ describe.skipIf(!url)('le plafond de clés d’API actives par espace', () => {
     expect(n.rows[0]!.n).toBe(0);
   });
 
+  it('🔴 sans limite (l’Entreprise, spec offres v2) : la onzième passe', async () => {
+    const sansLimite: PlafondCles = { max: null, horsDroit: 'mba:relais' };
+    for (let i = 0; i < 11; i += 1) {
+      expect(await cles.creerSousPlafond(tenantId, `clé ${i}`, ['contacts:write'], sansLimite), `la clé ${i + 1} doit passer`).not.toBeNull();
+    }
+  });
+
   it('révoquer une clé libère une place', async () => {
     const premiere = await creer('clé 0');
     for (let i = 1; i < 10; i += 1) await creer(`clé ${i}`);

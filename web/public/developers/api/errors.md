@@ -411,7 +411,7 @@ Que faire : Attendre retry-after secondes, puis réessayer.
 
 ### `quota_exceeded` 429
 
-Quota quotidien de l’espace atteint (envois ou fiches écrites), ou dépassé par ce lot : retry-after donne l’attente jusqu’à minuit, heure de Paris. Un lot plus petit peut encore passer.
+Quota quotidien de l’espace atteint (modèles, réponses ou fiches écrites), ou dépassé par ce lot : retry-after donne l’attente jusqu’à minuit, heure de Paris. Un lot plus petit peut encore passer.
 
 Que faire : Attendre la remise à zéro que donne retry-after (minuit, heure de Paris), ou envoyer un lot plus petit.
 

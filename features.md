@@ -2259,9 +2259,12 @@ scénario, comment importer des contacts.
   de la page « Démarrer »). Une clé peut aussi porter les droits du serveur MCP, décrits
   dans leur propre section (« Serveur MCP : brancher un assistant sur la console »).
   ⚠️ Les droits d'une clé se fixent à sa création et ne s'éditent pas : pour un droit de plus, on crée une clé.
-  ✅ **Dix clés actives au plus par espace** (2026-10-04) : l'écran affiche « n sur 10 clés actives » ; à dix, le
-  bouton « Créer la clé » se grise et l'écran explique qu'il faut en révoquer une. Les clés révoquées ne comptent
-  pas, la clé « Agent de Meta » non plus.
+  ✅ **Un plafond de clés actives par offre** (2026-10-04, par offre depuis la spec offres v2 du 2026-10-16) : 2 en
+  Free, 10 en Pro, sans limite en Entreprise. L'écran affiche « n sur N clés actives » ; au plafond, le bouton
+  « Créer la clé » se grise et l'écran explique qu'il faut en révoquer une. Le serveur refuse la clé de trop en 402,
+  avec la phrase qui nomme l'offre qui lève la limite. Les clés révoquées ne comptent pas, la clé « Agent de Meta »
+  non plus, et un espace revenu en Free garde ses clés au-delà : seule la création est refusée. Une limite invisible :
+  ni la page des tarifs ni la doc publique ne la chiffrent.
 - ✅ **Une personne est une FICHE** (2026-09-24). L'intégrateur la désigne par ce qu'il a : l'identifiant de
   fiche (`contactId`, affiché sur la fiche du mini-CRM sous « Identifiant API » avec un bouton Copier), SON
   identifiant (`externalId`, gardé sur la fiche, unique par espace), le numéro ou le BSUID. Plusieurs clés
@@ -2373,8 +2376,10 @@ scénario, comment importer des contacts.
   ⚠️ Trois cas n'ont pas de code, et la documentation les dit : un refus de Meta lui-même (lecture des
   templates, message simple WhatsApp) sort en 422 avec une phrase « Meta: … », une panne sort en 500, et un
   corps qui n'est pas du JSON lisible est refusé avant les règles ou lu comme vide.
-- ✅ **Plafond de l'API publique, par espace** (2026-09-25) : 60 appels par minute
-  et 1 000 par heure par défaut, communs à toutes les clés de l'espace et au serveur MCP. Un lot de 50 fiches
+- ✅ **Plafond de l'API publique, par espace** (2026-09-25, par offre depuis la spec offres v2) : 30 appels par minute
+  et 500 par heure en Free, 60 et 1 000 en Pro ; l'Entreprise suit la configuration (60 et 1 000), relevée sur devis.
+  Communs à toutes les clés de l'espace et au serveur MCP, et absents de la doc publique (une limite invisible : les
+  en-têtes `x-ratelimit-*` de chaque réponse les disent à l'intégrateur). Un lot de 50 fiches
   compte pour un appel. Au-delà : 429 `rate_limited`, avec `Retry-After` et un message qui dit si c'est la
   minute ou l'heure qui est pleine. L'exploitation peut régler le plafond d'un espace précis sans toucher les
   autres. L'agent de Meta n'est jamais privé de ses outils par un intégrateur qui charge l'API : sa clé a son
@@ -2385,11 +2390,15 @@ scénario, comment importer des contacts.
   plateforme approche de sa limite, les espaces de l'offre Base reçoivent le refus en premier (au-delà de leur part,
   la moitié par défaut) ; Pro et Entreprise gardent le reste. Le refus est le même 429 `rate_limited`, avec
   `Retry-After` et un message qui dit que la plateforme est saturée : le geste de l'intégrateur ne change pas.
-- ✅ **Quotas quotidiens de l'API publique, par espace** (2026-10-05) : 2 000 envois (destinataires d'un envoi et
-  messages libres WhatsApp ou RCS) et 20 000 fiches écrites par jour, remise à zéro à minuit (heure de Paris). Une
-  requête qui dépasserait est refusée en entier : 429 `quota_exceeded`, avec `Retry-After` jusqu'à minuit et un
-  message qui le dit ; un lot plus petit peut encore passer. Les lectures, les catalogues, le serveur MCP et les
-  campagnes lancées depuis la console n'ont pas de quota. L'exploitation peut relever le quota d'un espace précis.
+- ✅ **Quotas quotidiens de l'API publique, par espace** (2026-10-05, trois familles depuis la spec offres v2) : les
+  modèles (destinataires d'un envoi, et l'envoi d'un modèle par le serveur MCP : 500 par jour en Free, 2 000 en Pro),
+  les réponses (messages libres WhatsApp ou RCS dans la fenêtre de 24 h : 2 000 par jour, jamais moins) et 20 000
+  fiches écrites par jour ; l'Entreprise suit la configuration, relevée sur devis. Les familles se comptent à part :
+  un envoi de modèles qui épuise la sienne ne bloque JAMAIS une réponse à un client. Remise à zéro à minuit (heure de
+  Paris). Une requête qui dépasserait est refusée en entier : 429 `quota_exceeded`, avec `Retry-After` jusqu'à
+  minuit et un message qui le dit ; un lot plus petit peut encore passer. Les lectures, les catalogues, le reste du
+  serveur MCP et les campagnes lancées depuis la console n'ont pas de quota. L'exploitation peut relever le quota
+  d'un espace précis, famille par famille. La doc publique ne chiffre que les fiches.
 - ✅ **Les fonctions HubSpot disparaissent quand aucun portail n'est relié** (2026-09-23) : la source
   « HubSpot » d'une campagne et le déclencheur « un deal HubSpot atteint une étape » d'une automation ne
   s'affichent plus du tout tant que votre espace n'a pas de portail HubSpot lié. Une intégration qu'on n'a

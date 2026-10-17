@@ -82,23 +82,18 @@ function Reference() {
       </Section>
 
       <Section id="debit" titre={t('Débit', 'Rate limit')}>
-        <Tableau
-          entetes={[t('Plafond par défaut, par espace', 'Default limit, per workspace'), t('Valeur', 'Value')]}
-          lignes={[
-            { cle: 'minute', cellules: [t('Requêtes par minute', 'Requests per minute'), String(BORNES.plafondEspaceMinute)] },
-            { cle: 'heure', cellules: [t('Requêtes par heure', 'Requests per hour'), String(BORNES.plafondEspaceHeure)] },
-          ]}
-        />
         <Liste>
+          <li>{t('Un plafond d’appels par minute et par heure, selon l’offre de l’espace.', 'A cap on calls per minute and per hour, set by the workspace’s plan.')}</li>
           <li>{t('Partagé par toutes les clés de l’espace et le serveur MCP.', 'Shared by all the workspace’s keys and the MCP server.')}</li>
           <li>{t(`Un appel compte pour un, quel que soit son volume (${BORNES.contactsParLot} fiches en un lot : un appel).`, `A call counts as one whatever its size (${BORNES.contactsParLot} records at once: one call).`)}</li>
-          <li>{t('Plafond différent pour un espace : sur demande.', 'Different limit for a workspace: on request.')}</li>
+          <li>{t('Plafond relevé pour un espace : sur demande.', 'Higher limit for a workspace: on request.')}</li>
         </Liste>
-        <p>{t('Chaque réponse comptée porte le compteur le plus proche de son plafond :', 'Every counted response carries the counter closest to its limit:')}</p>
-        <Bloc legende={t('En-têtes de réponse', 'Response headers')}>{`x-ratelimit-limit: ${BORNES.plafondEspaceMinute}\nx-ratelimit-remaining: 57\nx-ratelimit-reset: 1790000000`}</Bloc>
+        <p>{t('Chaque réponse comptée porte, en en-têtes, le compteur le plus proche de son plafond :', 'Every counted response carries, in headers, the counter closest to its limit:')}</p>
         <Tableau
           entetes={[t('En-tête', 'Header'), t('Sens', 'Meaning')]}
           lignes={[
+            { cle: 'limit', cellules: [<C key="c">x-ratelimit-limit</C>, t('Le plafond de cette fenêtre (minute ou heure).', 'The limit of this window (minute or hour).')] },
+            { cle: 'remaining', cellules: [<C key="c">x-ratelimit-remaining</C>, t('Les appels qui restent dans cette fenêtre.', 'The calls left in this window.')] },
             { cle: 'reset', cellules: [<C key="c">x-ratelimit-reset</C>, t('Heure de remise à zéro, en secondes depuis 1970.', 'Reset time, in seconds since 1970.')] },
             { cle: 'retry', cellules: [<C key="c">retry-after</C>, t('Sur un 429 : secondes avant la remise à zéro de la fenêtre pleine (minute ou heure, nommée dans le message).', 'On a 429: seconds until the full window resets (minute or hour, named in the message).')] },
           ]}
@@ -107,20 +102,21 @@ function Reference() {
           <li>{t('Au dépassement :', 'On overflow:')}{' '}<Refus c="rate_limited" />{t('. Un appel refusé ne compte pas.', '. A refused call does not count.')}</li>
           <li>{t('Clé inconnue (401) : aucun de ces en-têtes.', 'Unknown key (401): none of these headers.')}</li>
         </Liste>
-        <p id="quotas">{t('En plus du débit, un quota QUOTIDIEN par espace compte le travail DEMANDÉ (un destinataire écarté ensuite compte quand même) :', 'On top of the rate limit, a DAILY quota per workspace counts the work REQUESTED (a recipient skipped later still counts):')}</p>
+        <p id="quotas">{t('En plus du débit, des quotas QUOTIDIENS par espace comptent le travail DEMANDÉ (un destinataire écarté ensuite compte quand même), en trois familles qui se comptent à part :', 'On top of the rate limit, DAILY quotas per workspace count the work REQUESTED (a recipient skipped later still counts), in three families counted separately:')}</p>
         <Tableau
-          entetes={[t('Quota par défaut, par espace et par jour', 'Default quota, per workspace and per day'), t('Valeur', 'Value')]}
+          entetes={[t('Famille', 'Family'), t('Ce qu’elle compte', 'What it counts'), t('Quota par jour', 'Daily quota')]}
           lignes={[
-            { cle: 'envois', cellules: [t('Envois : destinataires d’un envoi, et messages libres WhatsApp ou RCS', 'Sends: recipients of a send, and free WhatsApp or RCS messages'), String(BORNES.quotaEnvoisJour)] },
-            { cle: 'fiches', cellules: [t('Fiches écrites (une par fiche d’un lot)', 'Written contacts (one per contact, multi-contact calls included)'), String(BORNES.quotaFichesJour)] },
+            { cle: 'modeles', cellules: [t('Modèles', 'Templates'), t('Les destinataires d’un envoi, et l’envoi d’un modèle par le serveur MCP', 'The recipients of a send, and sending a template from the MCP server'), t('Selon l’offre', 'Set by the plan')] },
+            { cle: 'reponses', cellules: [t('Réponses', 'Replies'), t('Les messages libres WhatsApp ou RCS, dans la fenêtre de 24 h. Un envoi de modèles ne prend jamais leur place.', 'Free-form WhatsApp or RCS messages, within the 24-hour window. Sending templates never takes their room.'), t('Selon l’offre', 'Set by the plan')] },
+            { cle: 'fiches', cellules: [t('Fiches', 'Records'), t('Les fiches écrites (une par fiche d’un lot)', 'Written contacts (one per contact, multi-contact calls included)'), String(BORNES.quotaFichesJour)] },
           ]}
         />
         <Liste>
           <li>{t('Remise à zéro à minuit, heure de Paris.', 'Reset at midnight, Paris time.')}</li>
           <li>{t('Une requête qui dépasserait le quota est refusée en entier :', 'A request that would exceed the quota is refused entirely:')}{' '}<Refus c="quota_exceeded" />{t(', avec retry-after jusqu’à minuit. Un lot plus petit peut encore passer.', ', with retry-after until midnight. A smaller request may still go through.')}</li>
           <li>{t('Un nouvel appel avec la même clé d’idempotence ne compte pas, qu’il rejoue un envoi fini ou tombe sur un envoi en cours (409). Un envoi refusé par le quota libère sa clé.', 'A new call with the same idempotency key does not count, whether it replays a finished send or hits one in progress (409). A send refused by the quota frees its key.')}</li>
-          <li>{t('Les lectures, les catalogues et les campagnes lancées depuis la console n’ont pas de quota. Le serveur MCP non plus, sauf l’envoi d’un modèle, qui compte dans les envois.', 'Reads, catalogs and campaigns launched from the console have no quota. Neither does the MCP server, except sending a template, which counts as a send.')}</li>
-          <li>{t('Quota différent pour un espace : sur demande.', 'Different quota for a workspace: on request.')}</li>
+          <li>{t('Les lectures, les catalogues et les campagnes lancées depuis la console n’ont pas de quota. Le serveur MCP non plus, sauf l’envoi d’un modèle, qui compte dans les modèles.', 'Reads, catalogs and campaigns launched from the console have no quota. Neither does the MCP server, except sending a template, which counts as a template.')}</li>
+          <li>{t('Quota relevé pour un espace : sur demande.', 'Higher quota for a workspace: on request.')}</li>
         </Liste>
         <Encadre sorte="note">
           <p>{t('Compteurs tenus en base et partagés par toutes les copies du serveur : un déploiement ne les remet pas à zéro.', 'Counters kept in the database and shared by every server copy: a deploy does not reset them.')}</p>

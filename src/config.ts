@@ -185,9 +185,10 @@ export const schema = z.object({
   /**
    * Plafond de l'API publique par espace, commun à toutes ses clés, `/v1` et `/mcp` confondus : appels par
    * minute et par heure, les deux s'appliquent. Valeurs des espaces sans réglage propre
-   * (`tenant_settings.api_plafond_*`, route `/ops/plafond-api/:tenantId`).
-   * 0 désactive la fenêtre pour les espaces sans réglage (levier d'urgence) ; un réglage d'espace, toujours
-   * > 0, reste appliqué. Compté au TOTAL des copies de l'API (compteur partagé, migration 0186). Il compte des appels,
+   * (`tenant_settings.api_plafond_*`, route `/ops/plafond-api/:tenantId`) DONT L'OFFRE n'en donne pas (l'Entreprise) :
+   * la Free et le Pro ont les leurs (`Limites.appelsMinute`, spec offres v2), qu'une valeur non nulle ici ne bride pas
+   * (brider la plateforme est le rôle de `API_PLAFOND_GLOBAL_PAR_10S`). 0 désactive la fenêtre pour tous les espaces
+   * sans réglage, offre comprise (levier d'urgence) ; un réglage d'espace, toujours > 0, reste appliqué. Compté au TOTAL des copies de l'API (compteur partagé, migration 0186). Il compte des appels,
    * le travail (fiches d'un lot, destinataires) est mesuré à part (`usage-guard.ts`).
    */
   API_PLAFOND_MINUTE: z.coerce.number().int().min(0).default(PLAFOND_API_DEFAUT.minute),
@@ -202,8 +203,10 @@ export const schema = z.object({
   API_PLAFOND_GLOBAL_PART_FREE: z.coerce.number().int().min(0).max(100).default(50),
   /**
    * Les quotas QUOTIDIENS par espace de l'API publique (décision de Julien du 2026-10-04, `src/api/quotas.ts`) : les
-   * envois (destinataires et messages libres) et les fiches écrites, par jour civil de Paris. Un réglage d'espace
-   * (`/ops/plafond-api`, migration 0208) l'emporte. `0` le désactive pour tous : le levier d'urgence, sans déployer.
+   * envois (`API_QUOTA_ENVOIS_JOUR`, pour les DEUX familles, modèles et réponses) et les fiches écrites, par jour civil
+   * de Paris. Un réglage d'espace (`/ops/plafond-api`, migrations 0208 et 0241) l'emporte, puis l'offre (la Free et le
+   * Pro ont leurs valeurs, qu'une valeur non nulle ici ne bride pas). `0` le désactive pour tous, offre comprise : le
+   * levier d'urgence, sans déployer.
    */
   API_QUOTA_ENVOIS_JOUR: z.coerce.number().int().min(0).default(QUOTAS_API_DEFAUT.envois),
   API_QUOTA_FICHES_JOUR: z.coerce.number().int().min(0).default(QUOTAS_API_DEFAUT.fiches),

@@ -13,6 +13,7 @@ import { contactsV1Muets } from './aide/contacts-v1';
 import { capturerJournal } from './journal';
 import { bornesDuJour, jourDeParis } from '../src/api/quotas';
 import type { CompteurDebit } from '../src/db/debit';
+import { DROITS, type Offre } from '../src/offres/offres';
 
 /**
  * LE PLAFOND DE L'API PAR ESPACE, PAR LE VRAI CÂBLAGE (`buildServer`), ET LA ROUTE QUI LE RÈGLE.
@@ -45,7 +46,7 @@ class Cles implements ApiKeyLookup {
 class MagasinMemoire implements PlafondApiStore {
   lectures = 0;
   readonly ecritures: Array<{ tenantId: string; reglage: ReglagePlafondApi }> = [];
-  readonly reglages = new Map<string, ReglagePlafondApi>([[T1, { minute: null, heure: null, envoisJour: null, fichesJour: null }], [T2, { minute: null, heure: null, envoisJour: null, fichesJour: null }]]);
+  readonly reglages = new Map<string, ReglagePlafondApi>([[T1, { minute: null, heure: null, modelesJour: null, reponsesJour: null, fichesJour: null }], [T2, { minute: null, heure: null, modelesJour: null, reponsesJour: null, fichesJour: null }]]);
   async lire(t: string) { this.lectures += 1; return this.reglages.get(t) ?? null; }
   async ecrire(t: string, r: ReglagePlafondApi) {
     if (!this.reglages.has(t)) return false;
@@ -77,12 +78,13 @@ beforeAll(async () => {
   await s.close();
 });
 
-function monter(apiParMinute = 2, quotaFichesJour = 300, debit?: CompteurDebit) {
+function monter(apiParMinute = 2, quotaFichesJour = 300, debit?: CompteurDebit, offre?: Offre) {
   const magasin = new MagasinMemoire();
   const server = buildServer({
     queue: new FakeQueue(),
     auth: acces.auth,
     ...(debit ? { debit } : {}),
+    ...(offre ? { offres: { offreDe: async () => ({ offre, droits: DROITS[offre], retourEnBaseLe: null }) } } : {}),
     plafonds: { apiParMinute, apiParHeure: 1000, quotaEnvoisJour: 30, quotaFichesJour },
     plafondApi: magasin,
     v1: { apiKeys: new Cles(), oauth: aucunJetonOauth, contacts: contactsV1Muets(), mcp: {} as never, mbaRelais: relaisMuet },
@@ -169,7 +171,7 @@ describe('🔴 le quota quotidien de l’espace, par le vrai câblage', () => {
     expect((await contact(server, CLE_A)).statusCode).toBe(429);
     const pose = await server.inject({
       method: 'PUT', url: `/ops/plafond-api/${T1}`, headers: ops,
-      payload: { minute: null, heure: null, envoisJour: null, fichesJour: 2, note: 'intégrateur à fort volume' },
+      payload: { minute: null, heure: null, modelesJour: null, reponsesJour: null, fichesJour: 2, note: 'intégrateur à fort volume' },
     });
     expect(pose.statusCode).toBe(200);
     expect(pose.json()).toMatchObject({ fichesJour: { reglage: 2, defaut: 1, effectif: 2 } });
@@ -189,7 +191,7 @@ describe('🔴 le quota quotidien de l’espace, par le vrai câblage', () => {
     const jour = jourDeParis(Date.now());
     expect(res.json()).toMatchObject({
       fichesJour: { effectif: 3 },
-      aujourdhui: { jour, envois: 0, fiches: 3, remiseAZero: new Date(bornesDuJour(jour).finMs).toISOString() },
+      aujourdhui: { jour, modeles: 0, reponses: 0, fiches: 3, remiseAZero: new Date(bornesDuJour(jour).finMs).toISOString() },
     });
     // L'espace voisin a sa propre ligne.
     const voisin = await server.inject({ method: 'GET', url: `/ops/plafond-api/${T2}`, headers: ops });
@@ -218,7 +220,7 @@ describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
       expect((await server.inject({ method: 'GET', url: `/ops/plafond-api/${T1}`, headers: entetes })).statusCode).toBe(401);
       expect((await server.inject({
         method: 'PUT', url: `/ops/plafond-api/${T1}`, headers: { ...entetes, 'content-type': 'application/json' },
-        payload: { minute: 500, heure: null, envoisJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
+        payload: { minute: 500, heure: null, modelesJour: null, reponsesJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
       })).statusCode).toBe(401);
     }
     expect([magasin.lectures, magasin.ecritures.length]).toEqual([0, 0]);
@@ -227,37 +229,53 @@ describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
 
   it('GET rend le réglage, le défaut et ce qui s’applique ; 404 sur un espace inconnu ou mal formé', async () => {
     const { server, magasin } = monter(2);
-    magasin.reglages.set(T1, { minute: 10, heure: null, envoisJour: null, fichesJour: null });
+    magasin.reglages.set(T1, { minute: 10, heure: null, modelesJour: null, reponsesJour: null, fichesJour: null });
     const res = await server.inject({ method: 'GET', url: `/ops/plafond-api/${T1}`, headers: ops });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
       tenantId: T1,
       minute: { reglage: 10, defaut: 2, effectif: 10 },
       heure: { reglage: null, defaut: 1000, effectif: 1000 },
-      envoisJour: { reglage: null, defaut: 30, effectif: 30 },
+      modelesJour: { reglage: null, defaut: 30, effectif: 30 },
+      reponsesJour: { reglage: null, defaut: 30, effectif: 30 },
       fichesJour: { reglage: null, defaut: 300, effectif: 300 },
-      aujourdhui: { jour: jourDeParis(Date.now()), envois: 0, fiches: 0, remiseAZero: new Date(bornesDuJour(jourDeParis(Date.now())).finMs).toISOString() },
+      aujourdhui: { jour: jourDeParis(Date.now()), modeles: 0, reponses: 0, fiches: 0, remiseAZero: new Date(bornesDuJour(jourDeParis(Date.now())).finMs).toISOString() },
     });
     expect((await server.inject({ method: 'GET', url: `/ops/plafond-api/${INCONNU}`, headers: ops })).statusCode).toBe(404);
     expect((await server.inject({ method: 'GET', url: '/ops/plafond-api/pas-un-uuid', headers: ops })).statusCode).toBe(404);
     await server.close();
   });
 
-  it('🔴 PUT exige une NOTE et quatre valeurs valides : sinon 400, et rien n’est écrit', async () => {
+  it('🔴 GET d’une Free : le défaut est celui de son offre (spec offres v2), et le vrai limiteur l’applique', async () => {
+    const { server } = monter(60, 300, undefined, 'base');
+    const res = await server.inject({ method: 'GET', url: `/ops/plafond-api/${T1}`, headers: ops });
+    expect(res.json()).toMatchObject({
+      minute: { reglage: null, defaut: 30, effectif: 30 },
+      heure: { reglage: null, defaut: 500, effectif: 500 },
+      modelesJour: { reglage: null, defaut: 500, effectif: 500 },
+      reponsesJour: { reglage: null, defaut: 2000, effectif: 2000 },
+      fichesJour: { reglage: null, defaut: 300, effectif: 300 },
+    });
+    for (let i = 0; i < 30; i += 1) expect((await mcp(server, CLE_A)).statusCode).toBe(405);
+    expect((await mcp(server, CLE_A)).statusCode).toBe(429);
+    await server.close();
+  });
+
+  it('🔴 PUT exige une NOTE et cinq valeurs valides : sinon 400, et rien n’est écrit', async () => {
     const { server, magasin } = monter();
     const corps = [
-      { minute: 500, heure: null, envoisJour: null, fichesJour: null },
-      { minute: 500, heure: null, envoisJour: null, fichesJour: null, note: '  ' },
-      { minute: 0, heure: null, envoisJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
-      { minute: -1, heure: null, envoisJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
-      { minute: 1.5, heure: null, envoisJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
-      { minute: '500', heure: null, envoisJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
-      { minute: 500, envoisJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
+      { minute: 500, heure: null, modelesJour: null, reponsesJour: null, fichesJour: null },
+      { minute: 500, heure: null, modelesJour: null, reponsesJour: null, fichesJour: null, note: '  ' },
+      { minute: 0, heure: null, modelesJour: null, reponsesJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
+      { minute: -1, heure: null, modelesJour: null, reponsesJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
+      { minute: 1.5, heure: null, modelesJour: null, reponsesJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
+      { minute: '500', heure: null, modelesJour: null, reponsesJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
+      { minute: 500, modelesJour: null, reponsesJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
       // Les quotas aussi : absents, à 0 ou négatifs, refusés.
       { minute: 500, heure: null, fichesJour: null, note: 'intégrateur à fort volume' },
-      { minute: 500, heure: null, envoisJour: 0, fichesJour: null, note: 'intégrateur à fort volume' },
-      { minute: 500, heure: null, envoisJour: null, fichesJour: -5, note: 'intégrateur à fort volume' },
-      { minute: 2_147_483_648, heure: null, envoisJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
+      { minute: 500, heure: null, modelesJour: 0, reponsesJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
+      { minute: 500, heure: null, modelesJour: null, reponsesJour: null, fichesJour: -5, note: 'intégrateur à fort volume' },
+      { minute: 2_147_483_648, heure: null, modelesJour: null, reponsesJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
     ];
     for (const payload of corps) {
       const res = await server.inject({ method: 'PUT', url: `/ops/plafond-api/${T1}`, headers: ops, payload });
@@ -275,16 +293,16 @@ describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
     expect((await mcp(server, CLE_A)).statusCode).toBe(429);
 
     const { resultat: res, lignes } = await capturerJournal(() => server.inject({
-      method: 'PUT', url: `/ops/plafond-api/${T1}`, headers: ops, payload: { minute: 4, heure: null, envoisJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
+      method: 'PUT', url: `/ops/plafond-api/${T1}`, headers: ops, payload: { minute: 4, heure: null, modelesJour: null, reponsesJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
     }));
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ tenantId: T1, minute: { reglage: 4, defaut: 2, effectif: 4 } });
-    expect(magasin.ecritures).toEqual([{ tenantId: T1, reglage: { minute: 4, heure: null, envoisJour: null, fichesJour: null } }]);
+    expect(magasin.ecritures).toEqual([{ tenantId: T1, reglage: { minute: 4, heure: null, modelesJour: null, reponsesJour: null, fichesJour: null } }]);
     const traces = lignes.filter((l) => l.msg === 'ops_plafond_api');
     expect(traces).toHaveLength(1);
     expect(traces[0]).toMatchObject({
       lvl: 'warn', tenantId: T1, note: 'intégrateur à fort volume', par: ADRESSE_OPS,
-      avant: { minute: null, heure: null, envoisJour: null, fichesJour: null }, apres: { minute: 4, heure: null, envoisJour: null, fichesJour: null },
+      avant: { minute: null, heure: null, modelesJour: null, reponsesJour: null, fichesJour: null }, apres: { minute: 4, heure: null, modelesJour: null, reponsesJour: null, fichesJour: null },
     });
 
     // Deux places de plus dans la MÊME minute, tout de suite : le cache a été vidé.
@@ -300,16 +318,16 @@ describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
 
   it('🔴 PUT laisse sa trace DURABLE dans l’audit de l’espace : l’exploitant, l’avant et l’après, jamais la note', async () => {
     const { server, magasin } = monter();
-    magasin.reglages.set(T1, { minute: null, heure: null, envoisJour: 2000, fichesJour: null });
+    magasin.reglages.set(T1, { minute: null, heure: null, modelesJour: 2000, reponsesJour: null, fichesJour: null });
     const res = await server.inject({
       method: 'PUT', url: `/ops/plafond-api/${T1}`, headers: ops,
-      payload: { minute: null, heure: null, envoisJour: 50_000, fichesJour: null, note: 'intégrateur à fort volume' },
+      payload: { minute: null, heure: null, modelesJour: 50_000, reponsesJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
     });
     expect(res.statusCode).toBe(200);
     expect(magasin.traces).toEqual([{
       tenantId: T1, par: ADRESSE_OPS,
-      avant: { minute: null, heure: null, envoisJour: 2000, fichesJour: null },
-      apres: { minute: null, heure: null, envoisJour: 50_000, fichesJour: null },
+      avant: { minute: null, heure: null, modelesJour: 2000, reponsesJour: null, fichesJour: null },
+      apres: { minute: null, heure: null, modelesJour: 50_000, reponsesJour: null, fichesJour: null },
     }]);
     expect(JSON.stringify(magasin.traces)).not.toContain('intégrateur à fort volume');
     await server.close();
@@ -317,10 +335,10 @@ describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
 
   it('un PUT qui ne change rien n’écrit AUCUNE ligne d’audit (elle dirait « limites modifiées » sans rien dire)', async () => {
     const { server, magasin } = monter();
-    magasin.reglages.set(T1, { minute: null, heure: null, envoisJour: 2000, fichesJour: null });
+    magasin.reglages.set(T1, { minute: null, heure: null, modelesJour: 2000, reponsesJour: null, fichesJour: null });
     const res = await server.inject({
       method: 'PUT', url: `/ops/plafond-api/${T1}`, headers: ops,
-      payload: { minute: null, heure: null, envoisJour: 2000, fichesJour: null, note: 'relecture sans changement' },
+      payload: { minute: null, heure: null, modelesJour: 2000, reponsesJour: null, fichesJour: null, note: 'relecture sans changement' },
     });
     expect(res.statusCode).toBe(200);
     expect(magasin.traces).toEqual([]);
@@ -332,7 +350,7 @@ describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
     magasin.tracerEchoue = true;
     const { resultat: res, lignes } = await capturerJournal(() => server.inject({
       method: 'PUT', url: `/ops/plafond-api/${T1}`, headers: ops,
-      payload: { minute: null, heure: null, envoisJour: 40, fichesJour: null, note: 'intégrateur à fort volume' },
+      payload: { minute: null, heure: null, modelesJour: 40, reponsesJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
     }));
     expect(res.statusCode).toBe(200);
     expect(magasin.ecritures).toHaveLength(1);
@@ -344,7 +362,7 @@ describe('la route d’exploitation /ops/plafond-api/:tenantId', () => {
   it('PUT sur un espace inconnu : 404, rien d’écrit ni de journalisé', async () => {
     const { server, magasin } = monter();
     const { resultat: res, lignes } = await capturerJournal(() => server.inject({
-      method: 'PUT', url: `/ops/plafond-api/${INCONNU}`, headers: ops, payload: { minute: 4, heure: 40, envoisJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
+      method: 'PUT', url: `/ops/plafond-api/${INCONNU}`, headers: ops, payload: { minute: 4, heure: 40, modelesJour: null, reponsesJour: null, fichesJour: null, note: 'intégrateur à fort volume' },
     }));
     expect(res.statusCode).toBe(404);
     expect(magasin.ecritures).toEqual([]);

@@ -1,12 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
-import type { ApiKeyRow, PlafondCles } from '../auth/api-key-store.pg';
-import { API_SCOPES, DROIT_RELAIS, MAX_CLES_API_ACTIVES } from '../../web/lib/partage/droits-api';
-import { espaceVerifie, nonEmpty } from './scope';
+import type { ApiKeyRow } from '../auth/api-key-store.pg';
+import { creerCleApi, type DepsCreationCle } from '../auth/creer-cle';
+import { espaceVerifie } from './scope';
 import { makeJournal, type AuditSink } from '../audit/journal';
-
-/** Les droits et le plafond de clés actives sont partagés avec la console (`web/lib/partage/droits-api.ts`). */
-const PLAFOND_CLES: PlafondCles = { max: MAX_CLES_API_ACTIVES, horsDroit: DROIT_RELAIS };
+import { corpsDuRefus } from '../lib/issue';
 
 export interface ApiKeysRouteDeps {
   /**
@@ -16,11 +14,13 @@ export interface ApiKeysRouteDeps {
    */
   audit: AuditSink;
   cles: ClesApiDep;
+  /** Les clés actives que l'offre de l'espace permet (spec offres v2) ; `null` = sans limite. */
+  limiteCles: DepsCreationCle['limiteCles'];
 }
 
 export interface ClesApiDep {
-  /** `null` = plafond atteint, rien n'est créé. La route n'a pas accès à une création sans plafond. */
-  creerSousPlafond(tenantId: string, name: string, scopes: string[], plafond: PlafondCles): Promise<{ id: string; key: string } | null>;
+  /** `null` = plafond atteint, rien n'est créé. La route n'a pas accès à une création hors plafond de l'offre. */
+  creerSousPlafond: DepsCreationCle['cles']['creerSousPlafond'];
   listByTenant(tenantId: string): Promise<ApiKeyRow[]>;
   revoke(tenantId: string, id: string): Promise<boolean>;
 }
@@ -36,21 +36,10 @@ export function registerApiKeys(app: FastifyInstance, deps: ApiKeysRouteDeps, ga
   app.post('/tenants/:tenantId/api-keys', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const b = (req.body ?? {}) as { name?: unknown; scopes?: unknown };
-    if (!nonEmpty(b.name)) return reply.code(400).send({ error: 'name requis' });
-    const scopes = Array.isArray(b.scopes) ? [...new Set(b.scopes.map(String))] : [];
-    if (scopes.length === 0) return reply.code(400).send({ error: 'au moins un scope requis' });
-    const invalid = scopes.filter((s) => !(API_SCOPES as readonly string[]).includes(s));
-    if (invalid.length > 0) return reply.code(400).send({ error: `scope(s) inconnu(s) : ${invalid.join(', ')}` });
-    const creee = await deps.cles.creerSousPlafond(tenant, b.name.trim().slice(0, 100), scopes, PLAFOND_CLES);
-    if (!creee) {
-      return reply.code(409).send({
-        error: `${MAX_CLES_API_ACTIVES} clés actives au maximum par espace (la clé « Agent de Meta » ne compte pas) : révoquez-en une pour en créer une autre`,
-      });
-    }
-    const { id, key } = creee;
+    const scopes = Array.isArray(b.scopes) ? b.scopes.map(String) : [];
+    const r = await creerCleApi(deps, tenant, typeof b.name === 'string' ? b.name : '', scopes, { userId: req.auth?.userId ?? null, email: null });
     // `key` en clair, montrée une seule fois. L'audit porte les droits accordés, jamais la clé.
-    await journal(tenant, req, 'cle_api.creee', { kind: 'api_key', id }, { scopes });
-    return reply.code(201).send({ id, key, name: b.name.trim().slice(0, 100), scopes });
+    return r.ok ? reply.code(201).send(r.valeur) : reply.code(r.statut).send(corpsDuRefus(r));
   });
 
   app.get('/tenants/:tenantId/api-keys', opts, async (req, reply) => {

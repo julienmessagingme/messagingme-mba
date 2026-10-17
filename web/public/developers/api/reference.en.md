@@ -43,27 +43,17 @@ Authorization: Bearer mba_xxxxxxxxxxxxxxxx
 
 ## Rate limit
 
-| Default limit, per workspace | Value |
-| --- | --- |
-| Requests per minute | 60 |
-| Requests per hour | 1000 |
-
+- A cap on calls per minute and per hour, set by the workspace’s plan.
 - Shared by all the workspace’s keys and the MCP server.
 - A call counts as one whatever its size (50 records at once: one call).
-- Different limit for a workspace: on request.
+- Higher limit for a workspace: on request.
 
-Every counted response carries the counter closest to its limit:
-
-_Response headers_
-
-```
-x-ratelimit-limit: 60
-x-ratelimit-remaining: 57
-x-ratelimit-reset: 1790000000
-```
+Every counted response carries, in headers, the counter closest to its limit:
 
 | Header | Meaning |
 | --- | --- |
+| `x-ratelimit-limit` | The limit of this window (minute or hour). |
+| `x-ratelimit-remaining` | The calls left in this window. |
 | `x-ratelimit-reset` | Reset time, in seconds since 1970. |
 | `retry-after` | On a 429: seconds until the full window resets (minute or hour, named in the message). |
 
@@ -72,18 +62,19 @@ x-ratelimit-reset: 1790000000
 
 <a id="quotas"></a>
 
-On top of the rate limit, a DAILY quota per workspace counts the work REQUESTED (a recipient skipped later still counts):
+On top of the rate limit, DAILY quotas per workspace count the work REQUESTED (a recipient skipped later still counts), in three families counted separately:
 
-| Default quota, per workspace and per day | Value |
-| --- | --- |
-| Sends: recipients of a send, and free WhatsApp or RCS messages | 2000 |
-| Written contacts (one per contact, multi-contact calls included) | 20000 |
+| Family | What it counts | Daily quota |
+| --- | --- | --- |
+| Templates | The recipients of a send, and sending a template from the MCP server | Set by the plan |
+| Replies | Free-form WhatsApp or RCS messages, within the 24-hour window. Sending templates never takes their room. | Set by the plan |
+| Records | Written contacts (one per contact, multi-contact calls included) | 20000 |
 
 - Reset at midnight, Paris time.
 - A request that would exceed the quota is refused entirely: 429 `quota_exceeded`, with retry-after until midnight. A smaller request may still go through.
 - A new call with the same idempotency key does not count, whether it replays a finished send or hits one in progress (409). A send refused by the quota frees its key.
-- Reads, catalogs and campaigns launched from the console have no quota. Neither does the MCP server, except sending a template, which counts as a send.
-- Different quota for a workspace: on request.
+- Reads, catalogs and campaigns launched from the console have no quota. Neither does the MCP server, except sending a template, which counts as a template.
+- Higher quota for a workspace: on request.
 
 > **Note**
 >

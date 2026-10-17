@@ -50,6 +50,25 @@ export interface Limites {
    * Un espace au-dessus (changement d'offre) garde ses fichiers et continue d'envoyer : seul un nouveau dépôt est refusé.
    */
   stockageOctets: number | null;
+  /**
+   * Les clés d'API actives (spec offres v2, une limite invisible : jamais sur la page des tarifs). La clé du relais de
+   * l'agent de Meta ne compte pas ; un espace au-delà (retour en Free) garde ses clés, seule la création est refusée.
+   */
+  clesApi: number | null;
+  /**
+   * Les appels à l'API et au MCP par minute et par heure, une valeur par défaut de l'offre (spec offres v2, invisibles
+   * aussi). `null` = la configuration (`API_PLAFOND_MINUTE`, `_HEURE`) ; un réglage d'espace posé par `/ops` prime, et la
+   * configuration à 0 éteint aussi l'offre, le levier d'urgence (`src/auth/plafond-espace.ts`, `valeurEffective`).
+   */
+  appelsMinute: number | null;
+  appelsHeure: number | null;
+  /**
+   * Les quotas quotidiens de l'API, par famille (`src/api/quotas.ts`), mêmes règles : les modèles envoyés (`/v1/sends`,
+   * `send_template_to_contact`) et les messages libres dans la fenêtre de 24 h. 🔴 Les réponses ne descendent jamais sous
+   * 2 000 : ne jamais bloquer les clients du client.
+   */
+  modelesJour: number | null;
+  reponsesJour: number | null;
 }
 
 export interface Droits {
@@ -85,7 +104,7 @@ export const DROITS: Readonly<Record<Offre, Droits>> = {
     limites: {
       utilisateurs: 1, admins: 1, contacts: 100, envoisModelesMois: 1000, automations: 10, suppressionsJour: 10,
       adressesWebhook: 1, journalWebhooksJours: 3, conservationJours: 30, commissionPct: 50, badge: true, numeroInclus: false,
-      stockageOctets: 0,
+      stockageOctets: 0, clesApi: 2, appelsMinute: 30, appelsHeure: 500, modelesJour: 500, reponsesJour: 2000,
     },
   },
   pro: {
@@ -93,7 +112,7 @@ export const DROITS: Readonly<Record<Offre, Droits>> = {
     limites: {
       utilisateurs: 3, admins: 2, contacts: null, envoisModelesMois: null, automations: null, suppressionsJour: null,
       adressesWebhook: 5, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 10, badge: false, numeroInclus: true,
-      stockageOctets: 100 * MO,
+      stockageOctets: 100 * MO, clesApi: 10, appelsMinute: 60, appelsHeure: 1000, modelesJour: 2000, reponsesJour: 2000,
     },
   },
   entreprise: {
@@ -101,7 +120,7 @@ export const DROITS: Readonly<Record<Offre, Droits>> = {
     limites: {
       utilisateurs: null, admins: null, contacts: null, envoisModelesMois: null, automations: null, suppressionsJour: null,
       adressesWebhook: null, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 10, badge: false, numeroInclus: true,
-      stockageOctets: 500 * MO,
+      stockageOctets: 500 * MO, clesApi: null, appelsMinute: null, appelsHeure: null, modelesJour: null, reponsesJour: null,
     },
   },
 };

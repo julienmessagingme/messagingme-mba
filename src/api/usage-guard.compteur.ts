@@ -1,8 +1,8 @@
 import type { ApiUsageGuard, CompteurUsage, DemandeUsage, LiberationLourde, OperationApi, VerdictUsage } from './usage-guard';
 import type { Comptage, CompteurDebit, VerdictDebit } from '../db/debit';
 import { journaliser } from '../lib/journal';
-import { comptageQuota, familleDe, jourDeParis, raisonDuRefus, type FamilleQuota, type QuotasParDefaut } from './quotas';
-import { estReglageInconnu } from '../auth/plafond-espace';
+import { LIBELLE_FAMILLE, comptageQuota, familleDe, jourDeParis, raisonDuRefus, type FamilleQuota, type QuotasParDefaut } from './quotas';
+import { SANS_LIMITE_D_OFFRE, estReglageInconnu, valeurEffective, type LimitesApiOffre, type ReglagePlafondApi, type SourceLimitesApi } from '../auth/plafond-espace';
 
 /**
  * Ce qu'il faut au garde pour appliquer les quotas quotidiens (`src/api/quotas.ts`) : le réglage de chaque espace (le
@@ -10,7 +10,9 @@ import { estReglageInconnu } from '../auth/plafond-espace';
  * la configuration, et une alerte quand le compteur ne répond pas (le quota n'est alors pas tenu).
  */
 export interface QuotasEspace {
-  reglages: { reglage(tenantId: string): Promise<{ envoisJour: number | null; fichesJour: number | null }> };
+  reglages: { reglage(tenantId: string): Promise<Pick<ReglagePlafondApi, 'modelesJour' | 'reponsesJour' | 'fichesJour'>> };
+  /** Les quotas de l'offre de l'espace (spec offres v2), entre son réglage et la configuration. */
+  offres: SourceLimitesApi;
   defauts: QuotasParDefaut;
   /**
    * Prévient l'exploitation (Telegram) : le compteur muet (au plus une fois par `ALERTE_QUOTA_MS`), et la première fois
@@ -140,16 +142,36 @@ export class GardeUsage implements ApiUsageGuard {
   }
 
   /** Le comptage du quota d'une demande, ou `null` : opération hors quota, quotas absents, ou quota à 0 (désactivé). */
-  private async quotaDe(demande: DemandeUsage): Promise<{ famille: 'envois' | 'fiches'; max: number; comptage: Comptage } | null> {
+  private async quotaDe(demande: DemandeUsage): Promise<{ famille: FamilleQuota; max: number; comptage: Comptage } | null> {
     const famille = familleDe(demande.operation);
     if (!famille || !this.quotas) return null;
     const reglage = await this.quotas.reglages.reglage(demande.tenantId);
     // Lecture ratée sans réglage connu : le quota laisse passer, comme sur un compteur muet (`REGLAGE_INCONNU`).
     if (estReglageInconnu(reglage)) return null;
-    const max = (famille === 'envois' ? reglage.envoisJour : reglage.fichesJour) ?? this.quotas.defauts[famille];
+    const max = famille === 'fiches'
+      ? valeurEffective(reglage.fichesJour, null, this.quotas.defauts.fiches)
+      : await this.quotaDEnvoi(this.quotas, demande.tenantId, famille, reglage);
     if (max <= 0) return null;
     const maintenant = this.quotas.maintenant ?? Date.now;
     return { famille, max, comptage: comptageQuota(famille, demande.tenantId, max, demande.unites, maintenant()) };
+  }
+
+  /**
+   * Le quota d'une famille d'envoi : le réglage de l'espace, sinon son offre, sinon la configuration (`envois`, commune
+   * aux deux familles). Une offre illisible ne coupe ni ne relève rien : la configuration s'applique.
+   */
+  private async quotaDEnvoi(
+    quotas: QuotasEspace, tenantId: string, famille: 'modeles' | 'reponses', reglage: Pick<ReglagePlafondApi, 'modelesJour' | 'reponsesJour'>,
+  ): Promise<number> {
+    let offre: LimitesApiOffre = SANS_LIMITE_D_OFFRE;
+    try {
+      offre = await quotas.offres.limitesApi(tenantId);
+    } catch (err) {
+      this.avertir(err);
+    }
+    return famille === 'modeles'
+      ? valeurEffective(reglage.modelesJour, offre.modelesJour, quotas.defauts.envois)
+      : valeurEffective(reglage.reponsesJour, offre.reponsesJour, quotas.defauts.envois);
   }
 
   /**
@@ -163,7 +185,7 @@ export class GardeUsage implements ApiUsageGuard {
     if (this.quotasAnnonces.has(cle)) return;
     this.quotasAnnonces.add(cle);
     journaliser('warn', 'quota_api_atteint', { tenantId, famille, max, jour });
-    this.quotas?.alerter(`quota quotidien de l’API atteint : espace ${tenantId}, ${max} ${famille === 'envois' ? 'envois' : 'fiches écrites'} par jour. À relever par /ops/plafond-api si le client en a besoin.`);
+    this.quotas?.alerter(`quota quotidien de l’API atteint : espace ${tenantId}, ${max} ${LIBELLE_FAMILLE[famille]} par jour. À relever par /ops/plafond-api si le client en a besoin.`);
   }
 
   /** Le compteur ne répond pas : l'appel passe (la politique du garde), mais le quota n'est plus tenu, on le dit. */
