@@ -5,6 +5,32 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-17 : l'audit des index manquants, et la migration 0242
+
+- **La question de Julien** : si un index manquait pour les accusés, d'autres manquent-ils ailleurs ? La production est
+  minuscule (28 conversations), donc un index manquant ne s'y voit nulle part : il faut le chercher.
+- **La méthode** (lecture seule, client dédié, `begin read only`) : les 600 requêtes les plus jouées de
+  `pg_stat_statements`, planifiées avec `set local enable_seqscan = off` ; un parcours complet qui reste veut dire
+  qu'aucun index ne sert. ⚠️ **Premier passage faux** : `pg_stat_statements` remplace chaque littéral par un `$n`, et
+  un plan générique ne peut pas prouver qu'un `status = $1` vaut `'waiting'`. Les index PARTIELS du dépôt
+  (`workflow_runs_waiting_idx`, `campaigns_scheduled_idx`, etc.) y passaient pour des trous. Le second passage reprend
+  chaque candidat avec sa requête EXACTE du code et des valeurs réelles. Le code écrit d'ailleurs ses statuts en
+  littéral à dessein, pour que ces index servent (commentaire de `claimDue`).
+- **Le verdict** : UN seul trou sur un chemin chaud, la remise à l'agent de Meta (chaque accusé). Tous les autres
+  chemins par message, par accusé ou par envoi sont servis par un index. Deux balayages de fond relisent leur table au
+  plus une fois par minute (`todo.md`, à remesurer à 100 000 lignes). Les tables de réglages, de numéros, d'espaces et
+  d'abonnements restent petites : les lire en entier y est le bon choix.
+- **La migration 0242** : `conversations_release_mba_idx`, partiel (`where release_mba_apres_message is not null`),
+  construit sans bloquer la table. L'instruction de `consommerReleaseMba` est exportée (`CONSOMMER_REMISE_MBA_SQL`) pour
+  que le test d'intégration planifie la vraie et vérifie qu'elle choisit l'index. Plan :
+  `docs/superpowers/plans/2026-10-17-index-remise-mba.md`.
+- **La relecture a trouvé un rouge dans le test** : il exigeait un nom d'index sur chaque nœud du plan qui nomme
+  `conversations`, or le nœud racine d'un `update` (`ModifyTable`) nomme lui aussi sa table cible, sans index. Le test
+  aurait été rouge même avec l'index employé. Il cherche désormais l'index n'importe où dans le plan, et aucun
+  `Seq Scan` sur `conversations`. ⚠️ Le sens « sans index » est prouvé sur la PRODUCTION, qui ne l'avait pas encore :
+  même instruction, même analyse, en `explain` dans un `begin read only`, les deux assertions échouent. Le sens « avec
+  index » est prouvé par le job `integration` de la CI.
+
 ## 2026-10-17 : le banc des accusés avec de vrais messages, et l'index qui double la file des statuts
 
 - **Pourquoi** (point P1 de l'audit du 2026-10-17) : le banc du 14 octobre envoyait des accusés pour des identifiants

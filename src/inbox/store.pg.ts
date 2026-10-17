@@ -299,6 +299,20 @@ export const PURGE_CONVERSATIONS_PAR_LOT = 500;
  */
 export const BUDGET_PURGE_CONVERSATIONS_MS = 2 * 60_000;
 
+/**
+ * La consommation de la remise à l'agent de Meta, jouée pour CHAQUE accusé de Meta (`consommerReleaseMba`). Exportée
+ * pour que `tests/integration/index-remise-mba.integration.test.ts` planifie CETTE instruction, pas une copie : son
+ * `where` doit rester servi par `conversations_release_mba_idx` (0242). Sans cet index, chaque accusé relisait toute
+ * la table des conversations (banc du 2026-10-17 : 5 à 8 ms par accusé à 62 000 conversations, 0,013 ms avec).
+ */
+export const CONSOMMER_REMISE_MBA_SQL = `with accuse as (
+         update conversation_messages set accuse_le = now()
+          where meta_message_id = $1 and accuse_le is null
+       )
+       update conversations c set release_mba_apres_message = null
+        where c.release_mba_apres_message = $1
+       returning c.tenant_id, c.wa_id`;
+
 export class PgInboxStore implements InboxStore {
   constructor(private readonly pool: Pool) {}
 
@@ -789,16 +803,7 @@ export class PgInboxStore implements InboxStore {
    * lui apprend l'espace.
    */
   async consommerReleaseMba(messageId: string): Promise<{ tenantId: string; waId: string } | null> {
-    const res = await this.pool.query<{ tenant_id: string; wa_id: string }>(
-      `with accuse as (
-         update conversation_messages set accuse_le = now()
-          where meta_message_id = $1 and accuse_le is null
-       )
-       update conversations c set release_mba_apres_message = null
-        where c.release_mba_apres_message = $1
-       returning c.tenant_id, c.wa_id`,
-      [messageId],
-    );
+    const res = await this.pool.query<{ tenant_id: string; wa_id: string }>(CONSOMMER_REMISE_MBA_SQL, [messageId]);
     const r = res.rows[0];
     return r ? { tenantId: r.tenant_id, waId: r.wa_id } : null;
   }
