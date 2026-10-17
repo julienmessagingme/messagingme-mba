@@ -942,6 +942,8 @@ async function main(): Promise<void> {
     proVivant: (tenant) => abonnementsOffre.vivant(tenant),
     offreDe: async (tenant) => (await offres.offreDe(tenant)).offre,
   };
+  // Le plafond de clés actives de l'offre (spec offres v2), lu par la route de la console et par l'outil `create_api_key`.
+  const limiteClesDeLOffre = async (tenant: string): Promise<number | null> => (await offres.offreDe(tenant)).droits.limites.clesApi;
   const vueOffre = creerVueOffre({
     offres, usage: (tenant) => offresStore.usage(tenant), modelesDuMois: quotaModeles,
     proEnVente: proDeLaConsole.stripe !== null && proDeLaConsole.prixProMois !== '' && proDeLaConsole.prixProAn !== '',
@@ -1184,7 +1186,7 @@ async function main(): Promise<void> {
     // Le bouton « Onboard with 360dialog » (lot 3) : la même logique, par l'admin de l'espace.
     connexion360dialog: { ...rattachement360, audit: auditSink },
     offrePaiement: {
-      ouvrir: (tenant, periodicite, payeur) => ouvrirPro(proDeLaConsole, tenant, periodicite, payeur),
+      ouvrir: (tenant, periodicite, payeur) => ouvrirPro(proDeLaConsole, tenant, periodicite, payeur, 'offre'),
       portail: (tenant, payeur) => ouvrirPortailPro(proDeLaConsole, tenant, payeur),
       // Rendre le numéro fourni à la fin du Pro (lot 6, B2b).
       rendreLeNumero: (tenant, rendre) => abonnementsOffre.rendreLeNumero(tenant, rendre),
@@ -2669,7 +2671,7 @@ async function main(): Promise<void> {
       audit: auditSink,
       cles: apiKeyStore,
       // Le plafond de clés actives vient de l'offre (spec offres v2), lue par la source en cache.
-      limiteCles: async (tenant) => (await offres.offreDe(tenant)).droits.limites.clesApi,
+      limiteCles: limiteClesDeLOffre,
     },
     /**
      * L'OAuth devant `/mcp` (migration 0204) : les routes publiques et celles de la console partagent le même
@@ -2865,8 +2867,14 @@ async function main(): Promise<void> {
        * pour les deux d'un coup.
        */
       mcp: {
-        // L'offre de l'espace (lot 6) : la même vue que la console, pour l'outil `get_plan`.
-        offre: { vue: vueOffre },
+        // L'offre de l'espace (lot 6) : la même vue que la console, pour l'outil `get_plan`, et le MÊME paiement du Pro que
+        // la page de l'offre, pour `subscribe_pro` (spec offres v2), qui revient sur la page publique « paiement reçu ».
+        offre: {
+          vue: vueOffre,
+          pro: { ouvrir: (tenant, periodicite, payeur, retour) => ouvrirPro(proDeLaConsole, tenant, periodicite, payeur, retour) },
+        },
+        // La création d'une clé d'API (spec offres v2) : la MÊME fonction que la route de la console, pour `create_api_key`.
+        cles: { cles: apiKeyStore, limiteCles: limiteClesDeLOffre, audit: auditSink },
         // Les modèles (lot 13, domaine 3) : la MÊME création que `POST /v1/templates`, la MÊME liste que le catalogue.
         modeles: { ...creationModeles, lister: listerModeles },
         // L'envoi d'un modèle à un contact (livraison B) : le MÊME cœur que `POST /v1/sends`, sans clé d'en-tête.

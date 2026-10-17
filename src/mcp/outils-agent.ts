@@ -146,11 +146,11 @@ export const ACTION_WEBHOOK_EN = 'The action goes to the customer\'s application
   + 'automation can still start from the action.';
 
 /** Ce qu'un outil coûteux dit de son plafond, une fois pour toutes les descriptions. */
-const LOURDE = 'Counts toward the workspace\'s heavy operations, capped per minute (as in the console).';
+export const LOURDE = 'Counts toward the workspace\'s heavy operations, capped per minute (as in the console).';
 
 const lecture = (title: string, openWorldHint = false): AnnotationsMcp => ({ title, readOnlyHint: true, openWorldHint });
 /** Une écriture est toujours `destructiveHint: true` (règle du répertoire de Claude, voir `AnnotationsMcp`). */
-const ecriture = (title: string, idempotentHint: boolean, openWorldHint: boolean): AnnotationsMcp =>
+export const ecriture = (title: string, idempotentHint: boolean, openWorldHint: boolean): AnnotationsMcp =>
   ({ title, readOnlyHint: false, destructiveHint: true, idempotentHint, openWorldHint });
 
 /** L'identifiant d'agent, tel que les outils le lisent (`texteObligatoire(args, 'agent_id', 100)`). */
@@ -163,7 +163,7 @@ const AGENT_ID: ProprieteEntree = {
  * 🔴 Le plafond des opérations coûteuses de la console, consommé AVANT la fonction partagée, comme la garde de la
  * route : même instance, même clé (l'espace). Un refus est un refus d'outil, lisible, qui dit quand réessayer.
  */
-async function plafondCouteux(deps: DepsMcp, tenantId: string): Promise<void> {
+export async function plafondCouteux(deps: DepsMcp, tenantId: string): Promise<void> {
   const c = await deps.couteux.consommer(tenantId);
   if (!c.accepte) throw new RefusOutil(`${MESSAGE_OPERATIONS_LOURDES} (réessayer dans ${Math.max(1, Math.ceil(c.attenteMs / 1000))} s)`);
 }
@@ -172,7 +172,7 @@ async function plafondCouteux(deps: DepsMcp, tenantId: string): Promise<void> {
  * La personne qui signe. Un outil `exigePersonne` n'est jamais appelé sans elle (`outilsPour` l'écarte avant) : ce
  * refus ne sert qu'à un appel qui contournerait le serveur, et il vaut mieux que signer au nom de personne.
  */
-function signataire(personne: PersonneMcp | null): string {
+export function signataire(personne: PersonneMcp | null): string {
   if (personne === null) throw new RefusOutil('connexion OAuth requise : cet outil agit au nom d’une personne');
   return personne.userId;
 }

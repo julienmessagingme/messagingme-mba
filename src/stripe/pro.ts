@@ -22,6 +22,13 @@ export interface DepsPro extends DepsPortail {
   offreDe(tenantId: string): Promise<Offre>;
 }
 
+/**
+ * D'où le paiement est ouvert : la page de l'offre de la console, ou Claude (`subscribe_pro`, spec offres v2), qui revient
+ * sur la page publique « paiement reçu » : la personne de Claude Code n'a pas de session de console. Le portail d'un
+ * espace déjà Pro revient toujours sur la page de l'offre.
+ */
+export type RetourPro = 'offre' | 'claude';
+
 export const PRO_INDISPONIBLE = refus(503, 'le Pro n’est pas encore en vente', { code: 'pro_indisponible' });
 
 /** La récurrence que doit porter chaque prix chez Stripe. */
@@ -33,7 +40,7 @@ const RECURRENCE: Readonly<Record<PeriodicitePro, string>> = { mois: 'month', an
  * dit. Un espace déjà Pro reçoit l'adresse du portail (`portail: true`) : deux abonnements Pro vivants ne se paient pas.
  */
 export async function ouvrirPro(
-  d: DepsPro, tenantId: string, periodicite: PeriodicitePro, payeur: string,
+  d: DepsPro, tenantId: string, periodicite: PeriodicitePro, payeur: string, retour: RetourPro,
 ): Promise<Issue<{ url: string; portail: boolean }>> {
   const s = d.stripe;
   const prixId = periodicite === 'mois' ? d.prixProMois : d.prixProAn;
@@ -63,8 +70,8 @@ export async function ouvrirPro(
       tenantId,
       prix: prixId,
       customerId: await clientDeLEspace(d, s, tenantId),
-      urlSucces: `${page(d, 'offre')}?pro=recu`,
-      urlAbandon: `${page(d, 'offre')}?pro=abandon`,
+      urlSucces: retour === 'claude' ? `${page(d, 'claude')}?produit=pro` : `${page(d, 'offre')}?pro=recu`,
+      urlAbandon: retour === 'claude' ? `${page(d, 'claude')}?produit=pro&abonnement=abandon` : `${page(d, 'offre')}?pro=abandon`,
       idempotence: `pro-${tenantId}-${randomUUID()}`,
       produit: 'pro',
       periodicite,

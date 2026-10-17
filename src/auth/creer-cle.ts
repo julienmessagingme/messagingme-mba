@@ -33,8 +33,11 @@ export interface CleCreee {
   scopes: string[];
 }
 
+/** Par où la clé est créée : la console, ou Claude (`create_api_key`), que la trace d'audit nomme. */
+export type OrigineCle = 'console' | 'mcp';
+
 export async function creerCleApi(
-  deps: DepsCreationCle, tenantId: string, nom: string, scopes: readonly string[], auteur: AuteurCle,
+  deps: DepsCreationCle, tenantId: string, nom: string, scopes: readonly string[], auteur: AuteurCle, origine: OrigineCle,
 ): Promise<Issue<CleCreee>> {
   const name = nom.trim().slice(0, 100);
   if (name === '') return refus(400, 'name requis');
@@ -52,6 +55,6 @@ export async function creerCleApi(
   }
   // Best-effort, comme `makeJournal` : la clé existe, un journal en panne ne doit pas faire croire le contraire.
   // 🔴 Le détail porte les droits accordés, jamais la clé ni son empreinte (ce journal n'est pas purgé).
-  await tenter('audit ignoré:', () => deps.audit(tenantId, auteur, 'cle_api.creee', { kind: 'api_key', id: creee.id }, { scopes: droits }));
+  await tenter('audit ignoré:', () => deps.audit(tenantId, auteur, 'cle_api.creee', { kind: 'api_key', id: creee.id }, origine === 'mcp' ? { scopes: droits, via: 'mcp' } : { scopes: droits }));
   return { ok: true, valeur: { id: creee.id, key: creee.key, name, scopes: droits } };
 }

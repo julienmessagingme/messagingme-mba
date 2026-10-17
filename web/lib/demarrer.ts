@@ -25,8 +25,8 @@ export const COMMANDES_PLUGIN = [
 export const COMMANDE_DEMARRAGE = '/messagingme:demarrer';
 export const SERVEUR_PLUGIN_MCP = 'plugin:messagingme:messagingme';
 
-/** La variable d'environnement où ranger la clé d'API de l'application. */
-export const VARIABLE_CLE = 'MESSAGINGME_API_KEY';
+/** La variable d'environnement où ranger la clé d'API de l'application : partagée avec le serveur (`create_api_key`). */
+export { VARIABLE_CLE } from './partage/droits-api';
 
 /** La valeur de `?suite=` qui fait de `/connecter-whatsapp` une étape du tunnel, et sa clé dans la mémoire de l'onglet. */
 export const SUITE_DEMARRER = 'demarrer';

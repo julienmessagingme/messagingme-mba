@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Bouton } from './Bouton';
 import { Bloc } from './doc-api/elements';
 import { useT } from '@/lib/i18n';
-import { API_SCOPES_PAR_DEFAUT, createApiKey } from '@/lib/api';
+import { DROITS_CLE_APPLICATION, createApiKey } from '@/lib/api';
 import { COMMANDE_DEMARRAGE, COMMANDES_PLUGIN, SERVEUR_PLUGIN_MCP, VARIABLE_CLE } from '@/lib/demarrer';
 
 /**
@@ -20,9 +20,8 @@ export function PiloterDepuisClaude({ tenantId, isAdmin }: { tenantId: string; i
   const creerCle = async () => {
     setCle({ enCours: true, valeur: null, erreur: null });
     try {
-      // Plus la lecture des fils (lot 13) : l'application d'un vibe codeur répond aux messages, et répondre demande le
-      // contexte. Hors de ce geste, le droit reste une case à cocher (données personnelles, `API_SCOPES_PAR_DEFAUT`).
-      const creee = await createApiKey(tenantId, t('Mon application', 'My application'), [...API_SCOPES_PAR_DEFAUT, 'conversations:read']);
+      // Les droits de la clé d'une application (`DROITS_CLE_APPLICATION`), les mêmes que l'outil MCP `create_api_key`.
+      const creee = await createApiKey(tenantId, t('Mon application', 'My application'), [...DROITS_CLE_APPLICATION]);
       setCle({ enCours: false, valeur: creee.key, erreur: null });
     } catch (err) {
       setCle({ enCours: false, valeur: null, erreur: err instanceof Error ? err.message : t('Une erreur est survenue', 'Something went wrong') });

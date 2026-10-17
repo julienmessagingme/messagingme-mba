@@ -51,7 +51,11 @@ describe('le câblage de l’offre', () => {
     expect(api).toMatch(/const vueOffre = creerVueOffre\(\{\s+offres, usage: \(tenant\) => offresStore\.usage\(tenant\), modelesDuMois: quotaModeles,/);
     // Le prix du Pro ne s'affiche que s'il se paie : Stripe câblé ET les deux prix posés (jaune 10 de la relecture de B1).
     expect(api).toMatch(/proEnVente: proDeLaConsole\.stripe !== null && proDeLaConsole\.prixProMois !== '' && proDeLaConsole\.prixProAn !== '',/);
-    expect(api.match(/^\s+offre: \{ vue: vueOffre \},$/gm)).toHaveLength(2);
+    expect(api.match(/^\s+offre: \{ vue: vueOffre \},$/gm)).toHaveLength(1);
+    // Claude lit la MÊME vue, et paie le Pro par la MÊME ouverture que la console, en revenant où l'outil le demande (offres v2).
+    expect(api).toMatch(/offre: \{\s+vue: vueOffre,\s+pro: \{ ouvrir: \(tenant, periodicite, payeur, retour\) => ouvrirPro\(proDeLaConsole, tenant, periodicite, payeur, retour\) \},\s+\},/);
+    // La clé d'API créée par Claude bute sur le MÊME plafond de l'offre que la console.
+    expect(api.match(/limiteCles: limiteClesDeLOffre/g)).toHaveLength(2);
     // L'exploitation vide le cache de CE process : sans quoi un espace ramené en Base garderait l'Entreprise 30 s.
     expect(api).toMatch(/opsOffre: \{ store: offresStore, invalider: \(tenant\) => offres\.invalider\(tenant\), audit: auditSink \},/);
     expect(api).toMatch(/badgeDeLOffre: async \(tenant\) => \(await offres\.offreDe\(tenant\)\)\.droits\.limites\.badge,/);
@@ -64,7 +68,7 @@ describe('le câblage de l’offre', () => {
     expect(blocPro).toMatch(/invalider: \(tenant\) => offres\.invalider\(tenant\),/);
     expect(blocPro).toMatch(/enregistrer: \(a\) => abonnementsOffre\.enregistrer\(a\),/);
     expect(api).toMatch(/proVivant: \(tenant\) => abonnementsOffre\.vivant\(tenant\),/);
-    expect(api).toMatch(/ouvrir: \(tenant, periodicite, payeur\) => ouvrirPro\(proDeLaConsole, tenant, periodicite, payeur\),/);
+    expect(api).toMatch(/ouvrir: \(tenant, periodicite, payeur\) => ouvrirPro\(proDeLaConsole, tenant, periodicite, payeur, 'offre'\),/);
   });
 
   it('🔴 le gel des membres en trop (lot 6, B2a) : la session de la console ET le jeton de Claude le lisent', () => {

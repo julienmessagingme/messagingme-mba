@@ -20,6 +20,8 @@ import type { PlafondPartage } from '../auth/plafond-partage';
 import { RefusOutil, entierBorne, texteObligatoire, valeurOuRefus } from './saisie';
 import { decoderCurseur, encoderCurseur, type DepotConversationsV1 } from '../api/conversations-v1';
 import { OUTILS_AGENT, type DepsAgentMcp } from './outils-agent';
+import { OUTILS_OFFRE, type DepsOffreMcp } from './outils-offre';
+import type { DepsCreationCle } from '../auth/creer-cle';
 import { OUTILS_EVENEMENTS, type DepsEvenementsMcp } from './outils-evenements';
 import { OUTILS_CHIFFRES, type DepsChiffresMcp } from './outils-chiffres';
 import { OUTILS_NUMERO, type DepsNumeroMcp } from './outils-numero';
@@ -95,8 +97,13 @@ export interface DepsMcp extends DepsRepondre {
   evenements: DepsEvenementsMcp;
   /** Les chiffres de l'espace (2026-10-13) : les MÊMES fonctions que la route des statistiques de la console. */
   chiffres: DepsChiffresMcp;
-  /** L'offre de l'espace (lot 6) : la MÊME vue que la console (`GET /tenants/:tenantId/offre`), pour `get_plan`. */
-  offre: { vue(tenantId: string): Promise<VueOffre> };
+  /**
+   * L'offre de l'espace (lot 6) : la MÊME vue que la console (`GET /tenants/:tenantId/offre`), pour `get_plan`, et le MÊME
+   * paiement du Pro que `POST /offre/paiement`, pour `subscribe_pro` (spec offres v2).
+   */
+  offre: { vue(tenantId: string): Promise<VueOffre>; pro: DepsOffreMcp };
+  /** La création d'une clé d'API (spec offres v2) : la MÊME fonction que la route de la console, pour `create_api_key`. */
+  cles: DepsCreationCle;
   /** Un message par son identifiant public (lot 13) : la MÊME lecture que `GET /v1/messages/{id}`, pour `get_message_status`. */
   messagesApi: Pick<DepotConversationsV1, 'message'>;
   /** L'envoi au format de Meta (lot 13, domaine 2) : le MÊME que `POST /v1/messages`, pour `send_message`. */
@@ -835,6 +842,8 @@ export const OUTILS: OutilMcp[] = [
   ...OUTILS_MODELES,
   // Les chiffres de l'espace, pour les graphiques de Claude (2026-10-13) : leur fichier, `src/mcp/outils-chiffres.ts`.
   ...OUTILS_CHIFFRES,
+  // La clé de l'application et le paiement du Pro, depuis Claude (spec offres v2) : leur fichier, `src/mcp/outils-offre.ts`.
+  ...OUTILS_OFFRE,
 ];
 
 /**

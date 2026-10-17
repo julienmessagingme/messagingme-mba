@@ -4591,6 +4591,31 @@ plus), en séries par jour, semaine ou mois.
 - ⚠️ La maille « jour » couvre 92 jours au plus (au-delà, la réponse serait trop longue pour un modèle) ; sans maille
   demandée, Claude reçoit la semaine. Un message effacé par la durée de conservation ne compte plus.
 
+### La clé de son application et le Pro, depuis Claude (2026-10-17)
+
+**À quoi ça sert.** Un espace Free vit dans Claude Code : il n'a plus à ouvrir la console pour les deux gestes qui lui
+restaient (spec offres v2, livraison 4).
+
+- **`create_api_key`** crée la clé de l'application, celle que son code utilise pour appeler l'API, avec les droits de
+  la clé d'une application (les mêmes que « Créer la clé de mon application » de la page « Démarrer ») ou, parmi des
+  droits limités (contacts, envois, lecture des fils, modèles), ceux qu'on lui demande : une clé qui ouvre le serveur
+  MCP, les webhooks ou la suppression de contacts se crée dans la console. La clé est montrée une fois, dans la réponse : Claude la range dans le `.env` du projet sous
+  `MESSAGINGME_API_KEY`, jamais dans le code. Le plafond de l'offre s'applique (2 clés actives en Free, 10 en Pro, sans
+  limite en Entreprise) : la clé de trop est refusée avec le lien de l'offre Pro, et révoquer une clé dans la console
+  libère une place. Le journal d'audit signe la personne et l'origine (« via Claude »), jamais la clé.
+- **`subscribe_pro`** ouvre le paiement du Pro, au mois ou à l'année : Claude donne l'adresse de la page de paiement
+  de Stripe, avec le montant hors taxe (la taxe est calculée sur cette page), et c'est la personne qui paie. Après le
+  paiement, Stripe renvoie sur une page publique qui invite à retourner dans Claude, où `get_plan` dit l'offre passée.
+  Un espace déjà en Pro reçoit le portail de Stripe ; un espace Entreprise est refusé.
+
+**Les garde-fous.**
+- ✅ **Seulement avec la connexion de Claude**, jamais avec une clé d'API : une clé ne voit pas ces deux outils, donc ne
+  peut ni fabriquer une autre clé ni ouvrir un paiement.
+- ✅ **Ils comptent dans les opérations lourdes de la console** : une rafale de Claude ne contourne pas la limite par
+  minute de l'espace.
+- ⚠️ **La clé passe par la conversation avec l'assistant** : la description de l'outil le dit à Claude. Si elle a pu
+  fuiter, on la révoque dans la console (Clés d'API) et on en crée une autre.
+
 ## Plafonds d'usage (visible seulement si on force)
 
 Rien à régler côté client, mais deux messages peuvent apparaître, et le support doit savoir que ce ne sont

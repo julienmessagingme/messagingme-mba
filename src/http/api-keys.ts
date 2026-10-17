@@ -37,7 +37,7 @@ export function registerApiKeys(app: FastifyInstance, deps: ApiKeysRouteDeps, ga
     const tenant = espaceVerifie(req);
     const b = (req.body ?? {}) as { name?: unknown; scopes?: unknown };
     const scopes = Array.isArray(b.scopes) ? b.scopes.map(String) : [];
-    const r = await creerCleApi(deps, tenant, typeof b.name === 'string' ? b.name : '', scopes, { userId: req.auth?.userId ?? null, email: null });
+    const r = await creerCleApi(deps, tenant, typeof b.name === 'string' ? b.name : '', scopes, { userId: req.auth?.userId ?? null, email: null }, 'console');
     // `key` en clair, montrée une seule fois. L'audit porte les droits accordés, jamais la clé.
     return r.ok ? reply.code(201).send(r.valeur) : reply.code(r.statut).send(corpsDuRefus(r));
   });

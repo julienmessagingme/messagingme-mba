@@ -10,21 +10,12 @@
 
 import { request } from '../http';
 import type { UserFieldKind } from '../field-kinds';
-import type { ApiScope } from '../partage/droits-api';
 import type { AutomationTriggerKind as TypeDeDeclencheur } from '../partage/automations';
 
 // --- Clés d'API (surface publique /v1) ---
 
 // Droits reconnus, plafond de clés actives et droit du relais : partagés avec le serveur.
-export { API_SCOPES, MAX_CLES_API_ACTIVES, DROIT_RELAIS, type ApiScope } from '../partage/droits-api';
-/**
- * Ce qui est COCHÉ D'AVANCE à la création d'une clé.
- *
- * 🔴 Les deux scopes MCP n'y sont volontairement PAS. L'écran cochait tout par défaut quand il n'y avait
- * que deux droits ; laisser ce geste tel quel aurait donné à toute clé neuve le droit d'ENVOYER des
- * WhatsApp au nom du client, sans que personne ne l'ait décidé. Ouvrir MCP doit rester une case qu'on coche.
- */
-export const API_SCOPES_PAR_DEFAUT = ['contacts:write', 'sends:create'] as const satisfies readonly ApiScope[];
+export { API_SCOPES, API_SCOPES_PAR_DEFAUT, DROITS_CLE_APPLICATION, MAX_CLES_API_ACTIVES, DROIT_RELAIS, type ApiScope } from '../partage/droits-api';
 
 export interface ApiKeyRow {
   id: string;

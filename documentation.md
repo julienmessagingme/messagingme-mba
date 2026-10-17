@@ -2632,7 +2632,8 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
   `STRIPE_PRIX_PRO_AN` (posés ensemble ou aucun ; absents, 503 `pro_indisponible`, et la vue de l'offre rend `prixPro`
   nul, donc la console montre le Support au lieu des boutons). Le prix est relu chez Stripe et recoupé avec
   `PRIX_PRO_HT_CENTIMES` (sinon 422 `prix_incoherent`) ; la métadonnée `produit: pro` est posée sur la session ET sur
-  l'abonnement, et le code promo est ouvert. Un espace déjà Pro reçoit le portail (`portail: true`), que
+  l'abonnement, et le code promo est ouvert. Le retour dépend de l'appelant (`RetourPro`) : la console revient sur `/offre`,
+  l'outil MCP `subscribe_pro` sur la page publique `/paiement-recu?produit=pro`, faute de session de console. Un espace déjà Pro reçoit le portail (`portail: true`), que
   `POST .../offre/portail` ouvre aussi ; une Entreprise sans Pro vivant est refusée (409 `deja_entreprise`). Le webhook
   Stripe aiguille sur `produit: pro` (par `safeParse`) AVANT le chemin du numéro et écrit `abonnements_offre` par
   `PgAbonnementsOffreStore` (`src/offres/abonnements-offre.pg.ts`), son seul écrivain : rejouer ne duplique rien, la fin
@@ -2961,6 +2962,13 @@ l'activer, et d'ouvrir une recharge du crédit.
 - **La personne signe** : la ligne `fiche_agent` de l'historique (origine `mcp`), l'activation des outils sûrs
   (`active_par`), la suppression d'une fiche de connaissance (origine `mcp`, par `journaliserSuppressionDe`), et le
   payeur d'une recharge. L'historique de la console l'affiche « par Claude ».
+- **`create_api_key` et `subscribe_pro` appellent les fonctions de la console** (`creerCleApi`, `ouvrirPro`,
+  `src/mcp/outils-offre.ts`) : l'outil n'y ajoute que la personne (`exigePersonne`, donc invisibles derrière une clé) et
+  le plafond des opérations coûteuses. La clé est rendue une fois avec la variable où la ranger (`VARIABLE_CLE`), et la
+  description dit qu'elle passe par la conversation. Ses droits sont LIMITÉS (`DROITS_PAR_CLAUDE`) : ni `mcp:*`, ni
+  `webhooks:write`, ni `contacts:admin`, pour qu'une consigne glissée dans un message lu par Claude ne fabrique pas une clé
+  qui exfiltre ou efface et survit à la révocation de Claude. Le portail d'un espace déjà Pro est rendu sans montant. Ouverts à toutes les offres (`fonction: null`) : c'est la Free qui
+  en a besoin.
 - **`buy_credit` annonce le montant HORS TAXE** de l'offre : la taxe est calculée par Stripe Tax sur la page de
   paiement, selon le pays et le numéro de TVA saisis, donc aucun TTC n'est connu avant le paiement. Seul le webhook
   signé crédite.
@@ -3232,7 +3240,8 @@ spec offres v2) : la clé de trop est refusée en 402 `plan_limit_reached` (`lim
 comptent pas, la clé du relais de l'agent de Meta non plus, et un espace au-delà (retour en Free) garde ses clés.
 C'est une borne d'exposition (moins de secrets oubliés chez d'anciens intégrateurs), pas de débit : le plafond de l'API
 est déjà commun à toutes les clés de l'espace. Toute création passe par `creerCleApi` (`src/auth/creer-cle.ts`) : les
-droits, le plafond de l'offre et la trace `cle_api.creee`, pour la route de la console (l'outil MCP de création de clé la reprendra).
+droits, le plafond de l'offre et la trace `cle_api.creee`, pour la route de la console comme pour l'outil MCP `create_api_key`
+(dont la trace porte `via: 'mcp'`, et qui prend par défaut `DROITS_CLE_APPLICATION`, les droits de la page « Démarrer »).
 🔴 Le compte et l'insertion se font sous un verrou consultatif par espace (`creerSousPlafond`, clé
 `api_keys:<espace>`) : sans lui, des créations simultanées dépassent le plafond. Sans limite, rien n'est compté.
 `create`, sans plafond, sert la clé du relais. La console suppose dix (`MAX_CLES_API_ACTIVES`,

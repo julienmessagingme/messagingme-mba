@@ -9,19 +9,22 @@ import { useT } from '@/lib/i18n';
 /**
  * « /paiement-recu » (lot 4) : la page où Stripe renvoie après un réabonnement demandé à Claude
  * (`resubscribe_number`), et après une recharge du crédit IA demandée à Claude (`buy_credit`, `?produit=credit`, spec
- * offres v2 : la Free n'a plus la page Crédit IA). Publique, sans session : le client de Claude Code n'a pas de session de
+ * offres v2 : la Free n'a plus la page Crédit IA), et après le paiement du Pro demandé à Claude (`subscribe_pro`,
+ * `?produit=pro`). Publique, sans session : le client de Claude Code n'a pas de session de
  * console. Elle ne lit rien et n'affirme rien du paiement lui-même : c'est le webhook qui le confirme, et Claude le dit
- * (`get_number_subscription`, `get_credit`).
+ * (`get_number_subscription`, `get_credit`, `get_plan`).
  */
 export default function PaiementRecuPage() {
   const t = useT();
   /** `null` tant que l'adresse n'est pas lue : la page ne dit rien avant de savoir. */
   const [abandon, setAbandon] = useState<boolean | null>(null);
-  const [credit, setCredit] = useState(false);
+  /** Ce qui a été payé : le numéro (par défaut), le crédit IA (`buy_credit`) ou le Pro (`subscribe_pro`). */
+  const [produit, setProduit] = useState<'numero' | 'credit' | 'pro'>('numero');
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     setAbandon(q.get('abonnement') === 'abandon');
-    setCredit(q.get('produit') === 'credit');
+    const p = q.get('produit');
+    setProduit(p === 'credit' || p === 'pro' ? p : 'numero');
   }, []);
 
   return (
@@ -38,7 +41,9 @@ export default function PaiementRecuPage() {
           <div data-testid="paiement-recu">
             <TitrePage>{t('Paiement reçu', 'Payment received')}</TitrePage>
             <p className="mt-4 text-sm text-ink-700">
-              {credit
+              {produit === 'pro'
+                ? t('Merci. Retournez dans Claude : il vous confirme le passage de votre espace en Pro dès que Stripe l’a validé, en général en quelques secondes.', 'Thank you. Go back to Claude: it confirms your workspace’s move to Pro as soon as Stripe has validated it, usually within seconds.')
+                : produit === 'credit'
                 ? t('Merci. Retournez dans Claude : il vous confirme la recharge de votre crédit IA dès que Stripe l’a validée, en général en quelques secondes.', 'Thank you. Go back to Claude: it confirms your AI credit top-up as soon as Stripe has validated it, usually within seconds.')
                 : t('Merci. Retournez dans Claude : il vous confirme le réabonnement de votre numéro dès que Stripe l’a validé, en général en quelques secondes.', 'Thank you. Go back to Claude: it confirms your number subscription as soon as Stripe has validated it, usually within seconds.')}
             </p>

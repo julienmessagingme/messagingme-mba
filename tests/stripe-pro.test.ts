@@ -54,18 +54,18 @@ function deps(o: { prix?: Record<string, unknown>; reponses?: ReponseStripe[]; c
 describe('ouvrirPro', () => {
   it('🟡 une Entreprise sans Pro : 409, rien n’est créé chez Stripe (le Pro ne lui ajouterait rien)', async () => {
     const { d, transport } = deps({ offre: 'entreprise' });
-    expect(await ouvrirPro(d, T1, 'mois', 'u1')).toMatchObject({ ok: false, statut: 409, details: { code: 'deja_entreprise' } });
+    expect(await ouvrirPro(d, T1, 'mois', 'u1', 'offre')).toMatchObject({ ok: false, statut: 409, details: { code: 'deja_entreprise' } });
     expect([transport.posts, transport.lus]).toEqual([[], []]);
   });
 
   it('une Entreprise qui a encore un Pro vivant garde le portail, pour le résilier', async () => {
     const { d } = deps({ offre: 'entreprise', vivant: true, client: 'cus_A', reponses: [PORTAIL] });
-    expect(await ouvrirPro(d, T1, 'an', 'u1')).toEqual({ ok: true, valeur: { url: 'https://billing.stripe.com/p/session/pro', portail: true } });
+    expect(await ouvrirPro(d, T1, 'an', 'u1', 'offre')).toEqual({ ok: true, valeur: { url: 'https://billing.stripe.com/p/session/pro', portail: true } });
   });
 
   it('🔴 le mensuel : le prix du mois relu, une session d’abonnement Pro, retour sur la page de l’offre', async () => {
     const { d, transport } = deps();
-    expect(await ouvrirPro(d, T1, 'mois', 'u1')).toEqual({ ok: true, valeur: { url: 'https://checkout.stripe.com/c/pay/cs_test_pro', portail: false } });
+    expect(await ouvrirPro(d, T1, 'mois', 'u1', 'offre')).toEqual({ ok: true, valeur: { url: 'https://checkout.stripe.com/c/pay/cs_test_pro', portail: false } });
     expect(transport.lus.at(-1)).toMatch(/\/prices\/price_pro_mois$/);
     const session = transport.posts.find((p) => p.url.endsWith('/checkout/sessions'))!;
     expect(session.corps.get('line_items[0][price]')).toBe('price_pro_mois');
@@ -75,9 +75,18 @@ describe('ouvrirPro', () => {
     expect(session.corps.get('cancel_url')).toBe('https://console.exemple/offre?pro=abandon');
   });
 
+  it('🔴 ouvert depuis Claude (subscribe_pro) : retour sur la page publique « paiement reçu » (spec offres v2)', async () => {
+    // La personne de Claude Code n'a pas de session de console : la page de l'offre lui demanderait de se connecter.
+    const { d, transport } = deps();
+    expect(await ouvrirPro(d, T1, 'mois', 'u1', 'claude')).toMatchObject({ ok: true, valeur: { portail: false } });
+    const session = transport.posts.find((p) => p.url.endsWith('/checkout/sessions'))!;
+    expect(session.corps.get('success_url')).toBe('https://console.exemple/paiement-recu?produit=pro');
+    expect(session.corps.get('cancel_url')).toBe('https://console.exemple/paiement-recu?produit=pro&abonnement=abandon');
+  });
+
   it('🔴 l’annuel : le prix de l’an relu, sa session', async () => {
     const { d, transport } = deps();
-    expect(await ouvrirPro(d, T1, 'an', 'u1')).toMatchObject({ ok: true, valeur: { portail: false } });
+    expect(await ouvrirPro(d, T1, 'an', 'u1', 'offre')).toMatchObject({ ok: true, valeur: { portail: false } });
     expect(transport.lus.at(-1)).toMatch(/\/prices\/price_pro_an$/);
     expect(transport.posts.find((p) => p.url.endsWith('/checkout/sessions'))!.corps.get('metadata[periodicite]')).toBe('an');
   });
@@ -91,14 +100,14 @@ describe('ouvrirPro', () => {
       ['an', { ...AN, recurring: null }],
     ] as const) {
       const { d, transport } = deps({ prix: { price_pro_mois: prix, price_pro_an: prix } });
-      expect(await ouvrirPro(d, T1, periodicite, 'u1')).toMatchObject({ ok: false, statut: 422, details: { code: 'prix_incoherent' } });
+      expect(await ouvrirPro(d, T1, periodicite, 'u1', 'offre')).toMatchObject({ ok: false, statut: 422, details: { code: 'prix_incoherent' } });
       expect(transport.posts).toEqual([]);
     }
   });
 
   it('🔴 un espace déjà Pro est renvoyé au portail, sans nouvelle session de paiement', async () => {
     const { d, transport } = deps({ vivant: true, client: 'cus_A', reponses: [PORTAIL] });
-    expect(await ouvrirPro(d, T1, 'mois', 'u1')).toEqual({ ok: true, valeur: { url: 'https://billing.stripe.com/p/session/pro', portail: true } });
+    expect(await ouvrirPro(d, T1, 'mois', 'u1', 'offre')).toEqual({ ok: true, valeur: { url: 'https://billing.stripe.com/p/session/pro', portail: true } });
     expect(transport.posts.map((p) => p.url)).toEqual(['https://api.stripe.com/v1/billing_portal/sessions']);
     expect(transport.posts[0]!.corps.get('return_url')).toBe('https://console.exemple/offre');
   });
@@ -106,11 +115,11 @@ describe('ouvrirPro', () => {
   it('prix absents, Stripe non configuré, ou payeur refusé (mode test hors exploitation) : 503, rien chez Stripe', async () => {
     for (const o of [{ prixVides: true }, { autorise: false }]) {
       const { d, transport } = deps(o);
-      expect(await ouvrirPro(d, T1, 'mois', 'u1')).toEqual(PRO_INDISPONIBLE);
+      expect(await ouvrirPro(d, T1, 'mois', 'u1', 'offre')).toEqual(PRO_INDISPONIBLE);
       expect(transport.posts).toEqual([]);
     }
     const sans = deps();
-    expect(await ouvrirPro({ ...sans.d, stripe: null }, T1, 'mois', 'u1')).toEqual(PRO_INDISPONIBLE);
+    expect(await ouvrirPro({ ...sans.d, stripe: null }, T1, 'mois', 'u1', 'offre')).toEqual(PRO_INDISPONIBLE);
   });
 });
 

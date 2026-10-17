@@ -553,8 +553,17 @@ export const mcpNumeroInerte: Pick<DepsMcp, 'numero'> = {
   },
 };
 
-/** L'offre du MCP (lot 6), pour les montages qui n'en parlent pas : un espace Entreprise, sans limite. */
-export const mcpOffreInerte: Pick<DepsMcp, 'offre' | 'offres'> = {
+/**
+ * L'offre du MCP (lot 6), pour les montages qui n'en parlent pas : un espace Entreprise, sans limite. Le paiement du Pro
+ * et la création d'une clé (spec offres v2) ne doivent pas y être appelés : leurs outils ont leur fichier,
+ * `tests/mcp-offre.test.ts`.
+ */
+export const mcpOffreInerte: Pick<DepsMcp, 'offre' | 'offres' | 'cles'> = {
+  cles: {
+    cles: { creerSousPlafond: neDevraitPasEtreAppelee('cles.creerSousPlafond') },
+    limiteCles: neDevraitPasEtreAppelee('cles.limiteCles'),
+    audit: neDevraitPasEtreAppelee('cles.audit'),
+  },
   offres: offresToutOuvert,
   offre: {
     vue: async () => ({
@@ -562,6 +571,7 @@ export const mcpOffreInerte: Pick<DepsMcp, 'offre' | 'offres'> = {
       usage: { envoisModelesMois: null, contacts: 0, automations: 0, membres: 0 }, grille: grilleDesOffres(), prixPro: { moisCentimes: 4900, anCentimes: 49000 },
       suiteDuNumero: null, upgradeUrl: 'https://console.inerte.test/offre',
     }),
+    pro: { ouvrir: neDevraitPasEtreAppelee('offre.pro.ouvrir') },
   },
 };
 

@@ -16,6 +16,25 @@ export const API_SCOPES = [
 export type ApiScope = (typeof API_SCOPES)[number];
 
 /**
+ * Ce qui est COCHÉ D'AVANCE à la création d'une clé.
+ *
+ * 🔴 Les deux scopes MCP n'y sont volontairement PAS. L'écran cochait tout par défaut quand il n'y avait
+ * que deux droits ; laisser ce geste tel quel aurait donné à toute clé neuve le droit d'ENVOYER des
+ * WhatsApp au nom du client, sans que personne ne l'ait décidé. Ouvrir MCP doit rester une case qu'on coche.
+ */
+export const API_SCOPES_PAR_DEFAUT = ['contacts:write', 'sends:create'] as const satisfies readonly ApiScope[];
+
+/**
+ * Les droits de LA CLÉ DE L'APPLICATION, celle que créent la page « Démarrer », l'accueil d'une Free et l'outil MCP
+ * `create_api_key` : ceux d'avance, plus la lecture des fils (lot 13), parce que l'application d'un vibe codeur répond
+ * aux messages et que répondre demande le contexte. Partout ailleurs, ce droit reste une case à cocher.
+ */
+export const DROITS_CLE_APPLICATION = [...API_SCOPES_PAR_DEFAUT, 'conversations:read'] as const satisfies readonly ApiScope[];
+
+/** La variable d'environnement où ranger la clé d'API de l'application. */
+export const VARIABLE_CLE = 'MESSAGINGME_API_KEY';
+
+/**
  * Le plafond de clés actives que la console suppose quand l'offre est inconnue (une panne, ou une API plus ancienne).
  * Le vrai plafond vient de l'offre depuis la spec offres v2 (`Limites.clesApi` : 2 en Free, 10 en Pro, sans limite en
  * Entreprise), et le serveur le tient en 402. Chaque clé active est un secret confié à quelqu'un : la borne limite les clés
