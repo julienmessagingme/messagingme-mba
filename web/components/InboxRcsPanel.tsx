@@ -11,6 +11,7 @@ import { inputCls } from '@/lib/ui';
 import { RCS_TEXTE_MAX } from '@/lib/partage/rcs';
 import { Bouton } from '@/components/Bouton';
 import { Modale } from '@/components/Modale';
+import type { ReponseEnvoiInteractif } from '@/lib/partage/journal-sortant';
 
 /**
  * Envoyer un message RCS depuis une conversation.
@@ -36,7 +37,7 @@ export function InboxRcsPanel({
   tenantId: string;
   conversationId: string;
   onClose: () => void;
-  onSent: () => Promise<void>;
+  onSent: (resultat: ReponseEnvoiInteractif) => Promise<void>;
 }) {
   const t = useT();
   const [messages, setMessages] = useState<RcsMessage[]>([]);
@@ -66,8 +67,10 @@ export function InboxRcsPanel({
     setBusy(true);
     setError(null);
     try {
-      await sendRcsToConversation(tenantId, conversationId, libre ? { text: texte.trim() } : { rcsMessageId: selId });
-      await onSent();
+      const resultat = await sendRcsToConversation(tenantId, conversationId, libre ? { text: texte.trim() } : { rcsMessageId: selId });
+      setTexte('');
+      setSelId('');
+      await onSent(resultat);
     } catch (e) {
       // Le message vient du serveur et NOMME la cause (canal éteint, contact désabonné) : ces deux-là
       // demandent deux gestes différents, les aplatir en « envoi impossible » ne servirait personne.

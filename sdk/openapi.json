@@ -3947,12 +3947,20 @@
                         "whatsapp",
                         "rcs"
                       ]
+                    },
+                    "journal": {
+                      "type": "string",
+                      "enum": [
+                        "recorded",
+                        "unrecorded"
+                      ]
                     }
                   },
                   "required": [
                     "messageId",
                     "conversationId",
-                    "channel"
+                    "channel",
+                    "journal"
                   ]
                 }
               }
@@ -4128,12 +4136,20 @@
                         "whatsapp",
                         "rcs"
                       ]
+                    },
+                    "journal": {
+                      "type": "string",
+                      "enum": [
+                        "recorded",
+                        "unrecorded"
+                      ]
                     }
                   },
                   "required": [
                     "messageId",
                     "conversationId",
-                    "channel"
+                    "channel",
+                    "journal"
                   ]
                 }
               }
@@ -4309,12 +4325,20 @@
                         "whatsapp",
                         "rcs"
                       ]
+                    },
+                    "journal": {
+                      "type": "string",
+                      "enum": [
+                        "recorded",
+                        "unrecorded"
+                      ]
                     }
                   },
                   "required": [
                     "messageId",
                     "conversationId",
-                    "channel"
+                    "channel",
+                    "journal"
                   ]
                 }
               }

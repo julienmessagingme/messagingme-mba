@@ -1,5 +1,5 @@
 import Fastify from 'fastify';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { registerV1MessagesRcs, type V1MessagesRcsRouteDeps } from '../src/http/v1-messages-rcs';
 import type { DepsRcsLibre } from '../src/rcs/envoyer-libre';
 import type { ClesFiche, ModeCreation, ResolutionFiche } from '../src/api/fiche';
@@ -34,6 +34,8 @@ interface Monde {
   desabonne: boolean;
   agent: string | null;
   injoignable: boolean;
+  journalEchecs?: number;
+  filImpossible?: boolean;
 }
 
 const MONDE: Monde = {
@@ -48,6 +50,7 @@ const MONDE: Monde = {
 
 async function app(over: Partial<Monde> = {}, garde: PreHandler = cle) {
   const m: Monde = { ...MONDE, ...over };
+  let journalEchecsRestants = m.journalEchecs ?? 0;
   const envois: Array<{ waId: string; text: string }> = [];
   const enregistres: Array<{ conversationId: string; body: string; origine: OrigineMessage; type?: string; auteur: string | null; canal?: string }> = [];
   const prises: string[] = [];
@@ -82,12 +85,14 @@ async function app(over: Partial<Monde> = {}, garde: PreHandler = cle) {
     rcs,
     inbox: {
       ouvrirConversationDuContact: async (_t, contactId) => {
+        if (m.filImpossible) return null;
         const tel = m.fiches[contactId]?.phone;
         if (tel) ouverts.add(tel.replace(/\D/g, ''));
         journal.push(`ouvrir:${contactId}`);
         return 'conv-1';
       },
       recordOutbound: async (conversationId, body, _id, origine, type, _cat, _nom, auteur, canal) => {
+        if (journalEchecsRestants-- > 0) throw new Error('base indisponible');
         enregistres.push({ conversationId, body, origine, type, auteur: auteur ?? null, canal });
         journal.push(`inscrit:${conversationId}`);
       },
@@ -116,13 +121,42 @@ describe('POST /v1/messages/rcs', () => {
     const a = await app();
     const res = await post(a, { externalId: 'crm-7781', text: 'Bonjour' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ messageId: 'rcs-1', conversationId: 'conv-1', channel: 'rcs' });
+    expect(res.json()).toEqual({ messageId: 'rcs-1', conversationId: 'conv-1', channel: 'rcs', journal: 'recorded' });
     expect(a.envois).toEqual([{ waId: '33612345678', text: 'Bonjour' }]);
     expect(a.enregistres).toEqual([{ conversationId: 'conv-1', body: 'Bonjour', origine: 'api', type: 'rcs', auteur: null, canal: 'rcs' }]);
     expect((await a.usage.compteurs()).map((c) => c.operation)).toEqual(['messages.send']);
     // Un message simple ne fonde pas une relation : la fiche n'est jamais créée ici.
     expect(a.creations).toEqual(['jamais']);
     await a.server.close();
+  });
+
+  it('RCS public accepté sans journal : 200 explicite, un seul envoi fournisseur', async () => {
+    const journalErreur = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const a = await app({ journalEchecs: 2 });
+    try {
+      const res = await post(a, { contactId: C1, text: 'Bonjour' });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ messageId: 'rcs-1', conversationId: 'conv-1', channel: 'rcs', journal: 'unrecorded' });
+      expect(a.envois).toHaveLength(1);
+      expect(a.enregistres).toHaveLength(0);
+    } finally {
+      await a.server.close();
+      journalErreur.mockRestore();
+    }
+  });
+
+  it('RCS public accepté mais fil impossible à ouvrir : journal manquant explicite', async () => {
+    const journalErreur = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const a = await app({ filImpossible: true });
+    try {
+      const res = await post(a, { contactId: C1, text: 'Bonjour' });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ messageId: 'rcs-1', conversationId: null, channel: 'rcs', journal: 'unrecorded' });
+      expect(a.envois).toHaveLength(1);
+    } finally {
+      await a.server.close();
+      journalErreur.mockRestore();
+    }
   });
 
   it('🔴 « écrire PREND le fil » (§ 4), même pour une fiche qui n’a jamais écrit : ouvrir, PUIS prendre, PUIS inscrire', async () => {

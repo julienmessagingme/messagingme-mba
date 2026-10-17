@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
@@ -63,12 +63,14 @@ interface Monde {
   numeroSuspendu?: boolean;
   /** Meta refuse le contenu d'un message au format de Meta (lot 13, domaine 2). */
   metaRefuse?: boolean;
+  journalEchecs?: number;
 }
 
 const MONDE: Monde = { fiche: { id: C1 }, conversation: 'conv-1', sansFil: false, fenetreOuverte: true, desabonne: false, numeroDeLEspace: 'pn1', numeroDelie: false };
 
 function app(over: Partial<Monde> = {}) {
   const m: Monde = { ...MONDE, ...over };
+  let journalEchecsRestants = m.journalEchecs ?? 0;
   const envois: Array<{ to: string; text: string }> = [];
   // Les envois au format de Meta (`POST /v1/messages`) : ce qui part chez Meta, tel quel.
   const envoisMeta: Array<{ to: string; corps: Record<string, unknown> }> = [];
@@ -87,6 +89,7 @@ function app(over: Partial<Monde> = {}) {
         return tenant === 't1' && id === m.conversation ? { waId: '33612345678', lastInboundAt: null, windowOpen: m.fenetreOuverte } : null;
       },
       recordOutbound: async (_id, body, _msgId, origine, type, _cat, _name, sender) => {
+        if (journalEchecsRestants-- > 0) throw new Error('base indisponible');
         enregistres.push({ body, origine, auteur: sender ?? null, type });
       },
     },
@@ -154,7 +157,7 @@ describe('POST /v1/messages/whatsapp', () => {
     const { server, envois, enregistres, prises, resolutions } = app();
     const res = await post(server, { contactId: C1, text: 'bonjour' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ messageId: 'wamid.envoye', conversationId: 'conv-1', channel: 'whatsapp' });
+    expect(res.json()).toEqual({ messageId: 'wamid.envoye', conversationId: 'conv-1', channel: 'whatsapp', journal: 'recorded' });
     expect(envois).toEqual([{ to: '33612345678', text: 'bonjour' }]);
     // 🔴 L'ORIGINE EST LE SUJET DE LA MIGRATION 0166 ; `auteur` à null : aucun opérateur ne signe.
     expect(enregistres).toEqual([{ body: 'bonjour', origine: 'api', auteur: null, type: 'text' }]);
@@ -162,6 +165,26 @@ describe('POST /v1/messages/whatsapp', () => {
     expect(prises).toEqual(['33612345678']);
     expect(resolutions[0]!.tenant).toBe('t1');
     await server.close();
+  });
+
+  it('les deux routes WhatsApp publiques rendent un journal manquant sans faire réessayer le fournisseur', async () => {
+    const journalErreur = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      for (const { url, payload, id } of [
+        { url: URL_WA, payload: { contactId: C1, text: 'Bonjour' }, id: 'wamid.envoye' },
+        { url: '/v1/messages', payload: { contactId: C1, type: 'text', text: { body: 'Bonjour' } }, id: 'wamid.meta' },
+      ]) {
+        const { server, envois, envoisMeta, enregistres } = app({ journalEchecs: 2 });
+        const res = await post(server, payload, VALID, url);
+        expect(res.statusCode).toBe(200);
+        expect(res.json()).toMatchObject({ messageId: id, journal: 'unrecorded' });
+        expect(envois.length + envoisMeta.length).toBe(1);
+        expect(enregistres).toEqual([]);
+        await server.close();
+      }
+    } finally {
+      journalErreur.mockRestore();
+    }
   });
 
   it('🔴 un message simple ne CRÉE jamais de fiche : la route le demande à la résolution', async () => {
@@ -435,7 +458,7 @@ describe('POST /v1/messages (le corps de Meta tel quel)', () => {
     const { server, envoisMeta, enregistres, prises, resolutions } = app();
     const res = await post(server, IMAGE, VALID, URL_META);
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ messageId: 'wamid.meta', conversationId: 'conv-1', channel: 'whatsapp' });
+    expect(res.json()).toEqual({ messageId: 'wamid.meta', conversationId: 'conv-1', channel: 'whatsapp', journal: 'recorded' });
     expect(envoisMeta).toEqual([{ to: '33612345678', corps: { type: 'image', image: { link: 'https://exemple.fr/colis.jpg', caption: 'Votre colis' } } }]);
     expect(enregistres).toEqual([{ body: 'Votre colis', origine: 'api', auteur: null, type: 'image' }]);
     expect(prises).toEqual(['33612345678']);

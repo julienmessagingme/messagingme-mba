@@ -102,6 +102,7 @@ export const reponseMessageSimple = z.object({
   messageId: z.string(),
   conversationId: z.string().nullable(),
   channel: z.enum(['whatsapp', 'rcs']),
+  journal: z.enum(['recorded', 'unrecorded']),
 });
 
 const ouverture = z.enum(['whatsapp_template', 'whatsapp_session', 'rcs']);

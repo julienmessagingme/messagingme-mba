@@ -11,6 +11,7 @@ import { MetaApiError } from '../meta/errors';
 import { MESSAGE_RESOLUTION, normaliserCles, schemaClesFiche, type ClesFiche, type ModeCreation, type ResolutionFiche } from '../api/fiche';
 import { messageDeForme } from '../api/forme';
 import type { FilDuContact } from '../inbox/store.pg';
+import type { EtatJournalSortant } from '../inbox/journal-sortant';
 
 /**
  * API publique /v1 des messages dans la fenêtre de service de 24 h : `POST /v1/messages/whatsapp`, un texte, à une
@@ -79,6 +80,7 @@ export interface ReponseMessageSimple {
   messageId: string;
   conversationId: string | null;
   channel: 'whatsapp' | 'rcs';
+  journal: EtatJournalSortant;
 }
 
 /**
@@ -133,7 +135,7 @@ export function registerV1Messages(app: FastifyInstance, deps: V1MessagesRouteDe
       }
       throw err;
     }
-    if (!('refus' in res)) return reply.code(200).send({ messageId: res.messageId, conversationId, channel: 'whatsapp' } satisfies ReponseMessageSimple);
+    if (!('refus' in res)) return reply.code(200).send({ messageId: res.messageId, conversationId, channel: 'whatsapp', journal: res.journal } satisfies ReponseMessageSimple);
     return refuserLaReponse(reply, res.refus.motif);
   };
 

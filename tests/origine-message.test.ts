@@ -10,7 +10,7 @@ function faussePool() {
   const pool = {
     query: async (sql: string, params?: unknown[]) => {
       requetes.push({ sql, params: params ?? [] });
-      return { rows: [{ id: 'conv-1' }], rowCount: 1 };
+      return { rows: [{ id: 'conv-1', recorded: true }], rowCount: 1 };
     },
   } as unknown as Pool;
   return { pool, requetes };

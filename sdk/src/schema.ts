@@ -2923,6 +2923,8 @@ export interface operations {
                         conversationId: string | null;
                         /** @enum {string} */
                         channel: "whatsapp" | "rcs";
+                        /** @enum {string} */
+                        journal: "recorded" | "unrecorded";
                     };
                 };
             };
@@ -3033,6 +3035,8 @@ export interface operations {
                         conversationId: string | null;
                         /** @enum {string} */
                         channel: "whatsapp" | "rcs";
+                        /** @enum {string} */
+                        journal: "recorded" | "unrecorded";
                     };
                 };
             };
@@ -3143,6 +3147,8 @@ export interface operations {
                         conversationId: string | null;
                         /** @enum {string} */
                         channel: "whatsapp" | "rcs";
+                        /** @enum {string} */
+                        journal: "recorded" | "unrecorded";
                     };
                 };
             };

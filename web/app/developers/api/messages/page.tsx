@@ -47,7 +47,7 @@ function Messages() {
           ]}
         />
         <Liste>
-          <li>{t('Le message apparaît dans l’Inbox.', 'The message shows in the Inbox.')}</li>
+          <li>{t('Le message apparaît dans l’Inbox si journal vaut recorded.', 'The message appears in the Inbox when journal is recorded.')}</li>
           <li>{t('Il prend le fil : le scénario en cours s’arrête, l’agent de Meta cesse de répondre.', 'It takes the thread: the running scenario stops, the Meta agent stops replying.')}</li>
         </Liste>
         <Encadre sorte="attention">
@@ -62,6 +62,7 @@ function Messages() {
         <Sous>{reponse}</Sous>
         <Bloc legende="JSON">{json(EXEMPLES_REPONSES.messageEnvoye)}</Bloc>
         <p>{t('conversationId est toujours renseigné.', 'conversationId is always set.')}</p>
+        <p>{t('Après acceptation par le fournisseur, journal vaut unrecorded si l’écriture dans l’Inbox échoue encore après une reprise. Le statut reste 200 et messageId identifie le message : ne rejouez pas cet appel.', 'After the provider accepts the message, journal is unrecorded if the Inbox write still fails after one retry. The status remains 200 and messageId identifies the message: do not replay this call.')}</p>
         <Sous>{erreurs}</Sous>
         <p>{ordre}</p>
         <Erreurs
@@ -110,8 +111,8 @@ function Messages() {
         <Sous>{reponse}</Sous>
         <p>
           {t(
-            'Celle de POST /v1/messages/whatsapp, channel à rcs. conversationId vaut null dans un cas : le message est parti, mais la fiche a été bloquée ou supprimée entre-temps.',
-            'That of POST /v1/messages/whatsapp, with channel set to rcs. conversationId is null in one case: the message was sent, but the record was blocked or deleted in the meantime.',
+            'Celle de POST /v1/messages/whatsapp, channel à rcs. conversationId vaut null si le fil ne peut pas être ouvert après acceptation ; journal vaut alors unrecorded. Ne rejouez pas l’appel.',
+            'That of POST /v1/messages/whatsapp, with channel set to rcs. conversationId is null if the thread cannot be opened after acceptance; journal is then unrecorded. Do not replay the call.',
           )}
         </p>
         <Sous>{erreurs}</Sous>

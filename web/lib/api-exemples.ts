@@ -279,9 +279,10 @@ export interface MessageEnvoye {
   readonly messageId: string;
   readonly conversationId: string | null;
   readonly channel: 'whatsapp' | 'rcs';
+  readonly journal: 'recorded' | 'unrecorded';
 }
 
-const MESSAGE_ENVOYE: MessageEnvoye = { messageId: 'wamid.exemple-8412', conversationId: CONVERSATION_ID, channel: 'whatsapp' };
+const MESSAGE_ENVOYE: MessageEnvoye = { messageId: 'wamid.exemple-8412', conversationId: CONVERSATION_ID, channel: 'whatsapp', journal: 'recorded' };
 
 /** Une conversation lue (`GET /v1/conversations/{id}`), la forme d'une ligne de la liste. */
 const CONVERSATION_LUE = {

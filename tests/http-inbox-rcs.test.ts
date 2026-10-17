@@ -1,5 +1,5 @@
 import { jamaisDesabonne } from './consentement';
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
@@ -65,6 +65,25 @@ describe('Envoyer un RCS depuis l inbox', () => {
     expect(r.json().messageId).toBe('rcs-1');
     expect(journal).toEqual([{ body: 'Bonjour Julien', type: 'rcs', canal: 'rcs', sender: 'u1', origine: 'humain' }]);
     await a.close();
+  });
+
+  it('RCS accepté, journal indisponible : le fournisseur n’est appelé qu’une fois et la réponse prévient', async () => {
+    const journalErreur = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let envois = 0;
+    let ecritures = 0;
+    const { a } = app({
+      sendRcsFromInbox: async () => { envois += 1; return { messageId: 'rcs-1', apercu: 'Bonjour' }; },
+      inbox: { recordOutbound: async () => { ecritures += 1; throw new Error('base indisponible'); } },
+    });
+    try {
+      const res = await a.inject(envoi());
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ messageId: 'rcs-1', journal: 'unrecorded' });
+      expect([envois, ecritures]).toEqual([1, 2]);
+    } finally {
+      await a.close();
+      journalErreur.mockRestore();
+    }
   });
 
   /**

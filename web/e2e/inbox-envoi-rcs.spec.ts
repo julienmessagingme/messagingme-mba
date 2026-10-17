@@ -42,7 +42,7 @@ const MESSAGES_RCS = [
 
 async function mock(
   page: import('@playwright/test').Page,
-  opts: { windowOpen: boolean; rcsEnabled?: boolean; envois: string[]; corps?: Array<Record<string, unknown>>; refus?: string },
+  opts: { windowOpen: boolean; rcsEnabled?: boolean; envois: string[]; corps?: Array<Record<string, unknown>>; refus?: string; journal?: 'recorded' | 'unrecorded' },
 ) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
@@ -56,7 +56,7 @@ async function mock(
       if (opts.refus) {
         return route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: opts.refus }) });
       }
-      return json({ messageId: 'rcs-1' });
+      return json({ messageId: 'rcs-1', journal: opts.journal ?? 'recorded' });
     }
     if (url.split('?')[0]!.endsWith('/conversations')) return json({ conversations: CONVERSATIONS });
     if (url.includes('/messages') && !url.includes('/rcs-messages')) {
@@ -99,6 +99,17 @@ test.describe('Inbox : envoyer un RCS', () => {
     await page.getByTestId('inbox-rcs-send').click();
     await expect.poll(() => envois.length, { timeout: 10_000 }).toBe(1);
     expect(envois[0]).toBe('lib-1');
+  });
+
+  test('RCS accepté sans journal : le panneau se ferme et l’avertissement empêche un second clic', async ({ page }) => {
+    const envois: string[] = [];
+    await mock(page, { windowOpen: false, envois, journal: 'unrecorded' });
+    await ouvrirPanneau(page);
+    await page.getByTestId('inbox-rcs-select').selectOption('lib-1');
+    await page.getByTestId('inbox-rcs-send').click();
+    await expect(page.getByTestId('inbox-journal-warning')).toContainText('rcs-1');
+    await expect(page.getByTestId('inbox-rcs-panel')).toHaveCount(0);
+    expect(envois).toHaveLength(1);
   });
 
   test('🔴 réponse LIBRE : l opérateur écrit une phrase et elle part en RCS', async ({ page }) => {

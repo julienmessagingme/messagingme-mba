@@ -72,6 +72,7 @@ import { Modale } from '@/components/Modale';
 import { Squelette } from '@/components/Squelette';
 import { InboxDetail } from '@/components/InboxDetail';
 import { modeEffectifDesReglages } from '@/lib/repondeur';
+import type { ReponseEnvoiInteractif } from '@/lib/partage/journal-sortant';
 
 export default function InboxPage() {
   // Suspense : useSearchParams (deep-link ?c=) exige une frontière Suspense au build (Next 15).
@@ -1291,6 +1292,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
     && session.role !== 'admin'
     && session.role !== 'manager';
   const [error, setError] = useState<string | null>(null);
+  const [journalManquant, setJournalManquant] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   /**
    * LA TRADUCTION D'UN SORTANT (migration 0137), et ses deux états.
@@ -1650,10 +1652,12 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
     setError(null);
     try {
       // `text` est ce qui PART (traduit compris) ; `origine` ce que l'opérateur avait écrit.
-      await replyConversation(session.tenantId, conversation.id, text.trim(), traduction?.origine ?? null);
+      const resultat = await replyConversation(session.tenantId, conversation.id, text.trim(), traduction?.origine ?? null);
       setText('');
       setTraduction(null);
-      await load();
+      if (resultat.journal === 'unrecorded') setJournalManquant(resultat.messageId);
+      // L'envoi est déjà accepté : une panne de rafraîchissement ne doit pas devenir « Envoi impossible ».
+      await load().catch(() => {});
       onSent();
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Envoi impossible', 'Failed to send'));
@@ -1949,6 +1953,11 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
         <div ref={bottomRef} />
       </div>
 
+      {journalManquant && (
+        <p role="alert" data-testid="inbox-journal-warning" className="mx-4 mb-2 rounded-controle bg-alerte-50 px-3 py-2 text-sm text-alerte-700">
+          {t('Message accepté par le fournisseur, mais non enregistré dans l’Inbox. Ne le renvoyez pas. Identifiant :', 'Message accepted by the provider, but not recorded in the Inbox. Do not send it again. ID:')} {journalManquant}
+        </p>
+      )}
       {error && <p className="mx-4 mb-2 rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
       {/*
@@ -2078,7 +2087,12 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
           session={session}
           conversationId={conversation.id}
           onClose={() => setShowTemplate(false)}
-          onSent={async () => { setShowTemplate(false); await load(); onSent(); }}
+          onSent={async (resultat) => {
+            setShowTemplate(false);
+            if (resultat.journal === 'unrecorded') setJournalManquant(resultat.messageId);
+            await load().catch(() => {});
+            onSent();
+          }}
         />
       )}
 
@@ -2087,7 +2101,12 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
           tenantId={session.tenantId}
           conversationId={conversation.id}
           onClose={() => setShowRcs(false)}
-          onSent={async () => { setShowRcs(false); await load(); onSent(); }}
+          onSent={async (resultat) => {
+            setShowRcs(false);
+            if (resultat.journal === 'unrecorded') setJournalManquant(resultat.messageId);
+            await load().catch(() => {});
+            onSent();
+          }}
         />
       )}
 
@@ -2226,7 +2245,7 @@ function TemplateSendPanel({
   session: Session;
   conversationId: string;
   onClose: () => void;
-  onSent: () => void | Promise<void>;
+  onSent: (resultat: ReponseEnvoiInteractif) => void | Promise<void>;
 }) {
   const t = useT();
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
@@ -2286,7 +2305,7 @@ function TemplateSendPanel({
     setBusy(true);
     setError(null);
     try {
-      await sendTemplateToConversation(session.tenantId, conversationId, {
+      const resultat = await sendTemplateToConversation(session.tenantId, conversationId, {
         templateName: sel.name,
         language: sel.language,
         bodyParams: Array.from({ length: varCount }, (_, i) => vars[i] ?? ''),
@@ -2300,7 +2319,7 @@ function TemplateSendPanel({
           }
           : {}),
       });
-      await onSent();
+      await onSent(resultat);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Envoi impossible', 'Failed to send'));
     } finally {

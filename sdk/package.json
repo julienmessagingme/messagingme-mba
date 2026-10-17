@@ -1,6 +1,6 @@
 {
   "name": "@messagingme/sdk",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "TypeScript client for the Messaging Me API: typed calls, typed errors, webhook signature verification.",
   "license": "MIT",
   "type": "module",

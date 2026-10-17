@@ -10,6 +10,7 @@
 
 import { request, requestBlob } from '../http';
 import { lireDetail, type DetailConversation } from '../inbox-detail';
+import type { ReponseEnvoiInteractif } from '../partage/journal-sortant';
 
 // --- Inbox ---
 
@@ -595,7 +596,7 @@ export function replyConversation(
    * dans les deux sens.
    */
   redactionOrigine?: string | null,
-): Promise<{ messageId: string }> {
+): Promise<ReponseEnvoiInteractif> {
   return request(`/tenants/${tenantId}/conversations/${conversationId}/reply`, {
     method: 'POST',
     body: JSON.stringify(redactionOrigine ? { text, redactionOrigine } : { text }),
@@ -611,7 +612,7 @@ export interface SendTemplateInput {
   /** Catégorie du template (pour les stats du dashboard) : MARKETING | UTILITY. */
   templateCategory?: string;
 }
-export function sendTemplateToConversation(tenantId: string, conversationId: string, input: SendTemplateInput): Promise<{ messageId: string }> {
+export function sendTemplateToConversation(tenantId: string, conversationId: string, input: SendTemplateInput): Promise<ReponseEnvoiInteractif> {
   return request(`/tenants/${tenantId}/conversations/${conversationId}/send-template`, {
     method: 'POST',
     body: JSON.stringify(input),

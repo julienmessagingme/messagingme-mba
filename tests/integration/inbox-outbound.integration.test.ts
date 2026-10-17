@@ -8,7 +8,7 @@ import { PgStatsStore } from '../../src/stats/store.pg';
 const url = process.env.DATABASE_URL ?? '';
 
 // Pièce 0 : les envois campagne/workflow doivent atterrir dans conversation_messages (fil inbox + transcript).
-describe.skipIf(!url)('PgInboxStore.recordOutboundByWaId (Supabase)', () => {
+describe.skipIf(!url)('PgInboxStore : journal sortant', () => {
   let pool: Pool;
   let tenantId: string;
 
@@ -56,6 +56,33 @@ describe.skipIf(!url)('PgInboxStore.recordOutboundByWaId (Supabase)', () => {
     await store.recordOutboundByWaId(tenantId, waId, { body: 'A', messageId: 'wamid-DUP', templateName: 'promo', origine: 'campagne' });
     const convs = await conversationId(waId);
     expect(await countMessages(convs[0]!)).toBe(1);
+  });
+
+  it('réponse interactive : un INSERT refusé ne modifie pas le fil, puis le même identifiant se rejoue une seule fois', async () => {
+    const store = new PgInboxStore(pool);
+    const id = (await pool.query<{ id: string }>(
+      `insert into conversations (tenant_id, wa_id, last_preview, last_direction)
+       values ($1, '33600000801', 'avant', 'in') returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    const messageId = `wamid-atomic-${tenantId}`;
+    // La seconde requête de l'ancienne implémentation échouait sur cet UUID invalide après avoir déjà changé le fil.
+    await expect(store.recordOutbound(id, 'Bonjour', messageId, 'humain', 'text', null, null, 'pas-un-uuid')).rejects.toThrow();
+    const apresEchec = (await pool.query<{ last_preview: string; last_direction: string }>(
+      'select last_preview, last_direction from conversations where id = $1', [id],
+    )).rows[0]!;
+    expect(apresEchec).toEqual({ last_preview: 'avant', last_direction: 'in' });
+    expect(await countMessages(id)).toBe(0);
+
+    await store.recordOutbound(id, 'Bonjour', messageId, 'humain');
+    // Un commit dont la réponse se perd peut être retenté après un entrant plus récent : le rejeu ne le masque pas.
+    await pool.query(`update conversations set last_preview = 'entrant récent', last_direction = 'in' where id = $1`, [id]);
+    await store.recordOutbound(id, 'Bonjour', messageId, 'humain');
+    expect(await countMessages(id)).toBe(1);
+    const apresRejeu = (await pool.query<{ last_preview: string; last_direction: string }>(
+      'select last_preview, last_direction from conversations where id = $1', [id],
+    )).rows[0]!;
+    expect(apresRejeu).toEqual({ last_preview: 'entrant récent', last_direction: 'in' });
   });
 
   it('inbound PUIS outbound sur le même wa_id -> une seule conversation, les deux messages', async () => {
