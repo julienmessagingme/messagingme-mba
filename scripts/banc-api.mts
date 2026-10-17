@@ -19,7 +19,15 @@
  *   ce que le pool de réception accuse (au premier banc, deux connexions à 10 ms de la base en accusaient environ 150
  *   par seconde ; quatre depuis) ;
  * - `plafond` : un palier au-dessus du plafond global, l'API relancée avec `API_PLAFOND_GLOBAL_PAR_10S` posé : les Free
- *   doivent recevoir le 429 de la plateforme en premier, et la ligne chaude du compteur se mesure.
+ *   doivent recevoir le 429 de la plateforme en premier, et la ligne chaude du compteur se mesure ;
+ * - `accuses` : des accusés de VRAIS messages (`scripts/banc-accuses.ts`, point P1 de l'audit du 2026-10-17). Des
+ *   numéros qui envoient chacun à `BANC_ACC_PAR_MINUTE` (80, le plafond par numéro), avec pour chaque message `sent`,
+ *   puis `delivered` une à trois secondes après, puis `read` pour 60 % entre 20 s et 2 min, et des messages entrants à
+ *   `BANC_ACC_ENTRANTS_PAR_S` à côté. Par paliers de numéros (`BANC_ACC_PALIERS`), `BANC_ACC_PALIER_S` chacun ; après
+ *   chaque palier, la file se vide, puis le retard de bout en bout se lit dans pg-boss. Le verdict : le plus grand
+ *   nombre de numéros dont le p95 reste sous `BANC_ACC_OBJECTIF_S` (120 s, l'objectif de Julien) ;
+ * - `panne` : `BANC_ACC_NUMEROS` numéros pendant `BANC_ACC_DUREE_S`, pendant que `banc-api.sh` arrête le worker puis le
+ *   relance : le pic de la file, le temps de la résorber, et le retard des entrants pendant ce temps.
  *
  * 🔴 IL NE TOUCHE JAMAIS LA PRODUCTION : `BANC_CONFIRME=1` est exigé, seule une `DATABASE_URL` qui se déclare
  * jetable passe (`scripts/garde-banc.ts`), et l'API visée doit répondre sur un nom du banc. Le montage, la mesure et le démontage sont dans `scripts/banc-api.sh`,
@@ -44,6 +52,10 @@ import { CLE_REFUS_GLOBAL, MESSAGE_PLATEFORME_SATUREE } from '../src/auth/plafon
 import { sendTelegram } from '../src/ops/telegram';
 import { pgSsl } from '../src/db/ssl';
 import { exigerBaseJetable } from './garde-banc';
+import {
+  balayagesConversations, corpsAccuse, enAttente, mesurerRemiseMba, palierTenu, positionWal, retardFile, semerAccuses,
+  walEcritDepuis, wamidDe,
+} from './banc-accuses';
 
 const API = process.env.BANC_API ?? '';
 const URL_BASE = process.env.DATABASE_URL ?? '';
@@ -57,6 +69,19 @@ const PALIER_MS = Number(process.env.BANC_PALIER_S ?? 60) * 1000;
 const WEBHOOKS_PAR_S = Number(process.env.BANC_WEBHOOKS_PAR_S ?? 5);
 const STATUTS_PAR_S = Number(process.env.BANC_STATUTS_PAR_S ?? 300);
 const SCHEMA_BOSS = process.env.PGBOSS_SCHEMA ?? 'pgboss';
+const ACC_PALIERS = (process.env.BANC_ACC_PALIERS ?? '4,6,8,10,12,14').split(',').map(Number).filter((n) => n > 0);
+const ACC_PALIER_MS = Number(process.env.BANC_ACC_PALIER_S ?? 480) * 1000;
+/** Le débit d'un numéro : `PHONE_RATE_PER_MINUTE_MAX`, 80 messages par minute tous chemins confondus. */
+const ACC_PAR_MINUTE = Number(process.env.BANC_ACC_PAR_MINUTE ?? 80);
+const ACC_PART_LUS = 0.6;
+const ACC_OBJECTIF_S = Number(process.env.BANC_ACC_OBJECTIF_S ?? 120);
+const ACC_ENTRANTS_PAR_S = Number(process.env.BANC_ACC_ENTRANTS_PAR_S ?? 2);
+const ACC_NUMEROS_PANNE = Number(process.env.BANC_ACC_NUMEROS ?? 6);
+const ACC_PANNE_MS = Number(process.env.BANC_ACC_DUREE_S ?? 1500) * 1000;
+/** Les numéros de la panne : un autre jeu que ceux des paliers, pour que leurs messages n'aient reçu aucun accusé. */
+const ACC_PREMIER_PANNE = 51;
+/** Le plus long qu'on attend une file avant de la lire : au-delà, ses restants se rapportent comme tels. */
+const ACC_VIDAGE_MAX_MS = 15 * 60_000;
 /** Les alertes de la veille partent sur Telegram, préfixées, seulement si demandé (essai réel 91). */
 const TELEGRAM = process.env.BANC_TELEGRAM === '1';
 
@@ -313,6 +338,165 @@ async function plafond(pool: Pool): Promise<void> {
   await veilleDuBanc(pool)();
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// LES ACCUSÉS DE VRAIS MESSAGES (épreuves `accuses` et `panne`, `scripts/banc-accuses.ts`).
+// ---------------------------------------------------------------------------------------------------------------
+
+/** L'instant de la base : les fenêtres se lisent sur l'horloge de pg-boss, jamais sur celle du conteneur du banc. */
+const maintenantBase = async (pool: Pool): Promise<Date> => (await pool.query<{ t: Date }>('select now() as t')).rows[0]!.t;
+const secondesUnix = (): number => Math.floor(Date.now() / 1000);
+
+/** Les accusés programmés (`delivered`, `read`) et les envois en vol, attendus avant de conclure. */
+const programmes = new Set<ReturnType<typeof setTimeout>>();
+const enVolAccuses: Array<Promise<void>> = [];
+function programmer(ms: number, f: () => void): void {
+  const t = setTimeout(() => { programmes.delete(t); f(); }, ms);
+  programmes.add(t);
+}
+/** Les accusés émis depuis le dernier relevé : comparés à ce que la file a reçu, ils disent qu'aucun ne s'est perdu. */
+let accusesEmis = 0;
+const envoyerAccuse = (k: number, j: number, statut: 'sent' | 'delivered' | 'read'): void => {
+  accusesEmis += 1;
+  enVolAccuses.push(poster(corpsAccuse(k, j, statut, secondesUnix())));
+};
+
+/**
+ * Fait envoyer `numeros` à `ACC_PAR_MINUTE` messages par minute pendant `dureeMs` : pour chaque message, son `sent`
+ * tout de suite, son `delivered` une à trois secondes après, son `read` pour 60 % entre 20 s et 2 min ; et des
+ * messages entrants à côté, vers les espaces de `semer`. `curseurs` garde le prochain message de chaque numéro d'un
+ * appel à l'autre : un accusé déjà reçu ne referait rien (la livraison ne recule jamais) et fausserait la mesure.
+ */
+async function emettre(numeros: number[], curseurs: Map<number, number>, dureeMs: number): Promise<void> {
+  const fin = Date.now() + dureeMs;
+  const reste = new Map<number, number>(numeros.map((k) => [k, 0]));
+  let resteEntrants = 0;
+  let dernier = Date.now();
+  while (Date.now() < fin) {
+    // Le dû se calcule sur le temps réellement écoulé : un tick de `setTimeout` dure plus de 100 ms, et un dû fixe par
+    // tick ferait tomber le débit sous 80 par minute, donc la mesure du côté optimiste.
+    const maintenant = Date.now();
+    const ecoule = maintenant - dernier;
+    dernier = maintenant;
+    for (const k of numeros) {
+      let du = reste.get(k)! + (ACC_PAR_MINUTE * ecoule) / 60_000;
+      while (du >= 1) {
+        const j = curseurs.get(k) ?? 0;
+        curseurs.set(k, j + 1);
+        envoyerAccuse(k, j, 'sent');
+        programmer(1_000 + Math.random() * 2_000, () => envoyerAccuse(k, j, 'delivered'));
+        if (Math.random() < ACC_PART_LUS) programmer(20_000 + Math.random() * 100_000, () => envoyerAccuse(k, j, 'read'));
+        du -= 1;
+      }
+      reste.set(k, du);
+    }
+    resteEntrants += (ACC_ENTRANTS_PAR_S * ecoule) / 1000;
+    while (resteEntrants >= 1) { enVolAccuses.push(poster(webhookEntrant(1 + Math.floor(Math.random() * ESPACES)))); resteEntrants -= 1; }
+    await attendre(100);
+  }
+}
+
+/** Attend que la file des accusés n'ait plus rien en attente, au plus `ACC_VIDAGE_MAX_MS`. Rend la durée attendue. */
+async function attendreVidage(pool: Pool): Promise<number> {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ACC_VIDAGE_MAX_MS) {
+    if (await enAttente(pool, SCHEMA_BOSS, 'webhook-status') === 0) return Date.now() - t0;
+    await attendre(2_000);
+  }
+  return Date.now() - t0;
+}
+
+/** Combien de messages semer par numéro pour `dureeMs` d'émission, avec une marge. */
+const messagesPour = (dureeMs: number): number => Math.ceil((dureeMs / 60_000) * ACC_PAR_MINUTE * 1.15) + 20;
+
+async function accuses(pool: Pool): Promise<void> {
+  const numerosMax = Math.max(...ACC_PALIERS);
+  const messages = messagesPour(ACC_PALIERS.length * ACC_PALIER_MS);
+  dire(`semis : ${numerosMax} numeros, ${messages} messages chacun (destinataire, envoi, message sortant)`);
+  dire(`${await semerAccuses(pool, 1, numerosMax, messages)} messages semes`);
+  const curseurs = new Map<number, number>();
+  const lignes: Array<{ n: number; tenu: boolean }> = [];
+  for (const n of ACC_PALIERS) {
+    mesures = [];
+    accusesEmis = 0;
+    const numeros = Array.from({ length: n }, (_, i) => i + 1);
+    const wal = await positionWal(pool);
+    const balayages = await balayagesConversations(pool);
+    const de = await maintenantBase(pool);
+    dire(`=== ${n} numeros a ${ACC_PAR_MINUTE} messages/min pendant ${ACC_PALIER_MS / 1000} s, ${ACC_ENTRANTS_PAR_S} entrants/s ===`);
+    await emettre(numeros, curseurs, ACC_PALIER_MS);
+    const a = await maintenantBase(pool);
+    const emis = accusesEmis;
+    const enFin = await enAttente(pool, SCHEMA_BOSS, 'webhook-status');
+    const vidage = await attendreVidage(pool);
+    const st = await retardFile(pool, SCHEMA_BOSS, 'webhook-status', de, a);
+    const dernierQuart = await retardFile(pool, SCHEMA_BOSS, 'webhook-status', new Date(a.getTime() - ACC_PALIER_MS / 4), a);
+    const ent = await retardFile(pool, SCHEMA_BOSS, 'webhook', de, a);
+    const reception = mesures.filter((m) => m.famille === 'reception');
+    // Tout ce qui n'est pas un 200 est un accusé perdu : un 403 ou un 429 ne charge pas la file, et le palier
+    // paraîtrait tenu sur un travail qu'il n'a pas reçu.
+    const refus = reception.filter((m) => m.statut !== 200).length;
+    const tenu = palierTenu(st, dernierQuart, ACC_OBJECTIF_S, refus);
+    const apres = await balayagesConversations(pool);
+    lignes.push({ n, tenu });
+    dire(`accuses emis ${emis} | recus par la file ${st.termines + st.restants} | ${st.restants} non termines | ${st.reprises} reprises`);
+    dire(`retard p50 ${st.p50} s, p95 ${st.p95} s, max ${st.max} s | dernier quart p95 ${dernierQuart.p95} s | en attente a la fin ${enFin} | vide ${Math.round(vidage / 1000)} s apres`);
+    dire(`entrants ${ent.termines} | retard p95 ${ent.p95} s | reception p95 ${quantile(reception.map((m) => m.ms), 0.95)} ms, ${refus} refus | WAL ${await walEcritDepuis(pool, wal) ?? '?'} Mo`);
+    if (balayages && apres) dire(`conversations lues en entier : ${apres.balayages - balayages.balayages} fois, ${apres.lignes - balayages.lignes} lignes`);
+    dire(tenu ? `TENU (p95 <= ${ACC_OBJECTIF_S} s, dernier quart compris)` : `NON TENU (objectif ${ACC_OBJECTIF_S} s)`);
+  }
+  await Promise.all(enVolAccuses);
+  const premiereCasse = lignes.findIndex((l) => !l.tenu);
+  const tenus = premiereCasse === -1 ? lignes[lignes.length - 1]?.n ?? 0 : premiereCasse === 0 ? 0 : lignes[premiereCasse - 1]!.n;
+  console.log('');
+  dire(`VERDICT : ${tenus} numeros a plein debit en meme temps tiennent l objectif de ${ACC_OBJECTIF_S} s ${premiereCasse === -1 ? '(AUCUN palier n a casse : monter BANC_ACC_PALIERS)' : ''}`);
+  const remise = await mesurerRemiseMba(pool, wamidDe(1, 0));
+  dire(remise
+    ? `remise de l agent de Meta (update conversations par accuse) : ${remise.sansIndexMs} ms sans index, ${remise.avecIndexMs} ms avec un index partiel (transaction annulee)`
+    : 'remise de l agent de Meta : mesure impossible');
+  await attendre(65_000); // le dernier vidage de la mesure de l'API
+  await rapportServeur(pool);
+}
+
+async function panne(pool: Pool): Promise<void> {
+  const messages = messagesPour(ACC_PANNE_MS);
+  // La file vide d'abord : le semis efface ceux d'avant, et un worker encore occupé sur leurs lignes attendrait ses verrous.
+  await attendreVidage(pool);
+  await semerAccuses(pool, ACC_PREMIER_PANNE, ACC_NUMEROS_PANNE, messages);
+  const numeros = Array.from({ length: ACC_NUMEROS_PANNE }, (_, i) => ACC_PREMIER_PANNE + i);
+  mesures = [];
+  // La ligne que `banc-api.sh` attend pour arrêter puis relancer le worker : le semis est fini, l'émission commence.
+  dire(`EMISSION DEBUT : ${ACC_NUMEROS_PANNE} numeros pendant ${ACC_PANNE_MS / 1000} s`);
+  const releve: Array<{ t: number; n: number; le: Date }> = [];
+  const t0 = Date.now();
+  let actif = true;
+  const echantillonner = (async () => {
+    while (actif) {
+      releve.push({ t: Math.round((Date.now() - t0) / 1000), n: await enAttente(pool, SCHEMA_BOSS, 'webhook-status'), le: await maintenantBase(pool) });
+      await attendre(5_000);
+    }
+  })();
+  await emettre(numeros, new Map(), ACC_PANNE_MS);
+  await attendreVidage(pool);
+  actif = false;
+  await echantillonner;
+  await Promise.all(enVolAccuses);
+  for (const r of releve.filter((_, i) => i % 6 === 0)) dire(`t=${r.t} s : ${r.n} accuses en attente`);
+  const pic = releve.reduce((m, r) => (r.n > m.n ? r : m), releve[0]!);
+  // La file est résorbée quand elle redescend au niveau d'un fonctionnement normal : quelques secondes d'arrivées.
+  const seuil = Math.max(10, ACC_NUMEROS_PANNE * 20);
+  const resorbee = releve.find((r) => r.t > pic.t && r.n <= seuil);
+  dire(`pic : ${pic.n} accuses en attente a t=${pic.t} s | resorbee ${resorbee ? `a t=${resorbee.t} s, soit ${resorbee.t - pic.t} s apres le pic` : 'PAS avant la fin de la mesure'}`);
+  if (resorbee) {
+    // Depuis le début de l'émission : les pires entrants sont ceux arrivés pendant l'arrêt du worker.
+    const pendant = await retardFile(pool, SCHEMA_BOSS, 'webhook', releve[0]!.le, resorbee.le);
+    dire(`entrants de l emission a la resorption : ${pendant.termines} | retard p95 ${pendant.p95} s, max ${pendant.max} s`);
+  }
+  const refus = mesures.filter((m) => m.famille === 'reception' && m.statut !== 200).length;
+  dire(`reception : ${refus} refus sur ${mesures.filter((m) => m.famille === 'reception').length}`);
+  await attendre(65_000); // le dernier vidage de la mesure de l'API
+  await rapportServeur(pool);
+}
+
 async function main(): Promise<void> {
   garde();
   // Le TLS de l'application : rien sur le Postgres du banc (`DB_SSL=off`), vérifié sur une base managée.
@@ -322,7 +506,9 @@ async function main(): Promise<void> {
     else if (EPREUVE === 'paliers') await paliers(pool);
     else if (EPREUVE === 'statuts') await statuts(pool);
     else if (EPREUVE === 'plafond') await plafond(pool);
-    else throw new Error('BANC_EPREUVE : semer, paliers, statuts ou plafond');
+    else if (EPREUVE === 'accuses') await accuses(pool);
+    else if (EPREUVE === 'panne') await panne(pool);
+    else throw new Error('BANC_EPREUVE : semer, paliers, statuts, plafond, accuses ou panne');
   } finally {
     await pool.end();
     // Les alertes de la veille partent sans être attendues : leur laisser le temps d'arriver.

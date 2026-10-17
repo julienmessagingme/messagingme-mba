@@ -16,6 +16,11 @@
 #   adresse sur une ligne, jamais en argument (le mot de passe se lirait dans `ps`). Elle doit se déclarer jetable
 #   (`scripts/garde-banc.ts`), le TLS y est vérifié (`BANC_CA`, défaut `certs/scaleway-mm-banc.crt`, dans l'image), et
 #   sa latence est la vraie : `BANC_DELAI_MS` ne s'y applique pas.
+#   BANC_CA_FICHIER=chemin : le certificat de la base existante, copié dans les sources avant la construction (une base
+#   jetable neuve n'a pas son certificat dans le dépôt) ; il remplace BANC_CA.
+#   Épreuves `accuses` et `panne` (`scripts/banc-accuses.ts`, point P1 de l'audit du 2026-10-17) : leurs réglages
+#   `BANC_ACC_*` se passent après sudo comme les autres (`scripts/banc-api.mts`). Pendant `panne`, ce script arrête le
+#   worker `BANC_PANNE_APRES_S` secondes (300) après le début de l'émission, et le relance `BANC_PANNE_DUREE_S` (600) après.
 #   ⚠️ sudo efface l'environnement : ces variables se passent APRÈS sudo, `sudo BANC_PLAFOND_10S=700 bash banc-api.sh ...`.
 #
 # 🔴 NE TOUCHE PAS LA PRODUCTION : tout porte l'étiquette banc=api14 et le préfixe banc14-, sur un réseau à part
@@ -50,6 +55,10 @@ if [ -n "$BASE_FICHIER" ]; then echo "== montage du banc sur $SHA (base existant
 rm -rf "$D/src-banc" && mkdir -p "$D" "$R"
 git clone -q https://github.com/julienmessagingme/messagingme-mba.git "$D/src-banc"
 git -C "$D/src-banc" checkout -q "$SHA"
+if [ -n "${BANC_CA_FICHIER:-}" ]; then
+  cp "$BANC_CA_FICHIER" "$D/src-banc/certs/banc-ca.crt"
+  CA=certs/banc-ca.crt
+fi
 docker build -q -t "$IMG" "$D/src-banc" >/dev/null
 docker network create --label "$LBL" "$NET" >/dev/null
 
@@ -123,6 +132,30 @@ STATS=$!
 echo "== semer"; jouer -e BANC_EPREUVE=semer | tee "$R/semer.log"
 if [[ "$EPREUVES" == *,paliers,* ]]; then echo "== paliers $PALIERS"; jouer -e BANC_EPREUVE=paliers -e BANC_PALIERS="$PALIERS" | tee "$R/paliers.log"; fi
 if [[ "$EPREUVES" == *,statuts,* ]]; then echo "== rafale d'accusés"; jouer -e BANC_EPREUVE=statuts | tee "$R/statuts.log"; fi
+# Les réglages BANC_ACC_* passent au conteneur du banc : `docker run -e NOM` reprend la valeur de ce shell.
+ACC=()
+for v in BANC_ACC_PALIERS BANC_ACC_PALIER_S BANC_ACC_PAR_MINUTE BANC_ACC_OBJECTIF_S BANC_ACC_ENTRANTS_PAR_S BANC_ACC_NUMEROS BANC_ACC_DUREE_S; do
+  if [ -n "${!v:-}" ]; then ACC+=(-e "$v"); fi
+done
+if [[ "$EPREUVES" == *,accuses,* ]]; then echo "== accusés de vrais messages"; jouer -e BANC_EPREUVE=accuses "${ACC[@]}" | tee "$R/accuses.log"; fi
+if [[ "$EPREUVES" == *,panne,* ]]; then
+  echo "== panne du worker pendant l'émission"
+  if [ $(( ${BANC_PANNE_APRES_S:-300} + ${BANC_PANNE_DUREE_S:-600} + 60 )) -gt "${BANC_ACC_DUREE_S:-1500}" ]; then
+    echo "⚠️ BANC_ACC_DUREE_S (${BANC_ACC_DUREE_S:-1500} s) laisse moins d'une minute d'émission après la relance du worker"
+  fi
+  jouer -e BANC_EPREUVE=panne "${ACC[@]}" >"$R/panne.log" 2>&1 &
+  JOUEUR=$!
+  until grep -q 'EMISSION DEBUT' "$R/panne.log" 2>/dev/null; do
+    kill -0 "$JOUEUR" 2>/dev/null || { echo "le banc de la panne s'est arrêté avant d'émettre"; cat "$R/panne.log"; exit 1; }
+    sleep 2
+  done
+  sleep "${BANC_PANNE_APRES_S:-300}"
+  echo "$(date -u +%T) worker arrêté"; docker stop banc14-worker >/dev/null
+  sleep "${BANC_PANNE_DUREE_S:-600}"
+  echo "$(date -u +%T) worker relancé"; docker start banc14-worker >/dev/null
+  wait "$JOUEUR" || echo "⚠️ le banc de la panne a fini en échec (code $?), voir $R/panne.log"
+  cat "$R/panne.log"
+fi
 
 # Le plafond global posé à la valeur recommandée, puis un palier une fois et demie au-dessus.
 N=$(grep -o 'API_PLAFOND_GLOBAL_PAR_10S=[0-9]*' "$R/paliers.log" 2>/dev/null | tail -1 | cut -d= -f2 || true)
