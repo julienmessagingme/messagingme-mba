@@ -58,6 +58,20 @@ d'un modèle par `waba-v2.360dialog.io/messages` ET par MM Lite (`/marketing_mes
 - 🟡 **Sa base passe en gamme production au premier vrai client HubSpot** (DB-DEV-S aujourd'hui, sans engagement de
   service, choix de Julien pour un portail cobaye).
 
+## 🟠 L'index de la remise de l'agent de Meta : chaque accusé relit TOUTE la table `conversations` (banc du 2026-10-17)
+
+- **Le constat** : `consommerReleaseMba` (`src/inbox/store.pg.ts`), appelé pour CHAQUE accusé de Meta, fait
+  `update conversations ... where release_mba_apres_message = $1`, colonne sans index (`0149_release_mba_apres_statut.sql`
+  le dit délibéré, sur l'hypothèse fausse qu'une ligne serait déjà désignée) : une lecture complète de la table par
+  accusé. Sans effet aujourd'hui (28 conversations en production, mesuré le 2026-10-17), il borne la file des statuts
+  dès qu'un client a des dizaines de milliers de conversations : au banc (53 000 conversations), 4,8 à 7,6 ms par
+  accusé sans index, 0,013 ms avec, et la capacité passe d'environ 16 numéros à plein débit à au moins 24.
+- **Le correctif** : une migration `-- migrate: no-transaction`, `create index concurrently if not exists` sur
+  `conversations (release_mba_apres_message) where release_mba_apres_message is not null` (il sert la requête parce qu'une
+  égalité implique `is not null`, ce que le planificateur prouve seul ; vu au banc, 0,013 ms), relue en base après
+  (`indisvalid`), avec un test qui tient le prédicat. À poser tant que la table est petite : la construction est
+  instantanée. Le commentaire de 0149 se corrige avec. **En attente de l'accord de Julien.**
+
 ## 🔴 Lot 2 du bilan des audits : la reprise après sinistre, ce qui reste (2026-10-14)
 
 L'exercice de restauration est fait et réussi (`DEPLOY.md` § Restauration : 29 secrets sur 29 déchiffrés sur une copie

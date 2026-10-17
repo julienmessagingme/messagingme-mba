@@ -630,7 +630,7 @@ mesure avant d'ouvrir le site, et on repose les chiffres. Rien de ce qui suit ne
 | `DB_POOL_MAX` (API) | 10 | `docker-compose.yml` | budget du pooler Supabase (§ 7.5) | ✅ **10 par copie à la cible** (2026-10-15) : déclaré dans `ops/scaleway/conteneur-api.json`, tenu par le budget de `tests/deploy-scaleway.test.ts` |
 | `DB_POOL_RECEPTION_MAX` | 4 | `docker-compose.yml`, minimum tenu par `tests/budget-pooler.test.ts` | à 10 ms, deux connexions accusaient environ 150 webhooks/s | ✅ **4 suffit à la cible** : une rafale de 300 accusés/s y passe à 83 ms au p95 (2026-10-14), à 49 ms sur la vraie gamme (2026-10-15) |
 | `API_KEY_PREFILTRE_MAX` | 600 / min | défaut du code | après un démarrage, chaque clé repasse une fois par ce budget | Indépendant de la latence ; il est PAR COPIE, donc N copies en font N fois 600 |
-| Concurrence de `webhook-status` | 1 | `src/worker.ts` | protège la base | Mesurée à environ 11 accusés/s à 10 ms, puis **27,8 accusés/s à la cible** (2026-10-14) : la relever se décide sur ce chiffre |
+| Concurrence de `webhook-status` | 1 | `src/worker.ts` | protège la base | ✅ **Remesurée avec de VRAIS accusés le 2026-10-17** (DB-PRO2-XXS jetable) : environ **16 numéros à plein débit** (53 accusés/s) sans index sur `conversations.release_mba_apres_message`, **au moins 24** (80/s, limite non atteinte) avec. Les 27,8 accusés/s du 14 octobre mesuraient des accusés sans effet. La relever ne se décide qu'après cet index (`todo.md`) |
 
 **Les chiffres de référence, mesurés le 2026-10-12** (`docs/JOURNAL-TECHNIQUE.md`, même date) : 150 appels/s tenus
 (p95 de 146 ms), 200 en rupture (p95 de 9,4 s), une rafale de 300 accusés/s absorbée par quatre connexions (p95 de
@@ -644,7 +644,8 @@ d'Amsterdam (DB-DEV-M, 150 connexions), TLS vérifié, environ 1 ms : **300 appe
 rupture à 400. La borne est le pool de l'API (dix connexions), pas le processeur (53 % au pic) : des copies en plus
 ajoutent de la capacité, jusqu'à la limite de la base, que ce banc n'a pas atteinte. La réception de Meta reste à
 24 ms au p95 en rupture, une rafale de 300 accusés/s passe à 83 ms avec le pool de réception de quatre, et la file des
-statuts traite 27,8 accusés/s. ⚠️ Au-delà de la capacité, le plafond garde l'ordre (« Free d'abord » tenu) mais pas la
+statuts traite 27,8 accusés/s (des accusés d'identifiants inexistants : remesurée avec de vrais messages le 2026-10-17,
+§ 11). ⚠️ Au-delà de la capacité, le plafond garde l'ordre (« Free d'abord » tenu) mais pas la
 latence : p95 de 20 s à 315 appels/s plafond posé, la ligne unique du compteur global en étant la cause probable
 (`todo.md`).
 
@@ -991,6 +992,12 @@ geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose bu
 - **Le plafond global mesuré en surcharge, avec le nombre de copies prévu**, avant de le poser plus haut : latence des
   `429`, attente du pool, santé des webhooks, et la contention de sa ligne unique (`api.zz-plateforme`), cause
   probable du p95 de 3,3 s du 15 octobre, jamais isolée.
+- ✅ **Fait le 2026-10-17 sur une base DB-PRO2-XXS et une machine jetables** (journal, même date) : sans index, environ 16
+  numéros à plein débit tiennent les 2 minutes de Julien (p95 de 86 s à 16, 285 s à 20, 596 s à 24) ; avec un index
+  partiel sur `conversations.release_mba_apres_message`, 24 tiennent à 33 s, limite non atteinte. Une panne du worker de
+  10 minutes avec 6 numéros : 13 148 accusés en attente, rattrapés en 9 minutes (capacité d'environ 45 par seconde sans
+  l'index), les entrants retardés de la seule panne. Reste : poser l'index en production (`todo.md`), puis rejouer
+  l'épreuve `accuses` au-dessus de 24 numéros pour trouver la nouvelle limite.
 - **Le banc des accusés avec de VRAIS messages** (point P1 de l'audit du 2026-10-17, `docs/prive/`) : des campagnes
   semées dont les accusés `sent`, `delivered` et `read` désignent des messages qui existent, pour que chaque accusé
   fasse son vrai travail (livraison, tarif, mesure par bloc, signaux). Le banc du 14 octobre envoyait des identifiants

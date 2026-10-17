@@ -5,6 +5,36 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-17 : le banc des accusés avec de vrais messages, et l'index qui double la file des statuts
+
+- **Pourquoi** (point P1 de l'audit du 2026-10-17) : le banc du 14 octobre envoyait des accusés pour des identifiants
+  inventés. Aucun ne touchait de ligne, et ses 27,8 accusés par seconde ne mesuraient pas le travail d'un vrai accusé.
+  La question de Julien : combien de numéros à plein débit (80 messages par minute, le plafond par numéro) la file
+  `webhook-status` (concurrence 1) tient-elle sous **2 minutes** de retard au p95.
+- **Le montage** (accord de Julien) : une base DB-PRO2-XXS et une machine PRO2-XXS jetables à Amsterdam, sur le réseau
+  privé, supprimées à la fin ; `scripts/banc-api.sh` sur `a7464456`, épreuves `accuses` et `panne`
+  (`scripts/banc-accuses.ts`). Chaque accusé désigne un message semé (destinataire de campagne, envoi au journal,
+  message sortant) : `sent`, `delivered` une à trois secondes après, `read` pour 60 %. Retard lu dans pg-boss
+  (`completed_on - start_after`), dernier quart de chaque palier jugé à part. Aucun accusé perdu, aucun refus, aucune
+  reprise sur toute la séance ; les entrants (2 par seconde à côté) toujours sous la seconde au p95.
+- **Sans index**, de 4 à 14 numéros : p95 de 28 à 32 s, le rythme de la file (sondée toutes les 30 s). Puis 16 : 86 s ;
+  20 : 285 s ; 24 : 596 s. **La limite est d'environ 16 numéros, soit 53 accusés par seconde.**
+- **La cause** : `consommerReleaseMba` (`src/inbox/store.pg.ts`), appelé pour chaque accusé, fait
+  `update conversations ... where release_mba_apres_message = $1` sur une colonne sans index. Au palier de 14 numéros, la
+  table (62 000 conversations) a été relue en entier 23 297 fois en 8 minutes, 1,5 milliard de lignes. L'instruction
+  coûte 4,8 à 7,6 ms sans index, 0,013 ms avec un index partiel (`EXPLAIN ANALYZE`, transaction annulée).
+- **Avec l'index** (posé à la main sur la base jetable) : 16, 20 et 24 numéros à 30, 29 et 33 s ; la table n'est plus
+  relue que 4 fois par palier. **Au moins 24 numéros, 80 accusés par seconde, limite non atteinte.**
+- **La panne** (6 numéros, le worker arrêté 10 minutes en pleine émission) : 13 148 accusés en attente, rattrapés en
+  530 s pendant que d'autres arrivaient, soit une capacité d'environ 45 par seconde sans l'index ; les entrants
+  retardés de la seule durée de la panne (603 s au plus), jamais par le rattrapage des accusés.
+- **En production** : 28 conversations (sonde en lecture seule du même jour), donc aucun effet aujourd'hui. L'index se
+  pose tant que la table est petite (`todo.md`, en attente de l'accord de Julien).
+- **Appris au montage** : chez Scaleway, une base créée par l'API n'est ouverte à aucun utilisateur, même pas à
+  l'administrateur de l'instance (`permission denied for database`, `User does not have CONNECT privilege`) :
+  `rdb privilege set ... permission=all` d'abord. Et une machine sans IP publique se crée ARRÊTÉE, sa carte privée
+  posée, puis démarrée : sinon cloud-init n'a pas de réseau pour installer Docker.
+
 ## 2026-10-17 : les offres v2, livraison 4 (la clé de l'application et le Pro depuis Claude), en production
 
 - **Ce qui part** (`89749782`) : deux outils MCP pour la Free, qui n'a plus la console. `create_api_key` passe par
