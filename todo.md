@@ -1,5 +1,19 @@
 # todo.md : backlog
 
+## 🟡 Le bloc Attente en secondes, « en train d'écrire… » compris (2026-10-16)
+
+- **Le besoin** : poser une pause de 1 à 59 s entre deux messages rapides d'un scénario, pour l'effet humain.
+- **La spec** : `docs/superpowers/specs/2026-10-16-attente-en-secondes-design.md`, relue par un constructeur, décisions
+  de Julien comprises (bloc posé à la main, coches bleues acceptées). Reste à valider la spec, puis le plan. Pas
+  commencé.
+
+## 🟡 L'API Groups de WhatsApp : à garder, sans client pour l'instant (2026-10-16)
+
+- **L'étude** : `docs/ETUDE-API-GROUPS-2026-10-16.md`. 8 participants au plus, coche verte obligatoire, pas de
+  Coexistence, pas de boutons ni de listes dans un groupe, facturation par participant.
+- **Ce qui relance le sujet** : un client qui a la coche verte et un cas réel à 8 personnes au plus. Rien à construire
+  avant.
+
 ## 🟡 Le code de connexion par WhatsApp, les modèles « authentification » de Meta (2026-10-16)
 
 - **Le besoin** : le fondateur de SaaS veut envoyer un code de connexion ou de vérification par WhatsApp
