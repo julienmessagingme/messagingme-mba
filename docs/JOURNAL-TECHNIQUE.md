@@ -31,6 +31,23 @@
   même instruction, même analyse, en `explain` dans un `begin read only`, les deux assertions échouent. Le sens « avec
   index » est prouvé par le job `integration` de la CI.
 
+## 2026-10-17 : le cycle de vie des formulaires WhatsApp ne laisse plus de champs orphelins
+
+- **Pourquoi** (point 1 de l'audit de simplicité approfondi) : la route créait les champs CRM pendant la validation,
+  avant l'appel à Meta. Un corps finalement refusé ou une panne de Meta pouvait donc laisser des champs inutiles. À
+  l'inverse, une création acceptée par Meta puis perdue pendant l'écriture locale rendait le résultat ambigu et un
+  second clic pouvait créer un autre formulaire.
+- **La frontière** : `src/flow/preparation.ts` valide et calcule les écrans, le mapping et les champs requis sans
+  écrire. `src/flow/lifecycle.ts` possède l'unique séquence Meta puis confirmation locale. `PgPersistanceFormulaire`
+  écrit la ligne `flows` et ses `user_fields` dans une même transaction.
+- **La reprise** : après l'acceptation de Meta, la confirmation locale est rejouée une fois sans rappeler Meta.
+  L'insertion du formulaire est idempotente pour le même identifiant, espace et `ref`, ce qui couvre une réponse de
+  `COMMIT` perdue. Après deux échecs locaux, le brouillon Meta est supprimé ; si cette compensation échoue aussi, la
+  route rend un 409 avec l'identifiant distant et demande de rafraîchir au lieu de recréer à l'aveugle.
+- **Portée** : création, édition d'un brouillon et duplication gardent leurs réponses et règles produit. Aucun schéma
+  ni écran ne change. Les tests couvrent les refus avant effet, le refus Meta, la reprise locale, la compensation et
+  la transaction Postgres.
+
 ## 2026-10-17 : le banc des accusés avec de vrais messages, et l'index qui double la file des statuts
 
 - **Pourquoi** (point P1 de l'audit du 2026-10-17) : le banc du 14 octobre envoyait des accusés pour des identifiants

@@ -15,7 +15,8 @@ import { construireSocle } from './socle';
 import { PgContactHistoryStore } from './crm/contact-history.pg';
 import { PgTagStore } from './crm/tag-store.pg';
 import { PgDossierStore } from './dossiers/store.pg';
-import { ensureField, ensureFieldByKey, WHATSAPP_OPTIN_FIELD_KEY, WHATSAPP_OPTIN_FIELD_LABEL } from './crm/fields';
+import { ensureFieldByKey } from './crm/fields';
+import { PgPersistanceFormulaire } from './flow/persistence.pg';
 import { PgCampaignDraftStore } from './campaign/draft-store.pg';
 import type { ConversationMessage } from './inbox/store.pg';
 import { PgStatsStore } from './stats/store.pg';
@@ -1997,11 +1998,8 @@ async function main(): Promise<void> {
       meta: metaFactory, // token par tenant, repli global
       repo,
       flows: flowStore,
-      insertFlow: (tenantId, id, name, screens, ref, mapping, cta) => flowStore.insert({ id, tenantId, name, screens, ref, mapping, ...(cta ? { cta } : {}) }),
-      ensureUserField: async (tenant, label, type) => { await ensureField(fieldStore, tenant, label, type); },
+      persistance: new PgPersistanceFormulaire(pool),
       champs: fieldStore,
-      ensureOptinField: async (tenant) => { await ensureFieldByKey(fieldStore, tenant, WHATSAPP_OPTIN_FIELD_KEY, WHATSAPP_OPTIN_FIELD_LABEL, 'boolean'); },
-      updateFlowRow: (tenant, id, name, screens, ref, mapping, cta) => flowStore.update(id, tenant, { name, screens, ref, mapping, ...(cta ? { cta } : {}) }),
       insertExternalFlow: (tenant, f) => flowStore.insertExternal({ ...f, tenantId: tenant }),
       // Supprimer un formulaire qu'un message interactif de l'agent de Meta ouvre encore est refusé (lot messages interactifs).
       messagesInteractifsDuFormulaire: (tenant, flowId) => messagesInteractifsDuFormulaire(

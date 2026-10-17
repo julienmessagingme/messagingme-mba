@@ -6,7 +6,7 @@ import { resolveTenantCode } from '../ids/tenant-code';
 
 /** Store Postgres des champs perso (user fields) par tenant. */
 export class PgUserFieldStore implements UserFieldStore {
-  constructor(private readonly pool: Pool) {}
+  constructor(private readonly pool: Pick<Pool, 'query'>) {}
 
   async list(tenantId: string): Promise<UserFieldDef[]> {
     const res = await this.pool.query<{ key: string; label: string; type: UserFieldType; code: string | null }>(
