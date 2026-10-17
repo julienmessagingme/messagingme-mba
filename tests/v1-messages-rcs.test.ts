@@ -36,6 +36,7 @@ interface Monde {
   injoignable: boolean;
   journalEchecs?: number;
   filImpossible?: boolean;
+  ouvertureEchecs?: number;
 }
 
 const MONDE: Monde = {
@@ -51,6 +52,7 @@ const MONDE: Monde = {
 async function app(over: Partial<Monde> = {}, garde: PreHandler = cle) {
   const m: Monde = { ...MONDE, ...over };
   let journalEchecsRestants = m.journalEchecs ?? 0;
+  let ouvertureEchecsRestants = m.ouvertureEchecs ?? 0;
   const envois: Array<{ waId: string; text: string }> = [];
   const enregistres: Array<{ conversationId: string; body: string; origine: OrigineMessage; type?: string; auteur: string | null; canal?: string }> = [];
   const prises: string[] = [];
@@ -85,10 +87,11 @@ async function app(over: Partial<Monde> = {}, garde: PreHandler = cle) {
     rcs,
     inbox: {
       ouvrirConversationDuContact: async (_t, contactId) => {
+        journal.push(`ouvrir:${contactId}`);
+        if (ouvertureEchecsRestants-- > 0) throw new Error('base indisponible');
         if (m.filImpossible) return null;
         const tel = m.fiches[contactId]?.phone;
         if (tel) ouverts.add(tel.replace(/\D/g, ''));
-        journal.push(`ouvrir:${contactId}`);
         return 'conv-1';
       },
       recordOutbound: async (conversationId, body, _id, origine, type, _cat, _nom, auteur, canal) => {
@@ -157,6 +160,17 @@ describe('POST /v1/messages/rcs', () => {
       await a.server.close();
       journalErreur.mockRestore();
     }
+  });
+
+  it('RCS public accepté : une ouverture de fil échouée est reprise sans second envoi', async () => {
+    const a = await app({ ouvertureEchecs: 1 });
+    const res = await post(a, { contactId: C1, text: 'Bonjour' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ messageId: 'rcs-1', conversationId: 'conv-1', channel: 'rcs', journal: 'recorded' });
+    expect(a.envois).toHaveLength(1);
+    expect(a.journal.filter((etape) => etape === `ouvrir:${C1}`)).toHaveLength(2);
+    expect(a.enregistres).toHaveLength(1);
+    await a.server.close();
   });
 
   it('🔴 « écrire PREND le fil » (§ 4), même pour une fiche qui n’a jamais écrit : ouvrir, PUIS prendre, PUIS inscrire', async () => {

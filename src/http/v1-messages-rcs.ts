@@ -107,7 +107,11 @@ export function registerV1MessagesRcs(app: FastifyInstance, deps: V1MessagesRcsR
      * auteur `null`). Au mieux : le message est parti, un 5xx ferait réessayer l'intégrateur, donc envoyer deux fois.
      * Un rapport d'échec smsmode arrivé avant l'inscription est écrit quand même par `traiterRapportRcs`.
      */
-    const conversationId = await deps.inbox.ouvrirConversationDuContact(tenantId, fiche.contactId).catch(() => null);
+    // Ouvrir le fil est aussi une écriture rejouable : si elle échoue après l'envoi, on la reprend sans
+    // solliciter à nouveau le fournisseur. L'upsert de la conversation empêche un second fil.
+    const ouvrirFil = () => deps.inbox.ouvrirConversationDuContact(tenantId, fiche.contactId).catch(() => null);
+    let conversationId = await ouvrirFil();
+    if (!conversationId) conversationId = await ouvrirFil();
     let journal: EtatJournalSortant = 'unrecorded';
     if (conversationId) {
       await deps.takeControl(tenantId, waId, auteurDeLEnvoi('api', null)).catch(() => {});
