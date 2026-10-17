@@ -5,6 +5,26 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-17 : les offres v2, livraison 1 (la grille additive), en production
+
+- **Ce qui part** (`b10ba2ff`) : la fonction `console` dans la grille (Pro et Entreprise, pas la Free), sans rien fermer
+  encore ; la console reste ouverte tant que l'API ne la connaît pas, puisque Vercel publie avant le `up`. Les refus
+  nomment l'offre qui lève la limite ou ouvre la fonction (la grille le dit, plus « Pro » en dur), et le CRM ne dit
+  plus « Passez en Pro ». Les insights du MCP passent sous `analyse`. Les e-mails d'alerte de limite restent réservés à
+  la Free jusqu'à la livraison 5. /ops règle les contacts et la commission d'une Entreprise.
+- **Migration 0240** (`tenants.entreprise_contacts` et `entreprise_commission_pct`, entiers nullables, deux CHECK
+  nommés, `lock_timeout` de 5 s parce que `tenants` est lue à chaque requête) : image construite d'abord, 0240 seule en
+  attente dedans, `pg_stat_activity` sans transaction longue ni verrou sur `tenants`, appliquée AVANT le `up` (le
+  nouveau code lit ces colonnes à chaque calcul d'offre), relue en base (types, nullabilité, contraintes et leurs
+  prédicats), puis lue par le vrai code de la nouvelle image sur six espaces Entreprise (sans limite, 10 %, console
+  ouverte). Commandes passées par Julien, le garde-fou refusant les écritures sur le VPS.
+- **Relu** : aucun rouge. Traités avant le push : deux tests qui figeaient l'ancien état, le `lock_timeout`, les
+  alertes réservées à la Free. Reportés : la phrase « passez en Pro » de `src/agent/fiche.ts` (livraison 5) ; l'offre
+  qui lève une limite se trouve par sa VALEUR, donc une Entreprise réglée à 100 contacts se verrait proposer le Pro ; la page
+  Offre montre « Console complète » fermée à la Free avant la livraison 3 ; la ligne de commission du `CLAUDE.md`
+  (10 % négociable, 20 % en Pro à la livraison 5). CI verte job par job, e2e compris.
+- **Ce qui reste** : l'essai réel 127 (`docs/prive/ESSAIS-REELS.md`).
+
 ## 2026-10-16 : la vitrine anglaise, lot 3 (l'outil dans le dépôt, les courts films, les écrans, la 404)
 
 - **L'outil** : `scripts/vitrine/anglais.ts` (`e97ad6b6`) reproduit à l'octet près les onze pages anglaises en ligne ;

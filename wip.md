@@ -107,12 +107,16 @@ grille des offres (ci-dessous) : son brouillon français et anglais est dans le 
 
 ## LES OFFRES, DEUXIÈME VERSION (CADRÉ LE 2026-10-16)
 
-Spec : [docs/superpowers/specs/2026-10-16-offres-v2-design.md](docs/superpowers/specs/2026-10-16-offres-v2-design.md), à la
+Spec : [docs/superpowers/specs/2026-10-16-offres-v2-design.md](docs/superpowers/specs/2026-10-16-offres-v2-design.md),
 validée par Julien ; plan : [docs/superpowers/plans/2026-10-16-offres-v2.md](docs/superpowers/plans/2026-10-16-offres-v2.md)
 (huit livraisons). La Free se pilote par l'API et le MCP (console fermée sauf le numéro, les clés
 et l'offre), le Pro gagne les sièges payants et un essai de 14 jours avec carte, l'Entreprise seule ouvre l'analyse, les
 publicités, les chaînes, le CRM et le RCS, et promet la connexion SSO. Aucun client n'est en Pro (sonde du 2026-10-16) :
 aucune transition.
+
+- **Livraison 1, la grille additive** : en production (`b10ba2ff`, migration 0240). La fonction `console` existe mais ne
+  ferme encore rien (livraison 3) ; l'Entreprise se règle dans /ops (contacts, commission). Essai réel 127.
+- **Suivante** : la livraison 2, les limites de l'API et du MCP en Free (clés, débit, modèles par jour, réponses).
 
 ## CE QUI ATTEND UN ESSAI RÉEL
 
