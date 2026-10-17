@@ -183,22 +183,36 @@ function entreeDe(items: NavEntree[], key: string): NavEntree | null {
   return null;
 }
 
-/** La fonction qu'exige la page `key` (lot 6), `null` pour une page ouverte à toutes les offres ou inconnue. */
+/**
+ * LES ÉCRANS D'UNE FREE (spec offres v2) : la Free se pilote depuis Claude Code, Cursor ou l'API, et la console ne lui
+ * sert qu'au numéro (l'accueil), aux clés d'API et à leur doc, à l'offre, au compte et au support. 🔴 Tout autre écran
+ * exige la fonction `console`, y compris un écran ajouté demain ou une page hors de la barre : il naît fermé à la Free,
+ * comme ses routes côté serveur (`MODULES_OUVERTS_AU_FREE`, `src/server.ts`).
+ */
+export const ECRANS_FREE: readonly string[] = ['accueil', 'api-keys', 'api-docs', 'mcp', 'offre', 'compte', 'support'];
+
+/** La fonction qu'exige un écran : la sienne, sinon `console`, sauf pour les écrans d'une Free. */
+function fonctionEffective(key: string, fonction: FonctionOffre | undefined): FonctionOffre | null {
+  return fonction ?? (ECRANS_FREE.includes(key) ? null : 'console');
+}
+
+/** La fonction qu'exige la page `key` (lot 6), `null` pour un écran d'une Free (ouvert à toutes les offres). */
 export function fonctionDeLaPage(items: NavEntree[], key: string): FonctionOffre | null {
-  const entree = entreeDe(items, key);
-  return entree?.fonction ?? null;
+  return fonctionEffective(key, entreeDe(items, key)?.fonction);
 }
 
 /**
  * L'arbre marqué selon l'offre (lot 6) : une feuille dont la fonction n'est pas ouverte porte `verrouillee`, et la barre
- * la grise au lieu de la cacher (on voit ce que le Pro ajoute). 🔴 `null` = offre inconnue (API plus ancienne, panne de
- * la lecture) : rien n'est marqué, le serveur reste la barrière.
+ * la grise au lieu de la cacher (on voit ce que le Pro ajoute). La feuille grisée porte sa fonction EFFECTIVE (`console`
+ * pour un écran sans fonction propre) : son lien mène à l'offre qui l'ouvre. 🔴 `null` = offre inconnue (API plus
+ * ancienne, panne de la lecture) : rien n'est marqué, le serveur reste la barrière.
  */
 export function navPourOffre(items: NavEntree[], ouvertes: ReadonlySet<FonctionOffre> | null): NavEntree[] {
   if (ouvertes === null) return items;
   return items.map((item) => {
     if (item.children) return { ...item, children: navPourOffre(item.children, ouvertes) };
-    return item.fonction && !ouvertes.has(item.fonction) ? { ...item, verrouillee: true } : item;
+    const fonction = fonctionEffective(item.key, item.fonction);
+    return fonction && !ouvertes.has(fonction) ? { ...item, fonction, verrouillee: true } : item;
   });
 }
 

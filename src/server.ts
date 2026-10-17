@@ -567,10 +567,39 @@ export interface ModuleMonte {
   readonly acces: ClasseDAcces;
   /** Ses dépendances ont-elles été fournies ? C'est ce qui décide s'il se monte. */
   readonly fourni: boolean;
-  /** Ce que l'offre garde sur chacune de ses routes (lot 6), `null` pour un module ouvert à toutes les offres. */
+  /**
+   * Ce que l'offre garde sur chacune de ses routes (lot 6), la fonction PROPRE du module ; `null` pour un module sans
+   * fonction propre. Sur ses routes à `null`, un module d'espace exige encore la console, sauf `ouvertAuFree`.
+   */
   readonly garde: FonctionDeRoute | null;
+  /** Cette route d'un module d'espace, la Free la garde-t-elle (`MODULES_OUVERTS_AU_FREE`, spec offres v2) ? */
+  readonly ouvertAuFree: (route: RouteDeModule) => boolean;
   readonly monte: (app: FastifyInstance, gardes: Gardes) => void;
 }
+
+/** Une route d'un module, telle que les étapes de montage la voient. */
+type RouteDeModule = { methodes: readonly string[]; chemin: string };
+const toutLeModule = (): boolean => true;
+const fermeAuFree = (): boolean => false;
+
+/**
+ * 🔴 LA CONSOLE FERMÉE EN FREE (spec offres v2, livraison 3) : chaque module d'espace exige la fonction `console` sur ses
+ * routes sans fonction propre, SAUF ceux-ci, ce qu'une Free garde de la console : l'offre et ses paiements (Pro, crédit),
+ * le numéro (Embedded Signup, 360dialog, numéro fourni et son abonnement), les clés d'API, le consentement OAuth, le
+ * compte, la session, les e-mails de l'utilisateur et le support. Un module ajouté demain naît donc FERMÉ à la Free.
+ * Fermer l'écran seul ne suffirait pas : une campagne lancée depuis la console échappe au quota de l'API. `/v1` et `/mcp`
+ * ne sont pas des modules d'espace : ils restent ouverts. La liste se tient aux appels réels des écrans d'une Free
+ * (`ECRANS_FREE`, `web/lib/nav.ts`) ; `tests/offres-fonctions.test.ts` la prouve route par route. Elle descend à la route
+ * quand un module mêle les deux : de `account`, la Free garde le statut du numéro (l'accueil), pas les écritures HubSpot ;
+ * d'`admin`, la seule lecture du nom de l'espace (la page de consentement de Claude), pas Compte et équipe.
+ */
+export const MODULES_OUVERTS_AU_FREE: Readonly<Record<string, (route: RouteDeModule) => boolean>> = {
+  offre: toutLeModule, offrePaiement: toutLeModule, creditPaiement: toutLeModule, embeddedSignup: toutLeModule,
+  connexion360dialog: toutLeModule, numeroFourni: toutLeModule, abonnementNumero: toutLeModule, apiKeys: toutLeModule,
+  oauthConsentement: toutLeModule, me: toutLeModule, emailsMoi: toutLeModule, support: toutLeModule,
+  account: (r) => r.chemin === '/tenants/:tenantId/account-status',
+  admin: (r) => r.chemin === '/tenants/:tenantId/nom' && r.methodes.every((m) => m === 'GET' || m === 'HEAD'),
+};
 
 /**
  * Déclare un module montable. `D` est inféré depuis `deps`, donc `monter` le reçoit non nul : le test de
@@ -599,16 +628,19 @@ function entree<D>(
   garde: FonctionDeRoute | null = null,
 ): ModuleMonte {
   if (garde !== null && acces !== 'tenant') throw new Error(`le module ${nom} déclare une garde d'offre sans être « tenant »`);
+  const ouvertAuFree = acces === 'tenant' && Object.hasOwn(MODULES_OUVERTS_AU_FREE, nom) ? MODULES_OUVERTS_AU_FREE[nom]! : fermeAuFree;
   return {
     nom,
     acces,
     fourni: deps !== undefined,
     garde,
+    ouvertAuFree,
     monte: (app, gardes) => {
       if (deps === undefined) return;
       if (acces === 'tenant') {
-        const apres = garde === null ? null : (r: { methodes: readonly string[]; chemin: string }) => {
-          const f = garde(r);
+        // La fonction propre de la route, sinon la console (spec offres v2), sauf pour une route que la Free garde.
+        const apres = (r: RouteDeModule) => {
+          const f = garde?.(r) ?? (ouvertAuFree(r) ? null : 'console');
           return f === null ? null : etapeOffre(f, gardes.offres);
         };
         monterAvecEtapeEspace(app, () => monter(app, deps, gardes), apres);

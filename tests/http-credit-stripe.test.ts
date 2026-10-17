@@ -79,7 +79,7 @@ function paiement(o: {
       cle: CLE, livemode: true,
       prix: { refill_50: 'price_50', refill_100: 'price_100' },
       transport,
-      pageCredit: 'https://console.exemple/parametres/credit',
+      pageCredit: 'https://console.exemple/parametres/credit', pageClaude: 'https://console.exemple/paiement-recu',
     },
     clients: {
       clientDe: async () => connu,
@@ -142,7 +142,7 @@ describe('POST /tenants/:tenantId/credit/paiement', () => {
     await p.srv.close();
 
     const transport = new FauxStripe([]);
-    const q = paiement({ stripe: { cle: CLE, livemode: true, prix: { refill_50: '', refill_100: 'price_100' }, transport, pageCredit: 'https://x' } });
+    const q = paiement({ stripe: { cle: CLE, livemode: true, prix: { refill_50: '', refill_100: 'price_100' }, transport, pageCredit: 'https://x', pageClaude: 'https://x' } });
     expect((await payer(q.srv, { offre: 'refill_50' })).statusCode).toBe(503);
     expect(transport.appels).toHaveLength(0);
     await q.srv.close();

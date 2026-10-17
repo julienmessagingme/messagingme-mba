@@ -40,6 +40,7 @@ import { Squelette } from '@/components/Squelette';
 import { Nd } from '@/components/Nd';
 import { HorsOffre } from '@/components/HorsOffre';
 import { useFermeture } from '@/lib/use-offre';
+import { PiloterDepuisClaude } from '@/components/PiloterDepuisClaude';
 
 export default function AccueilPage() {
   return <AppShell active="accueil">{(session) => <AccueilInner session={session} />}</AppShell>;
@@ -130,6 +131,16 @@ function AccueilInner({ session }: { session: Session }) {
   const [accountLoading, setAccountLoading] = useState(true);
 
   const isAdmin = session.role === 'admin';
+  /**
+   * L'ACCUEIL D'UNE FREE (spec offres v2) : la console lui est fermée, sauf le numéro, les clés, l'offre, le compte et le
+   * support. Elle garde ici la carte du numéro et apprend à piloter l'espace depuis Claude Code ; elle ne lit ni les
+   * réglages ni les statistiques, que le serveur lui refuse. `undefined` tant que l'offre n'est pas lue : ces lectures
+   * attendent le verdict, comme celles de l'agent de Meta.
+   */
+  const fermeConsole = useFermeture(session.tenantId, 'console');
+  const estFree = fermeConsole != null;
+  /** La console est-elle ouverte, verdict connu ? Ce qui en dépend ne se monte pas avant, pour ne rien lire de fermé. */
+  const consoleOuverte = fermeConsole === null;
 
   /**
    * Statut du compte, chargé À PART et jamais en `Promise.all` avec le reste. C'était la cause du symptôme
@@ -152,10 +163,14 @@ function AccueilInner({ session }: { session: Session }) {
 
   /** Profil et réglages : `allSettled`, chaque réponse est appliquée indépendamment des autres. */
   const load = useCallback(async () => {
+    if (fermeConsole === undefined) return;
     setError(null);
-    const [m, cfg] = await Promise.allSettled([getMe(session.tenantId), getSettings(session.tenantId)]);
+    const [m, cfg] = await Promise.allSettled([
+      getMe(session.tenantId),
+      fermeConsole === null ? getSettings(session.tenantId) : Promise.resolve(null),
+    ]);
     if (m.status === 'fulfilled') setMe(m.value);
-    if (cfg.status === 'fulfilled') {
+    if (cfg.status === 'fulfilled' && cfg.value) {
       setMbaEnabled(cfg.value.mbaEnabled);
       setHubspotListsEnabled(cfg.value.hubspotListsEnabled);
       setHubspotActif(lireHubspotActif(cfg.value));
@@ -165,10 +180,12 @@ function AccueilInner({ session }: { session: Session }) {
       setError(reason instanceof Error ? reason.message : t('Chargement partiel', 'Partial load'));
     }
     setLoading(false);
-  }, [session.tenantId, t]);
+  }, [session.tenantId, t, fermeConsole]);
 
   // KPIs 30 j : chargés à part (non bloquants). Un hoquet des stats/coût n'efface pas la carte statut.
   const loadKpis = useCallback(async () => {
+    // Une Free ne lit pas les statistiques (le serveur les lui refuse) ; l'offre inconnue attend son verdict.
+    if (fermeConsole !== null) return;
     try {
       const [stats, tpl, cost] = await Promise.all([
         getStats(session.tenantId),
@@ -182,13 +199,12 @@ function AccueilInner({ session }: { session: Session }) {
     } catch {
       // Silencieux : les KPIs sont un plus, pas un bloquant. On laisse la rangée en « — ».
     }
-  }, [session.tenantId]);
+  }, [session.tenantId, fermeConsole]);
 
-  useEffect(() => {
-    void load();
-    void loadAccount();
-    void loadKpis();
-  }, [load, loadAccount, loadKpis]);
+  // Un effet par chargeur : le statut du numéro (deux appels à Meta) ne se relit pas quand le verdict de l'offre arrive.
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void loadAccount(); }, [loadAccount]);
+  useEffect(() => { void loadKpis(); }, [loadKpis]);
 
   /**
    * Allume ou eteint l'agent, CHEZ META quand c'est possible, et pas seulement chez nous.
@@ -312,13 +328,14 @@ function AccueilInner({ session }: { session: Session }) {
   }
 
   // Nombre de numéros du tenant : sert à avertir dans le dialogue de déconnexion (tenant-wide). Admin only, best-effort
-  // (un échec laisse le défaut 1 -> pas de faux avertissement).
+  // (un échec laisse le défaut 1 -> pas de faux avertissement). Pas en Free : ce dialogue (HubSpot) ne s'y montre pas, et
+  // la route des campagnes lui est refusée (spec offres v2) ; l'offre inconnue attend son verdict.
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!isAdmin || fermeConsole !== null) return;
     let alive = true;
     listPhoneNumbers(session.tenantId).then((r) => { if (alive) setNumbersCount(r.phoneNumbers.length); }).catch(() => {});
     return () => { alive = false; };
-  }, [isAdmin, session.tenantId]);
+  }, [isAdmin, session.tenantId, fermeConsole]);
 
   // PAUSE / REPRISE (F3-a). `next=false` -> pause (paused_at posé) ; `next=true` -> reprise (paused_at effacé + rattrapage).
   async function applyHubspotState(next: boolean) {
@@ -431,7 +448,8 @@ function AccueilInner({ session }: { session: Session }) {
 
       {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
 
-      {/* Rangée de KPIs (30 derniers jours) — mêmes chiffres que la page Analytics. */}
+      {/* Rangée de KPIs (30 derniers jours) : mêmes chiffres que la page Analytics. Pas en Free : elle n'a pas de statistiques. */}
+      {consoleOuverte && (
       <div>
         <div className="mb-2 text-xs font-medium text-ink-500">{t('30 derniers jours', 'Last 30 days')}</div>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -443,10 +461,11 @@ function AccueilInner({ session }: { session: Session }) {
           ))}
         </div>
       </div>
+      )}
 
       {/* 🔴 CANAUX ET SERVICES (plan du 2026-09-25) : un interrupteur par canal ou service, au même endroit.
           Admin seulement : tous ses gestes le sont côté serveur, et deux de ses lectures aussi. */}
-      {isAdmin && (
+      {isAdmin && consoleOuverte && (
         <CanauxServices
           tenantId={session.tenantId}
           compte={accountLoading ? null : account}
@@ -461,7 +480,7 @@ function AccueilInner({ session }: { session: Session }) {
 
       {/* « Qui répond au client » (RC6) : admins seulement, comme le serveur. Le choisir peut allumer l'agent de Meta :
           l'interrupteur de sa carte suit l'état relu. */}
-      {isAdmin && <QuiRepond tenantId={session.tenantId} version={versionRepondeur} sansAgentMeta={account?.fournisseur === '360dialog'} onChange={(e) => setMbaEnabled(e.mbaAllume)} />}
+      {isAdmin && consoleOuverte && <QuiRepond tenantId={session.tenantId} version={versionRepondeur} sansAgentMeta={account?.fournisseur === '360dialog'} onChange={(e) => setMbaEnabled(e.mbaAllume)} />}
 
       {loading ? (
         <Squelette forme="carte" />
@@ -471,7 +490,7 @@ function AccueilInner({ session }: { session: Session }) {
               en dessous du toggle (demande fondateur : les deux gouvernent qui répond au client).
               ⚠️ Le chiffre de l'agent est DANS le cadre depuis le 2026-09-25 (Julien), plus en dessous. */}
           {/* Masquée pour un compte relié par 360dialog (livraison D) : l'agent de Meta ne s'y règle pas. */}
-          {!est360 && (
+          {!est360 && consoleOuverte && (
           <div data-testid="settings-card" className="flex flex-col rounded-carte border border-ink-200 bg-white p-5">
             <div className="mb-3 flex items-start gap-3">
               {/* Logo Meta Business Agent (produit Meta), et non notre logo MM : cette carte parle du MBA de Meta. */}
@@ -732,7 +751,7 @@ function AccueilInner({ session }: { session: Session }) {
               🔴 DEPUIS LE 2026-09-25, C'EST L'INTERRUPTEUR DE PARAMÈTRES > INTÉGRATIONS QUI LE FAIT APPARAÎTRE, plus
               la présence d'un numéro : un espace neuf doit pouvoir connecter HubSpot avant d'avoir un numéro. La
               règle, et ses trois cas, vivent dans `affichageHubspotAccueil`. */}
-          {!accountLoading && !accountError && account && affichageHubspot === 'bloc' && (
+          {consoleOuverte && !accountLoading && !accountError && account && affichageHubspot === 'bloc' && (
             <div data-testid="hubspot-card" className="flex flex-col rounded-carte border border-ink-200 bg-white p-5">
               <h3 className="text-sm font-semibold text-ink-900">HubSpot</h3>
               {account.hubspotPortal?.connected && (
@@ -914,7 +933,7 @@ function AccueilInner({ session }: { session: Session }) {
             </div>
           )}
           {/* Interrupteur éteint, aucun portail : une ligne DISCRÈTE, pas une carte. Elle dit où l'allumer. */}
-          {!accountLoading && !accountError && affichageHubspot === 'renvoi' && (
+          {consoleOuverte && !accountLoading && !accountError && affichageHubspot === 'renvoi' && (
             <p data-testid="hubspot-renvoi" className="text-xs text-ink-500 lg:col-span-2">
               {t('HubSpot est éteint pour cet espace.', 'HubSpot is off for this workspace.')}{' '}
               <Link href="/parametres#integration-hubspot" data-testid="hubspot-renvoi-lien" className="text-brand-600 hover:underline">
@@ -922,6 +941,33 @@ function AccueilInner({ session }: { session: Session }) {
               </Link>
             </p>
           )}
+        </div>
+      )}
+
+      {/* La Free se pilote depuis Claude Code, Cursor ou l'API (spec offres v2) : les trois gestes, puis le Pro, qui ouvre
+          la console complète. */}
+      {estFree && (
+        <div data-testid="accueil-free">
+          <h2 className="mt-2 text-base font-semibold text-ink-900">{t('Piloter votre espace depuis Claude Code', 'Run your workspace from Claude Code')}</h2>
+          <p className="mt-1 text-sm text-ink-500">
+            {t(
+              'En Free, tout se fait depuis Claude Code, Cursor ou l’API : vos contacts, vos modèles, vos envois, votre agent IA et la bulle de votre site. Trois gestes suffisent pour commencer.',
+              'On Free, everything is done from Claude Code, Cursor or the API: your contacts, templates, sends, AI agent and your site’s bubble. Three steps are enough to start.',
+            )}
+          </p>
+          <PiloterDepuisClaude tenantId={session.tenantId} isAdmin={isAdmin} />
+          <section className="mt-4 rounded-carte border border-brand-200 bg-brand-50 p-5" data-testid="accueil-free-pro">
+            <h2 className="text-base font-semibold text-ink-900">{t('La console complète, avec le Pro', 'The full console, with Pro')}</h2>
+            <p className="mt-1 text-sm text-ink-500">
+              {t(
+                'L’Inbox pour répondre à plusieurs, les campagnes, les scénarios et les statistiques, à l’écran : tout s’ouvre avec l’offre Pro.',
+                'The Inbox to reply as a team, campaigns, scenarios and statistics, on screen: it all opens with the Pro plan.',
+              )}
+            </p>
+            <Link href="/offre?fonction=console" className="mt-3 inline-block text-sm font-semibold text-brand-700 underline" data-testid="accueil-free-lien-pro">
+              {t('Passer en Pro pour la console complète', 'Go Pro for the full console')}
+            </Link>
+          </section>
         </div>
       )}
     </div>

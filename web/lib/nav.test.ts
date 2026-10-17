@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFile } from 'node:fs/promises';
-import { accesAutorise, arbresNav, cheminDeNav, contientLaCle, fonctionDeLaPage, groupesAOuvrir, navPourOffre, navPourRole, ongletDeLaPage, premiereDestination, ONGLETS, type NavEntree, type Onglet } from './nav';
+import { accesAutorise, arbresNav, cheminDeNav, contientLaCle, fonctionDeLaPage, groupesAOuvrir, navPourOffre, navPourRole, ongletDeLaPage, premiereDestination, ECRANS_FREE, ONGLETS, type NavEntree, type Onglet } from './nav';
 
 /**
  * La chaîne d'ancêtres d'une page dans la barre de navigation.
@@ -374,23 +374,36 @@ describe('la barre selon l’offre', () => {
       'perf-synthese': 'performance_lab', 'dashboard-quali': 'performance_lab', 'dashboard-tableaux': 'performance_lab',
     };
     for (const [cle, f] of Object.entries(attendu)) expect(fonctionDeLaPage(toutes(), cle), cle).toBe(f);
-    for (const cle of ['accueil', 'contacts', 'campagnes', 'automations', 'agents', 'templates', 'widgets', 'offre', 'support', 'inconnue']) {
-      expect(fonctionDeLaPage(toutes(), cle), cle).toBeNull();
+    // Les écrans d'une Free (spec offres v2) sont ouverts à toutes les offres, et eux seuls.
+    for (const cle of ECRANS_FREE) expect(fonctionDeLaPage(toutes(), cle), cle).toBeNull();
+    // Le reste exige la console : un écran sans fonction propre, une page hors de la barre, une clé inconnue.
+    for (const cle of ['contacts', 'campagnes', 'automations', 'agents', 'templates', 'widgets', 'webhooks-sortants', 'admin', 'inconnue']) {
+      expect(fonctionDeLaPage(toutes(), cle), cle).toBe('console');
     }
+  });
+
+  it('🔴 les écrans d’une Free : l’accueil, les clés, la doc de l’API, le MCP, l’offre, le compte et le support', () => {
+    expect([...ECRANS_FREE].sort()).toEqual(['accueil', 'api-docs', 'api-keys', 'compte', 'mcp', 'offre', 'support']);
   });
 
   it('🔴 offre inconnue (null) : rien n’est grisé', () => {
     expect(verrouillees(navPourOffre(toutes(), null))).toEqual([]);
   });
 
-  it('🔴 une Base : tous les écrans des fonctions gardées sont grisés, et eux seuls', () => {
-    const grises = verrouillees(navPourOffre(toutes(), new Set()));
-    expect(grises.sort()).toEqual(['chaine', 'dashboard-quali', 'dashboard-tableaux', 'email-accounts', 'email-templates', 'flows', 'inbox', 'mba-settings',
-      'parametres-medias', 'perf-synthese', 'publicites', 'quanti-couts', 'quanti-funnel', 'quanti-messages', 'quanti-performance', 'rcs-messages', 'workflows'].sort());
+  it('🔴 une Free : tout est grisé sauf ses écrans, et chaque entrée grisée mène à l’offre qui l’ouvre', () => {
+    const marquee = navPourOffre(toutes(), new Set());
+    const feuilles = (items: NavEntree[]): NavEntree[] => items.flatMap((i) => (i.children ? feuilles(i.children) : [i]));
+    const grises = verrouillees(marquee);
+    expect(grises.sort()).toEqual(feuilles(toutes()).map((i) => i.key).filter((k) => !ECRANS_FREE.includes(k)).sort());
+    expect(grises).toContain('contacts');
+    expect(grises).not.toContain('api-keys');
+    // Le lien d'une entrée grisée se construit sur sa fonction : sans elle, il mènerait à `/offre?fonction=undefined`.
+    for (const i of feuilles(marquee).filter((x) => x.verrouillee)) expect(i.fonction, i.key).toBeTruthy();
+    expect(feuilles(marquee).find((i) => i.key === 'contacts')?.fonction).toBe('console');
   });
 
   it('un Pro : le quantitatif s’ouvre, la Synthèse, l’analyse, Mes tableaux et le RCS restent grisés', () => {
-    const pro = new Set(['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines'] as const);
+    const pro = new Set(['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines', 'console'] as const);
     expect(verrouillees(navPourOffre(toutes(), pro)).sort()).toEqual(['dashboard-quali', 'dashboard-tableaux', 'perf-synthese', 'rcs-messages']);
   });
 

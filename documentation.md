@@ -2569,7 +2569,7 @@ par défaut, `mmhs` TOUJOURS qualifié) et que toutes ses transactions passent p
 | `lireCorpsBorne` | toute réponse distante | l'épuisement mémoire par un corps géant |
 | Signature `ftyp`, bornes du morceau (`src/pubs/video.ts`), parseur d'octets muet | dépôt d'une vidéo publicitaire | autre chose qu'une vidéo envoyé chez Meta sous l'identité du client, et un corps tamponné avant l'authentification |
 | En-têtes de sécurité | toute réponse de l'API et de la console | ce qu'une faille future pourrait faire depuis le navigateur |
-| Étape d'offre (`etapeOffre`, `src/offres/etape.ts`), posée au montage juste après `etapeEspace` | les routes des modules dont l'entrée du registre déclare une fonction | l'usage d'une fonction que l'offre de l'espace n'ouvre pas (402 `plan_feature_unavailable`) |
+| Étape d'offre (`etapeOffre`, `src/offres/etape.ts`), posée au montage juste après `etapeEspace` | les routes des modules dont l'entrée du registre déclare une fonction, et la console sur toutes les autres routes d'espace hors `MODULES_OUVERTS_AU_FREE` | l'usage d'une fonction que l'offre de l'espace n'ouvre pas (402 `plan_feature_unavailable`) |
 
 ### L'offre d'un espace (lot 6)
 
@@ -2616,8 +2616,16 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
 - **Les refus nomment l'offre qui lève la limite ou ouvre la fonction** (`src/offres/refus.ts`) : déduite de la grille
   (l'offre dont c'est la limite, puis la suivante qui va plus haut ; l'offre la moins chère qui ouvre la fonction). Une
   limite absente de la grille (une Entreprise réglée) dit « Contactez-nous ».
-- **La fonction `console`** (Pro et Entreprise, spec offres v2) dit si l'espace se pilote depuis la console. Une API qui
-  ne la connaît pas encore (aucune offre de sa grille ne la porte) laisse la console ouverte (`lireVueOffre`).
+- 🔴 **La fonction `console`** (Pro et Entreprise, spec offres v2) dit si l'espace se pilote depuis la console. **Le
+  serveur la garde par défaut** : chaque module d'espace l'exige sur ses routes sans fonction propre, sauf
+  `MODULES_OUVERTS_AU_FREE` (`src/server.ts` : l'offre et ses paiements, le numéro, les clés d'API, le consentement
+  OAuth, le compte, la session, les e-mails de l'utilisateur, le support). Un module ajouté naît donc fermé à la Free,
+  et une campagne lancée depuis la console ne peut plus échapper au quota de l'API. `/v1` et `/mcp` ne sont pas des
+  modules d'espace et restent ouverts. **La console fait de même** : `ECRANS_FREE` (`web/lib/nav.ts` : accueil, clés,
+  doc de l'API, MCP, offre, compte, support) est ouvert à toutes les offres, tout autre écran exige `console` (barre
+  grisée, encart qui renvoie vers l'accueil), et l'accueil d'une Free ne lit ni les réglages ni les statistiques.
+  `tests/offres-fonctions.test.ts` prouve la liste blanche route par route. Une API qui ne connaît pas encore la
+  fonction (aucune offre de sa grille ne la porte) laisse la console ouverte (`lireVueOffre`).
 - 🔴 **Le Pro se paie chez Stripe, et seul le webhook signé l'ouvre** (livraison B1). `POST /tenants/:tenantId/offre/paiement`
   (`{periodicite}`, admin, plafond coûteux, SANS garde d'offre puisque c'est une Base qui paie, `src/http/offre-paiement.ts`)
   ouvre une session Checkout en mode abonnement (`ouvrirPro`, `src/stripe/pro.ts`) sur `STRIPE_PRIX_PRO_MOIS` ou

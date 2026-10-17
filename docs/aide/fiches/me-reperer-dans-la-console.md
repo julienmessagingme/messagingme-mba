@@ -1,6 +1,6 @@
 ---
 source_section: Navigation (trois onglets en haut, barre latérale par onglet)
-source_empreinte: 8585d6
+source_empreinte: 586a76
 ---
 # Me repérer dans la console
 
@@ -24,6 +24,11 @@ Analyse des conversations et Mes tableaux.
 Les groupes qui contiennent plusieurs écrans se replient d'un clic sur leur en-tête. Ils s'ouvrent d'office
 quand vous êtes sur une de leurs pages. Chaque écran garde son adresse propre : vous pouvez la mettre en
 favori ou l'envoyer à un collègue, elle rouvre la même page.
+
+**En offre Free, la console se réduit à l'essentiel** : l'Accueil (votre numéro, et comment piloter l'espace depuis
+Claude Code, Cursor ou l'API), les Clés d'API, la documentation de l'API et du serveur MCP, l'Offre, votre Compte et le
+Support. Les autres écrans restent visibles, grisés : ils s'ouvrent avec l'offre Pro. En attendant, tout ce qu'ils font
+se demande à Claude ou se fait par l'API.
 
 **Un opérateur ne voit qu'un onglet, l'Inbox.** Lui en montrer trois dont deux le renverraient aussitôt à
 l'Inbox serait lui promettre deux portes fermées.

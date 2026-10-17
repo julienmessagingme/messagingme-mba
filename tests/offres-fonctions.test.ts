@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import Fastify, { type FastifyRequest } from 'fastify';
 import { gardesOuvertes } from './gardes';
-import { modulesDeRoutes, type Gardes, type ModuleMonte } from '../src/server';
+import { MODULES_OUVERTS_AU_FREE, modulesDeRoutes, type Gardes, type ModuleMonte } from '../src/server';
 import { GardeUsageMemoire } from './aide/usage';
 import { DROITS, type Fonction, type Offre } from '../src/offres/offres';
 import type { SourceOffres } from '../src/offres/offre.pg';
@@ -68,14 +68,20 @@ describe('les fonctions gardées par l’offre', () => {
   });
 
   for (const nom of Object.keys(ATTENDU)) {
-    it(`🔴 ${nom} : chaque route gardée refuse un espace Base en 402, les autres passent`, async () => {
+    it(`🔴 ${nom} : chaque route gardée refuse un espace Base en 402, les autres passent la fonction (la console en Pro)`, async () => {
       const m = gardes().find((x) => x.nom === nom)!;
       const resultats = await appeler(m, source('base'));
       expect(resultats.length).toBeGreaterThan(0);
+      // En Base, une route « ouverte » exige encore la console (spec offres v2) : toutes refusent.
       for (const r of resultats) {
-        const garde = m.garde!({ methodes: [r.methode], chemin: r.chemin });
-        if (garde === null) expect(r.statut, `${r.methode} ${r.chemin} est ouverte et répond ${r.statut}`).not.toBe(402);
-        else expect(r.statut, `${r.methode} ${r.chemin} exige ${garde} et répond ${r.statut}`).toBe(402);
+        const garde = m.garde!({ methodes: [r.methode], chemin: r.chemin }) ?? 'console';
+        expect(r.statut, `${r.methode} ${r.chemin} exige ${garde} et répond ${r.statut}`).toBe(402);
+      }
+      // En Pro, la console est ouverte : une route sans fonction propre passe.
+      for (const r of await appeler(m, source('pro'))) {
+        if (m.garde!({ methodes: [r.methode], chemin: r.chemin }) === null) {
+          expect(r.statut, `${r.methode} ${r.chemin} est ouverte et répond ${r.statut}`).not.toBe(402);
+        }
       }
     });
   }
@@ -112,6 +118,73 @@ describe('les fonctions gardées par l’offre', () => {
     const res = await app.inject({ method: 'GET', url: '/tenants/t1/conversations' });
     expect(res.statusCode).toBe(402);
     expect(res.json()).toMatchObject({ code: 'plan_feature_unavailable', fonction: 'inbox', upgradeUrl: expect.stringMatching(/\/offre$/) });
+    await app.close();
+  });
+});
+
+/**
+ * LA CONSOLE FERMÉE EN FREE (spec offres v2, livraison 3), PAR LE SERVEUR : chaque route d'espace exige la fonction
+ * `console`, sauf la liste blanche du registre (le numéro, les clés, l'offre et ses paiements, le compte, le support), qui
+ * descend à la route quand un module mêle les deux. Une campagne lancée depuis la console échapperait sinon au quota de
+ * l'API : fermer l'écran seul ne suffit pas. La preuve est dynamique : chaque route de chaque module est appelée par un
+ * espace Free.
+ */
+const OUVERTS_AU_FREE = [
+  'offre', 'offrePaiement', 'creditPaiement', 'embeddedSignup', 'connexion360dialog', 'numeroFourni', 'abonnementNumero',
+  'apiKeys', 'oauthConsentement', 'account', 'admin', 'me', 'emailsMoi', 'support',
+];
+const modulesDEspace = (): ModuleMonte[] => modulesDeRoutes(toutBouchonne, usage).filter((m) => m.acces === 'tenant');
+const route = (r: { methode: string; chemin: string }) => ({ methodes: [r.methode], chemin: r.chemin });
+
+describe('🔴 la console fermée en Free, par le serveur', () => {
+  it('la liste blanche nomme exactement ces modules, et chacun est un module d’espace du registre', () => {
+    expect(Object.keys(MODULES_OUVERTS_AU_FREE).sort()).toEqual([...OUVERTS_AU_FREE].sort());
+    const noms = modulesDEspace().map((m) => m.nom);
+    for (const nom of OUVERTS_AU_FREE) expect(noms, nom).toContain(nom);
+  });
+
+  it('🔴 chaque route d’espace refuse une Free, sauf celles que la liste lui garde, avec la fonction qui l’ouvre', async () => {
+    let ouvertes = 0;
+    for (const m of modulesDEspace()) {
+      for (const r of await appeler(m, source('base'))) {
+        const attendue = m.garde?.(route(r)) ?? (m.ouvertAuFree(route(r)) ? null : 'console');
+        if (attendue === null) {
+          ouvertes += 1;
+          expect(r.statut, `${m.nom} ${r.methode} ${r.chemin} est gardée à la Free`).not.toBe(402);
+        } else expect(r.statut, `${m.nom} ${r.methode} ${r.chemin} exige ${attendue}`).toBe(402);
+      }
+    }
+    expect(ouvertes).toBeGreaterThan(0);
+  });
+
+  it('🔴 la liste descend à la route : de `account`, le statut du numéro et pas HubSpot ; d’`admin`, la lecture du nom et rien d’autre', async () => {
+    const statut = async (nom: string) => new Map((await appeler(modulesDEspace().find((m) => m.nom === nom)!, source('base')))
+      .map((r) => [`${r.methode} ${r.chemin}`, r.statut]));
+    const account = await statut('account');
+    expect(account.get('GET /tenants/:tenantId/account-status')).not.toBe(402);
+    expect(account.get('POST /tenants/:tenantId/hubspot/deconnexion')).toBe(402);
+    expect(account.get('PATCH /tenants/:tenantId/phone-numbers/:phoneNumberId/hubspot')).toBe(402);
+    const admin = await statut('admin');
+    expect(admin.get('GET /tenants/:tenantId/nom')).not.toBe(402);
+    expect(admin.get('PATCH /tenants/:tenantId/nom')).toBe(402);
+    expect([...admin.values()].filter((s) => s !== 402)).toHaveLength(1);
+  });
+
+  it('🔴 un Pro passe la console : un module sans fonction propre ne le refuse jamais', async () => {
+    for (const m of modulesDEspace().filter((x) => x.garde === null)) {
+      for (const r of await appeler(m, source('pro'))) expect(r.statut, `${m.nom} ${r.methode} ${r.chemin}`).not.toBe(402);
+    }
+  });
+
+  it('le refus d’une Free nomme la console et renvoie à l’offre', async () => {
+    const app = Fastify({ logger: false });
+    const m = modulesDEspace().find((x) => x.nom === 'contacts')!;
+    m.monte(app, { ...gardesOuvertes, auth: authT1, admin: authT1, encadrement: authT1, adminOuLien: authT1, offres: source('base') });
+    await app.ready();
+    const res = await app.inject({ method: 'GET', url: '/tenants/t1/contacts/blocked' });
+    expect(res.statusCode).toBe(402);
+    expect(res.json()).toMatchObject({ code: 'plan_feature_unavailable', fonction: 'console', upgradeUrl: expect.stringMatching(/\/offre$/) });
+    expect(res.json<{ error: string }>().error).toMatch(/la console complète\. Passez en Pro/);
     await app.close();
   });
 });

@@ -24,9 +24,24 @@ export function EncartOffre({ fonction, vue }: { fonction: FonctionOffre; vue: V
             `This screen is part of the ${nomDeLOffre(offre, t)} plan. Your workspace is on the ${nomDeLOffre(vue.offre, t)} plan.`)
           : t('Cet écran ne fait pas partie de votre offre.', 'This screen is not part of your plan.')}
       </p>
-      <Link href={`/offre?fonction=${fonction}`} className={classesBouton('principal', 'normale', 'mt-5')} data-testid="encart-offre-lien">
-        {t('Voir les offres', 'See plans')}
-      </Link>
+      {/* La console fermée (spec offres v2) : la Free fait la même chose depuis Claude Code, Cursor ou l'API, et l'accueil
+          dit comment. Sans ce renvoi, l'encart ne proposerait que de payer. */}
+      {fonction === 'console' && (
+        <p className="mt-2 text-sm text-ink-500" data-testid="encart-offre-console">
+          {t('En Free, votre espace se pilote depuis Claude Code, Cursor ou l’API : l’accueil vous montre comment.',
+            'On Free, your workspace is run from Claude Code, Cursor or the API: the home page shows you how.')}
+        </p>
+      )}
+      <div className="mt-5 flex flex-wrap justify-center gap-2">
+        {fonction === 'console' && (
+          <Link href="/accueil" className={classesBouton('secondaire', 'normale')} data-testid="encart-offre-accueil">
+            {t('Piloter depuis Claude Code', 'Run it from Claude Code')}
+          </Link>
+        )}
+        <Link href={`/offre?fonction=${fonction}`} className={classesBouton('principal', 'normale')} data-testid="encart-offre-lien">
+          {t('Voir les offres', 'See plans')}
+        </Link>
+      </div>
     </div>
   );
 }

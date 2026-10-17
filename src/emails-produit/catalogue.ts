@@ -85,14 +85,16 @@ export const CATALOGUE = [
         sujet: 'Crédit IA épuisé : vos agents IA ne répondent plus',
         corps: 'Bonjour,\n\nLe crédit IA de l’espace {{espace}} est épuisé. Vos agents IA, dont le répondeur automatique, ne '
           + 'répondent plus : les messages qu’ils auraient pris arrivent dans « À traiter » de l’Inbox, pour votre équipe.\n\n'
-          + 'Rechargez le crédit pour qu’ils reprennent.\n\nCette alerte part une fois par jour au plus.',
+          + 'Rechargez le crédit pour qu’ils reprennent, depuis la console ou en le demandant à Claude.\n\nCette alerte part une '
+          + 'fois par jour au plus.',
         bouton: { libelle: 'Recharger le crédit IA', lien: '{{lien_credit}}' },
       },
       en: {
         sujet: 'AI credit used up: your AI agents no longer reply',
         corps: 'Hello,\n\nThe AI credit of the {{espace}} workspace is used up. Your AI agents, including the automatic '
           + 'responder, no longer reply: the messages they would have taken go to “To do” in the Inbox, for your team.\n\n'
-          + 'Top up the credit so they start again.\n\nThis alert is sent at most once a day.',
+          + 'Top up the credit so they start again, from the console or by asking Claude.\n\nThis alert is sent at most once '
+          + 'a day.',
         bouton: { libelle: 'Top up AI credit', lien: '{{lien_credit}}' },
       },
     },
@@ -239,14 +241,15 @@ export const CATALOGUE = [
         sujet: 'Crédit IA bientôt épuisé : il reste {{solde}}',
         corps: 'Bonjour,\n\nLe crédit IA de l’espace {{espace}} passe sous 0,50 € : il reste {{solde}}. Quand il sera à zéro, '
           + 'vos agents IA, dont le répondeur automatique, ne répondront plus, et les messages iront dans « À traiter » de '
-          + 'l’Inbox.\n\nRechargez dès maintenant pour qu’ils continuent sans interruption.',
+          + 'l’Inbox.\n\nRechargez dès maintenant, depuis la console ou en le demandant à Claude, pour qu’ils continuent sans '
+          + 'interruption.',
         bouton: { libelle: 'Recharger le crédit IA', lien: '{{lien_credit}}' },
       },
       en: {
         sujet: 'AI credit running low: {{solde}} left',
         corps: 'Hello,\n\nThe AI credit of the {{espace}} workspace has dropped below €0.50: {{solde}} left. When it reaches '
           + 'zero, your AI agents, including the automatic responder, will stop replying, and messages will go to “To do” '
-          + 'in the Inbox.\n\nTop up now so they keep going without interruption.',
+          + 'in the Inbox.\n\nTop up now, from the console or by asking Claude, so they keep going without interruption.',
         bouton: { libelle: 'Top up AI credit', lien: '{{lien_credit}}' },
       },
     },

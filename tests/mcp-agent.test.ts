@@ -302,7 +302,7 @@ function monter(o: Options & { envoyerModele?: DepsMcp['envoyerModele']; usage?:
       cle: 'rk_test_fausse', livemode: false,
       prix: { refill_50: 'price_50', refill_100: 'price_100' },
       transport: new FauxStripe(),
-      pageCredit: 'https://console.exemple/parametres/credit',
+      pageCredit: 'https://console.exemple/parametres/credit', pageClaude: 'https://console.exemple/paiement-recu',
     },
     clients: { clientDe: async () => null, retenirClient: async (_t, _l, c) => c },
     payeurAutorise: async (userId) => { cap.payeurs.push(userId); return o.payeurAutorise ?? true; },

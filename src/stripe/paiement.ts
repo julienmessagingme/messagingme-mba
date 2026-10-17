@@ -23,9 +23,17 @@ export interface StripeConfigure {
   /** L'identifiant Stripe du prix de chaque offre. Vide = cette offre n'est pas encore en vente. */
   prix: Readonly<Record<OffreRecharge, string>>;
   transport: TransportStripe;
-  /** L'adresse de la page Crédit IA de la console, où Stripe renvoie après le paiement ou l'abandon. */
+  /** L'adresse de la page Crédit IA de la console, où Stripe renvoie un paiement ouvert depuis la console. */
   pageCredit: string;
+  /**
+   * L'adresse de la page publique « paiement reçu » (`/paiement-recu`), où Stripe renvoie un paiement ouvert depuis Claude
+   * (`buy_credit`) : la page Crédit IA est fermée à la Free (spec offres v2), qui ne paie que par là.
+   */
+  pageClaude: string;
 }
+
+/** D'où le paiement est ouvert : il revient au même endroit. */
+export type RetourPaiement = 'console' | 'claude';
 
 /** Le câblage passe les MÊMES objets à la console et au MCP. */
 export interface DepsPaiement {
@@ -64,7 +72,7 @@ export interface PaiementOuvert {
  * refus 422 : son message part au journal, pas à l'appelant (il parle de NOTRE compte, et peut citer la fin de la clé).
  */
 export async function ouvrirPaiement(
-  deps: DepsPaiement, tenantId: string, corps: unknown, payeur: string,
+  deps: DepsPaiement, tenantId: string, corps: unknown, payeur: string, retour: RetourPaiement,
 ): Promise<Issue<PaiementOuvert>> {
   const lu = saisieDePaiement.safeParse(corps ?? {});
   if (!lu.success) return refus(400, 'offre inconnue (refill_50 ou refill_100)');
@@ -100,8 +108,8 @@ export async function ouvrirPaiement(
       offre,
       prix: s.prix[offre],
       customerId: client,
-      urlSucces: `${s.pageCredit}?paiement=recu`,
-      urlAbandon: `${s.pageCredit}?paiement=abandon`,
+      urlSucces: retour === 'claude' ? `${s.pageClaude}?produit=credit` : `${s.pageCredit}?paiement=recu`,
+      urlAbandon: retour === 'claude' ? `${s.pageClaude}?produit=credit&abonnement=abandon` : `${s.pageCredit}?paiement=abandon`,
       idempotence: `session-${tenantId}-${randomUUID()}`,
     });
     return { ok: true, valeur: { url: session.url, htCentimes: attendu } };

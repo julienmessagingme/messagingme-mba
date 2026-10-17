@@ -175,7 +175,10 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
           )}
           {isAdmin && (
             <>
-              <Link href="/admin" onClick={() => setOpen(false)} className="block px-3 py-2 text-sm text-ink-900 hover:bg-ink-50">{t('Compte & équipe', 'Account & team')}</Link>
+              {/* Compte & équipe est un écran de la console, fermé à la Free (spec offres v2) : pas de lien vers l'encart. */}
+              {!(vueOffre && !vueOffre.fonctions.has('console')) && (
+                <Link href="/admin" onClick={() => setOpen(false)} data-testid="menu-compte-equipe" className="block px-3 py-2 text-sm text-ink-900 hover:bg-ink-50">{t('Compte & équipe', 'Account & team')}</Link>
+              )}
               <Link href="/offre" onClick={() => setOpen(false)} data-testid="menu-abonnement" className="flex items-center justify-between px-3 py-2 text-sm text-ink-900 hover:bg-ink-50">
                 {t('Abonnement', 'Subscription')}
                 {vueOffre && (

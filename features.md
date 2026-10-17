@@ -83,6 +83,11 @@ ils le règlent, comme Developers. Aucune adresse n'a changé.
   IA**, venu de « Other AI agent » : le crédit paie les agents IA ET la traduction de l'Inbox, c'est un réglage
   de l'espace et pas d'un agent. L'ancienne adresse `/agents/credit` mène à `/parametres/credit`. Un manager
   n'y voit que Général.
+- ✅ **En Free, la console se réduit à l'essentiel** (spec offres v2, 2026-10-17) : **Accueil** (le numéro, et les
+  trois gestes pour piloter l'espace depuis Claude Code, Cursor ou l'API), **Clés d'API**, **Documentation API**,
+  **Serveur MCP**, **Offre**, le **Compte** et le **Support**. Les autres écrans restent dans la barre, grisés, et
+  mènent à l'offre Pro ; ouverts par une adresse, ils montrent un encart qui renvoie vers l'accueil. Le serveur ferme
+  aussi leurs routes : la Free fait tout le reste depuis le MCP ou l'API, la recharge du crédit IA comprise.
 
 **Performance Lab** : **Quantitatif (Messages & contacts / Coûts / Funnel) · Analyse des conversations ·
 Mes tableaux**. C'est l'ancien groupe « Analytics », remonté d'un cran : dans cet onglet, il EST le menu.

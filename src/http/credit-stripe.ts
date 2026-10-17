@@ -69,7 +69,7 @@ export function registerCreditPaiement(app: FastifyInstance, deps: CreditPaiemen
    */
   app.post('/tenants/:tenantId/credit/paiement', couteux, async (req, reply) => {
     const tenant = espaceVerifie(req);
-    const r = await ouvrirPaiement(deps, tenant, req.body, req.auth?.userId ?? '');
+    const r = await ouvrirPaiement(deps, tenant, req.body, req.auth?.userId ?? '', 'console');
     if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
     return reply.code(200).send({ url: r.valeur.url });
   });

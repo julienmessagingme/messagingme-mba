@@ -874,6 +874,8 @@ async function main(): Promise<void> {
         prix: { refill_50: config.STRIPE_PRIX_REFILL_50, refill_100: config.STRIPE_PRIX_REFILL_100 },
         transport: new FetchTransportStripe(),
         pageCredit: `${config.APP_URL.trim().replace(/\/+$/, '')}/parametres/credit`,
+        // Un paiement ouvert par Claude (`buy_credit`) revient sur la page publique : la Free n'a plus la page Crédit IA.
+        pageClaude: `${config.APP_URL.trim().replace(/\/+$/, '')}/paiement-recu`,
       }
       : null,
     clients: stripeStore,
@@ -1486,7 +1488,8 @@ async function main(): Promise<void> {
     /**
      * La recharge du crédit IA par Stripe (`src/http/credit-stripe.ts`). Toujours montée : sans clé, elle rend 503,
      * que la console lit comme « recharge pas encore disponible ». Le retour de Stripe se fait sur la page Crédit IA
-     * de la console, jamais sur l'API : il ne crédite rien, il fait relire le solde.
+     * de la console (ou sur la page publique « paiement reçu » pour un paiement ouvert par Claude, `buy_credit`), jamais
+     * sur l'API : il ne crédite rien, il fait relire le solde.
      */
     creditPaiement: paiementDeLaConsole,
     // Le pont du code (lot 3a), monté seulement avec son secret : une signature sans secret ne prouverait rien.

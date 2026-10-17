@@ -910,7 +910,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
     async executer(deps, tenantId, args, personne) {
       const payeur = signataire(personne);
       await plafondCouteux(deps, tenantId);
-      const p = valeurOuRefus(await ouvrirPaiement(deps.agentIa.paiement, tenantId, { offre: args.offre }, payeur));
+      const p = valeurOuRefus(await ouvrirPaiement(deps.agentIa.paiement, tenantId, { offre: args.offre }, payeur, 'claude'));
       return {
         url: p.url,
         offre: args.offre,
