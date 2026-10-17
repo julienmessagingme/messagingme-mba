@@ -5,6 +5,28 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-17 : les offres v2, livraison 2 (les limites de l'API par offre), en production
+
+- **Ce qui part** (`90d7d420`) : les clés d'API actives par offre (2, 10, sans limite), créées par `creerCleApi` et
+  refusées en 402 au-delà ; les plafonds d'appels par offre (30 et 500 en Free, 60 et 1 000 en Pro, la configuration en
+  Entreprise) par `valeurEffective` ; le quota quotidien d'envois scindé en modèles et réponses (500 et 2 000 en Free,
+  2 000 et 2 000 en Pro). Les chiffres sortent de la doc publique, de la FAQ (vitrine comprise, accord de Julien) et
+  des skills du plugin 0.2.0, pas encore publié.
+- **Mesure avant de concevoir** (sonde en lecture seule) : aucun espace n'avait de réglage d'API dans /ops, donc deux
+  colonnes neuves plutôt qu'une, sans recopie de `api_quota_envois_jour`, qui n'est plus lue (retrait au backlog).
+- **Migration 0241** (`tenant_settings.api_quota_modeles_jour` et `_reponses_jour`, entiers nullables, CHECK > 0
+  nommés, `set local lock_timeout` de 5 s) : image construite d'abord, 0241 seule en attente dedans, sans transaction
+  longue ni verrou sur `tenant_settings`, et la sonde a recompté `api_quota_envois_jour` juste avant (0). Appliquée
+  AVANT le `up`, relue en base (colonnes, contraintes et leurs prédicats), puis lue par le vrai code de la nouvelle
+  image : la Free à 30, 500, 2 000 et 2 clés, les Entreprise à 60, 2 000, 2 000 et sans limite. Commandes passées par
+  Julien.
+- **Relu** : aucun rouge. Traités avant le push : le test de câblage de l'offre dans le garde d'usage (vu rouge sans
+  le branchement), les commentaires de configuration (une valeur non nulle ne bride pas l'offre, seul 0 éteint). Restent
+  jaunes : le plafond d'appels commun à toutes les routes (une boucle de modèles qui ignore `Retry-After` prive les
+  réponses de la minute en cours, comme avant à 60), `get_plan` qui rend les valeurs invisibles des trois offres (à
+  trancher à la livraison 4), la page des clés qui grise à 10 avant de lire l'offre. CI verte job par job, e2e compris.
+- **Ce qui reste** : l'essai réel 128 (`docs/prive/ESSAIS-REELS.md`).
+
 ## 2026-10-17 : les offres v2, livraison 1 (la grille additive), en production
 
 - **Ce qui part** (`b10ba2ff`) : la fonction `console` dans la grille (Pro et Entreprise, pas la Free), sans rien fermer

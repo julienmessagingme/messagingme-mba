@@ -116,7 +116,10 @@ aucune transition.
 
 - **Livraison 1, la grille additive** : en production (`b10ba2ff`, migration 0240). La fonction `console` existe mais ne
   ferme encore rien (livraison 3) ; l'Entreprise se règle dans /ops (contacts, commission). Essai réel 127.
-- **Suivante** : la livraison 2, les limites de l'API et du MCP en Free (clés, débit, modèles par jour, réponses).
+- **Livraison 2, les limites de l'API par offre** : en production (`90d7d420`, migration 0241). Clés, appels et quotas
+  du jour par offre, les modèles et les réponses comptés à part. Essai réel 128.
+- **Suivante** : la livraison 3, la console fermée en Free. 🔴 Prévenir AVANT son déploiement le seul espace Free
+  (geste de Julien).
 
 ## CE QUI ATTEND UN ESSAI RÉEL
 
