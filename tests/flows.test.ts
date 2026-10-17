@@ -12,6 +12,7 @@ const deriveElements = (elements: FlowElementInput[]) => deriveScreens([{ elemen
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { FlowRouteDeps, FlowsDep } from '../src/http/flows';
 import type { FlowRow } from '../src/flow/store.pg';
+import type { UserFieldDef } from '../src/crm/types';
 
 function makeFetch(responses: Array<{ ok: boolean; status: number; json: unknown }>) {
   const calls: Array<{ url: string; init: RequestInit }> = [];
@@ -150,13 +151,23 @@ beforeAll(async () => {
 const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const h = (t: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${t}` } });
 
-interface Cap { inserted: Array<{ id: string; name: string; ref: string; mapping?: Record<string, string> }>; published: string[]; metaCalls: string[]; metaBodies: unknown[]; updated: Array<{ id: string; name: string; ref: string }>; removed: string[]; ensuredOptin: number; externals: Array<{ id: string; name: string; status: string }>; aligned: Array<{ id: string; name: string; status: string }> }
+interface Cap {
+  inserted: Array<{ id: string; name: string; ref: string; mapping?: Record<string, string> }>;
+  published: string[];
+  metaCalls: string[];
+  metaBodies: unknown[];
+  updated: Array<{ id: string; name: string; ref: string }>;
+  removed: string[];
+  ensuredFields: UserFieldDef[];
+  externals: Array<{ id: string; name: string; status: string }>;
+  aligned: Array<{ id: string; name: string; status: string }>;
+}
 
 function app(
   over: Partial<Omit<FlowRouteDeps, 'flows' | 'champs'>> & { flows?: Partial<FlowsDep>; champs?: FlowRouteDeps['champs'] } = {},
   opts: { wabaId?: string | null; belongs?: boolean; metaOk?: boolean; flow?: FlowRow | null; metaFlows?: Array<{ id?: string; name?: string; status?: string }> } = {},
 ) {
-  const cap: Cap = { inserted: [], published: [], metaCalls: [], metaBodies: [], updated: [], removed: [], ensuredOptin: 0, externals: [], aligned: [] };
+  const cap: Cap = { inserted: [], published: [], metaCalls: [], metaBodies: [], updated: [], removed: [], ensuredFields: [], externals: [], aligned: [] };
   const fakeFetch: FetchLike = async (url, init) => {
     cap.metaCalls.push(String(url));
     cap.metaBodies.push(init?.body ?? null);
@@ -171,7 +182,6 @@ function app(
   const deps: FlowRouteDeps = {
     meta: { flowClientForTenant: async () => new MetaFlowClient('tok', 'v25.0', '7.2', fakeFetch) },
     repo: { getTenantWabaId: async () => (opts.wabaId === undefined ? 'waba1' : opts.wabaId) },
-    insertFlow: async (_t, id, name, _elements, ref, mapping) => { cap.inserted.push({ id, name, ref, mapping }); },
     flows: {
       list: async (): Promise<FlowRow[]> => [{ id: 'f1', tenantId: 't1', name: 'Contact', status: 'PUBLISHED', fields: [], screens: null, ref: null, mapping: null, cta: null, createdAt: '2026-07-10T00:00:00.000Z', updatedAt: '2026-07-10T00:00:00.000Z' }],
       belongsTo: async () => opts.belongs !== false,
@@ -181,14 +191,21 @@ function app(
       alignFromMeta: async (id, _t, patch) => { cap.aligned.push({ id, ...patch }); return true; },
       ...flows,
     },
-    // Mime la vraie ensureField : rejette un type qui n'est PAS un UserFieldType (text|number|date|boolean|url).
-    // Sans normalisation, un champ Flow email/phone/textarea arriverait ici tel quel -> throw -> 500.
-    ensureUserField: async (_t, _label, type) => {
-      if (!['text', 'number', 'date', 'boolean', 'url'].includes(type)) throw new Error(`type de champ invalide: ${type}`);
+    persistance: {
+      create: async (input) => {
+        for (const def of input.champsAAssurer) {
+          if (!['text', 'number', 'date', 'datetime', 'boolean', 'url'].includes(def.type)) throw new Error(`type de champ invalide: ${def.type}`);
+          cap.ensuredFields.push(def);
+        }
+        cap.inserted.push({ id: input.id, name: input.name, ref: input.ref, mapping: input.mapping });
+      },
+      update: async (input) => {
+        cap.ensuredFields.push(...input.champsAAssurer);
+        cap.updated.push({ id: input.id, name: input.name, ref: input.ref });
+        return true;
+      },
     },
     champs: champs ?? { list: async () => [] },
-    ensureOptinField: async () => { cap.ensuredOptin += 1; },
-    updateFlowRow: async (_t, id, name, _elements, ref) => { cap.updated.push({ id, name, ref }); return true; },
     insertExternalFlow: async (_t, f) => { cap.externals.push(f); return true; },
     messagesInteractifsDuFormulaire: async () => [],
     ...reste,
@@ -287,7 +304,7 @@ describe('routes flows — création', () => {
       ...h(adminTok),
       payload: { name: 'Contact', elements: [{ kind: 'field', label: 'Email', type: 'email', required: true }, { kind: 'field', label: 'Téléphone', type: 'phone', required: false }] },
     });
-    expect(res.statusCode).toBe(201); // ensureUserField reçoit 'text', pas 'email'/'phone' -> pas d'erreur
+    expect(res.statusCode).toBe(201); // la préparation produit 'text', pas 'email'/'phone' -> pas d'erreur
     expect(cap.inserted).toHaveLength(1);
     await server.close();
   });
@@ -302,6 +319,22 @@ describe('routes flows — création', () => {
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toContain('analyse_sentiment');
+    expect(cap.inserted).toHaveLength(0);
+    await server.close();
+  });
+
+  it('🔴 un 400 après un premier champ valide ne crée aucun champ CRM', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/flows', ...h(adminTok),
+      payload: { name: 'Contact', elements: [
+        { kind: 'field', label: 'Ville', type: 'text', required: true },
+        { kind: 'field', label: 'Analyse sentiment', type: 'text', required: true },
+      ] },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(cap.metaCalls).toHaveLength(0);
+    expect(cap.ensuredFields).toHaveLength(0);
     expect(cap.inserted).toHaveLength(0);
     await server.close();
   });
@@ -353,7 +386,7 @@ describe('routes flows — création', () => {
     });
     expect(res.statusCode).toBe(201);
     expect(cap.inserted[0]!.mapping!['j_accepte']).toBe('whatsapp_optin'); // rangé dans le champ de consentement
-    expect(cap.ensuredOptin).toBe(1); // champ whatsapp_optin assuré
+    expect(cap.ensuredFields).toContainEqual({ key: 'whatsapp_optin', label: 'Consentement WhatsApp', type: 'boolean' });
     await server.close();
   });
 
@@ -365,7 +398,7 @@ describe('routes flows — création', () => {
     });
     expect(res.statusCode).toBe(201);
     expect(cap.inserted[0]!.mapping!['j_accepte']).toBe('consentement_marketing');
-    expect(cap.ensuredOptin).toBe(0); // cible choisie -> pas de création du champ par défaut
+    expect(cap.ensuredFields).toHaveLength(0); // cible choisie -> pas de création du champ par défaut
     await server.close();
   });
 
@@ -434,9 +467,11 @@ describe('routes flows — création', () => {
   });
 
   it('POST Meta en erreur -> 422', async () => {
-    const { server } = app({}, { metaOk: false });
+    const { server, cap } = app({}, { metaOk: false });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/flows', ...h(adminTok), payload: validBody });
     expect(res.statusCode).toBe(422);
+    expect(cap.ensuredFields).toHaveLength(0);
+    expect(cap.inserted).toHaveLength(0);
     await server.close();
   });
 });

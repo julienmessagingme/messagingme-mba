@@ -1,13 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { journaliser } from '../lib/journal';
 import type { FastifyInstance } from 'fastify';
-import { deriveScreens, fieldsOfScreens, isFlowFieldType, isChoiceFieldType, flowFieldToUserFieldType, DuplicateFieldKeyError, VisibleIfError, MAX_SCREENS } from '../meta/flow-json';
+import { fieldsOfScreens, isFlowFieldType, isChoiceFieldType, MAX_SCREENS } from '../meta/flow-json';
 import type { FlowElementInput, FlowScreenInput, FlowScreenDef, FlowFieldElInput, VisibleIfInput } from '../meta/flow-json';
 import type { MetaFlowClient } from '../meta/flows';
 import type { FlowRow } from '../flow/store.pg';
-import type { UserFieldType, UserFieldDef } from '../crm/types';
-import { WHATSAPP_OPTIN_FIELD_KEY } from '../crm/fields';
-import { estCleReservee } from '../crm/champs-fiche';
+import type { UserFieldDef } from '../crm/types';
+import { preparerFormulaire } from '../flow/preparation';
+import type { FormulaireALire } from '../flow/preparation';
+import { creerFormulaire, mettreAJourFormulaire } from '../flow/lifecycle';
+import type { PersistanceFormulaire } from '../flow/lifecycle';
 import type { Guard } from '../auth/middleware';
 import { espaceVerifie, nonEmpty } from './scope';
 
@@ -31,17 +33,12 @@ export interface FlowRouteDeps {
   };
   repo: { getTenantWabaId(tenantId: string): Promise<string | null> };
   flows: FlowsDep;
-  insertFlow(tenantId: string, id: string, name: string, screens: FlowScreenDef[], ref: string, mapping: Record<string, string>, cta?: string): Promise<void>;
-  /** Crée le user field s'il n'existe pas (mapping par défaut : chaque champ -> son propre user field). */
-  ensureUserField(tenantId: string, label: string, type: UserFieldType): Promise<void>;
+  /** La ligne du formulaire et les champs CRM requis sont écrits atomiquement après acceptation par Meta. */
+  persistance: PersistanceFormulaire;
   champs: {
     /** Définitions des user fields du tenant : valider qu'une cible de consentement choisie est bien booléenne. */
     list(tenantId: string): Promise<UserFieldDef[]>;
   };
-  /** Crée (idempotent, par clé) le champ booléen de consentement par défaut `whatsapp_optin`. */
-  ensureOptinField(tenantId: string): Promise<void>;
-  /** Met à jour un flow DRAFT en base (fields re-dérivé côté store). true si une ligne DRAFT a bougé. */
-  updateFlowRow(tenantId: string, id: string, name: string, screens: FlowScreenDef[], ref: string, mapping: Record<string, string>, cta?: string): Promise<boolean>;
   /** Réconciliation : enregistre un flow vu chez Meta et absent en local (structure inconnue). true si créé. */
   insertExternalFlow(tenantId: string, flow: { id: string; name: string; status: 'DRAFT' | 'PUBLISHED' }): Promise<boolean>;
   /**
@@ -112,7 +109,7 @@ function parseElements(v: unknown, saveTos: Array<string | undefined>): { elemen
  * écrans, chacun avec au moins un élément, au moins un champ au total), ou `elements: [...]` (forme mono-écran,
  * enveloppée en un écran). Rend les écrans et les saveTo alignés sur l'ordre global des champs, null si invalide.
  */
-function parseFlowBody(body: { screens?: unknown; elements?: unknown }): { screens: FlowScreenInput[]; saveTos: Array<string | undefined> } | null {
+function parseFlowBody(body: { screens?: unknown; elements?: unknown }): FormulaireALire | null {
   const saveTos: Array<string | undefined> = [];
   if (body.screens !== undefined) {
     if (!Array.isArray(body.screens) || body.screens.length === 0 || body.screens.length > MAX_SCREENS) return null;
@@ -134,68 +131,6 @@ function parseFlowBody(body: { screens?: unknown; elements?: unknown }): { scree
   const parsed = parseElements(body.elements, saveTos);
   if (parsed === null || parsed.fieldCount === 0) return null;
   return { screens: [{ elements: parsed.elements }], saveTos };
-}
-
-/**
- * Dérive les écrans (clés de champ uniques au global, sinon DuplicateFieldKeyError ; visibleIf validés, sinon
- * VisibleIfError), puis construit le mapping champ -> user field (par défaut celui de la clé, créé ici ; sinon la
- * cible choisie). Rend une erreur (400) ou le trio prêt. Partagé par la création et l'édition.
- */
-async function deriveAndMap(
-  deps: FlowRouteDeps,
-  tenant: string,
-  parsed: { screens: FlowScreenInput[]; saveTos: Array<string | undefined> },
-): Promise<{ error: string } | { derived: FlowScreenDef[]; mapping: Record<string, string>; fields: ReturnType<typeof fieldsOfScreens> }> {
-  let derived: FlowScreenDef[];
-  try {
-    derived = deriveScreens(parsed.screens);
-  } catch (err) {
-    if (err instanceof DuplicateFieldKeyError || err instanceof VisibleIfError) return { error: err.message };
-    throw err;
-  }
-  const fields = fieldsOfScreens(derived);
-  const mapping: Record<string, string> = {};
-  // Défs chargées une fois, seulement si un consentement (optin) désigne une cible explicite à valider.
-  let defs: UserFieldDef[] | null = null;
-  for (let i = 0; i < fields.length; i += 1) {
-    const f = fields[i]!;
-    const saveTo = parsed.saveTos[i];
-    // La clé d'un champ FIXE de la fiche (`analyse_sentiment`, `external_id`...) n'est jamais une cible : un champ
-    // perso homonyme se confondrait avec lui, et la dernière analyse n'est écrite que par l'analyse. ⚠️ Sauf `nom`
-    // et `wa_id`, qu'un formulaire écrivait déjà avant la liste unique : une question « Nom » est la plus courante,
-    // la refuser casserait la création comme l'édition des formulaires.
-    const cible = saveTo ?? f.key;
-    if (estCleReservee(cible) && cible !== 'nom' && cible !== 'wa_id') {
-      return { error: `« ${f.label} » : « ${cible} » est un champ réservé de la fiche, renommez la question` };
-    }
-    if (f.type === 'optin') {
-      // Consentement : cible = champ booléen choisi (validé) ou, à défaut, whatsapp_optin (créé à la volée).
-      if (saveTo) {
-        defs ??= await deps.champs.list(tenant);
-        const target = defs.find((d) => d.key === saveTo);
-        if (!target || target.type !== 'boolean') {
-          return { error: `le consentement « ${f.label} » doit être enregistré dans un champ Oui/Non existant` };
-        }
-        mapping[f.key] = saveTo;
-      } else {
-        await deps.ensureOptinField(tenant);
-        mapping[f.key] = WHATSAPP_OPTIN_FIELD_KEY;
-      }
-    } else if (saveTo) {
-      mapping[f.key] = saveTo;
-    } else {
-      mapping[f.key] = f.key;
-      // email/phone/textarea (types Flow) -> 'text' (type user field) : sinon ensureField -> 500.
-      await deps.ensureUserField(tenant, f.label, flowFieldToUserFieldType(f.type));
-    }
-  }
-  // Deux consentements ne peuvent pas viser le même champ : le second écraserait le premier alors que le gate
-  // opt-in s'ouvre au moindre « oui ». Vaut pour le défaut (whatsapp_optin) comme pour deux cibles identiques.
-  const optinTargets = fields.filter((f) => f.type === 'optin').map((f) => mapping[f.key]!);
-  if (new Set(optinTargets).size !== optinTargets.length) {
-    return { error: 'deux consentements enregistrent dans le même champ : donnez une cible distincte à chacun' };
-  }
-  return { derived, mapping, fields };
 }
 
 const INVALID_ELEMENTS = 'screens/elements invalide (1 à 10 écrans, chacun >= 1 élément ; au moins 1 champ au global ; texte non vide ; image base64 <= 300KB ; type de champ valide ; visibleIf {field, op eq/neq, value})';
@@ -222,14 +157,21 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
     const wabaId = await deps.repo.getTenantWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
 
-    const mapped = await deriveAndMap(deps, tenant, parsed); // 400 (collision/condition) avant tout appel Meta
-    if ('error' in mapped) return reply.code(400).send({ error: mapped.error });
+    const prepare = await preparerFormulaire(deps.champs, tenant, parsed); // lecture seule avant tout appel Meta
+    if ('error' in prepare) return reply.code(400).send({ error: prepare.error });
+    const formulaire = prepare.formulaire;
 
     const ref = randomUUID();
     const name = b.name.trim();
-    const { id, status } = await (await deps.meta.flowClientForTenant(tenant)).create(wabaId, { name, screens: mapped.derived, ref, ...(cta ? { cta } : {}) });
-    await deps.insertFlow(tenant, id, name, mapped.derived, ref, mapped.mapping, cta);
-    return reply.code(201).send({ id, status, name, fields: mapped.fields });
+    const meta = await deps.meta.flowClientForTenant(tenant);
+    const metaInput = { name, screens: formulaire.screens, ref, ...(cta ? { cta } : {}) };
+    const { id, status } = await creerFormulaire(
+      { meta, local: deps.persistance },
+      wabaId,
+      { tenantId: tenant, name, screens: formulaire.screens, ref, mapping: formulaire.mapping, ...(cta ? { cta } : {}), champsAAssurer: formulaire.champsAAssurer },
+      metaInput,
+    );
+    return reply.code(201).send({ id, status, name, fields: formulaire.fields });
   });
 
   // Édition d'un flow DRAFT : réécrit le flow_json (/assets multipart) + le store. PUBLISHED -> 409 (immuable).
@@ -255,15 +197,21 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
     const wabaId = await deps.repo.getTenantWabaId(tenant);
     if (!wabaId) return reply.code(400).send({ error: 'aucun WABA pour ce tenant' });
 
-    const mapped = await deriveAndMap(deps, tenant, parsed);
-    if ('error' in mapped) return reply.code(400).send({ error: mapped.error });
+    const prepare = await preparerFormulaire(deps.champs, tenant, parsed);
+    if ('error' in prepare) return reply.code(400).send({ error: prepare.error });
+    const formulaire = prepare.formulaire;
 
     // On garde le même ref (le flow Meta est le même id ; findByRef du webhook ne doit pas être orphelin).
     const ref = existing.ref ?? randomUUID();
     const name = b.name.trim();
-    await (await deps.meta.flowClientForTenant(tenant)).updateDraft(flowId, { name, screens: mapped.derived, ref, ...(cta ? { cta } : {}) }); // Meta avant store
-    await deps.updateFlowRow(tenant, flowId, name, mapped.derived, ref, mapped.mapping, cta);
-    return reply.code(200).send({ id: flowId, status: 'DRAFT', name, fields: mapped.fields });
+    const meta = await deps.meta.flowClientForTenant(tenant);
+    const metaInput = { name, screens: formulaire.screens, ref, ...(cta ? { cta } : {}) };
+    await mettreAJourFormulaire(
+      { meta, local: deps.persistance },
+      { tenantId: tenant, id: flowId, name, screens: formulaire.screens, ref, mapping: formulaire.mapping, ...(cta ? { cta } : {}), champsAAssurer: formulaire.champsAAssurer },
+      metaInput,
+    );
+    return reply.code(200).send({ id: flowId, status: 'DRAFT', name, fields: formulaire.fields });
   });
 
   // « Dupliquer pour modifier » : clone un flow en un nouveau DRAFT (ref frais). Meta avant le store.
@@ -287,8 +235,13 @@ export function registerFlows(app: FastifyInstance, deps: FlowRouteDeps, garde: 
     for (let n = 2; taken.has(name); n += 1) name = `${source.name} (copie ${n})`;
     const mapping = source.mapping ?? {};
     const cta = source.cta ?? undefined;
-    const { id, status } = await (await deps.meta.flowClientForTenant(tenant)).create(wabaId, { name, screens: source.screens, ref, ...(cta ? { cta } : {}) });
-    await deps.insertFlow(tenant, id, name, source.screens, ref, mapping, cta);
+    const meta = await deps.meta.flowClientForTenant(tenant);
+    const { id, status } = await creerFormulaire(
+      { meta, local: deps.persistance },
+      wabaId,
+      { tenantId: tenant, name, screens: source.screens, ref, mapping, ...(cta ? { cta } : {}), champsAAssurer: [] },
+      { name, screens: source.screens, ref, ...(cta ? { cta } : {}) },
+    );
     return reply.code(201).send({ id, status, name, fields: fieldsOfScreens(source.screens) });
   });
 

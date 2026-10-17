@@ -179,7 +179,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **Meta Business Agent** | l'agent de META (pas le nôtre) : activation, passage de main, consignes et messages interactifs (vivent chez Meta, aucune table chez nous) | `src/mba/` | `/mba` | `tenant_settings` | `handoff-sweep` |
 | **Canal RCS** | deuxième canal, agent de marque chez smsmode | `src/rcs/`, `src/channels-me/` | `/rcs-messages`, `/chaine` | `rcs_agents`, `rcs_media` | |
 | **Canal e-mail** | troisième canal, SMTP par workspace | `src/email/` | `/email-templates` | `email_accounts`, `email_templates` | |
-| **Formulaires (Flows)** | les WhatsApp Flows et leur mapping vers les fiches | `src/flow/`, `src/meta/flow-json.ts` | `/flows` | `flows` | |
+| **Formulaires (Flows)** | les WhatsApp Flows et leur mapping vers les fiches ; préparation pure (`preparation.ts`), cycle Meta/local (`lifecycle.ts`) et transaction champs + formulaire (`persistence.pg.ts`) | `src/flow/`, `src/meta/flow-json.ts` | `/flows` | `flows`, `user_fields` | |
 | **Analyse de conversation** | ce que le LLM comprend d'un fil clos | `src/analysis/` | `/dashboard`, `/performance` | `conversation_analysis` | `analyze-conversation`, `push-analysis` |
 | **Statistiques** | volumes, funnel, erreurs, coût ; les mêmes fonctions servent les chiffres de Claude Code (`get_message_stats`, `src/mcp/outils-chiffres.ts` : maille calculée depuis les séries par jour, l'essentiel et 30 jours sans la fonction `statistiques`) | `src/stats/`, `src/mcp/outils-chiffres.ts` | `/dashboard` | lecture seule | |
 | **Liens tracés** | compter les clics sur les boutons URL d'un template | `src/links/` | | `tracked_links`, `tracked_link_clicks` | |

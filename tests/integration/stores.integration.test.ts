@@ -30,6 +30,7 @@ import { PgWorkflowStore } from '../../src/workflow/store.pg';
 import { PgWorkflowRunStore } from '../../src/workflow/run-store.pg';
 import { WorkflowExecutor } from '../../src/workflow/executor';
 import { PgFlowStore } from '../../src/flow/store.pg';
+import { PgPersistanceFormulaire } from '../../src/flow/persistence.pg';
 import { PgApiKeyStore } from '../../src/auth/api-key-store.pg';
 import { PgApiIdempotencyStore } from '../../src/api/idempotency-store.pg';
 import { DUREE_CLE_EN_COURS_MAX_MS } from '../../src/api/idempotence';
@@ -551,6 +552,45 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       expect(await store.findByRef('ref-inexistant-xyz')).toBeNull();
     } finally {
       await pool.query('delete from flows where id = $1', [id]);
+    }
+  });
+
+  it('🔴 PgPersistanceFormulaire : formulaire et champs CRM sont atomiques, et la création est rejouable', async () => {
+    const persistance = new PgPersistanceFormulaire(pool);
+    const marque = Date.now();
+    const id = `flow-cycle-itest-${marque}`;
+    const key = `ville_cycle_${marque}`;
+    const ref = `ref-cycle-itest-${marque}`;
+    const input = {
+      id,
+      tenantId,
+      name: 'Cycle itest',
+      screens: [{ elements: [{ kind: 'field' as const, label: 'Ville', type: 'text' as const, required: true, key }] }],
+      ref,
+      mapping: { [key]: key },
+      champsAAssurer: [{ key, label: 'Ville', type: 'text' as const }],
+    };
+    try {
+      await persistance.create(input);
+      await persistance.create(input); // réponse de COMMIT perdue : le même effet se confirme sans doublon
+      expect(await new PgFlowStore(pool).getById(id, tenantId)).not.toBeNull();
+      expect((await new PgUserFieldStore(pool).list(tenantId)).filter((f) => f.key === key)).toHaveLength(1);
+    } finally {
+      await pool.query('delete from flows where id = $1', [id]);
+      await pool.query('delete from user_fields where tenant_id = $1 and key = $2', [tenantId, key]);
+    }
+
+    const autre = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-flow-cycle-autre') returning id`)).rows[0]!.id;
+    const idConflit = `flow-cycle-conflit-${marque}`;
+    const keyRollback = `rollback_cycle_${marque}`;
+    try {
+      await new PgFlowStore(pool).insertExternal({ id: idConflit, tenantId: autre, name: 'Pris', status: 'DRAFT' });
+      await expect(persistance.create({ ...input, id: idConflit, ref: `${ref}-autre`, champsAAssurer: [{ key: keyRollback, label: 'Rollback', type: 'text' }] })).rejects.toThrow('déjà pris');
+      expect((await new PgUserFieldStore(pool).list(tenantId)).some((f) => f.key === keyRollback)).toBe(false);
+    } finally {
+      await pool.query('delete from flows where id = $1', [idConflit]);
+      await pool.query('delete from user_fields where tenant_id = $1 and key = $2', [tenantId, keyRollback]);
+      await pool.query('delete from tenants where id = $1', [autre]);
     }
   });
 

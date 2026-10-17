@@ -59,15 +59,21 @@ function toFlowRow(r: FlowDbRow): FlowRow {
  * FlowRow.fields.
  */
 export class PgFlowStore {
-  constructor(private readonly pool: Pool) {}
+  constructor(private readonly pool: Pick<Pool, 'query'>) {}
 
   async insert(input: { id: string; tenantId: string; name: string; screens: FlowScreenDef[]; ref: string; mapping: Record<string, string>; cta?: string }): Promise<void> {
     // `elements` porte la forme { screens } ; les lignes anciennes restent en tableau plat, normalisées à la lecture.
-    await this.pool.query(
+    // Le no-op sur le même (id, espace, ref) rend la confirmation rejouable après une réponse Postgres perdue. Un id
+    // déjà pris par un autre espace ou un autre ref ne matche pas le WHERE et reste un conflit explicite.
+    const res = await this.pool.query(
       `insert into flows (id, tenant_id, name, fields, elements, ref, mapping, cta)
-       values ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7::jsonb, $8)`,
+       values ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7::jsonb, $8)
+       on conflict (id) do update set id = excluded.id
+       where flows.tenant_id = excluded.tenant_id and flows.ref = excluded.ref
+       returning id`,
       [input.id, input.tenantId, input.name, JSON.stringify(fieldsOfScreens(input.screens)), JSON.stringify({ screens: input.screens }), input.ref, JSON.stringify(input.mapping), input.cta ?? null],
     );
+    if ((res.rowCount ?? 0) === 0) throw new Error(`identifiant de formulaire déjà pris : ${input.id}`);
   }
 
   async list(tenantId: string): Promise<FlowRow[]> {
