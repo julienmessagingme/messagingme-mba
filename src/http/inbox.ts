@@ -813,6 +813,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     const assignee = brut === null ? null : (brut as string);
     const ok = await deps.inbox.setAssignee(tenant, conversationId, assignee, parLaSession(req));
     if (!ok) return reply.code(404).send({ error: 'conversation inconnue, ou membre étranger à cet espace' });
+    invaliderCompteurs(tenant); // « Non affectées » et la charge par membre viennent de changer.
     return reply.code(200).send({ conversationId, assignee });
   });
 
