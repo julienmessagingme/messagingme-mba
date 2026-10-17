@@ -804,6 +804,25 @@ describe('affectation des conversations', () => {
     await a.close();
   });
 
+  it('🔴 affecter invalide les compteurs du menu', async () => {
+    let lectures = 0;
+    const a = app({
+      inbox: {
+        setAssignee: async () => true,
+        compterConversations: async () => {
+          lectures += 1;
+          return { tout: 1, aTraiter: 0, aTraiterNonLues: 0, urgentes: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 1, parMembre: [] };
+        },
+      },
+    });
+    await a.inject({ method: 'GET', url: '/tenants/t1/conversations/counts', ...comme(jetons.manager) });
+    const affectation = await a.inject({ method: 'PATCH', url: '/tenants/t1/conversations/c1/assignee', ...comme(jetons.manager), payload: { assignee: 'u-affecte' } });
+    await a.inject({ method: 'GET', url: '/tenants/t1/conversations/counts', ...comme(jetons.manager) });
+    expect(affectation.statusCode).toBe(200);
+    expect(lectures).toBe(2);
+    await a.close();
+  });
+
   it('`assignee: null` libère la conversation', async () => {
     const { a, poses } = appAvecAffectation('u-affecte');
     const res = await a.inject({ method: 'PATCH', url: '/tenants/t1/conversations/c1/assignee', ...comme(jetons.manager), payload: { assignee: null } });
