@@ -583,7 +583,7 @@ export const OUTILS: OutilMcp[] = [
       // Le numéro délié sort en exception : traduit en refus, sinon l'agent lirait une panne et réessaierait en
       // consommant le plafond de l'espace.
       const res = await reponseOuRefus(() => repondreDansLaFenetre(deps, tenantId, id, texte, personne?.userId ?? null, 'mcp'));
-      return { message_id: res.messageId, conversation_id: id };
+      return resultatEnvoiMcp(res, id);
     },
   },
   {
@@ -616,7 +616,7 @@ export const OUTILS: OutilMcp[] = [
       if (!lu.success) throw new RefusOutil(`message invalide : ${messageDeForme(lu.error)}`);
       const message = { corps: corpsPourMeta(lu.data), trace: apercuDuMessage(lu.data), type: lu.data.type };
       const res = await reponseOuRefus(() => repondreAvecUnMessage(deps, deps.envoyerMessage, tenantId, id, message, personne?.userId ?? null, 'mcp'));
-      return { message_id: res.messageId, conversation_id: id };
+      return resultatEnvoiMcp(res, id);
     },
   },
   {
@@ -851,7 +851,7 @@ export function outilsPour(ctx: { scopes: readonly string[]; personne: PersonneM
  * point d'envoi), la conversation inconnue, l'espace sans numéro, le STOP, la fenêtre fermée. Sans cela, l'agent lirait
  * une panne et réessaierait en consommant le plafond de l'espace.
  */
-async function reponseOuRefus(envoi: () => Promise<ResultatReponse>): Promise<{ messageId: string }> {
+async function reponseOuRefus(envoi: () => Promise<ResultatReponse>): Promise<Extract<ResultatReponse, { messageId: string }>> {
   let res: ResultatReponse;
   try {
     res = await envoi();
@@ -878,4 +878,15 @@ async function reponseOuRefus(envoi: () => Promise<ResultatReponse>): Promise<{ 
     'fenêtre de 24 h fermée : le contact n’a pas écrit récemment, WhatsApp refuse le message libre. '
     + 'Il faut un template approuvé, envoyé depuis la console.',
   );
+}
+
+function resultatEnvoiMcp(res: Extract<ResultatReponse, { messageId: string }>, conversationId: string) {
+  return {
+    message_id: res.messageId,
+    conversation_id: conversationId,
+    journal: res.journal,
+    ...(res.journal === 'unrecorded'
+      ? { warning: 'The provider accepted this message, but its Inbox record could not be confirmed. Do not send it again.' }
+      : {}),
+  };
 }

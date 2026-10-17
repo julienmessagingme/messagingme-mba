@@ -24,7 +24,7 @@ On this page
 | Unknown record | Refused | Created with a phone, except with a whatsapp_session opening |
 | Idempotency | No | [Yes, key required](https://console.messagingme.app/developers/api/concepts.en.md#idempotence) |
 
-- The message shows in the Inbox.
+- The message appears in the Inbox when journal is recorded.
 - It takes the thread: the running scenario stops, the Meta agent stops replying.
 
 > **Caution**
@@ -71,11 +71,14 @@ _JSON_
 {
   "messageId": "wamid.exemple-8412",
   "conversationId": "c4e1b2a3-9d8f-4e7a-a6b5-1c2d3e4f5a6b",
-  "channel": "whatsapp"
+  "channel": "whatsapp",
+  "journal": "recorded"
 }
 ```
 
 conversationId is always set.
+
+After the provider accepts the message, journal is unrecorded if the Inbox write still fails after one retry. The status remains 200 and messageId identifies the message: do not replay this call.
 
 ### Errors
 
@@ -156,7 +159,8 @@ _JSON_
 {
   "messageId": "wamid.exemple-8412",
   "conversationId": "c4e1b2a3-9d8f-4e7a-a6b5-1c2d3e4f5a6b",
-  "channel": "whatsapp"
+  "channel": "whatsapp",
+  "journal": "recorded"
 }
 ```
 
@@ -198,7 +202,7 @@ curl -X POST https://api.messagingme.app/v1/messages/rcs \
 
 ### 200 response
 
-That of POST /v1/messages/whatsapp, with channel set to rcs. conversationId is null in one case: the message was sent, but the record was blocked or deleted in the meantime.
+That of POST /v1/messages/whatsapp, with channel set to rcs. conversationId is null if the thread cannot be opened after acceptance; journal is then unrecorded. Do not replay the call.
 
 ### Errors
 

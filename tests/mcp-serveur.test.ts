@@ -1,5 +1,5 @@
 import { jamaisDesabonne, toujoursDesabonne } from './consentement';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { buildServer } from '../src/server';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { FakeQueue } from './fake-queue';
@@ -388,6 +388,33 @@ describe('serveur MCP : les outils', () => {
     expect(JSON.parse(contenu(res).texte)).toMatchObject({ message_id: 'wamid-1' });
     expect(traces.envois).toEqual([{ tenant: 't1', to: '33600000001', texte: 'je vous rappelle demain' }]);
     await server.close();
+  });
+
+  it('les deux outils rendent un envoi accepté mais non journalisé comme résultat, sans second envoi', async () => {
+    const journalErreur = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let ecritures = 0;
+    let envoisMeta = 0;
+    const { server, traces } = app({
+      inbox: { recordOutbound: async () => { ecritures += 1; throw new Error('base indisponible'); } },
+      envoyerMessage: async () => { envoisMeta += 1; return 'wamid.meta'; },
+    });
+    try {
+      const appels = [
+        appeler('reply_in_open_window', { conversation_id: 'cv1', text: 'Bonjour' }),
+        appeler('send_message', { conversation_id: 'cv1', message: { type: 'text', text: { body: 'Bonjour' } } }),
+      ];
+      for (const payload of appels) {
+        const res = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload }));
+        expect(res.isError).toBe(false);
+        expect(JSON.parse(res.texte)).toMatchObject({ journal: 'unrecorded', warning: expect.stringMatching(/Do not send it again/) });
+      }
+      expect(traces.envois).toHaveLength(1);
+      expect(envoisMeta).toBe(1);
+      expect(ecritures).toBe(4);
+    } finally {
+      await server.close();
+      journalErreur.mockRestore();
+    }
   });
 
   it('🔴 la réponse est journalisée « mcp », JAMAIS « scenario » ni « humain »', async () => {
@@ -967,7 +994,7 @@ describe('serveur MCP : les outils et l’offre (lot 6, B2a)', () => {
     const image = { type: 'image', image: { link: 'https://exemple.fr/colis.jpg', caption: 'Votre colis' } };
     const ok = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('send_message', { conversation_id: 'cv1', message: image }) }));
     expect(ok.isError, ok.texte).toBe(false);
-    expect(JSON.parse(ok.texte)).toEqual({ message_id: 'wamid.meta', conversation_id: 'cv1' });
+    expect(JSON.parse(ok.texte)).toEqual({ message_id: 'wamid.meta', conversation_id: 'cv1', journal: 'recorded' });
     expect(partis).toEqual([{ tenant: 't1', to: expect.any(String), corps: image }]);
     expect(traces.journal).toEqual([{ origine: 'mcp', auteur: null }]);
     const mauvais = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('send_message', { conversation_id: 'cv1', message: { type: 'image', image: { id: '123' } } }) }));

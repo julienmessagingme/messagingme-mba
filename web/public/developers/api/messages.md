@@ -24,7 +24,7 @@ Sur cette page
 | Fiche inconnue | Refusée | Créée avec un phone, sauf ouverture whatsapp_session |
 | Idempotence | Non | [Oui, clé obligatoire](https://console.messagingme.app/developers/api/concepts.md#idempotence) |
 
-- Le message apparaît dans l’Inbox.
+- Le message apparaît dans l’Inbox si journal vaut recorded.
 - Il prend le fil : le scénario en cours s’arrête, l’agent de Meta cesse de répondre.
 
 > **Attention**
@@ -71,11 +71,14 @@ _JSON_
 {
   "messageId": "wamid.exemple-8412",
   "conversationId": "c4e1b2a3-9d8f-4e7a-a6b5-1c2d3e4f5a6b",
-  "channel": "whatsapp"
+  "channel": "whatsapp",
+  "journal": "recorded"
 }
 ```
 
 conversationId est toujours renseigné.
+
+Après acceptation par le fournisseur, journal vaut unrecorded si l’écriture dans l’Inbox échoue encore après une reprise. Le statut reste 200 et messageId identifie le message : ne rejouez pas cet appel.
 
 ### Erreurs
 
@@ -156,7 +159,8 @@ _JSON_
 {
   "messageId": "wamid.exemple-8412",
   "conversationId": "c4e1b2a3-9d8f-4e7a-a6b5-1c2d3e4f5a6b",
-  "channel": "whatsapp"
+  "channel": "whatsapp",
+  "journal": "recorded"
 }
 ```
 
@@ -198,7 +202,7 @@ curl -X POST https://api.messagingme.app/v1/messages/rcs \
 
 ### Réponse 200
 
-Celle de POST /v1/messages/whatsapp, channel à rcs. conversationId vaut null dans un cas : le message est parti, mais la fiche a été bloquée ou supprimée entre-temps.
+Celle de POST /v1/messages/whatsapp, channel à rcs. conversationId vaut null si le fil ne peut pas être ouvert après acceptation ; journal vaut alors unrecorded. Ne rejouez pas l’appel.
 
 ### Erreurs
 

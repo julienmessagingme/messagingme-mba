@@ -1963,23 +1963,31 @@ export class PgInboxStore implements InboxStore {
      */
     redactionOrigine: string | null = null,
   ): Promise<void> {
-    await this.pool.query(
-      // `last_direction = 'out'` : on attend désormais le client. Une réponse humaine repousse le dégel (le délai
-      // court depuis sa dernière réponse, pas depuis la prise du fil) ; un automate ne prolonge pas un gel humain.
-      `update conversations set last_message_at = now(), last_preview = $2, last_direction = 'out',
-         control_changed_at = case when $3::boolean and control_owner = 'app_human'
-                                   then now() else control_changed_at end,
-         -- 🔴 LA PREMIÈRE RÉPONSE D'UN HUMAIN CLÔT L'ESCALADE (0164) : le balayage pourra rendre le fil à l'agent
-         -- après les 2 h habituelles de silence, pas avant (arbitrage de Julien du 2026-09-23).
-         escaladee_le = case when $3::boolean then null else escaladee_le end,
-         analysis_status = case when analysis_status in ('done', 'failed', 'hors_offre') then 'pending' else analysis_status end
-       where id = $1`,
-      [conversationId, body, origine === 'humain'],
+    const resultat = await this.pool.query<{ recorded: boolean }>(
+      // Une seule instruction : un INSERT refusé annule aussi l'UPDATE du fil. Sur un rejeu après commit incertain,
+      // la contrainte unique du message empêche une seconde bulle et `inserted` vide empêche de remonter le fil.
+      // `last_direction = 'out'` : on attend le client. Une réponse humaine repousse le dégel ; un automate non.
+      `with inserted as (
+         insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, template_category, template_name, sender_user_id, channel, origin, redaction_origine)
+         values ($1, 'out', $4, $2, $3, $5, $6, $7, $8, $9, $10)
+         on conflict (meta_message_id) where meta_message_id is not null do nothing
+         returning conversation_id
+       ), updated as (
+         update conversations set last_message_at = now(), last_preview = $2, last_direction = 'out',
+           control_changed_at = case when $11::boolean and control_owner = 'app_human'
+                                     then now() else control_changed_at end,
+           -- La première réponse humaine clôt l'escalade ; un automate ne la clôt pas.
+           escaladee_le = case when $11::boolean then null else escaladee_le end,
+           analysis_status = case when analysis_status in ('done', 'failed', 'hors_offre') then 'pending' else analysis_status end
+         where id = $1 and exists (select 1 from inserted)
+         returning id
+       )
+       select exists (select 1 from inserted)
+              or exists (select 1 from conversation_messages
+                         where meta_message_id = $3 and conversation_id = $1 and direction = 'out') as recorded`,
+      [conversationId, body, messageId, type, templateCategory, templateName, senderUserId, channel, origine, redactionOrigine, origine === 'humain'],
     );
-    await this.pool.query(
-      `insert into conversation_messages (conversation_id, direction, type, body, meta_message_id, template_category, template_name, sender_user_id, channel, origin, redaction_origine)
-       values ($1, 'out', $4, $2, $3, $5, $6, $7, $8, $9, $10)`,
-      [conversationId, body, messageId, type, templateCategory, templateName, senderUserId, channel, origine, redactionOrigine],
-    );
+    // Un identifiant déjà porté par un AUTRE fil n'est pas un rejeu réussi.
+    if (resultat.rows[0]?.recorded !== true) throw new Error('message sortant non journalisé dans cette conversation');
   }
 }

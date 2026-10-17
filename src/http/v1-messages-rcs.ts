@@ -10,8 +10,8 @@ import type { ConversationsRepondre } from '../inbox/repondre';
 import { envoyerRcsLibre, type DepsRcsLibre, type RefusRcsLibre } from '../rcs/envoyer-libre';
 import { RCS_TEXTE_MAX } from '../../web/lib/partage/rcs';
 import { INCONNUE_POUR_UN_MESSAGE, type ReponseMessageSimple } from './v1-messages';
-import { messageDe } from '../lib/erreur';
 import { auteurDeLEnvoi, type AuteurDuChangement } from '../inbox/evenements';
+import { journaliserEnvoiAccepte, type EtatJournalSortant } from '../inbox/journal-sortant';
 
 /**
  * `POST /v1/messages/rcs` : un texte en RCS, à une personne qui a une fiche.
@@ -107,18 +107,21 @@ export function registerV1MessagesRcs(app: FastifyInstance, deps: V1MessagesRcsR
      * auteur `null`). Au mieux : le message est parti, un 5xx ferait réessayer l'intégrateur, donc envoyer deux fois.
      * Un rapport d'échec smsmode arrivé avant l'inscription est écrit quand même par `traiterRapportRcs`.
      */
-    const conversationId = await deps.inbox.ouvrirConversationDuContact(tenantId, fiche.contactId).catch(() => null);
+    // Ouvrir le fil est aussi une écriture rejouable : si elle échoue après l'envoi, on la reprend sans
+    // solliciter à nouveau le fournisseur. L'upsert de la conversation empêche un second fil.
+    const ouvrirFil = () => deps.inbox.ouvrirConversationDuContact(tenantId, fiche.contactId).catch(() => null);
+    let conversationId = await ouvrirFil();
+    if (!conversationId) conversationId = await ouvrirFil();
+    let journal: EtatJournalSortant = 'unrecorded';
     if (conversationId) {
       await deps.takeControl(tenantId, waId, auteurDeLEnvoi('api', null)).catch(() => {});
-      await deps.inbox.recordOutbound(conversationId, issue.apercu, issue.messageId, 'api', 'rcs', null, null, null, 'rcs').catch((err: unknown) => {
-        // eslint-disable-next-line no-console
-        console.error(`v1/messages/rcs: RCS parti mais non inscrit dans l'Inbox (${tenantId}):`, messageDe(err));
-      });
+      journal = await journaliserEnvoiAccepte(tenantId, conversationId, issue.messageId, () =>
+        deps.inbox.recordOutbound(conversationId, issue.apercu, issue.messageId, 'api', 'rcs', null, null, null, 'rcs'));
     } else {
       // eslint-disable-next-line no-console
       console.error(`v1/messages/rcs: RCS parti, fil introuvable pour ${fiche.contactId} (${tenantId}), bloqué ou supprimé entre-temps`);
     }
     // `conversationId` peut valoir `null` : 200 quand même, le message est parti (un 5xx ferait envoyer deux fois).
-    return reply.code(200).send({ messageId: issue.messageId, conversationId, channel: 'rcs' } satisfies ReponseMessageSimple);
+    return reply.code(200).send({ messageId: issue.messageId, conversationId, channel: 'rcs', journal } satisfies ReponseMessageSimple);
   });
 }

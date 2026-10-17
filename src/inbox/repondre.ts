@@ -12,6 +12,7 @@
  */
 import type { OrigineMessage } from './origine';
 import { auteurDeLEnvoi, type AuteurDuChangement } from './evenements';
+import { journaliserEnvoiAccepte, type EtatJournalSortant } from './journal-sortant';
 
 /** Ce que la réponse lit et écrit des conversations. */
 export interface ConversationsRepondre {
@@ -71,7 +72,7 @@ export type RefusReponse =
   | { motif: 'aucun_numero' }
   | { motif: 'contact_desabonne' };
 
-export type ResultatReponse = { messageId: string } | { refus: RefusReponse };
+export type ResultatReponse = { messageId: string; journal: EtatJournalSortant } | { refus: RefusReponse };
 
 /**
  * `auteur` = l'humain qui écrit, ou `null` (agent tiers via MCP) : il finit dans `sender_user_id` et signe le
@@ -158,6 +159,7 @@ async function repondreAvec(
   // l'écarterait de la conversation, et le message suivant du client irait à « À traiter » au lieu de lui revenir.
   const laisserALApplication = origine === 'api' && await deps.filTenuParLApplication(tenantId, ctx.waId).catch(() => false);
   if (!laisserALApplication) await deps.takeControl(tenantId, ctx.waId, auteurDeLEnvoi(origine, auteur)).catch(() => {});
-  await deps.inbox.recordOutbound(conversationId, envoi.trace, messageId, origine, envoi.type, null, null, auteur, 'whatsapp', redactionOrigine);
-  return { messageId };
+  const journal = await journaliserEnvoiAccepte(tenantId, conversationId, messageId, () =>
+    deps.inbox.recordOutbound(conversationId, envoi.trace, messageId, origine, envoi.type, null, null, auteur, 'whatsapp', redactionOrigine));
+  return { messageId, journal };
 }

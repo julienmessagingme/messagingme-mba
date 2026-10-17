@@ -11,6 +11,7 @@
 import { request, requestBlob } from '../http';
 import type { BulkTarget } from '../contact-filters';
 import type { CanalEtage } from '../campagne-chaine';
+import type { ReponseEnvoiInteractif } from '../partage/journal-sortant';
 
 // --- Campagnes ---
 
@@ -290,8 +291,8 @@ export function sendRcsToConversation(
   tenantId: string,
   conversationId: string,
   contenu: { rcsMessageId: string } | { text: string },
-): Promise<{ messageId: string }> {
-  return request<{ messageId: string }>(`/tenants/${tenantId}/conversations/${conversationId}/send-rcs`, {
+): Promise<ReponseEnvoiInteractif> {
+  return request<ReponseEnvoiInteractif>(`/tenants/${tenantId}/conversations/${conversationId}/send-rcs`, {
     method: 'POST',
     body: JSON.stringify(contenu),
   });

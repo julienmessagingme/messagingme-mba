@@ -94,6 +94,20 @@ describe('inbox routes', () => {
     await a.close();
   });
 
+  it('POST reply : une écriture reprise ne renvoie pas le WhatsApp', async () => {
+    let envois = 0;
+    let ecritures = 0;
+    const a = app({
+      sendReply: async () => { envois += 1; return 'wamid.REPRIS'; },
+      inbox: { recordOutbound: async () => { if (++ecritures === 1) throw new Error('connexion coupée'); } },
+    });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/reply', ...auth(), payload: { text: 'Merci !' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ messageId: 'wamid.REPRIS', journal: 'recorded' });
+    expect([envois, ecritures]).toEqual([1, 2]);
+    await a.close();
+  });
+
   it('POST reply -> journalise l auteur (sender_user_id du JWT) et l origine « humain »', async () => {
     let sender: string | null | undefined = 'UNSET';
     const origines: string[] = [];
@@ -159,6 +173,25 @@ describe('inbox routes', () => {
     expect(sent).toMatchObject({ tenant: 't1', pn: 'pn1', to: '33611', tpl: { name: 'promo', language: 'fr', bodyParams: ['Julie'], headerMediaUrl: 'https://x.fr/v.mp4', headerFormat: 'VIDEO' } });
     expect(recordedType).toBe('template');
     await a.close();
+  });
+
+  it('POST send-template : fournisseur accepté, journal indisponible -> 200 explicite sans second envoi', async () => {
+    const journalErreur = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let envois = 0;
+    let ecritures = 0;
+    const a = app({
+      sendTemplateMessage: async () => { envois += 1; return 'wamid.TPL'; },
+      inbox: { recordOutbound: async () => { ecritures += 1; throw new Error('base indisponible'); } },
+    });
+    try {
+      const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/send-template', ...auth(), payload: { templateName: 'promo', language: 'fr' } });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ messageId: 'wamid.TPL', journal: 'unrecorded' });
+      expect([envois, ecritures]).toEqual([1, 2]);
+    } finally {
+      await a.close();
+      journalErreur.mockRestore();
+    }
   });
 
   it('🔴 POST send-template : la catégorie déclarée voyage jusqu’à l’envoi (c’est elle qui choisit la MM API), normalisée', async () => {

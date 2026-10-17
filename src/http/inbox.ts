@@ -13,6 +13,7 @@ import { MediaTropGros } from '../meta/media';
 import { MediaExpire, enTetesMedia } from '../inbox/media-entrant';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import { repondreDansLaFenetre, type ConversationsRepondre, type DepsRepondre } from '../inbox/repondre';
+import { journaliserEnvoiAccepte } from '../inbox/journal-sortant';
 import { estCodeLangue, estLangueConsole, TEXTE_MAX_CARACTERES, type CauseSansTraduction, type LangueConsole, type Traduction } from '../traduction/traduire';
 import type { FilTraduit } from '../traduction/fil';
 import { messageDe } from '../lib/erreur';
@@ -856,7 +857,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
       return reply.code(422).send({ error: 'Fenêtre de 24 h fermée : envoie un template, ou un message RCS si le contact y est joignable.', code: 'window_closed' });
     }
     invaliderCompteurs(tenant); // le fil passe cote humain : il entre dans « A traiter ».
-    return reply.code(200).send({ messageId: res.messageId });
+    return reply.code(200).send({ messageId: res.messageId, journal: res.journal });
   });
 
   /**
@@ -892,8 +893,9 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     // ne doit pas faire croire à un message perdu.
     await deps.takeControl(tenant, ctx.waId, parLaSession(req)).catch(() => {});
     invaliderCompteurs(tenant); // le fil passe cote humain : il entre dans « A traiter ».
-    await deps.inbox.recordOutbound(conversationId, issue.apercu, issue.messageId, 'humain', 'rcs', null, null, req.auth?.userId ?? null, 'rcs');
-    return reply.code(200).send({ messageId: issue.messageId });
+    const journal = await journaliserEnvoiAccepte(tenant, conversationId, issue.messageId, () =>
+      deps.inbox.recordOutbound(conversationId, issue.apercu, issue.messageId, 'humain', 'rcs', null, null, req.auth?.userId ?? null, 'rcs'));
+    return reply.code(200).send({ messageId: issue.messageId, journal });
   });
 
   /**
@@ -989,8 +991,9 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     // Même prise de main que sur la réponse texte : un template envoyé à la main est un acte d'opérateur.
     await deps.takeControl(tenant, ctx.waId, parLaSession(req)).catch(() => {});
     invaliderCompteurs(tenant); // le fil passe cote humain : il entre dans « A traiter ».
-    await deps.inbox.recordOutbound(conversationId, `[template] ${b.templateName}`, messageId, 'humain', 'template', templateCategory, b.templateName, req.auth?.userId ?? null);
-    return reply.code(200).send({ messageId });
+    const journal = await journaliserEnvoiAccepte(tenant, conversationId, messageId, () =>
+      deps.inbox.recordOutbound(conversationId, `[template] ${b.templateName}`, messageId, 'humain', 'template', templateCategory, b.templateName, req.auth?.userId ?? null));
+    return reply.code(200).send({ messageId, journal });
   });
 
   /**

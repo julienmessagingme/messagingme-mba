@@ -26,6 +26,7 @@ interface Options {
   langueContact?: string | null;
   /** Fenêtre de 24 h fermée : le composeur passe en mode TEMPLATE, qui ne se traduit pas. */
   fenetreFermee?: boolean;
+  journal?: 'recorded' | 'unrecorded';
 }
 
 async function monter(page: Page, opts: Options = {}) {
@@ -44,7 +45,7 @@ async function monter(page: Page, opts: Options = {}) {
     }
     if (/\/conversations\/c1\/reply$/.test(url)) {
       envois.push(req.postDataJSON());
-      return json({ messageId: 'wamid.OUT' });
+      return json({ messageId: 'wamid.OUT', journal: opts.journal ?? 'recorded' });
     }
     if (/\/conversations\/counts/.test(url)) return json({ tout: 1, aTraiter: 1, signalees: 0, archivees: 0, nonAffectees: 1, parMembre: [] });
     if (/\/c1\/messages$/.test(url.split('?')[0]!)) {
@@ -70,6 +71,15 @@ async function monter(page: Page, opts: Options = {}) {
 }
 
 test.describe('Inbox : traduire un sortant avant de l’envoyer', () => {
+  test('message accepté sans journal : le brouillon est vidé et un avertissement reste visible', async ({ page }) => {
+    const { envois } = await monter(page, { journal: 'unrecorded' });
+    await page.getByTestId('zone-saisie').fill('Bonjour, je regarde ça.');
+    await page.getByTestId('bouton-envoyer').click();
+    await expect(page.getByTestId('zone-saisie')).toHaveValue('');
+    await expect(page.getByTestId('inbox-journal-warning')).toContainText('wamid.OUT');
+    expect(envois).toHaveLength(1);
+  });
+
   test('🔴 le bouton NOMME sa cible', async ({ page }) => {
     // « Traduire » tout court ne dit pas où part la phrase. La langue apprise du contact peut être
     // fausse une fois (un « ok », un emoji) : la nommer est la seule protection qui reste.
