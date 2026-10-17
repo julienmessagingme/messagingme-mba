@@ -11,7 +11,7 @@ The TypeScript client of the API: calls typed by path and method, typed errors, 
 _Installation_
 
 ```
-npm install github:julienmessagingme/messagingme-sdk#v0.3.0
+npm install github:julienmessagingme/messagingme-sdk#v0.3.1
 ```
 
 - No dependency. Node 20 or later, Deno, Bun, and runtimes that expose fetch and Web Crypto.
