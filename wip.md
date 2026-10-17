@@ -118,8 +118,10 @@ aucune transition.
   ferme encore rien (livraison 3) ; l'Entreprise se règle dans /ops (contacts, commission). Essai réel 127.
 - **Livraison 2, les limites de l'API par offre** : en production (`90d7d420`, migration 0241). Clés, appels et quotas
   du jour par offre, les modèles et les réponses comptés à part. Essai réel 128.
-- **Suivante** : la livraison 3, la console fermée en Free. 🔴 Prévenir AVANT son déploiement le seul espace Free
-  (geste de Julien).
+- **Livraison 3, la console fermée en Free** : en production (`79f15081`). Le serveur exige `console` hors d'une liste
+  blanche ; la Free garde l'accueil (numéro, gestes Claude Code), les clés, la doc, l'offre, le compte et le support.
+  Essai réel 129.
+- **Suivante** : la livraison 4, les outils MCP `create_api_key` et le paiement du Pro, puis le plugin.
 
 ## CE QUI ATTEND UN ESSAI RÉEL
 

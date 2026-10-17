@@ -5,6 +5,27 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-17 : les offres v2, livraison 3 (la console fermée en Free), en production
+
+- **Ce qui part** (`79f15081`) : le serveur exige la fonction `console` sur chaque route d'espace, sauf
+  `MODULES_OUVERTS_AU_FREE`, qui descend à la route (d'`account` le seul statut du numéro, d'`admin` la seule lecture du
+  nom) ; la console réduit la Free à `ECRANS_FREE`, avec un encart qui renvoie vers l'accueil ; l'accueil d'une Free
+  garde le numéro et montre les trois gestes Claude Code (`PiloterDepuisClaude`, sorti de `/demarrer`). Hors du plan :
+  `buy_credit` revient sur `/paiement-recu?produit=credit`, la page Crédit IA étant fermée à la Free.
+- **La liste blanche s'est fixée sur un relevé** des appels réels de chaque écran Free (un agent d'exploration), qui a
+  trouvé ce qu'une liste par module aurait manqué : la page de consentement de Claude lit `GET /nom` du module `admin`,
+  et le module `account` aurait ouvert deux écritures HubSpot. Un e2e confronte désormais chaque appel des écrans Free
+  à cette liste.
+- **Ordre** : l'espace Free prévenu par Julien AVANT le push, la console se fermant dès la publication de Vercel ; aucune
+  migration ; `up` puis `aide:charger` (la fiche « Me repérer dans la console » a changé), relue en base ensuite.
+- **Relu** : aucun rouge. Traités : l'accueil montait encore deux composants de la console avant de connaître l'offre
+  (deux lectures refusées, et l'e2e neuf aurait été rouge), le statut du numéro était relu deux fois (deux appels à
+  Meta par accueil, toutes offres), « Compte & équipe » menait la Free à l'encart. Restent jaunes : le bouton des
+  e-mails du crédit mène la Free à l'encart, la facture d'une recharge payée par Claude n'a plus d'écran (le portail
+  Billing à vérifier). Le défaut `console` retiré, six tests rougissent. CI verte job par job, e2e compris ; journaux
+  sans erreur ni 402 après le `up`.
+- **Ce qui reste** : l'essai réel 129 (`docs/prive/ESSAIS-REELS.md`).
+
 ## 2026-10-17 : les offres v2, livraison 2 (les limites de l'API par offre), en production
 
 - **Ce qui part** (`90d7d420`) : les clés d'API actives par offre (2, 10, sans limite), créées par `creerCleApi` et
