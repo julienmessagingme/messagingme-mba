@@ -958,11 +958,21 @@ geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose bu
 - Un vrai rappel RCS est traité, et un visuel RCS reste lisible pendant toute la durée qu'exige l'opérateur.
 - ~~Une pièce jointe de l'assistant MBA est lisible depuis les DEUX copies d'API~~ : sans objet depuis le retrait
   de ce magasin (§3.4).
+- Les webhooks des autres tiers arrivent sur `api.` et passent leur signature : Stripe (un vrai achat de crédit, et le
+  paiement du Pro), Resend (l'événement de livraison d'un e-mail), 360dialog (un message entrant d'un numéro porté),
+  HubSpot (une étape de deal reçue par le relais).
+- Un vrai e-mail produit part, et son événement de livraison revient.
+- Le formulaire de contact de la vitrine aboutit : redirection 303 vers la vitrine, message reçu.
+- Un vrai lien tracé `/r/` redirige et compte son clic ; un vrai média `/m/` se sert.
+- Claude Code se connecte par le plugin (OAuth) et un outil MCP répond ; une clé d'API répond sur `/v1`.
 
 **L'API publique**
 - `/v1` applique ses plafonds et rend un `429`, **sans que les webhooks en soient affectés**.
 - Une clé révoquée est refusée par les DEUX copies d'API.
 - Une copie d'API de plus n'ajoute aucune connexion de session à la base (compte avant et après, §3.1).
+- Les limites de la grille v2 (spec `docs/superpowers/specs/2026-10-16-offres-v2-design.md`) tiennent sur la cible :
+  en Free, une troisième clé est refusée en 402 et le 31e appel de la minute rend 429 ; chaque client Entreprise a ses
+  limites relevées dans `/ops`, sinon il est à celles du Pro.
 - **Le second banc rejoué sur la cible** (`scripts/banc-deux-api-2.mts`, ses cinq épreuves) : une clé, un envoi,
   entre deux copies ; arrêt propre sans requête coupée ; arrêt brutal, toute clé coupée aboutit une fois le bail
   passé, ZÉRO campagne orpheline ; webhooks acquittés sous pression de pool ; chaque copie sous son `DB_POOL_MAX`.
@@ -978,11 +988,31 @@ geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose bu
   l'infrastructure actuelle, la borne était le pool de l'API (150 appels/s tenus, 200 en p95 de 9 s) et la file des
   statuts se vidait à environ 11 accusés par seconde : deux chiffres faits de latence, que la cible change, à
   remesurer avant de régler la concurrence de `webhook-status` ou la taille des pools.
+- **Le plafond global mesuré en surcharge, avec le nombre de copies prévu**, avant de le poser plus haut : latence des
+  `429`, attente du pool, santé des webhooks, et la contention de sa ligne unique (`api.zz-plateforme`), cause
+  probable du p95 de 3,3 s du 15 octobre, jamais isolée.
+- **Le banc des accusés avec de VRAIS messages** (point P1 de l'audit du 2026-10-17, `docs/prive/`) : des campagnes
+  semées dont les accusés `sent`, `delivered` et `read` désignent des messages qui existent, pour que chaque accusé
+  fasse son vrai travail (livraison, tarif, mesure par bloc, signaux). Le banc du 14 octobre envoyait des identifiants
+  inexistants, qui ne mettent rien à jour : ses 27,8 accusés par seconde ne mesurent pas ce coût. La question à
+  trancher : combien de numéros peuvent envoyer à plein débit en même temps (80 messages par minute chacun, soit
+  environ 4 accusés par seconde) avant que la file prenne du retard, et en combien de temps elle résorbe la rafale que
+  Meta renvoie après une indisponibilité de notre côté.
 
 **Les deux workers**
 - Tuer le worker d'analyse ne ralentit ni les entrants ni les campagnes.
 - Tuer le worker principal déclenche l'alerte de heartbeat qui le NOMME.
 - Les deux rôles sont visibles séparément dans `/ops`.
+- L'écouteur `LISTEN` de chaque worker est établi : une connexion `LISTEN` par worker dans `pg_stat_activity`, et
+  aucune ligne `pgboss_ecoute_nouvelle_tentative` dans leurs journaux.
+- La purge des conversations et les autres balayages planifiés ont tourné une fois sur la cible (journal du worker).
+
+**Les secrets et la reprise**
+- L'`ENCRYPTION_KEY` des conteneurs a la même empreinte que celle de la production (les 16 premiers caractères du
+  SHA-256, calculés sans affichage), et un secret chiffré se lit : un envoi Meta part.
+- La première sauvegarde automatique de Scaleway de la base de production est vue, et sa rétention relevée. Alors
+  seulement, la tâche planifiée de sauvegarde du VPS (`scripts/sauvegarde-base.sh`, posée par Julien le 2026-10-14)
+  se retire.
 
 **La route IA optionnelle, seulement si elle a été achetée et livrée**
 - Un espace témoin configuré Vercel passe toujours par Vercel et conserve outils, coûts et plafonds actuels.

@@ -63,10 +63,10 @@ d'un modèle par `waba-v2.360dialog.io/messages` ET par MM Lite (`/marketing_mes
 L'exercice de restauration est fait et réussi (`DEPLOY.md` § Restauration : 29 secrets sur 29 déchiffrés sur une copie
 jetable, copie identique à la production). Restent :
 
-- **À la bascule Scaleway** (lot 6 du plan `docs/superpowers/plans/2026-10-14-avant-bascule-scaleway.md`) : rejouer
-  `scripts/exercice-restauration.sh` contre une sauvegarde de la base managée, réécrire la section de `DEPLOY.md`, et
-  retirer la tâche planifiée du VPS une fois les sauvegardes de Scaleway relevées. Les extensions `vector`, `pg_trgm`
-  et `unaccent` se créent avant la restauration (un dump par schémas ne les porte pas).
+- **Après la bascule Scaleway** : retirer la tâche planifiée de sauvegarde du VPS, une fois la première sauvegarde
+  automatique de la base de production vue (§ 11 d'`ARCHITECTURE-CIBLE.md`, « Les secrets et la reprise »). La
+  restauration a déjà été rejouée chez Scaleway le 2026-10-15 sur les vraies données (lot 6 du plan d'avant la
+  bascule : 124 tables identiques, 30 secrets sur 30), et `DEPLOY.md` porte la procédure de la base managée.
 - 🟡 **La reprise d'un écouteur établi qui tombe n'est éprouvée par aucun test** : elle appartient à pg-boss
   (`listen` de `pg-boss/dist/db.js`, lu le 2026-10-14). Un test d'intégration qui coupe la connexion d'écoute
   (`pg_terminate_backend`) et mesure le réveil garderait une montée de version de pg-boss ; il ne tourne qu'en CI.
