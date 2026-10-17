@@ -4,8 +4,8 @@
 
 - **Le besoin** : poser une pause de 1 à 59 s entre deux messages rapides d'un scénario, pour l'effet humain.
 - **La spec** : `docs/superpowers/specs/2026-10-16-attente-en-secondes-design.md`, relue par un constructeur, décisions
-  de Julien comprises (bloc posé à la main, coches bleues acceptées). Reste à valider la spec, puis le plan. Pas
-  commencé.
+  de Julien comprises (bloc posé à la main, coches bleues acceptées), validée le 2026-10-17. Le plan :
+  `docs/superpowers/plans/2026-10-17-attente-en-secondes.md`. Pas commencé.
 
 ## 🟡 L'API Groups de WhatsApp : à garder, sans client pour l'instant (2026-10-16)
 
