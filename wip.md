@@ -121,7 +121,10 @@ aucune transition.
 - **Livraison 3, la console fermée en Free** : en production (`79f15081`). Le serveur exige `console` hors d'une liste
   blanche ; la Free garde l'accueil (numéro, gestes Claude Code), les clés, la doc, l'offre, le compte et le support.
   Essai réel 129.
-- **Suivante** : la livraison 4, les outils MCP `create_api_key` et le paiement du Pro, puis le plugin.
+- **Livraison 4, la clé de l'application et le Pro depuis Claude** : en production (`89749782`). `create_api_key` (droits
+  limités) et `subscribe_pro`, par la connexion de Claude seulement ; la skill du plugin les connaît (0.2.0, non publiée).
+  Essai réel 130.
+- **Suivante** : la livraison 5, le Pro resserré (sans analyse, publicités ni chaînes ; 5 000 contacts ; commission 20 %).
 
 ## CE QUI ATTEND UN ESSAI RÉEL
 

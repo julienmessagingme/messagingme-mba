@@ -5,6 +5,26 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-17 : les offres v2, livraison 4 (la clé de l'application et le Pro depuis Claude), en production
+
+- **Ce qui part** (`89749782`) : deux outils MCP pour la Free, qui n'a plus la console. `create_api_key` passe par
+  `creerCleApi` (la création de la console : plafond de l'offre en 402, trace `cle_api.creee` avec `via: 'mcp'`),
+  droits par défaut ceux de la page « Démarrer » (`DROITS_CLE_APPLICATION`, déplacé dans `web/lib/partage`), la clé
+  rendue une fois avec `MESSAGINGME_API_KEY`. `subscribe_pro` passe par `ouvrirPro`, qui gagne `RetourPro` : la console
+  revient sur `/offre`, Claude sur `/paiement-recu?produit=pro`. Les deux exigent la personne et consomment le plafond
+  des opérations coûteuses. La skill `mise-en-service` les connaît, sans montée de version : la 0.2.0 n'est pas publiée.
+- **Relu** : aucun rouge. Traités avant le push : l'outil acceptait tous les droits alors que la spec demande « une clé à
+  droits limités » (une consigne glissée dans un message lu par Claude aurait pu fabriquer une clé `webhooks:write` qui
+  survit à la révocation de Claude ; `DROITS_PAR_CLAUDE` exclut `mcp:*`, `webhooks:write` et `contacts:admin`), et le
+  portail d'un espace déjà Pro portait un montant que Claude aurait annoncé « à payer ». Deux attentes de
+  `tests/offres-cablage.test.ts` lisaient l'ancien texte du câblage. Reste jaune : la trace d'audit ne dit pas QUELLE
+  connexion de Claude a créé la clé. `get_plan` rend les limites invisibles de l'espace : gardé, c'est l'état de l'espace
+  lui-même, pas la doc publique, et les refus 402 les disent déjà.
+- **Ordre** : aucune migration, aucune fiche d'aide changée ; `up` des deux conteneurs. CI verte job par job ; `REVISION`
+  `89749782` sur l'API et le worker, `/live` 200, journaux sans erreur ni 402 ; la connexion Claude de la session de
+  travail liste les deux outils.
+- **Ce qui reste** : l'essai réel 130 (`docs/prive/ESSAIS-REELS.md`).
+
 ## 2026-10-17 : les offres v2, livraison 3 (la console fermée en Free), en production
 
 - **Ce qui part** (`79f15081`) : le serveur exige la fonction `console` sur chaque route d'espace, sauf
