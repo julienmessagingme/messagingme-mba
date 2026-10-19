@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { microEurosDepuisDollars } from '../agent/devise';
 
 /**
  * Ce que nous acceptons de dépenser pour les assistants de configuration.
@@ -28,6 +29,32 @@ export function resteDuBudget(depenseMicroEur: number, plafondEuros: number): nu
 export interface DepenseStore {
   lire(tenantId: string, mois: string): Promise<number>;
   ajouter(tenantId: string, mois: string, microEuros: number): Promise<void>;
+}
+
+export interface BudgetAssistantDeps {
+  depenses: DepenseStore;
+  /** 0 désactive le plafond. */
+  plafondEuros: number;
+  tauxEurParDollar: number;
+}
+
+/** Vérifie le plafond mensuel commun aux assistants exécutés sur notre clé. */
+export async function budgetOuvert(deps: BudgetAssistantDeps, tenantId: string): Promise<boolean> {
+  if (!deps.plafondEuros) return true;
+  return resteDuBudget(await deps.depenses.lire(tenantId, moisDe(new Date())), deps.plafondEuros) > 0;
+}
+
+/** Note au coût réel un appel déjà effectué, y compris si sa réponse se révèle inutilisable. */
+export async function noterDepense(
+  deps: BudgetAssistantDeps,
+  tenantId: string,
+  coutDollars: number,
+): Promise<void> {
+  await deps.depenses.ajouter(
+    tenantId,
+    moisDe(new Date()),
+    microEurosDepuisDollars(coutDollars, deps.tauxEurParDollar),
+  );
 }
 
 export class PgDepenseStore implements DepenseStore {

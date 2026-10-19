@@ -103,12 +103,12 @@ describe('prixClientMicroEur', () => {
 
 /**
  * 🔴 L'INVENTAIRE, parce qu'un nouveau chemin qui débite un client l'oubliera. `microEurosDepuisDollars` rend le
- * coût BRUT : c'est notre dépense, et seuls les deux assistants de configuration (sur notre clé) la mesurent
- * ainsi. Tout le reste débite le crédit d'un espace, donc au prix client.
+ * coût BRUT : c'est notre dépense. Le budget partagé des assistants et l'assistant MBA (sur notre clé) la
+ * mesurent ainsi. Tout le reste débite le crédit d'un espace, donc au prix client.
  */
 describe('inventaire du coût brut', () => {
   const RACINE = fileURLToPath(new URL('../src/', import.meta.url));
-  const AUTORISES = ['agent/devise.ts', 'http/agent-setup.ts', 'http/mba-assistant.ts'];
+  const AUTORISES = ['agent/devise.ts', 'assistant/budget.ts', 'http/mba-assistant.ts'];
 
   function fichiers(dossier: string): string[] {
     return readdirSync(dossier, { withFileTypes: true }).flatMap((e) => {
@@ -118,7 +118,7 @@ describe('inventaire du coût brut', () => {
     });
   }
 
-  it('🔴 `microEurosDepuisDollars` n’est nommée que par devise.ts et les deux assistants', () => {
+  it('🔴 `microEurosDepuisDollars` n’est nommée que par devise.ts et les deux budgets assistants', () => {
     const usagers = fichiers(RACINE)
       .filter((f) => readFileSync(f, 'utf8').includes('microEurosDepuisDollars'))
       .map((f) => f.slice(RACINE.length).split('\\').join('/'));

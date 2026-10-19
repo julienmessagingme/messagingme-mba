@@ -56,8 +56,8 @@ describe('le fil conserve tout, le prompt reste borné', () => {
  * un test qui monte un faux store voit ce que le faux lui rend. Seule une relecture qui SUIT la donnée l'a vu.
  */
 describe('le fil ÉCRIT n’est pas le fil ENVOYÉ', () => {
-  it('🔴 la route écrit le fil COMPLET, pas sa version bornée', () => {
-    const src = readFileSync(resolve(__dirname, '../src/http/agent-setup.ts'), 'utf8');
+  it('🔴 le tour écrit le fil COMPLET, pas sa version bornée', () => {
+    const src = readFileSync(resolve(__dirname, '../src/agent/setup/tour-entretien.ts'), 'utf8');
     // Le fil complet part de `avant.messages`, jamais de `bornerPourModele(...)`.
     expect(src).toContain('const filComplet: TourEntretien[] = [...avant.messages');
     // Et c'est LUI que l'état écrit reprend.
