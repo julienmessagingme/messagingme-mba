@@ -188,3 +188,29 @@ describe('ce que lisent les moteurs et les modèles', () => {
     }
   });
 });
+
+describe('le démarrage passe par le plugin, sans créer d’espace avant (Julien, 2026-10-19)', () => {
+  // L'espace naît à l'autorisation : « Continuer avec Google » sur une adresse inconnue le crée, avec son admin
+  // (`creerEspaceParGoogle`, tenu par tests/http-oauth.test.ts). Envoyer d'abord vers l'inscription de la console était
+  // un détour, et le portefeuille Meta n'est demandé qu'au numéro, dans /messagingme:demarrer.
+  for (const [langue, html] of Object.entries(PAGES)) {
+    it(`page ${langue} : aucun lien vers l’inscription, les appels mènent au plugin et à son dépôt`, () => {
+      expect(html).not.toContain('console.messagingme.app/signup');
+      expect(html).toContain('<section class="f-bloc dev-etapes" id="demarrer">');
+      expect(html.split('href="#demarrer"').length - 1, 'le haut et le bas de la page').toBe(2);
+      expect(html).toContain('href="https://github.com/julienmessagingme/messagingme-plugin"');
+      // Sous les boutons du haut : aucun compte, un numéro fourni, un compte Meta Business seulement (Julien, 2026-10-19).
+      const promesses = html.split('<ul class="dev-sans">')[1]?.split('</ul>')[0] ?? '';
+      expect(promesses.split('<li>').length - 1).toBe(3);
+    });
+  }
+  for (const page of ['tarifs/index.html', 'en/pricing/index.html']) {
+    it(`${page} : la Free se démarre par le plugin`, () => {
+      const html = lire(page);
+      const free = html.slice(html.indexOf('<h2 class="tarif-nom">Free</h2>'), html.indexOf('<h2 class="tarif-nom">Pro</h2>'));
+      expect(free.length).toBeGreaterThan(0);
+      expect(free).toMatch(/href="\/(en\/developers|developpeurs)\/#demarrer"/);
+      expect(free).not.toContain('signup');
+    });
+  }
+});

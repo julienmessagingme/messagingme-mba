@@ -16,7 +16,7 @@
 
 ## Développeurs
 
-- [Messaging Me pour les développeurs](https://app.messagingme.fr/developpeurs/) : WhatsApp dans votre app en une session Claude Code. Créer son espace, installer le plugin Claude Code, l’API, le SDK et ce que permet l’offre gratuite.
+- [Messaging Me pour les développeurs](https://app.messagingme.fr/developpeurs/) : WhatsApp dans votre app en une session Claude Code. Installer le plugin Claude Code (l’espace se crée à l’autorisation, avec Google), l’API, le SDK et ce que permet l’offre gratuite.
 - [Messaging Me for developers](https://app.messagingme.fr/en/developers/) : the same page in English.
 - [Questions fréquentes des développeurs](https://app.messagingme.fr/developpeurs/#faq) : l’API officielle, ce qu’il faut chez Meta, ce que Meta facture, la fenêtre de 24 h, les limites d’envoi, le numéro fourni, la mise à jour du plugin ([en anglais](https://app.messagingme.fr/en/developers/#faq)).
 - [Le plugin Claude Code](https://github.com/julienmessagingme/messagingme-plugin) : `/plugin marketplace add julienmessagingme/messagingme-plugin`, puis `/plugin install messagingme@messagingme` et `/messagingme:demarrer`.

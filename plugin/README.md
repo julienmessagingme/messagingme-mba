@@ -3,6 +3,8 @@
 WhatsApp for your app, from Claude Code: an official WhatsApp number, an AI agent that answers your customers and a
 chat bubble for your site, set up in one session with [Messaging Me](https://app.messagingme.fr/en/developers/).
 
+**No account to create, no key to copy. No WhatsApp number? We provide one. All you need is a Meta Business account.**
+
 ## Install
 
 In Claude Code:
@@ -12,8 +14,8 @@ In Claude Code:
 /plugin install messagingme@messagingme
 ```
 
-Then type `/mcp`, select `plugin:messagingme:messagingme` and Authenticate: a browser page opens, where you sign in
-(or create your workspace with Google) and click Authorize. Then:
+Then type `/mcp`, select `plugin:messagingme:messagingme` and Authenticate: a browser page opens. Continue with Google
+(no account yet? your workspace is created right then, with no form) and click Authorize. Nothing to create first. Then:
 
 ```
 /messagingme:demarrer

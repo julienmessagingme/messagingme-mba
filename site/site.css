@@ -866,6 +866,11 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 /* Deux colonnes égales au bureau seulement : sous 960 px, la une des pages fonctionnalités passe sur une colonne. */
 @media (min-width:961px){.dev-une{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
 .dev-une h1{font-size:clamp(2.2rem,3.6vw,3rem)}
+/* Ce qu'il ne faut PAS pour commencer (Julien, 2026-10-19) : aucun compte, un numéro fourni, un compte Meta Business seulement */
+.dev-sans{list-style:none;margin:26px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:10px 26px}
+.dev-sans li{position:relative;padding-left:26px;color:var(--muted);font-size:1rem}
+.dev-sans li::before{content:"";position:absolute;left:2px;top:.42em;width:12px;height:7px;border-left:2px solid var(--action-ink);border-bottom:2px solid var(--action-ink);transform:rotate(-45deg)}
+.dev-sans strong{color:var(--ink)}
 .dev-etapes{padding-top:16px}
 .dev-code,.dev-offre{padding:88px 0}
 /* La fenêtre est celle de Claude Code, pas une fenêtre « à nous » (Julien, 2026-10-19 : la version bleue « ne
