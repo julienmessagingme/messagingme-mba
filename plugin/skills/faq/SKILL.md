@@ -107,11 +107,11 @@ Trois limites. Celle de l’offre : 1 000 modèles par mois en Free, illimités 
 
 ## How do I add a colleague?
 
-From the console, with an invitation. 1 user on Free, 3 on Pro, per quote on Enterprise.
+From the console, with an invitation. 1 user on Free, 3 on Pro then €15 excl. VAT per extra user per month (offered when inviting), per quote on Enterprise.
 
 **FR · Comment ajouter un collègue ?**
 
-Depuis la console, par une invitation. 1 utilisateur en Free, 3 en Pro, selon le devis en Entreprise.
+Depuis la console, par une invitation. 1 utilisateur en Free, 3 en Pro puis 15 € HT par utilisateur en plus et par mois (proposé à l'invitation), selon le devis en Entreprise.
 
 ## How do I cancel, and what happens to the number?
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DROITS, FONCTIONS, PRIX_PRO_HT_CENTIMES, type Fonction, type Offre } from '../src/offres/offres';
+import { DROITS, ESSAI_PRO_JOURS, FONCTIONS, PRIX_PRO_HT_CENTIMES, PRIX_SIEGE_HT_CENTIMES, type Fonction, type Offre } from '../src/offres/offres';
 import { PRIX_NUMERO_HT_CENTIMES } from '../src/stripe/abonnement';
 import { JUMELLES } from '../scripts/vitrine/anglais';
 import { lire, parAttribut, texte } from './vitrine-lecture';
@@ -27,6 +27,9 @@ const ATTENDU: Record<string, number> = {
   'pro.utilisateurs': DROITS.pro.limites.utilisateurs ?? NaN,
   'pro.adresses-webhook': DROITS.pro.limites.adressesWebhook ?? NaN,
   'pro.conservation-jours': DROITS.pro.limites.conservationJours,
+  // L'essai (livraison 6) et le prix d'un utilisateur en plus (livraison 7).
+  'pro.essai-jours': ESSAI_PRO_JOURS,
+  'pro.siege-mois': PRIX_SIEGE_HT_CENTIMES.mois / 100,
   // Pas la commission sur le crédit IA : la page ne la dit pas (décision de Julien du 2026-10-19).
 };
 

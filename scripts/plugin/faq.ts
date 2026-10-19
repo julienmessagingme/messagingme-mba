@@ -7,7 +7,7 @@
  * jamais recopiés. Les tarifs de Meta ne portent AUCUN chiffre (décision du lot 17) : ils changent plusieurs fois par an,
  * et notre fiche produit (`brain/MESSAGINGME.md`, § tarifs) est la seule référence avant d'en écrire un mot.
  */
-import { DROITS } from '../../src/offres/offres';
+import { DROITS, PRIX_SIEGE_HT_CENTIMES } from '../../src/offres/offres';
 import { PRIX_NUMERO_HT_CENTIMES } from '../../src/stripe/abonnement';
 import { ETAPES_CARTE_META, PREREQUIS_META } from '../../web/lib/partage/etapes-meta';
 
@@ -34,6 +34,8 @@ const modeles = (limite: number | null, langue: 'fr' | 'en'): string => limite =
   : (langue === 'fr' ? `${nombre(limite, 'fr')} modèles par mois` : `${nombre(limite, 'en')} templates a month`);
 const UTILISATEURS_FREE = DROITS.base.limites.utilisateurs;
 const UTILISATEURS_PRO = DROITS.pro.limites.utilisateurs;
+/** Le prix d'un utilisateur en plus du Pro, au mois (livraison 7), en euros entiers. */
+const SIEGE_MOIS = PRIX_SIEGE_HT_CENTIMES.mois / 100;
 const INCLUS_FR = DROITS.pro.limites.numeroInclus ? ', inclus dans le Pro' : '';
 const INCLUS_EN = DROITS.pro.limites.numeroInclus ? ', included in Pro' : '';
 const GRILLE_META = 'https://developers.facebook.com/docs/whatsapp/pricing';
@@ -152,8 +154,8 @@ export const FAQ: readonly EntreeFaq[] = [
     id: 'ajouter-un-collegue',
     question: { fr: 'Comment ajouter un collègue ?', en: 'How do I add a colleague?' },
     reponse: {
-      fr: `Depuis la console, par une invitation. ${UTILISATEURS_FREE} utilisateur en Free, ${UTILISATEURS_PRO} en Pro, selon le devis en Entreprise.`,
-      en: `From the console, with an invitation. ${UTILISATEURS_FREE} user on Free, ${UTILISATEURS_PRO} on Pro, per quote on Enterprise.`,
+      fr: `Depuis la console, par une invitation. ${UTILISATEURS_FREE} utilisateur en Free, ${UTILISATEURS_PRO} en Pro puis ${SIEGE_MOIS} € HT par utilisateur en plus et par mois (proposé à l'invitation), selon le devis en Entreprise.`,
+      en: `From the console, with an invitation. ${UTILISATEURS_FREE} user on Free, ${UTILISATEURS_PRO} on Pro then €${SIEGE_MOIS} excl. VAT per extra user per month (offered when inviting), per quote on Enterprise.`,
     },
     source: 'src/offres/offres.ts (DROITS) ; docs/aide/fiches/inviter-mon-equipe-et-gerer-les-acces.md',
   },
