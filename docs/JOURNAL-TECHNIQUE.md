@@ -5,6 +5,29 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-19 : les offres v2, livraison 5 (le Pro resserré), en production
+
+- **Ce qui part** (`075babf7`, puis `84e312be`) : le Pro perd l'analyse des conversations, les publicités et les chaînes
+  (l'Entreprise seule), crée 5 000 contacts au plus et paie 20 % de commission sur le crédit IA. Tout ce qui lit la grille
+  suit seul : les refus (« Passez en Entreprise »), l'encart et la barre de la console, `OFFRES_SANS_ANALYSE`, le gel des
+  automations des chaînes et des publicités. Écrit à la main : les déclencheurs d'automation nés d'une analyse refusés
+  en 402 hors de la fonction `analyse` (dépendance requise `analyseOuverte`) et grisés à l'écran ; les alertes de contacts
+  du Pro (`limite_contacts_pro_80/100`, qui renvoient à l'Entreprise) ; les textes (page Offre, fiches, vitrine).
+- **Mesuré avant** (lecture seule) : aucun espace en Pro (1 Free, 7 Entreprise), aucun texte d'e-mail surchargé en base,
+  la seule automation d'analyse chez une Entreprise. Personne n'est touché.
+- **Relu** : aucun rouge. Traités avant le push : « risque élevé » sorti des déclencheurs d'analyse (un STOP, un silence
+  ou un numéro injoignable le font monter sans analyse) ; des seuils d'alerte par offre (communs, ils auraient privé de
+  son « Passer en Pro » un Pro arrivé à sa limite puis revenu en Free) ; la doc publique de `conversation.analyzed` ;
+  des fixtures de l'ancien Pro. Jaunes reportés dans `todo.md`. Sur la vitrine, « sans plafond de notre part » est devenu
+  « illimités », à la demande de Julien.
+- **CI** : la racine verte du premier coup ; la console rouge sur un seul e2e sur 1 586, dont l'attente disait encore
+  « Pro » sur l'encart d'une chaîne fermée, que l'écran dit désormais, à raison, « Entreprise ». Corrigé par `84e312be`,
+  vert. ⚠️ Une fixture d'e2e qui recopie la grille (`PRO = TOUTES.slice(0, 10)`) fige une offre : à chaque changement de
+  grille, chercher ces recopies dans `web/e2e` et `web/lib/*.test.ts`.
+- **Ordre** : aucune migration ; `up -d --build` des trois conteneurs qui portent la grille, puis `aide:charger` (quatre
+  fiches). `REVISION` `84e312be` partout, journaux sans erreur ni 402, fiches relues en base, `get_plan` rend la grille.
+- **Ce qui reste** : l'essai réel 131 (`docs/prive/ESSAIS-REELS.md`).
+
 ## 2026-10-17 : l'audit des index manquants, et la migration 0242
 
 - **La question de Julien** : si un index manquait pour les accusés, d'autres manquent-ils ailleurs ? La production est

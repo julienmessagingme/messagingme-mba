@@ -124,7 +124,10 @@ aucune transition.
 - **Livraison 4, la clé de l'application et le Pro depuis Claude** : en production (`89749782`). `create_api_key` (droits
   limités) et `subscribe_pro`, par la connexion de Claude seulement ; la skill du plugin les connaît (0.2.0, non publiée).
   Essai réel 130.
-- **Suivante** : la livraison 5, le Pro resserré (sans analyse, publicités ni chaînes ; 5 000 contacts ; commission 20 %).
+- **Livraison 5, le Pro resserré** : en production (`075babf7`, `84e312be`). Sans analyse, publicités ni chaînes, 5 000
+  contacts, 20 % de commission ; alertes de contacts du Pro ; vitrine « envois illimités ». Essai réel 131.
+- **Suivantes** : les livraisons 6 (l'essai de 14 jours) et 7 (les sièges payants) attendent d'abord les gestes de Julien
+  chez Stripe ; la 8 (les textes publics et la page des tarifs) peut passer avant.
 
 ## CE QUI ATTEND UN ESSAI RÉEL
 
