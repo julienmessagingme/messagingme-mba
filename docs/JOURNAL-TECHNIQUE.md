@@ -5,6 +5,32 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-19 : les offres v2, livraison 7 (les utilisateurs payés du Pro), en production
+
+- **Ce qui part** (`f182e6a9`, migration 0244 `abonnements_offre.sieges`) : le Pro compte 3 utilisateurs plus ses sièges
+  (`droitsDe`, lu par l'invitation et le gel). Une invitation à la limite d'un Pro est refusée avec le siège à acheter et
+  son prix (champ `siege` du 402) ; la console le propose (« Ajouter et inviter »), la route
+  `POST /tenants/:tenantId/offre/sieges` change la ligne de l'abonnement chez Stripe avec le prorata facturé et appliqué
+  seulement s'il est payé, puis la même invitation repart. La page Offre dit les utilisateurs payés et en retire un. Le
+  webhook relit les sièges chez Stripe à chaque modification de l'abonnement.
+- **Relu** : aucun rouge, dix-neuf jaunes. Corrigés avant le push, parce qu'ils touchaient un montant ou une phrase :
+  un siège proposé et payé pour une invitation refusée ensuite (administrateur de trop, adresse déjà membre, membres déjà
+  au-delà) ; une cible absolue lue dans un cache qui changeait un ajout en retrait (désormais `{ depuis, cible }`, un siège
+  à la fois, ce qui borne aussi la quantité) ; la base notée sur la réponse plutôt que sur une relecture ; le cache de
+  l'offre entre copies à l'invitation ; un refus durable de Stripe qui bloquait la mise à jour du Pro ; le prorata d'un
+  siège pris pour le premier paiement d'un essai ; une Entreprise qui pouvait acheter des sièges ; le retrait sans
+  confirmation ; trois phrases. Six jaunes au `todo.md` (SEPA, codes promo, motif du prorata, borne de 1 000, phrase du
+  membre gelé, outil MCP).
+- **Rayon de souffle** : la base simulée de `tests/ids-store.test.ts` rend `rowCount: 1` à toute requête inconnue, la
+  vérification du doublon compte donc les LIGNES rendues ; la FAQ du plugin (« ajouter un collègue ») dit les sièges, et
+  la vitrine qui la reprend part avec elle.
+- **Déploiement** : CI verte job par job (intégration de 0244, e2e des sièges compris) ; base lue avant (aucune
+  transaction longue ni verrou), les deux prix ajoutés à `.env.prod` par la commande de Julien (sans guillemet double),
+  image construite, seule la 0244 en attente, migrée AVANT le `up`, relue en base (entier, NOT NULL, défaut 0,
+  `abonnements_offre_sieges_chk` entre 0 et 1 000) et lue par le vrai code en lecture seule ; trois conteneurs sur
+  `f182e6a9`, sains, sans erreur ; deux fiches d'aide rechargées ; `get_plan` rend `prixSiege` (les sièges sont en vente).
+  Le déploiement a aussi emporté le refactor de l'assistant de configuration (PR 6, `37a8b887`), vert en CI.
+
 ## 2026-10-19 : les offres v2, livraison 6 (l'essai de 14 jours du Pro), en production
 
 - **Ce qui part** (`af79fec0`, migration 0243 `abonnements_offre.essai_fin_le`) : `ouvrirPro` donne 14 jours d'essai à

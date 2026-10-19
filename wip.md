@@ -130,9 +130,12 @@ aucune transition.
   chiffre et chaque fonction tenus sur le code par `tests/vitrine-pages.test.ts`. Essai réel 132.
 - **Livraison 6, l'essai de 14 jours** : en production (`af79fec0`, migration 0243). Un espace qui n'a jamais eu de Pro
   commence par 14 jours d'essai avec carte ; le numéro payé à part s'arrête au premier paiement du Pro. Essai réel 133.
-  Reste sa ligne sur la page des tarifs (sous le prix du Pro), à montrer à Julien avant de publier.
-- **Suivante** : la livraison 7 (les sièges payants), les prix posés par Julien dans `.env.prod` ; elle ajoute à la page
-  des tarifs le prix d'un utilisateur de plus.
+- **Livraison 7, les utilisateurs payés du Pro** : en production (`f182e6a9`, migration 0244, prix des sièges dans
+  `.env.prod`). Une invitation au-delà des 3 utilisateurs propose un siège avec son prix, payé chez Stripe avant
+  l'invitation ; la page Offre en retire un. Essai réel 134.
+- **Reste la vitrine** (préparée, rendu vérifié, attend le oui de Julien) : sur `/tarifs/` l'essai de 14 jours et le prix
+  d'un utilisateur de plus, la FAQ « Comment se paie le Pro ? », et la FAQ du plugin (« ajouter un collègue ») avec ses
+  pages développeurs. La skill FAQ du plugin part avec la version 0.2.0, qui attend les CGU.
 
 ## CE QUI ATTEND UN ESSAI RÉEL
 
