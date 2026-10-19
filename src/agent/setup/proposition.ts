@@ -454,6 +454,19 @@ export interface OutilDuCatalogue {
   branche: boolean;
 }
 
+/**
+ * Retient les outils connus de la bibliothèque dont le branchement changerait réellement d'état.
+ * Une proposition du modèle ne peut ainsi ni inventer un outil, ni répéter un geste déjà appliqué.
+ */
+export function brancheables(
+  catalogue: readonly OutilDuCatalogue[] | undefined,
+  noms: readonly string[] | undefined,
+  brancheAttendu: boolean,
+): string[] {
+  const par = new Map((catalogue ?? []).map((outil) => [outil.nom, outil]));
+  return (noms ?? []).filter((nom) => par.get(nom)?.branche === brancheAttendu);
+}
+
 export interface EtatCourant {
   fiche: FicheAgentContenu;
   /** Le régime d'annonce d'IA actuel, celui de l'espace : la question de la construction règle la politique

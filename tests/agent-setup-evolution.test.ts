@@ -181,6 +181,7 @@ describe('un point redevenu vide', () => {
 describe('le plafond de dépense', () => {
   const index = readFileSync(resolve(__dirname, '../src/index.ts'), 'utf8');
   const route = readFileSync(resolve(__dirname, '../src/http/agent-setup.ts'), 'utf8');
+  const tour = readFileSync(resolve(__dirname, '../src/agent/setup/tour-entretien.ts'), 'utf8');
 
   it('🔴 le compteur et le plafond sont FOURNIS à l’assistant d’agent', () => {
     const bloc = index.slice(index.indexOf('agentSetup: {'), index.indexOf('agentKnowledge: {'));
@@ -199,16 +200,16 @@ describe('le plafond de dépense', () => {
   it('🔴 il est vérifié AVANT l’appel, et il rend 200 avec une phrase', () => {
     // Un 4xx afficherait un message d'infrastructure là où le client attend une phrase, et un 5xx serait
     // remplacé par la page d'erreur de Cloudflare.
-    expect(route).toContain('if (!(await budgetOuvert(deps, ctx.tenant)))');
-    expect(route).toContain('message: MESSAGE_PLAFOND');
+    expect(tour).toContain('if (!(await budgetOuvert(deps, commande.tenantId)))');
+    expect(tour).toContain('message: MESSAGE_PLAFOND');
   });
 
   it('🔴 la dépense est notée même quand le modèle répond de travers', () => {
     // La noter seulement sur le chemin heureux rendrait le plafond contournable par un modèle bavard et
     // inexploitable : l'appel a eu lieu, donc il est payé.
-    const apresAppel = route.slice(route.indexOf('reponse = await deps.completer('));
-    const note = apresAppel.indexOf('await noterDepense(deps, ctx.tenant, reponse.usage.coutDollars)');
-    const sortie = apresAppel.indexOf("if (!appel) return reply.code(422)");
+    const apresAppel = tour.slice(tour.indexOf('reponse = await appelerProposition('));
+    const note = apresAppel.indexOf('await noterDepense(deps, commande.tenantId, reponse.usage.coutDollars)');
+    const sortie = apresAppel.indexOf("if (!appel) return { issue: 'proposition_absente' }");
     // ⚠️ L'EXISTENCE D'ABORD, l'ordre ENSUITE : `indexOf` rend -1 quand la ligne a disparu, et « -1 < n »
     // est vrai. Sans cette assertion, retirer la dépense ferait PASSER ce test, qui prouverait l'inverse de
     // ce qu'il annonce. Mesuré en le mutant.

@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { differences, propositionSchema, type EtatCourant } from '../src/agent/setup/proposition';
+import { brancheables, differences, propositionSchema, type EtatCourant } from '../src/agent/setup/proposition';
 import { construireMessages, type ContexteConstruction } from '../src/agent/setup/conversation';
-import { brancheables, catalogueBranchable } from '../src/http/agent-setup';
+import { catalogueBranchable } from '../src/http/agent-setup';
 import type { OutilBibliotheque } from '../src/agent/catalog';
 import { ficheVide } from '../src/agent/fiche';
 
@@ -137,7 +137,7 @@ describe('ce que le modèle voit', () => {
  */
 describe('le vrai câblage', () => {
   const index = readFileSync(resolve(__dirname, '../src/index.ts'), 'utf8');
-  const route = readFileSync(resolve(__dirname, '../src/http/agent-setup.ts'), 'utf8');
+  const tour = readFileSync(resolve(__dirname, '../src/agent/setup/tour-entretien.ts'), 'utf8');
   const front = readFileSync(resolve(__dirname, '../web/lib/api-agent-setup.ts'), 'utf8');
 
   it('🔴 le catalogue de l’ESPACE est lu, pas les outils de l’agent', () => {
@@ -149,9 +149,9 @@ describe('le vrai câblage', () => {
     expect(index).toContain('catalogue: catalogueBranchable(catalogue, offrables, agentId)');
   });
 
-  it('🔴 la route filtre sur la bibliothèque avant de rendre quoi que ce soit', () => {
-    expect(route).toContain('outilsBranches: brancheables(ctx.etat.catalogue');
-    expect(route).toContain('outilsDebranches: brancheables(ctx.etat.catalogue');
+  it('🔴 le tour filtre sur la bibliothèque avant de rendre quoi que ce soit', () => {
+    expect(tour).toContain('outilsBranches: brancheables(contexte.catalogue');
+    expect(tour).toContain('outilsDebranches: brancheables(contexte.catalogue');
   });
 
   /**

@@ -1,33 +1,23 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { parse as secureJsonParse } from 'secure-json-parse';
 import type { Guard } from '../auth/middleware';
-import type { ChatMessage, ChatMessageImage, ReponseChat, OutilExpose } from '../agent/llm/chat-client';
 import { octetsDepuisDataUrl } from '../rcs/image';
 import { MAX_FICHES_PAR_PAGE, type FicheExtraite } from '../agent/scrape';
 import {
   lireDocumentHorsBoucle, texteEnFichesHorsBoucle, TAILLE_DOCUMENT_MAX, TAILLE_IMAGE_MAX,
 } from '../agent/setup/piece-jointe';
-import { construireMessages, inventaireDe, MAX_CARACTERES_MESSAGE, type ContexteConstruction } from '../agent/setup/conversation';
+import { MAX_CARACTERES_MESSAGE, type ContexteConstruction } from '../agent/setup/conversation';
+import { urlDeConnaissance } from '../agent/setup/couverture';
+import { ENTRETIEN_VIERGE, type EntretienStore } from '../agent/setup/entretien-store';
+import { avancementEntretien } from '../agent/setup/avancement';
 import {
-  assainirProposition, differences, propositionSchema, OUTIL_PROPOSER, SCHEMA_PROPOSITION,
-} from '../agent/setup/proposition';
-import {
-  champScenario, MOYEN_DECRIT_PAR_LE_CLIENT, scenarioDuMoyen, scenariosAPoser, scenariosDesMoments, situationDuMoment,
-} from '../agent/setup/scenarios';
-import {
-  actionChoisie, agendaEffectif, basculesDuTour, fusionner, fusionnerBascules, manquesDeCouverture, momentDuPoint,
-  momentsDesReponses, poseUneQuestion, prochainPoint, urlDeConnaissance,
-} from '../agent/setup/couverture';
-import { bornerPourModele, ENTRETIEN_VIERGE, type EntretienComplet, type EntretienStore, type TourEntretien } from '../agent/setup/entretien-store';
+  creerTourEntretien, type ResultatTourEntretien, type TourEntretienDeps,
+} from '../agent/setup/tour-entretien';
 import { espaceVerifie, estUuid } from './scope';
 import type { OutilBibliotheque } from '../agent/catalog';
-import { moisDe, resteDuBudget, MESSAGE_PLAFOND, type DepenseStore } from '../assistant/budget';
-import { microEurosDepuisDollars } from '../agent/devise';
+import { budgetOuvert, MESSAGE_PLAFOND, noterDepense } from '../assistant/budget';
 import { direPanneModele } from '../llm/errors';
 import { journaliser } from '../lib/journal';
-import { blocDeFin } from '../agent/setup/fin';
-import type { IssueImportEntretien } from '../agent/connaissance';
 
 /**
  * La conversation de construction d'un agent : elle propose, le client corrige.
@@ -36,8 +26,8 @@ import type { IssueImportEntretien } from '../agent/connaissance';
  * son propre état (`agent_setup_conversations`).
  * 🔴 Ce que le modèle peut proposer est énuméré dans `src/agent/setup/proposition.ts` (la fiche et les mots des
  * outils maison) : ni mention légale d'IA, ni plafonds, ni modèle, ni risque, ni activation.
- * C'est le serveur qui conduit l'entretien : ordre du jour, point du tour et couverture sont calculés ici à
- * partir d'un état persisté ; le navigateur n'envoie qu'un message, le modèle formule et extrait.
+ * C'est le module `tour-entretien` qui conduit l'entretien depuis l'état persisté ; cette route authentifie,
+ * valide le message puis traduit son résultat. Le navigateur n'envoie qu'un message, le modèle formule et extrait.
  */
 
 /**
@@ -46,7 +36,7 @@ import type { IssueImportEntretien } from '../agent/connaissance';
  */
 export const MAX_MESSAGES_AFFICHES = 200;
 
-export interface AgentSetupRouteDeps {
+export interface AgentSetupRouteDeps extends TourEntretienDeps {
   /** L'état courant de l'agent, ou `null` s'il n'existe pas ou appartient à un autre tenant. */
   etatCourant(tenantId: string, agentId: string): Promise<ContexteConstruction | null>;
   /**
@@ -56,15 +46,6 @@ export interface AgentSetupRouteDeps {
    */
   emailsDesMembres(tenantId: string): Promise<Record<string, string>>;
   /**
-   * 🔴 Le compteur de notre dépense, partagé avec l'assistant du Meta Business Agent : cet assistant tourne sur
-   * notre clé, et sans plafond un espace bavarderait à nos frais. Par espace et non par assistant : un plafond par
-   * assistant multiplierait notre exposition par un nombre que le client contrôle.
-   */
-  depenses: DepenseStore;
-  /** Le plafond mensuel, en euros. 0 = pas de plafond (`ASSISTANT_PLAFOND_EUROS_MOIS`). */
-  plafondEuros: number;
-  tauxEurParDollar: number;
-  /**
    * Écrit les fiches d'une pièce jointe, en remplaçant celles que le même fichier avait produites, et avec leur
    * provenance : sans remplacement, redéposer le même PDF doublerait la base ; sans provenance, une fiche issue
    * d'un document serait indiscernable d'une fiche tapée à la main.
@@ -72,36 +53,15 @@ export interface AgentSetupRouteDeps {
   ecrireFichesDocument(
     tenantId: string, agentId: string, nom: string, fiches: Array<{ titre: string; corps: string }>,
   ): Promise<{ retirees: number; ecrites: number } | null>;
-  /**
-   * Importe le site que le client vient de donner (`importerLeSiteDeLEntretien`, décision de Julien du 2026-10-12) :
-   * appelé en tâche de fond, sans que le tour l'attende. Requis : absent, l'onglet Base de connaissance resterait vide
-   * en silence, ce que le client avait justement signalé.
-   */
-  importerSiteDeLEntretien(tenantId: string, agentId: string, url: string): Promise<IssueImportEntretien>;
-  /**
-   * Les scénarios EN LIGNE de l'espace (id, nom) : la question du moyen d'un moment « scénario » les liste, et seuls eux
-   * peuvent être visés par l'outil que l'entretien propose (`scenariosDesMoments`). Lus au seul tour POST, pas dans
-   * `etatCourant` : l'ouverture de l'onglet, les suggestions et la pièce jointe n'en ont pas besoin.
-   */
-  scenariosEnLigne(tenantId: string): Promise<Array<{ id: string; nom: string }>>;
   /** L'entretien persisté. Requis : un entretien sans mémoire redeviendrait non déterministe sans que personne
    *  ne le voie. */
   entretiens: EntretienStore;
-  /**
-   * Appel du modèle, injecté pour rester testable sans réseau ; absent, la route répond 503. `tenantId` décide
-   * quelle clé paie l'appel.
-   */
-  completer?(input: { tenantId: string; modele: string; messages: Array<ChatMessage | ChatMessageImage>; outils: OutilExpose[]; toolChoice: string; signal: AbortSignal }): Promise<ReponseChat>;
-  /** Modèle de l'IA de construction. À ne pas confondre avec celui de l'agent : celui-ci tourne rarement et
-  *  joue le rôle le plus dur, celui-là répond à chaque message d'un contact. */
-  modele: string;
   /**
    * Modèle qui lit les images jointes. Vide = les images sont refusées, les documents passent quand même. Séparé
    * du modèle d'entretien : celui de la production refuse une part `image_url` (400 au corps vide).
    */
   modeleVision: string;
 }
-
 const corpsSchema = z.object({
   message: z.string().trim().min(1).max(MAX_CARACTERES_MESSAGE),
 });
@@ -146,43 +106,6 @@ async function lireImage(
 const DELAI_MS = 45_000;
 
 /**
- * Le plafond, lu avant l'appel. `true` = on peut parler. Un plafond à 0 laisse passer
- * (`ASSISTANT_PLAFOND_EUROS_MOIS=0` le désactive).
- */
-async function budgetOuvert(deps: AgentSetupRouteDeps, tenantId: string): Promise<boolean> {
-  if (!deps.plafondEuros) return true;
-  return resteDuBudget(await deps.depenses.lire(tenantId, moisDe(new Date())), deps.plafondEuros) > 0;
-}
-
-/**
- * La dépense, notée après l'appel, au coût réel. Le dépassement du dernier tour est assumé : il est borné par
- * le coût d'un tour.
- */
-async function noterDepense(deps: AgentSetupRouteDeps, tenantId: string, coutDollars: number): Promise<void> {
-  await deps.depenses.ajouter(tenantId, moisDe(new Date()),
-    microEurosDepuisDollars(coutDollars, deps.tauxEurParDollar));
-}
-
-/** L'avancement, tel que l'écran l'affiche. Le total est celui de l'ordre du jour effectif : un client dont
-*  l'agent n'appellera jamais d'outil ne doit pas se voir annoncer un point qui n'existera jamais pour lui. */
-function avancement(etat: EntretienComplet, ctx: ContexteConstruction | null): { manquants: string[]; total: number; pointOuvert: string | null } {
-  // L'inventaire entre ici parce qu'il change la question du moyen, pas la liste des points : le compte et
-  // l'ordre sont les mêmes, mais la question posée montre ce qui est réellement branché.
-  const inv = ctx ? inventaireDe(ctx) : undefined;
-  /**
-   * Un champ vidé n'entre pas dans ce compte : cette couverture retient la proposition, or un champ ne se remplit
-   * qu'en appliquant une proposition (l'y faire entrer enfermerait l'entretien dans un cycle). Le champ vidé est
-   * signalé dans la consigne d'évolution.
-   */
-  const manquants = manquesDeCouverture(etat, inv);
-  return {
-    manquants,
-    total: agendaEffectif(etat, inv).length,
-    pointOuvert: prochainPoint(etat, inv)?.code ?? null,
-  };
-}
-
-/**
  * Ce que l'assistant voit de la bibliothèque de l'espace, pour un agent : chaque outil, et s'il est branché sur lui.
  * 🔴 SEULS Y SONT CE QU'ON PEUT LUI OFFRIR (`offrables`, la règle unique du catalogue) ET CE QU'IL A DÉJÀ (pour qu'on
  * puisse proposer de le débrancher). Cette fonction ne recalcule rien elle-même : elle filtrait l'enregistrement d'un
@@ -203,19 +126,27 @@ export function catalogueBranchable(
     .map(({ o, branche }) => ({ nom: o.name, titre: o.title, branche }));
 }
 
-/**
- * Les noms d'outils retenus : ceux qui existent dans la bibliothèque de l'espace et dont le branchement
- * changerait vraiment d'état. `brancheAttendu` dit l'état dans lequel l'outil doit être maintenant pour que
- * le geste ait un sens (`false` pour brancher, `true` pour débrancher).
- */
-export function brancheables(
-  catalogue: ContexteConstruction['catalogue'], noms: readonly string[] | undefined, brancheAttendu: boolean,
-): string[] {
-  const par = new Map((catalogue ?? []).map((c) => [c.nom, c]));
-  return (noms ?? []).filter((n) => par.get(n)?.branche === brancheAttendu);
+/** Traduit les issues du module en contrat HTTP sans reprendre son orchestration. */
+function repondreAuTour(reply: FastifyReply, resultat: ResultatTourEntretien): FastifyReply {
+  switch (resultat.issue) {
+    case 'repondu':
+    case 'budget_epuise':
+      return reply.code(200).send(resultat.reponse);
+    case 'assistant_indisponible':
+      return reply.code(503).send({ error: 'assistant de construction indisponible (aucun modèle configuré)' });
+    case 'modele_en_panne':
+      return reply.code(422).send({ error: `l’assistant n’a pas répondu : ${resultat.raison}` });
+    case 'proposition_absente':
+      return reply.code(422).send({ error: 'l’assistant n’a pas rendu de proposition exploitable' });
+    case 'proposition_illisible':
+      return reply.code(422).send({ error: 'l’assistant a rendu une proposition illisible' });
+    case 'proposition_hors_format':
+      return reply.code(422).send({ error: 'l’assistant a rendu une proposition hors format' });
+  }
 }
 
 export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDeps, garde: Guard): void {
+  const tourEntretien = creerTourEntretien(deps);
   const opts = { preHandler: garde };
 
   /** Contrôle d'accès commun aux trois routes : tenant du jeton, agent existant de ce tenant. */
@@ -254,7 +185,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
        */
       auteurs: auteurs.map((a) => (a === null ? null : emails[a] ?? null)),
       total: entretien.messages.length,
-      couverture: avancement(entretien, ctx.etat),
+      couverture: avancementEntretien(entretien, ctx.etat),
     });
   });
 
@@ -282,7 +213,7 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
     const ctx = await ouvrir(req, reply);
     if (!ctx) return;
     await ctx.entretiens.effacer(ctx.tenant, ctx.agentId);
-    return reply.code(200).send({ efface: true, couverture: avancement(ENTRETIEN_VIERGE, ctx.etat) });
+    return reply.code(200).send({ efface: true, couverture: avancementEntretien(ENTRETIEN_VIERGE, ctx.etat) });
   });
 
   /**
@@ -370,351 +301,20 @@ export function registerAgentSetup(app: FastifyInstance, deps: AgentSetupRouteDe
   app.post('/tenants/:tenantId/agents/:agentId/setup', opts, async (req, reply) => {
     const ctx = await ouvrir(req, reply);
     if (!ctx) return;
-    if (!deps.completer || deps.modele.trim() === '') {
-      return reply.code(503).send({ error: 'assistant de construction indisponible (aucun modèle configuré)' });
+    if (tourEntretien.indisponibilite) {
+      return repondreAuTour(reply, { issue: 'assistant_indisponible' });
     }
+
     const parse = corpsSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'message requis (texte non vide)' });
-    // Avant le point du tour : la question du moyen d'un moment « scénario » les liste.
-    ctx.etat.scenarios = await deps.scenariosEnLigne(ctx.tenant);
 
-    const avant = (await ctx.entretiens.lire(ctx.tenant, ctx.agentId)) ?? ENTRETIEN_VIERGE;
-    /**
-     * La borne est posée à la construction du prompt, pas à l'écriture : on borne ce qui part, jamais ce qu'on
-     * garde. Deux fils : `filComplet` est ce qu'on conserve, `historique` ce qu'on envoie au modèle (construire
-     * l'état écrit à partir du fil borné amputerait la base à chaque tour). L'auteur est posé ici sur le message de
-     * l'utilisateur, `null` pour la réponse de l'assistant.
-     */
-    const filComplet: TourEntretien[] = [...avant.messages, { role: 'user', content: parse.data.message }];
-    const auteursComplets: Array<string | null> = [...avant.auteurs, req.auth?.userId ?? null];
-    const historique: TourEntretien[] = bornerPourModele(filComplet);
-    // Le point du tour est arrêté avant l'appel, sur l'état serveur : la séquence des questions n'est pas
-    // négociable. Il est noté « posé » plus bas, parce que la réponse du modèle le pose.
-    const pointDuTour = prochainPoint(avant, inventaireDe(ctx.etat));
-
-    /**
-     * Le plafond est vérifié avant l'appel et rend 200 : c'est une limite voulue, l'assistant la dit (un 4xx
-     * afficherait un message d'infrastructure, un 5xx la page de Cloudflare). La forme de la réponse ne change pas :
-     * l'écran attend `message`, `couverture`, `proposition` et `changements`.
-     */
-    if (!(await budgetOuvert(deps, ctx.tenant))) {
-      return reply.code(200).send({
-        message: MESSAGE_PLAFOND,
-        couverture: avancement(avant, ctx.etat),
-        proposition: { fiche: {}, outils: [], connecteurs: [], outilsBranches: [], outilsDebranches: [] },
-        changements: [],
-        budgetEpuise: true,
-        ongletsUtilisables: true,
-        usage: { tokensIn: 0, tokensOut: 0 },
-      });
-    }
-
-    // Construits avant le `try` : une faute de programmation ici est notre panne, pas une réponse du modèle.
-    const messages = construireMessages(ctx.etat, historique, avant);
-    let reponse: ReponseChat;
-    try {
-      reponse = await deps.completer({
-        tenantId: ctx.tenant,
-        modele: deps.modele,
-        messages,
-        outils: [{
-          name: OUTIL_PROPOSER,
-          description: 'Rends ta réponse et, si tu en as une, ta proposition de réglage.',
-          parameters: SCHEMA_PROPOSITION,
-        }],
-        toolChoice: OUTIL_PROPOSER,
-        signal: AbortSignal.timeout(DELAI_MS),
-      });
-    } catch (err) {
-      // Panne du fournisseur, délai dépassé, clé refusée : pas un incident de la console, d'où 422 (un 5xx serait
-      // remplacé par la page de Cloudflare). Seulement ces trois-là : le reste est notre panne, relancée en 500 opaque.
-      const raison = direPanneModele(err);
-      if (raison === null) throw err;
-      journaliser('error', 'agent_setup_tour_echec', { tenantId: ctx.tenant, err });
-      return reply.code(422).send({ error: `l’assistant n’a pas répondu : ${raison}` });
-    }
-
-    // Avant toute sortie d'erreur : l'appel a eu lieu, donc il est payé. Le noter seulement sur le chemin heureux
-    // rendrait le plafond contournable par un modèle qui répond de travers.
-    await noterDepense(deps, ctx.tenant, reponse.usage.coutDollars);
-
-    const appel = reponse.appelsOutils.find((a) => a.nom === OUTIL_PROPOSER);
-    if (!appel) return reply.code(422).send({ error: 'l’assistant n’a pas rendu de proposition exploitable' });
-    let brut: unknown;
-    try {
-      // `secureJsonParse` et non `JSON.parse` : ce JSON vient d'un modèle, donc d'une source non fiable, et
-      // un `__proto__` dedans polluerait le prototype avant même la validation. Même règle que le webhook.
-      brut = secureJsonParse(appel.argumentsJson);
-    } catch {
-      return reply.code(422).send({ error: 'l’assistant a rendu une proposition illisible' });
-    }
-    // `safeParse` : ce qui n'est pas au schéma est écarté sans faire échouer le tour (un modèle qui tente une clé de
-    // sécurité n'obtient rien). Assaini d'abord : l'hygiène (longueur, slug, doublon) est ramenée dans les bornes,
-    // la frontière reste jugée par Zod juste après (`assainirProposition`).
-    const propose = propositionSchema.safeParse(assainirProposition(brut));
-    if (!propose.success) {
-      /**
-       * La raison est journalisée (chemins et codes d'erreur, jamais les valeurs, qui portent les mots du client) :
-       * sans elle, un 422 « hors format » ne dirait pas quel champ a été refusé.
-       */
-      journaliser('warn', 'agent_setup_proposition_hors_schema', {
-        tenantId: ctx.tenant, agentId: ctx.agentId,
-        champs: propose.error.issues.map((i) => `${i.path.join('.') || '(racine)'}:${i.code}`),
-      });
-      return reply.code(422).send({ error: 'l’assistant a rendu une proposition hors format' });
-    }
-
-    /**
-     * L'état de l'entretien est recalculé ici, et nulle part ailleurs. Les réponses extraites entrent dans l'état
-     * (`fusionner` ignore les codes inconnus et les valeurs vides) ; le point du tour est noté posé, parce que le
-     * message de l'assistant le pose : un point jamais montré au client ne peut pas être compté couvert.
-     */
-    const reponses = fusionner(avant.reponses, propose.data.reponses);
-    // Les bascules vivent à part : elles sont une liste (un moment, une action, un moyen), pas une réponse à
-    // un point. C'est ce qui permet de les prendre une par une au lieu de les écraser l'une sur l'autre.
-    // Le modèle range souvent les moments dans `reponses` : repris de là sur le seul tour où le client répond à la
-    // question des moments, et tant que la liste n'a jamais rien tenu (`momentsDesReponses` dit pourquoi ces deux
-    // bornes : une réponse « d'avance » ou réécrite ferait sinon naître un moment jamais cité, ou en double).
-    const reprendreDesReponses = pointDuTour?.collecteDesMoments === true
-      && (propose.data.bascules ?? []).length === 0 && (avant.bascules ?? []).length === 0;
-    // Hors du tour qui les recueille, un moment reformulé ne crée pas de doublon (`basculesDuTour`).
-    const basculesProposees = reprendreDesReponses
-      ? momentsDesReponses(propose.data.reponses)
-      : basculesDuTour(avant.bascules ?? [], propose.data.bascules ?? [], pointDuTour);
-    const listeBascules = fusionnerBascules(avant.bascules ?? [], basculesProposees);
-    // Au tour qui demande l'action du moment N, si le modèle ne l'a pas rendue : la réponse du client, lue dans la
-    // liste numérotée qu'on lui a posée (`actionChoisie`). Sans elle, la question revenait, trois fois de suite.
-    const vise = momentDuPoint(pointDuTour?.code);
-    const momentVise = vise?.quoi === 'action' ? listeBascules[vise.index] : undefined;
-    if (momentVise && !momentVise.action) {
-      const choisie = actionChoisie(parse.data.message);
-      if (choisie) momentVise.action = choisie;
-    }
-    /**
-     * LE SCÉNARIO D'UN MOMENT SE LIT DANS LE MESSAGE DU CLIENT, SOUS SON NOM EXACT (Julien, 2026-10-12) : le modèle le
-     * paraphrase, et la paraphrase ne se rapproche plus de rien. Un scénario que le client NOMME devient le moyen d'un
-     * moment « scénario » dans trois cas, et seulement eux :
-     *  - le tour porte sur CE moment (son action ou son moyen) : le client le nomme souvent avec l'action ;
-     *  - le modèle a rendu, pour ce moment, un moyen qui désigne le MÊME scénario : les deux s'accordent (un changement
-     *    d'avis après l'entretien) ;
-     *  - c'est le SEUL moment « scénario » qui n'a encore jamais eu de scénario reconnu, et le modèle lui a rattaché un
-     *    moyen ce tour-ci.
-     * Sinon, un moyen qui désignait déjà un scénario est rétabli : le modèle renvoie souvent la bascule entière avec un
-     * moyen reformulé, que `fusionnerBascules` recopie, et une question du client (« ce scénario est-il bien ? ») ne
-     * doit pas changer le choix.
-     * ⚠️ Le message brut du client ne devient jamais un moyen : le moyen part dans la consigne du tour (`ordreDuJour`),
-     * hors du bloc de données, et une réponse comme « c'est quoi ? » fermerait le point sans réponse.
-     */
-    const scenariosEnLigne = ctx.etat.scenarios ?? [];
-    const nomme = scenarioDuMoyen(parse.data.message, scenariosEnLigne);
-    const reconnu = (moyen: string | undefined) => (moyen ? scenarioDuMoyen(moyen, scenariosEnLigne) : null);
-    const sansScenario = listeBascules.filter((b) => b.action === 'scenario' && reconnu(b.moyen) === null);
-    listeBascules.forEach((b, i) => {
-      if (b.action !== 'scenario') return;
-      const ancien = (avant.bascules ?? [])[i];
-      const prisDuModele = reconnu(b.moyen);
-      const pourCeMoment = vise?.index === i
-        || (nomme !== null && prisDuModele?.id === nomme.id)
-        || (sansScenario.length === 1 && sansScenario[0] === b && Boolean(b.moyen?.trim()) && b.moyen !== ancien?.moyen
-          && reconnu(ancien?.moyen) === null);
-      if (nomme && pourCeMoment) {
-        b.moyen = nomme.nom;
-        return;
-      }
-      if (ancien?.moyen && b.moyen !== ancien.moyen && reconnu(ancien.moyen)) b.moyen = ancien.moyen;
+    const resultat = await tourEntretien.executer({
+      tenantId: ctx.tenant,
+      agentId: ctx.agentId,
+      auteurId: req.auth?.userId ?? null,
+      message: parse.data.message,
+      contexte: ctx.etat,
     });
-    /**
-     * UNE RÉPONSE LIBRE FERME LE POINT À SON DEUXIÈME PASSAGE, sans entrer dans la consigne. La question du moyen promet
-     * « ou décrivez ce qu'il devra faire » ; un modèle qui ne note pas la description la ferait revenir sans fin. Au
-     * second passage du même point, le moyen prend un marqueur FIXE : il ferme le point, et `scenariosDesMoments` ne le
-     * rapproche de rien (le bloc « Pour finir » dit alors de poser l'outil à la main).
-     */
-    const momentDuMoyen = vise?.quoi === 'moyen' ? listeBascules[vise.index] : undefined;
-    if (momentDuMoyen && !momentDuMoyen.moyen?.trim() && pointDuTour && avant.poses.includes(pointDuTour.code)) {
-      momentDuMoyen.moyen = MOYEN_DECRIT_PAR_LE_CLIENT;
-    }
-    const poses = pointDuTour && !avant.poses.includes(pointDuTour.code)
-      ? [...avant.poses, pointDuTour.code]
-      : avant.poses;
-
-    /**
-     * Un message qui n'interroge rien laisserait l'entretien mort : le serveur pose alors lui-même la question du
-     * point encore ouvert une fois les réponses du tour intégrées, et la note posée (sinon le tour d'après la
-     * reposerait).
-     */
-    const ouvertApres = prochainPoint({ poses, reponses, bascules: listeBascules }, inventaireDe(ctx.etat));
-    const relance = ouvertApres && !poseUneQuestion(propose.data.message) ? ouvertApres : null;
-    const posesApres = relance && !poses.includes(relance.code) ? [...poses, relance.code] : poses;
-
-    /**
-     * L'état de ce tour sans son message : il sert à savoir où en est la couverture, et il faut le savoir
-     * avant de connaître le message, puisque c'est la couverture qui décide s'il y a un tour de synthèse.
-     */
-    const etatApres: EntretienComplet = {
-      messages: filComplet, auteurs: auteursComplets, reponses, bascules: listeBascules, poses: posesApres,
-    };
-    const suivi = avancement(etatApres, ctx.etat);
-    const enEntretien = suivi.manquants.length > 0;
-
-    let propositionFinale = propose.data;
-    let message = relance ? `${propose.data.message}\n\n${relance.question}` : propose.data.message;
-    let tokensIn = reponse.usage.tokensIn;
-    let tokensOut = reponse.usage.tokensOut;
-
-    /**
-     * Le tour de synthèse : un second appel, une seule fois par entretien, quand l'ordre du jour vient de se
-     * fermer. La consigne du tour est arrêtée avant de lire le client, donc le tour qui répond au dernier point ne
-     * parle que de ce point ; sans synthèse, les autres champs resteraient vides dans le diff.
-     * La condition est une transition (il manquait des points avant ce tour, plus après), pas un état : sinon chaque
-     * message suivant relancerait une synthèse. Il complète le premier appel : on n'en garde que le message et les
-     * champs. Tout échec retombe sur la proposition du premier appel, jamais une erreur.
-     */
-    const vientDeFinir = !enEntretien && avancement(avant, ctx.etat).manquants.length > 0;
-    if (vientDeFinir) {
-      try {
-        if (await budgetOuvert(deps, ctx.tenant)) {
-          const seconde = await deps.completer({
-            tenantId: ctx.tenant,
-            modele: deps.modele,
-            // `historique` se termine sur le message du client : la synthèse en accuse elle-même réception,
-            // et y glisser le message du premier appel ferait dire deux fois la même chose.
-            messages: construireMessages(ctx.etat, historique, etatApres, { synthese: true }),
-            outils: [{
-              name: OUTIL_PROPOSER,
-              description: 'Rends ta réponse et, si tu en as une, ta proposition de réglage.',
-              parameters: SCHEMA_PROPOSITION,
-            }],
-            toolChoice: OUTIL_PROPOSER,
-            signal: AbortSignal.timeout(DELAI_MS),
-          });
-          await noterDepense(deps, ctx.tenant, seconde.usage.coutDollars);
-          tokensIn += seconde.usage.tokensIn;
-          tokensOut += seconde.usage.tokensOut;
-          const appelSynthese = seconde.appelsOutils.find((a) => a.nom === OUTIL_PROPOSER);
-          if (appelSynthese) {
-            const proposeSynthese = propositionSchema.safeParse(
-              assainirProposition(secureJsonParse(appelSynthese.argumentsJson)),
-            );
-            if (proposeSynthese.success) {
-              propositionFinale = proposeSynthese.data;
-              message = proposeSynthese.data.message;
-            } else {
-              journaliser('warn', 'agent_setup_synthese_hors_schema', {
-                tenantId: ctx.tenant, agentId: ctx.agentId,
-                champs: proposeSynthese.error.issues.map((i) => `${i.path.join('.') || '(racine)'}:${i.code}`),
-              });
-            }
-          }
-        }
-      } catch (err) {
-        // Le tour de synthèse échoue sans faire échouer le tour : on garde la proposition du tour. Une `SyntaxError`
-        // ne se journalise que par son nom : celle de `JSON.parse` recopie les arguments du modèle, donc les mots du
-        // client.
-        journaliser('warn', 'agent_setup_synthese_echec', {
-          tenantId: ctx.tenant, agentId: ctx.agentId, err: err instanceof SyntaxError ? err.name : err,
-        });
-      }
-    }
-
-    /**
-     * 🔴 L'adresse du site vient d'être donnée (ou changée) : son import part en TÂCHE DE FOND (Julien, 2026-10-12),
-     * pour que l'onglet Base de connaissance ait ses fiches quand le client l'ouvre. Le tour ne l'attend pas (un
-     * parcours prend jusqu'à trente secondes) ; son issue va au journal, et le message le dit au client.
-     */
-    const adresseRetenue = propositionFinale.connaissanceUrl ?? avant.connaissanceUrl;
-    const importLance = Boolean(adresseRetenue && adresseRetenue !== avant.connaissanceUrl);
-    if (adresseRetenue && importLance) {
-      const { tenant, agentId } = ctx;
-      void deps.importerSiteDeLEntretien(tenant, agentId, adresseRetenue)
-        .then((r) => journaliser(r.issue === 'refuse' ? 'warn' : 'info', 'agent_setup_import_site', { tenantId: tenant, agentId, ...r }))
-        .catch((err) => journaliser('error', 'agent_setup_import_site_echec', { tenantId: tenant, agentId, err }));
-      message = `${message}\n\nJ’importe les pages de ${adresseRetenue} dans votre base de connaissance : elles seront `
-        + 'dans l’onglet « Base de connaissance » d’ici une minute, à relire et corriger si besoin.';
-    }
-
-    /**
-     * Les scénarios des moments, rapprochés de la liste RÉELLE de l'espace, jamais d'un nom rendu par le modèle (RC4) :
-     * chacun que l'agent ne vise pas encore devient une ligne du diff, qu'« Enregistrer » pose en outil inactif. Calculés
-     * à chaque tour hors entretien, comme le diff : un tour de plus avant d'enregistrer ne les fait pas disparaître.
-     */
-    const vises = new Set(ctx.etat.outils.flatMap((o) => (o.handler === 'lancer_scenario' && o.workflowId ? [o.workflowId] : [])));
-    const desMoments = enEntretien ? [] : scenariosDesMoments(listeBascules, ctx.etat.scenarios ?? [], vises);
-    const aPoser = scenariosAPoser(desMoments);
-    /** Le diff montré au client, calculé une fois : le bloc de fin en dépend, la réponse aussi. */
-    const changements = enEntretien ? [] : [
-      ...differences(ctx.etat, propositionFinale),
-      // Le texte de la ligne est la SITUATION : la console la place dans la consigne de l'onglet Outils.
-      ...aPoser.map((s) => ({
-        champ: champScenario(s.workflowId),
-        label: `Outil « Lancer un scénario » : ${s.nom}, dès que le contact…`,
-        avant: '',
-        apres: situationDuMoment(s.moment),
-      })),
-    ];
-    /**
-     * Le bloc « Pour finir », ajouté au tour qui FERME l'entretien (la même transition que la synthèse) et écrit par
-     * le serveur sur l'état réel (`blocDeFin`) : appliquer, la connaissance à importer, les outils à brancher, le
-     * modèle, Tester, Activer. Avant lui, le dernier message ne disait rien de la suite (Julien, 2026-10-12).
-     */
-    if (vientDeFinir) {
-      const inv = inventaireDe(ctx.etat);
-      message = `${message}\n\n${blocDeFin({
-        aAppliquer: changements.length > 0,
-        connaissanceUrl: propositionFinale.connaissanceUrl ?? avant.connaissanceUrl ?? urlDeConnaissance(etatApres),
-        fichesDeConnaissance: ctx.etat.titresConnaissance.length,
-        bascules: listeBascules,
-        outilsApi: inv.outilsApi.length,
-        outilsMcp: inv.outilsMcp.length,
-        modele: ctx.etat.modele ?? null,
-        importEnCours: importLance,
-        scenarios: desMoments,
-      })}`;
-    }
-
-    const apres: EntretienComplet = {
-      // 🔴 `filComplet`, jamais `historique` : c'est la ligne qui décide si le fil perdure ou se fait amputer par
-      // sa propre sauvegarde.
-      messages: [...filComplet, { role: 'assistant', content: message }],
-      // L'assistant n'a pas d'auteur humain : `null`, et l'écran l'affiche comme venant de l'assistant.
-      auteurs: [...auteursComplets, null],
-      reponses,
-      bascules: listeBascules,
-      poses: posesApres,
-      /**
-       * On garde l'ancienne adresse quand le tour n'en apporte pas : donnée au point `connaissance`, bien avant la
-       * fin de l'entretien, l'écraser la perdrait dès la question suivante.
-       */
-      ...(adresseRetenue ? { connaissanceUrl: adresseRetenue } : {}),
-    };
-    await ctx.entretiens.ecrire(ctx.tenant, ctx.agentId, apres);
-
-    /**
-     * Le diff est retenu tant que l'ordre du jour n'est pas épuisé : couvrir tout le périmètre d'abord, avant
-     * d'afficher les règles. La proposition n'est pas jetée, elle n'est pas montrée : le tour suivant la reformulera.
-     */
-    // `suivi` est celui de `etatApres` : la couverture ne lit que les réponses, les bascules et les points posés,
-    // jamais les messages, donc ajouter celui de l'assistant ne la change pas.
-    return reply.code(200).send({
-      message,
-      couverture: suivi,
-      proposition: enEntretien ? { fiche: {}, outils: [], connecteurs: [], outilsBranches: [], outilsDebranches: [] } : {
-        fiche: propositionFinale.fiche ?? {},
-        outils: propositionFinale.outils ?? [],
-        // Les connecteurs proposés sont filtrés sur ceux qui existent : l'assistant n'en crée pas, et un nom
-        // inventé ne doit pas atteindre l'application, qui tenterait un patch sur un outil inconnu.
-        connecteurs: (propositionFinale.connecteurs ?? []).filter((c) => (ctx.etat.connecteurs ?? []).some((x) => x.nom === c.nom)),
-        /**
-         * 🔴 Le branchement est filtré sur la bibliothèque de l'espace : le schéma ne connaît pas le catalogue et ne
-         * peut pas refuser un nom inventé. Filtré aussi sur l'état courant : brancher ce qui l'est déjà ne produit
-         * aucun geste.
-         */
-        outilsBranches: brancheables(ctx.etat.catalogue, propositionFinale.outilsBranches, false),
-        outilsDebranches: brancheables(ctx.etat.catalogue, propositionFinale.outilsDebranches, true),
-        // Ce que « Enregistrer » pose (`appliquerProposition`) : la cible vient d'ici, la description de la ligne gardée.
-        scenarios: aPoser,
-      },
-      changements,
-      usage: { tokensIn, tokensOut },
-    });
+    return repondreAuTour(reply, resultat);
   });
 }
