@@ -798,6 +798,8 @@ export const OUTILS: OutilMcp[] = [
       'The workspace plan (free, pro or entreprise): the features it includes, its limits (null = no limit) and what '
       + 'is used of them (contacts created, automations on, members, templates sent this month), plus the upgradeUrl '
       + 'link to the Pro plan, and the Pro trial (essai: whether the 14-day trial is possible, and the end of a running one). '
+      + 'A Pro includes 3 users; sieges gives the extra users it pays for and prixSiege the price of one more, offered to the '
+      + 'admin when an invitation goes beyond (in the console). '
       + 'It explains an action refused with plan_limit_reached or plan_feature_unavailable; '
       + 'replies within the 24-hour window are never limited.',
     annotations: lecture('Read the plan'),

@@ -10,6 +10,9 @@ import { inputCls } from '@/lib/ui';
 import { estAnnulation, erreurDeChargement, ApiError } from '@/lib/http';
 import { routeInconnue } from '@/lib/canaux-services';
 import { Bouton } from '@/components/Bouton';
+import { lireSiegeRequis, type SiegeRequis } from '@/lib/offre';
+import { changerSieges } from '@/lib/api/offre';
+import { oublierOffre } from '@/lib/use-offre';
 import { TitrePage } from '@/components/TitrePage';
 import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
@@ -275,29 +278,70 @@ function AdminInner({ session }: { session: Session }) {
 
 function InviteCard({ tenantId, onInvited }: { tenantId: string; onInvited: () => void }) {
   const t = useT();
+  const { locale } = useLocale();
   const [email, setEmail] = useState('');
   const [nom, setNom] = useState('');
   const [role, setRole] = useState<UserRole>('agent');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  /**
+   * Le siège proposé par un refus à la limite d'utilisateurs d'un Pro (spec offres v2, livraison 7) : son prix est dit, et
+   * l'administrateur confirme avant que rien ne soit facturé. `facture` : le prorata n'a pas été payé, sa page Stripe.
+   */
+  const [siege, setSiege] = useState<SiegeRequis | null>(null);
+  const [facture, setFacture] = useState<string | null>(null);
+
+  async function inviter() {
+    const res = await inviteMember(tenantId, email.trim(), role, nom.trim());
+    setMsg({ kind: 'ok', text: res.emailSent ? t(`Invitation envoyée à ${email.trim()}.`, `Invitation sent to ${email.trim()}.`) : t(`Invitation créée pour ${email.trim()} (email non envoyé, vérifiez la configuration).`, `Invitation created for ${email.trim()} (email not sent, check the config).`) });
+    setEmail('');
+    setNom('');
+    setRole('agent');
+    onInvited();
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setMsg(null);
+    setFacture(null);
     setBusy(true);
     try {
-      const res = await inviteMember(tenantId, email.trim(), role, nom.trim());
-      setMsg({ kind: 'ok', text: res.emailSent ? t(`Invitation envoyée à ${email.trim()}.`, `Invitation sent to ${email.trim()}.`) : t(`Invitation créée pour ${email.trim()} (email non envoyé, vérifiez la configuration).`, `Invitation created for ${email.trim()} (email not sent, check the config).`) });
-      setEmail('');
-      setNom('');
-      setRole('agent');
-      onInvited();
+      await inviter();
     } catch (err) {
-      setMsg({ kind: 'err', text: err instanceof Error ? err.message : t('Invitation impossible', 'Unable to invite') });
+      const s = err instanceof ApiError ? lireSiegeRequis(err.corps) : null;
+      if (s) setSiege(s);
+      else setMsg({ kind: 'err', text: err instanceof Error ? err.message : t('Invitation impossible', 'Unable to invite') });
     } finally {
       setBusy(false);
     }
   }
+
+  /** Le siège payé chez Stripe D'ABORD (le prorata, sur la carte du Pro), puis la même invitation. */
+  async function acheterEtInviter() {
+    if (!siege) return;
+    setMsg(null);
+    setBusy(true);
+    try {
+      try {
+        await changerSieges(tenantId, siege.cible - 1, siege.cible);
+      } finally {
+        // La limite a peut-être changé : la page Offre et la coquille la relisent (Y18 de la relecture).
+        oublierOffre();
+      }
+      setSiege(null);
+      await inviter();
+    } catch (err) {
+      const corps = err instanceof ApiError ? err.corps : null;
+      const url = typeof corps === 'object' && corps !== null && (corps as { code?: unknown }).code === 'paiement_siege_incomplet'
+        ? (corps as { url?: unknown }).url : null;
+      setFacture(typeof url === 'string' && url.startsWith('https://') ? url : null);
+      setSiege(null);
+      setMsg({ kind: 'err', text: err instanceof Error ? err.message : t('Ajout impossible', 'Unable to add') });
+    } finally {
+      setBusy(false);
+    }
+  }
+  const prixSiege = siege ? (siege.prixHtCentimes / 100).toLocaleString(locale === 'en' ? 'en-GB' : 'fr-FR') : '';
 
   return (
     <form onSubmit={submit} className="space-y-3 rounded-carte border border-brand-200 bg-brand-50/40 p-5">
@@ -334,7 +378,25 @@ function InviteCard({ tenantId, onInvited }: { tenantId: string; onInvited: () =
           'Managers and agents get the inbox. Only an admin reaches the rest of the console.',
         )}
       </p>
+      {siege && (
+        <div data-testid="siege-requis" className="space-y-3 rounded-controle border border-brand-200 bg-white px-4 py-3 text-sm text-ink-700">
+          <p>
+            {siege.periodicite === 'an'
+              ? t(`Votre Pro compte déjà tous ses utilisateurs. Un utilisateur de plus coûte ${prixSiege} € HT par an : le prorata jusqu’à la fin de votre période est facturé maintenant, sur la carte du Pro (pendant un essai, rien n’est facturé avant sa fin).`, `Your Pro plan already has all its users. One more user costs €${prixSiege} excl. VAT per year: the prorated amount until the end of your period is charged now, on the Pro card (during a trial, nothing is charged before it ends).`)
+              : t(`Votre Pro compte déjà tous ses utilisateurs. Un utilisateur de plus coûte ${prixSiege} € HT par mois : le prorata jusqu’à la fin de votre période est facturé maintenant, sur la carte du Pro (pendant un essai, rien n’est facturé avant sa fin).`, `Your Pro plan already has all its users. One more user costs €${prixSiege} excl. VAT per month: the prorated amount until the end of your period is charged now, on the Pro card (during a trial, nothing is charged before it ends).`)}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Bouton type="button" enCours={busy} disabled={busy} onClick={() => { void acheterEtInviter(); }}>{t('Ajouter et inviter', 'Add and invite')}</Bouton>
+            <Bouton type="button" variante="secondaire" disabled={busy} onClick={() => setSiege(null)}>{t('Annuler', 'Cancel')}</Bouton>
+          </div>
+        </div>
+      )}
       {msg && <p className={`rounded-controle px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}>{msg.text}</p>}
+      {facture && (
+        <a data-testid="siege-facture" href={facture} target="_blank" rel="noopener noreferrer" className="inline-block text-sm font-medium text-brand-600 hover:underline">
+          {t('Régler la facture de l’utilisateur en plus', 'Pay the invoice for the extra user')}
+        </a>
+      )}
     </form>
   );
 }

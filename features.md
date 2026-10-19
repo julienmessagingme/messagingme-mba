@@ -3766,7 +3766,7 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   elle ne garde que l'accueil, les clés d'API, la documentation, l'offre, le compte et le support (spec offres v2).
 - ✅ **Le Pro** ouvre la console complète (l'Inbox, les scénarios, les statistiques, l'agent de Meta, l'e-mail, les
   assistants), porte la limite de contacts plus haut, lève celles des envois et des automations, et donne trois
-  utilisateurs. **L'Entreprise** ajoute l'analyse des conversations, les publicités Click-to-WhatsApp, les chaînes
+  utilisateurs, plus un par utilisateur payé en plus. **L'Entreprise** ajoute l'analyse des conversations, les publicités Click-to-WhatsApp, les chaînes
   WhatsApp (le Pro resserré, spec offres v2, livraison 5), le RCS, les connecteurs CRM (Batch, HubSpot, Salesforce) et
   le Performance Lab complet, avec une équipe à sa mesure. Un espace descendu de l'Entreprise au Pro garde ses publicités et ses chaînes,
   mais leurs automations se taisent, comme en Free. Côté statistiques : l'accueil, les coûts de chaque campagne et le
@@ -3793,8 +3793,14 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   fourni compris), et la page Offre, comme Claude, dit la date de fin. Un seul essai par espace. À la fin d'un essai sans
   paiement, l'espace revient en Free comme à la fin d'un Pro (un numéro fourni obtenu pendant l'essai suit alors la règle
   de la fin du Pro, et un numéro payé à part que le client choisit de rendre est arrêté, avec un avoir).
+  ✅ **Un utilisateur de plus que les trois du Pro se paie** (spec offres v2, livraison 7) : inviter un membre au-delà
+  affiche le prix, celui de la formule du Pro (mensuelle ou annuelle) ; l'administrateur confirme, le prorata jusqu'à la
+  fin de la période est facturé tout de suite sur la carte du Pro, et l'invitation part une fois ce paiement accepté. Un
+  paiement refusé ne change rien et laisse la facture à régler sur sa page. La page Offre dit les utilisateurs payés et en
+  retire un, sans remboursement, une fois le membre en trop désactivé. Les administrateurs restent deux. La page Offre
+  d'une Free dit aussi ce prix sous le Pro.
   ⚠️ Tant que le Pro n'est pas en vente (prix pas posés), le bouton « Passer en Pro » ouvre le Support, sujet
-  prérempli.
+  prérempli. Tant que les sièges ne le sont pas, une invitation au-delà des trois utilisateurs renvoie à l'Entreprise.
 - ✅ **Le numéro fourni est inclus dans le Pro** (livraison B2b) : un espace en Pro obtient son numéro sans payer, depuis
   la page « Connecter WhatsApp » ou le lien que donne Claude (qui ne lui annonce alors aucun prix). Si la réserve ne
   garde que des numéros dus à des abonnés qui ont payé et attendent le leur, l'espace en Pro réessaie un peu plus tard.

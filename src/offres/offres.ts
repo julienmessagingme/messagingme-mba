@@ -149,10 +149,22 @@ export const PRIX_PRO_HT_CENTIMES: Readonly<{ mois: number; an: number }> = { mo
  */
 export const ESSAI_PRO_JOURS = 14;
 
-/** Les droits d'un espace : ceux de son offre, et pour l'Entreprise la surcharge de l'exploitation. Copie neuve. */
-export function droitsDe(offre: Offre, surcharge: SurchargeEntreprise | null): Droits {
+/**
+ * Le prix HT d'un siège du Pro, un utilisateur de plus que les 3 inclus (spec offres v2, livraison 7), en centimes : 15 € par
+ * mois, 150 € par an, selon la formule du Pro. La route d'achat les recoupe avec le prix posé chez Stripe, la vue de
+ * l'offre et le refus d'une invitation les montrent : jamais recopiés ailleurs.
+ */
+export const PRIX_SIEGE_HT_CENTIMES: Readonly<{ mois: number; an: number }> = { mois: 1500, an: 15000 };
+
+/**
+ * Les droits d'un espace : ceux de son offre, et pour l'Entreprise la surcharge de l'exploitation. Copie neuve.
+ * 🔴 `sieges` : les sièges payés du Pro vivant (`abonnements_offre.sieges`, livraison 7), ajoutés aux utilisateurs du Pro
+ * ICI SEULEMENT, pour que l'invitation et le gel lisent la même limite (un membre payé n'est jamais gelé).
+ */
+export function droitsDe(offre: Offre, surcharge: SurchargeEntreprise | null, sieges = 0): Droits {
   const d = DROITS[offre];
   const limites: Limites = { ...d.limites };
+  if (offre === 'pro' && limites.utilisateurs !== null) limites.utilisateurs += Math.max(0, sieges);
   if (offre === 'entreprise' && surcharge !== null) {
     limites.utilisateurs = surcharge.utilisateurs;
     if (surcharge.conservationJours !== null) limites.conservationJours = surcharge.conservationJours;

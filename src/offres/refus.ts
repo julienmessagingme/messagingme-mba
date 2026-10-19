@@ -12,10 +12,29 @@ export const STATUT_REFUS_OFFRE = 402;
 /** Les limites qu'un geste peut atteindre (les autres se lisent sans refuser). */
 export type NomLimite = Extract<keyof Limites, 'utilisateurs' | 'admins' | 'contacts' | 'envoisModelesMois' | 'automations' | 'suppressionsJour' | 'adressesWebhook' | 'stockageOctets' | 'clesApi'>;
 
+/**
+ * Le siège à acheter pour lever la limite d'utilisateurs d'un Pro (spec offres v2, livraison 7) : le nombre de sièges visé
+ * et le prix HT de la formule du Pro. Le refus d'une invitation le porte : la console propose l'achat, Claude le redit.
+ */
+export interface SiegeRequis {
+  cible: number;
+  periodicite: 'mois' | 'an';
+  prixHtCentimes: number;
+}
+
+/**
+ * Ce que le refus sait de l'espace, quand l'appelant le sait : son offre (la grille ne suffit plus à la deviner dès qu'un
+ * Pro a des sièges, 4 utilisateurs n'étant la limite d'aucune offre), et le siège qui la lève.
+ */
+export interface ContexteLimite {
+  offre?: Offre;
+  siege?: SiegeRequis;
+}
+
 /** Une limite de l'offre est atteinte : levée par le magasin ou la fabrique, traduite en 402 par l'appelant. */
 export class LimiteOffreError extends Error {
-  constructor(readonly tenantId: string, readonly limite: NomLimite, readonly max: number) {
-    super(phraseLimite(limite, max));
+  constructor(readonly tenantId: string, readonly limite: NomLimite, readonly max: number, readonly contexte: ContexteLimite = {}) {
+    super(phraseLimite(limite, max, contexte));
     this.name = 'LimiteOffreError';
   }
 }
@@ -65,10 +84,18 @@ function offreQuiLeve(limite: NomLimite, max: number): Offre | null {
   }) ?? null;
 }
 
-export function phraseLimite(limite: NomLimite, max: number): string {
+export function phraseLimite(limite: NomLimite, max: number, contexte: ContexteLimite = {}): string {
   // Le Pro a lui-même un quota de stockage : « passez en Pro » serait faux pour lui. Ce qui libère, c'est de supprimer.
   if (limite === 'stockageOctets') {
     return `Limite de votre offre atteinte : ${LIBELLE_LIMITE[limite](max)}. Supprimez des fichiers inutilisés, ou changez d’offre : ${adresseOffre()}`;
+  }
+  // Les utilisateurs d'un Pro (livraison 7) : un siège les lève, au prix de sa formule ; sans siège en vente, l'Entreprise.
+  if (limite === 'utilisateurs' && contexte.offre === 'pro') {
+    const s = contexte.siege;
+    const suite = s
+      ? `Ajoutez un utilisateur (${nb(s.prixHtCentimes / 100)} € HT par ${s.periodicite}) en invitant le membre depuis « Compte & équipe », ou passez en Entreprise`
+      : 'Passez en Entreprise pour la lever';
+    return `Limite de votre offre atteinte : ${LIBELLE_LIMITE[limite](max)}. ${suite} : ${adresseOffre()}`;
   }
   const o = offreQuiLeve(limite, max);
   const suite = o === null ? 'Contactez-nous pour la relever' : `Passez en ${NOM_OFFRE[o]} pour la lever`;
@@ -101,6 +128,15 @@ export function refusFonction(fonction: Fonction): Refus {
  */
 export const INDISPONIBLE_POUR_LE_MODELE = 'ce contenu n’est pas disponible en ce moment : continue la conversation sans lui';
 
-export function corpsRefusLimite(e: LimiteOffreError): { error: string; code: 'plan_limit_reached'; limite: NomLimite; max: number; upgradeUrl: string } {
-  return { error: e.message, code: 'plan_limit_reached', limite: e.limite, max: e.max, upgradeUrl: adresseOffre() };
+/**
+ * Le corps d'un 402 de limite. `siege` (livraison 7) : seulement quand un siège lève la limite d'utilisateurs d'un Pro ; le
+ * code reste `plan_limit_reached`, le contrat que l'API et Claude connaissent.
+ */
+export function corpsRefusLimite(e: LimiteOffreError): {
+  error: string; code: 'plan_limit_reached'; limite: NomLimite; max: number; upgradeUrl: string; siege?: SiegeRequis;
+} {
+  return {
+    error: e.message, code: 'plan_limit_reached', limite: e.limite, max: e.max, upgradeUrl: adresseOffre(),
+    ...(e.contexte.siege ? { siege: e.contexte.siege } : {}),
+  };
 }

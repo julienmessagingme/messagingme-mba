@@ -25,7 +25,8 @@ const personne: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity 
 const VUE_BASE: VueOffre = {
   offre: 'free', fonctions: [], limites: { ...DROITS.base.limites },
   usage: { envoisModelesMois: 250, contacts: 42, automations: 3, membres: 1 }, grille: grilleDesOffres(), prixPro: { moisCentimes: 4900, anCentimes: 49000 },
-  suiteDuNumero: null, essai: { jours: 14, possible: true, finLe: null }, upgradeUrl: 'https://console.test/offre',
+  suiteDuNumero: null, essai: { jours: 14, possible: true, finLe: null }, sieges: null, prixSiege: { moisCentimes: 1500, anCentimes: 15000 },
+  upgradeUrl: 'https://console.test/offre',
 };
 
 function monter() {

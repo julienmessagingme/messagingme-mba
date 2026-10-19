@@ -43,7 +43,7 @@ describe('creerGelMembres', () => {
       offres: { offreDe: async () => ({ offre, droits: DROITS[offre], retourEnBaseLe: null }) },
       rang: async (_t, u) => { lus.push(u); return rang({ estAdmin: false, autresAvant: 0, admins: 1 }); },
     });
-    expect(await gel('base').horsOffre('t1', 'u2')).toEqual({ limite: 'utilisateurs', max: 1 });
+    expect(await gel('base').horsOffre('t1', 'u2')).toEqual({ limite: 'utilisateurs', max: 1, offre: 'base' });
     expect(await gel('entreprise').horsOffre('t1', 'u3')).toBeNull();
     expect(lus).toEqual(['u2']);
   });

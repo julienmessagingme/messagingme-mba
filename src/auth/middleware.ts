@@ -183,7 +183,7 @@ export function makeRequireAuth(secret: string, loadState?: UserStateLoader, lim
        * (même code) : la console affiche alors une page, pas un bandeau. Rien n'est effacé, l'accès revient au réabonnement.
        */
       if (state.horsOffre) {
-        const e = new LimiteOffreError(session.tenantId, state.horsOffre.limite, state.horsOffre.max);
+        const e = new LimiteOffreError(session.tenantId, state.horsOffre.limite, state.horsOffre.max, { offre: state.horsOffre.offre });
         await reply.code(STATUT_REFUS_OFFRE).send({ ...corpsRefusLimite(e), acces: 'suspendu' });
         return;
       }
@@ -248,7 +248,7 @@ export function makeRequireAdminOuLien(o: {
     }
     // Le membre en trop (lot 6, B2a) : le lien ne vaut pas mieux que sa session, refusée de la même façon.
     if (etat.horsOffre) {
-      const e = new LimiteOffreError(lien.tenantId, etat.horsOffre.limite, etat.horsOffre.max);
+      const e = new LimiteOffreError(lien.tenantId, etat.horsOffre.limite, etat.horsOffre.max, { offre: etat.horsOffre.offre });
       await reply.code(STATUT_REFUS_OFFRE).send({ ...corpsRefusLimite(e), acces: 'suspendu' });
       return;
     }

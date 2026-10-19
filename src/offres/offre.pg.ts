@@ -14,6 +14,11 @@ export interface OffreEspace {
   droits: Droits;
   /** La fin effective du dernier Pro d'un espace revenu en Base (le gel, le délai de la conservation) ; `null` sinon. */
   retourEnBaseLe: Date | null;
+  /**
+   * Le Pro vivant (livraison 7) : ses sièges payés, déjà comptés dans `droits`, et sa formule, qui fixe le prix du siège
+   * suivant. `null` ou absent hors Pro.
+   */
+  pro?: { sieges: number; periodicite: 'mois' | 'an' } | null;
 }
 
 export interface SourceOffres {
@@ -30,17 +35,22 @@ export class PgOffresStore implements SourceOffres {
     const r = await this.pool.query<{
       offre: string; entreprise_utilisateurs: number | null; entreprise_contacts: number | null;
       entreprise_commission_pct: number | null; conservation: number | null; dernier_fini: Date | null;
+      sieges: number | null; periodicite: 'mois' | 'an' | null;
     }>(
       `select offre_de_l_espace($1::uuid) as offre,
               (select t.entreprise_utilisateurs from tenants t where t.id = $1::uuid) as entreprise_utilisateurs,
               (select t.entreprise_contacts from tenants t where t.id = $1::uuid) as entreprise_contacts,
               (select t.entreprise_commission_pct from tenants t where t.id = $1::uuid) as entreprise_commission_pct,
               (select s.conversation_retention_days from tenant_settings s where s.tenant_id = $1::uuid) as conservation,
-              (select max(a.fini_le) from abonnements_offre a where a.tenant_id = $1::uuid) as dernier_fini`,
+              (select max(a.fini_le) from abonnements_offre a where a.tenant_id = $1::uuid) as dernier_fini,
+              (select a.sieges from abonnements_offre a where a.tenant_id = $1::uuid and a.fini_le is null) as sieges,
+              (select a.periodicite from abonnements_offre a where a.tenant_id = $1::uuid and a.fini_le is null) as periodicite`,
       [tenantId],
     );
     const l = r.rows[0];
     const offre: Offre = l && OFFRES.has(l.offre) ? (l.offre as Offre) : 'base';
+    // Les sièges ne comptent qu'en Pro : une Entreprise qui garde un Pro vivant a ses propres limites (/ops).
+    const pro = offre === 'pro' && l?.periodicite ? { sieges: l.sieges ?? 0, periodicite: l.periodicite } : null;
     return {
       offre,
       droits: droitsDe(offre, offre === 'entreprise'
@@ -48,8 +58,9 @@ export class PgOffresStore implements SourceOffres {
           utilisateurs: l?.entreprise_utilisateurs ?? null, conservationJours: l?.conservation ?? null,
           contacts: l?.entreprise_contacts ?? null, commissionPct: l?.entreprise_commission_pct ?? null,
         }
-        : null),
+        : null, pro?.sieges ?? 0),
       retourEnBaseLe: offre === 'base' ? (l?.dernier_fini ?? null) : null,
+      pro,
     };
   }
 

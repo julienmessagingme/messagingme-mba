@@ -33,6 +33,12 @@ export interface DepsTraitementAbonnements {
      */
     surPassageEnPro(tenantId: string, o: { arreterLeNumeroSeul: boolean }): Promise<void>;
     surFinDuPro(f: FinDuPro): Promise<unknown>;
+    /**
+     * 🔴 Les sièges payés du Pro, RELUS CHEZ STRIPE (spec offres v2, livraison 7) : la charge d'un événement peut arriver
+     * après un plus récent, et un nombre de sièges trop bas gèlerait un membre payé. `null` : les sièges ne sont pas en
+     * vente (rien à relire), ceux déjà notés restent. Une panne de Stripe lève : le webhook échoue, Stripe rejouera.
+     */
+    siegesChezStripe(abonnementId: string): Promise<number | null>;
   };
   /**
    * L'e-mail aux admins d'un renouvellement refusé (lot 7, livraison B), une fois par facture : Stripe réessaie la même
@@ -311,9 +317,11 @@ export function creerTraitementAbonnements(deps: DepsTraitementAbonnements) {
       const finDePeriode = fins.length > 0 ? Math.max(...fins) : null;
       const finPrevue = lu.data.cancel_at ?? (lu.data.cancel_at_period_end === true ? finDePeriode : null);
       const intervalle = lignes.map((l) => l.price?.recurring?.interval).find((v): v is string => typeof v === 'string');
+      const sieges = await deps.pro.siegesChezStripe(lu.data.id);
       const a = await deps.pro.modifier(lu.data.id, {
         finPrevueLe: finPrevue === null ? null : new Date(finPrevue * 1000),
         periodicite: intervalle ? (PERIODICITE_DE_STRIPE[intervalle] ?? null) : null,
+        ...(sieges !== null ? { sieges } : {}),
         // La fin de l'essai, tant qu'il court ; sinon on garde celle déjà notée (l'histoire de l'abonnement).
         ...(lu.data.status === 'trialing' && lu.data.trial_end ? { essaiFinLe: new Date(lu.data.trial_end * 1000) } : {}),
       });
@@ -329,6 +337,9 @@ export function creerTraitementAbonnements(deps: DepsTraitementAbonnements) {
     const fins = (lu.data.lines?.data ?? []).map((l) => l.period?.end).filter((v): v is number => typeof v === 'number');
     const finFacture = fins.length > 0 ? new Date(Math.max(...fins) * 1000) : null;
     if (e.type === 'invoice.payment_failed') {
+      // 🔴 Le prorata d'un siège refusé (livraison 7) : le changement attendait ce paiement et n'est pas appliqué. Le Pro
+      // reste payé à jour ; le mettre en retard enverrait aux admins l'e-mail d'un renouvellement qui n'a pas eu lieu.
+      if (lu.data.billing_reason === 'subscription_update') return ACQUITTE;
       const a = await deps.pro.majStatut(abonnementId, 'en_retard', null, finFacture);
       if (a) {
         deps.pro.invalider(a.tenantId);
@@ -342,7 +353,10 @@ export function creerTraitementAbonnements(deps: DepsTraitementAbonnements) {
     // arrête l'abonnement du numéro payé à part (rejouable, comme tout passage en Pro). Une facture de CYCLE payée l'arrête
     // aussi, même à 0 € (rouge 1 de la relecture) : un code promo à 100 % ferait sinon prélever le numéro seul en silence.
     // Un essai abandonné ne produit jamais de facture de cycle payée.
-    const payeeNonNulle = (lu.data.amount_paid ?? 0) > 0 || lu.data.billing_reason === 'subscription_cycle';
+    // Le prorata d'un siège (`subscription_update`, livraison 7) n'est jamais le premier paiement du Pro : pendant l'essai il
+    // vaut 0 €, mais on ne le confie pas à Stripe (Y12 de la relecture).
+    const payeeNonNulle = lu.data.billing_reason !== 'subscription_update'
+      && ((lu.data.amount_paid ?? 0) > 0 || lu.data.billing_reason === 'subscription_cycle');
     // Une facture peut arriver avant la session Checkout : elle suffit alors à enregistrer le Pro.
     const paye = await deps.pro.majStatut(abonnementId, 'actif', finFacture);
     if (paye) {

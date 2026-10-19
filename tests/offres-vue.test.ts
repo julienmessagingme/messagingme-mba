@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { creerVueOffre } from '../src/offres/vue';
-import { DROITS, FONCTIONS, PRIX_PRO_HT_CENTIMES, type Offre } from '../src/offres/offres';
+import { DROITS, FONCTIONS, PRIX_PRO_HT_CENTIMES, droitsDe, type Offre } from '../src/offres/offres';
 
 /**
  * LA VUE DE L'OFFRE (lot 6, tâche 6) : la même pour la console et pour Claude. Les fonctions dans l'ordre de la grille,
@@ -17,6 +17,7 @@ function vue(
     proEnVente,
     suiteDuNumero: async () => suite,
     essai: async () => essai,
+    siegesEnVente: true,
   });
 }
 
@@ -97,5 +98,31 @@ describe('l’essai du Pro dans la vue', () => {
     const fin = new Date('2026-11-02T09:00:00Z');
     expect((await vue('pro', null, true, null, { dejaEuUnPro: true, finLe: fin })('t1')).essai)
       .toEqual({ jours: 14, possible: false, finLe: '2026-11-02T09:00:00.000Z' });
+  });
+});
+
+describe('les sièges du Pro dans la vue (spec offres v2, livraison 7)', () => {
+  const avecSieges = (offre: Offre, pro: { sieges: number; periodicite: 'mois' | 'an' } | null, siegesEnVente = true) => creerVueOffre({
+    offres: { offreDe: async () => ({ offre, droits: droitsDe(offre, null, pro?.sieges ?? 0), retourEnBaseLe: null, pro }) },
+    usage: async () => ({ contacts: 0, automations: 0, membres: 4 }),
+    modelesDuMois: { etatDuMois: async () => null },
+    proEnVente: true,
+    suiteDuNumero: async () => null,
+    essai: async () => ({ dejaEuUnPro: true, finLe: null }),
+    siegesEnVente,
+  });
+
+  it('🔴 un Pro annuel avec deux sièges : 3 inclus, 2 achetés, la limite à 5, le prix de sa formule lisible', async () => {
+    const v = await avecSieges('pro', { sieges: 2, periodicite: 'an' })('t1');
+    expect(v.sieges).toEqual({ inclus: 3, achetes: 2, periodicite: 'an' });
+    expect(v.limites.utilisateurs).toBe(5);
+    expect(v.prixSiege).toEqual({ moisCentimes: 1500, anCentimes: 15000 });
+  });
+
+  it('une Free : aucun siège, mais le prix pour la carte du Pro ; sièges pas en vente : aucun prix', async () => {
+    const free = await avecSieges('base', null)('t1');
+    expect(free.sieges).toBeNull();
+    expect(free.prixSiege).toEqual({ moisCentimes: 1500, anCentimes: 15000 });
+    expect((await avecSieges('pro', { sieges: 0, periodicite: 'mois' }, false)('t1')).prixSiege).toBeNull();
   });
 });

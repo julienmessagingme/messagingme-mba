@@ -29,6 +29,8 @@ export interface AbonnementOffre {
   suiteAnnonceeLe: Date | null;
   /** La fin de l'essai de 14 jours (0243, spec offres v2), lue sur `trial_end` ; `null` pour un Pro payé dès le départ. */
   essaiFinLe: Date | null;
+  /** Les sièges payés en plus des 3 utilisateurs (0244, livraison 7), relus chez Stripe ; 0 sans siège. */
+  sieges: number;
 }
 
 /**
@@ -51,13 +53,14 @@ interface Ligne {
   rendre_numero: boolean;
   suite_annoncee_le: Date | null;
   essai_fin_le: Date | null;
+  sieges: number;
 }
 const COLONNES = 'stripe_subscription_id, tenant_id, periodicite, livemode, statut, periode_fin, fin_prevue_le, fini_le, fin_raison, '
-  + 'rendre_numero, suite_annoncee_le, essai_fin_le';
+  + 'rendre_numero, suite_annoncee_le, essai_fin_le, sieges';
 const versAbonnement = (l: Ligne): AbonnementOffre => ({
   abonnementId: l.stripe_subscription_id, tenantId: l.tenant_id, periodicite: l.periodicite, livemode: l.livemode, statut: l.statut,
   periodeFin: l.periode_fin, finPrevueLe: l.fin_prevue_le, finiLe: l.fini_le, finRaison: l.fin_raison,
-  rendreNumero: l.rendre_numero, suiteAnnonceeLe: l.suite_annoncee_le, essaiFinLe: l.essai_fin_le,
+  rendreNumero: l.rendre_numero, suiteAnnonceeLe: l.suite_annoncee_le, essaiFinLe: l.essai_fin_le, sieges: l.sieges,
 });
 
 export class PgAbonnementsOffreStore {
@@ -141,17 +144,37 @@ export class PgAbonnementsOffreStore {
    * change plus. Une fin retirée efface l'annonce de la suite du numéro (B2b) : reposée, elle s'annonce de nouveau.
    */
   async modifier(
-    abonnementId: string, m: { finPrevueLe: Date | null; periodicite: PeriodiciteOffre | null; essaiFinLe?: Date | null },
+    abonnementId: string,
+    m: {
+      finPrevueLe: Date | null; periodicite: PeriodiciteOffre | null; essaiFinLe?: Date | null;
+      /** Les sièges relus chez Stripe (livraison 7) ; absents, ceux déjà notés restent. */
+      sieges?: number;
+    },
   ): Promise<AbonnementOffre | null> {
     const res = await this.pool.query<Ligne>(
       `update abonnements_offre
           set fin_prevue_le = $2, periodicite = coalesce($3, periodicite), essai_fin_le = coalesce($4, essai_fin_le),
+              sieges = coalesce($5, sieges),
               suite_annoncee_le = case when $2::timestamptz is null then null else suite_annoncee_le end, maj_le = now()
         where stripe_subscription_id = $1 and fini_le is null
         returning ${COLONNES}`,
-      [abonnementId, m.finPrevueLe, m.periodicite, m.essaiFinLe ?? null],
+      [abonnementId, m.finPrevueLe, m.periodicite, m.essaiFinLe ?? null, m.sieges ?? null],
     );
     return res.rows[0] ? versAbonnement(res.rows[0]) : null;
+  }
+
+  /**
+   * Les sièges payés du Pro (livraison 7), tels que Stripe vient de les rendre à la route d'achat : la limite d'utilisateurs
+   * suit sans attendre le webhook, qui les relira aussi. Un Pro fini ne change plus ; `null` s'il est inconnu ou fini.
+   */
+  async noterSieges(abonnementId: string, sieges: number): Promise<{ tenantId: string } | null> {
+    const res = await this.pool.query<{ tenant_id: string }>(
+      `update abonnements_offre set sieges = $2, maj_le = now()
+        where stripe_subscription_id = $1 and fini_le is null
+        returning tenant_id`,
+      [abonnementId, sieges],
+    );
+    return res.rows[0] ? { tenantId: res.rows[0].tenant_id } : null;
   }
 
   /**

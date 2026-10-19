@@ -6,6 +6,21 @@
 réponses ont chacun leur colonne, 0241). Aucun espace n'y avait de valeur (sonde du 2026-10-17). Elle se retire par une
 migration APRÈS le déploiement de la livraison 2 : l'ancien code la nomme.
 
+## 🟡 Offres v2 : les jaunes de la relecture de la livraison 7, les sièges payants (2026-10-19)
+
+- **Un Pro prélevé en SEPA ne peut pas acheter de siège** : `pending_if_incomplete` n'accepte pas le prélèvement SEPA, la
+  route rend alors 422 « réessayez ». Vérifier dans le tableau de bord Stripe les moyens de paiement du Checkout du Pro ;
+  s'il y a du SEPA, un refus dédié (« ajoutez une carte depuis le portail »).
+- **Les codes promo du Pro s'appliqueraient aux sièges** s'ils ne sont pas restreints au produit Pro : le vérifier chez
+  Stripe (geste de Julien) et l'inscrire à l'essai réel.
+- **`invoice.payment_failed` de motif `subscription_update` est supposé venir d'un siège** : vrai tant que le portail reste
+  fermé au changement de formule. Le jour où il s'ouvre, filtrer sur les prix de siège des lignes de la facture.
+- **Le CHECK de `abonnements_offre.sieges` (0 à 1 000)** ferait échouer le webhook en boucle sur une quantité posée à la main
+  au-delà : borner la valeur relue (et alerter) plutôt que la refuser.
+- **Le membre gelé d'un Pro** lit « Passez en Entreprise » alors que son administrateur pourrait acheter un siège : une
+  phrase qui le dit, sans prix (il ne paie pas).
+- **Pas d'outil MCP pour acheter un siège** : `get_plan` dit les sièges et leur prix, l'achat reste dans la console.
+
 ## 🟡 Offres v2 : les jaunes de la relecture de la livraison 6, l'essai de 14 jours (2026-10-19)
 
 - **La fin d'un essai sans paiement alerte comme la fin d'un Pro payant** : `surFinDuPro` ne distingue pas un essai

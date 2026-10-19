@@ -12,7 +12,7 @@ import { getSession, clearSession } from './session';
 import { LOCALE_STORAGE_KEY, type Locale } from './locale';
 import { estCorpsCodeRefuse } from './second-facteur';
 import { CORPS_OPAQUE_5XX } from './partage/textes-serveur';
-import { ACCES_SUSPENDU_EVENT, OFFRE_REFUSEE_EVENT, estAccesSuspendu, lireRefusOffre } from './offre';
+import { ACCES_SUSPENDU_EVENT, OFFRE_REFUSEE_EVENT, estAccesSuspendu, lireRefusOffre, lireSiegeRequis } from './offre';
 
 /**
  * OÙ VIT L'API, VUE DU NAVIGATEUR. Exporté pour `/ops`, qui appelle avec sa propre session (autorité séparée).
@@ -211,7 +211,9 @@ async function attempt<T>(path: string, init: RequestInit, refus401: Refus401): 
  */
 function signalerRefusOffre(corps: unknown): void {
   const refus = lireRefusOffre(corps);
-  if (refus && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(OFFRE_REFUSEE_EVENT, { detail: refus }));
+  // Un refus qui propose un siège du Pro (livraison 7) : l'écran d'invitation propose l'achat lui-même, avec son prix ; le
+  // bandeau, qui renvoie à la page de l'offre, dirait la même chose ailleurs.
+  if (refus && lireSiegeRequis(corps) === null && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(OFFRE_REFUSEE_EVENT, { detail: refus }));
 }
 
 /**

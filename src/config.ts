@@ -542,6 +542,13 @@ export const schema = z.object({
   STRIPE_PRIX_PRO_MOIS: z.string().default(''),
   STRIPE_PRIX_PRO_AN: z.string().default(''),
   /**
+   * Les prix du siège du Pro (spec offres v2, livraison 7) : un utilisateur de plus que les 3 inclus, 15 € HT par mois et
+   * 150 € HT par an, relus chez Stripe avant chaque achat (`PRIX_SIEGE_HT_CENTIMES`). Posés ensemble ou pas du tout (garde
+   * plus bas) ; vides : les sièges ne sont pas en vente, le refus d'une invitation renvoie à l'Entreprise.
+   */
+  STRIPE_PRIX_SIEGE_MOIS: z.string().default(''),
+  STRIPE_PRIX_SIEGE_AN: z.string().default(''),
+  /**
    * Les numéros fournis (lot 3a, `src/otp/`). 🔴 Côté serveur uniquement.
    * `DIDWW_API_KEY` : la clé d'API DIDWW de PRODUCTION, limitée à l'adresse du VPS. Elle ne sert qu'à retrouver un
    * numéro et à le brancher sur le trunk de l'Asterisk (`DIDWW_TRUNK_OTP_ID`), jamais à acheter, bien qu'elle le
@@ -697,6 +704,10 @@ export const schema = z.object({
     // Les deux prix du Pro vont ensemble : un seul ouvrirait une périodicité et laisserait l'autre en 503.
     if ((c.STRIPE_PRIX_PRO_MOIS === '') !== (c.STRIPE_PRIX_PRO_AN === '')) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: [c.STRIPE_PRIX_PRO_MOIS === '' ? 'STRIPE_PRIX_PRO_MOIS' : 'STRIPE_PRIX_PRO_AN'], message: 'STRIPE_PRIX_PRO_MOIS et STRIPE_PRIX_PRO_AN se posent ensemble (ou aucun des deux)' });
+    }
+    // Les deux prix du siège vont ensemble : un Pro annuel ne pourrait pas acheter le sien, ou un mensuel le sien.
+    if ((c.STRIPE_PRIX_SIEGE_MOIS === '') !== (c.STRIPE_PRIX_SIEGE_AN === '')) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [c.STRIPE_PRIX_SIEGE_MOIS === '' ? 'STRIPE_PRIX_SIEGE_MOIS' : 'STRIPE_PRIX_SIEGE_AN'], message: 'STRIPE_PRIX_SIEGE_MOIS et STRIPE_PRIX_SIEGE_AN se posent ensemble (ou aucun des deux)' });
     }
     // Le pont du code : un secret court se devinerait. ⚠️ AUCUNE garde au démarrage sur la paire clé DIDWW et trunk :
     // `.env.prod` porte encore la ligne `DIDWW_API_KEY` d'une clé révoquée (mesuré le 2026-10-02), et la garde aurait

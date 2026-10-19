@@ -1,4 +1,4 @@
-import { DROITS, ESSAI_PRO_JOURS, FONCTIONS, PRIX_PRO_HT_CENTIMES, type Fonction, type Limites, type Offre } from './offres';
+import { DROITS, ESSAI_PRO_JOURS, FONCTIONS, PRIX_PRO_HT_CENTIMES, PRIX_SIEGE_HT_CENTIMES, type Fonction, type Limites, type Offre } from './offres';
 import type { SourceOffres } from './offre.pg';
 import { adresseOffre } from './refus';
 
@@ -51,6 +51,13 @@ export interface VueOffre {
    * de Pro, le Pro en vente), et la fin de l'essai en cours (`null` hors essai). La console et Claude le disent.
    */
   essai: { jours: number; possible: boolean; finLe: string | null };
+  /**
+   * Les sièges du Pro vivant (spec offres v2, livraison 7) : les utilisateurs inclus, ceux achetés en plus (déjà comptés
+   * dans `limites.utilisateurs`) et la formule, qui fixe le prix du suivant. `null` hors Pro.
+   */
+  sieges: { inclus: number; achetes: number; periodicite: 'mois' | 'an' } | null;
+  /** Le prix HT d'un siège, en centimes (`PRIX_SIEGE_HT_CENTIMES`) ; `null` tant que les sièges ne sont pas en vente. */
+  prixSiege: { moisCentimes: number; anCentimes: number } | null;
   upgradeUrl: string;
 }
 
@@ -66,6 +73,8 @@ export interface DepsVueOffre {
   suiteDuNumero(tenantId: string): Promise<{ finPrevueLe: Date | null; rendreNumero: boolean } | null>;
   /** L'espace a-t-il déjà eu un Pro, et la fin de l'essai du Pro vivant qui en est un (`PgAbonnementsOffreStore.deLEspace`). */
   essai(tenantId: string): Promise<{ dejaEuUnPro: boolean; finLe: Date | null }>;
+  /** Les sièges se paient-ils en ligne ? (Stripe câblé et `STRIPE_PRIX_SIEGE_MOIS` et `_AN` posés). */
+  siegesEnVente: boolean;
 }
 
 /** Une copie neuve à chaque appel : la modifier ne touche pas `DROITS`. Les clés passent par `offrePublique`, elle seule. */
@@ -77,7 +86,7 @@ export function grilleDesOffres(): VueOffre['grille'] {
 
 export function creerVueOffre(d: DepsVueOffre): (tenantId: string) => Promise<VueOffre> {
   return async (tenantId) => {
-    const [{ offre, droits }, usage, mois, suite, essai] = await Promise.all([
+    const [{ offre, droits, pro }, usage, mois, suite, essai] = await Promise.all([
       d.offres.offreDe(tenantId), d.usage(tenantId), d.modelesDuMois.etatDuMois(tenantId), d.suiteDuNumero(tenantId), d.essai(tenantId),
     ]);
     return {
@@ -93,6 +102,10 @@ export function creerVueOffre(d: DepsVueOffre): (tenantId: string) => Promise<Vu
         possible: offre === 'base' && d.proEnVente && !essai.dejaEuUnPro,
         finLe: essai.finLe?.toISOString() ?? null,
       },
+      sieges: offre === 'pro' && pro
+        ? { inclus: DROITS.pro.limites.utilisateurs ?? 0, achetes: pro.sieges, periodicite: pro.periodicite }
+        : null,
+      prixSiege: d.siegesEnVente ? { moisCentimes: PRIX_SIEGE_HT_CENTIMES.mois, anCentimes: PRIX_SIEGE_HT_CENTIMES.an } : null,
       upgradeUrl: adresseOffre(),
     };
   };

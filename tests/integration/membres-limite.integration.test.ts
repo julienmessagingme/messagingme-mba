@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgUserStore } from '../../src/user/store.pg';
 import { LimiteOffreError } from '../../src/offres/refus';
+import { DuplicateEmailError } from '../../src/user/store.pg';
 
 /**
  * LA LIMITE DE MEMBRES DE L'OFFRE (lot 6, tâche 5), sur une vraie base : les comptes actifs, invitations en attente
@@ -40,6 +41,13 @@ describe.skipIf(!url)('la limite de membres de l’offre', () => {
     // Un agent révoqué (le dernier admin, lui, ne peut pas l'être).
     expect(await users.setDisabled(t, b.id, true)).toBe('ok');
     await expect(users.createPending(t, mail(5), 'agent')).resolves.toMatchObject({ email: mail(5) });
+  });
+
+  it('🔴 une adresse déjà membre de l’espace : le doublon AVANT la limite (livraison 7 : sinon un siège serait proposé, payé, puis l’invitation refusée)', async () => {
+    await users.createPending(t, mail(1), 'admin');
+    await users.createPending(t, mail(2), 'agent');
+    await users.createPending(t, mail(3), 'agent');
+    await expect(users.createPending(t, mail(2).toUpperCase(), 'agent')).rejects.toBeInstanceOf(DuplicateEmailError);
   });
 
   it('🔴 le 3e administrateur est refusé, à l’invitation comme au changement de rôle', async () => {

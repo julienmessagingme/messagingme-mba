@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { estAccesSuspendu, lireRefusOffre, lireVueOffre, offreQuiOuvre, phraseInclusDans, phraseSansAdresse, FONCTIONS_OFFRE } from './offre';
+import { estAccesSuspendu, lireRefusOffre, lireSiegeRequis, lireVueOffre, offreQuiOuvre, phraseInclusDans, phraseSansAdresse, FONCTIONS_OFFRE } from './offre';
 
 /**
  * L'OFFRE CÔTÉ CONSOLE (lot 6, tâche 7) : la réponse du serveur vérifiée, et la règle qui protège un client d'une panne :
@@ -173,5 +173,28 @@ describe('les prix du Pro dans la vue (lot 6, B1)', () => {
     // Le Pro pas encore en vente : le serveur rend `null` (jaune 10 de la relecture de B1).
     expect(lireVueOffre({ ...BASE, prixPro: null })!.prixPro).toBeNull();
     expect(lireVueOffre({ ...BASE, prixPro: { moisCentimes: -1 } })!.prixPro).toBeNull();
+  });
+});
+
+describe('les sièges du Pro (spec offres v2, livraison 7)', () => {
+  it('lus quand l’API les porte ; absents ou illisibles, null, et la vue reste lisible', () => {
+    const v = lireVueOffre({ ...BASE, sieges: { inclus: 3, achetes: 2, periodicite: 'an' }, prixSiege: { moisCentimes: 1500, anCentimes: 15000 } })!;
+    expect(v.sieges).toEqual({ inclus: 3, achetes: 2, periodicite: 'an' });
+    expect(v.prixSiege).toEqual({ moisCentimes: 1500, anCentimes: 15000 });
+    for (const sieges of [undefined, null, { inclus: 3, achetes: -1, periodicite: 'mois' }, { inclus: 3, achetes: 1, periodicite: 'semaine' }]) {
+      const w = lireVueOffre({ ...BASE, sieges, prixSiege: { moisCentimes: '15' } });
+      expect(w, JSON.stringify(sieges)).not.toBeNull();
+      expect([w!.sieges, w!.prixSiege]).toEqual([null, null]);
+    }
+  });
+
+  it('🔴 le siège proposé par le refus d’une invitation : lu seulement sur un 402 de limite d’utilisateurs bien formé', () => {
+    const corps = { error: 'Limite…', code: 'plan_limit_reached', limite: 'utilisateurs', max: 3, siege: { cible: 1, periodicite: 'mois', prixHtCentimes: 1500 } };
+    expect(lireSiegeRequis(corps)).toEqual({ cible: 1, periodicite: 'mois', prixHtCentimes: 1500 });
+    expect(lireSiegeRequis({ ...corps, limite: 'admins' })).toBeNull();
+    expect(lireSiegeRequis({ ...corps, code: 'plan_feature_unavailable' })).toBeNull();
+    expect(lireSiegeRequis({ ...corps, siege: { cible: 0, periodicite: 'mois', prixHtCentimes: 1500 } })).toBeNull();
+    expect(lireSiegeRequis({ ...corps, siege: undefined })).toBeNull();
+    expect(lireSiegeRequis(null)).toBeNull();
   });
 });

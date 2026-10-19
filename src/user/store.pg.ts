@@ -234,6 +234,10 @@ export class PgUserStore {
   /** Crée un compte en attente (invitation), sans mot de passe : connexion impossible avant l'acceptation.
    *  DuplicateEmailError (409) si l'email est déjà pris. */
   async createPending(tenantId: string, email: string, role: string, name?: string): Promise<UserRow> {
+    // Le doublon AVANT la limite (livraison 7) : sinon le refus de la limite proposerait un siège, payé, pour une adresse
+    // que l'insertion refuserait ensuite. La même règle que l'index `users_tenant_email_unique` (espace, adresse sans casse).
+    const deja = await this.pool.query(`select 1 from users where tenant_id = $1 and lower(email) = lower($2)`, [tenantId, email]);
+    if (deja.rows.length > 0) throw new DuplicateEmailError();
     if (this.limitesMembres) await verifierPlaceMembre(this.pool, tenantId, await this.limitesMembres(tenantId), role, null);
     const code = makeCode('usr', await resolveTenantCode(this.pool, tenantId));
     try {

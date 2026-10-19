@@ -195,7 +195,7 @@ export function makeRequireApiKey(
      */
     if (found.horsOffre) {
       // Le corps de la session de la console (`requireAuth`) : la limite, son maximum et le lien de l'offre.
-      const e = new LimiteOffreError(found.tenantId, found.horsOffre.limite, found.horsOffre.max);
+      const e = new LimiteOffreError(found.tenantId, found.horsOffre.limite, found.horsOffre.max, { offre: found.horsOffre.offre });
       await reply.code(STATUT_REFUS_OFFRE).send({ ...corpsRefusLimite(e), acces: 'suspendu' });
       return;
     }

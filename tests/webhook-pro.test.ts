@@ -21,15 +21,17 @@ const FIN = 1_792_600_000;
 function ligne(abonnementId: string, over: Partial<AbonnementOffre> = {}): AbonnementOffre {
   return {
     abonnementId, tenantId: T1, periodicite: 'mois', livemode: true, statut: 'actif', periodeFin: null, finPrevueLe: null, finiLe: null, finRaison: null,
-    rendreNumero: false, suiteAnnonceeLe: null, essaiFinLe: null, ...over,
+    rendreNumero: false, suiteAnnonceeLe: null, essaiFinLe: null, sieges: 0, ...over,
   };
 }
 
-function monter(o: { connus?: string[]; issue?: IssueEnregistrementPro; panne?: unknown; rendre?: boolean } = {}) {
+function monter(o: { connus?: string[]; issue?: IssueEnregistrementPro; panne?: unknown; rendre?: boolean; sieges?: number | null | Error } = {}) {
   const cap = {
     enregistres: [] as Array<{ tenantId: string; abonnementId: string; periodicite: PeriodiciteOffre; livemode: boolean; periodeFin: Date | null; essaiFinLe?: Date | null }>,
     statuts: [] as Array<{ abonnementId: string; statut: string; periodeFin: Date | null; finEchouee: Date | null }>,
-    modifs: [] as Array<{ abonnementId: string; finPrevueLe: Date | null; periodicite: PeriodiciteOffre | null; essaiFinLe?: Date | null }>,
+    modifs: [] as Array<{ abonnementId: string; finPrevueLe: Date | null; periodicite: PeriodiciteOffre | null; essaiFinLe?: Date | null; sieges?: number }>,
+    /** Les abonnements relus chez Stripe pour leurs sièges (livraison 7). */
+    relus: [] as string[],
     fins: [] as Array<{ abonnementId: string; raison: RaisonFinOffre; finiLe: Date }>,
     invalides: [] as string[],
     alertes: [] as string[],
@@ -68,6 +70,11 @@ function monter(o: { connus?: string[]; issue?: IssueEnregistrementPro; panne?: 
       surPassageEnPro: async (t, o) => { cap.passages.push({ tenantId: t, arreter: o.arreterLeNumeroSeul }); },
       surFinDuPro: async (f) => { cap.finsDuPro.push(f); },
       vivant: async () => false,
+      siegesChezStripe: async (abonnementId) => {
+        cap.relus.push(abonnementId);
+        if (o.sieges instanceof Error) throw o.sieges;
+        return o.sieges ?? null;
+      },
     },
     now: () => NOW,
   };
@@ -327,5 +334,45 @@ describe('l’essai de 14 jours du Pro', () => {
     const numero = { id: 'sub_num', object: 'subscription', status: 'active', metadata: { tenant_id: T1, produit: 'numero' } };
     expect((await envoyer(srv, evenement(numero, 'customer.subscription.created'))).statusCode).toBe(200);
     expect([cap.enregistres, cap.passages]).toEqual([[], []]);
+  });
+});
+
+describe('les sièges payants (spec offres v2, livraison 7)', () => {
+  it('🔴 une modification de l’abonnement relit les sièges CHEZ STRIPE, jamais dans la charge de l’événement', async () => {
+    // La charge porte 5 sièges : un événement plus ancien, livré en retard. Stripe dit 2, c'est 2 qui est noté.
+    const { srv, cap } = monter({ connus: ['sub_pro'], sieges: 2 });
+    const charge = abonnementPro({ items: { data: [{ current_period_end: FIN, quantity: 5, price: { id: 'price_siege_an', recurring: { interval: 'year', interval_count: 1 } } }] } });
+    expect((await envoyer(srv, evenement(charge, 'customer.subscription.updated'))).statusCode).toBe(200);
+    expect(cap.relus).toEqual(['sub_pro']);
+    expect(cap.modifs).toEqual([expect.objectContaining({ abonnementId: 'sub_pro', sieges: 2 })]);
+    expect(cap.invalides).toEqual([T1]);
+  });
+
+  it('Stripe pas câblé pour les sièges : la modification garde ceux déjà notés (aucune clé `sieges`)', async () => {
+    const { srv, cap } = monter({ connus: ['sub_pro'], sieges: null });
+    await envoyer(srv, evenement(abonnementPro(), 'customer.subscription.updated'));
+    expect(cap.modifs[0]).not.toHaveProperty('sieges');
+  });
+
+  it('Stripe ne répond pas à la relecture : le webhook échoue, Stripe rejouera ; rien n’est écrit', async () => {
+    const { srv, cap } = monter({ connus: ['sub_pro'], sieges: new Error('stripe : siege impossible (reseau)') });
+    expect((await envoyer(srv, evenement(abonnementPro(), 'customer.subscription.updated'))).statusCode).toBeGreaterThanOrEqual(500);
+    expect(cap.modifs).toEqual([]);
+  });
+
+  it('🔴 le prorata PAYÉ d’un siège sur un abonnement marqué essai n’arrête jamais le numéro payé à part, même non nul', async () => {
+    const { srv, cap } = monter({ connus: ['sub_pro'] });
+    const essai = { type: 'subscription_details', subscription_details: { subscription: 'sub_pro', metadata: { ...META, essai: '14' } } };
+    await envoyer(srv, evenement(facturePro({ amount_paid: 1500, billing_reason: 'subscription_update', parent: essai }), 'invoice.paid'));
+    expect(cap.passages).toEqual([]);
+  });
+
+  it('🔴 un prorata de siège impayé ne met PAS le Pro en retard, et ne prévient personne : le siège n’a juste pas été ajouté', async () => {
+    const { srv, cap } = monter({ connus: ['sub_pro'] });
+    expect((await envoyer(srv, evenement(facturePro({ billing_reason: 'subscription_update' }), 'invoice.payment_failed'))).statusCode).toBe(200);
+    expect([cap.statuts, cap.paiementsRefuses, cap.alertes]).toEqual([[], [], []]);
+    // Un renouvellement refusé, lui, le met toujours en retard.
+    await envoyer(srv, evenement(facturePro({ id: 'in_cycle', billing_reason: 'subscription_cycle' }), 'invoice.payment_failed'));
+    expect(cap.statuts).toEqual([expect.objectContaining({ statut: 'en_retard' })]);
   });
 });

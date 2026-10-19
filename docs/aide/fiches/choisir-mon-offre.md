@@ -1,7 +1,7 @@
 ---
 ecran: offre
 source_section: Offres (menu « Paramètres » > Offre)
-source_empreinte: 3bbfe5
+source_empreinte: 27f325
 ---
 # Choisir mon offre
 
@@ -18,7 +18,9 @@ clients dans les 24 heures, envoient vos modèles et construisent votre agent IA
 l'accueil (votre numéro), les clés d'API, la documentation, l'offre, votre compte et le support.
 
 **Ce que le Pro et l'Entreprise ajoutent.** Le Pro ouvre la console complète : l'Inbox, les scénarios, les
-statistiques, l'agent de Meta, les assistants et l'e-mail, avec plus de contacts. L'analyse des conversations, les
+statistiques, l'agent de Meta, les assistants et l'e-mail, avec plus de contacts. Il compte trois utilisateurs : au-delà,
+chaque utilisateur en plus se paie, et son prix s'affiche quand vous invitez le membre, avant que rien ne soit facturé. La
+page Offre en retire un, sans remboursement, une fois le membre en trop désactivé. L'analyse des conversations, les
 publicités, les chaînes, le RCS, les connecteurs CRM et le Performance Lab complet demandent l'Entreprise.
 
 **Ce qui n'est jamais compté.** Un contact qui vous écrit le premier n'entre pas dans votre limite de contacts. Une

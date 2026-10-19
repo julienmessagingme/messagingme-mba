@@ -2659,11 +2659,39 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
   abandonné ne l'a donc jamais touché, et `surFinDuPro` le trouve vivant : `deja_abonne`, rien n'est recréé en double,
   sauf si le client a demandé à rendre le numéro (`rendreNumero`), qui l'arrête alors avec un avoir (`rendu`). La vue
   de l'offre porte `essai: { jours, possible, finLe }` ; la console (`/offre`) et `subscribe_pro` (`essai_jours`) le
-  disent. ⚠️ **Retour arrière** : une image antérieure à la livraison 6 ignore la métadonnée `essai`. Un essai en cours
+  disent.
+  ⚠️ **Retour arrière** : une image antérieure à la livraison 6 ignore la métadonnée `essai`. Un essai en cours
   n'y arrêterait plus l'abonnement du numéro payé à part au premier paiement (le client paierait les deux), et une
   session d'essai ouverte avant et payée après arrêterait le numéro dès le début de l'essai. Avant un retour arrière,
   compter les essais en cours (`select count(*) from abonnements_offre where essai_fin_le > now()`) et, s'il y en a,
   arrêter ces numéros à la main à leur premier paiement.
+  🔴 **Les sièges du Pro** (spec offres v2, livraison 7, `src/stripe/sieges.ts`, migration 0244 `abonnements_offre.sieges`) :
+  la limite d'utilisateurs du Pro vaut 3 plus les sièges payés, posée dans `droitsDe` SEULEMENT (lue par l'invitation,
+  `verifierPlaceMembre`, ET par le gel, `creerGelMembres` : un membre payé n'est jamais gelé). L'invitation lit l'offre SANS
+  cache (`offresSansCache`, `src/index.ts`) : celle qui suit l'achat peut tomber sur une autre copie ; le gel garde le cache
+  (30 s au plus de retard sur une autre copie). Le refus d'une invitation garde le code `plan_limit_reached` et ajoute
+  `siege: { cible, periodicite, prixHtCentimes }` seulement si un siège la ferait passer : les sièges en vente
+  (`STRIPE_PRIX_SIEGE_MOIS` et `_AN`, ensemble), une INVITATION (pas une réactivation), exactement à la limite, et ni un
+  administrateur de trop (refusé d'abord) ni une adresse déjà membre (le doublon est vérifié avant la limite). La console
+  propose alors l'achat et tait le bandeau. L'achat (`POST /tenants/:tenantId/offre/sieges`, `{ depuis, cible }`, un siège à
+  la fois) relit l'abonnement chez Stripe, refuse un état de départ périmé (409 `sieges_changes` : un « Ajouter » ne devient
+  jamais un retrait), recoupe le prix (`PRIX_SIEGE_HT_CENTIMES`, formule du Pro), puis change UNE ligne avec
+  `always_invoice` et `pending_if_incomplete` : rien ne change tant que le prorata n'est pas payé (402
+  `paiement_siege_incomplet` avec la facture ; réglée plus tard, Stripe applique le changement et le webhook le relit).
+  La clé d'idempotence porte l'état de départ (`siege-<abonnement>-<actuel>-<cible>-<dernière facture>`), une même
+  modification encore en vol rend 409 `sieges_en_cours`, et la base note ce que Stripe RELIT après la modification. Seul un
+  espace EN Pro achète (une Entreprise qui garde un Pro vivant, non). Le webhook relit les sièges chez Stripe à chaque
+  `customer.subscription.updated` (jamais dans la charge, qui peut être plus ancienne) ; un refus durable de Stripe (4xx,
+  réponse illisible) est journalisé et alerté sans bloquer la mise à jour du Pro, une panne passagère le fait rejouer. Un
+  `invoice.payment_failed` de `billing_reason = subscription_update` (un prorata refusé) ne met pas le Pro en retard, et un
+  `invoice.paid` de ce motif n'est jamais le premier paiement de l'essai. Un retrait se fait sans prorata ni remboursement,
+  refusé tant que les membres actifs dépassent 3 plus la cible ; une ligne de siège posée à la main chez Stripe (deux
+  lignes, ou l'autre formule) est refusée en 409 `sieges_a_regler`.
+  ⚠️ **Les lignes de siège se reconnaissent à leur PRIX** (`STRIPE_PRIX_SIEGE_*`) : changer ces identifiants sans migrer les
+  lignes existantes ferait noter 0 siège au prochain événement (des membres payés gelés) et créerait une seconde ligne au
+  prochain achat. Un nouveau tarif se fait en passant chaque abonnement au nouveau prix chez Stripe AVANT de changer
+  `.env.prod`. ⚠️ **Retour arrière des sièges** : une image antérieure à la livraison 7 ignore `sieges` et gèlerait les
+  membres payés ; compter d'abord `select count(*) from abonnements_offre where sieges > 0 and fini_le is null`.
   ⚠️ **Le compte Stripe est partagé avec d'autres activités** : tout code promo actif sans restriction de produit
   s'applique au Pro, au numéro fourni, et à la recharge, qui crédite le montant AVANT remise. Restreindre chaque code à ses produits se
   fait chez Stripe.

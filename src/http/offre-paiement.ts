@@ -4,6 +4,7 @@ import { gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
 import { espaceVerifie } from './scope';
 import { corpsDuRefus, type Issue } from '../lib/issue';
 import type { PeriodicitePro } from '../stripe/pro';
+import type { DemandeSieges } from '../stripe/sieges';
 
 /**
  * PAYER LE PRO DEPUIS LA CONSOLE (lot 6, livraison B1, tâche 10, spec § 6). Deux routes d'administrateur, sous le plafond
@@ -22,10 +23,22 @@ export interface OffrePaiementRouteDeps {
    * vivant.
    */
   rendreLeNumero(tenantId: string, rendre: boolean): Promise<boolean>;
+  /**
+   * Les sièges du Pro (spec offres v2, livraison 7, `changerSieges`, `src/stripe/sieges.ts`) : Stripe d'abord, la limite
+   * ensuite, et un ajout seulement si son prorata est payé.
+   */
+  sieges(tenantId: string, demande: DemandeSieges, payeur: string): Promise<Issue<{ sieges: number }>>;
 }
 
 /** Le corps ne porte qu'une périodicité, jamais un prix ni un montant : une clé inconnue est refusée. */
 const corpsSchema = z.object({ periodicite: z.enum(['mois', 'an']) }).strict();
+/**
+ * Un siège à la fois, depuis l'état que l'écran a lu : jamais un prix ni un montant (le prix vient de la configuration et de
+ * Stripe), et jamais un saut (une requête ne charge pas mille sièges sur la carte, Y7 de la relecture).
+ */
+const corpsSiegesSchema = z.object({ depuis: z.number().int().min(0).max(1000), cible: z.number().int().min(0).max(1000) })
+  .strict()
+  .refine((c) => Math.abs(c.cible - c.depuis) === 1);
 /** Rendre le numéro : un booléen, rien d'autre. */
 const corpsRendreSchema = z.object({ rendre: z.boolean() }).strict();
 
@@ -44,6 +57,19 @@ export function registerOffrePaiement(app: FastifyInstance, deps: OffrePaiementR
   app.post('/tenants/:tenantId/offre/portail', couteux, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const r = await deps.portail(tenant, req.auth?.userId ?? '');
+    if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
+    return reply.code(200).send(r.valeur);
+  });
+
+  /**
+   * Les utilisateurs en plus du Pro (livraison 7) : un administrateur, sous le plafond coûteux (chaque ajout écrit chez
+   * Stripe et facture un prorata). La console l'appelle après un refus d'invitation qui propose le siège.
+   */
+  app.post('/tenants/:tenantId/offre/sieges', couteux, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const lu = corpsSiegesSchema.safeParse(req.body ?? {});
+    if (!lu.success) return reply.code(400).send({ error: 'depuis et cible requis : un siège de plus ou de moins à la fois' });
+    const r = await deps.sieges(tenant, lu.data, req.auth?.userId ?? '');
     if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
     return reply.code(200).send(r.valeur);
   });

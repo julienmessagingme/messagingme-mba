@@ -44,6 +44,7 @@ import { QuotaSuppressions, creerModelesDuLancement } from './offres/compteurs';
 import { PgOffresStore } from './offres/offre.pg';
 import { PgAbonnementsOffreStore } from './offres/abonnements-offre.pg';
 import { ouvrirPro, ouvrirPortailPro, type DepsPro } from './stripe/pro';
+import { changerSieges, siegesChezStripe, type DepsSieges } from './stripe/sieges';
 import { creerVueOffre } from './offres/vue';
 import { upsertContactsFromApi } from './api/contacts-upsert';
 import { creerServiceContactsV1 } from './api/contacts-v1';
@@ -296,10 +297,21 @@ async function main(): Promise<void> {
   // annonce le nombre réellement appliqué. Hors du socle : le worker construit le sien pour écrire les agrégats,
   // avec `enabled` à `true`, que seul l'affichage lit.
   const conversationStatsStore = new PgConversationStatsStore(pool, config.CONVERSATION_ANALYSIS_ENABLED === 'true', config.CONVERSATION_RETENTION_DAYS);
-  // Les limites de membres de l'offre (lot 6) : à l'invitation, au passage en administrateur, à la réactivation.
+  // Les sièges du Pro (spec offres v2, livraison 7) : en vente quand Stripe est câblé et leurs deux prix posés.
+  const siegesEnVente = config.STRIPE_SECRET_KEY !== '' && config.STRIPE_PRIX_SIEGE_MOIS !== '' && config.STRIPE_PRIX_SIEGE_AN !== '';
+  // Les limites de membres de l'offre (lot 6) : à l'invitation, au passage en administrateur, à la réactivation. L'offre et
+  // le siège suivant du Pro (livraison 7) : le refus d'une invitation dit alors le prix du siège qui la lève.
+  // 🔴 SANS le cache de l'offre (Y3 de la relecture) : l'invitation qui suit l'achat d'un siège peut tomber sur une autre
+  // copie de l'API, dont le cache (30 s) date du refus d'avant ; une requête par invitation, rien à côté. Le gel, lui,
+  // garde le cache : un membre payé sur une autre copie peut y être refusé 30 s au plus.
+  const offresSansCache = new PgOffresStore(pool);
   const userStore = new PgUserStore(pool, async (tenant) => {
-    const { limites } = (await offres.offreDe(tenant)).droits;
-    return { utilisateurs: limites.utilisateurs, admins: limites.admins };
+    const o = await offresSansCache.offreDe(tenant);
+    const { limites } = o.droits;
+    return {
+      utilisateurs: limites.utilisateurs, admins: limites.admins, offre: o.offre,
+      siege: siegesEnVente && o.pro ? { achetes: o.pro.sieges, periodicite: o.pro.periodicite } : null,
+    };
   });
   /**
    * Le gel des membres en trop (lot 6, B2a, spec § 7) : la même question pour la garde des sessions de la console et pour
@@ -945,6 +957,27 @@ async function main(): Promise<void> {
     // L'essai de 14 jours, une fois par espace (spec offres v2) : un Pro, même fini, l'a consommé.
     dejaEuUnPro: async (tenant) => (await abonnementsOffre.deLEspace(tenant)) !== null,
   };
+  /**
+   * Les sièges du Pro (spec offres v2, livraison 7, `src/stripe/sieges.ts`) : le MÊME Stripe et la MÊME règle du mode test
+   * que le Pro. La limite suit ce que Stripe a rendu, l'offre en cache de CETTE copie est vidée pour l'invitation qui suit.
+   */
+  const siegesDeLaConsole: DepsSieges = {
+    stripe: paiementDeLaConsole.stripe,
+    prixSiegeMois: config.STRIPE_PRIX_SIEGE_MOIS,
+    prixSiegeAn: config.STRIPE_PRIX_SIEGE_AN,
+    payeurAutorise: paiementDeLaConsole.payeurAutorise,
+    // Le Pro vivant d'un espace EN PRO : une Entreprise qui garde un Pro vivant n'achète pas de sièges, que ses limites
+    // ignorent (Y16 de la relecture).
+    proVivant: async (tenant) => {
+      if ((await offresSansCache.offreDe(tenant)).offre !== 'pro') return null;
+      const a = await abonnementsOffre.deLEspace(tenant);
+      return a !== null && a.finiLe === null ? { abonnementId: a.abonnementId, periodicite: a.periodicite } : null;
+    },
+    membres: async (tenant) => (await offresStore.usage(tenant)).membres,
+    noterSieges: (abonnementId, sieges) => abonnementsOffre.noterSieges(abonnementId, sieges),
+    invalider: (tenant) => offres.invalider(tenant),
+    alerter: async (texte) => { await sendTelegram(`[mba-${NOM_API}] ${texte}`); },
+  };
   // Le plafond de clés actives de l'offre (spec offres v2), lu par la route de la console et par l'outil `create_api_key`.
   const limiteClesDeLOffre = async (tenant: string): Promise<number | null> => (await offres.offreDe(tenant)).droits.limites.clesApi;
   const vueOffre = creerVueOffre({
@@ -958,6 +991,7 @@ async function main(): Promise<void> {
       const enEssai = a !== null && a.finiLe === null && a.essaiFinLe !== null && a.essaiFinLe.getTime() > Date.now();
       return { dejaEuUnPro: a !== null, finLe: enEssai ? a.essaiFinLe : null };
     },
+    siegesEnVente,
   });
 
   /**
@@ -1199,6 +1233,8 @@ async function main(): Promise<void> {
       portail: (tenant, payeur) => ouvrirPortailPro(proDeLaConsole, tenant, payeur),
       // Rendre le numéro fourni à la fin du Pro (lot 6, B2b).
       rendreLeNumero: (tenant, rendre) => abonnementsOffre.rendreLeNumero(tenant, rendre),
+      // Les utilisateurs en plus du Pro (livraison 7).
+      sieges: (tenant, demande, payeur) => changerSieges(siegesDeLaConsole, tenant, demande, payeur),
     },
     // La suppression définitive d'un espace (RC8).
     opsSuppression: suppressionEspace,
@@ -1550,6 +1586,8 @@ async function main(): Promise<void> {
           // Le numéro inclus (B2b) : au passage en Pro et à la fin du Pro.
           surPassageEnPro: (tenant, o) => surPassageEnPro(numeroInclus, tenant, o),
           surFinDuPro: (f) => surFinDuPro(numeroInclus, f),
+          // Les sièges (livraison 7) : relus chez Stripe à chaque modification ; `null` tant qu'ils ne sont pas en vente.
+          siegesChezStripe: (abonnementId) => siegesChezStripe(siegesDeLaConsole, abonnementId),
         },
       },
     } : {}),

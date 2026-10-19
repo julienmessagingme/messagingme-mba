@@ -1,11 +1,19 @@
 import type { Pool } from 'pg';
-import { LimiteOffreError } from './refus';
+import { LimiteOffreError, type ContexteLimite } from './refus';
+import { PRIX_SIEGE_HT_CENTIMES, type Offre } from './offres';
 import type { SourceOffres } from './offre.pg';
 
 /** Les limites de membres d'une offre (`droits.limites`) : `null` = sans limite. */
 export interface LimitesMembres {
   utilisateurs: number | null;
   admins: number | null;
+  /** L'offre de l'espace, quand l'appelant la connaît : la phrase du refus en dépend (livraison 7). */
+  offre?: Offre;
+  /**
+   * Les sièges du Pro vivant (livraison 7) : ceux déjà payés et la formule, qui fixe le prix du suivant. `null` ou absent :
+   * pas de siège à vendre (pas de Pro, ou les prix des sièges pas posés), le refus ne propose rien à acheter.
+   */
+  siege?: { achetes: number; periodicite: 'mois' | 'an' } | null;
 }
 
 /**
@@ -41,6 +49,8 @@ export function limiteDepassee(r: RangMembre, l: LimitesMembres): 'utilisateurs'
 export interface HorsOffreMembre {
   limite: 'utilisateurs' | 'admins';
   max: number;
+  /** L'offre de l'espace : un Pro à 4 utilisateurs (un siège) n'est la limite d'aucune offre de la grille. */
+  offre?: Offre;
 }
 
 /** La question que posent la garde des sessions et celle des jetons de Claude, au même endroit. */
@@ -69,7 +79,7 @@ export function creerGelMembres(d: {
       if (r === null) return null;
       const limite = limiteDepassee(r, l);
       const max = limite === null ? null : l[limite];
-      return limite === null || max === null ? null : { limite, max };
+      return limite === null || max === null ? null : { limite, max, offre };
     },
   };
 }
@@ -98,6 +108,18 @@ export async function verifierPlaceMembre(
     [tenantId, exclure],
   );
   const { membres, admins } = r.rows[0] ?? { membres: 0, admins: 0 };
-  if (limites.utilisateurs !== null && membres >= limites.utilisateurs) throw new LimiteOffreError(tenantId, 'utilisateurs', limites.utilisateurs);
-  if (role === 'admin' && limites.admins !== null && admins >= limites.admins) throw new LimiteOffreError(tenantId, 'admins', limites.admins);
+  const offre: ContexteLimite = limites.offre ? { offre: limites.offre } : {};
+  // Les administrateurs ne s'achètent pas (2 au plus en Pro, quels que soient ses sièges) : un administrateur de trop se
+  // refuse D'ABORD, sinon un siège serait proposé et payé pour une invitation refusée ensuite (Y1 de la relecture).
+  if (role === 'admin' && limites.admins !== null && admins >= limites.admins) throw new LimiteOffreError(tenantId, 'admins', limites.admins, offre);
+  if (limites.utilisateurs !== null && membres >= limites.utilisateurs) {
+    // Le siège qui lève la limite d'un Pro (livraison 7), au prix de sa formule : proposé à une INVITATION seulement
+    // (`exclure` nul ; une réactivation garde son bandeau), et seulement si un siège suffit (exactement à la limite : des
+    // membres déjà au-delà, un Pro repris après une Free, n'entreraient pas avec un seul).
+    const s = limites.siege;
+    const unSiegeSuffit = s && exclure === null && membres === limites.utilisateurs;
+    throw new LimiteOffreError(tenantId, 'utilisateurs', limites.utilisateurs, unSiegeSuffit
+      ? { ...offre, siege: { cible: s.achetes + 1, periodicite: s.periodicite, prixHtCentimes: PRIX_SIEGE_HT_CENTIMES[s.periodicite] } }
+      : offre);
+  }
 }

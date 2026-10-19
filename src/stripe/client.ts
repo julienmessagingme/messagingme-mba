@@ -74,7 +74,7 @@ async function lireReponse(res: Response): Promise<ReponseStripe> {
 /** Stripe a refusé, ou n'a pas répondu. `type` et `code` sont ceux de Stripe quand il les donne. */
 export class StripeError extends Error {
   constructor(
-    readonly operation: 'prix' | 'facture' | 'client' | 'session' | 'abonnement' | 'portail' | 'resiliation',
+    readonly operation: 'prix' | 'facture' | 'client' | 'session' | 'abonnement' | 'portail' | 'resiliation' | 'siege',
     readonly status: number | null,
     readonly type: string | null,
     readonly code: string | null,
@@ -107,7 +107,7 @@ const sessionSchema = z.object({ id: z.string().startsWith('cs_'), url: z.string
  */
 async function appeler<T>(
   transport: TransportStripe,
-  operation: 'prix' | 'facture' | 'client' | 'session' | 'abonnement' | 'portail' | 'resiliation',
+  operation: 'prix' | 'facture' | 'client' | 'session' | 'abonnement' | 'portail' | 'resiliation' | 'siege',
   chemin: string,
   champs: Record<string, string> | null,
   o: { cle: string; idempotence?: string; supprimer?: true },
@@ -384,6 +384,80 @@ export async function creerAbonnementNumeroSeul(transport: TransportStripe, o: {
   }, { cle: o.cle, idempotence: o.idempotence }, abonnementCreeSchema);
   const fins = (r.items?.data ?? []).map((l) => l.current_period_end).filter((v): v is number => typeof v === 'number');
   return { id: r.id, periodeFin: fins.length > 0 ? new Date(Math.max(...fins) * 1000) : null };
+}
+
+/** Une ligne d'un abonnement : son identifiant (`si_`), son prix et sa quantité. */
+export interface LigneAbonnement {
+  id: string;
+  prix: string;
+  quantite: number;
+}
+
+const ligneSchema = z.object({
+  id: z.string().startsWith('si_'),
+  quantity: z.number().int().nonnegative().optional(),
+  price: z.object({ id: z.string().startsWith('price_') }),
+});
+const versLignes = (data: Array<z.infer<typeof ligneSchema>>): LigneAbonnement[] =>
+  data.map((l) => ({ id: l.id, prix: l.price.id, quantite: l.quantity ?? 1 }));
+
+const abonnementLuSchema = z.object({
+  id: z.string().startsWith('sub_'),
+  status: z.string(),
+  items: z.object({ data: z.array(ligneSchema) }),
+  latest_invoice: z.union([z.string(), z.object({ id: z.string() })]).nullable().optional(),
+});
+
+/**
+ * Lit un abonnement chez Stripe (livraison 7) : son statut, ses lignes, sa dernière facture. Les sièges du Pro s'y
+ * comptent, à chaque achat comme à chaque `customer.subscription.updated` : la charge d'un événement peut arriver dans le
+ * désordre, l'abonnement relu est l'état de maintenant. La clé restreinte doit pouvoir LIRE les abonnements.
+ */
+export async function lireAbonnementStripe(transport: TransportStripe, o: { cle: string; abonnementId: string }): Promise<{
+  statut: string; lignes: LigneAbonnement[]; derniereFacture: string | null;
+}> {
+  const a = await appeler(transport, 'siege', `/subscriptions/${encodeURIComponent(o.abonnementId)}`, null, { cle: o.cle }, abonnementLuSchema);
+  if (a.id !== o.abonnementId) throw new StripeError('siege', 200, null, null, 'reponse pour un autre abonnement');
+  const f = a.latest_invoice;
+  return { statut: a.status, lignes: versLignes(a.items.data), derniereFacture: f ? (typeof f === 'string' ? f : f.id) : null };
+}
+
+const abonnementChangeSchema = abonnementLuSchema.extend({
+  /** Non nul : le changement attend le paiement de sa facture (`pending_if_incomplete`), rien n'est encore appliqué. */
+  pending_update: z.unknown().nullable().optional(),
+  latest_invoice: z.union([
+    z.string(),
+    z.object({ id: z.string(), hosted_invoice_url: z.string().url().startsWith('https://').nullable().optional() }),
+  ]).nullable().optional(),
+});
+
+/**
+ * Change UNE ligne d'un abonnement (livraison 7, les sièges du Pro) : la quantité d'une ligne existante (`ligne.id`), ou
+ * une ligne neuve à un prix (`ligne.prix`) ; une quantité nulle supprime la ligne existante. `facturerMaintenant` : le
+ * prorata est facturé sur le coup (`always_invoice`) et le changement n'est APPLIQUÉ que si cette facture est payée
+ * (`pending_if_incomplete`) ; sinon, aucun prorata ni paiement (`none`), pour un retrait. `enAttente` dit que Stripe
+ * attend le paiement : rien n'a changé, la facture est à régler sur `urlFacture`. La clé restreinte doit pouvoir ÉCRIRE
+ * les abonnements.
+ */
+export async function changerLigneAbonnement(transport: TransportStripe, o: {
+  cle: string; abonnementId: string; ligne: { id: string } | { prix: string }; quantite: number; facturerMaintenant: boolean; idempotence: string;
+}): Promise<{ enAttente: boolean; lignes: LigneAbonnement[]; urlFacture: string | null }> {
+  const ligne: Record<string, string> = 'id' in o.ligne
+    ? (o.quantite === 0 ? { 'items[0][id]': o.ligne.id, 'items[0][deleted]': 'true' } : { 'items[0][id]': o.ligne.id, 'items[0][quantity]': String(o.quantite) })
+    : { 'items[0][price]': o.ligne.prix, 'items[0][quantity]': String(o.quantite) };
+  const a = await appeler(transport, 'siege', `/subscriptions/${encodeURIComponent(o.abonnementId)}`, {
+    ...ligne,
+    proration_behavior: o.facturerMaintenant ? 'always_invoice' : 'none',
+    ...(o.facturerMaintenant ? { payment_behavior: 'pending_if_incomplete' } : {}),
+    'expand[0]': 'latest_invoice',
+  }, { cle: o.cle, idempotence: o.idempotence }, abonnementChangeSchema);
+  if (a.id !== o.abonnementId) throw new StripeError('siege', 200, null, null, 'reponse pour un autre abonnement');
+  const f = a.latest_invoice;
+  return {
+    enAttente: a.pending_update !== null && a.pending_update !== undefined,
+    lignes: versLignes(a.items.data),
+    urlFacture: f && typeof f !== 'string' ? (f.hosted_invoice_url ?? null) : null,
+  };
 }
 
 /** Le mode d'une clé, lu sur son préfixe (vérifié au démarrage, `src/config.ts`). */

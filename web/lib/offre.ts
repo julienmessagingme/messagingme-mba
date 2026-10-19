@@ -75,6 +75,13 @@ export interface VueOffre {
    * une API plus ancienne : la page ne parle alors pas d'essai.
    */
   essai: { jours: number; possible: boolean; finLe: string | null } | null;
+  /**
+   * Les sièges du Pro vivant (spec offres v2, livraison 7) : les utilisateurs inclus, ceux achetés en plus, la formule.
+   * `null` hors Pro, ou sur une API plus ancienne.
+   */
+  sieges: { inclus: number; achetes: number; periodicite: 'mois' | 'an' } | null;
+  /** Le prix HT d'un siège, en centimes ; `null` tant que les sièges ne sont pas en vente, ou sur une API plus ancienne. */
+  prixSiege: { moisCentimes: number; anCentimes: number } | null;
   upgradeUrl: string;
 }
 
@@ -143,8 +150,36 @@ export function lireVueOffre(brut: unknown): VueOffre | null {
     prixPro: lirePrixPro(brut.prixPro),
     suiteDuNumero: lireSuiteDuNumero(brut.suiteDuNumero),
     essai: lireEssai(brut.essai),
+    sieges: lireSieges(brut.sieges),
+    prixSiege: lirePrixPro(brut.prixSiege),
     upgradeUrl: brut.upgradeUrl,
   };
+}
+
+const estPeriodicite = (v: unknown): v is 'mois' | 'an' => v === 'mois' || v === 'an';
+
+/** Des sièges absents ou illisibles ne rendent pas la vue illisible : la page n'en parle pas. */
+function lireSieges(v: unknown): VueOffre['sieges'] {
+  if (!estObjet(v) || !entier(v.inclus) || !entier(v.achetes) || !estPeriodicite(v.periodicite)) return null;
+  return { inclus: v.inclus, achetes: v.achetes, periodicite: v.periodicite };
+}
+
+/** Le siège qu'un refus d'invitation propose d'acheter (livraison 7) : le nombre visé, la formule et le prix HT. */
+export interface SiegeRequis {
+  cible: number;
+  periodicite: 'mois' | 'an';
+  prixHtCentimes: number;
+}
+
+/**
+ * Le siège proposé par le 402 d'une invitation refusée à la limite d'utilisateurs d'un Pro ; `null` pour tout autre corps
+ * (une Free, la limite d'administrateurs, des sièges pas en vente) : l'écran affiche alors la phrase du serveur seule.
+ */
+export function lireSiegeRequis(corps: unknown): SiegeRequis | null {
+  if (!estObjet(corps) || corps.code !== 'plan_limit_reached' || corps.limite !== 'utilisateurs') return null;
+  const s = corps.siege;
+  if (!estObjet(s) || !entier(s.cible) || s.cible < 1 || !estPeriodicite(s.periodicite) || !entier(s.prixHtCentimes)) return null;
+  return { cible: s.cible, periodicite: s.periodicite, prixHtCentimes: s.prixHtCentimes };
 }
 
 /** Un essai absent ou illisible ne rend pas la vue illisible : la page n'en parle pas. */

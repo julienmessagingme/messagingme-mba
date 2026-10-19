@@ -30,6 +30,17 @@ export function portailPro(tenantId: string): Promise<{ url: string }> {
   return request(`/tenants/${tenantId}/offre/portail`, { method: 'POST', body: '{}' });
 }
 
+/**
+ * Porte les sièges du Pro de `depuis` (ce que l'écran a lu) à `cible`, un siège à la fois (spec offres v2, livraison 7) : un
+ * ajout facture le prorata sur la carte du Pro et ne s'applique que s'il est payé (sinon un 402 `paiement_siege_incomplet`
+ * avec la facture à régler) ; un retrait ne rembourse rien ; une vue périmée est refusée (409 `sieges_changes`). Rend les
+ * sièges que Stripe a appliqués. ⚠️ L'écran oublie ensuite l'offre mémorisée (`oublierOffre`) : la limite a changé, et
+ * l'importer ici ferait une boucle (`use-offre` importe ce module).
+ */
+export function changerSieges(tenantId: string, depuis: number, cible: number): Promise<{ sieges: number }> {
+  return request(`/tenants/${tenantId}/offre/sieges`, { method: 'POST', body: JSON.stringify({ depuis, cible }) });
+}
+
 /** Rendre le numéro fourni à la fin du Pro, ou revenir sur ce choix (lot 6, B2b). */
 export function rendreNumero(tenantId: string, rendre: boolean): Promise<{ rendreNumero: boolean }> {
   return request(`/tenants/${tenantId}/offre/numero`, { method: 'PUT', body: JSON.stringify({ rendre }) });

@@ -142,6 +142,13 @@ describe('gardes de config en production', () => {
     expect(schema.safeParse({ ...prodEnv, STRIPE_PRIX_PRO_MOIS: 'price_mois', STRIPE_PRIX_PRO_AN: 'price_an' }).success).toBe(true);
   });
 
+  it('🔴 les deux prix du siège se posent ensemble (spec offres v2, livraison 7) : un Pro de l’autre formule n’aurait pas le sien', () => {
+    asProd();
+    expect(errPaths(schema.safeParse({ ...prodEnv, STRIPE_PRIX_SIEGE_MOIS: 'price_siege_mois' }))).toContain('STRIPE_PRIX_SIEGE_AN');
+    expect(errPaths(schema.safeParse({ ...prodEnv, STRIPE_PRIX_SIEGE_AN: 'price_siege_an' }))).toContain('STRIPE_PRIX_SIEGE_MOIS');
+    expect(schema.safeParse({ ...prodEnv, STRIPE_PRIX_SIEGE_MOIS: 'price_siege_mois', STRIPE_PRIX_SIEGE_AN: 'price_siege_an' }).success).toBe(true);
+  });
+
   it('🔴 le provisionnement SANS clé de chiffrement -> refusé', () => {
     // Sans elle, la clé Gateway d'un client finirait en clair dans la base, ou l'écriture échouerait au
     // premier agent créé. Les deux sont inacceptables, et aucun des deux ne se voit avant la production.

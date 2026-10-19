@@ -7,10 +7,11 @@ import { IntroPage, TitrePage } from '@/components/TitrePage';
 import { Squelette } from '@/components/Squelette';
 import { Icone } from '@/components/Icone';
 import { Bouton, classesBouton } from '@/components/Bouton';
+import { useConfirmation } from '@/components/Confirmation';
 import type { Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
 import { oublierOffre, useOffre } from '@/lib/use-offre';
-import { payerPro, portailPro, rendreNumero } from '@/lib/api/offre';
+import { changerSieges, payerPro, portailPro, rendreNumero } from '@/lib/api/offre';
 import { ApiError, erreurDeChargement } from '@/lib/http';
 import {
   FONCTIONS_OFFRE, NOMS_OFFRES, libelleFonction, nomDeLOffre, offreQuiOuvre,
@@ -74,6 +75,35 @@ function OffreInner({ session }: { session: Session }) {
   const [rendreChoisi, setRendreChoisi] = useState<boolean | null>(null);
   const [rendreEnCours, setRendreEnCours] = useState(false);
   const [erreurRendre, setErreurRendre] = useState<string | null>(null);
+  /** Les sièges après un retrait fait sur cette page (spec offres v2, livraison 7) : `null` = ceux de la vue. */
+  const [achetesChoisis, setAchetesChoisis] = useState<number | null>(null);
+  const confirmer = useConfirmation();
+  const [retraitEnCours, setRetraitEnCours] = useState(false);
+  const [erreurSieges, setErreurSieges] = useState<string | null>(null);
+
+  /**
+   * Retirer un utilisateur payé : confirmé d'abord (aucun remboursement, et le reprendre refacture un prorata) ; refusé tant
+   * que les membres actifs ne tiennent pas dans le reste.
+   */
+  async function retirerUnSiege(achetes: number): Promise<void> {
+    const ok = await confirmer({
+      titre: t('Retirer un utilisateur payé', 'Remove a paid user'),
+      message: t('La période en cours n’est pas remboursée, et reprendre cet utilisateur plus tard facturera de nouveau un prorata.',
+        'The current period is not refunded, and taking this user back later charges a prorated amount again.'),
+      confirmer: t('Retirer', 'Remove'),
+    });
+    if (!ok) return;
+    setRetraitEnCours(true);
+    setErreurSieges(null);
+    try {
+      setAchetesChoisis((await changerSieges(session.tenantId, achetes, achetes - 1)).sieges);
+      oublierOffre();
+    } catch (err) {
+      setErreurSieges(erreurDeChargement(err, t));
+    } finally {
+      setRetraitEnCours(false);
+    }
+  }
 
   /** Rendre le numéro fourni à la fin du Pro, ou le garder. */
   async function choisirRendre(rendre: boolean): Promise<void> {
@@ -248,6 +278,13 @@ function OffreInner({ session }: { session: Session }) {
             )}
             {/* Depuis la livraison B2b, le numéro fourni est inclus : son abonnement à part s'arrête, avec un avoir, au premier
                 paiement du Pro (après l'essai, s'il y en a un). */}
+            {/* Les sièges (livraison 7) : 3 utilisateurs inclus, puis un prix par utilisateur, dans la formule du Pro. */}
+            {vue.prixSiege && vue.grille.pro.limites.utilisateurs !== null && (
+              <p className="w-full text-xs text-ink-500" data-testid="offre-sieges-prix">
+                {t(`Le Pro comprend ${vue.grille.pro.limites.utilisateurs} utilisateurs ; chaque utilisateur en plus coûte ${euros(vue.prixSiege.moisCentimes)} HT par mois (${euros(vue.prixSiege.anCentimes)} HT par an avec le Pro annuel).`,
+                  `Pro includes ${vue.grille.pro.limites.utilisateurs} users; each extra user costs ${euros(vue.prixSiege.moisCentimes)} excl. VAT a month (${euros(vue.prixSiege.anCentimes)} excl. VAT a year with yearly Pro).`)}
+              </p>
+            )}
             <p className="w-full text-xs text-ink-500" data-testid="offre-numero-inclus">
               {t('Le numéro WhatsApp que nous vous fournissons est inclus dans le Pro : s’il est déjà payé à part, cet abonnement s’arrête au premier paiement du Pro, avec un avoir.',
                 'The WhatsApp number we provide is included in Pro: if it is already paid separately, that subscription stops at the first Pro payment, with a credit.')}
@@ -290,6 +327,38 @@ function OffreInner({ session }: { session: Session }) {
               </Bouton>
             ))}
             {erreurRendre && <p className="w-full text-sm text-danger" data-testid="offre-rendre-erreur">{erreurRendre}</p>}
+          </section>
+        );
+      })()}
+
+      {vue.offre === 'pro' && vue.sieges && (() => {
+        // Les utilisateurs du Pro (livraison 7) : les 3 inclus, ceux achetés en plus, le prix du suivant. Un utilisateur
+        // s'ajoute en invitant un membre (le prix est dit à ce moment) ; un utilisateur payé se retire ici, sans remboursement.
+        const achetes = achetesChoisis ?? vue.sieges.achetes;
+        const prix = vue.prixSiege ? (vue.sieges.periodicite === 'an' ? vue.prixSiege.anCentimes : vue.prixSiege.moisCentimes) : null;
+        return (
+          <section className="flex flex-wrap items-center gap-3 rounded-carte border border-ink-200 bg-white p-5" data-testid="offre-sieges">
+            <p className="min-w-0 flex-1 text-sm text-ink-500">
+              {achetes === 0
+                ? t(`Votre Pro comprend ${vue.sieges.inclus} utilisateurs.`, `Your Pro plan includes ${vue.sieges.inclus} users.`)
+                : t(`Votre Pro comprend ${vue.sieges.inclus} utilisateurs, et ${achetes} utilisateur${achetes > 1 ? 's' : ''} payé${achetes > 1 ? 's' : ''} en plus.`,
+                  `Your Pro plan includes ${vue.sieges.inclus} users, and ${achetes} paid extra user${achetes > 1 ? 's' : ''}.`)}
+              {prix !== null && (vue.sieges.periodicite === 'an'
+                ? t(` Un utilisateur de plus : ${euros(prix)} HT par an, proposé quand vous invitez un membre au-delà.`, ` One more user: ${euros(prix)} excl. VAT a year, offered when you invite a member beyond that.`)
+                : t(` Un utilisateur de plus : ${euros(prix)} HT par mois, proposé quand vous invitez un membre au-delà.`, ` One more user: ${euros(prix)} excl. VAT a month, offered when you invite a member beyond that.`))}
+            </p>
+            {achetes > 0 && (
+              <Bouton variante="secondaire" onClick={() => void retirerUnSiege(achetes)} enCours={retraitEnCours} disabled={retraitEnCours} data-testid="offre-retirer-siege">
+                {t('Retirer un utilisateur payé', 'Remove a paid user')}
+              </Bouton>
+            )}
+            {achetes > 0 && (
+              <p className="w-full text-xs text-ink-400">
+                {t('Un retrait ne rembourse pas la période en cours. Désactivez d’abord le membre en trop dans « Compte & équipe ».',
+                  'A removal does not refund the current period. First deactivate the extra member in “Account & team”.')}
+              </p>
+            )}
+            {erreurSieges && <p className="w-full text-sm text-danger" data-testid="offre-sieges-erreur">{erreurSieges}</p>}
           </section>
         );
       })()}

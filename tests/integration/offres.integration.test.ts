@@ -436,4 +436,26 @@ describe.skipIf(!url)('l’offre calculée (0218)', () => {
     const prolonge = new Date('2026-11-05T09:00:00Z');
     expect((await pros.modifier('sub_essaiA', { finPrevueLe: null, periodicite: null, essaiFinLe: prolonge }))!.essaiFinLe).toEqual(prolonge);
   });
+
+  it('🔴 0244 : les sièges du Pro, notés puis relus ; la limite d’utilisateurs les compte ; un Pro fini ne bouge plus (livraison 7)', async () => {
+    const t = await espace('sieges-pro');
+    const pros = new PgAbonnementsOffreStore(pool);
+    await pros.enregistrer({ tenantId: t, abonnementId: 'sub_siegesA', periodicite: 'an', livemode: false, periodeFin: null });
+    expect((await pros.deLEspace(t))!.sieges).toBe(0);
+    expect((await offres.offreDe(t)).droits.limites.utilisateurs).toBe(3);
+    expect(await pros.noterSieges('sub_siegesA', 2)).toEqual({ tenantId: t });
+    const o = await offres.offreDe(t);
+    expect(o.droits.limites.utilisateurs).toBe(5);
+    expect(o.pro).toEqual({ sieges: 2, periodicite: 'an' });
+    // Le webhook relit les sièges ; une modification qui ne les porte pas les garde.
+    expect((await pros.modifier('sub_siegesA', { finPrevueLe: null, periodicite: null, sieges: 1 }))!.sieges).toBe(1);
+    expect((await pros.modifier('sub_siegesA', { finPrevueLe: null, periodicite: null }))!.sieges).toBe(1);
+    // Le CHECK refuse un nombre négatif.
+    await expect(pros.noterSieges('sub_siegesA', -1)).rejects.toMatchObject({ code: '23514', constraint: 'abonnements_offre_sieges_chk' });
+    await pros.finir('sub_siegesA', 'resiliation', new Date('2026-12-01T00:00:00Z'));
+    expect(await pros.noterSieges('sub_siegesA', 4)).toBeNull();
+    const fini = await offres.offreDe(t);
+    expect(fini.offre).toBe('base');
+    expect(fini.pro).toBeNull();
+  });
 });
