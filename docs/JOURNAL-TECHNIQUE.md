@@ -5,6 +5,29 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-19 : la vitrine en vrais appareils (iPhone, Claude Code, fenêtres de navigateur)
+
+- **Les téléphones** (`a5f13994`) : les 22 images de téléphone des pages fonctionnalités (français et anglais), à plat
+  au cadre générique, deviennent l'iPhone de la une de l'accueil, dessiné par-dessus l'ancien cadre SANS déplacer
+  l'écran (`~/engageme-motion/encadrer-iphone.cjs`) : les gestes « 1 clic », posés en pourcentages de l'image, sont
+  restés justes sans retouche. Légère 3D en CSS (`rotate`), la figure qui porte un geste tournant en entier.
+- **La fenêtre Claude Code de la page développeurs** (même commit) : bleue et « pas du tout Claude Code » selon Julien,
+  elle reprend le dessin du film des cas d'usage (barre de macOS, thème sombre, mascotte, appels
+  `messagingme - <outil> (MCP)(…)`, réponses JSON tronquées). Les réponses ont été relevées dans `src/mcp/` à l'octet
+  près (clés, ordre, nombre de lignes) ; `tests/vitrine-developpeurs.test.ts` tient toujours les outils et leur ordre.
+- **Les écrans de la console** (`6c3b12c0`) : fiche CRM, campagne, Inbox, Chaîne, publicité et scénarios passent dans
+  une fenêtre de navigateur de Mac (`encadrer-navigateur.cjs`), la barre d'adresse portant la vraie route. Julien, en
+  cours de route : « c'est pas des screens de téléphone, fais gaffe ! ». Ils ont été rendus de nouveau depuis les
+  films, déjà en Messaging Me : l'ancien logo des en-têtes et « Mis à jour par Engage Me » ont disparu des images.
+- **Mesure** : l'instant de chaque film qui avait produit une image n'était écrit nulle part. Il a été retrouvé en
+  balayant la ligne de temps et en comparant une vignette 64 x 64 de la fenêtre à l'image publiée (écart moyen de 1 à 4
+  sur 255 au meilleur instant, contre plus de 10 ailleurs) ; les instants sont désormais dans le `CLAUDE.md` de
+  l'atelier.
+- **Mesure** : la suite entière lancée dans une copie extraite par `git archive` a rendu 4 rouges, dont 2 dus à la copie
+  elle-même (deux tests font `git grep`, sans `.git` dans la copie) ; un second passage s'est arrêté en code 255 sans
+  bilan. Après `git init` et `git add` dans la copie, le rapport JSON de vitest a rendu zéro échec ; la CI des deux
+  commits est verte (unit, intégration, sécurité, CodeQL).
+
 ## 2026-10-19 : les offres v2, livraison 7 (les utilisateurs payés du Pro), en production
 
 - **Ce qui part** (`f182e6a9`, migration 0244 `abonnements_offre.sieges`) : le Pro compte 3 utilisateurs plus ses sièges

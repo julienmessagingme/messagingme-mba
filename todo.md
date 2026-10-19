@@ -964,11 +964,12 @@ en production.
   déclenche l'indexation : un moteur de recherche ne trouvait aucune page du domaine le 2026-09-30.
 - **Un lien depuis messagingme.fr** vers la vitrine (aucun sur l'accueil du site mère), avec le travail sur le lien
   entre les deux sites.
-- **Rapatrier l'assembleur des pages dans le dépôt.** Les pages fonctionnalités, contact, merci et 404 sont
-  assemblées par un script (en-tête, pied et icônes recopiés de l'accueil, sitemap généré) qui ne vit, avec leurs
-  corps de page, que dans le dossier temporaire d'une session. Sans lui, un changement d'en-tête ou de pied se
-  reporte à la main dans sept pages, et le sitemap se tient à la main. Cible : `scripts/vitrine/`, jamais `site/`
+- **Générer le sitemap.** L'en-tête et le pied se génèrent depuis le 2026-10-16 (`npm run vitrine:entete`, gabarits
+  dans `scripts/vitrine/`) ; `site/sitemap.xml` se tient encore à la main. Cible : `scripts/vitrine/`, jamais `site/`
   (tout y est publié).
+- **Le `?v=` des images anglaises.** `scripts/vitrine/anglais.ts` le retire quand il passe une image à sa version
+  `-en` : une image anglaise remplacée sous le même nom reste un jour en cache chez qui l'a vue (vécu le 2026-10-19,
+  iPhone et fenêtres de navigateur). Reprendre le `?v=` de l'image française.
 - **Le widget en essai sur l'accueil** (`ndabjvs20vc4`) : le garder ou le retirer une fois l'essai réel fait. Depuis le
   2026-10-16, l'accueil anglais charge son jumeau `dyzfezy33kcx` (« Got a question? ») : la décision vaut pour les deux.
 
