@@ -22,8 +22,8 @@ import { adresseOffre } from '../offres/refus';
  * (semaine, mois) est calculée ici, depuis les séries par jour.
  *
  * L'OFFRE : un espace sans la fonction `statistiques` (le Free) ne lit que l'essentiel de `get_message_stats`, sur la
- * fenêtre de sa conservation (30 jours) ; le découpage entre Pro et Entreprise se fera en changeant la fonction d'un
- * outil (décision de Julien du 2026-10-13).
+ * fenêtre de sa conservation (30 jours) ; le découpage entre Pro et Entreprise se fait par la fonction de l'outil
+ * (décision de Julien du 2026-10-13) : `get_conversation_insights` demande l'analyse, donc l'Entreprise (spec offres v2).
  */
 
 export interface DepsChiffresMcp {

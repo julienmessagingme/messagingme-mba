@@ -34,7 +34,7 @@ const ACTION_T1 = '0b7e2c1a-4d5e-4f60-8a9b-1c2d3e4f5a6b';
 
 function app(
   over: Partial<AutomationsDep> = {},
-  refs: Partial<Pick<AutomationRouteDeps, 'actionsDeLEspace' | 'champsDeLEspace'>> = {},
+  refs: Partial<Pick<AutomationRouteDeps, 'actionsDeLEspace' | 'champsDeLEspace' | 'analyseOuverte'>> = {},
 ) {
   const cap = {
     created: [] as Array<{ tenant: string; input: AutomationInput }>,
@@ -55,6 +55,8 @@ function app(
     workflowBelongsToTenant: async (wfId, tenant) => wfId === 'wf1' && tenant === 't1',
     actionsDeLEspace: async (tenant) => (tenant === 't1' ? [{ id: ACTION_T1, nom: 'résiliation', agentId: 'ag1', agent: 'Accueil' }] : []),
     champsDeLEspace: async (tenant) => (tenant === 't1' ? [{ key: 'rdv', type: 'datetime' }, { key: 'ville', type: 'text' }] : []),
+    // Par défaut l'analyse est ouverte (une Entreprise) : les cas qui la ferment le disent.
+    analyseOuverte: async () => true,
     ...refs,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, automations: deps }), cap };
@@ -381,6 +383,65 @@ describe('routes automations', () => {
     expect(res.statusCode).toBe(201);
     expect(cap.created[0]!.input).not.toHaveProperty('possedePar');
     expect(cap.created[0]!.input).not.toHaveProperty('maxFiresPerHour');
+    await server.close();
+  });
+});
+
+/**
+ * LE PRO RESSERRÉ (spec offres v2, livraison 5) : les déclencheurs nés d'une analyse ne se créent qu'en Entreprise, la
+ * seule offre où l'analyse tourne. Un Pro qui en créerait un aurait une automation qui ne part jamais.
+ */
+describe('les déclencheurs nés d’une analyse demandent l’offre qui l’ouvre', () => {
+  const ANALYSE = [
+    { triggerKind: 'conversation_analyzed', triggerConfig: {}, cooldownSeconds: 3600 },
+    { triggerKind: 'analyse_devient', triggerConfig: { cle: 'analyse_sentiment', op: 'in', valeur: 'negatif' } },
+  ];
+  const sansAnalyse = { analyseOuverte: async () => false };
+
+  it('🔴 refusés à la création hors Entreprise, en 402 qui renvoie à l’Entreprise, sans rien écrire', async () => {
+    const { server, cap } = app({}, sansAnalyse);
+    for (const d of ANALYSE) {
+      const res = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload: { ...VALID, ...d } });
+      expect(res.statusCode, d.triggerKind).toBe(402);
+      expect(res.json(), d.triggerKind).toMatchObject({ code: 'plan_feature_unavailable', fonction: 'analyse' });
+      expect(res.json<{ error: string }>().error).toMatch(/Passez en Entreprise/);
+    }
+    expect(cap.created).toEqual([]);
+    // Les autres déclencheurs ne demandent rien, « risque élevé » compris : un STOP, un silence ou un numéro injoignable
+    // le font monter sans aucune analyse (`src/engagement/risque.ts`).
+    const motCle = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload: VALID });
+    expect(motCle.statusCode).toBe(201);
+    const risque = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload: { ...VALID, triggerKind: 'risque_eleve', triggerConfig: {} } });
+    expect(risque.statusCode).toBe(201);
+    await server.close();
+  });
+
+  it('🔴 changer le déclencheur d’une automation existante en un déclencheur d’analyse est une création : refusé', async () => {
+    const motCle = { id: 'a2', tenantId: 't1', name: 'B', enabled: false, triggerKind: 'keyword' as const, triggerConfig: { keywords: ['rdv'] }, conditionGroup: null, workflowId: 'wf1', startNodeId: null, cooldownSeconds: null, maxFiresPerHour: null, possedePar: null };
+    const { server, cap } = app({ getById: async (id) => (id === 'a2' ? motCle : null), update: async (id, tenant, patch) => { cap.updated.push({ id, tenant, patch }); return true; } }, sansAnalyse);
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/automations/a2', ...h(adminTok), payload: { triggerKind: 'analyse_devient', triggerConfig: { cle: 'analyse_sentiment', op: 'in', valeur: 'negatif' } } });
+    expect(res.statusCode).toBe(402);
+    expect(cap.updated).toEqual([]);
+    await server.close();
+  });
+
+  it('une automation d’analyse qui existe déjà (un espace descendu de l’Entreprise) reste modifiable sous son déclencheur', async () => {
+    const { server, cap } = app({}, sansAnalyse); // getById('a1') = conversation_analyzed
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/automations/a1', ...h(adminTok), payload: { triggerKind: 'conversation_analyzed', triggerConfig: { unresolvedOnly: true } } });
+    expect(res.statusCode).toBe(200);
+    const nom = await server.inject({ method: 'PATCH', url: '/tenants/t1/automations/a1', ...h(adminTok), payload: { name: 'Renommée' } });
+    expect(nom.statusCode).toBe(200);
+    expect(cap.updated).toHaveLength(2);
+    await server.close();
+  });
+
+  it('en Entreprise, ils se créent', async () => {
+    const { server, cap } = app({}, { analyseOuverte: async () => true });
+    for (const d of ANALYSE) {
+      const res = await server.inject({ method: 'POST', url: '/tenants/t1/automations', ...h(adminTok), payload: { ...VALID, ...d } });
+      expect(res.statusCode, d.triggerKind).toBe(201);
+    }
+    expect(cap.created).toHaveLength(2);
     await server.close();
   });
 });

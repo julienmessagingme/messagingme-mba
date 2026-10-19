@@ -6,6 +6,19 @@
 réponses ont chacun leur colonne, 0241). Aucun espace n'y avait de valeur (sonde du 2026-10-17). Elle se retire par une
 migration APRÈS le déploiement de la livraison 2 : l'ancien code la nomme.
 
+## 🟡 Offres v2 : les jaunes des relectures des livraisons 4 et 5 (2026-10-19)
+
+- **Une Entreprise réglée sur devis à une valeur de la grille** (5 000 ou 100 contacts) lit « Passez en Entreprise » ou
+  « Passez en Pro » : `offreQuiLeve` (`src/offres/refus.ts`) devine l'offre par la valeur. Passer l'offre de l'espace au
+  refus et répondre « Contactez-nous » à une Entreprise.
+- **Les nombres des e-mails de limite** sortent en « 5000 » (`valeurs.limite`, `limite_pro`), quand les refus disent
+  « 5 000 » : une forme `nombre` du rendu, écrite dans la langue de la personne.
+- **Ce que la console montre encore au Pro sans donnée derrière** : les conditions « Dernière analyse »
+  (`web/components/ConditionBuilder.tsx`), les filtres de contacts sur l'analyse (`src/crm/contact-filters.ts`) et
+  l'onglet Analyse de la fiche. Les griser hors de la fonction `analyse`, comme les déclencheurs d'automation.
+- **La trace `cle_api.creee` d'une clé créée par Claude** dit `via: 'mcp'` mais pas QUELLE autorisation OAuth : y
+  ajouter l'identifiant d'accès, comme le journal de l'API.
+
 ## 🟡 Le bloc Attente en secondes, « en train d'écrire… » compris (2026-10-16)
 
 - **Le besoin** : poser une pause de 1 à 59 s entre deux messages rapides d'un scénario, pour l'effet humain.

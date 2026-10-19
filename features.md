@@ -3007,7 +3007,8 @@ boîte par sous-menu.
   - le numéro fourni suspendu, le rappel deux jours avant sa libération, sa libération, et l'annonce de la suite du
     numéro à la fin du Pro ;
   - en offre Free, 80 % puis 100 % des modèles du mois (une fois par mois) et des contacts (une fois à chaque
-    franchissement) ; l'alerte de 100 % propose de passer en Pro.
+    franchissement) ; l'alerte de 100 % propose de passer en Pro, et cite la limite de contacts du Pro ;
+  - en offre Pro, 80 % puis 100 % des contacts, à chaque franchissement ; ces alertes renvoient à l'Entreprise.
 - ✅ **Une conversation attend l'équipe** : quand un agent IA, l'agent de Meta ou un scénario passe la main à l'équipe
   alors que le contact vient d'écrire, les administrateurs reçoivent un e-mail avec le nom du contact (ou son numéro
   masqué, jamais le texte des messages), l'heure où la fenêtre de 24 heures se ferme, et un bouton vers la conversation.
@@ -3262,7 +3263,7 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   INVENTE), et ils parlent correctement français. Un modèle retiré du catalogue disparaît tout seul de la
   liste. Les prix, eux, sont lus en direct chez le fournisseur : ils ne peuvent pas être périmés.
   ✅ **Le tarif affiché est le tarif payé** (2026-09-28) : il inclut notre commission, celle de l'offre de l'espace
-  (50 % en Free, 10 % en Pro et en Entreprise, depuis le lot 6), et le crédit est décompté au même tarif, commission
+  (50 % en Free, 20 % en Pro et 10 % en Entreprise, spec offres v2), et le crédit est décompté au même tarif, commission
   comprise. La consommation de l'encadré du dessous est donc au prix de
   la liste. ⚠️ Avant cette date, le crédit était décompté au coût brut (environ 10 % sous le tarif
   affiché), et l'écran le disait ; une conversation d'avant garde le montant qui lui a été décompté.
@@ -3760,13 +3761,15 @@ devis). L'offre décide de deux choses : les **fonctions** ouvertes, et les **li
 envoyer. Les chiffres exacts vivent à un seul endroit (`src/offres/offres.ts`) et s'affichent sur la page Offre :
 cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
 
-- ✅ **L'offre Free** donne le numéro, l'API, Claude (le serveur MCP), les contacts, les campagnes de modèles, les
-  automations et l'agent IA, avec des plafonds : contacts créés, modèles envoyés par mois civil, automations
-  allumées, suppressions de contacts par jour, un seul utilisateur. Elle n'ouvre ni l'Inbox, ni les scénarios, ni
-  les statistiques, ni l'agent de Meta, ni les assistants, ni les publicités, l'e-mail ou les chaînes.
-- ✅ **Le Pro** ouvre ces fonctions, lève les plafonds de contacts, d'envois et d'automations, et donne trois
-  utilisateurs. **L'Entreprise** ajoute le RCS, les connecteurs CRM (Batch, HubSpot, Salesforce) et le Performance
-  Lab complet, avec une équipe à sa mesure. Côté statistiques : l'accueil, les coûts de chaque campagne et le
+- ✅ **L'offre Free** se pilote par l'API et Claude (le serveur MCP) : le numéro, les contacts, les envois de modèles et
+  l'agent IA, avec des plafonds (contacts créés, modèles envoyés par mois civil, un seul utilisateur). Dans la console,
+  elle ne garde que l'accueil, les clés d'API, la documentation, l'offre, le compte et le support (spec offres v2).
+- ✅ **Le Pro** ouvre la console complète (l'Inbox, les scénarios, les statistiques, l'agent de Meta, l'e-mail, les
+  assistants), porte la limite de contacts plus haut, lève celles des envois et des automations, et donne trois
+  utilisateurs. **L'Entreprise** ajoute l'analyse des conversations, les publicités Click-to-WhatsApp, les chaînes
+  WhatsApp (le Pro resserré, spec offres v2, livraison 5), le RCS, les connecteurs CRM (Batch, HubSpot, Salesforce) et
+  le Performance Lab complet, avec une équipe à sa mesure. Un espace descendu de l'Entreprise au Pro garde ses publicités et ses chaînes,
+  mais leurs automations se taisent, comme en Free. Côté statistiques : l'accueil, les coûts de chaque campagne et le
   journal des erreurs restent ouverts à tous ; le Quantitatif est au Pro ; la Synthèse, l'analyse des
   conversations et « Mes tableaux » sont à l'Entreprise.
 - ✅ **Ce qui n'est jamais compté** : un contact qui écrit le premier (il n'entre pas dans la limite de contacts,
@@ -3823,11 +3826,13 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   conversations (absente, elle reste telle quelle : changer d'offre ne déclenche jamais de purge). La même route ramène
   un espace en Free. Les espaces qui existaient avant le lot 6 sont tous en Entreprise, sans aucune limite.
 - ✅ **Les coûts suivent l'offre** (livraison C) :
-  - la **commission sur le crédit IA** : 50 % en Free, 10 % en Pro et en Entreprise, au tarif affiché comme au montant
-    décompté ;
-  - l'**analyse des conversations** ne tourne pas en Free : la fiche d'un contact dit « analyse disponible en Pro ».
-    Passer en Pro n'analyse pas le passé : une conversation est analysée au premier nouveau message, et la fiche le dit
-    (« analysée au prochain message ») ;
+  - la **commission sur le crédit IA** : 50 % en Free, 20 % en Pro, 10 % en Entreprise (ou celle négociée au devis),
+    au tarif affiché comme au montant décompté ;
+  - l'**analyse des conversations** ne tourne qu'en Entreprise : ailleurs, la fiche d'un contact dit « analyse
+    disponible en Entreprise ». Y passer n'analyse pas le passé : une conversation est analysée au premier nouveau
+    message, et la fiche le dit (« analysée au prochain message »). Les déclencheurs d'automation nés d'une analyse
+    (conversation analysée, une analyse qui change) ne se créent qu'en Entreprise : ailleurs, ils sont
+    grisés avec l'offre qui les ouvre, et le serveur les refuse ; une automation qui en a déjà un reste modifiable ;
   - la **conservation** : 30 jours en Free, 30 jours après l'entrée en Free (voir les conversations, plus haut) ;
   - la **recherche dans la connaissance, la préparation des fiches et la transcription** sont payées par le crédit,
     dans toutes les offres ;
@@ -4582,10 +4587,11 @@ plus), en séries par jour, semaine ou mois.
   en Entreprise, en plus : les modèles par catégorie, les messages échangés et de service, le service par origine (IA,
   scénario, humain), les contacts et le coût estimé (une estimation, la facture fait foi).
 - ✅ **Dans le Pro et l'Entreprise** : `get_campaign_stats` (les campagnes de la période avec leur coût estimé, leurs
-  clics et les erreurs de Meta, ou l'entonnoir d'une campagne), `get_conversation_insights` (sentiment, intentions,
-  résolution, sujets, et la satisfaction et l'urgence moyennes sur 12 mois) et `get_ai_stats` (le coût des tours
-  d'agent IA sur le crédit, la traduction n'y étant pas, les messages écrits par l'IA, les demandes ouvertes pour
-  l'équipe et les actions déclenchées). En Free, ils refusent avec le lien de l'offre.
+  clics et les erreurs de Meta, ou l'entonnoir d'une campagne) et `get_ai_stats` (le coût des tours d'agent IA sur le
+  crédit, la traduction n'y étant pas, les messages écrits par l'IA, les demandes ouvertes pour l'équipe et les
+  actions déclenchées). **Dans l'Entreprise seule**, où l'analyse tourne : `get_conversation_insights` (sentiment,
+  intentions, résolution, sujets, et la satisfaction et l'urgence moyennes sur 12 mois). Hors de leur offre, ils
+  refusent avec le lien de l'offre qui les ouvre.
 - ✅ **Toute clé de lecture les lit** (`mcp:read`), sans personne connectée : une application peut aussi en faire un
   tableau de bord. Pour comparer deux périodes, Claude appelle deux fois.
 - ⚠️ La maille « jour » couvre 92 jours au plus (au-delà, la réponse serait trop longue pour un modèle) ; sans maille

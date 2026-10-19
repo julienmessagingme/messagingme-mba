@@ -9,12 +9,13 @@ import { test, expect, type Page } from './aide/test';
  */
 const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
 const TOUTES = ['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines', 'crm', 'rcs', 'performance_lab'];
-const PRO = TOUTES.slice(0, 10);
+// Le Pro resserré (spec offres v2, livraison 5) : sans l'analyse, les publicités ni les chaînes.
+const PRO = ['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'email'];
 const limites = (o: 'free' | 'pro' | 'entreprise') => ({
   utilisateurs: o === 'free' ? 1 : o === 'pro' ? 3 : null, admins: o === 'free' ? 1 : o === 'pro' ? 2 : null,
-  contacts: o === 'free' ? 100 : null, envoisModelesMois: o === 'free' ? 1000 : null, automations: o === 'free' ? 10 : null,
+  contacts: o === 'free' ? 100 : o === 'pro' ? 5000 : null, envoisModelesMois: o === 'free' ? 1000 : null, automations: o === 'free' ? 10 : null,
   suppressionsJour: o === 'free' ? 10 : null, adressesWebhook: o === 'free' ? 1 : 5, journalWebhooksJours: o === 'free' ? 3 : 30,
-  conservationJours: o === 'free' ? 30 : 90, commissionPct: o === 'free' ? 50 : 10, badge: o === 'free', numeroInclus: o !== 'free',
+  conservationJours: o === 'free' ? 30 : 90, commissionPct: o === 'free' ? 50 : o === 'pro' ? 20 : 10, badge: o === 'free', numeroInclus: o !== 'free',
 });
 const GRILLE = {
   free: { fonctions: [], limites: limites('free') },

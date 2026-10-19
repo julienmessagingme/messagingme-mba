@@ -48,7 +48,7 @@ export const TYPES_DOCUMENTES: readonly TypeDocumente[] = [
   },
   {
     type: 'conversation.analyzed',
-    quand: ['L’analyse d’une conversation est prête (offres Pro et Entreprise).', 'A conversation analysis is ready (Pro and Enterprise plans).'],
+    quand: ['L’analyse d’une conversation est prête (offre Entreprise).', 'A conversation analysis is ready (Enterprise plan).'],
     champs: [
       'contact', 'conversation_id', 'intent', 'sentiment', 'satisfaction', 'urgency', 'resolved', 'topic', 'action_suggestion',
       'handled_by', 'exchanges_count', 'summary',

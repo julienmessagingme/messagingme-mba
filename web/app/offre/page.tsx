@@ -43,7 +43,7 @@ function fonctionDemandee(): FonctionOffre | null {
 
 /** Les limites montrées dans la grille, dans cet ordre. Les webhooks sortants y entrent avec leur écran (lot 12). */
 const LIGNES_LIMITES = [
-  'utilisateurs', 'contacts', 'envoisModelesMois', 'automations', 'suppressionsJour', 'adressesWebhook', 'journalWebhooksJours',
+  'utilisateurs', 'contacts', 'envoisModelesMois', 'automations', 'adressesWebhook', 'journalWebhooksJours',
   'stockageOctets', 'conservationJours', 'commissionPct', 'numeroInclus', 'badge',
 ] as const satisfies ReadonlyArray<keyof LimitesOffre>;
 
@@ -112,7 +112,6 @@ function OffreInner({ session }: { session: Session }) {
     contacts: t('Contacts créés', 'Contacts created'),
     envoisModelesMois: t('Modèles envoyés par mois', 'Templates sent per month'),
     automations: t('Automations allumées', 'Active automations'),
-    suppressionsJour: t('Contacts supprimés par jour', 'Contacts deleted per day'),
     adressesWebhook: t('Adresses de webhook sortant actives', 'Active outgoing webhook addresses'),
     journalWebhooksJours: t('Journal des webhooks sortants', 'Outgoing webhook log'),
     stockageOctets: t('Fichiers de la médiathèque', 'Media library files'),
@@ -218,11 +217,16 @@ function OffreInner({ session }: { session: Session }) {
       {suivante && (
         <section className="flex flex-wrap items-center gap-3 rounded-carte border border-ink-200 bg-white p-5" data-testid="offre-passer">
           <p className="min-w-0 flex-1 text-sm text-ink-500">
+            {/* Les arguments du Pro resserré (spec offres v2, livraison 5) : ses contacts se lisent dans la grille du serveur, qui
+                peut encore les dire sans limite (une API plus ancienne que la console). */}
             {suivante === 'pro'
-              ? t('Le Pro ouvre l’Inbox, les scénarios, les statistiques, l’agent de Meta et lève les limites de contacts, d’envois et d’automations.',
-                'Pro unlocks the Inbox, scenarios, statistics and the Meta agent, and lifts the contact, sending and automation limits.')
-              : t('L’Entreprise ajoute le RCS, les connecteurs CRM, le Performance Lab et une équipe à votre mesure, sur devis.',
-                'Enterprise adds RCS, CRM connectors, the Performance Lab and a team sized for you, on quote.')}
+              ? (vue.grille.pro.limites.contacts != null
+                ? t(`Le Pro ouvre la console complète (l’Inbox, les scénarios, les statistiques, l’agent de Meta), crée jusqu’à ${valeurLimite(vue.grille.pro.limites, 'contacts')} contacts et lève les limites d’envois et d’automations.`,
+                  `Pro unlocks the full console (the Inbox, scenarios, statistics, the Meta agent), creates up to ${valeurLimite(vue.grille.pro.limites, 'contacts')} contacts and lifts the sending and automation limits.`)
+                : t('Le Pro ouvre la console complète (l’Inbox, les scénarios, les statistiques, l’agent de Meta) et lève les limites de contacts, d’envois et d’automations.',
+                  'Pro unlocks the full console (the Inbox, scenarios, statistics, the Meta agent) and lifts the contact, sending and automation limits.'))
+              : t('L’Entreprise ajoute l’analyse des conversations, les publicités et les chaînes WhatsApp, le RCS, les connecteurs CRM, le Performance Lab et une équipe à votre mesure, sur devis.',
+                'Enterprise adds conversation analysis, WhatsApp ads and channels, RCS, CRM connectors, the Performance Lab and a team sized for you, on quote.')}
           </p>
           {suivante === 'pro' && retour === 'recu' ? null : suivante === 'pro' && vue.prixPro && !proIndisponible ? (
             // Le Pro se paie sur la page de Stripe (lot 6, B1) ; le webhook signé, et lui seul, ouvre les fonctions.

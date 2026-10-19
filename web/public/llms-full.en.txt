@@ -3112,7 +3112,7 @@ Each address picks its types. Delivery receipts are unchecked by default: a camp
 | `message.failed` | One of your messages could not be delivered. (unchecked by default) | contact, channel, message_id, origin, send_id, reason, meta_code |
 | `link.clicked` | The contact clicked a tracked link. | contact, link, template, destination |
 | `contact.opted_out` | The contact opted out (STOP, record, bulk action, API). | contact, channel, source |
-| `conversation.analyzed` | A conversation analysis is ready (Pro and Enterprise plans). | contact, conversation_id, intent, sentiment, satisfaction, urgency, resolved, topic, action_suggestion, handled_by, exchanges_count, summary |
+| `conversation.analyzed` | A conversation analysis is ready (Enterprise plan). | contact, conversation_id, intent, sentiment, satisfaction, urgency, resolved, topic, action_suggestion, handled_by, exchanges_count, summary |
 | `contact.risk_changed` | A contact’s disengagement risk changed level (nightly run). | contact, level, previous_level, score, reasons |
 | `template.status_changed` | Meta ruled on one of your templates (approved, rejected, paused, disabled). No contact data. | template, status, reason |
 | `agent.action` | An AI agent triggered one of your actions during a conversation (once a day per contact and action): the collected fields are in fields. (unchecked by default) | contact, conversation_id, agent, action, fields, channel |

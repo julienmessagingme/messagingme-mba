@@ -9,6 +9,7 @@ import type { AutomationRow, AutomationTriggerKind } from '../automation/match';
 import type { AutomationInput } from '../automation/store.pg';
 import type { ActionDeLEspace } from '../agent/actions.pg';
 import type { UserFieldDef } from '../crm/types';
+import { STATUT_REFUS_OFFRE, corpsRefusFonction } from '../offres/refus';
 import { espaceVerifie, estUuid, nonEmpty } from './scope';
 
 export interface AutomationsDep {
@@ -28,7 +29,18 @@ export interface AutomationRouteDeps {
   champsDeLEspace(tenantId: string): Promise<Array<Pick<UserFieldDef, 'key' | 'type'>>>;
   /** Le scénario ciblé appartient-il bien à ce tenant ? Garde d'appartenance (comme la campagne workflow). */
   workflowBelongsToTenant(workflowId: string, tenantId: string): Promise<boolean>;
+  /**
+   * L'offre de l'espace ouvre-t-elle l'analyse des conversations (l'Entreprise seule depuis la spec offres v2, livraison
+   * 5) ? Un déclencheur né d'une analyse ne se crée pas sans elle : l'automation ne partirait jamais.
+   */
+  analyseOuverte(tenantId: string): Promise<boolean>;
 }
+
+/**
+ * Les déclencheurs nés d'une analyse : ils ne partent que là où l'analyse tourne. PAS « risque élevé » : un STOP, un silence
+ * ou un numéro injoignable le font monter sans aucune analyse (`src/engagement/risque.ts`).
+ */
+const DECLENCHEURS_D_ANALYSE: ReadonlySet<AutomationTriggerKind> = new Set(['conversation_analyzed', 'analyse_devient']);
 
 /**
  * Les types qu'on crée depuis cet écran : ceux du chemin chaud moins `webhook`, que son propre écran possède.
@@ -269,6 +281,9 @@ export function registerAutomations(app: FastifyInstance, deps: AutomationRouteD
     const parsed = parseBody(req.body, false);
     if ('error' in parsed) return reply.code(400).send({ error: parsed.error });
     const input = parsed.input as AutomationInput;
+    if (DECLENCHEURS_D_ANALYSE.has(input.triggerKind) && !(await deps.analyseOuverte(tenant))) {
+      return reply.code(STATUT_REFUS_OFFRE).send(corpsRefusFonction('analyse'));
+    }
     // 🔴 Le scénario ciblé doit appartenir à l'espace, sinon une automation d'un client démarrerait le scénario
     // d'un autre.
     if (!(await deps.workflowBelongsToTenant(input.workflowId, tenant))) {
@@ -299,6 +314,14 @@ export function registerAutomations(app: FastifyInstance, deps: AutomationRouteD
       || (parsed.input.enabled === true && parsed.input.triggerKind === undefined);
     const courant = besoinRelecture ? await deps.automations.getById(id, tenant) : null;
     if (besoinRelecture && !courant) return reply.code(404).send({ error: 'automation inconnue' });
+    // Passer à un déclencheur d'analyse est une création ; une automation qui l'a déjà (un espace descendu de
+    // l'Entreprise) reste modifiable sous lui.
+    const kindDemande = parsed.input.triggerKind;
+    if (kindDemande !== undefined && DECLENCHEURS_D_ANALYSE.has(kindDemande) && !(await deps.analyseOuverte(tenant))) {
+      const avant = courant ?? await deps.automations.getById(id, tenant);
+      if (!avant) return reply.code(404).send({ error: 'automation inconnue' });
+      if (avant.triggerKind !== kindDemande) return reply.code(STATUT_REFUS_OFFRE).send(corpsRefusFonction('analyse'));
+    }
     if (parsed.input.triggerKind !== undefined || parsed.input.enabled === true) {
       const reference = await validateTriggerReferences(
         tenant,

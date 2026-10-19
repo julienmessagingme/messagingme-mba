@@ -2410,6 +2410,8 @@ async function main(): Promise<void> {
       // Le menu du déclencheur « action de l'agent IA » (plan du 2026-10-13).
       actionsDeLEspace: (tenant) => new PgActionsAgent(pool).listerDeLEspace(tenant),
       champsDeLEspace: (tenant) => fieldStore.list(tenant),
+      // Les déclencheurs nés d'une analyse ne se créent qu'où l'analyse tourne (spec offres v2, livraison 5).
+      analyseOuverte: async (tenant) => (await offres.offreDe(tenant)).droits.fonctions.has('analyse'),
     },
     // Chaîne WhatsApp (Channels Me) : publier un post dont le bouton démarre un scénario.
     channelsMe: {

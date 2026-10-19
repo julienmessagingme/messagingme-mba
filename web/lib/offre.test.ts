@@ -9,7 +9,8 @@ const limites = (contacts: number | null) => ({
   utilisateurs: 1, admins: 1, contacts, envoisModelesMois: 1000, automations: 10, suppressionsJour: 10, adressesWebhook: 1,
   journalWebhooksJours: 3, conservationJours: 30, commissionPct: 50, badge: true, numeroInclus: false,
 });
-const PRO = ['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines'];
+// Le Pro resserré (spec offres v2, livraison 5) : sans l'analyse, les publicités ni les chaînes.
+const PRO = ['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'email'];
 const BASE = {
   offre: 'free', fonctions: [], limites: limites(100),
   usage: { envoisModelesMois: 250, contacts: 42, automations: 3, membres: 1 },

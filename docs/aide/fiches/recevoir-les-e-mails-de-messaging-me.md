@@ -1,6 +1,6 @@
 ---
 source_section: Les e-mails de Messaging Me aux administrateurs
-source_empreinte: a03cea
+source_empreinte: d5a782
 ---
 # Les e-mails que Messaging Me vous envoie
 
@@ -16,7 +16,8 @@ EN), en français par défaut. Vous pouvez aussi la choisir dans « Mon compte �
 IA ne répondent plus, une fois par jour au plus). Un paiement refusé de votre offre Pro ou de votre numéro fourni, dès
 le premier échec, avec la date où les envois du numéro seraient coupés. Le numéro fourni suspendu, le rappel deux jours
 avant sa libération, sa libération, et la suite du numéro quand votre offre Pro se termine. En offre Free, 80 % puis
-100 % des modèles du mois et de vos contacts : l'alerte de 100 % propose de passer en Pro.
+100 % des modèles du mois et de vos contacts : l'alerte de 100 % propose de passer en Pro. En offre Pro, 80 % puis
+100 % de vos contacts : l'alerte renvoie à l'offre Entreprise.
 
 **Une conversation attend votre équipe.** Quand un agent IA, l'agent de Meta ou un scénario confie à l'équipe une
 conversation dont le client vient d'écrire, vous recevez un e-mail avec le nom du contact (ou son numéro masqué), l'heure

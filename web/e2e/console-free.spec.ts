@@ -9,7 +9,8 @@ import { test, expect, type Page } from './aide/test';
  */
 const SESSION = { token: 'e2e-token', email: 'admin@e2e.test', role: 'admin', tenantId: 't-e2e' };
 const TOUTES = ['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines', 'crm', 'rcs', 'performance_lab', 'console'];
-const PRO = [...TOUTES.slice(0, 10), 'console'];
+// Le Pro resserré (spec offres v2, livraison 5) : sans l'analyse, les publicités ni les chaînes.
+const PRO = ['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'email', 'console'];
 const limites = (o: 'free' | 'pro' | 'entreprise') => ({
   utilisateurs: o === 'free' ? 1 : o === 'pro' ? 3 : null, admins: o === 'free' ? 1 : o === 'pro' ? 2 : null,
   contacts: o === 'free' ? 100 : null, envoisModelesMois: o === 'free' ? 1000 : null, automations: o === 'free' ? 10 : null,

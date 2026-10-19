@@ -98,7 +98,7 @@ Chaque adresse choisit ses types. Les accusés de livraison sont décochés par 
 | `message.failed` | Un de vos messages n’a pas pu être livré. (décoché par défaut) | contact, channel, message_id, origin, send_id, reason, meta_code |
 | `link.clicked` | Le contact a cliqué un lien suivi. | contact, link, template, destination |
 | `contact.opted_out` | Le contact s’est désabonné (STOP, fiche, action en masse, API). | contact, channel, source |
-| `conversation.analyzed` | L’analyse d’une conversation est prête (offres Pro et Entreprise). | contact, conversation_id, intent, sentiment, satisfaction, urgency, resolved, topic, action_suggestion, handled_by, exchanges_count, summary |
+| `conversation.analyzed` | L’analyse d’une conversation est prête (offre Entreprise). | contact, conversation_id, intent, sentiment, satisfaction, urgency, resolved, topic, action_suggestion, handled_by, exchanges_count, summary |
 | `contact.risk_changed` | Le risque de désengagement d’un contact a changé de niveau (calcul de nuit). | contact, level, previous_level, score, reasons |
 | `template.status_changed` | Meta a tranché sur un de vos modèles (approuvé, refusé, en pause, désactivé). Aucune donnée de contact. | template, status, reason |
 | `agent.action` | Un agent IA a déclenché une de vos actions en pleine conversation (une fois par jour, par contact et par action) : les champs recueillis sont dans fields. (décoché par défaut) | contact, conversation_id, agent, action, fields, channel |

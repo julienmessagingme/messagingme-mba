@@ -896,8 +896,9 @@ export async function demarrerWorker(): Promise<void> {
     return n;
   }, { immediat: true, enEchec: echecDeBalayage('emails-produit-reprise', 'sweeper:emails-produit-reprise') });
   /**
-   * Les limites du Free (lot 7, livraison B) : à 80 % puis à 100 % des modèles du mois (une fois par mois) et des
-   * contacts (une fois par franchissement, migration 0235), un e-mail aux admins, celui de 100 % avec « Passer en Pro ».
+   * Les limites de la Free et du Pro (lot 7, livraison B ; le Pro depuis la spec offres v2) : à 80 % puis à 100 % des
+   * modèles du mois (une fois par mois, la Free seule) et des contacts (une fois par franchissement, migration 0235), un
+   * e-mail aux admins, avec les textes de l'offre (`limitesAlertables`).
    * Les offres sans limite sont passées sans rien lire de plus.
    */
   const usageDesOffres = new PgOffresStore(pool);

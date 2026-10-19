@@ -68,7 +68,9 @@ export const VARIABLES_COMMUNES: Readonly<Record<string, Variable>> = {
 const LIEN_NUMERO: Variable = { description: 'La page « Connecter WhatsApp » de la console', forme: 'lien', exemple: 'https://console.messagingme.app/connecter-whatsapp' };
 const DATE_LIBERATION: Variable = { description: 'Le jour où le numéro sera libéré', forme: 'date', exemple: '2026-11-02T10:00:00.000Z' };
 const LIEN_OFFRE: Variable = { description: 'La page Offre de la console', forme: 'lien', exemple: 'https://console.messagingme.app/offre' };
-const LIMITE: Variable = { description: 'La limite de l’offre Free', forme: 'texte', exemple: '1000' };
+const LIMITE: Variable = { description: 'La limite de l’offre de l’espace', forme: 'texte', exemple: '1000' };
+/** La limite de contacts du Pro, lue dans la grille (`DROITS.pro`), que l'e-mail de la Free cite (spec offres v2, livraison 5). */
+const LIMITE_PRO: Variable = { description: 'La limite de contacts de l’offre Pro', forme: 'texte', exemple: '5000' };
 const LIEN_CONSOLE: Variable = { description: 'L’accueil de la console', forme: 'lien', exemple: 'https://console.messagingme.app/accueil' };
 
 export const CATALOGUE = [
@@ -359,20 +361,20 @@ export const CATALOGUE = [
     categorie: 'service',
     nom: 'Offre Free : 80 % des contacts',
     quand: 'Un espace Free atteint 80 % de sa limite de contacts. Une fois à chaque franchissement.',
-    variables: { limite: LIMITE, lien_offre: LIEN_OFFRE },
+    variables: { limite: LIMITE, limite_pro: LIMITE_PRO, lien_offre: LIEN_OFFRE },
     textes: {
       fr: {
         sujet: 'Vous approchez de votre limite de contacts',
         corps: 'Bonjour,\n\nL’espace {{espace}} a créé 80 % des {{limite}} contacts que l’offre Free permet. Au-delà, il ne '
           + 'sera plus possible d’en créer ni d’en importer. Un contact qui vous écrit le premier n’est jamais refusé ni '
-          + 'compté.\n\nL’offre Pro n’a pas cette limite.',
+          + 'compté.\n\nL’offre Pro en permet {{limite_pro}}.',
         bouton: { libelle: 'Voir les offres', lien: '{{lien_offre}}' },
       },
       en: {
         sujet: 'You are close to your contact limit',
         corps: 'Hello,\n\nThe {{espace}} workspace has created 80% of the {{limite}} contacts the Free plan allows. Beyond '
           + 'that, creating or importing contacts will no longer be possible. A contact who writes to you first is never '
-          + 'refused nor counted.\n\nThe Pro plan has no such limit.',
+          + 'refused nor counted.\n\nThe Pro plan allows {{limite_pro}}.',
         bouton: { libelle: 'See plans', lien: '{{lien_offre}}' },
       },
     },
@@ -382,21 +384,67 @@ export const CATALOGUE = [
     categorie: 'service',
     nom: 'Offre Free : limite de contacts atteinte',
     quand: 'Un espace Free atteint sa limite de contacts. Une fois à chaque franchissement.',
-    variables: { limite: LIMITE, lien_offre: LIEN_OFFRE },
+    variables: { limite: LIMITE, limite_pro: LIMITE_PRO, lien_offre: LIEN_OFFRE },
     textes: {
       fr: {
         sujet: 'Limite atteinte : vous ne pouvez plus créer de contacts',
         corps: 'Bonjour,\n\nL’espace {{espace}} a atteint les {{limite}} contacts que l’offre Free permet : créer ou importer '
           + 'un contact est refusé. Un contact qui vous écrit le premier n’est jamais refusé ni compté.\n\nPassez en Pro '
-          + 'pour ne plus avoir de limite de contacts, tout de suite.',
+          + 'pour en créer jusqu’à {{limite_pro}}, tout de suite.',
         bouton: { libelle: 'Passer en Pro', lien: '{{lien_offre}}' },
       },
       en: {
         sujet: 'Limit reached: you can no longer create contacts',
         corps: 'Hello,\n\nThe {{espace}} workspace has reached the {{limite}} contacts the Free plan allows: creating or '
           + 'importing a contact is refused. A contact who writes to you first is never refused nor counted.\n\nUpgrade '
-          + 'to Pro to have no contact limit, right away.',
+          + 'to Pro to create up to {{limite_pro}}, right away.',
         bouton: { libelle: 'Upgrade to Pro', lien: '{{lien_offre}}' },
+      },
+    },
+  },
+  {
+    cle: 'limite_contacts_pro_80',
+    categorie: 'service',
+    nom: 'Offre Pro : 80 % des contacts',
+    quand: 'Un espace Pro atteint 80 % de sa limite de contacts. Une fois à chaque franchissement.',
+    variables: { limite: LIMITE, lien_offre: LIEN_OFFRE },
+    textes: {
+      fr: {
+        sujet: 'Vous approchez de votre limite de contacts',
+        corps: 'Bonjour,\n\nL’espace {{espace}} a créé 80 % des {{limite}} contacts que l’offre Pro permet. Au-delà, il ne '
+          + 'sera plus possible d’en créer ni d’en importer. Un contact qui vous écrit le premier n’est jamais refusé ni '
+          + 'compté.\n\nL’offre Entreprise fixe cette limite à votre mesure, sur devis.',
+        bouton: { libelle: 'Voir les offres', lien: '{{lien_offre}}' },
+      },
+      en: {
+        sujet: 'You are close to your contact limit',
+        corps: 'Hello,\n\nThe {{espace}} workspace has created 80% of the {{limite}} contacts the Pro plan allows. Beyond '
+          + 'that, creating or importing contacts will no longer be possible. A contact who writes to you first is never '
+          + 'refused nor counted.\n\nThe Enterprise plan sets this limit to your needs, on quote.',
+        bouton: { libelle: 'See plans', lien: '{{lien_offre}}' },
+      },
+    },
+  },
+  {
+    cle: 'limite_contacts_pro_100',
+    categorie: 'service',
+    nom: 'Offre Pro : limite de contacts atteinte',
+    quand: 'Un espace Pro atteint sa limite de contacts. Une fois à chaque franchissement.',
+    variables: { limite: LIMITE, lien_offre: LIEN_OFFRE },
+    textes: {
+      fr: {
+        sujet: 'Limite atteinte : vous ne pouvez plus créer de contacts',
+        corps: 'Bonjour,\n\nL’espace {{espace}} a atteint les {{limite}} contacts que l’offre Pro permet : créer ou importer '
+          + 'un contact est refusé. Un contact qui vous écrit le premier n’est jamais refusé ni compté.\n\nL’offre '
+          + 'Entreprise fixe cette limite à votre mesure, sur devis : écrivez-nous depuis la page Offre.',
+        bouton: { libelle: 'Voir les offres', lien: '{{lien_offre}}' },
+      },
+      en: {
+        sujet: 'Limit reached: you can no longer create contacts',
+        corps: 'Hello,\n\nThe {{espace}} workspace has reached the {{limite}} contacts the Pro plan allows: creating or '
+          + 'importing a contact is refused. A contact who writes to you first is never refused nor counted.\n\nThe '
+          + 'Enterprise plan sets this limit to your needs, on quote: write to us from the Plan page.',
+        bouton: { libelle: 'See plans', lien: '{{lien_offre}}' },
       },
     },
   },

@@ -34,6 +34,8 @@ describe('les chiffres de l’offre sont ceux du code', () => {
     'base.utilisateurs': DROITS.base.limites.utilisateurs ?? NaN,
     'pro.prix-mois': PRIX_PRO_HT_CENTIMES.mois / 100,
     'pro.utilisateurs': DROITS.pro.limites.utilisateurs ?? NaN,
+    // Le Pro resserré (spec offres v2, livraison 5) : ses contacts ont une limite, la page la dit.
+    'pro.contacts': DROITS.pro.limites.contacts ?? NaN,
     // « 3,50 » et « 3.50 » se lisent 350 : les centimes, comme la constante que la route compare au prix de Stripe.
     'numero.prix-mois': PRIX_NUMERO_HT_CENTIMES,
   };

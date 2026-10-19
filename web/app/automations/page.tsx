@@ -10,6 +10,8 @@ import {
   type Automation, type AutomationTriggerKind, type WorkflowSummary, type HubspotDealPipeline, type UserFieldDef,
 } from '@/lib/api';
 import { listActionsAgent, type ActionAgentMenu } from '@/lib/api/integrations';
+import { useFermeture } from '@/lib/use-offre';
+import { nomDeLOffre, offreQuiOuvre } from '@/lib/offre';
 import { Bouton } from '@/components/Bouton';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
 import { BoutonConfirme } from '@/components/Confirmation';
@@ -73,6 +75,13 @@ function AutomationsInner({ session }: { session: Session }) {
   const champsAnalyse = useChampsFiltrables(session.tenantId);
   const champsDevient = champsPourOperateurs(champsAnalyse, OPERATEURS_DEVIENT);
   const champsFiltresAnalyse = champsPourOperateurs(champsAnalyse, OPERATEURS_CONVERSATION_ANALYSEE);
+  // Les déclencheurs nés d'une analyse ne se créent qu'où l'analyse tourne (spec offres v2, livraison 5 ; le serveur
+  // refuse en 402) : grisés ailleurs, avec l'offre qui l'ouvre. Celui d'une automation existante reste choisi.
+  const analyseFermee = useFermeture(session.tenantId, 'analyse');
+  const offreAnalyse = analyseFermee ? offreQuiOuvre(analyseFermee, 'analyse') : null;
+  const suffixeAnalyse = analyseFermee && offreAnalyse
+    ? ` (${t(`offre ${nomDeLOffre(offreAnalyse, t)}`, `${nomDeLOffre(offreAnalyse, t)} plan`)})` : '';
+  const analyseGrisee = (kind: AutomationTriggerKind) => analyseFermee != null && triggerKind !== kind;
   const [filtreDevient, setFiltreDevient] = useState<FiltreAnalyseValide | null>(null);
   const devient = filtreDevient ?? (champsDevient[0] ? filtreAnalyseParDefaut(champsDevient[0]) : null);
   const [filtresAnalyse, setFiltresAnalyse] = useState<FiltreAnalyseValide[]>([]);
@@ -417,7 +426,7 @@ function AutomationsInner({ session }: { session: Session }) {
               <option value="keyword">{t('le client envoie un mot-clé', 'the customer sends a keyword')}</option>
               <option value="new_contact">{t('un nouveau contact écrit pour la 1re fois', 'a new contact writes for the first time')}</option>
               <option value="tag_added">{t('une étiquette est posée sur un contact', 'a tag is added to a contact')}</option>
-              <option value="conversation_analyzed">{t('une conversation vient d’être analysée', 'a conversation has just been analyzed')}</option>
+              <option value="conversation_analyzed" disabled={analyseGrisee('conversation_analyzed')}>{t('une conversation vient d’être analysée', 'a conversation has just been analyzed')}{suffixeAnalyse}</option>
               {/* 🔴 MASQUÉE quand AUCUN portail n'est lié (arbitrage de Julien du 2026-09-23) : une intégration
                   qu'on n'a pas est du bruit, pas une information. ⚠️ `=== false` et non `!== true` : `null`
                   veut dire « on ne sait pas encore », et on montre alors, comme avant ce lot.
@@ -439,7 +448,7 @@ function AutomationsInner({ session }: { session: Session }) {
               )}
               {/* Offert seulement si l'API décrit les champs de la fiche : elle seule sait appliquer ce déclencheur. */}
               {champsDevient.length > 0 && (
-                <option value="analyse_devient">{t('la dernière analyse d’un contact change (ex. le sentiment devient négatif)', 'a contact’s latest analysis changes (e.g. sentiment becomes negative)')}</option>
+                <option value="analyse_devient" disabled={analyseGrisee('analyse_devient')}>{t('la dernière analyse d’un contact change (ex. le sentiment devient négatif)', 'a contact’s latest analysis changes (e.g. sentiment becomes negative)')}{suffixeAnalyse}</option>
               )}
             </select>
           </div>

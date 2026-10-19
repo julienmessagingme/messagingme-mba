@@ -93,9 +93,12 @@ export interface SurchargeEntreprise {
 /** Un mégaoctet, l'unité des quotas de stockage (la même que les plafonds de dépôt, `src/rcs/image.ts`). */
 const MO = 1024 * 1024;
 
+/**
+ * Le Pro resserré (spec offres v2, livraison 5) : la console complète, sans l'analyse des conversations, les publicités ni les
+ * chaînes, qui font la différence de l'Entreprise avec le CRM, le RCS et le Performance Lab.
+ */
 const FONCTIONS_PRO: readonly Fonction[] = [
-  'inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines',
-  'console',
+  'inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'email', 'console',
 ];
 
 export const DROITS: Readonly<Record<Offre, Droits>> = {
@@ -110,8 +113,8 @@ export const DROITS: Readonly<Record<Offre, Droits>> = {
   pro: {
     fonctions: new Set<Fonction>(FONCTIONS_PRO),
     limites: {
-      utilisateurs: 3, admins: 2, contacts: null, envoisModelesMois: null, automations: null, suppressionsJour: null,
-      adressesWebhook: 5, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 10, badge: false, numeroInclus: true,
+      utilisateurs: 3, admins: 2, contacts: 5000, envoisModelesMois: null, automations: null, suppressionsJour: null,
+      adressesWebhook: 5, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 20, badge: false, numeroInclus: true,
       stockageOctets: 100 * MO, clesApi: 10, appelsMinute: 60, appelsHeure: 1000, modelesJour: 2000, reponsesJour: 2000,
     },
   },

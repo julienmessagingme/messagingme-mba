@@ -7,6 +7,7 @@ import type { Emission } from '../src/emails-produit/emission';
 import { PgCreditStore } from '../src/agent/credits.pg';
 import { modeleDe } from '../src/emails-produit/catalogue';
 import { rendre } from '../src/emails-produit/rendu';
+import { DROITS } from '../src/offres/offres';
 
 /**
  * LES ALERTES DE LA LIVRAISON B (lot 7) : ce qui décide qu'un e-mail part, et son occasion. Ce que le journal fait de
@@ -88,14 +89,39 @@ describe('le paiement refusé', () => {
   });
 });
 
-describe('les limites du Free', () => {
-  it('🔴 seule la Free reçoit ces alertes : leur texte dit « Offre Free… Passez en Pro » (spec offres v2, livraison 1)', () => {
-    // Une Entreprise peut désormais avoir une limite de contacts posée par /ops : sans cette garde, elle recevrait un
-    // e-mail qui la dit en Free. Les textes par offre arrivent à la livraison 5.
+describe('les limites de la Free et du Pro', () => {
+  it('🔴 la Free et le Pro reçoivent les alertes de LEUR offre ; l’Entreprise, réglée sur devis, aucune (spec offres v2, livraison 5)', () => {
+    // Une Entreprise peut avoir une limite de contacts posée par /ops : un e-mail qui la dirait en Free ou en Pro serait faux.
     const limites = { envoisModelesMois: 1000, contacts: 20000 };
-    expect(limitesAlertables('base', limites)).toEqual({ modelesMois: 1000, contacts: 20000 });
-    expect(limitesAlertables('entreprise', limites)).toEqual({ modelesMois: null, contacts: null });
-    expect(limitesAlertables('pro', limites)).toEqual({ modelesMois: null, contacts: null });
+    expect(limitesAlertables('base', limites)).toEqual({ modelesMois: 1000, contacts: 20000, offre: 'free' });
+    // Le Pro n'a pas de limite de modèles : ses alertes ne portent que sur les contacts.
+    expect(limitesAlertables('pro', limites)).toEqual({ modelesMois: null, contacts: 20000, offre: 'pro' });
+    expect(limitesAlertables('entreprise', limites)).toEqual({ modelesMois: null, contacts: null, offre: null });
+  });
+
+  it('🔴 un Pro reçoit l’alerte du Pro, qui renvoie à l’Entreprise ; la Free cite la limite du Pro, lue dans la grille', async () => {
+    const { d, e } = banc({ pro: { modelesMois: null, contacts: 5000, crees: 4000, offre: 'pro' }, free: { modelesMois: null, contacts: 100, crees: 100 } });
+    await balayerLimites(d);
+    expect(e.emissions.map((x) => [x.tenantId, x.cle, x.valeurs.limite])).toEqual([
+      ['pro', 'limite_contacts_pro_80', '5000'],
+      ['free', 'limite_contacts_100', '100'],
+    ]);
+    expect(e.emissions[1]!.valeurs.limite_pro).toBe(String(DROITS.pro.limites.contacts));
+    for (const cle of ['limite_contacts_pro_80', 'limite_contacts_pro_100']) {
+      const m = modeleDe(cle)!;
+      for (const l of ['fr', 'en'] as const) {
+        const texte = rendre(m, m.textes[l], { limite: '5000', espace: 'A', lien_offre: 'https://c/offre' }, l);
+        expect(texte.text, cle + l).toMatch(/Entreprise|Enterprise/);
+        expect(texte.text, cle + l).not.toMatch(/Passez en Pro|Upgrade to Pro|offre Free|Free plan/);
+      }
+    }
+    // La Free ne dit plus que le Pro n'a pas de limite de contacts : il en a une, et l'e-mail la cite.
+    for (const cle of ['limite_contacts_80', 'limite_contacts_100']) {
+      const m = modeleDe(cle)!;
+      const fr = rendre(m, m.textes.fr, { limite: '100', limite_pro: '5000', espace: 'A', lien_offre: 'https://c/offre' }, 'fr');
+      expect(fr.text, cle).toContain('5000');
+      expect(fr.text, cle).not.toMatch(/n’a pas cette limite|ne plus avoir de limite/);
+    }
   });
 
   it('le seuil se compte à l’entier supérieur', () => {
@@ -106,12 +132,12 @@ describe('les limites du Free', () => {
   });
 
   /** Un banc : des espaces, leurs usages, et l'état des seuils comme en base (migration 0235). */
-  function banc(espaces: Record<string, { modelesMois: number | null; contacts: number | null; modeles?: number | null; crees?: number }>) {
+  function banc(espaces: Record<string, { modelesMois: number | null; contacts: number | null; modeles?: number | null; crees?: number; offre?: 'free' | 'pro' }>) {
     const e = emetteur();
     const seuils = new Map<string, { atteint: boolean; generation: number }>();
     const d: DepsLimites = {
       espaces: async () => Object.keys(espaces),
-      limites: async (t) => ({ modelesMois: espaces[t]!.modelesMois, contacts: espaces[t]!.contacts }),
+      limites: async (t) => ({ modelesMois: espaces[t]!.modelesMois, contacts: espaces[t]!.contacts, offre: espaces[t]!.offre ?? 'free' }),
       modelesDuMois: async (t) => espaces[t]!.modeles ?? 0,
       contactsCrees: async (t) => espaces[t]!.crees ?? 0,
       franchir: async (t, seuil, atteint) => {
@@ -188,6 +214,23 @@ describe('les limites du Free', () => {
     expect(e.emissions.map((x) => [x.cle, x.occasion])).toEqual([
       ['limite_contacts_100', 'franchissement:1'],
       ['limite_contacts_100', 'franchissement:2'],
+    ]);
+  });
+
+  it('🔴 les seuils sont ceux de l’offre : un Pro à sa limite, revenu en Free, reçoit l’alerte de la Free (et l’inverse)', async () => {
+    // Des seuils communs aux deux offres laisseraient le Pro à 5 000 contacts « déjà franchi » une fois revenu en Free :
+    // aucun « Passez en Pro » au moment où il sert le plus.
+    const { d, e, espaces } = banc({ t: { modelesMois: null, contacts: 5000, crees: 5000, offre: 'pro' } });
+    await balayerLimites(d);
+    espaces.t = { modelesMois: 1000, contacts: 100, crees: 5000, offre: 'free' };
+    await balayerLimites(d);
+    espaces.t = { modelesMois: null, contacts: 5000, crees: 4100, offre: 'pro' };
+    await balayerLimites(d);
+    expect(e.emissions.map((x) => [x.cle, x.occasion])).toEqual([
+      ['limite_contacts_pro_100', 'franchissement:1'],
+      ['limite_contacts_100', 'franchissement:1'],
+      // Le seuil de 80 % du Pro avait été posé au premier tour (seul le plus haut s'écrit) : relâché, il repart neuf.
+      ['limite_contacts_pro_80', 'franchissement:2'],
     ]);
   });
 

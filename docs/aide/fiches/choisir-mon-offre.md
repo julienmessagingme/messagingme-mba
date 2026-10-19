@@ -1,7 +1,7 @@
 ---
 ecran: offre
 source_section: Offres (menu « Paramètres » > Offre)
-source_empreinte: e90919
+source_empreinte: cabf6d
 ---
 # Choisir mon offre
 
@@ -12,11 +12,14 @@ Votre espace a une offre : **Free** (gratuite), **Pro** (un abonnement, au mois 
 limite (contacts créés, modèles envoyés ce mois-ci, automations allumées, utilisateurs), et la grille des trois
 offres côte à côte.
 
-**Ce que l'offre Free comprend.** Votre numéro WhatsApp, l'API, la connexion à Claude, les contacts, les campagnes de
-modèles, les automations et l'agent IA, avec des plafonds. Claude et l'API lisent aussi vos conversations et
-répondent à vos clients dans les 24 heures. L'écran de l'Inbox, les scénarios, les statistiques, l'agent de Meta, les assistants, les publicités,
-l'e-mail et les chaînes demandent le Pro. Le RCS, les connecteurs CRM et le
-Performance Lab complet demandent l'Entreprise.
+**Ce que l'offre Free comprend.** Votre numéro WhatsApp, l'API et la connexion à Claude, avec des plafonds : contacts
+créés, modèles envoyés chaque mois, un seul utilisateur. Claude et l'API lisent vos conversations, répondent à vos
+clients dans les 24 heures, envoient vos modèles et construisent votre agent IA. Dans la console, la Free garde
+l'accueil (votre numéro), les clés d'API, la documentation, l'offre, votre compte et le support.
+
+**Ce que le Pro et l'Entreprise ajoutent.** Le Pro ouvre la console complète : l'Inbox, les scénarios, les
+statistiques, l'agent de Meta, les assistants et l'e-mail, avec plus de contacts. L'analyse des conversations, les
+publicités, les chaînes, le RCS, les connecteurs CRM et le Performance Lab complet demandent l'Entreprise.
 
 **Ce qui n'est jamais compté.** Un contact qui vous écrit le premier n'entre pas dans votre limite de contacts. Une
 réponse envoyée dans les 24 heures qui suivent un message du client n'est pas un envoi de modèle : elle n'est pas
@@ -26,9 +29,9 @@ comptée non plus.
 la page Offre. Si une action est refusée parce qu'une limite est atteinte, un message vous le dit, avec un bouton
 « Voir les offres ».
 
-**Ce que l'offre change aux coûts.** Notre commission sur le crédit IA est de 50 % en Free et de 10 % en Pro et en
-Entreprise. L'analyse des conversations ne tourne pas en Free ; en Pro, une conversation est analysée au premier
-nouveau message (le passé n'est pas rattrapé). En Free, les conversations se gardent 30 jours, mais seulement 30 jours
+**Ce que l'offre change aux coûts.** Notre commission sur le crédit IA est de 50 % en Free, de 20 % en Pro et de
+10 % en Entreprise. L'analyse des conversations ne tourne qu'en Entreprise : quand votre espace y passe, une
+conversation est analysée au premier nouveau message (le passé n'est pas rattrapé). En Free, les conversations se gardent 30 jours, mais seulement 30 jours
 après l'entrée en Free : à la création de l'espace, à la fin de votre Pro ou au départ de l'Entreprise.
 
 **Si votre espace revient en Free.** Rien n'est effacé, et tout revient quand vous reprenez le Pro. En attendant,

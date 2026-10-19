@@ -270,7 +270,7 @@ describe.skipIf(!url)('PgConversationAnalysisStore (Supabase)', () => {
         .then((r) => r.rows[0]!.analysis_status);
       expect(await statut(enBase)).toBe('hors_offre');
       expect(await statut(enEntreprise)).toBe('queued');
-      // Passer en Pro n'analyse pas le passé : la conversation reste `hors_offre` tant qu'aucun message n'arrive.
+      // Passer dans l'offre qui ouvre l'analyse n'analyse pas le passé : la conversation reste `hors_offre` tant qu'aucun message n'arrive.
       await pool.query(`update tenants set offre_entreprise = true where id = $1`, [base]);
       expect((await store.claimForAnalysis(25 * 60 * 1000, 1000)).map((c) => c.conversationId)).not.toContain(enBase);
       expect(await statut(enBase)).toBe('hors_offre');

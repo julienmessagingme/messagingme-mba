@@ -34,9 +34,10 @@ export class PgConversationAnalysisStore {
    * Réclame en lot les conversations inactives encore `pending` -> `queued`. Les fils de test sont exclus : ni analyse
    * LLM, ni poussée vers HubSpot.
    *
-   * 🔴 L'ANALYSE EST ÉTEINTE EN BASE (lot 6, livraison C) : la conversation d'un espace en Base passe en `hors_offre`
-   * au lieu de `queued`, l'offre lue en SQL (`offre_de_l_espace`, une fois par conversation), et n'est pas rendue. Un
-   * nouveau message la remet en `pending` (`PgInboxStore`) ; passer en Pro n'analyse donc jamais le passé en rafale.
+   * 🔴 L'ANALYSE EST ÉTEINTE HORS DE SON OFFRE (lot 6, livraison C ; la Base et le Pro depuis la spec offres v2) : la
+   * conversation d'un tel espace passe en `hors_offre` au lieu de `queued`, l'offre lue en SQL (`offre_de_l_espace`, une
+   * fois par conversation), et n'est pas rendue. Un nouveau message la remet en `pending` (`PgInboxStore`) ; passer dans
+   * l'offre qui l'ouvre n'analyse donc jamais le passé en rafale.
    */
   async claimForAnalysis(inactivityMs: number, limit: number): Promise<ClaimedConversation[]> {
     const res = await this.pool.query<{ id: string; tenant_id: string }>(

@@ -16,8 +16,8 @@ const GRILLE: Record<Offre, Limites> = {
     stockageOctets: 0, clesApi: 2, appelsMinute: 30, appelsHeure: 500, modelesJour: 500, reponsesJour: 2000,
   },
   pro: {
-    utilisateurs: 3, admins: 2, contacts: null, envoisModelesMois: null, automations: null, suppressionsJour: null,
-    adressesWebhook: 5, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 10, badge: false, numeroInclus: true,
+    utilisateurs: 3, admins: 2, contacts: 5000, envoisModelesMois: null, automations: null, suppressionsJour: null,
+    adressesWebhook: 5, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 20, badge: false, numeroInclus: true,
     stockageOctets: 100 * MO, clesApi: 10, appelsMinute: 60, appelsHeure: 1000, modelesJour: 2000, reponsesJour: 2000,
   },
   entreprise: {
@@ -27,8 +27,9 @@ const GRILLE: Record<Offre, Limites> = {
   },
 };
 
-const PRO: Fonction[] = ['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines', 'console'];
-const ENTREPRISE_SEULE: Fonction[] = ['crm', 'rcs', 'performance_lab'];
+// Le Pro resserré (spec offres v2, livraison 5) : l'analyse, les publicités et les chaînes passent à l'Entreprise.
+const PRO: Fonction[] = ['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'email', 'console'];
+const ENTREPRISE_SEULE: Fonction[] = ['analyse', 'publicites', 'chaines', 'crm', 'rcs', 'performance_lab'];
 
 describe('la grille des offres', () => {
   it.each(['base', 'pro', 'entreprise'] as const)('les limites de %s sont celles de la spec', (offre) => {
@@ -45,7 +46,7 @@ describe('la grille des offres', () => {
     expect(DROITS.entreprise.fonctions.has('console')).toBe(true);
   });
 
-  it('le Pro ouvre tout sauf le CRM, le RCS et le Performance Lab', () => {
+  it('le Pro ouvre tout sauf l’analyse, les publicités, les chaînes, le CRM, le RCS et le Performance Lab', () => {
     expect([...DROITS.pro.fonctions].sort()).toEqual([...PRO].sort());
     for (const f of ENTREPRISE_SEULE) expect(DROITS.pro.fonctions.has(f)).toBe(false);
   });
@@ -84,6 +85,14 @@ describe('les refus nomment l’offre qui lève la limite ou ouvre la fonction (
     expect(corpsRefusFonction('crm').error).toMatch(/Entreprise/);
     expect(corpsRefusFonction('crm').error).not.toMatch(/Passez en Pro/);
     expect(corpsRefusFonction('inbox').error).toMatch(/Passez en Pro/);
+  });
+
+  it('🔴 le Pro resserré : l’analyse, les publicités et les chaînes renvoient à l’Entreprise, et les 5 000 contacts du Pro aussi', () => {
+    for (const f of ['analyse', 'publicites', 'chaines'] as const) {
+      expect(corpsRefusFonction(f).error, f).toMatch(/Passez en Entreprise/);
+    }
+    expect(phraseLimite('contacts', DROITS.pro.limites.contacts!)).toMatch(/5.000 contacts.*Passez en Entreprise/);
+    expect(phraseLimite('contacts', DROITS.base.limites.contacts!)).toMatch(/Passez en Pro/);
   });
 });
 

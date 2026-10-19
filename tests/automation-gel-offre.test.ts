@@ -72,12 +72,13 @@ describe('le gel des automations (lot 6, B2a)', () => {
     expect(m.demarrees).toEqual(['wf-widget']);
   });
 
-  it('en Pro, rien n’est gelé, et la liste des plus anciennes n’est jamais lue', async () => {
+  it('en Pro, les automations du client ne sont pas gelées et la liste des plus anciennes n’est jamais lue ; celle d’une chaîne se tait (l’Entreprise seule ouvre les chaînes depuis la spec offres v2, livraison 5)', async () => {
     const ids = Array.from({ length: 12 }, (_, i) => `c${i}`);
     const rows = [...ids.map((id) => auto(id)), auto('chaine', { possedePar: POSSESSEUR_LIEN_CHAINE })];
     const m = monter(rows, 'pro', []);
-    expect(await runAutomations('t1', MSG, m.deps)).toBe(13);
+    expect(await runAutomations('t1', MSG, m.deps)).toBe(12);
     expect(m.lectures).toEqual([]);
+    expect(await runAutomations('t1', MSG, monter(rows, 'entreprise', []).deps)).toBe(13);
   });
 
   it('en Base, une automation du client qui n’est pas parmi les plus anciennes ne tire pas, même seule candidate', async () => {

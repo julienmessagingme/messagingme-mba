@@ -30,7 +30,7 @@ const nombre = (n: number, langue: 'fr' | 'en'): string =>
   langue === 'fr' ? n.toLocaleString('fr-FR').replace(/\u202f/g, ' ') : n.toLocaleString('en-US');
 /** Les modèles par mois d'une offre, dits depuis `DROITS` : `null` (sans limite) se dit, il ne devient jamais « 0 ». */
 const modeles = (limite: number | null, langue: 'fr' | 'en'): string => limite === null
-  ? (langue === 'fr' ? 'sans plafond de notre part' : 'no cap from us')
+  ? (langue === 'fr' ? 'illimités' : 'unlimited')
   : (langue === 'fr' ? `${nombre(limite, 'fr')} modèles par mois` : `${nombre(limite, 'en')} templates a month`);
 const UTILISATEURS_FREE = DROITS.base.limites.utilisateurs;
 const UTILISATEURS_PRO = DROITS.pro.limites.utilisateurs;

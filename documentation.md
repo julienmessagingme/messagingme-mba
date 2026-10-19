@@ -2317,9 +2317,12 @@ modifiés dans `/ops` (rétablir supprime la ligne), `emails_produit_interrupteu
   - le crédit bas, par le crochet `surDebit` du magasin du crédit (tous les débits y passent), sur le seul débit qui
     franchit 0,50 € ; occasion : le dernier mouvement positif du crédit, qu'une recharge renouvelle ;
   - le paiement refusé, par le traitement des abonnements de Stripe (`paiementRefuse`) ; occasion : la facture ;
-  - les limites du Free, par le balayage `emails-produit-limites` (trente minutes) : les modèles du mois (occasion :
-    le mois de Paris) et les contacts (occasion : la génération du franchissement, `emails_produit_seuils`, migration
-    0235, posée par une instruction gardée par `not atteint`) ; seul le seuil le plus haut franchi s'écrit ;
+  - les limites de la Free et du Pro, par le balayage `emails-produit-limites` (trente minutes) : les modèles du mois
+    (occasion : le mois de Paris) et les contacts (occasion : la génération du franchissement, `emails_produit_seuils`,
+    migration 0235, posée par une instruction gardée par `not atteint`) ; seul le seuil le plus haut franchi s'écrit.
+    `limitesAlertables` choisit les textes de l'offre : la Free (`limite_*`, « Passez en Pro », qui citent la limite de
+    contacts du Pro lue dans `DROITS`), le Pro (ses contacts seuls, `limite_contacts_pro_*`, qui renvoient à
+    l'Entreprise) ; l'Entreprise, dont la limite se règle sur devis, n'en reçoit aucune ;
   - le passage à l'équipe (`prevenirEquipe`, construit par le socle), appelé par les trois chemins d'un robot qui passe
     la main et seulement si la bascule a eu lieu (`passerAUnHumain` et `marquerEscalade` rendent ce verdict) ; pour un
     scénario, seulement avec `escalade` et si l'exécuteur le permet (`prevenir` : la réponse d'un contact ou un
@@ -2688,9 +2691,11 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
     (`tests/migration-0222.test.ts` le chiffre) ;
   - l'analyse des conversations ne part pas hors de l'offre : `claimForAnalysis` lit l'offre en SQL (`offre_de_l_espace`,
     une fois par conversation réclamée) et passe en `hors_offre`, au lieu de `queued`, la conversation d'un espace dont
-    l'offre n'ouvre pas la fonction `analyse` (`OFFRES_SANS_ANALYSE`, lu dans la grille : la Base). Un
-    nouveau message, entrant ou sortant, la remet en `pending` comme `done` et `failed` ; passer en Pro n'analyse donc
-    jamais le passé en rafale ;
+    l'offre n'ouvre pas la fonction `analyse` (`OFFRES_SANS_ANALYSE`, lu dans la grille : la Base et le Pro). Un
+    nouveau message, entrant ou sortant, la remet en `pending` comme `done` et `failed` ; passer en Entreprise n'analyse
+    donc jamais le passé en rafale. Les déclencheurs d'automation nés d'une analyse (`DECLENCHEURS_D_ANALYSE`,
+    `src/http/automations.ts`) se refusent en 402 à la création sans cette fonction ; un PATCH qui garde le déclencheur
+    d'une automation existante passe (un espace descendu de l'Entreprise) ;
   - la conservation (`retentionEffective`, `src/inbox/retention.ts`, et en SQL `dureeConservationSql`, le MÊME texte lu
     par la purge `purgeConversationsOlderThan`, qui MATÉRIALISE une durée par espace, et par `hors_retention` des coûts de
     la synthèse) : en Base, 30 jours (la grille, ou le réglage de l'espace s'il est plus court), mais seulement une fois
@@ -3392,7 +3397,7 @@ donc désarmerait le plafond en silence.
 
 🔴 **QUI PAIE QUOI, ET À QUEL PRIX.** Sur le **crédit prépayé du client**, au **prix client** : le coût du
 Gateway au taux `EUR_PER_USD`, majoré de la commission de l'OFFRE de l'espace (`commissionPour`,
-`src/offres/commission.ts` : 50 % en Base, 10 % en Pro et en Entreprise, lue dans la grille par `OffresEnCache`),
+`src/offres/commission.ts` : 50 % en Base, 20 % en Pro, 10 % en Entreprise, lue dans la grille par `OffresEnCache`),
 calculé par `prixClientMicroEur` (`src/agent/devise.ts`), seul point de calcul du montant débité. Ses appelants : le
 cerveau de l'agent (donc le tour de production et l'essai du bac à sable, qui y ajoutent le coût de la recherche dans
 la connaissance, rendu par l'outil : `SortieResolveur.coutDollars`), la traduction des conversations, la vectorisation

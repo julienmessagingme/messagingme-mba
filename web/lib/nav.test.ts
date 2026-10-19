@@ -402,9 +402,10 @@ describe('la barre selon l’offre', () => {
     expect(feuilles(marquee).find((i) => i.key === 'contacts')?.fonction).toBe('console');
   });
 
-  it('un Pro : le quantitatif s’ouvre, la Synthèse, l’analyse, Mes tableaux et le RCS restent grisés', () => {
-    const pro = new Set(['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines', 'console'] as const);
-    expect(verrouillees(navPourOffre(toutes(), pro)).sort()).toEqual(['dashboard-quali', 'dashboard-tableaux', 'perf-synthese', 'rcs-messages']);
+  it('un Pro : le quantitatif s’ouvre ; la Synthèse, l’analyse, Mes tableaux, le RCS, la chaîne et les publicités restent grisés', () => {
+    // Le Pro resserré (spec offres v2, livraison 5) : sans l'analyse, les publicités ni les chaînes.
+    const pro = new Set(['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'email', 'console'] as const);
+    expect(verrouillees(navPourOffre(toutes(), pro)).sort()).toEqual(['chaine', 'dashboard-quali', 'dashboard-tableaux', 'perf-synthese', 'publicites', 'rcs-messages']);
   });
 
   it('la première destination ouverte d’un onglet : la Synthèse en Entreprise, le quantitatif en Pro, aucune en Base', () => {

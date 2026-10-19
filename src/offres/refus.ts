@@ -27,13 +27,16 @@ const LIBELLE_FONCTION: Record<Fonction, string> = {
   crm: 'les connecteurs CRM', rcs: 'le RCS', performance_lab: 'le Performance Lab', console: 'la console complète',
 };
 
+/** Un nombre écrit à la française (« 5 000 contacts ») : la phrase est lue par une personne, ou redite par Claude. */
+const nb = (m: number): string => m.toLocaleString('fr-FR');
+
 const LIBELLE_LIMITE: Record<NomLimite, (max: number) => string> = {
   utilisateurs: (m) => `${m} utilisateur${m > 1 ? 's' : ''}`,
   admins: (m) => `${m} administrateur${m > 1 ? 's' : ''}`,
-  contacts: (m) => `${m} contacts créés (ceux qui vous écrivent ne comptent pas)`,
-  envoisModelesMois: (m) => `${m} envois de modèles par mois (les réponses dans les 24 h ne comptent pas)`,
-  automations: (m) => `${m} automations`,
-  suppressionsJour: (m) => `${m} suppressions de contacts par jour`,
+  contacts: (m) => `${nb(m)} contacts créés (ceux qui vous écrivent ne comptent pas)`,
+  envoisModelesMois: (m) => `${nb(m)} envois de modèles par mois (les réponses dans les 24 h ne comptent pas)`,
+  automations: (m) => `${nb(m)} automations`,
+  suppressionsJour: (m) => `${nb(m)} suppressions de contacts par jour`,
   adressesWebhook: (m) => `${m} adresse${m > 1 ? 's' : ''} de webhook sortant actives`,
   stockageOctets: (m) => `${Math.round(m / (1024 * 1024))} Mo de fichiers dans la médiathèque`,
   clesApi: (m) => `${m} clés d’API actives (révoquez-en une pour en créer une autre ; la clé de l’agent de Meta ne compte pas)`,

@@ -12,6 +12,7 @@ import { Bouton } from '@/components/Bouton';
 import { Squelette } from '@/components/Squelette';
 import { Nd } from '@/components/Nd';
 import { useFermeture } from '@/lib/use-offre';
+import { nomDeLOffre, offreQuiOuvre, type VueOffre } from '@/lib/offre';
 
 /**
  * Onglet « Historique » de la fiche contact : ce qu'on lui a envoyé, et ce qu'il nous a répondu.
@@ -232,8 +233,10 @@ function DeliveryBadge({ send, stamp }: { send: ContactSend; stamp: (iso: string
  * `analyseFermee` : l'offre de l'espace si elle ferme l'analyse, `null` si elle l'ouvre (ou si elle est inconnue),
  * `undefined` tant qu'elle n'est pas lue (`useFermeture`).
  */
-function ConversationRow({ conv, stamp, analyseFermee }: { conv: ContactConversation; stamp: (iso: string) => string; analyseFermee: unknown }) {
+function ConversationRow({ conv, stamp, analyseFermee }: { conv: ContactConversation; stamp: (iso: string) => string; analyseFermee: VueOffre | null | undefined }) {
   const t = useT();
+  // L'offre qui ouvre l'analyse, lue dans la grille du serveur : l'Entreprise depuis la spec offres v2 (livraison 5).
+  const ouvrePar = analyseFermee ? offreQuiOuvre(analyseFermee, 'analyse') : null;
   return (
     <li className="rounded-carte border border-ink-200 bg-white px-3 py-2.5 text-sm">
       <div className="flex items-start justify-between gap-3">
@@ -277,13 +280,15 @@ function ConversationRow({ conv, stamp, analyseFermee }: { conv: ContactConversa
       ) : (
         <p className="mt-1.5 text-xs text-ink-500">
           {/* `hors_offre` (lot 6, C) : un espace en Base n'analyse pas ses conversations ; « pas encore » promettrait une
-              analyse qui ne viendra pas. Passé en Pro (J8 de la relecture), le passé n'est pas rattrapé : la conversation
+              analyse qui ne viendra pas. Passé dans l'offre qui l'ouvre (J8 de la relecture), le passé n'est pas rattrapé : la conversation
               est analysée au prochain message. */}
           {conv.analysisStatus === 'failed' ? t('analyse en échec', 'analysis failed')
             : conv.analysisStatus === 'hors_offre'
               ? (analyseFermee === null
                 ? t('analysée au prochain message', 'analyzed at the next message')
-                : t('analyse disponible en Pro', 'analysis available in Pro'))
+                : ouvrePar
+                  ? t(`analyse disponible en ${nomDeLOffre(ouvrePar, t)}`, `analysis available in ${nomDeLOffre(ouvrePar, t)}`)
+                  : t('analyse non comprise dans votre offre', 'analysis not included in your plan'))
               : t('pas encore analysée', 'not analyzed yet')}
         </p>
       )}

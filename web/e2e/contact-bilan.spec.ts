@@ -27,7 +27,8 @@ const OFFRE_BASE = {
   // La lecture de la console exige les trois offres de la grille (`lireVueOffre`) ; seules leurs fonctions comptent ici.
   grille: {
     free: { fonctions: [], limites: LIMITES_BASE },
-    pro: { fonctions: ['analyse'], limites: LIMITES_BASE },
+    // Le Pro resserré (spec offres v2, livraison 5) : l'analyse est à l'Entreprise seule.
+    pro: { fonctions: [], limites: LIMITES_BASE },
     entreprise: { fonctions: ['analyse'], limites: LIMITES_BASE },
   },
   upgradeUrl: 'https://console.e2e.test/offre',
@@ -78,18 +79,18 @@ test.describe('Le bilan d’un contact', () => {
     await expect(page.getByTestId('contact-bilan-cout')).toHaveText('n/d');
   });
 
-  test('🔴 une conversation d’un espace en Base dit « analyse disponible en Pro », pas « pas encore analysée » (lot 6, C)', async ({ page }) => {
+  test('🔴 une conversation d’un espace sans l’analyse dit « analyse disponible en Entreprise », l’offre de la grille qui l’ouvre, pas « pas encore analysée »', async ({ page }) => {
     // « Pas encore » promettrait une analyse qui ne viendra pas : l'offre Base n'analyse pas les conversations.
     await ouvrir(page, BILAN, [HORS_OFFRE], OFFRE_BASE);
-    await expect(page.getByText(/analyse disponible en Pro|analysis available in Pro/)).toBeVisible();
+    await expect(page.getByText(/analyse disponible en Entreprise|analysis available in Enterprise/)).toBeVisible();
     await expect(page.getByText(/pas encore analysée|not analyzed yet/)).toHaveCount(0);
   });
 
-  test('🔴 J8 : passé en Pro, la même conversation dit qu’elle sera analysée au prochain message, pas « disponible en Pro »', async ({ page }) => {
+  test('🔴 J8 : passé dans l’offre qui l’ouvre, la même conversation dit qu’elle sera analysée au prochain message', async ({ page }) => {
     // Sans route d'offre, la console lit tout ouvert : le cas d'un espace en Pro ou en Entreprise.
     await ouvrir(page, BILAN, [HORS_OFFRE]);
     await expect(page.getByText(/analysée au prochain message|analyzed at the next message/)).toBeVisible();
-    await expect(page.getByText(/analyse disponible en Pro|analysis available in Pro/)).toHaveCount(0);
+    await expect(page.getByText(/analyse disponible en|analysis available in/)).toHaveCount(0);
   });
 
   test('🔴 le bilan en PANNE ne fait pas disparaître l’historique', async ({ page }) => {

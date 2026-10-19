@@ -1,5 +1,6 @@
 import { journaliser } from '../lib/journal';
 import type { EmetteurEmails } from './emission';
+import { DROITS } from '../offres/offres';
 
 /**
  * LES ALERTES DE LA LIVRAISON B (lot 7, spec `docs/superpowers/specs/2026-10-14-emails-produit-design.md`) : ce qui
@@ -97,8 +98,8 @@ export const SEUILS_LIMITES = [100, 80] as const;
 
 export interface DepsLimites {
   espaces(): Promise<string[]>;
-  /** Les limites de l'offre de l'espace : `null` = sans limite (Pro, Entreprise). */
-  limites(tenantId: string): Promise<{ modelesMois: number | null; contacts: number | null }>;
+  /** Les limites surveillées de l'espace (`limitesAlertables`) : `null` = rien à surveiller ; `offre` choisit les textes. */
+  limites(tenantId: string): Promise<LimitesAlertables>;
   /** Les modèles envoyés ce mois-ci, `null` si le compteur ne répond pas. */
   modelesDuMois(tenantId: string): Promise<number | null>;
   contactsCrees(tenantId: string): Promise<number>;
@@ -113,18 +114,28 @@ export interface DepsLimites {
   moisDeParis(): string;
 }
 
-/** Le seuil atteint : `usage` vaut au moins `pct` % de `limite`, arrondi au supérieur (80 % de 100, c'est 80). */
+/** Ce que surveille le balayage d'un espace, et les textes de quelle offre (`null` : aucun, rien n'est surveillé). */
+export interface LimitesAlertables {
+  modelesMois: number | null;
+  contacts: number | null;
+  offre: 'free' | 'pro' | null;
+}
+
 /**
- * Les limites que surveille le balayage, selon l'offre (spec offres v2, livraison 1) : la Free seule, parce que le texte
- * de ces e-mails dit « Offre Free… Passez en Pro ». Une Entreprise peut avoir une limite de contacts posée par /ops, et le
- * Pro en aura une à la livraison 5 : leurs textes viennent avec elle. `null` = rien à surveiller.
+ * Les limites que surveille le balayage, selon l'offre (spec offres v2, livraison 5) : celles de la Free, dont les textes
+ * disent « Passez en Pro », et les contacts du Pro, dont les textes renvoient à l'Entreprise (le Pro n'a pas de limite de
+ * modèles). L'Entreprise, dont la limite de contacts se règle sur devis par /ops, n'en reçoit aucune : un texte la dirait
+ * dans une offre qui n'est pas la sienne. `null` = rien à surveiller.
  */
 export function limitesAlertables(
   offre: 'base' | 'pro' | 'entreprise', l: { envoisModelesMois: number | null; contacts: number | null },
-): { modelesMois: number | null; contacts: number | null } {
-  return offre === 'base' ? { modelesMois: l.envoisModelesMois, contacts: l.contacts } : { modelesMois: null, contacts: null };
+): LimitesAlertables {
+  if (offre === 'base') return { modelesMois: l.envoisModelesMois, contacts: l.contacts, offre: 'free' };
+  if (offre === 'pro') return { modelesMois: null, contacts: l.contacts, offre: 'pro' };
+  return { modelesMois: null, contacts: null, offre: null };
 }
 
+/** Le seuil atteint : `usage` vaut au moins `pct` % de `limite`, arrondi au supérieur (80 % de 100, c'est 80). */
 export function seuilAtteint(usage: number, limite: number, pct: number): boolean {
   return limite > 0 && usage >= Math.ceil((limite * pct) / 100);
 }
@@ -147,31 +158,43 @@ export async function balayerLimites(d: DepsLimites): Promise<number> {
           n += 1;
         }
       }
+      // Les seuils sont ceux de l'offre (`contacts_` en Free, `contacts_pro_` en Pro), et ceux de l'autre se relâchent :
+      // un Pro arrivé à sa limite puis revenu en Free a déjà franchi ses seuils de Pro, pas ceux de la Free, et reçoit
+      // son « Passer en Pro ». Un relâchement n'écrit rien quand le seuil l'est déjà.
+      const famille = l.offre === 'pro' ? 'contacts_pro' : 'contacts';
+      const autre = famille === 'contacts' ? 'contacts_pro' : 'contacts';
+      for (const pct of SEUILS_LIMITES) await d.franchir(tenantId, `${autre}_${pct}`, false);
       if (l.contacts === null) {
         // Une offre sans limite relâche ses seuils : revenu en Free au-dessus de la limite (fin du Pro, impayé), l'espace
         // doit recevoir l'alerte de 100 % et son « Passer en Pro », c'est là qu'elle sert le plus.
-        for (const pct of SEUILS_LIMITES) await d.franchir(tenantId, `contacts_${pct}`, false);
+        for (const pct of SEUILS_LIMITES) await d.franchir(tenantId, `${famille}_${pct}`, false);
       } else {
         const crees = await d.contactsCrees(tenantId);
         // Chaque seuil a son état ; on les pose tous (un seuil relâché se réarme), et on n'écrit que le plus haut
         // franchi à l'instant.
         const franchis: Array<{ pct: (typeof SEUILS_LIMITES)[number]; generation: number }> = [];
         for (const pct of SEUILS_LIMITES) {
-          const g = await d.franchir(tenantId, `contacts_${pct}`, seuilAtteint(crees, l.contacts, pct));
+          const g = await d.franchir(tenantId, `${famille}_${pct}`, seuilAtteint(crees, l.contacts, pct));
           if (g !== null) franchis.push({ pct, generation: g });
         }
         const plusHaut = franchis[0];
         if (plusHaut) {
           try {
-            await d.emettre({
-              cle: `limite_contacts_${plusHaut.pct}` as const, tenantId, occasion: `franchissement:${plusHaut.generation}`, a: 'admins',
-              valeurs: { limite: String(l.contacts), lien_offre: d.pageOffre },
-            });
+            // Les textes de l'offre de l'espace : le Pro renvoie à l'Entreprise, la Free au Pro, dont elle cite la limite.
+            await d.emettre(l.offre === 'pro'
+              ? {
+                cle: `limite_contacts_pro_${plusHaut.pct}` as const, tenantId, occasion: `franchissement:${plusHaut.generation}`, a: 'admins',
+                valeurs: { limite: String(l.contacts), lien_offre: d.pageOffre },
+              }
+              : {
+                cle: `limite_contacts_${plusHaut.pct}` as const, tenantId, occasion: `franchissement:${plusHaut.generation}`, a: 'admins',
+                valeurs: { limite: String(l.contacts), limite_pro: String(DROITS.pro.limites.contacts ?? ''), lien_offre: d.pageOffre },
+              });
           } catch (err) {
             // 🔴 Le seuil est posé AVANT la réservation : sans ce relâchement, une émission ratée (base, pool) perdrait
             // l'alerte jusqu'à un retour sous le seuil, qui à 100 % peut ne jamais venir. Relâchés, les seuils franchis
             // le seront de nouveau au tour suivant, avec une génération neuve.
-            for (const f of franchis) await d.franchir(tenantId, `contacts_${f.pct}`, false);
+            for (const f of franchis) await d.franchir(tenantId, `${famille}_${f.pct}`, false);
             throw err;
           }
           n += 1;
