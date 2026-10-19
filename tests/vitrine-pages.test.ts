@@ -19,7 +19,6 @@ const ATTENDU: Record<string, number> = {
   'base.utilisateurs': DROITS.base.limites.utilisateurs ?? NaN,
   'base.adresses-webhook': DROITS.base.limites.adressesWebhook ?? NaN,
   'base.conservation-jours': DROITS.base.limites.conservationJours,
-  'base.commission': DROITS.base.limites.commissionPct,
   // « 3,50 » et « 3.50 » se lisent 350 : les centimes, comme la constante.
   'numero.prix-mois': PRIX_NUMERO_HT_CENTIMES,
   'pro.prix-mois': PRIX_PRO_HT_CENTIMES.mois / 100,
@@ -28,8 +27,7 @@ const ATTENDU: Record<string, number> = {
   'pro.utilisateurs': DROITS.pro.limites.utilisateurs ?? NaN,
   'pro.adresses-webhook': DROITS.pro.limites.adressesWebhook ?? NaN,
   'pro.conservation-jours': DROITS.pro.limites.conservationJours,
-  'pro.commission': DROITS.pro.limites.commissionPct,
-  'entreprise.commission': DROITS.entreprise.limites.commissionPct,
+  // Pas la commission sur le crédit IA : la page ne la dit pas (décision de Julien du 2026-10-19).
 };
 
 /**
@@ -72,6 +70,10 @@ for (const [langue, page] of Object.entries(PAGES)) {
       const entreprise = html.slice(html.indexOf('data-fonction="entreprise:'));
       expect(entreprise).toMatch(/<li data-promesse="sso">[^<]*SSO[^<]*<\/li>/);
       expect(html.slice(0, html.indexOf('data-fonction="entreprise:'))).not.toContain('SSO');
+    });
+
+    it('la commission sur le crédit IA n’y paraît pas (décision de Julien du 2026-10-19)', () => {
+      expect(html.replace(/<!--[\s\S]*?-->/g, '')).not.toMatch(/commission/i);
     });
 
     it('🔴 aucune limite invisible : ni clés d’API comptées, ni appels, ni quotas du jour, ni suppressions', () => {
