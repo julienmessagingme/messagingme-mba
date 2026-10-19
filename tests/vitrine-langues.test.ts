@@ -156,7 +156,7 @@ describe('ce que lisent les moteurs', () => {
   });
 
   it('chaque page anglaise qui a une carte de partage s’y déclare en anglais', () => {
-    // Les deux pages en attente (industries, tarifs) n'ont de carte dans aucune langue.
+    // La page en attente (industries) n'a de carte dans aucune langue ; les tarifs en ont une depuis la livraison 8 des offres v2.
     const avecCarte = anglaises().filter((p) => lire(p).includes('property="og:'));
     expect(avecCarte.length).toBeGreaterThanOrEqual(10);
     for (const page of avecCarte) expect(lire(page), page).toContain('<meta property="og:locale" content="en_US">');

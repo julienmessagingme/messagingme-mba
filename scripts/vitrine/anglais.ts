@@ -28,7 +28,7 @@ export const JUMELLES: Readonly<Record<string, string>> = {
   '/fonctionnalites/publicites-click-to-whatsapp/': '/en/features/click-to-whatsapp-ads/',
   '/fonctionnalites/pilotage-des-couts/': '/en/features/cost-control/',
   '/industries/': '/en/industries/',
-  '/pricing/': '/en/pricing/',
+  '/tarifs/': '/en/pricing/',
   '/developpeurs/': '/en/developers/',
   '/contact/': '/en/contact/',
   '/contact/merci/': '/en/contact/thanks/',

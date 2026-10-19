@@ -932,3 +932,33 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .dev-pro strong{color:var(--ink)}
 @media (max-width:1100px){.dev-grille{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:700px){.dev-grille{grid-template-columns:minmax(0,1fr)}}
+
+/* ============================================================================================================
+   La page des tarifs (/tarifs/, offres v2) : les trois offres en trois cartes, le Pro mis en avant ; puis le crédit IA
+   et ce que Meta facture, en deux colonnes ; puis la FAQ, qui reprend celle de la page développeurs.
+   ============================================================================================================ */
+.tarifs-une{padding-bottom:48px}
+.tarifs-offres{padding:0 0 32px}
+.tarifs-grille{list-style:none;margin:0 auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;align-items:start}
+.tarif{display:flex;flex-direction:column;gap:16px;min-width:0;padding:32px 28px;border-radius:16px;background:var(--surface);border:1px solid var(--line)}
+.tarif-mis-en-avant{border-color:var(--action);box-shadow:0 0 0 1px var(--action),0 40px 80px -48px rgb(0 128 214 / .7)}
+.tarif-nom{margin:0;font-size:1.35rem;letter-spacing:-.02em;font-weight:800}
+.tarif-mis-en-avant .tarif-nom{color:var(--action-ink)}
+.tarif-prix{display:flex;flex-direction:column;gap:2px;margin:0}
+.tarif-prix strong{font-size:2.5rem;line-height:1.1;letter-spacing:-.03em;font-weight:800}
+.tarif-prix > span{color:var(--muted);font-size:.9rem}
+.tarif-pour{margin:0;color:var(--muted);text-wrap:pretty}
+.tarif .bouton{align-self:stretch;justify-content:center}
+.tarif .bouton-trait{padding:.85em 1.45em;font-size:1rem}
+.tarif-liste,.tarif-fonctions{list-style:none;margin:0;padding:0;display:grid;gap:10px;font-size:.95rem}
+.tarif-liste li,.tarif-fonctions li{position:relative;padding-left:26px;color:var(--muted)}
+.tarif-liste li::before,.tarif-fonctions li::before{content:"";position:absolute;left:2px;top:.45em;width:12px;height:7px;border-left:2px solid var(--action-ink);border-bottom:2px solid var(--action-ink);transform:rotate(-45deg)}
+.tarif-liste strong{color:var(--ink)}
+.tarif-fonctions li{color:var(--ink)}
+.tarif-plus{margin:8px 0 0;padding-top:18px;border-top:1px solid var(--line);font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--action-ink)}
+.tarif-note{margin:4px 0 0;color:var(--muted);font-size:.85rem;text-wrap:pretty}
+.tarifs-detail{padding:72px 0 24px}
+.tarifs-faq-bloc{padding-top:48px}
+.tarifs-detail-grille{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:56px}
+@media (max-width:1000px){.tarifs-grille{grid-template-columns:minmax(0,1fr);max-width:560px}}
+@media (max-width:900px){.tarifs-detail-grille{grid-template-columns:minmax(0,1fr);gap:40px}}

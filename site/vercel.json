@@ -34,6 +34,11 @@
       "source": "/:dossier*/index.html",
       "destination": "/:dossier*/",
       "permanent": true
+    },
+    {
+      "source": "/pricing/",
+      "destination": "/tarifs/",
+      "permanent": true
     }
   ],
   "headers": [

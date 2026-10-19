@@ -26,6 +26,11 @@
 - [Contrat OpenAPI de l’API](https://api.messagingme.app/openapi.json) : chaque route, ses corps, ses réponses, ses erreurs, et les événements des webhooks sortants.
 - [SDK TypeScript](https://console.messagingme.app/developers/api/sdk) : le client typé de l’API, généré depuis le contrat, et la vérification de signature des webhooks.
 
+## Tarifs
+
+- [Les tarifs](https://app.messagingme.fr/tarifs/) : la Free gratuite, pilotée depuis votre application ou votre assistant IA ; le Pro pour une équipe dans la console ; l’Entreprise sur devis. Ce que chaque offre comprend, le crédit IA et ce que Meta facture.
+- [Pricing](https://app.messagingme.fr/en/pricing/) : the same page in English.
+
 ## Contact
 
 - [Demander une démo](https://app.messagingme.fr/contact/)
