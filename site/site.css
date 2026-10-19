@@ -1004,3 +1004,12 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .f-etape img.f-tel{rotate:5 -14 .6 14.9deg}
 .js .f-ecran{perspective:1900px}
 .js .f-ecran img.f-tel{rotate:5 -14 .6 14.9deg}
+
+/* Les écrans de la console, dans une fenêtre de navigateur de Mac (2026-10-19, Julien : « tu peux pas les rendre plus
+   beaux ? »). Ce sont des écrans d'ORDINATEUR : jamais dans un téléphone. L'image porte la fenêtre (feux, barre
+   d'adresse, coins), `encadrer-navigateur.cjs` de l'atelier ; la page lui donne une ombre profonde et une légère 3D,
+   plus discrète que celle des iPhone sur une surface aussi large. */
+/* Les tâches et le schéma de la page Analyse ne sont pas des fenêtres : ils restent à plat. */
+.f-etape img:not(.f-tel):not([src*="crm-taches"]):not([src*="crm-brique"]),.js .f-ecran img:not(.f-tel):not([src*="crm-taches"]):not([src*="crm-brique"]){rotate:3 -12 0 6deg;filter:drop-shadow(0 34px 48px rgb(1 6 48 / .28))}
+.f-avant-visuel{perspective:1900px}
+.f-avant-visuel img.f-fenetre{rotate:3 -12 0 6deg;filter:drop-shadow(0 34px 48px rgb(0 2 20 / .6))}

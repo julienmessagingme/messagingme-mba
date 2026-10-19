@@ -152,7 +152,14 @@ Deux retours de Julien. **Méthode : en direct**, comme le reste du plan (pages 
   « … +N lines (ctrl+o to expand) », champ de saisie et mode « accept edits ». Elle défile comme un terminal ;
   `tests/vitrine-developpeurs.test.ts` tient toujours les outils, leur ordre et la balise.
 
-Restent à plat, à trancher par Julien : les écrans de la console (Chaîne, fiche CRM, Inbox).
+- Les écrans de la console (campagne, Inbox, Chaîne, publicité, scénarios) et la fiche CRM passent, le même jour,
+  dans une fenêtre de navigateur de Mac (feux, barre d'adresse au cadenas, coins) avec une ombre profonde et une 3D
+  plus discrète que celle des iPhone. Ce sont des écrans d'ORDINATEUR : jamais dans un téléphone. Ils sont rendus de
+  nouveau depuis les films (déjà en Messaging Me : l'ancien logo des en-têtes et « Mis à jour par Engage Me »
+  disparaissent), puis habillés par `encadrer-navigateur.cjs` (atelier). La barre d'adresse dit la vraie route de la
+  console (`/campaigns/nouvelle`, `/inbox`, `/chaine`, `/publicites`, `/workflows`) ; la fiche, celle d'un CRM
+  quelconque (`crm.votremarque.fr`). Le bas vide des deux fiches est coupé. Les tâches et le schéma « brique » ne
+  sont pas des fenêtres : ils restent à plat.
 
 ## Essai réel qui clôt
 
