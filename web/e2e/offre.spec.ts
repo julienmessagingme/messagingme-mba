@@ -91,7 +91,8 @@ test.describe('une Base', () => {
     const { appels } = await monter(page, vue('free'));
     await page.goto('/chaine');
     await expect(page.getByTestId('encart-offre')).toBeVisible();
-    await expect(page.getByTestId('encart-offre')).toContainText('Pro');
+    // Les chaînes sont à l'Entreprise seule depuis le Pro resserré (spec offres v2, livraison 5) : l'encart le dit.
+    await expect(page.getByTestId('encart-offre')).toContainText('offre Entreprise');
     expect(appels.filter((a) => a.includes('/channels-me'))).toEqual([]);
   });
 
