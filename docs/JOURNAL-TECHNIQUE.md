@@ -5,6 +5,27 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-19 : les offres v2, livraison 8 (la page des tarifs), en ligne
+
+- **Ce qui part** (`fe9d40a8`) : `/tarifs/` remplace la page « en construction » de `/pricing/` (redirigée en 308), et
+  `/en/pricing/` en est générée (`scripts/vitrine/anglais/tarifs.json`). Les trois offres, le crédit IA, ce que Meta
+  facture, une FAQ ; ouverte aux moteurs (sitemap, `llms.txt`, fil d'Ariane et FAQPage). Le menu dit « Tarifs »
+  (`npm run vitrine:entete` a réécrit l'en-tête des treize pages françaises).
+- **Tenue sur le code** : `tests/vitrine-pages.test.ts` compare chaque chiffre `data-offre` à `DROITS` et aux prix, les mots
+  « illimités » et « inclus » à leur valeur, chaque fonction `data-fonction` à ce que l'offre AJOUTE à la précédente, et
+  refuse toute limite invisible (clés, appels, quotas du jour, suppressions), description et JSON-LD compris. Vérifié
+  par trois mutations (un chiffre, une fonction, une limite).
+- **Décisions** : la SSO est promise « sur demande » en Entreprise (la spec) ; l'essai de 14 jours et les utilisateurs à
+  15 € ne sont PAS annoncés tant que les livraisons 6 et 7 ne les construisent pas ; « envois illimités », choix de Julien,
+  malgré le quota invisible de l'API du Pro.
+- **Relu** : aucun rouge. Traités : le bouton du Pro (« Commencer gratuitement » promettait un essai), la SSO présentée
+  comme livrée, le crédit IA qui paie aussi la connaissance et la transcription, une phrase de la FAQ fausse pour le
+  numéro fourni à la fin d'un Pro, un commentaire du source qui énumérait les limites invisibles, l'anglais
+  (`analyze`, « Custom pricing »).
+- **Rendu** : montré à Julien par un serveur d'aperçu sur l'extraction (`scratchpad/serveur-site.mjs`, une entrée
+  temporaire de `.claude/launch.json` retirée aussitôt) ; le serveur `site` du dépôt demande Python, absent du poste.
+- **En ligne** : CI verte job par job ; `/tarifs/` et `/en/pricing/` en 200, `/pricing/` en 308 vers `/tarifs/`.
+
 ## 2026-10-19 : les offres v2, livraison 5 (le Pro resserré), en production
 
 - **Ce qui part** (`075babf7`, puis `84e312be`) : le Pro perd l'analyse des conversations, les publicités et les chaînes

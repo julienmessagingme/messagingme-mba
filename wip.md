@@ -102,8 +102,8 @@ vitrine (`docs/prive/2026-10-15-audit-seo-vitrine.md`) et d'un geste de Julien :
 Tools. Les liens de confidentialité et de conditions du plugin 0.2.0 rendent 404 : ils prendront les adresses des pages
 légales que Geoffrey publie après la bascule (section du répertoire de Claude ci-dessus).
 Où on en est : livraison A en production (d8c0949a : le registre, la compilation par cas, le groupe « Recettes », l'en-tête
-et le pied de page générés). Les pages de secteur attendent leur contenu (Julien), la page des tarifs attend la nouvelle
-grille des offres (ci-dessous) : son brouillon français et anglais est dans le scratchpad de la session.
+et le pied de page générés). Les pages de secteur attendent leur contenu (Julien) ; la page des tarifs est en ligne depuis la livraison 8 des
+offres v2 (ci-dessous).
 
 ## LES OFFRES, DEUXIÈME VERSION (CADRÉ LE 2026-10-16)
 
@@ -126,8 +126,10 @@ aucune transition.
   Essai réel 130.
 - **Livraison 5, le Pro resserré** : en production (`075babf7`, `84e312be`). Sans analyse, publicités ni chaînes, 5 000
   contacts, 20 % de commission ; alertes de contacts du Pro ; vitrine « envois illimités ». Essai réel 131.
-- **Suivantes** : les livraisons 6 (l'essai de 14 jours) et 7 (les sièges payants) attendent d'abord les gestes de Julien
-  chez Stripe ; la 8 (les textes publics et la page des tarifs) peut passer avant.
+- **Livraison 8, la page des tarifs** : en ligne (`fe9d40a8`), `/tarifs/` et `/en/pricing/`, `/pricing/` redirigée ; chaque
+  chiffre et chaque fonction tenus sur le code par `tests/vitrine-pages.test.ts`. Essai réel 132.
+- **Suivantes** : les livraisons 6 (l'essai de 14 jours) et 7 (les sièges payants), après les gestes de Julien chez
+  Stripe ; chacune ajoute sa ligne à la page des tarifs (l'essai sous le prix du Pro, le prix d'un utilisateur de plus).
 
 ## CE QUI ATTEND UN ESSAI RÉEL
 

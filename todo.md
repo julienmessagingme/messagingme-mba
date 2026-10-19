@@ -16,6 +16,8 @@ migration APRÈS le déploiement de la livraison 2 : l'ancien code la nomme.
 - **Ce que la console montre encore au Pro sans donnée derrière** : les conditions « Dernière analyse »
   (`web/components/ConditionBuilder.tsx`), les filtres de contacts sur l'analyse (`src/crm/contact-filters.ts`) et
   l'onglet Analyse de la fiche. Les griser hors de la fonction `analyse`, comme les déclencheurs d'automation.
+- **La page des tarifs (livraison 8)** : poser les `offers` sur le `SoftwareApplication` de l'accueil (spec du lot 6), et
+  `og:locale:alternate` sur les pages françaises comme sur `/developpeurs/`.
 - **La trace `cle_api.creee` d'une clé créée par Claude** dit `via: 'mcp'` mais pas QUELLE autorisation OAuth : y
   ajouter l'identifiant d'accès, comme le journal de l'API.
 
