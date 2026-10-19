@@ -5,6 +5,27 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-19 : les offres v2, livraison 6 (l'essai de 14 jours du Pro), en production
+
+- **Ce qui part** (`af79fec0`, migration 0243 `abonnements_offre.essai_fin_le`) : `ouvrirPro` donne 14 jours d'essai à
+  un espace sans aucune ligne `abonnements_offre`, carte demandée, abonnement annulé sans moyen de paiement à la fin ; la
+  métadonnée `essai` voyage sur la session et l'abonnement. Le webhook écoute `customer.subscription.created` (seul un
+  `trialing` ouvre le Pro) ; le numéro payé à part ne s'arrête plus au passage en Pro mais au premier paiement de
+  l'essai. La page Offre, `subscribe_pro` et `get_plan` disent l'essai et sa date de fin.
+- **Gestes Stripe de Julien, faits avant** : l'événement `customer.subscription.created` ajouté au webhook, le rappel
+  de fin d'essai, la mention « Essai terminé » au relevé.
+- **Relu** : deux rouges, corrigés chacun par un test vu rouge puis vert. Un code promo à 100 % après l'essai n'aurait
+  jamais arrêté le numéro payé à part (une facture de cycle compte désormais, même à zéro) ; demander à rendre le numéro
+  pendant l'essai était ignoré à sa fin (`rendreLeNumeroSeul`, issue `rendu`). Jaunes traités : un abonnement `active`
+  créé avant l'encaissement ouvrait le Pro, la promesse « résilier avant ne coûte rien » (fausse avec un numéro obtenu
+  pendant l'essai), `get_plan` muet sur l'essai, le retour arrière (`documentation.md`). Trois jaunes au `todo.md`.
+- **Déploiement** : CI verte job par job ; base lue avant (aucune transaction longue, aucun verrou sur la table), image
+  construite, seule la 0243 en attente, migrée AVANT le `up`, relue en base (`timestamptz`, nullable, sans défaut) et
+  lue par le vrai store en lecture seule ; trois conteneurs sur `af79fec0`, aide rechargée (une fiche revectorisée),
+  `get_plan` en production rend `essai: { jours: 14, possible: false, finLe: null }` sur l'espace Entreprise de Julien.
+  ⚠️ La première commande donnée à Julien a échoué sur sa garde, sans dégât : PowerShell 5.1 retire les guillemets doubles
+  de l'argument passé à `ssh`, la garde a arrêté la chaîne avant `migrate`.
+
 ## 2026-10-19 : les offres v2, livraison 8 (la page des tarifs), en ligne
 
 - **Ce qui part** (`fe9d40a8`) : `/tarifs/` remplace la page « en construction » de `/pricing/` (redirigée en 308), et

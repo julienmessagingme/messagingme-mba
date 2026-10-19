@@ -128,8 +128,11 @@ aucune transition.
   contacts, 20 % de commission ; alertes de contacts du Pro ; vitrine « envois illimités ». Essai réel 131.
 - **Livraison 8, la page des tarifs** : en ligne (`fe9d40a8`), `/tarifs/` et `/en/pricing/`, `/pricing/` redirigée ; chaque
   chiffre et chaque fonction tenus sur le code par `tests/vitrine-pages.test.ts`. Essai réel 132.
-- **Suivantes** : les livraisons 6 (l'essai de 14 jours) et 7 (les sièges payants), après les gestes de Julien chez
-  Stripe ; chacune ajoute sa ligne à la page des tarifs (l'essai sous le prix du Pro, le prix d'un utilisateur de plus).
+- **Livraison 6, l'essai de 14 jours** : en production (`af79fec0`, migration 0243). Un espace qui n'a jamais eu de Pro
+  commence par 14 jours d'essai avec carte ; le numéro payé à part s'arrête au premier paiement du Pro. Essai réel 133.
+  Reste sa ligne sur la page des tarifs (sous le prix du Pro), à montrer à Julien avant de publier.
+- **Suivante** : la livraison 7 (les sièges payants), les prix posés par Julien dans `.env.prod` ; elle ajoute à la page
+  des tarifs le prix d'un utilisateur de plus.
 
 ## CE QUI ATTEND UN ESSAI RÉEL
 
