@@ -30,6 +30,10 @@
   `Seq Scan` sur `conversations`. ⚠️ Le sens « sans index » est prouvé sur la PRODUCTION, qui ne l'avait pas encore :
   même instruction, même analyse, en `explain` dans un `begin read only`, les deux assertions échouent. Le sens « avec
   index » est prouvé par le job `integration` de la CI.
+- **En production** : 0242 appliquée le 2026-10-17 à 17 h 25 UTC (avec le déploiement de `81d21d86`), relue en base le
+  2026-10-19 en lecture seule : `indisvalid` et `indisready` vrais, définition `WHERE (release_mba_apres_message IS NOT
+  NULL)`, et l'instruction du code planifiée par `conversations_release_mba_idx`, sans aucun `Seq Scan` sur
+  `conversations`.
 
 ## 2026-10-17 : le cycle de vie des formulaires WhatsApp ne laisse plus de champs orphelins
 
