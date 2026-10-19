@@ -8,6 +8,7 @@ import { AVERTISSEMENTS, OUTILS_DE_L_ETAPE, etatMiseEnService } from '../src/mcp
 import { STATUT_PAR_CODE } from '../src/api/erreurs';
 import { OUTILS_SURS } from '../src/agent/reglages';
 import { QUOTAS_API_DEFAUT } from '../src/api/quotas';
+import { commandesPubliees } from '../scripts/plugin/generer';
 
 /**
  * LE PLUGIN CLAUDE CODE (lot 10), tel qu'il part dans `julienmessagingme/messagingme-plugin` : ce dossier est copié tel
@@ -92,10 +93,13 @@ describe('🔴 ce que la console et la vitrine font taper (lot 10, B) est ce que
 
 describe('les skills', () => {
   it('chacune a son nom, celui de son dossier, et une description', () => {
-    expect(SKILLS.map((s) => s.nom).sort()).toEqual(['demarrer', 'faq', 'mise-en-service', 'regles-whatsapp']);
+    // Les quatre écrites à la main, puis les commandes de cas générées depuis le registre (lot 6 bis, livraison D).
+    expect(SKILLS.map((s) => s.nom).sort()).toEqual(['demarrer', 'faq', 'mise-en-service', 'regles-whatsapp', ...commandesPubliees()].sort());
     for (const s of SKILLS) {
       expect(s.champ('name'), s.nom).toBe(s.nom);
       expect((s.champ('description') ?? '').length, s.nom).toBeGreaterThan(40);
+      // L'en-tête est du YAML : « : » ou « # » précédés d'une espace y casseraient la description en silence.
+      expect(s.champ('description'), s.nom).not.toMatch(/: | #/);
     }
   });
 
