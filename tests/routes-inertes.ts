@@ -569,7 +569,7 @@ export const mcpOffreInerte: Pick<DepsMcp, 'offre' | 'offres' | 'cles'> = {
     vue: async () => ({
       offre: 'entreprise', fonctions: [...FONCTIONS], limites: { ...DROITS.entreprise.limites },
       usage: { envoisModelesMois: null, contacts: 0, automations: 0, membres: 0 }, grille: grilleDesOffres(), prixPro: { moisCentimes: 4900, anCentimes: 49000 },
-      suiteDuNumero: null, upgradeUrl: 'https://console.inerte.test/offre',
+      suiteDuNumero: null, essai: { jours: 14, possible: false, finLe: null }, upgradeUrl: 'https://console.inerte.test/offre',
     }),
     pro: { ouvrir: neDevraitPasEtreAppelee('offre.pro.ouvrir') },
   },

@@ -1,4 +1,4 @@
-import { DROITS, FONCTIONS, PRIX_PRO_HT_CENTIMES, type Fonction, type Limites, type Offre } from './offres';
+import { DROITS, ESSAI_PRO_JOURS, FONCTIONS, PRIX_PRO_HT_CENTIMES, type Fonction, type Limites, type Offre } from './offres';
 import type { SourceOffres } from './offre.pg';
 import { adresseOffre } from './refus';
 
@@ -46,6 +46,11 @@ export interface VueOffre {
    * le choix de le rendre à la fin. `null` sans Pro vivant ou sans numéro fourni. La console l'annonce et Claude la lit.
    */
   suiteDuNumero: { finPrevueLe: string | null; rendreNumero: boolean } | null;
+  /**
+   * L'essai du Pro (spec offres v2, livraison 6) : sa durée, s'il est possible pour l'espace (une Free qui n'a jamais eu
+   * de Pro, le Pro en vente), et la fin de l'essai en cours (`null` hors essai). La console et Claude le disent.
+   */
+  essai: { jours: number; possible: boolean; finLe: string | null };
   upgradeUrl: string;
 }
 
@@ -59,6 +64,8 @@ export interface DepsVueOffre {
   proEnVente: boolean;
   /** La suite du numéro fourni (`PgAbonnementsOffreStore.suiteDuNumero`, lot 6, B2b). */
   suiteDuNumero(tenantId: string): Promise<{ finPrevueLe: Date | null; rendreNumero: boolean } | null>;
+  /** L'espace a-t-il déjà eu un Pro, et la fin de l'essai du Pro vivant qui en est un (`PgAbonnementsOffreStore.deLEspace`). */
+  essai(tenantId: string): Promise<{ dejaEuUnPro: boolean; finLe: Date | null }>;
 }
 
 /** Une copie neuve à chaque appel : la modifier ne touche pas `DROITS`. Les clés passent par `offrePublique`, elle seule. */
@@ -70,8 +77,8 @@ export function grilleDesOffres(): VueOffre['grille'] {
 
 export function creerVueOffre(d: DepsVueOffre): (tenantId: string) => Promise<VueOffre> {
   return async (tenantId) => {
-    const [{ offre, droits }, usage, mois, suite] = await Promise.all([
-      d.offres.offreDe(tenantId), d.usage(tenantId), d.modelesDuMois.etatDuMois(tenantId), d.suiteDuNumero(tenantId),
+    const [{ offre, droits }, usage, mois, suite, essai] = await Promise.all([
+      d.offres.offreDe(tenantId), d.usage(tenantId), d.modelesDuMois.etatDuMois(tenantId), d.suiteDuNumero(tenantId), d.essai(tenantId),
     ]);
     return {
       offre: offrePublique(offre),
@@ -81,6 +88,11 @@ export function creerVueOffre(d: DepsVueOffre): (tenantId: string) => Promise<Vu
       grille: grilleDesOffres(),
       prixPro: d.proEnVente ? { moisCentimes: PRIX_PRO_HT_CENTIMES.mois, anCentimes: PRIX_PRO_HT_CENTIMES.an } : null,
       suiteDuNumero: suite === null ? null : { finPrevueLe: suite.finPrevueLe?.toISOString() ?? null, rendreNumero: suite.rendreNumero },
+      essai: {
+        jours: ESSAI_PRO_JOURS,
+        possible: offre === 'base' && d.proEnVente && !essai.dejaEuUnPro,
+        finLe: essai.finLe?.toISOString() ?? null,
+      },
       upgradeUrl: adresseOffre(),
     };
   };

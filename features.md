@@ -3788,12 +3788,18 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   minute), et la page Offre le dit au retour. Un Pro y trouve « Gérer mon abonnement », le portail de Stripe : carte,
   factures, résiliation. Passer du mensuel à l'annuel n'y est pas ouvert (réglage du portail). Une résiliation prend effet à la fin de la période payée,
   et l'espace revient alors en Free ; un renouvellement refusé le laisse en Pro pendant les relances de Stripe.
+  ✅ **Un essai gratuit de 14 jours** (spec offres v2, livraison 6) pour un espace qui n'a JAMAIS eu de Pro : la carte est
+  demandée sur la page de Stripe, rien n'est prélevé avant la fin de l'essai, le Pro est ouvert tout de suite (numéro
+  fourni compris), et la page Offre, comme Claude, dit la date de fin. Un seul essai par espace. À la fin d'un essai sans
+  paiement, l'espace revient en Free comme à la fin d'un Pro (un numéro fourni obtenu pendant l'essai suit alors la règle
+  de la fin du Pro, et un numéro payé à part que le client choisit de rendre est arrêté, avec un avoir).
   ⚠️ Tant que le Pro n'est pas en vente (prix pas posés), le bouton « Passer en Pro » ouvre le Support, sujet
   prérempli.
 - ✅ **Le numéro fourni est inclus dans le Pro** (livraison B2b) : un espace en Pro obtient son numéro sans payer, depuis
   la page « Connecter WhatsApp » ou le lien que donne Claude (qui ne lui annonce alors aucun prix). Si la réserve ne
   garde que des numéros dus à des abonnés qui ont payé et attendent le leur, l'espace en Pro réessaie un peu plus tard.
-  Un numéro déjà payé à part voit son abonnement s'arrêter au passage en Pro, avec un avoir au prorata sur la facture
+  Un numéro déjà payé à part voit son abonnement s'arrêter au premier paiement du Pro (après l'essai, s'il y en a un : un
+  essai abandonné ne le touche pas), avec un avoir au prorata sur la facture
   suivante (sans avoir s'il était en retard de paiement : rien n'avait été payé). Tant que le Pro court, le numéro
   n'est ni suspendu ni libéré. Quand une fin du Pro est programmée, la page Offre, Claude et un e-mail aux administrateurs
   annoncent la suite : le numéro passe à 3,50 € HT par mois sur la même carte, sauf si l'administrateur choisit

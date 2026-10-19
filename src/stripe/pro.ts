@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { creerSessionAbonnement, lirePrixStripe, StripeError } from './client';
 import { clientDeLEspace, ouvrirPortail, page, refusDeStripe, type DepsPortail } from './abonnement';
-import { PRIX_PRO_HT_CENTIMES, type Offre } from '../offres/offres';
+import { ESSAI_PRO_JOURS, PRIX_PRO_HT_CENTIMES, type Offre } from '../offres/offres';
 import { journaliser } from '../lib/journal';
 import { refus, type Issue } from '../lib/issue';
 
@@ -20,6 +20,11 @@ export interface DepsPro extends DepsPortail {
   proVivant(tenantId: string): Promise<boolean>;
   /** L'offre calculée de l'espace : une Entreprise ne paie pas le Pro, qui ne lui ajouterait rien (jaune 4 de la relecture). */
   offreDe(tenantId: string): Promise<Offre>;
+  /**
+   * L'espace a-t-il DÉJÀ eu un Pro, vivant ou fini (`abonnements_offre`) ? L'essai de 14 jours ne se donne qu'une fois par
+   * espace (spec offres v2) : sinon, le paiement commence tout de suite.
+   */
+  dejaEuUnPro(tenantId: string): Promise<boolean>;
 }
 
 /**
@@ -41,7 +46,7 @@ const RECURRENCE: Readonly<Record<PeriodicitePro, string>> = { mois: 'month', an
  */
 export async function ouvrirPro(
   d: DepsPro, tenantId: string, periodicite: PeriodicitePro, payeur: string, retour: RetourPro,
-): Promise<Issue<{ url: string; portail: boolean }>> {
+): Promise<Issue<{ url: string; portail: boolean; essaiJours?: number }>> {
   const s = d.stripe;
   const prixId = periodicite === 'mois' ? d.prixProMois : d.prixProAn;
   if (s === null || prixId === '') return PRO_INDISPONIBLE;
@@ -65,6 +70,8 @@ export async function ouvrirPro(
       return refus(422, 'Le Pro est momentanément indisponible : son tarif est en cours de correction. Réessayez plus tard, ou contactez-nous.',
         { code: 'prix_incoherent' });
     }
+    // L'essai, une fois par espace : un espace qui a déjà eu un Pro (même fini) paie dès le départ.
+    const essaiJours = (await d.dejaEuUnPro(tenantId)) ? undefined : ESSAI_PRO_JOURS;
     const session = await creerSessionAbonnement(s.transport, {
       cle: s.cle,
       tenantId,
@@ -75,8 +82,9 @@ export async function ouvrirPro(
       idempotence: `pro-${tenantId}-${randomUUID()}`,
       produit: 'pro',
       periodicite,
+      ...(essaiJours ? { essaiJours } : {}),
     });
-    return { ok: true, valeur: { url: session.url, portail: false } };
+    return { ok: true, valeur: { url: session.url, portail: false, ...(essaiJours ? { essaiJours } : {}) } };
   } catch (err) {
     if (!(err instanceof StripeError)) throw err;
     return refusDeStripe(err, tenantId, 'pro');

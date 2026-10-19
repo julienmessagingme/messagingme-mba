@@ -23,6 +23,16 @@ const BASE = {
 };
 
 describe('lireVueOffre', () => {
+  it('l’essai du Pro (spec offres v2) : lu quand l’API le porte ; absent ou illisible, null, et la vue reste lisible', () => {
+    expect(lireVueOffre({ ...BASE, essai: { jours: 14, possible: true, finLe: null } })!.essai).toEqual({ jours: 14, possible: true, finLe: null });
+    expect(lireVueOffre({ ...BASE, essai: { jours: 14, possible: false, finLe: '2026-11-02T09:00:00.000Z' } })!.essai!.finLe).toBe('2026-11-02T09:00:00.000Z');
+    for (const essai of [undefined, null, { jours: '14', possible: true, finLe: null }, { jours: 14, possible: 'oui', finLe: null }, { jours: 14, possible: true, finLe: 3 }]) {
+      const v = lireVueOffre({ ...BASE, essai });
+      expect(v, JSON.stringify(essai)).not.toBeNull();
+      expect(v!.essai).toBeNull();
+    }
+  });
+
   it('lit le quota de stockage de la médiathèque quand l’API le porte', () => {
     const v = lireVueOffre({ ...BASE, limites: { ...limites(100), stockageOctets: 0 } });
     expect(v!.limites.stockageOctets).toBe(0);

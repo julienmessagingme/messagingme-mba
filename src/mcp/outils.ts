@@ -797,7 +797,8 @@ export const OUTILS: OutilMcp[] = [
     description:
       'The workspace plan (free, pro or entreprise): the features it includes, its limits (null = no limit) and what '
       + 'is used of them (contacts created, automations on, members, templates sent this month), plus the upgradeUrl '
-      + 'link to the Pro plan. It explains an action refused with plan_limit_reached or plan_feature_unavailable; '
+      + 'link to the Pro plan, and the Pro trial (essai: whether the 14-day trial is possible, and the end of a running one). '
+      + 'It explains an action refused with plan_limit_reached or plan_feature_unavailable; '
       + 'replies within the 24-hour window are never limited.',
     annotations: lecture('Read the plan'),
     entree: { type: 'object', properties: {} },

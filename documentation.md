@@ -2646,6 +2646,24 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
   `no_payment_required` (code promo à 100 %) ouvre le Pro comme un paiement ; `en_retard` reste Pro, seul `fini_le`
   (`customer.subscription.deleted`, raison `impaye` si Stripe dit `payment_failed` ou `payment_disputed`) le termine, et
   `finir` dit si c'est la première fin (un rejeu ne réalerte pas).
+  🔴 **L'essai de 14 jours** (spec offres v2, livraison 6, `ESSAI_PRO_JOURS`) : `ouvrirPro` le donne à un espace sans
+  AUCUNE ligne `abonnements_offre` (`dejaEuUnPro`), par `subscription_data[trial_period_days]`, la carte toujours
+  demandée et l'abonnement annulé s'il n'a aucun moyen de paiement à la fin ; la métadonnée `essai` est posée sur la
+  session ET l'abonnement, donc chaque événement la porte, quel que soit l'ordre de livraison. Le webhook écoute aussi
+  `customer.subscription.created`, où SEUL un abonnement `trialing` marqué Pro enregistre le Pro (un `active` ou un
+  `incomplete` attend la facture payée, comme hors essai), et recopie `trial_end` dans `essai_fin_le` (migration 0243,
+  `coalesce` : un événement qui ne la porte pas la garde). 🔴 `surPassageEnPro(tenant, { arreterLeNumeroSeul })` :
+  pendant l'essai, les avis et les pauses du numéro sont levés mais l'abonnement du numéro payé à part n'est PAS
+  arrêté ; la première facture payée d'un abonnement marqué essai l'arrête si elle est non nulle (`amount_paid > 0`) OU
+  si c'est une facture de cycle (`billing_reason = subscription_cycle`, le cas d'un code promo à 100 %). Un essai
+  abandonné ne l'a donc jamais touché, et `surFinDuPro` le trouve vivant : `deja_abonne`, rien n'est recréé en double,
+  sauf si le client a demandé à rendre le numéro (`rendreNumero`), qui l'arrête alors avec un avoir (`rendu`). La vue
+  de l'offre porte `essai: { jours, possible, finLe }` ; la console (`/offre`) et `subscribe_pro` (`essai_jours`) le
+  disent. ⚠️ **Retour arrière** : une image antérieure à la livraison 6 ignore la métadonnée `essai`. Un essai en cours
+  n'y arrêterait plus l'abonnement du numéro payé à part au premier paiement (le client paierait les deux), et une
+  session d'essai ouverte avant et payée après arrêterait le numéro dès le début de l'essai. Avant un retour arrière,
+  compter les essais en cours (`select count(*) from abonnements_offre where essai_fin_le > now()`) et, s'il y en a,
+  arrêter ces numéros à la main à leur premier paiement.
   ⚠️ **Le compte Stripe est partagé avec d'autres activités** : tout code promo actif sans restriction de produit
   s'applique au Pro, au numéro fourni, et à la recharge, qui crédite le montant AVANT remise. Restreindre chaque code à ses produits se
   fait chez Stripe.

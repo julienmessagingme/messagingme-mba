@@ -258,6 +258,11 @@ export interface DemandeAbonnement {
   produit: 'numero' | 'pro';
   /** Le Pro seulement : sa périodicité, recopiée en métadonnée (le webhook la relit à la création). */
   periodicite?: 'mois' | 'an';
+  /**
+   * Le Pro seulement : l'essai, en jours (spec offres v2). Carte toujours demandée, abonnement annulé s'il n'a aucun moyen
+   * de paiement à la fin, et la marque `essai` sur la session ET l'abonnement : le webhook la relit sur chaque événement.
+   */
+  essaiJours?: number;
 }
 
 /**
@@ -290,6 +295,15 @@ export async function creerSessionAbonnement(transport: TransportStripe, d: Dema
     // Le Pro (lot 6, B1) : sa périodicité, que le webhook relit à la création.
     ...(d.produit === 'pro' && d.periodicite
       ? { 'metadata[periodicite]': d.periodicite, 'subscription_data[metadata][periodicite]': d.periodicite }
+      : {}),
+    ...(d.produit === 'pro' && d.essaiJours
+      ? {
+        'subscription_data[trial_period_days]': String(d.essaiJours),
+        payment_method_collection: 'always',
+        'subscription_data[trial_settings][end_behavior][missing_payment_method]': 'cancel',
+        'metadata[essai]': String(d.essaiJours),
+        'subscription_data[metadata][essai]': String(d.essaiJours),
+      }
       : {}),
     client_reference_id: d.tenantId,
     success_url: d.urlSucces,

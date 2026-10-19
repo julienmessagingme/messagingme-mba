@@ -131,6 +131,26 @@ test.describe('une Base', () => {
 });
 
 test.describe('payer le Pro (livraison B1)', () => {
+  test('🔴 l’essai de 14 jours (spec offres v2) : une Free qui peut essayer le lit sous les boutons', async ({ page }) => {
+    await monter(page, { ...vue('free'), prixPro: PRIX_PRO, essai: { jours: 14, possible: true, finLe: null } });
+    await page.goto('/offre');
+    await expect(page.getByTestId('offre-essai')).toContainText('Essai gratuit de 14 jours');
+  });
+
+  test('un Pro en essai lit la date de fin de son essai, et plus aucune offre d’essai', async ({ page }) => {
+    await monter(page, { ...vue('pro'), prixPro: PRIX_PRO, essai: { jours: 14, possible: false, finLe: '2026-11-02T09:00:00.000Z' } });
+    await page.goto('/offre');
+    await expect(page.getByTestId('offre-essai-fin')).toContainText('2 novembre 2026');
+    await expect(page.getByTestId('offre-essai')).toHaveCount(0);
+  });
+
+  test('une API qui ne rend pas encore l’essai : la page n’en parle pas', async ({ page }) => {
+    await monter(page, { ...vue('free'), prixPro: PRIX_PRO });
+    await page.goto('/offre');
+    await expect(page.getByTestId('offre-payer-mois')).toBeVisible();
+    await expect(page.getByTestId('offre-essai')).toHaveCount(0);
+  });
+
   test('🔴 une Base paie le Pro : le clic demande le paiement à l’API, puis part sur la page de Stripe', async ({ page }) => {
     const { paiements } = await monter(page, { ...vue('free'), prixPro: PRIX_PRO });
     await page.goto('/offre');

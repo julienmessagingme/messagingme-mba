@@ -16,7 +16,7 @@ const T = 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d';
 const PERSONNE = { userId: 'u1' };
 const outil = (nom: string) => OUTILS.find((o) => o.nom === nom)!;
 
-function deps(o: { limiteCles?: number | null; creee?: boolean; couteuxAccepte?: boolean; pro?: 'ok' | 'entreprise' | 'portail' } = {}) {
+function deps(o: { limiteCles?: number | null; creee?: boolean; couteuxAccepte?: boolean; pro?: 'ok' | 'entreprise' | 'portail' | 'essai' } = {}) {
   const cap = {
     creations: [] as Array<{ name: string; scopes: string[]; plafond: PlafondCles }>,
     audit: [] as Array<{ action: string; userId: string | null; detail: unknown }>,
@@ -41,7 +41,9 @@ function deps(o: { limiteCles?: number | null; creee?: boolean; couteuxAccepte?:
           cap.pro.push({ periodicite, payeur, retour });
           return o.pro === 'entreprise'
             ? { ok: false as const, statut: 409 as const, erreur: 'Votre espace est en offre Entreprise : le Pro ne lui ajouterait rien.', details: { code: 'deja_entreprise' } }
-            : o.pro === 'portail'
+            : o.pro === 'essai'
+              ? { ok: true as const, valeur: { url: 'https://checkout.stripe.com/c/pay/cs_pro', portail: false, essaiJours: 14 } }
+              : o.pro === 'portail'
               ? { ok: true as const, valeur: { url: 'https://billing.stripe.com/p/session/portail', portail: true } }
               : { ok: true as const, valeur: { url: 'https://checkout.stripe.com/c/pay/cs_pro', portail: false } };
         },
@@ -112,6 +114,10 @@ describe('les outils MCP d’une Free : la clé de son application et le Pro', (
     expect(portail).toMatchObject({ url: 'https://billing.stripe.com/p/session/portail', portail: true });
     expect(portail).not.toHaveProperty('montant_ht_eur');
     expect(portail).not.toHaveProperty('taxe');
+    // L'essai de 14 jours (spec offres v2) : Claude le dit, rien n'est prélevé avant sa fin.
+    const essai = await outil('subscribe_pro').executer(deps({ pro: 'essai' }).d, T, { periodicite: 'mois' }, PERSONNE) as Record<string, unknown>;
+    expect(essai).toMatchObject({ portail: false, essai_jours: 14 });
+    expect(outil('subscribe_pro').description).toMatch(/14-day free trial/);
   });
 
   it('🔴 les deux comptent dans les opérations lourdes : refusées, elles n’appellent ni la création ni Stripe', async () => {

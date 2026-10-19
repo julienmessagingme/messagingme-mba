@@ -21,20 +21,21 @@ const FIN = 1_792_600_000;
 function ligne(abonnementId: string, over: Partial<AbonnementOffre> = {}): AbonnementOffre {
   return {
     abonnementId, tenantId: T1, periodicite: 'mois', livemode: true, statut: 'actif', periodeFin: null, finPrevueLe: null, finiLe: null, finRaison: null,
-    rendreNumero: false, suiteAnnonceeLe: null, ...over,
+    rendreNumero: false, suiteAnnonceeLe: null, essaiFinLe: null, ...over,
   };
 }
 
 function monter(o: { connus?: string[]; issue?: IssueEnregistrementPro; panne?: unknown; rendre?: boolean } = {}) {
   const cap = {
-    enregistres: [] as Array<{ tenantId: string; abonnementId: string; periodicite: PeriodiciteOffre; livemode: boolean; periodeFin: Date | null }>,
+    enregistres: [] as Array<{ tenantId: string; abonnementId: string; periodicite: PeriodiciteOffre; livemode: boolean; periodeFin: Date | null; essaiFinLe?: Date | null }>,
     statuts: [] as Array<{ abonnementId: string; statut: string; periodeFin: Date | null; finEchouee: Date | null }>,
-    modifs: [] as Array<{ abonnementId: string; finPrevueLe: Date | null; periodicite: PeriodiciteOffre | null }>,
+    modifs: [] as Array<{ abonnementId: string; finPrevueLe: Date | null; periodicite: PeriodiciteOffre | null; essaiFinLe?: Date | null }>,
     fins: [] as Array<{ abonnementId: string; raison: RaisonFinOffre; finiLe: Date }>,
     invalides: [] as string[],
     alertes: [] as string[],
     credits: 0,
-    passages: [] as string[],
+    /** Les passages en Pro : l'espace, et si l'abonnement du numéro seul s'arrête (pas pendant un essai, spec offres v2). */
+    passages: [] as Array<{ tenantId: string; arreter: boolean }>,
     finsDuPro: [] as FinDuPro[],
     /** Les e-mails de paiement refusé demandés (lot 7). */
     paiementsRefuses: [] as Array<{ tenantId: string; offre: string; factureId: string }>,
@@ -64,7 +65,7 @@ function monter(o: { connus?: string[]; issue?: IssueEnregistrementPro; panne?: 
       },
       invalider: (t) => { cap.invalides.push(t); },
       alerter: async (texte) => { cap.alertes.push(texte); },
-      surPassageEnPro: async (t) => { cap.passages.push(t); },
+      surPassageEnPro: async (t, o) => { cap.passages.push({ tenantId: t, arreter: o.arreterLeNumeroSeul }); },
       surFinDuPro: async (f) => { cap.finsDuPro.push(f); },
       vivant: async () => false,
     },
@@ -225,7 +226,8 @@ describe('le numéro inclus dans le Pro (lot 6, B2b)', () => {
     await envoyer(srv, evenement(sessionPro(), 'checkout.session.completed'));
     await envoyer(srv, evenement(sessionPro(), 'checkout.session.completed'));
     // Une panne au premier passage (5xx, Stripe rejoue) ne doit pas le perdre : le rejeu, non nouveau, le refait.
-    expect(cap.passages).toEqual([T1, T1]);
+    // Hors essai, le numéro seul s'arrête dès le passage, comme avant la spec offres v2.
+    expect(cap.passages).toEqual([{ tenantId: T1, arreter: true }, { tenantId: T1, arreter: true }]);
   });
 
   it('🔴 la fin du Pro transmet la raison, la date, le choix de rendre, le client et la carte du Pro', async () => {
@@ -253,5 +255,77 @@ describe('le numéro inclus dans le Pro (lot 6, B2b)', () => {
     const { srv, cap } = monter();
     await envoyer(srv, evenement(abonnementPro({ ended_at: FIN }), 'customer.subscription.deleted'));
     expect(cap.finsDuPro).toEqual([]);
+  });
+});
+
+/**
+ * L'ESSAI DE 14 JOURS (spec offres v2, livraison 6). Le paiement du Pro marque l'essai (`essai: '14'`) sur la session et
+ * sur l'abonnement : chaque événement le porte, quel que soit l'ordre où Stripe les livre. Le Pro est ouvert pendant
+ * l'essai ; 🔴 l'abonnement du numéro payé à part ne s'arrête qu'à la PREMIÈRE facture payée non nulle, sinon un essai
+ * abandonné ferait perdre son numéro à un client qui le payait.
+ */
+const META_ESSAI = { ...META, periodicite: 'mois', essai: '14' };
+const FIN_ESSAI = 1_791_209_600;
+
+describe('l’essai de 14 jours du Pro', () => {
+  it('🔴 la session d’un essai (rien à payer) fait le Pro, sans arrêter le numéro payé à part ; Julien est prévenu de l’essai', async () => {
+    const { srv, cap } = monter();
+    await envoyer(srv, evenement(sessionPro({ payment_status: 'no_payment_required', amount_total: 0, metadata: META_ESSAI }), 'checkout.session.completed'));
+    expect(cap.enregistres).toHaveLength(1);
+    expect(cap.passages).toEqual([{ tenantId: T1, arreter: false }]);
+    expect(cap.alertes).toEqual([expect.stringMatching(/Nouveau Pro en essai/)]);
+  });
+
+  it('🔴 la création de l’abonnement en essai enregistre le Pro avec la fin de l’essai, quel que soit l’ordre des événements', async () => {
+    const { srv, cap } = monter();
+    await envoyer(srv, evenement(abonnementPro({ status: 'trialing', trial_end: FIN_ESSAI, metadata: META_ESSAI }), 'customer.subscription.created'));
+    expect(cap.enregistres).toEqual([expect.objectContaining({ tenantId: T1, abonnementId: 'sub_pro', essaiFinLe: new Date(FIN_ESSAI * 1000) })]);
+    expect(cap.passages).toEqual([{ tenantId: T1, arreter: false }]);
+  });
+
+  it('🔴 seule la création d’un ESSAI fait le Pro : un abonnement incomplet, ou actif avant encaissement (un prélèvement SEPA en cours), attend sa facture payée', async () => {
+    const { srv, cap } = monter();
+    for (const status of ['incomplete', 'active']) {
+      expect((await envoyer(srv, evenement(abonnementPro({ status, metadata: META }), 'customer.subscription.created'))).statusCode, status).toBe(200);
+    }
+    expect([cap.enregistres, cap.passages]).toEqual([[], []]);
+  });
+
+  it('🔴 la facture à 0 € du début de l’essai n’arrête rien ; la première facture payée NON NULLE arrête le numéro seul', async () => {
+    const { srv, cap } = monter({ connus: ['sub_pro'] });
+    const essai = { type: 'subscription_details', subscription_details: { subscription: 'sub_pro', metadata: META_ESSAI } };
+    await envoyer(srv, evenement(facturePro({ amount_paid: 0, parent: essai }), 'invoice.paid'));
+    expect(cap.passages).toEqual([]);
+    await envoyer(srv, evenement(facturePro({ id: 'in_pro_2', amount_paid: 4900, parent: essai }), 'invoice.paid'));
+    expect(cap.passages).toEqual([{ tenantId: T1, arreter: true }]);
+  });
+
+  it('🔴 un code promo à 100 % après l’essai : la facture de CYCLE à 0 € payée arrête aussi le numéro seul ; celle de la création, non', async () => {
+    // Le rouge 1 de la relecture de la livraison 6 : sans cela, le Pro gratuit laissait le numéro seul prélevé, en silence.
+    const { srv, cap } = monter({ connus: ['sub_pro'] });
+    const essai = { type: 'subscription_details', subscription_details: { subscription: 'sub_pro', metadata: META_ESSAI } };
+    await envoyer(srv, evenement(facturePro({ amount_paid: 0, billing_reason: 'subscription_create', parent: essai }), 'invoice.paid'));
+    expect(cap.passages).toEqual([]);
+    await envoyer(srv, evenement(facturePro({ id: 'in_pro_cycle', amount_paid: 0, billing_reason: 'subscription_cycle', parent: essai }), 'invoice.paid'));
+    expect(cap.passages).toEqual([{ tenantId: T1, arreter: true }]);
+  });
+
+  it('la modification de l’abonnement relit la fin de l’essai', async () => {
+    const { srv, cap } = monter({ connus: ['sub_pro'] });
+    await envoyer(srv, evenement(abonnementPro({ status: 'trialing', trial_end: FIN_ESSAI, metadata: META_ESSAI }), 'customer.subscription.updated'));
+    expect(cap.modifs).toEqual([expect.objectContaining({ abonnementId: 'sub_pro', essaiFinLe: new Date(FIN_ESSAI * 1000) })]);
+  });
+
+  it('hors essai, une facture payée d’un Pro connu n’arrête rien de plus : le numéro seul l’a été au passage', async () => {
+    const { srv, cap } = monter({ connus: ['sub_pro'] });
+    await envoyer(srv, evenement(facturePro({ amount_paid: 4900 }), 'invoice.paid'));
+    expect(cap.passages).toEqual([]);
+  });
+
+  it('🔴 la création d’un abonnement du NUMÉRO (sans notre marque Pro) ne touche ni au Pro ni au numéro', async () => {
+    const { srv, cap } = monter();
+    const numero = { id: 'sub_num', object: 'subscription', status: 'active', metadata: { tenant_id: T1, produit: 'numero' } };
+    expect((await envoyer(srv, evenement(numero, 'customer.subscription.created'))).statusCode).toBe(200);
+    expect([cap.enregistres, cap.passages]).toEqual([[], []]);
   });
 });

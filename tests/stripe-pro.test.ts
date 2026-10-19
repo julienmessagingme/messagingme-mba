@@ -36,7 +36,7 @@ const AN = { id: 'price_pro_an', unit_amount: 49000, currency: 'eur', recurring:
 const SESSION = { status: 200, json: { id: 'cs_test_pro', url: 'https://checkout.stripe.com/c/pay/cs_test_pro' } };
 const PORTAIL = { status: 200, json: { id: 'bps_1', url: 'https://billing.stripe.com/p/session/pro' } };
 
-function deps(o: { prix?: Record<string, unknown>; reponses?: ReponseStripe[]; client?: string | null; autorise?: boolean; vivant?: boolean; prixVides?: boolean; offre?: 'base' | 'pro' | 'entreprise' } = {}) {
+function deps(o: { prix?: Record<string, unknown>; reponses?: ReponseStripe[]; client?: string | null; autorise?: boolean; vivant?: boolean; prixVides?: boolean; offre?: 'base' | 'pro' | 'entreprise'; dejaEu?: boolean } = {}) {
   const transport = new FauxStripe(o.prix ?? { price_pro_mois: MOIS, price_pro_an: AN }, o.reponses ?? [{ status: 200, json: { id: 'cus_A' } }, SESSION]);
   const d: DepsPro = {
     stripe: { cle: 'rk_test_fausse', livemode: false, prix: { refill_50: '', refill_100: '' }, transport, pageCredit: 'https://x', pageClaude: 'https://x' },
@@ -47,6 +47,8 @@ function deps(o: { prix?: Record<string, unknown>; reponses?: ReponseStripe[]; c
     payeurAutorise: async () => o.autorise ?? true,
     proVivant: async () => o.vivant ?? false,
     offreDe: async () => o.offre ?? 'base',
+    // Par défaut, l'espace a déjà eu un Pro : pas d'essai (les cas de l'essai le disent).
+    dejaEuUnPro: async () => o.dejaEu ?? true,
   };
   return { d, transport };
 }
@@ -136,5 +138,30 @@ describe('ouvrirPortailPro', () => {
     const { d } = deps({ autorise: false });
     expect(await ouvrirPortailPro(d, T1, 'u1')).toEqual(PRO_INDISPONIBLE);
     expect(await ouvrirPortailPro({ ...d, stripe: null }, T1, 'u1')).toEqual(PRO_INDISPONIBLE);
+  });
+});
+
+/** L'ESSAI DE 14 JOURS (spec offres v2, livraison 6) : une fois par espace, carte toujours demandée. */
+describe('l’essai de 14 jours du Pro', () => {
+  it('🔴 un espace qui n’a jamais eu de Pro : 14 jours, carte demandée, annulé sans moyen de paiement, et l’essai marqué pour le webhook', async () => {
+    const { d, transport } = deps({ dejaEu: false });
+    expect(await ouvrirPro(d, T1, 'mois', 'u1', 'offre')).toEqual({
+      ok: true, valeur: { url: 'https://checkout.stripe.com/c/pay/cs_test_pro', portail: false, essaiJours: 14 },
+    });
+    const corps = Object.fromEntries(transport.posts.find((p) => p.url.endsWith('/checkout/sessions'))!.corps);
+    expect(corps).toMatchObject({
+      'subscription_data[trial_period_days]': '14',
+      payment_method_collection: 'always',
+      'subscription_data[trial_settings][end_behavior][missing_payment_method]': 'cancel',
+      'metadata[essai]': '14',
+      'subscription_data[metadata][essai]': '14',
+    });
+  });
+
+  it('🔴 jamais un second essai : un espace qui a déjà eu un Pro paie dès le départ, sans marque d’essai', async () => {
+    const { d, transport } = deps({ dejaEu: true });
+    expect(await ouvrirPro(d, T1, 'an', 'u1', 'offre')).toEqual({ ok: true, valeur: { url: 'https://checkout.stripe.com/c/pay/cs_test_pro', portail: false } });
+    const corps = Object.fromEntries(transport.posts.find((p) => p.url.endsWith('/checkout/sessions'))!.corps);
+    expect(Object.keys(corps).filter((k) => /trial|essai/.test(k))).toEqual([]);
   });
 });

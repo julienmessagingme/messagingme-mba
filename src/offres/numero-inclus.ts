@@ -62,10 +62,16 @@ const vivant = (a: AbonnementNumero | null): a is AbonnementNumero => a !== null
  */
 const dejaEnCours = (err: StripeError): boolean => err.code === 'idempotency_key_in_use';
 
-/** Le passage en Pro de l'espace (un Pro enregistré, rejoué compris). Ne lève que sur une panne de base. */
-export async function surPassageEnPro(d: DepsNumeroInclus, tenantId: string): Promise<void> {
+/**
+ * Le passage en Pro de l'espace (un Pro enregistré, rejoué compris). Ne lève que sur une panne de base.
+ * 🔴 `arreterLeNumeroSeul` faux pendant l'essai de 14 jours (spec offres v2) : le Pro couvre le numéro (avis et pauses
+ * levés), mais l'abonnement payé à part ne s'arrête qu'à la première facture payée non nulle. Un essai abandonné ne l'a
+ * donc jamais touché, et la fin du Pro le trouve vivant (`deja_abonne`) : rien n'est recréé en double.
+ */
+export async function surPassageEnPro(d: DepsNumeroInclus, tenantId: string, o: { arreterLeNumeroSeul: boolean }): Promise<void> {
   await d.numero.oublierAvisDeSuspension(tenantId);
   await d.reprendreCampagnes(tenantId);
+  if (!o.arreterLeNumeroSeul) return;
   const a = await d.numero.deLEspace(tenantId);
   if (!vivant(a)) return;
   const lien = lienTableauStripe('subscriptions', a.abonnementId, a.livemode);
@@ -110,7 +116,29 @@ export interface FinDuPro {
  * `pro_vivant` : un AUTRE Pro de l'espace vit (un rejeu tardif de la fin), il couvre le numéro. `en_cours` : la même
  * création est déjà en cours chez Stripe. `a_verifier` : le numéro seul recréé n'a pas été enregistré, Julien vérifie.
  */
-export type IssueFinDuPro = 'sans_numero' | 'pro_vivant' | 'deja_abonne' | 'recree' | 'a_verifier' | 'en_cours' | 'porte';
+export type IssueFinDuPro = 'sans_numero' | 'pro_vivant' | 'deja_abonne' | 'recree' | 'a_verifier' | 'en_cours' | 'porte' | 'rendu';
+
+/**
+ * Le numéro seul encore vivant à la fin du Pro (un essai ne l'arrête pas), que le client a choisi de rendre : arrêté chez
+ * Stripe avec un avoir (sans avoir s'il est en retard, J7). Un refus de Stripe ne lève jamais : Julien est prévenu.
+ */
+async function rendreLeNumeroSeul(d: DepsNumeroInclus, tenantId: string, a: AbonnementNumero): Promise<IssueFinDuPro> {
+  const lien = lienTableauStripe('subscriptions', a.abonnementId, a.livemode);
+  if (d.stripe === null || d.stripe.livemode !== a.livemode) {
+    await d.alerter(`Fin du Pro de l'espace ${tenantId} : son numéro, à rendre, court encore en abonnement seul ${a.abonnementId}. À arrêter à la main avec un avoir au prorata. ${lien}`);
+    return 'a_verifier';
+  }
+  try {
+    await arreterAbonnementNumeroSeul(d.stripe.transport, { cle: d.stripe.cle, abonnementId: a.abonnementId, avoir: a.statut !== 'en_retard' });
+    return 'rendu';
+  } catch (err) {
+    if (!(err instanceof StripeError)) throw err;
+    if (dejaEnCours(err)) return 'en_cours';
+    journaliser('error', 'numero_rendu_arret_impossible', { tenantId, abonnement: a.abonnementId, status: err.status, code: err.code, err: err.message });
+    await d.alerter(`Fin du Pro de l'espace ${tenantId} : son numéro est à rendre, mais Stripe refuse d'arrêter son abonnement seul ${a.abonnementId} (${err.status ?? 'réseau'}${err.code ? `, ${err.code}` : ''}). À arrêter à la main avec un avoir au prorata. ${lien}`);
+    return 'a_verifier';
+  }
+}
 
 /**
  * L'écart toléré entre la fin effective du Pro et sa fin prévue pour la tenir pour « à sa fin prévue » : Stripe finit
@@ -123,7 +151,13 @@ export async function surFinDuPro(d: DepsNumeroInclus, f: FinDuPro): Promise<Iss
   // J5 de la relecture : la fin d'un Pro relivrée après la souscription d'un autre. Le Pro vivant couvre le numéro.
   if (await d.proVivant(f.tenantId)) return 'pro_vivant';
   if (!(await d.numero.numeroAttribue(f.tenantId))) return 'sans_numero';
-  if (vivant(await d.numero.deLEspace(f.tenantId))) return 'deja_abonne';
+  const seul = await d.numero.deLEspace(f.tenantId);
+  if (vivant(seul)) {
+    // 🔴 Rouge 2 de la relecture de la livraison 6 : un essai n'arrête pas le numéro payé à part ; si le client a choisi
+    // de le RENDRE à la fin du Pro, il s'arrête ici, avec un avoir. Sa fin suit le chemin du lot 4 (envois coupés, 7 jours,
+    // libération), par le webhook de l'abonnement du numéro. Sans ce choix, il continue, comme avant.
+    return f.rendreNumero ? rendreLeNumeroSeul(d, f.tenantId, seul) : 'deja_abonne';
+  }
 
   const porter = async (pourquoi: string | null): Promise<'porte'> => {
     await d.numero.porterLaFinParLePro({ tenantId: f.tenantId, abonnementPro: f.abonnementPro, livemode: f.livemode, finiLe: f.finiLe });

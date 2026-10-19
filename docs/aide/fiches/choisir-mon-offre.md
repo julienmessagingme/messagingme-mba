@@ -1,7 +1,7 @@
 ---
 ecran: offre
 source_section: Offres (menu « Paramètres » > Offre)
-source_empreinte: cabf6d
+source_empreinte: 3bbfe5
 ---
 # Choisir mon offre
 
@@ -42,7 +42,8 @@ rend la console.
 
 **Passer en Pro.** Sur la page Offre, choisissez « Mensuel » ou « Annuel » : vous payez sur la page sécurisée de
 Stripe, où un code promo se saisit, et votre espace passe en Pro dès que le paiement est confirmé, en général dans
-la minute. Si ces boutons n'apparaissent pas, « Passer en Pro » ouvre le Support avec le sujet déjà rempli.
+la minute. Si votre espace n'a jamais eu le Pro, il commence par un essai gratuit de 14 jours : la carte est demandée,
+rien n'est prélevé avant la fin de l'essai, et la page Offre dit la date de fin. Si ces boutons n'apparaissent pas, « Passer en Pro » ouvre le Support avec le sujet déjà rempli.
 L'offre Entreprise se demande au Support.
 
 **Gérer mon abonnement.** En Pro, le bouton « Gérer mon abonnement » de la page Offre ouvre le portail de Stripe :
@@ -50,7 +51,7 @@ changer de carte, retrouver vos factures ou résilier. Pour passer du mensuel à
 la fin de la période payée ; votre espace revient alors en Free.
 
 **Votre numéro fourni.** Il est inclus dans le Pro : obtenez-le sans payer depuis la page « Connecter WhatsApp ».
-S'il était déjà payé à part, cet abonnement s'arrête quand vous passez en Pro, avec un avoir sur la facture suivante.
+S'il était déjà payé à part, cet abonnement s'arrête au premier paiement du Pro, avec un avoir sur la facture suivante.
 Si vous résiliez le Pro, la page Offre et un e-mail vous préviennent : à la fin du Pro, le numéro passe à 3,50 € HT
 par mois sur la même carte. Pour le rendre à la place, choisissez « Rendre mon numéro à la fin du Pro » sur la page
 Offre ; vous pouvez revenir sur ce choix tant que le Pro court. Si vous envoyez par votre propre numéro, le

@@ -6,13 +6,17 @@ import { DROITS, FONCTIONS, PRIX_PRO_HT_CENTIMES, type Offre } from '../src/offr
  * LA VUE DE L'OFFRE (lot 6, tâche 6) : la même pour la console et pour Claude. Les fonctions dans l'ordre de la grille,
  * les limites telles quelles, l'usage, et le lien vers l'offre.
  */
-function vue(offre: Offre, mois: { max: number; reste: number } | null, proEnVente = true, suite: { finPrevueLe: Date | null; rendreNumero: boolean } | null = null) {
+function vue(
+  offre: Offre, mois: { max: number; reste: number } | null, proEnVente = true, suite: { finPrevueLe: Date | null; rendreNumero: boolean } | null = null,
+  essai: { dejaEuUnPro: boolean; finLe: Date | null } = { dejaEuUnPro: false, finLe: null },
+) {
   return creerVueOffre({
     offres: { offreDe: async () => ({ offre, droits: DROITS[offre], retourEnBaseLe: null }) },
     usage: async () => ({ contacts: 42, automations: 3, membres: 1 }),
     modelesDuMois: { etatDuMois: async () => mois },
     proEnVente,
     suiteDuNumero: async () => suite,
+    essai: async () => essai,
   });
 }
 
@@ -73,5 +77,25 @@ describe('creerVueOffre', () => {
     const v = await vue('base', null)('t1');
     v.limites.contacts = 9999;
     expect(DROITS.base.limites.contacts).toBe(100);
+  });
+});
+
+/** L'ESSAI DE 14 JOURS DANS LA VUE (spec offres v2, livraison 6) : la console et Claude le proposent, puis en disent la fin. */
+describe('l’essai du Pro dans la vue', () => {
+  it('🔴 une Free qui n’a jamais eu de Pro, le Pro en vente : l’essai de 14 jours est possible', async () => {
+    expect((await vue('base', null)('t1')).essai).toEqual({ jours: 14, possible: true, finLe: null });
+  });
+
+  it('🔴 pas d’essai pour un espace qui a déjà eu un Pro, pour un Pro, une Entreprise, ou tant que le Pro n’est pas en vente', async () => {
+    expect((await vue('base', null, true, null, { dejaEuUnPro: true, finLe: null })('t1')).essai.possible).toBe(false);
+    expect((await vue('pro', null)('t1')).essai.possible).toBe(false);
+    expect((await vue('entreprise', null)('t1')).essai.possible).toBe(false);
+    expect((await vue('base', null, false)('t1')).essai.possible).toBe(false);
+  });
+
+  it('un Pro en essai : la date de fin, pour « votre essai se termine le … »', async () => {
+    const fin = new Date('2026-11-02T09:00:00Z');
+    expect((await vue('pro', null, true, null, { dejaEuUnPro: true, finLe: fin })('t1')).essai)
+      .toEqual({ jours: 14, possible: false, finLe: '2026-11-02T09:00:00.000Z' });
   });
 });

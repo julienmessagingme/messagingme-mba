@@ -70,6 +70,11 @@ export interface VueOffre {
    * le rendre. `null` sans Pro vivant, sans numéro fourni, ou sur une API plus ancienne.
    */
   suiteDuNumero: { finPrevueLe: string | null; rendreNumero: boolean } | null;
+  /**
+   * L'essai du Pro (spec offres v2, livraison 6) : sa durée, s'il est possible, la fin de l'essai en cours (ISO). `null` sur
+   * une API plus ancienne : la page ne parle alors pas d'essai.
+   */
+  essai: { jours: number; possible: boolean; finLe: string | null } | null;
   upgradeUrl: string;
 }
 
@@ -137,8 +142,16 @@ export function lireVueOffre(brut: unknown): VueOffre | null {
     grille: grille as VueOffre['grille'],
     prixPro: lirePrixPro(brut.prixPro),
     suiteDuNumero: lireSuiteDuNumero(brut.suiteDuNumero),
+    essai: lireEssai(brut.essai),
     upgradeUrl: brut.upgradeUrl,
   };
+}
+
+/** Un essai absent ou illisible ne rend pas la vue illisible : la page n'en parle pas. */
+function lireEssai(v: unknown): VueOffre['essai'] {
+  if (!estObjet(v) || !entier(v.jours) || typeof v.possible !== 'boolean') return null;
+  if (v.finLe !== null && typeof v.finLe !== 'string') return null;
+  return { jours: v.jours, possible: v.possible, finLe: v.finLe };
 }
 
 /** Une suite absente ou illisible ne rend pas la vue illisible : il n'y a rien à annoncer. */

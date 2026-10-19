@@ -143,6 +143,12 @@ export const GRACE_RETOUR_BASE_JOURS = 30;
  */
 export const PRIX_PRO_HT_CENTIMES: Readonly<{ mois: number; an: number }> = { mois: 4900, an: 49000 };
 
+/**
+ * L'essai du Pro, en jours (spec offres v2, livraison 6) : carte demandée, une fois par espace (jamais s'il a déjà eu un
+ * Pro). Le Pro est ouvert pendant l'essai ; à sa fin sans paiement, l'espace revient en Free comme à la fin d'un Pro.
+ */
+export const ESSAI_PRO_JOURS = 14;
+
 /** Les droits d'un espace : ceux de son offre, et pour l'Entreprise la surcharge de l'exploitation. Copie neuve. */
 export function droitsDe(offre: Offre, surcharge: SurchargeEntreprise | null): Droits {
   const d = DROITS[offre];

@@ -15,7 +15,7 @@ import type { Issue } from '../lib/issue';
  */
 export interface DepsOffreMcp {
   /** Le paiement du Pro, la MÊME ouverture que `POST /offre/paiement` (`ouvrirPro`, `src/stripe/pro.ts`). */
-  ouvrir(tenantId: string, periodicite: PeriodicitePro, payeur: string, retour: RetourPro): Promise<Issue<{ url: string; portail: boolean }>>;
+  ouvrir(tenantId: string, periodicite: PeriodicitePro, payeur: string, retour: RetourPro): Promise<Issue<{ url: string; portail: boolean; essaiJours?: number }>>;
 }
 
 /**
@@ -72,7 +72,9 @@ export const OUTILS_OFFRE: OutilMcp[] = [
       'Opens the payment of the Pro plan and returns the URL of the Stripe checkout page; the payment itself is made by the '
       + `person on that page (monthly: €${PRIX_PRO_HT_CENTIMES.mois / 100}, yearly: €${PRIX_PRO_HT_CENTIMES.an / 100}, `
       + 'EXCLUDING TAX, the tax calculated by Stripe from the country and VAT number entered there). The plan switches '
-      + 'once Stripe has confirmed it (get_plan). A workspace already on Pro gets its Stripe portal instead (portail: true); '
+      + 'once Stripe has confirmed it (get_plan). A workspace that never had Pro starts with a 14-day free trial '
+      + '(essai_jours): the card is entered on that page, nothing is charged before the trial ends, and the plan switches at '
+      + 'once; get_plan then tells when the trial ends. A workspace already on Pro gets its Stripe portal instead (portail: true); '
       + 'an Entreprise workspace is refused. ' + LOURDE,
     // Monde ouvert : elle crée une session chez Stripe. Non idempotente : une session de plus à chaque appel.
     annotations: ecriture('Open the Pro plan payment', false, true),
@@ -96,6 +98,8 @@ export const OUTILS_OFFRE: OutilMcp[] = [
         portail: false,
         montant_ht_eur: PRIX_PRO_HT_CENTIMES[periodicite] / 100,
         taxe: 'calculée par Stripe sur la page de paiement, selon le pays et le numéro de TVA saisis',
+        // L'essai (spec offres v2) : rien n'est prélevé avant sa fin, la carte est demandée sur la page.
+        ...(p.essaiJours ? { essai_jours: p.essaiJours } : {}),
       };
     },
   },

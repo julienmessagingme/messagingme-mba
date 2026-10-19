@@ -27,7 +27,11 @@ export interface DepsTraitementAbonnements {
   pro: Pick<PgAbonnementsOffreStore, 'enregistrer' | 'majStatut' | 'modifier' | 'finir' | 'vivant'> & {
     invalider(tenantId: string): void;
     alerter(texte: string): Promise<void>;
-    surPassageEnPro(tenantId: string): Promise<void>;
+    /**
+     * `arreterLeNumeroSeul` faux pendant l'essai de 14 jours (spec offres v2) : l'abonnement du numéro payé à part ne
+     * s'arrête qu'à la première facture payée non nulle, sinon un essai abandonné ferait perdre son numéro au client.
+     */
+    surPassageEnPro(tenantId: string, o: { arreterLeNumeroSeul: boolean }): Promise<void>;
     surFinDuPro(f: FinDuPro): Promise<unknown>;
   };
   /**
@@ -80,6 +84,10 @@ const factureSchema = z.object({
     }).nullable().optional(),
   }).nullable().optional(),
   lines: z.object({ data: z.array(z.object({ period: z.object({ end: z.number().int() }).optional() })) }).optional(),
+  /** Le montant réellement payé, en centimes : 0 pour la facture qui ouvre un essai (spec offres v2). */
+  amount_paid: z.number().int().optional(),
+  /** `subscription_create` (l'essai qui s'ouvre), `subscription_cycle` (une période payée, après l'essai), etc. */
+  billing_reason: z.string().nullable().optional(),
 });
 
 const abonnementNumeroSchema = z.object({ id: z.string().startsWith('sub_') });
@@ -95,7 +103,14 @@ const abonnementNumeroModifieSchema = z.object({
 
 const metaNumeroSchema = z.object({ tenant_id: z.uuid(), produit: z.literal('numero') });
 /** La périodicité est posée à la création puis peut être relue sur le prix après un changement dans le portail. */
-const metaProSchema = z.object({ tenant_id: z.uuid(), produit: z.literal('pro'), periodicite: z.enum(['mois', 'an']).optional() });
+/**
+ * `essai` : posé par `ouvrirPro` sur la session ET l'abonnement d'un essai de 14 jours (spec offres v2) ; chaque événement
+ * le porte donc, quel que soit l'ordre où Stripe les livre.
+ */
+const metaProSchema = z.object({
+  tenant_id: z.uuid(), produit: z.literal('pro'), periodicite: z.enum(['mois', 'an']).optional(), essai: z.string().optional(),
+});
+const estEssai = (m: { essai?: string }): boolean => m.essai !== undefined && m.essai !== '';
 
 /**
  * La marque du Pro suffit à aiguiller vers ce chemin : un objet marqué mais mal formé doit être refusé en 422, jamais
@@ -115,6 +130,9 @@ const sessionProSchema = z.object({
 const abonnementProSchema = z.object({
   id: z.string().startsWith('sub_'),
   metadata: metaProSchema,
+  /** `trialing` pendant l'essai ; `incomplete` à la création d'un abonnement pas encore payé (rien n'est enregistré). */
+  status: z.string().optional(),
+  trial_end: z.number().int().nullable().optional(),
   cancel_at: z.number().int().nullable().optional(),
   cancel_at_period_end: z.boolean().optional(),
   ended_at: z.number().int().nullable().optional(),
@@ -148,6 +166,8 @@ export function creerTraitementAbonnements(deps: DepsTraitementAbonnements) {
 
   function concerne(e: Pick<EvenementStripeVerifie, 'type' | 'objet'>): boolean {
     return TYPES_ABONNEMENT.has(e.type)
+      // La création d'un abonnement du Pro (essai de 14 jours) ; celle du numéro ne nous apprend rien.
+      || (e.type === 'customer.subscription.created' && objetDuPro(e.type, e.objet))
       || (e.type === 'checkout.session.completed'
         && (sessionNumeroSchema.safeParse(e.objet).success || objetDuPro(e.type, e.objet)));
   }
@@ -187,12 +207,17 @@ export function creerTraitementAbonnements(deps: DepsTraitementAbonnements) {
   }
 
   async function traiterPro(e: EvenementStripeVerifie): Promise<IssueTraitementAbonnement> {
+    /**
+     * `essai` : le Pro court sans facture payée (essai de 14 jours) ; il ouvre tout, mais n'arrête pas l'abonnement du
+     * numéro payé à part, ce que fera la première facture payée non nulle.
+     */
     const enregistrer = async (a: {
       tenantId: string;
       abonnementId: string;
       periodicite: PeriodiciteOffre;
       periodeFin: Date | null;
-    }): Promise<void> => {
+      essaiFinLe?: Date | null;
+    }, essai = false): Promise<void> => {
       let issue: Awaited<ReturnType<typeof deps.pro.enregistrer>>;
       try {
         issue = await deps.pro.enregistrer({ ...a, livemode: e.livemode });
@@ -208,10 +233,13 @@ export function creerTraitementAbonnements(deps: DepsTraitementAbonnements) {
       if (issue.etat === 'enregistre') {
         deps.pro.invalider(issue.tenantId);
         if (issue.nouveau) {
-          await deps.pro.alerter(`Nouveau Pro : espace ${issue.tenantId} (${a.abonnementId}, ${a.periodicite === 'an' ? 'annuel' : 'mensuel'}).`);
+          const formule = a.periodicite === 'an' ? 'annuel' : 'mensuel';
+          await deps.pro.alerter(essai
+            ? `Nouveau Pro en essai : espace ${issue.tenantId} (${a.abonnementId}, ${formule}${a.essaiFinLe ? `, fin de l'essai le ${a.essaiFinLe.toISOString().slice(0, 10)}` : ''}).`
+            : `Nouveau Pro : espace ${issue.tenantId} (${a.abonnementId}, ${formule}).`);
         }
         // Rejouable : une panne du premier passage ne doit jamais perdre l'effet sur le numéro inclus.
-        await deps.pro.surPassageEnPro(issue.tenantId);
+        await deps.pro.surPassageEnPro(issue.tenantId, { arreterLeNumeroSeul: !essai });
       } else if (issue.etat === 'doublon') {
         await deps.pro.alerter(`Pro en double : ${a.abonnementId} pour l'espace ${a.tenantId}, qui a déjà un Pro vivant. À annuler et rembourser chez Stripe.`);
       }
@@ -226,7 +254,28 @@ export function creerTraitementAbonnements(deps: DepsTraitementAbonnements) {
         abonnementId: idDe(lu.data.subscription),
         periodicite: lu.data.metadata.periodicite ?? 'mois',
         periodeFin: null,
-      });
+      }, estEssai(lu.data.metadata));
+      return ACQUITTE;
+    }
+
+    // La création de l'abonnement (spec offres v2) : celle d'un ESSAI porte sa fin, et peut arriver avant la session : elle
+    // suffit alors à faire le Pro. Tout autre statut attend sa facture payée, comme avant : un abonnement `active` peut
+    // l'être avant l'encaissement (un prélèvement SEPA en cours), et `incomplete` ne l'est pas encore.
+    if (e.type === 'customer.subscription.created') {
+      const lu = abonnementProSchema.safeParse(e.objet);
+      if (!lu.success) return illisible(e, 'pro');
+      if (lu.data.status !== 'trialing') return ACQUITTE;
+      const lignes = lu.data.items?.data ?? [];
+      const fins = lignes.map((l) => l.current_period_end).filter((v): v is number => typeof v === 'number');
+      const intervalle = lignes.map((l) => l.price?.recurring?.interval).find((v): v is string => typeof v === 'string');
+      await enregistrer({
+        tenantId: lu.data.metadata.tenant_id,
+        abonnementId: lu.data.id,
+        periodicite: lu.data.metadata.periodicite ?? (intervalle ? PERIODICITE_DE_STRIPE[intervalle] : undefined) ?? 'mois',
+        periodeFin: fins.length > 0 ? new Date(Math.max(...fins) * 1000) : null,
+        essaiFinLe: lu.data.trial_end ? new Date(lu.data.trial_end * 1000) : null,
+        // Un abonnement en essai l'est même sans notre marque : le numéro payé à part n'est jamais arrêté pendant un essai.
+      }, true);
       return ACQUITTE;
     }
 
@@ -265,6 +314,8 @@ export function creerTraitementAbonnements(deps: DepsTraitementAbonnements) {
       const a = await deps.pro.modifier(lu.data.id, {
         finPrevueLe: finPrevue === null ? null : new Date(finPrevue * 1000),
         periodicite: intervalle ? (PERIODICITE_DE_STRIPE[intervalle] ?? null) : null,
+        // La fin de l'essai, tant qu'il court ; sinon on garde celle déjà notée (l'histoire de l'abonnement).
+        ...(lu.data.status === 'trialing' && lu.data.trial_end ? { essaiFinLe: new Date(lu.data.trial_end * 1000) } : {}),
       });
       if (a) deps.pro.invalider(a.tenantId);
       return ACQUITTE;
@@ -287,16 +338,23 @@ export function creerTraitementAbonnements(deps: DepsTraitementAbonnements) {
       }
       return ACQUITTE;
     }
+    // 🔴 L'essai (spec offres v2) : la facture à 0 € qui l'ouvre n'arrête rien ; la PREMIÈRE facture payée non nulle
+    // arrête l'abonnement du numéro payé à part (rejouable, comme tout passage en Pro). Une facture de CYCLE payée l'arrête
+    // aussi, même à 0 € (rouge 1 de la relecture) : un code promo à 100 % ferait sinon prélever le numéro seul en silence.
+    // Un essai abandonné ne produit jamais de facture de cycle payée.
+    const payeeNonNulle = (lu.data.amount_paid ?? 0) > 0 || lu.data.billing_reason === 'subscription_cycle';
     // Une facture peut arriver avant la session Checkout : elle suffit alors à enregistrer le Pro.
     const paye = await deps.pro.majStatut(abonnementId, 'actif', finFacture);
-    if (paye) deps.pro.invalider(paye.tenantId);
-    else {
+    if (paye) {
+      deps.pro.invalider(paye.tenantId);
+      if (estEssai(meta.data) && payeeNonNulle) await deps.pro.surPassageEnPro(paye.tenantId, { arreterLeNumeroSeul: true });
+    } else {
       await enregistrer({
         tenantId: meta.data.tenant_id,
         abonnementId,
         periodicite: meta.data.periodicite ?? 'mois',
         periodeFin: finFacture,
-      });
+      }, estEssai(meta.data) && !payeeNonNulle);
     }
     return ACQUITTE;
   }

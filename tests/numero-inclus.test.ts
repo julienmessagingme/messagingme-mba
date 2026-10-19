@@ -59,9 +59,17 @@ function monter(o: {
 }
 
 describe('au passage en Pro', () => {
+  it('🔴 pendant l’essai de 14 jours (spec offres v2) : les avis et les pauses sont levés, mais l’abonnement du numéro payé à part n’est PAS arrêté', async () => {
+    const m = monter({ numero: numeroSeul() });
+    await surPassageEnPro(m.d, T, { arreterLeNumeroSeul: false });
+    expect(m.transport.appels).toEqual([]);
+    expect(m.journal).toEqual([`avis-oublies:${T}`, `campagnes:${T}`]);
+    expect(m.alertes).toEqual([]);
+  });
+
   it('🔴 un numéro seul vivant est arrêté chez Stripe avec un avoir ; les avis de suspension et les pauses sont levés (J5, J6)', async () => {
     const m = monter({ numero: numeroSeul(), reponses: [{ status: 200, json: { id: 'sub_NUM', status: 'canceled' } }] });
-    await surPassageEnPro(m.d, T);
+    await surPassageEnPro(m.d, T, { arreterLeNumeroSeul: true });
     expect(m.transport.appels).toMatchObject([{ methode: 'DELETE', url: 'https://api.stripe.com/v1/subscriptions/sub_NUM', cle: 'avoir-sub_NUM' }]);
     expect(Object.fromEntries(m.transport.appels[0]!.corps)).toEqual({ prorate: 'true', invoice_now: 'true' });
     expect(m.journal).toEqual([`avis-oublies:${T}`, `campagnes:${T}`]);
@@ -71,7 +79,7 @@ describe('au passage en Pro', () => {
   it('un numéro seul déjà fini, ou aucun : rien n’est demandé à Stripe, mais avis et pauses sont quand même levés', async () => {
     for (const numero of [null, numeroSeul({ statut: 'resilie', finiLe: new Date() })]) {
       const m = monter({ numero });
-      await surPassageEnPro(m.d, T);
+      await surPassageEnPro(m.d, T, { arreterLeNumeroSeul: true });
       expect(m.transport.appels).toEqual([]);
       expect(m.journal).toEqual([`avis-oublies:${T}`, `campagnes:${T}`]);
     }
@@ -79,7 +87,7 @@ describe('au passage en Pro', () => {
 
   it('🔴 Stripe refuse l’arrêt (clé sans le droit d’écrire, par exemple) : Julien est prévenu, rien ne lève', async () => {
     const m = monter({ numero: numeroSeul(), reponses: [{ status: 403, json: { error: { type: 'invalid_request_error', message: 'restricted' } } }] });
-    await expect(surPassageEnPro(m.d, T)).resolves.toBeUndefined();
+    await expect(surPassageEnPro(m.d, T, { arreterLeNumeroSeul: true })).resolves.toBeUndefined();
     expect(m.alertes).toHaveLength(1);
     expect(m.alertes[0]).toMatch(/sub_NUM/);
     expect(m.alertes[0]).toMatch(/avoir/);
@@ -89,13 +97,13 @@ describe('au passage en Pro', () => {
     // La session et la facture du Pro arrivent ensemble : deux passages en Pro envoient le même DELETE à quelques
     // millisecondes, Stripe répond 409 au second alors que l'arrêt se fait.
     const m = monter({ numero: numeroSeul(), reponses: [{ status: 409, json: { error: { type: 'idempotency_error', code: 'idempotency_key_in_use', message: 'in use' } } }] });
-    await expect(surPassageEnPro(m.d, T)).resolves.toBeUndefined();
+    await expect(surPassageEnPro(m.d, T, { arreterLeNumeroSeul: true })).resolves.toBeUndefined();
     expect(m.alertes).toEqual([]);
   });
 
   it('🔴 J7 : un numéro seul en retard de paiement s’arrête SANS avoir : aucun crédit sur une période jamais payée', async () => {
     const m = monter({ numero: numeroSeul({ statut: 'en_retard', premierEchecLe: new Date() }), reponses: [{ status: 200, json: { id: 'sub_NUM', status: 'canceled' } }] });
-    await surPassageEnPro(m.d, T);
+    await surPassageEnPro(m.d, T, { arreterLeNumeroSeul: true });
     expect(m.transport.appels).toHaveLength(1);
     expect(Object.fromEntries(m.transport.appels[0]!.corps)).toEqual({});
     expect(m.transport.appels[0]!.cle).toBe('arret-sub_NUM');
@@ -104,7 +112,7 @@ describe('au passage en Pro', () => {
   it('sans Stripe, ou un numéro seul d’un autre mode que la clé : aucun appel, Julien prévenu', async () => {
     for (const o of [{ stripe: false }, { livemode: false }]) {
       const m = monter({ numero: numeroSeul(), ...o });
-      await surPassageEnPro(m.d, T);
+      await surPassageEnPro(m.d, T, { arreterLeNumeroSeul: true });
       expect(m.transport.appels).toEqual([]);
       expect(m.alertes).toHaveLength(1);
     }
@@ -210,6 +218,14 @@ describe('à la fin du Pro', () => {
     expect(m.transport.appels).toEqual([]);
     expect(m.journal).toEqual([`porte:sub_PRO:${FIN.toISOString()}`]);
     expect(m.alertes).toEqual([]);
+  });
+
+  it('🔴 un numéro seul vivant (l’essai ne l’a pas arrêté) que le client a choisi de RENDRE : il est arrêté chez Stripe à la fin du Pro, avec un avoir', async () => {
+    // Le rouge 2 de la relecture de la livraison 6 : sans cela, le choix « Rendre mon numéro » pris pendant un essai était
+    // ignoré et le numéro seul, jamais arrêté, restait prélevé à 3,50 € HT par mois.
+    const m = monter({ numero: numeroSeul(), reponses: [{ status: 200, json: { id: 'sub_NUM', status: 'canceled' } }] });
+    expect(await surFinDuPro(m.d, fin({ rendreNumero: true }))).toBe('rendu');
+    expect(m.transport.appels).toMatchObject([{ methode: 'DELETE', url: 'https://api.stripe.com/v1/subscriptions/sub_NUM', cle: 'avoir-sub_NUM' }]);
   });
 
   it('aucun numéro fourni attribué : rien à faire ; un numéro seul déjà vivant : il continue', async () => {

@@ -27,6 +27,8 @@ export interface AbonnementOffre {
   rendreNumero: boolean;
   /** L'e-mail qui annonce la suite du numéro à la fin prévue est parti (0220, B2b) ; `null` sinon. */
   suiteAnnonceeLe: Date | null;
+  /** La fin de l'essai de 14 jours (0243, spec offres v2), lue sur `trial_end` ; `null` pour un Pro payé dès le départ. */
+  essaiFinLe: Date | null;
 }
 
 /**
@@ -48,13 +50,14 @@ interface Ligne {
   fin_raison: RaisonFinOffre | null;
   rendre_numero: boolean;
   suite_annoncee_le: Date | null;
+  essai_fin_le: Date | null;
 }
 const COLONNES = 'stripe_subscription_id, tenant_id, periodicite, livemode, statut, periode_fin, fin_prevue_le, fini_le, fin_raison, '
-  + 'rendre_numero, suite_annoncee_le';
+  + 'rendre_numero, suite_annoncee_le, essai_fin_le';
 const versAbonnement = (l: Ligne): AbonnementOffre => ({
   abonnementId: l.stripe_subscription_id, tenantId: l.tenant_id, periodicite: l.periodicite, livemode: l.livemode, statut: l.statut,
   periodeFin: l.periode_fin, finPrevueLe: l.fin_prevue_le, finiLe: l.fini_le, finRaison: l.fin_raison,
-  rendreNumero: l.rendre_numero, suiteAnnonceeLe: l.suite_annoncee_le,
+  rendreNumero: l.rendre_numero, suiteAnnonceeLe: l.suite_annoncee_le, essaiFinLe: l.essai_fin_le,
 });
 
 export class PgAbonnementsOffreStore {
@@ -65,7 +68,11 @@ export class PgAbonnementsOffreStore {
    * en Pro. Rejoué : la fin de période ne recule jamais, et un abonnement fini le reste. `nouveau` dit si la ligne vient
    * d'être créée (l'alerte « nouveau Pro » ne part qu'une fois).
    */
-  async enregistrer(a: { tenantId: string; abonnementId: string; periodicite: PeriodiciteOffre; livemode: boolean; periodeFin: Date | null }): Promise<IssueEnregistrementPro> {
+  async enregistrer(a: {
+    tenantId: string; abonnementId: string; periodicite: PeriodiciteOffre; livemode: boolean; periodeFin: Date | null;
+    /** La fin de l'essai (`customer.subscription.created`), quand on la connaît ; absente, celle déjà notée reste. */
+    essaiFinLe?: Date | null;
+  }): Promise<IssueEnregistrementPro> {
     for (let essai = 0; ; essai += 1) {
       try {
         return await this.enregistrerUneFois(a);
@@ -87,19 +94,20 @@ export class PgAbonnementsOffreStore {
   }
 
   private async enregistrerUneFois(
-    a: { tenantId: string; abonnementId: string; periodicite: PeriodiciteOffre; livemode: boolean; periodeFin: Date | null },
+    a: { tenantId: string; abonnementId: string; periodicite: PeriodiciteOffre; livemode: boolean; periodeFin: Date | null; essaiFinLe?: Date | null },
   ): Promise<IssueEnregistrementPro> {
     // J2 (lot 6, B2b) : le verrou d'espace commun avec la libération du numéro (`src/numero/verrou-numero-pro.ts`), sur
     // l'espace de l'événement ; un rejeu sur un autre espace ne ferait que prendre un verrou de trop.
     const res = await enTransaction(this.pool, async (client) => {
       await client.query(VERROU_NUMERO_PRO_SQL, [a.tenantId]);
       return client.query<{ tenant_id: string; fini_le: Date | null; nouveau: boolean }>(
-        `insert into abonnements_offre (stripe_subscription_id, tenant_id, periodicite, livemode, statut, periode_fin)
-         values ($1, $2, $3, $4, 'actif', $5)
+        `insert into abonnements_offre (stripe_subscription_id, tenant_id, periodicite, livemode, statut, periode_fin, essai_fin_le)
+         values ($1, $2, $3, $4, 'actif', $5, $6)
          on conflict (stripe_subscription_id) do update
-           set periode_fin = greatest(abonnements_offre.periode_fin, excluded.periode_fin), maj_le = now()
+           set periode_fin = greatest(abonnements_offre.periode_fin, excluded.periode_fin),
+               essai_fin_le = coalesce(excluded.essai_fin_le, abonnements_offre.essai_fin_le), maj_le = now()
          returning tenant_id, fini_le, (xmax = 0) as nouveau`,
-        [a.abonnementId, a.tenantId, a.periodicite, a.livemode, a.periodeFin],
+        [a.abonnementId, a.tenantId, a.periodicite, a.livemode, a.periodeFin, a.essaiFinLe ?? null],
       );
     });
     const l = res.rows[0]!;
@@ -132,14 +140,16 @@ export class PgAbonnementsOffreStore {
    * (relue sur le prix, si le portail ouvre un jour le changement de formule, fermé aujourd'hui). Un abonnement fini ne
    * change plus. Une fin retirée efface l'annonce de la suite du numéro (B2b) : reposée, elle s'annonce de nouveau.
    */
-  async modifier(abonnementId: string, m: { finPrevueLe: Date | null; periodicite: PeriodiciteOffre | null }): Promise<AbonnementOffre | null> {
+  async modifier(
+    abonnementId: string, m: { finPrevueLe: Date | null; periodicite: PeriodiciteOffre | null; essaiFinLe?: Date | null },
+  ): Promise<AbonnementOffre | null> {
     const res = await this.pool.query<Ligne>(
       `update abonnements_offre
-          set fin_prevue_le = $2, periodicite = coalesce($3, periodicite),
+          set fin_prevue_le = $2, periodicite = coalesce($3, periodicite), essai_fin_le = coalesce($4, essai_fin_le),
               suite_annoncee_le = case when $2::timestamptz is null then null else suite_annoncee_le end, maj_le = now()
         where stripe_subscription_id = $1 and fini_le is null
         returning ${COLONNES}`,
-      [abonnementId, m.finPrevueLe, m.periodicite],
+      [abonnementId, m.finPrevueLe, m.periodicite, m.essaiFinLe ?? null],
     );
     return res.rows[0] ? versAbonnement(res.rows[0]) : null;
   }

@@ -239,10 +239,18 @@ function OffreInner({ session }: { session: Session }) {
                 {t(`Annuel, ${euros(vue.prixPro.anCentimes)} HT`, `Yearly, ${euros(vue.prixPro.anCentimes)} excl. VAT`)}
               </Bouton>
             </div>
-            {/* Depuis la livraison B2b, le numéro fourni est inclus : son abonnement à part s'arrête, avec un avoir. */}
+            {/* L'essai de 14 jours (spec offres v2), une fois par espace : la carte est demandée, rien n'est prélevé avant sa fin. */}
+            {vue.essai?.possible && (
+              <p className="w-full text-sm text-ink-700" data-testid="offre-essai">
+                {t(`Essai gratuit de ${vue.essai.jours} jours : la carte est demandée sur la page de Stripe, et rien n’est prélevé avant la fin de l’essai.`,
+                  `${vue.essai.jours}-day free trial: the card is entered on the Stripe page, and nothing is charged before the trial ends.`)}
+              </p>
+            )}
+            {/* Depuis la livraison B2b, le numéro fourni est inclus : son abonnement à part s'arrête, avec un avoir, au premier
+                paiement du Pro (après l'essai, s'il y en a un). */}
             <p className="w-full text-xs text-ink-500" data-testid="offre-numero-inclus">
-              {t('Le numéro WhatsApp que nous vous fournissons est inclus dans le Pro : s’il est déjà payé à part, cet abonnement s’arrête, avec un avoir.',
-                'The WhatsApp number we provide is included in Pro: if it is already paid separately, that subscription stops, with a credit.')}
+              {t('Le numéro WhatsApp que nous vous fournissons est inclus dans le Pro : s’il est déjà payé à part, cet abonnement s’arrête au premier paiement du Pro, avec un avoir.',
+                'The WhatsApp number we provide is included in Pro: if it is already paid separately, that subscription stops at the first Pro payment, with a credit.')}
             </p>
             </>
           ) : (
@@ -288,6 +296,12 @@ function OffreInner({ session }: { session: Session }) {
 
       {vue.offre === 'pro' && (
         <section className="flex flex-wrap items-center gap-3 rounded-carte border border-ink-200 bg-white p-5" data-testid="offre-abonnement">
+          {vue.essai?.finLe && (
+            <p className="w-full text-sm text-ink-700" data-testid="offre-essai-fin">
+              {t(`Votre essai du Pro se termine le ${new Date(vue.essai.finLe).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })} : sans résiliation, le premier paiement a lieu ce jour-là.`,
+                `Your Pro trial ends on ${new Date(vue.essai.finLe).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}: unless you cancel, the first payment happens that day.`)}
+            </p>
+          )}
           <p className="min-w-0 flex-1 text-sm text-ink-500">
             {t('Changer de carte, retrouver vos factures ou résilier : tout se fait sur la page de Stripe.',
               'Change your card, find your invoices or cancel: it all happens on the Stripe page.')}

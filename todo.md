@@ -6,6 +6,16 @@
 réponses ont chacun leur colonne, 0241). Aucun espace n'y avait de valeur (sonde du 2026-10-17). Elle se retire par une
 migration APRÈS le déploiement de la livraison 2 : l'ancien code la nomme.
 
+## 🟡 Offres v2 : les jaunes de la relecture de la livraison 6, l'essai de 14 jours (2026-10-19)
+
+- **La fin d'un essai sans paiement alerte comme la fin d'un Pro payant** : `surFinDuPro` ne distingue pas un essai
+  abandonné d'un client qui part. Dire « essai non converti » dans l'alerte (la ligne porte `essai_fin_le`).
+- **« Un seul essai par espace » se contourne** : deux sessions Checkout ouvertes avant la première ligne
+  `abonnements_offre` donnent chacune un essai, et une ligne du mode test de Stripe compte comme un Pro passé. Poser la
+  règle au webhook (refuser un second essai) si l'abus apparaît, pas avant.
+- **Un essai terminé plus tôt** (le client paie avant la fin) garde `essai_fin_le` dans le futur : la page Offre dit
+  encore « votre essai se termine le… » jusqu'à cette date. Effacer la colonne à la première facture payée de l'essai.
+
 ## 🟡 Offres v2 : les jaunes des relectures des livraisons 4 et 5 (2026-10-19)
 
 - **Une Entreprise réglée sur devis à une valeur de la grille** (5 000 ou 100 contacts) lit « Passez en Entreprise » ou

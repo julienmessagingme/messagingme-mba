@@ -942,6 +942,8 @@ async function main(): Promise<void> {
     prixProAn: config.STRIPE_PRIX_PRO_AN,
     proVivant: (tenant) => abonnementsOffre.vivant(tenant),
     offreDe: async (tenant) => (await offres.offreDe(tenant)).offre,
+    // L'essai de 14 jours, une fois par espace (spec offres v2) : un Pro, même fini, l'a consommé.
+    dejaEuUnPro: async (tenant) => (await abonnementsOffre.deLEspace(tenant)) !== null,
   };
   // Le plafond de clés actives de l'offre (spec offres v2), lu par la route de la console et par l'outil `create_api_key`.
   const limiteClesDeLOffre = async (tenant: string): Promise<number | null> => (await offres.offreDe(tenant)).droits.limites.clesApi;
@@ -950,6 +952,12 @@ async function main(): Promise<void> {
     proEnVente: proDeLaConsole.stripe !== null && proDeLaConsole.prixProMois !== '' && proDeLaConsole.prixProAn !== '',
     // La suite du numéro fourni que le Pro annonce (lot 6, B2b).
     suiteDuNumero: (tenant) => abonnementsOffre.suiteDuNumero(tenant),
+    // L'essai du Pro (spec offres v2) : déjà consommé par un Pro, même fini ; la fin de celui qui court, s'il est en essai.
+    essai: async (tenant) => {
+      const a = await abonnementsOffre.deLEspace(tenant);
+      const enEssai = a !== null && a.finiLe === null && a.essaiFinLe !== null && a.essaiFinLe.getTime() > Date.now();
+      return { dejaEuUnPro: a !== null, finLe: enEssai ? a.essaiFinLe : null };
+    },
   });
 
   /**
@@ -1540,7 +1548,7 @@ async function main(): Promise<void> {
           invalider: (tenant) => offres.invalider(tenant),
           alerter: async (texte) => { await sendTelegram(`[mba-${NOM_API}] ${texte}`); },
           // Le numéro inclus (B2b) : au passage en Pro et à la fin du Pro.
-          surPassageEnPro: (tenant) => surPassageEnPro(numeroInclus, tenant),
+          surPassageEnPro: (tenant, o) => surPassageEnPro(numeroInclus, tenant, o),
           surFinDuPro: (f) => surFinDuPro(numeroInclus, f),
         },
       },

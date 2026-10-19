@@ -420,4 +420,20 @@ describe.skipIf(!url)('l’offre calculée (0218)', () => {
     const r = await pool.query<{ n: number }>('select count(*)::int as n from tenant_settings where tenant_id = $1', [inconnu]);
     expect(r.rows[0]!.n).toBe(0);
   });
+  it('🔴 0243 : la fin de l’essai du Pro écrite à la création, gardée quand un événement ne la porte pas, relue par l’espace (spec offres v2)', async () => {
+    const t = await espace('essai-pro');
+    const pros = new PgAbonnementsOffreStore(pool);
+    const fin = new Date('2026-11-02T09:00:00Z');
+    expect(await pros.enregistrer({ tenantId: t, abonnementId: 'sub_essaiA', periodicite: 'mois', livemode: false, periodeFin: null, essaiFinLe: fin }))
+      .toEqual({ etat: 'enregistre', tenantId: t, nouveau: true });
+    expect((await pros.deLEspace(t))!.essaiFinLe).toEqual(fin);
+    // La session Checkout, livrée ensuite, ne porte pas la fin de l'essai : elle reste.
+    await pros.enregistrer({ tenantId: t, abonnementId: 'sub_essaiA', periodicite: 'mois', livemode: false, periodeFin: null });
+    expect((await pros.deLEspace(t))!.essaiFinLe).toEqual(fin);
+    // Une modification sans essai la garde aussi ; une modification qui en porte une autre la remplace.
+    await pros.modifier('sub_essaiA', { finPrevueLe: null, periodicite: null });
+    expect((await pros.deLEspace(t))!.essaiFinLe).toEqual(fin);
+    const prolonge = new Date('2026-11-05T09:00:00Z');
+    expect((await pros.modifier('sub_essaiA', { finPrevueLe: null, periodicite: null, essaiFinLe: prolonge }))!.essaiFinLe).toEqual(prolonge);
+  });
 });
