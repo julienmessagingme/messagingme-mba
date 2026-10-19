@@ -102,18 +102,32 @@
     });
   });
 
+  // Le terminal défile comme un vrai : chaque entrée apparaît à son `--t`, et la fenêtre suit la dernière ligne.
+  // Sans IntersectionObserver, ou pour qui a demandé moins de mouvement, la séance est affichée finie, la fenêtre
+  // descendue sur sa fin (la balise de la bulle).
   var t = document.querySelector('.dev-terminal');
-  if (!t || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  if (!('IntersectionObserver' in window)) { t.classList.add('statique'); return; }
+  if (!t) return;
+  var fil = t.querySelector('.cc-fil'), entrees = [].slice.call(t.querySelectorAll('.dev-seance > li'));
+  var enBas = function (doux) { if (fil) fil.scrollTo({ top: fil.scrollHeight, behavior: doux ? 'smooth' : 'auto' }); };
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches || !('IntersectionObserver' in window)) {
+    t.classList.add('statique'); enBas(false); return;
+  }
+  var quand = function (li) { return (parseFloat(li.style.getPropertyValue('--t')) || 0) * 1000; };
+  var fin = Math.max.apply(null, entrees.map(quand));
   var minuteries = [], actif = false;
   function arreter() { minuteries.forEach(clearTimeout); minuteries = []; }
   function tour() {
     arreter();
-    t.classList.remove('joue', 'sortie');
-    void t.offsetWidth;
+    t.classList.remove('sortie', 'fini');
+    entrees.forEach(function (li) { li.classList.remove('vu'); });
     t.classList.add('joue');
-    minuteries.push(setTimeout(function () { t.classList.add('sortie'); }, 13000));
-    minuteries.push(setTimeout(tour, 13600));
+    enBas(false);
+    entrees.forEach(function (li) {
+      minuteries.push(setTimeout(function () { li.classList.add('vu'); enBas(true); }, quand(li)));
+    });
+    minuteries.push(setTimeout(function () { t.classList.add('fini'); }, fin + 400));
+    minuteries.push(setTimeout(function () { t.classList.add('sortie'); }, fin + 4600));
+    minuteries.push(setTimeout(tour, fin + 5200));
   }
   new IntersectionObserver(function (e) {
     if (e[0].isIntersecting && !actif) { actif = true; tour(); }

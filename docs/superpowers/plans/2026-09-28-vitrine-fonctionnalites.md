@@ -135,9 +135,29 @@ Le même jour, sur ses retours :
   dit), « Se connecter » en vert comme « Nous contacter », les boutons en pilule, plus d'espace au-dessus de la une.
   Plus large, le bandeau passe au burger jusqu'à 1000 px.
 
+## Ajout du 2026-10-19 : de vrais iPhone, et une vraie fenêtre Claude Code
+
+Deux retours de Julien. **Méthode : en direct**, comme le reste du plan (pages statiques, réversibles).
+- Les téléphones des pages fonctionnalités, des images à plat au cadre générique, deviennent les iPhone de la une de
+  l'accueil : châssis en titane, bordure noire, îlot, boutons, reflet, et la même légère 3D (`rotate`, jamais
+  `transform`). Le cadre est DESSINÉ sur l'image (`encadrer-iphone.cjs`, rangé dans l'atelier `~/engageme-motion` à
+  côté de `rendre-images.cjs`) sans déplacer l'écran : les gestes « 1 clic », posés en pourcentages de l'image, restent
+  justes. Une figure qui porte un geste tourne en entier. Vingt-deux images, français et anglais, servies avec
+  `?v=2` côté français (l'outil de traduction retire le `?v=` des images anglaises : celles-ci se rafraîchissent en un
+  jour chez qui les avait déjà vues). Une image refaite à plat par `rendre-images.cjs` doit repasser par
+  `encadrer-iphone.cjs`.
+- La fenêtre Claude Code de la page développeurs (bleue, « ne ressemble pas du tout à Claude Code ») reprend le dessin
+  du film des cas d'usage : barre grise de macOS, thème sombre de Claude Code, mascotte orange, appels
+  `messagingme - <outil> (MCP)(…)`, réponses JSON réelles du serveur (relevées dans `src/mcp/`) tronquées par
+  « … +N lines (ctrl+o to expand) », champ de saisie et mode « accept edits ». Elle défile comme un terminal ;
+  `tests/vitrine-developpeurs.test.ts` tient toujours les outils, leur ordre et la balise.
+
+Restent à plat, à trancher par Julien : les écrans de la console (Chaîne, fiche CRM, Inbox).
+
 ## Essai réel qui clôt
 
 Julien parcourt les deux pages en production, sur ordinateur et sur son téléphone : il ouvre le menu, lance les
 deux films, et clique « Demander une démo ». Pour le formulaire : il envoie un message depuis `/contact/` sur son
 téléphone, le reçoit dans sa boîte, et sa réponse part à l'adresse saisie. Pour les six cartes : il clique
-chacune depuis l'accueil, sur son téléphone, et relit les deux pages neuves.
+chacune depuis l'accueil, sur son téléphone, et relit les deux pages neuves. Pour les iPhone et la fenêtre Claude
+Code : il ouvre les quatre pages fonctionnalités et la page développeurs, sur ordinateur et sur son téléphone.
