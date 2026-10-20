@@ -194,7 +194,7 @@ import type { TemplateSummary } from './meta/templates';
 import type { DepsGestionModeles } from './templates/gestion';
 import type { DepsCreationModele } from './api/creer-modele';
 import { placesDeTelechargement, telechargerEnteteProduction } from './api/entete-par-url';
-import { lancerEnvoi, type DepsEnvoi } from './http/v1-sends';
+import { lancerEnvoiPublic, type DepsEnvoiPublic } from './api/envoi-public';
 import { tenter } from './lib/tenter';
 import { messageDe, texteDe } from './lib/erreur';
 import { PgStripeStore } from './stripe/store.pg';
@@ -1149,10 +1149,10 @@ async function main(): Promise<void> {
   };
 
   /**
-   * Les dépendances du cœur de `POST /v1/sends` (`lancerEnvoi`), partagées avec l'outil `send_template_to_contact`
+   * Les dépendances du cycle d'envoi public, partagées par `POST /v1/sends` et `send_template_to_contact`
    * (lot 13, domaine 3, livraison B) : un modèle envoyé par Claude passe par les MÊMES gardes que l'API.
    */
-  const depsEnvois: DepsEnvoi = {
+  const depsEnvois: DepsEnvoiPublic = {
     resolveScenario: (tenant, ref) => resolveScenario(tenant, ref, workflowStore),
     /**
      * Cible node : le code `nod_` vit dans le graphe publié, d'où le scan des scénarios de l'espace. Le
@@ -2935,7 +2935,7 @@ async function main(): Promise<void> {
         // Les modèles (lot 13, domaine 3) : la MÊME création que `POST /v1/templates`, la MÊME liste que le catalogue.
         modeles: { ...creationModeles, lister: listerModeles },
         // L'envoi d'un modèle à un contact (livraison B) : le MÊME cœur que `POST /v1/sends`, sans clé d'en-tête.
-        envoyerModele: (tenant, corps, compter) => lancerEnvoi(depsEnvois, tenant, corps, undefined, compter),
+        envoyerModele: (tenant, corps, compter) => lancerEnvoiPublic(depsEnvois, tenant, corps, undefined, compter),
         // Le statut d'un message (lot 13) : la MÊME lecture que `GET /v1/messages/{id}`.
         messagesApi: conversationsV1,
         // L'envoi au format de Meta (lot 13, domaine 2) : le MÊME que `POST /v1/messages`.

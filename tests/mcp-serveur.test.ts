@@ -18,7 +18,7 @@ import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInert
 import { creerPoseEtiquette, LONGUEUR_MAX_ETIQUETTE } from '../src/crm/poser-etiquette';
 import { DROITS } from '../src/offres/offres';
 import { MetaTemplateClient, type FetchLike, type TemplateSummary } from '../src/meta/templates';
-import { lireCible, schemaCorps, schemaDestinataire, type ReponseEnvoi } from '../src/http/v1-sends';
+import { lireCible, schemaCorps, schemaDestinataire, type ResultatEnvoiPublic } from '../src/api/envoi-public';
 import { validateParamMapping } from '../src/crm/template';
 import { cleIdempotence } from '../src/api/idempotence';
 import { modelesInertes, aucuneCampagneActive } from './routes-inertes';
@@ -1118,7 +1118,7 @@ describe('serveur MCP : envoyer un modèle à un contact (lot 13, domaine 3, liv
   const outil = OUTILS.find((o) => o.nom === 'send_template_to_contact')!;
   const RAPPORT = { sendId: 'send-1', opening: 'whatsapp_template', recipientCount: 1, created: 0, matched: 1, skipped: [], skippedTotal: 0 };
 
-  function monterEnvoi(reponse: ReponseEnvoi | null, couteuxAccepte = true, quotaAccepte = true) {
+  function monterEnvoi(reponse: ResultatEnvoiPublic, couteuxAccepte = true, quotaAccepte = true) {
     const corps: unknown[] = [];
     const comptes: number[] = [];
     const deps = {

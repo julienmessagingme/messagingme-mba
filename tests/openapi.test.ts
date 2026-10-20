@@ -18,7 +18,7 @@ import type { ContactDuSignal, ContenuSignal, Signal } from '../src/signaux/type
 import type { FicheApi, LastAnalysis, EngagementRisk, ResultatFiche } from '../src/api/contacts-v1';
 import type { ConversationV1, MessageV1, PageV1 } from '../src/api/conversations-v1';
 import type { SuiviEnvoiApi } from '../src/api/suivi-envoi';
-import type { RapportEnvoi } from '../src/http/v1-sends';
+import type { RapportEnvoi } from '../src/api/envoi-public';
 import type { ReponseMessageSimple } from '../src/http/v1-messages';
 import type { ChampV1 } from '../src/http/v1-contacts-admin';
 import type {

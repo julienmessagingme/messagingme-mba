@@ -9,7 +9,14 @@ import { nomDuMessageRcs, PREFIXE_ENVOI_API } from '../src/api/cible-rcs';
 import { appliquerConsentement, type IssueConsentement } from '../src/api/consentement';
 import type { ApiKeyLookup } from '../src/auth/api-key-store.pg';
 import type { PoolClient } from 'pg';
-import { lancerEnvoi, type V1SendsRouteDeps, type V1SendCreateInput } from '../src/http/v1-sends';
+import type { V1SendsRouteDeps } from '../src/http/v1-sends';
+import {
+  COMPTEUR_ENVOI_REFUSE,
+  lancerEnvoiPublic,
+  type CreationEnvoiPublic,
+  type DepsEnvoiPublic,
+  type ResultatEnvoiPublic,
+} from '../src/api/envoi-public';
 import type { BuiltRecipient, ContactEnvoi } from '../src/campaign/build';
 import type { EnvoiApiBrut } from '../src/campaign/store.pg';
 import type { ClesFiche, ModeCreation } from '../src/api/fiche';
@@ -103,9 +110,11 @@ interface Monde {
 /** Le client de transaction que les faux dépôts passent à la confirmation : opaque, aucun faux ne le lit. */
 const TX_FACTICE = {} as PoolClient;
 
+const statutDe = (resultat: ResultatEnvoiPublic): number | null => 'statut' in resultat ? resultat.statut : null;
+
 /** Le dépôt et le magasin d'idempotence se surchargent membre par membre. */
-type Surcharges = Partial<Omit<V1SendsRouteDeps, 'usage' | 'repo' | 'idempotence'>> & {
-  repo?: Partial<V1SendsRouteDeps['repo']>; idempotence?: Partial<V1SendsRouteDeps['idempotence']>;
+type Surcharges = Partial<Omit<DepsEnvoiPublic, 'repo' | 'idempotence'>> & {
+  repo?: Partial<DepsEnvoiPublic['repo']>; idempotence?: Partial<DepsEnvoiPublic['idempotence']>;
 };
 
 function app(over: Surcharges = {}, monde: Partial<Monde> = {}) {
@@ -117,7 +126,7 @@ function app(over: Surcharges = {}, monde: Partial<Monde> = {}) {
     ...monde,
   };
   const cap = {
-    sends: [] as Array<{ input: V1SendCreateInput; recipients: BuiltRecipient[] }>,
+    sends: [] as Array<{ input: CreationEnvoiPublic; recipients: BuiltRecipient[] }>,
     enqueued: [] as Array<{ id: string; rate: number | null }>,
     resolutions: [] as Array<{ cles: ClesFiche; creer: ModeCreation }>,
     /** Chaque demande d'écriture de consentement qui atteint le dépôt, écrite ou non. */
@@ -146,7 +155,7 @@ function app(over: Surcharges = {}, monde: Partial<Monde> = {}) {
     return 'change';
   };
 
-  const sends: Omit<V1SendsRouteDeps, 'usage'> = {
+  const sends: DepsEnvoiPublic = {
     resolveScenario: async (_t, ref) => {
       if (ref === 'Ambigu') return { ok: false, reason: 'ambiguous', matches: [{ id: 'a', name: 'Ambigu', graph: G_TEMPLATE }, { id: 'b', name: 'Ambigu', graph: G_TEMPLATE }] };
       const graph = SCENARIOS[ref];
@@ -852,36 +861,36 @@ describe('POST /v1/sends : idempotence', () => {
   });
 
   /**
-   * 🔴 LE QUOTA SE COMPTE APRÈS LA CLÉ. `lancerEnvoi` est le seul endroit où l'ordre se décide (la route et l'outil
+   * 🔴 LE QUOTA SE COMPTE APRÈS LA CLÉ. `lancerEnvoiPublic` est le seul endroit où l'ordre se décide (la route et l'outil
    * `send_template_to_contact` y passent) : un compteur espion dit ce qui a été compté.
    */
   it('🔴 un rejeu, un envoi en cours ou une clé déjà servie ne comptent rien du quota', async () => {
     const { sends, idem, cap } = app();
     const comptes: number[] = [];
     const compter = async (n: number) => { comptes.push(n); return true; };
-    expect((await lancerEnvoi(sends, 't1', CORPS, 'k-q', compter))?.statut).toBe(201);
-    expect((await lancerEnvoi(sends, 't1', CORPS, 'k-q', compter))?.statut).toBe(201);
-    expect((await lancerEnvoi(sends, 't1', { ...TPL, recipients: [{ contactId: C2 }] }, 'k-q', compter))?.statut).toBe(422);
+    expect(statutDe(await lancerEnvoiPublic(sends, 't1', CORPS, 'k-q', compter))).toBe(201);
+    expect(statutDe(await lancerEnvoiPublic(sends, 't1', CORPS, 'k-q', compter))).toBe(201);
+    expect(statutDe(await lancerEnvoiPublic(sends, 't1', { ...TPL, recipients: [{ contactId: C2 }] }, 'k-q', compter))).toBe(422);
     idem.set('k-en-cours', { hash: empreinteCorps(CORPS), jeton: 'autre' });
-    expect((await lancerEnvoi(sends, 't1', CORPS, 'k-en-cours', compter))?.statut).toBe(409);
+    expect(statutDe(await lancerEnvoiPublic(sends, 't1', CORPS, 'k-en-cours', compter))).toBe(409);
     expect(comptes).toEqual([1]);
     expect(cap.sends).toHaveLength(1);
   });
 
   it('🔴 un envoi refusé par le quota ne crée rien et LIBÈRE sa clé : le même appel repart ensuite', async () => {
     const { sends, idem, cap } = app();
-    expect(await lancerEnvoi(sends, 't1', CORPS, 'k-refus', async () => false)).toBeNull();
+    expect(await lancerEnvoiPublic(sends, 't1', CORPS, 'k-refus', async () => false)).toEqual(COMPTEUR_ENVOI_REFUSE);
     expect(idem.has('k-refus')).toBe(false);
     expect(cap.sends).toHaveLength(0);
-    expect((await lancerEnvoi(sends, 't1', CORPS, 'k-refus', async () => true))?.statut).toBe(201);
+    expect(statutDe(await lancerEnvoiPublic(sends, 't1', CORPS, 'k-refus', async () => true))).toBe(201);
   });
 
   it('🔴 un compteur qui LÈVE (l’outil MCP) libère aussi la clé : la même demande repart ensuite', async () => {
     const { sends, idem } = app();
     const refus = new Error('opérations lourdes : réessayer dans 20 s');
-    await expect(lancerEnvoi(sends, 't1', CORPS, 'k-leve', async () => { throw refus; })).rejects.toBe(refus);
+    await expect(lancerEnvoiPublic(sends, 't1', CORPS, 'k-leve', async () => { throw refus; })).rejects.toBe(refus);
     expect(idem.has('k-leve')).toBe(false);
-    expect((await lancerEnvoi(sends, 't1', CORPS, 'k-leve', async () => true))?.statut).toBe(201);
+    expect(statutDe(await lancerEnvoiPublic(sends, 't1', CORPS, 'k-leve', async () => true))).toBe(201);
   });
 
   it('un envoi identique en cours : 409 idempotency_in_progress', async () => {

@@ -28,7 +28,7 @@ import { OUTILS_NUMERO, type DepsNumeroMcp } from './outils-numero';
 import { OUTILS_MODELES, type DepsModelesMcp } from './outils-modeles';
 import { OUTILS_CAMPAGNES, type DepsCampagnesMcp } from './outils-campagnes';
 import { OUTILS_CHAMPS, type DepsChampsMcp } from './outils-champs';
-import type { ReponseEnvoi } from '../http/v1-sends';
+import type { ResultatEnvoiPublic } from '../api/envoi-public';
 import type { VueOffre } from '../offres/vue';
 import type { SourceOffres } from '../offres/offre.pg';
 import type { Fonction } from '../offres/offres';
@@ -130,10 +130,10 @@ export interface DepsMcp extends DepsRepondre, DepsChampsMcp {
    */
   campagnes: DepsCampagnesMcp['campagnes'];
   /**
-   * L'envoi d'un modèle (lot 13, domaine 3, livraison B) : `lancerEnvoi`, le cœur de `POST /v1/sends`, lié à ses
-   * dépendances par le câblage. `compter` est appelé où la route compte ; il rend `true` ou lève.
+   * L'envoi d'un modèle (lot 13, domaine 3, livraison B) : le même cycle d'envoi public que `POST /v1/sends`, lié
+   * à ses dépendances par le câblage. `compter` est appelé où la route compte ; il rend `true` ou lève.
    */
-  envoyerModele(tenantId: string, corps: unknown, compter: (unites: number) => Promise<boolean>): Promise<ReponseEnvoi | null>;
+  envoyerModele(tenantId: string, corps: unknown, compter: (unites: number) => Promise<boolean>): Promise<ResultatEnvoiPublic>;
   /**
    * Le quota QUOTIDIEN d'envois de l'espace (`src/api/quotas.ts`), le même que `POST /v1/sends` (opération
    * `sends.create`) : sans lui, Claude enverrait jusqu'à dix modèles par minute toute la journée. Posé par la route
