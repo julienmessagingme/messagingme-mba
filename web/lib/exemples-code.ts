@@ -455,6 +455,34 @@ export const PROMPT_RAPPELS: Bilingue = [
   ),
 ];
 
+/** Le prompt de la recette de la prise de rendez-vous (`EXEMPLES_CAS['rendez-vous']`), qui renvoie vers sa version `.md`. */
+export const PROMPT_RENDEZ_VOUS: Bilingue = [
+  lignes(
+    'Branche la prise de rendez-vous par WhatsApp dans ce projet, en suivant la recette',
+    'https://console.messagingme.app/developers/api/guides/appointment-booking.md :',
+    '1. installe le SDK : npm install github:julienmessagingme/messagingme-sdk#v{VERSION} ;',
+    '2. avec les outils Messaging Me, ajoute sur l’agent qui répond les deux actions « Appointment request » (champs',
+    '   reason et city) et « Slot choice » (champ slot) ;',
+    '3. écris lib/calendar.ts relié à notre agenda (proposer trois créneaux libres, réserver celui choisi) et la route',
+    '   app/api/webhooks/messagingme/route.ts, en gardant les mêmes noms d’actions et codes de champs partout ;',
+    '4. abonne la route à agent.action, décoché par défaut, et range la clé et le secret dans les variables',
+    '   d’environnement, jamais dans le code.',
+    'N’invente aucune route ni aucun champ : ils sont dans https://api.messagingme.app/openapi.json.',
+  ),
+  lignes(
+    'Add WhatsApp appointment booking to this project, following the recipe',
+    'https://console.messagingme.app/developers/api/guides/appointment-booking.en.md:',
+    '1. install the SDK: npm install github:julienmessagingme/messagingme-sdk#v{VERSION};',
+    '2. with the Messaging Me tools, add on the agent that answers the two actions “Appointment request” (fields',
+    '   reason and city) and “Slot choice” (field slot);',
+    '3. write lib/calendar.ts wired to our calendar (offer three free slots, book the one chosen) and the route',
+    '   app/api/webhooks/messagingme/route.ts, keeping the same action names and field codes everywhere;',
+    '4. subscribe the route to agent.action, unchecked by default, and keep the key and the secret in environment',
+    '   variables, never in the code.',
+    'Do not invent any route or field: they are in https://api.messagingme.app/openapi.json.',
+  ),
+];
+
 /** Le prompt de la recette des notifications de commande (`EXEMPLES_CAS.notifications`), qui renvoie vers sa version `.md`. */
 export const PROMPT_NOTIFICATIONS: Bilingue = [
   lignes(

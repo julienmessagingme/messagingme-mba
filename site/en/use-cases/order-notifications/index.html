@@ -196,6 +196,7 @@
       <details class="burger-groupe" open>
         <summary>Solutions<svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>
         <div class="burger-liens">
+          <a href="/en/use-cases/appointment-booking/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-chat-circle-dots"/></svg></span><span><strong>Appointment booking</strong><small>Three slots, one pick, booked</small></span></a>
           <a href="/en/use-cases/appointment-reminders/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-timer"/></svg></span><span><strong>Appointment reminders</strong><small>A reminder the evening before</small></span></a>
           <a href="/en/use-cases/order-notifications/" aria-current="page"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-package"/></svg></span><span><strong>Order notifications</strong><small>Order tracking, read or not</small></span></a>
           <a href="/en/use-cases/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-list-checks"/></svg></span><span><strong>All use cases</strong><small>The film, the diagram and the code of each</small></span></a>
@@ -225,6 +226,7 @@
     <details class="menu">
       <summary class="lien"><span class="menu-bureau">Solutions</span><svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>
       <div class="menu-panneau">
+        <a href="/en/use-cases/appointment-booking/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-chat-circle-dots"/></svg></span><span><strong>Appointment booking</strong><small>Three slots, one pick, booked</small></span></a>
         <a href="/en/use-cases/appointment-reminders/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-timer"/></svg></span><span><strong>Appointment reminders</strong><small>A reminder the evening before</small></span></a>
         <a href="/en/use-cases/order-notifications/" aria-current="page"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-package"/></svg></span><span><strong>Order notifications</strong><small>Order tracking, read or not</small></span></a>
         <a href="/en/use-cases/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-list-checks"/></svg></span><span><strong>All use cases</strong><small>The film, the diagram and the code of each</small></span></a>
@@ -274,7 +276,7 @@
         <li><span class="f-num">1</span><div><h3>The shipping template</h3><p>Claude Code creates it with <code>create_template</code>: utility category, the first name and the order number, a “Track my parcel” button to your tracking page. Meta approves it, often within minutes, and <code>get_template_status</code> confirms it.</p></div></li>
         <li><span class="f-num">2</span><div><h3>The send on shipping</h3><p>When an order moves to shipped, your app sends the template with <code>POST /v1/sends</code>, with an idempotency key taken from the order: replayed within 24 hours, it does not send twice. The send identifier it returns is stored on the order.</p></div></li>
         <li><span class="f-num">3</span><div><h3>Delivered, then read</h3><p>Your route, declared with <code>create_webhook_endpoint</code>, receives <code>message.delivered</code> then <code>message.read</code> (unchecked by default, you tick them on purpose): it finds the order by the send identifier and shows it “Read”.</p></div></li>
-        <li><span class="f-num">4</span><div><h3>If they reply</h3><p>Their reply opens a conversation, taken by the AI agent that answers for the workspace (<code>set_default_responder</code>), with your delivery policy in its knowledge. Your team can take over in the Inbox.</p></div></li>
+        <li><span class="f-num">4</span><div><h3>If they reply</h3><p>Their reply opens a conversation, taken by the AI agent that answers for the workspace (<code>set_default_responder</code>), with your delivery policy in its knowledge. On Pro, your team can take over in the console’s Inbox.</p></div></li>
       </ol>
       <h3 class="cas-sous-titre">What you type in Claude Code</h3>
       <p class="f-texte">With the plugin installed, one sentence is enough: Claude Code creates the template, wires the send and the route, and tests.</p>
@@ -312,7 +314,7 @@ export async function notifyShipped(order: { id: string; phone: string; firstNam
     <div class="cadre">
       <h2 class="f-titre">What you pay.</h2>
       <ul class="tarif-liste cas-liste">
-        <li><strong>The Free plan is enough:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> templates sent a month, the API and the MCP server included.</li>
+        <li><strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> templates sent a month and <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included; beyond that, Pro.</li>
         <li><strong>The AI agent</strong> is paid from the prepaid AI credit, per answer.</li>
         <li><strong>Meta bills your business directly</strong> for each utility template, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the customer’s country.</li>
       </ul>

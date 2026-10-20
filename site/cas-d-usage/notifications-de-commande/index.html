@@ -196,6 +196,7 @@
       <details class="burger-groupe" open>
         <summary>Solutions<svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>
         <div class="burger-liens">
+          <a href="/cas-d-usage/prise-de-rendez-vous/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-chat-circle-dots"/></svg></span><span><strong>Prise de rendez-vous</strong><small>Trois créneaux, un choix, réservé</small></span></a>
           <a href="/cas-d-usage/rappels-rendez-vous/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-timer"/></svg></span><span><strong>Rappels de rendez-vous</strong><small>Un rappel la veille, deux boutons</small></span></a>
           <a href="/cas-d-usage/notifications-de-commande/" aria-current="page"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-package"/></svg></span><span><strong>Notifications de commande</strong><small>Le suivi de commande, lu ou non</small></span></a>
           <a href="/cas-d-usage/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-list-checks"/></svg></span><span><strong>Tous les cas d’usage</strong><small>Le film, le schéma et le code de chacun</small></span></a>
@@ -225,6 +226,7 @@
     <details class="menu">
       <summary class="lien"><span class="menu-bureau">Solutions</span><svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>
       <div class="menu-panneau">
+        <a href="/cas-d-usage/prise-de-rendez-vous/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-chat-circle-dots"/></svg></span><span><strong>Prise de rendez-vous</strong><small>Trois créneaux, un choix, réservé</small></span></a>
         <a href="/cas-d-usage/rappels-rendez-vous/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-timer"/></svg></span><span><strong>Rappels de rendez-vous</strong><small>Un rappel la veille, deux boutons</small></span></a>
         <a href="/cas-d-usage/notifications-de-commande/" aria-current="page"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-package"/></svg></span><span><strong>Notifications de commande</strong><small>Le suivi de commande, lu ou non</small></span></a>
         <a href="/cas-d-usage/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-list-checks"/></svg></span><span><strong>Tous les cas d’usage</strong><small>Le film, le schéma et le code de chacun</small></span></a>
@@ -274,7 +276,7 @@
         <li><span class="f-num">1</span><div><h3>Le modèle d’expédition</h3><p>Claude Code le crée par <code>create_template</code>&nbsp;: catégorie utilitaire, le prénom et le numéro de commande, un bouton «&nbsp;Suivre mon colis&nbsp;» vers votre page de suivi. Meta l’approuve, souvent en quelques minutes, et <code>get_template_status</code> le confirme.</p></div></li>
         <li><span class="f-num">2</span><div><h3>L’envoi à l’expédition</h3><p>Quand une commande passe en expédiée, votre application envoie le modèle par <code>POST /v1/sends</code>, avec une clé d’idempotence tirée de la commande&nbsp;: rejoué dans les 24&nbsp;heures, il n’envoie pas deux fois. L’identifiant d’envoi rendu se range sur la commande.</p></div></li>
         <li><span class="f-num">3</span><div><h3>Livré, puis lu</h3><p>Votre route, déclarée par <code>create_webhook_endpoint</code>, reçoit <code>message.delivered</code> puis <code>message.read</code> (décochés par défaut, on les coche exprès)&nbsp;: elle retrouve la commande par l’identifiant d’envoi et l’affiche «&nbsp;Lu&nbsp;».</p></div></li>
-        <li><span class="f-num">4</span><div><h3>S’il répond</h3><p>Sa réponse ouvre une conversation, que prend l’agent IA qui répond pour l’espace (<code>set_default_responder</code>), avec votre politique de livraison dans sa connaissance. Votre équipe peut reprendre la main dans l’Inbox.</p></div></li>
+        <li><span class="f-num">4</span><div><h3>S’il répond</h3><p>Sa réponse ouvre une conversation, que prend l’agent IA qui répond pour l’espace (<code>set_default_responder</code>), avec votre politique de livraison dans sa connaissance. En Pro, votre équipe peut reprendre la main dans l’Inbox de la console.</p></div></li>
       </ol>
       <h3 class="cas-sous-titre">Ce que vous tapez dans Claude Code</h3>
       <p class="f-texte">Le plugin installé, une phrase suffit&nbsp;: Claude Code crée le modèle, branche l’envoi et la route, et teste.</p>
@@ -312,7 +314,7 @@ export async function notifyShipped(order: { id: string; phone: string; firstNam
     <div class="cadre">
       <h2 class="f-titre">Ce que vous payez.</h2>
       <ul class="tarif-liste cas-liste">
-        <li><strong>L’offre Free suffit&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> modèles envoyés par mois, l’API et le serveur MCP compris.</li>
+        <li><strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> modèles envoyés par mois et <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.</li>
         <li><strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse.</li>
         <li><strong>Meta facture directement</strong> chaque modèle utilitaire à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.</li>
       </ul>

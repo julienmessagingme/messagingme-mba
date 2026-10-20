@@ -34,6 +34,7 @@ export const JUMELLES: Readonly<Record<string, string>> = {
   '/cas-d-usage/': '/en/use-cases/',
   '/cas-d-usage/rappels-rendez-vous/': '/en/use-cases/appointment-reminders/',
   '/cas-d-usage/notifications-de-commande/': '/en/use-cases/order-notifications/',
+  '/cas-d-usage/prise-de-rendez-vous/': '/en/use-cases/appointment-booking/',
   '/contact/': '/en/contact/',
   '/contact/merci/': '/en/contact/thanks/',
 };

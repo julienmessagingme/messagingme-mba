@@ -55,7 +55,7 @@ export const ENTREES: readonly EntreeVitrine[] = [
     fr: { adresse: '/cas-d-usage/prise-de-rendez-vous/', titre: 'Prise de rendez-vous' },
     en: { adresse: '/en/use-cases/appointment-booking/', titre: 'Appointment booking' },
     profils: ['saas', 'lovable', 'agence', 'produit'], vague: 1, recherche: 'prise de rendez-vous whatsapp',
-    commande: 'demarrer', chemin: 'code', guide: 'appointment-booking', enLigne: false,
+    commande: 'demarrer', chemin: 'code', guide: 'appointment-booking', film: 'cas-rendez-vous', enLigne: true,
   },
   {
     cle: 'rappels', nature: 'cas',

@@ -133,7 +133,7 @@ export async function POST(req: Request) {
 
 ## Si le client répond
 
-Sa réponse ouvre une conversation. L’agent IA qui répond pour l’espace (`set_default_responder`) la prend, avec votre politique de livraison dans sa connaissance (`add_knowledge`) ; votre équipe peut reprendre la main dans l’Inbox. La route n’a rien à faire.
+Sa réponse ouvre une conversation. L’agent IA qui répond pour l’espace (`set_default_responder`) la prend, avec votre politique de livraison dans sa connaissance (`add_knowledge`) ; en Pro, votre équipe peut reprendre la main dans l’Inbox de la console. La route n’a rien à faire.
 
 <a id="essayer"></a>
 

@@ -78,6 +78,33 @@ function schemaNotifications(l: Langue): { horizontal: string; vertical: string 
     : { app: 'Your shop', veille: 'order shipped', wa: 'The customer on WhatsApp', boutons: 'tracking, one button', ok: 'Order marked Read', okD: 'in your admin', dep: 'The AI agent answers', depD: 'your delivery policy', conf: 'Delivered, then read', confApi: 'message.read', dec: 'They reply', decApi: '', titre: 'The shipping message, its read receipt, and the customer’s reply' });
 }
 
+/**
+ * Le schéma en boucle : le client écrit, l'agent IA déclenche l'action, votre app la reçoit et répond au client. Le
+ * retour passe sous les trois nœuds, son étiquette au-dessus de lui, hors de tout trait.
+ */
+function schemaRendezVous(l: Langue): { horizontal: string; vertical: string } {
+  const T = l === 'fr'
+    ? { titre: 'La demande de rendez-vous, de WhatsApp à votre agenda, et la réponse', client: 'Le client sur WhatsApp', clientD: '« un devis à Lyon ? »', agent: 'L’agent IA', agentD: 'le motif et la ville', app: 'Votre app', appD: 'votre agenda', ecrit: 'il écrit', retour: 'Trois créneaux, puis la confirmation' }
+    : { titre: 'The appointment request, from WhatsApp to your calendar, and the answer', client: 'The customer on WhatsApp', clientD: '“a quote in Lyon?”', agent: 'The AI agent', agentD: 'the reason and the city', app: 'Your app', appD: 'your calendar', ecrit: 'they write', retour: 'Three slots, then the confirmation' };
+  const horizontal = `<svg class="dessin-h" viewBox="0 0 1160 320" role="img" aria-labelledby="schema-titre"><title id="schema-titre">${T.titre}</title>${pointe('pt-h')}`
+    + noeud(10, 40, 300, 100, T.client, T.clientD)
+    + fleche('M310 90H422', 'pt-h') + `<text class="d-etiq" x="366" y="78" text-anchor="middle">${T.ecrit}</text>`
+    + noeud(430, 40, 300, 100, T.agent, T.agentD)
+    + fleche('M730 90H842', 'pt-h') + `<text class="d-api" x="786" y="78" text-anchor="middle">agent.action</text>`
+    + noeud(850, 40, 300, 100, T.app, T.appD, true)
+    + fleche('M1000 140V256Q1000 276 980 276H180Q160 276 160 256V148', 'pt-h') + etiquette(580, 226, T.retour, 'POST /v1/messages/whatsapp')
+    + '</svg>';
+  const vertical = `<svg class="dessin-v" viewBox="0 0 360 524" aria-hidden="true">${pointe('pt-v')}`
+    + noeud(60, 8, 280, 80, T.client, T.clientD)
+    + fleche('M200 88V160', 'pt-v') + `<text class="d-etiq" x="210" y="130">${T.ecrit}</text>`
+    + noeud(60, 168, 280, 80, T.agent, T.agentD)
+    + fleche('M200 248V320', 'pt-v') + `<text class="d-api" x="210" y="290">agent.action</text>`
+    + noeud(60, 328, 280, 80, T.app, T.appD, true)
+    + fleche('M200 408V448Q200 462 186 462H38Q24 462 24 448V62Q24 48 38 48H52', 'pt-v') + etiquette(200, 492, T.retour, 'POST /v1/messages/whatsapp')
+    + '</svg>';
+  return { horizontal, vertical };
+}
+
 function schemaFourche(T: TextesFourche): { horizontal: string; vertical: string } {
   // Les deux suites partent d'une fourche à angles arrondis : chaque étiquette tient sur un segment droit, aucun trait
   // ne la traverse.
@@ -104,6 +131,88 @@ function schemaFourche(T: TextesFourche): { horizontal: string; vertical: string
 }
 
 export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
+  'rendez-vous': {
+    fr: {
+      titre: 'Prise de rendez-vous sur WhatsApp · Messaging Me',
+      description: 'Le client demande un rendez-vous sur WhatsApp : l’agent IA note le motif et la ville, votre app propose trois créneaux et réserve.',
+      resume: 'Le client demande sur WhatsApp, l’agent IA note le motif et la ville, votre app propose trois créneaux et réserve.',
+      menu: 'Trois créneaux, un choix, réservé',
+      icone: 'i-chat-circle-dots',
+      h1: 'Vos clients prennent rendez-vous sur WhatsApp, et votre agenda se remplit.',
+      chapeau: 'Un client écrit qu’il veut un rendez-vous. L’agent IA lui demande le motif et la ville, votre application lui propose trois créneaux libres de votre agenda, puis réserve celui qu’il choisit et le lui confirme.',
+      film: {
+        titre: 'La demande, les créneaux, la réservation : 38 secondes.',
+        texte: 'De la demande dans Claude Code au rendez-vous réservé, sur une vraie conversation WhatsApp.',
+        aria: 'Film : la prise de rendez-vous avec Messaging Me', duree: 'PT38S', publie: '2026-10-20T12:00:00+02:00',
+      },
+      schema: { titre: 'Comment ça circule.', legende: 'Le client écrit sur WhatsApp. L’agent IA note le motif et la ville, et déclenche agent.action vers votre app, qui lit votre agenda et répond par POST /v1/messages/whatsapp avec trois créneaux, puis avec la confirmation.', ...schemaRendezVous('fr') },
+      etapes: [
+        { titre: 'Les deux actions de l’agent', texte: 'Claude Code les pose par <code>set_agent_action</code>&nbsp;: «&nbsp;Appointment request&nbsp;», qui note le motif et la ville, et «&nbsp;Slot choice&nbsp;», qui note le créneau choisi. L’agent les déclenche de lui-même, au fil de la conversation.' },
+        { titre: 'La demande arrive, signée', texte: 'Votre route, déclarée par <code>create_webhook_endpoint</code>, reçoit <code>agent.action</code> (décoché par défaut, on le coche exprès) et vérifie sa signature&nbsp;: une requête sans signature est refusée.' },
+        { titre: 'Trois créneaux libres', texte: 'Votre application lit votre agenda près de la ville donnée et répond au client par <code>POST /v1/messages/whatsapp</code>&nbsp;: il vient d’écrire, la fenêtre de 24&nbsp;heures est ouverte, aucun modèle n’est nécessaire.' },
+        { titre: 'Le créneau réservé', texte: 'Le client en choisit un&nbsp;; l’agent déclenche «&nbsp;Slot choice&nbsp;», et votre application réserve une seule fois par demande, puis confirme sur WhatsApp.' },
+      ],
+      invite: {
+        titre: 'Ce que vous tapez dans Claude Code',
+        texte: 'Le plugin installé, une phrase suffit&nbsp;: Claude Code règle l’agent, écrit la route et votre lien à l’agenda, et teste.',
+        phrase: 'quand un client demande un rdv sur whatsapp, l’agent IA récupère le motif et la ville, mon app (route /api/webhooks/messagingme) lui propose 3 créneaux libres de l’agenda (lib/agenda.ts), et quand il en choisit un on le réserve et on confirme sur whatsapp',
+      },
+      extrait: { titre: 'La route, telle que Claude Code l’écrit', partie: 'webhook' },
+      paie: [
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
+        '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse.',
+        '<strong>Meta facture directement</strong> chaque réponse envoyée dans la fenêtre de 24&nbsp;heures à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.',
+      ],
+      faq: [
+        { question: 'Faut-il un modèle approuvé par Meta&nbsp;?', reponse: 'Non&nbsp;: le client écrit le premier, et votre application lui répond dans la fenêtre de 24&nbsp;heures que son message ouvre.' },
+        { question: 'Le même créneau peut-il être réservé deux fois&nbsp;?', reponse: 'Non&nbsp;: la réservation se fait une seule fois par demande (le même événement reçu deux fois ne réserve qu’une fois), et c’est votre agenda qui dit ce qui est libre.' },
+        { question: 'Et si le client redemande le même jour&nbsp;?', reponse: 'Chaque action part une fois par jour au plus, par client et par action&nbsp;: une seconde demande le même jour n’atteint pas votre application, l’agent répond seul.' },
+        { question: 'Combien ça coûte&nbsp;?', reponse: 'La Free inclut l’API et le serveur MCP. L’agent IA se paie sur le crédit IA prépayé, et Meta facture chaque réponse envoyée dans la fenêtre de 24&nbsp;heures, selon sa grille et le pays du client.' },
+      ],
+      appel: { titre: 'Ouvrez la prise de rendez-vous aujourd’hui.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },
+      liens: [['/developpeurs/', 'Démarrer avec Claude Code'], ['/tarifs/', 'Les tarifs'], ['/cas-d-usage/', 'Tous les cas d’usage']],
+    },
+    en: {
+      titre: 'Appointment booking on WhatsApp · Messaging Me',
+      description: 'The customer asks for an appointment on WhatsApp: the AI agent notes the reason and the city, your app offers three slots and books.',
+      resume: 'The customer asks on WhatsApp, the AI agent notes the reason and the city, your app offers three slots and books.',
+      menu: 'Three slots, one pick, booked',
+      icone: 'i-chat-circle-dots',
+      h1: 'Your customers book appointments on WhatsApp, and your calendar fills up.',
+      chapeau: 'A customer writes that they want an appointment. The AI agent asks for the reason and the city, your app offers three free slots from your calendar, then books the one they pick and confirms it.',
+      film: {
+        titre: 'The request, the slots, the booking: 38 seconds.',
+        texte: 'From the request in Claude Code to the booked appointment, on a real WhatsApp conversation.',
+        aria: 'Film: appointment booking with Messaging Me', duree: 'PT38S', publie: '2026-10-20T12:00:00+02:00',
+      },
+      schema: { titre: 'How it flows.', legende: 'The customer writes on WhatsApp. The AI agent notes the reason and the city, and triggers agent.action to your app, which reads your calendar and answers with POST /v1/messages/whatsapp with three slots, then with the confirmation.', ...schemaRendezVous('en') },
+      etapes: [
+        { titre: 'The agent’s two actions', texte: 'Claude Code sets them with <code>set_agent_action</code>: “Appointment request”, which notes the reason and the city, and “Slot choice”, which notes the slot picked. The agent triggers them on its own, as the conversation goes.' },
+        { titre: 'The request arrives, signed', texte: 'Your route, declared with <code>create_webhook_endpoint</code>, receives <code>agent.action</code> (unchecked by default, you tick it on purpose) and checks its signature: a request without a signature is refused.' },
+        { titre: 'Three free slots', texte: 'Your app reads your calendar near the city given and answers the customer with <code>POST /v1/messages/whatsapp</code>: they just wrote, the 24-hour window is open, no template is needed.' },
+        { titre: 'The slot booked', texte: 'The customer picks one; the agent triggers “Slot choice”, and your app books once per request, then confirms on WhatsApp.' },
+      ],
+      invite: {
+        titre: 'What you type in Claude Code',
+        texte: 'With the plugin installed, one sentence is enough: Claude Code sets up the agent, writes the route and your calendar link, and tests.',
+        phrase: 'when a customer asks for an appointment on whatsapp, the AI agent gets the reason and city, my app (route /api/webhooks/messagingme) offers 3 free slots from the calendar (lib/calendar.ts), and when they pick one we book it and confirm on whatsapp',
+      },
+      extrait: { titre: 'The route, as Claude Code writes it', partie: 'webhook' },
+      paie: [
+        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included; beyond that, Pro.',
+        '<strong>The AI agent</strong> is paid from the prepaid AI credit, per answer.',
+        '<strong>Meta bills your business directly</strong> for each reply sent in the 24-hour window, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the customer’s country.',
+      ],
+      faq: [
+        { question: 'Is a template approved by Meta needed?', reponse: 'No: the customer writes first, and your app answers within the 24-hour window their message opens.' },
+        { question: 'Can the same slot be booked twice?', reponse: 'No: booking happens once per request (the same event received twice books once), and your calendar says what is free.' },
+        { question: 'What if the customer asks again the same day?', reponse: 'Each action fires at most once a day, per customer and per action: a second request the same day does not reach your app, the agent answers on its own.' },
+        { question: 'How much does it cost?', reponse: 'Free includes the API and the MCP server. The AI agent is paid from the prepaid AI credit, and Meta bills each reply sent in the 24-hour window, according to its rate card and the customer’s country.' },
+      ],
+      appel: { titre: 'Open appointment booking today.', texte: 'The plugin in two commands, then the sentence above in Claude Code. No account to create.' },
+      liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/use-cases/', 'All use cases']],
+    },
+  },
   rappels: {
     fr: {
       titre: 'Rappels de rendez-vous sur WhatsApp · Messaging Me',
@@ -132,7 +241,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'La tâche de la veille, telle que Claude Code l’écrit', partie: 'tache' },
       paie: [
-        '<strong>L’offre Free suffit&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> modèles envoyés par mois, l’API et le serveur MCP compris.',
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> modèles envoyés par mois et <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
         '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse.',
         '<strong>Meta facture directement</strong> chaque modèle utilitaire à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.',
       ],
@@ -172,7 +281,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'The day-before job, as Claude Code writes it', partie: 'tache' },
       paie: [
-        '<strong>The Free plan is enough:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> templates sent a month, the API and the MCP server included.',
+        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> templates sent a month and <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included; beyond that, Pro.',
         '<strong>The AI agent</strong> is paid from the prepaid AI credit, per answer.',
         '<strong>Meta bills your business directly</strong> for each utility template, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the customer’s country.',
       ],
@@ -205,7 +314,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         { titre: 'Le modèle d’expédition', texte: 'Claude Code le crée par <code>create_template</code>&nbsp;: catégorie utilitaire, le prénom et le numéro de commande, un bouton «&nbsp;Suivre mon colis&nbsp;» vers votre page de suivi. Meta l’approuve, souvent en quelques minutes, et <code>get_template_status</code> le confirme.' },
         { titre: 'L’envoi à l’expédition', texte: 'Quand une commande passe en expédiée, votre application envoie le modèle par <code>POST /v1/sends</code>, avec une clé d’idempotence tirée de la commande&nbsp;: rejoué dans les 24&nbsp;heures, il n’envoie pas deux fois. L’identifiant d’envoi rendu se range sur la commande.' },
         { titre: 'Livré, puis lu', texte: 'Votre route, déclarée par <code>create_webhook_endpoint</code>, reçoit <code>message.delivered</code> puis <code>message.read</code> (décochés par défaut, on les coche exprès)&nbsp;: elle retrouve la commande par l’identifiant d’envoi et l’affiche «&nbsp;Lu&nbsp;».' },
-        { titre: 'S’il répond', texte: 'Sa réponse ouvre une conversation, que prend l’agent IA qui répond pour l’espace (<code>set_default_responder</code>), avec votre politique de livraison dans sa connaissance. Votre équipe peut reprendre la main dans l’Inbox.' },
+        { titre: 'S’il répond', texte: 'Sa réponse ouvre une conversation, que prend l’agent IA qui répond pour l’espace (<code>set_default_responder</code>), avec votre politique de livraison dans sa connaissance. En Pro, votre équipe peut reprendre la main dans l’Inbox de la console.' },
       ],
       invite: {
         titre: 'Ce que vous tapez dans Claude Code',
@@ -214,7 +323,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'L’envoi à l’expédition, tel que Claude Code l’écrit', partie: 'commandes' },
       paie: [
-        '<strong>L’offre Free suffit&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> modèles envoyés par mois, l’API et le serveur MCP compris.',
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> modèles envoyés par mois et <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
         '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse.',
         '<strong>Meta facture directement</strong> chaque modèle utilitaire à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.',
       ],
@@ -245,7 +354,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         { titre: 'The shipping template', texte: 'Claude Code creates it with <code>create_template</code>: utility category, the first name and the order number, a “Track my parcel” button to your tracking page. Meta approves it, often within minutes, and <code>get_template_status</code> confirms it.' },
         { titre: 'The send on shipping', texte: 'When an order moves to shipped, your app sends the template with <code>POST /v1/sends</code>, with an idempotency key taken from the order: replayed within 24 hours, it does not send twice. The send identifier it returns is stored on the order.' },
         { titre: 'Delivered, then read', texte: 'Your route, declared with <code>create_webhook_endpoint</code>, receives <code>message.delivered</code> then <code>message.read</code> (unchecked by default, you tick them on purpose): it finds the order by the send identifier and shows it “Read”.' },
-        { titre: 'If they reply', texte: 'Their reply opens a conversation, taken by the AI agent that answers for the workspace (<code>set_default_responder</code>), with your delivery policy in its knowledge. Your team can take over in the Inbox.' },
+        { titre: 'If they reply', texte: 'Their reply opens a conversation, taken by the AI agent that answers for the workspace (<code>set_default_responder</code>), with your delivery policy in its knowledge. On Pro, your team can take over in the console’s Inbox.' },
       ],
       invite: {
         titre: 'What you type in Claude Code',
@@ -254,7 +363,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'The send on shipping, as Claude Code writes it', partie: 'commandes' },
       paie: [
-        '<strong>The Free plan is enough:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> templates sent a month, the API and the MCP server included.',
+        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> templates sent a month and <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included; beyond that, Pro.',
         '<strong>The AI agent</strong> is paid from the prepaid AI credit, per answer.',
         '<strong>Meta bills your business directly</strong> for each utility template, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the customer’s country.',
       ],

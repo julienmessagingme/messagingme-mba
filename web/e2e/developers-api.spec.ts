@@ -51,6 +51,7 @@ const SECTIONS: Record<CleDePage, string[]> = {
   'meta-pitfalls': ['La fenêtre de 24 h', 'Les modèles et leur validation', 'Ce que Meta facture', 'La carte dans le Business Manager', 'Le consentement et STOP', 'La qualité du numéro', 'Le débit', 'La limite marketing par personne', 'Le nom affiché', 'Le numéro injoignable', 'Les fichiers'],
   nextjs: ['Le prompt à coller', 'Installation', 'Le client', 'Envoyer un modèle', 'Recevoir les webhooks', 'Essayer'],
   'appointment-reminders': ['Le prompt à coller', 'Le modèle de rappel', 'Les deux actions de l’agent IA', 'Le code', 'La route qui reçoit les réponses', 'Essayer'],
+  'appointment-booking': ['Le prompt à coller', 'Les deux actions de l’agent IA', 'Le code', 'La route qui reçoit les actions', 'Essayer'],
   'order-notifications': ['Le prompt à coller', 'Le modèle d’expédition', 'Le code', 'La route qui reçoit les accusés', 'Si le client répond', 'Essayer'],
   events: ['Ce que la console remonte', 'Délais', 'Les événements', 'Les attributs de la fiche'],
   webhooks: ['L’enveloppe', 'Vérifier la signature', 'Réponse et réessais', 'Les événements', 'Mon application répond'],

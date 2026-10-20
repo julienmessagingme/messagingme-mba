@@ -133,7 +133,7 @@ export async function POST(req: Request) {
 
 ## If the customer replies
 
-Their reply opens a conversation. The AI agent that answers for the workspace (`set_default_responder`) takes it, with your delivery policy in its knowledge (`add_knowledge`); your team can take over in the Inbox. The route has nothing to do.
+Their reply opens a conversation. The AI agent that answers for the workspace (`set_default_responder`) takes it, with your delivery policy in its knowledge (`add_knowledge`); on Pro, your team can take over in the console’s Inbox. The route has nothing to do.
 
 <a id="essayer"></a>
 

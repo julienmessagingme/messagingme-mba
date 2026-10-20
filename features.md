@@ -49,7 +49,8 @@ au plugin (le Pro garde la création d'espace dans la console). « Créer mon es
 l'inscription de la console. Venu de la page anglaise, un lien ouvre la console en anglais.
 
 ✅ **La vitrine a ses pages de cas d'usage** (2026-10-20) : `app.messagingme.fr/cas-d-usage/` les liste, et chaque cas
-a sa page, en français et en anglais : les rappels de rendez-vous (`/cas-d-usage/rappels-rendez-vous/`, jumelle
+a sa page, en français et en anglais : la prise de rendez-vous (`/cas-d-usage/prise-de-rendez-vous/`, jumelle
+`/en/use-cases/appointment-booking/`), les rappels de rendez-vous (`/cas-d-usage/rappels-rendez-vous/`, jumelle
 `/en/use-cases/appointment-reminders/`) et les notifications de commande (`/cas-d-usage/notifications-de-commande/`,
 jumelle `/en/use-cases/order-notifications/`). Une page montre le film de la vraie séance Claude Code, le schéma de ce qui
 circule, les étapes avec les vrais noms d'outils, de routes et d'événements, la phrase à taper dans Claude Code,
@@ -2476,7 +2477,8 @@ scénario, comment importer des contacts.
   message envoyé par l'API, puis au premier modèle), **Les pièges de Meta** (fenêtre de 24 h, modèles et validation,
   ce que Meta facture, carte dans le Business Manager, consentement, qualité, débit, limite marketing, fichiers),
   **une recette Next.js** (un prompt à coller dans Claude Code ou Cursor, et le code qu'il doit produire, compilé par la
-  CI contre le SDK, comme les exemples de la page SDK), **une recette des rappels de rendez-vous** (2026-10-20, le
+  CI contre le SDK, comme les exemples de la page SDK), **une recette de la prise de rendez-vous** (2026-10-20, les deux
+  actions de l'agent IA, la route qui propose trois créneaux et réserve), **une recette des rappels de rendez-vous** (2026-10-20, le
   rappel de la veille à deux boutons, les deux actions de l'agent IA, la tâche et la route, le même code que la commande
   `/messagingme:rappels` du plugin), **une recette des notifications de commande** (2026-10-20, le message
   d'expédition, la route qui marque la commande livrée puis lue, l'agent IA qui répond) et un **Catalogue des erreurs** (chacun de nos codes avec quand il

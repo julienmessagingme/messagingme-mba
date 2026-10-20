@@ -32,6 +32,8 @@
 
 - [Tous les cas d’usage](https://app.messagingme.fr/cas-d-usage/) : Rappels de rendez-vous, notifications, support, accueil des utilisateurs : ce que vous branchez sur WhatsApp avec Claude Code, cas par cas, avec le code.
 - [All use cases](https://app.messagingme.fr/en/use-cases/) : the same page in English.
+- [Prise de rendez-vous](https://app.messagingme.fr/cas-d-usage/prise-de-rendez-vous/) : Le client demande sur WhatsApp, l’agent IA note le motif et la ville, votre app propose trois créneaux et réserve.
+- [Appointment booking](https://app.messagingme.fr/en/use-cases/appointment-booking/) : The customer asks on WhatsApp, the AI agent notes the reason and the city, your app offers three slots and books.
 - [Rappels de rendez-vous](https://app.messagingme.fr/cas-d-usage/rappels-rendez-vous/) : La veille, un rappel à deux boutons : le client confirme ou décale, et votre agenda suit.
 - [Appointment reminders](https://app.messagingme.fr/en/use-cases/appointment-reminders/) : The evening before, a reminder with two buttons: the customer confirms or reschedules, and your calendar follows.
 - [Notifications de commande](https://app.messagingme.fr/cas-d-usage/notifications-de-commande/) : La commande part : le client reçoit son suivi sur WhatsApp, et votre admin voit quand il l’a lu.
