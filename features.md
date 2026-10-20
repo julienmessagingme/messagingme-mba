@@ -3475,7 +3475,8 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
   panneau Détail de l'Inbox. Au bac à sable, elle est simulée. Depuis Claude Code : `set_agent_action` et
   `delete_agent_action`, et `get_conversation` montre les actions d'une conversation.
 - ✅ **Enchaîner des étapes** (2026-10-20) : un seul outil, plusieurs actions, **dans l'ordre que vous choisissez**.
-  Une première étape, puis « + Ajouter une étape », et des flèches pour changer l'ordre. Sept sortes d'étapes :
+  Le titre et « Quand l'appeler » d'abord, puis une première étape, « + Ajouter une étape », et des flèches pour
+  changer l'ordre. Sept sortes d'étapes :
   **Demander une information** (ce que l'agent demande, et le champ du mini-CRM où ranger la réponse, avec ses
   valeurs permises si vous en donnez), **Enregistrer une valeur fixe**, **Poser un tag**, **Marquer la
   conversation urgente**, **Envoyer un bloc**, **Lancer un scénario**, **Transférer en « À traiter »** (le même
@@ -3493,10 +3494,11 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
   - Dès qu'un bloc ou un scénario en fait partie, l'outil **part chez le client** : l'autonomie se coche, comme
     pour « Lancer un scénario ». Une écriture ou un tag qui échoue n'empêche pas la suite ; un scénario refusé
     laisse l'agent continuer la conversation. Au bac à sable, l'outil pose les mêmes questions et simule le reste.
-- ✅ **Qualifier et transférer** (écriture, 2026-10-20) : l'outil du contact qui veut parler à quelqu'un. Vous
-  écrivez vos questions, chacune avec ce que l'agent demande et le champ du mini-CRM choisi dans la liste où ranger
-  la réponse (« + Ajouter une question », des flèches pour l'ordre) ; le passage dans « À traiter » vient toujours
-  en dernier, sans réglage. Même règle que l'outil enchaîné : **une seule question au contact**, en un message,
+- ✅ **Qualifier et transférer** (écriture, 2026-10-20) : l'outil du contact qui veut parler à quelqu'un. Ni titre
+  ni nom à lui donner : la carte s'ouvre sur « Quand l'appeler », déjà rempli (le contact veut parler à quelqu'un de
+  l'équipe), que vous pouvez compléter. Puis vos questions, chacune avec ce que l'agent demande et le champ du
+  mini-CRM choisi dans la liste où ranger la réponse (« + Ajouter une question », des flèches pour l'ordre) ; le
+  passage dans « À traiter » vient toujours en dernier, sans réglage. Même règle que l'outil enchaîné : **une seule question au contact**, en un message,
   puis le transfert avec ce qu'il a donné, même rien. Sa dernière phrase part comme celle de « Passer la main à un humain » : quand il répond seul au
   numéro, ou que l'équipe est fermée ; sinon, c'est la suite de la sortie « Transfert à un humain » du scénario
   qui parle. Rien ne

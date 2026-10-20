@@ -237,9 +237,11 @@ export const TEXTES_QUALIFICATION = {
     'L’agent pose vos questions, range chaque réponse dans un champ, puis passe la conversation dans « À traiter ».',
     'The agent asks your questions, stores each answer in a field, then moves the conversation to “To handle”.',
   ] as Bilingue,
+  // Complète d'emblée (demande de Julien du 2026-10-20) : on sait quand l'appeler, le contact veut parler à quelqu'un.
+  // L'administrateur peut y ajouter une situation ; rien n'est à compléter pour enregistrer.
   quand: [
-    'Appelle cet outil dès que le contact veut parler à quelqu’un de l’équipe, ou qu’il [décrivez la situation], avec les informations qu’il a déjà données.',
-    'Call this tool as soon as the contact wants to talk to someone on the team, or [describe the situation], with the details they already gave.',
+    'Appelle cet outil dès que le contact veut parler à quelqu’un de l’équipe, avec les informations qu’il a déjà données.',
+    'Call this tool as soon as the contact wants to talk to someone on the team, with the details they already gave.',
   ] as Bilingue,
   pasQuand: [
     'N’appelle pas cet outil pour une question à laquelle les sources répondent.',

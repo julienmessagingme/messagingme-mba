@@ -77,8 +77,18 @@ export function FormulaireOutilAgent({
   // La cible d'origine : on ne la renvoie que si elle a CHANGÉ (un champ supprimé du mini-CRM ne doit pas faire
   // refuser une simple correction des mots).
   const [cibleDeDepart] = useState(() => JSON.stringify(depart));
-  const [title, setTitle] = useState(outil?.title ?? '');
-  const [name, setName] = useState(outil?.name ?? '');
+  /**
+   * « Qualifier et transférer » n'a ni titre ni nom à choisir (demande de Julien du 2026-10-20) : on sait ce qu'il fait,
+   * et un agent n'en a qu'un. Il prend le titre de la carte et le nom du catalogue, que l'écran ne montre pas.
+   */
+  const nomImpose = type === 'qualification';
+  /**
+   * L'ordre de lecture d'un outil à plusieurs temps (Julien, même jour) : QUAND l'appeler d'abord, puis ce qu'il demande
+   * ou fait. Pour un outil simple, la cible vient d'abord : elle donne son titre.
+   */
+  const consignesDAbord = type === 'qualification' || type === 'enchainement';
+  const [title, setTitle] = useState(outil?.title ?? (nomImpose ? t(textes.titre[0], textes.titre[1]) : ''));
+  const [name, setName] = useState(outil?.name ?? (nomImpose ? (modele?.nomDefaut ?? normaliserNomOutil(textes.titre[0])) : ''));
   // Un nom technique retouché à la main ne suit plus le titre.
   const [nomTouche, setNomTouche] = useState(outil !== null);
   const [description, setDescription] = useState(outil?.description ?? t(textes.quand[0], textes.quand[1]));
@@ -157,10 +167,40 @@ export function FormulaireOutilAgent({
     await onFini(suite);
   };
 
+  const consignes = (
+    <>
+      {!nomImpose && (
+        <>
+          <label className="text-xs text-ink-500">
+            {t('Titre', 'Title')}
+            <input className={`${inputCls} mt-1`} data-testid="agent-outil-form-titre" value={title} maxLength={BORNES_OUTIL.titre}
+              onChange={(e) => changerTitre(e.target.value)} />
+          </label>
+          <label className="text-xs text-ink-500">
+            {t('Nom technique (vu par le modèle)', 'Technical name (seen by the model)')}
+            <input className={`${inputCls} mt-1 font-mono`} data-testid="agent-outil-form-nom" value={name}
+              onChange={(e) => { setNomTouche(true); setName(normaliserNomOutil(e.target.value) || e.target.value); }} />
+          </label>
+        </>
+      )}
+      <label className="text-xs text-ink-500">
+        {t('Quand l’appeler', 'When to call it')}
+        <textarea className={`${inputCls} mt-1`} rows={3} data-testid="agent-outil-form-quand" value={description} maxLength={BORNES_OUTIL.texte}
+          onChange={(e) => setDescription(e.target.value)} />
+      </label>
+      <label className="text-xs text-ink-500">
+        {t('Quand ne pas l’appeler', 'When not to call it')}
+        <textarea className={`${inputCls} mt-1`} rows={2} data-testid="agent-outil-form-pasquand" value={nePasUtiliser} maxLength={BORNES_OUTIL.texte}
+          onChange={(e) => setNePasUtiliser(e.target.value)} />
+      </label>
+    </>
+  );
+
   return (
     <section className="flex flex-col gap-3 rounded-carte border border-ink-200 bg-white p-4" data-testid="agent-outil-form">
       <p className="text-sm font-semibold text-ink-900">{t(textes.titre[0], textes.titre[1])}</p>
       {erreur !== null && <p className="text-xs text-danger" data-testid="agent-outil-form-erreur">{erreur}</p>}
+      {consignesDAbord && consignes}
 
       {cible.type === 'tag' && (
         <CibleTag pour="agent" tenantId={tenantId} valeur={cible.tag} onChange={(tag) => setCible({ type: 'tag', tag })} />
@@ -203,26 +243,7 @@ export function FormulaireOutilAgent({
           }} />
       )}
 
-      <label className="text-xs text-ink-500">
-        {t('Titre', 'Title')}
-        <input className={`${inputCls} mt-1`} data-testid="agent-outil-form-titre" value={title} maxLength={BORNES_OUTIL.titre}
-          onChange={(e) => changerTitre(e.target.value)} />
-      </label>
-      <label className="text-xs text-ink-500">
-        {t('Nom technique (vu par le modèle)', 'Technical name (seen by the model)')}
-        <input className={`${inputCls} mt-1 font-mono`} data-testid="agent-outil-form-nom" value={name}
-          onChange={(e) => { setNomTouche(true); setName(normaliserNomOutil(e.target.value) || e.target.value); }} />
-      </label>
-      <label className="text-xs text-ink-500">
-        {t('Quand l’appeler', 'When to call it')}
-        <textarea className={`${inputCls} mt-1`} rows={3} data-testid="agent-outil-form-quand" value={description} maxLength={BORNES_OUTIL.texte}
-          onChange={(e) => setDescription(e.target.value)} />
-      </label>
-      <label className="text-xs text-ink-500">
-        {t('Quand ne pas l’appeler', 'When not to call it')}
-        <textarea className={`${inputCls} mt-1`} rows={2} data-testid="agent-outil-form-pasquand" value={nePasUtiliser} maxLength={BORNES_OUTIL.texte}
-          onChange={(e) => setNePasUtiliser(e.target.value)} />
-      </label>
+      {!consignesDAbord && consignes}
 
       {/* À la pose, l'autonomie se coche ici et part juste après la création ; sur un outil posé, elle s'enregistre
           sur-le-champ, comme dans « Régler ». Non accordée, le tronc commun refuse chaque appel. */}

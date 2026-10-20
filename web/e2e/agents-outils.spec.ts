@@ -441,12 +441,24 @@ test.describe('Agents IA : « Quel outil ajouter ? »', () => {
     await expect(page.getByTestId('outil-cible-n1')).toHaveText('2 étapes, dont 1 question, puis scénario Prise de rendez-vous');
   });
 
-  test('🔴 « Qualifier et transférer » : des questions ajoutées par « + », chacune dans son champ, puis « À traiter »', async ({ page }) => {
+  test('🔴 « Qualifier et transférer » : quand l’appeler d’abord, puis des questions ajoutées par « + », puis « À traiter »', async ({ page }) => {
     const appels: Appel[] = [];
     await mock(page, appels, []);
     await onglet(page);
     await page.getByTestId('agent-outils-ajouter').click();
     await page.getByTestId('mba-type-qualification').click();
+    // Ni titre ni nom à donner (demande de Julien) : on sait ce que fait l'outil. « Quand l'appeler » est déjà complet,
+    // et il vient AVANT les questions.
+    await expect(page.getByTestId('agent-outil-form-titre')).toHaveCount(0);
+    await expect(page.getByTestId('agent-outil-form-nom')).toHaveCount(0);
+    await expect(page.getByTestId('agent-outil-form-quand')).toHaveValue(/veut parler à quelqu’un de l’équipe/);
+    const avant = await page.evaluate(() => {
+      const quand = document.querySelector('[data-testid="agent-outil-form-quand"]');
+      const questions = document.querySelector('[data-testid="agent-qualification"]');
+      return quand !== null && questions !== null
+        && (quand.compareDocumentPosition(questions) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    });
+    expect(avant).toBe(true);
     // Une première question est déjà là, et le transfert est affiché en dernier, sans qu'on puisse le retirer.
     await expect(page.getByTestId('agent-etape-0')).toContainText('Question 1');
     await expect(page.getByTestId('agent-qualification-fin')).toContainText('« À traiter »');
@@ -456,8 +468,6 @@ test.describe('Agents IA : « Quel outil ajouter ? »', () => {
     await page.getByTestId('agent-question-ajouter').click();
     await page.getByTestId('agent-etape-1').getByTestId('agent-etape-question').fill('le campus visé');
     await page.getByTestId('agent-etape-1').getByTestId('mba-cible-champ').selectOption('statut');
-    await page.getByTestId('agent-outil-form-titre').fill('Qualifier le candidat');
-    await page.getByTestId('agent-outil-form-quand').fill('Appelle cet outil dès que le contact veut parler à un conseiller.');
     await expect(page.getByTestId('agent-outil-form-manque')).toContainText('Deux questions remplissent le même champ');
     await page.getByTestId('agent-etape-1').getByTestId('mba-cible-champ').selectOption('campus');
     // Pas d'autonomie à cocher : rien ne part chez le contact.
@@ -465,12 +475,13 @@ test.describe('Agents IA : « Quel outil ajouter ? »', () => {
     await page.getByTestId('agent-outil-form-enregistrer').click();
 
     await expect.poll(() => postsOutil(appels).map((a) => a.body), { timeout: 5000 }).toEqual([{
-      handler: 'qualifier_transferer', name: 'qualifier_le_candidat',
+      handler: 'qualifier_transferer', name: 'mba_qualifier_transferer',
       cible: { questions: [
         { champ: 'statut', question: 'le statut du candidat', valeurs: [] },
         { champ: 'campus', question: 'le campus visé', valeurs: [] },
       ] },
     }]);
+    await expect.poll(() => appels.find((a) => a.method === 'PATCH')?.body).toMatchObject({ title: 'Qualifier et transférer' });
     await expect(page.getByTestId('outil-cible-n1')).toHaveText('2 questions, puis « À traiter »');
   });
 
