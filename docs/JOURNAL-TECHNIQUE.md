@@ -22,8 +22,13 @@
   empreintes sha256 du code servi égales à git (939 fichiers de `src/` et `db/` relus par la session voisine), /health
   200, journaux sans erreur. Leçon : un déploiement donné à Julien s'annonce aux sessions voisines comme un fichier de
   câblage, et un `up` se précède d'un `ps` qui cherche un `docker compose` déjà en cours.
-- **Champs depuis Claude** (`75a3b653`, poussé, CI verte, à déployer) : `list_fields`, `create_field`,
-  `set_contact_field`, et les jaunes de la relecture des campagnes. Relecture sans rouge.
+- **Champs depuis Claude** (`75a3b653`) : `list_fields`, `create_field`, `set_contact_field`, et les jaunes de la
+  relecture des campagnes. Relecture sans rouge ; ses jaunes dans `21fbd99b`, avec la FAQ « préparer une campagne » et
+  les liens légaux du plugin (ils visaient /privacy-policy/ et /terms-of-use/, qui ne répondent pas).
+- **Déploiement par la session elle-même**, après la règle de permission ssh posée par Julien : `21fbd99b` (qui emporte
+  aussi « Enchaîner des étapes », `b4f0391c`, prêt d'après sa session), aucun `docker compose` en cours avant, aucune
+  migration en attente dans l'image, empreintes du code servi égales à git, /health 200, journaux sans erreur. Plugin
+  0.2.0 publié ensuite (`plugin.yml`, construire et publier verts).
 
 ## 2026-10-20 : l'enregistrement automatique d'un scénario coupait la console entière
 

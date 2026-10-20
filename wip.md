@@ -114,14 +114,12 @@ livraison 8 des offres v2 (ci-dessous).
 Spec : [docs/superpowers/specs/2026-10-20-campagnes-depuis-claude-design.md](docs/superpowers/specs/2026-10-20-campagnes-depuis-claude-design.md) ;
 plans : [campagnes](docs/superpowers/plans/2026-10-20-campagnes-depuis-claude.md) et
 [champs](docs/superpowers/plans/2026-10-20-champs-depuis-claude.md).
-- **Campagnes : en production** (`0c1825ad`, migration 0245, API sur `82a775bb`). `find_contacts`, `tag_contacts`,
-  `prepare_campaign`, `launch_campaign`, `list_conversations` étendu, et le bouton « Programmer pour le … » de la console.
-- **Champs : poussés, CI verte, à déployer** (`75a3b653`, sans migration) : `list_fields`, `create_field`,
-  `set_contact_field`, plus les jaunes de la relecture des campagnes. Les jaunes de la relecture des champs suivent dans
-  un petit commit.
-- **Reste** : l'essai réel (essais 137 et 138 de `docs/prive/ESSAIS-REELS.md`) ; l'entrée de FAQ « préparer une campagne
-  depuis Claude » (elle s'affiche aussi sur les pages Développeurs de la vitrine : oui de Julien) et la publication du
-  plugin 0.2.0, jamais publié depuis le 2026-10-13 ; la page de cas et son film, après l'essai réel (hors du lot, spec).
+- **Tout est en production** (API et workers sur `21fbd99b`, migration 0245) : `find_contacts`, `tag_contacts`,
+  `prepare_campaign`, `launch_campaign`, `list_conversations` étendu, le bouton « Programmer pour le … » de la console,
+  `list_fields`, `create_field`, `set_contact_field`, et les jaunes des deux relectures. La FAQ « Claude peut-il préparer
+  et lancer une campagne ? » est sur les pages Développeurs, et le plugin 0.2.0 est publié (liens légaux réparés).
+- **Reste** : les essais réels 137 (campagnes), 138 (champs) et 139 (plugin) de `docs/prive/ESSAIS-REELS.md` ; la page
+  de cas et son film, après l'essai réel (hors du lot, spec).
 
 ## LES OFFRES, DEUXIÈME VERSION (CADRÉ LE 2026-10-16)
 
