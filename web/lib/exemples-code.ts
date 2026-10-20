@@ -356,7 +356,7 @@ export const EXEMPLES_CAS = {
         "        { position: 2, source: { type: 'variable', key: 'order' } },",
         '      ],',
         '    },',
-        '    // Replayed, the shipment does not send twice.',
+        '    // Replayed within 24 hours (the life of the key), the shipment does not send twice.',
         '    idempotencyKey: `shipped-${order.id}`,',
         '  });',
         '  // The delivery and read receipts carry this sendId: it ties them back to the order.',
@@ -451,6 +451,34 @@ export const PROMPT_RAPPELS: Bilingue = [
     '   app/api/webhooks/messagingme/route.ts, keeping the same button labels and action names everywhere;',
     '4. subscribe the route to message.received and agent.action, and keep the key and the secret in environment',
     '   variables, never in the code.',
+    'Do not invent any route or field: they are in https://api.messagingme.app/openapi.json.',
+  ),
+];
+
+/** Le prompt de la recette des notifications de commande (`EXEMPLES_CAS.notifications`), qui renvoie vers sa version `.md`. */
+export const PROMPT_NOTIFICATIONS: Bilingue = [
+  lignes(
+    'Branche les notifications de commande WhatsApp dans ce projet, en suivant la recette',
+    'https://console.messagingme.app/developers/api/guides/order-notifications.md :',
+    '1. installe le SDK : npm install github:julienmessagingme/messagingme-sdk#v{VERSION} ;',
+    '2. avec les outils Messaging Me, crée le modèle d’expédition (UTILITY, le prénom puis le numéro de commande, un',
+    '   bouton URL vers notre page de suivi) ;',
+    '3. écris lib/orders.ts relié à nos commandes (l’envoi quand une commande passe en expédiée) et la route',
+    '   app/api/webhooks/messagingme/route.ts qui marque la commande livrée puis lue ;',
+    '4. abonne la route à message.delivered et message.read, décochés par défaut, et range la clé et le secret dans',
+    '   les variables d’environnement, jamais dans le code.',
+    'N’invente aucune route ni aucun champ : ils sont dans https://api.messagingme.app/openapi.json.',
+  ),
+  lignes(
+    'Add WhatsApp order notifications to this project, following the recipe',
+    'https://console.messagingme.app/developers/api/guides/order-notifications.en.md:',
+    '1. install the SDK: npm install github:julienmessagingme/messagingme-sdk#v{VERSION};',
+    '2. with the Messaging Me tools, create the shipping template (UTILITY, the first name then the order number, a',
+    '   URL button to our tracking page);',
+    '3. write lib/orders.ts wired to our orders (the send when an order moves to shipped) and the route',
+    '   app/api/webhooks/messagingme/route.ts that marks the order delivered then read;',
+    '4. subscribe the route to message.delivered and message.read, unchecked by default, and keep the key and the',
+    '   secret in environment variables, never in the code.',
     'Do not invent any route or field: they are in https://api.messagingme.app/openapi.json.',
   ),
 ];

@@ -96,7 +96,7 @@ export const ENTREES: readonly EntreeVitrine[] = [
     fr: { adresse: '/cas-d-usage/notifications-de-commande/', titre: 'Notifications de commande' },
     en: { adresse: '/en/use-cases/order-notifications/', titre: 'Order notifications' },
     profils: ['produit'], vague: 2, recherche: 'notification de commande whatsapp api',
-    chemin: 'code', guide: 'nextjs', enLigne: false,
+    chemin: 'code', guide: 'order-notifications', film: 'cas-notifications', enLigne: true,
   },
   {
     cle: 'assurance', nature: 'secteur',

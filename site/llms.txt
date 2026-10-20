@@ -34,6 +34,8 @@
 - [All use cases](https://app.messagingme.fr/en/use-cases/) : the same page in English.
 - [Rappels de rendez-vous](https://app.messagingme.fr/cas-d-usage/rappels-rendez-vous/) : La veille, un rappel à deux boutons : le client confirme ou décale, et votre agenda suit.
 - [Appointment reminders](https://app.messagingme.fr/en/use-cases/appointment-reminders/) : The evening before, a reminder with two buttons: the customer confirms or reschedules, and your calendar follows.
+- [Notifications de commande](https://app.messagingme.fr/cas-d-usage/notifications-de-commande/) : La commande part : le client reçoit son suivi sur WhatsApp, et votre admin voit quand il l’a lu.
+- [Order notifications](https://app.messagingme.fr/en/use-cases/order-notifications/) : The order ships: the customer gets their tracking on WhatsApp, and your admin sees when they read it.
 
 ## Tarifs
 

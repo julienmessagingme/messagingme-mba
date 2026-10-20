@@ -49,8 +49,9 @@ au plugin (le Pro garde la création d'espace dans la console). « Créer mon es
 l'inscription de la console. Venu de la page anglaise, un lien ouvre la console en anglais.
 
 ✅ **La vitrine a ses pages de cas d'usage** (2026-10-20) : `app.messagingme.fr/cas-d-usage/` les liste, et chaque cas
-a sa page, en français et en anglais (le premier : `/cas-d-usage/rappels-rendez-vous/`, jumelle
-`/en/use-cases/appointment-reminders/`). Une page montre le film de la vraie séance Claude Code, le schéma de ce qui
+a sa page, en français et en anglais : les rappels de rendez-vous (`/cas-d-usage/rappels-rendez-vous/`, jumelle
+`/en/use-cases/appointment-reminders/`) et les notifications de commande (`/cas-d-usage/notifications-de-commande/`,
+jumelle `/en/use-cases/order-notifications/`). Une page montre le film de la vraie séance Claude Code, le schéma de ce qui
 circule, les étapes avec les vrais noms d'outils, de routes et d'événements, la phrase à taper dans Claude Code,
 l'extrait du code que la suite compile, ce qu'on paie et une FAQ, puis mène à la recette complète de la doc
 développeurs. Le menu « Solutions » de l'en-tête, à la place d'« Industries », liste les cas en ligne et la page qui
@@ -2477,7 +2478,8 @@ scénario, comment importer des contacts.
   **une recette Next.js** (un prompt à coller dans Claude Code ou Cursor, et le code qu'il doit produire, compilé par la
   CI contre le SDK, comme les exemples de la page SDK), **une recette des rappels de rendez-vous** (2026-10-20, le
   rappel de la veille à deux boutons, les deux actions de l'agent IA, la tâche et la route, le même code que la commande
-  `/messagingme:rappels` du plugin) et un **Catalogue des erreurs** (chacun de nos codes avec quand il
+  `/messagingme:rappels` du plugin), **une recette des notifications de commande** (2026-10-20, le message
+  d'expédition, la route qui marque la commande livrée puis lue, l'agent IA qui répond) et un **Catalogue des erreurs** (chacun de nos codes avec quand il
   arrive et quoi faire, puis les erreurs de Meta qui concernent un espace, avec ce que Messaging Me fait déjà de
   lui-même). **Pour les modèles** (Claude, ChatGPT, Cursor) : chaque page existe en Markdown, en français
   (`/developers/api/contacts.md`) et en anglais (`.en.md`), et `https://console.messagingme.app/llms.txt` les liste,

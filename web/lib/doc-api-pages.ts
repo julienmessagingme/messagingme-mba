@@ -130,6 +130,12 @@ export const PAGES_DOC = [
     ancres: ['prompt', 'modele', 'actions', 'code', 'webhook', 'essayer'],
   },
   {
+    // Les notifications de commande (lot 6 bis) : le code de EXEMPLES_CAS.notifications.
+    cle: 'order-notifications', href: '/developers/api/guides/order-notifications', fichier: 'web/app/developers/api/guides/order-notifications/page.tsx', groupe: 'recettes',
+    nav: ['Notifications de commande', 'Order notifications'], titre: ['Recette : les notifications de commande', 'Recipe: order notifications'],
+    ancres: ['prompt', 'modele', 'code', 'webhook', 'reponse', 'essayer'],
+  },
+  {
     cle: 'events', href: '/developers/api/events', fichier: 'web/app/developers/api/events/page.tsx', groupe: 'plateforme',
     nav: ['Événements', 'Events'], titre: ['Événements', 'Events'],
     ancres: ['signaux'],
@@ -183,6 +189,7 @@ export const RESUMES_PAGES: Readonly<Record<CleDePage, Bilingue>> = {
   'meta-pitfalls': ['Ce que Meta impose et qui surprend : fenêtre de 24 h, modèles, facturation, qualité, débit, consentement.', 'What Meta imposes and what surprises: the 24-hour window, templates, billing, quality, throughput, consent.'],
   nextjs: ['Une recette Next.js : envoyer un modèle et recevoir un webhook vérifié, avec le prompt à coller dans son assistant.', 'A Next.js recipe: send a template and receive a verified webhook, with the prompt to paste into your assistant.'],
   'appointment-reminders': ['Une recette : le rappel WhatsApp de la veille avec deux boutons, l’agent IA qui propose des créneaux, la route qui confirme ou déplace le rendez-vous.', 'A recipe: the WhatsApp reminder the evening before with two buttons, the AI agent offering slots, the route that confirms or moves the appointment.'],
+  'order-notifications': ['Une recette : le message WhatsApp d’expédition avec son lien de suivi, la route qui marque la commande livrée puis lue, l’agent IA qui répond.', 'A recipe: the WhatsApp shipping message with its tracking link, the route that marks the order delivered then read, the AI agent that answers.'],
   events: ['Les signaux que Messaging Me remonte vers un outil branché.', 'The signals Messaging Me sends up to a connected tool.'],
   webhooks: ['Le format des webhooks sortants : enveloppe, signature, réessais et types d’événements.', 'The format of outgoing webhooks: envelope, signature, retries and event types.'],
   reference: ['Authentification, droits des clés, limites de débit et quotas.', 'Authentication, key scopes, rate limits and quotas.'],
