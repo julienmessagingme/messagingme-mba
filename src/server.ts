@@ -138,7 +138,7 @@ import type { IntegrationBatchRouteDeps } from './http/integration-batch';
 import type { SalesforceRouteDeps } from './http/salesforce';
 import type { RcsCallbackRouteDeps } from './http/rcs-callback';
 import type { RcsMediaRouteDeps } from './http/rcs-media';
-import type { TemplateRouteDeps } from './http/templates';
+import type { DepsGestionModeles } from './templates/gestion';
 import type { InboxRouteDeps } from './http/inbox';
 import type { StatsRouteDeps } from './http/stats';
 import type { SettingsRouteDeps } from './http/settings';
@@ -269,7 +269,7 @@ export interface ServerDeps {
   /** Visuels des messages RCS : téléversement admin, et service public du fichier (`/m/<code>.jpg`). */
   rcsMedia?: RcsMediaRouteDeps;
   /** Routes templates (liste + création via l'API Meta). */
-  templates?: TemplateRouteDeps;
+  templates?: DepsGestionModeles;
   /** Routes inbox (conversations + réponse). */
   inbox?: InboxRouteDeps;
   /** Canal entrant depuis le connecteur HubSpot (changement d'étape d'un deal). Fourni si le secret partagé

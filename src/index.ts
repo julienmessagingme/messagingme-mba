@@ -187,7 +187,7 @@ import { catalogueBranchable } from './http/agent-setup';
 import type { CountryCode } from 'libphonenumber-js';
 import { handlerMaison } from './agent/outils-maison';
 import type { TemplateSummary } from './meta/templates';
-import type { TemplateRouteDeps } from './http/templates';
+import type { DepsGestionModeles } from './templates/gestion';
 import type { DepsCreationModele } from './api/creer-modele';
 import { placesDeTelechargement, telechargerEnteteProduction } from './api/entete-par-url';
 import { lancerEnvoi, type DepsEnvoi } from './http/v1-sends';
@@ -1095,7 +1095,7 @@ async function main(): Promise<void> {
    * Les dépendances de l'écran Modèles, partagées avec `POST /v1/templates` et l'outil `create_template` (lot 13,
    * domaine 3) : la création passe par `creerUnModele`, avec ces gardes et ce traçage des liens, quel que soit l'appelant.
    */
-  const depsModeles: TemplateRouteDeps = {
+  const depsModeles: DepsGestionModeles = {
     meta: metaFactory, // token par tenant, repli global
     repo,
     getPublishedFlow: (tenant, flowId) => flowStore.isPublished(flowId, tenant),
