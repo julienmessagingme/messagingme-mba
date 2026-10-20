@@ -136,6 +136,18 @@ export const PAGES_DOC = [
     ancres: ['prompt', 'actions', 'code', 'webhook', 'essayer'],
   },
   {
+    // L'accueil des utilisateurs d'un SaaS (lot 6 bis) : le code de EXEMPLES_CAS.accueil, un modèle MARKETING consenti.
+    cle: 'saas-onboarding-activation', href: '/developers/api/guides/saas-onboarding-activation', fichier: 'web/app/developers/api/guides/saas-onboarding-activation/page.tsx', groupe: 'recettes',
+    nav: ['Accueil des utilisateurs', 'User onboarding'], titre: ['Recette : l’accueil des utilisateurs d’un SaaS', 'Recipe: SaaS user onboarding'],
+    ancres: ['prompt', 'modele', 'consentement', 'code', 'essayer'],
+  },
+  {
+    // La relance d'un paiement échoué (lot 6 bis) : le code de EXEMPLES_CAS['relance-paiement'], dans le webhook Stripe.
+    cle: 'failed-payment-recovery', href: '/developers/api/guides/failed-payment-recovery', fichier: 'web/app/developers/api/guides/failed-payment-recovery/page.tsx', groupe: 'recettes',
+    nav: ['Paiement échoué', 'Failed payment'], titre: ['Recette : la relance d’un paiement échoué', 'Recipe: failed payment recovery'],
+    ancres: ['prompt', 'modele', 'code', 'stripe', 'essayer'],
+  },
+  {
     // Les notifications de commande (lot 6 bis) : le code de EXEMPLES_CAS.notifications.
     cle: 'order-notifications', href: '/developers/api/guides/order-notifications', fichier: 'web/app/developers/api/guides/order-notifications/page.tsx', groupe: 'recettes',
     nav: ['Notifications de commande', 'Order notifications'], titre: ['Recette : les notifications de commande', 'Recipe: order notifications'],
@@ -196,6 +208,8 @@ export const RESUMES_PAGES: Readonly<Record<CleDePage, Bilingue>> = {
   nextjs: ['Une recette Next.js : envoyer un modèle et recevoir un webhook vérifié, avec le prompt à coller dans son assistant.', 'A Next.js recipe: send a template and receive a verified webhook, with the prompt to paste into your assistant.'],
   'appointment-reminders': ['Une recette : le rappel WhatsApp de la veille avec deux boutons, l’agent IA qui propose des créneaux, la route qui confirme ou déplace le rendez-vous.', 'A recipe: the WhatsApp reminder the evening before with two buttons, the AI agent offering slots, the route that confirms or moves the appointment.'],
   'appointment-booking': ['Une recette : le client demande un rendez-vous sur WhatsApp, l’agent IA note le motif et la ville, votre application propose trois créneaux et réserve.', 'A recipe: the customer asks for an appointment on WhatsApp, the AI agent notes the reason and the city, your app offers three slots and books.'],
+  'saas-onboarding-activation': ['Une recette : la bienvenue WhatsApp à l’inscription, un modèle marketing qui ne part qu’à qui a coché la case.', 'A recipe: the WhatsApp welcome at sign-up, a marketing template that only goes to those who ticked the box.'],
+  'failed-payment-recovery': ['Une recette : le message WhatsApp quand Stripe signale un paiement échoué, avec le lien vers la facturation.', 'A recipe: the WhatsApp message when Stripe reports a failed payment, with the link to billing.'],
   'order-notifications': ['Une recette : le message WhatsApp d’expédition avec son lien de suivi, la route qui marque la commande livrée puis lue, l’agent IA qui répond.', 'A recipe: the WhatsApp shipping message with its tracking link, the route that marks the order delivered then read, the AI agent that answers.'],
   events: ['Les signaux que Messaging Me remonte vers un outil branché.', 'The signals Messaging Me sends up to a connected tool.'],
   webhooks: ['Le format des webhooks sortants : enveloppe, signature, réessais et types d’événements.', 'The format of outgoing webhooks: envelope, signature, retries and event types.'],

@@ -30,4 +30,8 @@
   <url><loc>https://app.messagingme.fr/en/use-cases/order-notifications/</loc></url>
   <url><loc>https://app.messagingme.fr/cas-d-usage/prise-de-rendez-vous/</loc></url>
   <url><loc>https://app.messagingme.fr/en/use-cases/appointment-booking/</loc></url>
+  <url><loc>https://app.messagingme.fr/cas-d-usage/accueil-activation-saas/</loc></url>
+  <url><loc>https://app.messagingme.fr/en/use-cases/saas-onboarding-activation/</loc></url>
+  <url><loc>https://app.messagingme.fr/cas-d-usage/relance-paiement-echoue/</loc></url>
+  <url><loc>https://app.messagingme.fr/en/use-cases/failed-payment-recovery/</loc></url>
 </urlset>

@@ -82,14 +82,14 @@ export const ENTREES: readonly EntreeVitrine[] = [
     fr: { adresse: '/cas-d-usage/accueil-activation-saas/', titre: 'Accueil des utilisateurs d’un SaaS' },
     en: { adresse: '/en/use-cases/saas-onboarding-activation/', titre: 'SaaS onboarding and activation' },
     profils: ['saas', 'produit'], vague: 1, recherche: 'onboarding saas whatsapp',
-    commande: 'accueil', chemin: 'code', guide: 'saas-onboarding-activation', enLigne: false,
+    commande: 'accueil', chemin: 'code', guide: 'saas-onboarding-activation', film: 'cas-saas', enLigne: true,
   },
   {
     cle: 'relance-paiement', nature: 'cas',
     fr: { adresse: '/cas-d-usage/relance-paiement-echoue/', titre: 'Relance d’un paiement échoué' },
     en: { adresse: '/en/use-cases/failed-payment-recovery/', titre: 'Failed payment recovery' },
     profils: ['saas', 'produit'], vague: 1, recherche: 'relance paiement échoué whatsapp',
-    commande: 'relance-paiement', chemin: 'code', guide: 'failed-payment-recovery', enLigne: false,
+    commande: 'relance-paiement', chemin: 'code', guide: 'failed-payment-recovery', film: 'cas-saas', enLigne: true,
   },
   {
     cle: 'notifications', nature: 'cas',

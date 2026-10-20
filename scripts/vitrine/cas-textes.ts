@@ -105,6 +105,48 @@ function schemaRendezVous(l: Langue): { horizontal: string; vertical: string } {
   return { horizontal, vertical };
 }
 
+/** Les textes d'un schéma en ligne : trois nœuds, et l'étiquette de chacune des deux flèches (phrase, puis API). */
+interface TextesLigne {
+  readonly titre: string;
+  readonly noeuds: readonly [readonly [string, string], readonly [string, string], readonly [string, string]];
+  /** L'index du nœud qui est « votre app », bordé de la couleur d'action. */
+  readonly app: number;
+  readonly fleches: readonly [readonly [string, string], readonly [string, string]];
+}
+
+/** Trois nœuds en ligne ; chaque étiquette tient dans l'espace entre deux nœuds, au-dessus de sa flèche. */
+function schemaLigne(T: TextesLigne): { horizontal: string; vertical: string } {
+  const [a, b, c] = T.noeuds;
+  const [f1, f2] = T.fleches;
+  const horizontal = `<svg class="dessin-h" viewBox="0 0 1160 240" role="img" aria-labelledby="schema-titre"><title id="schema-titre">${T.titre}</title>${pointe('pt-h')}`
+    + noeud(10, 70, 260, 100, a[0], a[1], T.app === 0)
+    + fleche('M270 120H442', 'pt-h') + etiquette(360, f1[1] ? 86 : 106, f1[0], f1[1])
+    + noeud(450, 70, 260, 100, b[0], b[1], T.app === 1)
+    + fleche('M710 120H882', 'pt-h') + etiquette(800, f2[1] ? 86 : 106, f2[0], f2[1])
+    + noeud(890, 70, 260, 100, c[0], c[1], T.app === 2)
+    + '</svg>';
+  const vertical = `<svg class="dessin-v" viewBox="0 0 360 416" aria-hidden="true">${pointe('pt-v')}`
+    + noeud(40, 8, 280, 80, a[0], a[1], T.app === 0)
+    + fleche('M180 88V160', 'pt-v') + etiquette(192, 118, f1[0], f1[1], 'start')
+    + noeud(40, 168, 280, 80, b[0], b[1], T.app === 1)
+    + fleche('M180 248V320', 'pt-v') + etiquette(192, 278, f2[0], f2[1], 'start')
+    + noeud(40, 328, 280, 80, c[0], c[1], T.app === 2)
+    + '</svg>';
+  return { horizontal, vertical };
+}
+
+function schemaAccueil(l: Langue): { horizontal: string; vertical: string } {
+  return schemaLigne(l === 'fr'
+    ? { titre: 'La bienvenue, de l’inscription au premier usage', app: 0, noeuds: [['Votre app', 'l’inscription, case cochée'], ['Sur son WhatsApp', 'la bienvenue, un bouton'], ['Son premier usage', 'dans votre app']], fleches: [['consent opted_in', 'POST /v1/sends'], ['il touche le bouton', '']] }
+    : { titre: 'The welcome, from sign-up to first use', app: 0, noeuds: [['Your app', 'sign-up, box ticked'], ['On their WhatsApp', 'the welcome, one button'], ['Their first use', 'in your app']], fleches: [['consent opted_in', 'POST /v1/sends'], ['they tap the button', '']] });
+}
+
+function schemaRelance(l: Langue): { horizontal: string; vertical: string } {
+  return schemaLigne(l === 'fr'
+    ? { titre: 'Le paiement échoué, de Stripe au message WhatsApp', app: 1, noeuds: [['Stripe', 'invoice.payment_failed'], ['Votre app', 'son webhook Stripe'], ['Sur son WhatsApp', 'le lien de facturation']], fleches: [['le paiement échoue', ''], ['une clé par facture', 'POST /v1/sends']] }
+    : { titre: 'The failed payment, from Stripe to the WhatsApp message', app: 1, noeuds: [['Stripe', 'invoice.payment_failed'], ['Your app', 'its Stripe webhook'], ['On their WhatsApp', 'the billing link']], fleches: [['the payment fails', ''], ['one key per invoice', 'POST /v1/sends']] });
+}
+
 function schemaFourche(T: TextesFourche): { horizontal: string; vertical: string } {
   // Les deux suites partent d'une fourche à angles arrondis : chaque étiquette tient sur un segment droit, aucun trait
   // ne la traverse.
@@ -292,6 +334,166 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         { question: 'Can the customer reschedule several times?', reponse: 'A reschedule request goes out at most once a day, per customer and per action: the agent offers slots, the customer picks one, your app books it.' },
       ],
       appel: { titre: 'Set up your reminders today.', texte: 'The plugin in two commands, then the sentence above in Claude Code. No account to create.' },
+      liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/use-cases/', 'All use cases']],
+    },
+  },
+  accueil: {
+    fr: {
+      titre: 'Accueil des utilisateurs sur WhatsApp · Messaging Me',
+      description: 'À l’inscription, la bienvenue part sur WhatsApp, avec un bouton vers le premier usage de votre produit. Seulement à qui a coché la case.',
+      resume: 'À l’inscription, la bienvenue sur WhatsApp, avec un bouton vers le premier usage. Seulement à qui a coché la case.',
+      menu: 'La bienvenue, puis le premier usage',
+      icone: 'i-smiley',
+      h1: 'Vos nouveaux utilisateurs reçoivent leur bienvenue sur WhatsApp, et passent à l’action.',
+      chapeau: 'À l’inscription, l’utilisateur qui a coché la case reçoit sa bienvenue sur WhatsApp, avec un bouton qui l’emmène à la première action dans votre produit. Là où il lit vraiment ses messages.',
+      film: {
+        titre: 'La bienvenue, puis la relance : 38 secondes.',
+        texte: 'De la demande dans Claude Code au premier planning créé, sur une vraie conversation WhatsApp. Le même film montre ensuite la relance d’un paiement échoué.',
+        aria: 'Film : l’accueil des utilisateurs d’un SaaS avec Messaging Me', duree: 'PT38S', publie: '2026-10-20T13:00:00+02:00',
+      },
+      schema: { titre: 'Comment ça circule.', legende: 'Votre app envoie la bienvenue par POST /v1/sends, avec consent opted_in, à l’utilisateur qui a coché la case ; il touche le bouton, et votre app s’ouvre sur son premier usage.', ...schemaAccueil('fr') },
+      etapes: [
+        { titre: 'Le modèle de bienvenue', texte: 'Claude Code le crée par <code>create_template</code>, en catégorie marketing&nbsp;: pour Meta, une bienvenue qui invite à utiliser le produit est du marketing. Le prénom, et un bouton vers la page qui lance l’utilisateur&nbsp;; <code>get_template_status</code> confirme l’approbation.' },
+        { titre: 'La case du formulaire', texte: 'Le formulaire d’inscription porte une case «&nbsp;Recevoir mes conseils de démarrage sur WhatsApp&nbsp;», non cochée par défaut. Sans elle, rien ne part&nbsp;: un modèle marketing ne va qu’à qui a consenti.' },
+        { titre: 'L’envoi à l’inscription', texte: 'Une fois le compte créé, votre application envoie le modèle par <code>POST /v1/sends</code>, avec le consentement et sa source&nbsp;: l’API les écrit sur le contact avant le tri marketing. Une clé d’idempotence tirée de l’utilisateur évite le doublon.' },
+        { titre: 'Le premier usage', texte: 'L’utilisateur touche le bouton du message&nbsp;: votre application s’ouvre sur la page de sa première action, son premier planning, son premier projet.' },
+      ],
+      invite: {
+        titre: 'Ce que vous tapez dans Claude Code',
+        texte: 'Le plugin installé, une phrase suffit. Celle du film branche aussi la relance des paiements échoués&nbsp;: Claude Code crée les deux modèles, écrit le code et teste.',
+        phrase: '/messagingme:demarrer à l’inscription (app/inscription.ts), un whatsapp de bienvenue avec le lien pour créer son premier planning. et quand stripe signale un paiement échoué, un whatsapp avec le lien pour mettre à jour la carte',
+      },
+      extrait: { titre: 'La bienvenue, telle que Claude Code l’écrit', partie: 'inscription' },
+      paie: [
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> modèles envoyés par mois et <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
+        '<strong>Meta facture directement</strong> chaque modèle marketing à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays de l’utilisateur.',
+      ],
+      faq: [
+        { question: 'Pourquoi en marketing, et pas en utilitaire&nbsp;?', reponse: 'Meta classe en marketing tout modèle qui invite à utiliser le produit, et en utilitaire une alerte sur le compte, comme un paiement échoué. Un modèle déclaré utilitaire avec un texte marketing est reclassé par Meta.' },
+        { question: 'Et l’utilisateur qui n’a pas coché la case&nbsp;?', reponse: 'Il ne reçoit rien&nbsp;: votre code ne l’envoie pas, et l’API refuserait un modèle marketing sans consentement.' },
+        { question: 'Combien coûte une bienvenue&nbsp;?', reponse: 'La Free inclut 1&nbsp;000 modèles par mois. Meta facture chaque modèle marketing à votre entreprise, selon sa grille et le pays de l’utilisateur.' },
+        { question: 'Peut-il ne plus rien recevoir&nbsp;?', reponse: 'Oui&nbsp;: un utilisateur qui répond STOP ne reçoit plus rien, et son refus est noté sur le contact.' },
+      ],
+      appel: { titre: 'Accueillez vos utilisateurs sur WhatsApp.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },
+      liens: [['/developpeurs/', 'Démarrer avec Claude Code'], ['/tarifs/', 'Les tarifs'], ['/cas-d-usage/', 'Tous les cas d’usage']],
+    },
+    en: {
+      titre: 'User onboarding on WhatsApp · Messaging Me',
+      description: 'At sign-up, the welcome goes out on WhatsApp, with a button to the first use of your product. Only to those who ticked the box.',
+      resume: 'At sign-up, the welcome on WhatsApp, with a button to the first use. Only to those who ticked the box.',
+      menu: 'The welcome, then the first use',
+      icone: 'i-smiley',
+      h1: 'Your new users get their welcome on WhatsApp, and take action.',
+      chapeau: 'At sign-up, the user who ticked the box gets their welcome on WhatsApp, with a button that takes them to the first action in your product. Where they actually read their messages.',
+      film: {
+        titre: 'The welcome, then the recovery: 38 seconds.',
+        texte: 'From the request in Claude Code to the first schedule created, on a real WhatsApp conversation. The same film then shows a failed payment recovery.',
+        aria: 'Film: SaaS user onboarding with Messaging Me', duree: 'PT38S', publie: '2026-10-20T13:00:00+02:00',
+      },
+      schema: { titre: 'How it flows.', legende: 'Your app sends the welcome with POST /v1/sends, with consent opted_in, to the user who ticked the box; they tap the button, and your app opens on their first use.', ...schemaAccueil('en') },
+      etapes: [
+        { titre: 'The welcome template', texte: 'Claude Code creates it with <code>create_template</code>, in the marketing category: for Meta, a welcome that invites people to use the product is marketing. The first name, and a button to the page that gets the user started; <code>get_template_status</code> confirms the approval.' },
+        { titre: 'The form’s box', texte: 'The sign-up form carries a “Get my getting-started tips on WhatsApp” box, unticked by default. Without it, nothing goes out: a marketing template only goes to those who consented.' },
+        { titre: 'The send at sign-up', texte: 'Once the account exists, your app sends the template with <code>POST /v1/sends</code>, with the consent and its source: the API writes them on the contact before the marketing filter. An idempotency key taken from the user prevents duplicates.' },
+        { titre: 'The first use', texte: 'The user taps the message’s button: your app opens on the page of their first action, their first schedule, their first project.' },
+      ],
+      invite: {
+        titre: 'What you type in Claude Code',
+        texte: 'With the plugin installed, one sentence is enough. The film’s also wires the failed payment recovery: Claude Code creates both templates, writes the code and tests.',
+        phrase: '/messagingme:demarrer at sign-up (app/signup.ts), a whatsapp welcome with the link to create their first schedule. and when stripe reports a failed payment, a whatsapp with the link to update their card',
+      },
+      extrait: { titre: 'The welcome, as Claude Code writes it', partie: 'inscription' },
+      paie: [
+        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> templates sent a month and <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included; beyond that, Pro.',
+        '<strong>Meta bills your business directly</strong> for each marketing template, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the user’s country.',
+      ],
+      faq: [
+        { question: 'Why marketing, not utility?', reponse: 'Meta classifies as marketing any template that invites people to use the product, and as utility an alert on the account, like a failed payment. A template declared utility with a marketing text is reclassified by Meta.' },
+        { question: 'What about the user who did not tick the box?', reponse: 'They receive nothing: your code does not send it, and the API would refuse a marketing template without consent.' },
+        { question: 'How much does a welcome cost?', reponse: 'Free includes 1,000 templates a month. Meta bills each marketing template to your business, according to its rate card and the user’s country.' },
+        { question: 'Can they stop receiving messages?', reponse: 'Yes: a user who replies STOP receives nothing more, and their refusal is recorded on the contact.' },
+      ],
+      appel: { titre: 'Welcome your users on WhatsApp.', texte: 'The plugin in two commands, then the sentence above in Claude Code. No account to create.' },
+      liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/use-cases/', 'All use cases']],
+    },
+  },
+  'relance-paiement': {
+    fr: {
+      titre: 'Relance d’un paiement échoué sur WhatsApp · Messaging Me',
+      description: 'Quand Stripe signale un paiement échoué, l’utilisateur reçoit sur WhatsApp le lien pour mettre à jour sa carte, avant de perdre l’accès.',
+      resume: 'Stripe signale l’échec, l’utilisateur reçoit sur WhatsApp le lien pour mettre à jour sa carte.',
+      menu: 'La carte refusée, le lien qui la répare',
+      icone: 'i-wallet',
+      h1: 'Moins d’abonnements perdus sur une carte refusée, grâce à un message WhatsApp.',
+      chapeau: 'Quand Stripe signale un paiement échoué, votre application envoie à l’utilisateur un message WhatsApp avec le lien vers sa page de facturation. Il met à jour sa carte avant de perdre l’accès.',
+      film: {
+        titre: 'La bienvenue, puis la relance : 38 secondes.',
+        texte: 'De la demande dans Claude Code au paiement réussi, sur une vraie conversation WhatsApp. Le même film montre d’abord la bienvenue à l’inscription.',
+        aria: 'Film : la relance d’un paiement échoué avec Messaging Me', duree: 'PT38S', publie: '2026-10-20T13:00:00+02:00',
+      },
+      schema: { titre: 'Comment ça circule.', legende: 'Stripe envoie invoice.payment_failed au webhook de votre app, qui retrouve l’utilisateur et envoie le modèle par POST /v1/sends, avec une clé d’idempotence par facture.', ...schemaRelance('fr') },
+      etapes: [
+        { titre: 'Le modèle de paiement échoué', texte: 'Claude Code le crée par <code>create_template</code>, en catégorie utilitaire&nbsp;: une alerte sur le compte. Le prénom, et un bouton «&nbsp;Mettre à jour ma carte&nbsp;» vers votre page de facturation&nbsp;; <code>get_template_status</code> confirme l’approbation.' },
+        { titre: 'Le webhook Stripe que vous avez déjà', texte: 'Sur l’événement invoice.payment_failed, et une fois la signature de Stripe vérifiée, votre application retrouve l’utilisateur derrière le client Stripe.' },
+        { titre: 'L’envoi', texte: 'Elle envoie le modèle par <code>POST /v1/sends</code>, avec une clé d’idempotence tirée de la facture&nbsp;: un même événement livré deux fois dans les 24&nbsp;heures n’envoie qu’un message.' },
+        { titre: 'La carte mise à jour', texte: 'L’utilisateur touche le bouton et met à jour sa carte sur votre page de facturation, avant de perdre l’accès.' },
+      ],
+      invite: {
+        titre: 'Ce que vous tapez dans Claude Code',
+        texte: 'Le plugin installé, une phrase suffit. Celle du film branche aussi la bienvenue à l’inscription&nbsp;: Claude Code crée les deux modèles, écrit le code et teste.',
+        phrase: '/messagingme:demarrer à l’inscription (app/inscription.ts), un whatsapp de bienvenue avec le lien pour créer son premier planning. et quand stripe signale un paiement échoué, un whatsapp avec le lien pour mettre à jour la carte',
+      },
+      extrait: { titre: 'Le webhook Stripe, tel que Claude Code l’écrit', partie: 'stripe' },
+      paie: [
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> modèles envoyés par mois et <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
+        '<strong>Meta facture directement</strong> chaque modèle utilitaire à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays de l’utilisateur.',
+      ],
+      faq: [
+        { question: 'Faut-il une adresse de webhook Messaging Me&nbsp;?', reponse: 'Non&nbsp;: tout part du webhook Stripe que votre application a déjà, et rien ne revient vers elle.' },
+        { question: 'Et si Meta reclasse le modèle en marketing&nbsp;?', reponse: 'Il ne partirait plus qu’aux contacts qui ont consenti. Gardez un texte factuel&nbsp;: le paiement, la carte, l’accès.' },
+        { question: 'Combien coûte une relance&nbsp;?', reponse: 'La Free inclut 1&nbsp;000 modèles par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays de l’utilisateur.' },
+        { question: 'Stripe peut-il envoyer deux fois le même événement&nbsp;?', reponse: 'Oui, et la clé d’idempotence tirée de la facture le couvre&nbsp;: dans les 24&nbsp;heures, un seul message part.' },
+      ],
+      appel: { titre: 'Relancez vos paiements échoués aujourd’hui.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },
+      liens: [['/developpeurs/', 'Démarrer avec Claude Code'], ['/tarifs/', 'Les tarifs'], ['/cas-d-usage/', 'Tous les cas d’usage']],
+    },
+    en: {
+      titre: 'Failed payment recovery on WhatsApp · Messaging Me',
+      description: 'When Stripe reports a failed payment, the user gets on WhatsApp the link to update their card, before losing access.',
+      resume: 'Stripe reports the failure, the user gets on WhatsApp the link to update their card.',
+      menu: 'The declined card, the link that fixes it',
+      icone: 'i-wallet',
+      h1: 'Fewer subscriptions lost to a declined card, with a WhatsApp message.',
+      chapeau: 'When Stripe reports a failed payment, your app sends the user a WhatsApp message with the link to their billing page. They update their card before losing access.',
+      film: {
+        titre: 'The welcome, then the recovery: 38 seconds.',
+        texte: 'From the request in Claude Code to the successful payment, on a real WhatsApp conversation. The same film first shows the welcome at sign-up.',
+        aria: 'Film: failed payment recovery with Messaging Me', duree: 'PT38S', publie: '2026-10-20T13:00:00+02:00',
+      },
+      schema: { titre: 'How it flows.', legende: 'Stripe sends invoice.payment_failed to your app’s webhook, which finds the user and sends the template with POST /v1/sends, with one idempotency key per invoice.', ...schemaRelance('en') },
+      etapes: [
+        { titre: 'The failed payment template', texte: 'Claude Code creates it with <code>create_template</code>, in the utility category: an alert on the account. The first name, and an “Update my card” button to your billing page; <code>get_template_status</code> confirms the approval.' },
+        { titre: 'The Stripe webhook you already have', texte: 'On the invoice.payment_failed event, once Stripe’s signature is checked, your app finds the user behind the Stripe customer.' },
+        { titre: 'The send', texte: 'It sends the template with <code>POST /v1/sends</code>, with an idempotency key taken from the invoice: the same event delivered twice within 24 hours sends one message.' },
+        { titre: 'The card updated', texte: 'The user taps the button and updates their card on your billing page, before losing access.' },
+      ],
+      invite: {
+        titre: 'What you type in Claude Code',
+        texte: 'With the plugin installed, one sentence is enough. The film’s also wires the welcome at sign-up: Claude Code creates both templates, writes the code and tests.',
+        phrase: '/messagingme:demarrer at sign-up (app/signup.ts), a whatsapp welcome with the link to create their first schedule. and when stripe reports a failed payment, a whatsapp with the link to update their card',
+      },
+      extrait: { titre: 'The Stripe webhook, as Claude Code writes it', partie: 'stripe' },
+      paie: [
+        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> templates sent a month and <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included; beyond that, Pro.',
+        '<strong>Meta bills your business directly</strong> for each utility template, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the user’s country.',
+      ],
+      faq: [
+        { question: 'Is a Messaging Me webhook address needed?', reponse: 'No: everything starts from the Stripe webhook your app already has, and nothing comes back to it.' },
+        { question: 'What if Meta reclassifies the template as marketing?', reponse: 'It would then only go to contacts who consented. Keep a factual text: the payment, the card, the access.' },
+        { question: 'How much does a recovery message cost?', reponse: 'Free includes 1,000 templates a month. Meta bills each utility template to your business, according to its rate card and the user’s country.' },
+        { question: 'Can Stripe send the same event twice?', reponse: 'Yes, and the idempotency key taken from the invoice covers it: within 24 hours, one message goes out.' },
+      ],
+      appel: { titre: 'Recover your failed payments today.', texte: 'The plugin in two commands, then the sentence above in Claude Code. No account to create.' },
       liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/use-cases/', 'All use cases']],
     },
   },
