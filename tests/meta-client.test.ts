@@ -40,6 +40,13 @@ describe('MetaClient.signalerSaisie', () => {
     expect(req.url).toBe('https://graph.facebook.com/v25.0/123/messages');
     expect(req.body).toEqual({ messaging_product: 'whatsapp', status: 'read', message_id: 'wamid.IN', typing_indicator: { type: 'text' } });
   });
+
+  it('un seul essai, sans relance : un indicateur en retard s’afficherait APRÈS notre message suivant', async () => {
+    const t = new FakeTransport([{ status: 503, json: { error: { code: 1, message: 'busy' } } }, { status: 200, json: { success: true } }]);
+    const c = new MetaClient({ transport: t, token: 'TOK', phoneNumberId: '123', version: 'v25.0', retry: { baseDelayMs: 0, sleep: async () => {} } });
+    await expect(c.signalerSaisie('wamid.IN')).rejects.toMatchObject({ name: 'MetaApiError' });
+    expect(t.requests).toHaveLength(1);
+  });
 });
 
 describe('MetaClient.sendTemplate', () => {

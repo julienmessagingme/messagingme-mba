@@ -98,15 +98,18 @@ export class MetaClient {
   }
 
   private async call(path: string, body: unknown): Promise<unknown> {
-    return withRetry(async () => {
-      if (this.rateLimiter) await this.rateLimiter.acquire();
-      const res = await this.transport.post(this.url(path), body, this.authentification());
-      if (res.status < 200 || res.status >= 300) {
-        const errBody = (res.json as { error?: MetaErrorBody } | null)?.error ?? null;
-        throw new MetaApiError(res.status, errBody, parseRetryAfter(res.headers));
-      }
-      return res.json;
-    }, this.retry);
+    return withRetry(() => this.tentative(path, body), this.retry);
+  }
+
+  /** Un seul appel, frein du numéro compris, sans relance : `call` le rejoue, `signalerSaisie` non. */
+  private async tentative(path: string, body: unknown): Promise<unknown> {
+    if (this.rateLimiter) await this.rateLimiter.acquire();
+    const res = await this.transport.post(this.url(path), body, this.authentification());
+    if (res.status < 200 || res.status >= 300) {
+      const errBody = (res.json as { error?: MetaErrorBody } | null)?.error ?? null;
+      throw new MetaApiError(res.status, errBody, parseRetryAfter(res.headers));
+    }
+    return res.json;
   }
 
   /**
@@ -139,9 +142,12 @@ export class MetaClient {
    * « En train d'écrire… » chez le contact, sur un message qu'il nous a envoyé (`messageId` = son `wamid`). Le même
    * appel marque ce message comme lu (coches bleues) : Meta ne sépare pas les deux. L'indicateur s'éteint à notre
    * message suivant, ou au bout de 25 s. Sert aux pauses en secondes d'un scénario.
+   *
+   * Un seul essai, sans relance : un indicateur relancé plusieurs secondes plus tard s'afficherait APRÈS notre message
+   * suivant, et le contact verrait « en train d'écrire… » sans que rien n'arrive.
    */
   async signalerSaisie(messageId: string): Promise<void> {
-    await this.call('messages', {
+    await this.tentative('messages', {
       messaging_product: 'whatsapp',
       status: 'read',
       message_id: messageId,

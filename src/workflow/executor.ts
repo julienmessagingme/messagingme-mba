@@ -1124,8 +1124,8 @@ export class WorkflowExecutor {
   /**
    * Après l'écriture RÉUSSIE d'un état, et seulement elle : si c'est une pause de moins d'une minute, le réveil court,
    * puis « en train d'écrire… » sur le message du contact. Armé sur une écriture refusée, le réveil reprendrait un
-   * parcours clos (la réclamation le refuserait, mais l'indicateur, lui, serait déjà parti). Armé AVANT l'appel à Meta :
-   * sa latence (frein du numéro, relances) ne rallonge pas la pause.
+   * parcours clos (la réclamation le refuserait, mais l'indicateur, lui, serait déjà parti). L'appel à Meta n'est pas
+   * attendu : sa latence ne rallonge ni la pause ni le traitement en cours.
    *
    * L'indicateur, qui marque aussi le message comme lu, ne part qu'à l'entrée d'une pause EN SECONDES (décision de
    * Julien du 2026-10-17), sur WhatsApp, et sur un vrai identifiant de message WhatsApp (`wamid.`) : `last_message_id`
@@ -1141,12 +1141,14 @@ export class WorkflowExecutor {
     this.deps.reveilCourt.armer(tenantId, runId, state.resumeAt, maintenant);
     const pause = graph.nodes.find((x) => x.id === state.currentNode);
     if (!pause || !pauseEnSecondes(pause) || canal !== 'whatsapp' || !messageEntrant?.startsWith('wamid.')) return;
-    try {
-      await this.deps.signalerSaisie(tenantId, messageEntrant);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn(`workflow: « en train d'écrire » refusé pour le parcours ${runId} : ${messageDe(err)}`);
-    }
+    // NON attendu : ce chemin tourne souvent dans le traitement d'un message entrant, dont la file n'a que trois places
+    // pour tous les espaces. Un Meta lent y retiendrait une place pour un simple agrément.
+    void Promise.resolve()
+      .then(() => this.deps.signalerSaisie(tenantId, messageEntrant))
+      .catch((err: unknown) => {
+        // eslint-disable-next-line no-console
+        console.warn(`workflow: « en train d'écrire » refusé pour le parcours ${runId} : ${messageDe(err)}`);
+      });
   }
 
   /**

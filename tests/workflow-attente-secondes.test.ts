@@ -132,6 +132,18 @@ describe('pause en secondes : le démarrage', () => {
     expect(ordre).toEqual(['armer', 'saisie']);
   });
 
+  it('🔴 l’appel à Meta n’est pas attendu : un Meta lent ne retient pas le traitement du message entrant', async () => {
+    // La file des messages entrants n'a que trois places pour tous les espaces : attendre l'indicateur y retenait une
+    // place pendant toute la latence de Meta, relances comprises.
+    const cap = capture();
+    const demarrage = monter(DEPART, null, cap, { signalerSaisie: () => new Promise<void>(() => {}) })
+      .demarrer('automatisme_ordinaire', 't1', 'wf1', DEPART, { waId: '33600', contactId: 'c1' },
+        { depuis: 'entree', fenetreOuverte: true, messageDeclencheur: 'wamid.D' });
+    const issue = await Promise.race([demarrage.then(() => 'fini'), new Promise((r) => setTimeout(() => r('retenu'), 500))]);
+    expect(issue).toBe('fini');
+    expect(cap.armes).toHaveLength(1);
+  });
+
   it('un refus de Meta sur la saisie n’arrête pas le parcours : le réveil est armé quand même', async () => {
     const cap = capture();
     await monter(DEPART, null, cap, { signalerSaisie: async () => { throw new Error('Meta 400'); } })
