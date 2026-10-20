@@ -633,7 +633,12 @@ export function WorkflowBuilder({ tenantId, workflowId, initialGraph, brouillonI
           ) : (
             // ⚠️ Ce message DISAIT « aucun bouton à cliquer ». Depuis le lot 7 il y en a un, juste à côté, et
             // c'est lui qui met en ligne : promettre le contraire ferait croire qu'éditer suffit.
-            <span className="inline-flex items-center gap-1 text-ink-500"><Icone nom="valide" taille="petite" />{t('Brouillon enregistré automatiquement', 'Draft saved automatically')}</span>
+            // Au téléphone, la forme courte : la longue déborde de 66 px. Elle restait invisible tant qu'un
+            // enregistrement inutile partait à l'ouverture et la remplaçait aussitôt (jusqu'au 2026-10-20).
+            <span className="inline-flex items-center gap-1 text-ink-500"><Icone nom="valide" taille="petite" />
+              <span className="sm:hidden">{t('Enregistré', 'Saved')}</span>
+              <span className="hidden sm:inline">{t('Brouillon enregistré automatiquement', 'Draft saved automatically')}</span>
+            </span>
           )}
         </div>
         {/* MISE EN LIGNE. Le bouton n'apparaît que s'il y a quelque chose à publier ; sinon on affiche depuis

@@ -5,6 +5,39 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-20 : l'enregistrement automatique d'un scénario coupait la console entière
+
+- **Le symptôme** (Julien, espace sandbox) : en plein travail sur un scénario, plus rien ne s'enregistre ni ne
+  s'affiche, et la console répond « trop de requêtes ». Les journaux de l'API ne tracent pas les refus de débit ; la
+  table `http_latences` les compte : **434 `PATCH /workflows/:id` en cinq minutes**, contre 15 à 58 sur les
+  créneaux voisins, puis des 429 sur toutes les routes (scénarios, réglages, agents, non-lus). Le plafond de 300
+  requêtes par minute et par utilisateur couvre toutes les routes : un écran qui s'emballe coupe tous les autres.
+- **Trois défauts additionnés** dans `useEnregistrementScenario` :
+  - une modification arrivée PENDANT un envoi relançait le suivant **sans délai** : pendant un glisser ou une frappe
+    continue, les envois s'enchaînaient au rythme du serveur (36 ms mesurées) ;
+  - React Flow change la liste des blocs pour une sélection, une mesure ou chaque pixel d'un glisser, et chacun
+    planifiait un envoi, souvent du **même** scénario (le serveur notait déjà qu'un enregistrement part à la simple
+    ouverture) ;
+  - un 429 ne freinait rien.
+- **Le correctif** (décision de Julien parmi six scénarios, espacement de 5 s) : la cadence sort dans
+  `web/lib/cadence-enregistrement.ts`, sans React, testée sur une horloge simulée. La relance repasse par le délai de
+  1,2 s ; deux départs sont espacés d'au moins 5 s ; rien ne part si le scénario sérialisé est celui que le serveur a
+  déjà ; un 429 met l'enregistrement en pause le temps du `retry-after` (exposé par le CORS de l'API, porté par
+  `ApiError.attenteMs`), puis il reprend seul. « Publier » et « tester » vident toujours la file sans attendre.
+  Chaque parade a été vérifiée dans les deux sens : le défaut remis, son test échoue. Le test a aussi trouvé un défaut
+  du correctif lui-même : « Publier » pendant une pause annulait la reprise.
+- **La relecture** : aucun rouge ; quatre jaunes corrigés avant le premier push, chacun avec son test vérifié dans les
+  deux sens (une erreur périmée bloquait « Publier » après l'annulation d'une modification, l'attente d'un envoi en vol
+  n'était plus bornée à 4 s, un minuteur survivait à la fermeture de l'éditeur après un 429, la fermeture pendant une
+  pause perdait la dernière modification). La pause est plafonnée à deux minutes.
+- **Un défaut caché que l'enregistrement inutile masquait** : au repos, l'indicateur « Brouillon enregistré
+  automatiquement » débordait de 66 px au téléphone. L'enregistrement de l'ouverture le remplaçait aussitôt par
+  « Brouillon enregistré à HH:MM », plus court ; sans lui, `mobile-debordement.spec.ts` est rouge. Au téléphone,
+  l'indicateur au repos dit « Enregistré ». Deux e2e réécrits pour la même raison : l'ouverture n'enregistre plus
+  (`workflow-publication`), et la mise en page automatique d'un bloc seul ne change rien (`session-expiree` ajoute un
+  bloc). Suite e2e complète passée sur un serveur construit depuis la copie.
+- **Reste au backlog** : côté serveur, ne rien écrire quand le graphe reçu est identique au brouillon (scénario E).
+
 ## 2026-10-20 : la rubrique Solutions de la vitrine (cas d'usage, page chapeau, Transport), et le cadrage des campagnes depuis Claude
 
 - **Les pages de cas** (`e43c1736`, `d1887095`, `2f06639e`, `b3c843bf`) : cinq cas en français et en anglais (rappels,

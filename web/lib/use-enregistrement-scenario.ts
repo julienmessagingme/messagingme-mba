@@ -1,23 +1,33 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { updateWorkflow } from '@/lib/api';
+import { ApiError, updateWorkflow } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { fromRF, type RFNode, type RFEdge } from '@/lib/workflow-canevas';
+import { CADENCE_SCENARIO, CadenceEnregistrement } from '@/lib/cadence-enregistrement';
 
 /**
- * L'ENREGISTREMENT du scénario en cours d'édition : le debounce, la sérialisation d'un seul PATCH en vol, le
- * vidage au démontage et à la fermeture d'onglet, l'état affiché par l'indicateur.
+ * L'ENREGISTREMENT du scénario en cours d'édition : la cadence des envois, le vidage au démontage et à la fermeture
+ * d'onglet, l'état affiché par l'indicateur.
  *
  * 🔴 Pourquoi CELUI-CI est extrait (lot 7, 2026-09-01), au même critère que `useCampagneReferences` : c'est une
  * concern COHÉRENTE (un enregistrement, ses garde-fous, son état) qui ne touche AUCUN autre état du builder,
  * et c'est exactement le code que le brouillon/publié vient modifier juste après. Déplacer à l'inverse le
  * canevas ou la sélection obligerait à faire transiter la moitié du composant en paramètres.
  *
- * ⚠️ Il n'y a PAS de bouton « Enregistrer » : on sauvegarde ~1,2 s après la dernière édition. Les deux vidages
- * (démontage, `beforeunload`) ne sont donc pas du zèle, ce sont eux qui évitent de perdre les toutes dernières
- * modifications, ce qui serait PIRE qu'un bouton manuel.
+ * 🔴 QUAND ENVOYER se décide dans `CadenceEnregistrement` (`cadence-enregistrement.ts`), et c'est là qu'est dit
+ * pourquoi : 434 enregistrements en cinq minutes le 2026-10-20, la console entière coupée par le plafond de débit.
+ * Ce hook ne fait que lui dire qu'une modification a eu lieu et lui fournir l'envoi.
+ *
+ * ⚠️ Il n'y a PAS de bouton « Enregistrer » : on sauvegarde ~1,2 s après la dernière édition, au plus une fois toutes
+ * les 5 s. Les deux vidages (démontage, `beforeunload`) ne sont donc pas du zèle, ce sont eux qui évitent de perdre
+ * les toutes dernières modifications, ce qui serait PIRE qu'un bouton manuel.
  */
+/** La pause sur un 429 quand le serveur ne dit pas combien attendre : la fenêtre du plafond par utilisateur. */
+const PAUSE_DEBIT_PAR_DEFAUT_MS = 60_000;
+/** Un `retry-after` démesuré (un quota « jusqu'à demain ») ne suspend pas l'éditeur des heures : on retente avant. */
+const PAUSE_DEBIT_MAX_MS = 120_000;
+
 export interface EnregistrementScenario {
   /** Un PATCH est-il en vol ? */
   enCours: boolean;
@@ -25,7 +35,7 @@ export interface EnregistrementScenario {
   enregistreA: Date | null;
   /** Message d'échec du dernier enregistrement, à afficher avec un « réessayer ». */
   erreur: string | null;
-  /** Enregistre TOUT DE SUITE (bouton « réessayer »), sans attendre le debounce. */
+  /** Enregistre TOUT DE SUITE (bouton « réessayer »), sans attendre le délai. */
   enregistrer: () => void;
   /** Reste-t-il un brouillon non publié ? C'est la RÉPONSE DU SERVEUR au dernier enregistrement, pas une
    *  déduction locale : un enregistrement identique au publié ne laisse aucun brouillon derrière lui. */
@@ -39,6 +49,8 @@ export interface EnregistrementScenario {
   /** L'appelant vient de publier : plus rien n'est en attente. */
   marquerPublie: () => void;
 }
+
+const serialiser = (nodes: RFNode[], edges: RFEdge[]): string => JSON.stringify(fromRF(nodes, edges));
 
 export function useEnregistrementScenario(
   tenantId: string,
@@ -62,87 +74,58 @@ export function useEnregistrementScenario(
 
   const graphRef = useRef({ nodes, edges });
   useEffect(() => { graphRef.current = { nodes, edges }; }, [nodes, edges]);
-  const dirtyRef = useRef(false);
-  const savingRef = useRef(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const firstRender = useRef(true);
 
-  const doSave = useCallback(async (keepalive = false): Promise<void> => {
-    if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
-    // Sérialise : un seul PATCH en vol. Si un save tourne déjà, on marque « sale » et il re-sauvera à la fin avec
-    // le graphe le plus récent (évite qu'un PATCH plus ancien réponde après et écrase une version plus récente).
-    if (savingRef.current) { dirtyRef.current = true; return; }
-    savingRef.current = true;
-    dirtyRef.current = false;
-    setEnCours(true);
-    setErreur(null);
-    let echoue = false;
-    try {
-      const rep = await updateWorkflow(tenantId, workflowId, { graph: fromRF(graphRef.current.nodes, graphRef.current.edges) }, keepalive ? { keepalive: true } : undefined);
-      setEnregistreA(new Date());
-      if (surCodes && Array.isArray(rep?.graph?.nodes)) {
-        const codes = new Map<string, string>();
-        for (const n of rep.graph.nodes) if (typeof n.data?.code === 'string' && n.data.code !== '') codes.set(n.id, n.data.code);
-        surCodes(codes);
-      }
-      // Repli `true` si le serveur ne dit rien (backend plus ancien que le front) : on préfère proposer une
-      // publication inutile, qui ne coûte rien, à masquer un bouton dont l'écran a besoin.
-      setAPublier(typeof rep?.brouillon === 'boolean' ? rep.brouillon : true);
-    } catch (err) {
-      setErreur(err instanceof Error ? err.message : t('Enregistrement impossible', 'Could not save'));
-      dirtyRef.current = true; // laisse une chance au prochain debounce / au bouton « réessayer »
-      echoue = true;
-    } finally {
-      setEnCours(false);
-      savingRef.current = false;
+  // L'envoi lit ses dépendances par une ref : la cadence est créée UNE fois, et un changement de langue ou de
+  // `surCodes` ne doit ni la recréer ni perdre ce qu'elle a en attente.
+  const envoyer = async (contenu: string, keepalive: boolean): Promise<void> => {
+    const rep = await updateWorkflow(tenantId, workflowId, { graph: JSON.parse(contenu) }, keepalive ? { keepalive: true } : undefined);
+    setEnregistreA(new Date());
+    if (surCodes && Array.isArray(rep?.graph?.nodes)) {
+      const codes = new Map<string, string>();
+      for (const n of rep.graph.nodes) if (typeof n.data?.code === 'string' && n.data.code !== '') codes.set(n.id, n.data.code);
+      surCodes(codes);
     }
-    // Des modifs arrivées PENDANT le save -> re-sauver UNE fois avec le graphe le plus récent.
-    //
-    // ⚠️ JAMAIS après un ÉCHEC. Le drapeau « sale » est alors posé par l'échec lui-même, donc relancer ici
-    // bouclait à l'infini, sans aucun délai, sur toute erreur persistante (session expirée en tête), et même
-    // après démontage du composant. C'est le bouton « réessayer » et le prochain debounce qui reprennent.
-    if (dirtyRef.current && !echoue) void doSave(keepalive);
-  }, [tenantId, workflowId, t, surCodes]);
+    // Repli `true` si le serveur ne dit rien (backend plus ancien que le front) : on préfère proposer une
+    // publication inutile, qui ne coûte rien, à masquer un bouton dont l'écran a besoin.
+    setAPublier(typeof rep?.brouillon === 'boolean' ? rep.brouillon : true);
+  };
+  const envoyerRef = useRef(envoyer);
+  useEffect(() => { envoyerRef.current = envoyer; });
+  const tRef = useRef(t);
+  useEffect(() => { tRef.current = t; }, [t]);
 
-  // doSave via une ref : la planification du debounce ne dépend QUE de [nodes, edges] (pas de doSave), pour ne pas
-  // relancer une sauvegarde au simple changement de langue (doSave dépend de `t`).
-  const doSaveRef = useRef(doSave);
-  useEffect(() => { doSaveRef.current = doSave; }, [doSave]);
+  const cadenceRef = useRef<CadenceEnregistrement | null>(null);
+  if (cadenceRef.current === null) {
+    // La référence est le scénario tel qu'ouvert : la mesure des blocs au montage ou une sélection n'envoie rien.
+    cadenceRef.current = new CadenceEnregistrement({
+      lire: () => serialiser(graphRef.current.nodes, graphRef.current.edges),
+      envoyer: (contenu, keepalive) => envoyerRef.current(contenu, keepalive),
+      pauseApres: (e) => (e instanceof ApiError && e.status === 429 ? Math.min(e.attenteMs ?? PAUSE_DEBIT_PAR_DEFAUT_MS, PAUSE_DEBIT_MAX_MS) : null),
+      surEtat: (etat) => {
+        setEnCours(etat.enCours);
+        // Au départ, l'échec d'avant n'est plus l'état affiché : « réessayer » montre l'envoi, pas l'ancien échec.
+        if (etat.enCours) { setErreur(null); return; }
+        const e = etat.erreur;
+        setErreur(e === null ? null : e instanceof Error ? e.message : tRef.current('Enregistrement impossible', 'Could not save'));
+      },
+    }, CADENCE_SCENARIO, serialiser(nodes, edges));
+  }
+  const cadence = cadenceRef.current;
 
-  // Planifie une sauvegarde debounce à chaque édition. Skip le rendu INITIAL (chargement du graphe) : on ne
-  // sauvegarde pas tant que l'utilisateur n'a rien touché.
+  // Chaque changement de la liste des blocs (édition, mais aussi sélection, mesure, glisser) le signale ; la cadence
+  // décide s'il y a quelque chose à envoyer, et quand.
+  useEffect(() => { cadence.modifie(); }, [cadence, nodes, edges]);
+
+  // Vidage au démontage + fermeture d'onglet : ce qui reste part tout de suite en `keepalive` (la requête survit au
+  // déchargement de la page).
   useEffect(() => {
-    if (firstRender.current) { firstRender.current = false; return; }
-    dirtyRef.current = true;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => { void doSaveRef.current(); }, 1200);
-  }, [nodes, edges]);
+    const vider = () => { void cadence.maintenant(true); };
+    window.addEventListener('beforeunload', vider);
+    return () => { window.removeEventListener('beforeunload', vider); vider(); cadence.arreter(); };
+  }, [cadence]);
 
-  // Flush au démontage + fermeture d'onglet : si des modifs sont en attente, on sauvegarde tout de suite en
-  // `keepalive` (la requête survit au déchargement de la page).
-  useEffect(() => {
-    const flush = () => { if (dirtyRef.current) void doSaveRef.current(true); };
-    window.addEventListener('beforeunload', flush);
-    return () => { window.removeEventListener('beforeunload', flush); flush(); };
-  }, []);
-
-  const enregistrer = useCallback(() => { void doSaveRef.current(); }, []);
-
-  /**
-   * Attend que la file soit vide, puis rend `true` si tout est bien enregistré.
-   *
-   * La boucle d'attente n'est pas du zèle : `doSave` REND LA MAIN TOUT DE SUITE quand un PATCH est déjà en
-   * vol (il se contente de marquer « sale »). L'appeler et l'attendre ne prouverait donc rien dans ce cas
-   * précis. Bornée à 4 s pour ne jamais bloquer un bouton sur une requête qui traîne.
-   */
-  const enregistrerMaintenant = useCallback(async (): Promise<boolean> => {
-    for (let garde = 0; garde < 100 && savingRef.current; garde += 1) {
-      await new Promise((r) => { setTimeout(r, 40); });
-    }
-    if (dirtyRef.current) await doSaveRef.current();
-    return !dirtyRef.current;
-  }, []);
-
+  const enregistrer = useCallback(() => { void cadence.maintenant(); }, [cadence]);
+  const enregistrerMaintenant = useCallback(() => cadence.maintenant(), [cadence]);
   const marquerPublie = useCallback(() => { setAPublier(false); }, []);
 
   return { enCours, enregistreA, erreur, enregistrer, aPublier, enregistrerMaintenant, marquerPublie };

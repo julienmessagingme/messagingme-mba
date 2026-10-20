@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { ApiError, messageDErreur, request } from './http';
+import { ApiError, attenteDemandee, messageDErreur, request } from './http';
 import { OFFRE_REFUSEE_EVENT } from './offre';
 
 /**
@@ -45,6 +45,22 @@ describe('request', () => {
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(500);
     expect((err as ApiError).message).toBe('Incident de notre côté (erreur 500). Réessayez dans un instant.');
+  });
+
+  it('🔴 un 429 porte l’attente que le serveur demande (`retry-after`) : l’enregistrement automatique s’y met en pause', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'trop de requêtes, patientez un instant' }), {
+      status: 429, headers: { 'content-type': 'application/json', 'retry-after': '42' },
+    })));
+    const err = await request('/tenants/t1/workflows/w1', { method: 'PATCH', body: '{}' }).catch((e: unknown) => e);
+    expect((err as ApiError).status).toBe(429);
+    expect((err as ApiError).attenteMs).toBe(42_000);
+  });
+
+  it('sans `retry-after` lisible, aucune attente : l’appelant prend la sienne', async () => {
+    expect(attenteDemandee(null)).toBeUndefined();
+    expect(attenteDemandee('demain')).toBeUndefined();
+    expect(attenteDemandee('')).toBeUndefined();
+    expect(attenteDemandee('0')).toBe(0);
   });
 });
 

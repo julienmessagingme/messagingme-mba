@@ -40,7 +40,9 @@ test.describe('session expirée', () => {
     await page.goto('/workflows?open=wf1');
 
     // Une modification quelconque déclenche l'auto-save, qui échouera.
-    await page.getByTestId('workflow-autoarrange').click(); // déclenche l'enregistrement, comme les autres specs du builder
+    // Un vrai changement : la mise en page automatique ne déplace pas un bloc unique, et un scénario inchangé ne
+    // s'enregistre plus (`web/lib/cadence-enregistrement.ts`).
+    await page.getByTestId('add-node-wait').click();
 
     // La bannière arrive, avec un chemin de sortie VISIBLE (avant : un message dans un coin, et rien d'autre).
     const banniere = page.getByTestId('session-expiree');

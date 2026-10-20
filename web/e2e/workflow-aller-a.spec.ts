@@ -107,7 +107,7 @@ test.describe('Bloc « Aller à »', () => {
     await expect(page.getByTestId('aller-a-scenario')).toHaveValue('wf1');
     await page.getByTestId('aller-a-bloc').selectOption(C_MENU);
     await expect(page.getByTestId('aller-a-cible')).toHaveText('→ Menu');
-    await expect.poll(() => sautEnregistre(etat)?.data.cible).toBe(C_MENU);
+    await expect.poll(() => sautEnregistre(etat)?.data.cible, { timeout: 15_000 }).toBe(C_MENU);
     expect(sautEnregistre(etat)?.data.cibleLibelle).toBe('Menu');
 
     const id = sautEnregistre(etat)!.id;
@@ -120,7 +120,7 @@ test.describe('Bloc « Aller à »', () => {
     await page.getByTestId('aller-a-scenario').selectOption('wf2');
     await page.getByTestId('aller-a-bloc').selectOption(C_AILLEURS);
     await expect(carte).toContainText('→ Menu principal, Question 2');
-    await expect.poll(() => sautEnregistre(etat)?.data.cible).toBe(C_AILLEURS);
+    await expect.poll(() => sautEnregistre(etat)?.data.cible, { timeout: 15_000 }).toBe(C_AILLEURS);
     expect(sautEnregistre(etat)?.data.cibleLibelle).toBe('Menu principal, Question 2');
   });
 

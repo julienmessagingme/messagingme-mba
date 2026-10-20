@@ -74,11 +74,13 @@ async function ouvrirBuilder(page: import('@playwright/test').Page, brouillon: b
 }
 
 test.describe('Scénario : publier une version', () => {
-  test('🔴 OUVRIR un scénario ne réclame pas de le publier, alors que ça l’enregistre bien une fois', async ({ page }) => {
+  test('🔴 OUVRIR un scénario ne l’enregistre pas et ne réclame pas de le publier', async ({ page }) => {
     const { appels } = await ouvrirBuilder(page, false);
     await expect(page.getByTestId('workflow-publie')).toBeVisible();
-    // Mesuré le 2026-09-01 : la seule ouverture provoque UN enregistrement. Il ne doit rien mettre en attente.
-    await expect.poll(() => appels.length, { timeout: 6_000 }).toBe(1);
+    // Jusqu'au 2026-10-20, la seule ouverture provoquait UN enregistrement (React Flow mesure les blocs au montage).
+    // Depuis la cadence (`web/lib/cadence-enregistrement.ts`), rien ne part tant que le scénario n'a pas changé.
+    await page.waitForTimeout(3_000);
+    expect(appels).toEqual([]);
     await expect(page.getByTestId('workflow-publier')).toHaveCount(0);
     await expect(page.getByTestId('workflow-publie')).toBeVisible();
   });

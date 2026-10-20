@@ -7,6 +7,13 @@ Aider les gens à comprendre « comment on fait » : des modes opératoires pas 
 la vitrine, la console, l'aide, le plugin), en partant de l'existant (fiches d'aide de `docs/aide/fiches/`, guide du compte
 Meta Business généré depuis `web/lib/partage/etapes-meta.ts`, films de l'atelier `~/engageme-motion`).
 
+## 🟡 L'enregistrement d'un scénario identique ne devrait rien écrire (2026-10-20)
+
+- Côté serveur, `PATCH /tenants/:tenantId/workflows/:id` réécrit le graphe entier, relit le code de l'espace et
+  redéclare les étiquettes même quand le graphe reçu est celui du brouillon. La console n'envoie plus de graphe
+  identique (`web/lib/cadence-enregistrement.ts`), mais un onglet resté ouvert sur une version précédente de la console le
+  peut encore : comparer au brouillon et répondre sans écrire. Le scénario E de l'incident « trop de requêtes » du 2026-10-20 (journal).
+
 ## 🟡 Offres v2 : retirer la colonne du quota d'envois d'avant (2026-10-17)
 
 `tenant_settings.api_quota_envois_jour` (0208) n'est plus lue depuis la livraison 2 des offres v2 (les modèles et les

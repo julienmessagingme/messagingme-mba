@@ -66,9 +66,20 @@ export class ApiError extends Error {
      * que « agent incomplet », c'est-à-dire un refus sans mode d'emploi.
      */
     public readonly corps?: unknown,
+    /**
+     * Sur un refus de débit (429), l'attente que le serveur demande (`retry-after`, exposé par le CORS de l'API), en
+     * ms. Un enregistrement automatique s'y met en pause au lieu d'insister (`cadence-enregistrement.ts`).
+     */
+    public readonly attenteMs?: number,
   ) {
     super(message);
   }
+}
+
+/** L'attente d'un `retry-after` en secondes, `undefined` si l'en-tête manque ou ne se lit pas. */
+export function attenteDemandee(entete: string | null): number | undefined {
+  const s = entete === null || entete.trim() === '' ? NaN : Number(entete);
+  return Number.isFinite(s) && s >= 0 ? s * 1000 : undefined;
 }
 
 /**
@@ -196,7 +207,10 @@ async function attempt<T>(path: string, init: RequestInit, refus401: Refus401): 
     if (suspendu && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(ACCES_SUSPENDU_EVENT, { detail: suspendu }));
     else if (!RETRYABLE_METHODS.has((init.method ?? 'GET').toUpperCase())) signalerRefusOffre(body);
   }
-  if (!res.ok) throw new ApiError(res.status, messageDErreur(res.status, body, langue()), body);
+  if (!res.ok) {
+    const attente = res.status === 429 ? attenteDemandee(res.headers.get('retry-after')) : undefined;
+    throw new ApiError(res.status, messageDErreur(res.status, body, langue()), body, attente);
+  }
   return body as T;
 }
 

@@ -980,8 +980,10 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   le testeur répondait à une question ou qu'une attente se réveillait : on essayait deux versions sans le
   savoir, et le parcours pouvait s'arrêter sans un mot si le bloc courant n'existait pas en ligne.
 - ✅ **Enregistrement AUTOMATIQUE** : plus de bouton « Enregistrer » ni de statut « brouillon » : le scénario se
-  sauvegarde tout seul ~1 s après chaque modification (indicateur « Enregistré à HH:MM »), y compris quand on
-  quitte la page ou ferme l'onglet. En cas d'échec réseau : indicateur rouge + « réessayer ».
+  sauvegarde tout seul ~1 s après chaque modification (indicateur « Enregistré à HH:MM »), au plus une fois toutes
+  les 5 s pendant une édition continue, y compris quand on quitte la page ou ferme l'onglet. Ouvrir le scénario
+  ou sélectionner un bloc n'enregistre rien. En cas d'échec réseau : indicateur rouge + « réessayer » ;
+  si la plateforme demande de ralentir, l'enregistrement se met en pause et reprend seul.
 - ✅ **Bloc « message rapide »** : un texte + **jusqu'à 3 réponses rapides** (20 caractères chacune), envoyé SANS
   template Meta approuvé (message interactif). Chaque réponse devient une **sortie à relier** (branche par
   bouton, comme un template). Au choix, **un bouton de lien** à la place des réponses rapides (voir plus haut,
