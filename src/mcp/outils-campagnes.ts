@@ -14,6 +14,7 @@ import { LimiteOffreError, corpsRefusLimite } from '../offres/refus';
 import { empreinteEtat, type ConfirmationStore, type EtatConfirme, type IssueReclamation } from '../campaign/confirmation';
 import { modeleEnvoyable, numeroDEnvoi, type DepsModeleEnvoyable } from '../api/modele-envoi';
 import { validateParamMapping } from '../crm/template';
+import type { PhoneNumberRow } from '../campaign/store.pg';
 
 /**
  * Ce que les outils de campagne lisent et écrivent, en plus des contacts et de l'Inbox du MCP. 🔴 Les MÊMES objets que
@@ -30,6 +31,8 @@ export interface DepsCampagnesMcp {
         etatPourConfirmation(tenantId: string, campaignId: string): Promise<EtatConfirme | null>;
         apercuDestinataires(tenantId: string, campaignId: string, n: number): Promise<string[]>;
         desabonnesParmiLesDestinataires(tenantId: string, campaignId: string): Promise<number>;
+        /** Les numéros WhatsApp de l'espace, comme la console les liste. */
+        listPhoneNumbers(tenantId: string): Promise<PhoneNumberRow[]>;
       };
     };
     /** La lecture du modèle chez Meta et le numéro de l'espace, ceux de `POST /v1/sends`. */
@@ -252,7 +255,12 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
       await plafondCouteux(deps, tenantId);
       const modele = await modeleEnvoyable(c.modeles, tenantId, templateName, templateLanguage, paramMapping, 'modèle');
       if ('refus' in modele) refusDe(modele);
-      const numero = await numeroDEnvoi(c.modeles, tenantId, typeof args.phone_number_id === 'string' ? args.phone_number_id : undefined);
+      const numeros = await c.route.repo.listPhoneNumbers(tenantId);
+      const demande = typeof args.phone_number_id === 'string' ? args.phone_number_id : undefined;
+      if (demande === undefined && numeros.length > 1) {
+        throw new RefusOutil(`cet espace a plusieurs numéros WhatsApp : précisez phone_number_id (${numeros.map((n) => `${n.id} = ${n.displayPhoneNumber ?? n.verifiedName ?? '?'}`).join(', ')})`);
+      }
+      const numero = await numeroDEnvoi(c.modeles, tenantId, demande);
       if ('refus' in numero) refusDe(numero);
 
       // Le chemin de la console, mot pour mot : la même validation, la même résolution de cible, le même plafond.
@@ -263,6 +271,15 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
       }, tenantId, c.route);
       if (!prepare.ok) refusDe(prepare);
       const cree = await createCampaignWithRecipients({ ...prepare.input, prevueLe }, c.route.repo);
+      const ecartes = (motif: string): number => cree.skipped.filter((s) => s.reason === motif).length;
+      const vises = prepare.input.contactIds?.length ?? 0;
+      // Bloqués, supprimés, sans numéro, doublons : écartés à la création sans motif propre (constat 4).
+      const autres = Math.max(0, vises - cree.recipientCount - cree.skipped.length);
+      if (cree.recipientCount === 0) {
+        await c.route.repo.deleteDraftCampaign(cree.campaignId, tenantId);
+        throw new RefusOutil(`aucun destinataire : ${ecartes('not_opted_in')} sans consentement marketing (un modèle MARKETING ne part qu'à qui a consenti), `
+          + `${ecartes('missing_variable')} sans la valeur d'une variable, ${autres} écartés (bloqués, supprimés ou sans numéro). Rien n'a été créé.`);
+      }
 
       // L'ancien brouillon part APRÈS que le nouveau existe : un échec laisse deux brouillons, jamais zéro.
       const remplacement = remplace === null ? undefined : { campaign_id: remplace, deleted: await c.route.repo.deleteDraftCampaign(remplace, tenantId) };
@@ -277,7 +294,8 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
         c.route.repo.apercuDestinataires(tenantId, cree.campaignId, NOMS_DU_RECAPITULATIF),
       ]);
       const partiront = Math.max(0, cree.recipientCount - desabonnes);
-      const ecartes = (motif: string): number => cree.skipped.filter((s) => s.reason === motif).length;
+      // La marge des modèles du mois, quand l'offre en a une (constat 4) : une campagne qui la dépasse serait refusée au lancement.
+      const modelesDuMois = prevueLe === null ? await c.route.modelesDuLancement(tenantId, cree.campaignId) : null;
       return {
         campaign_id: cree.campaignId,
         status: 'draft',
@@ -286,13 +304,18 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
         scheduled_for: prevueLe === null ? null : { iso: prevueLe.toISOString(), paris: dateDeParis(prevueLe) },
         targeted: prepare.input.contactIds?.length ?? 0,
         will_send: partiront,
-        excluded: { not_opted_in: ecartes('not_opted_in'), missing_variable: ecartes('missing_variable'), unsubscribed: desabonnes },
+        excluded: { not_opted_in: ecartes('not_opted_in'), missing_variable: ecartes('missing_variable'), unsubscribed: desabonnes, other: autres },
+        phone_number: numeros.find((n) => n.id === numero.phoneNumberId)?.displayPhoneNumber ?? numero.phoneNumberId,
+        ...(modelesDuMois ? { monthly_templates: { limit: modelesDuMois.max, remaining: modelesDuMois.reste, needed: modelesDuMois.demandes } } : {}),
         sample: apercu,
         // Un volume, jamais un montant : un prix affiché à côté du bouton qui envoie serait cru (`EtapeRecap.tsx`).
         billable_messages_up_to: partiront,
         confirmation_code: pose.code,
         code_expires_at: pose.expireLe.toISOString(),
         ...(remplacement ? { replaced: remplacement } : {}),
+        ...(remplacement && !remplacement.deleted
+          ? { warning: 'The previous draft could not be deleted (it was launched or scheduled in the meantime): both campaigns now exist. Check Campaigns in the console before launching this one.' }
+          : {}),
         next_step: 'Show this summary to the person. Only after an explicit yes, call launch_campaign with campaign_id and '
           + 'confirmation_code. Nothing has been sent.',
       };

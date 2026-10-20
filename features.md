@@ -2401,7 +2401,13 @@ scénario, comment importer des contacts.
   Un brouillon préparé pour une date se programme à cette date, depuis Claude ou depuis la console, où son bouton devient
   « Programmer pour le … ». Pour retrouver les contacts d'un sujet, Claude lit les conversations d'une période
   (`list_conversations` donne aussi le contact de chacune) et étiquette celles qui en parlent. En Free, ces outils restent
-  visibles et répondent avec le lien de l'offre ; les filtres par analyse demandent l'Entreprise.
+  visibles et répondent avec le lien de l'offre ; les filtres par analyse demandent l'Entreprise. Sur un espace à plusieurs
+  numéros, Claude demande lequel envoie, et le récapitulatif le nomme ; une campagne qui ne toucherait personne n'est pas
+  créée, et Claude dit pourquoi (consentement, variable manquante, contacts bloqués).
+- ✅ **Claude gère les champs des contacts** (2026-10-20) : il les liste (`list_fields`, dans toutes les offres), en crée un
+  comme dans la console (`create_field`, la clé vient du libellé) et en remplit un sur une cible de contacts ou une liste
+  de conversations (`set_contact_field`, en Pro, comme l'action en masse de la liste des contacts, sans déclencher
+  d'automation). Une variable de modèle d'une campagne préparée par Claude peut ainsi venir d'un champ de la fiche.
 - ✅ **Envoyer un message simple** : un texte, à une personne, tout de suite, visible dans l'Inbox. Deux routes,
   parce que leurs règles n'ont presque rien en commun : `POST /v1/messages/whatsapp` (dans la fenêtre de 24 h)
   et `POST /v1/messages/rcs` (sans fenêtre, mais seulement vers quelqu'un qui a consenti ou qui vous a déjà

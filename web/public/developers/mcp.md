@@ -73,6 +73,9 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 | tag_contacts | mcp:write connexion OAuth requise | Étiqueter les contacts d’une cible ou d’une liste de conversations : un segment est une étiquette. Par l’action en masse de la console, sans déclencher d’automation. |
 | prepare_campaign | mcp:write connexion OAuth requise | Préparer une campagne de modèle sans rien envoyer : un brouillon visible dans la console, un récapitulatif (ciblés, partants, écartés et pourquoi, cinq noms, le volume facturable) et un code de confirmation. |
 | launch_campaign | mcp:write connexion OAuth requise | Lancer, ou programmer à sa date, une campagne préparée, avec le code de son récapitulatif, une fois que la personne a dit oui ; par le même chemin que le bouton « Lancer » de la console. |
+| list_fields | mcp:read | Les champs personnalisés des contacts : clé, libellé, type. Une variable de modèle peut en venir. |
+| create_field | mcp:write connexion OAuth requise | Créer un champ personnalisé, comme dans la console : sa clé vient du libellé. |
+| set_contact_field | mcp:write connexion OAuth requise | Remplir un champ sur les contacts d’une cible ou d’une liste de conversations, comme l’action en masse de la console, sans déclencher d’automation. |
 | search_contacts | mcp:read | Chercher un contact par nom ou par numéro, avec sa dernière analyse. |
 | get_contact | mcp:read | La fiche d’un contact à partir de son numéro, avec sa dernière analyse et le résumé de celle-ci. |
 | list_members | mcp:read | Les membres de l’espace, pour pouvoir leur confier un fil. |

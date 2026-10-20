@@ -4885,6 +4885,9 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 | tag_contacts | mcp:write OAuth connection required | Tag the contacts of a target or of a list of conversations: a segment is a tag. Through the console’s bulk action, without starting any automation. |
 | prepare_campaign | mcp:write OAuth connection required | Prepare a template campaign without sending anything: a draft visible in the console, a summary (targeted, sent, left out and why, five names, the billable volume) and a confirmation code. |
 | launch_campaign | mcp:write OAuth connection required | Launch, or schedule for its date, a prepared campaign, with the code of its summary, once the person said yes; through the same path as the console’s Launch button. |
+| list_fields | mcp:read | The custom contact fields: key, label, type. A template variable can come from one of them. |
+| create_field | mcp:write OAuth connection required | Create a custom field, as in the console: its key comes from the label. |
+| set_contact_field | mcp:write OAuth connection required | Set a field on the contacts of a target or of a list of conversations, like the console’s bulk action, without starting any automation. |
 | search_contacts | mcp:read | Find a contact by name or number, with their latest analysis. |
 | get_contact | mcp:read | A contact record from its number, with their latest analysis and its summary. |
 | list_members | mcp:read | Workspace members, to assign threads to them. |

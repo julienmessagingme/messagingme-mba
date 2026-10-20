@@ -4,7 +4,7 @@ import { RefusOutil } from '../src/mcp/saisie';
 import { lireCibleMcp, MAX_IDENTIFIANTS_CIBLE } from '../src/mcp/cible';
 import { DROITS, type Fonction } from '../src/offres/offres';
 import { corpsRefusFonction } from '../src/offres/refus';
-import type { ContactFilters, ContactRow } from '../src/crm/contact-store.pg';
+import type { BulkTarget, ContactFilters, ContactRow } from '../src/crm/contact-store.pg';
 
 /**
  * LA CIBLE DE L'ASSISTANT ET `find_contacts` (plan « Campagnes depuis Claude », tâche 4). La cible passe par
@@ -35,6 +35,7 @@ function deps(o: { fonctions?: ReadonlySet<Fonction>; conversations?: Record<str
       },
     },
     contacts: {
+      contactIdsForTarget: async (tenant: string, cible: BulkTarget) => (tenant === T && 'ids' in cible ? cible.ids.filter((i: string) => i === C1) : []),
       count: async (_t: string, filtres: ContactFilters) => { lus.push({ quoi: 'count', filtres }); return 238; },
       query: async (_t: string, filtres: ContactFilters, limit: number) => { lus.push({ quoi: 'query', filtres, limit }); return [fiche(C1)]; },
       analysesEtResumes: async () => { lus.push({ quoi: 'analyses' }); return new Map(); },
@@ -82,6 +83,14 @@ describe('lireCibleMcp', () => {
     const { d } = deps({ conversations: { [CV1]: C1 } });
     expect(await lireCibleMcp({ conversation_ids: [CV1] }, PRO, d, T, { identifiants: true })).toEqual({ ids: [C1] });
     await expect(lireCibleMcp({ conversation_ids: [CV1] }, PRO, d, 'autre-espace', { identifiants: true })).rejects.toThrow(RefusOutil);
+  });
+
+  it('🔴 des contacts d’un autre espace : refusés, jamais « 0 contact » en silence (relecture, constat 2)', async () => {
+    const { d } = deps();
+    const AUTRE = '99999999-9999-4999-8999-999999999999';
+    await expect(lireCibleMcp({ contact_ids: [AUTRE] }, PRO, d, T, { identifiants: true })).rejects.toThrow(/aucun de ces contacts/);
+    // Mêlés à un contact de l'espace : seuls ceux de l'espace restent.
+    expect(await lireCibleMcp({ contact_ids: [AUTRE, C1] }, PRO, d, T, { identifiants: true })).toEqual({ ids: [C1] });
   });
 
   it('identifiants mal formés, trop nombreux, ou mêlés à des filtres : refusés', async () => {

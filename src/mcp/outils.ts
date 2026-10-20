@@ -27,6 +27,7 @@ import { OUTILS_CHIFFRES, type DepsChiffresMcp } from './outils-chiffres';
 import { OUTILS_NUMERO, type DepsNumeroMcp } from './outils-numero';
 import { OUTILS_MODELES, type DepsModelesMcp } from './outils-modeles';
 import { OUTILS_CAMPAGNES, type DepsCampagnesMcp } from './outils-campagnes';
+import { OUTILS_CHAMPS, type DepsChampsMcp } from './outils-champs';
 import type { ReponseEnvoi } from '../http/v1-sends';
 import type { VueOffre } from '../offres/vue';
 import type { SourceOffres } from '../offres/offre.pg';
@@ -36,6 +37,7 @@ import { OUTILS_DE_L_ETAPE, lireMiseEnService } from './mise-en-service';
 export { RefusOutil } from './saisie';
 // Les bornes d'un fichier d'outils que `tests/mcp-serveur.test.ts` relit dans les schémas : exportées d'ici.
 export { MAX_CONTACTS_TROUVES, LONGUEUR_MAX_NOM_MODELE, LONGUEUR_MAX_LANGUE, LONGUEUR_MAX_NOM_CAMPAGNE, LONGUEUR_MAX_CODE } from './outils-campagnes';
+export { LONGUEUR_MAX_LIBELLE_CHAMP, LONGUEUR_MAX_CLE_CHAMP, LONGUEUR_MAX_VALEUR_CHAMP } from './outils-champs';
 
 /**
  * Le catalogue d'outils exposé aux agents tiers par le serveur MCP.
@@ -58,7 +60,7 @@ export type { ScopeMcp } from '../../web/lib/partage/catalogue-mcp';
 /** Les actions d'agent IA rendues par `get_conversation` : les plus récentes, la conversation en porte peu. */
 export const ACTIONS_DE_LA_CONVERSATION = 10;
 
-export interface DepsMcp extends DepsRepondre {
+export interface DepsMcp extends DepsRepondre, DepsChampsMcp {
   /** L'offre de l'espace (`OffresEnCache`, lot 6, B2a) : la fonction de chaque outil s'y vérifie avant de l'exécuter. */
   offres: SourceOffres;
   inbox: ConversationsRepondre & {
@@ -76,6 +78,8 @@ export interface DepsMcp extends DepsRepondre {
     query(tenantId: string, filtres: ContactFilters, limit: number, offset: number): Promise<ContactRow[]>;
     /** Le nombre de contacts d'une cible (`find_contacts`), le même compte que la liste des contacts. */
     count(tenantId: string, filtres: ContactFilters): Promise<number>;
+    /** Les identifiants d'une cible dans l'espace (`lireCibleMcp`) : la même résolution que l'action en masse. */
+    contactIdsForTarget(tenantId: string, target: BulkTarget, limite?: number): Promise<string[]>;
     /** L'action en masse du mini-CRM (`tag_contacts`) : la MÊME écriture que la route, qui n'émet rien. */
     applyEditsMany(tenantId: string, target: BulkTarget, edits: BulkEdits): Promise<IssueActionEnMasse>;
     findByPhone(tenantId: string, phoneE164: string): Promise<ContactRow | null>;
@@ -891,6 +895,8 @@ export const OUTILS: OutilMcp[] = [
   ...OUTILS_MODELES,
   // Les campagnes depuis l'assistant (2026-10-20) : leur fichier, `src/mcp/outils-campagnes.ts`.
   ...OUTILS_CAMPAGNES,
+  // Les champs depuis l'assistant (2026-10-20) : `src/mcp/outils-champs.ts`.
+  ...OUTILS_CHAMPS,
   // Les chiffres de l'espace, pour les graphiques de Claude (2026-10-13) : leur fichier, `src/mcp/outils-chiffres.ts`.
   ...OUTILS_CHIFFRES,
   // La clé de l'application et le paiement du Pro, depuis Claude (spec offres v2) : leur fichier, `src/mcp/outils-offre.ts`.

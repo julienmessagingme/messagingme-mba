@@ -32,6 +32,10 @@ export interface DepsCibleMcp {
     /** Les fiches des conversations désignées, DANS l'espace : une conversation d'un autre espace ne rend rien. */
     contactIdsDesConversations(tenantId: string, conversationIds: string[]): Promise<string[]>;
   };
+  contacts: {
+    /** Les identifiants d'une cible, DANS l'espace : un contact d'un autre espace ne rend rien. */
+    contactIdsForTarget(tenantId: string, target: BulkTarget, limite?: number): Promise<string[]>;
+  };
 }
 
 const OPERATEURS_ANALYSE = [...OPERATEURS_FICHE_SEULS, 'empty', 'not_empty'];
@@ -105,11 +109,17 @@ export async function lireCibleMcp(
     if (!opts.identifiants) throw new RefusOutil('cet outil cible par étiquettes, consentement ou analyse, pas par identifiants');
     if (parContacts && parConversations) throw new RefusOutil('contact_ids ou conversation_ids, pas les deux');
     if (parFiltres) throw new RefusOutil('une liste d’identifiants ne se combine pas avec des filtres : l’un ou l’autre');
+    // Résolus DANS l'espace, aux deux portes : un identifiant d'ailleurs ne désigne personne, et une liste qui ne désigne
+    // personne est refusée plutôt que de répondre « 0 » (relecture du lot des campagnes, constat 2).
     const ids = parContacts
-      ? identifiants(args.contact_ids, 'contact_ids')
+      ? await deps.contacts.contactIdsForTarget(tenantId, { ids: identifiants(args.contact_ids, 'contact_ids') })
       : await deps.inbox.contactIdsDesConversations(tenantId, identifiants(args.conversation_ids, 'conversation_ids'));
     const cible = parseBulkTarget({ ids });
-    if (cible === null) throw new RefusOutil('aucune de ces conversations n’a de contact dans cet espace');
+    if (cible === null) {
+      throw new RefusOutil(parContacts
+        ? 'aucun de ces contacts n’existe dans cet espace'
+        : 'aucune de ces conversations n’a de contact dans cet espace');
+    }
     return cible;
   }
 

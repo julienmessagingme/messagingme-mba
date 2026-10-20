@@ -2947,6 +2947,10 @@ async function main(): Promise<void> {
         // Les campagnes depuis l'assistant (2026-10-20) : le câblage de la route des campagnes, la lecture des modèles de
         // `POST /v1/sends` (catégorie lue chez Meta, numéro de l'espace) et les codes de confirmation (migration 0245).
         campagnes: { route: depsCampagnes, modeles: depsEnvois, confirmations: new PgConfirmations(pool) },
+        // Les champs depuis l'assistant (2026-10-20) : le MÊME référentiel que l'écran et `/v1/fields`, et le champ de base
+        // créé à la volée comme l'action en masse de la console.
+        champs: fieldStore,
+        ensureSocleField: async (tenant, key, label, type) => { await ensureFieldByKey(fieldStore, tenant, key, label, type); },
         // La pose d'étiquettes de `tag_conversation` : le MÊME module que la fiche et l'agent, appelé SANS publier.
         etiquettes: workflowRuntime.etiquettes,
         listerMembres: async (tenant) => (await userStore.list(tenant)).map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role })),

@@ -14,7 +14,7 @@ import * as catalogue from '../src/mcp/outils';
 import { API_SCOPES } from '../web/lib/partage/droits-api';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE, NumeroSuspenduError, MESSAGE_NUMERO_SUSPENDU } from '../src/meta/numero-delie';
-import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpChampsInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { creerPoseEtiquette, LONGUEUR_MAX_ETIQUETTE } from '../src/crm/poser-etiquette';
 import { DROITS } from '../src/offres/offres';
 import { MetaTemplateClient, type FetchLike, type TemplateSummary } from '../src/meta/templates';
@@ -101,6 +101,7 @@ function app(
     contacts: {
       query: async () => [],
       count: async () => 0,
+      contactIdsForTarget: async () => [],
       applyEditsMany: async () => { throw new Error('applyEditsMany ne devrait pas être appelée'); },
       findByPhone: async () => null,
       analysesEtResumes: async () => new Map(),
@@ -126,6 +127,7 @@ function app(
     ...mcpMessagesInertes,
     ...mcpOffreInerte,
     ...mcpCampagnesInertes,
+    ...mcpChampsInertes,
     ...reste,
   };
   const keys = new FakeApiKeys()
@@ -788,6 +790,9 @@ describe('serveur MCP : cohérence du catalogue', () => {
       prepare_campaign: [true, false, false],
       // Les messages partent (ou partiront à la date) chez des personnes ; un second appel avec le même code est refusé.
       launch_campaign: [true, false, true],
+      // Les champs (2026-10-20) : un champ de plus à chaque appel ; poser la même valeur ne change rien.
+      create_field: [true, false, false],
+      set_contact_field: [true, true, false],
       // Offres v2 : une clé de plus à chaque appel, rien chez un tiers ; le Pro ouvre une session chez Stripe à chaque appel.
       create_api_key: [true, false, false],
       subscribe_pro: [true, false, true],
@@ -958,6 +963,8 @@ const FONCTION_DES_OUTILS: Readonly<Record<string, string>> = {
   get_campaign_stats: 'statistiques', get_conversation_insights: 'analyse', get_ai_stats: 'statistiques',
   // Les campagnes depuis l'assistant (2026-10-20) : la fonction qui garde les campagnes de la console.
   find_contacts: 'console', tag_contacts: 'console', prepare_campaign: 'console', launch_campaign: 'console',
+  // Les champs (2026-10-20) : remplir un champ en masse est une action de la console ; lister et créer suivent l'API.
+  set_contact_field: 'console',
 };
 
 describe('serveur MCP : les outils et l’offre (lot 6, B2a)', () => {

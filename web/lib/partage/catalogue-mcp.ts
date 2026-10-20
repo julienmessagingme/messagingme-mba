@@ -72,6 +72,10 @@ export const CATALOGUE_MCP = {
   tag_contacts: { scope: 'mcp:write', exigePersonne: true },
   prepare_campaign: { scope: 'mcp:write', exigePersonne: true },
   launch_campaign: { scope: 'mcp:write', exigePersonne: true },
+  /** Les champs depuis l'assistant (2026-10-20). */
+  list_fields: { scope: 'mcp:read' },
+  create_field: { scope: 'mcp:write', exigePersonne: true },
+  set_contact_field: { scope: 'mcp:write', exigePersonne: true },
 } as const satisfies Record<string, { scope: ScopeMcp; exigePersonne?: true }>;
 
 export type NomOutilMcp = keyof typeof CATALOGUE_MCP;

@@ -202,9 +202,9 @@ const asStringArray = (v: unknown): string[] =>
 /**
  * Définition d'un champ pour valider une valeur saisie. Un champ socle (`prenom`/`email`) absent est matérialisé
  * à la volée (l'écran le propose dès l'ouverture d'un espace) ; tout autre champ inconnu reste refusé, pour
- * qu'une faute de frappe ne crée pas un champ fantôme.
+ * qu'une faute de frappe ne crée pas un champ fantôme. Partagée avec `set_contact_field` de l'assistant.
  */
-async function defPourEcriture(deps: ContactsRouteDeps, tenantId: string, key: string): Promise<UserFieldDef | undefined> {
+export async function defPourEcriture(deps: Pick<ContactsRouteDeps, 'champs' | 'ensureSocleField'>, tenantId: string, key: string): Promise<UserFieldDef | undefined> {
   const lu = async (): Promise<UserFieldDef | undefined> => (await deps.champs.list(tenantId)).find((d) => d.key === key);
   const def = await lu();
   if (def) return def;

@@ -768,6 +768,7 @@ export const mcpCampagnesInertes: Pick<DepsMcp, 'campagnes'> = {
         etatPourConfirmation: async () => null,
         apercuDestinataires: async () => [],
         desabonnesParmiLesDestinataires: async () => 0,
+        listPhoneNumbers: async () => [],
       },
     },
     modeles: {
@@ -781,4 +782,10 @@ export const mcpCampagnesInertes: Pick<DepsMcp, 'campagnes'> = {
       existe: async () => false,
     },
   },
+};
+
+/** Les champs depuis l'assistant (2026-10-20), pour les montages qui n'en parlent pas : lire rend « aucun », écrire lève. */
+export const mcpChampsInertes: Pick<DepsMcp, 'champs' | 'ensureSocleField'> = {
+  champs: { list: async () => [], create: neDevraitPasEtreAppelee('champs.create') },
+  ensureSocleField: neDevraitPasEtreAppelee('ensureSocleField'),
 };

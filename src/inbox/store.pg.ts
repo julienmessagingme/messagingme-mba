@@ -973,11 +973,6 @@ export class PgInboxStore implements InboxStore {
   }
 
   /**
-   * Une page de conversations, de la plus récente à la plus ancienne. Filtrage et pagination en SQL : filtrer
-   * en mémoire une page chargée ferait mentir « À traiter » au-delà. Pas de `hasMore` : une page pleine veut
-   * dire qu'il peut y en avoir d'autres, et un drapeau coûterait un `count`.
-   */
-  /**
    * Les fiches de ces conversations, sans doublon, dans l'espace (`tag_contacts` de l'assistant). 🔴 Le filtre
    * `tenant_id` est le seul contrôle : une conversation d'un autre espace ne rend rien, comme une inexistante. Les
    * identifiants arrivent déjà vérifiés (forme d'uuid) : un mal formé ferait lever le cast.
@@ -992,6 +987,11 @@ export class PgInboxStore implements InboxStore {
     return res.rows.map((r) => r.contact_id);
   }
 
+  /**
+   * Une page de conversations, de la plus récente à la plus ancienne. Filtrage et pagination en SQL : filtrer
+   * en mémoire une page chargée ferait mentir « À traiter » au-delà. Pas de `hasMore` : une page pleine veut
+   * dire qu'il peut y en avoir d'autres, et un drapeau coûterait un `count`.
+   */
   async listConversations(tenantId: string, opts: ListConversationsOptions = {}): Promise<ConversationSummary[]> {
     // Borné des deux côtés : un `limit` de query string ne doit ni vider la page ni ramener la table entière.
     const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 100), 1), 200);

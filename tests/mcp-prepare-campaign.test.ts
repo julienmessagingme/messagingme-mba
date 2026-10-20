@@ -20,6 +20,7 @@ const C1 = '11111111-1111-4111-8111-111111111111';
 const C2 = '22222222-2222-4222-8222-222222222222';
 const ANCIEN = '44444444-4444-4444-8444-444444444444';
 const NEUF = '55555555-5555-4555-8555-555555555555';
+const C3 = '33333333-3333-4333-8333-333333333333';
 const PERSONNE = { userId: 'u1' };
 const outil = OUTILS.find((o) => o.nom === 'prepare_campaign')!;
 
@@ -30,6 +31,11 @@ function deps(o: {
   modele?: LectureModele;
   ancien?: { tenant: string; confirme: boolean; status: string };
   numeros?: string[];
+  /** Les numéros de l'espace tels que la console les liste (constat 3 de la relecture). */
+  numerosListe?: Array<{ id: string; displayPhoneNumber: string | null; verifiedName: string | null }>;
+  modeles?: { max: number; reste: number; demandes: number } | null;
+  /** Un contact de la cible que la création écarte (bloqué ou supprimé) : il doit apparaître dans « other ». */
+  avecBloque?: boolean;
 } = {}) {
   const trace: string[] = [];
   const crees: CreateCampaignInput[] = [];
@@ -37,7 +43,8 @@ function deps(o: {
   const poses: Array<{ campaignId: string; etat: string }> = [];
   const etats = new Map<string, EtatConfirme>();
   const repo = {
-    phoneNumberBelongsToTenant: async (pn: string, t: string) => t === T && (o.numeros ?? ['pn-1']).includes(pn),
+    phoneNumberBelongsToTenant: async (pn: string, t: string) => t === T && (o.numeros ?? (o.numerosListe ?? []).map((n) => n.id).concat(['pn-1'])).includes(pn),
+    listPhoneNumbers: async () => o.numerosListe ?? [{ id: 'pn-1', displayPhoneNumber: '+33 5 25 68 02 47', verifiedName: 'Démo' }],
     getTenantPhoneNumberId: async () => (o.numeros ?? ['pn-1'])[0] ?? null,
     listContactsForBuild: async () => { throw new Error('jamais « tous les contacts »'); },
     listContactsForBuildByIds: async (_t: string, ids: string[]) =>
@@ -65,10 +72,12 @@ function deps(o: {
     offres: { offreDe: async () => ({ droits: { fonctions: DROITS.pro.fonctions } }) },
     couteux: { consommer: async () => { trace.push('plafond'); return { accepte: true, attenteMs: 0 }; } },
     inbox: { contactIdsDesConversations: async () => [] },
+    contacts: { contactIdsForTarget: async (_t: string, cible: BulkTarget) => ('ids' in cible ? cible.ids : []) },
     campagnes: {
       route: {
         repo,
-        contacts: { contactIdsForTarget: async (_t: string, cible: BulkTarget) => ('ids' in cible ? cible.ids : (cible.filters as ContactFilters).tags?.includes('retard') ? [C1, C2] : []) },
+        contacts: { contactIdsForTarget: async (_t: string, cible: BulkTarget) => ('ids' in cible ? cible.ids : (cible.filters as ContactFilters).tags?.includes('retard') ? [C1, C2, ...(o.avecBloque ? [C3] : [])] : []) },
+        modelesDuLancement: async () => o.modeles ?? null,
         identifiantsDeTousLesContacts: async () => { throw new Error('jamais « tous les contacts »'); },
         plafondDestinataires: 10_000,
         rcs: { belongsToTenant: async () => false },
@@ -173,5 +182,44 @@ describe('prepare_campaign', () => {
     const { d, trace } = deps();
     await expect(outil.executer(d, T, BASE, null)).rejects.toThrow(RefusOutil);
     expect(trace).toEqual([]);
+  });
+
+  it('🔴 un espace à plusieurs numéros sans phone_number_id : refusé avec la liste, rien n’est créé (constat 3)', async () => {
+    const numerosListe = [
+      { id: 'pn-a', displayPhoneNumber: '+33 5 25 68 02 47', verifiedName: 'Démo' },
+      { id: 'pn-b', displayPhoneNumber: '+33 5 25 68 02 50', verifiedName: 'Sandbox' },
+    ];
+    const v = deps({ numerosListe });
+    await expect(outil.executer(v.d, T, BASE, PERSONNE)).rejects.toThrow(/pn-a.*pn-b/);
+    expect(v.crees).toHaveLength(0);
+    const ok = deps({ numerosListe });
+    const r = (await outil.executer(ok.d, T, { ...BASE, phone_number_id: 'pn-b' }, PERSONNE)) as { phone_number: string };
+    expect(ok.crees[0]!.phoneNumberId).toBe('pn-b');
+    expect(r.phone_number).toBe('+33 5 25 68 02 50');
+  });
+
+  it('le récapitulatif boucle : les écartés sans motif sont comptés, la marge des modèles du mois est dite (constat 4)', async () => {
+    const { d } = deps({ avecBloque: true, modeles: { max: 1000, reste: 900, demandes: 2 } });
+    const r = (await outil.executer(d, T, BASE, PERSONNE)) as { targeted: number; will_send: number; excluded: { other: number }; monthly_templates: unknown };
+    expect(r.targeted).toBe(3);
+    expect(r.will_send).toBe(2);
+    expect(r.excluded.other).toBe(1);
+    expect(r.monthly_templates).toEqual({ limit: 1000, remaining: 900, needed: 2 });
+  });
+
+  it('🔴 un brouillon sans aucun destinataire : supprimé et refusé avec ses motifs, sans code (constat 6)', async () => {
+    const { d, supprimes, poses } = deps({ modele: { statut: 'approuve', categorie: 'marketing', variables: 1 } });
+    await expect(outil.executer(d, T, { ...BASE, tags: undefined, contact_ids: [C2] }, PERSONNE)).rejects.toThrow(/consentement/);
+    expect(supprimes).toEqual([NEUF]);
+    expect(poses).toHaveLength(0);
+  });
+
+  it('l’ancien brouillon qui n’a pas pu être supprimé : la réponse le dit (constat 5)', async () => {
+    const { d } = deps({ ancien: { tenant: T, confirme: true, status: 'draft' } });
+    // La suppression échoue : l'ancien a été lancé entre la vérification et la suppression.
+    (d.campagnes.route.repo as unknown as { deleteDraftCampaign: () => Promise<boolean> }).deleteDraftCampaign = async () => false;
+    const r = (await outil.executer(d, T, { ...BASE, replaces: ANCIEN }, PERSONNE)) as { replaced: { deleted: boolean }; warning?: string };
+    expect(r.replaced.deleted).toBe(false);
+    expect(r.warning).toMatch(/previous draft/i);
   });
 });

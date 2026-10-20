@@ -23,6 +23,7 @@ function deps(o: { couteuxAccepte?: boolean } = {}) {
     inbox: { contactIdsDesConversations: async (t: string, ids: string[]) => { ordre.push('conversations'); return t === T && ids.includes(CV1) ? [C1] : []; } },
     couteux: { consommer: async () => { ordre.push('plafond'); return { accepte: o.couteuxAccepte ?? true, attenteMs: 2000 }; } },
     contacts: {
+      contactIdsForTarget: async (t: string, cible: BulkTarget) => (t === T && 'ids' in cible ? cible.ids : []),
       applyEditsMany: async (tenant: string, cible: BulkTarget, edits: BulkEdits) => {
         ordre.push('ecriture'); ecrits.push({ tenant, cible, edits }); return { affected: 38, stopsGardes: 0 };
       },

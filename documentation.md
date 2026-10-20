@@ -4308,7 +4308,17 @@ Ajouté par le lot 4 de l'API publique :
    en une requête atomique, puis appelle `lancerCampagne` (`src/campaign/lancement.ts`), la fonction du bouton
    « Lancer » : un brouillon daté est PROGRAMMÉ à sa date, et un lancement refusé rend le code. La console montre la
    date d'un tel brouillon et son bouton devient « Programmer pour le … » (`lancementDuBrouillon`). Le quota du jour des
-   modèles de l'API ne s'applique pas : une campagne de l'assistant est une campagne de la console.
+   modèles de l'API ne s'applique pas : une campagne de l'assistant est une campagne de la console. Une liste de
+   `contact_ids` se résout DANS l'espace (`contactIdsForTarget`) et une liste qui n'y désigne personne est refusée ;
+   sur un espace à plusieurs numéros, `prepare_campaign` exige `phone_number_id` ; un brouillon qui n'aurait aucun
+   destinataire est supprimé aussitôt et refusé avec ses motifs.
+57. **Les champs depuis l'assistant n'ont aucune logique propre** (`src/mcp/outils-champs.ts`). `list_fields` lit le
+   référentiel comme `GET /v1/fields` ; `create_field` appelle `creerChamp` (`src/http/fields.ts`), celle de l'écran
+   Contenu et de `POST /v1/fields` (clé dérivée du libellé, champ de base refusé) ; tous deux sont ouverts à toutes les
+   offres, comme l'API. `set_contact_field` est l'action en masse « définir un champ » du mini-CRM : la garde
+   `defPourEcriture` (exportée de `src/http/contacts.ts`, un champ de base absent est créé à la volée),
+   `validateFieldValue` puis `canonicalizeFieldValue`, et `applyEditsMany`, qui n'émet aucun événement ; fonction
+   `console`, plafond des opérations coûteuses, cible de `lireCibleMcp`.
 48. **Les webhooks sortants gérés par une clé (`/v1/webhooks`, lot 13, domaine 4) n'ont aucune logique propre** :
    `src/http/v1-webhooks.ts` appelle les fonctions de `src/evenements/gestion.ts` (celles de la console et des outils
    MCP du lot 12), traduit les noms en anglais (`WebhookV1`, `DeliveryV1`, partagées avec les outils
