@@ -4,7 +4,7 @@ import { createCampaignWithRecipients } from '../campaign/create';
 import { avertissementPalier } from '../meta/palier';
 import type { CampaignRepoLike } from '../campaign/create';
 import type { CampaignSummary, CampaignDetail, PhoneNumberRow, RetryReset } from '../campaign/store.pg';
-import { campaignJobExpireSeconds, resolveRatePerMinute } from '../campaign/pacing';
+import { expirationDuRun, lancerCampagne } from '../campaign/lancement';
 import type { WorkflowGraph } from '../workflow/graph';
 import { gardeEtendue } from '../auth/middleware';
 import type { Guard, PreHandler } from '../auth/middleware';
@@ -134,17 +134,6 @@ export interface CampaignRouteDeps {
 /** Routes de campagne : lecture (liste/détail/numéros), création et déclenchement du run. */
 export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps, garde: Guard, limiteCouteuse?: PreHandler): void {
   const opts = { preHandler: garde };
-  /**
-   * L'expiration du job d'un run, dimensionnée sur le travail réel (destinataires en attente / débit résolu) :
-   * un run throttlé long ne doit pas expirer et être rejoué en parallèle. `undefined` (campagne introuvable) =
-   * le défaut de la file.
-   */
-  const expirationDuRun = async (campaignId: string): Promise<number | undefined> => {
-    const sizing = await deps.repo.getRunSizing(campaignId);
-    return sizing
-      ? campaignJobExpireSeconds(sizing.pendingCount, resolveRatePerMinute(sizing.ratePerMinute, deps.defaultRatePerMinute, deps.plafondLePlusBas))
-      : undefined;
-  };
   // Garde des routes coûteuses : la garde habituelle plus le plafond par espace (chaîne aplatie).
   const couteux = gardeEtendue(garde, limiteCouteuse);
 
@@ -252,53 +241,32 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
   app.post('/campaigns/:campaignId/run', couteux, async (req, reply) => {
     const { campaignId } = req.params as { campaignId: string };
     const authTenant = req.auth?.tenantId ?? '';
-    // 🔴 Scope espace : 404 si la campagne n'appartient pas à l'appelant (pas d'IDOR entre espaces).
-    if (!(await deps.repo.campaignBelongsTo(campaignId, authTenant))) {
-      return reply.code(404).send({ error: 'campagne inconnue' });
-    }
-
     // « Plus tard » : un scheduledAt (ISO absolu UTC) programme au lieu de lancer ; le sweeper enfilera le run à
-    // l'échéance. Date future obligatoire (une date passée = 400, pas un lancement immédiat déguisé). Statut
-    // 'scheduled', annulable via /cancel-schedule.
+    // l'échéance. Le corps se lit d'abord : un scheduledAt mal formé est une erreur de l'appelant (400), quelle que soit
+    // la campagne visée. Le reste, appartenance comprise, est `lancerCampagne`, que l'assistant appelle aussi.
     const b = (req.body ?? {}) as { scheduledAt?: unknown };
+    let quand: Date | null = null;
     if (b.scheduledAt !== undefined && b.scheduledAt !== null) {
       if (typeof b.scheduledAt !== 'string') return reply.code(400).send({ error: 'scheduledAt invalide (ISO)' });
-      const when = new Date(b.scheduledAt);
-      if (Number.isNaN(when.getTime())) return reply.code(400).send({ error: 'scheduledAt invalide (date)' });
-      if (when.getTime() <= Date.now()) return reply.code(400).send({ error: 'scheduledAt doit être dans le futur' });
-      const ok = await deps.repo.scheduleCampaign(campaignId, authTenant, when);
-      if (!ok) return reply.code(409).send({ error: 'campagne non programmable (déjà en cours/terminée)' });
-      return reply.code(202).send({ scheduled: true, campaignId, scheduledAt: when.toISOString() });
+      quand = new Date(b.scheduledAt);
+      if (Number.isNaN(quand.getTime())) return reply.code(400).send({ error: 'scheduledAt invalide (date)' });
     }
-
-    // Les modèles du mois (lot 6) : une campagne qui ne tient pas dans ce qu'il reste est refusée d'emblée, avant toute
-    // levée de pause, plutôt que de s'arrêter au milieu. Seul le lancement immédiat : une campagne programmée part un
-    // autre jour, peut-être un autre mois, et la fabrique décide alors.
-    const modeles = await deps.modelesDuLancement(authTenant, campaignId);
-    if (modeles !== null && modeles.demandes > modeles.reste) {
-      const refus = corpsRefusLimite(new LimiteOffreError(authTenant, 'envoisModelesMois', modeles.max));
-      return reply.code(STATUT_REFUS_OFFRE).send({ ...refus, reste: modeles.reste, demandes: modeles.demandes });
+    const issue = await lancerCampagne(deps, authTenant, campaignId, quand);
+    if (issue.ok) {
+      return 'programmee' in issue
+        ? reply.code(202).send({ scheduled: true, campaignId, scheduledAt: issue.programmee.toISOString() })
+        : reply.code(202).send({ enqueued: true, campaignId });
     }
-
-    // Lancement immédiat, l'expiration dimensionnée sur le travail réel (`expirationDuRun`).
-    const expireInSeconds = await expirationDuRun(campaignId);
-    // Reprise d'une campagne en pause : la pause est levée avant l'enfilement, parce que le job refuse de
-    // démarrer une campagne en pause (garde de `campaignRunJob`, qui empêche un job enfilé avant la pause de la
-    // ressusciter). No-op sur un brouillon, donc l'appel est inconditionnel.
-    await deps.repo.resumeCampaign(campaignId, authTenant);
-    // Deux POST /run concurrents empilent deux jobs, et les deux tournent : rien ne déduplique la file. 🔴 Le claim
-    // atomique par destinataire est le seul garde-fou contre le double envoi (pas contre le débit).
-    try {
-      // `groupId` = l'espace : le plafond de concurrence par espace de la file s'applique aussi au lancement
-      // manuel, sinon un client qui clique quatre fois occupe les quatre places.
-      await deps.queue.enqueue('campaign-run', { campaignId }, { ...(expireInSeconds ? { expireInSeconds } : {}), groupId: authTenant });
-    } catch (err) {
-      // L'enfilement a échoué après la levée de pause : on la rétablit, sinon la campagne resterait « en cours »
-      // sans job, et « Reprendre » ne s'afficherait pas. `pauseCampaign` est bornée à `running` (pas un brouillon).
-      await deps.repo.pauseCampaign(campaignId, authTenant);
-      throw err;
+    switch (issue.raison) {
+      // 🔴 Scope espace : 404 si la campagne n'appartient pas à l'appelant (pas d'IDOR entre espaces).
+      case 'inconnue': return reply.code(404).send({ error: 'campagne inconnue' });
+      case 'date_passee': return reply.code(400).send({ error: 'scheduledAt doit être dans le futur' });
+      case 'non_programmable': return reply.code(409).send({ error: 'campagne non programmable (déjà en cours/terminée)' });
+      case 'limite': {
+        const refus = corpsRefusLimite(new LimiteOffreError(authTenant, 'envoisModelesMois', issue.max));
+        return reply.code(STATUT_REFUS_OFFRE).send({ ...refus, reste: issue.reste, demandes: issue.demandes });
+      }
     }
-    return reply.code(202).send({ enqueued: true, campaignId });
   });
 
   /**
@@ -315,7 +283,7 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
     if (r.result === 'missing_var') return reply.code(422).send({ error: 'variable de template toujours manquante', missing: r.missing });
     if (r.result === 'conflict') return reply.code(409).send({ error: 'destinataire déjà repris' });
     // queued : enfile un run (le destinataire redevenu pending est renvoyé par runCampaign avec les valeurs corrigées).
-    const expireInSeconds = await expirationDuRun(campaignId);
+    const expireInSeconds = await expirationDuRun(deps, campaignId);
     // Même groupe que partout ailleurs : un renvoi de destinataire ne doit pas échapper au plafond par espace.
     await deps.queue.enqueue('campaign-run', { campaignId }, { ...(expireInSeconds ? { expireInSeconds } : {}), groupId: authTenant });
     return reply.code(202).send({ enqueued: true, recipientId });

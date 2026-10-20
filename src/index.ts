@@ -18,6 +18,8 @@ import { PgDossierStore } from './dossiers/store.pg';
 import { ensureFieldByKey } from './crm/fields';
 import { PgPersistanceFormulaire } from './flow/persistence.pg';
 import { PgCampaignDraftStore } from './campaign/draft-store.pg';
+import { PgConfirmations } from './campaign/confirmation.pg';
+import type { CampaignRouteDeps } from './http/campaigns';
 import type { ConversationMessage } from './inbox/store.pg';
 import { PgStatsStore } from './stats/store.pg';
 import { PgConversationStatsStore } from './stats/conversation-stats.pg';
@@ -1207,6 +1209,46 @@ async function main(): Promise<void> {
    */
   const quotaSuppressions = new QuotaSuppressions({ offres, compteur: compteurDebit });
 
+  /**
+   * Les campagnes : la route de la console ET les outils de campagne de l'assistant (`prepare_campaign`,
+   * `launch_campaign`) lisent ce MÊME objet. Un second câblage dériverait, et l'assistant préparerait ou lancerait
+   * avec d'autres garde-fous (plafond de destinataires, modèles du mois, groupe de l'espace).
+   */
+  const depsCampagnes = {
+    repo,
+    queue,
+    drafts: campaignDraftStore,
+    // Les modèles du mois (lot 6) : une campagne qui ne tient pas dans ce qu'il reste est refusée au lancement.
+    modelesDuLancement: creerModelesDuLancement(quotaModeles, (campagne, tenant) => repo.modelesEnAttente(campagne, tenant)),
+    // L'offre (lot 6, B2a) : hors `scenarios`, une campagne ou un étage à scénario est refusé à la création.
+    offres,
+    // Palier d'envoi du numéro, pour avertir avant un lancement plus gros que ce que Meta laissera passer
+    // en 24 h. Lecture du relevé déjà persisté, aucun appel Graph sur ce chemin.
+    getMessagingLimitTier: async (tenant) => (await phoneStatusStore.getPhoneNumber(tenant))?.messagingLimitTier ?? null,
+    // La même résolution de cible que les actions en masse du mini-CRM : par l'intention, pas par une liste
+    // d'identifiants qui ne tiendrait pas dans le corps de la requête.
+    contacts: contactStore,
+    // Le plafond de taille sur le chemin « tous les contacts », borné à `limite` : il fige son jeu
+    // d'identifiants. `{ filters: {} }` sélectionne l'espace entier, et les contacts bloqués sont écartés au
+    // chargement (`listContactsForBuildByIds`).
+    identifiantsDeTousLesContacts: (tenant: string, limite: number) => contactStore.contactIdsForTarget(tenant, { filters: {} }, limite),
+    plafondDestinataires: config.CAMPAIGN_MAX_RECIPIENTS,
+    // 🔴 Garde d'isolation du canal RCS, symétrique de celle du numéro Meta : le partenaire RBM est global,
+    // donc c'est ce contrôle qui empêche un tenant de créer une campagne sous la marque d'un autre.
+    rcs: workflowRuntime.rcsStack.agents,
+    // Garde d'un étage e-mail de la chaîne : `getById` est scopée tenant ET écarte les modèles supprimés
+    // (suppression douce), donc elle rend null dans les deux cas où la clé étrangère aurait rendu une 5xx.
+    emailTemplateBelongsToTenant: async (id, tenant) => (await emailTemplates.getById(tenant, id)) !== null,
+    // Campagne au fil de l'eau : le webhook doit appartenir à l'espace et être actif. Même garde que pour le
+    // numéro Meta et l'agent RCS, sur la troisième porte d'entrée des destinataires.
+    webhookUsableByTenant: (id, tenant) => webhookStore.usableByTenant(tenant, id),
+    getWorkflowGraph: async (wfId, tenant) => (await workflowStore.getById(wfId, tenant))?.graph ?? null,
+    defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
+    // Borne sûre pour l'estimation de durée : ces deux routes enfilent sans savoir le canal, et une
+    // estimation trop optimiste fait expirer le job en plein envoi (pg-boss le rejoue, le débit double).
+    plafondLePlusBas: plafondLePlusBas(config),
+  } satisfies CampaignRouteDeps;
+
   const app = buildServer({
     /**
      * 🔴 Le compteur des plafonds de débit, PARTAGÉ par toutes les copies de l'API (migration 0186). Oublié,
@@ -1303,40 +1345,8 @@ async function main(): Promise<void> {
       defaultCountry: config.DEFAULT_COUNTRY as CountryCode,
       audit: auditSink,
     },
-    campaigns: {
-      repo,
-      queue,
-      drafts: campaignDraftStore,
-      // Les modèles du mois (lot 6) : une campagne qui ne tient pas dans ce qu'il reste est refusée au lancement.
-      modelesDuLancement: creerModelesDuLancement(quotaModeles, (campagne, tenant) => repo.modelesEnAttente(campagne, tenant)),
-      // L'offre (lot 6, B2a) : hors `scenarios`, une campagne ou un étage à scénario est refusé à la création.
-      offres,
-      // Palier d'envoi du numéro, pour avertir avant un lancement plus gros que ce que Meta laissera passer
-      // en 24 h. Lecture du relevé déjà persisté, aucun appel Graph sur ce chemin.
-      getMessagingLimitTier: async (tenant) => (await phoneStatusStore.getPhoneNumber(tenant))?.messagingLimitTier ?? null,
-      // La même résolution de cible que les actions en masse du mini-CRM : par l'intention, pas par une liste
-      // d'identifiants qui ne tiendrait pas dans le corps de la requête.
-      contacts: contactStore,
-      // Le plafond de taille sur le chemin « tous les contacts », borné à `limite` : il fige son jeu
-      // d'identifiants. `{ filters: {} }` sélectionne l'espace entier, et les contacts bloqués sont écartés au
-      // chargement (`listContactsForBuildByIds`).
-      identifiantsDeTousLesContacts: (tenant: string, limite: number) => contactStore.contactIdsForTarget(tenant, { filters: {} }, limite),
-      plafondDestinataires: config.CAMPAIGN_MAX_RECIPIENTS,
-      // 🔴 Garde d'isolation du canal RCS, symétrique de celle du numéro Meta : le partenaire RBM est global,
-      // donc c'est ce contrôle qui empêche un tenant de créer une campagne sous la marque d'un autre.
-      rcs: workflowRuntime.rcsStack.agents,
-      // Garde d'un étage e-mail de la chaîne : `getById` est scopée tenant ET écarte les modèles supprimés
-      // (suppression douce), donc elle rend null dans les deux cas où la clé étrangère aurait rendu une 5xx.
-      emailTemplateBelongsToTenant: async (id, tenant) => (await emailTemplates.getById(tenant, id)) !== null,
-      // Campagne au fil de l'eau : le webhook doit appartenir à l'espace et être actif. Même garde que pour le
-      // numéro Meta et l'agent RCS, sur la troisième porte d'entrée des destinataires.
-      webhookUsableByTenant: (id, tenant) => webhookStore.usableByTenant(tenant, id),
-      getWorkflowGraph: async (wfId, tenant) => (await workflowStore.getById(wfId, tenant))?.graph ?? null,
-      defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
-      // Borne sûre pour l'estimation de durée : ces deux routes enfilent sans savoir le canal, et une
-      // estimation trop optimiste fait expirer le job en plein envoi (pg-boss le rejoue, le débit double).
-      plafondLePlusBas: plafondLePlusBas(config),
-    },
+    // Le MÊME objet que les campagnes de l'assistant (`mcp.campagnes`, plus bas) : un seul câblage, une seule vérité.
+    campaigns: depsCampagnes,
     // Redirection publique des liens tracés. Le tenant vient du code retrouvé en base, jamais de l'URL.
     links: {
       liens: trackedLinkStore,
@@ -2933,6 +2943,9 @@ async function main(): Promise<void> {
         offres,
         ...depsRepondre,
         contacts: contactStore,
+        // Les campagnes depuis l'assistant (2026-10-20) : le câblage de la route des campagnes, la lecture des modèles de
+        // `POST /v1/sends` (catégorie lue chez Meta, numéro de l'espace) et les codes de confirmation (migration 0245).
+        campagnes: { route: depsCampagnes, modeles: depsEnvois, confirmations: new PgConfirmations(pool) },
         // La pose d'étiquettes de `tag_conversation` : le MÊME module que la fiche et l'agent, appelé SANS publier.
         etiquettes: workflowRuntime.etiquettes,
         listerMembres: async (tenant) => (await userStore.list(tenant)).map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role })),

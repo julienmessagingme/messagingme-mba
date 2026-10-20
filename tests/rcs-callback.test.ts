@@ -479,7 +479,9 @@ describe('Rappels RCS : le plafond par code', () => {
    * `src/campaign/enqueue.ts` en font aussi. On les DÉRIVE de `src/`, au lieu d'en recopier la liste.
    */
   it('🔴 tout enfilement de `campaign-run`, où qu’il soit, porte un groupId', () => {
-    const fichiers = ['src/worker.ts', 'src/http/campaigns.ts', 'src/campaign/enqueue.ts'];
+    // Le lancement par l'opérateur et par l'assistant vit dans `src/campaign/lancement.ts` (2026-10-20) ; la route ne
+    // garde que le renvoi d'un destinataire.
+    const fichiers = ['src/worker.ts', 'src/http/campaigns.ts', 'src/campaign/enqueue.ts', 'src/campaign/lancement.ts'];
     const enfilements = fichiers.flatMap((f) =>
       readFileSync(new URL(`../${f}`, import.meta.url), 'utf8').split('\n')
         .filter((l) => l.includes("enqueue('campaign-run'")).map((l) => ({ f, l: l.trim() })));
@@ -490,7 +492,7 @@ describe('Rappels RCS : le plafond par code', () => {
 
   it('⚠️ et aucun autre fichier de src/ n’enfile `campaign-run` sans être lu par le test ci-dessus', () => {
     const racine = new URL('../src/', import.meta.url);
-    const connus = new Set(['worker.ts', 'http/campaigns.ts', 'campaign/enqueue.ts']);
+    const connus = new Set(['worker.ts', 'http/campaigns.ts', 'campaign/enqueue.ts', 'campaign/lancement.ts']);
     const parcourir = (dossier: URL, prefixe: string): string[] =>
       readdirSync(dossier, { withFileTypes: true }).flatMap((e) => e.isDirectory()
         ? parcourir(new URL(`${e.name}/`, dossier), `${prefixe}${e.name}/`)

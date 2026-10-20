@@ -16,7 +16,7 @@ import { lienWaMe } from '../src/lib/wa-me';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { jamaisDesabonne } from './consentement';
-import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpInerte } from './routes-inertes';
+import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpInerte } from './routes-inertes';
 import { bornesDesChamps, champsDe, muettes as bornesMuettes } from './aide/bornes-zod';
 import { offresToutOuvert } from './gardes';
 
@@ -114,6 +114,8 @@ function monter(o: { widgets?: WidgetRow[]; liens?: string[]; scenarios?: Array<
     filTenuParLApplication: async () => false,
     contacts: {
       query: jamais('query'),
+      count: jamais('count'),
+      applyEditsMany: jamais('applyEditsMany'),
       findByPhone: jamais('findByPhone'),
       analysesEtResumes: jamais('analysesEtResumes'),
     },
@@ -132,6 +134,7 @@ function monter(o: { widgets?: WidgetRow[]; liens?: string[]; scenarios?: Array<
     ...mcpChiffresInertes,
     ...mcpMessagesInertes,
     ...mcpOffreInerte,
+    ...mcpCampagnesInertes,
   };
   const keys = new FakeApiKeys()
     .add(CLE_TOUT, { id: 'k1', tenantId: 't1', scopes: ['mcp:read', 'mcp:write'] })

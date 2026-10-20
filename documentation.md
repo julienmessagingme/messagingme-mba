@@ -4292,6 +4292,23 @@ Ajouté par le lot 4 de l'API publique :
    `/mcp` pose à chaque requête sous la clé ou le jeton de l'appel), appelé au même endroit. L'outil construit le corps
    de l'API pour une personne, ses valeurs en sources `literal`, et refuse celles que Meta refuserait à l'envoi
    (retour à la ligne, tabulation, cinq espaces de suite).
+56. **Une campagne depuis l'assistant passe par la console, et ne part qu'avec le code de son récapitulatif**
+   (`src/mcp/outils-campagnes.ts`, spec `docs/superpowers/specs/2026-10-20-campagnes-depuis-claude-design.md`). Les
+   quatre outils sont gardés par la fonction `console` (celle des campagnes de l'écran) ; les filtres d'analyse, par
+   `analyse`. La cible (`src/mcp/cible.ts`) passe par `parseBulkTarget` et REFUSE ce que la console accepte : une cible
+   sans critère (qui serait « tous les contacts »), et tout ce qui dépasse un plafond (refusé, jamais tronqué).
+   `tag_contacts` est l'action en masse (`applyEditsMany`) : plafond coûteux, aucune émission. `prepare_campaign` lit le
+   modèle chez Meta comme `POST /v1/sends` (`modeleEnvoyable`, `src/api/modele-envoi.ts` ; la catégorie est celle de
+   Meta, jamais choisie par l'assistant), puis appelle `preparerCampagne` et `createCampaignWithRecipients` sur le MÊME
+   objet que la route (`depsCampagnes`, `src/index.ts`) ; la date choisie se range sur le brouillon (`prevue_le`)
+   sans le programmer. Le code (`src/campaign/confirmation.ts`, table `campagne_confirmations`) est haché, à usage
+   unique, valable 30 minutes, et lié à l'empreinte de l'état RELU en base (`etatPourConfirmation` : modèle, catégorie,
+   date, variables, destinataires en attente, statut) ; une ligne présente dit aussi que le brouillon vient de
+   l'assistant, seul cas où `replaces` le supprime (après la création du nouveau). `launch_campaign` réclame le code
+   en une requête atomique, puis appelle `lancerCampagne` (`src/campaign/lancement.ts`), la fonction du bouton
+   « Lancer » : un brouillon daté est PROGRAMMÉ à sa date, et un lancement refusé rend le code. La console montre la
+   date d'un tel brouillon et son bouton devient « Programmer pour le … » (`lancementDuBrouillon`). Le quota du jour des
+   modèles de l'API ne s'applique pas : une campagne de l'assistant est une campagne de la console.
 48. **Les webhooks sortants gérés par une clé (`/v1/webhooks`, lot 13, domaine 4) n'ont aucune logique propre** :
    `src/http/v1-webhooks.ts` appelle les fonctions de `src/evenements/gestion.ts` (celles de la console et des outils
    MCP du lot 12), traduit les noms en anglais (`WebhookV1`, `DeliveryV1`, partagées avec les outils
@@ -4605,6 +4622,10 @@ avec elle) garde son test de parité.
 | `src/rcs/message-entrant.ts` -> `traiterMessageEntrantRcs` | 🔴 le traitement d'une réponse RCS, une fois le rappel smsmode authentifié par la route, dans cet ordre : STOP (opt-out et signal) avant toute autre écriture, Inbox, fiche contact puis automation, signal de réponse, reprise du scénario. Automations et scénario sont secondaires : leur panne ne fait pas rejouer un rappel dont l'opt-out et l'Inbox sont écrits. `src/index.ts` ne fait que le câbler ; `tests/rcs-message-entrant.test.ts` exécute l'ordre |
 | `src/stripe/traitement-abonnements.ts` -> `creerTraitementAbonnements` | le cycle de vie des abonnements Stripe (le Pro, le numéro fourni) : classement des événements, lecture de leurs objets, transitions, effets rejouables. La route `credit-stripe.ts` garde signature, mode, recharge du crédit IA et HTTP (§ 8, la recharge par Stripe) |
 | `src/http/preparation-campagne.ts` -> `preparerCampagne` | toutes les validations et lectures de la création d'une campagne, sans aucune écriture ; `src/campaign/create.ts` écrit (§ 4.2) |
+| `src/campaign/lancement.ts` -> `lancerCampagne` | le lancement d'une campagne (programmer à une date, ou lever la pause puis enfiler le run dans le groupe de l'espace) : le bouton « Lancer » de la console et `launch_campaign` de l'assistant |
+| `src/campaign/confirmation.ts`, `confirmation.pg.ts` | le code de confirmation d'une campagne préparée par l'assistant : empreinte de l'état, code haché, réclamation atomique |
+| `src/mcp/cible.ts` -> `lireCibleMcp` | la cible d'un outil de campagne de l'assistant, devant `parseBulkTarget` : jamais sans critère, jamais tronquée, l'analyse réservée à l'Entreprise |
+| `src/api/modele-envoi.ts` -> `modeleEnvoyable`, `numeroDEnvoi` | un modèle jugé envoyable chez Meta (et sa catégorie), et le numéro d'envoi de l'espace : `POST /v1/sends` et `prepare_campaign` |
 | `src/inbox/fil.ts` -> `creerControleDuFil` | 🔴 le contrôle du fil : les gestes qui confient, reprennent ou passent une conversation (agent de Meta, scénario, équipe), l'ordre « Meta d'abord, la colonne ensuite », les gardes (agent allumé, `only`, fil de test, parcours en attente, détenteur relu avant Meta, opérateur épargné par un démarrage du client), l'événement `message_sans_suite` et la marque d'escalade. Seul appelant de `setControlOwner`, `demanderReleaseMba`, `consommerReleaseMba` et du `release` de Meta ; `tests/fil.test.ts` exécute sa table |
 | `src/inbox/delai-reprise.ts` -> `repriseDue`, `delaiHumainMs` | 🔴 le délai de reprise d'un fil tenu, une seule règle pour le balayage (`runControlSweep`) et la remise « personne ne suit » (`remettreSiPersonneNeSuit`) : escalade sans réponse jamais échue, délai nul ou absent = jamais, fil non daté échu ; le réglage de l'espace prime sur `CONTROL_HUMAN_TIMEOUT_MS`. Sans la fenêtre de service, que seul le balayage lit ; `tests/fil-delai-reprise.test.ts` |
 | `src/mba/liste.ts` -> `creerListeDeLAgent` | 🔴 la liste de l'agent de Meta (`mba_liste`, migration 0195) : ajouter (Meta puis la ligne, défait si la ligne échoue), retirer (Meta puis la ligne, un rejeu, un 404 vaut retrait, une panne de la table lève), retirer avant un modèle sous les deux formes du numéro (`formesDuNumero`, `RetraitDeLaListeRefuse`), lire qui y est, faire sortir le moins actif quand la liste du numéro atteint le plafond de Meta (`PLAFOND_LISTE`, 20). Seul appelant des routes `allowlist` de Meta ; `tests/mba-liste.test.ts` |

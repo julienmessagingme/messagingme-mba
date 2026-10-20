@@ -7,6 +7,7 @@ import type { BuildContact, BuiltRecipient, ContactEnvoi } from './build';
 import type { WorkflowGraph } from '../workflow/graph';
 import { resolveTemplateParams, type TemplateParam } from '../crm/template';
 import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
+import type { EtatConfirme } from './confirmation';
 import { RECIPIENT_FAILED_SQL } from './echecs-sql';
 import type { CampagneAssignante } from '../inbox/assignation-campagne';
 import { RANG_INITIAL, normaliserChaine, type CanalEtage, type DevenirEtage, type Etage, type EtageEntrant } from './etages';
@@ -59,6 +60,11 @@ export interface CreateCampaignInput {
    * `campaigns`.
    */
   chaine?: EtageEntrant[];
+  /**
+   * La date choisie dans l'assistant (`prepare_campaign`, migration 0245) : rangée sur le BROUILLON sans le programmer ;
+   * `launch_campaign` le programme à cette date. Absente = aucune.
+   */
+  prevueLe?: Date | null;
   /** « Réessayer les envois qui échouent » (`campaigns.reessayer`). Absent = le défaut de la table (vrai). */
   reessayer?: boolean;
   /** Le rattrapage peut-il partir hors des heures d'ouverture ? Absent = le défaut de la table (faux). */
@@ -76,7 +82,7 @@ export interface CampaignSummaryRow {
   workflow_name?: string | null;
   webhook_id?: string | null;
   webhook_name?: string | null;
-  created_at: Date; scheduled_at?: Date | null; archived_at?: Date | null;
+  created_at: Date; scheduled_at?: Date | null; archived_at?: Date | null; prevue_le?: Date | null;
   total: string; pending: string; sending: string; sent: string; failed: string; skipped: string;
 }
 
@@ -98,6 +104,7 @@ export function rowToSummary(r: CampaignSummaryRow): CampaignSummary {
     webhookName: r.webhook_name ?? null,
     createdAt: r.created_at.toISOString(),
     scheduledAt: r.scheduled_at ? r.scheduled_at.toISOString() : null,
+    prevueLe: r.prevue_le ? r.prevue_le.toISOString() : null,
     archivedAt: r.archived_at ? r.archived_at.toISOString() : null,
     counts: {
       total: Number(r.total),
@@ -137,6 +144,11 @@ export interface CampaignSummary {
   createdAt: string;
   /** Instant de lancement programmé (ISO UTC) quand status = 'scheduled'. null sinon. */
   scheduledAt: string | null;
+  /**
+   * La date choisie dans l'assistant pour un BROUILLON (`prepare_campaign`, migration 0245), pas encore programmée :
+   * la console propose alors « Programmer pour ... » au lieu de « Lancer ». null sinon.
+   */
+  prevueLe: string | null;
   /** Instant d'archivage (ISO UTC). null = campagne active. Orthogonal au statut : une campagne archivée garde
    *  son statut d'origine et ses destinataires, qui portent l'historique. */
   archivedAt: string | null;
@@ -276,7 +288,7 @@ export interface PhoneNumberRow {
  * porte sur la clé primaire : toute colonne de `campaigns` y est sélectionnable sans agrégat.
  */
 const summarySelect = (colonnesEnPlus = '') => `select c.id, c.name, c.category, c.status, c.phone_number_id,
-              c.template_name, c.template_language, c.created_at, c.scheduled_at, c.archived_at,
+              c.template_name, c.template_language, c.created_at, c.scheduled_at, c.archived_at, c.prevue_le,
               (select w.name from workflows w where w.id = c.workflow_id and w.tenant_id = c.tenant_id) as workflow_name,
               c.webhook_id,
               (select h.name from webhooks h where h.id = c.webhook_id and h.tenant_id = c.tenant_id) as webhook_name,
@@ -437,6 +449,61 @@ export class PgCampaignRepo {
       [campaignId, tenantId],
     );
     return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * L'état qu'un récapitulatif de l'assistant montre, relu en base aux DEUX bouts (préparation et lancement) : son
+   * empreinte lie le code de confirmation à ce que la personne a vu. `null` hors de l'espace.
+   */
+  async etatPourConfirmation(tenantId: string, campaignId: string): Promise<EtatConfirme | null> {
+    const res = await this.pool.query<{
+      template_name: string | null; template_language: string | null; category: CampaignCategory; prevue_le: Date | null;
+      param_mapping: TemplateParam[] | null; status: string; en_attente: string;
+    }>(
+      `select c.template_name, c.template_language, c.category, c.prevue_le, c.param_mapping, c.status,
+              (select count(*) from campaign_recipients r where r.campaign_id = c.id and r.status = 'pending')::text as en_attente
+       from campaigns c
+       where c.id = $1 and c.tenant_id = $2`,
+      [campaignId, tenantId],
+    );
+    const r = res.rows[0];
+    if (!r) return null;
+    return {
+      templateName: r.template_name ?? '', templateLanguage: r.template_language ?? '', category: r.category,
+      prevueLe: r.prevue_le ? r.prevue_le.toISOString() : null, paramMapping: r.param_mapping ?? [],
+      recipientCount: Number(r.en_attente), status: r.status,
+    };
+  }
+
+  /** Les noms (le numéro à défaut) des premiers destinataires en attente : de quoi vérifier une cible d'un coup d'œil. */
+  async apercuDestinataires(tenantId: string, campaignId: string, n: number): Promise<string[]> {
+    const res = await this.pool.query<{ nom: string }>(
+      `select coalesce(nullif(trim(ct.profile_name), ''), r.to_e164) as nom
+       from campaign_recipients r
+       join campaigns c on c.id = r.campaign_id and c.tenant_id = $1
+       left join contacts ct on ct.id = r.contact_id
+       where r.campaign_id = $2 and r.status = 'pending'
+       order by r.id
+       limit $3`,
+      [tenantId, campaignId, n],
+    );
+    return res.rows.map((r) => r.nom);
+  }
+
+  /**
+   * Les destinataires en attente qui ont dit STOP : la même source que `estDesabonne` (`opt_in_status = 'opted_out'`),
+   * qui les écartera à l'envoi. Une campagne marketing les a déjà écartés à la création ; une campagne de service non.
+   */
+  async desabonnesParmiLesDestinataires(tenantId: string, campaignId: string): Promise<number> {
+    const res = await this.pool.query<{ n: string }>(
+      `select count(*)::text as n
+       from campaign_recipients r
+       join campaigns c on c.id = r.campaign_id and c.tenant_id = $1
+       join contacts ct on ct.id = r.contact_id and ct.tenant_id = $1
+       where r.campaign_id = $2 and r.status = 'pending' and ct.opt_in_status = 'opted_out'`,
+      [tenantId, campaignId],
+    );
+    return Number(res.rows[0]?.n ?? 0);
   }
 
   /**
@@ -1399,8 +1466,8 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
   const rcsMessage = input.rcsMessage === undefined ? null : JSON.stringify(input.rcsMessage);
   const res = await q.query<{ id: string }>(
     `insert into campaigns
-       (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id, channel, rcs_agent_id, rcs_message, webhook_id, business_hours_only, reessayer, rattrapage_hors_horaires, assignation, assignation_user_id, reessai_par_campagne)
-     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $16, $17, $18, $19, $20)
+       (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping, workflow_id, rate_per_minute, start_node_id, channel, rcs_agent_id, rcs_message, webhook_id, business_hours_only, reessayer, rattrapage_hors_horaires, assignation, assignation_user_id, reessai_par_campagne, prevue_le)
+     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb, $14, $15, $16, $17, $18, $19, $20, $21)
      returning id`,
     [
       input.tenantId,
@@ -1437,6 +1504,8 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
        * la règle de l'espace s'applique.
        */
       input.reessayer !== undefined,
+      // La date choisie dans l'assistant (migration 0245) : rangée sur le brouillon, programmée au lancement.
+      input.prevueLe ?? null,
     ],
   );
   const id = res.rows[0]?.id;

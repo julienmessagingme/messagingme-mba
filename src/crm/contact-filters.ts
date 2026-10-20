@@ -11,8 +11,8 @@ import { estCleFiltrable, estOperateurFicheSeul, lireFiltreFiche } from './filtr
  */
 
 /** Plafonds : ils bornent une donnée cliente, pas un choix d'ergonomie. */
-const MAX_TAGS = 50;
-const MAX_FIELD_FILTERS = 20;
+export const MAX_TAGS = 50;
+export const MAX_FIELD_FILTERS = 20;
 const MAX_FIELD_KEY = 120;
 const MAX_FIELD_VALUE = 500;
 

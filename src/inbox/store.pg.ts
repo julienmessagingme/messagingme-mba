@@ -35,6 +35,11 @@ export interface ConversationSummary {
   lastPreview: string | null;
   lastMessageAt: string;
   /**
+   * La fiche du contact (`conversations.contact_id`) : l'outil `list_conversations` la rend pour que l'assistant
+   * étiquette les contacts d'un thème. Optionnel pour les faux de test.
+   */
+  contactId?: string | null;
+  /**
    * Le point de reprise de la pagination, opaque, et surtout pas `lastMessageAt` : tronqué à la milliseconde
    * alors que Postgres stocke la microseconde, il ferait sauter sans bruit les conversations actives dans la
    * même milliseconde (`(last_message_at, id) < (curseur, id)`). Optionnel pour les faux de test.
@@ -130,6 +135,12 @@ export interface ListConversationsOptions {
    * l'analyse.
    */
   signalees?: boolean;
+  /**
+   * La période du DERNIER message (`list_conversations` de l'assistant) : `depuis` incluse, `jusqua` exclue, en
+   * instants ISO absolus. Servie par l'index de la pagination (`tenant_id, last_message_at desc, id desc`, 0069).
+   */
+  depuis?: string;
+  jusqua?: string;
 }
 
 export interface ConversationMessage {
@@ -966,6 +977,21 @@ export class PgInboxStore implements InboxStore {
    * en mémoire une page chargée ferait mentir « À traiter » au-delà. Pas de `hasMore` : une page pleine veut
    * dire qu'il peut y en avoir d'autres, et un drapeau coûterait un `count`.
    */
+  /**
+   * Les fiches de ces conversations, sans doublon, dans l'espace (`tag_contacts` de l'assistant). 🔴 Le filtre
+   * `tenant_id` est le seul contrôle : une conversation d'un autre espace ne rend rien, comme une inexistante. Les
+   * identifiants arrivent déjà vérifiés (forme d'uuid) : un mal formé ferait lever le cast.
+   */
+  async contactIdsDesConversations(tenantId: string, conversationIds: string[]): Promise<string[]> {
+    if (conversationIds.length === 0) return [];
+    const res = await this.pool.query<{ contact_id: string }>(
+      `select distinct contact_id from conversations
+       where tenant_id = $1 and id = any($2::uuid[]) and contact_id is not null`,
+      [tenantId, conversationIds],
+    );
+    return res.rows.map((r) => r.contact_id);
+  }
+
   async listConversations(tenantId: string, opts: ListConversationsOptions = {}): Promise<ConversationSummary[]> {
     // Borné des deux côtés : un `limit` de query string ne doit ni vider la page ni ramener la table entière.
     const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 100), 1), 200);
@@ -1001,6 +1027,14 @@ export class PgInboxStore implements InboxStore {
       where.push(`(c.signalee_le is not null or exists (select 1 from conversation_analysis a where a.conversation_id = c.id and a.abusive))`);
     }
     if (opts.traitees === true) where.push('c.traitee_le is not null');
+    if (opts.depuis !== undefined) {
+      params.push(opts.depuis);
+      where.push(`c.last_message_at >= $${params.length}::timestamptz`);
+    }
+    if (opts.jusqua !== undefined) {
+      params.push(opts.jusqua);
+      where.push(`c.last_message_at < $${params.length}::timestamptz`);
+    }
     // Le prédicat de l'index partiel `conversations_urgentes_idx` (migration 0216), mot pour mot.
     if (opts.urgentes === true) where.push('c.urgente_le is not null');
     if (opts.affectee === 'aucune') {
@@ -1032,11 +1066,11 @@ export class PgInboxStore implements InboxStore {
 
     const res = await this.pool.query<{
       id: string; wa_id: string; profile_name: string | null; last_preview: string | null; last_message_at: Date; curseur: string;
-      control_owner: ControlOwner; unread: boolean; assigned_to: string | null; assigned_name: string | null;
+      contact_id: string | null; control_owner: ControlOwner; unread: boolean; assigned_to: string | null; assigned_name: string | null;
       signalee_main: boolean; traitee: boolean; urgente: boolean;
     }>(
       // curseur : le même instant que last_message_at, en texte à la microseconde (`ConversationSummary.curseur`).
-      `select c.id, c.wa_id, ct.profile_name, c.last_preview, c.last_message_at, c.control_owner,
+      `select c.id, c.wa_id, c.contact_id, ct.profile_name, c.last_preview, c.last_message_at, c.control_owner,
               to_char(c.last_message_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as curseur,
               ${UNREAD_SQL} as unread, c.assigned_to,
               -- ⚠️ coalesce ET NON u.name SEUL : sans nom, l ecran affichait « suivi par … », c est-a-dire
@@ -1064,6 +1098,7 @@ export class PgInboxStore implements InboxStore {
       lastPreview: r.last_preview,
       lastMessageAt: r.last_message_at.toISOString(),
       curseur: r.curseur,
+      contactId: r.contact_id,
       controlOwner: r.control_owner,
       unread: r.unread,
       assignedTo: r.assigned_to,

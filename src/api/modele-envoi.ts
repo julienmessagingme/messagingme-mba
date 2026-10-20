@@ -1,7 +1,9 @@
 import type { TemplateSummary } from '../meta/templates';
 import { carouselSendBlocker, headerMediaSendBlocker } from '../meta/template-components';
-import { countTemplateVariables } from '../crm/template';
+import { countTemplateVariables, type TemplateParam } from '../crm/template';
 import { estLienTraceAvecJeton } from '../links/rewrite';
+import type { CodeApi } from './erreurs';
+import type { CampaignCategory } from '../campaign/types';
 
 /**
  * Ce qu'un envoi par l'API sait d'un template, lu chez Meta.
@@ -105,4 +107,72 @@ export function verdictModele(info: ModeleLu | null, langue: string): LectureMod
   }
   if (info.category !== undefined && info.category !== '') return { statut: 'categorie_non_admise', categorie: info.category };
   return { statut: 'illisible' };
+}
+
+/** Un refus d'envoi, dans le vocabulaire de l'API publique : son statut HTTP, son code, sa phrase. */
+export type RefusEnvoi = { refus: { statut: 400 | 404 | 409 | 422; code: CodeApi; message: string } };
+
+/**
+ * Ce que lisent les trois fonctions ci-dessous. Partagées par `POST /v1/sends` et par l'outil `prepare_campaign` de
+ * l'assistant (plan « Campagnes depuis Claude ») : un modèle jugé envoyable à un endroit l'est à l'autre.
+ */
+export interface DepsModeleEnvoyable {
+  /** Le template lu chez Meta : sa catégorie, ou pourquoi il ne peut pas partir (`verdictModele`). */
+  lireModele(tenantId: string, name: string, language: string): Promise<LectureModele>;
+  repo: {
+    getTenantPhoneNumberId(tenantId: string): Promise<string | null>;
+    phoneNumberBelongsToTenant(phoneNumberId: string, tenantId: string): Promise<boolean>;
+  };
+}
+
+/**
+ * Un template qui va partir, lu chez Meta : sa catégorie, ce qui l'empêcherait de partir, et le nombre de
+ * variables de son corps. Sert la cible `template` et le template d'ouverture d'un scénario ou d'un bloc.
+ * Le nombre de variables se vérifie avant l'envoi : sinon Meta refuserait chaque destinataire après un 201.
+ * `params` à `null` = un bloc, dont le template résout ses variables par les sources de la console : rien à
+ * comparer. `non_envoyable` est jugé par la fonction du catalogue (`raisonNonEnvoyable`). `illisible` n'est
+ * jamais ramené à « utility ».
+ */
+export async function modeleEnvoyable(
+  deps: Pick<DepsModeleEnvoyable, 'lireModele'>, tenantId: string, name: string, language: string, params: TemplateParam[] | null, quoi: string,
+): Promise<{ categorie: CampaignCategory } | RefusEnvoi> {
+  const lu = await deps.lireModele(tenantId, name, language);
+  if (lu.statut === 'absent') {
+    return { refus: { statut: 404, code: 'template_not_found', message: `${quoi} introuvable, non approuvé ou d’une autre langue : ${name} (${language})` } };
+  }
+  if (lu.statut === 'illisible') {
+    return { refus: { statut: 422, code: 'template_category_unknown', message: `la catégorie de ce ${quoi} n’a pas pu être lue chez Meta : l’envoi est refusé par prudence, réessayez dans un instant` } };
+  }
+  if (lu.statut === 'categorie_non_admise') {
+    // Lue, et définitive : réessayer n'y changera rien, le message ne doit pas le suggérer.
+    return { refus: { statut: 422, code: 'template_category_unknown', message: `catégorie ${lu.categorie.slice(0, 40)} non envoyable par l’API : un template marketing ou utility est attendu` } };
+  }
+  if (lu.statut === 'non_envoyable') {
+    return { refus: { statut: 422, code: 'unsendable_target', message: `le ${quoi} ${name} ne peut partir par aucun envoi : ${lu.raison}. Il n’apparaît pas dans GET /v1/templates` } };
+  }
+  if (params !== null && params.length !== lu.variables) {
+    return { refus: { statut: 422, code: 'unsendable_target', message: `le ${quoi} ${name} attend ${lu.variables} variable(s) dans son corps et params en décrit ${params.length} : Meta refuserait chaque message` } };
+  }
+  return { categorie: lu.categorie };
+}
+
+/**
+ * 🔴 La catégorie ne se relâche jamais : celle que Meta donne au template qui part l'emporte sur une déclaration
+ * plus permissive (un marketing annoncé « utility » partirait sinon aux contacts sans consentement). Une
+ * déclaration plus stricte est gardée.
+ */
+export function categoriePlusStricte(lue: CampaignCategory, declaree: CampaignCategory): CampaignCategory {
+  return lue === 'marketing' || declaree === 'marketing' ? 'marketing' : 'utility';
+}
+
+export async function numeroDEnvoi(deps: Pick<DepsModeleEnvoyable, 'repo'>, tenantId: string, demande: string | undefined): Promise<{ phoneNumberId: string } | RefusEnvoi> {
+  if (demande !== undefined) {
+    return await deps.repo.phoneNumberBelongsToTenant(demande, tenantId)
+      ? { phoneNumberId: demande }
+      : { refus: { statut: 400, code: 'invalid_body', message: 'phoneNumberId : numéro inconnu de cet espace' } };
+  }
+  const defaut = await deps.repo.getTenantPhoneNumberId(tenantId);
+  return defaut
+    ? { phoneNumberId: defaut }
+    : { refus: { statut: 409, code: 'no_whatsapp_number', message: 'aucun numéro WhatsApp connecté sur cet espace' } };
 }

@@ -490,8 +490,10 @@ export const scenariosInertes: Pick<WorkflowRouteDeps, 'audit' | 'declareTags' |
   getDisplayPhoneNumber: async () => null,
 };
 
-export const mcpInerte: Pick<DepsMcp['inbox'], 'getControlOwner' | 'getAssignee' | 'setAssignee'> = {
+export const mcpInerte: Pick<DepsMcp['inbox'], 'getControlOwner' | 'getAssignee' | 'setAssignee' | 'contactIdsDesConversations'> = {
   getControlOwner: async () => 'app_workflow',
+  // Une lecture : aucune conversation ne désigne de contact dans ces montages (`tag_contacts`).
+  contactIdsDesConversations: async () => [],
   getAssignee: async () => undefined,
   setAssignee: neDevraitPasEtreAppelee('setAssignee'),
 };
@@ -739,5 +741,44 @@ export const mcpEvenementsInertes: Pick<DepsMcp, 'evenements'> = {
       invaliderCache: () => {},
     },
     audit: async () => {},
+  },
+};
+
+/**
+ * Les campagnes depuis l'assistant (2026-10-20), pour les montages qui n'en parlent pas : les ÉCRITURES lèvent, les
+ * lectures disent « rien ». Leurs outils ont leurs fichiers, `tests/mcp-prepare-campaign.test.ts` et ses voisins.
+ */
+export const mcpCampagnesInertes: Pick<DepsMcp, 'campagnes'> = {
+  campagnes: {
+    route: {
+      ...campagnesInertes,
+      getWorkflowGraph: async () => null,
+      queue: { enqueue: neDevraitPasEtreAppelee('campagnes.queue.enqueue') },
+      repo: {
+        phoneNumberBelongsToTenant: async () => false,
+        campaignBelongsTo: async () => false,
+        scheduleCampaign: neDevraitPasEtreAppelee('campagnes.scheduleCampaign'),
+        resumeCampaign: neDevraitPasEtreAppelee('campagnes.resumeCampaign'),
+        pauseCampaign: neDevraitPasEtreAppelee('campagnes.pauseCampaign'),
+        getRunSizing: async () => null,
+        listContactsForBuild: async () => [],
+        listContactsForBuildByIds: async () => [],
+        createWithRecipients: neDevraitPasEtreAppelee('campagnes.createWithRecipients'),
+        deleteDraftCampaign: neDevraitPasEtreAppelee('campagnes.deleteDraftCampaign'),
+        etatPourConfirmation: async () => null,
+        apercuDestinataires: async () => [],
+        desabonnesParmiLesDestinataires: async () => 0,
+      },
+    },
+    modeles: {
+      lireModele: async () => ({ statut: 'absent' }),
+      repo: { getTenantPhoneNumberId: async () => null, phoneNumberBelongsToTenant: async () => false },
+    },
+    confirmations: {
+      poser: neDevraitPasEtreAppelee('campagnes.confirmations.poser'),
+      reclamer: neDevraitPasEtreAppelee('campagnes.confirmations.reclamer'),
+      rendre: neDevraitPasEtreAppelee('campagnes.confirmations.rendre'),
+      existe: async () => false,
+    },
   },
 };

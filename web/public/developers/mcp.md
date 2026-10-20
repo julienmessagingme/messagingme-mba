@@ -56,7 +56,7 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 
 | Outil | Droit | Ce qu’il fait |
 | --- | --- | --- |
-| list_conversations | mcp:read | Les conversations, la plus active en premier. |
+| list_conversations | mcp:read | Les conversations, la plus active en premier, sur une période si besoin, avec le contact de chacune. |
 | get_conversation | mcp:read | Le détail d’un fil, et surtout si la fenêtre de 24 h est ouverte. |
 | send_message | mcp:write | Envoyer dans la fenêtre de 24 h une image, un document, un lieu, des boutons, une liste ou un bouton lien, au format de Meta. |
 | list_templates | mcp:read | Les modèles WhatsApp de l’espace, avec leur langue, leur catégorie et leur statut chez Meta. |
@@ -69,6 +69,10 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 | get_conversation_insights | mcp:read | Ce que l’analyse a compris des conversations : sentiment, intentions, résolution, sujets, et la satisfaction et l’urgence par maille. |
 | get_ai_stats | mcp:read | Les chiffres des agents IA : coût des tours d’agent sur le crédit, messages écrits par l’IA, demandes ouvertes pour l’équipe et actions déclenchées. |
 | get_messages | mcp:read | Les 50 derniers messages d’un fil, du plus ancien au plus récent, et before pour remonter plus loin. |
+| find_contacts | mcp:read | Les contacts d’une cible, comme les filtres de la liste des contacts : étiquettes, consentement et, en Entreprise, la dernière analyse. Le total, et 100 contacts au plus. |
+| tag_contacts | mcp:write connexion OAuth requise | Étiqueter les contacts d’une cible ou d’une liste de conversations : un segment est une étiquette. Par l’action en masse de la console, sans déclencher d’automation. |
+| prepare_campaign | mcp:write connexion OAuth requise | Préparer une campagne de modèle sans rien envoyer : un brouillon visible dans la console, un récapitulatif (ciblés, partants, écartés et pourquoi, cinq noms, le volume facturable) et un code de confirmation. |
+| launch_campaign | mcp:write connexion OAuth requise | Lancer, ou programmer à sa date, une campagne préparée, avec le code de son récapitulatif, une fois que la personne a dit oui ; par le même chemin que le bouton « Lancer » de la console. |
 | search_contacts | mcp:read | Chercher un contact par nom ou par numéro, avec sa dernière analyse. |
 | get_contact | mcp:read | La fiche d’un contact à partir de son numéro, avec sa dernière analyse et le résumé de celle-ci. |
 | list_members | mcp:read | Les membres de l’espace, pour pouvoir leur confier un fil. |

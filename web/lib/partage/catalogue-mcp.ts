@@ -67,6 +67,11 @@ export const CATALOGUE_MCP = {
   create_template: { scope: 'mcp:write', exigePersonne: true },
   /** Un envoi facturé à un contact exige également une personne OAuth. */
   send_template_to_contact: { scope: 'mcp:write', exigePersonne: true },
+  /** Les campagnes depuis l'assistant (2026-10-20) : trouver les contacts d'une cible, une lecture. */
+  find_contacts: { scope: 'mcp:read' },
+  tag_contacts: { scope: 'mcp:write', exigePersonne: true },
+  prepare_campaign: { scope: 'mcp:write', exigePersonne: true },
+  launch_campaign: { scope: 'mcp:write', exigePersonne: true },
 } as const satisfies Record<string, { scope: ScopeMcp; exigePersonne?: true }>;
 
 export type NomOutilMcp = keyof typeof CATALOGUE_MCP;

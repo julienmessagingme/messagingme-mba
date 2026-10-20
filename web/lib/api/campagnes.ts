@@ -42,6 +42,11 @@ export interface CampaignSummary {
   createdAt: string;
   /** Instant de lancement programmé (ISO UTC) quand status = 'scheduled'. null sinon. */
   scheduledAt: string | null;
+  /**
+   * La date qu'un assistant a choisie pour ce BROUILLON (`prepare_campaign`). Optionnelle : une API d'avant ne la rend
+   * pas, et l'écran retombe alors sur « Lancer » (`lancementDuBrouillon`).
+   */
+  prevueLe?: string | null;
   /** Instant d'archivage (ISO UTC). null = campagne active. Indépendant du statut. */
   archivedAt: string | null;
   counts: RecipientCounts;

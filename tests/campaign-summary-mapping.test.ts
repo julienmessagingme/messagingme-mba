@@ -33,4 +33,9 @@ describe('rowToSummary', () => {
     expect(rowToSummary(base).counts).toEqual({ total: 3, pending: 1, sending: 0, sent: 1, failed: 1, skipped: 0 });
     expect(rowToSummary(base).createdAt).toBe('2026-08-10T09:05:00.000Z');
   });
+
+  it('la date prévue d’un brouillon de l’assistant (migration 0245) : en ISO, null sans elle', () => {
+    expect(rowToSummary({ ...base, status: 'draft', prevue_le: new Date('2027-10-31T09:00:00.000Z') }).prevueLe).toBe('2027-10-31T09:00:00.000Z');
+    expect(rowToSummary(base).prevueLe).toBeNull();
+  });
 });

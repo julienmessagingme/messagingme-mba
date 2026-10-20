@@ -1,6 +1,6 @@
 import { ficheOutilMcp, MAX_MESSAGES_MCP as LIMITE_MESSAGES_MCP, type ScopeMcp } from '../../web/lib/partage/catalogue-mcp';
 import type { ConversationSummary, ConversationMessage, ListConversationsOptions, ControlOwner } from '../inbox/store.pg';
-import type { AnalyseEtResume, ContactRow, ContactFilters } from '../crm/contact-store.pg';
+import type { AnalyseEtResume, BulkEdits, BulkTarget, ContactRow, ContactFilters, IssueActionEnMasse } from '../crm/contact-store.pg';
 import { repondreAvecUnMessage, repondreDansLaFenetre, type ConversationsRepondre, type DepsRepondre, type ResultatReponse } from '../inbox/repondre';
 import { apercuDuMessage, corpsPourMeta, schemaContenuMeta } from '../api/message-meta';
 import { messageDeForme } from '../api/forme';
@@ -17,7 +17,7 @@ import {
 } from '../widgets/gestion';
 import type { WorkflowResumeRow } from '../workflow/store.pg';
 import type { PlafondPartage } from '../auth/plafond-partage';
-import { RefusOutil, entierBorne, texteObligatoire, valeurOuRefus } from './saisie';
+import { RefusOutil, dateAvecFuseau, entierBorne, texteObligatoire, valeurOuRefus } from './saisie';
 import { decoderCurseur, encoderCurseur, type DepotConversationsV1 } from '../api/conversations-v1';
 import { OUTILS_AGENT, type DepsAgentMcp } from './outils-agent';
 import { OUTILS_OFFRE, type DepsOffreMcp } from './outils-offre';
@@ -26,6 +26,7 @@ import { OUTILS_EVENEMENTS, type DepsEvenementsMcp } from './outils-evenements';
 import { OUTILS_CHIFFRES, type DepsChiffresMcp } from './outils-chiffres';
 import { OUTILS_NUMERO, type DepsNumeroMcp } from './outils-numero';
 import { OUTILS_MODELES, type DepsModelesMcp } from './outils-modeles';
+import { OUTILS_CAMPAGNES, type DepsCampagnesMcp } from './outils-campagnes';
 import type { ReponseEnvoi } from '../http/v1-sends';
 import type { VueOffre } from '../offres/vue';
 import type { SourceOffres } from '../offres/offre.pg';
@@ -33,6 +34,8 @@ import type { Fonction } from '../offres/offres';
 import { OUTILS_DE_L_ETAPE, lireMiseEnService } from './mise-en-service';
 
 export { RefusOutil } from './saisie';
+// Les bornes d'un fichier d'outils que `tests/mcp-serveur.test.ts` relit dans les schémas : exportées d'ici.
+export { MAX_CONTACTS_TROUVES, LONGUEUR_MAX_NOM_MODELE, LONGUEUR_MAX_LANGUE, LONGUEUR_MAX_NOM_CAMPAGNE, LONGUEUR_MAX_CODE } from './outils-campagnes';
 
 /**
  * Le catalogue d'outils exposé aux agents tiers par le serveur MCP.
@@ -41,8 +44,9 @@ export { RefusOutil } from './saisie';
  * (`reply_in_open_window` passe par `repondreDansLaFenetre`, les outils des widgets par `src/widgets/gestion.ts`).
  * Une seconde implémentation dériverait, et sur une surface d'écriture ce serait un agent qui écrit avec d'autres
  * garde-fous (fenêtre de 24 h, prise du fil, journal, phrase d'un widget).
- * Lecture d'abord, écriture étroite : pas de campagne, un mégaphone facturé sur un numéro dont Meta note la qualité ;
- * un modèle part vers UNE personne à la fois (`send_template_to_contact`, réservé à une personne connectée).
+ * Lecture d'abord, écriture étroite. Un modèle part vers UNE personne à la fois (`send_template_to_contact`), et une
+ * campagne, mégaphone facturé sur un numéro dont Meta note la qualité, ne part que préparée en brouillon puis lancée
+ * avec le code de son récapitulatif (`prepare_campaign`, `launch_campaign`), par une personne connectée.
  * 🔴 Aucun outil n'émet d'événement d'automation : un agent qui boucle sur 500 conversations déclencherait 500
  * automations facturées. Un tag posé ici ne réveille rien (la pose est appelée SANS publier), et la description le
  * dit.
@@ -64,10 +68,16 @@ export interface DepsMcp extends DepsRepondre {
     getControlOwner(tenantId: string, waId: string): Promise<ControlOwner>;
     getAssignee(tenantId: string, conversationId: string): Promise<string | null | undefined>;
     setAssignee(tenantId: string, conversationId: string, assignee: string | null, par: AuteurDuChangement): Promise<boolean>;
+    /** Les fiches de conversations désignées par l'assistant (`tag_contacts`), dans l'espace seulement. */
+    contactIdsDesConversations(tenantId: string, conversationIds: string[]): Promise<string[]>;
   };
   contacts: {
     /** Recherche de contacts (le même moteur de filtres que le mini-CRM). */
     query(tenantId: string, filtres: ContactFilters, limit: number, offset: number): Promise<ContactRow[]>;
+    /** Le nombre de contacts d'une cible (`find_contacts`), le même compte que la liste des contacts. */
+    count(tenantId: string, filtres: ContactFilters): Promise<number>;
+    /** L'action en masse du mini-CRM (`tag_contacts`) : la MÊME écriture que la route, qui n'émet rien. */
+    applyEditsMany(tenantId: string, target: BulkTarget, edits: BulkEdits): Promise<IssueActionEnMasse>;
     findByPhone(tenantId: string, phoneE164: string): Promise<ContactRow | null>;
     /** La dernière analyse et son résumé pour une page de fiches, en une requête filtrée sur l'espace. */
     analysesEtResumes(tenantId: string, contactIds: readonly string[]): Promise<Map<string, AnalyseEtResume>>;
@@ -110,6 +120,11 @@ export interface DepsMcp extends DepsRepondre {
   envoyerMessage(tenantId: string, phoneNumberId: string, to: string, corps: Record<string, unknown>): Promise<string>;
   /** Les modèles (lot 13, domaine 3) : la MÊME création et le MÊME suivi que `POST /v1/templates`, et la liste du catalogue. */
   modeles: DepsModelesMcp;
+  /**
+   * Les campagnes depuis l'assistant (2026-10-20) : le câblage de la route des campagnes, la lecture des modèles de
+   * `POST /v1/sends` et les codes de confirmation (`src/mcp/outils-campagnes.ts`).
+   */
+  campagnes: DepsCampagnesMcp['campagnes'];
   /**
    * L'envoi d'un modèle (lot 13, domaine 3, livraison B) : `lancerEnvoi`, le cœur de `POST /v1/sends`, lié à ses
    * dépendances par le câblage. `compter` est appelé où la route compte ; il rend `true` ou lève.
@@ -213,6 +228,21 @@ export interface OutilMcp {
    * la déclarent.
    */
   executer(deps: DepsMcp, tenantId: string, args: Record<string, unknown>, personne: PersonneMcp | null): Promise<unknown>;
+}
+
+/**
+ * Le curseur de `list_conversations` : celui de l'API (`encoderCurseur`, instant à la microseconde et identifiant),
+ * précédé du rang d'urgence, que seul « À traiter » lit (`ListConversationsOptions.before`). Opaque pour l'assistant,
+ * qui le renvoie tel quel ; forgé ou abîmé, il est refusé avant toute lecture.
+ */
+function curseurDeListe(at: string, id: string, urgente: boolean): string {
+  return `${urgente ? 'u' : 'n'}.${encoderCurseur({ at, id })}`;
+}
+function lireCurseurDeListe(brut: unknown): { at: string; id: string; urgente: boolean } {
+  const m = typeof brut === 'string' ? /^([un])\.(.+)$/.exec(brut) : null;
+  const reprise = m ? decoderCurseur(m[2]!) : null;
+  if (!m || !reprise) throw new RefusOutil('paramètre « cursor » illisible : renvoyez le next_cursor de la page précédente tel quel');
+  return { ...reprise, urgente: m[1] === 'u' };
 }
 
 /** 🔴 La conversation, ou un refus : garde d'espace partagée. `getConversationContext` rend `null` pour une
@@ -351,23 +381,38 @@ export const OUTILS: OutilMcp[] = [
       + 'scenario no longer handles and that await a human reply (a conversation an operator marked "Done" leaves '
       + 'this list until the contact\'s next message; those the team marked urgent come first). '
       + 'Conversations ARCHIVED from the Inbox are not listed: they still exist, they are only filed away, and a '
-      + 'message from the contact brings them back.',
+      + 'message from the contact brings them back. `since` and `until` keep the conversations whose LAST message '
+      + 'falls in that period; to go through a whole period, pass `next_cursor` back as `cursor` until it is absent. '
+      + 'Each conversation gives its `contact_id`, which `tag_contacts` accepts.',
     annotations: lecture('List conversations'),
     entree: {
       type: 'object',
       properties: {
         limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Number of conversations (1 to 200, default 50).' },
         a_traiter: { type: 'boolean', description: 'true keeps only the conversations to handle.' },
+        since: { type: 'string', description: 'ISO 8601 date WITH its time zone (e.g. 2026-10-13T00:00:00+02:00): last message at or after it.' },
+        until: { type: 'string', description: 'ISO 8601 date WITH its time zone: last message strictly before it.' },
+        cursor: { type: 'string', description: 'The `next_cursor` of the previous page, unchanged.' },
       },
     },
     async executer(deps, tenantId, args) {
+      const limit = entierBorne(args, 'limit', 50, 1, 200);
+      const depuis = dateAvecFuseau(args, 'since');
+      const jusqua = dateAvecFuseau(args, 'until');
+      const before = args.cursor === undefined || args.cursor === null ? undefined : lireCurseurDeListe(args.cursor);
       const conversations = await deps.inbox.listConversations(tenantId, {
-        limit: entierBorne(args, 'limit', 50, 1, 200),
+        limit,
         ...(args.a_traiter === true ? { aTraiter: true } : {}),
+        ...(depuis ? { depuis: depuis.toISOString() } : {}),
+        ...(jusqua ? { jusqua: jusqua.toISOString() } : {}),
+        ...(before ? { before } : {}),
       });
+      // Une page pleine peut avoir une suite ; une page incomplète est la dernière, et l'absence de curseur le dit.
+      const dernier = conversations.length === limit ? conversations[conversations.length - 1] : undefined;
       return {
         conversations: conversations.map((c) => ({
           conversation_id: c.id,
+          contact_id: c.contactId ?? null,
           contact: c.profileName ?? c.waId,
           phone: c.waId,
           last_message_at: c.lastMessageAt,
@@ -376,6 +421,7 @@ export const OUTILS: OutilMcp[] = [
           handled_by: c.controlOwner,
           assigned_to: c.assignedToName ?? c.assignedTo,
         })),
+        ...(dernier?.curseur ? { next_cursor: curseurDeListe(dernier.curseur, dernier.id, dernier.urgente === true) } : {}),
       };
     },
   },
@@ -843,6 +889,8 @@ export const OUTILS: OutilMcp[] = [
   ...OUTILS_EVENEMENTS,
   // Les modèles (lot 13, domaine 3) : leur fichier, `src/mcp/outils-modeles.ts`.
   ...OUTILS_MODELES,
+  // Les campagnes depuis l'assistant (2026-10-20) : leur fichier, `src/mcp/outils-campagnes.ts`.
+  ...OUTILS_CAMPAGNES,
   // Les chiffres de l'espace, pour les graphiques de Claude (2026-10-13) : leur fichier, `src/mcp/outils-chiffres.ts`.
   ...OUTILS_CHIFFRES,
   // La clé de l'application et le paiement du Pro, depuis Claude (spec offres v2) : leur fichier, `src/mcp/outils-offre.ts`.

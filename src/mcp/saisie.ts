@@ -43,6 +43,24 @@ export function entierBorne(args: Record<string, unknown>, cle: string, defaut: 
   return Math.min(Math.max(Math.trunc(n), mini), maxi);
 }
 
+/** Une date ISO 8601 qui DIT son fuseau (`Z` ou `+02:00`), à la seconde ou plus fin. */
+const ISO_AVEC_FUSEAU = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * Lit une date facultative. 🔴 Sans fuseau, elle est REFUSÉE, jamais supposée : « lundi 10 h » lu en UTC part deux
+ * heures trop tôt à Paris, et une campagne programmée ne se rattrape pas. Absente : `undefined`.
+ */
+export function dateAvecFuseau(args: Record<string, unknown>, cle: string): Date | undefined {
+  const v = args[cle];
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== 'string' || !ISO_AVEC_FUSEAU.test(v)) {
+    throw new RefusOutil(`paramètre « ${cle} » : une date ISO 8601 avec son fuseau est attendue (ex. 2026-10-21T10:00:00+02:00)`);
+  }
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) throw new RefusOutil(`paramètre « ${cle} » : date invalide`);
+  return d;
+}
+
 /**
  * Un refus d'une fonction partagée avec la console devient un refus d'OUTIL, avec sa phrase telle que l'écran la
  * montre : le modèle lit pourquoi et corrige, au lieu de croire l'outil cassé. Le statut HTTP ne sert qu'à la route.

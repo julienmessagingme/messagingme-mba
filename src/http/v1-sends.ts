@@ -19,7 +19,7 @@ import { schemaClesFiche, videEnAbsent, type ClesFiche, type ModeCreation, type 
 import type { IssueConsentement } from '../api/consentement';
 import { MAX_OPT_IN_SOURCE } from '../api/contacts-upsert';
 import { construireDestinataires, marquerDoublons, trierDestinataires, type DestinataireResolu, type Ecart } from '../api/sends-build';
-import type { LectureModele } from '../api/modele-envoi';
+import { categoriePlusStricte, modeleEnvoyable, numeroDEnvoi, type LectureModele, type RefusEnvoi } from '../api/modele-envoi';
 import { messageDeForme } from '../api/forme';
 import { formaterSuiviEnvoi } from '../api/suivi-envoi';
 import type { RcsOutbound } from '../rcs/types';
@@ -187,7 +187,7 @@ const PRECISIONS = {
 } as const;
 
 type Corps = z.infer<typeof schemaCorps>;
-type Refus = { refus: { statut: 400 | 404 | 409 | 422; code: CodeApi; message: string } };
+type Refus = RefusEnvoi;
 
 /** La cible demandée, après les règles de forme qui dépendent d'elle. Pure : aucune lecture. */
 type CibleDemandee =
@@ -243,58 +243,6 @@ export function lireCible(corps: Corps, params: TemplateParam[]): CibleDemandee 
   }
   if ('rcsMessage' in t) return { kind: 'rcsMessage', nom: t.rcsMessage, category: corps.category };
   return { kind: 'node', code: t.node, category: corps.category };
-}
-
-/**
- * Un template qui va partir, lu chez Meta : sa catégorie, ce qui l'empêcherait de partir, et le nombre de
- * variables de son corps. Sert la cible `template` et le template d'ouverture d'un scénario ou d'un bloc.
- * Le nombre de variables se vérifie avant l'envoi : sinon Meta refuserait chaque destinataire après un 201.
- * `params` à `null` = un bloc, dont le template résout ses variables par les sources de la console : rien à
- * comparer. `non_envoyable` est jugé par la fonction du catalogue (`raisonNonEnvoyable`). `illisible` n'est
- * jamais ramené à « utility ».
- */
-async function modeleEnvoyable(
-  deps: DepsEnvoi, tenantId: string, name: string, language: string, params: TemplateParam[] | null, quoi: string,
-): Promise<{ categorie: CampaignCategory } | Refus> {
-  const lu = await deps.lireModele(tenantId, name, language);
-  if (lu.statut === 'absent') {
-    return { refus: { statut: 404, code: 'template_not_found', message: `${quoi} introuvable, non approuvé ou d’une autre langue : ${name} (${language})` } };
-  }
-  if (lu.statut === 'illisible') {
-    return { refus: { statut: 422, code: 'template_category_unknown', message: `la catégorie de ce ${quoi} n’a pas pu être lue chez Meta : l’envoi est refusé par prudence, réessayez dans un instant` } };
-  }
-  if (lu.statut === 'categorie_non_admise') {
-    // Lue, et définitive : réessayer n'y changera rien, le message ne doit pas le suggérer.
-    return { refus: { statut: 422, code: 'template_category_unknown', message: `catégorie ${lu.categorie.slice(0, 40)} non envoyable par l’API : un template marketing ou utility est attendu` } };
-  }
-  if (lu.statut === 'non_envoyable') {
-    return { refus: { statut: 422, code: 'unsendable_target', message: `le ${quoi} ${name} ne peut partir par aucun envoi : ${lu.raison}. Il n’apparaît pas dans GET /v1/templates` } };
-  }
-  if (params !== null && params.length !== lu.variables) {
-    return { refus: { statut: 422, code: 'unsendable_target', message: `le ${quoi} ${name} attend ${lu.variables} variable(s) dans son corps et params en décrit ${params.length} : Meta refuserait chaque message` } };
-  }
-  return { categorie: lu.categorie };
-}
-
-/**
- * 🔴 La catégorie ne se relâche jamais : celle que Meta donne au template qui part l'emporte sur une déclaration
- * plus permissive (un marketing annoncé « utility » partirait sinon aux contacts sans consentement). Une
- * déclaration plus stricte est gardée.
- */
-function categoriePlusStricte(lue: CampaignCategory, declaree: CampaignCategory): CampaignCategory {
-  return lue === 'marketing' || declaree === 'marketing' ? 'marketing' : 'utility';
-}
-
-async function numeroDEnvoi(deps: DepsEnvoi, tenantId: string, demande: string | undefined): Promise<{ phoneNumberId: string } | Refus> {
-  if (demande !== undefined) {
-    return await deps.repo.phoneNumberBelongsToTenant(demande, tenantId)
-      ? { phoneNumberId: demande }
-      : { refus: { statut: 400, code: 'invalid_body', message: 'phoneNumberId : numéro inconnu de cet espace' } };
-  }
-  const defaut = await deps.repo.getTenantPhoneNumberId(tenantId);
-  return defaut
-    ? { phoneNumberId: defaut }
-    : { refus: { statut: 409, code: 'no_whatsapp_number', message: 'aucun numéro WhatsApp connecté sur cet espace' } };
 }
 
 /**

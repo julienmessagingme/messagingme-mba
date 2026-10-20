@@ -2387,7 +2387,21 @@ scénario, comment importer des contacts.
   réservé à une personne connectée, envoie un modèle approuvé à UN contact (par son numéro ou sa fiche), même hors de
   la fenêtre de 24 h, avec une valeur par variable et une clé d'idempotence. Il passe par le même chemin que
   `POST /v1/sends` : consentement, STOP, numéro délié ou suspendu, modèles du mois de l'offre ; un refus revient avec
-  sa raison. Pas de campagne depuis Claude.
+  sa raison. Une campagne, elle, se prépare puis se lance avec un code (entrée suivante).
+- ✅ **Claude prépare une campagne, et ne la lance qu'après votre oui** (2026-10-20, offre Pro) : « prépare une
+  campagne pour les clients qui se sont plaints d'un retard de livraison, envoi demain 10 h ». Claude trouve les contacts
+  (`find_contacts` : étiquettes, consentement, et en Entreprise la dernière analyse : intention, sentiment, urgence…), en
+  fait un segment, qui est une étiquette (`tag_contacts`, comme l'action en masse de la liste des contacts, sans
+  déclencher d'automation), et prépare la campagne (`prepare_campaign`) : un brouillon visible dans Campagnes, rien ne
+  part. Il montre le récapitulatif (contacts visés, combien partiront, combien sont écartés et pourquoi, cinq noms, le
+  nombre de messages facturables par Meta, jamais un montant) avec un code de confirmation valable 30 minutes, et ne
+  lance (`launch_campaign`) qu'après votre oui. Le code ne lance que la campagne telle qu'elle a été montrée ; pour changer
+  la cible, le modèle ou la date, Claude la prépare à nouveau et l'ancien brouillon disparaît. Le modèle doit être
+  approuvé, et c'est sa catégorie chez Meta qui décide : un modèle marketing ne part qu'aux contacts qui ont consenti.
+  Un brouillon préparé pour une date se programme à cette date, depuis Claude ou depuis la console, où son bouton devient
+  « Programmer pour le … ». Pour retrouver les contacts d'un sujet, Claude lit les conversations d'une période
+  (`list_conversations` donne aussi le contact de chacune) et étiquette celles qui en parlent. En Free, ces outils restent
+  visibles et répondent avec le lien de l'offre ; les filtres par analyse demandent l'Entreprise.
 - ✅ **Envoyer un message simple** : un texte, à une personne, tout de suite, visible dans l'Inbox. Deux routes,
   parce que leurs règles n'ont presque rien en commun : `POST /v1/messages/whatsapp` (dans la fenêtre de 24 h)
   et `POST /v1/messages/rcs` (sans fenêtre, mais seulement vers quelqu'un qui a consenti ou qui vous a déjà

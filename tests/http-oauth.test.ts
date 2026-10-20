@@ -14,7 +14,7 @@ import { nouvelIdentifiantClient } from '../src/oauth/clients.pg';
 import { FakeQueue } from './fake-queue';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { jamaisDesabonne } from './consentement';
-import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 
 /**
  * LES ROUTES OAUTH DEVANT `/mcp` (tâche 6 du plan `2026-10-03-oauth-mcp.md`), sur le serveur construit.
@@ -202,6 +202,8 @@ function monter(o: { publicApiUrl?: string; fiches?: Record<string, ClientResolu
     filTenuParLApplication: async () => false,
     contacts: {
       query: async () => [],
+      count: async () => 0,
+      applyEditsMany: async () => { throw new Error('applyEditsMany ne devrait pas être appelée'); },
       findByPhone: async () => null,
       analysesEtResumes: async () => new Map(),
     },
@@ -214,6 +216,7 @@ function monter(o: { publicApiUrl?: string; fiches?: Record<string, ClientResolu
     ...mcpChiffresInertes,
     ...mcpMessagesInertes,
     ...mcpOffreInerte,
+    ...mcpCampagnesInertes,
   };
   const server = buildServer({
     queue: new FakeQueue(),

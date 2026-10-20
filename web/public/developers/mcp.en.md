@@ -56,7 +56,7 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 
 | Tool | Scope | What it does |
 | --- | --- | --- |
-| list_conversations | mcp:read | Conversations, most recently active first. |
+| list_conversations | mcp:read | Conversations, most recently active first, over a period if needed, with each one’s contact. |
 | get_conversation | mcp:read | Thread details, and whether the 24 h window is open. |
 | send_message | mcp:write | Send within the 24-hour window an image, a document, a location, buttons, a list or a link button, in Meta’s format. |
 | list_templates | mcp:read | The workspace’s WhatsApp templates, with their language, category and status at Meta. |
@@ -69,6 +69,10 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 | get_conversation_insights | mcp:read | What the analysis understood of conversations: sentiment, intents, resolution, topics, and satisfaction and urgency over time. |
 | get_ai_stats | mcp:read | AI agent figures: cost of agent turns on the credit, messages written by AI, requests opened for the team and actions triggered. |
 | get_messages | mcp:read | The last 50 messages of a thread, oldest first, and before to go further back. |
+| find_contacts | mcp:read | The contacts of a target, like the contact list filters: tags, consent and, on the Enterprise plan, the latest analysis. The total, and up to 100 contacts. |
+| tag_contacts | mcp:write OAuth connection required | Tag the contacts of a target or of a list of conversations: a segment is a tag. Through the console’s bulk action, without starting any automation. |
+| prepare_campaign | mcp:write OAuth connection required | Prepare a template campaign without sending anything: a draft visible in the console, a summary (targeted, sent, left out and why, five names, the billable volume) and a confirmation code. |
+| launch_campaign | mcp:write OAuth connection required | Launch, or schedule for its date, a prepared campaign, with the code of its summary, once the person said yes; through the same path as the console’s Launch button. |
 | search_contacts | mcp:read | Find a contact by name or number, with their latest analysis. |
 | get_contact | mcp:read | A contact record from its number, with their latest analysis and its summary. |
 | list_members | mcp:read | Workspace members, to assign threads to them. |

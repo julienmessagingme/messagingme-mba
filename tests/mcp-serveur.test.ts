@@ -14,7 +14,7 @@ import * as catalogue from '../src/mcp/outils';
 import { API_SCOPES } from '../web/lib/partage/droits-api';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE, NumeroSuspenduError, MESSAGE_NUMERO_SUSPENDU } from '../src/meta/numero-delie';
-import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { creerPoseEtiquette, LONGUEUR_MAX_ETIQUETTE } from '../src/crm/poser-etiquette';
 import { DROITS } from '../src/offres/offres';
 import { MetaTemplateClient, type FetchLike, type TemplateSummary } from '../src/meta/templates';
@@ -100,6 +100,8 @@ function app(
     filTenuParLApplication: async () => false,
     contacts: {
       query: async () => [],
+      count: async () => 0,
+      applyEditsMany: async () => { throw new Error('applyEditsMany ne devrait pas être appelée'); },
       findByPhone: async () => null,
       analysesEtResumes: async () => new Map(),
       ...contacts,
@@ -123,6 +125,7 @@ function app(
     ...mcpChiffresInertes,
     ...mcpMessagesInertes,
     ...mcpOffreInerte,
+    ...mcpCampagnesInertes,
     ...reste,
   };
   const keys = new FakeApiKeys()
@@ -667,18 +670,27 @@ describe('serveur MCP : les outils', () => {
 });
 
 describe('serveur MCP : cohérence du catalogue', () => {
-  it('🔴 aucun outil n’expose de campagne ; les outils de modèle sont ceux décidés, et le seul qui envoie vise UNE personne', () => {
+  it('🔴 les campagnes : lire, préparer sans rien envoyer, lancer avec le code ; rien d’autre, et le seul envoi direct vise UNE personne', () => {
     // Décision du lot MCP, et pas un oubli : ouvrir l'envoi de MASSE à un modèle, c'est lui donner un mégaphone facturé
     // sur un numéro dont Meta note la qualité. Les modèles sont entrés par une décision de Julien (spec du lot 13,
     // 2026-10-08) : les créer, suivre leur validation, les lister, et en envoyer un à UN contact, réservé à une personne
     // connectée. Ce test est là pour que chaque ajout soit une décision explicite (il faudra le modifier) et non un
     // glissement.
-    // Une seule exception, décidée par Julien le 2026-10-13 : LIRE les chiffres des campagnes, sans rien envoyer.
+    // Exceptions décidées par Julien : LIRE les chiffres des campagnes (2026-10-13) ; PRÉPARER une campagne sans rien
+    // envoyer, puis la LANCER avec le code de son récapitulatif, au nom d'une personne (2026-10-20, spec
+    // docs/superpowers/specs/2026-10-20-campagnes-depuis-claude-design.md).
     const lecture = OUTILS.find((o) => o.nom === 'get_campaign_stats')!;
     expect(lecture.annotations.readOnlyHint).toBe(true);
     expect(lecture.scope).toBe('mcp:read');
-    const noms = OUTILS.map((o) => o.nom).filter((n) => n !== 'get_campaign_stats');
-    expect(noms.join(' ')).not.toMatch(/campaign|campagne|broadcast/i);
+    const prepare = OUTILS.find((o) => o.nom === 'prepare_campaign')!;
+    expect(prepare.exigePersonne).toBe(true);
+    expect(prepare.annotations.openWorldHint).toBe(false);
+    const lance = OUTILS.find((o) => o.nom === 'launch_campaign')!;
+    expect(lance.exigePersonne).toBe(true);
+    expect(lance.entree.required).toEqual(['campaign_id', 'confirmation_code']);
+    const campagnes = OUTILS.map((o) => o.nom).filter((n) => /campaign|campagne|broadcast/i.test(n)).sort();
+    expect(campagnes).toEqual(['get_campaign_stats', 'launch_campaign', 'prepare_campaign']);
+    const noms = OUTILS.map((o) => o.nom);
     expect(noms.filter((n) => /template/i.test(n)).sort())
       .toEqual(['create_template', 'get_template_status', 'list_templates', 'send_template_to_contact']);
     const envoi = OUTILS.find((o) => o.nom === 'send_template_to_contact')!;
@@ -770,6 +782,12 @@ describe('serveur MCP : cohérence du catalogue', () => {
       create_template: [true, false, true],
       // Livraison B : un message part chez une personne ; la même clé d'idempotence ne renvoie rien ; le fil n'est pas pris.
       send_template_to_contact: [true, true, true],
+      // Les campagnes depuis l'assistant (2026-10-20) : reposer les mêmes étiquettes ne change rien.
+      tag_contacts: [true, true, false],
+      // Un brouillon de plus à chaque appel, et rien ne part.
+      prepare_campaign: [true, false, false],
+      // Les messages partent (ou partiront à la date) chez des personnes ; un second appel avec le même code est refusé.
+      launch_campaign: [true, false, true],
       // Offres v2 : une clé de plus à chaque appel, rien chez un tiers ; le Pro ouvre une session chez Stripe à chaque appel.
       create_api_key: [true, false, false],
       subscribe_pro: [true, false, true],
@@ -938,12 +956,14 @@ const FONCTION_DES_OUTILS: Readonly<Record<string, string>> = {
   // Les chiffres du Pro (2026-10-13) : la fonction statistiques ; get_message_stats reste ouvert (l'essentiel en Free).
   // Ce que l'analyse a compris suit la fonction analyse (spec offres v2).
   get_campaign_stats: 'statistiques', get_conversation_insights: 'analyse', get_ai_stats: 'statistiques',
+  // Les campagnes depuis l'assistant (2026-10-20) : la fonction qui garde les campagnes de la console.
+  find_contacts: 'console', tag_contacts: 'console', prepare_campaign: 'console', launch_campaign: 'console',
 };
 
 describe('serveur MCP : les outils et l’offre (lot 6, B2a)', () => {
   const base = { offreDe: async () => ({ offre: 'base' as const, droits: DROITS.base, retourEnBaseLe: null }) };
 
-  it('🔴 chaque outil déclare sa fonction : étiqueter, affecter et les chiffres du Pro, aucune pour les autres', () => {
+  it('🔴 chaque outil déclare sa fonction : étiqueter, affecter, les chiffres et les campagnes du Pro, aucune pour les autres', () => {
     for (const o of OUTILS) expect([o.nom, o.fonction]).toEqual([o.nom, FONCTION_DES_OUTILS[o.nom] ?? null]);
   });
 

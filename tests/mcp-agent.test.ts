@@ -13,6 +13,7 @@ import { OUTILS_NUMERO } from '../src/mcp/outils-numero';
 import { OUTILS_EVENEMENTS } from '../src/mcp/outils-evenements';
 import { OUTILS_MODELES } from '../src/mcp/outils-modeles';
 import { OUTILS_OFFRE } from '../src/mcp/outils-offre';
+import { OUTILS_CAMPAGNES } from '../src/mcp/outils-campagnes';
 import type { DepsAgentMcp } from '../src/mcp/outils-agent';
 import { MESSAGE_OPERATIONS_LOURDES } from '../src/auth/plafond-partage';
 import type { AgentComplet, AgentResume, PatchAgent } from '../src/agent/agent-store';
@@ -39,7 +40,7 @@ import { cleApiDeTest } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { bornesDesChamps, bornesZod, champsDe, muettes, type Borne } from './aide/bornes-zod';
 import { jamaisDesabonne } from './consentement';
-import { journalMuet, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { journalMuet, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { SANS_MCP } from './outils-mcp';
 import { AUCUN_GESTE, GESTE_MUET } from './gestes';
 import { offresToutOuvert } from './gardes';
@@ -392,6 +393,7 @@ function monter(o: Options & { envoyerModele?: DepsMcp['envoyerModele']; usage?:
     ...mcpMessagesInertes,
     ...(o.envoyerModele ? { envoyerModele: o.envoyerModele } : {}),
     ...mcpOffreInerte,
+    ...mcpCampagnesInertes,
     estDesabonne: jamaisDesabonne,
     inbox: {
       ...mcpInerte,
@@ -406,6 +408,8 @@ function monter(o: Options & { envoyerModele?: DepsMcp['envoyerModele']; usage?:
     filTenuParLApplication: async () => false,
     contacts: {
       query: async () => [],
+      count: async () => 0,
+      applyEditsMany: async () => { throw new Error('applyEditsMany ne devrait pas être appelée'); },
       findByPhone: async () => null,
       analysesEtResumes: async () => new Map(),
     },
@@ -447,10 +451,11 @@ async function lister(server: Serveur, bearer: string): Promise<string[]> {
 
 /**
  * Les outils de la connexion du numéro (lot 3c), des webhooks sortants (lot 12), la création d'un modèle (lot 13), la clé
- * et le Pro d'une Free (offres v2) exigent aussi une personne : ils ont leur fichier, `tests/mcp-numero.test.ts`,
- * `tests/mcp-evenements.test.ts`, `tests/mcp-serveur.test.ts` et `tests/mcp-offre.test.ts`.
+ * et le Pro d'une Free (offres v2), les campagnes depuis l'assistant (2026-10-20) exigent aussi une personne : ils ont
+ * leur fichier, `tests/mcp-numero.test.ts`, `tests/mcp-evenements.test.ts`, `tests/mcp-serveur.test.ts`,
+ * `tests/mcp-offre.test.ts` et `tests/mcp-tag-contacts.test.ts` (et ses voisins).
  */
-const OUTILS_DU_NUMERO = new Set([...OUTILS_NUMERO, ...OUTILS_EVENEMENTS, ...OUTILS_MODELES, ...OUTILS_OFFRE].map((o) => o.nom));
+const OUTILS_DU_NUMERO = new Set([...OUTILS_NUMERO, ...OUTILS_EVENEMENTS, ...OUTILS_MODELES, ...OUTILS_OFFRE, ...OUTILS_CAMPAGNES].map((o) => o.nom));
 const EXIGENT_PERSONNE = OUTILS.filter((o) => o.exigePersonne === true && !OUTILS_DU_NUMERO.has(o.nom)).map((o) => o.nom);
 
 /** Des arguments valides pour chaque outil de l'agent : ce qu'un appel qui passerait la garde ferait. */

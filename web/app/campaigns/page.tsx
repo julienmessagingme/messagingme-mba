@@ -11,6 +11,7 @@ import { getCoutParCampagne } from '@/lib/api/stats';
 import { presetRange } from '@/lib/range';
 import { useT, useLocale } from '@/lib/i18n';
 import { dateHeure, formatDate, hourMin } from '@/lib/day';
+import { lancementDuBrouillon } from '@/lib/campagne-prevue';
 import {
   listCampaigns,
   listCampaignDrafts,
@@ -226,10 +227,11 @@ function CampaignsInner({ session }: { session: Session }) {
     }
   }
 
-  async function run(id: string) {
+  /** `quand` : la date d'un brouillon préparé par l'assistant, qui se PROGRAMME au lieu de partir tout de suite. */
+  async function run(id: string, quand?: string) {
     setError(null);
     try {
-      await runCampaign(id);
+      await runCampaign(id, quand);
       await openDetail(id); // ouvre le détail de la campagne lancée
       // Le worker traite en ~1-2s : on rafraîchit quelques fois pour voir les statuts évoluer.
       setPolling(true);
@@ -458,6 +460,17 @@ function CampaignsInner({ session }: { session: Session }) {
                         {t('Planifiée le', 'Scheduled for')} {dateHeure(c.scheduledAt, locale)}
                       </p>
                     )}
+                    {c.status === 'draft' && (() => {
+                      // Un brouillon que l'assistant a préparé pour une date : elle se lit ici, passée ou non.
+                      const l = lancementDuBrouillon(c.prevueLe, Date.now());
+                      const date = l.action === 'programmer' ? l.quand : l.prevuePassee;
+                      return date ? (
+                        <p className="mt-0.5 text-xs font-medium text-ink-500" data-testid={`campagne-prevue-${c.id}`}>
+                          {t('Préparée pour le', 'Prepared for')} {dateHeure(date, locale)}
+                          {l.action === 'lancer' && ` (${t('date passée', 'date passed')})`}
+                        </p>
+                      ) : null;
+                    })()}
                     <p className="mt-0.5 text-xs text-ink-500">
                       {campaignSendLabel(c, locale)} · {c.counts.total} {t('destinataires', 'recipients')}
                     </p>
@@ -477,14 +490,23 @@ function CampaignsInner({ session }: { session: Session }) {
                     {/* « Lancer » pour un brouillon (jamais envoyée) ; « Reprendre » pour une campagne mise
                         en pause par le quality gate (elle relance ses destinataires restants). Une campagne
                         en cours / terminée / en échec ne se (re)lance pas depuis la liste. */}
-                    {(c.status === 'draft' || c.status === 'paused') && (
-                      <Bouton taille="petite"
-                        onClick={() => run(c.id)}
-                        disabled={polling}
-                      >
-                        {c.status === 'paused' ? t('Reprendre', 'Resume') : t('Lancer', 'Launch')}
-                      </Bouton>
-                    )}
+                    {(c.status === 'draft' || c.status === 'paused') && (() => {
+                      // 🔴 Un brouillon daté par l'assistant se PROGRAMME à sa date : qui a vu « demain 10 h » ne doit
+                      // pas l'envoyer tout de suite d'un clic (spec « Campagnes depuis Claude », choix 1).
+                      const l = c.status === 'draft' ? lancementDuBrouillon(c.prevueLe, Date.now()) : null;
+                      return (
+                        <Bouton taille="petite"
+                          onClick={() => run(c.id, l?.action === 'programmer' ? l.quand : undefined)}
+                          disabled={polling}
+                        >
+                          {c.status === 'paused'
+                            ? t('Reprendre', 'Resume')
+                            : l?.action === 'programmer'
+                              ? `${t('Programmer pour le', 'Schedule for')} ${dateHeure(l.quand, locale)}`
+                              : t('Lancer', 'Launch')}
+                        </Bouton>
+                      );
+                    })()}
                     {/* ARRÊT D'URGENCE d'un envoi en cours. Jusqu'ici une campagne lancée n'avait aucun frein :
                         une erreur de ciblage sur 5 000 destinataires partait jusqu'au bout. L'envoi s'arrête
                         dans les secondes qui suivent, et le bouton devient « Reprendre » (statut en pause). */}
