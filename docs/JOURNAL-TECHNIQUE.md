@@ -5,6 +5,31 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-20 : la rubrique Solutions de la vitrine (cas d'usage, page chapeau, Transport), et le cadrage des campagnes depuis Claude
+
+- **Les pages de cas** (`e43c1736`, `d1887095`, `2f06639e`, `b3c843bf`) : cinq cas en français et en anglais (rappels,
+  notifications de commande, prise de rendez-vous, accueil SaaS, relance d'un paiement échoué), générés par
+  `npm run vitrine:cas`, chacun avec sa recette dans la doc développeurs ; `tests/vitrine-cas.test.ts` exige chaque nom
+  cité réel et chaque extrait égal au code compilé. Relecture du lot sans rouge, ses jaunes dans `f24d6a0a`.
+- **La bulle parle la langue du navigateur** (`f24d6a0a`) : l'API qui la porte tourne en production depuis la
+  révision `a944d930` (relu sur le VPS le soir même) ; la page de cas de la bulle Lovable est en ligne (`d4019aa1`).
+- **La page chapeau « SaaS et app builders »** (`d4019aa1`) remplace le carrefour des cas, `/cas-d-usage/` redirigé en
+  301 ; son film du démarrage (`cas-onboarding`) et sa une en 3D (tuiles Claude Code, Codex, GitHub reliées à WhatsApp,
+  CSS seul) arrivent dans `c6236635`. Le menu Solutions met les secteurs en tête et ouvre les cas au survol.
+- **La page Transport et mobilités** (`4c820d40`, puis `c6236635` et `226cef5d`) : la maquette de Julien, puis des
+  iPhone en 3D, les vrais logos de Keolis et de SNCF (fournis et autorisés par Julien), plus de formulaire dans la page
+  (l'appel mène à `/contact/#formulaire`), et le film refait dans la charte (`cas-transport`) à la place de la vidéo
+  fournie, retirée du site.
+- **La bande claire** (`226cef5d`) : `.bande-claire` sur 24 pages ; le code et le terminal y gardent leur fond sombre.
+  Assurance et Voyage et tourisme entrent au menu en pages d'attente (`attente` au registre : `noindex`, hors du plan du
+  site et de `llms.txt`). Le pied de page ne reprend plus que les liens de l'en-tête (`0a966701`). Une session voisine a
+  poussé son bilan SEO entre les deux (`23e20139`) : fusion à trois sans ligne perdue, CI verte.
+- **Les campagnes depuis Claude** : spec cadrée avec Julien en rondes de questions (`051b0bc4`), relue par un
+  constructeur, dont les neuf choix priment ; plan (`749544ae`). Rien de codé.
+- **Mesure** : le nettoyage des logos SVG par expression régulière retirait aussi les `x` et `y` des tracés (le « i » de
+  Keolis disparaissait) ; seule la balise racine `<svg>` se retouche. Le commit en plomberie ne savait pas fusionner un
+  binaire : il prend désormais le fichier de l'extraction quand origin ne l'a pas changé, et s'arrête sinon.
+
 ## 2026-10-19 : la vitrine en vrais appareils (iPhone, Claude Code, fenêtres de navigateur)
 
 - **Les téléphones** (`a5f13994`) : les 22 images de téléphone des pages fonctionnalités (français et anglais), à plat

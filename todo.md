@@ -1,5 +1,12 @@
 # todo.md : backlog
 
+## 🟡 La documentation fonctionnelle : modes opératoires et vidéos (sujet ouvert par Julien le 2026-10-20)
+
+Aider les gens à comprendre « comment on fait » : des modes opératoires pas à pas et des vidéos courtes, geste par geste,
+à côté de la doc développeurs. Rien de cadré : à ouvrir en rondes de questions (pour qui, quels gestes d'abord, où ça vit :
+la vitrine, la console, l'aide, le plugin), en partant de l'existant (fiches d'aide de `docs/aide/fiches/`, guide du compte
+Meta Business généré depuis `web/lib/partage/etapes-meta.ts`, films de l'atelier `~/engageme-motion`).
+
 ## 🟡 Offres v2 : retirer la colonne du quota d'envois d'avant (2026-10-17)
 
 `tenant_settings.api_quota_envois_jour` (0208) n'est plus lue depuis la livraison 2 des offres v2 (les modèles et les

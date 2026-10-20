@@ -101,9 +101,22 @@ français et en anglais, avec un film par cas. Le film 1 (prise de rendez-vous) 
 vitrine (`docs/prive/2026-10-15-audit-seo-vitrine.md`) et d'un geste de Julien : la Search Console et Bing Webmaster
 Tools. Les liens de confidentialité et de conditions du plugin 0.2.0 rendent 404 : ils prendront les adresses des pages
 légales que Geoffrey publie après la bascule (section du répertoire de Claude ci-dessus).
-Où on en est : livraison A en production (d8c0949a : le registre, la compilation par cas, le groupe « Recettes », l'en-tête
-et le pied de page générés). Les pages de secteur attendent leur contenu (Julien) ; la page des tarifs est en ligne depuis la livraison 8 des
-offres v2 (ci-dessous).
+Où on en est (2026-10-20) : six pages de cas en ligne avec leur film et leur recette, la page chapeau « SaaS et app
+builders » (film du démarrage, une en 3D), la page de secteur Transport et mobilités (film `cas-transport`), le menu
+Solutions (secteurs, puis les cas au survol). Restent : le CONTENU d'Assurance et de Voyage et tourisme, en ligne en pages
+d'attente (Julien : les clients citables pour l'Assurance, une maquette pour le Voyage) ; Enseignement supérieur et
+Agences, hors ligne au registre ; le film du support (Vélo Rapide), qui attend que `mba` soit autorisé de nouveau sur
+l'espace « Messaging Me demo » (une autre session y construit un agent IA). La page des tarifs est en ligne depuis la
+livraison 8 des offres v2 (ci-dessous).
+
+## CAMPAGNES DEPUIS CLAUDE (SPEC ET PLAN, 2026-10-20)
+
+Spec : [docs/superpowers/specs/2026-10-20-campagnes-depuis-claude-design.md](docs/superpowers/specs/2026-10-20-campagnes-depuis-claude-design.md),
+validée par Julien ; plan : [docs/superpowers/plans/2026-10-20-campagnes-depuis-claude.md](docs/superpowers/plans/2026-10-20-campagnes-depuis-claude.md)
+(dix tâches, la migration poussée seule d'abord). Quatre outils MCP (`find_contacts`, `tag_contacts`,
+`prepare_campaign`, `launch_campaign`) et `list_conversations` étendu : une phrase à l'assistant donne une campagne de
+modèle en brouillon, lancée sur confirmation (code à usage unique) ou depuis la console. Rien de codé : le plan attend la
+lecture de Julien et le choix de la méthode d'exécution.
 
 ## LES OFFRES, DEUXIÈME VERSION (CADRÉ LE 2026-10-16)
 
