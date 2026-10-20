@@ -951,16 +951,6 @@ en production.
   `standby` ne sont alors plus requalifiés (il est « présent ») et n'arrivent à personne. Piste : ne compenser que
   l'entrée que CE geste a créée (pas celle retrouvée par relecture).
 
-## 🟠 Base de connaissance : ce que la réparation du CSV a trouvé à côté (2026-09-29)
-
-- 🟠 **Le bot d'aide ne lit que le début de ses fiches** (mesuré en lecture seule le 2026-09-29) : 20 fiches sur
-  26 de `aide_fiches` dépassent 2 000 caractères (la plus longue 10 008, « créer une publicité »). La recherche
-  les lit entières, le modèle n'en reçoit que les 2 000 premiers (`CORPS_MAX`, `src/aide/repondre.ts`) : une
-  question sur la fin d'une fiche la fait retenir, puis répondre sans elle. Même défaut que la base de
-  connaissance des agents, réparée le même jour en bornant chaque fiche à ce que l'agent lit ; ici le remède est
-  à trancher : découper les fiches par section au chargement (`db/charger-aide.ts`), ou les rendre entières au
-  modèle, sur notre clé.
-
 ## 🟠 Suites de la recharge Stripe et du panneau Détail (2026-09-29)
 
 - **Julien** : ajouter l'autorisation **Invoices : Lecture** à la clé restreinte « Messaging Me console », puis

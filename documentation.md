@@ -816,8 +816,12 @@ reclassement lisent une fiche entière ; l'agent en reçoit au plus `CORPS_MAX`
 d'une fiche écrite à la main et l'écran, qui le rejoue (`web/lib/agent-connaissance.ts`). Une section plus
 longue est découpée en « (suite N) » par `empilerEnFiches`, jamais tronquée ; le CSV a son découpage à lui, par
 rangées, sous la même borne. Plus longue, une fiche serait retenue pour une phrase que l'agent ne reçoit pas.
-⚠️ Tout nouveau chemin d'écriture d'une fiche passe par cette borne. Le bot d'aide (`src/aide/repondre.ts`)
-porte sa propre copie de `CORPS_MAX` et ne tient pas encore cet invariant (`todo.md`).
+⚠️ Tout nouveau chemin d'écriture d'une fiche passe par cette borne. Le bot d'aide tient le même invariant à sa
+façon : `db/charger-aide.ts` charge chaque fiche du mode d'emploi plus longue que `MORCEAU_MAX` en morceaux
+`<fiche>#<n>` (`decouperFiche`, `src/aide/fiches.ts`), une étape par morceau, chacun commençant par son marqueur
+`**N. Titre.**`, et `src/aide/repondre.ts` importe la même borne ; une fiche plus courte reste entière sous sa clé.
+La structure d'une fiche (chapeau, étapes, encadrés « Bon à savoir ») se lit par `src/aide/structure.ts`. Une fiche
+modifiée n'atteint le bot qu'après `npm run aide:charger` en production (`DEPLOY.md`).
 
 🔴 **LA DÉFINITION D'UN OUTIL APPARTIENT À L'ESPACE, LE CONSENTEMENT AU COUPLE (outil, consommateur).**
 `agent_tools` porte ce qu'un outil EST (son nom, unique par espace pour une définition d'espace et par agent

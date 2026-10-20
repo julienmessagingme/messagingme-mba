@@ -62,6 +62,29 @@ describe('répondeur d’aide', () => {
     expect(r.ecrans[0]?.href).toBe('/campaigns');
   });
 
+  it('deux morceaux de la même fiche retenus : la fiche est citée UNE fois (les fiches longues sont chargées en morceaux)', async () => {
+    const morceaux = [
+      fiche({ id: '1', cle: 'lancer-une-campagne#4', corps: '**4. L’audience.** Piochez dans vos contacts.' }),
+      fiche({ id: '2', cle: 'lancer-une-campagne#5', corps: '**5. Le lancement.** Lancez, ou programmez.' }),
+    ];
+    const r = await creerRepondeur(deps({ depot: { chercher: async () => morceaux } }))(question);
+    expect(r.sources).toEqual(['Lancer une campagne']);
+  });
+
+  it('🔴 le modèle reçoit le morceau entier : le bot ne tronque plus en deçà de ce que le chargeur écrit', async () => {
+    const corps = `**5. Le lancement.** ${'Programmez pour plus tard. '.repeat(70)}`.trim();
+    expect(corps.length).toBeGreaterThan(1_800);
+    const vus: string[] = [];
+    await creerRepondeur(deps({
+      depot: { chercher: async () => [fiche({ corps })] },
+      completer: async (r: { messages: Array<{ content: string }> }) => {
+        vus.push(...r.messages.map((m) => m.content));
+        return repondu('Programmez.') as never;
+      },
+    } as never))(question);
+    expect(vus.some((t) => t.includes(corps))).toBe(true);
+  });
+
   it('🔴 une clé d’écran INVENTÉE par le modèle ne produit aucun lien', async () => {
     const r = await creerRepondeur(deps({
       completer: async () => repondu('Allez-y.', ['ecran-imaginaire']) as never,

@@ -9,6 +9,8 @@
  * l'isolation entre clients.
  */
 
+import { ENCADRE, structureFiche, texteBloc } from './structure';
+
 /** Une fiche remontée par le rappel, avec ce qui a permis de la remonter. */
 export interface FicheAide {
   id: string;
@@ -51,6 +53,87 @@ export interface FicheFichier {
   ecran: string | null;
   sourceSection: string | null;
   sourceEmpreinte: string | null;
+}
+
+/**
+ * Ce que le bot reçoit d'une fiche, au plus. Une fiche plus longue est chargée en morceaux (`decouperFiche`) : avant
+ * le 2026-10-20, il en recevait les 2 000 premiers caractères, soit les étapes 1 et 2 de « Lancer une campagne ».
+ */
+export const MORCEAU_MAX = 2_000;
+
+/** Une phrase se termine par sa ponctuation forte ; on coupe après, jamais au milieu. */
+const FIN_DE_PHRASE = /(?<=[.!?…])\s+/;
+
+/**
+ * Un texte trop long pour un morceau, rendu en parts qui tiennent : une liste se coupe entre ses points, un paragraphe
+ * entre ses phrases, et une phrase seule plus longue que la borne (aucune aujourd'hui) entre ses mots.
+ */
+function eclater(texte: string, budget: number): string[] {
+  const liste = texte.split('\n').every((l) => l.startsWith('- '));
+  const unites = (liste ? texte.split('\n') : texte.split(FIN_DE_PHRASE)).flatMap((u) => {
+    if (u.length <= budget) return [u];
+    const mots: string[] = [];
+    for (const mot of u.split(' ')) {
+      if (mots.length > 0 && `${mots.at(-1)} ${mot}`.length <= budget) mots[mots.length - 1] += ` ${mot}`;
+      else mots.push(mot.slice(0, budget));
+    }
+    return mots;
+  });
+  return emballer(unites, budget, liste ? '\n' : ' ');
+}
+
+/** Range des unités, dans l'ordre, en parts d'au plus `budget` caractères. */
+function emballer(unites: string[], budget: number, joint: string): string[] {
+  const parts: string[] = [];
+  let courante = '';
+  for (const u of unites) {
+    if (courante !== '' && courante.length + joint.length + u.length > budget) {
+      parts.push(courante);
+      courante = '';
+    }
+    courante = courante === '' ? u : `${courante}${joint}${u}`;
+  }
+  if (courante !== '') parts.push(courante);
+  return parts;
+}
+
+/** Les morceaux d'un sujet : chacun commence par `prefixe` (le marqueur d'une étape, d'un encadré), pour garder son contexte. */
+function morceaux(prefixe: string, blocs: string[]): string[] {
+  const budget = MORCEAU_MAX - (prefixe === '' ? 0 : prefixe.length + 1);
+  const unites = blocs.filter((b) => b !== '').flatMap((b) => (b.length <= budget ? [b] : eclater(b, budget)));
+  return emballer(unites, budget, '\n\n').map((m) => (prefixe === '' ? m : `${prefixe} ${m}`));
+}
+
+/**
+ * Ce que le chargeur écrit en base pour une fiche. Une fiche qui tient dans `MORCEAU_MAX` reste ENTIÈRE, sous sa clé :
+ * son texte ne change pas, donc son vecteur est gardé. Une fiche plus longue devient des morceaux `<clé>#<n>` : le
+ * chapeau et la prose d'avant la première étape, puis une étape par morceau, un encadré par morceau, la prose
+ * regroupée. Chaque morceau d'étape commence par son marqueur (`**3. Le contenu.**`) : un morceau retrouvé seul dit
+ * encore de quel geste il parle, et le titre de la fiche part à côté (`TITRE :` du bloc donné au modèle).
+ */
+export function decouperFiche(f: FicheFichier): FicheFichier[] {
+  if (f.corps.length <= MORCEAU_MAX) return [f];
+  const s = structureFiche(f.corps);
+  const textes: string[] = [];
+  let prose: string[] = s.chapeau === '' ? [] : [s.chapeau];
+  const vider = () => {
+    textes.push(...morceaux('', prose));
+    prose = [];
+  };
+  for (const section of s.sections) {
+    if (section.type === 'prose') {
+      prose.push(...(section.titre === null ? [] : [`## ${section.titre}`]), ...section.blocs.map(texteBloc));
+      continue;
+    }
+    vider();
+    if (section.type === 'etape') {
+      textes.push(...morceaux(`**${section.numero}. ${section.titre}.**`, [section.tete, ...section.detail.map(texteBloc)]));
+    } else {
+      textes.push(...morceaux(ENCADRE.fr, [section.texte]));
+    }
+  }
+  vider();
+  return textes.map((corps, i) => ({ ...f, cle: `${f.cle}#${i + 1}`, corps }));
 }
 
 /**

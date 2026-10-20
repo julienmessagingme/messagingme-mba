@@ -4,7 +4,7 @@ import { ficheEstPertinente } from '../agent/knowledge';
 import type { RechercheSemantique } from '../agent/resolvers/connaissance';
 import type { ChatMessage, OutilExpose, ReponseChat } from '../agent/llm/chat-client';
 import { carteVisiblePar, resoudre, type EcranAide } from './carte';
-import type { DepotAide, FicheAide } from './fiches';
+import { MORCEAU_MAX, type DepotAide, type FicheAide } from './fiches';
 
 /**
  * Le moteur du bot d'aide : rappel, verdict, réponse, et validation des clés d'écran.
@@ -95,8 +95,12 @@ const reponseSchema = z.object({
  * (`src/http/aide.ts`) : si elle acceptait plus que le moteur, la question serait tronquée en silence.
  */
 export const QUESTION_MAX_CARACTERES = 500;
-/** Ce qu'on donne du corps d'une fiche au modèle. Assez pour répondre, borné pour que le prompt reste petit. */
-const CORPS_MAX = 2_000;
+/**
+ * Ce qu'on donne du corps d'une fiche au modèle : la borne MÊME du chargeur, qui découpe chaque fiche longue en morceaux
+ * qui la respectent (`decouperFiche`). Une seule constante : une borne plus basse ici retronquerait en silence ce que le
+ * chargeur a découpé pour qu'il arrive entier. La coupe ne sert plus que de filet.
+ */
+const CORPS_MAX = MORCEAU_MAX;
 /** Combien de fiches partent au modèle, au plus. Trois suffisent et gardent la réponse nette. */
 const FICHES_RENDUES = 3;
 const DELAI_DEFAUT_MS = 20_000;
@@ -261,7 +265,8 @@ export function creerRepondeur(deps: DepsAide): (q: QuestionAide) => Promise<Rep
     return {
       sait: true,
       texte: valide.data.reponse.trim(),
-      sources: retenues.map((f) => f.titre),
+      // Deux morceaux d'une même fiche portent son titre : la source se cite une fois.
+      sources: [...new Set(retenues.map((f) => f.titre))],
       ecrans: resoudre(valide.data.ecrans ?? [], q.role),
     };
   };

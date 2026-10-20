@@ -21,7 +21,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 import { pgSsl } from '../src/db/ssl';
-import { lireFicheDuDepot, type FicheFichier } from '../src/aide/fiches';
+import { decouperFiche, lireFicheDuDepot, type FicheFichier } from '../src/aide/fiches';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dossier = join(here, '..', 'docs', 'aide', 'fiches');
@@ -32,6 +32,15 @@ export function fichesDuDepot(): FicheFichier[] {
     .filter((n) => n.endsWith('.md'))
     .sort()
     .map((n) => lireFicheDuDepot(n, readFileSync(join(dossier, n), 'utf8')));
+}
+
+/**
+ * Ce que la table reçoit : chaque fiche, entière si elle tient dans ce que le bot lit, en morceaux sinon
+ * (`decouperFiche`). Les clés `<fiche>#<n>` des morceaux disparaissent et réapparaissent avec le texte : le retrait
+ * de `chargerFiches` efface ceux d'un découpage précédent.
+ */
+export function morceauxDuDepot(): FicheFichier[] {
+  return fichesDuDepot().flatMap(decouperFiche);
 }
 
 /**
@@ -88,17 +97,17 @@ async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL manquant (.env)');
 
-  const fiches = fichesDuDepot();
+  const morceaux = morceauxDuDepot();
   // Zéro fiche est presque toujours une erreur de chemin, pas une intention. Vider la table sur cette base
   // rendrait le bot muet sans que personne ne comprenne pourquoi, donc on refuse plutôt que d'obéir.
-  if (fiches.length === 0) throw new Error(`aucune fiche trouvée dans ${dossier} : chargement refusé`);
+  if (morceaux.length === 0) throw new Error(`aucune fiche trouvée dans ${dossier} : chargement refusé`);
 
   const client = new Client({ connectionString: url, ssl: pgSsl() });
   await client.connect();
   try {
-    const { ecrites, retirees } = await chargerFiches(client, fiches);
+    const { ecrites, retirees } = await chargerFiches(client, morceaux);
     // eslint-disable-next-line no-console
-    console.log(`fiches d'aide : ${ecrites} chargées, ${retirees} retirées`);
+    console.log(`fiches d'aide : ${ecrites} lignes chargées (fiches entières et morceaux), ${retirees} retirées`);
   } finally {
     await client.end();
   }
