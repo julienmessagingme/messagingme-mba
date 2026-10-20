@@ -7,7 +7,7 @@ import { MAX_BATCH } from '../../http/v1-contacts';
 import { corpsChamp } from '../../http/v1-contacts-admin';
 import { schemaMessageWhatsapp } from '../../http/v1-messages';
 import { schemaMessageRcs } from '../../http/v1-messages-rcs';
-import { schemaCorps, schemaDestinataire, MAX_RECIPIENTS } from '../../http/v1-sends';
+import { schemaCorps, schemaDestinataire, MAX_RECIPIENTS } from '../envoi-public';
 import { requeteStatutModele } from '../../http/v1-templates';
 import { corpsRejeu, requeteJournal } from '../../http/v1-webhooks';
 import { saisieCreation, saisieModification } from '../../evenements/gestion';

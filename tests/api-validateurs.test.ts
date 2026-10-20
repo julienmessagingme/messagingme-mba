@@ -10,7 +10,7 @@ import {
 } from '../src/http/v1-contacts';
 import {
   schemaCorps as schemaCorpsEnvoi, schemaDestinataire as schemaDestinataireEnvoi, lireCible, MAX_RECIPIENTS, MAX_SKIPPED_REPORT, type RapportEnvoi,
-} from '../src/http/v1-sends';
+} from '../src/api/envoi-public';
 import { schemaMessageWhatsapp } from '../src/http/v1-messages';
 import { schemaMessageRcs } from '../src/http/v1-messages-rcs';
 

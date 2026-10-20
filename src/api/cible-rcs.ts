@@ -6,7 +6,7 @@ import type { RcsOutbound } from '../rcs/types';
  * La cible `rcsMessage` de `POST /v1/sends` : un message de Contenu > Messages RCS, désigné par son nom
  * (unique par espace, index partiel `rcs_messages_tenant_name`). Aucun numéro WhatsApp exigé, catégorie
  * obligatoire (elle décide du consentement), pas de `params` (les variables viennent de
- * `recipients[].variables`). Les règles de forme vivent dans `lireCible` (`src/http/v1-sends.ts`) ; ce
+ * `recipients[].variables`). Les règles de forme vivent dans `lireCible` (`src/api/envoi-public.ts`) ; ce
  * module fait les lectures et le suivi.
  */
 

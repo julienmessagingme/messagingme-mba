@@ -183,6 +183,6 @@ describe('la durée de vie d’une clé : UNE constante, et la purge ne descend 
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^\s*\/\/.*$/gm, '');
     expect(sansCommentaires('../src/worker.ts')).toMatch(/idempotencyStore\.sweepOlderThan\(DUREE_CLE_IDEMPOTENCE_MS\)/);
-    expect(sansCommentaires('../src/http/v1-sends.ts')).toMatch(/DUREE_CLE_IDEMPOTENCE_MS \/ 3_600_000/);
+    expect(sansCommentaires('../src/api/envoi-public.ts')).toMatch(/DUREE_CLE_IDEMPOTENCE_MS \/ 3_600_000/);
   });
 });

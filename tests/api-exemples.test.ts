@@ -16,7 +16,7 @@ import {
 } from '../src/http/v1-contacts';
 import {
   schemaCorps as schemaCorpsEnvoi, schemaDestinataire as schemaDestinataireEnvoi, lireCible, MAX_RECIPIENTS, MAX_SKIPPED_REPORT, type RapportEnvoi,
-} from '../src/http/v1-sends';
+} from '../src/api/envoi-public';
 import { schemaMessageWhatsapp, type ReponseMessageSimple } from '../src/http/v1-messages';
 import { schemaMessageRcs } from '../src/http/v1-messages-rcs';
 import { schemaMessageMeta } from '../src/api/message-meta';
@@ -63,9 +63,9 @@ const depuis = (r: { success: true } | { success: false; error: z.ZodError }): V
  * Le validateur de CHAQUE route qui prend un corps. `Record` sur l'union : une route ajoutée à
  * `RouteAvecCorps` sans validateur ne compile pas.
  *
- * 🔴 CE SONT LES RÈGLES DES ROUTES, JAMAIS UNE COPIE : les schémas, `lireCible` et les bornes sont EXPORTÉS par
- * les routes, `cleIdempotence`, `validateParamMapping` et `destinataireAvecVariablesInterdites` sont les
- * fonctions qu'elles appellent, avec les MÊMES arguments. Seul l'ORDRE est reproduit ici, celui de la route, et
+ * 🔴 CE SONT LES RÈGLES DU MODULE D'ENVOI, JAMAIS UNE COPIE : les schémas, `lireCible` et les bornes sont exportés
+ * par `api/envoi-public`, `cleIdempotence`, `validateParamMapping` et `destinataireAvecVariablesInterdites` sont les
+ * fonctions qu'il appelle, avec les MÊMES arguments. Seul l'ORDRE est reproduit ici, celui du cycle, et
  * il ne change rien à la question posée (un exemple de la doc doit passer TOUTES les règles).
  *
  * ⚠️ `POST /v1/sends` : la clé d'idempotence est lue dans le CORPS seul (`cleIdempotence(undefined, …)`) : les

@@ -21,10 +21,10 @@ describe('câblage de /v1/sends', () => {
     // Le magasin passe tel quel : aucune flèche intermédiaire ne peut avaler l'empreinte, et la route l'appelle
     // avec ses trois arguments.
     expect(envois).toMatch(/\bidempotence: idempotencyStore,/);
-    // Le cœur (`lancerEnvoi`) prend l'empreinte du corps brut, et la route lui passe le corps de la requête.
-    const sends = sansCommentaires('../src/http/v1-sends.ts');
-    expect(sends).toMatch(/deps\.idempotence\.claim\(tenantId, idem\.cle, empreinteCorps\(brut\)\)/);
-    expect(sends).toMatch(/lancerEnvoi\(\s*deps, req\.auth\.tenantId, req\.body, req\.headers\['idempotency-key'\],/);
+    // Le module propriétaire prend l'empreinte du corps brut, et l'adaptateur HTTP lui passe le corps reçu.
+    const cycle = sansCommentaires('../src/api/envoi-public.ts');
+    expect(cycle).toMatch(/deps\.idempotence\.claim\(tenantId, idem\.cle, empreinteCorps\(brut\)\)/);
+    expect(sansCommentaires('../src/http/v1-sends.ts')).toMatch(/lancerEnvoiPublic\(\s*deps, req\.auth\.tenantId, req\.body, req\.headers\['idempotency-key'\],/);
   });
 
   it('🔴 la SOURCE du consentement atteint l’écriture', () => {
@@ -58,7 +58,7 @@ describe('câblage de /v1/sends', () => {
 
   it('les contacts de l’API sont lus par la lecture qui garde les bloqués', () => {
     expect(envois).toMatch(/\brepo,/);
-    expect(sansCommentaires('../src/http/v1-sends.ts')).toMatch(/deps\.repo\.listContactsPourEnvoiApi\(/);
+    expect(sansCommentaires('../src/api/envoi-public.ts')).toMatch(/deps\.repo\.listContactsPourEnvoiApi\(/);
   });
 });
 
@@ -77,7 +77,8 @@ describe('câblage de /v1/templates', () => {
     // `fetch` nu injecté ici échapperait à l'inventaire, `DepsCreationModele` acceptant n'importe quel téléchargeur.
     // Livraison B : Claude envoie par le MÊME cœur que `POST /v1/sends`, sur les MÊMES dépendances.
     expect(source).toMatch(/sends: depsEnvois,/);
-    expect(source).toMatch(/envoyerModele: \(tenant, corps, compter\) => lancerEnvoi\(depsEnvois, tenant, corps, undefined, compter\),/);
+    expect(source).toMatch(/envoyerModele: \(tenant, corps, compter\) => lancerEnvoiPublic\(depsEnvois, tenant, corps, undefined, compter\),/);
+    expect(sansCommentaires('../src/mcp/outils.ts')).not.toMatch(/http\/v1-sends/);
     expect(source).toMatch(/telechargerEntete: telechargerEnteteProduction,\s*deposerEntete: enteteDeModele,\s*placesEntete: placesDeTelechargement,/);
   });
 });

@@ -2,7 +2,7 @@ import { ficheOutilMcp } from '../../web/lib/partage/catalogue-mcp';
 import type { AnnotationsMcp, DepsMcp, OutilMcp } from './outils';
 import { RefusOutil, entierBorne } from './saisie';
 import { MESSAGE_OPERATIONS_LOURDES } from '../auth/plafond-partage';
-import type { RapportEnvoi, ReponseEnvoi } from '../http/v1-sends';
+import { compteurEnvoiRefuse, type RapportEnvoi, type ReponseEnvoi } from '../api/envoi-public';
 import { CLE_IDEMPOTENCE_MAX } from '../api/idempotence';
 import { journaliser } from '../lib/journal';
 import { messageDeForme } from '../api/forme';
@@ -176,7 +176,7 @@ export const OUTILS_MODELES: OutilMcp[] = [
         ...(values.length > 0 ? { params: values.map((v, i) => ({ position: i + 1, source: { type: 'literal', value: v } })) } : {}),
         recipients: [phone !== undefined ? { phone } : { contactId }],
       };
-      // Compté où la route compte (juste après la clé d'idempotence, que `lancerEnvoi` libère si ce compteur lève) : le
+      // Compté où le cycle public compte (juste après la clé d'idempotence, qu'il libère si ce compteur lève) : le
       // plafond coûteux, PUIS le quota d'envois du jour.
       const r = await deps.envoyerModele(tenantId, corps, async (unites) => {
         const c = await deps.couteux.consommer(tenantId);
@@ -185,7 +185,7 @@ export const OUTILS_MODELES: OutilMcp[] = [
         if (!q.accepte) throw new RefusOutil(q.raison ?? 'quota quotidien d’envois de l’espace atteint');
         return true;
       });
-      if (r === null) throw new RefusOutil('envoi refusé');
+      if (compteurEnvoiRefuse(r)) throw new RefusOutil('envoi refusé par le compteur');
       if (r.statut >= 400) throw new RefusOutil(phraseDeRefus(r));
       // 201 : le rapport de l'envoi, ou celui d'un envoi déjà fait avec cette clé (rejeu), qui a la même forme.
       const rapport = r.corps as RapportEnvoi;

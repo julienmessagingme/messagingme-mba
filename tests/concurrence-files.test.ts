@@ -59,7 +59,7 @@ describe('l’enfilement pose le CLIENT comme clé de groupe', () => {
     const masse = lire('engagement/cablage.ts');
     expect(masse).toMatch(/enfilerEvenementAutomation\(o\.file, \{ tenantId: t, event: \{ kind: 'risque_eleve', waId \} \}/);
     // Ni l'action en masse, ni l'import, ni l'API publique, ni le moteur de campagne n'enfilent.
-    for (const f of ['http/contacts.ts', 'http/import.ts', 'crm/import.ts', 'campaign/engine.ts', 'http/v1-contacts.ts', 'http/v1-sends.ts']) {
+    for (const f of ['http/contacts.ts', 'http/import.ts', 'crm/import.ts', 'campaign/engine.ts', 'http/v1-contacts.ts', 'api/envoi-public.ts']) {
       expect(lire(f), f).not.toMatch(/enfilerEvenementAutomation|AUTOMATION_EVENT_QUEUE/);
     }
   });

@@ -165,7 +165,7 @@ import type { EmbeddedSignupRouteDeps } from './http/embedded-signup';
 import type { NumeroFourniRouteDeps } from './http/numero-fourni';
 import type { ApiKeysRouteDeps } from './http/api-keys';
 import type { V1ContactsRouteDeps } from './http/v1-contacts';
-import type { V1SendsRouteDeps } from './http/v1-sends';
+import type { DepsEnvoiPublic } from './api/envoi-public';
 import type { HubspotImportRouteDeps } from './http/hubspot-import';
 import type { HubspotPipelinesRouteDeps } from './http/hubspot-pipelines';
 import type { HubspotInstallRouteDeps } from './http/hubspot-install';
@@ -395,7 +395,7 @@ export interface ServerDeps {
      */
     oauth: AccesOauthLookup;
     contacts: Omit<V1ContactsRouteDeps, 'usage'>;
-    sends?: Omit<V1SendsRouteDeps, 'usage'>;
+    sends?: DepsEnvoiPublic;
     /** Les trois catalogues (`GET /v1/templates`, `/v1/scenarios`, `/v1/rcs-messages`). */
     catalogues?: Omit<V1CataloguesRouteDeps, 'usage'>;
     /** Un simple texte dans la fenêtre de 24 h (`POST /v1/messages/whatsapp`). */
