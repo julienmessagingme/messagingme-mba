@@ -45,7 +45,7 @@ const LECTEURS: Array<{ fichier: string; gardes: string[]; pourquoi: string }> =
     pourquoi: 'il ouvre une session MCP et poste du JSON-RPC',
   },
   {
-    fichier: 'src/http/agent-mcp.ts',
+    fichier: 'src/agent/mcp/rafraichissement.ts',
     gardes: ["source.kind !== 'mcp'"],
     pourquoi: 'aperçu et import ouvrent une connexion sortante',
   },

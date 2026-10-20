@@ -4,7 +4,8 @@ import type { RisqueOutil } from '../catalog';
 import { verrouillerDefinitions } from '../catalog.pg';
 import { paramsOutil, type SourceParam } from '../llm/tool-schema';
 import type { OutilExistantMcp } from './import';
-import type { EcritureImportMcp, OutilMcpVue, ServeurMcpVue } from '../../http/agent-mcp';
+import type { OutilMcpVue, ServeurMcpVue } from '../../http/agent-mcp';
+import type { EcritureImportMcp } from './rafraichissement';
 
 /**
  * Le stockage des outils importés d'un serveur MCP. À part de `catalog.pg.ts`, qui sert le chemin chaud (les

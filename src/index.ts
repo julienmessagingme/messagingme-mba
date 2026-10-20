@@ -159,6 +159,7 @@ import type { DemandeCreation } from './pubs/creation';
 import { creerAccesPublicitaire } from './pubs/acces-publicitaire';
 import { PgAgentSessionStore } from './agent/session-store.pg';
 import { PgMcpStore } from './agent/mcp/store.pg';
+import { creerRafraichissementMcp } from './agent/mcp/rafraichissement';
 import { PgEntretienStore } from './agent/setup/entretien-store.pg';
 import { PgEntretienMbaStore } from './mba/assistant/entretien-store';
 import { lireInventaireMba } from './mba/assistant/inventaire';
@@ -1987,16 +1988,15 @@ async function main(): Promise<void> {
      */
     mbaPublication: publicationMba,
     /**
-     * Les connecteurs MCP. Tout passe par `PgMcpStore` sauf la source elle-même, servie par `agentSources` :
-     * c'est la même table (`agent_tool_sources`, `kind = 'mcp'`), et un second chemin de lecture ferait deux
-     * façons de déchiffrer un secret.
+     * Les connecteurs MCP. La route reste un adaptateur HTTP ; le rafraîchissement possède la lecture sécurisée
+     * de la source, la session distante, le plan et l'écriture transactionnelle.
      */
     agentMcp: {
       audit: auditSink,
       // 🔴 La suppression d'un serveur passe par `PgMcpStore`, jamais par `agentSources.supprimer`, un `delete` nu
       // qui emporterait les outils et les consentements par cascade en rendant `true`.
       mcp: mcpStore,
-      sources: agentSources,
+      rafraichissement: creerRafraichissementMcp({ mcp: mcpStore, sources: agentSources }),
       // Le même store que les connecteurs API : même table, secret chiffré au même endroit.
       creerServeur: (tenant, input) => agentSources.creer(tenant, { kind: 'mcp', ...input }),
       // La même lecture que pour les variables de requête : deux définitions de « ce champ existe »
