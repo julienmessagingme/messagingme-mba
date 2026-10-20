@@ -10,6 +10,8 @@
 import { DROITS, PRIX_SIEGE_HT_CENTIMES } from '../../src/offres/offres';
 import { PRIX_NUMERO_HT_CENTIMES } from '../../src/stripe/abonnement';
 import { ETAPES_CARTE_META, PREREQUIS_META } from '../../web/lib/partage/etapes-meta';
+import { DUREE_CODE_MS } from '../../src/campaign/confirmation';
+import { NOMS_DU_RECAPITULATIF } from '../../src/mcp/outils-campagnes';
 
 export interface EntreeFaq {
   /** L'ancre, stable : la vitrine et la skill la portent. */
@@ -149,6 +151,15 @@ export const FAQ: readonly EntreeFaq[] = [
     },
     // Le quota du jour ne se chiffre pas : une limite invisible (spec offres v2), comme les plafonds d'appels.
     source: 'src/offres/offres.ts (DROITS) ; src/api/quotas.ts (les familles du quota) ; docs/aide/fiches/choisir-mon-offre.md',
+  },
+  {
+    id: 'preparer-une-campagne',
+    question: { fr: 'Claude peut-il préparer et lancer une campagne ?', en: 'Can Claude prepare and launch a campaign?' },
+    reponse: {
+      fr: `Oui, en Pro, et rien ne part sans votre oui. Claude trouve les contacts (find_contacts), en fait un segment, qui est une étiquette (tag_contacts), puis prépare la campagne (prepare_campaign) : un brouillon visible dans la console, avec un récapitulatif (contacts visés, combien partiront, les écartés et pourquoi, ${NOMS_DU_RECAPITULATIF} noms, le nombre de messages facturables par Meta) et un code valable ${DUREE_CODE_MS / 60_000} minutes. Il ne lance (launch_campaign) qu'après votre oui, avec ce code ; une date choisie programme l'envoi. Vous pouvez aussi lancer le brouillon depuis la console. Le modèle doit être approuvé, et un modèle marketing ne part qu'aux contacts qui ont consenti.`,
+      en: `Yes, on Pro, and nothing goes out without your yes. Claude finds the contacts (find_contacts), turns them into a segment, which is a tag (tag_contacts), then prepares the campaign (prepare_campaign): a draft visible in the console, with a summary (contacts targeted, how many will receive it, those left out and why, ${NOMS_DU_RECAPITULATIF} names, the number of messages Meta bills) and a code valid for ${DUREE_CODE_MS / 60_000} minutes. It only launches (launch_campaign) after your yes, with that code; a chosen date schedules the send. You can also launch the draft from the console. The template must be approved, and a marketing template only reaches contacts who opted in.`,
+    },
+    source: 'docs/superpowers/specs/2026-10-20-campagnes-depuis-claude-design.md ; src/mcp/outils-campagnes.ts ; src/campaign/confirmation.ts',
   },
   {
     id: 'ajouter-un-collegue',

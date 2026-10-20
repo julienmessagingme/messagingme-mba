@@ -57,7 +57,7 @@ remote server, the Messaging Me MCP server at `https://api.messagingme.app/mcp`.
   Meta business portfolio. Messages that Meta bills are charged by Meta to your WhatsApp Business account.
 
 Messaging Me is published by Messaging Me SAS (SmartLink), Paris. Privacy policy:
-https://www.messagingme.fr/privacy-policy/. Terms of use: https://www.messagingme.fr/terms-of-use/. Support:
+https://www.messagingme.fr/en/politique-de-confidentialite-messaging-me/. Terms of use: https://www.messagingme.fr/en/conditions-d-utilisation/. Support:
 https://app.messagingme.fr/contact/.
 
 ## Documentation

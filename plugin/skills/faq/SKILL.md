@@ -105,6 +105,14 @@ Three limits. The plan’s: 1,000 templates a month on Free, unlimited on Pro; r
 
 Trois limites. Celle de l’offre : 1 000 modèles par mois en Free, illimités en Pro ; les réponses dans la fenêtre de 24 heures n’y comptent jamais. Celle de l’API : un quota par jour et par espace, selon l’offre, où les modèles et les réponses se comptent à part (un envoi de modèles ne prend jamais la place des réponses), relevable sur demande ; au-delà, le refus quota_exceeded jusqu’au lendemain. Et celle de Meta, qui fixe ce qu’un numéro peut envoyer et l’augmente avec sa qualité.
 
+## Can Claude prepare and launch a campaign?
+
+Yes, on Pro, and nothing goes out without your yes. Claude finds the contacts (`find_contacts`), turns them into a segment, which is a tag (`tag_contacts`), then prepares the campaign (`prepare_campaign`): a draft visible in the console, with a summary (contacts targeted, how many will receive it, those left out and why, 5 names, the number of messages Meta bills) and a code valid for 30 minutes. It only launches (`launch_campaign`) after your yes, with that code; a chosen date schedules the send. You can also launch the draft from the console. The template must be approved, and a marketing template only reaches contacts who opted in.
+
+**FR · Claude peut-il préparer et lancer une campagne ?**
+
+Oui, en Pro, et rien ne part sans votre oui. Claude trouve les contacts (`find_contacts`), en fait un segment, qui est une étiquette (`tag_contacts`), puis prépare la campagne (`prepare_campaign`) : un brouillon visible dans la console, avec un récapitulatif (contacts visés, combien partiront, les écartés et pourquoi, 5 noms, le nombre de messages facturables par Meta) et un code valable 30 minutes. Il ne lance (`launch_campaign`) qu'après votre oui, avec ce code ; une date choisie programme l'envoi. Vous pouvez aussi lancer le brouillon depuis la console. Le modèle doit être approuvé, et un modèle marketing ne part qu'aux contacts qui ont consenti.
+
 ## How do I add a colleague?
 
 From the console, with an invitation. 1 user on Free, 3 on Pro then €15 excl. VAT per extra user per month (offered when inviting), per quote on Enterprise.

@@ -222,4 +222,27 @@ describe('prepare_campaign', () => {
     expect(r.replaced.deleted).toBe(false);
     expect(r.warning).toMatch(/previous draft/i);
   });
+
+  it('plusieurs numéros sans phone_number_id : refusé AVANT le plafond des opérations coûteuses (relecture, jaune 4)', async () => {
+    const v = deps({ numerosListe: [
+      { id: 'pn-a', displayPhoneNumber: '+33 5 25 68 02 47', verifiedName: 'Démo' },
+      { id: 'pn-b', displayPhoneNumber: '+33 5 25 68 02 50', verifiedName: 'Sandbox' },
+    ] });
+    await expect(outil.executer(v.d, T, BASE, PERSONNE)).rejects.toThrow(/phone_number_id/);
+    expect(v.trace).not.toContain('plafond');
+  });
+
+  it('🔴 tous les destinataires ont dit STOP : rien ne partirait, le brouillon neuf est supprimé et refusé (relecture, jaune 5)', async () => {
+    const { d, supprimes, poses } = deps();
+    (d.campagnes.route.repo as unknown as { desabonnesParmiLesDestinataires: () => Promise<number> }).desabonnesParmiLesDestinataires = async () => 2;
+    await expect(outil.executer(d, T, BASE, PERSONNE)).rejects.toThrow(/STOP/);
+    expect(supprimes).toEqual([NEUF]);
+    expect(poses).toHaveLength(0);
+  });
+
+  it('🔴 replaces et aucun destinataire : seul le brouillon NEUF part, l’ancien reste (relecture, jaune 7)', async () => {
+    const { d, supprimes } = deps({ ancien: { tenant: T, confirme: true, status: 'draft' }, modele: { statut: 'approuve', categorie: 'marketing', variables: 1 } });
+    await expect(outil.executer(d, T, { ...BASE, tags: undefined, contact_ids: [C2], replaces: ANCIEN }, PERSONNE)).rejects.toThrow(RefusOutil);
+    expect(supprimes).toEqual([NEUF]);
+  });
 });

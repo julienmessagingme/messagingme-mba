@@ -7,6 +7,7 @@ import { creerChamp, type ChampsDep } from '../http/fields';
 import { defPourEcriture } from '../http/contacts';
 import { USER_FIELD_TYPES, canonicalizeFieldValue, validateFieldValue } from '../crm/fields';
 import type { UserFieldDef } from '../crm/types';
+import { SOCLE_FIELDS } from '../../web/lib/partage/champs';
 
 /**
  * LES CHAMPS DEPUIS L'ASSISTANT (plan docs/superpowers/plans/2026-10-20-champs-depuis-claude.md) : les lister (une
@@ -41,7 +42,10 @@ export const OUTILS_CHAMPS: OutilMcp[] = [
     entree: { type: 'object', properties: {} },
     async executer(deps, tenantId) {
       const champs = await deps.champs.list(tenantId);
-      return { fields: champs.map((c) => ({ key: c.key, label: c.label, type: c.type })) };
+      // Les champs de base (prénom, e-mail) existent avant d'avoir servi : la fiche de la console les montre toujours, et
+      // set_contact_field les crée à la première écriture. Sans eux, Claude ne saurait pas que le prénom est là.
+      const absents = SOCLE_FIELDS.filter((s) => !champs.some((c) => c.key === s.key));
+      return { fields: [...absents, ...champs].map((c) => ({ key: c.key, label: c.label, type: c.type })) };
     },
   },
   {
@@ -73,7 +77,8 @@ export const OUTILS_CHAMPS: OutilMcp[] = [
     description:
       'Sets a custom field to the same value on every contact of a target (same filters as find_contacts) or of a list '
       + 'of contacts or conversations, like the console\'s bulk action. The field must exist (list_fields, create_field); '
-      + 'the value must match its type. Starts no automation. Returns how many contacts were updated. ' + LOURDE,
+      + 'the value must match its type. It OVERWRITES the current value of every contact of the target: count the target '
+      + 'with find_contacts first. Starts no automation. Returns how many contacts were updated. ' + LOURDE,
     annotations: ecriture('Set a contact field', true, false),
     entree: {
       type: 'object',
@@ -89,11 +94,11 @@ export const OUTILS_CHAMPS: OutilMcp[] = [
       signataire(personne);
       const key = texteObligatoire(args, 'key', LONGUEUR_MAX_CLE_CHAMP);
       const value = texteObligatoire(args, 'value', LONGUEUR_MAX_VALEUR_CHAMP);
+      const fonctions = (await deps.offres.offreDe(tenantId)).droits.fonctions;
+      const cible = await lireCibleMcp(args, fonctions, deps, tenantId, { identifiants: true });
       const def = await defPourEcriture(deps, tenantId, key);
       if (!def) throw new RefusOutil(`champ inconnu : ${key} (list_fields donne les champs de l’espace, create_field en crée un)`);
       if (!validateFieldValue(def.type, value)) throw new RefusOutil(`valeur invalide pour « ${def.label} » (${def.type})`);
-      const fonctions = (await deps.offres.offreDe(tenantId)).droits.fonctions;
-      const cible = await lireCibleMcp(args, fonctions, deps, tenantId, { identifiants: true });
       await plafondCouteux(deps, tenantId);
       const { affected } = await deps.contacts.applyEditsMany(tenantId, cible, { setField: { key, value: canonicalizeFieldValue(def.type, value) } });
       return { updated: affected };

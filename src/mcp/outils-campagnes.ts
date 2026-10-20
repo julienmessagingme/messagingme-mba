@@ -221,7 +221,7 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
           description: 'ISO 8601 date WITH its time zone, in the future (e.g. 2026-10-21T10:00:00+02:00). Omit to launch as soon as it is confirmed.',
         },
         name: { type: 'string', minLength: 1, maxLength: LONGUEUR_MAX_NOM_CAMPAGNE, description: 'The campaign name in the console. Default: the template name.' },
-        phone_number_id: { type: 'string', description: 'Only when the workspace has several WhatsApp numbers.' },
+        phone_number_id: { type: 'string', description: 'Required when the workspace has several WhatsApp numbers (the refusal lists them); otherwise its number.' },
         replaces: { type: 'string', format: 'uuid', description: 'A draft prepared here before and never launched: it is deleted once the new one exists.' },
         ...CHAMPS_CIBLE_FILTRES,
         ...CHAMPS_CIBLE_IDENTIFIANTS,
@@ -252,14 +252,15 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
         if (ancien.status !== 'draft') throw new RefusOutil('replaces : cette campagne a déjà été lancée ou programmée, elle ne se remplace plus');
       }
 
-      await plafondCouteux(deps, tenantId);
-      const modele = await modeleEnvoyable(c.modeles, tenantId, templateName, templateLanguage, paramMapping, 'modèle');
-      if ('refus' in modele) refusDe(modele);
       const numeros = await c.route.repo.listPhoneNumbers(tenantId);
       const demande = typeof args.phone_number_id === 'string' ? args.phone_number_id : undefined;
       if (demande === undefined && numeros.length > 1) {
         throw new RefusOutil(`cet espace a plusieurs numéros WhatsApp : précisez phone_number_id (${numeros.map((n) => `${n.id} = ${n.displayPhoneNumber ?? n.verifiedName ?? '?'}`).join(', ')})`);
       }
+
+      await plafondCouteux(deps, tenantId);
+      const modele = await modeleEnvoyable(c.modeles, tenantId, templateName, templateLanguage, paramMapping, 'modèle');
+      if ('refus' in modele) refusDe(modele);
       const numero = await numeroDEnvoi(c.modeles, tenantId, demande);
       if ('refus' in numero) refusDe(numero);
 
@@ -275,10 +276,12 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
       const vises = prepare.input.contactIds?.length ?? 0;
       // Bloqués, supprimés, sans numéro, doublons : écartés à la création sans motif propre (constat 4).
       const autres = Math.max(0, vises - cree.recipientCount - cree.skipped.length);
-      if (cree.recipientCount === 0) {
+      // Les destinataires qui ont dit STOP restent inscrits mais sont écartés à l'envoi : ils comptent pour « rien ne part ».
+      const desabonnes = cree.recipientCount === 0 ? 0 : await c.route.repo.desabonnesParmiLesDestinataires(tenantId, cree.campaignId);
+      if (cree.recipientCount - desabonnes <= 0) {
         await c.route.repo.deleteDraftCampaign(cree.campaignId, tenantId);
         throw new RefusOutil(`aucun destinataire : ${ecartes('not_opted_in')} sans consentement marketing (un modèle MARKETING ne part qu'à qui a consenti), `
-          + `${ecartes('missing_variable')} sans la valeur d'une variable, ${autres} écartés (bloqués, supprimés ou sans numéro). Rien n'a été créé.`);
+          + `${desabonnes} qui ont répondu STOP, ${ecartes('missing_variable')} sans la valeur d'une variable, ${autres} écartés (bloqués, supprimés ou sans numéro). Rien n'a été créé.`);
       }
 
       // L'ancien brouillon part APRÈS que le nouveau existe : un échec laisse deux brouillons, jamais zéro.
@@ -289,10 +292,7 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
       const pose = etat === null ? null : await c.confirmations.poser(tenantId, cree.campaignId, empreinteEtat(etat));
       if (pose === null) throw new Error(`prepare_campaign : la campagne ${cree.campaignId} n'a pas pu recevoir son code`);
 
-      const [desabonnes, apercu] = await Promise.all([
-        c.route.repo.desabonnesParmiLesDestinataires(tenantId, cree.campaignId),
-        c.route.repo.apercuDestinataires(tenantId, cree.campaignId, NOMS_DU_RECAPITULATIF),
-      ]);
+      const apercu = await c.route.repo.apercuDestinataires(tenantId, cree.campaignId, NOMS_DU_RECAPITULATIF);
       const partiront = Math.max(0, cree.recipientCount - desabonnes);
       // La marge des modèles du mois, quand l'offre en a une (constat 4) : une campagne qui la dépasse serait refusée au lancement.
       const modelesDuMois = prevueLe === null ? await c.route.modelesDuLancement(tenantId, cree.campaignId) : null;

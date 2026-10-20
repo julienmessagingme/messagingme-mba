@@ -49,8 +49,14 @@ describe('list_fields', () => {
   });
 
   it('rend clé, libellé et type, et dit comment s’en servir dans une variable', async () => {
-    const r = (await outil('list_fields').executer(deps().d, T, {}, null)) as { fields: unknown[] };
-    expect(r.fields).toEqual([{ key: 'ville', label: 'Ville', type: 'text' }, { key: 'age', label: 'Âge', type: 'number' }]);
+    const r = (await outil('list_fields').executer(deps().d, T, {}, null)) as { fields: Array<{ key: string }> };
+    expect(r.fields.slice(-2)).toEqual([{ key: 'ville', label: 'Ville', type: 'text' }, { key: 'age', label: 'Âge', type: 'number' }]);
+  });
+
+  it('les champs de base (prénom, e-mail) sont listés même s’ils n’ont jamais servi (relecture, jaune 1)', async () => {
+    const r = (await outil('list_fields').executer(deps().d, T, {}, null)) as { fields: Array<{ key: string }> };
+    expect(r.fields.map((f) => f.key)).toEqual(expect.arrayContaining(['prenom', 'email']));
+    expect(new Set(r.fields.map((f) => f.key)).size).toBe(r.fields.length);
   });
 });
 
@@ -114,4 +120,19 @@ describe('set_contact_field', () => {
       expect(v.ecrits, JSON.stringify(args)).toEqual([]);
     }
   });
+
+describe('set_contact_field : la personne et la cible d’abord (relecture, jaunes 2 et 7)', () => {
+  it('sans personne : refusé, rien n’est lu ni écrit', async () => {
+    const { d, trace, ecrits } = deps();
+    await expect(outil('set_contact_field').executer(d, T, { key: 'ville', value: 'Lyon', contact_ids: [C1] }, null)).rejects.toThrow(RefusOutil);
+    expect(trace).toEqual([]);
+    expect(ecrits).toEqual([]);
+  });
+
+  it('une cible vide est refusée AVANT de créer un champ de base', async () => {
+    const { d, trace } = deps();
+    await expect(outil('set_contact_field').executer(d, T, { key: 'prenom', value: 'Léa' }, PERSONNE)).rejects.toThrow(RefusOutil);
+    expect(trace).toEqual([]);
+  });
+});
 });
