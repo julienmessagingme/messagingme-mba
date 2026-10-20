@@ -40,20 +40,20 @@ export function enteteVitrine(langue: Langue, adresse: string, jumelle: string):
 export const piedVitrine = (langue: Langue): string => PIEDS[langue];
 
 /**
- * Le menu « Solutions » (décision de Julien du 2026-10-20) : les cas EN LIGNE au registre, chacun avec sa ligne de menu
- * (`cas-textes.ts`), puis « Tous les cas d'usage ». Les secteurs et les métiers y entreront avec leur contenu.
+ * Le menu « Solutions » (décisions de Julien du 2026-10-20) : la page chapeau « SaaS et app builders » en tête, puis
+ * ses cas EN LIGNE au registre en sous-menu, plus serrés (une icône et un titre). Les secteurs y entreront avec leur
+ * page.
  */
 export function liensSolutions(langue: Langue, retrait: string): string {
-  const lien = (href: string, icone: string, titre: string, ligne: string) =>
-    `${retrait}<a href="${href}"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#${icone}"/></svg></span><span><strong>${titre}</strong><small>${ligne}</small></span></a>`;
+  const c = TEXTES_CARREFOUR[langue];
+  const chapeau = `${retrait}<a href="${c.adresse}"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-code"/></svg></span><span><strong>${c.fil}</strong><small>${c.menu}</small></span></a>`;
   const cas = ENTREES.filter((e) => e.enLigne && e.nature === 'cas').map((e) => {
     const t = TEXTES_CAS[e.cle]?.[langue];
     if (!t) throw new Error(`${e.cle} : en ligne sans ses textes (scripts/vitrine/cas-textes.ts)`);
     const p = langue === 'fr' ? e.fr : e.en;
-    return lien(p.adresse, t.icone, p.titre, t.menu);
+    return `${retrait}<a class="menu-sous" href="${p.adresse}"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#${t.icone}"/></svg></span><span><strong>${p.titre}</strong></span></a>`;
   });
-  const c = TEXTES_CARREFOUR[langue];
-  return [...cas, lien(c.adresse, 'i-list-checks', langue === 'fr' ? 'Tous les cas d’usage' : 'All use cases', langue === 'fr' ? 'Le film, le schéma et le code de chacun' : 'The film, the diagram and the code of each')].join('\n');
+  return [chapeau, ...cas].join('\n');
 }
 
 /** L'adresse publique d'une page, depuis son chemin dans `site/` : `contact/index.html` -> `/contact/`. */

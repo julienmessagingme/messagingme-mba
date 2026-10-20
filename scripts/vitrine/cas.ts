@@ -229,33 +229,72 @@ export function pagesCarrefour(): Array<{ chemin: string; contenu: string }> {
   return (['fr', 'en'] as const).map((langue) => {
     const c = TEXTES_CARREFOUR[langue];
     const autre = TEXTES_CARREFOUR[langue === 'fr' ? 'en' : 'fr'];
+    const suffixe = langue === 'fr' ? '' : '-en';
+    const demarrer = langue === 'fr' ? '/developpeurs/#demarrer' : '/en/developers/#demarrer';
+    // Chaque cas avec la vignette de son film : l'affiche, et le film qui ne se charge qu'au survol (site.js).
     const cartes = enLigne.map((e) => {
       const p = langue === 'fr' ? e.fr : e.en;
-      const resume = TEXTES_CAS[e.cle]![langue].resume;
-      return `        <li><a class="cas-carte" href="${p.adresse}"><strong>${echapper(p.titre)}</strong><span>${resume}</span><span class="cas-lien">${langue === 'fr' ? 'Voir le cas' : 'See the use case'} <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></span></a></li>`;
+      const t = TEXTES_CAS[e.cle]![langue];
+      return `        <li><a class="hub-carte" href="${p.adresse}"><video class="hub-mini" src="/films/${e.film}${suffixe}.mp4?v=1" poster="/films/${e.film}${suffixe}.webp?v=1" width="1280" height="720" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video><span class="hub-texte"><strong>${echapper(p.titre)}</strong><small>${t.resume}</small></span><svg class="ic hub-fleche" aria-hidden="true"><use href="#i-fleche"/></svg></a></li>`;
     });
     const main = [
       '<main>',
       '  <section class="cadre f-une cas-une">',
       '    <div>',
-      `      <h1><span class="f-surtitre"><svg class="ic" aria-hidden="true"><use href="#i-list-checks"/></svg>${c.fil}</span>${c.h1}</h1>`,
+      `      <h1><span class="f-surtitre"><svg class="ic" aria-hidden="true"><use href="#i-code"/></svg>${c.fil}</span>${c.h1}</h1>`,
       `      <p class="chapeau">${c.chapeau}</p>`,
+      '      <div class="appels">',
+      `        <a class="bouton bouton-plein" href="${demarrer}">${langue === 'fr' ? 'Installer le plugin' : 'Install the plugin'}</a>`,
+      `        <a class="bouton bouton-texte" href="#cas">${langue === 'fr' ? 'Voir les cas' : 'See the use cases'} <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>`,
+      '      </div>',
       '    </div>',
       '  </section>',
-      '  <section class="f-bloc cas-carrefour">',
+      '',
+      '  <section class="f-bloc hub" id="cas">',
+      '    <div class="cadre hub-split">',
+      '      <div class="hub-cas">',
+      `        <h2 class="f-titre">${c.cas.titre}</h2>`,
+      `        <p class="f-texte">${c.cas.texte}</p>`,
+      '        <ul class="hub-liste">',
+      ...cartes.map((l) => `  ${l}`),
+      '        </ul>',
+      '      </div>',
+      '      <div class="hub-film">',
+      `        <h2 class="f-titre">${c.film.titre}</h2>`,
+      `        <p class="f-texte">${c.film.texte}</p>`,
+      `        <video class="f-video" src="/films/${c.film.nom}${suffixe}.mp4?v=1" poster="/films/${c.film.nom}${suffixe}.webp?v=1" data-vertical="/films/${c.film.nom}${suffixe}-9x16.mp4?v=1" data-affiche-verticale="/films/${c.film.nom}${suffixe}-9x16.webp?v=1" width="1280" height="720" controls muted playsinline preload="none" aria-label="${echapper(c.film.aria)}"></video>`,
+      '      </div>',
+      '    </div>',
+      '  </section>',
+      '',
+      '  <section class="f-bloc cas-pas">',
       '    <div class="cadre">',
-      '      <ul class="cas-cartes">',
-      ...cartes,
-      '      </ul>',
+      `      <h2 class="f-titre">${c.etapes.titre}</h2>`,
+      '      <ol class="guide-etapes">',
+      ...c.etapes.liste.map((x, i) => `        <li><span class="f-num">${i + 1}</span><div><h3>${x.titre}</h3><p>${x.texte}</p></div></li>`),
+      '      </ol>',
+      `      <p class="cas-voisins"><a href="${demarrer}">${c.etapes.lien}</a></p>`,
       '    </div>',
       '  </section>',
       '</main>',
     ].join('\n');
-    const ld = { '@context': 'https://schema.org', '@graph': [fil(langue, [ACCUEIL[langue], [c.fil, c.adresse]])] };
+    const texte = (h: string) => h.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ');
+    const ld = {
+      '@context': 'https://schema.org',
+      '@graph': [
+        fil(langue, [ACCUEIL[langue], [c.fil, c.adresse]]),
+        {
+          '@type': 'VideoObject', name: c.film.aria, description: texte(c.film.texte),
+          thumbnailUrl: `${ORIGINE}/films/${c.film.nom}${suffixe}.webp`, contentUrl: `${ORIGINE}/films/${c.film.nom}${suffixe}.mp4`,
+          uploadDate: c.film.publie, duration: c.film.duree, inLanguage: langue === 'fr' ? 'fr-FR' : 'en-US',
+          publisher: { '@id': 'https://www.messagingme.fr/#organisation' },
+        },
+      ],
+    };
     return {
       chemin: fichierDe(c.adresse),
-      contenu: page(langue, { adresse: c.adresse, jumelle: autre.adresse, titre: c.titre, description: c.description, ldJson: ld }, main,
-        'Le carrefour des cas d’usage, GÉNÉRÉ par npm run vitrine:cas depuis le registre : ne pas modifier à la main.'),
+      contenu: page(langue, { adresse: c.adresse, jumelle: autre.adresse, titre: c.titre, description: c.description, ldJson: ld, affiche: `/films/${c.film.nom}${suffixe}.webp` }, main,
+        'La page « SaaS et app builders », chapeau des cas d’usage, GÉNÉRÉE par npm run vitrine:cas depuis le registre : ne pas modifier à la main.'),
     };
   });
 }
@@ -272,8 +311,8 @@ export function sectionLlms(): string {
   return [
     '## Cas d’usage',
     '',
-    `- [Tous les cas d’usage](${ORIGINE}${TEXTES_CARREFOUR.fr.adresse}) : ${TEXTES_CARREFOUR.fr.description}`,
-    `- [All use cases](${ORIGINE}${TEXTES_CARREFOUR.en.adresse}) : the same page in English.`,
+    `- [SaaS et app builders](${ORIGINE}${TEXTES_CARREFOUR.fr.adresse}) : ${TEXTES_CARREFOUR.fr.description}`,
+    `- [SaaS and app builders](${ORIGINE}${TEXTES_CARREFOUR.en.adresse}) : the same page in English, with every use case below.`,
     ...enLigne.flatMap((e) => [
       `- [${e.fr.titre}](${ORIGINE}${e.fr.adresse}) : ${texte(TEXTES_CAS[e.cle]!.fr.resume)}`,
       `- [${e.en.titre}](${ORIGINE}${e.en.adresse}) : ${texte(TEXTES_CAS[e.cle]!.en.resume)}`,

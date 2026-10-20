@@ -29,20 +29,71 @@ export interface TexteCas {
   readonly liens: ReadonlyArray<readonly [string, string]>;
 }
 
-export const TEXTES_CARREFOUR: Record<Langue, { adresse: string; fil: string; titre: string; description: string; h1: string; chapeau: string }> = {
+/**
+ * La page CHAPEAU des cas (décision de Julien du 2026-10-20) : « SaaS et app builders », l'entrée `saas-app-builders`
+ * du registre, qui remplace le carrefour « Tous les cas d'usage » (redirigé). Écran divisé : les cas à gauche, chacun
+ * avec la vignette de son film, le grand film à droite ; puis comment ça marche, en trois étapes.
+ * ⚠️ `film` est le film du cas 1 tant que le film du démarrage (`engageme-cas-onboarding`, validé le 2026-10-20) n'est
+ * pas fabriqué : son titre ne promet donc pas « le démarrage ».
+ */
+export interface TexteChapeau {
+  readonly adresse: string; readonly fil: string; readonly titre: string; readonly description: string;
+  readonly h1: string; readonly chapeau: string;
+  /** La ligne sous le titre dans le menu Solutions. */
+  readonly menu: string;
+  readonly cas: { readonly titre: string; readonly texte: string };
+  readonly film: { readonly nom: string; readonly titre: string; readonly texte: string; readonly aria: string; readonly duree: string; readonly publie: string };
+  readonly etapes: { readonly titre: string; readonly liste: ReadonlyArray<{ readonly titre: string; readonly texte: string }>; readonly lien: string };
+}
+
+export const TEXTES_CARREFOUR: Record<Langue, TexteChapeau> = {
   fr: {
-    adresse: '/cas-d-usage/', fil: 'Cas d’usage',
-    titre: 'Cas d’usage WhatsApp pour votre app · Messaging Me',
-    description: 'Rappels de rendez-vous, notifications, support, accueil des utilisateurs : ce que vous branchez sur WhatsApp avec Claude Code, cas par cas, avec le code.',
-    h1: 'Ce que vous branchez sur WhatsApp, cas par cas.',
-    chapeau: 'Chaque cas montre le film, le schéma, le vrai code et ce que vous payez. Aucun compte à créer pour commencer : le plugin Claude Code suffit.',
+    adresse: '/solutions/saas-et-app-builders/', fil: 'SaaS et app builders',
+    titre: 'WhatsApp pour les SaaS et app builders · Messaging Me',
+    description: 'Branchez WhatsApp à votre app ou votre SaaS depuis Claude Code, en une session : le démarrage, puis chaque cas d’usage avec son film et son code.',
+    h1: 'Votre app parle WhatsApp, en une session.',
+    chapeau: 'Messaging Me branche l’API officielle de WhatsApp à votre application depuis Claude Code&nbsp;: vous installez le plugin, vous autorisez avec Google, vous reliez votre numéro. Ensuite, choisissez votre cas&nbsp;: chacun a son film, son schéma et son code.',
+    menu: 'Le démarrage et tous les cas',
+    cas: { titre: 'Les cas d’usage.', texte: 'Survolez un cas pour voir son film, cliquez pour son pas à pas et son code.' },
+    film: {
+      nom: 'cas-rendez-vous',
+      titre: 'De Claude Code à WhatsApp, en 30 secondes.',
+      texte: 'Une demande dans Claude Code, et votre app répond sur une vraie conversation WhatsApp.',
+      aria: 'Film : une app branchée sur WhatsApp depuis Claude Code, avec Messaging Me', duree: 'PT38S', publie: '2026-10-20T15:00:00+02:00',
+    },
+    etapes: {
+      titre: 'Comment ça marche.',
+      liste: [
+        { titre: 'Vous installez le plugin', texte: 'Deux commandes dans Claude Code. Il est gratuit, et sans abonnement.' },
+        { titre: 'Vous autorisez avec Google', texte: 'Votre espace se crée à ce moment, sans formulaire&nbsp;: aucun compte à remplir.' },
+        { titre: 'Vous reliez votre numéro', texte: 'Il vous faut un compte Meta Business. Pas de numéro&nbsp;? On vous en fournit un.' },
+      ],
+      lien: 'Les trois étapes en détail',
+    },
   },
   en: {
-    adresse: '/en/use-cases/', fil: 'Use cases',
-    titre: 'WhatsApp use cases for your app · Messaging Me',
-    description: 'Appointment reminders, notifications, support, user onboarding: what you connect to WhatsApp with Claude Code, case by case, with the code.',
-    h1: 'What you connect to WhatsApp, case by case.',
-    chapeau: 'Each case shows the film, the diagram, the real code and what you pay. No account to create to start: the Claude Code plugin is all you need.',
+    adresse: '/en/solutions/saas-and-app-builders/', fil: 'SaaS and app builders',
+    titre: 'WhatsApp for SaaS and app builders · Messaging Me',
+    description: 'Connect WhatsApp to your app or SaaS from Claude Code, in one session: getting started, then each use case with its film and its code.',
+    h1: 'Your app speaks WhatsApp, in one session.',
+    chapeau: 'Messaging Me connects the official WhatsApp API to your application from Claude Code: you install the plugin, you authorize with Google, you connect your number. Then pick your use case: each one has its film, its diagram and its code.',
+    menu: 'Getting started and every use case',
+    cas: { titre: 'Use cases.', texte: 'Hover a use case to see its film, click for its step by step and its code.' },
+    film: {
+      nom: 'cas-rendez-vous',
+      titre: 'From Claude Code to WhatsApp, in 30 seconds.',
+      texte: 'A request in Claude Code, and your app answers on a real WhatsApp conversation.',
+      aria: 'Film: an app connected to WhatsApp from Claude Code, with Messaging Me', duree: 'PT38S', publie: '2026-10-20T15:00:00+02:00',
+    },
+    etapes: {
+      titre: 'How it works.',
+      liste: [
+        { titre: 'You install the plugin', texte: 'Two commands in Claude Code. It is free, with no subscription.' },
+        { titre: 'You authorize with Google', texte: 'Your workspace is created right then, with no form: no account to fill in.' },
+        { titre: 'You connect your number', texte: 'You need a Meta Business account. No number? We provide one.' },
+      ],
+      lien: 'The three steps in detail',
+    },
   },
 };
 
@@ -218,7 +269,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         { question: 'Combien ça coûte&nbsp;?', reponse: 'La Free inclut l’API et le serveur MCP. L’agent IA se paie sur le crédit IA prépayé, et Meta facture chaque réponse envoyée dans la fenêtre de 24&nbsp;heures au-delà de sa franchise mensuelle, selon sa grille et le pays du client.' },
       ],
       appel: { titre: 'Ouvrez la prise de rendez-vous aujourd’hui.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },
-      liens: [['/developpeurs/', 'Démarrer avec Claude Code'], ['/tarifs/', 'Les tarifs'], ['/cas-d-usage/', 'Tous les cas d’usage']],
+      liens: [['/developpeurs/', 'Démarrer avec Claude Code'], ['/tarifs/', 'Les tarifs'], ['/solutions/saas-et-app-builders/', 'SaaS et app builders']],
     },
     en: {
       titre: 'Appointment booking on WhatsApp · Messaging Me',
@@ -258,7 +309,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         { question: 'How much does it cost?', reponse: 'Free includes the API and the MCP server. The AI agent is paid from the prepaid AI credit, and Meta bills each reply sent in the 24-hour window beyond its monthly free tier, according to its rate card and the customer’s country.' },
       ],
       appel: { titre: 'Open appointment booking today.', texte: 'The plugin in two commands, then the sentence above in Claude Code. No account to create.' },
-      liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/use-cases/', 'All use cases']],
+      liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/solutions/saas-and-app-builders/', 'SaaS and app builders']],
     },
   },
   rappels: {
@@ -300,7 +351,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         { question: 'Le client peut-il décaler plusieurs fois&nbsp;?', reponse: 'Une demande de report part une fois par jour au plus, par client et par action&nbsp;: l’agent propose des créneaux, le client en choisit un, votre application le réserve.' },
       ],
       appel: { titre: 'Branchez vos rappels aujourd’hui.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },
-      liens: [['/developpeurs/', 'Démarrer avec Claude Code'], ['/tarifs/', 'Les tarifs'], ['/cas-d-usage/', 'Tous les cas d’usage']],
+      liens: [['/developpeurs/', 'Démarrer avec Claude Code'], ['/tarifs/', 'Les tarifs'], ['/solutions/saas-et-app-builders/', 'SaaS et app builders']],
     },
     en: {
       titre: 'Appointment reminders on WhatsApp · Messaging Me',
@@ -340,7 +391,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         { question: 'Can the customer reschedule several times?', reponse: 'A reschedule request goes out at most once a day, per customer and per action: the agent offers slots, the customer picks one, your app books it.' },
       ],
       appel: { titre: 'Set up your reminders today.', texte: 'The plugin in two commands, then the sentence above in Claude Code. No account to create.' },
-      liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/use-cases/', 'All use cases']],
+      liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/solutions/saas-and-app-builders/', 'SaaS and app builders']],
     },
   },
   'bulle-lovable': {
@@ -382,7 +433,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         { question: 'La bulle ralentit-elle mon site&nbsp;?', reponse: 'Non&nbsp;: la balise se charge sans bloquer la page, et si notre service ne répond pas, la bulle n’apparaît simplement pas.' },
       ],
       appel: { titre: 'Mettez votre site sur WhatsApp aujourd’hui.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },
-      liens: [['/developpeurs/', 'Démarrer avec Claude Code'], ['/tarifs/', 'Les tarifs'], ['/cas-d-usage/', 'Tous les cas d’usage']],
+      liens: [['/developpeurs/', 'Démarrer avec Claude Code'], ['/tarifs/', 'Les tarifs'], ['/solutions/saas-et-app-builders/', 'SaaS et app builders']],
     },
     en: {
       titre: 'WhatsApp bubble on a Lovable site · Messaging Me',
@@ -422,7 +473,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         { question: 'Does the bubble slow my site down?', reponse: 'No: the tag loads without blocking the page, and if our service does not answer, the bubble simply does not appear.' },
       ],
       appel: { titre: 'Put your site on WhatsApp today.', texte: 'The plugin in two commands, then the sentence above in Claude Code. No account to create.' },
-      liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/use-cases/', 'All use cases']],
+      liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/solutions/saas-and-app-builders/', 'SaaS and app builders']],
     },
   },
   accueil: {
@@ -463,7 +514,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         { question: 'Peut-il ne plus rien recevoir&nbsp;?', reponse: 'Oui&nbsp;: un utilisateur qui répond STOP ne reçoit plus rien, et son refus est noté sur le contact.' },
       ],
       appel: { titre: 'Accueillez vos utilisateurs sur WhatsApp.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },
-      liens: [['/developpeurs/', 'Démarrer avec Claude Code'], ['/tarifs/', 'Les tarifs'], ['/cas-d-usage/', 'Tous les cas d’usage']],
+      liens: [['/developpeurs/', 'Démarrer avec Claude Code'], ['/tarifs/', 'Les tarifs'], ['/solutions/saas-et-app-builders/', 'SaaS et app builders']],
     },
     en: {
       titre: 'User onboarding on WhatsApp · Messaging Me',
@@ -502,7 +553,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         { question: 'Can they stop receiving messages?', reponse: 'Yes: a user who replies STOP receives nothing more, and their refusal is recorded on the contact.' },
       ],
       appel: { titre: 'Welcome your users on WhatsApp.', texte: 'The plugin in two commands, then the sentence above in Claude Code. No account to create.' },
-      liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/use-cases/', 'All use cases']],
+      liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/solutions/saas-and-app-builders/', 'SaaS and app builders']],
     },
   },
   'relance-paiement': {
@@ -544,7 +595,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         { question: 'L’utilisateur doit-il avoir accepté de recevoir des messages&nbsp;?', reponse: 'Meta demande que la personne ait accepté d’être contactée sur WhatsApp&nbsp;: demandez-le à l’inscription ou dans son compte. Un utilisateur qui répond STOP ne reçoit plus rien.' },
       ],
       appel: { titre: 'Relancez vos paiements échoués aujourd’hui.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },
-      liens: [['/developpeurs/', 'Démarrer avec Claude Code'], ['/tarifs/', 'Les tarifs'], ['/cas-d-usage/', 'Tous les cas d’usage']],
+      liens: [['/developpeurs/', 'Démarrer avec Claude Code'], ['/tarifs/', 'Les tarifs'], ['/solutions/saas-et-app-builders/', 'SaaS et app builders']],
     },
     en: {
       titre: 'Failed payment recovery on WhatsApp · Messaging Me',
@@ -584,7 +635,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         { question: 'Must the user have agreed to receive messages?', reponse: 'Meta asks that the person agreed to be contacted on WhatsApp: ask for it at sign-up or in their account. A user who replies STOP receives nothing more.' },
       ],
       appel: { titre: 'Recover your failed payments today.', texte: 'The plugin in two commands, then the sentence above in Claude Code. No account to create.' },
-      liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/use-cases/', 'All use cases']],
+      liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/solutions/saas-and-app-builders/', 'SaaS and app builders']],
     },
   },
   notifications: {
@@ -626,7 +677,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         { question: 'Que se passe-t-il si l’envoi est rejoué&nbsp;?', reponse: 'Dans les 24&nbsp;heures, la même clé d’idempotence, tirée de la commande, rend le même envoi&nbsp;: le client ne reçoit qu’un message.' },
       ],
       appel: { titre: 'Branchez vos notifications aujourd’hui.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },
-      liens: [['/developpeurs/', 'Démarrer avec Claude Code'], ['/tarifs/', 'Les tarifs'], ['/cas-d-usage/', 'Tous les cas d’usage']],
+      liens: [['/developpeurs/', 'Démarrer avec Claude Code'], ['/tarifs/', 'Les tarifs'], ['/solutions/saas-et-app-builders/', 'SaaS et app builders']],
     },
     en: {
       titre: 'Order notifications on WhatsApp · Messaging Me',
@@ -666,7 +717,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         { question: 'What if the send is replayed?', reponse: 'Within 24 hours, the same idempotency key, taken from the order, returns the same send: the customer gets one message.' },
       ],
       appel: { titre: 'Set up your notifications today.', texte: 'The plugin in two commands, then the sentence above in Claude Code. No account to create.' },
-      liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/use-cases/', 'All use cases']],
+      liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/solutions/saas-and-app-builders/', 'SaaS and app builders']],
     },
   },
 };

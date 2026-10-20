@@ -31,12 +31,13 @@ export const JUMELLES: Readonly<Record<string, string>> = {
   '/tarifs/': '/en/pricing/',
   '/developpeurs/': '/en/developers/',
   '/developpeurs/compte-meta-business/': '/en/developers/meta-business-account/',
-  '/cas-d-usage/': '/en/use-cases/',
+  '/solutions/saas-et-app-builders/': '/en/solutions/saas-and-app-builders/',
   '/cas-d-usage/rappels-rendez-vous/': '/en/use-cases/appointment-reminders/',
   '/cas-d-usage/notifications-de-commande/': '/en/use-cases/order-notifications/',
   '/cas-d-usage/prise-de-rendez-vous/': '/en/use-cases/appointment-booking/',
   '/cas-d-usage/accueil-activation-saas/': '/en/use-cases/saas-onboarding-activation/',
   '/cas-d-usage/relance-paiement-echoue/': '/en/use-cases/failed-payment-recovery/',
+  '/cas-d-usage/bulle-whatsapp-site-lovable/': '/en/use-cases/whatsapp-bubble-lovable-site/',
   '/contact/': '/en/contact/',
   '/contact/merci/': '/en/contact/thanks/',
 };
@@ -47,7 +48,7 @@ export const JUMELLES: Readonly<Record<string, string>> = {
  */
 const ECRITES_A_LA_MAIN = new Set(['/developpeurs/', '/developpeurs/compte-meta-business/']);
 /** Les pages de cas et leur carrefour ont leurs deux langues dans `scripts/vitrine/cas-textes.ts` (npm run vitrine:cas). */
-const hors = (p: string): boolean => ECRITES_A_LA_MAIN.has(p) || p.startsWith('/cas-d-usage/');
+const hors = (p: string): boolean => ECRITES_A_LA_MAIN.has(p) || p.startsWith('/cas-d-usage/') || p.startsWith('/solutions/');
 export const GENEREES: readonly string[] = Object.keys(JUMELLES).filter((p) => !hors(p));
 
 /** Les noms qu'une page anglaise garde exprès (un prénom, un client) : le détecteur de français ne les lit pas. */

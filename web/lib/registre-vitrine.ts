@@ -75,7 +75,7 @@ export const ENTREES: readonly EntreeVitrine[] = [
     cle: 'bulle-lovable', nature: 'cas',
     fr: { adresse: '/cas-d-usage/bulle-whatsapp-site-lovable/', titre: 'Bulle WhatsApp sur un site Lovable' },
     en: { adresse: '/en/use-cases/whatsapp-bubble-lovable-site/', titre: 'WhatsApp bubble on a Lovable site' },
-    profils: ['lovable'], vague: 1, recherche: 'bulle whatsapp site lovable', chemin: 'console', enLigne: false,
+    profils: ['lovable'], vague: 1, recherche: 'bulle whatsapp site lovable', chemin: 'console', film: 'cas-bulle', enLigne: true,
   },
   {
     cle: 'accueil', nature: 'cas',
@@ -120,7 +120,7 @@ export const ENTREES: readonly EntreeVitrine[] = [
     cle: 'saas-app-builders', nature: 'metier',
     fr: { adresse: '/solutions/saas-et-app-builders/', titre: 'SaaS et app builders' },
     en: { adresse: '/en/solutions/saas-and-app-builders/', titre: 'SaaS and app builders' },
-    profils: [], vague: 1, recherche: 'whatsapp api saas app builder', chemin: 'console', enLigne: false,
+    profils: [], vague: 1, recherche: 'whatsapp api saas app builder', chemin: 'console', enLigne: true,
   },
   {
     cle: 'agences', nature: 'metier',

@@ -48,17 +48,22 @@ GitHub » à son dépôt : depuis le
 au plugin (le Pro garde la création d'espace dans la console). « Créer mon espace », en haut de l'accueil, ouvre
 l'inscription de la console. Venu de la page anglaise, un lien ouvre la console en anglais.
 
-✅ **La vitrine a ses pages de cas d'usage** (2026-10-20) : `app.messagingme.fr/cas-d-usage/` les liste, et chaque cas
-a sa page, en français et en anglais : la prise de rendez-vous (`/cas-d-usage/prise-de-rendez-vous/`, jumelle
+✅ **La vitrine a ses pages de cas d'usage** (2026-10-20) : la page chapeau « SaaS et app builders »
+(`app.messagingme.fr/solutions/saas-et-app-builders/`, jumelle `/en/solutions/saas-and-app-builders/`) les rassemble,
+écran divisé : les cas à gauche, chacun avec la vignette de son film qui joue au survol, le grand film à droite, puis
+comment ça marche en trois étapes ; l'ancienne adresse `/cas-d-usage/` y redirige. Chaque cas a sa page, en français et
+en anglais : la prise de rendez-vous (`/cas-d-usage/prise-de-rendez-vous/`, jumelle
 `/en/use-cases/appointment-booking/`), les rappels de rendez-vous (`/cas-d-usage/rappels-rendez-vous/`, jumelle
 `/en/use-cases/appointment-reminders/`), l'accueil des utilisateurs d'un SaaS (`/cas-d-usage/accueil-activation-saas/`,
 jumelle `/en/use-cases/saas-onboarding-activation/`), la relance d'un paiement échoué
-(`/cas-d-usage/relance-paiement-echoue/`, jumelle `/en/use-cases/failed-payment-recovery/`) et les notifications de commande (`/cas-d-usage/notifications-de-commande/`,
+(`/cas-d-usage/relance-paiement-echoue/`, jumelle `/en/use-cases/failed-payment-recovery/`), la bulle WhatsApp sur un site
+Lovable (`/cas-d-usage/bulle-whatsapp-site-lovable/`, jumelle `/en/use-cases/whatsapp-bubble-lovable-site/`) et les
+notifications de commande (`/cas-d-usage/notifications-de-commande/`,
 jumelle `/en/use-cases/order-notifications/`). Une page montre le film de la vraie séance Claude Code, le schéma de ce qui
 circule, les étapes avec les vrais noms d'outils, de routes et d'événements, la phrase à taper dans Claude Code,
 l'extrait du code que la suite compile, ce qu'on paie et une FAQ, puis mène à la recette complète de la doc
-développeurs. Le menu « Solutions » de l'en-tête, à la place d'« Industries », liste les cas en ligne et la page qui
-les rassemble ; les pages secteurs restent en ligne, hors du menu.
+développeurs. Le menu « Solutions » de l'en-tête, à la place d'« Industries », porte « SaaS et app builders » en tête et
+ses cas en sous-menu ; les pages secteurs restent en ligne, hors du menu.
 
 ✅ **Les tentatives d'accès à `/ops` alertent** (2026-09-03). Au 5e refus en 5 minutes, un message Telegram
 part, une fois par demi-heure au plus. Chaque refus est journalisé même quand l'alerte est étouffée. Le jeton

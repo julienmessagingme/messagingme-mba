@@ -22,9 +22,9 @@
   <url><loc>https://app.messagingme.fr/en/developers/meta-business-account/</loc></url>
   <url><loc>https://app.messagingme.fr/en/pricing/</loc></url>
   <url><loc>https://app.messagingme.fr/en/contact/</loc></url>
-  <url><loc>https://app.messagingme.fr/cas-d-usage/</loc></url>
+  <url><loc>https://app.messagingme.fr/solutions/saas-et-app-builders/</loc></url>
   <url><loc>https://app.messagingme.fr/cas-d-usage/rappels-rendez-vous/</loc></url>
-  <url><loc>https://app.messagingme.fr/en/use-cases/</loc></url>
+  <url><loc>https://app.messagingme.fr/en/solutions/saas-and-app-builders/</loc></url>
   <url><loc>https://app.messagingme.fr/en/use-cases/appointment-reminders/</loc></url>
   <url><loc>https://app.messagingme.fr/cas-d-usage/notifications-de-commande/</loc></url>
   <url><loc>https://app.messagingme.fr/en/use-cases/order-notifications/</loc></url>
@@ -34,4 +34,6 @@
   <url><loc>https://app.messagingme.fr/en/use-cases/saas-onboarding-activation/</loc></url>
   <url><loc>https://app.messagingme.fr/cas-d-usage/relance-paiement-echoue/</loc></url>
   <url><loc>https://app.messagingme.fr/en/use-cases/failed-payment-recovery/</loc></url>
+  <url><loc>https://app.messagingme.fr/cas-d-usage/bulle-whatsapp-site-lovable/</loc></url>
+  <url><loc>https://app.messagingme.fr/en/use-cases/whatsapp-bubble-lovable-site/</loc></url>
 </urlset>

@@ -39,6 +39,26 @@
       "source": "/pricing/",
       "destination": "/tarifs/",
       "permanent": true
+    },
+    {
+      "source": "/cas-d-usage",
+      "destination": "/solutions/saas-et-app-builders/",
+      "permanent": true
+    },
+    {
+      "source": "/cas-d-usage/",
+      "destination": "/solutions/saas-et-app-builders/",
+      "permanent": true
+    },
+    {
+      "source": "/en/use-cases",
+      "destination": "/en/solutions/saas-and-app-builders/",
+      "permanent": true
+    },
+    {
+      "source": "/en/use-cases/",
+      "destination": "/en/solutions/saas-and-app-builders/",
+      "permanent": true
     }
   ],
   "headers": [

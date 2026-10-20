@@ -52,6 +52,14 @@
     }, { threshold: 0.5 }).observe(v);
   });
 
+  // Les vignettes de la page chapeau : le film du cas joue au survol, s'arrête à la sortie.
+  document.querySelectorAll('.hub-carte').forEach(function (a) {
+    var v = a.querySelector('.hub-mini');
+    if (!v || calme) return;
+    a.addEventListener('mouseenter', function () { var p = v.play(); if (p && p.catch) p.catch(function () {}); });
+    a.addEventListener('mouseleave', function () { v.pause(); });
+  });
+
   // L'écran collant suit l'étape la plus proche du milieu de la fenêtre. On la RECALCULE à chaque signal plutôt
   // que de suivre le franchissement d'une ligne : un saut (ancre, retour en haut) ne laisse pas d'état périmé.
   document.querySelectorAll('.f-pas').forEach(function (bloc) {

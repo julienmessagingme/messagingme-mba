@@ -908,6 +908,23 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .cas-voisins{margin:28px 0 0;color:var(--muted)}
 .cas-voisins a{color:var(--ink)}
 .cas-carrefour{padding:24px 0 104px}
+/* La page chapeau « SaaS et app builders » : les cas à gauche, le film à droite, collant (2026-10-20) */
+.hub{padding:24px 0 56px}
+.hub-split{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:40px;align-items:start}
+.hub-film{position:sticky;top:96px}
+.hub-film .f-video{margin-top:20px}
+.hub-liste{list-style:none;margin:20px 0 0;padding:0;display:grid;gap:10px}
+.hub-carte{display:grid;grid-template-columns:128px minmax(0,1fr) auto;align-items:center;gap:16px;padding:10px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);text-decoration:none;transition:border-color .15s,background-color .15s}
+.hub-carte:hover,.hub-carte:focus-visible{border-color:var(--action-ink);background:rgb(255 255 255 / .04)}
+.hub-mini{display:block;width:128px;height:72px;object-fit:cover;border-radius:8px;background:#000}
+.hub-texte strong{display:block;font-size:1rem}
+.hub-texte small{display:block;margin-top:2px;color:var(--muted);font-size:.86rem;line-height:1.4}
+.hub-fleche{color:var(--action-ink)}
+@media (max-width:900px){.hub-split{grid-template-columns:minmax(0,1fr)}.hub-film{position:static;order:-1}}
+@media (max-width:480px){.hub-carte{grid-template-columns:96px minmax(0,1fr)}.hub-mini{width:96px;height:54px}.hub-fleche{display:none}}
+.menu-panneau a.menu-sous,.burger-liens a.menu-sous{grid-template-columns:28px minmax(0,1fr);gap:10px;padding:6px 10px 6px 26px}
+.menu-sous .menu-ic{width:28px;height:28px;border-radius:8px;font-size:.95rem}
+.menu-sous strong{font-weight:600}
 .cas-cartes{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px}
 .cas-carte{display:flex;flex-direction:column;gap:10px;height:100%;padding:24px;border:1px solid var(--line);border-radius:18px;background:var(--surface);color:var(--ink);text-decoration:none}
 .cas-carte strong{font-size:1.2rem}
