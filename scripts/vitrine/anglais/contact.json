@@ -1,5 +1,6 @@
 [
  {"contexte":"<form class=\"c-form\" id=\"formulaire\" action=\"https://api.messagingme.app/vitrine/contact\" method=\"post\">","en":"<form class=\"c-form\" id=\"formulaire\" action=\"https://api.messagingme.app/vitrine/contact\" method=\"post\">\n      <input type=\"hidden\" name=\"langue\" value=\"en\">","optionnel":true},
+ {"fr":"Contact et démo WhatsApp Business · Messaging Me","en":"Contact and WhatsApp Business demo · Messaging Me"},
  {"fr":"Parlons de votre projet.","en":"Let us talk about your project."},
  {"fr":"Une démo, une question sur WhatsApp ou le RCS, un devis&nbsp;: écrivez-nous, nous vous répondons par e-mail.","en":"A demo, a question about WhatsApp or RCS, a quote: write to us, and we will reply by email."},
  {"fr":"Vous préférez l’e-mail&nbsp;?","en":"Prefer email?"},

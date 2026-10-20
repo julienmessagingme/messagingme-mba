@@ -16,7 +16,7 @@
  {"contexte":"<li><strong><span data-offre=\"pro.conservation-jours\">90</span> jours</strong> d’historique des conversations</li>","en":"<li><strong><span data-offre=\"pro.conservation-jours\">90</span> days</strong> of conversation history</li>"},
  {"contexte":"<li><strong>Contacts, utilisateurs et webhooks</strong> à votre mesure</li>","en":"<li><strong>Contacts, users and webhooks</strong> sized for you</li>"},
  {"contexte":"<p class=\"f-texte\">Meta facture certains messages directement à votre entreprise, sur le moyen de paiement de votre Business Manager, selon <a href=\"https://developers.facebook.com/docs/whatsapp/pricing\">sa grille</a>. Messaging Me ne touche pas à ces frais.</p>","en":"<p class=\"f-texte\">Meta bills some messages directly to your business, on the payment method of your Business Manager, according to <a href=\"https://developers.facebook.com/docs/whatsapp/pricing\">its rate card</a>. Messaging Me takes no cut of these fees.</p>"},
- {"fr":"Tarifs · Messaging Me","en":"Pricing · Messaging Me"},
+ {"fr":"Tarifs de l’API WhatsApp Business · Messaging Me","en":"WhatsApp Business API pricing · Messaging Me"},
  {"fr":"Les tarifs de Messaging Me : la Free gratuite, le Pro pour une équipe, l’Entreprise sur devis, le crédit IA et ce que Meta facture.","en":"Messaging Me pricing: Free at no cost, Pro for a team, Enterprise with custom pricing, AI credit and what Meta bills."},
  {"fr":"Tarifs","en":"Pricing"},
  {"fr":"Gratuit pour commencer.","en":"Free to start."},
