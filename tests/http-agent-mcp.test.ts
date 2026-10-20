@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import Fastify from 'fastify';
-import { registerAgentMcp, type AgentMcpRouteDeps, type EcritureImportMcp } from '../src/http/agent-mcp';
+import { registerAgentMcp, type AgentMcpRouteDeps } from '../src/http/agent-mcp';
+import { creerRafraichissementMcp, type EcritureImportMcp } from '../src/agent/mcp/rafraichissement';
 import { monterAvecEtapeEspace } from '../src/http/scope';
 import type { PreHandler } from '../src/auth/middleware';
 import type { OutilExistantMcp } from '../src/agent/mcp/import';
@@ -84,9 +85,7 @@ function harnais(over: {
     fermer: vi.fn(async () => {}),
   };
   const traces: Array<{ action: string; detail?: Record<string, unknown> }> = [];
-  const deps: AgentMcpRouteDeps = {
-    audit: async (_t, _a, action, _target, detail) => { traces.push({ action, detail }); },
-    mcp: {
+  const mcp = {
       listerServeurs: async () => [{ ...SERVEUR, ...(over.label ? { label: over.label } : {}) }],
       supprimerServeur: async () => over.suppression ?? 'supprime',
       outilsDuServeur: async () => over.outils ?? [],
@@ -98,15 +97,26 @@ function harnais(over: {
         proposes.push({ id, propose });
         return over.proposer === undefined ? { ok: true } : over.proposer;
       },
-    },
-    creerServeur: async (_t, input) => { crees.push(input); return { ...SERVEUR, ...input }; },
-    sources: {
+    } satisfies AgentMcpRouteDeps['mcp'] & {
+      outilsDuServeur(tenantId: string, sourceId: string): Promise<OutilExistantMcp[]>;
+      nomsPris(tenantId: string): Promise<string[]>;
+      appliquer(tenantId: string, sourceId: string, ecriture: EcritureImportMcp): Promise<void>;
+    };
+  const sources = {
       pourAppel: async () => ({ ...POUR_APPEL, kind: over.kind ?? 'mcp' }),
-      marquerEpreuve: async (_t, _i, ok) => { epreuves.push({ ok }); },
-    },
+      marquerEpreuve: async (_t: string, _i: string, ok: boolean) => { epreuves.push({ ok }); },
+    };
+  const deps: AgentMcpRouteDeps = {
+    audit: async (_t, _a, action, _target, detail) => { traces.push({ action, detail }); },
+    mcp,
+    rafraichissement: creerRafraichissementMcp({
+      mcp,
+      sources,
+      ouvrirSession: async () => over.ouverture ?? session,
+      verifierResolution: async () => over.resolution ?? { ok: true },
+    }),
+    creerServeur: async (_t, input) => { crees.push(input); return { ...SERVEUR, ...input }; },
     clesDeChamps: async () => over.cles ?? ['email', 'reference'],
-    ouvrirSession: async () => over.ouverture ?? session,
-    verifierResolution: async () => over.resolution ?? { ok: true },
   };
   const app = Fastify();
   monterAvecEtapeEspace(app, () => registerAgentMcp(app, deps, gardeQuiPose));
@@ -230,6 +240,7 @@ describe('l apercu et l import', () => {
     expect(r.statusCode).toBe(200);
     expect(r.json().plan).toEqual([{ type: 'nouveau', nom: 'search' }]);
     expect(h.ecrit).toEqual([]);
+    expect(h.session.fermer).toHaveBeenCalledOnce();
   });
 
   it('l IMPORT applique le MEME plan', async () => {
@@ -269,6 +280,7 @@ describe('l apercu et l import', () => {
     expect(r.json()).toEqual({ error: 'le serveur est injoignable' });
     expect(h.ecrit).toEqual([]);
     expect(h.epreuves).toEqual([{ ok: false }]);
+    expect(h.session.fermer).toHaveBeenCalledOnce();
   });
 
   it('🔴 un echec AVANT le catalogue rend lui aussi 422 avec sa raison, sur l apercu comme sur l import', async () => {

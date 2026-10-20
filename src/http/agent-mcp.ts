@@ -1,16 +1,10 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
-import { LabelSourceDejaPris, type SourceAppel } from '../agent/sources';
+import { LabelSourceDejaPris } from '../agent/sources';
 import type { RisqueOutil } from '../agent/catalog';
 import type { SourceParam } from '../agent/llm/tool-schema';
-import {
-  outilDepuisAnnonce, planifierImport,
-  type ChangementMcp, type OutilAImporter, type OutilExistantMcp,
-} from '../agent/mcp/import';
-import { enTetesAuthSource } from '../agent/http-cible';
-import { ouvrirSessionMcp, type EchecMcp, type OutilAnnonce } from '../mcp/client';
-import { resolutionPublique, type VerdictResolution } from '../lib/adresse-privee';
+import type { RafraichissementMcp } from '../agent/mcp/rafraichissement';
 import { CHAMPS_CONTACT_AUTORISES, estChampContact } from '../agent/champs-contact';
 import { adresseAcceptable, authCoherente, hoteDe } from './agent-sources';
 import { espaceVerifie, estUuid } from './scope';
@@ -62,17 +56,6 @@ export interface OutilMcpVue {
   utilisePar: string[];
 }
 
-/** Ce que l'import écrit, en un seul objet, pour que le store le pose dans une transaction. */
-export interface EcritureImportMcp {
-  nouveaux: OutilAImporter[];
-  /** Schéma changé : on remplace l'annonce et les paramètres, et le consentement tombe. */
-  changes: Array<{ id: string; outil: OutilAImporter }>;
-  /** Ids des outils disparus : marqués indisponibles, jamais supprimés. */
-  disparus: string[];
-  /** Ids des outils revus, pour avancer `mcp_vu_le`. */
-  vus: string[];
-}
-
 /** Ce que les routes lisent et écrivent des serveurs MCP et de leurs outils importés. */
 export interface McpDep {
   listerServeurs(tenantId: string): Promise<ServeurMcpVue[]>;
@@ -83,12 +66,6 @@ export interface McpDep {
   supprimerServeur(tenantId: string, id: string): Promise<'supprime' | 'introuvable' | 'outils_actifs'>;
   /** Les outils importés, pour l'écran. Séparée de la lecture d'import, qui compare et rien de plus. */
   outilsPourEcran(tenantId: string, sourceId: string): Promise<OutilMcpVue[]>;
-  /** Les outils MCP déjà importés de ce serveur, avec ce qu'un changement ferait tomber. */
-  outilsDuServeur(tenantId: string, sourceId: string): Promise<OutilExistantMcp[]>;
-  /** Les noms d'outils déjà pris dans l'espace : l'unicité est par espace. */
-  nomsPris(tenantId: string): Promise<string[]>;
-  /** La seule écriture de ce module. Tout ou rien. */
-  appliquer(tenantId: string, sourceId: string, ecriture: EcritureImportMcp): Promise<void>;
   /** Le réglage d'un outil importé. Rend `false` si l'outil n'est pas de cet espace. */
   reglerOutil(tenantId: string, outilId: string, patch: {
     params?: Array<{ name: string; source: SourceParam; cle?: string; contactPath?: string; value?: string | number | boolean }>;
@@ -110,15 +87,8 @@ export interface AgentMcpRouteDeps {
    */
   audit: AuditSink;
   mcp: McpDep;
-  /**
-   * La source elle-même, servie par le dépôt des sources : c'est la même table que les connecteurs API, et un
-   * second chemin de lecture ferait deux façons de déchiffrer un secret.
-   */
-  sources: {
-    /** L'adresse et le secret déchiffré. Un seul appelant, comme pour les connecteurs HTTP. */
-    pourAppel(tenantId: string, id: string): Promise<SourceAppel | null>;
-    marquerEpreuve(tenantId: string, id: string, ok: boolean, erreur?: string): Promise<void>;
-  };
+  /** Le cycle distant et transactionnel de l'aperçu et de l'import. */
+  rafraichissement: RafraichissementMcp;
   /**
    * Déclare un serveur MCP : seul chemin qui écrit `kind = 'mcp'` (la route des connecteurs API écrit
    * `kind: 'http'`).
@@ -129,19 +99,7 @@ export interface AgentMcpRouteDeps {
   }): Promise<ServeurMcpVue>;
   /** Les clés des champs personnalisés déclarés par l'espace : un clouage doit en désigner une. */
   clesDeChamps(tenantId: string): Promise<string[]>;
-  /** Injectées pour tester sans réseau ni DNS. */
-  ouvrirSession?: typeof ouvrirSessionMcp;
-  verifierResolution?: (url: string) => Promise<VerdictResolution>;
 }
-
-/**
- * Budget d'une opération d'import, en millisecondes : l'échéance de `fetch` est par requête, et un catalogue
- * paginé sur vingt pages tiendrait sinon vingt fois cette valeur, au-delà de ce qu'une passerelle laisse passer.
- */
-const BUDGET_IMPORT_MS = 25_000;
-const TIMEOUT_REQUETE_MS = 8_000;
-/** Un catalogue entier peut être gros ; il ne traverse pas le modèle, il s'affiche. */
-const MAX_OCTETS_CATALOGUE = 1_000_000;
 
 const creationSchema = z.object({
   label: z.string().trim().min(1).max(80),
@@ -166,114 +124,6 @@ const reglageSchema = z.object({
 });
 
 const proposeSchema = z.object({ propose: z.boolean() }).strict();
-
-function direEchec(e: EchecMcp): string {
-  switch (e.genre) {
-    case 'transport_ancien':
-      return 'ce serveur parle l’ancien transport HTTP+SSE de la révision 2024-11-05, qui n’est pas pris en charge';
-    case 'refus':
-      return `le serveur a refusé la connexion (${e.code})`;
-    case 'reseau':
-      return 'le serveur est injoignable';
-    case 'redirection':
-      return 'le serveur a redirigé l’appel, ce qui n’est pas accepté sur un connecteur';
-    case 'adresse_interne':
-      // Même phrase que la vérification préalable (`ouvrirPourSource`) : c'est la même cause, vue plus tard.
-      return 'cette adresse ne résout pas vers une adresse publique';
-    case 'budget':
-      // Notre minuterie, et on le dit : « réponse illisible » ferait soupçonner à l'administrateur son serveur pour
-      // un délai que nous avons fixé.
-      return 'le serveur a mis trop de temps à répondre (délai de l’épreuve dépassé)';
-    default:
-      return e.message;
-  }
-}
-
-/**
- * 🔴 La source de cette route, à condition qu'elle soit un serveur MCP : `pourAppel` ne filtre pas le `kind`, et
- * l'identifiant d'un connecteur API ferait sinon POSTer un `initialize` JSON-RPC sur le système métier du
- * client, avec son secret, puis écrire sur sa ligne. Un point de passage unique pour toutes les routes. 404 et
- * non 403 : un 403 confirmerait l'existence de la ligne.
- */
-async function serveurMcp(
-  deps: AgentMcpRouteDeps,
-  req: FastifyRequest,
-  reply: FastifyReply,
-): Promise<{ tenant: string; sourceId: string; source: SourceAppel } | null> {
-  const tenant = espaceVerifie(req);
-  const { sourceId } = req.params as { sourceId: string };
-  if (!estUuid(sourceId)) { await reply.code(400).send({ error: 'identifiant invalide' }); return null; }
-  const source = await deps.sources.pourAppel(tenant, sourceId);
-  if (!source || source.kind !== 'mcp') {
-    await reply.code(404).send({ error: 'serveur introuvable' });
-    return null;
-  }
-  return { tenant, sourceId, source };
-}
-
-/** Ouvre une session vers un serveur, après avoir vérifié vers quoi son adresse résout. */
-async function connecter(
-  deps: AgentMcpRouteDeps,
-  source: SourceAppel,
-): Promise<{ echec: string } | Awaited<ReturnType<typeof ouvrirSessionMcp>>> {
-  const verifier = deps.verifierResolution ?? resolutionPublique;
-  // 🔴 Avant toute connexion : posée après, la vérification serait décorative.
-  const verdict = await verifier(source.baseUrl);
-  if (!verdict.ok) return { echec: verdict.raison ?? 'cette adresse ne résout pas vers une adresse publique' };
-  const ouvrir = deps.ouvrirSession ?? ouvrirSessionMcp;
-  return ouvrir({
-    url: source.baseUrl,
-    enTetes: enTetesAuthSource(source),
-    timeoutMs: TIMEOUT_REQUETE_MS,
-    budgetTotalMs: BUDGET_IMPORT_MS,
-    maxOctets: MAX_OCTETS_CATALOGUE,
-  });
-}
-
-/**
- * Le plan d'un rafraîchissement et l'écriture qui l'applique, calculés ensemble par la même fonction : l'aperçu
- * montre exactement ce que l'application fera.
- */
-function planEtEcriture(
-  annonces: readonly OutilAnnonce[],
-  existants: readonly OutilExistantMcp[],
-  tronque: boolean,
-  libelleSource: string,
-  nomsPris: readonly string[],
-): { plan: ChangementMcp[]; ecriture: EcritureImportMcp } {
-  const plan = planifierImport(annonces, existants, { tronque });
-  const parNom = new Map(existants.map((e) => [e.nomDistant, e]));
-  const annoncesParNom = new Map(annonces.map((a) => [a.name, a]));
-  /**
-   * Les noms déjà pris dans l'espace. Ils le restent tous : en retirer ceux de ce serveur laisserait un outil neuf
-   * se normaliser vers le nom d'un outil inchangé (`get-contact` et `get_contact`), violer l'index unique par
-   * espace et annuler tout l'import. Un `schema_change` garde de toute façon son nom d'avant.
-   */
-  const pris = new Set(nomsPris);
-
-  const ecriture: EcritureImportMcp = { nouveaux: [], changes: [], disparus: [], vus: [] };
-  for (const c of plan) {
-    const annonce = annoncesParNom.get(c.nom);
-    const avant = parNom.get(c.nom);
-    if (c.type === 'nouveau' && annonce) {
-      const outil = outilDepuisAnnonce(annonce, libelleSource, pris);
-      pris.add(outil.name);
-      ecriture.nouveaux.push(outil);
-    } else if (c.type === 'schema_change' && annonce && avant) {
-      // Le nom local ne bouge pas : il est peut-être écrit dans une consigne d'agent. Seuls l'annonce, les
-      // paramètres et l'activabilité changent. 🔴 `avant.params` préserve la garde d'identité : sans lui, un
-      // changement de schéma remettrait tout en « rempli par le modèle », donc influençable par le contact.
-      const outil = { ...outilDepuisAnnonce(annonce, libelleSource, pris, avant.params), name: avant.name };
-      pris.add(outil.name);
-      ecriture.changes.push({ id: avant.id, outil });
-    } else if (c.type === 'disparu' && avant) {
-      ecriture.disparus.push(avant.id);
-    } else if (c.type === 'inchange' && avant) {
-      ecriture.vus.push(avant.id);
-    }
-  }
-  return { plan, ecriture };
-}
 
 export function registerAgentMcp(
   app: FastifyInstance,
@@ -367,16 +217,23 @@ export function registerAgentMcp(
    * écrit `marquerEpreuve`, et en `GET` un préchargement ou un robot suffirait à le déclencher.
    */
   app.post('/tenants/:tenantId/mcp/:sourceId/apercu', lourd, async (req, reply) => {
-    const r = await calculer(deps, req, reply);
-    if (r === null) return reply;
+    const tenant = espaceVerifie(req);
+    const { sourceId } = req.params as { sourceId: string };
+    if (!estUuid(sourceId)) return reply.code(400).send({ error: 'identifiant invalide' });
+    const r = await deps.rafraichissement.apercevoir(tenant, sourceId);
+    if (!r.ok && r.cause === 'introuvable') return reply.code(404).send({ error: 'serveur introuvable' });
+    if (!r.ok) return reply.code(422).send({ error: r.erreur });
     return reply.code(200).send({ plan: r.plan, tronque: r.tronque });
   });
 
   /** L'import : le même plan, appliqué. */
   app.post('/tenants/:tenantId/mcp/:sourceId/importer', lourd, async (req, reply) => {
-    const r = await calculer(deps, req, reply);
-    if (r === null) return reply;
-    await deps.mcp.appliquer(r.tenant, r.sourceId, r.ecriture);
+    const tenant = espaceVerifie(req);
+    const { sourceId } = req.params as { sourceId: string };
+    if (!estUuid(sourceId)) return reply.code(400).send({ error: 'identifiant invalide' });
+    const r = await deps.rafraichissement.importer(tenant, sourceId);
+    if (!r.ok && r.cause === 'introuvable') return reply.code(404).send({ error: 'serveur introuvable' });
+    if (!r.ok) return reply.code(422).send({ error: r.erreur });
     return reply.code(200).send({ plan: r.plan, tronque: r.tronque });
   });
 
@@ -442,49 +299,4 @@ export function registerAgentMcp(
     }
     return reply.code(200).send({ propose: parse.data.propose });
   });
-}
-
-/**
- * Le tronc commun de l'aperçu et de l'import : lire le catalogue et calculer le plan, une seule fonction pour
- * que ce que le client valide soit ce qui s'exécute. Rend `null` quand la réponse est déjà envoyée. L'échec du
- * serveur distant sort en 422 (la raison, `direEchec`, est à lire par l'administrateur) ; un 5xx reste réservé
- * à notre panne.
- */
-async function calculer(
-  deps: AgentMcpRouteDeps,
-  req: FastifyRequest,
-  reply: FastifyReply,
-): Promise<{ tenant: string; sourceId: string; plan: ChangementMcp[]; ecriture: EcritureImportMcp; tronque: boolean } | null> {
-  const ciblee = await serveurMcp(deps, req, reply);
-  if (ciblee === null) return null;
-  const { tenant, sourceId, source } = ciblee;
-
-  const ouverte = await connecter(deps, source);
-  if ('echec' in ouverte) {
-    const raison = typeof ouverte.echec === 'string' ? ouverte.echec : direEchec(ouverte.echec);
-    await deps.sources.marquerEpreuve(tenant, sourceId, false, raison);
-    await reply.code(422).send({ error: raison });
-    return null;
-  }
-
-  try {
-    const catalogue = await ouverte.lister();
-    if ('echec' in catalogue) {
-      const raison = direEchec(catalogue.echec);
-      await deps.sources.marquerEpreuve(tenant, sourceId, false, raison);
-      await reply.code(422).send({ error: raison });
-      return null;
-    }
-    await deps.sources.marquerEpreuve(tenant, sourceId, true);
-    const [existants, nomsPris] = await Promise.all([
-      deps.mcp.outilsDuServeur(tenant, sourceId),
-      deps.mcp.nomsPris(tenant),
-    ]);
-    const serveurs = await deps.mcp.listerServeurs(tenant);
-    const libelle = serveurs.find((s) => s.id === sourceId)?.label ?? 'mcp';
-    const { plan, ecriture } = planEtEcriture(catalogue.outils, existants, catalogue.tronque, libelle, nomsPris);
-    return { tenant, sourceId, plan, ecriture, tronque: catalogue.tronque };
-  } finally {
-    await ouverte.fermer();
-  }
 }
