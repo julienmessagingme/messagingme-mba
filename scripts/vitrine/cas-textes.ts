@@ -189,7 +189,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Vos clients prennent rendez-vous sur WhatsApp, et votre agenda se remplit.',
       chapeau: 'Un client écrit qu’il veut un rendez-vous. L’agent IA lui demande le motif et la ville, votre application lui propose trois créneaux libres de votre agenda, puis réserve celui qu’il choisit et le lui confirme.',
       film: {
-        titre: 'La demande, les créneaux, la réservation : 38 secondes.',
+        titre: 'La demande, les créneaux, la réservation  : 30 secondes.',
         texte: 'De la demande dans Claude Code au rendez-vous réservé, sur une vraie conversation WhatsApp.',
         aria: 'Film : la prise de rendez-vous avec Messaging Me', duree: 'PT38S', publie: '2026-10-20T12:00:00+02:00',
       },
@@ -229,7 +229,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Your customers book appointments on WhatsApp, and your calendar fills up.',
       chapeau: 'A customer writes that they want an appointment. The AI agent asks for the reason and the city, your app offers three free slots from your calendar, then books the one they pick and confirms it.',
       film: {
-        titre: 'The request, the slots, the booking: 38 seconds.',
+        titre: 'The request, the slots, the booking: 30 seconds.',
         texte: 'From the request in Claude Code to the booked appointment, on a real WhatsApp conversation.',
         aria: 'Film: appointment booking with Messaging Me', duree: 'PT38S', publie: '2026-10-20T12:00:00+02:00',
       },
@@ -271,7 +271,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Moins de rendez-vous manqués, grâce à un rappel WhatsApp la veille.',
       chapeau: 'La veille, chaque client reçoit son rappel sur WhatsApp, avec deux boutons. Il confirme d’un geste&nbsp;; s’il décale, l’agent IA lui propose des créneaux libres et votre agenda déplace le rendez-vous.',
       film: {
-        titre: 'Le rappel, la réponse, l’agenda : 38 secondes.',
+        titre: 'Le rappel, la réponse, l’agenda  : 30 secondes.',
         texte: 'De la demande dans Claude Code au rendez-vous déplacé, sur une vraie conversation WhatsApp.',
         aria: 'Film : les rappels de rendez-vous avec Messaging Me', duree: 'PT38S', publie: '2026-10-20T09:00:00+02:00',
       },
@@ -311,7 +311,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Fewer missed appointments, with a WhatsApp reminder the evening before.',
       chapeau: 'The evening before, each customer gets their reminder on WhatsApp, with two buttons. They confirm in one tap; if they reschedule, the AI agent offers free slots and your calendar moves the appointment.',
       film: {
-        titre: 'The reminder, the answer, the calendar: 38 seconds.',
+        titre: 'The reminder, the answer, the calendar: 30 seconds.',
         texte: 'From the request in Claude Code to the moved appointment, on a real WhatsApp conversation.',
         aria: 'Film: appointment reminders with Messaging Me', duree: 'PT38S', publie: '2026-10-20T09:00:00+02:00',
       },
@@ -353,7 +353,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Une bulle WhatsApp sur votre site Lovable, et un agent qui répond avec votre contenu.',
       chapeau: 'Une phrase dans Claude Code, dans le dossier de votre site&nbsp;: il crée l’agent, lui fait lire vos pages, l’allume et colle la bulle. Vos visiteurs écrivent sur WhatsApp, l’agent leur répond, jour et nuit.',
       film: {
-        titre: 'Le site, la bulle, la réponse : 38 secondes.',
+        titre: 'Le site, la bulle, la réponse  : 30 secondes.',
         texte: 'De la demande dans Claude Code à la réponse de l’agent, sur une vraie conversation WhatsApp.',
         aria: 'Film : une bulle WhatsApp et son agent sur un site, avec Messaging Me', duree: 'PT38S', publie: '2026-10-21T09:00:00+02:00',
       },
@@ -393,7 +393,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'A WhatsApp bubble on your Lovable site, and an agent that answers from your content.',
       chapeau: 'One sentence in Claude Code, in your site’s folder: it creates the agent, has it read your pages, turns it on and pastes the bubble. Your visitors write on WhatsApp, the agent answers them, day and night.',
       film: {
-        titre: 'The site, the bubble, the answer: 38 seconds.',
+        titre: 'The site, the bubble, the answer: 30 seconds.',
         texte: 'From the request in Claude Code to the agent’s answer, on a real WhatsApp conversation.',
         aria: 'Film: a WhatsApp bubble and its agent on a website, with Messaging Me', duree: 'PT38S', publie: '2026-10-21T09:00:00+02:00',
       },
@@ -435,7 +435,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Vos nouveaux utilisateurs reçoivent leur welcome message sur WhatsApp, et passent à l’action.',
       chapeau: 'À l’inscription, l’utilisateur qui a coché la case reçoit son welcome message sur WhatsApp, avec un bouton qui l’emmène à la première action dans votre produit. Là où il lit vraiment ses messages.',
       film: {
-        titre: 'Le welcome message, puis la relance : 38 secondes.',
+        titre: 'Le welcome message, puis la relance  : 30 secondes.',
         texte: 'De la demande dans Claude Code au premier planning créé, sur une vraie conversation WhatsApp. Le même film montre ensuite la relance d’un paiement échoué.',
         aria: 'Film : l’accueil des utilisateurs d’un SaaS avec Messaging Me', duree: 'PT38S', publie: '2026-10-20T13:00:00+02:00',
       },
@@ -474,7 +474,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Your new users get their welcome on WhatsApp, and take action.',
       chapeau: 'At sign-up, the user who ticked the box gets their welcome on WhatsApp, with a button that takes them to the first action in your product. Where they actually read their messages.',
       film: {
-        titre: 'The welcome, then the recovery: 38 seconds.',
+        titre: 'The welcome, then the recovery: 30 seconds.',
         texte: 'From the request in Claude Code to the first schedule created, on a real WhatsApp conversation. The same film then shows a failed payment recovery.',
         aria: 'Film: SaaS user onboarding with Messaging Me', duree: 'PT38S', publie: '2026-10-20T13:00:00+02:00',
       },
@@ -515,7 +515,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Moins d’abonnements perdus sur une carte refusée, grâce à un message WhatsApp.',
       chapeau: 'Quand Stripe signale un paiement échoué, votre application envoie à l’utilisateur un message WhatsApp avec le lien vers sa page de facturation. Il met à jour sa carte avant de perdre l’accès.',
       film: {
-        titre: 'Le welcome message, puis la relance : 38 secondes.',
+        titre: 'Le welcome message, puis la relance  : 30 secondes.',
         texte: 'De la demande dans Claude Code au paiement réussi, sur une vraie conversation WhatsApp. Le même film montre d’abord le welcome message à l’inscription.',
         aria: 'Film : la relance d’un paiement échoué avec Messaging Me', duree: 'PT38S', publie: '2026-10-20T13:00:00+02:00',
       },
@@ -555,7 +555,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Fewer subscriptions lost to a declined card, with a WhatsApp message.',
       chapeau: 'When Stripe reports a failed payment, your app sends the user a WhatsApp message with the link to their billing page. They update their card before losing access.',
       film: {
-        titre: 'The welcome, then the recovery: 38 seconds.',
+        titre: 'The welcome, then the recovery: 30 seconds.',
         texte: 'From the request in Claude Code to the successful payment, on a real WhatsApp conversation. The same film first shows the welcome at sign-up.',
         aria: 'Film: failed payment recovery with Messaging Me', duree: 'PT38S', publie: '2026-10-20T13:00:00+02:00',
       },
@@ -597,7 +597,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Vos clients suivent leur commande sur WhatsApp, et vous savez qu’ils l’ont lu.',
       chapeau: 'Dès qu’une commande passe en expédiée, le client reçoit son message de suivi sur WhatsApp. Votre admin le voit livré, puis lu. S’il répond, l’agent IA prend la conversation.',
       film: {
-        titre: 'L’expédition, le suivi, la lecture : 38 secondes.',
+        titre: 'L’expédition, le suivi, la lecture  : 30 secondes.',
         texte: 'De la demande dans Claude Code à la commande marquée lue, sur une vraie conversation WhatsApp.',
         aria: 'Film : les notifications de commande avec Messaging Me', duree: 'PT38S', publie: '2026-10-20T11:00:00+02:00',
       },
@@ -637,7 +637,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Your customers follow their order on WhatsApp, and you know they read it.',
       chapeau: 'As soon as an order moves to shipped, the customer gets their tracking message on WhatsApp. Your admin sees it delivered, then read. If they reply, the AI agent takes the conversation.',
       film: {
-        titre: 'The shipment, the tracking, the read receipt: 38 seconds.',
+        titre: 'The shipment, the tracking, the read receipt: 30 seconds.',
         texte: 'From the request in Claude Code to the order marked read, on a real WhatsApp conversation.',
         aria: 'Film: order notifications with Messaging Me', duree: 'PT38S', publie: '2026-10-20T11:00:00+02:00',
       },

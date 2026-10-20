@@ -10,7 +10,6 @@
  {"fr":"Ceux qui ne l’ont pas vous échappent.","en":"Those who do not have it slip away."},
  {"fr":"En RCS","en":"On RCS"},
  {"fr":"Ceux dont le téléphone ne le reçoit pas vous échappent aussi.","en":"Those whose phone cannot receive it slip away too."},
- {"fr":"Tout le parcours en 33 secondes.","en":"The whole journey in 33 seconds."},
  {"fr":"Dans le sens que vous voulez.","en":"In the direction you choose."},
  {"fr":"Activez le fallback en une option","en":"Turn on fallback with one option"},
  {"fr":"À la création de la campagne, choisissez « WhatsApp et RCS, avec repli » : un envoi qui échoue repart aussitôt sur l’autre canal, sans double envoi.","en":"When you create the campaign, choose “WhatsApp and RCS, with fallback”: a send that fails goes out again right away on the other channel, with no double send."},
