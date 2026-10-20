@@ -3046,12 +3046,13 @@ export async function markConfirmed(appointment: Appointment): Promise<void> { r
 export async function freeSlots(appointment: Appointment, count: number): Promise<string> { return todo('freeSlots'); }
 /**
  * Moves the appointment to the chosen slot and returns the confirmation. `slot` is the AI agent’s reading of the
- * customer’s words: match it against the slots offered, move only to one still free, otherwise ask again.
+ * customer’s words: match it against the slots offered and move only to one still free. Otherwise answer with
+ * other free slots and a link to book: a second Slot choice the same day does not reach your app.
  */
 export async function move(appointment: Appointment, slot: string): Promise<string> { return todo('move'); }
 ```
 
-La tâche de la veille, lancée chaque soir par le planificateur de votre hébergeur. Elle envoie par [POST /v1/sends](https://console.messagingme.app/developers/api/sends.md#envoi), avec une clé d’idempotence tirée du rendez-vous et de son heure : relancée le même soir, elle n’envoie pas deux fois. Un destinataire écarté (STOP, limite de l’offre) n’est pas une erreur, il revient dans skipped avec sa raison ; une erreur sur un rendez-vous n’arrête pas les autres, et un 429 attend le délai que l’API indique.
+La tâche de la veille, lancée chaque soir par le planificateur de votre hébergeur. Elle envoie par [POST /v1/sends](https://console.messagingme.app/developers/api/sends.md#envoi), avec une clé d’idempotence tirée du rendez-vous et de son heure : relancée le même soir, elle n’envoie pas deux fois. Un destinataire écarté (STOP, limite de l’offre) n’est pas une erreur, il revient dans skipped avec sa raison ; une erreur sur un rendez-vous n’arrête pas les autres, un débit dépassé (rate_limited) attend le délai que l’API indique, et le quota du jour atteint (quota_exceeded) arrête la tâche jusqu’au lendemain.
 
 _jobs/reminders.ts_
 
@@ -3085,15 +3086,17 @@ export async function dayBeforeReminders(): Promise<void> {
       try {
         send = await sendReminder(appointment);
       } catch (e) {
-        // Too many calls in the minute: wait what the API says, then try once more.
-        if (!(e instanceof ApiError) || e.status !== 429) throw e;
-        await new Promise((r) => setTimeout(r, (e.retryAfter ?? 60) * 1000));
+        // Too many calls in the minute: wait what the API says (60 s at most), then try once more.
+        if (!(e instanceof ApiError) || e.code !== 'rate_limited') throw e;
+        await new Promise((r) => setTimeout(r, Math.min(e.retryAfter ?? 60, 60) * 1000));
         send = await sendReminder(appointment);
       }
       // A refused recipient (STOP, no number, plan limit) is not an error: it is listed in skipped.
       if (send.skippedTotal > 0) console.warn(`reminder ${appointment.id} not sent: ${send.skipped[0]?.reason}`);
       else await saveReminder(appointment, send.sendId);
     } catch (e) {
+      // The quota of the day is reached: nothing more goes out before tomorrow, stop here.
+      if (e instanceof ApiError && e.code === 'quota_exceeded') { console.error('daily quota reached', e); return; }
       console.error(`reminder ${appointment.id} failed`, e);
     }
   }
@@ -3189,7 +3192,7 @@ Sur l’agent qui répond, ajoutez deux actions par `set_agent_action` : « Appo
 
 > **Obligatoire**
 >
-> Le code lit action.name et fields par leur nom exact : gardez les mêmes noms d’actions et les mêmes codes de champs dans l’agent et dans la route. Et slot est ce que l’agent a compris du client : votre agenda le recoupe avec les créneaux proposés, et ne réserve qu’un créneau encore libre, deux clients pouvant choisir le même.
+> Le code lit action.name et fields par leur nom exact : gardez les mêmes noms d’actions et les mêmes codes de champs dans l’agent et dans la route. Et slot est ce que l’agent a compris du client : votre agenda le recoupe avec les créneaux proposés, et ne réserve qu’un créneau encore libre, deux clients pouvant choisir le même. Sinon, répondez avec d’autres créneaux et un lien pour réserver : un second « Slot choice » le même jour n’atteindrait pas votre application.
 
 <a id="code"></a>
 
@@ -3232,7 +3235,8 @@ export async function offerSlots(city: string, count: number): Promise<string> {
 /**
  * Books the chosen slot once per request (the same event twice books once) and returns the confirmation. `slot` is
  * the AI agent’s reading of the customer’s words: match it against the slots offered, book only one still free (two
- * customers can pick the same), otherwise return a message that asks to pick again.
+ * customers can pick the same). Otherwise return other free slots and a link to book: a second Slot choice the same
+ * day does not reach your app.
  */
 export async function book(requestId: string, slot: string): Promise<string> { return todo('book'); }
 ```
@@ -3288,7 +3292,7 @@ export async function POST(req: Request) {
 
 # Recette : l’accueil des utilisateurs d’un SaaS
 
-À l’inscription, votre application envoie la bienvenue sur WhatsApp, avec un bouton qui mène à la première action dans votre produit. Elle ne part qu’à l’utilisateur qui a coché la case WhatsApp du formulaire.
+À l’inscription, votre application envoie le welcome message sur WhatsApp, avec un bouton qui mène à la première action dans votre produit. Elle ne part qu’à l’utilisateur qui a coché la case WhatsApp du formulaire.
 
 <a id="prompt"></a>
 
@@ -3299,10 +3303,10 @@ Dans Claude Code, ouvert sur votre projet, avec le serveur MCP de Messaging Me b
 _Prompt_
 
 ```
-Branche la bienvenue WhatsApp des nouveaux utilisateurs dans ce projet, en suivant la recette
+Branche le welcome message WhatsApp des nouveaux utilisateurs dans ce projet, en suivant la recette
 https://console.messagingme.app/developers/api/guides/saas-onboarding-activation.md :
 1. installe le SDK : npm install github:julienmessagingme/messagingme-sdk#v0.3.1 ;
-2. avec les outils Messaging Me, crée le modèle de bienvenue welcome (MARKETING, en, le prénom, un bouton URL vers la
+2. avec les outils Messaging Me, crée le modèle du welcome message, welcome (MARKETING, en, le prénom, un bouton URL vers la
    page qui lance l’utilisateur) ;
 3. ajoute au formulaire d’inscription une case « Recevoir mes conseils de démarrage sur WhatsApp », non cochée par
    défaut, et écris app/signup.ts qui n’envoie qu’à qui l’a cochée, avec consent opted_in ;
@@ -3312,13 +3316,13 @@ N’invente aucune route ni aucun champ : ils sont dans https://api.messagingme.
 
 <a id="modele"></a>
 
-## Le modèle de bienvenue
+## Le modèle du welcome message
 
 Un modèle MARKETING à une variable (le prénom) et un bouton URL vers la page qui lance l’utilisateur. Créez-le par `create_template` (serveur MCP) ou par [POST /v1/templates](https://console.messagingme.app/developers/api/templates.md#creer), puis attendez l’approbation de Meta (le code l’appelle welcome, en anglais : gardez ce nom et cette langue, ou changez-les dans le code) ; `get_template_status` la confirme.
 
 > **Obligatoire**
 >
-> Une bienvenue qui invite à utiliser le produit est du marketing pour Meta, pas de l’utilitaire. Un modèle marketing ne part qu’à un contact qui a consenti : sans la case cochée, le destinataire est écarté, et il revient dans skipped avec la raison no_consent.
+> Un welcome message qui invite à utiliser le produit est du marketing pour Meta, pas de l’utilitaire. Un modèle marketing ne part qu’à un contact qui a consenti : sans la case cochée, le destinataire est écarté, et il revient dans skipped avec la raison no_consent.
 
 <a id="consentement"></a>
 
@@ -3354,7 +3358,7 @@ import { createClient } from '@messagingme/sdk';
 export const messagingme = createClient({ apiKey: process.env.MESSAGINGME_API_KEY! });
 ```
 
-La bienvenue, appelée une fois le compte créé. Elle part par [POST /v1/sends](https://console.messagingme.app/developers/api/sends.md#envoi), avec une clé d’idempotence tirée de l’utilisateur : rejouée dans les 24 heures, elle n’envoie pas deux fois.
+Le welcome message, appelé une fois le compte créé. Il part par [POST /v1/sends](https://console.messagingme.app/developers/api/sends.md#envoi), avec une clé d’idempotence tirée de l’utilisateur : rejoué dans les 24 heures, il n’envoie pas deux fois.
 
 _app/signup.ts_
 
@@ -3390,7 +3394,7 @@ export async function sendWelcome(user: { id: string; phone: string; firstName: 
 
 ## Essayer
 
-- Inscrivez-vous avec votre propre numéro en cochant la case : la bienvenue arrive, et son bouton ouvre votre application.
+- Inscrivez-vous avec votre propre numéro en cochant la case : le welcome message arrive, et son bouton ouvre votre application.
 - Inscrivez-vous sans cocher la case : rien ne part.
 
 ---
@@ -3482,7 +3486,7 @@ export async function userOfCustomer(customerId: string): Promise<{ phone: strin
 
 ## Le webhook Stripe
 
-Dans le webhook Stripe que votre application a déjà, sur invoice.payment_failed. L’envoi part par [POST /v1/sends](https://console.messagingme.app/developers/api/sends.md#envoi), avec une clé d’idempotence tirée de la facture : un même événement livré deux fois dans les 24 heures n’envoie qu’un message. Un échec de l’envoi WhatsApp ne fait jamais échouer le webhook : il répond toujours 200 à Stripe, qui sinon le réessaierait puis le désactiverait. Aucune adresse de webhook Messaging Me n’est nécessaire.
+Dans le webhook Stripe que votre application a déjà, sur invoice.payment_failed. L’envoi part par [POST /v1/sends](https://console.messagingme.app/developers/api/sends.md#envoi), avec une clé d’idempotence tirée de la facture : un même événement livré deux fois dans les 24 heures n’envoie qu’un message. Un échec de l’envoi WhatsApp ne change pas la réponse à Stripe, qui sinon réessaierait le webhook puis le désactiverait. Aucune adresse de webhook Messaging Me n’est nécessaire.
 
 _app/api/stripe/route.ts_
 

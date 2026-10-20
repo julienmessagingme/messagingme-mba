@@ -2481,7 +2481,7 @@ scénario, comment importer des contacts.
   **une recette Next.js** (un prompt à coller dans Claude Code ou Cursor, et le code qu'il doit produire, compilé par la
   CI contre le SDK, comme les exemples de la page SDK), **une recette de la prise de rendez-vous** (2026-10-20, les deux
   actions de l'agent IA, la route qui propose trois créneaux et réserve), **une recette de l'accueil des utilisateurs
-  d'un SaaS** (2026-10-20, la bienvenue MARKETING qui ne part qu'à qui a coché la case, `consent: 'opted_in'`), **une
+  d'un SaaS** (2026-10-20, le welcome message MARKETING qui ne part qu'à qui a coché la case, `consent: 'opted_in'`), **une
   recette de la relance d'un paiement échoué** (2026-10-20, le modèle UTILITAIRE envoyé depuis le webhook Stripe de
   l'application, une clé d'idempotence par facture), **une recette des rappels de rendez-vous** (2026-10-20, le
   rappel de la veille à deux boutons, les deux actions de l'agent IA, la tâche et la route, le même code que la commande

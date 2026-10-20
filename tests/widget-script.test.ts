@@ -471,7 +471,7 @@ interface Page {
   ecouteursDocument: Record<string, Array<() => void>>;
 }
 
-function executer(script: string, options: { tactile?: boolean; etatDocument?: string; langues?: string[] } = {}): Page {
+function executer(script: string, options: { tactile?: boolean; etatDocument?: string; langues?: string[]; seuleLangue?: string } = {}): Page {
   const body = new Noeud('body');
   const ecouteursDocument: Record<string, Array<() => void>> = {};
   const document = {
@@ -484,6 +484,8 @@ function executer(script: string, options: { tactile?: boolean; etatDocument?: s
   const window = {
     matchMedia: () => ({ matches: options.tactile ?? false }),
     ...(options.langues ? { navigator: { languages: options.langues, language: options.langues[0] } } : {}),
+    // Un navigateur ancien : `language` seul, sans `languages`.
+    ...(options.seuleLangue ? { navigator: { language: options.seuleLangue } } : {}),
   };
   // `document` et `window` sont des PARAMÈTRES : le script s'exécute sans toucher l'environnement du test.
   new Function('document', 'window', script)(document, window);
@@ -578,6 +580,10 @@ describe('le script exécuté', () => {
     expect(executer(construireScript(SERVI)).noeuds().find((n) => n.className === 'badge')?.textContent).toBe('Propulsé par Messaging Me');
     expect(executer(construireScript(SERVI), { langues: [] }).noeuds().find((n) => n.className === 'badge')?.textContent).toBe('Propulsé par Messaging Me');
     expect(executer(construireScript(SERVI), { langues: ['es-ES'] }).noeuds().find((n) => n.className === 'badge')?.textContent).toBe('Powered by Messaging Me');
+    // fro (ancien français) ou frr (frison) ne sont pas le français.
+    expect(executer(construireScript(SERVI), { langues: ['frr'] }).noeuds().find((n) => n.className === 'badge')?.textContent).toBe('Powered by Messaging Me');
+    expect(executer(construireScript(SERVI), { seuleLangue: 'en-US' }).noeuds().find((n) => n.className === 'badge')?.textContent).toBe('Powered by Messaging Me');
+    expect(executer(construireScript(SERVI), { seuleLangue: 'fr_FR' }).noeuds().find((n) => n.className === 'badge')?.textContent).toBe('Propulsé par Messaging Me');
   });
 
   it('grisée en anglais : le title et l’aria-label dans la langue du navigateur', () => {

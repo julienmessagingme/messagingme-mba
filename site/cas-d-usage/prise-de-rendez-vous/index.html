@@ -93,7 +93,7 @@
      "name": "Le même créneau peut-il être réservé deux fois ?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "C’est votre agenda qui tranche : il ne réserve qu’un créneau encore libre et proposé à ce client, deux clients pouvant choisir le même, et le même événement reçu deux fois ne réserve qu’une fois."
+      "text": "C’est votre agenda qui tranche : il ne réserve qu’un créneau encore libre et proposé à ce client, deux clients pouvant choisir le même, sinon il propose d’autres créneaux et un lien pour réserver. Le même événement reçu deux fois ne réserve qu’une fois."
      }
     },
     {
@@ -198,7 +198,7 @@
         <div class="burger-liens">
           <a href="/cas-d-usage/prise-de-rendez-vous/" aria-current="page"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-chat-circle-dots"/></svg></span><span><strong>Prise de rendez-vous</strong><small>Trois créneaux, un choix, réservé</small></span></a>
           <a href="/cas-d-usage/rappels-rendez-vous/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-timer"/></svg></span><span><strong>Rappels de rendez-vous</strong><small>Un rappel la veille, deux boutons</small></span></a>
-          <a href="/cas-d-usage/accueil-activation-saas/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-smiley"/></svg></span><span><strong>Accueil des utilisateurs d’un SaaS</strong><small>La bienvenue, puis le premier usage</small></span></a>
+          <a href="/cas-d-usage/accueil-activation-saas/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-smiley"/></svg></span><span><strong>Accueil des utilisateurs d’un SaaS</strong><small>Le welcome message, puis le premier usage</small></span></a>
           <a href="/cas-d-usage/relance-paiement-echoue/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-wallet"/></svg></span><span><strong>Relance d’un paiement échoué</strong><small>La carte refusée, le lien qui la répare</small></span></a>
           <a href="/cas-d-usage/notifications-de-commande/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-package"/></svg></span><span><strong>Notifications de commande</strong><small>Le suivi de commande, lu ou non</small></span></a>
           <a href="/cas-d-usage/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-list-checks"/></svg></span><span><strong>Tous les cas d’usage</strong><small>Le film, le schéma et le code de chacun</small></span></a>
@@ -230,7 +230,7 @@
       <div class="menu-panneau">
         <a href="/cas-d-usage/prise-de-rendez-vous/" aria-current="page"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-chat-circle-dots"/></svg></span><span><strong>Prise de rendez-vous</strong><small>Trois créneaux, un choix, réservé</small></span></a>
         <a href="/cas-d-usage/rappels-rendez-vous/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-timer"/></svg></span><span><strong>Rappels de rendez-vous</strong><small>Un rappel la veille, deux boutons</small></span></a>
-        <a href="/cas-d-usage/accueil-activation-saas/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-smiley"/></svg></span><span><strong>Accueil des utilisateurs d’un SaaS</strong><small>La bienvenue, puis le premier usage</small></span></a>
+        <a href="/cas-d-usage/accueil-activation-saas/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-smiley"/></svg></span><span><strong>Accueil des utilisateurs d’un SaaS</strong><small>Le welcome message, puis le premier usage</small></span></a>
         <a href="/cas-d-usage/relance-paiement-echoue/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-wallet"/></svg></span><span><strong>Relance d’un paiement échoué</strong><small>La carte refusée, le lien qui la répare</small></span></a>
         <a href="/cas-d-usage/notifications-de-commande/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-package"/></svg></span><span><strong>Notifications de commande</strong><small>Le suivi de commande, lu ou non</small></span></a>
         <a href="/cas-d-usage/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-list-checks"/></svg></span><span><strong>Tous les cas d’usage</strong><small>Le film, le schéma et le code de chacun</small></span></a>
@@ -331,7 +331,7 @@ export async function POST(req: Request) {
       <h2 class="f-titre">Questions fréquentes.</h2>
       <div class="dev-faq">
         <details><summary>Faut-il un modèle approuvé par Meta&nbsp;?</summary><p>Non&nbsp;: le client écrit le premier, et votre application lui répond dans la fenêtre de 24&nbsp;heures que son message ouvre.</p></details>
-        <details><summary>Le même créneau peut-il être réservé deux fois&nbsp;?</summary><p>C’est votre agenda qui tranche&nbsp;: il ne réserve qu’un créneau encore libre et proposé à ce client, deux clients pouvant choisir le même, et le même événement reçu deux fois ne réserve qu’une fois.</p></details>
+        <details><summary>Le même créneau peut-il être réservé deux fois&nbsp;?</summary><p>C’est votre agenda qui tranche&nbsp;: il ne réserve qu’un créneau encore libre et proposé à ce client, deux clients pouvant choisir le même, sinon il propose d’autres créneaux et un lien pour réserver. Le même événement reçu deux fois ne réserve qu’une fois.</p></details>
         <details><summary>Et si le client redemande le même jour&nbsp;?</summary><p>Chaque action part une fois par jour au plus, par client et par action&nbsp;: une seconde demande le même jour n’atteint pas votre application, l’agent répond seul.</p></details>
         <details><summary>Combien ça coûte&nbsp;?</summary><p>La Free inclut l’API et le serveur MCP. L’agent IA se paie sur le crédit IA prépayé, et Meta facture chaque réponse envoyée dans la fenêtre de 24&nbsp;heures au-delà de sa franchise mensuelle, selon sa grille et le pays du client.</p></details>
       </div>

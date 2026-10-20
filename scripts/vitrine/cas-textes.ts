@@ -137,7 +137,7 @@ function schemaLigne(T: TextesLigne): { horizontal: string; vertical: string } {
 
 function schemaAccueil(l: Langue): { horizontal: string; vertical: string } {
   return schemaLigne(l === 'fr'
-    ? { titre: 'La bienvenue, de l’inscription au premier usage', app: 0, noeuds: [['Votre app', 'l’inscription, case cochée'], ['Sur son WhatsApp', 'la bienvenue, un bouton'], ['Son premier usage', 'dans votre app']], fleches: [['consent opted_in', 'POST /v1/sends'], ['il touche le bouton', '']] }
+    ? { titre: 'Le welcome message, de l’inscription au premier usage', app: 0, noeuds: [['Votre app', 'l’inscription, case cochée'], ['Sur son WhatsApp', 'le welcome message, un bouton'], ['Son premier usage', 'dans votre app']], fleches: [['consent opted_in', 'POST /v1/sends'], ['il touche le bouton', '']] }
     : { titre: 'The welcome, from sign-up to first use', app: 0, noeuds: [['Your app', 'sign-up, box ticked'], ['On their WhatsApp', 'the welcome, one button'], ['Their first use', 'in your app']], fleches: [['consent opted_in', 'POST /v1/sends'], ['they tap the button', '']] });
 }
 
@@ -213,7 +213,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       ],
       faq: [
         { question: 'Faut-il un modèle approuvé par Meta&nbsp;?', reponse: 'Non&nbsp;: le client écrit le premier, et votre application lui répond dans la fenêtre de 24&nbsp;heures que son message ouvre.' },
-        { question: 'Le même créneau peut-il être réservé deux fois&nbsp;?', reponse: 'C’est votre agenda qui tranche&nbsp;: il ne réserve qu’un créneau encore libre et proposé à ce client, deux clients pouvant choisir le même, et le même événement reçu deux fois ne réserve qu’une fois.' },
+        { question: 'Le même créneau peut-il être réservé deux fois&nbsp;?', reponse: 'C’est votre agenda qui tranche&nbsp;: il ne réserve qu’un créneau encore libre et proposé à ce client, deux clients pouvant choisir le même, sinon il propose d’autres créneaux et un lien pour réserver. Le même événement reçu deux fois ne réserve qu’une fois.' },
         { question: 'Et si le client redemande le même jour&nbsp;?', reponse: 'Chaque action part une fois par jour au plus, par client et par action&nbsp;: une seconde demande le même jour n’atteint pas votre application, l’agent répond seul.' },
         { question: 'Combien ça coûte&nbsp;?', reponse: 'La Free inclut l’API et le serveur MCP. L’agent IA se paie sur le crédit IA prépayé, et Meta facture chaque réponse envoyée dans la fenêtre de 24&nbsp;heures au-delà de sa franchise mensuelle, selon sa grille et le pays du client.' },
       ],
@@ -253,7 +253,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       ],
       faq: [
         { question: 'Is a template approved by Meta needed?', reponse: 'No: the customer writes first, and your app answers within the 24-hour window their message opens.' },
-        { question: 'Can the same slot be booked twice?', reponse: 'Your calendar decides: it books only a slot still free and offered to this customer, since two customers can pick the same, and the same event received twice books once.' },
+        { question: 'Can the same slot be booked twice?', reponse: 'Your calendar decides: it books only a slot still free and offered to this customer, since two customers can pick the same, otherwise it offers other slots and a link to book. The same event received twice books once.' },
         { question: 'What if the customer asks again the same day?', reponse: 'Each action fires at most once a day, per customer and per action: a second request the same day does not reach your app, the agent answers on its own.' },
         { question: 'How much does it cost?', reponse: 'Free includes the API and the MCP server. The AI agent is paid from the prepaid AI credit, and Meta bills each reply sent in the 24-hour window beyond its monthly free tier, according to its rate card and the customer’s country.' },
       ],
@@ -428,20 +428,20 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
   accueil: {
     fr: {
       titre: 'Accueil des utilisateurs sur WhatsApp · Messaging Me',
-      description: 'À l’inscription, la bienvenue part sur WhatsApp, avec un bouton vers le premier usage de votre produit. Seulement à qui a coché la case.',
-      resume: 'À l’inscription, la bienvenue sur WhatsApp, avec un bouton vers le premier usage. Seulement à qui a coché la case.',
-      menu: 'La bienvenue, puis le premier usage',
+      description: 'À l’inscription, le welcome message part sur WhatsApp, avec un bouton vers le premier usage de votre produit. Seulement à qui a coché la case.',
+      resume: 'À l’inscription, le welcome message sur WhatsApp, avec un bouton vers le premier usage. Seulement à qui a coché la case.',
+      menu: 'Le welcome message, puis le premier usage',
       icone: 'i-smiley',
-      h1: 'Vos nouveaux utilisateurs reçoivent leur bienvenue sur WhatsApp, et passent à l’action.',
-      chapeau: 'À l’inscription, l’utilisateur qui a coché la case reçoit sa bienvenue sur WhatsApp, avec un bouton qui l’emmène à la première action dans votre produit. Là où il lit vraiment ses messages.',
+      h1: 'Vos nouveaux utilisateurs reçoivent leur welcome message sur WhatsApp, et passent à l’action.',
+      chapeau: 'À l’inscription, l’utilisateur qui a coché la case reçoit son welcome message sur WhatsApp, avec un bouton qui l’emmène à la première action dans votre produit. Là où il lit vraiment ses messages.',
       film: {
-        titre: 'La bienvenue, puis la relance : 38 secondes.',
+        titre: 'Le welcome message, puis la relance : 38 secondes.',
         texte: 'De la demande dans Claude Code au premier planning créé, sur une vraie conversation WhatsApp. Le même film montre ensuite la relance d’un paiement échoué.',
         aria: 'Film : l’accueil des utilisateurs d’un SaaS avec Messaging Me', duree: 'PT38S', publie: '2026-10-20T13:00:00+02:00',
       },
-      schema: { titre: 'Comment ça circule.', legende: 'Votre app envoie la bienvenue par POST /v1/sends, avec consent opted_in, à l’utilisateur qui a coché la case ; il touche le bouton, et votre app s’ouvre sur son premier usage.', ...schemaAccueil('fr') },
+      schema: { titre: 'Comment ça circule.', legende: 'Votre app envoie le welcome message par POST /v1/sends, avec consent opted_in, à l’utilisateur qui a coché la case ; il touche le bouton, et votre app s’ouvre sur son premier usage.', ...schemaAccueil('fr') },
       etapes: [
-        { titre: 'Le modèle de bienvenue', texte: 'Claude Code le crée par <code>create_template</code>, en catégorie marketing&nbsp;: pour Meta, une bienvenue qui invite à utiliser le produit est du marketing. Le prénom, et un bouton vers la page qui lance l’utilisateur&nbsp;; <code>get_template_status</code> confirme l’approbation.' },
+        { titre: 'Le modèle du welcome message', texte: 'Claude Code le crée par <code>create_template</code>, en catégorie marketing&nbsp;: pour Meta, un welcome message qui invite à utiliser le produit est du marketing. Le prénom, et un bouton vers la page qui lance l’utilisateur&nbsp;; <code>get_template_status</code> confirme l’approbation.' },
         { titre: 'La case du formulaire', texte: 'Le formulaire d’inscription porte une case «&nbsp;Recevoir mes conseils de démarrage sur WhatsApp&nbsp;», non cochée par défaut. Sans elle, rien ne part&nbsp;: un modèle marketing ne va qu’à qui a consenti.' },
         { titre: 'L’envoi à l’inscription', texte: 'Une fois le compte créé, votre application envoie le modèle par <code>POST /v1/sends</code>, avec le consentement et sa source&nbsp;: l’API les écrit sur le contact avant le tri marketing. Une clé d’idempotence tirée de l’utilisateur évite le doublon.' },
         { titre: 'Le premier usage', texte: 'L’utilisateur touche le bouton du message&nbsp;: votre application s’ouvre sur la page de sa première action, son premier planning, son premier projet.' },
@@ -451,7 +451,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         texte: 'Le plugin installé, une phrase suffit. Celle du film branche aussi la relance des paiements échoués&nbsp;: Claude Code crée les deux modèles, écrit le code et teste.',
         phrase: '/messagingme:demarrer à l’inscription (app/inscription.ts), un whatsapp de bienvenue avec le lien pour créer son premier planning. et quand stripe signale un paiement échoué, un whatsapp avec le lien pour mettre à jour la carte',
       },
-      extrait: { titre: 'La bienvenue, telle que Claude Code l’écrit', partie: 'inscription' },
+      extrait: { titre: 'Le welcome message, tel que Claude Code l’écrit', partie: 'inscription' },
       paie: [
         '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> modèles envoyés par mois et <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
         '<strong>Meta facture directement</strong> chaque modèle marketing à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays de l’utilisateur.',
@@ -459,7 +459,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       faq: [
         { question: 'Pourquoi en marketing, et pas en utilitaire&nbsp;?', reponse: 'Meta classe en marketing tout modèle qui invite à utiliser le produit, et en utilitaire une alerte sur le compte, comme un paiement échoué. Un modèle déclaré utilitaire avec un texte marketing est reclassé par Meta.' },
         { question: 'Et l’utilisateur qui n’a pas coché la case&nbsp;?', reponse: 'Il ne reçoit rien&nbsp;: votre code ne l’envoie pas, et l’API l’écarterait de toute façon, un modèle marketing ne partant qu’à qui a consenti.' },
-        { question: 'Combien coûte une bienvenue&nbsp;?', reponse: 'La Free inclut 1&nbsp;000 modèles par mois. Meta facture chaque modèle marketing à votre entreprise, selon sa grille et le pays de l’utilisateur.' },
+        { question: 'Combien coûte un welcome message&nbsp;?', reponse: 'La Free inclut 1&nbsp;000 modèles par mois. Meta facture chaque modèle marketing à votre entreprise, selon sa grille et le pays de l’utilisateur.' },
         { question: 'Peut-il ne plus rien recevoir&nbsp;?', reponse: 'Oui&nbsp;: un utilisateur qui répond STOP ne reçoit plus rien, et son refus est noté sur le contact.' },
       ],
       appel: { titre: 'Accueillez vos utilisateurs sur WhatsApp.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },
@@ -515,8 +515,8 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Moins d’abonnements perdus sur une carte refusée, grâce à un message WhatsApp.',
       chapeau: 'Quand Stripe signale un paiement échoué, votre application envoie à l’utilisateur un message WhatsApp avec le lien vers sa page de facturation. Il met à jour sa carte avant de perdre l’accès.',
       film: {
-        titre: 'La bienvenue, puis la relance : 38 secondes.',
-        texte: 'De la demande dans Claude Code au paiement réussi, sur une vraie conversation WhatsApp. Le même film montre d’abord la bienvenue à l’inscription.',
+        titre: 'Le welcome message, puis la relance : 38 secondes.',
+        texte: 'De la demande dans Claude Code au paiement réussi, sur une vraie conversation WhatsApp. Le même film montre d’abord le welcome message à l’inscription.',
         aria: 'Film : la relance d’un paiement échoué avec Messaging Me', duree: 'PT38S', publie: '2026-10-20T13:00:00+02:00',
       },
       schema: { titre: 'Comment ça circule.', legende: 'Stripe envoie invoice.payment_failed au webhook de votre app, qui retrouve l’utilisateur et envoie le modèle par POST /v1/sends, avec une clé d’idempotence par facture.', ...schemaRelance('fr') },
@@ -528,7 +528,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       ],
       invite: {
         titre: 'Ce que vous tapez dans Claude Code',
-        texte: 'Le plugin installé, une phrase suffit. Celle du film branche aussi la bienvenue à l’inscription&nbsp;: Claude Code crée les deux modèles, écrit le code et teste.',
+        texte: 'Le plugin installé, une phrase suffit. Celle du film branche aussi le welcome message à l’inscription&nbsp;: Claude Code crée les deux modèles, écrit le code et teste.',
         phrase: '/messagingme:demarrer à l’inscription (app/inscription.ts), un whatsapp de bienvenue avec le lien pour créer son premier planning. et quand stripe signale un paiement échoué, un whatsapp avec le lien pour mettre à jour la carte',
       },
       extrait: { titre: 'Le webhook Stripe, tel que Claude Code l’écrit', partie: 'stripe' },

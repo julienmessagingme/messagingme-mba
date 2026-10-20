@@ -178,7 +178,7 @@ function langue() {
   var n = window.navigator;
   var l = n ? ((n.languages && n.languages[0]) || n.language || '') : '';
   if (!l) return 'fr';
-  return String(l).toLowerCase().indexOf('fr') === 0 ? 'fr' : 'en';
+  return /^fr([-_]|$)/i.test(String(l)) ? 'fr' : 'en';
 }
 function tactile() {
   return typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;

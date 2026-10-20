@@ -93,7 +93,7 @@
      "name": "Can the same slot be booked twice?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "Your calendar decides: it books only a slot still free and offered to this customer, since two customers can pick the same, and the same event received twice books once."
+      "text": "Your calendar decides: it books only a slot still free and offered to this customer, since two customers can pick the same, otherwise it offers other slots and a link to book. The same event received twice books once."
      }
     },
     {
@@ -331,7 +331,7 @@ export async function POST(req: Request) {
       <h2 class="f-titre">Frequently asked questions.</h2>
       <div class="dev-faq">
         <details><summary>Is a template approved by Meta needed?</summary><p>No: the customer writes first, and your app answers within the 24-hour window their message opens.</p></details>
-        <details><summary>Can the same slot be booked twice?</summary><p>Your calendar decides: it books only a slot still free and offered to this customer, since two customers can pick the same, and the same event received twice books once.</p></details>
+        <details><summary>Can the same slot be booked twice?</summary><p>Your calendar decides: it books only a slot still free and offered to this customer, since two customers can pick the same, otherwise it offers other slots and a link to book. The same event received twice books once.</p></details>
         <details><summary>What if the customer asks again the same day?</summary><p>Each action fires at most once a day, per customer and per action: a second request the same day does not reach your app, the agent answers on its own.</p></details>
         <details><summary>How much does it cost?</summary><p>Free includes the API and the MCP server. The AI agent is paid from the prepaid AI credit, and Meta bills each reply sent in the 24-hour window beyond its monthly free tier, according to its rate card and the customer’s country.</p></details>
       </div>

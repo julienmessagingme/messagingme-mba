@@ -26,7 +26,7 @@ Do not invent any route or field: they are in https://api.messagingme.app/openap
 
 <a id="modele"></a>
 
-## The welcome template
+## The welcome message template
 
 A MARKETING template with one variable (the first name) and a URL button to the page that gets the user started. Create it with `create_template` (MCP server) or with [POST /v1/templates](https://console.messagingme.app/developers/api/templates.en.md#creer), then wait for Meta’s approval (the code calls it welcome, in English: keep that name and language, or change them in the code); `get_template_status` confirms it.
 
@@ -68,7 +68,7 @@ import { createClient } from '@messagingme/sdk';
 export const messagingme = createClient({ apiKey: process.env.MESSAGINGME_API_KEY! });
 ```
 
-The welcome, called once the account exists. It goes through [POST /v1/sends](https://console.messagingme.app/developers/api/sends.en.md#envoi), with an idempotency key taken from the user: replayed within 24 hours, it does not send twice.
+The welcome message, called once the account exists. It goes through [POST /v1/sends](https://console.messagingme.app/developers/api/sends.en.md#envoi), with an idempotency key taken from the user: replayed within 24 hours, it does not send twice.
 
 _app/signup.ts_
 

@@ -34,7 +34,7 @@ Sur l’agent qui répond, ajoutez deux actions par `set_agent_action` : « Appo
 
 > **Obligatoire**
 >
-> Le code lit action.name et fields par leur nom exact : gardez les mêmes noms d’actions et les mêmes codes de champs dans l’agent et dans la route. Et slot est ce que l’agent a compris du client : votre agenda le recoupe avec les créneaux proposés, et ne réserve qu’un créneau encore libre, deux clients pouvant choisir le même.
+> Le code lit action.name et fields par leur nom exact : gardez les mêmes noms d’actions et les mêmes codes de champs dans l’agent et dans la route. Et slot est ce que l’agent a compris du client : votre agenda le recoupe avec les créneaux proposés, et ne réserve qu’un créneau encore libre, deux clients pouvant choisir le même. Sinon, répondez avec d’autres créneaux et un lien pour réserver : un second « Slot choice » le même jour n’atteindrait pas votre application.
 
 <a id="code"></a>
 
@@ -77,7 +77,8 @@ export async function offerSlots(city: string, count: number): Promise<string> {
 /**
  * Books the chosen slot once per request (the same event twice books once) and returns the confirmation. `slot` is
  * the AI agent’s reading of the customer’s words: match it against the slots offered, book only one still free (two
- * customers can pick the same), otherwise return a message that asks to pick again.
+ * customers can pick the same). Otherwise return other free slots and a link to book: a second Slot choice the same
+ * day does not reach your app.
  */
 export async function book(requestId: string, slot: string): Promise<string> { return todo('book'); }
 ```

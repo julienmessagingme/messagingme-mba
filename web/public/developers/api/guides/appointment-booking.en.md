@@ -33,7 +33,7 @@ On the agent that answers, add two actions with `set_agent_action`: “Appointme
 
 > **Required**
 >
-> The code reads action.name and fields by their exact name: keep the same action names and field codes in the agent and in the route. And slot is what the agent understood from the customer: your calendar matches it against the slots offered, and books only a slot still free, since two customers can pick the same.
+> The code reads action.name and fields by their exact name: keep the same action names and field codes in the agent and in the route. And slot is what the agent understood from the customer: your calendar matches it against the slots offered, and books only a slot still free, since two customers can pick the same. Otherwise, answer with other slots and a link to book: a second “Slot choice” the same day would not reach your app.
 
 <a id="code"></a>
 
@@ -76,7 +76,8 @@ export async function offerSlots(city: string, count: number): Promise<string> {
 /**
  * Books the chosen slot once per request (the same event twice books once) and returns the confirmation. `slot` is
  * the AI agent’s reading of the customer’s words: match it against the slots offered, book only one still free (two
- * customers can pick the same), otherwise return a message that asks to pick again.
+ * customers can pick the same). Otherwise return other free slots and a link to book: a second Slot choice the same
+ * day does not reach your app.
  */
 export async function book(requestId: string, slot: string): Promise<string> { return todo('book'); }
 ```

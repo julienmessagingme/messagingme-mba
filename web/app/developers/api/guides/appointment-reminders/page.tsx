@@ -86,8 +86,8 @@ function Recette() {
           {t('La tâche de la veille, lancée chaque soir par le planificateur de votre hébergeur. Elle envoie par ', 'The day-before job, run every evening by your host’s scheduler. It sends through ')}
           <LienDoc page="sends" ancre="envoi">POST /v1/sends</LienDoc>
           {t(
-            ', avec une clé d’idempotence tirée du rendez-vous et de son heure : relancée le même soir, elle n’envoie pas deux fois. Un destinataire écarté (STOP, limite de l’offre) n’est pas une erreur, il revient dans skipped avec sa raison ; une erreur sur un rendez-vous n’arrête pas les autres, et un 429 attend le délai que l’API indique.',
-            ', with an idempotency key taken from the appointment and its time: run again the same evening, it does not send twice. A recipient set aside (STOP, plan limit) is not an error, it comes back in skipped with its reason; an error on one appointment does not stop the others, and a 429 waits the delay the API gives.',
+            ', avec une clé d’idempotence tirée du rendez-vous et de son heure : relancée le même soir, elle n’envoie pas deux fois. Un destinataire écarté (STOP, limite de l’offre) n’est pas une erreur, il revient dans skipped avec sa raison ; une erreur sur un rendez-vous n’arrête pas les autres, un débit dépassé (rate_limited) attend le délai que l’API indique, et le quota du jour atteint (quota_exceeded) arrête la tâche jusqu’au lendemain.',
+            ', with an idempotency key taken from the appointment and its time: run again the same evening, it does not send twice. A recipient set aside (STOP, plan limit) is not an error, it comes back in skipped with its reason; an error on one appointment does not stop the others, an exceeded rate (rate_limited) waits the delay the API gives, and the daily quota reached (quota_exceeded) stops the job until the next day.',
           )}
         </p>
         <Bloc legende={cas.tache.fichier}>{cas.tache.code}</Bloc>

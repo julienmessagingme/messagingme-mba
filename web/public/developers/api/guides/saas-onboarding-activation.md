@@ -2,7 +2,7 @@
 
 # Recette : l’accueil des utilisateurs d’un SaaS
 
-À l’inscription, votre application envoie la bienvenue sur WhatsApp, avec un bouton qui mène à la première action dans votre produit. Elle ne part qu’à l’utilisateur qui a coché la case WhatsApp du formulaire.
+À l’inscription, votre application envoie le welcome message sur WhatsApp, avec un bouton qui mène à la première action dans votre produit. Elle ne part qu’à l’utilisateur qui a coché la case WhatsApp du formulaire.
 
 <a id="prompt"></a>
 
@@ -13,10 +13,10 @@ Dans Claude Code, ouvert sur votre projet, avec le serveur MCP de Messaging Me b
 _Prompt_
 
 ```
-Branche la bienvenue WhatsApp des nouveaux utilisateurs dans ce projet, en suivant la recette
+Branche le welcome message WhatsApp des nouveaux utilisateurs dans ce projet, en suivant la recette
 https://console.messagingme.app/developers/api/guides/saas-onboarding-activation.md :
 1. installe le SDK : npm install github:julienmessagingme/messagingme-sdk#v0.3.1 ;
-2. avec les outils Messaging Me, crée le modèle de bienvenue welcome (MARKETING, en, le prénom, un bouton URL vers la
+2. avec les outils Messaging Me, crée le modèle du welcome message, welcome (MARKETING, en, le prénom, un bouton URL vers la
    page qui lance l’utilisateur) ;
 3. ajoute au formulaire d’inscription une case « Recevoir mes conseils de démarrage sur WhatsApp », non cochée par
    défaut, et écris app/signup.ts qui n’envoie qu’à qui l’a cochée, avec consent opted_in ;
@@ -26,13 +26,13 @@ N’invente aucune route ni aucun champ : ils sont dans https://api.messagingme.
 
 <a id="modele"></a>
 
-## Le modèle de bienvenue
+## Le modèle du welcome message
 
 Un modèle MARKETING à une variable (le prénom) et un bouton URL vers la page qui lance l’utilisateur. Créez-le par `create_template` (serveur MCP) ou par [POST /v1/templates](https://console.messagingme.app/developers/api/templates.md#creer), puis attendez l’approbation de Meta (le code l’appelle welcome, en anglais : gardez ce nom et cette langue, ou changez-les dans le code) ; `get_template_status` la confirme.
 
 > **Obligatoire**
 >
-> Une bienvenue qui invite à utiliser le produit est du marketing pour Meta, pas de l’utilitaire. Un modèle marketing ne part qu’à un contact qui a consenti : sans la case cochée, le destinataire est écarté, et il revient dans skipped avec la raison no_consent.
+> Un welcome message qui invite à utiliser le produit est du marketing pour Meta, pas de l’utilitaire. Un modèle marketing ne part qu’à un contact qui a consenti : sans la case cochée, le destinataire est écarté, et il revient dans skipped avec la raison no_consent.
 
 <a id="consentement"></a>
 
@@ -68,7 +68,7 @@ import { createClient } from '@messagingme/sdk';
 export const messagingme = createClient({ apiKey: process.env.MESSAGINGME_API_KEY! });
 ```
 
-La bienvenue, appelée une fois le compte créé. Elle part par [POST /v1/sends](https://console.messagingme.app/developers/api/sends.md#envoi), avec une clé d’idempotence tirée de l’utilisateur : rejouée dans les 24 heures, elle n’envoie pas deux fois.
+Le welcome message, appelé une fois le compte créé. Il part par [POST /v1/sends](https://console.messagingme.app/developers/api/sends.md#envoi), avec une clé d’idempotence tirée de l’utilisateur : rejoué dans les 24 heures, il n’envoie pas deux fois.
 
 _app/signup.ts_
 
@@ -104,5 +104,5 @@ export async function sendWelcome(user: { id: string; phone: string; firstName: 
 
 ## Essayer
 
-- Inscrivez-vous avec votre propre numéro en cochant la case : la bienvenue arrive, et son bouton ouvre votre application.
+- Inscrivez-vous avec votre propre numéro en cochant la case : le welcome message arrive, et son bouton ouvre votre application.
 - Inscrivez-vous sans cocher la case : rien ne part.

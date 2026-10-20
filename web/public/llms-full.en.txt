@@ -3046,12 +3046,13 @@ export async function markConfirmed(appointment: Appointment): Promise<void> { r
 export async function freeSlots(appointment: Appointment, count: number): Promise<string> { return todo('freeSlots'); }
 /**
  * Moves the appointment to the chosen slot and returns the confirmation. `slot` is the AI agent’s reading of the
- * customer’s words: match it against the slots offered, move only to one still free, otherwise ask again.
+ * customer’s words: match it against the slots offered and move only to one still free. Otherwise answer with
+ * other free slots and a link to book: a second Slot choice the same day does not reach your app.
  */
 export async function move(appointment: Appointment, slot: string): Promise<string> { return todo('move'); }
 ```
 
-The day-before job, run every evening by your host’s scheduler. It sends through [POST /v1/sends](https://console.messagingme.app/developers/api/sends.en.md#envoi), with an idempotency key taken from the appointment and its time: run again the same evening, it does not send twice. A recipient set aside (STOP, plan limit) is not an error, it comes back in skipped with its reason; an error on one appointment does not stop the others, and a 429 waits the delay the API gives.
+The day-before job, run every evening by your host’s scheduler. It sends through [POST /v1/sends](https://console.messagingme.app/developers/api/sends.en.md#envoi), with an idempotency key taken from the appointment and its time: run again the same evening, it does not send twice. A recipient set aside (STOP, plan limit) is not an error, it comes back in skipped with its reason; an error on one appointment does not stop the others, an exceeded rate (rate_limited) waits the delay the API gives, and the daily quota reached (quota_exceeded) stops the job until the next day.
 
 _jobs/reminders.ts_
 
@@ -3085,15 +3086,17 @@ export async function dayBeforeReminders(): Promise<void> {
       try {
         send = await sendReminder(appointment);
       } catch (e) {
-        // Too many calls in the minute: wait what the API says, then try once more.
-        if (!(e instanceof ApiError) || e.status !== 429) throw e;
-        await new Promise((r) => setTimeout(r, (e.retryAfter ?? 60) * 1000));
+        // Too many calls in the minute: wait what the API says (60 s at most), then try once more.
+        if (!(e instanceof ApiError) || e.code !== 'rate_limited') throw e;
+        await new Promise((r) => setTimeout(r, Math.min(e.retryAfter ?? 60, 60) * 1000));
         send = await sendReminder(appointment);
       }
       // A refused recipient (STOP, no number, plan limit) is not an error: it is listed in skipped.
       if (send.skippedTotal > 0) console.warn(`reminder ${appointment.id} not sent: ${send.skipped[0]?.reason}`);
       else await saveReminder(appointment, send.sendId);
     } catch (e) {
+      // The quota of the day is reached: nothing more goes out before tomorrow, stop here.
+      if (e instanceof ApiError && e.code === 'quota_exceeded') { console.error('daily quota reached', e); return; }
       console.error(`reminder ${appointment.id} failed`, e);
     }
   }
@@ -3188,7 +3191,7 @@ On the agent that answers, add two actions with `set_agent_action`: “Appointme
 
 > **Required**
 >
-> The code reads action.name and fields by their exact name: keep the same action names and field codes in the agent and in the route. And slot is what the agent understood from the customer: your calendar matches it against the slots offered, and books only a slot still free, since two customers can pick the same.
+> The code reads action.name and fields by their exact name: keep the same action names and field codes in the agent and in the route. And slot is what the agent understood from the customer: your calendar matches it against the slots offered, and books only a slot still free, since two customers can pick the same. Otherwise, answer with other slots and a link to book: a second “Slot choice” the same day would not reach your app.
 
 <a id="code"></a>
 
@@ -3231,7 +3234,8 @@ export async function offerSlots(city: string, count: number): Promise<string> {
 /**
  * Books the chosen slot once per request (the same event twice books once) and returns the confirmation. `slot` is
  * the AI agent’s reading of the customer’s words: match it against the slots offered, book only one still free (two
- * customers can pick the same), otherwise return a message that asks to pick again.
+ * customers can pick the same). Otherwise return other free slots and a link to book: a second Slot choice the same
+ * day does not reach your app.
  */
 export async function book(requestId: string, slot: string): Promise<string> { return todo('book'); }
 ```
@@ -3311,7 +3315,7 @@ Do not invent any route or field: they are in https://api.messagingme.app/openap
 
 <a id="modele"></a>
 
-## The welcome template
+## The welcome message template
 
 A MARKETING template with one variable (the first name) and a URL button to the page that gets the user started. Create it with `create_template` (MCP server) or with [POST /v1/templates](https://console.messagingme.app/developers/api/templates.en.md#creer), then wait for Meta’s approval (the code calls it welcome, in English: keep that name and language, or change them in the code); `get_template_status` confirms it.
 
@@ -3353,7 +3357,7 @@ import { createClient } from '@messagingme/sdk';
 export const messagingme = createClient({ apiKey: process.env.MESSAGINGME_API_KEY! });
 ```
 
-The welcome, called once the account exists. It goes through [POST /v1/sends](https://console.messagingme.app/developers/api/sends.en.md#envoi), with an idempotency key taken from the user: replayed within 24 hours, it does not send twice.
+The welcome message, called once the account exists. It goes through [POST /v1/sends](https://console.messagingme.app/developers/api/sends.en.md#envoi), with an idempotency key taken from the user: replayed within 24 hours, it does not send twice.
 
 _app/signup.ts_
 
@@ -3481,7 +3485,7 @@ export async function userOfCustomer(customerId: string): Promise<{ phone: strin
 
 ## The Stripe webhook
 
-In the Stripe webhook your app already has, on invoice.payment_failed. The send goes through [POST /v1/sends](https://console.messagingme.app/developers/api/sends.en.md#envoi), with an idempotency key taken from the invoice: the same event delivered twice within 24 hours sends one message. A failed WhatsApp send never fails the webhook: it always answers 200 to Stripe, which would otherwise retry it, then disable it. No Messaging Me webhook address is needed.
+In the Stripe webhook your app already has, on invoice.payment_failed. The send goes through [POST /v1/sends](https://console.messagingme.app/developers/api/sends.en.md#envoi), with an idempotency key taken from the invoice: the same event delivered twice within 24 hours sends one message. A failed WhatsApp send does not change the answer to Stripe, which would otherwise retry the webhook, then disable it. No Messaging Me webhook address is needed.
 
 _app/api/stripe/route.ts_
 

@@ -50,8 +50,8 @@ function Recette() {
         <Encadre sorte="obligatoire">
           <p>
             {t(
-              'Le code lit action.name et fields par leur nom exact : gardez les mêmes noms d’actions et les mêmes codes de champs dans l’agent et dans la route. Et slot est ce que l’agent a compris du client : votre agenda le recoupe avec les créneaux proposés, et ne réserve qu’un créneau encore libre, deux clients pouvant choisir le même.',
-              'The code reads action.name and fields by their exact name: keep the same action names and field codes in the agent and in the route. And slot is what the agent understood from the customer: your calendar matches it against the slots offered, and books only a slot still free, since two customers can pick the same.',
+              'Le code lit action.name et fields par leur nom exact : gardez les mêmes noms d’actions et les mêmes codes de champs dans l’agent et dans la route. Et slot est ce que l’agent a compris du client : votre agenda le recoupe avec les créneaux proposés, et ne réserve qu’un créneau encore libre, deux clients pouvant choisir le même. Sinon, répondez avec d’autres créneaux et un lien pour réserver : un second « Slot choice » le même jour n’atteindrait pas votre application.',
+              'The code reads action.name and fields by their exact name: keep the same action names and field codes in the agent and in the route. And slot is what the agent understood from the customer: your calendar matches it against the slots offered, and books only a slot still free, since two customers can pick the same. Otherwise, answer with other slots and a link to book: a second “Slot choice” the same day would not reach your app.',
             )}
           </p>
         </Encadre>

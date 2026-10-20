@@ -198,7 +198,7 @@
         <div class="burger-liens">
           <a href="/cas-d-usage/prise-de-rendez-vous/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-chat-circle-dots"/></svg></span><span><strong>Prise de rendez-vous</strong><small>Trois créneaux, un choix, réservé</small></span></a>
           <a href="/cas-d-usage/rappels-rendez-vous/" aria-current="page"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-timer"/></svg></span><span><strong>Rappels de rendez-vous</strong><small>Un rappel la veille, deux boutons</small></span></a>
-          <a href="/cas-d-usage/accueil-activation-saas/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-smiley"/></svg></span><span><strong>Accueil des utilisateurs d’un SaaS</strong><small>La bienvenue, puis le premier usage</small></span></a>
+          <a href="/cas-d-usage/accueil-activation-saas/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-smiley"/></svg></span><span><strong>Accueil des utilisateurs d’un SaaS</strong><small>Le welcome message, puis le premier usage</small></span></a>
           <a href="/cas-d-usage/relance-paiement-echoue/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-wallet"/></svg></span><span><strong>Relance d’un paiement échoué</strong><small>La carte refusée, le lien qui la répare</small></span></a>
           <a href="/cas-d-usage/notifications-de-commande/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-package"/></svg></span><span><strong>Notifications de commande</strong><small>Le suivi de commande, lu ou non</small></span></a>
           <a href="/cas-d-usage/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-list-checks"/></svg></span><span><strong>Tous les cas d’usage</strong><small>Le film, le schéma et le code de chacun</small></span></a>
@@ -230,7 +230,7 @@
       <div class="menu-panneau">
         <a href="/cas-d-usage/prise-de-rendez-vous/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-chat-circle-dots"/></svg></span><span><strong>Prise de rendez-vous</strong><small>Trois créneaux, un choix, réservé</small></span></a>
         <a href="/cas-d-usage/rappels-rendez-vous/" aria-current="page"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-timer"/></svg></span><span><strong>Rappels de rendez-vous</strong><small>Un rappel la veille, deux boutons</small></span></a>
-        <a href="/cas-d-usage/accueil-activation-saas/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-smiley"/></svg></span><span><strong>Accueil des utilisateurs d’un SaaS</strong><small>La bienvenue, puis le premier usage</small></span></a>
+        <a href="/cas-d-usage/accueil-activation-saas/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-smiley"/></svg></span><span><strong>Accueil des utilisateurs d’un SaaS</strong><small>Le welcome message, puis le premier usage</small></span></a>
         <a href="/cas-d-usage/relance-paiement-echoue/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-wallet"/></svg></span><span><strong>Relance d’un paiement échoué</strong><small>La carte refusée, le lien qui la répare</small></span></a>
         <a href="/cas-d-usage/notifications-de-commande/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-package"/></svg></span><span><strong>Notifications de commande</strong><small>Le suivi de commande, lu ou non</small></span></a>
         <a href="/cas-d-usage/"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-list-checks"/></svg></span><span><strong>Tous les cas d’usage</strong><small>Le film, le schéma et le code de chacun</small></span></a>
@@ -315,15 +315,17 @@ export async function dayBeforeReminders(): Promise&lt;void&gt; {
       try {
         send = await sendReminder(appointment);
       } catch (e) {
-        // Too many calls in the minute: wait what the API says, then try once more.
-        if (!(e instanceof ApiError) || e.status !== 429) throw e;
-        await new Promise((r) =&gt; setTimeout(r, (e.retryAfter ?? 60) * 1000));
+        // Too many calls in the minute: wait what the API says (60 s at most), then try once more.
+        if (!(e instanceof ApiError) || e.code !== 'rate_limited') throw e;
+        await new Promise((r) =&gt; setTimeout(r, Math.min(e.retryAfter ?? 60, 60) * 1000));
         send = await sendReminder(appointment);
       }
       // A refused recipient (STOP, no number, plan limit) is not an error: it is listed in skipped.
       if (send.skippedTotal &gt; 0) console.warn(`reminder ${appointment.id} not sent: ${send.skipped[0]?.reason}`);
       else await saveReminder(appointment, send.sendId);
     } catch (e) {
+      // The quota of the day is reached: nothing more goes out before tomorrow, stop here.
+      if (e instanceof ApiError &amp;&amp; e.code === 'quota_exceeded') { console.error('daily quota reached', e); return; }
       console.error(`reminder ${appointment.id} failed`, e);
     }
   }

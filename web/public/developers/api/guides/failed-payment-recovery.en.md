@@ -85,7 +85,7 @@ export async function userOfCustomer(customerId: string): Promise<{ phone: strin
 
 ## The Stripe webhook
 
-In the Stripe webhook your app already has, on invoice.payment_failed. The send goes through [POST /v1/sends](https://console.messagingme.app/developers/api/sends.en.md#envoi), with an idempotency key taken from the invoice: the same event delivered twice within 24 hours sends one message. A failed WhatsApp send never fails the webhook: it always answers 200 to Stripe, which would otherwise retry it, then disable it. No Messaging Me webhook address is needed.
+In the Stripe webhook your app already has, on invoice.payment_failed. The send goes through [POST /v1/sends](https://console.messagingme.app/developers/api/sends.en.md#envoi), with an idempotency key taken from the invoice: the same event delivered twice within 24 hours sends one message. A failed WhatsApp send does not change the answer to Stripe, which would otherwise retry the webhook, then disable it. No Messaging Me webhook address is needed.
 
 _app/api/stripe/route.ts_
 

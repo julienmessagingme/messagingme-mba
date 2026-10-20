@@ -19,6 +19,7 @@ export async function markConfirmed(appointment: Appointment): Promise<void> { r
 export async function freeSlots(appointment: Appointment, count: number): Promise<string> { return todo('freeSlots'); }
 /**
  * Moves the appointment to the chosen slot and returns the confirmation. `slot` is the AI agent’s reading of the
- * customer’s words: match it against the slots offered, move only to one still free, otherwise ask again.
+ * customer’s words: match it against the slots offered and move only to one still free. Otherwise answer with
+ * other free slots and a link to book: a second Slot choice the same day does not reach your app.
  */
 export async function move(appointment: Appointment, slot: string): Promise<string> { return todo('move'); }

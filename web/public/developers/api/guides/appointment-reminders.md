@@ -96,12 +96,13 @@ export async function markConfirmed(appointment: Appointment): Promise<void> { r
 export async function freeSlots(appointment: Appointment, count: number): Promise<string> { return todo('freeSlots'); }
 /**
  * Moves the appointment to the chosen slot and returns the confirmation. `slot` is the AI agent’s reading of the
- * customer’s words: match it against the slots offered, move only to one still free, otherwise ask again.
+ * customer’s words: match it against the slots offered and move only to one still free. Otherwise answer with
+ * other free slots and a link to book: a second Slot choice the same day does not reach your app.
  */
 export async function move(appointment: Appointment, slot: string): Promise<string> { return todo('move'); }
 ```
 
-La tâche de la veille, lancée chaque soir par le planificateur de votre hébergeur. Elle envoie par [POST /v1/sends](https://console.messagingme.app/developers/api/sends.md#envoi), avec une clé d’idempotence tirée du rendez-vous et de son heure : relancée le même soir, elle n’envoie pas deux fois. Un destinataire écarté (STOP, limite de l’offre) n’est pas une erreur, il revient dans skipped avec sa raison ; une erreur sur un rendez-vous n’arrête pas les autres, et un 429 attend le délai que l’API indique.
+La tâche de la veille, lancée chaque soir par le planificateur de votre hébergeur. Elle envoie par [POST /v1/sends](https://console.messagingme.app/developers/api/sends.md#envoi), avec une clé d’idempotence tirée du rendez-vous et de son heure : relancée le même soir, elle n’envoie pas deux fois. Un destinataire écarté (STOP, limite de l’offre) n’est pas une erreur, il revient dans skipped avec sa raison ; une erreur sur un rendez-vous n’arrête pas les autres, un débit dépassé (rate_limited) attend le délai que l’API indique, et le quota du jour atteint (quota_exceeded) arrête la tâche jusqu’au lendemain.
 
 _jobs/reminders.ts_
 
@@ -135,15 +136,17 @@ export async function dayBeforeReminders(): Promise<void> {
       try {
         send = await sendReminder(appointment);
       } catch (e) {
-        // Too many calls in the minute: wait what the API says, then try once more.
-        if (!(e instanceof ApiError) || e.status !== 429) throw e;
-        await new Promise((r) => setTimeout(r, (e.retryAfter ?? 60) * 1000));
+        // Too many calls in the minute: wait what the API says (60 s at most), then try once more.
+        if (!(e instanceof ApiError) || e.code !== 'rate_limited') throw e;
+        await new Promise((r) => setTimeout(r, Math.min(e.retryAfter ?? 60, 60) * 1000));
         send = await sendReminder(appointment);
       }
       // A refused recipient (STOP, no number, plan limit) is not an error: it is listed in skipped.
       if (send.skippedTotal > 0) console.warn(`reminder ${appointment.id} not sent: ${send.skipped[0]?.reason}`);
       else await saveReminder(appointment, send.sendId);
     } catch (e) {
+      // The quota of the day is reached: nothing more goes out before tomorrow, stop here.
+      if (e instanceof ApiError && e.code === 'quota_exceeded') { console.error('daily quota reached', e); return; }
       console.error(`reminder ${appointment.id} failed`, e);
     }
   }
