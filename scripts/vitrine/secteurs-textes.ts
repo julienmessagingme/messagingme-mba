@@ -19,7 +19,8 @@ export interface TexteSecteur {
   readonly chapeau: string;
   readonly sous: string;
   readonly appel: string;
-  readonly references: { readonly titre: string; readonly noms: readonly string[] };
+  /** Les clients cités, en logos (leur accord écrit est requis, voir plus haut). */
+  readonly references: { readonly titre: string; readonly logos: ReadonlyArray<{ readonly src: string; readonly alt: string; readonly largeur: number; readonly hauteur: number }> };
   readonly captures: ReadonlyArray<{ readonly src: string; readonly alt: string }>;
   readonly enjeux: {
     readonly surtitre: string; readonly titre: readonly [string, string];
@@ -42,12 +43,8 @@ export interface TexteSecteur {
     readonly liste: ReadonlyArray<{ readonly titre: string; readonly texte: string }>;
     readonly pilotage: string;
   };
-  readonly projet: {
-    readonly surtitre: string; readonly titre: string; readonly texte: string; readonly fin: string;
-    readonly champs: { readonly nom: string; readonly email: string; readonly reseau: string; readonly besoin: string; readonly choisir: string };
-    readonly besoins: readonly string[];
-    readonly bouton: string; readonly mention: string; readonly politique: string;
-  };
+  /** L'appel final : il mène au formulaire de la page Contact. */
+  readonly projet: { readonly titre: string; readonly texte: string; readonly bouton: string };
 }
 
 export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteur>>> = {
@@ -62,10 +59,10 @@ export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteu
       chapeau: 'Des chaînes WhatsApp à l’assistance avec IA, connectez vos voyageurs aux informations et aux réponses dont ils ont besoin.',
       sous: 'Conseil stratégique, technologie et accompagnement&nbsp;: une expérience adaptée à votre réseau, connectée à vos outils.',
       appel: 'Parlons de votre projet mobilité',
-      references: { titre: 'Nos références mobilité', noms: ['Keolis', 'SNCF'] },
+      references: { titre: 'Nos références mobilité', logos: [{ src: '/img/logo-keolis.svg', alt: 'Keolis', largeur: 116, hauteur: 18 }, { src: '/img/logo-sncf.svg', alt: 'SNCF', largeur: 57, hauteur: 30 }] },
       captures: [
-        { src: '/img/transport-ligne-deviee.webp', alt: 'La chaîne WhatsApp d’un réseau de bus annonce une ligne déviée' },
-        { src: '/img/transport-auxrm-bot.webp', alt: 'Un voyageur demande les tarifs au compte WhatsApp du réseau, qui lui répond' },
+        { src: '/img/transport-ligne-deviee.webp?v=2', alt: 'La chaîne WhatsApp d’un réseau de bus annonce une ligne déviée' },
+        { src: '/img/transport-auxrm-bot.webp?v=2', alt: 'Un voyageur demande les tarifs au compte WhatsApp du réseau, qui lui répond' },
       ],
       enjeux: {
         surtitre: 'Vos enjeux aujourd’hui',
@@ -109,15 +106,9 @@ export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteu
         pilotage: 'Ce que nous pilotons ensemble&nbsp;: satisfaction voyageurs, résolution des demandes, motifs de contact et coûts de traitement.',
       },
       projet: {
-        surtitre: 'Parlons de votre projet',
         titre: 'Quel parcours voyageur voulez-vous simplifier&nbsp;?',
         texte: 'Lancer une chaîne WhatsApp, faire évoluer votre service client ou faciliter l’accès aux horaires et itinéraires&nbsp;: échangeons sur votre réseau et les usages à prioriser.',
-        fin: 'Du cadrage à l’exploitation quotidienne.',
-        champs: { nom: 'Votre nom', email: 'E-mail professionnel', reseau: 'Entreprise ou réseau', besoin: 'Votre besoin', choisir: 'Sélectionnez votre priorité' },
-        besoins: ['Lancer une chaîne WhatsApp', 'Faire évoluer notre service client', 'Donner accès aux horaires et itinéraires', 'Autre projet mobilité'],
         bouton: 'Parlons de votre projet mobilité',
-        mention: 'Vos informations servent à vous recontacter au sujet de votre projet.',
-        politique: 'Politique de confidentialité',
       },
     },
     en: {
@@ -130,10 +121,10 @@ export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteu
       chapeau: 'From WhatsApp Channels to AI assistance, connect your passengers to the information and answers they need.',
       sous: 'Strategy, technology and support: an experience built for your network, connected to your tools.',
       appel: 'Let’s talk about your mobility project',
-      references: { titre: 'Our mobility references', noms: ['Keolis', 'SNCF'] },
+      references: { titre: 'Our mobility references', logos: [{ src: '/img/logo-keolis.svg', alt: 'Keolis', largeur: 116, hauteur: 18 }, { src: '/img/logo-sncf.svg', alt: 'SNCF', largeur: 57, hauteur: 30 }] },
       captures: [
-        { src: '/img/transport-ligne-deviee.webp', alt: 'A bus network’s WhatsApp Channel announces a diverted line' },
-        { src: '/img/transport-auxrm-bot.webp', alt: 'A passenger asks the network’s WhatsApp account about fares, and gets an answer' },
+        { src: '/img/transport-ligne-deviee.webp?v=2', alt: 'A bus network’s WhatsApp Channel announces a diverted line' },
+        { src: '/img/transport-auxrm-bot.webp?v=2', alt: 'A passenger asks the network’s WhatsApp account about fares, and gets an answer' },
       ],
       enjeux: {
         surtitre: 'Your challenges today',
@@ -177,15 +168,9 @@ export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteu
         pilotage: 'What we steer together: passenger satisfaction, request resolution, contact reasons and handling costs.',
       },
       projet: {
-        surtitre: 'Let’s talk about your project',
         titre: 'Which passenger journey do you want to simplify?',
         texte: 'Launch a WhatsApp Channel, evolve your customer service or open access to timetables and routes: let’s talk about your network and the use cases to prioritize.',
-        fin: 'From scoping to day-to-day operations.',
-        champs: { nom: 'Your name', email: 'Work email', reseau: 'Company or network', besoin: 'Your need', choisir: 'Select your priority' },
-        besoins: ['Launch a WhatsApp Channel', 'Evolve our customer service', 'Give access to timetables and routes', 'Another mobility project'],
         bouton: 'Let’s talk about your mobility project',
-        mention: 'Your information is only used to get back to you about your project.',
-        politique: 'Privacy policy',
       },
     },
   },

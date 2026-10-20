@@ -49,9 +49,11 @@ au plugin (le Pro garde la création d'espace dans la console). « Créer mon es
 l'inscription de la console. Venu de la page anglaise, un lien ouvre la console en anglais.
 
 ✅ **La vitrine a ses pages de cas d'usage** (2026-10-20) : la page chapeau « SaaS et app builders »
-(`app.messagingme.fr/solutions/saas-et-app-builders/`, jumelle `/en/solutions/saas-and-app-builders/`) les rassemble,
-écran divisé : les cas à gauche, chacun avec la vignette de son film qui joue au survol, le grand film à droite, puis
-comment ça marche en trois étapes ; l'ancienne adresse `/cas-d-usage/` y redirige. Chaque cas a sa page, en français et
+(`app.messagingme.fr/solutions/saas-et-app-builders/`, jumelle `/en/solutions/saas-and-app-builders/`) les rassemble.
+Sa une montre Claude Code, Codex et GitHub en tuiles 3D reliées à WhatsApp (« Tout se fait depuis votre assistant IA »),
+puis l'écran divisé : les cas à gauche, chacun avec la vignette de son film qui joue au survol, à droite le film du démarrage
+(le plugin, l'autorisation avec Google, le numéro relié, le premier message, puis les six cas), puis comment ça marche en
+trois étapes ; l'ancienne adresse `/cas-d-usage/` y redirige. Chaque cas a sa page, en français et
 en anglais : la prise de rendez-vous (`/cas-d-usage/prise-de-rendez-vous/`, jumelle
 `/en/use-cases/appointment-booking/`), les rappels de rendez-vous (`/cas-d-usage/rappels-rendez-vous/`, jumelle
 `/en/use-cases/appointment-reminders/`), l'accueil des utilisateurs d'un SaaS (`/cas-d-usage/accueil-activation-saas/`,
@@ -62,15 +64,16 @@ notifications de commande (`/cas-d-usage/notifications-de-commande/`,
 jumelle `/en/use-cases/order-notifications/`). Une page montre le film de la vraie séance Claude Code, le schéma de ce qui
 circule, les étapes avec les vrais noms d'outils, de routes et d'événements, la phrase à taper dans Claude Code,
 l'extrait du code que la suite compile, ce qu'on paie et une FAQ, puis mène à la recette complète de la doc
-développeurs. Le menu « Solutions » de l'en-tête, à la place d'« Industries », porte « SaaS et app builders » en tête,
-ses cas en sous-menu, puis les secteurs en ligne ; les anciennes pages « Industries » restent en ligne, hors du menu.
+développeurs. Le menu « Solutions » de l'en-tête, à la place d'« Industries », porte les secteurs en ligne en tête,
+puis « SaaS et app builders », dont les cas ne s'ouvrent qu'au survol, dans un panneau à côté (au téléphone, ils sont
+listés dessous) ; les anciennes pages « Industries » restent en ligne, hors du menu.
 
 ✅ **La vitrine a sa première page de secteur, Transport et mobilités** (2026-10-20, maquette de Julien) :
 `app.messagingme.fr/solutions/transport-et-mobilites/`, jumelle `/en/solutions/transport-and-mobility/`. Les enjeux
 d'un réseau (visibilité, adoption d'une application, dispersion des canaux), le cas Keolis (film, chiffres des réseaux
 pilotes, captures de la chaîne WhatsApp et du bot), les usages (informer, répondre, accompagner), l'accompagnement de
-Messaging Me, et un formulaire « Parlons de votre projet mobilité » qui part par la route de contact de la vitrine, le
-besoin choisi devenant le message. Générée par `npm run vitrine:cas` depuis `scripts/vitrine/secteurs-textes.ts`.
+Messaging Me, et l'appel « Parlons de votre projet mobilité », qui mène au formulaire de la page Contact. Les captures sont
+des iPhone en 3D, comme sur les pages Fonctionnalités. Générée par `npm run vitrine:cas` depuis `scripts/vitrine/secteurs-textes.ts`.
 
 ✅ **Les tentatives d'accès à `/ops` alertent** (2026-09-03). Au 5e refus en 5 minutes, un message Telegram
 part, une fois par demi-heure au plus. Chaque refus est journalisé même quand l'alerte est étouffée. Le jeton

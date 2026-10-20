@@ -29,8 +29,8 @@ const PIEDS: Record<Langue, string> = { fr: gabarit('pied.fr.html'), en: gabarit
 export function enteteVitrine(langue: Langue, adresse: string, jumelle: string): string {
   return ENTETES[langue]
     .replaceAll('{{jumelle}}', () => jumelle)
-    .replace('{{solutions}}', () => liensSolutions(langue, '        '))
-    .replace('{{solutions-burger}}', () => liensSolutions(langue, '          '))
+    .replace('{{solutions}}', () => liensSolutions(langue, '        ', false))
+    .replace('{{solutions-burger}}', () => liensSolutions(langue, '          ', true))
     // Le logo et le drapeau ne sont jamais « la page actuelle », même quand ils y mènent.
     .replace(/<a ([^>]*?)href="([^"]+)"/g, (tout: string, attributs: string, href: string) =>
       href === adresse && !/class="(marque|langue)"/.test(attributs) ? `${tout} aria-current="page"` : tout)
@@ -41,26 +41,37 @@ export function enteteVitrine(langue: Langue, adresse: string, jumelle: string):
 export const piedVitrine = (langue: Langue): string => PIEDS[langue];
 
 /**
- * Le menu « Solutions » (décisions de Julien du 2026-10-20) : la page chapeau « SaaS et app builders » en tête, puis
- * ses cas EN LIGNE au registre en sous-menu, plus serrés (une icône et un titre). Les secteurs y entreront avec leur
- * page.
+ * Le menu « Solutions » (décisions de Julien du 2026-10-20) : les secteurs EN LIGNE au registre en tête, puis la page
+ * chapeau « SaaS et app builders ». Ses cas ne s'affichent pas avec le menu : sur le bureau, ils s'ouvrent au survol
+ * (ou au focus) de la page chapeau, dans un panneau à côté ; dans le burger, sans survol, ils restent listés dessous,
+ * plus serrés (une icône et un titre).
  */
-export function liensSolutions(langue: Langue, retrait: string): string {
+export function liensSolutions(langue: Langue, retrait: string, burger: boolean): string {
   const c = TEXTES_CARREFOUR[langue];
-  const chapeau = `${retrait}<a href="${c.adresse}"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-code"/></svg></span><span><strong>${c.fil}</strong><small>${c.menu}</small></span></a>`;
-  const cas = ENTREES.filter((e) => e.enLigne && e.nature === 'cas').map((e) => {
-    const t = TEXTES_CAS[e.cle]?.[langue];
-    if (!t) throw new Error(`${e.cle} : en ligne sans ses textes (scripts/vitrine/cas-textes.ts)`);
-    const p = langue === 'fr' ? e.fr : e.en;
-    return `${retrait}<a class="menu-sous" href="${p.adresse}"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#${t.icone}"/></svg></span><span><strong>${p.titre}</strong></span></a>`;
-  });
   const secteurs = ENTREES.filter((e) => e.enLigne && e.nature === 'secteur').map((e) => {
     const t = TEXTES_SECTEURS[e.cle]?.[langue];
     if (!t) throw new Error(`${e.cle} : secteur en ligne sans ses textes (scripts/vitrine/secteurs-textes.ts)`);
     const p = langue === 'fr' ? e.fr : e.en;
     return `${retrait}<a class="menu-secteur" href="${p.adresse}"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#${t.icone}"/></svg></span><span><strong>${p.titre}</strong><small>${t.menu}</small></span></a>`;
   });
-  return [chapeau, ...cas, ...secteurs].join('\n');
+  const suite = burger ? '' : '<svg class="ic menu-suite" aria-hidden="true"><use href="#i-caret-left"/></svg>';
+  const chapeau = `<a class="menu-chapeau" href="${c.adresse}"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-code"/></svg></span><span><strong>${c.fil}</strong><small>${c.menu}</small></span>${suite}</a>`;
+  const cas = ENTREES.filter((e) => e.enLigne && e.nature === 'cas').map((e) => {
+    const t = TEXTES_CAS[e.cle]?.[langue];
+    if (!t) throw new Error(`${e.cle} : en ligne sans ses textes (scripts/vitrine/cas-textes.ts)`);
+    const p = langue === 'fr' ? e.fr : e.en;
+    return `<a class="menu-sous" href="${p.adresse}"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#${t.icone}"/></svg></span><span><strong>${p.titre}</strong></span></a>`;
+  });
+  if (burger) return [...secteurs, retrait + chapeau, ...cas.map((x) => retrait + x)].join('\n');
+  return [
+    ...secteurs,
+    `${retrait}<div class="menu-groupe">`,
+    `${retrait}  ${chapeau}`,
+    `${retrait}  <div class="menu-sous-panneau">`,
+    ...cas.map((x) => `${retrait}    ${x}`),
+    `${retrait}  </div>`,
+    `${retrait}</div>`,
+  ].join('\n');
 }
 
 /** L'adresse publique d'une page, depuis son chemin dans `site/` : `contact/index.html` -> `/contact/`. */

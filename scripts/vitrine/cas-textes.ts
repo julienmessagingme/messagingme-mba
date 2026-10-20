@@ -33,8 +33,8 @@ export interface TexteCas {
  * La page CHAPEAU des cas (décision de Julien du 2026-10-20) : « SaaS et app builders », l'entrée `saas-app-builders`
  * du registre, qui remplace le carrefour « Tous les cas d'usage » (redirigé). Écran divisé : les cas à gauche, chacun
  * avec la vignette de son film, le grand film à droite ; puis comment ça marche, en trois étapes.
- * ⚠️ `film` est le film du cas 1 tant que le film du démarrage (`engageme-cas-onboarding`, validé le 2026-10-20) n'est
- * pas fabriqué : son titre ne promet donc pas « le démarrage ».
+ * `film` est le film du démarrage (`cas-onboarding`, fabriqué dans `~/engageme-motion/engageme-cas-onboarding` le
+ * 2026-10-20) : le plugin, l'autorisation avec Google, le numéro, le premier message, puis les six cas en vignettes.
  */
 export interface TexteChapeau {
   readonly adresse: string; readonly fil: string; readonly titre: string; readonly description: string;
@@ -56,10 +56,10 @@ export const TEXTES_CARREFOUR: Record<Langue, TexteChapeau> = {
     menu: 'Le démarrage et tous les cas',
     cas: { titre: 'Les cas d’usage.', texte: 'Survolez un cas pour voir son film, cliquez pour son pas à pas et son code.' },
     film: {
-      nom: 'cas-rendez-vous',
-      titre: 'De Claude Code à WhatsApp, en 30 secondes.',
-      texte: 'Une demande dans Claude Code, et votre app répond sur une vraie conversation WhatsApp.',
-      aria: 'Film : une app branchée sur WhatsApp depuis Claude Code, avec Messaging Me', duree: 'PT38S', publie: '2026-10-20T15:00:00+02:00',
+      nom: 'cas-onboarding',
+      titre: 'Le démarrage, en 30 secondes.',
+      texte: 'Le plugin, l’autorisation avec Google, votre numéro, puis votre premier message WhatsApp&nbsp;: tout depuis Claude Code.',
+      aria: 'Film : le démarrage de Messaging Me depuis Claude Code, du plugin au premier message WhatsApp', duree: 'PT38S', publie: '2026-10-20T18:00:00+02:00',
     },
     etapes: {
       titre: 'Comment ça marche.',
@@ -80,10 +80,10 @@ export const TEXTES_CARREFOUR: Record<Langue, TexteChapeau> = {
     menu: 'Getting started and every use case',
     cas: { titre: 'Use cases.', texte: 'Hover a use case to see its film, click for its step by step and its code.' },
     film: {
-      nom: 'cas-rendez-vous',
-      titre: 'From Claude Code to WhatsApp, in 30 seconds.',
-      texte: 'A request in Claude Code, and your app answers on a real WhatsApp conversation.',
-      aria: 'Film: an app connected to WhatsApp from Claude Code, with Messaging Me', duree: 'PT38S', publie: '2026-10-20T15:00:00+02:00',
+      nom: 'cas-onboarding',
+      titre: 'Getting started, in 30 seconds.',
+      texte: 'The plugin, the Google authorization, your number, then your first WhatsApp message: all from Claude Code.',
+      aria: 'Film: getting started with Messaging Me from Claude Code, from the plugin to the first WhatsApp message', duree: 'PT38S', publie: '2026-10-20T18:00:00+02:00',
     },
     etapes: {
       titre: 'How it works.',

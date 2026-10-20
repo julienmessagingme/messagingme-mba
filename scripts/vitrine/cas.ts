@@ -16,6 +16,7 @@ import { ENTREES, type EntreeVitrine } from '../../web/lib/registre-vitrine';
 import { TEXTES_CAS, TEXTES_CARREFOUR, type Langue, type TexteCas } from './cas-textes';
 import { TEXTES_SECTEURS } from './secteurs-textes';
 import { pageAvecEntete } from './entete';
+import { LOGOS_ASSISTANTS, type LogoAssistant } from './logos-assistants';
 
 const ORIGINE = 'https://app.messagingme.fr';
 const CONSOLE = 'https://console.messagingme.app';
@@ -225,6 +226,31 @@ export function pagesCas(e: EntreeVitrine): Array<{ chemin: string; contenu: str
 }
 
 /** Le carrefour « Tous les cas d'usage », dans les deux langues : une carte par cas EN LIGNE. */
+/**
+ * La une de la page chapeau, à droite du titre (Julien, 2026-10-20 : « il faut tout de suite comprendre qu'ici on gère ça
+ * avec les assistants IA ») : Claude Code, Codex et GitHub en tuiles épaisses, en légère 3D, reliés à WhatsApp par des
+ * fils où passe un message. L'épaisseur est une pile de calques (CSS 3D, sans bibliothèque) ; tout ce qui bouge s'arrête
+ * avec prefers-reduced-motion.
+ */
+function assistants(langue: Langue): string {
+  const svg = (l: LogoAssistant, classe: string) => `<svg class="${classe}" viewBox="${l.viewBox}" aria-hidden="true">${l.corps}</svg>`;
+  const epaisseur = Array.from({ length: 12 }, (_, k) => `<i style="--z:${k + 1}"></i>`).join('');
+  const tuile = (cle: string, nom: string, logo: LogoAssistant, d: string) =>
+    `      <div class="as-tuile as-${cle}" style="--d:${d}"><div class="as-porte"><div class="as-bloc">${epaisseur}<span class="as-face">${svg(logo, 'as-logo')}</span></div></div><span class="as-ombre"></span><span class="as-nom">${nom}</span></div>`;
+  const fil = (d: string, retard: string) => `<path d="${d}"/><path class="as-flux" d="${d}" pathLength="100" style="--d:${retard}"/>`;
+  const fr = langue === 'fr';
+  return [
+    `    <figure class="assistants" role="img" aria-label="${fr ? 'Claude Code, Codex et GitHub, reliés à WhatsApp : tout se fait depuis votre assistant IA' : 'Claude Code, Codex and GitHub, connected to WhatsApp: everything happens from your AI assistant'}">`,
+    `      <svg class="as-fils" viewBox="0 0 560 470" aria-hidden="true">${fil('M280 216 L280 312', '0s')}${fil('M120 300 C150 356 196 371 228 371', '.9s')}${fil('M440 300 C410 356 364 371 332 371', '1.8s')}</svg>`,
+    tuile('claude', 'Claude Code', LOGOS_ASSISTANTS.claude, '0s'),
+    tuile('codex', 'Codex', LOGOS_ASSISTANTS.codex, '-2.3s'),
+    tuile('github', 'GitHub', LOGOS_ASSISTANTS.github, '-4.6s'),
+    `      <div class="as-wa">${svg(LOGOS_ASSISTANTS.whatsapp, 'as-wa-logo')}</div>`,
+    `      <figcaption>${fr ? 'Tout se fait depuis votre assistant IA.' : 'Everything happens from your AI assistant.'}</figcaption>`,
+    '    </figure>',
+  ].join('\n');
+}
+
 export function pagesCarrefour(): Array<{ chemin: string; contenu: string }> {
   const enLigne = ENTREES.filter((e) => e.enLigne && e.nature === 'cas');
   return (['fr', 'en'] as const).map((langue) => {
@@ -249,6 +275,7 @@ export function pagesCarrefour(): Array<{ chemin: string; contenu: string }> {
       `        <a class="bouton bouton-texte" href="#cas">${langue === 'fr' ? 'Voir les cas' : 'See the use cases'} <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>`,
       '      </div>',
       '    </div>',
+      assistants(langue),
       '  </section>',
       '',
       '  <section class="f-bloc hub" id="cas">',
@@ -307,8 +334,9 @@ export function pagesGenerees(): Array<{ chemin: string; contenu: string }> {
 
 /**
  * Les pages de secteur EN LIGNE au registre (rubrique Solutions), dans les deux langues, depuis
- * `secteurs-textes.ts`. La première : Transport et mobilités (maquette de Julien du 2026-10-20). Le formulaire poste sur
- * la route de contact de la vitrine (`src/http/contact-vitrine.ts`) : le besoin choisi part comme message.
+ * `secteurs-textes.ts`. La première : Transport et mobilités (maquette de Julien du 2026-10-20). Ses captures sont des
+ * iPhone en 3D, comme sur les pages Fonctionnalités, et ses appels mènent au formulaire de la page Contact : pas de
+ * formulaire dans la page (Julien, 2026-10-20).
  */
 export function pagesSecteurs(): Array<{ chemin: string; contenu: string }> {
   return ENTREES.filter((e) => e.enLigne && e.nature === 'secteur').flatMap((e) => (['fr', 'en'] as const).map((langue) => {
@@ -317,9 +345,7 @@ export function pagesSecteurs(): Array<{ chemin: string; contenu: string }> {
     const p = langue === 'fr' ? e.fr : e.en;
     const autre = langue === 'fr' ? e.en : e.fr;
     const deux = (l: readonly [string, string]) => `${l[0]}<br>${l[1]}`;
-    const politique = langue === 'fr'
-      ? 'https://www.messagingme.fr/politique-de-confidentialite-messaging-me/'
-      : 'https://www.messagingme.fr/en/politique-de-confidentialite-messaging-me/';
+    const contact = langue === 'fr' ? '/contact/#formulaire' : '/en/contact/#formulaire';
     const f = t.terrain.film;
     const main = [
       '<main>',
@@ -329,11 +355,11 @@ export function pagesSecteurs(): Array<{ chemin: string; contenu: string }> {
       `      <p class="chapeau">${t.chapeau}</p>`,
       `      <p class="sec-sous">${t.sous}</p>`,
       '      <div class="appels">',
-      `        <a class="bouton bouton-plein" href="#projet">${t.appel}</a>`,
+      `        <a class="bouton bouton-plein" href="${contact}">${t.appel}</a>`,
       '      </div>',
-      `      <p class="sec-refs"><span>${t.references.titre}</span>${t.references.noms.map((n) => `<strong>${echapper(n)}</strong>`).join('')}</p>`,
+      `      <p class="sec-refs"><span>${t.references.titre}</span>${t.references.logos.map((l) => `<span class="sec-logo"><img src="${l.src}" alt="${echapper(l.alt)}" width="${l.largeur}" height="${l.hauteur}"></span>`).join('')}</p>`,
       '    </div>',
-      `    <figure class="sec-tels">${t.captures.map((c, i) => `<img class="sec-tel sec-tel-${i + 1}" src="${c.src}" alt="${echapper(c.alt)}" width="262" height="566"${i === 0 ? ' fetchpriority="high"' : ' loading="lazy"'}>`).join('')}</figure>`,
+      `    <figure class="f-duo">${t.captures.map((c, i) => `<img src="${c.src}" alt="${echapper(c.alt)}" width="560" height="1182"${i === 0 ? ' fetchpriority="high"' : ' loading="lazy"'}>`).join('')}</figure>`,
       '  </section>',
       '',
       '  <section class="f-bloc sec-enjeux">',
@@ -383,24 +409,13 @@ export function pagesSecteurs(): Array<{ chemin: string; contenu: string }> {
       '    </div>',
       '  </section>',
       '',
-      '  <section class="f-bloc sec-projet" id="projet">',
-      '    <div class="cadre sec-projet-grille">',
-      '      <div>',
-      `        <p class="f-surtitre">${t.projet.surtitre}</p>`,
-      `        <h2 class="f-titre">${t.projet.titre}</h2>`,
-      `        <p class="f-texte">${t.projet.texte}</p>`,
-      `        <p class="sec-fin">${t.projet.fin}</p>`,
+      '  <section class="f-appel">',
+      '    <div class="cadre">',
+      `      <h2 class="f-titre">${t.projet.titre}</h2>`,
+      `      <p class="f-texte">${t.projet.texte}</p>`,
+      '      <div class="appels">',
+      `        <a class="bouton bouton-plein" href="${contact}">${t.projet.bouton} <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>`,
       '      </div>',
-      '      <form class="c-form" id="formulaire" action="https://api.messagingme.app/vitrine/contact" method="post">',
-      ...(langue === 'en' ? ['        <input type="hidden" name="langue" value="en">'] : []),
-      '        <p class="c-erreur" role="alert" hidden></p>',
-      `        <div class="c-champ"><label for="s-nom">${t.projet.champs.nom}</label><input id="s-nom" name="nom" type="text" autocomplete="name" maxlength="120" required></div>`,
-      `        <div class="c-champ"><label for="s-email">${t.projet.champs.email}</label><input id="s-email" name="email" type="email" autocomplete="email" maxlength="254" required></div>`,
-      `        <div class="c-champ large"><label for="s-reseau">${t.projet.champs.reseau}</label><input id="s-reseau" name="societe" type="text" autocomplete="organization" maxlength="160" required></div>`,
-      `        <div class="c-champ large"><label for="s-besoin">${t.projet.champs.besoin}</label><select id="s-besoin" name="message" required><option value="">${t.projet.champs.choisir}</option>${t.projet.besoins.map((b) => `<option value="${echapper(`${p.titre} : ${b}`)}">${echapper(b)}</option>`).join('')}</select></div>`,
-      '        <div class="c-piege" aria-hidden="true"><label for="s-site">Ne pas remplir ce champ</label><input id="s-site" name="site" type="text" tabindex="-1" autocomplete="off"></div>',
-      `        <div class="c-envoi"><p class="c-mention">${t.projet.mention} <a href="${politique}">${t.projet.politique}</a></p><button class="bouton bouton-plein" type="submit">${t.projet.bouton} <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></button></div>`,
-      '      </form>',
       '    </div>',
       '  </section>',
       '</main>',
@@ -420,7 +435,7 @@ export function pagesSecteurs(): Array<{ chemin: string; contenu: string }> {
     };
     return {
       chemin: fichierDe(p.adresse),
-      contenu: page(langue, { adresse: p.adresse, jumelle: autre.adresse, titre: t.titre, description: t.description, ldJson: ld, affiche: t.captures[0]!.src }, main,
+      contenu: page(langue, { adresse: p.adresse, jumelle: autre.adresse, titre: t.titre, description: t.description, ldJson: ld, affiche: `/films/${f.nom}.webp` }, main,
         'Une page de secteur, GÉNÉRÉE par npm run vitrine:cas depuis scripts/vitrine/secteurs-textes.ts : ne pas modifier à la main.'),
     };
   }));

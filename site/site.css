@@ -883,6 +883,38 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .guide-etapes a{color:var(--action-ink)}
 /* Les pages de cas d’usage (lot 6), générées par npm run vitrine:cas */
 .cas-une{padding-bottom:24px}
+/* La une de la page chapeau (Julien, 2026-10-20) : Claude Code, Codex et GitHub en tuiles épaisses, reliés à WhatsApp.
+   L'épaisseur est une pile de calques en 3D ; jamais de `filter` sur un bloc 3D (il l'aplatirait), l'ombre est à part. */
+.assistants{position:relative;width:min(100%,560px);aspect-ratio:560 / 470;margin:0 auto 34px;perspective:1100px}
+.as-fils{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.as-fils path{fill:none;stroke:rgb(111 194 254 / .4);stroke-width:2;stroke-linecap:round;stroke-dasharray:2 8}
+.as-fils path.as-flux{stroke:#25D366;stroke-width:3.5;stroke-dasharray:0 100;opacity:0}
+.as-tuile{position:absolute;width:24%;translate:-50% -50%;display:grid;justify-items:center;gap:16px}
+.as-claude{left:50%;top:24%;--face:#F0EEE6;--bord:#B3AB9A;--rx:14deg;--ry:0deg}
+.as-codex{left:18%;top:43%;--face:#FFFFFF;--bord:#A9B2C6;--rx:10deg;--ry:28deg}
+.as-github{left:82%;top:43%;--face:#161B22;--bord:#020305;--rx:10deg;--ry:-28deg}
+.as-porte{position:relative;width:100%;aspect-ratio:1;transform-style:preserve-3d}
+.as-bloc{position:absolute;inset:0;transform-style:preserve-3d;transform:rotateX(var(--rx)) rotateY(var(--ry))}
+.as-bloc i{position:absolute;inset:0;border-radius:26%;background:var(--bord);transform:translateZ(calc(var(--z) * -1.7px))}
+.as-face{position:absolute;inset:0;display:grid;place-items:center;border-radius:26%;background:var(--face);box-shadow:inset 0 1px 0 rgb(255 255 255 / .5),inset 0 -14px 28px rgb(0 0 0 / .1)}
+.as-logo{width:54%;height:54%}
+.as-claude .as-logo{fill:#D97757}
+.as-codex .as-logo{fill:#0B0E24}
+.as-github .as-logo{fill:#FFFFFF}
+.as-ombre{position:absolute;left:14%;right:14%;top:96%;height:12%;border-radius:50%;background:radial-gradient(closest-side,rgb(0 2 20 / .7),rgb(0 2 20 / 0))}
+.as-nom{position:relative;color:#FFFFFF;font-size:.98rem;font-weight:700;letter-spacing:-.01em;white-space:nowrap}
+.as-wa{position:absolute;left:50%;top:79%;width:19%;aspect-ratio:1;translate:-50% -50%;border-radius:50%;box-shadow:0 0 0 10px rgb(37 211 102 / .1),0 0 64px 8px rgb(37 211 102 / .42)}
+.as-wa-logo{display:block;width:100%;height:100%}
+.assistants figcaption{position:absolute;left:0;right:0;top:calc(100% + 6px);margin:0;text-align:center;color:var(--muted);font-size:.95rem}
+@media (prefers-reduced-motion:no-preference){
+  .js .as-porte{animation:as-flotte 7s ease-in-out infinite;animation-delay:var(--d)}
+  .js .as-fils path.as-flux{animation:as-flux 2.7s cubic-bezier(.45,0,.55,1) infinite;animation-delay:var(--d)}
+  .js .as-wa::after{content:"";position:absolute;inset:-8px;border-radius:50%;border:2px solid rgb(37 211 102 / .55);animation:as-onde 2.7s ease-out infinite;animation-delay:1.9s}
+}
+@keyframes as-flotte{50%{translate:0 -10px}}
+@keyframes as-flux{0%{stroke-dasharray:0 100;stroke-dashoffset:0;opacity:0}15%{opacity:1}70%{stroke-dasharray:16 100;stroke-dashoffset:-84;opacity:1}85%,100%{stroke-dasharray:0 100;stroke-dashoffset:-100;opacity:0}}
+@keyframes as-onde{0%,55%{scale:.9;opacity:0}62%{opacity:.9}100%{scale:1.45;opacity:0}}
+@media (max-width:960px){.assistants{width:min(100%,460px)}}
 .cas-schema{padding:56px 0}
 .dessin{margin:28px 0 0}
 .dessin svg{display:block;width:100%;height:auto}
@@ -922,19 +954,38 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .hub-fleche{color:var(--action-ink)}
 @media (max-width:900px){.hub-split{grid-template-columns:minmax(0,1fr)}.hub-film{position:static;order:-1}}
 @media (max-width:480px){.hub-carte{grid-template-columns:96px minmax(0,1fr)}.hub-mini{width:96px;height:54px}.hub-fleche{display:none}}
+/* Le menu Solutions (2026-10-20, Julien) : les secteurs, puis « SaaS et app builders », dont les cas ne s'ouvrent
+   qu'au survol ou au focus, dans un panneau à côté ; un pont invisible le garde ouvert pendant que la souris y va.
+   Sous 1100 px, le panneau à côté sortirait de l'écran : les cas se déplient sous la page chapeau. */
 .menu-panneau a.menu-sous,.burger-liens a.menu-sous{grid-template-columns:28px minmax(0,1fr);gap:10px;padding:6px 10px 6px 26px}
 .menu-sous .menu-ic{width:28px;height:28px;border-radius:8px;font-size:.95rem}
 .menu-sous strong{font-weight:600}
-.menu-panneau a.menu-secteur,.burger-liens a.menu-secteur{margin-top:4px;border-top:1px solid rgb(255 255 255 / .1);border-radius:0 0 10px 10px;padding-top:12px}
+.menu-groupe{position:relative;margin-top:4px;padding-top:4px;border-top:1px solid rgb(255 255 255 / .1)}
+.burger-liens a.menu-chapeau{margin-top:4px;border-top:1px solid rgb(255 255 255 / .1);border-radius:0 0 10px 10px;padding-top:12px}
+.menu-panneau a.menu-chapeau{grid-template-columns:40px minmax(0,1fr) 14px}
+.menu-suite{font-size:.8rem;color:var(--muted);rotate:180deg;transition:translate .15s}
+.menu-groupe:hover > a.menu-chapeau,.menu-groupe:focus-within > a.menu-chapeau{background:rgb(255 255 255 / .08)}
+.menu-groupe:hover .menu-suite,.menu-groupe:focus-within .menu-suite{translate:3px 0;color:#FFFFFF}
+.menu-sous-panneau{position:absolute;left:calc(100% + 16px);top:-5px;width:300px;display:grid;gap:2px;padding:8px;border-radius:16px;background:#16237E;border:1px solid rgb(255 255 255 / .16);box-shadow:inset 0 1px 0 rgb(255 255 255 / .07),0 28px 56px -18px var(--ombre);opacity:0;visibility:hidden;translate:-6px 0;transition:opacity .15s,visibility .15s,translate .15s}
+.menu-sous-panneau::before{content:"";position:absolute;right:100%;top:0;bottom:0;width:26px}
+.menu-groupe:hover .menu-sous-panneau,.menu-groupe:focus-within .menu-sous-panneau{opacity:1;visibility:visible;translate:0 0}
+.menu-sous-panneau a.menu-sous{padding:8px 10px}
+@media (max-width:1100px){
+  .menu-sous-panneau{position:static;width:auto;display:none;padding:2px 0 0;border:0;border-radius:0;background:none;box-shadow:none;opacity:1;visibility:visible;translate:none;transition:none}
+  .menu-sous-panneau::before{content:none}
+  .menu-groupe:hover .menu-sous-panneau,.menu-groupe:focus-within .menu-sous-panneau{display:grid}
+  .menu-sous-panneau a.menu-sous{padding:6px 10px 6px 26px}
+  .menu-suite{rotate:-90deg}
+  .menu-groupe:hover .menu-suite,.menu-groupe:focus-within .menu-suite{translate:none}
+}
 /* Les pages de secteur (Solutions), générées par npm run vitrine:cas (2026-10-20) */
 .sec-accent{color:var(--action-ink)}
 .sec-sous{margin:-18px 0 30px;max-width:34em;color:var(--muted);font-size:.98rem}
 .sec-refs{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;margin:30px 0 0;color:var(--muted);font-size:.85rem}
-.sec-refs strong{padding:6px 12px;border-radius:8px;background:#FFFFFF;color:#0B1033;font-size:.9rem;letter-spacing:.02em}
-.sec-tels{position:relative;display:flex;justify-content:center;align-items:flex-start;gap:20px;margin:0}
-.sec-tel{width:min(46%,240px);height:auto;border-radius:22px;box-shadow:0 28px 56px -22px var(--ombre)}
-.sec-tel-2{margin-top:72px}
-.sec-enjeux,.sec-terrain,.sec-usages,.sec-partenaire,.sec-projet{padding:72px 0}
+.sec-logo{display:inline-flex;align-items:center;justify-content:center;height:46px;padding:0 16px;border-radius:10px;background:#FFFFFF}
+.sec-logo img{display:block;width:auto;height:18px}
+.sec-logo img[src$="logo-sncf.svg"]{height:30px}
+.sec-enjeux,.sec-terrain,.sec-usages,.sec-partenaire{padding:72px 0}
 .sec-trois{list-style:none;margin:32px 0 0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px}
 .sec-trois h3{margin:6px 0 10px;font-size:1.15rem;line-height:1.3}
 .sec-trois p{margin:0;color:var(--muted)}
@@ -950,11 +1001,7 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .sec-cartes h3{color:var(--action-ink)}
 .sec-cartes .sec-mots{margin-top:14px;font-size:.88rem}
 .sec-parcours{margin:28px 0 0;color:var(--action-ink);font-weight:700}
-.sec-projet-grille{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:48px;align-items:start}
-.sec-fin{margin:24px 0 0;color:var(--action-ink);font-weight:700}
-.c-champ select{color-scheme:light;width:100%;margin:0;padding:.72em .9em;border-radius:10px;border:1px solid #FFFFFF;background:#FFFFFF;color:#0B1033;font:inherit;font-size:1rem;line-height:1.5}
-@media (max-width:900px){.sec-trois,.sec-terrain-grille,.sec-projet-grille,.sec-encart{grid-template-columns:minmax(0,1fr)}}
-@media (max-width:640px){.sec-tel{width:46%}.sec-tel-2{margin-top:40px}}
+@media (max-width:900px){.sec-trois,.sec-terrain-grille,.sec-encart{grid-template-columns:minmax(0,1fr)}}
 .cas-cartes{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px}
 .cas-carte{display:flex;flex-direction:column;gap:10px;height:100%;padding:24px;border:1px solid var(--line);border-radius:18px;background:var(--surface);color:var(--ink);text-decoration:none}
 .cas-carte strong{font-size:1.2rem}
