@@ -53,7 +53,7 @@ export class PgTrackedLinkStore {
       // son tour, sinon un template resoumis puis refusé garderait la confirmation précédente.
       // `avec_jeton`, décidé par l'appelant, est la seule source de vérité pour l'envoi (131008 si le composant
       // manque, 132000 s'il est fourni sans variable). Un bouton de carte de carousel n'est pas adressable par le
-      // constructeur de composants : il ne reçoit jamais de `{{1}}` (règle dans `src/http/templates.ts`).
+      // constructeur de composants : il ne reçoit jamais de `{{1}}` (règle dans `src/templates/gestion.ts`).
       `insert into tracked_links (code, tenant_id, template_name, template_language, card_index, button_index, destination, avec_jeton)
        values ($1, $2, $3, $4, $5, $6, $7, $8)
        on conflict (tenant_id, template_name, template_language, coalesce(card_index, -1), button_index)

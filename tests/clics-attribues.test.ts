@@ -3,7 +3,7 @@ import { fabriquerJeton, estJeton, JETON_RE } from '../src/links/jeton-contact';
 import { suffixesPourDestinataire } from '../src/campaign/engine';
 import { buildTemplateComponents } from '../src/meta/template-components';
 import { lienDe, lienTraceAvecJeton } from '../src/links/rewrite';
-import { estAttribuable } from '../src/http/templates';
+import { estAttribuable } from '../src/templates/gestion';
 
 /**
  * SAVOIR QUI A CLIQUÉ (migration 0106).

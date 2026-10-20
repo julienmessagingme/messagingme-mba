@@ -1,4 +1,9 @@
-import { creerUnModele, refusDesChamps, type TemplateRouteDeps } from '../http/templates';
+import {
+  creerUnModele,
+  lireStatutsModele,
+  verifierCreationModele,
+  type DepsGestionModeles,
+} from '../templates/gestion';
 import { MetaApiError } from '../meta/errors';
 import { MediaUploadError } from '../meta/media';
 import { isValidTemplateLanguage } from '../../web/lib/partage/langues-modeles';
@@ -15,7 +20,7 @@ import type { FormatEntete } from './entete-par-url';
 
 export interface DepsCreationModele {
   /** Les dépendances de l'écran Modèles, le MÊME objet (`src/index.ts`). */
-  modeles: TemplateRouteDeps;
+  modeles: DepsGestionModeles;
   /** Le téléchargement gardé d'une adresse saisie par un client : `telechargerEnteteProduction` en production. */
   telechargerEntete(format: FormatEntete, url: string): Promise<{ octets: Buffer; mime: string } | { refus: string }>;
   /**
@@ -80,7 +85,7 @@ const OCCUPE: RefusModele = {
   statut: 429, code: 'rate_limited', message: 'trop de fichiers d’en-tête en cours de dépôt, réessayez dans un instant', reessayerDansS: 2,
 };
 
-/** Un refus des gardes de la console, sous un code de l'API. Un 422 de `refusDesChamps` est une panne de lecture : à réessayer. */
+/** Un refus du pré-contrôle commun, sous un code public. Un 422 est une panne de lecture : à réessayer. */
 function refusDeLaConsole(r: { statut: 400 | 422; error: string }): RefusModele {
   if (r.statut === 400) return { statut: 400, code: 'invalid_body', message: r.error };
   return { statut: 429, code: 'rate_limited', message: r.error, reessayerDansS: 5 };
@@ -102,15 +107,16 @@ async function deposerLEntete(deps: DepsCreationModele, tenantId: string, format
 /** Crée le modèle, corps déjà validé par `schemaModeleMeta`. Une erreur de Meta connue devient un refus, une panne lève. */
 export async function creerModeleDepuisMeta(deps: DepsCreationModele, tenantId: string, lu: ModeleMeta): Promise<{ refus: RefusModele } | { modele: ModeleCree }> {
   const { input, enteteMedia } = versModeleConsole(lu);
-  // Avant de télécharger quoi que ce soit : un espace sans compte n'a rien à déposer.
-  if (!(await deps.modeles.repo.getTenantWabaId(tenantId))) return { refus: AUCUN_COMPTE };
+  // Avant de télécharger quoi que ce soit : le même pré-contrôle que la création finale (compte, champs et Flow).
+  const avant = await verifierCreationModele(deps.modeles, tenantId, input);
+  if (avant) {
+    if (avant.motif === 'compte') return { refus: AUCUN_COMPTE };
+    if (avant.motif === 'champs') return { refus: refusDeLaConsole(avant) };
+    return { refus: { statut: avant.statut, code: 'invalid_body', message: avant.error } };
+  }
   try {
     let complet = input;
     if (enteteMedia) {
-      // La seule garde de la console qui peut refuser ce corps (les champs `{cle}` des liens), avant de télécharger et de
-      // déposer jusqu'à 16 Mo pour rien. `creerUnModele` la rejoue : elle ne lit les champs que si une adresse en porte.
-      const avant = await refusDesChamps(deps.modeles, tenantId, input);
-      if (avant) return { refus: refusDeLaConsole(avant) };
       const depot = await deposerLEntete(deps, tenantId, enteteMedia.format, enteteMedia.url);
       if ('refus' in depot) return depot;
       complet = { ...input, header: { format: enteteMedia.format, handle: depot.handle } };
@@ -152,11 +158,11 @@ export async function statutsDuModele(
   }
   const inconnu: RefusModele = { statut: 404, code: 'template_not_found', message: 'modèle inconnu' };
   if (!estNomDeModele(name)) return { refus: inconnu };
-  const waba = await deps.modeles.repo.getTenantWabaId(tenantId);
-  if (!waba) return { refus: AUCUN_COMPTE };
   let tous;
   try {
-    tous = await (await deps.modeles.meta.templateClientForTenant(tenantId)).statutsDuNom(waba, name);
+    const lecture = await lireStatutsModele(deps.modeles, tenantId, name);
+    if (!lecture.compteLie) return { refus: AUCUN_COMPTE };
+    tous = lecture.statuts;
   } catch (err) {
     const refus = refusDeMeta(err);
     if (refus !== null) return { refus };

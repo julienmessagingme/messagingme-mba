@@ -21,7 +21,7 @@ export async function suffixesPourUnEnvoi(
   waId: string,
 ): Promise<{ suffixesBoutons?: Record<number, string> }> {
   const traces = await liens.listByTemplates(tenant, [name]);
-  // Les boutons de carte de carousel ne portent jamais de `{{1}}` (`estAttribuable`, `src/http/templates.ts`).
+  // Les boutons de carte de carousel ne portent jamais de `{{1}}` (`estAttribuable`, `src/templates/gestion.ts`).
   const boutons = traces.filter((l) => l.avecJeton && l.cardIndex === null).map((l) => l.buttonIndex);
   if (boutons.length === 0) return {};
   const jeton = await liens.jetonPourE164(tenant, waId, fabriquerJeton).catch(() => null);

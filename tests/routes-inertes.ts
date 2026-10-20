@@ -20,7 +20,7 @@ import type { RcsCallbackRouteDeps } from '../src/http/rcs-callback';
 import type { ReglagesDep, SettingsRouteDeps } from '../src/http/settings';
 import type { AnalysesDep, StatsRouteDeps } from '../src/http/stats';
 import type { SupportRouteDeps } from '../src/http/support';
-import type { TemplateRouteDeps } from '../src/http/templates';
+import type { DepsGestionModeles } from '../src/templates/gestion';
 import type { MembresDep, UsersRouteDeps } from '../src/http/users';
 import type { ScenariosDep, WorkflowRouteDeps } from '../src/http/workflows';
 import type { DepsMcp } from '../src/mcp/outils';
@@ -429,7 +429,7 @@ export const supportInerte: Pick<SupportRouteDeps, 'getUserEmail'> = {
   getUserEmail: async () => null,
 };
 
-export const modelesInertes: Pick<TemplateRouteDeps, 'getPublishedFlow' | 'indices' | 'tracking' | 'champsDeclares'> = {
+export const modelesInertes: Pick<DepsGestionModeles, 'getPublishedFlow' | 'indices' | 'tracking' | 'champsDeclares'> = {
   // Absente : pas de pré-check, donc « publié ».
   getPublishedFlow: async () => true,
   // Aucun champ déclaré : seuls les champs de base (`prenom`, `nom`, `telephone`) passent dans une adresse.
