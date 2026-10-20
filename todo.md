@@ -60,12 +60,21 @@ migration APRÈS le déploiement de la livraison 2 : l'ancien code la nomme.
 - **La trace `cle_api.creee` d'une clé créée par Claude** dit `via: 'mcp'` mais pas QUELLE autorisation OAuth : y
   ajouter l'identifiant d'accès, comme le journal de l'API.
 
-## 🟡 Le bloc Attente en secondes, « en train d'écrire… » compris (2026-10-16)
+## 🟡 Le bloc Attente en secondes : ce que la relecture laisse (2026-10-20)
 
-- **Le besoin** : poser une pause de 1 à 59 s entre deux messages rapides d'un scénario, pour l'effet humain.
-- **La spec** : `docs/superpowers/specs/2026-10-16-attente-en-secondes-design.md`, relue par un constructeur, décisions
-  de Julien comprises (bloc posé à la main, coches bleues acceptées), validée le 2026-10-17. Le plan :
-  `docs/superpowers/plans/2026-10-17-attente-en-secondes.md`. Pas commencé.
+Livré le 2026-10-20 (moteur `82a775bb` en production, console `71c25867`). Jaunes de la relecture du lot, pas commencés :
+- **Le miroir de la console ignore les secondes** : `web/lib/campaign-eligibility.ts` (estimation de la fenêtre de
+  24 h) ne connaît pas `seconds`, donc l'éditeur n'avertit pas d'un cycle de pauses en secondes suivi d'un message de
+  session que le serveur refuse à la publication (`engine.ts`, `PAS_MIN_MS`). Ajouter l'unité au miroir et au test de
+  parité.
+- **Le débit sous charge** : 4 reprises par processus (`WORKFLOW_REVEIL_COURT_CONCURRENCY`). Une campagne de milliers
+  de destinataires avec une pause en secondes ne la tient pas à la seconde ; la mesurer avant d'annoncer mieux.
+- **Une boucle « modèle, Attente 1 s, retour »** se cadence soixante fois plus vite qu'en minutes, avec des modèles
+  facturés : la publication ne bloque que les messages de session.
+- **Des entrées périmées dans la file en mémoire** : sous retard, une pause de 1 s peut tomber à 0 grâce à la
+  tolérance de 2 s. Sans doublon.
+- **L'indicateur sur un vieux message** : après une longue pause suivie d'une pause en secondes, `last_message_id` peut
+  dater de plusieurs jours ; le refus de Meta est avalé mais bruite le journal.
 
 ## 🟡 L'API Groups de WhatsApp : à garder, sans client pour l'instant (2026-10-16)
 
