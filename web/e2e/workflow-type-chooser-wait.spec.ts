@@ -73,6 +73,23 @@ test.describe('Builder : nature d’un bloc et bloc Attente', () => {
     }, { timeout: 10_000 }).toMatchObject({ delay: 3, unit: 'days' });
   });
 
+  test('une pause en secondes : bornée à 59, résumée en secondes, enregistrée telle quelle', async ({ page }) => {
+    const saved: Graph[] = [];
+    await mockBuilder(page, UN_BLOC, saved);
+    await page.goto('/workflows?open=wf1');
+    await page.getByRole('button', { name: /Attente/i }).click();
+
+    await page.getByRole('combobox').last().selectOption('seconds');
+    await expect(page.getByText('Au-delà de 59 secondes, passez en minutes.')).toBeVisible();
+    await page.getByRole('spinbutton').fill('75');
+    await expect(page.getByRole('spinbutton')).toHaveValue('59');
+
+    await expect(page.locator('.react-flow__node').getByText(/attendre 59 s/i)).toBeVisible();
+    await page.getByTestId('workflow-autoarrange').click();
+    await expect.poll(() => saved[saved.length - 1]?.nodes.find((n) => n.type === 'wait')?.data ?? null, { timeout: 10_000 })
+      .toMatchObject({ delay: 59, unit: 'seconds' });
+  });
+
   test('un bloc Attente sans durée affiche « durée à choisir » plutôt qu’un délai inventé', async ({ page }) => {
     const graph: Graph = { nodes: [{ id: 'w', type: 'wait', position: { x: 0, y: 0 }, data: { wfType: 'wait' } }], edges: [] };
     await mockBuilder(page, graph, []);

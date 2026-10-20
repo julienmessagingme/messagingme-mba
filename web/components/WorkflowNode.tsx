@@ -69,7 +69,7 @@ function summaryOf(data: Record<string, unknown>, t: (fr: string, en?: string) =
     const n = Number(data.delay ?? 0);
     const u = String(data.unit ?? 'hours');
     if (!Number.isFinite(n) || n <= 0) return t('durée à choisir…', 'set a duration…');
-    const lib = u === 'minutes' ? t('min', 'min') : u === 'days' ? t('j', 'd') : t('h', 'h');
+    const lib = u === 'seconds' ? t('s', 's') : u === 'minutes' ? t('min', 'min') : u === 'days' ? t('j', 'd') : t('h', 'h');
     return `${t('attendre', 'wait')} ${n} ${lib}`;
   }
   if (wfType === 'condition') {

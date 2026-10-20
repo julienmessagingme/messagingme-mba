@@ -850,7 +850,9 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
 
 - ✅ **Bloc « Attente »** (2026-08-15, **trois façons de reprendre depuis le 2026-09-08**) : met le parcours en
   pause, puis la suite repart toute seule. Trois choix, dans le panneau du bloc :
-  - **après un délai** : minutes, heures ou jours (30 jours maximum), tenu à la minute près environ ;
+  - **après un délai** : secondes (de 1 à 59, tenues à la seconde, pour espacer deux messages ; quand le scénario
+    répond à un message du contact, il voit « en train d'écrire… » et son message passe en lu), minutes, heures ou
+    jours (30 jours maximum, tenus à la minute près environ) ;
   - **à une date précise** : une date et une heure, valables pour tous les contacts qui passent par ce bloc,
     lues dans le fuseau de l'espace (onglet Paramètres). Une date déjà passée ne retient personne ;
   - **aux prochaines heures ouvrées** : s'il est 1 h du matin, la suite ne repart qu'à l'ouverture du jour,

@@ -1,7 +1,7 @@
 ---
 ecran: workflows
 source_section: Automatisations (menu « Scénario », ex-« Flow »)
-source_empreinte: 8fa004
+source_empreinte: 5c5526
 ---
 # Créer un scénario
 
@@ -30,7 +30,8 @@ Les blocs que vous utiliserez le plus :
   surtout dans une campagne : quand c'est un message du contact qui lance le scénario, c'est ce message-là, donc
   « maintenant ». Le pays suit l'indicatif : les départements d'outre-mer ont le leur, à cocher en plus de la France.
 - **Attente** : met le parcours en pause, pour une durée, jusqu'à une date, ou jusqu'aux prochaines heures
-  d'ouverture.
+  d'ouverture. En secondes (de 1 à 59), elle espace deux messages pour leur donner le rythme d'une personne qui
+  écrit : quand le scénario répond au contact, celui-ci voit « en train d'écrire… » et son message passe en lu.
 - **Assigner à un agent** : passe la main à quelqu'un de votre équipe, qui reprend la conversation.
 - **Aller à** : envoie le contact sur un autre bloc, de ce scénario ou d'un autre, par exemple pour revenir au menu
   après une réponse. Choisissez le scénario puis le bloc, ou collez le code du bloc. Ses réponses déjà données le

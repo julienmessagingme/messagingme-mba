@@ -201,24 +201,41 @@ export function ConfigPanel({
             <option value="heures_ouvrees">{t('aux prochaines heures ouvrées', 'at the next business hours')}</option>
           </select>
 
-          {mode === 'delai' && (
-            <>
-              <div className="mt-2 flex gap-2">
-                <input
-                  type="number"
-                  min={1}
-                  value={Number(d.delay ?? 1)}
-                  onChange={(e) => onPatch({ delay: Math.max(1, Math.floor(Number(e.target.value) || 1)) })}
-                  className={`${cls} w-24`}
-                />
-                <select value={String(d.unit ?? 'hours')} onChange={(e) => onPatch({ unit: e.target.value })} className={`${cls} bg-white`}>
-                  <option value="minutes">{t('minutes', 'minutes')}</option>
-                  <option value="hours">{t('heures', 'hours')}</option>
-                  <option value="days">{t('jours', 'days')}</option>
-                </select>
-              </div>
-            </>
-          )}
+          {mode === 'delai' && (() => {
+            // En secondes, la pause courte entre deux messages : 59 au plus, au-delà les minutes prennent le relais.
+            const unite = String(d.unit ?? 'hours');
+            const enSecondes = unite === 'seconds';
+            const borne = (v: number) => Math.max(1, Math.min(enSecondes ? 59 : Number.MAX_SAFE_INTEGER, Math.floor(v) || 1));
+            return (
+              <>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    {...(enSecondes ? { max: 59 } : {})}
+                    value={Number(d.delay ?? 1)}
+                    onChange={(e) => onPatch({ delay: borne(Number(e.target.value)) })}
+                    className={`${cls} w-24`}
+                  />
+                  <select
+                    value={unite}
+                    onChange={(e) => onPatch(e.target.value === 'seconds'
+                      ? { unit: 'seconds', delay: Math.min(59, Number(d.delay ?? 1) || 1) }
+                      : { unit: e.target.value })}
+                    className={`${cls} bg-white`}
+                  >
+                    <option value="seconds">{t('secondes', 'seconds')}</option>
+                    <option value="minutes">{t('minutes', 'minutes')}</option>
+                    <option value="hours">{t('heures', 'hours')}</option>
+                    <option value="days">{t('jours', 'days')}</option>
+                  </select>
+                </div>
+                {enSecondes && (
+                  <p className="mt-1 text-xs text-ink-500">{t('Au-delà de 59 secondes, passez en minutes.', 'Beyond 59 seconds, switch to minutes.')}</p>
+                )}
+              </>
+            );
+          })()}
 
           {mode === 'date' && (
             <>
