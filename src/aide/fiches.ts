@@ -14,7 +14,7 @@ import { ENCADRE, structureFiche, texteBloc } from './structure';
 /** Une fiche remontée par le rappel, avec ce qui a permis de la remonter. */
 export interface FicheAide {
   id: string;
-  /** Le nom de son fichier dans `docs/aide/fiches/`, sans extension. */
+  /** Le nom de son fichier dans `docs/aide/fiches/`, sans extension, suivi de `#<n>` pour un morceau (`decouperFiche`). */
   cle: string;
   titre: string;
   corps: string;
@@ -46,7 +46,10 @@ export interface DepotAide {
 
 /** Une fiche telle qu'elle vit dans le dépôt, avant d'être chargée en base. */
 export interface FicheFichier {
-  /** Le nom du fichier sans extension. C'est la clé d'unicité, donc ce qui rend le chargement idempotent. */
+  /**
+   * Le nom du fichier sans extension, ou `<nom>#<n>` pour un morceau d'une fiche longue. C'est la clé d'unicité, donc
+   * ce qui rend le chargement idempotent.
+   */
   cle: string;
   titre: string;
   corps: string;
@@ -97,11 +100,14 @@ function emballer(unites: string[], budget: number, joint: string): string[] {
   return parts;
 }
 
-/** Les morceaux d'un sujet : chacun commence par `prefixe` (le marqueur d'une étape, d'un encadré), pour garder son contexte. */
-function morceaux(prefixe: string, blocs: string[]): string[] {
-  const budget = MORCEAU_MAX - (prefixe === '' ? 0 : prefixe.length + 1);
+/**
+ * Les morceaux d'un sujet : chacun commence par `prefixe` (le marqueur d'une étape ou d'un encadré, suivi d'une espace ;
+ * l'intertitre d'une section, suivi d'une ligne vide), pour qu'un morceau retrouvé seul dise encore de quoi il parle.
+ */
+function morceaux(prefixe: string, blocs: string[], joint = ' '): string[] {
+  const budget = MORCEAU_MAX - (prefixe === '' ? 0 : prefixe.length + joint.length);
   const unites = blocs.filter((b) => b !== '').flatMap((b) => (b.length <= budget ? [b] : eclater(b, budget)));
-  return emballer(unites, budget, '\n\n').map((m) => (prefixe === '' ? m : `${prefixe} ${m}`));
+  return emballer(unites, budget, '\n\n').map((m) => (prefixe === '' ? m : `${prefixe}${joint}${m}`));
 }
 
 /**
@@ -121,12 +127,16 @@ export function decouperFiche(f: FicheFichier): FicheFichier[] {
     prose = [];
   };
   for (const section of s.sections) {
-    if (section.type === 'prose') {
-      prose.push(...(section.titre === null ? [] : [`## ${section.titre}`]), ...section.blocs.map(texteBloc));
+    if (section.type === 'prose' && section.titre === null) {
+      prose.push(...section.blocs.map(texteBloc));
       continue;
     }
     vider();
-    if (section.type === 'etape') {
+    if (section.type === 'prose') {
+      // Une section sous intertitre se range à part, et chaque morceau en porte l'intertitre : sinon il restait seul en
+      // fin d'un morceau, et sa suite ouvrait le suivant sans lui.
+      textes.push(...morceaux(`## ${section.titre}`, section.blocs.map(texteBloc), '\n\n'));
+    } else if (section.type === 'etape') {
       textes.push(...morceaux(`**${section.numero}. ${section.titre}.**`, [section.tete, ...section.detail.map(texteBloc)]));
     } else {
       textes.push(...morceaux(ENCADRE.fr, [section.texte]));
@@ -134,6 +144,67 @@ export function decouperFiche(f: FicheFichier): FicheFichier[] {
   }
   vider();
   return textes.map((corps, i) => ({ ...f, cle: `${f.cle}#${i + 1}`, corps }));
+}
+
+/** Les rubriques du centre d'aide public, dans l'ordre du menu. */
+export const RUBRIQUES = ['demarrer', 'parler-aux-clients'] as const;
+export type Rubrique = (typeof RUBRIQUES)[number];
+
+/**
+ * Ce qu'une fiche PUBLIQUE dit d'elle-même dans son en-tête, pour le centre d'aide de la vitrine (plan du centre
+ * d'aide, tâche 3). Le bot n'en lit rien : ces champs ne servent qu'aux pages et au lien « Comment faire ».
+ */
+export interface PublicationFiche {
+  rubrique: Rubrique;
+  /** Sa place dans la rubrique, à partir de 1. */
+  rang: number;
+  /** La page « Comment faire » de son écran (`ecran`), dans la console. */
+  commentFaire: boolean;
+  /** Ses étapes ont une capture de la console ; `captures: non` pour des étapes qui se passent ailleurs. */
+  captures: boolean;
+  /** Son film est livré (`site/films/aide-<cle>*`) ; posé à la livraison, jamais avant. */
+  video: boolean;
+  /** La fiche à lire avant, le second bouton de la page. */
+  prerequis: string | null;
+  /** La page dit l'offre qu'elle demande (le Pro) ; `offre: non` pour une page qui n'en demande pas. */
+  offre: boolean;
+}
+
+/** Un champ de l'en-tête `---` d'une fiche ; un champ vide vaut absent. */
+export function champDeFiche(texte: string, nom: string): string | null {
+  const lignes = texte.split(/\r?\n/);
+  const fin = lignes[0] === '---' ? lignes.indexOf('---', 1) : -1;
+  if (fin <= 0) return null;
+  const trouve = new RegExp(`^${nom}:(.*)$`, 'm').exec(lignes.slice(1, fin).join('\n'));
+  const valeur = trouve?.[1]?.trim() ?? '';
+  return valeur === '' ? null : valeur;
+}
+
+/**
+ * La publication d'une fiche, ou `null` si elle n'est pas publique (`publique: oui`). LÈVE sur un champ mal écrit, en
+ * le nommant : seuls les tests et le générateur de la vitrine l'appellent, jamais le chargeur du bot.
+ */
+export function publicationDe(texte: string): PublicationFiche | null {
+  if (champDeFiche(texte, 'publique') !== 'oui') return null;
+  const oui = (nom: string, defaut: boolean): boolean => {
+    const v = champDeFiche(texte, nom);
+    if (v === null) return defaut;
+    if (v !== 'oui' && v !== 'non') throw new Error(`${nom}: « ${v} », attendu oui ou non`);
+    return v === 'oui';
+  };
+  const rubrique = champDeFiche(texte, 'rubrique');
+  if (!RUBRIQUES.includes(rubrique as Rubrique)) throw new Error(`rubrique: « ${rubrique} », attendu ${RUBRIQUES.join(' ou ')}`);
+  const rang = Number(champDeFiche(texte, 'rang'));
+  if (!Number.isInteger(rang) || rang < 1) throw new Error(`rang: « ${champDeFiche(texte, 'rang')} », attendu un entier dès 1`);
+  return {
+    rubrique: rubrique as Rubrique,
+    rang,
+    commentFaire: oui('comment_faire', false),
+    captures: oui('captures', true),
+    video: oui('video', false),
+    prerequis: champDeFiche(texte, 'prerequis'),
+    offre: oui('offre', true),
+  };
 }
 
 /**

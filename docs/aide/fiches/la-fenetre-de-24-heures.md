@@ -1,4 +1,9 @@
 ---
+publique: oui
+rubrique: parler-aux-clients
+rang: 2
+captures: non
+offre: non
 ---
 # Pourquoi mon message ne part pas : la fenêtre de 24 heures
 
@@ -20,5 +25,5 @@ Ce que ça change, concrètement :
 - **Un bloc d'attente de vingt-quatre heures ou plus** referme la fenêtre. Le message qui suit dans le
   scénario sera refusé, et la console vous le signale au montage plutôt qu'à l'envoi.
 
-Le réflexe à prendre : dès que le message s'adresse à quelqu'un qui ne vient pas de vous écrire, pensez
-modèle approuvé. Dès qu'il répond à quelqu'un qui vient de parler, écrivez librement.
+**Bon à savoir.** Le réflexe à prendre : dès que le message s'adresse à quelqu'un qui ne vient pas de vous
+écrire, pensez modèle approuvé. Dès qu'il répond à quelqu'un qui vient de parler, écrivez librement.

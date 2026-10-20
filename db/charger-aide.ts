@@ -8,7 +8,7 @@
  * RETIRE les lignes dont le fichier a disparu : sans ça, le bot continuerait de répondre avec une page
  * effacée du produit, et personne ne saurait d'où sort sa réponse.
  *
- * ⚠️ IDEMPOTENT PAR LA CLÉ (le nom du fichier). Relancer met à jour, il ne duplique pas. Sans ça, chaque
+ * ⚠️ IDEMPOTENT PAR LA CLÉ (le nom du fichier, ou `<nom>#<n>` pour un morceau). Relancer met à jour, il ne duplique pas. Sans ça, chaque
  * chargement doublerait la base et la recherche remonterait deux fois la même réponse.
  *
  * ⚠️ IL NE VECTORISE RIEN, et c'est délibéré : le balayage existant s'en charge (`balayerVectorisation`).

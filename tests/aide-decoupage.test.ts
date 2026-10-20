@@ -50,25 +50,26 @@ describe('decouperFiche, sur les fiches réelles', () => {
     }
   });
 
-  it('🔴 « Lancer une campagne » : une étape par morceau, et chaque morceau d’étape commence par son marqueur', () => {
-    const f = fiches.find((x) => x.cle === 'lancer-une-campagne')!;
-    const m = decouperFiche(f);
-    for (const e of structureFiche(f.corps).sections.filter((s) => s.type === 'etape')) {
-      const marque = `**${e.numero}. ${e.titre}.**`;
-      const siens = m.filter((x) => x.corps.includes(marque));
-      expect(siens.length, marque).toBeGreaterThan(0);
-      // Le contexte : un morceau qui porte l'étape commence par elle, jamais au milieu d'un autre sujet.
-      for (const x of siens) expect(x.corps.startsWith(marque), `${x.cle} commence par ${marque}`).toBe(true);
+  it('🔴 dans toute fiche longue à étapes, chaque morceau qui porte une étape commence par son marqueur', () => {
+    // Porté sur TOUTES les fiches à étapes, pas sur le contenu d'une seule : la tâche 3 réécrit les fiches, et un test lié
+    // à la place d'une étape dans un texte deviendrait rouge sur un push de `.md` seuls, qui ne lance pas la CI.
+    const aEtapes = fiches.filter((f) => f.corps.length > MORCEAU_MAX && structureFiche(f.corps).sections.some((s) => s.type === 'etape'));
+    expect(aEtapes.length).toBeGreaterThan(0);
+    for (const f of aEtapes) {
+      const m = decouperFiche(f);
+      for (const e of structureFiche(f.corps).sections.filter((s) => s.type === 'etape')) {
+        const marque = `**${e.numero}. ${e.titre}.**`;
+        const siens = m.filter((x) => x.corps.includes(marque));
+        expect(siens.length, `${f.cle} ${marque}`).toBeGreaterThan(0);
+        for (const x of siens) expect(x.corps.startsWith(marque), `${x.cle} commence par ${marque}`).toBe(true);
+      }
     }
-    // La programmation (étape 5) est atteignable : elle était au-delà des 2 000 premiers caractères.
-    expect(f.corps.indexOf('**5. ')).toBeGreaterThan(MORCEAU_MAX);
-    expect(m.some((x) => x.corps.startsWith('**5. '))).toBe(true);
   });
 
   it('les clés des morceaux sont uniques sur tout le dépôt', () => {
     const cles = morceauxDuDepot().map((m) => m.cle);
     expect(new Set(cles).size).toBe(cles.length);
-    expect(cles).toContain('lancer-une-campagne#1');
+    expect(cles.some((c) => c.includes('#'))).toBe(true);
   });
 
   it('🔴 le chargeur charge les MORCEAUX, pas les fiches entières', () => {
@@ -99,6 +100,40 @@ describe('decouperFiche, sur des cas construits', () => {
     const etape = m.filter((x) => x.corps.includes('Phrase numéro'));
     expect(etape.length).toBeGreaterThan(1);
     for (const x of etape) expect(x.corps.startsWith('**1. Le geste.**')).toBe(true);
+  });
+
+  it('🔴 une étape au-delà des 2 000 premiers caractères a son morceau, qui commence par elle', () => {
+    const remplissage = Array.from({ length: 12 }, (_, i) => phrase(i)).join(' ');
+    const corps = ['Le chapeau.', ...[1, 2, 3, 4, 5].map((n) => `**${n}. Étape ${n}.** Faire le geste ${n}. ${remplissage}`)].join('\n\n');
+    expect(corps.indexOf('**5. ')).toBeGreaterThan(MORCEAU_MAX);
+    const m = decouperFiche({ ...base, corps });
+    for (const n of [1, 2, 3, 4, 5]) {
+      const siens = m.filter((x) => x.corps.includes(`**${n}. Étape ${n}.**`));
+      expect(siens.length, String(n)).toBeGreaterThan(0);
+      for (const x of siens) expect(x.corps.startsWith(`**${n}. Étape ${n}.**`)).toBe(true);
+    }
+  });
+
+  it('un encadré long se coupe, chaque part garde son marqueur, rien n’est perdu', () => {
+    const long = Array.from({ length: 80 }, (_, i) => phrase(i)).join(' ');
+    const m = decouperFiche({ ...base, corps: `Le chapeau.\n\n**1. Le geste.** Faire ceci.\n\n**Bon à savoir.** ${long}` });
+    const encadre = m.filter((x) => x.corps.includes('Phrase numéro'));
+    expect(encadre.length).toBeGreaterThan(1);
+    for (const x of encadre) {
+      expect(x.corps.startsWith('**Bon à savoir.**')).toBe(true);
+      expect(x.corps.length).toBeLessThanOrEqual(MORCEAU_MAX);
+    }
+    for (let i = 0; i < 80; i++) expect(encadre.some((x) => x.corps.includes(phrase(i))), String(i)).toBe(true);
+  });
+
+  it('un intertitre reste avec ce qu’il annonce, et la suite de sa section le porte encore', () => {
+    const long = Array.from({ length: 80 }, (_, i) => phrase(i)).join(' ');
+    const avant = Array.from({ length: 30 }, (_, i) => `Avant ${i}.`).join(' ');
+    const m = decouperFiche({ ...base, corps: `Le chapeau.\n\n${avant}\n\n## Suivre ce que ça donne\n\n${long}` });
+    for (const x of m) expect(x.corps.trimEnd().endsWith('## Suivre ce que ça donne'), x.cle).toBe(false);
+    for (const x of m.filter((y) => y.corps.includes('Phrase numéro'))) {
+      expect(x.corps.startsWith('## Suivre ce que ça donne'), x.cle).toBe(true);
+    }
   });
 
   it('une longue liste se coupe entre ses points', () => {

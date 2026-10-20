@@ -974,6 +974,15 @@ en production.
   `standby` ne sont alors plus requalifiés (il est « présent ») et n'arrivent à personne. Piste : ne compenser que
   l'entrée que CE geste a créée (pas celle retrouvée par relecture).
 
+## 🟡 Bot d'aide : une course entre le chargement et la vectorisation (relecture du 2026-10-20)
+
+- 🟡 **`ecrireVecteurs` écrit par `id` sans vérifier que le texte n'a pas changé depuis sa lecture**
+  (`src/aide/fiches.pg.ts`, même forme dans le dépôt de connaissance des agents). Un `aide:charger` qui tombe pendant un
+  passage du balayage laisse à une ligne le vecteur de son ANCIEN texte, pour de bon (elle ne redevient pas « à
+  vectoriser »). Le découpage en morceaux élargit l'exposition : une étape insérée renumérote les morceaux suivants, donc
+  change leur texte. Risque faible (deux écritures à moins d'une minute). Piste : conditionner l'update à l'`updated_at`
+  lu, ou à une empreinte du texte.
+
 ## 🟠 Suites de la recharge Stripe et du panneau Détail (2026-09-29)
 
 - **Julien** : ajouter l'autorisation **Invoices : Lecture** à la clé restreinte « Messaging Me console », puis

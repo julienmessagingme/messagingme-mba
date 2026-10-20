@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { creerRepondeur, OUTIL_REPONDRE, type DepsAide } from '../src/aide/repondre';
-import type { FicheAide } from '../src/aide/fiches';
+import { MORCEAU_MAX, type FicheAide } from '../src/aide/fiches';
 
 /**
  * LE MOTEUR DE L'AIDE.
@@ -71,9 +71,62 @@ describe('répondeur d’aide', () => {
     expect(r.sources).toEqual(['Lancer une campagne']);
   });
 
+  /** Le bloc de fiches que le modèle a reçu, pour ces morceaux retenus dans cet ordre. */
+  async function blocRecu(retenus: FicheAide[]): Promise<{ bloc: string; sources: string[] }> {
+    const vus: string[] = [];
+    const r = await creerRepondeur(deps({
+      depot: { chercher: async () => retenus },
+      completer: async (q: { messages: Array<{ content: string }> }) => {
+        vus.push(...q.messages.map((x) => x.content));
+        return repondu('Voilà.') as never;
+      },
+    } as never))(question);
+    return { bloc: vus.find((t) => t.startsWith('FICHES DU MODE')) ?? '', sources: r.sources };
+  }
+  const grand = (cle: string, titre: string, n: number) =>
+    fiche({ id: `${cle}#${n}`, cle: `${cle}#${n}`, titre, corps: `Geste ${cle} ${n}. ${'x'.repeat(1_500)}` });
+
+  it('🔴 les petits morceaux d’une fiche passent TOUS : le bot ne reçoit pas moins qu’avant le découpage', async () => {
+    // Quatre étapes courtes d'une même fiche, dont celle du consentement : elles tiennent dans ce qu'une fiche peut
+    // envoyer, aucune ne doit tomber (relecture du 2026-10-20 : un plafond de deux morceaux en perdait la moitié).
+    const etapes = [1, 2, 3, 4].map((n) => fiche({ id: `c${n}`, cle: `importer-mes-contacts#${n}`, titre: 'Importer mes contacts', corps: `**${n}. Étape.** Geste ${n}.` }));
+    const { bloc, sources } = await blocRecu(etapes);
+    for (const n of [1, 2, 3, 4]) expect(bloc).toContain(`Geste ${n}.`);
+    expect(sources).toEqual(['Importer mes contacts']);
+  });
+
+  it('🔴 une fiche ne remplit pas tout : au-delà de son budget, la fiche suivante garde sa place', async () => {
+    const { bloc, sources } = await blocRecu([
+      grand('lancer-une-campagne', 'Lancer une campagne', 1),
+      grand('lancer-une-campagne', 'Lancer une campagne', 2),
+      grand('lancer-une-campagne', 'Lancer une campagne', 3),
+      grand('importer-mes-contacts', 'Importer mes contacts', 1),
+    ]);
+    expect(bloc).toContain('Geste lancer-une-campagne 1.');
+    expect(bloc).toContain('Geste lancer-une-campagne 2.');
+    expect(bloc).not.toContain('Geste lancer-une-campagne 3.');
+    expect(bloc).toContain('Geste importer-mes-contacts 1.');
+    expect(sources).toEqual(['Lancer une campagne', 'Importer mes contacts']);
+  });
+
+  it('🔴 le total envoyé au modèle ne dépasse jamais trois morceaux pleins : le coût d’une réponse ne monte pas', async () => {
+    const retenus = ['a', 'b', 'c', 'd', 'e'].map((c) => grand(c, `Fiche ${c}`, 1));
+    const { bloc } = await blocRecu(retenus);
+    const corps = retenus.filter((f) => bloc.includes(f.corps));
+    expect(corps.reduce((n, f) => n + f.corps.length, 0)).toBeLessThanOrEqual(3 * MORCEAU_MAX);
+    expect(corps.length).toBe(3);
+  });
+
+  it('sans reclassement, le rappel lexical ramène de quoi remplir le budget', async () => {
+    const limites: number[] = [];
+    await creerRepondeur(deps({ depot: { chercher: async (_q: string, n: number) => { limites.push(n); return [fiche()]; } } }))(question);
+    expect(limites[0]).toBeGreaterThanOrEqual(12);
+  });
+
   it('🔴 le modèle reçoit le morceau entier : le bot ne tronque plus en deçà de ce que le chargeur écrit', async () => {
-    const corps = `**5. Le lancement.** ${'Programmez pour plus tard. '.repeat(70)}`.trim();
-    expect(corps.length).toBeGreaterThan(1_800);
+    const debut = '**5. Le lancement.** ';
+    const corps = debut + 'x'.repeat(MORCEAU_MAX - debut.length);
+    expect(corps.length).toBe(MORCEAU_MAX);
     const vus: string[] = [];
     await creerRepondeur(deps({
       depot: { chercher: async () => [fiche({ corps })] },
@@ -82,7 +135,7 @@ describe('répondeur d’aide', () => {
         return repondu('Programmez.') as never;
       },
     } as never))(question);
-    expect(vus.some((t) => t.includes(corps))).toBe(true);
+    expect(vus.some((t) => t.includes(`${corps}\n<<<FIN FICHE`))).toBe(true);
   });
 
   it('🔴 une clé d’écran INVENTÉE par le modèle ne produit aucun lien', async () => {

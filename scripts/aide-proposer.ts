@@ -43,6 +43,15 @@ export function empreinteDe(texte: string): string {
 }
 
 /**
+ * Ce que la version anglaise d'une fiche publique a traduit : l'empreinte du titre et du corps français, que la fiche
+ * anglaise recopie dans `traduit_de`. Pas l'en-tête : poser `video: oui` à la livraison d'un film ne change rien à
+ * traduire (plan du centre d'aide, tâche 4).
+ */
+export function empreinteATraduire(fiche: { titre: string; corps: string }): string {
+  return empreinteDe(`${fiche.titre}\n\n${fiche.corps}`);
+}
+
+/**
  * Découpe `features.md` sur ses titres de niveau deux.
  *
  * ⚠️ LE CORPS S'ARRÊTE À LA SECTION SUIVANTE. Le laisser courir jusqu'à la fin ferait changer l'empreinte de

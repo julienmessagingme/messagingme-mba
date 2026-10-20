@@ -2,25 +2,62 @@
 ecran: contacts
 source_section: Contacts & CRM
 source_empreinte: 418864
+publique: oui
+rubrique: parler-aux-clients
+rang: 4
+comment_faire: oui
 ---
 # Ajouter ou importer mes contacts
 
-Le bouton « + Rajouter des contacts », en haut de l'écran Contacts, propose deux chemins : ajouter une
-personne à la main, ou importer un fichier CSV.
+Vos contacts sont les personnes à qui vous écrirez. L'écran Contacts sert à les ajouter, à les retrouver, et à
+agir sur plusieurs d'un coup.
 
-L'import vous fait associer chaque colonne de votre fichier à un champ de la fiche. Les contacts arrivent
-alors dans votre liste, prêts à être ciblés.
+**1. Choisir le chemin.** Le bouton « + Rajouter des contacts », en haut de l'écran Contacts, propose deux
+chemins : ajouter une personne à la main, ou importer un fichier CSV.
 
-La case du consentement vaut pour tout le fichier, y compris pour les personnes qui vous avaient répondu
-STOP : cochée, elle les réabonne. Ne la cochez que si vous détenez la preuve de leur consentement. Ajouter à la
-main un numéro déjà connu, en revanche, ne réabonne jamais quelqu'un qui a dit STOP.
+**2. Associer les colonnes.** Pour un import, associez chaque colonne de votre fichier à un champ de la fiche.
+Les contacts arrivent alors dans votre liste, prêts à être ciblés.
+
+**3. Décider du consentement.** La case du consentement vaut pour tout le fichier, y compris pour les
+personnes qui vous avaient répondu STOP : cochée, elle les réabonne. Ne la cochez que si vous détenez la preuve
+de leur consentement.
+
+Ajouter à la main un numéro déjà connu, en revanche, ne réabonne jamais quelqu'un qui a dit STOP.
+
+**4. Retrouver et agir en masse.** L'écran sert ensuite de moteur de recherche : filtrez, cochez des lignes, et
+le menu « Action » applique le même geste à toute la sélection (poser un tag, en retirer un, remplir un champ,
+passer en consentement accordé ou refusé, supprimer).
+
+Vous filtrez par tag, par consentement marketing, par nom, par numéro de téléphone, par la valeur d'un champ
+que vous avez créé, par la présence d'une adresse e-mail, par niveau de risque de désengagement (de quoi
+préparer une campagne vers ceux qui décrochent), ou par ce que dit leur dernière analyse : intention,
+sentiment, satisfaction ou urgence au-dessus ou en dessous d'une note, demande résolue ou non, analysée depuis
+moins de tant de jours. Une fiche jamais analysée n'entre dans aucune de ces valeurs. Les filtres se cumulent,
+et ce sont les mêmes quand vous choisissez les destinataires d'une campagne.
+
+Trois points à connaître avant d'agir en masse :
+
+- **Passer en consentement accordé** rend la sélection destinataire de vos campagnes. Ne le faites que si
+  vous détenez une preuve de ce consentement. Les personnes qui vous ont répondu STOP le restent : l'écran vous
+  dit combien de fiches ont gardé leur STOP. Un STOP se lève depuis la fiche de la personne, par la personne
+  elle-même, par un import CSV case cochée ou par un scénario, jamais par une action en masse.
+- **Passer en consentement refusé** exclut de toute campagne, y compris de celles déjà programmées.
+- **Supprimer est irréversible** : la fiche, la conversation et son historique partent d'un seul geste. Il
+  faut taper le mot SUPPRIMER pour confirmer.
+
+**Bon à savoir.** Une action en masse ne déclenche aucun scénario. Poser un tag sur cinq mille contacts d'un
+coup ne lance pas l'automation « tag ajouté », sinon ce serait autant de messages envoyés sans que vous l'ayez
+voulu. Seul un tag posé sur une fiche, une par une, la déclenche. Pour toucher une liste entière, c'est une
+campagne qu'il vous faut.
+
+## La fiche d'un contact
 
 Un clic sur une ligne ouvre la fiche de la personne. Vous y modifiez ses champs, ses tags et son
-consentement, et vous y lisez le résumé de sa dernière conversation analysée dès qu'elle en a tenu une :
-de quoi savoir de quoi vous avez parlé avant de la rappeler, sans rouvrir l'échange. Ce résumé est écrit par
-l'analyse, il ne se modifie pas à la main, et il disparaît en même temps que la conversation quand celle-ci
-atteint votre durée de conservation. L'onglet « Historique » de la fiche montre, lui, le résumé de chacune
-de ses conversations.
+consentement, et vous y lisez le résumé de sa dernière conversation analysée dès qu'elle en a tenu une : de quoi
+savoir de quoi vous avez parlé avant de la rappeler, sans rouvrir l'échange. Ce résumé est écrit par l'analyse,
+il ne se modifie pas à la main, et il disparaît en même temps que la conversation quand celle-ci atteint votre
+durée de conservation. L'onglet « Historique » de la fiche montre, lui, le résumé de chacune de ses
+conversations.
 
 La fiche s'organise en onglets : **Fiche** montre tout, **Tags**, **Champs** et **Analyse** en montrent chacun
 une partie (les étiquettes, les champs personnalisés, ce que la plateforme a déduit de la personne), et
@@ -35,31 +72,6 @@ des constats, pas les propos de la personne. Seule la suppression de la fiche l'
 La fiche montre aussi le **risque de désengagement** de la personne : faible, moyen, élevé, ou inconnu, avec
 un score sur 100, les raisons principales écrites en clair et depuis quand elle est à ce niveau. Il est
 recalculé chaque nuit à partir des 90 derniers jours : réponses, clics, lectures, dernière conversation
-analysée, joignabilité, désabonnement. La date ne bouge que si le niveau change ; le score et les raisons,
-eux, sont toujours à jour. « Inconnu » veut dire qu'aucun message ne lui a été délivré sur cette période, donc qu'il n'y
-avait rien à observer. Une fiche que le calcul n'a encore jamais vue affiche « pas encore calculé ».
-
-Une fois vos contacts en place, l'écran sert de moteur de recherche. Vous filtrez par tag, par consentement
-marketing, par nom, par numéro de téléphone, par la valeur d'un champ que vous avez créé, par la présence
-d'une adresse e-mail, par niveau de risque de désengagement (de quoi préparer une campagne vers ceux qui
-décrochent), ou par ce que dit leur dernière analyse : intention, sentiment, satisfaction ou urgence au-dessus
-ou en dessous d'une note, demande résolue ou non, analysée depuis moins de tant de jours. Une fiche jamais
-analysée n'entre dans aucune de ces valeurs. Les filtres se cumulent, et ce sont les mêmes quand vous
-choisissez les destinataires d'une campagne. Vous cochez ensuite des lignes, et le menu « Action » applique
-le même geste à toute la sélection : poser un tag, en retirer un, remplir un champ, passer en consentement
-accordé ou refusé, supprimer.
-
-Trois points à connaître avant d'agir en masse :
-
-- **Passer en consentement accordé** rend la sélection destinataire de vos campagnes. Ne le faites que si
-  vous détenez une preuve de ce consentement. Les personnes qui vous ont répondu STOP le restent : l'écran vous
-  dit combien de fiches ont gardé leur STOP. Un STOP se lève depuis la fiche de la personne, par la personne
-  elle-même, par un import CSV case cochée ou par un scénario, jamais par une action en masse.
-- **Passer en consentement refusé** exclut de toute campagne, y compris de celles déjà programmées.
-- **Supprimer est irréversible** : la fiche, la conversation et son historique partent d'un seul geste. Il
-  faut taper le mot SUPPRIMER pour confirmer.
-
-Enfin, une action en masse ne déclenche aucun scénario. Poser un tag sur cinq mille contacts d'un coup ne
-lance pas l'automation « tag ajouté », sinon ce serait autant de messages envoyés sans que vous l'ayez
-voulu. Seul un tag posé sur une fiche, une par une, la déclenche. Pour toucher une liste entière, c'est une
-campagne qu'il vous faut.
+analysée, joignabilité, désabonnement. La date ne bouge que si le niveau change ; le score et les raisons, eux,
+sont toujours à jour. « Inconnu » veut dire qu'aucun message ne lui a été délivré sur cette période, donc qu'il
+n'y avait rien à observer. Une fiche que le calcul n'a encore jamais vue affiche « pas encore calculé ».

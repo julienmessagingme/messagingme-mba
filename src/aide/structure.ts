@@ -138,10 +138,26 @@ export function erreursDeStructure(corps: string, langue: LangueFiche): string[]
     }
   }
 
+  // Une étape ou un encadré COLLÉ à la ligne d'avant serait recollé dans le paragraphe précédent : la page montrerait
+  // une étape de moins, et la numérotation resterait intacte si c'était la dernière. Seul un début de bloc compte.
+  const marques = [/^\*\*\d+\. /, ENCADRE.fr, ENCADRE.en];
+  for (const bloc of corps.replace(/\r\n/g, '\n').split(/\n[ \t]*\n/)) {
+    const lignes = bloc.split('\n').filter((l) => l.trim() !== '');
+    for (const l of lignes.slice(1)) {
+      const t = l.trim();
+      if (marques.some((m) => (typeof m === 'string' ? t.startsWith(m) : m.test(t)))) {
+        erreurs.push(`étape ou encadré collé à la ligne d’avant, sans ligne vide : « ${t.slice(0, 40)} »`);
+      }
+    }
+    // Une liste numérotée : en tête de bloc, ou au moins deux lignes d'un même bloc (sous un paragraphe, elle serait
+    // recollée en un seul). Une seule ligne coupée qui commence par « 15. » reste du texte.
+    const numerotees = lignes.filter((l) => /^\d+\. /.test(l.trim())).length;
+    if (/^\d+\. /.test(lignes[0] ?? '') || numerotees >= 2) erreurs.push('liste numérotée : une étape s’écrit **N. Titre.**');
+  }
+
   if (corps.includes('`')) erreurs.push('accent grave : la page ne rend pas le code');
   if (corps.includes('](')) erreurs.push('lien Markdown : la page ne rend pas les liens');
   if (corps.replace(/\*\*/g, '').includes('*')) erreurs.push('astérisque seul (italique ?) : seul le gras existe');
   if (/^#(?!# )/m.test(corps)) erreurs.push('titre autre que « ## » : seul l’intertitre existe');
-  if (/^\d+\. /m.test(corps)) erreurs.push('liste numérotée : une étape s’écrit **N. Titre.**');
   return erreurs;
 }

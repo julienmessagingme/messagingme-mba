@@ -47,7 +47,7 @@ export class PgDepotAide implements DepotAide, DepotAVectoriser {
               -- vienne de NOTRE code et non du GUC pg_trgm.similarity_threshold, qui est un reglage serveur
               -- que le depot ne controle pas.
               or (f.titre % $2 and similarity(f.titre, $2) >= $4)
-        order by termes_trouves desc, proximite_titre desc
+        order by termes_trouves desc, proximite_titre desc, f.cle
         limit $5::int`,
       [termes, requete, termes.join(' | '), PROXIMITE_TITRE_MIN, Math.max(1, Math.floor(limite))],
     );

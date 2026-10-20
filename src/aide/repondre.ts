@@ -101,8 +101,40 @@ export const QUESTION_MAX_CARACTERES = 500;
  * chargeur a découpé pour qu'il arrive entier. La coupe ne sert plus que de filet.
  */
 const CORPS_MAX = MORCEAU_MAX;
-/** Combien de fiches partent au modèle, au plus. Trois suffisent et gardent la réponse nette. */
+/**
+ * CE QUI PART AU MODÈLE SE COMPTE EN CARACTÈRES, PAS EN FICHES (relecture du 2026-10-20). Avant le découpage, trois
+ * fiches tronquées à `CORPS_MAX` : c'est le coût d'une réponse, et il ne monte pas. Mais une fiche réécrite en étapes
+ * donne de PETITS morceaux, et un plafond en NOMBRE en aurait perdu la moitié (l'étape du consentement de « Importer mes
+ * contacts », que le bot avait toujours sous les yeux). D'où deux budgets : au total, trois morceaux pleins ; par fiche,
+ * deux, pour qu'une question à cheval sur deux fiches garde la seconde.
+ */
+const BUDGET_TOTAL = 3 * CORPS_MAX;
+const BUDGET_PAR_FICHE = 2 * CORPS_MAX;
+/** Combien de fiches DISTINCTES partent au modèle, au plus : au-delà, la réponse se dilue. */
 const FICHES_RENDUES = 3;
+/** Combien de morceaux la recherche ramène sans reclassement : de quoi remplir le budget de petits morceaux. */
+const CANDIDATS_LEXICAUX = 12;
+
+/** La fiche d'un morceau : sa clé sans le `#<n>` du découpage, et son titre, que tous ses morceaux partagent. */
+const ficheDe = (f: FicheAide): string => `${f.cle.split('#')[0]!} | ${f.titre}`;
+
+/**
+ * Les retenues dans leur ordre, tant qu'elles tiennent dans le budget total, dans celui de leur fiche, et parmi les
+ * `FICHES_RENDUES` premières fiches.
+ */
+function places(fiches: FicheAide[]): FicheAide[] {
+  let total = 0;
+  const parFiche = new Map<string, number>();
+  return fiches.filter((f) => {
+    const taille = Math.min(f.corps.length, CORPS_MAX);
+    const deLaFiche = parFiche.get(ficheDe(f)) ?? 0;
+    if (!parFiche.has(ficheDe(f)) && parFiche.size >= FICHES_RENDUES) return false;
+    if (total + taille > BUDGET_TOTAL || deLaFiche + taille > BUDGET_PAR_FICHE) return false;
+    total += taille;
+    parFiche.set(ficheDe(f), deLaFiche + taille);
+    return true;
+  });
+}
 const DELAI_DEFAUT_MS = 20_000;
 /**
  * Combien d'échanges passés partent au modèle. Borné parce que chaque appel renvoie tout le fil : son coût
@@ -190,7 +222,7 @@ export function creerRepondeur(deps: DepsAide): (q: QuestionAide) => Promise<Rep
     if (question === '') return rien;
 
     const large = deps.recherche !== null;
-    const lexicales = await deps.depot.chercher(question, large ? deps.recherche!.candidats : FICHES_RENDUES);
+    const lexicales = await deps.depot.chercher(question, large ? deps.recherche!.candidats : CANDIDATS_LEXICAUX);
     let candidates = lexicales;
     if (deps.recherche && deps.depot.chercherParVecteur) {
       try {
@@ -204,7 +236,8 @@ export function creerRepondeur(deps: DepsAide): (q: QuestionAide) => Promise<Rep
     }
 
     let retenues = (deps.recherche ? await verdict(candidates, question, deps.recherche)
-      : candidates.filter(ficheEstPertinente)).slice(0, FICHES_RENDUES);
+      : candidates.filter(ficheEstPertinente));
+    retenues = places(retenues);
 
     /**
      * Le rattrapage des questions de suite : « et ensuite ? » ne ramène rien au rappel. On ne cherche avec la
@@ -214,9 +247,10 @@ export function creerRepondeur(deps: DepsAide): (q: QuestionAide) => Promise<Rep
     const precedente = q.historique?.at(-1)?.question?.trim() ?? '';
     if (retenues.length === 0 && precedente !== '') {
       const elargie = `${precedente} ${question}`.slice(0, QUESTION_MAX_CARACTERES);
-      const rattrapees = await deps.depot.chercher(elargie, large ? deps.recherche!.candidats : FICHES_RENDUES);
+      const rattrapees = await deps.depot.chercher(elargie, large ? deps.recherche!.candidats : CANDIDATS_LEXICAUX);
       retenues = (deps.recherche ? await verdict(rattrapees, elargie, deps.recherche)
-        : rattrapees.filter(ficheEstPertinente)).slice(0, FICHES_RENDUES);
+        : rattrapees.filter(ficheEstPertinente));
+      retenues = places(retenues);
     }
 
     // Aucune source : on ne va pas voir le modèle.

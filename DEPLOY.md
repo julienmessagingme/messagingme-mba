@@ -163,13 +163,15 @@ fiable, puisqu'il lit le répertoire réel et non une image.)
 🔴 **UNE FICHE DU BOT D'AIDE QUI A CHANGÉ DOIT ÊTRE CHARGÉE, ET RIEN NE LE RAPPELLE.** Le dépôt est la
 SOURCE des fiches (`docs/aide/fiches/*.md`), la table `aide_fiches` n'en est que l'INDEX : un `git pull` +
 `up --build` ne la met pas à jour, et le bot continue de répondre aux clients avec le texte d'avant, sans
-qu'aucune erreur ne le signale. À faire après le déploiement, dès qu'un `.md` de ce dossier a bougé :
+qu'aucune erreur ne le signale. À faire après le déploiement, dès qu'un `.md` de ce dossier a bougé, OU que le
+découpage a changé (`src/aide/fiches.ts`, `src/aide/structure.ts` : une fiche longue est chargée en morceaux, et
+leur texte en dépend) :
 
 ```bash
 sudo docker compose run --rm --no-deps mba-api npm run aide:charger
 ```
 
-⚠️ **Idempotent par le nom du fichier** : relancer met à jour, ça ne duplique pas, donc le lancer « au cas
+⚠️ **Idempotent par la clé** (le nom du fichier, ou `<nom>#<n>` pour un morceau) : relancer met à jour, ça ne duplique pas, donc le lancer « au cas
 où » ne coûte rien. Il RETIRE aussi les lignes dont le fichier a disparu, sinon le bot répondrait avec une
 page effacée du produit. Il ne vectorise rien : la fiche est trouvable par les MOTS tout de suite, par le
 SENS au passage suivant du balayage.

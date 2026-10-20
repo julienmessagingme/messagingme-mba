@@ -2,108 +2,69 @@
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
 source_empreinte: 69abba
+publique: oui
+rubrique: demarrer
+rang: 3
+comment_faire: oui
+prerequis: ce-qu-il-faut-chez-meta
 ---
 # Connecter mon numéro WhatsApp, et lire son état
 
-L'Accueil est l'écran sur lequel vous arrivez en vous connectant, et celui que le logo ramène. Il porte une
-seule chose : l'état de votre compte WhatsApp.
+L'Accueil est l'écran sur lequel vous arrivez en vous connectant, et celui que le logo ramène. Il porte une seule
+chose : l'état de votre compte WhatsApp, et tant qu'aucun numéro n'est rattaché, de quoi en connecter un.
 
-**Connecter un numéro.** Tant qu'aucun numéro n'est rattaché, un bouton ouvre la fenêtre de Meta. Vous y
-choisissez votre compte professionnel et votre numéro, et tout le reste se fait sans vous. Si vous aviez
-déjà commencé une première fois, recommencer fonctionne : vous n'avez rien à ressaisir et aucun nouveau code
-à redemander, vous retrouvez le compte et le numéro existants. Quand Meta refuse, c'est SON motif qui
+**1. Ouvrir la fenêtre de Meta.** Tant qu'aucun numéro n'est rattaché, un bouton de l'Accueil ouvre la fenêtre de
+Meta. Vous y choisissez votre compte professionnel et votre numéro, et tout le reste se fait sans vous.
+
+Si vous aviez déjà commencé une première fois, recommencer fonctionne : vous n'avez rien à ressaisir et aucun
+nouveau code à redemander, vous retrouvez le compte et le numéro existants. Quand Meta refuse, c'est SON motif qui
 s'affiche (code expiré, compte non partagé, plusieurs numéros à départager), pas un message d'erreur opaque.
-**Vous n'avez pas de numéro ?** Le lien « Pas de numéro ? Nous vous en fournissons un » ouvre la page « Connecter
-WhatsApp » : « Fournissez-moi un numéro » vous propose un numéro britannique dédié à 3,50 € HT par mois. Vous payez sur
-la page de Stripe (un code promo s'y saisit, si nous vous en avons remis un), puis le numéro s'affiche. Ensuite,
-dans l'ordre : « Ouvrir la fenêtre de Meta » ; à l'écran du numéro, « Enter a new phone number », le pays GB (+44),
-puis les chiffres qui suivent +44 ; la vérification par SMS (« Text message ») si Meta vous laisse le choix ; le code
-s'affiche sur la page en quelques secondes, recopiez-le dans la fenêtre ; sans code au bout de 45 secondes, attendez
-que Meta propose de le renvoyer et essayez l'autre méthode ; enfin, allez jusqu'au dernier écran de Meta (« Finish »),
-qui termine la connexion. Si Meta refuse ce numéro, « En obtenir un autre » vous en donne un nouveau. « Gérer mon
-abonnement », sur cette page, ouvre le portail de Stripe (carte, factures, résiliation) ; depuis Claude Code,
-demandez-le à Claude.
 
-**Si l'abonnement du numéro fourni tombe.** Un renouvellement qui échoue vous laisse 7 jours pour régler : un bandeau,
-sur toutes les pages, donne la date de la coupure, et « Régler » ouvre le portail de Stripe. Passé ce délai, ou à la
-fin d'un abonnement résilié, le numéro ne peut plus rien envoyer (réponses de l'Inbox, campagnes, scénarios, agents
-IA, API) : les campagnes en cours se mettent en pause et reprennent d'elles-mêmes au paiement. Si l'abonnement est
-terminé, « Se réabonner » (sur le bandeau ou sur la page « Connecter WhatsApp ») vous rend le MÊME numéro, sans
-repasser par la fenêtre de Meta ; sans réabonnement, le bandeau donne la date à laquelle le numéro sera libéré. Seul
-un administrateur a ces boutons ; les autres membres voient le bandeau et l'invitation à le prévenir. Depuis Claude
-Code, demandez à Claude de vous réabonner. Les administrateurs reçoivent aussi un e-mail à la suspension, 2 jours
-avant la libération, puis à la libération. Libéré, 7 jours après la fin de l'abonnement, le numéro quitte votre espace
-pour de bon : votre espace redevient sans numéro, et vous pouvez en connecter un autre pour continuer sur WhatsApp. Si
-vous envoyez par votre propre numéro, l'abonnement du numéro fourni ne le coupe jamais.
+**2. Pas de numéro ? En obtenir un.** Le lien « Pas de numéro ? Nous vous en fournissons un » ouvre la page
+« Connecter WhatsApp » : « Fournissez-moi un numéro » vous propose un numéro britannique dédié à 3,50 € HT par
+mois.
 
-**Rendre un numéro fourni.** « Abandonner » rend le numéro à la réserve ; si son abonnement court, sa fin est
-programmée à la fin de la période déjà payée, et plus rien n'est prélevé ensuite.
+Vous payez sur la page de Stripe (un code promo s'y saisit, si nous vous en avons remis un), puis le numéro
+s'affiche. Ensuite, dans l'ordre :
 
-Pour le premier numéro de votre espace, **1 € de crédit IA vous est offert** dès que Meta l'a vérifié, une seule
-fois : à la connexion s'il l'est déjà, sinon quand vous l'activez avec le code de vérification. Il paie vos agents
-IA, la traduction et la transcription de l'Inbox (voir Paramètres > Crédit IA).
+- « Ouvrir la fenêtre de Meta » ;
+- à l'écran du numéro, « Enter a new phone number », le pays GB (+44), puis les chiffres qui suivent +44 ;
+- la vérification par SMS (« Text message ») si Meta vous laisse le choix ;
+- le code s'affiche sur la page en quelques secondes, recopiez-le dans la fenêtre ; sans code au bout de 45
+  secondes, attendez que Meta propose de le renvoyer et essayez l'autre méthode ;
+- enfin, allez jusqu'au dernier écran de Meta (« Finish »), qui termine la connexion.
 
-**Un espace pilote un seul numéro.** En connecter un second est refusé, en vous disant lequel est déjà là et
-quoi faire : créer un second espace, ou détacher celui-ci. Accepter les deux mélangerait les conversations
-d'une même personne.
+Si Meta refuse ce numéro, « En obtenir un autre » vous en donne un nouveau. « Gérer mon abonnement », sur cette
+page, ouvre le portail de Stripe (carte, factures, résiliation) ; depuis Claude Code, demandez-le à Claude.
 
-**Un numéro rattaché mais pas vérifié.** Il arrive que Meta laisse terminer l'inscription sans vérifier le
-numéro : il est bien à vous, mais il ne peut pas encore envoyer. La carte du numéro le dit et porte le
-bouton qui règle ça : Meta vous envoie un code (par appel, ou par SMS si vous le préférez), vous le saisissez,
-et le numéro est enregistré dans la foulée. Meta ne tolère que dix demandes par numéro sur 72 heures, toutes
-étapes confondues, et bloque le numéro au-delà : l'écran refuse donc un second code avant une minute et ne
-réessaie jamais tout seul.
+**3. Vérifier le numéro, si Meta le demande.** Il arrive que Meta laisse terminer l'inscription sans vérifier le
+numéro : il est bien à vous, mais il ne peut pas encore envoyer. La carte du numéro le dit et porte le bouton qui
+règle ça.
 
-**Renouveler la connexion Meta.** Si vos envois s'arrêtent sur une erreur d'autorisation, un administrateur clique
-« Renouveler la connexion Meta » au bas de la carte du numéro : la fenêtre de Meta se rouvre, vous y choisissez le même
-compte et le même numéro, et Messaging Me reçoit une autorisation neuve (la carte le confirme). Rien n'est effacé, le
-numéro reste branché.
+Meta vous envoie un code (par appel, ou par SMS si vous le préférez), vous le saisissez, et le numéro est
+enregistré dans la foulée. Meta ne tolère que dix demandes par numéro sur 72 heures, toutes étapes confondues, et
+bloque le numéro au-delà : l'écran refuse donc un second code avant une minute et ne réessaie jamais tout seul.
 
-**Déconnecter le numéro.** Pour remplacer le numéro de l'espace par un autre, un administrateur clique « Déconnecter
-le numéro », à côté de « Renouveler la connexion Meta ». La fenêtre dit ce qui part, et il faut retaper le numéro pour
-confirmer : c'est définitif. Les conversations de l'espace sont effacées (messages RCS compris), les campagnes WhatsApp
-qui tournaient s'arrêtent (une campagne RCS continue, sans son repli WhatsApp), l'agent de Meta s'éteint, et Messaging
-Me se retire de votre compte chez Meta. Vos contacts, vos scénarios, vos agents et vos réglages restent ; vos modèles de
-message restent attachés à l'ancien compte WhatsApp. Le numéro, lui, reste à vous chez Meta ; s'il vous avait été
-fourni par Messaging Me, il est perdu et son abonnement s'arrête à la fin de la période payée. La carte redevient alors
-la zone « Connecter ». Pour couper les envois sans rien perdre, utilisez plutôt « Délier » dans Canaux et services.
+**4. Lire l'état du numéro.** La carte du numéro affiche votre photo de profil WhatsApp, le statut du compte en
+pastille de couleur, la qualité du numéro, votre nom d'affichage et le nombre de clients à qui vous pouvez écrire
+par tranche de 24 heures.
 
-**Ce que la carte du numéro affiche** : votre photo de profil WhatsApp, celle que voient vos destinataires
-(rien ne s'affiche tant que vous n'en avez pas posé, c'est le cas ordinaire au début), le statut du compte
-en pastille de couleur, la qualité du numéro, votre nom d'affichage et le nombre de clients à qui vous
-pouvez écrire par tranche de 24 heures (« Pas encore évalué par Meta » tant que Meta n'a pas tranché). Quand
-un état ne peut pas être lu, l'écran écrit « Statut indisponible » avec un bouton Réessayer, plutôt qu'un
-vert rassurant.
+La photo de profil est celle que voient vos destinataires : rien ne s'affiche tant que vous n'en avez pas posé,
+c'est le cas ordinaire au début. Le nombre de clients indique « Pas encore évalué par Meta » tant que Meta n'a pas
+tranché. Quand un état ne peut pas être lu, l'écran écrit « Statut indisponible » avec un bouton Réessayer, plutôt
+qu'un vert rassurant.
 
-Juste en dessous, un panneau **Compte WhatsApp Business** reprend la revue du compte par Meta, la
-vérification de votre entreprise et le business propriétaire, chacun avec sa pastille. Votre moyen de
-paiement n'est pas lisible depuis ici : l'écran vous renvoie au Business Manager de Meta au lieu d'afficher
-une valeur inventée.
+Juste en dessous, un panneau **Compte WhatsApp Business** reprend la revue du compte par Meta, la vérification de
+votre entreprise et le business propriétaire, chacun avec sa pastille. Votre moyen de paiement n'est pas lisible
+depuis ici : l'écran vous renvoie au Business Manager de Meta au lieu d'afficher une valeur inventée.
 
-**Quatre chiffres sur 30 jours** ouvrent la page (contacts, messages échangés, modèles envoyés, coût estimé).
-Ce sont exactement ceux du Performance Lab, et un tiret remplace le coût quand Meta ne donne aucun tarif.
+**Quatre chiffres sur 30 jours** ouvrent la page (contacts, messages échangés, modèles envoyés, coût estimé). Ce
+sont exactement ceux du Performance Lab, et un tiret remplace le coût quand Meta ne donne aucun tarif.
 
-**HubSpot**, s'il est relié, a son propre bloc : le portail, l'état de la synchronisation et un lien vers le
-guide de configuration. La couper vous fait choisir entre une **pause**, réversible (les analyses produites
-pendant la pause sont renvoyées à la reprise), et une **déconnexion complète**, qui délie le compte HubSpot
-et coupe tous les numéros de l'espace. Un interrupteur juste dessous autorise l'usage de vos listes HubSpot
-comme destinataires de campagne.
+**Bon à savoir.** Pour le premier numéro de votre espace, 1 € de crédit IA vous est offert dès que Meta l'a
+vérifié, une seule fois : à la connexion s'il l'est déjà, sinon quand vous l'activez avec le code de vérification.
+Il paie vos agents IA, la traduction et la transcription de l'Inbox (voir Paramètres > Crédit IA).
 
-**Le bloc HubSpot s'allume dans Paramètres > Intégrations**, et c'est là qu'on le demande, numéro WhatsApp ou
-pas : un espace tout neuf peut donc connecter HubSpot avant d'avoir un numéro. Éteint, l'Accueil n'affiche
-qu'une ligne qui vous y renvoie. Tant qu'un portail est relié, il ne s'éteint pas : faites d'abord la
-déconnexion complète depuis le bloc HubSpot (sans numéro, c'est un bouton du bloc, sans l'option de pause).
-
-**Le bloc « Canaux et services »** rassemble une carte par canal ou service (numéro WhatsApp, canal RCS, chaîne,
-compte publicitaire, HubSpot), chacune avec son logo, son interrupteur et une pastille d'état ; les cartes Chaîne,
-Compte publicitaire et HubSpot portent aussi le lien vers leur écran (le détail du numéro et du canal RCS est plus
-bas sur l'Accueil). Les cartes WhatsApp et RCS montrent les messages envoyés et reçus ces 30 derniers jours, envois
-de campagne compris ; celle du numéro compte tout le canal WhatsApp de l'espace. La carte Chaîne montre le nombre de
-publications. La pastille du numéro est verte quand il est relié, ambre quand Meta signale un problème sur le compte
-(la même alerte que la carte du numéro, plus bas). Rallumer ne demande rien ; éteindre demande une confirmation qui
-dit ce qui s'arrête. Éteindre le numéro le **délie** de l'espace : plus aucun message WhatsApp ne part, les campagnes
-qui ont un étage WhatsApp (repli compris) passent en pause, un scénario s'arrête à son premier envoi WhatsApp, et
-les messages reçus ne sont plus enregistrés ; les campagnes uniquement RCS et les scénarios sans WhatsApp (e-mail ou
-RCS seuls) continuent. Le numéro se relie d'un clic. Rien ne change chez Meta : si l'agent de Meta est allumé, il
-continue de répondre aux clients qu'il tient. Éteindre la chaîne oublie ses identifiants, mais les publications déjà parues
-restent en ligne. Ces interrupteurs sont réservés aux administrateurs.
+**Un espace pilote un seul numéro.** En connecter un second est refusé, en vous disant lequel est déjà là et quoi
+faire : créer un second espace, ou détacher celui-ci. Accepter les deux mélangerait les conversations d'une même
+personne.

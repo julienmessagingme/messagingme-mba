@@ -15,16 +15,16 @@ const etapes = (sections: SectionFiche[]) =>
   sections.filter((s): s is Extract<SectionFiche, { type: 'etape' }> => s.type === 'etape');
 
 describe('structureFiche', () => {
-  it('lit les cinq étapes de « Lancer une campagne », dans l’ordre, avec leur tête', () => {
+  it('lit les étapes d’une fiche réelle dans l’ordre, chacune avec sa tête et son détail', () => {
+    // Sans figer le TEXTE de la fiche : elle se réécrit, et un push de `.md` seuls ne lance pas la CI.
     const s = structureFiche(fiche('lancer-une-campagne').corps);
-    expect(s.chapeau).toBe('Une campagne envoie un même message à une liste de contacts, les uns après les autres.');
+    expect(s.chapeau).not.toBe('');
     const e = etapes(s.sections);
-    expect(e.map((x) => x.numero)).toEqual([1, 2, 3, 4, 5]);
-    expect(e[0]!.titre).toBe('Le nom');
-    expect(e[0]!.tete.startsWith('Il n')).toBe(true);
-    expect(e[0]!.tete).toContain('visible que de votre équipe');
-    // L'étape 3 a des paragraphes de détail : ils lui appartiennent, ils ne deviennent pas de la prose.
-    expect(e[2]!.detail.length).toBeGreaterThan(0);
+    expect(e.length).toBeGreaterThanOrEqual(3);
+    expect(e.map((x) => x.numero)).toEqual(e.map((_, i) => i + 1));
+    for (const x of e) expect(x.tete, `étape ${x.numero}`).not.toBe('');
+    // Des paragraphes de détail appartiennent à leur étape, ils ne deviennent pas de la prose.
+    expect(e.some((x) => x.detail.length > 0)).toBe(true);
   });
 
   it('garde un encadré à sa place entre deux étapes, et la prose d’avant la première étape', () => {
@@ -90,6 +90,19 @@ describe('erreursDeStructure', () => {
       const corps = ['Le chapeau.', '**1. A.** x.', faux].join('\n\n');
       expect(erreursDeStructure(corps, 'fr'), faux).not.toEqual([]);
     }
+  });
+
+  it('🔴 signale une étape ou un encadré collé au paragraphe d’avant, sans ligne vide (il disparaîtrait dans l’étape précédente)', () => {
+    expect(erreursDeStructure(['Le chapeau.', '**1. A.** x.', '**2. B.** Faire cela.\n**3. C.** Puis ceci.'].join('\n\n'), 'fr')).not.toEqual([]);
+    expect(erreursDeStructure(['Le chapeau.', '**1. A.** x.\n**Bon à savoir.** y.'].join('\n\n'), 'fr')).not.toEqual([]);
+  });
+
+  it('une liste numérotée collée sous un paragraphe est signalée (elle serait recollée en un seul paragraphe)', () => {
+    expect(erreursDeStructure(['Le chapeau.', 'Faites ceci :\n1. Ouvrir.\n2. Fermer.'].join('\n\n'), 'fr')).not.toEqual([]);
+  });
+
+  it('une ligne coupée qui commence par un nombre et un point n’est pas une liste numérotée', () => {
+    expect(erreursDeStructure(['Le chapeau.', 'Le plafond passe de 10 à\n15. Il se règle dans Paramètres.'].join('\n\n'), 'fr')).toEqual([]);
   });
 
   it('signale un « Bon à savoir » sans son gras, et celui d’une autre langue', () => {

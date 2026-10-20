@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
-import { lireFicheDuDepot } from '../src/aide/fiches';
+import { lireFicheDuDepot, publicationDe, type PublicationFiche, type Rubrique } from '../src/aide/fiches';
+import { erreursDeStructure } from '../src/aide/structure';
 import { chargerCarte } from '../src/aide/carte';
 
 /**
@@ -165,5 +166,84 @@ describe('lireFicheDuDepot', () => {
     // ce qui avantagerait les fiches au titre long sans aucune raison.
     const f = lireFicheDuDepot('x.md', '# Mon titre\n\nMon corps.');
     expect(f.corps).toBe('Mon corps.');
+  });
+});
+
+/**
+ * LES FICHES PUBLIQUES (plan du centre d'aide, tâche 3). Une fiche marquée `publique: oui` devient une page de la
+ * vitrine : elle suit la grammaire de `src/aide/structure.ts`, et la première vague est celle que Julien a validée.
+ */
+describe('les fiches publiques', () => {
+  /** La première vague (plan, « Global Constraints ») : rubrique et rang. */
+  const VAGUE: Record<string, [Rubrique, number]> = {
+    'choisir-mon-offre': ['demarrer', 1],
+    'ce-qu-il-faut-chez-meta': ['demarrer', 2],
+    'connecter-mon-numero-whatsapp': ['demarrer', 3],
+    'me-reperer-dans-la-console': ['demarrer', 4],
+    'repondre-dans-l-inbox': ['parler-aux-clients', 1],
+    'la-fenetre-de-24-heures': ['parler-aux-clients', 2],
+    'faire-approuver-un-modele': ['parler-aux-clients', 3],
+    'importer-mes-contacts': ['parler-aux-clients', 4],
+    'lancer-une-campagne': ['parler-aux-clients', 5],
+  };
+  /** Les six écrans qui portent « Comment faire », et leur page. */
+  const COMMENT_FAIRE: Record<string, string> = {
+    accueil: 'connecter-mon-numero-whatsapp',
+    offre: 'choisir-mon-offre',
+    inbox: 'repondre-dans-l-inbox',
+    templates: 'faire-approuver-un-modele',
+    contacts: 'importer-mes-contacts',
+    campagnes: 'lancer-une-campagne',
+  };
+  const texteDe = (nom: string) => readFileSync(new URL(nom, DOSSIER), 'utf8');
+  const publiques = fichiers
+    .map((nom) => ({ nom, cle: nom.replace(/\.md$/, ''), texte: texteDe(nom), publication: publicationDe(texteDe(nom)) }))
+    .filter((f): f is typeof f & { publication: PublicationFiche } => f.publication !== null);
+
+  it('la première vague, et elle seule, est publique, à sa place', () => {
+    expect(Object.fromEntries(publiques.map((f) => [f.cle, [f.publication.rubrique, f.publication.rang]]))).toEqual(VAGUE);
+  });
+
+  it('🔴 chaque fiche publique suit la grammaire : aucune étape ne se perdrait en simple paragraphe', () => {
+    for (const f of publiques) {
+      expect(erreursDeStructure(lireFicheDuDepot(f.nom, f.texte).corps, 'fr'), f.cle).toEqual([]);
+    }
+  });
+
+  it('« Comment faire » : une page par écran, sur les six écrans prévus', () => {
+    const vus: Record<string, string> = {};
+    for (const f of publiques.filter((x) => x.publication.commentFaire)) {
+      const ecran = lireFicheDuDepot(f.nom, f.texte).ecran;
+      expect(ecran, `${f.cle} est la page d’un écran, il lui faut son ecran`).not.toBeNull();
+      expect(vus[ecran!], `deux pages pour l’écran ${ecran}`).toBeUndefined();
+      vus[ecran!] = f.cle;
+    }
+    expect(vus).toEqual(COMMENT_FAIRE);
+  });
+
+  it('les pages sans capture et sans mention d’offre sont celles prévues', () => {
+    expect(publiques.filter((f) => !f.publication.captures).map((f) => f.cle).sort())
+      .toEqual(['ce-qu-il-faut-chez-meta', 'la-fenetre-de-24-heures']);
+    expect(publiques.filter((f) => !f.publication.offre).map((f) => f.cle).sort())
+      .toEqual(['ce-qu-il-faut-chez-meta', 'choisir-mon-offre', 'la-fenetre-de-24-heures']);
+  });
+
+  it('un prérequis désigne une autre fiche publique', () => {
+    const cles = new Set(publiques.map((f) => f.cle));
+    for (const f of publiques.filter((x) => x.publication.prerequis !== null)) {
+      expect(cles.has(f.publication.prerequis!), `${f.cle} -> ${f.publication.prerequis}`).toBe(true);
+      expect(f.publication.prerequis).not.toBe(f.cle);
+    }
+  });
+
+  it('publicationDe lève sur un champ mal écrit, en le nommant', () => {
+    const fiche = (entete: string) => `---\npublique: oui\n${entete}\n---\n# T\n\nC.`;
+    expect(() => publicationDe(fiche('rubrique: autre\nrang: 1'))).toThrow(/rubrique/);
+    expect(() => publicationDe(fiche('rubrique: demarrer\nrang: 0'))).toThrow(/rang/);
+    expect(() => publicationDe(fiche('rubrique: demarrer\nrang: 2\ncaptures: peut-etre'))).toThrow(/captures/);
+    expect(publicationDe('---\necran: offre\n---\n# T\n\nC.')).toBeNull();
+    expect(publicationDe(fiche('rubrique: demarrer\nrang: 2'))).toEqual({
+      rubrique: 'demarrer', rang: 2, commentFaire: false, captures: true, video: false, prerequis: null, offre: true,
+    });
   });
 });
