@@ -63,10 +63,6 @@ migration APRÈS le déploiement de la livraison 2 : l'ancien code la nomme.
 ## 🟡 Le bloc Attente en secondes : ce que la relecture laisse (2026-10-20)
 
 Livré le 2026-10-20 (moteur `82a775bb` en production, console `71c25867`). Jaunes de la relecture du lot, pas commencés :
-- **Le miroir de la console ignore les secondes** : `web/lib/campaign-eligibility.ts` (estimation de la fenêtre de
-  24 h) ne connaît pas `seconds`, donc l'éditeur n'avertit pas d'un cycle de pauses en secondes suivi d'un message de
-  session que le serveur refuse à la publication (`engine.ts`, `PAS_MIN_MS`). Ajouter l'unité au miroir et au test de
-  parité.
 - **Le débit sous charge** : 4 reprises par processus (`WORKFLOW_REVEIL_COURT_CONCURRENCY`). Une campagne de milliers
   de destinataires avec une pause en secondes ne la tient pas à la seconde ; la mesurer avant d'annoncer mieux.
 - **Une boucle « modèle, Attente 1 s, retour »** se cadence soixante fois plus vite qu'en minutes, avec des modèles

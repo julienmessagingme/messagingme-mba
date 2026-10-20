@@ -384,6 +384,18 @@ describe('parité de la détection « attente >= 24 h puis message de session »
     )],
     ['attente 2 j, aller dans un autre scénario', g([n('w', 'wait', { delay: 2, unit: 'days' }), n('j', 'aller_a', { cible: 'nod_x_9' })], [e('w', 'j')])],
     ['attente 2 j, aller à l’attente elle-même (boucle)', g([n('w', 'wait', { delay: 2, unit: 'days', code: 'nod_x_4' }), n('j', 'aller_a', { cible: 'nod_x_4' }), QM('q')], [e('w', 'j')])],
+    // LES SECONDES (2026-10-20). Chaque pause compte pour au moins 60 s des deux côtés : un cycle de pauses en
+    // secondes atteint donc la fenêtre, et le serveur refuse ce qui suit. Le miroir qui ignorait l'unité la
+    // comptait aussi pour 60 s, mais n'en faisait jamais la « dernière attente », donc ne disait rien.
+    ['attente 30 s puis message rapide', g([n('w', 'wait', { delay: 30, unit: 'seconds' }), QM('q')], [e('w', 'q')])],
+    ['cycle de pauses de 30 s, puis message rapide', g(
+      [n('w', 'wait', { delay: 30, unit: 'seconds' }), n('c', 'condition', TROIS_FAMILLES), QM('q')],
+      [e('w', 'c'), e('c', 'w', 'true'), e('c', 'q', 'famille:k3')],
+    )],
+    ['attente 2 j, pause de 5 s, message rapide (la pause est la dernière attente)', g(
+      [n('w1', 'wait', { delay: 2, unit: 'days' }), n('w2', 'wait', { delay: 5, unit: 'seconds' }), QM('q')],
+      [e('w1', 'w2'), e('w2', 'q')],
+    )],
   ];
 
   it('front et serveur désignent le MÊME montage fautif (ou aucun)', () => {

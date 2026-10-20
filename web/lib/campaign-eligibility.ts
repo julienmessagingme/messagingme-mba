@@ -186,7 +186,7 @@ export function waitBeforeSessionMessage(graph: GraphLike): WaitThenSession | nu
   // plancher, un délai fractionnaire enregistré par l'API (`{delay: 0.001}`, 60 ms) dans un cycle demanderait
   // ~1,4 million d'itérations par bloc et figerait l'onglet.
   const PAS_MIN_MS = 60_000;
-  const UNITES: Record<string, number> = { minutes: 60_000, hours: 3_600_000, days: 86_400_000 };
+  const UNITES: Record<string, number> = { seconds: 1000, minutes: 60_000, hours: 3_600_000, days: 86_400_000 };
   /**
    * Miroir de `waitEstimationMs` (serveur). Une attente « jusqu'à une date » ou « jusqu'aux prochaines heures
    * ouvrées » n'a pas de durée connue à la publication : elle compte pour la FENÊTRE ENTIÈRE, sinon le
