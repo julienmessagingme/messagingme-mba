@@ -1176,6 +1176,40 @@ nombre, date, email, liste), au plus `BORNES_ACTION.champs` champs et `BORNES_AC
   message entrant, donc un scénario qui OUVRE par un message de session est refusé, et un scénario qui ouvre par un
   modèle coupe le parcours de l'agent. Seul un scénario fait d'actions (tag, e-mail) laisse l'agent continuer.
 
+🔴 **L'OUTIL ENCHAÎNÉ (`enchainer`, `src/agent/enchainement.ts`, 2026-10-20).** Un sixième outil à cible :
+`{ etapes }`, de 1 à `BORNES_ENCHAINEMENT.etapes` étapes que l'administrateur range, exécutées DANS SON ORDRE par
+`resolvers/mba.ts`. Six types : `demander` (`{ champ, question, valeurs }`, la seule que le modèle remplit), `valeur`
+(un champ et une valeur fixes), `tag`, `urgent`, `bloc` (`{ workflowId, code }`), `scenario` (`{ workflowId }`). Les
+invariants :
+- **Les paramètres DÉRIVENT des étapes** (`paramsDeLEnchainement`, par `paramsEffectifs`) : un par `demander`, nommé
+  par la clé du champ (d'où `CLE_CHAMP_DEMANDE_RE`), facultatif, énuméré par ses valeurs ; plus `deja_demande`,
+  booléen REQUIS dès qu'il y a une question. Rien n'est recopié dans `params`.
+- 🔴 **UNE QUESTION AU PLUS** (`planEnchainement`, pure, partagée par la production et le bac à sable) : une réponse
+  manquante et `deja_demande` faux, l'outil n'exécute RIEN et rend les questions (`consigneDeQuestions`) ; sinon tout
+  s'exécute avec ce qui a été donné, refus compris. C'est le modèle qui porte « déjà demandé » : un état serveur
+  aurait demandé un câblage du journal d'appels dans le résolveur, et le bac à sable, sans journal, n'aurait pas su le
+  rejouer. Le défaut probable est un `true` trop tôt, donc un passage sans qualification, jamais un contact bloqué.
+- 🔴 **DEUX RÈGLES D'ORDRE, tenues par le schéma** (`fauteDOrdre`, dans `cibleEnchainementSchema`) et redites à
+  l'écran (`manqueDeLEnchainement`, `web/lib/agent-outils.ts`, parité tenue par `tests/web-agent-outils.test.ts`) :
+  un `scenario` est la DERNIÈRE étape ; aucun `bloc` ni `scenario` avant la dernière `demander`. La seconde vient de ce
+  que l'outil n'exécute RIEN tant qu'une réponse manque : les questions passent toujours avant toutes les étapes, et un
+  bloc rangé avant une question partirait après la réponse, à rebours de l'ordre affiché. Un tag, une valeur fixe ou
+  l'urgence ne montrent pas cet écart : leur place est libre. Une réponse est ramenée à `BORNES_ENCHAINEMENT.texte`
+  caractères, borne annoncée au modèle ; une chaîne vide sur une énumération facultative vaut « non fourni »
+  (`schemaArguments`, `executor.ts`), sinon le modèle, refusé, pouvait choisir une valeur au hasard pour passer.
+- **Le risque dérive des étapes** (`risqueDeLEnchainement`) : `irreversible` dès qu'un bloc ou un scénario en fait
+  partie, `write` sinon, calculé à la pose (`risqueDeLOutil`, `src/agent/reglages.ts`) et réécrit par
+  `patchConsommateur` quand les étapes changent. 🔴 Une étape de bloc ou de scénario ajoutée après coup fait TOMBER
+  l'autonomie dans la même instruction (CTE `avant`, `autonomie`), comme la montée de risque d'un connecteur : un oui
+  donné à une écriture ne vaut pas pour un envoi. L'outil refuse alors chaque appel jusqu'à ce qu'on la recoche, et la
+  ligne le dit.
+- **Tous les scénarios visés sont de l'espace** : la garde d'isolation de l'écriture prend un TABLEAU
+  (`scenariosDeLaCible`, `catalog.pg.ts`), un pour un bloc ou un lancement, ceux des étapes pour un enchaînement.
+- **Un échec ne bloque pas le passage à l'équipe** : une écriture, un tag, l'urgence ou un bloc qui échoue est noté
+  (`non_abouti`) et la suite part ; un scénario refusé rend un échec, la session reste vivante. Le scénario où l'agent
+  parle est refusé AVANT toute étape. Un dépassement de délai sur un enchaînement qui finit par un scénario arrête le
+  tour comme `lancer_scenario` (`executor.ts`, `issueInconnue`).
+
 🔴 **Le modèle ne choisit jamais une cible.** Sur un connecteur API client, l'adresse est figée sur la source,
 le gabarit est écrit par un administrateur, et `construireCible` vérifie que l'URL finale reste SOUS l'adresse
 de base, segment par segment, après encodage. Le `wa_id` vient du TOUR, pas de la projection du contact : la

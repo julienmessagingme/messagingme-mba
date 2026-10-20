@@ -7,7 +7,7 @@ import { listRequetes } from '@/lib/api-agent-requetes';
 import { TYPES_OUTIL_MBA, type TypeOutilMba } from '@/lib/partage/outils-mba';
 import { textesDuType, type ConsommateurOutil } from '@/lib/mba-outils';
 import { IconeOutil } from '@/components/IconeOutil';
-import { TEXTES_ACTION } from '@/lib/agent-outils';
+import { TEXTES_ACTION, TEXTES_ENCHAINEMENT } from '@/lib/agent-outils';
 import { useT } from '@/lib/i18n';
 
 /** Les types proposés dans l'ordre du contrat partagé. */
@@ -24,7 +24,7 @@ export const TYPES_PROPOSES = TYPES_OUTIL_MBA;
  * déclarer ce qu'il a déjà.
  */
 type Compte = number | null | 'erreur';
-export function ChoixTypeOutil({ tenantId, onChoisir, onAnnuler, mcpDisponibles, onChoisirMcp, onChoisirAction, pour = 'mba' }: {
+export function ChoixTypeOutil({ tenantId, onChoisir, onAnnuler, mcpDisponibles, onChoisirMcp, onChoisirAction, onChoisirEnchainement, pour = 'mba' }: {
   tenantId: string; onChoisir: (type: TypeOutilMba) => void; onAnnuler: () => void;
   /** Combien d'outils MCP enregistrés l'agent n'a pas encore. Lu par la liste de l'onglet. */
   mcpDisponibles: number;
@@ -40,6 +40,8 @@ export function ChoixTypeOutil({ tenantId, onChoisir, onAnnuler, mcpDisponibles,
    * `TypeOutilMba`, l'agent de Meta n'a pas cet outil. Absente, la case n'est pas montrée.
    */
   onChoisirAction?: () => void;
+  /** « Enchaîner des étapes » (2026-10-20), propre à l'agent IA comme l'action. Absente, la case n'est pas montrée. */
+  onChoisirEnchainement?: () => void;
 }) {
   const t = useT();
   const [appels, setAppels] = useState<Compte>(null);
@@ -115,6 +117,17 @@ export function ChoixTypeOutil({ tenantId, onChoisir, onAnnuler, mcpDisponibles,
                 <span className="min-w-0 truncate">{t(TEXTES_ACTION.titre[0], TEXTES_ACTION.titre[1])}</span>
               </span>
               <span className="mt-1 block text-xs text-ink-500">{t(TEXTES_ACTION.aide[0], TEXTES_ACTION.aide[1])}</span>
+            </button>
+          </div>
+        )}
+        {pour === 'agent' && onChoisirEnchainement && (
+          <div className="rounded-carte border border-ink-200 p-4 hover:border-brand-300 hover:bg-brand-50">
+            <button type="button" data-testid="mba-type-enchainement" onClick={onChoisirEnchainement} className="block w-full text-left">
+              <span className="flex items-center gap-2 text-sm font-semibold text-ink-900">
+                <IconeOutil signe="scenario" className="text-ink-400" />
+                <span className="min-w-0 truncate">{t(TEXTES_ENCHAINEMENT.titre[0], TEXTES_ENCHAINEMENT.titre[1])}</span>
+              </span>
+              <span className="mt-1 block text-xs text-ink-500">{t(TEXTES_ENCHAINEMENT.aide[0], TEXTES_ENCHAINEMENT.aide[1])}</span>
             </button>
           </div>
         )}

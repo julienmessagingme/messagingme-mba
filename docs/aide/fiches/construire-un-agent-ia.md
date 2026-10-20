@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: 908763
+source_empreinte: 6e4b97
 ---
 # Construire un agent IA
 
@@ -92,8 +92,8 @@ l'agent de Meta. En tête, **« Toujours là »** : les gestes propres à l'agen
 fiche du contact, marquer la conversation urgente), avec les mêmes commandes que vos outils : « Activer » pose
 l'outil puis l'active, « Désactiver » le désactive, « Modifier » ouvre ses consignes, et la croix le supprime. Puis **« Ajouter un outil »** ouvre la grille « Quel outil ajouter ? » :
 poser un tag, enregistrer une information, envoyer un bloc, lancer un scénario, appeler un connecteur API,
-appeler un outil MCP, et déclencher une action, propre à l'agent IA. Enfin, la liste des outils posés, chacun avec son état (« Actif » ou « Inactif »), « Activer » ou
-« Désactiver », « Modifier » et la croix qui supprime. Cinq choses à retenir :
+appeler un outil MCP, et deux outils propres à l'agent IA : déclencher une action, et enchaîner des étapes. Enfin, la liste des outils posés, chacun avec son état (« Actif » ou « Inactif »), « Activer » ou
+« Désactiver », « Modifier » et la croix qui supprime. Six choses à retenir :
 
 - **Le tag, l'information, le bloc et le scénario sont choisis par vous**, un par outil : l'agent ne décide que
   du moment, et pour une information, de la valeur (bornée à la liste que vous donnez, si vous en donnez une).
@@ -118,6 +118,13 @@ appeler un outil MCP, et déclencher une action, propre à l'agent IA. Enfin, la
   décoché par défaut : cochez-le sur une adresse dans Developers > Webhooks sortants, sinon rien ne part, et la
   carte de l'action vous le rappelle. Le code d'un champ est la clé que votre application lit : ne le changez plus
   une fois l'application branchée. Une automation peut aussi partir de l'action (menu Automation).
+- **Plusieurs actions d'un coup, dans votre ordre.** « Enchaîner des étapes » : une première étape, puis « + Ajouter
+  une étape », et les flèches pour ranger. Par exemple : demander le prénom, le nom, le campus et la formation,
+  puis lancer le scénario qui passe le contact à votre équipe. S'il manque une réponse, l'agent la demande **une
+  seule fois**, puis exécute tout avec ce qu'il a, même si le contact refuse. Deux règles, que l'écran vous
+  rappelle : le scénario se place en dernier, et aucun bloc ni scénario ne vient avant une question (les questions
+  passent toujours en premier). Dès qu'un bloc
+  ou un scénario en fait partie, cochez « autoriser l'agent à faire ça seul ».
 
 **Les règles d'arrêt dessinent les sorties du bloc.** Une règle d'arrêt, c'est « quand l'agent a fini de
 faire ça, il sort par là » : vous lui donnez un code et un libellé, et chacune devient une sortie à relier

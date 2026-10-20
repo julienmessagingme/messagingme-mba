@@ -53,9 +53,11 @@ export function CibleTag({ tenantId, valeur, onChange, pour = 'mba' }: {
   );
 }
 
-export function CibleChamp({ tenantId, champ, valeurs, onChange, pour = 'mba' }: {
+export function CibleChamp({ tenantId, champ, valeurs, onChange, pour = 'mba', sansValeurs = false }: {
   tenantId: string; champ: string; valeurs: string[]; onChange: (champ: string, valeurs: string[]) => void;
   pour?: ConsommateurOutil;
+  /** Le champ seul, sans liste de valeurs permises (une valeur fixe d'un outil enchaîné, qui n'en a pas). */
+  sansValeurs?: boolean;
 }) {
   const t = useT();
   // `'erreur'` n'est pas `[]` : une lecture RATÉE affichait « ce champ n'existe plus, supprimez l'outil » d'un
@@ -109,14 +111,16 @@ export function CibleChamp({ tenantId, champ, valeurs, onChange, pour = 'mba' }:
               'This field no longer exists in the mini-CRM: pick another one, or delete the tool.')}
         </p>
       )}
-      <label className="text-xs text-ink-500">
-        {t('Valeurs permises, une par ligne (facultatif)', 'Allowed values, one per line (optional)')}
-        <textarea className={`${inputCls} mt-1`} rows={3} data-testid="mba-cible-valeurs" value={texte}
-          onChange={(e) => {
-            setTexte(e.target.value);
-            onChange(champ, valeursPermises(e.target.value));
-          }} />
-      </label>
+      {!sansValeurs && (
+        <label className="text-xs text-ink-500">
+          {t('Valeurs permises, une par ligne (facultatif)', 'Allowed values, one per line (optional)')}
+          <textarea className={`${inputCls} mt-1`} rows={3} data-testid="mba-cible-valeurs" value={texte}
+            onChange={(e) => {
+              setTexte(e.target.value);
+              onChange(champ, valeursPermises(e.target.value));
+            }} />
+        </label>
+      )}
     </div>
   );
 }

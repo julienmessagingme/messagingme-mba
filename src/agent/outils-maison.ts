@@ -4,13 +4,14 @@ import type { SortieAgent } from './agent-store';
 import { paramsOutil, toolParamsToJsonSchema, type ParamOutil, type SchemaObjet } from './llm/tool-schema';
 import { LONGUEUR_MAX_ETIQUETTE } from '../crm/poser-etiquette';
 import { CODE_BLOC_RE } from '../workflow/node-list';
+import { cibleEnchainementSchema, motsDeLEnchainement, paramsDeLEnchainement } from './enchainement';
 
 /**
  * Le catalogue des outils maison, et ce que le modèle voit d'un outil.
  *
  * Un catalogue plutôt qu'un formulaire libre : le comportement vient de `binding.handler`, et seuls existent
  * les handlers de `resolvers/mba.ts`. Un handler libre produirait un outil actif qui refuse à chaque appel.
- * Le client compose le nom, les mots et, pour quatre d'entre eux, la cible (`cibleOutilAgentSchema`). Miroir de `HANDLERS`, tenu par
+ * Le client compose le nom, les mots et, pour six d'entre eux, la cible (`cibleOutilAgentSchema`). Miroir de `HANDLERS`, tenu par
  * `tests/agent-outils-maison.test.ts`.
  */
 
@@ -59,13 +60,13 @@ const P = (
 });
 
 /**
- * Les dix outils maison. `envoyer_bloc` et `lancer_scenario` sont déclarés irréversibles : un message parti ne se
+ * Les onze outils maison. `envoyer_bloc` et `lancer_scenario` sont déclarés irréversibles : un message parti ne se
  * rappelle pas et il est facturé, donc le tronc commun les refuse tant que le client n'a pas coché l'autonomie sur
- * l'outil.
+ * l'outil. `enchainer` l'est selon ses étapes (`risqueDeLEnchainement`).
  *
- * 🔴 CINQ D'ENTRE EUX AGISSENT SUR UNE CIBLE FIXÉE PAR L'ADMINISTRATEUR (RC4, alignés sur l'agent de Meta) : un tag,
- * un champ, un bloc, un scénario par outil, dans `binding` (`cibleOutilAgentSchema`). Le modèle ne décide que du
- * moment et, pour un champ, de la valeur ; il ne désigne jamais la cible.
+ * 🔴 SIX D'ENTRE EUX AGISSENT SUR UNE CIBLE FIXÉE PAR L'ADMINISTRATEUR (RC4, alignés sur l'agent de Meta) : un tag,
+ * un champ, un bloc, un scénario, une action ou des étapes par outil, dans `binding` (`cibleOutilAgentSchema`). Le
+ * modèle ne décide que du moment et, pour un champ, de la valeur ; il ne désigne jamais la cible.
  */
 export const OUTILS_MAISON: readonly OutilCatalogue[] = [
   {
@@ -254,6 +255,26 @@ export const OUTILS_MAISON: readonly OutilCatalogue[] = [
     risk: 'write',
     params: [],
   },
+  {
+    // L'outil enchaîné (`src/agent/enchainement.ts`, demande de Julien du 2026-10-20) : des étapes que l'administrateur
+    // range dans l'ordre qu'il veut, FIXÉES à la pose (`binding.etapes`) ; le modèle ne fournit que les informations
+    // demandées et `deja_demande`. Le risque déclaré ici est celui d'un outil neuf qu'on ne connaît pas encore ; la pose
+    // et la modification le recalculent sur les étapes (`risqueDeLEnchainement`) : irréversible dès qu'un bloc ou un
+    // scénario part chez le contact, donc l'autonomie à cocher.
+    handler: 'enchainer',
+    nomDefaut: 'mba_enchainer',
+    titre: { fr: 'Enchaîner des étapes', en: 'Chain steps' },
+    description: {
+      fr: 'Exécute dans l’ordre les étapes prévues pour cet outil : recueillir des informations sur le contact, puis agir (étiquette, message, scénario).',
+      en: 'Runs the steps planned for this tool in order: collect information about the contact, then act (tag, message, scenario).',
+    },
+    nePasUtiliser: {
+      fr: 'Ne pas l’appeler tant que le contact n’est pas dans la situation que cet outil traite.',
+      en: 'Do not call it until the contact is in the situation this tool handles.',
+    },
+    risk: 'write',
+    params: [],
+  },
 ];
 
 /**
@@ -304,6 +325,7 @@ export const cibleOutilAgentSchema = z.discriminatedUnion('handler', [
     champs: z.array(champActionSchema).max(BORNES_ACTION.champs)
       .refine((cs) => new Set(cs.map((c) => c.code)).size === cs.length, { message: 'deux champs portent le même code' }),
   }).strict(),
+  cibleEnchainementSchema,
 ]);
 export type CibleOutilAgent = z.infer<typeof cibleOutilAgentSchema>;
 export type HandlerACible = CibleOutilAgent['handler'];
@@ -378,7 +400,14 @@ export function outilExpose(outil: OutilDefini, sorties: readonly SortieAgent[])
 function motsExposes(outil: OutilDefini): string {
   const refus = outil.nePasUtiliser.trim();
   const base = refus === '' ? outil.description : `${outil.description}\n\nNE PAS l’appeler : ${refus}`;
-  return base + consigneDeLAction(outil);
+  return base + consigneDeLAction(outil) + etapesDeLEnchainement(outil);
+}
+
+/** Les étapes d'un outil enchaîné, dites au modèle dans l'ordre (`motsDeLEnchainement`) : elles viennent de la cible. */
+function etapesDeLEnchainement(outil: OutilDefini): string {
+  if (handlerMaison(outil) !== 'enchainer') return '';
+  const cible = lireCibleOutilAgent(outil.binding);
+  return cible?.handler === 'enchainer' ? motsDeLEnchainement(cible.etapes) : '';
 }
 
 /**
@@ -428,6 +457,10 @@ export function paramsEffectifs(outil: Pick<OutilDefini, 'origin' | 'binding' | 
  */
 function avecValeursDuChamp(binding: unknown, handler: string, params: ParamOutil[]): ParamOutil[] {
   if (handler === 'declencher_action') return paramsDeLAction(binding);
+  if (handler === 'enchainer') {
+    const cible = lireCibleOutilAgent(binding);
+    return cible?.handler === 'enchainer' ? paramsDeLEnchainement(cible.etapes) : [];
+  }
   if (handler !== 'ecrire_variable') return params;
   const cible = lireCibleOutilAgent(binding);
   if (cible?.handler !== 'ecrire_variable' || cible.valeurs.length === 0) return params;

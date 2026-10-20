@@ -53,6 +53,7 @@ export function estToujoursLa(handler: string): handler is HandlerToujoursLa {
  */
 export const HANDLER_DU_TYPE = {
   tag: 'poser_tag', champ: 'ecrire_variable', bloc: 'envoyer_bloc', scenario: 'lancer_scenario', action: 'declencher_action',
+  enchainement: 'enchainer',
 } as const;
 export type TypeACible = keyof typeof HANDLER_DU_TYPE;
 
@@ -81,8 +82,132 @@ export type CibleSaisieAgent =
   | { type: 'champ'; champ: string; valeurs: string[] }
   | { type: 'bloc'; workflowId: string; code: string }
   | { type: 'scenario'; workflowId: string }
-  | { type: 'action'; nom: string; consigne: string; champs: ChampActionSaisi[] };
+  | { type: 'action'; nom: string; consigne: string; champs: ChampActionSaisi[] }
+  | { type: 'enchainement'; etapes: EtapeSaisie[] };
 export type CibleActionSaisie = Extract<CibleSaisieAgent, { type: 'action' }>;
+export type CibleEnchainementSaisie = Extract<CibleSaisieAgent, { type: 'enchainement' }>;
+
+/**
+ * L'OUTIL ENCHAÎNÉ (demande de Julien du 2026-10-20) : des étapes que l'administrateur range dans l'ordre qu'il veut.
+ * Recopie des types et des bornes de `src/agent/enchainement.ts`, tenue égale par `tests/web-agent-outils.test.ts` :
+ * les deux builds ne partagent pas ce module.
+ */
+export const TYPES_ETAPE = ['demander', 'valeur', 'tag', 'urgent', 'bloc', 'scenario'] as const;
+export type TypeEtape = (typeof TYPES_ETAPE)[number];
+export const BORNES_ENCHAINEMENT = { etapes: 12, question: 120, champ: 64, valeur: 120, valeurs: 50, valeurFixe: 500, texte: 1000 } as const;
+/** La clé d'un champ « demander » devient le nom d'un paramètre : même alphabet que le serveur. */
+export const CLE_CHAMP_DEMANDE_RE = /^[a-z][a-z0-9_]{0,63}$/;
+export const PARAM_DEJA_DEMANDE = 'deja_demande';
+
+/** Une étape telle que l'écran la saisit : un seul objet, chaque type lit ses champs. */
+export interface EtapeSaisie {
+  type: TypeEtape;
+  champ: string;
+  question: string;
+  valeurs: string[];
+  valeur: string;
+  tag: string;
+  workflowId: string;
+  code: string;
+}
+
+export function etapeVide(type: TypeEtape): EtapeSaisie {
+  return { type, champ: '', question: '', valeurs: [], valeur: '', tag: '', workflowId: '', code: '' };
+}
+
+/** Les mots de chaque type d'étape, dans le menu « + Ajouter une étape » et en tête de l'étape. */
+export const LIBELLES_ETAPE: Readonly<Record<TypeEtape, Bilingue>> = {
+  demander: ['Demander une information', 'Ask for a detail'],
+  valeur: ['Enregistrer une valeur fixe', 'Save a fixed value'],
+  tag: ['Poser un tag', 'Set a tag'],
+  urgent: ['Marquer la conversation urgente', 'Mark the conversation urgent'],
+  bloc: ['Envoyer un bloc', 'Send a block'],
+  scenario: ['Lancer un scénario (termine)', 'Start a scenario (ends)'],
+};
+
+/** Les étapes qui partent chez le contact : jamais avant une question (le serveur l'exige aussi). */
+const PART_CHEZ_LE_CONTACT: ReadonlySet<TypeEtape> = new Set(['bloc', 'scenario']);
+
+/** L'outil part-il chez le contact ? Il est alors irréversible, et l'autonomie se coche à la pose. */
+export function enchainementIrreversible(etapes: readonly EtapeSaisie[]): boolean {
+  return etapes.some((e) => PART_CHEZ_LE_CONTACT.has(e.type));
+}
+
+/**
+ * Ce qui manque à un enchaînement, ou ce qui ne va pas dans son ORDRE, dit avant le 400 du serveur
+ * (`fauteDOrdre`, `src/agent/enchainement.ts`) ; `null` = il est prêt.
+ */
+export function manqueDeLEnchainement(c: CibleEnchainementSaisie): Bilingue | null {
+  if (c.etapes.length === 0) return ['Ajoutez une première étape.', 'Add a first step.'];
+  if (c.etapes.length > BORNES_ENCHAINEMENT.etapes) {
+    return [`Au plus ${BORNES_ENCHAINEMENT.etapes} étapes.`, `At most ${BORNES_ENCHAINEMENT.etapes} steps.`];
+  }
+  for (const [i, e] of c.etapes.entries()) {
+    const n = i + 1;
+    switch (e.type) {
+      case 'demander':
+        if (e.champ === '') return [`Étape ${n} : choisissez le champ où ranger la réponse.`, `Step ${n}: pick the field that stores the answer.`];
+        if (!CLE_CHAMP_DEMANDE_RE.test(e.champ) || e.champ === PARAM_DEJA_DEMANDE) {
+          return [`Étape ${n} : le champ « ${e.champ} » a une clé que l’agent ne peut pas remplir (minuscules, chiffres, tirets bas, une lettre d’abord).`,
+            `Step ${n}: the field “${e.champ}” has a key the agent cannot fill (lowercase, digits, underscores, a letter first).`];
+        }
+        if (e.question.trim() === '') return [`Étape ${n} : dites ce que l’agent demande.`, `Step ${n}: say what the agent asks.`];
+        if (e.question.trim().length > BORNES_ENCHAINEMENT.question) {
+          return [`Étape ${n} : ${BORNES_ENCHAINEMENT.question} caractères au plus.`, `Step ${n}: at most ${BORNES_ENCHAINEMENT.question} characters.`];
+        }
+        if (e.valeurs.length > BORNES_ENCHAINEMENT.valeurs || e.valeurs.some((v) => v.length > BORNES_ENCHAINEMENT.valeur)) {
+          return [`Étape ${n} : ${BORNES_ENCHAINEMENT.valeurs} valeurs de ${BORNES_ENCHAINEMENT.valeur} caractères au plus.`,
+            `Step ${n}: at most ${BORNES_ENCHAINEMENT.valeurs} values of ${BORNES_ENCHAINEMENT.valeur} characters.`];
+        }
+        break;
+      case 'valeur':
+        if (e.champ === '' || e.valeur.trim() === '') return [`Étape ${n} : choisissez le champ et sa valeur.`, `Step ${n}: pick the field and its value.`];
+        break;
+      case 'tag':
+        if (e.tag.trim() === '') return [`Étape ${n} : choisissez le tag.`, `Step ${n}: pick the tag.`];
+        break;
+      case 'bloc':
+        if (e.workflowId === '' || e.code === '') return [`Étape ${n} : choisissez le bloc.`, `Step ${n}: pick the block.`];
+        break;
+      case 'scenario':
+        if (e.workflowId === '') return [`Étape ${n} : choisissez le scénario.`, `Step ${n}: pick the scenario.`];
+        break;
+      case 'urgent':
+        break;
+    }
+  }
+  const types = c.etapes.map((e) => e.type);
+  const iScenario = types.indexOf('scenario');
+  if (iScenario !== -1 && iScenario !== types.length - 1) {
+    return ['Le scénario ferme la marche : l’agent se retire, rien de ce qui suit ne partirait. Mettez-le en dernier.',
+      'The scenario comes last: the agent steps back, nothing after it would run. Put it last.'];
+  }
+  const premierEnvoi = types.findIndex((x) => PART_CHEZ_LE_CONTACT.has(x));
+  if (premierEnvoi !== -1 && premierEnvoi < types.lastIndexOf('demander')) {
+    return ['Un bloc ou un scénario vient après toutes les questions : l’agent pose toujours les questions en premier, un bloc placé avant partirait en réalité après la réponse.',
+      'A block or a scenario comes after all the questions: the agent always asks first, so a block placed before would actually be sent after the answer.'];
+  }
+  const cles = c.etapes.filter((e) => e.type === 'demander').map((e) => e.champ);
+  if (new Set(cles).size !== cles.length) return ['Deux questions remplissent le même champ.', 'Two questions fill the same field.'];
+  return null;
+}
+
+/** Les mots de la carte « Enchaîner des étapes », propre à l'agent IA. */
+export const TEXTES_ENCHAINEMENT = {
+  titre: ['Enchaîner des étapes', 'Chain steps'] as Bilingue,
+  aide: [
+    'Plusieurs actions dans l’ordre que vous choisissez : demander des informations, puis poser un tag, envoyer un bloc, lancer un scénario…',
+    'Several actions in the order you choose: ask for details, then set a tag, send a block, start a scenario…',
+  ] as Bilingue,
+  quand: [
+    'Appelle cet outil dès que le contact [décrivez la situation], avec les informations qu’il a déjà données.',
+    'Call this tool as soon as the contact [describe the situation], with the details they already gave.',
+  ] as Bilingue,
+  pasQuand: [
+    'N’appelle pas cet outil tant que le contact n’est pas dans cette situation.',
+    'Do not call this tool until the contact is in this situation.',
+  ] as Bilingue,
+} as const;
 
 /**
  * Le code d'un champ, tiré de son libellé : la clé du champ dans `fields` du webhook, et le paramètre que le modèle
@@ -195,7 +320,36 @@ export function cibleDeLOutil(binding: Record<string, unknown>): CibleSaisieAgen
       type: 'action', nom: texte(binding.nom), consigne: texte(binding.consigne),
       champs: Array.isArray(binding.champs) ? binding.champs.flatMap(champLu) : [],
     };
+    case 'enchainement': return {
+      type: 'enchainement', etapes: Array.isArray(binding.etapes) ? binding.etapes.flatMap(etapeLue) : [],
+    };
     case null: return null;
+  }
+}
+
+/** Une étape relue défensivement : un type inconnu est écarté (une console plus ancienne que l'API). */
+function etapeLue(e: unknown): EtapeSaisie[] {
+  if (!e || typeof e !== 'object' || Array.isArray(e)) return [];
+  const o = e as Record<string, unknown>;
+  const type = TYPES_ETAPE.find((x) => x === o.type);
+  if (!type) return [];
+  return [{
+    ...etapeVide(type),
+    champ: texte(o.champ), question: texte(o.question), valeur: texte(o.valeur), tag: texte(o.tag),
+    workflowId: texte(o.workflowId), code: texte(o.code),
+    valeurs: Array.isArray(o.valeurs) ? o.valeurs.filter((v): v is string => typeof v === 'string') : [],
+  }];
+}
+
+/** Une étape telle que le serveur la lit : seulement les champs de son type. */
+function corpsDeLEtape(e: EtapeSaisie): Record<string, unknown> {
+  switch (e.type) {
+    case 'demander': return { type: e.type, champ: e.champ, question: e.question.trim(), valeurs: e.valeurs.map((v) => v.trim()).filter((v) => v !== '') };
+    case 'valeur': return { type: e.type, champ: e.champ, valeur: e.valeur.trim() };
+    case 'tag': return { type: e.type, tag: e.tag.trim() };
+    case 'urgent': return { type: e.type };
+    case 'bloc': return { type: e.type, workflowId: e.workflowId, code: e.code };
+    case 'scenario': return { type: e.type, workflowId: e.workflowId };
   }
 }
 
@@ -214,6 +368,7 @@ export function corpsDeLaCible(c: CibleSaisieAgent): Record<string, unknown> {
         ...(ch.type === 'liste' ? { valeurs: ch.valeurs.map((v) => v.trim()).filter((v) => v !== '') } : {}),
       })),
     };
+    case 'enchainement': return { etapes: c.etapes.map(corpsDeLEtape) };
   }
 }
 
@@ -225,5 +380,6 @@ export function cibleComplete(c: CibleSaisieAgent): boolean {
     case 'bloc': return c.workflowId !== '' && c.code !== '';
     case 'scenario': return c.workflowId !== '';
     case 'action': return manqueDeLAction(c) === null;
+    case 'enchainement': return manqueDeLEnchainement(c) === null;
   }
 }

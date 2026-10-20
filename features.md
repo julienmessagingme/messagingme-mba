@@ -3436,9 +3436,10 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
     peut pas le donner. Au bac à sable, il est simulé.
 - ✅ **« Ajouter un outil » ouvre la grille « Quel outil ajouter ? »**, la même que chez l'agent de Meta, avec
   ses six cartes : **Poser un tag**, **Enregistrer une information**, **Envoyer un bloc**, **Lancer un
-  scénario**, **Appeler un connecteur API**, **Appeler un outil MCP** ; plus une septième, propre à l'agent IA,
-  **Déclencher une action** (2026-10-13). Une carte sans rien à choisir est grisée, avec le lien vers l'écran où
-  le créer (aucun appel déclaré, aucun champ dans le mini-CRM, aucun outil MCP).
+  scénario**, **Appeler un connecteur API**, **Appeler un outil MCP** ; plus deux, propres à l'agent IA,
+  **Déclencher une action** (2026-10-13) et **Enchaîner des étapes** (2026-10-20). Une carte sans rien à choisir
+  est grisée, avec le lien vers l'écran où le créer (aucun appel déclaré, aucun champ dans le mini-CRM, aucun
+  outil MCP).
 - ✅ **Le tag, l'information, le bloc et le scénario sont FIXÉS par vous**, comme chez l'agent de Meta : un outil
   par tag, par champ, par bloc, par scénario. L'agent ne décide que du **moment**, et pour une information, de
   la **valeur**, bornée à la liste des valeurs permises si vous en donnez une. Il ne peut donc ni inventer un
@@ -3467,6 +3468,23 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
   dit. Sans application, une automation peut partir de l'action. L'action déclenchée s'inscrit dans la frise du
   panneau Détail de l'Inbox. Au bac à sable, elle est simulée. Depuis Claude Code : `set_agent_action` et
   `delete_agent_action`, et `get_conversation` montre les actions d'une conversation.
+- ✅ **Enchaîner des étapes** (2026-10-20) : un seul outil, plusieurs actions, **dans l'ordre que vous choisissez**.
+  Une première étape, puis « + Ajouter une étape », et des flèches pour changer l'ordre. Six sortes d'étapes :
+  **Demander une information** (ce que l'agent demande, et le champ du mini-CRM où ranger la réponse, avec ses
+  valeurs permises si vous en donnez), **Enregistrer une valeur fixe**, **Poser un tag**, **Marquer la
+  conversation urgente**, **Envoyer un bloc**, **Lancer un scénario**. Cas type : demander prénom, nom, campus et
+  formation, puis lancer le scénario qui passe le contact à l'équipe.
+  - **L'agent ne demande qu'une fois.** S'il manque une réponse quand il appelle l'outil, rien ne s'exécute :
+    l'outil lui rend les questions, il les pose en UN message, puis rappelle l'outil, et tout s'exécute avec ce
+    que le contact a donné, même s'il a refusé ou répondu en partie. Un contact qui veut parler à quelqu'un n'est
+    jamais bloqué derrière un formulaire.
+  - **Deux règles d'ordre**, dites à l'écran avant d'enregistrer : un **scénario se place en dernier** (l'agent se
+    retire, rien après lui ne partirait) ; **aucun bloc ni scénario avant une question** (l'agent pose toujours
+    les questions en premier, un bloc placé avant partirait en réalité après la réponse). Un tag, une valeur fixe
+    ou le marquage urgent se placent où vous voulez.
+  - Dès qu'un bloc ou un scénario en fait partie, l'outil **part chez le client** : l'autonomie se coche, comme
+    pour « Lancer un scénario ». Une écriture ou un tag qui échoue n'empêche pas la suite ; un scénario refusé
+    laisse l'agent continuer la conversation. Au bac à sable, l'outil pose les mêmes questions et simule le reste.
 - ✅ **La liste des outils posés**, au format des lignes de l'agent de Meta : titre et ce que l'outil vise, son
   type, son état (actif ou inactif) avec « Activer » / « Désactiver », « Modifier » et « Supprimer ». Les appels
   de connecteur API et les outils MCP y entrent comme les autres. La ligne dit aussi ce qui empêche un outil de

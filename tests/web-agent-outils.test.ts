@@ -5,7 +5,11 @@ import {
   TOUJOURS_LA, TYPES_CHAMP_ACTION as TYPES_CHAMP_ACTION_ECRAN, cibleDeLOutil, codeLibre, corpsDeLaCible, manqueDeLAction,
   normaliserCodeChamp, normaliserNomOutil, typeDuHandler,
   type CibleSaisieAgent,
+  BORNES_ENCHAINEMENT as BORNES_ENCHAINEMENT_ECRAN, CLE_CHAMP_DEMANDE_RE as CLE_CHAMP_DEMANDE_RE_ECRAN,
+  PARAM_DEJA_DEMANDE as PARAM_DEJA_DEMANDE_ECRAN, TYPES_ETAPE as TYPES_ETAPE_ECRAN, enchainementIrreversible, etapeVide,
+  manqueDeLEnchainement, type EtapeSaisie, type TypeEtape,
 } from '../web/lib/agent-outils';
+import { BORNES_ENCHAINEMENT, CLE_CHAMP_DEMANDE_RE, PARAM_DEJA_DEMANDE } from '../src/agent/enchainement';
 import { signeDuHandler } from '../web/lib/signes-outils';
 import { BORNES_OUTIL } from '../web/lib/mba-outils';
 import {
@@ -179,5 +183,49 @@ describe('RC4 : la console et le catalogue serveur disent la même chose', () =>
     expect(cibleDeLOutil({ handler: 'poser_tag' })).toEqual({ type: 'tag', tag: '' });
     expect(cibleDeLOutil({ handler: 'ecrire_variable', valeurs: [1, 'a'] })).toEqual({ type: 'champ', champ: '', valeurs: ['a'] });
     expect(cibleDeLOutil({ handler: 'terminer' })).toBeNull();
+  });
+});
+
+describe('outil enchaîné : la console et le serveur disent la même chose (2026-10-20)', () => {
+  it('mêmes types d’étapes, mêmes bornes, même alphabet de champ, même paramètre réservé', () => {
+    expect([...TYPES_ETAPE_ECRAN]).toEqual(['demander', 'valeur', 'tag', 'urgent', 'bloc', 'scenario']);
+    expect({ ...BORNES_ENCHAINEMENT_ECRAN }).toEqual({ ...BORNES_ENCHAINEMENT });
+    expect(CLE_CHAMP_DEMANDE_RE_ECRAN.source).toBe(CLE_CHAMP_DEMANDE_RE.source);
+    expect(PARAM_DEJA_DEMANDE_ECRAN).toBe(PARAM_DEJA_DEMANDE);
+  });
+
+  const WF = '0b7e2c1a-4d5e-4f60-8a9b-1c2d3e4f5a6b';
+  const etape = (type: TypeEtape, over: Partial<EtapeSaisie> = {}): EtapeSaisie => ({ ...etapeVide(type), ...over });
+  const Q = etape('demander', { champ: 'prenom', question: 'ton prénom' });
+  const TAG = etape('tag', { tag: 'lead_chaud' });
+  const BLOC = etape('bloc', { workflowId: WF, code: 'nod_t1_01HZX5Y6Z7A8B9C0D1E2F3G4H5' });
+  const SC = etape('scenario', { workflowId: WF });
+
+  /** 🔴 La parité qui compte : ce que l'écran laisse partir, le serveur l'accepte, et inversement. */
+  it.each([
+    ['le parcours Pigier', [Q, TAG, SC], true],
+    ['un ordre libre avant les envois', [TAG, Q, etape('urgent'), BLOC, SC], true],
+    ['un scénario qui ne ferme pas la marche', [SC, TAG], false],
+    ['un bloc avant une question', [BLOC, Q], false],
+    ['deux questions sur le même champ', [Q, { ...Q, question: 'encore' }], false],
+    ['aucune étape', [], false],
+  ] as const)('%s', (_nom, etapes, accepte) => {
+    const c: CibleSaisieAgent = { type: 'enchainement', etapes: [...etapes] };
+    expect(manqueDeLEnchainement(c) === null).toBe(accepte);
+    expect(lireCibleSaisie('enchainer', corpsDeLaCible(c)) !== null).toBe(accepte);
+  });
+
+  it('une cible enchaînée relue à l’écran repart à l’identique', () => {
+    const c: CibleSaisieAgent = { type: 'enchainement', etapes: [{ ...Q, valeurs: ['A', 'B'] }, TAG, SC] };
+    const binding = { handler: 'enchainer', ...corpsDeLaCible(c) };
+    expect(cibleDeLOutil(binding)).toEqual(c);
+    expect(typeDuHandler('enchainer')).toBe('enchainement');
+    expect(signeDuHandler('enchainer')).toBe('scenario');
+  });
+
+  it('irréversible côté écran exactement quand un bloc ou un scénario part', () => {
+    expect(enchainementIrreversible([Q, TAG])).toBe(false);
+    expect(enchainementIrreversible([Q, BLOC])).toBe(true);
+    expect(enchainementIrreversible([Q, SC])).toBe(true);
   });
 });

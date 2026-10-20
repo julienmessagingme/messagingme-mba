@@ -111,7 +111,9 @@ describe('catalogue des outils maison', () => {
     expect(outilMaison('ecrire_variable')?.params.map((p) => p.name)).toEqual(['valeur']);
     // L'action (2026-10-13) : son nom, sa consigne et ses champs sont fixés ; les paramètres en sont DÉRIVÉS (un par champ).
     expect(outilMaison('declencher_action')?.params).toEqual([]);
-    expect(HANDLERS_A_CIBLE.slice().sort()).toEqual(['declencher_action', 'ecrire_variable', 'envoyer_bloc', 'lancer_scenario', 'poser_tag']);
+    // L'outil enchaîné (2026-10-20) : ses étapes sont fixées ; seules les questions deviennent des paramètres, DÉRIVÉS.
+    expect(outilMaison('enchainer')?.params).toEqual([]);
+    expect(HANDLERS_A_CIBLE.slice().sort()).toEqual(['declencher_action', 'ecrire_variable', 'enchainer', 'envoyer_bloc', 'lancer_scenario', 'poser_tag']);
   });
 
   it('🔴 RC4 : « lancer un scénario » est irréversible, et hors des outils sûrs du MCP', () => {

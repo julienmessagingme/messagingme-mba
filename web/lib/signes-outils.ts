@@ -45,6 +45,8 @@ export function signeDuHandler(handler: string): SigneOutil | null {
     case 'terminer': return 'fin';
     // Une action part vers l'application du client, comme l'appel d'un connecteur : même famille d'actes.
     case 'declencher_action': return 'connecteur';
+    // L'outil enchaîné (2026-10-20) : une suite d'étapes, le même dessin que le parcours d'un scénario.
+    case 'enchainer': return 'scenario';
     default: return null;
   }
 }

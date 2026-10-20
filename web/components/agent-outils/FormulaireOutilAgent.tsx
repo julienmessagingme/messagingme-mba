@@ -7,10 +7,12 @@ import { Bouton } from '@/components/Bouton';
 import { CibleBloc, CibleChamp, CibleScenario, CibleTag } from '@/components/mba-outils/CiblesOutil';
 import { BORNES_OUTIL, consigneIncomplete, textesDuType } from '@/lib/mba-outils';
 import {
-  HANDLER_DU_TYPE, TEXTES_ACTION, cibleComplete, cibleDeLOutil, corpsDeLaCible, manqueDeLAction, normaliserNomOutil,
+  HANDLER_DU_TYPE, TEXTES_ACTION, TEXTES_ENCHAINEMENT, cibleComplete, cibleDeLOutil, corpsDeLaCible, enchainementIrreversible,
+  manqueDeLAction, manqueDeLEnchainement, normaliserNomOutil,
   type CibleSaisieAgent, type TypeACible,
 } from '@/lib/agent-outils';
 import { CibleAction } from './CibleAction';
+import { CibleEnchainement } from './CibleEnchainement';
 import {
   ajouterOutil, autonomieOutil, patchOutil, type GesteMoment, type ModeleOutil, type OutilAgent,
 } from '@/lib/api-agent-tools';
@@ -24,6 +26,7 @@ function cibleVide(type: TypeACible): CibleSaisieAgent {
     case 'bloc': return { type: 'bloc', workflowId: '', code: '' };
     case 'scenario': return { type: 'scenario', workflowId: '' };
     case 'action': return { type: 'action', nom: '', consigne: '', champs: [] };
+    case 'enchainement': return { type: 'enchainement', etapes: [] };
   }
 }
 
@@ -65,7 +68,7 @@ export function FormulaireOutilAgent({
 }) {
   const t = useT();
   // L'action est propre à l'agent IA : ses mots ne sont pas dans la grille de l'agent de Meta.
-  const textes = type === 'action' ? TEXTES_ACTION : textesDuType(type, 'agent');
+  const textes = type === 'action' ? TEXTES_ACTION : type === 'enchainement' ? TEXTES_ENCHAINEMENT : textesDuType(type, 'agent');
   const depart = (outil ? cibleDeLOutil(outil.binding) : null) ?? cibleVide(type);
   const [cible, setCible] = useState<CibleSaisieAgent>(depart);
   // La cible d'origine : on ne la renvoie que si elle a CHANGÉ (un champ supprimé du mini-CRM ne doit pas faire
@@ -77,7 +80,11 @@ export function FormulaireOutilAgent({
   const [nomTouche, setNomTouche] = useState(outil !== null);
   const [description, setDescription] = useState(outil?.description ?? t(textes.quand[0], textes.quand[1]));
   const [nePasUtiliser, setNePasUtiliser] = useState(outil?.nePasUtiliser ?? t(textes.pasQuand[0], textes.pasQuand[1]));
-  const irreversible = (outil?.risk ?? modele?.risk) === 'irreversible';
+  // Un outil enchaîné est irréversible selon SES étapes (un bloc ou un scénario part chez le contact) : le serveur le
+  // recalcule à la pose, l'écran le suit pour proposer l'autonomie avant d'enregistrer.
+  const irreversible = cible.type === 'enchainement'
+    ? enchainementIrreversible(cible.etapes)
+    : (outil?.risk ?? modele?.risk) === 'irreversible';
   const [autonome, setAutonome] = useState(false);
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -87,7 +94,8 @@ export function FormulaireOutilAgent({
     if (!nomTouche) setName(normaliserNomOutil(v));
   };
 
-  const manqueAction = cible.type === 'action' ? manqueDeLAction(cible) : null;
+  const manqueAction = cible.type === 'action' ? manqueDeLAction(cible)
+    : cible.type === 'enchainement' ? manqueDeLEnchainement(cible) : null;
   const manque: string | null =
     manqueAction !== null ? t(manqueAction[0], manqueAction[1])
     : !cibleComplete(cible) ? t('Choisissez ce que vise l’outil.', 'Pick what the tool targets.')
@@ -171,6 +179,9 @@ export function FormulaireOutilAgent({
             if (c.nom !== cible.nom && (title.trim() === '' || title === cible.nom)) changerTitre(c.nom);
             setCible(c);
           }} />
+      )}
+      {cible.type === 'enchainement' && (
+        <CibleEnchainement tenantId={tenantId} valeur={cible} onChange={setCible} />
       )}
       {cible.type === 'scenario' && (
         <CibleScenario pour="agent" tenantId={tenantId} workflowId={cible.workflowId}

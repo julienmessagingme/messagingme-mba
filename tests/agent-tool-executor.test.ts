@@ -352,6 +352,43 @@ describe('tronc commun : journaliser, appeler, assainir, clore (étapes 5 à 8)'
     expect(r2.scenarioLance).toBeUndefined();
   }, 10_000);
 
+  it('🔴 outil ENCHAÎNÉ : une chaîne vide sur une liste vaut « non fourni », et deja_demande est exigé (2026-10-20)', async () => {
+    // Une liste (campus) refusait `""` : l'appel revenait au modèle, qui pouvait choisir une valeur au hasard pour passer.
+    const enchaine = { ...OUTIL, binding: { handler: 'enchainer', etapes: [
+      { type: 'demander', champ: 'campus', question: 'le campus', valeurs: ['Bayonne', 'Lyon'] },
+      { type: 'demander', champ: 'prenom', question: 'le prénom', valeurs: [] },
+    ] } };
+    const h = harnais({ outil: enchaine });
+    const r = await executeTool({ name: OUTIL.name, argumentsJson: JSON.stringify({ campus: '', prenom: 'Lina', deja_demande: false }) }, CTX, h.deps);
+    expect(r.status).toBe('ok');
+    expect(h.vus[0]?.args).toEqual({ prenom: 'Lina', deja_demande: false });
+    // Une valeur hors liste reste refusée, et l'oubli de deja_demande aussi : la validation est celle des paramètres dérivés.
+    const hors = await executeTool({ name: OUTIL.name, argumentsJson: JSON.stringify({ campus: 'Pau', deja_demande: true }) }, CTX, harnais({ outil: enchaine }).deps);
+    expect(hors.status).toBe('refuse');
+    const sans = await executeTool({ name: OUTIL.name, argumentsJson: JSON.stringify({ prenom: 'Lina' }) }, CTX, harnais({ outil: enchaine }).deps);
+    expect(sans.status).toBe('refuse');
+  });
+
+  it('🔴 un outil ENCHAÎNÉ qui finit par un scénario, coupé à l’échéance, est terminal de même (2026-10-20)', async () => {
+    const pend = () => new Promise<never>(() => {});
+    const WF = '0b7e2c1a-4d5e-4f60-8a9b-1c2d3e4f5a6b';
+    const avecScenario = harnais({
+      outil: { ...OUTIL, timeoutMs: 200, binding: { handler: 'enchainer', etapes: [{ type: 'tag', tag: 'x' }, { type: 'scenario', workflowId: WF }] } },
+      resolveur: pend,
+    });
+    const r = await executeTool({ name: OUTIL.name, argumentsJson: '{}' }, CTX, avecScenario.deps);
+    expect(r.status).toBe('timeout');
+    expect(r.scenarioLance).toBe(true);
+    // Sans scénario, rien ne prend la conversation : un timeout ordinaire, le modèle est rappelé.
+    const sansScenario = harnais({
+      outil: { ...OUTIL, timeoutMs: 200, binding: { handler: 'enchainer', etapes: [{ type: 'tag', tag: 'x' }] } },
+      resolveur: pend,
+    });
+    const r2 = await executeTool({ name: OUTIL.name, argumentsJson: '{}' }, CTX, sansScenario.deps);
+    expect(r2.status).toBe('timeout');
+    expect(r2.scenarioLance).toBeUndefined();
+  }, 10_000);
+
   it('echeance du tour DEJA depassee -> timeout immediat, le resolveur n est pas appele', async () => {
     const { deps, vus } = harnais();
     const r = await executeTool({ name: OUTIL.name, argumentsJson: args({ reference: 'X' }) }, { ...CTX, deadline: 999_000 }, deps);

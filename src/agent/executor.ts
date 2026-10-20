@@ -2,7 +2,8 @@ import { z } from 'zod';
 import type { Geste } from './gestes';
 import type { JournalAppels, OrigineOutil, OutilDefini, StatutAppel, ToolCatalog } from './catalog';
 import type { ParamOutil } from './llm/tool-schema';
-import { paramsEffectifs } from './outils-maison';
+import { lireCibleOutilAgent, paramsEffectifs } from './outils-maison';
+import { lanceUnScenario } from './enchainement';
 import { completerArguments } from './completer-arguments';
 import { tenter } from '../lib/tenter';
 import { messageDe, texteDe } from '../lib/erreur';
@@ -140,6 +141,12 @@ function schemaArguments(params: ParamOutil[]): z.ZodObject {
     // `nullish` et non `optional` : plusieurs fournisseurs émettent `null` pour un paramètre facultatif non
     // rempli. Les `null` sont retirés juste après la validation.
     if (!p.required) s = s.nullish();
+    // 🔴 Une chaîne VIDE sur une énumération facultative vaut « non fourni » : `""` n'est jamais une valeur permise, et
+    // la refuser faisait renvoyer l'appel au modèle, qui pouvait alors choisir une valeur au hasard pour passer (un
+    // faux campus sur la fiche). Seulement sur une énumération : ailleurs, une chaîne vide peut être une vraie valeur.
+    if (!p.required && p.type === 'string' && p.enum && p.enum.length > 0) {
+      s = z.preprocess((v) => (v === '' ? undefined : v), s);
+    }
     shape[p.name] = s;
   }
   return z.object(shape);
@@ -365,7 +372,10 @@ export async function executeTool(
        * si le lancement aboutit, c'est lui qui clôt la session (`sessionRemplacee: 'retiree'`), sinon le prochain
        * message du contact rouvre la conversation avec l'agent. Relevé par la relecture de RC4.
        */
-      const issueInconnue = String(outil.binding.handler ?? '') === 'lancer_scenario';
+      // Même chose pour un outil enchaîné dont la dernière étape lance un scénario (`src/agent/enchainement.ts`).
+      const cibleLue = lireCibleOutilAgent(outil.binding);
+      const issueInconnue = String(outil.binding.handler ?? '') === 'lancer_scenario'
+        || (cibleLue?.handler === 'enchainer' && lanceUnScenario(cibleLue.etapes));
       return {
         status: 'timeout',
         contenu: { erreur: 'delai depasse, l outil n a pas repondu a temps' },

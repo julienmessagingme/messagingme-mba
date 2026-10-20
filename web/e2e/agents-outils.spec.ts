@@ -36,6 +36,7 @@ const CATALOGUE = [
   modele('envoyer_bloc', 'Envoyer un bloc de votre scénario', 'irreversible'),
   modele('lancer_scenario', 'Lancer un scénario', 'irreversible'),
   modele('declencher_action', 'Déclencher une action', 'write'),
+  modele('enchainer', 'Enchaîner des étapes', 'write'),
 ];
 
 const base = {
@@ -351,7 +352,7 @@ test.describe('Agents IA : « Quel outil ajouter ? »', () => {
     await mock(page, [], []);
     await onglet(page);
     await page.getByTestId('agent-outils-ajouter').click();
-    for (const type of ['tag', 'champ', 'bloc', 'scenario', 'connecteur', 'mcp', 'action']) {
+    for (const type of ['tag', 'champ', 'bloc', 'scenario', 'connecteur', 'mcp', 'action', 'enchainement']) {
       await expect(page.getByTestId(`mba-type-${type}`)).toBeVisible();
     }
     await expect(page.getByTestId('mba-types')).not.toContainText('agent de Meta');
@@ -402,6 +403,39 @@ test.describe('Agents IA : « Quel outil ajouter ? »', () => {
       .toEqual([{ handler: 'lancer_scenario', name: 'prise_de_rendez_vous', cible: { workflowId: WF } }]);
     await expect.poll(() => appels.find((a) => /\/autonomie$/.test(a.url))?.body).toEqual({ valeur: true });
     await expect(page.getByTestId('outil-cible-n1')).toHaveText('Scénario : Prise de rendez-vous');
+  });
+
+  test('🔴 « Enchaîner des étapes » : l’ordre de l’écran part tel quel, et un scénario mal placé est refusé avant l’envoi', async ({ page }) => {
+    const appels: Appel[] = [];
+    await mock(page, appels, []);
+    await onglet(page);
+    await page.getByTestId('agent-outils-ajouter').click();
+    await page.getByTestId('mba-type-enchainement').click();
+    // Une étape « scénario » d'abord, puis une question : l'écran refuse, la question doit venir avant.
+    await page.getByTestId('agent-etape-ajouter').selectOption('scenario');
+    await page.getByTestId('agent-etape-0').getByTestId('mba-cible-scenario').selectOption(WF);
+    await page.getByTestId('agent-etape-ajouter').selectOption('demander');
+    await page.getByTestId('agent-etape-1').getByTestId('agent-etape-question').fill('ton statut');
+    await page.getByTestId('agent-etape-1').getByTestId('mba-cible-champ').selectOption('statut');
+    await page.getByTestId('agent-outil-form-titre').fill('Qualifier puis transférer');
+    await page.getByTestId('agent-outil-form-quand').fill('Appelle cet outil dès que le contact veut parler à un conseiller.');
+    await expect(page.getByTestId('agent-outil-form-manque')).toContainText('Le scénario ferme la marche');
+    await expect(page.getByTestId('agent-outil-form-enregistrer')).toBeDisabled();
+    // On remonte la question : l'ordre est bon, l'autonomie est demandée (un scénario part chez le contact).
+    await page.getByTestId('agent-etape-monter-1').click();
+    await expect(page.getByTestId('agent-etape-0')).toContainText('Demander une information');
+    await page.getByTestId('agent-outil-form-autonomie').getByRole('checkbox').check();
+    await page.getByTestId('agent-outil-form-enregistrer').click();
+
+    await expect.poll(() => postsOutil(appels).map((a) => a.body), { timeout: 5000 }).toEqual([{
+      handler: 'enchainer', name: 'qualifier_puis_transferer',
+      cible: { etapes: [
+        { type: 'demander', champ: 'statut', question: 'ton statut', valeurs: [] },
+        { type: 'scenario', workflowId: WF },
+      ] },
+    }]);
+    await expect.poll(() => appels.find((a) => /\/autonomie$/.test(a.url))?.body).toEqual({ valeur: true });
+    await expect(page.getByTestId('outil-cible-n1')).toHaveText('2 étapes, dont 1 question, puis scénario Prise de rendez-vous');
   });
 
   test('🔴 « Envoyer un bloc » : le scénario, puis UN bloc de ce scénario, qui part seul', async ({ page }) => {

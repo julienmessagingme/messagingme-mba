@@ -10,13 +10,23 @@ import { asRecord } from '../webhooks/json';
 import { agentDuConsommateur, consommateurAgent, consommateurMba } from './consommateur';
 import { RISQUE_MAISON, type CibleMaison } from '../mba/outils-maison';
 import type { CibleOutilAgent } from './outils-maison';
+import { risqueDeLEnchainement, scenariosDeLEnchainement } from './enchainement';
 import { lireVariables, paramsDuConnecteur } from './requetes';
 import { enTransaction } from '../db/transaction';
 
-/** Le scénario que vise la cible d'un outil d'agent IA (RC4), pour la garde d'isolation de l'écriture, ou `null`. */
-function scenarioDeLaCible(cible: CibleOutilAgent | null): string | null {
-  return cible?.handler === 'envoyer_bloc' || cible?.handler === 'lancer_scenario' ? cible.workflowId : null;
+/**
+ * Les scénarios que vise la cible d'un outil d'agent IA (RC4), pour la garde d'isolation de l'écriture : un pour un bloc
+ * ou un lancement, ceux de ses étapes pour un outil enchaîné, aucun sinon. TOUS doivent être de l'espace.
+ */
+function scenariosDeLaCible(cible: CibleOutilAgent | null): string[] {
+  if (cible?.handler === 'envoyer_bloc' || cible?.handler === 'lancer_scenario') return [cible.workflowId];
+  return cible?.handler === 'enchainer' ? scenariosDeLEnchainement(cible.etapes) : [];
 }
+
+/** La garde d'isolation, en SQL : aucun des scénarios donnés n'est hors de l'espace `$1`. Un tableau vide passe. */
+const SCENARIOS_DE_L_ESPACE = (param: string): string =>
+  `not exists (select 1 from unnest(${param}::uuid[]) as s(id)
+                where not exists (select 1 from workflows w where w.id = s.id and w.tenant_id = $1))`;
 
 interface Ligne {
   /** jsonb opaque, relu par `lireGestes` : un contenu corrompu rend un tableau vide. */
@@ -279,7 +289,7 @@ export class PgToolCatalog implements ToolCatalog {
            (tenant_id, agent_id, origin, name, title, description, ne_pas_utiliser, params, binding, risk)
          select $1, $9, 'mba', $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8
           where exists (select 1 from agents where id = $9 and tenant_id = $1)
-            and ($10::uuid is null or exists (select 1 from workflows where id = $10 and tenant_id = $1))
+            and ${SCENARIOS_DE_L_ESPACE('$10')}
          returning id`,
         [
           tenantId, outil.name, outil.title, outil.description, outil.nePasUtiliser,
@@ -287,7 +297,7 @@ export class PgToolCatalog implements ToolCatalog {
           // `binding.handler` donne son comportement à l'outil, jamais le nom exposé, que le client peut changer. La
           // cible fixée (RC4) vit à côté de lui, dans le même objet, comme chez l'agent de Meta.
           JSON.stringify(outil.cible ?? { handler: outil.handler }),
-          outil.risk, agentId, scenarioDeLaCible(outil.cible),
+          outil.risk, agentId, scenariosDeLaCible(outil.cible),
         ],
       ).catch(surNomDejaPris);
       const id = res.rows[0]?.id;
@@ -486,7 +496,11 @@ export class PgToolCatalog implements ToolCatalog {
       // Pas d'alias ni de `returning ${COLONNES_ADMIN}` : ses préfixes `t.` et `c.` n'existent pas dans un
       // UPDATE. L'`exists` sur la liaison borne le périmètre : sans lui, l'écran d'un agent corrigerait les
       // mots d'un outil qu'il n'utilise pas, donc le comportement de l'agent du voisin.
-      `update agent_tools set
+      // 🔴 `avant` lit le risque dans le MÊME instantané que l'écriture (les CTE d'une instruction le partagent) : c'est
+      // lui qui dit si ce patch fait MONTER l'outil à irréversible (`autonomie`, en bas).
+      `with avant as (select risk from agent_tools where tenant_id = $1 and id = $3),
+       maj as (
+       update agent_tools set
          name = coalesce($4, name),
          title = coalesce($5, title),
          description = coalesce($6, description),
@@ -512,6 +526,8 @@ export class PgToolCatalog implements ToolCatalog {
                              else coalesce($11::text[], output_paths) end,
          -- La cible fixée d un outil maison (RC4) : tout le binding, handler compris, jamais un autre handler.
          binding = coalesce($12::jsonb, binding),
+         -- Le risque d un outil enchaine suit ses etapes (un scenario ajoute le rend irreversible) ; null ailleurs.
+         risk = coalesce($14, risk),
          updated_at = now()
        where agent_tools.tenant_id = $1 and agent_tools.id = $3
          and exists (select 1 from agent_tool_consommateurs c
@@ -520,14 +536,25 @@ export class PgToolCatalog implements ToolCatalog {
          -- Une cible ne change pas le comportement de l outil, et son scenario est de cet espace (garde d isolation,
          -- comme a la pose). Sinon aucune ligne : 404.
          and ($12::jsonb is null or (agent_tools.origin = 'mba' and agent_tools.binding->>'handler' = $12::jsonb->>'handler'))
-         and ($13::uuid is null or exists (select 1 from workflows w where w.id = $13 and w.tenant_id = $1))
-       returning id`,
+         and ${SCENARIOS_DE_L_ESPACE('$13')}
+       returning agent_tools.id, agent_tools.risk),
+       -- L autonomie TOMBE quand ce patch rend l outil irreversible (une etape de scenario ou de bloc ajoutee a un
+       -- outil enchaine) : elle avait ete cochee pour autre chose, et un oui donne a une ecriture ne vaut pas pour un
+       -- envoi. Meme regle que la montee de risque d un connecteur (requetes.pg.ts) et d un outil MCP.
+       autonomie as (
+         update agent_tool_consommateurs c set autonome = false, updated_at = now()
+           from maj, avant
+          where c.tenant_id = $1 and c.tool_id = maj.id and c.autonome
+            and maj.risk = 'irreversible' and avant.risk <> 'irreversible'
+       )
+       select id from maj`,
       [tenantId, consommateur, outilId, patch.name ?? null, patch.title ?? null,
         patch.description ?? null, patch.nePasUtiliser ?? null,
         patch.enums ? JSON.stringify(patch.enums) : null,
         patch.gestes ? JSON.stringify(patch.gestes) : null,
         patch.nature ?? null, patch.outputPaths ? [...patch.outputPaths] : null,
-        patch.cible ? JSON.stringify(patch.cible) : null, scenarioDeLaCible(patch.cible ?? null)],
+        patch.cible ? JSON.stringify(patch.cible) : null, scenariosDeLaCible(patch.cible ?? null),
+        patch.cible?.handler === 'enchainer' ? risqueDeLEnchainement(patch.cible.etapes) : null],
     ).catch(surNomDejaPris);
     const r = res.rows[0];
     return r ? this.complet(tenantId, consommateur, r.id) : null;

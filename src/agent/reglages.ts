@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { OutilComplet } from './catalog';
+import type { OutilComplet, RisqueOutil } from './catalog';
+import { BORNES_ENCHAINEMENT, risqueDeLEnchainement } from './enchainement';
 import { NomOutilDejaPris, OutilNonActivable } from './catalog';
 import {
   BORNES_ACTION, cibleOutilAgentSchema, exigeUneCible, handlerMaison, lireCibleOutilAgent, outilMaison, paramsInitiaux,
@@ -41,7 +42,17 @@ export const CIBLE_REQUISE: Readonly<Record<HandlerACible, string>> = {
   envoyer_bloc: 'cible requise : le scénario et le code du bloc à envoyer',
   lancer_scenario: 'cible requise : le scénario à lancer',
   declencher_action: `cible requise : le nom de l’action, sa consigne, et au plus ${BORNES_ACTION.champs} champs (code, libellé, type texte, nombre, date, email ou liste avec ses valeurs)`,
+  enchainer: `cible requise : de 1 à ${BORNES_ENCHAINEMENT.etapes} étapes, un scénario seulement en dernier, aucun bloc ni scénario avant une question, et deux questions jamais sur le même champ`,
 };
+
+/**
+ * Le risque d'un outil posé : celui du catalogue, sauf pour l'outil enchaîné, dont le risque dépend de ses étapes
+ * (`risqueDeLEnchainement`). Partagé par la pose et la modification : une étape de scénario ajoutée après coup rend
+ * l'outil irréversible, donc l'autonomie à cocher.
+ */
+export function risqueDeLOutil(risqueDuCatalogue: RisqueOutil, cible: CibleOutilAgent | null): RisqueOutil {
+  return cible?.handler === 'enchainer' ? risqueDeLEnchainement(cible.etapes) : risqueDuCatalogue;
+}
 
 /**
  * Ajoute à l'agent un outil maison du catalogue, INACTIF. 🔴 Le modèle d'outil vient du catalogue, jamais de
@@ -77,7 +88,7 @@ export async function ajouterOutilMaison(
       description: modele.description.fr,
       nePasUtiliser: modele.nePasUtiliser.fr,
       params: paramsInitiaux(modele),
-      risk: modele.risk,
+      risk: risqueDeLOutil(modele.risk, cible),
     });
     return outil ? { ok: true, valeur: outil } : refus(404, 'agent introuvable');
   } catch (err) {

@@ -202,7 +202,8 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
     // d'un autre espace rend 404, comme un agent inconnu.
     const r = await ajouterOutilMaison(deps.outils, ctx.tenant, ctx.agentId, parse.data.handler, parse.data.name, parse.data.cible);
     if (!r.ok) {
-      const scenarioEnJeu = r.statut === 404 && (parse.data.handler === 'envoyer_bloc' || parse.data.handler === 'lancer_scenario');
+      const scenarioEnJeu = r.statut === 404
+        && (parse.data.handler === 'envoyer_bloc' || parse.data.handler === 'lancer_scenario' || parse.data.handler === 'enchainer');
       return reply.code(r.statut).send(scenarioEnJeu ? { error: 'agent ou scénario introuvable' } : corpsDuRefus(r));
     }
     const sorties = (await deps.sortiesDeLAgent(ctx.tenant, ctx.agentId)) ?? [];

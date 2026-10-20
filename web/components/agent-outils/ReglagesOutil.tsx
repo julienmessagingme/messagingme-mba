@@ -45,7 +45,9 @@ export function Risque({ risk, handler }: { risk: OutilAgent['risk']; handler?: 
   if (risk === 'write') return <Etiquette classe="bg-brand-50 text-brand-600">{t('écriture', 'write')}</Etiquette>;
   return (
     <Etiquette classe="bg-alerte-50 text-alerte-800">
-      {handler === 'envoyer_bloc' || handler === 'lancer_scenario' ? t('part chez le client', 'reaches the customer') : t('sans retour', 'no undo')}
+      {/* Un outil enchaîné n'est irréversible que par un bloc ou un scénario (`risqueDeLEnchainement`) : il part aussi. */}
+      {handler === 'envoyer_bloc' || handler === 'lancer_scenario' || handler === 'enchainer'
+        ? t('part chez le client', 'reaches the customer') : t('sans retour', 'no undo')}
     </Etiquette>
   );
 }

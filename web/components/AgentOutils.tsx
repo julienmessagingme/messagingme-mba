@@ -63,6 +63,16 @@ function libelleCible(o: OutilAgent, noms: Noms, t: Traduire): string {
       const champs = n === 0 ? '' : t(` (${n} champ${n > 1 ? 's' : ''})`, ` (${n} field${n > 1 ? 's' : ''})`);
       return c.nom ? t(`Action : ${c.nom}${champs}`, `Action: ${c.nom}${champs}`) : t('Action à nommer', 'Action to name');
     }
+    case 'enchainement': {
+      const n = c.etapes.length;
+      const questions = c.etapes.filter((e) => e.type === 'demander').length;
+      const dernier = c.etapes[n - 1];
+      const fin = dernier?.type === 'scenario'
+        ? t(`, puis scénario ${noms.scenarios.get(dernier.workflowId) ?? '(supprimé ou dépublié)'}`, `, then scenario ${noms.scenarios.get(dernier.workflowId) ?? '(deleted or unpublished)'}`)
+        : '';
+      return t(`${n} étape${n > 1 ? 's' : ''}, dont ${questions} question${questions > 1 ? 's' : ''}${fin}`,
+        `${n} step${n > 1 ? 's' : ''}, ${questions} question${questions > 1 ? 's' : ''}${fin}`);
+    }
   }
 }
 
@@ -273,7 +283,11 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
             <ChoixTypeOutil pour="agent" tenantId={tenantId} onAnnuler={() => setMode({ vue: 'liste' })}
               onChoisir={(type) => setMode(type === 'connecteur' ? { vue: 'connecteur' } : { vue: 'form', type })}
               mcpDisponibles={mcpARattacher.length} onChoisirMcp={() => setMode({ vue: 'mcp' })}
-              onChoisirAction={() => setMode({ vue: 'form', type: 'action' })} />
+              onChoisirAction={() => setMode({ vue: 'form', type: 'action' })}
+              /* La carte n'apparaît que si l'API la connaît : la console part au push, l'API à son déploiement, et une
+                 carte servie avant aurait posé un outil que la route refuse (« outil inconnu »). */
+              {...(catalogue.some((m) => m.handler === HANDLER_DU_TYPE.enchainement)
+                ? { onChoisirEnchainement: () => setMode({ vue: 'form', type: 'enchainement' }) } : {})} />
           )}
 
           {mode.vue === 'mcp' && (
