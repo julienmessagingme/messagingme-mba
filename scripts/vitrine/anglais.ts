@@ -13,6 +13,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ADRESSES_CLAUDE_FR, jumellesAide } from './aide-pages';
 import { pageAvecEntete } from './entete';
 
 const ORIGINE = 'https://app.messagingme.fr';
@@ -43,6 +44,8 @@ export const JUMELLES: Readonly<Record<string, string>> = {
   '/cas-d-usage/bulle-whatsapp-site-lovable/': '/en/use-cases/whatsapp-bubble-lovable-site/',
   '/contact/': '/en/contact/',
   '/contact/merci/': '/en/contact/thanks/',
+  // Le centre d'aide : ses deux langues viennent des fiches et de leur version anglaise (npm run vitrine:aide).
+  ...jumellesAide(),
 };
 
 /**
@@ -50,8 +53,12 @@ export const JUMELLES: Readonly<Record<string, string>> = {
  * écrite à la main (lot 18), et le guide Meta reçoit ses étapes dans les deux langues de `etapes-meta.ts`.
  */
 const ECRITES_A_LA_MAIN = new Set(['/developpeurs/', '/developpeurs/compte-meta-business/']);
-/** Les pages de cas et leur carrefour ont leurs deux langues dans `scripts/vitrine/cas-textes.ts` (npm run vitrine:cas). */
-const hors = (p: string): boolean => ECRITES_A_LA_MAIN.has(p) || p.startsWith('/cas-d-usage/') || p.startsWith('/solutions/');
+/**
+ * Les pages de cas et leur carrefour ont leurs deux langues dans `scripts/vitrine/cas-textes.ts` (npm run vitrine:cas) ;
+ * le centre d'aide, dans les fiches et leur version anglaise (npm run vitrine:aide).
+ */
+const hors = (p: string): boolean => ECRITES_A_LA_MAIN.has(p) || p.startsWith('/cas-d-usage/') || p.startsWith('/solutions/')
+  || p.startsWith('/aide/') || ADRESSES_CLAUDE_FR.has(p);
 export const GENEREES: readonly string[] = Object.keys(JUMELLES).filter((p) => !hors(p));
 
 /** Les noms qu'une page anglaise garde exprès (un prénom, un client) : le détecteur de français ne les lit pas. */

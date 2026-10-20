@@ -1168,3 +1168,62 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .bande-claire .code,.bande-claire .dev-terminal{--ink:#FFFFFF;--muted:rgb(255 255 255 / .66);--line:rgb(255 255 255 / .12);--action-ink:#6FC2FE;--surface:#0B1452}
 .bande-claire .dev-pas p code,.bande-claire .dev-autres code{color:#0B0E24;background:#E7EAF3}
 .bande-claire .dev-copier.pret{border-color:var(--line)}
+
+/* Le centre d'aide (/aide/, /en/help/), généré par npm run vitrine:aide depuis les fiches. Gabarit de la maquette validée
+   le 2026-10-20 : menu à gauche, étapes avec leur capture, détail replié, encadrés. */
+.aide-fil{font-size:.85rem;color:var(--muted);margin:0 0 .6rem}
+.aide-fil a{color:inherit}
+.aide-une .bouton-texte{white-space:normal;text-align:left}
+.aide-offre{font-size:.95rem;color:var(--muted);margin:-18px 0 30px;max-width:34em}
+.aide-grille{display:grid;grid-template-columns:250px minmax(0,1fr);gap:40px;align-items:start}
+.aide-nav{position:sticky;top:90px;font-size:.92rem}
+.aide-nav h3{font-size:.8rem;font-weight:600;color:var(--muted);margin:18px 0 6px}
+.aide-nav a{display:block;padding:5px 10px;border-radius:8px;color:var(--ink);text-decoration:none}
+.aide-nav a:hover{background:var(--action-wash)}
+.aide-nav a.actif{background:rgb(37 211 102 / .14);font-weight:600}
+.aide-nav [hidden]{display:none}
+.aide-recherche{width:100%;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit}
+.aide-recherche:focus-visible{outline:2px solid var(--action);outline-offset:1px}
+.aide-article{min-width:0}
+.aide-video{margin:0 0 28px}
+.aide-video video{display:block;width:100%;height:auto;border-radius:16px;box-shadow:0 20px 50px var(--ombre);background:#0B1530}
+.aide-video figcaption{font-size:.85rem;color:var(--muted);margin-top:8px}
+.aide-etape{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:26px;align-items:start;padding:22px 0;border-top:1px solid var(--line)}
+.aide-etape:first-child,.aide-video+.aide-etape{border-top:0}
+.aide-etape.sans-capture{grid-template-columns:minmax(0,1fr)}
+.aide-etape h3{margin:0 0 8px;font-size:1.15rem}
+.aide-etape p{margin:0 0 8px;line-height:1.6}
+.aide-etape img{display:block;width:100%;height:auto;max-height:380px;object-fit:contain;border-radius:12px;box-shadow:0 12px 30px var(--ombre)}
+.aide-capture{display:block;border-radius:12px;cursor:zoom-in}
+.aide-detail{margin-top:6px;color:var(--muted)}
+.aide-detail summary{cursor:pointer;font-weight:600;color:var(--action-ink)}
+.aide-detail summary:focus-visible{outline:2px solid var(--action);outline-offset:2px;border-radius:4px}
+.aide-detail p,.aide-detail li{line-height:1.6}
+.aide-detail ul,.aide-prose ul{padding-left:1.2em}
+.aide-encadre{border-left:3px solid #25D366;background:rgb(37 211 102 / .08);padding:14px 18px;border-radius:0 12px 12px 0;margin:20px 0;line-height:1.6}
+.aide-encadre strong:first-child{display:block;margin-bottom:4px}
+.aide-prose{padding:12px 0;line-height:1.6}
+.aide-prose h2{font-size:1.35rem;margin:22px 0 10px}
+.aide-pied-page{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center;margin-top:28px;padding-top:20px;border-top:1px solid var(--line);font-size:.92rem}
+.aide-pied-page a{color:var(--action-ink)}
+.aide-question{margin-left:auto}
+.aide-accueil h2{font-size:1.4rem;margin:8px 0 14px;scroll-margin-top:90px}
+.aide-cartes{list-style:none;padding:0;margin:0 0 34px;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.aide-cartes a{display:block;height:100%;padding:16px 18px;border-radius:14px;background:var(--surface);border:1px solid var(--line);color:var(--ink);text-decoration:none}
+.aide-cartes a:hover{border-color:var(--action-ink)}
+.aide-cartes strong{display:block;margin-bottom:6px}
+.aide-cartes small{display:block;color:var(--muted);font-size:.88rem;line-height:1.5}
+.aide-cartes .aide-carte-offre{margin-top:8px;color:var(--ink);font-weight:600}
+.aide-echange{display:grid;gap:8px;margin-top:4px}
+.aide-echange p{margin:0;padding:10px 14px;border-radius:12px;line-height:1.55}
+.aide-echange span{display:block;font-size:.78rem;font-weight:600;color:var(--muted);margin-bottom:2px}
+.aide-vous{background:var(--action-wash)}
+.aide-outils{background:transparent;border:1px dashed var(--line);font-size:.92rem}
+.aide-claude{background:var(--surface);border:1px solid var(--line)}
+.aide-echange code{font-family:var(--mono);font-size:.88em;background:rgb(1 6 48 / .06);padding:1px 6px;border-radius:6px;overflow-wrap:anywhere}
+@media (max-width:860px){
+  .aide-grille{grid-template-columns:minmax(0,1fr);gap:20px}
+  .aide-nav{position:static}
+  .aide-etape{grid-template-columns:minmax(0,1fr)}
+  .aide-question{margin-left:0}
+}

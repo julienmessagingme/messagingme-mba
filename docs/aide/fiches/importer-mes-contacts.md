@@ -25,8 +25,8 @@ de leur consentement.
 Ajouter à la main un numéro déjà connu, en revanche, ne réabonne jamais quelqu'un qui a dit STOP.
 
 **4. Retrouver et agir en masse.** L'écran sert ensuite de moteur de recherche : filtrez, cochez des lignes, et
-le menu « Action » applique le même geste à toute la sélection (poser un tag, en retirer un, remplir un champ,
-passer en consentement accordé ou refusé, supprimer).
+le menu « Action » applique le même geste à toute la sélection (« Ajouter une étiquette », « Retirer une
+étiquette », « Ajouter un champ », « Passer en opt-in », « Passer en opt-out », « Supprimer »).
 
 Vous filtrez par tag, par consentement marketing, par nom, par numéro de téléphone, par la valeur d'un champ
 que vous avez créé, par la présence d'une adresse e-mail, par niveau de risque de désengagement (de quoi
@@ -37,11 +37,11 @@ et ce sont les mêmes quand vous choisissez les destinataires d'une campagne.
 
 Trois points à connaître avant d'agir en masse :
 
-- **Passer en consentement accordé** rend la sélection destinataire de vos campagnes. Ne le faites que si
+- **« Passer en opt-in »** (consentement accordé) rend la sélection destinataire de vos campagnes. Ne le faites que si
   vous détenez une preuve de ce consentement. Les personnes qui vous ont répondu STOP le restent : l'écran vous
   dit combien de fiches ont gardé leur STOP. Un STOP se lève depuis la fiche de la personne, par la personne
   elle-même, par un import CSV case cochée ou par un scénario, jamais par une action en masse.
-- **Passer en consentement refusé** exclut de toute campagne, y compris de celles déjà programmées.
+- **« Passer en opt-out »** (consentement refusé) exclut de toute campagne, y compris de celles déjà programmées.
 - **Supprimer est irréversible** : la fiche, la conversation et son historique partent d'un seul geste. Il
   faut taper le mot SUPPRIMER pour confirmer.
 

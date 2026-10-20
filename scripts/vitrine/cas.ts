@@ -32,7 +32,8 @@ function gabarit(langue: Langue): string {
   return readFileSync(SITE(langue === 'fr' ? 'developpeurs/index.html' : 'en/developers/index.html'), 'utf8');
 }
 
-interface Tete {
+/** La tête d’une page générée (exportée pour le centre d’aide, `aide.ts`). */
+export interface Tete {
   readonly adresse: string;
   readonly jumelle: string;
   readonly titre: string;
@@ -44,7 +45,7 @@ interface Tete {
 }
 
 /** Une page complète : la tête de la page Développeurs réécrite, et son `<main>` remplacé. */
-function page(langue: Langue, tete: Tete, main: string, commentaire: string): string {
+export function page(langue: Langue, tete: Tete, main: string, commentaire: string): string {
   const fr = langue === 'fr';
   const [aFr, aEn] = fr ? [tete.adresse, tete.jumelle] : [tete.jumelle, tete.adresse];
   let s = gabarit(langue);
@@ -69,11 +70,11 @@ function page(langue: Langue, tete: Tete, main: string, commentaire: string): st
   return pageAvecEntete(s, fichierDe(tete.adresse));
 }
 
-const fil = (langue: Langue, elements: ReadonlyArray<[string, string]>) => ({
+export const fil = (langue: Langue, elements: ReadonlyArray<[string, string]>) => ({
   '@type': 'BreadcrumbList',
   itemListElement: elements.map(([nom, adresse], i) => ({ '@type': 'ListItem', position: i + 1, name: nom, item: ORIGINE + adresse })),
 });
-const ACCUEIL: Record<Langue, [string, string]> = { fr: ['Accueil', '/'], en: ['Home', '/en/'] };
+export const ACCUEIL: Record<Langue, [string, string]> = { fr: ['Accueil', '/'], en: ['Home', '/en/'] };
 
 /** Le guide de la doc d'un cas, dans la langue de la page (`?lang=en` sur la page anglaise). */
 export const adresseGuide = (e: EntreeVitrine, langue: Langue): string | null =>

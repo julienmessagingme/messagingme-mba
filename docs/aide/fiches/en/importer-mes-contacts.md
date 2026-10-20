@@ -1,6 +1,6 @@
 ---
 slug: import-my-contacts
-traduit_de: b00a04
+traduit_de: 9063bc
 ---
 # Add or import my contacts
 
@@ -19,8 +19,8 @@ you: ticked, it resubscribes them. Only tick it if you hold proof of their conse
 Adding by hand a number that is already known, on the other hand, never resubscribes someone who said STOP.
 
 **4. Find and act in bulk.** The screen then works as a search engine: filter, tick rows, and the “Action” menu
-applies the same action to the whole selection (add a tag, remove one, fill in a field, switch to consent given or
-refused, delete).
+applies the same action to the whole selection (“Add a tag”, “Remove a tag”, “Set a field”, “Mark as opted in”,
+“Mark as opted out”, “Delete”).
 
 You filter by tag, by marketing consent, by name, by phone number, by the value of a field you created, by whether
 there is an email address, by disengagement risk level (useful to prepare a campaign towards those who are drifting
@@ -30,11 +30,11 @@ Filters add up, and they are the same when you choose a campaign’s recipients.
 
 Three things to know before acting in bulk:
 
-- **Switching to consent given** makes the selection a recipient of your campaigns. Only do it if you hold proof of
+- **“Mark as opted in”** (consent given) makes the selection a recipient of your campaigns. Only do it if you hold proof of
   that consent. People who replied STOP to you stay that way: the screen tells you how many records kept their
   STOP. A STOP is lifted from the person’s record, by the person themselves, by a CSV import with the box ticked or
   by a scenario, never by a bulk action.
-- **Switching to consent refused** excludes from every campaign, including those already scheduled.
+- **“Mark as opted out”** (consent refused) excludes from every campaign, including those already scheduled.
 - **Deleting cannot be undone**: the record, the conversation and its history go in a single action. You must type
   the word SUPPRIMER to confirm.
 

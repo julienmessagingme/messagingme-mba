@@ -18,6 +18,7 @@
     "auto-attaque": "tsx scripts/auto-attaque.mts",
     "oauth:fiches": "tsx scripts/oauth-fiches.mts",
     "aide:carte": "tsx scripts/carte-console.ts",
+    "aide:captures": "cd web && npx playwright test -c playwright.captures.config.ts && cd .. && node scripts/aide/captures-webp.mjs",
     "aide:charger": "tsx db/charger-aide.ts",
     "aide:proposer": "tsx scripts/aide-proposer.ts",
     "sdk:contrat": "tsx scripts/sdk-contrat.ts",
@@ -26,7 +27,8 @@
     "vitrine:entete": "tsx scripts/vitrine/entete.ts",
     "vitrine:guide-meta": "tsx scripts/vitrine/guide-meta.ts",
     "vitrine:cas": "tsx scripts/vitrine/cas.ts",
-    "vitrine:anglais": "tsx scripts/vitrine/anglais.ts"
+    "vitrine:anglais": "tsx scripts/vitrine/anglais.ts",
+    "vitrine:aide": "tsx scripts/vitrine/aide.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",

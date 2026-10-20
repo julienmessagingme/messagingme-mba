@@ -178,6 +178,14 @@
   var demo = DEMOS[new URLSearchParams(location.search).get('demo')];
   var message = form.querySelector('textarea[name="message"]');
   if (demo && message && !message.value) message.value = EN ? 'Hello, I would like a demo of Messaging Me: ' + demo + '.' : 'Bonjour, je souhaite une démo de Messaging Me : ' + demo + '.';
+  // Venu du centre d'aide (« Une question sans réponse ? ») : le message cite l'adresse de la page. Seul un NOM de page
+  // passe (lettres, chiffres, tirets), jamais un texte libre recopié de l'adresse, comme pour les démos.
+  var aide = new URLSearchParams(location.search).get('aide');
+  if (aide && /^[a-z0-9-]{1,80}$/.test(aide) && message && !message.value) {
+    message.value = EN
+      ? 'Hello, I have a question about the help page ' + location.origin + '/en/help/' + aide + '/: '
+      : 'Bonjour, j’ai une question sur la page d’aide ' + location.origin + '/aide/' + aide + '/ : ';
+  }
   form.addEventListener('input', function () {
     var b = {};
     champs.forEach(function (c) { b[c.name] = c.value; });
@@ -211,4 +219,30 @@
   var bouton = form.querySelector('button[type="submit"]');
   form.addEventListener('submit', function () { setTimeout(function () { bouton.disabled = true; }, 0); });
   window.addEventListener('pageshow', function () { bouton.disabled = false; });
+})();
+
+// Centre d'aide : le filtre du menu. La saisie passe par la même normalisation que les mots de chaque entrée
+// (`motsDeRecherche`, scripts/vitrine/aide.ts) : minuscules, sans accents, sans ponctuation. Une rubrique vide se masque.
+(function () {
+  var champ = document.querySelector('.aide-recherche');
+  if (!champ) return;
+  var normaliser = function (t) {
+    // Les accents décomposés par NFD (U+0300 à U+036F), sans `\p{M}` : un navigateur sans échappement de propriété
+    // Unicode refuserait d'analyser TOUT site.js, et chaque page perdrait ses scripts (relecture du lot 3).
+    return t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  };
+  var rubriques = [].slice.call(document.querySelectorAll('.aide-rubrique'));
+  champ.addEventListener('input', function () {
+    var mots = normaliser(champ.value).split(' ').filter(Boolean);
+    rubriques.forEach(function (r) {
+      var visibles = 0;
+      [].slice.call(r.querySelectorAll('a[data-mots]')).forEach(function (a) {
+        var dedans = a.getAttribute('data-mots');
+        var garde = mots.every(function (m) { return dedans.indexOf(m) >= 0; });
+        a.hidden = !garde;
+        if (garde) visibles++;
+      });
+      r.hidden = visibles === 0;
+    });
+  });
 })();
