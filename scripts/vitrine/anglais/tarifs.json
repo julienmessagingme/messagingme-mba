@@ -1,6 +1,8 @@
 [
- {"contexte":"<li><strong><span data-offre=\"base.envois-modeles-mois\">1&nbsp;000</span> modèles</strong> envoyés par mois</li>","en":"<li><strong><span data-offre=\"base.envois-modeles-mois\">1,000</span> templates</strong> sent per month</li>"},
- {"contexte":"<li><strong><span data-offre=\"base.contacts\">100</span> contacts</strong> créés&nbsp;; ceux qui vous écrivent ne comptent pas</li>","en":"<li><strong><span data-offre=\"base.contacts\">100</span> contacts</strong> created; those who write to you first never count</li>"},
+ {"contexte":"<li><strong><span data-offre=\"base.envois-modeles-mois\">1&nbsp;000</span> messages</strong> envoyés par mois</li>","en":"<li><strong><span data-offre=\"base.envois-modeles-mois\">1,000</span> messages</strong> sent per month</li>"},
+ {"contexte":"<li><strong><span data-offre=\"base.contacts\">100</span> contacts</strong> créés</li>","en":"<li><strong><span data-offre=\"base.contacts\">100</span> contacts</strong> created</li>"},
+ {"fr":"Contacts entrants illimités","en":"Unlimited inbound contacts"},
+ {"contexte":"<li><strong><span data-offre=\"credit.offert-euros\">1</span>&nbsp;€ de crédit IA offert</strong> au premier numéro relié</li>","en":"<li><strong>€<span data-offre=\"credit.offert-euros\">1</span> of AI credit offered</strong> when your first number is connected</li>"},
  {"contexte":"<li><strong><span data-offre=\"base.utilisateurs\">1</span> utilisateur</strong></li>","en":"<li><strong><span data-offre=\"base.utilisateurs\">1</span> user</strong></li>"},
  {"contexte":"<li><strong><span data-offre=\"base.adresses-webhook\">1</span> adresse</strong> de webhook</li>","en":"<li><strong><span data-offre=\"base.adresses-webhook\">1</span> webhook</strong> address</li>"},
  {"contexte":"<li><strong><span data-offre=\"base.conservation-jours\">30</span> jours</strong> d’historique des conversations</li>","en":"<li><strong><span data-offre=\"base.conservation-jours\">30</span> days</strong> of conversation history</li>"},
@@ -65,7 +67,7 @@
  {"fr":"Gérez 100&nbsp;% de votre WhatsApp depuis Claude Code, Codex ou votre terminal.","en":"Run 100% of your WhatsApp from Claude Code, Codex or your terminal."},
  {"fr":"Les agents IA, l’API et le serveur MCP","en":"AI agents, the API and the MCP server"},
  {"fr":"Un widget WhatsApp à installer sur votre site ou votre app","en":"A WhatsApp widget to install on your site or app"},
- {"fr":"Vos statistiques de base (envoyés, livrés, lus), par Claude ou par l’API","en":"Your basic statistics (sent, delivered, read), through Claude or the API"},
+ {"fr":"Vos statistiques brutes, livrées dans votre terminal ou dans Claude, Codex, Lovable","en":"Your raw statistics, delivered in your terminal or in Claude, Codex, Lovable"},
  {"fr":"Les tableaux de bord et KPI de la console","en":"The console dashboards and KPIs"},
  {"fr":"Avance des frais et ligne de crédit","en":"Fee advance and a credit line"}
 ]

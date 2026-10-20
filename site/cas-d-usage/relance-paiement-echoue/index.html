@@ -101,7 +101,7 @@
      "name": "Combien coûte une relance ?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "La Free inclut 1 000 modèles par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays de l’utilisateur."
+      "text": "La Free inclut 1 000 messages envoyés par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays de l’utilisateur."
      }
     },
     {
@@ -335,7 +335,7 @@ export async function POST(req: Request) {
     <div class="cadre">
       <h2 class="f-titre">Ce que vous payez.</h2>
       <ul class="tarif-liste cas-liste">
-        <li><strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> modèles envoyés par mois et <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.</li>
+        <li><strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts créés (les contacts entrants sont illimités), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.</li>
         <li><strong>Meta facture directement</strong> chaque modèle utilitaire à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays de l’utilisateur.</li>
       </ul>
     </div>
@@ -346,7 +346,7 @@ export async function POST(req: Request) {
       <div class="dev-faq">
         <details><summary>Faut-il une adresse de webhook Messaging Me&nbsp;?</summary><p>Non&nbsp;: tout part du webhook Stripe que votre application a déjà, et rien ne revient vers elle.</p></details>
         <details><summary>Et si Meta reclasse le modèle en marketing&nbsp;?</summary><p>Il ne partirait plus qu’aux contacts qui ont consenti. Gardez un texte factuel&nbsp;: le paiement, la carte, l’accès.</p></details>
-        <details><summary>Combien coûte une relance&nbsp;?</summary><p>La Free inclut 1&nbsp;000 modèles par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays de l’utilisateur.</p></details>
+        <details><summary>Combien coûte une relance&nbsp;?</summary><p>La Free inclut 1&nbsp;000 messages envoyés par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays de l’utilisateur.</p></details>
         <details><summary>Stripe peut-il envoyer deux fois le même événement&nbsp;?</summary><p>Oui, et la clé d’idempotence tirée de la facture le couvre&nbsp;: dans les 24&nbsp;heures, un seul message part. Et un échec de l’envoi WhatsApp ne fait jamais échouer votre webhook Stripe.</p></details>
         <details><summary>L’utilisateur doit-il avoir accepté de recevoir des messages&nbsp;?</summary><p>Meta demande que la personne ait accepté d’être contactée sur WhatsApp&nbsp;: demandez-le à l’inscription ou dans son compte. Un utilisateur qui répond STOP ne reçoit plus rien.</p></details>
       </div>

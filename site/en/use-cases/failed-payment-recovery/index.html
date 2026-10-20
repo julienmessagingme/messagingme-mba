@@ -101,7 +101,7 @@
      "name": "How much does a recovery message cost?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "Free includes 1,000 templates a month. Meta bills each utility template to your business, according to its rate card and the user’s country."
+      "text": "Free includes 1,000 messages sent a month. Meta bills each utility template to your business, according to its rate card and the user’s country."
      }
     },
     {
@@ -335,7 +335,7 @@ export async function POST(req: Request) {
     <div class="cadre">
       <h2 class="f-titre">What you pay.</h2>
       <ul class="tarif-liste cas-liste">
-        <li><strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> templates sent a month and <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included; beyond that, Pro.</li>
+        <li><strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> messages sent a month and <span data-offre="base.contacts">100</span> contacts created (inbound contacts are unlimited), the API and the MCP server included; beyond that, Pro.</li>
         <li><strong>Meta bills your business directly</strong> for each utility template, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the user’s country.</li>
       </ul>
     </div>
@@ -346,7 +346,7 @@ export async function POST(req: Request) {
       <div class="dev-faq">
         <details><summary>Is a Messaging Me webhook address needed?</summary><p>No: everything starts from the Stripe webhook your app already has, and nothing comes back to it.</p></details>
         <details><summary>What if Meta reclassifies the template as marketing?</summary><p>It would then only go to contacts who consented. Keep a factual text: the payment, the card, the access.</p></details>
-        <details><summary>How much does a recovery message cost?</summary><p>Free includes 1,000 templates a month. Meta bills each utility template to your business, according to its rate card and the user’s country.</p></details>
+        <details><summary>How much does a recovery message cost?</summary><p>Free includes 1,000 messages sent a month. Meta bills each utility template to your business, according to its rate card and the user’s country.</p></details>
         <details><summary>Can Stripe send the same event twice?</summary><p>Yes, and the idempotency key taken from the invoice covers it: within 24 hours, one message goes out. And a failed WhatsApp send never fails your Stripe webhook.</p></details>
         <details><summary>Must the user have agreed to receive messages?</summary><p>Meta asks that the person agreed to be contacted on WhatsApp: ask for it at sign-up or in their account. A user who replies STOP receives nothing more.</p></details>
       </div>

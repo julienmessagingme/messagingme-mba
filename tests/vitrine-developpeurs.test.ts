@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { DROITS, PRIX_PRO_HT_CENTIMES } from '../src/offres/offres';
 import { CODE_RE } from '../src/http/widget-public';
 import { PRIX_NUMERO_HT_CENTIMES } from '../src/stripe/abonnement';
+import { schema } from '../src/config';
 import { adresseDuScript, baliseDuScript } from '../src/widgets/adresses';
 import { API_PUBLIQUE, COMMANDE_DEMARRAGE, COMMANDES_PLUGIN, SERVEUR_PLUGIN_MCP } from '../web/lib/demarrer';
 import { MARQUE_DEBUT } from '../scripts/plugin/generer';
@@ -38,6 +39,8 @@ describe('les chiffres de l’offre sont ceux du code', () => {
     'pro.contacts': DROITS.pro.limites.contacts ?? NaN,
     // « 3,50 » et « 3.50 » se lisent 350 : les centimes, comme la constante que la route compare au prix de Stripe.
     'numero.prix-mois': PRIX_NUMERO_HT_CENTIMES,
+    // Le crédit IA offert au premier numéro, en euros : le défaut du code.
+    'credit.offert-euros': schema.shape.CREDIT_OFFERT_MICRO_EUR.parse(undefined) / 1_000_000,
   };
 
   for (const [langue, html] of Object.entries(PAGES)) {

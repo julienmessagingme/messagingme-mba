@@ -259,7 +259,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       extrait: { titre: 'La route, telle que Claude Code l’écrit', partie: 'webhook' },
       paie: [
         '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
-        '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse.',
+        '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse&nbsp;; 1&nbsp;€ est offert au premier numéro relié.',
         '<strong>Meta facture directement</strong> chaque réponse envoyée dans la fenêtre de 24&nbsp;heures à votre entreprise, au-delà de sa franchise mensuelle, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.',
       ],
       faq: [
@@ -299,7 +299,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       extrait: { titre: 'The route, as Claude Code writes it', partie: 'webhook' },
       paie: [
         '<strong>The Free plan is enough to start:</strong> <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included; beyond that, Pro.',
-        '<strong>The AI agent</strong> is paid from the prepaid AI credit, per answer.',
+        '<strong>The AI agent</strong> is paid from the prepaid AI credit, per answer; €1 is offered when your first number is connected.',
         '<strong>Meta bills your business directly</strong> for each reply sent in the 24-hour window, beyond its monthly free tier, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the customer’s country.',
       ],
       faq: [
@@ -340,14 +340,14 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'La tâche de la veille, telle que Claude Code l’écrit', partie: 'tache' },
       paie: [
-        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> modèles envoyés par mois et <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
-        '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse.',
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts créés (les contacts entrants sont illimités), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
+        '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse&nbsp;; 1&nbsp;€ est offert au premier numéro relié.',
         '<strong>Meta facture directement</strong> chaque modèle utilitaire à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.',
       ],
       faq: [
         { question: 'Le client doit-il avoir accepté de recevoir des messages&nbsp;?', reponse: 'Meta demande que la personne ait accepté d’être contactée sur WhatsApp, par exemple en donnant son numéro à la prise de rendez-vous. Un client qui répond STOP ne reçoit plus rien.' },
         { question: 'Que se passe-t-il si le client ne répond pas&nbsp;?', reponse: 'Rien&nbsp;: le rendez-vous reste tel quel, et votre agenda montre qui a confirmé.' },
-        { question: 'Combien coûte un rappel&nbsp;?', reponse: 'La Free inclut 1&nbsp;000 modèles par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays du client.' },
+        { question: 'Combien coûte un rappel&nbsp;?', reponse: 'La Free inclut 1&nbsp;000 messages envoyés par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays du client.' },
         { question: 'Le client peut-il décaler plusieurs fois&nbsp;?', reponse: 'Une demande de report part une fois par jour au plus, par client et par action&nbsp;: l’agent propose des créneaux, le client en choisit un, votre application le réserve.' },
       ],
       appel: { titre: 'Branchez vos rappels aujourd’hui.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },
@@ -380,14 +380,14 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'The day-before job, as Claude Code writes it', partie: 'tache' },
       paie: [
-        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> templates sent a month and <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included; beyond that, Pro.',
-        '<strong>The AI agent</strong> is paid from the prepaid AI credit, per answer.',
+        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> messages sent a month and <span data-offre="base.contacts">100</span> contacts created (inbound contacts are unlimited), the API and the MCP server included; beyond that, Pro.',
+        '<strong>The AI agent</strong> is paid from the prepaid AI credit, per answer; €1 is offered when your first number is connected.',
         '<strong>Meta bills your business directly</strong> for each utility template, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the customer’s country.',
       ],
       faq: [
         { question: 'Must the customer have agreed to receive messages?', reponse: 'Meta asks that the person agreed to be contacted on WhatsApp, for example by giving their number when booking. A customer who replies STOP receives nothing more.' },
         { question: 'What if the customer does not answer?', reponse: 'Nothing: the appointment stays as it is, and your calendar shows who confirmed.' },
-        { question: 'How much does a reminder cost?', reponse: 'Free includes 1,000 templates a month. Meta bills each utility template to your business, according to its rate card and the customer’s country.' },
+        { question: 'How much does a reminder cost?', reponse: 'Free includes 1,000 messages sent a month. Meta bills each utility template to your business, according to its rate card and the customer’s country.' },
         { question: 'Can the customer reschedule several times?', reponse: 'A reschedule request goes out at most once a day, per customer and per action: the agent offers slots, the customer picks one, your app books it.' },
       ],
       appel: { titre: 'Set up your reminders today.', texte: 'The plugin in two commands, then the sentence above in Claude Code. No account to create.' },
@@ -423,7 +423,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       extrait: { titre: 'La balise que Claude Code colle dans votre page', partie: 'balise' },
       paie: [
         '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris, avec la mention «&nbsp;Propulsé par Messaging Me&nbsp;» sous la bulle&nbsp;; le Pro la retire.',
-        '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse.',
+        '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse&nbsp;; 1&nbsp;€ est offert au premier numéro relié.',
         '<strong>Meta facture directement</strong> chaque réponse envoyée dans la fenêtre de 24&nbsp;heures à votre entreprise, au-delà de sa franchise mensuelle, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du visiteur.',
       ],
       faq: [
@@ -463,7 +463,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       extrait: { titre: 'The tag Claude Code pastes into your page', partie: 'balise' },
       paie: [
         '<strong>The Free plan is enough to start:</strong> <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included, with “Powered by Messaging Me” under the bubble; Pro removes it.',
-        '<strong>The AI agent</strong> is paid from the prepaid AI credit, per answer.',
+        '<strong>The AI agent</strong> is paid from the prepaid AI credit, per answer; €1 is offered when your first number is connected.',
         '<strong>Meta bills your business directly</strong> for each reply sent in the 24-hour window, beyond its monthly free tier, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the visitor’s country.',
       ],
       faq: [
@@ -504,13 +504,13 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'Le welcome message, tel que Claude Code l’écrit', partie: 'inscription' },
       paie: [
-        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> modèles envoyés par mois et <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts créés (les contacts entrants sont illimités), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
         '<strong>Meta facture directement</strong> chaque modèle marketing à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays de l’utilisateur.',
       ],
       faq: [
         { question: 'Pourquoi en marketing, et pas en utilitaire&nbsp;?', reponse: 'Meta classe en marketing tout modèle qui invite à utiliser le produit, et en utilitaire une alerte sur le compte, comme un paiement échoué. Un modèle déclaré utilitaire avec un texte marketing est reclassé par Meta.' },
         { question: 'Et l’utilisateur qui n’a pas coché la case&nbsp;?', reponse: 'Il ne reçoit rien&nbsp;: votre code ne l’envoie pas, et l’API l’écarterait de toute façon, un modèle marketing ne partant qu’à qui a consenti.' },
-        { question: 'Combien coûte un welcome message&nbsp;?', reponse: 'La Free inclut 1&nbsp;000 modèles par mois. Meta facture chaque modèle marketing à votre entreprise, selon sa grille et le pays de l’utilisateur.' },
+        { question: 'Combien coûte un welcome message&nbsp;?', reponse: 'La Free inclut 1&nbsp;000 messages envoyés par mois. Meta facture chaque modèle marketing à votre entreprise, selon sa grille et le pays de l’utilisateur.' },
         { question: 'Peut-il ne plus rien recevoir&nbsp;?', reponse: 'Oui&nbsp;: un utilisateur qui répond STOP ne reçoit plus rien, et son refus est noté sur le contact.' },
       ],
       appel: { titre: 'Accueillez vos utilisateurs sur WhatsApp.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },
@@ -543,13 +543,13 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'The welcome, as Claude Code writes it', partie: 'inscription' },
       paie: [
-        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> templates sent a month and <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included; beyond that, Pro.',
+        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> messages sent a month and <span data-offre="base.contacts">100</span> contacts created (inbound contacts are unlimited), the API and the MCP server included; beyond that, Pro.',
         '<strong>Meta bills your business directly</strong> for each marketing template, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the user’s country.',
       ],
       faq: [
         { question: 'Why marketing, not utility?', reponse: 'Meta classifies as marketing any template that invites people to use the product, and as utility an alert on the account, like a failed payment. A template declared utility with a marketing text is reclassified by Meta.' },
         { question: 'What about the user who did not tick the box?', reponse: 'They receive nothing: your code does not send it, and the API would set them aside anyway, since a marketing template only goes to those who consented.' },
-        { question: 'How much does a welcome cost?', reponse: 'Free includes 1,000 templates a month. Meta bills each marketing template to your business, according to its rate card and the user’s country.' },
+        { question: 'How much does a welcome cost?', reponse: 'Free includes 1,000 messages sent a month. Meta bills each marketing template to your business, according to its rate card and the user’s country.' },
         { question: 'Can they stop receiving messages?', reponse: 'Yes: a user who replies STOP receives nothing more, and their refusal is recorded on the contact.' },
       ],
       appel: { titre: 'Welcome your users on WhatsApp.', texte: 'The plugin in two commands, then the sentence above in Claude Code. No account to create.' },
@@ -584,13 +584,13 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'Le webhook Stripe, tel que Claude Code l’écrit', partie: 'stripe' },
       paie: [
-        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> modèles envoyés par mois et <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts créés (les contacts entrants sont illimités), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
         '<strong>Meta facture directement</strong> chaque modèle utilitaire à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays de l’utilisateur.',
       ],
       faq: [
         { question: 'Faut-il une adresse de webhook Messaging Me&nbsp;?', reponse: 'Non&nbsp;: tout part du webhook Stripe que votre application a déjà, et rien ne revient vers elle.' },
         { question: 'Et si Meta reclasse le modèle en marketing&nbsp;?', reponse: 'Il ne partirait plus qu’aux contacts qui ont consenti. Gardez un texte factuel&nbsp;: le paiement, la carte, l’accès.' },
-        { question: 'Combien coûte une relance&nbsp;?', reponse: 'La Free inclut 1&nbsp;000 modèles par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays de l’utilisateur.' },
+        { question: 'Combien coûte une relance&nbsp;?', reponse: 'La Free inclut 1&nbsp;000 messages envoyés par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays de l’utilisateur.' },
         { question: 'Stripe peut-il envoyer deux fois le même événement&nbsp;?', reponse: 'Oui, et la clé d’idempotence tirée de la facture le couvre&nbsp;: dans les 24&nbsp;heures, un seul message part. Et un échec de l’envoi WhatsApp ne fait jamais échouer votre webhook Stripe.' },
         { question: 'L’utilisateur doit-il avoir accepté de recevoir des messages&nbsp;?', reponse: 'Meta demande que la personne ait accepté d’être contactée sur WhatsApp&nbsp;: demandez-le à l’inscription ou dans son compte. Un utilisateur qui répond STOP ne reçoit plus rien.' },
       ],
@@ -624,13 +624,13 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'The Stripe webhook, as Claude Code writes it', partie: 'stripe' },
       paie: [
-        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> templates sent a month and <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included; beyond that, Pro.',
+        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> messages sent a month and <span data-offre="base.contacts">100</span> contacts created (inbound contacts are unlimited), the API and the MCP server included; beyond that, Pro.',
         '<strong>Meta bills your business directly</strong> for each utility template, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the user’s country.',
       ],
       faq: [
         { question: 'Is a Messaging Me webhook address needed?', reponse: 'No: everything starts from the Stripe webhook your app already has, and nothing comes back to it.' },
         { question: 'What if Meta reclassifies the template as marketing?', reponse: 'It would then only go to contacts who consented. Keep a factual text: the payment, the card, the access.' },
-        { question: 'How much does a recovery message cost?', reponse: 'Free includes 1,000 templates a month. Meta bills each utility template to your business, according to its rate card and the user’s country.' },
+        { question: 'How much does a recovery message cost?', reponse: 'Free includes 1,000 messages sent a month. Meta bills each utility template to your business, according to its rate card and the user’s country.' },
         { question: 'Can Stripe send the same event twice?', reponse: 'Yes, and the idempotency key taken from the invoice covers it: within 24 hours, one message goes out. And a failed WhatsApp send never fails your Stripe webhook.' },
         { question: 'Must the user have agreed to receive messages?', reponse: 'Meta asks that the person agreed to be contacted on WhatsApp: ask for it at sign-up or in their account. A user who replies STOP receives nothing more.' },
       ],
@@ -666,14 +666,14 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'L’envoi à l’expédition, tel que Claude Code l’écrit', partie: 'commandes' },
       paie: [
-        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> modèles envoyés par mois et <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
-        '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse.',
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts créés (les contacts entrants sont illimités), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
+        '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse&nbsp;; 1&nbsp;€ est offert au premier numéro relié.',
         '<strong>Meta facture directement</strong> chaque modèle utilitaire à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.',
       ],
       faq: [
         { question: 'Le client doit-il avoir accepté de recevoir des messages&nbsp;?', reponse: 'Meta demande que la personne ait accepté d’être contactée sur WhatsApp, par exemple en le cochant à la commande. Un client qui répond STOP ne reçoit plus rien.' },
         { question: 'Et si le client a désactivé les confirmations de lecture&nbsp;?', reponse: 'WhatsApp n’envoie alors jamais la lecture&nbsp;: la commande reste «&nbsp;Livrée&nbsp;» dans votre admin.' },
-        { question: 'Combien coûte une notification&nbsp;?', reponse: 'La Free inclut 1&nbsp;000 modèles par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays du client.' },
+        { question: 'Combien coûte une notification&nbsp;?', reponse: 'La Free inclut 1&nbsp;000 messages envoyés par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays du client.' },
         { question: 'Que se passe-t-il si l’envoi est rejoué&nbsp;?', reponse: 'Dans les 24&nbsp;heures, la même clé d’idempotence, tirée de la commande, rend le même envoi&nbsp;: le client ne reçoit qu’un message.' },
       ],
       appel: { titre: 'Branchez vos notifications aujourd’hui.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },
@@ -706,14 +706,14 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'The send on shipping, as Claude Code writes it', partie: 'commandes' },
       paie: [
-        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> templates sent a month and <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included; beyond that, Pro.',
-        '<strong>The AI agent</strong> is paid from the prepaid AI credit, per answer.',
+        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> messages sent a month and <span data-offre="base.contacts">100</span> contacts created (inbound contacts are unlimited), the API and the MCP server included; beyond that, Pro.',
+        '<strong>The AI agent</strong> is paid from the prepaid AI credit, per answer; €1 is offered when your first number is connected.',
         '<strong>Meta bills your business directly</strong> for each utility template, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the customer’s country.',
       ],
       faq: [
         { question: 'Must the customer have agreed to receive messages?', reponse: 'Meta asks that the person agreed to be contacted on WhatsApp, for example by ticking it at checkout. A customer who replies STOP receives nothing more.' },
         { question: 'What if the customer turned off read receipts?', reponse: 'WhatsApp then never sends the read receipt: the order stays “Delivered” in your admin.' },
-        { question: 'How much does a notification cost?', reponse: 'Free includes 1,000 templates a month. Meta bills each utility template to your business, according to its rate card and the customer’s country.' },
+        { question: 'How much does a notification cost?', reponse: 'Free includes 1,000 messages sent a month. Meta bills each utility template to your business, according to its rate card and the customer’s country.' },
         { question: 'What if the send is replayed?', reponse: 'Within 24 hours, the same idempotency key, taken from the order, returns the same send: the customer gets one message.' },
       ],
       appel: { titre: 'Set up your notifications today.', texte: 'The plugin in two commands, then the sentence above in Claude Code. No account to create.' },

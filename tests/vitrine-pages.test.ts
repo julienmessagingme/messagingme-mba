@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { DROITS, ESSAI_PRO_JOURS, FONCTIONS, PRIX_PRO_HT_CENTIMES, PRIX_SIEGE_HT_CENTIMES, type Fonction, type Offre } from '../src/offres/offres';
 import { PRIX_NUMERO_HT_CENTIMES } from '../src/stripe/abonnement';
+import { schema } from '../src/config';
 import { JUMELLES } from '../scripts/vitrine/anglais';
 import { lire, parAttribut, texte } from './vitrine-lecture';
 
@@ -31,6 +32,8 @@ const ATTENDU: Record<string, number> = {
   'pro.essai-jours': ESSAI_PRO_JOURS,
   'pro.siege-mois': PRIX_SIEGE_HT_CENTIMES.mois / 100,
   // Pas la commission sur le crédit IA : la page ne la dit pas (décision de Julien du 2026-10-19).
+  // Le crédit IA offert au premier numéro, en euros : le défaut du code (une surcharge de .env.prod ne se lit pas ici).
+  'credit.offert-euros': schema.shape.CREDIT_OFFERT_MICRO_EUR.parse(undefined) / 1_000_000,
 };
 
 /**

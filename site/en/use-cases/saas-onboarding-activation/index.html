@@ -101,7 +101,7 @@
      "name": "How much does a welcome cost?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "Free includes 1,000 templates a month. Meta bills each marketing template to your business, according to its rate card and the user’s country."
+      "text": "Free includes 1,000 messages sent a month. Meta bills each marketing template to your business, according to its rate card and the user’s country."
      }
     },
     {
@@ -320,7 +320,7 @@ export async function sendWelcome(user: { id: string; phone: string; firstName: 
     <div class="cadre">
       <h2 class="f-titre">What you pay.</h2>
       <ul class="tarif-liste cas-liste">
-        <li><strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> templates sent a month and <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included; beyond that, Pro.</li>
+        <li><strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> messages sent a month and <span data-offre="base.contacts">100</span> contacts created (inbound contacts are unlimited), the API and the MCP server included; beyond that, Pro.</li>
         <li><strong>Meta bills your business directly</strong> for each marketing template, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the user’s country.</li>
       </ul>
     </div>
@@ -331,7 +331,7 @@ export async function sendWelcome(user: { id: string; phone: string; firstName: 
       <div class="dev-faq">
         <details><summary>Why marketing, not utility?</summary><p>Meta classifies as marketing any template that invites people to use the product, and as utility an alert on the account, like a failed payment. A template declared utility with a marketing text is reclassified by Meta.</p></details>
         <details><summary>What about the user who did not tick the box?</summary><p>They receive nothing: your code does not send it, and the API would set them aside anyway, since a marketing template only goes to those who consented.</p></details>
-        <details><summary>How much does a welcome cost?</summary><p>Free includes 1,000 templates a month. Meta bills each marketing template to your business, according to its rate card and the user’s country.</p></details>
+        <details><summary>How much does a welcome cost?</summary><p>Free includes 1,000 messages sent a month. Meta bills each marketing template to your business, according to its rate card and the user’s country.</p></details>
         <details><summary>Can they stop receiving messages?</summary><p>Yes: a user who replies STOP receives nothing more, and their refusal is recorded on the contact.</p></details>
       </div>
     </div>

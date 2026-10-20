@@ -313,11 +313,11 @@ const envoi = await api.POST('/v1/sends', {
       <!-- The figures marked data-offre are the code's (src/offres/offres.ts, and PRIX_NUMERO_HT_CENTIMES in
            src/stripe/abonnement.ts): tests/vitrine-developpeurs.test.ts compares them. -->
       <ul class="dev-grille">
-        <li><strong><span data-offre="base.envois-modeles-mois">1,000</span> templates</strong>sent per month</li>
-        <li><strong><span data-offre="base.contacts">100</span> contacts</strong>created; people who write to you never count</li>
+        <li><strong><span data-offre="base.envois-modeles-mois">1,000</span> messages</strong>sent per month</li>
+        <li><strong><span data-offre="base.contacts">100</span> contacts</strong>created; inbound contacts are unlimited</li>
         <li><strong><span data-offre="base.utilisateurs">1</span> user</strong>to build your app</li>
         <li><strong>Your own number</strong>or a provided number at €<span data-offre="numero.prix-mois">3.50</span> excl. VAT per month</li>
-        <li><strong>Pay-as-you-go AI</strong>on prepaid credit, no subscription</li>
+        <li><strong>Pay-as-you-go AI</strong>on prepaid credit, €<span data-offre="credit.offert-euros">1</span> offered when your first number is connected</li>
       </ul>
       <p class="dev-pro"><strong>Pro, €<span data-offre="pro.prix-mois">49</span> excl. VAT per month</strong>: unlimited sends, <span data-offre="pro.contacts">5,000</span> contacts, <span data-offre="pro.utilisateurs">3</span> users, provided number included.</p>
       <p class="f-note">Meta bills some messages directly to your business, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a>.</p>

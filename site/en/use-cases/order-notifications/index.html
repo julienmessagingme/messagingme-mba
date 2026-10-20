@@ -101,7 +101,7 @@
      "name": "How much does a notification cost?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "Free includes 1,000 templates a month. Meta bills each utility template to your business, according to its rate card and the customer’s country."
+      "text": "Free includes 1,000 messages sent a month. Meta bills each utility template to your business, according to its rate card and the customer’s country."
      }
     },
     {
@@ -326,8 +326,8 @@ export async function notifyShipped(order: { id: string; phone: string; firstNam
     <div class="cadre">
       <h2 class="f-titre">What you pay.</h2>
       <ul class="tarif-liste cas-liste">
-        <li><strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> templates sent a month and <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included; beyond that, Pro.</li>
-        <li><strong>The AI agent</strong> is paid from the prepaid AI credit, per answer.</li>
+        <li><strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> messages sent a month and <span data-offre="base.contacts">100</span> contacts created (inbound contacts are unlimited), the API and the MCP server included; beyond that, Pro.</li>
+        <li><strong>The AI agent</strong> is paid from the prepaid AI credit, per answer; €1 is offered when your first number is connected.</li>
         <li><strong>Meta bills your business directly</strong> for each utility template, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the customer’s country.</li>
       </ul>
     </div>
@@ -338,7 +338,7 @@ export async function notifyShipped(order: { id: string; phone: string; firstNam
       <div class="dev-faq">
         <details><summary>Must the customer have agreed to receive messages?</summary><p>Meta asks that the person agreed to be contacted on WhatsApp, for example by ticking it at checkout. A customer who replies STOP receives nothing more.</p></details>
         <details><summary>What if the customer turned off read receipts?</summary><p>WhatsApp then never sends the read receipt: the order stays “Delivered” in your admin.</p></details>
-        <details><summary>How much does a notification cost?</summary><p>Free includes 1,000 templates a month. Meta bills each utility template to your business, according to its rate card and the customer’s country.</p></details>
+        <details><summary>How much does a notification cost?</summary><p>Free includes 1,000 messages sent a month. Meta bills each utility template to your business, according to its rate card and the customer’s country.</p></details>
         <details><summary>What if the send is replayed?</summary><p>Within 24 hours, the same idempotency key, taken from the order, returns the same send: the customer gets one message.</p></details>
       </div>
     </div>
