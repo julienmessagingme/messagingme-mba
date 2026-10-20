@@ -38,9 +38,11 @@ anglais `/en/developers/`. Pour qui construit avec Claude Code, Cursor ou Lovabl
 une séance Claude Code rejouée (l'agent IA, la lecture du site, la bulle WhatsApp), les trois étapes (installer le
 plugin ; autoriser Claude, ce qui crée l'espace d'une adresse Google inconnue, sans formulaire ; lancer
 `/messagingme:demarrer`, où Meta n'est demandé qu'au moment de relier le numéro), le branchement par le code (API, SDK,
-webhooks signés) et ce que permet l'offre gratuite. « Développeurs », dans le menu de toutes les pages, y mène. Sous les
-boutons du haut, trois promesses : aucun compte à créer, un numéro fourni si l'on n'en a pas, seulement un compte Meta
-Business à avoir. En haut et en bas de la page, « Installer le plugin » mène aux trois étapes et « Le plugin sur
+webhooks signés) et ce que permet l'offre gratuite. « Développeurs », dans le menu de toutes les pages, y mène. Le titre porte la
+mention « Gratuit et sans abonnement ». Sous les boutons du haut, trois promesses : aucun compte à créer, un numéro
+fourni si l'on n'en a pas, seulement un compte Meta Business à avoir ; la troisième mène au guide « Votre compte Meta
+Business, pas à pas » (`/developpeurs/compte-meta-business/` et sa jumelle anglaise), dont les étapes sont celles que
+donnent la console et Claude, générées depuis `web/lib/partage/etapes-meta.ts`. En haut et en bas de la page, « Installer le plugin » mène aux trois étapes et « Le plugin sur
 GitHub » à son dépôt : depuis le
 2026-10-19, aucune page Développeurs ne renvoie vers l'inscription de la console, et sur la page des tarifs la Free mène
 au plugin (le Pro garde la création d'espace dans la console). « Créer mon espace », en haut de l'accueil, ouvre

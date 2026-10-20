@@ -24,6 +24,7 @@
     "sdk:construire": "tsc -p sdk/tsconfig.json",
     "plugin:generer": "tsx scripts/plugin/generer.ts",
     "vitrine:entete": "tsx scripts/vitrine/entete.ts",
+    "vitrine:guide-meta": "tsx scripts/vitrine/guide-meta.ts",
     "vitrine:anglais": "tsx scripts/vitrine/anglais.ts"
   },
   "dependencies": {

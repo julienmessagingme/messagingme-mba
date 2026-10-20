@@ -871,6 +871,16 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .dev-sans li{position:relative;padding-left:26px;color:var(--muted);font-size:1rem}
 .dev-sans li::before{content:"";position:absolute;left:2px;top:.42em;width:12px;height:7px;border-left:2px solid var(--action-ink);border-bottom:2px solid var(--action-ink);transform:rotate(-45deg)}
 .dev-sans strong{color:var(--ink)}
+.dev-sans a{color:inherit;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--action-ink)}
+/* La mention « gratuit » sur le titre de la page Développeurs (Julien, 2026-10-19) */
+.dev-gratuit{margin-left:12px;padding:4px 12px;border-radius:999px;background:#17C74E;color:#010630;font-size:.8rem;font-weight:800;letter-spacing:0;text-transform:none}
+/* Le guide « Votre compte Meta Business, pas à pas » : ses étapes, générées depuis web/lib/partage/etapes-meta.ts */
+.guide-bloc{padding:56px 0}
+.guide-bloc .f-texte{margin-bottom:8px}
+.guide-etapes{list-style:none;margin:28px 0 0;padding:0;display:grid;gap:14px;max-width:52em}
+.guide-etapes li{display:grid;grid-template-columns:34px minmax(0,1fr);gap:18px;align-items:start;padding:20px 22px;border:1px solid var(--line);border-radius:18px;background:var(--surface)}
+.guide-etapes p{margin:5px 0 0;color:var(--muted);font-size:1.02rem;text-wrap:pretty}
+.guide-etapes a{color:var(--action-ink)}
 .dev-etapes{padding-top:16px}
 .dev-code,.dev-offre{padding:88px 0}
 /* La fenêtre est celle de Claude Code, pas une fenêtre « à nous » (Julien, 2026-10-19 : la version bleue « ne

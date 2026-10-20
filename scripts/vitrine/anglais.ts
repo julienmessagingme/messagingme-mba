@@ -30,12 +30,17 @@ export const JUMELLES: Readonly<Record<string, string>> = {
   '/industries/': '/en/industries/',
   '/tarifs/': '/en/pricing/',
   '/developpeurs/': '/en/developers/',
+  '/developpeurs/compte-meta-business/': '/en/developers/meta-business-account/',
   '/contact/': '/en/contact/',
   '/contact/merci/': '/en/contact/thanks/',
 };
 
-/** Les pages françaises que l'outil traduit. `/developpeurs/` n'y est pas : sa jumelle est écrite à la main (lot 18). */
-export const GENEREES: readonly string[] = Object.keys(JUMELLES).filter((p) => p !== '/developpeurs/');
+/**
+ * Les pages françaises que l'outil traduit. Les pages développeurs n'y sont pas : la jumelle de `/developpeurs/` est
+ * écrite à la main (lot 18), et le guide Meta reçoit ses étapes dans les deux langues de `etapes-meta.ts`.
+ */
+const ECRITES_A_LA_MAIN = new Set(['/developpeurs/', '/developpeurs/compte-meta-business/']);
+export const GENEREES: readonly string[] = Object.keys(JUMELLES).filter((p) => !ECRITES_A_LA_MAIN.has(p));
 
 /** Les noms qu'une page anglaise garde exprès (un prénom, un client) : le détecteur de français ne les lit pas. */
 export const FRANCAIS_VOULU: readonly string[] = ['Léa', 'Mieux Assuré'];
