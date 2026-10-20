@@ -1,5 +1,28 @@
 # todo.md : backlog
 
+## 🟡 L'outil enchaîné et « Qualifier et transférer » : ce que les deux relectures laissent (2026-10-20)
+
+Plans : [outil enchaîné](docs/superpowers/plans/2026-10-20-outil-enchaine.md) et
+[qualifier et transférer](docs/superpowers/plans/2026-10-20-qualifier-transferer.md). Tout est en production.
+
+- **Une écriture de champ sur un contact absent est comptée comme réussie** : `ecrireChamp` ne dit pas qu'il n'a touché
+  aucune ligne, donc l'étape n'entre pas dans `non_abouti`.
+- **Un bloc qui dépasse le délai dans un enchaînement SANS scénario** : son issue est inconnue, le modèle est rappelé et
+  peut rappeler l'outil, donc le bloc repartir. Seul l'enchaînement qui finit par un scénario est traité en issue
+  inconnue (`executor.ts`).
+- **Un transfert coupé par le délai** n'est pas non plus une issue inconnue : le modèle est rappelé, un second transfert
+  rend `mainPrise: false`. Sans dégât (les gestes sont idempotents), comme « Passer la main » avant ce lot.
+- **L'assistant de construction ne voit pas les scénarios visés par les étapes d'un enchaînement** (il voit ceux de
+  « Lancer un scénario »).
+- **Tests d'intégration manquants** : la garde d'isolation sur un TABLEAU de scénarios (`SCENARIOS_DE_L_ESPACE`) et la
+  chute de l'autonomie quand un `PATCH` rend un enchaînement irréversible.
+- **La fenêtre de concurrence du camp** (`src/agent/camp.ts`) : deux activations opposées à la même seconde passent
+  toutes les deux. Documentée, sans verrou ; le geste suivant refuse de prolonger l'incohérence.
+- 🟠 **Le texte du modèle perdu quand il appelle un outil dans la même réponse** (vu sur l'agent Pigier de la sandbox :
+  une réponse vide après un appel d'outil ; contourné en retirant `lire_contact` et par une consigne). Le soupçon porte
+  sur `src/agent/brain.gateway.ts` (le traitement d'une réponse qui porte du texte ET un appel). À diagnostiquer en lot
+  séparé (skill `diagnostic-agent-ia`), sur une conversation rejouée.
+
 ## 🟡 La documentation fonctionnelle : modes opératoires et vidéos (sujet ouvert par Julien le 2026-10-20)
 
 Aider les gens à comprendre « comment on fait » : des modes opératoires pas à pas et des vidéos courtes, geste par geste,

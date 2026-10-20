@@ -5,6 +5,43 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-20 (nuit) : l'agent Pigier, l'outil enchaîné et « Qualifier et transférer »
+
+- **L'agent Pigier, dans l'espace sandbox.** Un agent IA nourri du site pigier.com : il renseigne les candidats, met
+  l'alternance en avant avec ses offres, propose la porte ouverte la plus proche d'une ville (Pau mène à Bayonne),
+  explique qu'un MBA se vise après un BTS ou un Bachelor, et passe un candidat chaud à un conseiller ; deux outils
+  (brochure, candidature) branchés par Julien sur ses scénarios. Ses premiers essais ont montré une réponse VIDE après
+  un appel d'outil (contournée : `lire_contact` retiré, consigne de ne pas chercher dans la base sur une demande de
+  conseiller ; le défaut de fond est au backlog). Qualifier le candidat avant le transfert demandait cinq outils
+  « Enregistrer » et un transfert, dans un ordre que rien ne tenait : d'où les deux lots.
+- **Lot 1, « Enchaîner des étapes »** (`b4f0391c`), demande de Julien (« me laisser l'ordre ») : un outil, des étapes
+  rangées par l'administrateur, une question au plus (`deja_demande`, porté par le modèle). Relecture sans rouge, ses
+  jaunes en partie corrigés avant le push (l'autonomie tombe quand le risque monte, une chaîne vide sur une énumération
+  vaut « non fourni ») ; parti en production avec `21fbd99b`, déployé par la session du plugin.
+- **Lot 2, « Qualifier et transférer »** (`807f724b`, puis `17c832f2` pour les jaunes), grillé en trois rondes : une
+  carte à part sur le même moteur, l'étape « Transférer en À traiter », « choisir son camp » (qualifier OU passer la
+  main, refus qui nomme quoi désactiver, à l'activation, au `PATCH` d'une cible et à l'écriture des règles d'arrêt), la
+  case « passe à un humain » des règles d'arrêt, et le champ cité par « Enregistrer une information » chez les deux
+  agents. Relecture indépendante unique : aucun rouge, sept jaunes ; quatre corrigés dans `17c832f2` (seule une règle
+  NOUVELLEMENT cochée est jugée, sinon une fiche laissée dans les deux camps par une course refusait jusqu'au ton ;
+  l'assistant ne pose plus la case ; `set_agent_tools` dit ce qui est déjà actif ; les textes ne promettent plus la
+  phrase de l'agent, qui part comme celle de « Passer la main », en répondeur ou équipe fermée), les autres au backlog.
+- **Vérifications** : la suite entière dans une copie détachée d'origin (13 192 tests), l'auto-attaque, 141 e2e des
+  écrans touchés ; les requêtes neuves jouées en lecture seule contre la base (servies par
+  `atc_nom_par_consommateur_uidx`), et aucun outil enchaîné existant sur une clé désormais réservée ; CI verte job par
+  job, le test d'intégration des camps compris.
+- **Déployé par la session**, à la demande de Julien : le VPS était déjà en `34f4fe56` (la PR n° 8, fusionnée sans
+  relecture et déployée plus tôt), donc ne sont partis que les deux commits et deux documents ; `merge --ff-only`,
+  `up -d --build`, quatre conteneurs en `17c832f2`, empreintes du code servi égales à git dans l'API et le worker,
+  /health 200, journaux sans erreur.
+- **Plomberie : cinq conflits évités.** Le patch `git diff HEAD` des fichiers déjà poussés au lot 1 portait le lot 1
+  ET le lot 2, et ses hunks collés à ceux du lot 1 conflictaient en trois voies. Ces fichiers se sont patchés depuis
+  `b4f0391c`, les autres depuis `HEAD` ; et `src/mcp/outils-agent.ts`, en retard dans l'arbre sur la refonte MCP, n'a
+  gardé que nos six lignes grâce au patch en trois voies (un blob de l'arbre l'aurait défaite).
+- **Retour de Julien sur l'écran, le soir même** : « Qualifier et transférer » s'ouvre désormais sur « Quand
+  l'appeler », déjà rempli, sans titre ni nom technique à donner ; « Enchaîner des étapes » montre aussi ses consignes
+  avant ses étapes.
+
 ## 2026-10-20 (soir) : les campagnes et les champs depuis Claude
 
 - **Campagnes depuis Claude, en production** (`0c1825ad`, déployé avec `82a775bb`). Exécution du plan en direct par la
