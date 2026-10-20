@@ -16,8 +16,8 @@ _Prompt_
 Add WhatsApp order notifications to this project, following the recipe
 https://console.messagingme.app/developers/api/guides/order-notifications.en.md:
 1. install the SDK: npm install github:julienmessagingme/messagingme-sdk#v0.3.1;
-2. with the Messaging Me tools, create the shipping template (UTILITY, the first name then the order number, a
-   URL button to our tracking page);
+2. with the Messaging Me tools, create the shipping template order_shipped (UTILITY, en, the first name then the
+   order number, a URL button to our tracking page);
 3. write lib/orders.ts wired to our orders (the send when an order moves to shipped) and the route
    app/api/webhooks/messagingme/route.ts that marks the order delivered then read;
 4. subscribe the route to message.delivered and message.read, unchecked by default, and keep the key and the
@@ -29,7 +29,7 @@ Do not invent any route or field: they are in https://api.messagingme.app/openap
 
 ## The shipping template
 
-A UTILITY template with two variables (the first name, then the order number) and a URL button to your tracking page. Create it with `create_template` (MCP server) or with [POST /v1/templates](https://console.messagingme.app/developers/api/templates.en.md#creer), then wait for Meta’s approval, often within minutes; `get_template_status` confirms it.
+A UTILITY template with two variables (the first name, then the order number) and a URL button to your tracking page. Create it with `create_template` (MCP server) or with [POST /v1/templates](https://console.messagingme.app/developers/api/templates.en.md#creer), then wait for Meta’s approval, often within minutes (the code calls it order_shipped, in English: keep that name and language, or change them in the code); `get_template_status` confirms it.
 
 > **Required**
 >
@@ -73,6 +73,7 @@ import { messagingme } from './messagingme';
 // What this case needs from your orders: Claude Code wires these two functions to your own database.
 const todo = (what: string): never => { throw new Error(`lib/orders.ts: ${what} is not connected yet`); };
 export async function saveSendId(orderId: string, sendId: string): Promise<void> { return todo('saveSendId'); }
+/** Moves the order’s WhatsApp status forward only: a late or retried "delivered" never overwrites "read". */
 export async function setWhatsappStatus(sendId: string, status: 'delivered' | 'read'): Promise<void> { return todo('setWhatsappStatus'); }
 
 // Call it when an order moves to shipped. The template order_shipped has two variables, the first name then the
@@ -90,6 +91,11 @@ export async function notifyShipped(order: { id: string; phone: string; firstNam
     // Replayed within 24 hours (the life of the key), the shipment does not send twice.
     idempotencyKey: `shipped-${order.id}`,
   });
+  // A refused recipient (STOP, plan limit) is not an error: it is listed in skipped, and nothing was sent.
+  if (send.skippedTotal > 0) {
+    console.warn(`order ${order.id} not notified: ${send.skipped[0]?.reason}`);
+    return;
+  }
   // The delivery and read receipts carry this sendId: it ties them back to the order.
   await saveSendId(order.id, send.sendId);
 }
@@ -127,7 +133,7 @@ export async function POST(req: Request) {
 
 > **Required**
 >
-> A customer who turned off read receipts in WhatsApp never sends message.read: their order stays delivered.
+> A customer who turned off read receipts in WhatsApp never sends message.read: their order stays delivered. A receipt can arrive late or twice: the status only moves forward, a late “delivered” never erases “read”. To see a delivery failure, also subscribe to message.failed, unticked by default.
 
 <a id="reponse"></a>
 

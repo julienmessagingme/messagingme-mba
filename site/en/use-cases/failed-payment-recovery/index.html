@@ -109,7 +109,15 @@
      "name": "Can Stripe send the same event twice?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "Yes, and the idempotency key taken from the invoice covers it: within 24 hours, one message goes out."
+      "text": "Yes, and the idempotency key taken from the invoice covers it: within 24 hours, one message goes out. And a failed WhatsApp send never fails your Stripe webhook."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Must the user have agreed to receive messages?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Meta asks that the person agreed to be contacted on WhatsApp: ask for it at sign-up or in their account. A user who replies STOP receives nothing more."
      }
     }
    ]
@@ -298,15 +306,22 @@ export async function POST(req: Request) {
     const invoice = event.data.object;
     const user = await userOfCustomer(invoice.customer);
     if (user) {
-      await messagingme.POST('/v1/sends', {
-        body: {
-          target: { template: { name: 'payment_failed', language: 'en' } },
-          recipients: [{ phone: user.phone, variables: { firstName: user.firstName } }],
-          params: [{ position: 1, source: { type: 'variable', key: 'firstName' } }],
-        },
-        // Stripe may deliver the same event again: within 24 hours, one message per invoice.
-        idempotencyKey: `payment-${invoice.id}`,
-      });
+      // A failed WhatsApp send never fails the Stripe webhook: Stripe would retry it, then disable it.
+      try {
+        const send = await messagingme.POST('/v1/sends', {
+          body: {
+            target: { template: { name: 'payment_failed', language: 'en' } },
+            recipients: [{ phone: user.phone, variables: { firstName: user.firstName } }],
+            params: [{ position: 1, source: { type: 'variable', key: 'firstName' } }],
+          },
+          // Stripe may deliver the same event again: within 24 hours, one message per invoice.
+          idempotencyKey: `payment-${invoice.id}`,
+        });
+        // A refused recipient (STOP, plan limit) is not an error: it is listed in skipped, with its reason.
+        if (send.skippedTotal &gt; 0) console.warn(`payment ${invoice.id} not sent: ${send.skipped[0]?.reason}`);
+      } catch (e) {
+        console.error(`payment ${invoice.id}: WhatsApp send failed`, e);
+      }
     }
   }
   return new Response(null, { status: 200 });
@@ -330,7 +345,8 @@ export async function POST(req: Request) {
         <details><summary>Is a Messaging Me webhook address needed?</summary><p>No: everything starts from the Stripe webhook your app already has, and nothing comes back to it.</p></details>
         <details><summary>What if Meta reclassifies the template as marketing?</summary><p>It would then only go to contacts who consented. Keep a factual text: the payment, the card, the access.</p></details>
         <details><summary>How much does a recovery message cost?</summary><p>Free includes 1,000 templates a month. Meta bills each utility template to your business, according to its rate card and the user’s country.</p></details>
-        <details><summary>Can Stripe send the same event twice?</summary><p>Yes, and the idempotency key taken from the invoice covers it: within 24 hours, one message goes out.</p></details>
+        <details><summary>Can Stripe send the same event twice?</summary><p>Yes, and the idempotency key taken from the invoice covers it: within 24 hours, one message goes out. And a failed WhatsApp send never fails your Stripe webhook.</p></details>
+        <details><summary>Must the user have agreed to receive messages?</summary><p>Meta asks that the person agreed to be contacted on WhatsApp: ask for it at sign-up or in their account. A user who replies STOP receives nothing more.</p></details>
       </div>
     </div>
   </section>

@@ -16,8 +16,9 @@ _Prompt_
 Branche la prise de rendez-vous par WhatsApp dans ce projet, en suivant la recette
 https://console.messagingme.app/developers/api/guides/appointment-booking.md :
 1. installe le SDK : npm install github:julienmessagingme/messagingme-sdk#v0.3.1 ;
-2. avec les outils Messaging Me, ajoute sur l’agent qui répond les deux actions « Appointment request » (champs
-   reason et city) et « Slot choice » (champ slot) ;
+2. avec les outils Messaging Me, allume l’agent qui répond (activate_agent, puis set_default_responder) et pose sur
+   lui les deux actions « Appointment request » (champs reason et city, à déclencher une fois la ville connue) et
+   « Slot choice » (champ slot) ;
 3. écris lib/calendar.ts relié à notre agenda (proposer trois créneaux libres, réserver celui choisi) et la route
    app/api/webhooks/messagingme/route.ts, en gardant les mêmes noms d’actions et codes de champs partout ;
 4. abonne la route à agent.action, décoché par défaut, et range la clé et le secret dans les variables
@@ -29,11 +30,11 @@ N’invente aucune route ni aucun champ : ils sont dans https://api.messagingme.
 
 ## Les deux actions de l’agent IA
 
-Sur l’agent qui répond, ajoutez deux actions par `set_agent_action` : « Appointment request », avec deux champs texte codés reason et city (dire qu’on regarde les créneaux libres), et « Slot choice », avec un champ texte codé slot (dire qu’on bloque le créneau). Votre application reçoit agent.action, une fois par jour au plus par contact et par action.
+Sur l’agent qui répond, ajoutez deux actions par `set_agent_action` : « Appointment request », avec deux champs texte codés reason et city (consigne : la déclencher une fois la ville connue, et dire qu’on regarde les créneaux libres), et « Slot choice », avec un champ texte codé slot (dire qu’on bloque le créneau). Votre application reçoit agent.action, une fois par jour au plus par contact et par action, avec les champs connus à ce moment. L’agent doit être allumé (activate_agent) et répondre pour l’espace (set_default_responder) : sinon aucune action ne part, sans erreur.
 
 > **Obligatoire**
 >
-> Le code lit action.name et fields par leur nom exact : gardez les mêmes noms d’actions et les mêmes codes de champs dans l’agent et dans la route.
+> Le code lit action.name et fields par leur nom exact : gardez les mêmes noms d’actions et les mêmes codes de champs dans l’agent et dans la route. Et slot est ce que l’agent a compris du client : votre agenda le recoupe avec les créneaux proposés, et ne réserve qu’un créneau encore libre, deux clients pouvant choisir le même.
 
 <a id="code"></a>
 
@@ -73,7 +74,11 @@ const todo = (what: string): never => { throw new Error(`lib/calendar.ts: ${what
 
 /** A few free slots near this city, written as the WhatsApp message that offers them. */
 export async function offerSlots(city: string, count: number): Promise<string> { return todo('offerSlots'); }
-/** Books the chosen slot once per request (the same event twice books once), and returns the confirmation. */
+/**
+ * Books the chosen slot once per request (the same event twice books once) and returns the confirmation. `slot` is
+ * the AI agent’s reading of the customer’s words: match it against the slots offered, book only one still free (two
+ * customers can pick the same), otherwise return a message that asks to pick again.
+ */
 export async function book(requestId: string, slot: string): Promise<string> { return todo('book'); }
 ```
 
@@ -91,7 +96,8 @@ import { messagingme } from '../../../../lib/messagingme';
 import { book, offerSlots } from '../../../../lib/calendar';
 
 // Subscribed to agent.action: the AI agent’s two actions, Appointment request (fields reason and city) and Slot
-// choice (field slot). The type is unchecked by default on a webhook address.
+// choice (field slot). The type is unchecked by default on a webhook address. An action fires once a day per
+// customer, with the fields known at that moment: its instruction tells the agent to wait for the city.
 export async function POST(req: Request) {
   // The RAW body: the signature covers its bytes.
   const body = await req.text();
@@ -108,7 +114,8 @@ export async function POST(req: Request) {
   if (action.name === 'Appointment request') text = await offerSlots(String(fields.city ?? ''), 3);
   if (action.name === 'Slot choice' && fields.slot !== undefined) text = await book(event.id, String(fields.slot));
   if (text) await messagingme.POST('/v1/messages/whatsapp', { body: { contactId: contact.id, text } });
-  // Answer fast (under 10 s): a slow job runs after, otherwise the webhook is retried.
+  // The webhook waits 10 s for this answer, then retries the same event (same event.id): keep the work above
+  // short, and your calendar functions safe to run twice.
   return new Response(null, { status: 204 });
 }
 ```

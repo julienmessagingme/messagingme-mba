@@ -16,8 +16,9 @@ _Prompt_
 Add WhatsApp appointment reminders to this project, following the recipe
 https://console.messagingme.app/developers/api/guides/appointment-reminders.en.md:
 1. install the SDK: npm install github:julienmessagingme/messagingme-sdk#v0.3.1;
-2. with the Messaging Me tools, create the reminder template (UTILITY, the first name then the time, two quick reply
-   buttons) and, on the agent that answers, the two actions “Reschedule request” (no field) and “Slot choice” (field slot);
+2. with the Messaging Me tools, create the reminder template appointment_reminder (UTILITY, en, the first name then the
+   time, two quick reply buttons) and, on the agent that answers (on and set as responder), the two actions
+   “Reschedule request” (no field) and “Slot choice” (field slot);
 3. write lib/calendar.ts wired to our calendar, jobs/reminders.ts (the day-before job) and the route
    app/api/webhooks/messagingme/route.ts, keeping the same button labels and action names everywhere;
 4. subscribe the route to message.received and agent.action, and keep the key and the secret in environment
@@ -29,7 +30,7 @@ Do not invent any route or field: they are in https://api.messagingme.app/openap
 
 ## The reminder template
 
-A UTILITY template with two variables (the first name, then the time) and two quick reply buttons, 25 characters at most each. Create it with `create_template` (MCP server) or with [POST /v1/templates](https://console.messagingme.app/developers/api/templates.en.md#creer), then wait for Meta’s approval, often within minutes.
+A UTILITY template with two variables (the first name, then the time) and two quick reply buttons, 25 characters at most each. Create it with `create_template` (MCP server) or with [POST /v1/templates](https://console.messagingme.app/developers/api/templates.en.md#creer), then wait for Meta’s approval, often within minutes. The code calls it appointment_reminder, in English (en): keep that name and language, or change them in the code.
 
 > **Required**
 >
@@ -39,7 +40,7 @@ A UTILITY template with two variables (the first name, then the time) and two qu
 
 ## The two AI agent actions
 
-On the agent that answers, add two actions with `set_agent_action`: “Reschedule request”, with no field (say you are checking the free slots), and “Slot choice”, with a text field coded slot (say you are holding the slot). Your app receives agent.action, at most once a day per contact and per action.
+On the agent that answers, add two actions with `set_agent_action`: “Reschedule request”, with no field (say you are checking the free slots), and “Slot choice”, with a text field coded slot (say you are holding the slot). Your app receives agent.action, at most once a day per contact and per action. The agent must be on (`activate_agent`) and answer for the workspace (`set_default_responder`): otherwise no action fires, with no error.
 
 <a id="code"></a>
 
@@ -93,35 +94,58 @@ export async function lastReminder(phone: string): Promise<Appointment | null> {
 export async function markConfirmed(appointment: Appointment): Promise<void> { return todo('markConfirmed'); }
 /** A few free slots, written as the WhatsApp message that offers them. */
 export async function freeSlots(appointment: Appointment, count: number): Promise<string> { return todo('freeSlots'); }
-/** Moves the appointment to the chosen slot (twice the same slot moves it once), and returns the confirmation. */
+/**
+ * Moves the appointment to the chosen slot and returns the confirmation. `slot` is the AI agent’s reading of the
+ * customer’s words: match it against the slots offered, move only to one still free, otherwise ask again.
+ */
 export async function move(appointment: Appointment, slot: string): Promise<string> { return todo('move'); }
 ```
 
-The day-before job, run every evening by your host’s scheduler. It sends through [POST /v1/sends](https://console.messagingme.app/developers/api/sends.en.md#envoi), with an idempotency key taken from the appointment: run again, it does not send twice.
+The day-before job, run every evening by your host’s scheduler. It sends through [POST /v1/sends](https://console.messagingme.app/developers/api/sends.en.md#envoi), with an idempotency key taken from the appointment and its time: run again the same evening, it does not send twice. A recipient set aside (STOP, plan limit) is not an error, it comes back in skipped with its reason; an error on one appointment does not stop the others, and a 429 waits the delay the API gives.
 
 _jobs/reminders.ts_
 
 ```
+import { ApiError } from '@messagingme/sdk';
 import { messagingme } from '../lib/messagingme';
-import { saveReminder, tomorrowsAppointments } from '../lib/calendar';
+import { saveReminder, tomorrowsAppointments, type Appointment } from '../lib/calendar';
 
-// Run once a day, the evening before (a cron of your host). The template appointment_reminder has two variables,
-// the first name then the time, and two quick reply buttons: Confirm and Reschedule.
+// The template appointment_reminder (language en) has two variables, the first name then the time, and two quick
+// reply buttons: Confirm and Reschedule.
+function sendReminder(appointment: Appointment) {
+  return messagingme.POST('/v1/sends', {
+    body: {
+      target: { template: { name: 'appointment_reminder', language: 'en' } },
+      recipients: [{ phone: appointment.phone, variables: { firstName: appointment.firstName, time: appointment.time } }],
+      params: [
+        { position: 1, source: { type: 'variable', key: 'firstName' } },
+        { position: 2, source: { type: 'variable', key: 'time' } },
+      ],
+    },
+    // Run twice the same evening, the job does not send twice; a moved appointment gets a new key.
+    idempotencyKey: `reminder-${appointment.id}-${encodeURIComponent(appointment.time)}`,
+  });
+}
+
+// Run once a day, the evening before (a cron of your host). One failed reminder never stops the others.
 export async function dayBeforeReminders(): Promise<void> {
   for (const appointment of await tomorrowsAppointments()) {
-    const send = await messagingme.POST('/v1/sends', {
-      body: {
-        target: { template: { name: 'appointment_reminder', language: 'en' } },
-        recipients: [{ phone: appointment.phone, variables: { firstName: appointment.firstName, time: appointment.time } }],
-        params: [
-          { position: 1, source: { type: 'variable', key: 'firstName' } },
-          { position: 2, source: { type: 'variable', key: 'time' } },
-        ],
-      },
-      // Run twice for the same appointment, the job does not send twice.
-      idempotencyKey: `reminder-${appointment.id}`,
-    });
-    await saveReminder(appointment, send.sendId);
+    try {
+      let send;
+      try {
+        send = await sendReminder(appointment);
+      } catch (e) {
+        // Too many calls in the minute: wait what the API says, then try once more.
+        if (!(e instanceof ApiError) || e.status !== 429) throw e;
+        await new Promise((r) => setTimeout(r, (e.retryAfter ?? 60) * 1000));
+        send = await sendReminder(appointment);
+      }
+      // A refused recipient (STOP, no number, plan limit) is not an error: it is listed in skipped.
+      if (send.skippedTotal > 0) console.warn(`reminder ${appointment.id} not sent: ${send.skipped[0]?.reason}`);
+      else await saveReminder(appointment, send.sendId);
+    } catch (e) {
+      console.error(`reminder ${appointment.id} failed`, e);
+    }
   }
 }
 ```
@@ -130,7 +154,7 @@ export async function dayBeforeReminders(): Promise<void> {
 
 ## The route that receives the replies
 
-Declare its address with `create_webhook_endpoint` or with [POST /v1/webhooks](https://console.messagingme.app/developers/api/webhook-endpoints.en.md#creer), with the types message.received and agent.action: they are unticked by default.
+Declare its address with `create_webhook_endpoint` or with [POST /v1/webhooks](https://console.messagingme.app/developers/api/webhook-endpoints.en.md#creer), with the types message.received, ticked by default, and agent.action, unticked by default: tick it.
 
 _app/api/webhooks/messagingme/route.ts_
 
@@ -139,8 +163,8 @@ import { verifyWebhook, WebhookVerificationError } from '@messagingme/sdk';
 import { messagingme } from '../../../../lib/messagingme';
 import { freeSlots, lastReminder, markConfirmed, move } from '../../../../lib/calendar';
 
-// Subscribed to message.received (the Confirm button) and agent.action (the AI agent’s two actions,
-// Reschedule request and Slot choice). Both types are unchecked by default on a webhook address.
+// Subscribed to message.received (the Confirm button, ticked by default) and agent.action (the AI agent’s two
+// actions, Reschedule request and Slot choice), unchecked by default on a webhook address: tick it.
 export async function POST(req: Request) {
   // The RAW body: the signature covers its bytes.
   const body = await req.text();
@@ -164,7 +188,8 @@ export async function POST(req: Request) {
     if (action.name === 'Slot choice' && fields.slot !== undefined) text = await move(appointment, String(fields.slot));
     if (text) await messagingme.POST('/v1/messages/whatsapp', { body: { contactId: contact.id, text } });
   }
-  // Answer fast (under 10 s): a slow job runs after, otherwise the webhook is retried.
+  // The webhook waits 10 s for this answer, then retries the same event (same event.id): keep the work above
+  // short, and your calendar functions safe to run twice.
   return new Response(null, { status: 204 });
 }
 ```

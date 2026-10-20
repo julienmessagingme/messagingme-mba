@@ -45,15 +45,15 @@ function Recette() {
           <C>create_template</C>
           {t(' (serveur MCP) ou par ', ' (MCP server) or with ')}
           <LienDoc page="templates" ancre="creer">POST /v1/templates</LienDoc>
-          {t(', puis attendez l’approbation de Meta ; ', ', then wait for Meta’s approval; ')}
+          {t(', puis attendez l’approbation de Meta (le code l’appelle welcome, en anglais : gardez ce nom et cette langue, ou changez-les dans le code) ; ', ', then wait for Meta’s approval (the code calls it welcome, in English: keep that name and language, or change them in the code); ')}
           <C>get_template_status</C>
           {t(' la confirme.', ' confirms it.')}
         </p>
         <Encadre sorte="obligatoire">
           <p>
             {t(
-              'Une bienvenue qui invite à utiliser le produit est du marketing pour Meta, pas de l’utilitaire. Un modèle marketing ne part qu’à un contact qui a consenti : sans la case cochée, l’envoi est refusé (no_consent).',
-              'A welcome that invites people to use the product is marketing for Meta, not utility. A marketing template only goes to a contact who consented: without the ticked box, the send is refused (no_consent).',
+              'Une bienvenue qui invite à utiliser le produit est du marketing pour Meta, pas de l’utilitaire. Un modèle marketing ne part qu’à un contact qui a consenti : sans la case cochée, le destinataire est écarté, et il revient dans skipped avec la raison no_consent.',
+              'A welcome that invites people to use the product is marketing for Meta, not utility. A marketing template only goes to a contact who consented: without the ticked box, the recipient is set aside, and comes back in skipped with the reason no_consent.',
             )}
           </p>
         </Encadre>

@@ -16,8 +16,8 @@ _Prompt_
 Add WhatsApp appointment booking to this project, following the recipe
 https://console.messagingme.app/developers/api/guides/appointment-booking.en.md:
 1. install the SDK: npm install github:julienmessagingme/messagingme-sdk#v0.3.1;
-2. with the Messaging Me tools, add on the agent that answers the two actions “Appointment request” (fields
-   reason and city) and “Slot choice” (field slot);
+2. with the Messaging Me tools, turn the agent on, set it as responder, and add it the two actions
+   “Appointment request” (fields reason and city, to trigger once the city is known) and “Slot choice” (field slot);
 3. write lib/calendar.ts wired to our calendar (offer three free slots, book the one chosen) and the route
    app/api/webhooks/messagingme/route.ts, keeping the same action names and field codes everywhere;
 4. subscribe the route to agent.action, unchecked by default, and keep the key and the secret in environment
@@ -29,11 +29,11 @@ Do not invent any route or field: they are in https://api.messagingme.app/openap
 
 ## The two AI agent actions
 
-On the agent that answers, add two actions with `set_agent_action`: “Appointment request”, with two text fields coded reason and city (say you are checking the free slots), and “Slot choice”, with a text field coded slot (say you are holding the slot). Your app receives agent.action, at most once a day per contact and per action.
+On the agent that answers, add two actions with `set_agent_action`: “Appointment request”, with two text fields coded reason and city (instruction: trigger it once the city is known, and say you are checking the free slots), and “Slot choice”, with a text field coded slot (say you are holding the slot). Your app receives agent.action, at most once a day per contact and per action, with the fields known at that moment. The agent must be on (activate_agent) and answer for the workspace (set_default_responder): otherwise no action fires, with no error.
 
 > **Required**
 >
-> The code reads action.name and fields by their exact name: keep the same action names and field codes in the agent and in the route.
+> The code reads action.name and fields by their exact name: keep the same action names and field codes in the agent and in the route. And slot is what the agent understood from the customer: your calendar matches it against the slots offered, and books only a slot still free, since two customers can pick the same.
 
 <a id="code"></a>
 
@@ -73,7 +73,11 @@ const todo = (what: string): never => { throw new Error(`lib/calendar.ts: ${what
 
 /** A few free slots near this city, written as the WhatsApp message that offers them. */
 export async function offerSlots(city: string, count: number): Promise<string> { return todo('offerSlots'); }
-/** Books the chosen slot once per request (the same event twice books once), and returns the confirmation. */
+/**
+ * Books the chosen slot once per request (the same event twice books once) and returns the confirmation. `slot` is
+ * the AI agent’s reading of the customer’s words: match it against the slots offered, book only one still free (two
+ * customers can pick the same), otherwise return a message that asks to pick again.
+ */
 export async function book(requestId: string, slot: string): Promise<string> { return todo('book'); }
 ```
 
@@ -91,7 +95,8 @@ import { messagingme } from '../../../../lib/messagingme';
 import { book, offerSlots } from '../../../../lib/calendar';
 
 // Subscribed to agent.action: the AI agent’s two actions, Appointment request (fields reason and city) and Slot
-// choice (field slot). The type is unchecked by default on a webhook address.
+// choice (field slot). The type is unchecked by default on a webhook address. An action fires once a day per
+// customer, with the fields known at that moment: its instruction tells the agent to wait for the city.
 export async function POST(req: Request) {
   // The RAW body: the signature covers its bytes.
   const body = await req.text();
@@ -108,7 +113,8 @@ export async function POST(req: Request) {
   if (action.name === 'Appointment request') text = await offerSlots(String(fields.city ?? ''), 3);
   if (action.name === 'Slot choice' && fields.slot !== undefined) text = await book(event.id, String(fields.slot));
   if (text) await messagingme.POST('/v1/messages/whatsapp', { body: { contactId: contact.id, text } });
-  // Answer fast (under 10 s): a slow job runs after, otherwise the webhook is retried.
+  // The webhook waits 10 s for this answer, then retries the same event (same event.id): keep the work above
+  // short, and your calendar functions safe to run twice.
   return new Response(null, { status: 204 });
 }
 ```

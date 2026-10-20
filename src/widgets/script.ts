@@ -50,8 +50,34 @@ export type ConfigScript = ScriptServi | ScriptGrise;
  */
 export const SCRIPT_INERTE = '/* Messaging Me : aucune bulle à afficher pour ce code. */\n';
 
+/**
+ * Les textes de la bulle, en français et en anglais (2026-10-20, pour la page de cas « bulle sur un site Lovable » et sa
+ * jumelle anglaise). Le script choisit dans le NAVIGATEUR du visiteur, pas dans l'attribut `lang` de la page : un site
+ * fait avec un générateur garde souvent `lang="en"` par défaut, même en français. Un navigateur `fr*` lit le français,
+ * toute autre langue l'anglais, et un navigateur muet le français, le comportement d'avant. Le libellé reste celui que
+ * le client a écrit, dans sa langue.
+ */
+export const TEXTES_BULLE = {
+  fr: {
+    indisponible: 'Messagerie WhatsApp momentanément indisponible',
+    scanner: 'Scannez ce code avec votre téléphone pour ouvrir WhatsApp',
+    qr: 'QR code WhatsApp',
+    ordinateur: 'Ouvrir WhatsApp sur cet ordinateur',
+    discuter: 'Discuter sur WhatsApp',
+    badge: 'Propulsé par Messaging Me',
+  },
+  en: {
+    indisponible: 'WhatsApp messaging temporarily unavailable',
+    scanner: 'Scan this code with your phone to open WhatsApp',
+    qr: 'WhatsApp QR code',
+    ordinateur: 'Open WhatsApp on this computer',
+    discuter: 'Chat on WhatsApp',
+    badge: 'Powered by Messaging Me',
+  },
+} as const;
+
 /** Le texte de la bulle grisée, en `title` et `aria-label` seulement : aucun texte visible au premier lot. */
-export const TEXTE_INDISPONIBLE = 'Messagerie WhatsApp momentanément indisponible';
+export const TEXTE_INDISPONIBLE = TEXTES_BULLE.fr.indisponible;
 
 /**
  * Une valeur JSON, sûre à écrire dans un script. `<` s'écrit en séquence d'échappement Unicode (ni `</script>` ni
@@ -86,7 +112,7 @@ export function construireScript(config: ConfigScript): string {
       badge: config.badge,
     }
     : { etat: config.etat, position: config.position };
-  return `(function () {\n'use strict';\nvar D = ${enJson(donnees)};\nvar INDISPONIBLE = ${enJson(TEXTE_INDISPONIBLE)};\n${CORPS}})();\n`;
+  return `(function () {\n'use strict';\nvar D = ${enJson(donnees)};\nvar TEXTES = ${enJson(TEXTES_BULLE)};\n${CORPS}})();\n`;
 }
 
 /**
@@ -148,11 +174,18 @@ function versOnglet(a, lien) {
   a.target = '_blank';
   a.rel = 'noopener noreferrer';
 }
+function langue() {
+  var n = window.navigator;
+  var l = n ? ((n.languages && n.languages[0]) || n.language || '') : '';
+  if (!l) return 'fr';
+  return String(l).toLowerCase().indexOf('fr') === 0 ? 'fr' : 'en';
+}
 function tactile() {
   return typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
 }
 function monter() {
   if (!document.body || typeof document.body.attachShadow !== 'function') return;
+  var T = TEXTES[langue()];
   var coin = Object.prototype.hasOwnProperty.call(COINS, D.position) ? COINS[D.position] : COINS.bas_droite;
   var hote = document.createElement('div');
   hote.style.position = 'fixed';
@@ -170,8 +203,8 @@ function monter() {
     var grise = document.createElement('span');
     grise.className = 'bulle grise';
     grise.setAttribute('role', 'img');
-    grise.title = INDISPONIBLE;
-    grise.setAttribute('aria-label', INDISPONIBLE);
+    grise.title = T.indisponible;
+    grise.setAttribute('aria-label', T.indisponible);
     grise.appendChild(icone());
     boite.appendChild(grise);
     document.body.appendChild(hote);
@@ -183,24 +216,24 @@ function monter() {
   if (D.qr !== null) {
     var titre = document.createElement('p');
     titre.className = 'titre';
-    titre.textContent = 'Scannez ce code avec votre téléphone pour ouvrir WhatsApp';
+    titre.textContent = T.scanner;
     panneau.appendChild(titre);
     var qr = document.createElement('img');
     qr.className = 'qr';
-    qr.alt = 'QR code WhatsApp';
+    qr.alt = T.qr;
     qr.src = 'data:image/svg+xml,' + encodeURIComponent(D.qr);
     panneau.appendChild(qr);
   }
   var web = document.createElement('a');
   web.className = 'web';
   versOnglet(web, D.lien);
-  web.textContent = 'Ouvrir WhatsApp sur cet ordinateur';
+  web.textContent = T.ordinateur;
   panneau.appendChild(web);
   boite.appendChild(panneau);
   var ligne = document.createElement('a');
   ligne.className = 'ligne';
   versOnglet(ligne, D.lien);
-  ligne.setAttribute('aria-label', 'Discuter sur WhatsApp');
+  ligne.setAttribute('aria-label', T.discuter);
   ligne.setAttribute('aria-expanded', 'false');
   if (D.libelle !== null || D.avatar !== null) {
     var etiquette = document.createElement('span');
@@ -234,7 +267,7 @@ function monter() {
   if (D.badge) {
     var badge = document.createElement('p');
     badge.className = 'badge';
-    badge.textContent = 'Propulsé par Messaging Me';
+    badge.textContent = T.badge;
     boite.appendChild(badge);
   }
   document.body.appendChild(hote);

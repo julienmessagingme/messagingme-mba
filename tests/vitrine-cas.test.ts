@@ -26,6 +26,8 @@ const pagesDe = (e: (typeof ENTREES)[number]) => [['fr', fichierDe(e.fr.adresse)
 describe('les pages de cas d’usage', () => {
   it('🔴 chaque page est égale à sa génération (npm run vitrine:cas), et llms.txt porte la section des cas', () => {
     expect(enLigne.length).toBeGreaterThan(0);
+    // Deux pages par cas en ligne, plus le carrefour dans chaque langue : une génération vide ne passe pas.
+    expect(pagesGenerees().length).toBe(enLigne.length * 2 + 2);
     for (const { chemin, contenu } of pagesGenerees()) expect(lire(chemin), chemin).toBe(contenu);
     expect(llmsAvecCas(lire('llms.txt'))).toBe(lire('llms.txt'));
   });
@@ -50,6 +52,8 @@ describe('les pages de cas d’usage', () => {
 
         it('🔴 chaque chiffre marqué data-offre vaut ce que dit le code', () => {
           const marques = parAttribut(html, 'data-offre');
+          // Chaque page de cas dit ce que comprend la Free, au moins le nombre de contacts.
+          expect(marques.map((m) => m.valeur)).toContain('base.contacts');
           for (const { valeur, contenu } of marques) {
             expect(Object.keys(ATTENDU), `clé inconnue ${valeur}`).toContain(valeur);
             expect(Number(texte(contenu).replace(/\D/g, '')), valeur).toBe(ATTENDU[valeur]);
@@ -71,7 +75,9 @@ describe('les pages de cas d’usage', () => {
         it('le titre et la description dans leurs bornes, un seul H1, un JSON-LD lisible, les fichiers du film présents', () => {
           const titre = /<title>([^<]*)<\/title>/.exec(html)?.[1] ?? '';
           const description = /<meta name="description" content="([^"]*)">/.exec(html)?.[1] ?? '';
+          expect(texte(titre).length, titre).toBeGreaterThan(10);
           expect(texte(titre).length, titre).toBeLessThanOrEqual(60);
+          expect(texte(description).length, description).toBeGreaterThan(50);
           expect(texte(description).length, description).toBeLessThanOrEqual(155);
           expect(html.split('<h1').length - 1).toBe(1);
           for (const m of html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)) expect(() => JSON.parse(m[1]!)).not.toThrow();

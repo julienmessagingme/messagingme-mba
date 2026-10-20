@@ -45,15 +45,15 @@ function Recette() {
           <C>create_template</C>
           {t(' (serveur MCP) ou par ', ' (MCP server) or with ')}
           <LienDoc page="templates" ancre="creer">POST /v1/templates</LienDoc>
-          {t(', puis attendez l’approbation de Meta ; ', ', then wait for Meta’s approval; ')}
+          {t(', puis attendez l’approbation de Meta (le code l’appelle payment_failed, en anglais : gardez ce nom et cette langue, ou changez-les dans le code) ; ', ', then wait for Meta’s approval (the code calls it payment_failed, in English: keep that name and language, or change them in the code); ')}
           <C>get_template_status</C>
           {t(' la confirme.', ' confirms it.')}
         </p>
         <Encadre sorte="obligatoire">
           <p>
             {t(
-              'Gardez le texte factuel : le paiement, la carte, l’accès. Un modèle que Meta reclasse en marketing ne part plus qu’aux contacts qui ont consenti.',
-              'Keep the text factual: the payment, the card, the access. A template Meta reclassifies as marketing then only goes to contacts who consented.',
+              'Gardez le texte factuel : le paiement, la carte, l’accès. Un modèle que Meta reclasse en marketing ne part plus qu’aux contacts qui ont consenti. Et Meta demande que l’utilisateur ait accepté d’être contacté sur WhatsApp : demandez-le à l’inscription ou dans son compte.',
+              'Keep the text factual: the payment, the card, the access. A template Meta reclassifies as marketing then only goes to contacts who consented. And Meta asks that the user agreed to be contacted on WhatsApp: ask for it at sign-up or in their account.',
             )}
           </p>
         </Encadre>
@@ -76,8 +76,8 @@ function Recette() {
           {t('Dans le webhook Stripe que votre application a déjà, sur invoice.payment_failed. L’envoi part par ', 'In the Stripe webhook your app already has, on invoice.payment_failed. The send goes through ')}
           <LienDoc page="sends" ancre="envoi">POST /v1/sends</LienDoc>
           {t(
-            ', avec une clé d’idempotence tirée de la facture : un même événement livré deux fois dans les 24 heures n’envoie qu’un message. Aucune adresse de webhook Messaging Me n’est nécessaire.',
-            ', with an idempotency key taken from the invoice: the same event delivered twice within 24 hours sends one message. No Messaging Me webhook address is needed.',
+            ', avec une clé d’idempotence tirée de la facture : un même événement livré deux fois dans les 24 heures n’envoie qu’un message. Un échec de l’envoi WhatsApp ne fait jamais échouer le webhook : il répond toujours 200 à Stripe, qui sinon le réessaierait puis le désactiverait. Aucune adresse de webhook Messaging Me n’est nécessaire.',
+            ', with an idempotency key taken from the invoice: the same event delivered twice within 24 hours sends one message. A failed WhatsApp send never fails the webhook: it always answers 200 to Stripe, which would otherwise retry it, then disable it. No Messaging Me webhook address is needed.',
           )}
         </p>
         <Bloc legende={cas.stripe.fichier}>{cas.stripe.code}</Bloc>

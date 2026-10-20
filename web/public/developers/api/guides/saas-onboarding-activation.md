@@ -16,8 +16,8 @@ _Prompt_
 Branche la bienvenue WhatsApp des nouveaux utilisateurs dans ce projet, en suivant la recette
 https://console.messagingme.app/developers/api/guides/saas-onboarding-activation.md :
 1. installe le SDK : npm install github:julienmessagingme/messagingme-sdk#v0.3.1 ;
-2. avec les outils Messaging Me, crée le modèle de bienvenue (MARKETING, le prénom, un bouton URL vers la page qui
-   lance l’utilisateur) ;
+2. avec les outils Messaging Me, crée le modèle de bienvenue welcome (MARKETING, en, le prénom, un bouton URL vers la
+   page qui lance l’utilisateur) ;
 3. ajoute au formulaire d’inscription une case « Recevoir mes conseils de démarrage sur WhatsApp », non cochée par
    défaut, et écris app/signup.ts qui n’envoie qu’à qui l’a cochée, avec consent opted_in ;
 4. range la clé dans les variables d’environnement, jamais dans le code.
@@ -28,11 +28,11 @@ N’invente aucune route ni aucun champ : ils sont dans https://api.messagingme.
 
 ## Le modèle de bienvenue
 
-Un modèle MARKETING à une variable (le prénom) et un bouton URL vers la page qui lance l’utilisateur. Créez-le par `create_template` (serveur MCP) ou par [POST /v1/templates](https://console.messagingme.app/developers/api/templates.md#creer), puis attendez l’approbation de Meta ; `get_template_status` la confirme.
+Un modèle MARKETING à une variable (le prénom) et un bouton URL vers la page qui lance l’utilisateur. Créez-le par `create_template` (serveur MCP) ou par [POST /v1/templates](https://console.messagingme.app/developers/api/templates.md#creer), puis attendez l’approbation de Meta (le code l’appelle welcome, en anglais : gardez ce nom et cette langue, ou changez-les dans le code) ; `get_template_status` la confirme.
 
 > **Obligatoire**
 >
-> Une bienvenue qui invite à utiliser le produit est du marketing pour Meta, pas de l’utilitaire. Un modèle marketing ne part qu’à un contact qui a consenti : sans la case cochée, l’envoi est refusé (no_consent).
+> Une bienvenue qui invite à utiliser le produit est du marketing pour Meta, pas de l’utilitaire. Un modèle marketing ne part qu’à un contact qui a consenti : sans la case cochée, le destinataire est écarté, et il revient dans skipped avec la raison no_consent.
 
 <a id="consentement"></a>
 
@@ -80,7 +80,7 @@ import { messagingme } from '../lib/messagingme';
 // button to the page that creates the first schedule.
 export async function sendWelcome(user: { id: string; phone: string; firstName: string; whatsappOptIn: boolean }): Promise<void> {
   if (!user.whatsappOptIn) return;
-  await messagingme.POST('/v1/sends', {
+  const send = await messagingme.POST('/v1/sends', {
     body: {
       target: { template: { name: 'welcome', language: 'en' } },
       recipients: [{
@@ -95,6 +95,8 @@ export async function sendWelcome(user: { id: string; phone: string; firstName: 
     // Replayed within 24 hours (the life of the key), the welcome does not send twice.
     idempotencyKey: `welcome-${user.id}`,
   });
+  // A refused recipient (STOP, no consent, plan limit) is not an error: it is listed in skipped, with its reason.
+  if (send.skippedTotal > 0) console.warn(`welcome ${user.id} not sent: ${send.skipped[0]?.reason}`);
 }
 ```
 

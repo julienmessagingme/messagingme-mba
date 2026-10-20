@@ -1,7 +1,7 @@
 ---
 ecran: widgets
 source_section: Widget WhatsApp (menu Tools > Widget WhatsApp)
-source_empreinte: e470df
+source_empreinte: 36269d
 ---
 # Poser une bulle WhatsApp sur mon site
 
@@ -12,7 +12,8 @@ ordinateur, elle montre un QR code à scanner.
 
 **Créer le widget.** Donnez-lui un nom (pour vous y retrouver, le visiteur ne le voit pas), le message
 pré-rempli, qui répond, et son apparence : une couleur, un des quatre coins de l'écran, un libellé court et un
-avatar si vous le souhaitez. Un aperçu montre la bulle telle qu'elle apparaîtra. Puis copiez la balise et collez-la
+avatar si vous le souhaitez. Un aperçu montre la bulle telle qu'elle apparaîtra. Pour le visiteur, la bulle parle
+la langue de son navigateur, le français ou l'anglais ; votre libellé reste tel que vous l'avez écrit. Puis copiez la balise et collez-la
 sur chaque page où la bulle doit apparaître. Si notre service ne répond pas, la bulle n'apparaît simplement pas :
 votre page n'est jamais ralentie.
 

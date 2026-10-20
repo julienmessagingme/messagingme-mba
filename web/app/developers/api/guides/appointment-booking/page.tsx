@@ -43,15 +43,15 @@ function Recette() {
         <p>
           {t('Sur l’agent qui répond, ajoutez deux actions par ', 'On the agent that answers, add two actions with ')}<C>set_agent_action</C>
           {t(
-            ' : « Appointment request », avec deux champs texte codés reason et city (dire qu’on regarde les créneaux libres), et « Slot choice », avec un champ texte codé slot (dire qu’on bloque le créneau). Votre application reçoit agent.action, une fois par jour au plus par contact et par action.',
-            ': “Appointment request”, with two text fields coded reason and city (say you are checking the free slots), and “Slot choice”, with a text field coded slot (say you are holding the slot). Your app receives agent.action, at most once a day per contact and per action.',
+            ' : « Appointment request », avec deux champs texte codés reason et city (consigne : la déclencher une fois la ville connue, et dire qu’on regarde les créneaux libres), et « Slot choice », avec un champ texte codé slot (dire qu’on bloque le créneau). Votre application reçoit agent.action, une fois par jour au plus par contact et par action, avec les champs connus à ce moment. L’agent doit être allumé (activate_agent) et répondre pour l’espace (set_default_responder) : sinon aucune action ne part, sans erreur.',
+            ': “Appointment request”, with two text fields coded reason and city (instruction: trigger it once the city is known, and say you are checking the free slots), and “Slot choice”, with a text field coded slot (say you are holding the slot). Your app receives agent.action, at most once a day per contact and per action, with the fields known at that moment. The agent must be on (activate_agent) and answer for the workspace (set_default_responder): otherwise no action fires, with no error.',
           )}
         </p>
         <Encadre sorte="obligatoire">
           <p>
             {t(
-              'Le code lit action.name et fields par leur nom exact : gardez les mêmes noms d’actions et les mêmes codes de champs dans l’agent et dans la route.',
-              'The code reads action.name and fields by their exact name: keep the same action names and field codes in the agent and in the route.',
+              'Le code lit action.name et fields par leur nom exact : gardez les mêmes noms d’actions et les mêmes codes de champs dans l’agent et dans la route. Et slot est ce que l’agent a compris du client : votre agenda le recoupe avec les créneaux proposés, et ne réserve qu’un créneau encore libre, deux clients pouvant choisir le même.',
+              'The code reads action.name and fields by their exact name: keep the same action names and field codes in the agent and in the route. And slot is what the agent understood from the customer: your calendar matches it against the slots offered, and books only a slot still free, since two customers can pick the same.',
             )}
           </p>
         </Encadre>

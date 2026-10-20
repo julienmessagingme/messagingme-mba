@@ -46,7 +46,10 @@ function Recette() {
           <C>create_template</C>
           {t(' (serveur MCP) ou par ', ' (MCP server) or with ')}
           <LienDoc page="templates" ancre="creer">POST /v1/templates</LienDoc>
-          {t(', puis attendez l’approbation de Meta, souvent en quelques minutes.', ', then wait for Meta’s approval, often within minutes.')}
+          {t(
+            ', puis attendez l’approbation de Meta, souvent en quelques minutes. Le code l’appelle appointment_reminder, en anglais (en) : gardez ce nom et cette langue, ou changez-les dans le code.',
+            ', then wait for Meta’s approval, often within minutes. The code calls it appointment_reminder, in English (en): keep that name and language, or change them in the code.',
+          )}
         </p>
         <Encadre sorte="obligatoire">
           <p>
@@ -61,7 +64,11 @@ function Recette() {
       <Section id="actions" titre={t('Les deux actions de l’agent IA', 'The two AI agent actions')}>
         <p>
           {t('Sur l’agent qui répond, ajoutez deux actions par ', 'On the agent that answers, add two actions with ')}<C>set_agent_action</C>
-          {t(' : « Reschedule request », sans champ (dire qu’on regarde les créneaux libres), et « Slot choice », avec un champ texte codé slot (dire qu’on bloque le créneau). Votre application reçoit agent.action, une fois par jour au plus par contact et par action.', ': “Reschedule request”, with no field (say you are checking the free slots), and “Slot choice”, with a text field coded slot (say you are holding the slot). Your app receives agent.action, at most once a day per contact and per action.')}
+          {t(' : « Reschedule request », sans champ (dire qu’on regarde les créneaux libres), et « Slot choice », avec un champ texte codé slot (dire qu’on bloque le créneau). Votre application reçoit agent.action, une fois par jour au plus par contact et par action. L’agent doit être allumé (', ': “Reschedule request”, with no field (say you are checking the free slots), and “Slot choice”, with a text field coded slot (say you are holding the slot). Your app receives agent.action, at most once a day per contact and per action. The agent must be on (')}
+          <C>activate_agent</C>
+          {t(') et répondre pour l’espace (', ') and answer for the workspace (')}
+          <C>set_default_responder</C>
+          {t(') : sinon aucune action ne part, sans erreur.', '): otherwise no action fires, with no error.')}
         </p>
       </Section>
 
@@ -78,7 +85,10 @@ function Recette() {
         <p>
           {t('La tâche de la veille, lancée chaque soir par le planificateur de votre hébergeur. Elle envoie par ', 'The day-before job, run every evening by your host’s scheduler. It sends through ')}
           <LienDoc page="sends" ancre="envoi">POST /v1/sends</LienDoc>
-          {t(', avec une clé d’idempotence tirée du rendez-vous : relancée, elle n’envoie pas deux fois.', ', with an idempotency key taken from the appointment: run again, it does not send twice.')}
+          {t(
+            ', avec une clé d’idempotence tirée du rendez-vous et de son heure : relancée le même soir, elle n’envoie pas deux fois. Un destinataire écarté (STOP, limite de l’offre) n’est pas une erreur, il revient dans skipped avec sa raison ; une erreur sur un rendez-vous n’arrête pas les autres, et un 429 attend le délai que l’API indique.',
+            ', with an idempotency key taken from the appointment and its time: run again the same evening, it does not send twice. A recipient set aside (STOP, plan limit) is not an error, it comes back in skipped with its reason; an error on one appointment does not stop the others, and a 429 waits the delay the API gives.',
+          )}
         </p>
         <Bloc legende={cas.tache.fichier}>{cas.tache.code}</Bloc>
       </Section>
@@ -87,7 +97,10 @@ function Recette() {
         <p>
           {t('Déclarez son adresse par ', 'Declare its address with ')}<C>create_webhook_endpoint</C>{t(' ou par ', ' or with ')}
           <LienDoc page="webhook-endpoints" ancre="creer">POST /v1/webhooks</LienDoc>
-          {t(', avec les types message.received et agent.action : ils sont décochés par défaut.', ', with the types message.received and agent.action: they are unticked by default.')}
+          {t(
+            ', avec les types message.received, coché par défaut, et agent.action, décoché par défaut : cochez-le.',
+            ', with the types message.received, ticked by default, and agent.action, unticked by default: tick it.',
+          )}
         </p>
         <Bloc legende={cas.webhook.fichier}>{cas.webhook.code}</Bloc>
       </Section>

@@ -109,7 +109,15 @@
      "name": "Stripe peut-il envoyer deux fois le même événement ?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "Oui, et la clé d’idempotence tirée de la facture le couvre : dans les 24 heures, un seul message part."
+      "text": "Oui, et la clé d’idempotence tirée de la facture le couvre : dans les 24 heures, un seul message part. Et un échec de l’envoi WhatsApp ne fait jamais échouer votre webhook Stripe."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "L’utilisateur doit-il avoir accepté de recevoir des messages ?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Meta demande que la personne ait accepté d’être contactée sur WhatsApp : demandez-le à l’inscription ou dans son compte. Un utilisateur qui répond STOP ne reçoit plus rien."
      }
     }
    ]
@@ -298,15 +306,22 @@ export async function POST(req: Request) {
     const invoice = event.data.object;
     const user = await userOfCustomer(invoice.customer);
     if (user) {
-      await messagingme.POST('/v1/sends', {
-        body: {
-          target: { template: { name: 'payment_failed', language: 'en' } },
-          recipients: [{ phone: user.phone, variables: { firstName: user.firstName } }],
-          params: [{ position: 1, source: { type: 'variable', key: 'firstName' } }],
-        },
-        // Stripe may deliver the same event again: within 24 hours, one message per invoice.
-        idempotencyKey: `payment-${invoice.id}`,
-      });
+      // A failed WhatsApp send never fails the Stripe webhook: Stripe would retry it, then disable it.
+      try {
+        const send = await messagingme.POST('/v1/sends', {
+          body: {
+            target: { template: { name: 'payment_failed', language: 'en' } },
+            recipients: [{ phone: user.phone, variables: { firstName: user.firstName } }],
+            params: [{ position: 1, source: { type: 'variable', key: 'firstName' } }],
+          },
+          // Stripe may deliver the same event again: within 24 hours, one message per invoice.
+          idempotencyKey: `payment-${invoice.id}`,
+        });
+        // A refused recipient (STOP, plan limit) is not an error: it is listed in skipped, with its reason.
+        if (send.skippedTotal &gt; 0) console.warn(`payment ${invoice.id} not sent: ${send.skipped[0]?.reason}`);
+      } catch (e) {
+        console.error(`payment ${invoice.id}: WhatsApp send failed`, e);
+      }
     }
   }
   return new Response(null, { status: 200 });
@@ -330,7 +345,8 @@ export async function POST(req: Request) {
         <details><summary>Faut-il une adresse de webhook Messaging Me&nbsp;?</summary><p>Non&nbsp;: tout part du webhook Stripe que votre application a déjà, et rien ne revient vers elle.</p></details>
         <details><summary>Et si Meta reclasse le modèle en marketing&nbsp;?</summary><p>Il ne partirait plus qu’aux contacts qui ont consenti. Gardez un texte factuel&nbsp;: le paiement, la carte, l’accès.</p></details>
         <details><summary>Combien coûte une relance&nbsp;?</summary><p>La Free inclut 1&nbsp;000 modèles par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays de l’utilisateur.</p></details>
-        <details><summary>Stripe peut-il envoyer deux fois le même événement&nbsp;?</summary><p>Oui, et la clé d’idempotence tirée de la facture le couvre&nbsp;: dans les 24&nbsp;heures, un seul message part.</p></details>
+        <details><summary>Stripe peut-il envoyer deux fois le même événement&nbsp;?</summary><p>Oui, et la clé d’idempotence tirée de la facture le couvre&nbsp;: dans les 24&nbsp;heures, un seul message part. Et un échec de l’envoi WhatsApp ne fait jamais échouer votre webhook Stripe.</p></details>
+        <details><summary>L’utilisateur doit-il avoir accepté de recevoir des messages&nbsp;?</summary><p>Meta demande que la personne ait accepté d’être contactée sur WhatsApp&nbsp;: demandez-le à l’inscription ou dans son compte. Un utilisateur qui répond STOP ne reçoit plus rien.</p></details>
       </div>
     </div>
   </section>

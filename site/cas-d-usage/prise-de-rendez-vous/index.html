@@ -93,7 +93,7 @@
      "name": "Le même créneau peut-il être réservé deux fois ?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "Non : la réservation se fait une seule fois par demande (le même événement reçu deux fois ne réserve qu’une fois), et c’est votre agenda qui dit ce qui est libre."
+      "text": "C’est votre agenda qui tranche : il ne réserve qu’un créneau encore libre et proposé à ce client, deux clients pouvant choisir le même, et le même événement reçu deux fois ne réserve qu’une fois."
      }
     },
     {
@@ -109,7 +109,7 @@
      "name": "Combien ça coûte ?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "La Free inclut l’API et le serveur MCP. L’agent IA se paie sur le crédit IA prépayé, et Meta facture chaque réponse envoyée dans la fenêtre de 24 heures, selon sa grille et le pays du client."
+      "text": "La Free inclut l’API et le serveur MCP. L’agent IA se paie sur le crédit IA prépayé, et Meta facture chaque réponse envoyée dans la fenêtre de 24 heures au-delà de sa franchise mensuelle, selon sa grille et le pays du client."
      }
     }
    ]
@@ -277,7 +277,7 @@
     <div class="cadre">
       <h2 class="f-titre">Pas à pas, avec le vrai.</h2>
       <ol class="guide-etapes">
-        <li><span class="f-num">1</span><div><h3>Les deux actions de l’agent</h3><p>Claude Code les pose par <code>set_agent_action</code>&nbsp;: «&nbsp;Appointment request&nbsp;», qui note le motif et la ville, et «&nbsp;Slot choice&nbsp;», qui note le créneau choisi. L’agent les déclenche de lui-même, au fil de la conversation.</p></div></li>
+        <li><span class="f-num">1</span><div><h3>Les deux actions de l’agent</h3><p>Claude Code les pose par <code>set_agent_action</code>&nbsp;: «&nbsp;Appointment request&nbsp;», qui note le motif et la ville et se déclenche une fois la ville connue, et «&nbsp;Slot choice&nbsp;», qui note le créneau choisi. L’agent les déclenche de lui-même, au fil de la conversation.</p></div></li>
         <li><span class="f-num">2</span><div><h3>La demande arrive, signée</h3><p>Votre route, déclarée par <code>create_webhook_endpoint</code>, reçoit <code>agent.action</code> (décoché par défaut, on le coche exprès) et vérifie sa signature&nbsp;: une requête sans signature est refusée.</p></div></li>
         <li><span class="f-num">3</span><div><h3>Trois créneaux libres</h3><p>Votre application lit votre agenda près de la ville donnée et répond au client par <code>POST /v1/messages/whatsapp</code>&nbsp;: il vient d’écrire, la fenêtre de 24&nbsp;heures est ouverte, aucun modèle n’est nécessaire.</p></div></li>
         <li><span class="f-num">4</span><div><h3>Le créneau réservé</h3><p>Le client en choisit un&nbsp;; l’agent déclenche «&nbsp;Slot choice&nbsp;», et votre application réserve une seule fois par demande, puis confirme sur WhatsApp.</p></div></li>
@@ -291,7 +291,8 @@ import { messagingme } from '../../../../lib/messagingme';
 import { book, offerSlots } from '../../../../lib/calendar';
 
 // Subscribed to agent.action: the AI agent’s two actions, Appointment request (fields reason and city) and Slot
-// choice (field slot). The type is unchecked by default on a webhook address.
+// choice (field slot). The type is unchecked by default on a webhook address. An action fires once a day per
+// customer, with the fields known at that moment: its instruction tells the agent to wait for the city.
 export async function POST(req: Request) {
   // The RAW body: the signature covers its bytes.
   const body = await req.text();
@@ -308,7 +309,8 @@ export async function POST(req: Request) {
   if (action.name === 'Appointment request') text = await offerSlots(String(fields.city ?? ''), 3);
   if (action.name === 'Slot choice' &amp;&amp; fields.slot !== undefined) text = await book(event.id, String(fields.slot));
   if (text) await messagingme.POST('/v1/messages/whatsapp', { body: { contactId: contact.id, text } });
-  // Answer fast (under 10 s): a slow job runs after, otherwise the webhook is retried.
+  // The webhook waits 10 s for this answer, then retries the same event (same event.id): keep the work above
+  // short, and your calendar functions safe to run twice.
   return new Response(null, { status: 204 });
 }</code></pre>
       <p class="f-note">app/api/webhooks/messagingme/route.ts · <a href="https://console.messagingme.app/developers/api/guides/appointment-booking" data-guide="appointment-booking">tout le code dans le guide</a></p>
@@ -320,7 +322,7 @@ export async function POST(req: Request) {
       <ul class="tarif-liste cas-liste">
         <li><strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.</li>
         <li><strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse.</li>
-        <li><strong>Meta facture directement</strong> chaque réponse envoyée dans la fenêtre de 24&nbsp;heures à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.</li>
+        <li><strong>Meta facture directement</strong> chaque réponse envoyée dans la fenêtre de 24&nbsp;heures à votre entreprise, au-delà de sa franchise mensuelle, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.</li>
       </ul>
     </div>
   </section>
@@ -329,9 +331,9 @@ export async function POST(req: Request) {
       <h2 class="f-titre">Questions fréquentes.</h2>
       <div class="dev-faq">
         <details><summary>Faut-il un modèle approuvé par Meta&nbsp;?</summary><p>Non&nbsp;: le client écrit le premier, et votre application lui répond dans la fenêtre de 24&nbsp;heures que son message ouvre.</p></details>
-        <details><summary>Le même créneau peut-il être réservé deux fois&nbsp;?</summary><p>Non&nbsp;: la réservation se fait une seule fois par demande (le même événement reçu deux fois ne réserve qu’une fois), et c’est votre agenda qui dit ce qui est libre.</p></details>
+        <details><summary>Le même créneau peut-il être réservé deux fois&nbsp;?</summary><p>C’est votre agenda qui tranche&nbsp;: il ne réserve qu’un créneau encore libre et proposé à ce client, deux clients pouvant choisir le même, et le même événement reçu deux fois ne réserve qu’une fois.</p></details>
         <details><summary>Et si le client redemande le même jour&nbsp;?</summary><p>Chaque action part une fois par jour au plus, par client et par action&nbsp;: une seconde demande le même jour n’atteint pas votre application, l’agent répond seul.</p></details>
-        <details><summary>Combien ça coûte&nbsp;?</summary><p>La Free inclut l’API et le serveur MCP. L’agent IA se paie sur le crédit IA prépayé, et Meta facture chaque réponse envoyée dans la fenêtre de 24&nbsp;heures, selon sa grille et le pays du client.</p></details>
+        <details><summary>Combien ça coûte&nbsp;?</summary><p>La Free inclut l’API et le serveur MCP. L’agent IA se paie sur le crédit IA prépayé, et Meta facture chaque réponse envoyée dans la fenêtre de 24&nbsp;heures au-delà de sa franchise mensuelle, selon sa grille et le pays du client.</p></details>
       </div>
     </div>
   </section>

@@ -45,7 +45,7 @@ function Recette() {
           <C>create_template</C>
           {t(' (serveur MCP) ou par ', ' (MCP server) or with ')}
           <LienDoc page="templates" ancre="creer">POST /v1/templates</LienDoc>
-          {t(', puis attendez l’approbation de Meta, souvent en quelques minutes ; ', ', then wait for Meta’s approval, often within minutes; ')}
+          {t(', puis attendez l’approbation de Meta, souvent en quelques minutes (le code l’appelle order_shipped, en anglais : gardez ce nom et cette langue, ou changez-les dans le code) ; ', ', then wait for Meta’s approval, often within minutes (the code calls it order_shipped, in English: keep that name and language, or change them in the code); ')}
           <C>get_template_status</C>
           {t(' la confirme.', ' confirms it.')}
         </p>
@@ -88,8 +88,8 @@ function Recette() {
         <Encadre sorte="obligatoire">
           <p>
             {t(
-              'Un client qui a désactivé les confirmations de lecture dans WhatsApp n’envoie jamais message.read : sa commande reste livrée.',
-              'A customer who turned off read receipts in WhatsApp never sends message.read: their order stays delivered.',
+              'Un client qui a désactivé les confirmations de lecture dans WhatsApp n’envoie jamais message.read : sa commande reste livrée. Un accusé peut arriver en retard ou deux fois : le statut ne fait qu’avancer, un « livré » tardif n’efface pas « lu ». Pour voir un échec de remise, abonnez aussi message.failed, décoché par défaut.',
+              'A customer who turned off read receipts in WhatsApp never sends message.read: their order stays delivered. A receipt can arrive late or twice: the status only moves forward, a late “delivered” never erases “read”. To see a delivery failure, also subscribe to message.failed, unticked by default.',
             )}
           </p>
         </Encadre>

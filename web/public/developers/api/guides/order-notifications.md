@@ -16,8 +16,8 @@ _Prompt_
 Branche les notifications de commande WhatsApp dans ce projet, en suivant la recette
 https://console.messagingme.app/developers/api/guides/order-notifications.md :
 1. installe le SDK : npm install github:julienmessagingme/messagingme-sdk#v0.3.1 ;
-2. avec les outils Messaging Me, crée le modèle d’expédition (UTILITY, le prénom puis le numéro de commande, un
-   bouton URL vers notre page de suivi) ;
+2. avec les outils Messaging Me, crée le modèle d’expédition order_shipped (UTILITY, en, le prénom puis le numéro de
+   commande, un bouton URL vers notre page de suivi) ;
 3. écris lib/orders.ts relié à nos commandes (l’envoi quand une commande passe en expédiée) et la route
    app/api/webhooks/messagingme/route.ts qui marque la commande livrée puis lue ;
 4. abonne la route à message.delivered et message.read, décochés par défaut, et range la clé et le secret dans
@@ -29,7 +29,7 @@ N’invente aucune route ni aucun champ : ils sont dans https://api.messagingme.
 
 ## Le modèle d’expédition
 
-Un modèle UTILITY à deux variables (le prénom, puis le numéro de commande) et un bouton URL vers votre page de suivi. Créez-le par `create_template` (serveur MCP) ou par [POST /v1/templates](https://console.messagingme.app/developers/api/templates.md#creer), puis attendez l’approbation de Meta, souvent en quelques minutes ; `get_template_status` la confirme.
+Un modèle UTILITY à deux variables (le prénom, puis le numéro de commande) et un bouton URL vers votre page de suivi. Créez-le par `create_template` (serveur MCP) ou par [POST /v1/templates](https://console.messagingme.app/developers/api/templates.md#creer), puis attendez l’approbation de Meta, souvent en quelques minutes (le code l’appelle order_shipped, en anglais : gardez ce nom et cette langue, ou changez-les dans le code) ; `get_template_status` la confirme.
 
 > **Obligatoire**
 >
@@ -73,6 +73,7 @@ import { messagingme } from './messagingme';
 // What this case needs from your orders: Claude Code wires these two functions to your own database.
 const todo = (what: string): never => { throw new Error(`lib/orders.ts: ${what} is not connected yet`); };
 export async function saveSendId(orderId: string, sendId: string): Promise<void> { return todo('saveSendId'); }
+/** Moves the order’s WhatsApp status forward only: a late or retried "delivered" never overwrites "read". */
 export async function setWhatsappStatus(sendId: string, status: 'delivered' | 'read'): Promise<void> { return todo('setWhatsappStatus'); }
 
 // Call it when an order moves to shipped. The template order_shipped has two variables, the first name then the
@@ -90,6 +91,11 @@ export async function notifyShipped(order: { id: string; phone: string; firstNam
     // Replayed within 24 hours (the life of the key), the shipment does not send twice.
     idempotencyKey: `shipped-${order.id}`,
   });
+  // A refused recipient (STOP, plan limit) is not an error: it is listed in skipped, and nothing was sent.
+  if (send.skippedTotal > 0) {
+    console.warn(`order ${order.id} not notified: ${send.skipped[0]?.reason}`);
+    return;
+  }
   // The delivery and read receipts carry this sendId: it ties them back to the order.
   await saveSendId(order.id, send.sendId);
 }
@@ -127,7 +133,7 @@ export async function POST(req: Request) {
 
 > **Obligatoire**
 >
-> Un client qui a désactivé les confirmations de lecture dans WhatsApp n’envoie jamais message.read : sa commande reste livrée.
+> Un client qui a désactivé les confirmations de lecture dans WhatsApp n’envoie jamais message.read : sa commande reste livrée. Un accusé peut arriver en retard ou deux fois : le statut ne fait qu’avancer, un « livré » tardif n’efface pas « lu ». Pour voir un échec de remise, abonnez aussi message.failed, décoché par défaut.
 
 <a id="reponse"></a>
 

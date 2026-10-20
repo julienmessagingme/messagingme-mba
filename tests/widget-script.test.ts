@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Fastify from 'fastify';
 import type { FastifyInstance } from 'fastify';
 import { registerWidgetPublic, type WidgetPublicRouteDeps } from '../src/http/widget-public';
-import { construireScript, SCRIPT_INERTE, TEXTE_INDISPONIBLE, type ConfigScript } from '../src/widgets/script';
+import { construireScript, SCRIPT_INERTE, TEXTE_INDISPONIBLE, TEXTES_BULLE, type ConfigScript } from '../src/widgets/script';
 import { qrSvg } from '../src/widgets/qr';
 import { RateLimiter } from '../src/auth/rate-limit';
 import { modulesDeRoutes } from '../src/server';
@@ -471,7 +471,7 @@ interface Page {
   ecouteursDocument: Record<string, Array<() => void>>;
 }
 
-function executer(script: string, options: { tactile?: boolean; etatDocument?: string } = {}): Page {
+function executer(script: string, options: { tactile?: boolean; etatDocument?: string; langues?: string[] } = {}): Page {
   const body = new Noeud('body');
   const ecouteursDocument: Record<string, Array<() => void>> = {};
   const document = {
@@ -481,7 +481,10 @@ function executer(script: string, options: { tactile?: boolean; etatDocument?: s
     createElementNS: (_ns: string, tag: string) => new Noeud(tag),
     addEventListener: (type: string, f: () => void) => { (ecouteursDocument[type] ??= []).push(f); },
   };
-  const window = { matchMedia: () => ({ matches: options.tactile ?? false }) };
+  const window = {
+    matchMedia: () => ({ matches: options.tactile ?? false }),
+    ...(options.langues ? { navigator: { languages: options.langues, language: options.langues[0] } } : {}),
+  };
   // `document` et `window` sont des PARAMÈTRES : le script s'exécute sans toucher l'environnement du test.
   new Function('document', 'window', script)(document, window);
   const tous = (n: Noeud): Noeud[] => [n, ...n.enfants.flatMap(tous), ...(n.ombre ? tous(n.ombre.racine) : [])];
@@ -552,6 +555,36 @@ describe('le script exécuté', () => {
     expect(noeuds.some((n) => n.tag === 'a' || n.href !== undefined)).toBe(false);
     // Le seul contenu textuel est la feuille de style.
     expect(noeuds.filter((n) => n.textContent !== undefined).map((n) => n.tag)).toEqual(['style']);
+  });
+
+  it('🔴 parle la langue du navigateur : anglais pour un navigateur anglais, panneau, lien, aria et badge', () => {
+    const noeuds = executer(construireScript(SERVI), { langues: ['en-US', 'en'] }).noeuds();
+    expect(noeuds.find((n) => n.className === 'titre')?.textContent).toBe('Scan this code with your phone to open WhatsApp');
+    expect(noeuds.find((n) => n.className === 'qr')?.alt).toBe('WhatsApp QR code');
+    expect(noeuds.find((n) => n.className === 'web')?.textContent).toBe('Open WhatsApp on this computer');
+    expect(noeuds.find((n) => n.className === 'ligne')?.attributs['aria-label']).toBe('Chat on WhatsApp');
+    expect(noeuds.find((n) => n.className === 'badge')?.textContent).toBe('Powered by Messaging Me');
+  });
+
+  it('🔴 français pour un navigateur français, quelle que soit la région', () => {
+    for (const langues of [['fr-FR'], ['fr'], ['fr-CA', 'en']]) {
+      const noeuds = executer(construireScript(SERVI), { langues }).noeuds();
+      expect(noeuds.find((n) => n.className === 'badge')?.textContent, langues[0]).toBe('Propulsé par Messaging Me');
+      expect(noeuds.find((n) => n.className === 'web')?.textContent, langues[0]).toBe('Ouvrir WhatsApp sur cet ordinateur');
+    }
+  });
+
+  it('sans langue lisible, le français d’avant ; une autre langue, l’anglais', () => {
+    expect(executer(construireScript(SERVI)).noeuds().find((n) => n.className === 'badge')?.textContent).toBe('Propulsé par Messaging Me');
+    expect(executer(construireScript(SERVI), { langues: [] }).noeuds().find((n) => n.className === 'badge')?.textContent).toBe('Propulsé par Messaging Me');
+    expect(executer(construireScript(SERVI), { langues: ['es-ES'] }).noeuds().find((n) => n.className === 'badge')?.textContent).toBe('Powered by Messaging Me');
+  });
+
+  it('grisée en anglais : le title et l’aria-label dans la langue du navigateur', () => {
+    const bulle = executer(construireScript({ etat: 'grise', position: 'bas_droite' }), { langues: ['en-GB'] }).noeuds().find((n) => n.className === 'bulle grise')!;
+    expect(bulle.title).toBe(TEXTES_BULLE.en.indisponible);
+    expect(bulle.attributs['aria-label']).toBe(TEXTES_BULLE.en.indisponible);
+    expect(TEXTE_INDISPONIBLE).toBe(TEXTES_BULLE.fr.indisponible);
   });
 
   it('attend DOMContentLoaded quand la page se charge encore', () => {

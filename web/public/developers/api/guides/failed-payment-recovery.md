@@ -16,8 +16,8 @@ _Prompt_
 Branche la relance WhatsApp des paiements échoués dans ce projet, en suivant la recette
 https://console.messagingme.app/developers/api/guides/failed-payment-recovery.md :
 1. installe le SDK : npm install github:julienmessagingme/messagingme-sdk#v0.3.1 ;
-2. avec les outils Messaging Me, crée le modèle de paiement échoué (UTILITY, le prénom, un bouton URL vers notre
-   page de facturation) ;
+2. avec les outils Messaging Me, crée le modèle de paiement échoué payment_failed (UTILITY, en, le prénom, un bouton
+   URL vers notre page de facturation) ;
 3. écris lib/billing.ts relié à Stripe (signature vérifiée) et à nos utilisateurs, et branche l’envoi dans notre
    webhook Stripe app/api/stripe/route.ts, sur invoice.payment_failed, avec une clé d’idempotence par facture ;
 4. range les clés et les secrets dans les variables d’environnement, jamais dans le code.
@@ -28,11 +28,11 @@ N’invente aucune route ni aucun champ : ils sont dans https://api.messagingme.
 
 ## Le modèle de paiement échoué
 
-Un modèle UTILITY à une variable (le prénom) et un bouton URL vers votre page de facturation : une alerte sur le compte de l’utilisateur. Créez-le par `create_template` (serveur MCP) ou par [POST /v1/templates](https://console.messagingme.app/developers/api/templates.md#creer), puis attendez l’approbation de Meta ; `get_template_status` la confirme.
+Un modèle UTILITY à une variable (le prénom) et un bouton URL vers votre page de facturation : une alerte sur le compte de l’utilisateur. Créez-le par `create_template` (serveur MCP) ou par [POST /v1/templates](https://console.messagingme.app/developers/api/templates.md#creer), puis attendez l’approbation de Meta (le code l’appelle payment_failed, en anglais : gardez ce nom et cette langue, ou changez-les dans le code) ; `get_template_status` la confirme.
 
 > **Obligatoire**
 >
-> Gardez le texte factuel : le paiement, la carte, l’accès. Un modèle que Meta reclasse en marketing ne part plus qu’aux contacts qui ont consenti.
+> Gardez le texte factuel : le paiement, la carte, l’accès. Un modèle que Meta reclasse en marketing ne part plus qu’aux contacts qui ont consenti. Et Meta demande que l’utilisateur ait accepté d’être contacté sur WhatsApp : demandez-le à l’inscription ou dans son compte.
 
 <a id="code"></a>
 
@@ -72,7 +72,10 @@ const todo = (what: string): never => { throw new Error(`lib/billing.ts: ${what}
 
 export interface StripeInvoiceEvent { id: string; type: string; data: { object: { id: string; customer: string } } }
 
-/** Stripe’s event with its signature checked (stripe.webhooks.constructEvent and your signing secret); null if invalid. */
+/**
+ * Stripe’s event with its signature checked: stripe.webhooks.constructEvent on the RAW body (await req.text()), the
+ * stripe-signature header and your signing secret. null if invalid.
+ */
 export async function verifiedStripeEvent(req: Request): Promise<StripeInvoiceEvent | null> { return todo('verifiedStripeEvent'); }
 /** The user behind a Stripe customer, if there is one. */
 export async function userOfCustomer(customerId: string): Promise<{ phone: string; firstName: string } | null> { return todo('userOfCustomer'); }
@@ -82,7 +85,7 @@ export async function userOfCustomer(customerId: string): Promise<{ phone: strin
 
 ## Le webhook Stripe
 
-Dans le webhook Stripe que votre application a déjà, sur invoice.payment_failed. L’envoi part par [POST /v1/sends](https://console.messagingme.app/developers/api/sends.md#envoi), avec une clé d’idempotence tirée de la facture : un même événement livré deux fois dans les 24 heures n’envoie qu’un message. Aucune adresse de webhook Messaging Me n’est nécessaire.
+Dans le webhook Stripe que votre application a déjà, sur invoice.payment_failed. L’envoi part par [POST /v1/sends](https://console.messagingme.app/developers/api/sends.md#envoi), avec une clé d’idempotence tirée de la facture : un même événement livré deux fois dans les 24 heures n’envoie qu’un message. Un échec de l’envoi WhatsApp ne fait jamais échouer le webhook : il répond toujours 200 à Stripe, qui sinon le réessaierait puis le désactiverait. Aucune adresse de webhook Messaging Me n’est nécessaire.
 
 _app/api/stripe/route.ts_
 
@@ -99,15 +102,22 @@ export async function POST(req: Request) {
     const invoice = event.data.object;
     const user = await userOfCustomer(invoice.customer);
     if (user) {
-      await messagingme.POST('/v1/sends', {
-        body: {
-          target: { template: { name: 'payment_failed', language: 'en' } },
-          recipients: [{ phone: user.phone, variables: { firstName: user.firstName } }],
-          params: [{ position: 1, source: { type: 'variable', key: 'firstName' } }],
-        },
-        // Stripe may deliver the same event again: within 24 hours, one message per invoice.
-        idempotencyKey: `payment-${invoice.id}`,
-      });
+      // A failed WhatsApp send never fails the Stripe webhook: Stripe would retry it, then disable it.
+      try {
+        const send = await messagingme.POST('/v1/sends', {
+          body: {
+            target: { template: { name: 'payment_failed', language: 'en' } },
+            recipients: [{ phone: user.phone, variables: { firstName: user.firstName } }],
+            params: [{ position: 1, source: { type: 'variable', key: 'firstName' } }],
+          },
+          // Stripe may deliver the same event again: within 24 hours, one message per invoice.
+          idempotencyKey: `payment-${invoice.id}`,
+        });
+        // A refused recipient (STOP, plan limit) is not an error: it is listed in skipped, with its reason.
+        if (send.skippedTotal > 0) console.warn(`payment ${invoice.id} not sent: ${send.skipped[0]?.reason}`);
+      } catch (e) {
+        console.error(`payment ${invoice.id}: WhatsApp send failed`, e);
+      }
     }
   }
   return new Response(null, { status: 200 });

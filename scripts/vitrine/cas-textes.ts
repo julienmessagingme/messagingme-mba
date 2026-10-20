@@ -147,6 +147,12 @@ function schemaRelance(l: Langue): { horizontal: string; vertical: string } {
     : { titre: 'The failed payment, from Stripe to the WhatsApp message', app: 1, noeuds: [['Stripe', 'invoice.payment_failed'], ['Your app', 'its Stripe webhook'], ['On their WhatsApp', 'the billing link']], fleches: [['the payment fails', ''], ['one key per invoice', 'POST /v1/sends']] });
 }
 
+function schemaBulle(l: Langue): { horizontal: string; vertical: string } {
+  return schemaLigne(l === 'fr'
+    ? { titre: 'De la bulle de votre site à la réponse de votre agent', app: 0, noeuds: [['Votre site', 'la bulle WhatsApp'], ['Sur son WhatsApp', 'le message déjà écrit'], ['Votre agent IA', 'répond avec votre site']], fleches: [['il touche la bulle', ''], ['il l’envoie', '']] }
+    : { titre: 'From your site’s bubble to your agent’s answer', app: 0, noeuds: [['Your site', 'the WhatsApp bubble'], ['On their WhatsApp', 'the message pre-written'], ['Your AI agent', 'answers from your site']], fleches: [['they tap the bubble', ''], ['they send it', '']] });
+}
+
 function schemaFourche(T: TextesFourche): { horizontal: string; vertical: string } {
   // Les deux suites partent d'une fourche à angles arrondis : chaque étiquette tient sur un segment droit, aucun trait
   // ne la traverse.
@@ -189,7 +195,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       schema: { titre: 'Comment ça circule.', legende: 'Le client écrit sur WhatsApp. L’agent IA note le motif et la ville, et déclenche agent.action vers votre app, qui lit votre agenda et répond par POST /v1/messages/whatsapp avec trois créneaux, puis avec la confirmation.', ...schemaRendezVous('fr') },
       etapes: [
-        { titre: 'Les deux actions de l’agent', texte: 'Claude Code les pose par <code>set_agent_action</code>&nbsp;: «&nbsp;Appointment request&nbsp;», qui note le motif et la ville, et «&nbsp;Slot choice&nbsp;», qui note le créneau choisi. L’agent les déclenche de lui-même, au fil de la conversation.' },
+        { titre: 'Les deux actions de l’agent', texte: 'Claude Code les pose par <code>set_agent_action</code>&nbsp;: «&nbsp;Appointment request&nbsp;», qui note le motif et la ville et se déclenche une fois la ville connue, et «&nbsp;Slot choice&nbsp;», qui note le créneau choisi. L’agent les déclenche de lui-même, au fil de la conversation.' },
         { titre: 'La demande arrive, signée', texte: 'Votre route, déclarée par <code>create_webhook_endpoint</code>, reçoit <code>agent.action</code> (décoché par défaut, on le coche exprès) et vérifie sa signature&nbsp;: une requête sans signature est refusée.' },
         { titre: 'Trois créneaux libres', texte: 'Votre application lit votre agenda près de la ville donnée et répond au client par <code>POST /v1/messages/whatsapp</code>&nbsp;: il vient d’écrire, la fenêtre de 24&nbsp;heures est ouverte, aucun modèle n’est nécessaire.' },
         { titre: 'Le créneau réservé', texte: 'Le client en choisit un&nbsp;; l’agent déclenche «&nbsp;Slot choice&nbsp;», et votre application réserve une seule fois par demande, puis confirme sur WhatsApp.' },
@@ -203,13 +209,13 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       paie: [
         '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
         '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse.',
-        '<strong>Meta facture directement</strong> chaque réponse envoyée dans la fenêtre de 24&nbsp;heures à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.',
+        '<strong>Meta facture directement</strong> chaque réponse envoyée dans la fenêtre de 24&nbsp;heures à votre entreprise, au-delà de sa franchise mensuelle, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.',
       ],
       faq: [
         { question: 'Faut-il un modèle approuvé par Meta&nbsp;?', reponse: 'Non&nbsp;: le client écrit le premier, et votre application lui répond dans la fenêtre de 24&nbsp;heures que son message ouvre.' },
-        { question: 'Le même créneau peut-il être réservé deux fois&nbsp;?', reponse: 'Non&nbsp;: la réservation se fait une seule fois par demande (le même événement reçu deux fois ne réserve qu’une fois), et c’est votre agenda qui dit ce qui est libre.' },
+        { question: 'Le même créneau peut-il être réservé deux fois&nbsp;?', reponse: 'C’est votre agenda qui tranche&nbsp;: il ne réserve qu’un créneau encore libre et proposé à ce client, deux clients pouvant choisir le même, et le même événement reçu deux fois ne réserve qu’une fois.' },
         { question: 'Et si le client redemande le même jour&nbsp;?', reponse: 'Chaque action part une fois par jour au plus, par client et par action&nbsp;: une seconde demande le même jour n’atteint pas votre application, l’agent répond seul.' },
-        { question: 'Combien ça coûte&nbsp;?', reponse: 'La Free inclut l’API et le serveur MCP. L’agent IA se paie sur le crédit IA prépayé, et Meta facture chaque réponse envoyée dans la fenêtre de 24&nbsp;heures, selon sa grille et le pays du client.' },
+        { question: 'Combien ça coûte&nbsp;?', reponse: 'La Free inclut l’API et le serveur MCP. L’agent IA se paie sur le crédit IA prépayé, et Meta facture chaque réponse envoyée dans la fenêtre de 24&nbsp;heures au-delà de sa franchise mensuelle, selon sa grille et le pays du client.' },
       ],
       appel: { titre: 'Ouvrez la prise de rendez-vous aujourd’hui.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },
       liens: [['/developpeurs/', 'Démarrer avec Claude Code'], ['/tarifs/', 'Les tarifs'], ['/cas-d-usage/', 'Tous les cas d’usage']],
@@ -229,7 +235,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       schema: { titre: 'How it flows.', legende: 'The customer writes on WhatsApp. The AI agent notes the reason and the city, and triggers agent.action to your app, which reads your calendar and answers with POST /v1/messages/whatsapp with three slots, then with the confirmation.', ...schemaRendezVous('en') },
       etapes: [
-        { titre: 'The agent’s two actions', texte: 'Claude Code sets them with <code>set_agent_action</code>: “Appointment request”, which notes the reason and the city, and “Slot choice”, which notes the slot picked. The agent triggers them on its own, as the conversation goes.' },
+        { titre: 'The agent’s two actions', texte: 'Claude Code sets them with <code>set_agent_action</code>: “Appointment request”, which notes the reason and the city and fires once the city is known, and “Slot choice”, which notes the slot picked. The agent triggers them on its own, as the conversation goes.' },
         { titre: 'The request arrives, signed', texte: 'Your route, declared with <code>create_webhook_endpoint</code>, receives <code>agent.action</code> (unchecked by default, you tick it on purpose) and checks its signature: a request without a signature is refused.' },
         { titre: 'Three free slots', texte: 'Your app reads your calendar near the city given and answers the customer with <code>POST /v1/messages/whatsapp</code>: they just wrote, the 24-hour window is open, no template is needed.' },
         { titre: 'The slot booked', texte: 'The customer picks one; the agent triggers “Slot choice”, and your app books once per request, then confirms on WhatsApp.' },
@@ -243,13 +249,13 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       paie: [
         '<strong>The Free plan is enough to start:</strong> <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included; beyond that, Pro.',
         '<strong>The AI agent</strong> is paid from the prepaid AI credit, per answer.',
-        '<strong>Meta bills your business directly</strong> for each reply sent in the 24-hour window, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the customer’s country.',
+        '<strong>Meta bills your business directly</strong> for each reply sent in the 24-hour window, beyond its monthly free tier, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the customer’s country.',
       ],
       faq: [
         { question: 'Is a template approved by Meta needed?', reponse: 'No: the customer writes first, and your app answers within the 24-hour window their message opens.' },
-        { question: 'Can the same slot be booked twice?', reponse: 'No: booking happens once per request (the same event received twice books once), and your calendar says what is free.' },
+        { question: 'Can the same slot be booked twice?', reponse: 'Your calendar decides: it books only a slot still free and offered to this customer, since two customers can pick the same, and the same event received twice books once.' },
         { question: 'What if the customer asks again the same day?', reponse: 'Each action fires at most once a day, per customer and per action: a second request the same day does not reach your app, the agent answers on its own.' },
-        { question: 'How much does it cost?', reponse: 'Free includes the API and the MCP server. The AI agent is paid from the prepaid AI credit, and Meta bills each reply sent in the 24-hour window, according to its rate card and the customer’s country.' },
+        { question: 'How much does it cost?', reponse: 'Free includes the API and the MCP server. The AI agent is paid from the prepaid AI credit, and Meta bills each reply sent in the 24-hour window beyond its monthly free tier, according to its rate card and the customer’s country.' },
       ],
       appel: { titre: 'Open appointment booking today.', texte: 'The plugin in two commands, then the sentence above in Claude Code. No account to create.' },
       liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/use-cases/', 'All use cases']],
@@ -337,6 +343,88 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/use-cases/', 'All use cases']],
     },
   },
+  'bulle-lovable': {
+    fr: {
+      titre: 'Bulle WhatsApp sur un site Lovable · Messaging Me',
+      description: 'Une bulle WhatsApp sur votre site Lovable, et un agent IA qui répond avec votre contenu : posés depuis Claude Code, en une phrase.',
+      resume: 'Une bulle WhatsApp sur votre site, et un agent IA qui répond avec votre contenu.',
+      menu: 'Une bulle et un agent sur votre site',
+      icone: 'i-whatsapp',
+      h1: 'Une bulle WhatsApp sur votre site Lovable, et un agent qui répond avec votre contenu.',
+      chapeau: 'Une phrase dans Claude Code, dans le dossier de votre site&nbsp;: il crée l’agent, lui fait lire vos pages, l’allume et colle la bulle. Vos visiteurs écrivent sur WhatsApp, l’agent leur répond, jour et nuit.',
+      film: {
+        titre: 'Le site, la bulle, la réponse : 38 secondes.',
+        texte: 'De la demande dans Claude Code à la réponse de l’agent, sur une vraie conversation WhatsApp.',
+        aria: 'Film : une bulle WhatsApp et son agent sur un site, avec Messaging Me', duree: 'PT38S', publie: '2026-10-21T09:00:00+02:00',
+      },
+      schema: { titre: 'Comment ça circule.', legende: 'Le visiteur touche la bulle de votre site, WhatsApp s’ouvre avec le message déjà écrit, il l’envoie, et votre agent IA lui répond avec ce que dit votre site.', ...schemaBulle('fr') },
+      etapes: [
+        { titre: 'L’agent qui connaît votre site', texte: 'Claude Code crée l’agent par <code>create_agent</code>, puis lui fait lire les pages de votre site par <code>preview_site</code> et <code>import_site</code>&nbsp;: les cours, le planning, les tarifs deviennent sa connaissance.' },
+        { titre: 'Il répond pour vous', texte: '<code>activate_agent</code> l’allume et <code>set_default_responder</code> lui confie les conversations&nbsp;: il répond à partir de votre site, et renvoie vers vos pages.' },
+        { titre: 'La bulle', texte: '<code>create_widget</code> crée la bulle et son message déjà écrit, et Claude Code colle sa balise avant la fin de votre page. Sur un téléphone, elle ouvre WhatsApp&nbsp;; sur un ordinateur, un QR code.' },
+        { titre: 'Le visiteur écrit, l’agent répond', texte: 'Le visiteur envoie le message&nbsp;: c’est lui qui écrit le premier, donc aucun modèle n’est nécessaire. L’agent lui répond, jour et nuit.' },
+      ],
+      invite: {
+        titre: 'Ce que vous tapez dans Claude Code',
+        texte: 'Le plugin installé, une phrase suffit, dans le dossier de votre site&nbsp;: Claude Code crée l’agent, la bulle, et colle la balise.',
+        phrase: '/messagingme:demarrer mets une bulle whatsapp sur studio-lumen.fr (index.html), avec un agent qui répond aux visiteurs à partir du site : cours, planning, tarifs',
+      },
+      extrait: { titre: 'La balise que Claude Code colle dans votre page', partie: 'balise' },
+      paie: [
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris, avec la mention «&nbsp;Propulsé par Messaging Me&nbsp;» sous la bulle&nbsp;; le Pro la retire.',
+        '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse.',
+        '<strong>Meta facture directement</strong> chaque réponse envoyée dans la fenêtre de 24&nbsp;heures à votre entreprise, au-delà de sa franchise mensuelle, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du visiteur.',
+      ],
+      faq: [
+        { question: 'Et sur un site qui n’est pas fait avec Lovable&nbsp;?', reponse: 'Ça marche pareil&nbsp;: c’est une balise à coller dans la page, sur tout site dont vous pouvez modifier le HTML.' },
+        { question: 'Faut-il un modèle approuvé par Meta&nbsp;?', reponse: 'Non&nbsp;: le visiteur écrit le premier, et l’agent répond dans la fenêtre de 24&nbsp;heures que son message ouvre.' },
+        { question: 'La bulle parle-t-elle anglais&nbsp;?', reponse: 'Elle parle la langue du navigateur du visiteur, le français ou l’anglais&nbsp;; son libellé reste celui que vous écrivez.' },
+        { question: 'La bulle ralentit-elle mon site&nbsp;?', reponse: 'Non&nbsp;: la balise se charge sans bloquer la page, et si notre service ne répond pas, la bulle n’apparaît simplement pas.' },
+      ],
+      appel: { titre: 'Mettez votre site sur WhatsApp aujourd’hui.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },
+      liens: [['/developpeurs/', 'Démarrer avec Claude Code'], ['/tarifs/', 'Les tarifs'], ['/cas-d-usage/', 'Tous les cas d’usage']],
+    },
+    en: {
+      titre: 'WhatsApp bubble on a Lovable site · Messaging Me',
+      description: 'A WhatsApp bubble on your Lovable site, and an AI agent that answers from your content: set up from Claude Code, in one sentence.',
+      resume: 'A WhatsApp bubble on your site, and an AI agent that answers from your content.',
+      menu: 'A bubble and an agent on your site',
+      icone: 'i-whatsapp',
+      h1: 'A WhatsApp bubble on your Lovable site, and an agent that answers from your content.',
+      chapeau: 'One sentence in Claude Code, in your site’s folder: it creates the agent, has it read your pages, turns it on and pastes the bubble. Your visitors write on WhatsApp, the agent answers them, day and night.',
+      film: {
+        titre: 'The site, the bubble, the answer: 38 seconds.',
+        texte: 'From the request in Claude Code to the agent’s answer, on a real WhatsApp conversation.',
+        aria: 'Film: a WhatsApp bubble and its agent on a website, with Messaging Me', duree: 'PT38S', publie: '2026-10-21T09:00:00+02:00',
+      },
+      schema: { titre: 'How it flows.', legende: 'The visitor taps your site’s bubble, WhatsApp opens with the message pre-written, they send it, and your AI agent answers with what your site says.', ...schemaBulle('en') },
+      etapes: [
+        { titre: 'The agent that knows your site', texte: 'Claude Code creates the agent with <code>create_agent</code>, then has it read your site’s pages with <code>preview_site</code> and <code>import_site</code>: the classes, the schedule, the pricing become its knowledge.' },
+        { titre: 'It answers for you', texte: '<code>activate_agent</code> turns it on and <code>set_default_responder</code> hands it the conversations: it answers from your site, and points to your pages.' },
+        { titre: 'The bubble', texte: '<code>create_widget</code> creates the bubble and its pre-written message, and Claude Code pastes its tag before the end of your page. On a phone, it opens WhatsApp; on a computer, a QR code.' },
+        { titre: 'The visitor writes, the agent answers', texte: 'The visitor sends the message: they write first, so no template is needed. The agent answers them, day and night.' },
+      ],
+      invite: {
+        titre: 'What you type in Claude Code',
+        texte: 'With the plugin installed, one sentence is enough, in your site’s folder: Claude Code creates the agent, the bubble, and pastes the tag.',
+        phrase: '/messagingme:demarrer put a whatsapp bubble on lumenstudio.com (index.html), with an agent that answers visitors from the website: classes, schedule, pricing',
+      },
+      extrait: { titre: 'The tag Claude Code pastes into your page', partie: 'balise' },
+      paie: [
+        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included, with “Powered by Messaging Me” under the bubble; Pro removes it.',
+        '<strong>The AI agent</strong> is paid from the prepaid AI credit, per answer.',
+        '<strong>Meta bills your business directly</strong> for each reply sent in the 24-hour window, beyond its monthly free tier, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the visitor’s country.',
+      ],
+      faq: [
+        { question: 'What about a site not made with Lovable?', reponse: 'It works the same: it is a tag to paste into the page, on any site whose HTML you can edit.' },
+        { question: 'Is a template approved by Meta needed?', reponse: 'No: the visitor writes first, and the agent answers within the 24-hour window their message opens.' },
+        { question: 'Does the bubble speak English?', reponse: 'It speaks the language of the visitor’s browser, French or English; its label stays the one you write.' },
+        { question: 'Does the bubble slow my site down?', reponse: 'No: the tag loads without blocking the page, and if our service does not answer, the bubble simply does not appear.' },
+      ],
+      appel: { titre: 'Put your site on WhatsApp today.', texte: 'The plugin in two commands, then the sentence above in Claude Code. No account to create.' },
+      liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/use-cases/', 'All use cases']],
+    },
+  },
   accueil: {
     fr: {
       titre: 'Accueil des utilisateurs sur WhatsApp · Messaging Me',
@@ -370,7 +458,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       ],
       faq: [
         { question: 'Pourquoi en marketing, et pas en utilitaire&nbsp;?', reponse: 'Meta classe en marketing tout modèle qui invite à utiliser le produit, et en utilitaire une alerte sur le compte, comme un paiement échoué. Un modèle déclaré utilitaire avec un texte marketing est reclassé par Meta.' },
-        { question: 'Et l’utilisateur qui n’a pas coché la case&nbsp;?', reponse: 'Il ne reçoit rien&nbsp;: votre code ne l’envoie pas, et l’API refuserait un modèle marketing sans consentement.' },
+        { question: 'Et l’utilisateur qui n’a pas coché la case&nbsp;?', reponse: 'Il ne reçoit rien&nbsp;: votre code ne l’envoie pas, et l’API l’écarterait de toute façon, un modèle marketing ne partant qu’à qui a consenti.' },
         { question: 'Combien coûte une bienvenue&nbsp;?', reponse: 'La Free inclut 1&nbsp;000 modèles par mois. Meta facture chaque modèle marketing à votre entreprise, selon sa grille et le pays de l’utilisateur.' },
         { question: 'Peut-il ne plus rien recevoir&nbsp;?', reponse: 'Oui&nbsp;: un utilisateur qui répond STOP ne reçoit plus rien, et son refus est noté sur le contact.' },
       ],
@@ -409,7 +497,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       ],
       faq: [
         { question: 'Why marketing, not utility?', reponse: 'Meta classifies as marketing any template that invites people to use the product, and as utility an alert on the account, like a failed payment. A template declared utility with a marketing text is reclassified by Meta.' },
-        { question: 'What about the user who did not tick the box?', reponse: 'They receive nothing: your code does not send it, and the API would refuse a marketing template without consent.' },
+        { question: 'What about the user who did not tick the box?', reponse: 'They receive nothing: your code does not send it, and the API would set them aside anyway, since a marketing template only goes to those who consented.' },
         { question: 'How much does a welcome cost?', reponse: 'Free includes 1,000 templates a month. Meta bills each marketing template to your business, according to its rate card and the user’s country.' },
         { question: 'Can they stop receiving messages?', reponse: 'Yes: a user who replies STOP receives nothing more, and their refusal is recorded on the contact.' },
       ],
@@ -452,7 +540,8 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         { question: 'Faut-il une adresse de webhook Messaging Me&nbsp;?', reponse: 'Non&nbsp;: tout part du webhook Stripe que votre application a déjà, et rien ne revient vers elle.' },
         { question: 'Et si Meta reclasse le modèle en marketing&nbsp;?', reponse: 'Il ne partirait plus qu’aux contacts qui ont consenti. Gardez un texte factuel&nbsp;: le paiement, la carte, l’accès.' },
         { question: 'Combien coûte une relance&nbsp;?', reponse: 'La Free inclut 1&nbsp;000 modèles par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays de l’utilisateur.' },
-        { question: 'Stripe peut-il envoyer deux fois le même événement&nbsp;?', reponse: 'Oui, et la clé d’idempotence tirée de la facture le couvre&nbsp;: dans les 24&nbsp;heures, un seul message part.' },
+        { question: 'Stripe peut-il envoyer deux fois le même événement&nbsp;?', reponse: 'Oui, et la clé d’idempotence tirée de la facture le couvre&nbsp;: dans les 24&nbsp;heures, un seul message part. Et un échec de l’envoi WhatsApp ne fait jamais échouer votre webhook Stripe.' },
+        { question: 'L’utilisateur doit-il avoir accepté de recevoir des messages&nbsp;?', reponse: 'Meta demande que la personne ait accepté d’être contactée sur WhatsApp&nbsp;: demandez-le à l’inscription ou dans son compte. Un utilisateur qui répond STOP ne reçoit plus rien.' },
       ],
       appel: { titre: 'Relancez vos paiements échoués aujourd’hui.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },
       liens: [['/developpeurs/', 'Démarrer avec Claude Code'], ['/tarifs/', 'Les tarifs'], ['/cas-d-usage/', 'Tous les cas d’usage']],
@@ -491,7 +580,8 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         { question: 'Is a Messaging Me webhook address needed?', reponse: 'No: everything starts from the Stripe webhook your app already has, and nothing comes back to it.' },
         { question: 'What if Meta reclassifies the template as marketing?', reponse: 'It would then only go to contacts who consented. Keep a factual text: the payment, the card, the access.' },
         { question: 'How much does a recovery message cost?', reponse: 'Free includes 1,000 templates a month. Meta bills each utility template to your business, according to its rate card and the user’s country.' },
-        { question: 'Can Stripe send the same event twice?', reponse: 'Yes, and the idempotency key taken from the invoice covers it: within 24 hours, one message goes out.' },
+        { question: 'Can Stripe send the same event twice?', reponse: 'Yes, and the idempotency key taken from the invoice covers it: within 24 hours, one message goes out. And a failed WhatsApp send never fails your Stripe webhook.' },
+        { question: 'Must the user have agreed to receive messages?', reponse: 'Meta asks that the person agreed to be contacted on WhatsApp: ask for it at sign-up or in their account. A user who replies STOP receives nothing more.' },
       ],
       appel: { titre: 'Recover your failed payments today.', texte: 'The plugin in two commands, then the sentence above in Claude Code. No account to create.' },
       liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/use-cases/', 'All use cases']],

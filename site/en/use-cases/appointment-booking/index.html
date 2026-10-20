@@ -93,7 +93,7 @@
      "name": "Can the same slot be booked twice?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "No: booking happens once per request (the same event received twice books once), and your calendar says what is free."
+      "text": "Your calendar decides: it books only a slot still free and offered to this customer, since two customers can pick the same, and the same event received twice books once."
      }
     },
     {
@@ -109,7 +109,7 @@
      "name": "How much does it cost?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "Free includes the API and the MCP server. The AI agent is paid from the prepaid AI credit, and Meta bills each reply sent in the 24-hour window, according to its rate card and the customer’s country."
+      "text": "Free includes the API and the MCP server. The AI agent is paid from the prepaid AI credit, and Meta bills each reply sent in the 24-hour window beyond its monthly free tier, according to its rate card and the customer’s country."
      }
     }
    ]
@@ -277,7 +277,7 @@
     <div class="cadre">
       <h2 class="f-titre">Step by step, for real.</h2>
       <ol class="guide-etapes">
-        <li><span class="f-num">1</span><div><h3>The agent’s two actions</h3><p>Claude Code sets them with <code>set_agent_action</code>: “Appointment request”, which notes the reason and the city, and “Slot choice”, which notes the slot picked. The agent triggers them on its own, as the conversation goes.</p></div></li>
+        <li><span class="f-num">1</span><div><h3>The agent’s two actions</h3><p>Claude Code sets them with <code>set_agent_action</code>: “Appointment request”, which notes the reason and the city and fires once the city is known, and “Slot choice”, which notes the slot picked. The agent triggers them on its own, as the conversation goes.</p></div></li>
         <li><span class="f-num">2</span><div><h3>The request arrives, signed</h3><p>Your route, declared with <code>create_webhook_endpoint</code>, receives <code>agent.action</code> (unchecked by default, you tick it on purpose) and checks its signature: a request without a signature is refused.</p></div></li>
         <li><span class="f-num">3</span><div><h3>Three free slots</h3><p>Your app reads your calendar near the city given and answers the customer with <code>POST /v1/messages/whatsapp</code>: they just wrote, the 24-hour window is open, no template is needed.</p></div></li>
         <li><span class="f-num">4</span><div><h3>The slot booked</h3><p>The customer picks one; the agent triggers “Slot choice”, and your app books once per request, then confirms on WhatsApp.</p></div></li>
@@ -291,7 +291,8 @@ import { messagingme } from '../../../../lib/messagingme';
 import { book, offerSlots } from '../../../../lib/calendar';
 
 // Subscribed to agent.action: the AI agent’s two actions, Appointment request (fields reason and city) and Slot
-// choice (field slot). The type is unchecked by default on a webhook address.
+// choice (field slot). The type is unchecked by default on a webhook address. An action fires once a day per
+// customer, with the fields known at that moment: its instruction tells the agent to wait for the city.
 export async function POST(req: Request) {
   // The RAW body: the signature covers its bytes.
   const body = await req.text();
@@ -308,7 +309,8 @@ export async function POST(req: Request) {
   if (action.name === 'Appointment request') text = await offerSlots(String(fields.city ?? ''), 3);
   if (action.name === 'Slot choice' &amp;&amp; fields.slot !== undefined) text = await book(event.id, String(fields.slot));
   if (text) await messagingme.POST('/v1/messages/whatsapp', { body: { contactId: contact.id, text } });
-  // Answer fast (under 10 s): a slow job runs after, otherwise the webhook is retried.
+  // The webhook waits 10 s for this answer, then retries the same event (same event.id): keep the work above
+  // short, and your calendar functions safe to run twice.
   return new Response(null, { status: 204 });
 }</code></pre>
       <p class="f-note">app/api/webhooks/messagingme/route.ts · <a href="https://console.messagingme.app/developers/api/guides/appointment-booking?lang=en" data-guide="appointment-booking">all the code in the guide</a></p>
@@ -320,7 +322,7 @@ export async function POST(req: Request) {
       <ul class="tarif-liste cas-liste">
         <li><strong>The Free plan is enough to start:</strong> <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included; beyond that, Pro.</li>
         <li><strong>The AI agent</strong> is paid from the prepaid AI credit, per answer.</li>
-        <li><strong>Meta bills your business directly</strong> for each reply sent in the 24-hour window, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the customer’s country.</li>
+        <li><strong>Meta bills your business directly</strong> for each reply sent in the 24-hour window, beyond its monthly free tier, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the customer’s country.</li>
       </ul>
     </div>
   </section>
@@ -329,9 +331,9 @@ export async function POST(req: Request) {
       <h2 class="f-titre">Frequently asked questions.</h2>
       <div class="dev-faq">
         <details><summary>Is a template approved by Meta needed?</summary><p>No: the customer writes first, and your app answers within the 24-hour window their message opens.</p></details>
-        <details><summary>Can the same slot be booked twice?</summary><p>No: booking happens once per request (the same event received twice books once), and your calendar says what is free.</p></details>
+        <details><summary>Can the same slot be booked twice?</summary><p>Your calendar decides: it books only a slot still free and offered to this customer, since two customers can pick the same, and the same event received twice books once.</p></details>
         <details><summary>What if the customer asks again the same day?</summary><p>Each action fires at most once a day, per customer and per action: a second request the same day does not reach your app, the agent answers on its own.</p></details>
-        <details><summary>How much does it cost?</summary><p>Free includes the API and the MCP server. The AI agent is paid from the prepaid AI credit, and Meta bills each reply sent in the 24-hour window, according to its rate card and the customer’s country.</p></details>
+        <details><summary>How much does it cost?</summary><p>Free includes the API and the MCP server. The AI agent is paid from the prepaid AI credit, and Meta bills each reply sent in the 24-hour window beyond its monthly free tier, according to its rate card and the customer’s country.</p></details>
       </div>
     </div>
   </section>

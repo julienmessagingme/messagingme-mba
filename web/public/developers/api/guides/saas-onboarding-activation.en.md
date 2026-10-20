@@ -16,8 +16,8 @@ _Prompt_
 Add the WhatsApp welcome for new users to this project, following the recipe
 https://console.messagingme.app/developers/api/guides/saas-onboarding-activation.en.md:
 1. install the SDK: npm install github:julienmessagingme/messagingme-sdk#v0.3.1;
-2. with the Messaging Me tools, create the welcome template (MARKETING, the first name, a URL button to the page
-   that gets the user started);
+2. with the Messaging Me tools, create the welcome template welcome (MARKETING, en, the first name, a URL button to
+   the page that gets the user started);
 3. add to the sign-up form a “Get my getting-started tips on WhatsApp” box, unticked by default, and write
    app/signup.ts that only sends to those who ticked it, with consent opted_in;
 4. keep the key in environment variables, never in the code.
@@ -28,11 +28,11 @@ Do not invent any route or field: they are in https://api.messagingme.app/openap
 
 ## The welcome template
 
-A MARKETING template with one variable (the first name) and a URL button to the page that gets the user started. Create it with `create_template` (MCP server) or with [POST /v1/templates](https://console.messagingme.app/developers/api/templates.en.md#creer), then wait for Meta’s approval; `get_template_status` confirms it.
+A MARKETING template with one variable (the first name) and a URL button to the page that gets the user started. Create it with `create_template` (MCP server) or with [POST /v1/templates](https://console.messagingme.app/developers/api/templates.en.md#creer), then wait for Meta’s approval (the code calls it welcome, in English: keep that name and language, or change them in the code); `get_template_status` confirms it.
 
 > **Required**
 >
-> A welcome that invites people to use the product is marketing for Meta, not utility. A marketing template only goes to a contact who consented: without the ticked box, the send is refused (no_consent).
+> A welcome that invites people to use the product is marketing for Meta, not utility. A marketing template only goes to a contact who consented: without the ticked box, the recipient is set aside, and comes back in skipped with the reason no_consent.
 
 <a id="consentement"></a>
 
@@ -80,7 +80,7 @@ import { messagingme } from '../lib/messagingme';
 // button to the page that creates the first schedule.
 export async function sendWelcome(user: { id: string; phone: string; firstName: string; whatsappOptIn: boolean }): Promise<void> {
   if (!user.whatsappOptIn) return;
-  await messagingme.POST('/v1/sends', {
+  const send = await messagingme.POST('/v1/sends', {
     body: {
       target: { template: { name: 'welcome', language: 'en' } },
       recipients: [{
@@ -95,6 +95,8 @@ export async function sendWelcome(user: { id: string; phone: string; firstName: 
     // Replayed within 24 hours (the life of the key), the welcome does not send twice.
     idempotencyKey: `welcome-${user.id}`,
   });
+  // A refused recipient (STOP, no consent, plan limit) is not an error: it is listed in skipped, with its reason.
+  if (send.skippedTotal > 0) console.warn(`welcome ${user.id} not sent: ${send.skipped[0]?.reason}`);
 }
 ```
 

@@ -4387,7 +4387,10 @@ bulle n'apparaît simplement pas. Le QR code et le lien WhatsApp de la bulle son
 
 **L'apparence est bornée** : une couleur, un des quatre coins, un libellé court à côté de la bulle, un avatar (une
 image en https). Pas de style libre. « Propulsé par Messaging Me » s'affiche sous la bulle ; il ne se retire pas depuis
-la console, il tient à l'offre.
+la console, il tient à l'offre. **La bulle parle la langue du navigateur du visiteur** (dans le code le 2026-10-20, en ligne au prochain déploiement
+de l'API) : français pour un
+navigateur français, anglais pour toute autre langue (« Powered by Messaging Me », le panneau du QR code, les textes
+lus par un lecteur d'écran) ; le libellé reste celui que le client a écrit.
 
 **Le message pré-rempli dit d'où vient la conversation.** Chaque arrivée par un widget porte une étiquette
 `widget-<code>` sur le contact, qui ne change pas quand le widget est renommé. D'où quatre règles, vérifiées à

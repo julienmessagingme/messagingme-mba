@@ -10,6 +10,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { adresseDuScript, baliseDuScript } from '../../src/widgets/adresses';
 import { EXEMPLES_CAS, type ExempleCode } from '../../web/lib/exemples-code';
 import { ENTREES, type EntreeVitrine } from '../../web/lib/registre-vitrine';
 import { TEXTES_CAS, TEXTES_CARREFOUR, type Langue, type TexteCas } from './cas-textes';
@@ -74,9 +75,19 @@ const ACCUEIL: Record<Langue, [string, string]> = { fr: ['Accueil', '/'], en: ['
 export const adresseGuide = (e: EntreeVitrine, langue: Langue): string | null =>
   e.guide ? `${CONSOLE}/developers/api/guides/${e.guide}${langue === 'en' ? '?lang=en' : ''}` : null;
 
-/** L'extrait de code d'une page : une partie de `EXEMPLES_CAS`, telle quelle. */
+/**
+ * Les extraits des cas qui passent par la console, sans code applicatif : la balise du widget, fabriquée par les
+ * fonctions mêmes qui la donnent au client (`src/widgets/adresses.ts`), avec le code du widget du film.
+ */
+const EXTRAITS_CONSOLE: Readonly<Record<string, Readonly<Record<string, ExempleCode>>>> = {
+  'bulle-lovable': {
+    balise: { fichier: 'index.html', code: baliseDuScript(adresseDuScript('https://api.messagingme.app', 'h4x9k2m7q3vb')) },
+  },
+};
+
+/** L'extrait de code d'une page : une partie de `EXEMPLES_CAS` (compilée), ou d'`EXTRAITS_CONSOLE`, telle quelle. */
 export function extraitDe(cle: string, partie: string): ExempleCode {
-  const cas = (EXEMPLES_CAS as Record<string, Record<string, ExempleCode>>)[cle];
+  const cas = (EXEMPLES_CAS as Record<string, Record<string, ExempleCode>>)[cle] ?? EXTRAITS_CONSOLE[cle];
   const ex = cas?.[partie];
   if (!ex) throw new Error(`extrait absent : cas.${cle}.${partie}`);
   return ex;

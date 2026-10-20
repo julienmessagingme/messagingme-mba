@@ -17,5 +17,8 @@ export async function lastReminder(phone: string): Promise<Appointment | null> {
 export async function markConfirmed(appointment: Appointment): Promise<void> { return todo('markConfirmed'); }
 /** A few free slots, written as the WhatsApp message that offers them. */
 export async function freeSlots(appointment: Appointment, count: number): Promise<string> { return todo('freeSlots'); }
-/** Moves the appointment to the chosen slot (twice the same slot moves it once), and returns the confirmation. */
+/**
+ * Moves the appointment to the chosen slot and returns the confirmation. `slot` is the AI agent’s reading of the
+ * customer’s words: match it against the slots offered, move only to one still free, otherwise ask again.
+ */
 export async function move(appointment: Appointment, slot: string): Promise<string> { return todo('move'); }
