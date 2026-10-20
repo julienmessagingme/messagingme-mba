@@ -50,6 +50,7 @@ const SECTIONS: Record<CleDePage, string[]> = {
   'per-contact': ['1 L’adresse et l’en-tête', '3 La clé d’idempotence', '6 Éprouver l’appel'],
   'meta-pitfalls': ['La fenêtre de 24 h', 'Les modèles et leur validation', 'Ce que Meta facture', 'La carte dans le Business Manager', 'Le consentement et STOP', 'La qualité du numéro', 'Le débit', 'La limite marketing par personne', 'Le nom affiché', 'Le numéro injoignable', 'Les fichiers'],
   nextjs: ['Le prompt à coller', 'Installation', 'Le client', 'Envoyer un modèle', 'Recevoir les webhooks', 'Essayer'],
+  'appointment-reminders': ['Le prompt à coller', 'Le modèle de rappel', 'Les deux actions de l’agent IA', 'Le code', 'La route qui reçoit les réponses', 'Essayer'],
   events: ['Ce que la console remonte', 'Délais', 'Les événements', 'Les attributs de la fiche'],
   webhooks: ['L’enveloppe', 'Vérifier la signature', 'Réponse et réessais', 'Les événements', 'Mon application répond'],
   reference: ['Authentification et droits', 'Débit', 'Erreurs'],

@@ -426,3 +426,31 @@ export const PROMPT_NEXTJS: Bilingue = [
     'Do not invent any route or field: they are in https://api.messagingme.app/openapi.json.',
   ),
 ];
+
+/** Le prompt de la recette des rappels de rendez-vous (`EXEMPLES_CAS.rappels`), qui renvoie l'assistant vers sa version `.md`. */
+export const PROMPT_RAPPELS: Bilingue = [
+  lignes(
+    'Branche des rappels de rendez-vous WhatsApp dans ce projet, en suivant la recette',
+    'https://console.messagingme.app/developers/api/guides/appointment-reminders.md :',
+    '1. installe le SDK : npm install github:julienmessagingme/messagingme-sdk#v{VERSION} ;',
+    '2. avec les outils Messaging Me, crée le modèle de rappel (UTILITY, le prénom puis l’heure, deux boutons de réponse',
+    '   rapide) et, sur l’agent qui répond, les deux actions « Reschedule request » (sans champ) et « Slot choice » (champ slot) ;',
+    '3. écris lib/calendar.ts relié à notre agenda, jobs/reminders.ts (la tâche de la veille) et la route',
+    '   app/api/webhooks/messagingme/route.ts, en gardant les mêmes libellés de boutons et noms d’actions partout ;',
+    '4. abonne la route à message.received et agent.action, et range la clé et le secret dans les variables',
+    '   d’environnement, jamais dans le code.',
+    'N’invente aucune route ni aucun champ : ils sont dans https://api.messagingme.app/openapi.json.',
+  ),
+  lignes(
+    'Add WhatsApp appointment reminders to this project, following the recipe',
+    'https://console.messagingme.app/developers/api/guides/appointment-reminders.en.md:',
+    '1. install the SDK: npm install github:julienmessagingme/messagingme-sdk#v{VERSION};',
+    '2. with the Messaging Me tools, create the reminder template (UTILITY, the first name then the time, two quick reply',
+    '   buttons) and, on the agent that answers, the two actions “Reschedule request” (no field) and “Slot choice” (field slot);',
+    '3. write lib/calendar.ts wired to our calendar, jobs/reminders.ts (the day-before job) and the route',
+    '   app/api/webhooks/messagingme/route.ts, keeping the same button labels and action names everywhere;',
+    '4. subscribe the route to message.received and agent.action, and keep the key and the secret in environment',
+    '   variables, never in the code.',
+    'Do not invent any route or field: they are in https://api.messagingme.app/openapi.json.',
+  ),
+];

@@ -124,6 +124,12 @@ export const PAGES_DOC = [
     ancres: ['prompt', 'installation', 'client', 'envoi', 'webhook', 'essayer'],
   },
   {
+    // Les rappels de rendez-vous (lot 6 bis) : le code de EXEMPLES_CAS.rappels, celui de la commande /messagingme:rappels.
+    cle: 'appointment-reminders', href: '/developers/api/guides/appointment-reminders', fichier: 'web/app/developers/api/guides/appointment-reminders/page.tsx', groupe: 'recettes',
+    nav: ['Rappels de rendez-vous', 'Appointment reminders'], titre: ['Recette : les rappels de rendez-vous', 'Recipe: appointment reminders'],
+    ancres: ['prompt', 'modele', 'actions', 'code', 'webhook', 'essayer'],
+  },
+  {
     cle: 'events', href: '/developers/api/events', fichier: 'web/app/developers/api/events/page.tsx', groupe: 'plateforme',
     nav: ['Événements', 'Events'], titre: ['Événements', 'Events'],
     ancres: ['signaux'],
@@ -176,6 +182,7 @@ export const RESUMES_PAGES: Readonly<Record<CleDePage, Bilingue>> = {
   'per-contact': ['Brancher un outil qui appelle l’API une fois par contact.', 'Connecting a tool that calls the API once per contact.'],
   'meta-pitfalls': ['Ce que Meta impose et qui surprend : fenêtre de 24 h, modèles, facturation, qualité, débit, consentement.', 'What Meta imposes and what surprises: the 24-hour window, templates, billing, quality, throughput, consent.'],
   nextjs: ['Une recette Next.js : envoyer un modèle et recevoir un webhook vérifié, avec le prompt à coller dans son assistant.', 'A Next.js recipe: send a template and receive a verified webhook, with the prompt to paste into your assistant.'],
+  'appointment-reminders': ['Une recette : le rappel WhatsApp de la veille avec deux boutons, l’agent IA qui propose des créneaux, la route qui confirme ou déplace le rendez-vous.', 'A recipe: the WhatsApp reminder the evening before with two buttons, the AI agent offering slots, the route that confirms or moves the appointment.'],
   events: ['Les signaux que Messaging Me remonte vers un outil branché.', 'The signals Messaging Me sends up to a connected tool.'],
   webhooks: ['Le format des webhooks sortants : enveloppe, signature, réessais et types d’événements.', 'The format of outgoing webhooks: envelope, signature, retries and event types.'],
   reference: ['Authentification, droits des clés, limites de débit et quotas.', 'Authentication, key scopes, rate limits and quotas.'],

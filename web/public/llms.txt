@@ -29,6 +29,7 @@ Chaque page existe en français (.md) et en anglais (.en.md). Every page exists 
 ## Recettes / Recipes
 
 - [Recette : Next.js](https://console.messagingme.app/developers/api/guides/nextjs.md): Une recette Next.js : envoyer un modèle et recevoir un webhook vérifié, avec le prompt à coller dans son assistant. English: [Recipe: Next.js](https://console.messagingme.app/developers/api/guides/nextjs.en.md)
+- [Recette : les rappels de rendez-vous](https://console.messagingme.app/developers/api/guides/appointment-reminders.md): Une recette : le rappel WhatsApp de la veille avec deux boutons, l’agent IA qui propose des créneaux, la route qui confirme ou déplace le rendez-vous. English: [Recipe: appointment reminders](https://console.messagingme.app/developers/api/guides/appointment-reminders.en.md)
 
 ## Plateforme / Platform
 

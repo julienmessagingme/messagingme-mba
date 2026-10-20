@@ -62,7 +62,7 @@ export const ENTREES: readonly EntreeVitrine[] = [
     fr: { adresse: '/cas-d-usage/rappels-rendez-vous/', titre: 'Rappels de rendez-vous' },
     en: { adresse: '/en/use-cases/appointment-reminders/', titre: 'Appointment reminders' },
     profils: ['lovable', 'produit'], vague: 1, recherche: 'rappel rendez-vous whatsapp absences',
-    commande: 'rappels', chemin: 'code', guide: 'appointment-reminders', enLigne: false,
+    commande: 'rappels', chemin: 'code', guide: 'appointment-reminders', film: 'cas-rappels', enLigne: true,
   },
   {
     cle: 'support', nature: 'cas',

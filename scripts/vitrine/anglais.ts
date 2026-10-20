@@ -31,6 +31,8 @@ export const JUMELLES: Readonly<Record<string, string>> = {
   '/tarifs/': '/en/pricing/',
   '/developpeurs/': '/en/developers/',
   '/developpeurs/compte-meta-business/': '/en/developers/meta-business-account/',
+  '/cas-d-usage/': '/en/use-cases/',
+  '/cas-d-usage/rappels-rendez-vous/': '/en/use-cases/appointment-reminders/',
   '/contact/': '/en/contact/',
   '/contact/merci/': '/en/contact/thanks/',
 };
@@ -40,7 +42,9 @@ export const JUMELLES: Readonly<Record<string, string>> = {
  * écrite à la main (lot 18), et le guide Meta reçoit ses étapes dans les deux langues de `etapes-meta.ts`.
  */
 const ECRITES_A_LA_MAIN = new Set(['/developpeurs/', '/developpeurs/compte-meta-business/']);
-export const GENEREES: readonly string[] = Object.keys(JUMELLES).filter((p) => !ECRITES_A_LA_MAIN.has(p));
+/** Les pages de cas et leur carrefour ont leurs deux langues dans `scripts/vitrine/cas-textes.ts` (npm run vitrine:cas). */
+const hors = (p: string): boolean => ECRITES_A_LA_MAIN.has(p) || p.startsWith('/cas-d-usage/');
+export const GENEREES: readonly string[] = Object.keys(JUMELLES).filter((p) => !hors(p));
 
 /** Les noms qu'une page anglaise garde exprès (un prénom, un client) : le détecteur de français ne les lit pas. */
 export const FRANCAIS_VOULU: readonly string[] = ['Léa', 'Mieux Assuré'];

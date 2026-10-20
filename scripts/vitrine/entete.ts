@@ -8,6 +8,8 @@
 // du burger qui le contient (ouvert), et le drapeau vers la page jumelle, lue dans son `<link rel="alternate">`.
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ENTREES } from '../../web/lib/registre-vitrine';
+import { TEXTES_CAS, TEXTES_CARREFOUR } from './cas-textes';
 
 export type Langue = 'fr' | 'en';
 
@@ -26,6 +28,8 @@ const PIEDS: Record<Langue, string> = { fr: gabarit('pied.fr.html'), en: gabarit
 export function enteteVitrine(langue: Langue, adresse: string, jumelle: string): string {
   return ENTETES[langue]
     .replaceAll('{{jumelle}}', () => jumelle)
+    .replace('{{solutions}}', () => liensSolutions(langue, '        '))
+    .replace('{{solutions-burger}}', () => liensSolutions(langue, '          '))
     // Le logo et le drapeau ne sont jamais « la page actuelle », même quand ils y mènent.
     .replace(/<a ([^>]*?)href="([^"]+)"/g, (tout: string, attributs: string, href: string) =>
       href === adresse && !/class="(marque|langue)"/.test(attributs) ? `${tout} aria-current="page"` : tout)
@@ -34,6 +38,23 @@ export function enteteVitrine(langue: Langue, adresse: string, jumelle: string):
 }
 
 export const piedVitrine = (langue: Langue): string => PIEDS[langue];
+
+/**
+ * Le menu « Solutions » (décision de Julien du 2026-10-20) : les cas EN LIGNE au registre, chacun avec sa ligne de menu
+ * (`cas-textes.ts`), puis « Tous les cas d'usage ». Les secteurs et les métiers y entreront avec leur contenu.
+ */
+export function liensSolutions(langue: Langue, retrait: string): string {
+  const lien = (href: string, icone: string, titre: string, ligne: string) =>
+    `${retrait}<a href="${href}"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#${icone}"/></svg></span><span><strong>${titre}</strong><small>${ligne}</small></span></a>`;
+  const cas = ENTREES.filter((e) => e.enLigne && e.nature === 'cas').map((e) => {
+    const t = TEXTES_CAS[e.cle]?.[langue];
+    if (!t) throw new Error(`${e.cle} : en ligne sans ses textes (scripts/vitrine/cas-textes.ts)`);
+    const p = langue === 'fr' ? e.fr : e.en;
+    return lien(p.adresse, t.icone, p.titre, t.menu);
+  });
+  const c = TEXTES_CARREFOUR[langue];
+  return [...cas, lien(c.adresse, 'i-list-checks', langue === 'fr' ? 'Tous les cas d’usage' : 'All use cases', langue === 'fr' ? 'Le film, le schéma et le code de chacun' : 'The film, the diagram and the code of each')].join('\n');
+}
 
 /** L'adresse publique d'une page, depuis son chemin dans `site/` : `contact/index.html` -> `/contact/`. */
 export const adressePage = (chemin: string): string =>

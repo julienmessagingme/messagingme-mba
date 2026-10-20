@@ -25,6 +25,7 @@
     "plugin:generer": "tsx scripts/plugin/generer.ts",
     "vitrine:entete": "tsx scripts/vitrine/entete.ts",
     "vitrine:guide-meta": "tsx scripts/vitrine/guide-meta.ts",
+    "vitrine:cas": "tsx scripts/vitrine/cas.ts",
     "vitrine:anglais": "tsx scripts/vitrine/anglais.ts"
   },
   "dependencies": {

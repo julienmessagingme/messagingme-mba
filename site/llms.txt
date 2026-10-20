@@ -28,6 +28,13 @@
 - [Contrat OpenAPI de l’API](https://api.messagingme.app/openapi.json) : chaque route, ses corps, ses réponses, ses erreurs, et les événements des webhooks sortants.
 - [SDK TypeScript](https://console.messagingme.app/developers/api/sdk) : le client typé de l’API, généré depuis le contrat, et la vérification de signature des webhooks.
 
+## Cas d’usage
+
+- [Tous les cas d’usage](https://app.messagingme.fr/cas-d-usage/) : Rappels de rendez-vous, notifications, support, accueil des utilisateurs : ce que vous branchez sur WhatsApp avec Claude Code, cas par cas, avec le code.
+- [All use cases](https://app.messagingme.fr/en/use-cases/) : the same page in English.
+- [Rappels de rendez-vous](https://app.messagingme.fr/cas-d-usage/rappels-rendez-vous/) : La veille, un rappel à deux boutons : le client confirme ou décale, et votre agenda suit.
+- [Appointment reminders](https://app.messagingme.fr/en/use-cases/appointment-reminders/) : The evening before, a reminder with two buttons: the customer confirms or reschedules, and your calendar follows.
+
 ## Tarifs
 
 - [Les tarifs](https://app.messagingme.fr/tarifs/) : la Free gratuite, pilotée depuis votre application ou votre assistant IA ; le Pro pour une équipe dans la console ; l’Entreprise sur devis. Ce que chaque offre comprend, le crédit IA et ce que Meta facture.
