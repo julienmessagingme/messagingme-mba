@@ -181,6 +181,14 @@ describe('SCHEMA_PROPOSITION', () => {
     expect(propositionSchema.safeParse(brut).success).toBe(false);
   });
 
+  it('🔴 la case « passe à un humain » d’une règle d’arrêt n’est jamais posée par l’assistant (2026-10-20)', () => {
+    // Ni annoncée au modèle, ni montrée dans le diff que le client relit : posée ici, elle passerait sans être vue.
+    // Retirée, la règle garde sa case d'avant (`avecCasesHumainGardees`).
+    const brut = { message: 'Voici.', fiche: { sorties: [{ code: 'conseiller', label: 'Conseiller', humain: true }] } };
+    const r = propositionSchema.safeParse(assainirProposition(brut));
+    expect(r.success ? r.data.fiche?.sorties : null).toEqual([{ code: 'conseiller', label: 'Conseiller' }]);
+  });
+
   it('ne porte aucun bruit numérique', () => {
     // Même garde qu'en tâche 15 : un schéma dérivé d'un schéma Zod produit `minimum: -9007199254740991` et
     // consorts, qu'on paie dans le prompt à CHAQUE tour.

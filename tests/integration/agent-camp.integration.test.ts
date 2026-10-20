@@ -115,4 +115,29 @@ describe.skipIf(!url)('choisir son camp (Postgres)', () => {
       contenu: { sorties: [{ code: 'conseiller', label: 'Conseiller enfin', humain: true }] },
     })).not.toBeNull();
   });
+
+  it('🔴 seule une règle NOUVELLEMENT cochée est jugée : une fiche déjà dans les deux camps reste modifiable', async () => {
+    // Les deux camps à la fois, comme deux activations concurrentes le laisseraient : la règle cochée d'abord, puis la
+    // qualification activée directement en base (la porte l'aurait refusée).
+    const a = await pool.query<{ id: string }>(
+      `insert into agents (tenant_id, label, mention_ia, modele) values ($1, 'itest-camp-3', 'Je suis une IA.', 'm') returning id`,
+      [tenantId],
+    );
+    const agent3 = a.rows[0]!.id;
+    const REGLE = { code: 'conseiller', label: 'Conseiller', humain: true };
+    expect(await agents.patch(tenantId, agent3, { contenu: { sorties: [REGLE] } })).not.toBeNull();
+    const qualifier = await poser(agent3, 'qualifier_transferer', 'mba_qualifier_3', 'Qualifier',
+      { handler: 'qualifier_transferer', questions: QUESTIONS });
+    await pool.query(
+      `update agent_tool_consommateurs set actif = true, active_par = $3, active_le = now()
+        where tenant_id = $1 and tool_id = $2`,
+      [tenantId, qualifier, adminId],
+    );
+    // Un changement de ton renvoie la fiche entière (la console le fait), règle cochée comprise : il passe.
+    expect(await agents.patch(tenantId, agent3, { contenu: { ton: 'Chaleureux.', sorties: [REGLE] } })).not.toBeNull();
+    // Une NOUVELLE règle cochée, elle, est refusée.
+    await expect(agents.patch(tenantId, agent3, {
+      contenu: { sorties: [REGLE, { code: 'rappel', label: 'Rappel', humain: true }] },
+    })).rejects.toThrow(CampEnConflit);
+  });
 });

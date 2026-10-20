@@ -3479,8 +3479,8 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
   **Demander une information** (ce que l'agent demande, et le champ du mini-CRM où ranger la réponse, avec ses
   valeurs permises si vous en donnez), **Enregistrer une valeur fixe**, **Poser un tag**, **Marquer la
   conversation urgente**, **Envoyer un bloc**, **Lancer un scénario**, **Transférer en « À traiter »** (le même
-  geste que « Passer la main à un humain », avec la dernière phrase de l'agent). Cas type : demander prénom, nom,
-  campus et formation, puis lancer le scénario qui passe le contact à l'équipe.
+  geste que « Passer la main à un humain »). Cas type : demander prénom, nom, campus et formation, puis lancer le
+  scénario qui passe le contact à l'équipe.
   - **L'agent ne demande qu'une fois.** S'il manque une réponse quand il appelle l'outil, rien ne s'exécute :
     l'outil lui rend les questions, il les pose en UN message, puis rappelle l'outil, et tout s'exécute avec ce
     que le contact a donné, même s'il a refusé ou répondu en partie. Un contact qui veut parler à quelqu'un n'est
@@ -3497,9 +3497,11 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
   écrivez vos questions, chacune avec ce que l'agent demande et le champ du mini-CRM choisi dans la liste où ranger
   la réponse (« + Ajouter une question », des flèches pour l'ordre) ; le passage dans « À traiter » vient toujours
   en dernier, sans réglage. Même règle que l'outil enchaîné : **une seule question au contact**, en un message,
-  puis le transfert avec ce qu'il a donné, même rien. L'agent écrit lui-même sa dernière phrase. Il ne part pas
-  chez le client par un message prévu : aucune autonomie à cocher. Au bac à sable, il pose les mêmes questions et
-  simule le transfert.
+  puis le transfert avec ce qu'il a donné, même rien. Sa dernière phrase part comme celle de « Passer la main à un humain » : quand il répond seul au
+  numéro, ou que l'équipe est fermée ; sinon, c'est la suite de la sortie « Transfert à un humain » du scénario
+  qui parle. Rien ne
+  part chez le client par un message prévu : aucune autonomie à cocher. Au bac à sable, il pose les mêmes questions
+  et simule le transfert.
   - 🔴 **Choisir son camp.** Un agent passe la main SOIT en qualifiant d'abord (cet outil, ou un enchaînement qui
     finit par le transfert), SOIT directement (« Passer la main à un humain », ou une règle d'arrêt cochée « passe
     à un humain »), jamais les deux : avec les deux, l'agent prendrait le chemin le plus court et l'équipe

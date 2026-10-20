@@ -173,12 +173,21 @@ export class PgAgentStore implements AgentStore {
      * 🔴 CHOISIR SON CAMP (`src/agent/camp.ts`) : une règle d'arrêt qui passe à un humain ne s'écrit pas tant qu'un
      * outil de l'agent qualifie avant de transférer. Ici, porte unique des trois écrivains de la fiche (console, outil
      * MCP `update_agent`, assistant de construction), qui passent tous par `modifierAgent`.
+     *
+     * ⚠️ Seule une règle NOUVELLEMENT cochée est jugée, comme la complétude ne juge que ce qu'un patch introduit : la
+     * console renvoie toute la fiche à chaque champ enregistré, et si deux activations concurrentes ont laissé les deux
+     * camps (la fenêtre de `camp.ts`), juger toutes les règles cochées refuserait jusqu'au moindre changement de ton.
      */
     const humaines = patch.contenu?.sorties?.filter((s) => s.humain === true) ?? [];
     if (humaines.length > 0) {
-      const actifs = await this.pool.query<LigneOutilPourCamp>(OUTILS_ACTIFS_POUR_CAMP, [tenantId, consommateurAgent(id)]);
-      const refus = refusDeCampPourLesSorties(humaines, actifs.rows.map((o) => ({ titre: o.title, binding: o.binding })));
-      if (refus !== null) throw new CampEnConflit(refus);
+      const avant = await this.pool.query<{ fiche: unknown }>('select fiche from agents where tenant_id = $1 and id = $2', [tenantId, id]);
+      const dejaCochees = new Set(sortiesDeLaFiche(avant.rows[0]?.fiche ?? null).filter((s) => s.humain === true).map((s) => s.code));
+      const nouvelles = humaines.filter((s) => !dejaCochees.has(s.code));
+      if (nouvelles.length > 0) {
+        const actifs = await this.pool.query<LigneOutilPourCamp>(OUTILS_ACTIFS_POUR_CAMP, [tenantId, consommateurAgent(id)]);
+        const refus = refusDeCampPourLesSorties(nouvelles, actifs.rows.map((o) => ({ titre: o.title, binding: o.binding })));
+        if (refus !== null) throw new CampEnConflit(refus);
+      }
     }
     // `coalesce($n, colonne)` sur chaque colonne, et `||` sur le jsonb (fusion au premier niveau) : un patch
     // partiel n'écrit que ce qu'il mentionne.

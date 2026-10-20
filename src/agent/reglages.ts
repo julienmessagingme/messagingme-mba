@@ -136,7 +136,12 @@ export async function ajouterOutilsSurs(
       try {
         active = await outils.activer(tenantId, agentId, outil.id, true, personne);
       } catch (err) {
-        if (err instanceof OutilNonActivable) return refus(409, err.raison);
+        // Un refus à mi-liste (le camp, `src/agent/camp.ts`) laisse les outils d'avant activés : le dire, plutôt qu'un
+        // échec qui laisserait croire que rien n'a bougé.
+        if (err instanceof OutilNonActivable) {
+          const deja = actifs.map((o) => o.name);
+          return refus(409, deja.length > 0 ? `${err.raison} Déjà actifs : ${deja.join(', ')}.` : err.raison);
+        }
         throw err;
       }
       if (!active) return refus(404, 'outil introuvable');

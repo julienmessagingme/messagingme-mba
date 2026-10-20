@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: dae37f
+source_empreinte: 127cdc
 ---
 # Construire un agent IA
 
@@ -128,8 +128,9 @@ appeler un outil MCP, et deux outils propres à l'agent IA : déclencher une act
   range une seule réponse, dans un champ que l'agent lit en clair et que le titre proposé cite.
 - **Qualifier avant de passer la main, ou passer la main tout de suite : il faut choisir.** « Qualifier et
   transférer » pose vos questions (chacune dans un champ choisi dans la liste, « + Ajouter une question »), une
-  seule fois, puis passe la conversation dans « À traiter » avec la dernière phrase de l'agent, même si le contact
-  n'a rien répondu. Il ne cohabite ni avec « Passer la main à un humain » ni avec une règle d'arrêt cochée
+  seule fois, puis passe la conversation dans « À traiter », même si le contact n'a rien répondu. Comme avec
+  « Passer la main à un humain », l'agent ne dit sa dernière phrase que s'il répond seul au numéro ou que l'équipe
+  est fermée ; sinon, c'est la suite de la sortie « Transfert à un humain » de votre scénario qui parle. Il ne cohabite ni avec « Passer la main à un humain » ni avec une règle d'arrêt cochée
   « passe à un humain » : activer l'un quand l'autre est là est refusé, et le message dit quoi désactiver d'abord.
 
 **Les règles d'arrêt dessinent les sorties du bloc.** Une règle d'arrêt, c'est « quand l'agent a fini de

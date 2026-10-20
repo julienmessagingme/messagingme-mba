@@ -63,5 +63,7 @@ la prochaine publication de chaque espace qui en a un le republiera chez Meta (m
 Sur l'agent Pigier de la sandbox : désactiver « Passer la main à un humain », poser « Qualifier et transférer »
 (prénom, nom, campus, formation). Vérifier que réactiver « Passer la main » est refusé avec le message. Depuis un
 téléphone : (1) « je veux parler à quelqu'un » sans rien donner : UNE question, répondre, la fiche porte les quatre
-champs, la conversation est en « À traiter » et l'agent a dit sa phrase ; (2) même début, « non, juste un humain » :
+champs, la conversation est en « À traiter » (la phrase de l'agent part en répondeur ou équipe fermée, sinon c'est
+la branche « Transfert à un humain » du scénario qui parle : vérifier qu'elle dit quelque chose) ; (2) même début,
+« non, juste un humain » :
 transfert immédiat, sans deuxième question.

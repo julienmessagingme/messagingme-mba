@@ -1211,7 +1211,8 @@ nombre, date, email, liste), au plus `BORNES_ACTION.champs` champs et `BORNES_AC
   parle est refusé AVANT toute étape. Un dépassement de délai sur un enchaînement qui finit par un scénario arrête le
   tour comme `lancer_scenario` (`executor.ts`, `issueInconnue`).
 - **Le transfert est le geste de `escalader`** (`escaladerVersHumain`) : `rendu` arrête le tour, `mainPrise` garde la
-  phrase, et `message` (la dernière phrase de l'agent) est un paramètre DÉRIVÉ, présent seulement quand les étapes
+  phrase (envoyée, comme celle d'`escalader`, seulement en répondeur ou équipe fermée, `brain.gateway.ts` ; sinon la
+  branche `humain` du scénario parle), et `message` (la dernière phrase de l'agent) est un paramètre DÉRIVÉ, présent seulement quand les étapes
   finissent par le transfert, annoncé requis et toléré absent comme celui d'`escalader` (`paramsAvecDerivations`).
   `deja_demande` et `message` sont donc des clés interdites à une question (`CLES_RESERVEES`). Un transfert qui échoue
   propose UN rappel, sauf si un bloc est déjà parti (il repartirait).
@@ -1225,7 +1226,9 @@ Le schéma ne laisse passer ni étape, ni bloc, ni ordre à juger : c'est ce qui
 `qualification` : `qualifier_transferer`, ou un `enchainer` qui finit par `transferer`) OU directement (camp `direct` :
 `escalader`, ou une règle d'arrêt `humain: true`), jamais les deux. UNE classification (`campDeLOutil`), lue par deux
 portes uniques : `PgToolCatalog` (activation et `PATCH` d'une cible d'outil ACTIF, refus en `OutilNonActivable`, 409)
-et `PgAgentStore.patch` (règles d'arrêt cochées, refus en `CampEnConflit`, 409 par `modifierAgent`). Les trois
+et `PgAgentStore.patch` (règles NOUVELLEMENT cochées seulement, refus en `CampEnConflit`, 409 par `modifierAgent`).
+L'assistant de construction ne pose pas la case (retirée à l'assainissement, `proposition.ts`) : il ne l'annonce pas et
+son diff ne la montre pas. Les trois
 écrivains de la fiche (console, `update_agent`, assistant de construction) passent par `modifierAgent`, les trois
 appelants de l'activation (onglet, `set_agent_tools`, pose d'une action) par `activer`. Chaque refus nomme ce qu'il
 faut désactiver. ⚠️ Lecture puis écriture sans verrou commun : deux activations opposées à la même seconde passeraient

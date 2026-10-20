@@ -62,8 +62,8 @@ export function CibleEnchainement({ tenantId, etapes, onEtapes, questionsSeules 
       <p className="text-xs text-ink-500">
         {questionsSeules
           ? t(
-            'L’agent demande au contact ce qui lui manque, une seule fois et en un message, range chaque réponse dans son champ, puis passe la conversation dans « À traiter » avec sa dernière phrase. Il transfère même si le contact ne répond pas.',
-            'The agent asks the contact for what is missing, once and in one message, stores each answer in its field, then moves the conversation to “To handle” with its last sentence. It hands over even if the contact does not answer.',
+            'L’agent demande au contact ce qui lui manque, une seule fois et en un message, range chaque réponse dans son champ, puis passe la conversation dans « À traiter ». Il transfère même si le contact ne répond pas.',
+            'The agent asks the contact for what is missing, once and in one message, stores each answer in its field, then moves the conversation to “To handle”. It hands over even if the contact does not answer.',
           )
           : t(
             'L’agent exécute les étapes dans cet ordre. S’il manque une réponse à une question, il la demande au contact une seule fois, puis exécute tout avec ce qu’il a.',
@@ -176,8 +176,8 @@ function Etape({ tenantId, etape, onChange }: { tenantId: string; etape: EtapeSa
       return (
         <p className="text-xs text-ink-500">
           {t(
-            'La conversation passe dans « À traiter » : l’agent écrit sa dernière phrase, puis se retire. Un agent qui transfère ainsi ne garde pas « Passer la main à un humain ».',
-            'The conversation moves to “To handle”: the agent writes its last sentence, then steps back. An agent that hands over this way does not keep “Hand over to a human”.',
+            'La conversation passe dans « À traiter » et l’agent se retire, comme avec « Passer la main à un humain » : un agent qui transfère ainsi ne garde pas cet outil.',
+            'The conversation moves to “To handle” and the agent steps back, as with “Hand over to a human”: an agent that hands over this way does not keep that tool.',
           )}
         </p>
       );

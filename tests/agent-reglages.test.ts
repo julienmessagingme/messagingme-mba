@@ -89,6 +89,18 @@ describe('🔴 ajouterOutilsSurs : quatre outils, ajoutés et activés au nom de
     expect(refuse).toMatchObject({ ok: false, statut: 409, erreur: 'schéma non représentable' });
   });
 
+  it('🔴 un refus à mi-liste (choisir son camp, 2026-10-20) dit quels outils sont déjà actifs', async () => {
+    // « Passer la main » refusé parce qu'un outil qualifie déjà : `terminer`, activé juste avant, le reste.
+    const c = catalogue([]);
+    const activer = c.outils.activer;
+    c.outils.activer = async (t, a, id, actif, par) => {
+      if (id === 'id-escalader') throw new OutilNonActivable('Choisissez un camp.');
+      return activer(t, a, id, actif, par);
+    };
+    const r = await ajouterOutilsSurs(c.outils, 't1', AG, ['terminer', 'escalader'], PERSONNE);
+    expect(r).toMatchObject({ ok: false, statut: 409, erreur: 'Choisissez un camp. Déjà actifs : mba_terminer.' });
+  });
+
   it('une liste vide ou qui n’en est pas une : 400', async () => {
     const c = catalogue([]);
     expect(await ajouterOutilsSurs(c.outils, 't1', AG, [], PERSONNE)).toMatchObject({ ok: false, statut: 400 });

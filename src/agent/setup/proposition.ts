@@ -229,6 +229,9 @@ export function assainirProposition(brut: unknown): unknown {
      */
     const vus = new Set<string>();
     f.sorties = entrees(f.sorties, MAX_SORTIES, (s) => {
+      // La case « passe à un humain » n'est ni annoncée au modèle ni montrée dans le diff relu par le client : posée par
+      // l'assistant, elle passerait sans que personne la voie. Retirée, la règle garde la sienne (`avecCasesHumainGardees`).
+      delete s.humain;
       if (typeof s.code === 'string') s.code = normaliserCodeSortie(s.code);
       couper(s, 'label', BORNES_FICHE.label);
       if (typeof s.code !== 'string' || !CODE_SORTIE_RE.test(s.code) || s.label === '') return null;
