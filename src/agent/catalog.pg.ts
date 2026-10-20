@@ -11,6 +11,8 @@ import { agentDuConsommateur, consommateurAgent, consommateurMba } from './conso
 import { RISQUE_MAISON, type CibleMaison } from '../mba/outils-maison';
 import type { CibleOutilAgent } from './outils-maison';
 import { risqueDeLEnchainement, scenariosDeLEnchainement } from './enchainement';
+import { OUTILS_ACTIFS_POUR_CAMP, campDeLOutil, refusDeCampPourUnOutil, type LigneOutilPourCamp } from './camp';
+import { sortiesDeLaFiche } from './fiche';
 import { lireVariables, paramsDuConnecteur } from './requetes';
 import { enTransaction } from '../db/transaction';
 
@@ -492,6 +494,16 @@ export class PgToolCatalog implements ToolCatalog {
     // laisserait deux administrateurs se recouvrir en silence. Un renommage suit chez chaque consommateur par la
     // cascade de `tool_name` (0211), et l'index refuse celui qui ferait un doublon chez l'un d'eux, même un AUTRE
     // agent que celui dont l'écran renomme.
+    // Choisir son camp (`src/agent/camp.ts`) : une cible qui fait entrer un outil ACTIF dans un camp (un enchaînement
+    // qui finit désormais par le transfert) est jugée comme une activation. Inactif, il le sera à son activation.
+    if (patch.cible && campDeLOutil(patch.cible) !== null) {
+      const actif = await this.pool.query(
+        'select 1 from agent_tool_consommateurs where tenant_id = $1 and consommateur = $2 and tool_id = $3 and actif',
+        [tenantId, consommateur, outilId],
+      );
+      const camp = (actif.rowCount ?? 0) > 0 ? await this.refusDeCamp(tenantId, consommateur, outilId, patch.cible) : null;
+      if (camp !== null) throw new OutilNonActivable(camp);
+    }
     const res = await this.pool.query<{ id: string }>(
       // Pas d'alias ni de `returning ${COLONNES_ADMIN}` : ses préfixes `t.` et `c.` n'existent pas dans un
       // UPDATE. L'`exists` sur la liaison borne le périmètre : sans lui, l'écran d'un agent corrigerait les
@@ -560,6 +572,33 @@ export class PgToolCatalog implements ToolCatalog {
     return r ? this.complet(tenantId, consommateur, r.id) : null;
   }
 
+  /**
+   * Le refus de « choisir son camp » pour cet outil d'un agent (`src/agent/camp.ts`), ou `null`. `binding` : la cible qui
+   * VA s'écrire (un `PATCH`), sinon celle en base. Lit les AUTRES outils actifs de l'agent et ses règles d'arrêt. Un
+   * consommateur qui n'est pas un agent (l'agent de Meta) n'a pas de camp.
+   */
+  private async refusDeCamp(
+    tenantId: string, consommateur: string, outilId: string, binding: unknown | null,
+  ): Promise<string | null> {
+    const agentId = agentDuConsommateur(consommateur);
+    if (agentId === null) return null;
+    const [actifs, cible, fiche] = await Promise.all([
+      this.pool.query<LigneOutilPourCamp>(OUTILS_ACTIFS_POUR_CAMP, [tenantId, consommateur]),
+      binding === null
+        ? this.pool.query<{ binding: unknown }>(
+          `select binding from agent_tools where tenant_id = $1 and id = $2 and origin = 'mba'`, [tenantId, outilId])
+        : Promise.resolve({ rows: [{ binding }] }),
+      this.pool.query<{ fiche: unknown }>('select fiche from agents where tenant_id = $1 and id = $2', [tenantId, agentId]),
+    ]);
+    const camp = campDeLOutil(cible.rows[0]?.binding ?? null);
+    if (camp === null) return null;
+    return refusDeCampPourUnOutil(
+      camp,
+      actifs.rows.filter((o) => o.id !== outilId).map((o) => ({ titre: o.title, binding: o.binding })),
+      sortiesDeLaFiche(fiche.rows[0]?.fiche ?? null),
+    );
+  }
+
   /** Active ou désactive. `parUtilisateur` vient du jeton. Rend `null` si l'outil n'est pas de ce couple. */
   async activer(
     tenantId: string, agentId: string, outilId: string, actif: boolean, parUtilisateur: string,
@@ -589,6 +628,10 @@ export class PgToolCatalog implements ToolCatalog {
       const l = etat.rows[0];
       const inappelable = l ? lireInappelable(l.cause, l.mcp_non_activable) : null;
       if (l && inappelable) throw new OutilNonActivable(messageInappelable(inappelable, l.origin));
+      // Choisir son camp (`src/agent/camp.ts`) : « Qualifier et transférer » et « Passer la main » ne s'activent pas
+      // ensemble, ni le premier à côté d'une règle d'arrêt qui passe à un humain.
+      const camp = await this.refusDeCamp(tenantId, consommateur, outilId, null);
+      if (camp !== null) throw new OutilNonActivable(camp);
     }
     const res = await this.pool.query(
       `update agent_tool_consommateurs set

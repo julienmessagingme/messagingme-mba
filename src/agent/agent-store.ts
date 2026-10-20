@@ -51,6 +51,12 @@ export interface FicheAgent {
 export interface SortieAgent {
   code: string;
   label: string;
+  /**
+   * La règle passe la conversation à un humain (case « passe à un humain », demande de Julien du 2026-10-20). Rien ne
+   * change à l'exécution : c'est le scénario qui route. Elle range la règle dans le camp « direct », que l'outil
+   * « Qualifier et transférer » exclut (`src/agent/camp.ts`). Absente = non.
+   */
+  humain?: boolean;
 }
 
 /** Ce que le builder a besoin de savoir d'un agent pour le proposer et dessiner ses sorties. */
@@ -111,6 +117,14 @@ export interface PatchAgent {
 /** L'écriture a été refusée parce que la fiche a changé entre la lecture et l'enregistrement. */
 export class FicheAgentPerimee extends Error {
   constructor() { super('la fiche a changé depuis son chargement'); this.name = 'FicheAgentPerimee'; }
+}
+
+/**
+ * Une règle d'arrêt cochée « passe à un humain » alors qu'un outil de l'agent qualifie avant de transférer
+ * (`src/agent/camp.ts`). Le message dit quoi désactiver d'abord ; la gestion le rend en 409.
+ */
+export class CampEnConflit extends Error {
+  constructor(message: string) { super(message); this.name = 'CampEnConflit'; }
 }
 
 /** Le libellé d'un agent est unique par workspace (index en base). */

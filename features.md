@@ -2853,6 +2853,10 @@ côté » s'y ajoutent le 2026-09-22** (lots 3 et 4) ; leur essai réel en conve
   pas, et il n'est pas rejoué ensuite. L'écran le dit.
 - ✅ **Enregistrer une information** : le champ de la fiche est fixé, l'agent de Meta fournit la valeur, tirée
   de la conversation. En option, une liste de valeurs permises : une autre valeur est refusée, et l'agent le sait.
+  Le champ est **nommé dans ce que l'agent lit** (2026-10-20) : il sait quelle information l'outil range, sans la
+  deviner, et ne cite jamais ce nom au client. Le titre proposé à la création le cite aussi (« Enregistrer :
+  Campus ») et suit le champ choisi tant que vous ne l'avez pas écrit vous-même. ⚠️ Un outil déjà publié reçoit ces
+  mots à la prochaine publication.
 - ✅ **Envoyer un bloc** : un message précis d'un de vos scénarios publiés (un message rapide, un modèle), choisi
   à l'avance. Il part SEUL, sans ce qui le suit dans le scénario, et l'agent de Meta reprend la parole au message
   suivant du client. 🔴 Un bloc qui attend une réponse (des boutons, une question, un formulaire, une attente, un
@@ -3436,8 +3440,9 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
     peut pas le donner. Au bac à sable, il est simulé.
 - ✅ **« Ajouter un outil » ouvre la grille « Quel outil ajouter ? »**, la même que chez l'agent de Meta, avec
   ses six cartes : **Poser un tag**, **Enregistrer une information**, **Envoyer un bloc**, **Lancer un
-  scénario**, **Appeler un connecteur API**, **Appeler un outil MCP** ; plus deux, propres à l'agent IA,
-  **Déclencher une action** (2026-10-13) et **Enchaîner des étapes** (2026-10-20). Une carte sans rien à choisir
+  scénario**, **Appeler un connecteur API**, **Appeler un outil MCP** ; plus trois, propres à l'agent IA,
+  **Déclencher une action** (2026-10-13), **Enchaîner des étapes** et **Qualifier et transférer** (2026-10-20).
+  Une carte sans rien à choisir
   est grisée, avec le lien vers l'écran où le créer (aucun appel déclaré, aucun champ dans le mini-CRM, aucun
   outil MCP).
 - ✅ **Le tag, l'information, le bloc et le scénario sont FIXÉS par vous**, comme chez l'agent de Meta : un outil
@@ -3447,7 +3452,8 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
   titre, un nom technique (vu par le modèle) et ses deux consignes, et il naît « Inactif ».
   - **Poser un tag** (écriture) : pour retrouver le contact dans le mini-CRM, ou déclencher une automation.
   - **Enregistrer une information** (écriture) : un champ du mini-CRM, pour qu'un bloc plus loin dans le
-    scénario le réutilise.
+    scénario le réutilise. Un champ par outil, **nommé dans ce que l'agent lit** (2026-10-20), et cité dans le
+    titre proposé (« Enregistrer : Prénom »), qui suit le champ choisi tant que vous ne l'avez pas réécrit.
   - **Envoyer un bloc** (part chez le client) : un message d'un de vos scénarios publiés, choisi en deux temps
     (le scénario, puis le bloc). **Il part seul**, sans ce qui le suit ; un bloc qui attend une réponse, ouvre
     un agent ou part en RCS est grisé, avec sa raison. L'agent garde la main.
@@ -3469,22 +3475,36 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
   panneau Détail de l'Inbox. Au bac à sable, elle est simulée. Depuis Claude Code : `set_agent_action` et
   `delete_agent_action`, et `get_conversation` montre les actions d'une conversation.
 - ✅ **Enchaîner des étapes** (2026-10-20) : un seul outil, plusieurs actions, **dans l'ordre que vous choisissez**.
-  Une première étape, puis « + Ajouter une étape », et des flèches pour changer l'ordre. Six sortes d'étapes :
+  Une première étape, puis « + Ajouter une étape », et des flèches pour changer l'ordre. Sept sortes d'étapes :
   **Demander une information** (ce que l'agent demande, et le champ du mini-CRM où ranger la réponse, avec ses
   valeurs permises si vous en donnez), **Enregistrer une valeur fixe**, **Poser un tag**, **Marquer la
-  conversation urgente**, **Envoyer un bloc**, **Lancer un scénario**. Cas type : demander prénom, nom, campus et
-  formation, puis lancer le scénario qui passe le contact à l'équipe.
+  conversation urgente**, **Envoyer un bloc**, **Lancer un scénario**, **Transférer en « À traiter »** (le même
+  geste que « Passer la main à un humain », avec la dernière phrase de l'agent). Cas type : demander prénom, nom,
+  campus et formation, puis lancer le scénario qui passe le contact à l'équipe.
   - **L'agent ne demande qu'une fois.** S'il manque une réponse quand il appelle l'outil, rien ne s'exécute :
     l'outil lui rend les questions, il les pose en UN message, puis rappelle l'outil, et tout s'exécute avec ce
     que le contact a donné, même s'il a refusé ou répondu en partie. Un contact qui veut parler à quelqu'un n'est
     jamais bloqué derrière un formulaire.
-  - **Deux règles d'ordre**, dites à l'écran avant d'enregistrer : un **scénario se place en dernier** (l'agent se
-    retire, rien après lui ne partirait) ; **aucun bloc ni scénario avant une question** (l'agent pose toujours
+  - **Deux règles d'ordre**, dites à l'écran avant d'enregistrer : un **scénario ou un transfert se place en
+    dernier, et un seul des deux** (l'agent se retire, rien après ne partirait) ; **aucun bloc ni scénario avant
+    une question** (l'agent pose toujours
     les questions en premier, un bloc placé avant partirait en réalité après la réponse). Un tag, une valeur fixe
     ou le marquage urgent se placent où vous voulez.
   - Dès qu'un bloc ou un scénario en fait partie, l'outil **part chez le client** : l'autonomie se coche, comme
     pour « Lancer un scénario ». Une écriture ou un tag qui échoue n'empêche pas la suite ; un scénario refusé
     laisse l'agent continuer la conversation. Au bac à sable, l'outil pose les mêmes questions et simule le reste.
+- ✅ **Qualifier et transférer** (écriture, 2026-10-20) : l'outil du contact qui veut parler à quelqu'un. Vous
+  écrivez vos questions, chacune avec ce que l'agent demande et le champ du mini-CRM choisi dans la liste où ranger
+  la réponse (« + Ajouter une question », des flèches pour l'ordre) ; le passage dans « À traiter » vient toujours
+  en dernier, sans réglage. Même règle que l'outil enchaîné : **une seule question au contact**, en un message,
+  puis le transfert avec ce qu'il a donné, même rien. L'agent écrit lui-même sa dernière phrase. Il ne part pas
+  chez le client par un message prévu : aucune autonomie à cocher. Au bac à sable, il pose les mêmes questions et
+  simule le transfert.
+  - 🔴 **Choisir son camp.** Un agent passe la main SOIT en qualifiant d'abord (cet outil, ou un enchaînement qui
+    finit par le transfert), SOIT directement (« Passer la main à un humain », ou une règle d'arrêt cochée « passe
+    à un humain »), jamais les deux : avec les deux, l'agent prendrait le chemin le plus court et l'équipe
+    recevrait un contact dont elle ne sait rien. Activer l'un quand l'autre est là est refusé, et le message dit
+    quoi désactiver d'abord. Vaut pour la console, Claude Code et l'assistant de construction.
 - ✅ **La liste des outils posés**, au format des lignes de l'agent de Meta : titre et ce que l'outil vise, son
   type, son état (actif ou inactif) avec « Activer » / « Désactiver », « Modifier » et « Supprimer ». Les appels
   de connecteur API et les outils MCP y entrent comme les autres. La ligne dit aussi ce qui empêche un outil de
@@ -3542,6 +3562,10 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
   sur le bloc, et l'onglet Outils le répète : l'outil « Terminer » est alors retiré au lieu d'être proposé
   vide, pour que l'agent n'invente pas un code que le bloc ne dessine pas.
 - ✅ **Une sortie qui ne mène nulle part est signalée en rouge sur le bloc**, comme pour les autres blocs.
+- ✅ **La case « passe à un humain »** (2026-10-20), sur chaque règle : elle ne change rien à ce que fait la règle
+  (c'est votre scénario qui route), elle dit qu'elle mène à l'équipe. Une règle cochée ne cohabite pas avec
+  « Qualifier et transférer » (voir les outils). Une écriture qui ne connaît pas la case (l'assistant de
+  construction, un outil Claude Code) la laisse comme elle était.
 
 ### Le passage de main à un humain
 

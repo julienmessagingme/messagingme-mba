@@ -8,8 +8,9 @@ import {
   BORNES_ENCHAINEMENT as BORNES_ENCHAINEMENT_ECRAN, CLE_CHAMP_DEMANDE_RE as CLE_CHAMP_DEMANDE_RE_ECRAN,
   PARAM_DEJA_DEMANDE as PARAM_DEJA_DEMANDE_ECRAN, TYPES_ETAPE as TYPES_ETAPE_ECRAN, enchainementIrreversible, etapeVide,
   manqueDeLEnchainement, type EtapeSaisie, type TypeEtape,
+  CLES_RESERVEES as CLES_RESERVEES_ECRAN, manqueDeLaQualification,
 } from '../web/lib/agent-outils';
-import { BORNES_ENCHAINEMENT, CLE_CHAMP_DEMANDE_RE, PARAM_DEJA_DEMANDE } from '../src/agent/enchainement';
+import { BORNES_ENCHAINEMENT, CLES_RESERVEES, CLE_CHAMP_DEMANDE_RE, PARAM_DEJA_DEMANDE } from '../src/agent/enchainement';
 import { signeDuHandler } from '../web/lib/signes-outils';
 import { BORNES_OUTIL } from '../web/lib/mba-outils';
 import {
@@ -188,10 +189,11 @@ describe('RC4 : la console et le catalogue serveur disent la même chose', () =>
 
 describe('outil enchaîné : la console et le serveur disent la même chose (2026-10-20)', () => {
   it('mêmes types d’étapes, mêmes bornes, même alphabet de champ, même paramètre réservé', () => {
-    expect([...TYPES_ETAPE_ECRAN]).toEqual(['demander', 'valeur', 'tag', 'urgent', 'bloc', 'scenario']);
+    expect([...TYPES_ETAPE_ECRAN]).toEqual(['demander', 'valeur', 'tag', 'urgent', 'bloc', 'scenario', 'transferer']);
     expect({ ...BORNES_ENCHAINEMENT_ECRAN }).toEqual({ ...BORNES_ENCHAINEMENT });
     expect(CLE_CHAMP_DEMANDE_RE_ECRAN.source).toBe(CLE_CHAMP_DEMANDE_RE.source);
     expect(PARAM_DEJA_DEMANDE_ECRAN).toBe(PARAM_DEJA_DEMANDE);
+    expect([...CLES_RESERVEES_ECRAN]).toEqual([...CLES_RESERVEES]);
   });
 
   const WF = '0b7e2c1a-4d5e-4f60-8a9b-1c2d3e4f5a6b';
@@ -200,6 +202,7 @@ describe('outil enchaîné : la console et le serveur disent la même chose (202
   const TAG = etape('tag', { tag: 'lead_chaud' });
   const BLOC = etape('bloc', { workflowId: WF, code: 'nod_t1_01HZX5Y6Z7A8B9C0D1E2F3G4H5' });
   const SC = etape('scenario', { workflowId: WF });
+  const TR = etape('transferer');
 
   /** 🔴 La parité qui compte : ce que l'écran laisse partir, le serveur l'accepte, et inversement. */
   it.each([
@@ -209,6 +212,10 @@ describe('outil enchaîné : la console et le serveur disent la même chose (202
     ['un bloc avant une question', [BLOC, Q], false],
     ['deux questions sur le même champ', [Q, { ...Q, question: 'encore' }], false],
     ['aucune étape', [], false],
+    ['des questions puis le transfert à l’équipe', [Q, TAG, TR], true],
+    ['un transfert qui ne ferme pas la marche', [TR, TAG], false],
+    ['un scénario ET un transfert', [Q, SC, TR], false],
+    ['une question sur un champ réservé (la phrase de l’agent)', [{ ...Q, champ: 'message' }, TR], false],
   ] as const)('%s', (_nom, etapes, accepte) => {
     const c: CibleSaisieAgent = { type: 'enchainement', etapes: [...etapes] };
     expect(manqueDeLEnchainement(c) === null).toBe(accepte);
@@ -223,9 +230,42 @@ describe('outil enchaîné : la console et le serveur disent la même chose (202
     expect(signeDuHandler('enchainer')).toBe('scenario');
   });
 
+  it('une étape de transfert relue à l’écran repart à l’identique', () => {
+    const c: CibleSaisieAgent = { type: 'enchainement', etapes: [Q, TR] };
+    expect(cibleDeLOutil({ handler: 'enchainer', ...corpsDeLaCible(c) })).toEqual(c);
+  });
+
   it('irréversible côté écran exactement quand un bloc ou un scénario part', () => {
     expect(enchainementIrreversible([Q, TAG])).toBe(false);
     expect(enchainementIrreversible([Q, BLOC])).toBe(true);
     expect(enchainementIrreversible([Q, SC])).toBe(true);
+    expect(enchainementIrreversible([Q, TR])).toBe(false);
+  });
+});
+
+describe('« Qualifier et transférer » : la console et le serveur disent la même chose (2026-10-20)', () => {
+  const Q = (champ: string, over: Partial<EtapeSaisie> = {}): EtapeSaisie => ({ ...etapeVide('demander'), champ, question: `ton ${champ}`, ...over });
+
+  it.each([
+    ['les quatre questions de Pigier', [Q('prenom'), Q('nom'), Q('campus', { valeurs: ['Pau', 'Bayonne'] }), Q('formation_souhaitee')], true],
+    ['une seule question', [Q('prenom')], true],
+    ['aucune question', [], false],
+    ['deux questions sur le même champ', [Q('prenom'), Q('prenom', { question: 'encore' })], false],
+    ['une question sans texte', [Q('prenom', { question: ' ' })], false],
+    ['une question sur un champ réservé', [Q('deja_demande')], false],
+  ] as const)('%s', (_nom, etapes, accepte) => {
+    const c: CibleSaisieAgent = { type: 'qualification', etapes: [...etapes] };
+    expect(manqueDeLaQualification(c) === null).toBe(accepte);
+    expect(lireCibleSaisie('qualifier_transferer', corpsDeLaCible(c)) !== null).toBe(accepte);
+  });
+
+  it('le corps envoyé ne porte que des questions, et se relit à l’identique', () => {
+    const c: CibleSaisieAgent = { type: 'qualification', etapes: [Q('prenom'), Q('campus', { valeurs: ['Pau'] })] };
+    expect(corpsDeLaCible(c)).toEqual({
+      questions: [{ champ: 'prenom', question: 'ton prenom', valeurs: [] }, { champ: 'campus', question: 'ton campus', valeurs: ['Pau'] }],
+    });
+    expect(cibleDeLOutil({ handler: 'qualifier_transferer', ...corpsDeLaCible(c) })).toEqual(c);
+    expect(typeDuHandler('qualifier_transferer')).toBe('qualification');
+    expect(signeDuHandler('qualifier_transferer')).toBe('humain');
   });
 });

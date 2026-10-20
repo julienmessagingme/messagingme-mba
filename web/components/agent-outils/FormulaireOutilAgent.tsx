@@ -7,9 +7,9 @@ import { Bouton } from '@/components/Bouton';
 import { CibleBloc, CibleChamp, CibleScenario, CibleTag } from '@/components/mba-outils/CiblesOutil';
 import { BORNES_OUTIL, consigneIncomplete, textesDuType } from '@/lib/mba-outils';
 import {
-  HANDLER_DU_TYPE, TEXTES_ACTION, TEXTES_ENCHAINEMENT, cibleComplete, cibleDeLOutil, corpsDeLaCible, enchainementIrreversible,
-  manqueDeLAction, manqueDeLEnchainement, normaliserNomOutil,
-  type CibleSaisieAgent, type TypeACible,
+  HANDLER_DU_TYPE, TEXTES_ACTION, TEXTES_ENCHAINEMENT, TEXTES_QUALIFICATION, cibleComplete, cibleDeLOutil, corpsDeLaCible,
+  enchainementIrreversible, estTitreDeChamp, etapeVide, manqueDeLAction, manqueDeLaQualification, manqueDeLEnchainement,
+  normaliserNomOutil, titreDuChamp, type CibleSaisieAgent, type TypeACible,
 } from '@/lib/agent-outils';
 import { CibleAction } from './CibleAction';
 import { CibleEnchainement } from './CibleEnchainement';
@@ -27,6 +27,8 @@ function cibleVide(type: TypeACible): CibleSaisieAgent {
     case 'scenario': return { type: 'scenario', workflowId: '' };
     case 'action': return { type: 'action', nom: '', consigne: '', champs: [] };
     case 'enchainement': return { type: 'enchainement', etapes: [] };
+    // Une première question à remplir d'emblée : la carte n'a de sens qu'avec au moins une.
+    case 'qualification': return { type: 'qualification', etapes: [etapeVide('demander')] };
   }
 }
 
@@ -68,7 +70,8 @@ export function FormulaireOutilAgent({
 }) {
   const t = useT();
   // L'action est propre à l'agent IA : ses mots ne sont pas dans la grille de l'agent de Meta.
-  const textes = type === 'action' ? TEXTES_ACTION : type === 'enchainement' ? TEXTES_ENCHAINEMENT : textesDuType(type, 'agent');
+  const textes = type === 'action' ? TEXTES_ACTION : type === 'enchainement' ? TEXTES_ENCHAINEMENT
+    : type === 'qualification' ? TEXTES_QUALIFICATION : textesDuType(type, 'agent');
   const depart = (outil ? cibleDeLOutil(outil.binding) : null) ?? cibleVide(type);
   const [cible, setCible] = useState<CibleSaisieAgent>(depart);
   // La cible d'origine : on ne la renvoie que si elle a CHANGÉ (un champ supprimé du mini-CRM ne doit pas faire
@@ -95,7 +98,8 @@ export function FormulaireOutilAgent({
   };
 
   const manqueAction = cible.type === 'action' ? manqueDeLAction(cible)
-    : cible.type === 'enchainement' ? manqueDeLEnchainement(cible) : null;
+    : cible.type === 'enchainement' ? manqueDeLEnchainement(cible)
+      : cible.type === 'qualification' ? manqueDeLaQualification(cible) : null;
   const manque: string | null =
     manqueAction !== null ? t(manqueAction[0], manqueAction[1])
     : !cibleComplete(cible) ? t('Choisissez ce que vise l’outil.', 'Pick what the tool targets.')
@@ -163,7 +167,11 @@ export function FormulaireOutilAgent({
       )}
       {cible.type === 'champ' && (
         <CibleChamp pour="agent" tenantId={tenantId} champ={cible.champ} valeurs={cible.valeurs}
-          onChange={(champ, valeurs) => setCible({ type: 'champ', champ, valeurs })} />
+          onChange={(champ, valeurs, libelle) => {
+            setCible({ type: 'champ', champ, valeurs });
+            // Le titre cite le champ (demande de Julien du 2026-10-20), et le suit tant qu'on ne l'a pas écrit autrement.
+            if (libelle && (title.trim() === '' || estTitreDeChamp(title))) changerTitre(t(...titreDuChamp(libelle)));
+          }} />
       )}
       {cible.type === 'bloc' && (
         <CibleBloc tenantId={tenantId} workflowId={cible.workflowId} code={cible.code}
@@ -181,7 +189,11 @@ export function FormulaireOutilAgent({
           }} />
       )}
       {cible.type === 'enchainement' && (
-        <CibleEnchainement tenantId={tenantId} valeur={cible} onChange={setCible} />
+        <CibleEnchainement tenantId={tenantId} etapes={cible.etapes} onEtapes={(etapes) => setCible({ type: 'enchainement', etapes })} />
+      )}
+      {cible.type === 'qualification' && (
+        <CibleEnchainement questionsSeules tenantId={tenantId} etapes={cible.etapes}
+          onEtapes={(etapes) => setCible({ type: 'qualification', etapes })} />
       )}
       {cible.type === 'scenario' && (
         <CibleScenario pour="agent" tenantId={tenantId} workflowId={cible.workflowId}

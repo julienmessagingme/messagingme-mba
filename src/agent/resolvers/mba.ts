@@ -4,7 +4,9 @@ import { chercherConnaissance, type RechercheSemantique } from './connaissance';
 import type { AnalyseEtResume } from '../../crm/contact-store.pg';
 import { lireCibleOutilAgent, type CibleOutilAgent, type HandlerACible } from '../outils-maison';
 import { valeursDesChamps, type IssueAction, type ValeursAction } from '../actions';
-import { consigneDeQuestions, planEnchainement } from '../enchainement';
+import {
+  PARAM_MESSAGE, consigneDeQuestions, etapesDeLaQualification, planEnchainement, type EtapeEnchainement,
+} from '../enchainement';
 
 /**
  * Le résolveur des outils maison : une table `handler` vers fonction TypeScript, sans réseau.
@@ -285,77 +287,121 @@ const HANDLERS: Record<string, Handler> = {
   },
 
   /**
-   * 🔴 L'OUTIL ENCHAÎNÉ (`src/agent/enchainement.ts`) : les étapes FIXÉES par l'administrateur, exécutées DANS SON ORDRE.
-   * S'il manque une information et que la question n'a pas encore été posée, RIEN ne s'exécute : le modèle reçoit les
-   * questions (`planEnchainement`, la même décision que le bac à sable). Sinon tout part, avec ce qui a été donné.
-   *
-   * Une écriture sur la fiche, un tag ou un bloc qui échoue ne bloque pas la suite : le passage à l'équipe compte plus
-   * qu'un champ, et le modèle lit ce qui n'a pas abouti. Un scénario refusé, lui, rend un échec : la session reste vivante
-   * et le modèle répond. Le scénario où l'agent parle déjà est refusé AVANT toute étape, comme `lancer_scenario`.
+   * 🔴 L'OUTIL ENCHAÎNÉ (`src/agent/enchainement.ts`) : les étapes FIXÉES par l'administrateur, exécutées DANS SON ORDRE
+   * (`executerEtapes`). Le scénario où l'agent parle déjà est refusé AVANT toute étape, comme `lancer_scenario`.
    */
   enchainer: async (entree, deps) => {
     const cible = cibleLue(entree);
     if (cible?.handler !== 'enchainer') return refusCible(entree, 'enchainer');
-    const { ctx } = entree;
-    if (cible.etapes.some((e) => e.type === 'scenario' && e.workflowId === ctx.workflowId)) {
+    if (cible.etapes.some((e) => e.type === 'scenario' && e.workflowId === entree.ctx.workflowId)) {
       return echec('ce scénario est celui où tu parles déjà : le relancer recommencerait la conversation, continue sans cet outil');
     }
-    const plan = planEnchainement(cible.etapes, entree.args);
-    if (plan.quoi === 'demander') return { contenu: consigneDeQuestions(plan.questions) };
+    return executerEtapes(cible.etapes, entree, deps);
+  },
 
-    const nonAbouti: string[] = [];
-    const essayer = async (quoi: string, geste: () => Promise<unknown>): Promise<void> => {
-      try {
-        await geste();
-      } catch (e) {
-        console.warn(`mba_enchainer: étape « ${quoi} » non aboutie (best-effort):`, e instanceof Error ? e.message : e);
-        nonAbouti.push(quoi);
-      }
-    };
-    for (const e of cible.etapes) {
-      switch (e.type) {
-        case 'demander': {
-          const v = plan.valeurs.get(e.champ);
-          if (v !== undefined) await essayer(e.question, () => deps.ecrireChamp(ctx.tenantId, ctx.waId, e.champ, v));
-          break;
-        }
-        case 'valeur':
-          await essayer('mise à jour de la fiche', () => deps.ecrireChamp(ctx.tenantId, ctx.waId, e.champ, e.valeur));
-          break;
-        case 'tag':
-          await essayer('étiquette', () => deps.poserTag(ctx.tenantId, ctx.waId, e.tag));
-          break;
-        case 'urgent':
-          await essayer('conversation urgente', async () => {
-            if (!(await deps.marquerUrgente({ tenantId: ctx.tenantId, waId: ctx.waId, agentId: ctx.agentId }))) throw new Error('aucune conversation');
-          });
-          break;
-        case 'bloc':
-          await essayer('message prévu', async () => {
-            const res = await deps.envoyerBloc({ tenantId: ctx.tenantId, waId: ctx.waId, runId: ctx.runId, workflowId: e.workflowId, code: e.code });
-            if (!res.ok) throw new Error(res.raison ?? 'le bloc n a pas pu etre envoye');
-          });
-          break;
-        case 'scenario': {
-          // Toujours la dernière étape (`fauteDOrdre`) : terminal sur un succès, comme `lancer_scenario`.
-          const res = await deps.lancerScenario({
-            tenantId: ctx.tenantId, waId: ctx.waId, runId: ctx.runId, sessionId: ctx.sessionId, workflowId: e.workflowId,
-          });
-          if (!res.ok) {
-            return echec(`les étapes précédentes sont faites, mais le scénario n’a pas pu être lancé : ${res.raison ?? 'raison inconnue'}. Ne rappelle pas cet outil : tout le reste repartirait.`);
-          }
-          return { contenu: { lance: true, ...(nonAbouti.length > 0 ? { non_abouti: nonAbouti } : {}) }, scenarioLance: true };
-        }
-      }
-    }
-    return {
-      contenu: {
-        fait: true, ...(nonAbouti.length > 0 ? { non_abouti: nonAbouti } : {}),
-        note: 'C’est fait : ne rappelle pas cet outil pour la même demande, ses étapes repartiraient.',
-      },
-    };
+  /**
+   * « Qualifier et transférer » (demande de Julien du 2026-10-20) : ses questions, puis le passage à l'équipe, par le
+   * MÊME moteur que l'outil enchaîné (`etapesDeLaQualification`), donc la même règle « demander une seule fois ».
+   */
+  qualifier_transferer: async (entree, deps) => {
+    const cible = cibleLue(entree);
+    if (cible?.handler !== 'qualifier_transferer') return refusCible(entree, 'qualifier_transferer');
+    return executerEtapes(etapesDeLaQualification(cible), entree, deps);
   },
 };
+
+/**
+ * 🔴 LES ÉTAPES, DANS L'ORDRE DE L'ADMINISTRATEUR, partagées par les deux outils qui en ont. S'il manque une information
+ * et que la question n'a pas encore été posée, RIEN ne s'exécute : le modèle reçoit les questions (`planEnchainement`, la
+ * même décision que le bac à sable). Sinon tout part, avec ce qui a été donné.
+ *
+ * Une écriture sur la fiche, un tag ou un bloc qui échoue ne bloque pas la suite : le passage à l'équipe compte plus
+ * qu'un champ, et le modèle lit ce qui n'a pas abouti. Un scénario refusé, lui, rend un échec : la session reste vivante
+ * et le modèle répond. Le transfert est le geste de `escalader` : `rendu` arrête le tour, `mainPrise` garde la phrase.
+ */
+async function executerEtapes(
+  etapes: readonly EtapeEnchainement[], entree: EntreeResolveur, deps: DepsResolveurMba,
+): Promise<SortieResolveur> {
+  const { ctx } = entree;
+  const plan = planEnchainement(etapes, entree.args);
+  if (plan.quoi === 'demander') return { contenu: consigneDeQuestions(plan.questions) };
+
+  const nonAbouti: string[] = [];
+  const essayer = async (quoi: string, geste: () => Promise<unknown>): Promise<void> => {
+    try {
+      await geste();
+    } catch (e) {
+      console.warn(`mba_enchainer: étape « ${quoi} » non aboutie (best-effort):`, e instanceof Error ? e.message : e);
+      nonAbouti.push(quoi);
+    }
+  };
+  // Lu à la fin, pas avant la boucle : c'est elle qui le remplit.
+  const rapport = (): Record<string, unknown> => (nonAbouti.length > 0 ? { non_abouti: nonAbouti } : {});
+  for (const e of etapes) {
+    switch (e.type) {
+      case 'demander': {
+        const v = plan.valeurs.get(e.champ);
+        if (v !== undefined) await essayer(e.question, () => deps.ecrireChamp(ctx.tenantId, ctx.waId, e.champ, v));
+        break;
+      }
+      case 'valeur':
+        await essayer('mise à jour de la fiche', () => deps.ecrireChamp(ctx.tenantId, ctx.waId, e.champ, e.valeur));
+        break;
+      case 'tag':
+        await essayer('étiquette', () => deps.poserTag(ctx.tenantId, ctx.waId, e.tag));
+        break;
+      case 'urgent':
+        await essayer('conversation urgente', async () => {
+          if (!(await deps.marquerUrgente({ tenantId: ctx.tenantId, waId: ctx.waId, agentId: ctx.agentId }))) throw new Error('aucune conversation');
+        });
+        break;
+      case 'bloc':
+        await essayer('message prévu', async () => {
+          const res = await deps.envoyerBloc({ tenantId: ctx.tenantId, waId: ctx.waId, runId: ctx.runId, workflowId: e.workflowId, code: e.code });
+          if (!res.ok) throw new Error(res.raison ?? 'le bloc n a pas pu etre envoye');
+        });
+        break;
+      case 'scenario': {
+        // Toujours la dernière étape (`fauteDOrdre`) : terminal sur un succès, comme `lancer_scenario`.
+        const res = await deps.lancerScenario({
+          tenantId: ctx.tenantId, waId: ctx.waId, runId: ctx.runId, sessionId: ctx.sessionId, workflowId: e.workflowId,
+        });
+        if (!res.ok) {
+          return echec(`les étapes précédentes sont faites, mais le scénario n’a pas pu être lancé : ${res.raison ?? 'raison inconnue'}. Ne rappelle pas cet outil : tout le reste repartirait.`);
+        }
+        return { contenu: { lance: true, ...rapport() }, scenarioLance: true };
+      }
+      case 'transferer': {
+        // Toujours la dernière étape (`fauteDOrdre`), et le geste de `escalader` : la conversation arrive dans « À traiter ».
+        let mainPrise: boolean;
+        try {
+          mainPrise = await deps.escaladerVersHumain({
+            tenantId: ctx.tenantId, waId: ctx.waId, runId: ctx.runId, sessionId: ctx.sessionId, agentId: ctx.agentId,
+          });
+        } catch (err) {
+          console.warn('mba_enchainer: passage à l’équipe non abouti:', err instanceof Error ? err.message : err);
+          // Rappeler l'outil refait les écritures (sans effet : mêmes valeurs) et retente le transfert, sauf si un message
+          // prévu est déjà parti : il repartirait.
+          const blocParti = etapes.some((x) => x.type === 'bloc') && !nonAbouti.includes('message prévu');
+          return echec(`les informations sont enregistrées, mais le passage à l’équipe n’a pas abouti. ${blocParti
+            ? 'Ne rappelle pas cet outil : le message prévu repartirait. Dis au contact que l’équipe reprendra la conversation.'
+            : 'Rappelle cet outil une seule fois, avec les mêmes informations et deja_demande à true.'}`);
+        }
+        const dernierMessage = texte(entree.args, PARAM_MESSAGE);
+        return {
+          contenu: { escalade: true, ...rapport() }, rendu: true, mainPrise,
+          ...(dernierMessage !== '' ? { dernierMessage } : {}),
+        };
+      }
+    }
+  }
+  return {
+    contenu: {
+      fait: true, ...rapport(),
+      note: 'C’est fait : ne rappelle pas cet outil pour la même demande, ses étapes repartiraient.',
+    },
+  };
+}
 
 /** Les handlers qui existent vraiment, exportés pour que `tests/agent-outils-maison.test.ts` vérifie la
  *  correspondance avec le catalogue de la console (`src/agent/outils-maison.ts`). */

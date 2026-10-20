@@ -3,10 +3,14 @@ import { enTransaction } from '../db/transaction';
 import type { AgentComplet, AgentResume, AgentStore, FicheAgent, PatchAgent, SortieAgent, StatutAgent } from './agent-store';
 import { estFrequenceMention } from './agent-store';
 import { FicheAgentPerimee, LabelAgentDejaPris } from './agent-store';
-import { asArray, asRecord } from '../webhooks/json';
-import { CODE_SORTIE_RE, ficheAgentSchema, ficheVide } from './fiche';
+import { ficheAgentSchema, ficheVide, sortiesDeLaFiche } from './fiche';
 import { consommateurAgent } from './consommateur';
 import { verrouillerDefinitions } from './catalog.pg';
+import { CampEnConflit } from './agent-store';
+import { OUTILS_ACTIFS_POUR_CAMP, refusDeCampPourLesSorties, type LigneOutilPourCamp } from './camp';
+
+/** Déplacée dans `fiche.ts` (sans base) pour que le catalogue la lise sans import circulaire ; ré-exportée ici. */
+export { sortiesDeLaFiche } from './fiche';
 
 interface Ligne {
   id: string;
@@ -165,6 +169,17 @@ export class PgAgentStore implements AgentStore {
   }
 
   async patch(tenantId: string, id: string, patch: PatchAgent): Promise<AgentComplet | null> {
+    /**
+     * 🔴 CHOISIR SON CAMP (`src/agent/camp.ts`) : une règle d'arrêt qui passe à un humain ne s'écrit pas tant qu'un
+     * outil de l'agent qualifie avant de transférer. Ici, porte unique des trois écrivains de la fiche (console, outil
+     * MCP `update_agent`, assistant de construction), qui passent tous par `modifierAgent`.
+     */
+    const humaines = patch.contenu?.sorties?.filter((s) => s.humain === true) ?? [];
+    if (humaines.length > 0) {
+      const actifs = await this.pool.query<LigneOutilPourCamp>(OUTILS_ACTIFS_POUR_CAMP, [tenantId, consommateurAgent(id)]);
+      const refus = refusDeCampPourLesSorties(humaines, actifs.rows.map((o) => ({ titre: o.title, binding: o.binding })));
+      if (refus !== null) throw new CampEnConflit(refus);
+    }
     // `coalesce($n, colonne)` sur chaque colonne, et `||` sur le jsonb (fusion au premier niveau) : un patch
     // partiel n'écrit que ce qu'il mentionne.
     const res = await this.pool.query<LigneComplete>(
@@ -255,22 +270,4 @@ function versComplet(r: LigneComplete): AgentComplet {
     contenu: parse.success ? parse.data : ficheVide(),
     ficheVersion: r.fiche_version,
   };
-}
-
-/**
- * Les règles d'arrêt d'une fiche, lues défensivement (jsonb écrit par l'IA de construction) : une entrée
- * inutilisable est écartée plutôt que de faire tomber le builder. Le code passe par `CODE_SORTIE_RE`, la
- * même règle qu'à l'écriture (`src/agent/fiche.ts`).
- */
-export function sortiesDeLaFiche(fiche: unknown): SortieAgent[] {
-  const out: SortieAgent[] = [];
-  const vus = new Set<string>();
-  for (const brut of asArray(asRecord(fiche).sorties)) {
-    const o = asRecord(brut);
-    const code = typeof o.code === 'string' ? o.code.trim().toLowerCase() : '';
-    if (!CODE_SORTIE_RE.test(code) || vus.has(code)) continue;
-    vus.add(code);
-    out.push({ code, label: typeof o.label === 'string' && o.label.trim() !== '' ? o.label.trim() : code });
-  }
-  return out;
 }

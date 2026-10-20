@@ -327,6 +327,12 @@ export const OUTILS_AGENT: OutilMcp[] = [
                 description: 'The rule code: lowercase letters, digits and underscores, with no underscore at the start or end. It is the block\'s exit in the scenario.',
               },
               label: { type: 'string', minLength: 1, maxLength: BORNES_FICHE.label, description: 'What the rule means, in plain words.' },
+              humain: {
+                type: 'boolean',
+                description: 'True when this rule hands the conversation over to a human. Such a rule is refused while the agent has an '
+                  + 'active tool that qualifies the contact before handing over (one way or the other, never both). Omitted, the '
+                  + 'rule keeps its previous value.',
+              },
             },
             required: ['code', 'label'],
           },

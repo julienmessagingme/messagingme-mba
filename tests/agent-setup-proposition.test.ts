@@ -155,11 +155,11 @@ describe('SCHEMA_PROPOSITION', () => {
   it('🔴 l’énumération des handlers est celle du catalogue, MOINS les outils à cible (RC4)', () => {
     expect([...SCHEMA_PROPOSITION.properties.outils.items.properties.handler.enum].sort())
       .toEqual(OUTILS_PROPOSABLES.map((o) => o.handler).sort());
-    // Un tag, un champ, un bloc, un scénario, une action ou des étapes enchaînées se fixent à l'écran, dans des listes que
+    // Un tag, un champ, un bloc, un scénario, une action, des étapes enchaînées ou des questions se fixent à l'écran, dans des listes que
     // l'assistant ne voit pas.
     expect(OUTILS_PROPOSABLES.map((o) => o.handler).sort()).toEqual(
       OUTILS_MAISON.map((o) => o.handler)
-        .filter((h) => !['poser_tag', 'ecrire_variable', 'envoyer_bloc', 'lancer_scenario', 'declencher_action', 'enchainer'].includes(h)).sort(),
+        .filter((h) => !['poser_tag', 'ecrire_variable', 'envoyer_bloc', 'lancer_scenario', 'declencher_action', 'enchainer', 'qualifier_transferer'].includes(h)).sort(),
     );
   });
 

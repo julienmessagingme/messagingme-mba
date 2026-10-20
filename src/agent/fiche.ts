@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { CODE_SORTIE_RE, LONGUEUR_CODE_SORTIE, MAX_SORTIES } from '../../web/lib/partage/sorties-agent';
+import { asArray, asRecord } from '../webhooks/json';
+import type { SortieAgent } from './agent-store';
 
 /** La règle du code d'une règle d'arrêt est partagée avec la console, qui l'applique sous les yeux du client. */
 export { CODE_SORTIE_RE, MAX_SORTIES, normaliserCodeSortie } from '../../web/lib/partage/sorties-agent';
@@ -34,6 +36,11 @@ export const BORNES_FICHE = {
 export const sortieAgentSchema = z.object({
   code: z.string().regex(CODE_SORTIE_RE),
   label: z.string().trim().min(1).max(BORNES_FICHE.label),
+  /**
+   * « Elle passe à un humain » (`SortieAgent.humain`). Absente d'une écriture qui remplace la liste (l'assistant de
+   * construction, un outil MCP qui ne la connaît pas) : la valeur d'avant est gardée, par code (`modifierAgent`).
+   */
+  humain: z.boolean().optional(),
 });
 
 /**
@@ -90,4 +97,26 @@ export type FicheAgentContenu = z.infer<typeof ficheAgentSchema>;
 /** Une fiche vide, valide. Sert de valeur par défaut à la création et de repli à la lecture d'un jsonb illisible. */
 export function ficheVide(): FicheAgentContenu {
   return { nom: '', objectif: '', ton: '', personnalite: '', reglesTransfert: '', sorties: [] };
+}
+
+/**
+ * Les règles d'arrêt d'une fiche, lues défensivement (jsonb écrit par l'IA de construction) : une entrée
+ * inutilisable est écartée plutôt que de faire tomber le builder. Le code passe par `CODE_SORTIE_RE`, la
+ * même règle qu'à l'écriture (`src/agent/fiche.ts`).
+ */
+export function sortiesDeLaFiche(fiche: unknown): SortieAgent[] {
+  const out: SortieAgent[] = [];
+  const vus = new Set<string>();
+  for (const brut of asArray(asRecord(fiche).sorties)) {
+    const o = asRecord(brut);
+    const code = typeof o.code === 'string' ? o.code.trim().toLowerCase() : '';
+    if (!CODE_SORTIE_RE.test(code) || vus.has(code)) continue;
+    vus.add(code);
+    out.push({
+      code, label: typeof o.label === 'string' && o.label.trim() !== '' ? o.label.trim() : code,
+      // Seulement quand elle est cochée : une règle sans la case reste `{ code, label }`, comme avant.
+      ...(o.humain === true ? { humain: true } : {}),
+    });
+  }
+  return out;
 }

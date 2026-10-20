@@ -326,6 +326,8 @@ export function registerAgentTools(app: FastifyInstance, deps: AgentToolsRouteDe
       return reply.code(200).send({ outil: vue(outil, sorties) });
     } catch (err) {
       if (err instanceof NomOutilDejaPris) return reply.code(409).send({ error: err.message });
+      // Une cible qui ferait entrer un outil actif dans le camp opposé à un autre (`src/agent/camp.ts`).
+      if (err instanceof OutilNonActivable) return reply.code(409).send({ error: err.raison });
       throw err;
     }
   });

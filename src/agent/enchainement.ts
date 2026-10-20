@@ -17,8 +17,8 @@ import { CODE_BLOC_RE } from '../workflow/node-list';
  * qu'il a, réponse complète, partielle ou refus. Un candidat qui veut parler à quelqu'un ne doit jamais rester bloqué
  * derrière un formulaire.
  *
- * 🔴 DEUX RÈGLES D'ORDRE, tenues par le schéma et non par l'écran seul. (1) Un scénario ferme la marche : l'agent se
- * retire, rien de ce qui suivrait ne partirait. (2) Rien de ce qui PART CHEZ LE CONTACT (bloc, scénario) ne vient avant
+ * 🔴 DEUX RÈGLES D'ORDRE, tenues par le schéma et non par l'écran seul. (1) Un scénario ou un transfert à l'équipe ferme
+ * la marche, et il n'y en a qu'un : l'agent se retire, rien de ce qui suivrait ne partirait. (2) Rien de ce qui PART CHEZ LE CONTACT (bloc, scénario) ne vient avant
  * une question. Tant qu'une réponse manque, l'outil n'exécute RIEN : les questions passent donc toujours avant toutes
  * les étapes, et un bloc rangé avant une question partirait en réalité APRÈS la réponse, à rebours de l'ordre que
  * l'écran affiche. Pour un tag, une valeur fixe ou l'urgence, l'écart ne se voit pas : leur place est libre.
@@ -30,6 +30,13 @@ export const BORNES_ENCHAINEMENT = { etapes: 12, question: 120, champ: 64, valeu
 /** Le nom du paramètre qui dit à l'outil que la question a déjà été posée. Interdit comme clé de champ. */
 export const PARAM_DEJA_DEMANDE = 'deja_demande';
 
+/** Le paramètre de la dernière phrase de l'agent, quand l'outil passe la main : le nom de celui de `escalader`. Interdit
+ *  aussi comme clé de champ, pour la même raison. */
+export const PARAM_MESSAGE = 'message';
+
+/** Les clés qu'une question ne peut pas remplir : ce sont déjà des paramètres de l'outil. */
+export const CLES_RESERVEES: readonly string[] = [PARAM_DEJA_DEMANDE, PARAM_MESSAGE];
+
 /**
  * La clé d'un champ « demander » devient le NOM du paramètre que le modèle remplit : l'alphabet commun des fournisseurs,
  * une lettre d'abord. Les clés du mini-CRM sont déjà de cette forme (`prenom`, `nom_de_famille`).
@@ -38,20 +45,25 @@ export const CLE_CHAMP_DEMANDE_RE = /^[a-z][a-z0-9_]{0,63}$/;
 
 const champ = z.string().trim().min(1).max(BORNES_ENCHAINEMENT.champ);
 
+/** Une question : partagée par l'étape « demander » et par l'outil « Qualifier et transférer ». */
+const CHAMPS_QUESTION = {
+  champ: z.string().trim().regex(CLE_CHAMP_DEMANDE_RE).refine((c) => !CLES_RESERVEES.includes(c), { message: 'clé réservée' }),
+  /** Ce que l'agent demande, dans les mots de l'administrateur (« ton prénom »). */
+  question: z.string().trim().min(1).max(BORNES_ENCHAINEMENT.question),
+  /** Les valeurs permises ; vide = toute valeur. Annoncées au modèle et appliquées par la validation. */
+  valeurs: z.array(z.string().trim().min(1).max(BORNES_ENCHAINEMENT.valeur)).max(BORNES_ENCHAINEMENT.valeurs),
+};
+
 const etapeSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('demander'),
-    champ: z.string().trim().regex(CLE_CHAMP_DEMANDE_RE).refine((c) => c !== PARAM_DEJA_DEMANDE, { message: 'clé réservée' }),
-    /** Ce que l'agent demande, dans les mots de l'administrateur (« ton prénom »). */
-    question: z.string().trim().min(1).max(BORNES_ENCHAINEMENT.question),
-    /** Les valeurs permises ; vide = toute valeur. Annoncées au modèle et appliquées par la validation. */
-    valeurs: z.array(z.string().trim().min(1).max(BORNES_ENCHAINEMENT.valeur)).max(BORNES_ENCHAINEMENT.valeurs),
-  }).strict(),
+  z.object({ type: z.literal('demander'), ...CHAMPS_QUESTION }).strict(),
   z.object({ type: z.literal('valeur'), champ, valeur: z.string().trim().min(1).max(BORNES_ENCHAINEMENT.valeurFixe) }).strict(),
   z.object({ type: z.literal('tag'), tag: z.string().trim().min(1).max(LONGUEUR_MAX_ETIQUETTE) }).strict(),
   z.object({ type: z.literal('urgent') }).strict(),
   z.object({ type: z.literal('bloc'), workflowId: z.string().uuid(), code: z.string().regex(CODE_BLOC_RE) }).strict(),
   z.object({ type: z.literal('scenario'), workflowId: z.string().uuid() }).strict(),
+  /** La conversation passe à l'équipe, dans « À traiter » (demande de Julien du 2026-10-20) : le même geste que
+   *  « Passer la main à un humain », avec la dernière phrase de l'agent (`message`). */
+  z.object({ type: z.literal('transferer') }).strict(),
 ]);
 export type EtapeEnchainement = z.infer<typeof etapeSchema>;
 export type TypeEtape = EtapeEnchainement['type'];
@@ -59,10 +71,16 @@ export type TypeEtape = EtapeEnchainement['type'];
 /** Les étapes qui partent chez le contact : jamais avant une question (règle 2). */
 const PART_CHEZ_LE_CONTACT: ReadonlySet<TypeEtape> = new Set(['bloc', 'scenario']);
 
+/** Les étapes après lesquelles l'agent se retire : une seule, en dernier (règle 1). */
+const TERMINALES: ReadonlySet<TypeEtape> = new Set(['scenario', 'transferer']);
+
 /** La raison pour laquelle cet ordre d'étapes est refusé, ou `null`. Partagée avec l'écran par le message du 400. */
 export function fauteDOrdre(etapes: readonly EtapeEnchainement[]): string | null {
-  const iScenario = etapes.findIndex((e) => e.type === 'scenario');
-  if (iScenario !== -1 && iScenario !== etapes.length - 1) return 'le scénario ferme la marche : rien ne peut venir après lui';
+  const terminales = etapes.flatMap((e, i) => (TERMINALES.has(e.type) ? [i] : []));
+  if (terminales.length > 1) return 'un seul scénario ou transfert à l’équipe : l’agent se retire au premier';
+  if (terminales.length === 1 && terminales[0] !== etapes.length - 1) {
+    return 'le scénario ou le transfert ferme la marche : rien ne peut venir après lui';
+  }
   const derniereQuestion = etapes.map((e) => e.type).lastIndexOf('demander');
   const premierEnvoi = etapes.findIndex((e) => PART_CHEZ_LE_CONTACT.has(e.type));
   if (premierEnvoi !== -1 && premierEnvoi < derniereQuestion) {
@@ -82,6 +100,28 @@ export const cibleEnchainementSchema = z.object({
 });
 export type CibleEnchainement = z.infer<typeof cibleEnchainementSchema>;
 
+/**
+ * 🔴 « QUALIFIER ET TRANSFÉRER » (demande de Julien du 2026-10-20) : une carte à part, mais le MÊME moteur. Sa cible
+ * n'est qu'une liste de questions ; l'outil les pose (une seule fois), range chaque réponse dans son champ, puis passe la
+ * conversation à l'équipe, toujours en dernier. Le schéma ne laisse rien d'autre : ni bloc, ni scénario, ni ordre à
+ * juger, ce qui est tout l'intérêt d'une carte à part.
+ */
+export const cibleQualificationSchema = z.object({
+  handler: z.literal('qualifier_transferer'),
+  questions: z.array(z.object(CHAMPS_QUESTION).strict()).min(1).max(BORNES_ENCHAINEMENT.etapes),
+}).strict().superRefine((c, ctx) => {
+  if (new Set(c.questions.map((q) => q.champ)).size !== c.questions.length) {
+    ctx.addIssue({ code: 'custom', message: 'deux questions remplissent le même champ', path: ['questions'] });
+  }
+});
+export type CibleQualification = z.infer<typeof cibleQualificationSchema>;
+
+/** Les étapes de l'outil de qualification : ses questions, puis le transfert. Ce que la production et le bac à sable
+ *  exécutent, et ce que le modèle lit. */
+export function etapesDeLaQualification(c: Pick<CibleQualification, 'questions'>): EtapeEnchainement[] {
+  return [...c.questions.map((q): EtapeEnchainement => ({ type: 'demander', ...q })), { type: 'transferer' }];
+}
+
 /** Un outil qui lance un scénario ou envoie un bloc est irréversible : il faut cocher l'autonomie pour qu'il agisse. */
 export function risqueDeLEnchainement(etapes: readonly EtapeEnchainement[]): 'write' | 'irreversible' {
   return etapes.some((e) => PART_CHEZ_LE_CONTACT.has(e.type)) ? 'irreversible' : 'write';
@@ -97,6 +137,12 @@ export function lanceUnScenario(etapes: readonly EtapeEnchainement[]): boolean {
   return etapes.some((e) => e.type === 'scenario');
 }
 
+/** L'outil finit-il par passer la conversation à l'équipe ? C'est ce qui le range dans le camp de la qualification
+ *  (`src/agent/camp.ts`). */
+export function transfereALEquipe(etapes: readonly EtapeEnchainement[]): boolean {
+  return etapes.some((e) => e.type === 'transferer');
+}
+
 /**
  * 🔴 LES PARAMÈTRES QUE LE MODÈLE REMPLIT, dérivés des étapes et jamais stockés : un par question, facultatif, borné à
  * ses valeurs permises ; plus `deja_demande`, requis, dès qu'il y a une question. Annoncés au modèle ET appliqués par la
@@ -104,7 +150,14 @@ export function lanceUnScenario(etapes: readonly EtapeEnchainement[]): boolean {
  */
 export function paramsDeLEnchainement(etapes: readonly EtapeEnchainement[]): ParamOutil[] {
   const questions = etapes.flatMap((e) => (e.type === 'demander' ? [e] : []));
-  if (questions.length === 0) return [];
+  // La phrase de l'agent quand l'outil passe la main, comme celle de « Passer la main à un humain » : annoncée requise
+  // et tolérée absente (`paramsAvecDerivations`), parce qu'un modèle qui appelle sans écrire laisserait le contact sans
+  // un mot. Facultative à la validation : au premier appel, qui rend les questions, elle n'est pas dite.
+  const message: ParamOutil[] = transfereALEquipe(etapes) ? [{
+    name: PARAM_MESSAGE, type: 'string', source: 'modele', required: false,
+    description: 'Ta phrase au contact au moment où l’outil le passe à l’équipe, dans le ton de la conversation : qui prend le relais, ou quand l’équipe reprend si elle n’est pas joignable. Toujours rempli.',
+  }] : [];
+  if (questions.length === 0) return message;
   return [
     ...questions.map((q): ParamOutil => ({
       name: q.champ, type: 'string', source: 'modele', required: false,
@@ -115,6 +168,7 @@ export function paramsDeLEnchainement(etapes: readonly EtapeEnchainement[]): Par
       name: PARAM_DEJA_DEMANDE, type: 'boolean', source: 'modele', required: true,
       description: 'true si tu as déjà demandé au contact les informations qui manquent (il a répondu, en partie ou pas, refusé ou insisté) ; false au premier appel.',
     },
+    ...message,
   ];
 }
 
@@ -125,6 +179,7 @@ const DIT_DE_L_ETAPE: Readonly<Record<TypeEtape, (e: EtapeEnchainement) => strin
   urgent: () => 'marque la conversation urgente pour l’équipe',
   bloc: () => 'envoie un message prévu au contact',
   scenario: () => 'lance un scénario qui prend la conversation : tu te retires et n’écris plus rien',
+  transferer: () => 'passe la conversation à l’équipe : tu te retires après ta phrase (message)',
 };
 
 /**
@@ -137,6 +192,11 @@ export function motsDeLEnchainement(etapes: readonly EtapeEnchainement[]): strin
   return `\n\nCet outil fait, dans l’ordre : ${liste}.`
     + (aDesQuestions
       ? '\nPasse les informations que le contact a DÉJÀ données dans la conversation. S’il en manque, l’outil te dit lesquelles : demande-les en UN seul message, puis rappelle l’outil avec ses réponses et deja_demande à true. Ne demande jamais deux fois : s’il refuse, répond en partie ou insiste, rappelle l’outil tout de suite avec deja_demande à true.'
+      : '')
+    // Le cas d'origine : un contact qui veut un humain sans rien avoir donné. L'agent ne doit ni le faire attendre, ni
+    // passer la main par un autre chemin que l'outil qui qualifie.
+    + (transfereALEquipe(etapes)
+      ? '\nSi le contact demande à parler à quelqu’un, appelle cet outil tout de suite : c’est lui qui le passe à l’équipe.'
       : '');
 }
 

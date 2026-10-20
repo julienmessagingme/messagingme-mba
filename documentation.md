@@ -1178,9 +1178,9 @@ nombre, date, email, liste), au plus `BORNES_ACTION.champs` champs et `BORNES_AC
 
 🔴 **L'OUTIL ENCHAÎNÉ (`enchainer`, `src/agent/enchainement.ts`, 2026-10-20).** Un sixième outil à cible :
 `{ etapes }`, de 1 à `BORNES_ENCHAINEMENT.etapes` étapes que l'administrateur range, exécutées DANS SON ORDRE par
-`resolvers/mba.ts`. Six types : `demander` (`{ champ, question, valeurs }`, la seule que le modèle remplit), `valeur`
-(un champ et une valeur fixes), `tag`, `urgent`, `bloc` (`{ workflowId, code }`), `scenario` (`{ workflowId }`). Les
-invariants :
+`resolvers/mba.ts`. Sept types : `demander` (`{ champ, question, valeurs }`, la seule que le modèle remplit), `valeur`
+(un champ et une valeur fixes), `tag`, `urgent`, `bloc` (`{ workflowId, code }`), `scenario` (`{ workflowId }`),
+`transferer` (le geste de `escalader`, la conversation en « À traiter »). Les invariants :
 - **Les paramètres DÉRIVENT des étapes** (`paramsDeLEnchainement`, par `paramsEffectifs`) : un par `demander`, nommé
   par la clé du champ (d'où `CLE_CHAMP_DEMANDE_RE`), facultatif, énuméré par ses valeurs ; plus `deja_demande`,
   booléen REQUIS dès qu'il y a une question. Rien n'est recopié dans `params`.
@@ -1191,7 +1191,8 @@ invariants :
   rejouer. Le défaut probable est un `true` trop tôt, donc un passage sans qualification, jamais un contact bloqué.
 - 🔴 **DEUX RÈGLES D'ORDRE, tenues par le schéma** (`fauteDOrdre`, dans `cibleEnchainementSchema`) et redites à
   l'écran (`manqueDeLEnchainement`, `web/lib/agent-outils.ts`, parité tenue par `tests/web-agent-outils.test.ts`) :
-  un `scenario` est la DERNIÈRE étape ; aucun `bloc` ni `scenario` avant la dernière `demander`. La seconde vient de ce
+  un `scenario` ou un `transferer` est la DERNIÈRE étape, et il n'y en a qu'un ; aucun `bloc` ni `scenario` avant la
+  dernière `demander`. La seconde vient de ce
   que l'outil n'exécute RIEN tant qu'une réponse manque : les questions passent toujours avant toutes les étapes, et un
   bloc rangé avant une question partirait après la réponse, à rebours de l'ordre affiché. Un tag, une valeur fixe ou
   l'urgence ne montrent pas cet écart : leur place est libre. Une réponse est ramenée à `BORNES_ENCHAINEMENT.texte`
@@ -1209,6 +1210,37 @@ invariants :
   (`non_abouti`) et la suite part ; un scénario refusé rend un échec, la session reste vivante. Le scénario où l'agent
   parle est refusé AVANT toute étape. Un dépassement de délai sur un enchaînement qui finit par un scénario arrête le
   tour comme `lancer_scenario` (`executor.ts`, `issueInconnue`).
+- **Le transfert est le geste de `escalader`** (`escaladerVersHumain`) : `rendu` arrête le tour, `mainPrise` garde la
+  phrase, et `message` (la dernière phrase de l'agent) est un paramètre DÉRIVÉ, présent seulement quand les étapes
+  finissent par le transfert, annoncé requis et toléré absent comme celui d'`escalader` (`paramsAvecDerivations`).
+  `deja_demande` et `message` sont donc des clés interdites à une question (`CLES_RESERVEES`). Un transfert qui échoue
+  propose UN rappel, sauf si un bloc est déjà parti (il repartirait).
+
+🔴 **« QUALIFIER ET TRANSFÉRER » (`qualifier_transferer`, 2026-10-20) : une carte à part, le MÊME moteur.** Sa cible
+n'est qu'une liste de questions (`cibleQualificationSchema`, `{ questions: [{ champ, question, valeurs }] }`), traduite
+en étapes `demander` puis `transferer` (`etapesDeLaQualification`) pour l'exposition, la production et le bac à sable.
+Le schéma ne laisse passer ni étape, ni bloc, ni ordre à juger : c'est ce qui en fait une carte distincte.
+
+🔴 **CHOISIR SON CAMP (`src/agent/camp.ts`, 2026-10-20).** Un agent passe à l'équipe en qualifiant d'abord (camp
+`qualification` : `qualifier_transferer`, ou un `enchainer` qui finit par `transferer`) OU directement (camp `direct` :
+`escalader`, ou une règle d'arrêt `humain: true`), jamais les deux. UNE classification (`campDeLOutil`), lue par deux
+portes uniques : `PgToolCatalog` (activation et `PATCH` d'une cible d'outil ACTIF, refus en `OutilNonActivable`, 409)
+et `PgAgentStore.patch` (règles d'arrêt cochées, refus en `CampEnConflit`, 409 par `modifierAgent`). Les trois
+écrivains de la fiche (console, `update_agent`, assistant de construction) passent par `modifierAgent`, les trois
+appelants de l'activation (onglet, `set_agent_tools`, pose d'une action) par `activer`. Chaque refus nomme ce qu'il
+faut désactiver. ⚠️ Lecture puis écriture sans verrou commun : deux activations opposées à la même seconde passeraient
+toutes les deux, une incohérence de réglage que le geste suivant refuse de prolonger. Seuls les consommateurs `agent:`
+ont un camp. `tests/agent-camp.test.ts` et `tests/integration/agent-camp.integration.test.ts`.
+
+🔴 **LA CASE « PASSE À UN HUMAIN » SE GARDE PAR CODE** (`avecCasesHumainGardees`, `src/agent/gestion.ts`). Les règles
+d'arrêt sont remplacées en entier, et l'assistant de construction ne connaît pas la case : sans cette fusion, chacune
+de ses écritures la décocherait, et la qualification deviendrait activable à côté d'une règle qui transfère. Une
+valeur donnée l'emporte, une règle neuve naît décochée, une case décochée ne s'écrit pas. Rien ne change à
+l'exécution : la case ne sert qu'au camp.
+
+**« Enregistrer une information » cite son champ** (2026-10-20) : une ligne « Ce qu'il enregistre » dans les mots
+exposés de l'agent IA (`champDeLOutil`, la clé lue sur la cible), et la description de la variable publiée chez Meta
+(`variablesPourMeta`) ; comparée en entier à la publication, elle part à la prochaine publication de chaque espace.
 
 🔴 **Le modèle ne choisit jamais une cible.** Sur un connecteur API client, l'adresse est figée sur la source,
 le gabarit est écrit par un administrateur, et `construireCible` vérifie que l'URL finale reste SOUS l'adresse

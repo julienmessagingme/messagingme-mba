@@ -104,7 +104,9 @@ export function variablesPourMeta(c: CibleMaison): VariableDeclaree[] {
     type: 'string',
     origine: { type: 'modele' },
     requis: true,
-    description: 'La valeur à enregistrer, telle que le client l’a donnée.',
+    // Le champ est CITÉ (demande de Julien du 2026-10-20) : sans lui, l'agent de Meta lisait « la valeur à enregistrer »
+    // et devinait laquelle. Il suit la cible, et la publication compare les variables en entier : un champ changé part.
+    description: `La valeur à enregistrer dans le champ « ${c.champ} » de la fiche du client, telle qu’il l’a donnée (un nom interne : ne le cite pas au client).`,
     ...(c.valeurs.length > 0 ? { enum: c.valeurs } : {}),
   }];
 }

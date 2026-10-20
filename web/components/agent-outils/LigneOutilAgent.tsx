@@ -19,6 +19,7 @@ export function badgeDeLOutil(o: OutilAgent): { signe: SigneOutil | null; mot: r
   // L'action est propre à l'agent IA : son badge n'est pas dans la grille de l'agent de Meta.
   if (type === 'action') return { signe: signeDuHandler(handler), mot: ['Action', 'Action'] };
   if (type === 'enchainement') return { signe: signeDuHandler(handler), mot: ['Étapes', 'Steps'] };
+  if (type === 'qualification') return { signe: signeDuHandler(handler), mot: ['Qualifier', 'Qualify'] };
   if (type !== null) return { signe: textesDuType(type, 'agent').signe, mot: textesDuType(type, 'agent').badge };
   // Un handler que cette console ne connaît pas : aucun dessin plutôt qu'un dessin qui affirmerait une nature.
   return { signe: signeDuHandler(handler), mot: ['Inconnu', 'Unknown'] };

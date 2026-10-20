@@ -7,7 +7,7 @@ import { listRequetes } from '@/lib/api-agent-requetes';
 import { TYPES_OUTIL_MBA, type TypeOutilMba } from '@/lib/partage/outils-mba';
 import { textesDuType, type ConsommateurOutil } from '@/lib/mba-outils';
 import { IconeOutil } from '@/components/IconeOutil';
-import { TEXTES_ACTION, TEXTES_ENCHAINEMENT } from '@/lib/agent-outils';
+import { TEXTES_ACTION, TEXTES_ENCHAINEMENT, TEXTES_QUALIFICATION } from '@/lib/agent-outils';
 import { useT } from '@/lib/i18n';
 
 /** Les types proposés dans l'ordre du contrat partagé. */
@@ -24,7 +24,9 @@ export const TYPES_PROPOSES = TYPES_OUTIL_MBA;
  * déclarer ce qu'il a déjà.
  */
 type Compte = number | null | 'erreur';
-export function ChoixTypeOutil({ tenantId, onChoisir, onAnnuler, mcpDisponibles, onChoisirMcp, onChoisirAction, onChoisirEnchainement, pour = 'mba' }: {
+export function ChoixTypeOutil({
+  tenantId, onChoisir, onAnnuler, mcpDisponibles, onChoisirMcp, onChoisirAction, onChoisirEnchainement, onChoisirQualification, pour = 'mba',
+}: {
   tenantId: string; onChoisir: (type: TypeOutilMba) => void; onAnnuler: () => void;
   /** Combien d'outils MCP enregistrés l'agent n'a pas encore. Lu par la liste de l'onglet. */
   mcpDisponibles: number;
@@ -42,6 +44,8 @@ export function ChoixTypeOutil({ tenantId, onChoisir, onAnnuler, mcpDisponibles,
   onChoisirAction?: () => void;
   /** « Enchaîner des étapes » (2026-10-20), propre à l'agent IA comme l'action. Absente, la case n'est pas montrée. */
   onChoisirEnchainement?: () => void;
+  /** « Qualifier et transférer » (2026-10-20), propre à l'agent IA. Absente, la case n'est pas montrée. */
+  onChoisirQualification?: () => void;
 }) {
   const t = useT();
   const [appels, setAppels] = useState<Compte>(null);
@@ -128,6 +132,17 @@ export function ChoixTypeOutil({ tenantId, onChoisir, onAnnuler, mcpDisponibles,
                 <span className="min-w-0 truncate">{t(TEXTES_ENCHAINEMENT.titre[0], TEXTES_ENCHAINEMENT.titre[1])}</span>
               </span>
               <span className="mt-1 block text-xs text-ink-500">{t(TEXTES_ENCHAINEMENT.aide[0], TEXTES_ENCHAINEMENT.aide[1])}</span>
+            </button>
+          </div>
+        )}
+        {pour === 'agent' && onChoisirQualification && (
+          <div className="rounded-carte border border-ink-200 p-4 hover:border-brand-300 hover:bg-brand-50">
+            <button type="button" data-testid="mba-type-qualification" onClick={onChoisirQualification} className="block w-full text-left">
+              <span className="flex items-center gap-2 text-sm font-semibold text-ink-900">
+                <IconeOutil signe="humain" className="text-ink-400" />
+                <span className="min-w-0 truncate">{t(TEXTES_QUALIFICATION.titre[0], TEXTES_QUALIFICATION.titre[1])}</span>
+              </span>
+              <span className="mt-1 block text-xs text-ink-500">{t(TEXTES_QUALIFICATION.aide[0], TEXTES_QUALIFICATION.aide[1])}</span>
             </button>
           </div>
         )}

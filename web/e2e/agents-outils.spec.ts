@@ -37,6 +37,7 @@ const CATALOGUE = [
   modele('lancer_scenario', 'Lancer un scénario', 'irreversible'),
   modele('declencher_action', 'Déclencher une action', 'write'),
   modele('enchainer', 'Enchaîner des étapes', 'write'),
+  modele('qualifier_transferer', 'Qualifier et transférer', 'write'),
 ];
 
 const base = {
@@ -154,7 +155,9 @@ async function mock(page: import('@playwright/test').Page, appels: Appel[], depa
       ] });
     }
     if (/\/workflows(\?|$)/.test(url)) return json({ workflows: [{ id: WF, name: 'Prise de rendez-vous', nodeCount: 3 }] });
-    if (/\/user-fields(\?|$)/.test(url)) return json({ fields: [{ key: 'statut', label: 'Statut', type: 'text' }] });
+    if (/\/user-fields(\?|$)/.test(url)) {
+      return json({ fields: [{ key: 'statut', label: 'Statut', type: 'text' }, { key: 'campus', label: 'Campus', type: 'text' }] });
+    }
     if (/\/tags(\?|$)/.test(url)) return json({ tags: [{ tag: 'rdv_pris', count: 3 }] });
     if (url.includes('/agent-requetes')) return json({ requetes: [REQUETE], champs: [], catalogue: { contact: [], systeme: [], entetesReserves: [] } });
     if (url.includes('/agent-sources')) return json({ sources: [{ id: SRC, kind: 'http', label: 'ERP', status: 'active' }] });
@@ -352,7 +355,7 @@ test.describe('Agents IA : « Quel outil ajouter ? »', () => {
     await mock(page, [], []);
     await onglet(page);
     await page.getByTestId('agent-outils-ajouter').click();
-    for (const type of ['tag', 'champ', 'bloc', 'scenario', 'connecteur', 'mcp', 'action', 'enchainement']) {
+    for (const type of ['tag', 'champ', 'bloc', 'scenario', 'connecteur', 'mcp', 'action', 'enchainement', 'qualification']) {
       await expect(page.getByTestId(`mba-type-${type}`)).toBeVisible();
     }
     await expect(page.getByTestId('mba-types')).not.toContainText('agent de Meta');
@@ -419,7 +422,7 @@ test.describe('Agents IA : « Quel outil ajouter ? »', () => {
     await page.getByTestId('agent-etape-1').getByTestId('mba-cible-champ').selectOption('statut');
     await page.getByTestId('agent-outil-form-titre').fill('Qualifier puis transférer');
     await page.getByTestId('agent-outil-form-quand').fill('Appelle cet outil dès que le contact veut parler à un conseiller.');
-    await expect(page.getByTestId('agent-outil-form-manque')).toContainText('Le scénario ferme la marche');
+    await expect(page.getByTestId('agent-outil-form-manque')).toContainText('ferme la marche');
     await expect(page.getByTestId('agent-outil-form-enregistrer')).toBeDisabled();
     // On remonte la question : l'ordre est bon, l'autonomie est demandée (un scénario part chez le contact).
     await page.getByTestId('agent-etape-monter-1').click();
@@ -436,6 +439,55 @@ test.describe('Agents IA : « Quel outil ajouter ? »', () => {
     }]);
     await expect.poll(() => appels.find((a) => /\/autonomie$/.test(a.url))?.body).toEqual({ valeur: true });
     await expect(page.getByTestId('outil-cible-n1')).toHaveText('2 étapes, dont 1 question, puis scénario Prise de rendez-vous');
+  });
+
+  test('🔴 « Qualifier et transférer » : des questions ajoutées par « + », chacune dans son champ, puis « À traiter »', async ({ page }) => {
+    const appels: Appel[] = [];
+    await mock(page, appels, []);
+    await onglet(page);
+    await page.getByTestId('agent-outils-ajouter').click();
+    await page.getByTestId('mba-type-qualification').click();
+    // Une première question est déjà là, et le transfert est affiché en dernier, sans qu'on puisse le retirer.
+    await expect(page.getByTestId('agent-etape-0')).toContainText('Question 1');
+    await expect(page.getByTestId('agent-qualification-fin')).toContainText('« À traiter »');
+    await page.getByTestId('agent-etape-0').getByTestId('agent-etape-question').fill('le statut du candidat');
+    await page.getByTestId('agent-etape-0').getByTestId('mba-cible-champ').selectOption('statut');
+    // « + » : une deuxième question, sur le MÊME champ d'abord, refusée avant l'envoi.
+    await page.getByTestId('agent-question-ajouter').click();
+    await page.getByTestId('agent-etape-1').getByTestId('agent-etape-question').fill('le campus visé');
+    await page.getByTestId('agent-etape-1').getByTestId('mba-cible-champ').selectOption('statut');
+    await page.getByTestId('agent-outil-form-titre').fill('Qualifier le candidat');
+    await page.getByTestId('agent-outil-form-quand').fill('Appelle cet outil dès que le contact veut parler à un conseiller.');
+    await expect(page.getByTestId('agent-outil-form-manque')).toContainText('Deux questions remplissent le même champ');
+    await page.getByTestId('agent-etape-1').getByTestId('mba-cible-champ').selectOption('campus');
+    // Pas d'autonomie à cocher : rien ne part chez le contact.
+    await expect(page.getByTestId('agent-outil-form-autonomie')).toHaveCount(0);
+    await page.getByTestId('agent-outil-form-enregistrer').click();
+
+    await expect.poll(() => postsOutil(appels).map((a) => a.body), { timeout: 5000 }).toEqual([{
+      handler: 'qualifier_transferer', name: 'qualifier_le_candidat',
+      cible: { questions: [
+        { champ: 'statut', question: 'le statut du candidat', valeurs: [] },
+        { champ: 'campus', question: 'le campus visé', valeurs: [] },
+      ] },
+    }]);
+    await expect(page.getByTestId('outil-cible-n1')).toHaveText('2 questions, puis « À traiter »');
+  });
+
+  test('🔴 « Enregistrer une information » : le titre proposé cite le champ choisi, et le suit', async ({ page }) => {
+    await mock(page, [], []);
+    await onglet(page);
+    await page.getByTestId('agent-outils-ajouter').click();
+    await page.getByTestId('mba-type-champ').click();
+    await page.getByTestId('mba-cible-champ').selectOption('statut');
+    await expect(page.getByTestId('agent-outil-form-titre')).toHaveValue('Enregistrer : Statut');
+    await page.getByTestId('mba-cible-champ').selectOption('campus');
+    await expect(page.getByTestId('agent-outil-form-titre')).toHaveValue('Enregistrer : Campus');
+    await expect(page.getByTestId('agent-outil-form-nom')).toHaveValue('enregistrer_campus');
+    // Un titre écrit à la main ne suit plus.
+    await page.getByTestId('agent-outil-form-titre').fill('Campus du candidat');
+    await page.getByTestId('mba-cible-champ').selectOption('statut');
+    await expect(page.getByTestId('agent-outil-form-titre')).toHaveValue('Campus du candidat');
   });
 
   test('🔴 « Envoyer un bloc » : le scénario, puis UN bloc de ce scénario, qui part seul', async ({ page }) => {

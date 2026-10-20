@@ -5,7 +5,10 @@ import type { RequeteConnecteur, RequeteStore, VariableDeclaree } from '../reque
 import { chercherConnaissance, type RechercheSemantique } from './connaissance';
 import { cibleLue, refusCible, terminerAvec } from './mba';
 import { valeursDesChamps } from '../actions';
-import { consigneDeQuestions, lanceUnScenario, planEnchainement } from '../enchainement';
+import {
+  consigneDeQuestions, etapesDeLaQualification, lanceUnScenario, planEnchainement, transfereALEquipe,
+  type EtapeEnchainement,
+} from '../enchainement';
 
 /**
  * Le résolveur du bac à sable, quand le client parle à son agent depuis la console : un outil qui lit
@@ -40,6 +43,28 @@ function texte(args: Record<string, unknown>, cle: string): string {
 
 /** Ce qu'un outil à effet rend en bac à sable. `simule: true` est lu par l'écran pour le signaler au client,
  *  et la phrase est lue par le modèle pour qu'il n'enchaîne pas sur une prémisse fausse. */
+/**
+ * La MÊME décision qu'en production (`planEnchainement`) : les questions rendues tant qu'il manque une information jamais
+ * demandée, sinon les étapes simulées, et un arrêt du tour quand la dernière lance un scénario, comme `lancer_scenario`.
+ * Un transfert à l'équipe ne l'arrête pas, comme `escalader` ici : il n'y a personne à qui passer la main.
+ */
+function simulerEtapes(etapes: readonly EtapeEnchainement[], args: Record<string, unknown>): SortieResolveur {
+  const plan = planEnchainement(etapes, args);
+  if (plan.quoi === 'demander') return { contenu: consigneDeQuestions(plan.questions) };
+  const valeurs = Object.fromEntries(plan.valeurs);
+  if (lanceUnScenario(etapes)) {
+    return {
+      contenu: {
+        simule: true, enregistrees: valeurs,
+        note: 'Test hors ligne : rien n’a été enregistré et le scénario n’a PAS été lancé. En production, il prend la conversation et l’agent se tait.',
+      },
+      scenarioLance: true,
+    };
+  }
+  if (transfereALEquipe(etapes)) return simule('les étapes de cet outil, puis le passage à l’équipe', { enregistrees: valeurs });
+  return simule('les étapes de cet outil', { enregistrees: valeurs });
+}
+
 function simule(quoi: string, details: Record<string, unknown> = {}): SortieResolveur {
   return {
     contenu: {
@@ -206,27 +231,15 @@ export function creerResolveurSimulation(deps: DepsResolveurSimulation): Resolve
         if (!lues.ok) return { ok: false, contenu: { erreur: lues.erreur }, erreur: lues.erreur };
         return simule(`l’action « ${cible.nom} »`, { champs: lues.valeurs, ...(cible.consigne.trim() === '' ? {} : { consigne: cible.consigne.trim() }) });
       }
-      /**
-       * La MÊME décision qu'en production (`planEnchainement`) : les questions rendues tant qu'il manque une information
-       * jamais demandée, sinon les étapes simulées, et un arrêt du tour quand la dernière lance un scénario, comme
-       * `lancer_scenario`.
-       */
       case 'enchainer': {
         const cible = cibleLue({ outil });
         if (cible?.handler !== 'enchainer') return refusCible({ outil }, 'enchainer');
-        const plan = planEnchainement(cible.etapes, args);
-        if (plan.quoi === 'demander') return { contenu: consigneDeQuestions(plan.questions) };
-        const valeurs = Object.fromEntries(plan.valeurs);
-        if (lanceUnScenario(cible.etapes)) {
-          return {
-            contenu: {
-              simule: true, enregistrees: valeurs,
-              note: 'Test hors ligne : rien n’a été enregistré et le scénario n’a PAS été lancé. En production, il prend la conversation et l’agent se tait.',
-            },
-            scenarioLance: true,
-          };
-        }
-        return simule('les étapes de cet outil', { enregistrees: valeurs });
+        return simulerEtapes(cible.etapes, args);
+      }
+      case 'qualifier_transferer': {
+        const cible = cibleLue({ outil });
+        if (cible?.handler !== 'qualifier_transferer') return refusCible({ outil }, 'qualifier_transferer');
+        return simulerEtapes(etapesDeLaQualification(cible), args);
       }
 
       default:

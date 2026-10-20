@@ -47,6 +47,8 @@ export function signeDuHandler(handler: string): SigneOutil | null {
     case 'declencher_action': return 'connecteur';
     // L'outil enchaîné (2026-10-20) : une suite d'étapes, le même dessin que le parcours d'un scénario.
     case 'enchainer': return 'scenario';
+    // « Qualifier et transférer » (2026-10-20) finit par le passage à l'équipe : le dessin de « Passer la main ».
+    case 'qualifier_transferer': return 'humain';
     default: return null;
   }
 }

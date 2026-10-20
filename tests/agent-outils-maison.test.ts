@@ -113,7 +113,11 @@ describe('catalogue des outils maison', () => {
     expect(outilMaison('declencher_action')?.params).toEqual([]);
     // L'outil enchaîné (2026-10-20) : ses étapes sont fixées ; seules les questions deviennent des paramètres, DÉRIVÉS.
     expect(outilMaison('enchainer')?.params).toEqual([]);
-    expect(HANDLERS_A_CIBLE.slice().sort()).toEqual(['declencher_action', 'ecrire_variable', 'enchainer', 'envoyer_bloc', 'lancer_scenario', 'poser_tag']);
+    // « Qualifier et transférer » (2026-10-20) : ses questions sont fixées, et leurs paramètres DÉRIVÉS de même.
+    expect(outilMaison('qualifier_transferer')?.params).toEqual([]);
+    expect(HANDLERS_A_CIBLE.slice().sort()).toEqual([
+      'declencher_action', 'ecrire_variable', 'enchainer', 'envoyer_bloc', 'lancer_scenario', 'poser_tag', 'qualifier_transferer',
+    ]);
   });
 
   it('🔴 RC4 : « lancer un scénario » est irréversible, et hors des outils sûrs du MCP', () => {

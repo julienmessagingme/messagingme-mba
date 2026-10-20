@@ -69,9 +69,13 @@ function libelleCible(o: OutilAgent, noms: Noms, t: Traduire): string {
       const dernier = c.etapes[n - 1];
       const fin = dernier?.type === 'scenario'
         ? t(`, puis scénario ${noms.scenarios.get(dernier.workflowId) ?? '(supprimé ou dépublié)'}`, `, then scenario ${noms.scenarios.get(dernier.workflowId) ?? '(deleted or unpublished)'}`)
-        : '';
+        : dernier?.type === 'transferer' ? t(', puis « À traiter »', ', then “To handle”') : '';
       return t(`${n} étape${n > 1 ? 's' : ''}, dont ${questions} question${questions > 1 ? 's' : ''}${fin}`,
         `${n} step${n > 1 ? 's' : ''}, ${questions} question${questions > 1 ? 's' : ''}${fin}`);
+    }
+    case 'qualification': {
+      const n = c.etapes.length;
+      return t(`${n} question${n > 1 ? 's' : ''}, puis « À traiter »`, `${n} question${n > 1 ? 's' : ''}, then “To handle”`);
     }
   }
 }
@@ -287,7 +291,9 @@ export function AgentOutils({ tenantId, agentId, onChange }: { tenantId: string;
               /* La carte n'apparaît que si l'API la connaît : la console part au push, l'API à son déploiement, et une
                  carte servie avant aurait posé un outil que la route refuse (« outil inconnu »). */
               {...(catalogue.some((m) => m.handler === HANDLER_DU_TYPE.enchainement)
-                ? { onChoisirEnchainement: () => setMode({ vue: 'form', type: 'enchainement' }) } : {})} />
+                ? { onChoisirEnchainement: () => setMode({ vue: 'form', type: 'enchainement' }) } : {})}
+              {...(catalogue.some((m) => m.handler === HANDLER_DU_TYPE.qualification)
+                ? { onChoisirQualification: () => setMode({ vue: 'form', type: 'qualification' }) } : {})} />
           )}
 
           {mode.vue === 'mcp' && (

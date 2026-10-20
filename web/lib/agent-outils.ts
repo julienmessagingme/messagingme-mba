@@ -53,7 +53,7 @@ export function estToujoursLa(handler: string): handler is HandlerToujoursLa {
  */
 export const HANDLER_DU_TYPE = {
   tag: 'poser_tag', champ: 'ecrire_variable', bloc: 'envoyer_bloc', scenario: 'lancer_scenario', action: 'declencher_action',
-  enchainement: 'enchainer',
+  enchainement: 'enchainer', qualification: 'qualifier_transferer',
 } as const;
 export type TypeACible = keyof typeof HANDLER_DU_TYPE;
 
@@ -83,21 +83,26 @@ export type CibleSaisieAgent =
   | { type: 'bloc'; workflowId: string; code: string }
   | { type: 'scenario'; workflowId: string }
   | { type: 'action'; nom: string; consigne: string; champs: ChampActionSaisi[] }
-  | { type: 'enchainement'; etapes: EtapeSaisie[] };
+  | { type: 'enchainement'; etapes: EtapeSaisie[] }
+  /** « Qualifier et transférer » : ses questions, saisies comme des étapes « demander » (le même éditeur). */
+  | { type: 'qualification'; etapes: EtapeSaisie[] };
 export type CibleActionSaisie = Extract<CibleSaisieAgent, { type: 'action' }>;
 export type CibleEnchainementSaisie = Extract<CibleSaisieAgent, { type: 'enchainement' }>;
+export type CibleQualificationSaisie = Extract<CibleSaisieAgent, { type: 'qualification' }>;
 
 /**
  * L'OUTIL ENCHAÎNÉ (demande de Julien du 2026-10-20) : des étapes que l'administrateur range dans l'ordre qu'il veut.
  * Recopie des types et des bornes de `src/agent/enchainement.ts`, tenue égale par `tests/web-agent-outils.test.ts` :
  * les deux builds ne partagent pas ce module.
  */
-export const TYPES_ETAPE = ['demander', 'valeur', 'tag', 'urgent', 'bloc', 'scenario'] as const;
+export const TYPES_ETAPE = ['demander', 'valeur', 'tag', 'urgent', 'bloc', 'scenario', 'transferer'] as const;
 export type TypeEtape = (typeof TYPES_ETAPE)[number];
 export const BORNES_ENCHAINEMENT = { etapes: 12, question: 120, champ: 64, valeur: 120, valeurs: 50, valeurFixe: 500, texte: 1000 } as const;
 /** La clé d'un champ « demander » devient le nom d'un paramètre : même alphabet que le serveur. */
 export const CLE_CHAMP_DEMANDE_RE = /^[a-z][a-z0-9_]{0,63}$/;
 export const PARAM_DEJA_DEMANDE = 'deja_demande';
+/** Les clés qu'une question ne peut pas remplir : `deja_demande` et la phrase de l'agent (`message`). */
+export const CLES_RESERVEES: readonly string[] = [PARAM_DEJA_DEMANDE, 'message'];
 
 /** Une étape telle que l'écran la saisit : un seul objet, chaque type lit ses champs. */
 export interface EtapeSaisie {
@@ -123,15 +128,39 @@ export const LIBELLES_ETAPE: Readonly<Record<TypeEtape, Bilingue>> = {
   urgent: ['Marquer la conversation urgente', 'Mark the conversation urgent'],
   bloc: ['Envoyer un bloc', 'Send a block'],
   scenario: ['Lancer un scénario (termine)', 'Start a scenario (ends)'],
+  transferer: ['Transférer en « À traiter » (termine)', 'Hand over to “To handle” (ends)'],
 };
 
 /** Les étapes qui partent chez le contact : jamais avant une question (le serveur l'exige aussi). */
 const PART_CHEZ_LE_CONTACT: ReadonlySet<TypeEtape> = new Set(['bloc', 'scenario']);
+/** Les étapes après lesquelles l'agent se retire : une seule, en dernier. */
+const TERMINALES: ReadonlySet<TypeEtape> = new Set(['scenario', 'transferer']);
 
 /** L'outil part-il chez le contact ? Il est alors irréversible, et l'autonomie se coche à la pose. */
 export function enchainementIrreversible(etapes: readonly EtapeSaisie[]): boolean {
   return etapes.some((e) => PART_CHEZ_LE_CONTACT.has(e.type));
 }
+
+/** Ce qui ne va pas dans une question (une étape « demander »), ou `null`. `quoi` : « Étape 2 » ou « Question 2 ». */
+function manqueDeLaQuestion(e: EtapeSaisie, quoi: Bilingue): Bilingue | null {
+  const [fr, en] = quoi;
+  if (e.champ === '') return [`${fr} : choisissez le champ où ranger la réponse.`, `${en}: pick the field that stores the answer.`];
+  if (!CLE_CHAMP_DEMANDE_RE.test(e.champ) || CLES_RESERVEES.includes(e.champ)) {
+    return [`${fr} : le champ « ${e.champ} » a une clé que l’agent ne peut pas remplir (minuscules, chiffres, tirets bas, une lettre d’abord).`,
+      `${en}: the field “${e.champ}” has a key the agent cannot fill (lowercase, digits, underscores, a letter first).`];
+  }
+  if (e.question.trim() === '') return [`${fr} : dites ce que l’agent demande.`, `${en}: say what the agent asks.`];
+  if (e.question.trim().length > BORNES_ENCHAINEMENT.question) {
+    return [`${fr} : ${BORNES_ENCHAINEMENT.question} caractères au plus.`, `${en}: at most ${BORNES_ENCHAINEMENT.question} characters.`];
+  }
+  if (e.valeurs.length > BORNES_ENCHAINEMENT.valeurs || e.valeurs.some((v) => v.length > BORNES_ENCHAINEMENT.valeur)) {
+    return [`${fr} : ${BORNES_ENCHAINEMENT.valeurs} valeurs de ${BORNES_ENCHAINEMENT.valeur} caractères au plus.`,
+      `${en}: at most ${BORNES_ENCHAINEMENT.valeurs} values of ${BORNES_ENCHAINEMENT.valeur} characters.`];
+  }
+  return null;
+}
+
+const DEUX_QUESTIONS_MEME_CHAMP: Bilingue = ['Deux questions remplissent le même champ.', 'Two questions fill the same field.'];
 
 /**
  * Ce qui manque à un enchaînement, ou ce qui ne va pas dans son ORDRE, dit avant le 400 du serveur
@@ -145,21 +174,11 @@ export function manqueDeLEnchainement(c: CibleEnchainementSaisie): Bilingue | nu
   for (const [i, e] of c.etapes.entries()) {
     const n = i + 1;
     switch (e.type) {
-      case 'demander':
-        if (e.champ === '') return [`Étape ${n} : choisissez le champ où ranger la réponse.`, `Step ${n}: pick the field that stores the answer.`];
-        if (!CLE_CHAMP_DEMANDE_RE.test(e.champ) || e.champ === PARAM_DEJA_DEMANDE) {
-          return [`Étape ${n} : le champ « ${e.champ} » a une clé que l’agent ne peut pas remplir (minuscules, chiffres, tirets bas, une lettre d’abord).`,
-            `Step ${n}: the field “${e.champ}” has a key the agent cannot fill (lowercase, digits, underscores, a letter first).`];
-        }
-        if (e.question.trim() === '') return [`Étape ${n} : dites ce que l’agent demande.`, `Step ${n}: say what the agent asks.`];
-        if (e.question.trim().length > BORNES_ENCHAINEMENT.question) {
-          return [`Étape ${n} : ${BORNES_ENCHAINEMENT.question} caractères au plus.`, `Step ${n}: at most ${BORNES_ENCHAINEMENT.question} characters.`];
-        }
-        if (e.valeurs.length > BORNES_ENCHAINEMENT.valeurs || e.valeurs.some((v) => v.length > BORNES_ENCHAINEMENT.valeur)) {
-          return [`Étape ${n} : ${BORNES_ENCHAINEMENT.valeurs} valeurs de ${BORNES_ENCHAINEMENT.valeur} caractères au plus.`,
-            `Step ${n}: at most ${BORNES_ENCHAINEMENT.valeurs} values of ${BORNES_ENCHAINEMENT.valeur} characters.`];
-        }
+      case 'demander': {
+        const faute = manqueDeLaQuestion(e, [`Étape ${n}`, `Step ${n}`]);
+        if (faute !== null) return faute;
         break;
+      }
       case 'valeur':
         if (e.champ === '' || e.valeur.trim() === '') return [`Étape ${n} : choisissez le champ et sa valeur.`, `Step ${n}: pick the field and its value.`];
         break;
@@ -173,14 +192,19 @@ export function manqueDeLEnchainement(c: CibleEnchainementSaisie): Bilingue | nu
         if (e.workflowId === '') return [`Étape ${n} : choisissez le scénario.`, `Step ${n}: pick the scenario.`];
         break;
       case 'urgent':
+      case 'transferer':
         break;
     }
   }
   const types = c.etapes.map((e) => e.type);
-  const iScenario = types.indexOf('scenario');
-  if (iScenario !== -1 && iScenario !== types.length - 1) {
-    return ['Le scénario ferme la marche : l’agent se retire, rien de ce qui suit ne partirait. Mettez-le en dernier.',
-      'The scenario comes last: the agent steps back, nothing after it would run. Put it last.'];
+  const terminales = types.flatMap((x, i) => (TERMINALES.has(x) ? [i] : []));
+  if (terminales.length > 1) {
+    return ['Un seul scénario ou transfert à l’équipe : l’agent se retire au premier, le suivant ne partirait jamais.',
+      'A single scenario or handover to the team: the agent steps back at the first one, the next would never run.'];
+  }
+  if (terminales.length === 1 && terminales[0] !== types.length - 1) {
+    return ['Le scénario ou le transfert ferme la marche : l’agent se retire, rien de ce qui suit ne partirait. Mettez-le en dernier.',
+      'The scenario or the handover comes last: the agent steps back, nothing after it would run. Put it last.'];
   }
   const premierEnvoi = types.findIndex((x) => PART_CHEZ_LE_CONTACT.has(x));
   if (premierEnvoi !== -1 && premierEnvoi < types.lastIndexOf('demander')) {
@@ -188,8 +212,49 @@ export function manqueDeLEnchainement(c: CibleEnchainementSaisie): Bilingue | nu
       'A block or a scenario comes after all the questions: the agent always asks first, so a block placed before would actually be sent after the answer.'];
   }
   const cles = c.etapes.filter((e) => e.type === 'demander').map((e) => e.champ);
-  if (new Set(cles).size !== cles.length) return ['Deux questions remplissent le même champ.', 'Two questions fill the same field.'];
+  if (new Set(cles).size !== cles.length) return DEUX_QUESTIONS_MEME_CHAMP;
   return null;
+}
+
+/** Ce qui manque à « Qualifier et transférer » (`cibleQualificationSchema` du serveur) ; `null` = il est prêt. */
+export function manqueDeLaQualification(c: CibleQualificationSaisie): Bilingue | null {
+  if (c.etapes.length === 0) return ['Ajoutez une première question.', 'Add a first question.'];
+  if (c.etapes.length > BORNES_ENCHAINEMENT.etapes) {
+    return [`Au plus ${BORNES_ENCHAINEMENT.etapes} questions.`, `At most ${BORNES_ENCHAINEMENT.etapes} questions.`];
+  }
+  for (const [i, e] of c.etapes.entries()) {
+    const faute = manqueDeLaQuestion(e, [`Question ${i + 1}`, `Question ${i + 1}`]);
+    if (faute !== null) return faute;
+  }
+  if (new Set(c.etapes.map((e) => e.champ)).size !== c.etapes.length) return DEUX_QUESTIONS_MEME_CHAMP;
+  return null;
+}
+
+/** Les mots de la carte « Qualifier et transférer », propre à l'agent IA. */
+export const TEXTES_QUALIFICATION = {
+  titre: ['Qualifier et transférer', 'Qualify and hand over'] as Bilingue,
+  aide: [
+    'L’agent pose vos questions, range chaque réponse dans un champ, puis passe la conversation dans « À traiter ».',
+    'The agent asks your questions, stores each answer in a field, then moves the conversation to “To handle”.',
+  ] as Bilingue,
+  quand: [
+    'Appelle cet outil dès que le contact veut parler à quelqu’un de l’équipe, ou qu’il [décrivez la situation], avec les informations qu’il a déjà données.',
+    'Call this tool as soon as the contact wants to talk to someone on the team, or [describe the situation], with the details they already gave.',
+  ] as Bilingue,
+  pasQuand: [
+    'N’appelle pas cet outil pour une question à laquelle les sources répondent.',
+    'Do not call this tool for a question the sources answer.',
+  ] as Bilingue,
+} as const;
+
+/** Le titre proposé d'un outil « Enregistrer une information », d'après le libellé du champ choisi. */
+export function titreDuChamp(libelle: string): Bilingue {
+  return [`Enregistrer : ${libelle}`, `Record: ${libelle}`];
+}
+
+/** Un titre que l'écran a proposé lui-même (« Enregistrer : … ») : il suit encore le champ choisi. */
+export function estTitreDeChamp(titre: string): boolean {
+  return titre.startsWith('Enregistrer : ') || titre.startsWith('Record: ');
 }
 
 /** Les mots de la carte « Enchaîner des étapes », propre à l'agent IA. */
@@ -323,8 +388,17 @@ export function cibleDeLOutil(binding: Record<string, unknown>): CibleSaisieAgen
     case 'enchainement': return {
       type: 'enchainement', etapes: Array.isArray(binding.etapes) ? binding.etapes.flatMap(etapeLue) : [],
     };
+    // Les questions se relisent comme des étapes « demander » : le même éditeur les montre.
+    case 'qualification': return {
+      type: 'qualification',
+      etapes: Array.isArray(binding.questions) ? binding.questions.flatMap((q) => etapeLue({ ...asObjet(q), type: 'demander' })) : [],
+    };
     case null: return null;
   }
+}
+
+function asObjet(v: unknown): Record<string, unknown> {
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
 /** Une étape relue défensivement : un type inconnu est écarté (une console plus ancienne que l'API). */
@@ -350,6 +424,7 @@ function corpsDeLEtape(e: EtapeSaisie): Record<string, unknown> {
     case 'urgent': return { type: e.type };
     case 'bloc': return { type: e.type, workflowId: e.workflowId, code: e.code };
     case 'scenario': return { type: e.type, workflowId: e.workflowId };
+    case 'transferer': return { type: e.type };
   }
 }
 
@@ -369,6 +444,13 @@ export function corpsDeLaCible(c: CibleSaisieAgent): Record<string, unknown> {
       })),
     };
     case 'enchainement': return { etapes: c.etapes.map(corpsDeLEtape) };
+    // Une question sans son `type` : le serveur n'accepte que des questions ici.
+    case 'qualification': return {
+      questions: c.etapes.map((e) => {
+        const { type: _type, ...q } = corpsDeLEtape({ ...e, type: 'demander' });
+        return q;
+      }),
+    };
   }
 }
 
@@ -381,5 +463,6 @@ export function cibleComplete(c: CibleSaisieAgent): boolean {
     case 'scenario': return c.workflowId !== '';
     case 'action': return manqueDeLAction(c) === null;
     case 'enchainement': return manqueDeLEnchainement(c) === null;
+    case 'qualification': return manqueDeLaQualification(c) === null;
   }
 }

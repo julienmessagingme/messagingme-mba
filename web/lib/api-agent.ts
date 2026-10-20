@@ -6,6 +6,8 @@ import { lireEtatRepondeur, lireRepondeurAgentId, type EtatRepondeur } from './r
 export interface SortieAgent {
   code: string;
   label: string;
+  /** La règle passe la conversation à un humain (miroir de `SortieAgent.humain` du serveur). Absente = non. */
+  humain?: boolean;
 }
 
 export type StatutAgent = 'draft' | 'active' | 'disabled';

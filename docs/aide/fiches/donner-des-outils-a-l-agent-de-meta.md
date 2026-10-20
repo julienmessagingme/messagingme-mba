@@ -1,7 +1,7 @@
 ---
 ecran: mba-settings
 source_section: L'onglet « Outils » de l'agent de Meta (Meta Business Agent > Paramètres > Outils)
-source_empreinte: 6a3a68
+source_empreinte: 04a646
 ---
 # Donner des outils à l'agent de Meta
 
@@ -18,7 +18,9 @@ administrateurs.
   tenue. Le scénario qu'elles lanceraient ne démarre pas, et il n'est pas rejoué ensuite. L'écran le dit.
 - **Enregistrer une information.** Le champ de la fiche est fixé, l'agent fournit la valeur, tirée de la
   conversation. Vous pouvez lui imposer une liste de valeurs permises : toute autre valeur est refusée, et
-  il le sait.
+  il le sait. Le champ est nommé dans ce que l'agent lit, pour qu'il sache quelle information ranger, et le
+  titre proposé le cite (« Enregistrer : Campus »). Un outil déjà publié reçoit ces mots à la prochaine
+  publication.
 - **Envoyer un bloc.** Un message précis d'un de vos scénarios publiés, choisi à l'avance. Il part **seul**,
   sans la suite du scénario, et l'agent reprend la parole au message suivant du client. Un bloc qui attend
   une réponse (des boutons, une question, un formulaire, une attente) ne se choisit pas : il reste visible,

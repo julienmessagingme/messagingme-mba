@@ -42,7 +42,8 @@ export const CIBLE_REQUISE: Readonly<Record<HandlerACible, string>> = {
   envoyer_bloc: 'cible requise : le scénario et le code du bloc à envoyer',
   lancer_scenario: 'cible requise : le scénario à lancer',
   declencher_action: `cible requise : le nom de l’action, sa consigne, et au plus ${BORNES_ACTION.champs} champs (code, libellé, type texte, nombre, date, email ou liste avec ses valeurs)`,
-  enchainer: `cible requise : de 1 à ${BORNES_ENCHAINEMENT.etapes} étapes, un scénario seulement en dernier, aucun bloc ni scénario avant une question, et deux questions jamais sur le même champ`,
+  enchainer: `cible requise : de 1 à ${BORNES_ENCHAINEMENT.etapes} étapes, un seul scénario ou transfert à l’équipe et seulement en dernier, aucun bloc ni scénario avant une question, et deux questions jamais sur le même champ`,
+  qualifier_transferer: `cible requise : de 1 à ${BORNES_ENCHAINEMENT.etapes} questions, chacune avec ce que l’agent demande et le champ qui range la réponse, deux questions jamais sur le même champ`,
 };
 
 /**

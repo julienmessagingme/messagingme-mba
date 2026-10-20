@@ -5,6 +5,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { AgentsRouteDeps } from '../src/http/agents';
 import type { AgentComplet, AgentResume, PatchAgent, StatutAgent } from '../src/agent/agent-store';
+import { CampEnConflit } from '../src/agent/agent-store';
 import { ficheVide } from '../src/agent/fiche';
 import { changerStatut, modifierAgent, type AuteurModification } from '../src/agent/gestion';
 import type { LigneHistorique } from '../src/reglages/historique';
@@ -231,5 +232,40 @@ describe('le modèle et la phrase de mention d’un agent au journal des actions
     const m = monter({ statut: 'active' });
     await modifierAgent(m.deps, 't1', AG, { contenu: { ton: 'Chaleureux.' } }, CONSOLE);
     expect(m.cap.audits).toEqual([]);
+  });
+});
+
+describe('🔴 la case « passe à un humain » d’une règle d’arrêt (2026-10-20)', () => {
+  const HUMAIN = { code: 'besoin_cerne', label: 'Besoin cerné', humain: true };
+
+  it('🔴 un écrivain qui remplace la liste SANS la case (assistant, MCP) la garde, par code', async () => {
+    const m = monter({ statut: 'draft' });
+    await modifierAgent(m.deps, 't1', AG, { contenu: { sorties: [HUMAIN] } }, CONSOLE);
+    await modifierAgent(m.deps, 't1', AG, {
+      contenu: { sorties: [{ code: 'besoin_cerne', label: 'Besoin bien cerné' }, { code: 'devis', label: 'Devis' }] },
+    }, CLAUDE);
+    // La règle gardée garde sa case ; la nouvelle naît décochée, sans clé.
+    expect(m.cap.patches[1]?.contenu?.sorties).toEqual([{ code: 'besoin_cerne', label: 'Besoin bien cerné', humain: true }, { code: 'devis', label: 'Devis' }]);
+  });
+
+  it('une case DONNÉE l’emporte : décochée, elle disparaît de la règle', async () => {
+    const m = monter({ statut: 'draft' });
+    await modifierAgent(m.deps, 't1', AG, { contenu: { sorties: [HUMAIN] } }, CONSOLE);
+    await modifierAgent(m.deps, 't1', AG, { contenu: { sorties: [{ ...HUMAIN, humain: false }] } }, CONSOLE);
+    expect(m.cap.patches[1]?.contenu?.sorties).toEqual([{ code: 'besoin_cerne', label: 'Besoin cerné' }]);
+  });
+
+  it('🔴 le refus du store (un outil qualifie déjà) devient un 409 qui dit quoi désactiver, et rien n’est journalisé', async () => {
+    const m = monter({ statut: 'draft' });
+    const message = 'Choisissez un camp : la règle d’arrêt « Besoin cerné » passe la main sans qualifier.';
+    m.deps.agents.patch = async () => { throw new CampEnConflit(message); };
+    const r = await modifierAgent(m.deps, 't1', AG, { contenu: { sorties: [HUMAIN] } }, CONSOLE);
+    expect(r).toEqual({ ok: false, statut: 409, erreur: message });
+    expect(m.cap.lignes).toHaveLength(0);
+    const res = await m.srv().inject({
+      method: 'PATCH', url: `/tenants/t1/agents/${AG}`, ...h(adminTok), payload: { contenu: { sorties: [HUMAIN] } },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe(message);
   });
 });

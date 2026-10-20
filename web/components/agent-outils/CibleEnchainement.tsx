@@ -3,10 +3,10 @@
 import { useState } from 'react';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
+import { Bouton } from '@/components/Bouton';
 import { CibleBloc, CibleChamp, CibleScenario, CibleTag } from '@/components/mba-outils/CiblesOutil';
 import {
-  BORNES_ENCHAINEMENT, LIBELLES_ETAPE, TYPES_ETAPE, etapeVide,
-  type CibleEnchainementSaisie, type EtapeSaisie, type TypeEtape,
+  BORNES_ENCHAINEMENT, LIBELLES_ETAPE, TYPES_ETAPE, etapeVide, type EtapeSaisie, type TypeEtape,
 } from '@/lib/agent-outils';
 
 /**
@@ -16,33 +16,36 @@ import {
  * Chaque étape reprend le sélecteur de l'outil simple du même geste (champ, tag, bloc, scénario) : même lecture du
  * mini-CRM et des scénarios publiés, mêmes signalements d'un champ ou d'un scénario disparu.
  *
- * ⚠️ L'ORDRE est jugé par le parent (`manqueDeLEnchainement`), qui le dit sous le formulaire : un scénario en dernier,
- * aucun bloc ni scénario avant une question. L'écran ne déplace rien tout seul : c'est l'administrateur qui range.
+ * ⚠️ L'ORDRE est jugé par le parent (`manqueDeLEnchainement`), qui le dit sous le formulaire : un scénario ou un transfert
+ * en dernier, aucun bloc ni scénario avant une question. L'écran ne déplace rien tout seul : c'est l'administrateur qui range.
+ *
+ * `questionsSeules` : l'éditeur de « Qualifier et transférer » (demande de Julien du 2026-10-20). Des questions seulement,
+ * « + Ajouter une question », et le transfert affiché en dernier sans qu'on puisse le retirer : le serveur l'ajoute.
  */
-export function CibleEnchainement({ tenantId, valeur, onChange }: {
+export function CibleEnchainement({ tenantId, etapes, onEtapes, questionsSeules = false }: {
   tenantId: string;
-  valeur: CibleEnchainementSaisie;
-  onChange: (c: CibleEnchainementSaisie) => void;
+  etapes: EtapeSaisie[];
+  onEtapes: (etapes: EtapeSaisie[]) => void;
+  questionsSeules?: boolean;
 }) {
   const t = useT();
   const [choix, setChoix] = useState<TypeEtape | ''>('');
   // Une clé stable par étape : la position change quand on déplace, et un sélecteur garde un état local (ses listes lues).
-  const [cles, setCles] = useState<number[]>(() => valeur.etapes.map((_, i) => i));
-  const [prochaine, setProchaine] = useState(valeur.etapes.length);
-  const etapes = valeur.etapes;
+  const [cles, setCles] = useState<number[]>(() => etapes.map((_, i) => i));
+  const [prochaine, setProchaine] = useState(etapes.length);
 
-  const changer = (i: number, e: EtapeSaisie): void => onChange({ ...valeur, etapes: etapes.map((x, j) => (j === i ? e : x)) });
+  const changer = (i: number, e: EtapeSaisie): void => onEtapes(etapes.map((x, j) => (j === i ? e : x)));
 
   const ajouter = (type: TypeEtape): void => {
     if (etapes.length >= BORNES_ENCHAINEMENT.etapes) return;
-    onChange({ ...valeur, etapes: [...etapes, etapeVide(type)] });
+    onEtapes([...etapes, etapeVide(type)]);
     setCles((c) => [...c, prochaine]);
     setProchaine((n) => n + 1);
     setChoix('');
   };
 
   const retirer = (i: number): void => {
-    onChange({ ...valeur, etapes: etapes.filter((_, j) => j !== i) });
+    onEtapes(etapes.filter((_, j) => j !== i));
     setCles((c) => c.filter((_, j) => j !== i));
   };
 
@@ -50,23 +53,30 @@ export function CibleEnchainement({ tenantId, valeur, onChange }: {
     const j = i + sens;
     if (j < 0 || j >= etapes.length) return;
     const echange = <T,>(l: T[]): T[] => { const r = [...l]; [r[i], r[j]] = [r[j]!, r[i]!]; return r; };
-    onChange({ ...valeur, etapes: echange(etapes) });
+    onEtapes(echange(etapes));
     setCles(echange);
   };
 
   return (
-    <div className="flex flex-col gap-3" data-testid="agent-enchainement">
+    <div className="flex flex-col gap-3" data-testid={questionsSeules ? 'agent-qualification' : 'agent-enchainement'}>
       <p className="text-xs text-ink-500">
-        {t(
-          'L’agent exécute les étapes dans cet ordre. S’il manque une réponse à une question, il la demande au contact une seule fois, puis exécute tout avec ce qu’il a.',
-          'The agent runs the steps in this order. If an answer to a question is missing, it asks the contact once, then runs everything with what it has.',
-        )}
+        {questionsSeules
+          ? t(
+            'L’agent demande au contact ce qui lui manque, une seule fois et en un message, range chaque réponse dans son champ, puis passe la conversation dans « À traiter » avec sa dernière phrase. Il transfère même si le contact ne répond pas.',
+            'The agent asks the contact for what is missing, once and in one message, stores each answer in its field, then moves the conversation to “To handle” with its last sentence. It hands over even if the contact does not answer.',
+          )
+          : t(
+            'L’agent exécute les étapes dans cet ordre. S’il manque une réponse à une question, il la demande au contact une seule fois, puis exécute tout avec ce qu’il a.',
+            'The agent runs the steps in this order. If an answer to a question is missing, it asks the contact once, then runs everything with what it has.',
+          )}
       </p>
       {etapes.map((e, i) => (
         <div key={cles[i] ?? i} className="flex flex-col gap-2 rounded-controle border border-ink-200 p-3" data-testid={`agent-etape-${i}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs font-semibold text-ink-900">
-              {t(`Étape ${i + 1} : `, `Step ${i + 1}: `)}{t(LIBELLES_ETAPE[e.type][0], LIBELLES_ETAPE[e.type][1])}
+              {questionsSeules
+                ? t(`Question ${i + 1}`, `Question ${i + 1}`)
+                : <>{t(`Étape ${i + 1} : `, `Step ${i + 1}: `)}{t(LIBELLES_ETAPE[e.type][0], LIBELLES_ETAPE[e.type][1])}</>}
             </p>
             <div className="flex items-center gap-3 text-xs text-ink-500">
               <button type="button" data-testid={`agent-etape-monter-${i}`} disabled={i === 0} onClick={() => deplacer(i, -1)}
@@ -81,7 +91,18 @@ export function CibleEnchainement({ tenantId, valeur, onChange }: {
           <Etape tenantId={tenantId} etape={e} onChange={(x) => changer(i, x)} />
         </div>
       ))}
-      {etapes.length < BORNES_ENCHAINEMENT.etapes && (
+      {questionsSeules && etapes.length < BORNES_ENCHAINEMENT.etapes && (
+        <Bouton variante="secondaire" taille="petite" type="button" data-testid="agent-question-ajouter"
+          className="self-start" onClick={() => ajouter('demander')}>
+          {t('+ Ajouter une question', '+ Add a question')}
+        </Bouton>
+      )}
+      {questionsSeules && (
+        <p className="rounded-controle border border-ink-200 bg-ink-50 px-3 py-2 text-xs text-ink-500" data-testid="agent-qualification-fin">
+          {t('Puis : la conversation passe dans « À traiter », toujours en dernier.', 'Then: the conversation moves to “To handle”, always last.')}
+        </p>
+      )}
+      {!questionsSeules && etapes.length < BORNES_ENCHAINEMENT.etapes && (
         <div className="flex flex-wrap items-end gap-2">
           <label className="text-xs text-ink-500">
             {etapes.length === 0 ? t('Première étape', 'First step') : t('+ Ajouter une étape', '+ Add a step')}
@@ -150,6 +171,15 @@ function Etape({ tenantId, etape, onChange }: { tenantId: string; etape: EtapeSa
       return (
         <CibleScenario pour="agent" tenantId={tenantId} workflowId={etape.workflowId}
           onChange={(workflowId) => onChange({ ...etape, workflowId })} />
+      );
+    case 'transferer':
+      return (
+        <p className="text-xs text-ink-500">
+          {t(
+            'La conversation passe dans « À traiter » : l’agent écrit sa dernière phrase, puis se retire. Un agent qui transfère ainsi ne garde pas « Passer la main à un humain ».',
+            'The conversation moves to “To handle”: the agent writes its last sentence, then steps back. An agent that hands over this way does not keep “Hand over to a human”.',
+          )}
+        </p>
       );
   }
 }

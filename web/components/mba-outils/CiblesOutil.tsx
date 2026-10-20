@@ -54,7 +54,8 @@ export function CibleTag({ tenantId, valeur, onChange, pour = 'mba' }: {
 }
 
 export function CibleChamp({ tenantId, champ, valeurs, onChange, pour = 'mba', sansValeurs = false }: {
-  tenantId: string; champ: string; valeurs: string[]; onChange: (champ: string, valeurs: string[]) => void;
+  /** `libelle` : le nom du champ choisi, tel que le mini-CRM l'affiche (le titre de l'outil le cite). */
+  tenantId: string; champ: string; valeurs: string[]; onChange: (champ: string, valeurs: string[], libelle?: string) => void;
   pour?: ConsommateurOutil;
   /** Le champ seul, sans liste de valeurs permises (une valeur fixe d'un outil enchaîné, qui n'en a pas). */
   sansValeurs?: boolean;
@@ -83,7 +84,7 @@ export function CibleChamp({ tenantId, champ, valeurs, onChange, pour = 'mba', s
       <label className="text-xs text-ink-500">
         {t('Champ de la fiche', 'Record field')}
         <select className={`${inputCls} mt-1`} data-testid="mba-cible-champ" value={champ}
-          onChange={(e) => onChange(e.target.value, valeurs)}>
+          onChange={(e) => onChange(e.target.value, valeurs, lus.find((f) => f.key === e.target.value)?.label)}>
           <option value="">{t('Choisir un champ', 'Pick a field')}</option>
           {disparu && <option value={champ}>{champ} {t('(supprimé du mini-CRM)', '(deleted from the mini-CRM)')}</option>}
           {/* Liste pas encore lue, ou illisible : la valeur courante reste affichée, sans rien affirmer d'elle. */}

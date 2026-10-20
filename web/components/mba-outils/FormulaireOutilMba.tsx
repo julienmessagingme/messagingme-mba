@@ -6,6 +6,7 @@ import {
 } from '@/lib/api-mba-outils';
 import type { CibleSaisie, OutilMbaVue, TypeOutilMba } from '@/lib/partage/outils-mba';
 import { BORNES_OUTIL, TEXTES_PAR_TYPE, consigneIncomplete, nomTechniqueDepuisTitre } from '@/lib/mba-outils';
+import { estTitreDeChamp, titreDuChamp } from '@/lib/agent-outils';
 import { CibleBloc, CibleChamp, CibleConnecteur, CibleScenario, CibleTag } from './CiblesOutil';
 import { inputCls } from '@/lib/ui';
 import { useT } from '@/lib/i18n';
@@ -136,7 +137,11 @@ export function FormulaireOutilMba({ tenantId, type, outil, occupe, onOccupe, on
       )}
       {cible?.type === 'champ' && (
         <CibleChamp tenantId={tenantId} champ={cible.champ} valeurs={cible.valeurs}
-          onChange={(champ, valeurs) => setCible({ type: 'champ', champ, valeurs })} />
+          onChange={(champ, valeurs, libelle) => {
+            setCible({ type: 'champ', champ, valeurs });
+            // Le titre cite le champ (demande de Julien du 2026-10-20), et le suit tant qu'on ne l'a pas écrit autrement.
+            if (libelle && (title.trim() === '' || estTitreDeChamp(title))) changerTitre(t(...titreDuChamp(libelle)));
+          }} />
       )}
       {cible?.type === 'bloc' && (
         <CibleBloc tenantId={tenantId} workflowId={cible.workflowId} code={cible.code}

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { AgentComplet, PatchAgent, StatutAgent } from './agent-store';
-import { FicheAgentPerimee, LabelAgentDejaPris } from './agent-store';
+import { CampEnConflit, FicheAgentPerimee, LabelAgentDejaPris } from './agent-store';
 import { fichePatchSchema, type FicheAgentContenu } from './fiche';
 import { avertissements, manquesAvantActivation, type EtatPourLint, type ManqueFiche } from './setup/lint';
 import { CreditInsuffisantPourCle, PLAFOND_GATEWAY_MIN_DOLLARS } from './provisionner-cle';
@@ -165,7 +165,9 @@ export async function modifierAgent(
     // 4xx et non 5xx : Cloudflare remplacerait le corps, et le client ne saurait pas quel champ corriger.
     return refus(400, `champs invalides : ${detail}`);
   }
-  const patch: PatchAgent = lu.data;
+  // L'état d'avant, lu ici et non plus bas : la case « passe à un humain » d'une règle d'arrêt se garde par lui.
+  const courant = await deps.agents.complet(tenantId, agentId);
+  const patch: PatchAgent = avecCasesHumainGardees(lu.data, courant);
   // Une version seule ne modifie rien : elle accompagne un patch, elle n'en est pas un.
   const { ficheVersionAttendue: _v, ...champs } = patch;
   if (Object.keys(champs).length === 0) return refus(400, 'aucun champ à modifier');
@@ -177,9 +179,8 @@ export async function modifierAgent(
   if (champs.modele !== undefined && !IDS_MODELES_CHOISIS.has(champs.modele) && champs.modele !== deps.modeleParDefaut) {
     return refus(400, `modèle inconnu : ${champs.modele}. Choisissez-en un dans la liste proposée.`);
   }
-  // L'état d'avant : il dit si l'agent est actif, et il est l'« avant » de la ligne d'historique. `null` ne refuse
-  // rien ici : l'écriture le dira (404, ou 409 si c'est le verrou qui a mordu).
-  const courant = await deps.agents.complet(tenantId, agentId);
+  // L'état d'avant (lu plus haut) dit aussi si l'agent est actif, et il est l'« avant » de la ligne d'historique. `null`
+  // ne refuse rien ici : l'écriture le dira (404, ou 409 si c'est le verrou qui a mordu).
   const incomplet = await completudeRefusee(deps, tenantId, agentId, courant, patch);
   if (incomplet) return incomplet;
   let agent: AgentComplet | null;
@@ -188,6 +189,7 @@ export async function modifierAgent(
   } catch (err) {
     if (err instanceof FicheAgentPerimee) return refus(409, err.message);
     if (err instanceof LabelAgentDejaPris) return refus(409, err.message);
+    if (err instanceof CampEnConflit) return refus(409, err.message);
     throw err;
   }
   if (!agent) return refus(404, AGENT_INTROUVABLE);
@@ -197,6 +199,26 @@ export async function modifierAgent(
     journaliser('info', 'repondeur_retire_par_desactivation', { tenantId, agentId: agent.id });
   }
   return { ok: true, valeur: agent };
+}
+
+/**
+ * 🔴 LA CASE « PASSE À UN HUMAIN » SE GARDE PAR CODE. Les règles d'arrêt sont REMPLACÉES en entier, et deux de leurs
+ * trois écrivains ne connaissent pas la case : l'assistant de construction (son schéma ne l'annonce pas) et l'outil MCP
+ * `update_agent`. Sans ceci, chacune de leurs écritures la décocherait en silence, et l'outil « Qualifier et transférer »
+ * deviendrait activable à côté d'une règle qui passe à un humain. Une valeur DONNÉE (cochée ou décochée, par la console)
+ * l'emporte ; une règle nouvelle naît décochée. Une case décochée ne s'écrit pas : la règle reste `{ code, label }`.
+ */
+export function avecCasesHumainGardees(patch: PatchAgent, courant: Pick<AgentComplet, 'contenu'> | null): PatchAgent {
+  const sorties = patch.contenu?.sorties;
+  if (!sorties) return patch;
+  const avant = new Set((courant?.contenu.sorties ?? []).filter((s) => s.humain === true).map((s) => s.code));
+  return {
+    ...patch,
+    contenu: {
+      ...patch.contenu,
+      sorties: sorties.map(({ humain, ...s }) => ((humain ?? avant.has(s.code)) ? { ...s, humain: true } : s)),
+    },
+  };
 }
 
 /**

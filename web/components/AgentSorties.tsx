@@ -17,6 +17,10 @@ import { Icone } from '@/components/Icone';
  * ses yeux, et le libellé, lui, reste libre. C'est le libellé que le builder affiche.
  *
  * La règle du code elle-même est partagée avec le serveur (`web/lib/partage/sorties-agent.ts`).
+ *
+ * La case « passe à un humain » (demande de Julien du 2026-10-20) ne change rien à ce que fait la règle : elle dit au
+ * serveur que c'est un transfert, pour que l'outil « Qualifier et transférer » ne cohabite pas avec elle. Elle part
+ * toujours explicite (cochée ou décochée) : une règle envoyée sans elle garderait son ancienne valeur.
  */
 export function CodeSortieInput({ sorties, busy, onChange }: {
   sorties: SortieAgent[];
@@ -53,12 +57,19 @@ export function CodeSortieInput({ sorties, busy, onChange }: {
         <div key={s.code} data-testid={`agent-sortie-${s.code}`} className="flex items-center gap-2 rounded-controle border border-ink-200 px-3 py-2">
           <span className="shrink-0 rounded-controle bg-ink-100 px-1.5 py-0.5 font-mono text-xs text-ink-500">{s.code}</span>
           <span className="truncate text-sm text-ink-900">{s.label}</span>
+          <label className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-ink-500"
+            title={t('Cochez si cette règle passe la conversation à un humain : elle ne cohabite pas avec l’outil « Qualifier et transférer ».',
+              'Check if this rule hands the conversation over to a human: it cannot coexist with the “Qualify and hand over” tool.')}>
+            <input type="checkbox" data-testid={`agent-sortie-humain-${s.code}`} disabled={busy} checked={s.humain === true}
+              onChange={(e) => onChange(sorties.map((x) => (x.code === s.code ? { ...x, humain: e.target.checked } : x)))} />
+            {t('passe à un humain', 'hands over to a human')}
+          </label>
           <button
             data-testid={`agent-sortie-retirer-${s.code}`}
             disabled={busy}
             onClick={() => onChange(sorties.filter((x) => x.code !== s.code))}
             title={t('Retirer cette règle d’arrêt', 'Remove this stop rule')}
-            className="ml-auto shrink-0 rounded-controle px-1.5 text-sm text-danger hover:bg-danger-50 disabled:opacity-40"
+            className="shrink-0 rounded-controle px-1.5 text-sm text-danger hover:bg-danger-50 disabled:opacity-40"
           ><Icone nom="fermer" taille="petite" /></button>
         </div>
       ))}

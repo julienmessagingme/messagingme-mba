@@ -4,14 +4,17 @@ import type { SortieAgent } from './agent-store';
 import { paramsOutil, toolParamsToJsonSchema, type ParamOutil, type SchemaObjet } from './llm/tool-schema';
 import { LONGUEUR_MAX_ETIQUETTE } from '../crm/poser-etiquette';
 import { CODE_BLOC_RE } from '../workflow/node-list';
-import { cibleEnchainementSchema, motsDeLEnchainement, paramsDeLEnchainement } from './enchainement';
+import {
+  PARAM_MESSAGE, cibleEnchainementSchema, cibleQualificationSchema, etapesDeLaQualification, motsDeLEnchainement,
+  paramsDeLEnchainement, type EtapeEnchainement,
+} from './enchainement';
 
 /**
  * Le catalogue des outils maison, et ce que le modèle voit d'un outil.
  *
  * Un catalogue plutôt qu'un formulaire libre : le comportement vient de `binding.handler`, et seuls existent
  * les handlers de `resolvers/mba.ts`. Un handler libre produirait un outil actif qui refuse à chaque appel.
- * Le client compose le nom, les mots et, pour six d'entre eux, la cible (`cibleOutilAgentSchema`). Miroir de `HANDLERS`, tenu par
+ * Le client compose le nom, les mots et, pour sept d'entre eux, la cible (`cibleOutilAgentSchema`). Miroir de `HANDLERS`, tenu par
  * `tests/agent-outils-maison.test.ts`.
  */
 
@@ -60,13 +63,14 @@ const P = (
 });
 
 /**
- * Les onze outils maison. `envoyer_bloc` et `lancer_scenario` sont déclarés irréversibles : un message parti ne se
+ * Les douze outils maison. `envoyer_bloc` et `lancer_scenario` sont déclarés irréversibles : un message parti ne se
  * rappelle pas et il est facturé, donc le tronc commun les refuse tant que le client n'a pas coché l'autonomie sur
  * l'outil. `enchainer` l'est selon ses étapes (`risqueDeLEnchainement`).
  *
- * 🔴 SIX D'ENTRE EUX AGISSENT SUR UNE CIBLE FIXÉE PAR L'ADMINISTRATEUR (RC4, alignés sur l'agent de Meta) : un tag,
- * un champ, un bloc, un scénario, une action ou des étapes par outil, dans `binding` (`cibleOutilAgentSchema`). Le
- * modèle ne décide que du moment et, pour un champ, de la valeur ; il ne désigne jamais la cible.
+ * 🔴 SEPT D'ENTRE EUX AGISSENT SUR UNE CIBLE FIXÉE PAR L'ADMINISTRATEUR (RC4, alignés sur l'agent de Meta) : un tag,
+ * un champ, un bloc, un scénario, une action, des étapes ou des questions par outil, dans `binding`
+ * (`cibleOutilAgentSchema`). Le modèle ne décide que du moment et, pour un champ, de la valeur ; il ne désigne jamais la
+ * cible.
  */
 export const OUTILS_MAISON: readonly OutilCatalogue[] = [
   {
@@ -265,12 +269,31 @@ export const OUTILS_MAISON: readonly OutilCatalogue[] = [
     nomDefaut: 'mba_enchainer',
     titre: { fr: 'Enchaîner des étapes', en: 'Chain steps' },
     description: {
-      fr: 'Exécute dans l’ordre les étapes prévues pour cet outil : recueillir des informations sur le contact, puis agir (étiquette, message, scénario).',
-      en: 'Runs the steps planned for this tool in order: collect information about the contact, then act (tag, message, scenario).',
+      fr: 'Exécute dans l’ordre les étapes prévues pour cet outil : recueillir des informations sur le contact, puis agir (étiquette, message, scénario, passage à l’équipe).',
+      en: 'Runs the steps planned for this tool in order: collect information about the contact, then act (tag, message, scenario, handover to the team).',
     },
     nePasUtiliser: {
       fr: 'Ne pas l’appeler tant que le contact n’est pas dans la situation que cet outil traite.',
       en: 'Do not call it until the contact is in the situation this tool handles.',
+    },
+    risk: 'write',
+    params: [],
+  },
+  {
+    // « Qualifier et transférer » (demande de Julien du 2026-10-20) : des questions FIXÉES à la pose (`binding.questions`),
+    // posées une seule fois, puis la conversation passe à l'équipe (« À traiter »), toujours en dernier. Le moteur est
+    // celui de l'outil enchaîné (`etapesDeLaQualification`). Il exclut « Passer la main à un humain » et toute règle
+    // d'arrêt qui passe à un humain : l'un ou l'autre, jamais les deux (`src/agent/camp.ts`).
+    handler: 'qualifier_transferer',
+    nomDefaut: 'mba_qualifier_transferer',
+    titre: { fr: 'Qualifier et transférer', en: 'Qualify and hand over' },
+    description: {
+      fr: 'Recueille les informations prévues sur le contact, puis passe la conversation à l’équipe, dans le dossier « À traiter ».',
+      en: 'Collects the planned information about the contact, then hands the conversation over to the team, in the “To handle” folder.',
+    },
+    nePasUtiliser: {
+      fr: 'Ne pas l’appeler par prudence sur une question à laquelle les sources répondent.',
+      en: 'Do not call it out of caution on a question the sources answer.',
     },
     risk: 'write',
     params: [],
@@ -326,6 +349,7 @@ export const cibleOutilAgentSchema = z.discriminatedUnion('handler', [
       .refine((cs) => new Set(cs.map((c) => c.code)).size === cs.length, { message: 'deux champs portent le même code' }),
   }).strict(),
   cibleEnchainementSchema,
+  cibleQualificationSchema,
 ]);
 export type CibleOutilAgent = z.infer<typeof cibleOutilAgentSchema>;
 export type HandlerACible = CibleOutilAgent['handler'];
@@ -400,14 +424,37 @@ export function outilExpose(outil: OutilDefini, sorties: readonly SortieAgent[])
 function motsExposes(outil: OutilDefini): string {
   const refus = outil.nePasUtiliser.trim();
   const base = refus === '' ? outil.description : `${outil.description}\n\nNE PAS l’appeler : ${refus}`;
-  return base + consigneDeLAction(outil) + etapesDeLEnchainement(outil);
+  return base + consigneDeLAction(outil) + champDeLOutil(outil) + etapesDeLEnchainement(outil);
+}
+
+/**
+ * Les étapes d'un outil enchaîné ou de qualification (le même moteur), ou `null` pour un autre outil. Lues sur la
+ * cible : c'est elle qui fait foi, à l'exposition comme à l'exécution.
+ */
+export function etapesDeLaCible(cible: CibleOutilAgent | null): EtapeEnchainement[] | null {
+  if (cible?.handler === 'enchainer') return cible.etapes;
+  if (cible?.handler === 'qualifier_transferer') return etapesDeLaQualification(cible);
+  return null;
 }
 
 /** Les étapes d'un outil enchaîné, dites au modèle dans l'ordre (`motsDeLEnchainement`) : elles viennent de la cible. */
 function etapesDeLEnchainement(outil: OutilDefini): string {
-  if (handlerMaison(outil) !== 'enchainer') return '';
+  const handler = handlerMaison(outil);
+  if (handler !== 'enchainer' && handler !== 'qualifier_transferer') return '';
+  const etapes = etapesDeLaCible(lireCibleOutilAgent(outil.binding));
+  return etapes ? motsDeLEnchainement(etapes) : '';
+}
+
+/**
+ * 🔴 LE CHAMP QUE REMPLIT « Enregistrer une information » (demande de Julien du 2026-10-20) : sans lui, le modèle lisait
+ * « l'information prévue pour cet outil » et devinait laquelle. La clé vient de la cible, donc elle suit un changement
+ * de champ sans que personne réécrive la description. Le modèle ne la répète pas au contact : un nom interne.
+ */
+function champDeLOutil(outil: OutilDefini): string {
+  if (handlerMaison(outil) !== 'ecrire_variable') return '';
   const cible = lireCibleOutilAgent(outil.binding);
-  return cible?.handler === 'enchainer' ? motsDeLEnchainement(cible.etapes) : '';
+  if (cible?.handler !== 'ecrire_variable') return '';
+  return `\n\nCe qu’il enregistre : le champ « ${cible.champ} » de la fiche du contact (un nom interne : ne le cite pas au contact).`;
 }
 
 /**
@@ -457,9 +504,9 @@ export function paramsEffectifs(outil: Pick<OutilDefini, 'origin' | 'binding' | 
  */
 function avecValeursDuChamp(binding: unknown, handler: string, params: ParamOutil[]): ParamOutil[] {
   if (handler === 'declencher_action') return paramsDeLAction(binding);
-  if (handler === 'enchainer') {
-    const cible = lireCibleOutilAgent(binding);
-    return cible?.handler === 'enchainer' ? paramsDeLEnchainement(cible.etapes) : [];
+  if (handler === 'enchainer' || handler === 'qualifier_transferer') {
+    const etapes = etapesDeLaCible(lireCibleOutilAgent(binding));
+    return etapes ? paramsDeLEnchainement(etapes) : [];
   }
   if (handler !== 'ecrire_variable') return params;
   const cible = lireCibleOutilAgent(binding);
@@ -509,6 +556,9 @@ function paramsAvecDerivations(outil: OutilDefini, codesSortie: string[]): Param
   // Annoncé requis, toléré absent : c'est l'obligation qui fait poser la question à un modèle de raisonnement,
   // et la validation, plus souple, ne refuse pas un appel qui l'oublie (il bouclerait jusqu'au plafond).
   const imposes = new Set((modele.paramsImposes ?? []).map((p) => p.name));
+  // La phrase d'un outil enchaîné qui passe à l'équipe suit la même règle que celle de « Passer la main » : annoncée
+  // requise, tolérée absente. Elle n'est dans `params` que quand les étapes finissent par le transfert.
+  if (modele.handler === 'enchainer' || modele.handler === 'qualifier_transferer') imposes.add(PARAM_MESSAGE);
   if (derives.size === 0 && imposes.size === 0) return params;
   if (codesSortie.length === 0 && params.some((p) => derives.has(p.name))) return null;
   return params.map((p) => ({
