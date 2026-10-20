@@ -109,14 +109,19 @@ Agences, hors ligne au registre ; le film du support (Vélo Rapide), qui attend 
 l'espace « Messaging Me demo » (une autre session y construit un agent IA). La page des tarifs est en ligne depuis la
 livraison 8 des offres v2 (ci-dessous).
 
-## CAMPAGNES DEPUIS CLAUDE (SPEC ET PLAN, 2026-10-20)
+## CAMPAGNES ET CHAMPS DEPUIS CLAUDE (2026-10-20)
 
-Spec : [docs/superpowers/specs/2026-10-20-campagnes-depuis-claude-design.md](docs/superpowers/specs/2026-10-20-campagnes-depuis-claude-design.md),
-validée par Julien ; plan : [docs/superpowers/plans/2026-10-20-campagnes-depuis-claude.md](docs/superpowers/plans/2026-10-20-campagnes-depuis-claude.md)
-(dix tâches, la migration poussée seule d'abord). Quatre outils MCP (`find_contacts`, `tag_contacts`,
-`prepare_campaign`, `launch_campaign`) et `list_conversations` étendu : une phrase à l'assistant donne une campagne de
-modèle en brouillon, lancée sur confirmation (code à usage unique) ou depuis la console. Rien de codé : le plan attend la
-lecture de Julien et le choix de la méthode d'exécution.
+Spec : [docs/superpowers/specs/2026-10-20-campagnes-depuis-claude-design.md](docs/superpowers/specs/2026-10-20-campagnes-depuis-claude-design.md) ;
+plans : [campagnes](docs/superpowers/plans/2026-10-20-campagnes-depuis-claude.md) et
+[champs](docs/superpowers/plans/2026-10-20-champs-depuis-claude.md).
+- **Campagnes : en production** (`0c1825ad`, migration 0245, API sur `82a775bb`). `find_contacts`, `tag_contacts`,
+  `prepare_campaign`, `launch_campaign`, `list_conversations` étendu, et le bouton « Programmer pour le … » de la console.
+- **Champs : poussés, CI verte, à déployer** (`75a3b653`, sans migration) : `list_fields`, `create_field`,
+  `set_contact_field`, plus les jaunes de la relecture des campagnes. Les jaunes de la relecture des champs suivent dans
+  un petit commit.
+- **Reste** : l'essai réel (essais 137 et 138 de `docs/prive/ESSAIS-REELS.md`) ; l'entrée de FAQ « préparer une campagne
+  depuis Claude » (elle s'affiche aussi sur les pages Développeurs de la vitrine : oui de Julien) et la publication du
+  plugin 0.2.0, jamais publié depuis le 2026-10-13 ; la page de cas et son film, après l'essai réel (hors du lot, spec).
 
 ## LES OFFRES, DEUXIÈME VERSION (CADRÉ LE 2026-10-16)
 

@@ -5,6 +5,26 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-20 (soir) : les campagnes et les champs depuis Claude
+
+- **Campagnes depuis Claude, en production** (`0c1825ad`, déployé avec `82a775bb`). Exécution du plan en direct par la
+  session (méthode Native), une relecture indépendante unique : un rouge, le `$` manquant aux deux bornes de période de
+  `listConversations` (un heredoc avait mangé l'antislash ; Postgres aurait refusé chaque `list_conversations` daté),
+  corrigé et tenu par `tests/inbox-periode-sql.test.ts`, vu rouge puis vert ; ses jaunes passés au lot suivant.
+- **Migration 0245** (`campaigns.prevue_le`, table `campagne_confirmations`), poussée seule (`28c5f1f5`). Le garde-fou du
+  mode automatique a refusé de l'appliquer depuis la session, par le VPS comme par le runner local (« Production Deploy ») :
+  appliquée par la commande de Julien à 18:38 UTC, puis relue en base point par point (types, nullabilité, clé primaire,
+  `confdeltype = 'c'`) et exécutée par le vrai code en lecture seule (liste des campagnes, état confirmé, conversations
+  sur une période).
+- **Incident évité : deux `docker compose up -d --build` croisés sur le VPS.** La commande de Julien (épinglée sur
+  `0c1825ad`) et celle de la session « API groups » (`82a775bb`, 70 s plus tard) ont tourné ensemble, la seconde ayant
+  avancé l'arbre du VPS pendant le build de la première. Le second `up` est passé en dernier, sur l'arbre complet :
+  empreintes sha256 du code servi égales à git (939 fichiers de `src/` et `db/` relus par la session voisine), /health
+  200, journaux sans erreur. Leçon : un déploiement donné à Julien s'annonce aux sessions voisines comme un fichier de
+  câblage, et un `up` se précède d'un `ps` qui cherche un `docker compose` déjà en cours.
+- **Champs depuis Claude** (`75a3b653`, poussé, CI verte, à déployer) : `list_fields`, `create_field`,
+  `set_contact_field`, et les jaunes de la relecture des campagnes. Relecture sans rouge.
+
 ## 2026-10-20 : l'enregistrement automatique d'un scénario coupait la console entière
 
 - **Le symptôme** (Julien, espace sandbox) : en plein travail sur un scénario, plus rien ne s'enregistre ni ne
