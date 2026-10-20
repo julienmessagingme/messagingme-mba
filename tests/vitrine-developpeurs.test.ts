@@ -199,7 +199,8 @@ describe('le démarrage passe par le plugin, sans créer d’espace avant (Julie
   for (const [langue, html] of Object.entries(PAGES)) {
     it(`page ${langue} : aucun lien vers l’inscription, les appels mènent au plugin et à son dépôt`, () => {
       expect(html).not.toContain('console.messagingme.app/signup');
-      expect(html).toContain('<section class="f-bloc dev-etapes" id="demarrer">');
+      // Les étapes portent la bande claire de la page (2026-10-20)
+      expect(html).toContain('<section class="f-bloc dev-etapes bande-claire" id="demarrer">');
       expect(html.split('href="#demarrer"').length - 1, 'le haut et le bas de la page').toBe(2);
       expect(html).toContain('href="https://github.com/julienmessagingme/messagingme-plugin"');
       // Sous les boutons du haut : aucun compte, un numéro fourni, un compte Meta Business seulement (Julien, 2026-10-19).

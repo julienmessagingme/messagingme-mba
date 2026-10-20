@@ -77,7 +77,7 @@ export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteu
       terrain: {
         surtitre: 'Le conversationnel sur le terrain',
         titre: ['Avec Keolis, l’information voyageurs', 'prend le chemin de WhatsApp.'],
-        film: { nom: 'cas-keolis', aria: 'Film : le cas Keolis, l’information voyageurs sur WhatsApp avec Messaging Me', duree: 'PT24S', publie: '2026-10-20T16:00:00+02:00' },
+        film: { nom: 'cas-transport', aria: 'Film : le cas Keolis, l’information voyageurs sur WhatsApp avec Messaging Me', duree: 'PT38S', publie: '2026-10-20T19:00:00+02:00' },
         chiffres: [
           { valeur: 'Plus de 3&nbsp;500 abonnés', texte: 'sur les réseaux pilotes, en organique, en 3&nbsp;mois' },
           { valeur: 'Moins de 48&nbsp;h', texte: 'pour certifier deux réseaux' },
@@ -139,7 +139,7 @@ export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteu
       terrain: {
         surtitre: 'Conversational in the field',
         titre: ['With Keolis, passenger information', 'takes the WhatsApp route.'],
-        film: { nom: 'cas-keolis', aria: 'Film: the Keolis case, passenger information on WhatsApp with Messaging Me', duree: 'PT24S', publie: '2026-10-20T16:00:00+02:00', note: 'The film is in French.' },
+        film: { nom: 'cas-transport', aria: 'Film: the Keolis case, passenger information on WhatsApp with Messaging Me', duree: 'PT38S', publie: '2026-10-20T19:00:00+02:00' },
         chiffres: [
           { valeur: 'Over 3,500 followers', texte: 'on the pilot networks, organically, in 3 months' },
           { valeur: 'Under 48 h', texte: 'to verify two networks' },
@@ -172,6 +172,50 @@ export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteu
         texte: 'Launch a WhatsApp Channel, evolve your customer service or open access to timetables and routes: let’s talk about your network and the use cases to prioritize.',
         bouton: 'Let’s talk about your mobility project',
       },
+    },
+  },
+};
+
+/**
+ * Les pages d'attente des secteurs en ligne au registre avec `attente` (Julien, 2026-10-20) : le menu les montre, la page
+ * dit qu'elle arrive et mène au formulaire de contact. En noindex, hors du plan du site et de llms.txt.
+ */
+export interface TexteAttente {
+  readonly titre: string; readonly description: string; readonly menu: string; readonly icone: string;
+  readonly h1: string; readonly chapeau: string; readonly appel: string; readonly voir: string;
+}
+
+export const TEXTES_ATTENTE: Readonly<Record<string, Record<Langue, TexteAttente>>> = {
+  assurance: {
+    fr: {
+      titre: 'WhatsApp pour l’assurance · Messaging Me',
+      description: 'WhatsApp pour l’assurance : nos cas d’usage arrivent bientôt sur cette page. En attendant, parlons de votre projet avec nos équipes.',
+      menu: 'Bientôt en ligne', icone: 'i-file-text', h1: 'Page en préparation.',
+      chapeau: 'Nos cas d’usage WhatsApp pour l’assurance arrivent ici. En attendant, parlons du vôtre&nbsp;: une démo sur votre cas, avec vos assurés et vos canaux.',
+      appel: 'Parlons de votre projet', voir: 'Voir le cas Transport',
+    },
+    en: {
+      titre: 'WhatsApp for insurance · Messaging Me',
+      description: 'WhatsApp for insurance: our use cases are coming to this page soon. Meanwhile, let’s talk about your project with our team.',
+      menu: 'Coming soon', icone: 'i-file-text', h1: 'Coming soon.',
+      chapeau: 'Our WhatsApp use cases for insurance are coming here. Meanwhile, let’s talk about yours: a demo on your case, with your policyholders and your channels.',
+      appel: 'Let’s talk about your project', voir: 'See the Transport case',
+    },
+  },
+  tourisme: {
+    fr: {
+      titre: 'WhatsApp pour le voyage et le tourisme · Messaging Me',
+      description: 'WhatsApp pour le voyage et le tourisme : nos cas d’usage arrivent bientôt sur cette page. En attendant, parlons de votre projet.',
+      menu: 'Bientôt en ligne', icone: 'i-key', h1: 'Page en préparation.',
+      chapeau: 'Nos cas d’usage WhatsApp pour le voyage et le tourisme arrivent ici. En attendant, parlons du vôtre&nbsp;: une démo sur votre cas, avec vos voyageurs et vos canaux.',
+      appel: 'Parlons de votre projet', voir: 'Voir le cas Transport',
+    },
+    en: {
+      titre: 'WhatsApp for travel and tourism · Messaging Me',
+      description: 'WhatsApp for travel and tourism: our use cases are coming to this page soon. Meanwhile, let’s talk about your project with our team.',
+      menu: 'Coming soon', icone: 'i-key', h1: 'Coming soon.',
+      chapeau: 'Our WhatsApp use cases for travel and tourism are coming here. Meanwhile, let’s talk about yours: a demo on your case, with your travellers and your channels.',
+      appel: 'Let’s talk about your project', voir: 'See the Transport case',
     },
   },
 };

@@ -61,7 +61,7 @@ export function blocGuideMeta(langue: Langue): string {
   };
   return [
     MARQUE_DEBUT,
-    '<section class="f-bloc guide-bloc">',
+    '<section class="f-bloc guide-bloc bande-claire">',
     '  <div class="cadre">',
     `    <h2 class="f-titre">${enHtml(TITRES.avant[langue], langue)}</h2>`,
     ...liste(PREREQUIS_META, langue),

@@ -73,7 +73,19 @@ listés dessous) ; les anciennes pages « Industries » restent en ligne, hors d
 d'un réseau (visibilité, adoption d'une application, dispersion des canaux), le cas Keolis (film, chiffres des réseaux
 pilotes, captures de la chaîne WhatsApp et du bot), les usages (informer, répondre, accompagner), l'accompagnement de
 Messaging Me, et l'appel « Parlons de votre projet mobilité », qui mène au formulaire de la page Contact. Les captures sont
-des iPhone en 3D, comme sur les pages Fonctionnalités. Générée par `npm run vitrine:cas` depuis `scripts/vitrine/secteurs-textes.ts`.
+des iPhone en 3D, comme sur les pages Fonctionnalités, et les références Keolis et SNCF de vrais logos. Le film du cas
+(`cas-transport`, FR et EN, 16:9 et 9:16) reprend les vraies copies d'écran dans la charte des films. Générée par
+`npm run vitrine:cas` depuis `scripts/vitrine/secteurs-textes.ts`.
+
+✅ **Assurance et Voyage et tourisme sont au menu Solutions, en pages d'attente** (2026-10-20) :
+`/solutions/assurance/` et `/solutions/voyage-et-tourisme/` (jumelles `/en/solutions/insurance/` et
+`/en/solutions/travel-and-tourism/`) disent que la page arrive et mènent au formulaire de contact ; en `noindex`, hors du
+plan du site et de `llms.txt`, jusqu'à leur contenu (`TEXTES_ATTENTE`, `attente` au registre).
+
+✅ **Chaque page de la vitrine qui a plusieurs sections a sa bande claire** (2026-10-20), comme l'accueil et les pages
+Fonctionnalités : une section entre deux biais, sur fond blanc (`.bande-claire`). Les étapes des pages de cas, « comment ça
+marche » de la page chapeau, les enjeux de la page Transport, les étapes de la page Développeurs, le premier bloc du guide
+Meta, le détail des Tarifs, les publicités de Pilotage des coûts.
 
 ✅ **Les tentatives d'accès à `/ops` alertent** (2026-09-03). Au 5e refus en 5 minutes, un message Telegram
 part, une fois par demi-heure au plus. Chaque refus est journalisé même quand l'alerte est étouffée. Le jeton

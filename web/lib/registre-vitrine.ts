@@ -47,6 +47,8 @@ export interface EntreeVitrine {
   /** Le nom de base du film dans `site/films/`. */
   readonly film?: string;
   readonly enLigne: boolean;
+  /** Un secteur en ligne dont la page est en préparation : une page d'attente, en noindex (2026-10-20). */
+  readonly attente?: boolean;
 }
 
 export const ENTREES: readonly EntreeVitrine[] = [
@@ -109,13 +111,13 @@ export const ENTREES: readonly EntreeVitrine[] = [
     cle: 'assurance', nature: 'secteur',
     fr: { adresse: '/solutions/assurance/', titre: 'Assurance' },
     en: { adresse: '/en/solutions/insurance/', titre: 'Insurance' },
-    profils: [], vague: 1, recherche: 'whatsapp assurance', chemin: 'console', enLigne: false,
+    profils: [], vague: 1, recherche: 'whatsapp assurance', chemin: 'console', enLigne: true, attente: true,
   },
   {
     cle: 'tourisme', nature: 'secteur',
-    fr: { adresse: '/solutions/tourisme/', titre: 'Tourisme' },
-    en: { adresse: '/en/solutions/tourism/', titre: 'Tourism' },
-    profils: [], vague: 1, recherche: 'whatsapp tourisme', chemin: 'console', enLigne: false,
+    fr: { adresse: '/solutions/voyage-et-tourisme/', titre: 'Voyage et tourisme' },
+    en: { adresse: '/en/solutions/travel-and-tourism/', titre: 'Travel and tourism' },
+    profils: [], vague: 1, recherche: 'whatsapp voyage tourisme', chemin: 'console', enLigne: true, attente: true,
   },
   {
     cle: 'enseignement-superieur', nature: 'secteur',

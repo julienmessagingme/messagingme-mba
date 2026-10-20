@@ -14,7 +14,7 @@ import { adresseDuScript, baliseDuScript } from '../../src/widgets/adresses';
 import { EXEMPLES_CAS, type ExempleCode } from '../../web/lib/exemples-code';
 import { ENTREES, type EntreeVitrine } from '../../web/lib/registre-vitrine';
 import { TEXTES_CAS, TEXTES_CARREFOUR, type Langue, type TexteCas } from './cas-textes';
-import { TEXTES_SECTEURS } from './secteurs-textes';
+import { TEXTES_ATTENTE, TEXTES_SECTEURS } from './secteurs-textes';
 import { pageAvecEntete } from './entete';
 import { LOGOS_ASSISTANTS, type LogoAssistant } from './logos-assistants';
 
@@ -39,6 +39,8 @@ interface Tete {
   readonly description: string;
   readonly ldJson: object;
   readonly affiche?: string;
+  /** Une page d'attente : hors des moteurs. */
+  readonly noindex?: boolean;
 }
 
 /** Une page complète : la tête de la page Développeurs réécrite, et son `<main>` remplacé. */
@@ -52,7 +54,7 @@ function page(langue: Langue, tete: Tete, main: string, commentaire: string): st
   };
   rempl(/<!doctype html>\n<!--[\s\S]*?-->\n/, `<!doctype html>\n<!-- ${commentaire} -->\n`, 'commentaire');
   rempl(/<title>[^<]*<\/title>/, `<title>${echapper(tete.titre)}</title>`, 'title');
-  rempl(/<meta name="description" content="[^"]*">/, `<meta name="description" content="${echapper(tete.description)}">`, 'description');
+  rempl(/<meta name="description" content="[^"]*">/, `<meta name="description" content="${echapper(tete.description)}">${tete.noindex ? '\n<meta name="robots" content="noindex">' : ''}`, 'description');
   rempl(/<link rel="canonical" href="[^"]*">/, `<link rel="canonical" href="${ORIGINE}${tete.adresse}">`, 'canonical');
   rempl(/<link rel="alternate" hreflang="fr" href="[^"]*">/, `<link rel="alternate" hreflang="fr" href="${ORIGINE}${aFr}">`, 'hreflang fr');
   rempl(/<link rel="alternate" hreflang="en" href="[^"]*">/, `<link rel="alternate" hreflang="en" href="${ORIGINE}${aEn}">`, 'hreflang en');
@@ -131,7 +133,7 @@ function mainCas(e: EntreeVitrine, t: TexteCas, langue: Langue): string {
     '    </div>',
     '  </section>',
     '',
-    '  <section class="f-bloc cas-pas">',
+    '  <section class="f-bloc cas-pas bande-claire">',
     '    <div class="cadre">',
     `      <h2 class="f-titre">${langue === 'fr' ? 'Pas à pas, avec le vrai.' : 'Step by step, for real.'}</h2>`,
     '      <ol class="guide-etapes">',
@@ -295,7 +297,7 @@ export function pagesCarrefour(): Array<{ chemin: string; contenu: string }> {
       '    </div>',
       '  </section>',
       '',
-      '  <section class="f-bloc cas-pas">',
+      '  <section class="f-bloc cas-pas bande-claire">',
       '    <div class="cadre">',
       `      <h2 class="f-titre">${c.etapes.titre}</h2>`,
       '      <ol class="guide-etapes">',
@@ -340,6 +342,7 @@ export function pagesGenerees(): Array<{ chemin: string; contenu: string }> {
  */
 export function pagesSecteurs(): Array<{ chemin: string; contenu: string }> {
   return ENTREES.filter((e) => e.enLigne && e.nature === 'secteur').flatMap((e) => (['fr', 'en'] as const).map((langue) => {
+    if (e.attente) return pageAttente(e, langue);
     const t = TEXTES_SECTEURS[e.cle]?.[langue];
     if (!t) throw new Error(`${e.cle} : secteur en ligne sans ses textes (scripts/vitrine/secteurs-textes.ts)`);
     const p = langue === 'fr' ? e.fr : e.en;
@@ -347,6 +350,8 @@ export function pagesSecteurs(): Array<{ chemin: string; contenu: string }> {
     const deux = (l: readonly [string, string]) => `${l[0]}<br>${l[1]}`;
     const contact = langue === 'fr' ? '/contact/#formulaire' : '/en/contact/#formulaire';
     const f = t.terrain.film;
+    // Le film existe dans les deux langues (`<nom>-en`) et en 9:16 pour le téléphone (`-9x16`)
+    const sf = langue === 'fr' ? '' : '-en';
     const main = [
       '<main>',
       '  <section class="cadre f-une sec-une">',
@@ -362,7 +367,7 @@ export function pagesSecteurs(): Array<{ chemin: string; contenu: string }> {
       `    <figure class="f-duo">${t.captures.map((c, i) => `<img src="${c.src}" alt="${echapper(c.alt)}" width="560" height="1182"${i === 0 ? ' fetchpriority="high"' : ' loading="lazy"'}>`).join('')}</figure>`,
       '  </section>',
       '',
-      '  <section class="f-bloc sec-enjeux">',
+      '  <section class="f-bloc sec-enjeux bande-claire">',
       '    <div class="cadre">',
       `      <p class="f-surtitre">${t.enjeux.surtitre}</p>`,
       `      <h2 class="f-titre">${deux(t.enjeux.titre)}</h2>`,
@@ -378,7 +383,7 @@ export function pagesSecteurs(): Array<{ chemin: string; contenu: string }> {
       `      <p class="f-surtitre">${t.terrain.surtitre}</p>`,
       `      <h2 class="f-titre">${deux(t.terrain.titre)}</h2>`,
       '      <div class="sec-terrain-grille">',
-      `        <div><video class="f-video" src="/films/${f.nom}.mp4?v=1" poster="/films/${f.nom}.webp?v=1" width="1280" height="720" controls muted playsinline preload="none" aria-label="${echapper(f.aria)}"></video>${f.note ? `<p class="f-note">${f.note}</p>` : ''}</div>`,
+      `        <div><video class="f-video" src="/films/${f.nom}${sf}.mp4?v=1" poster="/films/${f.nom}${sf}.webp?v=1" data-vertical="/films/${f.nom}${sf}-9x16.mp4?v=1" data-affiche-verticale="/films/${f.nom}${sf}-9x16.webp?v=1" width="1280" height="720" controls muted playsinline preload="none" aria-label="${echapper(f.aria)}"></video>${f.note ? `<p class="f-note">${f.note}</p>` : ''}</div>`,
       '        <ul class="sec-chiffres">',
       ...t.terrain.chiffres.map((c) => `          <li><strong>${c.valeur}</strong><span>${c.texte}</span></li>`),
       '        </ul>',
@@ -427,18 +432,47 @@ export function pagesSecteurs(): Array<{ chemin: string; contenu: string }> {
         fil(langue, [ACCUEIL[langue], [p.titre, p.adresse]]),
         {
           '@type': 'VideoObject', name: f.aria, description: texte(t.terrain.titre.join(' ')),
-          thumbnailUrl: `${ORIGINE}/films/${f.nom}.webp`, contentUrl: `${ORIGINE}/films/${f.nom}.mp4`,
-          uploadDate: f.publie, duration: f.duree, inLanguage: 'fr-FR',
+          thumbnailUrl: `${ORIGINE}/films/${f.nom}${sf}.webp`, contentUrl: `${ORIGINE}/films/${f.nom}${sf}.mp4`,
+          uploadDate: f.publie, duration: f.duree, inLanguage: langue === 'fr' ? 'fr-FR' : 'en-US',
           publisher: { '@id': 'https://www.messagingme.fr/#organisation' },
         },
       ],
     };
     return {
       chemin: fichierDe(p.adresse),
-      contenu: page(langue, { adresse: p.adresse, jumelle: autre.adresse, titre: t.titre, description: t.description, ldJson: ld, affiche: `/films/${f.nom}.webp` }, main,
+      contenu: page(langue, { adresse: p.adresse, jumelle: autre.adresse, titre: t.titre, description: t.description, ldJson: ld, affiche: `/films/${f.nom}${sf}.webp` }, main,
         'Une page de secteur, GÉNÉRÉE par npm run vitrine:cas depuis scripts/vitrine/secteurs-textes.ts : ne pas modifier à la main.'),
     };
   }));
+}
+
+/** La page d'attente d'un secteur (`attente` au registre) : une une, un appel vers le formulaire de contact, en noindex. */
+function pageAttente(e: EntreeVitrine, langue: Langue): { chemin: string; contenu: string } {
+  const t = TEXTES_ATTENTE[e.cle]?.[langue];
+  if (!t) throw new Error(`${e.cle} : secteur en attente sans ses textes (TEXTES_ATTENTE, scripts/vitrine/secteurs-textes.ts)`);
+  const p = langue === 'fr' ? e.fr : e.en;
+  const autre = langue === 'fr' ? e.en : e.fr;
+  const transport = ENTREES.find((x) => x.cle === 'transport-mobilites')!;
+  const main = [
+    '<main>',
+    '  <section class="cadre f-une-large chantier">',
+    '    <div>',
+    `      <h1><span class="f-surtitre"><svg class="ic" aria-hidden="true"><use href="#${t.icone}"/></svg>${p.titre}</span>${t.h1}</h1>`,
+    `      <p class="chapeau">${t.chapeau}</p>`,
+    '      <div class="appels">',
+    `        <a class="bouton bouton-plein" href="${langue === 'fr' ? '/contact/#formulaire' : '/en/contact/#formulaire'}">${t.appel}</a>`,
+    `        <a class="bouton bouton-texte" href="${langue === 'fr' ? transport.fr.adresse : transport.en.adresse}">${t.voir} <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>`,
+    '      </div>',
+    '    </div>',
+    '  </section>',
+    '</main>',
+  ].join('\n');
+  const ld = { '@context': 'https://schema.org', '@graph': [fil(langue, [ACCUEIL[langue], [p.titre, p.adresse]])] };
+  return {
+    chemin: fichierDe(p.adresse),
+    contenu: page(langue, { adresse: p.adresse, jumelle: autre.adresse, titre: t.titre, description: t.description, ldJson: ld, noindex: true }, main,
+      'Une page d\'attente de secteur, GÉNÉRÉE par npm run vitrine:cas depuis scripts/vitrine/secteurs-textes.ts : ne pas modifier à la main.'),
+  };
 }
 
 /** La section « Cas d'usage » de `llms.txt` : le carrefour, puis chaque cas en ligne, en français puis en anglais. */
@@ -454,7 +488,7 @@ export function sectionLlms(): string {
       `- [${e.fr.titre}](${ORIGINE}${e.fr.adresse}) : ${texte(TEXTES_CAS[e.cle]!.fr.resume)}`,
       `- [${e.en.titre}](${ORIGINE}${e.en.adresse}) : ${texte(TEXTES_CAS[e.cle]!.en.resume)}`,
     ]),
-    ...ENTREES.filter((e) => e.enLigne && e.nature === 'secteur').flatMap((e) => [
+    ...ENTREES.filter((e) => e.enLigne && e.nature === 'secteur' && !e.attente).flatMap((e) => [
       `- [${e.fr.titre}](${ORIGINE}${e.fr.adresse}) : ${texte(TEXTES_SECTEURS[e.cle]!.fr.description)}`,
       `- [${e.en.titre}](${ORIGINE}${e.en.adresse}) : ${texte(TEXTES_SECTEURS[e.cle]!.en.description)}`,
     ]),
