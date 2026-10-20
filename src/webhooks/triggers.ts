@@ -62,7 +62,7 @@ export async function processTriggers(
       const partis = await deps.run(
         tenantId,
         {
-          kind: 'message', waId: m.waId, body: m.body, isNewContact, channel: 'whatsapp',
+          kind: 'message', waId: m.waId, body: m.body, isNewContact, channel: 'whatsapp', messageId: m.messageId,
           ...(m.referral ? { adId: m.referral.adId } : {}),
           ...(route?.campagneId ? { campagneId: route.campagneId } : {}),
         },

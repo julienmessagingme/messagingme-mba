@@ -122,8 +122,10 @@ export type AutomationEvent =
   /** `channel` : le tuyau du message reçu ; un message RCS ne prouve pas la fenêtre de service WhatsApp.
    *  `adId` : la publicité d'origine, que Meta ne transmet que sur le premier message après le clic.
    *  `campagneId` : la campagne de cette publicité, résolue par le routage (Meta ne la transmet pas) ; absente
-   *  = campagne inconnue. */
-  | { kind: 'message'; waId: string; body: string | null; isNewContact: boolean; channel: 'whatsapp' | 'rcs'; adId?: string; campagneId?: string }
+   *  = campagne inconnue.
+   *  `messageId` : l'identifiant du message reçu, que le parcours démarré inscrit comme déjà reçu et sur lequel une pause
+   *  en secondes affiche « en train d'écrire… ». */
+  | { kind: 'message'; waId: string; body: string | null; isNewContact: boolean; channel: 'whatsapp' | 'rcs'; adId?: string; campagneId?: string; messageId?: string }
   | { kind: 'tag_added'; waId: string; tag: string }
   /**
    * Une conversation vient d'être analysée. `sentiment` et `resolved` restent à la racine : les automations

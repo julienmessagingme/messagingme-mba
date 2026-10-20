@@ -32,7 +32,7 @@ import { messageDe } from '../lib/erreur';
  * l'identifiant du message sinon. Le journal dans le fil est best-effort : il ne fait jamais échouer un envoi
  * que Meta a accepté.
  */
-export type EnvoisDeBloc = Pick<WorkflowExecutorDeps, 'sendTemplate' | 'sendQuickMessage' | 'sendQuestion' | 'sendFlow'>;
+export type EnvoisDeBloc = Pick<WorkflowExecutorDeps, 'sendTemplate' | 'sendQuickMessage' | 'sendQuestion' | 'sendFlow' | 'signalerSaisie'>;
 
 /**
  * Ce que la lecture d'un template chez Meta rend (`templateVarInfo`, mise en cache dans le câblage et partagée
@@ -72,7 +72,7 @@ function nomDuDocument(nom: string | null): string {
 }
 
 /** Les méthodes du client Meta que ces envois appellent, et elles seules. */
-export type ClientDesEnvois = Pick<MetaClient, 'sendTemplate' | 'sendMarketing' | 'sendCtaUrl' | 'sendInteractive' | 'sendMedia' | 'sendText' | 'sendList' | 'sendFlowMessage'>;
+export type ClientDesEnvois = Pick<MetaClient, 'sendTemplate' | 'sendMarketing' | 'sendCtaUrl' | 'sendInteractive' | 'sendMedia' | 'sendText' | 'sendList' | 'sendFlowMessage' | 'signalerSaisie'>;
 
 /** Ce dont les envois ont besoin, tout requis : un oubli ne compile pas. */
 export interface DepsEnvoisDeBloc {
@@ -265,6 +265,19 @@ export function creerEnvoisDeBloc(deps: DepsEnvoisDeBloc): EnvoisDeBloc {
       // compterait en volume mais pas dans le coût.
       await logTemplateSent(inboxStore, tenant, waId, name, res.messageId, { templateCategory: info.category ?? null });
       return { messageId: res.messageId };
+    },
+    // « En train d'écrire… » d'une pause en secondes, sur le message reçu du contact. Best-effort : l'indicateur est un
+    // agrément, un espace sans numéro ou un refus de Meta ne doit jamais arrêter le parcours.
+    signalerSaisie: async (tenant, messageId) => {
+      if (dryRun) return; // DRY_RUN : aucun appel Meta
+      const client = await clientWhatsApp(tenant, 'workflow signalerSaisie', `« en train d'écrire » non affiché sur ${messageId}`);
+      if (typeof client === 'string') return;
+      try {
+        await client.signalerSaisie(messageId);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(`workflow signalerSaisie: « en train d'écrire » refusé sur ${messageId} : ${messageDe(err)}`);
+      }
     },
     // Message rapide (node quick_message), hors template, toujours en fenêtre 24 h : `advance` (le contact
     // vient de répondre) ou un démarrage dont la garde de fenêtre est levée (`fenetreLevee`, `workflow/lancements.ts`).

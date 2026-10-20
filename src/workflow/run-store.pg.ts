@@ -36,6 +36,17 @@ function runDeLigne(r: LigneRun): WorkflowRunRow {
   };
 }
 
+/** Une ligne rendue par une réclamation (balayage ou réveil court) : celle de `LigneRun`, sans le statut, que la
+ *  réclamation connaît par construction. */
+type LigneReclamee = Omit<LigneRun, 'status'>;
+
+function ligneReclamee(r: LigneReclamee, statut: 'sleeping' | 'waiting'): WorkflowRunRow {
+  return {
+    id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id, contactId: r.contact_id,
+    currentNode: r.current_node, status: statut, lastMessageId: r.last_message_id, channel: r.channel ?? 'whatsapp', grapheFige: parseGraph(r.graphe_fige),
+  };
+}
+
 /** `sleeping` = le run attend que le temps passe (bloc Attente), `waiting` qu'un contact réponde. */
 export type RunStatus = 'waiting' | 'inbox' | 'done' | 'sleeping';
 
@@ -307,11 +318,7 @@ export class PgWorkflowRunStore {
    * paramètre priverait le planificateur des index partiels posés sur `status`.
    */
   private async claimDue(statut: 'sleeping' | 'waiting', limit: number): Promise<WorkflowRunRow[]> {
-    const res = await this.pool.query<{
-      id: string; workflow_id: string; tenant_id: string; wa_id: string; contact_id: string | null;
-      current_node: string | null; last_message_id: string | null; channel: RunChannel | null;
-      graphe_fige: WorkflowGraph | null;
-    }>(
+    const res = await this.pool.query<LigneReclamee>(
       `update workflow_runs r set resume_at = now() + interval '15 minutes', updated_at = now()
        from (
          select id from workflow_runs
@@ -325,10 +332,34 @@ export class PgWorkflowRunStore {
        returning r.id, r.workflow_id, r.tenant_id, r.wa_id, r.contact_id, r.current_node, r.last_message_id, r.channel, r.graphe_fige`,
       [limit],
     );
-    return res.rows.map((r) => ({
-      id: r.id, workflowId: r.workflow_id, tenantId: r.tenant_id, waId: r.wa_id, contactId: r.contact_id,
-      currentNode: r.current_node, status: statut, lastMessageId: r.last_message_id, channel: r.channel ?? 'whatsapp', grapheFige: parseGraph(r.graphe_fige),
-    }));
+    return res.rows.map((r) => ligneReclamee(r, statut));
+  }
+
+  /**
+   * Réclame UN parcours dormant par son identifiant : c'est le réveil court (`reveil-court.ts`) qui l'appelle à
+   * l'échéance d'une pause de moins d'une minute. Même bail et mêmes bornes que `claimDue`, donc le balayage et le
+   * minuteur ne peuvent pas reprendre le même parcours deux fois : celui qui obtient la ligne la sort des dus.
+   *
+   * La tolérance de 2 s couvre l'écart entre l'horloge du processus, qui a calculé `resume_at`, et celle de Postgres :
+   * sans elle, un minuteur un peu en avance trouverait l'échéance future et laisserait la pause au balayage, jusqu'à
+   * une minute plus tard. Le balayage garde sa condition stricte. Rend `null` quand la ligne n'est pas prise.
+   */
+  async claimSleepingById(tenantId: string, id: string): Promise<WorkflowRunRow | null> {
+    const res = await this.pool.query<LigneReclamee>(
+      `update workflow_runs r set resume_at = now() + interval '15 minutes', updated_at = now()
+       from (
+         select id from workflow_runs
+         where tenant_id = $1 and id = $2 and status = 'sleeping' and resume_at is not null
+           and resume_at <= now() + interval '2 seconds'
+           and created_at > now() - interval '90 days'
+         for update skip locked
+       ) due
+       where r.id = due.id
+       returning r.id, r.workflow_id, r.tenant_id, r.wa_id, r.contact_id, r.current_node, r.last_message_id, r.channel, r.graphe_fige`,
+      [tenantId, id],
+    );
+    const r = res.rows[0];
+    return r ? ligneReclamee(r, 'sleeping') : null;
   }
 
   /**

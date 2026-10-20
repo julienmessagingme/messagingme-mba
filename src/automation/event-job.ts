@@ -110,6 +110,7 @@ export function parseAutomationEventJob(raw: unknown): AutomationEventJob | null
         kind: 'message', waId, body: typeof e.body === 'string' ? e.body : null,
         isNewContact: e.isNewContact === true, channel,
         ...(typeof e.adId === 'string' && e.adId.trim() !== '' ? { adId: e.adId.trim() } : {}),
+        ...(typeof e.messageId === 'string' && e.messageId.trim() !== '' ? { messageId: e.messageId.trim() } : {}),
       },
     };
   }

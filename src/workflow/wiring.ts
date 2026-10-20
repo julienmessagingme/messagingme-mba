@@ -27,6 +27,7 @@ import type { OutboundCarouselCard } from '../meta/template-components';
 import { WorkflowExecutor } from './executor';
 import { creerLancements } from './lancements';
 import { creerEnvoisDeBloc, type TplInfo } from './envois-bloc';
+import { creerReveilCourt } from './reveil-court';
 import { buildRcsStack } from '../rcs/factory';
 import { urlRappelRcs } from '../rcs/callback';
 import { adressesPubliques } from '../lib/adresses-publiques';
@@ -352,8 +353,17 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     journal: (ligne) => console.log(ligne),
   });
 
+  // Le réveil des pauses en secondes : à l'échéance, il réclame CE parcours sous le bail du balayage, puis le reprend
+  // comme lui. Liaison tardive vers l'exécuteur, construit juste après : la minuterie ne part qu'après sa construction.
+  const reveilCourt = creerReveilCourt({
+    reclamer: (tenant, id) => runStore.claimSleepingById(tenant, id),
+    reprendre: (run) => workflowExecutor.resume(run),
+    concurrence: config.WORKFLOW_REVEIL_COURT_CONCURRENCY,
+  });
+
   const workflowExecutor = new WorkflowExecutor({
     runs: runStore,
+    reveilCourt,
     // Canal RCS du bloc `rcs_message`. 🔴 `agentIdFor` est scopé tenant : c'est lui qui empêche un scénario
     // d'envoyer sous la marque d'un autre client. Aucun agent -> le bloc part sur sa sortie « non joignable ».
     rcs: {
@@ -569,5 +579,5 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
    */
   const lancements = creerLancements({ executor: workflowExecutor, scenarios: workflowStore, contacts: contactStore, offres });
 
-  return { executor: workflowExecutor, lancements, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack, agentSessions, envoyerTexteAgent, poserTagDepuisAgent, etiquettes };
+  return { executor: workflowExecutor, reveilCourt, lancements, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack, agentSessions, envoyerTexteAgent, poserTagDepuisAgent, etiquettes };
 }

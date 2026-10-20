@@ -227,7 +227,7 @@ export type DepartDuParcours =
    */
   | { depuis: 'entree'; fenetreOuverte?: boolean; firstTemplateParams?: string[]; messageDeclencheur?: string }
   /** À un bloc désigné du graphe. Un bloc absent est refusé lisiblement par `runFrom`. */
-  | { depuis: 'bloc'; noeudId: string }
+  | { depuis: 'bloc'; noeudId: string; messageDeclencheur?: string }
   /**
    * Au bloc visé par un « Aller à » (RC5), le seul départ des types `aller_a` et `aller_a_masse`. À part de `bloc`,
    * délibérément : il porte une preuve de fenêtre (`bloc` n'en porte aucune, et la lui ajouter changerait la règle des
@@ -288,6 +288,8 @@ export interface DemandeAutomatisme extends DemandeDeBase {
   blocDeDepart: string | null;
   /** La fenêtre est prouvée ouverte : l'événement est un message WhatsApp entrant. */
   fenetreOuverte: boolean;
+  /** Le message WhatsApp qui déclenche (mot-clé, publicité, widget), inscrit comme déjà reçu ; `null` = aucun. */
+  messageDeclencheur: string | null;
 }
 
 /**
@@ -352,9 +354,12 @@ function departDe(demande: Exclude<DemandeDeLancement, DemandeEnvoiDeBloc | Dema
     case 'automatisme_chaine':
     case 'automatisme_publicite_ou_widget':
       // Vérité JS et pas `!== null`, comme le câblage d'avant : un bloc de départ vide vaut « l'entrée ».
-      return demande.blocDeDepart
-        ? { depuis: 'bloc', noeudId: demande.blocDeDepart }
-        : { depuis: 'entree', fenetreOuverte: demande.fenetreOuverte };
+      return {
+        ...(demande.blocDeDepart
+          ? { depuis: 'bloc' as const, noeudId: demande.blocDeDepart }
+          : { depuis: 'entree' as const, fenetreOuverte: demande.fenetreOuverte }),
+        ...(demande.messageDeclencheur !== null ? { messageDeclencheur: demande.messageDeclencheur } : {}),
+      };
     case 'lien_de_test':
       // `blocDesigne` rend l'identifiant exact du bloc, en tolérant la casse ; sinon le suffixe tel quel, que
       // `runFrom` refuse lisiblement. Pas de garde « ce bloc existe-t-il ? » ici : `runFrom` la porte déjà.

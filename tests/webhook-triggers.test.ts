@@ -30,7 +30,7 @@ describe('processTriggers', () => {
       isNewContact: async () => true,
       run: async (_t, ev) => { seen.push(ev); return 1; },
     });
-    expect(seen).toEqual([{ kind: 'message', waId: '33611', body: 'je veux un rdv', isNewContact: true, channel: 'whatsapp' }]);
+    expect(seen).toEqual([{ kind: 'message', waId: '33611', body: 'je veux un rdv', isNewContact: true, channel: 'whatsapp', messageId: 'wamid.33611.je veux un rdv' }]);
   });
 
   it('numéro inconnu (aucun tenant) -> aucun déclenchement', async () => {

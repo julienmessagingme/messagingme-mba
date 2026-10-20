@@ -762,6 +762,9 @@ const constantes = {
   RECLAIM_INTERVAL_MS: 5 * 60 * 1000,
   /** Réveil des parcours endormis (bloc « Attente »). 60 s : c'est aussi la précision réelle d'un délai. */
   WORKFLOW_WAKE_SWEEP_INTERVAL_MS: 60 * 1000,
+  /** Reprises simultanées des pauses en secondes, par processus (`src/workflow/reveil-court.ts`) : une pause posée
+   *  dans une campagne finit au même instant pour tous ses destinataires, et chaque reprise prend le pool. */
+  WORKFLOW_REVEIL_COURT_CONCURRENCY: 4,
   /** Plafond de débit d'un webhook entrant (menu Tools). Par webhook, pas par IP : c'est le budget d'une
    *  intégration, et l'IP d'un Zapier n'a aucune stabilité. */
   WEBHOOK_IN_RATE_LIMIT_MAX: 120,

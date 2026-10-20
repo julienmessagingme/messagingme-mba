@@ -117,7 +117,7 @@ export function demarrageParLeRunner(
   return (tenantId, widget, workflowId, m) => runAutomations(
     tenantId,
     // `isNewContact` n'entre pas dans la correspondance d'un mot-clé : faux, plutôt qu'un signal qu'on n'a pas.
-    { kind: 'message', waId: m.waId, body: m.body, isNewContact: false, channel: 'whatsapp' },
+    { kind: 'message', waId: m.waId, body: m.body, isNewContact: false, channel: 'whatsapp', messageId: m.messageId },
     {
       ...runner,
       automations: {

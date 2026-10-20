@@ -60,7 +60,7 @@ export function summarize(type: WorkflowNodeType, data: Record<string, unknown>)
       }
       const n = Number(data.delay ?? 0);
       const u = String(data.unit ?? 'hours');
-      const lib = u === 'minutes' ? 'min' : u === 'days' ? 'j' : 'h';
+      const lib = u === 'seconds' ? 's' : u === 'minutes' ? 'min' : u === 'days' ? 'j' : 'h';
       out = !Number.isFinite(n) || n <= 0 ? '' : `attendre ${n} ${lib}`;
       break;
     }

@@ -135,6 +135,20 @@ export class MetaClient {
     return this.envoyer(to, corps);
   }
 
+  /**
+   * « En train d'écrire… » chez le contact, sur un message qu'il nous a envoyé (`messageId` = son `wamid`). Le même
+   * appel marque ce message comme lu (coches bleues) : Meta ne sépare pas les deux. L'indicateur s'éteint à notre
+   * message suivant, ou au bout de 25 s. Sert aux pauses en secondes d'un scénario.
+   */
+  async signalerSaisie(messageId: string): Promise<void> {
+    await this.call('messages', {
+      messaging_product: 'whatsapp',
+      status: 'read',
+      message_id: messageId,
+      typing_indicator: { type: 'text' },
+    });
+  }
+
   async sendText(to: string, body: string): Promise<SendResult> {
     const json = await this.call('messages', {
       messaging_product: 'whatsapp',

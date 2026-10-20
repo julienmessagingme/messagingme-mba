@@ -49,6 +49,7 @@ function fauxClient(appels: Appel[]): ClientDesEnvois {
     sendText: noter('sendText'),
     sendList: noter('sendList'),
     sendFlowMessage: noter('sendFlowMessage'),
+    signalerSaisie: async (messageId: string) => { appels.push(['signalerSaisie', messageId]); },
   };
 }
 
@@ -478,6 +479,28 @@ describe('sendTemplate, boutons de lien tracés (attribution des clics)', () => 
     expect(await envois.sendTemplate(T, W, NOM, LANGUE, [])).toEqual({ messageId: MESSAGE_ID });
     expect(erreurs).toHaveBeenCalledWith(`workflow sendTemplate: liens tracés de « ${NOM} » illisibles:`, 'base indisponible');
     expect(appels).toEqual([['sendTemplate', W, { name: NOM, language: LANGUE }]]);
+  });
+});
+
+describe('signalerSaisie (« en train d’écrire… » d’une pause en secondes)', () => {
+  it('passe par le client du numéro de l’espace, sur le message reçu', async () => {
+    const { envois, appels } = monter();
+    await envois.signalerSaisie(T, 'wamid.IN');
+    expect(appels).toEqual([['signalerSaisie', 'wamid.IN']]);
+  });
+
+  it('DRY_RUN : aucun appel à Meta', async () => {
+    const { envois, deps, appels } = monter({ dryRun: true });
+    await envois.signalerSaisie(T, 'wamid.IN');
+    expect(deps.clientWhatsApp).not.toHaveBeenCalled();
+    expect(appels).toEqual([]);
+  });
+
+  it('un espace sans numéro ou un refus de Meta est avalé : la pause continue', async () => {
+    await expect(monter({ clientWhatsApp: vi.fn(async () => SANS_NUMERO) }).envois.signalerSaisie(T, 'wamid.IN')).resolves.toBeUndefined();
+    const refus = { ...fauxClient([]), signalerSaisie: async () => { throw new Error('Meta 400'); } };
+    await expect(monter({ clientWhatsApp: vi.fn(async () => refus) }).envois.signalerSaisie(T, 'wamid.IN')).resolves.toBeUndefined();
+    expect(erreurs).toHaveBeenCalled();
   });
 });
 

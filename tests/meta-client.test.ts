@@ -32,6 +32,16 @@ describe('MetaClient.sendText', () => {
   });
 });
 
+describe('MetaClient.signalerSaisie', () => {
+  it('marque le message reçu comme lu et affiche « en train d’écrire… »', async () => {
+    const t = new FakeTransport([{ status: 200, json: { success: true } }]);
+    await client(t).signalerSaisie('wamid.IN');
+    const req = t.requests[0]!;
+    expect(req.url).toBe('https://graph.facebook.com/v25.0/123/messages');
+    expect(req.body).toEqual({ messaging_product: 'whatsapp', status: 'read', message_id: 'wamid.IN', typing_indicator: { type: 'text' } });
+  });
+});
+
 describe('MetaClient.sendTemplate', () => {
   it('body type=template avec name + language.code', async () => {
     const t = new FakeTransport([okBody('wamid.2')]);

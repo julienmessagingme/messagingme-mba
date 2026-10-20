@@ -79,6 +79,17 @@ describe('parseAutomationEventJob', () => {
     expect(job?.event).toMatchObject({ adId: '120212345678901234' });
   });
 
+  it('l’identifiant du message survit au passage en file (« en train d’écrire… » d’une pause en secondes)', () => {
+    const job = parseAutomationEventJob({
+      tenantId: 't1', event: { kind: 'message', waId: '33611', body: 'rdv', isNewContact: false, channel: 'whatsapp', messageId: 'wamid.K' },
+    });
+    expect(job?.event).toMatchObject({ messageId: 'wamid.K' });
+    const vide = parseAutomationEventJob({
+      tenantId: 't1', event: { kind: 'message', waId: '33611', body: 'rdv', isNewContact: false, channel: 'whatsapp', messageId: '  ' },
+    });
+    expect(vide?.event).not.toHaveProperty('messageId');
+  });
+
   it('le nom de file est stable (API et worker doivent parler de la même)', () => {
     expect(AUTOMATION_EVENT_QUEUE).toBe('automation-event');
   });

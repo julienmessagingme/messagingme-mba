@@ -243,6 +243,9 @@ export async function runAutomations(
         waId: ev.waId,
         blocDeDepart: a.startNodeId,
         fenetreOuverte: windowOpen,
+        // Le message WhatsApp qui déclenche : le parcours naît en l'ayant reçu, et une pause en secondes l'utilise pour
+        // « en train d'écrire… ». Un message RCS n'est pas un identifiant de Meta.
+        messageDeclencheur: ev.kind === 'message' && ev.channel === 'whatsapp' ? ev.messageId ?? null : null,
       });
       // `false` ou une chaîne = pas parti ; tester la simple vérité JS compterait une chaîne comme un succès, et
       // l'anti-rebond avalerait la prochaine vraie demande. Tout le reste = parti, comme le moteur de campagne.

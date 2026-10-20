@@ -44,6 +44,24 @@ describe('PgWorkflowRunStore : les réclamations du balayage de réveil', () => 
   });
 });
 
+describe('PgWorkflowRunStore : la réclamation d’UN parcours par le réveil court', () => {
+  const parId = `update workflow_runs r set resume_at = now() + interval '15 minutes', updated_at = now() from ( select id from workflow_runs where tenant_id = $1 and id = $2 and status = 'sleeping' and resume_at is not null and resume_at <= now() + interval '2 seconds' and created_at > now() - interval '90 days' for update skip locked ) due where r.id = due.id returning r.id, r.workflow_id, r.tenant_id, r.wa_id, r.contact_id, r.current_node, r.last_message_id, r.channel, r.graphe_fige`;
+
+  it('même bail que le balayage, sur CE parcours, avec 2 s de tolérance d’horloge', async () => {
+    const { pool, appels } = fauxPool([ligne]);
+    const rendu = await new PgWorkflowRunStore(pool).claimSleepingById('t1', 'r1');
+    expect(appels).toEqual([{ sql: parId, params: ['t1', 'r1'] }]);
+    expect(rendu).toEqual({
+      id: 'r1', workflowId: 'w1', tenantId: 't1', waId: '336', contactId: 'c1', currentNode: 'n2',
+      status: 'sleeping', lastMessageId: 'wamid.1', channel: 'whatsapp', grapheFige: null,
+    });
+  });
+
+  it('`null` quand la ligne n’est pas prise (déjà réclamée, close, pas encore due)', async () => {
+    expect(await new PgWorkflowRunStore(fauxPool([]).pool).claimSleepingById('t1', 'r1')).toBeNull();
+  });
+});
+
 describe('PgWorkflowRunStore : la lecture d’un run', () => {
   const lu = { ...ligne, status: 'waiting', channel: 'rcs' };
   // `contactId` : la fiche du parcours, qu'un « Aller à » vers un autre scénario transmet au parcours qu'il démarre (RC5).

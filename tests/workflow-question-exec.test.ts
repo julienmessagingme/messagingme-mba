@@ -200,8 +200,8 @@ describe('bloc Question : le réveil « pas de réponse »', () => {
  * question jamais reveillee, ou un dormant reveille par la mauvaise sortie.
  */
 describe('balayeur : les deux familles d echeance', () => {
-  const dormant = (id: string): DueRun => ({ id, workflowId: 'wf', tenantId: 't1', waId: '33600', currentNode: 'w', grapheFige: null });
-  const question = (id: string): DueRun => ({ id, workflowId: 'wf', tenantId: 't1', waId: '33601', currentNode: 'q', status: 'waiting', grapheFige: null });
+  const dormant = (id: string): DueRun => ({ id, workflowId: 'wf', tenantId: 't1', waId: '33600', currentNode: 'w', grapheFige: null, lastMessageId: null });
+  const question = (id: string): DueRun => ({ id, workflowId: 'wf', tenantId: 't1', waId: '33601', currentNode: 'q', status: 'waiting', grapheFige: null, lastMessageId: null });
 
   it('reprend les dormants ET les questions sans reponse, en portant leur statut', async () => {
     const vus: Array<{ id: string; status?: string }> = [];

@@ -1508,6 +1508,51 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     }
   });
 
+  it('claimSleepingById : le réveil court prend SON parcours dû, une seule fois, et le balayage reste le filet', async () => {
+    const runStore = new PgWorkflowRunStore(pool);
+    const wfStore = new PgWorkflowStore(pool);
+    const { id: wfId } = await wfStore.insert(tenantId, 'WF attente courte', { nodes: [], edges: [] });
+    const dormant = async (waId: string, echeanceSql: string): Promise<string> => {
+      const { id } = await runStore.start(tenantId, wfId, waId, null, { currentNode: 'w', status: 'sleeping', resumeAt: new Date() }, null);
+      // L'échéance posée par l'horloge de Postgres : la tolérance se juge contre `now()`, pas contre celle du test.
+      await pool.query(`update workflow_runs set resume_at = ${echeanceSql} where id = $1`, [id]);
+      return id;
+    };
+
+    // Dû : pris, rendu `sleeping`, sous bail (l'échéance repart à +15 min, le balayage ne le voit plus).
+    const du = await dormant('33600000101', `now() - interval '1 second'`);
+    const pris = await runStore.claimSleepingById(tenantId, du);
+    expect(pris?.id).toBe(du);
+    expect(pris?.status).toBe('sleeping');
+    expect((await runStore.claimDueSleeping(50)).map((r) => r.id)).not.toContain(du);
+    // Déjà pris : refusé.
+    expect(await runStore.claimSleepingById(tenantId, du)).toBeNull();
+
+    // La tolérance d'horloge : dans 1 s pris, dans 3 s refusé.
+    expect((await runStore.claimSleepingById(tenantId, await dormant('33600000102', `now() + interval '1 second'`)))?.id).toBeDefined();
+    expect(await runStore.claimSleepingById(tenantId, await dormant('33600000103', `now() + interval '3 seconds'`))).toBeNull();
+
+    // Un autre espace ne prend pas ce parcours, même avec son identifiant.
+    const autre = await dormant('33600000104', `now() - interval '1 second'`);
+    expect(await runStore.claimSleepingById('00000000-0000-0000-0000-000000000000', autre)).toBeNull();
+
+    // Clos : refusé.
+    const clos = await dormant('33600000105', `now() - interval '1 second'`);
+    await runStore.setState(clos, { currentNode: null, status: 'done' });
+    expect(await runStore.claimSleepingById(tenantId, clos)).toBeNull();
+
+    // Deux réclamations simultanées du même parcours : une seule le rend.
+    const course = await dormant('33600000106', `now() - interval '1 second'`);
+    const [a, b] = await Promise.all([runStore.claimSleepingById(tenantId, course), runStore.claimSleepingById(tenantId, course)]);
+    expect([a, b].filter((r) => r !== null)).toHaveLength(1);
+
+    // Le filet : un parcours court que le minuteur n'a jamais réclamé (processus arrêté) reste pris par le balayage.
+    const oublie = await dormant('33600000107', `now() - interval '1 second'`);
+    expect((await runStore.claimDueSleeping(1000)).map((r) => r.id)).toContain(oublie);
+    // `last_message_id` voyage avec la réclamation du balayage comme avec celle du minuteur.
+    expect(pris).toHaveProperty('lastMessageId');
+  });
+
   it('claimDueSleeping : DEUX balayages simultanés ne réveillent le même parcours QU’UNE fois', async () => {
     // C'est LA garantie anti-doublon du bloc Attente : sans claim atomique, deux workers reprendraient le même
     // parcours et le client recevrait deux fois le message. Le test exerce le vrai SQL, en concurrence réelle.

@@ -657,6 +657,7 @@ describe('🔴 l’émission d’événements d’automation est décidée par l
     expect(partis).toBe(1);
     expect(startWorkflow).toHaveBeenCalledWith({
       type: 'automatisme_publicite_ou_widget', tenantId: T, workflowId: 'wf1', waId: '33611', blocDeDepart: null, fenetreOuverte: true,
+      messageDeclencheur: 'wamid.1',
     });
   });
 

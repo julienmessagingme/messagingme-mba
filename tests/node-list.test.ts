@@ -7,6 +7,10 @@ import { summarize } from '../src/workflow/node-list';
  * autres. C'est déjà arrivé deux fois (wait, puis rcs_message). Ce test verrouille le cas `agent`.
  */
 describe('summarize (Contenu > Blocs)', () => {
+  it('une pause en secondes se résume en secondes', () => {
+    expect(summarize('wait', { delay: 4, unit: 'seconds' })).toBe('attendre 4 s');
+  });
+
   it('un bloc agent rend son label, pas un résumé vide', () => {
     expect(summarize('agent', { label: 'SAV commande' })).toBe('SAV commande');
   });

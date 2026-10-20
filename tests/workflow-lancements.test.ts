@@ -108,7 +108,7 @@ function demandeDe(type: Exclude<TypeDeLancement, TypeDuSaut>, v: Variante): Dem
     case 'automatisme_ordinaire':
     case 'automatisme_chaine':
     case 'automatisme_publicite_ou_widget':
-      return { ...base, type, waId: WA, blocDeDepart: v.auBloc === true ? bloc : null, fenetreOuverte: v.fenetreOuverte === true };
+      return { ...base, type, waId: WA, blocDeDepart: v.auBloc === true ? bloc : null, fenetreOuverte: v.fenetreOuverte === true, messageDeclencheur: null };
     case 'lien_de_test':
       return { ...base, type, waId: WA, blocDuJeton: v.auBloc === true ? bloc : null };
     case 'campagne_scenario':
@@ -414,6 +414,25 @@ describe('ce que l’entrée lit, et ce qu’elle transmet', () => {
     const issue = await m.lancements.lancer({ type: 'campagne_scenario', tenantId: ESPACE, workflowId: 'wf-modele', waId: WA, contactId: 'c1', firstTemplateParams: ['Julie'] });
     expect(issue).toBe(true);
     expect(m.envois).toEqual(['tpl:publie:Julie']);
+  });
+
+  it('🔴 un mot-clé transmet son message au parcours, à l’entrée comme au bloc de départ (redélivré, il n’est pas une réponse)', async () => {
+    for (const auBloc of [false, true]) {
+      const recus: Array<string | null | undefined> = [];
+      const m = banc('app_workflow', {
+        runs: avecGardesDEtatInertes({
+          start: async (_t: string, _w: string, _wa: string, _c: string | null, s: { lastMessageId?: string | null }) => { recus.push(s.lastMessageId); return { id: 'r1' }; },
+          findWaitingByWaId: async () => null,
+          setState: async () => {},
+          closeActiveByWaId: async () => [],
+        }),
+      });
+      await m.lancements.lancer({
+        type: 'automatisme_ordinaire', tenantId: ESPACE, workflowId: 'wf-modele', waId: WA,
+        blocDeDepart: auBloc ? PREMIER_BLOC['wf-modele']! : null, fenetreOuverte: true, messageDeclencheur: 'wamid.K',
+      });
+      expect(recus, auBloc ? 'au bloc' : 'à l’entrée').toEqual(['wamid.K']);
+    }
   });
 
   it('🔴 le lien de test démarre AU BLOC que le jeton désigne, casse tolérée, et refuse lisiblement un bloc absent', async () => {

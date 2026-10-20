@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { walk, entryNode, nextNode, nextNodeByHandle, nextNodeSansHandle, waitMode, problemeLienBouton } from './engine';
+import { walk, entryNode, nextNode, nextNodeByHandle, nextNodeSansHandle, waitMode, problemeLienBouton, pauseEnSecondes } from './engine';
 import type { WalkStep } from './engine';
 import type { WorkflowAction, WalkRest, WorkflowButton, SendEmailAction, QuestionRow, LienBouton } from './engine';
 import type { WorkflowGraph, WorkflowNode, WorkflowNodeType } from './graph';
@@ -15,6 +15,7 @@ import { aDesLiensTracables } from '../links/rcs-liens';
 import type { AgentSessionStatus, AgentSessionStore } from '../agent/session-store';
 
 import { BAIL_AVANCE_S, renouvelerLeBail, type GardeDuTour } from './bail-avance';
+import { REVEIL_COURT_MAX_MS, type ReveilCourt } from './reveil-court';
 import { SORTIE_TIMEOUT } from '../../web/lib/partage/sorties-agent';
 import { SORTIE_FORMULAIRE_REMPLI } from '../../web/lib/partage/sorties-formulaire';
 import type { AgentTurnJob } from '../agent/turn-job';
@@ -240,6 +241,17 @@ export interface WorkflowExecutorDeps {
   };
   /** Horloge (tests). Absente -> Date.now(). Sert à l'échéance d'un bloc Attente. */
   now?: () => number;
+  /**
+   * Le réveil des pauses de moins d'une minute (`reveil-court.ts`), armé après chaque écriture réussie d'un
+   * sommeil : le balayage ne passe qu'une fois par minute. Requis ; fixtures : `reveilCourtInerte`.
+   */
+  reveilCourt: Pick<ReveilCourt, 'armer'>;
+  /**
+   * « En train d'écrire… » sur un message reçu du contact, à l'entrée d'une pause en secondes. Marque aussi ce
+   * message comme lu chez Meta (coches bleues, accepté par Julien le 2026-10-17). Best-effort : l'exécuteur avale un
+   * refus. Requis ; fixtures : `saisieInerte`.
+   */
+  signalerSaisie(tenantId: string, messageId: string): Promise<void>;
   /**
    * La fenêtre de service 24 h est-elle ouverte pour ce contact ? Utilisée à la reprise d'un parcours
    * endormi : elle court depuis le dernier message du contact, donc même une attente courte peut la voir se
@@ -790,6 +802,8 @@ export class WorkflowExecutor {
     grapheFige: WorkflowGraph | null;
     /** Canal courant du parcours. Absent -> WhatsApp (runs anciens). */
     channel?: RunChannel;
+    /** Le dernier message consommé par le parcours : celui sur lequel une nouvelle pause en secondes signale la saisie. */
+    lastMessageId?: string | null;
     /**
      * Pourquoi ce run était au repos, donc par où le reprendre : `sleeping` = bloc Attente, au bloc suivant ;
      * `waiting` = délai « pas de réponse » d'un bloc Question, par la sortie `timeout`. Absent -> `sleeping`.
@@ -902,7 +916,9 @@ export class WorkflowExecutor {
     }
     // Seulement si le parcours vit encore : un autre chemin a pu le clore pendant nos envois, et écrire sans
     // regarder le ressusciterait avec son échéance.
-    if (!(await this.ecrireSiVivant(tenantId, run.id, { ...restToState(rest, this.now()), channel: canal }))) return false;
+    const etat = { ...restToState(rest, this.now()), channel: canal };
+    if (!(await this.ecrireSiVivant(tenantId, run.id, etat))) return false;
+    await this.apresSommeil(tenantId, run.id, etat, canal, run.lastMessageId ?? null, graph);
     if (rest.status === 'inbox') {
       await this.deps.escalateToHuman(tenantId, waId, rest.assigneA ?? null, true, run.workflowId, false);
     }
@@ -1103,6 +1119,34 @@ export class WorkflowExecutor {
       depart = repli;
     }
     return { actions, rest: { status: 'done' }, canal };
+  }
+
+  /**
+   * Après l'écriture RÉUSSIE d'un état, et seulement elle : si c'est une pause de moins d'une minute, le réveil court,
+   * puis « en train d'écrire… » sur le message du contact. Armé sur une écriture refusée, le réveil reprendrait un
+   * parcours clos (la réclamation le refuserait, mais l'indicateur, lui, serait déjà parti). Armé AVANT l'appel à Meta :
+   * sa latence (frein du numéro, relances) ne rallonge pas la pause.
+   *
+   * L'indicateur, qui marque aussi le message comme lu, ne part qu'à l'entrée d'une pause EN SECONDES (décision de
+   * Julien du 2026-10-17), sur WhatsApp, et sur un vrai identifiant de message WhatsApp (`wamid.`) : `last_message_id`
+   * porte aussi l'identifiant synthétique d'une sortie d'agent et ceux du RCS, que Meta refuserait. Une seule fois par
+   * pause : il s'éteint à notre message suivant, ou au bout de 25 s.
+   */
+  private async apresSommeil(
+    tenantId: string, runId: string, state: RunState, canal: RunChannel, messageEntrant: string | null, graph: WorkflowGraph,
+  ): Promise<void> {
+    if (state.status !== 'sleeping' || !state.resumeAt) return;
+    const maintenant = this.now();
+    if (state.resumeAt.getTime() - maintenant >= REVEIL_COURT_MAX_MS) return;
+    this.deps.reveilCourt.armer(tenantId, runId, state.resumeAt, maintenant);
+    const pause = graph.nodes.find((x) => x.id === state.currentNode);
+    if (!pause || !pauseEnSecondes(pause) || canal !== 'whatsapp' || !messageEntrant?.startsWith('wamid.')) return;
+    try {
+      await this.deps.signalerSaisie(tenantId, messageEntrant);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(`workflow: « en train d'écrire » refusé pour le parcours ${runId} : ${messageDe(err)}`);
+    }
   }
 
   /**
@@ -1336,6 +1380,7 @@ export class WorkflowExecutor {
     const cree = state.status !== 'done'
       ? await this.deps.runs.start(tenantId, workflowId, contact.waId, contact.contactId, state, grapheAFiger(politique) ? graph : null)
       : null;
+    if (cree) await this.apresSommeil(tenantId, cree.id, state, canal, opts.messageDeclencheur ?? null, graph);
     // Bloc `inbox` atteint -> la conversation passe explicitement à un humain. L'escalade (collante : le
     // balayage ne rend plus le fil à l'agent de Meta tant que personne n'a répondu) exige `partis > 0` : sur une
     // campagne, un scénario qui ouvre sur « passer à un humain » ferait sinon un fil collant par destinataire
@@ -1396,7 +1441,7 @@ export class WorkflowExecutor {
       politique,
       fenetreLevee: fenetreLevee(politique, depart),
       ...(depart.depuis === 'entree' && depart.firstTemplateParams ? { firstTemplateParams: depart.firstTemplateParams } : {}),
-      ...((depart.depuis === 'entree' || depart.depuis === 'saut') && depart.messageDeclencheur !== undefined ? { messageDeclencheur: depart.messageDeclencheur } : {}),
+      ...(depart.messageDeclencheur !== undefined ? { messageDeclencheur: depart.messageDeclencheur } : {}),
       ...(depart.depuis === 'saut' ? { sauts: depart.sauts } : {}),
     });
   }
@@ -1783,7 +1828,9 @@ export class WorkflowExecutor {
         return;
       }
     }
-    const ecrit = await ecrire({ ...restToState(rest, this.now()), lastMessageId: messageId, channel: canal });
+    const etat = { ...restToState(rest, this.now()), lastMessageId: messageId, channel: canal };
+    const ecrit = await ecrire(etat);
+    if (ecrit) await this.apresSommeil(tenantId, run.id, etat, canal, messageId, graph);
     if (rest.status === 'inbox') {
       await this.deps.escalateToHuman(tenantId, waId, rest.assigneA ?? null, true, run.workflowId, true);
     }

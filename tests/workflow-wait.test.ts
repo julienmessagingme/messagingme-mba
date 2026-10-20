@@ -29,6 +29,27 @@ describe('waitDurationMs (bloc Attente, fonction pure)', () => {
   it('borné à 30 jours : une saisie absurde ne pose pas une échéance dans 10 ans', () => {
     expect(waitDurationMs(nd('w', 'wait', { delay: 9999, unit: 'days' }))).toBe(WAIT_MAX_MS);
   });
+
+  it('les secondes : la pause courte entre deux messages', () => {
+    expect(waitDurationMs(nd('w', 'wait', { delay: 4, unit: 'seconds' }))).toBe(4000);
+    expect(waitDurationMs(nd('w', 'wait', { delay: 1, unit: 'seconds' }))).toBe(1000);
+    expect(waitDurationMs(nd('w', 'wait', { delay: 59, unit: 'seconds' }))).toBe(59_000);
+    expect(waitDurationMs(nd('w', 'wait', { delay: 0.5, unit: 'seconds' }))).toBe(500);
+    expect(waitDurationMs(nd('w', 'wait', { delay: 0, unit: 'seconds' }))).toBe(0);
+    expect(waitDurationMs(nd('w', 'wait', { delay: -1, unit: 'seconds' }))).toBe(0);
+  });
+});
+
+describe('walk : une pause en secondes endort le parcours comme les autres', () => {
+  it('le repos porte la durée exacte, en millisecondes', () => {
+    const graph = g(
+      [nd('m1', 'quick_message', { body: 'Bonjour' }), nd('w', 'wait', { delay: 4, unit: 'seconds' }), nd('m2', 'quick_message', { body: 'Suite' })],
+      [ed('m1', 'w'), ed('w', 'm2')],
+    );
+    const r = walk(graph, 'm1');
+    expect(r.actions.map((e) => e.nodeId)).toEqual(['m1']);
+    expect(r.rest).toEqual({ status: 'sleeping', nodeId: 'w', resumeInMs: 4000 });
+  });
 });
 
 describe('walk : un bloc Attente endort le parcours', () => {
@@ -65,7 +86,7 @@ describe('walk : un bloc Attente endort le parcours', () => {
 });
 
 describe('runWorkflowWakeSweep', () => {
-  const run = (id: string): DueRun => ({ id, workflowId: 'wf', tenantId: 't1', waId: '33600', currentNode: 'w', grapheFige: null });
+  const run = (id: string): DueRun => ({ id, workflowId: 'wf', tenantId: 't1', waId: '33600', currentNode: 'w', grapheFige: null, lastMessageId: null });
 
   it('reprend chaque parcours réservé et compte les reprises effectives', async () => {
     const repris: string[] = [];
@@ -213,7 +234,7 @@ describe('waitBeforeSessionMessage (montage impossible, détecté pour l’UI)',
 });
 
 describe('runWorkflowWakeSweep : nettoyage des parcours dormants trop vieux', () => {
-  const run = (id: string): DueRun => ({ id, workflowId: 'wf', tenantId: 't1', waId: '33600', currentNode: 'w', grapheFige: null });
+  const run = (id: string): DueRun => ({ id, workflowId: 'wf', tenantId: 't1', waId: '33600', currentNode: 'w', grapheFige: null, lastMessageId: null });
 
   it('clôt les vieux AVANT de réveiller les dus', async () => {
     const ordre: string[] = [];

@@ -98,6 +98,7 @@ import { qrSvg } from './widgets/qr';
 import { conflitDansLEspace } from './widgets/phrases';
 import { gestionDesWidgetsEnBase, type DepsWidgets } from './widgets/gestion';
 import { etatDuScenario } from './workflow/store.pg';
+import { ATTENTE_REVEIL_COURT_A_L_ARRET_MS } from './workflow/reveil-court';
 import { enfilerEvenementAutomation, type AutomationEventJob } from './automation/event-job';
 import { RateLimiter } from './auth/rate-limit';
 import { resolveTenantCode } from './ids/tenant-code';
@@ -3038,7 +3039,9 @@ async function main(): Promise<void> {
   installGracefulShutdown(async () => {
     clearInterval(minuteriePoolAttentes);
     await arreterApi({
-      fermerServeur: () => app.close(),
+      // Le réveil des pauses en secondes (un scénario lancé depuis l'Inbox s'endort ici) s'arrête une fois le serveur
+      // fermé, avant la file et le pool dont ses reprises ont besoin.
+      fermerServeur: async () => { await app.close(); await workflowRuntime.reveilCourt.arreter(ATTENTE_REVEIL_COURT_A_L_ARRET_MS); },
       travaux: travauxEnVol,
       borneMs: ATTENTE_GESTES_A_L_ARRET_MS,
       fermerFile: async () => { await queueReception.stop(); await queue.stop(); },

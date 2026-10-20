@@ -21,6 +21,7 @@ import { PgCampaignRunLock } from './campaign/run-lock';
 import { runCampaignScheduleSweep } from './campaign/schedule-sweep';
 import { runCampaignRepriseSweep } from './campaign/reprise-sweep';
 import { runWorkflowWakeSweep } from './workflow/wake-sweep';
+import { ATTENTE_REVEIL_COURT_A_L_ARRET_MS } from './workflow/reveil-court';
 import { runTourBloqueSweep } from './agent/tour-bloque-sweep';
 import { SORTIE_ECHEC } from '../web/lib/partage/sorties-agent';
 import { runRetrySweep } from './campaign/retry-sweep';
@@ -317,7 +318,7 @@ export async function demarrerWorker(): Promise<void> {
   // l'Inbox avec la même sémantique. Tout lancement passe par `lancements` (`src/workflow/lancements.ts`) : un
   // câblage choisit un TYPE, jamais un réglage de démarrage.
   const {
-    executor: workflowExecutor, lancements, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack,
+    executor: workflowExecutor, reveilCourt, lancements, runStore, templateVarInfo, prepareCarouselMedia, prepareHeaderMedia, buildEvalContext, rcsStack,
     agentSessions, envoyerTexteAgent, poserTagDepuisAgent, etiquettes,
   } = workflowRuntime;
 
@@ -2030,6 +2031,11 @@ export async function demarrerWorker(): Promise<void> {
   installGracefulShutdown(async () => {
     // Une ligne pour toutes les tâches : c'est ce qui rend l'oubli impossible.
     taches.arreterTout();
+    // Le réveil des pauses en secondes, avant la file et le pool dont ses reprises ont besoin : plus aucune réclamation,
+    // puis l'attente des reprises en vol. Ce qu'il laisse, le balayage du worker suivant le reprend.
+    const coupees = await reveilCourt.arreter(ATTENTE_REVEIL_COURT_A_L_ARRET_MS);
+    // eslint-disable-next-line no-console
+    if (coupees > 0) console.warn(`arret: ${coupees} reprise(s) de pause en secondes encore en cours, coupee(s)`);
     await queue.stop();
     await pool.end();
   }, undefined, () => {

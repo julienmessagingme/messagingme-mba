@@ -66,6 +66,35 @@ function make(rows: AutomationRow[], over: Surcharges = {}): { deps: AutomationR
   return { deps, trace };
 }
 
+describe('runAutomations : le message déclencheur suit le parcours', () => {
+  const declencheurs = (rows: AutomationRow[]) => {
+    const vus: Array<string | null> = [];
+    const { deps } = make(rows, { startWorkflow: async (d) => { vus.push(d.messageDeclencheur); return true; } });
+    return { deps, vus };
+  };
+
+  it('un mot-clé WhatsApp transmet l’identifiant de son message', async () => {
+    const { deps, vus } = declencheurs([auto()]);
+    await runAutomations('t1', { ...MSG, messageId: 'wamid.K' }, deps);
+    expect(vus).toEqual(['wamid.K']);
+  });
+
+  it('en RCS, ou sans identifiant, rien n’est transmis', async () => {
+    const rcs = declencheurs([auto()]);
+    await runAutomations('t1', { ...MSG, channel: 'rcs', messageId: 'rcs-1' }, rcs.deps);
+    expect(rcs.vus).toEqual([null]);
+    const sans = declencheurs([auto()]);
+    await runAutomations('t1', MSG, sans.deps);
+    expect(sans.vus).toEqual([null]);
+  });
+
+  it('un déclencheur qui n’est pas un message (tag) ne transmet rien', async () => {
+    const { deps, vus } = declencheurs([auto({ triggerKind: 'tag_added', triggerConfig: { tag: 'vip' } })]);
+    await runAutomations('t1', { kind: 'tag_added', waId: '33611', tag: 'vip' }, deps);
+    expect(vus).toEqual([null]);
+  });
+});
+
 describe('runAutomations', () => {
   it('🔴 un passage en risque élevé ne charge QUE les automations « risque élevé », et démarre hors fenêtre', async () => {
     const demandes: Array<readonly string[]> = [];

@@ -59,6 +59,10 @@ export const aucunBlocAilleurs = async (): Promise<null> => null;
 export const aucunEchecJournalise = async (): Promise<void> => {};
 /** `confierAuMbaParLeBloc` (RC6) : avant lui, aucun bloc ne confiait un contact à l'agent de Meta. */
 export const aucunEnvoiAuMba = async (): Promise<void> => {};
+/** `reveilCourt` (pauses en secondes) : avant lui, une pause n'était reprise que par le balayage, rien n'était armé. */
+export const reveilCourtInerte: WorkflowExecutorDeps['reveilCourt'] = { armer: () => {} };
+/** `signalerSaisie` (pauses en secondes) : avant lui, aucun « en train d'écrire… » ni marquage lu. */
+export const saisieInerte = async (): Promise<void> => {};
 /** `rcs.recordOutbound` absent : l'envoi RCS n'était pas écrit dans le fil. */
 export const filRcsNonJournalise = async (): Promise<void> => {};
 /** `rcs.jetonPour` absent : les liens partaient tracés mais anonymes. */
@@ -158,5 +162,7 @@ export const depsInertes = {
   resoudreBloc: aucunBlocAilleurs,
   journaliserEchecSaut: aucunEchecJournalise,
   confierAuMbaParLeBloc: aucunEnvoiAuMba,
+  reveilCourt: reveilCourtInerte,
+  signalerSaisie: saisieInerte,
   rcs: rcsSansAgent,
 } satisfies Partial<WorkflowExecutorDeps>;

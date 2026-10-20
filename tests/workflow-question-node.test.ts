@@ -90,6 +90,10 @@ describe('bloc Question : l’échéance « pas de réponse »', () => {
     expect(questionTimeoutMs(q('n1', { timeoutValue: 2 }))).toBe(2 * 3_600_000); // défaut = heures
     expect(questionTimeoutMs(q('n1', { timeoutValue: 999, timeoutUnit: 'days' }))).toBe(WAIT_MAX_MS);
   });
+
+  it('les secondes restent au seul bloc Attente : une échéance en secondes n’est pas configurée', () => {
+    expect(questionTimeoutMs(q('n1', { timeoutValue: 30, timeoutUnit: 'seconds' }))).toBe(0);
+  });
 });
 
 describe('bloc Question : il attend TOUJOURS', () => {

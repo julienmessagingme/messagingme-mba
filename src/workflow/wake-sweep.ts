@@ -16,6 +16,11 @@ export interface DueRun {
    */
   grapheFige: WorkflowGraph | null;
   /**
+   * Le dernier message consommé par le parcours (`last_message_id`), que la reprise transmet pour afficher « en
+   * train d'écrire… » sur une nouvelle pause en secondes. Requis, comme `grapheFige` : chaque réclamation doit le lire.
+   */
+  lastMessageId: string | null;
+  /**
    * Ce qui est arrivé à échéance, donc par où reprendre : `sleeping` = bloc Attente (reprise au bloc suivant),
    * `waiting` = délai « pas de réponse » d'un bloc Question (sortie `timeout`). Absent = `sleeping`.
    */

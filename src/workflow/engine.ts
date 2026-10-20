@@ -346,10 +346,14 @@ export type WalkRest =
   | { status: 'vers_mba'; nodeId: string }
   | { status: 'done' }; // fin de chaîne (plus d'arête sortante)
 
-/** Unités proposées par le bloc Attente. */
-export const WAIT_UNITS = ['minutes', 'hours', 'days'] as const;
+/** Unités proposées par le bloc Attente. `seconds` : la pause courte entre deux messages, réveillée à la seconde
+ *  par le réveil court (`reveil-court.ts`) et non par le balayage, qui ne passe qu'une fois par minute. */
+export const WAIT_UNITS = ['seconds', 'minutes', 'hours', 'days'] as const;
 export type WaitUnit = (typeof WAIT_UNITS)[number];
-const UNIT_MS: Record<WaitUnit, number> = { minutes: 60_000, hours: 3_600_000, days: 86_400_000 };
+const UNIT_MS: Record<WaitUnit, number> = { seconds: 1000, minutes: 60_000, hours: 3_600_000, days: 86_400_000 };
+/** Unités de l'échéance « pas de réponse » d'un bloc Question : sans les secondes, que l'écran ne propose pas et
+ *  qu'une échéance à la seconde n'aurait aucun sens à tenir (le balayage des questions passe une fois par minute). */
+export const QUESTION_UNITS = ['minutes', 'hours', 'days'] as const;
 /** Plafond : 30 jours. Au-delà, un parcours dormant n'a plus de sens métier ; borner évite aussi une
  *  échéance absurde posée par une saisie erronée. */
 export const WAIT_MAX_MS = 30 * 86_400_000;
@@ -366,6 +370,11 @@ export type WaitMode = (typeof WAIT_MODES)[number];
 export function waitMode(node: WorkflowNode): WaitMode {
   const brut = String(node.data.waitMode ?? 'delai');
   return (WAIT_MODES as readonly string[]).includes(brut) ? (brut as WaitMode) : 'delai';
+}
+
+/** Une pause en secondes : le seul bloc Attente qui affiche « en train d'écrire… » (et marque le message lu). */
+export function pauseEnSecondes(node: WorkflowNode): boolean {
+  return node.type === 'wait' && waitMode(node) === 'delai' && String(node.data.unit ?? '') === 'seconds';
 }
 
 /**
@@ -451,9 +460,9 @@ export const QUESTION_LIMITES = { body: 4096, bouton: 20, titre: 24, description
 export function questionTimeoutMs(node: WorkflowNode): number {
   const brut = Number(node.data.timeoutValue ?? 0);
   if (!Number.isFinite(brut) || brut <= 0) return 0;
-  const unit = String(node.data.timeoutUnit ?? 'hours') as WaitUnit;
-  const ms = UNIT_MS[unit];
-  if (!ms) return 0;
+  const unit = String(node.data.timeoutUnit ?? 'hours');
+  if (!(QUESTION_UNITS as readonly string[]).includes(unit)) return 0;
+  const ms = UNIT_MS[unit as WaitUnit];
   return Math.min(Math.round(brut * ms), WAIT_MAX_MS);
 }
 
