@@ -10,6 +10,7 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ENTREES } from '../../web/lib/registre-vitrine';
 import { TEXTES_CAS, TEXTES_CARREFOUR } from './cas-textes';
+import { TEXTES_SECTEURS } from './secteurs-textes';
 
 export type Langue = 'fr' | 'en';
 
@@ -53,7 +54,13 @@ export function liensSolutions(langue: Langue, retrait: string): string {
     const p = langue === 'fr' ? e.fr : e.en;
     return `${retrait}<a class="menu-sous" href="${p.adresse}"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#${t.icone}"/></svg></span><span><strong>${p.titre}</strong></span></a>`;
   });
-  return [chapeau, ...cas].join('\n');
+  const secteurs = ENTREES.filter((e) => e.enLigne && e.nature === 'secteur').map((e) => {
+    const t = TEXTES_SECTEURS[e.cle]?.[langue];
+    if (!t) throw new Error(`${e.cle} : secteur en ligne sans ses textes (scripts/vitrine/secteurs-textes.ts)`);
+    const p = langue === 'fr' ? e.fr : e.en;
+    return `${retrait}<a class="menu-secteur" href="${p.adresse}"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#${t.icone}"/></svg></span><span><strong>${p.titre}</strong><small>${t.menu}</small></span></a>`;
+  });
+  return [chapeau, ...cas, ...secteurs].join('\n');
 }
 
 /** L'adresse publique d'une page, depuis son chemin dans `site/` : `contact/index.html` -> `/contact/`. */

@@ -99,6 +99,13 @@ export const ENTREES: readonly EntreeVitrine[] = [
     chemin: 'code', guide: 'order-notifications', film: 'cas-notifications', enLigne: true,
   },
   {
+    // La maquette de Julien du 2026-10-20, avec le cas Keolis : le premier secteur en ligne.
+    cle: 'transport-mobilites', nature: 'secteur',
+    fr: { adresse: '/solutions/transport-et-mobilites/', titre: 'Transport et mobilités' },
+    en: { adresse: '/en/solutions/transport-and-mobility/', titre: 'Transport and mobility' },
+    profils: [], vague: 1, recherche: 'whatsapp information voyageurs transport', chemin: 'console', enLigne: true,
+  },
+  {
     cle: 'assurance', nature: 'secteur',
     fr: { adresse: '/solutions/assurance/', titre: 'Assurance' },
     en: { adresse: '/en/solutions/insurance/', titre: 'Insurance' },

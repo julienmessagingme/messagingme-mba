@@ -38,7 +38,8 @@ function fichiersSous(rubrique: string): string[] {
 describe('le registre de la vitrine', () => {
   it('porte les sept cas et les cinq pages Solutions de la spec', () => {
     expect(ENTREES.filter((e) => e.nature === 'cas')).toHaveLength(7);
-    expect(ENTREES.filter((e) => e.nature === 'secteur')).toHaveLength(3);
+    // Transport et mobilités s'ajoute aux trois secteurs de la spec (maquette de Julien du 2026-10-20).
+    expect(ENTREES.filter((e) => e.nature === 'secteur')).toHaveLength(4);
     expect(ENTREES.filter((e) => e.nature === 'metier')).toHaveLength(2);
   });
 

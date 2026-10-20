@@ -32,6 +32,7 @@ export const JUMELLES: Readonly<Record<string, string>> = {
   '/developpeurs/': '/en/developers/',
   '/developpeurs/compte-meta-business/': '/en/developers/meta-business-account/',
   '/solutions/saas-et-app-builders/': '/en/solutions/saas-and-app-builders/',
+  '/solutions/transport-et-mobilites/': '/en/solutions/transport-and-mobility/',
   '/cas-d-usage/rappels-rendez-vous/': '/en/use-cases/appointment-reminders/',
   '/cas-d-usage/notifications-de-commande/': '/en/use-cases/order-notifications/',
   '/cas-d-usage/prise-de-rendez-vous/': '/en/use-cases/appointment-booking/',

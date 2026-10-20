@@ -62,8 +62,15 @@ notifications de commande (`/cas-d-usage/notifications-de-commande/`,
 jumelle `/en/use-cases/order-notifications/`). Une page montre le film de la vraie séance Claude Code, le schéma de ce qui
 circule, les étapes avec les vrais noms d'outils, de routes et d'événements, la phrase à taper dans Claude Code,
 l'extrait du code que la suite compile, ce qu'on paie et une FAQ, puis mène à la recette complète de la doc
-développeurs. Le menu « Solutions » de l'en-tête, à la place d'« Industries », porte « SaaS et app builders » en tête et
-ses cas en sous-menu ; les pages secteurs restent en ligne, hors du menu.
+développeurs. Le menu « Solutions » de l'en-tête, à la place d'« Industries », porte « SaaS et app builders » en tête,
+ses cas en sous-menu, puis les secteurs en ligne ; les anciennes pages « Industries » restent en ligne, hors du menu.
+
+✅ **La vitrine a sa première page de secteur, Transport et mobilités** (2026-10-20, maquette de Julien) :
+`app.messagingme.fr/solutions/transport-et-mobilites/`, jumelle `/en/solutions/transport-and-mobility/`. Les enjeux
+d'un réseau (visibilité, adoption d'une application, dispersion des canaux), le cas Keolis (film, chiffres des réseaux
+pilotes, captures de la chaîne WhatsApp et du bot), les usages (informer, répondre, accompagner), l'accompagnement de
+Messaging Me, et un formulaire « Parlons de votre projet mobilité » qui part par la route de contact de la vitrine, le
+besoin choisi devenant le message. Générée par `npm run vitrine:cas` depuis `scripts/vitrine/secteurs-textes.ts`.
 
 ✅ **Les tentatives d'accès à `/ops` alertent** (2026-09-03). Au 5e refus en 5 minutes, un message Telegram
 part, une fois par demi-heure au plus. Chaque refus est journalisé même quand l'alerte est étouffée. Le jeton

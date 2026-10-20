@@ -26,8 +26,10 @@ const pagesDe = (e: (typeof ENTREES)[number]) => [['fr', fichierDe(e.fr.adresse)
 describe('les pages de cas d’usage', () => {
   it('🔴 chaque page est égale à sa génération (npm run vitrine:cas), et llms.txt porte la section des cas', () => {
     expect(enLigne.length).toBeGreaterThan(0);
-    // Deux pages par cas en ligne, plus le carrefour dans chaque langue : une génération vide ne passe pas.
-    expect(pagesGenerees().length).toBe(enLigne.length * 2 + 2);
+    // Deux pages par cas et par secteur en ligne, plus la page chapeau dans chaque langue : une génération vide ne passe pas.
+    const secteurs = ENTREES.filter((e) => e.enLigne && e.nature === 'secteur');
+    expect(secteurs.length).toBeGreaterThan(0);
+    expect(pagesGenerees().length).toBe(enLigne.length * 2 + secteurs.length * 2 + 2);
     for (const { chemin, contenu } of pagesGenerees()) expect(lire(chemin), chemin).toBe(contenu);
     expect(llmsAvecCas(lire('llms.txt'))).toBe(lire('llms.txt'));
   });

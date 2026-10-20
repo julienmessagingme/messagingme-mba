@@ -44,6 +44,8 @@
 - [Failed payment recovery](https://app.messagingme.fr/en/use-cases/failed-payment-recovery/) : Stripe reports the failure, the user gets on WhatsApp the link to update their card.
 - [Notifications de commande](https://app.messagingme.fr/cas-d-usage/notifications-de-commande/) : La commande part : le client reçoit son suivi sur WhatsApp, et votre admin voit quand il l’a lu.
 - [Order notifications](https://app.messagingme.fr/en/use-cases/order-notifications/) : The order ships: the customer gets their tracking on WhatsApp, and your admin sees when they read it.
+- [Transport et mobilités](https://app.messagingme.fr/solutions/transport-et-mobilites/) : Chaînes WhatsApp, assistance avec IA, horaires et itinéraires : informez vos voyageurs et accompagnez chaque trajet. Le cas Keolis.
+- [Transport and mobility](https://app.messagingme.fr/en/solutions/transport-and-mobility/) : WhatsApp Channels, AI assistance, timetables and routes: inform your passengers and support every journey. The Keolis case.
 
 ## Tarifs
 

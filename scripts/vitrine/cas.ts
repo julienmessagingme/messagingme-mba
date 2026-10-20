@@ -14,6 +14,7 @@ import { adresseDuScript, baliseDuScript } from '../../src/widgets/adresses';
 import { EXEMPLES_CAS, type ExempleCode } from '../../web/lib/exemples-code';
 import { ENTREES, type EntreeVitrine } from '../../web/lib/registre-vitrine';
 import { TEXTES_CAS, TEXTES_CARREFOUR, type Langue, type TexteCas } from './cas-textes';
+import { TEXTES_SECTEURS } from './secteurs-textes';
 import { pageAvecEntete } from './entete';
 
 const ORIGINE = 'https://app.messagingme.fr';
@@ -301,7 +302,128 @@ export function pagesCarrefour(): Array<{ chemin: string; contenu: string }> {
 
 /** Tout ce que `npm run vitrine:cas` écrit. */
 export function pagesGenerees(): Array<{ chemin: string; contenu: string }> {
-  return [...pagesCarrefour(), ...ENTREES.filter((e) => e.enLigne && e.nature === 'cas').flatMap(pagesCas)];
+  return [...pagesCarrefour(), ...ENTREES.filter((e) => e.enLigne && e.nature === 'cas').flatMap(pagesCas), ...pagesSecteurs()];
+}
+
+/**
+ * Les pages de secteur EN LIGNE au registre (rubrique Solutions), dans les deux langues, depuis
+ * `secteurs-textes.ts`. La première : Transport et mobilités (maquette de Julien du 2026-10-20). Le formulaire poste sur
+ * la route de contact de la vitrine (`src/http/contact-vitrine.ts`) : le besoin choisi part comme message.
+ */
+export function pagesSecteurs(): Array<{ chemin: string; contenu: string }> {
+  return ENTREES.filter((e) => e.enLigne && e.nature === 'secteur').flatMap((e) => (['fr', 'en'] as const).map((langue) => {
+    const t = TEXTES_SECTEURS[e.cle]?.[langue];
+    if (!t) throw new Error(`${e.cle} : secteur en ligne sans ses textes (scripts/vitrine/secteurs-textes.ts)`);
+    const p = langue === 'fr' ? e.fr : e.en;
+    const autre = langue === 'fr' ? e.en : e.fr;
+    const deux = (l: readonly [string, string]) => `${l[0]}<br>${l[1]}`;
+    const politique = langue === 'fr'
+      ? 'https://www.messagingme.fr/politique-de-confidentialite-messaging-me/'
+      : 'https://www.messagingme.fr/en/politique-de-confidentialite-messaging-me/';
+    const f = t.terrain.film;
+    const main = [
+      '<main>',
+      '  <section class="cadre f-une sec-une">',
+      '    <div>',
+      `      <h1><span class="f-surtitre"><svg class="ic" aria-hidden="true"><use href="#${t.icone}"/></svg>${t.surtitre}</span>${t.h1[0]} <span class="sec-accent">${t.h1[1]}</span></h1>`,
+      `      <p class="chapeau">${t.chapeau}</p>`,
+      `      <p class="sec-sous">${t.sous}</p>`,
+      '      <div class="appels">',
+      `        <a class="bouton bouton-plein" href="#projet">${t.appel}</a>`,
+      '      </div>',
+      `      <p class="sec-refs"><span>${t.references.titre}</span>${t.references.noms.map((n) => `<strong>${echapper(n)}</strong>`).join('')}</p>`,
+      '    </div>',
+      `    <figure class="sec-tels">${t.captures.map((c, i) => `<img class="sec-tel sec-tel-${i + 1}" src="${c.src}" alt="${echapper(c.alt)}" width="262" height="566"${i === 0 ? ' fetchpriority="high"' : ' loading="lazy"'}>`).join('')}</figure>`,
+      '  </section>',
+      '',
+      '  <section class="f-bloc sec-enjeux">',
+      '    <div class="cadre">',
+      `      <p class="f-surtitre">${t.enjeux.surtitre}</p>`,
+      `      <h2 class="f-titre">${deux(t.enjeux.titre)}</h2>`,
+      '      <ul class="sec-trois">',
+      ...t.enjeux.liste.map((x) => `        <li><p class="sec-num">${x.num}</p><h3>${deux(x.titre)}</h3><p>${x.texte}</p></li>`),
+      '      </ul>',
+      `      <div class="sec-encart"><p class="sec-encart-titre">${deux(t.enjeux.encart.titre)}</p><p>${t.enjeux.encart.texte}</p></div>`,
+      '    </div>',
+      '  </section>',
+      '',
+      '  <section class="f-bloc sec-terrain">',
+      '    <div class="cadre">',
+      `      <p class="f-surtitre">${t.terrain.surtitre}</p>`,
+      `      <h2 class="f-titre">${deux(t.terrain.titre)}</h2>`,
+      '      <div class="sec-terrain-grille">',
+      `        <div><video class="f-video" src="/films/${f.nom}.mp4?v=1" poster="/films/${f.nom}.webp?v=1" width="1280" height="720" controls muted playsinline preload="none" aria-label="${echapper(f.aria)}"></video>${f.note ? `<p class="f-note">${f.note}</p>` : ''}</div>`,
+      '        <ul class="sec-chiffres">',
+      ...t.terrain.chiffres.map((c) => `          <li><strong>${c.valeur}</strong><span>${c.texte}</span></li>`),
+      '        </ul>',
+      '      </div>',
+      `      <p class="f-note">${t.terrain.source}</p>`,
+      '    </div>',
+      '  </section>',
+      '',
+      '  <section class="f-bloc sec-usages">',
+      '    <div class="cadre">',
+      `      <p class="f-surtitre">${t.usages.surtitre}</p>`,
+      `      <h2 class="f-titre">${deux(t.usages.titre)}</h2>`,
+      '      <ul class="sec-trois sec-cartes">',
+      ...t.usages.liste.map((u) => `        <li><h3>${u.titre}</h3><p>${u.texte}</p><p class="sec-mots">${u.mots}</p></li>`),
+      '      </ul>',
+      `      <p class="sec-parcours">${t.usages.parcours}</p>`,
+      '    </div>',
+      '  </section>',
+      '',
+      '  <section class="f-bloc sec-partenaire">',
+      '    <div class="cadre">',
+      `      <p class="f-surtitre">${t.partenaire.surtitre}</p>`,
+      `      <h2 class="f-titre">${deux(t.partenaire.titre)}</h2>`,
+      '      <ul class="sec-trois">',
+      ...t.partenaire.liste.map((x) => `        <li><h3>${x.titre}</h3><p>${x.texte}</p></li>`),
+      '      </ul>',
+      `      <p class="f-note">${t.partenaire.pilotage}</p>`,
+      '    </div>',
+      '  </section>',
+      '',
+      '  <section class="f-bloc sec-projet" id="projet">',
+      '    <div class="cadre sec-projet-grille">',
+      '      <div>',
+      `        <p class="f-surtitre">${t.projet.surtitre}</p>`,
+      `        <h2 class="f-titre">${t.projet.titre}</h2>`,
+      `        <p class="f-texte">${t.projet.texte}</p>`,
+      `        <p class="sec-fin">${t.projet.fin}</p>`,
+      '      </div>',
+      '      <form class="c-form" id="formulaire" action="https://api.messagingme.app/vitrine/contact" method="post">',
+      ...(langue === 'en' ? ['        <input type="hidden" name="langue" value="en">'] : []),
+      '        <p class="c-erreur" role="alert" hidden></p>',
+      `        <div class="c-champ"><label for="s-nom">${t.projet.champs.nom}</label><input id="s-nom" name="nom" type="text" autocomplete="name" maxlength="120" required></div>`,
+      `        <div class="c-champ"><label for="s-email">${t.projet.champs.email}</label><input id="s-email" name="email" type="email" autocomplete="email" maxlength="254" required></div>`,
+      `        <div class="c-champ large"><label for="s-reseau">${t.projet.champs.reseau}</label><input id="s-reseau" name="societe" type="text" autocomplete="organization" maxlength="160" required></div>`,
+      `        <div class="c-champ large"><label for="s-besoin">${t.projet.champs.besoin}</label><select id="s-besoin" name="message" required><option value="">${t.projet.champs.choisir}</option>${t.projet.besoins.map((b) => `<option value="${echapper(`${p.titre} : ${b}`)}">${echapper(b)}</option>`).join('')}</select></div>`,
+      '        <div class="c-piege" aria-hidden="true"><label for="s-site">Ne pas remplir ce champ</label><input id="s-site" name="site" type="text" tabindex="-1" autocomplete="off"></div>',
+      `        <div class="c-envoi"><p class="c-mention">${t.projet.mention} <a href="${politique}">${t.projet.politique}</a></p><button class="bouton bouton-plein" type="submit">${t.projet.bouton} <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></button></div>`,
+      '      </form>',
+      '    </div>',
+      '  </section>',
+      '</main>',
+    ].join('\n');
+    const texte = (h: string) => h.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ');
+    const ld = {
+      '@context': 'https://schema.org',
+      '@graph': [
+        fil(langue, [ACCUEIL[langue], [p.titre, p.adresse]]),
+        {
+          '@type': 'VideoObject', name: f.aria, description: texte(t.terrain.titre.join(' ')),
+          thumbnailUrl: `${ORIGINE}/films/${f.nom}.webp`, contentUrl: `${ORIGINE}/films/${f.nom}.mp4`,
+          uploadDate: f.publie, duration: f.duree, inLanguage: 'fr-FR',
+          publisher: { '@id': 'https://www.messagingme.fr/#organisation' },
+        },
+      ],
+    };
+    return {
+      chemin: fichierDe(p.adresse),
+      contenu: page(langue, { adresse: p.adresse, jumelle: autre.adresse, titre: t.titre, description: t.description, ldJson: ld, affiche: t.captures[0]!.src }, main,
+        'Une page de secteur, GÉNÉRÉE par npm run vitrine:cas depuis scripts/vitrine/secteurs-textes.ts : ne pas modifier à la main.'),
+    };
+  }));
 }
 
 /** La section « Cas d'usage » de `llms.txt` : le carrefour, puis chaque cas en ligne, en français puis en anglais. */
@@ -316,6 +438,10 @@ export function sectionLlms(): string {
     ...enLigne.flatMap((e) => [
       `- [${e.fr.titre}](${ORIGINE}${e.fr.adresse}) : ${texte(TEXTES_CAS[e.cle]!.fr.resume)}`,
       `- [${e.en.titre}](${ORIGINE}${e.en.adresse}) : ${texte(TEXTES_CAS[e.cle]!.en.resume)}`,
+    ]),
+    ...ENTREES.filter((e) => e.enLigne && e.nature === 'secteur').flatMap((e) => [
+      `- [${e.fr.titre}](${ORIGINE}${e.fr.adresse}) : ${texte(TEXTES_SECTEURS[e.cle]!.fr.description)}`,
+      `- [${e.en.titre}](${ORIGINE}${e.en.adresse}) : ${texte(TEXTES_SECTEURS[e.cle]!.en.description)}`,
     ]),
     '',
   ].join('\n');
