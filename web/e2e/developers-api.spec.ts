@@ -52,7 +52,7 @@ const SECTIONS: Record<CleDePage, string[]> = {
   nextjs: ['Le prompt à coller', 'Installation', 'Le client', 'Envoyer un modèle', 'Recevoir les webhooks', 'Essayer'],
   'appointment-reminders': ['Le prompt à coller', 'Le modèle de rappel', 'Les deux actions de l’agent IA', 'Le code', 'La route qui reçoit les réponses', 'Essayer'],
   'appointment-booking': ['Le prompt à coller', 'Les deux actions de l’agent IA', 'Le code', 'La route qui reçoit les actions', 'Essayer'],
-  'saas-onboarding-activation': ['Le prompt à coller', 'Le modèle de bienvenue', 'La case de consentement', 'Le code', 'Essayer'],
+  'saas-onboarding-activation': ['Le prompt à coller', 'Le modèle du welcome message', 'La case de consentement', 'Le code', 'Essayer'],
   'failed-payment-recovery': ['Le prompt à coller', 'Le modèle de paiement échoué', 'Le code', 'Le webhook Stripe', 'Essayer'],
   'order-notifications': ['Le prompt à coller', 'Le modèle d’expédition', 'Le code', 'La route qui reçoit les accusés', 'Si le client répond', 'Essayer'],
   events: ['Ce que la console remonte', 'Délais', 'Les événements', 'Les attributs de la fiche'],
