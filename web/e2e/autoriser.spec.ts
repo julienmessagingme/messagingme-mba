@@ -121,7 +121,7 @@ test.describe('Autoriser Claude : avec la session de la console', () => {
     await expect(page.getByTestId('autoriser-droits')).toContainText('répondre dans une conversation ouverte');
     await expect(page.getByTestId('autoriser-droits')).toContainText('traitées par Anthropic');
     await expect(page.getByRole('link', { name: 'Notre politique de confidentialité' }))
-      .toHaveAttribute('href', 'https://www.messagingme.fr/politique-de-confidentialite/');
+      .toHaveAttribute('href', 'https://www.messagingme.fr/politique-de-confidentialite-messaging-me/');
     const direct = page.getByRole('button', { name: 'Autoriser dans Mon espace' });
     await expect(direct).toBeVisible();
     // Google reste offert, pour un autre espace, et le dit.

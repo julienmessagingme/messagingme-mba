@@ -17,7 +17,10 @@ import {
 } from '@/lib/oauth';
 
 /** La politique de confidentialité de messagingme.fr, que la page cite avec la phrase sur Anthropic (spec, section 3). */
-const POLITIQUE_DE_CONFIDENTIALITE = 'https://www.messagingme.fr/politique-de-confidentialite/';
+const POLITIQUE_DE_CONFIDENTIALITE: readonly [string, string] = [
+  'https://www.messagingme.fr/politique-de-confidentialite-messaging-me/',
+  'https://www.messagingme.fr/en/politique-de-confidentialite-messaging-me/',
+];
 
 /**
  * LE CONSENTEMENT D'UN CLIENT MCP (spec `docs/superpowers/specs/2026-10-03-oauth-mcp-design.md`, section 3, et
@@ -309,7 +312,7 @@ function Capacites({ client, droits, marque, domaine }: { client: string; droits
             `Ces données seront lues par ${client} et traitées par son éditeur${domaine ? ` (${domaine})` : ''}.`,
             `This data will be read by ${client} and processed by its publisher${domaine ? ` (${domaine})` : ''}.`,
           )}{' '}
-        <a href={POLITIQUE_DE_CONFIDENTIALITE} target="_blank" rel="noopener noreferrer" className="font-medium text-brand-600 underline underline-offset-2 hover:text-brand-700">
+        <a href={t(...POLITIQUE_DE_CONFIDENTIALITE)} target="_blank" rel="noopener noreferrer" className="font-medium text-brand-600 underline underline-offset-2 hover:text-brand-700">
           {t('Notre politique de confidentialité', 'Our privacy policy')}
         </a>
       </p>
