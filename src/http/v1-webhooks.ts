@@ -6,12 +6,13 @@ import { journalDeLApi } from '../api/journal-api';
 import { refuser, type CodeApi } from '../api/erreurs';
 import { messageDeForme } from '../api/forme';
 import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
+import { corpsRejeu, requeteJournal } from '../api/contrat-public';
 import type { Refus } from '../lib/issue';
 import { operationLourdeAcceptee, type PlafondPartage } from '../auth/plafond-partage';
 import { TYPES_ABONNABLES, type TypeAbonnable } from '../evenements/types';
 import type { AdresseVue, EnvoiVue } from '../evenements/store.pg';
 import {
-  JOURNAL_PAGE_MAX, TYPES_PAR_DEFAUT, creerAdresse, envoyerEssai, lireJournal, modifierAdresse, rejouerEchecs, rejouerEnvoi,
+  TYPES_PAR_DEFAUT, creerAdresse, envoyerEssai, lireJournal, modifierAdresse, rejouerEchecs, rejouerEnvoi,
   supprimerAdresse, tournerSecret, type DepsGestionEvenements,
 } from '../evenements/gestion';
 
@@ -110,13 +111,6 @@ function refuserGestion(reply: FastifyReply, r: Refus, objet: 'webhook' | 'deliv
 const CIBLE = (id: string) => ({ kind: 'adresse_evenements', id });
 const parametresAdresse = z.object({ webhookId: z.string().max(100) });
 const parametresEnvoi = z.object({ deliveryId: z.string().max(100) });
-/** Exporté pour le contrat OpenAPI (`src/api/openapi/registre.ts`) : la requête du journal, telle que la route la lit. */
-export const requeteJournal = z.strictObject({
-  before: z.string().datetime({ offset: true }).optional(),
-  limit: z.coerce.number().int().min(1).max(JOURNAL_PAGE_MAX).optional(),
-});
-export const corpsRejeu = z.strictObject({ since: z.string().datetime({ offset: true }) });
-
 export function registerV1Webhooks(app: FastifyInstance, deps: V1WebhooksRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
   // Pas `makeJournal` : derrière une clé, l'acteur n'est pas un compte (`src/api/journal-api.ts`).

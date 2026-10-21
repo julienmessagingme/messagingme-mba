@@ -1,14 +1,13 @@
-import { z } from 'zod';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import { repondreAvecUnMessage, repondreDansLaFenetre, type DepsRepondre, type RefusReponse, type ResultatReponse } from '../inbox/repondre';
 import { apercuDuMessage, corpsPourMeta, schemaMessageMeta } from '../api/message-meta';
-import { TEXTE_MAX_CARACTERES } from '../traduction/traduire';
+import { schemaMessageWhatsapp } from '../api/contrat-public';
 import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
 import { STATUT_PAR_CODE, refuser } from '../api/erreurs';
 import { NumeroBloqueError } from '../meta/numero-delie';
 import { MetaApiError } from '../meta/errors';
-import { MESSAGE_RESOLUTION, normaliserCles, schemaClesFiche, type ClesFiche, type ModeCreation, type ResolutionFiche } from '../api/fiche';
+import { MESSAGE_RESOLUTION, normaliserCles, type ClesFiche, type ModeCreation, type ResolutionFiche } from '../api/fiche';
 import { messageDeForme } from '../api/forme';
 import type { FilDuContact } from '../inbox/store.pg';
 import type { EtatJournalSortant } from '../inbox/journal-sortant';
@@ -54,22 +53,10 @@ export interface V1MessagesRouteDeps {
   envoyerMessage(tenantId: string, phoneNumberId: string, to: string, corps: Record<string, unknown>): Promise<string>;
 }
 
-/**
- * Strict : l'ancienne forme `{ to, text }` est refusée en nommant `to`, et un `tenantId` glissé dans le corps
- * aussi (l'espace vient de la clé).
- */
-const schemaMessage = z.strictObject({
-  ...schemaClesFiche.shape,
-  text: z.string().min(1).max(TEXTE_MAX_CARACTERES),
-});
-
 /** Le refus d'une fenêtre fermée : un fil sans entrant récent, ou pas de fil du tout (le même cas pour Meta). */
 const FENETRE_FERMEE = 'fenêtre de 24 h fermée : cette personne n’a pas écrit récemment. Utilisez un template (POST /v1/sends).';
 
 export const INCONNUE_POUR_UN_MESSAGE = 'aucune fiche pour cette personne : un message simple ne crée pas de fiche, un envoi (POST /v1/sends) le fait';
-
-/** Le validateur de cette route, sous le nom que la documentation de l'API éprouve (`tests/api-exemples.test.ts`). */
-export const schemaMessageWhatsapp = schemaMessage;
 
 /**
  * La réponse 200 des deux routes de message simple, typée pour que la documentation la suive
@@ -142,7 +129,7 @@ export function registerV1Messages(app: FastifyInstance, deps: V1MessagesRouteDe
   app.post('/v1/messages/whatsapp', opts, async (req, reply) => {
     if (!req.auth) return refuser(reply, 401, 'unauthorized', 'clé d’API requise');
     const tenantId = req.auth.tenantId;
-    const lu = schemaMessage.safeParse(req.body);
+    const lu = schemaMessageWhatsapp.safeParse(req.body);
     if (!lu.success) return refuser(reply, 400, 'invalid_body', messageDeForme(lu.error));
     const { text, ...cles } = lu.data;
     const conversationId = await jusquAuFil(req, reply, tenantId, cles);

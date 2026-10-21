@@ -9,10 +9,8 @@ import {
   schemaContactV1 as schemaCorpsContact, schemaRechercheContactV1 as schemaCorpsRecherche,
   schemaPatchContactV1 as schemaCorpsModification,
 } from '../src/api/contacts-v1';
-import { conteneurDuLot as schemaCorpsLot } from '../src/http/v1-contacts';
 import { schemaCorps as schemaCorpsEnvoi, schemaDestinataire as schemaDestinataireEnvoi } from '../src/api/envoi-public';
-import { schemaMessageWhatsapp } from '../src/http/v1-messages';
-import { schemaMessageRcs } from '../src/http/v1-messages-rcs';
+import { conteneurDuLot as schemaCorpsLot, schemaMessageRcs, schemaMessageWhatsapp } from '../src/api/contrat-public';
 import { validateParamMapping, type ParamSource, type TemplateParam } from '../src/crm/template';
 
 /**

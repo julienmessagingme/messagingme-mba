@@ -12,18 +12,17 @@ import {
   schemaPatchContactV1 as schemaCorpsModification, schemaContactLotV1 as schemaCorpsElementDuLot,
 } from '../src/api/contacts-v1';
 import {
-  conteneurDuLot as schemaCorpsLot, MAX_BATCH,
-} from '../src/http/v1-contacts';
+  conteneurDuLot as schemaCorpsLot, corpsChamp, corpsRejeu, MAX_BATCH, schemaMessageRcs, schemaMessageWhatsapp,
+} from '../src/api/contrat-public';
 import {
   schemaCorps as schemaCorpsEnvoi, schemaDestinataire as schemaDestinataireEnvoi, lireCible, MAX_RECIPIENTS, MAX_SKIPPED_REPORT, type RapportEnvoi,
 } from '../src/api/envoi-public';
-import { schemaMessageWhatsapp, type ReponseMessageSimple } from '../src/http/v1-messages';
-import { schemaMessageRcs } from '../src/http/v1-messages-rcs';
+import type { ReponseMessageSimple } from '../src/http/v1-messages';
 import { schemaMessageMeta } from '../src/api/message-meta';
 import { schemaModeleMeta } from '../src/api/modele-meta';
 import { saisieCreation, saisieModification } from '../src/evenements/gestion';
-import { corpsRejeu, type DeliveryV1, type WebhookV1 } from '../src/http/v1-webhooks';
-import { corpsChamp, type ChampV1 } from '../src/http/v1-contacts-admin';
+import type { DeliveryV1, WebhookV1 } from '../src/http/v1-webhooks';
+import type { ChampV1 } from '../src/http/v1-contacts-admin';
 import type { ModeleCree, StatutLangue } from '../src/api/creer-modele';
 import { validateParamMapping } from '../src/crm/template';
 import { destinataireAvecVariablesInterdites } from '../src/api/variables';
@@ -74,7 +73,7 @@ const depuis = (r: { success: true } | { success: false; error: z.ZodError }): V
  * un mensonge (l'exemple montrerait un destinataire qui ne part pas), donc chaque destinataire passe ici le
  * schéma de la route.
  * ⚠️ `POST /v1/contacts/batch` : le lot 1 tient les deux bornes de longueur du lot (vide, plus de `MAX_BATCH`)
- * dans son HANDLER, pas dans son schéma. Elles sont appliquées ici avec SA constante ; seul le lot 1 peut les
+ * dans son handler, pas dans son schéma. Elles sont appliquées ici avec la constante du contrat ; seul le lot 1 peut les
  * remonter dans le schéma. Les cas cassés du lot éprouvent donc le conteneur et l'élément, pas ces bornes.
  */
 const VALIDATEURS: Record<RouteAvecCorps, (corps: unknown) => Verdict> = {
