@@ -21,7 +21,7 @@ import { DROITS, ESSAI_PRO_JOURS, PRIX_PRO_HT_CENTIMES } from '../../src/offres/
 import { PRIX_NUMERO_HT_CENTIMES } from '../../src/stripe/abonnement';
 import { schema } from '../../src/config';
 import { COMMANDES } from './commandes';
-import { CONSTRUIRE, type LienCapacite } from './construire';
+import { CONSTRUIRE, ICONES_FAMILLES, type LienCapacite } from './construire';
 import { FAMILLES_OUTILS } from './familles-outils';
 import { FAQ } from './faq';
 
@@ -187,6 +187,7 @@ export function blocConstruireVitrine(langue: Langue): string {
     '<div class="dev-construire">',
     ...CONSTRUIRE.flatMap((f) => [
       '  <div>',
+      `    <span class="dev-ic dev-ic-${f.icone}" aria-hidden="true"><svg viewBox="0 0 256 256"><path class="dev-ic-fond" d="${ICONES_FAMILLES[f.icone].fond}"/><path d="${ICONES_FAMILLES[f.icone].trait}"/></svg></span>`,
       `    <h3>${echapper(f.titre[langue])}</h3>`,
       '    <ul>',
       ...f.capacites.map((c) => `      <li><a href="${hrefCapacite(c.lien, langue)}">${echapper(c.texte[langue])}</a></li>`),

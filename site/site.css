@@ -1134,8 +1134,28 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 /* Ce que vous pouvez construire : trois familles, une ligne par capacité, chacune un lien vers sa page (générée par
    npm run plugin:generer depuis scripts/plugin/construire.ts). */
 .dev-construire{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin-top:36px}
-.dev-construire > div{min-width:0;padding:28px;border-radius:16px;background:var(--surface);border:1px solid var(--line)}
+.dev-construire > div{position:relative;min-width:0;padding:28px;border-radius:16px;background:var(--surface);border:1px solid var(--line);overflow:hidden;transition:border-color .2s,transform .2s}
+.dev-construire > div:hover{border-color:rgb(255 255 255 / .22);transform:translateY(-3px)}
 .dev-construire h3{margin:0 0 16px;font-size:1.2rem;line-height:1.25;letter-spacing:-.02em;font-weight:800}
+/* L'icône de chaque famille (Julien, 2026-10-21) : une tuile en dégradé à la couleur de la famille, l'icône duotone
+   en blanc, et un halo de la même couleur en haut de la carte. Au survol, elle joue son geste : les bulles se
+   répondent, la cloche sonne, les prises se branchent. Rien ne bouge pour qui a demandé moins de mouvement. */
+.dev-ic{--a:#25D366;--b:#128C7E;display:grid;place-items:center;width:56px;height:56px;margin-bottom:20px;border-radius:16px;background:linear-gradient(140deg,var(--a),var(--b));box-shadow:inset 0 1px 0 rgb(255 255 255 / .35),0 14px 30px -12px var(--a)}
+.dev-ic svg{width:30px;height:30px;fill:#FFFFFF}
+.dev-ic .dev-ic-fond{opacity:.35}
+.dev-ic-cloche{--a:#FFB547;--b:#F2711C}
+.dev-ic-prises{--a:#6FC2FE;--b:#5B5BF0}
+.dev-construire > div::before{content:"";position:absolute;top:-90px;left:-40px;width:220px;height:180px;border-radius:50%;background:radial-gradient(closest-side,rgb(37 211 102 / .16),transparent);pointer-events:none}
+.dev-construire > div:has(.dev-ic-cloche)::before{background:radial-gradient(closest-side,rgb(255 181 71 / .16),transparent)}
+.dev-construire > div:has(.dev-ic-prises)::before{background:radial-gradient(closest-side,rgb(111 194 254 / .18),transparent)}
+@media (prefers-reduced-motion:no-preference){
+  .dev-ic svg{transition:transform .3s cubic-bezier(.34,1.56,.64,1)}
+  .dev-construire > div:hover .dev-ic-chats svg{animation:dev-bulles .7s ease}
+  .dev-construire > div:hover .dev-ic-cloche svg{transform-origin:50% 12%;animation:dev-sonne .8s ease}
+  .dev-construire > div:hover .dev-ic-prises svg{transform:rotate(-12deg) scale(1.1)}
+  @keyframes dev-bulles{0%,100%{transform:none}30%{transform:translateY(-4px) scale(1.08)}60%{transform:translateY(1px)}}
+  @keyframes dev-sonne{0%,100%{transform:none}15%{transform:rotate(16deg)}35%{transform:rotate(-14deg)}55%{transform:rotate(9deg)}75%{transform:rotate(-5deg)}}
+}
 .dev-construire ul{list-style:none;margin:0;padding:0;display:grid;gap:14px}
 .dev-construire a{color:var(--muted);text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:4px;line-height:1.5}
 .dev-construire a:hover{color:var(--ink);text-decoration-color:var(--action-ink)}
