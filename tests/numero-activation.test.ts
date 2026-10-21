@@ -6,7 +6,7 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { EmbeddedSignupRouteDeps } from '../src/http/embedded-signup';
 import { metaInscriptionInerte, signupInerte } from './routes-inertes';
 import { verrousEnMemoire } from './verrous';
-import { cleDemandeCode, DELAI_ENTRE_CODES_MS } from '../src/http/embedded-signup';
+import { cleDemandeCode, DELAI_ENTRE_CODES_MS } from '../src/account/connexion-numero';
 
 /**
  * « Activer le numéro » : finir chez nous ce que la fenêtre Meta a laissé en plan.

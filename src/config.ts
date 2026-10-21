@@ -506,7 +506,7 @@ export const schema = z.object({
    * ⚠️ RELIER un numéro ne prouve PAS sa vérification : la liaison se fait avant que Meta ne la confirme, et un numéro
    * `NOT_VERIFIED` se relie très bien (ce commentaire affirmait l'inverse, et l'offre partait à la liaison). La route
    * de l'inscription n'offre donc que si Meta dit le numéro vérifié ; sinon c'est l'activation, dès que Meta accepte
-   * le code (`src/http/embedded-signup.ts`). `credits_offerts` n'offre qu'une fois par espace, et jamais deux fois
+   * le code (`src/account/connexion-numero.ts`). `credits_offerts` n'offre qu'une fois par espace, et jamais deux fois
    * pour le même numéro, ni par son identifiant Meta (0191) ni par son numéro affiché (0193), même s'il change
    * d'espace. Les espaces qui avaient déjà un numéro sont marqués par la migration : pas rétroactif.
    */

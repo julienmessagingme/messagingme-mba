@@ -2114,7 +2114,7 @@ async function main(): Promise<void> {
           lierCompteSansNumero: (input) => esCredentialsStore.lierCompteSansNumero(input),
         },
         /**
-         * Le crédit de bienvenue, que la route n'appelle que pour un numéro que Meta dit vérifié. 🔴 Un espace qui a
+         * Le crédit de bienvenue, que le protocole n'appelle que pour un numéro que Meta dit vérifié. 🔴 Un espace qui a
          * déjà une clé de modèle voit son plafond remonter, comme après une recharge (sinon Vercel le couperait avant
          * qu'il ait consommé ce crédit), EN ARRIÈRE-PLAN et suivi par l'arrêt propre : Vercel peut prendre 30 s, que
          * l'inscription n'a pas à attendre (`creerOffreDeBienvenue`).
