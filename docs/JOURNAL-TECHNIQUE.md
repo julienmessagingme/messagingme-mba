@@ -5,6 +5,35 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-21 : les simplifications de Codex du 12 au 21 octobre, reportées dans le manuel
+
+Codex a mené une série de simplifications après « Réunir la préparation d'une campagne » (`be24529c`, 12 octobre),
+jusqu'à `9c8ae73b` (21 octobre), PR #1 et #4 à #11 comprises. Toutes sont sur `main` et déployées au fil des chantiers ;
+le SDK `0.3.1` porte le nouveau contrat des envois interactifs. Chaque point a été revérifié dans le code avant d'entrer
+au manuel.
+
+- **Des contrats console et serveur uniques dans `web/lib/partage/`** : la grammaire des chemins JSON (`51ef42c6`), les
+  clés de champs CSV (`9e022f2d`), le parcours d'ouverture d'un scénario (`9600e563`), les filtres du mini-CRM (PR #1,
+  `d2fe4661`). Côté console seule, la sélection de contacts commune au mini-CRM et aux campagnes (`2259d09d`).
+- **Un vrai défaut corrigé** (`492db368`) : la forme JSON des déclencheurs d'automation était validée, pas leurs
+  références, qui pouvaient être inexistantes ou d'un autre espace. Invariant 58.
+- **Des intermédiaires supprimés** (`9600e563`) : `src/crm/lists-gate.ts`, des réexportations sans logique. La route de
+  désactivation d'un lien Channels Me reste disponible et testée, sans bouton (décision produit).
+- **Des propriétaires métier sortis des routes** : l'envoi SMTP (`d5b6effe`), un jeton de lien résolu une fois par
+  redirection (`09e3623b`), les formulaires WhatsApp (PR #4), un tour d'entretien de configuration (PR #6), les modèles
+  (PR #7), l'import MCP (PR #8), l'envoi public (PR #9, environ 590 lignes retirées de `v1-sends.ts`), la connexion d'un
+  numéro (PR #10), le passage de main à l'agent de Meta (PR #11, `src/mba/handoff-sweep.ts` supprimé). Invariant 60.
+- **Un envoi accepté ne redevient plus une erreur d'envoi** (`06df6967`) : `journal: 'unrecorded'` plutôt qu'un échec à
+  renvoyer. Invariant 59.
+- **Les compteurs d'affectation de l'Inbox** sont invalidés après une affectation ou une libération (PR #5).
+- **Une précision trouvée en vérifiant** : le mémo dit que le worker retente le passage de main au balayage suivant ;
+  c'est vrai du seul mode `business_hours`. `reconcilierHandoffSurHoraires` ne relit que ces espaces : un échec
+  d'application en `always` ou `never` attend le prochain enregistrement du choix (la route rend
+  `appliqueChezMeta: false`). Le manuel dit ce que fait le code.
+- **Ce qui était devenu faux dans le manuel**, corrigé : le balayeur `mba/handoff-sweep`, la lecture `champsParJeton`
+  des liens suivis, `web/lib/contact-filters.ts` présenté comme un « miroir du parse serveur », et
+  `campaign-eligibility.ts` comme un « miroir » de l'analyse d'ouverture.
+
 ## 2026-10-21 : la file des accusés vide ses paquets d'un coup, et l'échec d'un destinataire de campagne est définitif
 
 - **L'alerte** (Telegram, 06:54 UTC) : « file webhook-status en retard, 69 s ». Aucune erreur. `pgboss.job` montre le

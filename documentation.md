@@ -176,7 +176,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **E-mails du produit** | les e-mails aux admins des espaces (alertes, puis transferts et commerciaux), leurs textes et chiffres dans `/ops` | `src/emails-produit/`, `src/http/ops-emails.ts`, `src/http/webhook-resend.ts` | `/ops`, `/compte` | `emails_produit_envois`, `emails_produit_textes`, `emails_produit_interrupteurs`, `emails_produit_desinscriptions`, `identities.langue` | `emails-produit`, `emails-produit-reprise` |
 | **Traduction** | lire les entrants dans sa langue, traduire un sortant avant l'envoi | `src/traduction/` | `/inbox` | `conversation_messages` (`traduction`), `contacts` (`langue_detectee`) | |
 | **Agent IA** | un bloc de scénario qui tient la conversation seul, avec des outils, ou le répondeur de l'espace (§ 4.4) | `src/agent/`, `src/repondeur/` | `/agents` | `agents`, `agent_tools`, `agent_tool_consommateurs`, `agent_sessions`, `agent_knowledge`, `agent_credits` (`repondeur_alertes_credit` n'est plus écrite depuis la migration 0234) | `agent-turn` |
-| **Meta Business Agent** | l'agent de META (pas le nôtre) : activation, passage de main, consignes et messages interactifs (vivent chez Meta, aucune table chez nous) | `src/mba/` | `/mba` | `tenant_settings` | `handoff-sweep` |
+| **Meta Business Agent** | l'agent de META (pas le nôtre) : activation, passage de main, consignes et messages interactifs (vivent chez Meta, aucune table chez nous) | `src/mba/` | `/mba` | `tenant_settings` | réconciliation du passage de main (`src/mba/handoff.ts`) |
 | **Canal RCS** | deuxième canal, agent de marque chez smsmode | `src/rcs/`, `src/channels-me/` | `/rcs-messages`, `/chaine` | `rcs_agents`, `rcs_media` | |
 | **Canal e-mail** | troisième canal, SMTP par workspace | `src/email/` | `/email-templates` | `email_accounts`, `email_templates` | |
 | **Formulaires (Flows)** | les WhatsApp Flows et leur mapping vers les fiches ; préparation pure (`preparation.ts`), cycle Meta/local (`lifecycle.ts`) et transaction champs + formulaire (`persistence.pg.ts`) | `src/flow/`, `src/meta/flow-json.ts` | `/flows` | `flows`, `user_fields` | |
@@ -2106,7 +2106,7 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 | `campaigns_paused` | coupe-circuit d'envoi pour tout l'espace |
 | `auto_retry_enabled` | auto-relance des échecs des campagnes d'AVANT la migration 0165 ; ce réglage n'a plus d'écran et ne s'écrit plus. Une campagne créée depuis obéit à SA case `campaigns.reessayer` (`campaigns.reessai_par_campagne`) |
 | `timezone` et `business_hours` | le fuseau (une heure murale sans fuseau est interprétée là) et les horaires |
-| `mba_handoff_mode` | `always` \| `business_hours` \| `never` |
+| `mba_handoff_mode` | `always` \| `business_hours` \| `never`. 🔴 La base est la source de vérité : `src/mba/handoff.ts` l'écrit, l'applique chez Meta (`reglerModeHandoff`) et la réconcilie à chaque balayage (`reconcilierHandoffSurHoraires`), la route et le worker appelant ce même module. Une panne de Meta n'annule pas le choix (la route rend `appliqueChezMeta: false`). ⚠️ Le balayage ne relit que les espaces en `business_hours` : c'est là seulement qu'il retente ; un échec en `always` ou `never` attend le prochain enregistrement du choix. Dans le balayage, l'échec d'un espace n'arrête pas les autres. L'état lu chez Meta a TROIS valeurs : un booléen (la valeur réelle), `'absent'` (jamais configuré : on écrit, même pour `false`), `null` (aucun numéro ou aucun agent : aucune écriture à l'aveugle) |
 
 **Publicités**
 
@@ -2527,7 +2527,7 @@ automations, servis par le principal) : ça tient parce que `enqueue` crée sa f
 | `campaign/retry-sweep` | auto-relance des échecs |
 | `workflow/wake-sweep` | réveille les parcours endormis et réclame les blocs Question à échéance |
 | `inbox/control-sweep` | rend la main au scénario après le délai de reprise |
-| `mba/handoff-sweep` | applique le mode `business_hours` du passage de main Meta |
+| `mba/handoff` (`reconcilierHandoffSurHoraires`) | applique le mode `business_hours` du passage de main Meta et réconcilie l'état chez Meta avec la base, pour les seuls espaces en `business_hours`, un échec restant local à l'espace |
 | `analysis/sweep` | réclame les conversations closes à analyser |
 | `automation/date-sweep` | déclencheur « X avant ou après la date d'un champ » |
 | `engagement/balayage` | le risque de désengagement, une fois par nuit (3 h à 6 h, heure de Paris) et par espace : relit les faits par lots, écrit le niveau, émet les signaux sur un CHANGEMENT de niveau et l'événement d'automation `risque_eleve` sur un PASSAGE en élevé. Aussi à la demande, pour un espace : `POST /ops/risque/:tenantId` |
@@ -3924,12 +3924,15 @@ La destination d'un bouton « Lien » peut porter des champs du contact en accol
 (`CLES_DE_BASE_URL`). Elle est stockée telle quelle dans `tracked_links.destination`. Meta reçoit toujours le lien
 tracé à jeton (`/r/<code>/{{1}}`) et ne voit jamais le champ.
 
-- **Au clic**, si la destination porte des champs (`porteDesChamps`), la redirection lit la fiche par son jeton DANS
-  L'ESPACE DU LIEN (`champsParJeton` : `tenant_id` du lien, `deleted_at is null`) et remplace chaque `{cle}` par sa
-  valeur encodée (`remplirChampsUrl`, `src/links/champs-url.ts`) : `nom` est le nom du profil, `telephone` le numéro.
-  Valeur vide, jeton `anon`, inconnu, mal formé ou absent (forme `/r/:code`), lecture en échec : le champ est
-  retiré, et la redirection a lieu (302, `no-store`, jamais de 5xx). Le remplacement ne dépend pas du filtre des
-  clics automatiques, qui ne décide que du comptage.
+- **Au clic**, le jeton se résout UNE fois, DANS L'ESPACE DU LIEN, pour les deux usages (`resoudreJeton`,
+  `src/links/tracked-links.pg.ts`) : l'identité du contact (l'attribution du clic) et, seulement si la destination
+  porte des champs (`porteDesChamps`), les valeurs de sa fiche, qui remplacent chaque `{cle}` encodée
+  (`remplirChampsUrl`, `src/links/champs-url.ts`) : `nom` est le nom du profil, `telephone` le numéro. Une fiche
+  masquée (`deleted_at`) reste attribuable mais ne prête plus ses valeurs. Valeur vide, jeton `anon`, inconnu, mal
+  formé ou absent (forme `/r/:code`), lecture en échec : le champ est retiré, et la redirection a lieu (302,
+  `no-store`, jamais de 5xx) ; si la lecture complète échoue, une lecture légère tente encore de garder
+  l'attribution. Un clic automatique (robot, revue de Meta) n'est pas compté, mais sa destination à champs se
+  remplit quand même.
 - 🔴 **Un champ ne se trouve qu'après l'hôte** (chemin, requête, fragment). Une valeur de fiche peut être écrite
   par le contact : dans le schéma, l'utilisateur, l'hôte ou le port, elle ferait de notre domaine un redirecteur
   ouvert. La règle se lit sur le TEXTE (`analyserChampsUrl`), parce que `new URL` accepte `{x}` dans un nom d'hôte.
@@ -4164,6 +4167,10 @@ suit est la règle, en une formulation courte.
 6. **On refuse une donnée ambiguë en le DISANT, on ne la devine pas.** Une date mal devinée ne ressemble pas à
    un bug, elle ressemble à une date : elle ne se voit qu'au moment où un rappel part un mois trop tôt, chez
    le client.
+58. 🔴 **Une référence portée par une configuration se valide sur son EXISTENCE dans l'espace, pas sur sa forme**
+   (`validateTriggerReferences`, `src/http/automations.ts`) : `avant_date.fieldKey` désigne un champ « date et
+   heure » de l'espace, `agent_action.actionId` une action de l'espace. La vérification se refait à l'activation,
+   même seule (une activation ne ranime pas une référence supprimée depuis) ; désactiver reste toujours possible.
 
 ### Sur les envois
 
@@ -4443,6 +4450,15 @@ Ajouté par le lot 4 de l'API publique :
    `pullFromError` importe). Jamais sur le seul type `OAuthException`, que Meta pose sur la plupart de ses refus
    d'envoi (100, 132000, 4, 134101...) : l'intercepteur de la fabrique invalidait alors le jeton d'un espace entier
    sur un simple refus, et coupait tous ses envois jusqu'à une reconnexion (vu le 2026-10-05).
+59. 🔴 **Un effet que le fournisseur a accepté ne redevient jamais une erreur à retenter, et une reprise locale ne
+   rejoue jamais l'effet distant.** Pour un message (réponses WhatsApp, modèles et RCS de l'Inbox, MCP, routes
+   publiques WhatsApp et RCS ; pas les campagnes ni les scénarios) : seule l'écriture locale, idempotente, est
+   rejouée une fois (`journaliserEnvoiAccepte`, `src/inbox/journal-sortant.ts`) ; si elle échoue encore, la réponse
+   reste un succès qui porte l'identifiant du fournisseur et `journal: 'unrecorded'`
+   (`web/lib/partage/journal-sortant.ts`). La console vide le brouillon et dit de ne pas renvoyer, MCP rend le même
+   état, les routes HTTP répondent 200. Pour un formulaire (`src/flow/lifecycle.ts`) : la confirmation locale est
+   reprise une fois après l'accord de Meta ; une création qui ne s'écrit toujours pas supprime son brouillon chez
+   Meta, et si cette compensation échoue, l'erreur rend l'identifiant Meta à réconcilier.
 
 ### Sur les contrats externes
 
@@ -4575,6 +4591,15 @@ Ajouté par le lot 4 de l'API publique :
     au lieu de l'objet qui la porte, et la route part sans `preHandler`. Le compilateur ne voit rien, et le
     symptôme est un 403 sur un geste légitime (ou une porte ouverte, dans l'autre sens). C'est ce que vérifie
     `tests/scope-tenant.test.ts` en inspectant ce que Fastify a réellement enregistré.
+60. 🔴 **Une route HTTP traduit une requête et une issue ; elle ne possède pas un protocole métier.** L'ordre des
+    effets (vérifier, persister, appeler le fournisseur, compenser, compter) vit dans un module de domaine qui rend
+    une issue TYPÉE, testable sans Fastify, et que tous ses appelants partagent (route, MCP, worker) : les
+    propriétaires sont listés au § 13 (modèles, envoi public, connexion d'un numéro, passage de main, formulaires,
+    entretien de configuration, import MCP, envoi SMTP).
+61. **Une réexportation sans rôle se remplace par un import depuis le propriétaire**, et un intermédiaire qui ne
+    calcule qu'une ligne se supprime. Un module d'adaptation qui reste importe le
+    contrat sans en garder de copie (`src/webhook-entrant/chemin.ts`, `web/lib/chemin-json.ts`,
+    `web/lib/contact-filters.ts`).
 
 ### Sur la méthode
 
@@ -4633,8 +4658,12 @@ fichiers, consignes et prix de l'agent de Meta (`agent-meta`), les plafonds de p
 (`piece-jointe`), les déclencheurs d'automation et leurs opérateurs (`automations`), les étapes du guide Salesforce
 (`salesforce`), les bornes d'une publicité (`publicite`), les codes d'une analyse (`analyse`), le motif d'une pastille
 `{{nom}}` (`pastille`), le nom de paramètre d'une Fonction JS (`fonction-js`), les étapes du numéro fourni que
-la page affiche et que Claude redit (`etapes-numero-fourni`), et ce qu'il faut chez Meta, les prérequis et le chemin
-de la carte (`etapes-meta`). 🔴 Pour ces valeurs (types, bornes,
+la page affiche et que Claude redit (`etapes-numero-fourni`), ce qu'il faut chez Meta, les prérequis et le chemin
+de la carte (`etapes-meta`), le contrat des filtres du mini-CRM (`contact-filters` : critères, opérateurs, noms des
+paramètres d'adresse, cible d'une action en masse, que la console écrit et le serveur relit ;
+`tests/contact-filters-roundtrip.test.ts` le transporte en `Required<ContactFilters>`, donc un critère ajouté oblige
+à compléter la preuve), la grammaire des chemins JSON (`chemin-json`), les clés de champs de l'import CSV
+(`cle-champ`) et la réponse d'un envoi accepté (`journal-sortant`). 🔴 Pour ces valeurs (types, bornes,
 droits, libellés), le fichier est la SOURCE : ce manuel dit où elles vivent, il ne les recopie pas. Une copie qui reste
 ailleurs (une liste de libellés d'écran, une règle liée à la base ou à `zod`, une logique qui entraînerait le serveur
 avec elle) garde son test de parité.
@@ -4647,6 +4676,14 @@ avec elle) garde son test de parité.
 | `src/api/modele-envoi.ts` | ce qu'un envoi de l'API sait d'un template : `modeleLuDe` (la construction de la lecture partagée `templateVarInfo` ET du catalogue `/v1/templates`), `raisonNonEnvoyable` (ce qu'aucun envoi ne peut faire partir) et `verdictModele`. Le catalogue n'annonce que ce que l'envoi accepte |
 | `src/server.ts` -> `modulesDeRoutes` | 🔴 le point de passage OBLIGÉ pour monter un module de routes. Chaque entrée déclare sa `ClasseDAcces` (six valeurs, pas deux), et la couverture du garde-fou d'authentification s'en DÉRIVE au lieu d'être recopiée, comme l'étape d'espace (posée par `entree` sur les seuls modules `tenant`). Monter une route ailleurs la sort du garde-fou et de l'étape : si elle lit l'espace par `espaceVerifie`, elle rend un 500 au lieu de servir, sinon aucune erreur ne le dit |
 | `src/mba/orchestration-publication.ts` -> `PublicationMba` | 🔴 le point de passage OBLIGÉ pour apercevoir et exécuter une publication chez Meta : résolution du numéro, instantané et recalcul du plan sous verrou, contexte typé commun aux gestes, prolongation et libération du verrou, classement des échecs. `src/http/mba-publication.ts` ne fait que traduire son `Issue` en HTTP |
+| `src/templates/gestion.ts` | 🔴 le cycle de vie d'un modèle WhatsApp, commun à la console, l'API et MCP : vérifications préalables, création, liste et reconstruction des liens suivis, modification, suppression, statuts, gardes des campagnes actives, compensations des liens. `src/http/templates.ts` n'est qu'un adaptateur |
+| `src/api/envoi-public.ts` -> `lancerEnvoiPublic` | 🔴 le cycle d'un envoi public, commun à `/v1` et MCP : schéma du corps, cible, destinataires et données, consentement et quotas, plafond de destinataires, idempotence et reprise d'un rapport existant, création du lot, enfilement à reprise bornée, rapport et erreurs publiques |
+| `src/account/connexion-numero.ts` -> `connecterNumero`, `demanderCodeNumero`, `activerNumero` | 🔴 le protocole de connexion d'un numéro : échange du code Meta, découverte du WABA et du numéro, preuve d'appartenance, rattachement à l'espace, abonnement aux webhooks, enregistrement, identifiants et PIN, crédit offert, demande de code (délai partagé entre copies, `cleDemandeCode`), vérification et activation. `src/http/embedded-signup.ts` traduit les issues |
+| `src/mba/handoff.ts` -> `reglerModeHandoff`, `reconcilierHandoffSurHoraires` | le passage de main à l'agent de Meta : le choix en base, son application chez Meta et sa réconciliation (`mba_handoff_mode`, § 5) |
+| `src/flow/preparation.ts`, `src/flow/lifecycle.ts` | un formulaire WhatsApp : la préparation SANS écriture (écrans, mappings, champs CRM à assurer, rien de partiel sur un refus), puis l'ordre des effets chez Meta et en base (invariant 59) |
+| `src/agent/setup/tour-entretien.ts` -> `creerTourEntretien` | un tour de l'entretien de configuration d'un agent : chargement, budget, contexte, appel du modèle, validation de la proposition, progression des questions, fusion des réponses, synthèse finale, comptabilisation, persistance, import différé du site retenu. `src/http/agent-setup.ts` traduit l'issue |
+| `src/agent/mcp/rafraichissement.ts` -> `creerRafraichissementMcp` | l'aperçu et l'import d'un serveur MCP externe, par la même préparation : source, type, connexion, catalogue, plan de changement, adresses publiques, écriture transactionnelle |
+| `src/email/resolver.ts` -> `EmailAccountResolver.prepareSend` | l'envoi SMTP d'une boîte : une fonction d'envoi prête, sans exposer à l'appelant le mot de passe déchiffré ni le transport ; partagé par la route de la console et les scénarios, son cache invalidé à chaque écriture de compte |
 | `src/crm/contact-store.pg.ts` -> `MATCH_BY_WAID_SQL` | résoudre un contact par `wa_id` (E.164 exact, chiffres nus, BSUID) |
 | `src/workflow/engine.ts` -> `cibleDuSaut`, `blocDuCode` ; `src/workflow/aller-a.ts` | 🔴 où mène un « Aller à » : dans le graphe joué d'abord, ailleurs par `resoudreBloc`. `aller-a.ts` porte ce qui lit plusieurs scénarios : `MAX_SAUTS_SANS_PAUSE` et `refusDePublication`. Voir § 4.3 |
 | `src/workflow/conditions.ts` -> `sortiesDeCondition`, `famillesDeCondition` | 🔴 les sorties d'un bloc Condition (une par famille, puis « Sinon ») et la lecture de ses familles, compatibilité des blocs d'avant comprise. Aucun lecteur du graphe n'écrit `true` / `false` : voir § 4.3 |
@@ -4761,7 +4798,7 @@ avec elle) garde son test de parité.
 | `web/components/TitrePage.tsx` | `TitrePage`, le seul `h1` d'une page (`text-xl`), et `IntroPage`, la phrase sous le titre (`max-w-prose`). Police : Geist et Geist Mono (`next/font/google`, `web/app/layout.tsx`) |
 | `web/lib/libelles-mba.ts` -> `LIBELLES` | le seul lien entre une clé de tâche de complétion (serveur) et un onglet de l'écran, plus le libellé de repli quand le serveur ne joint pas de raison |
 | `web/lib/logos-llm.ts` | le logo d'un modèle, dérivé du PRÉFIXE de son identifiant, et la pastille de repli. 🔴 L'`alt` est VIDE délibérément : il entrerait dans le nom accessible du bouton qui porte l'image, que deux suites ciblent par ce nom |
-| `web/lib/campaign-eligibility.ts` | 🔴 le MIROIR de l'analyse d'ouverture serveur, tenu par un test de parité |
+| `web/lib/campaign-eligibility.ts` | 🔴 l'éligibilité d'un scénario à une campagne. Le parcours d'ouverture est celui du moteur (`partage/ouverture-scenario`) ; un test de parité garde les deux lectures d'un bloc configuré et des sorties de condition |
 | `web/lib/condition-familles.ts` | 🔴 le MIROIR des familles d'un bloc Condition (`sortiesDeCondition`), plus ce que seul l'écran fait : leur nom affiché, la forme écrite (`ecrireFamilles`), un code neuf. Lu par la carte, le panneau, le constructeur, l'éligibilité, les mesures et le canevas d'Analytics ; parité tenue par `tests/web-condition-familles-parity.test.ts` |
 | `web/lib/api-exemples.ts` | les exemples (corps et réponses), les codes d'erreur et les bornes des pages de la documentation API (`FICHIERS_DOC`). 🔴 Aucun fichier de la doc n'écrit de JSON à la main : `tests/api-exemples.test.ts` passe chaque corps aux règles de sa route (schéma zod, règles de cible), type chaque réponse par ce que sa route rend, tient la table des codes égale à `CodeApi` (au typecheck), vérifie que les exemples se répondent (l'appel de scénario décrit les variables du template d'ouverture montré) et refuse tout nom d'outil tiers. ⚠️ Aucun import : il est lu par la console ET par la suite racine |
 | `web/lib/doc-api-pages.ts` | la carte de la documentation publique : ses pages (adresse, fichier, groupe, titre, ancres) et la liste FERMÉE de ses fichiers (`FICHIERS_DOC`). 🔴 Les gardes de source (`tests/api-exemples.test.ts`, `tests/web-signaux-parite.test.ts`, `tests/web-risque-parite.test.ts`, `web/lib/api-base.test.ts`) lisent cette liste, jamais tout `web/`, et chacune exige d'y trouver ce qu'elle cherche. Une page posée sous `web/app/developers/api/` sans y figurer fait tomber la suite. L'e2e ouvre chaque page (console, sans compte, anglais, mobile) et vérifie chaque ancre. ⚠️ Aucun import de valeur ; plus `ANCRES_DEPLACEES` (anciennes ancres, et la page de départ vers la nouvelle adresse) et `LIENS_NAV` (entrées de navigation qui ne sont pas des pages) ; la liste fermée couvre aussi `web/components/doc-api/` et les modules de texte |
@@ -4783,7 +4820,8 @@ avec elle) garde son test de parité.
 | `web/lib/intentions.ts` | 🔴 les libellés des intentions d'une conversation analysée, et leurs comptes dans l'ordre d'affichage (fixe, `autre` en dernier), pour la carte du Performance Lab ET l'Analyse des conversations. La liste est `INTENTS`, partagée avec le serveur (`web/lib/partage/analyse.ts`) ; un libellé par valeur est exigé par `tests/intentions-parite.test.ts` (à la racine : seul `ci.yml` tourne quand `src/` change). Une intention absente d'une API plus ancienne vaut zéro (`comptesParIntention`) |
 | `web/lib/erreurs-livraison.ts` | l'ORIGINE d'une ligne du journal des erreurs de livraison, en mots (canal et provenance d'un message libre non délivré), et l'export CSV de ce journal : les mêmes mots à l'écran et dans l'export |
 | `web/lib/partage/chemin-json.ts` | la grammaire unique des chemins JSON de webhook : la console construit les chemins de l'arbre avec elle, le serveur valide et relit les mêmes chemins. `web/lib/chemin-json.ts` garde l'arbre d'affichage ; `src/webhook-entrant/chemin.ts` garde la conversion en valeur de champ. Une clé inadressable ou un chemin de plus de 300 caractères reste visible, mais ne peut pas être attaché |
-| `web/lib/contact-filters.ts` | les filtres du mini-CRM, miroir du parse serveur |
+| `web/lib/contact-filters.ts` | la reprise des filtres d'un brouillon et leur sérialisation dans l'adresse ; le contrat vit dans `web/lib/partage/contact-filters.ts` |
+| `web/lib/selection-contacts.ts` | la sélection de contacts commune au mini-CRM et aux campagnes : lignes choisies, ou tout le résultat filtré moins les exclusions, le comptage et la cible d'une action en masse |
 | `web/lib/risque.ts` | le risque de désengagement à l'écran : badges des niveaux, libellés des raisons en deux langues, choix du filtre, et `risqueLu`, qui lit le champ venu du réseau et rend `null` (« pas encore calculé ») pour un champ absent, nul ou illisible, jamais un niveau inventé |
 | `web/lib/rcs.ts` | déduire le format d'un message RCS de sa saisie, miroir de `rcsOutboundOf` |
 | `web/lib/rcs-carrousel.ts` | le carrousel RCS côté écran (brouillon, message envoyable, manques carte par carte) et la relecture STRICTE d'un carrousel copié dans un brouillon de campagne : mal formé, il est jeté. Tenu contre `rcsOutboundSchema` par `tests/web-rcs-carrousel.test.ts` |

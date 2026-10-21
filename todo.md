@@ -1800,22 +1800,6 @@ qui attend quelqu'un, et il garderait la conversation visible.
 conversation qu'un scénario mène n'est pas une ligne de travail). C'est la DESTINATION de la reprise qui est
 discutable, pas le filtre.
 
-## 🟢 L'audit ponytail du 2026-10-13 : quatre petits sujets revus le 2026-10-14
-
-Un audit de sur-ingénierie de tout le dépôt, fait en conversation (aucun rapport versionné, d'où cette copie). Le point
-1 est fait (journal du 2026-10-13 ; gain réel environ 500 lignes, pas les 1 500 annoncés). Suite des quatre sujets :
-
-2. **Analyse d'ouverture réunie** dans `web/lib/partage/ouverture-scenario.ts` : entrée, sauts et parcours en
-   largeur sont communs à l'API et à la console. `depuis` reste disponible côté serveur. Le test de parité reste
-   nécessaire pour la lecture des blocs configurés et des sorties de condition, qui appartiennent à leurs modules.
-3. **Route de désactivation conservée sans bouton**, décision produit de Julien le 2026-10-14. La console ne l'appelle
-   pas ; l'API garde l'action et ses tests.
-4. **`lists-gate.ts` retiré** : les deux routes HubSpot lisent directement `!enabled || paused` ; leurs tests HTTP
-   couvrent les réponses et l'absence d'appel au connecteur quand l'accès est fermé.
-5. **Réexportations de passage retirées** dans `src/http/mba-outils.ts`, `src/mba/vue-outils.ts`,
-   `web/lib/api-mba-outils.ts` et `web/lib/journal.ts` ; leurs lecteurs importent le contrat partagé directement.
-   Les autres réexportations qui servent de façade métier restent à leur place.
-
 ## 🟠 Les audits d'architecture des 11 et 12 octobre : ce qui reste ouvert (2026-10-12)
 
 Audits « improve-codebase-architecture » menés dans une session ChatGPT, rapports NON versionnés : ce qui compte est
@@ -1826,8 +1810,8 @@ sans changement produit ni migration. ⚠️ Les audits ne sont PAS clos :
   faite ; ne pas l'ouvrir sans pouvoir dire quelle interface rétrécit, et pour quel appelant.
 - **Audit du 2026-10-12** : la préparation d'une campagne (`be24529c`), la grammaire des chemins JSON de webhook
   (partagée entre console et serveur le 2026-10-13) et les clés de champs de l'import CSV (contrat et dérivation
-  partagés le 2026-10-14) sont traitées. Restent À EXAMINER (rien n'est décidé) : le cycle de vie des formulaires
-  WhatsApp et le contrat des déclencheurs d'automation.
+  partagés le 2026-10-14) sont traitées. Les deux sujets restés à examiner sont faits par Codex : le cycle de vie des
+  formulaires WhatsApp (PR #4) et les références des déclencheurs d'automation (`492db368`), journal du 2026-10-21.
 
 ## 🟠 Le rapport d'architecture du 2026-10-02 : huit pistes restantes sur neuf (2026-10-03)
 
