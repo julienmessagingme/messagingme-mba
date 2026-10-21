@@ -1,14 +1,13 @@
-import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
-import { MESSAGE_RESOLUTION, normaliserCles, schemaClesFiche, type ClesFiche, type ModeCreation, type ResolutionFiche } from '../api/fiche';
+import { MESSAGE_RESOLUTION, normaliserCles, type ClesFiche, type ModeCreation, type ResolutionFiche } from '../api/fiche';
 import { STATUT_PAR_CODE, refuser } from '../api/erreurs';
 import { messageDeForme } from '../api/forme';
 import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
 import { waIdOf } from '../crm/identity';
 import type { ConversationsRepondre } from '../inbox/repondre';
 import { envoyerRcsLibre, type DepsRcsLibre, type RefusRcsLibre } from '../rcs/envoyer-libre';
-import { RCS_TEXTE_MAX } from '../../web/lib/partage/rcs';
+import { schemaMessageRcs } from '../api/contrat-public';
 import { INCONNUE_POUR_UN_MESSAGE, type ReponseMessageSimple } from './v1-messages';
 import { auteurDeLEnvoi, type AuteurDuChangement } from '../inbox/evenements';
 import { journaliserEnvoiAccepte, type EtatJournalSortant } from '../inbox/journal-sortant';
@@ -43,15 +42,6 @@ export interface V1MessagesRcsRouteDeps {
   /** Le garde d'usage, injecté par `buildServer`. Requis, comme sur les autres routes /v1. */
   usage: ApiUsageGuard;
 }
-
-/**
- * Les clés de fiche, plus le texte. `strictObject` : une clé inconnue (un `rcsMessageId` d'Inbox, une faute de
- * frappe) est un défaut de forme, pas un champ ignoré.
- */
-export const schemaMessageRcs = z.strictObject({
-  ...schemaClesFiche.shape,
-  text: z.string().trim().min(1).max(RCS_TEXTE_MAX),
-});
 
 /** Les refus d'`envoyerRcsLibre`, en codes de l'API. Le statut vient de la table des codes (`STATUT_PAR_CODE`). */
 const MESSAGE_RCS: Record<RefusRcsLibre, string> = {

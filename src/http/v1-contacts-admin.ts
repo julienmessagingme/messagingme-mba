@@ -6,7 +6,7 @@ import { journalDeLApi } from '../api/journal-api';
 import { refuser } from '../api/erreurs';
 import { messageDeForme } from '../api/forme';
 import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
-import { USER_FIELD_TYPES } from '../crm/fields';
+import { corpsChamp } from '../api/contrat-public';
 import { effacerContacts, type DepsEffacement } from '../crm/effacement';
 import { creerChamp, type ChampsDep } from './fields';
 import { LimiteOffreError, STATUT_REFUS_OFFRE, corpsRefusLimite } from '../offres/refus';
@@ -46,11 +46,6 @@ export interface GardesContactsAdminV1 {
 /** Un champ personnalisé, tel que l'API le rend : la clé à utiliser dans `fields` des fiches. */
 export interface ChampV1 { key: string; label: string; type: string }
 
-/** Exporté pour la doc : ses exemples passent par la MÊME règle (`tests/api-exemples.test.ts`). */
-export const corpsChamp = z.strictObject({
-  label: z.string().trim().min(1).max(100),
-  type: z.enum(USER_FIELD_TYPES as [string, ...string[]]),
-});
 const parametresFiche = z.object({ contactId: z.string().uuid() });
 
 export function registerV1ContactsAdmin(app: FastifyInstance, deps: V1ContactsAdminRouteDeps, gardes: GardesContactsAdminV1): void {

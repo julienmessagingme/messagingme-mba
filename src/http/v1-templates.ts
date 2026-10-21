@@ -5,6 +5,7 @@ import { refuser } from '../api/erreurs';
 import { messageDeForme } from '../api/forme';
 import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
 import { schemaModeleMeta } from '../api/modele-meta';
+import { requeteStatutModele } from '../api/contrat-public';
 import { creerModeleDepuisMeta, statutsDuModele, type DepsCreationModele, type RefusModele } from '../api/creer-modele';
 import type { FastifyReply } from 'fastify';
 
@@ -28,9 +29,6 @@ function refuserModele(reply: FastifyReply, r: RefusModele): FastifyReply {
   if (r.reessayerDansS !== undefined) reply.header('retry-after', String(r.reessayerDansS));
   return refuser(reply, r.statut, r.code, r.message, r.metaCode === undefined ? undefined : { metaCode: r.metaCode });
 }
-/** Exporté pour le contrat OpenAPI (`src/api/openapi/registre.ts`) : la requête du statut, telle que la route la lit. */
-export const requeteStatutModele = z.object({ language: z.string().max(20).optional() });
-
 export function registerV1Templates(app: FastifyInstance, deps: V1TemplatesRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
 

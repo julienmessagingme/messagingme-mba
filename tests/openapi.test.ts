@@ -101,6 +101,13 @@ describe('🔴 le registre du contrat est l’API documentée (donc montée)', (
     }
   });
 
+  it('le registre et le contrat public ne dépendent d’aucun adaptateur HTTP', () => {
+    for (const fichier of ['../src/api/contrat-public.ts', '../src/api/openapi/registre.ts']) {
+      const source = readFileSync(new URL(fichier, import.meta.url), 'utf8');
+      expect(source, fichier).not.toMatch(/from ['\"][^'\"]*http\//);
+    }
+  });
+
   it('chaque code d’erreur nommé est un code de route (jamais un motif d’écart seul)', () => {
     for (const r of ROUTES_V1) for (const c of r.erreurs) expect(STATUT_PAR_CODE[c], `${cle(r)} : ${c}`).not.toBeNull();
   });

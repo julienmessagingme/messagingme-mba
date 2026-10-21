@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
-import { z } from 'zod';
 import type { Guard } from '../auth/middleware';
 import { raisonDeValidation } from '../api/contacts-upsert';
+import { MAX_BATCH, conteneurDuLot } from '../api/contrat-public';
 import {
   schemaContactLotV1, schemaContactV1, schemaPatchContactV1, schemaRechercheContactV1,
   type ContactV1, type ResultatFiche, type ServiceContactsV1,
@@ -21,14 +21,6 @@ export interface GardesContactsV1 {
   ecrire: Guard;
   lire: Guard;
 }
-
-/**
- * 50 fiches par lot : un lot occupe l'unique place d'opération lourde du process (`API_MAX_LOURDES_SIMULTANEES`),
- * partagée par tous les espaces et `/v1/sends`, et sa taille décide combien de temps il la garde. Les gros volumes
- * passent par l'import CSV de la console.
- */
-export const MAX_BATCH = 50;
-export const conteneurDuLot = z.object({ contacts: z.array(z.unknown()) });
 
 /**
  * Le tri du lot : les éléments bien formés d'un côté, les refus de l'autre, avec leur index.

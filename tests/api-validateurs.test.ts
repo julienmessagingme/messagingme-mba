@@ -6,13 +6,11 @@ import {
   schemaPatchContactV1 as schemaCorpsModification,
 } from '../src/api/contacts-v1';
 import {
-  conteneurDuLot as schemaCorpsLot, MAX_BATCH,
-} from '../src/http/v1-contacts';
+  conteneurDuLot as schemaCorpsLot, MAX_BATCH, schemaMessageRcs, schemaMessageWhatsapp,
+} from '../src/api/contrat-public';
 import {
   schemaCorps as schemaCorpsEnvoi, schemaDestinataire as schemaDestinataireEnvoi, lireCible, MAX_RECIPIENTS, MAX_SKIPPED_REPORT, type RapportEnvoi,
 } from '../src/api/envoi-public';
-import { schemaMessageWhatsapp } from '../src/http/v1-messages';
-import { schemaMessageRcs } from '../src/http/v1-messages-rcs';
 
 /**
  * LES VALIDATEURS DES CORPS /v1 SONT NOMMÉS ET EXPORTÉS.

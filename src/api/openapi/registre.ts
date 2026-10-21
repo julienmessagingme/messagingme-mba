@@ -1,15 +1,13 @@
 import { z } from 'zod';
-import { schemaContactLotV1, schemaContactV1, schemaPatchContactV1, schemaRechercheContactV1 } from '../contacts-v1';
+import { schemaContactV1, schemaPatchContactV1, schemaRechercheContactV1 } from '../contacts-v1';
 import { LIMITE_PAGE_DEFAUT, LIMITE_PAGE_MAX } from '../conversations-v1';
 import { schemaMessageMeta } from '../message-meta';
 import { schemaModeleMeta } from '../modele-meta';
-import { MAX_BATCH } from '../../http/v1-contacts';
-import { corpsChamp } from '../../http/v1-contacts-admin';
-import { schemaMessageWhatsapp } from '../../http/v1-messages';
-import { schemaMessageRcs } from '../../http/v1-messages-rcs';
+import {
+  corpsChamp, corpsLotDeFiches, corpsRejeu, requeteJournal, requeteStatutModele, schemaMessageRcs,
+  schemaMessageWhatsapp,
+} from '../contrat-public';
 import { schemaCorps, schemaDestinataire, MAX_RECIPIENTS } from '../envoi-public';
-import { requeteStatutModele } from '../../http/v1-templates';
-import { corpsRejeu, requeteJournal } from '../../http/v1-webhooks';
 import { saisieCreation, saisieModification } from '../../evenements/gestion';
 import type { CodeApi } from '../erreurs';
 import type { RouteOpenapi } from './document';
@@ -22,8 +20,8 @@ import {
 
 /**
  * LE REGISTRE DES ROUTES `/v1` (lot 16) : ce que le contrat OpenAPI dit de chacune. Les schémas d'ENTRÉE sont ceux que
- * les routes appliquent, importés d'elles ; trois seulement sont composés ici pour la doc, parce que la route lit son
- * corps en deux temps (un conteneur, puis chaque élément) : le lot de fiches, l'envoi (ses destinataires et ses
+ * le module `contrat-public` possède les entrées propres à `/v1` ; les routes et ce registre les consomment. Deux
+ * schémas sont composés pour la doc lorsque la route lit le corps en plusieurs temps : l'envoi (ses
  * `params`). `tests/openapi.test.ts` tient ce registre égal aux routes montées (dans les deux sens), à l'index de la doc
  * (`web/lib/api-doc-endpoints.ts` : droit, groupe, phrase), et fait passer chaque exemple de la doc dans ses schémas.
  */
@@ -33,9 +31,6 @@ const pagination = {
   limit: z.number().int().min(1).max(LIMITE_PAGE_MAX).default(LIMITE_PAGE_DEFAUT).describe('Page size.'),
   cursor: z.string().max(200).describe('The nextCursor of the previous page, as is.'),
 };
-
-/** Le lot de fiches : la route lit d'abord un tableau, puis chaque élément par `schemaContactLotV1`. */
-export const corpsLotDeFiches = z.strictObject({ contacts: z.array(schemaContactLotV1).min(1).max(MAX_BATCH) });
 
 /** Une variable de template : sa position (`{{1}}`), d'où vient sa valeur, et sa valeur de repli (`TemplateParam`). */
 export const parametreTemplate = z.strictObject({
