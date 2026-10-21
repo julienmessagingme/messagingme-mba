@@ -1,17 +1,20 @@
-import { randomBytes, createHash } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { verifyPassword, hashPassword, hashPasswordSync } from './password';
 import { signSession, signChoice, verifyChoice, signMfa, signEnrolement, signSessionOps, type EtapeConnexion } from './token';
 import { refuserTropDeRequetes } from './rate-limit';
-import { PlafondPartage, MESSAGE_PLAFOND_INDISPONIBLE } from './plafond-partage';
+import { PlafondPartage } from './plafond-partage';
 import type { CompteurDebit } from '../db/debit';
 import { registerMfa, type MfaRouteDeps, type OptionsSuite } from './mfa-routes';
 import type { UserAuthStore } from './store';
 import { estAdresseOps, type UserStateLoader, type Guard } from './middleware';
 import type { GoogleIdentity } from './google';
-import { DuplicateEmailError, type OrigineEspace } from '../user/store.pg';
+import { DuplicateEmailError } from '../user/store.pg';
 import { nomEspace, MESSAGE_NOM_ESPACE_INVALIDE } from '../user/nom-espace';
 import { journaliser } from '../lib/journal';
+import { marquerConnexion, type ComptesAuthDep } from './comptes';
+import { entrerParGoogle } from './entree-google';
+import { empreinteTentative, verifierTentative } from './tentatives';
 
 export interface AuthRouteDeps extends MfaRouteDeps {
   /**
@@ -47,52 +50,16 @@ export interface AuthRouteDeps extends MfaRouteDeps {
   resetTtlMs?: number;
 }
 
-/** Ce que les routes lisent et écrivent des comptes. Chaque méthode absente rend sa route 503. */
-export interface ComptesAuthDep {
-  /** Inscription libre : crée un espace et son admin. `passwordHash` null = compte Google seul. */
-  /**
-   * `origine` (migrations 0212 et 0227) : d'où naît l'espace, `claude_code` par la connexion OAuth de Claude, `client_mcp` par
-   * celle d'un autre client MCP (lot 15), `console` sinon.
-   * Requise : une porte qui l'oublierait ne compilerait pas. Elle ne fixe plus le crédit offert (1 € partout depuis le lot 6).
-   */
-  createTenantWithAdmin?(workspaceName: string, admin: { email: string; name: string | null; passwordHash: string | null }, origine: OrigineEspace): Promise<{ tenantId: string; userId: string }>;
-  /** Pose (écrase) le hash de mot de passe d'un compte (reset / changement). */
-  setPassword?(userId: string, hash: string): Promise<boolean>;
-  /** Hash de mot de passe courant d'un compte (vérification au changement). null si absent/sans mdp. */
-  getPasswordHash?(userId: string): Promise<string | null>;
-  /** Le mot de passe de l'identité d'une adresse : `undefined` = adresse inconnue, `null` = identité sans mot de passe. */
-  motDePasseDeLAdresse?(email: string): Promise<string | null | undefined>;
-  /** {tenantId, role, email} d'un compte par id : émettre une session après acceptation d'invitation. */
-  getSessionUser?(userId: string): Promise<{ tenantId: string; role: string; email: string } | null>;
-  /** Tous les comptes d'une adresse, tout statut (login Google lié par adresse). Vide = adresse inconnue. */
-  getByEmail?(email: string): Promise<Array<{ id: string; tenantId: string; tenantName: string; role: string; disabled: boolean }>>;
-  /**
-   * Horodate la dernière connexion réussie (page Équipe). Optionnel : les tests construisent `auth` avec
-   * `{ users, secret }` seuls.
-   */
-  touchLastLogin?(userId: string): Promise<void>;
-}
-
-/**
- * Marque une connexion réussie sans jamais bloquer ni faire échouer la réponse (fire-and-forget) : une
- * écriture Postgres sur ce chemin transformerait un pool saturé en « identifiants refusés ». `?.` sur le
- * retour : dépendance absente, `undefined`, et `.catch` dessus lèverait. Exportée pour le changement d'espace
- * (`src/http/espaces.ts`), qui ouvre aussi une session.
- */
-export function markLogin(comptes: ComptesAuthDep | undefined, userId: string): void {
-  void comptes?.touchLastLogin?.(userId)?.catch(() => {});
-}
-
 /**
  * La suite d'une connexion réussie, une fois le second facteur passé ou non dû : une session si l'identité
  * n'a qu'un espace, un jeton de choix sinon. Une seule fonction pour `/auth/login`, `/auth/mfa/verifier` et
- * `/auth/mfa/activer` : une copie qui divergerait ouvrirait un espace sans passer par le choix. `markLogin`
+ * `/auth/mfa/activer` : une copie qui divergerait ouvrirait un espace sans passer par le choix. `marquerConnexion`
  * n'est appelé qu'ici, à l'ouverture effective d'une session.
  *
  * 🔴 Une étape d'exploitation (`etape.ops`) ne rend jamais une session d'espace, seulement une session
  * d'exploitation, et seulement avec le moyen qui a prouvé le second facteur (`options.facteur`) : seules les
  * routes du code et de l'activation le passent, après vérification. Appelée sans lui, elle lève (500) plutôt que
- * d'ouvrir `/ops` sur le seul mot de passe. Pas de `markLogin` : aucun compte d'espace ne s'ouvre.
+ * d'ouvrir `/ops` sur le seul mot de passe. Pas de `marquerConnexion` : aucun compte d'espace ne s'ouvre.
  */
 async function suiteDeConnexion(deps: AuthRouteDeps, etape: EtapeConnexion, options: OptionsSuite = {}): Promise<Record<string, unknown>> {
   if (etape.ops) {
@@ -108,7 +75,7 @@ async function suiteDeConnexion(deps: AuthRouteDeps, etape: EtapeConnexion, opti
   // Un seul espace : on y va, sans écran de plus.
   if (autres.length === 0) {
     const token = await signSession({ userId: premier.userId, tenantId: premier.tenantId, role: premier.role }, deps.secret);
-    markLogin(deps.comptes, premier.userId);
+    marquerConnexion(deps.comptes, premier.userId);
     return { token, user: { email: etape.email, role: premier.role, tenantId: premier.tenantId } };
   }
   // Plusieurs espaces : on demande, choisir au hasard ferait entrer chez le mauvais client. 🔴 Aucun jeton de
@@ -175,63 +142,12 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD = 12;
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
-/**
- * Clé de rate-limit : l’empreinte de `req.ip::discriminant`. `req.ip` seul désigne le proxy (Fastify sans `trustProxy`
- * derrière Cloudflare puis NPM) : un limiteur sur lui serait transverse. Le discriminant (adresse
- * normalisée, jeton) garde un plafond par identité tentée.
- *
- * ⚠️ `req.ip` n'est donc PAS l'adresse du client (lot B, 2026-09-28, et c'est un sujet d'infra, pas de ce code) : la
- * clé vaut en pratique `<adresse du proxy>::discriminant`, un plafond par identité tentée pour toute la plateforme.
- * Derrière un répartiteur qui présenterait plusieurs adresses sources, la même identité se répartirait sur plusieurs
- * clés (un plafond multiplié d'autant) ; le jour où l'origine ne répond qu'à Cloudflare, `CF-Connecting-IP` devient
- * lisible (`docs/ARCHITECTURE-CIBLE.md` §7.3 et §7.7).
- *
- * 🔴 LA CLÉ EST TOUJOURS UNE EMPREINTE, jamais le texte (lot B, 2026-09-28). Elle vit désormais en base
- * (`compteurs_debit`), donc aussi dans le journal de la base et ses sauvegardes : en clair, elle y écrirait
- * l'adresse de chaque tentative, y compris celles d'inconnus, et, pour la réinitialisation et l'invitation, le JETON
- * lui-même, qui ouvre un compte pendant une heure. L'empreinte discrimine aussi bien, et occupe 64 caractères quoi
- * qu'on lui donne (un jeton Google entier ferait un kilo-octet par ligne). Posé ici, seul point par où passent
- * toutes les clés.
- */
-export function rateKey(req: { ip: string }, discriminant: string): string {
-  return createHash('sha256').update(`${req.ip}::${discriminant}`).digest('hex');
-}
-
-/**
- * Freine une tentative : `true` = refusée, le 429 est déjà parti. Le compte vit dans le compteur PARTAGÉ par les
- * copies de l'API : dix essais par minute pour une identité, au total, et pas dix par copie.
- * 🔴 FERMÉ SUR PANNE : si la base ne peut pas compter, la tentative est refusée (`siLaBaseEchoue: 'refuser'`), avec
- * un message qui dit que la vérification est impossible et non « trop de tentatives ». Une panne ne doit jamais
- * ouvrir un essai de plus contre un mot de passe ; la connexion elle-même a de toute façon besoin de la base.
- */
-export async function freine(plafond: PlafondPartage, cle: string, reply: FastifyReply): Promise<boolean> {
-  const c = await plafond.consommer(cle);
-  if (c.accepte) return false;
-  await refuserTropDeRequetes(reply, c.attenteMs, c.indisponible ? MESSAGE_PLAFOND_INDISPONIBLE : 'trop de tentatives, réessaie plus tard');
+/** Adapte la décision de débit indépendante du transport à la réponse Fastify de ces routes. */
+async function freine(plafond: PlafondPartage, cle: string, reply: FastifyReply): Promise<boolean> {
+  const decision = await verifierTentative(plafond, cle);
+  if (decision.acceptee) return false;
+  await refuserTropDeRequetes(reply, decision.attenteMs, decision.message);
   return true;
-}
-
-/**
- * L'espace et l'admin d'une adresse Google INCONNUE : « Espace de <nom Google> », sans mot de passe. Une seule
- * fonction pour `/auth/google` et le consentement OAuth (`src/http/oauth.ts`) : deux copies finiraient par créer
- * deux espaces différents pour la même personne selon la porte. Le nom construit passe par la règle de
- * l'inscription (`nomEspace`) : un nom Google refusé donne « Mon espace », jamais un refus.
- * Une inscription est une connexion (`markLogin`) : sinon le compte neuf s'afficherait « jamais connecté », donc
- * « en attente », sur la page Équipe. Les appelants vérifient la présence de `createTenantWithAdmin` (503) : son
- * absence ici lève, plutôt que de rendre un compte qui n'existe pas.
- */
-export async function creerEspaceParGoogle(
-  comptes: ComptesAuthDep,
-  identity: Pick<GoogleIdentity, 'email' | 'name'>,
-  origine: OrigineEspace,
-): Promise<{ tenantId: string; userId: string; tenantName: string }> {
-  if (!comptes.createTenantWithAdmin) throw new Error('creerEspaceParGoogle : création d’espace non câblée');
-  const gname = (identity.name ?? '').slice(0, 60).trim();
-  const construit = nomEspace.safeParse(gname !== '' ? `Espace de ${gname}` : '');
-  const tenantName = construit.success ? construit.data : 'Mon espace';
-  const { tenantId, userId } = await comptes.createTenantWithAdmin(tenantName, { email: identity.email, name: identity.name, passwordHash: null }, origine);
-  markLogin(comptes, userId);
-  return { tenantId, userId, tenantName };
 }
 
 export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: Guard, compteur: CompteurDebit): void {
@@ -257,7 +173,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     }
     const email = b.email.trim().toLowerCase();
     // Rate-limit après le parse (la clé porte l'adresse) et avant le scrypt (protège le coût CPU du brute-force).
-    if (await freine(limiter, rateKey(req, email), reply)) return reply;
+    if (await freine(limiter, empreinteTentative(req, email), reply)) return reply;
 
     const identite = await deps.users.findIdentity(email);
     // Toujours vérifier un hash (leurre si l'adresse est inconnue) : même temps CPU, pas de fuite d'existence.
@@ -305,14 +221,14 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     if (typeof b.choiceToken !== 'string' || typeof b.tenantId !== 'string' || b.choiceToken === '' || b.tenantId === '') {
       return reply.code(400).send({ error: 'choiceToken et tenantId requis' });
     }
-    if (await freine(limiter, rateKey(req, b.choiceToken), reply)) return reply;
+    if (await freine(limiter, empreinteTentative(req, b.choiceToken), reply)) return reply;
     const choix = await verifyChoice(b.choiceToken, deps.secret);
     if (!choix) return reply.code(401).send({ error: 'choix expiré, reconnecte-toi' });
     const compte = choix.comptes.find((c) => c.tenantId === b.tenantId);
     if (!compte) return reply.code(403).send({ error: 'espace non autorisé pour cette adresse' });
 
     const token = await signSession({ userId: compte.userId, tenantId: compte.tenantId, role: compte.role }, deps.secret);
-    markLogin(deps.comptes, compte.userId);
+    marquerConnexion(deps.comptes, compte.userId);
     return reply.code(200).send({ token, user: { email: choix.email, role: compte.role, tenantId: compte.tenantId } });
   });
 
@@ -328,37 +244,48 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     const idToken = str(corps.idToken);
     if (idToken === '') return reply.code(400).send({ error: 'idToken requis' });
     // Clé sur l'idToken Google : borne les tentatives par jeton, plus de blocage transverse.
-    if (await freine(googleLimiter, rateKey(req, idToken), reply)) return reply;
-    const identity = await deps.verifyGoogle(idToken);
-    if (!identity || !identity.emailVerified) return reply.code(401).send({ error: 'jeton Google invalide' });
-    const comptes = await deps.comptes.getByEmail(identity.email);
+    if (await freine(googleLimiter, empreinteTentative(req, idToken), reply)) return reply;
+    const entree = await entrerParGoogle(
+      {
+        verifyGoogle: deps.verifyGoogle,
+        comptes: {
+          getByEmail: deps.comptes.getByEmail,
+          createTenantWithAdmin: deps.comptes.createTenantWithAdmin,
+          touchLastLogin: deps.comptes.touchLastLogin,
+        },
+      },
+      idToken,
+      corps.ops === true ? undefined : 'console',
+    );
+    if (entree.statut === 'invalide') return reply.code(401).send({ error: 'jeton Google invalide' });
     /**
      * L'exploitation par Google : Google prouve l'adresse, jamais le second facteur, qui reste exigé. Avant la
      * branche d'inscription : une adresse inconnue n'entre pas, et ne crée surtout pas d'espace.
      */
     if (corps.ops === true) {
       if (!deps.mfa) return reply.code(503).send({ error: 'double authentification indisponible' });
-      const actifs = comptes.filter((c) => !c.disabled);
+      if (entree.statut !== 'ouverte') return reply.code(403).send({ error: 'adresse non autorisée pour l’exploitation' });
+      const actifs = entree.comptes;
       const facteur = actifs[0] ? await deps.mfa.lireParCompte(actifs[0].id) : null;
       if (!facteur) return reply.code(403).send({ error: 'adresse non autorisée pour l’exploitation' });
       const etape: EtapeConnexion = {
         identityId: facteur.identityId,
-        email: identity.email,
+        email: entree.identite.email,
         comptes: actifs.map((c) => ({ userId: c.id, tenantId: c.tenantId, role: c.role })),
       };
       const ops = await entreeOps(deps, etape, facteur.secret !== null);
       return reply.code(ops.code).send(ops.corps);
     }
-    if (comptes.length > 0) {
-      // Compte existant (actif ou invitation en attente) : Google fait foi (liaison par adresse vérifiée). Un
-      // compte révoqué n'ouvre rien et n'apparaît pas dans le choix.
-      const actifs = comptes.filter((c) => !c.disabled);
+    if (entree.statut === 'revoquee') return reply.code(403).send({ error: 'compte révoqué' });
+    if (entree.statut !== 'ouverte') throw new Error('entrée Google sans création malgré une origine');
+    if (!entree.nouveau) {
+      const actifs = entree.comptes;
       const [existing, ...autres] = actifs;
-      if (!existing) return reply.code(403).send({ error: 'compte révoqué' });
+      if (!existing) throw new Error('entrée Google ouverte sans compte');
       if (autres.length > 0) {
         // Plusieurs espaces : on demande, comme `/auth/login` ; Google ne prouve que l'adresse, pas l'espace voulu.
         const choix = await signChoice(
-          { email: identity.email, comptes: actifs.map((c) => ({ userId: c.id, tenantId: c.tenantId, role: c.role })) },
+          { email: entree.identite.email, comptes: actifs.map((c) => ({ userId: c.id, tenantId: c.tenantId, role: c.role })) },
           deps.secret,
         );
         return reply.code(200).send({
@@ -369,14 +296,14 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
       const jwt = await signSession({ userId: existing.id, tenantId: existing.tenantId, role: existing.role }, deps.secret);
       // Après le contrôle `disabled` : un compte révoqué ne doit pas être crédité d'une connexion qui n'a pas eu
       // lieu.
-      markLogin(deps.comptes, existing.id);
-      return reply.code(200).send({ token: jwt, user: { email: identity.email, role: existing.role, tenantId: existing.tenantId }, isNew: false });
+      marquerConnexion(deps.comptes, existing.id);
+      return reply.code(200).send({ token: jwt, user: { email: entree.identite.email, role: existing.role, tenantId: existing.tenantId }, isNew: false });
     }
-    // Adresse inconnue : inscription libre via Google (espace et admin, sans mot de passe).
-    const { tenantId, userId } = await creerEspaceParGoogle(deps.comptes, identity, 'console');
-    const jwt = await signSession({ userId, tenantId, role: 'admin' }, deps.secret);
+    const cree = entree.comptes[0];
+    if (!cree) throw new Error('entrée Google créée sans compte');
+    const jwt = await signSession({ userId: cree.id, tenantId: cree.tenantId, role: 'admin' }, deps.secret);
     // isNew:true : le front ouvre le tunnel de la Base (le numéro, puis la page finale `/demarrer`).
-    return reply.code(201).send({ token: jwt, user: { email: identity.email, role: 'admin', tenantId }, isNew: true });
+    return reply.code(201).send({ token: jwt, user: { email: entree.identite.email, role: 'admin', tenantId: cree.tenantId }, isNew: true });
   });
 
   // Inscription libre : crée un nouvel espace et son admin, puis la porte du second facteur (la session pour un espace
@@ -396,7 +323,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     if (!nomLu.success) return reply.code(400).send({ error: MESSAGE_NOM_ESPACE_INVALIDE });
     const workspaceName = nomLu.data;
     if (!EMAIL_RE.test(email)) return reply.code(400).send({ error: 'email invalide' });
-    if (await freine(signupLimiter, rateKey(req, email), reply)) return reply;
+    if (await freine(signupLimiter, empreinteTentative(req, email), reply)) return reply;
     if (password.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });
     // 🔴 Une adresse déjà connue ne s'inscrit qu'avec son mot de passe : l'inscription réutilise son identité, et
     // sans cette vérification n'importe qui se rattacherait à l'identité d'un autre, puis changerait le mot de
@@ -432,7 +359,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
   app.post('/auth/forgot-password', async (req, reply) => {
     const email = str((req.body as { email?: unknown } | undefined)?.email).trim().toLowerCase();
     // Clé sur l'adresse. Le `take()` précède toute lecture : le seuil du 429 ne révèle pas l'existence du compte.
-    if (await freine(forgotLimiter, rateKey(req, email), reply)) return reply;
+    if (await freine(forgotLimiter, empreinteTentative(req, email), reply)) return reply;
     const generic = { ok: true, message: 'Si un compte existe pour cet email, un lien de réinitialisation a été envoyé.' };
     if (EMAIL_RE.test(email) && deps.tokens && deps.sendEmail && deps.appUrl) {
       try {
@@ -465,7 +392,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     const password = str(b.password);
     if (token === '') return reply.code(400).send({ error: 'token requis' });
     // Clé sur le jeton (pas d'adresse ici) : borne le brute-force d'un lien sans bloquer les autres.
-    if (await freine(resetLimiter, rateKey(req, token), reply)) return reply;
+    if (await freine(resetLimiter, empreinteTentative(req, token), reply)) return reply;
     if (password.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });
     const userId = await deps.tokens.consume('reset', token);
     if (!userId) return reply.code(400).send({ error: 'lien invalide ou expiré' });
@@ -482,7 +409,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     const password = str(b.password);
     if (token === '') return reply.code(400).send({ error: 'token requis' });
     // Clé sur le jeton d'invitation : borne le brute-force d'un lien sans bloquer les autres.
-    if (await freine(acceptLimiter, rateKey(req, token), reply)) return reply;
+    if (await freine(acceptLimiter, empreinteTentative(req, token), reply)) return reply;
     if (password.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });
     const userId = await deps.tokens.consume('invite', token);
     if (!userId) return reply.code(400).send({ error: 'invitation invalide ou expirée' });

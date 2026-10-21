@@ -4,7 +4,8 @@ import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import { hashPasswordSync } from '../src/auth/password';
 import { DuplicateEmailError } from '../src/user/store.pg';
-import type { AuthRouteDeps, ComptesAuthDep } from '../src/auth/routes';
+import type { ComptesAuthDep } from '../src/auth/comptes';
+import type { AuthRouteDeps } from '../src/auth/routes';
 import type { AuthUser, EmailIdentity } from '../src/auth/store';
 import { MfaEnMemoire, identiteDe, passerLeSecondFacteur } from './mfa';
 

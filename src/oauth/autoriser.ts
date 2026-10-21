@@ -1,4 +1,4 @@
-import type { ComptesAuthDep } from '../auth/routes';
+import type { ComptesAuthDep } from '../auth/comptes';
 import type { DemandeOauth } from '../auth/token';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import type { PgOauthStore } from './store.pg';

@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Guard, UserStateLoader } from '../auth/middleware';
-import { markLogin, type ComptesAuthDep } from '../auth/routes';
+import { marquerConnexion, type ComptesAuthDep } from '../auth/comptes';
 import { echeanceSession, signSession } from '../auth/token';
 import { espaceVerifie } from './scope';
 
@@ -102,7 +102,7 @@ export function registerEspaces(app: FastifyInstance, deps: EspacesRouteDeps, ga
     // 404 et pas 403 : un espace étranger et un espace inexistant répondent la même chose.
     if (!lu || !cible) return reply.code(404).send({ error: 'espace introuvable' });
     const token = await signSession({ userId: cible.id, tenantId: cible.tenantId, role: cible.role }, deps.secret, echeance);
-    markLogin(deps.comptes, cible.id);
+    marquerConnexion(deps.comptes, cible.id);
     // La forme exacte de `suiteDeConnexion` : la console l'enregistre comme une connexion.
     return reply.code(200).send({ token, user: { email: lu.email, role: cible.role, tenantId: cible.tenantId } });
   });

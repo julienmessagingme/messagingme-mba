@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { DuplicateEmailError } from '../src/user/store.pg';
-import type { AuthRouteDeps, ComptesAuthDep } from '../src/auth/routes';
+import type { ComptesAuthDep } from '../src/auth/comptes';
+import type { AuthRouteDeps } from '../src/auth/routes';
 import type { GoogleIdentity } from '../src/auth/google';
 
 const SECRET = 'test-secret';

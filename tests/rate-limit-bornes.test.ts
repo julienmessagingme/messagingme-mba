@@ -94,6 +94,8 @@ describe('limiteur : un plafond à 0 le désactive', () => {
 describe('limiteurs d’authentification : le câblage', () => {
   const source = readFileSync(new URL('../src/auth/routes.ts', import.meta.url), 'utf8');
   const sansCommentaires = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const tentatives = readFileSync(new URL('../src/auth/tentatives.ts', import.meta.url), 'utf8');
+  const tentativesSansCommentaires = tentatives.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
   it('🔴 les SIX plafonds comptent dans le compteur PARTAGÉ, tous fermés sur panne, et aucun ne reste en mémoire', () => {
     // Lot B (2026-09-28). Ce cas tenait jusque-là le plafond de clés vivantes des six limiteurs EN MÉMOIRE (une
@@ -113,8 +115,9 @@ describe('limiteurs d’authentification : le câblage', () => {
     // base (lot B, 2026-09-28), c'est aussi une question de secret : en clair, elle écrirait l'adresse de chaque
     // tentative et le jeton de réinitialisation dans le journal de la base. Le comportement est tenu par
     // `tests/plafonds-partages.test.ts` ; ceci tient la forme, seul point de passage des six plafonds.
-    expect(sansCommentaires, 'rateKey doit rendre l’empreinte de la clé entière')
-      .toMatch(/return createHash\('sha256'\)\.update\(`\$\{req\.ip\}::\$\{discriminant\}`\)\.digest\('hex'\);/);
+    expect(tentativesSansCommentaires, 'empreinteTentative doit rendre l’empreinte de la clé entière')
+      .toMatch(/return createHash\('sha256'\)\.update\(`\$\{source\.ip\}::\$\{discriminant\}`\)\.digest\('hex'\);/);
+    expect(sansCommentaires).toContain('empreinteTentative(req,');
   });
 });
 
