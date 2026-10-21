@@ -14,7 +14,7 @@ import { adresseDuScript, baliseDuScript } from '../../src/widgets/adresses';
 import { EXEMPLES_CAS, type ExempleCode } from '../../web/lib/exemples-code';
 import { ENTREES, type EntreeVitrine } from '../../web/lib/registre-vitrine';
 import { TEXTES_CAS, TEXTES_CARREFOUR, type Langue, type TexteCas } from './cas-textes';
-import { TEXTES_ATTENTE, TEXTES_SECTEURS } from './secteurs-textes';
+import { TEXTES_ATTENTE, TEXTES_SECTEURS, type LogoClient, type TexteSecteur, type UsageSecteur } from './secteurs-textes';
 import { pageAvecEntete } from './entete';
 import { LOGOS_ASSISTANTS, type LogoAssistant } from './logos-assistants';
 
@@ -355,6 +355,19 @@ export function pagesSecteurs(): Array<{ chemin: string; contenu: string }> {
     const f = t.terrain.film;
     // Le film existe dans les deux langues (`<nom>-en`) et en 9:16 pour le téléphone (`-9x16`)
     const sf = langue === 'fr' ? '' : '-en';
+    const logo = (l: LogoClient) => `<span class="sec-logo"><img src="${l.src}" alt="${attribut(l.alt)}" width="${l.largeur}" height="${l.hauteur}"></span>`;
+    const chiffres = (liste: TexteSecteur['terrain']['chiffres'], retrait: string) => [
+      `${retrait}<ul class="sec-chiffres">`,
+      ...liste.map((c) => `${retrait}  <li><strong>${c.valeur}</strong><span>${c.texte}</span></li>`),
+      `${retrait}</ul>`,
+    ];
+    const cas = t.terrain.cas;
+    const autres = t.terrain.autres ?? [];
+    // Un exemple de conversation : l'entreprise à gauche, son contact à droite, comme sur le téléphone du contact
+    const echange = (u: UsageSecteur) => u.echange?.length
+      ? `<div class="sec-echange">${u.echange.map((m) => `<p class="sec-bulle${m.contact ? ' sec-bulle-contact' : ''}"><span class="sec-qui">${m.qui}</span>${m.texte}</p>`).join('')}</div>`
+      : '';
+    const u = t.usages;
     const main = [
       '<main>',
       '  <section class="cadre f-une sec-une">',
@@ -365,7 +378,7 @@ export function pagesSecteurs(): Array<{ chemin: string; contenu: string }> {
       '      <div class="appels">',
       `        <a class="bouton bouton-plein" href="${contact}">${t.appel}</a>`,
       '      </div>',
-      `      <p class="sec-refs"><span>${t.references.titre}</span>${t.references.logos.map((l) => `<span class="sec-logo"><img src="${l.src}" alt="${echapper(l.alt)}" width="${l.largeur}" height="${l.hauteur}"></span>`).join('')}</p>`,
+      `      <p class="sec-refs"><span>${t.references.titre}</span>${t.references.logos.map(logo).join('')}</p>`,
       '    </div>',
       `    <figure class="f-duo">${t.captures.map((c, i) => `<img src="${c.src}" alt="${echapper(c.alt)}" width="560" height="1182"${i === 0 ? ' fetchpriority="high"' : ' loading="lazy"'}>`).join('')}</figure>`,
       '  </section>',
@@ -387,10 +400,21 @@ export function pagesSecteurs(): Array<{ chemin: string; contenu: string }> {
       `      <h2 class="f-titre">${deux(t.terrain.titre)}</h2>`,
       '      <div class="sec-terrain-grille">',
       `        <div><video class="f-video" src="/films/${f.nom}${sf}.mp4?v=1" poster="/films/${f.nom}${sf}.webp?v=1" data-vertical="/films/${f.nom}${sf}-9x16.mp4?v=1" data-affiche-verticale="/films/${f.nom}${sf}-9x16.webp?v=1" width="1280" height="720" controls muted playsinline preload="none" aria-label="${echapper(f.aria)}"></video>${f.note ? `<p class="f-note">${f.note}</p>` : ''}</div>`,
-      '        <ul class="sec-chiffres">',
-      ...t.terrain.chiffres.map((c) => `          <li><strong>${c.valeur}</strong><span>${c.texte}</span></li>`),
-      '        </ul>',
+      ...(cas
+        ? ['        <div class="sec-cas">', `          ${logo(cas.logo)}`, `          <h3>${cas.titre}</h3>`, `          <p>${cas.texte}</p>`, ...chiffres(t.terrain.chiffres, '          '), '        </div>']
+        : chiffres(t.terrain.chiffres, '        ')),
       '      </div>',
+      ...(autres.length ? [
+        '      <ul class="sec-autres">',
+        ...autres.map((a) => [
+          `        <li${a.visuel ? ' class="sec-avec-visuel"' : ''}>`,
+          `          <div>${logo(a.logo)}<h3>${a.titre}</h3><p>${a.texte}</p>${a.resultat ? `<p class="sec-resultat">${a.resultat}</p>` : ''}</div>`,
+          ...(a.chiffres ? chiffres(a.chiffres, '          ') : []),
+          ...(a.visuel ? [`          <img class="sec-visuel" src="${a.visuel.src}" alt="${attribut(a.visuel.alt)}" width="${a.visuel.largeur}" height="${a.visuel.hauteur}" loading="lazy">`] : []),
+          '        </li>',
+        ].join('\n')),
+        '      </ul>',
+      ] : []),
       `      <p class="f-note">${t.terrain.source}</p>`,
       '    </div>',
       '  </section>',
@@ -400,9 +424,12 @@ export function pagesSecteurs(): Array<{ chemin: string; contenu: string }> {
       `      <p class="f-surtitre">${t.usages.surtitre}</p>`,
       `      <h2 class="f-titre">${deux(t.usages.titre)}</h2>`,
       '      <ul class="sec-trois sec-cartes">',
-      ...t.usages.liste.map((u) => `        <li><h3>${u.titre}</h3><p>${u.texte}</p><p class="sec-mots">${u.mots}</p></li>`),
+      ...u.liste.map((x) => `        <li><h3>${x.titre}</h3>${x.accroche ? `<p class="sec-accroche">${x.accroche}</p>` : ''}<p>${x.texte}</p>${x.mots ? `<p class="sec-mots">${x.mots}</p>` : ''}${echange(x)}</li>`),
       '      </ul>',
-      `      <p class="sec-parcours">${t.usages.parcours}</p>`,
+      ...(u.parcours ? [`      <p class="sec-parcours">${u.parcours}</p>`] : []),
+      ...(u.note ? [`      <p class="f-note">${u.note}</p>`] : []),
+      ...(u.encart ? [`      <div class="sec-encart"><p class="sec-encart-titre">${deux(u.encart.titre)}</p><p>${u.encart.texte}</p></div>`] : []),
+      ...(u.appel ? [`      <div class="appels sec-usages-appel"><a class="bouton bouton-texte" href="${contact}">${u.appel} <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a></div>`] : []),
       '    </div>',
       '  </section>',
       '',

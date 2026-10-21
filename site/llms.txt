@@ -46,6 +46,8 @@
 - [Order notifications](https://app.messagingme.fr/en/use-cases/order-notifications/) : The order ships: the customer gets their tracking on WhatsApp, and your admin sees when they read it.
 - [Transport et mobilités](https://app.messagingme.fr/solutions/transport-et-mobilites/) : Chaînes WhatsApp, assistance avec IA, horaires et itinéraires : informez vos voyageurs et accompagnez chaque trajet. Le cas Keolis.
 - [Transport and mobility](https://app.messagingme.fr/en/solutions/transport-and-mobility/) : WhatsApp Channels, AI assistance, timetables and routes: inform your passengers and support every journey. The Keolis case.
+- [Enseignement supérieur](https://app.messagingme.fr/solutions/enseignement-superieur/) : Campagnes WhatsApp, réponses avec IA et suivi des candidats : accélérez vos recrutements, de l’intérêt à la candidature. Les cas NEOMA, EDH et EDHEC.
+- [Higher education](https://app.messagingme.fr/en/solutions/higher-education/) : WhatsApp campaigns, AI answers and candidate follow-up: speed up your recruitment, from first interest to application. The NEOMA, EDH and EDHEC cases.
 
 ## Aide
 

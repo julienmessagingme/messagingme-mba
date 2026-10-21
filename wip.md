@@ -112,9 +112,10 @@ Tools. Les liens de confidentialité et de conditions du plugin 0.2.0 rendent 40
 légales que Geoffrey publie après la bascule (section du répertoire de Claude ci-dessus).
 Où on en est (2026-10-20) : six pages de cas en ligne avec leur film et leur recette, la page chapeau « SaaS et app
 builders » (film du démarrage, une en 3D), la page de secteur Transport et mobilités (film `cas-transport`), le menu
-Solutions (secteurs, puis les cas au survol). Restent : le CONTENU d'Assurance et de Voyage et tourisme, en ligne en pages
-d'attente (Julien : les clients citables pour l'Assurance, une maquette pour le Voyage) ; Enseignement supérieur et
-Agences, hors ligne au registre ; le film du support (Vélo Rapide), qui attend que `mba` soit autorisé de nouveau sur
+Solutions (secteurs, puis les cas au survol), et depuis le 2026-10-21 la page Enseignement supérieur (film
+`cas-education`, cas NEOMA, EDH et EDHEC). Restent : le CONTENU d'Assurance et de Voyage et tourisme, en ligne en pages
+d'attente (Julien : les clients citables pour l'Assurance, une maquette pour le Voyage) ; Agences, hors ligne au
+registre ; le film du support (Vélo Rapide), qui attend que `mba` soit autorisé de nouveau sur
 l'espace « Messaging Me demo » (une autre session y construit un agent IA). La page des tarifs est en ligne depuis la
 livraison 8 des offres v2 (ci-dessous).
 

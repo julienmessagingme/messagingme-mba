@@ -60,6 +60,25 @@ au manuel.
   (« deux accusés du même message doivent s'appliquer dans l'ordre ») n'est plus vrai sur un rejeu ; laissé pour ne pas
   toucher un fichier de câblage partagé, à corriger au prochain lot qui le touche.
 
+## 2026-10-21 (soir) : la page de secteur Enseignement supérieur, et le film NEOMA
+
+Demandée par Julien avec trois maquettes PDF (une par onglet des usages) et la vidéo `cas-neoma.mp4`. La page reprend le
+gabarit de Transport ; ce que ce gabarit ne savait pas porter s'y ajoute en champs FACULTATIFS de `TexteSecteur`, pour
+que la page Transport reste identique à l'octet près (seul le menu y change) : le cas du film au-dessus de ses chiffres
+(`terrain.cas`), les autres cas en cartes (`terrain.autres`, avec chiffres, objectif ou visuel), une accroche et un
+exemple de conversation par usage (`echange`, l'école à gauche et le candidat à droite, aux couleurs de WhatsApp), et
+sous les usages une mention, un encart et un appel.
+
+- **Les écrans viennent des PDF** (sans poppler sur le poste : un petit lecteur d'objets image, ASCII85 puis Flate). Les
+  deux téléphones sont des captures nues, sans cadre : un liseré de 13 px leur est ajouté pour que `encadrer-iphone.cjs`
+  ait un « ancien cadre » à recouvrir. La capture d'EDH a une barre d'état d'ancien iPhone, que l'îlot touchait : 18 px
+  de la couleur de la barre sont insérés au-dessus, l'écran garde tout son contenu.
+- **Le logo d'EDHEC est en deux objets dans le PDF** : l'image en couleurs (fond noir) et son masque (`SMask`) ; ils se
+  recomposent en un logo à fond transparent.
+- **Le film** (`~/engageme-motion/engageme-secteur-education`, `SCRIPT.md`) dérive du squelette du Transport, un seul
+  téléphone, 37,6 s, deux langues, deux formats.
+- **Au menu, l'Enseignement supérieur passe avant les pages d'attente** : l'ordre du registre fait l'ordre du menu.
+
 ## 2026-10-21 (après-midi) : les six films du centre d'aide
 
 Tâche 11 du plan du centre d'aide. Un gabarit commun dans l'atelier (`~/engageme-motion/engageme-aide`) : l'ouverture

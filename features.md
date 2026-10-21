@@ -77,6 +77,14 @@ des iPhone en 3D, comme sur les pages Fonctionnalités, et les références Keol
 (`cas-transport`, FR et EN, 16:9 et 9:16) reprend les vraies copies d'écran dans la charte des films. Générée par
 `npm run vitrine:cas` depuis `scripts/vitrine/secteurs-textes.ts`.
 
+✅ **La deuxième page de secteur, Enseignement supérieur** (2026-10-21, trois maquettes de Julien) :
+`app.messagingme.fr/solutions/enseignement-superieur/`, jumelle `/en/solutions/higher-education/`, au menu juste après
+Transport. Les enjeux du recrutement (joignabilité, préférence, suivi), trois cas d'écoles : NEOMA (film `cas-education`,
+plus de 200 participants au webinar promu, 100 % des messages entrants répartis), EDH (recrutement international, plus de
+30 000 conversations, 11 comptes) et EDHEC (campagnes push, sa publicité Click-to-WhatsApp), puis trois usages (engager,
+accompagner, faire avancer) avec chacun un exemple de conversation entre l'école et le candidat, l'accompagnement et
+l'appel « Parlons de vos recrutements ». Les écrans de NEOMA et d'EDH sont en iPhone 3D, les trois écoles en logos.
+
 ✅ **Assurance et Voyage et tourisme sont au menu Solutions, en pages d'attente** (2026-10-20) :
 `/solutions/assurance/` et `/solutions/voyage-et-tourisme/` (jumelles `/en/solutions/insurance/` et
 `/en/solutions/travel-and-tourism/`) disent que la page arrive et mènent au formulaire de contact ; en `noindex`, hors du

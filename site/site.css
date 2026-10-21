@@ -1003,7 +1003,30 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .sec-cartes h3{color:var(--action-ink)}
 .sec-cartes .sec-mots{margin-top:14px;font-size:.88rem}
 .sec-parcours{margin:28px 0 0;color:var(--action-ink);font-weight:700}
-@media (max-width:900px){.sec-trois,.sec-terrain-grille,.sec-encart{grid-template-columns:minmax(0,1fr)}}
+/* Page Enseignement supérieur : le cas du film au-dessus de ses chiffres, les autres écoles en cartes, et des
+   exemples de conversation dans les usages (l'école à gauche, le candidat à droite) */
+.sec-logo img[src$="logo-neoma.webp"]{height:26px}
+.sec-logo img[src$="logo-edh.webp"]{height:24px}
+.sec-logo img[src$="logo-edhec.webp"]{height:24px}
+.sec-cas h3{margin:18px 0 8px;font-size:1.2rem;line-height:1.3}
+.sec-cas > p{margin:0 0 22px;color:var(--muted)}
+.sec-autres{list-style:none;margin:40px 0 0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+.sec-autres > li{display:grid;gap:22px;align-content:start;padding:24px;border-radius:16px;background:var(--surface);border:1px solid var(--line)}
+.sec-autres > li.sec-avec-visuel{grid-template-columns:minmax(0,1fr) 140px;align-items:start}
+.sec-autres h3{margin:16px 0 8px;font-size:1.1rem;line-height:1.3}
+.sec-autres p{margin:0;color:var(--muted)}
+.sec-autres .sec-resultat{margin-top:14px;color:var(--action-ink);font-weight:700}
+.sec-visuel{display:block;width:100%;height:auto;border-radius:12px}
+.sec-cartes .sec-accroche{margin:0 0 8px;color:var(--ink);font-weight:700}
+.sec-echange{display:grid;gap:8px;margin:18px 0 0;padding:14px;border-radius:12px;background:var(--wa-fond)}
+.sec-echange .sec-bulle{max-width:88%;justify-self:start;margin:0;padding:8px 11px;border-radius:2px 10px 10px 10px;background:var(--wa-recu);color:var(--wa-texte);font-size:.88rem;line-height:1.4;box-shadow:0 1px .5px rgb(11 20 26 / .13)}
+.sec-echange .sec-bulle-contact{justify-self:end;border-radius:10px 2px 10px 10px;background:var(--wa-envoye)}
+.sec-qui{display:block;margin-bottom:2px;color:var(--wa-meta);font-size:.72rem;font-weight:700}
+.sec-bulle-contact .sec-qui{color:#54656F}
+.sec-usages-appel{margin-top:24px}
+.sec-usages-appel .bouton-texte{padding-left:0}
+@media (max-width:900px){.sec-trois,.sec-terrain-grille,.sec-encart,.sec-autres{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:520px){.sec-autres > li.sec-avec-visuel{grid-template-columns:minmax(0,1fr)}.sec-visuel{max-width:220px}}
 .cas-cartes{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px}
 .cas-carte{display:flex;flex-direction:column;gap:10px;height:100%;padding:24px;border:1px solid var(--line);border-radius:18px;background:var(--surface);color:var(--ink);text-decoration:none}
 .cas-carte strong{font-size:1.2rem}

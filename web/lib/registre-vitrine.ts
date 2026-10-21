@@ -108,6 +108,13 @@ export const ENTREES: readonly EntreeVitrine[] = [
     profils: [], vague: 1, recherche: 'whatsapp information voyageurs transport', chemin: 'console', enLigne: true,
   },
   {
+    // Les trois maquettes de Julien du 2026-10-21, avec les cas NEOMA, EDH et EDHEC : avant les pages d'attente au menu.
+    cle: 'enseignement-superieur', nature: 'secteur',
+    fr: { adresse: '/solutions/enseignement-superieur/', titre: 'Enseignement supérieur' },
+    en: { adresse: '/en/solutions/higher-education/', titre: 'Higher education' },
+    profils: [], vague: 1, recherche: 'whatsapp enseignement supérieur', chemin: 'console', enLigne: true,
+  },
+  {
     cle: 'assurance', nature: 'secteur',
     fr: { adresse: '/solutions/assurance/', titre: 'Assurance' },
     en: { adresse: '/en/solutions/insurance/', titre: 'Insurance' },
@@ -118,12 +125,6 @@ export const ENTREES: readonly EntreeVitrine[] = [
     fr: { adresse: '/solutions/voyage-et-tourisme/', titre: 'Voyage et tourisme' },
     en: { adresse: '/en/solutions/travel-and-tourism/', titre: 'Travel and tourism' },
     profils: [], vague: 1, recherche: 'whatsapp voyage tourisme', chemin: 'console', enLigne: true, attente: true,
-  },
-  {
-    cle: 'enseignement-superieur', nature: 'secteur',
-    fr: { adresse: '/solutions/enseignement-superieur/', titre: 'Enseignement supérieur' },
-    en: { adresse: '/en/solutions/higher-education/', titre: 'Higher education' },
-    profils: [], vague: 1, recherche: 'whatsapp enseignement supérieur', chemin: 'console', enLigne: false,
   },
   {
     cle: 'saas-app-builders', nature: 'metier',
