@@ -1252,6 +1252,16 @@ l'exécution : la case ne sert qu'au camp.
 exposés de l'agent IA (`champDeLOutil`, la clé lue sur la cible), et la description de la variable publiée chez Meta
 (`variablesPourMeta`) ; comparée en entier à la publication, elle part à la prochaine publication de chaque espace.
 
+🔴 **LE CHAMP DE BASE « NOM » A LA CLÉ `nom_de_famille`, JAMAIS `nom`** (2026-10-21). Il est socle (`SOCLE_FIELDS`,
+`web/lib/partage/champs.ts`), rangé dans `contacts.fields` comme `prenom` et `email`, donc jamais réécrit. La clé `nom`
+désigne déjà le nom du PROFIL (`profile_name`, que chaque message entrant réécrit) dans `CHAMPS_FICHE_FIXES`, les
+connecteurs (`contact:nom`, `fiche:nom`), les paramètres d'outils et les adresses de boutons (`valeursDeLaFiche`) : la
+réutiliser aurait changé en silence ce qui part chez des tiers. Le champ de base `name` s'affiche « Nom WhatsApp ».
+Le sélecteur de champ des outils d'agent (`CibleChamp`) propose les champs socle en tête, puis les champs créés par
+ordre alphabétique ; l'agent de Meta tient un champ socle pour existant avant sa première écriture (`socleField`, à la
+création, sur la ligne de l'onglet et à chaque appel). ⚠️ Les formulaires WhatsApp et l'import CSV envoient encore
+« Nom de famille » vers `profile_name` (`web/lib/flow-mapping.ts`, `src/crm/recognize.ts`).
+
 🔴 **Le modèle ne choisit jamais une cible.** Sur un connecteur API client, l'adresse est figée sur la source,
 le gabarit est écrit par un administrateur, et `construireCible` vérifie que l'URL finale reste SOUS l'adresse
 de base, segment par segment, après encodage. Le `wa_id` vient du TOUR, pas de la projection du contact : la

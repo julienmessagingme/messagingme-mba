@@ -1,6 +1,7 @@
 import type { OutilComplet, OutilBibliotheque } from '../agent/catalog';
 import { messageInappelable } from '../agent/catalog';
 import { entryNode } from '../workflow/engine';
+import { socleField } from '../crm/fields';
 import type { WorkflowGraph } from '../workflow/graph';
 import { blocSeul, lireCibleMaison, nomDuBlocParCode, typeDeLaCible } from './outils-maison';
 import type { OutilMbaVue, OutilMcpProposable } from '../../web/lib/partage/outils-mba';
@@ -80,7 +81,8 @@ export function vueOutilMba(o: OutilComplet, ctx: ContexteVue): OutilMbaVue {
     case 'champ_fixe':
       return {
         ...base, type, cible: { type: 'champ', champ: cible.champ, valeurs: cible.valeurs },
-        cibleManquante: ctx.champs.has(cible.champ) ? null : `le champ « ${cible.champ} » n’existe plus dans le mini-CRM`,
+        // Un champ de base (Prénom, Nom, Email) n'est jamais manquant : il existe avant sa première écriture.
+        cibleManquante: ctx.champs.has(cible.champ) || socleField(cible.champ) ? null : `le champ « ${cible.champ} » n’existe plus dans le mini-CRM`,
         aussiUtilisePar: [], publiable: true,
       };
     // Un bloc ou un scénario modifié depuis la création se revérifie ici, comme à chaque appel du relais : un bloc

@@ -1,4 +1,5 @@
 import { REPONSE_MAISON, lireValeurChamp, type CibleMaison } from './outils-maison';
+import { socleField } from '../crm/fields';
 import { clesAntiRejeu } from './anti-rejeu';
 import type { VerrousCourts } from '../db/verrous-courts';
 
@@ -54,7 +55,8 @@ export async function executerOutilMaison(
       await deps.poserTag(tenantId, waId, cible.tag);
       return { ok: true, reponse: REPONSE_MAISON.tag_fixe };
     case 'champ_fixe': {
-      if (!(await deps.champExiste(tenantId, cible.champ))) return { ok: false, erreur: CHAMP_DISPARU };
+      // Un champ de base (Prénom, Nom, Email) existe toujours, même avant sa première écriture (2026-10-21).
+      if (!socleField(cible.champ) && !(await deps.champExiste(tenantId, cible.champ))) return { ok: false, erreur: CHAMP_DISPARU };
       const lu = lireValeurChamp(cible, input.corps);
       if (!lu.ok) return { ok: false, erreur: lu.erreur };
       await deps.ecrireChamp(tenantId, waId, cible.champ, lu.valeur);

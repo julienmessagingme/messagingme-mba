@@ -63,8 +63,10 @@ export function ChoixTypeOutil({
       .catch(() => { if (vivant) setChamps('erreur'); });
     return () => { vivant = false; };
   }, [tenantId, essai]);
+  // « Enregistrer une information » n'est jamais grisé (2026-10-21) : les champs de base (Prénom, Nom, Email) existent
+  // toujours, même sur un mini-CRM sans aucun champ créé. Seule une lecture ratée se dit.
   const compteDe = (type: TypeOutilMba): Compte | undefined =>
-    type === 'connecteur' ? appels : type === 'champ' ? champs : undefined;
+    type === 'connecteur' ? appels : type === 'champ' && champs === 'erreur' ? champs : undefined;
   const LIENS: Partial<Record<TypeOutilMba, { href: string; texte: readonly [string, string] }>> = {
     connecteur: { href: '/connecteurs', texte: ['Aucun appel déclaré : Tools > Connecteurs API', 'No call declared: Tools > API connectors'] },
     champ: { href: '/fields', texte: ['Aucun champ déclaré : Contenu > Bibliothèque > Champs', 'No field declared: Content > Library > Fields'] },

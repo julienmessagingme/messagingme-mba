@@ -607,12 +607,20 @@ test.describe('MBA Paramètres : onglet Outils', () => {
     await expect(page.getByTestId('mba-outils-erreur')).toContainText('À envoyer');
   });
 
-  test('🔴 « Enregistrer une information » est grisé, avec le lien, quand le mini-CRM n’a aucun champ', async ({ page }) => {
+  test('🔴 « Enregistrer une information » reste proposé sans aucun champ créé : les champs de base sont là (2026-10-21)', async ({ page }) => {
     await monterOutils(page, { outils: [], fields: [] });
     await page.goto('/mba/parametres?tab=outils');
     await page.getByTestId('mba-outils-ajouter').click();
-    await expect(page.getByTestId('mba-type-champ')).toBeDisabled();
-    await expect(page.getByTestId('mba-type-champ-lien')).toHaveAttribute('href', '/fields');
+    await expect(page.getByTestId('mba-type-champ')).toBeEnabled();
+    await expect(page.getByTestId('mba-type-champ-lien')).toHaveCount(0);
+    await page.getByTestId('mba-type-champ').click();
+    // Le groupe « Champs de base » en tête : Prénom, Nom, Email ; aucun groupe « Vos champs » sans champ créé.
+    const base = page.locator('[data-testid="mba-cible-champ"] optgroup[data-testid="mba-cible-champ-base"] option');
+    await expect(base).toHaveText(['Prénom', 'Nom', 'Email']);
+    await expect(page.locator('[data-testid="mba-cible-champ-perso"]')).toHaveCount(0);
+    await page.getByTestId('mba-cible-champ').selectOption('nom_de_famille');
+    await expect(page.getByTestId('mba-form-titre')).toHaveValue('Enregistrer : Nom');
+    await expect(page.getByTestId('mba-cible-champ-disparu')).toHaveCount(0);
   });
 
   test('🔴 une lecture ratée n’est pas « aucun » : elle le dit et propose de relire', async ({ page }) => {

@@ -1,7 +1,7 @@
 ---
 ecran: mba-settings
 source_section: L'onglet « Outils » de l'agent de Meta (Meta Business Agent > Paramètres > Outils)
-source_empreinte: 04a646
+source_empreinte: 792a4d
 ---
 # Donner des outils à l'agent de Meta
 
@@ -20,7 +20,8 @@ administrateurs.
   conversation. Vous pouvez lui imposer une liste de valeurs permises : toute autre valeur est refusée, et
   il le sait. Le champ est nommé dans ce que l'agent lit, pour qu'il sache quelle information ranger, et le
   titre proposé le cite (« Enregistrer : Campus »). Un outil déjà publié reçoit ces mots à la prochaine
-  publication.
+  publication. La liste des champs commence par les champs de base (Prénom, Nom, Email), toujours là, puis
+  vos champs par ordre alphabétique.
 - **Envoyer un bloc.** Un message précis d'un de vos scénarios publiés, choisi à l'avance. Il part **seul**,
   sans la suite du scénario, et l'agent reprend la parole au message suivant du client. Un bloc qui attend
   une réponse (des boutons, une question, un formulaire, une attente) ne se choisit pas : il reste visible,
@@ -41,8 +42,8 @@ MCP, est posé par Messaging Me. Leurs mots et leurs paramètres sont partagés 
 là-bas (« Régler »), pas ici. Un outil disparu de son serveur, inutilisable, ou dont le serveur est éteint, passe en
 rouge et ne part pas chez Meta ; il ne vous est pas proposé non plus.
 
-Un type reste grisé, avec le lien qui y mène, tant que votre espace n'a rien à y mettre : aucun champ
-déclaré, aucun appel déclaré. Une lecture qui échoue ne passe pas pour « aucun » : elle le dit, avec
+Un type reste grisé, avec le lien qui y mène, tant que votre espace n'a rien à y mettre : aucun appel
+déclaré. « Enregistrer une information » ne l'est jamais, les champs de base existent toujours. Une lecture qui échoue ne passe pas pour « aucun » : elle le dit, avec
 « Réessayer ».
 
 **La réponse « à côté ».** Quand un de vos scénarios pose une question à boutons et que le client écrit

@@ -493,8 +493,10 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (**toggle langue FR/E
   oui/non, lien), éditer le libellé / le type, supprimer. Supprimer la définition d'un champ **ne détruit pas les
   valeurs déjà saisies** sur les contacts : elles restent lisibles sur les fiches, où on peut les retirer une par
   une. La **clé est verrouillée** (renommer la clé casserait le mapping des campagnes) -> on édite label/type
-  seulement. **Champs de base « système »** (Nom, Prénom, Téléphone, BSUID, WhatsApp ID, Email) : toujours
-  présents, **non supprimables**, utilisables comme sources de variable partout.
+  seulement. **Champs de base « système »** (Nom WhatsApp, Prénom, Nom, Téléphone, BSUID, WhatsApp ID, Email) :
+  toujours présents, **non supprimables**, utilisables comme sources de variable partout. **Nom** (2026-10-21) est le
+  nom de famille, rangé sur la fiche comme Prénom et Email et jamais écrasé ; **Nom WhatsApp** est le nom du profil,
+  que chaque message du contact met à jour (il s'appelait « Nom » avant).
 - ✅ **Colonne « WhatsApp ID »** dans le tableau contacts (à côté du BSUID) : les chiffres du numéro sans « + »
   (la clé de routage que Meta émet), ou le BSUID si le contact n'a pas de numéro.
 - ✅ **Codes publics (socle API) COMPLET** : chaque **scénario, bloc de scénario, champ (perso ET de base)
@@ -2881,6 +2883,8 @@ côté » s'y ajoutent le 2026-09-22** (lots 3 et 4) ; leur essai réel en conve
   deviner, et ne cite jamais ce nom au client. Le titre proposé à la création le cite aussi (« Enregistrer :
   Campus ») et suit le champ choisi tant que vous ne l'avez pas écrit vous-même. ⚠️ Un outil déjà publié reçoit ces
   mots à la prochaine publication.
+  La liste des champs s'ouvre sur les **champs de base** (Prénom, Nom, Email : toujours là, même sur un mini-CRM vide,
+  donc ce type n'est jamais grisé), puis **vos champs** par ordre alphabétique (2026-10-21).
 - ✅ **Envoyer un bloc** : un message précis d'un de vos scénarios publiés (un message rapide, un modèle), choisi
   à l'avance. Il part SEUL, sans ce qui le suit dans le scénario, et l'agent de Meta reprend la parole au message
   suivant du client. 🔴 Un bloc qui attend une réponse (des boutons, une question, un formulaire, une attente, un
@@ -3476,8 +3480,10 @@ un gros bouton « Ajouter un outil », et la liste des outils posés.
   titre, un nom technique (vu par le modèle) et ses deux consignes, et il naît « Inactif ».
   - **Poser un tag** (écriture) : pour retrouver le contact dans le mini-CRM, ou déclencher une automation.
   - **Enregistrer une information** (écriture) : un champ du mini-CRM, pour qu'un bloc plus loin dans le
-    scénario le réutilise. Un champ par outil, **nommé dans ce que l'agent lit** (2026-10-20), et cité dans le
-    titre proposé (« Enregistrer : Prénom »), qui suit le champ choisi tant que vous ne l'avez pas réécrit.
+    scénario le réutilise. La liste s'ouvre sur les champs de base (Prénom, Nom, Email), puis vos champs par
+    ordre alphabétique ; ce choix est le même pour les questions de « Qualifier et transférer » et les étapes.
+    Un champ par outil, **nommé dans ce que l'agent lit** (2026-10-20), et cité dans le titre proposé
+    (« Enregistrer : Prénom »), qui suit le champ choisi tant que vous ne l'avez pas réécrit.
   - **Envoyer un bloc** (part chez le client) : un message d'un de vos scénarios publiés, choisi en deux temps
     (le scénario, puis le bloc). **Il part seul**, sans ce qui le suit ; un bloc qui attend une réponse, ouvre
     un agent ou part en RCS est grisé, avec sa raison. L'agent garde la main.

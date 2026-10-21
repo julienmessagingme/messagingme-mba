@@ -24,6 +24,7 @@ export interface SystemField {
 const SOURCE_DU_CHAMP: Record<SystemFieldKey, ParamSource> = {
   name: { type: 'attribute', key: 'name' },
   prenom: { type: 'field', key: 'prenom' },
+  nom_de_famille: { type: 'field', key: 'nom_de_famille' },
   phone: { type: 'attribute', key: 'phone' },
   bsuid: { type: 'attribute', key: 'bsuid' },
   wa_id: { type: 'attribute', key: 'wa_id' },
@@ -102,7 +103,7 @@ export function emailResolvableFields(fields: UserFieldDef[]): UserFieldDef[] {
  * message lu par un humain.
  */
 const VARS_DE_BASE: Array<{ key: string; label: [string, string] }> = [
-  { key: 'profile_name', label: ['Nom', 'Name'] },
+  { key: 'profile_name', label: ['Nom WhatsApp', 'WhatsApp name'] },
   { key: 'phone', label: ['Téléphone', 'Phone'] },
 ];
 
@@ -134,6 +135,8 @@ export function systemFieldExample(key: string): string {
       return 'Julie';
     case 'prenom':
       return 'Julie';
+    case 'nom_de_famille':
+      return 'Martin';
     case 'phone':
       return '+33 6 12 34 56 78';
     case 'bsuid':

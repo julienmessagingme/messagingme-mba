@@ -19,7 +19,8 @@ describe('emailVariableFields', () => {
   });
 
   it('🔴 le nom porte la clé SERVEUR `profile_name`, pas `name` (qui rendrait du vide)', () => {
-    const nom = emailVariableFields([], t).find((f) => f.label === 'Nom');
+    // « Nom WhatsApp » depuis qu'un vrai champ de base « Nom » existe (2026-10-21).
+    const nom = emailVariableFields([], t).find((f) => f.label === 'Nom WhatsApp');
     expect(nom?.key).toBe('profile_name');
     // `name` reste exclu : c'est un attribut que la table de substitution email ne fournit pas.
     expect(emailVariableFields([champ('name', 'Nom')], t).map((f) => f.key)).not.toContain('name');

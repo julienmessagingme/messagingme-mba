@@ -9,6 +9,7 @@ import { espaceVerifie, estUuid } from './scope';
 import { blocSeul, type BlocPropose, type CibleMaison } from '../mba/outils-maison';
 import { outilsMcpProposables, vueOutilMba, SCENARIO_VIDE, type ContexteVue } from '../mba/vue-outils';
 import { entryNode } from '../workflow/engine';
+import { socleField } from '../crm/fields';
 import type { WorkflowGraph } from '../workflow/graph';
 import { BORNES_OUTIL_MBA, TYPES_OUTIL_MBA } from '../../web/lib/partage/outils-mba';
 import type { CibleSaisie, TextesOutil, TypeOutilMba } from '../../web/lib/partage/outils-mba';
@@ -117,7 +118,8 @@ export function registerMbaOutils(app: FastifyInstance, deps: MbaOutilsDeps, gar
 
   /** La cible d'un outil maison existe-t-elle ? `null` = oui, sinon la raison (422). */
   const cibleInvalide = async (tenant: string, c: CibleSaisie): Promise<string | null> => {
-    if (c.type === 'champ' && !(await deps.champs(tenant)).includes(c.champ)) {
+    // Un champ de base écrivable (Prénom, Nom, Email) existe toujours, même avant sa première écriture (2026-10-21).
+    if (c.type === 'champ' && !socleField(c.champ) && !(await deps.champs(tenant)).includes(c.champ)) {
       return `le champ « ${c.champ} » n’existe pas dans le mini-CRM`;
     }
     // Même vérification que le relais à chaque appel (`blocSeul`) : un bloc à boutons accepté ici serait ensuite

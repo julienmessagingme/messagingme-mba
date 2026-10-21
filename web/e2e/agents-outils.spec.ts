@@ -485,6 +485,17 @@ test.describe('Agents IA : « Quel outil ajouter ? »', () => {
     await expect(page.getByTestId('outil-cible-n1')).toHaveText('2 questions, puis « À traiter »');
   });
 
+  test('🔴 le choix du champ : les champs de base en tête, puis les vôtres par ordre alphabétique (2026-10-21)', async ({ page }) => {
+    await mock(page, [], []);
+    await onglet(page);
+    await page.getByTestId('agent-outils-ajouter').click();
+    await page.getByTestId('mba-type-champ').click();
+    await expect(page.locator('[data-testid="mba-cible-champ-base"] option')).toHaveText(['Prénom', 'Nom', 'Email']);
+    await expect(page.locator('[data-testid="mba-cible-champ-perso"] option')).toHaveText(['Campus', 'Statut']);
+    await page.getByTestId('mba-cible-champ').selectOption('nom_de_famille');
+    await expect(page.getByTestId('agent-outil-form-titre')).toHaveValue('Enregistrer : Nom');
+  });
+
   test('🔴 « Enregistrer une information » : le titre proposé cite le champ choisi, et le suit', async ({ page }) => {
     await mock(page, [], []);
     await onglet(page);

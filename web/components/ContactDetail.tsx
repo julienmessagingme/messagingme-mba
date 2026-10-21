@@ -626,10 +626,14 @@ export function ContactDetail({
       {/* Les champs de BASE de la fiche : toujours rendus, même vides. Le testid sert à les cibler sans
           ambiguïté (« Prénom » existe aussi en en-tête de la liste des contacts). */}
       <div data-testid="fiche-champs-base" className="mt-4 grid grid-cols-[110px_1fr] items-center gap-x-3 gap-y-2 text-sm">
-        <span className="text-ink-500">{t('Nom', 'Name')}</span>
-        <EditableField value={contact.profileName ?? ''} busy={busy} onSave={(v) => apply({ profileName: v.trim() === '' ? null : v.trim() })} />
         <span className="text-ink-500">{t('Prénom', 'First name')}</span>
         <EditableField value={fieldValue(contact, 'prenom') ?? ''} type="text" busy={busy} onSave={(v) => saveSocleField('prenom', v)} onDelete={() => apply({ removeFields: ['prenom'] })} />
+        {/* Le nom de famille, champ SOCLE comme Prénom (2026-10-21) : jamais réécrit par un message entrant, à la
+            différence du nom du profil WhatsApp juste en dessous. */}
+        <span className="text-ink-500">{t('Nom', 'Last name')}</span>
+        <EditableField value={fieldValue(contact, 'nom_de_famille') ?? ''} type="text" busy={busy} onSave={(v) => saveSocleField('nom_de_famille', v)} onDelete={() => apply({ removeFields: ['nom_de_famille'] })} />
+        <span className="text-ink-500" title={t('Le nom affiché dans WhatsApp : chaque message du contact le met à jour.', 'The name shown in WhatsApp: each message from the contact updates it.')}>{t('Nom WhatsApp', 'WhatsApp name')}</span>
+        <EditableField value={contact.profileName ?? ''} busy={busy} onSave={(v) => apply({ profileName: v.trim() === '' ? null : v.trim() })} />
         {/* Email : champ SOCLE au même titre que Prénom (cf. `SOCLE_FIELDS`, web/lib/partage/champs.ts), donc TOUJOURS
             présent sur la fiche, même vide. Il n'apparaissait qu'une fois rempli, et il n'était même pas
             proposé à l'ajout : la liste des champs ajoutables vient de `user_fields`, où un champ socle

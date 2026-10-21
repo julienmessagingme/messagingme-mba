@@ -1,5 +1,26 @@
 # todo.md : backlog
 
+## 🟡 Le champ de base « Nom » : ce qui ne le suit pas encore (2026-10-21)
+
+Plan : [docs/superpowers/plans/2026-10-21-champ-nom-et-selecteur.md](docs/superpowers/plans/2026-10-21-champ-nom-et-selecteur.md).
+
+- **Formulaires WhatsApp et import CSV** : « Nom », « Nom de famille », « Last name » vont encore vers le nom du profil
+  (`web/lib/flow-mapping.ts`, `src/crm/recognize.ts`), que le message suivant réécrit. Les faire pointer vers
+  `nom_de_famille` change la destination de formulaires existants : à décider avec Julien.
+- **Le panneau Détail de l'Inbox** compose prénom et nom du profil (`InboxDetail.tsx`) : prendre le nouveau « Nom »
+  quand il est rempli.
+- **`GET /v1/fields` et `list_fields`** décrivent le nom comme un attribut, et ne listent pas les champs de base.
+- **Les autres sélecteurs de champ** (bloc Action, filtres de contacts) ne proposent pas encore les champs de base en tête.
+- **Les jaunes de la relecture** :
+  - le sélecteur des boutons-liens (`TemplateForm.tsx`, vers la ligne 120) ne propose plus `nom_de_famille`
+    (`customFieldsOnly` l'en retire) et y appelle « Nom » le profil : ajouter « Nom », relibeller `nom` en « Nom WhatsApp » ;
+  - une écriture d'agent (IA ou Meta, `mergeFieldsByPhone`) sur Prénom, Nom ou Email ne matérialise pas la ligne
+    `user_fields` : la valeur est sur la fiche, mais `champsDeLaFiche` (filtres, ciblage, conditions) ne la propose
+    qu'après une édition de fiche. Appeler `ensureFieldByKey` quand `socleField(cle)` ;
+  - `ChoixTypeOutil.tsx` lit encore `listUserFields` pour le seul cas d'erreur, et `LIENS.champ` n'est plus affiché :
+    retirer les deux ;
+  - le constructeur de Flow (`BASE_SAVE_FIELDS`, `web/lib/flow-mapping.ts`) appelle encore « Nom » le profil WhatsApp.
+
 ## 🟡 L'outil enchaîné et « Qualifier et transférer » : ce que les deux relectures laissent (2026-10-20)
 
 Plans : [outil enchaîné](docs/superpowers/plans/2026-10-20-outil-enchaine.md) et

@@ -54,7 +54,7 @@ function defaultSystemClause(kind: (typeof CHAMPS_SYSTEME)[number]['kind']): Cla
 
 /** Champs de BASE adressables par une condition (attributs + socles). `wa_id` exclu : le moteur ne le résout pas. */
 const BASE_FIELDS: { key: string; type: UserFieldKind }[] = [
-  { key: 'name', type: 'text' }, { key: 'prenom', type: 'text' }, { key: 'email', type: 'text' },
+  { key: 'name', type: 'text' }, { key: 'prenom', type: 'text' }, { key: 'nom_de_famille', type: 'text' }, { key: 'email', type: 'text' },
   { key: 'phone', type: 'text' }, { key: 'bsuid', type: 'text' },
 ];
 

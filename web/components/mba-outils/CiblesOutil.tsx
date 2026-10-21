@@ -7,6 +7,8 @@ import { listerBlocsMba } from '@/lib/api-mba-outils';
 import type { BlocPropose } from '@/lib/partage/outils-mba';
 import { BORNES_OUTIL, METHODES_IRREVERSIBLES, valeursPermises, type ConsommateurOutil } from '@/lib/mba-outils';
 import { inputCls } from '@/lib/ui';
+import { SOCLE_FIELDS, SYSTEM_FIELD_LABELS } from '@/lib/partage/champs';
+import { customFieldsOnly } from '@/lib/fields';
 import { useT } from '@/lib/i18n';
 import { Bouton } from '@/components/Bouton';
 
@@ -75,26 +77,42 @@ export function CibleChamp({ tenantId, champ, valeurs, onChange, pour = 'mba', s
       .catch(() => { if (vivant) setChamps('erreur'); });
     return () => { vivant = false; };
   }, [tenantId, essai]);
-  const lus = Array.isArray(champs) ? champs : [];
+  /**
+   * DEUX GROUPES (demande de Julien du 2026-10-21, « c'est le bordel ») : les champs de BASE qu'un agent peut écrire
+   * (Prénom, Nom, Email, les champs socle : toujours là, même avant la première écriture), puis les champs créés, par
+   * ordre alphabétique. Les autres champs de base (téléphone, identifiants WhatsApp) ne s'écrivent pas : absents.
+   */
+  const base = SOCLE_FIELDS.map((f) => ({ key: f.key, label: t(...SYSTEM_FIELD_LABELS[f.key]) }));
+  const lus = (Array.isArray(champs) ? customFieldsOnly(champs) : [])
+    .slice().sort((a, b) => a.label.localeCompare(b.label, 'fr', { sensitivity: 'base' }));
   // 🔴 Un champ supprimé du mini-CRM RESTE affiché, et signalé : le select le montrait « Choisir un champ »
-  // pendant que l'état gardait l'ancienne clé, donc l'écran et ce qui partait divergeaient.
-  const disparu = Array.isArray(champs) && champ !== '' && !champs.some((f) => f.key === champ);
+  // pendant que l'état gardait l'ancienne clé, donc l'écran et ce qui partait divergeaient. Un champ de base ne
+  // disparaît jamais.
+  const disparu = Array.isArray(champs) && champ !== '' && !base.some((f) => f.key === champ) && !lus.some((f) => f.key === champ);
+  const libelleDe = (key: string): string | undefined => base.find((f) => f.key === key)?.label ?? lus.find((f) => f.key === key)?.label;
   return (
     <div className="flex flex-col gap-2">
       <label className="text-xs text-ink-500">
         {t('Champ de la fiche', 'Record field')}
         <select className={`${inputCls} mt-1`} data-testid="mba-cible-champ" value={champ}
-          onChange={(e) => onChange(e.target.value, valeurs, lus.find((f) => f.key === e.target.value)?.label)}>
+          onChange={(e) => onChange(e.target.value, valeurs, libelleDe(e.target.value))}>
           <option value="">{t('Choisir un champ', 'Pick a field')}</option>
           {disparu && <option value={champ}>{champ} {t('(supprimé du mini-CRM)', '(deleted from the mini-CRM)')}</option>}
           {/* Liste pas encore lue, ou illisible : la valeur courante reste affichée, sans rien affirmer d'elle. */}
-          {champ !== '' && !Array.isArray(champs) && <option value={champ}>{champ}</option>}
-          {/* Une clé plus longue que la borne de la route serait refusée en 400 : proposée grisée, avec sa raison. */}
-          {lus.map((f) => (
-            <option key={f.key} value={f.key} disabled={f.key.length > BORNES_OUTIL.champ}>
-              {f.label}{f.key.length > BORNES_OUTIL.champ ? t(' (nom interne trop long)', ' (internal name too long)') : ''}
-            </option>
-          ))}
+          {champ !== '' && !Array.isArray(champs) && !base.some((f) => f.key === champ) && <option value={champ}>{champ}</option>}
+          <optgroup label={t('Champs de base', 'Base fields')} data-testid="mba-cible-champ-base">
+            {base.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+          </optgroup>
+          {lus.length > 0 && (
+            <optgroup label={t('Vos champs', 'Your fields')} data-testid="mba-cible-champ-perso">
+              {/* Une clé plus longue que la borne de la route serait refusée en 400 : proposée grisée, avec sa raison. */}
+              {lus.map((f) => (
+                <option key={f.key} value={f.key} disabled={f.key.length > BORNES_OUTIL.champ}>
+                  {f.label}{f.key.length > BORNES_OUTIL.champ ? t(' (nom interne trop long)', ' (internal name too long)') : ''}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
       </label>
       {champs === 'erreur' && (

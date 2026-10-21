@@ -133,6 +133,15 @@ describe('créer un outil de l’agent de Meta', () => {
     expect(gestes).toEqual([]);
   });
 
+  it('🔴 un champ de BASE (Prénom, Nom, Email) est accepté même absent du mini-CRM (2026-10-21)', async () => {
+    // Il existe toujours, avant sa première écriture : le sélecteur le propose en tête, la création ne le refuse plus.
+    for (const champ of ['prenom', 'nom_de_famille', 'email']) {
+      const { app } = monter();
+      const res = await app.inject({ method: 'POST', url, ...h(), payload: { ...TEXTES, name: `noter_${champ}`, cible: { type: 'champ', champ, valeurs: [] } } });
+      expect(res.statusCode, champ).not.toBe(422);
+    }
+  });
+
   it('🔴 (porté) crée un connecteur ET l’active pour l’agent de Meta, avec le risque DÉRIVÉ de la méthode', async () => {
     const { app, gestes } = monter();
     const res = await app.inject({ method: 'POST', url, ...h(), payload: { ...TEXTES, cible: { type: 'connecteur', requeteId: REQ } } });

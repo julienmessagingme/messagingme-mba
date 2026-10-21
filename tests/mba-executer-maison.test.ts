@@ -70,6 +70,15 @@ describe('exécuter un geste de l’agent de Meta', () => {
     expect(f.gestes).toEqual([]);
   });
 
+  it('🔴 un champ de BASE (le Nom) s’écrit même absent du mini-CRM : il existe avant sa première écriture (2026-10-21)', async () => {
+    const f = faux([]);
+    const r = await executerOutilMaison(f.deps, {
+      tenantId: 't1', outilId: 'o1', waId: 'w', cible: { handler: 'champ_fixe', champ: 'nom_de_famille', valeurs: [] }, corps: { valeur: 'Dumas' },
+    });
+    expect(r.ok).toBe(true);
+    expect(f.gestes).toEqual(['champ t1 w nom_de_famille=Dumas']);
+  });
+
   it('🔴 une valeur refusée n’écrit RIEN', async () => {
     const f = faux();
     const r = await executerOutilMaison(f.deps, {

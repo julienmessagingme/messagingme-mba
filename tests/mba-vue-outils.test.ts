@@ -29,6 +29,13 @@ describe('la ligne d’un outil dans l’onglet', () => {
       .toMatchObject({ type: 'tag', cible: { type: 'tag', tag: 'vip' }, cibleManquante: null, actif: true, risque: 'write' });
   });
 
+  it('🔴 un champ de BASE n’est jamais signalé manquant, même absent du mini-CRM (2026-10-21)', () => {
+    for (const champ of ['prenom', 'nom_de_famille', 'email']) {
+      const v = vueOutilMba(outil({ binding: { handler: 'champ_fixe', champ, valeurs: [] } }), ctx());
+      expect(v.cibleManquante, champ).toBeNull();
+    }
+  });
+
   it('🔴 un champ supprimé du mini-CRM est SIGNALÉ', () => {
     const v = vueOutilMba(outil({ binding: { handler: 'champ_fixe', champ: 'code_postal', valeurs: [] } }), ctx());
     expect(v.type).toBe('champ');
