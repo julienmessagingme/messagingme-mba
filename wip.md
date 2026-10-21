@@ -18,6 +18,14 @@
 | CI | lue job par job sur `gh run view <id> --json jobs`, jamais sur le code de sortie du watch ; un rouge `toomanyrequests` (Docker Hub) n'a rien vérifié ; un rouge `unauthorized` sur la connexion à Docker Hub = jeton expiré ou révoqué, ou secret absent (CLAUDE.md) |
 | Le récit | les lots déployés sont sortis de ce fichier le 2026-10-10, texte d'origine, vers [docs/JOURNAL-TECHNIQUE.md](docs/JOURNAL-TECHNIQUE.md) ; les essais dus vivent dans `docs/prive/ESSAIS-REELS.md`, les restes dans [todo.md](todo.md) |
 
+## LE CENTRE D'AIDE (EN COURS)
+
+Le plan : [docs/superpowers/plans/2026-10-20-centre-d-aide.md](docs/superpowers/plans/2026-10-20-centre-d-aide.md) ; ce
+qui est en ligne se lit dans [features.md](features.md) (« Le centre d'aide public et « Comment faire » »). Reste :
+- les films (tâche 11), un par page, fabriqués dans `~/engageme-motion` (son `CLAUDE.md`), puis `video: oui` dans la
+  fiche et `npm run vitrine:aide` ;
+- l'essai réel de Julien (`docs/prive/ESSAIS-REELS.md`), qui clôt le plan.
+
 ## LA BASCULE SCALEWAY (EN COURS)
 
 L'état de chaque lot se lit dans [le plan avant la bascule](docs/superpowers/plans/2026-10-14-avant-bascule-scaleway.md),

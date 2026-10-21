@@ -411,6 +411,7 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
 - **Discipline anti-tailor-made** : inbox minimal borné, pas de multicanal/segments avancés/A-B testing.
   (Un **constructeur de Flow** riche EXISTE désormais, cf `features.md` : formulaires de collecte, pas un
   workflow builder générique.)
+- 🔴 **UNE FICHE D'AIDE PUBLIQUE (`publique: oui`) EST UNE PAGE DE LA VITRINE** : retouchée, `npm run vitrine:aide` dans le même commit, sa version `en/` retraduite, puis `aide:charger` en production après le push ; une capture se refait par `npm run aide:captures` (`documentation.md`, modules partagés).
 - 🔴 **TOUTE BORNE QU'ON APPLIQUE À LA SORTIE D'UN MODÈLE EST ANNONCÉE DANS LE SCHÉMA QU'ON LUI ENVOIE**
   (2026-09-17). Deux schémas coexistent dès qu'on impose une sortie structurée : celui qu'on ANNONCE et celui
   qu'on APPLIQUE. Ce que le second refuse sans que le premier l'annonce est une panne qu'AUCUNE coopération

@@ -5,6 +5,34 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-21 : le centre d'aide public, « Aide » dans la vitrine, « Comment faire » dans la console
+
+Plan `docs/superpowers/plans/2026-10-20-centre-d-aide.md`, spec `docs/superpowers/specs/2026-10-20-doc-fonctionnelle-design.md`
+(validée par Julien le 2026-10-20). Exécuté en direct dans une extraction, commit en plomberie, une relecture
+indépendante par lot.
+
+- **Lot 1 et 2, le bot qui lit ses fiches par étape** (dce730e1, ab0431b0, déployés en REVISION ab0431b0) : la grammaire
+  des fiches (`src/aide/structure.ts`), le découpage en morceaux d'étape, les budgets du répondeur, neuf fiches
+  réécrites, quatre nouvelles, neuf traductions. Relecture : deux rouges, un plafond en nombre de morceaux qui perdait
+  des étapes et un libellé anglais faux, corrigés avec leur test. Sonde en production : « programme ma campagne »
+  reçoit l'étape 5, « importer mes contacts » celle du consentement, « que faut-il chez Meta » les quatre prérequis.
+- **Lot 3, le centre d'aide** (e2d84f8b, API redéployée pour `aide:charger`, 142 lignes) : vingt pages générées en
+  français et en anglais, quatre pages « Depuis Claude Code », 58 captures de la vraie console sur des données
+  inventées. Relecture : un rouge, l'accueil promettait « depuis Claude Code, tout se fait aussi avec l'offre Free »
+  alors que les outils de campagne sont fermés en Free ; l'accueil liste désormais les pages Claude avec leur offre, et
+  un test confronte chaque page aux outils qu'elle cite. Jaunes notables corrigés dans le lot : `\p{M}` dans `site.js`
+  (un vieux navigateur aurait refusé tout le fichier) et des heures d'ouverture de démo à la mauvaise forme (la capture
+  montrait l'espace fermé toute la semaine).
+- **Lot 4, le menu et le lien** (08c442ec, oui de Julien pour le menu) : « Aide » entre Tarifs et Développeurs ; le
+  bandeau français débordait de 7 px entre 1 001 et 1 016 px (mesuré, la vitrine en ligne ne débordait pas), d'où le
+  burger jusqu'à 1 040 px. « Comment faire » dans la barre du haut de la console. Relecture : aucun rouge ; un jaune
+  aurait rendu la CI rouge (le test racine importait un fichier qui tire `@playwright/test`, installé seulement dans
+  `web/` : vert sur le poste, qui le trouve en remontant l'arborescence), et l'étape 2 de « Choisir mon offre »
+  répétait l'étape 1 (une capture « en bas » d'une zone proche du haut retombe en haut de page).
+- **Mesures** : la conversion PNG vers WebP est déterministe (une reprise complète redonne les mêmes octets, d'où un
+  `?v=` égal à l'empreinte du fichier) ; e2e complète de la console 1 625 sur 1 625 avec le lien.
+- **Reste** : les films (tâche 11) et l'essai réel de Julien.
+
 ## 2026-10-20 (nuit) : l'agent Pigier, l'outil enchaîné et « Qualifier et transférer »
 
 - **L'agent Pigier, dans l'espace sandbox.** Un agent IA nourri du site pigier.com : il renseigne les candidats, met

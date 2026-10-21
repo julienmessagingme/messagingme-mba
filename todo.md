@@ -23,13 +23,6 @@ Plans : [outil enchaîné](docs/superpowers/plans/2026-10-20-outil-enchaine.md) 
   sur `src/agent/brain.gateway.ts` (le traitement d'une réponse qui porte du texte ET un appel). À diagnostiquer en lot
   séparé (skill `diagnostic-agent-ia`), sur une conversation rejouée.
 
-## 🟡 La documentation fonctionnelle : modes opératoires et vidéos (sujet ouvert par Julien le 2026-10-20)
-
-Aider les gens à comprendre « comment on fait » : des modes opératoires pas à pas et des vidéos courtes, geste par geste,
-à côté de la doc développeurs. Rien de cadré : à ouvrir en rondes de questions (pour qui, quels gestes d'abord, où ça vit :
-la vitrine, la console, l'aide, le plugin), en partant de l'existant (fiches d'aide de `docs/aide/fiches/`, guide du compte
-Meta Business généré depuis `web/lib/partage/etapes-meta.ts`, films de l'atelier `~/engageme-motion`).
-
 ## 🟡 L'enregistrement d'un scénario identique ne devrait rien écrire (2026-10-20)
 
 - Côté serveur, `PATCH /tenants/:tenantId/workflows/:id` réécrit le graphe entier, relit le code de l'espace et

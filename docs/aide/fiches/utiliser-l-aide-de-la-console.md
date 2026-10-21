@@ -1,6 +1,6 @@
 ---
-source_section: L'aide de la console (bouton flottant, sur tous les écrans)
-source_empreinte: 9df1ed
+source_section: L'aide de la console (bouton flottant, sur tous les écrans) | Le centre d'aide public et « Comment faire » (vitrine et console)
+source_empreinte: 9df1ed | 98bc47
 ---
 # Poser une question à l'aide de la console
 
@@ -33,5 +33,10 @@ même jour de la semaine précédente. Trois choses à savoir :
   croire que tout est couvert.
 - **Un seul calcul par jour pour tout l'espace.** Le premier qui clique le fait calculer, tout le monde lit
   le même, et il ne bouge plus de la journée.
+
+**Les modes opératoires pas à pas** sont aussi en ligne, dans le centre d'aide (app.messagingme.fr/aide/, en
+anglais app.messagingme.fr/en/help/) : une page par geste, avec les captures de la console. Sur les écrans qui en ont
+une (Accueil, Inbox, Modèles, mini-CRM, Campagnes, Offre), le lien « Comment faire » de la barre du haut l'ouvre
+dans un nouvel onglet.
 
 Cette aide est à notre charge : elle ne consomme pas le crédit de votre espace.

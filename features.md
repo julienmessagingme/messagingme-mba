@@ -1997,6 +1997,27 @@ scénario, comment importer des contacts.
   quelque chose à signaler** (un volume qui s'écarte nettement de la semaine précédente, un sujet nouveau) ;
   sinon il rend le même texte sans rien dépenser.
 
+## Le centre d'aide public et « Comment faire » (vitrine et console)
+
+- ✅ **Le centre d'aide** (`app.messagingme.fr/aide/`, en anglais `/en/help/`, depuis le 2026-10-21) : un mode
+  opératoire par geste, pas à pas. Démarrer : choisir son offre, ce qu'il faut chez Meta, connecter son numéro, se
+  repérer dans la console. Parler aux clients : répondre dans l'Inbox, la fenêtre de 24 heures, faire approuver un
+  modèle, importer ses contacts, lancer une campagne.
+  - Chaque étape a sa **capture de la vraie console** (avec des données inventées), qui s'ouvre en grand d'un clic ;
+    la suite de l'étape se déplie sous « En détail ».
+  - Un menu à gauche, avec une recherche qui ignore les accents ; la page dit l'offre qu'elle demande, mène à l'écran
+    de la console, et son lien « Une question sans réponse ? » ouvre le formulaire de contact en citant la page.
+  - **Les mêmes textes que l'aide de la console** : une page est une fiche du mode d'emploi publiée, corriger l'une
+    corrige l'autre.
+- ✅ **Depuis Claude Code** : quatre pages développeurs (installer le plugin et relier son espace, connecter son
+  numéro, répondre à un client, préparer et lancer une campagne) disent quoi demander à Claude, les outils qu'il
+  appelle et ce qu'il répond. La page des campagnes dit que l'offre Pro est demandée ; l'accueil du centre aussi.
+- ✅ **« Aide » dans le menu de la vitrine**, au bureau, dans le menu du téléphone et en pied de page.
+- ✅ **« Comment faire » dans la console** : dans la barre du haut des écrans qui ont leur page (Accueil, Inbox,
+  Modèles, mini-CRM, Campagnes, Offre), un lien ouvre la page du centre d'aide, dans la langue de la console, dans
+  un nouvel onglet. Sous 1 024 px de large, l'icône seule.
+- ⏳ Les films courts de chaque page (sans son, sous-titrés) viennent ensuite ; une page sans film n'en montre pas.
+
 ## Support (menu Support)
 
 - ✅ **Formulaire de contact** : sujet + message -> email à l'équipe via Resend. Le **reply-to est l'email du
