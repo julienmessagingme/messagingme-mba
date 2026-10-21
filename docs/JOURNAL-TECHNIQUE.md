@@ -27,6 +27,16 @@
   publiées (`/messagingme:rappels` y manquait), et les 65 outils par famille (`familles-outils.ts`, chacun dans une
   seule). Plugin en 0.2.1.
 - **Les films des pages d'aide « Répondre à un client » et « Préparer une campagne » depuis Claude** sont en ligne.
+- **Puis celui de « Connecter votre numéro WhatsApp depuis Claude »** : la vraie page `/brancher` en quatre états
+  (payer, numéro attribué, code capté, connecté), capturée par un scénario Playwright jetable sur les simulations de
+  `web/e2e/brancher.spec.ts`, la fenêtre de Meta générique de l'onboarding (atelier, `engageme-aide-claude/numero/`).
+- **Les jaunes de la relecture** : `plugin.yml` lance aussi `tests/plugin-readme.test.ts` avant de publier, et les
+  mentions du Pro dans le README (numéro inclus, Inbox) suivent les droits du code, plus seulement ses chiffres.
+- **Essai : un compte de l'application WhatsApp Business piloté sans API** (hors dépôt, dossier jetable) : le
+  +44 1555 479304 de la réserve, créé dans l'application par Julien (code capté par le pont), relié comme appareil lié
+  par QR code (Baileys de wagroups), un serveur MCP minimal à deux outils (lire, répondre). Connecté. Appris : le code
+  d'appairage à huit caractères expire en environ deux minutes et laisse une session que WhatsApp invalide (401) ;
+  relié par QR code, Baileys pose `creds.me` mais pas `creds.registered`.
 
 ## 2026-10-21 : les simplifications de Codex du 12 au 21 octobre, reportées dans le manuel
 

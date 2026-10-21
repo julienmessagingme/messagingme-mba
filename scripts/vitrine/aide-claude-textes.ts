@@ -87,6 +87,7 @@ export const PAGES_CLAUDE: readonly PageClaude[] = [
       fr: 'Claude vous donne le lien de la fenêtre de Meta, suit la connexion pendant que vous la faites, et vous dit quand le numéro est prêt.',
       en: 'Claude gives you the link to Meta’s window, follows the connection while you go through it, and tells you when the number is ready.',
     },
+    film: 'claude-numero',
     etapes: [
       {
         titre: { fr: 'Choisir le numéro', en: 'Choose the number' },

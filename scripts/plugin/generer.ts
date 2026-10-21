@@ -216,14 +216,21 @@ export function readmeAJour(md: string): string {
   const base = DROITS.base.limites;
   const pro = DROITS.pro.limites;
   const offert = schema.shape.CREDIT_OFFERT_MICRO_EUR.parse(undefined) / 1_000_000;
+  const utilisateurs = (n: number | null) => `${n} user${n === 1 ? '' : 's'}`;
+  // Chaque mention du Pro suit les droits du code, pas seulement ses chiffres : un droit retiré disparaît du README.
+  const mentionsPro = [
+    pro.envoisModelesMois === null ? 'unlimited sends' : `${enAnglais(pro.envoisModelesMois!)} messages sent per month`,
+    `${enAnglais(pro.contacts!)} contacts`,
+    utilisateurs(pro.utilisateurs),
+    ...(pro.numeroInclus ? ['provided number included'] : []),
+    ...(DROITS.pro.fonctions.has('inbox') ? ['and the Inbox where your team takes over'] : []),
+  ];
   const prix = [
     `- **Free**: ${enAnglais(base.envoisModelesMois!)} messages sent per month, ${enAnglais(base.contacts!)} contacts created (inbound `
-      + `contacts are unlimited), ${base.utilisateurs} user, the API and the MCP server included.`,
+      + `contacts are unlimited), ${utilisateurs(base.utilisateurs)}, the API and the MCP server included.`,
     `- **Your own number**, or a provided number at ${euros(PRIX_NUMERO_HT_CENTIMES)} excl. VAT per month.`,
     `- **Pay-as-you-go AI** on prepaid credit, €${offert} offered when your first number is connected.`,
-    `- **Pro, ${euros(PRIX_PRO_HT_CENTIMES.mois)} excl. VAT per month** (${ESSAI_PRO_JOURS}-day free trial): `
-      + `${pro.envoisModelesMois === null ? 'unlimited sends' : `${enAnglais(pro.envoisModelesMois!)} messages sent per month`}, `
-      + `${enAnglais(pro.contacts!)} contacts, ${pro.utilisateurs} users, provided number included, and the Inbox where your team takes over.`,
+    `- **Pro, ${euros(PRIX_PRO_HT_CENTIMES.mois)} excl. VAT per month** (${ESSAI_PRO_JOURS}-day free trial): ${mentionsPro.join(', ')}.`,
     '- Meta bills some messages directly to your business, according to [its rate card](https://developers.facebook.com/docs/whatsapp/pricing).',
   ].join('\n');
   const contenu = [

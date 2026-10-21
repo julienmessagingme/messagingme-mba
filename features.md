@@ -2039,7 +2039,11 @@ scénario, comment importer des contacts.
 - ✅ **Un film court sur les six pages qui montrent un geste dans la console** (connecter son numéro, se repérer,
   répondre dans l'Inbox, faire approuver un modèle, importer ses contacts, lancer une campagne), en français et en
   anglais : la vraie console, étape par étape, le geste pointé et agrandi, sous-titré, sans son, une minute environ.
-- ⏳ Les films des trois pages « Depuis Claude Code » qui n'en ont pas encore ; une page sans film n'en montre pas.
+- ✅ **Un film sur chacune des quatre pages « Depuis Claude Code »**, en français et en anglais, avec la musique : la
+  vraie session Claude Code (les outils et leurs réponses relevés dans le serveur MCP), et à côté ce qu'elle produit. Le
+  numéro se connecte sur la vraie page du lien (payer, le numéro attribué, la fenêtre de Meta, le code capté tout
+  seul) ; Léa reçoit sa réponse dans la fenêtre de 24 heures, Karim un modèle approuvé ; la campagne montre le
+  récapitulatif, le oui, puis ses chiffres du lendemain.
 
 ## Support (menu Support)
 

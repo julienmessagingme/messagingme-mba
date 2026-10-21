@@ -42,10 +42,10 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      # Un plugin qui cite un outil absent, pre-autorise une ecriture, porte une FAQ en retard sur sa source, ou une commande
-      # dont le code ne compile pas contre le SDK publie ou differe de sa generation, ne part pas.
+      # Un plugin qui cite un outil absent, pre-autorise une ecriture, porte une FAQ ou un README en retard sur sa source, ou
+      # une commande dont le code ne compile pas contre le SDK publie ou differe de sa generation, ne part pas.
       - name: Verifier le plugin
-        run: npx vitest run tests/plugin.test.ts tests/plugin-faq.test.ts tests/mcp-mise-en-service.test.ts tests/plugin-commandes.test.ts tests/doc-exemples-compiles.test.ts
+        run: npx vitest run tests/plugin.test.ts tests/plugin-faq.test.ts tests/plugin-readme.test.ts tests/mcp-mise-en-service.test.ts tests/plugin-commandes.test.ts tests/doc-exemples-compiles.test.ts
 
   publier:
     needs: construire
