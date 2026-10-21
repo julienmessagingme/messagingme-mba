@@ -51,7 +51,6 @@ function app(portail: SettingsRouteDeps['hubspotPortalConnecte']) {
         setCampaignsPaused: async () => {},
         setAutoRetryEnabled: async () => {},
         setControlHandbackSeconds: async () => {},
-        setMbaHandoffMode: async () => {},
         setTimezone: async () => {},
         setBusinessHours: async () => {},
       },

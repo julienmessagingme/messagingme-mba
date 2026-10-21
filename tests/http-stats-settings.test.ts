@@ -120,7 +120,6 @@ function app(over: { stats?: Partial<Omit<StatsRouteDeps, 'stats' | 'conversatio
       get: async () => ({ mbaEnabled: false, repondeurMode: 'equipe', repondeurAgentId: null, repondeurWorkflowId: null, repondeurAdresseId: null, repondeurDelaiScenarioS: 86400, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false, controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, hubspotActif: false, optoutRequestId: null, mentionIaFrequence: null, timezone: 'Europe/Paris', businessHours: {}, prix: GRILLE_DEFAUT }),
       setMbaEnabled: async () => {},
       setHubspotListsEnabled: async () => {},
-      setMbaHandoffMode: async () => {},
       setControlHandbackSeconds: async () => {},
       setTimezone: async () => {},
       setBusinessHours: async () => {},
@@ -749,82 +748,65 @@ describe('PATCH /settings/control-handback', () => {
 });
 
 /**
- * Quand l'agent de Meta passe la main à un humain. Le choix vit en base (c'est lui qui pilote le balayage
- * horaire) et il est appliqué chez Meta dans la foulée, en best-effort.
+ * L'adapter valide le mode puis délègue le protocole entier au module de pilotage MBA.
  */
 describe('PATCH /settings/mba-handoff', () => {
   const url = '/tenants/t1/settings/mba-handoff';
-  /** Stub commun : enregistre le mode posé en base et l'état appliqué chez Meta. */
-  const espion = (over: Record<string, unknown> = {}, reglages: Record<string, unknown> = {}) => {
-    const modes: string[] = [];
-    const appliques: boolean[] = [];
+  const espion = (appliqueChezMeta = true) => {
+    const appels: Array<{ tenantId: string; mode: string }> = [];
     const a = app({ settings: {
-      applyMbaHandoffEnabled: async (_t: string, e: boolean) => { appliques.push(e); },
-      ...over,
-      reglages: { setMbaHandoffMode: async (_t: string, m: string) => { modes.push(m); }, ...reglages },
+      reglerMbaHandoff: async (tenantId: string, mode: string) => {
+        appels.push({ tenantId, mode });
+        return { appliqueChezMeta };
+      },
     } });
-    return { a, modes, appliques };
+    return { a, appels };
   };
 
-  it('« toujours » -> enregistré, et le passage de main allumé chez Meta', async () => {
-    const { a, modes, appliques } = espion();
+  it('délègue le mode « toujours » au pilotage', async () => {
+    const { a, appels } = espion();
     const res = await a.inject({ method: 'PATCH', url, ...h(adminTok), payload: { mode: 'always' } });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ mbaHandoffMode: string }>().mbaHandoffMode).toBe('always');
-    expect(modes).toEqual(['always']);
-    expect(appliques).toEqual([true]);
+    expect(appels).toEqual([{ tenantId: 't1', mode: 'always' }]);
     await a.close();
   });
 
-  it('« jamais » -> l’agent garde le fil', async () => {
-    const { a, modes, appliques } = espion();
+  it('délègue aussi « jamais » sans reconstruire sa valeur Meta', async () => {
+    const { a, appels } = espion();
     expect((await a.inject({ method: 'PATCH', url, ...h(adminTok), payload: { mode: 'never' } })).statusCode).toBe(200);
-    expect(modes).toEqual(['never']);
-    expect(appliques).toEqual([false]);
+    expect(appels).toEqual([{ tenantId: 't1', mode: 'never' }]);
     await a.close();
   });
 
-  it('« heures d’ouverture » -> applique l’état de L’INSTANT (ici : fermé)', async () => {
-    // Sinon le client règle son outil un dimanche et voit le passage de main allumé jusqu'au balayage suivant.
-    const tousFermes = Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [String(d), { closed: true, open: '', close: '' }]));
-    const { a, modes, appliques } = espion({
-      // Aucun portail lie : c est le defaut, et la fixture le DIT (cf. `tests/hubspot.ts`).
-      hubspotPortalConnecte: sansPortailHubspot,
-    }, {
-      get: async () => ({
-        mbaEnabled: true, repondeurMode: 'mba', repondeurAgentId: null, repondeurWorkflowId: null, repondeurAdresseId: null, repondeurDelaiScenarioS: 86400, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,
-        controlHandbackSeconds: null, mbaHandoffMode: null, agentTransfertMode: null, agentsPeuventPrendre: false, timezone: 'Europe/Paris', businessHours: tousFermes,
-      }),
-    });
+  it('délègue « heures d’ouverture » au module qui possède le calcul instantané', async () => {
+    const { a, appels } = espion();
     expect((await a.inject({ method: 'PATCH', url, ...h(adminTok), payload: { mode: 'business_hours' } })).statusCode).toBe(200);
-    expect(modes).toEqual(['business_hours']);
-    expect(appliques).toEqual([false]);
+    expect(appels).toEqual([{ tenantId: 't1', mode: 'business_hours' }]);
     await a.close();
   });
 
-  it('🔴 Meta injoignable -> le choix est quand même enregistré (le balayage rattrapera)', async () => {
-    const { a, modes } = espion({ applyMbaHandoffEnabled: async () => { throw new Error('502'); } });
+  it('rend l’état d’application fourni par le pilotage', async () => {
+    const { a } = espion(false);
     const res = await a.inject({ method: 'PATCH', url, ...h(adminTok), payload: { mode: 'always' } });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ appliqueChezMeta: boolean }>().appliqueChezMeta).toBe(false);
-    expect(modes).toEqual(['always']); // enregistré : refuser priverait le client de son propre réglage
     await a.close();
   });
 
   it('mode inconnu -> 400, et rien n’est écrit', async () => {
-    const { a, modes, appliques } = espion();
+    const { a, appels } = espion();
     for (const mode of ['parfois', '', null, undefined, true]) {
       expect((await a.inject({ method: 'PATCH', url, ...h(adminTok), payload: { mode } })).statusCode).toBe(400);
     }
-    expect(modes).toEqual([]);
-    expect(appliques).toEqual([]);
+    expect(appels).toEqual([]);
     await a.close();
   });
 
   it('un agent ne peut pas changer ce réglage (admin seulement)', async () => {
-    const { a, modes } = espion();
+    const { a, appels } = espion();
     expect((await a.inject({ method: 'PATCH', url, ...h(agentTok), payload: { mode: 'never' } })).statusCode).toBe(403);
-    expect(modes).toEqual([]);
+    expect(appels).toEqual([]);
     await a.close();
   });
 });

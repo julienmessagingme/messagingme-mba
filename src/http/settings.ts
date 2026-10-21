@@ -2,14 +2,12 @@ import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import type { TenantSettings, MbaHandoffMode } from '../settings/store.pg';
 import type { BusinessHours } from '../workflow/conditions';
-import { withinBusinessHours } from '../workflow/conditions';
 import { espaceVerifie } from './scope';
 import { estFrequenceMention, FREQUENCES_MENTION_IA, type FrequenceMentionIa } from '../agent/agent-store';
 import { MODE_TRANSFERT_DEFAUT, type ModeTransfert } from '../agent/disponibilite-equipe';
 import { isValidTimeZone, normalizeBusinessHours, reglerModeTransfert } from '../agent/reglages';
 import { corpsDuRefus } from '../lib/issue';
 import { valideGrille, BORNES_GRILLE } from '../stats/prix';
-import { messageDe } from '../lib/erreur';
 import { makeJournal, type AuditSink } from '../audit/journal';
 
 /** Ce que les routes lisent et écrivent des réglages de l'espace. */
@@ -19,8 +17,6 @@ export interface ReglagesDep {
   setHubspotListsEnabled(tenantId: string, enabled: boolean): Promise<void>;
   /** Durée du gel après prise de main par un opérateur, en secondes. null = défaut du serveur. */
   setControlHandbackSeconds(tenantId: string, seconds: number | null): Promise<void>;
-  /** Quand l'agent de Meta passe la main à un humain (écran « Activation »). */
-  setMbaHandoffMode(tenantId: string, mode: MbaHandoffMode): Promise<void>;
   /** Fuseau IANA du tenant. */
   setTimezone(tenantId: string, timezone: string): Promise<void>;
   /** Heures d'ouverture par jour ('0'..'6'). */
@@ -52,12 +48,8 @@ export interface SettingsRouteDeps {
      */
     hasAgent(tenantId: string): Promise<boolean>;
   };
-  /**
-   * Applique `handoff.enabled` chez Meta. Best-effort : un échec ne fait pas échouer l'enregistrement (le
-   * choix est en base, le balayage l'appliquera), sinon Meta injoignable empêcherait le client de régler son
-   * outil.
-   */
-  applyMbaHandoffEnabled(tenantId: string, enabled: boolean): Promise<void>;
+  /** Enregistre le choix et tente de faire converger Meta ; le module MBA possède l'ordre et la reprise. */
+  reglerMbaHandoff(tenantId: string, mode: MbaHandoffMode): Promise<{ appliqueChezMeta: boolean }>;
   /**
    * Un portail HubSpot est-il lié à cet espace ? Seul signal qui dise si la source HubSpot d'une campagne
    * est possible : `hubspotListsEnabled` dit si le client la veut, et un client qui délie son portail garde
@@ -321,23 +313,8 @@ export function registerSettings(
     if (mode !== 'always' && mode !== 'business_hours' && mode !== 'never') {
       return reply.code(400).send({ error: "mode invalide ('always' | 'business_hours' | 'never')" });
     }
-    await deps.reglages.setMbaHandoffMode(tenant, mode);
-    let applique = false;
-    // Pour `business_hours` seulement, l'état à cet instant : le client règle souvent son outil pendant ses
-    // heures d'ouverture, et verrait sinon un passage de main éteint jusqu'au balayage suivant.
-    let voulu = mode === 'always';
-    if (mode === 'business_hours') {
-      const s = await deps.reglages.get(tenant);
-      voulu = withinBusinessHours(new Date(), s.timezone, s.businessHours);
-    }
-    try {
-      await deps.applyMbaHandoffEnabled(tenant, voulu);
-      applique = true;
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error(`mba-handoff: application chez Meta impossible pour ${tenant}:`, messageDe(err));
-    }
-    return reply.code(200).send({ mbaHandoffMode: mode, appliqueChezMeta: applique });
+    const resultat = await deps.reglerMbaHandoff(tenant, mode);
+    return reply.code(200).send({ mbaHandoffMode: mode, appliqueChezMeta: resultat.appliqueChezMeta });
   });
 
 

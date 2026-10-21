@@ -112,7 +112,7 @@ import { signSession, signLienNumero } from './auth/token';
 import { lireEtatConnexion } from './otp/etat-connexion';
 import { PgAbonnementsNumeroStore } from './stripe/abonnements.pg';
 import { ouvrirAbonnement, ouvrirPortail, programmerFinDuNumero, type DepsAbonnement } from './stripe/abonnement';
-import { ecrireHandoffEnabled } from './mba/handoff';
+import { reglerModeHandoff } from './mba/handoff';
 import { carouselSendBlocker } from './meta/template-components';
 import { creerEnvoiModeleInbox } from './inbox/envoi-modele';
 import { PgRcsMessageStore } from './rcs/message-store.pg';
@@ -1654,12 +1654,12 @@ async function main(): Promise<void> {
        * par-dessus un portail relié.
        */
       hubspotPortalConnecte: (tenant) => lirePortailHubspot(tenant).then((p) => p.connected),
-      // Applique le choix chez Meta immédiatement. Mêmes helpers que le balayage horaire, pour que « je viens
-      // de choisir » et « l'heure a changé » écrivent exactement la même chose.
-      applyMbaHandoffEnabled: (tenant, enabled) => ecrireHandoffEnabled(
-        { numeros: repo, meta: metaFactory },
+      // Le module possède persistance, calcul instantané et application Meta : cette route ne peut plus en
+      // oublier une moitié quand la règle évolue.
+      reglerMbaHandoff: (tenant, mode) => reglerModeHandoff(
+        { reglages: settingsStore, numeros: repo, meta: metaFactory },
         tenant,
-        enabled,
+        mode,
       ),
       /**
        * Le connecteur prévenu à chaque désabonnement : on ne rend que l'identifiant et le libellé, l'écran du

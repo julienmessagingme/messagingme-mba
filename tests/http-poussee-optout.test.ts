@@ -56,7 +56,6 @@ function app(branche: string | null = null) {
       }),
       setMbaEnabled: async () => {},
       setHubspotListsEnabled: async () => {},
-      setMbaHandoffMode: async () => {},
       setControlHandbackSeconds: async () => {},
       setTimezone: async () => {},
       setBusinessHours: async () => {},

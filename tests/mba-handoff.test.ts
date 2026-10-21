@@ -1,57 +1,88 @@
 import { describe, it, expect } from 'vitest';
-import { lireHandoffEnabled, ecrireHandoffEnabled } from '../src/mba/handoff';
-import type { HandoffCibleDeps } from '../src/mba/handoff';
+import { reglerModeHandoff } from '../src/mba/handoff';
+import type { PilotageHandoffDeps } from '../src/mba/handoff';
 import type { MbaClient, AgentSettings } from '../src/mba/client';
+import type { MbaHandoffMode } from '../src/settings/store.pg';
+import type { BusinessHours } from '../src/workflow/conditions';
 
-/** Faux client : seules `getSettings` et `putSettings` sont touchées ici. */
-function cible(settings: AgentSettings | null, pn: string | null = 'PN1'): {
-  deps: HandoffCibleDeps; puts: Array<Record<string, unknown>>;
+const FERME: BusinessHours = Object.fromEntries(
+  [0, 1, 2, 3, 4, 5, 6].map((jour) => [String(jour), { closed: true, open: '', close: '' }]),
+);
+
+function pilotage(options: {
+  settings?: AgentSettings | null;
+  numero?: string | null;
+  putEchoue?: boolean;
+  now?: number;
+} = {}): {
+  deps: PilotageHandoffDeps;
+  modes: MbaHandoffMode[];
+  puts: Array<Record<string, unknown>>;
 } {
+  const modes: MbaHandoffMode[] = [];
   const puts: Array<Record<string, unknown>> = [];
+  const settings = options.settings === undefined ? { agent_id: 'AG1', handoff: { enabled: false } } : options.settings;
   const client = {
     getSettings: async () => settings,
-    putSettings: async (_pn: string, corps: Record<string, unknown>) => { puts.push(corps); return {}; },
+    putSettings: async (_pn: string, corps: Record<string, unknown>) => {
+      if (options.putEchoue) throw new Error('502');
+      puts.push(corps);
+      return {};
+    },
   } as unknown as MbaClient;
-  return { deps: { meta: { mbaClientForTenant: async () => client }, numeros: { getTenantPhoneNumberId: async () => pn } }, puts };
+  return {
+    deps: {
+      reglages: {
+        setMbaHandoffMode: async (_tenant, mode) => { modes.push(mode); },
+        get: async () => ({ timezone: 'Europe/Paris', businessHours: FERME }),
+        tenantsHandoffSurHoraires: async () => [],
+      },
+      numeros: { getTenantPhoneNumberId: async () => options.numero === undefined ? 'PN1' : options.numero },
+      meta: { mbaClientForTenant: async () => client },
+      now: () => options.now ?? Date.parse('2026-08-20T10:00:00+02:00'),
+    },
+    modes,
+    puts,
+  };
 }
 
-describe('lireHandoffEnabled : « jamais configuré » n’est PAS « configuré à false »', () => {
-  it('handoff.enabled lu chez Meta -> la valeur', async () => {
-    expect(await lireHandoffEnabled(cible({ handoff: { enabled: true } }).deps, 't1')).toBe(true);
-    expect(await lireHandoffEnabled(cible({ handoff: { enabled: false } }).deps, 't1')).toBe(false);
+describe('reglerModeHandoff : un seul protocole possède le choix et son application Meta', () => {
+  it('« toujours » persiste le choix puis active le passage de main', async () => {
+    const { deps, modes, puts } = pilotage();
+    expect(await reglerModeHandoff(deps, 't1', 'always')).toEqual({ appliqueChezMeta: true });
+    expect(modes).toEqual(['always']);
+    expect(puts[0]?.handoff).toEqual({ enabled: true });
   });
 
-  it('🔴 réglages lisibles mais handoff ABSENT -> « absent », pas false', async () => {
-    // Meta le documente : « Null if not configured ». Rendre `false` ferait croire au balayage que l'agent
-    // est déjà dans l'état voulu, et un agent neuf ne serait jamais configuré.
-    expect(await lireHandoffEnabled(cible({ agent_id: 'AG1' }).deps, 't1')).toBe('absent');
-    expect(await lireHandoffEnabled(cible({ handoff: {} }).deps, 't1')).toBe('absent');
-    expect(await lireHandoffEnabled(cible({ handoff: { message: 'coucou' } }).deps, 't1')).toBe('absent');
-  });
-
-  it('pas de numéro, ou agent pas encore créé par Meta -> null (ne rien écrire)', async () => {
-    expect(await lireHandoffEnabled(cible({ handoff: { enabled: true } }, null).deps, 't1')).toBeNull();
-    expect(await lireHandoffEnabled(cible(null).deps, 't1')).toBeNull();
-  });
-});
-
-describe('ecrireHandoffEnabled', () => {
-  it('écrit enabled en préservant le reste des réglages ET le reste de handoff', async () => {
+  it('« jamais » préserve les autres réglages et les autres champs de handoff', async () => {
     const actuel: AgentSettings = {
       agent_id: 'AG1',
       never_say_phrases: ['jamais ça'],
       handoff: { enabled: true, message: 'Un conseiller arrive.', message_selection: 'CUSTOM' },
     };
-    const { deps, puts } = cible(actuel);
-    await ecrireHandoffEnabled(deps, 't1', false);
-    expect(puts).toHaveLength(1);
+    const { deps, puts } = pilotage({ settings: actuel });
+    await reglerModeHandoff(deps, 't1', 'never');
     expect(puts[0]?.handoff).toEqual({ enabled: false, message: 'Un conseiller arrive.', message_selection: 'CUSTOM' });
-    expect(puts[0]?.never_say_phrases).toEqual(['jamais ça']); // le PUT est un remplacement complet
+    expect(puts[0]?.never_say_phrases).toEqual(['jamais ça']);
   });
 
-  it('sans numéro : ne tape pas Meta du tout', async () => {
-    const { deps, puts } = cible({ handoff: { enabled: true } }, null);
-    await ecrireHandoffEnabled(deps, 't1', false);
+  it('« heures d’ouverture » calcule la valeur de l’instant avec les horaires persistés', async () => {
+    const { deps, modes, puts } = pilotage();
+    expect(await reglerModeHandoff(deps, 't1', 'business_hours')).toEqual({ appliqueChezMeta: true });
+    expect(modes).toEqual(['business_hours']);
+    expect(puts[0]?.handoff).toEqual({ enabled: false });
+  });
+
+  it('une panne Meta ne retire pas le choix enregistré et sera rattrapée par le balayage', async () => {
+    const { deps, modes } = pilotage({ putEchoue: true });
+    expect(await reglerModeHandoff(deps, 't1', 'always')).toEqual({ appliqueChezMeta: false });
+    expect(modes).toEqual(['always']);
+  });
+
+  it('sans numéro, le choix est enregistré et l’application reste un no-op réussi comme avant', async () => {
+    const { deps, modes, puts } = pilotage({ numero: null });
+    expect(await reglerModeHandoff(deps, 't1', 'never')).toEqual({ appliqueChezMeta: true });
+    expect(modes).toEqual(['never']);
     expect(puts).toEqual([]);
   });
 });

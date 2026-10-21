@@ -386,12 +386,12 @@ export const rappelsRcsInertes: Pick<RcsCallbackRouteDeps['agents'], 'noterRappe
   noterRappel: async () => {},
 };
 
-export const reglagesInertes: Pick<SettingsRouteDeps, 'rcs' | 'applyMbaHandoffEnabled' | 'listerRequetesConnecteur' | 'agents' | 'audit'> = {
+export const reglagesInertes: Pick<SettingsRouteDeps, 'rcs' | 'reglerMbaHandoff' | 'listerRequetesConnecteur' | 'agents' | 'audit'> = {
   audit: journalMuet,
   // Absente : `false`, briques éteintes.
   rcs: { hasAgent: async () => false },
   // Absente : rien n'était appliqué chez Meta (`appliqueChezMeta: false`). Un échec produit ce même `false`.
-  applyMbaHandoffEnabled: async () => { throw new Error('valeur inerte : passage de main non appliqué chez Meta'); },
+  reglerMbaHandoff: async () => ({ appliqueChezMeta: false }),
   listerRequetesConnecteur: async () => [],
   // Absente : liste vide.
   agents: { listerPourConformite: async () => [] },

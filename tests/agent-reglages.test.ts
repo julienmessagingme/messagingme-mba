@@ -140,7 +140,6 @@ describe('le mode de transfert de l’agent IA', () => {
           }),
           setMbaEnabled: async () => {},
           setHubspotListsEnabled: async () => {},
-          setMbaHandoffMode: async () => {},
           setControlHandbackSeconds: async () => {},
           setTimezone: async () => {},
           setBusinessHours: async () => {},
