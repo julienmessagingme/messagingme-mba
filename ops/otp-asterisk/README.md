@@ -11,7 +11,7 @@ Il tourne sur le VPS, dans `/home/ubuntu/otp-asterisk`, hors du dépôt de l'app
 | Fichier | Rôle |
 | --- | --- |
 | `docker-compose.yml` | le conteneur, en `network_mode: host`, ses montages |
-| `extensions.conf` | décrocher, enregistrer 90 s en chemin absolu, puis lancer le script à la fin de l'appel |
+| `extensions.conf` | décrocher, enregistrer 90 s en arrière-plan en chemin absolu en appuyant sur 5 (l'appel de l'application WhatsApp l'exige avant de dicter son code), puis lancer le script à la fin de l'enregistrement |
 | `envoyer-otp.sh` | signer et poster l'enregistrement, l'effacer sur un 2xx (exécutable) |
 | `pjsip.conf.example` | le gabarit SIP : l'Asterisk s'enregistre chez DIDWW sur le port 5080 |
 | `rtp.conf` | la plage des ports RTP |

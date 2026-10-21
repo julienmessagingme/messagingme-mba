@@ -14,9 +14,15 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CATALOGUE_MCP } from '../../web/lib/partage/catalogue-mcp';
+import { pageDoc } from '../../web/lib/doc-api-pages';
 import { ENV_NEXTJS, EXEMPLES_CAS, VERSION_SDK, type ExempleCode } from '../../web/lib/exemples-code';
 import { ENTREES } from '../../web/lib/registre-vitrine';
+import { DROITS, ESSAI_PRO_JOURS, PRIX_PRO_HT_CENTIMES } from '../../src/offres/offres';
+import { PRIX_NUMERO_HT_CENTIMES } from '../../src/stripe/abonnement';
+import { schema } from '../../src/config';
 import { COMMANDES } from './commandes';
+import { CONSTRUIRE, type LienCapacite } from './construire';
+import { FAMILLES_OUTILS } from './familles-outils';
 import { FAQ } from './faq';
 
 /** Un fichier que le générateur écrit, par son chemin dans `plugin/`. */
@@ -151,15 +157,99 @@ export function pageAvecFaq(html: string, langue: Langue): string {
   return html.slice(0, i) + blocFaqVitrine(langue) + html.slice(j + MARQUE_FIN.length);
 }
 
+/** Remplace le bloc `nom` entre ses deux marques, ou rend le texte tel quel s'il ne les porte pas. */
+function remplacerBloc(texte: string, nom: string, debut: string, contenu: string): string {
+  const i = texte.indexOf(`<!-- ${nom}:debut`);
+  if (i < 0) return texte;
+  const fin = `<!-- ${nom}:fin -->`;
+  const j = texte.indexOf(fin, i);
+  if (j < 0) throw new Error(`marque de fin du bloc ${nom} absente`);
+  return texte.slice(0, i) + [debut, contenu, fin].join('\n') + texte.slice(j + fin.length);
+}
+
+const VITRINE = 'https://app.messagingme.fr';
+
+/** L'adresse d'une capacité : relative sur la vitrine, absolue vers la console (en anglais pour la page anglaise). */
+export function hrefCapacite(lien: LienCapacite, langue: Langue): string {
+  if ('cas' in lien) {
+    const e = ENTREES.find((x) => x.cle === lien.cas);
+    if (!e) throw new Error(`cas inconnu du registre : ${lien.cas}`);
+    return e[langue].adresse;
+  }
+  if ('page' in lien) return lien.page[langue];
+  return `https://console.messagingme.app${pageDoc(lien.doc).href}${langue === 'en' ? '?lang=en' : ''}`;
+}
+
+const DEBUT_CONSTRUIRE = '<!-- construire:debut, généré par npm run plugin:generer depuis scripts/plugin/construire.ts : ne pas modifier à la main -->';
+
+export function blocConstruireVitrine(langue: Langue): string {
+  return [
+    '<div class="dev-construire">',
+    ...CONSTRUIRE.flatMap((f) => [
+      '  <div>',
+      `    <h3>${echapper(f.titre[langue])}</h3>`,
+      '    <ul>',
+      ...f.capacites.map((c) => `      <li><a href="${hrefCapacite(c.lien, langue)}">${echapper(c.texte[langue])}</a></li>`),
+      '    </ul>',
+      '  </div>',
+    ]),
+    '</div>',
+  ].join('\n');
+}
+
+/** La page avec sa section « Ce que vous pouvez construire » à jour, ou telle quelle si elle ne porte pas les marques. */
+export function pageAvecConstruire(html: string, langue: Langue): string {
+  return remplacerBloc(html, 'construire', DEBUT_CONSTRUIRE, blocConstruireVitrine(langue));
+}
+
+const enAnglais = (n: number) => n.toLocaleString('en-US');
+const euros = (centimes: number) => `€${Number.isInteger(centimes / 100) ? centimes / 100 : (centimes / 100).toFixed(2)}`;
+
+/** Les blocs générés du README : ce qu'on construit, ce que ça coûte, les outils par famille. */
+export function readmeAJour(md: string): string {
+  const absolue = (href: string) => (href.startsWith('/') ? VITRINE + href : href);
+  const construire = CONSTRUIRE.flatMap((f) => [
+    `### ${f.titre.en}`, '',
+    ...f.capacites.map((c) => `- [${c.texte.en}](${absolue(hrefCapacite(c.lien, 'en'))})`), '',
+  ]).join('\n').trimEnd();
+  const base = DROITS.base.limites;
+  const pro = DROITS.pro.limites;
+  const offert = schema.shape.CREDIT_OFFERT_MICRO_EUR.parse(undefined) / 1_000_000;
+  const prix = [
+    `- **Free**: ${enAnglais(base.envoisModelesMois!)} messages sent per month, ${enAnglais(base.contacts!)} contacts created (inbound `
+      + `contacts are unlimited), ${base.utilisateurs} user, the API and the MCP server included.`,
+    `- **Your own number**, or a provided number at ${euros(PRIX_NUMERO_HT_CENTIMES)} excl. VAT per month.`,
+    `- **Pay-as-you-go AI** on prepaid credit, €${offert} offered when your first number is connected.`,
+    `- **Pro, ${euros(PRIX_PRO_HT_CENTIMES.mois)} excl. VAT per month** (${ESSAI_PRO_JOURS}-day free trial): `
+      + `${pro.envoisModelesMois === null ? 'unlimited sends' : `${enAnglais(pro.envoisModelesMois!)} messages sent per month`}, `
+      + `${enAnglais(pro.contacts!)} contacts, ${pro.utilisateurs} users, provided number included, and the Inbox where your team takes over.`,
+    '- Meta bills some messages directly to your business, according to [its rate card](https://developers.facebook.com/docs/whatsapp/pricing).',
+  ].join('\n');
+  const contenu = [
+    '- the Messaging Me MCP server (`https://api.messagingme.app/mcp`), authorized with OAuth: no key in your files;',
+    '- `/messagingme:demarrer`, the setup entry point;',
+    ...commandesPubliees().map((nom) => `- \`/messagingme:${nom}\`: ${COMMANDES[nom]!.titre.replace(/ on WhatsApp$/, '')}, with the code to adapt in your app;`),
+    '- skills: the setup (`mise-en-service`), the WhatsApp rules (`regles-whatsapp`) and the FAQ (`faq`).',
+  ].join('\n');
+  const outils = FAMILLES_OUTILS.map((f) => `- **${f.titre}**: ${f.outils.map((o) => `\`${o}\``).join(', ')}`).join('\n');
+  const debut = (nom: string, source: string) => `<!-- ${nom}:debut, generated by npm run plugin:generer from ${source}: do not edit by hand -->`;
+  let sortie = remplacerBloc(md, 'construire', debut('construire', 'scripts/plugin/construire.ts'), construire);
+  sortie = remplacerBloc(sortie, 'prix', debut('prix', 'src/offres/offres.ts'), prix);
+  sortie = remplacerBloc(sortie, 'contenu', debut('contenu', 'scripts/plugin/commandes.ts'), contenu);
+  return remplacerBloc(sortie, 'outils', debut('outils', 'scripts/plugin/familles-outils.ts'), outils);
+}
+
 async function main(): Promise<void> {
   const racine = (p: string) => fileURLToPath(new URL(`../../${p}`, import.meta.url));
   writeFileSync(racine('plugin/skills/faq/SKILL.md'), skillFaq());
   for (const { chemin, langue } of PAGES_FAQ) {
     if (!existsSync(racine(chemin))) continue;
     const avant = readFileSync(racine(chemin), 'utf8');
-    const apres = pageAvecFaq(avant, langue);
+    const apres = pageAvecConstruire(pageAvecFaq(avant, langue), langue);
     if (apres !== avant) writeFileSync(racine(chemin), apres);
   }
+  const readme = readFileSync(racine('plugin/README.md'), 'utf8');
+  if (readmeAJour(readme) !== readme) writeFileSync(racine('plugin/README.md'), readmeAJour(readme));
   for (const f of dossiersDeCommandes()) {
     mkdirSync(dirname(racine(`plugin/${f.chemin}`)), { recursive: true });
     writeFileSync(racine(`plugin/${f.chemin}`), f.contenu);

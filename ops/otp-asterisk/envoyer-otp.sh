@@ -1,6 +1,6 @@
 #!/bin/sh
 # LE PONT DU CODE, COTE ASTERISK (lot 3a, spec docs/superpowers/specs/2026-10-05-pont-du-code-design.md).
-# Lance par le plan de numerotation (extension h) apres chaque appel recu sur un numero de la reserve : signe
+# Lance par le plan de numerotation (MixMonitor, a la fin de l enregistrement) apres chaque appel recu sur un numero de la reserve : signe
 # l'enregistrement et le poste a l'API, puis l'efface si l'API l'a recu (tout 2xx). Sinon il reste, pour un rejeu
 # a la main (meme commande).
 #

@@ -37,7 +37,9 @@ sur les pages existent dans les deux langues. La page « introuvable » parle an
 anglais `/en/developers/`. Pour qui construit avec Claude Code, Cursor ou Lovable :
 une séance Claude Code rejouée (l'agent IA, la lecture du site, la bulle WhatsApp), les trois étapes (installer le
 plugin ; autoriser Claude, ce qui crée l'espace d'une adresse Google inconnue, sans formulaire ; lancer
-`/messagingme:demarrer`, où Meta n'est demandé qu'au moment de relier le numéro), le branchement par le code (API, SDK,
+`/messagingme:demarrer`, où Meta n'est demandé qu'au moment de relier le numéro), ce que l'on peut construire, en mots de
+métier (répondre à vos clients, leur écrire au bon moment, brancher à votre app : une ligne par usage, qui mène à son cas
+d'usage ou à la documentation, la même liste que le README du plugin sur GitHub), le branchement par le code (API, SDK,
 webhooks signés) et ce que permet l'offre gratuite. « Développeurs », dans le menu de toutes les pages, y mène. Le titre porte la
 mention « Gratuit et sans abonnement ». Sous les boutons du haut, trois promesses : aucun compte à créer, un numéro
 fourni si l'on n'en a pas, seulement un compte Meta Business à avoir ; la troisième mène au guide « Votre compte Meta

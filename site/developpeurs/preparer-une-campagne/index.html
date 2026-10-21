@@ -17,7 +17,7 @@
 <meta property="og:site_name" content="Messaging Me">
 <meta property="og:title" content="Préparer et lancer une campagne depuis Claude | Développeurs Messaging Me">
 <meta property="og:description" content="Dites à qui écrire et quoi envoyer : Claude prépare un brouillon, vous montre le récapitulatif, et ne lance qu’avec votre oui et son code.">
-<meta property="og:image" content="https://app.messagingme.fr/img/partage/developpeurs.jpg?v=2">
+<meta property="og:image" content="https://app.messagingme.fr/films/claude-campagne.webp?v=903e546d">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
@@ -272,6 +272,9 @@
       </div>
     </nav>
     <article class="aide-article">
+      <figure class="aide-video">
+        <video class="f-video aide-film" src="/films/claude-campagne.mp4?v=b12c1ae2" poster="/films/claude-campagne.webp?v=903e546d" width="1280" height="720" controls muted playsinline preload="none" aria-label="Préparer et lancer une campagne depuis Claude"></video>
+      </figure>
       <div class="aide-etape sans-capture" id="etape-1"><div><h3>1. Trouver les destinataires</h3><div class="aide-echange"><p class="aide-vous"><span>Vous</span> Qui a parlé de la collection d’automne cette semaine&nbsp;?</p><p class="aide-outils"><span>Claude appelle</span> <code data-outil="list_conversations">list_conversations</code>, <code data-outil="find_contacts">find_contacts</code></p><p class="aide-claude"><span>Claude</span> Claude retrouve les contacts concernés et leur nombre. Il faut au moins un critère&nbsp;: il n’existe pas de cible «&nbsp;tout le monde&nbsp;».</p></div></div></div>
       <div class="aide-etape sans-capture" id="etape-2"><div><h3>2. Préparer la campagne</h3><div class="aide-echange"><p class="aide-vous"><span>Vous</span> Prépare une campagne avec le modèle de la collection d’automne pour eux, envoi demain à 10 h.</p><p class="aide-outils"><span>Claude appelle</span> <code data-outil="prepare_campaign">prepare_campaign</code></p><p class="aide-claude"><span>Claude</span> Claude crée un brouillon, visible dans la console, sans rien envoyer, et vous montre le récapitulatif&nbsp;: combien partent, qui est écarté et pourquoi, cinq noms, la date en heure de Paris, et un code de confirmation.</p></div></div></div>
       <div class="aide-etape sans-capture" id="etape-3"><div><h3>3. Dire oui</h3><div class="aide-echange"><p class="aide-vous"><span>Vous</span> Oui, lance-la.</p><p class="aide-outils"><span>Claude appelle</span> <code data-outil="launch_campaign">launch_campaign</code></p><p class="aide-claude"><span>Claude</span> Claude lance avec le code du récapitulatif&nbsp;: la campagne est programmée pour la date choisie, ou part tout de suite si aucune date n’a été donnée.</p></div></div></div>

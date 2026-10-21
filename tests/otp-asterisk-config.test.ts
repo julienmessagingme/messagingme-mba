@@ -20,9 +20,11 @@ function lignes(texte: string): string[] {
 
 describe('le plan de numérotation du pont', () => {
   const conf = lignes(lire('extensions.conf'));
+  // Ce qu'un shell exécute : `System()`, et la commande que `MixMonitor()` lance à la fin de l'enregistrement.
+  const executeCommande = (l: string) => l.includes('System(') || l.includes('MixMonitor(');
 
   it('🔴 aucune variable de l’appel dans `System()` : seuls des noms filtrés y passent', () => {
-    const appels = conf.filter((l) => l.includes('System('));
+    const appels = conf.filter(executeCommande);
     expect(appels.length).toBeGreaterThan(0);
     for (const l of appels) {
       const variables = [...l.matchAll(/\$\{([A-Z_]+)\}/g)].map((m) => m[1]);
@@ -47,10 +49,27 @@ describe('le plan de numérotation du pont', () => {
       const refs = [...valeur.matchAll(/\$\{([A-Z_]+)\}/g)].map((x) => x[1]!);
       if (!valeur.includes('FILTER(') && refs.length > 0 && refs.every((r) => sures.has(r)) && /^[A-Za-z0-9/._${}-]+$/.test(valeur)) sures.add(nom);
     }
-    const appel = conf.find((l) => l.includes('System('))!;
-    const passees = [...appel.slice(appel.indexOf('System(')).matchAll(/\$\{([A-Z_]+)\}/g)].map((m) => m[1]!);
-    expect(passees.length).toBeGreaterThan(0);
-    for (const v of passees) expect(sures.has(v), `${v} n’est pas filtrée`).toBe(true);
+    const appels = conf.filter(executeCommande);
+    expect(appels.length).toBeGreaterThan(0);
+    for (const appel of appels) {
+      const passees = [...appel.slice(appel.search(/System\(|MixMonitor\(/)).matchAll(/\$\{([A-Z_]+)\}/g)].map((m) => m[1]!);
+      expect(passees.length).toBeGreaterThan(0);
+      for (const v of passees) expect(sures.has(v), `${v} n’est pas filtrée`).toBe(true);
+    }
+  });
+
+  it('l’appel de l’application WhatsApp demande la touche 5 avant de dicter son code : le pont enregistre en arrière-plan et l’envoie (2026-10-21)', () => {
+    // Mesuré sur la réserve : sans touche, la transcription s'arrête à « appuyez sur 5 » et le code n'est jamais dit.
+    // L'appel de Meta (Cloud API) n'attend aucune touche : il dicte son code, enregistré dès le décroché.
+    const enregistre = conf.findIndex((l) => l.includes('MixMonitor('));
+    const touches = conf.flatMap((l, i) => (l.includes('SendDTMF(5)') ? [i] : []));
+    expect(enregistre).toBeGreaterThan(-1);
+    expect(touches.length).toBeGreaterThan(0);
+    expect(touches.every((i) => i > enregistre)).toBe(true);
+    // Un `Record()` bloquant empêcherait toute touche pendant l'enregistrement.
+    expect(conf.some((l) => l.includes('Record('))).toBe(false);
+    // L'envoi part une fois, à la fin de l'enregistrement : jamais aussi depuis l'extension h, qui le doublerait.
+    expect(conf.filter((l) => l.includes('envoyer-otp.sh')).length).toBe(1);
   });
 });
 

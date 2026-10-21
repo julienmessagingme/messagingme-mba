@@ -17,7 +17,7 @@
 <meta property="og:site_name" content="Messaging Me">
 <meta property="og:title" content="Reply to a customer from Claude | Messaging Me Developers">
 <meta property="og:description" content="Claude reads your conversations, tells you whether the 24-hour window is open, and replies for you when you ask.">
-<meta property="og:image" content="https://app.messagingme.fr/img/partage/developers-en.jpg?v=2">
+<meta property="og:image" content="https://app.messagingme.fr/films/claude-repondre-en.webp?v=c2113225">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
@@ -271,6 +271,9 @@
       </div>
     </nav>
     <article class="aide-article">
+      <figure class="aide-video">
+        <video class="f-video aide-film" src="/films/claude-repondre-en.mp4?v=4b69b495" poster="/films/claude-repondre-en.webp?v=c2113225" width="1280" height="720" controls muted playsinline preload="none" aria-label="Reply to a customer from Claude"></video>
+      </figure>
       <div class="aide-etape sans-capture" id="etape-1"><div><h3>1. See who wrote to you</h3><div class="aide-echange"><p class="aide-vous"><span>You</span> Who wrote to me today?</p><p class="aide-outils"><span>Claude calls</span> <code data-outil="list_conversations">list_conversations</code></p><p class="aide-claude"><span>Claude</span> Claude lists the recent conversations, most recent first, with the last message of each.</p></div></div></div>
       <div class="aide-etape sans-capture" id="etape-2"><div><h3>2. Read a conversation</h3><div class="aide-echange"><p class="aide-vous"><span>You</span> Show me Léa’s.</p><p class="aide-outils"><span>Claude calls</span> <code data-outil="get_conversation">get_conversation</code></p><p class="aide-claude"><span>Claude</span> Claude sums up the exchange and tells you whether the 24-hour window is open, that is whether Léa wrote to you in the last twenty-four hours.</p></div></div></div>
       <div class="aide-etape sans-capture" id="etape-3"><div><h3>3. Reply within the window</h3><div class="aide-echange"><p class="aide-vous"><span>You</span> Tell her that her order ships tomorrow.</p><p class="aide-outils"><span>Claude calls</span> <code data-outil="reply_in_open_window">reply_in_open_window</code></p><p class="aide-claude"><span>Claude</span> The window is open: Claude sends the message, as she will read it. With the window closed, the send is refused, and Claude offers you a template.</p></div></div></div>

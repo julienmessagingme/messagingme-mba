@@ -1131,6 +1131,16 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 @media (max-width:1100px){.dev-grille{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:700px){.dev-grille{grid-template-columns:minmax(0,1fr)}}
 
+/* Ce que vous pouvez construire : trois familles, une ligne par capacité, chacune un lien vers sa page (générée par
+   npm run plugin:generer depuis scripts/plugin/construire.ts). */
+.dev-construire{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin-top:36px}
+.dev-construire > div{min-width:0;padding:28px;border-radius:16px;background:var(--surface);border:1px solid var(--line)}
+.dev-construire h3{margin:0 0 16px;font-size:1.2rem;line-height:1.25;letter-spacing:-.02em;font-weight:800}
+.dev-construire ul{list-style:none;margin:0;padding:0;display:grid;gap:14px}
+.dev-construire a{color:var(--muted);text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:4px;line-height:1.5}
+.dev-construire a:hover{color:var(--ink);text-decoration-color:var(--action-ink)}
+@media (max-width:900px){.dev-construire{grid-template-columns:minmax(0,1fr)}}
+
 /* ============================================================================================================
    La page des tarifs (/tarifs/, offres v2) : les trois offres en trois cartes, le Pro mis en avant ; puis le crédit IA
    et ce que Meta facture, en deux colonnes ; puis la FAQ, qui reprend celle de la page développeurs.

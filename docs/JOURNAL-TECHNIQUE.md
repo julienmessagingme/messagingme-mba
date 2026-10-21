@@ -5,6 +5,29 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-21 (nuit) : le pont des codes appuie sur 5, « Ce que vous pouvez construire », et le README du plugin
+
+- **Le pont des codes capte aussi l'appel de l'application WhatsApp Business.** Mesuré sur le +44 1555 479304 de la
+  réserve, pour l'essai d'un compte de l'application piloté par Claude (sans API) : l'appel de vérification de
+  l'APPLICATION dit « Pour recevoir votre code de vérification WhatsApp, appuyez sur 5 » avant de dicter le code, et
+  notre Asterisk, qui enregistrait sans toucher à rien (`Record` bloquant), n'a reçu que cette phrase (« aucun code
+  certain » dans `/ops`). Le plan d'appel enregistre désormais en arrière-plan (`MixMonitor`), envoie la touche 5 à 3,
+  6 et 9 secondes, et c'est la fin de `MixMonitor` qui lance l'envoi, fichier fermé (l'extension `h` est retirée).
+  Déployé sur le VPS le même soir (fichiers recopiés, l'ancien gardé en `.avant-touche-202610211845`, conteneur
+  recréé, enregistrement chez DIDWW revu `Registered`). Second appel de Julien : touche partie trois fois, WhatsApp a
+  raccroché à 21 s, le code est arrivé dans `/ops`, et Meta a accepté le numéro DIDWW dans l'application.
+  ⚠️ L'appel de Meta (Cloud API, Embedded Signup) passe par le même plan : il n'attend aucune touche et elle part hors
+  du son (`rfc4733`), mais ce n'est pas encore prouvé sur un vrai appel de Meta (essai réel à faire).
+- **La page développeurs dit ce qu'on construit, en mots de métier** (demande de Julien) : la section « Ce que vous
+  pouvez construire », après les trois étapes, en trois familles (répondre à vos clients, leur écrire au bon moment,
+  brancher à votre app). Une source, `scripts/plugin/construire.ts`, que `npm run plugin:generer` publie dans les deux
+  pages et dans `plugin/README.md` ; `tests/plugin-readme.test.ts` exige chaque cas en ligne du registre cité.
+- **Le README du plugin sur GitHub s'étoffe** : le film animé de l'installation en tête (`site/img/plugin-demo.gif`), ce
+  qu'on construit, ce que ça coûte (généré depuis `src/offres/offres.ts`), « What's inside » avec les commandes de cas
+  publiées (`/messagingme:rappels` y manquait), et les 65 outils par famille (`familles-outils.ts`, chacun dans une
+  seule). Plugin en 0.2.1.
+- **Les films des pages d'aide « Répondre à un client » et « Préparer une campagne » depuis Claude** sont en ligne.
+
 ## 2026-10-21 : les simplifications de Codex du 12 au 21 octobre, reportées dans le manuel
 
 Codex a mené une série de simplifications après « Réunir la préparation d'une campagne » (`be24529c`, 12 octobre),

@@ -138,6 +138,7 @@ export const PAGES_CLAUDE: readonly PageClaude[] = [
       fr: 'Claude lit vos conversations, vous dit si la fenêtre de 24 heures est ouverte, et répond pour vous quand vous le lui demandez.',
       en: 'Claude reads your conversations, tells you whether the 24-hour window is open, and replies for you when you ask.',
     },
+    film: 'claude-repondre',
     etapes: [
       {
         titre: { fr: 'Voir qui vous a écrit', en: 'See who wrote to you' },
@@ -185,6 +186,7 @@ export const PAGES_CLAUDE: readonly PageClaude[] = [
       fr: 'Dites à qui écrire et quoi envoyer : Claude prépare un brouillon, vous montre le récapitulatif, et ne lance qu’avec votre oui et son code.',
       en: 'Say who to write to and what to send: Claude prepares a draft, shows you the summary, and only launches with your yes and its code.',
     },
+    film: 'claude-campagne',
     offrePro: true,
     etapes: [
       {

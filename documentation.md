@@ -3599,8 +3599,10 @@ connaît pas la raison, donc une branche sans fenêtre parcourait tous les mouve
 
 🔴 **LE PONT DU CODE DES NUMÉROS FOURNIS** (lot 3a, `src/http/otp-pont.ts`, spec
 `docs/superpowers/specs/2026-10-05-pont-du-code-design.md`). Meta vérifie un numéro que nous fournissons en l'appelant ;
-l'Asterisk du VPS (`ops/otp-asterisk/`) décroche, enregistre, puis poste l'enregistrement à
-`POST /internes/otp/appels/:numero/:appel` (classe `signature-service`).
+l'Asterisk du VPS (`ops/otp-asterisk/`) décroche, enregistre en arrière-plan (`MixMonitor`) en envoyant trois fois la
+touche 5, puis poste l'enregistrement à `POST /internes/otp/appels/:numero/:appel` (classe `signature-service`). La
+touche sert à l'appel de l'application WhatsApp, qui dit « appuyez sur 5 » avant de dicter son code ; celui de Meta
+(Cloud API) n'en attend aucune et dicte le sien dès le décroché, et la touche part hors du son (`rfc4733`).
 - 🔴 **L'adresse est publique** (l'API n'est que sur le réseau Docker, l'Asterisk passe par `api.messagingme.app`) :
   c'est la signature qui la ferme, au format de nos services (`x-mm-service-signature`, `verifyRequest`), sur le corps
   brut, la méthode et le CHEMIN, qui porte le numéro et l'identifiant d'appel. Elle est vérifiée avant tout. Le script
@@ -3614,7 +3616,7 @@ l'Asterisk du VPS (`ops/otp-asterisk/`) décroche, enregistre, puis poste l'enre
   503. ⚠️ La configuration ne refuse PAS de démarrer sur une clé sans trunk : `.env.prod` porte encore la ligne d'une
   clé révoquée, et une garde au démarrage aurait coupé l'API au premier déploiement.
 - 🔴 **Côté Asterisk, trois verrous, parce que le conteneur est en `network_mode: host` sur un VPS sans pare-feu
-  actif** : le numéro appelé (écrit par l'appelant SIP) n'entre dans `System()` qu'après `FILTER` ; le point d'entrée
+  actif** : le numéro appelé (écrit par l'appelant SIP) n'entre dans une commande du shell (la fin de `MixMonitor`) qu'après `FILTER` ; le point d'entrée
   sans mot de passe n'est reconnu que par l'adresse (`identify_by = ip`) ; et `ops/otp-asterisk/pare-feu.sh` ne laisse
   arriver le SIP (5080) et le son (20000-20100) que des plages de DIDWW, relancé au démarrage par la crontab de root.
   Les plages du pare-feu et celles de la section `identify` restent identiques, et l'IAX2 (chargé par défaut par
