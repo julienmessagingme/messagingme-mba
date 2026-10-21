@@ -44,7 +44,6 @@ function app(o: { cable?: boolean } = {}) {
       }),
       setMbaEnabled: async () => {},
       setHubspotListsEnabled: async () => {},
-      setMbaHandoffMode: async () => {},
       setControlHandbackSeconds: async () => {},
       setTimezone: async () => {},
       setBusinessHours: async () => {},

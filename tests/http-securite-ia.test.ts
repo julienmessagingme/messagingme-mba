@@ -52,7 +52,6 @@ function app(depart: FrequenceMentionIa | null = null) {
       }),
       setMbaEnabled: async () => {},
       setHubspotListsEnabled: async () => {},
-      setMbaHandoffMode: async () => {},
       setControlHandbackSeconds: async () => {},
       setTimezone: async () => {},
       setBusinessHours: async () => {},

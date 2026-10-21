@@ -42,8 +42,7 @@ import { PgOauthClientsStore } from './oauth/clients.pg';
 import { balayerLesPubs } from './pubs/suivi';
 import { estJetonRefuse } from './meta/graph';
 import { runControlSweep } from './inbox/control-sweep';
-import { runHandoffSweep } from './mba/handoff-sweep';
-import { lireHandoffEnabled, ecrireHandoffEnabled } from './mba/handoff';
+import { reconcilierHandoffSurHoraires } from './mba/handoff';
 import { SOURCE_STOP_WHATSAPP } from './crm/consentement';
 import {
   ensureFieldByKey,
@@ -1302,13 +1301,8 @@ export async function demarrerWorker(): Promise<void> {
   // Passage de main de l'agent selon les heures d'ouverture. Meta n'a aucune notion d'horaires : sans ce
   // balayage, un agent qui passe la main la passe aussi à 3 h du matin (« un conseiller arrive » quand
   // personne n'est là). Ne concerne que les tenants ayant choisi ce mode.
-  const cibleHandoff = { numeros: repo, meta: metaFactory };
   const handoffSweep = async (): Promise<void> => {
-    const bascules = await runHandoffSweep({
-      reglages: settingsStore,
-      lireHandoffEnabled: (tenant) => lireHandoffEnabled(cibleHandoff, tenant),
-      ecrireHandoffEnabled: (tenant, enabled) => ecrireHandoffEnabled(cibleHandoff, tenant, enabled),
-    });
+    const bascules = await reconcilierHandoffSurHoraires({ reglages: settingsStore, numeros: repo, meta: metaFactory });
     // eslint-disable-next-line no-console
     if (bascules > 0) console.log(`handoff-sweep: ${bascules} tenant(s) basculé(s) sur les heures d'ouverture`);
   };

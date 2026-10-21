@@ -49,7 +49,6 @@ function reglages(o: { portail?: SettingsRouteDeps['hubspotPortalConnecte']; ini
       }),
       setMbaEnabled: async () => {},
       setHubspotListsEnabled: async () => {},
-      setMbaHandoffMode: async () => {},
       setControlHandbackSeconds: async () => {},
       setTimezone: async () => {},
       setBusinessHours: async () => {},
