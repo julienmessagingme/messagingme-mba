@@ -204,6 +204,12 @@ function schemaBulle(l: Langue): { horizontal: string; vertical: string } {
     : { titre: 'From your site’s bubble to your agent’s answer', app: 0, noeuds: [['Your site', 'the WhatsApp bubble'], ['On their WhatsApp', 'the message pre-written'], ['Your AI agent', 'answers from your site']], fleches: [['they tap the bubble', ''], ['they send it', '']] });
 }
 
+function schemaSupport(l: Langue): { horizontal: string; vertical: string } {
+  return schemaLigne(l === 'fr'
+    ? { titre: 'De la question du client à la réponse de l’agent, et au relais vers l’équipe', app: 1, noeuds: [['Le client sur WhatsApp', '« ma batterie ne charge plus »'], ['Votre agent IA', 'répond avec votre doc'], ['Votre équipe', 'reprend dans l’Inbox']], fleches: [['il écrit', ''], ['il veut un humain', '']] }
+    : { titre: 'From the customer’s question to the agent’s answer, and the handover to the team', app: 1, noeuds: [['The customer on WhatsApp', '“my battery won’t charge”'], ['Your AI agent', 'answers from your docs'], ['Your team', 'takes over in the Inbox']], fleches: [['they write', ''], ['they want a human', '']] });
+}
+
 function schemaFourche(T: TextesFourche): { horizontal: string; vertical: string } {
   // Les deux suites partent d'une fourche à angles arrondis : chaque étiquette tient sur un segment droit, aucun trait
   // ne la traverse.
@@ -391,6 +397,88 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         { question: 'Can the customer reschedule several times?', reponse: 'A reschedule request goes out at most once a day, per customer and per action: the agent offers slots, the customer picks one, your app books it.' },
       ],
       appel: { titre: 'Set up your reminders today.', texte: 'The plugin in two commands, then the sentence above in Claude Code. No account to create.' },
+      liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/solutions/saas-and-app-builders/', 'SaaS and app builders']],
+    },
+  },
+  support: {
+    fr: {
+      titre: 'Agent IA de support WhatsApp, avec relais · Messaging Me',
+      description: 'Un agent IA qui répond au support client sur WhatsApp avec votre documentation, et passe la main à votre équipe : mis en place depuis Claude Code.',
+      resume: 'Un agent IA répond à vos clients avec votre doc, et votre équipe reprend la main quand il faut.',
+      menu: 'Un agent de support, et le relais',
+      icone: 'i-user',
+      h1: 'Un agent IA qui répond au support sur WhatsApp, et votre équipe quand il faut.',
+      chapeau: 'Une phrase dans Claude Code, dans le dossier de votre projet&nbsp;: il crée l’agent, lui fait lire votre documentation, règle le relais à l’équipe et vos horaires, le teste et l’allume. Vos clients écrivent sur WhatsApp, l’agent répond jour et nuit, et votre équipe reprend la conversation dans l’Inbox.',
+      film: {
+        titre: 'La question, la réponse, le relais : 38 secondes.',
+        texte: 'De la demande dans Claude Code à la réponse de Sophie, sur une vraie conversation WhatsApp et la vraie Inbox de la console.',
+        aria: 'Film : un agent IA de support sur WhatsApp, et le relais à l’équipe, avec Messaging Me', duree: 'PT38S', publie: '2026-10-21T21:00:00+02:00',
+      },
+      schema: { titre: 'Comment ça circule.', legende: 'Le client écrit sur WhatsApp, votre agent IA lui répond avec votre documentation, et quand il veut un humain, ou que l’agent ne sait pas, la conversation passe à votre équipe dans l’Inbox.', ...schemaSupport('fr') },
+      etapes: [
+        { titre: 'L’agent qui connaît votre doc', texte: 'Claude Code crée l’agent par <code>create_agent</code>, puis lui donne chaque fichier de votre dossier docs/ par <code>import_document_text</code>&nbsp;: garanties, livraisons, entretien deviennent sa connaissance.' },
+        { titre: 'Quand passer la main', texte: '<code>update_agent</code> écrit son objectif et quand il passe la main, <code>set_agent_tools</code> lui donne la recherche dans sa connaissance et le relais, <code>set_transfer_mode</code> et <code>set_business_hours</code> vos horaires&nbsp;: hors de ces heures, l’agent dit au client quand l’équipe reprend.' },
+        { titre: 'Testé, puis allumé', texte: '<code>test_agent</code> lui pose une vraie question de client, et l’agent répond avec votre documentation. <code>activate_agent</code> l’allume et <code>set_default_responder</code> lui confie les conversations.' },
+        { titre: 'Le client veut un humain', texte: 'L’agent passe la main&nbsp;: la conversation arrive dans «&nbsp;À traiter&nbsp;» de l’Inbox de la console, avec tout son historique, et un membre de l’équipe répond depuis la console. L’Inbox est dans l’offre Pro.' },
+      ],
+      invite: {
+        titre: 'Ce que vous tapez dans Claude Code',
+        texte: 'Le plugin installé, une phrase suffit, dans le dossier de votre projet&nbsp;: Claude Code lit votre doc, crée l’agent, règle le relais et le teste.',
+        phrase: "/messagingme:demarrer un agent qui répond au support whatsapp depuis docs/ (garanties, livraisons, entretien), et qui passe la main à l'équipe quand il ne sait pas ou quand le client le demande. équipe dispo 9h-18h en semaine",
+      },
+      extrait: { titre: 'Un fichier de la doc que l’agent apprend', partie: 'doc' },
+      paie: [
+        '<strong>L’offre Free suffit pour l’agent&nbsp;:</strong> <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris. <strong>Le relais dans l’Inbox</strong>, où votre équipe reprend la conversation, est dans l’offre Pro, avec un essai gratuit de 14&nbsp;jours.',
+        '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse&nbsp;; 1&nbsp;€ est offert au premier numéro relié.',
+        '<strong>Meta facture directement</strong> chaque réponse envoyée dans la fenêtre de 24&nbsp;heures à votre entreprise, au-delà de sa franchise mensuelle, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.',
+      ],
+      faq: [
+        { question: 'Que se passe-t-il hors des horaires de l’équipe&nbsp;?', reponse: 'L’agent continue de répondre. Quand il passe la main, il dit au client quand l’équipe reprend, d’après vos horaires, et la conversation l’attend dans «&nbsp;À traiter&nbsp;». Passé 24&nbsp;heures après le dernier message du client, l’équipe ne peut plus lui écrire librement&nbsp;: il lui faut un modèle approuvé.' },
+        { question: 'L’agent peut-il inventer une réponse&nbsp;?', reponse: 'Il cherche dans votre documentation avant de répondre, et la phrase que vous tapez peut lui demander de passer la main quand elle ne suffit pas, comme dans le film.' },
+        { question: 'Le client sait-il qu’il parle à une IA&nbsp;?', reponse: 'Par défaut, oui&nbsp;: l’agent l’annonce dans son premier message («&nbsp;Vous échangez avec un assistant automatique.&nbsp;»). Vous réglez la phrase et sa fréquence dans la console, une fois par conversation, à chaque message ou jamais&nbsp;: l’information du client vous appartient.' },
+        { question: 'Faut-il un modèle approuvé par Meta&nbsp;?', reponse: 'Non&nbsp;: le client écrit le premier, et l’agent comme l’équipe répondent dans la fenêtre de 24&nbsp;heures que son message ouvre.' },
+      ],
+      appel: { titre: 'Mettez votre support sur WhatsApp aujourd’hui.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },
+      liens: [['/developpeurs/', 'Démarrer avec Claude Code'], ['/tarifs/', 'Les tarifs'], ['/solutions/saas-et-app-builders/', 'SaaS et app builders']],
+    },
+    en: {
+      titre: 'WhatsApp AI support agent, with handover · Messaging Me',
+      description: 'An AI agent that answers customer support on WhatsApp from your documentation, and hands over to your team: set up from Claude Code.',
+      resume: 'An AI agent answers your customers from your docs, and your team takes over when needed.',
+      menu: 'A support agent, and the handover',
+      icone: 'i-user',
+      h1: 'An AI agent that answers support on WhatsApp, and your team when needed.',
+      chapeau: 'One sentence in Claude Code, in your project’s folder: it creates the agent, has it read your documentation, sets the team handover and your hours, tests it and turns it on. Your customers write on WhatsApp, the agent answers day and night, and your team takes the conversation over in the Inbox.',
+      film: {
+        titre: 'The question, the answer, the handover: 38 seconds.',
+        texte: 'From the request in Claude Code to Sophie’s reply, on a real WhatsApp conversation and the console’s real Inbox.',
+        aria: 'Film: an AI support agent on WhatsApp, and the handover to the team, with Messaging Me', duree: 'PT38S', publie: '2026-10-21T21:00:00+02:00',
+      },
+      schema: { titre: 'How it flows.', legende: 'The customer writes on WhatsApp, your AI agent answers from your documentation, and when they want a human, or the agent doesn’t know, the conversation goes to your team in the Inbox.', ...schemaSupport('en') },
+      etapes: [
+        { titre: 'The agent that knows your docs', texte: 'Claude Code creates the agent with <code>create_agent</code>, then gives it each file of your docs/ folder with <code>import_document_text</code>: warranty, delivery, maintenance become its knowledge.' },
+        { titre: 'When to hand over', texte: '<code>update_agent</code> writes its objective and when it hands over, <code>set_agent_tools</code> gives it knowledge search and the handover, <code>set_transfer_mode</code> and <code>set_business_hours</code> your hours: outside them, the agent tells the customer when the team is back.' },
+        { titre: 'Tested, then turned on', texte: '<code>test_agent</code> asks it a real customer question, and the agent answers from your documentation. <code>activate_agent</code> turns it on and <code>set_default_responder</code> hands it the conversations.' },
+        { titre: 'The customer wants a human', texte: 'The agent hands over: the conversation lands in “To handle” in the console’s Inbox, with its whole history, and a team member replies from the console. The Inbox is part of the Pro plan.' },
+      ],
+      invite: {
+        titre: 'What you type in Claude Code',
+        texte: 'With the plugin installed, one sentence is enough, in your project’s folder: Claude Code reads your docs, creates the agent, sets the handover and tests it.',
+        phrase: "/messagingme:demarrer an agent that answers whatsapp support from docs/ (warranty, delivery, maintenance), and hands over to the team when it doesn't know or when the customer asks. team available 9am-6pm on weekdays",
+      },
+      extrait: { titre: 'A file of the docs the agent learns', partie: 'docEn' },
+      paie: [
+        '<strong>The Free plan is enough for the agent:</strong> <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included. <strong>The handover in the Inbox</strong>, where your team takes the conversation over, is part of the Pro plan, with a 14-day free trial.',
+        '<strong>The AI agent</strong> is paid from the prepaid AI credit, per answer; €1 is offered when your first number is connected.',
+        '<strong>Meta bills your business directly</strong> for each reply sent in the 24-hour window, beyond its monthly free tier, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the customer’s country.',
+      ],
+      faq: [
+        { question: 'What happens outside the team’s hours?', reponse: 'The agent keeps answering. When it hands over, it tells the customer when the team is back, based on your hours, and the conversation waits in “To handle”. Once 24 hours have passed since the customer’s last message, the team can no longer write freely: it needs an approved template.' },
+        { question: 'Can the agent make up an answer?', reponse: 'It searches your documentation before answering, and the sentence you type can ask it to hand over when the docs aren’t enough, as in the film.' },
+        { question: 'Does the customer know they’re talking to an AI?', reponse: 'By default, yes: the agent says so in its first message. You set the wording and how often it appears in the console, once per conversation, on every message or never: informing the customer is your call.' },
+        { question: 'Is a template approved by Meta needed?', reponse: 'No: the customer writes first, and both the agent and the team reply within the 24-hour window their message opens.' },
+      ],
+      appel: { titre: 'Put your support on WhatsApp today.', texte: 'The plugin in two commands, then the sentence above in Claude Code. No account to create.' },
       liens: [['/en/developers/', 'Get started with Claude Code'], ['/en/pricing/', 'Pricing'], ['/en/solutions/saas-and-app-builders/', 'SaaS and app builders']],
     },
   },

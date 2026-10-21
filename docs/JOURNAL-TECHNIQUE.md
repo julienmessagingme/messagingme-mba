@@ -60,6 +60,25 @@ au manuel.
   (« deux accusés du même message doivent s'appliquer dans l'ordre ») n'est plus vrai sur un rejeu ; laissé pour ne pas
   toucher un fichier de câblage partagé, à corriger au prochain lot qui le touche.
 
+## 2026-10-21 (soir) : le cas d'usage #3, le support par un agent IA avec relais, et son film sur la vraie Inbox
+
+Le film attendait que `mba` soit autorisé de nouveau sur l'espace « Messaging Me demo » (Julien l'a fait). Tout ce qu'il
+montre a été fait pour de vrai, par nos outils MCP, sur cet espace : l'agent « Vélo Rapide · Support » créé, sa doc
+importée (`garanties.md`, `livraisons.md`, `entretien.md`, 11 fiches), son profil, ses outils, le relais aux heures
+d'ouverture (lundi à vendredi, 9 h à 18 h), deux tests, l'activation ; puis il a été le répondeur de l'espace le temps
+que Julien écrive depuis son téléphone et que « Sophie » réponde dans l'Inbox. « Messaging Me Assistant » est redevenu
+le répondeur, l'agent Vélo Rapide reste (décision de Julien). Les réponses relevées sont dans
+`~/engageme-motion/engageme-cas-support/releve.md`, les messages exacts lus par `get_messages`.
+
+- **Le film se dérive du film des notifications** (`deriver.cjs`) : la fenêtre de navigateur montre la VRAIE capture de
+  l'Inbox (Julien, en français et en anglais), recadrée sur la conversation ; la réponse de Sophie y est masquée puis
+  dévoilée, et part vers le téléphone. La conversation reste la française dans les deux versions (décision de Julien).
+- **Ce que le tournage a montré du produit** (non corrigé ici) : l'Inbox affiche les messages de l'agent sans leurs
+  retours à la ligne et avec les astérisques du gras WhatsApp ; le résumé de la conversation reste celui de l'échange
+  précédent jusqu'au délai d'inactivité de l'analyse ; la mention « Vous échangez avec un assistant automatique. » est
+  réglée par agent et reste en français pour un client qui écrit en anglais ; l'historique de l'Inbox garde des
+  libellés français dans la console anglaise.
+
 ## 2026-10-21 (soir) : la page de secteur Assurance, et le film Gan Prévoyance
 
 Demandée par Julien juste après l'Éducation, avec trois maquettes PDF et la vidéo `cas-gan-prevoyance.mp4` (six

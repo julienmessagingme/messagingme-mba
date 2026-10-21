@@ -56,7 +56,9 @@ puis l'écran divisé : les cas à gauche, chacun avec la vignette de son film q
 trois étapes ; l'ancienne adresse `/cas-d-usage/` y redirige. Chaque cas a sa page, en français et
 en anglais : la prise de rendez-vous (`/cas-d-usage/prise-de-rendez-vous/`, jumelle
 `/en/use-cases/appointment-booking/`), les rappels de rendez-vous (`/cas-d-usage/rappels-rendez-vous/`, jumelle
-`/en/use-cases/appointment-reminders/`), l'accueil des utilisateurs d'un SaaS (`/cas-d-usage/accueil-activation-saas/`,
+`/en/use-cases/appointment-reminders/`), le support par un agent IA avec relais à l'équipe
+(`/cas-d-usage/support-ia-relais-humain/`, jumelle `/en/use-cases/ai-support-human-handover/`, depuis le 2026-10-21 : son film
+montre la vraie Inbox de la console, où Sophie reprend la conversation), l'accueil des utilisateurs d'un SaaS (`/cas-d-usage/accueil-activation-saas/`,
 jumelle `/en/use-cases/saas-onboarding-activation/`), la relance d'un paiement échoué
 (`/cas-d-usage/relance-paiement-echoue/`, jumelle `/en/use-cases/failed-payment-recovery/`), la bulle WhatsApp sur un site
 Lovable (`/cas-d-usage/bulle-whatsapp-site-lovable/`, jumelle `/en/use-cases/whatsapp-bubble-lovable-site/`) et les

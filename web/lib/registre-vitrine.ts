@@ -71,7 +71,7 @@ export const ENTREES: readonly EntreeVitrine[] = [
     fr: { adresse: '/cas-d-usage/support-ia-relais-humain/', titre: 'Support IA et relais à l’équipe' },
     en: { adresse: '/en/use-cases/ai-support-human-handover/', titre: 'AI support and human handover' },
     profils: ['saas', 'lovable', 'agence', 'produit'], vague: 1, recherche: 'agent ia support client whatsapp',
-    commande: 'demarrer', chemin: 'console', enLigne: false,
+    commande: 'demarrer', chemin: 'console', film: 'cas-support', enLigne: true,
   },
   {
     cle: 'bulle-lovable', nature: 'cas',

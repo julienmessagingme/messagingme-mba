@@ -90,6 +90,34 @@ const EXTRAITS_CONSOLE: Readonly<Record<string, Readonly<Record<string, ExempleC
   'bulle-lovable': {
     balise: { fichier: 'index.html', code: baliseDuScript(adresseDuScript('https://api.messagingme.app', 'h4x9k2m7q3vb')) },
   },
+  // Le support (cas #3) : le fichier de la doc que l'agent du film a vraiment appris (import_document_text, espace de
+  // démonstration, 2026-10-21), et sa version anglaise pour la page anglaise
+  support: {
+    doc: { fichier: 'docs/garanties.md', code: [
+      '# Garanties Vélo Rapide',
+      '',
+      '## Batterie',
+      'La batterie est garantie 2 ans, à compter de la date de livraison. La garantie couvre un défaut de charge ou une',
+      'perte de capacité supérieure à 30 % dans ce délai, en usage normal.',
+      '',
+      '## Faire jouer la garantie',
+      '1. Écrivez-nous avec votre numéro de commande et une photo de l\'étiquette de la batterie (sous le support).',
+      '2. Nous vous envoyons une étiquette de retour prépayée sous 24 h ouvrées.',
+      '3. Nous remplaçons la batterie sous 5 jours ouvrés après réception, sans frais pendant la garantie.',
+    ].join('\n') },
+    docEn: { fichier: 'docs/warranty.md', code: [
+      '# Vélo Rapide warranty',
+      '',
+      '## Battery',
+      'The battery is guaranteed for 2 years from the delivery date. The warranty covers a charging fault or a',
+      'capacity loss of more than 30% within that period, under normal use.',
+      '',
+      '## Making a warranty claim',
+      '1. Write to us with your order number and a photo of the battery label (under the bracket).',
+      '2. We send you a prepaid return label within 24 working hours.',
+      '3. We replace the battery within 5 working days of receiving it, free of charge under warranty.',
+    ].join('\n') },
+  },
 };
 
 /** L'extrait de code d'une page : une partie de `EXEMPLES_CAS` (compilée), ou d'`EXTRAITS_CONSOLE`, telle quelle. */

@@ -42,6 +42,7 @@ export const JUMELLES: Readonly<Record<string, string>> = {
   '/cas-d-usage/prise-de-rendez-vous/': '/en/use-cases/appointment-booking/',
   '/cas-d-usage/accueil-activation-saas/': '/en/use-cases/saas-onboarding-activation/',
   '/cas-d-usage/relance-paiement-echoue/': '/en/use-cases/failed-payment-recovery/',
+  '/cas-d-usage/support-ia-relais-humain/': '/en/use-cases/ai-support-human-handover/',
   '/cas-d-usage/bulle-whatsapp-site-lovable/': '/en/use-cases/whatsapp-bubble-lovable-site/',
   '/contact/': '/en/contact/',
   '/contact/merci/': '/en/contact/thanks/',
