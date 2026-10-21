@@ -368,6 +368,8 @@ export function pagesSecteurs(): Array<{ chemin: string; contenu: string }> {
       ? `<div class="sec-echange">${u.echange.map((m) => `<p class="sec-bulle${m.contact ? ' sec-bulle-contact' : ''}"><span class="sec-qui">${m.qui}</span>${m.texte}</p>`).join('')}</div>`
       : '';
     const u = t.usages;
+    const d = t.distinction;
+    const distinction = d ? `<p class="sec-distinction"><span class="sec-logo"><img src="${d.src}" alt="${attribut(d.alt)}" width="${d.largeur}" height="${d.hauteur}"></span><span>${d.texte}</span></p>` : '';
     const main = [
       '<main>',
       '  <section class="cadre f-une sec-une">',
@@ -379,6 +381,7 @@ export function pagesSecteurs(): Array<{ chemin: string; contenu: string }> {
       `        <a class="bouton bouton-plein" href="${contact}">${t.appel}</a>`,
       '      </div>',
       `      <p class="sec-refs"><span>${t.references.titre}</span>${t.references.logos.map(logo).join('')}</p>`,
+      ...(distinction ? [`      ${distinction}`] : []),
       '    </div>',
       `    <figure class="f-duo">${t.captures.map((c, i) => `<img src="${c.src}" alt="${echapper(c.alt)}" width="560" height="1182"${i === 0 ? ' fetchpriority="high"' : ' loading="lazy"'}>`).join('')}</figure>`,
       '  </section>',
@@ -408,8 +411,12 @@ export function pagesSecteurs(): Array<{ chemin: string; contenu: string }> {
         '      <ul class="sec-autres">',
         ...autres.map((a) => [
           `        <li${a.visuel ? ' class="sec-avec-visuel"' : ''}>`,
-          `          <div>${logo(a.logo)}<h3>${a.titre}</h3><p>${a.texte}</p>${a.resultat ? `<p class="sec-resultat">${a.resultat}</p>` : ''}</div>`,
-          ...(a.chiffres ? chiffres(a.chiffres, '          ') : []),
+          // Le texte, les chiffres et les objectifs en une colonne, le visuel dans l'autre
+          '          <div class="sec-autre">',
+          `            <div>${logo(a.logo)}<h3>${a.titre}</h3><p>${a.texte}</p>${a.resultat ? `<p class="sec-resultat">${a.resultat}</p>` : ''}</div>`,
+          ...(a.chiffres ? chiffres(a.chiffres, '            ') : []),
+          ...(a.objectifs ? [`            <div class="sec-objectifs"><p>${a.objectifs.titre}</p>`, ...chiffres(a.objectifs.liste, '              '), '            </div>'] : []),
+          '          </div>',
           ...(a.visuel ? [`          <img class="sec-visuel" src="${a.visuel.src}" alt="${attribut(a.visuel.alt)}" width="${a.visuel.largeur}" height="${a.visuel.hauteur}" loading="lazy">`] : []),
           '        </li>',
         ].join('\n')),
@@ -441,6 +448,7 @@ export function pagesSecteurs(): Array<{ chemin: string; contenu: string }> {
       ...t.partenaire.liste.map((x) => `        <li><h3>${x.titre}</h3><p>${x.texte}</p></li>`),
       '      </ul>',
       `      <p class="f-note">${t.partenaire.pilotage}</p>`,
+      ...(distinction ? [`      ${distinction}`] : []),
       '    </div>',
       '  </section>',
       '',

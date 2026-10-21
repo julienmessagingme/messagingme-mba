@@ -60,6 +60,23 @@ au manuel.
   (« deux accusés du même message doivent s'appliquer dans l'ordre ») n'est plus vrai sur un rejeu ; laissé pour ne pas
   toucher un fichier de câblage partagé, à corriger au prochain lot qui le touche.
 
+## 2026-10-21 (soir) : la page de secteur Assurance, et le film Gan Prévoyance
+
+Demandée par Julien juste après l'Éducation, avec trois maquettes PDF et la vidéo `cas-gan-prevoyance.mp4` (six
+diapositives, 24 s). La page quitte son état d'attente (`attente` retiré au registre, `TEXTES_ATTENTE.assurance` retiré,
+deux adresses de plus au plan du site). Le gabarit gagne deux champs facultatifs : `distinction` (le prix French
+Assurtech 2026, dans la une et après le pilotage) et `objectifs` d'un autre cas, titrés « Objectifs de campagne », pour
+ne jamais présenter un objectif comme un résultat (Groupama, chien-chat). Le texte, les chiffres et les objectifs d'un
+autre cas passent dans une même colonne (`.sec-autre`), sinon la grille à deux colonnes d'une carte à visuel les
+dispersait ; la page Éducation en hérite sans changer d'aspect.
+
+- **Les écrans sont des captures Android** : `~/engageme-motion/barre-ios.cjs` leur pose une barre d'état d'iPhone (heure,
+  réseau, wifi, batterie), avant le cadre d'`encadrer-iphone.cjs`.
+- **Le film** (`~/engageme-motion/engageme-secteur-assurance`) se DÉRIVE du squelette de l'Éducation par `deriver.cjs` :
+  chaque remplacement doit trouver sa cible une fois exactement, sinon la dérivation s'arrête.
+- **Les positions des images d'un PDF se lisent avec pdf.js** (`unpdf`, déjà au `package.json`) : la liste des opérations
+  donne la place de chaque image, le texte la sienne, et c'est ce qui a rattaché chaque logo et chaque visuel à son cas.
+
 ## 2026-10-21 (soir) : la page de secteur Enseignement supérieur, et le film NEOMA
 
 Demandée par Julien avec trois maquettes PDF (une par onglet des usages) et la vidéo `cas-neoma.mp4`. La page reprend le

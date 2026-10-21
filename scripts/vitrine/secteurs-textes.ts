@@ -2,16 +2,17 @@
 // Les textes des pages de secteur (rubrique Solutions), en français et en anglais : la seule chose écrite à la main de
 // ces pages, que `scripts/vitrine/cas.ts` assemble (npm run vitrine:cas). La première, Transport et mobilités, reprend la
 // maquette de Julien du 2026-10-20 (`maquette-landing-mobilite`), avec le cas Keolis. La deuxième, Enseignement
-// supérieur, reprend ses trois maquettes du 2026-10-21 (`landing-education-*`), avec les cas NEOMA, EDH et EDHEC.
+// supérieur, reprend ses trois maquettes du 2026-10-21 (`landing-education-*`), avec les cas NEOMA, EDH et EDHEC, et la
+// troisième, Assurance, les trois du même jour (`landing-assurance-*`), avec les cas Gan Prévoyance, Groupama et Mieux Assuré.
 // ⚠️ Un client n'est cité (nom, chiffres, captures) qu'avec son accord écrit (spec des cas d'usage) : Keolis et SNCF le
-// sont sur la maquette de Julien, NEOMA, EDH et EDHEC sur les siennes.
+// sont sur la maquette de Julien, NEOMA, EDH, EDHEC, Gan Prévoyance, Groupama et Mieux Assuré sur les siennes.
 
 import type { Langue } from './cas-textes';
 
 /** Le logo d'un client, sur fond blanc ; sa hauteur affichée vit dans `site.css` (`.sec-logo img[src$=...]`). */
 export interface LogoClient { readonly src: string; readonly alt: string; readonly largeur: number; readonly hauteur: number }
 
-/** Un autre cas du secteur, en carte sous le film (page Enseignement supérieur). */
+/** Un autre cas du secteur, en carte sous le film (pages Enseignement supérieur et Assurance). */
 export interface AutreCas {
   readonly logo: LogoClient;
   readonly titre: string;
@@ -19,6 +20,8 @@ export interface AutreCas {
   readonly chiffres?: ReadonlyArray<{ readonly valeur: string; readonly texte: string }>;
   /** Ce que le cas cherche à obtenir, quand il n'a pas de chiffre publié. */
   readonly resultat?: string;
+  /** Des objectifs annoncés, et non des résultats : ils portent leur titre (« Objectifs de campagne »). */
+  readonly objectifs?: { readonly titre: string; readonly liste: ReadonlyArray<{ readonly valeur: string; readonly texte: string }> };
   readonly visuel?: { readonly src: string; readonly alt: string; readonly largeur: number; readonly hauteur: number };
 }
 
@@ -35,6 +38,11 @@ export interface UsageSecteur {
 const LOGO_NEOMA: LogoClient = { src: '/img/logo-neoma.webp', alt: 'NEOMA Business School', largeur: 94, hauteur: 26 };
 const LOGO_EDH: LogoClient = { src: '/img/logo-edh.webp', alt: 'Groupe EDH', largeur: 48, hauteur: 24 };
 const LOGO_EDHEC: LogoClient = { src: '/img/logo-edhec.webp', alt: 'EDHEC Business School', largeur: 110, hauteur: 24 };
+// Ceux des assureurs, et le prix French Assurtech, tirés des maquettes Assurance
+const LOGO_GAN: LogoClient = { src: '/img/logo-gan.webp', alt: 'Gan Prévoyance', largeur: 27, hauteur: 30 };
+const LOGO_GROUPAMA: LogoClient = { src: '/img/logo-groupama.webp', alt: 'Groupama Protection Juridique', largeur: 102, hauteur: 28 };
+const LOGO_MIEUX_ASSURE: LogoClient = { src: '/img/logo-mieux-assure.webp', alt: 'Mieux Assuré', largeur: 30, hauteur: 30 };
+const FRENCH_ASSURTECH = { src: '/img/laureat-french-assurtech-2026.webp', largeur: 84, hauteur: 44 };
 
 export interface TexteSecteur {
   readonly titre: string;
@@ -50,6 +58,9 @@ export interface TexteSecteur {
   readonly appel: string;
   /** Les clients cités, en logos (leur accord écrit est requis, voir plus haut). */
   readonly references: { readonly titre: string; readonly logos: ReadonlyArray<LogoClient> };
+  /** Un prix reçu par Messaging Me, montré dans la une et rappelé avec l'accompagnement (page Assurance) ; `alt` vide quand
+   * `texte` dit déjà ce que montre l'image (sinon un lecteur d'écran l'entend deux fois). */
+  readonly distinction?: { readonly src: string; readonly alt: string; readonly largeur: number; readonly hauteur: number; readonly texte: string };
   readonly captures: ReadonlyArray<{ readonly src: string; readonly alt: string }>;
   readonly enjeux: {
     readonly surtitre: string; readonly titre: readonly [string, string];
@@ -408,6 +419,210 @@ export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteu
       },
     },
   },
+  assurance: {
+    fr: {
+      titre: 'WhatsApp pour l’assurance · Messaging Me',
+      description: 'Campagnes WhatsApp, réponses avec IA et relais vers votre réseau : rapprochez-vous de vos assurés. Les cas Gan Prévoyance, Groupama et Mieux Assuré.',
+      menu: 'Joindre ses assurés sur WhatsApp',
+      icone: 'i-file-text',
+      surtitre: 'Assurance et IA conversationnelle',
+      h1: ['Rapprochez-vous de vos assurés.', 'Accélérez vos opportunités.'],
+      chapeau: 'Mieux joindre vos clients, obtenir une réponse et faire avancer l’échange&nbsp;: faites de WhatsApp un lien direct avec vos assurés et un levier pour votre réseau commercial.',
+      sous: 'Nous associons conseil stratégique, plateforme technologique et accompagnement pour connecter vos conversations à vos équipes et à vos outils.',
+      appel: 'Parlons de vos parcours clients',
+      references: { titre: 'Nos références assurance', logos: [LOGO_GAN, LOGO_GROUPAMA, LOGO_MIEUX_ASSURE] },
+      distinction: { ...FRENCH_ASSURTECH, alt: '', texte: 'Messaging Me, lauréat French Assurtech 2026' },
+      captures: [
+        { src: '/img/assurance-gan-prevoyance.webp', alt: 'Un client répond à une campagne Gan Prévoyance sur WhatsApp, puis le Service Client prend le relais' },
+        { src: '/img/assurance-mieux-assure.webp', alt: 'Un assuré demande une facture justificative au compte WhatsApp de Mieux Assuré, qui lui répond' },
+      ],
+      enjeux: {
+        surtitre: 'Votre premier enjeu&nbsp;: la joignabilité',
+        titre: ['Avant de convaincre,', 'encore faut-il réussir à se parler.'],
+        liste: [
+          { num: '01 / Établir le contact', titre: ['Des appels sans réponse.', 'Des emails sans retour.'], texte: 'Vos équipes multiplient les tentatives pour joindre les clients et ouvrir un échange sur leurs besoins.' },
+          { num: '02 / Ouvrir l’échange', titre: ['Une offre reçue.', 'Une réponse à obtenir.'], texte: 'Le client doit pouvoir poser une question et reprendre la conversation au moment qui lui convient.' },
+          { num: '03 / Passer le relais', titre: ['Un intérêt exprimé.', 'Le bon conseiller à mobiliser.'], texte: 'La demande doit rejoindre le service compétent ou le réseau commercial, avec le contexte déjà recueilli.' },
+        ],
+        encart: { titre: ['WhatsApp.', 'Un lien que l’assuré peut reprendre à son rythme.'], texte: 'Engagez une conversation qui reste accessible, apportez une première réponse et préparez le relais vers vos équipes ou votre réseau commercial.' },
+      },
+      terrain: {
+        surtitre: 'Notre expérience dans l’assurance',
+        titre: ['De la campagne commerciale', 'à la relation assurés.'],
+        film: { nom: 'cas-assurance', aria: 'Film : le cas Gan Prévoyance, des campagnes WhatsApp pour mieux joindre les assurés avec Messaging Me', duree: 'PT38S', publie: '2026-10-21T20:00:00+02:00' },
+        cas: { logo: LOGO_GAN, titre: 'Mieux joindre les clients pour alimenter le réseau.', texte: 'Des campagnes WhatsApp en PER et prévoyance individuelle, ciblées selon le profil et l’équipement. Le réseau commercial prend le relais pour conseiller et convertir.' },
+        chiffres: [
+          { valeur: '30&nbsp;% d’engagement', texte: 'sur les campagnes' },
+          { valeur: 'Plus de 85&nbsp;% de lecture', texte: 'des messages de campagne' },
+        ],
+        autres: [
+          {
+            logo: LOGO_GROUPAMA, titre: 'Du premier contact au devis, garder le fil.',
+            texte: 'Une campagne Click-to-WhatsApp en assurance chien-chat&nbsp;: devis et réponses dans la conversation, puis relais vers un collaborateur pour finaliser la souscription.',
+            chiffres: [{ valeur: 'Un devis conversationnel', texte: 'dans WhatsApp' }],
+            objectifs: { titre: 'Objectifs de campagne', liste: [{ valeur: 'Coût d’acquisition moyen visé', texte: 'divisé par 2' }, { valeur: '40&nbsp;%', texte: 'd’engagement attendu' }] },
+            visuel: { src: '/img/assurance-groupama-publicite.webp', alt: 'Une publicité Groupama pour l’assurance chien-chat, avec le bouton « Faire mon devis »', largeur: 300, hauteur: 294 },
+          },
+          {
+            logo: LOGO_MIEUX_ASSURE, titre: 'Automatiser les demandes courantes. Faciliter le relais.',
+            texte: 'Une IA alimentée par les FAQ auto et habitation pour traiter les questions courantes, recueillir les informations utiles et orienter les autres demandes vers un humain.',
+            chiffres: [{ valeur: '40&nbsp;% des sollicitations', texte: 'de service client automatisées' }],
+            visuel: { src: '/img/assurance-mieux-assure.webp', alt: 'La conversation WhatsApp d’un assuré avec Mieux Assuré', largeur: 486, hauteur: 1034 },
+          },
+        ],
+        source: 'Source&nbsp;: cas clients Messaging Me. Chien-chat&nbsp;: objectifs de campagne.',
+      },
+      usages: {
+        surtitre: 'Les usages de votre organisation',
+        titre: ['À chaque étape de la relation,', 'une conversation qui fait avancer.'],
+        liste: [
+          {
+            titre: 'Engager', accroche: 'Un message ciblé. Un échange qui commence.',
+            texte: 'Joignez vos clients sur WhatsApp avec des offres ciblées. Ouvrez la conversation et identifiez leur intérêt.',
+            echange: [
+              { qui: 'Votre assureur', texte: 'Bonjour, souhaitez-vous faire le point sur votre protection et les solutions de prévoyance avec votre conseiller&nbsp;?' },
+              { qui: 'Client', texte: 'Oui, je souhaite en parler. Pouvez-vous me proposer un rendez-vous&nbsp;?', contact: true },
+            ],
+          },
+          {
+            titre: 'Convertir', accroche: 'Un besoin qualifié. Le réseau prend le relais.',
+            texte: 'Facilitez le devis ou la prise de rendez-vous. Transmettez la conversation à vos équipes ou à votre réseau commercial pour poursuivre l’échange.',
+            echange: [
+              { qui: 'Client', texte: 'Je souhaite échanger avec un conseiller avant de finaliser mon devis.', contact: true },
+              { qui: 'Votre assureur', texte: 'Je transmets votre demande et les éléments de notre échange à votre conseiller pour préparer votre rendez-vous.' },
+            ],
+          },
+          {
+            titre: 'Accompagner', accroche: 'Une réponse utile. Un relais quand il le faut.',
+            texte: 'Traitez les questions fréquentes avec l’IA. Orientez les demandes vers le service compétent ou le réseau commercial selon le besoin.',
+            echange: [
+              { qui: 'Client', texte: 'Bonjour, où puis-je retrouver mon attestation d’assurance&nbsp;?', contact: true },
+              { qui: 'Votre assureur', texte: 'Vous pouvez la retrouver dans votre espace client, dans la rubrique Documents. Si vous ne la trouvez pas, je peux transmettre votre demande à notre équipe.' },
+            ],
+          },
+        ],
+        appel: 'Construisons votre parcours client',
+        note: 'Exemples illustratifs de parcours à déployer.',
+        encart: { titre: ['Chaque conversation', 'prépare la suite.'], texte: 'Les besoins exprimés et les freins identifiés enrichissent votre connaissance client, vos campagnes et les échanges de vos conseillers grâce aux données conversationnelles.' },
+      },
+      partenaire: {
+        surtitre: 'Votre partenaire conversationnel',
+        titre: ['Du premier contact', 'au relais dans votre réseau.'],
+        liste: [
+          { titre: 'Conseil stratégique', texte: 'Définir les moments de contact, les parcours et les règles d’orientation vers vos services ou votre réseau commercial.' },
+          { titre: 'Plateforme et intégrations', texte: 'Connecter WhatsApp à vos outils pour transmettre les demandes et le contexte des conversations au bon interlocuteur.' },
+          { titre: 'Accompagnement et données conversationnelles', texte: 'Analyser les réponses, suivre la prise en charge et améliorer les scénarios avec vos équipes.' },
+        ],
+        pilotage: 'À piloter ensemble&nbsp;: réponses obtenues, demandes qualifiées, rendez-vous, souscriptions et sollicitations traitées, selon les données disponibles.',
+      },
+      projet: {
+        titre: 'Et si votre prochaine campagne vous rapprochait de vos assurés&nbsp;?',
+        texte: 'Mieux joindre vos clients, alimenter votre réseau commercial ou automatiser les demandes courantes&nbsp;: définissons le premier parcours à activer, du premier échange au relais humain.',
+        bouton: 'Parlons de vos parcours clients',
+      },
+    },
+    en: {
+      titre: 'WhatsApp for insurance · Messaging Me',
+      description: 'WhatsApp campaigns, AI answers and handover to your network: get closer to your policyholders. The Gan Prévoyance, Groupama and Mieux Assuré cases.',
+      menu: 'Reaching policyholders on WhatsApp',
+      icone: 'i-file-text',
+      surtitre: 'Insurance and conversational AI',
+      h1: ['Get closer to your policyholders.', 'Speed up your opportunities.'],
+      chapeau: 'Reach your customers better, get an answer and move the conversation forward: make WhatsApp a direct link with your policyholders and a lever for your sales network.',
+      sous: 'We combine strategy, a technology platform and support to connect your conversations to your teams and your tools.',
+      appel: 'Let’s talk about your customer journeys',
+      references: { titre: 'Our insurance references', logos: [LOGO_GAN, LOGO_GROUPAMA, LOGO_MIEUX_ASSURE] },
+      distinction: { ...FRENCH_ASSURTECH, alt: '', texte: 'Messaging Me, French Assurtech 2026 winner' },
+      captures: [
+        { src: '/img/assurance-gan-prevoyance.webp', alt: 'A customer answers a Gan Prévoyance campaign on WhatsApp, then Customer Service takes over' },
+        { src: '/img/assurance-mieux-assure.webp', alt: 'A policyholder asks Mieux Assuré’s WhatsApp account for a supporting invoice, and gets an answer' },
+      ],
+      enjeux: {
+        surtitre: 'Your first challenge: reachability',
+        titre: ['Before you can convince,', 'you have to be able to talk.'],
+        liste: [
+          { num: '01 / Making contact', titre: ['Unanswered calls.', 'Emails left unread.'], texte: 'Your teams make attempt after attempt to reach customers and open a conversation about their needs.' },
+          { num: '02 / Opening the conversation', titre: ['An offer received.', 'An answer to get.'], texte: 'Customers need to be able to ask a question and pick up the conversation when it suits them.' },
+          { num: '03 / Handing over', titre: ['Interest expressed.', 'The right advisor to involve.'], texte: 'The request has to reach the right department or the sales network, with the context already gathered.' },
+        ],
+        encart: { titre: ['WhatsApp.', 'A link policyholders can pick up at their own pace.'], texte: 'Start a conversation that stays accessible, give a first answer and prepare the handover to your teams or your sales network.' },
+      },
+      terrain: {
+        surtitre: 'Our experience in insurance',
+        titre: ['From the sales campaign', 'to the policyholder relationship.'],
+        film: { nom: 'cas-assurance', aria: 'Film: the Gan Prévoyance case, WhatsApp campaigns to reach policyholders better with Messaging Me', duree: 'PT38S', publie: '2026-10-21T20:00:00+02:00' },
+        cas: { logo: LOGO_GAN, titre: 'Reach customers better to feed the network.', texte: 'WhatsApp campaigns on retirement savings and individual protection, targeted by profile and existing cover. The sales network takes over to advise and convert.' },
+        chiffres: [
+          { valeur: '30% engagement', texte: 'on the campaigns' },
+          { valeur: 'More than 85% read rate', texte: 'on campaign messages' },
+        ],
+        autres: [
+          {
+            logo: LOGO_GROUPAMA, titre: 'From first contact to quote, keep the thread.',
+            texte: 'A Click-to-WhatsApp campaign for pet insurance (cats and dogs): quotes and answers in the conversation, then handover to an employee to finalize the subscription.',
+            chiffres: [{ valeur: 'A conversational quote', texte: 'in WhatsApp' }],
+            objectifs: { titre: 'Campaign goals', liste: [{ valeur: 'Target average acquisition cost', texte: 'divided by 2' }, { valeur: '40%', texte: 'expected engagement' }] },
+            visuel: { src: '/img/assurance-groupama-publicite.webp', alt: 'A Groupama pet insurance ad, with the “Get my quote” button', largeur: 300, hauteur: 294 },
+          },
+          {
+            logo: LOGO_MIEUX_ASSURE, titre: 'Automate everyday requests. Make handover easy.',
+            texte: 'An AI fed with the car and home FAQs to handle everyday questions, gather the useful information and route the other requests to a person.',
+            chiffres: [{ valeur: '40% of requests', texte: 'to customer service automated' }],
+            visuel: { src: '/img/assurance-mieux-assure.webp', alt: 'A policyholder’s WhatsApp conversation with Mieux Assuré', largeur: 486, hauteur: 1034 },
+          },
+        ],
+        source: 'Source: Messaging Me client cases. Pet insurance: campaign goals.',
+      },
+      usages: {
+        surtitre: 'Your organization’s use cases',
+        titre: ['At every step of the relationship,', 'a conversation that moves things forward.'],
+        liste: [
+          {
+            titre: 'Engage', accroche: 'A targeted message. A conversation that begins.',
+            texte: 'Reach your customers on WhatsApp with targeted offers. Open the conversation and identify their interest.',
+            echange: [
+              { qui: 'Your insurer', texte: 'Hello, would you like to review your cover and protection options with your advisor?' },
+              { qui: 'Customer', texte: 'Yes, I’d like to talk about it. Could you offer me an appointment?', contact: true },
+            ],
+          },
+          {
+            titre: 'Convert', accroche: 'A qualified need. The network takes over.',
+            texte: 'Make quotes and appointment booking easy. Pass the conversation to your teams or your sales network to continue the exchange.',
+            echange: [
+              { qui: 'Customer', texte: 'I’d like to talk with an advisor before finalizing my quote.', contact: true },
+              { qui: 'Your insurer', texte: 'I’m passing your request and the details of our conversation to your advisor to prepare your appointment.' },
+            ],
+          },
+          {
+            titre: 'Support', accroche: 'A useful answer. A handover when needed.',
+            texte: 'Handle frequent questions with AI. Route requests to the right department or the sales network as needed.',
+            echange: [
+              { qui: 'Customer', texte: 'Hello, where can I find my insurance certificate?', contact: true },
+              { qui: 'Your insurer', texte: 'You’ll find it in your customer area, under Documents. If you can’t find it, I can pass your request to our team.' },
+            ],
+          },
+        ],
+        appel: 'Let’s build your customer journey',
+        note: 'Illustrative examples of journeys to deploy.',
+        encart: { titre: ['Every conversation', 'prepares what comes next.'], texte: 'The needs expressed and the obstacles identified enrich your customer knowledge, your campaigns and your advisors’ conversations through conversational data.' },
+      },
+      partenaire: {
+        surtitre: 'Your conversational partner',
+        titre: ['From first contact', 'to handover in your network.'],
+        liste: [
+          { titre: 'Strategy', texte: 'Define the moments of contact, the journeys and the routing rules to your departments or your sales network.' },
+          { titre: 'Platform and integrations', texte: 'Connect WhatsApp to your tools to pass requests and conversation context to the right contact.' },
+          { titre: 'Support and conversational data', texte: 'Analyze answers, track handling and improve the scenarios with your teams.' },
+        ],
+        pilotage: 'What we steer together: answers received, qualified requests, appointments, policies taken out and requests handled, based on the data available.',
+      },
+      projet: {
+        titre: 'What if your next campaign brought you closer to your policyholders?',
+        texte: 'Reach your customers better, feed your sales network or automate everyday requests: let’s define the first journey to activate, from the first conversation to the human handover.',
+        bouton: 'Let’s talk about your customer journeys',
+      },
+    },
+  },
 };
 
 /**
@@ -420,22 +635,6 @@ export interface TexteAttente {
 }
 
 export const TEXTES_ATTENTE: Readonly<Record<string, Record<Langue, TexteAttente>>> = {
-  assurance: {
-    fr: {
-      titre: 'WhatsApp pour l’assurance · Messaging Me',
-      description: 'WhatsApp pour l’assurance : nos cas d’usage arrivent bientôt sur cette page. En attendant, parlons de votre projet avec nos équipes.',
-      menu: 'Bientôt en ligne', icone: 'i-file-text', h1: 'Page en préparation.',
-      chapeau: 'Nos cas d’usage WhatsApp pour l’assurance arrivent ici. En attendant, parlons du vôtre&nbsp;: une démo sur votre cas, avec vos assurés et vos canaux.',
-      appel: 'Parlons de votre projet', voir: 'Voir le cas Transport',
-    },
-    en: {
-      titre: 'WhatsApp for insurance · Messaging Me',
-      description: 'WhatsApp for insurance: our use cases are coming to this page soon. Meanwhile, let’s talk about your project with our team.',
-      menu: 'Coming soon', icone: 'i-file-text', h1: 'Coming soon.',
-      chapeau: 'Our WhatsApp use cases for insurance are coming here. Meanwhile, let’s talk about yours: a demo on your case, with your policyholders and your channels.',
-      appel: 'Let’s talk about your project', voir: 'See the Transport case',
-    },
-  },
   tourisme: {
     fr: {
       titre: 'WhatsApp pour le voyage et le tourisme · Messaging Me',

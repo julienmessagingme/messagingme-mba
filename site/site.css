@@ -1008,6 +1008,12 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .sec-logo img[src$="logo-neoma.webp"]{height:26px}
 .sec-logo img[src$="logo-edh.webp"]{height:24px}
 .sec-logo img[src$="logo-edhec.webp"]{height:24px}
+.sec-logo img[src$="logo-gan.webp"],.sec-logo img[src$="logo-mieux-assure.webp"]{height:30px}
+.sec-logo img[src$="logo-groupama.webp"]{height:28px}
+/* Un prix reçu (page Assurance) : sous les références de la une, et après le pilotage */
+.sec-distinction{display:flex;align-items:center;gap:14px;margin:14px 0 0;color:var(--muted);font-size:.85rem}
+.sec-distinction .sec-logo{height:58px;padding:0 10px}
+.sec-logo img[src$="laureat-french-assurtech-2026.webp"]{height:44px}
 .sec-cas h3{margin:18px 0 8px;font-size:1.2rem;line-height:1.3}
 .sec-cas > p{margin:0 0 22px;color:var(--muted)}
 .sec-autres{list-style:none;margin:40px 0 0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
@@ -1016,6 +1022,8 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .sec-autres h3{margin:16px 0 8px;font-size:1.1rem;line-height:1.3}
 .sec-autres p{margin:0;color:var(--muted)}
 .sec-autres .sec-resultat{margin-top:14px;color:var(--action-ink);font-weight:700}
+.sec-autre{display:grid;gap:22px;align-content:start}
+.sec-autres .sec-objectifs > p{margin:0 0 12px;color:var(--action-ink);font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
 .sec-visuel{display:block;width:100%;height:auto;border-radius:12px}
 .sec-cartes .sec-accroche{margin:0 0 8px;color:var(--ink);font-weight:700}
 .sec-echange{display:grid;gap:8px;margin:18px 0 0;padding:14px;border-radius:12px;background:var(--wa-fond)}

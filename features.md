@@ -85,10 +85,16 @@ plus de 200 participants au webinar promu, 100 % des messages entrants répartis
 accompagner, faire avancer) avec chacun un exemple de conversation entre l'école et le candidat, l'accompagnement et
 l'appel « Parlons de vos recrutements ». Les écrans de NEOMA et d'EDH sont en iPhone 3D, les trois écoles en logos.
 
-✅ **Assurance et Voyage et tourisme sont au menu Solutions, en pages d'attente** (2026-10-20) :
-`/solutions/assurance/` et `/solutions/voyage-et-tourisme/` (jumelles `/en/solutions/insurance/` et
-`/en/solutions/travel-and-tourism/`) disent que la page arrive et mènent au formulaire de contact ; en `noindex`, hors du
-plan du site et de `llms.txt`, jusqu'à leur contenu (`TEXTES_ATTENTE`, `attente` au registre).
+✅ **La troisième page de secteur, Assurance** (2026-10-21, trois maquettes de Julien) : `app.messagingme.fr/solutions/assurance/`,
+jumelle `/en/solutions/insurance/`. La joignabilité comme premier enjeu, trois cas d'assureurs : Gan Prévoyance (film
+`cas-assurance`, 30 % d'engagement sur les campagnes, plus de 85 % de lecture), Groupama (un devis conversationnel en
+assurance chien-chat, ses objectifs de campagne affichés comme tels) et Mieux Assuré (40 % des sollicitations du service
+client automatisées), trois usages (engager, convertir, accompagner) avec leur exemple de conversation, le prix French
+Assurtech 2026 dans la une et avec l'accompagnement, et l'appel « Parlons de vos parcours clients ».
+
+✅ **Voyage et tourisme est au menu Solutions, en page d'attente** (2026-10-20) : `/solutions/voyage-et-tourisme/` (jumelle
+`/en/solutions/travel-and-tourism/`) dit que la page arrive et mène au formulaire de contact ; en `noindex`, hors du plan
+du site et de `llms.txt`, jusqu'à son contenu (`TEXTES_ATTENTE`, `attente` au registre).
 
 ✅ **Chaque page de la vitrine qui a plusieurs sections a sa bande claire** (2026-10-20), comme l'accueil et les pages
 Fonctionnalités : une section entre deux biais, sur fond blanc (`.bande-claire`). Les étapes des pages de cas, « comment ça

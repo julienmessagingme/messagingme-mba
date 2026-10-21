@@ -115,10 +115,11 @@ export const ENTREES: readonly EntreeVitrine[] = [
     profils: [], vague: 1, recherche: 'whatsapp enseignement supérieur', chemin: 'console', enLigne: true,
   },
   {
+    // Les trois maquettes de Julien du 2026-10-21, avec les cas Gan Prévoyance, Groupama et Mieux Assuré.
     cle: 'assurance', nature: 'secteur',
     fr: { adresse: '/solutions/assurance/', titre: 'Assurance' },
     en: { adresse: '/en/solutions/insurance/', titre: 'Insurance' },
-    profils: [], vague: 1, recherche: 'whatsapp assurance', chemin: 'console', enLigne: true, attente: true,
+    profils: [], vague: 1, recherche: 'whatsapp assurance', chemin: 'console', enLigne: true,
   },
   {
     cle: 'tourisme', nature: 'secteur',
