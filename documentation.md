@@ -2248,6 +2248,46 @@ Le secret qui signe les appels d'une org est chiffré DANS le store (`ENCRYPTION
 sélectionne pas. L'interrupteur de l'espace, lui, vit dans le coeur (`tenant_settings.salesforce_actif`), parce
 que `salesforce.orgs` n'a pas de ligne avant la connexion.
 
+### Les tables `shopify_*` (le connecteur Shopify)
+
+Le connecteur Shopify (plan `docs/superpowers/plans/2026-10-21-connecteur-shopify.md`, migration 0246) range ses
+données dans `public`, et non dans un schéma à part : la purge d'une fiche nomme ses lignes, et la suppression d'un
+espace passe par la cascade vers `tenants`. Le marchand crée l'app dans SON organisation Shopify (la skill `shopify`
+du plugin pilote la CLI) et nous transmet son identifiant et son secret ; la connexion est vérifiée chez Shopify
+(`client_credentials`, `src/shopify/connexion.ts`) avant que le secret ne soit gardé, chiffré par `ENCRYPTION_KEY`
+dans `PgShopifyStore`. Le jeton rendu n'est ni gardé ni renouvelé : les webhooks portent tout ce qu'un message utilise.
+
+- 🔴 **une adresse pour toutes les boutiques**, `POST /shopify/webhooks` (classe `signature-service`) : le domaine de
+  `X-Shopify-Shop-Domain` est contrôlé par sa forme AVANT la base, le secret de CETTE boutique vérifie le HMAC du corps
+  brut, et rien du corps n'est lu avant. Le secret passe par un cache d'une minute, absence comprise ; aucun plafond de
+  débit avant la vérification (un tiers ferait refuser les vrais webhooks d'un marchand) ;
+- 🔴 **les messages passent par l'envoi public** (`lancerEnvoiPublic`, troisième adaptateur, `src/shopify/envoi.ts`),
+  JAMAIS par le moteur de scénario : une automation ordinaire ne reprend pas le fil (`automatisme_ordinaire`), donc
+  une confirmation ne partirait pas quand l'agent de Meta ou un opérateur tient la conversation, et quand elle part,
+  elle clôt le parcours et la session d'agent en cours. La clé d'idempotence est la clé métier
+  (`shopify:<boutique>:orders/paid:<id>`), le compteur ne décompte pas le plafond de l'API publique, les valeurs partent
+  en variables du destinataire (jamais écrites sur la fiche), et `sansCampagneVide` évite une ligne de Campagnes à zéro
+  destinataire ;
+- **le traitement se fait DANS la requête**, et Shopify tient lieu de file : l'envoi public n'existe que dans l'API, un
+  503 fait réessayer Shopify, et chaque événement se réserve (`shopify_evenements`, bail de 2 minutes) ; aucun ordre
+  n'est supposé entre sujets (mesuré : `orders/paid` arrive avant `orders/create`) ;
+- **une boutique `coupee` garde son secret** : plus aucun message, mais les trois sujets RGPD se vérifient encore
+  (`shop/redact` arrive environ 48 h après la désinstallation), et tout autre webhook signé reçoit 200 et s'ignore. La
+  ligne part par `shop/redact` ou avec l'espace ;
+- **`shopify_commandes` relie commande, client Shopify et fiche**, pour que `customers/redact` retrouve la fiche née
+  du téléphone de livraison ; `purgeMany` efface ses lignes et les paniers du numéro, par requête explicite (la purge
+  anonymise la fiche, la cascade sur `contacts` ne joue pas). L'effacement demandé par Shopify passe par
+  `effacerContacts` HORS limite du jour.
+
+- 🔴 **l'affirmation du consentement vaut pour UNE boutique et UN branchement** : toute connexion l'efface, et
+  `customers_consented: false` la retire. Gardée, une boutique de production branchée après une boutique d'essai ferait
+  écrire consentants des clients pour qui personne n'a rien affirmé ;
+- **le secret qui vérifie doit être celui de la boutique relue** : le cache d'une minute ne laisse pas passer un
+  webhook de l'ancienne app après une reconnexion, et `shop/redact` n'efface jamais une boutique `connectee`.
+
+`tenant_id = $1` sur chaque requête du store, sauf TROIS lectures transverses nommées dans le fichier :
+`boutiqueParDomaine` et `couperParDomaine` (le domaine DONNE l'espace) et `purgerEvenements`.
+
 ---
 
 ## 6. Asynchrone, concurrence, idempotence

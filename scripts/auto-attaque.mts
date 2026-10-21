@@ -67,6 +67,7 @@ import type { HubspotEventRouteDeps } from '../src/http/hubspot-events';
 import type { StripeWebhookRouteDeps } from '../src/http/credit-stripe';
 import type { ResendWebhookRouteDeps } from '../src/http/webhook-resend';
 import type { Receiver360Deps } from '../src/webhooks/receiver-360dialog';
+import type { ShopifyWebhooksRouteDeps } from '../src/http/shopify-webhooks';
 import type { OtpPontRouteDeps } from '../src/http/otp-pont';
 import type { ContactVitrineDeps } from '../src/http/contact-vitrine';
 import type { CspRapportsDeps } from '../src/http/csp-rapports';
@@ -183,6 +184,8 @@ const ADRESSE_SONDE_OPS = 'sonde-ops@exemple.test';
 const SECRET_META = randomBytes(32).toString('hex');
 const JETON_VERIFICATION_META = randomBytes(16).toString('hex');
 const SECRET_SERVICE = randomBytes(32).toString('hex');
+/** La boutique Shopify inventée de la sonde 12 : la seule que la fausse autorité connaisse. */
+const BOUTIQUE_SONDE = 'sonde-auto-attaque.myshopify.com';
 const SECRET_STRIPE = randomBytes(32).toString('hex');
 
 /**
@@ -308,6 +311,17 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
   // Les webhooks 360dialog : un VRAI secret, sans quoi la comparaison du Basic n'est jamais exercée. Un Basic faux ou
   // absent doit tomber avant la file (sonde 12).
   receiver360: { queue: new FakeQueue(), secret: SECRET_SERVICE } satisfies Receiver360Deps,
+  // Les webhooks Shopify : la boutique inventée de la sonde a un VRAI secret, sans quoi la comparaison du HMAC n'est
+  // jamais exercée ; toute autre boutique est inconnue. Une signature fausse ou absente doit tomber avant le traitement
+  // (sonde 12, qui envoie les en-têtes de Shopify).
+  shopifyWebhooks: {
+    boutiques: {
+      boutiqueParDomaine: async (d) => (d === BOUTIQUE_SONDE
+        ? { tenantId: randomUUID(), etat: 'connectee', secret: SECRET_SERVICE, pays: 'FR', consentementAffirme: false }
+        : null),
+    },
+    traiter: async () => { throw new Error('auto-attaque : le traitement n’est jamais atteint'); },
+  } satisfies ShopifyWebhooksRouteDeps,
   // Le webhook de Resend (lot 7) : un VRAI secret (au format Svix), et un journal qui ne note rien. Une signature
   // fausse ou absente doit tomber avant lui (sonde 12).
   resendWebhook: {
@@ -900,7 +914,12 @@ async function main(): Promise<void> {
       verifier('12. signature de service absente', `${methode} ${r.chemin}`, sans.statut === 401, '401', String(sans.statut));
       const fausse = await envoyer({
         methode, chemin, corps,
-        entetes: { 'x-mm-service-signature': `v1=${Date.now()}.${randomBytes(8).toString('hex')}.${randomBytes(32).toString('hex')}` },
+        // Les en-têtes de Shopify aussi : sans un domaine connu, sa route refuserait avant de comparer quoi que ce soit.
+        entetes: {
+          'x-mm-service-signature': `v1=${Date.now()}.${randomBytes(8).toString('hex')}.${randomBytes(32).toString('hex')}`,
+          'x-shopify-shop-domain': BOUTIQUE_SONDE,
+          'x-shopify-hmac-sha256': randomBytes(32).toString('base64'),
+        },
       });
       verifier('12. signature de service fausse', `${methode} ${r.chemin}`, fausse.statut === 401, '401', String(fausse.statut));
     }

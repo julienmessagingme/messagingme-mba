@@ -81,6 +81,10 @@ describe.skipIf(!url)('la purge d’un espace supprimé (RC8)', () => {
     await pool.query(`insert into salesforce.orgs (tenant_id, org_id, my_domain) values ($1, $2, 'https://itest.my.salesforce.com')`, [id, ORG()]);
     await pool.query(`insert into agent_credits (tenant_id, solde_micro_eur) values ($1, 1500000)`, [id]);
     await pool.query(`insert into mba_liste (tenant_id, wa_id, phone_number_id, entree_id) values ($1, '33600000001', $2, 'e1')`, [id, pn]);
+    // Le connecteur Shopify (0246) : la cascade vers `tenants` (et vers `contacts` pour les commandes) doit tout emporter.
+    await pool.query(`insert into shopify_boutiques (tenant_id, domaine, client_id, secret_chiffre) values ($1, $2, 'itest', 'v1.a.b.c')`, [id, `itest-${randomUUID()}.myshopify.com`]);
+    await pool.query(`insert into shopify_commandes (tenant_id, commande_id, contact_id) values ($1, '1001', $2)`, [id, contact]);
+    await pool.query(`insert into shopify_paniers (tenant_id, jeton, telephone) values ($1, $2, '+33600000001')`, [id, randomUUID()]);
     return { id, pn, waba };
   }
 
@@ -198,7 +202,7 @@ describe.skipIf(!url)('la purge d’un espace supprimé (RC8)', () => {
       fait: true,
       comptes: { utilisateurs: 3, contacts: 1, conversations: 1, messages: 2, scenarios: 1, identitesEffacees: 1, identitesGardees: 2 },
     });
-    for (const table of ['users', 'contacts', 'conversations', 'workflows', 'channelsme_links', 'channelsme_posts', 'agent_tools', 'connector_requests', 'agent_tool_sources', 'agents', 'waba', 'phone_numbers', 'stripe_clients', 'abonnements_numero', 'agent_credits', 'mba_liste']) {
+    for (const table of ['users', 'contacts', 'conversations', 'workflows', 'channelsme_links', 'channelsme_posts', 'agent_tools', 'connector_requests', 'agent_tool_sources', 'agents', 'waba', 'phone_numbers', 'stripe_clients', 'abonnements_numero', 'agent_credits', 'mba_liste', 'shopify_boutiques', 'shopify_commandes', 'shopify_paniers']) {
       expect(await existe(`select 1 from ${table} where tenant_id = $1`, [A.id]), table).toBe(false);
     }
     expect(await existe('select 1 from tenants where id = $1', [A.id])).toBe(false);
@@ -228,7 +232,7 @@ describe.skipIf(!url)('la purge d’un espace supprimé (RC8)', () => {
   });
 
   it('🔴 l’espace VOISIN, peuplé des mêmes tables, est intact', async () => {
-    for (const table of ['users', 'contacts', 'conversations', 'workflows', 'channelsme_links', 'channelsme_posts', 'agent_tools', 'connector_requests', 'agent_tool_sources', 'agents', 'waba', 'phone_numbers', 'agent_credits', 'mba_liste']) {
+    for (const table of ['users', 'contacts', 'conversations', 'workflows', 'channelsme_links', 'channelsme_posts', 'agent_tools', 'connector_requests', 'agent_tool_sources', 'agents', 'waba', 'phone_numbers', 'agent_credits', 'mba_liste', 'shopify_boutiques', 'shopify_commandes', 'shopify_paniers']) {
       expect(await existe(`select 1 from ${table} where tenant_id = $1`, [B.id]), table).toBe(true);
     }
     expect(await existe('select 1 from salesforce.orgs where tenant_id = $1', [B.id])).toBe(true);

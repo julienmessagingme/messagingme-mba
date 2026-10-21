@@ -16,6 +16,7 @@ import { handleWebhookJob } from './webhooks/handler';
 import { creerApresLAgent } from './mba/lien-de-test';
 import { PgEventStore } from './webhooks/store';
 import { PgCampaignStore, PgQualityProvider } from './campaign/store.pg';
+import { PgShopifyStore } from './shopify/store.pg';
 import { campaignRunJob, type CapacitesMoteur } from './campaign/run-job';
 import { PgCampaignRunLock } from './campaign/run-lock';
 import { runCampaignScheduleSweep } from './campaign/schedule-sweep';
@@ -1317,6 +1318,17 @@ export async function demarrerWorker(): Promise<void> {
     return n;
   };
   taches.programmer('idempotence-api', 60 * 60 * 1000, idempotencySweep, { immediat: true, enEchec: echecDeBalayage('idempotency-sweep', 'sweeper:idempotency') });
+
+  // Les événements Shopify (0246) : le dédoublonnage et les chiffres de la carte portent sur 30 jours, et Shopify ne
+  // réessaie pas un webhook au-delà de 48 h.
+  const evenementsShopify = new PgShopifyStore(pool, config.ENCRYPTION_KEY);
+  const shopifySweep = async (): Promise<number> => {
+    const n = await evenementsShopify.purgerEvenements(30);
+    // eslint-disable-next-line no-console
+    if (n > 0) console.log(`shopify-sweep: ${n} événement(s) Shopify purgé(s)`);
+    return n;
+  };
+  taches.programmer('shopify-evenements', 60 * 60 * 1000, shopifySweep, { immediat: true, enEchec: echecDeBalayage('shopify-sweep', 'sweeper:shopify') });
 
   // RGPD : le dernier payload d'un webhook entrant est du JSON tiers, potentiellement personnel. Il ne sert
   // qu'au mapping dans l'écran et au débogage ; après une semaine sans appel, il est effacé.

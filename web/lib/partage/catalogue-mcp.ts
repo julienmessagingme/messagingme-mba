@@ -76,6 +76,11 @@ export const CATALOGUE_MCP = {
   list_fields: { scope: 'mcp:read' },
   create_field: { scope: 'mcp:write', exigePersonne: true },
   set_contact_field: { scope: 'mcp:write', exigePersonne: true },
+  /** Le connecteur Shopify (2026-10-21) : les quatre exigent une personne nommée, la lecture comprise. */
+  connect_shopify: { scope: 'mcp:write', exigePersonne: true },
+  set_shopify_message: { scope: 'mcp:write', exigePersonne: true },
+  get_shopify_state: { scope: 'mcp:read', exigePersonne: true },
+  disconnect_shopify: { scope: 'mcp:write', exigePersonne: true },
 } as const satisfies Record<string, { scope: ScopeMcp; exigePersonne?: true }>;
 
 export type NomOutilMcp = keyof typeof CATALOGUE_MCP;

@@ -82,7 +82,29 @@ Cinq rouges, tous vérifiés dans le code, et ce qu'ils ont changé :
   la carte sert le Pro et l'Entreprise.
 - **Les quatre outils exigent une personne nommée** (OAuth, `exigePersonne`, posé par outil) : l'affirmation du
   consentement est signée et journalisée (qui, quand), et une clé `mcp:write` donnée à un agent ne peut ni brancher ni
-  débrancher la boutique. Retirer l'affirmation n'efface pas les consentements déjà écrits : l'outil le dit.
+  débrancher la boutique. `customers_consented: false` la retire (les fiches déjà consentantes le restent, l'outil le
+  dit), et TOUTE connexion l'efface : elle vaut pour une boutique et un branchement (rouge de la relecture du lot 1).
+
+## Ce que le code a changé au plan (lot 1, en codant)
+
+- **Le traitement se fait DANS la requête, pas dans un job du worker** : l'envoi public n'existe que dans l'API (ses
+  dépendances se construisent dans `src/index.ts`), les recopier dans le worker serait une liste tenue à la main.
+  Shopify tient lieu de file : un 503 le fait réessayer, et chaque événement se réserve (`shopify_evenements`, bail de
+  2 minutes). Pas de file `shopify-evenement`.
+- **Les tables sont dans `public`** (`shopify_boutiques`, `_messages`, `_evenements`, `_commandes`, `_paniers`), pas
+  dans un schéma à part : le schéma `salesforce` interdit à tout autre fichier de le nommer, et la purge d'une fiche
+  nomme les lignes Shopify.
+- **L'effacement demandé par Shopify passe HORS limite du jour** (une obligation légale ne bute pas sur une limite
+  commerciale) au lieu d'être réenfilé au lendemain ; il retrouve la fiche par les commandes, le client Shopify et le
+  téléphone (la fiche n'a pas d'e-mail).
+- **L'e-mail d'une demande d'accès ne cite pas le client** (règle du catalogue des e-mails) : il renvoie à la demande,
+  dans l'administration de la boutique.
+- **Un envoi où personne ne part ne laisse aucune ligne dans Campagnes** (option `sansCampagneVide` de l'envoi public).
+- **`set_shopify_message` n'expose que `order_paid` et `order_fulfilled`** ; le panier et son délai arrivent au lot 2.
+- **La carte est une section de Paramètres** (`web/components/ReglageShopify.tsx`), comme Salesforce et HubSpot, sans page
+  ni entrée de navigation à part ; elle ne s'affiche pas tant que l'API n'a pas sa route. Sa fiche d'aide :
+  `docs/aide/fiches/brancher-ma-boutique-shopify.md`.
+- **La purge des événements à 30 jours** est une minuterie du worker (`shopify-evenements`).
 
 ## Méthode de livraison
 

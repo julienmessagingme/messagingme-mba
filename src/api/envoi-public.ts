@@ -354,6 +354,20 @@ export const COMPTEUR_ENVOI_REFUSE: CompteurEnvoiRefuse = { type: 'compteur_envo
 export const compteurEnvoiRefuse = (resultat: ResultatEnvoiPublic): resultat is CompteurEnvoiRefuse =>
   'type' in resultat && resultat.type === 'compteur_envoi_refuse';
 
+/**
+ * Ce qu'un adaptateur peut régler sans toucher aux gardes (connecteur Shopify, 2026-10-21). Absentes, le comportement de
+ * `POST /v1/sends` et de `send_template_to_contact` est inchangé.
+ */
+export interface OptionsEnvoiPublic {
+  /** Le nom de la ligne dans Campagnes, à la place de `[API] <cible>` (coupé à 120 caractères). */
+  nom?: string;
+  /**
+   * Personne d'envoyable (STOP, sans consentement, limite de contacts) : aucune campagne n'est créée, la clé est libérée
+   * et le rapport rendu en 200, `sendId` vide. Sans elle, l'envoi vide est scellé : une campagne à zéro destinataire.
+   */
+  sansCampagneVide?: true;
+}
+
 /** La même enveloppe que `refuser` (`{ error, code }`), rendue au lieu d'être envoyée. */
 const repondre = (statut: number, code: CodeApi, message: string): ReponseEnvoi => ({ statut, corps: { error: message, code } });
 
@@ -370,6 +384,7 @@ export async function lancerEnvoiPublic(
   brut: unknown,
   cleEnTete: string | string[] | undefined,
   compter: (unites: number) => Promise<boolean>,
+  options: OptionsEnvoiPublic = {},
 ): Promise<ResultatEnvoiPublic> {
 
   const lu = schemaCorps.safeParse(brut);
@@ -514,6 +529,10 @@ export async function lancerEnvoiPublic(
       skipped: ecarts.slice(0, MAX_SKIPPED_REPORT),
       skippedTotal: ecarts.length,
     };
+    if (options.sansCampagneVide && recipients.length === 0) {
+      await deps.idempotence.release(tenantId, idem.cle, jeton);
+      return { statut: 200, corps: report };
+    }
     /**
      * 🔴 Juste avant le geste irréversible : la clé est-elle encore à nous ? Un traitement qui a dépassé
      * `DUREE_CLE_EN_COURS_MAX_MS` a pu la voir abandonnée et reprise par un autre appel, qui enverra : on
@@ -533,7 +552,8 @@ export async function lancerEnvoiPublic(
         // Le préfixe est `PREFIXE_ENVOI_API`, que le suivi relit (`nomDuMessageRcs`). Le nom d'un envoi RCS n'est pas
         // coupé : le suivi y relit le nom du message (jusqu'à 120 caractères). Les autres cibles gardent leur coupe.
         tenantId, phoneNumberId: numero.phoneNumberId, category: cible.category,
-        name: cible.rcs ? `${PREFIXE_ENVOI_API}${cible.label}` : `${PREFIXE_ENVOI_API}${cible.label}`.slice(0, 120),
+        name: options.nom !== undefined ? options.nom.slice(0, 120)
+          : cible.rcs ? `${PREFIXE_ENVOI_API}${cible.label}` : `${PREFIXE_ENVOI_API}${cible.label}`.slice(0, 120),
         templateName: cible.templateName, templateLanguage: cible.templateLanguage, paramMapping: params,
         ...(cible.workflowId ? { workflowId: cible.workflowId } : {}),
         ...(cible.startNodeId ? { startNodeId: cible.startNodeId } : {}),

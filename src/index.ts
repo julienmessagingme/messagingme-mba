@@ -77,6 +77,13 @@ import { PgSalesforceStore } from './salesforce/store.pg';
 import { creerClientSalesforce } from './salesforce/client';
 import { connecter as connecterSalesforce, deconnecter as deconnecterSalesforce } from './salesforce/connexion';
 import type { SalesforceRouteDeps } from './http/salesforce';
+import type { ShopifyRouteDeps } from './http/shopify';
+import type { ShopifyWebhooksRouteDeps } from './http/shopify-webhooks';
+import { PgShopifyStore } from './shopify/store.pg';
+import { verifierBoutique } from './shopify/connexion';
+import type { DepsGestionShopify } from './shopify/gestion';
+import { traiterWebhookShopify, type DepsTraitementShopify } from './shopify/traitement';
+import { effacerContacts } from './crm/effacement';
 import { signalDeLAccuse, signalDuClic } from './signaux/emetteur';
 import { plafondLePlusBas } from './campaign/pacing';
 import { fetchHubspotLists, importHubspotList, disconnectHubspot, fetchHubspotDealStages, lireHubspotPortal } from './crm/hubspot-service';
@@ -262,7 +269,7 @@ async function main(): Promise<void> {
     agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
     numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, connexionPub, publicites,
     clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, offres, quotaModeles,
-    emailsProduit, envoyeurProduit, paiementRefuse,
+    emailsProduit, envoyeurProduit, paiementRefuse, emetteurEmails,
   } = construireSocle({ pool, queue, config });
 
   /**
@@ -1210,6 +1217,45 @@ async function main(): Promise<void> {
    * purge du mini-CRM et `DELETE /v1/contacts/{id}` (lot 13, domaine 5), qui comptent donc dans la même limite.
    */
   const quotaSuppressions = new QuotaSuppressions({ offres, compteur: compteurDebit });
+
+  /**
+   * Le connecteur Shopify (plan 2026-10-21, lot 1) : UNE gestion pour la carte de la console et les outils MCP, et le
+   * traitement des webhooks DANS l'API, parce que l'envoi public n'existe qu'ici (`depsEnvois`) : le recopier dans le
+   * worker serait une liste tenue à la main. Shopify réessaie ce qui n'a pas reçu de 2xx, il tient lieu de file.
+   */
+  const shopifyStore = new PgShopifyStore(pool, config.ENCRYPTION_KEY);
+  const gestionShopify: DepsGestionShopify = {
+    store: shopifyStore,
+    verifier: (domaine, clientId, secret) => verifierBoutique(domaine, clientId, secret),
+    // La MÊME lecture du modèle chez Meta que l'envoi qui le fera partir.
+    lireModele: (tenant, nom, langue) => depsEnvois.lireModele(tenant, nom, langue),
+    chiffrementPret: (() => {
+      try {
+        encryptSecret('sonde', config.ENCRYPTION_KEY);
+        return true;
+      } catch {
+        return false;
+      }
+    })(),
+  };
+  const traitementShopify: DepsTraitementShopify = {
+    store: shopifyStore,
+    envoyer: (tenant, corps, compter, options) => lancerEnvoiPublic(depsEnvois, tenant, corps, undefined, compter, options),
+    ficheParTelephone: async (tenant, e164) => (await contactStore.findByPhone(tenant, e164))?.id ?? null,
+    /**
+     * L'effacement de la purge du mini-CRM (même retrait chez l'agent de Meta, même suivi en fond), HORS limite du jour :
+     * une demande d'effacement transmise par Shopify est une obligation légale, pas un geste qu'une offre limite.
+     */
+    effacerFiches: async (tenant, ids) => {
+      const e = await effacerContacts(
+        { contacts: contactStore, suppressionsDuJour: { consommer: async () => ({ ok: true }) }, listeDeLAgent, enVol: travauxEnVol },
+        tenant, ids,
+      );
+      if (e.ok) e.retirerChezMeta();
+    },
+    emails: emetteurEmails,
+    pageOffre: `${config.APP_URL.trim().replace(/\/+$/, '')}/offre`,
+  };
 
   /**
    * Les campagnes : la route de la console ET les outils de campagne de l'assistant (`prepare_campaign`,
@@ -2379,6 +2425,13 @@ async function main(): Promise<void> {
         audit: auditSink,
       } satisfies SalesforceRouteDeps;
     })() } : {}),
+    // Paramètres > Intégrations > Shopify : la carte en lecture et « Couper », par la gestion des outils MCP.
+    shopify: { gestion: gestionShopify, audit: auditSink } satisfies ShopifyRouteDeps,
+    // Les webhooks des boutiques : la boutique se reconnaît à son domaine, son secret vérifie la signature.
+    shopifyWebhooks: {
+      boutiques: shopifyStore,
+      traiter: (b, sujet, corps) => traiterWebhookShopify(traitementShopify, b, sujet, corps),
+    } satisfies ShopifyWebhooksRouteDeps,
     rcsChannel: {
       audit: auditSink,
       agents: workflowRuntime.rcsStack.agents,
@@ -2934,6 +2987,8 @@ async function main(): Promise<void> {
         cles: { cles: apiKeyStore, limiteCles: limiteClesDeLOffre, audit: auditSink },
         // Les modèles (lot 13, domaine 3) : la MÊME création que `POST /v1/templates`, la MÊME liste que le catalogue.
         modeles: { ...creationModeles, lister: listerModeles },
+        // Le connecteur Shopify (2026-10-21) : la MÊME gestion que la carte de la console.
+        shopify: gestionShopify,
         // L'envoi d'un modèle à un contact (livraison B) : le MÊME cœur que `POST /v1/sends`, sans clé d'en-tête.
         envoyerModele: (tenant, corps, compter) => lancerEnvoiPublic(depsEnvois, tenant, corps, undefined, compter),
         // Le statut d'un message (lot 13) : la MÊME lecture que `GET /v1/messages/{id}`.

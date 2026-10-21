@@ -15,6 +15,7 @@ import { OUTILS_MODELES } from '../src/mcp/outils-modeles';
 import { OUTILS_OFFRE } from '../src/mcp/outils-offre';
 import { OUTILS_CAMPAGNES } from '../src/mcp/outils-campagnes';
 import { OUTILS_CHAMPS } from '../src/mcp/outils-champs';
+import { OUTILS_SHOPIFY } from '../src/mcp/outils-shopify';
 import type { DepsAgentMcp } from '../src/mcp/outils-agent';
 import { MESSAGE_OPERATIONS_LOURDES } from '../src/auth/plafond-partage';
 import type { AgentComplet, AgentResume, PatchAgent } from '../src/agent/agent-store';
@@ -41,7 +42,7 @@ import { cleApiDeTest } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { bornesDesChamps, bornesZod, champsDe, muettes, type Borne } from './aide/bornes-zod';
 import { jamaisDesabonne } from './consentement';
-import { journalMuet, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpChampsInertes, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { journalMuet, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpChampsInertes, mcpShopifyInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { SANS_MCP } from './outils-mcp';
 import { AUCUN_GESTE, GESTE_MUET } from './gestes';
 import { offresToutOuvert } from './gardes';
@@ -396,6 +397,7 @@ function monter(o: Options & { envoyerModele?: DepsMcp['envoyerModele']; usage?:
     ...mcpOffreInerte,
     ...mcpCampagnesInertes,
     ...mcpChampsInertes,
+    ...mcpShopifyInerte,
     estDesabonne: jamaisDesabonne,
     inbox: {
       ...mcpInerte,
@@ -458,7 +460,7 @@ async function lister(server: Serveur, bearer: string): Promise<string[]> {
  * leur fichier, `tests/mcp-numero.test.ts`, `tests/mcp-evenements.test.ts`, `tests/mcp-serveur.test.ts`,
  * `tests/mcp-offre.test.ts` et `tests/mcp-tag-contacts.test.ts` (et ses voisins).
  */
-const OUTILS_DU_NUMERO = new Set([...OUTILS_NUMERO, ...OUTILS_EVENEMENTS, ...OUTILS_MODELES, ...OUTILS_OFFRE, ...OUTILS_CAMPAGNES, ...OUTILS_CHAMPS].map((o) => o.nom));
+const OUTILS_DU_NUMERO = new Set([...OUTILS_NUMERO, ...OUTILS_EVENEMENTS, ...OUTILS_MODELES, ...OUTILS_OFFRE, ...OUTILS_CAMPAGNES, ...OUTILS_CHAMPS, ...OUTILS_SHOPIFY].map((o) => o.nom));
 const EXIGENT_PERSONNE = OUTILS.filter((o) => o.exigePersonne === true && !OUTILS_DU_NUMERO.has(o.nom)).map((o) => o.nom);
 
 /** Des arguments valides pour chaque outil de l'agent : ce qu'un appel qui passerait la garde ferait. */

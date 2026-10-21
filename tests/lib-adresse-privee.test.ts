@@ -308,6 +308,8 @@ describe('inventaire : chaque appel vers une URL client passe par le fetch véri
     ['src/evenements/envoi.ts', 'un webhook sortant (lot 12)', true],
     ['src/api/entete-par-url.ts', 'l’en-tête d’un modèle par son adresse (lot 13)', true],
     ['src/oauth/fiche-client.ts', 'la fiche d’identité d’un client OAuth (lot 15)', true],
+    // Le domaine est borné à `*.myshopify.com` avant l'appel, mais il vient du marchand (2026-10-21).
+    ['src/shopify/connexion.ts', 'la vérification d’une boutique Shopify (domaine donné par le marchand)', true],
   ] as const;
 
   for (const [fichier, quoi, sansFetchNu] of CHEMINS) {

@@ -2352,6 +2352,32 @@ scénario, comment importer des contacts.
 - Réservé aux **admins** (côté serveur, pas seulement dans l'écran) : une adresse de webhook est un pouvoir
   d'écriture sur le mini-CRM, et un pouvoir d'envoi quand un scénario y est attaché.
 
+## Boutique Shopify : les messages de commande sur WhatsApp (depuis Claude Code, 2026-10-21)
+
+Le marchand branche sa boutique Shopify depuis Claude Code, sans taper une commande : la skill `shopify` du plugin crée
+l'app dans SON organisation Shopify (aucune validation de Shopify n'est nécessaire), le marchand clique une fois
+« Installer », et la boutique est branchée. Ouvert à toutes les offres, Free comprise.
+
+- **Deux messages** : à la commande payée (« commande confirmée ») et à l'expédition (avec le transporteur et le lien
+  de suivi). Chacun est un modèle WhatsApp de service (utility) approuvé par Meta ; les données de la commande (prénom,
+  numéro, montant payé, lien de la commande, suivi) remplissent ses variables. Un message par événement : le rebrancher
+  le remplace.
+- **Les règles des envois s'appliquent** : STOP, consentement, modèles du mois, limite de contacts de l'offre (la
+  fiche d'un nouveau client compte). Chaque message fait une ligne dans Campagnes (« Shopify · commande payée ·
+  #1002 ») ; un client écarté (STOP, limite) n'en fait aucune. Le message part même quand l'agent ou un opérateur tient
+  la conversation, et ne la coupe pas.
+- **Le consentement** : Shopify ne recueille aucun consentement WhatsApp. Le marchand peut affirmer que ses clients
+  ont accepté ; leurs fiches deviennent alors consentantes partout (campagnes comprises), sous sa responsabilité, et
+  l'affirmation est tracée (qui, quand).
+- **Limite de contacts atteinte** : les nouveaux clients ne reçoivent plus leurs messages ; la carte et l'outil d'état
+  les comptent, et un e-mail part aux admins au premier refus du mois.
+- **Paramètres > Intégrations > Shopify** (Pro et Entreprise) : la boutique, ses messages, le dernier événement, les
+  chiffres des 30 jours, et « Couper » (plus aucun message ; l'app se désinstalle depuis la boutique). En Free, sans
+  console, tout passe par Claude Code (`get_shopify_state`, `disconnect_shopify`).
+- **RGPD** : une demande d'effacement d'un client transmise par Shopify efface sa fiche ; une demande d'accès prévient
+  les admins ; 48 h après la désinstallation, Shopify fait effacer le branchement (les fiches restent au mini-CRM).
+- La relance de panier abandonné arrive dans un second temps.
+
 ## API publique `/v1` (intégrateurs externes)
 
 - ✅ **Clés d'API** (2026-07-17) : un admin crée des clés depuis la console (nom + droits). La clé n'est

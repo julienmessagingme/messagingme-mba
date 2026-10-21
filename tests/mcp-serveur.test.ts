@@ -14,7 +14,7 @@ import * as catalogue from '../src/mcp/outils';
 import { API_SCOPES } from '../web/lib/partage/droits-api';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE, NumeroSuspenduError, MESSAGE_NUMERO_SUSPENDU } from '../src/meta/numero-delie';
-import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpChampsInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpChampsInertes, mcpShopifyInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { creerPoseEtiquette, LONGUEUR_MAX_ETIQUETTE } from '../src/crm/poser-etiquette';
 import { DROITS } from '../src/offres/offres';
 import { MetaTemplateClient, type FetchLike, type TemplateSummary } from '../src/meta/templates';
@@ -128,6 +128,7 @@ function app(
     ...mcpOffreInerte,
     ...mcpCampagnesInertes,
     ...mcpChampsInertes,
+    ...mcpShopifyInerte,
     ...reste,
   };
   const keys = new FakeApiKeys()
@@ -793,6 +794,11 @@ describe('serveur MCP : cohérence du catalogue', () => {
       // Les champs (2026-10-20) : un champ de plus à chaque appel ; poser la même valeur ne change rien.
       create_field: [true, false, false],
       set_contact_field: [true, true, false],
+      // Le connecteur Shopify (2026-10-21) : brancher et rebrancher donnent le même état ; la connexion appelle Shopify, et
+      // un message branché part chez des clients ; couper ne touche personne hors de l'espace.
+      connect_shopify: [true, true, true],
+      set_shopify_message: [true, true, true],
+      disconnect_shopify: [true, true, false],
       // Offres v2 : une clé de plus à chaque appel, rien chez un tiers ; le Pro ouvre une session chez Stripe à chaque appel.
       create_api_key: [true, false, false],
       subscribe_pro: [true, false, true],

@@ -15,8 +15,10 @@ import {
   lancerEnvoiPublic,
   type CreationEnvoiPublic,
   type DepsEnvoiPublic,
+  type OptionsEnvoiPublic,
   type ResultatEnvoiPublic,
 } from '../src/api/envoi-public';
+import { envoyerShopify, type EnvoiShopify } from '../src/shopify/envoi';
 import type { BuiltRecipient, ContactEnvoi } from '../src/campaign/build';
 import type { EnvoiApiBrut } from '../src/campaign/store.pg';
 import type { ClesFiche, ModeCreation } from '../src/api/fiche';
@@ -803,6 +805,47 @@ describe('POST /v1/sends : le consentement par destinataire', () => {
   });
 });
 
+/**
+ * LE CONNECTEUR SHOPIFY PASSE PAR LE VRAI CYCLE (relecture du lot 1, 2026-10-21) : le corps que construit son adaptateur
+ * (`envoyerShopify`) est donné à `lancerEnvoiPublic` lui-même, pas à un faux. Un corps refusé par `schemaCorps`, ou un
+ * consentement qui n'atteindrait pas le tri, ne se verraient sinon qu'en production.
+ */
+describe('le connecteur Shopify, par le vrai cycle d’envoi public', () => {
+  const envoiShopify = (over: Partial<EnvoiShopify> = {}): EnvoiShopify => ({
+    tenantId: 't1', cle: 'shopify:b.myshopify.com:orders/paid:1002', nomLigne: 'Shopify · commande payée · #1002',
+    modele: 'confirmation', langue: 'fr', variables: [], valeurs: {}, telephone: PHONE(1), sourceConsentement: null, ...over,
+  });
+  const branche = (sends: DepsEnvoiPublic) => (t: string, corps: unknown, compter: (n: number) => Promise<boolean>, options: OptionsEnvoiPublic) =>
+    lancerEnvoiPublic(sends, t, corps, undefined, compter, options);
+
+  it('🔴 un MARKETING vers une fiche sans consentement : écarté, aucune ligne de campagne', async () => {
+    const { sends, cap } = app({}, { modele: { statut: 'approuve', categorie: 'marketing', variables: 0 }, fiches: new Map([[C1, fiche(C1, 1, { optInStatus: 'unknown' })]]) });
+    expect(await envoyerShopify(branche(sends), envoiShopify())).toBe('sans_consentement');
+    expect(cap.sends).toHaveLength(0);
+  });
+
+  it('🔴 le consentement affirmé du marchand est écrit avec sa source, et passe le tri du même envoi', async () => {
+    const { sends, cap } = app({}, { modele: { statut: 'approuve', categorie: 'marketing', variables: 0 }, fiches: new Map([[C1, fiche(C1, 1, { optInStatus: 'unknown' })]]) });
+    expect(await envoyerShopify(branche(sends), envoiShopify({ sourceConsentement: 'shopify:b.myshopify.com' }))).toBe('envoye');
+    expect(cap.consentements).toMatchObject([{ contactId: C1, consent: 'opted_in', source: 'shopify:b.myshopify.com' }]);
+    expect(cap.sends[0]!.input.name).toBe('Shopify · commande payée · #1002');
+  });
+
+  it('un utility avec ses variables : le corps passe la forme, et les valeurs partent avec le destinataire', async () => {
+    const { sends, cap } = app({}, { modele: { statut: 'approuve', categorie: 'utility', variables: 2 } });
+    const issue = await envoyerShopify(branche(sends), envoiShopify({
+      variables: ['first_name', 'order_number'], valeurs: { first_name: 'Julien', order_number: '#1002' },
+    }));
+    expect(issue).toBe('envoye');
+    expect(cap.sends[0]!.recipients.map((r) => r.toE164)).toEqual([PHONE(1)]);
+    // Rejoué avec la même clé : le rapport est relu, rien ne repart.
+    expect(await envoyerShopify(branche(sends), envoiShopify({
+      variables: ['first_name', 'order_number'], valeurs: { first_name: 'Julien', order_number: '#1002' },
+    }))).toBe('envoye');
+    expect(cap.sends).toHaveLength(1);
+  });
+});
+
 describe('POST /v1/sends : idempotence', () => {
   const CORPS = { ...TPL, recipients: [{ contactId: C1 }] };
 
@@ -883,6 +926,28 @@ describe('POST /v1/sends : idempotence', () => {
     expect(idem.has('k-refus')).toBe(false);
     expect(cap.sends).toHaveLength(0);
     expect(statutDe(await lancerEnvoiPublic(sends, 't1', CORPS, 'k-refus', async () => true))).toBe(201);
+  });
+
+  /**
+   * Les options d'un adaptateur (connecteur Shopify, 2026-10-21) : le nom de la ligne, et aucune campagne vide. Les deux
+   * autres appelants n'en passent aucune : un envoi vide reste scellé, et la ligne garde `[API] `.
+   */
+  it('🔴 sans campagne vide : personne d’envoyable, rien n’est créé, la clé est libérée, le rapport dit pourquoi', async () => {
+    const { sends, idem, cap } = app({}, { fiches: new Map([[C1, fiche(C1, 1, { optInStatus: 'opted_out' })]]) });
+    const r = await lancerEnvoiPublic(sends, 't1', CORPS, 'k-vide', async () => true, { sansCampagneVide: true });
+    expect(r).toMatchObject({ statut: 200, corps: { sendId: '', recipientCount: 0, skipped: [{ index: 0, reason: 'opted_out' }] } });
+    expect(cap.sends).toHaveLength(0);
+    expect(idem.has('k-vide')).toBe(false);
+    // Sans l'option, le même envoi vide est scellé : une campagne à zéro destinataire, comme avant.
+    expect(statutDe(await lancerEnvoiPublic(sends, 't1', CORPS, 'k-vide-2', async () => true))).toBe(201);
+    expect(cap.sends).toHaveLength(1);
+  });
+
+  it('le nom donné par l’adaptateur remplace `[API] <cible>` ; sans lui, la ligne garde le préfixe', async () => {
+    const { sends, cap } = app();
+    await lancerEnvoiPublic(sends, 't1', CORPS, 'k-nom', async () => true, { nom: 'Shopify · commande payée · #1002' });
+    await lancerEnvoiPublic(sends, 't1', CORPS, 'k-sans-nom', async () => true);
+    expect(cap.sends.map((s) => s.input.name)).toEqual(['Shopify · commande payée · #1002', '[API] confirmation']);
   });
 
   it('🔴 un compteur qui LÈVE (l’outil MCP) libère aussi la clé : la même demande repart ensuite', async () => {

@@ -13,6 +13,8 @@ import { registerRcsChannel } from './http/rcs-channel';
 import { registerIntegrationBatch } from './http/integration-batch';
 import { registerEvenements, type EvenementsRouteDeps } from './http/evenements';
 import { registerSalesforce } from './http/salesforce';
+import { registerShopify, type ShopifyRouteDeps } from './http/shopify';
+import { registerShopifyWebhooks, type ShopifyWebhooksRouteDeps } from './http/shopify-webhooks';
 import { registerRcsCallback } from './http/rcs-callback';
 import { registerRcsMedia } from './http/rcs-media';
 import { registerTemplates } from './http/templates';
@@ -264,6 +266,10 @@ export interface ServerDeps {
    * lecture comprise. Monté seulement quand la clé d'app Salesforce est posée sur l'instance.
    */
   salesforce?: SalesforceRouteDeps;
+  /** La carte Shopify de la console (lecture et « Couper ») ; le réglage passe par les outils MCP. */
+  shopify?: ShopifyRouteDeps;
+  /** Les webhooks de toutes les boutiques Shopify branchées, signés avec le secret de chaque boutique. */
+  shopifyWebhooks?: ShopifyWebhooksRouteDeps;
   /** Rappels smsmode du canal RCS (livraison + réponses). Publique : le code d'URL porte le workspace. */
   rcsCallback?: RcsCallbackRouteDeps;
   /** Visuels des messages RCS : téléversement admin, et service public du fichier (`/m/<code>.jpg`). */
@@ -766,6 +772,8 @@ export function modulesDeRoutes(
     // Une LIMITE de l'offre, pas une fonction : la Base y a droit (une adresse), d'où aucun `toutes`.
     entree('evenements', 'tenant', deps.evenements, (app, d, g) => registerEvenements(app, d, g.admin, g.limiteCouteuse)),
     entree('salesforce', 'tenant', deps.salesforce, (app, d, g) => registerSalesforce(app, d, g.admin, g.limiteCouteuse), toutes('crm')),
+    // Shopify : ouvert à toutes les offres (décision de Julien), donc sans `toutes` ; la Free, sans console, passe par le MCP.
+    entree('shopify', 'tenant', deps.shopify, (app, d, g) => registerShopify(app, d, g.admin)),
     // Visuels RCS : monté avec `auth` alors qu'il porte aussi une route publique `/m/<code>.<ext>`. Les gardes
     // sont posées par route (`preHandler`), donc la lecture reste ouverte : l'opérateur télécom télécharge
     // l'image sans session.
@@ -779,6 +787,8 @@ export function modulesDeRoutes(
     entree('hubspotEvents', 'signature-service', deps.hubspotEvents, (app, d) => registerHubspotEvents(app, d)),
     // Le webhook de Stripe : autorité = la signature du corps brut, vérifiée dans le module avant toute lecture.
     entree('stripeWebhook', 'signature-service', deps.stripeWebhook, (app, d) => registerStripeWebhook(app, d)),
+    // Les webhooks Shopify : autorité = le HMAC du corps brut, avec le secret de la boutique de `X-Shopify-Shop-Domain`.
+    entree('shopifyWebhooks', 'signature-service', deps.shopifyWebhooks, (app, d) => registerShopifyWebhooks(app, d)),
     // Les webhooks des numéros portés par 360dialog : autorité = le Basic du numéro, vérifié avant toute lecture.
     entree('receiver360', 'signature-service', deps.receiver360, (app, d) => registerReceiver360(app, d)),
     // Ce que deviennent les e-mails du produit (lot 7), signé par Resend (Svix).

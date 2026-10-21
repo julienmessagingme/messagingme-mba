@@ -10,6 +10,7 @@ import { BlockedContacts } from '@/components/BlockedContacts';
 import { ReglageIntegrationBatch } from '@/components/ReglageIntegrationBatch';
 import { ReglageHubspot } from '@/components/ReglageHubspot';
 import { ReglageSalesforce } from '@/components/ReglageSalesforce';
+import { ReglageShopify } from '@/components/ReglageShopify';
 import { Toggle } from '@/components/Toggle';
 import { Bouton } from '@/components/Bouton';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
@@ -317,6 +318,8 @@ function Parametres({ tenantId }: { tenantId: string }) {
               l'Accueil, numéro ou pas. L'Accueil renvoie ici (`#integration-hubspot`) quand il est éteint. */}
           <ReglageHubspot tenantId={tenantId} />
       <ReglageSalesforce tenantId={tenantId} />
+          {/* ...et la boutique Shopify (2026-10-21) : une carte en lecture et « Couper », le réglage passe par Claude Code. */}
+          <ReglageShopify tenantId={tenantId} />
 
           {/* Contacts bloqués : SEULE porte de sortie d'un blocage. Un contact bloqué n'apparaît nulle part
               ailleurs, donc sans cet écran il serait introuvable. La section se masque quand la liste est vide. */}

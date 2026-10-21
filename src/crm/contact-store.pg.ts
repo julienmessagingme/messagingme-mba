@@ -1615,6 +1615,13 @@ export class PgContactStore implements ContactStore {
       // ne recevra plus) l'événement. Un envoi encore en cours devient périmé, son job ne trouvera plus rien.
       await client.query(`delete from envois_evenements where tenant_id = $1 and contact_id = any($2::uuid[])`, [tenantId, ids]);
 
+      // Shopify (migration 0246) : le lien commande, client Shopify et fiche, et les paniers en attente de son numéro.
+      // 🔴 Par requête explicite : la purge anonymise la fiche sans la supprimer, la cascade sur `contacts` ne joue pas.
+      await client.query(`delete from shopify_commandes where tenant_id = $1 and contact_id = any($2::uuid[])`, [tenantId, ids]);
+      if (e164.length > 0) {
+        await client.query(`delete from shopify_paniers where tenant_id = $1 and telephone = any($2::text[])`, [tenantId, e164]);
+      }
+
       // La ligne de campagne reste (statut, horodatage, livraison) ; son numéro et ses variables partent :
       // `resolved_params` porte les valeurs injectées (typiquement le prénom), `variables` ce que l'intégrateur a
       // passé pour ce destinataire. `null` et pas '{}' : « n'en porte pas ».

@@ -69,6 +69,7 @@ const LIEN_NUMERO: Variable = { description: 'La page « Connecter WhatsApp » d
 const DATE_LIBERATION: Variable = { description: 'Le jour où le numéro sera libéré', forme: 'date', exemple: '2026-11-02T10:00:00.000Z' };
 const LIEN_OFFRE: Variable = { description: 'La page Offre de la console', forme: 'lien', exemple: 'https://console.messagingme.app/offre' };
 const LIMITE: Variable = { description: 'La limite de l’offre de l’espace', forme: 'texte', exemple: '1000' };
+const BOUTIQUE_SHOPIFY: Variable = { description: 'Le domaine de la boutique Shopify branchée', forme: 'texte', exemple: 'ma-boutique.myshopify.com' };
 /** La limite de contacts du Pro, lue dans la grille (`DROITS.pro`), que l'e-mail de la Free cite (spec offres v2, livraison 5). */
 const LIMITE_PRO: Variable = { description: 'La limite de contacts de l’offre Pro', forme: 'texte', exemple: '5000' };
 const LIEN_CONSOLE: Variable = { description: 'L’accueil de la console', forme: 'lien', exemple: 'https://console.messagingme.app/accueil' };
@@ -599,6 +600,54 @@ export const CATALOGUE = [
           + 'AI credit left: {{credit}}.\n\nThe Pro plan adds detailed statistics, the team Inbox and scenarios, with no '
           + 'template or contact limit.',
         bouton: { libelle: 'See plans', lien: '{{lien_offre}}' },
+      },
+    },
+  },
+  {
+    cle: 'shopify_limite_contacts',
+    categorie: 'service',
+    nom: 'Shopify : messages non partis, limite de contacts',
+    quand: 'Un message de commande Shopify ne part pas parce que la limite de contacts de l’offre est atteinte. Une fois par mois civil.',
+    variables: { boutique: BOUTIQUE_SHOPIFY, lien_offre: LIEN_OFFRE },
+    textes: {
+      fr: {
+        sujet: 'Des clients de votre boutique Shopify ne reçoivent plus leurs messages',
+        corps: 'Bonjour,\n\nL’espace {{espace}} a atteint la limite de contacts de son offre : les messages de commande de la '
+          + 'boutique {{boutique}} ne partent plus vers les nouveaux clients. Les clients déjà dans vos contacts les reçoivent '
+          + 'toujours.\n\nPassez à l’offre supérieure pour que chaque client reçoive à nouveau sa confirmation.',
+        bouton: { libelle: 'Voir les offres', lien: '{{lien_offre}}' },
+      },
+      en: {
+        sujet: 'Customers of your Shopify store no longer receive their messages',
+        corps: 'Hello,\n\nThe {{espace}} workspace has reached its plan’s contact limit: order messages from the {{boutique}} '
+          + 'store no longer go out to new customers. Customers already in your contacts still receive them.\n\nUpgrade your '
+          + 'plan so every customer gets their confirmation again.',
+        bouton: { libelle: 'See plans', lien: '{{lien_offre}}' },
+      },
+    },
+  },
+  {
+    cle: 'shopify_demande_donnees',
+    categorie: 'service',
+    nom: 'Shopify : un client demande ses données',
+    quand: 'Shopify transmet la demande d’un client de la boutique qui veut connaître ses données (customers/data_request).',
+    variables: { boutique: BOUTIQUE_SHOPIFY },
+    textes: {
+      fr: {
+        sujet: 'Un client de votre boutique Shopify demande ses données',
+        corps: 'Bonjour,\n\nShopify nous transmet la demande d’un client de la boutique {{boutique}} qui veut connaître les '
+          + 'données que vous détenez sur lui. La demande, avec le nom du client, est dans l’administration de votre '
+          + 'boutique.\n\nDans l’espace {{espace}}, sa fiche se retrouve par son numéro dans les contacts de la console, ou '
+          + 'depuis Claude Code avec l’outil get_contact. C’est à vous de lui répondre.',
+        bouton: null,
+      },
+      en: {
+        sujet: 'A customer of your Shopify store requests their data',
+        corps: 'Hello,\n\nShopify forwards the request of a customer of the {{boutique}} store who wants to know the data you '
+          + 'hold about them. The request, with the customer’s name, is in your store’s admin.\n\nIn the {{espace}} '
+          + 'workspace, their record can be found by phone number in the console contacts, or from Claude Code with the '
+          + 'get_contact tool. It is up to you to answer them.',
+        bouton: null,
       },
     },
   },

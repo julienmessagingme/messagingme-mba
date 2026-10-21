@@ -28,6 +28,8 @@ import { OUTILS_NUMERO, type DepsNumeroMcp } from './outils-numero';
 import { OUTILS_MODELES, type DepsModelesMcp } from './outils-modeles';
 import { OUTILS_CAMPAGNES, type DepsCampagnesMcp } from './outils-campagnes';
 import { OUTILS_CHAMPS, type DepsChampsMcp } from './outils-champs';
+import { OUTILS_SHOPIFY } from './outils-shopify';
+import type { DepsGestionShopify } from '../shopify/gestion';
 import type { ResultatEnvoiPublic } from '../api/envoi-public';
 import type { VueOffre } from '../offres/vue';
 import type { SourceOffres } from '../offres/offre.pg';
@@ -124,6 +126,8 @@ export interface DepsMcp extends DepsRepondre, DepsChampsMcp {
   envoyerMessage(tenantId: string, phoneNumberId: string, to: string, corps: Record<string, unknown>): Promise<string>;
   /** Les modèles (lot 13, domaine 3) : la MÊME création et le MÊME suivi que `POST /v1/templates`, et la liste du catalogue. */
   modeles: DepsModelesMcp;
+  /** Le connecteur Shopify : la MÊME gestion que la carte de la console. */
+  shopify: DepsGestionShopify;
   /**
    * Les campagnes depuis l'assistant (2026-10-20) : le câblage de la route des campagnes, la lecture des modèles de
    * `POST /v1/sends` et les codes de confirmation (`src/mcp/outils-campagnes.ts`).
@@ -897,6 +901,8 @@ export const OUTILS: OutilMcp[] = [
   ...OUTILS_CAMPAGNES,
   // Les champs depuis l'assistant (2026-10-20) : `src/mcp/outils-champs.ts`.
   ...OUTILS_CHAMPS,
+  // Le connecteur Shopify (2026-10-21) : `src/mcp/outils-shopify.ts`.
+  ...OUTILS_SHOPIFY,
   // Les chiffres de l'espace, pour les graphiques de Claude (2026-10-13) : leur fichier, `src/mcp/outils-chiffres.ts`.
   ...OUTILS_CHIFFRES,
   // La clé de l'application et le paiement du Pro, depuis Claude (spec offres v2) : leur fichier, `src/mcp/outils-offre.ts`.

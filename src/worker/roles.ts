@@ -101,6 +101,7 @@ export const TACHES_PAR_ROLE: Record<string, Appartenance> = {
   'retention-payloads-webhooks': 'principal',
   'reveil-parcours': 'principal',
   'risque-desengagement': 'principal',
+  'shopify-evenements': 'principal',
   'statut-numeros': 'principal',
   'suivi-pubs': 'principal',
   'tours-agent-bloques': 'principal',

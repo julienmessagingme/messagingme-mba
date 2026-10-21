@@ -93,8 +93,9 @@ describe('🔴 ce que la console et la vitrine font taper (lot 10, B) est ce que
 
 describe('les skills', () => {
   it('chacune a son nom, celui de son dossier, et une description', () => {
-    // Les quatre écrites à la main, puis les commandes de cas générées depuis le registre (lot 6 bis, livraison D).
-    expect(SKILLS.map((s) => s.nom).sort()).toEqual(['demarrer', 'faq', 'mise-en-service', 'regles-whatsapp', ...commandesPubliees()].sort());
+    // Les cinq écrites à la main (le connecteur Shopify depuis le 2026-10-21), puis les commandes de cas générées depuis le
+    // registre (lot 6 bis, livraison D).
+    expect(SKILLS.map((s) => s.nom).sort()).toEqual(['demarrer', 'faq', 'mise-en-service', 'regles-whatsapp', 'shopify', ...commandesPubliees()].sort());
     for (const s of SKILLS) {
       expect(s.champ('name'), s.nom).toBe(s.nom);
       expect((s.champ('description') ?? '').length, s.nom).toBeGreaterThan(40);
@@ -122,9 +123,10 @@ describe('les skills', () => {
       widgets: [{ id: 'w', nom: 'W', actif: true }],
     });
     const arguments_ = OUTILS.flatMap((o) => Object.keys((o.entree as { properties?: object }).properties ?? {}));
-    // Les valeurs permises d'un argument (le mode `business_hours` de set_transfer_mode, par exemple).
-    const valeurs = OUTILS.flatMap((o) => Object.values((o.entree as { properties?: Record<string, { enum?: unknown[] }> }).properties ?? {})
-      .flatMap((p) => (p.enum ?? []).filter((v): v is string => typeof v === 'string')));
+    // Les valeurs permises d'un argument (le mode `business_hours` de set_transfer_mode, par exemple), et celles des éléments
+    // d'un argument liste (les données Shopify de set_shopify_message).
+    const valeurs = OUTILS.flatMap((o) => Object.values((o.entree as { properties?: Record<string, { enum?: unknown[]; items?: { enum?: unknown[] } }> }).properties ?? {})
+      .flatMap((p) => [...(p.enum ?? []), ...(p.items?.enum ?? [])].filter((v): v is string => typeof v === 'string')));
     const connus = new Set<string>([
       ...Object.keys(CATALOGUE_MCP), ...Object.keys(OUTILS_DE_L_ETAPE), ...AVERTISSEMENTS, ...clesRendues(exemple),
       ...arguments_, ...valeurs, ...OUTILS_SURS, ...Object.keys(STATUT_PAR_CODE),
