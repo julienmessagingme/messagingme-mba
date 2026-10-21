@@ -5,6 +5,32 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-21 : la file des accusés vide ses paquets d'un coup, et l'échec d'un destinataire de campagne est définitif
+
+- **L'alerte** (Telegram, 06:54 UTC) : « file webhook-status en retard, 69 s ». Aucune erreur. `pgboss.job` montre le
+  mécanisme : Meta rend ses accusés par paquets de trois ou quatre, et la file les prenait **un par lecture de 30 s**
+  (06:52:51, quatre accusés traités à 06:53:00, :30, 06:54:00, :30 ; 98 s pour le dernier). La rafale
+  (`burstWhenReadyExceeds: 2`) ne s'engageait pas : le compte qu'elle compare est en cache 60 s. Structurel, du 15 au
+  21 octobre : attente médiane de 19 à 27 s, 95 % sous 57 à 65 s, pire de 64 à 99 s chaque jour. Effet visible : les
+  coches de livraison, et la remise d'un fil à l'agent de Meta, qui attend l'accusé.
+- **Le correctif** : `webhook-status` entre dans `FILES_VIDEES_EN_CONTINU`. Après chaque accusé, `notifyWorker`
+  relance la lecture au lieu du sommeil de 30 s, jusqu'à une lecture vide ; un paquet n'attend plus que la première
+  lecture. Vérifié dans le code de pg-boss 12.25.1 (`worker.js`) : le vidage ne dépend pas de LISTEN. La file reste
+  non notifiée, à 30 s, avec une seule boucle : une seule connexion, et une grosse campagne se vide au rythme de la
+  rafale d'avant. Coût : une lecture à vide par paquet.
+- **Ce que la relecture a trouvé** (aucun rouge) : un accusé en échec est désormais rejoué 10 à 20 s plus tard
+  (`DELAI_REJEU_VIDAGE_SECONDES`), donc après les suivants. Le statut du message le supportait (« un échec est
+  définitif », 0225), **pas celui du destinataire de campagne ni de son journal** : un `sent` rejoué après un `failed`
+  l'écrasait et effaçait son code d'erreur. La même garde y est posée (`delivery_status is distinct from 'failed'`).
+  Prouvé dans les deux sens sur le vrai Postgres, en lecture seule et sans table : l'ancienne condition écrase un
+  échec, la nouvelle non, les autres cas inchangés. Une relance de campagne n'en souffre pas : `resetForRetry` et
+  `basculerEtage` remettent le statut à zéro et partent sous un nouvel identifiant.
+- **Tests** : le câblage (`queue-pool-prete`, une boucle à 30 s réveillée après chaque accusé, délai de rejeu posé),
+  la liste (`queue-names`), et en CI le vidage réel dans pg-boss (`queue.integration`, quatre accusés traités en moins
+  de 3 s après la première lecture) et la garde d'échec (`stores.integration`). Le commentaire de `src/worker.ts`
+  (« deux accusés du même message doivent s'appliquer dans l'ordre ») n'est plus vrai sur un rejeu ; laissé pour ne pas
+  toucher un fichier de câblage partagé, à corriger au prochain lot qui le touche.
+
 ## 2026-10-21 : le centre d'aide public, « Aide » dans la vitrine, « Comment faire » dans la console
 
 Plan `docs/superpowers/plans/2026-10-20-centre-d-aide.md`, spec `docs/superpowers/specs/2026-10-20-doc-fonctionnelle-design.md`

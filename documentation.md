@@ -2261,7 +2261,8 @@ La carte de latence de `/ops` passe au rouge au-delà du seuil de la FILE (`seui
 le SLO d'un message entrant, ou trois cadences pour une file sondée lentement, qui attend jusqu'à une cadence avant même
 d'être vue. Le serveur l'envoie avec chaque ligne ; l'écran ne tient aucune liste de files. ⚠️ `webhook-status` reste
 vert jusqu'à 90 s, alors que le retour d'un fil à l'agent de Meta attend l'accusé de notre dernier envoi
-(`demanderReleaseMba`) : une reprise retenue jusque-là ne se voit pas en rouge.
+(`demanderReleaseMba`) : une reprise retenue jusque-là ne se voit pas en rouge. Depuis qu'elle est vidée en continu
+(ci-dessous), un paquet d'accusés n'attend plus que la première lecture, 30 s au plus.
 
 🔴 **Pourquoi pas le défaut de pg-boss (2 s partout)** : mesuré, le polling à vide des quatre process (mba api
 et worker, mm-hubspot api et worker) produisait 663 000 requêtes et 249 Mo d'egress par jour pour 157 jobs en
@@ -2279,7 +2280,9 @@ au rythme de l'horloge. ⚠️ La comparaison de pg-boss est STRICTE (`readyCoun
 celui d'AVANT le déclenchement, et un seuil de `3` posé en pensant « dès trois » laisserait hors rafale le cas
 le plus fréquent, sans aucun symptôme. ⚠️ Ce qui rend un seuil bas SÛR n'est pas sa valeur, c'est la garde
 anti-boucle de pg-boss : la rafale exige que la dernière prise ait ramené un job, donc une file vide retombe
-toujours sur sa cadence lente et l'egress au repos ne bouge pas.
+toujours sur sa cadence lente et l'egress au repos ne bouge pas. ⚠️ Pour la file des accusés, le seuil bas n'a
+PAS suffi : le compte qu'il compare est en cache 60 s, et un paquet arrivé entre deux rafraîchissements passait un
+job par cadence (98 s pour le dernier, mesuré en production). C'est le vidage continu qui la règle (plus bas).
 
 🔴 **LA CONCURRENCE MULTIPLIE LE SONDAGE, et le tableau ci-dessus ne se lit pas sans elle.** Chaque unité de
 concurrence est un worker pg-boss avec SA PROPRE boucle : une file sonde `concurrence / cadence` fois par
@@ -2305,6 +2308,12 @@ lecture vide : 8,6 s au pire sur la même rafale. Le plafond d'un message à la 
 suivant par nom de file. ⚠️ Pas `burstWhenBatchFull` (il exige des lots de deux, et `batchSize: 1` protège une
 tâche réussie du rejeu de sa voisine en échec), ni de seuil de rafale à zéro (refusé au démarrage, minimum 1).
 
+`webhook-status` est vidée en continu elle aussi, SANS être notifiée : Meta rend ses accusés par paquets de trois ou
+quatre, sous le compte en cache de la rafale, et la file les prenait un par lecture de 30 s (98 s pour le dernier d'un
+paquet, mesuré dans `pgboss.job`). Un paquet attend désormais la lecture suivante, puis se vide d'une traite. Sa
+cadence de 30 s et sa boucle unique ne bougent pas : elle ne prend toujours qu'une connexion, et une grosse campagne se
+vide au rythme de la rafale d'avant. Le vidage ne se déclenche que par `notifyWorker`, indépendant de LISTEN.
+
 🔴 **CHAQUE FILE PORTE UN BATTEMENT DE CŒUR** (`BATTEMENT_SECONDES`, 20 s, rafraîchi toutes les 5 s pendant le
 traitement), posé par `updateQueue` puisque les files existent. La supervision de pg-boss passe toutes les
 `SURVEILLANCE_FILES_SECONDES` (10 s) et son moniteur toutes les 9 (pg-boss compare strictement), sur le SEUL worker
@@ -2316,9 +2325,11 @@ qu'une expiration courte ferait, et quatre battements manqués sont exigés avan
 le battement de leur file à leur création : celles déjà en file lors d'un déploiement gardent l'ancien comportement.
 ⚠️ **Un retour arrière du code ne retire PAS le battement des files** (il vit dans `pgboss.queue`) : pg-boss
 continuerait de le rafraîchir à son défaut (la moitié du battement) et de surveiller toutes les 60 s, soit deux
-battements de marge seulement. Le retirer avec le code : `updateQueue(<file>, { heartbeatSeconds: null })`.
+battements de marge seulement. Le retirer avec le code : `updateQueue(<file>, { heartbeatSeconds: null })`. Même
+chose pour le délai de rejeu d'une file vidée en continu (ci-dessous), qui reste dans `pgboss.queue` : sans danger,
+mais `updateQueue(<file>, { retryDelay: 0 })` le retire.
 
-🔴 **LA FILE VIDÉE EN CONTINU A UN DÉLAI DE REJEU** (`DELAI_REJEU_VIDAGE_SECONDES`, 10 s, doublé à chaque tentative).
+🔴 **LES FILES VIDÉES EN CONTINU ONT UN DÉLAI DE REJEU** (`DELAI_REJEU_VIDAGE_SECONDES`, 10 s, doublé à chaque tentative).
 Les files sont créées sans délai : une tâche en échec est remise en file aussitôt, et le vidage la relit tout de
 suite. Sans ce délai, ses six tentatives s'enchaînaient en une seconde jusqu'à la file d'échec pendant une panne
 passagère de la base, là où le filet de 60 s les étalait sur plusieurs minutes.

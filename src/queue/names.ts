@@ -25,8 +25,9 @@ export const ALL_QUEUES: string[] = BASE_QUEUES.flatMap((q) => [q, dlqName(q)]);
  * facturé à l'egress : un sondage à vide est du pur surcoût. On règle donc sur la latence utile :
  * - `webhook`, `agent-turn` : un contact attend sa réponse -> 2 s.
  * - `campaign-run` (l'opérateur regarde l'écran), `automation-event` (démarrage de scénario) -> 5 s.
- * - `webhook-status` : les accusés de Meta, personne ne les attend et ils arrivent en rafale (trois par
- *   destinataire) ; sur leur propre file pour ne pas retarder les entrants -> 30 s.
+ * - `webhook-status` : les accusés de Meta, qu'aucun contact n'attend (la remise d'un fil à l'agent de Meta, si, d'où
+ *   son vidage continu) et qui arrivent en rafale (trois par destinataire) ; sur leur propre file pour ne pas
+ *   retarder les entrants -> 30 s.
  * - `analyze-conversation`, `push-analysis`, `hubspot-catchup`, `optout-poussee` (le refus est déjà écrit quand
  *   le job est enfilé), `signaux-batch` : traitements de fond -> 30 s. La promesse « dans la minute » des signaux
  *   de geste tient à leur priorité (`PRIORITE_SIGNAL`), pas à cette cadence.
@@ -65,7 +66,7 @@ export const FILES_NOTIFIEES: Record<(typeof BASE_QUEUES)[number], boolean> = {
   'agent-turn': true, // idem, c'est le même chemin conversationnel
   'campaign-run': true, // l'opérateur vient de cliquer et regarde l'écran
   'automation-event': true, // démarrage de scénario sur mot-clé / tag, chemin conversationnel
-  'webhook-status': false, // accusés Meta : personne ne les attend, et les espacer protège les entrants
+  'webhook-status': false, // accusés Meta : un paquet attend la lecture suivante (30 s), puis se vide en continu ; une seule boucle protège les entrants
   'analyze-conversation': false, // traitement de fond
   'push-analysis': false, // traitement de fond
   'hubspot-catchup': false, // traitement de fond
@@ -97,6 +98,9 @@ export const SEUIL_RAFALE = 20;
  * trois en attente ». Un seuil bas reste sûr grâce à la garde de pg-boss (une prise à vide coupe la rafale) :
  * l'egress au repos est inchangé, et la concurrence de 1 borne la file à une connexion du pool.
  * Les autres files de fond restent au défaut tant que leurs paquets n'ont pas été mesurés.
+ * ⚠️ Ce seuil ne suffisait pas, mesuré en production (le compte qu'il compare est en cache 60 s) : depuis le
+ * 2026-10-21, c'est le vidage continu (`FILES_VIDEES_EN_CONTINU`) qui vide le paquet. Gardé : inoffensif, et il
+ * reprendrait la main si la file sortait du vidage.
  */
 export const SEUILS_RAFALE: Partial<Record<(typeof BASE_QUEUES)[number], number>> = {
   'webhook-status': 2,
@@ -133,8 +137,20 @@ export const SONDAGE_FILET_NOTIFIE = 60;
  * un filet de 5 s et une rafale à 1, encore 37 s. Coût : au plus une lecture à vide par boucle après le dernier
  * message d'une série. ⚠️ Pas `burstWhenBatchFull`, le vidage instantané de pg-boss : il exige des lots de deux,
  * et `batchSize: 1` est ce qui empêche une tâche en échec de faire rejouer sa voisine réussie.
+ *
+ * `webhook-status` (2026-10-21) : Meta rend ses accusés par paquets de trois ou quatre, que le compte en cache ne voit
+ * pas assez tôt pour rafaler. La file les prenait un par lecture de 30 s : 98 s d'attente pour le dernier d'un paquet,
+ * 95 % sous 65 s seulement, mesuré du 15 au 21 octobre (`pgboss.job`), et la remise d'une conversation à l'agent de Meta
+ * attend l'accusé. Le vidage ne la réveille pas à l'arrivée (elle reste hors de `FILES_NOTIFIEES`, sa cadence de 30 s
+ * reste la même) : il vide le paquet une fois la première lecture faite. Sa concurrence reste à 1, donc une seule
+ * connexion, et une grosse campagne se vide au même rythme que sous la rafale d'avant. ⚠️ Un accusé en échec est
+ * rejoué 10 à 20 s plus tard (`DELAI_REJEU_VIDAGE_SECONDES`), donc APRÈS les suivants, là où il repassait devant
+ * eux. Les statuts le supportent : ils ne reculent pas et un échec est définitif, sur le message comme sur le
+ * destinataire de campagne et son journal (`updateDeliveryByMessageId`, `src/campaign/store.pg.ts` ; la garde des
+ * deux derniers est posée le même jour, `tests/integration/stores.integration.test.ts`). Une relance de campagne n'en
+ * souffre pas : elle remet le statut à zéro et part sous un nouvel identifiant (`resetForRetry`, `basculerEtage`).
  */
-export const FILES_VIDEES_EN_CONTINU: readonly (typeof BASE_QUEUES)[number][] = ['webhook'];
+export const FILES_VIDEES_EN_CONTINU: readonly (typeof BASE_QUEUES)[number][] = ['webhook', 'webhook-status'];
 
 export function videeEnContinu(queue: string): boolean {
   return (FILES_VIDEES_EN_CONTINU as readonly string[]).includes(queue);

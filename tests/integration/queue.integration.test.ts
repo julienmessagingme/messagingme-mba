@@ -106,6 +106,23 @@ describe.skipIf(!url)('intégration pg-boss + PgEventStore (Supabase)', () => {
     expect(c1.some((a) => c2.some((b) => chevauche(a, b)))).toBe(true);
   }, 40_000);
 
+  it('🔴 pg-boss : la file des accusés, NON notifiée, vide un paquet d’une traite après sa première lecture (2026-10-21)', async () => {
+    // Mesuré en production du 15 au 21 octobre : un paquet de quatre accusés pris un par lecture de 30 s, 98 s pour le
+    // dernier. La boucle est d'abord mise au repos (une lecture à vide, puis 30 s de sommeil), le paquet arrive ensuite :
+    // le premier attend la lecture suivante, les trois autres doivent suivre sans nouveau sommeil.
+    const traites: number[] = [];
+    let fini!: () => void;
+    const tout = new Promise<void>((r) => { fini = r; });
+    await queue.work('webhook-status', async () => {
+      traites.push(Date.now());
+      if (traites.length === 4) fini();
+    });
+    await new Promise((r) => setTimeout(r, 1_000));
+    for (let i = 0; i < 4; i += 1) await queue.enqueue('webhook-status', { i });
+    await Promise.race([tout, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 50_000))]);
+    expect(traites[3]! - traites[0]!).toBeLessThan(3_000);
+  }, 60_000);
+
   /**
    * Lot C du plan `2026-09-28-api-multi-instances.md` : l'API empile par son pool APPLICATIF prêté à pg-boss, le
    * worker dépile avec le sien, sur le même schéma, comme en production. La création de la file passe aussi par

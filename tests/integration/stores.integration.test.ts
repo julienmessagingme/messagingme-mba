@@ -1136,6 +1136,16 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(await recipients.updateDeliveryByMessageId('m-1', 'failed', '131049 blocked', 131049, null)).toBe(1);
     const ec = (await pool.query<{ error_code: number | null }>(`select error_code from campaign_recipients where id = $1`, [rid])).rows[0]?.error_code;
     expect(ec).toBe(131049);
+
+    // 🔴 Un échec est DÉFINITIF, comme pour le statut du message : un `sent` rejoué après lui (accusé rejoué 10 à 20 s
+    // plus tard depuis que la file des accusés se vide en continu, 2026-10-21) n'efface ni l'échec ni son code.
+    expect(await recipients.updateDeliveryByMessageId('m-1', 'sent', null, null, null)).toBe(0);
+    const apres = (await pool.query<{ delivery_status: string; error_code: number | null; delivery_error: string | null }>(
+      `select delivery_status, error_code, delivery_error from campaign_recipients where id = $1`, [rid],
+    )).rows[0];
+    expect(apres).toEqual({ delivery_status: 'failed', error_code: 131049, delivery_error: '131049 blocked' });
+    const envois = (await pool.query<{ delivery_status: string | null }>(`select delivery_status from campaign_envois where message_id = 'm-1'`)).rows;
+    for (const e of envois) expect(e.delivery_status).toBe('failed');
   });
 
   /**

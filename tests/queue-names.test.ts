@@ -277,7 +277,16 @@ describe('cadence de polling par file', () => {
     expect(videeEnContinu('webhook')).toBe(true);
     expect(filetNotifieSecondes('webhook')).toBeLessThanOrEqual(10);
     // Les autres files ne paient pas un réveil par message sans mesure qui le justifie (`agent-turn` : douze boucles).
-    for (const q of BASE_QUEUES.filter((x) => x !== 'webhook')) expect(videeEnContinu(q), q).toBe(false);
+    for (const q of BASE_QUEUES.filter((x) => x !== 'webhook' && x !== 'webhook-status')) expect(videeEnContinu(q), q).toBe(false);
+  });
+
+  it('🔴 la file des accusés vide son paquet d’un coup, sans être réveillée à l’arrivée ni gagner de boucle', () => {
+    // Mesuré du 15 au 21 octobre (`pgboss.job`) : un paquet de quatre accusés pris un par lecture de 30 s, 98 s pour le
+    // dernier. Le vidage le prend d'une traite après la première lecture.
+    expect(videeEnContinu('webhook-status')).toBe(true);
+    // Ce qui protège les messages entrants ne bouge pas : pas de réveil à chaque accusé, la même cadence de 30 s.
+    expect(notifieePour('webhook-status')).toBe(false);
+    expect(pollingSecondsFor('webhook-status')).toBe(30);
   });
 
   it('🔴 le battement de cœur : jamais sous le minimum de pg-boss, et plusieurs battements manqués avant de rejouer', () => {

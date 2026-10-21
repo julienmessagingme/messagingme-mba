@@ -158,9 +158,18 @@ describe('🔴 le battement de cœur des tâches (banc des trente espaces, 2026-
     expect(etat.reglages).toContainEqual(['webhook', { notify: true }]);
     expect(etat.reglages).toContainEqual(['webhook-status', { heartbeatSeconds: BATTEMENT_SECONDES }]);
     expect(etat.reglages).not.toContainEqual(['webhook-status', { notify: true }]);
-    // Le délai de rejeu, sur la seule file vidée en continu : elle relirait aussitôt une tâche en échec.
+    // Le délai de rejeu, sur les files vidées en continu : elles reliraient aussitôt une tâche en échec.
     expect(etat.reglages).toContainEqual(['webhook', { retryDelay: DELAI_REJEU_VIDAGE_SECONDES }]);
-    expect(etat.reglages.some(([nom, o]) => nom === 'webhook-status' && 'retryDelay' in o)).toBe(false);
+    expect(etat.reglages).toContainEqual(['webhook-status', { retryDelay: DELAI_REJEU_VIDAGE_SECONDES }]);
+  });
+
+  it('🔴 la file des accusés : UNE boucle à 30 s, réveillée après chaque accusé pour vider son paquet (2026-10-21)', async () => {
+    const q = new PgBossQueue('postgres://u:p@h:5432/db', 'pgboss', { max: 2 });
+    await q.work('webhook-status', async () => {});
+    expect(etat.travaux).toHaveLength(1);
+    expect(etat.travaux[0]![1]).toMatchObject({ localConcurrency: 1, pollingIntervalSeconds: 30, batchSize: 1 });
+    await etat.travaux[0]![2]([{ data: {} }]);
+    expect(etat.reveils).toEqual(['boucle-1']);
   });
 
   it('🔴 la file des entrants : une boucle par registration, et chaque message traité réveille les trois', async () => {

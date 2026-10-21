@@ -1647,8 +1647,10 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
              error_code = $4::integer
          where message_id = $1 and (
            $2 = 'failed'
-           or (case $2 when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end)
-              > (case delivery_status when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end)
+           -- Un echec est DEFINITIF, comme pour le message plus bas : un accuse rejoue apres lui ne l efface pas.
+           or (delivery_status is distinct from 'failed'
+               and (case $2 when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end)
+                   > (case delivery_status when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end))
          )
          returning 1 as touche
        ),
@@ -1657,8 +1659,10 @@ export class PgRecipientStore implements RecipientStore, DeliveryStore {
          set delivery_status = $2
          where message_id = $1 and (
            $2 = 'failed'
-           or (case $2 when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end)
-              > (case delivery_status when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end)
+           -- Un echec est DEFINITIF, comme pour le message plus bas : un accuse rejoue apres lui ne l efface pas.
+           or (delivery_status is distinct from 'failed'
+               and (case $2 when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end)
+                   > (case delivery_status when 'read' then 3 when 'delivered' then 2 when 'sent' then 1 else 0 end))
          )
          returning 1 as touche
        ),
