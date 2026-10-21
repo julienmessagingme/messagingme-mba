@@ -1,8 +1,8 @@
 import type { TravauxEnVol } from '../lib/en-vol';
 
 /**
- * Le crédit de bienvenue tel que la route de l'inscription le demande : l'offre en base, puis la remontée du plafond
- * de la clé de modèle de l'espace s'il en a déjà une (`EmbeddedSignupRouteDeps.offrirCredit`).
+ * Le crédit de bienvenue tel que le protocole de connexion le demande : l'offre en base, puis la remontée du plafond
+ * de la clé de modèle de l'espace s'il en a déjà une (`DepsConnexionNumero.offrirCredit`).
  *
  * 🔴 LA REMONTÉE NE SE FAIT PAS ATTENDRE (relecture du 2026-09-29). Elle appelle Vercel, qui peut prendre jusqu'à
  * 30 s : attendue, elle retenait la réponse de l'inscription d'autant, alors que le client regarde la fenêtre de Meta

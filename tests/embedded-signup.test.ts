@@ -3,7 +3,8 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { EmbeddedSignupRouteDeps, MetaInscriptionDep } from '../src/http/embedded-signup';
+import type { EmbeddedSignupRouteDeps } from '../src/http/embedded-signup';
+import type { MetaInscriptionDep } from '../src/account/connexion-numero';
 import { TenantConflictError, SecondNumeroRefuseError } from '../src/account/es-store.pg';
 import { metaInscriptionInerte, signupInerte } from './routes-inertes';
 
