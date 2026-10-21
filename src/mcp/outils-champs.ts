@@ -4,7 +4,7 @@ import { RefusOutil, texteObligatoire } from './saisie';
 import { CHAMPS_CIBLE_FILTRES, CHAMPS_CIBLE_IDENTIFIANTS, lireCibleMcp } from './cible';
 import { ecriture, LOURDE, plafondCouteux, signataire } from './outils-agent';
 import { creerChamp, type ChampsDep } from '../http/fields';
-import { defPourEcriture } from '../http/contacts';
+import { defPourEcriture } from '../crm/fields';
 import { USER_FIELD_TYPES, canonicalizeFieldValue, validateFieldValue } from '../crm/fields';
 import type { UserFieldDef } from '../crm/types';
 import { SOCLE_FIELDS } from '../../web/lib/partage/champs';
