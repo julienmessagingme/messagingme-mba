@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Guard } from '../auth/middleware';
-import type { ComptesAuthDep } from '../auth/routes';
+import type { ComptesAuthDep } from '../auth/comptes';
 import { verifyDemandeOauth } from '../auth/token';
 import { makeJournal } from '../audit/journal';
 import { clientConnu } from '../oauth/clients';

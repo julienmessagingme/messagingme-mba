@@ -7,7 +7,7 @@ import { monterAvecEtapeEspace } from '../src/http/scope';
 import { FakeQueue } from './fake-queue';
 import { signSession, verifySession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { ComptesAuthDep } from '../src/auth/routes';
+import type { ComptesAuthDep } from '../src/auth/comptes';
 
 /**
  * CHANGER D'ESPACE SANS SE DÉCONNECTER (RC3, `src/http/espaces.ts`).

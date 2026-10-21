@@ -1,8 +1,11 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { PlafondPartage } from '../auth/plafond-partage';
-import { creerEspaceParGoogle, freine, rateKey, type ComptesAuthDep } from '../auth/routes';
+import type { ComptesAuthDep } from '../auth/comptes';
+import { entrerParGoogle } from '../auth/entree-google';
 import type { GoogleIdentity } from '../auth/google';
+import { refuserTropDeRequetes } from '../auth/rate-limit';
+import { empreinteTentative, verifierTentative } from '../auth/tentatives';
 import { signChoixOauth, signDemandeOauth, verifyChoixOauth, verifyDemandeOauth } from '../auth/token';
 import type { CompteurDebit } from '../db/debit';
 import { sha256Hex } from '../lib/signature';
@@ -43,7 +46,7 @@ import type { PgOauthStore } from '../oauth/store.pg';
  */
 export interface OauthRouteDeps extends DepsAutoriser {
   store: Pick<PgOauthStore, 'creerAutorisation' | 'consommerCode' | 'poserJetons' | 'renouveler' | 'revoquerParJeton'>;
-  /** `getByEmail` pour autoriser, `createTenantWithAdmin` pour l'adresse Google inconnue (`creerEspaceParGoogle`). */
+  /** Lecture des comptes et création éventuelle par l'entrée Google partagée. */
   comptes: Required<Pick<ComptesAuthDep, 'getByEmail' | 'createTenantWithAdmin'>> & Pick<ComptesAuthDep, 'touchLastLogin'>;
   /** Le même vérificateur que `/auth/google` : signature Google, émetteur, audience. L'appelant exige `emailVerified`. */
   verifyGoogle(idToken: string): Promise<GoogleIdentity | null>;
@@ -102,6 +105,13 @@ const ParPreuve = z.object({ demande: z.string().min(1), choix: z.string().min(1
 
 const DROITS: readonly string[] = DROITS_OAUTH;
 
+async function freine(plafond: PlafondPartage, cle: string, reply: FastifyReply): Promise<boolean> {
+  const decision = await verifierTentative(plafond, cle);
+  if (decision.acceptee) return false;
+  await refuserTropDeRequetes(reply, decision.attenteMs, decision.message);
+  return true;
+}
+
 export function registerOauth(app: FastifyInstance, deps: OauthRouteDeps, base: string | null, compteur: CompteurDebit): void {
   if (base === null) return;
   const ressource = ressourceMcp(base);
@@ -110,7 +120,7 @@ export function registerOauth(app: FastifyInstance, deps: OauthRouteDeps, base: 
    * Deux plafonds, dans le compteur PARTAGÉ, fermés sur panne comme ceux de la connexion (`src/auth/routes.ts`).
    * `jeton` : dix présentations par minute d'un MÊME code ou jeton de renouvellement. Les deux ne servent qu'une
    * fois (code brûlé, jeton tourné), donc tout ce qu'il freine est un échec : un client qui rejoue en boucle un
-   * jeton mort. Une clé par jeton, jamais une clé commune : sans l'adresse du client (`rateKey`), une clé commune
+   * jeton mort. Une clé par jeton, jamais une clé commune : sans l'adresse du client dans l'empreinte, une clé commune
    * laisserait n'importe qui couper les renouvellements de tous les Claude connectés.
    * `consentement` : vingt par minute et par jeton Google ou par preuve, comme `/auth/google` (la création d'un
    * espace pour une adresse inconnue passe par ici).
@@ -133,7 +143,7 @@ export function registerOauth(app: FastifyInstance, deps: OauthRouteDeps, base: 
   const plafondFiches = plafondSur('fiche', 20, 60_000);
   const plafondFichesGlobal = plafondSur('fiche-global', 600, 60_000);
   const parAdresse = (req: { ip: string; headers: Record<string, unknown> }, discriminant: string): string =>
-    rateKey({ ip: ipIndicative(req) }, discriminant);
+    empreinteTentative({ ip: ipIndicative(req) }, discriminant);
 
   // Les métadonnées de la ressource, aux deux adresses : Claude Code lit la racine, la spécification MCP fait
   // essayer la forme à chemin d'abord.
@@ -245,7 +255,7 @@ export function registerOauth(app: FastifyInstance, deps: OauthRouteDeps, base: 
         const e = lu.data;
         if (!formeDeClient(e.client_id)) return refus('invalid_client', 'unknown client');
         if (!formeDeJeton(e.code, PREFIXE_CODE)) return refus('invalid_grant', 'invalid, expired or already used code');
-        if (await freine(plafondJetons, rateKey(req, e.code), reply)) return reply;
+        if (await freine(plafondJetons, empreinteTentative(req, e.code), reply)) return reply;
         if (!(await clientEncoreReconnu(deps.clients, e.client_id))) return refus('invalid_client', 'unknown client');
         // 🔴 Le code est consommé AVANT les comparaisons : un vérificateur faux le brûle aussi, un vérificateur ne
         // se devine donc pas en plusieurs essais. Même réponse pour toutes les causes.
@@ -269,7 +279,7 @@ export function registerOauth(app: FastifyInstance, deps: OauthRouteDeps, base: 
         if (!formeDeClient(r.client_id)) return refus('invalid_client', 'unknown client');
         if (r.resource !== undefined && r.resource !== ressource) return refus('invalid_target', `supported resource: ${ressource}`);
         if (!formeDeJeton(r.refresh_token, PREFIXE_RENOUVELLEMENT)) return refus('invalid_grant', 'invalid refresh token');
-        if (await freine(plafondJetons, rateKey(req, r.refresh_token), reply)) return reply;
+        if (await freine(plafondJetons, empreinteTentative(req, r.refresh_token), reply)) return reply;
         if (!(await clientEncoreReconnu(deps.clients, r.client_id))) return refus('invalid_client', 'unknown client');
         const p = paire();
         // 🔴 Un ANCIEN jeton présenté révoque toute l'autorisation (`PgOauthStore.renouveler`, RFC 9700 4.14) :
@@ -366,7 +376,7 @@ export function registerOauth(app: FastifyInstance, deps: OauthRouteDeps, base: 
 
     /**
      * « Continuer avec Google » sur la page de consentement. Adresse inconnue : son espace et son admin naissent par
-     * le MÊME chemin que `/auth/google` (`creerEspaceParGoogle`). Rend la preuve signée, liée à CETTE demande, et
+     * le MÊME chemin que `/auth/google` (`entrerParGoogle`). Rend la preuve signée, liée à CETTE demande, et
      * les espaces de la personne : `admin` dit sur lesquels elle peut autoriser, le rôle sera relu au clic.
      */
     portee.post('/oauth/consentement/google', async (req, reply) => {
@@ -375,24 +385,20 @@ export function registerOauth(app: FastifyInstance, deps: OauthRouteDeps, base: 
       const demandeLue = await verifyDemandeOauth(lu.data.demande, deps.secret);
       if (!demandeLue) return reply.code(400).send(DEMANDE_EXPIREE);
       // Avant la vérification Google, comme `/auth/google` : la clé est le jeton présenté.
-      if (await freine(plafondConsentement, rateKey(req, lu.data.idToken), reply)) return reply;
-      const identite = await deps.verifyGoogle(lu.data.idToken);
-      if (!identite?.emailVerified) return reply.code(401).send({ error: 'jeton Google invalide' });
-      const tous = await deps.comptes.getByEmail(identite.email);
-      let actifs = tous.filter((c) => !c.disabled);
-      if (tous.length > 0 && actifs.length === 0) return reply.code(403).send({ error: 'compte révoqué' });
-      const nouveau = tous.length === 0;
-      if (nouveau) {
-        // L'espace naît ici par la connexion d'un client MCP : `claude_code` pour Claude, `client_mcp` pour un autre (0227).
-        // Une trace : l'origine ne décide plus du crédit offert.
-        const cree = await creerEspaceParGoogle(deps.comptes, identite, clientConnu(demandeLue.clientId) ? 'claude_code' : 'client_mcp');
-        actifs = [{ id: cree.userId, tenantId: cree.tenantId, tenantName: cree.tenantName, role: 'admin', disabled: false }];
-      }
-      const choix = await signChoixOauth({ email: identite.email, demande: sha256Hex(lu.data.demande) }, deps.secret);
+      if (await freine(plafondConsentement, empreinteTentative(req, lu.data.idToken), reply)) return reply;
+      const entree = await entrerParGoogle(
+        deps,
+        lu.data.idToken,
+        clientConnu(demandeLue.clientId) ? 'claude_code' : 'client_mcp',
+      );
+      if (entree.statut === 'invalide') return reply.code(401).send({ error: 'jeton Google invalide' });
+      if (entree.statut === 'revoquee') return reply.code(403).send({ error: 'compte révoqué' });
+      if (entree.statut !== 'ouverte') throw new Error('entrée Google sans création malgré une origine');
+      const choix = await signChoixOauth({ email: entree.identite.email, demande: sha256Hex(lu.data.demande) }, deps.secret);
       return reply.code(200).send({
         choix,
-        nouveau,
-        espaces: actifs.map((c) => ({ tenantId: c.tenantId, nom: c.tenantName, admin: c.role === 'admin' })),
+        nouveau: entree.nouveau,
+        espaces: entree.comptes.map((c) => ({ tenantId: c.tenantId, nom: c.tenantName, admin: c.role === 'admin' })),
       });
     });
 
@@ -408,7 +414,7 @@ export function registerOauth(app: FastifyInstance, deps: OauthRouteDeps, base: 
       if (!choix || choix.demande !== sha256Hex(lu.data.demande)) {
         return reply.code(401).send({ error: 'connexion Google expirée : reconnectez-vous' });
       }
-      if (await freine(plafondConsentement, rateKey(req, lu.data.choix), reply)) return reply;
+      if (await freine(plafondConsentement, empreinteTentative(req, lu.data.choix), reply)) return reply;
       const r = await autoriser(deps, base, { email: choix.email }, lu.data.tenantId, demande);
       return r.ok ? reply.code(200).send({ adresse: r.adresse }) : reply.code(403).send({ error: r.erreur });
     });
