@@ -7,6 +7,7 @@ import { adresseCapture, adressesAide, fichierCommentFaire, llmsAvecAide, motsDe
 import { pagesDuCentre } from '../scripts/vitrine/aide-pages';
 import { structureFiche } from '../src/aide/structure';
 import { PAGES_CLAUDE } from '../scripts/vitrine/aide-claude-textes';
+import { FILMS_AIDE } from '../scripts/vitrine/aide-films';
 import { CATALOGUE_MCP } from '../web/lib/partage/catalogue-mcp';
 import { page } from '../scripts/vitrine/cas';
 import { OUTILS } from '../src/mcp/outils';
@@ -78,6 +79,47 @@ describe('le centre d’aide de la vitrine', () => {
         .map((f) => join(f.parentPath, f.name).slice(SITE.length + 1).split(sep).join('/'))
       : [];
     expect(presentes.sort()).toEqual(attendues.sort());
+  });
+
+  it('🔴 un film de page a ses quatre fichiers, sa vraie durée et aucune piste son (tâche 11)', () => {
+    // La durée se lit dans la boîte `mvhd` du MP4, la piste son dans `moov` (un `hdlr` de type `soun`) : rien n'est
+    // recopié de l'atelier sans être vérifié sur le fichier publié.
+    const boite = (b: Buffer, type: string): Buffer => {
+      for (let i = 0; i + 8 <= b.length;) {
+        const taille = b.readUInt32BE(i);
+        if (b.toString('latin1', i + 4, i + 8) === type) return b.subarray(i + 8, i + taille);
+        if (taille < 8) break;
+        i += taille;
+      }
+      throw new Error(`boîte ${type} absente`);
+    };
+    const secondes = (moov: Buffer): number => {
+      const mvhd = boite(moov, 'mvhd');
+      return mvhd[0] === 1
+        ? Number(mvhd.readBigUInt64BE(24)) / mvhd.readUInt32BE(20)
+        : mvhd.readUInt32BE(16) / mvhd.readUInt32BE(12);
+    };
+    const avecFilm = centre.filter((p) => p.publication.video).map((p) => p.cle);
+    expect(avecFilm.sort()).toEqual(Object.keys(FILMS_AIDE).sort());
+    expect(avecFilm.length).toBeGreaterThan(0);
+    for (const cle of avecFilm) {
+      for (const langue of ['fr', 'en'] as const) {
+        const base = join(SITE, 'films', `aide-${cle}${langue === 'en' ? '-en' : ''}`);
+        expect(existsSync(`${base}.webp`), `${base}.webp`).toBe(true);
+        const moov = boite(readFileSync(`${base}.mp4`), 'moov');
+        expect(moov.includes('soun'), `${cle} ${langue} : une piste son`).toBe(false);
+        expect(Math.round(secondes(moov)), `${cle} ${langue}`).toBe(FILMS_AIDE[cle]!.secondes[langue]);
+        // La spec : une minute trente au plus, en 16:9 (largeur et hauteur en 16.16, à la fin de `tkhd`).
+        expect(FILMS_AIDE[cle]!.secondes[langue], `${cle} ${langue} : plus d’une minute trente`).toBeLessThanOrEqual(90);
+        const tkhd = boite(boite(moov, 'trak'), 'tkhd');
+        const largeur = tkhd.readUInt32BE(tkhd.length - 8) / 65536, hauteur = tkhd.readUInt32BE(tkhd.length - 4) / 65536;
+        expect(largeur / hauteur, `${cle} ${langue} : ${largeur} × ${hauteur}`).toBeCloseTo(16 / 9, 2);
+      }
+    }
+    // Et rien d'autre sous ce nom : un film retiré d'une page, ou renommé, ne traîne pas dans `site/films/`.
+    const publies = readdirSync(join(SITE, 'films')).filter((f) => f.startsWith('aide-'));
+    const attendus = avecFilm.flatMap((c) => ['', '-en'].flatMap((s) => [`aide-${c}${s}.mp4`, `aide-${c}${s}.webp`]));
+    expect(publies.sort()).toEqual(attendus.sort());
   });
 
   it('deux étapes d’une même page ne montrent jamais la même image', () => {

@@ -21,6 +21,7 @@ import { ESSAI_PRO_JOURS } from '../../src/offres/offres';
 import { ACCUEIL, fichierDe, fil, page } from './cas';
 import { insecables } from './guide-meta';
 import { PAGES_CLAUDE, type PageClaude } from './aide-claude-textes';
+import { FILMS_AIDE, type FilmAide } from './aide-films';
 import { ACCUEIL_AIDE, NOMS_RUBRIQUES, pagesDuCentre, type Langue, type PageAide } from './aide-pages';
 
 const ORIGINE = 'https://app.messagingme.fr';
@@ -45,7 +46,8 @@ const T = {
     suivant: 'Suivant :',
     question: 'Une question sans réponse ? Écrivez-nous',
     contact: '/contact/',
-    legendeFilm: 'Vidéo sous-titrée, sans son.',
+    legendeFilm: (duree: string) => `Vidéo de ${duree}, sous-titrée, sans son.`,
+    duree: (m: number, s: number) => (m === 0 ? `${s} secondes` : s === 0 ? `${m} minute${m > 1 ? 's' : ''}` : `${m} min ${String(s).padStart(2, '0')}`),
     etape: 'Étape',
     agrandir: 'Voir la capture en grand',
     titreSite: 'Aide Messaging Me',
@@ -70,7 +72,8 @@ const T = {
     suivant: 'Next:',
     question: 'A question this page does not answer? Write to us',
     contact: '/en/contact/',
-    legendeFilm: 'Subtitled video, no sound.',
+    legendeFilm: (duree: string) => `${duree} video, subtitled, no sound.`,
+    duree: (m: number, s: number) => (m === 0 ? `${s}-second` : s === 0 ? `${m}-minute` : `${m} min ${String(s).padStart(2, '0')}`),
     etape: 'Step',
     agrandir: 'View the screenshot full size',
     titreSite: 'Messaging Me Help',
@@ -167,12 +170,22 @@ function menu(pages: PageAide[], courante: PageAide | null, langue: Langue): str
   return lignes.join('\n');
 }
 
+/** Le film d'une page, s'il est annoncé (`video: oui`) : il doit alors être décrit dans `FILMS_AIDE`. */
+function filmDe(p: PageAide): FilmAide | null {
+  if (!p.publication.video) return null;
+  const f = FILMS_AIDE[p.cle];
+  if (!f) throw new Error(`${p.cle} : video: oui sans son entrée dans scripts/vitrine/aide-films.ts`);
+  return f;
+}
+const minSec = (s: number): [number, number] => [Math.floor(s / 60), s % 60];
+
 function film(p: PageAide, langue: Langue): string {
-  if (!p.publication.video) return '';
+  const f = filmDe(p);
+  if (!f) return '';
   return [
     '      <figure class="aide-video">',
-    `        <video class="f-video" src="${versionnee(adresseFilm(p.cle, langue, 'mp4'))}" poster="${versionnee(adresseFilm(p.cle, langue, 'webp'))}" width="1280" height="720" controls muted playsinline preload="none" aria-label="${attribut(p[langue].titre)}"></video>`,
-      `        <figcaption>${T[langue].legendeFilm}</figcaption>`,
+    `        <video class="f-video aide-film" src="${versionnee(adresseFilm(p.cle, langue, 'mp4'))}" poster="${versionnee(adresseFilm(p.cle, langue, 'webp'))}" width="1280" height="720" controls muted playsinline preload="none" aria-label="${attribut(p[langue].titre)}"></video>`,
+      `        <figcaption>${texte(T[langue].legendeFilm(T[langue].duree(...minSec(f.secondes[langue]))), langue)}</figcaption>`,
     '      </figure>',
   ].join('\n');
 }
@@ -235,9 +248,10 @@ function pageAide(pages: PageAide[], p: PageAide, langue: Langue): { chemin: str
           })),
         }
         : { '@type': 'TechArticle', headline: v.titre, description, inLanguage: langueLd, url: ORIGINE + v.adresse, publisher: ORGANISATION },
-      ...(p.publication.video ? [{
+      ...(filmDe(p) ? [{
         '@type': 'VideoObject', name: v.titre, description,
         thumbnailUrl: ORIGINE + adresseFilm(p.cle, langue, 'webp'), contentUrl: ORIGINE + adresseFilm(p.cle, langue, 'mp4'),
+        uploadDate: filmDe(p)!.publie, duration: `PT${minSec(filmDe(p)!.secondes[langue]).join('M')}S`,
         inLanguage: langueLd, publisher: ORGANISATION,
       }] : []),
     ],
@@ -380,7 +394,7 @@ function pageClaude(p: PageClaude, langue: Langue): { chemin: string; contenu: s
     '    <article class="aide-article">',
     ...(p.film ? [
       '      <figure class="aide-video">',
-      `        <video class="f-video" src="${versionnee(`/films/${p.film}${suffixe}.mp4`)}" poster="${versionnee(`/films/${p.film}${suffixe}.webp`)}" width="1280" height="720" controls muted playsinline preload="none" aria-label="${attribut(p.titre[langue])}"></video>`,
+      `        <video class="f-video aide-film" src="${versionnee(`/films/${p.film}${suffixe}.mp4`)}" poster="${versionnee(`/films/${p.film}${suffixe}.webp`)}" width="1280" height="720" controls muted playsinline preload="none" aria-label="${attribut(p.titre[langue])}"></video>`,
       '      </figure>',
     ] : []),
     ...etapes,

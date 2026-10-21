@@ -36,18 +36,19 @@ for (const locale of ['fr', 'en'] as Locale[]) {
       const corps = page.getByRole('textbox', { name: L[locale].corps });
       await corps.fill('Bonjour {{1}} ❄️ Notre collection d’hiver arrive : découvrez-la en avant-première avec le code HIVER15.');
       await page.getByPlaceholder(L[locale].pied).fill('Répondez STOP pour ne plus recevoir nos offres');
-      await capturer(page, CLE, 1, locale, page.getByTestId('template-nom'));
+      await capturer(page, CLE, 1, locale, page.getByTestId('template-nom'), 'haut', page.getByTestId('template-nom'));
 
       // 2. La variable, et l'exemple que WhatsApp demande.
       await page.getByPlaceholder(L[locale].exemple).first().fill('Léa');
-      await capturer(page, CLE, 2, locale, corps);
+      await capturer(page, CLE, 2, locale, corps, 'haut', page.getByPlaceholder(L[locale].exemple).first());
 
       // 3. La durée de validité : sept jours pour une offre.
       await page.getByTestId('template-duree').selectOption({ label: L[locale].sept });
-      await capturer(page, CLE, 3, locale, page.getByTestId('template-duree'));
+      await capturer(page, CLE, 3, locale, page.getByTestId('template-duree'), 'haut', page.getByTestId('template-duree'));
 
       // 4. La langue choisie en haut, puis le bouton qui soumet le modèle à WhatsApp (il n'est pas cliqué).
-      await capturer(page, CLE, 4, locale, page.getByRole('button', { name: L[locale].soumettre }), 'bas');
+      const soumettre = page.getByRole('button', { name: L[locale].soumettre });
+      await capturer(page, CLE, 4, locale, soumettre, 'bas', soumettre);
     });
   });
 }

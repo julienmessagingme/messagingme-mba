@@ -22,8 +22,9 @@
 
 Le plan : [docs/superpowers/plans/2026-10-20-centre-d-aide.md](docs/superpowers/plans/2026-10-20-centre-d-aide.md) ; ce
 qui est en ligne se lit dans [features.md](features.md) (« Le centre d'aide public et « Comment faire » »). Reste :
-- les films (tâche 11), un par page, fabriqués dans `~/engageme-motion` (son `CLAUDE.md`), puis `video: oui` dans la
-  fiche et `npm run vitrine:aide` ;
+- les films des trois pages « Depuis Claude Code » sans film (connecter son numéro, répondre, préparer une campagne),
+  dans le style des films de cas d'usage (une vraie fenêtre Claude Code, le téléphone à côté) ; les six films de
+  console sont livrés (`~/engageme-motion/engageme-aide`) ;
 - l'essai réel de Julien (`docs/prive/ESSAIS-REELS.md`), qui clôt le plan.
 
 ## LA BASCULE SCALEWAY (EN COURS)

@@ -6,6 +6,7 @@ publique: oui
 rubrique: parler-aux-clients
 rang: 1
 comment_faire: oui
+video: oui
 ---
 # Répondre à un client dans l'Inbox
 

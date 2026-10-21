@@ -38,20 +38,20 @@ for (const locale of ['fr', 'en'] as Locale[]) {
 
       // 1. Le nom, et la nature de la campagne.
       await page.getByLabel('Nom de la campagne').fill('Collection d’automne');
-      await capturer(page, CLE, 1, locale);
+      await capturer(page, CLE, 1, locale, undefined, 'haut', page.getByLabel('Nom de la campagne'));
       await page.getByRole('button', { name: 'Suivant' }).click();
 
       // 2. Le canal, et les heures d'ouverture.
       await page.getByRole('radio', { name: 'WhatsApp', exact: true }).check();
       await page.getByRole('checkbox', { name: 'Envoyer uniquement pendant les heures ouvrées' }).check();
-      await capturer(page, CLE, 2, locale);
+      await capturer(page, CLE, 2, locale, undefined, 'haut', page.getByRole('radio', { name: 'WhatsApp', exact: true }));
       await page.getByRole('button', { name: 'Suivant' }).click();
 
       // 3. Le contenu : le modèle de la collection d'automne, et son aperçu.
       await page.getByTestId('etage-1').click();
       await page.getByTestId('modele-1').selectOption(MODELE_AUTOMNE.name);
       await expect(page.getByTestId('apercu-1')).toBeVisible({ timeout: 15_000 });
-      await capturer(page, CLE, 3, locale);
+      await capturer(page, CLE, 3, locale, undefined, 'haut', page.getByTestId('modele-1'));
       await page.getByRole('button', { name: 'Suivant' }).click();
 
       // 4. L'audience : les clientes fidèles, et le compteur.
@@ -60,13 +60,13 @@ for (const locale of ['fr', 'en'] as Locale[]) {
       await etiquette.fill('clientes-fideles');
       await etiquette.press('Enter');
       await expect(page.getByText(/186 contact/).first()).toBeVisible();
-      await capturer(page, CLE, 4, locale);
+      await capturer(page, CLE, 4, locale, undefined, 'haut', etiquette);
       await page.getByRole('button', { name: 'Suivant' }).click();
 
       // 5. Le récapitulatif : « Plus tard », demain à 10 h.
       await page.getByTestId('quand-plus_tard').click();
       await page.getByLabel('Date et heure du départ').fill('2026-10-22T10:00');
-      await capturer(page, CLE, 5, locale, page.getByRole('heading', { name: 'Récapitulatif' }));
+      await capturer(page, CLE, 5, locale, page.getByRole('heading', { name: 'Récapitulatif' }), 'haut', page.getByTestId('quand-plus_tard'));
     });
   });
 }

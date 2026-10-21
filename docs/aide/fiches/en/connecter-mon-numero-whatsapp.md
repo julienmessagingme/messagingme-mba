@@ -1,6 +1,6 @@
 ---
 slug: connect-my-whatsapp-number
-traduit_de: bc5830
+traduit_de: 2fc91f
 ---
 # Connect my WhatsApp number, and read its status
 
@@ -15,7 +15,7 @@ find the existing account and number again. When Meta refuses, it is ITS reason 
 account not shared, several numbers to choose between), not an opaque error message.
 
 **2. No number? Get one.** The “No number? We provide one” link opens the “Connect WhatsApp” page: “Provide me a
-number” offers you a dedicated UK number at €3.50 excl. VAT a month.
+number” offers you a dedicated UK number, included in the Pro plan, and €3.50 excl. VAT a month without it.
 
 You pay on Stripe’s page (a promo code can be entered there, if we gave you one), then the number appears. Next, in
 order:

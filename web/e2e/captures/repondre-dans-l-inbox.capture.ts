@@ -68,21 +68,21 @@ for (const locale of ['fr', 'en'] as Locale[]) {
       // 1. Le dossier « À traiter ».
       await page.getByRole('button', { name: L[locale].aTraiter }).first().click();
       await expect(page.getByText('Léa Martin').first()).toBeVisible();
-      await capturer(page, CLE, 1, locale);
+      await capturer(page, CLE, 1, locale, undefined, 'haut', page.getByRole('button', { name: L[locale].aTraiter }).first());
 
       // 2. La conversation de Léa, et son détail sous la liste.
       await page.getByRole('button', { name: L[locale].ouvrir }).first().click();
       await expect(page.getByText('La veste camel existe en 38 ?').last()).toBeVisible();
-      await capturer(page, CLE, 2, locale);
+      await capturer(page, CLE, 2, locale, undefined, 'haut', page.getByText('Léa Martin').first());
 
       // 3. La réponse, écrite et pas encore envoyée.
       await page.getByPlaceholder(L[locale].repondre).fill('Oui, elle existe en 38 ! Je vous la mets de côté jusqu’à samedi ?');
-      await capturer(page, CLE, 3, locale);
+      await capturer(page, CLE, 3, locale, undefined, 'haut', page.getByPlaceholder(L[locale].repondre));
 
       // 4. Ranger : deux conversations cochées, et le même menu « Ranger dans… » au-dessus de la liste (une liste
       // déroulante native ne se dessine pas dans une capture, la sélection montre où il est).
       for (const c of await page.getByRole('checkbox', { name: L[locale].selection }).all()) await c.check();
-      await capturer(page, CLE, 4, locale);
+      await capturer(page, CLE, 4, locale, undefined, 'haut', page.getByTestId('inbox-ranger-selection'));
     });
   });
 }

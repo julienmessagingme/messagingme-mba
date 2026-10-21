@@ -31,6 +31,24 @@
   (« deux accusés du même message doivent s'appliquer dans l'ordre ») n'est plus vrai sur un rejeu ; laissé pour ne pas
   toucher un fichier de câblage partagé, à corriger au prochain lot qui le touche.
 
+## 2026-10-21 (après-midi) : les six films du centre d'aide
+
+Tâche 11 du plan du centre d'aide. Un gabarit commun dans l'atelier (`~/engageme-motion/engageme-aide`) : l'ouverture
+sur le titre du geste, puis les captures de la page d'aide dans une fenêtre de navigateur, le curseur au geste de
+chaque étape et la caméra qui y zoome, les sous-titres de la langue du film, la fin sur l'adresse du centre d'aide.
+Sans son (un export qui n'écrit aucun flux audio), 16:9, 30 i/s, de 45 à 60 s, de 3,7 à 5,8 Mo à CRF 23.
+
+- **Les coordonnées ne s'écrivent nulle part** : `capturer` (`web/e2e/captures/donnees-demo.ts`) écrit à côté de chaque
+  PNG la boîte du geste et de la zone utile, mesurées dans l'état exact de la capture ; le film s'y pose. Une refonte
+  de la console se rattrape par `npm run aide:captures`, puis la construction des films.
+- **Un piège payé** : `page.evaluate(() => window.__tl.pause(0))` renvoie la timeline, que Playwright tente de
+  sérialiser avec ses images en base64 ; l'appel ne revient jamais. Entre accolades, il rend la main tout de suite
+  (`SCRIPT.md` de l'atelier).
+- **Mesures** : un export prend 5 min 30 seul ; les onze autres, deux à la fois, une quarantaine de minutes. Une
+  capture refaite peut différer de l'originale à l'anticrénelage près, sans différence visible : les octets déjà
+  publiés sont gardés, pour ne pas changer d'adresse pour rien.
+- **Reste** : les films des trois pages « Depuis Claude Code » qui n'en ont pas, et l'essai réel de Julien.
+
 ## 2026-10-21 : le centre d'aide public, « Aide » dans la vitrine, « Comment faire » dans la console
 
 Plan `docs/superpowers/plans/2026-10-20-centre-d-aide.md`, spec `docs/superpowers/specs/2026-10-20-doc-fonctionnelle-design.md`

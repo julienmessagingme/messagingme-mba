@@ -50,7 +50,7 @@ for (const locale of ['fr', 'en'] as Locale[]) {
       // 1. Le bouton d'ajout et ses deux chemins.
       await page.getByTestId('contacts-ajouter-menu').click();
       await expect(page.getByTestId('contact-importer-csv')).toBeVisible();
-      await capturer(page, CLE, 1, locale);
+      await capturer(page, CLE, 1, locale, undefined, 'haut', page.getByTestId('contact-importer-csv'));
 
       // 2. L'import : le fichier collé, puis ses colonnes associées aux champs de la fiche.
       await page.getByTestId('contact-importer-csv').click();
@@ -58,11 +58,15 @@ for (const locale of ['fr', 'en'] as Locale[]) {
       await page.locator('textarea').first().fill(CSV);
       await page.getByRole('button', { name: L[locale].analyser }).click();
       await expect(page.getByText('Léa').first()).toBeVisible();
-      await capturer(page, CLE, 2, locale);
+      // Le geste de l'étape : associer une colonne à un champ. JAMAIS le bouton « Importer » : il part tout de suite, avec
+      // la case du consentement cochée d'office, que l'étape suivante seulement explique (relecture du lot 5).
+      await capturer(page, CLE, 2, locale, undefined, 'haut', page.locator('select').first());
 
       // 3. Une étiquette pour tout le fichier, et la case du consentement, qui vaut pour tout le fichier.
       await page.getByPlaceholder(L[locale].exempleEtiquette).fill('salon-2026');
-      await capturer(page, CLE, 3, locale, page.getByText(L[locale].consentement).first());
+      const consentement = page.getByText(L[locale].consentement).first();
+      // Le curseur va à l'étiquette, pas à la case : cochée d'office, un clic la DÉCOCHERAIT.
+      await capturer(page, CLE, 3, locale, consentement, 'haut', page.getByPlaceholder(L[locale].exempleEtiquette));
 
       // 4. Retour à la liste : un filtre, une sélection, et le menu « Action ».
       await page.goto('/contacts');
@@ -74,7 +78,7 @@ for (const locale of ['fr', 'en'] as Locale[]) {
       await page.getByRole('checkbox').nth(1).check();
       await page.getByRole('checkbox').nth(2).check();
       await page.getByRole('button', { name: L[locale].action }).first().click();
-      await capturer(page, CLE, 4, locale);
+      await capturer(page, CLE, 4, locale, undefined, 'haut', page.getByRole('button', { name: L[locale].action }).first());
     });
   });
 }

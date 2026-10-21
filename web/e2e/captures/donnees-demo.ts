@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises';
 import type { Locator, Page } from '@playwright/test';
 import { OFFRE_PRO } from './offre-demo';
 
@@ -150,9 +151,13 @@ export const NAVIGATEUR: Readonly<Record<Locale, { locale: string; timezoneId: s
 /**
  * La capture d'une étape, dans `e2e/captures/sortie/<clé>/etape-<n>[-en].png` (le script de la racine en fait des
  * .webp). `zone` est l'élément que l'étape montre : la page défile pour le placer en haut, sous la barre.
+ *
+ * À côté, `etape-<n>[-en].json` : la boîte de `pointeur` (le geste de l'étape) et celle de `zone`, mesurées dans l'état
+ * exact de la capture. Le film de la page (`~/engageme-motion/engageme-aide`) y pose son curseur et son zoom : il se
+ * refait avec les captures, sans coordonnée écrite à la main.
  */
 export async function capturer(
-  page: Page, cle: string, numero: number, locale: Locale, zone?: Locator, ou: 'haut' | 'bas' = 'haut',
+  page: Page, cle: string, numero: number, locale: Locale, zone?: Locator, ou: 'haut' | 'bas' = 'haut', pointeur?: Locator,
 ): Promise<void> {
   await page.waitForLoadState('networkidle');
   // Aucun champ en cours de saisie sur une capture : le curseur et la sélection ne disent rien au lecteur.
@@ -167,5 +172,11 @@ export async function capturer(
     await page.evaluate(() => window.scrollTo(0, 0));
   }
   await page.waitForTimeout(400);
-  await page.screenshot({ path: `e2e/captures/sortie/${cle}/etape-${numero}${locale === 'en' ? '-en' : ''}.png` });
+  const nom = `e2e/captures/sortie/${cle}/etape-${numero}${locale === 'en' ? '-en' : ''}`;
+  await page.screenshot({ path: `${nom}.png` });
+  const boite = async (l?: Locator) => {
+    const b = l ? await l.boundingBox() : null;
+    return b && { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) };
+  };
+  await writeFile(`${nom}.json`, JSON.stringify({ pointeur: await boite(pointeur), zone: await boite(zone) }));
 }

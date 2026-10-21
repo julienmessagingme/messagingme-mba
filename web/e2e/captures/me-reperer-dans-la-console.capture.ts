@@ -13,7 +13,10 @@ const CONVERSATIONS = [
   { id: 'c3', waId: '33639980103', profileName: 'Inès Petit', lastPreview: 'Je peux passer la retirer samedi ?', lastMessageAt: '2026-10-21T08:15:00Z', controlOwner: 'app_human', unread: true, curseur: '2026-10-21T08:15:00Z', signaleeMain: false },
   { id: 'c2', waId: '33639980102', profileName: 'Hugo Bernard', lastPreview: 'Merci pour l’info !', lastMessageAt: '2026-10-21T07:58:00Z', controlOwner: 'app_human', unread: false, curseur: '2026-10-21T07:58:00Z', signaleeMain: false },
 ];
-const L = { fr: { compte: /lea@votre-marque\.test/ }, en: { compte: /lea@votre-marque\.test/ } } as const;
+const L = {
+  fr: { compte: /lea@votre-marque\.test/, general: 'Général' },
+  en: { compte: /lea@votre-marque\.test/, general: 'General' },
+} as const;
 
 for (const locale of ['fr', 'en'] as Locale[]) {
   test.describe(locale, () => {
@@ -27,10 +30,10 @@ for (const locale of ['fr', 'en'] as Locale[]) {
       await page.reload();
       await expect(page.getByTestId('numero-card')).toBeVisible();
       // 1. L'onglet Console, et son menu à gauche.
-      await capturer(page, CLE, 1, locale);
+      await capturer(page, CLE, 1, locale, undefined, 'haut', page.getByRole('link', { name: 'Console', exact: true }));
       // 4. Le menu Compte, en haut à droite.
       await page.getByRole('button', { name: L[locale].compte }).click();
-      await capturer(page, CLE, 4, locale);
+      await capturer(page, CLE, 4, locale, undefined, 'haut', page.getByRole('button', { name: L[locale].compte }));
     });
 
     test(`${CLE} (${locale}) : Inbox`, async ({ page }) => {
@@ -46,7 +49,7 @@ for (const locale of ['fr', 'en'] as Locale[]) {
       await page.goto('/inbox');
       await expect(page.getByText('Léa Martin').first()).toBeVisible();
       // 2. L'onglet Inbox : ses dossiers, à la manière d'une boîte mail.
-      await capturer(page, CLE, 2, locale);
+      await capturer(page, CLE, 2, locale, undefined, 'haut', page.getByRole('link', { name: /^Inbox/ }).first());
     });
 
     test(`${CLE} (${locale}) : Performance Lab`, async ({ page }) => {
@@ -60,7 +63,7 @@ for (const locale of ['fr', 'en'] as Locale[]) {
       await communs(page);
       await page.goto('/dashboard');
       // 3. Le Performance Lab, pour lire les résultats.
-      await capturer(page, CLE, 3, locale);
+      await capturer(page, CLE, 3, locale, undefined, 'haut', page.getByRole('link', { name: 'Performance Lab', exact: true }));
     });
 
     test(`${CLE} (${locale}) : Paramètres`, async ({ page }) => {
@@ -74,7 +77,7 @@ for (const locale of ['fr', 'en'] as Locale[]) {
       await communs(page);
       await page.goto('/parametres');
       // 5. Paramètres > Général : le fuseau et les heures d'ouverture.
-      await capturer(page, CLE, 5, locale);
+      await capturer(page, CLE, 5, locale, undefined, 'haut', page.getByRole('link', { name: L[locale].general, exact: true }));
     });
   });
 }

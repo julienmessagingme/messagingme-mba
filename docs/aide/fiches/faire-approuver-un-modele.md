@@ -6,6 +6,7 @@ publique: oui
 rubrique: parler-aux-clients
 rang: 3
 comment_faire: oui
+video: oui
 ---
 # Créer un modèle et le faire approuver
 

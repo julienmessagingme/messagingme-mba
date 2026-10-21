@@ -7,6 +7,7 @@ rubrique: parler-aux-clients
 rang: 5
 comment_faire: oui
 prerequis: faire-approuver-un-modele
+video: oui
 ---
 # Lancer une campagne
 

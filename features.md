@@ -2016,7 +2016,10 @@ scénario, comment importer des contacts.
 - ✅ **« Comment faire » dans la console** : dans la barre du haut des écrans qui ont leur page (Accueil, Inbox,
   Modèles, mini-CRM, Campagnes, Offre), un lien ouvre la page du centre d'aide, dans la langue de la console, dans
   un nouvel onglet. Sous 1 024 px de large, l'icône seule.
-- ⏳ Les films courts de chaque page (sans son, sous-titrés) viennent ensuite ; une page sans film n'en montre pas.
+- ✅ **Un film court sur les six pages qui montrent un geste dans la console** (connecter son numéro, se repérer,
+  répondre dans l'Inbox, faire approuver un modèle, importer ses contacts, lancer une campagne), en français et en
+  anglais : la vraie console, étape par étape, le geste pointé et agrandi, sous-titré, sans son, une minute environ.
+- ⏳ Les films des trois pages « Depuis Claude Code » qui n'en ont pas encore ; une page sans film n'en montre pas.
 
 ## Support (menu Support)
 

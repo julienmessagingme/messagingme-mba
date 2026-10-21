@@ -4,6 +4,7 @@ source_empreinte: 586a76
 publique: oui
 rubrique: demarrer
 rang: 4
+video: oui
 ---
 # Me repérer dans la console
 

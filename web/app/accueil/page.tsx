@@ -1368,7 +1368,7 @@ function ActiverNumeroZone({ tenantId, isAdmin, verifie, onActive }: { tenantId:
               {busy ? t('En cours…', 'Working…') : t('Activer le numéro', 'Activate the number')}
             </button>
             <span className="text-xs text-alerte-800">
-              {t('Meta ne permet que dix essais par numéro sur 72 heures : ne relance pas en rafale.', 'Meta allows only ten attempts per number over 72 hours: do not retry in bursts.')}
+              {t('Meta ne permet que dix essais par numéro sur 72 heures : ne relancez pas en rafale.', 'Meta allows only ten attempts per number over 72 hours: do not retry in bursts.')}
             </span>
           </div>
         </>

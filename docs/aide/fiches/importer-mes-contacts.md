@@ -6,6 +6,7 @@ publique: oui
 rubrique: parler-aux-clients
 rang: 4
 comment_faire: oui
+video: oui
 ---
 # Ajouter ou importer mes contacts
 

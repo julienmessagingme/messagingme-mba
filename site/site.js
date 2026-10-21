@@ -43,8 +43,9 @@
   var calme = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // Le film part, muet, quand il est à moitié à l'écran, et s'arrête quand il en sort. Pour qui a demandé moins
-  // de mouvement, rien ne démarre seul : les commandes restent là.
-  document.querySelectorAll('.f-video').forEach(function (v) {
+  // de mouvement, rien ne démarre seul : les commandes restent là. Sauf un film du centre d'aide (`.aide-film`) : une
+  // page qu'on rouvre souvent ne recharge pas quatre ou cinq mégaoctets à chaque visite, on le lance soi-même.
+  document.querySelectorAll('.f-video:not(.aide-film)').forEach(function (v) {
     if (calme) return;
     new IntersectionObserver(function (e) {
       if (e[0].isIntersecting) { v.muted = true; var p = v.play(); if (p && p.catch) p.catch(function () {}); }

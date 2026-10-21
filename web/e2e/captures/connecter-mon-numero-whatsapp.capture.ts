@@ -37,17 +37,24 @@ for (const locale of ['fr', 'en'] as Locale[]) {
       await communs(page);
       await page.goto('/connecter-whatsapp');
       // 2. Pas de numéro ? « Fournissez-moi un numéro ».
-      await capturer(page, CLE, 2, locale);
+      await capturer(page, CLE, 2, locale, undefined, 'haut', page.getByTestId('choix-fourni'));
     });
 
     test(`${CLE} (${locale}) : numéro à vérifier`, async ({ page }) => {
       await langue(page, locale);
-      await mockAccueil(page, { account: { ...COMPTE, numberStatus: 'PENDING', codeVerificationStatus: 'NOT_VERIFIED' }, settings: REGLAGES_ACCUEIL });
+      // Le libellé que le serveur donne à un numéro pas encore connecté (`src/account/service.ts`), pas le vert d'un numéro actif.
+      await mockAccueil(page, {
+        account: {
+          ...COMPTE, numberStatus: 'PENDING', codeVerificationStatus: 'NOT_VERIFIED',
+          status: { dot: 'grey', label: 'Numéro non connecté', reason: 'Le numéro est en état « PENDING », pas encore connecté.' },
+        },
+        settings: REGLAGES_ACCUEIL,
+      });
       await communs(page);
       await page.reload();
       // 3. Un numéro rattaché que Meta n'a pas vérifié : la carte le dit et porte le bouton.
       await expect(page.getByTestId('numero-card')).toBeVisible();
-      await capturer(page, CLE, 3, locale, page.getByTestId('numero-card'));
+      await capturer(page, CLE, 3, locale, page.getByTestId('numero-card'), 'haut', page.getByTestId('demander-code'));
     });
 
     test(`${CLE} (${locale}) : numéro connecté`, async ({ page }) => {
