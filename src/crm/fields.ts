@@ -100,11 +100,32 @@ export function isReservedFieldLabel(label: string): boolean {
 /**
  * Le champ socle correspondant à cette clé, ou undefined si ce n'en est pas un. Les champs socles
  * (`SOCLE_FIELDS`, partagés avec la console) sont les deux seuls champs système stockés dans `contacts.fields`.
- * Aucun chemin d'inscription ne les crée : ils sont matérialisés à la première écriture (cf. `http/contacts.ts`),
+ * Aucun chemin d'inscription ne les crée : ils sont matérialisés à la première écriture (cf. `defPourEcriture`),
  * sans quoi saisir un prénom sur un espace neuf rendrait « champ inconnu ».
  */
 export function socleField(key: string): { key: string; label: string; type: UserFieldType } | undefined {
   return SOCLE_FIELDS.find((f) => f.key === key);
+}
+
+/** Dépendances minimales pour retrouver un champ au moment d'écrire une valeur sur une fiche. */
+export interface ChampsPourEcriture {
+  champs: { list(tenantId: string): Promise<UserFieldDef[]> };
+  ensureSocleField(tenantId: string, key: string, label: string, type: UserFieldDef['type']): Promise<void>;
+}
+
+/**
+ * Définition d'un champ pour valider une valeur saisie. Un champ socle (`prenom`/`email`) absent est matérialisé
+ * à la volée ; tout autre champ inconnu reste refusé, pour qu'une faute de frappe ne crée pas un champ fantôme.
+ * Le mini-CRM et le MCP partagent cette règle sans dépendre d'une route HTTP.
+ */
+export async function defPourEcriture(deps: ChampsPourEcriture, tenantId: string, key: string): Promise<UserFieldDef | undefined> {
+  const lu = async (): Promise<UserFieldDef | undefined> => (await deps.champs.list(tenantId)).find((d) => d.key === key);
+  const def = await lu();
+  if (def) return def;
+  const socle = socleField(key);
+  if (!socle) return undefined;
+  await deps.ensureSocleField(tenantId, socle.key, socle.label, socle.type);
+  return lu();
 }
 
 export interface UserFieldStore {

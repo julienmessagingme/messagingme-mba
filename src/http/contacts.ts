@@ -5,32 +5,21 @@ import type { ContactRow, ContactFilters, BulkTarget, BulkEdits, IssueActionEnMa
 import type { UserFieldDef } from '../crm/types';
 import type { ContactHistory, ContactSend, ResumeContact } from '../crm/contact-history.pg';
 import type { CoutContact, NiveauEngagement } from '../stats/cost';
-import { validateFieldValue, canonicalizeFieldValue, socleField } from '../crm/fields';
+import { validateFieldValue, canonicalizeFieldValue, defPourEcriture } from '../crm/fields';
 import { classerDemandeArret } from '../crm/consentement';
 import { nettoyerEtiquettes, type PoseEtiquette } from '../crm/poser-etiquette';
 import { espaceVerifie } from './scope';
 import { buildContactFilters, normalizeFieldFilters } from '../crm/contact-filters';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import type { AuditEntry } from '../audit/store.pg';
-import { messageDe } from '../lib/erreur';
 import type { ListeDeLAgent, LigneDeLaListe } from '../mba/liste';
 import type { TravauxEnVol } from '../lib/en-vol';
 import { LimiteOffreError, STATUT_REFUS_OFFRE, corpsRefusLimite } from '../offres/refus';
 import { effacerContacts } from '../crm/effacement';
+import { creerEditionFicheOperateur, type ContactsEditionOperateur } from '../crm/editer-fiche-operateur';
 
 /** Ce que les routes lisent et écrivent des fiches de contact. */
-export interface ContactsDep {
-  /** Applique fields (MERGE) + suppression de fields + Nom + addTags/removeTags en une transaction. null si le
-   *  contact n'existe pas dans le tenant, ou s'il est supprimé. `consentementChange` : le statut demandé a été écrit
-   *  (faux s'il était déjà en place). */
-  applyEdits(
-    tenantId: string,
-    contactId: string,
-    edits: {
-      fields: Record<string, string>; removeFields?: string[]; addTags: string[]; removeTags: string[];
-      profileName?: string | null; optInStatus?: 'opted_in' | 'opted_out';
-    },
-  ): Promise<{ contact: ContactRow; addedTags: string[]; consentementChange: boolean } | null>;
+export interface ContactsDep extends ContactsEditionOperateur {
   /**
    * Modération : bloque ou débloque un contact. Bloqué = plus aucun envoi, et sa conversation disparaît de
    * l'Inbox.
@@ -199,21 +188,6 @@ export function parseBulkTarget(raw: unknown): BulkTarget | null {
 const asStringArray = (v: unknown): string[] =>
   Array.isArray(v) ? nettoyerEtiquettes(v.map(String), 50) : [];
 
-/**
- * Définition d'un champ pour valider une valeur saisie. Un champ socle (`prenom`/`email`) absent est matérialisé
- * à la volée (l'écran le propose dès l'ouverture d'un espace) ; tout autre champ inconnu reste refusé, pour
- * qu'une faute de frappe ne crée pas un champ fantôme. Partagée avec `set_contact_field` de l'assistant.
- */
-export async function defPourEcriture(deps: Pick<ContactsRouteDeps, 'champs' | 'ensureSocleField'>, tenantId: string, key: string): Promise<UserFieldDef | undefined> {
-  const lu = async (): Promise<UserFieldDef | undefined> => (await deps.champs.list(tenantId)).find((d) => d.key === key);
-  const def = await lu();
-  if (def) return def;
-  const socle = socleField(key);
-  if (!socle) return undefined;
-  await deps.ensureSocleField(tenantId, socle.key, socle.label, socle.type);
-  return lu();
-}
-
 export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, garde: Guard, gardeEncadrement: Guard, limiteCouteuse?: PreHandler): void {
   const opts = { preHandler: garde };
   /**
@@ -228,6 +202,7 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
   // Garde des routes coûteuses : la garde habituelle plus le plafond par espace (chaîne aplatie).
   const couteux = gardeEtendue(garde, limiteCouteuse);
   const journal = makeJournal(deps.audit);
+  const editionFiche = creerEditionFicheOperateur(deps);
 
   /**
    * Les contacts désabonnés : la liste du centre de Sécurité & compliance, réservée à l'encadrement (elle nomme
@@ -276,79 +251,15 @@ export function registerContacts(app: FastifyInstance, deps: ContactsRouteDeps, 
     const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return;
     const { contactId } = req.params as { contactId: string };
-
-    const b = (req.body ?? {}) as { fields?: unknown; removeFields?: unknown; addTags?: unknown; removeTags?: unknown; profileName?: unknown; optInStatus?: unknown };
-    const rawFields = b.fields && typeof b.fields === 'object' && !Array.isArray(b.fields) ? (b.fields as Record<string, unknown>) : {};
-    const addTags = asStringArray(b.addTags);
-    const removeTags = asStringArray(b.removeTags);
-
-    // Valide les champs contre les définitions user_fields du tenant.
-    const values: Record<string, string> = {};
-    for (const [key, raw] of Object.entries(rawFields)) {
-      const def = await defPourEcriture(deps, tenant, key);
-      if (!def) return reply.code(400).send({ error: `champ inconnu : ${key}` });
-      const val = String(raw);
-      if (!validateFieldValue(def.type, val)) return reply.code(400).send({ error: `valeur invalide pour « ${def.label} » (${def.type})` });
-      values[key] = canonicalizeFieldValue(def.type, val);
-    }
-
-    // Suppression de valeurs de champs : n'importe quelle clé présente sur le contact (l'opérateur jsonb `- text[]`
-    // est inoffensif et scopé). On accepte donc les clés sans définition (champ « orphelin » dont le def a été
-    // supprimé mais dont la valeur traîne encore sur le contact) : sinon elles seraient impossibles à retirer.
-    const removeFields = Array.isArray(b.removeFields)
-      ? [...new Set(b.removeFields.map(String).map((k) => k.trim()).filter((k) => k !== ''))].slice(0, 50)
-      : [];
-
-    // Nom (profile_name) éditable : chaîne bornée ; vide -> null (on vide). undefined -> on ne touche pas.
-    let profileName: string | null | undefined;
-    if (b.profileName !== undefined) {
-      if (b.profileName !== null && typeof b.profileName !== 'string') return reply.code(400).send({ error: 'profileName invalide' });
-      const trimmed = typeof b.profileName === 'string' ? b.profileName.trim().slice(0, 200) : '';
-      profileName = trimmed === '' ? null : trimmed;
-    }
-
-    // 🔴 Consentement posé à la main depuis la fiche, deux valeurs seulement : « inconnu » veut dire « rien n'a
-    // jamais été enregistré », et le réécrire après coup falsifierait le registre au lieu de le corriger.
-    let optInStatus: 'opted_in' | 'opted_out' | undefined;
-    if (b.optInStatus !== undefined) {
-      if (b.optInStatus !== 'opted_in' && b.optInStatus !== 'opted_out') {
-        return reply.code(400).send({ error: 'consentement invalide (opted_in | opted_out)' });
-      }
-      optInStatus = b.optInStatus;
-    }
-
-    if (Object.keys(values).length === 0 && removeFields.length === 0 && addTags.length === 0 && removeTags.length === 0 && profileName === undefined && optInStatus === undefined) {
-      return reply.code(400).send({ error: 'rien à modifier (fields / removeFields / addTags / removeTags / profileName / optInStatus)' });
-    }
-
-    // Une transaction : MERGE/suppression fields + Nom + tags, ou 404 si le contact n'est pas dans le tenant ou s'il
-    // est supprimé (purgé).
-    const updated = await deps.contacts.applyEdits(tenant, contactId, {
-      fields: values, removeFields, addTags, removeTags,
-      ...(profileName !== undefined ? { profileName } : {}),
-      ...(optInStatus !== undefined ? { optInStatus } : {}),
+    const issue = await editionFiche.editer({
+      tenantId: tenant,
+      contactId,
+      acteur: { userId: req.auth?.userId ?? null, email: null },
+      entree: req.body,
     });
-    if (!updated) return reply.code(404).send({ error: 'contact inconnu' });
-    // Journalisé comme la bascule en masse : c'est la même décision, prise sur une fiche au lieu d'une liste.
-    // Après l'écriture réussie, sinon on consignerait un consentement qu'on n'a pas posé. Et seulement s'il a changé :
-    // enregistrer une fiche dont le statut est déjà en place n'écrit rien, une trace dirait le contraire.
-    if (optInStatus !== undefined && updated.consentementChange) {
-      await journal(tenant, req, optInStatus === 'opted_in' ? 'contact.optin' : 'contact.optout', { kind: 'contact', id: contactId }, { source: 'fiche' });
-    }
-    // Les étiquettes posées entrent dans le référentiel, et les réellement nouvelles déclenchent les automations
-    // « tag ajouté » (reposer un tag présent ne change rien). Après l'écriture réussie, hors de sa transaction, et au
-    // mieux (un incident de file ne transforme pas l'édition en erreur), mais l'échec est journalisé : sans trace,
-    // une automation muette serait indébogable.
-    if (addTags.length > 0) {
-      // Déclarées : celles qui FINISSENT sur la fiche. Une étiquette ajoutée puis retirée dans le même envoi n'y est
-      // pas, et n'a rien à faire dans le référentiel (relecture du 2026-10-04).
-      const pose = { posees: addTags.filter((t) => updated.contact.tags.includes(t)), nouvelles: updated.addedTags };
-      await deps.etiquettes.apresPose(tenant, contactId, pose, { publier: true }).catch((err: unknown) => {
-        // eslint-disable-next-line no-console
-        console.error('publication « tag ajouté » ignorée (best-effort):', messageDe(err));
-      });
-    }
-    return reply.code(200).send({ contact: updated.contact });
+    if (issue.statut === 'invalide') return reply.code(400).send({ error: issue.erreur });
+    if (issue.statut === 'inconnue') return reply.code(404).send({ error: 'contact inconnu' });
+    return reply.code(200).send({ contact: issue.contact });
   });
 
   /**
