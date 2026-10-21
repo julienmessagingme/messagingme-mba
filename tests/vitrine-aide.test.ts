@@ -1,14 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { adresseCapture, adressesAide, fichierCommentFaire, llmsAvecAide, motsDeRecherche, pagesAide, sitemapAvecAide } from '../scripts/vitrine/aide';
 import { pagesDuCentre } from '../scripts/vitrine/aide-pages';
 import { structureFiche } from '../src/aide/structure';
 import { PAGES_CLAUDE } from '../scripts/vitrine/aide-claude-textes';
 import { CATALOGUE_MCP } from '../web/lib/partage/catalogue-mcp';
+import { page } from '../scripts/vitrine/cas';
 import { OUTILS } from '../src/mcp/outils';
-import { DROITS } from '../src/offres/offres';
+import { DROITS, ESSAI_PRO_JOURS, PRIX_PRO_HT_CENTIMES, PRIX_SIEGE_HT_CENTIMES } from '../src/offres/offres';
+import { OFFRE_PRO, PRIX_DEMO } from '../web/e2e/captures/offre-demo';
 import { SITE, lire, pagesHtml, parAttribut, texte } from './vitrine-lecture';
 
 /**
@@ -77,6 +80,15 @@ describe('le centre d’aide de la vitrine', () => {
     expect(presentes.sort()).toEqual(attendues.sort());
   });
 
+  it('deux étapes d’une même page ne montrent jamais la même image', () => {
+    // Relecture du lot 4 : la capture « en bas » d'une zone proche du haut retombait en haut de page, et l'étape 2 de
+    // « Choisir mon offre » répétait l'étape 1.
+    for (const { chemin, contenu } of generees) {
+      const empreintes = [...contenu.matchAll(/<img src="\/img\/aide\/[^"?]+\?v=([^"]+)"/g)].map((m) => m[1]);
+      expect(new Set(empreintes).size, chemin).toBe(empreintes.length);
+    }
+  });
+
   it('chaque capture s’ouvre en grand d’un clic, et change d’adresse avec son contenu', () => {
     // Dans la page, une capture fait un tiers de sa taille : le lien mène à l'image entière. Son `?v=` est l'empreinte
     // du fichier, la vitrine gardant les images un jour en cache chez le visiteur (`site/vercel.json`).
@@ -90,6 +102,83 @@ describe('le centre d’aide de la vitrine', () => {
       }
     }
     expect(vues).toBe(58);
+  });
+
+  it('chaque page de la vitrine mène au centre d’aide, au bureau, dans le burger et en pied de page (tâche 9)', () => {
+    const pages = pagesHtml();
+    expect(pages.length).toBeGreaterThan(40);
+    for (const chemin of pages) {
+      const html = lire(chemin);
+      const [adresse, nom] = chemin.startsWith('en/') ? ['/en/help/', 'Help'] : ['/aide/', 'Aide'];
+      const entete = html.match(/<header class="cadre entete">[\s\S]*?<\/header>/)?.[0] ?? '';
+      const pied = html.match(/<footer class="pied">[\s\S]*?<\/footer>/)?.[0] ?? '';
+      expect(entete, `${chemin} : menu de bureau`).toMatch(new RegExp(`<a class="lien" href="${adresse}"( aria-current="page")?>${nom}</a>`));
+      expect(entete, `${chemin} : burger`).toMatch(new RegExp(`<a class="burger-ligne" href="${adresse}"( aria-current="page")?>${nom}</a>`));
+      expect(pied, `${chemin} : pied`).toContain(`<li><a href="${adresse}">${nom}</a></li>`);
+    }
+  });
+
+  it('site.js : le filtre normalise comme les mots indexés, et le contact ne recopie qu’un nom de page (Review Focus 3 et 4)', () => {
+    // Relecture du lot 3 : les autres tests de ce fichier restaient verts si l'on retirait le filtre du préremplissage,
+    // passait par innerHTML, ou si la normalisation du filtre divergeait de `motsDeRecherche`.
+    const js = lire('site.js');
+    const source = js.match(/var normaliser = (function \(t\) \{[\s\S]*?\n {2}\});/)?.[1];
+    expect(source, 'la fonction normaliser de site.js').toBeDefined();
+    const normaliser = new Function(`return ${source}`)() as (t: string) => string;
+    for (const t of ['Faire approuver un modèle', 'Fenêtre de 24 heures', 'Ça, c’est « l’Inbox » !', 'ÉTÉ À NOËL']) {
+      expect(normaliser(t), t).toBe(motsDeRecherche(t));
+    }
+    const contact = js.slice(js.indexOf('.get(\'aide\')'), js.indexOf('form.addEventListener(\'input\''));
+    expect(contact).toContain('/^[a-z0-9-]{1,80}$/.test(aide)');
+    expect(contact).toContain('message.value =');
+    expect(js).not.toMatch(/innerHTML|insertAdjacentHTML|outerHTML|document\.write/);
+  });
+
+  it('en français, aucune ponctuation haute ni guillemet ne peut partir seul à la ligne', () => {
+    // Le texte visible du <main> de chaque page française générée : une espace ordinaire avant « : ; ? ! » » ou après
+    // « « » laisserait le signe seul en début de ligne (relecture du lot 3 : « Précédent : », « D’abord : »).
+    for (const { chemin, contenu } of generees.filter((g) => !g.chemin.startsWith('en/'))) {
+      const visible = (contenu.match(/<main>[\s\S]*<\/main>/)?.[0] ?? '').replace(/<[^>]+>/g, ' ');
+      expect(visible.match(/.{0,30}(?: [:;?!»]|« ).{0,10}/g), chemin).toBeNull();
+    }
+  });
+
+  it('les captures montrent les vrais prix, le vrai essai et la vraie grille (sinon : npm run aide:captures)', () => {
+    // Les captures de « Choisir mon offre » sont des images publiques : un prix changé dans le code sans elles les
+    // laisserait fausses, sans un rouge (relecture du lot 3). Les valeurs de démo se confrontent ici à celles qui font foi.
+    expect(PRIX_DEMO.pro).toEqual({ moisCentimes: PRIX_PRO_HT_CENTIMES.mois, anCentimes: PRIX_PRO_HT_CENTIMES.an });
+    expect(PRIX_DEMO.siege).toEqual({ moisCentimes: PRIX_SIEGE_HT_CENTIMES.mois, anCentimes: PRIX_SIEGE_HT_CENTIMES.an });
+    expect(PRIX_DEMO.essaiJours).toBe(ESSAI_PRO_JOURS);
+    for (const [demo, vraie] of [['free', 'base'], ['pro', 'pro'], ['entreprise', 'entreprise']] as const) {
+      const g = OFFRE_PRO.grille[demo];
+      expect(new Set(g.fonctions), demo).toEqual(DROITS[vraie].fonctions);
+      // Dans les deux sens : une limite que la page Offre affiche mais que la démo n'aurait pas disparaîtrait de la grille.
+      expect(Object.keys(g.limites).sort(), demo).toEqual(Object.keys(DROITS[vraie].limites).sort());
+      for (const [cle, valeur] of Object.entries(g.limites)) {
+        expect(valeur, `${demo}.${cle}`).toBe(DROITS[vraie].limites[cle as keyof typeof DROITS.base.limites]);
+      }
+    }
+  });
+
+  it('une fiche publique sans sa version anglaise est refusée par un message qui dit quoi faire', () => {
+    const dossier = mkdtempSync(join(tmpdir(), 'aide-sans-anglais-'));
+    try {
+      copyFileSync(join(SITE, '..', 'docs', 'aide', 'fiches', 'la-fenetre-de-24-heures.md'), join(dossier, 'la-fenetre-de-24-heures.md'));
+      expect(() => pagesDuCentre(dossier)).toThrow('docs/aide/fiches/en/la-fenetre-de-24-heures.md manquante');
+    } finally {
+      rmSync(dossier, { recursive: true, force: true });
+    }
+  });
+
+  it('un guillemet droit dans un titre ou un chapeau ne ferme pas l’attribut de la tête de page', () => {
+    // Les titres et chapeaux des fiches, écrits librement, alimentent la description et les balises og: ; en anglais
+    // `Click "Add"` est naturel (relecture du lot 3).
+    const html = page('en', {
+      adresse: '/en/help/', jumelle: '/aide/', titre: 'Click "Add"', description: 'Then "Save" & go', ldJson: {},
+    }, '<main></main>', 'essai');
+    expect(html).toContain('<meta name="description" content="Then &quot;Save&quot; &amp; go">');
+    expect(html).toContain('<meta property="og:title" content="Click &quot;Add&quot;">');
+    expect(html).toContain('<meta property="og:description" content="Then &quot;Save&quot; &amp; go">');
   });
 
   it('chaque lien interne d’une page d’aide mène à une page qui existe', () => {

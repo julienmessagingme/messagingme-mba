@@ -1,6 +1,6 @@
 import { test, expect } from '../aide/test';
 import { mockAccueil } from '../support/accueil';
-import { NAVIGATEUR, REGLAGES_ACCUEIL, REGLAGES_DEMO, STATS_DEMO, capturer, communs, langue, type Locale } from './donnees-demo';
+import { NAVIGATEUR, REGLAGES_ACCUEIL, REGLAGES_DEMO, STATS_DEMO, capturer, chiffresAccueil, communs, langue, type Locale } from './donnees-demo';
 
 /**
  * « Me repérer dans la console » : l'onglet Console (l'Accueil d'un espace connecté), l'onglet Inbox, le Performance
@@ -22,6 +22,7 @@ for (const locale of ['fr', 'en'] as Locale[]) {
     test(`${CLE} (${locale}) : Console et menu Compte`, async ({ page }) => {
       await langue(page, locale);
       await mockAccueil(page, { account: COMPTE, settings: REGLAGES_ACCUEIL });
+      await chiffresAccueil(page);
       await communs(page);
       await page.reload();
       await expect(page.getByTestId('numero-card')).toBeVisible();

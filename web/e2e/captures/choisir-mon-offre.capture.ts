@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from '../aide/test';
-import { NAVIGATEUR, OFFRE_PRO, capturer, communs, langue, type Locale } from './donnees-demo';
+import { NAVIGATEUR, OFFRE_PRO, PRIX_DEMO, capturer, communs, langue, type Locale } from './donnees-demo';
 
 /**
  * « Choisir mon offre » : la page Offre d'un espace Free (où il en est, et le passage en Pro avec son essai), puis
@@ -8,8 +8,6 @@ import { NAVIGATEUR, OFFRE_PRO, capturer, communs, langue, type Locale } from '.
  * payé, le bouton de paiement n'est pas cliqué.
  */
 const CLE = 'choisir-mon-offre';
-const PRIX_PRO = { moisCentimes: 4900, anCentimes: 49000 };
-const PRIX_SIEGE = { moisCentimes: 1500, anCentimes: 15000 };
 const L = {
   fr: { gerer: /Gérer mon abonnement/ },
   en: { gerer: /Manage my subscription/ },
@@ -18,11 +16,12 @@ const L = {
 const free = {
   ...OFFRE_PRO, offre: 'free', fonctions: [], limites: OFFRE_PRO.grille.free.limites,
   usage: { envoisModelesMois: 236, contacts: 74, automations: 2, membres: 1 },
-  prixPro: PRIX_PRO, prixSiege: PRIX_SIEGE, essai: { jours: 14, possible: true, finLe: null }, sieges: null, suiteDuNumero: null,
+  prixPro: PRIX_DEMO.pro, prixSiege: PRIX_DEMO.siege, essai: { jours: PRIX_DEMO.essaiJours, possible: true, finLe: null }, sieges: null,
+  suiteDuNumero: null,
 };
 const pro = {
-  ...OFFRE_PRO, prixPro: PRIX_PRO, prixSiege: PRIX_SIEGE, essai: { jours: 14, possible: false, finLe: null },
-  sieges: { inclus: 3, achetes: 0, periodicite: 'mois' }, suiteDuNumero: null,
+  ...OFFRE_PRO, prixPro: PRIX_DEMO.pro, prixSiege: PRIX_DEMO.siege, essai: { jours: PRIX_DEMO.essaiJours, possible: false, finLe: null },
+  sieges: { inclus: OFFRE_PRO.limites.utilisateurs, achetes: 0, periodicite: 'mois' }, suiteDuNumero: null,
 };
 
 async function offre(page: Page, vue: unknown): Promise<void> {
@@ -45,7 +44,7 @@ for (const locale of ['fr', 'en'] as Locale[]) {
       // 1. Où en est l'espace : son offre, ce qu'il consomme, la grille.
       await capturer(page, CLE, 1, locale);
       // 2. Passer en Pro : mensuel ou annuel, et l'essai de 14 jours.
-      await capturer(page, CLE, 2, locale, page.getByTestId('offre-essai'), 'bas');
+      await capturer(page, CLE, 2, locale, page.getByTestId('offre-essai'));
     });
 
     test(`${CLE} (${locale}) : espace Pro`, async ({ page }) => {

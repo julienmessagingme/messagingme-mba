@@ -23,6 +23,8 @@ const CONSOLE = 'https://console.messagingme.app';
 const SITE = (p: string) => fileURLToPath(new URL(`../../site/${p}`, import.meta.url));
 
 const echapper = (t: string): string => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+/** Une valeur d'attribut entre guillemets droits : un `"` d'un titre de fiche le fermerait (relecture du lot 3). */
+const attribut = (t: string): string => echapper(t).replace(/"/g, '&quot;');
 
 /** Le chemin d'une page dans `site/` depuis son adresse : `/cas-d-usage/x/` -> `cas-d-usage/x/index.html`. */
 export const fichierDe = (adresse: string): string => `${adresse.slice(1)}index.html`;
@@ -55,14 +57,14 @@ export function page(langue: Langue, tete: Tete, main: string, commentaire: stri
   };
   rempl(/<!doctype html>\n<!--[\s\S]*?-->\n/, `<!doctype html>\n<!-- ${commentaire} -->\n`, 'commentaire');
   rempl(/<title>[^<]*<\/title>/, `<title>${echapper(tete.titre)}</title>`, 'title');
-  rempl(/<meta name="description" content="[^"]*">/, `<meta name="description" content="${echapper(tete.description)}">${tete.noindex ? '\n<meta name="robots" content="noindex">' : ''}`, 'description');
+  rempl(/<meta name="description" content="[^"]*">/, `<meta name="description" content="${attribut(tete.description)}">${tete.noindex ? '\n<meta name="robots" content="noindex">' : ''}`, 'description');
   rempl(/<link rel="canonical" href="[^"]*">/, `<link rel="canonical" href="${ORIGINE}${tete.adresse}">`, 'canonical');
   rempl(/<link rel="alternate" hreflang="fr" href="[^"]*">/, `<link rel="alternate" hreflang="fr" href="${ORIGINE}${aFr}">`, 'hreflang fr');
   rempl(/<link rel="alternate" hreflang="en" href="[^"]*">/, `<link rel="alternate" hreflang="en" href="${ORIGINE}${aEn}">`, 'hreflang en');
   rempl(/<link rel="alternate" hreflang="x-default" href="[^"]*">/, `<link rel="alternate" hreflang="x-default" href="${ORIGINE}${aFr}">`, 'x-default');
   rempl(/<meta property="og:url" content="[^"]*">/, `<meta property="og:url" content="${ORIGINE}${tete.adresse}">`, 'og:url');
-  rempl(/<meta property="og:title" content="[^"]*">/, `<meta property="og:title" content="${echapper(tete.titre)}">`, 'og:title');
-  rempl(/<meta property="og:description" content="[^"]*">/, `<meta property="og:description" content="${echapper(tete.description)}">`, 'og:description');
+  rempl(/<meta property="og:title" content="[^"]*">/, `<meta property="og:title" content="${attribut(tete.titre)}">`, 'og:title');
+  rempl(/<meta property="og:description" content="[^"]*">/, `<meta property="og:description" content="${attribut(tete.description)}">`, 'og:description');
   if (tete.affiche) rempl(/<meta property="og:image" content="[^"]*">/, `<meta property="og:image" content="${ORIGINE}${tete.affiche}">`, 'og:image');
   rempl(/<script type="application\/ld\+json">\n\{[\s\S]*?\n\}\n<\/script>\n<\/head>/,
     `<script type="application/ld+json">\n${JSON.stringify(tete.ldJson, null, 1)}\n</script>\n</head>`, 'JSON-LD');

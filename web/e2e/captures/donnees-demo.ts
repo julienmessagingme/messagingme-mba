@@ -1,4 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
+import { OFFRE_PRO } from './offre-demo';
 
 /**
  * L'ESPACE DE DÉMONSTRATION DES CAPTURES DU CENTRE D'AIDE (tâche 8 du plan du centre d'aide). Une marque INVENTÉE
@@ -11,22 +12,8 @@ export type Locale = 'fr' | 'en';
 
 export const SESSION_DEMO = { token: 'demo', email: 'lea@votre-marque.test', role: 'admin', tenantId: 't-demo' };
 
-/** Le Pro : la console complète, comme la voit un client qui lit l'aide (les pages disent l'offre demandée). */
-const PRO = ['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'email', 'console'];
-const limitesPro = {
-  utilisateurs: 3, admins: 2, contacts: 5000, envoisModelesMois: null, automations: null, suppressionsJour: null,
-  adressesWebhook: 5, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 20, badge: false, numeroInclus: true,
-};
-export const OFFRE_PRO = {
-  offre: 'pro', fonctions: PRO, limites: limitesPro,
-  usage: { envoisModelesMois: 412, contacts: 248, automations: 3, membres: 2 },
-  grille: {
-    free: { fonctions: [], limites: { ...limitesPro, utilisateurs: 1, admins: 1, contacts: 100, envoisModelesMois: 1000, automations: 10, commissionPct: 50, badge: true, numeroInclus: false } },
-    pro: { fonctions: PRO, limites: limitesPro },
-    entreprise: { fonctions: [...PRO, 'analyse', 'publicites', 'chaines', 'crm', 'rcs', 'performance_lab'], limites: { ...limitesPro, utilisateurs: null, commissionPct: 10 } },
-  },
-  upgradeUrl: 'https://console.messagingme.app/offre',
-};
+/** Les prix, l'essai et la grille de la démo : dans un module sans import, que le test de la racine lit. */
+export { OFFRE_PRO, PRIX_DEMO } from './offre-demo';
 
 /** Le modèle de la collection d'automne, avec son visuel : celui des films de la vitrine. */
 export const MODELE_AUTOMNE = {
@@ -107,6 +94,28 @@ export const STATS_DEMO = {
   serviceParOrigine: { ia: 512, scenario: 236, humain: 418, indeterminee: 0 },
   serviceIaDetail: { agent: 512, mba: 0, mcp: 0 },
 };
+
+const somme = (s: Array<{ count: number }>): number => s.reduce((n, p) => n + p.count, 0);
+
+/**
+ * Les compteurs de l'Accueil (contacts, messages échangés, modèles envoyés, coût estimé) : les mêmes trente jours que le
+ * Performance Lab. Posé APRÈS le faux de l'Accueil, qu'il complète ; le reste continue vers lui.
+ */
+export async function chiffresAccueil(page: Page): Promise<void> {
+  await page.route('**/api/backend/**', async (route) => {
+    const chemin = new URL(route.request().url()).pathname;
+    const json = (b: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
+    if (chemin.endsWith('/stats/templates')) {
+      return json({ breakdown: [
+        { name: MODELE_AUTOMNE.name, category: 'MARKETING', count: somme(STATS_DEMO.templates.marketing) },
+        { name: MODELE_SUIVI.name, category: 'UTILITY', count: somme(STATS_DEMO.templates.utility) },
+      ], pricing: null });
+    }
+    if (chemin.endsWith('/stats/cost')) return json({ marketing: [], utility: [], total: 41.86, hasRates: true, currency: 'EUR', nonChiffrables: 0 });
+    if (chemin.endsWith('/stats')) return json(STATS_DEMO);
+    return route.fallback();
+  });
+}
 
 /** La langue de la console, comme la bascule FR/EN la mémorise. */
 export async function langue(page: Page, locale: Locale): Promise<void> {

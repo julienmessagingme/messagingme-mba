@@ -56,7 +56,7 @@ a:focus-visible{outline:2px solid var(--action);outline-offset:3px;border-radius
 .entete{position:relative;display:flex;align-items:center;justify-content:space-between;gap:26px;height:72px}
 .entete::after{content:"";position:absolute;left:var(--g);right:var(--g);bottom:0;height:1px;background:rgb(255 255 255 / .16);transition:opacity .25s}
 .js .barre.defile .entete::after{opacity:0}
-@media (min-width:1001px){.entete{height:84px}}
+@media (min-width:1041px){.entete{height:84px}}
 .marque{display:flex;align-items:center;gap:10px;white-space:nowrap;text-decoration:none;font-weight:700;font-size:1.05rem;letter-spacing:-.01em}
 .marque img{display:block;width:auto;height:22px;flex:none}
 .nav{flex:1;min-width:0;display:flex;align-items:center;gap:22px}
@@ -422,7 +422,7 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 }
 
 /* Menu « Fonctionnalités » du bureau : un <details> natif, qui s'ouvre sans script et au clavier ; `site.js` le
-   referme au clic ailleurs et à Échap. Sous 640 px, la barre entière laisse la place au burger (plus bas). */
+   referme au clic ailleurs et à Échap. Jusqu'à 1040 px, la barre entière laisse la place au burger (plus bas). */
 .menu{position:relative}
 .menu summary{display:flex;align-items:center;gap:6px;cursor:pointer;list-style:none;user-select:none}
 .menu summary::-webkit-details-marker{display:none}
@@ -436,13 +436,15 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .menu-ic{display:grid;place-items:center;width:40px;height:40px;border-radius:10px;background:rgb(111 194 254 / .14);color:var(--action-ink);font-size:1.25rem}
 .menu-panneau strong{display:block;color:#FFFFFF;font-size:.92rem;font-weight:700;line-height:1.3}
 .menu-panneau small{display:block;color:var(--muted);font-size:.8rem;line-height:1.35}
-/* Le menu du téléphone : trois traits en haut à droite, qui ouvrent « Fonctionnalités » (dépliable sur les quatre
-   pages, déplié d'office sur l'une d'elles), « Développeurs » et, tout en bas, « Se connecter ». Un <details> natif
-   lui aussi : il marche sans script, et `site.js` le referme au clic ailleurs, à Échap, et sur un lien suivi. */
+/* Le menu du téléphone et des écrans étroits : trois traits en haut à droite, qui ouvrent « Fonctionnalités » et
+   « Solutions » (dépliables, celui de la page courante déplié d'office), « Tarifs », « Aide », « Développeurs », les
+   drapeaux et, tout en bas, « Se connecter ». Un <details> natif lui aussi : il marche sans script, et `site.js` le
+   referme au clic ailleurs, à Échap, et sur un lien suivi. */
 .burger{display:none}
-/* 1000 px et non 640 : avec Industries, Pricing, les drapeaux et le bouton vert, le bandeau du bureau ne tient sur
-   une ligne qu'à partir d'environ 960 px de large (mesuré le 2026-10-09 ; c'était 800 px avant les drapeaux). */
-@media (max-width:1000px){
+/* 1040 px et non 640 : avec Industries, Pricing, les drapeaux et le bouton vert, le bandeau du bureau ne tenait sur
+   une ligne qu'à partir d'environ 960 px de large (mesuré le 2026-10-09 ; c'était 800 px avant les drapeaux) ; avec
+   « Aide » (2026-10-21), le français déborde jusqu'à 1 016 px. La hauteur de l'en-tête de bureau (plus haut) suit ce seuil. */
+@media (max-width:1040px){
   .nav{display:none}
   .burger{display:block}
   .burger > summary{display:grid;place-items:center;width:44px;height:44px;margin-right:-10px;border-radius:10px;cursor:pointer;list-style:none;user-select:none;color:var(--ink);font-size:1.6rem}

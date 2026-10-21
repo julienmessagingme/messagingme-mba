@@ -38,7 +38,7 @@ const T = {
     detail: 'En détail',
     bonASavoir: 'Bon à savoir',
     offre: `Avec l’offre Pro, ou pendant l’essai Pro de ${ESSAI_PRO_JOURS} jours.`,
-    ouvrir: (ecran: string) => `Ouvrir ${ecran} dans la console`,
+    ouvrir: (ecran: string) => `Ouvrir « ${ecran} » dans la console`,
     ouvrirConsole: 'Ouvrir la console',
     avant: 'D’abord :',
     precedent: 'Précédent :',
@@ -63,7 +63,7 @@ const T = {
     detail: 'In detail',
     bonASavoir: 'Good to know',
     offre: `With the Pro plan, or during the ${ESSAI_PRO_JOURS}-day Pro trial.`,
-    ouvrir: (ecran: string) => `Open ${ecran} in the console`,
+    ouvrir: (ecran: string) => `Open “${ecran}” in the console`,
     ouvrirConsole: 'Open the console',
     avant: 'First:',
     precedent: 'Previous:',
@@ -87,6 +87,9 @@ const echapper = (t: string): string => t.replace(/&/g, '&amp;').replace(/</g, '
 const attribut = (t: string): string => echapper(t).replace(/"/g, '&quot;');
 /** Le texte brut d'une ligne de fiche : sans le gras, pour une méta, un JSON-LD ou une recherche. */
 const brut = (t: string): string => t.replace(/\*\*/g, '');
+
+/** Un texte sans balisage (titre, libellé) : échappé, et en français les espaces insécables de la ponctuation. */
+const texte = (t: string, langue: Langue): string => (langue === 'fr' ? insecables(echapper(t)) : echapper(t));
 
 /** Une ligne de fiche en HTML : échappée, le gras rendu, et en français les espaces insécables de la ponctuation. */
 function enLigne(t: string, langue: Langue): string {
@@ -132,7 +135,7 @@ function corps(p: PageAide, langue: Langue): string {
       const capture = adresseCapture(p.cle, s.numero, langue);
       // Dans la page, la capture fait un tiers de sa taille : un clic ouvre l'image entière, sans script.
       const image = p.publication.captures && captureExiste(capture)
-        ? `<a class="aide-capture" href="${versionnee(capture)}" title="${T[langue].agrandir}"><img src="${versionnee(capture)}" alt="${attribut(`${T[langue].etape} ${s.numero} : ${brut(s.titre)}`)}" width="1280" height="800" loading="lazy"></a>`
+        ? `<a class="aide-capture" href="${versionnee(capture)}" title="${T[langue].agrandir}"><img src="${versionnee(capture)}" alt="${attribut(`${T[langue].etape} ${s.numero}${langue === 'fr' ? ' :' : ':'} ${brut(s.titre)}`)}" width="1280" height="800" loading="lazy"></a>`
         : '';
       const detail = s.detail.length > 0
         ? `<details class="aide-detail"><summary>${T[langue].detail}</summary>${s.detail.map((b) => bloc(b, langue)).join('')}</details>`
@@ -156,7 +159,7 @@ function menu(pages: PageAide[], courante: PageAide | null, langue: Langue): str
       const v = p[langue];
       const mots = motsDeRecherche(`${v.titre} ${structureFiche(v.corps, langue).chapeau}`);
       const actif = p === courante ? ' class="actif" aria-current="page"' : '';
-      lignes.push(`        <a href="${v.adresse}" data-mots="${mots}"${actif}>${echapper(v.titre)}</a>`);
+      lignes.push(`        <a href="${v.adresse}" data-mots="${mots}"${actif}>${texte(v.titre, langue)}</a>`);
     }
     lignes.push('      </div>');
   }
@@ -190,13 +193,13 @@ function pageAide(pages: PageAide[], p: PageAide, langue: Langue): { chemin: str
     '<main>',
     '<section class="cadre f-une guide-une aide-une">',
     '  <div>',
-    `    <p class="aide-fil"><a href="${ACCUEIL_AIDE[langue]}">${T[langue].aide}</a> › <a href="${ACCUEIL_AIDE[langue]}#${p.publication.rubrique}">${rubrique}</a> › ${echapper(v.titre)}</p>`,
-    `    <h1><span class="f-surtitre"><svg class="ic" aria-hidden="true"><use href="#i-file-text"/></svg>${T[langue].aide}</span> ${echapper(v.titre)}</h1>`,
+    `    <p class="aide-fil"><a href="${ACCUEIL_AIDE[langue]}">${T[langue].aide}</a> › <a href="${ACCUEIL_AIDE[langue]}#${p.publication.rubrique}">${rubrique}</a> › ${texte(v.titre, langue)}</p>`,
+    `    <h1><span class="f-surtitre"><svg class="ic" aria-hidden="true"><use href="#i-file-text"/></svg>${T[langue].aide}</span> ${texte(v.titre, langue)}</h1>`,
     `    <p class="chapeau">${enLigne(s.chapeau, langue)}</p>`,
     ...(p.publication.offre ? [`    <p class="aide-offre">${langue === 'fr' ? insecables(T.fr.offre) : T.en.offre}</p>`] : []),
     '    <div class="appels">',
-    `      <a class="bouton bouton-plein" href="${CONSOLE}${ecran?.href ?? '/'}${suffixeConsole}">${ecran ? T[langue].ouvrir(ecran[langue]) : T[langue].ouvrirConsole}</a>`,
-    ...(prerequis ? [`      <a class="bouton bouton-texte" href="${prerequis[langue].adresse}">${T[langue].avant} ${echapper(prerequis[langue].titre)} <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>`] : []),
+    `      <a class="bouton bouton-plein" href="${CONSOLE}${ecran?.href ?? '/'}${suffixeConsole}">${ecran ? texte(T[langue].ouvrir(ecran[langue]), langue) : T[langue].ouvrirConsole}</a>`,
+    ...(prerequis ? [`      <a class="bouton bouton-texte" href="${prerequis[langue].adresse}">${texte(`${T[langue].avant} ${prerequis[langue].titre}`, langue)} <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>`] : []),
     '    </div>',
     '  </div>',
     '</section>',
@@ -208,8 +211,8 @@ function pageAide(pages: PageAide[], p: PageAide, langue: Langue): { chemin: str
     film(p, langue),
     corps(p, langue),
     '      <div class="aide-pied-page">',
-    ...(avant ? [`        <a class="aide-precedente" href="${avant[langue].adresse}">${T[langue].precedent} ${echapper(avant[langue].titre)}</a>`] : []),
-    ...(apres ? [`        <a class="aide-suivante" href="${apres[langue].adresse}">${T[langue].suivant} ${echapper(apres[langue].titre)}</a>`] : []),
+    ...(avant ? [`        <a class="aide-precedente" href="${avant[langue].adresse}">${texte(`${T[langue].precedent} ${avant[langue].titre}`, langue)}</a>`] : []),
+    ...(apres ? [`        <a class="aide-suivante" href="${apres[langue].adresse}">${texte(`${T[langue].suivant} ${apres[langue].titre}`, langue)}</a>`] : []),
     `        <a class="aide-question" href="${T[langue].contact}?aide=${v.adresse.split("/").filter(Boolean).pop()}">${langue === 'fr' ? insecables(T.fr.question) : T.en.question}</a>`,
     '      </div>',
     '    </article>',
@@ -265,7 +268,7 @@ function accueilAide(pages: PageAide[], langue: Langue): { chemin: string; conte
     lignes.push(`    <h2 id="${r}">${NOMS_RUBRIQUES[r][langue]}</h2>`, '    <ul class="aide-cartes">');
     for (const p of pages.filter((x) => x.publication.rubrique === r)) {
       const v = p[langue];
-      lignes.push(`      <li><a href="${v.adresse}"><strong>${echapper(v.titre)}</strong><small>${enLigne(structureFiche(v.corps, langue).chapeau, langue)}</small></a></li>`);
+      lignes.push(`      <li><a href="${v.adresse}"><strong>${texte(v.titre, langue)}</strong><small>${enLigne(structureFiche(v.corps, langue).chapeau, langue)}</small></a></li>`);
     }
     lignes.push('    </ul>');
   }
@@ -275,7 +278,7 @@ function accueilAide(pages: PageAide[], langue: Langue): { chemin: string; conte
     // Chaque page Claude Code, et l'offre quand ses outils la demandent (relecture du lot 3 : l'accueil promettait
     // « tout en Free » alors que les outils de campagne sont fermés en Free ; `tests/vitrine-aide.test.ts` tient les deux).
     '    <ul class="aide-cartes">',
-    ...PAGES_CLAUDE.map((p) => `      <li><a href="${p.adresse[langue]}"><strong>${echapper(p.titre[langue])}</strong><small>${enLigne(p.chapeau[langue], langue)}</small>${p.offrePro ? `<small class="aide-carte-offre">${langue === 'fr' ? insecables(T.fr.offre) : T.en.offre}</small>` : ''}</a></li>`),
+    ...PAGES_CLAUDE.map((p) => `      <li><a href="${p.adresse[langue]}"><strong>${texte(p.titre[langue], langue)}</strong><small>${enLigne(p.chapeau[langue], langue)}</small>${p.offrePro ? `<small class="aide-carte-offre">${langue === 'fr' ? insecables(T.fr.offre) : T.en.offre}</small>` : ''}</a></li>`),
     '    </ul>',
     `    <p><a href="${T[langue].developpeursAdresse}">${T[langue].developpeursLien}</a></p>`,
     '  </div>',
@@ -340,7 +343,7 @@ function menuDeveloppeurs(courante: PageClaude, langue: Langue): string {
     `        <a href="${GUIDE_META[langue]}">${TC[langue].guideMeta}</a>`,
     '      </div>',
     `      <div class="aide-rubrique"><h3>${TC[langue].surtitre}</h3>`,
-    ...PAGES_CLAUDE.map((p) => `        <a href="${p.adresse[langue]}"${p === courante ? ' class="actif" aria-current="page"' : ''}>${echapper(p.titre[langue])}</a>`),
+    ...PAGES_CLAUDE.map((p) => `        <a href="${p.adresse[langue]}"${p === courante ? ' class="actif" aria-current="page"' : ''}>${texte(p.titre[langue], langue)}</a>`),
     '      </div>',
     '    </nav>',
   ].join('\n');
@@ -361,8 +364,8 @@ function pageClaude(p: PageClaude, langue: Langue): { chemin: string; contenu: s
     '<main>',
     '<section class="cadre f-une guide-une aide-une">',
     '  <div>',
-    `    <p class="aide-fil"><a href="${DEVELOPPEURS[langue]}">${TC[langue].developpeurs}</a> › ${echapper(p.titre[langue])}</p>`,
-    `    <h1><span class="f-surtitre"><svg class="ic" aria-hidden="true"><use href="#i-code"/></svg>${TC[langue].surtitre}</span> ${echapper(p.titre[langue])}</h1>`,
+    `    <p class="aide-fil"><a href="${DEVELOPPEURS[langue]}">${TC[langue].developpeurs}</a> › ${texte(p.titre[langue], langue)}</p>`,
+    `    <h1><span class="f-surtitre"><svg class="ic" aria-hidden="true"><use href="#i-code"/></svg>${TC[langue].surtitre}</span> ${texte(p.titre[langue], langue)}</h1>`,
     `    <p class="chapeau">${enLigne(p.chapeau[langue], langue)}</p>`,
     ...(p.offrePro ? [`    <p class="aide-offre">${langue === 'fr' ? insecables(T.fr.offre) : T.en.offre}</p>`] : []),
     '    <div class="appels">',
@@ -383,8 +386,8 @@ function pageClaude(p: PageClaude, langue: Langue): { chemin: string; contenu: s
     ...etapes,
     ...(p.bonASavoir ? [`      <div class="aide-encadre"><strong>${T[langue].bonASavoir}</strong> ${enLigne(p.bonASavoir[langue], langue)}</div>`] : []),
     '      <div class="aide-pied-page">',
-    ...(avant ? [`        <a class="aide-precedente" href="${avant.adresse[langue]}">${T[langue].precedent} ${echapper(avant.titre[langue])}</a>`] : []),
-    ...(apres ? [`        <a class="aide-suivante" href="${apres.adresse[langue]}">${T[langue].suivant} ${echapper(apres.titre[langue])}</a>`] : []),
+    ...(avant ? [`        <a class="aide-precedente" href="${avant.adresse[langue]}">${texte(`${T[langue].precedent} ${avant.titre[langue]}`, langue)}</a>`] : []),
+    ...(apres ? [`        <a class="aide-suivante" href="${apres.adresse[langue]}">${texte(`${T[langue].suivant} ${apres.titre[langue]}`, langue)}</a>`] : []),
     `        <a class="aide-question" href="${T[langue].contact}">${langue === 'fr' ? insecables(T.fr.question) : T.en.question}</a>`,
     '      </div>',
     '    </article>',

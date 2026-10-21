@@ -7,6 +7,7 @@ import { getSession, clearSession, type Session } from '@/lib/session';
 import { countUnreadConversations, SESSION_EXPIRED_EVENT } from '@/lib/api';
 import { Logo, LogoComplet } from './Logo';
 import { AccountMenu } from './AccountMenu';
+import { LienCommentFaire } from './LienCommentFaire';
 import { BoutonAide } from './BoutonAide';
 import { BandeauAbonnement } from './BandeauAbonnement';
 import { EncartOffre } from './EncartOffre';
@@ -492,6 +493,7 @@ export function AppShell({ active, fullBleed = false, fonction, children }: {
         {/* `pr-4` rend au menu de compte la marge que l'entête a perdue : le `px-4` est descendu dans la
             zone de gauche, qui porte désormais une largeur propre. Sans lui, l'avatar colle au bord. */}
         <div className="ml-auto flex shrink-0 items-center gap-1 pr-4">
+          <LienCommentFaire ecran={active} />
           {aideDansEntete && <BoutonAide tenantId={session.tenantId} ecranCourant={active} role={session.role} dansEntete />}
           <AccountMenu session={session} onLogout={logout} />
         </div>

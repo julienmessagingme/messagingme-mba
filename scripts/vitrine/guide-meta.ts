@@ -32,14 +32,14 @@ const TITRES = {
 
 const echapper = (t: string): string => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-/**
- * Une étape en HTML : l'adresse de Meta devient un lien (business.facebook.com) et, en français, la ponctuation haute et
- * les guillemets gardent leur espace insécable (sinon « : » part seul en début de ligne).
- */
 /** En français, la ponctuation haute et les guillemets gardent leur espace insécable (le centre d'aide l'importe). */
 export const insecables = (h: string): string =>
   h.replace(/ ([:;?!])/g, '&nbsp;$1').replace(/« /g, '«&nbsp;').replace(/ »/g, '&nbsp;»');
 
+/**
+ * Une étape en HTML : l'adresse de Meta devient un lien (business.facebook.com) et, en français, la ponctuation haute et
+ * les guillemets gardent leur espace insécable (sinon « : » part seul en début de ligne).
+ */
 const enHtml = (t: string, langue: Langue): string => {
   const h = echapper(t).replace(/business\.facebook\.com/g, '<a href="https://business.facebook.com/">business.facebook.com</a>');
   return langue === 'fr' ? insecables(h) : h;

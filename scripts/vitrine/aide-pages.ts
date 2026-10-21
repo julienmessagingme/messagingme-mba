@@ -3,7 +3,7 @@
 // fiches publiques de `docs/aide/fiches/`, leur version anglaise (`docs/aide/fiches/en/`) et leurs adresses. Le
 // générateur (`aide.ts`) écrit les pages ; `anglais.ts` en lit les jumelles. Ce fichier n'importe ni l'un ni l'autre :
 // `anglais.ts` le lit à l'import, et une boucle d'imports le laisserait à moitié chargé.
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { champDeFiche, lireFicheDuDepot, publicationDe, RUBRIQUES, type PublicationFiche, type Rubrique } from '../../src/aide/fiches';
@@ -38,15 +38,19 @@ export interface PageAide {
 }
 
 /** Les pages du centre, dans l'ordre du menu : rubrique, puis rang. */
-export function pagesDuCentre(): PageAide[] {
-  return readdirSync(DOSSIER)
+export function pagesDuCentre(dossier: string = DOSSIER): PageAide[] {
+  return readdirSync(dossier)
     .filter((n) => n.endsWith('.md'))
     .flatMap((nom): PageAide[] => {
-      const texte = readFileSync(join(DOSSIER, nom), 'utf8');
+      const texte = readFileSync(join(dossier, nom), 'utf8');
       const publication = publicationDe(texte);
       if (publication === null) return [];
       const fr = lireFicheDuDepot(nom, texte);
-      const texteEn = readFileSync(join(DOSSIER, 'en', nom), 'utf8');
+      // Un message qui dit quoi faire, plutôt qu'un ENOENT à l'import des tests de la vitrine (relecture du lot 3).
+      if (!existsSync(join(dossier, 'en', nom))) {
+        throw new Error(`docs/aide/fiches/en/${nom} manquante : une fiche publique a sa version anglaise (la traduire, avec slug et traduit_de)`);
+      }
+      const texteEn = readFileSync(join(dossier, 'en', nom), 'utf8');
       const en = lireFicheDuDepot(nom, texteEn);
       const slug = champDeFiche(texteEn, 'slug');
       if (slug === null) throw new Error(`docs/aide/fiches/en/${nom} : sans slug`);
