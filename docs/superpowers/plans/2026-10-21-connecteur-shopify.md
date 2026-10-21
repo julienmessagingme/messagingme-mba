@@ -46,7 +46,7 @@ reste pour plus tard.
 - **Le modèle doit être approuvé pour être branché**, catégorie UTILITY imposée pour commande et expédition. À
   l'envoi, un modèle que Meta a repassé en MARKETING ne part qu'à une fiche consentante (le chemin du scénario ne
   regarde pas le consentement : `optInAllows` ne sert qu'à la construction d'une liste).
-- **Expédition = `fulfillments/create`** (transporteur, numéro et lien de suivi). À mesurer au lot 0.
+- **Expédition = `fulfillments/create`** (transporteur, numéro et lien de suivi), mesuré au lot 0.
 - **`customers/data_request` = un e-mail aux admins de l'espace** avec le lien de la fiche : c'est le marchand qui
   répond à son client.
 - **« Couper » laisse l'app installée chez Shopify** (aucune API ne la désinstalle) : la carte donne le lien de la page
@@ -64,17 +64,32 @@ secret chiffré, la purge RGPD, l'écriture du consentement) et porte des invari
 catégorie du modèle à l'envoi). Pas feature-loop, parce que le bon comportement face à une vraie boutique et un vrai
 téléphone ne se prouve pas par un test : l'essai réel décrit plus bas clôt chaque lot.
 
-## Lot 0 : mesures avant le code (boutique YANS MOD, sans rien écrire au dépôt)
+## Lot 0 : mesures avant le code (FAIT le 2026-10-21, boutique `messaging-me-essai`, app d'essai n° 2, CLI 4.9.4)
 
-Ce que la mesure du 21 n'a pas couvert, et que les tâches supposent :
-- `orders/paid` : où est le téléphone (ordre attendu : `shipping_address.phone`, `billing_address.phone`,
-  `customer.phone`, `phone`), et `order_status_url`.
-- `fulfillments/create` : transporteur, numéro et lien de suivi, et l'accès qu'il exige (`read_orders` suffit-il ?).
-- `compliance_topics` accepté dans le `shopify.app.toml` d'une app de l'organisation, par `app deploy`.
-- `shopify app webhook trigger` signe-t-il avec le secret de l'app (sert à l'essai réel des webhooks RGPD) ?
-- Lire l'identifiant d'organisation sans que le marchand copie l'adresse de son tableau de bord ; à défaut, il colle
-  cette adresse et la skill l'en extrait.
-- Une boutique PAYANTE active (règle d'organisation attendue identique).
+Vrais webhooks reçus par un tunnel, signature vérifiée sur chacun :
+- **Aucun ordre entre sujets** : une commande payée a livré `orders/paid` AVANT `orders/create` (et un
+  `checkouts/update` portant `completed_at`). Dédoublonnage et fermeture du panier ne supposent donc aucun ordre.
+- **`orders/paid`** : téléphone dans `shipping_address.phone` (`customer` absent sur une commande sans client),
+  `order_status_url`, `name` (« #1002 »), `checkout_token` égal au `token` du checkout, `currency` et
+  `presentment_currency`. En-têtes : `X-Shopify-Order-Id`, `X-Shopify-Event-Id`, `X-Shopify-Webhook-Id`,
+  `X-Shopify-Triggered-At`, `X-Shopify-Test`.
+- **`fulfillments/create`** : téléphone dans `destination.phone`, `tracking_company`, `tracking_number`,
+  `tracking_url`, `order_id`, `name` (« #1002.1 », la commande suivie d'un suffixe). NI `order_status_url` NI client :
+  le message d'expédition porte le lien de suivi, pas celui de la commande. **Il exige `read_fulfillments`** (ou
+  `read_marketplace_orders`) : sans lui, `app deploy` refuse la version.
+- **`compliance_topics`** passent dans le `shopify.app.toml` d'une app de l'organisation : `app deploy` les accepte.
+- **`app webhook trigger`** signe avec le vrai secret de l'app sans qu'on le lui donne, MAIS il envoie l'exemple de
+  Shopify sur le domaine `shop.myshopify.com` (corps `shop_id`, `shop_domain`, `customer {id, email, phone}`,
+  `orders_to_redact`, en-tête `X-Shopify-Test: true`). Il ne vise jamais une vraie boutique.
+- **`app/uninstalled`** arrive tout de suite, corps = la fiche de la boutique. Ensuite, la demande de jeton rend
+  `400 {"error": "app_not_installed"}` **à condition d'envoyer `Accept: application/json`** ; sans cet en-tête, elle
+  rend une page HTML.
+- **Le marchand n'a rien à copier** : `shopify organization list --json` rend chaque organisation (identifiant, nom,
+  nombre de boutiques) et `shopify store list --organization-id <id> --json` rend le domaine `*.myshopify.com` de
+  chacune de ses boutiques.
+
+Pas mesuré : une boutique PAYANTE active (l'organisation n'en a pas ; règle d'organisation attendue identique) ; une
+vraie demande `customers/redact` (Shopify la diffère après la demande du marchand, selon sa documentation).
 
 ## Lot 1 : la connexion et les messages de commande
 
@@ -86,8 +101,10 @@ Ce que la mesure du 21 n'a pas couvert, et que les tâches supposent :
    ce lot, parce que la purge d'un client la nomme). Clés étrangères vers l'espace en cascade.
 2. **`src/shopify/connexion.ts`**, sur le modèle de `src/salesforce/connexion.ts` : domaine contrôlé par regex
    (`<nom>.myshopify.com`, rien d'autre), jeton `client_credentials` puis `shop.json` par `fetchPublic` et
-   `lireCorpsBorne` (le chemin entre dans l'inventaire de `tests/lib-adresse-privee.test.ts`), chaque échec rendu avec
-   le geste qui le règle (`shop_not_permitted` : « cliquez Installer sur ce lien »).
+   `lireCorpsBorne` (le chemin entre dans l'inventaire de `tests/lib-adresse-privee.test.ts`), toujours avec
+   `Accept: application/json` (sans lui, une erreur revient en page HTML), chaque échec rendu avec le geste qui le
+   règle (`app_not_installed` : « cliquez Installer sur ce lien » ; `shop_not_permitted` : l'app n'est pas dans
+   l'organisation de la boutique).
 3. **`src/shopify/gestion.ts`**, porte unique de l'outil MCP et de la console : connecter, brancher un message, état,
    couper. Brancher crée une automation POSSÉDÉE (`possede_par = 'shopify'`, déclencheur `shopify`, scénario d'un seul
    bloc « envoyer un modèle ») et pose les `template_param_hints` vers les champs Shopify. Les données Shopify vivent
@@ -103,10 +120,13 @@ Ce que la mesure du 21 n'a pas couvert, et que les tâches supposent :
    5 s : aucun travail avant la file. Frein des domaines inconnus comme le webhook entrant, plafond de corps dédié.
    Entrée `shopifyWebhooks` dans `FAUSSES_AUTORITES` : un magasin qui rend un VRAI secret pour une boutique inventée,
    sinon la comparaison n'est jamais exercée par l'auto-attaque.
-6. **Le job `shopify-evenement`** : dédoublonnage sur la clé métier ; `orders/paid` et `fulfillments/create`, si un
-   message est branché, écrivent la fiche par le chemin partagé (`upsertContactsFromApi`, via le même `ecrireContact`
-   que `src/http/webhook-entrant.ts` : limite de contacts, consentement affirmé ou non, source tracée, un STOP qui reste
-   un STOP), téléphone normalisé au pays de la boutique, puis publient l'événement ; issue inscrite (servi,
+6. **Le job `shopify-evenement`** : dédoublonnage sur la clé métier, sans rien supposer de l'ordre d'arrivée des
+   sujets ; `orders/paid` et `fulfillments/create`, si un message est branché, écrivent la fiche par le chemin partagé
+   (`upsertContactsFromApi`, via le même `ecrireContact` que `src/http/webhook-entrant.ts` : limite de contacts,
+   consentement affirmé ou non, source tracée, un STOP qui reste un STOP), puis publient l'événement. Téléphone : pour
+   une commande `shipping_address.phone`, puis `billing_address.phone`, `customer.phone`, `phone` ; pour une
+   expédition `destination.phone` ; normalisé au pays de l'adresse, à défaut à celui de la boutique. Le numéro de
+   commande d'une expédition se lit dans son `name`, suffixe retiré. Issue inscrite (servi,
    sans téléphone, limite de contacts, désabonné). Premier refus du mois pour la limite : l'e-mail aux admins (file
    `emails-produit`). `app/uninstalled` : état `coupee`, automations éteintes.
 7. **Les trois webhooks RGPD** : `customers/redact` cherche la fiche du client (téléphone, e-mail) DANS l'espace de la
@@ -123,15 +143,17 @@ Ce que la mesure du 21 n'a pas couvert, et que les tâches supposent :
    « Couper » (admin), lien vers la page des apps de la boutique. Routes `GET` et `DELETE
    /tenants/:tenantId/integrations/shopify`, classe `tenant`.
 10. **La skill du plugin** `plugin/skills/shopify/SKILL.md` (en anglais, comme ses voisines) : Node présent (`npx.cmd`
-    sous Windows), connexion Shopify, `app init` dans un dossier dédié, extensions d'exemple retirées, `shopify.app.toml`
-    écrit (ci-dessous), `app deploy`, lien d'installation donné au marchand, `app env show`, `connect_shopify`, puis les
-    modèles proposés (`create_template`), leur approbation suivie (`get_template_status`) et `set_shopify_message`.
-    Montée de `plugin.json`.
+    sous Windows), connexion Shopify, organisation par `organization list --json` (celle qui a une boutique ; s'il y en
+    a plusieurs, le marchand choisit par son nom) et boutique par `store list --json`, `app init` dans un dossier dédié,
+    extensions d'exemple retirées, `shopify.app.toml` écrit (ci-dessous), `app deploy`, lien d'installation donné au
+    marchand, `app env show`, `connect_shopify`, puis les modèles proposés (`create_template`), leur approbation suivie
+    (`get_template_status`) et `set_shopify_message`. Un accès ajouté plus tard ne s'applique qu'après un nouveau clic
+    sur le même lien : la skill le redonne. Montée de `plugin.json`.
 11. **Doc** : `features.md` (et la fiche d'aide qui en cite la section, empreinte comprise), `documentation.md`.
 
 **Le `shopify.app.toml` écrit par la skill** : `client_id` rendu par `app init` ; `name = "Messaging Me"` ;
-`application_url` vers la console, `embedded = false` ; accès `read_customers,read_orders,read_checkouts` (mesurés le
-21, plus celui que le lot 0 trouve pour l'expédition) ; `[webhooks] api_version = "2026-10"` ; un abonnement
+`application_url` vers la console, `embedded = false` ; accès `read_customers,read_orders,read_checkouts,read_fulfillments`
+(mesurés le 21) ; `[webhooks] api_version = "2026-10"` ; un abonnement
 `orders/create`, `orders/paid`, `fulfillments/create`, `checkouts/create`, `checkouts/update`, `app/uninstalled` et un
 abonnement `compliance_topics` (`customers/data_request`, `customers/redact`, `shop/redact`), tous deux vers
 `https://api.messagingme.app/shopify/webhooks` ; `[auth] redirect_urls` laissé à la valeur par défaut de la CLI.
@@ -140,7 +162,8 @@ abonnement `compliance_topics` (`customers/data_request`, `customers/redact`, `s
 
 1. `checkouts/create` et `checkouts/update` : upsert du panier sur son jeton (téléphone de `shipping_address.phone`,
    lien `abandoned_checkout_url`, nom), aucune fiche écrite ; sans téléphone, rien. `orders/create` portant le jeton de
-   checkout, ou `completed_at` rempli : panier fermé.
+   checkout (`checkout_token`), ou `completed_at` rempli : panier fermé. La fermeture peut arriver AVANT le panier
+   (mesuré) : elle écrit alors un panier déjà fermé, et un panier fermé ne se rouvre jamais.
 2. Le balayage (même cadence que `src/automation/date-sweep.ts`) : panier ouvert, échu, jamais relancé, message
    `panier_abandonne` actif et consentement affirmé, alors fiche écrite (consentante), `relance_le` posé dans la même
    écriture que la réclamation (une seule relance même si deux balayages se croisent), événement publié. Paniers de plus
@@ -152,12 +175,13 @@ abonnement `compliance_topics` (`customers/data_request`, `customers/redact`, `s
 - `tests/shopify-webhook.test.ts` : signature fausse ou absente, 401 sans `safeParse` ni file ; domaine mal formé
   refusé sans toucher la base ; domaine inconnu 401 ; corps valide en file. Comparaison mutée, vérifiée dans les deux
   sens.
-- `tests/shopify-evenement.test.ts` : dédoublonnage ; ordre des téléphones ; aucun message branché, aucune fiche ;
+- `tests/shopify-evenement.test.ts` : dédoublonnage ; `orders/paid` avant `orders/create` ; ordre des téléphones et
+  `destination.phone` ; aucun message branché, aucune fiche ;
   limite atteinte, issue inscrite et UN e-mail par mois ; STOP gardé ; consentement affirmé, `opted_in` et source ;
   modèle repassé MARKETING, rien vers une fiche non consentante ; désinstallation.
 - `tests/shopify-rgpd.test.ts` : effacement du client dans SON espace seulement ; `shop/redact` garde les fiches ;
   demande d'accès, e-mail.
-- `tests/shopify-connexion.test.ts` : regex du domaine, chaque échec et son geste ; inventaire de
+- `tests/shopify-connexion.test.ts` : regex du domaine, en-tête `Accept`, chaque échec et son geste ; inventaire de
   `tests/lib-adresse-privee.test.ts` étendu.
 - `tests/mcp-shopify.test.ts` : refus (catégorie, approbation, consentement), bornes du schéma, OAuth seulement pour le
   consentement, Base permise.
@@ -165,8 +189,8 @@ abonnement `compliance_topics` (`customers/data_request`, `customers/redact`, `s
   l'auto-attaque couvrent la file et les routes (auto-attaque lancée en local avant de pousser).
 - `tests/integration/shopify-store.integration.test.ts` (CI) : unicité du domaine, cascade, purge des paniers d'un
   téléphone, réclamation de relance unique.
-- Lot 2 : `tests/shopify-paniers.test.ts` : upsert idempotent, fermeture par commande, relance due et unique, rien
-  quand le panier est fermé, fiche écrite seulement à la relance.
+- Lot 2 : `tests/shopify-paniers.test.ts` : upsert idempotent, fermeture par commande, fermeture reçue avant le
+  panier, relance due et unique, rien quand le panier est fermé, fiche écrite seulement à la relance.
 
 ## Ordre de déploiement
 
@@ -184,8 +208,10 @@ Sur la boutique de dev YANS MOD, branchée à un espace de test, depuis une sess
 « branche ma boutique Shopify à Messaging Me ». Julien ne fait que se connecter à Shopify et cliquer « Installer ».
 - **Lot 1** : modèles approuvés et branchés ; une commande payée (passerelle de test) avec le téléphone de Julien
   donne la confirmation WhatsApp (numéro, lien de la commande) ; l'expédition avec un suivi donne son message ; STOP,
-  puis une nouvelle commande : rien, la carte compte un désabonné ; `customers/redact` déclenché par la CLI purge la
-  fiche ; désinstaller l'app met la carte en « coupée » ; « Couper » efface le branchement.
+  puis une nouvelle commande : rien, la carte compte un désabonné ; l'exemple `customers/redact` envoyé par la CLI est
+  refusé en 401 (domaine `shop.myshopify.com`, inconnu : mesuré au lot 0, la CLI ne vise jamais une vraie boutique,
+  donc l'effacement d'un client se prouve par test) ; désinstaller l'app met la carte en « coupée » ; « Couper »
+  efface le branchement.
 - **Lot 2** : délai à 15 min ; un checkout rempli avec le téléphone de Julien et laissé impayé donne la relance, dont
   le lien rouvre le panier ; un second checkout payé avant 15 min ne donne rien.
 
