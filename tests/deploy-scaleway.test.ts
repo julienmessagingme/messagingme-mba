@@ -229,14 +229,14 @@ describe('le compose de la machine des workers', () => {
     const registre = valeur(blocRacine(WORKFLOW, 'env'), 'REGISTRE');
     expect(registre).toBeTruthy();
     expect(COMPOSE_SCALEWAY).not.toMatch(/^\s+build:/m);
-    for (const service of ['mba-worker', 'mba-worker-analyse']) {
+    for (const service of ['mba-worker', 'mba-worker-analyse', 'mba-application']) {
       expect(blocNiveau2(COMPOSE_SCALEWAY, service), service)
         .toContain(`    image: ${registre}/mba:\${IMAGE_TAG:?`);
     }
   });
 
   it('⚠️ les journaux de chaque worker tournent : le pilote json-file les garderait sans fin', () => {
-    for (const service of ['mba-worker', 'mba-worker-analyse']) {
+    for (const service of ['mba-worker', 'mba-worker-analyse', 'mba-application']) {
       const bloc = blocNiveau2(COMPOSE_SCALEWAY, service);
       expect(bloc, service).toMatch(/^ {6}driver: json-file$/m);
       expect(valeur(bloc, 'max-size'), service).toBe('10m');
@@ -244,10 +244,10 @@ describe('le compose de la machine des workers', () => {
     }
   });
 
-  it('🔴 chaque worker porte une limite de mémoire et de processeur, la même sur le VPS et chez Scaleway', () => {
-    // Lot 2b : la condition pour que les deux workers partagent une machine (docs/ARCHITECTURE-CIBLE.md §2). Sans
+  it('🔴 chaque service porte une limite de mémoire et de processeur, la même sur le VPS et chez Scaleway', () => {
+    // Lot 2b : la condition pour que les services partagent une machine (docs/ARCHITECTURE-CIBLE.md §2). Sans
     // limite, une fuite de l'un emporte l'autre ; des limites différentes des deux côtés ne seraient plus éprouvées.
-    for (const service of ['mba-worker', 'mba-worker-analyse']) {
+    for (const service of ['mba-worker', 'mba-worker-analyse', 'mba-application']) {
       const vps = blocNiveau2(COMPOSE_VPS, service);
       const scaleway = blocNiveau2(COMPOSE_SCALEWAY, service);
       expect(valeur(vps, 'mem_limit'), `${service} mem_limit (VPS)`).toMatch(/^\d+[mg]$/);
@@ -286,22 +286,30 @@ describe('le conteneur de l’API chez Scaleway et le budget de connexions', () 
   /** Migrations, sondes, sauvegardes et console d'administration. */
   const MARGE = 10;
   // TOUS les services du compose de la machine comptent, pas seulement ceux qu'on connaît aujourd'hui. Un worker : son
-  // pool, son pg-boss, et une connexion d'écoute des notifications.
+  // pool, son pg-boss, et une connexion d'écoute des notifications. Le service de connexions de la filière application :
+  // son pool seul, qu'il prête à pg-boss pour empiler, comme l'API.
   const SERVICES = [...blocRacine(COMPOSE_SCALEWAY, 'services').matchAll(/^ {2}([a-z0-9-]+):$/gm)].map((m) => m[1]!);
+  const estConnexions = (bloc: string) => /^\s+command:.*src\/application\/service\.ts/m.test(bloc);
   const workers = SERVICES.reduce((n, s) => {
     const bloc = blocNiveau2(COMPOSE_SCALEWAY, s);
+    if (estConnexions(bloc)) return n + Number(valeur(bloc, 'DB_POOL_MAX'));
     return n + Number(valeur(bloc, 'DB_POOL_MAX')) + Number(valeur(bloc, 'PGBOSS_MAX')) + 1;
   }, 0);
   // Une copie d'API : son pool applicatif (qui porte aussi ses enfilements) et celui de la réception de Meta.
   const parCopie = Number(env.DB_POOL_MAX) + Number(env.DB_POOL_RECEPTION_MAX);
 
   it('🔴 chaque service de la machine déclare ses pools, et tous entrent au budget', () => {
-    expect(SERVICES).toEqual(expect.arrayContaining(['mba-worker', 'mba-worker-analyse']));
+    expect(SERVICES).toEqual(expect.arrayContaining(['mba-worker', 'mba-worker-analyse', 'mba-application']));
     for (const s of SERVICES) {
       const bloc = blocNiveau2(COMPOSE_SCALEWAY, s);
       expect(valeur(bloc, 'DB_POOL_MAX'), `${s} sans DB_POOL_MAX`).toBeDefined();
-      expect(valeur(bloc, 'PGBOSS_MAX'), `${s} sans PGBOSS_MAX`).toBeDefined();
+      // Le service de connexions n'ouvre pas de pg-boss : le déclarer laisserait croire qu'il compte.
+      if (estConnexions(bloc)) expect(valeur(bloc, 'PGBOSS_MAX'), s).toBeUndefined();
+      else expect(valeur(bloc, 'PGBOSS_MAX'), `${s} sans PGBOSS_MAX`).toBeDefined();
     }
+    // Le pool du service de connexions reprend celui du VPS, comme ceux des workers.
+    expect(valeur(blocNiveau2(COMPOSE_SCALEWAY, 'mba-application'), 'DB_POOL_MAX'))
+      .toBe(valeur(blocNiveau2(COMPOSE_VPS, 'mba-application'), 'DB_POOL_MAX'));
   });
 
   it('🔴 le pire cas tient dans la base PENDANT un déploiement : deux versions pleines, les workers, la marge', () => {

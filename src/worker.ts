@@ -132,6 +132,8 @@ import { commissionPour } from './offres/commission';
 import { DROITS } from './offres/offres';
 import { purgerJusquAEpuisement } from './lib/purge-par-lots';
 import { PURGE_CONVERSATIONS_PAR_LOT, BUDGET_PURGE_CONVERSATIONS_MS } from './inbox/store.pg';
+import { lireJobEntrant, traiterEntrantApplication } from './application/entrant';
+import { creerDejaRecu } from './application/entrant.pg';
 
 /**
  * Démarre l’orchestration du worker. L’appelant garde la responsabilité du chargement d’environnement
@@ -619,6 +621,34 @@ export async function demarrerWorker(): Promise<void> {
     // deux messages d'un même contact ; `groupConcurrency` seul serait un no-op. Le groupe est le couple numéro +
     // contact, posé à l'enfilement par le receveur (`cleDeContact`). Garantie locale au process : avec un second
     // worker, deux jobs du même contact pourraient repartir en parallèle.
+  }, { concurrency: config.WEBHOOK_CONCURRENCY, groupConcurrency: 1 });
+
+  /**
+   * Les messages de la filière application (2026-10-22), versés par le service de connexions : la même ingestion que
+   * les entrants de Meta (fiche, STOP, écriture, détenteur), puis la même remise à l'agent IA. Ni publicités, ni Flows,
+   * ni scénarios, ni agent de Meta : ils envoient par Meta (`src/application/entrant.ts`). Groupe = l'espace, posé à
+   * l'enfilement : un seul job à la fois par espace, donc « déjà reçu » ne se dispute pas entre deux jobs.
+   */
+  await queue.work('application-entrant', async (data) => {
+    const job = lireJobEntrant(data);
+    if (!job) {
+      // eslint-disable-next-line no-console
+      console.error('application-entrant: payload inexploitable, ignoré');
+      return;
+    }
+    await traiterEntrantApplication(job, {
+      dejaRecu: creerDejaRecu(pool),
+      inbox: inboxStore,
+      entrants: {
+        upsertContact: (tenant, m) => contactStore.upsertFromInbound(tenant, m.waId, m.profileName),
+        // 🔴 Le STOP, comme sur la file `webhook` : même écriture, même source.
+        optOut: (tenant, waId, messageId) => contactStore.setOptInByWaId(tenant, waId, 'opted_out', 'personne', SOURCE_STOP_WHATSAPP, messageId),
+        signalReponse: puitsSignaux.reponse,
+        detenteur: fil,
+      },
+      remise: { remettre: fil.remettreSiPersonneNeSuit },
+      priseDeMain: fil.prisEnEcrivant,
+    });
   }, { concurrency: config.WEBHOOK_CONCURRENCY, groupConcurrency: 1 });
 
   /**

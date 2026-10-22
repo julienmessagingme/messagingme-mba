@@ -109,6 +109,37 @@ export async function etatAuthPostgres(pool: Pool, compteId: string, cle: Buffer
   };
 }
 
+/** Le numero d'un contact masque (`…@lid`), appris de ses messages recus (`completerNumero`, `./session.ts`). */
+export interface Correspondances {
+  retenir(lid: string, numero: string): Promise<void>;
+  numeroDe(lid: string): Promise<string | null>;
+}
+
+const CATEGORIE_NUMEROS = 'numero-du-lid';
+
+/**
+ * Les correspondances d'un compte, rangees avec son etat (chiffrees, effacees avec lui). Une memoire par session evite
+ * une ecriture par message recu : on n'ecrit qu'un numero neuf ou change.
+ */
+export function correspondancesPostgres(pool: Pool, compteId: string, cle: Buffer): Correspondances {
+  const memoire = new Map<string, string>();
+  return {
+    async retenir(lid, numero) {
+      if (memoire.get(lid) === numero) return;
+      await ecrireLot(pool, compteId, cle, [{ categorie: CATEGORIE_NUMEROS, cle: lid, valeur: numero }]);
+      memoire.set(lid, numero);
+    },
+    async numeroDe(lid) {
+      const connu = memoire.get(lid);
+      if (connu) return connu;
+      const lu = await lireUne(pool, compteId, cle, CATEGORIE_NUMEROS, lid);
+      if (typeof lu !== 'string') return null;
+      memoire.set(lid, lu);
+      return lu;
+    },
+  };
+}
+
 /** Efface tout l'etat d'un compte : une session retiree ne garde aucune cle. */
 export async function effacerEtatAuth(pool: Pool, compteId: string): Promise<void> {
   await pool.query('delete from comptes_application_auth where compte_id = $1', [compteId]);

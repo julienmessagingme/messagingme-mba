@@ -562,6 +562,16 @@ export const schema = z.object({
   DIDWW_TRUNK_OTP_ID: z.string().default(''),
   OTP_PONT_SECRET: z.string().default(''),
   /**
+   * La filière « application WhatsApp Business » (plan 2026-10-22) : le service de connexions `mba-application` tient
+   * les sessions des comptes reliés comme appareils liés. `APPLICATION_SERVICE_URL` : son adresse sur le réseau privé,
+   * pour l'API et le worker. `APPLICATION_SERVICE_SECRET` : le secret partagé qui signe chaque appel
+   * (`x-mm-service-signature`). Posés ensemble ou pas du tout ; vides, la filière est fermée (relier refuse, avec
+   * une phrase qui le dit). `APPLICATION_SERVICE_PORT` : le port d'écoute du service lui-même.
+   */
+  APPLICATION_SERVICE_URL: z.string().default(''),
+  APPLICATION_SERVICE_SECRET: z.string().default(''),
+  APPLICATION_SERVICE_PORT: z.coerce.number().int().min(1).max(65535).default(8090),
+  /**
    * Le numéro fourni côté client (lot 3b) : sous ce nombre de numéros libres dans la réserve, Julien est prévenu par
    * Telegram, au plus une fois par jour. 0 éteint l'alerte (aucun compte n'est sous zéro).
    */
@@ -714,6 +724,14 @@ export const schema = z.object({
     // refusé de démarrer l'API au premier déploiement. Il manque l'une ou l'autre : la déclaration rend 503.
     if (c.OTP_PONT_SECRET !== '' && c.OTP_PONT_SECRET.length < 32) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['OTP_PONT_SECRET'], message: 'OTP_PONT_SECRET doit faire au moins 32 caractères' });
+    }
+    // Le service de connexions : une adresse sans secret signerait avec une clé vide (le service refuserait tout), un
+    // secret sans adresse ne servirait à rien ; un secret court se devinerait.
+    if ((c.APPLICATION_SERVICE_URL === '') !== (c.APPLICATION_SERVICE_SECRET === '')) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [c.APPLICATION_SERVICE_URL === '' ? 'APPLICATION_SERVICE_URL' : 'APPLICATION_SERVICE_SECRET'], message: 'APPLICATION_SERVICE_URL et APPLICATION_SERVICE_SECRET se posent ensemble (ou aucun des deux)' });
+    }
+    if (c.APPLICATION_SERVICE_SECRET !== '' && c.APPLICATION_SERVICE_SECRET.length < 32) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['APPLICATION_SERVICE_SECRET'], message: 'APPLICATION_SERVICE_SECRET doit faire au moins 32 caractères' });
     }
     // Le push connecteur activé (URL posée) sans secret signerait avec une clé vide -> le connecteur refuserait tout (401).
     if (c.CONNECTOR_PUSH_URL !== '' && c.CONNECTOR_PUSH_SECRET === '') {

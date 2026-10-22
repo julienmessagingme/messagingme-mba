@@ -47,9 +47,12 @@ describe('le câblage des signaux dans le worker', () => {
     expect(worker).toMatch(/inboundOptOut: \(tenant, waId, messageId\) => contactStore\.setOptInByWaId\(tenant, waId, 'opted_out', 'personne', SOURCE_STOP_WHATSAPP, messageId\)/);
   });
 
-  it('🔴 les DEUX files qui voient des accusés passent le puits, et la réponse n’arrive que par une', () => {
+  it('🔴 les DEUX files qui voient des accusés passent le puits, et la réponse arrive par les deux files d’entrants, jamais par celle des accusés', () => {
     expect(worker.match(/signauxAccuse: puitsSignaux\.accuse/g)).toHaveLength(2);
-    expect(worker.match(/signalReponse: puitsSignaux\.reponse/g)).toHaveLength(1);
+    // Les entrants de Meta (`webhook`) et ceux de la filière application (`application-entrant`, 2026-10-22).
+    expect(worker.match(/signalReponse: puitsSignaux\.reponse/g)).toHaveLength(2);
+    const accuses = worker.slice(worker.indexOf("queue.work('webhook-status'"), worker.indexOf("queue.work('campaign-run'"));
+    expect(accuses).not.toContain('signalReponse');
   });
 
   it('🔴 la conversation analysée est un consommateur du point de sortie, AVANT l’automation qui peut sortir tôt', () => {

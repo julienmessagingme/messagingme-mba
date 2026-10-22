@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgComptesApplication } from '../../src/application/comptes.pg';
-import { effacerEtatAuth, etatAuthPostgres } from '../../src/application/transport/etat-auth';
+import { correspondancesPostgres, effacerEtatAuth, etatAuthPostgres } from '../../src/application/transport/etat-auth';
 
 /**
  * L'ÉTAT D'AUTHENTIFICATION D'UNE SESSION DE L'APPLICATION (migration 0247), recopié de wagroups avec ses tests
@@ -117,6 +117,16 @@ describe.skipIf(!url)('l’état d’authentification d’une session (0247)', (
     await autreEtat.state.keys.set({ 'pre-key': { '1': { public: Buffer.from([2]) } as never } });
     await pool.query(`update comptes_application_auth set valeur = $1 where compte_id = $2 and categorie = 'pre-key' and cle = '1'`, [ligne1, autre]);
     await expect(autreEtat.state.keys.get('pre-key', ['1'])).rejects.toThrow();
+  });
+
+  it('🔴 le numéro d’un contact masqué survit au redémarrage du service, et reste à son compte', async () => {
+    await correspondancesPostgres(pool, compteId, CLE).retenir('123456789012345@lid', '33612345678');
+    // Une nouvelle mémoire, comme après un redémarrage : la valeur vient de la base, chiffrée.
+    expect(await correspondancesPostgres(pool, compteId, CLE).numeroDe('123456789012345@lid')).toBe('33612345678');
+    const autre = await nouveauCompte('449990000898');
+    expect(await correspondancesPostgres(pool, autre, CLE).numeroDe('123456789012345@lid')).toBeNull();
+    const ligne = (await lire('numero-du-lid', '123456789012345@lid')).rows[0]!.valeur;
+    expect(Buffer.from(ligne, 'base64').toString('utf8')).not.toContain('33612345678');
   });
 
   it('effacer ne laisse aucune clé du compte', async () => {

@@ -55,3 +55,23 @@ services:
       PGBOSS_MAX: "2"
     mem_limit: 1g
     cpus: 1.0
+
+  # Le service de connexions de la filiere application (le detail est dans `docker-compose.yml`). 🔴 UN SEUL EXEMPLAIRE :
+  # `APPLICATION_SERVICE_SECRET` ne se pose dans le .env.prod de cette machine qu'a la bascule, une fois celui du VPS
+  # arrete ; vide, le service reste debout sans rien tenir.
+  mba-application:
+    image: rg.nl-ams.scw.cloud/messagingme/mba:${IMAGE_TAG:?IMAGE_TAG absent de /opt/messagingme/.env}
+    container_name: mba-application
+    command: ["npx", "tsx", "src/application/service.ts"]
+    env_file: .env.prod
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    environment:
+      DB_POOL_MAX: "2"
+    mem_limit: 512m
+    cpus: 0.5

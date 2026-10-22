@@ -52,6 +52,8 @@ export const FILES_PAR_ROLE: Record<NomDeFile, Appartenance> = {
   'evenements-envoi': 'principal',
   // Les e-mails du produit (lot 7) : une alerte de crédit ou de numéro attend derrière.
   'emails-produit': 'principal',
+  // Les messages reçus par la filière application (2026-10-22) : un client attend la réponse derrière.
+  'application-entrant': 'principal',
   // L'analyse et ce qu'elle alimente : personne n'attend derrière, et c'est ce qui appelle les modèles.
   'analyze-conversation': 'analyse',
   'push-analysis': 'analyse',

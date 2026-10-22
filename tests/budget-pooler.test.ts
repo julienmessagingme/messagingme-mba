@@ -46,13 +46,15 @@ const AUTRES_CLIENTS_TRANSACTION = 2;
 /** Les services sans base de données : la console Next.js, qui ne parle qu'à l'API. Tout AUTRE service compte. */
 const SERVICES_SANS_BASE = ['mba-web'];
 
-/** `receptionMax` : le pool réservé à la réception de Meta, que seule une copie d'API ouvre (lot 14, `creerPoolReception`). */
-interface Service { nom: string; worker: boolean; poolMax: number | null; pgbossMax: number | null; receptionMax: number | null }
+/** `receptionMax` : le pool réservé à la réception de Meta, que seule une copie d'API ouvre (lot 14, `creerPoolReception`).
+ *  `connexions` : le service de connexions de la filière application (`src/application/service.ts`), qui prête son pool
+ *  à pg-boss comme l'API mais n'ouvre pas de pool de réception. */
+interface Service { nom: string; worker: boolean; connexions: boolean; poolMax: number | null; pgbossMax: number | null; receptionMax: number | null }
 
 /**
  * TOUS les services de `docker-compose.yml`, sauf ceux de `SERVICES_SANS_BASE` : peu importe qu'une copie soit
  * déclarée par `build`, `image` ou `extends`, elle compte. Un worker se reconnaît à son rôle (`WORKER_ROLE`) ou à
- * sa commande ; tout le reste est une copie d'API.
+ * sa commande, le service de connexions à sa commande ; tout le reste est une copie d'API.
  */
 function servicesDuCompose(): Service[] {
   const lignes = readFileSync(resolve(__dirname, '..', 'docker-compose.yml'), 'utf8').split(/\r?\n/);
@@ -75,6 +77,7 @@ function servicesDuCompose(): Service[] {
     .map((b) => ({
       nom: b.nom,
       worker: code(b.lignes).some((l) => /^\s+WORKER_ROLE:/.test(l) || /^\s+command:.*worker/.test(l)),
+      connexions: code(b.lignes).some((l) => /^\s+command:.*src\/application\/service\.ts/.test(l)),
       poolMax: valeur(b.lignes, 'DB_POOL_MAX'),
       pgbossMax: valeur(b.lignes, 'PGBOSS_MAX'),
       receptionMax: valeur(b.lignes, 'DB_POOL_RECEPTION_MAX'),
@@ -89,11 +92,12 @@ describe('le budget de connexions des processus', () => {
   // (elle prête son pool applicatif à pg-boss), tant que `APP_DATABASE_URL` est posée.
   const sessions = services.filter((s) => s.worker).reduce((n, s) => n + (s.pgbossMax ?? 0) + 1, 0) + SESSIONS_MM_HUBSPOT;
   // Une copie d'API ouvre DEUX pools en mode transaction : l'applicatif et celui de la réception de Meta (lot 14).
-  const sommePools = services.reduce((n, s) => n + (s.poolMax ?? 0) + (s.worker ? 0 : s.receptionMax ?? 0), 0);
+  const copiesApi = services.filter((s) => !s.worker && !s.connexions);
+  const sommePools = services.reduce((n, s) => n + (s.poolMax ?? 0) + (copiesApi.includes(s) ? s.receptionMax ?? 0 : 0), 0);
 
   it('la lecture du compose trouve l’API et les deux workers, et rien d’autre n’échappe au compte', () => {
     expect(services.map((s) => s.nom).sort()).toEqual(expect.arrayContaining(['mba-api', 'mba-worker', 'mba-worker-analyse']));
-    expect(services.filter((s) => !s.worker).map((s) => s.nom)).toContain('mba-api');
+    expect(copiesApi.map((s) => s.nom)).toContain('mba-api');
     expect(services.filter((s) => s.worker).map((s) => s.nom).sort()).toEqual(expect.arrayContaining(['mba-worker', 'mba-worker-analyse']));
   });
 
@@ -110,8 +114,20 @@ describe('le budget de connexions des processus', () => {
     // Au moins 4 : mesuré au banc du lot 14 (2026-10-12), deux connexions accusaient environ 150 webhooks par seconde,
     // et une rafale de 300 accusés par seconde attendait jusqu'à 7,6 s, à un souffle du délai de 8 s au-delà duquel
     // la réception rend 500 et Meta rejoue.
-    for (const s of services.filter((x) => !x.worker)) expect(s.receptionMax ?? 0, `${s.nom} : DB_POOL_RECEPTION_MAX`).toBeGreaterThanOrEqual(4);
+    for (const s of copiesApi) expect(s.receptionMax ?? 0, `${s.nom} : DB_POOL_RECEPTION_MAX`).toBeGreaterThanOrEqual(4);
     for (const s of services.filter((x) => x.worker)) expect(s.receptionMax, s.nom).toBeNull();
+  });
+
+  it('🔴 le service de connexions de la filière application compte son pool, et rien d’autre', () => {
+    // Il prête son pool à pg-boss pour empiler (aucune session) et ne reçoit rien de Meta : y déclarer PGBOSS_MAX ou
+    // DB_POOL_RECEPTION_MAX laisserait croire qu'il les ouvre. Un seul exemplaire : deux tiendraient la même session.
+    const connexions = services.filter((s) => s.connexions);
+    expect(connexions.map((s) => s.nom)).toEqual(['mba-application']);
+    for (const s of connexions) {
+      expect(s.worker, s.nom).toBe(false);
+      expect(s.pgbossMax, s.nom).toBeNull();
+      expect(s.receptionMax, s.nom).toBeNull();
+    }
   });
 
   it('🔴 la somme des pools tient dans le pool du pooler, sinon l’attente part chez Supavisor, muette', () => {
@@ -135,7 +151,7 @@ describe('le budget de connexions des processus', () => {
   it('🔴 chaque copie d’API garde de quoi servir la console et les webhooks pendant ses opérations lourdes', () => {
     // Un lot prend jusqu'à ECRITURES_EN_VOL connexions, et API_MAX_LOURDES_SIMULTANEES lots tournent à la fois :
     // le pool d'une copie doit rester PLUS grand, sinon la console attend un intégrateur (la réception de Meta a son pool).
-    for (const s of services.filter((x) => !x.worker)) {
+    for (const s of copiesApi) {
       expect(s.poolMax ?? 0, s.nom).toBeGreaterThan(ECRITURES_EN_VOL * LOURDES_DEFAUT);
     }
   });

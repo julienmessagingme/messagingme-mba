@@ -4,8 +4,9 @@
 // conversations individuelles, l'envoi d'un texte. Les types de Baileys ne sortent pas de ce dossier.
 import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, normalizeMessageContent, type WAMessage, type WASocket } from '@whiskeysockets/baileys';
 import type { Pool } from 'pg';
+import { estIndividuel, type TypeMessageApplication } from '../message';
 import { codeDeconnexion } from './connexion';
-import { effacerEtatAuth, etatAuthPostgres } from './etat-auth';
+import { correspondancesPostgres, effacerEtatAuth, etatAuthPostgres, type Correspondances } from './etat-auth';
 
 export type CauseFermeture = 'reprise' | 'banni' | 'deconnecte';
 
@@ -23,8 +24,6 @@ export function causeDeFermeture(code: number | undefined): CauseFermeture {
 export function estRelie(creds: { me?: { id?: string } | null; registered?: boolean }): boolean {
   return Boolean(creds.registered) || Boolean(creds.me?.id);
 }
-
-export type TypeMessageApplication = 'text' | 'image' | 'audio' | 'video' | 'document' | 'sticker';
 
 /** Un message de l'application, sans rien de Baileys. */
 export interface MessageApplication {
@@ -91,34 +90,62 @@ function contenu(brut: WAMessage): { type: TypeMessageApplication; texte: string
   return null;
 }
 
-/** Un message de Baileys en message de l'application, ou `null`. */
+/**
+ * Un message de Baileys en message de l'application, ou `null`.
+ *
+ * 🔴 Le numéro joint à un message (`senderPn`) est celui de l'EXPÉDITEUR : pour un message tapé sur le téléphone du
+ * compte, c'est le nôtre (`decodeMessageNode`, Baileys 6.7.23). Il ne sert donc qu'à un message reçu ; celui d'un
+ * message tapé vers un contact masqué se retrouve par `completerNumero`.
+ */
 export function versMessageApplication(brut: WAMessage): MessageApplication | null {
   const jid = brut.key?.remoteJid;
   const id = brut.key?.id;
-  if (!jid || !id) return null;
+  if (!jid || !id || !estIndividuel(jid)) return null;
   const c = contenu(brut);
   if (!c) return null;
+  const deMoi = Boolean(brut.key.fromMe);
   const cle: Record<string, unknown> = { ...brut.key };
   const pn = typeof cle.senderPn === 'string' ? cle.senderPn : null;
   return {
-    id, jid, deMoi: Boolean(brut.key.fromMe), nom: brut.pushName ?? null,
+    id, jid, deMoi, nom: brut.pushName ?? null,
     horodatage: new Date(Number(brut.messageTimestamp ?? 0) * 1000), type: c.type, texte: c.texte,
-    numero: chiffres(jid.endsWith('@s.whatsapp.net') ? jid : pn),
+    numero: jid.endsWith('@s.whatsapp.net') ? chiffres(jid) : deMoi ? null : chiffres(pn),
   };
 }
+
+/**
+ * Le numéro d'un contact masqué : appris de ses messages reçus, retrouvé pour ceux qu'on lui tape depuis le téléphone.
+ * Sans lui, la réponse du téléphone tomberait dans une autre conversation que le message auquel elle répond, et la
+ * prise de main viserait la mauvaise.
+ */
+export async function completerNumero(m: MessageApplication, c: Pick<Correspondances, 'retenir' | 'numeroDe'>): Promise<MessageApplication> {
+  if (!m.jid.endsWith('@lid')) return m;
+  if (!m.deMoi && m.numero) {
+    await c.retenir(m.jid, m.numero);
+    return m;
+  }
+  if (m.deMoi && !m.numero) return { ...m, numero: await c.numeroDe(m.jid) };
+  return m;
+}
+
+/**
+ * Les options du socket. 🔴 `emitOwnEvents: false` : sinon Baileys renvoie chacun de nos envois comme un message « de
+ * moi », et chaque réponse de l'agent passerait pour une réponse tapée sur le téléphone, donc pour une prise de main.
+ * Les messages tapés sur le téléphone arrivent, eux, par la réception ordinaire.
+ */
+export const OPTIONS_SOCKET = {
+  browser: ['Messaging Me', 'Chrome', '1.0.0'] as [string, string, string],
+  markOnlineOnConnect: false,
+  syncFullHistory: false,
+  emitOwnEvents: false,
+} as const;
 
 /** Ouvre la session d'un compte sur son état enregistré (un compte neuf reçoit un QR code par `rappels.qr`). */
 export async function ouvrirSession(compte: { id: string }, auth: { pool: Pool; cle: Buffer }, rappels: RappelsSession): Promise<Session> {
   const { state, saveCreds } = await etatAuthPostgres(auth.pool, compte.id, auth.cle);
+  const correspondances = correspondancesPostgres(auth.pool, compte.id, auth.cle);
   const { version } = await fetchLatestBaileysVersion();
-  const sock: WASocket = makeWASocket({
-    version,
-    auth: state,
-    logger: journalBaileys(compte.id),
-    browser: ['Messaging Me', 'Chrome', '1.0.0'],
-    markOnlineOnConnect: false,
-    syncFullHistory: false,
-  });
+  const sock: WASocket = makeWASocket({ version, auth: state, logger: journalBaileys(compte.id), ...OPTIONS_SOCKET });
 
   sock.ev.on('creds.update', async () => {
     try {
@@ -138,12 +165,13 @@ export async function ouvrirSession(compte: { id: string }, auth: { pool: Pool; 
   });
   sock.ev.on('messages.upsert', async ({ messages }) => {
     for (const brut of messages) {
-      const m = versMessageApplication(brut);
-      if (!m) continue;
+      const lu = versMessageApplication(brut);
+      if (!lu) continue;
       try {
+        const m = await completerNumero(lu, correspondances);
         await rappels.message(m);
       } catch (err) {
-        console.error(`application ${compte.id} : message ${m.id} non traité`, err);
+        console.error(`application ${compte.id} : message ${lu.id} non traité`, err);
       }
     }
   });

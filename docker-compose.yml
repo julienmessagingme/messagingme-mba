@@ -98,6 +98,35 @@ services:
     cpus: 1.0
     networks: [mcp-robot_default]
 
+  # LE SERVICE DE CONNEXIONS DE LA FILIÈRE APPLICATION (2026-10-22, `src/application/service.ts`) : il tient une session
+  # WhatsApp par compte relié et verse les messages reçus dans la file `application-entrant`. L'API et le worker
+  # l'appellent sur `APPLICATION_SERVICE_URL` (http://mba-application:8090), par ce réseau seul : aucun port publié.
+  # 🔴 UN SEUL EXEMPLAIRE, ICI OU CHEZ SCALEWAY, JAMAIS LES DEUX : deux processus tiendraient la même session et WhatsApp
+  # en déconnecterait un. Fermé tant que `APPLICATION_SERVICE_SECRET` est vide (il reste debout, sans rien tenir).
+  mba-application:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        REVISION: ${REVISION:-inconnue}
+    container_name: mba-application
+    command: ["npx", "tsx", "src/application/service.ts"]
+    env_file: .env.prod
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8090/sante || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    environment:
+      # Un enfilement par message reçu et l'état des sessions : petit, et le budget est serré (`tests/budget-pooler.test.ts`).
+      DB_POOL_MAX: "2"
+    mem_limit: 512m
+    cpus: 0.5
+    networks: [mcp-robot_default]
+
   mba-web:
     build:
       context: .

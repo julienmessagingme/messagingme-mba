@@ -130,7 +130,8 @@ describe('le détenteur du fil se déduit du `field` de chaque entrant', () => {
     // Le type exige une valeur, pas la bonne : une fermeture vide compilerait.
     const worker = readFileSync(resolve(__dirname, '../src/worker.ts'), 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-    expect(worker.match(/^\s*detenteur: fil,\s*$/gm)).toHaveLength(1);
+    // Les deux files d'entrants : `webhook` (Meta) et `application-entrant` (filière application, 2026-10-22).
+    expect(worker.match(/^\s*detenteur: fil,\s*$/gm)).toHaveLength(2);
   });
 
   it('🔴 un échec de correction n’empêche PAS d’enregistrer le message', async () => {
