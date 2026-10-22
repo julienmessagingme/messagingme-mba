@@ -90,9 +90,3 @@ export const DELAI_PANIER_MAX = 4320;
 export const DELAI_PANIER_DEFAUT = 60;
 /** Les délais que l'assistant propose d'un clic (maquette validée) ; « autre » ouvre un champ jusqu'à 72 h. */
 export const DELAIS_PROPOSES: readonly number[] = [15, 60, 180, 1440];
-
-/** Le texte d'un modèle tel que le client le recevra : chaque repère remplacé par sa valeur d'exemple. */
-export function apercuDuTexte(texte: string): string {
-  return texte.replace(/\{\{\s*([a-z_]+)\s*\}\}/g, (tout, cle: string) =>
-    ((DONNEES_SHOPIFY as readonly string[]).includes(cle) ? EXEMPLES_DONNEES[cle as DonneeShopify] : tout));
-}

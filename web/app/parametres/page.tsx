@@ -318,7 +318,7 @@ function Parametres({ tenantId }: { tenantId: string }) {
               l'Accueil, numéro ou pas. L'Accueil renvoie ici (`#integration-hubspot`) quand il est éteint. */}
           <ReglageHubspot tenantId={tenantId} />
       <ReglageSalesforce tenantId={tenantId} />
-          {/* ...et la boutique Shopify (2026-10-21) : une carte en lecture et « Couper », le réglage passe par Claude Code. */}
+          {/* ...et la boutique Shopify (2026-10-21) : brancher, régler les trois messages, importer les clients, couper. */}
           <ReglageShopify tenantId={tenantId} />
 
           {/* Contacts bloqués : SEULE porte de sortie d'un blocage. Un contact bloqué n'apparaît nulle part

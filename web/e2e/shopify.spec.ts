@@ -1,0 +1,141 @@
+import { test, expect, type Page } from './aide/test';
+
+/**
+ * LA CARTE SHOPIFY DE PARAMÈTRES > INTÉGRATIONS, vue de l'écran (conception 2026-10-22) : brancher une boutique depuis
+ * la console, régler un message par l'assistant, sans repasser par Meta quand seul le délai change. Le serveur tient ses
+ * règles de son côté (`tests/http-shopify.test.ts`, `tests/shopify-preparation.test.ts`) ; ici, on regarde ce que
+ * l'écran MONTRE et ce qu'il ENVOIE, contre une API simulée.
+ */
+const BOUTIQUE = {
+  domaine: 'ma-boutique.myshopify.com', nom: 'Ma Boutique', etat: 'connectee', dernierEvenementLe: null,
+  consentement: null, delaiPanierMinutes: 60, origine: 'claude_code',
+};
+const VIDE = { boutique: null, messages: [], compteurs: {}, paniers: { relances: {}, fermesATemps: 0, enAttente: 0 }, pageApps: null, attentes: [] };
+const BRANCHEE = {
+  ...VIDE, boutique: BOUTIQUE, pageApps: 'https://admin.shopify.com/store/ma-boutique/settings/apps',
+  messages: [{ evenement: 'order_paid', modele: 'confirmation_commande', langue: 'fr', variables: ['first_name', 'order_number'], actif: true }],
+};
+
+interface Trace { branchements: unknown[]; preparations: unknown[]; reglages: Array<{ evenement: string; corps: unknown }> }
+
+async function monter(page: Page, o: { etat?: Record<string, unknown> | 'absente'; apresBranchement?: Record<string, unknown> }): Promise<Trace> {
+  const trace: Trace = { branchements: [], preparations: [], reglages: [] };
+  const session = { token: 'e2e-token', email: 'moi@e2e.test', role: 'admin', tenantId: 't-e2e' };
+  await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), session);
+  let etat = o.etat ?? BRANCHEE;
+  await page.route('**/api/backend/**', async (route) => {
+    const req = route.request();
+    const chemin = req.url().split('?')[0]!;
+    const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
+    const reglage = /\/integrations\/shopify\/messages\/([a-z_]+)$/.exec(chemin);
+    if (reglage && req.method() === 'PATCH') {
+      trace.reglages.push({ evenement: reglage[1]!, corps: req.postDataJSON() });
+      return json({ relanceArretee: false });
+    }
+    if (chemin.endsWith('/integrations/shopify/messages') && req.method() === 'POST') {
+      trace.preparations.push(req.postDataJSON());
+      return json({ etat: 'en_validation', modele: 'shopify_checkout_abandoned_x' });
+    }
+    if (chemin.endsWith('/integrations/shopify') && req.method() === 'POST') {
+      trace.branchements.push(req.postDataJSON());
+      if (o.apresBranchement) etat = o.apresBranchement;
+      return json(BOUTIQUE);
+    }
+    if (chemin.endsWith('/integrations/shopify')) {
+      // Le 404 exact du routeur Fastify : c'est lui qui dit « API pas encore déployée ».
+      if (etat === 'absente') return json({ message: 'Route GET not found', error: 'Not Found', statusCode: 404 }, 404);
+      return json(etat);
+    }
+    if (chemin.endsWith('/templates')) {
+      return json({ templates: [{ id: '1', name: 'confirmation_commande', status: 'APPROVED', category: 'UTILITY', language: 'fr', body: 'Bonjour {{1}}, votre commande {{2}} est bien payée. Merci !', isCarousel: false }] });
+    }
+    if (chemin.endsWith('/settings')) return json({ mbaEnabled: false, timezone: 'Europe/Paris', businessHours: {} });
+    if (chemin.endsWith('/account-status')) return json({ hasNumber: false, hubspotPortal: { connected: false } });
+    if (chemin.endsWith('/integrations/batch')) return json({ branche: false });
+    if (chemin.endsWith('/settings/agents-peuvent-prendre')) return json({ actif: false });
+    if (chemin.endsWith('/contacts/blocked')) return json({ contacts: [] });
+    if (chemin.endsWith('/unread-count')) return json({ count: 0 });
+    if (chemin.endsWith('/me')) return json({ email: 'moi@e2e.test', name: 'Moi', role: 'admin' });
+    return json({});
+  });
+  await page.goto('/parametres');
+  return trace;
+}
+
+test.describe('Paramètres > Intégrations > Shopify : la carte de la console', () => {
+  test('🔴 sans boutique : le mode opératoire, puis les clés branchent la boutique, nettoyées', async ({ page }) => {
+    const trace = await monter(page, { etat: VIDE, apresBranchement: BRANCHEE });
+    const carte = page.getByTestId('integration-shopify');
+    await expect(carte.getByTestId('shopify-mode-operatoire')).toContainText('Create app manually');
+    await expect(carte.getByTestId('shopify-mode-operatoire')).toContainText('https://app.messagingme.fr/shopify/console/');
+    await expect(carte.getByTestId('shopify-mode-operatoire')).toContainText('read_customers,read_orders,read_checkouts,read_fulfillments');
+    const valider = carte.getByTestId('shopify-brancher-valider');
+    await expect(valider).toBeDisabled();
+    await carte.getByTestId('shopify-boutique').fill(' https://admin.shopify.com/store/ma-boutique ');
+    await carte.getByTestId('shopify-client-id').fill(' cid ');
+    await carte.getByTestId('shopify-secret').fill('shpss_secret\n');
+    await valider.click();
+    await expect.poll(() => trace.branchements.length).toBe(1);
+    expect(trace.branchements[0]).toEqual({ boutique: 'https://admin.shopify.com/store/ma-boutique', clientId: 'cid', secret: 'shpss_secret' });
+    await expect(carte.getByTestId('integration-shopify-messages')).toBeVisible();
+    await expect(carte.getByTestId('integration-shopify-message')).toContainText('Boutique branchée');
+  });
+
+  test('🔴 la relance : texte proposé à repères, délai, consentement obligatoire, puis le corps envoyé au serveur', async ({ page }) => {
+    const trace = await monter(page, {});
+    await expect(page.getByTestId('integration-shopify-message-checkout_abandoned')).toContainText('pas encore réglé');
+    await page.getByTestId('integration-shopify-regler-checkout_abandoned').click();
+    const assistant = page.getByTestId('shopify-assistant');
+    await expect(assistant.getByTestId('shopify-assistant-texte')).toHaveValue(/\{prénom\}.*\n.*\{lien du panier\}/);
+    // L'aperçu WhatsApp montre les valeurs d'exemple, et le pied STOP de la relance.
+    await expect(assistant).toContainText('Bonjour Camille');
+    await expect(assistant).toContainText('Répondez STOP pour ne plus recevoir ces messages');
+    await assistant.getByTestId('shopify-assistant-suivant').click();
+    await assistant.getByTestId('shopify-delai-15').click();
+    await assistant.getByTestId('shopify-assistant-suivant').click();
+    const envoyer = assistant.getByTestId('shopify-assistant-envoyer');
+    await expect(envoyer).toBeDisabled();
+    await assistant.getByTestId('shopify-assistant-consentement').check();
+    await envoyer.click();
+    await expect.poll(() => trace.preparations.length).toBe(1);
+    expect(trace.preparations[0]).toEqual({
+      evenement: 'checkout_abandoned', langue: 'fr', delaiMinutes: 15, consentementAffirme: true,
+      texte: 'Bonjour {{first_name}}, vous avez laissé des articles dans votre panier.\nIl vous attend ici : {{checkout_url}}\nÀ très vite !',
+    });
+    await expect(page.getByTestId('integration-shopify-message')).toContainText('Envoyé à Meta');
+  });
+
+  test('un repère inconnu, ou un texte qui finit par une donnée, est dit avant l’envoi', async ({ page }) => {
+    const trace = await monter(page, {});
+    await page.getByTestId('integration-shopify-regler-checkout_abandoned').click();
+    const assistant = page.getByTestId('shopify-assistant');
+    await assistant.getByTestId('shopify-assistant-texte').fill('Bonjour {prenon}, votre panier : {lien du panier} merci');
+    await assistant.getByTestId('shopify-assistant-suivant').click();
+    await expect(assistant.getByTestId('shopify-assistant-erreur')).toContainText('{prenon}');
+    await assistant.getByTestId('shopify-assistant-texte').fill('Bonjour, votre panier : {lien du panier}');
+    await assistant.getByTestId('shopify-assistant-suivant').click();
+    await expect(assistant.getByTestId('shopify-assistant-erreur')).toContainText('ni commencer ni finir');
+    expect(trace.preparations).toEqual([]);
+  });
+
+  test('🔴 un message actif dont seule la case change : réglé tout de suite, sans repasser par Meta', async ({ page }) => {
+    const trace = await monter(page, {});
+    await expect(page.getByTestId('integration-shopify-message-order_paid')).toContainText('actif');
+    await page.getByTestId('integration-shopify-regler-order_paid').click();
+    const assistant = page.getByTestId('shopify-assistant');
+    // Le texte du modèle en place, relu chez Meta, avec les repères du marchand.
+    await expect(assistant.getByTestId('shopify-assistant-texte')).toHaveValue('Bonjour {prénom}, votre commande {numéro de commande} est bien payée. Merci !');
+    await assistant.getByTestId('shopify-assistant-suivant').click();
+    await assistant.getByTestId('shopify-assistant-consentement').check();
+    await assistant.getByTestId('shopify-assistant-envoyer').click();
+    await expect.poll(() => trace.reglages.length).toBe(1);
+    expect(trace.reglages[0]).toEqual({ evenement: 'order_paid', corps: { consentementAffirme: true } });
+    expect(trace.preparations).toEqual([]);
+  });
+
+  test('🔴 API pas encore déployée (404 du routeur) : AUCUNE carte', async ({ page }) => {
+    await monter(page, { etat: 'absente' });
+    await expect(page.getByTestId('integration-hubspot')).toBeVisible();
+    await expect(page.getByTestId('integration-shopify')).toHaveCount(0);
+  });
+});
