@@ -8,7 +8,7 @@ import {
 } from './donnees';
 import type { Issue, Refus } from './gestion';
 import type { AttenteMessage, PgShopifyStore } from './store.pg';
-import { EXEMPLES_DONNEES, langueDuPied, PIED_STOP, TEXTES_PROPOSES } from '../../web/lib/partage/shopify-messages';
+import { EXEMPLES_DONNEES, LIBELLES_EVENEMENTS, langueDuPied, PIED_STOP, TEXTES_PROPOSES } from '../../web/lib/partage/shopify-messages';
 
 // Le pied STOP et les textes proposés vivent dans le module que la console partage : l'aperçu de l'assistant et le
 // modèle créé chez Meta disent la même chose.
@@ -134,7 +134,7 @@ export async function preparerMessage(deps: DepsPreparation, tenantId: string, p
     ...(c.exemples.length > 0 ? { example: c.exemples } : {}),
     ...(relance ? { footer: PIED_STOP[langueDuPied(langue)] } : {}),
   });
-  if (!cree.ok) return refus(422, `Meta refuse ce modèle : ${cree.message}`);
+  if (!cree.ok) return refus(422, `La création du modèle chez Meta a échoué : ${cree.message}`);
   // Un refus dès la création ne viendra pas forcément par le statut : le dire tout de suite plutôt que d'attendre.
   if (cree.statut === 'rejected') {
     return refus(422, 'Meta a refusé ce modèle dès sa création : reformulez le texte (sans promotion pour un message de commande), puis réessayez.');
@@ -195,11 +195,6 @@ export async function reglerMessage(deps: Pick<DepsPreparation, 'store'>, tenant
   return { ok: true, valeur: { relanceArretee } };
 }
 
-/** Les libellés des messages, dans les e-mails. */
-const LIBELLES: Readonly<Record<EvenementShopify, string>> = {
-  order_paid: 'Commande payée', order_fulfilled: 'Commande expédiée', checkout_abandoned: 'Relance de panier abandonné',
-};
-
 /**
  * Le statut d'un modèle tranché par Meta, pour une boutique de l'espace : APPROVED active le message préparé qui porte
  * CE modèle, REJECTED retire l'attente et prévient (le message actif reste en place). Sans attente pour ce modèle (un
@@ -215,7 +210,7 @@ export async function activerSelonStatut(
   const attente = await deps.store.attenteDuModele(tenantId, s.modele, s.langue);
   if (attente === null) return 'rien';
   const boutique = await deps.store.lire(tenantId);
-  const valeurs = { boutique: boutique?.domaine ?? '', message: LIBELLES[attente.evenement], lien_parametres: deps.pageParametres };
+  const valeurs = { boutique: boutique?.domaine ?? '', message: LIBELLES_EVENEMENTS[attente.evenement][0], lien_parametres: deps.pageParametres };
   if (statut === 'APPROVED') {
     // 🔴 BRANCHER AVANT DE RETIRER L'ATTENTE (relecture des lots 0 et 1) : une panne entre les deux laisse l'attente, que
     // le rejeu du statut ou le filet retrouve ; dans l'autre ordre, le message était perdu sans trace. Un second passage

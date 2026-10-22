@@ -87,7 +87,7 @@ export async function connecterShopify(
   origine: OrigineBoutique,
 ): Promise<Issue<VueBoutique>> {
   const domaine = domaineShopify(saisie.boutique);
-  if (domaine === null) return refus(400, 'boutique : le domaine de la boutique, de la forme <nom>.myshopify.com.');
+  if (domaine === null) return refus(400, 'boutique : le domaine de la boutique, de la forme <nom>.myshopify.com (son nom suffit, celui de l’adresse admin.shopify.com/store/<nom>).');
   // Une clé collée depuis la page de Shopify porte souvent une espace ou un retour à la ligne : nettoyée avant tout.
   const clientId = typeof saisie.clientId === 'string' ? saisie.clientId.trim() : saisie.clientId;
   const secret = typeof saisie.secret === 'string' ? saisie.secret.trim() : saisie.secret;
@@ -99,15 +99,21 @@ export async function connecterShopify(
     return refus(400, `client_secret : le secret de l’app (Client secret), tel que ${ou} le donne.`);
   }
   if (!deps.chiffrementPret) return refus(503, 'Le chiffrement des secrets n’est pas configuré sur cette instance : impossible de brancher une boutique.');
+  // 🔴 La même boutique, avec les clés de l'app de la CLI (relecture du lot 3 de la console) : elle reste `claude_code`.
+  // Ses webhooks sont déclarés dans l'app, les abonner aussi par l'API ferait tout recevoir deux fois, et ses demandes
+  // RGPD continuent d'arriver (une boutique `console` serait effacée à la désinstallation, sans `shop/redact`).
+  const avant = origine === 'console' ? await deps.store.acces(tenantId) : null;
+  const memeApp = avant !== null && avant.origine === 'claude_code' && avant.domaine === domaine && avant.clientId === clientId;
+  const origineRetenue: OrigineBoutique = memeApp ? 'claude_code' : origine;
   const v = await deps.verifier(domaine, clientId, secret);
   if (!v.ok) return refus(v.code === 'passager' ? 503 : 422, v.message);
   const issue = await deps.store.connecter(tenantId, {
-    domaine, clientId, secretClair: secret, nom: v.nom, pays: v.pays, devise: v.devise, par, origine,
+    domaine, clientId, secretClair: secret, nom: v.nom, pays: v.pays, devise: v.devise, par, origine: origineRetenue,
   });
   if (issue === 'boutique_ailleurs') {
     return refus(409, 'Cette boutique est déjà branchée à un autre espace Messaging Me : coupez-la d’abord dans cet espace.');
   }
-  if (origine === 'console') {
+  if (origineRetenue === 'console') {
     // Branchée, mais sans événements tant que l'abonnement n'a pas réussi : le refus le dit, et un nouvel essai est
     // idempotent (un sujet déjà abonné vaut « déjà »).
     const j = await deps.jeton(domaine, clientId, secret);
@@ -236,8 +242,8 @@ interface Lecture { nouveaux: ClientAbonne[]; dejaDansLEspace: number; sansTelep
  */
 async function lireAbonnes(deps: DepsGestionShopify, tenantId: string): Promise<Issue<Lecture>> {
   const a = await deps.store.acces(tenantId);
-  if (a === null) return refus(409, 'Aucune boutique Shopify n’est branchée : lancez la skill shopify du plugin, puis connect_shopify.');
-  if (a.etat !== 'connectee') return refus(409, 'La boutique Shopify est coupée : rebranchez-la (connect_shopify) avant d’importer ses clients.');
+  if (a === null) return refus(409, 'Aucune boutique Shopify n’est branchée : branchez-la d’abord (la carte Shopify de la console, ou la skill shopify du plugin).');
+  if (a.etat !== 'connectee') return refus(409, 'La boutique Shopify est coupée : rebranchez-la avant d’importer ses clients.');
   const j = await deps.jeton(a.domaine, a.clientId, a.secret);
   if (!j.ok) return refus(j.code === 'passager' ? 503 : 409, j.message);
   const lecture = await deps.lireClients({ domaine: a.domaine, jeton: j.jeton, pays: a.pays }, CLIENTS_LUS_MAX);

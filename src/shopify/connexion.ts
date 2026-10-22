@@ -24,10 +24,15 @@ const DOMAINE_MAX = 100;
 const CORPS_MAX = 64_000;
 const DELAI_MS = 10_000;
 
-/** Le domaine `*.myshopify.com` d'une saisie (adresse complète ou nom nu tolérés), ou `null`. */
+/**
+ * Le domaine `*.myshopify.com` d'une saisie, ou `null`. Tolérés : l'adresse complète, le nom nu, et l'adresse de l'admin
+ * que le marchand de la console a sous les yeux (`admin.shopify.com/store/<nom>`).
+ */
 export function domaineShopify(brut: unknown): string | null {
   if (typeof brut !== 'string') return null;
-  let d = brut.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  let d = brut.trim().toLowerCase().replace(/^https?:\/\//, '');
+  const admin = /^admin\.shopify\.com\/store\/([a-z0-9][a-z0-9-]*)(?:[/?#]|$)/.exec(d);
+  d = admin ? admin[1]! : d.replace(/\/.*$/, '');
   if (d !== '' && !d.includes('.')) d = `${d}.myshopify.com`;
   return d.length <= DOMAINE_MAX && DOMAINE_SHOPIFY.test(d) ? d : null;
 }

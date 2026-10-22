@@ -341,6 +341,10 @@ export class PgShopifyStore {
       `update shopify_boutiques set consentement_par = null, consentement_le = null, maj_le = now() where tenant_id = $1`,
       [tenantId],
     );
+    // Les paniers ouverts notés sous l'affirmation partent avec elle, comme à une reconnexion (relecture du lot 3 de la
+    // console) : sinon la réaffirmer relancerait d'un coup des paniers de plusieurs jours. Ceux déjà relancés ou fermés
+    // restent, pour les chiffres de la carte.
+    await this.pool.query(`delete from shopify_paniers where tenant_id = $1 and ferme_le is null and relance_le is null`, [tenantId]);
   }
 
   async reglerDelaiPanier(tenantId: string, minutes: number): Promise<void> {

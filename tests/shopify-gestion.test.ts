@@ -26,6 +26,7 @@ const VUE: VueBoutique = {
 function monter(o: {
   boutique?: VueBoutique | null; modele?: LectureModele; ailleurs?: boolean; verif?: Awaited<ReturnType<DepsGestionShopify['verifier']>>;
   jeton?: Awaited<ReturnType<DepsGestionShopify['jeton']>>; abonnement?: Awaited<ReturnType<DepsGestionShopify['abonner']>>;
+  acces?: Awaited<ReturnType<DepsGestionShopify['store']['acces']>>;
 } = {}) {
   let boutique: VueBoutique | null = o.boutique === undefined ? VUE : o.boutique;
   const journal = { connexions: [] as unknown[], branches: [] as unknown[], consentements: [] as Array<string | null>, retraits: 0, coupes: 0, verifs: 0, delais: [] as number[], attentesRetirees: [] as unknown[], abonnements: [] as unknown[] };
@@ -42,7 +43,7 @@ function monter(o: {
       compteurs: async () => ({ envoye: 3 }),
       reglerDelaiPanier: async (_t, m) => { journal.delais.push(m); },
       compteursPaniers: async () => ({ relances: { envoye: 1 }, fermesATemps: 2, enAttente: 3 }),
-      acces: async () => null,
+      acces: async () => o.acces ?? null,
       attentes: async () => [],
       retirerAttente: async (_t, cible) => { journal.attentesRetirees.push(cible); return null; },
     },
@@ -95,6 +96,19 @@ describe('brancher une boutique depuis la console (conception 2026-10-22)', () =
     // Les clés collées depuis la page de Shopify sont nettoyées avant la vérification.
     expect(journal.connexions).toMatchObject([{ clientId: 'cid', secretClair: 'shpss_x', origine: 'console' }]);
     expect(journal.abonnements).toEqual([{ domaine: 'b.myshopify.com', jeton: 'jeton-de-test' }]);
+  });
+
+  it('🔴 la boutique de Claude Code rebranchée depuis la console avec les clés de SON app reste claude_code, sans abonnement', async () => {
+    const cli = { domaine: 'b.myshopify.com', clientId: 'cid', secret: 'shpss_x', pays: 'FR', etat: 'coupee' as const, origine: 'claude_code' as const };
+    const meme = monter({ boutique: null, acces: cli });
+    expect((await connecterShopify(meme.deps, T, { boutique: 'b.myshopify.com', clientId: 'cid', secret: 'shpss_x' }, 'u1', 'console')).ok).toBe(true);
+    expect(meme.journal.connexions).toMatchObject([{ origine: 'claude_code' }]);
+    expect(meme.journal.abonnements).toEqual([]);
+    // Une AUTRE app (créée à la main) fait d'elle une boutique de la console, abonnée par l'API.
+    const autre = monter({ boutique: null, acces: cli });
+    expect((await connecterShopify(autre.deps, T, { boutique: 'b.myshopify.com', clientId: 'cid-console', secret: 'shpss_y' }, 'u1', 'console')).ok).toBe(true);
+    expect(autre.journal.connexions).toMatchObject([{ origine: 'console' }]);
+    expect(autre.journal.abonnements).toHaveLength(1);
   });
 
   it('un abonnement qui échoue rend 503 et le dit : la boutique reste branchée, un nouvel essai est idempotent', async () => {

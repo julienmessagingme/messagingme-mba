@@ -106,6 +106,11 @@ describe('le domaine d’une boutique', () => {
     expect(domaineShopify('Ma-Boutique.myshopify.com')).toBe('ma-boutique.myshopify.com');
     expect(domaineShopify('https://ma-boutique.myshopify.com/admin')).toBe('ma-boutique.myshopify.com');
     expect(domaineShopify('ma-boutique')).toBe('ma-boutique.myshopify.com');
+    // L'adresse de l'admin, que le marchand de la console a sous les yeux.
+    expect(domaineShopify('https://admin.shopify.com/store/ma-boutique/settings/apps')).toBe('ma-boutique.myshopify.com');
+    expect(domaineShopify('admin.shopify.com/store/ma-boutique')).toBe('ma-boutique.myshopify.com');
+    expect(domaineShopify('https://admin.shopify.com/store/')).toBeNull();
+    expect(domaineShopify('admin.shopify.com')).toBeNull();
     for (const faux of ['ma-boutique.com', 'evil.com/x.myshopify.com', '127.0.0.1', 'a.myshopify.com.evil.com', '', '-x.myshopify.com', 42]) {
       expect(domaineShopify(faux)).toBeNull();
     }

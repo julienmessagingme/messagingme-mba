@@ -41,7 +41,7 @@ describe.skipIf(!url)('le store Shopify', () => {
     expect(JSON.stringify(vue)).not.toContain('shpss_itest');
     expect(await store.boutiqueParDomaine(domaine)).toMatchObject({ tenantId: A, etat: 'connectee', secret: 'shpss_itest', consentementAffirme: false });
     // L'accès de l'import des clients (lot 3) : la boutique de L'ESPACE, secret déchiffré ; un autre espace n'a rien.
-    expect(await store.acces(A)).toEqual({ domaine, clientId: 'cid', secret: 'shpss_itest', pays: 'FR', etat: 'connectee' });
+    expect(await store.acces(A)).toEqual({ domaine, clientId: 'cid', secret: 'shpss_itest', pays: 'FR', etat: 'connectee', origine: 'claude_code' });
     expect(await store.acces(B)).toBeNull();
     const brut = (await pool.query<{ secret_chiffre: string }>('select secret_chiffre from shopify_boutiques where tenant_id = $1', [A])).rows[0]!;
     expect(brut.secret_chiffre).not.toContain('shpss_itest');
@@ -79,8 +79,14 @@ describe.skipIf(!url)('le store Shopify', () => {
     expect(await store.connecter(B, connexion())).toBe('ok');
     expect((await store.lire(B))!.consentement).toBeNull();
     await store.affirmerConsentement(B, null);
+    // Retirer l'affirmation écarte les paniers ouverts notés sous elle ; un panier déjà relancé reste, pour les chiffres.
+    await store.noterPanier(B, { jeton: 'ouvert-retrait', telephone: '+33600000951', nom: null, lien: 'https://l' });
+    await store.noterPanier(B, { jeton: 'relance-retrait', telephone: '+33600000952', nom: null, lien: 'https://l' });
+    await pool.query(`update shopify_paniers set relance_le = now() where tenant_id = $1 and jeton = 'relance-retrait'`, [B]);
     await store.retirerConsentement(B);
     expect((await store.boutiqueParDomaine(domaine))!.consentementAffirme).toBe(false);
+    const restants = await pool.query<{ jeton: string }>(`select jeton from shopify_paniers where tenant_id = $1 and jeton like '%-retrait' order by jeton`, [B]);
+    expect(restants.rows.map((r) => r.jeton)).toEqual(['relance-retrait']);
   });
 
   it('🔴 un événement se réserve une fois ; sans issue au-delà du bail, il se reprend ; servi, il ne repart plus', async () => {
