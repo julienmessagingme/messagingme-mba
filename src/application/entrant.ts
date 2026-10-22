@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { processInbound, type DepsEntrants, type InboundMessage, type InboxStore } from '../webhooks/inbound';
 import { processRemiseMbaEntrant, type RemiseMbaEntrantDeps } from '../webhooks/remise-mba-entrant';
+import { processWorkflowAdvance, type WorkflowAdvanceDeps } from '../webhooks/workflow-advance';
 import { auteurDeLEnvoi, type AuteurDuChangement } from '../inbox/evenements';
 import type { OrigineMessage } from '../inbox/origine';
 import { TYPES_MESSAGE, estIndividuel, idDuMessage } from './message';
@@ -9,10 +10,11 @@ import type { JobEntrant } from './sessions';
 /**
  * RECEVOIR, FILIÈRE APPLICATION (plan 2026-10-22, tâche 4) : le job de la file `application-entrant`, traité par le
  * worker comme le canal RCS (`src/rcs/message-entrant.ts`), sur l'ingestion commune. `processInbound` fait la fiche,
- * le STOP, l'écriture et le détenteur ; la remise commune décide si l'agent IA répond, avec ses gardes.
+ * le STOP, l'écriture et le détenteur ; l'avance fait suivre un parcours en attente, celui de l'agent IA en pleine
+ * conversation ; la remise commune décide si l'agent IA répond, avec ses gardes.
  *
- * Ce qui n'existe pas sur l'application n'est pas appelé : publicités, Flows, scénarios et automations (ils envoient
- * par Meta), agent de Meta. `handleWebhookJob` reste intact.
+ * Ce qui n'existe pas sur l'application n'est pas appelé : publicités, Flows, déclencheurs d'automations et jetons de
+ * test, agent de Meta. `handleWebhookJob` reste intact.
  */
 
 const lu = z.object({
@@ -68,6 +70,11 @@ export interface DepsEntrantApplication {
   /** Les dépendances de l'ingestion commune : le STOP et le détenteur y sont requis. */
   entrants: DepsEntrants;
   remise: RemiseMbaEntrantDeps;
+  /**
+   * L'avance du parcours en attente de ce contact, la même que la réception de Meta. 🔴 Un agent IA qui converse EST un
+   * parcours en attente : sans elle, il ne répondait qu'au premier message (essai réel du 2026-10-22).
+   */
+  avance: WorkflowAdvanceDeps;
   /** La prise de main humaine, comme une réponse de l'Inbox (`ControleDuFil.prisEnEcrivant`). */
   priseDeMain(tenantId: string, waId: string, par: AuteurDuChangement): Promise<void>;
 }
@@ -89,5 +96,8 @@ export async function traiterEntrantApplication(job: JobEntrant, deps: DepsEntra
   }
   const entrants = [{ message: m, tenantId: job.tenantId }];
   const rouvertes = await processInbound(entrants, deps.inbox, deps.entrants);
-  await processRemiseMbaEntrant(entrants, deps.remise, undefined, rouvertes);
+  // L'avance avant la remise, comme la réception de Meta (`src/webhooks/handler.ts`) : un message qu'un parcours a reçu
+  // est à lui, la remise ne le confie pas une seconde fois à l'agent.
+  const parParcours = await processWorkflowAdvance(entrants, deps.avance);
+  await processRemiseMbaEntrant(entrants, deps.remise, parParcours, rouvertes);
 }

@@ -2,7 +2,7 @@
 // de wagroups (commit 526d3cc, `src/transport/baileys/transport.ts` : options du socket, sauvegarde des identifiants,
 // lecture de la fermeture par la forme de l'erreur), réduite à ce que la filière application fait : le QR code, les
 // conversations individuelles, l'envoi d'un texte. Les types de Baileys ne sortent pas de ce dossier.
-import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, normalizeMessageContent, type WAMessage, type WASocket } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, normalizeMessageContent, type proto, type WAMessage, type WASocket } from '@whiskeysockets/baileys';
 import type { Pool } from 'pg';
 import { estIndividuel, type TypeMessageApplication } from '../message';
 import { codeDeconnexion } from './connexion';
@@ -140,12 +140,57 @@ export const OPTIONS_SOCKET = {
   emitOwnEvents: false,
 } as const;
 
+/**
+ * LES DERNIERS MESSAGES ENVOYÉS D'UNE SESSION, gardés pour les renvoyer (essai réel du 2026-10-22). Chaque appareil du
+ * client déchiffre sa propre copie ; celui qui échoue en demande un renvoi, et Baileys ne renvoie que ce que
+ * `getMessage` lui rend (`sendMessagesAgain`, `Socket/messages-recv.js`, 6.7.23 ; par défaut, rien). Sans elle, une
+ * réponse restait « En attente de ce message » sur le mobile et s'affichait sur l'ordinateur. En mémoire et bornée : un
+ * renvoi se demande dans les secondes qui suivent, et une copie perdue au redémarrage du service n'est plus renvoyable.
+ */
+export interface MemoireDesEnvois {
+  retenir(id: string, message: proto.IMessage): void;
+  retrouver(id: string | null | undefined): proto.IMessage | undefined;
+}
+
+export function memoireDesEnvois(borne = 500): MemoireDesEnvois {
+  const messages = new Map<string, proto.IMessage>();
+  return {
+    retenir(id, message) {
+      messages.delete(id);
+      messages.set(id, message);
+      // Une Map garde l'ordre d'insertion : la première clé est la plus ancienne.
+      if (messages.size > borne) messages.delete(messages.keys().next().value as string);
+    },
+    retrouver: (id) => (id ? messages.get(id) : undefined),
+  };
+}
+
+/** Les options du socket d'une session, avec `getMessage` sur sa mémoire des envois. */
+export function optionsDuSocket(memoire: Pick<MemoireDesEnvois, 'retrouver'>) {
+  return { ...OPTIONS_SOCKET, getMessage: async (cle: { id?: string | null }) => memoire.retrouver(cle.id) };
+}
+
+/** Envoie un texte, garde le message accepté par WhatsApp sous l'identifiant qu'il rend, et rend cet identifiant. */
+export function envoyeur(
+  sock: { sendMessage(jid: string, contenu: { text: string }): Promise<{ key?: { id?: string | null }; message?: proto.IMessage | null } | undefined> },
+  memoire: Pick<MemoireDesEnvois, 'retenir'>,
+): (destinataire: string, texte: string) => Promise<string> {
+  return async (destinataire, texte) => {
+    const r = await sock.sendMessage(destinataire, { text: texte });
+    const id = r?.key?.id;
+    if (!id) throw new Error('WhatsApp n’a rendu aucun identifiant de message');
+    if (r.message) memoire.retenir(id, r.message);
+    return id;
+  };
+}
+
 /** Ouvre la session d'un compte sur son état enregistré (un compte neuf reçoit un QR code par `rappels.qr`). */
 export async function ouvrirSession(compte: { id: string }, auth: { pool: Pool; cle: Buffer }, rappels: RappelsSession): Promise<Session> {
   const { state, saveCreds } = await etatAuthPostgres(auth.pool, compte.id, auth.cle);
   const correspondances = correspondancesPostgres(auth.pool, compte.id, auth.cle);
   const { version } = await fetchLatestBaileysVersion();
-  const sock: WASocket = makeWASocket({ version, auth: state, logger: journalBaileys(compte.id), ...OPTIONS_SOCKET });
+  const envois = memoireDesEnvois();
+  const sock: WASocket = makeWASocket({ version, auth: state, logger: journalBaileys(compte.id), ...optionsDuSocket(envois) });
 
   sock.ev.on('creds.update', async () => {
     try {
@@ -183,12 +228,7 @@ export async function ouvrirSession(compte: { id: string }, auth: { pool: Pool; 
   });
 
   return {
-    async envoyer(destinataire, texte) {
-      const r = await sock.sendMessage(destinataire, { text: texte });
-      const id = r?.key?.id;
-      if (!id) throw new Error('WhatsApp n’a rendu aucun identifiant de message');
-      return id;
-    },
+    envoyer: envoyeur(sock, envois),
     fermer() {
       // end() ferme la socket sans détruire la session côté WhatsApp, contrairement à logout().
       sock.end(undefined);

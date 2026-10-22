@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { WAMessage } from '@whiskeysockets/baileys';
-import { OPTIONS_SOCKET, completerNumero, versMessageApplication, type MessageApplication } from '../src/application/transport/session';
+import { OPTIONS_SOCKET, completerNumero, envoyeur, memoireDesEnvois, optionsDuSocket, versMessageApplication, type MessageApplication } from '../src/application/transport/session';
 import { lireJobEntrant, traiterEntrantApplication, versInboundMessage, type DepsEntrantApplication } from '../src/application/entrant';
 import type { JobEntrant } from '../src/application/sessions';
 import type { InboundMessage } from '../src/webhooks/inbound';
@@ -38,6 +38,41 @@ describe('le message de Baileys, côté service de connexions', () => {
 
   it('🔴 nos propres envois ne reviennent pas comme des messages : sinon chaque réponse de l’agent vaudrait une prise de main', () => {
     expect(OPTIONS_SOCKET.emitOwnEvents).toBe(false);
+  });
+});
+
+/**
+ * RENVOYER CE QU'UN APPAREIL N'A PAS PU DÉCHIFFRER (essai réel du 2026-10-22). Chaque appareil du client déchiffre sa
+ * copie ; celui qui échoue en demande un renvoi, et Baileys ne renvoie que ce que `getMessage` lui rend. Sans lui, la
+ * réponse de l'agent restait « En attente de ce message » sur le mobile, et s'affichait sur l'ordinateur.
+ */
+describe('les messages envoyés, gardés pour un renvoi', () => {
+  it('🔴 le socket reçoit getMessage, qui retrouve un message envoyé par son identifiant ; un inconnu rend undefined', async () => {
+    const memoire = memoireDesEnvois();
+    const options = optionsDuSocket(memoire);
+    expect(options.emitOwnEvents).toBe(false);
+    memoire.retenir('3EB0A', { conversation: 'Bonjour' });
+    expect(await options.getMessage({ id: '3EB0A' })).toEqual({ conversation: 'Bonjour' });
+    expect(await options.getMessage({ id: 'INCONNU' })).toBeUndefined();
+    expect(await options.getMessage({})).toBeUndefined();
+  });
+
+  it('au-delà de la borne, le plus ancien sort', () => {
+    const memoire = memoireDesEnvois(2);
+    memoire.retenir('a', { conversation: '1' });
+    memoire.retenir('b', { conversation: '2' });
+    memoire.retenir('c', { conversation: '3' });
+    expect(memoire.retrouver('a')).toBeUndefined();
+    expect(memoire.retrouver('c')).toEqual({ conversation: '3' });
+  });
+
+  it('🔴 envoyer garde le message que WhatsApp a accepté, sous l’identifiant qu’il rend', async () => {
+    const memoire = memoireDesEnvois();
+    const envoyer = envoyeur({ sendMessage: async () => ({ key: { id: '3EB0B' }, message: { conversation: 'Réponse' } }) }, memoire);
+    expect(await envoyer('33612345678@s.whatsapp.net', 'Réponse')).toBe('3EB0B');
+    expect(memoire.retrouver('3EB0B')).toEqual({ conversation: 'Réponse' });
+    const muet = envoyeur({ sendMessage: async () => undefined }, memoire);
+    await expect(muet('33612345678@s.whatsapp.net', 'x')).rejects.toThrow('aucun identifiant');
   });
 });
 
@@ -108,7 +143,7 @@ describe('le job de la file, côté worker', () => {
   });
 });
 
-function banc() {
+function banc(o: { enAttente?: boolean } = {}) {
   const traces: string[] = [];
   const enregistres = new Set<string>();
   const deps: DepsEntrantApplication = {
@@ -130,6 +165,7 @@ function banc() {
       detenteur: aucuneCorrectionDuDetenteur,
     },
     remise: { remettre: async (_t, waId, contenu, e) => { traces.push(`remise:${waId}:${contenu}:${e.messageDeclencheur}:${e.redelivre}`); } },
+    avance: { advance: async (_t, waId, id) => { traces.push(`avance:${waId}:${id}`); return o.enAttente ?? false; } },
     priseDeMain: async (_t, waId) => { traces.push(`main:${waId}`); },
   };
   return { traces, deps };
@@ -139,7 +175,15 @@ describe('traiter un message reçu', () => {
   it('enregistre, crée la fiche, et passe la main à la remise qui décide si l’agent répond', async () => {
     const { traces, deps } = banc();
     await traiterEntrantApplication(job(), deps);
-    expect(traces).toEqual(['contact:33612345678', `in:33612345678:${ID}`, `remise:33612345678:Bonjour:${ID}:false`]);
+    expect(traces).toEqual(['contact:33612345678', `in:33612345678:${ID}`, `avance:33612345678:${ID}`, `remise:33612345678:Bonjour:${ID}:false`]);
+  });
+
+  it('🔴 essai réel : l’agent en pleine conversation (un parcours en attente) reçoit le message, et la remise ne le reprend pas', async () => {
+    // Le deuxième message d'une conversation était enregistré sans réveiller l'agent : la réception n'avançait aucun
+    // parcours, et le parcours de l'agent restait en attente.
+    const { traces, deps } = banc({ enAttente: true });
+    await traiterEntrantApplication(job({ texte: 'Quels sont les horaires ?' }), deps);
+    expect(traces).toEqual(['contact:33612345678', `in:33612345678:${ID}`, `avance:33612345678:${ID}`]);
   });
 
   it('🔴 cas 1 : le même message redonné deux fois n’est enregistré et remis qu’une fois', async () => {
@@ -160,6 +204,7 @@ describe('traiter un message reçu', () => {
   it('🔴 un message tapé sur le téléphone est une réponse humaine qui prend le fil, et l’agent n’est pas sollicité', async () => {
     const { traces, deps } = banc();
     await traiterEntrantApplication(job({ deMoi: true, texte: 'Je m’en occupe' }), deps);
+    // Ni avance ni remise : c'est une prise de main, pas une réponse du contact à son parcours.
     expect(traces).toEqual([`out:33612345678:${ID}:humain`, 'main:33612345678']);
   });
 

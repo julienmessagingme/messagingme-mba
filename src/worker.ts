@@ -133,6 +133,7 @@ import { DROITS } from './offres/offres';
 import { purgerJusquAEpuisement } from './lib/purge-par-lots';
 import { PURGE_CONVERSATIONS_PAR_LOT, BUDGET_PURGE_CONVERSATIONS_MS } from './inbox/store.pg';
 import { lireJobEntrant, traiterEntrantApplication } from './application/entrant';
+import type { WorkflowAdvanceDeps } from './webhooks/workflow-advance';
 import { creerDejaRecu } from './application/entrant.pg';
 import { endormirLesComptes } from './application/sommeil';
 
@@ -414,6 +415,24 @@ export async function demarrerWorker(): Promise<void> {
     // ensemble (`groupConcurrency` est un no-op tant que `concurrency` vaut 1).
   }, { concurrency: config.AUTOMATION_EVENT_CONCURRENCY, groupConcurrency: 1 });
 
+  /**
+   * L'avance du parcours en attente d'un contact, la même pour la réception de Meta et pour celle de la filière
+   * application (un agent IA qui converse est un parcours en attente : essai réel du 2026-10-22).
+   */
+  const avanceDesParcours: WorkflowAdvanceDeps = {
+    // `true` si un parcours attendait ce contact : lu AVANT l'avance, qui peut le terminer (réponse « à côté »,
+    // dernier bloc). La remise à l'agent de Meta, dans le même job, laisse alors ce message au parcours.
+    // `entrant` dit si c'est une réaction : un agent IA en pleine conversation ne répond pas à un emoji (lot 5, J1).
+    advance: async (t, w, m, bp, entrant) => {
+      const enAttente = await runStore.findWaitingByWaId(t, w);
+      await workflowExecutor.advance(t, w, m, bp, 'whatsapp', entrant);
+      return enAttente !== null;
+    },
+    // Une avance qui échoue atterrit dans le journal des erreurs que l'écran montre : sinon le job finirait en
+    // succès, sans rejeu ni trace, et le contact resterait bloqué sur son bloc.
+    journaliserEchec: (e) => erreursLivraison.enregistrerEchecAvance(e),
+  };
+
   await queue.work('webhook', async (data) => {
     await handleWebhookJob(data, {
       store: eventStore,
@@ -493,19 +512,7 @@ export async function demarrerWorker(): Promise<void> {
       // Acteur `null` : c'est le contact lui-même qui a coché, via WhatsApp. Aucun humain de l'équipe n'a agi, et
       // le journal doit le dire plutôt que d'attribuer le geste à personne en silence.
       flowMapping: { lookup: flowStore, writer: contactStore, audit: (tenant, actor, action, target, detail) => auditStore.record(tenant, actor, action, target, detail) },
-      workflowAdvance: {
-        // `true` si un parcours attendait ce contact : lu AVANT l'avance, qui peut le terminer (réponse « à côté »,
-        // dernier bloc). La remise à l'agent de Meta, dans le même job, laisse alors ce message au parcours.
-        // `entrant` dit si c'est une réaction : un agent IA en pleine conversation ne répond pas à un emoji (lot 5, J1).
-        advance: async (t, w, m, bp, entrant) => {
-          const enAttente = await runStore.findWaitingByWaId(t, w);
-          await workflowExecutor.advance(t, w, m, bp, 'whatsapp', entrant);
-          return enAttente !== null;
-        },
-        // Une avance qui échoue atterrit dans le journal des erreurs que l'écran montre : sinon le job finirait en
-        // succès, sans rejeu ni trace, et le contact resterait bloqué sur son bloc.
-        journaliserEchec: (e) => erreursLivraison.enregistrerEchecAvance(e),
-      },
+      workflowAdvance: avanceDesParcours,
       // Auto-création de fiche depuis l'inbound (par numéro ou BSUID) : les clients qui écrivent sans partager
       // leur numéro atterrissent dans le CRM. Le résultat ('created') signale le 1er message d'un contact inconnu,
       // pour le déclencheur `new_contact` : ne pas le jeter.
@@ -626,8 +633,8 @@ export async function demarrerWorker(): Promise<void> {
 
   /**
    * Les messages de la filière application (2026-10-22), versés par le service de connexions : la même ingestion que
-   * les entrants de Meta (fiche, STOP, écriture, détenteur), puis la même remise à l'agent IA. Ni publicités, ni Flows,
-   * ni scénarios, ni agent de Meta : ils envoient par Meta (`src/application/entrant.ts`). Groupe = l'espace, posé à
+   * les entrants de Meta (fiche, STOP, écriture, détenteur), la même avance du parcours en attente, puis la même remise
+   * à l'agent IA. Ni publicités, ni Flows, ni déclencheurs d'automations, ni agent de Meta (`src/application/entrant.ts`). Groupe = l'espace, posé à
    * l'enfilement : un seul job à la fois par espace, donc « déjà reçu » ne se dispute pas entre deux jobs.
    */
   await queue.work('application-entrant', async (data) => {
@@ -648,6 +655,7 @@ export async function demarrerWorker(): Promise<void> {
         detenteur: fil,
       },
       remise: { remettre: fil.remettreSiPersonneNeSuit },
+      avance: avanceDesParcours,
       priseDeMain: fil.prisEnEcrivant,
     });
   }, { concurrency: config.WEBHOOK_CONCURRENCY, groupConcurrency: 1 });

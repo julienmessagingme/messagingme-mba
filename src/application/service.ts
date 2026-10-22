@@ -10,6 +10,7 @@ import { creerGestionnaireSessions } from './sessions';
 import { cleDepuisHex } from './transport/chiffrement';
 import { effacerEtatAuth } from './transport/etat-auth';
 import { ouvrirSession } from './transport/session';
+import { taireLesClesDeSignal } from './transport/journal-signal';
 import { avisDeCoupure } from './avis';
 import { PgEmailsProduitStore } from '../emails-produit/store.pg';
 import { creerEmetteurEmails, FILE_EMAILS_PRODUIT } from '../emails-produit/emission';
@@ -25,6 +26,7 @@ import { PgTenantSettingsStore } from '../settings/store.pg';
  * au worker.
  */
 async function demarrer(): Promise<void> {
+  taireLesClesDeSignal();
   const app = Fastify({ logger: false });
   app.get('/sante', async () => ({ ok: true }));
   if (!config.APPLICATION_SERVICE_SECRET) {
