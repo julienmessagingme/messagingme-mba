@@ -14,7 +14,7 @@
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
     "@xyflow/react": "^12.11.2",
-    "next": "^15.1.6",
+    "next": "^15.5.28",
     "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
