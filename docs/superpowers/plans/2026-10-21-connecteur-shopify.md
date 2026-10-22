@@ -257,6 +257,50 @@ abonnement `compliance_topics` (`customers/data_request`, `customers/redact`, `s
    relance : accepté pour un message marketing, et écrit. Paniers de plus de 7 jours effacés.
 3. La carte et `get_shopify_state` portent le panier (délai, relances parties, paniers fermés à temps).
 
+## Lot 3 : l'import des clients abonnés (cadré avec Julien le 2026-10-22)
+
+Décisions de Julien (rondes de questions du 2026-10-22), qui retirent l'import des clients du hors-périmètre :
+- **Qui** : les clients ABONNÉS au marketing dans Shopify (e-mail ou SMS), avec un téléphone valable ; les autres
+  sont comptés, jamais importés.
+- **Consentement** : JAMAIS, même si le marchand a affirmé celui de ses clients. Un accord e-mail ou SMS n'est pas un
+  accord WhatsApp. Une fiche déjà consentante le reste, un STOP reste un STOP (autorité `import`).
+- **Limite** : Claude compte d'abord, le marchand choisit (jusqu'à la limite, les plus récents d'abord, ou l'offre
+  supérieure). Rien ne s'écrit sans ce choix. C'est au marchand de gérer sa limite.
+- **Rythme** : une fois, à la demande, relançable sans doublon ; les nouveaux clients entrent déjà par leurs commandes.
+
+Mesuré le 2026-10-22 (boutique `messaging-me-essai`, API 2026-10, jeton `client_credentials` de l'app du marchand) :
+- le téléphone est dans `defaultPhoneNumber.phoneNumber` (E.164), à défaut `defaultAddress.phone` avec
+  `countryCodeV2` ; l'abonnement dans `defaultEmailAddress.marketingState` et `defaultPhoneNumber.marketingState`
+  (`SUBSCRIBED`, `NOT_SUBSCRIBED`...) ;
+- 🔴 **`customersCount(query:)` IGNORE le filtre** (4 pour chaque filtre essayé), et un filtre de recherche inconnu est
+  ignoré en silence (`email_subscription_status:SUBSCRIBED` rendait tout le monde). Compter, c'est donc parcourir, et
+  l'abonnement se REVÉRIFIE sur chaque client lu, quel que soit le filtre envoyé : un filtre ignoré importerait sinon
+  toute la boutique, sans consentement de personne ;
+- une page de 250 clients coûte 35 points demandés sur un seau de 2 000 rechargé de 100 par seconde.
+- **Reste à mesurer** : que `email_marketing_state:SUBSCRIBED OR sms_marketing_state:SUBSCRIBED` sélectionne bien les
+  abonnés (la boutique de dev n'en a aucun). Il ne sert qu'à lire moins de pages : la revérification reste la règle.
+
+1. `src/shopify/clients.ts` : la lecture paginée des abonnés (du plus récent au plus ancien), chaque page passée à
+   `safeParse`, l'abonnement revérifié, le téléphone normalisé par `telephoneE164`, le nom fait du prénom et du nom ;
+   plafond de clients lus par appel, dit dans la réponse ; attente quand le seau de Shopify est vide.
+2. `apercuImport` et `importerClients` (dans `src/shopify/gestion.ts`) : abonnés lus, avec téléphone, déjà dans
+   l'espace, nouveaux, places libres de l'offre (`null` sans limite) ; l'import prend les nouveaux jusqu'au maximum
+   choisi et aux places libres, et passe par `importContacts` (`optIn: false`, autorité `import`, étiquette `Shopify`),
+   le chemin de l'import HubSpot : limite vérifiée sur tout le lot avant d'écrire, lots de 500, AUCUN événement
+   d'automation (chemin de masse).
+3. Deux outils MCP, sur le modèle `preview_site` / `import_site` : `preview_shopify_customers` (lecture seule) et
+   `import_shopify_customers` (`max_contacts`), personne nommée exigée, toutes offres, plafond des opérations coûteuses
+   pour l'import. La skill : compter, dire le choix, importer seulement après la réponse du marchand.
+4. Doc : `features.md` et sa fiche (empreinte), skill et plugin remonté, `mcp-outils.ts` et `doc:md`, familles d'outils.
+
+Tests : `tests/shopify-clients.test.ts` (un client non abonné rendu par Shopify n'est PAS importé, filtre ignoré
+compris ; téléphone d'adresse et pays ; pagination et plafond ; seau vide), `tests/shopify-gestion.test.ts` (aperçu,
+maximum et places libres, aucun consentement écrit, STOP gardé, étiquette, offre pleine), les tests MCP qui suivent les
+outils (`mcp-agent` pour le plafond coûteux, `mcp-doc-parite`, `plugin`). Aucune migration. Ordre : l'API d'abord
+(les outils), la skill et le plugin ensuite. Méthode : celle du plan, implémenteur puis UNE relecture du diff.
+Essai réel : sur la boutique de dev, deux clients abonnés avec téléphone et un non abonné ; Claude annonce deux
+clients importables ; l'import crée deux fiches étiquetées `Shopify`, sans consentement, et laisse le troisième.
+
 ## Tests attendus
 
 - `tests/shopify-webhook.test.ts` : domaine absent ou mal formé, 401 sans toucher la base ; signature fausse ou
@@ -313,6 +357,6 @@ Sur la boutique de dev YANS MOD, branchée à un espace de test, depuis une sess
 
 ## Hors périmètre
 
-App publique de l'App Store, plusieurs boutiques par espace, import des clients existants, case de consentement au
-checkout, deuxième relance, réglage des messages depuis la console, message à la création d'une commande non payée,
-filtre des envois Shopify dans Campagnes.
+App publique de l'App Store, plusieurs boutiques par espace, case de consentement au checkout, deuxième relance,
+réglage des messages depuis la console, message à la création d'une commande non payée, filtre des envois Shopify dans
+Campagnes, import des clients NON abonnés et import en continu (lot 3 : une fois, à la demande, abonnés seulement).
