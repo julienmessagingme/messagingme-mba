@@ -14,8 +14,10 @@
 --   coupe par nous et dit), banni (WhatsApp a coupe le numero, 403), deconnecte (l appareil retire depuis le telephone,
 --   401), retire (nous avons retire l appareil, fin d abonnement). fourni_id : le numero de la reserve, pour un numero
 --   fourni.
--- comptes_application_auth : l etat d authentification de la session (cles de Signal), une ligne par cle, chiffre par
---   ENCRYPTION_KEY (src/crypto/secretbox.ts). Part avec son compte.
+-- comptes_application_auth : l etat d authentification de la session (identifiants et cles de Signal), une ligne par
+--   (categorie, cle), comme wa_auth_state de wagroups dont le stockage est recopie (src/application/transport/
+--   etat-auth.ts). Chiffre par ENCRYPTION_KEY, lie a sa ligne par une donnee associee : une valeur deplacee d une
+--   ligne a l autre ne se dechiffre plus. Part avec son compte.
 --
 -- Tables neuves que l ancien code ne lit pas : elles passent AVANT le code. Leurs cles etrangeres prennent un verrou
 -- SHARE ROW EXCLUSIVE sur tenants (chemin chaud) et numeros_fournis : un lock_timeout de 5 s, en set local.
@@ -39,7 +41,9 @@ create unique index if not exists comptes_application_numero_vivant_uidx
 
 create table if not exists comptes_application_auth (
   compte_id  uuid not null references comptes_application(id) on delete cascade,
+  categorie  text not null check (char_length(categorie) between 1 and 60),
   cle        text not null check (char_length(cle) between 1 and 200),
   valeur     text not null,
-  primary key (compte_id, cle)
+  maj_le     timestamptz not null default now(),
+  primary key (compte_id, categorie, cle)
 );

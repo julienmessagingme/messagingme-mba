@@ -70,6 +70,13 @@ const CLASSEMENT: Record<string, { verdict: Verdict; pourquoi: string }> = {
     pourquoi: 'Sender de canal RCS : il envoie ce que le moteur lui donne, à qui le moteur lui dit, et le moteur '
       + 'porte la garde (construction de la liste, puis réclamation au moment d’envoyer).',
   },
+  'src/application/transport/session.ts': {
+    verdict: 'delegue',
+    pourquoi: 'Le transport de la filière « application WhatsApp Business » (plan 2026-10-22) : `Session.envoyer` '
+      + 'envoie le texte que le service de connexions lui passe, à qui il lui dit. Il ne décide rien : les gardes '
+      + '(STOP, numéro bloqué, détenteur du fil) sont celles des appelants du service, la réponse '
+      + '(`repondreDansLaFenetre`) et l’agent IA (`src/agent/run-turn.ts`), comme pour un envoi par Meta.',
+  },
   'src/inbox/envoi-modele.ts': {
     verdict: 'delegue',
     pourquoi: 'L’envoi d’un MODÈLE depuis l’Inbox (`POST .../send-template`, `src/http/inbox.ts`) : il compose les '

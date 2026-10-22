@@ -74,7 +74,7 @@ describe.skipIf(!url)('les comptes de la filière application (0247)', () => {
 
   it('une nouvelle préparation efface la session précédente', async () => {
     const c = (await comptes.parEspace(t1))!;
-    await pool.query(`insert into comptes_application_auth (compte_id, cle, valeur) values ($1, 'creds', 'x')`, [c.id]);
+    await pool.query(`insert into comptes_application_auth (compte_id, categorie, cle, valeur) values ($1, 'creds', 'main', 'x')`, [c.id]);
     const p = await comptes.preparer(t1, { numero: '449990000074', fourniId: null });
     expect(p.ok).toBe(true);
     const reste = await pool.query('select 1 from comptes_application_auth where compte_id = $1', [c.id]);
