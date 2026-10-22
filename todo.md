@@ -4,8 +4,12 @@
 
 Plan : `docs/superpowers/plans/2026-10-21-connecteur-shopify.md`.
 
-- **Le lot 2, la relance de panier abandonné** : `checkouts/*` et la fermeture par `orders/create`, le balayage borné,
-  le délai dans `set_shopify_message`, `checkout_abandoned` ouvert dans `EVENEMENTS_DISPONIBLES`.
+- **Ce que la relecture du lot 2 laisse** : (1) le balayage des paniers tourne dans la minuterie de l'API ; sur
+  Scaleway Serverless Containers, le processeur d'une copie sans requête en cours est bridé, donc la minuterie peut ne
+  pas tourner : à remesurer à la bascule (ou passer le balayage dans une route appelée par un cron). (2) La réclamation
+  n'a pas d'index partiel (`ferme_le is null and relance_le is null`) : sans objet au volume d'aujourd'hui, à poser
+  quand `shopify_paniers` grossit, son prédicat mot pour mot celui du `where`. (3) Un checkout modifié après la purge
+  de son panier (sept jours) écrit une ligne neuve, relançable une seconde fois : la clé d'envoi ne vit que 24 h.
 - **La mesure sur une boutique en PRODUCTION** (décision 13 de Julien) : le téléphone arrive-t-il dans les webhooks sans
   déclarer à la main l'accès aux données protégées ? Sinon, la skill guide ce geste.
 - **Les jaunes de la relecture** : l'affirmation du consentement n'a que sa colonne et une ligne de journal (pas

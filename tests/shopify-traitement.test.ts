@@ -41,6 +41,8 @@ function monter(o: {
     reserve: [] as string[], issues: [] as Array<[string, string]>, liberes: [] as string[], liees: [] as unknown[],
     envois: [] as Array<{ corps: unknown; options: unknown }>, emails: [] as Emission[], effaces: [] as string[][],
     coupees: [] as string[], boutiquesEffacees: [] as string[],
+    paniers: [] as unknown[], fermes: [] as string[], fermesExistants: [] as string[], fermesParNumero: [] as string[],
+    paniersEffaces: [] as string[],
   };
   const deps: DepsTraitementShopify = {
     store: {
@@ -53,6 +55,11 @@ function monter(o: {
       couperParDomaine: async (d) => { journal.coupees.push(d); },
       effacerBoutique: async (t) => { journal.boutiquesEffacees.push(t); },
       contactsLies: async (_t, commandes, client) => (commandes.includes('1002') || client === '77' ? ['fiche-1'] : []),
+      noterPanier: async (_t, p) => { journal.paniers.push(p); },
+      fermerPanier: async (_t, jeton) => { journal.fermes.push(jeton); },
+      fermerPanierExistant: async (_t, jeton) => { journal.fermesExistants.push(jeton); },
+      fermerPaniersDuTelephone: async (_t, tel) => { journal.fermesParNumero.push(tel); },
+      effacerPaniersDuTelephone: async (_t, tel) => { journal.paniersEffaces.push(tel); },
     },
     envoyer: async (_t, corps, compter, options) => {
       journal.envois.push({ corps, options });
@@ -155,6 +162,87 @@ describe('une expédition', () => {
       recipients: [{ phone: '+33633921577', variables: { order_number: '#1002', tracking_url: 'https://suivi/6A1' } }],
     });
     expect(journal.envois[0]!.options).toMatchObject({ nom: 'Shopify · commande expédiée · #1002' });
+  });
+});
+
+describe('les paniers (lot 2) : noter, fermer, sans ordre entre sujets', () => {
+  const PANIER: MessageBranche = { ...MESSAGE, evenement: 'checkout_abandoned', modele: 'relance', variables: ['first_name', 'checkout_url'] };
+  const checkout = (over: Record<string, unknown> = {}) => ({
+    token: 'jeton-du-checkout', completed_at: null, phone: null, customer: null,
+    abandoned_checkout_url: 'https://b.myshopify.com/1/checkouts/ac/x/recover?key=k',
+    shipping_address: { first_name: 'Julien', phone: '+33633921577', country_code: 'FR' }, billing_address: null, ...over,
+  });
+
+  const AFFIRMEE: BoutiqueRecue = { ...BOUTIQUE, consentementAffirme: true };
+
+  it('un checkout avec téléphone note le panier : jeton, téléphone, prénom, lien de reprise ; aucune fiche, aucun envoi', async () => {
+    const { deps, journal } = monter({ messages: [PANIER] });
+    for (const sujet of ['checkouts/create', 'checkouts/update']) {
+      expect(await traiterWebhookShopify(deps, AFFIRMEE, sujet, checkout())).toEqual({ statut: 200 });
+    }
+    expect(journal.paniers).toEqual([
+      { jeton: 'jeton-du-checkout', telephone: '+33633921577', nom: 'Julien', lien: 'https://b.myshopify.com/1/checkouts/ac/x/recover?key=k' },
+      { jeton: 'jeton-du-checkout', telephone: '+33633921577', nom: 'Julien', lien: 'https://b.myshopify.com/1/checkouts/ac/x/recover?key=k' },
+    ]);
+    expect(journal.envois).toEqual([]);
+  });
+
+  it('le numéro de l’acheteur passe avant celui de la livraison (un cadeau ne relance pas son destinataire)', async () => {
+    const { deps, journal } = monter({ messages: [PANIER] });
+    await traiterWebhookShopify(deps, AFFIRMEE, 'checkouts/update', checkout({ billing_address: { first_name: 'Julien', phone: '+33612345678', country_code: 'FR' } }));
+    expect(journal.paniers).toMatchObject([{ telephone: '+33612345678' }]);
+  });
+
+  it('🔴 sans consentement affirmé, aucun panier ne se garde : une affirmation ultérieure les relancerait d’un coup', async () => {
+    const { deps, journal } = monter({ messages: [PANIER] });
+    await traiterWebhookShopify(deps, BOUTIQUE, 'checkouts/update', checkout());
+    expect(journal.paniers).toEqual([]);
+  });
+
+  it('🔴 sans message de relance actif, rien ne se garde ; une commande ferme quand même le panier qui EXISTE, sans en écrire', async () => {
+    for (const messages of [[], [{ ...PANIER, actif: false }]]) {
+      const { deps, journal } = monter({ messages });
+      await traiterWebhookShopify(deps, AFFIRMEE, 'checkouts/update', checkout());
+      await traiterWebhookShopify(deps, AFFIRMEE, 'orders/create', commande({ checkout_token: 'jeton-du-checkout' }));
+      expect([journal.paniers, journal.fermes]).toEqual([[], []]);
+      // Éteinte puis rallumée, la relance aurait sinon relancé le client qui a commandé pendant la pause.
+      expect(journal.fermesExistants).toEqual(['jeton-du-checkout']);
+    }
+  });
+
+  it('sans téléphone, rien ; payé (completed_at), le panier se ferme, relance éteinte comprise', async () => {
+    const { deps, journal } = monter({ messages: [PANIER] });
+    await traiterWebhookShopify(deps, AFFIRMEE, 'checkouts/update', checkout({ shipping_address: null }));
+    expect(journal.paniers).toEqual([]);
+    await traiterWebhookShopify(deps, AFFIRMEE, 'checkouts/update', checkout({ completed_at: '2026-10-22T10:00:00Z' }));
+    expect(journal.fermes).toEqual(['jeton-du-checkout']);
+    const eteinte = monter({ messages: [] });
+    await traiterWebhookShopify(eteinte.deps, AFFIRMEE, 'checkouts/update', checkout({ completed_at: '2026-10-22T10:00:00Z' }));
+    expect([eteinte.journal.fermes, eteinte.journal.fermesExistants]).toEqual([[], ['jeton-du-checkout']]);
+  });
+
+  it('🔴 une commande, créée OU payée, ferme son panier par son checkout_token ET ceux de son numéro, quel que soit l’ordre', async () => {
+    const { deps, journal } = monter({ messages: [PANIER, MESSAGE] });
+    await traiterWebhookShopify(deps, AFFIRMEE, 'orders/paid', commande({ checkout_token: 'jeton-du-checkout' }));
+    await traiterWebhookShopify(deps, AFFIRMEE, 'orders/create', commande({ checkout_token: 'jeton-du-checkout' }));
+    expect(journal.fermes).toEqual(['jeton-du-checkout', 'jeton-du-checkout']);
+    // Un achat express passe par un autre checkout : les paniers ouverts du même numéro se ferment aussi.
+    expect(journal.fermesParNumero).toEqual(['+33633921577', '+33633921577']);
+    // La commande payée est servie comme avant.
+    expect(journal.issues).toEqual([['shopify:b.myshopify.com:orders/paid:1002', 'envoye']]);
+  });
+
+  it('une boutique coupée ne note aucun panier', async () => {
+    const { deps, journal } = monter({ messages: [PANIER] });
+    await traiterWebhookShopify(deps, { ...AFFIRMEE, etat: 'coupee' }, 'checkouts/update', checkout());
+    expect(journal.paniers).toEqual([]);
+  });
+
+  it('customers/redact efface aussi les paniers de son numéro, fiche ou pas', async () => {
+    const { deps, journal } = monter();
+    await traiterWebhookShopify(deps, BOUTIQUE, 'customers/redact', { customer: { id: 9, email: null, phone: '+33699999999' }, orders_to_redact: [] });
+    expect(journal.paniersEffaces).toEqual(['+33699999999']);
+    expect(journal.effaces).toEqual([]);
   });
 });
 

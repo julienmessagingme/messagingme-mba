@@ -106,6 +106,20 @@ Cinq rouges, tous vérifiés dans le code, et ce qu'ils ont changé :
   `docs/aide/fiches/brancher-ma-boutique-shopify.md`.
 - **La purge des événements à 30 jours** est une minuterie du worker (`shopify-evenements`).
 
+Lot 2 (2026-10-22) :
+- **Le balayage des relances tourne dans l'API**, dans sa minuterie d'une minute (l'envoi public n'existe qu'ici), et
+  non au rythme de `date-sweep.ts` dans le worker ; chaque copie balaie, la réclamation en base départage.
+- **Un panier ne se garde que si le message `checkout_abandoned` est actif** (pas de téléphone stocké sans raison), et
+  une commande PAYÉE le ferme aussi, en plus de `orders/create` et de `completed_at`.
+- **Le délai court depuis la DERNIÈRE modification du panier** : un client qui le remplit encore ne l'a pas abandonné.
+- **Brancher la relance exige le consentement affirmé**, dans l'appel ou avant (409 sinon) ; un modèle marketing ou
+  utility est admis.
+- **Après la relecture du lot 2** (un rouge) : une commande ferme TOUJOURS le panier qui existe, relance éteinte comprise
+  (éteinte puis rallumée, elle relançait le client qui avait commandé pendant la pause), et les autres paniers ouverts de
+  son numéro ; un panier ne se garde qu'avec le consentement DÉJÀ affirmé ; toute connexion efface les paniers, comme
+  elle efface l'affirmation ; l'envoi relit le panier juste avant de partir ; le numéro de l'acheteur passe avant celui
+  de la livraison ; la carte et l'outil comptent les paniers sur leurs sept jours de vie.
+
 ## Méthode de livraison
 
 **Implémenteur par lot (moi) puis une relecture indépendante du diff par lot, et Julien qui juge l'essai réel.**

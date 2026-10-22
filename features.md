@@ -2376,7 +2376,11 @@ l'app dans SON organisation Shopify (aucune validation de Shopify n'est nécessa
   console, tout passe par Claude Code (`get_shopify_state`, `disconnect_shopify`).
 - **RGPD** : une demande d'effacement d'un client transmise par Shopify efface sa fiche ; une demande d'accès prévient
   les admins ; 48 h après la désinstallation, Shopify fait effacer le branchement (les fiches restent au mini-CRM).
-- La relance de panier abandonné arrive dans un second temps.
+- **La relance de panier abandonné** (2026-10-22) : un client qui remplit le checkout avec son téléphone sans
+  commander reçoit UNE relance (un modèle marketing, le lien de son panier en variable), au délai choisi par le marchand
+  après la dernière modification du panier (1 h par défaut, de 15 min à 72 h). Rien ne part si une commande en est née
+  entre-temps, même non payée. Elle exige que le marchand ait affirmé le consentement de ses clients. Les paniers en
+  attente ne se gardent qu'une semaine, et seulement quand la relance est branchée.
 
 ## API publique `/v1` (intégrateurs externes)
 

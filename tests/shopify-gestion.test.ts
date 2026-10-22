@@ -17,7 +17,7 @@ const VUE: VueBoutique = {
 
 function monter(o: { boutique?: VueBoutique | null; modele?: LectureModele; ailleurs?: boolean; verif?: Awaited<ReturnType<DepsGestionShopify['verifier']>> } = {}) {
   let boutique: VueBoutique | null = o.boutique === undefined ? VUE : o.boutique;
-  const journal = { connexions: [] as unknown[], branches: [] as unknown[], consentements: [] as Array<string | null>, retraits: 0, coupes: 0, verifs: 0 };
+  const journal = { connexions: [] as unknown[], branches: [] as unknown[], consentements: [] as Array<string | null>, retraits: 0, coupes: 0, verifs: 0, delais: [] as number[] };
   const messages: MessageBranche[] = [];
   const deps: DepsGestionShopify = {
     store: {
@@ -29,6 +29,8 @@ function monter(o: { boutique?: VueBoutique | null; modele?: LectureModele; aill
       affirmerConsentement: async (_t, par) => { journal.consentements.push(par); },
       retirerConsentement: async () => { journal.retraits += 1; },
       compteurs: async () => ({ envoye: 3 }),
+      reglerDelaiPanier: async (_t, m) => { journal.delais.push(m); },
+      compteursPaniers: async () => ({ relances: { envoye: 1 }, fermesATemps: 2, enAttente: 3 }),
     },
     verifier: async () => { journal.verifs += 1; return o.verif ?? { ok: true, nom: 'Essai', pays: 'FR', devise: 'EUR' }; },
     lireModele: async () => o.modele ?? { statut: 'approuve', categorie: 'utility', variables: 2 },
@@ -96,9 +98,8 @@ describe('brancher un message', () => {
     }
   });
 
-  it('🔴 refusé : la relance de panier (lot 2), une donnée que l’événement ne porte pas, une boutique absente ou coupée', async () => {
+  it('🔴 refusé : une donnée que l’événement ne porte pas, une boutique absente ou coupée', async () => {
     const { deps } = monter();
-    expect(await brancherMessage(deps, T, { ...branchement, evenement: 'checkout_abandoned' }, null)).toMatchObject({ ok: false, statut: 400 });
     expect(await brancherMessage(deps, T, { ...branchement, variables: ['tracking_url'] }, null)).toMatchObject({ ok: false, statut: 400 });
     expect(await brancherMessage(monter({ boutique: null }).deps, T, branchement, null)).toMatchObject({ ok: false, statut: 409 });
     expect(await brancherMessage(monter({ boutique: { ...VUE, etat: 'coupee' } }).deps, T, branchement, null)).toMatchObject({ ok: false, statut: 409 });
@@ -111,12 +112,48 @@ describe('brancher un message', () => {
   });
 });
 
+describe('la relance de panier (lot 2)', () => {
+  const panier = { evenement: 'checkout_abandoned', modele: 'relance', langue: 'fr', variables: ['first_name', 'checkout_url'], actif: true, consentementAffirme: undefined };
+  const marketing: LectureModele = { statut: 'approuve', categorie: 'marketing', variables: 2 };
+
+  it('🔴 elle ne s’active pas sans consentement affirmé, ni dans l’appel ni avant', async () => {
+    const { deps, journal } = monter({ modele: marketing });
+    expect(await brancherMessage(deps, T, panier, null)).toMatchObject({ ok: false, statut: 409 });
+    expect(journal.branches).toEqual([]);
+    // Affirmé dans l’appel : branchée, consentement noté.
+    expect((await brancherMessage(deps, T, { ...panier, consentementAffirme: true }, 'u1')).ok).toBe(true);
+    expect(journal.consentements).toEqual(['u1']);
+  });
+
+  it('affirmé avant : branchée sans le redire ; retiré dans le même appel : refusée', async () => {
+    const avant = monter({ modele: marketing, boutique: { ...VUE, consentement: { par: 'u1', le: '2026-10-21T00:00:00.000Z' } } });
+    expect((await brancherMessage(avant.deps, T, panier, null)).ok).toBe(true);
+    expect(await brancherMessage(avant.deps, T, { ...panier, consentementAffirme: false }, null)).toMatchObject({ ok: false, statut: 409 });
+  });
+
+  it('un modèle marketing est admis pour le panier, et le délai se règle dans ses bornes', async () => {
+    const { deps, journal } = monter({ modele: marketing });
+    expect((await brancherMessage(deps, T, { ...panier, consentementAffirme: true, delaiMinutes: 30 }, null)).ok).toBe(true);
+    expect(journal.delais).toEqual([30]);
+    for (const delaiMinutes of [14, 4321, 30.5, '60']) {
+      expect(await brancherMessage(deps, T, { ...panier, consentementAffirme: true, delaiMinutes }, null)).toMatchObject({ ok: false, statut: 400 });
+    }
+    const commande = { evenement: 'order_paid', modele: 'commande_payee', langue: 'fr', variables: [], actif: true, consentementAffirme: undefined };
+    expect(await brancherMessage(deps, T, { ...commande, delaiMinutes: 30 }, null)).toMatchObject({ ok: false, statut: 400 });
+  });
+
+  it('éteindre la relance n’exige rien', async () => {
+    const { deps } = monter({ modele: marketing });
+    expect((await brancherMessage(deps, T, { ...panier, actif: false }, null)).ok).toBe(true);
+  });
+});
+
 describe('l’état et la coupure', () => {
   it('l’état porte les chiffres des 30 jours et la page des apps de la boutique', async () => {
     const e = await etatShopify(monter().deps, T);
     expect(e.compteurs).toEqual({ envoye: 3 });
     expect(e.pageApps).toBe('https://admin.shopify.com/store/b/settings/apps');
-    expect(await etatShopify(monter({ boutique: null }).deps, T)).toEqual({ boutique: null, messages: [], compteurs: {}, pageApps: null });
+    expect(await etatShopify(monter({ boutique: null }).deps, T)).toEqual({ boutique: null, messages: [], compteurs: {}, paniers: { relances: {}, fermesATemps: 0, enAttente: 0 }, pageApps: null });
   });
 
   it('couper est idempotent et rend la page d’où désinstaller l’app', async () => {
@@ -138,8 +175,9 @@ describe('les outils MCP du connecteur', () => {
 
   it('le schéma annoncé porte les bornes que la gestion applique (événements du lot, données permises)', () => {
     const o = OUTILS.find((x) => x.nom === 'set_shopify_message')!;
-    expect(o.entree.properties.event!.enum).toEqual(['order_paid', 'order_fulfilled']);
+    expect(o.entree.properties.event!.enum).toEqual(['order_paid', 'order_fulfilled', 'checkout_abandoned']);
     expect(o.entree.properties.variables!.maxItems).toBe(10);
-    expect(o.entree.properties.variables!.items!.enum).not.toContain('checkout_url');
+    expect(o.entree.properties.variables!.items!.enum).toContain('checkout_url');
+    expect([o.entree.properties.delay_minutes!.minimum, o.entree.properties.delay_minutes!.maximum]).toEqual([15, 4320]);
   });
 });

@@ -77,8 +77,8 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 | create_field | mcp:write OAuth connection required | Create a custom field, as in the console: its key comes from the label. |
 | set_contact_field | mcp:write OAuth connection required | Set a field on the contacts of a target or of a list of conversations, like the console’s bulk action, without starting any automation. |
 | connect_shopify | mcp:write OAuth connection required | Connect the merchant’s Shopify store with the app the shopify skill created in its organization; the connection is checked with Shopify before the secret is kept, encrypted. |
-| set_shopify_message | mcp:write OAuth connection required | Send an approved template when an order is paid or fulfilled, with Shopify data as variables, through the sends rules (STOP, consent, monthly templates, contact limit). |
-| get_shopify_state | mcp:read OAuth connection required | The connected Shopify store: its state, its messages, the last event received and the last 30 days of outcomes. |
+| set_shopify_message | mcp:write OAuth connection required | Send an approved template when an order is paid or fulfilled, or remind an abandoned checkout once, with Shopify data as variables, through the sends rules (STOP, consent, monthly templates, contact limit). |
+| get_shopify_state | mcp:read OAuth connection required | The connected Shopify store: its state, its messages, the last event received, the last 30 days of outcomes and the last 7 days of checkouts. |
 | disconnect_shopify | mcp:write OAuth connection required | Cut the Shopify store: no message leaves anymore, the store’s privacy requests are still honored. |
 | search_contacts | mcp:read | Find a contact by name or number, with their latest analysis. |
 | get_contact | mcp:read | A contact record from its number, with their latest analysis and its summary. |

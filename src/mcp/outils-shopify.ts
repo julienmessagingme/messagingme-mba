@@ -3,7 +3,7 @@ import type { DepsMcp, OutilMcp } from './outils';
 import { RefusOutil } from './saisie';
 import { MESSAGE_OPERATIONS_LOURDES } from '../auth/plafond-partage';
 import { journaliser } from '../lib/journal';
-import { DONNEES_PAR_EVENEMENT, EVENEMENTS_DISPONIBLES } from '../shopify/donnees';
+import { DELAI_PANIER_DEFAUT, DELAI_PANIER_MAX, DELAI_PANIER_MIN, DONNEES_PAR_EVENEMENT, EVENEMENTS_DISPONIBLES } from '../shopify/donnees';
 import { brancherMessage, connecterShopify, couperShopify, etatShopify, type Issue } from '../shopify/gestion';
 
 /**
@@ -58,7 +58,9 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
     description:
       'Sends an approved WhatsApp template when a Shopify event happens, or stops it: event, template, language, '
       + `variables (the Shopify data of {{1}}, {{2}}... in order, as many as the template has). Events and their data: ${evenements}. `
-      + 'An order message must be a utility template, approved at Meta (create_template, then get_template_status); links '
+      + 'An order message must be a utility template, approved at Meta (create_template, then get_template_status); a '
+      + 'checkout_abandoned reminder is a marketing template, sent once, delay_minutes after the checkout last changed and '
+      + 'only if no order came out of it; it requires the merchant to affirm customer consent. Links '
       + 'go in the body, a URL button takes no variable. One message per event: setting it again replaces it. '
       + 'customers_consented: true records that the merchant affirms its customers agreed to receive WhatsApp messages; the '
       + 'customers\' records then become opted in everywhere, campaigns included, and the merchant is responsible for it; '
@@ -77,6 +79,10 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
         },
         active: { type: 'boolean', description: 'false stops the message (default true).' },
         customers_consented: { type: 'boolean', description: 'The merchant affirms its customers agreed to receive WhatsApp messages.' },
+        delay_minutes: {
+          type: 'integer', minimum: DELAI_PANIER_MIN, maximum: DELAI_PANIER_MAX,
+          description: `checkout_abandoned only: minutes after the checkout last changed (default ${DELAI_PANIER_DEFAUT}).`,
+        },
       },
       required: ['event', 'template', 'language'],
       additionalProperties: false,
@@ -84,6 +90,7 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
     async executer(deps: DepsMcp, tenantId, args, personne) {
       const messages = valeur(await brancherMessage(deps.shopify, tenantId, {
         evenement: args.event, modele: args.template, langue: args.language, variables: args.variables, actif: args.active,
+        delaiMinutes: args.delay_minutes,
         consentementAffirme: args.customers_consented,
       }, personne?.userId ?? null));
       journaliser('info', 'mcp_shopify_message', {
@@ -103,7 +110,8 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
     description:
       'The Shopify store connected to the workspace: its state (connected or cut), the messages set on its events, the last '
       + 'event received, whether the merchant affirmed customer consent, and the last 30 days of events by outcome (sent, '
-      + 'opted out, without consent, contact limit, monthly templates limit, without phone...).',
+      + 'opted out, without consent, contact limit, monthly templates limit, without phone...), and the abandoned checkouts: '
+      + 'their delay and, over the last 7 days, the reminders sent, those closed in time by an order, those waiting.',
     annotations: { title: 'Get the Shopify connection', readOnlyHint: true, openWorldHint: false },
     entree: { type: 'object', properties: {} },
     async executer(deps: DepsMcp, tenantId) {
@@ -115,6 +123,10 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
         last_event_at: e.boutique.dernierEvenementLe, customers_consented_at: e.boutique.consentement?.le ?? null,
         messages: e.messages.map((m) => ({ event: m.evenement, template: m.modele, language: m.langue, variables: m.variables, active: m.actif })),
         last_30_days: e.compteurs,
+        checkouts: {
+          delay_minutes: e.boutique.delaiPanierMinutes, reminders_last_7_days: e.paniers.relances,
+          closed_in_time: e.paniers.fermesATemps, waiting: e.paniers.enAttente,
+        },
         store_apps_page: e.pageApps,
       };
     },

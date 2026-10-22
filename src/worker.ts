@@ -1324,9 +1324,11 @@ export async function demarrerWorker(): Promise<void> {
   const evenementsShopify = new PgShopifyStore(pool, config.ENCRYPTION_KEY);
   const shopifySweep = async (): Promise<number> => {
     const n = await evenementsShopify.purgerEvenements(30);
+    // Les paniers (lot 2) portent le téléphone d'un client qui n'a peut-être rien commandé : une semaine, pas plus.
+    const p = await evenementsShopify.purgerPaniers(7);
     // eslint-disable-next-line no-console
-    if (n > 0) console.log(`shopify-sweep: ${n} événement(s) Shopify purgé(s)`);
-    return n;
+    if (n + p > 0) console.log(`shopify-sweep: ${n} événement(s) et ${p} panier(s) Shopify purgé(s)`);
+    return n + p;
   };
   taches.programmer('shopify-evenements', 60 * 60 * 1000, shopifySweep, { immediat: true, enEchec: echecDeBalayage('shopify-sweep', 'sweeper:shopify') });
 

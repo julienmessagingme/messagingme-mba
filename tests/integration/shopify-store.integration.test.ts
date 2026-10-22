@@ -117,3 +117,121 @@ describe.skipIf(!url)('le store Shopify', () => {
     expect(await store.boutiqueParDomaine(domaine)).toBeNull();
   });
 });
+
+/**
+ * LES PANIERS (lot 2) : ce qu'aucun faux ne prouve. La réclamation pose `relance_le` dans la même écriture, donc un panier
+ * ne se relance qu'une fois même sous deux balayages simultanés ; un panier fermé ne se rouvre jamais ; la fermeture peut
+ * précéder le panier ; seuls les paniers d'une boutique connectée, au consentement affirmé et au message actif sont dus.
+ */
+describe.skipIf(!url)('le store Shopify : les paniers', () => {
+  let pool: Pool;
+  let store: PgShopifyStore;
+  let C = '';
+  const domaine = `itest-p-${randomUUID().slice(0, 8)}.myshopify.com`;
+  const due = async (jeton: string) => pool.query(`update shopify_paniers set maj_le = now() - interval '2 hours' where tenant_id = $1 and jeton = $2`, [C, jeton]);
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: url, ssl: pgSsl() });
+    store = new PgShopifyStore(pool, CLE);
+    C = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-shopify-paniers') returning id`)).rows[0]!.id;
+    await store.connecter(C, { domaine, clientId: 'cid', secretClair: 'shpss_itest', nom: null, pays: 'FR', devise: 'EUR', par: null });
+    await store.brancher(C, { evenement: 'checkout_abandoned', modele: 'relance', langue: 'fr', variables: ['checkout_url'], actif: true, par: null });
+  });
+
+  afterAll(async () => {
+    await pool.query('delete from tenants where id = $1', [C]);
+    await pool.end();
+  });
+
+  it('🔴 un panier fermé ne se rouvre jamais, et la fermeture peut arriver AVANT lui', async () => {
+    await store.fermerPanier(C, 'avant');
+    await store.noterPanier(C, { jeton: 'avant', telephone: '+33600000947', nom: 'X', lien: 'https://l' });
+    const r = (await pool.query<{ telephone: string | null; ferme_le: Date | null }>(`select telephone, ferme_le from shopify_paniers where tenant_id = $1 and jeton = 'avant'`, [C])).rows[0]!;
+    expect(r.ferme_le).not.toBeNull();
+    expect(r.telephone).toBeNull();
+  });
+
+  it('une valeur absente n’efface pas celle d’avant', async () => {
+    await store.noterPanier(C, { jeton: 'p1', telephone: '+33600000948', nom: 'Julien', lien: 'https://lien-1' });
+    await store.noterPanier(C, { jeton: 'p1', telephone: null, nom: null, lien: null });
+    const r = (await pool.query<{ telephone: string; nom: string; lien: string }>(`select telephone, nom, lien from shopify_paniers where tenant_id = $1 and jeton = 'p1'`, [C])).rows[0]!;
+    expect(r).toEqual({ telephone: '+33600000948', nom: 'Julien', lien: 'https://lien-1' });
+  });
+
+  it('🔴 rien n’est dû sans consentement affirmé, puis une seule réclamation sous deux balayages simultanés', async () => {
+    await due('p1');
+    expect((await store.reclamerPaniersDus(50)).filter((p) => p.tenantId === C)).toEqual([]);
+    await store.affirmerConsentement(C, null);
+    const [a, b] = await Promise.all([store.reclamerPaniersDus(50), store.reclamerPaniersDus(50)]);
+    const miens = [...a, ...b].filter((p) => p.tenantId === C);
+    expect(miens.map((p) => [p.jeton, p.telephone, p.lien, p.domaine, p.modele, p.variables])).toEqual([
+      ['p1', '+33600000948', 'https://lien-1', domaine, 'relance', ['checkout_url']],
+    ]);
+    expect((await store.reclamerPaniersDus(50)).filter((p) => p.tenantId === C)).toEqual([]);
+    await store.noterIssuePanier(C, 'p1', 'envoye');
+  });
+
+  it('un panier pas encore échu, fermé, sur un message éteint ou une boutique coupée n’est pas dû', async () => {
+    await store.noterPanier(C, { jeton: 'recent', telephone: '+33600000949', nom: null, lien: 'https://l' });
+    await store.noterPanier(C, { jeton: 'ferme', telephone: '+33600000950', nom: null, lien: 'https://l' });
+    await due('ferme');
+    await store.fermerPanier(C, 'ferme');
+    expect((await store.reclamerPaniersDus(50)).filter((p) => p.tenantId === C)).toEqual([]);
+    await store.noterPanier(C, { jeton: 'eteint', telephone: '+33600000951', nom: null, lien: 'https://l' });
+    await due('eteint');
+    await store.brancher(C, { evenement: 'checkout_abandoned', modele: 'relance', langue: 'fr', variables: ['checkout_url'], actif: false, par: null });
+    expect((await store.reclamerPaniersDus(50)).filter((p) => p.tenantId === C)).toEqual([]);
+    await store.brancher(C, { evenement: 'checkout_abandoned', modele: 'relance', langue: 'fr', variables: ['checkout_url'], actif: true, par: null });
+    await store.couper(C, 'test');
+    expect((await store.reclamerPaniersDus(50)).filter((p) => p.tenantId === C)).toEqual([]);
+  });
+
+  it('les compteurs : relancés par issue, fermés à temps, en attente, seuls les paniers notés ; la purge à 7 jours', async () => {
+    const c = await store.compteursPaniers(C, 7);
+    expect(c.relances).toEqual({ envoye: 1 });
+    // 'ferme' seul : la ligne écrite par une commande arrivée AVANT son panier ('avant', sans téléphone) n'en sauve aucun.
+    expect(c.fermesATemps).toBe(1);
+    expect(c.enAttente).toBe(2);
+    await pool.query(`update shopify_paniers set ouvert_le = now() - interval '8 days' where tenant_id = $1 and jeton = 'recent'`, [C]);
+    expect(await store.purgerPaniers(7)).toBeGreaterThanOrEqual(1);
+    expect((await pool.query(`select 1 from shopify_paniers where tenant_id = $1 and jeton = 'recent'`, [C])).rowCount).toBe(0);
+  });
+
+  it('🔴 fermer un panier existant n’en écrit aucun ; une commande ferme ceux de son numéro ; un effacement les retire', async () => {
+    await store.fermerPanierExistant(C, 'jamais-vu');
+    expect((await pool.query(`select 1 from shopify_paniers where tenant_id = $1 and jeton = 'jamais-vu'`, [C])).rowCount).toBe(0);
+    await store.noterPanier(C, { jeton: 'x1', telephone: '+33600000952', nom: null, lien: 'https://l' });
+    await store.noterPanier(C, { jeton: 'x2', telephone: '+33600000952', nom: null, lien: 'https://l' });
+    await store.noterPanier(C, { jeton: 'x3', telephone: '+33600000953', nom: null, lien: 'https://l' });
+    expect(await store.panierOuvert(C, 'x1')).toBe(true);
+    await store.fermerPanierExistant(C, 'x1');
+    expect(await store.panierOuvert(C, 'x1')).toBe(false);
+    await store.fermerPaniersDuTelephone(C, '+33600000952');
+    expect([await store.panierOuvert(C, 'x2'), await store.panierOuvert(C, 'x3')]).toEqual([false, true]);
+    await store.effacerPaniersDuTelephone(C, '+33600000953');
+    expect((await pool.query(`select 1 from shopify_paniers where tenant_id = $1 and jeton = 'x3'`, [C])).rowCount).toBe(0);
+    expect(await store.panierOuvert(C, 'x3')).toBe(false);
+  });
+
+  it('🔴 reconnecter efface les paniers ; le délai se compte en MINUTES de la boutique ; un panier verrouillé est sauté', async () => {
+    await store.connecter(C, { domaine, clientId: 'cid', secretClair: 'shpss_itest', nom: null, pays: 'FR', devise: 'EUR', par: null });
+    expect((await pool.query('select 1 from shopify_paniers where tenant_id = $1', [C])).rowCount).toBe(0);
+    await store.affirmerConsentement(C, null);
+    await store.reglerDelaiPanier(C, 60);
+    await store.noterPanier(C, { jeton: 'delai', telephone: '+33600000954', nom: null, lien: 'https://l' });
+    await pool.query(`update shopify_paniers set maj_le = now() - interval '30 minutes' where tenant_id = $1 and jeton = 'delai'`, [C]);
+    expect((await store.reclamerPaniersDus(50)).filter((p) => p.tenantId === C)).toEqual([]);
+    await store.reglerDelaiPanier(C, 15);
+    // Un autre balayage tient la ligne : `skip locked` la saute au lieu de l'attendre (ni double relance, ni blocage).
+    const verrou = await pool.connect();
+    try {
+      await verrou.query('begin');
+      await verrou.query(`select 1 from shopify_paniers where tenant_id = $1 and jeton = 'delai' for update`, [C]);
+      expect((await store.reclamerPaniersDus(50)).filter((p) => p.tenantId === C)).toEqual([]);
+    } finally {
+      await verrou.query('rollback');
+      verrou.release();
+    }
+    expect((await store.reclamerPaniersDus(50)).filter((p) => p.tenantId === C).map((p) => p.jeton)).toEqual(['delai']);
+  });
+});

@@ -25,9 +25,12 @@ export interface EtatShopifyVue {
     etat: 'connectee' | 'coupee';
     dernierEvenementLe: string | null;
     consentementLe: string | null;
+    delaiPanierMinutes: number | null;
   } | null;
   messages: MessageShopifyVue[];
   compteurs: Record<string, number>;
+  /** Les paniers des 30 derniers jours (lot 2). */
+  paniers: { relances: Record<string, number>; fermesATemps: number; enAttente: number };
   pageApps: string | null;
 }
 
@@ -43,6 +46,7 @@ export function lireEtatShopify(brut: unknown): EtatShopifyVue | null {
       domaine: b.domaine, nom: texte(b.nom), etat: b.etat === 'coupee' ? 'coupee' as const : 'connectee' as const,
       dernierEvenementLe: texte(b.dernierEvenementLe),
       consentementLe: texte((b.consentement as Record<string, unknown> | null | undefined)?.le),
+      delaiPanierMinutes: typeof b.delaiPanierMinutes === 'number' ? b.delaiPanierMinutes : null,
     }
     : null;
   const messages = Array.isArray(o.messages)
@@ -57,7 +61,14 @@ export function lireEtatShopify(brut: unknown): EtatShopifyVue | null {
   if (o.compteurs && typeof o.compteurs === 'object') {
     for (const [k, v] of Object.entries(o.compteurs as Record<string, unknown>)) if (typeof v === 'number') compteurs[k] = v;
   }
-  return { boutique, messages, compteurs, pageApps: texte(o.pageApps) };
+  const p = (o.paniers ?? {}) as Record<string, unknown>;
+  const relances: Record<string, number> = {};
+  if (p.relances && typeof p.relances === 'object') {
+    for (const [k, v] of Object.entries(p.relances as Record<string, unknown>)) if (typeof v === 'number') relances[k] = v;
+  }
+  const nombre = (v: unknown): number => (typeof v === 'number' ? v : 0);
+  const paniers = { relances, fermesATemps: nombre(p.fermesATemps), enAttente: nombre(p.enAttente) };
+  return { boutique, messages, compteurs, paniers, pageApps: texte(o.pageApps) };
 }
 
 export async function lireShopify(tenantId: string): Promise<EtatShopifyVue | null> {

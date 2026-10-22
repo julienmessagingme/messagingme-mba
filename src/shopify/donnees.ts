@@ -41,8 +41,13 @@ export const CATEGORIES_ADMISES: Readonly<Record<EvenementShopify, ReadonlyArray
   checkout_abandoned: ['marketing', 'utility'],
 };
 
-/** Les événements qu'un marchand peut brancher aujourd'hui : la relance de panier arrive au lot 2. */
-export const EVENEMENTS_DISPONIBLES: readonly EvenementShopify[] = ['order_paid', 'order_fulfilled'];
+/** Les événements qu'un marchand peut brancher (la relance de panier depuis le lot 2). */
+export const EVENEMENTS_DISPONIBLES: readonly EvenementShopify[] = ['order_paid', 'order_fulfilled', 'checkout_abandoned'];
+
+/** Le délai d'une relance de panier, en minutes (décision de Julien : 1 h par défaut, de 15 min à 72 h). */
+export const DELAI_PANIER_MIN = 15;
+export const DELAI_PANIER_MAX = 4320;
+export const DELAI_PANIER_DEFAUT = 60;
 
 export function estEvenementShopify(v: unknown): v is EvenementShopify {
   return typeof v === 'string' && (EVENEMENTS_SHOPIFY as readonly string[]).includes(v);
@@ -81,6 +86,40 @@ export const schemaExpedition = z.object({
   destination: adresse,
 });
 export type ExpeditionShopify = z.infer<typeof schemaExpedition>;
+
+/**
+ * Un checkout (`checkouts/create`, puis un `checkouts/update` par modification), mesuré le 2026-10-21 : le téléphone saisi
+ * est dans `shipping_address.phone` (PAS sur `customer`), le lien de reprise dans `abandoned_checkout_url`, et
+ * `completed_at` reste vide tant que rien n'est payé.
+ */
+export const schemaCheckout = z.object({
+  token: z.string().min(1).max(200),
+  completed_at: texte,
+  abandoned_checkout_url: texte,
+  phone: texte,
+  customer: z.object({ phone: texte, first_name: texte }).nullish(),
+  shipping_address: adresse,
+  billing_address: adresse,
+});
+export type CheckoutShopify = z.infer<typeof schemaCheckout>;
+
+/**
+ * Le numéro de l'ACHETEUR d'abord : la relance est un message marketing qui rouvre SON paiement, et un cadeau ferait
+ * sinon relancer le destinataire du colis. La livraison reste en dernier : c'est souvent le seul numéro saisi (mesuré).
+ */
+export function telephoneDeCheckout(c: CheckoutShopify, paysBoutique: string | null): string | null {
+  return telephoneE164([
+    { brut: c.phone },
+    { brut: c.customer?.phone },
+    { brut: c.billing_address?.phone, pays: c.billing_address?.country_code },
+    { brut: c.shipping_address?.phone, pays: c.shipping_address?.country_code },
+  ], paysBoutique);
+}
+
+/** Le prénom d'un checkout, rangé avec le panier : la relance part longtemps après le webhook. */
+export function prenomDeCheckout(c: CheckoutShopify): string | null {
+  return valeurDeVariable(c.shipping_address?.first_name ?? c.billing_address?.first_name ?? c.customer?.first_name);
+}
 
 const clientRgpd = z.object({ id: idShopify.nullish(), email: texte, phone: texte }).nullish();
 export const schemaEffacementClient = z.object({ customer: clientRgpd, orders_to_redact: z.array(idShopify).nullish() });

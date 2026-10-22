@@ -6,7 +6,8 @@ import type { Emission } from '../emails-produit/emission';
 import {
   DONNEES_PAR_EVENEMENT, donneesDeCommande, donneesDExpedition, schemaCommande, schemaDemandeDonnees,
   schemaEffacementClient, schemaExpedition, telephoneDeCommande, telephoneDExpedition, telephoneE164,
-  numeroDeCommandeDExpedition, type DonneeShopify, type EvenementShopify,
+  numeroDeCommandeDExpedition, prenomDeCheckout, schemaCheckout, telephoneDeCheckout, valeurDeVariable,
+  type DonneeShopify, type EvenementShopify,
 } from './donnees';
 import { envoyerShopify, type EnvoyerPublic, type IssueEnvoi } from './envoi';
 import type { EtatBoutique, PgShopifyStore } from './store.pg';
@@ -36,7 +37,8 @@ export interface BoutiqueRecue {
 export interface DepsTraitementShopify {
   store: Pick<PgShopifyStore,
     'message' | 'reserverEvenement' | 'noterIssue' | 'libererEvenement' | 'noterDernierEvenement' | 'lierCommande'
-    | 'couperParDomaine' | 'effacerBoutique' | 'contactsLies'>;
+    | 'couperParDomaine' | 'effacerBoutique' | 'contactsLies' | 'noterPanier' | 'fermerPanier' | 'fermerPanierExistant'
+    | 'fermerPaniersDuTelephone' | 'effacerPaniersDuTelephone'>;
   envoyer: EnvoyerPublic;
   /** La fiche vivante d'un numéro E.164 dans l'espace, ou `null`. */
   ficheParTelephone(tenantId: string, e164: string): Promise<string | null>;
@@ -78,6 +80,8 @@ export async function traiterWebhookShopify(
     case 'orders/paid': {
       const c = schemaCommande.safeParse(corps);
       if (!c.success) return illisible(b, sujet);
+      // Une commande payée ferme aussi son panier : `orders/create` peut arriver après (aucun ordre entre sujets).
+      await fermerSiPanier(deps, b, c.data.checkout_token, telephoneDeCommande(c.data, b.pays));
       return servir(deps, b, {
         evenement: 'order_paid', cle: `orders/paid:${c.data.id}`, sujet,
         commandeId: String(c.data.id), clientId: c.data.customer?.id ? String(c.data.customer.id) : null,
@@ -94,6 +98,17 @@ export async function traiterWebhookShopify(
         numero: numeroDeCommandeDExpedition(f.data.name),
       });
     }
+    case 'orders/create': {
+      // Le panier se ferme dès qu'une commande en naît, même non payée : un client qui a commandé par virement ne
+      // reçoit pas « vous avez oublié votre panier ».
+      const c = schemaCommande.safeParse(corps);
+      if (!c.success) return illisible(b, sujet);
+      await fermerSiPanier(deps, b, c.data.checkout_token, telephoneDeCommande(c.data, b.pays));
+      return OK;
+    }
+    case 'checkouts/create':
+    case 'checkouts/update':
+      return noterCheckout(deps, b, sujet, corps);
     case 'app/uninstalled':
       await deps.store.couperParDomaine(b.domaine, 'app désinstallée de la boutique');
       return OK;
@@ -120,9 +135,50 @@ export async function traiterWebhookShopify(
       await deps.store.effacerBoutique(b.tenantId);
       return OK;
     default:
-      // `orders/create`, `checkouts/*` : le panier abandonné (lot 2). Un sujet inconnu ne se réessaie pas.
+      // Un sujet inconnu ne se réessaie pas.
       return OK;
   }
+}
+
+/** Le message de relance est-il branché et actif ? Sans lui, aucun panier ne se garde : un téléphone sans raison. */
+async function relanceActive(deps: DepsTraitementShopify, b: BoutiqueRecue): Promise<boolean> {
+  return (await deps.store.message(b.tenantId, 'checkout_abandoned'))?.actif === true;
+}
+
+/**
+ * Une commande ferme son panier. 🔴 TOUJOURS celui qui existe, relance éteinte comprise : éteinte puis rallumée, elle
+ * relançait sinon le client qui avait commandé pendant la pause (rouge de la relecture du lot 2). La ligne d'un panier
+ * pas encore reçu (fermeture avant le panier) ne s'écrit, elle, que relance active. Et les autres paniers ouverts du
+ * même numéro se ferment aussi : un achat express passe par un autre checkout.
+ */
+async function fermerSiPanier(deps: DepsTraitementShopify, b: BoutiqueRecue, jeton: string | null | undefined, telephone: string | null): Promise<void> {
+  if (jeton) {
+    if (await relanceActive(deps, b)) await deps.store.fermerPanier(b.tenantId, jeton);
+    else await deps.store.fermerPanierExistant(b.tenantId, jeton);
+  }
+  if (telephone !== null) await deps.store.fermerPaniersDuTelephone(b.tenantId, telephone);
+}
+
+/**
+ * Un checkout : payé, il ferme le panier ; sinon il le note, avec le téléphone saisi, le prénom et le lien de reprise.
+ * Sans téléphone, rien ne se garde (le suivant en portera peut-être un).
+ */
+async function noterCheckout(deps: DepsTraitementShopify, b: BoutiqueRecue, sujet: string, corps: unknown): Promise<ReponseTraitement> {
+  const c = schemaCheckout.safeParse(corps);
+  if (!c.success) return illisible(b, sujet);
+  if (c.data.completed_at) {
+    await fermerSiPanier(deps, b, c.data.token, null);
+    return OK;
+  }
+  // Un panier ne se garde qu'avec la relance active ET le consentement affirmé : sinon c'est un téléphone sans usage,
+  // qu'une affirmation ultérieure ferait relancer d'un coup (relecture du lot 2).
+  if (!b.consentementAffirme || !(await relanceActive(deps, b))) return OK;
+  const telephone = telephoneDeCheckout(c.data, b.pays);
+  if (telephone === null) return OK;
+  await deps.store.noterPanier(b.tenantId, {
+    jeton: c.data.token, telephone, nom: prenomDeCheckout(c.data), lien: valeurDeVariable(c.data.abandoned_checkout_url),
+  });
+  return OK;
 }
 
 /** Un corps bien signé qui ne se lit pas : 200 et une trace, jamais un 4xx (Shopify réessaierait, puis désabonnerait). */
@@ -199,6 +255,8 @@ async function effacerClient(deps: DepsTraitementShopify, b: BoutiqueRecue, corp
     ));
     const tel = telephoneE164([{ brut: d.data.customer?.phone }], b.pays);
     const parNumero = tel === null ? null : await deps.ficheParTelephone(b.tenantId, tel);
+    // Ses paniers en attente partent aussi, fiche ou pas (relecture du lot 2).
+    if (tel !== null) await deps.store.effacerPaniersDuTelephone(b.tenantId, tel);
     if (parNumero !== null) ids.add(parNumero);
     if (ids.size > 0) await deps.effacerFiches(b.tenantId, [...ids]);
     journaliser('info', 'shopify_client_efface', { tenantId: b.tenantId, fiches: ids.size });

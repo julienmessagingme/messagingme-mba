@@ -2283,10 +2283,23 @@ dans `PgShopifyStore`. Le jeton rendu n'est ni gardé ni renouvelé : les webhoo
   `customers_consented: false` la retire. Gardée, une boutique de production branchée après une boutique d'essai ferait
   écrire consentants des clients pour qui personne n'a rien affirmé ;
 - **le secret qui vérifie doit être celui de la boutique relue** : le cache d'une minute ne laisse pas passer un
-  webhook de l'ancienne app après une reconnexion, et `shop/redact` n'efface jamais une boutique `connectee`.
+  webhook de l'ancienne app après une reconnexion, et `shop/redact` n'efface jamais une boutique `connectee` ;
+- 🔴 **la relance de panier est balayée DANS L'API** (`src/shopify/relance.ts`, la minuterie d'une minute de
+  `src/index.ts`), pour la même raison que le traitement : l'envoi public n'existe qu'ici. Chaque copie balaie ; la
+  réclamation (`reclamerPaniersDus`, `for update skip locked`) pose `relance_le` dans la même écriture, donc un panier
+  n'est relancé qu'une fois, et une relance qui échoue après sa réclamation est perdue, pas renvoyée. Un panier dû :
+  ouvert, avec téléphone et lien, sa dernière modification au-delà du délai de SA boutique (connectée, consentement
+  affirmé, message `checkout_abandoned` actif). Un panier ne se garde que si ce message est actif ET le consentement
+  déjà affirmé (une affirmation ultérieure ne relance pas d'un coup des paniers notés sans elle), et toute connexion
+  efface les paniers de l'espace, comme son affirmation. 🔴 Une commande (`orders/create` ou `orders/paid`, par
+  `checkout_token`) ou un `completed_at` ferme TOUJOURS le panier qui existe, relance éteinte comprise (éteinte puis
+  rallumée, elle relancerait sinon un client qui a commandé), et ne l'ÉCRIT fermé d'avance que relance active ; elle
+  ferme aussi les autres paniers ouverts de son numéro. Un panier fermé ne se rouvre jamais, l'envoi le relit juste
+  avant de partir, et il part au bout de sept jours (minuterie `shopify-evenements` du worker).
 
-`tenant_id = $1` sur chaque requête du store, sauf TROIS lectures transverses nommées dans le fichier :
-`boutiqueParDomaine` et `couperParDomaine` (le domaine DONNE l'espace) et `purgerEvenements`.
+`tenant_id = $1` sur chaque requête du store, sauf CINQ lectures transverses nommées dans le fichier :
+`boutiqueParDomaine` et `couperParDomaine` (le domaine DONNE l'espace), `purgerEvenements`, `reclamerPaniersDus` (qui
+joint chaque panier à sa boutique et à son message par `tenant_id`) et `purgerPaniers`.
 
 ---
 

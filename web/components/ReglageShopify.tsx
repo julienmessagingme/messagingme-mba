@@ -116,6 +116,14 @@ export function ReglageShopify({ tenantId }: { tenantId: string }) {
               )}
             </p>
           )}
+          {vue!.messages.some((m) => m.evenement === 'checkout_abandoned') && (
+            <p className="text-ink-500" data-testid="integration-shopify-paniers">
+              {t(
+                `Paniers abandonnés : relance ${b.delaiPanierMinutes ?? 60} min après la dernière modification. Sur 7 jours, ${Object.values(vue!.paniers.relances).reduce((s, n) => s + n, 0)} relancés (${vue!.paniers.relances.envoye ?? 0} partis), ${vue!.paniers.fermesATemps} devenus une commande à temps, ${vue!.paniers.enAttente} en attente.`,
+                `Abandoned checkouts: reminder ${b.delaiPanierMinutes ?? 60} min after the last change. Over 7 days, ${Object.values(vue!.paniers.relances).reduce((s, n) => s + n, 0)} reminded (${vue!.paniers.relances.envoye ?? 0} sent), ${vue!.paniers.fermesATemps} turned into an order in time, ${vue!.paniers.enAttente} waiting.`,
+              )}
+            </p>
+          )}
           {compteurs.length > 0 && (
             <ul className="space-y-0.5 text-ink-500" data-testid="integration-shopify-compteurs">
               <li className="font-medium text-ink-900">{t('Les 30 derniers jours', 'The last 30 days')}</li>

@@ -1,7 +1,7 @@
 ---
 ecran: parametres
 source_section: Boutique Shopify : les messages de commande sur WhatsApp (depuis Claude Code, 2026-10-21)
-source_empreinte: 3b83c9
+source_empreinte: 76b9a6
 ---
 # Brancher ma boutique Shopify
 
@@ -26,4 +26,10 @@ premier refus du mois. **« Couper »** arrête tous les messages ; l'app reste 
 depuis la page des apps de la boutique (le lien est sur la carte). Vous pourrez la rebrancher depuis Claude Code.
 
 Une demande d'effacement d'un client transmise par Shopify efface sa fiche ; une demande d'accès vous est signalée par
-e-mail, et c'est à vous de lui répondre. La relance des paniers abandonnés arrive dans un second temps.
+e-mail, et c'est à vous de lui répondre.
+
+**La relance des paniers abandonnés** : un client qui remplit le paiement avec son téléphone sans commander reçoit UNE
+relance sur WhatsApp, avec le lien qui rouvre son panier, au délai que vous choisissez après sa dernière modification
+(1 h par défaut, de 15 min à 72 h). Rien ne part si une commande en est née entre-temps, même non payée. C'est un
+message marketing : Claude ne la branche qu'une fois que vous avez affirmé le consentement de vos clients. La carte
+Shopify compte les relances parties, les paniers devenus une commande à temps, et ceux en attente.

@@ -83,6 +83,7 @@ import { PgShopifyStore } from './shopify/store.pg';
 import { verifierBoutique } from './shopify/connexion';
 import type { DepsGestionShopify } from './shopify/gestion';
 import { traiterWebhookShopify, type DepsTraitementShopify } from './shopify/traitement';
+import { relancerPaniers, type DepsRelance } from './shopify/relance';
 import { effacerContacts } from './crm/effacement';
 import { signalDeLAccuse, signalDuClic } from './signaux/emetteur';
 import { plafondLePlusBas } from './campaign/pacing';
@@ -1256,6 +1257,11 @@ async function main(): Promise<void> {
     emails: emetteurEmails,
     pageOffre: `${config.APP_URL.trim().replace(/\/+$/, '')}/offre`,
   };
+  /** La relance des paniers abandonnés (lot 2), par le MÊME envoi que les messages de commande. */
+  const relancePaniers: DepsRelance = {
+    store: shopifyStore, envoyer: traitementShopify.envoyer, emails: emetteurEmails, pageOffre: traitementShopify.pageOffre,
+  };
+  let relancePaniersEnCours = false;
 
   /**
    * Les campagnes : la route de la console ET les outils de campagne de l'assistant (`prepare_campaign`,
@@ -3092,6 +3098,17 @@ async function main(): Promise<void> {
       // eslint-disable-next-line no-console
       console.error('surveillance-workers: lecture impossible:', messageDe(err));
     });
+    // La relance des paniers Shopify (lot 2) : dans l'API, là où vit l'envoi public. Chaque copie balaie ; la réclamation
+    // en base empêche deux relances du même panier, et cette garde, deux passages qui se chevauchent dans une copie.
+    if (!relancePaniersEnCours) {
+      relancePaniersEnCours = true;
+      void travauxEnVol.suivre(relancerPaniers(relancePaniers)
+        .catch((err: unknown) => {
+          // eslint-disable-next-line no-console
+          console.error('shopify-relance: passage en échec:', messageDe(err));
+        })
+        .finally(() => { relancePaniersEnCours = false; }));
+    }
   }, 60_000);
   minuteriePoolAttentes.unref?.();
 

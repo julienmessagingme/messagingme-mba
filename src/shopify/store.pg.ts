@@ -7,9 +7,10 @@ import { estDonneeShopify, type DonneeShopify, type EvenementShopify } from './d
  * LE STORE DU CONNECTEUR SHOPIFY (plan 2026-10-21, lot 1), seul à écrire les tables `shopify_*` (migration 0246) ;
  * `purgeMany` y efface aussi les lignes d'une fiche purgée.
  *
- * 🔴 `tenant_id = $1` SUR CHAQUE REQUÊTE, sauf TROIS lectures transverses nommées ici : `boutiqueParDomaine` et
- * `couperParDomaine` (ce sont elles qui DONNENT l'espace, à partir du domaine qui signe un webhook), et
- * `purgerEvenements` (le balayage de toutes les boutiques).
+ * 🔴 `tenant_id = $1` SUR CHAQUE REQUÊTE, sauf CINQ lectures transverses nommées ici : `boutiqueParDomaine` et
+ * `couperParDomaine` (ce sont elles qui DONNENT l'espace, à partir du domaine qui signe un webhook), et trois balayages
+ * de toutes les boutiques : `purgerEvenements`, `reclamerPaniersDus` (qui joint chaque panier à SA boutique et à SON
+ * message par `tenant_id`) et `purgerPaniers`.
  *
  * 🔴 LE SECRET NE SORT JAMAIS VERS UN ÉCRAN : `lire` ne le sélectionne pas, et seule `boutiqueParDomaine` le rend
  * déchiffré, pour vérifier une signature.
@@ -62,6 +63,19 @@ export interface Connexion {
 
 /** `boutique_ailleurs` : un autre espace tient cette boutique, connectée. */
 export type IssueConnexionBoutique = 'ok' | 'boutique_ailleurs';
+
+/** Un panier réclamé pour sa relance, avec ce que l'envoi demande. */
+export interface PanierDu {
+  tenantId: string;
+  jeton: string;
+  telephone: string;
+  nom: string | null;
+  lien: string;
+  domaine: string;
+  modele: string;
+  langue: string;
+  variables: DonneeShopify[];
+}
 
 /** Une issue nulle depuis plus longtemps que ce bail = un traitement mort en route : il se reprend. */
 export const BAIL_EVENEMENT_S = 120;
@@ -148,6 +162,9 @@ export class PgShopifyStore {
            consentement_par = null, consentement_le = null`,
         [tenantId, c.domaine, c.clientId, secret, c.nom, c.pays, c.devise, c.par],
       );
+      // 🔴 Les paniers notés sous l'ancienne connexion partent avec son affirmation : les commandes d'une boutique coupée
+      // ne les ont pas fermés, et ceux d'une autre boutique porteraient son lien (relecture du lot 2).
+      await client.query(`delete from shopify_paniers where tenant_id = $1`, [tenantId]);
       return 'ok';
     });
   }
@@ -274,6 +291,136 @@ export class PgShopifyStore {
   /** EXCEPTION TRANSVERSE 3 : le balayage, toutes boutiques confondues. */
   async purgerEvenements(jours: number): Promise<number> {
     const res = await this.pool.query(`delete from shopify_evenements where recu_le < now() - make_interval(days => $1)`, [jours]);
+    return res.rowCount ?? 0;
+  }
+
+  /**
+   * Un checkout reçu (lot 2) : le panier se crée ou se complète. 🔴 Un panier FERMÉ ne se rouvre jamais (garde du
+   * `where`), et une valeur absente n'efface pas celle d'avant (`coalesce`). Chaque modification repousse l'échéance :
+   * un client qui remplit encore son panier ne l'a pas abandonné.
+   */
+  async noterPanier(tenantId: string, p: { jeton: string; telephone: string | null; nom: string | null; lien: string | null }): Promise<void> {
+    await this.pool.query(
+      `insert into shopify_paniers (tenant_id, jeton, telephone, nom, lien) values ($1, $2, $3, $4, $5)
+       on conflict (tenant_id, jeton) do update set
+         telephone = coalesce(excluded.telephone, shopify_paniers.telephone),
+         nom = coalesce(excluded.nom, shopify_paniers.nom),
+         lien = coalesce(excluded.lien, shopify_paniers.lien),
+         maj_le = now()
+       where shopify_paniers.ferme_le is null`,
+      [tenantId, p.jeton, p.telephone, p.nom, p.lien],
+    );
+  }
+
+  /**
+   * Le panier devient une commande (`orders/create` avec son `checkout_token`, ou un checkout `completed_at`). Aucun
+   * ordre entre sujets (mesuré) : la fermeture peut arriver AVANT le panier, elle écrit alors un panier déjà fermé.
+   */
+  async fermerPanier(tenantId: string, jeton: string): Promise<void> {
+    await this.pool.query(
+      `insert into shopify_paniers (tenant_id, jeton, ferme_le) values ($1, $2, now())
+       on conflict (tenant_id, jeton) do update set ferme_le = coalesce(shopify_paniers.ferme_le, now())`,
+      [tenantId, jeton],
+    );
+  }
+
+  /**
+   * 🔴 Ferme un panier DÉJÀ noté, sans en créer : c'est ce que fait une commande quand la relance est éteinte. Sans
+   * elle, une relance éteinte puis rallumée relançait le client qui avait commandé pendant la pause (relecture du lot 2).
+   */
+  async fermerPanierExistant(tenantId: string, jeton: string): Promise<void> {
+    await this.pool.query(
+      `update shopify_paniers set ferme_le = coalesce(ferme_le, now()) where tenant_id = $1 and jeton = $2`,
+      [tenantId, jeton],
+    );
+  }
+
+  /** Une commande ferme aussi les autres paniers ouverts du même numéro : un achat express passe par un autre checkout. */
+  async fermerPaniersDuTelephone(tenantId: string, telephone: string): Promise<void> {
+    await this.pool.query(
+      `update shopify_paniers set ferme_le = now() where tenant_id = $1 and telephone = $2 and ferme_le is null`,
+      [tenantId, telephone],
+    );
+  }
+
+  /** `customers/redact` d'un client qui n'a pas de fiche : ses paniers en attente partent quand même. */
+  async effacerPaniersDuTelephone(tenantId: string, telephone: string): Promise<void> {
+    await this.pool.query(`delete from shopify_paniers where tenant_id = $1 and telephone = $2`, [tenantId, telephone]);
+  }
+
+  /** Le panier est-il encore ouvert ? Relu juste avant l'envoi : une commande a pu arriver depuis la réclamation. */
+  async panierOuvert(tenantId: string, jeton: string): Promise<boolean> {
+    const r = (await this.pool.query<{ ouvert: boolean }>(
+      `select ferme_le is null as ouvert from shopify_paniers where tenant_id = $1 and jeton = $2`, [tenantId, jeton],
+    )).rows[0];
+    return r?.ouvert === true;
+  }
+
+  /**
+   * EXCEPTION TRANSVERSE 4 : le balayage des relances, toutes boutiques confondues. Un panier DÛ : ouvert, jamais relancé,
+   * avec un téléphone et un lien, dont la dernière modification a dépassé le délai de SA boutique, connectée, au
+   * consentement affirmé, et dont le message `checkout_abandoned` est actif. 🔴 La réclamation POSE `relance_le` dans la
+   * même écriture (`for update skip locked`) : deux balayages, de deux copies de l'API, ne relancent jamais le même panier.
+   */
+  async reclamerPaniersDus(limite: number): Promise<PanierDu[]> {
+    const res = await this.pool.query<{
+      tenant_id: string; jeton: string; telephone: string; nom: string | null; lien: string; domaine: string;
+      modele: string; langue: string; variables: unknown;
+    }>(
+      `with dus as (
+         select p.tenant_id, p.jeton from shopify_paniers p
+           join shopify_boutiques b on b.tenant_id = p.tenant_id
+           join shopify_messages m on m.tenant_id = p.tenant_id and m.evenement = 'checkout_abandoned'
+          where p.ferme_le is null and p.relance_le is null and p.telephone is not null and p.lien is not null
+            and b.etat = 'connectee' and b.consentement_le is not null and m.actif
+            and p.maj_le < now() - make_interval(mins => b.delai_panier_minutes)
+          order by p.maj_le
+          limit $1
+          for update of p skip locked
+       )
+       update shopify_paniers p set relance_le = now()
+         from dus, shopify_boutiques b, shopify_messages m
+        where p.tenant_id = dus.tenant_id and p.jeton = dus.jeton and p.relance_le is null
+          and b.tenant_id = p.tenant_id and m.tenant_id = p.tenant_id and m.evenement = 'checkout_abandoned'
+       returning p.tenant_id, p.jeton, p.telephone, p.nom, p.lien, b.domaine, m.modele, m.langue, m.variables`,
+      [limite],
+    );
+    return res.rows.map((r) => ({
+      tenantId: r.tenant_id, jeton: r.jeton, telephone: r.telephone, nom: r.nom, lien: r.lien, domaine: r.domaine,
+      modele: r.modele, langue: r.langue, variables: Array.isArray(r.variables) ? r.variables.filter(estDonneeShopify) : [],
+    }));
+  }
+
+  async noterIssuePanier(tenantId: string, jeton: string, issue: string): Promise<void> {
+    await this.pool.query(`update shopify_paniers set issue = $3 where tenant_id = $1 and jeton = $2`, [tenantId, jeton, issue]);
+  }
+
+  /**
+   * Les paniers des `jours` derniers jours : relancés (par issue), fermés à temps, en attente. Seuls les paniers NOTÉS
+   * comptent (un téléphone) : la ligne qu'écrit une commande arrivée avant son panier n'est pas un panier sauvé.
+   */
+  async compteursPaniers(tenantId: string, jours: number): Promise<{ relances: Record<string, number>; fermesATemps: number; enAttente: number }> {
+    const res = await this.pool.query<{ issue: string | null; ferme: boolean; relance: boolean; n: string }>(
+      `select issue, ferme_le is not null as ferme, relance_le is not null as relance, count(*)::text as n
+         from shopify_paniers where tenant_id = $1 and telephone is not null and ouvert_le > now() - make_interval(days => $2)
+        group by 1, 2, 3`,
+      [tenantId, jours],
+    );
+    const relances: Record<string, number> = {};
+    let fermesATemps = 0;
+    let enAttente = 0;
+    for (const r of res.rows) {
+      const n = Number(r.n);
+      if (r.relance) relances[r.issue ?? 'en_cours'] = (relances[r.issue ?? 'en_cours'] ?? 0) + n;
+      else if (r.ferme) fermesATemps += n;
+      else enAttente += n;
+    }
+    return { relances, fermesATemps, enAttente };
+  }
+
+  /** EXCEPTION TRANSVERSE 5 : les paniers de plus de `jours` jours partent, relancés ou non (ils portent un téléphone). */
+  async purgerPaniers(jours: number): Promise<number> {
+    const res = await this.pool.query(`delete from shopify_paniers where ouvert_le < now() - make_interval(days => $1)`, [jours]);
     return res.rowCount ?? 0;
   }
 
