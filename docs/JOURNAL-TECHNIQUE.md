@@ -69,6 +69,13 @@ Pro ou Entreprise sans Claude Code branche sa boutique et règle ses trois messa
 - **Le découpage du push** : lots 1 et 2 et jaunes construits dans un worktree détaché sur `origin/main`, le câblage
   de `src/worker.ts` résolu à la main (l'avance des parcours d'un voisin et l'activation Shopify, l'une après l'autre),
   la moitié serveur typecheckée seule, la suite entière jouée sur l'arbre combiné.
+- **Deux rouges d'intégration en CI, tous deux sur des tests** : `acces` rendait désormais l'origine et un test
+  attendait l'objet exact (le piège du store qui change de retour, déjà noté) ; puis le nouveau test du retrait du
+  consentement laissait un panier, et la purge, plus bas dans le même fichier, compte TOUS les paniers de l'espace.
+- **Déployé à `e9551233`** (API, worker, worker d'analyse, en deux temps), après la CI lue job par job : sonde du vrai
+  code en lecture seule dans l'image (chemin chaud des webhooks, lectures de la carte), code servi égal à git dans les
+  trois conteneurs, fumée verte, routes neuves en 401 sans session, fiches d'aide chargées. La carte est partie APRÈS
+  (`d89a1c55`, les deux CI vertes), relue par une seconde relecture sans rouge, e2e de la carte (5 cas) et captures.
 
 ## 2026-10-22 (soir) : le connecteur Shopify, lot 3 (l'import des clients abonnés), et la page « C'est installé »
 
