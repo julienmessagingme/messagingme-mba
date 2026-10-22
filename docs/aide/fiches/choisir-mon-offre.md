@@ -1,7 +1,7 @@
 ---
 ecran: offre
 source_section: Offres (menu « Paramètres » > Offre)
-source_empreinte: 27f325
+source_empreinte: 6baf25
 publique: oui
 rubrique: demarrer
 rang: 1
@@ -53,8 +53,8 @@ pas comptée non plus.
 la page Offre. Si une action est refusée parce qu'une limite est atteinte, un message vous le dit, avec un bouton
 « Voir les offres ».
 
-**Ce que l'offre change aux coûts.** Notre commission sur le crédit IA est de 50 % en Free, de 20 % en Pro et de
-10 % en Entreprise. L'analyse des conversations ne tourne qu'en Entreprise : quand votre espace y passe, une
+**Ce que l'offre change aux coûts.** Notre commission sur le crédit IA est de 100 % en Free (10 € de crédit y paient
+5 € de consommation des modèles), de 20 % en Pro et de 10 % en Entreprise. L'analyse des conversations ne tourne qu'en Entreprise : quand votre espace y passe, une
 conversation est analysée au premier nouveau message (le passé n'est pas rattrapé). En Free, les conversations se
 gardent 30 jours, mais seulement 30 jours après l'entrée en Free : à la création de l'espace, à la fin de votre Pro
 ou au départ de l'Entreprise.

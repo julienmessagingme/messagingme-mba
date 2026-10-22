@@ -33,6 +33,8 @@ const h = (jeton: string) => ({ headers: { 'content-type': 'application/json', a
 
 /** Les prix tels que Stripe les rend : ceux de la configuration valent le HT de leur offre, en euros. */
 const PRIX_JUSTES: Record<string, ReponseStripe> = {
+  price_5: { status: 200, json: { id: 'price_5', unit_amount: 500, currency: 'eur' } },
+  price_10: { status: 200, json: { id: 'price_10', unit_amount: 1_000, currency: 'eur' } },
   price_50: { status: 200, json: { id: 'price_50', unit_amount: 5_000, currency: 'eur' } },
   price_100: { status: 200, json: { id: 'price_100', unit_amount: 10_000, currency: 'eur' } },
 };
@@ -77,7 +79,7 @@ function paiement(o: {
   const deps: CreditPaiementRouteDeps = {
     stripe: o.stripe === 'aucun' ? null : o.stripe ?? {
       cle: CLE, livemode: true,
-      prix: { refill_50: 'price_50', refill_100: 'price_100' },
+      prix: { refill_5: 'price_5', refill_10: 'price_10', refill_50: 'price_50', refill_100: 'price_100' },
       transport,
       pageCredit: 'https://console.exemple/parametres/credit', pageClaude: 'https://console.exemple/paiement-recu',
     },
@@ -125,6 +127,17 @@ describe('POST /tenants/:tenantId/credit/paiement', () => {
     await p.srv.close();
   });
 
+  it('🔴 les deux petites recharges (5 et 10 € HT) ouvrent un paiement avec LEUR prix, relu chez Stripe', async () => {
+    for (const [offre, prix] of [['refill_5', 'price_5'], ['refill_10', 'price_10']] as const) {
+      const p = paiement({ clientConnu: 'cus_DEJA', reponses: [SESSION_OK] });
+      expect((await payer(p.srv, { offre })).statusCode, offre).toBe(200);
+      expect(p.transport.lectures, offre).toEqual([`https://api.stripe.com/v1/prices/${prix}`]);
+      expect(p.transport.appels[0]!.corps.get('line_items[0][price]'), offre).toBe(prix);
+      expect(p.transport.appels[0]!.corps.get('metadata[offre]'), offre).toBe(offre);
+      await p.srv.close();
+    }
+  });
+
   it('🔴 le corps ne choisit qu’une OFFRE, jamais un montant ni un prix', async () => {
     const p = paiement();
     expect((await payer(p.srv, { offre: 'refill_1000' })).statusCode).toBe(400);
@@ -142,7 +155,7 @@ describe('POST /tenants/:tenantId/credit/paiement', () => {
     await p.srv.close();
 
     const transport = new FauxStripe([]);
-    const q = paiement({ stripe: { cle: CLE, livemode: true, prix: { refill_50: '', refill_100: 'price_100' }, transport, pageCredit: 'https://x', pageClaude: 'https://x' } });
+    const q = paiement({ stripe: { cle: CLE, livemode: true, prix: { refill_5: 'price_5', refill_10: 'price_10', refill_50: '', refill_100: 'price_100' }, transport, pageCredit: 'https://x', pageClaude: 'https://x' } });
     expect((await payer(q.srv, { offre: 'refill_50' })).statusCode).toBe(503);
     expect(transport.appels).toHaveLength(0);
     await q.srv.close();
@@ -500,6 +513,23 @@ describe('POST /webhooks/stripe', () => {
       await envoyer(w.srv, evenement(session({ id: 'cs_3', client_reference_id: '11111111-1111-4111-8111-111111111111' })));
       expect(w.paiements.credits).toEqual([]);
       expect(erreurs.mock.calls.flat().join(' ').match(/stripe_paiement_incoherent/g)).toHaveLength(3);
+    } finally {
+      erreurs.mockRestore();
+    }
+    await w.srv.close();
+  });
+
+  it('🔴 une recharge de 5 € crédite 5 € pour 500 centimes HT encaissés, et rien si Stripe a encaissé autre chose', async () => {
+    const w = webhook();
+    const erreurs = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const juste = session({ id: 'cs_5', amount_subtotal: 500, amount_total: 600, metadata: { tenant_id: T1, offre: 'refill_5' } });
+      expect((await envoyer(w.srv, evenement(juste))).json()).toMatchObject({ credite: true });
+      // L'offre annonce 5 €, Stripe a encaissé le prix de la recharge de 10 € : rien, et une erreur au journal.
+      const faux = session({ id: 'cs_5b', amount_subtotal: 1_000, metadata: { tenant_id: T1, offre: 'refill_5' } });
+      expect((await envoyer(w.srv, evenement(faux))).json()).toMatchObject({ credite: false });
+      expect(w.paiements.credits.map((c) => [c.offre, c.creditMicroEur, c.htCentimes])).toEqual([['refill_5', 5_000_000, 500]]);
+      expect(erreurs.mock.calls.flat().join(' ').match(/stripe_paiement_incoherent/g)).toHaveLength(1);
     } finally {
       erreurs.mockRestore();
     }

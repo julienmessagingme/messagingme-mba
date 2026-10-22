@@ -195,7 +195,7 @@ describe('Transcrire le message d’une conversation', () => {
     const { d, faux, debits, ordre } = deps({ id: 'm1', mediaId: 'media-1', mediaMime: 'audio/ogg', transcription: null });
     await transcrireMessage(d, 't-base', 'm1');
     expect(faux.appels[0]!.headers.authorization).toBe('Bearer vck-maison');
-    // 0,000235 $ au taux 1 : 235 micro-euros bruts, + 50 % en Base.
+    // 0,000235 $ au taux 1 : 235 micro-euros bruts, + 50 % (la commission que ce faux rend pour l'espace).
     expect(debits).toEqual([{ tenantId: 't-base', montant: 353, note: 'transcription d’un vocal' }]);
     // Écrit avant d'être débité : un débit qui casserait ne doit pas faire perdre une transcription payée.
     expect(ordre).toEqual(['modele', 'ecrit', 'debit']);

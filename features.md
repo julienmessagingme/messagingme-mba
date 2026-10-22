@@ -3435,7 +3435,8 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   INVENTE), et ils parlent correctement français. Un modèle retiré du catalogue disparaît tout seul de la
   liste. Les prix, eux, sont lus en direct chez le fournisseur : ils ne peuvent pas être périmés.
   ✅ **Le tarif affiché est le tarif payé** (2026-09-28) : il inclut notre commission, celle de l'offre de l'espace
-  (50 % en Free, 20 % en Pro et 10 % en Entreprise, spec offres v2), et le crédit est décompté au même tarif, commission
+  (100 % en Free depuis le 2026-10-22, 20 % en Pro et 10 % en Entreprise, spec offres v2), et le crédit est décompté au
+  même tarif, commission
   comprise. La consommation de l'encadré du dessous est donc au prix de
   la liste. ⚠️ Avant cette date, le crédit était décompté au coût brut (environ 10 % sous le tarif
   affiché), et l'écran le disait ; une conversation d'avant garde le montant qui lui a été décompté.
@@ -3845,7 +3846,7 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
   (« c'est bas, au bout vos agents cesseront de répondre »), et un bandeau rouge à zéro (« vos agents ne
   répondent plus et sortent par Plafond atteint »). L'agent IA qui répond au client, lui, laisse alors chaque message à
   l'équipe (voir plus haut).
-- ✅ **Un admin le recharge lui-même, en payant** (2026-09-29) : **Paramètres > Crédit IA**, 50 € ou 100 € HT,
+- ✅ **Un admin le recharge lui-même, en payant** (2026-09-29) : **Paramètres > Crédit IA**, 50 € ou 100 € HT (depuis Claude, par `buy_credit`, aussi 5 € ou 10 € HT, le chemin de la Free),
   sur la page de paiement de Stripe (voir « Crédit IA »). Un client ne s'écrit jamais de crédit : seul le paiement
   confirmé par Stripe en ajoute. La recharge à la main par l'exploitation reste possible (voir la section `/ops`).
 - ✅ **1 € OFFERT AU PREMIER NUMÉRO WHATSAPP VÉRIFIÉ PAR META** (5 € du 2026-09-29 au lot 6 ; 1 € pour toutes les
@@ -3861,9 +3862,9 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
   démarre, ni bac à sable, ni traduction, ni transcription, et ses nouvelles fiches de connaissance attendent**.
 - ✅ **Trois plafonds de conversation** en plus du solde, réglés sur la fiche (tours, appels d'outils, budget).
   Le premier atteint fait sortir le parcours par 🛑 « Plafond atteint », qui est une sortie à brancher : c'est
-  un garde-fou, pas un réglage de confort. Le budget vaut **0,07 € par défaut** depuis le lot 6 (0,03 € avant) : la
-  recherche dans la base de connaissance y entre désormais, et il laisse au modèle la place d'avant plus douze
-  recherches.
+  un garde-fou, pas un réglage de confort. Le budget n'a **plus de limite par défaut** depuis le 2026-10-22 (100 €, le
+  maximum de la fiche, décision de Julien : c'est le client qui paie son crédit IA) ; il valait 0,07 € depuis le lot 6,
+  0,03 € avant. Les tours et les appels d'outils bornent toujours une conversation, et le solde reste la vraie limite.
 - ✅ **CHAQUE ESPACE A SA PROPRE CLÉ DE MODÈLE** (2026-09-09), créée automatiquement au moment où le client
   crée son PREMIER agent, ou depuis le 2026-09-28 à sa PREMIÈRE TRADUCTION s'il a du crédit, et plafonnée au
   crédit qu'il a acheté. Ce qui change côté client : **sans crédit,
@@ -4054,7 +4055,8 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   conversations (absente, elle reste telle quelle : changer d'offre ne déclenche jamais de purge). La même route ramène
   un espace en Free. Les espaces qui existaient avant le lot 6 sont tous en Entreprise, sans aucune limite.
 - ✅ **Les coûts suivent l'offre** (livraison C) :
-  - la **commission sur le crédit IA** : 50 % en Free, 20 % en Pro, 10 % en Entreprise (ou celle négociée au devis),
+  - la **commission sur le crédit IA** : 100 % en Free (10 € de crédit y paient 5 € de consommation des modèles,
+    décision de Julien du 2026-10-22), 20 % en Pro, 10 % en Entreprise (ou celle négociée au devis),
     au tarif affiché comme au montant décompté ;
   - l'**analyse des conversations** ne tourne qu'en Entreprise : ailleurs, la fiche d'un contact dit « analyse
     disponible en Entreprise ». Y passer n'analyse pas le passé : une conversation est analysée au premier nouveau

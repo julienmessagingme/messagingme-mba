@@ -39,7 +39,7 @@ const PORTAIL = { status: 200, json: { id: 'bps_1', url: 'https://billing.stripe
 function deps(o: { prix?: Record<string, unknown>; reponses?: ReponseStripe[]; client?: string | null; autorise?: boolean; vivant?: boolean; prixVides?: boolean; offre?: 'base' | 'pro' | 'entreprise'; dejaEu?: boolean; filiere?: 'api' | 'application' | null } = {}) {
   const transport = new FauxStripe(o.prix ?? { price_pro_mois: MOIS, price_pro_an: AN }, o.reponses ?? [{ status: 200, json: { id: 'cus_A' } }, SESSION]);
   const d: DepsPro = {
-    stripe: { cle: 'rk_test_fausse', livemode: false, prix: { refill_50: '', refill_100: '' }, transport, pageCredit: 'https://x', pageClaude: 'https://x' },
+    stripe: { cle: 'rk_test_fausse', livemode: false, prix: { refill_5: '', refill_10: '', refill_50: '', refill_100: '' }, transport, pageCredit: 'https://x', pageClaude: 'https://x' },
     prixProMois: o.prixVides ? '' : 'price_pro_mois',
     prixProAn: o.prixVides ? '' : 'price_pro_an',
     urlConsole: 'https://console.exemple/',

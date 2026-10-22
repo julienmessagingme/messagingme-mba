@@ -16,7 +16,7 @@ const PRO = ['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assist
 export const LIMITES_DEMO = {
   free: {
     utilisateurs: 1, admins: 1, contacts: 100, envoisModelesMois: 1000, automations: 10, suppressionsJour: 10,
-    adressesWebhook: 1, journalWebhooksJours: 3, conservationJours: 30, commissionPct: 50, badge: true, numeroInclus: false,
+    adressesWebhook: 1, journalWebhooksJours: 3, conservationJours: 30, commissionPct: 100, badge: true, numeroInclus: false,
     stockageOctets: 0, clesApi: 2, appelsMinute: 30, appelsHeure: 500, modelesJour: 500, reponsesJour: 2000,
   },
   pro: {

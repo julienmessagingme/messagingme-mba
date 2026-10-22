@@ -522,11 +522,14 @@ export const schema = z.object({
    * vrais euros de modèle à n'importe quel client, et le webhook refuse un événement d'un autre mode que la clé.
    * `STRIPE_WEBHOOK_SECRET` est le secret de signature de la destination déclarée chez Stripe (`whsec_...`). En
    * production, la clé et le secret se posent ensemble ou pas du tout (garde plus bas).
-   * Les deux prix sont les identifiants Stripe (`price_...`) des offres Refill 50 € et Refill 100 € HT : le crédit
-   * accordé de chaque offre vit dans le code (`src/stripe/offres.ts`), jamais dans la requête du client.
+   * Les prix sont les identifiants Stripe (`price_...`) des offres Refill 5, 10, 50 et 100 € HT (5 et 10 € par Claude
+   * seulement) : le crédit accordé de chaque offre vit dans le code (`src/stripe/offres.ts`), jamais dans la requête
+   * du client. Un prix vide : cette offre n'est pas en vente (503).
    */
   STRIPE_SECRET_KEY: z.string().default(''),
   STRIPE_WEBHOOK_SECRET: z.string().default(''),
+  STRIPE_PRIX_REFILL_5: z.string().default(''),
+  STRIPE_PRIX_REFILL_10: z.string().default(''),
   STRIPE_PRIX_REFILL_50: z.string().default(''),
   STRIPE_PRIX_REFILL_100: z.string().default(''),
   /**

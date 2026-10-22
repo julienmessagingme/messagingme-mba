@@ -4,16 +4,16 @@ import { OffresEnCache } from '../src/offres/cache';
 import { DROITS, type Offre } from '../src/offres/offres';
 
 /**
- * LA COMMISSION SUR LE CRÉDIT IA SUIT L'OFFRE (lot 6, livraison C, tâche 17) : 50 % en Base, 20 % en Pro (spec offres
- * v2, livraison 5) et 10 % en Entreprise, lue dans la grille (`src/offres/offres.ts`), seule source. Le tour d'agent, son essai, la traduction et le
+ * LA COMMISSION SUR LE CRÉDIT IA SUIT L'OFFRE (lot 6, livraison C, tâche 17) : 100 % en Base depuis le 2026-10-22 (10 €
+ * rechargés y donnent 5 € de jetons, décision de Julien), 20 % en Pro (spec offres v2, livraison 5) et 10 % en Entreprise, lue dans la grille (`src/offres/offres.ts`), seule source. Le tour d'agent, son essai, la traduction et le
  * catalogue des modèles affiché la lisent par cette fonction.
  */
 const source = { offreDe: async (t: string) => ({ offre: t as Offre, droits: DROITS[t as Offre], retourEnBaseLe: null }) };
 
 describe('la commission de l’espace', () => {
-  it('🔴 50 % en Base, 20 % en Pro, 10 % en Entreprise : la grille, et elle seule', async () => {
+  it('🔴 100 % en Base, 20 % en Pro, 10 % en Entreprise : la grille, et elle seule', async () => {
     const c = commissionPour(source);
-    expect(await c('base')).toBe(50);
+    expect(await c('base')).toBe(100);
     expect(await c('pro')).toBe(20);
     expect(await c('entreprise')).toBe(10);
     expect(await c('base')).toBe(DROITS.base.limites.commissionPct);

@@ -33,7 +33,7 @@ function deps(payeurs: string[], autorise = true): DepsPaiement {
   return {
     stripe: {
       cle: 'rk_test_fausse', livemode: false,
-      prix: { refill_50: 'price_50', refill_100: 'price_100' },
+      prix: { refill_5: 'price_5', refill_10: 'price_10', refill_50: 'price_50', refill_100: 'price_100' },
       transport: new FauxStripe([
         { status: 200, json: { id: 'cus_A' } },
         { status: 200, json: { id: 'cs_test_1', url: 'https://checkout.stripe.com/c/pay/cs_test_1' } },
@@ -76,7 +76,7 @@ describe('ouvrirPaiement', () => {
 
   it('une offre hors de la liste fermée, ou un montant : 400, rien n’est demandé à Stripe', async () => {
     const payeurs: string[] = [];
-    expect(await ouvrirPaiement(deps(payeurs), T1, { offre: 'refill_5' }, 'p', 'console')).toMatchObject({ ok: false, statut: 400 });
+    expect(await ouvrirPaiement(deps(payeurs), T1, { offre: 'refill_20' }, 'p', 'console')).toMatchObject({ ok: false, statut: 400 });
     expect(await ouvrirPaiement(deps(payeurs), T1, { montant: 5 }, 'p', 'console')).toMatchObject({ ok: false, statut: 400 });
     expect(payeurs).toEqual([]);
   });

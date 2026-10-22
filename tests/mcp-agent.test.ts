@@ -134,7 +134,8 @@ class FauxStripe implements TransportStripe {
   }
   async get(url: string): Promise<ReponseStripe> {
     const id = url.slice(url.lastIndexOf('/') + 1);
-    return { status: 200, json: { id, unit_amount: id === 'price_100' ? 10_000 : 5_000, currency: 'eur' } };
+    const centimes: Record<string, number> = { price_5: 500, price_10: 1_000, price_50: 5_000, price_100: 10_000 };
+    return { status: 200, json: { id, unit_amount: centimes[id] ?? 0, currency: 'eur' } };
   }
 }
 
@@ -304,7 +305,7 @@ function monter(o: Options & { envoyerModele?: DepsMcp['envoyerModele']; usage?:
   const paiement: DepsPaiement = {
     stripe: {
       cle: 'rk_test_fausse', livemode: false,
-      prix: { refill_50: 'price_50', refill_100: 'price_100' },
+      prix: { refill_5: 'price_5', refill_10: 'price_10', refill_50: 'price_50', refill_100: 'price_100' },
       transport: new FauxStripe(),
       pageCredit: 'https://console.exemple/parametres/credit', pageClaude: 'https://console.exemple/paiement-recu',
     },
@@ -915,6 +916,13 @@ describe('les outils de l’agent appellent les fonctions de la console, dans l�
     await refuse.server.close();
   });
 
+  it('🔴 buy_credit : la petite recharge de 5 € HT, proposée par Claude seulement (2026-10-22)', async () => {
+    const { server } = monter();
+    const r = await appeler(server, JETON.brut, 'buy_credit', { offre: 'refill_5' });
+    expect(r.json()).toMatchObject({ offre: 'refill_5', montant_ht_eur: 5 });
+    await server.close();
+  });
+
   it('list_agents et get_agent : les manques comptés et listés, sans plafonds ni texte de mention d’IA', async () => {
     const { server, cap } = monter({ fichesConnaissance: 0, outilsPoses: [outil('terminer', true)] });
     const liste = await appeler(server, CLE_ECRITURE, 'list_agents');
@@ -1019,6 +1027,9 @@ describe('les descriptions disent ce qu’un modèle doit savoir pour ne pas se 
     expect(d('add_knowledge')).toMatch(/A SITE is not copied here: preview_site then import_site/);
     expect(d('buy_credit')).toMatch(/EXCLUDING TAX/);
     expect(d('buy_credit')).toMatch(/tax is calculated by Stripe/);
+    // Les quatre montants, du plus petit au plus grand, et le plus petit utile pour un essai.
+    expect(d('buy_credit')).toContain('refill_5 (€5 excl. VAT), refill_10 (€10 excl. VAT), refill_50 (€50 excl. VAT), refill_100 (€100 excl. VAT)');
+    expect(d('buy_credit')).toMatch(/smallest amount that covers the need/);
   });
 
   it('🔴 désactiver COUPE l’agent dans ses scénarios : seulement sur demande, jamais pour faire passer un refus', () => {

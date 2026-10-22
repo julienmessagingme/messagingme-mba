@@ -387,7 +387,7 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
   2026-09-15, gardé depuis par `tests/agent-setup-evolution.test.ts`.
   🔴 **CE QUI TOMBE SUR LE CRÉDIT DU CLIENT EST DÉBITÉ AU PRIX CLIENT, ET PAR UN SEUL CALCUL** (2026-09-28) :
   `prixClientMicroEur` (`src/agent/devise.ts`), coût du Gateway majoré de la commission de l'OFFRE de l'espace
-  (`commissionPour`, `src/offres/commission.ts`, 50 % en Base, 20 % en Pro et 10 % en Entreprise depuis la spec offres v2), la même
+  (`commissionPour`, `src/offres/commission.ts`, 100 % en Base, 20 % en Pro et 10 % en Entreprise), la même
   commission que le tarif affiché. Le cerveau de l'agent (tour et bac à sable) et la traduction l'importent ;
   `microEurosDepuisDollars` (coût brut) ne sert qu'à NOTRE dépense, les deux assistants, et
   `tests/agent-devise.test.ts` la refuse ailleurs. La traduction usait la clé du client SANS rien inscrire au

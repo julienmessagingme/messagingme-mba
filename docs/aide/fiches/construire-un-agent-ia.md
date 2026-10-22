@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: 62b6e1
+source_empreinte: b8e2be
 ---
 # Construire un agent IA
 
@@ -157,12 +157,12 @@ Le solde descend à chaque tour, au tarif affiché dans la liste des
 modèles (notre commission comprise, celle de votre offre), recherche dans la base de connaissance comprise, et aussi
 à la préparation des fiches de connaissance et à chaque traduction ou transcription de l'Inbox. Un avertissement apparaît quand
 il devient bas, et un bandeau rouge à zéro. Un administrateur le recharge dans **Paramètres > Crédit IA**
-(50 € ou 100 € hors taxe, payés sur la page de Stripe), et 1 € est offert au premier numéro WhatsApp de
+(50 € ou 100 € hors taxe, payés sur la page de Stripe ; depuis Claude, aussi 5 € ou 10 €), et 1 € est offert au premier numéro WhatsApp de
 l'espace, une fois que Meta l'a vérifié. **Sans crédit, on ne peut pas créer d'agent et le
 bac à sable refuse** : un essai appelle vraiment le modèle, il se paie comme une conversation.
 
 **Trois plafonds** protègent chaque conversation en plus du solde : le nombre de tours, le nombre d'appels
-d'outils et un budget (0,07 € par défaut, recherches dans la base de connaissance comprises). Le premier atteint
+d'outils et un budget (sans limite par défaut : c'est votre solde qui borne la dépense). Le premier atteint
 fait sortir le parcours par « Plafond atteint », qui est une
 sortie à brancher, pas un réglage de confort.
 

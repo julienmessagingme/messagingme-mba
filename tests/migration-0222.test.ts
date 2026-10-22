@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { decouperInstructions, veutHorsTransaction } from '../src/db/migration-directives';
 import { prixClientMicroEur } from '../src/agent/devise';
-import { DROITS } from '../src/offres/offres';
 import { schema } from '../src/config';
 
 /**
@@ -29,10 +28,11 @@ describe('migration 0222', () => {
 
   it('🔴 le nouveau budget laisse au modèle la place d’avant ET paie toutes les recherches permises, en Base', () => {
     // Le pire cas : chaque appel d'outil permis par défaut est une recherche (0,002 $ le reranker, mesuré), au tarif de la
-    // Base (la commission la plus haute), au taux par défaut de l'instance.
+    // Base (la commission la plus haute), au taux par défaut de l'instance. 50 % : la commission de la Base À LA DATE de
+    // 0222. Elle est passée à 100 % le 2026-10-22, et 0248 a levé le budget par défaut le même jour (son propre test).
     const appels = Number(/max_appels_outils\s+int\s+not null default (\d+)/.exec(lire('../db/migrations/0086_agent_ia.sql'))![1]);
     const taux = schema.parse({}).EUR_PER_USD;
-    const recherche = prixClientMicroEur(0.002, taux, DROITS.base.limites.commissionPct);
+    const recherche = prixClientMicroEur(0.002, taux, 50);
     const budget = Number(/set default (\d+)/.exec(SQL)![1]);
     expect(budget).toBeGreaterThanOrEqual(30_000 + appels * recherche);
   });

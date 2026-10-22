@@ -81,7 +81,7 @@ function deps(o: {
   const invalides: string[] = [];
   const alertes: string[] = [];
   const d: DepsSieges = {
-    stripe: { cle: 'rk_test_fausse', livemode: false, prix: { refill_50: '', refill_100: '' }, transport, pageCredit: 'https://x', pageClaude: 'https://x' },
+    stripe: { cle: 'rk_test_fausse', livemode: false, prix: { refill_5: '', refill_10: '', refill_50: '', refill_100: '' }, transport, pageCredit: 'https://x', pageClaude: 'https://x' },
     prixSiegeMois: o.prixVides ? '' : 'price_siege_mois',
     prixSiegeAn: o.prixVides ? '' : 'price_siege_an',
     payeurAutorise: async () => o.autorise ?? true,

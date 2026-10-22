@@ -75,7 +75,7 @@ export async function ouvrirPaiement(
   deps: DepsPaiement, tenantId: string, corps: unknown, payeur: string, retour: RetourPaiement,
 ): Promise<Issue<PaiementOuvert>> {
   const lu = saisieDePaiement.safeParse(corps ?? {});
-  if (!lu.success) return refus(400, 'offre inconnue (refill_50 ou refill_100)');
+  if (!lu.success) return refus(400, `offre inconnue (${OFFRES_RECHARGE.join(', ')})`);
   const offre = lu.data.offre;
   const s = deps.stripe;
   if (s === null || s.prix[offre] === '') return RECHARGE_INDISPONIBLE;

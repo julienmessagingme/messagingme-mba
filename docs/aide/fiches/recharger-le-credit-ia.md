@@ -8,11 +8,12 @@ source_empreinte: d8301e
 Le crédit IA est le crédit prépayé de votre espace. Il paie **vos agents IA**, à chaque échange avec leur modèle et
 à chaque recherche dans leur base de connaissance (en conversation comme dans l'onglet Tester), **la préparation de
 vos fiches de connaissance**, et **la traduction et la transcription des conversations de l'Inbox**. Le tarif est
-celui de votre offre, affiché dans l'onglet Modèle d'un agent : notre commission y est de 50 % en Free, de 20 % en
+celui de votre offre, affiché dans l'onglet Modèle d'un agent : notre commission y est de 100 % en Free, de 20 % en
 Pro et de 10 % en Entreprise. Vous le trouvez dans **Paramètres >
 Crédit IA** ; l'écran est réservé aux administrateurs.
 
-**Recharger.** Deux boutons : 50 € ou 100 €, hors taxe. Un clic vous emmène sur la page de paiement sécurisée
+**Recharger.** Deux boutons : 50 € ou 100 €, hors taxe. Depuis Claude, la recharge propose aussi 5 € et 10 € hors
+taxe : c'est le chemin de la Free, dont la console n'a pas cet écran. Un clic vous emmène sur la page de paiement sécurisée
 de Stripe, où vous saisissez votre carte, votre raison sociale, votre adresse de facturation et, si vous le
 souhaitez, votre numéro de TVA. La TVA s'ajoute au paiement : 50 € hors taxe payés donnent 50 € de crédit.
 Stripe vous envoie la facture par e-mail. Le crédit n'expire pas et n'est pas remboursé.

@@ -33,7 +33,7 @@ const SESSION = { status: 200, json: { id: 'cs_test_9', url: 'https://checkout.s
 function deps(o: { prix?: unknown; reponses?: ReponseStripe[]; client?: string | null; autorise?: boolean; prixNumero?: string } = {}) {
   const transport = new FauxStripe(o.prix ?? PRIX_JUSTE, o.reponses ?? [{ status: 200, json: { id: 'cus_A' } }, SESSION]);
   const d: DepsAbonnement = {
-    stripe: { cle: 'rk_test_fausse', livemode: false, prix: { refill_50: '', refill_100: '' }, transport, pageCredit: 'https://x', pageClaude: 'https://x' },
+    stripe: { cle: 'rk_test_fausse', livemode: false, prix: { refill_5: '', refill_10: '', refill_50: '', refill_100: '' }, transport, pageCredit: 'https://x', pageClaude: 'https://x' },
     prixNumero: o.prixNumero ?? 'price_numero',
     urlConsole: 'https://console.exemple/',
     clients: { clientDe: async () => o.client ?? null, retenirClient: async (_t, _l, c) => c },

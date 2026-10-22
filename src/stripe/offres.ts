@@ -6,11 +6,14 @@
  * accorde, après l'avoir recoupé avec ce que Stripe dit avoir encaissé (`htCentimes`).
  *
  * HT (décision de Julien du 2026-09-28) : 50 € payés hors taxe donnent 50 € de crédit, la TVA s'ajoute au paiement.
+ * Les recharges de 5 et 10 € (2026-10-22) ne sont proposées que par Claude (`buy_credit`) : l'écran Crédit IA de la
+ * console garde 50 et 100 € (`web/app/parametres/credit/page.tsx`).
  * Le crédit se DÉRIVE du prix hors taxe, il ne se recopie pas : deux nombres écrits séparément finiraient par
  * diverger, et le webhook refuserait alors tous les paiements de l'offre.
  */
 
-export const OFFRES_RECHARGE = ['refill_50', 'refill_100'] as const;
+/** De la plus petite à la plus grande : la description de `buy_credit` les cite dans cet ordre. */
+export const OFFRES_RECHARGE = ['refill_5', 'refill_10', 'refill_50', 'refill_100'] as const;
 export type OffreRecharge = typeof OFFRES_RECHARGE[number];
 
 export interface DefinitionOffre {
@@ -22,6 +25,8 @@ export interface DefinitionOffre {
 }
 
 const DEFINITIONS: Readonly<Record<OffreRecharge, DefinitionOffre>> = {
+  refill_5: { offre: 'refill_5', htCentimes: 500, libelle: 'Refill 5 € HT' },
+  refill_10: { offre: 'refill_10', htCentimes: 1_000, libelle: 'Refill 10 € HT' },
   refill_50: { offre: 'refill_50', htCentimes: 5_000, libelle: 'Refill 50 € HT' },
   refill_100: { offre: 'refill_100', htCentimes: 10_000, libelle: 'Refill 100 € HT' },
 };

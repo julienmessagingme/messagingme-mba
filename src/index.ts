@@ -927,7 +927,10 @@ async function main(): Promise<void> {
       ? {
         cle: config.STRIPE_SECRET_KEY,
         livemode: estCleLive(config.STRIPE_SECRET_KEY),
-        prix: { refill_50: config.STRIPE_PRIX_REFILL_50, refill_100: config.STRIPE_PRIX_REFILL_100 },
+        prix: {
+          refill_5: config.STRIPE_PRIX_REFILL_5, refill_10: config.STRIPE_PRIX_REFILL_10,
+          refill_50: config.STRIPE_PRIX_REFILL_50, refill_100: config.STRIPE_PRIX_REFILL_100,
+        },
         transport: new FetchTransportStripe(),
         pageCredit: `${config.APP_URL.trim().replace(/\/+$/, '')}/parametres/credit`,
         // Un paiement ouvert par Claude (`buy_credit`) revient sur la page publique : la Free n'a plus la page Crédit IA.

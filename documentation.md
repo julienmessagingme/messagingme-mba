@@ -3612,7 +3612,7 @@ constantes du bloc `constantes` en fin de `src/config.ts` depuis le 2026-09-25 :
 | **Rétention** | `WEBHOOK_EVENTS_RETENTION_DAYS` | une réponse RGPD fausse |
 | **Paramètres commerciaux** | `EUR_PER_USD`, `CREDIT_OFFERT_MICRO_EUR` | ce qu'on facture, et ce qu'on offre (la commission vit dans la grille des offres, `src/offres/offres.ts`) |
 | **Provisionnement des clés client** | `VERCEL_API_TOKEN` + `VERCEL_TEAM_ID` | les deux vides = éteint ; une seule moitié = refus au boot (chaque création d'agent échouerait, donc plus aucun client ne pourrait en créer) |
-| **Recharge par Stripe** | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRIX_REFILL_50`, `STRIPE_PRIX_REFILL_100` | vides = recharge fermée (la route rend 503, le webhook n'est pas monté) ; une clé sans préfixe `sk_`/`rk_` + `live_`/`test_`, ou la clé sans le secret du webhook (ou l'inverse) = refus au boot |
+| **Recharge par Stripe** | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRIX_REFILL_5`, `_10`, `_50`, `_100` | vides = recharge fermée (un prix vide ferme sa seule offre) (la route rend 503, le webhook n'est pas monté) ; une clé sans préfixe `sk_`/`rk_` + `live_`/`test_`, ou la clé sans le secret du webhook (ou l'inverse) = refus au boot |
 
 🔴 **Le boot ÉCHOUE VITE plutôt que de dégrader en silence**, et c'est délibéré : `AUTH_SECRET` trop court en
 production, `CORS_ORIGINS` à `*`, une entrée de `OPS_EMAILS` qui n'a pas la forme d'une adresse, `AI_GATEWAY_API_KEY` sans ses deux modèles,
@@ -3626,7 +3626,7 @@ donc désarmerait le plafond en silence.
 
 🔴 **QUI PAIE QUOI, ET À QUEL PRIX.** Sur le **crédit prépayé du client**, au **prix client** : le coût du
 Gateway au taux `EUR_PER_USD`, majoré de la commission de l'OFFRE de l'espace (`commissionPour`,
-`src/offres/commission.ts` : 50 % en Base, 20 % en Pro, 10 % en Entreprise, lue dans la grille par `OffresEnCache`),
+`src/offres/commission.ts` : 100 % en Base, 20 % en Pro, 10 % en Entreprise, lue dans la grille par `OffresEnCache`),
 calculé par `prixClientMicroEur` (`src/agent/devise.ts`), seul point de calcul du montant débité. Ses appelants : le
 cerveau de l'agent (donc le tour de production et l'essai du bac à sable, qui y ajoutent le coût de la recherche dans
 la connaissance, rendu par l'outil : `SortieResolveur.coutDollars`), la traduction des conversations, la vectorisation
@@ -3846,7 +3846,7 @@ est écrit sans SDK (formulaire `x-www-form-urlencoded`, `Stripe-Version` éping
 webhook, `Idempotency-Key` sur chaque création, `client-<espace>` pour le client Stripe), avec un transport
 injectable : aucun test n'appelle Stripe.
 - `POST /tenants/:tenantId/credit/paiement` (admin, plafond coûteux) : le corps ne porte qu'une offre
-  (`refill_50`, `refill_100`) ; le prix Stripe vient de la configuration, le crédit de `src/stripe/offres.ts`
+  (`OFFRES_RECHARGE` : `refill_5`, `refill_10`, `refill_50`, `refill_100` ; l'écran n'en propose que 50 et 100, `buy_credit` les quatre) ; le prix Stripe vient de la configuration, le crédit de `src/stripe/offres.ts`
   (dérivé du HT). Le client Stripe de l'espace est créé au premier achat et gardé PAR MODE (`stripe_clients`,
   clé `(tenant_id, livemode)`) : un client de test n'existe pas en live. 🔴 **Le prix est relu chez Stripe AVANT
   tout** (`lirePrixStripe`, la clé restreinte a les prix en lecture) : s'il ne vaut pas le HT de l'offre, en

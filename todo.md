@@ -1,5 +1,24 @@
 # todo.md : backlog
 
+## 🟡 Un plafond de crédit par conversation, posé depuis Claude (idée de Julien, 2026-10-22)
+
+Le budget par conversation d'un agent n'a plus de limite par défaut (0248). Julien : « il pourrait être judicieux de créer
+un outil MCP qui permettrait de définir une limite de crédit maximum par conversation, mais par défaut, pas de limite ».
+Aujourd'hui `budgetMicroEur` ne se règle que par la route de la console (`src/agent/gestion.ts`, entre 1 et 100 000 000
+micro-euros), et aucun écran ni outil ne l'expose. Ses deux voisins, `maxTours` (8 par défaut) et `maxAppelsOutils`
+(12), coupent toujours une conversation longue par « Plafond atteint » : à reposer avec Julien dans le même outil.
+
+## 🟡 Les jaunes de la relecture des recharges de 5 et 10 € (2026-10-22)
+
+- **Une métadonnée d'offre inconnue répond 200 en silence** (`src/http/credit-stripe.ts`) : après un retour arrière d'image
+  antérieure au lot, une session `refill_5` ou `refill_10` encore ouverte serait encaissée sans crédit, sans alerte, et
+  Stripe ne la rejouerait pas. Avec un `tenant_id` présent, journaliser une erreur et alerter (à rembourser).
+- **`lirePrixStripe` ne lit pas `tax_behavior`** : un prix créé taxe incluse passerait le contrôle. Les deux prix neufs
+  sont en `exclusive` (lu chez Stripe le 2026-10-22) ; ajouter la vérification au contrôle préalable.
+- **La description de `buy_credit` annonce les quatre offres même quand un prix est vide** sur l'instance : dériver
+  l'énumération des prix configurés.
+- **Aucun test du webhook ne crédite `refill_10`** (la dérivation commune le couvre).
+
 ## 🟡 Le connecteur Shopify : le lot 2 et ce que la relecture du lot 1 laisse (2026-10-22)
 
 Plan : `docs/superpowers/plans/2026-10-21-connecteur-shopify.md`.

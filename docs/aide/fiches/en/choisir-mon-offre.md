@@ -1,6 +1,6 @@
 ---
 slug: choose-my-plan
-traduit_de: 93769b
+traduit_de: 325768
 ---
 # Choose my plan
 
@@ -43,7 +43,8 @@ within 24 hours of a customer’s message is not a template send: it is not coun
 **When something is not in your plan.** The menu stays visible, greyed out, with a padlock: it takes you to the Plan
 page. If an action is refused because a limit is reached, a message tells you so, with a “See plans” button.
 
-**What the plan changes to costs.** Our commission on AI credit is 50% on Free, 20% on Pro and 10% on Enterprise.
+**What the plan changes to costs.** Our commission on AI credit is 100% on Free (€10 of credit pays for €5 of model
+usage there), 20% on Pro and 10% on Enterprise.
 Conversation analysis only runs on Enterprise: when your workspace moves to it, a conversation is analysed at its
 first new message (the past is not caught up). On Free, conversations are kept 30 days, but only 30 days after
 entering Free: when the workspace is created, when your Pro ends or when you leave Enterprise.

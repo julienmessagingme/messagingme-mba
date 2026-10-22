@@ -168,11 +168,16 @@ describe('les offres et le mode de la clé', () => {
     expect(creditDeLOffre('refill_50')).toBe(50_000_000);
     expect(definitionOffre('refill_100').htCentimes).toBe(10_000);
     expect(creditDeLOffre('refill_100')).toBe(100_000_000);
+    // Les deux petites recharges de Claude (2026-10-22) suivent la même règle.
+    expect(definitionOffre('refill_5').htCentimes).toBe(500);
+    expect(creditDeLOffre('refill_5')).toBe(5_000_000);
+    expect(definitionOffre('refill_10').htCentimes).toBe(1_000);
+    expect(creditDeLOffre('refill_10')).toBe(10_000_000);
   });
 
-  it('seules nos deux offres existent', () => {
+  it('seules nos quatre offres existent, de la plus petite à la plus grande', () => {
     // La liste que la route valide (`z.enum(OFFRES_RECHARGE)`, `src/http/credit-stripe.ts`) : rien d'autre ne s'achète.
-    expect(OFFRES_RECHARGE).toEqual(['refill_50', 'refill_100']);
+    expect(OFFRES_RECHARGE).toEqual(['refill_5', 'refill_10', 'refill_50', 'refill_100']);
   });
 
   it('le mode se lit sur le préfixe de la clé', () => {

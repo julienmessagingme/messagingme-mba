@@ -938,7 +938,8 @@ export const OUTILS_AGENT: OutilMcp[] = [
     description:
       'Opens the payment of an AI credit top-up and returns the URL of the Stripe checkout page; the payment itself is '
       + 'made by the person on that page, and the credit arrives once Stripe has confirmed it (get_credit). '
-      + `Offers: ${OFFRES_EN_CLAIR}, credited in full. The amount is stated EXCLUDING TAX (montant_ht_eur): the tax is `
+      + `Offers: ${OFFRES_EN_CLAIR}, credited in full. Offer the smallest amount that covers the need: refill_5 is `
+      + 'enough for a trial. The amount is stated EXCLUDING TAX (montant_ht_eur): the tax is '
       + 'calculated by Stripe on the payment page, from the country and the VAT number the person enters there. '
       + LOURDE,
     // Monde ouvert : elle crée une session chez Stripe. Non idempotente : une session de plus à chaque appel.

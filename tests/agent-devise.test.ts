@@ -66,6 +66,11 @@ describe('prixClientMicroEur', () => {
     expect(prixClientMicroEur(1, 0.92, 10)).toBe(1_012_000);
   });
 
+  it('🔴 à 100 % (la Free depuis le 2026-10-22), le double exact du coût brut : 10 € de crédit, 5 € de jetons', () => {
+    expect(prixClientMicroEur(0.01, 0.92, 100)).toBe(18_400);
+    expect(prixClientMicroEur(5, 1, 100)).toBe(10_000_000);
+  });
+
   it('🔴 arrondit UNE seule fois, après la commission', () => {
     // 1,4 micro-euro brut : arrondi d'abord, il vaudrait 1, puis 1,1, donc 1 ; la commission serait perdue sur
     // tous les petits appels, qui sont justement la majorité (un tour coûte quelques dizaines de micro-euros).
