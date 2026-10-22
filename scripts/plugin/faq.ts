@@ -183,10 +183,10 @@ export const FAQ: readonly EntreeFaq[] = [
     id: 'mettre-a-jour-le-plugin',
     question: { fr: 'Comment mettre à jour le plugin ?', en: 'How do I update the plugin?' },
     reponse: {
-      fr: 'Il ne se met pas à jour tout seul. Dans Claude Code : /plugin, onglet Marketplaces, messagingme, « Update marketplace » (ou « Enable auto-update » pour la suite). En terminal : claude plugin update messagingme@messagingme. Le nouveau code se charge à la session suivante, ou après /reload-plugins.',
-      en: 'It does not update on its own. In Claude Code: /plugin, Marketplaces tab, messagingme, “Update marketplace” (or “Enable auto-update” from then on). In a terminal: claude plugin update messagingme@messagingme. The new code loads in the next session, or after /reload-plugins.',
+      fr: 'Il ne se met pas à jour tout seul. Dans Claude Code : /plugin, onglet Marketplaces, messagingme, « Update marketplace » (ou « Enable auto-update » pour la suite). En terminal : claude plugin update messagingme@messagingme ; sous Windows, dans PowerShell, écrivez claude.cmd au lieu de claude (PowerShell bloque le script claude.ps1). Le nouveau code se charge à la session suivante, ou après /reload-plugins.',
+      en: 'It does not update on its own. In Claude Code: /plugin, Marketplaces tab, messagingme, “Update marketplace” (or “Enable auto-update” from then on). In a terminal: claude plugin update messagingme@messagingme; on Windows, in PowerShell, type claude.cmd instead of claude (PowerShell blocks the claude.ps1 script). The new code loads in the next session, or after /reload-plugins.',
     },
-    source: 'documentation de Claude Code (plugins, mises à jour), lue le 2026-10-12',
+    source: 'documentation de Claude Code (plugins, mises à jour), lue le 2026-10-12 ; claude.ps1 refusé par la politique d’exécution de PowerShell, claude.cmd accepté, mesuré le 2026-10-22 sur le poste de Julien',
   },
   {
     id: 'serveur-ajoute-a-la-main',
