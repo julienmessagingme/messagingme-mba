@@ -77,10 +77,11 @@ describe('les messages envoyés, gardés pour un renvoi', () => {
 
   it('🔴 envoyer garde le message que WhatsApp a accepté, sous l’identifiant qu’il rend', async () => {
     const memoire = memoireDesEnvois();
-    const envoyer = envoyeur({ sendMessage: async () => ({ key: { id: '3EB0B' }, message: { conversation: 'Réponse' } }) }, memoire);
+    const telle = async (jid: string) => jid;
+    const envoyer = envoyeur({ sendMessage: async () => ({ key: { id: '3EB0B' }, message: { conversation: 'Réponse' } }) }, memoire, telle);
     expect(await envoyer('33612345678@s.whatsapp.net', 'Réponse')).toBe('3EB0B');
     expect(memoire.retrouver('3EB0B')).toEqual({ conversation: 'Réponse' });
-    const muet = envoyeur({ sendMessage: async () => undefined }, memoire);
+    const muet = envoyeur({ sendMessage: async () => undefined }, memoire, telle);
     await expect(muet('33612345678@s.whatsapp.net', 'x')).rejects.toThrow('aucun identifiant');
   });
 });

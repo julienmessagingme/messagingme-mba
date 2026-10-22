@@ -186,13 +186,29 @@ export function optionsDuSocket(memoire: Pick<MemoireDesEnvois, 'retrouver'>) {
   return { ...OPTIONS_SOCKET, getMessage: async (cle: { id?: string | null }) => memoire.retrouver(cle.id) };
 }
 
-/** Envoie un texte, garde le message accepté par WhatsApp sous l'identifiant qu'il rend, et rend cet identifiant. */
+/**
+ * L'ADRESSE D'UNE RÉPONSE (essai réel du 2026-10-22) : l'identifiant masqué du contact quand il nous a écrit depuis lui,
+ * sinon son numéro. WhatsApp adresse la plupart des conversations par identifiant masqué : une réponse envoyée au numéro
+ * arrivait sur l'ordinateur du contact et restait « En attente de ce message » sur son mobile ; la même, adressée à son
+ * identifiant masqué, est arrivée sur les deux (mesuré sur newCompany). La conversation garde le numéro pour clé.
+ */
+export async function adresseDeReponse(destinataire: string, c: Pick<Correspondances, 'lidDe'>): Promise<string> {
+  if (!destinataire.endsWith('@s.whatsapp.net')) return destinataire;
+  const numero = chiffres(destinataire);
+  return (numero ? await c.lidDe(numero) : null) ?? destinataire;
+}
+
+/**
+ * Envoie un texte à l'adresse que `adresser` choisit, garde le message accepté par WhatsApp sous l'identifiant qu'il
+ * rend, et rend cet identifiant.
+ */
 export function envoyeur(
   sock: { sendMessage(jid: string, contenu: { text: string }): Promise<{ key?: { id?: string | null }; message?: proto.IMessage | null } | undefined> },
   memoire: Pick<MemoireDesEnvois, 'retenir'>,
+  adresser: (destinataire: string) => Promise<string>,
 ): (destinataire: string, texte: string) => Promise<string> {
   return async (destinataire, texte) => {
-    const r = await sock.sendMessage(destinataire, { text: texte });
+    const r = await sock.sendMessage(await adresser(destinataire), { text: texte });
     const id = r?.key?.id;
     if (!id) throw new Error('WhatsApp n’a rendu aucun identifiant de message');
     if (r.message) memoire.retenir(id, r.message);
@@ -245,7 +261,7 @@ export async function ouvrirSession(
   });
 
   return {
-    envoyer: envoyeur(sock, envois),
+    envoyer: envoyeur(sock, envois, (destinataire) => adresseDeReponse(destinataire, correspondances)),
     fermer() {
       // end() ferme la socket sans détruire la session côté WhatsApp, contrairement à logout().
       sock.end(undefined);

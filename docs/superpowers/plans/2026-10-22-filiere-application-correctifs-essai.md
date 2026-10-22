@@ -39,6 +39,16 @@ redémarrage du service n'est plus renvoyable : c'est accepté, un renvoi se dem
 session s'écrivent sans elle.
 - Test : une session factice portant `privKey` n'apparaît plus dans ce qui est écrit, et un autre message passe intact.
 
+**4. Répondre à l'identifiant masqué** (ajoutée le soir, après le deuxième essai). Le renvoi n'a pas suffi : les
+réponses restaient « En attente de ce message » sur le mobile. Le contact nous écrit depuis son identifiant masqué
+(`…@lid`), et nous répondions à son numéro. Un message de test adressé à son identifiant masqué est arrivé sur le
+mobile ET sur l'ordinateur (mesuré à 21 h 5x sur newCompany) : le défaut est dans notre adressage, pas dans la version
+de Baileys. Les correspondances d'un compte s'écrivent désormais dans les deux sens (`lid-du-numero`), et l'envoi
+adresse la réponse à l'identifiant masqué quand il est connu (`adresseDeReponse`) ; la conversation garde le numéro pour
+clé. Un contact jamais lu depuis un identifiant masqué reçoit toujours au numéro.
+- Tests (`tests/application-adresse-reponse.test.ts`) : l'adresse choisie dans les trois cas, l'envoi qui part à elle, et
+  la correspondance inverse relue par une instance neuve (un service redémarré).
+
 ## Ordre de déploiement
 
 Le push (sans CI d'un pair en cours), la CI relue job par job, puis `up -d --build` de `mba-application` et de

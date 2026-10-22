@@ -113,9 +113,13 @@ export async function etatAuthPostgres(pool: Pool, compteId: string, cle: Buffer
 export interface Correspondances {
   retenir(lid: string, numero: string): Promise<void>;
   numeroDe(lid: string): Promise<string | null>;
+  /** L'identifiant masque d'un numero, quand le contact nous a ecrit depuis lui (`adresseDeReponse`, `./session.ts`). */
+  lidDe(numero: string): Promise<string | null>;
 }
 
 const CATEGORIE_NUMEROS = 'numero-du-lid';
+// Le sens inverse, ecrit avec le premier : une reponse se retrouve par le numero, cle de la conversation.
+const CATEGORIE_LIDS = 'lid-du-numero';
 
 /**
  * Les correspondances d'un compte, rangees avec son etat (chiffrees, effacees avec lui). Une memoire par session evite
@@ -123,11 +127,24 @@ const CATEGORIE_NUMEROS = 'numero-du-lid';
  */
 export function correspondancesPostgres(pool: Pool, compteId: string, cle: Buffer): Correspondances {
   const memoire = new Map<string, string>();
+  const inverse = new Map<string, string>();
   return {
     async retenir(lid, numero) {
       if (memoire.get(lid) === numero) return;
-      await ecrireLot(pool, compteId, cle, [{ categorie: CATEGORIE_NUMEROS, cle: lid, valeur: numero }]);
+      await ecrireLot(pool, compteId, cle, [
+        { categorie: CATEGORIE_NUMEROS, cle: lid, valeur: numero },
+        { categorie: CATEGORIE_LIDS, cle: numero, valeur: lid },
+      ]);
       memoire.set(lid, numero);
+      inverse.set(numero, lid);
+    },
+    async lidDe(numero) {
+      const connu = inverse.get(numero);
+      if (connu) return connu;
+      const lu = await lireUne(pool, compteId, cle, CATEGORIE_LIDS, numero);
+      if (typeof lu !== 'string') return null;
+      inverse.set(numero, lu);
+      return lu;
     },
     async numeroDe(lid) {
       const connu = memoire.get(lid);
