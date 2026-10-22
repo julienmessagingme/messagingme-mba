@@ -1,6 +1,6 @@
 import { refus, type Issue } from '../lib/issue';
 import type { ClientApplication } from './client';
-import type { ComptesApplication, RefusPreparation, StatutCompte } from './comptes';
+import type { CompteApplication, ComptesApplication, RefusPreparation, StatutCompte } from './comptes';
 
 /**
  * RELIER UN COMPTE DE L'APPLICATION WHATSAPP BUSINESS (plan 2026-10-22, tâche 6), depuis la page du lien. La page appelle
@@ -72,4 +72,22 @@ export function phraseDuRefusDePreparation(raison: RefusPreparation): string {
     case 'filiere_api': return 'Cet espace a déjà un numéro de l’API WhatsApp : la filière application ne s’y ajoute pas.';
     case 'numero_invalide': return 'Numéro invalide : il faut le numéro international, indicatif compris (8 à 15 chiffres).';
   }
+}
+
+/**
+ * « Abandonner » un numéro fourni de la filière application (relecture du lot, 🔴 2) : un numéro qui porte peut-être un
+ * compte WhatsApp Business ne retourne JAMAIS à la réserve, sans quoi l'espace suivant qui le recevrait reprendrait ce
+ * compte et ses clients. Il le porte si un compte de l'application de l'espace le tient, ou, pour un lien de la filière,
+ * dès que son code de vérification a été capté (le compte de l'application peut exister avant que la page ne le
+ * prépare). La filière API garde son comportement.
+ */
+export function numeroFourniAGarder(o: {
+  filiereDuLien: 'application' | undefined;
+  compte: CompteApplication | null;
+  fourni: { numero: string };
+  codeCapte: boolean;
+}): boolean {
+  const compteVivant = o.compte !== null && o.compte.statut !== 'retire';
+  if (compteVivant && o.compte!.numero === o.fourni.numero) return true;
+  return (o.filiereDuLien === 'application' || compteVivant) && o.codeCapte;
 }

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import { signLienNumero, verifyLienNumero } from '../src/auth/token';
 import { empreinteEtat, lireEtatConnexion, type EtatConnexion } from '../src/otp/etat-connexion';
-import { qrApplication, relierApplication, type DepsConnexionApplication } from '../src/application/connexion';
+import { numeroFourniAGarder, qrApplication, relierApplication, type DepsConnexionApplication } from '../src/application/connexion';
 import type { CompteApplication, StatutCompte } from '../src/application/comptes';
 import type { ClientApplication } from '../src/application/client';
 import { OUTILS, type DepsMcp, type OutilMcp } from '../src/mcp/outils';
@@ -48,6 +48,14 @@ describe('l’état de la connexion', () => {
     const attente = await lireEtatConnexion(depsEtat(compte('en_attente')), T);
     expect(attente.connecte).toBeNull();
     expect(empreinteEtat(attente)).not.toBe(empreinteEtat(relie));
+  });
+
+  it('🔴 relecture : un numéro de Meta connecté prime sur un vieux compte de l’application (banni, en attente)', async () => {
+    // Un espace passé à l'API après un essai de la filière application : l'état est celui de l'API, sans « numéro coupé ».
+    const deps = { ...depsEtat(compte('banni')), numeroConnecte: async () => ({ chiffres: '33612345678', aActiver: false }) };
+    const e = await lireEtatConnexion(deps, T);
+    expect(e.connecte).toEqual({ chiffres: '33612345678', aActiver: false });
+    expect(e).not.toHaveProperty('application');
   });
 
   it('sans compte de l’application, l’état est celui d’aujourd’hui', async () => {
@@ -110,6 +118,21 @@ describe('relier depuis la page du lien', () => {
     const relie = banc({ compte: compte('relie') });
     expect(await qrApplication(relie.d, T)).toEqual({ statut: 'relie', qr: null, relie: true });
     expect(relie.traces).toEqual([`credit:${T}`]);
+  });
+});
+
+describe('« Abandonner » un numéro fourni de la filière application (relecture, 🔴 2)', () => {
+  const fourni = { numero: '441234567890' };
+  it('🔴 un numéro qui porte un compte de l’application (ou dont le code a été capté par le lien de la filière) est gardé, jamais rendu', () => {
+    expect(numeroFourniAGarder({ filiereDuLien: undefined, compte: compte('en_attente', '441234567890'), fourni, codeCapte: false })).toBe(true);
+    expect(numeroFourniAGarder({ filiereDuLien: 'application', compte: null, fourni, codeCapte: true })).toBe(true);
+    expect(numeroFourniAGarder({ filiereDuLien: undefined, compte: compte('relie', '441234567890'), fourni, codeCapte: true })).toBe(true);
+  });
+
+  it('la filière API, ou un numéro jamais vérifié, se rend comme avant', () => {
+    expect(numeroFourniAGarder({ filiereDuLien: undefined, compte: null, fourni, codeCapte: true })).toBe(false);
+    expect(numeroFourniAGarder({ filiereDuLien: 'application', compte: null, fourni, codeCapte: false })).toBe(false);
+    expect(numeroFourniAGarder({ filiereDuLien: undefined, compte: compte('retire', '441234567890'), fourni, codeCapte: true })).toBe(false);
   });
 });
 

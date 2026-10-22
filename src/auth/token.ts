@@ -18,6 +18,8 @@ export interface Session {
    * un jeton : une trace d'audit dit ainsi que l'écriture vient du lien que Claude Code a donné.
    */
   viaLien?: true;
+  /** Posé par `adminOuLien` avec `viaLien` quand le lien est celui de la filière application (2026-10-22). */
+  filiere?: 'application';
 }
 
 function key(secret: string): Uint8Array {

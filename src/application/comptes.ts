@@ -49,7 +49,7 @@ export interface ComptesApplication {
   marquer(id: string, statut: StatutCompte, extra?: { jid?: string }): Promise<void>;
   /** Un message reçu ou envoyé : la mise en sommeil compte à partir de là. */
   toucher(id: string, quand: Date): Promise<void>;
-  /** La filière de l'espace : un compte de l'application non retiré, sinon un numéro de l'API, sinon aucune. */
+  /** La filière de l'espace : un numéro de Meta relié (il prime, relecture du lot), sinon un compte de l'application non retiré, sinon aucune. */
   filiereDe(tenantId: string): Promise<Filiere | null>;
 }
 

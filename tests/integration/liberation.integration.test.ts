@@ -222,6 +222,20 @@ describe.skipIf(!url)('la libération d’un numéro fourni (lot 4, B)', () => {
       await pool.query('delete from comptes_application where tenant_id = $1', [t]);
     });
 
+    it('🔴 relecture : rejouée après un retrait déjà fait (DIDWW en échec la fois d’avant), elle résilie quand même, jamais « libre »', async () => {
+      await fini('sub_libapr', IL_Y_A_8_JOURS);
+      const compte = await compteSurLeNumero();
+      await pool.query(`update comptes_application set statut = 'retire' where id = $1`, [compte]);
+      const gestes: string[] = [];
+      expect(await liberation.liberer(t, 'sub_libapr', {
+        resilier: async (d) => { gestes.push(`resilier:${d}`); },
+        retirerApplication: async (c) => { gestes.push(`retirer:${c}`); },
+      }, MAINTENANT)).toEqual({ fait: 'resilie', numero: N, retire: true });
+      expect(gestes).toEqual([`resilier:${DID}`]);
+      expect(await reserve()).toEqual({ statut: 'resilie', tenant_id: null });
+      await pool.query('delete from comptes_application where tenant_id = $1', [t]);
+    });
+
     it('🔴 un retrait refusé annule tout : rien n’est résilié, la libération se rejouera', async () => {
       await fini('sub_libapq', IL_Y_A_8_JOURS);
       await compteSurLeNumero();

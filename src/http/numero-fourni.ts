@@ -11,7 +11,7 @@ import type { PgAbonnementsNumeroStore } from '../stripe/abonnements.pg';
 import type { RetourAbonnement } from '../stripe/abonnement';
 import { corpsDuRefus, type Issue } from '../lib/issue';
 import { programmerLaFinDuNumero } from '../numero/fin-abonnement';
-import { qrApplication, relierApplication, type DepsConnexionApplication } from '../application/connexion';
+import { numeroFourniAGarder, qrApplication, relierApplication, type DepsConnexionApplication } from '../application/connexion';
 
 /**
  * LE NUMÉRO FOURNI CÔTÉ CLIENT (lot 3b, spec `docs/superpowers/specs/2026-10-05-numero-fourni-design.md`).
@@ -28,7 +28,7 @@ import { qrApplication, relierApplication, type DepsConnexionApplication } from 
  * d'office à l'abonné qui attend le sien (la réserve est à nous, comme dans /ops).
  */
 export interface NumeroFourniRouteDeps {
-  numeros: Pick<PgNumerosFournisStore, 'attribuer' | 'numeroDeLEspace' | 'codeDeLEspace' | 'remplacerNumero' | 'rendre' | 'compterLibres'>;
+  numeros: Pick<PgNumerosFournisStore, 'attribuer' | 'numeroDeLEspace' | 'codeDeLEspace' | 'remplacerNumero' | 'rendre' | 'bloquer' | 'compterLibres'>;
   /**
    * Le numéro WhatsApp connecté à l'espace, en chiffres (`''` si son affichage est inconnu), `null` s'il n'en a pas.
    * 🔴 Un espace qui a déjà un numéro n'en reçoit pas d'autre (un seul numéro par espace), et le numéro fourni ne
@@ -104,7 +104,7 @@ export function creerAlertesReserve(o: {
       if (!(await o.envoyer(texte))) await o.verrous.relacher(prise);
     },
     numeroBloque: async (numero, tenant) => {
-      await o.envoyer(`Numéro fourni refusé par Meta et bloqué : +${numero} (espace ${tenant}). À résilier chez DIDWW, ou à garder.`);
+      await o.envoyer(`Numéro fourni bloqué (refusé par Meta, ou porteur d'un compte WhatsApp Business) : +${numero} (espace ${tenant}). À résilier chez DIDWW, ou à garder.`);
     },
     finNonProgrammee: async (abonnementId, tenant) => {
       await o.envoyer(`« Abandonner » sans résiliation chez Stripe : abonnement ${abonnementId} (espace ${tenant}). Le numéro est rendu, mais l'abonnement continue : à résilier à la main en fin de période.`);
@@ -306,6 +306,26 @@ export function registerNumeroFourni(
     const [connecte, fourni] = await Promise.all([deps.numeroConnecte(tenant), deps.numeros.numeroDeLEspace(tenant)]);
     if (connecte && fourni && (connecte.chiffres === '' || connecte.chiffres === fourni.numero)) {
       return reply.code(409).send({ error: 'Le numéro de cet espace est déjà connecté.', cause: 'deja_un_numero' });
+    }
+    // 🔴 Un numéro de la filière application qui porte un compte WhatsApp Business sort de l'espace sans retourner à la
+    // réserve (`numeroFourniAGarder`) : Julien est prévenu, comme pour un numéro refusé par Meta.
+    const garder = fourni !== null && numeroFourniAGarder({
+      filiereDuLien: req.auth?.filiere,
+      compte: await deps.application.comptes.parEspace(tenant),
+      fourni,
+      codeCapte: (await deps.numeros.codeDeLEspace(tenant)) !== null,
+    });
+    if (garder) {
+      const garde = await deps.numeros.bloquer(tenant);
+      if (garde) {
+        try {
+          await deps.alertes.numeroBloque(garde, tenant);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error(`numero-fourni : alerte du numéro gardé non partie : ${texteDe(err)}`);
+        }
+      }
+      return reply.code(200).send({ rendu: garde !== null, finProgrammee: await programmerLaFin(tenant) });
     }
     const rendu = await deps.numeros.rendre(tenant);
     if (rendu !== null) await servirUnAbonneEnAttente(tenant);

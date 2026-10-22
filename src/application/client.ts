@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { signRequest } from '../lib/signature';
 import { STATUTS_COMPTE, type StatutCompte } from './comptes';
-import { PREFIXE } from './routes-internes';
+import { PREFIXE } from './interne';
 
 /**
  * LE CLIENT DU SERVICE DE CONNEXIONS (plan 2026-10-22, tâche 3), pour l'API et le worker. Chaque appel est signé

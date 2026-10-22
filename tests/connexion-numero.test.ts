@@ -105,6 +105,7 @@ describe('GET /tenants/:tenantId/connexion-numero', () => {
         codeDeLEspace: async () => ({ code: '123456', recuLe: new Date('2026-10-06T08:53:01Z') }),
         remplacerNumero: async () => ({ bloque: null, nouveau: null }),
         rendre: async () => null,
+        bloquer: async () => null,
         compterLibres: async () => 0,
       },
       numeroConnecte: async () => null,

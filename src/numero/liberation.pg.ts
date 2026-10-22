@@ -135,13 +135,15 @@ export class PgLiberationStore {
         return { fait: 'sans_numero' } as const;
       }
       // La filière application : notre appareil lié se retire, puis le numéro est résilié (voir l'en-tête).
-      const application = await client.query<{ id: string }>(
-        `select id from comptes_application where tenant_id = $1 and fourni_id = $2 and statut <> 'retire'`, [tenantId, fourni.id],
+      // Le compte se lit même déjà retiré : un retrait fait puis une résiliation en échec (rejeu) ne doit pas faire
+      // retomber le numéro sur `vuDeMeta`, qui pourrait le rendre à la réserve (relecture du lot).
+      const application = await client.query<{ id: string; statut: string }>(
+        `select id, statut from comptes_application where tenant_id = $1 and fourni_id = $2`, [tenantId, fourni.id],
       );
       const compte = application.rows[0];
       if (compte) {
         if (resilier === null) throw new DidwwNonConfigure();
-        await gestes.retirerApplication(compte.id);
+        if (compte.statut !== 'retire') await gestes.retirerApplication(compte.id);
         await resilier(fourni.didww_did_id);
         await client.query(
           `update numeros_fournis set statut = 'resilie', tenant_id = null, attribue_le = null where id = $1`, [fourni.id],

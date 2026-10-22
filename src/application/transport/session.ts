@@ -156,11 +156,17 @@ export async function ouvrirSession(compte: { id: string }, auth: { pool: Pool; 
     }
   });
   sock.ev.on('connection.update', async (u) => {
-    if (u.qr) await rappels.qr(u.qr);
-    if (u.connection === 'open') await rappels.ouverte(sock.user?.id ?? '');
-    if (u.connection === 'close') {
-      const code = codeDeconnexion(u.lastDisconnect?.error);
-      await rappels.fermee(causeDeFermeture(code), code);
+    // Un rejet ici sortirait du gestionnaire d'événements et ferait tomber tout le service (relecture du lot) : il se
+    // journalise, la session suivante reprendra.
+    try {
+      if (u.qr) await rappels.qr(u.qr);
+      if (u.connection === 'open') await rappels.ouverte(sock.user?.id ?? '');
+      if (u.connection === 'close') {
+        const code = codeDeconnexion(u.lastDisconnect?.error);
+        await rappels.fermee(causeDeFermeture(code), code);
+      }
+    } catch (err) {
+      console.error(`application ${compte.id} : changement de connexion non traité`, err);
     }
   });
   sock.ev.on('messages.upsert', async ({ messages }) => {

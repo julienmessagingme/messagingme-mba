@@ -57,9 +57,11 @@ function monter(o: {
   fin?: Issue<true>;
   /** Un Pro vivant couvre l'espace (lot 6, B2b) : le numéro y est inclus. */
   pro?: boolean;
+  /** Le compte de l'application WhatsApp Business de l'espace (filière application, 2026-10-22). */
+  compteApplication?: { numero: string; statut: 'en_attente' | 'relie' };
 } = {}) {
   const cap = {
-    attribues: 0, rendus: 0, remplaces: 0, alertesReserve: [] as number[], bloques: [] as string[],
+    attribues: 0, rendus: 0, remplaces: 0, gardes: 0, alertesReserve: [] as number[], bloques: [] as string[],
     ouvertures: [] as Array<{ tenantId: string; retour: string; payeur: string }>,
     /** Les AUTRES espaces servis par une attribution (un abonné en attente). */
     servis: [] as string[],
@@ -94,6 +96,7 @@ function monter(o: {
         return { bloque, nouveau: attribue ? NUMERO(attribue) : null };
       },
       rendre: async () => { cap.rendus += 1; const r = attribue; attribue = null; if (r) reserve.push(r); return r; },
+      bloquer: async () => { cap.gardes += 1; const r = attribue; attribue = null; return r; },
       compterLibres: async () => o.libresApres ?? reserve.length,
     },
     numeroConnecte: async () => (o.connecte !== undefined ? { chiffres: o.connecte, aActiver: false } : null),
@@ -121,7 +124,16 @@ function monter(o: {
       programmerFin: async (abonnementId) => { cap.fins.push(abonnementId); return o.fin ?? { ok: true, valeur: true }; },
     },
     pro: { vivant: async () => o.pro ?? false },
-    application: aucunCompteApplication,
+    application: o.compteApplication ? {
+      ...aucunCompteApplication,
+      comptes: {
+        ...aucunCompteApplication.comptes,
+        parEspace: async (t: string) => ({
+          id: 'c1', tenantId: t, numero: o.compteApplication!.numero, jid: null, statut: o.compteApplication!.statut, fourniId: null,
+          relieLe: null, dernierMessageLe: null, statutChangeLe: new Date(0),
+        }),
+      },
+    } : aucunCompteApplication,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, numeroFourni: deps }), cap };
 }
@@ -360,6 +372,16 @@ describe('remplacer et abandonner', () => {
     const res = await server.inject({ method: 'POST', url: `${URL}/abandonner`, ...h(adminTok), payload: '{}' });
     expect(res.statusCode).toBe(200);
     expect(cap.rendus).toBe(1);
+    await server.close();
+  });
+
+  it('🔴 filière application : un numéro fourni qui porte un compte WhatsApp Business ne retourne JAMAIS à la réserve', async () => {
+    // Rendu, il partirait chez un autre espace, qui reprendrait le compte WhatsApp et ses clients (relecture du lot).
+    const { server, cap } = monter({ attribue: '441235619343', compteApplication: { numero: '441235619343', statut: 'en_attente' } });
+    const res = await server.inject({ method: 'POST', url: `${URL}/abandonner`, ...h(adminTok), payload: '{}' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ rendu: true });
+    expect([cap.rendus, cap.gardes, cap.bloques]).toEqual([0, 1, ['441235619343']]);
     await server.close();
   });
 

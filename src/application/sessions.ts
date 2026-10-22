@@ -1,6 +1,7 @@
 import { DisconnectReason } from '@whiskeysockets/baileys';
 import type { CompteApplication, ComptesApplication, StatutCompte } from './comptes';
 import { reprendAuDemarrage } from './comptes';
+import { ErreurApplication } from './interne';
 import { delaiBackoff } from './transport/connexion';
 import type { CauseFermeture, MessageApplication, RappelsSession, Session } from './transport/session';
 
@@ -22,14 +23,7 @@ export interface JobEntrant {
   message: MessageApplicationJson;
 }
 
-export type RaisonRefus = 'compte_inconnu' | 'non_relie' | 'statut';
-
-export class ErreurApplication extends Error {
-  constructor(readonly raison: RaisonRefus, message: string) {
-    super(message);
-    this.name = 'ErreurApplication';
-  }
-}
+export { ErreurApplication, type RaisonRefus } from './interne';
 
 export interface DepsSessions {
   comptes: ComptesApplication;
@@ -96,13 +90,15 @@ export function creerGestionnaireSessions(d: DepsSessions): GestionnaireSessions
         if (!actuelle()) return;
         entree.ouverte = false;
         entree.session = null;
-        const etat = await d.comptes.parId(compte.id);
         if (cause === 'banni' || cause === 'deconnecte') {
+          // 🔴 Le statut d'abord, avant toute autre lecture (relecture du lot) : une panne de base entre les deux ne doit pas
+          // laisser un compte banni « relié », que `reprendre` relierait au redémarrage.
           entrees.delete(compte.id);
           await d.comptes.marquer(compte.id, cause);
-          await d.prevenir(etat ?? compte, cause);
+          await d.prevenir((await d.comptes.parId(compte.id)) ?? compte, cause);
           return;
         }
+        const etat = await d.comptes.parId(compte.id);
         // Un QR code qui n'a pas été scanné expire : on ne relance pas l'appairage en boucle. Le développeur le
         // redemande en rouvrant la page du lien. Seul le 515 qui suit un appairage réussi rouvre la session.
         if (etat?.statut === 'en_attente' && code !== DisconnectReason.restartRequired) {

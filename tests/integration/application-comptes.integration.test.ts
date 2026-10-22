@@ -70,6 +70,16 @@ describe.skipIf(!url)('les comptes de la filière application (0247)', () => {
     );
     expect(await comptes.filiereDe(t3)).toBe('api');
     expect(await comptes.preparer(t3, { numero: '449990000073', fourniId: null })).toEqual({ ok: false, raison: 'filiere_api' });
+    // 🔴 Relecture : un numéro de Meta relié prime sur un vieux compte de l'application (un essai passé ensuite à l'API),
+    // sinon chaque réponse de l'espace partirait par une filière qui n'est plus la sienne.
+    await pool.query(`insert into waba (id, tenant_id, name) values ('itest-app-waba-2', $1, 'itest')`, [t2]);
+    await pool.query(
+      `insert into phone_numbers (id, tenant_id, waba_id, display_phone_number, status) values ('itest-app-pn-2', $1, 'itest-app-waba-2', '+33 1 00 00 00 02', 'CONNECTED')`,
+      [t2],
+    );
+    expect(await comptes.filiereDe(t2)).toBe('api');
+    await pool.query(`delete from phone_numbers where id = 'itest-app-pn-2'`);
+    await pool.query(`delete from waba where id = 'itest-app-waba-2'`);
   });
 
   it('une nouvelle préparation efface la session précédente', async () => {
@@ -91,6 +101,15 @@ describe.skipIf(!url)('les comptes de la filière application (0247)', () => {
     await comptes.toucher(c.id, new Date('2026-10-22T10:00:00Z'));
     await comptes.toucher(c.id, new Date('2026-10-20T10:00:00Z'));
     expect((await comptes.parId(c.id))?.dernierMessageLe?.toISOString()).toBe('2026-10-22T10:00:00.000Z');
+  });
+
+  it('🔴 relecture : réveillé, un compte endormi repart pour un délai entier, il ne se rendort pas dans l’heure', async () => {
+    const c = (await comptes.parEspace(t1))!;
+    const ilYA = (jours: number) => new Date(Date.now() - jours * 24 * 3_600_000);
+    await comptes.marquer(c.id, 'sommeil');
+    await pool.query('update comptes_application set dernier_message_le = $2, relie_le = $2 where id = $1', [c.id, ilYA(40)]);
+    await comptes.marquer(c.id, 'relie');
+    expect((await comptes.endormables(30)).map((x) => x.id)).not.toContain(c.id);
   });
 
   it('🔴 la mise en sommeil : un compte relié muet depuis le délai s’endort, un compte actif ou non relié non', async () => {

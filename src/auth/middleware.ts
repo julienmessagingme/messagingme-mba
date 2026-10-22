@@ -262,7 +262,7 @@ export function makeRequireAdminOuLien(o: {
       await reply.code(409).send({ error: 'le numéro est connecté : ce lien ne sert plus', code: 'lien_termine' });
       return;
     }
-    req.auth = { userId: lien.userId, tenantId: lien.tenantId, role: 'admin', viaLien: true };
+    req.auth = { userId: lien.userId, tenantId: lien.tenantId, role: 'admin', viaLien: true, ...(lien.filiere ? { filiere: lien.filiere } : {}) };
   };
 }
 

@@ -46,6 +46,8 @@ export async function lireEtatConnexion(deps: DepsEtatConnexion, tenantId: strin
     deps.pro.vivant(tenantId), deps.application.comptes.parEspace(tenantId),
   ]);
   const connecte = connecteMeta ?? (compte?.statut === 'relie' ? { chiffres: compte.numero, aActiver: false } : null);
+  // Un numéro de Meta relié prime sur un vieux compte de l'application (`filiereDe`) : l'état est alors celui de l'API.
+  const application = connecteMeta === null && compte ? { statut: compte.statut, numero: compte.numero } : null;
   // Le code ne se lit que pour un numéro attribué : `codeDeLEspace` le borne à l'attribution.
   const c = n ? await deps.numeros.codeDeLEspace(tenantId) : null;
   return {
@@ -54,7 +56,7 @@ export async function lireEtatConnexion(deps: DepsEtatConnexion, tenantId: strin
     connecte,
     abonnement: a ? { statut: a.statut, periodeFin: a.periodeFin ? a.periodeFin.toISOString() : null } : null,
     inclusDansLePro: pro,
-    ...(compte ? { application: { statut: compte.statut, numero: compte.numero } } : {}),
+    ...(application ? { application } : {}),
   };
 }
 

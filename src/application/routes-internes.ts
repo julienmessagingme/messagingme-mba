@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { verifyRequest } from '../lib/signature';
-import { ErreurApplication, type GestionnaireSessions } from './sessions';
+import type { GestionnaireSessions } from './sessions';
+import { ErreurApplication, PREFIXE } from './interne';
 
 /**
  * LES ROUTES INTERNES DU SERVICE DE CONNEXIONS (plan 2026-10-22, tâche 3). Servies par `mba-application`, sur le seul
@@ -9,7 +10,7 @@ import { ErreurApplication, type GestionnaireSessions } from './sessions';
  * est signé comme nos services (`x-mm-service-signature`, `src/lib/signature.ts`) sur le corps brut, la méthode et le
  * chemin, et la signature se vérifie AVANT de lire quoi que ce soit.
  */
-export const PREFIXE = '/interne/application/comptes';
+export { PREFIXE };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const corpsEnvoi = z.object({

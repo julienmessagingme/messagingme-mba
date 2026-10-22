@@ -253,6 +253,19 @@ export class PgNumerosFournisStore {
     return res.rows[0]?.numero ?? null;
   }
 
+  /**
+   * Sort le numéro de cet espace SANS le rendre à la réserve (`bloque`, comme « Remplacer ») : un numéro qui porte un
+   * compte WhatsApp Business (filière application, relecture du lot) ne doit servir à personne d'autre. Rend le numéro.
+   */
+  async bloquer(tenantId: string): Promise<string | null> {
+    const res = await this.pool.query<{ numero: string }>(
+      `update numeros_fournis set statut = 'bloque', tenant_id = null
+        where tenant_id = $1 and statut = 'attribue' returning numero`,
+      [tenantId],
+    );
+    return res.rows[0]?.numero ?? null;
+  }
+
   /** Les numéros encore libres : l'alerte de réserve basse. */
   async compterLibres(): Promise<number> {
     const res = await this.pool.query<{ n: number }>(`select count(*)::int as n from numeros_fournis where statut = 'libre'`);

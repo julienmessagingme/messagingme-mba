@@ -85,6 +85,9 @@ export class PgComptesApplication implements ComptesApplication {
       `update comptes_application
           set statut = $2, statut_change_le = now(),
               relie_le = case when $2 = 'relie' then coalesce(relie_le, now()) else relie_le end,
+              -- Réveillé (sommeil -> relié), le compte repart pour un délai entier : sinon le balayage suivant, lisant
+              -- l'ancienne activité, le rendormirait dans l'heure (relecture du lot). À droite, statut est l'ancien.
+              dernier_message_le = case when $2 = 'relie' and statut = 'sommeil' then now() else dernier_message_le end,
               jid = coalesce($3, jid)
         where id = $1`,
       [id, statut, extra.jid ?? null],
@@ -105,6 +108,8 @@ export class PgComptesApplication implements ComptesApplication {
       [tenantId],
     );
     const l = r.rows[0];
-    return l?.app ? 'application' : l?.api ? 'api' : null;
+    // 🔴 Un numéro de Meta relié prime (relecture du lot) : un espace qui a essayé l'application puis relié l'API est sur
+    // l'API, sinon chaque réponse partirait par une filière qui n'est plus la sienne.
+    return l?.api ? 'api' : l?.app ? 'application' : null;
   }
 }

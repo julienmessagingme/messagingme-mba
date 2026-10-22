@@ -89,6 +89,16 @@ describe('le gestionnaire des sessions', () => {
     await expect(g.relier('c1')).rejects.toThrow(ErreurApplication);
   });
 
+  it('🔴 relecture : un 403 écrit « banni » AVANT toute autre lecture, pour qu’une panne de base n’en fasse pas un relié', async () => {
+    await g.reprendre();
+    const ordre: string[] = [];
+    const marquer = comptes.marquer.bind(comptes);
+    comptes.marquer = async (id, statut, extra) => { ordre.push(`marquer:${statut}`); await marquer(id, statut, extra); };
+    comptes.parId = async () => { ordre.push('parId'); throw new Error('base indisponible'); };
+    await Promise.resolve(transport.derniere('c1').rappels.fermee('banni', 403)).catch(() => {});
+    expect(ordre[0]).toBe('marquer:banni');
+  });
+
   it('un 401 marque le compte déconnecté et prévient, sans rouvrir', async () => {
     await g.reprendre();
     await transport.derniere('c1').rappels.fermee('deconnecte', DisconnectReason.loggedOut);
