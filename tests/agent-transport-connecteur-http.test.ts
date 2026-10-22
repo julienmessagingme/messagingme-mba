@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AdresseInterdite } from '../src/lib/connexion-publique';
-import { creerTransportConnecteurHttp } from '../src/agent/transport-connecteur-http';
+import {
+  creerTransportConnecteurHttp,
+  type TransportConnecteurHttpDeps,
+} from '../src/agent/transport-connecteur-http';
 
 const APPEL = (over: Partial<Parameters<ReturnType<typeof creerTransportConnecteurHttp>['executer']>[0]> = {}) => ({
   url: 'https://api.client.fr/v1/action',
@@ -13,6 +16,26 @@ const APPEL = (over: Partial<Parameters<ReturnType<typeof creerTransportConnecte
 });
 
 describe('transport d’un Connecteur HTTP', () => {
+  it('conserve le receveur des dépendances injectées', async () => {
+    class DependancesAvecEtat implements TransportConnecteurHttpDeps {
+      private readonly hote = 'api.client.fr';
+
+      async verifierResolution(url: string) {
+        if (!url.includes(this.hote)) throw new Error('mauvais receveur');
+        return { ok: true as const };
+      }
+
+      async fetch(input: RequestInfo | URL): Promise<Response> {
+        if (!String(input).includes(this.hote)) throw new Error('mauvais receveur');
+        return new Response('{"ok":true}');
+      }
+    }
+
+    const transport = creerTransportConnecteurHttp(new DependancesAvecEtat());
+
+    expect(await transport.executer(APPEL())).toMatchObject({ nature: 'reponse', httpStatus: 200 });
+  });
+
   it('refuse une résolution interne avant toute connexion', async () => {
     const fetch = vi.fn();
     const transport = creerTransportConnecteurHttp({
