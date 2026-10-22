@@ -141,7 +141,7 @@ describe('la liste, le journal et le rejeu depuis Claude (lot 13, domaine 4)', (
  */
 describe('modifier et supprimer une adresse depuis Claude (marche arrière, tâche 2)', () => {
   type Patch = { description?: string; types?: readonly string[]; active?: boolean };
-  function avecAdresse(o: { limite?: number | null; tournee?: boolean; existe?: boolean } = {}) {
+  function avecAdresse(o: { limite?: number | null; tournee?: boolean; existe?: boolean; repondeur?: { mode: string; adresseId: string | null } } = {}) {
     const { d, audit } = deps({ limite: o.limite });
     const ecrits: Patch[] = [];
     const tournes: string[] = [];
@@ -163,6 +163,11 @@ describe('modifier et supprimer une adresse depuis Claude (marche arrière, tâc
       supprimer: async (t, id) => { if (!existe(t, id)) return false; supprimes.push(id); return true; },
     };
     d.evenements.gestion.chiffrer = (c) => `c:${c}`;
+    // Le réglage du répondeur, que la suppression lit avant d'agir : l'équipe, sauf mention.
+    const repondeur = o.repondeur ?? { mode: 'equipe', adresseId: null };
+    Object.assign(d, { agentIa: { repondeur: { reglages: {
+      get: async (t: string) => (t === T ? { repondeurMode: repondeur.mode, repondeurAdresseId: repondeur.adresseId } : { repondeurMode: 'equipe', repondeurAdresseId: null }),
+    } } } });
     return { d, audit, ecrits, tournes, supprimes };
   }
 
@@ -219,6 +224,8 @@ describe('modifier et supprimer une adresse depuis Claude (marche arrière, tâc
     const { d } = avecAdresse();
     await expect(outil('update_webhook_endpoint').executer(d, T, { adresse_id: A, url: 'https://app.client.fr/hook' }, { userId: 'u1' }))
       .rejects.toThrow(/delete_webhook_endpoint/);
+    await expect(outil('update_webhook_endpoint').executer(d, T, { adresse_id: A, url: 'https://app.client.fr/hook' }, { userId: 'u1' }))
+      .rejects.toThrow(/set_default_responder/);
   });
 
   it('supprimer passe par la gestion, signé de la personne ; une adresse inconnue est un refus lisible', async () => {
@@ -229,5 +236,15 @@ describe('modifier et supprimer une adresse depuis Claude (marche arrière, tâc
     const autre = avecAdresse({ existe: false });
     await expect(outil('delete_webhook_endpoint').executer(autre.d, T, { adresse_id: A }, { userId: 'u1' })).rejects.toThrow(/Adresse introuvable/);
     expect(autre.audit).toEqual([]);
+  });
+
+  it('🔴 supprimer l’adresse qui répond aux clients (mode « application ») le dit, avec le geste qui le répare ; une autre adresse, rien de plus', async () => {
+    const { d, supprimes } = avecAdresse({ repondeur: { mode: 'application', adresseId: A } });
+    const r = await outil('delete_webhook_endpoint').executer(d, T, { adresse_id: A }, { userId: 'u1' }) as { a_faire: string };
+    expect(supprimes).toEqual([A]);
+    expect(r).toMatchObject({ supprimee: true, adresse_id: A, repondeur: 'equipe' });
+    expect(r.a_faire).toMatch(/set_default_responder/);
+    const autre = avecAdresse({ repondeur: { mode: 'application', adresseId: 'ffffffff-a7b8-4c9d-8e0f-1a2b3c4d5e6f' } });
+    expect(await outil('delete_webhook_endpoint').executer(autre.d, T, { adresse_id: A }, { userId: 'u1' })).toEqual({ supprimee: true, adresse_id: A });
   });
 });

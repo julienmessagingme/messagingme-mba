@@ -4864,8 +4864,10 @@ chemin pour elle. Chacun devient un outil, qui appelle la fonction du bouton de 
   derrière une clé d'API, comme la réponse.
 - **Le webhook de l'application** (`update_webhook_endpoint`, `delete_webhook_endpoint`) : ses types d'événements, sa
   pause, un nouveau secret (montré une fois, l'ancien signe encore 24 h), sa suppression avec son journal. Changer
-  d'adresse reste « supprimer puis recréer », comme dans la console. C'est ce qui manquait au développeur qui passe de
-  l'adresse de son tunnel d'essai à celle de sa production, avec la seule adresse de la Free.
+  d'adresse reste « supprimer puis recréer », comme dans la console ; si l'adresse répondait aux clients, la
+  suppression le dit, et la nouvelle se désigne par `set_default_responder`, sans quoi leurs messages vont à l'équipe.
+  C'est ce qui manquait au développeur qui passe de l'adresse de son tunnel d'essai à celle de sa production, avec la
+  seule adresse de la Free.
 - **Les modèles** (`update_template`, `delete_template`) : corriger une langue d'un modèle refusé sans changer de nom
   (il repart en validation ; Meta limite un modèle approuvé à une correction par 24 h et dix par 30 jours, et un
   en-tête image, vidéo ou document ne se corrige pas), ou le supprimer, toutes ses langues (refusé tant qu'une
@@ -4876,7 +4878,8 @@ chemin pour elle. Chacun devient un outil, qui appelle la fonction du bouton de 
 - **Les freins d'une campagne** (`control_campaign`, offre Pro) : mettre en pause une campagne qui envoie, déprogrammer
   une campagne programmée, ou préparer la reprise d'une campagne en pause : un récapitulatif des destinataires
   restants et un code, puis `launch_campaign` avec ce code, comme pour un lancement. La reprise part tout de suite, et
-  aucun refus ne renvoie vers une nouvelle préparation, qui écrirait à tout le monde.
+  aucun refus ne renvoie vers une nouvelle préparation, qui écrirait à tout le monde, pas même quand la campagne a
+  repris entre-temps (par le balayage ou dans la console).
 - **La mention d'IA en anglais** : `create_agent` et `update_agent` choisissent entre deux phrases relues, « Vous
   échangez avec un assistant automatique. » et « You are chatting with an automated assistant. ». `get_agent` dit
   laquelle ; un texte libre se règle toujours dans la console.

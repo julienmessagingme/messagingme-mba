@@ -77,6 +77,19 @@ const REFUS_DU_CODE_DE_REPRISE: Record<Exclude<IssueReclamation, 'ok'>, string> 
   utilise: 'code déjà utilisé : cette reprise est déjà partie',
   modifie: 'la campagne a changé depuis le récapitulatif de reprise : demandez-en un autre avec control_campaign (prepare_resume)',
 };
+/**
+ * 🔴 Le refus se choisit sur le statut RELU, et seul un BROUILLON peut s'entendre dire « préparez à nouveau » : rien n'en
+ * est parti. Une campagne qui n'est plus ni brouillon ni en pause (lancée ou programmée depuis la console, reprise par le
+ * balayage ou par un collègue pendant que la personne lisait le récapitulatif, terminée) a écrit, écrit ou écrira à ses
+ * destinataires : la préparer à nouveau leur écrirait une seconde fois, et `replaces` n'accepte qu'un brouillon.
+ */
+function refusDuCode(statut: string, issue: Exclude<IssueReclamation, 'ok'>): string {
+  if (statut === 'draft') return REFUS_DU_CODE[issue];
+  if (statut === 'paused') return REFUS_DU_CODE_DE_REPRISE[issue];
+  if (issue === 'utilise') return REFUS_DU_CODE.utilise;
+  return `la campagne n’est plus en brouillon ni en pause (statut ${statut}) : rien n’est parti par ce code. Voyez où elle `
+    + 'en est avec get_campaign_stats, et ne la préparez pas à nouveau : ce serait écrire une seconde fois à ses destinataires';
+}
 const REFUS_DU_LANCEMENT: Record<'inconnue' | 'date_passee' | 'non_programmable', string> = {
   inconnue: 'campagne inconnue dans cet espace',
   date_passee: 'la date prévue est passée : préparez à nouveau avec prepare_campaign et replaces, avec une nouvelle date',
@@ -366,10 +379,10 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
       // 🔴 Le code est réclamé AVANT le lancement, sur l'état relu en base : usage unique, et rien d'autre que ce qui a
       // été montré.
       // Une campagne en PAUSE se reprend (le code de `control_campaign`, `prepare_resume`) : tout de suite, sa date prévue
-      // étant passée depuis qu'elle a démarré, et avec des refus qui ne renvoient pas vers une nouvelle préparation.
+      // étant passée depuis qu'elle a démarré. Le refus d'un code se choisit sur le statut relu (`refusDuCode`).
       const reprise = etat.status === 'paused';
       const reclamation = await c.confirmations.reclamer(tenantId, campaignId, code, empreinteEtat(etat));
-      if (reclamation !== 'ok') throw new RefusOutil((reprise ? REFUS_DU_CODE_DE_REPRISE : REFUS_DU_CODE)[reclamation]);
+      if (reclamation !== 'ok') throw new RefusOutil(refusDuCode(etat.status, reclamation));
 
       const quand = reprise || etat.prevueLe === null ? null : new Date(etat.prevueLe);
       let issue: IssueLancement;

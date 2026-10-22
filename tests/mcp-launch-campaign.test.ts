@@ -115,6 +115,20 @@ describe('launch_campaign', () => {
     }
   });
 
+  it('🔴 un code présenté quand la campagne n’est plus ni brouillon ni en pause (reprise par le balayage ou dans la console, programmée, terminée) ne renvoie JAMAIS vers prepare_campaign', async () => {
+    for (const status of ['running', 'scheduled', 'completed', 'failed']) {
+      for (const reclamation of ['invalide', 'expire', 'utilise', 'modifie'] as const) {
+        const { d, trace } = deps({ etat: { ...ETAT, status }, reclamation });
+        const refus = await outil.executer(d, T, { campaign_id: ID, confirmation_code: 'R4P2XQ' }, PERSONNE).catch((e: Error) => e.message);
+        expect(refus, `${status} ${reclamation}`).not.toMatch(/prepare_campaign/);
+        expect(trace.some((t) => t.startsWith('enfile') || t.startsWith('programme') || t === 'reprend'), `${status} ${reclamation}`).toBe(false);
+      }
+    }
+    // Un brouillon n'a rien envoyé : « préparez à nouveau » y reste le bon conseil.
+    const { d } = deps({ reclamation: 'modifie' });
+    await expect(outil.executer(d, T, { campaign_id: ID, confirmation_code: 'K7M2QP' }, PERSONNE)).rejects.toThrow(/prepare_campaign/);
+  });
+
   it('identifiant mal formé ou sans personne : refusé avant toute lecture', async () => {
     const { d, trace } = deps();
     await expect(outil.executer(d, T, { campaign_id: 'pas-un-uuid', confirmation_code: 'K7M2QP' }, PERSONNE)).rejects.toThrow(RefusOutil);

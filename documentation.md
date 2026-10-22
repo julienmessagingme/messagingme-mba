@@ -3191,13 +3191,17 @@ l'activer, et d'ouvrir une recharge du crédit.
   laissait « à la console » y devient un outil, sur la fonction du bouton : `control_conversation` (`reprendreLaMain`,
   `rendreLaMain`, sans personne exigée, comme `reply_in_open_window` qui prend déjà le fil), `update_webhook_endpoint`
   et `delete_webhook_endpoint` (`modifierAdresse`, `tournerSecret`, `supprimerAdresse`, la modification AVANT la rotation
-  pour qu'un refus ne laisse pas un secret neuf que personne n'a vu), `update_template` et `delete_template`
+  pour qu'un refus ne laisse pas un secret neuf que personne n'a vu ; la suppression de l'adresse qui répond aux
+  clients le dit dans son résultat, le réglage lu avant elle, car l'`on delete set null` de 0224 envoie leurs messages
+  à l'équipe jusqu'au prochain `set_default_responder`), `update_template` et `delete_template`
   (`modifierUnModele`, `supprimerUnModele`, comptés dans les opérations coûteuses, une erreur de Meta rendue lisible par
   `refusDeMeta`), `block_contact` (`setBlocked`) et, au Pro, `control_campaign` (`pauseCampaign`, `cancelSchedule`).
   🔴 **La reprise d'une campagne en pause** pose un code sur l'état en pause (`campagne_confirmations`, le même upsert que
   `prepare_campaign`), et c'est `launch_campaign` qui la lance : tout de suite, sa date prévue passée étant ignorée, et
   avec des refus qui ne renvoient JAMAIS vers `prepare_campaign`, qui créerait une campagne neuve vers tous les
-  destinataires. `get_messages` rend l'identifiant public de chaque message (`idPublic` : la requête des messages de
+  destinataires : le refus d'un code se choisit sur le statut RELU (`refusDuCode`), et seul un brouillon s'entend dire
+  « préparez à nouveau » (une campagne reprise par le balayage pendant que la personne lisait n'est plus en pause).
+  `get_messages` rend l'identifiant public de chaque message (`idPublic` : la requête des messages de
   l'Inbox lit `meta_message_id`), celui que lit `get_message_status`.
 - **`buy_credit` annonce le montant HORS TAXE** de l'offre : la taxe est calculée par Stripe Tax sur la page de
   paiement, selon le pays et le numéro de TVA saisis, donc aucun TTC n'est connu avant le paiement. Seul le webhook

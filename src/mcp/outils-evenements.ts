@@ -189,7 +189,8 @@ export const OUTILS_EVENEMENTS: OutilMcp[] = [
       + 'shown ONLY ONCE in this result: put it at once in the application\'s environment variable, the previous secret '
       + 'keeps signing until previous_secret_valid_until (24 hours). If the workspace\'s responder is the application '
       + '(set_default_responder), a paused endpoint sends the customers\' messages to the team. The URL does not change: '
-      + 'to move an endpoint, delete_webhook_endpoint then create_webhook_endpoint, which gives a new secret.',
+      + 'to move an endpoint, delete_webhook_endpoint then create_webhook_endpoint, which gives a new secret, then '
+      + 'set_default_responder with the new endpoint if the old one answered the customers.',
     // Une adresse de plus n'est pas créée, mais chaque `rotate_secret` en tire un nouveau : pas idempotente. Rien ne part
     // chez un tiers. Destructrice pour la règle du répertoire de Claude.
     annotations: { title: 'Edit an outgoing webhook', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
@@ -211,7 +212,8 @@ export const OUTILS_EVENEMENTS: OutilMcp[] = [
     async executer(deps: DepsMcp, tenantId, args, personne) {
       if (args.url !== undefined) {
         throw new RefusOutil('l’adresse d’un webhook ne se modifie pas : supprimez-la (delete_webhook_endpoint) puis recréez-la '
-          + '(create_webhook_endpoint), qui rend un nouveau secret');
+          + '(create_webhook_endpoint), qui rend un nouveau secret ; si elle répondait aux clients (set_default_responder, '
+          + 'mode « application »), désignez la nouvelle aussitôt créée, sinon leurs messages vont à l’équipe, sans réponse automatique');
       }
       const id = typeof args.adresse_id === 'string' ? args.adresse_id : '';
       // Seuls les champs donnés partent à la gestion, qui refuse toute autre clé (`saisieModification`, stricte).
@@ -247,9 +249,11 @@ export const OUTILS_EVENEMENTS: OutilMcp[] = [
     fonction: null,
     description:
       'Deletes an outgoing webhook endpoint and its log: Messaging Me stops sending it events at once, deliveries being '
-      + 'retried included. If the workspace\'s responder is the application (set_default_responder), the customers\' '
-      + 'messages then go to the team. To move an endpoint to another URL: delete it, then create_webhook_endpoint (a new '
-      + 'secret). To stop it for a while, pause it instead (update_webhook_endpoint, active false).',
+      + 'retried included. If it is the endpoint that answers the customers (set_default_responder, mode "application"), '
+      + 'their messages go to the team, where nothing answers them automatically, until set_default_responder designates '
+      + 'another endpoint: the result says so (repondeur, a_faire). To move an endpoint to another URL: delete it, '
+      + 'create_webhook_endpoint (a new secret), then set_default_responder with the new endpoint if the old one answered '
+      + 'the customers. To stop it for a while, pause it instead (update_webhook_endpoint, active false).',
     // Rejouer la suppression ne supprime rien de plus. Rien ne part chez un tiers.
     annotations: { title: 'Delete an outgoing webhook', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     entree: {
@@ -262,11 +266,24 @@ export const OUTILS_EVENEMENTS: OutilMcp[] = [
     },
     async executer(deps: DepsMcp, tenantId, args, personne) {
       const id = typeof args.adresse_id === 'string' ? args.adresse_id : '';
+      // 🔴 L'adresse du répondeur (mode « application ») : sa suppression remet le réglage à nul (`on delete set null`,
+      // migration 0224), et les messages des clients vont alors à l'équipe, où rien ne leur répond automatiquement, et que
+      // la Free, sans Inbox, ne voit pas. Lu AVANT la suppression, pour le dire avec le geste qui le répare.
+      const reglage = await deps.agentIa.repondeur.reglages.get(tenantId);
+      const repondait = reglage.repondeurMode === 'application' && reglage.repondeurAdresseId === id;
       valeurOuRefus(await supprimerAdresse(deps.evenements.gestion, tenantId, id));
       await deps.evenements.audit(
         tenantId, { userId: personne?.userId ?? null, email: null }, 'evenements.adresse_supprimee', { kind: 'adresse_evenements', id }, { via: 'mcp' },
       );
-      return { supprimee: true, adresse_id: id };
+      if (!repondait) return { supprimee: true, adresse_id: id };
+      return {
+        supprimee: true,
+        adresse_id: id,
+        repondeur: 'equipe',
+        a_faire: 'Cette adresse répondait aux clients : jusqu’à ce qu’une autre soit désignée, leurs messages vont à l’équipe, '
+          + 'sans réponse automatique. Pour que l’application réponde de nouveau : créer la nouvelle adresse '
+          + '(create_webhook_endpoint), puis la désigner avec set_default_responder, mode « application », et son adresse_id.',
+      };
     },
   },
 ];
