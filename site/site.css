@@ -56,7 +56,7 @@ a:focus-visible{outline:2px solid var(--action);outline-offset:3px;border-radius
 .entete{position:relative;display:flex;align-items:center;justify-content:space-between;gap:26px;height:72px}
 .entete::after{content:"";position:absolute;left:var(--g);right:var(--g);bottom:0;height:1px;background:rgb(255 255 255 / .16);transition:opacity .25s}
 .js .barre.defile .entete::after{opacity:0}
-@media (min-width:1041px){.entete{height:84px}}
+@media (min-width:1141px){.entete{height:84px}}
 .marque{display:flex;align-items:center;gap:10px;white-space:nowrap;text-decoration:none;font-weight:700;font-size:1.05rem;letter-spacing:-.01em}
 .marque img{display:block;width:auto;height:22px;flex:none}
 .nav{flex:1;min-width:0;display:flex;align-items:center;gap:22px}
@@ -422,7 +422,7 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 }
 
 /* Menu « Fonctionnalités » du bureau : un <details> natif, qui s'ouvre sans script et au clavier ; `site.js` le
-   referme au clic ailleurs et à Échap. Jusqu'à 1040 px, la barre entière laisse la place au burger (plus bas). */
+   referme au clic ailleurs et à Échap. Jusqu'à 1140 px, la barre entière laisse la place au burger (plus bas). */
 .menu{position:relative}
 .menu summary{display:flex;align-items:center;gap:6px;cursor:pointer;list-style:none;user-select:none}
 .menu summary::-webkit-details-marker{display:none}
@@ -436,15 +436,16 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .menu-ic{display:grid;place-items:center;width:40px;height:40px;border-radius:10px;background:rgb(111 194 254 / .14);color:var(--action-ink);font-size:1.25rem}
 .menu-panneau strong{display:block;color:#FFFFFF;font-size:.92rem;font-weight:700;line-height:1.3}
 .menu-panneau small{display:block;color:var(--muted);font-size:.8rem;line-height:1.35}
-/* Le menu du téléphone et des écrans étroits : trois traits en haut à droite, qui ouvrent « Fonctionnalités » et
-   « Solutions » (dépliables, celui de la page courante déplié d'office), « Tarifs », « Aide », « Développeurs », les
-   drapeaux et, tout en bas, « Se connecter ». Un <details> natif lui aussi : il marche sans script, et `site.js` le
+/* Le menu du téléphone et des écrans étroits : trois traits en haut à droite, qui ouvrent « Fonctionnalités »,
+   « Solutions » et « Ressources » (dépliables, celui de la page courante déplié d'office), « Tarifs », « Développeurs »,
+   les drapeaux et, tout en bas, « Se connecter ». Un <details> natif lui aussi : il marche sans script, et `site.js` le
    referme au clic ailleurs, à Échap, et sur un lien suivi. */
 .burger{display:none}
-/* 1040 px et non 640 : avec Industries, Pricing, les drapeaux et le bouton vert, le bandeau du bureau ne tenait sur
+/* 1140 px et non 640 : avec Industries, Pricing, les drapeaux et le bouton vert, le bandeau du bureau ne tenait sur
    une ligne qu'à partir d'environ 960 px de large (mesuré le 2026-10-09 ; c'était 800 px avant les drapeaux) ; avec
-   « Aide » (2026-10-21), le français déborde jusqu'à 1 016 px. La hauteur de l'en-tête de bureau (plus haut) suit ce seuil. */
-@media (max-width:1040px){
+   le menu « Ressources » (2026-10-22, à la place du lien « Aide »), le français déborde jusqu'à environ 1 125 px de
+   fenêtre (mesuré : 850 px de menu pour 826 de place à 1 100). La hauteur de l'en-tête de bureau (plus haut) suit ce seuil. */
+@media (max-width:1140px){
   .nav{display:none}
   .burger{display:block}
   .burger > summary{display:grid;place-items:center;width:44px;height:44px;margin-right:-10px;border-radius:10px;cursor:pointer;list-style:none;user-select:none;color:var(--ink);font-size:1.6rem}
@@ -1272,13 +1273,52 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .aide-pied-page{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center;margin-top:28px;padding-top:20px;border-top:1px solid var(--line);font-size:.92rem}
 .aide-pied-page a{color:var(--action-ink)}
 .aide-question{margin-left:auto}
-.aide-accueil h2{font-size:1.4rem;margin:8px 0 14px;scroll-margin-top:90px}
-.aide-cartes{list-style:none;padding:0;margin:0 0 34px;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
-.aide-cartes a{display:block;height:100%;padding:16px 18px;border-radius:14px;background:var(--surface);border:1px solid var(--line);color:var(--ink);text-decoration:none}
-.aide-cartes a:hover{border-color:var(--action-ink)}
-.aide-cartes strong{display:block;margin-bottom:6px}
+/* L'accueil du centre : le carrousel des films, puis les cartes à accordéon par section (2026-10-22). Les films
+   n'existent qu'en 16:9 : au téléphone, un par écran, le suivant qui dépasse pour dire qu'on peut glisser. */
+.aide-accueil{min-width:0}
+.aide-accueil h2{font-size:1.4rem;margin:8px 0 14px}
+.aide-accueil [hidden]{display:none}
+.aide-videos,.aide-accueil .aide-rubrique{scroll-margin-top:90px}
+.aide-videos{margin:0 0 34px}
+.aide-videos-tete{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:6px}
+.aide-carrousel-boutons{display:none;gap:8px}
+.js .aide-carrousel-boutons{display:flex}
+.aide-carrousel-bouton{width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--ink);display:grid;place-items:center;cursor:pointer}
+.aide-carrousel-bouton:hover:not(:disabled){border-color:var(--action-ink)}
+.aide-carrousel-bouton:disabled{opacity:.35;cursor:default}
+.aide-carrousel-bouton:focus-visible{outline:2px solid var(--action);outline-offset:2px}
+.aide-carrousel{list-style:none;margin:0;padding:8px 0 14px;display:grid;grid-auto-flow:column;grid-auto-columns:calc((100% - 20px) / 2);gap:20px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;overscroll-behavior-x:contain;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.js .aide-carrousel{scrollbar-width:none}
+.js .aide-carrousel::-webkit-scrollbar{display:none}
+.aide-diapo{scroll-snap-align:start;min-width:0}
+.aide-diapo video{display:block;width:100%;height:auto;aspect-ratio:16/9;border-radius:14px;background:#0B1530;box-shadow:0 12px 30px var(--ombre)}
+.aide-diapo p{margin:12px 2px 0;line-height:1.4}
+.aide-diapo small{display:block;font-size:.8rem;color:var(--muted);margin-bottom:2px}
+.aide-diapo a{color:var(--ink);font-weight:600;text-decoration:none}
+.aide-diapo a:hover{color:var(--action-ink)}
+.aide-cartes{list-style:none;padding:0;margin:0 0 34px;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;align-items:start}
+.aide-carte{padding:16px 18px;border-radius:14px;background:var(--surface);border:1px solid var(--line)}
+.aide-carte:hover{border-color:var(--action-ink)}
+.aide-carte-lien{display:block;color:var(--ink);text-decoration:none}
+.aide-carte-lien>strong{display:block;margin-bottom:6px}
+.aide-carte-lien:hover>strong{color:var(--action-ink)}
 .aide-cartes small{display:block;color:var(--muted);font-size:.88rem;line-height:1.5}
 .aide-cartes .aide-carte-offre{margin-top:8px;color:var(--ink);font-weight:600}
+.aide-carte-etapes{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.aide-carte-etapes summary{display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;list-style:none;font-size:.9rem;font-weight:600;color:var(--action-ink)}
+.aide-carte-etapes summary::-webkit-details-marker{display:none}
+.aide-carte-etapes summary:focus-visible{outline:2px solid var(--action);outline-offset:2px;border-radius:4px}
+.aide-carte-etapes summary .ic{transition:transform .2s}
+.aide-carte-etapes[open] summary .ic{transform:rotate(180deg)}
+.aide-carte-etapes ol{margin:10px 0 10px;padding-left:1.3em;font-size:.9rem;line-height:1.5}
+.aide-carte-etapes li{margin:5px 0}
+.aide-carte-etapes ol a{color:var(--ink)}
+.aide-carte-etapes ol a:hover{color:var(--action-ink)}
+.aide-carte-guide{display:inline-flex;align-items:center;gap:6px;font-size:.9rem;font-weight:600;color:var(--action-ink);text-decoration:none}
+.aide-aucun{color:var(--muted)}
+@media (max-width:860px){.aide-sections{display:none}}
+@media (max-width:640px){.aide-carrousel{grid-auto-columns:88%;gap:14px}}
+@media (prefers-reduced-motion:reduce){.aide-carrousel{scroll-behavior:auto}.aide-carte-etapes summary .ic{transition:none}}
 .aide-echange{display:grid;gap:8px;margin-top:4px}
 .aide-echange p{margin:0;padding:10px 14px;border-radius:12px;line-height:1.55}
 .aide-echange span{display:block;font-size:.78rem;font-weight:600;color:var(--muted);margin-bottom:2px}

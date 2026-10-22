@@ -224,6 +224,8 @@
 
 // Centre d'aide : le filtre du menu. La saisie passe par la même normalisation que les mots de chaque entrée
 // (`motsDeRecherche`, scripts/vitrine/aide.ts) : minuscules, sans accents, sans ponctuation. Une rubrique vide se masque.
+// Sur l'accueil, la même recherche filtre les cartes : le carrousel s'efface pendant qu'on cherche, et une phrase dit
+// quand plus rien ne correspond.
 (function () {
   var champ = document.querySelector('.aide-recherche');
   if (!champ) return;
@@ -233,17 +235,57 @@
     return t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
   };
   var rubriques = [].slice.call(document.querySelectorAll('.aide-rubrique'));
+  var videos = document.querySelector('.aide-videos');
+  var aucun = document.querySelector('.aide-aucun');
   champ.addEventListener('input', function () {
     var mots = normaliser(champ.value).split(' ').filter(Boolean);
+    var total = 0;
     rubriques.forEach(function (r) {
       var visibles = 0;
-      [].slice.call(r.querySelectorAll('a[data-mots]')).forEach(function (a) {
+      [].slice.call(r.querySelectorAll('[data-mots]')).forEach(function (a) {
         var dedans = a.getAttribute('data-mots');
         var garde = mots.every(function (m) { return dedans.indexOf(m) >= 0; });
         a.hidden = !garde;
         if (garde) visibles++;
       });
       r.hidden = visibles === 0;
+      total += visibles;
     });
+    if (videos) videos.hidden = mots.length > 0;
+    if (aucun) aucun.hidden = total > 0;
+  });
+})();
+
+// Accueil du centre d'aide : le carrousel des films. Les boutons avancent d'un film, s'éteignent aux deux bouts ; un
+// seul film joue à la fois, et celui qui sort de l'écran s'arrête.
+(function () {
+  var piste = document.querySelector('.aide-carrousel');
+  if (!piste) return;
+  var boutons = [].slice.call(document.querySelectorAll('.aide-carrousel-bouton'));
+  var pas = function () {
+    var diapo = piste.querySelector('.aide-diapo');
+    return diapo ? diapo.getBoundingClientRect().width + (parseFloat(getComputedStyle(piste).columnGap) || 0) : piste.clientWidth;
+  };
+  var bornes = function () {
+    boutons.forEach(function (b) {
+      b.disabled = b.getAttribute('data-sens') === '-1'
+        ? piste.scrollLeft <= 1
+        : piste.scrollLeft + piste.clientWidth >= piste.scrollWidth - 1;
+    });
+  };
+  boutons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      piste.scrollBy({ left: Number(b.getAttribute('data-sens')) * pas(), behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    });
+  });
+  piste.addEventListener('scroll', bornes, { passive: true });
+  window.addEventListener('resize', bornes);
+  bornes();
+  var films = [].slice.call(piste.querySelectorAll('video'));
+  films.forEach(function (v) {
+    v.addEventListener('play', function () { films.forEach(function (f) { if (f !== v && !f.paused) f.pause(); }); });
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (e) { if (!e[0].isIntersecting && !v.paused) v.pause(); }, { threshold: 0.3 }).observe(v);
+    }
   });
 })();

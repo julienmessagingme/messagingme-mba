@@ -57,6 +57,13 @@ const T = {
     developpeursTexte: 'Une partie de ces gestes se fait aussi en le demandant à Claude, depuis Claude Code.',
     developpeursLien: 'Les pages développeurs',
     developpeursAdresse: '/developpeurs/',
+    videos: 'Les guides en vidéo',
+    sections: 'Sections',
+    filmPrecedent: 'Film précédent',
+    filmSuivant: 'Film suivant',
+    etapes: (n: number) => `Les ${n} étapes`,
+    lireGuide: 'Lire le guide',
+    aucun: 'Aucun guide ne correspond à cette recherche.',
   },
   en: {
     aide: 'Help',
@@ -83,6 +90,13 @@ const T = {
     developpeursTexte: 'Some of these actions can also be done by asking Claude, from Claude Code.',
     developpeursLien: 'The developer pages',
     developpeursAdresse: '/en/developers/',
+    videos: 'Video guides',
+    sections: 'Sections',
+    filmPrecedent: 'Previous video',
+    filmSuivant: 'Next video',
+    etapes: (n: number) => `The ${n} steps`,
+    lireGuide: 'Read the guide',
+    aucun: 'No guide matches this search.',
   },
 } as const;
 
@@ -263,6 +277,64 @@ function pageAide(pages: PageAide[], p: PageAide, langue: Langue): { chemin: str
   return { chemin: fichierDe(v.adresse), contenu };
 }
 
+/** La barre latérale de l'accueil : la recherche, qui filtre les cartes, puis les grandes sections de la page. */
+function menuAccueil(langue: Langue): string {
+  const sections: Array<[string, string]> = [
+    ['videos', T[langue].videos],
+    ...RUBRIQUES.map((r): [string, string] => [r, NOMS_RUBRIQUES[r][langue]]),
+    ['claude-code', T[langue].developpeurs],
+  ];
+  return [
+    `    <nav class="aide-nav" aria-label="${T[langue].centre}">`,
+    `      <input class="aide-recherche" type="search" placeholder="${T[langue].recherche}" aria-label="${T[langue].recherche}">`,
+    `      <div class="aide-sections"><h3>${T[langue].sections}</h3>`,
+    ...sections.map(([ancre, nom]) => `        <a href="#${ancre}">${nom}</a>`),
+    '      </div>',
+    '    </nav>',
+  ].join('\n');
+}
+
+/**
+ * Le carrousel de l'accueil : les films des guides, puis ceux des pages « Depuis Claude Code ». Tous en 16:9 (aucun
+ * n'existe en 9:16) ; au téléphone, un film par écran qu'on fait glisser (`site.css`). Sans script, la piste défile
+ * au doigt ou à la molette ; les boutons n'apparaissent qu'avec lui (`site.js`).
+ */
+function carrousel(pages: PageAide[], langue: Langue): string {
+  const suffixe = langue === 'en' ? '-en' : '';
+  const films = [
+    ...pages.filter((p) => filmDe(p) !== null).map((p) => ({
+      mp4: adresseFilm(p.cle, langue, 'mp4'), webp: adresseFilm(p.cle, langue, 'webp'),
+      adresse: p[langue].adresse, titre: p[langue].titre, rubrique: NOMS_RUBRIQUES[p.publication.rubrique][langue],
+    })),
+    ...PAGES_CLAUDE.filter((p) => p.film).map((p) => ({
+      mp4: `/films/${p.film}${suffixe}.mp4`, webp: `/films/${p.film}${suffixe}.webp`,
+      adresse: p.adresse[langue], titre: p.titre[langue], rubrique: T[langue].developpeurs,
+    })),
+  ];
+  const bouton = (sens: -1 | 1) => `<button class="aide-carrousel-bouton" type="button" data-sens="${sens}" aria-label="${sens < 0 ? T[langue].filmPrecedent : T[langue].filmSuivant}"><svg class="ic" aria-hidden="true"><use href="#${sens < 0 ? 'i-arrow-left' : 'i-fleche'}"/></svg></button>`;
+  return [
+    '      <section class="aide-videos" id="videos">',
+    `        <div class="aide-videos-tete"><h2>${T[langue].videos}</h2><div class="aide-carrousel-boutons">${bouton(-1)}${bouton(1)}</div></div>`,
+    '        <ul class="aide-carrousel">',
+    ...films.map((f) => `          <li class="aide-diapo"><video class="f-video aide-film" src="${versionnee(f.mp4)}" poster="${versionnee(f.webp)}" width="1280" height="720" controls muted playsinline preload="none" aria-label="${attribut(f.titre)}"></video><p><small>${f.rubrique}</small><a href="${f.adresse}">${texte(f.titre, langue)}</a></p></li>`),
+    '        </ul>',
+    '      </section>',
+  ].join('\n');
+}
+
+/**
+ * Une carte de l'accueil : le titre et le chapeau mènent au guide ; l'accordéon déplie ses étapes, chacune vers son
+ * ancre (`#etape-<n>`). Un guide sans étape n'a pas d'accordéon. `data-mots` nourrit la recherche de la barre latérale.
+ */
+function carte(adresse: string, titre: string, chapeau: string, offre: string, mots: string,
+  etapes: ReadonlyArray<{ numero: number; titre: string }>, langue: Langue): string {
+  const accordeon = etapes.length === 0 ? ''
+    : `<details class="aide-carte-etapes"><summary>${T[langue].etapes(etapes.length)}<svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>`
+      + `<ol>${etapes.map((e) => `<li><a href="${adresse}#etape-${e.numero}">${e.titre}</a></li>`).join('')}</ol>`
+      + `<a class="aide-carte-guide" href="${adresse}">${T[langue].lireGuide} <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a></details>`;
+  return `          <li class="aide-carte" data-mots="${mots}"><a class="aide-carte-lien" href="${adresse}"><strong>${titre}</strong><small>${chapeau}</small>${offre}</a>${accordeon}</li>`;
+}
+
 function accueilAide(pages: PageAide[], langue: Langue): { chemin: string; contenu: string } {
   const adresse = ACCUEIL_AIDE[langue];
   const lignes = [
@@ -276,25 +348,39 @@ function accueilAide(pages: PageAide[], langue: Langue): { chemin: string; conte
     '</section>',
     '',
     '<section class="f-bloc bande-claire">',
-    '  <div class="cadre aide-accueil">',
+    '  <div class="cadre aide-grille">',
+    menuAccueil(langue),
+    '    <div class="aide-accueil">',
+    carrousel(pages, langue),
   ];
   for (const r of RUBRIQUES) {
-    lignes.push(`    <h2 id="${r}">${NOMS_RUBRIQUES[r][langue]}</h2>`, '    <ul class="aide-cartes">');
+    lignes.push(`      <section class="aide-rubrique" id="${r}">`, `        <h2>${NOMS_RUBRIQUES[r][langue]}</h2>`, '        <ul class="aide-cartes">');
     for (const p of pages.filter((x) => x.publication.rubrique === r)) {
       const v = p[langue];
-      lignes.push(`      <li><a href="${v.adresse}"><strong>${texte(v.titre, langue)}</strong><small>${enLigne(structureFiche(v.corps, langue).chapeau, langue)}</small></a></li>`);
+      const s = structureFiche(v.corps, langue);
+      const etapes = s.sections.flatMap((x) => (x.type === 'etape' ? [{ numero: x.numero, titre: x.titre }] : []));
+      lignes.push(carte(v.adresse, texte(v.titre, langue), enLigne(s.chapeau, langue), '',
+        motsDeRecherche(`${v.titre} ${s.chapeau} ${etapes.map((e) => e.titre).join(' ')}`),
+        etapes.map((e) => ({ ...e, titre: enLigne(e.titre, langue) })), langue));
     }
-    lignes.push('    </ul>');
+    lignes.push('        </ul>', '      </section>');
   }
   lignes.push(
-    `    <h2 id="claude-code">${T[langue].developpeurs}</h2>`,
-    `    <p>${langue === 'fr' ? insecables(T.fr.developpeursTexte) : T.en.developpeursTexte}</p>`,
+    '      <section class="aide-rubrique" id="claude-code">',
+    `        <h2>${T[langue].developpeurs}</h2>`,
+    `        <p>${langue === 'fr' ? insecables(T.fr.developpeursTexte) : T.en.developpeursTexte}</p>`,
     // Chaque page Claude Code, et l'offre quand ses outils la demandent (relecture du lot 3 : l'accueil promettait
     // « tout en Free » alors que les outils de campagne sont fermés en Free ; `tests/vitrine-aide.test.ts` tient les deux).
-    '    <ul class="aide-cartes">',
-    ...PAGES_CLAUDE.map((p) => `      <li><a href="${p.adresse[langue]}"><strong>${texte(p.titre[langue], langue)}</strong><small>${enLigne(p.chapeau[langue], langue)}</small>${p.offrePro ? `<small class="aide-carte-offre">${langue === 'fr' ? insecables(T.fr.offre) : T.en.offre}</small>` : ''}</a></li>`),
-    '    </ul>',
-    `    <p><a href="${T[langue].developpeursAdresse}">${T[langue].developpeursLien}</a></p>`,
+    '        <ul class="aide-cartes">',
+    ...PAGES_CLAUDE.map((p) => carte(p.adresse[langue], texte(p.titre[langue], langue), enLigne(p.chapeau[langue], langue),
+      p.offrePro ? `<small class="aide-carte-offre">${langue === 'fr' ? insecables(T.fr.offre) : T.en.offre}</small>` : '',
+      motsDeRecherche(`${p.titre[langue]} ${p.chapeau[langue]} ${p.etapes.map((e) => e.titre[langue]).join(' ')}`),
+      p.etapes.map((e, n) => ({ numero: n + 1, titre: enLigne(e.titre[langue], langue) })), langue)),
+    '        </ul>',
+    `        <p><a href="${T[langue].developpeursAdresse}">${T[langue].developpeursLien}</a></p>`,
+    '      </section>',
+    `      <p class="aide-aucun" hidden>${langue === 'fr' ? insecables(T.fr.aucun) : T.en.aucun}</p>`,
+    '    </div>',
     '  </div>',
     '</section>',
     '</main>',

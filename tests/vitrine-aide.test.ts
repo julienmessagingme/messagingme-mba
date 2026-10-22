@@ -146,16 +146,22 @@ describe('le centre d’aide de la vitrine', () => {
     expect(vues).toBe(58);
   });
 
-  it('chaque page de la vitrine mène au centre d’aide, au bureau, dans le burger et en pied de page (tâche 9)', () => {
+  it('chaque page de la vitrine mène au centre d’aide et au blog par « Ressources », au bureau et dans le burger, et à l’aide en pied de page', () => {
+    // Le lien « Aide » de l'en-tête est passé dans le menu « Ressources », avec le blog du site principal (2026-10-22).
     const pages = pagesHtml();
     expect(pages.length).toBeGreaterThan(40);
+    const blog = 'https://www.messagingme.fr/blog-messaging-me-agence-conversationelle/';
     for (const chemin of pages) {
       const html = lire(chemin);
-      const [adresse, nom] = chemin.startsWith('en/') ? ['/en/help/', 'Help'] : ['/aide/', 'Aide'];
+      const [adresse, nom, ressources] = chemin.startsWith('en/') ? ['/en/help/', 'Help', 'Resources'] : ['/aide/', 'Aide', 'Ressources'];
       const entete = html.match(/<header class="cadre entete">[\s\S]*?<\/header>/)?.[0] ?? '';
       const pied = html.match(/<footer class="pied">[\s\S]*?<\/footer>/)?.[0] ?? '';
-      expect(entete, `${chemin} : menu de bureau`).toMatch(new RegExp(`<a class="lien" href="${adresse}"( aria-current="page")?>${nom}</a>`));
-      expect(entete, `${chemin} : burger`).toMatch(new RegExp(`<a class="burger-ligne" href="${adresse}"( aria-current="page")?>${nom}</a>`));
+      const bureau = entete.match(new RegExp(`<details class="menu">\\s*<summary class="lien"><span class="menu-bureau">${ressources}</span>[\\s\\S]*?</details>`))?.[0] ?? '';
+      const burger = entete.match(new RegExp(`<details class="burger-groupe"( open)?>\\s*<summary>${ressources}<[\\s\\S]*?</details>`))?.[0] ?? '';
+      for (const [ou, menu] of [['menu de bureau', bureau], ['burger', burger]] as const) {
+        expect(menu, `${chemin} : ${ou}`).toMatch(new RegExp(`<a href="${adresse}"( aria-current="page")?>.*?<strong>${nom}</strong>`));
+        expect(menu, `${chemin} : ${ou}`).toContain(`<a href="${blog}"`);
+      }
       expect(pied, `${chemin} : pied`).toContain(`<li><a href="${adresse}">${nom}</a></li>`);
     }
   });
@@ -303,7 +309,8 @@ describe('le centre d’aide de la vitrine', () => {
       const accueil = lire(`${langue === 'fr' ? 'aide' : 'en/help'}/index.html`);
       const section = accueil.slice(accueil.indexOf('id="claude-code"'));
       for (const p of PAGES_CLAUDE) {
-        const carte = section.match(new RegExp(`<li><a href="${p.adresse[langue]}">[\\s\\S]*?</li>`))?.[0];
+        // La carte est un accordéon depuis le 2026-10-22 : la mention Pro vit dans son lien, avant les étapes.
+        const carte = section.match(new RegExp(`<li class="aide-carte" data-mots="[^"]*"><a class="aide-carte-lien" href="${p.adresse[langue]}">[\\s\\S]*?</a>`))?.[0];
         expect(carte, `${langue} ${p.cle}`).toBeDefined();
         expect(carte!.includes('class="aide-carte-offre"'), `${langue} ${p.cle}`).toBe(p.offrePro === true);
       }
