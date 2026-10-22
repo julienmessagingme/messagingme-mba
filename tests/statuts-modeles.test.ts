@@ -43,11 +43,13 @@ describe('le découpage du webhook', () => {
 describe('l’étape des statuts de modèles', () => {
   function monter(espace: string | null = 't1') {
     const envoyes: Array<{ tenantId: string; ev: { id: string; type: string; le: string; data: Record<string, unknown> } }> = [];
+    const statuts: Array<{ tenantId: string; modele: string; langue: string; statut: string; raison: string | null }> = [];
     const deps: StatutsModelesDeps = {
       espaceDuCompte: async (waba) => (waba === 'waba-1' ? espace : null),
       distribuer: async (tenantId, ev) => { envoyes.push({ tenantId, ev }); },
+      surStatut: async (tenantId, s) => { statuts.push({ tenantId, ...s }); },
     };
-    return { deps, envoyes };
+    return { deps, envoyes, statuts };
   }
 
   it('🔴 l’espace du compte reçoit template.status_changed : le modèle, le statut en minuscules, le motif d’un refus', async () => {
@@ -144,13 +146,13 @@ describe('le statut d’un modèle dans le traitement du webhook', () => {
     const vus: string[] = [];
     await handleWebhookJob(statut(), {
       store,
-      statutsModeles: { espaceDuCompte: async () => 't1', distribuer: async (t) => { vus.push(t); } },
+      statutsModeles: { espaceDuCompte: async () => 't1', distribuer: async (t) => { vus.push(t); }, surStatut: async () => undefined },
     });
     expect(vus).toEqual(['t1']);
   });
 
   it('🔴 une panne sur un payload de modèles SEUL fait rejouer le job ; mêlée à un message, elle ne fait rien tomber', async () => {
-    const enPanne = { espaceDuCompte: async () => 't1', distribuer: async () => { throw new Error('base indisponible'); } };
+    const enPanne = { espaceDuCompte: async () => 't1', distribuer: async () => { throw new Error('base indisponible'); }, surStatut: async () => undefined };
     await expect(handleWebhookJob(statut(), { store, statutsModeles: enPanne })).rejects.toThrow(/base indisponible/);
     const mixte = statut();
     mixte.entry[0]!.changes.push({

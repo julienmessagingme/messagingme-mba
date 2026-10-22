@@ -82,6 +82,8 @@ import type { ShopifyWebhooksRouteDeps } from './http/shopify-webhooks';
 import { PgShopifyStore } from './shopify/store.pg';
 import { demanderJeton, verifierBoutique } from './shopify/connexion';
 import { lireClientsAbonnes } from './shopify/clients';
+import { abonnerWebhooks } from './shopify/abonnements';
+import { relireAttentes, type DepsPreparation } from './shopify/preparation';
 import { importContacts } from './crm/import';
 import type { DepsGestionShopify } from './shopify/gestion';
 import { traiterWebhookShopify, type DepsTraitementShopify } from './shopify/traitement';
@@ -202,8 +204,8 @@ import { catalogueBranchable } from './http/agent-setup';
 import type { CountryCode } from 'libphonenumber-js';
 import { handlerMaison } from './agent/outils-maison';
 import type { TemplateSummary } from './meta/templates';
-import type { DepsGestionModeles } from './templates/gestion';
-import type { DepsCreationModele } from './api/creer-modele';
+import { creerUnModele, type DepsGestionModeles } from './templates/gestion';
+import { refusDeMeta, statutsDuModele, type DepsCreationModele } from './api/creer-modele';
 import { placesDeTelechargement, telechargerEnteteProduction } from './api/entete-par-url';
 import { lancerEnvoiPublic, type DepsEnvoiPublic } from './api/envoi-public';
 import { tenter } from './lib/tenter';
@@ -1280,6 +1282,8 @@ async function main(): Promise<void> {
     lireClients: (acces, plafond) => lireClientsAbonnes(acces, plafond),
     places: (tenant, numeros) => contactStore.placesContacts(tenant, numeros),
     importer: (input) => importContacts(input, { contacts: contactStore, userFields: fieldStore }),
+    // Le branchement par la console : les webhooks de la boutique, abonnés par l'API avec le jeton de l'app.
+    abonner: (acces) => abonnerWebhooks(acces),
   };
   const traitementShopify: DepsTraitementShopify = {
     store: shopifyStore,
@@ -1304,6 +1308,39 @@ async function main(): Promise<void> {
     store: shopifyStore, envoyer: traitementShopify.envoyer, emails: emetteurEmails, pageOffre: traitementShopify.pageOffre,
   };
   let relancePaniersEnCours = false;
+
+  /**
+   * L'assistant des messages Shopify de la console (conception 2026-10-22) : le modèle se crée par la MÊME création que
+   * l'écran Modèles, puis le message s'active seul à l'approbation de Meta. Le signal vient du worker (statut d'un
+   * modèle) ; ce filet relit chez Meta, toutes les dix minutes, les attentes de plus de dix minutes.
+   */
+  const preparationShopify: DepsPreparation = {
+    store: shopifyStore,
+    creerModele: async (tenant, input) => {
+      try {
+        const issue = await creerUnModele(depsModeles, tenant, input);
+        if ('res' in issue) return { ok: true, statut: issue.res.status.toLowerCase(), categorie: issue.res.category.toLowerCase() };
+        return { ok: false, message: issue.error };
+      } catch (err) {
+        const refus = refusDeMeta(err);
+        if (refus !== null) return { ok: false, message: refus.message };
+        throw err;
+      }
+    },
+  };
+  const filetAttentesShopify = {
+    store: shopifyStore,
+    emails: emetteurEmails,
+    pageParametres: `${config.APP_URL.trim().replace(/\/+$/, '')}/parametres`,
+    statutModele: async (tenant: string, modele: string, langue: string) => {
+      const r = await statutsDuModele({ modeles: depsModeles }, tenant, modele, langue);
+      if ('refus' in r) return null;
+      const s = r.languages[0];
+      return s ? { statut: s.status, raison: s.rejectedReason } : null;
+    },
+  };
+  let filetAttentesEnCours = false;
+  let toursFiletAttentes = 0;
 
   /**
    * Les campagnes : la route de la console ET les outils de campagne de l'assistant (`prepare_campaign`,
@@ -2474,7 +2511,7 @@ async function main(): Promise<void> {
       } satisfies SalesforceRouteDeps;
     })() } : {}),
     // Paramètres > Intégrations > Shopify : la carte en lecture et « Couper », par la gestion des outils MCP.
-    shopify: { gestion: gestionShopify, audit: auditSink } satisfies ShopifyRouteDeps,
+    shopify: { gestion: gestionShopify, preparation: preparationShopify, audit: auditSink } satisfies ShopifyRouteDeps,
     // Les webhooks des boutiques : la boutique se reconnaît à son domaine, son secret vérifie la signature.
     shopifyWebhooks: {
       boutiques: shopifyStore,
@@ -3160,6 +3197,17 @@ async function main(): Promise<void> {
           console.error('shopify-relance: passage en échec:', messageDe(err));
         })
         .finally(() => { relancePaniersEnCours = false; }));
+    }
+    // Le filet des messages Shopify préparés par la console : une passe toutes les dix minutes, bornée.
+    toursFiletAttentes = (toursFiletAttentes + 1) % 10;
+    if (toursFiletAttentes === 0 && !filetAttentesEnCours) {
+      filetAttentesEnCours = true;
+      void travauxEnVol.suivre(relireAttentes(filetAttentesShopify, 10, 20)
+        .catch((err: unknown) => {
+          // eslint-disable-next-line no-console
+          console.error('shopify-attentes: passage en échec:', messageDe(err));
+        })
+        .finally(() => { filetAttentesEnCours = false; }));
     }
   }, 60_000);
   minuteriePoolAttentes.unref?.();

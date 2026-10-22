@@ -32,6 +32,11 @@ const CATALOGUE_ACTIONS_AUDIT = {
   'salesforce.modifiee': ['Réglages Salesforce modifiés', 'Salesforce settings changed'],
   'salesforce.deconnectee': ['Org Salesforce déconnectée', 'Salesforce org disconnected'],
   'shopify.coupee': ['Boutique Shopify coupée', 'Shopify store cut'],
+  // Le branchement et les messages depuis la console (conception 2026-10-22).
+  'shopify.branchee': ['Boutique Shopify branchée', 'Shopify store connected'],
+  'shopify.message': ['Message Shopify préparé', 'Shopify message prepared'],
+  'shopify.reglage': ['Message Shopify réglé', 'Shopify message settings changed'],
+  'shopify.import': ['Clients Shopify importés', 'Shopify customers imported'],
   // L'interrupteur du numéro sur l'Accueil (migration 0180). La cible est l'ESPACE, jamais le numéro affiché.
   'numero.delie': ['Numéro WhatsApp délié', 'WhatsApp number unlinked'],
   'numero.relie': ['Numéro WhatsApp relié', 'WhatsApp number relinked'],

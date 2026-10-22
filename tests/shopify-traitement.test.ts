@@ -14,7 +14,7 @@ import type { RapportEnvoi, ResultatEnvoiPublic } from '../src/api/envoi-public'
  */
 
 const T = '5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01';
-const BOUTIQUE: BoutiqueRecue = { tenantId: T, domaine: 'b.myshopify.com', etat: 'connectee', pays: 'FR', consentementAffirme: false };
+const BOUTIQUE: BoutiqueRecue = { tenantId: T, domaine: 'b.myshopify.com', etat: 'connectee', pays: 'FR', consentementAffirme: false, origine: 'claude_code' };
 
 const commande = (over: Record<string, unknown> = {}) => ({
   id: 1002, name: '#1002', checkout_token: 'ck', customer: { id: 77, phone: null, first_name: 'Julien' },
@@ -274,6 +274,14 @@ describe('une boutique coupée, la désinstallation et les sujets RGPD', () => {
     const { deps, journal } = monter();
     await traiterWebhookShopify(deps, BOUTIQUE, 'app/uninstalled', { id: 1 });
     expect(journal.coupees).toEqual(['b.myshopify.com']);
+    expect(journal.boutiquesEffacees).toEqual([]);
+  });
+
+  it('🔴 app/uninstalled d’une boutique de la CONSOLE efface son branchement : shop/redact ne viendra jamais', async () => {
+    const { deps, journal } = monter();
+    await traiterWebhookShopify(deps, { ...BOUTIQUE, origine: 'console' }, 'app/uninstalled', { id: 1 });
+    expect(journal.boutiquesEffacees).toEqual([T]);
+    expect(journal.coupees).toEqual([]);
   });
 
   it('customers/redact efface les fiches liées aux commandes, au client et à son numéro, une fois chacune', async () => {

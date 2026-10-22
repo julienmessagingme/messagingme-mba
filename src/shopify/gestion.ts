@@ -1,6 +1,7 @@
 import type { LectureModele } from '../api/modele-envoi';
 import { domaineShopify, pageApps, type IssueJeton, type IssueVerification } from './connexion';
 import type { AccesClients, ClientAbonne, LectureClients } from './clients';
+import type { IssueAbonnement } from './abonnements';
 import type { ImportInput } from '../crm/import';
 import type { ImportReport } from '../crm/types';
 import { LimiteOffreError } from '../offres/refus';
@@ -9,7 +10,7 @@ import {
   estEvenementShopify,
   type DonneeShopify, type EvenementShopify,
 } from './donnees';
-import type { MessageBranche, PgShopifyStore, VueBoutique } from './store.pg';
+import type { AttenteMessage, MessageBranche, OrigineBoutique, PgShopifyStore, VueBoutique } from './store.pg';
 
 /**
  * LA GESTION DU CONNECTEUR SHOPIFY, porte unique des outils MCP et de la console (plan 2026-10-21, lot 1) : connecter
@@ -20,7 +21,7 @@ import type { MessageBranche, PgShopifyStore, VueBoutique } from './store.pg';
 
 export interface DepsGestionShopify {
   store: Pick<PgShopifyStore, 'lire' | 'connecter' | 'couper' | 'messages' | 'brancher' | 'affirmerConsentement' | 'retirerConsentement' | 'compteurs'
-    | 'reglerDelaiPanier' | 'compteursPaniers' | 'acces'>;
+    | 'reglerDelaiPanier' | 'compteursPaniers' | 'acces' | 'attentes' | 'retirerAttente'>;
   /** `verifierBoutique` lié à `fetchPublic` par le câblage. */
   verifier(domaine: string, clientId: string, secret: string): Promise<IssueVerification>;
   /** Le modèle lu chez Meta, la MÊME lecture que l'envoi public. */
@@ -34,6 +35,8 @@ export interface DepsGestionShopify {
   places(tenantId: string, numeros: readonly string[]): Promise<{ limite: number | null; comptees: number; presents: Set<string> }>;
   /** `importContacts` lié aux magasins de la fiche : le chemin de l'import HubSpot, aucun événement d'automation. */
   importer(input: ImportInput): Promise<ImportReport>;
+  /** Le branchement par la console (conception 2026-10-22) : `abonnerWebhooks` lié à `fetchPublic` par le câblage. */
+  abonner(acces: { domaine: string; jeton: string }): Promise<IssueAbonnement>;
 }
 
 export type Refus = { ok: false; statut: 400 | 402 | 409 | 422 | 503; message: string };
@@ -57,11 +60,13 @@ export interface EtatShopify {
   paniers: { relances: Record<string, number>; fermesATemps: number; enAttente: number };
   /** La page des apps de la boutique, d'où le marchand désinstalle l'app (aucune API ne le fait). */
   pageApps: string | null;
+  /** Les messages préparés par la console dont le modèle attend l'approbation de Meta. */
+  attentes: AttenteMessage[];
 }
 
 export async function etatShopify(deps: DepsGestionShopify, tenantId: string): Promise<EtatShopify> {
   const boutique = await deps.store.lire(tenantId);
-  if (boutique === null) return { boutique: null, messages: [], compteurs: {}, paniers: { relances: {}, fermesATemps: 0, enAttente: 0 }, pageApps: null };
+  if (boutique === null) return { boutique: null, messages: [], compteurs: {}, paniers: { relances: {}, fermesATemps: 0, enAttente: 0 }, pageApps: null, attentes: [] };
   return {
     boutique,
     messages: await deps.store.messages(tenantId),
@@ -69,28 +74,46 @@ export async function etatShopify(deps: DepsGestionShopify, tenantId: string): P
     // Sept jours : un panier ne vit pas plus (purge), compter au-delà ne compterait rien de plus.
     paniers: await deps.store.compteursPaniers(tenantId, JOURS_PANIERS),
     pageApps: pageApps(boutique.domaine),
+    attentes: await deps.store.attentes(tenantId),
   };
 }
 
 export async function connecterShopify(
   deps: DepsGestionShopify, tenantId: string, saisie: { boutique: unknown; clientId: unknown; secret: unknown }, par: string | null,
+  /**
+   * 🔴 Par où (conception 2026-10-22) : `console` abonne les webhooks par l'API, `claude_code` jamais (ils sont déclarés
+   * dans l'app de la CLI, les doubler ferait tout recevoir deux fois). Requis : un appelant qui l'oublierait ne compile pas.
+   */
+  origine: OrigineBoutique,
 ): Promise<Issue<VueBoutique>> {
   const domaine = domaineShopify(saisie.boutique);
   if (domaine === null) return refus(400, 'boutique : le domaine de la boutique, de la forme <nom>.myshopify.com.');
-  if (typeof saisie.clientId !== 'string' || !CLIENT_ID.test(saisie.clientId)) {
-    return refus(400, 'client_id : l’identifiant de l’app, tel que « shopify app env show » le donne (SHOPIFY_API_KEY).');
+  // Une clé collée depuis la page de Shopify porte souvent une espace ou un retour à la ligne : nettoyée avant tout.
+  const clientId = typeof saisie.clientId === 'string' ? saisie.clientId.trim() : saisie.clientId;
+  const secret = typeof saisie.secret === 'string' ? saisie.secret.trim() : saisie.secret;
+  const ou = origine === 'console' ? 'la page Settings de l’app, sur le tableau de bord développeur de Shopify' : '« shopify app env show »';
+  if (typeof clientId !== 'string' || !CLIENT_ID.test(clientId)) {
+    return refus(400, `client_id : l’identifiant de l’app (Client ID), tel que ${ou} le donne.`);
   }
-  if (typeof saisie.secret !== 'string' || !SECRET.test(saisie.secret)) {
-    return refus(400, 'client_secret : le secret de l’app, tel que « shopify app env show » le donne (SHOPIFY_API_SECRET).');
+  if (typeof secret !== 'string' || !SECRET.test(secret)) {
+    return refus(400, `client_secret : le secret de l’app (Client secret), tel que ${ou} le donne.`);
   }
   if (!deps.chiffrementPret) return refus(503, 'Le chiffrement des secrets n’est pas configuré sur cette instance : impossible de brancher une boutique.');
-  const v = await deps.verifier(domaine, saisie.clientId, saisie.secret);
+  const v = await deps.verifier(domaine, clientId, secret);
   if (!v.ok) return refus(v.code === 'passager' ? 503 : 422, v.message);
   const issue = await deps.store.connecter(tenantId, {
-    domaine, clientId: saisie.clientId, secretClair: saisie.secret, nom: v.nom, pays: v.pays, devise: v.devise, par,
+    domaine, clientId, secretClair: secret, nom: v.nom, pays: v.pays, devise: v.devise, par, origine,
   });
   if (issue === 'boutique_ailleurs') {
     return refus(409, 'Cette boutique est déjà branchée à un autre espace Messaging Me : coupez-la d’abord dans cet espace.');
+  }
+  if (origine === 'console') {
+    // Branchée, mais sans événements tant que l'abonnement n'a pas réussi : le refus le dit, et un nouvel essai est
+    // idempotent (un sujet déjà abonné vaut « déjà »).
+    const j = await deps.jeton(domaine, clientId, secret);
+    if (!j.ok) return refus(j.code === 'passager' ? 503 : 422, j.message);
+    const a = await deps.abonner({ domaine, jeton: j.jeton });
+    if (!a.ok) return refus(503, `La boutique est branchée, mais ses événements ne sont pas encore abonnés : ${a.message} Rebranchez-la pour réessayer.`);
   }
   const vue = await deps.store.lire(tenantId);
   if (vue === null) return refus(503, 'La boutique n’a pas pu être relue après sa connexion : réessayez.');
@@ -162,6 +185,9 @@ export async function brancherMessage(
     }
   }
   await deps.store.brancher(tenantId, { evenement, modele, langue, variables, actif, par });
+  // Le dernier geste gagne (conception 2026-10-22) : un message préparé par la console pour cet événement, encore en
+  // validation chez Meta, ne remplacera pas celui qu'on branche ici à son approbation.
+  await deps.store.retirerAttente(tenantId, { evenement });
   if (typeof b.delaiMinutes === 'number') await deps.store.reglerDelaiPanier(tenantId, b.delaiMinutes);
   // Trois états : vrai affirme, faux RETIRE (plus aucune fiche n'est écrite consentante), absent ne change rien.
   if (affirme) await deps.store.affirmerConsentement(tenantId, par);

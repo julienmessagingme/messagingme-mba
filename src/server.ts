@@ -774,7 +774,7 @@ export function modulesDeRoutes(
     entree('evenements', 'tenant', deps.evenements, (app, d, g) => registerEvenements(app, d, g.admin, g.limiteCouteuse)),
     entree('salesforce', 'tenant', deps.salesforce, (app, d, g) => registerSalesforce(app, d, g.admin, g.limiteCouteuse), toutes('crm')),
     // Shopify : ouvert à toutes les offres (décision de Julien), donc sans `toutes` ; la Free, sans console, passe par le MCP.
-    entree('shopify', 'tenant', deps.shopify, (app, d, g) => registerShopify(app, d, g.admin)),
+    entree('shopify', 'tenant', deps.shopify, (app, d, g) => registerShopify(app, d, g.admin, g.limiteCouteuse)),
     // Visuels RCS : monté avec `auth` alors qu'il porte aussi une route publique `/m/<code>.<ext>`. Les gardes
     // sont posées par route (`preHandler`), donc la lecture reste ouverte : l'opérateur télécom télécharge
     // l'image sans session.

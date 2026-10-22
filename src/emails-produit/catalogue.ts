@@ -70,6 +70,9 @@ const DATE_LIBERATION: Variable = { description: 'Le jour où le numéro sera li
 const LIEN_OFFRE: Variable = { description: 'La page Offre de la console', forme: 'lien', exemple: 'https://console.messagingme.app/offre' };
 const LIMITE: Variable = { description: 'La limite de l’offre de l’espace', forme: 'texte', exemple: '1000' };
 const BOUTIQUE_SHOPIFY: Variable = { description: 'Le domaine de la boutique Shopify branchée', forme: 'texte', exemple: 'ma-boutique.myshopify.com' };
+const MESSAGE_SHOPIFY: Variable = { description: 'Le message Shopify réglé dans la console', forme: 'texte', exemple: 'Relance de panier abandonné' };
+const LIEN_PARAMETRES: Variable = { description: 'La page Paramètres de la console, où vit la carte Shopify', forme: 'lien', exemple: 'https://console.messagingme.app/parametres' };
+const RAISON_REFUS: Variable = { description: 'La raison du refus, telle que Meta la donne', forme: 'texte', exemple: 'INVALID_FORMAT' };
 /** La limite de contacts du Pro, lue dans la grille (`DROITS.pro`), que l'e-mail de la Free cite (spec offres v2, livraison 5). */
 const LIMITE_PRO: Variable = { description: 'La limite de contacts de l’offre Pro', forme: 'texte', exemple: '5000' };
 const LIEN_CONSOLE: Variable = { description: 'L’accueil de la console', forme: 'lien', exemple: 'https://console.messagingme.app/accueil' };
@@ -680,6 +683,51 @@ export const CATALOGUE = [
           + 'workspace, their record can be found by phone number in the console contacts, or from Claude Code with the '
           + 'get_contact tool. It is up to you to answer them.',
         bouton: null,
+      },
+    },
+  },
+  // Les messages Shopify réglés depuis la console (conception 2026-10-22) : l'activation se fait seule à l'approbation.
+  {
+    cle: 'shopify_message_actif',
+    categorie: 'service',
+    nom: 'Shopify : un message réglé dans la console est actif',
+    quand: 'Meta approuve le modèle d’un message Shopify préparé dans la console : le message est activé tout seul.',
+    variables: { boutique: BOUTIQUE_SHOPIFY, message: MESSAGE_SHOPIFY, lien_parametres: LIEN_PARAMETRES },
+    textes: {
+      fr: {
+        sujet: 'Votre message Shopify est actif',
+        corps: 'Bonjour,\n\nMeta a approuvé votre message « {{message}} » pour la boutique {{boutique}} : il est actif, vos '
+          + 'clients le reçoivent désormais sur WhatsApp, sans autre geste de votre part.',
+        bouton: { libelle: 'Voir la carte Shopify', lien: '{{lien_parametres}}' },
+      },
+      en: {
+        sujet: 'Your Shopify message is live',
+        corps: 'Hello,\n\nMeta approved your “{{message}}” message for the {{boutique}} store: it is live, and your customers '
+          + 'now receive it on WhatsApp, with nothing more to do.',
+        bouton: { libelle: 'See the Shopify card', lien: '{{lien_parametres}}' },
+      },
+    },
+  },
+  {
+    cle: 'shopify_modele_refuse',
+    categorie: 'service',
+    nom: 'Shopify : Meta refuse le texte d’un message réglé dans la console',
+    quand: 'Meta refuse le modèle d’un message Shopify préparé dans la console. Le message précédent, s’il y en a un, reste actif.',
+    variables: { boutique: BOUTIQUE_SHOPIFY, message: MESSAGE_SHOPIFY, lien_parametres: LIEN_PARAMETRES, raison: RAISON_REFUS },
+    textes: {
+      fr: {
+        sujet: 'Meta refuse le texte de votre message Shopify',
+        corps: 'Bonjour,\n\nMeta a refusé le texte de votre message « {{message}} » pour la boutique {{boutique}} (raison : '
+          + '{{raison}}). Rien n’a changé pour vos clients : le message précédent, s’il y en avait un, part toujours.\n\n'
+          + 'Reprenez le texte depuis la carte Shopify de la console.',
+        bouton: { libelle: 'Reprendre le texte', lien: '{{lien_parametres}}' },
+      },
+      en: {
+        sujet: 'Meta rejected the text of your Shopify message',
+        corps: 'Hello,\n\nMeta rejected the text of your “{{message}}” message for the {{boutique}} store (reason: '
+          + '{{raison}}). Nothing changed for your customers: the previous message, if any, still goes out.\n\n'
+          + 'Rework the text from the Shopify card of the console.',
+        bouton: { libelle: 'Rework the text', lien: '{{lien_parametres}}' },
       },
     },
   },

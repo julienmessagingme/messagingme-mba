@@ -17,6 +17,7 @@ import { creerApresLAgent } from './mba/lien-de-test';
 import { PgEventStore } from './webhooks/store';
 import { PgCampaignStore, PgQualityProvider } from './campaign/store.pg';
 import { PgShopifyStore } from './shopify/store.pg';
+import { activerSelonStatut, type DepsActivation } from './shopify/preparation';
 import { campaignRunJob, type CapacitesMoteur } from './campaign/run-job';
 import { PgCampaignRunLock } from './campaign/run-lock';
 import { runCampaignScheduleSweep } from './campaign/schedule-sweep';
@@ -433,6 +434,16 @@ export async function demarrerWorker(): Promise<void> {
     journaliserEchec: (e) => erreursLivraison.enregistrerEchecAvance(e),
   };
 
+  /**
+   * L'activation des messages Shopify préparés dans la console (conception 2026-10-22), au statut que Meta tranche pour
+   * leur modèle. Construite AVANT l'abonnement à la file : un job peut arriver dès que le worker l'écoute.
+   */
+  const activationShopify: DepsActivation = {
+    store: new PgShopifyStore(pool, config.ENCRYPTION_KEY),
+    emails: { emettre: (e) => emetteurEmails.emettre(e) },
+    pageParametres: `${config.APP_URL.trim().replace(/\/+$/, '')}/parametres`,
+  };
+
   await queue.work('webhook', async (data) => {
     await handleWebhookJob(data, {
       store: eventStore,
@@ -444,6 +455,7 @@ export async function demarrerWorker(): Promise<void> {
       statutsModeles: {
         espaceDuCompte: (waba) => repo.espaceDuCompteWhatsapp(waba),
         distribuer: async (t, ev) => { await distribuerEvenementEspace(depsDistributionEspace, t, ev); },
+        surStatut: (t, s) => activerSelonStatut(activationShopify, t, s),
       },
       /**
        * Les deux files qui voient des statuts reçoivent la remise du fil, celle-ci et `webhook-status` : un

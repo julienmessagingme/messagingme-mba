@@ -20,7 +20,7 @@ describe.skipIf(!url)('le store Shopify', () => {
   let A = '';
   let B = '';
   const domaine = `itest-${randomUUID().slice(0, 8)}.myshopify.com`;
-  const connexion = (par: string | null = null) => ({ domaine, clientId: 'cid', secretClair: 'shpss_itest', nom: 'Itest', pays: 'FR', devise: 'EUR', par });
+  const connexion = (par: string | null = null) => ({ domaine, clientId: 'cid', secretClair: 'shpss_itest', nom: 'Itest', pays: 'FR', devise: 'EUR', par, origine: 'claude_code' as const });
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: url, ssl: pgSsl() });
@@ -137,7 +137,7 @@ describe.skipIf(!url)('le store Shopify : les paniers', () => {
     pool = new Pool({ connectionString: url, ssl: pgSsl() });
     store = new PgShopifyStore(pool, CLE);
     C = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-shopify-paniers') returning id`)).rows[0]!.id;
-    await store.connecter(C, { domaine, clientId: 'cid', secretClair: 'shpss_itest', nom: null, pays: 'FR', devise: 'EUR', par: null });
+    await store.connecter(C, { domaine, clientId: 'cid', secretClair: 'shpss_itest', nom: null, pays: 'FR', devise: 'EUR', par: null, origine: 'claude_code' });
     await store.brancher(C, { evenement: 'checkout_abandoned', modele: 'relance', langue: 'fr', variables: ['checkout_url'], actif: true, par: null });
   });
 
@@ -217,7 +217,7 @@ describe.skipIf(!url)('le store Shopify : les paniers', () => {
   });
 
   it('🔴 reconnecter efface les paniers ; le délai se compte en MINUTES de la boutique ; un panier verrouillé est sauté', async () => {
-    await store.connecter(C, { domaine, clientId: 'cid', secretClair: 'shpss_itest', nom: null, pays: 'FR', devise: 'EUR', par: null });
+    await store.connecter(C, { domaine, clientId: 'cid', secretClair: 'shpss_itest', nom: null, pays: 'FR', devise: 'EUR', par: null, origine: 'claude_code' });
     expect((await pool.query('select 1 from shopify_paniers where tenant_id = $1', [C])).rowCount).toBe(0);
     await store.affirmerConsentement(C, null);
     await store.reglerDelaiPanier(C, 60);
@@ -236,5 +236,52 @@ describe.skipIf(!url)('le store Shopify : les paniers', () => {
       verrou.release();
     }
     expect((await store.reclamerPaniersDus(50)).filter((p) => p.tenantId === C).map((p) => p.jeton)).toEqual(['delai']);
+  });
+});
+
+describe.skipIf(!url)('le store Shopify : la console (origine, attentes, migration 0249)', () => {
+  let pool: Pool;
+  let store: PgShopifyStore;
+  let D = '';
+  const domaine = `itest-c-${randomUUID().slice(0, 8)}.myshopify.com`;
+  const connexion = { domaine, clientId: 'cid', secretClair: 'shpss_itest', nom: null, pays: 'FR', devise: 'EUR', par: null, origine: 'console' as const };
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: url, ssl: pgSsl() });
+    store = new PgShopifyStore(pool, CLE);
+    D = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-shopify-console') returning id`)).rows[0]!.id;
+  });
+
+  afterAll(async () => {
+    await pool.query('delete from tenants where id = $1', [D]);
+    await pool.end();
+  });
+
+  it('l’origine est gardée et rendue par la vue, l’accès et la boutique signée', async () => {
+    expect(await store.connecter(D, connexion)).toBe('ok');
+    expect((await store.lire(D))?.origine).toBe('console');
+    expect((await store.acces(D))?.origine).toBe('console');
+    expect((await store.boutiqueParDomaine(domaine))?.origine).toBe('console');
+  });
+
+  it('🔴 une attente par événement : la nouvelle remplace, le retrait par modèle la rend, le message actif n’est pas touché', async () => {
+    await store.brancher(D, { evenement: 'checkout_abandoned', modele: 'ancien', langue: 'fr', variables: ['checkout_url'], actif: true, par: null });
+    await store.poserAttente(D, { evenement: 'checkout_abandoned', modele: 'shopify_a', langue: 'fr', variables: ['first_name'], delaiMinutes: 15, par: null });
+    await store.poserAttente(D, { evenement: 'checkout_abandoned', modele: 'shopify_b', langue: 'fr', variables: ['first_name', 'checkout_url'], delaiMinutes: 30, par: null });
+    expect((await store.attentes(D)).map((a) => [a.modele, a.delaiMinutes, a.variables])).toEqual([['shopify_b', 30, ['first_name', 'checkout_url']]]);
+    expect((await store.message(D, 'checkout_abandoned'))?.modele).toBe('ancien');
+    expect(await store.retirerAttente(D, { modele: 'shopify_a', langue: 'fr' })).toBeNull();
+    expect(await store.retirerAttente(D, { modele: 'shopify_b', langue: 'fr' })).toMatchObject({ evenement: 'checkout_abandoned', modele: 'shopify_b' });
+    expect(await store.attentes(D)).toEqual([]);
+  });
+
+  it('le filet ne voit que les attentes anciennes ; l’effacement du branchement les emporte', async () => {
+    await store.poserAttente(D, { evenement: 'order_paid', modele: 'shopify_c', langue: 'fr', variables: [], delaiMinutes: null, par: null });
+    expect((await store.attentesAnciennes(10, 50)).filter((a) => a.tenantId === D)).toEqual([]);
+    await pool.query(`update shopify_messages_attente set cree_le = now() - interval '20 minutes' where tenant_id = $1`, [D]);
+    expect((await store.attentesAnciennes(10, 50)).filter((a) => a.tenantId === D).map((a) => a.modele)).toEqual(['shopify_c']);
+    await store.effacerBoutique(D);
+    expect(await store.attentes(D)).toEqual([]);
+    expect(await store.lire(D)).toBeNull();
   });
 });

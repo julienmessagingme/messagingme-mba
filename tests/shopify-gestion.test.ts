@@ -20,12 +20,15 @@ import { MESSAGE_OPERATIONS_LOURDES } from '../src/auth/plafond-partage';
 const T = 't1';
 const VUE: VueBoutique = {
   domaine: 'b.myshopify.com', nom: 'Essai', pays: 'FR', devise: 'EUR', etat: 'connectee', motifCoupure: null, coupeeLe: null,
-  connecteeLe: '2026-10-21T00:00:00.000Z', dernierEvenementLe: null, consentement: null, delaiPanierMinutes: 60,
+  connecteeLe: '2026-10-21T00:00:00.000Z', dernierEvenementLe: null, consentement: null, delaiPanierMinutes: 60, origine: 'claude_code',
 };
 
-function monter(o: { boutique?: VueBoutique | null; modele?: LectureModele; ailleurs?: boolean; verif?: Awaited<ReturnType<DepsGestionShopify['verifier']>> } = {}) {
+function monter(o: {
+  boutique?: VueBoutique | null; modele?: LectureModele; ailleurs?: boolean; verif?: Awaited<ReturnType<DepsGestionShopify['verifier']>>;
+  jeton?: Awaited<ReturnType<DepsGestionShopify['jeton']>>; abonnement?: Awaited<ReturnType<DepsGestionShopify['abonner']>>;
+} = {}) {
   let boutique: VueBoutique | null = o.boutique === undefined ? VUE : o.boutique;
-  const journal = { connexions: [] as unknown[], branches: [] as unknown[], consentements: [] as Array<string | null>, retraits: 0, coupes: 0, verifs: 0, delais: [] as number[] };
+  const journal = { connexions: [] as unknown[], branches: [] as unknown[], consentements: [] as Array<string | null>, retraits: 0, coupes: 0, verifs: 0, delais: [] as number[], attentesRetirees: [] as unknown[], abonnements: [] as unknown[] };
   const messages: MessageBranche[] = [];
   const deps: DepsGestionShopify = {
     store: {
@@ -40,14 +43,17 @@ function monter(o: { boutique?: VueBoutique | null; modele?: LectureModele; aill
       reglerDelaiPanier: async (_t, m) => { journal.delais.push(m); },
       compteursPaniers: async () => ({ relances: { envoye: 1 }, fermesATemps: 2, enAttente: 3 }),
       acces: async () => null,
+      attentes: async () => [],
+      retirerAttente: async (_t, cible) => { journal.attentesRetirees.push(cible); return null; },
     },
     verifier: async () => { journal.verifs += 1; return o.verif ?? { ok: true, nom: 'Essai', pays: 'FR', devise: 'EUR' }; },
     lireModele: async () => o.modele ?? { statut: 'approuve', categorie: 'utility', variables: 2 },
     chiffrementPret: true,
-    jeton: async () => { throw new Error('jeton : hors de ce test'); },
+    jeton: async () => o.jeton ?? { ok: true, jeton: 'jeton-de-test' },
     lireClients: async () => { throw new Error('lireClients : hors de ce test'); },
     places: async () => { throw new Error('places : hors de ce test'); },
     importer: async () => { throw new Error('importer : hors de ce test'); },
+    abonner: async (acces) => { journal.abonnements.push(acces); return o.abonnement ?? { ok: true, abonnes: ['ORDERS_PAID'], deja: [] }; },
   };
   return { deps, journal };
 }
@@ -55,27 +61,51 @@ function monter(o: { boutique?: VueBoutique | null; modele?: LectureModele; aill
 describe('connecter une boutique', () => {
   it('vérifie chez Shopify, puis garde la boutique ; le domaine se normalise', async () => {
     const { deps, journal } = monter({ boutique: null });
-    const r = await connecterShopify(deps, T, { boutique: 'B.myshopify.com', clientId: 'cid', secret: 'shpss_x' }, 'u1');
+    const r = await connecterShopify(deps, T, { boutique: 'B.myshopify.com', clientId: 'cid', secret: 'shpss_x' }, 'u1', 'claude_code');
     expect(r.ok).toBe(true);
-    expect(journal.connexions).toEqual([{ domaine: 'b.myshopify.com', clientId: 'cid', secretClair: 'shpss_x', nom: 'Essai', pays: 'FR', devise: 'EUR', par: 'u1' }]);
+    expect(journal.connexions).toEqual([{ domaine: 'b.myshopify.com', clientId: 'cid', secretClair: 'shpss_x', nom: 'Essai', pays: 'FR', devise: 'EUR', par: 'u1', origine: 'claude_code' }]);
+    // Claude Code : les webhooks sont dans l'app de la CLI, rien ne s'abonne par l'API.
+    expect(journal.abonnements).toEqual([]);
   });
 
   it('🔴 un refus de Shopify ne garde rien ; une saisie mal formée ne va même pas chez Shopify', async () => {
     const refusee = monter({ verif: { ok: false, code: 'app_non_installee', message: 'cliquez Installer' } });
-    expect(await connecterShopify(refusee.deps, T, { boutique: 'b.myshopify.com', clientId: 'cid', secret: 's' }, null)).toEqual({ ok: false, statut: 422, message: 'cliquez Installer' });
+    expect(await connecterShopify(refusee.deps, T, { boutique: 'b.myshopify.com', clientId: 'cid', secret: 's' }, null, 'claude_code')).toEqual({ ok: false, statut: 422, message: 'cliquez Installer' });
     expect(refusee.journal.connexions).toEqual([]);
     const passagere = monter({ verif: { ok: false, code: 'passager', message: 'réessayez' } });
-    expect(await connecterShopify(passagere.deps, T, { boutique: 'b.myshopify.com', clientId: 'cid', secret: 's' }, null)).toMatchObject({ ok: false, statut: 503 });
+    expect(await connecterShopify(passagere.deps, T, { boutique: 'b.myshopify.com', clientId: 'cid', secret: 's' }, null, 'claude_code')).toMatchObject({ ok: false, statut: 503 });
     const malFormee = monter();
     for (const s of [{ boutique: 'evil.com', clientId: 'cid', secret: 's' }, { boutique: 'b', clientId: 'c id', secret: 's' }, { boutique: 'b', clientId: 'cid', secret: '' }]) {
-      expect(await connecterShopify(malFormee.deps, T, s, null)).toMatchObject({ ok: false, statut: 400 });
+      expect(await connecterShopify(malFormee.deps, T, s, null, 'claude_code')).toMatchObject({ ok: false, statut: 400 });
     }
     expect(malFormee.journal.verifs).toBe(0);
   });
 
   it('une boutique tenue par un autre espace : 409, avec la phrase', async () => {
     const { deps } = monter({ ailleurs: true });
-    expect(await connecterShopify(deps, T, { boutique: 'b.myshopify.com', clientId: 'cid', secret: 's' }, null)).toMatchObject({ ok: false, statut: 409 });
+    expect(await connecterShopify(deps, T, { boutique: 'b.myshopify.com', clientId: 'cid', secret: 's' }, null, 'claude_code')).toMatchObject({ ok: false, statut: 409 });
+  });
+});
+
+describe('brancher une boutique depuis la console (conception 2026-10-22)', () => {
+  it('🔴 origine console : les six webhooks s’abonnent par l’API avec le jeton de l’app, et l’origine est gardée', async () => {
+    const { deps, journal } = monter({ boutique: null });
+    const r = await connecterShopify(deps, T, { boutique: 'b.myshopify.com', clientId: ' cid ', secret: 'shpss_x\n' }, 'u1', 'console');
+    expect(r.ok).toBe(true);
+    // Les clés collées depuis la page de Shopify sont nettoyées avant la vérification.
+    expect(journal.connexions).toMatchObject([{ clientId: 'cid', secretClair: 'shpss_x', origine: 'console' }]);
+    expect(journal.abonnements).toEqual([{ domaine: 'b.myshopify.com', jeton: 'jeton-de-test' }]);
+  });
+
+  it('un abonnement qui échoue rend 503 et le dit : la boutique reste branchée, un nouvel essai est idempotent', async () => {
+    const { deps, journal } = monter({ boutique: null, abonnement: { ok: false, message: 'Shopify refuse (ORDERS_PAID).' } });
+    const r = await connecterShopify(deps, T, { boutique: 'b.myshopify.com', clientId: 'cid', secret: 'shpss_x' }, 'u1', 'console');
+    expect(r).toMatchObject({ ok: false, statut: 503, message: expect.stringContaining('ORDERS_PAID') });
+    expect(journal.connexions).toHaveLength(1);
+    const sansJeton = monter({ boutique: null, jeton: { ok: false, code: 'app_non_installee', message: 'Installez l’app.' } });
+    expect(await connecterShopify(sansJeton.deps, T, { boutique: 'b.myshopify.com', clientId: 'cid', secret: 'shpss_x' }, 'u1', 'console'))
+      .toMatchObject({ ok: false, statut: 422, message: 'Installez l’app.' });
+    expect(sansJeton.journal.abonnements).toEqual([]);
   });
 });
 
@@ -87,6 +117,8 @@ describe('brancher un message', () => {
     expect((await brancherMessage(deps, T, { ...branchement, consentementAffirme: true }, 'u1')).ok).toBe(true);
     expect(journal.branches).toEqual([{ evenement: 'order_paid', modele: 'commande_payee', langue: 'fr', variables: ['first_name', 'order_number'], actif: true, par: 'u1' }]);
     expect(journal.consentements).toEqual(['u1']);
+    // Le dernier geste gagne : un message préparé par la console pour cet événement ne le remplacera pas.
+    expect(journal.attentesRetirees).toEqual([{ evenement: 'order_paid' }]);
   });
 
   it('🔴 customers_consented : vrai affirme, FAUX RETIRE l’affirmation, absent ne change rien', async () => {
@@ -166,7 +198,7 @@ describe('l’état et la coupure', () => {
     const e = await etatShopify(monter().deps, T);
     expect(e.compteurs).toEqual({ envoye: 3 });
     expect(e.pageApps).toBe('https://admin.shopify.com/store/b/settings/apps');
-    expect(await etatShopify(monter({ boutique: null }).deps, T)).toEqual({ boutique: null, messages: [], compteurs: {}, paniers: { relances: {}, fermesATemps: 0, enAttente: 0 }, pageApps: null });
+    expect(await etatShopify(monter({ boutique: null }).deps, T)).toEqual({ boutique: null, messages: [], compteurs: {}, paniers: { relances: {}, fermesATemps: 0, enAttente: 0 }, pageApps: null, attentes: [] });
   });
 
   it('couper est idempotent et rend la page d’où désinstaller l’app', async () => {
@@ -213,7 +245,7 @@ describe('l’import des clients abonnés (lot 3)', () => {
       store: {
         ...deps.store,
         acces: async () => (o.acces === undefined
-          ? { domaine: 'b.myshopify.com', clientId: 'cid', secret: 'shpss_x', pays: 'FR', etat: 'connectee' } : o.acces),
+          ? { domaine: 'b.myshopify.com', clientId: 'cid', secret: 'shpss_x', pays: 'FR', etat: 'connectee', origine: 'claude_code' } : o.acces),
       },
       jeton: async () => o.jeton ?? { ok: true, jeton: 'jeton' },
       lireClients: async (acces, plafond) => { journal.lectures.push({ acces, plafond }); return o.lecture ?? { ok: true, abonnes: ABONNES, sansTelephone: 2, complet: true }; },
@@ -279,7 +311,7 @@ describe('l’import des clients abonnés (lot 3)', () => {
 
   it('sans boutique, boutique coupée, jeton refusé, accès aux clients refusé : chaque refus dit le geste', async () => {
     expect(await apercuImportClients(monterImport({ acces: null }).deps, T)).toMatchObject({ ok: false, statut: 409 });
-    const coupee = monterImport({ acces: { domaine: 'b.myshopify.com', clientId: 'cid', secret: 's', pays: 'FR', etat: 'coupee' } });
+    const coupee = monterImport({ acces: { domaine: 'b.myshopify.com', clientId: 'cid', secret: 's', pays: 'FR', etat: 'coupee', origine: 'claude_code' } });
     expect(await importerClients(coupee.deps, T, 1)).toMatchObject({ ok: false, statut: 409, message: expect.stringContaining('coupée') });
     expect(coupee.journal.lectures).toEqual([]);
     const jeton = monterImport({ jeton: { ok: false, code: 'app_non_installee', message: 'Installez l’app.' } });

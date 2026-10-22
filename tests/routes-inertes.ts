@@ -810,6 +810,8 @@ export const mcpShopifyInerte: Pick<DepsMcp, 'shopify'> = {
       reglerDelaiPanier: neDevraitPasEtreAppelee('shopify.reglerDelaiPanier'),
       compteursPaniers: async () => ({ relances: {}, fermesATemps: 0, enAttente: 0 }),
       acces: async () => null,
+      attentes: async () => [],
+      retirerAttente: neDevraitPasEtreAppelee('shopify.retirerAttente'),
     },
     verifier: neDevraitPasEtreAppelee('shopify.verifier'),
     lireModele: neDevraitPasEtreAppelee('shopify.lireModele'),
@@ -818,6 +820,7 @@ export const mcpShopifyInerte: Pick<DepsMcp, 'shopify'> = {
     lireClients: neDevraitPasEtreAppelee('shopify.lireClients'),
     places: neDevraitPasEtreAppelee('shopify.places'),
     importer: neDevraitPasEtreAppelee('shopify.importer'),
+    abonner: neDevraitPasEtreAppelee('shopify.abonner'),
   },
 };
 

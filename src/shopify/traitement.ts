@@ -10,7 +10,7 @@ import {
   type DonneeShopify, type EvenementShopify,
 } from './donnees';
 import { envoyerShopify, type EnvoyerPublic, type IssueEnvoi } from './envoi';
-import type { EtatBoutique, PgShopifyStore } from './store.pg';
+import type { EtatBoutique, OrigineBoutique, PgShopifyStore } from './store.pg';
 
 /**
  * LE TRAITEMENT D'UN WEBHOOK SHOPIFY DÉJÀ VÉRIFIÉ (plan 2026-10-21, lot 1), sujet par sujet.
@@ -32,6 +32,8 @@ export interface BoutiqueRecue {
   etat: EtatBoutique;
   pays: string | null;
   consentementAffirme: boolean;
+  /** `console` : une boutique désinstallée perd son branchement, `shop/redact` ne viendra jamais (conception 2026-10-22). */
+  origine: OrigineBoutique;
 }
 
 export interface DepsTraitementShopify {
@@ -110,7 +112,10 @@ export async function traiterWebhookShopify(
     case 'checkouts/update':
       return noterCheckout(deps, b, sujet, corps);
     case 'app/uninstalled':
-      await deps.store.couperParDomaine(b.domaine, 'app désinstallée de la boutique');
+      // Une boutique de la console ne recevra jamais shop/redact (ses sujets RGPD ne s'abonnent pas sans la CLI) : son
+      // branchement part tout de suite, le secret ne servait plus qu'à vérifier ce sujet. Les fiches restent.
+      if (b.origine === 'console') await deps.store.effacerBoutique(b.tenantId);
+      else await deps.store.couperParDomaine(b.domaine, 'app désinstallée de la boutique');
       return OK;
     case 'customers/redact':
       return effacerClient(deps, b, corps);

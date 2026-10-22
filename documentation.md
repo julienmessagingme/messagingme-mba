@@ -2310,9 +2310,25 @@ dans `PgShopifyStore`. Le jeton rendu n'est ni gardé ni renouvelé : les webhoo
   `client_credentials` se redemande à chaque appel (`demanderJeton`), avec le secret que `acces` déchiffre pour
   l'espace.
 
-`tenant_id = $1` sur chaque requête du store, sauf CINQ lectures transverses nommées dans le fichier :
+- 🔴 **deux origines de branchement, jamais confondues** (`shopify_boutiques.origine`, migration 0249) :
+  `claude_code`, l'app de la CLI, dont les webhooks sont déclarés dans l'app (`shopify.app.toml`) ; `console`, l'app
+  créée à la main sur le tableau de bord développeur de Shopify, qui n'a AUCUN écran pour ses webhooks : notre serveur
+  les abonne par l'API au branchement (`abonnerWebhooks`, six sujets, « already been taken » vaut « déjà », mesuré).
+  Abonner ceux d'une app de la CLI ferait tout recevoir en double. Les sujets RGPD ne s'abonnent pas sans la CLI : une
+  boutique de la console ne reçoit pas les demandes d'effacement (le marchand efface à la main), et sa désinstallation
+  (`app/uninstalled`) EFFACE son branchement au lieu de le couper, puisque `shop/redact` ne viendra jamais ;
+- 🔴 **l'assistant de la console** (`src/shopify/preparation.ts`) transforme un texte à repères (`{{first_name}}`...)
+  en modèle créé chez Meta par la MÊME création que l'écran Modèles (`creerUnModele`) ; le message ne s'active qu'à
+  l'approbation (`activerSelonStatut`, appelé par le statut des modèles dans le worker et par un filet de l'API qui
+  relit toutes les dix minutes les attentes de plus de dix minutes). Le message ACTIF n'est jamais touché par une
+  préparation ni par un refus ; le dernier geste gagne (`set_shopify_message` retire l'attente du même événement). Une
+  relance ne se prépare jamais sans consentement affirmé, et porte en pied « Répondez STOP... » (une réponse texte
+  désabonne ; un bouton, non).
+
+`tenant_id = $1` sur chaque requête du store, sauf SIX lectures transverses nommées dans le fichier :
 `boutiqueParDomaine` et `couperParDomaine` (le domaine DONNE l'espace), `purgerEvenements`, `reclamerPaniersDus` (qui
-joint chaque panier à sa boutique et à son message par `tenant_id`) et `purgerPaniers`.
+joint chaque panier à sa boutique et à son message par `tenant_id`), `purgerPaniers` et `attentesAnciennes` (le filet
+de l'activation).
 
 ---
 

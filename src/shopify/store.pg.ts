@@ -7,16 +7,33 @@ import { estDonneeShopify, type DonneeShopify, type EvenementShopify } from './d
  * LE STORE DU CONNECTEUR SHOPIFY (plan 2026-10-21, lot 1), seul à écrire les tables `shopify_*` (migration 0246) ;
  * `purgeMany` y efface aussi les lignes d'une fiche purgée.
  *
- * 🔴 `tenant_id = $1` SUR CHAQUE REQUÊTE, sauf CINQ lectures transverses nommées ici : `boutiqueParDomaine` et
- * `couperParDomaine` (ce sont elles qui DONNENT l'espace, à partir du domaine qui signe un webhook), et trois balayages
+ * 🔴 `tenant_id = $1` SUR CHAQUE REQUÊTE, sauf SIX lectures transverses nommées ici : `boutiqueParDomaine` et
+ * `couperParDomaine` (ce sont elles qui DONNENT l'espace, à partir du domaine qui signe un webhook), et quatre balayages
  * de toutes les boutiques : `purgerEvenements`, `reclamerPaniersDus` (qui joint chaque panier à SA boutique et à SON
- * message par `tenant_id`) et `purgerPaniers`.
+ * message par `tenant_id`), `purgerPaniers` et `attentesAnciennes` (le filet de l'activation, console).
  *
  * 🔴 LE SECRET NE SORT JAMAIS VERS UN ÉCRAN : `lire` ne le sélectionne pas, et seule `boutiqueParDomaine` le rend
  * déchiffré, pour vérifier une signature.
  */
 
 export type EtatBoutique = 'connectee' | 'coupee';
+/**
+ * Par où la boutique a été branchée (migration 0249) : `claude_code`, l'app de la CLI, dont les webhooks sont déclarés
+ * dans l'app ; `console`, l'app créée à la main sur le tableau de bord de Shopify, dont NOTRE serveur abonne les
+ * webhooks par l'API. Les confondre ferait tout recevoir en double.
+ */
+export type OrigineBoutique = 'console' | 'claude_code';
+
+/** Un message préparé par l'assistant de la console, dont le modèle attend l'approbation de Meta (migration 0249). */
+export interface AttenteMessage {
+  evenement: EvenementShopify;
+  modele: string;
+  langue: string;
+  variables: DonneeShopify[];
+  /** La relance seulement : le délai à poser à l'activation. */
+  delaiMinutes: number | null;
+  creeLe: string;
+}
 
 export interface VueBoutique {
   domaine: string;
@@ -31,6 +48,7 @@ export interface VueBoutique {
   /** Le marchand a affirmé que ses clients consentent : qui (identifiant d'utilisateur) et quand. */
   consentement: { par: string | null; le: string } | null;
   delaiPanierMinutes: number;
+  origine: OrigineBoutique;
 }
 
 export interface MessageBranche {
@@ -49,6 +67,7 @@ export interface BoutiqueSignee {
   secret: string;
   pays: string | null;
   consentementAffirme: boolean;
+  origine: OrigineBoutique;
 }
 
 /** De quoi demander un jeton à Shopify pour l'espace : l'import des clients (lot 3). */
@@ -58,6 +77,7 @@ export interface AccesBoutique {
   secret: string;
   pays: string | null;
   etat: EtatBoutique;
+  origine: OrigineBoutique;
 }
 
 export interface Connexion {
@@ -68,6 +88,7 @@ export interface Connexion {
   pays: string | null;
   devise: string | null;
   par: string | null;
+  origine: OrigineBoutique;
 }
 
 /** `boutique_ailleurs` : un autre espace tient cette boutique, connectée. */
@@ -94,7 +115,7 @@ export type Reservation = 'nouveau' | 'en_cours' | 'servi';
 interface LigneBoutique {
   domaine: string; nom: string | null; pays: string | null; devise: string | null; etat: EtatBoutique;
   motif_coupure: string | null; coupee_le: Date | null; connectee_le: Date; dernier_evenement_le: Date | null;
-  consentement_par: string | null; consentement_le: Date | null; delai_panier_minutes: number;
+  consentement_par: string | null; consentement_le: Date | null; delai_panier_minutes: number; origine: OrigineBoutique;
 }
 
 export class PgShopifyStore {
@@ -103,7 +124,7 @@ export class PgShopifyStore {
   async lire(tenantId: string): Promise<VueBoutique | null> {
     const res = await this.pool.query<LigneBoutique>(
       `select domaine, nom, pays, devise, etat, motif_coupure, coupee_le, connectee_le, dernier_evenement_le,
-              consentement_par, consentement_le, delai_panier_minutes
+              consentement_par, consentement_le, delai_panier_minutes, origine
          from shopify_boutiques where tenant_id = $1`,
       [tenantId],
     );
@@ -114,7 +135,7 @@ export class PgShopifyStore {
       coupeeLe: r.coupee_le?.toISOString() ?? null, connecteeLe: r.connectee_le.toISOString(),
       dernierEvenementLe: r.dernier_evenement_le?.toISOString() ?? null,
       consentement: r.consentement_le ? { par: r.consentement_par, le: r.consentement_le.toISOString() } : null,
-      delaiPanierMinutes: r.delai_panier_minutes,
+      delaiPanierMinutes: r.delai_panier_minutes, origine: r.origine,
     };
   }
 
@@ -123,13 +144,13 @@ export class PgShopifyStore {
    * personne d'autre : rien de ce qui est rendu ici ne sort de l'API.
    */
   async acces(tenantId: string): Promise<AccesBoutique | null> {
-    const res = await this.pool.query<{ domaine: string; client_id: string; secret_chiffre: string; pays: string | null; etat: EtatBoutique }>(
-      `select domaine, client_id, secret_chiffre, pays, etat from shopify_boutiques where tenant_id = $1`,
+    const res = await this.pool.query<{ domaine: string; client_id: string; secret_chiffre: string; pays: string | null; etat: EtatBoutique; origine: OrigineBoutique }>(
+      `select domaine, client_id, secret_chiffre, pays, etat, origine from shopify_boutiques where tenant_id = $1`,
       [tenantId],
     );
     const r = res.rows[0];
     if (!r) return null;
-    return { domaine: r.domaine, clientId: r.client_id, secret: decryptSecret(r.secret_chiffre, this.cle), pays: r.pays, etat: r.etat };
+    return { domaine: r.domaine, clientId: r.client_id, secret: decryptSecret(r.secret_chiffre, this.cle), pays: r.pays, etat: r.etat, origine: r.origine };
   }
 
   /**
@@ -137,13 +158,16 @@ export class PgShopifyStore {
    * pour vérifier la signature, et à personne d'autre.
    */
   async boutiqueParDomaine(domaine: string): Promise<BoutiqueSignee | null> {
-    const res = await this.pool.query<{ tenant_id: string; etat: EtatBoutique; secret_chiffre: string; pays: string | null; consentement_le: Date | null }>(
-      `select tenant_id, etat, secret_chiffre, pays, consentement_le from shopify_boutiques where domaine = $1`,
+    const res = await this.pool.query<{ tenant_id: string; etat: EtatBoutique; secret_chiffre: string; pays: string | null; consentement_le: Date | null; origine: OrigineBoutique }>(
+      `select tenant_id, etat, secret_chiffre, pays, consentement_le, origine from shopify_boutiques where domaine = $1`,
       [domaine],
     );
     const r = res.rows[0];
     if (!r) return null;
-    return { tenantId: r.tenant_id, etat: r.etat, secret: decryptSecret(r.secret_chiffre, this.cle), pays: r.pays, consentementAffirme: r.consentement_le !== null };
+    return {
+      tenantId: r.tenant_id, etat: r.etat, secret: decryptSecret(r.secret_chiffre, this.cle), pays: r.pays,
+      consentementAffirme: r.consentement_le !== null, origine: r.origine,
+    };
   }
 
   /**
@@ -176,14 +200,14 @@ export class PgShopifyStore {
         await effacerBranchement(client, tenue.tenant_id);
       }
       await client.query(
-        `insert into shopify_boutiques (tenant_id, domaine, client_id, secret_chiffre, nom, pays, devise, etat, connectee_par, connectee_le, maj_le)
-         values ($1, $2, $3, $4, $5, $6, $7, 'connectee', $8, now(), now())
+        `insert into shopify_boutiques (tenant_id, domaine, client_id, secret_chiffre, nom, pays, devise, etat, connectee_par, connectee_le, maj_le, origine)
+         values ($1, $2, $3, $4, $5, $6, $7, 'connectee', $8, now(), now(), $9)
          on conflict (tenant_id) do update set
            domaine = excluded.domaine, client_id = excluded.client_id, secret_chiffre = excluded.secret_chiffre,
-           nom = excluded.nom, pays = excluded.pays, devise = excluded.devise, etat = 'connectee',
+           nom = excluded.nom, pays = excluded.pays, devise = excluded.devise, etat = 'connectee', origine = excluded.origine,
            motif_coupure = null, coupee_le = null, connectee_par = excluded.connectee_par, connectee_le = now(), maj_le = now(),
            consentement_par = null, consentement_le = null`,
-        [tenantId, c.domaine, c.clientId, secret, c.nom, c.pays, c.devise, c.par],
+        [tenantId, c.domaine, c.clientId, secret, c.nom, c.pays, c.devise, c.par, c.origine],
       );
       // 🔴 Les paniers notés sous l'ancienne connexion partent avec son affirmation : les commandes d'une boutique coupée
       // ne les ont pas fermés, et ceux d'une autre boutique porteraient son lien (relecture du lot 2).
@@ -242,6 +266,53 @@ export class PgShopifyStore {
          modifie_par = excluded.modifie_par, modifie_le = now()`,
       [tenantId, m.evenement, m.modele, m.langue, JSON.stringify(m.variables), m.actif, m.par],
     );
+  }
+
+  /** Une nouvelle préparation REMPLACE l'attente de l'événement ; le message actif n'est pas touché. */
+  async poserAttente(tenantId: string, a: Omit<AttenteMessage, 'creeLe'> & { par: string | null }): Promise<void> {
+    await this.pool.query(
+      `insert into shopify_messages_attente (tenant_id, evenement, modele, langue, variables, delai_panier_minutes, par, cree_le)
+       values ($1, $2, $3, $4, $5::jsonb, $6, $7, now())
+       on conflict (tenant_id, evenement) do update set
+         modele = excluded.modele, langue = excluded.langue, variables = excluded.variables,
+         delai_panier_minutes = excluded.delai_panier_minutes, par = excluded.par, cree_le = now()`,
+      [tenantId, a.evenement, a.modele, a.langue, JSON.stringify(a.variables), a.delaiMinutes, a.par],
+    );
+  }
+
+  async attentes(tenantId: string): Promise<AttenteMessage[]> {
+    const res = await this.pool.query<LigneAttente>(
+      `select evenement, modele, langue, variables, delai_panier_minutes, cree_le from shopify_messages_attente where tenant_id = $1 order by evenement`,
+      [tenantId],
+    );
+    return res.rows.map(versAttente);
+  }
+
+  /** Rend l'attente retirée (celle de l'événement, ou celle qui porte ce modèle et cette langue), ou `null`. */
+  async retirerAttente(tenantId: string, cible: { evenement: EvenementShopify } | { modele: string; langue: string }): Promise<AttenteMessage | null> {
+    const res = 'evenement' in cible
+      ? await this.pool.query<LigneAttente>(
+        `delete from shopify_messages_attente where tenant_id = $1 and evenement = $2
+          returning evenement, modele, langue, variables, delai_panier_minutes, cree_le`, [tenantId, cible.evenement],
+      )
+      : await this.pool.query<LigneAttente>(
+        `delete from shopify_messages_attente where tenant_id = $1 and modele = $2 and langue = $3
+          returning evenement, modele, langue, variables, delai_panier_minutes, cree_le`, [tenantId, cible.modele, cible.langue],
+      );
+    return res.rows[0] ? versAttente(res.rows[0]) : null;
+  }
+
+  /**
+   * EXCEPTION TRANSVERSE 6 : le filet de l'activation, toutes boutiques confondues. Les attentes de plus de `minutes`
+   * minutes, les plus anciennes d'abord : leur modèle est relu chez Meta, au cas où son statut ne serait pas arrivé.
+   */
+  async attentesAnciennes(minutes: number, limite: number): Promise<Array<AttenteMessage & { tenantId: string }>> {
+    const res = await this.pool.query<LigneAttente & { tenant_id: string }>(
+      `select tenant_id, evenement, modele, langue, variables, delai_panier_minutes, cree_le from shopify_messages_attente
+        where cree_le < now() - make_interval(mins => $1) order by cree_le limit $2`,
+      [minutes, limite],
+    );
+    return res.rows.map((r) => ({ ...versAttente(r), tenantId: r.tenant_id }));
   }
 
   /** Le marchand affirme que ses clients consentent (décision de Julien) : qui et quand, pour la trace. */
@@ -469,7 +540,18 @@ export class PgShopifyStore {
 
 /** Tout le branchement d'un espace, dans la transaction de l'appelant. */
 async function effacerBranchement(client: PoolClient, tenantId: string): Promise<void> {
-  for (const table of ['shopify_messages', 'shopify_paniers', 'shopify_evenements', 'shopify_commandes', 'shopify_boutiques']) {
+  for (const table of ['shopify_messages', 'shopify_messages_attente', 'shopify_paniers', 'shopify_evenements', 'shopify_commandes', 'shopify_boutiques']) {
     await client.query(`delete from ${table} where tenant_id = $1`, [tenantId]);
   }
+}
+
+interface LigneAttente {
+  evenement: EvenementShopify; modele: string; langue: string; variables: unknown; delai_panier_minutes: number | null; cree_le: Date;
+}
+
+function versAttente(r: LigneAttente): AttenteMessage {
+  return {
+    evenement: r.evenement, modele: r.modele, langue: r.langue, delaiMinutes: r.delai_panier_minutes, creeLe: r.cree_le.toISOString(),
+    variables: Array.isArray(r.variables) ? r.variables.filter(estDonneeShopify) : [],
+  };
 }
