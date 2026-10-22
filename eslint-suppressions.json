@@ -1,0 +1,62 @@
+{
+  "src/agent/connaissance.ts": {
+    "@typescript-eslint/unbound-method": {
+      "count": 1
+    }
+  },
+  "src/api/envoi-public.ts": {
+    "@typescript-eslint/unbound-method": {
+      "count": 1
+    }
+  },
+  "src/application/sessions.ts": {
+    "@typescript-eslint/unbound-method": {
+      "count": 1
+    }
+  },
+  "src/auth/routes.ts": {
+    "@typescript-eslint/unbound-method": {
+      "count": 1
+    }
+  },
+  "src/crm/contact-store.pg.ts": {
+    "@typescript-eslint/unbound-method": {
+      "count": 1
+    }
+  },
+  "src/http/v1-messages.ts": {
+    "@typescript-eslint/unbound-method": {
+      "count": 1
+    }
+  },
+  "src/index.ts": {
+    "@typescript-eslint/unbound-method": {
+      "count": 32
+    }
+  },
+  "src/mcp/outils.ts": {
+    "@typescript-eslint/unbound-method": {
+      "count": 1
+    }
+  },
+  "src/worker.ts": {
+    "@typescript-eslint/unbound-method": {
+      "count": 9
+    }
+  },
+  "src/workflow/envois-bloc.ts": {
+    "@typescript-eslint/unbound-method": {
+      "count": 7
+    }
+  },
+  "src/workflow/reveil-court.ts": {
+    "@typescript-eslint/unbound-method": {
+      "count": 1
+    }
+  },
+  "src/workflow/wiring.ts": {
+    "@typescript-eslint/unbound-method": {
+      "count": 4
+    }
+  }
+}

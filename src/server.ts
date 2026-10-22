@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import type { SurveillanceOps } from './ops/tentatives';
 import { CODE_ABANDON, type MesureLatenceHttp } from './ops/latence-http';
+import { creerAlerteConnexion } from './ops/alerte-connexion';
 import type { FastifyInstance, FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { config } from './config';
 import { registerReceiver } from './webhooks/receiver';
@@ -1085,6 +1086,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
    * seul : leur écran lit la phrase, et reconnaît le texte opaque des 5xx (`CORPS_OPAQUE_5XX`, partagé avec elle).
    * `tests/v1-erreurs-code.test.ts` tient les deux sens.
    */
+  const alerteConnexion = creerAlerteConnexion(deps.alerter ?? ((texte) => journaliser('error', 'connexion_alerte', { texte })));
   app.setErrorHandler((err: FastifyError, req: FastifyRequest, reply: FastifyReply) => {
     const surV1 = estAdresseV1(req.url);
     // Erreur remontée de l'API Meta (token expiré, template invalide...) -> 422 + message clair.
@@ -1136,6 +1138,8 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     // `logger: false`, donc `req.log` est un no-op. Il porte la cause (le `ENOTFOUND` d'un `fetch failed`).
     if (code >= 500) {
       journaliser('error', 'unhandled_route_error', { method: req.method, url: req.url, tenantId: req.auth?.tenantId ?? null, err });
+      // Une route de connexion en 500 laisse des gens à la porte : Telegram, pas seulement le journal.
+      alerteConnexion(req, err);
     }
     // Ce texte a un lecteur : la console le reconnaît et le remplace par une phrase traduite
     // (`CORPS_OPAQUE_5XX`, partagé avec elle).

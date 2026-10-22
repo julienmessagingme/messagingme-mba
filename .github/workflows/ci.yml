@@ -137,6 +137,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      # Une méthode détachée de son objet perd son `this` sans que tsc le voie (connexion Google en 500, 2026-10-21).
+      - run: npm run lint
       - run: npm test
       # 🔴 L'auto-attaque tourne ICI, et c'est la seule chose qui la rend utile. Elle inventorie les routes
       # sur le SERVEUR CONSTRUIT et attaque chacune : une route ajoutee sans garde est trouvee sans que
