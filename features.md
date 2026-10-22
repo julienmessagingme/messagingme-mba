@@ -4881,7 +4881,10 @@ chemin pour elle. Chacun devient un outil, qui appelle la fonction du bouton de 
 - **La main du fil** (`control_conversation`) : la prendre sans écrire au contact, ou la rendre au répondeur
   automatique (agent IA, agent de Meta, scénario), qui répond au message SUIVANT du contact. Une réponse de Claude
   prend le fil : sans ce geste, l'agent IA d'une Free se taisait jusqu'au délai de reprise. Toutes les offres, et aussi
-  derrière une clé d'API, comme la réponse.
+  derrière une clé d'API, comme la réponse. La main n'est jamais rendue pour un contact qui a dit STOP ou qui est
+  bloqué, ni quand personne ne répond automatiquement (« équipe ») : le refus dit quoi régler d'abord. Et une réponse
+  de Claude faite par une personne connectée vaut celle de l'Inbox : la conversation sort d'« À traiter », et le
+  répondeur la reprend après le délai, comme après une réponse de l'équipe.
 - **Le webhook de l'application** (`update_webhook_endpoint`, `delete_webhook_endpoint`) : ses types d'événements, sa
   pause, un nouveau secret (montré une fois, l'ancien signe encore 24 h), sa suppression avec son journal. Changer
   d'adresse reste « supprimer puis recréer », comme dans la console ; si l'adresse répondait aux clients, la
@@ -4891,7 +4894,8 @@ chemin pour elle. Chacun devient un outil, qui appelle la fonction du bouton de 
 - **Les modèles** (`update_template`, `delete_template`) : corriger une langue d'un modèle refusé sans changer de nom
   (il repart en validation ; Meta limite un modèle approuvé à une correction par 24 h et dix par 30 jours, et un
   en-tête image, vidéo ou document ne se corrige pas), ou le supprimer, toutes ses langues (refusé tant qu'une
-  campagne active l'utilise ; le nom d'un modèle approuvé supprimé reste bloqué 30 jours chez Meta).
+  campagne active l'utilise ; le nom d'un modèle approuvé supprimé reste bloqué 30 jours chez Meta). Un modèle à
+  bouton Flow ne se corrige pas depuis Claude : la correction perdrait le bouton.
 - **Le blocage d'un contact** (`block_contact`) : comme la fiche, plus rien ne lui part et aucun robot ne prend sa
   conversation, ses messages restent enregistrés. `get_contact` et `search_contacts` disent s'il est bloqué : c'est là
   que Claude le retrouve pour le débloquer.
@@ -4899,7 +4903,9 @@ chemin pour elle. Chacun devient un outil, qui appelle la fonction du bouton de 
   une campagne programmée, ou préparer la reprise d'une campagne en pause : un récapitulatif des destinataires
   restants et un code, puis `launch_campaign` avec ce code, comme pour un lancement. La reprise part tout de suite, et
   aucun refus ne renvoie vers une nouvelle préparation, qui écrirait à tout le monde, pas même quand la campagne a
-  repris entre-temps (par le balayage ou dans la console).
+  repris entre-temps (par le balayage ou dans la console). Le récapitulatif de reprise dit pourquoi la campagne s'est
+  arrêtée (une pause pour la qualité du numéro demande de la vérifier d'abord) ; une pause qu'un autre geste lève
+  (numéro délié, abonnement impayé) ne se reprend pas par Claude.
 - **La mention d'IA en anglais** : `create_agent` et `update_agent` choisissent entre deux phrases relues, « Vous
   échangez avec un assistant automatique. » et « You are chatting with an automated assistant. ». `get_agent` dit
   laquelle ; un texte libre se règle toujours dans la console.

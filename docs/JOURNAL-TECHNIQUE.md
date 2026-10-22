@@ -5,6 +5,40 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-22 (nuit) : la marche arrière des outils MCP, lots 1 et 2
+
+Plan : `docs/superpowers/plans/2026-10-22-mcp-marche-arriere.md`. Il part d'une analyse des outils MCP demandée par
+Julien (« des bouts de process ? ») : la Free n'a plus de console depuis les offres v2, donc chaque geste qu'un outil
+laissait « à la console » n'existait pas pour elle. Règle retenue : ce qu'une offre permet de commencer, elle permet de
+le finir. Cadrage en deux rondes de questions, six décisions de Julien (freins et reprise des campagnes, suppression
+d'un modèle comme dans la console, `update_template` dans le lot, mention d'IA au choix entre deux phrases relues,
+e-mail de la Free qui renvoie vers Claude, essai réel à deux). Aucune migration.
+
+- **Lot 1, huit tâches** : `control_conversation`, `update_webhook_endpoint` et `delete_webhook_endpoint`,
+  `update_template` et `delete_template`, `block_contact`, `control_campaign` (pause, déprogrammation, reprise par un
+  code que `launch_campaign` réclame), la mention d'IA en anglais, l'e-mail de transfert de la Free
+  (`transfert_equipe_free`), la doc et le plugin. Tâches 1 et 2 poussées une par une, 3 à 8 recalées sur origin et
+  vérifiées sur l'arbre exact (copie à part, la session du plugin ayant du travail non poussé dans l'arbre partagé).
+- **La relecture indépendante a trouvé deux rouges**, corrigés et prouvés dans les deux sens avant tout déploiement :
+  un code de reprise présenté APRÈS une reprise par le balayage ou dans la console recevait le refus d'un brouillon
+  (« préparez à nouveau avec prepare_campaign »), qui aurait écrit une seconde fois à tous les destinataires (le refus
+  se choisit désormais sur le statut relu, `refusDuCode`) ; et supprimer l'adresse de webhook qui répondait aux clients,
+  geste que l'outil prescrivait pour changer d'URL, remettait le répondeur à nul (`on delete set null`, 0224) sans rien
+  dire, donc une Free en mode application n'aurait plus répondu à personne (la suppression lit désormais le réglage
+  avant et le dit). Déployé à `2bf50c54` avec le lot 3 Shopify, plugin `0.3.4`.
+- **Lot 2, les huit jaunes de cette relecture et un constat de la session du plugin** (une réponse par
+  `reply_in_open_window` ne levait pas `escaladee_le`, donc le fil restait à l'équipe pour toujours) : `hand_back` refuse
+  un contact STOP ou bloqué et le mode « équipe », la reprise dit le motif de la pause (`pauseDe`) et refuse les pauses
+  qu'un autre geste lève, `update_template` refuse un bouton Flow, une réponse MCP signée d'une personne lève
+  l'escalade (`vautReponseDeLEquipe`), les textes qui renvoyaient encore à la console, et deux tests qui ne tenaient
+  pas ce qu'ils annonçaient. Douze gardes mutées une par une (échec constaté, restauration par copie). Relecture : aucun
+  rouge ; ses six jaunes sont au backlog. Déployé à `aeca44d5` (API et les deux workers, en deux temps), fiches d'aide
+  rechargées, plugin `0.3.5`.
+- **Coordination** : trois sessions ont poussé et déployé le même soir. Une course de push a été arrêtée par le contrôle
+  « origin a bougé » avant le commit ; un contrôle `ps | grep -c "[d]ocker compose up"` placé dans la même commande que
+  l'`up` s'est compté lui-même et a arrêté le déploiement sans rien relancer. L'essai réel à deux reste dû
+  (`docs/prive/ESSAIS-REELS.md`, essai 148).
+
 ## 2026-10-22 (nuit) : Shopify depuis la console, pour les clients payants
 
 Plan : `docs/superpowers/plans/2026-10-22-shopify-console.md`, conception
