@@ -5,6 +5,33 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-22 (soir) : le connecteur Shopify, lot 3 (l'import des clients abonnés), et la page « C'est installé »
+
+Plan : `docs/superpowers/plans/2026-10-21-connecteur-shopify.md`, § Lot 3, cadré avec Julien en rondes de questions :
+seuls les clients ABONNÉS au marketing (e-mail ou SMS), jamais de consentement WhatsApp écrit, compter d'abord puis le
+marchand choisit, une fois à la demande. Deux outils MCP, `preview_shopify_customers` et `import_shopify_customers` ;
+les fiches passent par `importContacts`, le chemin de l'import HubSpot. Aucune migration.
+
+- **Mesuré sur la boutique de dev** (`messaging-me-essai`) : Shopify IGNORE en silence un filtre de recherche inconnu
+  (`email_subscription_status:SUBSCRIBED` rendait tout le monde), et `customersCount` ignore tout filtre. L'abonnement
+  se revérifie donc sur chaque client lu (`estAbonne`), le filtre ne sert qu'à lire moins de pages. Julien a abonné
+  deux clients (l'un par e-mail, l'autre par SMS) : le filtre et le vrai code les rendent exactement, et la lecture de
+  tous les clients sans filtre donne le même résultat. Une page de 250 clients coûte 35 points sur un seau de 2 000.
+- **La relecture du diff n'a trouvé aucun rouge.** Trois jaunes corrigés dans le lot : seul le téléphone du CLIENT est
+  retenu (celui d'une adresse peut être celui d'un destinataire, et `customers/redact` ne porte que lui) ; la lecture
+  s'arrête à 25 s (le proxy coupe à 45 s : l'outil aurait rendu un échec pendant que l'import s'écrivait, et sa relance
+  aurait dépassé le nombre choisi) ; le refus de limite porte sur ce qui serait écrit. Les deux tests rouges du lot,
+  et les deux nouveaux, ont été vus rouges sans leur correctif puis verts. Le reste est au backlog.
+- **`placesContacts`** compte sur les mêmes prédicats que `verifierPlaceContacts` (`FICHE_COMPTEE`, `FICHE_ACTIVE`,
+  désormais nommés) : l'annonce et le refus comptent pareil.
+- **La page « C'est installé »** (`/shopify/installe/`, `7595d6a8`) : après « Installer », Shopify ouvre l'adresse de
+  l'app, qui menait à l'écran de connexion de la console ; le marchand croyait que ça avait raté (vécu à l'essai réel).
+  La skill la donne désormais comme adresse de l'app. Vue en production au parcours sans CLI du soir.
+- **Déployé à `2bf50c54`** avec le lot MCP « marche arrière » de la session voisine, après son feu vert et l'accord de
+  Julien (un seul déploiement linéaire) : CI lue job par job pour les deux têtes, aucune migration, fumée verte, SQL neuf
+  planifié en `EXPLAIN` contre la production en lecture seule, fiches d'aide chargées. Plugin `0.3.4` publié par la
+  session MCP pour les deux lots.
+
 ## 2026-10-22 : la page de secteur Voyage et tourisme, et le film Odalys
 
 Demandée par Julien avec trois maquettes PDF (`landing-tourisme-choisir-reserver`, `-preparer-arrivee`, `-pendant-sejour`)
