@@ -165,7 +165,23 @@ export function memoireDesEnvois(borne = 500): MemoireDesEnvois {
   };
 }
 
-/** Les options du socket d'une session, avec `getMessage` sur sa mémoire des envois. */
+/**
+ * Une mémoire des envois PAR COMPTE, et non par session : le gestionnaire rouvre la session à chaque reprise (515, 428,
+ * coupure réseau), et un renvoi demandé juste après doit retrouver les envois d'avant (relecture du 2026-10-22).
+ */
+export function memoiresDesComptes(): (compteId: string) => MemoireDesEnvois {
+  const memoires = new Map<string, MemoireDesEnvois>();
+  return (compteId) => {
+    let m = memoires.get(compteId);
+    if (!m) {
+      m = memoireDesEnvois();
+      memoires.set(compteId, m);
+    }
+    return m;
+  };
+}
+
+/** Les options du socket d'une session, avec `getMessage` sur la mémoire des envois de son compte. */
 export function optionsDuSocket(memoire: Pick<MemoireDesEnvois, 'retrouver'>) {
   return { ...OPTIONS_SOCKET, getMessage: async (cle: { id?: string | null }) => memoire.retrouver(cle.id) };
 }
@@ -185,11 +201,12 @@ export function envoyeur(
 }
 
 /** Ouvre la session d'un compte sur son état enregistré (un compte neuf reçoit un QR code par `rappels.qr`). */
-export async function ouvrirSession(compte: { id: string }, auth: { pool: Pool; cle: Buffer }, rappels: RappelsSession): Promise<Session> {
+export async function ouvrirSession(
+  compte: { id: string }, auth: { pool: Pool; cle: Buffer }, rappels: RappelsSession, envois: MemoireDesEnvois,
+): Promise<Session> {
   const { state, saveCreds } = await etatAuthPostgres(auth.pool, compte.id, auth.cle);
   const correspondances = correspondancesPostgres(auth.pool, compte.id, auth.cle);
   const { version } = await fetchLatestBaileysVersion();
-  const envois = memoireDesEnvois();
   const sock: WASocket = makeWASocket({ version, auth: state, logger: journalBaileys(compte.id), ...optionsDuSocket(envois) });
 
   sock.ev.on('creds.update', async () => {

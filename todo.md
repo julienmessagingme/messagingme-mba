@@ -8,6 +8,26 @@ Aujourd'hui `budgetMicroEur` ne se règle que par la route de la console (`src/a
 micro-euros), et aucun écran ni outil ne l'expose. Ses deux voisins, `maxTours` (8 par défaut) et `maxAppelsOutils`
 (12), coupent toujours une conversation longue par « Plafond atteint » : à reposer avec Julien dans le même outil.
 
+## 🟡 Filière application : les jaunes de la relecture des correctifs de l'essai (2026-10-22)
+
+- **Un parcours gelé avale le message** (`src/worker.ts`, `avanceDesParcours`, et `fil.ts`) : après une réponse tapée
+  sur le téléphone, le fil passe à l'équipe sans clore le parcours du répondeur, resté en attente sur le bloc agent. Si
+  l'équipe classe la conversation « Traité » et que le contact réécrit, l'avance (gelée, `mayAct` faux) rend quand même
+  `true` : la remise est sautée et la demande de réouverture (`CAUSE_REOUVERTURE`) ne s'ouvre pas. Identique sur la
+  réception de Meta, plus fréquent ici où répondre du téléphone est le geste courant. Que `advance` rende `false` quand
+  elle est gelée, ou ouvrir la demande dans cette branche.
+- **Un espace sur les deux filières confond les canaux** : un espace qui relie l'API de Meta après l'application garde
+  sa session de l'application, qui verse toujours dans `application-entrant` ; l'avance y ferait progresser des
+  parcours de l'époque Meta, dont les blocs partent par Meta. Ignorer `application-entrant` quand `filiereDe` rend `api`,
+  ou fermer la session quand l'API est reliée.
+- **Un espace dont le numéro de Meta est délié puis passé à l'application** : `getTenantPhoneNumberId` ne filtre pas
+  `delie_le`, donc `numeroBloqueDeLEspace` peut rendre `true` et l'agent se taire (remise et tour). `numeroBloque` doit
+  rendre `false` quand la filière est `application`.
+- **Le service ne déchiffre plus les messages du téléphone du compte** sur newCompany depuis 16 h 50 UTC le 2026-10-22
+  (« Bad MAC », « No matching sessions », environ 11 par minute, `fromMe` depuis l'identifiant masqué du compte) : la
+  prise de main depuis ce téléphone n'arriverait pas en base. À mesurer après le déploiement des correctifs, puis
+  relier par un nouveau QR code si cela persiste, et chercher la cause (adressage par identifiant masqué de Baileys 6.7).
+
 ## 🟡 Les jaunes de la relecture des recharges de 5 et 10 € (2026-10-22)
 
 - **Une métadonnée d'offre inconnue répond 200 en silence** (`src/http/credit-stripe.ts`) : après un retour arrière d'image

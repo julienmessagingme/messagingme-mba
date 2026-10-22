@@ -80,7 +80,8 @@ export interface DepsEntrantApplication {
 }
 
 /**
- * Un message reçu : enregistré par l'ingestion commune, puis remis (l'agent IA répond si personne ne suit). Un message
+ * Un message reçu : enregistré par l'ingestion commune, donné au parcours qui l'attend (l'agent IA en pleine
+ * conversation), sinon remis (l'agent IA répond si personne ne suit). Un message
  * tapé sur le téléphone du compte : une réponse humaine, qui prend le fil, et l'agent se retire selon les réglages de
  * retour. Un message déjà enregistré (Baileys le redonne, ou le job est rejoué) ne refait rien : l'enregistrement est
  * la dernière étape qui puisse lever, la remise ne l'est jamais.

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { WAMessage } from '@whiskeysockets/baileys';
-import { OPTIONS_SOCKET, completerNumero, envoyeur, memoireDesEnvois, optionsDuSocket, versMessageApplication, type MessageApplication } from '../src/application/transport/session';
+import { OPTIONS_SOCKET, completerNumero, envoyeur, memoireDesEnvois, memoiresDesComptes, optionsDuSocket, versMessageApplication, type MessageApplication } from '../src/application/transport/session';
 import { lireJobEntrant, traiterEntrantApplication, versInboundMessage, type DepsEntrantApplication } from '../src/application/entrant';
 import type { JobEntrant } from '../src/application/sessions';
 import type { InboundMessage } from '../src/webhooks/inbound';
@@ -55,6 +55,15 @@ describe('les messages envoyés, gardés pour un renvoi', () => {
     expect(await options.getMessage({ id: '3EB0A' })).toEqual({ conversation: 'Bonjour' });
     expect(await options.getMessage({ id: 'INCONNU' })).toBeUndefined();
     expect(await options.getMessage({})).toBeUndefined();
+  });
+
+  it('🔴 la mémoire est celle du COMPTE : une session rouverte après une coupure retrouve les envois d’avant', () => {
+    // Le gestionnaire rouvre la session à chaque reprise (515, 428, coupure réseau), plusieurs fois par jour : une
+    // mémoire par session aurait été vide pour un renvoi demandé juste après (relecture du 2026-10-22).
+    const de = memoiresDesComptes();
+    de('compte-a').retenir('3EB0C', { conversation: 'Avant la coupure' });
+    expect(de('compte-a').retrouver('3EB0C')).toEqual({ conversation: 'Avant la coupure' });
+    expect(de('compte-b').retrouver('3EB0C')).toBeUndefined();
   });
 
   it('au-delà de la borne, le plus ancien sort', () => {

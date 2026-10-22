@@ -81,7 +81,8 @@ export async function processWorkflowAdvance(entrants: readonly EntrantRattache[
       // Best-effort, et à la fin : un journal d'échec qui ferait échouer le traitement qu'il observe serait
       // une très mauvaise idée.
       if (deps.journaliserEchec) {
-        // Le canal est connu ici : ce chemin est le webhook Meta, donc WhatsApp. Repli si l'erreur n'a pas porté le sien.
+        // Le canal est connu ici : la réception de Meta et celle de la filière application, donc WhatsApp. Repli si
+        // l'erreur n'a pas porté le sien.
         const contexte = { canal: 'whatsapp', ...contexteDeLAvance(err) };
         await deps.journaliserEchec({ tenantId, waId: m.waId, messageId: m.messageId, erreur, ...contexte }).catch((e: unknown) => {
           // eslint-disable-next-line no-console

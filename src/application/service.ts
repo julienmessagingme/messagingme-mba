@@ -9,7 +9,7 @@ import { enregistrerRoutesApplication } from './routes-internes';
 import { creerGestionnaireSessions } from './sessions';
 import { cleDepuisHex } from './transport/chiffrement';
 import { effacerEtatAuth } from './transport/etat-auth';
-import { ouvrirSession } from './transport/session';
+import { memoiresDesComptes, ouvrirSession } from './transport/session';
 import { taireLesClesDeSignal } from './transport/journal-signal';
 import { avisDeCoupure } from './avis';
 import { PgEmailsProduitStore } from '../emails-produit/store.pg';
@@ -54,9 +54,11 @@ async function demarrer(): Promise<void> {
   });
   const prevenirParCourriel = avisDeCoupure((e) => emetteur.emettre(e));
 
+  // Les envois gardés pour un renvoi vivent avec le processus, par compte : une session rouverte les retrouve.
+  const envoisDe = memoiresDesComptes();
   const sessions = creerGestionnaireSessions({
     comptes,
-    ouvrir: (compte, rappels) => ouvrirSession(compte, { pool, cle }, rappels),
+    ouvrir: (compte, rappels) => ouvrirSession(compte, { pool, cle }, rappels, envoisDe(compte.id)),
     enfiler: (job) => queue.enqueue('application-entrant', job, { groupId: job.tenantId }),
     prevenir: async (compte, quoi) => {
       journaliser('warn', quoi === 'banni' ? 'application_numero_banni' : 'application_appareil_retire', { compte: compte.id, espace: compte.tenantId });

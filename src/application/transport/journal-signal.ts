@@ -5,7 +5,7 @@
  * quatre messages s'écrivent sans la session ; tout le reste passe intact. Appelé une fois, au démarrage du service,
  * le seul processus qui tienne des sessions.
  */
-const PORTENT_UNE_SESSION: readonly string[] = ['Closing session:', 'Opening session:', 'Removing old closed session:', 'Session already closed'];
+export const PORTENT_UNE_SESSION: readonly string[] = ['Closing session:', 'Opening session:', 'Removing old closed session:', 'Session already closed'];
 
 type Ecrire = (...a: unknown[]) => void;
 
