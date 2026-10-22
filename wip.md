@@ -105,7 +105,7 @@ Specs : [lot 6](docs/superpowers/specs/2026-10-15-cas-d-usage-design.md) (toutes
 [lot 6 bis](docs/superpowers/specs/2026-10-16-cas-d-usage-par-profil-design.md) (les profils, le registre, les dépôts),
 validées par Julien ; plan : [docs/superpowers/plans/2026-10-16-cas-d-usage-solutions-depot.md](docs/superpowers/plans/2026-10-16-cas-d-usage-solutions-depot.md)
 (livraisons 0 à E). Le menu devient
-Fonctionnalités, Solutions (trois secteurs, deux métiers, les cas), Développeurs, Tarifs ; sept pages de cas, en
+Fonctionnalités, Solutions (quatre secteurs, deux métiers, les cas), Développeurs, Tarifs ; sept pages de cas, en
 français et en anglais, avec un film par cas. Le film 1 (prise de rendez-vous) est fait. Précédé de l'audit SEO de la
 vitrine (`docs/prive/2026-10-15-audit-seo-vitrine.md`) et d'un geste de Julien : la Search Console et Bing Webmaster
 Tools. Les liens de confidentialité et de conditions du plugin 0.2.0 rendent 404 : ils prendront les adresses des pages
