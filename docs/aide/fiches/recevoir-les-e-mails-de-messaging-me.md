@@ -1,6 +1,6 @@
 ---
 source_section: Les e-mails de Messaging Me aux administrateurs
-source_empreinte: d5a782
+source_empreinte: 415dfc
 ---
 # Les e-mails que Messaging Me vous envoie
 
@@ -22,7 +22,9 @@ avant sa libération, sa libération, et la suite du numéro quand votre offre P
 **Une conversation attend votre équipe.** Quand un agent IA, l'agent de Meta ou un scénario confie à l'équipe une
 conversation dont le client vient d'écrire, vous recevez un e-mail avec le nom du contact (ou son numéro masqué), l'heure
 où la fenêtre de 24 heures se ferme, et un bouton pour ouvrir la conversation. Le texte des messages n'y figure jamais.
-Au plus dix de ces e-mails par jour et par espace : au-delà, les conversations attendent dans l'Inbox sans e-mail.
+Au plus dix de ces e-mails par jour et par espace : au-delà, les conversations attendent dans l'Inbox sans e-mail. En
+offre Free, qui n'a pas l'Inbox, l'e-mail vous propose de répondre depuis Claude ou depuis votre application, et son
+bouton mène à l'offre Pro.
 
 **Pour bien démarrer.** Un e-mail de bienvenue à la création de l'espace, puis, une fois chacune : une relance si votre numéro WhatsApp n'est pas connecté au bout de 24 heures, si personne ne répond
 automatiquement 24 heures après sa connexion (ni agent IA, ni agent de Meta, ni scénario), et si votre numéro n'a reçu

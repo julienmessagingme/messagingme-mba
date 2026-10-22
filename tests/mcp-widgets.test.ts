@@ -119,6 +119,7 @@ function monter(o: { widgets?: WidgetRow[]; liens?: string[]; scenarios?: Array<
       contactIdsForTarget: jamais('contactIdsForTarget'),
       applyEditsMany: jamais('applyEditsMany'),
       findByPhone: jamais('findByPhone'),
+      setBlocked: jamais('setBlocked'),
       analysesEtResumes: jamais('analysesEtResumes'),
     },
     listerMembres: jamais('listerMembres'),

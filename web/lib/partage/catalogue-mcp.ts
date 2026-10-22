@@ -12,6 +12,8 @@ export const CATALOGUE_MCP = {
   get_ai_stats: { scope: 'mcp:read' },
   search_contacts: { scope: 'mcp:read' },
   get_contact: { scope: 'mcp:read' },
+  /** Bloquer un contact (2026-10-22) : une décision qui coupe la relation avec un client, signée d'une personne. */
+  block_contact: { scope: 'mcp:write', exigePersonne: true },
   list_members: { scope: 'mcp:read' },
   reply_in_open_window: { scope: 'mcp:write' },
   send_message: { scope: 'mcp:write' },
@@ -70,6 +72,9 @@ export const CATALOGUE_MCP = {
    * `templates:write`.
    */
   create_template: { scope: 'mcp:write', exigePersonne: true },
+  /** Corriger et supprimer un modèle (2026-10-22), pour la même raison que la création : une personne, jamais une clé. */
+  update_template: { scope: 'mcp:write', exigePersonne: true },
+  delete_template: { scope: 'mcp:write', exigePersonne: true },
   /** Un envoi facturé à un contact exige également une personne OAuth. */
   send_template_to_contact: { scope: 'mcp:write', exigePersonne: true },
   /** Les campagnes depuis l'assistant (2026-10-20) : trouver les contacts d'une cible, une lecture. */
@@ -77,6 +82,8 @@ export const CATALOGUE_MCP = {
   tag_contacts: { scope: 'mcp:write', exigePersonne: true },
   prepare_campaign: { scope: 'mcp:write', exigePersonne: true },
   launch_campaign: { scope: 'mcp:write', exigePersonne: true },
+  /** Les freins et la reprise (2026-10-22) : la reprise passe par un code, puis par `launch_campaign`. */
+  control_campaign: { scope: 'mcp:write', exigePersonne: true },
   /** Les champs depuis l'assistant (2026-10-20). */
   list_fields: { scope: 'mcp:read' },
   create_field: { scope: 'mcp:write', exigePersonne: true },

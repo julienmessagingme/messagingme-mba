@@ -61,6 +61,8 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 | send_message | mcp:write | Envoyer dans la fenêtre de 24 h une image, un document, un lieu, des boutons, une liste ou un bouton lien, au format de Meta. |
 | list_templates | mcp:read | Les modèles WhatsApp de l’espace, avec leur langue, leur catégorie et leur statut chez Meta. |
 | create_template | mcp:write connexion OAuth requise | Créer un modèle au format de Meta et le soumettre à sa validation ; une image d’en-tête se donne par son adresse. |
+| update_template | mcp:write connexion OAuth requise | Corriger une langue d’un modèle, au format de Meta, qui repart en validation ; un en-tête média ne se corrige pas. |
+| delete_template | mcp:write connexion OAuth requise | Supprimer un modèle, toutes ses langues ; refusé tant qu’une campagne active l’utilise. |
 | send_template_to_contact | mcp:write connexion OAuth requise | Envoyer un modèle approuvé à une personne, même hors de la fenêtre de 24 h, avec les règles des envois (consentement, STOP, modèles du mois). |
 | get_template_status | mcp:read | Le statut d’un modèle chez Meta, langue par langue, avec le motif d’un refus. |
 | get_message_status | mcp:read | Le statut de livraison d’un message envoyé : envoyé, distribué, lu ou en échec, avec le motif de Meta. |
@@ -72,7 +74,8 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 | find_contacts | mcp:read | Les contacts d’une cible, comme les filtres de la liste des contacts : étiquettes, consentement et, en Entreprise, la dernière analyse. Le total, et 100 contacts au plus. |
 | tag_contacts | mcp:write connexion OAuth requise | Étiqueter les contacts d’une cible ou d’une liste de conversations : un segment est une étiquette. Par l’action en masse de la console, sans déclencher d’automation. |
 | prepare_campaign | mcp:write connexion OAuth requise | Préparer une campagne de modèle sans rien envoyer : un brouillon visible dans la console, un récapitulatif (ciblés, partants, écartés et pourquoi, cinq noms, le volume facturable) et un code de confirmation. |
-| launch_campaign | mcp:write connexion OAuth requise | Lancer, ou programmer à sa date, une campagne préparée, avec le code de son récapitulatif, une fois que la personne a dit oui ; par le même chemin que le bouton « Lancer » de la console. |
+| launch_campaign | mcp:write connexion OAuth requise | Lancer, ou programmer à sa date, une campagne préparée, avec le code de son récapitulatif, une fois que la personne a dit oui ; par le même chemin que le bouton « Lancer » de la console. Reprend aussi une campagne en pause, avec le code de control_campaign. |
+| control_campaign | mcp:write connexion OAuth requise | Mettre en pause une campagne qui envoie, déprogrammer une campagne programmée, ou préparer la reprise d’une campagne en pause (un récapitulatif et un code). |
 | list_fields | mcp:read | Les champs personnalisés des contacts : clé, libellé, type. Une variable de modèle peut en venir. |
 | create_field | mcp:write connexion OAuth requise | Créer un champ personnalisé, comme dans la console : sa clé vient du libellé. |
 | set_contact_field | mcp:write connexion OAuth requise | Remplir un champ sur les contacts d’une cible ou d’une liste de conversations, comme l’action en masse de la console, sans déclencher d’automation. |
@@ -84,6 +87,7 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 | disconnect_shopify | mcp:write connexion OAuth requise | Couper la boutique Shopify : plus aucun message ne part, les demandes RGPD de la boutique restent traitées. |
 | search_contacts | mcp:read | Chercher un contact par nom ou par numéro, avec sa dernière analyse. |
 | get_contact | mcp:read | La fiche d’un contact à partir de son numéro, avec sa dernière analyse et le résumé de celle-ci. |
+| block_contact | mcp:write connexion OAuth requise | Bloquer ou débloquer un contact : plus rien ne lui part, ses messages restent enregistrés. |
 | list_members | mcp:read | Les membres de l’espace, pour pouvoir leur confier un fil. |
 | reply_in_open_window | mcp:write | Répondre, uniquement si la fenêtre de 24 h est ouverte. |
 | tag_conversation | mcp:write | Poser des tags sur le contact d’un fil. |

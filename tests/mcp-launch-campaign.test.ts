@@ -98,6 +98,23 @@ describe('launch_campaign', () => {
     expect(trace[trace.length - 1]).toBe('rend');
   });
 
+  it('🔴 la reprise d’une campagne en pause (code de control_campaign) repart TOUT DE SUITE : sa date passée ne la fait pas refuser', async () => {
+    const enPause: EtatConfirme = { ...ETAT, status: 'paused', recipientCount: 2, prevueLe: '2020-01-01T09:00:00.000Z' };
+    const { d, trace } = deps({ etat: enPause });
+    expect(await outil.executer(d, T, { campaign_id: ID, confirmation_code: 'R4P2XQ' }, PERSONNE)).toEqual({ campaign_id: ID, status: 'sending', recipients: 2 });
+    expect(trace).toEqual(['plafond', 'reclame', 'reprend', `enfile:campaign-run:${JSON.stringify({ campaignId: ID })}`]);
+  });
+
+  it('🔴 un code de reprise refusé ne renvoie JAMAIS vers prepare_campaign, qui renverrait à tous les destinataires', async () => {
+    const enPause: EtatConfirme = { ...ETAT, status: 'paused', recipientCount: 2 };
+    for (const reclamation of ['invalide', 'expire', 'utilise', 'modifie'] as const) {
+      const { d } = deps({ etat: enPause, reclamation });
+      const refus = await outil.executer(d, T, { campaign_id: ID, confirmation_code: 'R4P2XQ' }, PERSONNE).catch((e: Error) => e.message);
+      expect(refus, reclamation).not.toMatch(/prepare_campaign/);
+      if (reclamation !== 'utilise') expect(refus, reclamation).toMatch(/prepare_resume/);
+    }
+  });
+
   it('identifiant mal formé ou sans personne : refusé avant toute lecture', async () => {
     const { d, trace } = deps();
     await expect(outil.executer(d, T, { campaign_id: 'pas-un-uuid', confirmation_code: 'K7M2QP' }, PERSONNE)).rejects.toThrow(RefusOutil);

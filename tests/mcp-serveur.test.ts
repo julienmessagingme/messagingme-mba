@@ -106,6 +106,7 @@ function app(
       contactIdsForTarget: async () => [],
       applyEditsMany: async () => { throw new Error('applyEditsMany ne devrait pas être appelée'); },
       findByPhone: async () => null,
+      setBlocked: async () => { throw new Error('setBlocked ne devrait pas être appelée'); },
       analysesEtResumes: async () => new Map(),
       ...contacts,
     },
@@ -723,7 +724,10 @@ describe('serveur MCP : cohérence du catalogue', () => {
     // glissement.
     // Exceptions décidées par Julien : LIRE les chiffres des campagnes (2026-10-13) ; PRÉPARER une campagne sans rien
     // envoyer, puis la LANCER avec le code de son récapitulatif, au nom d'une personne (2026-10-20, spec
-    // docs/superpowers/specs/2026-10-20-campagnes-depuis-claude-design.md).
+    // docs/superpowers/specs/2026-10-20-campagnes-depuis-claude-design.md) ; CORRIGER et SUPPRIMER un modèle, au nom d'une
+    // personne (grill du 2026-10-22, plan docs/superpowers/plans/2026-10-22-mcp-marche-arriere.md) : rien n'en part chez un
+    // contact ; FREINER une campagne (pause, déprogrammation) et en PRÉPARER la reprise (même grill) : `control_campaign`
+    // n'envoie rien, la reprise part par `launch_campaign`, avec un code.
     const lecture = OUTILS.find((o) => o.nom === 'get_campaign_stats')!;
     expect(lecture.annotations.readOnlyHint).toBe(true);
     expect(lecture.scope).toBe('mcp:read');
@@ -734,10 +738,13 @@ describe('serveur MCP : cohérence du catalogue', () => {
     expect(lance.exigePersonne).toBe(true);
     expect(lance.entree.required).toEqual(['campaign_id', 'confirmation_code']);
     const campagnes = OUTILS.map((o) => o.nom).filter((n) => /campaign|campagne|broadcast/i.test(n)).sort();
-    expect(campagnes).toEqual(['get_campaign_stats', 'launch_campaign', 'prepare_campaign']);
+    expect(campagnes).toEqual(['control_campaign', 'get_campaign_stats', 'launch_campaign', 'prepare_campaign']);
+    const freins = OUTILS.find((o) => o.nom === 'control_campaign')!;
+    expect(freins.exigePersonne).toBe(true);
+    expect(freins.annotations.openWorldHint).toBe(false);
     const noms = OUTILS.map((o) => o.nom);
     expect(noms.filter((n) => /template/i.test(n)).sort())
-      .toEqual(['create_template', 'get_template_status', 'list_templates', 'send_template_to_contact']);
+      .toEqual(['create_template', 'delete_template', 'get_template_status', 'list_templates', 'send_template_to_contact', 'update_template']);
     const envoi = OUTILS.find((o) => o.nom === 'send_template_to_contact')!;
     expect(envoi.exigePersonne).toBe(true);
     expect(envoi.entree.properties).not.toHaveProperty('recipients');
@@ -789,6 +796,8 @@ describe('serveur MCP : cohérence du catalogue', () => {
       // La main du fil (2026-10-22) : rejouer le même geste laisse le même détenteur, et le geste peut retirer le contact
       // de la liste de l'agent de Meta, ou l'y remettre, chez Meta.
       control_conversation: [true, true, true],
+      // Le blocage (2026-10-22) : bloquer un bloqué ne change rien ; rien ne part chez un tiers.
+      block_contact: [true, true, false],
       create_widget: [true, false, false],
       update_widget: [true, true, false],
       // L'agent IA et le crédit : la table de la spec du lot 8a (2026-10-03-mcp-agent-ia-design.md, section 1).
@@ -832,6 +841,10 @@ describe('serveur MCP : cohérence du catalogue', () => {
       delete_webhook_endpoint: [true, true, false],
       // Lot 13, domaine 3 : un modèle de plus chez Meta à chaque appel, qui y reste.
       create_template: [true, false, true],
+      // La marche arrière (2026-10-22) : chaque correction use une des éditions que Meta compte ; supprimer deux fois ne
+      // supprime rien de plus ; les deux se font chez Meta.
+      update_template: [true, false, true],
+      delete_template: [true, true, true],
       // Livraison B : un message part chez une personne ; la même clé d'idempotence ne renvoie rien ; le fil n'est pas pris.
       send_template_to_contact: [true, true, true],
       // Les campagnes depuis l'assistant (2026-10-20) : reposer les mêmes étiquettes ne change rien.
@@ -840,6 +853,8 @@ describe('serveur MCP : cohérence du catalogue', () => {
       prepare_campaign: [true, false, false],
       // Les messages partent (ou partiront à la date) chez des personnes ; un second appel avec le même code est refusé.
       launch_campaign: [true, false, true],
+      // Les freins et la reprise (2026-10-22) : rien ne part chez un tiers ; chaque reprise préparée tire un nouveau code.
+      control_campaign: [true, false, false],
       // Les champs (2026-10-20) : un champ de plus à chaque appel ; poser la même valeur ne change rien.
       create_field: [true, false, false],
       set_contact_field: [true, true, false],
@@ -1021,6 +1036,8 @@ const FONCTION_DES_OUTILS: Readonly<Record<string, string>> = {
   get_campaign_stats: 'statistiques', get_conversation_insights: 'analyse', get_ai_stats: 'statistiques',
   // Les campagnes depuis l'assistant (2026-10-20) : la fonction qui garde les campagnes de la console.
   find_contacts: 'console', tag_contacts: 'console', prepare_campaign: 'console', launch_campaign: 'console',
+  // Les freins et la reprise (2026-10-22) : la même offre que le lancement, comme dans la console.
+  control_campaign: 'console',
   // Les champs (2026-10-20) : remplir un champ en masse est une action de la console ; lister et créer suivent l'API.
   set_contact_field: 'console',
 };

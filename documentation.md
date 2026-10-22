@@ -2493,7 +2493,10 @@ modifiés dans `/ops` (rétablir supprime la ligne), `emails_produit_interrupteu
     dernier message du contact, donc deux passages pour le même message n'envoient qu'un e-mail. Au-delà de
     `PLAFOND_TRANSFERTS_JOUR` passages dans le jour de Paris pour l'espace (`transfertsDuJour` compte les OCCASIONS
     réservées, pas les destinataires), plus rien ce jour-là. ⚠️ Le compte précède la réservation sans verrou : deux
-    passages simultanés au bord du plafond peuvent le dépasser de peu, ce qui est accepté.
+    passages simultanés au bord du plafond peuvent le dépasser de peu, ce qui est accepté. Un espace dont l'offre
+    n'ouvre pas l'Inbox (`inboxOuverte`, la Free) reçoit `transfert_equipe_free` : répondre depuis Claude ou
+    l'application, le bouton vers l'offre ; une offre illisible garde l'e-mail ordinaire. 🔴 Le plafond compte les DEUX
+    clés (`CLES_TRANSFERT`), sinon la version Free y échapperait.
 - **L'accompagnement** (`src/emails-produit/accompagnement.ts`, balayage `emails-produit-accompagnement`, trente
   minutes, des modèles `commercial`) : la bienvenue (moins de 48 h après la création), puis trois relances à occasion
   fixe, donc une fois chacune : le numéro absent après 24 h, le répondeur effectif `equipe` (`modeEffectif` sous
@@ -3167,10 +3170,12 @@ l'activer, et d'ouvrir une recharge du crédit.
   consomment avant leur fonction, en plus de l'unité de débit de l'appel MCP. Leur liste est tenue par
   `tests/mcp-agent.test.ts`.
 - **`update_agent` filtre ses arguments** : objectif, ton, personnalité, règles de transfert, règles d'arrêt, modèle
-  (liste fermée) et `fiche_version`. Toute autre clé est REFUSÉE, pas ignorée : `modifierAgent` est la porte de
-  l'administrateur et accepte aussi les plafonds de coût, la mention d'IA, le libellé et le statut. Claude ne lit ni
-  les plafonds ni la mention d'IA (`get_agent` ne les rend pas), même si `test_agent` rend la phrase en tête de la
-  réponse, comme le contact la lira.
+  (liste fermée), `fiche_version` et `mention_ia_langue`, une des phrases relues de `MENTIONS_IA` (`src/agent/gestion.ts`,
+  français et anglais), que `create_agent` accepte aussi. Toute autre clé est REFUSÉE, pas ignorée : `modifierAgent` est
+  la porte de l'administrateur et accepte aussi les plafonds de coût, une mention d'IA en texte libre, le libellé et le
+  statut. Claude ne lit ni les plafonds ni le texte de la mention : `get_agent` rend seulement sa langue
+  (`personnalisee` pour un texte écrit dans la console), même si `test_agent` rend la phrase en tête de la réponse,
+  comme le contact la lira.
 - **La personne signe** : la ligne `fiche_agent` de l'historique (origine `mcp`), l'activation des outils sûrs
   (`active_par`), la suppression d'une fiche de connaissance (origine `mcp`, par `journaliserSuppressionDe`), et le
   payeur d'une recharge. L'historique de la console l'affiche « par Claude ».
@@ -3181,6 +3186,19 @@ l'activer, et d'ouvrir une recharge du crédit.
   `webhooks:write`, ni `contacts:admin`, pour qu'une consigne glissée dans un message lu par Claude ne fabrique pas une clé
   qui exfiltre ou efface et survit à la révocation de Claude. Le portail d'un espace déjà Pro est rendu sans montant. Ouverts à toutes les offres (`fonction: null`) : c'est la Free qui
   en a besoin.
+- 🔴 **La marche arrière : ce qu'une offre permet de commencer, elle permet de le finir** (plan
+  `docs/superpowers/plans/2026-10-22-mcp-marche-arriere.md`). La Free n'a plus de console : chaque geste qu'un outil
+  laissait « à la console » y devient un outil, sur la fonction du bouton : `control_conversation` (`reprendreLaMain`,
+  `rendreLaMain`, sans personne exigée, comme `reply_in_open_window` qui prend déjà le fil), `update_webhook_endpoint`
+  et `delete_webhook_endpoint` (`modifierAdresse`, `tournerSecret`, `supprimerAdresse`, la modification AVANT la rotation
+  pour qu'un refus ne laisse pas un secret neuf que personne n'a vu), `update_template` et `delete_template`
+  (`modifierUnModele`, `supprimerUnModele`, comptés dans les opérations coûteuses, une erreur de Meta rendue lisible par
+  `refusDeMeta`), `block_contact` (`setBlocked`) et, au Pro, `control_campaign` (`pauseCampaign`, `cancelSchedule`).
+  🔴 **La reprise d'une campagne en pause** pose un code sur l'état en pause (`campagne_confirmations`, le même upsert que
+  `prepare_campaign`), et c'est `launch_campaign` qui la lance : tout de suite, sa date prévue passée étant ignorée, et
+  avec des refus qui ne renvoient JAMAIS vers `prepare_campaign`, qui créerait une campagne neuve vers tous les
+  destinataires. `get_messages` rend l'identifiant public de chaque message (`idPublic` : la requête des messages de
+  l'Inbox lit `meta_message_id`), celui que lit `get_message_status`.
 - **`buy_credit` annonce le montant HORS TAXE** de l'offre : la taxe est calculée par Stripe Tax sur la page de
   paiement, selon le pays et le numéro de TVA saisis, donc aucun TTC n'est connu avant le paiement. Seul le webhook
   signé crédite.

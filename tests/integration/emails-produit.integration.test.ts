@@ -303,7 +303,9 @@ describe.skipIf(!url)('le journal des e-mails du produit (Postgres réel)', () =
     await pool.query(`update emails_produit_envois set cree_le = now() - interval '2 days' where id = $1`, [hier]);
     await store.reserver({ tenantId: t, cle: 'credit_epuise', occasion: 'jour:x', identites: deux, valeurs: {} });
     await store.reserver({ tenantId: autreTenantId, cle: 'transfert_equipe', occasion: 'attente:c9:1', identites: [identites.autre!], valeurs: {} });
-    expect(await store.transfertsDuJour(t)).toBe(2);
+    // 🔴 La version Free (2026-10-22) compte dans le même plafond : sinon la Free y échapperait.
+    await store.reserver({ tenantId: t, cle: 'transfert_equipe_free', occasion: 'attente:c4:1', identites: [identites.admin!], valeurs: {} });
+    expect(await store.transfertsDuJour(t)).toBe(3);
     // L'occasion réservée se lit dans son espace, pour son modèle.
     expect(await store.occasionReservee(t, 'transfert_equipe', 'attente:c1:1')).toBe(true);
     expect(await store.occasionReservee(t, 'credit_epuise', 'attente:c1:1')).toBe(false);

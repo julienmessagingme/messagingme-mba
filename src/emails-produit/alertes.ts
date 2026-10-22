@@ -252,6 +252,14 @@ export function creerPrevenirEquipe(d: {
   emettre: Emettre;
   /** L'adresse de la conversation dans l'Inbox de la console. */
   lienConversation(conversationId: string): string;
+  /**
+   * L'offre de l'espace ouvre-t-elle l'Inbox (la fonction `inbox`) ? Sinon (la Free), l'e-mail dit de répondre depuis
+   * Claude ou l'application, et son bouton mène à l'offre (`transfert_equipe_free`) : celui de l'Inbox mènerait à une
+   * page fermée.
+   */
+  inboxOuverte(tenantId: string): Promise<boolean>;
+  /** La page de l'offre, le bouton de la version sans Inbox. */
+  lienOffre: string;
   now?: () => Date;
 }): (tenantId: string, waId: string) => Promise<void> {
   return async (tenantId, waId) => {
@@ -265,15 +273,17 @@ export function creerPrevenirEquipe(d: {
         journaliser('info', 'passage_equipe_plafond_atteint', { tenantId });
         return;
       }
+      // Une offre illisible garde l'e-mail d'aujourd'hui, comme le cache des offres se replie sur l'Entreprise.
+      const avecInbox = await d.inboxOuverte(tenantId).catch(() => true);
+      const contact = c.nom?.trim() || numeroMasque(c.waId);
+      const finFenetre = new Date(c.dernierEntrantLe.getTime() + FENETRE_MS).toISOString();
       await d.emettre({
-        cle: 'transfert_equipe', tenantId, a: 'admins',
+        tenantId, a: 'admins',
         // Le message qui attend : deux passages pour le même message n'envoient qu'un e-mail.
         occasion: `attente:${c.conversationId}:${c.dernierEntrantLe.toISOString()}`,
-        valeurs: {
-          contact: c.nom?.trim() || numeroMasque(c.waId),
-          fin_fenetre: new Date(c.dernierEntrantLe.getTime() + FENETRE_MS).toISOString(),
-          lien_conversation: d.lienConversation(c.conversationId),
-        },
+        ...(avecInbox
+          ? { cle: 'transfert_equipe', valeurs: { contact, fin_fenetre: finFenetre, lien_conversation: d.lienConversation(c.conversationId) } }
+          : { cle: 'transfert_equipe_free', valeurs: { contact, fin_fenetre: finFenetre, lien_offre: d.lienOffre } }),
       });
     } catch (err) {
       journaliser('error', 'alerte_passage_equipe_impossible', { err, tenantId });

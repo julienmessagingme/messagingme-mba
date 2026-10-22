@@ -5,7 +5,7 @@ import {
 } from '../src/emails-produit/alertes';
 import type { Emission } from '../src/emails-produit/emission';
 import { PgCreditStore } from '../src/agent/credits.pg';
-import { modeleDe } from '../src/emails-produit/catalogue';
+import { CLES_TRANSFERT, modeleDe } from '../src/emails-produit/catalogue';
 import { rendre } from '../src/emails-produit/rendu';
 import { DROITS } from '../src/offres/offres';
 
@@ -246,11 +246,13 @@ describe('les limites de la Free et du Pro', () => {
 
 describe('la conversation passée à l’équipe', () => {
   const MAINTENANT = new Date('2026-10-14T10:00:00Z');
-  function prevenir(c: ContextePassage | null, dejaCeJour = 0) {
+  function prevenir(c: ContextePassage | null, dejaCeJour = 0, inbox: boolean | 'panne' = true) {
     const e = emetteur();
     const p = creerPrevenirEquipe({
       contexte: async () => c, transfertsDuJour: async () => dejaCeJour, emettre: e.emettre,
       lienConversation: (id) => `https://c/inbox?c=${id}`, now: () => MAINTENANT,
+      inboxOuverte: async () => { if (inbox === 'panne') throw new Error('offre illisible'); return inbox; },
+      lienOffre: 'https://c/offre',
     });
     return { p, e };
   }
@@ -285,8 +287,38 @@ describe('la conversation passée à l’équipe', () => {
     await p('t1', '33612345678');
     expect(e.emissions[0]!.valeurs.contact).toBe('+33 •• •• •• 78');
     expect(numeroMasque('12')).toBe('••••');
-    const enPanne = creerPrevenirEquipe({ contexte: async () => { throw new Error('base'); }, transfertsDuJour: async () => 0, emettre: async () => ({ destinataires: 0, reserves: 0 }), lienConversation: () => '' });
+    const enPanne = creerPrevenirEquipe({
+      contexte: async () => { throw new Error('base'); }, transfertsDuJour: async () => 0, emettre: async () => ({ destinataires: 0, reserves: 0 }),
+      lienConversation: () => '', inboxOuverte: async () => true, lienOffre: '',
+    });
     await expect(enPanne('t1', 'w')).resolves.toBeUndefined();
+  });
+
+  it('🔴 un espace dont l’offre n’ouvre pas l’Inbox (la Free) reçoit sa version : répondre depuis Claude, et le lien de l’offre', async () => {
+    const { p, e } = prevenir(contexte(), 0, false);
+    await p('t1', '33612345678');
+    expect(e.emissions).toEqual([{
+      cle: 'transfert_equipe_free', tenantId: 't1', a: 'admins', occasion: 'attente:conv-1:2026-10-14T09:58:00.000Z',
+      valeurs: { contact: 'Camille', fin_fenetre: '2026-10-15T09:58:00.000Z', lien_offre: 'https://c/offre' },
+    }]);
+    const m = modeleDe('transfert_equipe_free')!;
+    expect(m.categorie).toBe(modeleDe('transfert_equipe')!.categorie);
+    expect(m.textes.fr.corps).toMatch(/Claude/);
+    expect(m.textes.en.corps).toMatch(/Claude/);
+    expect(m.textes.fr.bouton?.lien).toBe('{{lien_offre}}');
+  });
+
+  it('une offre illisible garde l’e-mail d’aujourd’hui, avec le lien vers l’Inbox', async () => {
+    const { p, e } = prevenir(contexte(), 0, 'panne');
+    await p('t1', '33612345678');
+    expect(e.emissions.map((x) => x.cle)).toEqual(['transfert_equipe']);
+  });
+
+  it('🔴 le plafond du jour vaut pour les deux versions : la Free n’y échappe pas', async () => {
+    expect(CLES_TRANSFERT).toEqual(['transfert_equipe', 'transfert_equipe_free']);
+    const au = prevenir(contexte(), PLAFOND_TRANSFERTS_JOUR, false);
+    await au.p('t1', '33612345678');
+    expect(au.e.emissions).toHaveLength(0);
   });
 
   it('🔴 au-delà de dix passages dans la journée, plus aucun e-mail (décision du 2026-10-14)', async () => {

@@ -61,6 +61,8 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 | send_message | mcp:write | Send within the 24-hour window an image, a document, a location, buttons, a list or a link button, in Meta’s format. |
 | list_templates | mcp:read | The workspace’s WhatsApp templates, with their language, category and status at Meta. |
 | create_template | mcp:write OAuth connection required | Create a template in Meta’s format and submit it for review; a header image is given by its address. |
+| update_template | mcp:write OAuth connection required | Edit one language of a template, in Meta’s format, which goes back to review; a media header cannot be edited. |
+| delete_template | mcp:write OAuth connection required | Delete a template, all its languages; refused while an active campaign uses it. |
 | send_template_to_contact | mcp:write OAuth connection required | Send an approved template to one person, even outside the 24-hour window, with the sends rules (consent, STOP, monthly templates). |
 | get_template_status | mcp:read | A template’s status at Meta, language by language, with the reason for a rejection. |
 | get_message_status | mcp:read | The delivery status of a sent message: sent, delivered, read or failed, with Meta’s reason. |
@@ -72,7 +74,8 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 | find_contacts | mcp:read | The contacts of a target, like the contact list filters: tags, consent and, on the Enterprise plan, the latest analysis. The total, and up to 100 contacts. |
 | tag_contacts | mcp:write OAuth connection required | Tag the contacts of a target or of a list of conversations: a segment is a tag. Through the console’s bulk action, without starting any automation. |
 | prepare_campaign | mcp:write OAuth connection required | Prepare a template campaign without sending anything: a draft visible in the console, a summary (targeted, sent, left out and why, five names, the billable volume) and a confirmation code. |
-| launch_campaign | mcp:write OAuth connection required | Launch, or schedule for its date, a prepared campaign, with the code of its summary, once the person said yes; through the same path as the console’s Launch button. |
+| launch_campaign | mcp:write OAuth connection required | Launch, or schedule for its date, a prepared campaign, with the code of its summary, once the person said yes; through the same path as the console’s Launch button. Also resumes a paused campaign, with the code of control_campaign. |
+| control_campaign | mcp:write OAuth connection required | Pause a sending campaign, unschedule a scheduled one, or prepare to resume a paused one (a summary and a code). |
 | list_fields | mcp:read | The custom contact fields: key, label, type. A template variable can come from one of them. |
 | create_field | mcp:write OAuth connection required | Create a custom field, as in the console: its key comes from the label. |
 | set_contact_field | mcp:write OAuth connection required | Set a field on the contacts of a target or of a list of conversations, like the console’s bulk action, without starting any automation. |
@@ -84,6 +87,7 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 | disconnect_shopify | mcp:write OAuth connection required | Cut the Shopify store: no message leaves anymore, the store’s privacy requests are still honored. |
 | search_contacts | mcp:read | Find a contact by name or number, with their latest analysis. |
 | get_contact | mcp:read | A contact record from its number, with their latest analysis and its summary. |
+| block_contact | mcp:write OAuth connection required | Block or unblock a contact: nothing is sent to them anymore, their messages are still recorded. |
 | list_members | mcp:read | Workspace members, to assign threads to them. |
 | reply_in_open_window | mcp:write | Reply, only while the 24 h window is open. |
 | tag_conversation | mcp:write | Add tags to a thread’s contact. |

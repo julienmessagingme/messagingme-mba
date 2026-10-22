@@ -84,6 +84,7 @@ import { creerAlerteCreditBas, creerPaiementRefuse, creerPrevenirEquipe } from '
 import { PgOffresStore } from './offres/offre.pg';
 import { OffresEnCache } from './offres/cache';
 import { QuotaModeles } from './offres/compteurs';
+import { adresseOffre } from './offres/refus';
 import { PgComptesApplication } from './application/comptes.pg';
 import { creerClientApplication } from './application/client';
 import { creerEnvoiApplication } from './application/envoi';
@@ -305,6 +306,9 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     transfertsDuJour: (t) => emailsProduit.transfertsDuJour(t),
     emettre: (e) => emetteurEmails.emettre(e),
     lienConversation: (id) => `${console_}/inbox?c=${encodeURIComponent(id)}`,
+    // Un espace dont l'offre n'ouvre pas l'Inbox (la Free) reçoit la version qui dit de répondre depuis Claude (2026-10-22).
+    inboxOuverte: async (t) => (await offres.offreDe(t)).droits.fonctions.has('inbox'),
+    lienOffre: adresseOffre(),
   });
   const agentSources = new PgSourceStore(pool);
   // Les requêtes de connecteur : un appel mis au point une fois dans la bibliothèque de l'espace, que l'outil d'un

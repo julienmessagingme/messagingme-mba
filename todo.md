@@ -280,8 +280,6 @@ Plans `docs/superpowers/plans/2026-10-14-mm-api-envoi.md` et `2026-10-14-duree-v
   requête.
 - **Essai 99 : `import_site` échoue sur la page d'accueil d'un site** (`https://www.verifiermondevis.fr/`, avec ou sans
   barre finale, seule ou dans une liste) en « échec interne de l'outil », alors que les autres pages passent.
-- **Aucun outil MCP ne rend la main à l'agent IA** une fois qu'un humain a répondu : `reply_in_open_window` prend le fil,
-  `assign_conversation` ne touche que le membre.
 - **La limite d'un corps de template MARKETING chez Meta** (550 caractères, affirmée par un tiers, non confirmée par la
   doc de Meta) : le compteur reste à 1 024 ; un essai de soumission ne se fait qu'avec l'accord de Julien.
 

@@ -6,9 +6,11 @@ import { compteurEnvoiRefuse, type RapportEnvoi, type ReponseEnvoi } from '../ap
 import { CLE_IDEMPOTENCE_MAX } from '../api/idempotence';
 import { journaliser } from '../lib/journal';
 import { messageDeForme } from '../api/forme';
-import { BORNES_MODELE, schemaModeleMeta } from '../api/modele-meta';
-import { creerModeleDepuisMeta, statutsDuModele, type DepsCreationModele } from '../api/creer-modele';
+import { BORNES_MODELE, schemaModeleMeta, versModeleConsole } from '../api/modele-meta';
+import { creerModeleDepuisMeta, estNomDeModele, refusDeMeta, statutsDuModele, type DepsCreationModele } from '../api/creer-modele';
+import { modifierUnModele, supprimerUnModele, type RefusGestionModele } from '../templates/gestion';
 import type { TemplateSummary } from '../meta/templates';
+import { LOURDE, plafondCouteux } from './outils-agent';
 
 /**
  * LES MODÈLES DEPUIS CLAUDE (lot 13, domaine 3, spec § 5) : créer un modèle au format de Meta, suivre sa validation,
@@ -36,6 +38,26 @@ const VALEUR_ACCEPTEE = /^(?!.*[\n\t])(?!.* {5,}).*$/s;
 
 const NOM = { type: 'string' as const, minLength: 1, maxLength: BORNES_MODELE.nom, pattern: '^[a-z0-9_]+$', description: 'The template name (lowercase letters, digits and _).' };
 const lecture = (title: string): AnnotationsMcp => ({ title, readOnlyHint: true, openWorldHint: false });
+
+/** Un refus de l'écran Modèles, avec les campagnes actives nommées : la personne sait quoi arrêter d'abord. */
+function phraseDuRefus(r: RefusGestionModele): string {
+  const campagnes = r.campaigns?.map((c) => `« ${c.name} »`).join(', ');
+  return campagnes ? `${r.error} : ${campagnes}` : r.error;
+}
+
+/**
+ * Une erreur de Meta connue devient un refus lisible (`refusDeMeta`, le classement de l'API), une panne remonte. La route
+ * de la console laisse ces erreurs en 500 ; un modèle ne doit pas faire croire à une panne là où Meta a dit pourquoi.
+ */
+async function ouRefusDeMeta<T>(appel: () => Promise<T>): Promise<T> {
+  try {
+    return await appel();
+  } catch (err) {
+    const r = refusDeMeta(err);
+    if (r === null) throw err;
+    throw new RefusOutil(r.message);
+  }
+}
 
 export const OUTILS_MODELES: OutilMcp[] = [
   {
@@ -197,6 +219,85 @@ export const OUTILS_MODELES: OutilMcp[] = [
       // La trace de la personne qui a envoyé : la campagne, elle, porte le préfixe des envois de l'API.
       journaliser('info', 'mcp_modele_envoye', { tenantId, userId: personne?.userId ?? null, sendId: rapport.sendId });
       return { send_id: rapport.sendId, contact_created: rapport.created > 0 };
+    },
+  },
+  /*
+   * La marche arrière (plan du 2026-10-22, tâche 3) : corriger un modèle refusé sous le même nom, et supprimer un modèle,
+   * par l'édition et la suppression de l'écran Modèles (`modifierUnModele`, `supprimerUnModele`), sans garde de plus. La
+   * Free n'a plus cet écran. Les règles de Meta citées sont celles de sa page « Template management » (lue le 2026-10-22).
+   */
+  {
+    ...ficheOutilMcp('update_template'),
+    fonction: null,
+    description:
+      'Edits ONE language of a template already submitted, in META\'S FORMAT, the same as create_template: name and '
+      + 'language designate it, and the components REPLACE the current ones (send them all). Only a template made of a '
+      + 'BODY, with BUTTONS, a FOOTER or a TEXT HEADER, can be edited; an image, video or document header can be neither '
+      + 'added nor kept: create a new template instead. Meta\'s rules: an APPROVED template can be edited once in 24 '
+      + 'hours and 10 times in 30 days, and its category cannot change; a REJECTED or PAUSED one without limit. The '
+      + 'template goes back to review (pending), which get_template_status follows. Refused while an active campaign uses '
+      + 'it. ' + LOURDE,
+    // Monde ouvert : le modèle repart chez Meta. Pas idempotente : chaque édition d'un modèle approuvé use une des dix du
+    // mois. Destructrice pour la règle du répertoire de Claude (voir `AnnotationsMcp`).
+    annotations: { title: 'Edit a template', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    entree: {
+      type: 'object',
+      properties: {
+        template: {
+          type: 'object',
+          description: 'Meta\'s body, as for create_template, for example { "name": "order_ready", "language": "en", '
+            + '"category": "UTILITY", "components": [{ "type": "BODY", "text": "Hello {{1}}, your order is ready.", '
+            + '"example": { "body_text": [["Marie"]] } }] }. An unknown field is refused.',
+        },
+      },
+      required: ['template'],
+      additionalProperties: false,
+    },
+    async executer(deps: DepsMcp, tenantId, args, personne) {
+      const lu = schemaModeleMeta.safeParse(args.template);
+      if (!lu.success) throw new RefusOutil(`modèle invalide : ${messageDeForme(lu.error)}`);
+      const { input, enteteMedia } = versModeleConsole(lu.data);
+      // L'écran ne refait pas un en-tête média (il faudrait le redéposer) : le garder ou l'ajouter le perdrait en silence.
+      if (enteteMedia) {
+        throw new RefusOutil('un en-tête image, vidéo ou document ne se met pas par une correction : créez un nouveau modèle (create_template)');
+      }
+      await plafondCouteux(deps, tenantId);
+      const { name, language, ...champs } = input;
+      await ouRefusDeMeta(async () => {
+        const issue = await modifierUnModele(deps.modeles.modeles, tenantId, name, language, champs);
+        if ('refus' in issue) throw new RefusOutil(phraseDuRefus(issue.refus));
+      });
+      journaliser('info', 'mcp_modele_modifie', { tenantId, userId: personne?.userId ?? null, nom: name, langue: language });
+      return { name, language, status: 'pending' };
+    },
+  },
+  {
+    ...ficheOutilMcp('delete_template'),
+    fonction: null,
+    description:
+      'Deletes a template, ALL its languages, at Meta and in the workspace. Refused while an active campaign uses it. '
+      + 'Before deleting, check that nothing else sends it: a Shopify message (get_shopify_state) or a published scenario '
+      + 'that uses it would then fail without warning. If the template was APPROVED, Meta forbids creating a new one '
+      + 'with the same name for 30 days. ' + LOURDE,
+    // Monde ouvert : la suppression se fait chez Meta. Supprimer deux fois ne supprime rien de plus.
+    annotations: { title: 'Delete a template', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    entree: {
+      type: 'object',
+      properties: { name: NOM },
+      required: ['name'],
+      additionalProperties: false,
+    },
+    async executer(deps: DepsMcp, tenantId, args, personne) {
+      const name = typeof args.name === 'string' ? args.name : '';
+      if (!estNomDeModele(name)) throw new RefusOutil('name : un nom de modèle, en lettres minuscules, chiffres et _');
+      await plafondCouteux(deps, tenantId);
+      await ouRefusDeMeta(async () => {
+        const issue = await supprimerUnModele(deps.modeles.modeles, tenantId, name);
+        if ('refus' in issue) throw new RefusOutil(phraseDuRefus(issue.refus));
+        if (!issue.res.success) throw new RefusOutil('Meta n’a pas confirmé la suppression : vérifiez avec list_templates avant de réessayer');
+      });
+      journaliser('info', 'mcp_modele_supprime', { tenantId, userId: personne?.userId ?? null, nom: name });
+      return { supprime: true, name };
     },
   },
 ];

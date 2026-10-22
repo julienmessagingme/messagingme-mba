@@ -418,6 +418,7 @@ function monter(o: Options & { envoyerModele?: DepsMcp['envoyerModele']; usage?:
       contactIdsForTarget: async () => [],
       applyEditsMany: async () => { throw new Error('applyEditsMany ne devrait pas être appelée'); },
       findByPhone: async () => null,
+      setBlocked: async () => { throw new Error('setBlocked ne devrait pas être appelée'); },
       analysesEtResumes: async () => new Map(),
     },
     listerMembres: async () => [],
@@ -458,11 +459,15 @@ async function lister(server: Serveur, bearer: string): Promise<string[]> {
 
 /**
  * Les outils de la connexion du numéro (lot 3c), des webhooks sortants (lot 12), la création d'un modèle (lot 13), la clé
- * et le Pro d'une Free (offres v2), les campagnes depuis l'assistant (2026-10-20) exigent aussi une personne : ils ont
- * leur fichier, `tests/mcp-numero.test.ts`, `tests/mcp-evenements.test.ts`, `tests/mcp-serveur.test.ts`,
- * `tests/mcp-offre.test.ts` et `tests/mcp-tag-contacts.test.ts` (et ses voisins).
+ * et le Pro d'une Free (offres v2), les campagnes depuis l'assistant (2026-10-20) et le blocage d'un contact (2026-10-22)
+ * exigent aussi une personne : ils ont leur fichier, `tests/mcp-numero.test.ts`, `tests/mcp-evenements.test.ts`,
+ * `tests/mcp-serveur.test.ts`, `tests/mcp-offre.test.ts`, `tests/mcp-tag-contacts.test.ts` (et ses voisins) et
+ * `tests/mcp-block-contact.test.ts`.
  */
-const OUTILS_DU_NUMERO = new Set([...OUTILS_NUMERO, ...OUTILS_EVENEMENTS, ...OUTILS_MODELES, ...OUTILS_OFFRE, ...OUTILS_CAMPAGNES, ...OUTILS_CHAMPS, ...OUTILS_SHOPIFY].map((o) => o.nom));
+const OUTILS_DU_NUMERO = new Set([
+  ...[...OUTILS_NUMERO, ...OUTILS_EVENEMENTS, ...OUTILS_MODELES, ...OUTILS_OFFRE, ...OUTILS_CAMPAGNES, ...OUTILS_CHAMPS, ...OUTILS_SHOPIFY].map((o) => o.nom),
+  'block_contact',
+]);
 const EXIGENT_PERSONNE = OUTILS.filter((o) => o.exigePersonne === true && !OUTILS_DU_NUMERO.has(o.nom)).map((o) => o.nom);
 
 /** Des arguments valides pour chaque outil de l'agent : ce qu'un appel qui passerait la garde ferait. */
@@ -582,13 +587,35 @@ describe('🔴 le plafond des opérations coûteuses est celui de la console', (
 });
 
 describe('les outils de l’agent appellent les fonctions de la console, dans l’espace du jeton', () => {
-  it('🔴 create_agent : l’espace vient du jeton, jamais des arguments ; ni plafonds ni mention d’IA dans ce qui est rendu', async () => {
+  it('🔴 create_agent : l’espace vient du jeton, jamais des arguments ; ni plafonds ni texte de mention d’IA rendus, sa seule langue', async () => {
     const { server, cap } = monter();
     const r = await appeler(server, JETON.brut, 'create_agent', { label: 'Accueil', tenantId: 't2' });
     expect(r.isError).toBe(false);
     // Le modèle des agents de Claude Code, et non le défaut du serveur (`modele-config`) que garde la console.
     expect(cap.creations).toEqual([{ tenant: 't1', label: 'Accueil', modele: MODELE_AGENT_CLAUDE_CODE }]);
-    expect(r.json().agent).toEqual({ id: AG_NEUF, label: 'Accueil', status: 'draft', modele: MODELE_AGENT_CLAUDE_CODE, fiche: ficheVide(), fiche_version: 1 });
+    expect(r.json().agent).toEqual({
+      id: AG_NEUF, label: 'Accueil', status: 'draft', modele: MODELE_AGENT_CLAUDE_CODE, fiche: ficheVide(), fiche_version: 1, mention_ia: 'fr',
+    });
+    await server.close();
+  });
+
+  it('🔴 la mention d’IA en anglais (2026-10-22) : une phrase relue, à la création comme à la modification ; jamais un texte libre', async () => {
+    const neuf = monter();
+    const cree = await appeler(neuf.server, JETON.brut, 'create_agent', { label: 'Support', mention_ia_langue: 'en' });
+    expect(cree.json().agent).toMatchObject({ label: 'Support', mention_ia: 'en' });
+    await neuf.server.close();
+
+    const { server, cap } = monter();
+    const r = await appeler(server, JETON.brut, 'update_agent', { agent_id: AG, mention_ia_langue: 'en' });
+    expect(r.isError, r.texte).toBe(false);
+    expect(cap.patches).toEqual([{ tenant: 't1', patch: { mentionIa: 'You are chatting with an automated assistant.' } }]);
+    expect(r.json().agent).toMatchObject({ mention_ia: 'en' });
+    for (const langue of ['de', 'Vous parlez à un robot.', 42]) {
+      const refus = await appeler(server, JETON.brut, 'update_agent', { agent_id: AG, mention_ia_langue: langue });
+      expect(refus.isError, String(langue)).toBe(true);
+      expect(refus.texte, String(langue)).toMatch(/^mention_ia_langue/);
+    }
+    expect(cap.patches).toHaveLength(1);
     await server.close();
   });
 
@@ -888,13 +915,13 @@ describe('les outils de l’agent appellent les fonctions de la console, dans l�
     await refuse.server.close();
   });
 
-  it('list_agents et get_agent : les manques comptés et listés, sans plafonds ni mention d’IA', async () => {
+  it('list_agents et get_agent : les manques comptés et listés, sans plafonds ni texte de mention d’IA', async () => {
     const { server, cap } = monter({ fichesConnaissance: 0, outilsPoses: [outil('terminer', true)] });
     const liste = await appeler(server, CLE_ECRITURE, 'list_agents');
     expect(liste.json()).toEqual({ agents: [{ id: AG, label: 'Conseiller', status: 'draft', nb_manques: 1, repondeur: false }] });
     expect(cap.lectures).toEqual(['t1']);
     const r = (await appeler(server, CLE_ECRITURE, 'get_agent', { agent_id: AG })).json();
-    expect(r.agent).toEqual({ id: AG, label: 'Conseiller', status: 'draft', modele: 'modele-config', fiche: FICHE_COMPLETE, fiche_version: 4 });
+    expect(r.agent).toEqual({ id: AG, label: 'Conseiller', status: 'draft', modele: 'modele-config', fiche: FICHE_COMPLETE, fiche_version: 4, mention_ia: 'fr' });
     expect(r).toMatchObject({ transfer_mode: 'business_hours', connecteurs: 0, fiches_connaissance: 0 });
     expect(r.outils).toEqual([{ code: 'terminer', nom: 'mba_terminer', titre: 'terminer', actif: true }]);
     expect(r.manques).toHaveLength(1);
@@ -1044,7 +1071,7 @@ describe('🔴 les bornes de la console sont annoncées dans les schémas des ou
   it('update_agent n’annonce QUE les champs que la spec lui ouvre, et refuse tout autre', () => {
     const s = schema('update_agent');
     expect(Object.keys(s.properties).sort()).toEqual(
-      ['agent_id', 'fiche_version', 'modele', 'objectif', 'personnalite', 'reglesTransfert', 'sorties', 'ton'],
+      ['agent_id', 'fiche_version', 'mention_ia_langue', 'modele', 'objectif', 'personnalite', 'reglesTransfert', 'sorties', 'ton'],
     );
     expect(s.additionalProperties).toBe(false);
   });

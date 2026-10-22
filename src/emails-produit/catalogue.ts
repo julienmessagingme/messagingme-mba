@@ -478,6 +478,37 @@ export const CATALOGUE = [
     },
   },
   {
+    // La version d'un espace dont l'offre n'ouvre pas l'Inbox (la Free, grill du 2026-10-22) : le bouton de l'autre
+    // mènerait à une Inbox fermée. Même catégorie, donc même désabonnement, et même plafond du jour (`CLES_TRANSFERT`).
+    cle: 'transfert_equipe_free',
+    categorie: 'transfert',
+    nom: 'Une conversation attend une réponse (sans Inbox)',
+    quand: 'Comme « Une conversation attend l’équipe », pour un espace dont l’offre n’ouvre pas l’Inbox : on lui répond depuis Claude ou depuis son application.',
+    variables: {
+      contact: { description: 'Le nom du contact, ou son numéro masqué', forme: 'texte', exemple: 'Camille D.' },
+      fin_fenetre: { description: 'La fin de la fenêtre de 24 heures pour répondre librement', forme: 'date_heure', exemple: '2026-10-15T09:30:00.000Z' },
+      lien_offre: { description: 'La page de l’offre, où passer en Pro', forme: 'lien', exemple: 'https://console.messagingme.app/offre' },
+    },
+    textes: {
+      fr: {
+        sujet: 'Une conversation attend votre réponse : {{contact}}',
+        corps: 'Bonjour,\n\nLa conversation avec {{contact}} vient d’être confiée à l’équipe de l’espace {{espace}} : le '
+          + 'contact attend une réponse.\n\nRépondez-lui depuis Claude, en lui demandant « réponds à {{contact}} », ou depuis '
+          + 'votre application, librement jusqu’au {{fin_fenetre}}. Passé ce délai, WhatsApp n’accepte plus qu’un modèle '
+          + 'validé.\n\nL’Inbox de la console, pour répondre à plusieurs, fait partie de l’offre Pro.',
+        bouton: { libelle: 'Voir l’offre Pro', lien: '{{lien_offre}}' },
+      },
+      en: {
+        sujet: 'A conversation is waiting for your reply: {{contact}}',
+        corps: 'Hello,\n\nThe conversation with {{contact}} has just been handed to the {{espace}} workspace team: the contact '
+          + 'is waiting for a reply.\n\nReply from Claude, by asking it to “reply to {{contact}}”, or from your application, '
+          + 'freely until {{fin_fenetre}}. After that, WhatsApp only accepts an approved template.\n\nThe console Inbox, to '
+          + 'reply as a team, is part of the Pro plan.',
+        bouton: { libelle: 'See the Pro plan', lien: '{{lien_offre}}' },
+      },
+    },
+  },
+  {
     cle: 'bienvenue',
     categorie: 'commercial',
     nom: 'Bienvenue',
@@ -734,6 +765,9 @@ export const CATALOGUE = [
 ] as const satisfies readonly ModeleEmail[];
 
 export type CleEmail = (typeof CATALOGUE)[number]['cle'];
+
+/** Les deux versions de « une conversation attend » : le plafond du jour les compte ensemble (`transfertsDuJour`). */
+export const CLES_TRANSFERT = ['transfert_equipe', 'transfert_equipe_free'] as const satisfies readonly CleEmail[];
 
 const PAR_CLE: ReadonlyMap<string, ModeleEmail> = new Map(CATALOGUE.map((m) => [m.cle, m]));
 

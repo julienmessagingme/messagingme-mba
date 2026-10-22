@@ -5,7 +5,8 @@ import { RefusOutil, entierBorne, texteObligatoire, valeurOuRefus } from './sais
 import { MESSAGE_OPERATIONS_LOURDES } from '../auth/plafond-partage';
 import type { AgentComplet, AgentResume } from '../agent/agent-store';
 import {
-  AGENT_INTROUVABLE, MAX_LABEL_AGENT, changerStatut, creerAgent, manquesDeLAgent, modifierAgent, type DepsGestionAgents,
+  AGENT_INTROUVABLE, MAX_LABEL_AGENT, MENTIONS_IA, changerStatut, creerAgent, langueDeLaMention, manquesDeLAgent, modifierAgent,
+  type DepsGestionAgents, type LangueMentionIa,
 } from '../agent/gestion';
 import {
   MAX_FICHES_PAR_AJOUT, MAX_SUPPRESSIONS, MAX_URL_SITE, PORTEES, ajouterFiches, apercuSite, importerSite,
@@ -177,9 +178,34 @@ export function signataire(personne: PersonneMcp | null): string {
   return personne.userId;
 }
 
-/** Un agent tel que Claude le voit : ni ses plafonds de coût ni sa mention d'IA (spec, section 2). */
+/**
+ * Un agent tel que Claude le voit : ni ses plafonds de coût ni le texte de sa mention d'IA (spec, section 2), seulement la
+ * langue de celle-ci (`fr`, `en`, ou `personnalisee` pour un texte écrit dans la console), qu'il peut choisir.
+ */
 function vueAgent(a: AgentComplet): Record<string, unknown> {
-  return { id: a.id, label: a.label, status: a.status, modele: a.modele, fiche: a.contenu, fiche_version: a.ficheVersion };
+  return {
+    id: a.id, label: a.label, status: a.status, modele: a.modele, fiche: a.contenu, fiche_version: a.ficheVersion,
+    mention_ia: langueDeLaMention(a.mentionIa),
+  };
+}
+
+/** Les langues des phrases de mention relues, que `create_agent` et `update_agent` annoncent. */
+const LANGUES_MENTION = Object.keys(MENTIONS_IA) as LangueMentionIa[];
+const MENTION_IA_LANGUE: ProprieteEntree = {
+  type: 'string', enum: LANGUES_MENTION,
+  description: 'The language of the AI disclosure the platform puts before the agent\'s messages, one reviewed phrase per '
+    + `language (${LANGUES_MENTION.join(', ')}; en: "${MENTIONS_IA.en}"): the language of the agent's customers. A free text `
+    + 'is set in the console.',
+};
+
+/** La langue de mention saisie, ou `undefined` si absente ; une autre valeur est refusée. */
+function langueSaisie(args: Record<string, unknown>): LangueMentionIa | undefined {
+  const l = args.mention_ia_langue;
+  if (l === undefined) return undefined;
+  if (typeof l !== 'string' || !(LANGUES_MENTION as string[]).includes(l)) {
+    throw new RefusOutil(`mention_ia_langue : ${LANGUES_MENTION.join(' ou ')} ; un autre texte se règle dans la console`);
+  }
+  return l as LangueMentionIa;
 }
 
 /**
@@ -188,7 +214,7 @@ function vueAgent(a: AgentComplet): Record<string, unknown> {
  * et une clé hors de la liste est REFUSÉE, pas ignorée : un modèle qui croirait avoir relevé un plafond l'annoncerait.
  */
 const CHAMPS_FICHE_MCP = ['objectif', 'ton', 'personnalite', 'reglesTransfert', 'sorties'] as const satisfies ReadonlyArray<keyof FicheAgentContenu>;
-const CLES_UPDATE_AGENT: ReadonlySet<string> = new Set(['agent_id', ...CHAMPS_FICHE_MCP, 'modele', 'fiche_version']);
+const CLES_UPDATE_AGENT: ReadonlySet<string> = new Set(['agent_id', ...CHAMPS_FICHE_MCP, 'modele', 'fiche_version', 'mention_ia_langue']);
 
 /**
  * Une offre et son montant hors taxe, lus dans la définition de l'offre : le prix n'est écrit qu'une fois. Lu par la
@@ -269,7 +295,8 @@ export const OUTILS_AGENT: OutilMcp[] = [
       + 'set_agent_tools gives it its tools, the knowledge comes from preview_site and import_site or from '
       + 'add_knowledge). A workspace\'s first agent opens for it a model key billed to its credit: it takes at least '
       + `the equivalent of $${PLAFOND_GATEWAY_MIN_DOLLARS} of credit (less than one euro), otherwise the creation is `
-      + 'refused and buy_credit opens a top-up (get_credit gives the balance). ' + SANS_SCENARIO_MUET,
+      + 'refused and buy_credit opens a top-up (get_credit gives the balance). The AI disclosure is in French unless '
+      + 'mention_ia_langue says otherwise. ' + SANS_SCENARIO_MUET,
     // Monde ouvert : le premier agent ouvre une clé chez Vercel. Non idempotente : un agent de plus à chaque appel.
     annotations: ecriture('Create an AI agent', false, true),
     entree: {
@@ -279,13 +306,16 @@ export const OUTILS_AGENT: OutilMcp[] = [
           type: 'string', minLength: 1, maxLength: MAX_LABEL_AGENT,
           description: 'The agent label in the console, unique in the workspace. The contact does not see it.',
         },
+        mention_ia_langue: MENTION_IA_LANGUE,
       },
       required: ['label'],
     },
     async executer(deps, tenantId, args) {
+      const langue = langueSaisie(args);
       // Le modèle des agents de Claude Code, pas le défaut du serveur que garde la console (`MODELE_AGENT_CLAUDE_CODE`).
       const gestion = { ...deps.agentIa.gestion, modeleParDefaut: MODELE_AGENT_CLAUDE_CODE };
-      return { agent: vueAgent(valeurOuRefus(await creerAgent(gestion, tenantId, { label: args.label }))) };
+      const cree = await creerAgent(gestion, tenantId, { label: args.label }, langue === undefined ? undefined : MENTIONS_IA[langue]);
+      return { agent: vueAgent(valeurOuRefus(cree)) };
     },
   },
   {
@@ -299,8 +329,9 @@ export const OUTILS_AGENT: OutilMcp[] = [
       + 'incomplete (objective or handover rules emptied, no stop rule left) is refused, with what it would introduce: '
       + 'the way forward is a completed profile, or the person\'s decision, rather than deactivating the agent. '
       + DESACTIVER_SUR_DEMANDE + ' The update goes to production at once (an active agent has no draft version), and it '
-      + 'is logged under the signed-in person\'s name. The label, cost caps and AI disclosure are set only in the '
-      + 'console; the status, through activate_agent.',
+      + 'is logged under the signed-in person\'s name. mention_ia_langue chooses the AI disclosure among reviewed phrases '
+      + '(get_agent tells the current one, personnalisee for a text written in the console). The label, cost caps and a '
+      + 'free-text AI disclosure are set only in the console; the status, through activate_agent.',
     // Elle remplace les champs fournis, `sorties` en entier.
     annotations: ecriture('Edit an AI agent', true, false),
     entree: {
@@ -347,6 +378,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
           type: 'integer', minimum: 1,
           description: 'The profile version read by get_agent: the write is refused if the profile changed since.',
         },
+        mention_ia_langue: MENTION_IA_LANGUE,
       },
       required: ['agent_id'],
       additionalProperties: false,
@@ -356,15 +388,18 @@ export const OUTILS_AGENT: OutilMcp[] = [
       const interdites = Object.keys(args).filter((k) => !CLES_UPDATE_AGENT.has(k));
       if (interdites.length > 0) {
         throw new RefusOutil(
-          `champ non modifiable par cet outil : ${interdites.join(', ')}. Le libellé, les plafonds de coût et la mention `
-          + 'd’IA se règlent dans la console, le statut par activate_agent.',
+          `champ non modifiable par cet outil : ${interdites.join(', ')}. Le libellé, les plafonds de coût et une mention `
+          + 'd’IA en texte libre se règlent dans la console (mention_ia_langue choisit une phrase relue), le statut par activate_agent.',
         );
       }
+      const langue = langueSaisie(args);
       const contenu = Object.fromEntries(CHAMPS_FICHE_MCP.filter((k) => args[k] !== undefined).map((k) => [k, args[k]]));
-      // La saisie de la console, telle quelle : les bornes et le contrôle de complétude sont ceux de `modifierAgent`.
+      // La saisie de la console, telle quelle : les bornes et le contrôle de complétude sont ceux de `modifierAgent`, qui
+      // signe aussi le changement de mention dans le journal (`agent.mention_modifiee`).
       const corps = {
         ...(Object.keys(contenu).length > 0 ? { contenu } : {}),
         ...(args.modele !== undefined ? { modele: args.modele } : {}),
+        ...(langue !== undefined ? { mentionIa: MENTIONS_IA[langue] } : {}),
         ...(args.fiche_version !== undefined ? { ficheVersionAttendue: args.fiche_version } : {}),
       };
       const auteur = { userId: signataire(personne), origine: 'mcp' as const };

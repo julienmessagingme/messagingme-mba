@@ -21,7 +21,8 @@ import type { PlafondPartage } from '../auth/plafond-partage';
 import { RefusOutil, dateAvecFuseau, entierBorne, texteObligatoire, valeurOuRefus } from './saisie';
 import { decoderCurseur, encoderCurseur, idPublic, type DepotConversationsV1 } from '../api/conversations-v1';
 import type { ControleDuFil, IssueRendreLaMain } from '../inbox/fil';
-import { OUTILS_AGENT, type DepsAgentMcp } from './outils-agent';
+import { OUTILS_AGENT, signataire, type DepsAgentMcp } from './outils-agent';
+import { estUuid } from '../http/scope';
 import { OUTILS_OFFRE, type DepsOffreMcp } from './outils-offre';
 import type { DepsCreationCle } from '../auth/creer-cle';
 import { OUTILS_EVENEMENTS, type DepsEvenementsMcp } from './outils-evenements';
@@ -87,6 +88,11 @@ export interface DepsMcp extends DepsRepondre, DepsChampsMcp {
     /** L'action en masse du mini-CRM (`tag_contacts`) : la MÊME écriture que la route, qui n'émet rien. */
     applyEditsMany(tenantId: string, target: BulkTarget, edits: BulkEdits): Promise<IssueActionEnMasse>;
     findByPhone(tenantId: string, phoneE164: string): Promise<ContactRow | null>;
+    /**
+     * Bloquer ou débloquer (`block_contact`) : le MÊME geste que la fiche du contact (`PATCH .../blocked`), signé de la
+     * personne. `false` : aucune fiche vivante de ce nom dans l'espace.
+     */
+    setBlocked(tenantId: string, contactId: string, bloque: boolean, parUserId: string | null): Promise<boolean>;
     /** La dernière analyse et son résumé pour une page de fiches, en une requête filtrée sur l'espace. */
     analysesEtResumes(tenantId: string, contactIds: readonly string[]): Promise<Map<string, AnalyseEtResume>>;
   };
@@ -281,6 +287,8 @@ function contactPublic(c: ContactRow, analyses: Map<string, AnalyseEtResume> | n
     phone: c.phoneE164,
     name: c.profileName,
     opt_in: c.optInStatus,
+    // Un contact bloqué n'apparaît plus dans la console hors de son écran : c'est ici que Claude le retrouve.
+    blocked: Boolean(c.blockedAt),
     tags: c.tags,
     fields: c.fields,
     ...(analyses === null ? {} : { last_analysis: analysePublique(analyses.get(c.id), avecResume) }),
@@ -604,6 +612,50 @@ export const OUTILS: OutilMcp[] = [
       const c = await deps.contacts.findByPhone(tenantId, phone);
       if (!c) throw new RefusOutil('aucun contact avec ce numéro dans cet espace');
       return contactPublic(c, await analysesOuRien(deps, tenantId, [c.id]), true);
+    },
+  },
+  {
+    ...ficheOutilMcp('block_contact'),
+    // Le geste de la fiche, ouvert dans toutes les offres (plan du 2026-10-22, la marche arrière) : en Free, sans fiche
+    // dans la console, un importun faisait répondre l'agent IA à chaque message, donc consommait le crédit.
+    fonction: null,
+    description:
+      'Blocks or unblocks a contact, like the contact record in the console, ONLY at the person\'s explicit request. A '
+      + 'blocked contact receives nothing from the workspace anymore (campaigns, scenarios, automations, AI agent), no '
+      + 'robot is handed its conversation, and the conversation leaves the Inbox; its incoming messages are still '
+      + 'recorded, so a cancellation or a complaint is never lost. get_contact and search_contacts tell whether a contact is blocked '
+      + '(blocked), which is how to find one to unblock. Designate the contact by phone (with the country code: '
+      + '+33612345678) or contact_id.',
+    // Destructrice : elle coupe la relation avec un client. Idempotente : bloquer un bloqué ne change rien. Rien chez un tiers.
+    annotations: { title: 'Block or unblock a contact', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    entree: {
+      type: 'object',
+      properties: {
+        phone: { type: 'string', pattern: '^\\+[1-9][0-9]{7,14}$', description: 'The number with the country code. Or contact_id.' },
+        contact_id: { type: 'string', format: 'uuid', minLength: 36, maxLength: 36, description: 'The id of a contact record. Or phone.' },
+        blocked: { type: 'boolean', description: 'true blocks, false unblocks.' },
+      },
+      required: ['blocked'],
+      additionalProperties: false,
+    },
+    async executer(deps, tenantId, args, personne) {
+      const phone = typeof args.phone === 'string' ? args.phone : undefined;
+      const fiche = typeof args.contact_id === 'string' ? args.contact_id : undefined;
+      if ((phone === undefined) === (fiche === undefined)) throw new RefusOutil('désignez le contact par phone OU par contact_id, pas les deux');
+      const bloque = args.blocked;
+      if (typeof bloque !== 'boolean') throw new RefusOutil('blocked : true pour bloquer, false pour débloquer');
+      // Un identifiant qui n'est pas un uuid finirait en cast SQL : refusé avant toute lecture.
+      if (fiche !== undefined && !estUuid(fiche)) throw new RefusOutil('contact_id : l’identifiant d’une fiche (un uuid)');
+      let id = fiche;
+      if (phone !== undefined) {
+        const e164 = e164DepuisSaisie(phone);
+        if (e164 === null) throw new RefusOutil('numéro illisible : donnez-le au format international (+33612345678)');
+        id = (await deps.contacts.findByPhone(tenantId, e164))?.id;
+      }
+      if (id === undefined || !(await deps.contacts.setBlocked(tenantId, id, bloque, signataire(personne)))) {
+        throw new RefusOutil('contact inconnu dans cet espace');
+      }
+      return { contact_id: id, blocked: bloque };
     },
   },
   {

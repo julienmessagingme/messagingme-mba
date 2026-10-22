@@ -778,6 +778,7 @@ export const mcpCampagnesInertes: Pick<DepsMcp, 'campagnes'> = {
         listContactsForBuildByIds: async () => [],
         createWithRecipients: neDevraitPasEtreAppelee('campagnes.createWithRecipients'),
         deleteDraftCampaign: neDevraitPasEtreAppelee('campagnes.deleteDraftCampaign'),
+        cancelSchedule: neDevraitPasEtreAppelee('campagnes.cancelSchedule'),
         etatPourConfirmation: async () => null,
         apercuDestinataires: async () => [],
         desabonnesParmiLesDestinataires: async () => 0,

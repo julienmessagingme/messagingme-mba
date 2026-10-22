@@ -27,9 +27,24 @@ import { tenter } from '../lib/tenter';
 
 export const AGENT_INTROUVABLE = 'agent introuvable';
 
+/**
+ * Les phrases de mention d'IA que Claude peut poser (grill du 2026-10-22) : une par langue, relues, jamais un texte libre,
+ * parce qu'une IA ne réécrit pas la phrase qui annonce qu'elle en est une. La console, elle, garde le texte libre.
+ */
+export const MENTIONS_IA = {
+  fr: 'Vous échangez avec un assistant automatique.',
+  en: 'You are chatting with an automated assistant.',
+} as const;
+export type LangueMentionIa = keyof typeof MENTIONS_IA;
+
+/** La langue d'une phrase de mention, `personnalisee` pour un texte écrit dans la console. */
+export function langueDeLaMention(phrase: string): LangueMentionIa | 'personnalisee' {
+  return (Object.keys(MENTIONS_IA) as LangueMentionIa[]).find((l) => MENTIONS_IA[l] === phrase.trim()) ?? 'personnalisee';
+}
+
 /** Mention d'IA par défaut. Obligatoire en base (`not null`), donc il en faut une dès la création : la laisser
  *  vide reviendrait à créer un agent hors-la-loi que personne ne penserait à compléter. */
-const MENTION_IA_DEFAUT = 'Vous échangez avec un assistant automatique.';
+const MENTION_IA_DEFAUT = MENTIONS_IA.fr;
 
 /**
  * Bornes des champs. Cinq rejouent un `check` en base (`max_tours`, `max_appels_outils`, `inactivite_minutes`,
@@ -111,7 +126,13 @@ const CREDIT_INSUFFISANT =
 const AGENT_ACTIF_INCOMPLET =
   'agent actif : cette modification le rendrait incomplet. Complétez-la, ou désactivez l’agent avant de le remanier.';
 
-export async function creerAgent(deps: DepsGestionAgents, tenantId: string, corps: unknown): Promise<Issue<AgentComplet>> {
+/**
+ * `mentionIa` : une des phrases relues (`MENTIONS_IA`), que l'outil `create_agent` choisit par langue ; la console n'en
+ * passe pas et garde le défaut français.
+ */
+export async function creerAgent(
+  deps: DepsGestionAgents, tenantId: string, corps: unknown, mentionIa: (typeof MENTIONS_IA)[LangueMentionIa] = MENTION_IA_DEFAUT,
+): Promise<Issue<AgentComplet>> {
   const lu = saisieDeCreation.safeParse(corps ?? {});
   // Même règle qu'à la modification : un label trop long est refusé, pas tronqué en silence. Deux comportements
   // différents pour le même champ selon la porte feraient croire à un bug d'affichage.
@@ -134,7 +155,7 @@ export async function creerAgent(deps: DepsGestionAgents, tenantId: string, corp
   }
   try {
     // Créé en brouillon par le store, jamais actif : le corps ne peut pas en décider.
-    return { ok: true, valeur: await deps.agents.create(tenantId, lu.data.label, MENTION_IA_DEFAUT, deps.modeleParDefaut) };
+    return { ok: true, valeur: await deps.agents.create(tenantId, lu.data.label, mentionIa, deps.modeleParDefaut) };
   } catch (err) {
     if (err instanceof LabelAgentDejaPris) return refus(409, err.message);
     throw err;

@@ -2,7 +2,7 @@ import type { Pool } from 'pg';
 import { BOUNDS_CTE, STATS_TZ } from '../stats/range';
 import { TYPES_OUVERTURE } from '../stats/performance';
 import { FENETRE_JOURS } from './accompagnement';
-import type { CategorieCoupable, Langue, TexteEmail } from './catalogue';
+import { CLES_TRANSFERT, type CategorieCoupable, type Langue, type TexteEmail } from './catalogue';
 
 /**
  * LE STORE DES E-MAILS DU PRODUIT (migration 0234). 🔴 Chaque requête qui touche le journal d'un espace porte
@@ -322,14 +322,15 @@ export class PgEmailsProduitStore {
 
   /**
    * Les passages à l'équipe déjà écrits aujourd'hui (jour de Paris) pour l'espace : le plafond de Julien (dix par jour,
-   * 2026-10-14). Une occasion est un passage, quel que soit le nombre d'admins prévenus.
+   * 2026-10-14). Une occasion est un passage, quel que soit le nombre d'admins prévenus. 🔴 Les DEUX versions de l'e-mail
+   * comptent (`CLES_TRANSFERT`, 2026-10-22) : sinon celle d'un espace sans Inbox échapperait au plafond.
    */
   async transfertsDuJour(tenantId: string): Promise<number> {
     const res = await this.pool.query<{ n: number }>(
       `select count(distinct occasion)::int as n from emails_produit_envois
-        where tenant_id = $1 and cle = 'transfert_equipe'
+        where tenant_id = $1 and cle = any($2::text[])
           and cree_le >= date_trunc('day', now() at time zone 'Europe/Paris') at time zone 'Europe/Paris'`,
-      [tenantId],
+      [tenantId, [...CLES_TRANSFERT]],
     );
     return res.rows[0]?.n ?? 0;
   }

@@ -3184,7 +3184,9 @@ boîte par sous-menu.
   masqué, jamais le texte des messages), l'heure où la fenêtre de 24 heures se ferme, et un bouton vers la conversation.
   Le lancement d'une campagne qui confie ses destinataires à l'équipe n'envoie aucun e-mail ; un destinataire qui
   répond ensuite, et que le scénario passe à l'équipe, en envoie un, comme tout client qui attend. **Au plus dix par
-  jour et par espace** (jour de Paris) : au-delà, les conversations attendent dans l'Inbox sans e-mail.
+  jour et par espace** (jour de Paris) : au-delà, les conversations attendent dans l'Inbox sans e-mail. **En offre
+  Free, qui n'a pas l'Inbox** (2026-10-22), l'e-mail dit de répondre depuis Claude ou depuis l'application, et son
+  bouton mène à l'offre Pro au lieu d'une Inbox fermée ; il compte dans les mêmes dix par jour.
 - ✅ **Pour bien démarrer** (2026-10-14, des e-mails d'information) : la bienvenue, dans les deux jours qui suivent la
   création de l'espace, puis trois relances, une fois chacune et dans la semaine qui suit ce qui la déclenche : le
   numéro WhatsApp pas connecté au bout de 24 heures, aucun répondeur (ni agent IA, ni agent de Meta, ni scénario)
@@ -4850,6 +4852,39 @@ restaient (spec offres v2, livraison 4).
   minute de l'espace.
 - ⚠️ **La clé passe par la conversation avec l'assistant** : la description de l'outil le dit à Claude. Si elle a pu
   fuiter, on la révoque dans la console (Clés d'API) et on en crée une autre.
+
+### Finir depuis Claude ce qu'on y a commencé (2026-10-22)
+
+**À quoi ça sert.** La Free n'a plus de console : un geste que les outils laissaient « à la console » n'avait plus aucun
+chemin pour elle. Chacun devient un outil, qui appelle la fonction du bouton de la console :
+
+- **La main du fil** (`control_conversation`) : la prendre sans écrire au contact, ou la rendre au répondeur
+  automatique (agent IA, agent de Meta, scénario), qui répond au message SUIVANT du contact. Une réponse de Claude
+  prend le fil : sans ce geste, l'agent IA d'une Free se taisait jusqu'au délai de reprise. Toutes les offres, et aussi
+  derrière une clé d'API, comme la réponse.
+- **Le webhook de l'application** (`update_webhook_endpoint`, `delete_webhook_endpoint`) : ses types d'événements, sa
+  pause, un nouveau secret (montré une fois, l'ancien signe encore 24 h), sa suppression avec son journal. Changer
+  d'adresse reste « supprimer puis recréer », comme dans la console. C'est ce qui manquait au développeur qui passe de
+  l'adresse de son tunnel d'essai à celle de sa production, avec la seule adresse de la Free.
+- **Les modèles** (`update_template`, `delete_template`) : corriger une langue d'un modèle refusé sans changer de nom
+  (il repart en validation ; Meta limite un modèle approuvé à une correction par 24 h et dix par 30 jours, et un
+  en-tête image, vidéo ou document ne se corrige pas), ou le supprimer, toutes ses langues (refusé tant qu'une
+  campagne active l'utilise ; le nom d'un modèle approuvé supprimé reste bloqué 30 jours chez Meta).
+- **Le blocage d'un contact** (`block_contact`) : comme la fiche, plus rien ne lui part et aucun robot ne prend sa
+  conversation, ses messages restent enregistrés. `get_contact` et `search_contacts` disent s'il est bloqué : c'est là
+  que Claude le retrouve pour le débloquer.
+- **Les freins d'une campagne** (`control_campaign`, offre Pro) : mettre en pause une campagne qui envoie, déprogrammer
+  une campagne programmée, ou préparer la reprise d'une campagne en pause : un récapitulatif des destinataires
+  restants et un code, puis `launch_campaign` avec ce code, comme pour un lancement. La reprise part tout de suite, et
+  aucun refus ne renvoie vers une nouvelle préparation, qui écrirait à tout le monde.
+- **La mention d'IA en anglais** : `create_agent` et `update_agent` choisissent entre deux phrases relues, « Vous
+  échangez avec un assistant automatique. » et « You are chatting with an automated assistant. ». `get_agent` dit
+  laquelle ; un texte libre se règle toujours dans la console.
+- `get_messages` rend l'identifiant de chaque message, que `get_message_status` lit.
+
+**Les garde-fous.** Tous exigent la connexion de Claude, sauf la main du fil. Corriger et supprimer un modèle comptent
+dans les opérations lourdes. Un refus de Meta (un modèle, un droit qui manque au compte) revient avec sa raison, jamais
+comme une panne.
 
 ## Plafonds d'usage (visible seulement si on force)
 

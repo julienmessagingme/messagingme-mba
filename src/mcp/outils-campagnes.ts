@@ -27,6 +27,8 @@ export interface DepsCampagnesMcp {
       repo: CampaignRepoLike & {
         /** Supprime un brouillon jamais lancé (la garde métier de la console). */
         deleteDraftCampaign(campaignId: string, tenantId: string): Promise<boolean>;
+        /** Déprogramme : la campagne programmée redevient un brouillon (`control_campaign`, le bouton de la console). */
+        cancelSchedule(campaignId: string, tenantId: string): Promise<boolean>;
         /** L'état que montre le récapitulatif, relu en base ; `null` hors de l'espace. */
         etatPourConfirmation(tenantId: string, campaignId: string): Promise<EtatConfirme | null>;
         apercuDestinataires(tenantId: string, campaignId: string, n: number): Promise<string[]>;
@@ -64,6 +66,16 @@ const REFUS_DU_CODE: Record<Exclude<IssueReclamation, 'ok'>, string> = {
   expire: 'code de confirmation expiré (30 minutes) : préparez à nouveau avec prepare_campaign et replaces',
   utilise: 'code déjà utilisé : cette campagne a déjà été lancée ou programmée',
   modifie: 'la campagne a changé depuis le récapitulatif : préparez-la à nouveau avec prepare_campaign et replaces',
+};
+/**
+ * 🔴 Les mêmes refus pour la REPRISE d'une campagne en pause, et ils ne renvoient jamais vers `prepare_campaign` : préparer
+ * à nouveau créerait une campagne neuve, vers TOUS les destinataires, ceux déjà servis compris.
+ */
+const REFUS_DU_CODE_DE_REPRISE: Record<Exclude<IssueReclamation, 'ok'>, string> = {
+  invalide: 'code de confirmation faux pour cette reprise : reprenez celui de control_campaign (prepare_resume)',
+  expire: 'code de confirmation expiré (30 minutes) : demandez-en un autre avec control_campaign (prepare_resume)',
+  utilise: 'code déjà utilisé : cette reprise est déjà partie',
+  modifie: 'la campagne a changé depuis le récapitulatif de reprise : demandez-en un autre avec control_campaign (prepare_resume)',
 };
 const REFUS_DU_LANCEMENT: Record<'inconnue' | 'date_passee' | 'non_programmable', string> = {
   inconnue: 'campagne inconnue dans cet espace',
@@ -328,7 +340,9 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
       'Launches a campaign prepared with prepare_campaign, ONLY after the person said yes to its summary, with the '
       + 'confirmation code of that summary. A campaign prepared for a date is scheduled for that date; otherwise it '
       + 'starts sending now. Same path as the console\'s Launch button. The code works once, for 30 minutes, and only '
-      + 'for the campaign exactly as summarized: if anything changed, prepare it again. ' + LOURDE,
+      + 'for the campaign exactly as summarized: if anything changed, prepare it again. It also RESUMES a paused campaign, '
+      + 'with the code of control_campaign (prepare_resume): the recipients still waiting are sent at once; never prepare '
+      + 'a paused campaign again, which would send to everyone. ' + LOURDE,
     annotations: ecriture('Launch a campaign', false, true),
     entree: {
       type: 'object',
@@ -351,10 +365,13 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
 
       // 🔴 Le code est réclamé AVANT le lancement, sur l'état relu en base : usage unique, et rien d'autre que ce qui a
       // été montré.
+      // Une campagne en PAUSE se reprend (le code de `control_campaign`, `prepare_resume`) : tout de suite, sa date prévue
+      // étant passée depuis qu'elle a démarré, et avec des refus qui ne renvoient pas vers une nouvelle préparation.
+      const reprise = etat.status === 'paused';
       const reclamation = await c.confirmations.reclamer(tenantId, campaignId, code, empreinteEtat(etat));
-      if (reclamation !== 'ok') throw new RefusOutil(REFUS_DU_CODE[reclamation]);
+      if (reclamation !== 'ok') throw new RefusOutil((reprise ? REFUS_DU_CODE_DE_REPRISE : REFUS_DU_CODE)[reclamation]);
 
-      const quand = etat.prevueLe === null ? null : new Date(etat.prevueLe);
+      const quand = reprise || etat.prevueLe === null ? null : new Date(etat.prevueLe);
       let issue: IssueLancement;
       try {
         issue = await lancerCampagne(c.route, tenantId, campaignId, quand);
@@ -372,6 +389,78 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
       return 'programmee' in issue
         ? { campaign_id: campaignId, status: 'scheduled', scheduled_for: { iso: issue.programmee.toISOString(), paris: dateDeParis(issue.programmee) } }
         : { campaign_id: campaignId, status: 'sending', recipients: etat.recipientCount };
+    },
+  },
+  /*
+   * La marche arrière (plan du 2026-10-22, tâche 5) : les freins d'une campagne, et le chemin du retour. La pause et la
+   * déprogrammation sont les gestes de la console (`pauseCampaign`, `cancelSchedule`), sans confirmation : ils arrêtent.
+   * La reprise fait repartir des messages : elle ne fait que poser un code sur l'état en pause, et c'est `launch_campaign`,
+   * le seul outil qui envoie en masse, qui la lance.
+   */
+  {
+    ...ficheOutilMcp('control_campaign'),
+    fonction: 'console',
+    description:
+      'The brakes of a campaign, and the way back. pause: stops a campaign that is sending, within seconds; what has '
+      + 'left stays sent, and the recipients not yet reached wait. unschedule: a scheduled campaign goes back to draft, '
+      + 'nothing leaves. prepare_resume: for a PAUSED campaign, returns the summary of what resuming would send (the '
+      + 'recipients still waiting) and a confirmation code valid 30 minutes. SHOW IT TO THE PERSON AND WAIT FOR AN '
+      + 'EXPLICIT YES, then call launch_campaign with that code. Pausing needs no confirmation: it is the emergency '
+      + 'gesture of the console. Never prepare a paused campaign again with prepare_campaign: it would send to everyone.',
+    // Rien ne part chez un tiers ; chaque `prepare_resume` tire un nouveau code : pas idempotente.
+    annotations: ecriture('Pause, unschedule or prepare to resume a campaign', false, false),
+    entree: {
+      type: 'object',
+      properties: {
+        campaign_id: { type: 'string', format: 'uuid', description: 'The campaign id (prepare_campaign, get_campaign_stats).' },
+        action: {
+          type: 'string', enum: ['pause', 'unschedule', 'prepare_resume'],
+          description: 'pause a sending campaign, unschedule a scheduled one, or prepare_resume a paused one.',
+        },
+      },
+      required: ['campaign_id', 'action'],
+    },
+    async executer(deps, tenantId, args, personne) {
+      signataire(personne);
+      const c = deps.campagnes;
+      const campaignId = args.campaign_id;
+      if (!estUuid(campaignId)) throw new RefusOutil('paramètre « campaign_id » : identifiant mal formé');
+      const action = args.action;
+      if (action !== 'pause' && action !== 'unschedule' && action !== 'prepare_resume') {
+        throw new RefusOutil('paramètre « action » : pause, unschedule ou prepare_resume');
+      }
+      // L'appartenance d'abord, comme la route de la console : une campagne d'ailleurs n'existe pas.
+      if (!(await c.route.repo.campaignBelongsTo(campaignId, tenantId))) throw new RefusOutil('campagne inconnue dans cet espace');
+      if (action === 'pause') {
+        if (!(await c.route.repo.pauseCampaign(campaignId, tenantId))) {
+          throw new RefusOutil('campagne non suspendable : elle n’est pas en cours d’envoi');
+        }
+        return { campaign_id: campaignId, status: 'paused' };
+      }
+      if (action === 'unschedule') {
+        if (!(await c.route.repo.cancelSchedule(campaignId, tenantId))) throw new RefusOutil('campagne non programmée : rien à déprogrammer');
+        return { campaign_id: campaignId, status: 'draft' };
+      }
+      const etat = await c.route.repo.etatPourConfirmation(tenantId, campaignId);
+      if (etat === null) throw new RefusOutil('campagne inconnue dans cet espace');
+      if (etat.status !== 'paused') throw new RefusOutil('seule une campagne en pause se reprend : mettez-la en pause d’abord (pause)');
+      // Le code est lié à l'état relu en base, celui que `launch_campaign` relira : une reprise faite entre-temps dans la
+      // console l'invalide.
+      const pose = await c.confirmations.poser(tenantId, campaignId, empreinteEtat(etat));
+      if (pose === null) throw new Error(`control_campaign : la campagne ${campaignId} n'a pas pu recevoir son code`);
+      return {
+        campaign_id: campaignId,
+        status: 'paused',
+        template: { name: etat.templateName, language: etat.templateLanguage },
+        category: etat.category,
+        recipients_waiting: etat.recipientCount,
+        // Un volume, jamais un montant, comme le récapitulatif de `prepare_campaign`.
+        billable_messages_up_to: etat.recipientCount,
+        confirmation_code: pose.code,
+        code_expires_at: pose.expireLe.toISOString(),
+        next_step: 'Show this summary to the person. Only after an explicit yes, call launch_campaign with campaign_id and '
+          + 'confirmation_code. Nothing has been sent.',
+      };
     },
   },
 ];
