@@ -66,6 +66,24 @@ qui suit attend un lot.
   reprise qui ne court pas sur un fil escaladé, ni quand il vaut 0 ; l'e-mail de la Free borne à 24 h une réponse par
   Claude, ce qui est faux sur la filière application (à vérifier si elle le reçoit).
 
+## 🟡 Shopify depuis la console : ce que les relectures laissent (2026-10-22)
+
+Plan : `docs/superpowers/plans/2026-10-22-shopify-console.md`.
+
+- **La catégorie n'est pas relue à l'approbation** : Meta peut reclasser à la revue un message de commande en
+  marketing ; l'activation le branche alors, et sans consentement chaque confirmation sort en `sans_consentement`.
+  Relire la catégorie dans `activerSelonStatut` (le filet l'a sous la main, `statutsDuModele` rend `category`) et ne
+  pas activer hors `CATEGORIES_ADMISES`, avec un e-mail qui le dit.
+- **Un branchement console à moitié fait** (boutique écrite, abonnement des webhooks en échec) n'a ni trace d'audit ni
+  état persistant : la carte dit « branchée » à la relecture. Le refus le dit au moment même ; il faudrait un état
+  « événements non abonnés » et un bouton pour réessayer.
+- **`disconnect_shopify` dit que le RGPD reste honoré** : faux pour une boutique de la console. `ADRESSE_WEBHOOKS` est
+  en dur (`api.messagingme.app`) au lieu de `adresses-publiques.ts`.
+- **Le mode opératoire n'a pas de captures** : le texte seul, pour l'instant (les captures se prennent sur l'app d'essai
+  « Messaging Me essai sans CLI », à supprimer ensuite avec les apps du lot 0).
+- **La carte n'arrête pas un message seul** : seul « Couper » arrête tout ; un message arrêté depuis Claude Code se
+  reprend par l'assistant (nouveau modèle chez Meta).
+
 ## 🟡 Le connecteur Shopify : le lot 2 et ce que la relecture du lot 1 laisse (2026-10-22)
 
 Plan : `docs/superpowers/plans/2026-10-21-connecteur-shopify.md`.

@@ -5,6 +5,37 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-22 (nuit) : Shopify depuis la console, pour les clients payants
+
+Plan : `docs/superpowers/plans/2026-10-22-shopify-console.md`, conception
+`docs/superpowers/specs/2026-10-22-shopify-console-design.md` (cadrée avec Julien, deux maquettes validées). Un client
+Pro ou Entreprise sans Claude Code branche sa boutique et règle ses trois messages depuis Paramètres > Intégrations.
+
+- **Mesuré sur le tableau de bord développeur de Shopify, avec Julien** (app d'essai « Messaging Me essai sans CLI ») :
+  plus aucune app personnalisée ne se crée dans l'admin depuis le 2026-01-01 ; « Create app manually » ouvre un seul
+  formulaire, et AUCUN écran ne règle les webhooks. Le jeton `client_credentials` de cette app abonne les six sujets
+  par `webhookSubscriptionCreate` (un sujet rejoué : « already been taken », donc idempotent) ; les sujets RGPD ne
+  s'abonnent pas sans la CLI, et les abonnements déclarés dans l'app de la CLI n'apparaissent pas dans la liste de la
+  boutique. D'où deux origines (`shopify_boutiques.origine`) : seule la console abonne par l'API.
+- **Migration 0249** (la colonne `origine`, la table `shopify_messages_attente`), poussée SEULE (`aeca44d5`) : image
+  construite et vérifiée (seule 0249 en attente), `pg_stat_activity` sans transaction longue ni verrou sur
+  `shopify_boutiques`, `lock_timeout` de 5 s ; appliquée depuis le VPS, relue en base en lecture seule (colonne
+  `text not null default 'claude_code'`, CHECK sous leur nom, clé étrangère `confdeltype = 'c'`, clé primaire, index) ;
+  la boutique existante a pris `claude_code`. L'ancien code l'ignore : elle n'avait pas à précéder un déploiement.
+- **La relecture des lots 0 et 1 n'a trouvé aucun rouge**, neuf jaunes. Corrigés avant le déploiement (`44fb8c9a`),
+  chacun tenu par un test vu rouge, défaut remis, puis vert : l'activation retirait l'attente AVANT de brancher (une
+  panne entre les deux perdait le message sans réparateur, la règle des transitions en deux écritures) ; l'e-mail
+  « actif » partait pour une boutique coupée ou une relance sans consentement ; un modèle refusé dès sa création
+  restait « en validation » ; `consentementAffirme: false` était accepté sans rien faire ; une boutique de la console
+  coupée puis désinstallée gardait son branchement ; le filet relisait les vingt plus anciennes attentes, que des
+  attentes bloquées auraient affamé. Restent au todo : la catégorie relue à l'approbation, le branchement à moitié
+  fait sans trace d'audit, la description de `disconnect_shopify`.
+- **Un événement reçu deux fois n'envoie pas deux messages** (vérifié en préparant la carte) : chaque commande,
+  expédition et panier a sa clé de déduplication (`orders/paid:<id>`, `fulfillments/create:<id>`, le jeton du panier).
+- **Le découpage du push** : lots 1 et 2 et jaunes construits dans un worktree détaché sur `origin/main`, le câblage
+  de `src/worker.ts` résolu à la main (l'avance des parcours d'un voisin et l'activation Shopify, l'une après l'autre),
+  la moitié serveur typecheckée seule, la suite entière jouée sur l'arbre combiné.
+
 ## 2026-10-22 (soir) : le connecteur Shopify, lot 3 (l'import des clients abonnés), et la page « C'est installé »
 
 Plan : `docs/superpowers/plans/2026-10-21-connecteur-shopify.md`, § Lot 3, cadré avec Julien en rondes de questions :

@@ -2320,10 +2320,18 @@ dans `PgShopifyStore`. Le jeton rendu n'est ni gardé ni renouvelé : les webhoo
 - 🔴 **l'assistant de la console** (`src/shopify/preparation.ts`) transforme un texte à repères (`{{first_name}}`...)
   en modèle créé chez Meta par la MÊME création que l'écran Modèles (`creerUnModele`) ; le message ne s'active qu'à
   l'approbation (`activerSelonStatut`, appelé par le statut des modèles dans le worker et par un filet de l'API qui
-  relit toutes les dix minutes les attentes de plus de dix minutes). Le message ACTIF n'est jamais touché par une
-  préparation ni par un refus ; le dernier geste gagne (`set_shopify_message` retire l'attente du même événement). Une
-  relance ne se prépare jamais sans consentement affirmé, et porte en pied « Répondez STOP... » (une réponse texte
-  désabonne ; un bouton, non).
+  relit toutes les dix minutes vingt attentes de plus de dix minutes, TIRÉES AU HASARD pour que des attentes bloquées
+  n'affament pas les autres). 🔴 L'activation BRANCHE avant de retirer l'attente : une panne entre les deux laisse
+  l'attente au rejeu et au filet, et un second passage ne trouve plus rien à retirer, donc l'e-mail ne part qu'une fois.
+  Cet e-mail « actif » ne part que si le message part vraiment (boutique branchée, et pour la relance, consentement
+  affirmé). Le message ACTIF n'est jamais touché par une préparation ni par un refus ; le dernier geste gagne
+  (`set_shopify_message` retire l'attente du même événement). Une relance ne se prépare jamais sans consentement
+  affirmé, et porte en pied « Répondez STOP... » (une réponse texte désabonne ; un bouton, non). Retirer l'affirmation
+  passe par le réglage (`PATCH .../messages/:evenement`), jamais par la préparation : la relance reste branchée mais ne
+  part plus (gardes de la prise de panier et du balayage), et la carte la dit EN PAUSE ;
+- **les textes, les données et leurs libellés** vivent dans `web/lib/partage/shopify-messages.ts`, que le serveur
+  importe (`src/shopify/donnees.ts`, `preparation.ts`) : l'aperçu de l'assistant et le modèle créé chez Meta disent la
+  même chose. La carte écrit les repères `{prénom}` et les convertit en `{{first_name}}` (`web/lib/shopify-assistant.ts`).
 
 `tenant_id = $1` sur chaque requête du store, sauf SIX lectures transverses nommées dans le fichier :
 `boutiqueParDomaine` et `couperParDomaine` (le domaine DONNE l'espace), `purgerEvenements`, `reclamerPaniersDus` (qui

@@ -2357,11 +2357,12 @@ scénario, comment importer des contacts.
 - Réservé aux **admins** (côté serveur, pas seulement dans l'écran) : une adresse de webhook est un pouvoir
   d'écriture sur le mini-CRM, et un pouvoir d'envoi quand un scénario y est attaché.
 
-## Boutique Shopify : les messages de commande sur WhatsApp (depuis Claude Code, 2026-10-21)
+## Boutique Shopify : les messages de commande sur WhatsApp (Claude Code ou console, 2026-10-21)
 
 Le marchand branche sa boutique Shopify depuis Claude Code, sans taper une commande : la skill `shopify` du plugin crée
 l'app dans SON organisation Shopify (aucune validation de Shopify n'est nécessaire), le marchand clique une fois
-« Installer », et la boutique est branchée. Ouvert à toutes les offres, Free comprise.
+« Installer », et la boutique est branchée. Ouvert à toutes les offres, Free comprise. En Pro et Entreprise, il peut
+aussi tout faire depuis la console, sans Claude Code (2026-10-22, voir la carte ci-dessous).
 
 - **Deux messages** : à la commande payée (« commande confirmée ») et à l'expédition (avec le transporteur et le lien
   de suivi). Chacun est un modèle WhatsApp de service (utility) approuvé par Meta ; les données de la commande (prénom,
@@ -2376,19 +2377,33 @@ l'app dans SON organisation Shopify (aucune validation de Shopify n'est nécessa
   l'affirmation est tracée (qui, quand).
 - **Limite de contacts atteinte** : les nouveaux clients ne reçoivent plus leurs messages ; la carte et l'outil d'état
   les comptent, et un e-mail part aux admins au premier refus du mois.
-- **Paramètres > Intégrations > Shopify** (Pro et Entreprise) : la boutique, ses messages, le dernier événement, les
-  chiffres des 30 jours, et « Couper » (plus aucun message ; l'app se désinstalle depuis la boutique). En Free, sans
-  console, tout passe par Claude Code (`get_shopify_state`, `disconnect_shopify`).
+- **Paramètres > Intégrations > Shopify** (Pro et Entreprise, 2026-10-22) :
+  - **sans boutique**, un mode opératoire de cinq minutes chez Shopify : créer l'app à la main sur le tableau de bord
+    développeur (son adresse et ses droits se copient d'un clic), l'installer sur la boutique, copier son identifiant et
+    son secret ; puis les coller dans la carte, qui branche la boutique et abonne ses événements ;
+  - **avec une boutique**, les trois messages, chacun avec son état (actif, en validation chez Meta, pas encore réglé,
+    en pause) et un assistant : le texte proposé, modifiable, où les données de la boutique s'écrivent `{prénom}`,
+    `{lien du panier}`... avec un aperçu WhatsApp ; le délai pour la relance ; le consentement. « Envoyer à Meta et
+    activer dès l'approbation » crée le modèle chez Meta, et le message s'active seul à l'approbation (un e-mail le dit,
+    ou dit le refus de Meta et sa raison). Modifier un message actif ne l'arrête pas : l'ancien part jusqu'à
+    l'approbation du nouveau ; changer seulement le délai ou la case s'applique tout de suite ;
+  - l'import des clients abonnés, les chiffres des 30 jours et des paniers, et « Couper » (plus aucun message ; l'app
+    se désinstalle depuis la boutique ; une boutique coupée se rebranche depuis la carte).
+  - En Free, sans console, tout passe par Claude Code (`get_shopify_state`, `disconnect_shopify`). Les deux chemins
+    appliquent les mêmes règles ; le dernier geste gagne.
 - **RGPD** : une demande d'effacement d'un client transmise par Shopify efface sa fiche ; une demande d'accès prévient
   les admins ; 48 h après la désinstallation, Shopify fait effacer le branchement (les fiches restent au mini-CRM).
+  ⚠️ Une boutique branchée depuis la console ne reçoit pas ces demandes (Shopify ne les abonne qu'aux apps créées par sa
+  CLI) : le marchand efface lui-même la fiche dans Contacts quand Shopify lui en transmet une, la carte le lui dit, et
+  la désinstallation efface tout de suite le branchement.
 - **La relance de panier abandonné** (2026-10-22) : un client qui remplit le checkout avec son téléphone sans
   commander reçoit UNE relance (un modèle marketing, le lien de son panier en variable), au délai choisi par le marchand
   après la dernière modification du panier (1 h par défaut, de 15 min à 72 h). Rien ne part si une commande en est née
   entre-temps, même non payée. Elle exige que le marchand ait affirmé le consentement de ses clients. Les paniers en
   attente ne se gardent qu'une semaine, et seulement quand la relance est branchée.
-- **L'import des clients abonnés** (2026-10-22) : depuis Claude Code, le marchand importe les clients de sa boutique
+- **L'import des clients abonnés** (2026-10-22) : depuis Claude Code ou la carte, le marchand importe les clients de sa boutique
   abonnés au marketing (e-mail ou SMS) qui ont un téléphone. Claude compte d'abord (abonnés, déjà présents, nouveaux,
-  places libres de l'offre), puis le marchand choisit combien en importer, les plus récents d'abord ; au-delà des places
+  places libres de l'offre) avant que le marchand choisisse combien en importer, les plus récents d'abord ; au-delà des places
   libres, rien n'est importé. Les fiches sont étiquetées « Shopify » et arrivent SANS consentement WhatsApp (un accord
   e-mail ou SMS n'en est pas un) ; un STOP reste un STOP, une fiche déjà présente n'est pas touchée.
 
