@@ -94,6 +94,35 @@ describe('POST /auth/google', () => {
     await server.close();
   });
 
+  it('🔴 des comptes portés par une CLASSE (comme PgUserStore) gardent leur this : connexion et création passent', async () => {
+    class Store {
+      readonly touches: string[] = [];
+      private readonly connus = [{ id: 'u1', tenantId: 't1', tenantName: 'Un', role: 'agent', disabled: false }];
+      async getByEmail(email: string) { return email === 'known@x.fr' ? this.connus : []; }
+      async createTenantWithAdmin() { return { tenantId: `${this.connus[0]!.tenantId}New`, userId: 'uNew' }; }
+      async touchLastLogin(userId: string) { this.touches.push(userId); }
+    }
+    const store = new Store();
+    const server = buildServer({
+      queue: new FakeQueue(),
+      auth: {
+        users: { findIdentity: async () => null },
+        secret: SECRET,
+        getUserState: async () => ({ role: 'admin', disabled: false, tenantStatus: 'active', horsOffre: null }),
+        comptes: store,
+        googleClientId: 'client-abc',
+        verifyGoogle: fakeVerify,
+      },
+    });
+    const connu = await server.inject({ method: 'POST', url: '/auth/google', ...j, payload: { idToken: 'GOOD' } });
+    expect(connu.statusCode).toBe(200);
+    const nouveau = await server.inject({ method: 'POST', url: '/auth/google', ...j, payload: { idToken: 'NEW' } });
+    expect(nouveau.statusCode).toBe(201);
+    expect(nouveau.json()).toMatchObject({ user: { tenantId: 't1New' } });
+    expect(store.touches).toEqual(['u1', 'uNew']);
+    await server.close();
+  });
+
   it('email inconnu + jeton valide -> 201 + nouvel espace admin SANS mot de passe', async () => {
     const { server, cap } = app();
     const res = await server.inject({ method: 'POST', url: '/auth/google', ...j, payload: { idToken: 'NEW' } });

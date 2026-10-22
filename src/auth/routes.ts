@@ -248,10 +248,11 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     const entree = await entrerParGoogle(
       {
         verifyGoogle: deps.verifyGoogle,
+        // Liées : le store est une classe (`PgUserStore`), une méthode détachée perd son `this` (500 du 2026-10-22).
         comptes: {
-          getByEmail: deps.comptes.getByEmail,
-          createTenantWithAdmin: deps.comptes.createTenantWithAdmin,
-          touchLastLogin: deps.comptes.touchLastLogin,
+          getByEmail: deps.comptes.getByEmail.bind(deps.comptes),
+          createTenantWithAdmin: deps.comptes.createTenantWithAdmin.bind(deps.comptes),
+          touchLastLogin: deps.comptes.touchLastLogin?.bind(deps.comptes),
         },
       },
       idToken,

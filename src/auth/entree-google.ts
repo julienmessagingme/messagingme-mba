@@ -44,10 +44,10 @@ export async function entrerParGoogle(
   }
 
   if (origine === undefined) return { statut: 'inconnue', identite };
-  const creer = deps.comptes.createTenantWithAdmin;
-  if (!creer) throw new Error('entrerParGoogle : création d’espace non câblée');
+  if (!deps.comptes.createTenantWithAdmin) throw new Error('entrerParGoogle : création d’espace non câblée');
   const tenantName = nomDuNouvelEspace(identite);
-  const { tenantId, userId } = await creer(
+  // Appel de méthode, jamais détaché : le store est une classe et y perdrait son `this`.
+  const { tenantId, userId } = await deps.comptes.createTenantWithAdmin(
     tenantName,
     { email: identite.email, name: identite.name, passwordHash: null },
     origine,
