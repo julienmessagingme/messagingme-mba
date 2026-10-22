@@ -8,6 +8,11 @@ import {
 } from './donnees';
 import type { Issue, Refus } from './gestion';
 import type { AttenteMessage, PgShopifyStore } from './store.pg';
+import { EXEMPLES_DONNEES, langueDuPied, PIED_STOP, TEXTES_PROPOSES } from '../../web/lib/partage/shopify-messages';
+
+// Le pied STOP et les textes proposés vivent dans le module que la console partage : l'aperçu de l'assistant et le
+// modèle créé chez Meta disent la même chose.
+export { PIED_STOP, TEXTES_PROPOSES };
 
 /**
  * L'ASSISTANT DES MESSAGES SHOPIFY DE LA CONSOLE (conception 2026-10-22, plan lot 1) : préparer un message (le texte
@@ -32,7 +37,7 @@ export interface DepsPreparation {
 }
 
 export interface DepsActivation {
-  store: Pick<PgShopifyStore, 'lire' | 'brancher' | 'retirerAttente' | 'reglerDelaiPanier'>;
+  store: Pick<PgShopifyStore, 'lire' | 'brancher' | 'retirerAttente' | 'reglerDelaiPanier' | 'attenteDuModele'>;
   emails: { emettre(e: Emission): Promise<unknown> };
   /** La page Paramètres de la console, où vit la carte Shopify : le lien des deux e-mails. */
   pageParametres: string;
@@ -46,45 +51,6 @@ const REPERE = /\{\{\s*([a-z_]+)\s*\}\}/g;
 const VARIABLES_MAX = 10;
 const CORPS_MAX = 1024;
 
-/**
- * Le pied de la relance (relecture de la conception) : pas de bouton, qu'un clic ne désabonnerait pas, mais la consigne
- * de répondre STOP, qu'une réponse texte « STOP » applique déjà.
- */
-export const PIED_STOP: Readonly<Record<'fr' | 'en', string>> = {
-  fr: 'Répondez STOP pour ne plus recevoir ces messages',
-  en: 'Reply STOP to stop these messages',
-};
-
-/** Les valeurs d'exemple que Meta exige pour chaque variable du corps. */
-const EXEMPLES: Readonly<Record<DonneeShopify, string>> = {
-  first_name: 'Camille',
-  order_number: '#1002',
-  order_total: '42,00 €',
-  order_status_url: 'https://ma-boutique.myshopify.com/commandes/1002',
-  carrier: 'Colissimo',
-  tracking_number: '6A12345678901',
-  tracking_url: 'https://www.laposte.fr/outils/suivre-vos-envois?code=6A12345678901',
-  checkout_url: 'https://ma-boutique.myshopify.com/checkouts/recover',
-};
-
-/** Les textes proposés par l'assistant (conception), un par message et par langue. */
-export const TEXTES_PROPOSES: Readonly<Record<EvenementShopify, Record<'fr' | 'en', string>>> = {
-  order_paid: {
-    fr: 'Bonjour {{first_name}}, merci pour votre commande {{order_number}} de {{order_total}}.\nSuivez-la ici : {{order_status_url}}\nÀ très vite !',
-    en: 'Hello {{first_name}}, thank you for your order {{order_number}} of {{order_total}}.\nTrack it here: {{order_status_url}}\nSee you soon!',
-  },
-  order_fulfilled: {
-    fr: 'Bonjour {{first_name}}, votre commande {{order_number}} est en route avec {{carrier}}.\nSuivez votre colis : {{tracking_url}}\nÀ très vite !',
-    en: 'Hello {{first_name}}, your order {{order_number}} is on its way with {{carrier}}.\nTrack your parcel: {{tracking_url}}\nSee you soon!',
-  },
-  checkout_abandoned: {
-    fr: 'Bonjour {{first_name}}, vous avez laissé des articles dans votre panier.\nIl vous attend ici : {{checkout_url}}\nÀ très vite !',
-    en: 'Hello {{first_name}}, you left items in your cart.\nIt is waiting for you here: {{checkout_url}}\nSee you soon!',
-  },
-};
-
-/** La langue du pied : le français pour une langue française, l'anglais sinon. */
-const langueDuPied = (langue: string): 'fr' | 'en' => (langue.toLowerCase().startsWith('fr') ? 'fr' : 'en');
 
 /**
  * Le texte de l'assistant vers un corps de modèle : chaque repère devient {{1}}, {{2}}... dans l'ordre d'apparition, et
@@ -114,7 +80,7 @@ export function versCorps(evenement: EvenementShopify, texte: unknown):
     return { ok: false, message: 'texte : le message ne peut ni commencer ni finir par une donnée ; ajoutez quelques mots avant ou après.' };
   }
   if (corps.length > CORPS_MAX) return { ok: false, message: `texte : ${CORPS_MAX} caractères au plus.` };
-  return { ok: true, corps, variables, exemples: variables.map((v) => EXEMPLES[v]) };
+  return { ok: true, corps, variables, exemples: variables.map((v) => EXEMPLES_DONNEES[v]) };
 }
 
 export interface Preparation {
@@ -151,6 +117,9 @@ export async function preparerMessage(deps: DepsPreparation, tenantId: string, p
     }
   }
   if (p.consentementAffirme !== undefined && typeof p.consentementAffirme !== 'boolean') return refus(400, 'consentementAffirme : true ou false.');
+  // Retirer l'affirmation vaut pour toute la boutique : c'est le réglage qui le fait, et qui le dit (relecture des lots 0
+  // et 1 : ici, `false` était accepté sans rien faire).
+  if (p.consentementAffirme === false) return refus(400, 'consentementAffirme : true pour affirmer ; le retrait se fait par le réglage du message.');
   if (relance && boutique.consentement === null && p.consentementAffirme !== true) {
     return refus(409, 'La relance de panier est un message marketing : affirmez d’abord que vos clients ont accepté de recevoir vos messages WhatsApp.');
   }
@@ -166,6 +135,10 @@ export async function preparerMessage(deps: DepsPreparation, tenantId: string, p
     ...(relance ? { footer: PIED_STOP[langueDuPied(langue)] } : {}),
   });
   if (!cree.ok) return refus(422, `Meta refuse ce modèle : ${cree.message}`);
+  // Un refus dès la création ne viendra pas forcément par le statut : le dire tout de suite plutôt que d'attendre.
+  if (cree.statut === 'rejected') {
+    return refus(422, 'Meta a refusé ce modèle dès sa création : reformulez le texte (sans promotion pour un message de commande), puis réessayez.');
+  }
   // Meta peut reclasser un modèle de service en marketing : un message de commande n'est admis qu'en service.
   if (!(CATEGORIES_ADMISES[evenement] as readonly string[]).includes(cree.categorie)) {
     return refus(422, `Meta a classé ce message en ${cree.categorie} : un message de commande doit rester un message de service. Retirez-en toute promotion, puis réessayez.`);
@@ -173,6 +146,8 @@ export async function preparerMessage(deps: DepsPreparation, tenantId: string, p
   const delaiMinutes = relance && typeof p.delaiMinutes === 'number' ? p.delaiMinutes : null;
   if (cree.statut === 'approved') {
     await activer(deps.store, tenantId, { evenement, modele, langue, variables: c.variables, delaiMinutes });
+    // Le dernier geste gagne : une attente plus ancienne du même événement ne s'activera pas par-dessus.
+    await deps.store.retirerAttente(tenantId, { evenement });
     return { ok: true, valeur: { etat: 'actif', modele } };
   }
   await deps.store.poserAttente(tenantId, { evenement, modele, langue, variables: c.variables, delaiMinutes, par });
@@ -180,14 +155,13 @@ export async function preparerMessage(deps: DepsPreparation, tenantId: string, p
   return { ok: true, valeur: { etat: 'en_validation', modele } };
 }
 
-/** Branche le message approuvé, avec son délai, et retire l'attente de l'événement. */
+/** Branche le message approuvé, avec son délai. L'attente se retire APRÈS, par l'appelant. */
 async function activer(
-  store: Pick<PgShopifyStore, 'brancher' | 'retirerAttente' | 'reglerDelaiPanier'>, tenantId: string,
+  store: Pick<PgShopifyStore, 'brancher' | 'reglerDelaiPanier'>, tenantId: string,
   a: Pick<AttenteMessage, 'evenement' | 'modele' | 'langue' | 'variables' | 'delaiMinutes'>,
 ): Promise<void> {
   await store.brancher(tenantId, { evenement: a.evenement, modele: a.modele, langue: a.langue, variables: a.variables, actif: true, par: null });
   if (a.delaiMinutes !== null) await store.reglerDelaiPanier(tenantId, a.delaiMinutes);
-  await store.retirerAttente(tenantId, { evenement: a.evenement });
 }
 
 export interface Reglage {
@@ -238,16 +212,25 @@ export async function activerSelonStatut(
   const statut = s.statut.toUpperCase();
   if (statut !== 'APPROVED' && statut !== 'REJECTED') return 'rien';
   if (!s.modele.startsWith('shopify_')) return 'rien';
-  const attente = await deps.store.retirerAttente(tenantId, { modele: s.modele, langue: s.langue });
+  const attente = await deps.store.attenteDuModele(tenantId, s.modele, s.langue);
   if (attente === null) return 'rien';
   const boutique = await deps.store.lire(tenantId);
   const valeurs = { boutique: boutique?.domaine ?? '', message: LIBELLES[attente.evenement], lien_parametres: deps.pageParametres };
   if (statut === 'APPROVED') {
-    await activer(deps.store, tenantId, attente);
-    await deps.emails.emettre({ cle: 'shopify_message_actif', tenantId, a: 'admins', occasion: s.modele, valeurs }).catch(() => undefined);
-    journaliser('info', 'shopify_message_active', { tenantId, evenement: attente.evenement, modele: s.modele });
+    // 🔴 BRANCHER AVANT DE RETIRER L'ATTENTE (relecture des lots 0 et 1) : une panne entre les deux laisse l'attente, que
+    // le rejeu du statut ou le filet retrouve ; dans l'autre ordre, le message était perdu sans trace. Un second passage
+    // (statut et filet) rebranche à l'identique et ne trouve plus rien à retirer : l'e-mail ne part qu'une fois.
+    if (boutique !== null) await activer(deps.store, tenantId, attente);
+    const retiree = await deps.store.retirerAttente(tenantId, { modele: s.modele, langue: s.langue });
+    if (retiree === null || boutique === null) return 'rien';
+    // L'e-mail « actif » ne dit que la vérité : une boutique coupée, ou une relance dont l'affirmation a été retirée
+    // pendant la validation, ne part pas (les gardes de l'envoi la retiennent ; la carte la montre en pause).
+    const part = boutique.etat === 'connectee' && (attente.evenement !== 'checkout_abandoned' || boutique.consentement !== null);
+    if (part) await deps.emails.emettre({ cle: 'shopify_message_actif', tenantId, a: 'admins', occasion: s.modele, valeurs }).catch(() => undefined);
+    journaliser('info', 'shopify_message_active', { tenantId, evenement: attente.evenement, modele: s.modele, part });
     return 'active';
   }
+  if ((await deps.store.retirerAttente(tenantId, { modele: s.modele, langue: s.langue })) === null) return 'rien';
   await deps.emails.emettre({
     cle: 'shopify_modele_refuse', tenantId, a: 'admins', occasion: s.modele, valeurs: { ...valeurs, raison: (s.raison ?? 'non précisée').slice(0, 300) },
   }).catch(() => undefined);

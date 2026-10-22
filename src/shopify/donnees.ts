@@ -16,20 +16,10 @@ import { VALEUR_VARIABLE_MAX } from '../api/variables';
  * valides) et tolèrent `null` partout où Shopify le rend.
  */
 
-export const EVENEMENTS_SHOPIFY = ['order_paid', 'order_fulfilled', 'checkout_abandoned'] as const;
-export type EvenementShopify = (typeof EVENEMENTS_SHOPIFY)[number];
-
-export const DONNEES_SHOPIFY = [
-  'first_name', 'order_number', 'order_total', 'order_status_url', 'carrier', 'tracking_number', 'tracking_url', 'checkout_url',
-] as const;
-export type DonneeShopify = (typeof DONNEES_SHOPIFY)[number];
-
-/** Ce que chaque événement sait remplir : une variable hors de cette liste est refusée au branchement. */
-export const DONNEES_PAR_EVENEMENT: Readonly<Record<EvenementShopify, readonly DonneeShopify[]>> = {
-  order_paid: ['first_name', 'order_number', 'order_total', 'order_status_url'],
-  order_fulfilled: ['first_name', 'order_number', 'carrier', 'tracking_number', 'tracking_url'],
-  checkout_abandoned: ['first_name', 'checkout_url'],
-};
+// La liste des événements, des données et de ce que chacun sait remplir vit dans le module que la console partage
+// (l'assistant propose ses textes et ses repères depuis la même source) : un seul endroit à changer.
+import { DONNEES_PAR_EVENEMENT, DONNEES_SHOPIFY, EVENEMENTS_SHOPIFY, type DonneeShopify, type EvenementShopify } from '../../web/lib/partage/shopify-messages';
+export { DONNEES_PAR_EVENEMENT, DONNEES_SHOPIFY, EVENEMENTS_SHOPIFY, type DonneeShopify, type EvenementShopify };
 
 /**
  * La catégorie de modèle admise par événement : une confirmation et une expédition sont des messages de service
@@ -44,10 +34,7 @@ export const CATEGORIES_ADMISES: Readonly<Record<EvenementShopify, ReadonlyArray
 /** Les événements qu'un marchand peut brancher (la relance de panier depuis le lot 2). */
 export const EVENEMENTS_DISPONIBLES: readonly EvenementShopify[] = ['order_paid', 'order_fulfilled', 'checkout_abandoned'];
 
-/** Le délai d'une relance de panier, en minutes (décision de Julien : 1 h par défaut, de 15 min à 72 h). */
-export const DELAI_PANIER_MIN = 15;
-export const DELAI_PANIER_MAX = 4320;
-export const DELAI_PANIER_DEFAUT = 60;
+export { DELAI_PANIER_DEFAUT, DELAI_PANIER_MAX, DELAI_PANIER_MIN } from '../../web/lib/partage/shopify-messages';
 
 export function estEvenementShopify(v: unknown): v is EvenementShopify {
   return typeof v === 'string' && (EVENEMENTS_SHOPIFY as readonly string[]).includes(v);

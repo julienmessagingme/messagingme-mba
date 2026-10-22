@@ -101,6 +101,24 @@ describe('préparer un message', () => {
     expect(journal.branches).toMatchObject([{ evenement: 'checkout_abandoned', actif: true, variables: ['first_name', 'checkout_url'] }]);
     expect(journal.delais).toEqual([30]);
     expect(journal.attentes).toEqual([]);
+    // Le dernier geste gagne : une attente plus ancienne de l'événement ne s'activera pas par-dessus.
+    expect(journal.retraits).toEqual([{ evenement: 'checkout_abandoned' }]);
+  });
+
+  it('🔴 un modèle refusé dès sa création est dit tout de suite, sans attente qui resterait « en validation »', async () => {
+    const { deps, journal } = monter({ creation: { ok: true, statut: 'rejected', categorie: 'utility' } });
+    expect(await preparerMessage(deps, T, { evenement: 'order_paid', texte: TEXTES_PROPOSES.order_paid.fr, langue: 'fr' }, 'u1'))
+      .toMatchObject({ ok: false, statut: 422, message: expect.stringContaining('dès sa création') });
+    expect(journal.attentes).toEqual([]);
+    expect(journal.branches).toEqual([]);
+  });
+
+  it('retirer l’affirmation ne passe pas par la préparation : refusé, rien créé chez Meta', async () => {
+    const { deps, journal } = monter({ boutique: AFFIRMEE });
+    expect(await preparerMessage(deps, T, { evenement: 'checkout_abandoned', texte: TEXTES_PROPOSES.checkout_abandoned.fr, langue: 'fr', consentementAffirme: false }, 'u1'))
+      .toMatchObject({ ok: false, statut: 400 });
+    expect(journal.modeles).toEqual([]);
+    expect(journal.retraitsConsentement).toBe(0);
   });
 
   it('🔴 un message de commande que Meta reclasse en marketing est refusé, sans attente', async () => {
@@ -138,13 +156,14 @@ describe('régler un message sans repasser par Meta', () => {
 
 describe('l’activation au statut tranché par Meta', () => {
   const ATTENTE: AttenteMessage = { evenement: 'checkout_abandoned', modele: 'shopify_checkout_abandoned_x', langue: 'fr', variables: ['first_name', 'checkout_url'], delaiMinutes: 15, creeLe: '' };
-  function monterActivation(attente: AttenteMessage | null = ATTENTE) {
+  function monterActivation(attente: AttenteMessage | null = ATTENTE, o: { boutique?: VueBoutique | null; panne?: boolean } = {}) {
     const journal = { branches: [] as unknown[], emails: [] as Emission[], delais: [] as number[], retraits: [] as unknown[] };
     let restante = attente;
     const deps: DepsActivation = {
       store: {
-        lire: async () => VUE,
-        brancher: async (_t, m) => { journal.branches.push(m); },
+        lire: async () => (o.boutique === undefined ? AFFIRMEE : o.boutique),
+        attenteDuModele: async (_t, modele, langue) => (restante !== null && restante.modele === modele && restante.langue === langue ? restante : null),
+        brancher: async (_t, m) => { if (o.panne) throw new Error('base perdue'); journal.branches.push(m); },
         retirerAttente: async (_t, c) => {
           journal.retraits.push(c);
           if ('modele' in c) { const a = restante; restante = null; return a !== null && a.modele === c.modele && a.langue === c.langue ? a : null; }
@@ -164,6 +183,34 @@ describe('l’activation au statut tranché par Meta', () => {
     expect(journal.branches).toEqual([{ evenement: 'checkout_abandoned', modele: ATTENTE.modele, langue: 'fr', variables: ['first_name', 'checkout_url'], actif: true, par: null }]);
     expect(journal.delais).toEqual([15]);
     expect(journal.emails).toMatchObject([{ cle: 'shopify_message_actif', a: 'admins', valeurs: { boutique: 'b.myshopify.com', message: 'Relance de panier abandonné', lien_parametres: 'https://console.test/parametres' } }]);
+  });
+
+  it('🔴 une panne au branchement laisse l’attente : le rejeu du statut ou le filet la retrouve', async () => {
+    const { deps, journal } = monterActivation(ATTENTE, { panne: true });
+    await expect(activerSelonStatut(deps, T, { modele: ATTENTE.modele, langue: 'fr', statut: 'APPROVED', raison: null })).rejects.toThrow('base perdue');
+    expect(journal.retraits).toEqual([]);
+    expect(journal.emails).toEqual([]);
+  });
+
+  it('🔴 le statut et le filet passent tous deux : branché à l’identique, un seul e-mail', async () => {
+    const { deps, journal } = monterActivation();
+    const s = { modele: ATTENTE.modele, langue: 'fr', statut: 'APPROVED', raison: null };
+    expect(await activerSelonStatut(deps, T, s)).toBe('active');
+    expect(await activerSelonStatut(deps, T, s)).toBe('rien');
+    expect(journal.emails).toHaveLength(1);
+  });
+
+  it('🔴 une relance approuvée après le retrait de l’affirmation, ou une boutique coupée : branchée, mais aucun e-mail « actif »', async () => {
+    for (const boutique of [VUE, { ...AFFIRMEE, etat: 'coupee' as const }]) {
+      const { deps, journal } = monterActivation(ATTENTE, { boutique });
+      expect(await activerSelonStatut(deps, T, { modele: ATTENTE.modele, langue: 'fr', statut: 'APPROVED', raison: null })).toBe('active');
+      expect(journal.branches).toHaveLength(1);
+      expect(journal.emails).toEqual([]);
+    }
+    // Un message de commande, lui, part sans affirmation : l'e-mail le dit.
+    const commande = monterActivation({ ...ATTENTE, evenement: 'order_paid', delaiMinutes: null }, { boutique: VUE });
+    expect(await activerSelonStatut(commande.deps, T, { modele: ATTENTE.modele, langue: 'fr', statut: 'APPROVED', raison: null })).toBe('active');
+    expect(commande.journal.emails).toMatchObject([{ cle: 'shopify_message_actif' }]);
   });
 
   it('🔴 REJECTED retire l’attente et prévient, sans rien brancher : le message actif reste', async () => {

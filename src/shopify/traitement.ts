@@ -77,7 +77,9 @@ const SUJETS_RGPD = new Set(['customers/redact', 'customers/data_request', 'shop
 export async function traiterWebhookShopify(
   deps: DepsTraitementShopify, b: BoutiqueRecue, sujet: string, corps: unknown,
 ): Promise<ReponseTraitement> {
-  if (b.etat === 'coupee' && !SUJETS_RGPD.has(sujet)) return OK;
+  // Une boutique coupée n'écoute plus que le RGPD, et la désinstallation d'une boutique de la console : c'est le seul
+  // signal qui efface son branchement, le parcours nominal étant « Couper » puis désinstaller (relecture des lots 0 et 1).
+  if (b.etat === 'coupee' && !SUJETS_RGPD.has(sujet) && !(sujet === 'app/uninstalled' && b.origine === 'console')) return OK;
   switch (sujet) {
     case 'orders/paid': {
       const c = schemaCommande.safeParse(corps);

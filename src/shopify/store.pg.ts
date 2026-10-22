@@ -288,6 +288,16 @@ export class PgShopifyStore {
     return res.rows.map(versAttente);
   }
 
+  /** L'attente qui porte ce modèle et cette langue, sans la retirer : l'activation branche d'abord, retire ensuite. */
+  async attenteDuModele(tenantId: string, modele: string, langue: string): Promise<AttenteMessage | null> {
+    const res = await this.pool.query<LigneAttente>(
+      `select evenement, modele, langue, variables, delai_panier_minutes, cree_le from shopify_messages_attente
+        where tenant_id = $1 and modele = $2 and langue = $3`,
+      [tenantId, modele, langue],
+    );
+    return res.rows[0] ? versAttente(res.rows[0]) : null;
+  }
+
   /** Rend l'attente retirée (celle de l'événement, ou celle qui porte ce modèle et cette langue), ou `null`. */
   async retirerAttente(tenantId: string, cible: { evenement: EvenementShopify } | { modele: string; langue: string }): Promise<AttenteMessage | null> {
     const res = 'evenement' in cible
@@ -304,12 +314,14 @@ export class PgShopifyStore {
 
   /**
    * EXCEPTION TRANSVERSE 6 : le filet de l'activation, toutes boutiques confondues. Les attentes de plus de `minutes`
-   * minutes, les plus anciennes d'abord : leur modèle est relu chez Meta, au cas où son statut ne serait pas arrivé.
+   * minutes, tirées au hasard : leur modèle est relu chez Meta, au cas où son statut ne serait pas arrivé. Au hasard et
+   * non les plus anciennes d'abord (relecture des lots 0 et 1) : vingt attentes dont le statut reste illisible
+   * bloqueraient sinon toutes les autres.
    */
   async attentesAnciennes(minutes: number, limite: number): Promise<Array<AttenteMessage & { tenantId: string }>> {
     const res = await this.pool.query<LigneAttente & { tenant_id: string }>(
       `select tenant_id, evenement, modele, langue, variables, delai_panier_minutes, cree_le from shopify_messages_attente
-        where cree_le < now() - make_interval(mins => $1) order by cree_le limit $2`,
+        where cree_le < now() - make_interval(mins => $1) order by random() limit $2`,
       [minutes, limite],
     );
     return res.rows.map((r) => ({ ...versAttente(r), tenantId: r.tenant_id }));

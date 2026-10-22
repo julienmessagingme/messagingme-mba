@@ -284,6 +284,16 @@ describe('une boutique coupée, la désinstallation et les sujets RGPD', () => {
     expect(journal.coupees).toEqual([]);
   });
 
+  it('🔴 une boutique de la console COUPÉE, puis désinstallée, perd aussi son branchement ; une boutique de Claude Code coupée, rien', async () => {
+    const console_ = monter();
+    await traiterWebhookShopify(console_.deps, { ...BOUTIQUE, origine: 'console', etat: 'coupee' }, 'app/uninstalled', { id: 1 });
+    expect(console_.journal.boutiquesEffacees).toEqual([T]);
+    const cli = monter();
+    await traiterWebhookShopify(cli.deps, { ...BOUTIQUE, etat: 'coupee' }, 'app/uninstalled', { id: 1 });
+    expect(cli.journal.boutiquesEffacees).toEqual([]);
+    expect(cli.journal.coupees).toEqual([]);
+  });
+
   it('customers/redact efface les fiches liées aux commandes, au client et à son numéro, une fois chacune', async () => {
     const { deps, journal } = monter();
     const r = await traiterWebhookShopify(deps, BOUTIQUE, 'customers/redact', {

@@ -270,6 +270,10 @@ describe.skipIf(!url)('le store Shopify : la console (origine, attentes, migrati
     await store.poserAttente(D, { evenement: 'checkout_abandoned', modele: 'shopify_b', langue: 'fr', variables: ['first_name', 'checkout_url'], delaiMinutes: 30, par: null });
     expect((await store.attentes(D)).map((a) => [a.modele, a.delaiMinutes, a.variables])).toEqual([['shopify_b', 30, ['first_name', 'checkout_url']]]);
     expect((await store.message(D, 'checkout_abandoned'))?.modele).toBe('ancien');
+    // L'activation lit l'attente sans la retirer : elle branche d'abord, retire ensuite.
+    expect(await store.attenteDuModele(D, 'shopify_b', 'fr')).toMatchObject({ evenement: 'checkout_abandoned', delaiMinutes: 30 });
+    expect(await store.attenteDuModele(D, 'shopify_b', 'en')).toBeNull();
+    expect(await store.attentes(D)).toHaveLength(1);
     expect(await store.retirerAttente(D, { modele: 'shopify_a', langue: 'fr' })).toBeNull();
     expect(await store.retirerAttente(D, { modele: 'shopify_b', langue: 'fr' })).toMatchObject({ evenement: 'checkout_abandoned', modele: 'shopify_b' });
     expect(await store.attentes(D)).toEqual([]);

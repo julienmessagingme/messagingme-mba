@@ -67,6 +67,12 @@ describe('l’étape des statuts de modèles', () => {
     expect(Object.keys(envoyes[0]!.ev.data)).toEqual([...CHAMPS_DU_TYPE['template.status_changed']]);
   });
 
+  it('🔴 l’activation Shopify reçoit le modèle, sa langue, le statut tel que Meta l’écrit et le motif (relecture des lots 0 et 1)', async () => {
+    const { deps, statuts } = monter();
+    await processStatutsModeles(parseWebhook(statut({ event: 'REJECTED', reason: 'INVALID_FORMAT' })), deps);
+    expect(statuts).toEqual([{ tenantId: 't1', modele: 'commande_prete', langue: 'fr', statut: 'REJECTED', raison: 'INVALID_FORMAT' }]);
+  });
+
   it('🔴 le même changement redélivré garde le même identifiant d’événement : l’application ne le reçoit qu’une fois', async () => {
     const { deps, envoyes } = monter();
     await processStatutsModeles(parseWebhook(statut()), deps);

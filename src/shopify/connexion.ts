@@ -90,10 +90,10 @@ export async function demanderJeton(
       return { ok: false, code: 'app_non_installee', message: `L’app n’est pas installée sur la boutique : cliquez « Installer » sur ${lienInstallation(domaine, clientId)}, puis réessayez.` };
     }
     if (code === 'shop_not_permitted') {
-      return { ok: false, code: 'hors_organisation', message: 'Cette app n’est pas dans l’organisation Shopify qui porte la boutique : créez-la dans cette organisation (shopify organization list), puis réessayez.' };
+      return { ok: false, code: 'hors_organisation', message: 'Cette app n’est pas dans l’organisation Shopify qui porte la boutique : créez-la dans cette organisation (sur le tableau de bord développeur de Shopify, ou par shopify organization list), puis réessayez.' };
     }
     if (code === 'invalid_client' || res.status === 401) {
-      return { ok: false, code: 'identifiants', message: 'Shopify refuse cet identifiant ou ce secret : relisez-les avec « shopify app env show ».' };
+      return { ok: false, code: 'identifiants', message: 'Shopify refuse cet identifiant ou ce secret : relisez-les dans Settings de l’app, sur le tableau de bord développeur de Shopify (ou avec « shopify app env show »).' };
     }
     if (res.status === 404) return { ok: false, code: 'boutique_inconnue', message: 'Shopify ne connaît pas cette boutique, ou elle est inactive.' };
     if (res.status >= 500) return passager(`statut ${res.status}`);
