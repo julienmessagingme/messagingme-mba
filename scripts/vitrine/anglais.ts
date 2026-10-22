@@ -48,6 +48,8 @@ export const JUMELLES: Readonly<Record<string, string>> = {
   '/contact/merci/': '/en/contact/thanks/',
   // Où Shopify mène le marchand après « Installer » (l'`application_url` de l'app que la skill shopify crée).
   '/shopify/installe/': '/en/shopify/installed/',
+  // La même page pour le parcours de la console (conception 2026-10-22) : « revenez dans votre console ».
+  '/shopify/console/': '/en/shopify/console/',
   // Le centre d'aide : ses deux langues viennent des fiches et de leur version anglaise (npm run vitrine:aide).
   ...jumellesAide(),
 };

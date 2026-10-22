@@ -3,5 +3,8 @@
  {"fr":"L’application Messaging Me est installée sur votre boutique Shopify : revenez dans Claude Code pour finir.","en":"The Messaging Me app is installed on your Shopify store: go back to Claude Code to finish."},
  {"fr":"C’est installé.","en":"It is installed."},
  {"fr":"L’application Messaging Me est installée sur votre boutique. Revenez dans Claude Code et dites-lui que c’est fait&nbsp;: il branche la boutique, puis vous propose vos messages WhatsApp. Vous pouvez fermer cet onglet.","en":"The Messaging Me app is installed on your store. Go back to Claude Code and tell it you are done: it connects the store, then suggests your WhatsApp messages. You can close this tab."},
- {"fr":"Messaging Me pour Claude Code","en":"Messaging Me for Claude Code"}
+ {"fr":"Messaging Me pour Claude Code","en":"Messaging Me for Claude Code"},
+ {"fr":"L’application Messaging Me est installée sur votre boutique Shopify : revenez dans votre console pour la brancher.","en":"The Messaging Me app is installed on your Shopify store: go back to your console to connect it."},
+ {"fr":"L’application Messaging Me est installée sur votre boutique. Revenez dans votre console Messaging Me et collez l’identifiant et le secret de l’app&nbsp;: nous branchons la boutique, puis vous réglez vos messages WhatsApp. Vous pouvez fermer cet onglet.","en":"The Messaging Me app is installed on your store. Go back to your Messaging Me console and paste the app’s client ID and secret: we connect the store, then you set up your WhatsApp messages. You can close this tab."},
+ {"fr":"Ouvrir ma console","en":"Open my console"}
 ]
