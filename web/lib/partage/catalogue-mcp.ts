@@ -17,6 +17,8 @@ export const CATALOGUE_MCP = {
   send_message: { scope: 'mcp:write' },
   tag_conversation: { scope: 'mcp:write' },
   assign_conversation: { scope: 'mcp:write' },
+  /** Prendre et rendre la main sur un fil (2026-10-22), sans personne exigée : `reply_in_open_window` prend déjà le fil. */
+  control_conversation: { scope: 'mcp:write' },
   list_widgets: { scope: 'mcp:read' },
   list_scenarios: { scope: 'mcp:read' },
   create_widget: { scope: 'mcp:write' },

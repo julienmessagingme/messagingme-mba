@@ -510,6 +510,14 @@ export const mcpEtiquettesInertes: Pick<DepsMcp, 'etiquettes'> = {
 };
 
 /**
+ * La main du fil de `control_conversation`, pour les montages qui n'en parlent pas : deux ÉCRITURES, donc elles lèvent.
+ * L'outil a son propre fichier, `tests/mcp-control-conversation.test.ts`.
+ */
+export const mcpFilInerte: Pick<DepsMcp, 'fil'> = {
+  fil: { reprendreLaMain: neDevraitPasEtreAppelee('fil.reprendreLaMain'), rendreLaMain: neDevraitPasEtreAppelee('fil.rendreLaMain') },
+};
+
+/**
  * Les widgets et les scénarios du MCP (lot 5 du widget), pour les montages qui ne parlent pas des widgets : les
  * LECTURES rendent le vide, les ÉCRITURES lèvent. Leurs outils ont leur propre fichier, `tests/mcp-widgets.test.ts`.
  */

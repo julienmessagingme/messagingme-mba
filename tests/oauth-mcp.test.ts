@@ -10,7 +10,7 @@ import { FakeQueue } from './fake-queue';
 import { cleApiDeTest } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { jamaisDesabonne } from './consentement';
-import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpChampsInertes, mcpShopifyInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpChampsInertes, mcpShopifyInerte, mcpFilInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { filiereApiSeule } from './gardes';
 
 /**
@@ -89,6 +89,7 @@ function monter(o: { publicApiUrl?: string; apiParMinute?: number } = {}) {
     ...mcpCampagnesInertes,
     ...mcpChampsInertes,
     ...mcpShopifyInerte,
+    ...mcpFilInerte,
   };
   const server = buildServer({
     queue: new FakeQueue(),

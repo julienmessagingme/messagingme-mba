@@ -14,7 +14,7 @@ import * as catalogue from '../src/mcp/outils';
 import { API_SCOPES } from '../web/lib/partage/droits-api';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE, NumeroSuspenduError, MESSAGE_NUMERO_SUSPENDU } from '../src/meta/numero-delie';
-import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpChampsInertes, mcpShopifyInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpChampsInertes, mcpShopifyInerte, mcpFilInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { creerPoseEtiquette, LONGUEUR_MAX_ETIQUETTE } from '../src/crm/poser-etiquette';
 import { DROITS } from '../src/offres/offres';
 import { MetaTemplateClient, type FetchLike, type TemplateSummary } from '../src/meta/templates';
@@ -131,6 +131,7 @@ function app(
     ...mcpCampagnesInertes,
     ...mcpChampsInertes,
     ...mcpShopifyInerte,
+    ...mcpFilInerte,
     ...reste,
   };
   const keys = new FakeApiKeys()
@@ -785,6 +786,9 @@ describe('serveur MCP : cohérence du catalogue', () => {
       send_message: [true, false, true],
       tag_conversation: [true, true, false],
       assign_conversation: [true, true, false],
+      // La main du fil (2026-10-22) : rejouer le même geste laisse le même détenteur, et le geste peut retirer le contact
+      // de la liste de l'agent de Meta, ou l'y remettre, chez Meta.
+      control_conversation: [true, true, true],
       create_widget: [true, false, false],
       update_widget: [true, true, false],
       // L'agent IA et le crédit : la table de la spec du lot 8a (2026-10-03-mcp-agent-ia-design.md, section 1).

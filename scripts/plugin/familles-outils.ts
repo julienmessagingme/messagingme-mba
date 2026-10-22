@@ -21,7 +21,7 @@ export const FAMILLES_OUTILS: ReadonlyArray<{ readonly titre: string; readonly o
   { titre: 'Agent knowledge', outils: ['list_knowledge', 'add_knowledge', 'delete_knowledge', 'preview_site', 'import_site', 'import_document_text'] },
   {
     titre: 'Conversations',
-    outils: ['list_conversations', 'get_conversation', 'get_messages', 'reply_in_open_window', 'send_message', 'tag_conversation', 'assign_conversation', 'get_conversation_insights'],
+    outils: ['list_conversations', 'get_conversation', 'get_messages', 'reply_in_open_window', 'send_message', 'control_conversation', 'tag_conversation', 'assign_conversation', 'get_conversation_insights'],
   },
   { titre: 'Templates', outils: ['list_templates', 'get_template_status', 'create_template', 'send_template_to_contact', 'get_message_status'] },
   {

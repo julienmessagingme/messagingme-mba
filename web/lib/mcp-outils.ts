@@ -40,6 +40,7 @@ const TEXTES_MCP = {
   reply_in_open_window: ['Répondre, uniquement si la fenêtre de 24 h est ouverte.', 'Reply, only while the 24 h window is open.'],
   tag_conversation: ['Poser des tags sur le contact d’un fil.', 'Add tags to a thread’s contact.'],
   assign_conversation: ['Confier un fil à un membre, ou le libérer.', 'Assign a thread to a member, or release it.'],
+  control_conversation: ['Prendre la main sur un fil, ou la rendre au répondeur automatique, qui répondra au message suivant.', 'Take over a thread, or hand it back to the automatic responder, which answers the next message.'],
   get_plan: ['L’offre de l’espace, ses limites et ce qui en est consommé, avec le lien pour passer en Pro.', 'The workspace plan, its limits and current usage, with the link to upgrade.'],
   get_setup_state: ['Où en est la mise en service de l’espace (numéro, agent IA, répondeur, bulle, crédit, offre), et l’étape suivante avec ses outils. À appeler en premier pour mettre un espace en service, ou reprendre.', 'Where the workspace setup stands (number, AI agent, responder, bubble, credit, plan), and the next step with its tools. Call it first to set up a workspace, or to resume.'],
   list_widgets: ['Les widgets WhatsApp de l’espace, avec la balise à coller sur le site.', 'The workspace’s WhatsApp widgets, with the tag to paste on the site.'],

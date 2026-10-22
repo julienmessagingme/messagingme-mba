@@ -14,7 +14,7 @@ import { nouvelIdentifiantClient } from '../src/oauth/clients.pg';
 import { FakeQueue } from './fake-queue';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { jamaisDesabonne } from './consentement';
-import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpChampsInertes, mcpShopifyInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpChampsInertes, mcpShopifyInerte, mcpFilInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { filiereApiSeule } from './gardes';
 
 /**
@@ -222,6 +222,7 @@ function monter(o: { publicApiUrl?: string; fiches?: Record<string, ClientResolu
     ...mcpCampagnesInertes,
     ...mcpChampsInertes,
     ...mcpShopifyInerte,
+    ...mcpFilInerte,
   };
   const server = buildServer({
     queue: new FakeQueue(),

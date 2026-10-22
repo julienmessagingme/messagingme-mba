@@ -19,7 +19,8 @@ import {
 import type { WorkflowResumeRow } from '../workflow/store.pg';
 import type { PlafondPartage } from '../auth/plafond-partage';
 import { RefusOutil, dateAvecFuseau, entierBorne, texteObligatoire, valeurOuRefus } from './saisie';
-import { decoderCurseur, encoderCurseur, type DepotConversationsV1 } from '../api/conversations-v1';
+import { decoderCurseur, encoderCurseur, idPublic, type DepotConversationsV1 } from '../api/conversations-v1';
+import type { ControleDuFil, IssueRendreLaMain } from '../inbox/fil';
 import { OUTILS_AGENT, type DepsAgentMcp } from './outils-agent';
 import { OUTILS_OFFRE, type DepsOffreMcp } from './outils-offre';
 import type { DepsCreationCle } from '../auth/creer-cle';
@@ -94,6 +95,11 @@ export interface DepsMcp extends DepsRepondre, DepsChampsMcp {
    * l'agent : nettoyage, pose, déclaration dans le référentiel de l'espace. Appelée SANS publier (voir l'en-tête).
    */
   etiquettes: Pick<PoseEtiquette, 'poser'>;
+  /**
+   * La main du fil (`control_conversation`) : les deux boutons du fil de la console, le MÊME contrôle
+   * (`src/inbox/fil.ts`). L'outil n'y ajoute que la garde d'espace et des refus lisibles là où la console rend un 409.
+   */
+  fil: Pick<ControleDuFil, 'reprendreLaMain' | 'rendreLaMain'>;
   /** Membres de l'espace, pour qu'un agent puisse confier une conversation à quelqu'un de nommé. */
   listerMembres(tenantId: string): Promise<Array<{ id: string; name: string | null; email: string; role: string }>>;
   /**
@@ -476,9 +482,9 @@ export const OUTILS: OutilMcp[] = [
     ...ficheOutilMcp('get_messages'),
     fonction: null,
     description:
-      `The MOST RECENT messages of a conversation, ${MAX_MESSAGES_MCP} at most, returned from oldest to newest. `
-      + 'tronque = true: the thread has messages older than those returned, and before reads them (the returned '
-      + 'before value, passed back, goes up one page).',
+      `The MOST RECENT messages of a conversation, ${MAX_MESSAGES_MCP} at most, returned from oldest to newest, each with `
+      + 'its message_id (the one get_message_status reads). tronque = true: the thread has messages older than those '
+      + 'returned, and before reads them (the returned before value, passed back, goes up one page).',
     annotations: lecture('Read the latest messages'),
     entree: {
       type: 'object',
@@ -510,6 +516,8 @@ export const OUTILS: OutilMcp[] = [
       return {
         conversation_id: id,
         messages: rendus.map((m) => ({
+          // L'identifiant PUBLIC, celui de `GET /v1/messages/{id}` : `get_message_status` le lit tel quel.
+          message_id: idPublic(m.metaMessageId ?? null, m.id),
           direction: m.direction,
           type: m.type,
           body: m.body,
@@ -752,6 +760,64 @@ export const OUTILS: OutilMcp[] = [
       const ok = await deps.inbox.setAssignee(tenantId, id, membre, par);
       if (!ok) throw new RefusOutil('conversation inconnue, ou membre étranger à cet espace');
       return { conversation_id: id, assigned_to: membre };
+    },
+  },
+  {
+    ...ficheOutilMcp('control_conversation'),
+    // Les deux boutons du fil de la console, ouverts dans toutes les offres (plan du 2026-10-22, la marche arrière) : en
+    // Free, sans Inbox, c'est le seul chemin pour qu'un répondeur reprenne un fil après une réponse de Claude. Sans
+    // personne exigée, comme `reply_in_open_window`, qui prend déjà le fil : une clé qui peut répondre peut rendre la main.
+    fonction: null,
+    description:
+      'Takes over or hands back a conversation, like the two buttons of the console\'s thread. take_over: the team holds '
+      + 'the thread, nothing is written to the contact, and no scenario, AI agent or Meta Business Agent answers it until '
+      + 'it is handed back or the workspace\'s takeover delay runs out. hand_back: the workspace\'s automatic responder (a '
+      + 'scenario, the AI agent or the Meta Business Agent) takes the thread again and answers the contact\'s NEXT '
+      + 'message, not the ones already received. reply_in_open_window and send_message take over by themselves: call '
+      + 'hand_back once the reply is done if the responder should answer again. handled_by tells who holds the thread '
+      + 'afterwards.',
+    // Destructrice : elle REMPLACE qui tient le fil. Idempotente : rejouer le même geste laisse le même détenteur. Monde
+    // ouvert : le geste peut retirer le contact de la liste de l'agent de Meta, ou l'y remettre, chez Meta.
+    annotations: { title: 'Take over or hand back a conversation', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    entree: {
+      type: 'object',
+      properties: {
+        conversation_id: CONVERSATION_ID,
+        action: {
+          type: 'string', enum: ['take_over', 'hand_back'],
+          description: 'take_over: the team holds the thread. hand_back: the automatic responder takes it again.',
+        },
+      },
+      required: ['conversation_id', 'action'],
+    },
+    async executer(deps, tenantId, args, personne) {
+      const id = texteObligatoire(args, 'conversation_id', 100);
+      const action = args.action;
+      if (action !== 'take_over' && action !== 'hand_back') throw new RefusOutil('paramètre « action » : take_over ou hand_back');
+      const ctx = await contexteOuRefus(deps, tenantId, id);
+      // Le même auteur qu'`assign_conversation` : la personne du jeton OAuth, sinon un agent tiers derrière une clé.
+      const par = personne ? { collaborateur: personne.userId } : parCause('agent tiers (MCP)');
+      if (action === 'take_over') {
+        // La console rend 409 sur ce refus de Meta : rien n'est écrit, et écrire au contact prend le fil à coup sûr.
+        if ((await deps.fil.reprendreLaMain(tenantId, ctx.waId, par)) === 'refuse') {
+          throw new RefusOutil('Meta n’a pas cédé la conversation : son agent peut encore répondre. Écrire au contact '
+            + '(reply_in_open_window) prend le fil à coup sûr.');
+        }
+        return { conversation_id: id, handled_by: 'app_human' };
+      }
+      let detenteur: IssueRendreLaMain;
+      try {
+        detenteur = await deps.fil.rendreLaMain(tenantId, ctx.waId, par);
+      } catch (err) {
+        // Comme la route de la console : Meta a refusé de reprendre le contact, et notre état n'a pas bougé.
+        console.error(`mcp: control_conversation, Meta n’a pas repris la conversation (${tenantId}/${id}):`, err instanceof Error ? err.message : err);
+        throw new RefusOutil('Meta n’a pas repris la conversation : elle reste à l’équipe, réessayez dans un instant.');
+      }
+      if (detenteur === 'aucun_numero') {
+        throw new RefusOutil('Aucun numéro WhatsApp n’est connecté : l’agent de Meta ne peut pas reprendre la conversation, '
+          + 'elle reste à l’équipe.');
+      }
+      return { conversation_id: id, handled_by: detenteur };
     },
   },
   /**

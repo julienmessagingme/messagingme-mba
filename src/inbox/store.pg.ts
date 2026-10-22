@@ -157,6 +157,11 @@ export interface ConversationMessage {
    * Optionnel pour les faux de test.
    */
   curseur?: string;
+  /**
+   * L'identifiant de Meta (`wamid.…`), `null` pour un message qui n'en a pas : `get_messages` en fait l'identifiant
+   * PUBLIC du message (`idPublic`), celui que lit `get_message_status`. Optionnel pour les faux de test.
+   */
+  metaMessageId?: string | null;
   /** Auteur d'un message sortant (name sinon partie locale de l'email). null = pas d'auteur (legacy/auto).
    *  Optionnel : les mocks de test qui omettent le champ restent valides. */
   senderName?: string | null;
@@ -234,7 +239,7 @@ const A_TRAITER_SQL = `c.control_owner <> 'app_workflow' and ((c.last_direction 
  * sender_name : name, sinon la partie locale de l'email. curseur : cf. `ConversationMessage.curseur`. Les
  * colonnes de traduction et de transcription sont nommées ici : leur migration passe avant le code.
  */
-const SELECT_MESSAGES_SQL = `select m.id, m.direction, m.type, m.body, m.button_payload, m.created_at, m.channel,
+const SELECT_MESSAGES_SQL = `select m.id, m.meta_message_id, m.direction, m.type, m.body, m.button_payload, m.created_at, m.channel,
               (m.media_id is not null) as a_media, m.transcription, m.transcription_langue,
               -- 🔴 media_nom (migration 0160) est NOMMEE ici : la migration passe donc AVANT le deploiement,
               -- sans quoi ce select rend 42703 et le fil entier tombe, toutes les 4 s.
@@ -246,7 +251,7 @@ const SELECT_MESSAGES_SQL = `select m.id, m.direction, m.type, m.body, m.button_
        left join users u on u.id = m.sender_user_id`;
 
 interface LigneMessage {
-  id: string; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date; curseur: string; sender_name: string | null; channel: string | null; a_media: boolean; media_expire: boolean; media_nom: string | null; transcription: string | null; transcription_langue: string | null; traduction: string | null; traduction_langue: string | null; redaction_origine: string | null;
+  id: string; meta_message_id: string | null; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date; curseur: string; sender_name: string | null; channel: string | null; a_media: boolean; media_expire: boolean; media_nom: string | null; transcription: string | null; transcription_langue: string | null; traduction: string | null; traduction_langue: string | null; redaction_origine: string | null;
 }
 
 function messageDeLigne(r: LigneMessage): ConversationMessage {
@@ -258,6 +263,7 @@ function messageDeLigne(r: LigneMessage): ConversationMessage {
     buttonPayload: r.button_payload,
     createdAt: r.created_at.toISOString(),
     curseur: r.curseur,
+    metaMessageId: r.meta_message_id,
     senderName: r.sender_name,
     // `channel` null en base (message ancien) -> WhatsApp.
     channel: r.channel === 'rcs' ? 'rcs' : 'whatsapp',

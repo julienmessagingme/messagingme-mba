@@ -79,7 +79,7 @@ The tools of the MCP server, by family:
 - **WhatsApp number**: `start_whatsapp_connection`, `watch_whatsapp_connection`, `get_number_subscription`, `manage_number_subscription`, `resubscribe_number`, `return_number_at_plan_end`
 - **AI agent**: `list_agents`, `get_agent`, `create_agent`, `update_agent`, `set_agent_tools`, `set_agent_action`, `delete_agent_action`, `test_agent`, `activate_agent`, `set_default_responder`, `set_transfer_mode`, `set_business_hours`
 - **Agent knowledge**: `list_knowledge`, `add_knowledge`, `delete_knowledge`, `preview_site`, `import_site`, `import_document_text`
-- **Conversations**: `list_conversations`, `get_conversation`, `get_messages`, `reply_in_open_window`, `send_message`, `tag_conversation`, `assign_conversation`, `get_conversation_insights`
+- **Conversations**: `list_conversations`, `get_conversation`, `get_messages`, `reply_in_open_window`, `send_message`, `control_conversation`, `tag_conversation`, `assign_conversation`, `get_conversation_insights`
 - **Templates**: `list_templates`, `get_template_status`, `create_template`, `send_template_to_contact`, `get_message_status`
 - **Contacts and campaigns**: `search_contacts`, `get_contact`, `find_contacts`, `tag_contacts`, `list_fields`, `create_field`, `set_contact_field`, `prepare_campaign`, `launch_campaign`, `list_scenarios`
 - **Chat bubble**: `list_widgets`, `create_widget`, `update_widget`

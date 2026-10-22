@@ -3047,6 +3047,8 @@ async function main(): Promise<void> {
         ensureSocleField: async (tenant, key, label, type) => { await ensureFieldByKey(fieldStore, tenant, key, label, type); },
         // La pose d'étiquettes de `tag_conversation` : le MÊME module que la fiche et l'agent, appelé SANS publier.
         etiquettes: workflowRuntime.etiquettes,
+        // La main du fil de `control_conversation` : le MÊME contrôle que les boutons « Prendre » et « Rendre la main ».
+        fil,
         listerMembres: async (tenant) => (await userStore.list(tenant)).map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role })),
         // Les widgets de l'écran, le MÊME objet : un outil MCP n'est qu'un second appelant de leur gestion.
         widgets: widgetsDeLaConsole,
