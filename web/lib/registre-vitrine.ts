@@ -122,10 +122,11 @@ export const ENTREES: readonly EntreeVitrine[] = [
     profils: [], vague: 1, recherche: 'whatsapp assurance', chemin: 'console', enLigne: true,
   },
   {
+    // Les trois maquettes de Julien du 2026-10-22, avec le cas Odalys.
     cle: 'tourisme', nature: 'secteur',
     fr: { adresse: '/solutions/voyage-et-tourisme/', titre: 'Voyage et tourisme' },
     en: { adresse: '/en/solutions/travel-and-tourism/', titre: 'Travel and tourism' },
-    profils: [], vague: 1, recherche: 'whatsapp voyage tourisme', chemin: 'console', enLigne: true, attente: true,
+    profils: [], vague: 1, recherche: 'whatsapp voyage tourisme', chemin: 'console', enLigne: true,
   },
   {
     cle: 'saas-app-builders', nature: 'metier',

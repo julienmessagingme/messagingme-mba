@@ -1010,6 +1010,8 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .sec-logo img[src$="logo-edhec.webp"]{height:24px}
 .sec-logo img[src$="logo-gan.webp"],.sec-logo img[src$="logo-mieux-assure.webp"]{height:30px}
 .sec-logo img[src$="logo-groupama.webp"]{height:28px}
+.sec-logo img[src$="logo-odalys.webp"]{height:30px}
+.sec-logo img[src$="logo-thalazur.webp"]{height:26px}
 /* Un prix reçu (page Assurance) : sous les références de la une, et après le pilotage */
 .sec-distinction{display:flex;align-items:center;gap:14px;margin:14px 0 0;color:var(--muted);font-size:.85rem}
 .sec-distinction .sec-logo{height:58px;padding:0 10px}

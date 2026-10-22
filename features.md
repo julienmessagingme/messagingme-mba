@@ -96,9 +96,12 @@ assurance chien-chat, ses objectifs de campagne affichés comme tels) et Mieux A
 client automatisées), trois usages (engager, convertir, accompagner) avec leur exemple de conversation, le prix French
 Assurtech 2026 dans la une et avec l'accompagnement, et l'appel « Parlons de vos parcours clients ».
 
-✅ **Voyage et tourisme est au menu Solutions, en page d'attente** (2026-10-20) : `/solutions/voyage-et-tourisme/` (jumelle
-`/en/solutions/travel-and-tourism/`) dit que la page arrive et mène au formulaire de contact ; en `noindex`, hors du plan
-du site et de `llms.txt`, jusqu'à son contenu (`TEXTES_ATTENTE`, `attente` au registre).
+✅ **La quatrième page de secteur, Voyage et tourisme** (2026-10-22, trois maquettes de Julien) :
+`app.messagingme.fr/solutions/voyage-et-tourisme/`, jumelle `/en/solutions/travel-and-tourism/`, qui remplace sa page
+d'attente. Garder le lien avant l'arrivée comme sur place, le cas Odalys (film `cas-tourisme` : un bot qui guide les
+vacanciers et passe le relais à un conseiller, plus de 2 000 messages traités par mois, un pilote d'early check-in lu à
+plus de 80 %), trois usages (choisir et réserver, préparer l'arrivée, pendant le séjour) avec leur exemple de
+conversation, Odalys et Thalazur en références, et l'appel « Parlons de vos parcours voyageurs ».
 
 ✅ **Chaque page de la vitrine qui a plusieurs sections a sa bande claire** (2026-10-20), comme l'accueil et les pages
 Fonctionnalités : une section entre deux biais, sur fond blanc (`.bande-claire`). Les étapes des pages de cas, « comment ça

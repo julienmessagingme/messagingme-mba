@@ -114,7 +114,7 @@ Où on en est (2026-10-21) : sept pages de cas en ligne avec leur film et leur r
 builders » (film du démarrage, une en 3D), la page de secteur Transport et mobilités (film `cas-transport`), le menu
 Solutions (secteurs, puis les cas au survol), et depuis le 2026-10-21 la page Enseignement supérieur (film
 `cas-education`, cas NEOMA, EDH et EDHEC) et la page Assurance (film `cas-assurance`, cas Gan Prévoyance, Groupama et
-Mieux Assuré). Restent : le CONTENU de Voyage et tourisme, en ligne en page d'attente (Julien : une maquette) ; Agences,
+Mieux Assuré), et depuis le 2026-10-22 la page Voyage et tourisme (film `cas-tourisme`, cas Odalys). Reste : Agences,
 hors ligne au registre. Le support (Vélo Rapide) est en ligne depuis le 2026-10-21, son film tourné sur l'espace
 « Messaging Me demo », où l'agent « Vélo Rapide · Support » reste (actif, sans répondre). La page des tarifs est en ligne depuis la
 livraison 8 des offres v2 (ci-dessous).

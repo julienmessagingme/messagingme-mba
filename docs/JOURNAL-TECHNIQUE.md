@@ -5,6 +5,22 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-22 : la page de secteur Voyage et tourisme, et le film Odalys
+
+Demandée par Julien avec trois maquettes PDF (`landing-tourisme-choisir-reserver`, `-preparer-arrivee`, `-pendant-sejour`)
+et la vidéo `cas-odalys.mp4` (six diapositives, 24 s). La dernière page d'attente reçoit son contenu : `attente` retiré au
+registre, `TEXTES_ATTENTE` désormais vide (le mécanisme reste pour un prochain secteur), deux adresses de plus au plan du
+site. Un seul cas, donc ni `autres` ni `distinction` : le gabarit n'a pas bougé. Thalazur, qui figure dans la une de la
+maquette sans cas, entre en logo dans les références.
+
+- **La capture d'Odalys est déjà un écran d'iPhone** (barre d'état comprise) : pas de `barre-ios.cjs`, seulement le liseré
+  de 13 px avant `encadrer-iphone.cjs`. Pour le film, elle est prolongée de 24 px en bas, à la couleur de la barre de
+  saisie, pour prendre la proportion de l'écran du squelette (416 x 924) sans bande vide.
+- **Le film** (`~/engageme-motion/engageme-secteur-tourisme`) se dérive du squelette de l'Assurance ; le compteur des
+  2 000 messages pose le séparateur des milliers de la langue (espace insécable en français, virgule en anglais).
+- **Les images d'un PDF se sortent avec `extractImages` d'`unpdf`** (pixels bruts, puis `rawvideo` de ffmpeg ou `sharp`),
+  sans le lecteur d'objets écrit pour l'Éducation.
+
 ## 2026-10-22 (matin) : le connecteur Shopify, lot 2 (la relance de panier abandonné)
 
 Plan : `docs/superpowers/plans/2026-10-21-connecteur-shopify.md`, § Lot 2. Un client qui remplit le checkout avec son

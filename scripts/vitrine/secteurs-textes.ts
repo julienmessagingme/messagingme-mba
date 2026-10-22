@@ -3,9 +3,10 @@
 // ces pages, que `scripts/vitrine/cas.ts` assemble (npm run vitrine:cas). La première, Transport et mobilités, reprend la
 // maquette de Julien du 2026-10-20 (`maquette-landing-mobilite`), avec le cas Keolis. La deuxième, Enseignement
 // supérieur, reprend ses trois maquettes du 2026-10-21 (`landing-education-*`), avec les cas NEOMA, EDH et EDHEC, et la
-// troisième, Assurance, les trois du même jour (`landing-assurance-*`), avec les cas Gan Prévoyance, Groupama et Mieux Assuré.
+// troisième, Assurance, les trois du même jour (`landing-assurance-*`), avec les cas Gan Prévoyance, Groupama et Mieux Assuré,
+// et la quatrième, Voyage et tourisme, les trois du 2026-10-22 (`landing-tourisme-*`), avec le cas Odalys.
 // ⚠️ Un client n'est cité (nom, chiffres, captures) qu'avec son accord écrit (spec des cas d'usage) : Keolis et SNCF le
-// sont sur la maquette de Julien, NEOMA, EDH, EDHEC, Gan Prévoyance, Groupama et Mieux Assuré sur les siennes.
+// sont sur la maquette de Julien, NEOMA, EDH, EDHEC, Gan Prévoyance, Groupama, Mieux Assuré, Odalys et Thalazur sur les siennes.
 
 import type { Langue } from './cas-textes';
 
@@ -43,6 +44,9 @@ const LOGO_GAN: LogoClient = { src: '/img/logo-gan.webp', alt: 'Gan Prévoyance'
 const LOGO_GROUPAMA: LogoClient = { src: '/img/logo-groupama.webp', alt: 'Groupama Protection Juridique', largeur: 102, hauteur: 28 };
 const LOGO_MIEUX_ASSURE: LogoClient = { src: '/img/logo-mieux-assure.webp', alt: 'Mieux Assuré', largeur: 30, hauteur: 30 };
 const FRENCH_ASSURTECH = { src: '/img/laureat-french-assurtech-2026.webp', largeur: 84, hauteur: 44 };
+// Ceux du tourisme, tirés des maquettes Voyage et tourisme (Thalazur n'y figure qu'en référence, sans cas)
+const LOGO_ODALYS: LogoClient = { src: '/img/logo-odalys.webp', alt: 'Odalys Vacances', largeur: 78, hauteur: 30 };
+const LOGO_THALAZUR: LogoClient = { src: '/img/logo-thalazur.webp', alt: 'Thalazur', largeur: 111, hauteur: 26 };
 
 export interface TexteSecteur {
   readonly titre: string;
@@ -623,6 +627,182 @@ export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteu
       },
     },
   },
+  tourisme: {
+    fr: {
+      titre: 'WhatsApp pour le voyage et le tourisme · Messaging Me',
+      description: 'Réservation, préparation de l’arrivée et services pendant le séjour : gardez le lien avec vos voyageurs sur WhatsApp. Le cas Odalys.',
+      menu: 'Accompagner chaque séjour sur WhatsApp',
+      icone: 'i-key',
+      surtitre: 'Tourisme, hébergement et IA conversationnelle',
+      h1: ['Engagez la conversation.', 'Enrichissez chaque séjour.'],
+      chapeau: 'Du choix de la destination aux expériences sur place, ouvrez un lien direct sur WhatsApp. Accompagnez la réservation, facilitez l’arrivée et valorisez vos services pendant le séjour.',
+      sous: 'Conseil stratégique, plateforme technologique et accompagnement&nbsp;: nous connectons les conversations à vos équipes et à vos outils.',
+      appel: 'Parlons de vos parcours voyageurs',
+      references: { titre: 'Nos références tourisme', logos: [LOGO_ODALYS, LOGO_THALAZUR] },
+      captures: [
+        { src: '/img/tourisme-odalys.webp', alt: 'Un vacancier répond « Ski et spa » au compte WhatsApp d’Odalys Vacances, qui lui propose une résidence à l’Alpe d’Huez' },
+      ],
+      enjeux: {
+        surtitre: 'Les enjeux de votre relation voyageurs',
+        titre: ['Avant l’arrivée comme sur place,', 'gardez le lien avec vos voyageurs.'],
+        liste: [
+          { num: '01 / Aider à choisir', titre: ['Une question.', 'Un séjour à concrétiser.'], texte: 'Destinations, hébergements, services&nbsp;: une question sans réponse peut interrompre la recherche.' },
+          { num: '02 / Préparer l’arrivée', titre: ['Un départ qui approche.', 'Des démarches à simplifier.'], texte: 'Informations pratiques et formalités demandent de joindre les clients au bon moment, avant leur arrivée.' },
+          { num: '03 / Garder le contact', titre: ['Des clients sur place.', 'Des services à faire découvrir.'], texte: 'Activités à réserver, offres à proposer, informations à transmettre&nbsp;: comment toucher vos voyageurs pendant le séjour&nbsp;?' },
+        ],
+        encart: { titre: ['WhatsApp.', 'Un fil de conversation tout au long du séjour.'], texte: 'Accompagnez le choix, simplifiez l’arrivée puis partagez les informations et les offres utiles pendant le séjour.' },
+      },
+      terrain: {
+        surtitre: 'Le cas Odalys',
+        titre: ['Du choix du séjour', 'à la préparation de l’arrivée.'],
+        film: { nom: 'cas-tourisme', aria: 'Film : le cas Odalys, le séjour qui commence par une conversation WhatsApp avec Messaging Me', duree: 'PT38S', publie: '2026-10-22T12:00:00+02:00' },
+        cas: { logo: LOGO_ODALYS, titre: 'Autonomie et contact humain.', texte: 'Un bot conversationnel guide les vacanciers parmi les offres, répond aux questions fréquentes et passe le relais à un conseiller lorsque nécessaire. En complément, un pilote d’early check-in sur WhatsApp facilite les démarches avant l’arrivée, avec de premiers retours positifs.' },
+        chiffres: [
+          { valeur: 'Plus de 2&nbsp;000 messages', texte: 'traités par mois' },
+          { valeur: 'Plus de 80&nbsp;% de lecture', texte: 'des messages de check-in' },
+        ],
+        source: 'Source&nbsp;: cas Odalys présenté par Messaging Me. Early check-in&nbsp;: pilote.',
+      },
+      usages: {
+        surtitre: 'Les usages de vos établissements',
+        titre: ['À chaque moment du séjour,', 'une conversation utile.'],
+        liste: [
+          {
+            titre: 'Choisir et réserver', accroche: 'Les bonnes réponses. Le séjour qui leur correspond.',
+            texte: 'Faites découvrir vos offres, répondez aux questions et passez le relais à vos conseillers pour accompagner la réservation.',
+            mots: 'Destinations · Hébergements · Services',
+            echange: [
+              { qui: 'Voyageur', texte: 'Nous cherchons un séjour à la montagne en famille.', contact: true },
+              { qui: 'Votre établissement', texte: 'À quelles dates souhaitez-vous partir et combien de personnes voyageront&nbsp;?' },
+            ],
+          },
+          {
+            titre: 'Préparer l’arrivée', accroche: 'Le séjour approche. Les démarches avancent.',
+            texte: 'Partagez les informations pratiques et facilitez les démarches avant le départ, avec des parcours connectés à vos outils.',
+            mots: 'Informations d’accès · Horaires · Formalités',
+            echange: [
+              { qui: 'Votre établissement', texte: 'Votre séjour approche&nbsp;! Souhaitez-vous préparer votre arrivée&nbsp;?' },
+              { qui: 'Voyageur', texte: 'Oui, quelles démarches puis-je effectuer dès maintenant&nbsp;?', contact: true },
+            ],
+          },
+          {
+            titre: 'Pendant le séjour', accroche: 'Vos services méritent de faire partie du séjour.',
+            texte: 'Informez vos voyageurs et développez les ventes additionnelles&nbsp;: notifications sur les services, suggestions d’activités et offres adaptées au moment du séjour.',
+            mots: 'Spa · Restauration · Activités · Départ tardif',
+            echange: [
+              { qui: 'Votre établissement', texte: 'Envie de vous détendre cet après-midi&nbsp;? Découvrez les soins et les créneaux disponibles au spa.' },
+              { qui: 'Voyageur', texte: 'Oui, je veux consulter les disponibilités.', contact: true },
+            ],
+          },
+        ],
+        appel: 'Construisons votre parcours voyageur',
+        note: 'Exemples illustratifs de parcours à déployer.',
+        encart: { titre: ['Mieux comprendre', 'pour mieux accueillir.'], texte: 'Les données conversationnelles révèlent les attentes et les informations manquantes. Enrichissez vos réponses et améliorez les parcours avant et pendant le séjour.' },
+      },
+      partenaire: {
+        surtitre: 'Votre partenaire conversationnel',
+        titre: ['Vos destinations, vos équipes.', 'Notre savoir-faire pour garder le lien.'],
+        liste: [
+          { titre: 'Conseil stratégique', texte: 'Identifier les moments de contact et concevoir les parcours, de la découverte des offres aux services proposés sur place.' },
+          { titre: 'Plateforme et intégrations', texte: 'Déployer WhatsApp, connecter vos contenus et vos outils, organiser le relais vers vos conseillers ou vos établissements.' },
+          { titre: 'Accompagnement et données conversationnelles', texte: 'Analyser les demandes, suivre les performances et faire évoluer les scénarios avec vos équipes.' },
+        ],
+        pilotage: 'À piloter ensemble&nbsp;: conversations engagées, réservations, démarches avant l’arrivée, lecture des messages et ventes additionnelles, selon les données disponibles.',
+      },
+      projet: {
+        titre: 'Quel moment du parcours voyageur voulez-vous simplifier&nbsp;?',
+        texte: 'Aider à choisir, préparer l’arrivée ou développer les ventes additionnelles pendant le séjour&nbsp;: identifions le premier parcours à activer. Un lien direct, avant et pendant le séjour.',
+        bouton: 'Parlons de vos parcours voyageurs',
+      },
+    },
+    en: {
+      titre: 'WhatsApp for travel and tourism · Messaging Me',
+      description: 'Booking, arrival preparation and services during the stay: stay connected with your travellers on WhatsApp. The Odalys case.',
+      menu: 'Supporting every stay on WhatsApp',
+      icone: 'i-key',
+      surtitre: 'Tourism, hospitality and conversational AI',
+      h1: ['Start the conversation.', 'Enrich every stay.'],
+      chapeau: 'From choosing a destination to experiences on site, open a direct link on WhatsApp. Support the booking, make arrival easier and showcase your services during the stay.',
+      sous: 'Strategy, a technology platform and support: we connect conversations to your teams and your tools.',
+      appel: 'Let’s talk about your traveller journeys',
+      references: { titre: 'Our tourism references', logos: [LOGO_ODALYS, LOGO_THALAZUR] },
+      captures: [
+        { src: '/img/tourisme-odalys.webp', alt: 'A holidaymaker answers “Ski et spa” to Odalys Vacances’ WhatsApp account, which suggests a residence in Alpe d’Huez' },
+      ],
+      enjeux: {
+        surtitre: 'The challenges of your traveller relationship',
+        titre: ['Before arrival and on site,', 'stay connected with your travellers.'],
+        liste: [
+          { num: '01 / Helping them choose', titre: ['A question.', 'A stay to make happen.'], texte: 'Destinations, accommodation, services: an unanswered question can cut the search short.' },
+          { num: '02 / Preparing the arrival', titre: ['A departure coming up.', 'Formalities to simplify.'], texte: 'Practical information and formalities mean reaching customers at the right moment, before they arrive.' },
+          { num: '03 / Staying in touch', titre: ['Guests on site.', 'Services to showcase.'], texte: 'Activities to book, offers to suggest, information to pass on: how do you reach your travellers during their stay?' },
+        ],
+        encart: { titre: ['WhatsApp.', 'One conversation thread for the whole stay.'], texte: 'Support the choice, simplify the arrival, then share useful information and offers during the stay.' },
+      },
+      terrain: {
+        surtitre: 'The Odalys case',
+        titre: ['From choosing the stay', 'to preparing the arrival.'],
+        film: { nom: 'cas-tourisme', aria: 'Film: the Odalys case, the stay that begins with a WhatsApp conversation with Messaging Me', duree: 'PT38S', publie: '2026-10-22T12:00:00+02:00' },
+        cas: { logo: LOGO_ODALYS, titre: 'Self-service and the human touch.', texte: 'A conversational bot guides holidaymakers through the offers, answers frequent questions and hands over to an advisor when needed. On top of that, an early check-in pilot on WhatsApp makes formalities easier before arrival, with positive first feedback.' },
+        chiffres: [
+          { valeur: 'More than 2,000 messages', texte: 'handled every month' },
+          { valeur: 'More than 80% read rate', texte: 'on check-in messages' },
+        ],
+        source: 'Source: Odalys case presented by Messaging Me. Early check-in: pilot.',
+      },
+      usages: {
+        surtitre: 'Your establishments’ use cases',
+        titre: ['At every moment of the stay,', 'a useful conversation.'],
+        liste: [
+          {
+            titre: 'Choose and book', accroche: 'The right answers. The stay that suits them.',
+            texte: 'Showcase your offers, answer questions and hand over to your advisors to support the booking.',
+            mots: 'Destinations · Accommodation · Services',
+            echange: [
+              { qui: 'Traveller', texte: 'We’re looking for a family stay in the mountains.', contact: true },
+              { qui: 'Your establishment', texte: 'What dates would you like to travel, and how many people will be coming?' },
+            ],
+          },
+          {
+            titre: 'Prepare the arrival', accroche: 'The stay is coming up. Formalities move forward.',
+            texte: 'Share practical information and make formalities easier before departure, with journeys connected to your tools.',
+            mots: 'Access information · Opening hours · Formalities',
+            echange: [
+              { qui: 'Your establishment', texte: 'Your stay is coming up! Would you like to prepare your arrival?' },
+              { qui: 'Traveller', texte: 'Yes, what can I take care of right now?', contact: true },
+            ],
+          },
+          {
+            titre: 'During the stay', accroche: 'Your services deserve to be part of the stay.',
+            texte: 'Keep your travellers informed and grow additional sales: service notifications, activity suggestions and offers suited to the moment of the stay.',
+            mots: 'Spa · Dining · Activities · Late check-out',
+            echange: [
+              { qui: 'Your establishment', texte: 'Fancy some relaxation this afternoon? Discover the treatments and the slots available at the spa.' },
+              { qui: 'Traveller', texte: 'Yes, I’d like to see what’s available.', contact: true },
+            ],
+          },
+        ],
+        appel: 'Let’s build your traveller journey',
+        note: 'Illustrative examples of journeys to deploy.',
+        encart: { titre: ['Understand better', 'to welcome better.'], texte: 'Conversational data reveals expectations and missing information. Enrich your answers and improve the journeys before and during the stay.' },
+      },
+      partenaire: {
+        surtitre: 'Your conversational partner',
+        titre: ['Your destinations, your teams.', 'Our know-how to stay connected.'],
+        liste: [
+          { titre: 'Strategy', texte: 'Identify the moments of contact and design the journeys, from discovering the offers to the services available on site.' },
+          { titre: 'Platform and integrations', texte: 'Deploy WhatsApp, connect your content and your tools, organize handover to your advisors or your establishments.' },
+          { titre: 'Support and conversational data', texte: 'Analyze requests, track performance and evolve the scenarios with your teams.' },
+        ],
+        pilotage: 'What we steer together: conversations started, bookings, pre-arrival formalities, message reads and additional sales, based on the data available.',
+      },
+      projet: {
+        titre: 'Which moment of the traveller journey do you want to simplify?',
+        texte: 'Helping them choose, preparing the arrival or growing additional sales during the stay: let’s identify the first journey to activate. A direct link, before and during the stay.',
+        bouton: 'Let’s talk about your traveller journeys',
+      },
+    },
+  },
 };
 
 /**
@@ -634,21 +814,5 @@ export interface TexteAttente {
   readonly h1: string; readonly chapeau: string; readonly appel: string; readonly voir: string;
 }
 
-export const TEXTES_ATTENTE: Readonly<Record<string, Record<Langue, TexteAttente>>> = {
-  tourisme: {
-    fr: {
-      titre: 'WhatsApp pour le voyage et le tourisme · Messaging Me',
-      description: 'WhatsApp pour le voyage et le tourisme : nos cas d’usage arrivent bientôt sur cette page. En attendant, parlons de votre projet.',
-      menu: 'Bientôt en ligne', icone: 'i-key', h1: 'Page en préparation.',
-      chapeau: 'Nos cas d’usage WhatsApp pour le voyage et le tourisme arrivent ici. En attendant, parlons du vôtre&nbsp;: une démo sur votre cas, avec vos voyageurs et vos canaux.',
-      appel: 'Parlons de votre projet', voir: 'Voir le cas Transport',
-    },
-    en: {
-      titre: 'WhatsApp for travel and tourism · Messaging Me',
-      description: 'WhatsApp for travel and tourism: our use cases are coming to this page soon. Meanwhile, let’s talk about your project with our team.',
-      menu: 'Coming soon', icone: 'i-key', h1: 'Coming soon.',
-      chapeau: 'Our WhatsApp use cases for travel and tourism are coming here. Meanwhile, let’s talk about yours: a demo on your case, with your travellers and your channels.',
-      appel: 'Let’s talk about your project', voir: 'See the Transport case',
-    },
-  },
-};
+// Aucune depuis le 2026-10-22 : Voyage et tourisme, la dernière, a reçu son contenu.
+export const TEXTES_ATTENTE: Readonly<Record<string, Record<Langue, TexteAttente>>> = {};
