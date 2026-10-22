@@ -13,6 +13,7 @@ import { MediaTropGros } from '../meta/media';
 import { MediaExpire, enTetesMedia } from '../inbox/media-entrant';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import { repondreDansLaFenetre, type ConversationsRepondre, type DepsRepondre } from '../inbox/repondre';
+import { PHRASE_FORMAT_APPLICATION, phraseApplicationIndisponible } from '../application/envoi';
 import { journaliserEnvoiAccepte } from '../inbox/journal-sortant';
 import { estCodeLangue, estLangueConsole, TEXTE_MAX_CARACTERES, type CauseSansTraduction, type LangueConsole, type Traduction } from '../traduction/traduire';
 import type { FilTraduit } from '../traduction/fil';
@@ -852,6 +853,14 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
        */
       if (res.refus.motif === 'contact_desabonne') {
         return reply.code(409).send({ error: 'ce contact a demandé à ne plus recevoir de messages', code: 'contact_desabonne' });
+      }
+      // La filière application : le compte n'est pas relié, ou le service ne répond pas.
+      if (res.refus.motif === 'application_indisponible') {
+        return reply.code(409).send({ error: phraseApplicationIndisponible(res.refus.raison), code: 'whatsapp_app_unavailable' });
+      }
+      // Inatteignable (cette route n'envoie que du texte), écrit pour la même raison que le refus d'opt-out.
+      if (res.refus.motif === 'format_non_pris_en_charge') {
+        return reply.code(422).send({ error: PHRASE_FORMAT_APPLICATION, code: 'unsupported_on_whatsapp_app' });
       }
       // Hors fenêtre 24 h : Meta refuse le texte libre. Le message dit les deux chemins qui restent (template, ou
       // RCS si le contact y est joignable). Le code `window_closed` ne bouge pas, l'écran s'en sert.

@@ -15,6 +15,7 @@ import { FakeQueue } from './fake-queue';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { jamaisDesabonne } from './consentement';
 import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpChampsInertes, mcpShopifyInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { filiereApiSeule } from './gardes';
 
 /**
  * LES ROUTES OAUTH DEVANT `/mcp` (tâche 6 du plan `2026-10-03-oauth-mcp.md`), sur le serveur construit.
@@ -200,6 +201,7 @@ function monter(o: { publicApiUrl?: string; fiches?: Record<string, ClientResolu
     sendReply: async () => 'wamid',
     takeControl: async () => {},
     filTenuParLApplication: async () => false,
+    application: filiereApiSeule,
     contacts: {
       query: async () => [],
       count: async () => 0,

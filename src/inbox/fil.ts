@@ -183,6 +183,11 @@ export interface DepsControleDuFil {
   numeros: {
     getTenantPhoneNumberId(tenantId: string): Promise<string | null>;
     numeroBloque(tenantId: string): Promise<boolean>;
+    /**
+     * Le compte de l'application WhatsApp Business de l'espace est-il relié (filière application, 2026-10-22) ? Il
+     * tient lieu de numéro pour un robot de la console, jamais pour l'agent de Meta, qui n'existe pas sur cette filière.
+     */
+    applicationReliee(tenantId: string): Promise<boolean>;
   };
   /**
    * La liste de l'agent de Meta (`src/mba/liste.ts`) : confier y ajoute le contact, reprendre l'en retire. Requise :
@@ -612,7 +617,8 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
         if (await depot.estConversationDeTest(tenantId, waId)) { await laisserALEquipe(); return false; }
         // Un contact désabonné ou bloqué n'est jamais confié à une machine : elle lui parlerait.
         if (await muet()) { await laisserALEquipe(); return false; }
-        if (!(await deps.numeros.getTenantPhoneNumberId(tenantId))) { await laisserALEquipe(); return false; }
+        const peutEnvoyer = (await deps.numeros.getTenantPhoneNumberId(tenantId)) !== null || await deps.numeros.applicationReliee(tenantId);
+        if (!peutEnvoyer) { await laisserALEquipe(); return false; }
         return true;
       };
       /**

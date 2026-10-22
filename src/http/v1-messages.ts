@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Guard } from '../auth/middleware';
 import { repondreAvecUnMessage, repondreDansLaFenetre, type DepsRepondre, type RefusReponse, type ResultatReponse } from '../inbox/repondre';
+import { PHRASE_FORMAT_APPLICATION, phraseApplicationIndisponible } from '../application/envoi';
 import { apercuDuMessage, corpsPourMeta, schemaMessageMeta } from '../api/message-meta';
 import { schemaMessageWhatsapp } from '../api/contrat-public';
 import { compterOuRefuser, type ApiUsageGuard } from '../api/usage-guard';
@@ -123,7 +124,7 @@ export function registerV1Messages(app: FastifyInstance, deps: V1MessagesRouteDe
       throw err;
     }
     if (!('refus' in res)) return reply.code(200).send({ messageId: res.messageId, conversationId, channel: 'whatsapp', journal: res.journal } satisfies ReponseMessageSimple);
-    return refuserLaReponse(reply, res.refus.motif);
+    return refuserLaReponse(reply, res.refus);
   };
 
   app.post('/v1/messages/whatsapp', opts, async (req, reply) => {
@@ -162,8 +163,9 @@ export function registerV1Messages(app: FastifyInstance, deps: V1MessagesRouteDe
 }
 
 /** Le refus d'une réponse dans la fenêtre, en code de l'API publique. Exhaustif : un motif ajouté demain ne compile pas. */
-function refuserLaReponse(reply: FastifyReply, motif: RefusReponse['motif']): FastifyReply {
+function refuserLaReponse(reply: FastifyReply, refus: RefusReponse): FastifyReply {
   {
+    const { motif } = refus;
     switch (motif) {
       case 'contact_desabonne':
         return refuser(reply, 409, 'opted_out', 'cette personne a demandé à ne plus recevoir de messages');
@@ -175,6 +177,14 @@ function refuserLaReponse(reply: FastifyReply, motif: RefusReponse['motif']): Fa
         return refuser(reply, 404, 'unknown_contact', 'conversation introuvable pour cette fiche');
       case 'fenetre_fermee':
         return refuser(reply, 422, 'window_closed', FENETRE_FERMEE);
+      // La filière application : des codes existants, pour ne pas changer le contrat publié (SDK, OpenAPI). Le service de
+      // connexions en panne n'est pas un refus : une erreur, que l'intégrateur rejoue.
+      case 'application_indisponible':
+        if (refus.raison === 'service_injoignable') throw new Error(phraseApplicationIndisponible(refus.raison));
+        if (refus.raison === 'refuse') return refuser(reply, 422, 'meta_rejected', phraseApplicationIndisponible(refus.raison));
+        return refuser(reply, 409, 'number_unlinked', phraseApplicationIndisponible(refus.raison));
+      case 'format_non_pris_en_charge':
+        return refuser(reply, 400, 'invalid_body', `type : ${PHRASE_FORMAT_APPLICATION} (POST /v1/messages/whatsapp)`);
       default: {
         // Exhaustif : un motif ajouté demain à `RefusReponse` ne compile pas ici, au lieu de sortir sous une raison
         // fausse.

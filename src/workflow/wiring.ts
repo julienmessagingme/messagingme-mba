@@ -55,6 +55,7 @@ import type { MetaClient } from '../meta/client';
 import { resolveNode } from '../ids/resolve';
 import { PgErreursLivraisonStore } from '../ops/erreurs-livraison.pg';
 import type { SourceOffres } from '../offres/offre.pg';
+import type { EnvoiApplication } from '../application/envoi';
 
 /**
  * Câblage de l'exécuteur de scénarios : ses dépendances IO (contacts, tags, envois Meta, caches de
@@ -114,11 +115,16 @@ export interface WorkflowRuntimeDeps {
    * l'oublierait ne préviendrait jamais personne, en silence. Elle n'écrit que si le contact vient d'écrire.
    */
   prevenirEquipe(tenantId: string, waId: string): Promise<void>;
+  /**
+   * 🔴 La filière application (2026-10-22) : la réponse de l'agent IA d'un espace sans compte Meta Business part par le
+   * service de connexions. Requise : sans elle, l'agent d'un tel espace se tairait faute de numéro de Meta.
+   */
+  application: Pick<EnvoiApplication, 'filiere' | 'envoyer'>;
 }
 
 /** `buildWorkflowRuntime` construit l'exécuteur et ce qui l'accompagne, une fois par process (les caches vivent dedans). */
 export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
-  const { pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory, rcsProvider, emailTemplates, emailResolver, numeroDeLEspace, runStore, fil, offres } = deps;
+  const { pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory, rcsProvider, emailTemplates, emailResolver, numeroDeLEspace, runStore, fil, offres, application } = deps;
   /**
    * Le client Meta de l'espace pour un envoi WhatsApp, ou le refus (une chaîne, comme tout `SendRefusal`)
    * quand aucun numéro n'est rattaché. `dryRun` reste chez l'appelant : certains envois refusent un bloc vide
@@ -557,10 +563,18 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
    */
   const envoyerTexteAgent = async (tenant: string, waId: string, texte: string): Promise<string | void> => {
     if (dryRun) return; // DRY_RUN : aucun appel Meta
-    const client = await clientWhatsApp(tenant, 'agent', `réponse non envoyée à ${waId}`);
-    if (typeof client === 'string') return client;
-    const res = await client.sendText(waId, texte);
-    try { await inboxStore.recordOutboundByWaId(tenant, waId, { body: texte, messageId: res.messageId, type: 'text', origine: 'ia' }); } catch { /* best-effort */ }
+    let messageId: string;
+    // La filière application : par le service de connexions, sans numéro de Meta.
+    if ((await application.filiere(tenant)) === 'application') {
+      const r = await application.envoyer(tenant, waId, texte);
+      if (!r.ok) return `réponse non envoyée par l'application WhatsApp Business (${r.raison})`;
+      messageId = r.messageId;
+    } else {
+      const client = await clientWhatsApp(tenant, 'agent', `réponse non envoyée à ${waId}`);
+      if (typeof client === 'string') return client;
+      messageId = (await client.sendText(waId, texte)).messageId;
+    }
+    try { await inboxStore.recordOutboundByWaId(tenant, waId, { body: texte, messageId, type: 'text', origine: 'ia' }); } catch { /* best-effort */ }
   };
 
   /**

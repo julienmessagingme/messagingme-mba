@@ -7,7 +7,7 @@ import { runControlSweep } from '../src/inbox/control-sweep';
 import { buildWorkflowRuntime } from '../src/workflow/wiring';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import { bancDuFil, type ReponseMeta } from './banc-du-fil';
-import { offresToutOuvert } from './gardes';
+import { offresToutOuvert, filiereApiSeule } from './gardes';
 
 /**
  * LE CÂBLAGE DE LA SOUPAPE DE CONTRÔLE DU FIL.
@@ -94,6 +94,7 @@ function cablageDuScenario(
     offres: offresToutOuvert,
     // L'e-mail aux admins (lot 7) : la demande est notée, ce qu'elle décide ensuite est `tests/emails-produit-alertes.test.ts`.
     prevenirEquipe: async (...a: unknown[]) => { appels.push(['prevenir', ...a]); },
+    application: filiereApiSeule,
   });
   // `deps` est privé à l'exécuteur : on lit la dépendance que le câblage lui a donnée, sans monter un parcours entier.
   const { escalateToHuman } = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
@@ -185,6 +186,7 @@ describe('le câblage d’un scénario confie le message « à côté » au rép
       offres: offresToutOuvert,
       // Le lot 7 : ces bancs ne testent pas l’e-mail aux admins.
       prevenirEquipe: async () => {},
+      application: filiereApiSeule,
     });
     const { confierAuRepondeur } = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
     await confierAuRepondeur('t1', '33600000001', 'wamid.C');

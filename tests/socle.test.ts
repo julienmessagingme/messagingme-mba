@@ -38,6 +38,9 @@ const configuration: ConfigSocle = {
   RESEND_API_KEY: '',
   SUPPORT_FROM: 'test@exemple.test',
   APP_URL: 'https://console.exemple.test',
+  // Sans service de connexions : la filière application est fermée.
+  APPLICATION_SERVICE_URL: '',
+  APPLICATION_SERVICE_SECRET: '',
 };
 
 /** Un faux pool qui répond aux deux lectures du chemin (la fiche avant l'écriture, les espaces branchés), et une file qui garde ce qu'on lui confie. */

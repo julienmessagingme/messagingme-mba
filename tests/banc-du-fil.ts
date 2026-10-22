@@ -270,6 +270,8 @@ export interface OptionsBanc {
   numero?: string | null;
   /** Le numéro de l'espace est-il bloqué (délié, ou suspendu faute de paiement, lot 4) ? Défaut : non. */
   numeroBloque?: boolean;
+  /** Le compte de l'application WhatsApp Business est-il relié (filière application) ? Défaut : non. */
+  applicationReliee?: boolean;
   /** Un parcours attend-il la réponse du contact ? Défaut : non. */
   enAttente?: boolean;
   /** Les contacts qui ont dit STOP. Défaut : aucun. */
@@ -351,6 +353,7 @@ export function bancDuFil(o: OptionsBanc = {}): {
     numeros: {
       getTenantPhoneNumberId: async () => (o.numero === undefined ? 'pn1' : o.numero),
       numeroBloque: async () => o.numeroBloque === true,
+      applicationReliee: async () => o.applicationReliee === true,
     },
     liste,
     consentement: {

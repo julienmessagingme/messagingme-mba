@@ -13,6 +13,7 @@ import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE, NumeroSuspenduError, MESSAGE_NUMERO_SUSPENDU } from '../src/meta/numero-delie';
 import { MetaApiError } from '../src/meta/errors';
+import { filiereApiSeule } from './gardes';
 
 /**
  * `POST /v1/messages/whatsapp` : UN SIMPLE TEXTE, À UNE FICHE, DANS LA FENÊTRE DE 24 H (spec 2026-09-24, § 4).
@@ -103,6 +104,7 @@ function app(over: Partial<Monde> = {}) {
     estDesabonne: async (_t, waId) => { desabonneLu.push(waId); return m.desabonne; },
     takeControl: async (_t, waId) => { prises.push(waId); },
     filTenuParLApplication: async () => m.tenuParLApplication === true,
+    application: filiereApiSeule,
   };
 
   const keys = new FakeApiKeys()

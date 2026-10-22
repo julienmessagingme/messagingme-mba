@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildWorkflowRuntime } from '../src/workflow/wiring';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { BesoinsContexte } from '../src/workflow/conditions';
-import { offresToutOuvert } from './gardes';
+import { offresToutOuvert, filiereApiSeule } from './gardes';
 
 /**
  * LE CONTEXTE D'UN CONTACT, VRAI CÂBLAGE (`buildEvalContext`, `src/workflow/wiring.ts`), POUR LES CHAMPS SYSTÈME (RC5).
@@ -35,6 +35,7 @@ function cablage(lectures: { recu?: () => Promise<Date | null>; langue?: () => P
     offres: offresToutOuvert,
     // Le lot 7 : ces bancs ne testent pas l’e-mail aux admins.
     prevenirEquipe: async () => {},
+    application: filiereApiSeule,
   });
   // `deps` est privé à l'exécuteur : on lit la dépendance que le câblage lui a donnée.
   const { evalContext } = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;

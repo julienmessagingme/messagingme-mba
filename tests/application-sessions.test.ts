@@ -142,6 +142,13 @@ describe('le gestionnaire des sessions', () => {
     await expect(g.envoyer('c4', 'x@s.whatsapp.net', 'Bonjour')).rejects.toThrow(ErreurApplication);
   });
 
+  it('un envoi touche le compte, comme un message reçu : la mise en sommeil compte l’activité dans les deux sens', async () => {
+    await g.reprendre();
+    await transport.derniere('c1').rappels.ouverte('x@s.whatsapp.net');
+    await g.envoyer('c1', '33612345678@s.whatsapp.net', 'Bonjour');
+    expect(comptes.touches).toEqual(['c1']);
+  });
+
   it('la mise en sommeil ferme la session sans la retirer, et ne la rouvre pas', async () => {
     await g.reprendre();
     const s = transport.derniere('c1');

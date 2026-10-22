@@ -270,7 +270,7 @@ async function main(): Promise<void> {
     agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
     numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, connexionPub, publicites,
     clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, offres, quotaModeles,
-    emailsProduit, envoyeurProduit, paiementRefuse, emetteurEmails,
+    emailsProduit, envoyeurProduit, paiementRefuse, emetteurEmails, envoiApplication,
   } = construireSocle({ pool, queue, config });
 
   /**
@@ -693,6 +693,8 @@ async function main(): Promise<void> {
     takeControl: fil.prisEnEcrivant,
     // « Mon application répond » (lot 12, B) : sa réponse par l'API ne prend pas un fil qu'elle tient.
     filTenuParLApplication: fil.tenuParLApplication,
+    // La filière application WhatsApp Business : pas de fenêtre, l'envoi par le service de connexions.
+    application: envoiApplication,
   } satisfies DepsRepondre;
 
   /**

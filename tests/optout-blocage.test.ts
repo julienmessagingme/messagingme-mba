@@ -12,6 +12,7 @@ import { ORIGINES } from '../src/inbox/origine';
 import { jamaisDesabonne, numeroJamaisBloque } from './consentement';
 import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { priseDeFilSansEffet } from './routes-inertes';
+import { filiereApiSeule } from './gardes';
 
 /**
  * UN CONTACT DÉSABONNÉ NE REÇOIT RIEN D'AUTOMATIQUE.
@@ -268,6 +269,7 @@ describe('les deux chemins tranchés : modèle de l’Inbox, et agent MCP', () =
         estDesabonne: async (_t, waId) => { lu.push(waId); return desabonne; },
         takeControl: priseDeFilSansEffet,
         filTenuParLApplication: async () => false,
+        application: filiereApiSeule,
       };
       return { d, envois, lu };
     };

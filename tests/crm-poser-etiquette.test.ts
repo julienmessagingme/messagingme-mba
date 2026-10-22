@@ -5,7 +5,7 @@ import {
 import { buildWorkflowRuntime } from '../src/workflow/wiring';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import { AUTOMATION_EVENT_QUEUE } from '../src/automation/event-job';
-import { offresToutOuvert } from './gardes';
+import { offresToutOuvert, filiereApiSeule } from './gardes';
 
 /**
  * POSER UNE ÉTIQUETTE SUR UN CONTACT, le geste commun des cinq portes unitaires (plan
@@ -203,6 +203,7 @@ function socle(deja: string[] = []) {
     offres: offresToutOuvert,
     // Le lot 7 : ces bancs ne testent pas l’e-mail aux admins.
     prevenirEquipe: async () => {},
+    application: filiereApiSeule,
   });
   const publiees = () => file.map((j) => {
     expect(j.name).toBe(AUTOMATION_EVENT_QUEUE);

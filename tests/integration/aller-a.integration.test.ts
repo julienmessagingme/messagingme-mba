@@ -8,7 +8,7 @@ import { PgErreursLivraisonStore } from '../../src/ops/erreurs-livraison.pg';
 import { buildWorkflowRuntime } from '../../src/workflow/wiring';
 import type { WorkflowExecutorDeps } from '../../src/workflow/executor';
 import type { WorkflowGraph } from '../../src/workflow/graph';
-import { offresToutOuvert } from '../gardes';
+import { offresToutOuvert, filiereApiSeule } from '../gardes';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -45,6 +45,7 @@ describe.skipIf(!url)('« Aller à » (Postgres)', () => {
       offres: offresToutOuvert,
       // Le lot 7 : ces bancs ne testent pas l’e-mail aux admins.
       prevenirEquipe: async () => {},
+      application: filiereApiSeule,
     });
     deps = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
   });

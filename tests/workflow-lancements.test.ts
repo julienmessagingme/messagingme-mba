@@ -14,7 +14,7 @@ import type { WorkflowRow } from '../src/workflow/store.pg';
 import type { ControlOwner } from '../src/inbox/store.pg';
 import { AUTOMATION_EVENT_QUEUE } from '../src/automation/event-job';
 import { DROITS, type Offre } from '../src/offres/offres';
-import { offresToutOuvert } from './gardes';
+import { offresToutOuvert, filiereApiSeule } from './gardes';
 
 /**
  * LES LANCEMENTS DE SCÉNARIO, EXÉCUTÉS TYPE PAR TYPE (plan `docs/superpowers/plans/2026-10-04-lancements-de-scenario.md`).
@@ -286,6 +286,7 @@ function poseDuCablage() {
     offres: offresToutOuvert,
     // Le lot 7 : ces bancs ne testent pas l’e-mail aux admins.
     prevenirEquipe: async () => {},
+    application: filiereApiSeule,
   });
   // `deps` est privé à l'exécuteur : on lit les dépendances que le câblage lui a données.
   const { applyTag, emitTagAdded } = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
@@ -547,6 +548,7 @@ describe('buildWorkflowRuntime rend des lancements construits sur son propre ex�
       offres: offresToutOuvert,
       // Le lot 7 : ces bancs ne testent pas l’e-mail aux admins.
       prevenirEquipe: async () => {},
+      application: filiereApiSeule,
     });
     const demarrer = vi.spyOn(executor, 'demarrer').mockResolvedValue(true);
     expect(await lancements.lancer({ type: 'inbox', tenantId: 't9', workflowId: 'wf-modele', waId: WA, fenetreOuverte: true })).toBe(true);

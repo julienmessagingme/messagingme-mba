@@ -74,8 +74,9 @@ const CLASSEMENT: Record<string, { verdict: Verdict; pourquoi: string }> = {
     verdict: 'delegue',
     pourquoi: 'Le transport de la filière « application WhatsApp Business » (plan 2026-10-22) : `Session.envoyer` '
       + 'envoie le texte que le service de connexions lui passe, à qui il lui dit. Il ne décide rien : les gardes '
-      + '(STOP, numéro bloqué, détenteur du fil) sont celles des appelants du service, la réponse '
-      + '(`repondreDansLaFenetre`) et l’agent IA (`src/agent/run-turn.ts`), comme pour un envoi par Meta.',
+      + '(STOP, numéro bloqué, détenteur du fil) sont celles des appelants du service, qui y passent tous par '
+      + '`src/application/envoi.ts` : la réponse (`repondreDansLaFenetre`) et l’agent IA (`src/agent/run-turn.ts`, '
+      + 'puis `envoyerTexteAgent`), comme pour un envoi par Meta.',
   },
   'src/inbox/envoi-modele.ts': {
     verdict: 'delegue',

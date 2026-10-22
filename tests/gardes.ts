@@ -4,6 +4,7 @@ import { PlafondPartage } from '../src/auth/plafond-partage';
 import { CompteurDebitMemoire } from '../src/db/debit.memoire';
 import { DROITS } from '../src/offres/offres';
 import type { SourceOffres } from '../src/offres/offre.pg';
+import type { EnvoiApplication } from '../src/application/envoi';
 
 /**
  * LA GARDE QUI LAISSE PASSER, ET ELLE A UN NOM (lot 2 du plan 2026-09-14).
@@ -51,4 +52,15 @@ export const gardesOuvertes: Gardes = {
   ops: gardeOuverte,
   plafondCouteux: plafondCoupe,
   offres: offresToutOuvert,
+};
+
+/**
+ * LA FILIÈRE API PARTOUT (2026-10-22) : aucun espace n'a de compte de l'application WhatsApp Business. L'hypothèse des
+ * tests qui montent une réponse, un runtime de scénario ou le contrôle du fil sans parler de cette filière ; un envoi
+ * par elle y est une erreur du test, et il lève.
+ */
+export const filiereApiSeule: EnvoiApplication = {
+  filiere: async () => 'api',
+  relie: async () => false,
+  envoyer: async () => { throw new Error('filière application : aucun envoi attendu dans ce test'); },
 };

@@ -9,7 +9,7 @@ import { SUFFIXE_ANONYME } from '../src/campaign/engine';
 import type { TemplateSummary } from '../src/meta/templates';
 import type { OutboundCarouselCard } from '../src/meta/template-components';
 import { LimiteOffreError } from '../src/offres/refus';
-import { offresToutOuvert } from './gardes';
+import { offresToutOuvert, filiereApiSeule } from './gardes';
 
 /**
  * LES QUATRE ENVOIS D'UN BLOC DE SCÉNARIO, EXÉCUTÉS (`src/workflow/envois-bloc.ts`).
@@ -744,6 +744,7 @@ function cablage(opts: { dryRun?: boolean; numero?: string | null; templates?: T
     offres: offresToutOuvert,
     // Le lot 7 : ces bancs ne testent pas l’e-mail aux admins.
     prevenirEquipe: async () => {},
+    application: filiereApiSeule,
   });
   // `deps` est privé à l'exécuteur : on lit les dépendances que le câblage lui a données.
   const deps = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;

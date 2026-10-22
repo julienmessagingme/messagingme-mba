@@ -13,7 +13,7 @@ import { buildWorkflowRuntime } from '../src/workflow/wiring';
 import type { WorkflowGraph, WorkflowNodeType } from '../src/workflow/graph';
 import type { RunState, WorkflowRunRow } from '../src/workflow/run-store.pg';
 import type { EvalContext } from '../src/workflow/conditions';
-import { offresToutOuvert } from './gardes';
+import { offresToutOuvert, filiereApiSeule } from './gardes';
 
 /**
  * LE BLOC « ALLER À » (RC5, livraison B, plan `docs/superpowers/plans/2026-10-06-rc5-blocs-condition-aller-a.md`).
@@ -405,6 +405,7 @@ describe('le vrai câblage', () => {
       offres: offresToutOuvert,
       // Le lot 7 : ces bancs ne testent pas l’e-mail aux admins.
       prevenirEquipe: async () => {},
+      application: filiereApiSeule,
     });
     const deps = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
     expect(await deps.resoudreBloc('t2', code(130))).toBeNull();

@@ -22,6 +22,7 @@ import { lireCible, schemaCorps, schemaDestinataire, type ResultatEnvoiPublic } 
 import { validateParamMapping } from '../src/crm/template';
 import { cleIdempotence } from '../src/api/idempotence';
 import { modelesInertes, aucuneCampagneActive } from './routes-inertes';
+import { filiereApiSeule } from './gardes';
 
 /**
  * Le serveur MCP : `POST /mcp`, du JSON-RPC 2.0 sans état, autorisé par une clé d'API.
@@ -98,6 +99,7 @@ function app(
     sendReply: async (tenant, _pn, to, texte) => { traces.envois.push({ tenant, to, texte }); return 'wamid-1'; },
     takeControl: async () => {},
     filTenuParLApplication: async () => false,
+    application: filiereApiSeule,
     contacts: {
       query: async () => [],
       count: async () => 0,
@@ -258,6 +260,26 @@ describe('serveur MCP : autorisation', () => {
     const corps = JSON.parse(r.texte);
     expect(corps.periode).toMatchObject({ maille: 'semaine', fuseau: 'Europe/Paris' });
     expect(corps.modeles.totaux).toEqual({ envoyes: 0, livres: 0, lus: 0, echecs: 0, sans_accuse: 0 });
+    await server.close();
+  });
+
+  it('🔴 filière application : get_conversation dit que la fenêtre ne s’applique pas, et la réponse part par le service', async () => {
+    // Une conversation de plus de 24 heures : sur l'application, répondre reste possible (spec du 2026-10-22).
+    const envoisApplication: string[] = [];
+    const { server, traces } = app({
+      inbox: { getConversationContext: async () => ({ waId: '33600000001', lastInboundAt: '2026-09-01T09:00:00.000Z', windowOpen: false }) },
+      application: {
+        filiere: async () => 'application',
+        envoyer: async (_t, waId, texte) => { envoisApplication.push(`${waId}:${texte}`); return { ok: true, messageId: 'app:c1:WA1' }; },
+      },
+    });
+    const lu = JSON.parse(contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('get_conversation', { conversation_id: 'cv1' }) })).texte);
+    expect(lu.window).toBe('not_applicable');
+    expect(lu).not.toHaveProperty('window_open');
+    const envoi = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('reply_in_open_window', { conversation_id: 'cv1', text: 'Bonjour' }) }));
+    expect(envoi.isError, envoi.texte).toBeFalsy();
+    expect(envoisApplication).toEqual(['33600000001:Bonjour']);
+    expect(traces.envois).toEqual([]);
     await server.close();
   });
 

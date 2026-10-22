@@ -2,6 +2,7 @@ import { ficheOutilMcp, MAX_MESSAGES_MCP as LIMITE_MESSAGES_MCP, type ScopeMcp }
 import type { ConversationSummary, ConversationMessage, ListConversationsOptions, ControlOwner } from '../inbox/store.pg';
 import type { AnalyseEtResume, BulkEdits, BulkTarget, ContactRow, ContactFilters, IssueActionEnMasse } from '../crm/contact-store.pg';
 import { repondreAvecUnMessage, repondreDansLaFenetre, type ConversationsRepondre, type DepsRepondre, type ResultatReponse } from '../inbox/repondre';
+import { PHRASE_FORMAT_APPLICATION, phraseApplicationIndisponible } from '../application/envoi';
 import { apercuDuMessage, corpsPourMeta, schemaContenuMeta } from '../api/message-meta';
 import { messageDeForme } from '../api/forme';
 import { MetaApiError } from '../meta/errors';
@@ -450,15 +451,20 @@ export const OUTILS: OutilMcp[] = [
     async executer(deps, tenantId, args) {
       const id = texteObligatoire(args, 'conversation_id', 100);
       const ctx = await contexteOuRefus(deps, tenantId, id);
-      const [owner, assignee, actions] = await Promise.all([
+      const [owner, assignee, actions, filiere] = await Promise.all([
         deps.inbox.getControlOwner(tenantId, ctx.waId),
         deps.inbox.getAssignee(tenantId, id),
         deps.agentIa.actions.listerDeLaConversation(tenantId, id, ACTIONS_DE_LA_CONVERSATION),
+        deps.application.filiere(tenantId),
       ]);
       return {
         conversation_id: id,
         phone: ctx.waId,
-        window_open: ctx.windowOpen,
+        // Sur l'application WhatsApp Business, la fenêtre de 24 h n'existe pas : un champ qui le dit, plutôt qu'un
+        // `window_open: true` qui mentirait sur la règle (spec du 2026-10-22).
+        ...(filiere === 'application'
+          ? { window: 'not_applicable', note: 'WhatsApp Business app number: the 24-hour window does not apply, a reply can always be sent.' }
+          : { window_open: ctx.windowOpen }),
         last_inbound_at: ctx.lastInboundAt,
         handled_by: owner ?? null,
         assigned_to: assignee ?? null,
@@ -938,6 +944,8 @@ async function reponseOuRefus(envoi: () => Promise<ResultatReponse>): Promise<Ex
   if (!('refus' in res)) return res;
   if (res.refus.motif === 'conversation_inconnue') throw new RefusOutil('conversation inconnue dans cet espace');
   if (res.refus.motif === 'aucun_numero') throw new RefusOutil('aucun numéro WhatsApp rattaché à cet espace');
+  if (res.refus.motif === 'application_indisponible') throw new RefusOutil(phraseApplicationIndisponible(res.refus.raison));
+  if (res.refus.motif === 'format_non_pris_en_charge') throw new RefusOutil(`${PHRASE_FORMAT_APPLICATION} : utilisez reply_in_open_window`);
   // 🔴 Une machine ne parle pas à quelqu'un qui a dit STOP. Le message donne la raison et l'issue (un opérateur peut
   // encore répondre), sinon l'agent conclurait à une panne et réessaierait.
   if (res.refus.motif === 'contact_desabonne') {

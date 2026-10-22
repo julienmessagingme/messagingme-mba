@@ -150,7 +150,10 @@ export function creerGestionnaireSessions(d: DepsSessions): GestionnaireSessions
     async envoyer(compteId, destinataire, texte) {
       const e = entrees.get(compteId);
       if (!e?.ouverte || !e.session) throw new ErreurApplication('non_relie', `compte ${compteId} non relié`);
-      return e.session.envoyer(destinataire, texte);
+      const id = await e.session.envoyer(destinataire, texte);
+      // L'activité compte dans les deux sens pour la mise en sommeil. Un échec ici ne fait pas croire à un envoi perdu.
+      await d.comptes.toucher(compteId, new Date()).catch((err: unknown) => console.error(`application ${compteId} : activité non notée`, err));
+      return id;
     },
     async sommeil(compteId) {
       const e = entrees.get(compteId);

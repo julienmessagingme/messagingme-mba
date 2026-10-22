@@ -5,7 +5,8 @@
  *
  * L'ordre des gestes compte :
  *   1. la conversation existe et appartient à cet espace (sinon rien de plus, IDOR) ;
- *   2. la fenêtre est ouverte (Meta refuse le texte libre en dehors : on refuse avant d'appeler) ;
+ *   2. la fenêtre est ouverte (Meta refuse le texte libre en dehors : on refuse avant d'appeler). Sur la filière
+ *      application, elle ne s'applique pas : répondre y est toujours possible, par le service de connexions ;
  *   3. l'envoi ;
  *   4. la prise du fil et le journal, après l'envoi et en best-effort : un échec d'état ne doit jamais faire
  *      croire à un message perdu.
@@ -13,6 +14,8 @@
 import type { OrigineMessage } from './origine';
 import { auteurDeLEnvoi, type AuteurDuChangement } from './evenements';
 import { journaliserEnvoiAccepte, type EtatJournalSortant } from './journal-sortant';
+import type { EnvoiApplication } from '../application/envoi';
+import type { RaisonClient } from '../application/client';
 
 /** Ce que la réponse lit et écrit des conversations. */
 export interface ConversationsRepondre {
@@ -60,6 +63,11 @@ export interface DepsRepondre {
    * `api` : sa réponse ne prend alors pas le fil, et le message suivant du client lui revient (`ControleDuFil`).
    */
   filTenuParLApplication(tenantId: string, waId: string): Promise<boolean>;
+  /**
+   * 🔴 La filière application (2026-10-22). Requise : un espace sans compte Meta Business n'a pas de numéro de Meta,
+   * et une réponse qui l'ignorerait refuserait en silence « aucun numéro ».
+   */
+  application: Pick<EnvoiApplication, 'filiere' | 'envoyer'>;
 }
 
 /**
@@ -70,7 +78,11 @@ export type RefusReponse =
   | { motif: 'conversation_inconnue' }
   | { motif: 'fenetre_fermee' }
   | { motif: 'aucun_numero' }
-  | { motif: 'contact_desabonne' };
+  | { motif: 'contact_desabonne' }
+  /** Filière application : le compte n'est pas relié, ou le service de connexions ne répond pas. */
+  | { motif: 'application_indisponible'; raison: RaisonClient }
+  /** Filière application : seul le texte part (un média ou des boutons attendent un lot suivant). */
+  | { motif: 'format_non_pris_en_charge' };
 
 export type ResultatReponse = { messageId: string; journal: EtatJournalSortant } | { refus: RefusReponse };
 
@@ -94,6 +106,7 @@ export async function repondreDansLaFenetre(
 ): Promise<ResultatReponse> {
   return repondreAvec(deps, tenantId, conversationId, {
     envoyer: (phoneNumberId, to) => deps.sendReply(tenantId, phoneNumberId, to, texte),
+    texteApplication: texte,
     trace: texte,
     type: 'text',
   }, auteur, origine, redactionOrigine);
@@ -128,14 +141,17 @@ async function repondreAvec(
   deps: DepsRepondre,
   tenantId: string,
   conversationId: string,
-  envoi: { envoyer(phoneNumberId: string, to: string): Promise<string>; trace: string; type: string },
+  /** `texteApplication` : ce qui part par la filière application ; absent, le message n'y part pas (format de Meta). */
+  envoi: { envoyer(phoneNumberId: string, to: string): Promise<string>; texteApplication?: string; trace: string; type: string },
   auteur: string | null,
   origine: OrigineMessage,
   redactionOrigine: string | null,
 ): Promise<ResultatReponse> {
   const ctx = await deps.inbox.getConversationContext(conversationId, tenantId);
   if (ctx === null) return { refus: { motif: 'conversation_inconnue' } };
-  if (!ctx.windowOpen) return { refus: { motif: 'fenetre_fermee' } };
+  const application = (await deps.application.filiere(tenantId)) === 'application';
+  if (application && envoi.texteApplication === undefined) return { refus: { motif: 'format_non_pris_en_charge' } };
+  if (!application && !ctx.windowOpen) return { refus: { motif: 'fenetre_fermee' } };
 
   /**
    * 🔴 Une machine ne parle pas à quelqu'un qui a dit STOP, un opérateur si : sans cette exception, il ne
@@ -147,10 +163,16 @@ async function repondreAvec(
     return { refus: { motif: 'contact_desabonne' } };
   }
 
-  const phoneNumberId = await deps.repo.getTenantPhoneNumberId(tenantId);
-  if (!phoneNumberId) return { refus: { motif: 'aucun_numero' } };
-
-  const messageId = await envoi.envoyer(phoneNumberId, ctx.waId);
+  let messageId: string;
+  if (application) {
+    const r = await deps.application.envoyer(tenantId, ctx.waId, envoi.texteApplication!);
+    if (!r.ok) return { refus: { motif: 'application_indisponible', raison: r.raison } };
+    messageId = r.messageId;
+  } else {
+    const phoneNumberId = await deps.repo.getTenantPhoneNumberId(tenantId);
+    if (!phoneNumberId) return { refus: { motif: 'aucun_numero' } };
+    messageId = await envoi.envoyer(phoneNumberId, ctx.waId);
+  }
   // Le fil est pris : le scénario cesse d'avancer tout seul sur ce contact et MBA cesse de répondre, quel que
   // soit le tiers qui écrit. Ce que ça n'arrête pas : une campagne (déclenchée par un opérateur) et un clic sur un
   // bouton de chaîne (geste explicite de l'abonné), dont le type de lancement reprend le fil

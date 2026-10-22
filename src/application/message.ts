@@ -13,3 +13,12 @@ export const estIndividuel = (jid: string): boolean => jid.endsWith('@s.whatsapp
  * pour toute la base, et deux de nos comptes qui s'écrivent recevraient le même identifiant WhatsApp.
  */
 export const idDuMessage = (compteId: string, id: string): string => `app:${compteId}:${id}`;
+
+/**
+ * L'adresse WhatsApp d'un contact depuis son `wa_id` : les chiffres d'un numéro, ou l'identifiant masqué tel quel
+ * (`…@lid`, rangé ainsi à la réception). `null` pour tout le reste : un groupe n'est jamais une destination.
+ */
+export function jidDuWaId(waId: string): string | null {
+  if (/^[0-9]{8,15}$/.test(waId)) return `${waId}@s.whatsapp.net`;
+  return /^[0-9]{1,30}@lid$/.test(waId) ? waId : null;
+}

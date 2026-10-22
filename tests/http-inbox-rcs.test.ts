@@ -6,6 +6,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { InboxDep, InboxRouteDeps } from '../src/http/inbox';
 import { inboxDepInerte, inboxInerte } from './routes-inertes';
+import { filiereApiSeule } from './gardes';
 
 const SECRET = 'test-secret';
 let token = '';
@@ -37,6 +38,7 @@ function app(over: Partial<Omit<InboxRouteDeps, 'inbox'>> & { inbox?: Partial<In
     },
     takeControl: async (_t, waId) => { priseDeControle.push(waId); },
     filTenuParLApplication: async () => false,
+    application: filiereApiSeule,
     repo: {
       getTenantPhoneNumberId: async () => 'pn1',
     },

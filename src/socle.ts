@@ -84,6 +84,9 @@ import { creerAlerteCreditBas, creerPaiementRefuse, creerPrevenirEquipe } from '
 import { PgOffresStore } from './offres/offre.pg';
 import { OffresEnCache } from './offres/cache';
 import { QuotaModeles } from './offres/compteurs';
+import { PgComptesApplication } from './application/comptes.pg';
+import { creerClientApplication } from './application/client';
+import { creerEnvoiApplication } from './application/envoi';
 
 /**
  * Ce que le socle lit de la configuration qu'on lui passe. Les autres réglages restent aux racines qui les consomment ;
@@ -93,6 +96,7 @@ export type ConfigSocle = Pick<Config,
   | 'DRY_RUN' | 'PGBOSS_SCHEMA' | 'ENCRYPTION_KEY' | 'META_ACCESS_TOKEN' | 'META_APP_ID' | 'META_APP_SECRET'
   | 'META_GRAPH_VERSION' | 'META_MM_LITE' | 'PHONE_RATE_PER_MINUTE_MAX' | 'RCS_PROVIDER' | 'CREDIT_OFFERT_MICRO_EUR'
   | 'CONTROL_HUMAN_TIMEOUT_MS' | 'AI_GATEWAY_API_KEY' | 'RESEND_API_KEY' | 'SUPPORT_FROM' | 'APP_URL'
+  | 'APPLICATION_SERVICE_URL' | 'APPLICATION_SERVICE_SECRET'
 >;
 
 export interface DepsSocle {
@@ -424,6 +428,18 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const runStore = new PgWorkflowRunStore(pool);
 
   /**
+   * La filière application (2026-10-22) : les comptes de l'application WhatsApp Business et l'envoi par le service de
+   * connexions. Sans `APPLICATION_SERVICE_URL`, aucun client : la filière est fermée, chaque envoi le dit.
+   */
+  const comptesApplication = new PgComptesApplication(pool);
+  const envoiApplication = creerEnvoiApplication({
+    comptes: comptesApplication,
+    client: config.APPLICATION_SERVICE_URL
+      ? creerClientApplication({ url: config.APPLICATION_SERVICE_URL, secret: config.APPLICATION_SERVICE_SECRET })
+      : null,
+  });
+
+  /**
    * L'alerte de crédit épuisé (`src/repondeur/alerte-credit.ts`) : une par jour et par admin, tenue par le journal des
    * e-mails du produit. Le démarreur du répondeur la déclenche, le tour d'un agent aussi (worker).
    */
@@ -457,7 +473,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     // Le délai de reprise de l'équipe quand l'espace n'en a pas réglé : le même que celui du balayage (`src/worker.ts`).
     delaiRepriseParDefautMs: config.CONTROL_HUMAN_TIMEOUT_MS,
     parcours: runStore,
-    numeros: { getTenantPhoneNumberId: numeroDeLEspace, numeroBloque: numeroBloqueDeLEspace },
+    numeros: { getTenantPhoneNumberId: numeroDeLEspace, numeroBloque: numeroBloqueDeLEspace, applicationReliee: envoiApplication.relie },
     liste: listeDeLAgent,
     consentement: {
       estDesabonne: (t, waId) => contactStore.estDesabonneParWaId(t, waId),
@@ -502,6 +518,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
     rcsProvider: config.RCS_PROVIDER,
     emailTemplates, emailResolver, numeroDeLEspace, runStore, fil, offres, prevenirEquipe,
+    application: envoiApplication,
   });
 
   /**
@@ -545,6 +562,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, numeroBloqueDeLEspace, esCredentialsStore, metaCredentials, metaFactory, listeDeLAgent,
     connexionsPub, connexionPub, publicites, clientPubs, clientCreationPubs, workflowRuntime, fil, alerteCredit, offres, quotaModeles,
     emailsProduit, emetteurEmails, envoyeurProduit, paiementRefuse, prevenirEquipe,
+    comptesApplication, envoiApplication,
   };
 }
 

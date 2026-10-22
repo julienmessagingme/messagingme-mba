@@ -45,7 +45,7 @@ import { jamaisDesabonne } from './consentement';
 import { journalMuet, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpChampsInertes, mcpShopifyInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { SANS_MCP } from './outils-mcp';
 import { AUCUN_GESTE, GESTE_MUET } from './gestes';
-import { offresToutOuvert } from './gardes';
+import { offresToutOuvert, filiereApiSeule } from './gardes';
 
 /**
  * LES OUTILS MCP DE L'AGENT IA ET DU CRÉDIT (lot 8a, livraison B), montés par `buildServer` derrière la vraie garde
@@ -410,6 +410,7 @@ function monter(o: Options & { envoyerModele?: DepsMcp['envoyerModele']; usage?:
     sendReply: async () => 'wamid',
     takeControl: async () => {},
     filTenuParLApplication: async () => false,
+    application: filiereApiSeule,
     contacts: {
       query: async () => [],
       count: async () => 0,

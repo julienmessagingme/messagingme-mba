@@ -421,7 +421,7 @@ describe('confier et reprendre, dans l’ordre (`src/inbox/fil.ts` sur `src/mba/
       repondeur: aucunRepondeur,
       delaiRepriseParDefautMs: DELAI_REPRISE_DEFAUT_MS,
       parcours: { findWaitingByWaId: async () => null },
-      numeros: { getTenantPhoneNumberId: async () => PN , numeroBloque: numeroJamaisBloque },
+      numeros: { getTenantPhoneNumberId: async () => PN , numeroBloque: numeroJamaisBloque, applicationReliee: async () => false },
       liste,
       consentement: { estDesabonne: jamaisDesabonne, estBloque: jamaisBloque },
       meta: { mbaClientForTenant: async () => client },
