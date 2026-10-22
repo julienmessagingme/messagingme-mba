@@ -5,6 +5,30 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-22 (matin) : le connecteur Shopify, lot 2 (la relance de panier abandonné)
+
+Plan : `docs/superpowers/plans/2026-10-21-connecteur-shopify.md`, § Lot 2. Un client qui remplit le checkout avec son
+téléphone sans commander reçoit UNE relance, au délai que le marchand choisit (1 h par défaut, de 15 min à 72 h)
+après la dernière modification du panier, sauf si une commande en est née. Aucune migration : `shopify_paniers`
+existe depuis 0246.
+
+- **Le balayage tourne dans l'API**, dans sa minuterie d'une minute, parce que l'envoi public n'existe qu'ici. La
+  réclamation pose `relance_le` dans la même écriture (`for update skip locked`) : deux copies ne relancent jamais le
+  même panier, et une relance qui échoue après sa réclamation est perdue, pas renvoyée.
+- **La relecture du diff a trouvé un rouge** : une commande ne fermait le panier que relance active. Éteinte puis
+  rallumée (ou coupée puis reconnectée), la relance aurait écrit « vous avez oublié votre panier » à un client qui
+  avait commandé pendant la pause. Correctif : une commande ferme TOUJOURS le panier qui existe, et ne l'écrit fermé
+  d'avance que relance active ; toute connexion efface les paniers de l'espace, comme son affirmation. Tenu par un
+  test vu rouge (le bon symptôme : aucun panier fermé) puis vert.
+- **Les jaunes traités dans le même lot** : un panier ne se garde qu'avec le consentement déjà affirmé ; l'envoi relit
+  le panier juste avant de partir ; une commande ferme aussi les autres paniers ouverts de son numéro (achat express) ;
+  `customers/redact` efface les paniers du numéro ; le numéro de l'acheteur passe avant celui de la livraison ; la
+  limite de contacts prévient les admins une fois par mois ; carte et `get_shopify_state` comptent les paniers sur
+  leurs sept jours de vie ; le refus de catégorie nomme ce que l'événement admet. Restent au backlog : la minuterie
+  sur Scaleway Serverless, l'index partiel de la réclamation, un checkout modifié après la purge de son panier.
+- **Déployé à d0f1a645** (API, worker, worker d'analyse, en deux temps), après la CI lue job par job : fumée publique
+  verte, fiches d'aide chargées, fiches OAuth conformes, plugin publié en `v0.3.1`.
+
 ## 2026-10-22 (nuit) : le connecteur Shopify, lot 1 (connexion et messages de commande)
 
 Plan : `docs/superpowers/plans/2026-10-21-connecteur-shopify.md`, cadré avec Julien en rondes de questions, lot 0 de
