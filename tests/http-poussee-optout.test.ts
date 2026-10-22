@@ -7,6 +7,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { SettingsRouteDeps } from '../src/http/settings';
 import type { AgentRequetesRouteDeps } from '../src/http/agent-requetes';
+import { creerTransportConnecteurHttp } from '../src/agent/transport-connecteur-http';
 import type { RequeteConnecteur } from '../src/agent/requetes';
 import { reglagesDepInertes, reglagesInertes } from './routes-inertes';
 
@@ -73,7 +74,10 @@ function app(branche: string | null = null) {
     },
     sourcePourTest: async () => ({ baseUrl: 'https://api.client.fr', entetes: {}, status: 'active' }),
     clesDeChamps: async () => [],
-    verifierResolution: async () => ({ ok: true }),
+    transportHttp: creerTransportConnecteurHttp({
+      fetch: (async () => new Response('{}')) as unknown as typeof fetch,
+      verifierResolution: async () => ({ ok: true }),
+    }),
     brancheeSurConsentement: async (_t, id) => courant === id,
   };
   return { ecrits, srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, settings, agentRequetes }) };

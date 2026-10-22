@@ -6,6 +6,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { AgentRequetesRouteDeps } from '../src/http/agent-requetes';
 import { LabelRequeteDejaPris, type RequeteConnecteur } from '../src/agent/requetes';
+import { creerTransportConnecteurHttp, type TransportConnecteurHttpDeps } from '../src/agent/transport-connecteur-http';
 import { requetesInertes } from './routes-inertes';
 
 /**
@@ -45,7 +46,7 @@ function app(
   over: Partial<RequeteConnecteur> = {},
   fetchImpl?: typeof fetch,
   champs = ['ville', 'points'],
-  resolution?: (url: string) => Promise<{ ok: boolean; raison?: string }>,
+  resolution?: TransportConnecteurHttpDeps['verifierResolution'],
   delaiTestMs?: number,
 ) {
   const cap = {
@@ -70,11 +71,12 @@ function app(
     // ⚠️ Les clés d'une source sont en MINUSCULES (`enTetesAuthSource`), comme celles d'un appel assemblé.
     sourcePourTest: async () => ({ baseUrl: 'https://api.client.fr/v1', entetes: { accept: 'application/json', authorization: 'Bearer SECRET-42', 'x-api-key': 'SECRET-42' }, status: 'active' }),
     clesDeChamps: async () => champs,
-    ...(fetchImpl ? { fetchImpl } : {}),
-    // La garde de RÉSOLUTION est injectée comme `fetch` : sans elle, ces tests partiraient interroger le DNS
-    // pour un domaine d'exemple. Elle a ses tests dédiés dans `tests/lib-adresse-privee.test.ts`, et son
-    // effet sur CE bouton est éprouvé plus bas.
-    verifierResolution: resolution ?? (async () => ({ ok: true })),
+    // Les primitives réseau sont réunies derrière l'interface de transport. Les tests de la route ne peuvent
+    // plus injecter un fetch qui contourne par accident la garde de résolution.
+    transportHttp: creerTransportConnecteurHttp({
+      fetch: fetchImpl ?? (async () => new Response('{}')) as typeof fetch,
+      verifierResolution: resolution ?? (async () => ({ ok: true })),
+    }),
     ...(delaiTestMs === undefined ? {} : { delaiTestMs }),
   };
   return { cap, srv: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, agentRequetes: deps }) };
@@ -441,6 +443,18 @@ describe('requêtes : le bouton Test', () => {
     const { srv } = app({}, redirige);
     const res = await srv.inject({ method: 'POST', url: `${base()}/${RQ}/test`, ...h(adminTok), payload: {} });
     expect(res.json()).toEqual({ ok: false, erreur: 'le système du client a redirigé l’appel, ce qui n’est pas accepté sur un connecteur' });
+  });
+
+  it('🔴 une panne réseau rend une catégorie sûre, jamais le message natif ni un secret', async () => {
+    const panne = (async () => {
+      throw new Error('GET https://api.client.fr?jeton=SECRET-URL : ECONNRESET');
+    }) as unknown as typeof fetch;
+    const { srv } = app({}, panne);
+    const res = await srv.inject({ method: 'POST', url: `${base()}/${RQ}/test`, ...h(adminTok), payload: {} });
+
+    expect(res.json()).toEqual({ ok: false, erreur: 'le système du client n’a pas répondu' });
+    expect(res.body).not.toContain('SECRET-URL');
+    expect(res.body).not.toContain('ECONNRESET');
   });
 
   it('🔴 un nom qui résout vers l’intérieur : le test REFUSE, et aucun appel ne part', async () => {

@@ -7,6 +7,7 @@ import type { SourceAppel } from '../src/agent/sources';
 import type { RequeteConnecteur } from '../src/agent/requetes';
 import { SANS_MCP } from './outils-mcp';
 import { AUCUN_GESTE } from './gestes';
+import { creerTransportConnecteurHttp, type TransportConnecteurHttpDeps } from '../src/agent/transport-connecteur-http';
 
 /**
  * Le résolveur des outils de CONNECTEUR (lot L2).
@@ -72,7 +73,7 @@ function harnais(over: {
   fiche?: Record<string, string | number | boolean | null> | null;
   lance?: Error;
   /** Verdict de la garde de résolution. Absent = « publique », le cas nominal. */
-  resolution?: (url: string) => Promise<{ ok: boolean; raison?: string }>;
+  resolution?: TransportConnecteurHttpDeps['verifierResolution'];
 } = {}) {
   const appels: Array<{ url: string; init: RequestInit }> = [];
   const epreuves: Array<{ ok: boolean; erreur?: string }> = [];
@@ -95,11 +96,11 @@ function harnais(over: {
     fuseau: async () => 'Europe/Paris',
     // Horloge figee : la valeur systeme « maintenant » doit etre reproductible.
     now: () => new Date('2026-09-02T09:45:00.000Z'),
-    fetchImpl,
-    // La garde de RÉSOLUTION est injectée, comme `fetch` : sans ça, chaque test partirait interroger le DNS
-    // pour un domaine de test qui n'existe pas, et la garde refuserait tout. Elle a ses tests dédiés plus bas
-    // et dans `tests/lib-adresse-privee.test.ts` ; ici on veut éprouver le reste du chemin.
-    verifierResolution: over.resolution ?? (async () => ({ ok: true })),
+    // Le résolveur ne voit plus les primitives réseau : son seam est l'interface de transport complète.
+    transportHttp: creerTransportConnecteurHttp({
+      fetch: fetchImpl,
+      verifierResolution: over.resolution ?? (async () => ({ ok: true })),
+    }),
   });
 
   const entree: EntreeResolveur = {
@@ -493,7 +494,7 @@ describe('résolveur http : où le nom mène vraiment', () => {
     const res = await h.resolveur(h.entree);
     expect(res.ok).toBe(false);
     expect(h.appels).toEqual([]);
-    expect(String(res.erreur)).toContain('resolution_interne');
+    expect(String(res.erreur)).toContain('adresse_interne');
   });
 
   it('le refus est noté SUR LA SOURCE, et ce qu’on dit au modèle ne décrit pas notre réseau', async () => {
@@ -517,7 +518,7 @@ describe('résolveur http : où le nom mène vraiment', () => {
     const h = harnais({ lance: new TypeError('fetch failed', { cause: new AdresseInterdite() }) });
     const res = await h.resolveur(h.entree);
     expect(res.ok).toBe(false);
-    expect(res.erreur).toBe('connexion_interne');
+    expect(res.erreur).toBe('adresse_interne');
     expect(h.epreuves.some((e) => e.ok === false && e.erreur === 'adresse interne')).toBe(true);
     expect(JSON.stringify(res.contenu)).not.toMatch(/172\.|169\.254|docker|localhost|127\./i);
   });

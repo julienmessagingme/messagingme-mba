@@ -3,12 +3,10 @@ import type { JournalAppels, SourceAppel, StatutAppel } from '../catalog';
 import type { SourceStore } from '../sources';
 import type { RequeteStore } from '../requetes';
 import { construireCible, enTetesAuthSource } from '../http-cible';
-import { resolutionPublique, type VerdictResolution } from '../../lib/adresse-privee';
-import { fetchPublic, estRefusAdresseInterne, estRedirectionRefusee } from '../../lib/connexion-publique';
-import { lireCorpsBorne } from '../../lib/corps-borne';
 import { assemblerAppel } from '../requete-http';
 import { resoudreVariable, type ValeurResolue } from '../variables';
 import type { CleFicheFixe } from '../../crm/champs-fiche';
+import { transportConnecteurHttp, type TransportConnecteurHttp } from '../transport-connecteur-http';
 
 /**
  * Le résolveur des outils de connecteur : un appel HTTP vers le système du client.
@@ -38,12 +36,10 @@ export interface DepsResolveurHttp {
    */
   fiche: { ficheDuContact(tenantId: string, waId: string): Promise<Partial<Record<CleFicheFixe, ValeurResolue>> | null> };
   fuseau?: (tenantId: string) => Promise<string>;
-  /** Injecté pour tester sans réseau, comme partout dans ce dépôt. */
-  fetchImpl?: typeof fetch;
   /** Injectée pour que la valeur système « maintenant » soit reproductible en test. */
   now?: () => Date;
-  /** Injectée pour tester la garde de résolution sans DNS. Défaut : la vraie résolution. */
-  verifierResolution?: (url: string) => Promise<VerdictResolution>;
+  /** Le transport complet, injecté dans les tests. Défaut : résolution et connexion publiques de production. */
+  transportHttp?: TransportConnecteurHttp;
 }
 
 /** Ce qu'on dit au modèle quand ça ne va pas. Volontairement pauvre : il n'a pas à savoir pourquoi le
@@ -127,9 +123,7 @@ export interface JournalDAppel {
  * messages.
  */
 export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecteur) => Promise<SortieResolveur> {
-  // Le `fetch` vérifié à la connexion (DNS rebinding) : `src/lib/connexion-publique.ts`.
-  const appeler = deps.fetchImpl ?? fetchPublic;
-  const estPublique = deps.verifierResolution ?? ((url: string) => resolutionPublique(url));
+  const transportHttp = deps.transportHttp ?? transportConnecteurHttp;
 
   /** L'enveloppe de journal, best-effort dans les deux sens : un appel ne meurt pas d'une insertion ratée. */
   const journaliser = async (p: AppelConnecteur, faire: () => Promise<SortieResolveur>): Promise<SortieResolveur> => {
@@ -248,79 +242,59 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
     });
     if (!appel.ok) return { ok: false, contenu: { erreur: 'ce connecteur est mal configuré' }, erreur: appel.raison };
 
-    // 5bis. 🔴 Où ce nom mène-t-il vraiment ? `construireCible` lit le texte de l'hôte, et ne peut rien contre
-    // un nom public qui résout vers les métadonnées du fournisseur ou le réseau Docker du VPS. Vérifié sur
-    // l'URL finale, après l'assemblage.
-    const resolution = await estPublique(appel.url);
-    if (!resolution.ok) {
-      await deps.sources.marquerEpreuve(ctx.tenantId, source.id, false, 'adresse interne').catch(() => {});
-      return { ok: false, contenu: { erreur: MESSAGES.interne }, erreur: `resolution_interne: ${resolution.raison ?? '?'}` };
-    }
-
-    // 6. L'appel. Le secret n'existe que dans cet objet d'en-têtes. 🔴 L'authentification est superposée en
-    // dernier : aucun en-tête saisi ne peut la recouvrir.
+    // 5bis-7. Le transport commun possède la résolution publique, la connexion protégée, les redirections,
+    // l'abandon et la lecture bornée. Le secret reste assemblé ici, dans l'adapter de la source.
     const headers = { ...appel.entetes, ...enTetesAuthSource(source) };
-
-    let res: Response;
-    try {
-      res = await appeler(appel.url, {
-        method: appel.methode,
-        headers,
-        ...(appel.corps !== null ? { body: appel.corps } : {}),
-        redirect: 'error',
-        signal,
-      });
-    } catch (err) {
-      // Panne réseau, DNS, échéance ou redirection refusée : l'échec est noté sur la source, pour qu'un
-      // connecteur mort se voie dans la console. Un refus à la connexion (DNS rebinding, fermé par `fetchPublic`)
-      // rend le même verdict que la vérification préalable : même cause.
-      if (estRefusAdresseInterne(err)) {
-        await deps.sources.marquerEpreuve(ctx.tenantId, source.id, false, 'adresse interne').catch(() => {});
-        return { ok: false, contenu: { erreur: MESSAGES.interne }, erreur: 'connexion_interne' };
-      }
-      const redirige = estRedirectionRefusee(err);
-      await deps.sources.marquerEpreuve(ctx.tenantId, source.id, false, redirige ? 'redirection refusée' : 'injoignable').catch(() => {});
-      const cle = redirige ? 'redirige' : 'indispo';
-      return { ok: false, contenu: { erreur: MESSAGES[cle] }, erreur: cle };
+    const transporte = await transportHttp.executer({
+      url: appel.url,
+      methode: appel.methode,
+      entetes: headers,
+      corps: appel.corps,
+      signal,
+      lecture: p.lecture.nature === 'pousse'
+        ? { nature: 'aucune' }
+        : { nature: 'texte', maxOctets: outil.maxBytes },
+    });
+    if (transporte.nature === 'adresse_refusee') {
+      await deps.sources.marquerEpreuve(ctx.tenantId, source.id, false, 'adresse interne').catch(() => {});
+      return { ok: false, contenu: { erreur: MESSAGES.interne }, erreur: 'adresse_interne' };
     }
-
-    // Certaines implémentations de `fetch` rendent la redirection au lieu de lever : on la refuse aussi ici.
-    if (res.status >= 300 && res.status < 400) {
+    if (transporte.nature === 'redirection_refusee') {
       await deps.sources.marquerEpreuve(ctx.tenantId, source.id, false, 'redirection refusée').catch(() => {});
-      return { ok: false, contenu: { erreur: MESSAGES.redirige }, erreur: 'redirige', httpStatus: res.status };
+      return {
+        ok: false, contenu: { erreur: MESSAGES.redirige }, erreur: 'redirige',
+        ...(transporte.httpStatus === undefined ? {} : { httpStatus: transporte.httpStatus }),
+      };
     }
-
-    // 7. Le corps, lu en flux et borné sur ce qu'on a lu (pas `content-length`, qui peut mentir), en octets.
-    // Au-delà, refus plutôt que troncature : un JSON tronqué est illisible.
-    const corps = await lireCorpsBorne(res, outil.maxBytes);
-    if (corps.trop_gros) {
-      return { ok: false, contenu: { erreur: MESSAGES.trop_gros }, erreur: 'trop_gros', httpStatus: res.status };
+    if (transporte.nature === 'abandon' || transporte.nature === 'reseau') {
+      await deps.sources.marquerEpreuve(ctx.tenantId, source.id, false, 'injoignable').catch(() => {});
+      return { ok: false, contenu: { erreur: MESSAGES.indispo }, erreur: 'indispo' };
     }
-    /**
-     * Un flux coupé n'est pas un corps vide : sans ce cas, le `catch` de l'étape 9 marquerait saine une source
-     * dont la connexion lâche à chaque appel.
-     */
-    if (corps.casse) {
+    if (transporte.nature === 'corps_trop_gros') {
+      return { ok: false, contenu: { erreur: MESSAGES.trop_gros }, erreur: 'trop_gros', httpStatus: transporte.httpStatus };
+    }
+    if (transporte.nature === 'corps_interrompu') {
       // Marquée en échec, comme « injoignable » et « redirection refusée ».
       await deps.sources.marquerEpreuve(ctx.tenantId, source.id, false, 'réponse interrompue').catch(() => {});
       // Clé de journal distincte d'`illisible` : une coupure de connexion n'est pas un JSON invalide.
-      return { ok: false, contenu: { erreur: MESSAGES.coupe }, erreur: 'coupe', httpStatus: res.status };
+      return { ok: false, contenu: { erreur: MESSAGES.coupe }, erreur: 'coupe', httpStatus: transporte.httpStatus };
     }
-    const brut = corps.texte;
+    const brut = transporte.texte ?? '';
+    const httpStatus = transporte.httpStatus;
 
     // 8. Le statut. Un 4xx ou 5xx est un échec métier : le modèle le sait, sans le corps brut de l'erreur
     // (chemins internes, parfois des identifiants).
-    if (!res.ok) {
-      const authentification = res.status === 401 || res.status === 403;
+    if (httpStatus < 200 || httpStatus >= 300) {
+      const authentification = httpStatus === 401 || httpStatus === 403;
       // Un 4xx est une réponse du système du client : la source reste saine, sauf refus d'authentification, le
       // symptôme d'un jeton mort.
-      const sourceSaine = res.status >= 400 && res.status < 500 && !authentification;
-      await deps.sources.marquerEpreuve(ctx.tenantId, source.id, sourceSaine, authentification ? 'authentification refusée' : `HTTP ${res.status}`).catch(() => {});
+      const sourceSaine = httpStatus >= 400 && httpStatus < 500 && !authentification;
+      await deps.sources.marquerEpreuve(ctx.tenantId, source.id, sourceSaine, authentification ? 'authentification refusée' : `HTTP ${httpStatus}`).catch(() => {});
       return {
         ok: false,
         contenu: { erreur: authentification ? MESSAGES.auth : MESSAGES.indispo },
-        erreur: authentification ? 'auth' : `http_${res.status}`,
-        httpStatus: res.status,
+        erreur: authentification ? 'auth' : `http_${httpStatus}`,
+        httpStatus,
       };
     }
 
@@ -331,7 +305,7 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
      */
     if (p.lecture.nature === 'pousse') {
       await deps.sources.marquerEpreuve(ctx.tenantId, source.id, true).catch(() => {});
-      return { contenu: { ok: true, statut: res.status }, httpStatus: res.status };
+      return { contenu: { ok: true, statut: httpStatus }, httpStatus };
     }
 
     // 9ter. La réponse entière (relais du MBA), déjà bornée par la lecture en flux. Un corps vide vaut `null`,
@@ -342,7 +316,7 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
       if (brut !== '') {
         try { reponse = JSON.parse(brut) as unknown; } catch { reponse = brut; }
       }
-      return { contenu: { reponse }, httpStatus: res.status };
+      return { contenu: { reponse }, httpStatus };
     }
 
     // 9. Le filtre. Ce qui repart au modèle est exactement ce que le client a listé, et rien d'autre. C'est le SEUL
@@ -352,7 +326,7 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
       json = JSON.parse(brut) as unknown;
     } catch {
       await deps.sources.marquerEpreuve(ctx.tenantId, source.id, true).catch(() => {});
-      return { ok: false, contenu: { erreur: MESSAGES.illisible }, erreur: 'illisible', httpStatus: res.status };
+      return { ok: false, contenu: { erreur: MESSAGES.illisible }, erreur: 'illisible', httpStatus };
     }
     const contenu: Record<string, unknown> = {};
     for (const chemin of champsLus) {
@@ -360,7 +334,7 @@ export function creerAppelConnecteur(deps: DepsResolveurHttp): (p: AppelConnecte
       if (v !== undefined) contenu[chemin] = v;
     }
     await deps.sources.marquerEpreuve(ctx.tenantId, source.id, true).catch(() => {});
-    return { contenu, httpStatus: res.status };
+    return { contenu, httpStatus };
   });
 }
 

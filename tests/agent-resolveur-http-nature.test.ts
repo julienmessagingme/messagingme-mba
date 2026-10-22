@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { creerResolveurHttp } from '../src/agent/resolvers/http';
+import { creerTransportConnecteurHttp } from '../src/agent/transport-connecteur-http';
 import { connecteurSimule, resolveursSimulation } from '../src/agent/resolvers/simulation';
 import { executeTool, type EntreeResolveur, type ToolExecutorDeps } from '../src/agent/executor';
 import { JOURNAL_MUET } from '../src/agent/journal-muet';
@@ -70,8 +71,10 @@ function harnais(
     inbox: { derniereSaisieDuContact: async () => null },
     fuseau: async () => 'Europe/Paris',
     now: () => new Date('2026-09-15T09:00:00.000Z'),
-    fetchImpl,
-    verifierResolution: async () => ({ ok: true }),
+    transportHttp: creerTransportConnecteurHttp({
+      fetch: fetchImpl,
+      verifierResolution: async () => ({ ok: true }),
+    }),
   });
   const entree: EntreeResolveur = {
     outil,
