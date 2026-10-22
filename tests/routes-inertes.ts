@@ -33,7 +33,7 @@ import { creerTravauxEnVol } from '../src/lib/en-vol';
 import { DROITS, FONCTIONS } from '../src/offres/offres';
 import { grilleDesOffres } from '../src/offres/vue';
 import type { StripeWebhookRouteDeps } from '../src/http/credit-stripe';
-import { offresToutOuvert, filiereApiSeule } from './gardes';
+import { offresToutOuvert, filiereApiSeule, aucunCompteApplication } from './gardes';
 
 /**
  * LES DÉPENDANCES DE ROUTES DEVENUES REQUISES, EN VALEURS INERTES NOMMÉES (lot 3 de l'audit ponytail, 2026-09-26).
@@ -555,6 +555,8 @@ export const mcpNumeroInerte: Pick<DepsMcp, 'numero'> = {
     // Lot 6, B2b : aucun Pro, donc aucune suite à rappeler ; rendre le numéro n'est pas le sujet de ces montages.
     suiteDuPro: async () => null,
     rendreLeNumero: neDevraitPasEtreAppelee('numero.rendreLeNumero'),
+    // La filière application : aucun compte à préparer dans ces montages.
+    comptesApplication: aucunCompteApplication.comptes,
   },
 };
 

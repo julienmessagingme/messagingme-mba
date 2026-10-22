@@ -11,6 +11,7 @@ import type { PgAbonnementsNumeroStore } from '../stripe/abonnements.pg';
 import type { RetourAbonnement } from '../stripe/abonnement';
 import { corpsDuRefus, type Issue } from '../lib/issue';
 import { programmerLaFinDuNumero } from '../numero/fin-abonnement';
+import { qrApplication, relierApplication, type DepsConnexionApplication } from '../application/connexion';
 
 /**
  * LE NUMÉRO FOURNI CÔTÉ CLIENT (lot 3b, spec `docs/superpowers/specs/2026-10-05-numero-fourni-design.md`).
@@ -67,6 +68,11 @@ export interface NumeroFourniRouteDeps {
    * numéro, et aucun paiement du numéro ne s'ouvre. Requis : un câblage qui l'oublierait ferait payer un client Pro.
    */
   pro: { vivant(tenantId: string): Promise<boolean> };
+  /**
+   * La filière application WhatsApp Business (2026-10-22) : relier par QR code depuis la page du lien. Requise : l'état
+   * de la connexion la lit aussi, sans quoi un compte relié n'y serait jamais dit connecté.
+   */
+  application: DepsConnexionApplication;
 }
 
 const saisieAbonnement = z.object({ retour: z.enum(['brancher', 'console']) });
@@ -246,6 +252,21 @@ export function registerNumeroFourni(
   app.get('/tenants/:tenantId/connexion-numero', opts, async (req, reply) => {
     const etat = await lireEtatConnexion(deps, espaceVerifie(req));
     return reply.code(200).send({ etat, empreinte: empreinteEtat(etat) });
+  });
+
+  /**
+   * La filière application (2026-10-22) : la page ouvre la session du compte, qui produit le QR code, puis le relit
+   * jusqu'à « relié ». Ouvrir une session engage le service de connexions : la limite coûteuse, comme les gestes du numéro.
+   */
+  app.post('/tenants/:tenantId/application/relier', couteux, async (req, reply) => {
+    const r = await relierApplication(deps.application, espaceVerifie(req));
+    if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
+    return reply.code(200).send({ ok: true });
+  });
+
+  // Le QR code en image, relu par la page toutes les trois secondes : lecture seule, hors plafond coûteux.
+  app.get('/tenants/:tenantId/application/qr', opts, async (req, reply) => {
+    return reply.code(200).send(await qrApplication(deps.application, espaceVerifie(req)));
   });
 
   app.post('/tenants/:tenantId/numero-fourni/remplacer', couteux, async (req, reply) => {

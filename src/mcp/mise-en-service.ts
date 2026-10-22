@@ -44,6 +44,9 @@ export type EtapeMiseEnService = keyof typeof OUTILS_DE_L_ETAPE;
 /** Les avertissements que l'outil peut rendre ; `lecture_manquee` porte la source après un deux-points. */
 export const AVERTISSEMENTS = [
   'numero_a_activer', 'credit_epuise', 'repondeur_gele_par_l_offre', 'carte_meta_a_regler', 'lecture_manquee',
+  // La filière application (2026-10-22) : WhatsApp a coupé le numéro, ou l'appareil a été retiré depuis le téléphone ;
+  // ou le compte dort faute de messages. Le développeur est prévenu par courriel, et Claude le lui dit dans sa session.
+  'numero_coupe', 'numero_en_sommeil',
 ] as const;
 
 /** Ce que l'outil lit, une source par champ ; `null` = la lecture a échoué. */
@@ -60,7 +63,11 @@ export interface LecturesMiseEnService {
 export interface EtatMiseEnService {
   offre: VueOffre['offre'] | null;
   credit_eur: number | null;
-  numero: { connecte: boolean; a_activer: boolean; chiffres: string | null; fourni: string | null; abonnement: string | null } | null;
+  numero: {
+    connecte: boolean; a_activer: boolean; chiffres: string | null; fourni: string | null; abonnement: string | null;
+    /** `application` : un compte de l'application WhatsApp Business, relié par QR code ; `api` sinon. */
+    filiere: 'api' | 'application';
+  } | null;
   agents: {
     actifs: Array<{ id: string; label: string }>;
     a_completer: Array<{ id: string; label: string; nb_manques: number | null }>;
@@ -90,8 +97,12 @@ export function etatMiseEnService(l: LecturesMiseEnService): EtatMiseEnService {
     chiffres: l.numero.connecte?.chiffres || null,
     fourni: l.numero.fourni,
     abonnement: l.numero.abonnement?.statut ?? null,
+    filiere: l.numero.application ? 'application' as const : 'api' as const,
   };
   if (numero?.a_activer) avertissements.push('numero_a_activer');
+  const statutApplication = l.numero?.application?.statut;
+  if (statutApplication === 'banni' || statutApplication === 'deconnecte') avertissements.push('numero_coupe');
+  if (statutApplication === 'sommeil') avertissements.push('numero_en_sommeil');
   // Connecté mais bloqué chez Meta pour sa carte : les modèles ne partent pas (erreur 141006, guide « compte Meta »).
   const carteARegler = numero?.connecte === true && l.numero?.connecte?.paiementBloque === true;
   if (carteARegler) avertissements.push('carte_meta_a_regler');

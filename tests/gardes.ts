@@ -5,6 +5,7 @@ import { CompteurDebitMemoire } from '../src/db/debit.memoire';
 import { DROITS } from '../src/offres/offres';
 import type { SourceOffres } from '../src/offres/offre.pg';
 import type { EnvoiApplication } from '../src/application/envoi';
+import type { DepsConnexionApplication } from '../src/application/connexion';
 
 /**
  * LA GARDE QUI LAISSE PASSER, ET ELLE A UN NOM (lot 2 du plan 2026-09-14).
@@ -63,4 +64,19 @@ export const filiereApiSeule: EnvoiApplication = {
   filiere: async () => 'api',
   relie: async () => false,
   envoyer: async () => { throw new Error('filière application : aucun envoi attendu dans ce test'); },
+};
+
+/**
+ * AUCUN COMPTE DE L'APPLICATION À RELIER (2026-10-22) : l'hypothèse des tests de la connexion du numéro qui ne parlent
+ * pas de la filière application. Préparer ou relier y est une erreur du test, et lève.
+ */
+export const aucunCompteApplication: DepsConnexionApplication = {
+  comptes: {
+    parEspace: async () => null,
+    preparer: async () => { throw new Error('filière application : aucune préparation attendue dans ce test'); },
+  },
+  client: null,
+  numeroFourni: async () => null,
+  offrirCredit: async () => {},
+  qrEnImage: async () => { throw new Error('filière application : aucun QR code attendu dans ce test'); },
 };

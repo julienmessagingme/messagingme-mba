@@ -236,6 +236,29 @@ export async function offrirAuNumeroVerifie(
 }
 
 /**
+ * Le crédit offert au premier numéro, pour un compte de l'application WhatsApp Business RELIÉ (filière application,
+ * 2026-10-22). Les trois bornes de `credits_offerts` sont les mêmes : une offre par espace, jamais deux pour le même
+ * identifiant (`app:` et l'identifiant du compte), jamais deux pour le même numéro affiché. 🔴 Le numéro affiché est
+ * celui que WhatsApp a donné à l'appairage (`jid`), jamais celui que le développeur a déclaré : un numéro déclaré ne
+ * prouve rien, et un même téléphone relié sous dix numéros inventés aurait reçu dix offres. Rend le montant offert.
+ */
+export async function offrirAuCompteApplication(client: PoolClient, tenantId: string, montantMicroEur: number): Promise<number> {
+  const montant = Math.max(0, Math.round(montantMicroEur));
+  if (montant === 0) return 0;
+  const pris = await client.query(
+    `insert into credits_offerts (tenant_id, phone_number_id, numero_affiche, montant_micro_eur)
+     select $1, 'app:' || ca.id::text, '+' || substring(ca.jid from '^([0-9]{8,15})[:@]'), $2
+       from comptes_application ca
+      where ca.tenant_id = $1 and ca.statut = 'relie' and substring(ca.jid from '^([0-9]{8,15})[:@]') is not null
+     on conflict do nothing`,
+    [tenantId, montant],
+  );
+  if ((pris.rowCount ?? 0) === 0) return 0;
+  await bouger(client, tenantId, montant, 'offert', { note: NOTE_CREDIT_OFFERT });
+  return montant;
+}
+
+/**
  * Le crédit d'un achat Stripe, écrit DANS la transaction du webhook, juste après la ligne de paiement qui le rend
  * idempotent (`PgStripeStore.crediterPaiement`). Rend le solde après opération.
  * `stripeSessionId` rattache le mouvement à son paiement (migration 0193) : c'est ce lien, et jamais la note, que lit

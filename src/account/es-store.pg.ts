@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import { enTransaction } from '../db/transaction';
-import { offrirAuNumeroVerifie } from '../agent/credits.pg';
+import { offrirAuCompteApplication, offrirAuNumeroVerifie } from '../agent/credits.pg';
 import type { Fournisseur, WabaCredential } from '../meta/credentials';
 
 /**
@@ -144,6 +144,11 @@ export class PgEmbeddedSignupStore {
   async offrirCredit(tenantId: string, phoneNumberId: string): Promise<number> {
     // Le même montant pour toutes les origines (lot 6, C) : la console et Claude Code offrent 1 €.
     return enTransaction(this.pool, (client) => offrirAuNumeroVerifie(client, tenantId, phoneNumberId, this.offre.creditOffertMicroEur));
+  }
+
+  /** Le même crédit, pour un compte de l'application WhatsApp Business relié (`offrirAuCompteApplication`). */
+  async offrirCreditApplication(tenantId: string): Promise<number> {
+    return enTransaction(this.pool, (client) => offrirAuCompteApplication(client, tenantId, this.offre.creditOffertMicroEur));
   }
 
   /**

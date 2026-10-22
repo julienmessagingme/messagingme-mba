@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { PgNumerosFournisStore } from './store.pg';
 import type { PgAbonnementsNumeroStore, StatutAbonnement } from '../stripe/abonnements.pg';
+import type { ComptesApplication, StatutCompte } from '../application/comptes';
 
 /**
  * OÙ EN EST LA CONNEXION DU NUMÉRO D'UN ESPACE (lot 3c, livraison A). Une seule lecture, pour la page `/brancher`
@@ -22,6 +23,11 @@ export interface EtatConnexion {
   abonnement: { statut: StatutAbonnement; periodeFin: string | null } | null;
   /** Un Pro vivant couvre l'espace (lot 6, B2b) : le numéro fourni y est inclus, la page l'obtient sans payer. */
   inclusDansLePro: boolean;
+  /**
+   * Le compte de l'application WhatsApp Business de l'espace (filière application, 2026-10-22) ; absent sans compte, et
+   * l'état est alors celui de la filière API. Relié, il vaut « connecté », sous son numéro.
+   */
+  application?: { statut: StatutCompte; numero: string };
 }
 
 export interface DepsEtatConnexion {
@@ -30,13 +36,16 @@ export interface DepsEtatConnexion {
   abonnements: Pick<PgAbonnementsNumeroStore, 'deLEspace'>;
   /** Le Pro de l'espace (lot 6, B2b, `PgAbonnementsOffreStore.vivant`). */
   pro: { vivant(tenantId: string): Promise<boolean> };
+  /** Le compte de la filière application. Requis : sans lui, un compte relié ne serait jamais dit connecté. */
+  application: { comptes: Pick<ComptesApplication, 'parEspace'> };
 }
 
 export async function lireEtatConnexion(deps: DepsEtatConnexion, tenantId: string): Promise<EtatConnexion> {
-  const [n, connecte, a, pro] = await Promise.all([
+  const [n, connecteMeta, a, pro, compte] = await Promise.all([
     deps.numeros.numeroDeLEspace(tenantId), deps.numeroConnecte(tenantId), deps.abonnements.deLEspace(tenantId),
-    deps.pro.vivant(tenantId),
+    deps.pro.vivant(tenantId), deps.application.comptes.parEspace(tenantId),
   ]);
+  const connecte = connecteMeta ?? (compte?.statut === 'relie' ? { chiffres: compte.numero, aActiver: false } : null);
   // Le code ne se lit que pour un numéro attribué : `codeDeLEspace` le borne à l'attribution.
   const c = n ? await deps.numeros.codeDeLEspace(tenantId) : null;
   return {
@@ -45,6 +54,7 @@ export async function lireEtatConnexion(deps: DepsEtatConnexion, tenantId: strin
     connecte,
     abonnement: a ? { statut: a.statut, periodeFin: a.periodeFin ? a.periodeFin.toISOString() : null } : null,
     inclusDansLePro: pro,
+    ...(compte ? { application: { statut: compte.statut, numero: compte.numero } } : {}),
   };
 }
 
@@ -56,7 +66,7 @@ export async function lireEtatConnexion(deps: DepsEtatConnexion, tenantId: strin
 export function empreinteEtat(e: EtatConnexion): string {
   const forme = JSON.stringify([
     e.fourni, e.code?.recuLe ?? null, e.code?.code ?? null, e.connecte?.chiffres ?? null, e.connecte?.aActiver ?? null,
-    e.abonnement?.statut ?? null,
+    e.abonnement?.statut ?? null, e.application?.statut ?? null,
   ]);
   return createHash('sha256').update(forme).digest('hex').slice(0, 16);
 }

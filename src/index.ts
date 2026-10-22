@@ -103,6 +103,7 @@ import { PgChannelsMePostStore } from './channels-me/post-store.pg';
 import { ChannelsMeClient } from './channels-me/client';
 import { PgWidgetStore } from './widgets/store.pg';
 import { qrSvg } from './widgets/qr';
+import type { DepsConnexionApplication } from './application/connexion';
 import { conflitDansLEspace } from './widgets/phrases';
 import { gestionDesWidgetsEnBase, type DepsWidgets } from './widgets/gestion';
 import { etatDuScenario } from './workflow/store.pg';
@@ -270,7 +271,7 @@ async function main(): Promise<void> {
     agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
     numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, connexionPub, publicites,
     clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, offres, quotaModeles,
-    emailsProduit, envoyeurProduit, paiementRefuse, emetteurEmails, envoiApplication,
+    emailsProduit, envoyeurProduit, paiementRefuse, emetteurEmails, envoiApplication, comptesApplication, clientApplication,
   } = construireSocle({ pool, queue, config });
 
   /**
@@ -713,6 +714,32 @@ async function main(): Promise<void> {
    * La transcription d'un appel de Meta part sur NOTRE clé, comme celle des vocaux : ce n'est la dépense d'aucun client.
    */
   const numerosFournis = new PgNumerosFournisStore(pool);
+
+  /**
+   * Relier un compte de l'application WhatsApp Business par QR code (filière application, 2026-10-22), depuis la page du
+   * lien. Le crédit offert suit le chemin de celui de Meta : l'offre en base, puis la remontée du plafond en arrière-plan.
+   */
+  const offrirCreditApplication = creerOffreDeBienvenue({
+    offrir: (tenant) => esCredentialsStore.offrirCreditApplication(tenant),
+    remonterPlafond: provisionCle ? (tenant: string) => remonterPlafondApresRecharge(provisionCle, tenant) : null,
+    travaux: travauxEnVol,
+    journal: (msg, err, tenant) => { journaliser('error', msg, { err, tenantId: tenant, pour: 'credit_offert_application' }); },
+  });
+  const connexionApplication: DepsConnexionApplication = {
+    comptes: comptesApplication,
+    client: clientApplication,
+    numeroFourni: async (tenant) => {
+      const n = await numerosFournis.numeroDeLEspace(tenant);
+      return n ? { id: n.id, numero: n.numero } : null;
+    },
+    // Une panne n'empêche jamais la page de dire « relié » : l'offre encore due se sert à la lecture suivante.
+    offrirCredit: async (tenant) => {
+      try { await offrirCreditApplication(tenant, ''); } catch (err) {
+        journaliser('error', 'credit_offert_application_non_ecrit', { err: texteDe(err), tenantId: tenant });
+      }
+    },
+    qrEnImage: async (texte) => `data:image/svg+xml;base64,${Buffer.from(await qrSvg(texte)).toString('base64')}`,
+  };
   /** L'abonnement du numéro fourni (lot 3c, livraison B, migration 0214) : écrit par le webhook, lu par la page et Claude. */
   const abonnementsNumero = new PgAbonnementsNumeroStore(pool);
   /**
@@ -2707,6 +2734,8 @@ async function main(): Promise<void> {
       },
       // Le numéro inclus dans le Pro (lot 6, B2b) : un Pro vivant l'attribue sans paiement.
       pro: { vivant: (tenant) => abonnementsOffre.vivant(tenant) },
+      // La filière application : le QR code de la page, et l'état qui dit « relié ».
+      application: connexionApplication,
     },
     // L'état de l'abonnement du numéro (lot 4), pour le bandeau de la console : la seule lecture.
     abonnementNumero: { etat: (tenant) => abonnementsNumero.etatDeLEspace(tenant) },
@@ -3045,10 +3074,12 @@ async function main(): Promise<void> {
         // `/brancher` de la console, et la MÊME lecture de l'état que cette page.
         numero: {
           signerLien: (l) => signLienNumero(l, config.AUTH_SECRET),
-          etat: (tenant) => lireEtatConnexion({ numeros: numerosFournis, numeroConnecte, abonnements: abonnementsNumero, pro: abonnementsOffre }, tenant),
+          etat: (tenant) => lireEtatConnexion({ numeros: numerosFournis, numeroConnecte, abonnements: abonnementsNumero, pro: abonnementsOffre, application: connexionApplication }, tenant),
           urlConsole: config.APP_URL,
           attendre: (ms) => new Promise((r) => { setTimeout(r, ms); }),
           maintenant: () => Date.now(),
+          // La filière application : son propre numéro se prépare dès le lien (`start_whatsapp_connection`).
+          comptesApplication,
           ouvrirPortail: (tenant, payeur) => ouvrirPortail(abonnementDuNumero, tenant, 'console', payeur),
           // Lot 4 : la seule lecture de l'état, et le réabonnement du même numéro (retour sur `/paiement-recu`).
           abonnement: (tenant) => abonnementsNumero.etatDeLEspace(tenant),

@@ -8,6 +8,7 @@ import type { CleDemandee, Prise } from '../src/db/verrous-courts';
 import type { NumeroFourni } from '../src/otp/store.pg';
 import type { StatutAbonnement } from '../src/stripe/abonnements.pg';
 import { refus, type Issue } from '../src/lib/issue';
+import { aucunCompteApplication } from './gardes';
 
 /**
  * LE NUMÉRO FOURNI CÔTÉ CLIENT (lot 3b, spec docs/superpowers/specs/2026-10-05-numero-fourni-design.md) : la page
@@ -120,6 +121,7 @@ function monter(o: {
       programmerFin: async (abonnementId) => { cap.fins.push(abonnementId); return o.fin ?? { ok: true, valeur: true }; },
     },
     pro: { vivant: async () => o.pro ?? false },
+    application: aucunCompteApplication,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, numeroFourni: deps }), cap };
 }

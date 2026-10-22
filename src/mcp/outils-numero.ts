@@ -8,6 +8,9 @@ import type { Issue } from '../lib/issue';
 import { DUREE_LIEN_NUMERO_MS, type LienNumero } from '../auth/token';
 import { empreinteEtat, type EtatConnexion } from '../otp/etat-connexion';
 import type { EtatDeLEspace } from '../stripe/abonnements.pg';
+import { ETAPES_COMPTE_FOURNI, ETAPES_RELIER_APPLICATION } from '../../web/lib/partage/etapes-application';
+import type { ComptesApplication } from '../application/comptes';
+import { phraseDuRefusDePreparation } from '../application/connexion';
 
 /**
  * LES OUTILS DE LA CONNEXION DU NUMÉRO (lot 3c, livraison A, spec `docs/superpowers/specs/2026-10-06-lien-attente-abonnement-design.md`).
@@ -42,6 +45,8 @@ export interface DepsNumeroMcp {
   suiteDuPro(tenantId: string): Promise<{ finPrevueLe: Date | null; rendreNumero: boolean } | null>;
   /** Rendre le numéro à la fin du Pro (`PgAbonnementsOffreStore.rendreLeNumero`) : `false` sans Pro vivant. */
   rendreLeNumero(tenantId: string, rendre: boolean): Promise<boolean>;
+  /** La filière application (2026-10-22) : son propre numéro se prépare dès le lien, que la page relie par QR code. */
+  comptesApplication: Pick<ComptesApplication, 'preparer'>;
 }
 
 const jour = (d: Date | null): string | null => (d === null ? null : d.toISOString().slice(0, 10));
@@ -157,10 +162,63 @@ const CONSIGNES = {
 const RAPPEL_ATTENTE = 'Rappelle watch_whatsapp_connection avec etat_connu égal à cette empreinte pour attendre la suite.';
 
 /**
+ * La filière application WhatsApp Business (2026-10-22) : pas de fenêtre de Meta, un QR code sur la page, scanné depuis
+ * le téléphone qui porte le numéro. Les étapes sont celles de la page (`web/lib/partage/etapes-application.ts`).
+ */
+const SUIVRE_APPLICATION = ' Appelle ensuite watch_whatsapp_connection avec filiere égal à « application » pour savoir quand le numéro est relié.';
+const CONSIGNES_APPLICATION = {
+  apporte: LIEN_EN_ENTIER + 'Il ouvre, sur un ordinateur, la page de connexion de son numéro, sans se connecter, pendant une heure : un '
+    + 'QR code. Donne-lui ces étapes, numérotées, une par ligne, dans sa langue ; la page affiche les mêmes : '
+    + numerotees(['Ouvrir le lien sur un ordinateur.', ...ETAPES_RELIER_APPLICATION.map((e) => e.fr)])
+    + SUIVRE_APPLICATION + SI_ELLE_REVIENT,
+  fourni: (inclusDansLePro: boolean) => LIEN_EN_ENTIER + 'Il ouvre, sur un ordinateur, la page de connexion de son numéro, sans se '
+    + 'connecter, pendant une heure. Donne-lui ces étapes, numérotées, une par ligne, dans sa langue ; la page affiche les mêmes : '
+    + numerotees([
+      'Ouvrir le lien sur un ordinateur.',
+      inclusDansLePro
+        ? '« Obtenir mon numéro » : il est inclus dans son Pro, rien à payer ; le numéro s’affiche sur la page.'
+        : '« Payer 3,50 € HT par mois » ; une fois le paiement confirmé, le numéro s’affiche sur la page.',
+      ...ETAPES_COMPTE_FOURNI.map((e) => e.fr),
+      ...ETAPES_RELIER_APPLICATION.map((e) => e.fr),
+    ])
+    + ' Le code de vérification arrivera aussi ici : écris-le-lui en entier dès qu’il arrive.' + SUIVRE_APPLICATION + SI_ELLE_REVIENT,
+} as const;
+
+/** Ce que Claude dit ensuite sur la filière application, selon l'état du compte. `null` : rien de propre à la filière. */
+function suiteApplication(e: EtatConnexion): string | null {
+  switch (e.application?.statut) {
+    case 'relie':
+      return 'Le numéro de l’application WhatsApp Business est relié : le branchement est fini. Relis get_setup_state avant '
+        + 'd’annoncer la suite. Le crédit offert au premier numéro arrive quelques secondes après : s’il est encore à 0, relis '
+        + 'une fois quelques secondes plus tard.';
+    case 'en_attente':
+      return 'Dis à la personne de scanner le QR code de la page avec le téléphone qui porte le numéro : '
+        + `${numerotees(ETAPES_RELIER_APPLICATION.slice(0, 2).map((x) => x.fr))} ${RAPPEL_ATTENTE}`;
+    case 'banni':
+      return 'WhatsApp a coupé ce numéro : il ne peut plus être relié. Dis-le à la personne, et propose la suite : un autre '
+        + 'numéro (start_whatsapp_connection), ou l’API WhatsApp avec un compte Meta Business.';
+    case 'deconnecte':
+      return 'L’appareil a été retiré depuis le téléphone : plus rien ne passe. Pour relier de nouveau, redonne un lien '
+        + '(start_whatsapp_connection, filiere « application ») et le QR code à scanner.';
+    case 'sommeil':
+      return 'Le numéro dort (aucun message depuis longtemps) : redonne un lien (start_whatsapp_connection, filiere '
+        + '« application ») pour le réveiller.';
+    default:
+      return null;
+  }
+}
+
+/**
  * Ce que Claude dit ensuite, selon l'étape. À l'essai 99, il attendait en silence pendant que la personne ne savait plus
  * où aller, et annonçait le crédit lu avant la connexion (0 €) alors que le crédit offert venait d'arriver.
  */
-function suiteDe(e: EtatConnexion): string {
+function suiteDe(e: EtatConnexion, filiere: 'api' | 'application'): string {
+  const application = suiteApplication(e);
+  if (application) return application;
+  if (filiere === 'application' && e.code) {
+    return 'Écris ce code en entier à la personne, en texte simple : elle le saisit dans l’application WhatsApp Business, '
+      + `puis scanne le QR code de la page. ${RAPPEL_ATTENTE}`;
+  }
   if (e.connecte?.aActiver) {
     return 'Le numéro est relié, mais Meta ne l’a pas encore activé : la vérification n’est pas allée au bout. Dis-le à la '
       + 'personne : elle peut la terminer dans l’Accueil de la console (« Activer le numéro »).';
@@ -192,6 +250,7 @@ function suiteDe(e: EtatConnexion): string {
 /** L'état tel que Claude le lit. Le code en clair n'y figure qu'à part (`code`), quand il est arrivé. */
 function vueEtat(e: EtatConnexion): Record<string, unknown> {
   return {
+    ...(e.application ? { filiere: 'application', compte_application: e.application.statut } : {}),
     numero_fourni: e.fourni,
     code_recu_le: e.code?.recuLe ?? null,
     connecte: e.connecte !== null && !e.connecte.aActiver,
@@ -324,6 +383,16 @@ export const OUTILS_NUMERO: OutilMcp[] = [
       type: 'object',
       properties: {
         mode: { type: 'string', enum: ['fourni', 'apporte'], description: 'fourni: a number we provide; apporte: the person\'s own number.' },
+        filiere: {
+          type: 'string', enum: ['api', 'application'],
+          description: 'api (default): the official WhatsApp API, through a Meta Business account. application: the WhatsApp Business '
+            + 'app, for a workspace without a Meta Business account, linked by a QR code scanned from the phone.',
+        },
+        numero: {
+          type: 'string', maxLength: 30,
+          description: 'With filiere application and mode apporte only: the phone number of the WhatsApp Business app account, in '
+            + 'international format (country code included).',
+        },
       },
       required: ['mode'],
       additionalProperties: false,
@@ -332,6 +401,8 @@ export const OUTILS_NUMERO: OutilMcp[] = [
       const userId = signataire(personne);
       const mode = args.mode;
       if (mode !== 'fourni' && mode !== 'apporte') throw new RefusOutil('mode : « fourni » ou « apporte »');
+      const filiere = args.filiere ?? 'api';
+      if (filiere !== 'api' && filiere !== 'application') throw new RefusOutil('filiere : « api » ou « application »');
       const etat = await deps.numero.etat(tenantId);
       const relie = etat.connecte;
       if (relie?.aActiver) {
@@ -339,11 +410,20 @@ export const OUTILS_NUMERO: OutilMcp[] = [
           + 'vérification, dans l’Accueil de la console (« Activer le numéro »).');
       }
       if (relie) throw new RefusOutil('Cet espace a déjà un numéro WhatsApp connecté : il n’y a rien à brancher.');
-      const jeton = await deps.numero.signerLien({ tenantId, userId, mode });
+      if (filiere === 'application' && mode === 'apporte') {
+        // Son propre numéro : le compte se prépare maintenant, la page n'aura plus qu'à afficher son QR code.
+        const brut = typeof args.numero === 'string' ? args.numero.replace(/[^0-9]/g, '') : '';
+        if (!brut) throw new RefusOutil('numero : le numéro du compte WhatsApp Business, au format international (indicatif compris)');
+        const p = await deps.numero.comptesApplication.preparer(tenantId, { numero: brut, fourniId: null });
+        if (!p.ok) throw new RefusOutil(phraseDuRefusDePreparation(p.raison));
+      }
+      const jeton = await deps.numero.signerLien({ tenantId, userId, mode, ...(filiere === 'application' ? { filiere } : {}) });
       return {
         url: `${deps.numero.urlConsole.replace(/\/+$/, '')}/brancher#${jeton}`,
         expire_le: new Date(deps.numero.maintenant() + DUREE_LIEN_NUMERO_MS).toISOString(),
-        consigne: mode === 'fourni' ? consigneFourni(etat.inclusDansLePro) : CONSIGNES.apporte,
+        consigne: filiere === 'application'
+          ? (mode === 'fourni' ? CONSIGNES_APPLICATION.fourni(etat.inclusDansLePro) : CONSIGNES_APPLICATION.apporte)
+          : mode === 'fourni' ? consigneFourni(etat.inclusDansLePro) : CONSIGNES.apporte,
       };
     },
   },
@@ -365,11 +445,13 @@ export const OUTILS_NUMERO: OutilMcp[] = [
           type: 'string', maxLength: 16, pattern: EMPREINTE_RE.source,
           description: 'The fingerprint returned by the previous call; absent on the initial call.',
         },
+        filiere: { type: 'string', enum: ['api', 'application'], description: 'The filiere chosen with start_whatsapp_connection (default api).' },
       },
       additionalProperties: false,
     },
     async executer(deps: DepsMcp, tenantId, args, personne) {
       signataire(personne);
+      const filiere = args.filiere === 'application' ? 'application' : 'api';
       const connu = args.etat_connu;
       if (connu !== undefined && (typeof connu !== 'string' || !EMPREINTE_RE.test(connu))) {
         throw new RefusOutil('etat_connu : l’empreinte rendue par l’appel précédent (16 caractères hexadécimaux)');
@@ -386,7 +468,7 @@ export const OUTILS_NUMERO: OutilMcp[] = [
             etat: vueEtat(e),
             code: e.code?.code ?? null,
             empreinte,
-            suite: suiteDe(e),
+            suite: suiteDe(e, filiere),
           };
         }
         await deps.numero.attendre(PAS_ATTENTE_MS);

@@ -306,11 +306,18 @@ const lienNumero = z.object({
   tenantId: z.string().min(1),
   userId: z.string().min(1),
   mode: z.enum(['fourni', 'apporte']),
+  /**
+   * La filière application WhatsApp Business (2026-10-22) : la page montre le QR code au lieu de la fenêtre de Meta.
+   * Absente : la filière API, et le jeton est exactement celui d'avant.
+   */
+  filiere: z.literal('application').optional(),
 });
 export type LienNumero = z.infer<typeof lienNumero>;
 
 export function signLienNumero(l: LienNumero, secret: string): Promise<string> {
-  return signerKind('lien_numero', { tenantId: l.tenantId, userId: l.userId, mode: l.mode }, secret, `${DUREE_LIEN_NUMERO_MS / 1000}s`);
+  return signerKind('lien_numero', {
+    tenantId: l.tenantId, userId: l.userId, mode: l.mode, ...(l.filiere ? { filiere: l.filiere } : {}),
+  }, secret, `${DUREE_LIEN_NUMERO_MS / 1000}s`);
 }
 export function verifyLienNumero(token: string, secret: string): Promise<LienNumero | null> {
   return verifierKind('lien_numero', lienNumero, token, secret);

@@ -432,12 +432,10 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
    * connexions. Sans `APPLICATION_SERVICE_URL`, aucun client : la filière est fermée, chaque envoi le dit.
    */
   const comptesApplication = new PgComptesApplication(pool);
-  const envoiApplication = creerEnvoiApplication({
-    comptes: comptesApplication,
-    client: config.APPLICATION_SERVICE_URL
-      ? creerClientApplication({ url: config.APPLICATION_SERVICE_URL, secret: config.APPLICATION_SERVICE_SECRET })
-      : null,
-  });
+  const clientApplication = config.APPLICATION_SERVICE_URL
+    ? creerClientApplication({ url: config.APPLICATION_SERVICE_URL, secret: config.APPLICATION_SERVICE_SECRET })
+    : null;
+  const envoiApplication = creerEnvoiApplication({ comptes: comptesApplication, client: clientApplication });
 
   /**
    * L'alerte de crédit épuisé (`src/repondeur/alerte-credit.ts`) : une par jour et par admin, tenue par le journal des
@@ -562,7 +560,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, numeroBloqueDeLEspace, esCredentialsStore, metaCredentials, metaFactory, listeDeLAgent,
     connexionsPub, connexionPub, publicites, clientPubs, clientCreationPubs, workflowRuntime, fil, alerteCredit, offres, quotaModeles,
     emailsProduit, emetteurEmails, envoyeurProduit, paiementRefuse, prevenirEquipe,
-    comptesApplication, envoiApplication,
+    comptesApplication, clientApplication, envoiApplication,
   };
 }
 

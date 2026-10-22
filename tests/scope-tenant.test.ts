@@ -276,6 +276,8 @@ const ROUTES_DU_LIEN = new Set([
   'POST /tenants/:tenantId/numero-fourni/abonnement',
   'GET /tenants/:tenantId/embedded-signup/config', 'POST /tenants/:tenantId/embedded-signup/complete',
   'POST /tenants/:tenantId/numero/code', 'POST /tenants/:tenantId/numero/activer',
+  // La filière application (2026-10-22) : la page du lien ouvre la session du compte et relit son QR code.
+  'POST /tenants/:tenantId/application/relier', 'GET /tenants/:tenantId/application/qr',
 ]);
 const duLien = (r: RouteSondee): boolean => ROUTES_DU_LIEN.has(`${r.methode} ${r.chemin}`);
 

@@ -6,6 +6,7 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { NumeroFourniRouteDeps } from '../src/http/numero-fourni';
 import type { NumeroFourni } from '../src/otp/store.pg';
 import { lireEtatConnexion, empreinteEtat, type EtatConnexion } from '../src/otp/etat-connexion';
+import { aucunCompteApplication } from './gardes';
 
 /**
  * L'ÉTAT DE LA CONNEXION DU NUMÉRO (lot 3c, livraison A, tâche 3) : où en est le branchement d'un espace. Une seule
@@ -33,6 +34,7 @@ function etatDe(o: { attribue?: string; code?: { code: string; recuLe: Date }; c
       },
     },
     pro: { vivant: async (t: string) => { lus.push(`pro:${t}`); return o.pro === true; } },
+    application: aucunCompteApplication,
   };
   return { deps, lus };
 }
@@ -116,6 +118,7 @@ describe('GET /tenants/:tenantId/connexion-numero', () => {
         programmerFin: async () => ({ ok: true as const, valeur: true as const }),
       },
       pro: { vivant: async () => false },
+      application: aucunCompteApplication,
     };
     return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET, getUserState: async (userId) => ({ role: userId === 'u2' ? 'agent' : 'admin', disabled: false, horsOffre: null }) }, numeroFourni: deps });
   };
