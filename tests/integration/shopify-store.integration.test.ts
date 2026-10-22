@@ -87,6 +87,8 @@ describe.skipIf(!url)('le store Shopify', () => {
     expect((await store.boutiqueParDomaine(domaine))!.consentementAffirme).toBe(false);
     const restants = await pool.query<{ jeton: string }>(`select jeton from shopify_paniers where tenant_id = $1 and jeton like '%-retrait' order by jeton`, [B]);
     expect(restants.rows.map((r) => r.jeton)).toEqual(['relance-retrait']);
+    // Rien ne reste derrière ce test : la purge, plus bas, compte TOUS les paniers de l'espace.
+    await pool.query(`delete from shopify_paniers where tenant_id = $1 and jeton like '%-retrait'`, [B]);
   });
 
   it('🔴 un événement se réserve une fois ; sans issue au-delà du bail, il se reprend ; servi, il ne repart plus', async () => {
