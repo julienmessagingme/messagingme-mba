@@ -46,6 +46,8 @@ export const JUMELLES: Readonly<Record<string, string>> = {
   '/cas-d-usage/bulle-whatsapp-site-lovable/': '/en/use-cases/whatsapp-bubble-lovable-site/',
   '/contact/': '/en/contact/',
   '/contact/merci/': '/en/contact/thanks/',
+  // Où Shopify mène le marchand après « Installer » (l'`application_url` de l'app que la skill shopify crée).
+  '/shopify/installe/': '/en/shopify/installed/',
   // Le centre d'aide : ses deux langues viennent des fiches et de leur version anglaise (npm run vitrine:aide).
   ...jumellesAide(),
 };
