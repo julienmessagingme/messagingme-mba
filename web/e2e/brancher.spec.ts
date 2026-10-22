@@ -146,3 +146,45 @@ test('lien refusé par le serveur (401) : redemander le lien à Claude', async (
   await page.goto(`/brancher#${jeton()}`);
   await expect(page.getByTestId('brancher-sans-lien')).toContainText('Claude');
 });
+
+/**
+ * La filière application WhatsApp Business (2026-10-22) : son propre numéro, déjà préparé par Claude. La page ouvre la
+ * session du compte, montre le QR code à la place de la fenêtre de Meta, puis dit « connecté » quand le compte est relié.
+ */
+test('🔴 filière application : le QR code à la place de la fenêtre de Meta, puis « connecté »', async ({ page }) => {
+  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const j = `${b64({ alg: 'HS256' })}.${b64({ kind: 'lien_numero', tenantId: TENANT, userId: 'u-1', mode: 'apporte', filiere: 'application', exp: 4102444800 })}.signature`;
+  const s = { relier: 0, relie: false, autorisations: [] as string[] };
+  const json = (body: unknown, status = 200) => ({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  const QR = 'data:image/svg+xml;base64,' + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>').toString('base64');
+  await page.route('**/api/backend/**', async (route) => {
+    const req = route.request();
+    const chemin = new URL(req.url()).pathname;
+    s.autorisations.push(req.headers().authorization ?? '(aucune)');
+    if (chemin.endsWith('/embedded-signup/config')) return route.fulfill(json({ enabled: true, appId: 'app-e2e', configId: 'cfg-e2e', graphVersion: 'v25.0' }));
+    if (req.method() === 'POST' && chemin.endsWith('/application/relier')) { s.relier += 1; return route.fulfill(json({ ok: true })); }
+    if (chemin.endsWith('/application/qr')) {
+      return route.fulfill(json(s.relie ? { statut: 'relie', qr: null, relie: true } : { statut: 'en_attente', qr: QR, relie: false }));
+    }
+    if (chemin.endsWith('/connexion-numero')) {
+      return route.fulfill(json({
+        etat: {
+          fourni: null, code: null, abonnement: null,
+          connecte: s.relie ? { chiffres: '447700900000', aActiver: false } : null,
+          application: { statut: s.relie ? 'relie' : 'en_attente', numero: '447700900000' },
+        },
+        empreinte: '0123456789abcdef',
+      }));
+    }
+    if (req.method() === 'GET' && chemin.endsWith('/numero-fourni')) return route.fulfill(json({ numero: null, code: null, codeRecuLe: null }));
+    return route.fulfill(json({ error: `route non simulée : ${chemin}` }, 404));
+  });
+  await page.goto(`/brancher#${j}`);
+  await expect(page.getByTestId('qr-application-image')).toHaveAttribute('src', QR);
+  await expect(page.getByTestId('prerequis-meta')).toHaveCount(0);
+  await expect(page.getByTestId('ouvrir-fenetre-meta')).toHaveCount(0);
+  expect(s.relier).toBe(1);
+  s.relie = true;
+  await expect(page.getByTestId('brancher-connecte')).toBeVisible();
+  expect(new Set(s.autorisations)).toEqual(new Set([`Bearer ${j}`]));
+});

@@ -26,6 +26,17 @@ export interface ApiConnexionNumero {
    * Code ne l'a pas (le serveur le refuse) : Claude a son outil, `manage_number_subscription`.
    */
   portail?(): Promise<{ url: string }>;
+  /** La filière application (2026-10-22) : ouvrir la session du compte, qui produit le QR code. */
+  relierApplication(): Promise<{ ok: true }>;
+  /** Le QR code en image (`data:`), jusqu'à « relié ». */
+  qrApplication(): Promise<QrApplication>;
+}
+
+/** Ce que rend `GET /tenants/:tenantId/application/qr`. */
+export interface QrApplication {
+  statut: 'en_attente' | 'relie' | 'sommeil' | 'banni' | 'deconnecte' | 'retire' | null;
+  qr: string | null;
+  relie: boolean;
 }
 
 /** La session de la console : les appels d'hier, inchangés. */
@@ -40,6 +51,8 @@ export function apiDeLaSession(tenantId: string): ApiConnexionNumero {
     etat: () => request(`/tenants/${tenantId}/connexion-numero`),
     payer: (retour) => request(`/tenants/${tenantId}/numero-fourni/abonnement`, { method: 'POST', body: JSON.stringify({ retour }) }),
     portail: () => request(`/tenants/${tenantId}/numero-fourni/portail`, { method: 'POST', body: '{}' }),
+    relierApplication: () => request(`/tenants/${tenantId}/application/relier`, { method: 'POST', body: '{}' }),
+    qrApplication: () => request(`/tenants/${tenantId}/application/qr`),
   };
 }
 
@@ -53,6 +66,8 @@ export interface EtatConnexion {
   abonnement: { statut: 'actif' | 'en_retard' | 'resilie'; periodeFin: string | null } | null;
   /** Un Pro vivant inclut le numéro (lot 6, B2b) : il s'obtient sans payer. Absent sur une API plus ancienne. */
   inclusDansLePro?: boolean;
+  /** Le compte de l'application WhatsApp Business (filière application) ; absent sans compte. */
+  application?: { statut: QrApplication['statut']; numero: string };
 }
 
 /**
@@ -86,5 +101,7 @@ export function apiDuLien(tenantId: string, jeton: string): ApiConnexionNumero {
     abandonner: () => poster('/numero-fourni/abandonner'),
     etat: () => appel('/connexion-numero'),
     payer: (retour) => poster('/numero-fourni/abonnement', { retour }),
+    relierApplication: () => poster('/application/relier'),
+    qrApplication: () => appel('/application/qr'),
   };
 }

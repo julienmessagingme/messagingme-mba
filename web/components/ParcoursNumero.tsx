@@ -7,6 +7,8 @@ import { useConnexionNumero } from '@/lib/connexion-numero';
 import type { ApiConnexionNumero } from '@/lib/api/connexion-numero';
 import { ETAPES_NUMERO_FOURNI } from '@/lib/partage/etapes-numero-fourni';
 import { PREREQUIS_META } from '@/lib/partage/etapes-meta';
+import { ETAPES_COMPTE_FOURNI } from '@/lib/partage/etapes-application';
+import { QrApplication } from '@/components/QrApplication';
 
 /**
  * LE PARCOURS DE CONNEXION DU NUMÉRO (lot 3b, sorti de `/connecter-whatsapp` au lot 3c pour servir aussi `/brancher`).
@@ -22,9 +24,14 @@ import { PREREQUIS_META } from '@/lib/partage/etapes-meta';
  * ⚠️ EN v4, RIEN NE FAIT SAUTER L'ÉCRAN DU NUMÉRO DE LA FENÊTRE DE META (mesuré le 2026-10-06) : le client y tape donc
  * le numéro, d'où les consignes. La fenêtre vérifie le code, puis la suite actuelle relie et active le numéro.
  */
-export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, surConnexion }: {
+export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, surConnexion, filiere = 'api' }: {
   tenantId: string;
   api: ApiConnexionNumero;
+  /**
+   * `application` : la filière de l'application WhatsApp Business (2026-10-22), ouverte par le lien de Claude Code. Le
+   * numéro se relie par un QR code scanné depuis le téléphone, à la place de la fenêtre de Meta. Absente : l'API.
+   */
+  filiere?: 'api' | 'application';
   /** Où Stripe renvoie après le paiement : cette page-ci (`/brancher` ou `/connecter-whatsapp`). */
   retour: 'brancher' | 'console';
   /** Le choix déjà fait (le mode du lien de Claude Code), ou `null` pour proposer les deux. */
@@ -51,6 +58,9 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
   const [finProgrammee, setFinProgrammee] = useState(false);
   /** Un Pro vivant inclut le numéro (lot 6, B2b) : il s'obtient sans payer. Faux tant qu'il n'est pas lu. */
   const [inclus, setInclus] = useState(false);
+  /** Filière application, numéro fourni : le QR code s'affiche une fois le compte créé dans l'application. */
+  const [qrDemande, setQrDemande] = useState(false);
+  const application = filiere === 'application';
   const connexion = useConnexionNumero(tenantId, api, surConnexion);
   /**
    * La course d'un geste et d'une lecture (jaune 5 de la relecture de la livraison B) : une lecture partie AVANT
@@ -149,13 +159,16 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
 
   return (
     <>
-      {/* Ce qu'il faut chez Meta, avant toute fenêtre de Meta : la même source que Claude (guide « compte Meta »). */}
-      <div data-testid="prerequis-meta" className="mt-6 rounded-carte border border-ink-200 bg-ink-50 p-5">
-        <div className="text-sm font-semibold text-ink-900">{t('Avant de commencer, chez Meta', 'Before you start, at Meta')}</div>
-        <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-ink-700">
-          {PREREQUIS_META.map((e) => <li key={e.fr}>{t(e.fr, e.en)}</li>)}
-        </ol>
-      </div>
+      {/* Ce qu'il faut chez Meta, avant toute fenêtre de Meta : la même source que Claude (guide « compte Meta »). La filière
+          application n'a pas de fenêtre de Meta. */}
+      {!application && (
+        <div data-testid="prerequis-meta" className="mt-6 rounded-carte border border-ink-200 bg-ink-50 p-5">
+          <div className="text-sm font-semibold text-ink-900">{t('Avant de commencer, chez Meta', 'Before you start, at Meta')}</div>
+          <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-ink-700">
+            {PREREQUIS_META.map((e) => <li key={e.fr}>{t(e.fr, e.en)}</li>)}
+          </ol>
+        </div>
+      )}
       {choix === null ? (
         <div className="mt-6 grid gap-3 sm:grid-cols-2">
           <button type="button" data-testid="choix-fourni" onClick={() => setChoix('fourni')} className="rounded-carte border border-ink-200 bg-white p-5 text-left hover:border-ink-400">
@@ -171,6 +184,8 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
             <p className="mt-1 text-xs text-ink-500">{t('Vous le saisissez dans la fenêtre de Meta et recevez son code.', 'You enter it in the Meta window and receive its code.')}</p>
           </button>
         </div>
+      ) : choix === 'apporte' && application ? (
+        <QrApplication api={api} />
       ) : choix === 'apporte' ? (
         <div data-testid="choix-apporte-ouvert" className="mt-6 rounded-carte border border-ink-200 bg-white p-5">
           <p className="text-sm text-ink-700">{t('Dans la fenêtre de Meta, choisissez votre entreprise, saisissez votre numéro et le code reçu.', 'In the Meta window, pick your business, enter your number and the code you receive.')}</p>
@@ -181,7 +196,11 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
         </div>
       ) : numero === null ? (
         <div data-testid="choix-fourni-ouvert" className="mt-6 rounded-carte border border-ink-200 bg-white p-5">
-          <p className="text-sm text-ink-700">{t('Nous vous attribuons un numéro britannique dédié, que vous connecterez dans la fenêtre de Meta.', 'We assign you a dedicated UK number, which you then connect in the Meta window.')}</p>
+          <p className="text-sm text-ink-700">
+            {application
+              ? t('Nous vous attribuons un numéro britannique dédié, que vous ajouterez dans l’application WhatsApp Business.', 'We assign you a dedicated UK number, which you then add in the WhatsApp Business app.')
+              : t('Nous vous attribuons un numéro britannique dédié, que vous connecterez dans la fenêtre de Meta.', 'We assign you a dedicated UK number, which you then connect in the Meta window.')}
+          </p>
           {abonne && rendu ? (
             // Rendu par « Abandonner », mais l'abonnement court toujours : on le dit, avec ce qu'on peut en faire.
             <p data-testid="numero-rendu" className="mt-3 text-sm text-ink-700">
@@ -231,21 +250,32 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
             </div>
             {/* Les mêmes étapes que celles que Claude redit (`src/mcp/outils-numero.ts`) : une seule source. */}
             <ol data-testid="etapes-numero-fourni" className="mt-4 list-decimal space-y-1 pl-5 text-sm text-ink-700">
-              {ETAPES_NUMERO_FOURNI.map((e) => <li key={e.fr}>{t(e.fr, e.en)}</li>)}
+              {(application ? ETAPES_COMPTE_FOURNI : ETAPES_NUMERO_FOURNI).map((e) => <li key={e.fr}>{t(e.fr, e.en)}</li>)}
             </ol>
-            <div className="mt-4">{boutonFenetre}</div>
+            <div className="mt-4">
+              {!application ? boutonFenetre : !qrDemande ? (
+                <Bouton type="button" onClick={() => setQrDemande(true)} data-testid="afficher-qr-application">
+                  {t('J’ai créé le compte : afficher le QR code', 'I created the account: show the QR code')}
+                </Bouton>
+              ) : null}
+            </div>
           </div>
           <div data-testid="code-capte" className="rounded-carte border border-ink-200 bg-ink-50 p-5">
             <div className="text-xs font-medium text-ink-500">{t('Code de vérification', 'Verification code')}</div>
             {code ? (
               <div className="mt-1 font-mono text-3xl font-semibold tracking-widest text-ink-900">{code}</div>
             ) : (
-              <p className="mt-1 text-sm text-ink-500">{t('En attente du code de Meta…', 'Waiting for Meta’s code…')}</p>
+              <p className="mt-1 text-sm text-ink-500">
+                {application ? t('En attente du code de WhatsApp…', 'Waiting for WhatsApp’s code…') : t('En attente du code de Meta…', 'Waiting for Meta’s code…')}
+              </p>
             )}
           </div>
+          {application && qrDemande && <QrApplication api={api} />}
           <div className="flex flex-wrap items-center gap-3 text-xs">
             <Bouton type="button" variante="discret" taille="petite" disabled={enCours} onClick={() => { void remplacer(); }} data-testid="remplacer-numero">
-              {t('Meta refuse ce numéro ? En obtenir un autre', 'Meta refuses this number? Get another one')}
+              {application
+                ? t('Ce numéro ne passe pas ? En obtenir un autre', 'This number does not go through? Get another one')
+                : t('Meta refuse ce numéro ? En obtenir un autre', 'Meta refuses this number? Get another one')}
             </Bouton>
             <Bouton type="button" variante="discret" taille="petite" disabled={enCours} onClick={() => { void abandonner(); }} data-testid="abandonner-numero">
               {t('Abandonner', 'Give up')}

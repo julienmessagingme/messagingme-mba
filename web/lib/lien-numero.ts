@@ -7,6 +7,8 @@
 export interface LienLu {
   tenantId: string;
   mode: 'fourni' | 'apporte';
+  /** `application` : la filière de l'application WhatsApp Business, reliée par QR code (2026-10-22). Absente du jeton : `api`. */
+  filiere: 'api' | 'application';
 }
 
 const ESPACE_RE = /^[A-Za-z0-9-]{1,64}$/;
@@ -19,11 +21,11 @@ export function lireLien(jeton: string): LienLu | null {
     const octets = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
     const brut: unknown = JSON.parse(new TextDecoder().decode(octets));
     if (typeof brut !== 'object' || brut === null) return null;
-    const { kind, tenantId, mode } = brut as { kind?: unknown; tenantId?: unknown; mode?: unknown };
+    const { kind, tenantId, mode, filiere } = brut as { kind?: unknown; tenantId?: unknown; mode?: unknown; filiere?: unknown };
     if (kind !== 'lien_numero') return null;
     if (typeof tenantId !== 'string' || !ESPACE_RE.test(tenantId)) return null;
     if (mode !== 'fourni' && mode !== 'apporte') return null;
-    return { tenantId, mode };
+    return { tenantId, mode, filiere: filiere === 'application' ? 'application' : 'api' };
   } catch {
     return null;
   }

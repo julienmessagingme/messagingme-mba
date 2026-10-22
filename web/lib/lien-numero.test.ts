@@ -11,7 +11,10 @@ const jeton = (charge: unknown) => `${b64({ alg: 'HS256' })}.${b64(charge)}.sign
 
 describe('lireLien', () => {
   it('rend l’espace et le mode d’un jeton de lien', () => {
-    expect(lireLien(jeton({ kind: 'lien_numero', tenantId: 't-1', userId: 'u-1', mode: 'fourni' }))).toEqual({ tenantId: 't-1', mode: 'fourni' });
+    expect(lireLien(jeton({ kind: 'lien_numero', tenantId: 't-1', userId: 'u-1', mode: 'fourni' }))).toEqual({ tenantId: 't-1', mode: 'fourni', filiere: 'api' });
+    // La filière application (2026-10-22) : seule la valeur « application » la donne, tout le reste est l'API.
+    expect(lireLien(jeton({ kind: 'lien_numero', tenantId: 't-1', userId: 'u-1', mode: 'apporte', filiere: 'application' }))?.filiere).toBe('application');
+    expect(lireLien(jeton({ kind: 'lien_numero', tenantId: 't-1', userId: 'u-1', mode: 'apporte', filiere: 'autre' }))?.filiere).toBe('api');
     expect(lireLien(jeton({ kind: 'lien_numero', tenantId: 't-1', userId: 'u-1', mode: 'apporte' }))?.mode).toBe('apporte');
   });
 
