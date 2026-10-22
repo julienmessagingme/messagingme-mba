@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { creerEprouverSource } from '../src/agent/eprouver-source';
 import { AdresseInterdite } from '../src/lib/connexion-publique';
 import type { SourceAppel } from '../src/agent/sources';
+import { creerTransportConnecteurHttp } from '../src/agent/transport-connecteur-http';
 
 /**
  * LE BOUTON « ÉPROUVER » D'UNE SOURCE DE CONNECTEUR.
@@ -30,11 +31,15 @@ function monter(opts: {
       pourAppel: async () => (opts.source === undefined ? SOURCE : opts.source),
       marquerEpreuve: async (_t, _i, ok, erreur) => { epreuves.push({ ok, ...(erreur ? { erreur } : {}) }); },
     },
-    verifierResolution: async () => opts.resolution ?? { ok: true },
-    fetchImpl: (async (url: string, init?: RequestInit) => {
-      appels.push({ url, auth: new Headers(init?.headers).get('authorization') });
-      return (opts.reponse ?? (async () => new Response('{}', { status: 200 })))();
-    }) as unknown as typeof fetch,
+    transportHttp: creerTransportConnecteurHttp({
+      verifierResolution: async () => opts.resolution?.ok === false
+        ? { ok: false, raison: opts.resolution.raison }
+        : { ok: true },
+      fetch: (async (url: string, init?: RequestInit) => {
+        appels.push({ url, auth: new Headers(init?.headers).get('authorization') });
+        return (opts.reponse ?? (async () => new Response('{}', { status: 200 })))();
+      }) as unknown as typeof fetch,
+    }),
   });
   return { eprouver, epreuves, appels };
 }

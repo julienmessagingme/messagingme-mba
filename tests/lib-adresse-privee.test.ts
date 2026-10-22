@@ -243,11 +243,8 @@ describe('lecture bornée du corps d’une réponse', () => {
  */
 describe('inventaire des appels sortants vers une URL saisie par un client', () => {
   const CHEMINS = [
-    ['src/agent/resolvers/http.ts', 'le connecteur, en pleine conversation'],
-    ['src/http/agent-requetes.ts', 'le bouton Test d’une REQUÊTE'],
+    ['src/agent/transport-connecteur-http.ts', 'le transport partagé du connecteur, de son test et de son épreuve'],
     ['src/lib/page-distante.ts', 'la lecture d’une page distante, à chaque saut de redirection'],
-    // Câblé dans `src/index.ts` jusqu'au 2026-09-21, sorti depuis dans son module pour être testé.
-    ['src/agent/eprouver-source.ts', 'le bouton éprouver une SOURCE, oublié jusqu’au 2026-09-03'],
     ['src/salesforce/connexion.ts', 'la connexion d’une org Salesforce (adresse saisie par l’admin du client)'],
     ['src/evenements/envoi.ts', 'un webhook sortant, vers l’adresse de l’application du client (lot 12)'],
     ['src/api/entete-par-url.ts', 'le fichier d’en-tête d’un modèle créé par l’API ou par Claude (lot 13)'],
@@ -271,11 +268,33 @@ describe('inventaire des appels sortants vers une URL saisie par un client', () 
     });
   }
 
-  it('et le compte est de HUIT (la fiche d’identité d’un client OAuth est le huitième, 2026-10-09)', () => {
-    // Si un septième apparaît sans être ajouté ici, ce test ne le verra pas : c'est sa limite, et elle est
-    // dite. Ce qu'il empêche, c'est qu'un des sept PERDE sa garde sans que personne ne s'en aperçoive.
-    expect(CHEMINS).toHaveLength(8);
+  it('et le compte est de SIX transports (trois chemins de connecteur partagent désormais le premier)', () => {
+    // Les trois chemins du Connecteur HTTP restent inventoriés séparément juste dessous : ce compte mesure les
+    // implémentations de transport, pas leurs consommateurs.
+    expect(CHEMINS).toHaveLength(6);
   });
+});
+
+describe('le Connecteur HTTP impose son transport complet à ses trois consommateurs', () => {
+  const sansCommentairesNiImports = (fichier: string): string =>
+    readFileSync(new URL(`../${fichier}`, import.meta.url), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '')
+      .replace(/^\s*import .*$/gm, '');
+
+  const CONSOMMATEURS = [
+    ['src/agent/resolvers/http.ts', 'le connecteur en conversation'],
+    ['src/http/agent-requetes.ts', 'le bouton Test d’une requête'],
+    ['src/agent/eprouver-source.ts', 'le bouton éprouver une source'],
+  ] as const;
+
+  for (const [fichier, quoi] of CONSOMMATEURS) {
+    it(`🔴 ${quoi} ne peut injecter que le transport gardé`, () => {
+      const src = sansCommentairesNiImports(fichier);
+      expect(src).toMatch(/transportHttp\.executer\(/);
+      expect(src).not.toMatch(/resolutionPublique|fetchPublic|(?<![\w.])fetch\(/);
+    });
+  }
 });
 
 /**
@@ -299,11 +318,9 @@ describe('inventaire : chaque appel vers une URL client passe par le fetch véri
       .replace(/^\s*import .*$/gm, '');
 
   const CHEMINS = [
-    ['src/agent/resolvers/http.ts', 'le connecteur, en pleine conversation', true],
-    ['src/http/agent-requetes.ts', 'le bouton Test d’une REQUÊTE', true],
+    ['src/agent/transport-connecteur-http.ts', 'le transport partagé des Connecteurs HTTP', true],
     ['src/lib/page-distante.ts', 'la lecture d’une page distante', true],
     ['src/mcp/client.ts', 'le client MCP (agent IA et écran des connecteurs MCP)', true],
-    ['src/agent/eprouver-source.ts', 'le bouton éprouver une SOURCE', true],
     ['src/salesforce/client.ts', 'le client REST Salesforce (adresse My Domain saisie par l’admin du client)', true],
     ['src/evenements/envoi.ts', 'un webhook sortant (lot 12)', true],
     ['src/api/entete-par-url.ts', 'l’en-tête d’un modèle par son adresse (lot 13)', true],

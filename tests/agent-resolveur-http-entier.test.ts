@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { creerAppelConnecteur, type AppelConnecteur } from '../src/agent/resolvers/http';
+import { creerTransportConnecteurHttp } from '../src/agent/transport-connecteur-http';
 import type { SourceAppel } from '../src/agent/sources';
 import type { RequeteConnecteur } from '../src/agent/requetes';
 
@@ -27,8 +28,10 @@ function appelAvec(reponse: { status: number; body: string | null }) {
     sources: { pourAppel: async () => SOURCE, marquerEpreuve: async () => {} },
     requetes: { parId: async () => REQUETE },
     fiche: { ficheDuContact: async () => null },
-    fetchImpl: (async () => new Response(reponse.body, { status: reponse.status })) as unknown as typeof fetch,
-    verifierResolution: async () => ({ ok: true }),
+    transportHttp: creerTransportConnecteurHttp({
+      fetch: (async () => new Response(reponse.body, { status: reponse.status })) as unknown as typeof fetch,
+      verifierResolution: async () => ({ ok: true }),
+    }),
   });
   const p: AppelConnecteur = {
     tenantId: 't1', waId: '33600', contact: { nom: 'J', tags: [], champs: {} }, requestId: 'rq1',

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import type { Pool } from 'pg';
 import type { SourceAppel } from '../src/agent/sources';
+import { creerTransportConnecteurHttp } from '../src/agent/transport-connecteur-http';
 import { PgContactStore } from '../src/crm/contact-store.pg';
 import type { ContactUpsert, LotContacts } from '../src/crm/import';
 import {
@@ -345,10 +346,18 @@ describe('le travail de poussée', () => {
     authKind: 'none', authHeaderName: null, authSecret: null, status: 'active',
   };
 
-  function deps(over: Partial<Parameters<typeof creerTravailPousseeOptOut>[0]> = {}) {
+  function deps(
+    over: Partial<Parameters<typeof creerTravailPousseeOptOut>[0]> & { fetchImpl?: typeof fetch } = {},
+  ) {
     const appels: string[] = [];
     const corpsEnvoyes: string[] = [];
     const logs: string[] = [];
+    const fetchImpl = over.fetchImpl ?? (async (url: string, init?: RequestInit) => {
+      appels.push(String(url));
+      corpsEnvoyes.push(typeof init?.body === 'string' ? init.body : '');
+      return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as unknown as typeof fetch;
+    const { fetchImpl: _fetchImpl, ...reste } = over;
     const base = {
       sources: {
         pourAppel: async () => SOURCE,
@@ -357,15 +366,13 @@ describe('le travail de poussée', () => {
       requetes: { parId: async () => REQUETE as never },
       requeteConfiguree: async () => 'rq1',
       contacts: { projectionPourTiers: async () => ({ nom: 'Julie', tags: [], champs: {} }) },
-      fetchImpl: (async (url: string, init?: RequestInit) => {
-        appels.push(String(url));
-        corpsEnvoyes.push(typeof init?.body === 'string' ? init.body : '');
-        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } });
-      }) as unknown as typeof fetch,
-      verifierResolution: async () => ({ ok: true as const }),
+      transportHttp: creerTransportConnecteurHttp({
+        fetch: fetchImpl,
+        verifierResolution: async () => ({ ok: true as const }),
+      }),
       log: (m: string) => logs.push(m),
     };
-    return { travail: creerTravailPousseeOptOut({ ...base, ...over } as Parameters<typeof creerTravailPousseeOptOut>[0]), appels, corpsEnvoyes, logs };
+    return { travail: creerTravailPousseeOptOut({ ...base, ...reste } as Parameters<typeof creerTravailPousseeOptOut>[0]), appels, corpsEnvoyes, logs };
   }
 
   it('un appel par personne du lot, et c’est bien SON identité qui part', async () => {

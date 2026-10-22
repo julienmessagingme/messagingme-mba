@@ -8,6 +8,7 @@ import { PgSourceStore } from '../../src/agent/sources.pg';
 import { outilExpose } from '../../src/agent/outils-maison';
 import { executeTool } from '../../src/agent/executor';
 import { creerResolveurHttp } from '../../src/agent/resolvers/http';
+import { creerTransportConnecteurHttp } from '../../src/agent/transport-connecteur-http';
 import { JOURNAL_MUET } from '../../src/agent/journal-muet';
 import type { OutilDefini } from '../../src/agent/catalog';
 import type { ParametreUrl } from '../../src/agent/requete-http';
@@ -151,11 +152,13 @@ describe.skipIf(!url)('un outil de connecteur suit sa requête (Postgres)', () =
     const resolveur = creerResolveurHttp({
       sources, requetes,
       fiche: { ficheDuContact: async () => null },
-      fetchImpl: (async (u: string) => {
-        parties.push(String(u));
-        return new Response(JSON.stringify({ prix: 12.5 }), { status: 200, headers: { 'content-type': 'application/json' } });
-      }) as unknown as typeof fetch,
-      verifierResolution: async () => ({ ok: true }),
+      transportHttp: creerTransportConnecteurHttp({
+        fetch: (async (u: string) => {
+          parties.push(String(u));
+          return new Response(JSON.stringify({ prix: 12.5 }), { status: 200, headers: { 'content-type': 'application/json' } });
+        }) as unknown as typeof fetch,
+        verifierResolution: async () => ({ ok: true }),
+      }),
     });
     const r = await executeTool(
       { name: 'obtenir_tarif', argumentsJson: JSON.stringify({ espece: 'lapin', race: 'nain', age: 3, sexe: 'f' }) },

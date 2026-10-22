@@ -11,3 +11,7 @@ Ce vocabulaire décrit les campagnes créées dans un espace et les contacts qu'
 **Campagne au fil de l'eau** : Campagne créée sans audience initiale, qui accueille des contacts provenant d'un webhook entrant tant qu'elle reste ouverte.
 
 **Étage** : Tentative d'envoi sur un canal dans la chaîne d'une campagne. Un étage de repli prend la suite d'un envoi qui n'a pas abouti.
+
+# Connecteurs
+
+**Connecteur HTTP** : Accès configuré par un espace vers le système HTTP d'un client. L'appelant prépare la cible, l'authentification et les données à envoyer ; le transport commun applique les gardes réseau (adresse publique, refus des redirections, délai et taille maximale de réponse). Ce terme ne désigne pas un connecteur MCP.

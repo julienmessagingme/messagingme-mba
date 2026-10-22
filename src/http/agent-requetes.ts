@@ -7,9 +7,7 @@ import { assemblerAppel, cheminsDeLaReponse, estEnTeteReserve, variablesUtilisee
 import { CLES_SYSTEME, normaliserOrigine } from '../agent/variables';
 import { CHAMPS_FICHE_FIXES, CLES_FICHE_SORTIE, type CleFicheFixe } from '../crm/champs-fiche';
 import { espaceVerifie, estUuid } from './scope';
-import { resolutionPublique, type VerdictResolution } from '../lib/adresse-privee';
-import { fetchPublic, estRefusAdresseInterne, estRedirectionRefusee } from '../lib/connexion-publique';
-import { lireCorpsBorne } from '../lib/corps-borne';
+import { transportConnecteurHttp, type TransportConnecteurHttp } from '../agent/transport-connecteur-http';
 
 /**
  * Les requêtes d'un connecteur : décrire un appel, l'éprouver, puis l'ouvrir aux agents. Décrire une requête,
@@ -43,9 +41,8 @@ export interface AgentRequetesRouteDeps {
    * passent `jamaisBrancheeSurConsentement`.
    */
   brancheeSurConsentement(tenantId: string, requestId: string): Promise<boolean>;
-  fetchImpl?: typeof fetch;
-  /** Injectée pour tester la garde de résolution sans DNS. Défaut : la vraie résolution. */
-  verifierResolution?: (url: string) => Promise<VerdictResolution>;
+  /** Le transport complet, injecté dans les tests. Défaut : résolution et connexion publiques de production. */
+  transportHttp?: TransportConnecteurHttp;
   /**
    * Plafond de temps de l'appel de test (défaut `DELAI_TEST_MS`). Injectable parce que les faux minuteurs de
    * vitest ne pilotent pas `AbortSignal.timeout` : sans cette couture, la garde ne pourrait pas être éprouvée.
@@ -219,9 +216,7 @@ function verifier(r: ARegler, clesDeChamps: readonly string[]): string | null {
 export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
   const base = '/tenants/:tenantId/agent-requetes';
-  // Le `fetch` vérifié à la connexion (DNS rebinding) : `src/lib/connexion-publique.ts`.
-  const appeler = deps.fetchImpl ?? fetchPublic;
-  const estPublique = deps.verifierResolution ?? ((url: string) => resolutionPublique(url));
+  const transportHttp = deps.transportHttp ?? transportConnecteurHttp;
 
   /**
    * Ce que la console propose : les origines de variable, pour que l'écran ne recopie pas une liste serveur.
@@ -339,58 +334,37 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
     // Un refus d'assemblage est une information pour le client, pas une panne : 200 avec `ok: false`.
     if (!appel.ok) return { code: 200, body: { ok: false, erreur: appel.raison } };
 
-    // 🔴 Où ce nom mène-t-il vraiment ? Ce bouton appelle une URL saisie par le client, depuis notre réseau.
-    // `construireCible` refuse les hôtes internes sur leur texte, pas un nom public qui pointe vers le réseau Docker
-    // ou les métadonnées du fournisseur : même garde de résolution que le connecteur en conversation.
-    const resolution = await estPublique(appel.url);
-    if (!resolution.ok) {
+    // Le délai commence avant la résolution : les dix secondes bornent désormais tout le transport de l'adresse
+    // choisie par le client, pas seulement la connexion qui suit le DNS.
+    const echeance = AbortSignal.timeout(deps.delaiTestMs ?? DELAI_TEST_MS);
+    const transporte = await transportHttp.executer({
+      url: appel.url,
+      methode: appel.methode,
+      entetes: { ...appel.entetes, ...source.entetes },
+      corps: appel.corps,
+      signal: echeance,
+      lecture: { nature: 'texte', maxOctets: MAX_APERCU * 2 },
+    });
+    if (transporte.nature === 'adresse_refusee') {
       return { code: 200, body: { ok: false, erreur: 'cette adresse n’est pas joignable depuis notre infrastructure' } };
     }
-
-    const debut = Date.now();
-    let res: Response;
-    /**
-     * Plafond de temps de l'essai : sans `signal`, c'est le défaut d'undici qui coupe (309 s mesurées contre un
-     * serveur qui ne répond jamais), sur un hôte que le client choisit, donc dont la lenteur est choisie par autrui.
-     */
-    const echeance = AbortSignal.timeout(deps.delaiTestMs ?? DELAI_TEST_MS);
-    try {
-      res = await appeler(appel.url, {
-        method: appel.methode,
-        headers: { ...appel.entetes, ...source.entetes },
-        ...(appel.corps !== null ? { body: appel.corps } : {}),
-        redirect: 'error',
-        signal: echeance,
-      });
-    } catch (err) {
-      // Refus à la connexion (le nom a résolu vers l'intérieur entre la vérification ci-dessus et l'appel) : même
-      // message que la vérification préalable, c'est la même cause.
-      if (estRefusAdresseInterne(err)) {
-        return { code: 200, body: { ok: false, erreur: 'cette adresse n’est pas joignable depuis notre infrastructure' } };
-      }
-      // Même phrase que le résolveur de connecteur pour la même cause (`redirect: 'error'` ci-dessus).
-      if (estRedirectionRefusee(err)) {
-        return { code: 200, body: { ok: false, erreur: 'le système du client a redirigé l’appel, ce qui n’est pas accepté sur un connecteur' } };
-      }
-      return { code: 200, body: { ok: false, erreur: `appel impossible : ${err instanceof Error ? err.message : 'erreur réseau'}` } };
+    if (transporte.nature === 'redirection_refusee') {
+      return { code: 200, body: { ok: false, erreur: 'le système du client a redirigé l’appel, ce qui n’est pas accepté sur un connecteur' } };
     }
-
-    // Lecture bornée en flux : `res.text()` chargerait tout en mémoire avant de couper à `MAX_APERCU`.
-    const lu = await lireCorpsBorne(res, MAX_APERCU * 2);
-    // Le plafond doit couvrir aussi la lecture du corps : un serveur qui rend vite ses en-têtes puis distille son
-    // corps épuise l'échéance ici, et `lireCorpsBorne` rendrait un texte vide, donc un faux succès au corps vide.
-    if (echeance.aborted) {
+    if (transporte.nature === 'abandon') {
       return { code: 200, body: { ok: false, erreur: 'le système n’a pas répondu dans le temps imparti' } };
     }
-    // Autre faux succès possible : un système qui coupe en plein corps, sans que l'échéance soit atteinte.
-    if (lu.casse) {
+    if (transporte.nature === 'corps_interrompu') {
       return { code: 200, body: { ok: false, erreur: 'la réponse a été interrompue en cours de lecture' } };
     }
-    // Le corps trop gros est refusé et dit, comme par les routes sœurs : un plafond n'a de sens que si on le dit.
-    if (lu.trop_gros) {
+    if (transporte.nature === 'corps_trop_gros') {
       return { code: 200, body: { ok: false, erreur: 'réponse trop volumineuse pour l’aperçu' } };
     }
-    const brut = lu.texte.slice(0, MAX_APERCU);
+    if (transporte.nature === 'reseau') {
+      // Aucun message natif : il peut contenir l'URL complète, donc un secret placé dans la query string.
+      return { code: 200, body: { ok: false, erreur: 'le système du client n’a pas répondu' } };
+    }
+    const brut = (transporte.texte ?? '').slice(0, MAX_APERCU);
     let json: unknown;
     try { json = JSON.parse(brut); } catch { json = undefined; }
     return {
@@ -399,8 +373,8 @@ export function registerAgentRequetes(app: FastifyInstance, deps: AgentRequetesR
         // `ok` décrit l'assemblage et l'aller-retour, pas le verdict du système du client : un 404 est une réponse
         // valide à montrer, et la marquer en échec ferait chercher un problème chez nous.
         ok: true,
-        httpStatus: res.status,
-        dureeMs: Date.now() - debut,
+        httpStatus: transporte.httpStatus,
+        dureeMs: transporte.dureeMs,
         // Ce qui est parti, pour que le client voie ce que sa configuration produit : les en-têtes de la requête,
         // variables substituées, jamais ceux de la source (le secret), et moins ceux que la source écrase à l'envoi.
         envoye: { url: appel.url, methode: appel.methode, corps: appel.corps, entetes: sansCeuxDeLaSource(appel.entetes, source.entetes) },

@@ -5,6 +5,7 @@ import { versOutil } from '../src/agent/catalog.pg';
 import { outilExpose } from '../src/agent/outils-maison';
 import { executeTool } from '../src/agent/executor';
 import { creerResolveurHttp } from '../src/agent/resolvers/http';
+import { creerTransportConnecteurHttp } from '../src/agent/transport-connecteur-http';
 import { JOURNAL_MUET } from '../src/agent/journal-muet';
 import type { OutilDefini } from '../src/agent/catalog';
 import type { SourceAppel } from '../src/agent/sources';
@@ -74,11 +75,13 @@ async function appeler(outil: OutilDefini, requeteCourante: RequeteConnecteur, a
     sources: { pourAppel: async () => SOURCE, marquerEpreuve: async () => {} },
     requetes: { parId: async () => requeteCourante },
     fiche: { ficheDuContact: async () => null },
-    fetchImpl: (async (url: string) => {
-      parties.push(String(url));
-      return new Response(JSON.stringify({ prix: 12.5 }), { status: 200, headers: { 'content-type': 'application/json' } });
-    }) as unknown as typeof fetch,
-    verifierResolution: async () => ({ ok: true }),
+    transportHttp: creerTransportConnecteurHttp({
+      fetch: (async (url: string) => {
+        parties.push(String(url));
+        return new Response(JSON.stringify({ prix: 12.5 }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }) as unknown as typeof fetch,
+      verifierResolution: async () => ({ ok: true }),
+    }),
   });
   const r = await executeTool(
     { name: outil.name, argumentsJson: JSON.stringify(args) },

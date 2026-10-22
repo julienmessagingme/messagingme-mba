@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { valeurPourChamp, creerAppelHttpScenario } from '../src/workflow/appel-http';
+import { creerTransportConnecteurHttp } from '../src/agent/transport-connecteur-http';
 import { walk } from '../src/workflow/engine';
 import type { WorkflowGraph } from '../src/workflow/graph';
 
@@ -75,26 +76,39 @@ describe('le bloc dans le graphe', () => {
 });
 
 describe('le câblage du bloc', () => {
-  const deps = (over: Record<string, unknown> = {}) => ({
-    sources: {
+  const deps = (over: Record<string, unknown> = {}) => {
+    const {
+      fetchImpl = (async () => new Response('{}')) as unknown as typeof fetch,
+      verifierResolution = async () => ({ ok: true as const }),
+      ...reste
+    } = over as Record<string, unknown> & {
+      fetchImpl?: typeof fetch;
+      verifierResolution?: () => Promise<{ ok: true }>;
+    };
+    return {
+      sources: {
       pourAppel: async () => ({
         id: 's1', kind: 'http' as const, baseUrl: 'https://api.client.fr/v1', authKind: 'none' as const,
         authHeaderName: null, authSecret: null, status: 'active' as const,
       }),
       marquerEpreuve: async () => {},
-    },
-    requetes: {
+      },
+      requetes: {
       parId: async () => ({
         id: 'req-1', tenantId: 't1', sourceId: 's1', label: 'Statut',
         methode: 'GET' as const, chemin: '/commandes', parametres: [], entetes: [],
         corps: { mode: 'aucun' as const }, variables: [], outputPaths: ['statut'],
         valeursTest: {}, outils: 0, updatedAt: '2026-09-11T00:00:00.000Z',
       }),
-    },
-    projectionContact: async () => ({ nom: 'Jean', tags: [], champs: {} }),
-    verifierResolution: async () => ({ ok: true }),
-    ...over,
-  });
+      },
+      projectionContact: async () => ({ nom: 'Jean', tags: [], champs: {} }),
+      transportHttp: creerTransportConnecteurHttp({
+        fetch: fetchImpl,
+        verifierResolution,
+      }),
+      ...reste,
+    };
+  };
 
   it('🔴 une réponse lisible devient la valeur du champ', async () => {
     const appel = creerAppelHttpScenario(deps({

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { creerAppelConnecteur } from '../src/agent/resolvers/http';
+import { creerTransportConnecteurHttp } from '../src/agent/transport-connecteur-http';
 import { creerAppelHttpScenario } from '../src/workflow/appel-http';
 import { creerTravailPousseeOptOut } from '../src/crm/poussee-optout';
 import type { JournalAppels } from '../src/agent/catalog';
@@ -50,8 +51,10 @@ function depsConnecteur(fetchImpl: typeof fetch) {
     sources: { pourAppel: async () => SOURCE, marquerEpreuve: async () => {} },
     requetes: { parId: async () => REQUETE as never },
     fiche: { ficheDuContact: async () => null },
-    fetchImpl,
-    verifierResolution: async () => ({ ok: true as const }),
+    transportHttp: creerTransportConnecteurHttp({
+      fetch: fetchImpl,
+      verifierResolution: async () => ({ ok: true as const }),
+    }),
   };
 }
 
