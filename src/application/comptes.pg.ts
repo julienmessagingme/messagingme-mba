@@ -70,6 +70,16 @@ export class PgComptesApplication implements ComptesApplication {
     return r.rows.map(versCompte);
   }
 
+  async endormables(jours: number): Promise<CompteApplication[]> {
+    // Sans message depuis la liaison, c'est la liaison qui compte : un compte relié et resté muet s'endort aussi.
+    const r = await this.pool.query<LigneCompte>(
+      `select ${COLONNES} from comptes_application
+        where statut = 'relie' and coalesce(dernier_message_le, relie_le, statut_change_le) < now() - make_interval(days => $1)`,
+      [jours],
+    );
+    return r.rows.map(versCompte);
+  }
+
   async marquer(id: string, statut: StatutCompte, extra: { jid?: string } = {}): Promise<void> {
     await this.pool.query(
       `update comptes_application

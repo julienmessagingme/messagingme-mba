@@ -997,6 +997,8 @@ async function main(): Promise<void> {
     offreDe: async (tenant) => (await offres.offreDe(tenant)).offre,
     // L'essai de 14 jours, une fois par espace (spec offres v2) : un Pro, même fini, l'a consommé.
     dejaEuUnPro: async (tenant) => (await abonnementsOffre.deLEspace(tenant)) !== null,
+    // La filière application (2026-10-22) : le Pro y est refusé tant que la coexistence n'est pas construite.
+    filiereDe: (tenant) => comptesApplication.filiereDe(tenant),
   };
   /**
    * Les sièges du Pro (spec offres v2, livraison 7, `src/stripe/sieges.ts`) : le MÊME Stripe et la MÊME règle du mode test

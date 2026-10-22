@@ -80,6 +80,8 @@ export const TACHES_PAR_ROLE: Record<string, Appartenance> = {
   'hubspot-rattrapage': 'analyse',
   // Tout le reste : le produit, ses reprises, ses purges, son exploitation.
   'abonnements-numero': 'principal',
+  // La mise en sommeil des comptes de l'application WhatsApp Business (2026-10-22).
+  'application-sommeil': 'principal',
   'agregats-analyse': 'principal',
   'retention-conversations': 'principal',
   'auto-relance-echecs': 'principal',

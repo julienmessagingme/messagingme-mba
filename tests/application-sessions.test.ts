@@ -23,6 +23,7 @@ function fauxComptes(liste: CompteApplication[]): ComptesApplication & { touches
     async parEspace(t) { return [...parId.values()].find((c) => c.tenantId === t) ?? null; },
     async parId(id) { return parId.get(id) ?? null; },
     async relies() { return [...parId.values()].filter((c) => c.statut === 'relie'); },
+    async endormables() { return []; },
     async marquer(id, statut, extra) { const c = parId.get(id)!; parId.set(id, { ...c, statut, jid: extra?.jid ?? c.jid }); },
     async toucher(id) { this.touches.push(id); },
     async filiereDe() { return 'application'; },

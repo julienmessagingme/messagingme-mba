@@ -134,6 +134,7 @@ import { purgerJusquAEpuisement } from './lib/purge-par-lots';
 import { PURGE_CONVERSATIONS_PAR_LOT, BUDGET_PURGE_CONVERSATIONS_MS } from './inbox/store.pg';
 import { lireJobEntrant, traiterEntrantApplication } from './application/entrant';
 import { creerDejaRecu } from './application/entrant.pg';
+import { endormirLesComptes } from './application/sommeil';
 
 /**
  * Démarre l’orchestration du worker. L’appelant garde la responsabilité du chargement d’environnement
@@ -212,7 +213,7 @@ export async function demarrerWorker(): Promise<void> {
     heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
     journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub, connexionPub,
     publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, alerteCredit, numeroBloqueDeLEspace, offres,
-    emailsProduit, emetteurEmails, envoyeurProduit, prevenirEquipe, quotaModeles,
+    emailsProduit, emetteurEmails, envoyeurProduit, prevenirEquipe, quotaModeles, comptesApplication, clientApplication,
   } = construireSocle({ pool, queue, config });
   // La commission sur le crédit IA, celle de l'offre de l'espace (lot 6, C) : le cerveau des tours d'agent la lit.
   const commissionDeLEspace = commissionPour(offres);
@@ -1203,6 +1204,21 @@ export async function demarrerWorker(): Promise<void> {
     avisDejaParti: (abonnementId, avis) => abonnementsDuNumero.avisDejaParti(abonnementId, avis),
     noterAvis: (abonnementId, avis) => abonnementsDuNumero.noterAvis(abonnementId, avis),
   });
+  /**
+   * La mise en sommeil des comptes de l'application WhatsApp Business (2026-10-22, `src/application/sommeil.ts`) : une
+   * fois par heure, les comptes reliés sans message depuis `APPLICATION_SOMMEIL_JOURS` jours voient leur session fermée
+   * par le service de connexions, et les admins sont prévenus. 0 l'éteint.
+   */
+  if (config.APPLICATION_SOMMEIL_JOURS > 0) {
+    taches.programmer('application-sommeil', 60 * 60_000, async () => {
+      const n = await endormirLesComptes({
+        comptes: comptesApplication, client: clientApplication, emettre: (e) => emetteurEmails.emettre(e),
+      }, config.APPLICATION_SOMMEIL_JOURS, new Date());
+      // eslint-disable-next-line no-console
+      if (n > 0) console.log(`application-sommeil : ${n} compte(s) mis en sommeil`);
+    });
+  }
+
   taches.programmer('abonnements-numero', 15 * 60_000, () => balayerAbonnements({
     aSurveiller: () => abonnementsDuNumero.aSurveiller(),
     etat: (t) => abonnementsDuNumero.etatDeLEspace(t),
@@ -1212,7 +1228,14 @@ export async function demarrerWorker(): Promise<void> {
     // dédoublonnage est la table des avis, notée seulement si Telegram a pris le message.
     alerter: (texte) => sendTelegram(`[mba-${nomDuProcessus(config.WORKER_ROLE)}] ${texte}`),
     mails: mailsAbonnement,
-    liberer: (t, abonnementId) => liberations.liberer(t, abonnementId, clientDidww ? (didId) => clientDidww.resilier(didId) : null),
+    liberer: (t, abonnementId) => liberations.liberer(t, abonnementId, {
+      resilier: clientDidww ? (didId) => clientDidww.resilier(didId) : null,
+      // La filière application : notre appareil lié se retire du téléphone avant la résiliation (2026-10-22).
+      retirerApplication: async (compteId) => {
+        const r = clientApplication ? await clientApplication.retirer(compteId) : { ok: false as const, raison: 'service_injoignable' as const };
+        if (!r.ok) throw new Error(`retrait de l’appareil lié refusé (${r.raison}) : la libération se rejouera`);
+      },
+    }),
     // Un numéro rendu à la réserve va d'abord à l'abonné qui attend le sien, comme une déclaration dans /ops.
     servirAbonneEnAttente: async (sauf) => {
       const suivant = (await abonnementsDuNumero.enAttenteDeNumero()).find((t) => t !== sauf);

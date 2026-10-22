@@ -43,6 +43,8 @@ export interface ComptesApplication {
   parId(id: string): Promise<CompteApplication | null>;
   /** Les comptes dont la session reprend au démarrage du service. */
   relies(): Promise<CompteApplication[]>;
+  /** Les comptes reliés sans message, reçu ni envoyé, depuis `jours` jours (la mise en sommeil, `src/application/sommeil.ts`). */
+  endormables(jours: number): Promise<CompteApplication[]>;
   /** Change le statut ; `jid` se pose à la liaison. */
   marquer(id: string, statut: StatutCompte, extra?: { jid?: string }): Promise<void>;
   /** Un message reçu ou envoyé : la mise en sommeil compte à partir de là. */

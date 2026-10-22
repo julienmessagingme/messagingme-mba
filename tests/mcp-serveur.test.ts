@@ -283,6 +283,25 @@ describe('serveur MCP : autorisation', () => {
     await server.close();
   });
 
+  it('🔴 filière application : un outil sans objet (modèles, campagnes) refuse et propose l’API, sans rien appeler', async () => {
+    const appels: string[] = [];
+    const { server } = app({
+      application: {
+        filiere: async () => 'application',
+        envoyer: async () => { appels.push('envoyer'); return { ok: false, raison: 'refuse' }; },
+      },
+    });
+    // Ceux qu'une clé d'API atteint ; les autres exigent une personne, et passent par la même garde.
+    for (const nom of ['list_templates', 'get_template_status', 'get_message_status', 'get_campaign_stats']) {
+      const r = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler(nom, {}) }));
+      expect(r.isError, nom).toBe(true);
+      expect(r.texte, nom).toMatch(/application WhatsApp Business/);
+      expect(r.texte, nom).toMatch(/API WhatsApp/);
+    }
+    expect(appels).toEqual([]);
+    await server.close();
+  });
+
   it('🔴 un identifiant de conversation d’un AUTRE espace se refuse comme un inexistant', async () => {
     // IDOR : la garde est le scope tenant du store, et le message ne doit pas confirmer que l'identifiant
     // existe ailleurs. Les deux cas rendent exactement la même phrase.

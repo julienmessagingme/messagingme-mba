@@ -572,6 +572,11 @@ export const schema = z.object({
   APPLICATION_SERVICE_SECRET: z.string().default(''),
   APPLICATION_SERVICE_PORT: z.coerce.number().int().min(1).max(65535).default(8090),
   /**
+   * La mise en sommeil (plan 2026-10-22, tâche 7) : un compte de l'application relié sans message depuis ce nombre de
+   * jours voit sa session fermée, et le développeur est prévenu. 0 l'éteint.
+   */
+  APPLICATION_SOMMEIL_JOURS: z.coerce.number().int().min(0).max(365).default(30),
+  /**
    * Le numéro fourni côté client (lot 3b) : sous ce nombre de numéros libres dans la réserve, Julien est prévenu par
    * Telegram, au plus une fois par jour. 0 éteint l'alerte (aucun compte n'est sous zéro).
    */

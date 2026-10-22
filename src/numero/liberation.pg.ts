@@ -26,7 +26,22 @@ import { VERROU_NUMERO_PRO_SQL } from './verrou-numero-pro';
  *
  * ⚠️ La preuve « un code de Meta capté » tient parce que la purge des codes épargne ceux d'un numéro ATTRIBUÉ (rouge 2 de
  * la même relecture) : sans quoi, purgés à 7 jours, ils manquaient toujours à la libération.
+ *
+ * 🔴 UN NUMÉRO FOURNI DE LA FILIÈRE APPLICATION (2026-10-22) : un compte de l'application WhatsApp Business le porte, sur
+ * le téléphone du développeur. Notre appareil lié se retire d'abord, puis le numéro est résilié chez DIDWW, jamais rendu
+ * à la réserve : un compte WhatsApp existe sur ce numéro, il ne servira à personne d'autre. `vuDeMeta` n'y est pas lu,
+ * Meta n'a jamais vu ce numéro.
  */
+
+/**
+ * Les gestes hors de la base que la libération demande. `resilier` : le geste DIDWW (`null` = non configuré, ce qui lève
+ * `DidwwNonConfigure` si le numéro doit être résilié). `retirerApplication` : retirer notre appareil lié d'un compte de
+ * l'application, par le service de connexions ; il lève sur un refus, ce qui annule tout et fait rejouer le balayage.
+ */
+export interface GestesLiberation {
+  resilier: ((didId: string) => Promise<void>) | null;
+  retirerApplication(compteId: string): Promise<void>;
+}
 
 export type IssueLiberation =
   | { fait: 'rien' }
@@ -76,13 +91,11 @@ export class PgLiberationStore {
   constructor(private readonly pool: Pool) {}
 
   /**
-   * Libère l'abonnement `abonnementId` de l'espace s'il est fini depuis 7 jours et pas encore libéré. `resilier` : le
-   * geste DIDWW (`null` = non configuré, ce qui lève `DidwwNonConfigure` si le numéro doit être résilié). Toute erreur
-   * remonte et annule la transaction.
+   * Libère l'abonnement `abonnementId` de l'espace s'il est fini depuis 7 jours et pas encore libéré, par les `gestes`
+   * (`GestesLiberation`). Toute erreur remonte et annule la transaction.
    */
-  async liberer(
-    tenantId: string, abonnementId: string, resilier: ((didId: string) => Promise<void>) | null, maintenant: Date = new Date(),
-  ): Promise<IssueLiberation> {
+  async liberer(tenantId: string, abonnementId: string, gestes: GestesLiberation, maintenant: Date = new Date()): Promise<IssueLiberation> {
+    const { resilier } = gestes;
     return enTransaction(this.pool, async (client) => {
       // J2 (lot 6, B2b) : le verrou d'espace commun avec l'enregistrement d'un Pro, AVANT toute lecture.
       await client.query(VERROU_NUMERO_PRO_SQL, [tenantId]);
@@ -120,6 +133,21 @@ export class PgLiberationStore {
       if (!fourni) {
         await poserLaDate();
         return { fait: 'sans_numero' } as const;
+      }
+      // La filière application : notre appareil lié se retire, puis le numéro est résilié (voir l'en-tête).
+      const application = await client.query<{ id: string }>(
+        `select id from comptes_application where tenant_id = $1 and fourni_id = $2 and statut <> 'retire'`, [tenantId, fourni.id],
+      );
+      const compte = application.rows[0];
+      if (compte) {
+        if (resilier === null) throw new DidwwNonConfigure();
+        await gestes.retirerApplication(compte.id);
+        await resilier(fourni.didww_did_id);
+        await client.query(
+          `update numeros_fournis set statut = 'resilie', tenant_id = null, attribue_le = null where id = $1`, [fourni.id],
+        );
+        await poserLaDate();
+        return { fait: 'resilie', numero: fourni.numero, retire: true } as const;
       }
       const { connectes, vu } = await vuDeMeta(client, tenantId, fourni);
       if (!vu) {

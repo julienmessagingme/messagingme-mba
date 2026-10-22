@@ -10,6 +10,10 @@ import { creerGestionnaireSessions } from './sessions';
 import { cleDepuisHex } from './transport/chiffrement';
 import { effacerEtatAuth } from './transport/etat-auth';
 import { ouvrirSession } from './transport/session';
+import { avisDeCoupure } from './avis';
+import { PgEmailsProduitStore } from '../emails-produit/store.pg';
+import { creerEmetteurEmails, FILE_EMAILS_PRODUIT } from '../emails-produit/emission';
+import { PgTenantSettingsStore } from '../settings/store.pg';
 
 /**
  * LE SERVICE DE CONNEXIONS `mba-application` (plan 2026-10-22, tâche 3) : `npm run application`. Il tient une
@@ -36,12 +40,26 @@ async function demarrer(): Promise<void> {
   queue.onError((err) => journaliser('error', 'application_pgboss', { erreur: String(err) }));
   await queue.start();
 
+  // Les courriels d'une coupure : le même émetteur que le socle (`src/socle.ts`), qui réserve en base puis enfile dans
+  // la file `emails-produit`, que le worker envoie.
+  const emailsProduit = new PgEmailsProduitStore(pool);
+  const reglages = new PgTenantSettingsStore(pool);
+  const emetteur = creerEmetteurEmails({
+    adminsConnectes: (t) => emailsProduit.adminsConnectes(t),
+    reserver: (e) => emailsProduit.reserver(e),
+    fuseau: async (t) => (await reglages.get(t)).timezone,
+    enfiler: (job) => queue.enqueue(FILE_EMAILS_PRODUIT, job, { groupId: job.tenantId }),
+  });
+  const prevenirParCourriel = avisDeCoupure((e) => emetteur.emettre(e));
+
   const sessions = creerGestionnaireSessions({
     comptes,
     ouvrir: (compte, rappels) => ouvrirSession(compte, { pool, cle }, rappels),
     enfiler: (job) => queue.enqueue('application-entrant', job, { groupId: job.tenantId }),
     prevenir: async (compte, quoi) => {
       journaliser('warn', quoi === 'banni' ? 'application_numero_banni' : 'application_appareil_retire', { compte: compte.id, espace: compte.tenantId });
+      // Un courriel qui ne part pas ne retient pas l'arrêt de la session : le statut est déjà écrit, get_setup_state le dit.
+      await prevenirParCourriel(compte, quoi).catch((err: unknown) => journaliser('error', 'application_avis_non_emis', { compte: compte.id, err: String(err) }));
     },
     effacer: (id) => effacerEtatAuth(pool, id),
   });

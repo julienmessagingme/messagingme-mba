@@ -73,6 +73,7 @@ const BOUTIQUE_SHOPIFY: Variable = { description: 'Le domaine de la boutique Sho
 /** La limite de contacts du Pro, lue dans la grille (`DROITS.pro`), que l'e-mail de la Free cite (spec offres v2, livraison 5). */
 const LIMITE_PRO: Variable = { description: 'La limite de contacts de l’offre Pro', forme: 'texte', exemple: '5000' };
 const LIEN_CONSOLE: Variable = { description: 'L’accueil de la console', forme: 'lien', exemple: 'https://console.messagingme.app/accueil' };
+const NUMERO_APPLICATION: Variable = { description: 'Le numéro du compte de l’application WhatsApp Business', forme: 'texte', exemple: '+447700900000' };
 
 export const CATALOGUE = [
   {
@@ -647,6 +648,85 @@ export const CATALOGUE = [
           + 'hold about them. The request, with the customer’s name, is in your store’s admin.\n\nIn the {{espace}} '
           + 'workspace, their record can be found by phone number in the console contacts, or from Claude Code with the '
           + 'get_contact tool. It is up to you to answer them.',
+        bouton: null,
+      },
+    },
+  },
+  // La filière application WhatsApp Business (2026-10-22). Un espace Free n'a pas de console : chaque texte renvoie à Claude.
+  {
+    cle: 'application_numero_coupe',
+    categorie: 'service',
+    nom: 'Numéro de l’application coupé par WhatsApp',
+    quand: 'WhatsApp coupe le numéro d’un compte de l’application WhatsApp Business relié à l’espace.',
+    variables: { numero: NUMERO_APPLICATION },
+    textes: {
+      fr: {
+        sujet: 'WhatsApp a coupé votre numéro',
+        corps: 'Bonjour,\n\nWhatsApp a coupé le numéro {{numero}}, relié à l’espace {{espace}} par l’application WhatsApp '
+          + 'Business : plus aucun message ne part ni n’arrive par Messaging Me.\n\nUn numéro coupé par WhatsApp ne peut plus '
+          + 'être relié. Demandez la suite à Claude, dans Claude Code : un autre numéro, ou l’API WhatsApp officielle avec un '
+          + 'compte Meta Business.',
+        bouton: null,
+      },
+      en: {
+        sujet: 'WhatsApp has cut your number',
+        corps: 'Hello,\n\nWhatsApp has cut the number {{numero}}, linked to the {{espace}} workspace through the WhatsApp '
+          + 'Business app: no message goes out or comes in through Messaging Me anymore.\n\nA number cut by WhatsApp cannot be '
+          + 'linked again. Ask Claude, in Claude Code, what comes next: another number, or the official WhatsApp API with a '
+          + 'Meta Business account.',
+        bouton: null,
+      },
+    },
+  },
+  {
+    cle: 'application_appareil_retire',
+    categorie: 'service',
+    nom: 'Numéro de l’application délié depuis le téléphone',
+    quand: 'L’appareil Messaging Me est retiré depuis le téléphone (Appareils connectés de WhatsApp Business).',
+    variables: { numero: NUMERO_APPLICATION },
+    textes: {
+      fr: {
+        sujet: 'Votre numéro WhatsApp n’est plus relié',
+        corps: 'Bonjour,\n\nLe numéro {{numero}} n’est plus relié à l’espace {{espace}} : l’appareil Messaging Me a été retiré '
+          + 'depuis le téléphone (WhatsApp Business, Appareils connectés). Plus aucun message ne part ni n’arrive par '
+          + 'Messaging Me.\n\nPour le relier de nouveau, demandez à Claude, dans Claude Code, un nouveau lien de connexion : il '
+          + 'suffit de scanner le QR code.',
+        bouton: null,
+      },
+      en: {
+        sujet: 'Your WhatsApp number is no longer linked',
+        corps: 'Hello,\n\nThe number {{numero}} is no longer linked to the {{espace}} workspace: the Messaging Me device was '
+          + 'removed from the phone (WhatsApp Business, Linked devices). No message goes out or comes in through Messaging Me '
+          + 'anymore.\n\nTo link it again, ask Claude, in Claude Code, for a new connection link: scanning the QR code is all '
+          + 'it takes.',
+        bouton: null,
+      },
+    },
+  },
+  {
+    cle: 'application_en_sommeil',
+    categorie: 'service',
+    nom: 'Numéro de l’application en sommeil',
+    quand: 'Un compte de l’application WhatsApp Business relié n’a reçu ni envoyé aucun message depuis le délai réglé (30 jours par défaut).',
+    variables: {
+      numero: NUMERO_APPLICATION,
+      jours: { description: 'Le nombre de jours sans message qui endort la connexion', forme: 'texte', exemple: '30' },
+    },
+    textes: {
+      fr: {
+        sujet: 'Votre numéro WhatsApp est en sommeil',
+        corps: 'Bonjour,\n\nLe numéro {{numero}}, relié à l’espace {{espace}} par l’application WhatsApp Business, n’a reçu ni '
+          + 'envoyé aucun message depuis {{jours}} jours : sa connexion est mise en sommeil. Tant qu’il dort, les messages '
+          + 'qu’il reçoit n’arrivent pas dans Messaging Me.\n\nPour le réveiller, demandez à Claude, dans Claude Code, un '
+          + 'nouveau lien de connexion.',
+        bouton: null,
+      },
+      en: {
+        sujet: 'Your WhatsApp number is asleep',
+        corps: 'Hello,\n\nThe number {{numero}}, linked to the {{espace}} workspace through the WhatsApp Business app, has '
+          + 'neither received nor sent any message for {{jours}} days: its connection has been put to sleep. While it sleeps, '
+          + 'the messages it receives do not reach Messaging Me.\n\nTo wake it up, ask Claude, in Claude Code, for a new '
+          + 'connection link.',
         bouton: null,
       },
     },

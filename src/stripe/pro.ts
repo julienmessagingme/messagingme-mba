@@ -4,6 +4,7 @@ import { clientDeLEspace, ouvrirPortail, page, refusDeStripe, type DepsPortail }
 import { ESSAI_PRO_JOURS, PRIX_PRO_HT_CENTIMES, type Offre } from '../offres/offres';
 import { journaliser } from '../lib/journal';
 import { refus, type Issue } from '../lib/issue';
+import type { Filiere } from '../application/comptes';
 
 /**
  * OUVRIR LE PAIEMENT DU PRO, ET SON PORTAIL (lot 6, livraison B1, tâche 10, spec § 6). Comme le numéro, la route n'en rend
@@ -25,6 +26,12 @@ export interface DepsPro extends DepsPortail {
    * espace (spec offres v2) : sinon, le paiement commence tout de suite.
    */
   dejaEuUnPro(tenantId: string): Promise<boolean>;
+  /**
+   * La filière de l'espace (2026-10-22). Le Pro passe par l'API WhatsApp officielle : un espace de la filière application
+   * n'y entre pas tant que la coexistence n'est pas construite. Requise : un câblage qui l'oublierait ferait payer un Pro
+   * dont la console ne marcherait pas.
+   */
+  filiereDe(tenantId: string): Promise<Filiere | null>;
 }
 
 /**
@@ -57,6 +64,11 @@ export async function ouvrirPro(
   }
   if ((await d.offreDe(tenantId)) === 'entreprise') {
     return refus(409, 'Votre espace est en offre Entreprise : le Pro ne lui ajouterait rien.', { code: 'deja_entreprise' });
+  }
+  if ((await d.filiereDe(tenantId)) === 'application') {
+    return refus(409, 'Le Pro passe par l’API WhatsApp officielle, avec un compte Meta Business : un numéro de l’application '
+      + 'WhatsApp Business ne peut pas y passer pour l’instant. Pour le Pro, reliez un numéro par un compte Meta Business.',
+    { code: 'filiere_application' });
   }
   try {
     const prix = await lirePrixStripe(s.transport, { cle: s.cle, prix: prixId });

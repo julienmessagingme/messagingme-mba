@@ -2,6 +2,7 @@ import { outilsPour, RefusOutil, type DepsMcp, type OutilMcp, type PersonneMcp }
 import { messageDe } from '../lib/erreur';
 import { rappelDeLAbonnement, rappelDeLaSuiteDuPro } from './outils-numero';
 import { corpsRefusFonction } from '../offres/refus';
+import { phraseOutilSansObjet, sansObjetSurApplication } from '../application/garde-outils';
 
 /**
  * Le transport MCP : du JSON-RPC 2.0 sur un seul POST, sans état.
@@ -130,6 +131,11 @@ export async function traiterMessage(deps: DepsMcp, ctx: ContexteMcp, message: u
       // Le gel de l'offre (lot 6, B2a) : l'outil reste listé, et refuse avec la phrase et le lien de l'offre.
       if (outil.fonction !== null && !(await deps.offres.offreDe(ctx.tenantId)).droits.fonctions.has(outil.fonction)) {
         return ok(id, { content: blocs(corpsRefusFonction(outil.fonction).error), isError: true });
+      }
+      // La filière application (2026-10-22) : un outil qui n'y a pas de sens reste listé, et refuse en proposant l'API.
+      const sansObjet = sansObjetSurApplication(outil.nom);
+      if (sansObjet !== undefined && (await deps.application.filiere(ctx.tenantId)) === 'application') {
+        return ok(id, { content: blocs(phraseOutilSansObjet(sansObjet)), isError: true });
       }
       try {
         const resultat = await outil.executer(deps, ctx.tenantId, args, ctx.personne);

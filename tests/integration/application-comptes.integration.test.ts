@@ -92,4 +92,19 @@ describe.skipIf(!url)('les comptes de la filière application (0247)', () => {
     await comptes.toucher(c.id, new Date('2026-10-20T10:00:00Z'));
     expect((await comptes.parId(c.id))?.dernierMessageLe?.toISOString()).toBe('2026-10-22T10:00:00.000Z');
   });
+
+  it('🔴 la mise en sommeil : un compte relié muet depuis le délai s’endort, un compte actif ou non relié non', async () => {
+    const c = (await comptes.parEspace(t1))!;
+    await comptes.marquer(c.id, 'relie', { jid: '449990000071:1@s.whatsapp.net' });
+    const ilYA = (jours: number) => new Date(Date.now() - jours * 24 * 3_600_000);
+    await pool.query('update comptes_application set dernier_message_le = $2 where id = $1', [c.id, ilYA(31)]);
+    expect((await comptes.endormables(30)).map((x) => x.id)).toContain(c.id);
+    await pool.query('update comptes_application set dernier_message_le = $2 where id = $1', [c.id, ilYA(29)]);
+    expect((await comptes.endormables(30)).map((x) => x.id)).not.toContain(c.id);
+    // Muet depuis sa liaison : c'est la liaison qui compte.
+    await pool.query('update comptes_application set dernier_message_le = null, relie_le = $2 where id = $1', [c.id, ilYA(40)]);
+    expect((await comptes.endormables(30)).map((x) => x.id)).toContain(c.id);
+    await comptes.marquer(c.id, 'sommeil');
+    expect((await comptes.endormables(30)).map((x) => x.id)).not.toContain(c.id);
+  });
 });

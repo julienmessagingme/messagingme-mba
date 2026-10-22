@@ -22,6 +22,8 @@ const N = '449990000031';
 const MAINTENANT = new Date();
 const IL_Y_A_8_JOURS = new Date(MAINTENANT.getTime() - 8 * 24 * 3_600_000);
 const IL_Y_A_6_JOURS = new Date(MAINTENANT.getTime() - 6 * 24 * 3_600_000);
+/** Aucun compte de l'application dans ces cas : un retrait demandé y est une erreur du test. */
+const aucunRetrait = async (): Promise<void> => { throw new Error('aucun compte de l’application dans ce cas'); };
 
 describe.skipIf(!url)('la libération d’un numéro fourni (lot 4, B)', () => {
   let pool: Pool;
@@ -91,7 +93,7 @@ describe.skipIf(!url)('la libération d’un numéro fourni (lot 4, B)', () => {
     const suspendue = await campagne('paused', 'numero_suspendu');
     const rcs = await campagne('running', null, 'rcs');
     const resilies: string[] = [];
-    expect(await liberation.liberer(t, 'sub_liba', async (d) => { resilies.push(d); }, MAINTENANT))
+    expect(await liberation.liberer(t, 'sub_liba', { resilier: async (d) => { resilies.push(d); }, retirerApplication: aucunRetrait }, MAINTENANT))
       .toEqual({ fait: 'resilie', numero: N, retire: true });
     expect(resilies).toEqual([DID]);
     expect(await reserve()).toEqual({ statut: 'resilie', tenant_id: null });
@@ -104,27 +106,27 @@ describe.skipIf(!url)('la libération d’un numéro fourni (lot 4, B)', () => {
     expect(await pause(rcs)).toEqual({ status: 'running', pause_reason: null });
     expect(await abonnements.etatDeLEspace(t)).toMatchObject({ etat: 'libere' });
     // Une seconde fois : rien à faire, rien d'appelé.
-    expect(await liberation.liberer(t, 'sub_liba', async () => { throw new Error('jamais'); }, MAINTENANT)).toEqual({ fait: 'rien' });
+    expect(await liberation.liberer(t, 'sub_liba', { resilier: async () => { throw new Error('jamais'); }, retirerApplication: aucunRetrait }, MAINTENANT)).toEqual({ fait: 'rien' });
   });
 
   it('🔴 DIDWW échoue : TOUT est annulé (ni délié, ni réserve, ni date), et le tour suivant rejoue', async () => {
     await fini('sub_libb', IL_Y_A_8_JOURS);
     await connecter('+44 999 0000031');
-    await expect(liberation.liberer(t, 'sub_libb', async () => { throw new Error('DIDWW a refusé (403)'); }, MAINTENANT)).rejects.toThrow(/403/);
+    await expect(liberation.liberer(t, 'sub_libb', { resilier: async () => { throw new Error('DIDWW a refusé (403)'); }, retirerApplication: aucunRetrait }, MAINTENANT)).rejects.toThrow(/403/);
     expect(await numerosDeLEspace()).toBe(1);
     expect(await delieLe()).toBeNull();
     expect(await reserve()).toEqual({ statut: 'attribue', tenant_id: t });
     expect(await liberee('sub_libb')).toBeNull();
     expect(await abonnements.etatDeLEspace(t)).toMatchObject({ etat: 'suspendu' });
     // DIDWW non configuré : même chose, avec sa propre erreur.
-    await expect(liberation.liberer(t, 'sub_libb', null, MAINTENANT)).rejects.toBeInstanceOf(DidwwNonConfigure);
+    await expect(liberation.liberer(t, 'sub_libb', { resilier: null, retirerApplication: aucunRetrait }, MAINTENANT)).rejects.toBeInstanceOf(DidwwNonConfigure);
     expect(await reserve()).toEqual({ statut: 'attribue', tenant_id: t });
-    expect(await liberation.liberer(t, 'sub_libb', async () => {}, MAINTENANT)).toMatchObject({ fait: 'resilie' });
+    expect(await liberation.liberer(t, 'sub_libb', { resilier: async () => {}, retirerApplication: aucunRetrait }, MAINTENANT)).toMatchObject({ fait: 'resilie' });
   });
 
   it('jamais vu de Meta (ni connecté, ni code capté) : rendu « libre » à la réserve, rien chez DIDWW', async () => {
     await fini('sub_libc', IL_Y_A_8_JOURS);
-    expect(await liberation.liberer(t, 'sub_libc', async () => { throw new Error('jamais'); }, MAINTENANT)).toEqual({ fait: 'libre', numero: N });
+    expect(await liberation.liberer(t, 'sub_libc', { resilier: async () => { throw new Error('jamais'); }, retirerApplication: aucunRetrait }, MAINTENANT)).toEqual({ fait: 'libre', numero: N });
     expect(await reserve()).toEqual({ statut: 'libre', tenant_id: null });
     expect(await liberee('sub_libc')).toBeInstanceOf(Date);
   });
@@ -139,14 +141,14 @@ describe.skipIf(!url)('la libération d’un numéro fourni (lot 4, B)', () => {
     // 🔴 Rouge 2 de la relecture de B : la purge effaçait tout code de plus de 7 jours, donc la preuve, toujours,
     // avant la libération. Elle épargne désormais les codes d'un numéro encore attribué.
     await numeros.purgerAvant(7);
-    expect(await liberation.liberer(t, 'sub_libd', async () => {}, MAINTENANT)).toEqual({ fait: 'resilie', numero: N, retire: false });
+    expect(await liberation.liberer(t, 'sub_libd', { resilier: async () => {}, retirerApplication: aucunRetrait }, MAINTENANT)).toEqual({ fait: 'resilie', numero: N, retire: false });
   });
 
   it('🔴 un numéro APPORTÉ par le client (autres chiffres) ne quitte jamais l’espace', async () => {
     await fini('sub_libe', IL_Y_A_8_JOURS);
     await connecter('+33 6 12 34 56 78');
     const enCours = await campagne('running');
-    expect(await liberation.liberer(t, 'sub_libe', async () => { throw new Error('jamais'); }, MAINTENANT)).toEqual({ fait: 'libre', numero: N });
+    expect(await liberation.liberer(t, 'sub_libe', { resilier: async () => { throw new Error('jamais'); }, retirerApplication: aucunRetrait }, MAINTENANT)).toEqual({ fait: 'libre', numero: N });
     expect(await numerosDeLEspace()).toBe(1);
     expect(await delieLe()).toBeNull();
     expect(await pause(enCours)).toEqual({ status: 'running', pause_reason: null });
@@ -155,19 +157,19 @@ describe.skipIf(!url)('la libération d’un numéro fourni (lot 4, B)', () => {
   it('chiffres inconnus (affichage vide) : traités comme le numéro fourni, retiré', async () => {
     await fini('sub_libf', IL_Y_A_8_JOURS);
     await connecter(null);
-    expect(await liberation.liberer(t, 'sub_libf', async () => {}, MAINTENANT)).toEqual({ fait: 'resilie', numero: N, retire: true });
+    expect(await liberation.liberer(t, 'sub_libf', { resilier: async () => {}, retirerApplication: aucunRetrait }, MAINTENANT)).toEqual({ fait: 'resilie', numero: N, retire: true });
     expect(await numerosDeLEspace()).toBe(0);
   });
 
   it('🔴 pas encore dû (6 jours), ou réabonné entre-temps : rien ne bouge', async () => {
     await fini('sub_libg', IL_Y_A_6_JOURS);
-    expect(await liberation.liberer(t, 'sub_libg', async () => { throw new Error('jamais'); }, MAINTENANT)).toEqual({ fait: 'rien' });
+    expect(await liberation.liberer(t, 'sub_libg', { resilier: async () => { throw new Error('jamais'); }, retirerApplication: aucunRetrait }, MAINTENANT)).toEqual({ fait: 'rien' });
     await pool.query('delete from abonnements_numero where tenant_id = $1', [t]);
     await fini('sub_libh', IL_Y_A_8_JOURS);
     await pool.query(
       `insert into abonnements_numero (stripe_subscription_id, tenant_id, livemode, statut) values ('sub_libvivant', $1, false, 'actif')`, [t],
     );
-    expect(await liberation.liberer(t, 'sub_libh', async () => { throw new Error('jamais'); }, MAINTENANT)).toEqual({ fait: 'rien' });
+    expect(await liberation.liberer(t, 'sub_libh', { resilier: async () => { throw new Error('jamais'); }, retirerApplication: aucunRetrait }, MAINTENANT)).toEqual({ fait: 'rien' });
     expect(await reserve()).toEqual({ statut: 'attribue', tenant_id: t });
   });
 
@@ -180,20 +182,58 @@ describe.skipIf(!url)('la libération d’un numéro fourni (lot 4, B)', () => {
       [t, finiLe === null ? 'actif' : 'resilie', finiLe],
     );
     await pro(null);
-    expect(await liberation.liberer(t, 'sub_libpro', async () => { throw new Error('jamais'); }, MAINTENANT)).toEqual({ fait: 'rien' });
+    expect(await liberation.liberer(t, 'sub_libpro', { resilier: async () => { throw new Error('jamais'); }, retirerApplication: aucunRetrait }, MAINTENANT)).toEqual({ fait: 'rien' });
     await pro(IL_Y_A_6_JOURS);
-    expect(await liberation.liberer(t, 'sub_libpro', async () => { throw new Error('jamais'); }, MAINTENANT)).toEqual({ fait: 'rien' });
+    expect(await liberation.liberer(t, 'sub_libpro', { resilier: async () => { throw new Error('jamais'); }, retirerApplication: aucunRetrait }, MAINTENANT)).toEqual({ fait: 'rien' });
     expect(await reserve()).toEqual({ statut: 'attribue', tenant_id: t });
     expect(await liberee('sub_libpro')).toBeNull();
     // Fini depuis 8 jours : la grâce du Pro est passée, la libération reprend son cours.
     await pro(IL_Y_A_8_JOURS);
-    expect(await liberation.liberer(t, 'sub_libpro', async () => {}, MAINTENANT)).not.toEqual({ fait: 'rien' });
+    expect(await liberation.liberer(t, 'sub_libpro', { resilier: async () => {}, retirerApplication: aucunRetrait }, MAINTENANT)).not.toEqual({ fait: 'rien' });
   });
 
   it('fini sans numéro attribué (rendu par « Abandonner ») : seule la date se pose', async () => {
     await numeros.rendre(t);
     await fini('sub_libi', IL_Y_A_8_JOURS);
-    expect(await liberation.liberer(t, 'sub_libi', async () => { throw new Error('jamais'); }, MAINTENANT)).toEqual({ fait: 'sans_numero' });
+    expect(await liberation.liberer(t, 'sub_libi', { resilier: async () => { throw new Error('jamais'); }, retirerApplication: aucunRetrait }, MAINTENANT)).toEqual({ fait: 'sans_numero' });
     expect(await liberee('sub_libi')).toBeInstanceOf(Date);
+  });
+
+  describe('filière application (2026-10-22)', () => {
+    const compteSurLeNumero = async (): Promise<string> => {
+      await pool.query('delete from comptes_application where tenant_id = $1', [t]);
+      const fourni = (await pool.query<{ id: string }>(`select id from numeros_fournis where numero = $1`, [N])).rows[0]!.id;
+      return (await pool.query<{ id: string }>(
+        `insert into comptes_application (tenant_id, numero, statut, fourni_id) values ($1, $2, 'relie', $3) returning id`, [t, N, fourni],
+      )).rows[0]!.id;
+    };
+
+    it('🔴 notre appareil lié se retire, puis le numéro est résilié, jamais rendu à la réserve', async () => {
+      await fini('sub_libapp', IL_Y_A_8_JOURS);
+      const compte = await compteSurLeNumero();
+      const gestes: string[] = [];
+      expect(await liberation.liberer(t, 'sub_libapp', {
+        resilier: async (d) => { gestes.push(`resilier:${d}`); },
+        retirerApplication: async (c) => { gestes.push(`retirer:${c}`); },
+      }, MAINTENANT)).toEqual({ fait: 'resilie', numero: N, retire: true });
+      expect(gestes).toEqual([`retirer:${compte}`, `resilier:${DID}`]);
+      expect(await reserve()).toEqual({ statut: 'resilie', tenant_id: null });
+      expect(await liberee('sub_libapp')).toBeInstanceOf(Date);
+      await pool.query('delete from comptes_application where tenant_id = $1', [t]);
+    });
+
+    it('🔴 un retrait refusé annule tout : rien n’est résilié, la libération se rejouera', async () => {
+      await fini('sub_libapq', IL_Y_A_8_JOURS);
+      await compteSurLeNumero();
+      const resilies: string[] = [];
+      await expect(liberation.liberer(t, 'sub_libapq', {
+        resilier: async (d) => { resilies.push(d); },
+        retirerApplication: async () => { throw new Error('service injoignable'); },
+      }, MAINTENANT)).rejects.toThrow(/injoignable/);
+      expect(resilies).toEqual([]);
+      expect(await reserve()).toMatchObject({ statut: 'attribue' });
+      expect(await liberee('sub_libapq')).toBeNull();
+      await pool.query('delete from comptes_application where tenant_id = $1', [t]);
+    });
   });
 });

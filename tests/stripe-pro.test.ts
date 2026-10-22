@@ -36,7 +36,7 @@ const AN = { id: 'price_pro_an', unit_amount: 49000, currency: 'eur', recurring:
 const SESSION = { status: 200, json: { id: 'cs_test_pro', url: 'https://checkout.stripe.com/c/pay/cs_test_pro' } };
 const PORTAIL = { status: 200, json: { id: 'bps_1', url: 'https://billing.stripe.com/p/session/pro' } };
 
-function deps(o: { prix?: Record<string, unknown>; reponses?: ReponseStripe[]; client?: string | null; autorise?: boolean; vivant?: boolean; prixVides?: boolean; offre?: 'base' | 'pro' | 'entreprise'; dejaEu?: boolean } = {}) {
+function deps(o: { prix?: Record<string, unknown>; reponses?: ReponseStripe[]; client?: string | null; autorise?: boolean; vivant?: boolean; prixVides?: boolean; offre?: 'base' | 'pro' | 'entreprise'; dejaEu?: boolean; filiere?: 'api' | 'application' | null } = {}) {
   const transport = new FauxStripe(o.prix ?? { price_pro_mois: MOIS, price_pro_an: AN }, o.reponses ?? [{ status: 200, json: { id: 'cus_A' } }, SESSION]);
   const d: DepsPro = {
     stripe: { cle: 'rk_test_fausse', livemode: false, prix: { refill_50: '', refill_100: '' }, transport, pageCredit: 'https://x', pageClaude: 'https://x' },
@@ -49,11 +49,21 @@ function deps(o: { prix?: Record<string, unknown>; reponses?: ReponseStripe[]; c
     offreDe: async () => o.offre ?? 'base',
     // Par défaut, l'espace a déjà eu un Pro : pas d'essai (les cas de l'essai le disent).
     dejaEuUnPro: async () => o.dejaEu ?? true,
+    // Par défaut, la filière API (2026-10-22) : la filière application a son cas.
+    filiereDe: async () => (o.filiere === undefined ? 'api' : o.filiere),
   };
   return { d, transport };
 }
 
 describe('ouvrirPro', () => {
+  it('🔴 filière application : le Pro est refusé avec la phrase des contraintes, rien n’est créé chez Stripe', async () => {
+    const { d, transport } = deps({ filiere: 'application' });
+    const r = await ouvrirPro(d, T1, 'mois', 'u1', 'claude');
+    expect(r).toMatchObject({ ok: false, statut: 409, details: { code: 'filiere_application' } });
+    expect(r.ok ? '' : r.erreur).toMatch(/API WhatsApp/);
+    expect([transport.posts, transport.lus]).toEqual([[], []]);
+  });
+
   it('🟡 une Entreprise sans Pro : 409, rien n’est créé chez Stripe (le Pro ne lui ajouterait rien)', async () => {
     const { d, transport } = deps({ offre: 'entreprise' });
     expect(await ouvrirPro(d, T1, 'mois', 'u1', 'offre')).toMatchObject({ ok: false, statut: 409, details: { code: 'deja_entreprise' } });

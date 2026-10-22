@@ -12,6 +12,8 @@ import { VERROU_NUMERO_PRO_SQL } from '../src/numero/verrou-numero-pro';
  */
 const T = 't-pro';
 const MAINTENANT = new Date('2026-10-20T10:00:00Z');
+/** Aucun compte de l'application dans ces cas : un retrait demandé y est une erreur du test. */
+const aucunRetrait = async (): Promise<void> => { throw new Error('aucun compte de l’application dans ce cas'); };
 
 /** Un faux client : l'abonnement du numéro est dû, aucun autre n'est vivant ; le Pro répond selon `pro`. */
 function base(pro: boolean) {
@@ -37,7 +39,7 @@ describe('la libération et le Pro', () => {
   it('🔴 un Pro vivant, ou fini depuis moins de 7 jours : rien ne bouge, DIDWW jamais appelé', async () => {
     const { pool, requetes } = base(true);
     let resilie = 0;
-    const r = await new PgLiberationStore(pool).liberer(T, 'sub_num', async () => { resilie += 1; }, MAINTENANT);
+    const r = await new PgLiberationStore(pool).liberer(T, 'sub_num', { resilier: async () => { resilie += 1; }, retirerApplication: aucunRetrait }, MAINTENANT);
     expect(r).toEqual({ fait: 'rien' });
     expect(resilie).toBe(0);
     // La relecture porte la même grâce que la couverture : un Pro fini depuis moins de 7 jours retient encore.
@@ -47,7 +49,7 @@ describe('la libération et le Pro', () => {
 
   it('sans Pro : la transaction va au-delà de la relecture (le reste est vu par l’intégration)', async () => {
     const { pool } = base(false);
-    await expect(new PgLiberationStore(pool).liberer(T, 'sub_num', async () => {}, MAINTENANT)).rejects.toThrow(/requête inattendue/);
+    await expect(new PgLiberationStore(pool).liberer(T, 'sub_num', { resilier: async () => {}, retirerApplication: aucunRetrait }, MAINTENANT)).rejects.toThrow(/requête inattendue/);
   });
 });
 
@@ -59,7 +61,7 @@ describe('la libération et le Pro', () => {
 describe('le verrou d’espace partagé par la libération et l’enregistrement du Pro (J2)', () => {
   it('🔴 la libération le prend juste après l’ouverture, sur l’espace', async () => {
     const { pool, requetes, params } = base(true);
-    await new PgLiberationStore(pool).liberer(T, 'sub_num', async () => {}, MAINTENANT);
+    await new PgLiberationStore(pool).liberer(T, 'sub_num', { resilier: async () => {}, retirerApplication: aucunRetrait }, MAINTENANT);
     expect(requetes.slice(0, 2)).toEqual(['begin', VERROU_NUMERO_PRO_SQL]);
     expect(params[1]).toEqual([T]);
   });
