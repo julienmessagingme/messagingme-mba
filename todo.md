@@ -1,5 +1,22 @@
 # todo.md : backlog
 
+## 🟡 Le connecteur Shopify : le lot 2 et ce que la relecture du lot 1 laisse (2026-10-22)
+
+Plan : `docs/superpowers/plans/2026-10-21-connecteur-shopify.md`.
+
+- **Le lot 2, la relance de panier abandonné** : `checkouts/*` et la fermeture par `orders/create`, le balayage borné,
+  le délai dans `set_shopify_message`, `checkout_abandoned` ouvert dans `EVENEMENTS_DISPONIBLES`.
+- **La mesure sur une boutique en PRODUCTION** (décision 13 de Julien) : le téléphone arrive-t-il dans les webhooks sans
+  déclarer à la main l'accès aux données protégées ? Sinon, la skill guide ce geste.
+- **Les jaunes de la relecture** : l'affirmation du consentement n'a que sa colonne et une ligne de journal (pas
+  d'entrée d'audit, pas d'historique), et `disconnect_shopify` n'audite pas ; « Dernier événement reçu » ne bouge que
+  pour un événement qui a un message branché ; l'occasion de l'e-mail de demande d'accès sans client ni commande vaut
+  `<domaine>::<jour>` ; après la reprise d'une boutique coupée par un autre espace, les fiches de l'ancien ne sont plus
+  joignables par `customers/redact` ; `purgerEvenements` parcourt toute la table (index sur `(tenant_id, recu_le)`) ;
+  un envoi scellé dont l'issue n'a pas été notée se renverrait sur un réessai de plus de 24 h.
+- **Les rôles `anon` et `authenticated` de Supabase** ont tous les droits sur les tables de `public` (constaté à la
+  relecture de 0246) : sans objet tant que l'API de données ne sert pas, à oublier après la bascule Scaleway.
+
 ## 🟡 Le champ de base « Nom » : ce qui ne le suit pas encore (2026-10-21)
 
 Plan : [docs/superpowers/plans/2026-10-21-champ-nom-et-selecteur.md](docs/superpowers/plans/2026-10-21-champ-nom-et-selecteur.md).

@@ -5,6 +5,28 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-22 (nuit) : le connecteur Shopify, lot 1 (connexion et messages de commande)
+
+Plan : `docs/superpowers/plans/2026-10-21-connecteur-shopify.md`, cadré avec Julien en rondes de questions, lot 0 de
+mesures sur la boutique de dev `messaging-me-essai` (organisation YANS MOD), relu par un relecteur indépendant AVANT le
+code (cinq rouges, dont le moteur de scénario, qui ne reprend pas le fil et aurait coupé l'agent IA : les messages
+passent par l'envoi public), puis le diff du lot relu à son tour (un rouge : l'affirmation du consentement survivait à
+une reconnexion et ne se retirait pas, corrigé et tenu par un test vu rouge puis vert).
+
+- **Migration 0246** (tables `shopify_*`), poussée SEULE (`309675b2`) parce que `purgeMany` les nomme : avant, image
+  construite et vérifiée (seule la 0246 en attente), `pg_stat_activity` sans transaction longue ni verrou lourd sur
+  `tenants` et `contacts`, `lock_timeout` de 5 s dans le fichier ; appliquée depuis le VPS par la session, puis relue en
+  base en lecture seule : colonnes, défauts, CHECK sous leur nom, clés étrangères `confdeltype = 'c'`, prédicats des deux
+  index partiels. Constat hors lot : `anon` et `authenticated` ont tous les droits sur les tables neuves de `public`,
+  comme sur les autres (`campagne_confirmations`) ; sans conséquence tant que l'API de données de Supabase ne sert pas,
+  et sans objet après la bascule Scaleway.
+- **Le code** (`625a7430`), puis la doc Markdown des outils MCP régénérée (`95fde26b`) : `npm run doc:md` n'avait pas
+  été lancé, et `web/lib/doc-md.test.ts` a rougi la CI de la console. La suite de `web/` se lance donc aussi quand le
+  catalogue MCP change.
+- **Déployé à 95fde26b** (API, worker, worker d'analyse, en deux temps), avec l'accord de Julien pour les commits non
+  déployés de la journée et la PR #14 : fumée publique verte, `/shopify/webhooks` en 401 sans signature, signature
+  forgée ou domaine mal formé, fiches d'aide chargées, fiches OAuth conformes, plugin publié en `v0.3.0`.
+
 ## 2026-10-21 (nuit) : le pont des codes appuie sur 5, « Ce que vous pouvez construire », et le README du plugin
 
 - **Le pont des codes capte aussi l'appel de l'application WhatsApp Business.** Mesuré sur le +44 1555 479304 de la
