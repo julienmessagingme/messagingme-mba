@@ -40,6 +40,9 @@ describe.skipIf(!url)('le store Shopify', () => {
     expect(vue).toMatchObject({ domaine, nom: 'Itest', pays: 'FR', devise: 'EUR', etat: 'connectee', consentement: null });
     expect(JSON.stringify(vue)).not.toContain('shpss_itest');
     expect(await store.boutiqueParDomaine(domaine)).toMatchObject({ tenantId: A, etat: 'connectee', secret: 'shpss_itest', consentementAffirme: false });
+    // L'accès de l'import des clients (lot 3) : la boutique de L'ESPACE, secret déchiffré ; un autre espace n'a rien.
+    expect(await store.acces(A)).toEqual({ domaine, clientId: 'cid', secret: 'shpss_itest', pays: 'FR', etat: 'connectee' });
+    expect(await store.acces(B)).toBeNull();
     const brut = (await pool.query<{ secret_chiffre: string }>('select secret_chiffre from shopify_boutiques where tenant_id = $1', [A])).rows[0]!;
     expect(brut.secret_chiffre).not.toContain('shpss_itest');
   });

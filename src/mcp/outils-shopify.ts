@@ -4,15 +4,18 @@ import { RefusOutil } from './saisie';
 import { MESSAGE_OPERATIONS_LOURDES } from '../auth/plafond-partage';
 import { journaliser } from '../lib/journal';
 import { DELAI_PANIER_DEFAUT, DELAI_PANIER_MAX, DELAI_PANIER_MIN, DONNEES_PAR_EVENEMENT, EVENEMENTS_DISPONIBLES } from '../shopify/donnees';
-import { brancherMessage, connecterShopify, couperShopify, etatShopify, type Issue } from '../shopify/gestion';
+import {
+  apercuImportClients, brancherMessage, connecterShopify, couperShopify, etatShopify, importerClients, IMPORT_MAX, type Issue,
+} from '../shopify/gestion';
 
 /**
  * LE CONNECTEUR SHOPIFY DEPUIS CLAUDE CODE (plan 2026-10-21, lot 1) : la skill `shopify` du plugin pilote la CLI de
  * Shopify chez le marchand (création et publication de l'app, lien d'installation, `app env show`), puis ces outils
  * gardent la boutique et branchent les messages. La MÊME gestion que la carte de la console (`src/shopify/gestion.ts`).
  *
- * 🔴 LES QUATRE EXIGENT UNE PERSONNE NOMMÉE (OAuth) : l'affirmation du consentement des clients se signe, et une clé
- * `mcp:write` donnée à un agent qui lit des messages de clients ne doit ni brancher ni débrancher la boutique.
+ * 🔴 TOUS EXIGENT UNE PERSONNE NOMMÉE (OAuth) : l'affirmation du consentement des clients se signe, et une clé
+ * `mcp:write` donnée à un agent qui lit des messages de clients ne doit ni brancher ni débrancher la boutique, ni en
+ * importer les clients (lot 3).
  * Ouverts à toutes les offres (décision de Julien), Base comprise, qui n'a pas de console.
  */
 
@@ -128,6 +131,57 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
           closed_in_time: e.paniers.fermesATemps, waiting: e.paniers.enAttente,
         },
         store_apps_page: e.pageApps,
+      };
+    },
+  },
+  {
+    ...ficheOutilMcp('preview_shopify_customers'),
+    fonction: null,
+    description:
+      'Counts, before any import, the customers of the connected Shopify store who subscribed to marketing (email or '
+      + 'SMS) and have a valid phone: how many are already in the workspace, how many are new, how many free places the '
+      + 'plan leaves (null when unlimited), and how many an import would write (importable, newest first). Writes nothing: '
+      + 'the numbers the merchant chooses from (up to the free places, or a higher plan) before import_shopify_customers. '
+      + 'Counts toward the workspace\'s heavy operations.',
+    annotations: { title: 'Count the Shopify customers to import', readOnlyHint: true, openWorldHint: true },
+    entree: { type: 'object', properties: {} },
+    async executer(deps: DepsMcp, tenantId) {
+      const c = await deps.couteux.consommer(tenantId);
+      if (!c.accepte) throw new RefusOutil(`${MESSAGE_OPERATIONS_LOURDES} (réessayer dans ${Math.max(1, Math.ceil(c.attenteMs / 1000))} s)`);
+      const a = valeur(await apercuImportClients(deps.shopify, tenantId));
+      return {
+        subscribed_with_phone: a.abonnes, subscribed_without_phone: a.sansTelephone, already_in_workspace: a.dejaDansLEspace,
+        new: a.nouveaux, free_places: a.placesLibres, importable: a.importables, complete: a.complet,
+      };
+    },
+  },
+  {
+    ...ficheOutilMcp('import_shopify_customers'),
+    fonction: null,
+    description:
+      'Imports the newest max_contacts customers of the connected Shopify store who subscribed to marketing (email or SMS), '
+      + 'have a valid phone and are not in the workspace yet, as the number the user chose after preview_shopify_customers. '
+      + 'The records are tagged Shopify and carry NO WhatsApp consent: an email or SMS agreement is not a WhatsApp one, '
+      + 'and a record that said STOP stays opted out. A max_contacts above the plan\'s free places is refused, nothing is '
+      + `written halfway. At most ${IMPORT_MAX} per call; calling again imports the next ones without duplicates. `
+      + 'Records already in the workspace are left untouched. Counts toward the workspace\'s heavy operations.',
+    annotations: { title: 'Import the Shopify customers', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    entree: {
+      type: 'object',
+      properties: {
+        max_contacts: { type: 'integer', minimum: 1, maximum: IMPORT_MAX, description: 'How many new subscribed customers to import, newest first: the number the user chose.' },
+      },
+      required: ['max_contacts'],
+      additionalProperties: false,
+    },
+    async executer(deps: DepsMcp, tenantId, args, personne) {
+      const c = await deps.couteux.consommer(tenantId);
+      if (!c.accepte) throw new RefusOutil(`${MESSAGE_OPERATIONS_LOURDES} (réessayer dans ${Math.max(1, Math.ceil(c.attenteMs / 1000))} s)`);
+      const b = valeur(await importerClients(deps.shopify, tenantId, args.max_contacts));
+      journaliser('info', 'mcp_shopify_clients_importes', { tenantId, userId: personne?.userId ?? null, importes: b.importes, retablis: b.retablis });
+      return {
+        imported: b.importes, restored: b.retablis, left_out: b.restent, free_places_left: b.placesLibres, tag: b.etiquette,
+        complete: b.complet, consent: 'none: the imported records are not opted in to WhatsApp',
       };
     },
   },

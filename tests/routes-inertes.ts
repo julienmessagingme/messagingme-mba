@@ -807,10 +807,15 @@ export const mcpShopifyInerte: Pick<DepsMcp, 'shopify'> = {
       retirerConsentement: neDevraitPasEtreAppelee('shopify.retirerConsentement'), compteurs: async () => ({}),
       reglerDelaiPanier: neDevraitPasEtreAppelee('shopify.reglerDelaiPanier'),
       compteursPaniers: async () => ({ relances: {}, fermesATemps: 0, enAttente: 0 }),
+      acces: async () => null,
     },
     verifier: neDevraitPasEtreAppelee('shopify.verifier'),
     lireModele: neDevraitPasEtreAppelee('shopify.lireModele'),
     chiffrementPret: false,
+    jeton: neDevraitPasEtreAppelee('shopify.jeton'),
+    lireClients: neDevraitPasEtreAppelee('shopify.lireClients'),
+    places: neDevraitPasEtreAppelee('shopify.places'),
+    importer: neDevraitPasEtreAppelee('shopify.importer'),
   },
 };
 

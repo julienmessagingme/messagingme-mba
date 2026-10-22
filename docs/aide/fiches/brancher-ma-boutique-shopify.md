@@ -1,7 +1,7 @@
 ---
 ecran: parametres
 source_section: Boutique Shopify : les messages de commande sur WhatsApp (depuis Claude Code, 2026-10-21)
-source_empreinte: 76b9a6
+source_empreinte: 94d4de
 ---
 # Brancher ma boutique Shopify
 
@@ -33,3 +33,8 @@ relance sur WhatsApp, avec le lien qui rouvre son panier, au délai que vous cho
 (1 h par défaut, de 15 min à 72 h). Rien ne part si une commande en est née entre-temps, même non payée. C'est un
 message marketing : Claude ne la branche qu'une fois que vous avez affirmé le consentement de vos clients. La carte
 Shopify compte les relances parties, les paniers devenus une commande à temps, et ceux en attente.
+
+**Importer vos clients** : demandez à Claude d'importer vos clients Shopify. Seuls ceux qui ont accepté votre marketing
+(e-mail ou SMS) et ont un téléphone sont concernés. Claude les compte d'abord et vous dit combien de places votre offre
+laisse ; vous choisissez combien en importer, les plus récents d'abord. Les fiches sont étiquetées « Shopify » et
+arrivent sans consentement WhatsApp : un accord e-mail ou SMS n'en est pas un.

@@ -1,5 +1,9 @@
 import type { LectureModele } from '../api/modele-envoi';
-import { domaineShopify, pageApps, type IssueVerification } from './connexion';
+import { domaineShopify, pageApps, type IssueJeton, type IssueVerification } from './connexion';
+import type { AccesClients, ClientAbonne, LectureClients } from './clients';
+import type { ImportInput } from '../crm/import';
+import type { ImportReport } from '../crm/types';
+import { LimiteOffreError } from '../offres/refus';
 import {
   CATEGORIES_ADMISES, DELAI_PANIER_MAX, DELAI_PANIER_MIN, DONNEES_PAR_EVENEMENT, EVENEMENTS_DISPONIBLES, estDonneeShopify,
   estEvenementShopify,
@@ -16,16 +20,23 @@ import type { MessageBranche, PgShopifyStore, VueBoutique } from './store.pg';
 
 export interface DepsGestionShopify {
   store: Pick<PgShopifyStore, 'lire' | 'connecter' | 'couper' | 'messages' | 'brancher' | 'affirmerConsentement' | 'retirerConsentement' | 'compteurs'
-    | 'reglerDelaiPanier' | 'compteursPaniers'>;
+    | 'reglerDelaiPanier' | 'compteursPaniers' | 'acces'>;
   /** `verifierBoutique` lié à `fetchPublic` par le câblage. */
   verifier(domaine: string, clientId: string, secret: string): Promise<IssueVerification>;
   /** Le modèle lu chez Meta, la MÊME lecture que l'envoi public. */
   lireModele(tenantId: string, nom: string, langue: string): Promise<LectureModele>;
   /** `ENCRYPTION_KEY` sait chiffrer : sans elle, aucun secret de boutique ne peut être gardé. Sondé au câblage. */
   chiffrementPret: boolean;
+  /** L'import des clients (lot 3) : `demanderJeton` et `lireClientsAbonnes` liés à `fetchPublic` par le câblage. */
+  jeton(domaine: string, clientId: string, secret: string): Promise<IssueJeton>;
+  lireClients(acces: AccesClients, plafond: number): Promise<LectureClients>;
+  /** Les places de l'offre et les numéros déjà présents (`placesContacts`), comptés comme la limite les compte. */
+  places(tenantId: string, numeros: readonly string[]): Promise<{ limite: number | null; comptees: number; presents: Set<string> }>;
+  /** `importContacts` lié aux magasins de la fiche : le chemin de l'import HubSpot, aucun événement d'automation. */
+  importer(input: ImportInput): Promise<ImportReport>;
 }
 
-export type Refus = { ok: false; statut: 400 | 409 | 422 | 503; message: string };
+export type Refus = { ok: false; statut: 400 | 402 | 409 | 422 | 503; message: string };
 export type Issue<T> = { ok: true; valeur: T } | Refus;
 
 const refus = (statut: Refus['statut'], message: string): Refus => ({ ok: false, statut, message });
@@ -165,5 +176,120 @@ export async function couperShopify(deps: DepsGestionShopify, tenantId: string):
   return {
     ok: true,
     valeur: { dejaCoupee: !coupee, pageApps: pageApps(boutique.domaine) },
+  };
+}
+
+/** Les clients lus par appel, au plus (80 pages de Shopify) : de quoi tenir dans le délai d'un outil. */
+export const CLIENTS_LUS_MAX = 20_000;
+/** Les fiches qu'un import écrit, au plus, par appel : le relancer prend la suite, sans doublon. */
+export const IMPORT_MAX = 5_000;
+/** L'étiquette des fiches importées : le marchand les retrouve, et les cible. */
+export const ETIQUETTE_SHOPIFY = 'Shopify';
+
+export interface ApercuImport {
+  /** Les clients abonnés au marketing (e-mail ou SMS) avec un téléphone valable. */
+  abonnes: number;
+  /** Les abonnés sans téléphone valable : jamais importés. */
+  sansTelephone: number;
+  dejaDansLEspace: number;
+  nouveaux: number;
+  /** Les places que l'offre laisse ; `null` : sans limite. */
+  placesLibres: number | null;
+  /** Ce qu'un import écrirait au plus : les nouveaux, dans les places libres et la borne d'un appel. */
+  importables: number;
+  /** `false` : la lecture s'est arrêtée au plafond, il reste des abonnés plus anciens. */
+  complet: boolean;
+}
+
+interface Lecture { nouveaux: ClientAbonne[]; dejaDansLEspace: number; sansTelephone: number; libres: number | null; complet: boolean }
+
+/**
+ * Les abonnés de la boutique de l'espace, et ce que l'offre permet d'en importer. Décisions de Julien du 2026-10-22 :
+ * les abonnés au marketing seulement, du plus récent au plus ancien ; une fiche déjà présente n'est ni comptée ni
+ * touchée.
+ */
+async function lireAbonnes(deps: DepsGestionShopify, tenantId: string): Promise<Issue<Lecture>> {
+  const a = await deps.store.acces(tenantId);
+  if (a === null) return refus(409, 'Aucune boutique Shopify n’est branchée : lancez la skill shopify du plugin, puis connect_shopify.');
+  if (a.etat !== 'connectee') return refus(409, 'La boutique Shopify est coupée : rebranchez-la (connect_shopify) avant d’importer ses clients.');
+  const j = await deps.jeton(a.domaine, a.clientId, a.secret);
+  if (!j.ok) return refus(j.code === 'passager' ? 503 : 409, j.message);
+  const lecture = await deps.lireClients({ domaine: a.domaine, jeton: j.jeton, pays: a.pays }, CLIENTS_LUS_MAX);
+  if (!lecture.ok) return refus(lecture.code === 'passager' ? 503 : 409, lecture.message);
+  const places = await deps.places(tenantId, lecture.abonnes.map((c) => c.telephone));
+  const nouveaux = lecture.abonnes.filter((c) => !places.presents.has(c.telephone));
+  return {
+    ok: true,
+    valeur: {
+      nouveaux, dejaDansLEspace: lecture.abonnes.length - nouveaux.length, sansTelephone: lecture.sansTelephone,
+      libres: places.limite === null ? null : Math.max(0, places.limite - places.comptees), complet: lecture.complet,
+    },
+  };
+}
+
+/** Compter avant d'importer (décision de Julien) : rien ne s'écrit ici. */
+export async function apercuImportClients(deps: DepsGestionShopify, tenantId: string): Promise<Issue<ApercuImport>> {
+  const l = await lireAbonnes(deps, tenantId);
+  if (!l.ok) return l;
+  const { nouveaux, dejaDansLEspace, sansTelephone, libres, complet } = l.valeur;
+  return {
+    ok: true,
+    valeur: {
+      abonnes: nouveaux.length + dejaDansLEspace, sansTelephone, dejaDansLEspace, nouveaux: nouveaux.length, placesLibres: libres,
+      importables: Math.min(nouveaux.length, libres ?? Infinity, IMPORT_MAX), complet,
+    },
+  };
+}
+
+export interface BilanImport {
+  importes: number;
+  /** Des numéros qu'une fiche supprimée portait : l'import les rétablit, comme l'import d'un fichier. */
+  retablis: number;
+  /** Les nouveaux abonnés laissés dehors : au-delà du nombre choisi. */
+  restent: number;
+  placesLibres: number | null;
+  etiquette: string;
+  complet: boolean;
+}
+
+/**
+ * Importe les `maximum` abonnés nouveaux les plus récents, le nombre que le marchand a choisi après l'aperçu.
+ * 🔴 JAMAIS de consentement (décision de Julien : un accord e-mail ou SMS n'est pas un accord WhatsApp), et l'autorité
+ * `import` ne lève jamais un STOP. Un maximum au-delà des places libres est refusé : le marchand gère sa limite, rien
+ * ne s'écrit à moitié.
+ */
+export async function importerClients(deps: DepsGestionShopify, tenantId: string, maximum: unknown): Promise<Issue<BilanImport>> {
+  if (typeof maximum !== 'number' || !Number.isInteger(maximum) || maximum < 1 || maximum > IMPORT_MAX) {
+    return refus(400, `max_contacts : un entier de 1 à ${IMPORT_MAX}, le nombre de clients que le marchand a choisi d’importer.`);
+  }
+  const l = await lireAbonnes(deps, tenantId);
+  if (!l.ok) return l;
+  const { nouveaux, libres, complet } = l.valeur;
+  // Ce qui serait ÉCRIT, et non le nombre demandé (relecture du lot 3) : 100 demandés pour 3 nouveaux et 50 places passent.
+  if (libres !== null && Math.min(maximum, nouveaux.length) > libres) {
+    return refus(402, `L’offre ne laisse que ${libres} place${libres > 1 ? 's' : ''} de contacts : importez au plus ${libres} clients, ou passez à l’offre supérieure.`);
+  }
+  const choisis = nouveaux.slice(0, maximum);
+  let rapport: ImportReport = { created: 0, updated: 0, skipped: 0, errors: [] };
+  if (choisis.length > 0) {
+    try {
+      rapport = await deps.importer({
+        rows: choisis.map((c) => ({ phone: c.telephone, name: c.nom ?? '' })),
+        mapping: { columns: { phone: { target: 'phone' }, name: { target: 'name' } } },
+        tenantId, optIn: false, tags: [ETIQUETTE_SHOPIFY], autorite: 'import',
+      });
+    } catch (err) {
+      // Deux écritures simultanées à la dernière place : la vérification de l'import tranche, et le dit.
+      if (err instanceof LimiteOffreError) return refus(402, err.message);
+      throw err;
+    }
+  }
+  return {
+    ok: true,
+    valeur: {
+      importes: rapport.created, retablis: rapport.updated, restent: nouveaux.length - choisis.length,
+      placesLibres: libres === null ? null : Math.max(0, libres - rapport.created - rapport.updated),
+      etiquette: ETIQUETTE_SHOPIFY, complet,
+    },
   };
 }

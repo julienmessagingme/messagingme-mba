@@ -269,16 +269,18 @@ Décisions de Julien (rondes de questions du 2026-10-22), qui retirent l'import 
 - **Rythme** : une fois, à la demande, relançable sans doublon ; les nouveaux clients entrent déjà par leurs commandes.
 
 Mesuré le 2026-10-22 (boutique `messaging-me-essai`, API 2026-10, jeton `client_credentials` de l'app du marchand) :
-- le téléphone est dans `defaultPhoneNumber.phoneNumber` (E.164), à défaut `defaultAddress.phone` avec
-  `countryCodeV2` ; l'abonnement dans `defaultEmailAddress.marketingState` et `defaultPhoneNumber.marketingState`
+- le téléphone du client est dans `defaultPhoneNumber.phoneNumber` (E.164), et c'est le SEUL retenu (relecture du lot :
+  celui d'une adresse peut être celui d'un destinataire, et `customers/redact` ne porte que celui du client) ; l'abonnement dans `defaultEmailAddress.marketingState` et `defaultPhoneNumber.marketingState`
   (`SUBSCRIBED`, `NOT_SUBSCRIBED`...) ;
 - 🔴 **`customersCount(query:)` IGNORE le filtre** (4 pour chaque filtre essayé), et un filtre de recherche inconnu est
   ignoré en silence (`email_subscription_status:SUBSCRIBED` rendait tout le monde). Compter, c'est donc parcourir, et
   l'abonnement se REVÉRIFIE sur chaque client lu, quel que soit le filtre envoyé : un filtre ignoré importerait sinon
   toute la boutique, sans consentement de personne ;
 - une page de 250 clients coûte 35 points demandés sur un seau de 2 000 rechargé de 100 par seconde.
-- **Reste à mesurer** : que `email_marketing_state:SUBSCRIBED OR sms_marketing_state:SUBSCRIBED` sélectionne bien les
-  abonnés (la boutique de dev n'en a aucun). Il ne sert qu'à lire moins de pages : la revérification reste la règle.
+- **Mesuré ensuite le même jour**, Julien ayant abonné deux clients (l'un par e-mail, l'autre par SMS) :
+  `email_marketing_state:SUBSCRIBED OR sms_marketing_state:SUBSCRIBED` rend exactement ces deux-là, et le vrai code
+  (`lireClientsAbonnes`) aussi, avec leur téléphone ; les deux non abonnés sont écartés, comme le dit la lecture de
+  tous les clients sans filtre. Le filtre ne sert qu'à lire moins de pages : la revérification reste la règle.
 
 1. `src/shopify/clients.ts` : la lecture paginée des abonnés (du plus récent au plus ancien), chaque page passée à
    `safeParse`, l'abonnement revérifié, le téléphone normalisé par `telephoneE164`, le nom fait du prénom et du nom ;

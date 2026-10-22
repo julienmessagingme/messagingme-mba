@@ -79,6 +79,8 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 | connect_shopify | mcp:write connexion OAuth requise | Brancher la boutique Shopify du marchand avec l’app que la skill shopify a créée dans son organisation ; la connexion est vérifiée chez Shopify avant de garder le secret, chiffré. |
 | set_shopify_message | mcp:write connexion OAuth requise | Envoyer un modèle approuvé quand une commande est payée ou expédiée, ou relancer une fois un panier abandonné, avec les données Shopify en variables, par les règles des envois (STOP, consentement, modèles du mois, limite de contacts). |
 | get_shopify_state | mcp:read connexion OAuth requise | La boutique Shopify branchée : son état, ses messages, le dernier événement reçu, les issues des 30 derniers jours et les paniers des 7 derniers. |
+| preview_shopify_customers | mcp:read connexion OAuth requise | Compter, sans rien écrire, les clients Shopify abonnés au marketing (e-mail ou SMS) qui ont un téléphone : déjà dans l’espace, nouveaux, places libres de l’offre, importables. |
+| import_shopify_customers | mcp:write connexion OAuth requise | Importer les clients Shopify abonnés que le marchand a choisis, les plus récents d’abord : des fiches étiquetées Shopify, sans consentement WhatsApp, dans la limite de l’offre. |
 | disconnect_shopify | mcp:write connexion OAuth requise | Couper la boutique Shopify : plus aucun message ne part, les demandes RGPD de la boutique restent traitées. |
 | search_contacts | mcp:read | Chercher un contact par nom ou par numéro, avec sa dernière analyse. |
 | get_contact | mcp:read | La fiche d’un contact à partir de son numéro, avec sa dernière analyse et le résumé de celle-ci. |

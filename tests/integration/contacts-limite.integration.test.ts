@@ -69,6 +69,20 @@ describe.skipIf(!url)('la limite de contacts de l’offre', () => {
     await expect(creer(60)).resolves.toMatchObject({ created: true });
   });
 
+  it('placesContacts dit ce que la vérification compte (import Shopify, lot 3) : fiches comptées, numéros portés, rien de refusé', async () => {
+    await creer(1);
+    await creer(2);
+    expect(await store.upsertFromInbound(t, tel(50).slice(1), 'Inconnu')).toBe('created');
+    await pool.query('update contacts set deleted_at = now() where tenant_id = $1 and phone_e164 = $2', [t, tel(2)]);
+    const p = await store.placesContacts(t, [tel(1), tel(2), tel(50), tel(9)]);
+    expect(p.limite).toBe(LIMITE);
+    // Seule tel(1) compte : la fiche née d'un entrant ne compte jamais, la supprimée a libéré sa place.
+    expect(p.comptees).toBe(1);
+    // Portés par une fiche ACTIVE : l'entrant oui, la supprimée non (l'importer la rétablit, comme un fichier).
+    expect([...p.presents].sort()).toEqual([tel(1), tel(50)]);
+    expect((await new PgContactStore(pool).placesContacts(t, [])).limite).toBeNull();
+  });
+
   it('un lot dont les fiches NEUVES dépassent le reste est refusé en entier : rien n’est écrit', async () => {
     await creer(1);
     await expect(store.verifierPlaceContacts(t, [tel(1), tel(2), tel(3), tel(4)])).rejects.toBeInstanceOf(LimiteOffreError);

@@ -1,8 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { brancherMessage, connecterShopify, couperShopify, etatShopify, type DepsGestionShopify } from '../src/shopify/gestion';
+import {
+  apercuImportClients, brancherMessage, CLIENTS_LUS_MAX, connecterShopify, couperShopify, etatShopify, IMPORT_MAX, importerClients,
+  type DepsGestionShopify,
+} from '../src/shopify/gestion';
+import type { ClientAbonne, LectureClients } from '../src/shopify/clients';
+import type { IssueJeton } from '../src/shopify/connexion';
+import type { ImportInput } from '../src/crm/import';
+import { LimiteOffreError } from '../src/offres/refus';
 import type { LectureModele } from '../src/api/modele-envoi';
-import type { MessageBranche, VueBoutique } from '../src/shopify/store.pg';
-import { OUTILS } from '../src/mcp/outils';
+import type { AccesBoutique, MessageBranche, VueBoutique } from '../src/shopify/store.pg';
+import { OUTILS, type DepsMcp } from '../src/mcp/outils';
+import { MESSAGE_OPERATIONS_LOURDES } from '../src/auth/plafond-partage';
 
 /**
  * LA GESTION DU CONNECTEUR SHOPIFY (plan 2026-10-21, lot 1), porte unique des outils MCP et de la console. Chaque refus
@@ -31,10 +39,15 @@ function monter(o: { boutique?: VueBoutique | null; modele?: LectureModele; aill
       compteurs: async () => ({ envoye: 3 }),
       reglerDelaiPanier: async (_t, m) => { journal.delais.push(m); },
       compteursPaniers: async () => ({ relances: { envoye: 1 }, fermesATemps: 2, enAttente: 3 }),
+      acces: async () => null,
     },
     verifier: async () => { journal.verifs += 1; return o.verif ?? { ok: true, nom: 'Essai', pays: 'FR', devise: 'EUR' }; },
     lireModele: async () => o.modele ?? { statut: 'approuve', categorie: 'utility', variables: 2 },
     chiffrementPret: true,
+    jeton: async () => { throw new Error('jeton : hors de ce test'); },
+    lireClients: async () => { throw new Error('lireClients : hors de ce test'); },
+    places: async () => { throw new Error('places : hors de ce test'); },
+    importer: async () => { throw new Error('importer : hors de ce test'); },
   };
   return { deps, journal };
 }
@@ -179,5 +192,127 @@ describe('les outils MCP du connecteur', () => {
     expect(o.entree.properties.variables!.maxItems).toBe(10);
     expect(o.entree.properties.variables!.items!.enum).toContain('checkout_url');
     expect([o.entree.properties.delay_minutes!.minimum, o.entree.properties.delay_minutes!.maximum]).toEqual([15, 4320]);
+  });
+});
+
+describe('l’import des clients abonnés (lot 3)', () => {
+  const ABONNES: ClientAbonne[] = [
+    { telephone: '+33600000001', nom: 'Le plus récent' },
+    { telephone: '+33600000002', nom: 'Déjà là' },
+    { telephone: '+33600000003', nom: null },
+    { telephone: '+33600000004', nom: 'Le plus ancien' },
+  ];
+  function monterImport(o: {
+    acces?: AccesBoutique | null; jeton?: IssueJeton; lecture?: LectureClients; limite?: number | null; comptees?: number;
+    importerLeve?: Error;
+  } = {}) {
+    const journal = { imports: [] as ImportInput[], lectures: [] as unknown[] };
+    const { deps } = monter();
+    const d: DepsGestionShopify = {
+      ...deps,
+      store: {
+        ...deps.store,
+        acces: async () => (o.acces === undefined
+          ? { domaine: 'b.myshopify.com', clientId: 'cid', secret: 'shpss_x', pays: 'FR', etat: 'connectee' } : o.acces),
+      },
+      jeton: async () => o.jeton ?? { ok: true, jeton: 'jeton' },
+      lireClients: async (acces, plafond) => { journal.lectures.push({ acces, plafond }); return o.lecture ?? { ok: true, abonnes: ABONNES, sansTelephone: 2, complet: true }; },
+      places: async (_t, numeros) => ({
+        limite: o.limite === undefined ? 100 : o.limite, comptees: o.comptees ?? 90,
+        presents: new Set(numeros.filter((n) => n === '+33600000002')),
+      }),
+      importer: async (input) => {
+        journal.imports.push(input);
+        if (o.importerLeve) throw o.importerLeve;
+        return { created: input.rows.length, updated: 0, skipped: 0, errors: [] };
+      },
+    };
+    return { deps: d, journal };
+  }
+
+  it('compte sans rien écrire : abonnés, déjà là, nouveaux, places libres, importables ; le jeton sert à la lecture', async () => {
+    const { deps, journal } = monterImport();
+    expect(await apercuImportClients(deps, T)).toEqual({ ok: true, valeur: {
+      abonnes: 4, sansTelephone: 2, dejaDansLEspace: 1, nouveaux: 3, placesLibres: 10, importables: 3, complet: true,
+    } });
+    expect(journal.imports).toEqual([]);
+    expect(journal.lectures).toEqual([{ acces: { domaine: 'b.myshopify.com', jeton: 'jeton', pays: 'FR' }, plafond: CLIENTS_LUS_MAX }]);
+    // Sans limite (Entreprise), et une offre pleine.
+    expect(await apercuImportClients(monterImport({ limite: null }).deps, T)).toMatchObject({ ok: true, valeur: { placesLibres: null, importables: 3 } });
+    expect(await apercuImportClients(monterImport({ comptees: 120 }).deps, T)).toMatchObject({ ok: true, valeur: { placesLibres: 0, importables: 0 } });
+  });
+
+  it('🔴 importe les nouveaux les plus récents, au nombre choisi, SANS consentement, autorité import, étiquette Shopify', async () => {
+    const { deps, journal } = monterImport();
+    expect(await importerClients(deps, T, 2)).toEqual({ ok: true, valeur: {
+      importes: 2, retablis: 0, restent: 1, placesLibres: 8, etiquette: 'Shopify', complet: true,
+    } });
+    expect(journal.imports).toEqual([{
+      rows: [{ phone: '+33600000001', name: 'Le plus récent' }, { phone: '+33600000003', name: '' }],
+      mapping: { columns: { phone: { target: 'phone' }, name: { target: 'name' } } },
+      tenantId: T, optIn: false, tags: ['Shopify'], autorite: 'import',
+    }]);
+  });
+
+  it('🔴 au-delà des places libres : refusé, rien n’est écrit ; le marchand gère sa limite', async () => {
+    const { deps, journal } = monterImport({ comptees: 99 });
+    const r = await importerClients(deps, T, 2);
+    expect(r).toMatchObject({ ok: false, statut: 402 });
+    expect((r as { message: string }).message).toContain('1 place de contacts');
+    expect(journal.imports).toEqual([]);
+    // Ce qui serait ÉCRIT compte, pas le nombre demandé : 100 demandés pour 1 nouveau et 1 place, ça passe.
+    const un = monterImport({ comptees: 99, lecture: { ok: true, abonnes: [ABONNES[0]!], sansTelephone: 0, complet: true } });
+    expect(await importerClients(un.deps, T, 100)).toMatchObject({ ok: true, valeur: { importes: 1, placesLibres: 0 } });
+    // Deux écritures à la dernière place : le refus de l'import est rendu, pas une panne.
+    const course = monterImport({ importerLeve: new LimiteOffreError(T, 'contacts', 100) });
+    expect(await importerClients(course.deps, T, 1)).toMatchObject({ ok: false, statut: 402 });
+  });
+
+  it('le nombre choisi est un entier de 1 à la borne d’un appel ; rien à importer ne lance rien', async () => {
+    for (const m of [0, IMPORT_MAX + 1, 1.5, '3', undefined]) {
+      expect(await importerClients(monterImport().deps, T, m), String(m)).toMatchObject({ ok: false, statut: 400 });
+    }
+    const vide = monterImport({ lecture: { ok: true, abonnes: [], sansTelephone: 0, complet: true } });
+    expect(await importerClients(vide.deps, T, 5)).toMatchObject({ ok: true, valeur: { importes: 0, restent: 0 } });
+    expect(vide.journal.imports).toEqual([]);
+  });
+
+  it('sans boutique, boutique coupée, jeton refusé, accès aux clients refusé : chaque refus dit le geste', async () => {
+    expect(await apercuImportClients(monterImport({ acces: null }).deps, T)).toMatchObject({ ok: false, statut: 409 });
+    const coupee = monterImport({ acces: { domaine: 'b.myshopify.com', clientId: 'cid', secret: 's', pays: 'FR', etat: 'coupee' } });
+    expect(await importerClients(coupee.deps, T, 1)).toMatchObject({ ok: false, statut: 409, message: expect.stringContaining('coupée') });
+    expect(coupee.journal.lectures).toEqual([]);
+    const jeton = monterImport({ jeton: { ok: false, code: 'app_non_installee', message: 'Installez l’app.' } });
+    expect(await apercuImportClients(jeton.deps, T)).toEqual({ ok: false, statut: 409, message: 'Installez l’app.' });
+    const acces = monterImport({ lecture: { ok: false, code: 'acces_refuse', message: 'Données protégées.' } });
+    expect(await apercuImportClients(acces.deps, T)).toEqual({ ok: false, statut: 409, message: 'Données protégées.' });
+    const panne = monterImport({ lecture: { ok: false, code: 'passager', message: 'Réessayez.' } });
+    expect(await apercuImportClients(panne.deps, T)).toMatchObject({ ok: false, statut: 503 });
+  });
+
+  it('🔴 les deux outils consomment le plafond des opérations coûteuses AVANT de lire chez Shopify', async () => {
+    for (const [nom, args] of [['preview_shopify_customers', {}], ['import_shopify_customers', { max_contacts: 1 }]] as const) {
+      const { deps, journal } = monterImport();
+      const refusant = { couteux: { consommer: async () => ({ accepte: false, attenteMs: 2000 }) }, shopify: deps } as unknown as DepsMcp;
+      await expect(OUTILS.find((x) => x.nom === nom)!.executer(refusant, T, args, { userId: 'u1' } as never), nom)
+        .rejects.toThrow(MESSAGE_OPERATIONS_LOURDES);
+      expect([journal.lectures, journal.imports], nom).toEqual([[], []]);
+      const acceptant = { couteux: { consommer: async () => ({ accepte: true, attenteMs: 0 }) }, shopify: deps } as unknown as DepsMcp;
+      await OUTILS.find((x) => x.nom === nom)!.executer(acceptant, T, args, { userId: 'u1' } as never);
+      expect(journal.lectures, nom).toHaveLength(1);
+    }
+  });
+
+  it('🔴 les deux outils exigent une personne nommée, toutes offres ; l’import exige le nombre choisi, dans sa borne', () => {
+    for (const nom of ['preview_shopify_customers', 'import_shopify_customers']) {
+      const o = OUTILS.find((x) => x.nom === nom);
+      expect(o, nom).toBeDefined();
+      expect(o!.exigePersonne, nom).toBe(true);
+      expect(o!.fonction, nom).toBeNull();
+    }
+    expect(OUTILS.find((x) => x.nom === 'preview_shopify_customers')!.annotations.readOnlyHint).toBe(true);
+    const imp = OUTILS.find((x) => x.nom === 'import_shopify_customers')!;
+    expect(imp.entree.required).toEqual(['max_contacts']);
+    expect([imp.entree.properties.max_contacts!.minimum, imp.entree.properties.max_contacts!.maximum]).toEqual([1, IMPORT_MAX]);
   });
 });

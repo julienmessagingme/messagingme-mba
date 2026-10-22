@@ -83,6 +83,9 @@ export const CATALOGUE_MCP = {
   set_shopify_message: { scope: 'mcp:write', exigePersonne: true },
   get_shopify_state: { scope: 'mcp:read', exigePersonne: true },
   disconnect_shopify: { scope: 'mcp:write', exigePersonne: true },
+  /** L'import des clients abonnés (lot 3, 2026-10-22) : compter, puis importer ce que le marchand a choisi. */
+  preview_shopify_customers: { scope: 'mcp:read', exigePersonne: true },
+  import_shopify_customers: { scope: 'mcp:write', exigePersonne: true },
 } as const satisfies Record<string, { scope: ScopeMcp; exigePersonne?: true }>;
 
 export type NomOutilMcp = keyof typeof CATALOGUE_MCP;

@@ -10,6 +10,12 @@ Plan : `docs/superpowers/plans/2026-10-21-connecteur-shopify.md`.
   n'a pas d'index partiel (`ferme_le is null and relance_le is null`) : sans objet au volume d'aujourd'hui, à poser
   quand `shopify_paniers` grossit, son prédicat mot pour mot celui du `where`. (3) Un checkout modifié après la purge
   de son panier (sept jours) écrit une ligne neuve, relançable une seconde fois : la clé d'envoi ne vit que 24 h.
+- **Ce que la relecture du lot 3 (import des clients) laisse** : (1) aucun test ne joue `importerClients` avec le vrai
+  `importContacts` et un vrai magasin, ni l'attente préventive du seau de Shopify, ni l'épuisement des cinq freinages ;
+  (2) `src/offres/offre.pg.ts` garde sa propre copie du prédicat « fiche comptée », que `FICHE_COMPTEE` ne tient pas :
+  l'écran d'offre et le refus peuvent dériver si l'un change seul ; (3) le refus « au-delà des places libres » ne porte
+  pas le lien de l'offre que `LimiteOffreError` donne ; (4) lire `extensions.search` (l'avertissement de Shopify sur
+  un champ de recherche invalide) dirait si le filtre des abonnés cesse un jour d'être reconnu.
 - **La mesure sur une boutique en PRODUCTION** (décision 13 de Julien) : le téléphone arrive-t-il dans les webhooks sans
   déclarer à la main l'accès aux données protégées ? Sinon, la skill guide ce geste.
 - **Les jaunes de la relecture** : l'affirmation du consentement n'a que sa colonne et une ligne de journal (pas

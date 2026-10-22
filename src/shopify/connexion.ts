@@ -62,15 +62,17 @@ async function json(res: Response): Promise<unknown> {
   }
 }
 
-export async function verifierBoutique(
+export type IssueJeton = { ok: true; jeton: string } | Extract<IssueVerification, { ok: false }>;
+
+/**
+ * Le jeton `client_credentials` de l'app (24 h), demandé à chaque usage et jamais gardé : la vérification d'une connexion
+ * et l'import des clients (lot 3). Chaque refus est rendu avec le geste qui le règle.
+ */
+export async function demanderJeton(
   domaine: string, clientId: string, secret: string,
-  /** `fetchPublic` en production ; injectable pour éprouver la vérification sans réseau. */
+  /** `fetchPublic` en production ; injectable pour éprouver la demande sans réseau. */
   appeler: typeof fetch = fetchPublic,
-): Promise<IssueVerification> {
-  const passager = (detail: string): IssueVerification => ({
-    ok: false, code: 'passager', message: `Shopify n’a pas répondu (${detail}) : réessayez dans un instant.`,
-  });
-  let jeton: string;
+): Promise<IssueJeton> {
   try {
     const res = await appeler(`https://${domaine}/admin/oauth/access_token`, {
       method: 'POST',
@@ -81,27 +83,38 @@ export async function verifierBoutique(
     });
     const corps = await json(res);
     const ok = schemaJeton.safeParse(corps);
-    if (res.status === 200 && ok.success) {
-      jeton = ok.data.access_token;
-    } else {
-      const err = schemaErreur.safeParse(corps);
-      const code = err.success ? err.data.error : '';
-      if (code === 'app_not_installed') {
-        return { ok: false, code: 'app_non_installee', message: `L’app n’est pas installée sur la boutique : cliquez « Installer » sur ${lienInstallation(domaine, clientId)}, puis réessayez.` };
-      }
-      if (code === 'shop_not_permitted') {
-        return { ok: false, code: 'hors_organisation', message: 'Cette app n’est pas dans l’organisation Shopify qui porte la boutique : créez-la dans cette organisation (shopify organization list), puis réessayez.' };
-      }
-      if (code === 'invalid_client' || res.status === 401) {
-        return { ok: false, code: 'identifiants', message: 'Shopify refuse cet identifiant ou ce secret : relisez-les avec « shopify app env show ».' };
-      }
-      if (res.status === 404) return { ok: false, code: 'boutique_inconnue', message: 'Shopify ne connaît pas cette boutique, ou elle est inactive.' };
-      if (res.status >= 500) return passager(`statut ${res.status}`);
-      return { ok: false, code: 'identifiants', message: `Shopify refuse la connexion (${code || `statut ${res.status}`}).` };
+    if (res.status === 200 && ok.success) return { ok: true, jeton: ok.data.access_token };
+    const err = schemaErreur.safeParse(corps);
+    const code = err.success ? err.data.error : '';
+    if (code === 'app_not_installed') {
+      return { ok: false, code: 'app_non_installee', message: `L’app n’est pas installée sur la boutique : cliquez « Installer » sur ${lienInstallation(domaine, clientId)}, puis réessayez.` };
     }
+    if (code === 'shop_not_permitted') {
+      return { ok: false, code: 'hors_organisation', message: 'Cette app n’est pas dans l’organisation Shopify qui porte la boutique : créez-la dans cette organisation (shopify organization list), puis réessayez.' };
+    }
+    if (code === 'invalid_client' || res.status === 401) {
+      return { ok: false, code: 'identifiants', message: 'Shopify refuse cet identifiant ou ce secret : relisez-les avec « shopify app env show ».' };
+    }
+    if (res.status === 404) return { ok: false, code: 'boutique_inconnue', message: 'Shopify ne connaît pas cette boutique, ou elle est inactive.' };
+    if (res.status >= 500) return passager(`statut ${res.status}`);
+    return { ok: false, code: 'identifiants', message: `Shopify refuse la connexion (${code || `statut ${res.status}`}).` };
   } catch (err) {
     return passager(texteDe(err));
   }
+}
+
+function passager(detail: string): Extract<IssueVerification, { ok: false }> {
+  return { ok: false, code: 'passager', message: `Shopify n’a pas répondu (${detail}) : réessayez dans un instant.` };
+}
+
+export async function verifierBoutique(
+  domaine: string, clientId: string, secret: string,
+  /** `fetchPublic` en production ; injectable pour éprouver la vérification sans réseau. */
+  appeler: typeof fetch = fetchPublic,
+): Promise<IssueVerification> {
+  const j = await demanderJeton(domaine, clientId, secret, appeler);
+  if (!j.ok) return j;
+  const jeton = j.jeton;
   try {
     const res = await appeler(`https://${domaine}/admin/api/${API_VERSION_SHOPIFY}/shop.json`, {
       headers: { accept: 'application/json', 'x-shopify-access-token': jeton },

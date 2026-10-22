@@ -2296,6 +2296,17 @@ dans `PgShopifyStore`. Le jeton rendu n'est ni gardé ni renouvelé : les webhoo
   rallumée, elle relancerait sinon un client qui a commandé), et ne l'ÉCRIT fermé d'avance que relance active ; elle
   ferme aussi les autres paniers ouverts de son numéro. Un panier fermé ne se rouvre jamais, l'envoi le relit juste
   avant de partir, et il part au bout de sept jours (minuterie `shopify-evenements` du worker).
+- 🔴 **l'import des clients ne retient que les ABONNÉS, revérifiés client par client** (`src/shopify/clients.ts`) :
+  Shopify ignore en silence un filtre de recherche inconnu, et `customersCount` ignore tout filtre (mesuré). Le filtre
+  envoyé ne sert qu'à lire moins de pages ; c'est `estAbonne` (e-mail ou SMS `SUBSCRIBED`) qui décide. Seul le
+  téléphone du CLIENT (`defaultPhoneNumber`) est retenu : `customers/redact` ne porte que lui. La lecture s'arrête à
+  `BUDGET_LECTURE_MS` (le proxy coupe à 45 s) en rendant `complet: false`. Les fiches
+  passent par `importContacts`, le chemin de l'import HubSpot : SANS consentement (`optIn: false`, décision de Julien),
+  autorité `import` (un STOP reste un STOP), étiquette `Shopify`, aucun événement d'automation. L'aperçu compte les
+  places par `placesContacts`, sur les MÊMES prédicats que `verifierPlaceContacts` (`FICHE_COMPTEE`, `FICHE_ACTIVE`) :
+  l'annonce et le refus comptent pareil. Un nombre au-delà des places libres est refusé avant d'écrire. Le jeton
+  `client_credentials` se redemande à chaque appel (`demanderJeton`), avec le secret que `acces` déchiffre pour
+  l'espace.
 
 `tenant_id = $1` sur chaque requête du store, sauf CINQ lectures transverses nommées dans le fichier :
 `boutiqueParDomaine` et `couperParDomaine` (le domaine DONNE l'espace), `purgerEvenements`, `reclamerPaniersDus` (qui

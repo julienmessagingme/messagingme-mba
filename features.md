@@ -2384,6 +2384,11 @@ l'app dans SON organisation Shopify (aucune validation de Shopify n'est nécessa
   après la dernière modification du panier (1 h par défaut, de 15 min à 72 h). Rien ne part si une commande en est née
   entre-temps, même non payée. Elle exige que le marchand ait affirmé le consentement de ses clients. Les paniers en
   attente ne se gardent qu'une semaine, et seulement quand la relance est branchée.
+- **L'import des clients abonnés** (2026-10-22) : depuis Claude Code, le marchand importe les clients de sa boutique
+  abonnés au marketing (e-mail ou SMS) qui ont un téléphone. Claude compte d'abord (abonnés, déjà présents, nouveaux,
+  places libres de l'offre), puis le marchand choisit combien en importer, les plus récents d'abord ; au-delà des places
+  libres, rien n'est importé. Les fiches sont étiquetées « Shopify » et arrivent SANS consentement WhatsApp (un accord
+  e-mail ou SMS n'en est pas un) ; un STOP reste un STOP, une fiche déjà présente n'est pas touchée.
 
 ## API publique `/v1` (intégrateurs externes)
 

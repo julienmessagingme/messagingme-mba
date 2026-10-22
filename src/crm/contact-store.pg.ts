@@ -174,6 +174,11 @@ export interface EditionFicheApi {
 /** Une violation d'index unique : un refus de saisie, pas une panne. */
 const estUnicite = (err: unknown): boolean => (err as { code?: string }).code === '23505';
 
+/** Une fiche active (alias `x`) : ni supprimée, ni anonymisée. Un numéro qu'elle porte n'est pas une création. */
+const FICHE_ACTIVE = 'x.deleted_at is null and x.anonymized_at is null';
+/** Une fiche que la limite de contacts de l'offre compte : active, et pas née d'un message entrant (migration 0218). */
+const FICHE_COMPTEE = `not x.ne_entrant and ${FICHE_ACTIVE}`;
+
 /**
  * Résolution d'un contact à partir d'un `wa_id` : E.164 exact (`'+' || wa_id`), sinon chiffres nus, sinon BSUID ;
  * un seul contact, préférence à la correspondance exacte. Attend `$1` = tenant, `$2` = wa_id, derrière un
@@ -244,15 +249,32 @@ export class PgContactStore implements ContactStore {
     const limite = await this.limiteContacts(tenantId);
     if (limite === null) return;
     const r = await this.pool.query<{ crees: number; nouveaux: number }>(
-      `select (select count(*) from contacts x
-                where x.tenant_id = $1 and not x.ne_entrant and x.deleted_at is null and x.anonymized_at is null)::int as crees,
+      `select (select count(*) from contacts x where x.tenant_id = $1 and ${FICHE_COMPTEE})::int as crees,
               (select count(*) from unnest($2::text[]) as p(numero)
                 where not exists (select 1 from contacts x
-                                  where x.tenant_id = $1 and x.phone_e164 = p.numero and x.deleted_at is null and x.anonymized_at is null))::int as nouveaux`,
+                                  where x.tenant_id = $1 and x.phone_e164 = p.numero and ${FICHE_ACTIVE}))::int as nouveaux`,
       [tenantId, [...new Set(numeros)]],
     );
     const { crees, nouveaux } = r.rows[0] ?? { crees: 0, nouveaux: 0 };
     if (nouveaux + sansNumero > 0 && crees + nouveaux + sansNumero > limite) throw new LimiteOffreError(tenantId, 'contacts', limite);
+  }
+
+  /**
+   * Ce que `verifierPlaceContacts` mesure, rendu au lieu d'être tranché : la limite de l'offre (`null` sans limite), les
+   * fiches qu'elle compte, et ceux de ces numéros déjà portés par une fiche active. L'import des clients Shopify (lot 3)
+   * le dit AVANT d'écrire, pour que le marchand choisisse ; les MÊMES prédicats, pour que l'annonce et le refus
+   * comptent pareil.
+   */
+  async placesContacts(tenantId: string, numeros: readonly string[]): Promise<{ limite: number | null; comptees: number; presents: Set<string> }> {
+    const limite = this.limiteContacts ? await this.limiteContacts(tenantId) : null;
+    const r = await this.pool.query<{ comptees: number; presents: string[] | null }>(
+      `select (select count(*) from contacts x where x.tenant_id = $1 and ${FICHE_COMPTEE})::int as comptees,
+              (select array_agg(x.phone_e164) from contacts x
+                where x.tenant_id = $1 and x.phone_e164 = any($2::text[]) and ${FICHE_ACTIVE}) as presents`,
+      [tenantId, [...new Set(numeros)]],
+    );
+    const ligne = r.rows[0];
+    return { limite, comptees: ligne?.comptees ?? 0, presents: new Set(ligne?.presents ?? []) };
   }
 
   /**

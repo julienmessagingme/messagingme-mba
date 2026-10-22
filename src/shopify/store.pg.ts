@@ -51,6 +51,15 @@ export interface BoutiqueSignee {
   consentementAffirme: boolean;
 }
 
+/** De quoi demander un jeton à Shopify pour l'espace : l'import des clients (lot 3). */
+export interface AccesBoutique {
+  domaine: string;
+  clientId: string;
+  secret: string;
+  pays: string | null;
+  etat: EtatBoutique;
+}
+
 export interface Connexion {
   domaine: string;
   clientId: string;
@@ -107,6 +116,20 @@ export class PgShopifyStore {
       consentement: r.consentement_le ? { par: r.consentement_par, le: r.consentement_le.toISOString() } : null,
       delaiPanierMinutes: r.delai_panier_minutes,
     };
+  }
+
+  /**
+   * La boutique de l'espace avec son secret déchiffré, pour demander un jeton (import des clients, lot 3), et à
+   * personne d'autre : rien de ce qui est rendu ici ne sort de l'API.
+   */
+  async acces(tenantId: string): Promise<AccesBoutique | null> {
+    const res = await this.pool.query<{ domaine: string; client_id: string; secret_chiffre: string; pays: string | null; etat: EtatBoutique }>(
+      `select domaine, client_id, secret_chiffre, pays, etat from shopify_boutiques where tenant_id = $1`,
+      [tenantId],
+    );
+    const r = res.rows[0];
+    if (!r) return null;
+    return { domaine: r.domaine, clientId: r.client_id, secret: decryptSecret(r.secret_chiffre, this.cle), pays: r.pays, etat: r.etat };
   }
 
   /**

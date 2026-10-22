@@ -80,7 +80,9 @@ import type { SalesforceRouteDeps } from './http/salesforce';
 import type { ShopifyRouteDeps } from './http/shopify';
 import type { ShopifyWebhooksRouteDeps } from './http/shopify-webhooks';
 import { PgShopifyStore } from './shopify/store.pg';
-import { verifierBoutique } from './shopify/connexion';
+import { demanderJeton, verifierBoutique } from './shopify/connexion';
+import { lireClientsAbonnes } from './shopify/clients';
+import { importContacts } from './crm/import';
 import type { DepsGestionShopify } from './shopify/gestion';
 import { traiterWebhookShopify, type DepsTraitementShopify } from './shopify/traitement';
 import { relancerPaniers, type DepsRelance } from './shopify/relance';
@@ -1269,6 +1271,12 @@ async function main(): Promise<void> {
         return false;
       }
     })(),
+    // L'import des clients (lot 3) : le MÊME import que celui d'une liste HubSpot, et les places comptées par le
+    // magasin qui refusera, pour que l'annonce et le refus comptent pareil.
+    jeton: (domaine, clientId, secret) => demanderJeton(domaine, clientId, secret),
+    lireClients: (acces, plafond) => lireClientsAbonnes(acces, plafond),
+    places: (tenant, numeros) => contactStore.placesContacts(tenant, numeros),
+    importer: (input) => importContacts(input, { contacts: contactStore, userFields: fieldStore }),
   };
   const traitementShopify: DepsTraitementShopify = {
     store: shopifyStore,
