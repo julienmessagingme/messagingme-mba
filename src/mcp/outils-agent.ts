@@ -50,9 +50,10 @@ import {
  * 🔴 Les écritures exigent une PERSONNE (`exigePersonne`) : invisibles derrière une clé d'API, elles ne s'ouvrent
  * qu'avec un jeton OAuth, dont la personne est un admin relu à chaque appel et signe ce qu'elle fait.
  *
- * Ce que Claude ne lit ni ne règle : les plafonds de coût d'un agent, sa mention d'IA (`test_agent` la rend pourtant en
- * tête de la réponse, comme le contact la lira), l'autonomie sur une action irréversible, `envoyer_bloc`, les
- * connecteurs, l'assistant de construction de la console (il ferait double emploi).
+ * Ce que Claude ne lit ni ne règle : les plafonds de coût d'un agent, le texte libre de sa mention d'IA (il en lit la
+ * langue et choisit l'une des phrases relues, `mention_ia_langue` ; `test_agent` la rend en tête de la réponse, comme le
+ * contact la lira), l'autonomie sur une action irréversible, `envoyer_bloc`, les connecteurs, l'assistant de
+ * construction de la console (il ferait double emploi).
  */
 
 /**
@@ -133,16 +134,16 @@ function vueAction(o: OutilComplet): Record<string, unknown> {
  */
 export const ACTION_WEBHOOK = 'L’action part vers l’application du client par le webhook agent.action (champs dans fields, '
   + 'par code), DÉCOCHÉ par défaut. Si une adresse sert déjà l’application (list_webhook_endpoints), y ajouter le type '
-  + 'agent.action, dans la console (Developers > Webhooks sortants) ou par PATCH /v1/webhooks/{id} avec la liste '
-  + 'complète de ses types, plutôt que d’en créer une seconde (elle aurait un autre secret) ; sinon, '
+  + 'agent.action par update_webhook_endpoint, avec la liste complète de ses types (ils remplacent les actuels), plutôt '
+  + 'que d’en créer une seconde (elle aurait un autre secret) ; sinon, '
   + 'create_webhook_endpoint avec le type agent.action. Sans adresse abonnée, rien ne part, mais une automation de la '
   + 'console peut encore partir de l’action.';
 
 /** `ACTION_WEBHOOK` pour la description de `set_agent_action`, en anglais (répertoire de Claude, 2026-10-14). */
 export const ACTION_WEBHOOK_EN = 'The action goes to the customer\'s application through the agent.action webhook (the '
   + 'collected fields in fields, keyed by code), UNCHECKED by default. If an endpoint already serves the application (list_webhook_endpoints), the '
-  + 'agent.action type is added to it, in the console (Developers > Outgoing webhooks) or by PATCH /v1/webhooks/{id} '
-  + 'with the full list of its types, rather than creating a second endpoint (it would have another secret); otherwise, '
+  + 'agent.action type is added to it with update_webhook_endpoint, giving the full list of its types (they replace the '
+  + 'current ones), rather than creating a second endpoint (it would have another secret); otherwise, '
   + 'create_webhook_endpoint with the agent.action type. Without a subscribed endpoint nothing goes out, but a console '
   + 'automation can still start from the action.';
 

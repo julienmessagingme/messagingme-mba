@@ -15,6 +15,7 @@ import { empreinteEtat, type ConfirmationStore, type EtatConfirme, type IssueRec
 import { modeleEnvoyable, numeroDEnvoi, type DepsModeleEnvoyable } from '../api/modele-envoi';
 import { validateParamMapping } from '../crm/template';
 import type { PhoneNumberRow } from '../campaign/store.pg';
+import { messageDePause, type MotifDePause } from '../campaign/pause';
 
 /**
  * Ce que les outils de campagne lisent et écrivent, en plus des contacts et de l'Inbox du MCP. 🔴 Les MÊMES objets que
@@ -31,6 +32,10 @@ export interface DepsCampagnesMcp {
         cancelSchedule(campaignId: string, tenantId: string): Promise<boolean>;
         /** L'état que montre le récapitulatif, relu en base ; `null` hors de l'espace. */
         etatPourConfirmation(tenantId: string, campaignId: string): Promise<EtatConfirme | null>;
+        /**
+         * Le motif et l'échéance d'une pause (`prepare_resume`), hors de l'empreinte du code : `null` hors de l'espace.
+         */
+        pauseDe(tenantId: string, campaignId: string): Promise<{ motif: MotifDePause | null; jusqua: Date | null } | null>;
         apercuDestinataires(tenantId: string, campaignId: string, n: number): Promise<string[]>;
         desabonnesParmiLesDestinataires(tenantId: string, campaignId: string): Promise<number>;
         /** Les numéros WhatsApp de l'espace, comme la console les liste. */
@@ -74,7 +79,8 @@ const REFUS_DU_CODE: Record<Exclude<IssueReclamation, 'ok'>, string> = {
 const REFUS_DU_CODE_DE_REPRISE: Record<Exclude<IssueReclamation, 'ok'>, string> = {
   invalide: 'code de confirmation faux pour cette reprise : reprenez celui de control_campaign (prepare_resume)',
   expire: 'code de confirmation expiré (30 minutes) : demandez-en un autre avec control_campaign (prepare_resume)',
-  utilise: 'code déjà utilisé : cette reprise est déjà partie',
+  // Le code gardé a déjà servi (à lancer la campagne, ou à une reprise qu'une nouvelle pause a suivie) : elle est en pause.
+  utilise: 'code déjà utilisé, et la campagne est en pause : demandez-en un autre avec control_campaign (prepare_resume)',
   modifie: 'la campagne a changé depuis le récapitulatif de reprise : demandez-en un autre avec control_campaign (prepare_resume)',
 };
 /**
@@ -90,6 +96,19 @@ function refusDuCode(statut: string, issue: Exclude<IssueReclamation, 'ok'>): st
   return `la campagne n’est plus en brouillon ni en pause (statut ${statut}) : rien n’est parti par ce code. Voyez où elle `
     + 'en est avec get_campaign_stats, et ne la préparez pas à nouveau : ce serait écrire une seconde fois à ses destinataires';
 }
+/**
+ * Ce que `prepare_resume` répond d'une campagne qui n'est pas en pause : rien à reprendre. Jamais « mettez-la en pause
+ * d'abord », qui ferait suspendre une campagne en plein envoi pour la reprendre.
+ */
+const REFUS_HORS_PAUSE: Record<string, string> = {
+  draft: 'cette campagne est un brouillon, jamais lancée : il n’y a rien à reprendre',
+  scheduled: 'cette campagne est programmée : elle partira à sa date, il n’y a rien à reprendre',
+  running: 'cette campagne est en cours d’envoi : il n’y a rien à reprendre',
+  completed: 'cette campagne est terminée : il n’y a rien à reprendre',
+  failed: 'cette campagne a échoué : elle ne se reprend pas, get_campaign_stats dit ce qui est parti',
+};
+/** Une pause que seul un autre geste lève : reprendre la remettrait aussitôt en pause (`messageDePause` dit lequel). */
+const PAUSES_SANS_REPRISE: ReadonlySet<MotifDePause> = new Set(['numero_delie', 'numero_suspendu']);
 const REFUS_DU_LANCEMENT: Record<'inconnue' | 'date_passee' | 'non_programmable', string> = {
   inconnue: 'campagne inconnue dans cet espace',
   date_passee: 'la date prévue est passée : préparez à nouveau avec prepare_campaign et replaces, avec une nouvelle date',
@@ -417,7 +436,9 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
       'The brakes of a campaign, and the way back. pause: stops a campaign that is sending, within seconds; what has '
       + 'left stays sent, and the recipients not yet reached wait. unschedule: a scheduled campaign goes back to draft, '
       + 'nothing leaves. prepare_resume: for a PAUSED campaign, returns the summary of what resuming would send (the '
-      + 'recipients still waiting) and a confirmation code valid 30 minutes. SHOW IT TO THE PERSON AND WAIT FOR AN '
+      + 'recipients still waiting), why it paused (pause_message: a quality pause asks to check the number first) and a '
+      + 'confirmation code valid 30 minutes; refused for a pause that only another gesture lifts (the number unlinked, '
+      + 'its subscription unpaid). SHOW IT TO THE PERSON AND WAIT FOR AN '
       + 'EXPLICIT YES, then call launch_campaign with that code. Pausing needs no confirmation: it is the emergency '
       + 'gesture of the console. Never prepare a paused campaign again with prepare_campaign: it would send to everyone.',
     // Rien ne part chez un tiers ; chaque `prepare_resume` tire un nouveau code : pas idempotente.
@@ -456,7 +477,16 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
       }
       const etat = await c.route.repo.etatPourConfirmation(tenantId, campaignId);
       if (etat === null) throw new RefusOutil('campagne inconnue dans cet espace');
-      if (etat.status !== 'paused') throw new RefusOutil('seule une campagne en pause se reprend : mettez-la en pause d’abord (pause)');
+      if (etat.status !== 'paused') {
+        throw new RefusOutil(REFUS_HORS_PAUSE[etat.status] ?? `seule une campagne en pause se reprend (statut ${etat.status})`);
+      }
+      // Le motif, que la console affiche à la pause : une pause pour la qualité du numéro ne doit pas repartir sur un oui
+      // donné sans son avertissement.
+      const pause = await c.route.repo.pauseDe(tenantId, campaignId);
+      const motif = pause?.motif ?? null;
+      if (motif !== null && PAUSES_SANS_REPRISE.has(motif)) {
+        throw new RefusOutil(`${messageDePause(motif, null, undefined)} Elle ne se reprend pas par ce geste.`);
+      }
       // Le code est lié à l'état relu en base, celui que `launch_campaign` relira : une reprise faite entre-temps dans la
       // console l'invalide.
       const pose = await c.confirmations.poser(tenantId, campaignId, empreinteEtat(etat));
@@ -469,10 +499,13 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
         recipients_waiting: etat.recipientCount,
         // Un volume, jamais un montant, comme le récapitulatif de `prepare_campaign`.
         billable_messages_up_to: etat.recipientCount,
+        pause_reason: motif,
+        pause_message: motif === null ? null : messageDePause(motif, pause?.jusqua ?? null, undefined),
         confirmation_code: pose.code,
         code_expires_at: pose.expireLe.toISOString(),
-        next_step: 'Show this summary to the person. Only after an explicit yes, call launch_campaign with campaign_id and '
-          + 'confirmation_code. Nothing has been sent.',
+        next_step: 'Show this summary to the person, pause_message included (why the campaign stopped, and whether it '
+          + 'resumes on its own). Only after an explicit yes, call launch_campaign with campaign_id and confirmation_code. '
+          + 'Nothing has been sent.',
       };
     },
   },

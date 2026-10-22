@@ -4949,7 +4949,7 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 
 ## What it does not do
 
-- **No campaigns.** It sends a template to one person at a time, signed in as you; it does not launch a mass send.
+- **No campaign without your yes.** On Pro, it prepares a campaign and shows you its summary; it only launches it with the code of that summary, after your yes. Outside Pro, it sends a template to one person at a time.
 - **Outside the 24 h window, only an approved template goes out.** A free-form message is refused, with the reason; an approved template goes out through send_template_to_contact.
 - **WhatsApp number unlinked, nothing is sent.** The tool refuses, with the reason, until an admin relinks the number from the Home page.
 - **Automations are not triggered.** A tag set by the assistant classifies the contact, without waking the automations listening for that tag.

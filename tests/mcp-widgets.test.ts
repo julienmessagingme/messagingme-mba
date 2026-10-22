@@ -120,6 +120,7 @@ function monter(o: { widgets?: WidgetRow[]; liens?: string[]; scenarios?: Array<
       applyEditsMany: jamais('applyEditsMany'),
       findByPhone: jamais('findByPhone'),
       setBlocked: jamais('setBlocked'),
+      isBlockedByWaId: jamais('isBlockedByWaId'),
       analysesEtResumes: jamais('analysesEtResumes'),
     },
     listerMembres: jamais('listerMembres'),

@@ -54,7 +54,8 @@ function deps(o: {
     },
   };
   const d = {
-    modeles: { modeles: gestion },
+    // La liste du catalogue lit le même compte (`listerModeles`) : `update_template` y relit les boutons du modèle.
+    modeles: { modeles: gestion, lister: async () => client.list() },
     couteux: { consommer: async () => { lourds += 1; return { accepte: o.lourdAccepte ?? true, attenteMs: 2000 }; } },
   } as unknown as DepsMcp;
   return { d, editions, suppressions, lourds: () => lourds };
@@ -102,6 +103,16 @@ describe('corriger et supprimer un modèle depuis Claude (marche arrière, tâch
     };
     await expect(outil('update_template').executer(d, T, { template: avecImage }, MOI)).rejects.toThrow(/en-tête/);
     expect(editions).toEqual([]);
+  });
+
+  it('🔴 un modèle à bouton Flow ne se corrige pas d’ici : la correction le supprimerait, rien ne part chez Meta', async () => {
+    const { d, editions } = deps({ resume: { buttons: [{ type: 'FLOW', text: 'Prendre rendez-vous', flowId: 'flow-1' }] } });
+    await expect(outil('update_template').executer(d, T, { template: CORRIGE }, MOI)).rejects.toThrow(/bouton Flow/);
+    expect(editions).toEqual([]);
+    // Des boutons que le format sait renvoyer ne bloquent rien.
+    const simple = deps({ resume: { buttons: [{ type: 'QUICK_REPLY', text: 'Merci' }] } });
+    await outil('update_template').executer(simple.d, T, { template: CORRIGE }, MOI);
+    expect(simple.editions).toHaveLength(1);
   });
 
   it('les refus de l’écran gardent leur phrase : campagne active, modèle non éditable', async () => {

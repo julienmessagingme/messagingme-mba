@@ -233,8 +233,9 @@ export const OUTILS_MODELES: OutilMcp[] = [
       'Edits ONE language of a template already submitted, in META\'S FORMAT, the same as create_template: name and '
       + 'language designate it, and the components REPLACE the current ones (send them all). Only a template made of a '
       + 'BODY, with BUTTONS, a FOOTER or a TEXT HEADER, can be edited; an image, video or document header can be neither '
-      + 'added nor kept: create a new template instead. Meta\'s rules: an APPROVED template can be edited once in 24 '
-      + 'hours and 10 times in 30 days, and its category cannot change; a REJECTED or PAUSED one without limit. The '
+      + 'added nor kept: create a new template instead. A template with a Flow button is refused too: this format '
+      + 'cannot send that button back, and the edit would remove it. Meta\'s rules: an APPROVED template can be edited '
+      + 'once in 24 hours and 10 times in 30 days, and its category cannot change; a REJECTED or PAUSED one without limit. The '
       + 'template goes back to review (pending), which get_template_status follows. Refused while an active campaign uses '
       + 'it. ' + LOURDE,
     // Monde ouvert : le modèle repart chez Meta. Pas idempotente : chaque édition d'un modèle approuvé use une des dix du
@@ -264,6 +265,13 @@ export const OUTILS_MODELES: OutilMcp[] = [
       await plafondCouteux(deps, tenantId);
       const { name, language, ...champs } = input;
       await ouRefusDeMeta(async () => {
+        // 🔴 Les composants REMPLACENT ceux d'avant, et ce format ne porte que des boutons « réponse rapide » et « lien »
+        // (`schemaModeleMeta`) : le bouton Flow d'un modèle, que la console sait garder, disparaîtrait en silence.
+        const actuel = (await deps.modeles.lister(tenantId)).find((t) => t.name === name && t.language === language);
+        if (actuel?.buttons?.some((b) => b.type === 'FLOW')) {
+          throw new RefusOutil('ce modèle porte un bouton Flow, que ce format ne sait pas renvoyer : la correction le '
+            + 'supprimerait. Il ne se corrige pas depuis Claude');
+        }
         const issue = await modifierUnModele(deps.modeles.modeles, tenantId, name, language, champs);
         if ('refus' in issue) throw new RefusOutil(phraseDuRefus(issue.refus));
       });

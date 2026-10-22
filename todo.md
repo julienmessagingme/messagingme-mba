@@ -19,6 +19,33 @@ micro-euros), et aucun écran ni outil ne l'expose. Ses deux voisins, `maxTours`
   l'énumération des prix configurés.
 - **Aucun test du webhook ne crédite `refill_10`** (la dérivation commune le couvre).
 
+## 🟡 La marche arrière MCP : les jaunes de la relecture du lot 2 (2026-10-22)
+
+Relecture du lot des jaunes (plan `docs/superpowers/plans/2026-10-22-mcp-marche-arriere.md`, « Suite ») : aucun rouge, ce
+qui suit attend un lot.
+
+- **Les statistiques ne comptent pas la réponse d'une personne par Claude**, alors que le fil la compte depuis ce lot
+  (`vautReponseDeLEquipe`, `src/inbox/origine.ts`) : `src/stats/performance.pg.ts` ne retient que `origin = 'humain'`,
+  donc une demande escaladée, répondue par Claude puis rendue par le balayage, passe en « résolue sans réponse ». Un
+  seul fragment SQL à côté de `vautReponseDeLEquipe`, lu par les trois endroits. Même famille : la frise signe la prise
+  du fil « agent tiers (MCP) » même quand une personne est derrière (`auteurDeLEnvoi`, `src/inbox/evenements.ts`).
+- **`vautReponseDeLEquipe` ignore le type du message** : une réaction envoyée par `send_message` avec un jeton OAuth lève
+  l'escalade ; exclure `reaction`. Et un jeton OAuth peut tourner sans personne devant (une routine planifiée) :
+  l'hypothèse « un jeton, c'est un humain qui lit » est à écrire, ou à resserrer.
+- **Un modèle envoyé par une personne depuis Claude** (`send_template_to_contact`, origine `campagne`) ne lève pas
+  l'escalade, alors que le même geste dans l'Inbox la lève : une Free qui répond hors des 24 h reste escaladée.
+- **Le refus de `hand_back` en mode « équipe » est plus large que ce qu'il protège** : il retire à une Free le seul moyen
+  de sortir un fil d'« À traiter » depuis Claude (aucun outil ne marque « Traité »), et de rendre un parcours en attente.
+  Refuser seulement sans escalade ni parcours en attente, ou outiller « Traité ».
+- **`update_template` laisse passer d'autres boutons que son format ne renvoie pas** : `buttonsOf`
+  (`src/meta/templates.ts`) relit un bouton téléphone, code à copier, appel ou catalogue comme une réponse rapide (la
+  console a le même défaut), une URL dynamique n'est pas renvoyable, et la garde lit la liste en cache (une minute).
+  Poser l'indicateur dans la lecture du modèle (`isSimpleEditable`), et vérifier sur `existing` dans `modifierUnModele`.
+- **Des textes** : derrière une clé d'API, les refus de `control_conversation` renvoient vers `block_contact` et
+  `set_default_responder`, qui exigent une personne ; la description de `reply_in_open_window` promet un délai de
+  reprise qui ne court pas sur un fil escaladé, ni quand il vaut 0 ; l'e-mail de la Free borne à 24 h une réponse par
+  Claude, ce qui est faux sur la filière application (à vérifier si elle le reçoit).
+
 ## 🟡 Le connecteur Shopify : le lot 2 et ce que la relecture du lot 1 laisse (2026-10-22)
 
 Plan : `docs/superpowers/plans/2026-10-21-connecteur-shopify.md`.

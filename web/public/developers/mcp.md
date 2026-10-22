@@ -137,7 +137,7 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 
 ## Ce qu’il ne fait pas
 
-- **Pas de campagne.** Il envoie un modèle à une personne à la fois, connecté en votre nom ; il ne lance pas d’envoi de masse.
+- **Pas de campagne sans votre oui.** En Pro, il prépare une campagne et vous en montre le récapitulatif ; il ne la lance qu’avec le code de ce récapitulatif, après votre oui. Hors du Pro, il envoie un modèle à une personne à la fois.
 - **Hors de la fenêtre de 24 h, seul un modèle approuvé part.** Un message libre est refusé, avec la raison ; un modèle approuvé part par send_template_to_contact.
 - **Numéro WhatsApp délié, rien ne part.** L’outil refuse, avec la raison, jusqu’à ce qu’un administrateur relie le numéro depuis l’Accueil.
 - **Les automations ne se déclenchent pas.** Un tag posé par l’assistant classe le contact, sans réveiller les automations qui écoutent ce tag.

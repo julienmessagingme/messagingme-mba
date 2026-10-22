@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { OUTILS, outilsPour, type DepsMcp } from '../src/mcp/outils';
 import { RefusOutil } from '../src/mcp/saisie';
 import { empreinteEtat, type EtatConfirme } from '../src/campaign/confirmation';
+import type { MotifDePause } from '../src/campaign/pause';
 
 /**
  * `control_campaign` (plan `docs/superpowers/plans/2026-10-22-mcp-marche-arriere.md`, tâche 5) : les freins d'une campagne
@@ -19,7 +20,11 @@ const EN_PAUSE: EtatConfirme = {
   paramMapping: [], recipientCount: 2, status: 'paused',
 };
 
-function deps(o: { etat?: EtatConfirme; appartient?: boolean; suspendable?: boolean; programmee?: boolean } = {}) {
+function deps(o: {
+  etat?: EtatConfirme; appartient?: boolean; suspendable?: boolean; programmee?: boolean;
+  /** Le motif et l'échéance de la pause (`pauseDe`) : un plafond de débit par défaut. */
+  motif?: MotifDePause | null; jusqua?: Date | null;
+} = {}) {
   const trace: string[] = [];
   const poses: string[] = [];
   const d = {
@@ -30,6 +35,7 @@ function deps(o: { etat?: EtatConfirme; appartient?: boolean; suspendable?: bool
           pauseCampaign: async () => { trace.push('pause'); return o.suspendable ?? true; },
           cancelSchedule: async () => { trace.push('deprogramme'); return o.programmee ?? true; },
           etatPourConfirmation: async (t: string) => (t === T ? (o.etat ?? EN_PAUSE) : null),
+          pauseDe: async (t: string) => (t === T ? { motif: o.motif === undefined ? 'debit' : o.motif, jusqua: o.jusqua ?? null } : null),
         },
       },
       confirmations: {
@@ -70,16 +76,36 @@ describe('control_campaign : les freins et la reprise (marche arrière, tâche 5
   it('🔴 prepare_resume rend le récapitulatif des destinataires restants et un code lié à l’état en pause, sans rien envoyer', async () => {
     const { d, trace, poses } = deps();
     const r = await outil.executer(d, T, { campaign_id: ID, action: 'prepare_resume' }, PERSONNE) as Record<string, unknown>;
-    expect(r).toMatchObject({ campaign_id: ID, status: 'paused', recipients_waiting: 2, confirmation_code: 'R4P2XQ' });
+    expect(r).toMatchObject({ campaign_id: ID, status: 'paused', recipients_waiting: 2, confirmation_code: 'R4P2XQ', pause_reason: 'debit' });
     expect(poses).toEqual([empreinteEtat(EN_PAUSE)]);
     expect(trace).toEqual([]);
   });
 
-  it('🔴 seule une campagne en pause se reprend : aucun code pour une autre', async () => {
-    for (const status of ['running', 'draft', 'completed']) {
-      const { d, poses } = deps({ etat: { ...EN_PAUSE, status } });
-      await expect(outil.executer(d, T, { campaign_id: ID, action: 'prepare_resume' }, PERSONNE), status).rejects.toThrow(/en pause/);
-      expect(poses, status).toEqual([]);
+  it('🔴 seule une campagne en pause se reprend : aucun code pour une autre, et jamais le conseil de la suspendre', async () => {
+    for (const status of ['running', 'draft', 'scheduled', 'completed', 'failed']) {
+      const { d, poses, trace } = deps({ etat: { ...EN_PAUSE, status } });
+      const refus = await outil.executer(d, T, { campaign_id: ID, action: 'prepare_resume' }, PERSONNE).catch((e: Error) => e.message);
+      expect(refus, status).toMatch(/rien à reprendre|ne se reprend pas/);
+      expect(refus, status).not.toMatch(/en pause d’abord|mettez-la en pause/);
+      expect([...poses, ...trace], status).toEqual([]);
+    }
+  });
+
+  it('🔴 le récapitulatif dit pourquoi la campagne s’est arrêtée : une pause pour la qualité du numéro demande de la vérifier', async () => {
+    const qualite = deps({ motif: 'qualite' });
+    const r = await outil.executer(qualite.d, T, { campaign_id: ID, action: 'prepare_resume' }, PERSONNE) as { pause_reason: string; pause_message: string };
+    expect(r.pause_reason).toBe('qualite');
+    expect(r.pause_message).toMatch(/vérifiez la qualité du numéro/);
+    const debit = deps({ motif: 'debit', jusqua: new Date('2026-10-22T16:15:00.000Z') });
+    const d2 = await outil.executer(debit.d, T, { campaign_id: ID, action: 'prepare_resume' }, PERSONNE) as { pause_message: string };
+    expect(d2.pause_message).toMatch(/Reprise automatique prévue vers 2026-10-22T16:15:00.000Z/);
+  });
+
+  it('🔴 une pause qu’un autre geste lève (numéro délié, abonnement impayé) ne se reprend pas ici : aucun code', async () => {
+    for (const motif of ['numero_delie', 'numero_suspendu'] as const) {
+      const { d, poses } = deps({ motif });
+      await expect(outil.executer(d, T, { campaign_id: ID, action: 'prepare_resume' }, PERSONNE), motif).rejects.toThrow(/ne se reprend pas par ce geste/);
+      expect(poses, motif).toEqual([]);
     }
   });
 

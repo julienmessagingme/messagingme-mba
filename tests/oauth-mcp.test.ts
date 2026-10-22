@@ -76,6 +76,7 @@ function monter(o: { publicApiUrl?: string; apiParMinute?: number } = {}) {
       applyEditsMany: async () => { throw new Error('applyEditsMany ne devrait pas être appelée'); },
       findByPhone: async () => null,
       setBlocked: async () => { throw new Error('setBlocked ne devrait pas être appelée'); },
+      isBlockedByWaId: async () => false,
       analysesEtResumes: async () => new Map(),
     },
     listerMembres: async () => [],

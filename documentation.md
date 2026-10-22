@@ -1880,7 +1880,9 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   et sort d'« Archivé » et de « Traité ». Elle y reste jusqu'à ce que quelqu'un agisse : la PREMIÈRE réponse
   d'un opérateur, « Traité », « Archiver » ou le bouton « Rendre la main » la clôt, et le balayage de reprise
   ne rend JAMAIS un fil escaladé à l'agent (arbitrage de Julien : on ne le lui rend qu'après une réponse
-  humaine, puis les 2 h habituelles).
+  humaine, puis les 2 h habituelles). Une réponse de Claude signée d'une personne (jeton OAuth) vaut celle d'un
+  opérateur (`vautReponseDeLEquipe`, 2026-10-22) : sans elle, une Free qui répond par Claude restait escaladée pour
+  toujours. Une clé d'API (agent tiers) reste un automate et ne la clôt pas.
   🔴 **Tout geste où un ROBOT reprend le fil la clôt aussi** (arbitrage de Julien du 2026-09-27) : l'agent de
   Meta à qui on rend le fil (accusé du dernier envoi, client que personne ne suit, fin de parcours dès son état
   d'attente) et un scénario lancé délibérément. Sans ça, la conversation restait dans « À traiter » pendant que
@@ -3203,6 +3205,13 @@ l'activer, et d'ouvrir une recharge du crédit.
   « préparez à nouveau » (une campagne reprise par le balayage pendant que la personne lisait n'est plus en pause).
   `get_messages` rend l'identifiant public de chaque message (`idPublic` : la requête des messages de
   l'Inbox lit `meta_message_id`), celui que lit `get_message_status`.
+  🔴 **Les gardes que la console laisse à un geste humain, l'outil les pose** (lot 2, les jaunes de la relecture) :
+  `control_conversation` ne rend pas la main sur un contact qui a dit STOP ou qui est bloqué (`rendreLaMain` confie à
+  l'agent de Meta sans la garde du consentement, et l'outil s'ouvre derrière une clé d'API), ni en mode « équipe », où
+  aucun robot ne reprendrait le fil (le mode lu sous l'offre, `sousLOffre`, comme le contrôle du fil).
+  `prepare_resume` rend le motif de la pause et sa phrase (`pauseDe`, lu hors de l'empreinte du code, et
+  `messageDePause`), et refuse une pause qu'un autre geste lève (numéro délié, abonnement impayé). `update_template`
+  refuse un modèle à bouton Flow, que le format de Meta de l'outil ne renvoie pas.
 - **`buy_credit` annonce le montant HORS TAXE** de l'offre : la taxe est calculée par Stripe Tax sur la page de
   paiement, selon le pays et le numéro de TVA saisis, donc aucun TTC n'est connu avant le paiement. Seul le webhook
   signé crédite.

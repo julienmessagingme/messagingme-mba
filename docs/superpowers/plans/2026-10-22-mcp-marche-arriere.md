@@ -208,3 +208,36 @@ tests `tests/mcp-block-contact.test.ts` (nouveau).
       au moins) ; `documentation.md` (l'item du MCP) ; la doc Markdown régénérée (`npm run doc:md`) ; le README du plugin
       (`npm run plugin:generer`).
 - [ ] Les suites, la relecture du lot, le push, le déploiement, le plugin, l'essai réel.
+
+## Suite : les jaunes de la relecture (2026-10-22, lot 2)
+
+La relecture des tâches 1 à 8 a rendu deux rouges, corrigés avant le déploiement (2bf50c54), et huit jaunes. Julien
+demande de les traiter en un lot relu, avec un constat de la session du plugin : une réponse par `reply_in_open_window`
+ne lève pas `escaladee_le`.
+
+1. `control_conversation` (`hand_back`) refuse un contact qui a dit STOP ou qui est bloqué : en mode `mba`,
+   `rendreLaMain` le confierait à l'agent de Meta sans la garde du consentement, et l'outil s'ouvre aussi derrière une
+   clé d'API. Il refuse aussi en mode « équipe », où aucun robot ne reprendrait le fil. Le refus de `take_over` ne
+   pousse plus à écrire au contact.
+2. `control_campaign` (`prepare_resume`) rend le motif de la pause et la phrase de la console (`messageDePause`), refuse
+   une pause que seule une autre action lève (numéro délié, abonnement impayé), et refuse selon le statut au lieu de
+   « mettez-la en pause d'abord ». Le refus d'un code déjà utilisé sur une campagne en pause ne dit plus que la reprise
+   est partie.
+3. `update_template` refuse un modèle à bouton Flow : ce format ne le renvoie pas, et les composants remplacent ceux
+   d'avant.
+4. Les textes qui renvoient encore à la console un geste que le lot a outillé : `reply_in_open_window`,
+   `ACTION_WEBHOOK` (et sa version anglaise), la FAQ du plugin (l'agent muet, les actions), la mise en service,
+   `features.md` (ce que Claude ne règle pas, le blocage) avec la fiche « signaler ou bloquer » et son empreinte, la
+   page `/developers/mcp` (« Pas de campagne »).
+5. L'e-mail de la Free : ne plus faire recopier un nom qui peut être un numéro masqué, et borner la règle des 24 heures
+   à ce qui répond par l'API.
+6. `escaladee_le` : une réponse de Claude signée d'une personne (jeton OAuth) vaut une réponse de l'Inbox, elle lève
+   l'escalade et relance le délai de reprise ; une clé d'API (agent tiers) reste un automate.
+7. Deux tests qui tiennent enfin ce qu'ils disent : le plafond des transferts lu dans les paramètres de la vraie
+   requête, et une mention d'IA personnalisée gardée par une autre modification.
+
+**Méthode** : en direct, dans une copie à part de `main` (la session du plugin a du travail non poussé sur deux fichiers
+du lot), puis une relecture indépendante du lot entier ; chaque test de garde vérifié dans les deux sens. Aucune
+migration. **Déploiement** : API et worker, puis le plugin (0.3.5 ou 0.3.6, selon qui publie le premier avec la session
+du plugin), puis la fiche d'aide rechargée. **Essai réel** : rattaché à celui du lot 1 (étape 1 : un contact qui a dit
+STOP n'est pas rendu ; une réponse de Claude après une escalade laisse revenir l'agent après le délai).

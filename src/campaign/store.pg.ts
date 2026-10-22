@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from 'pg';
 import { enTransaction } from '../db/transaction';
-import type { MotifDePause } from './pause';
+import { MOTIFS_DE_PAUSE, type MotifDePause } from './pause';
 import type { Campaign, CampaignStatus, CampaignCategory, Recipient, QualityRating } from './types';
 import type { CampaignStore, RecipientStore, QualityProvider, EcartALEnvoi } from './engine';
 import type { BuildContact, BuiltRecipient, ContactEnvoi } from './build';
@@ -473,6 +473,21 @@ export class PgCampaignRepo {
       prevueLe: r.prevue_le ? r.prevue_le.toISOString() : null, paramMapping: r.param_mapping ?? [],
       recipientCount: Number(r.en_attente), status: r.status,
     };
+  }
+
+  /**
+   * Le motif et l'échéance de la pause d'une campagne de l'espace (`control_campaign`, `prepare_resume`), lus à part de
+   * `etatPourConfirmation` : ils n'entrent pas dans l'empreinte du code. `null` hors de l'espace ; un motif que le code ne
+   * connaît pas se lit comme absent.
+   */
+  async pauseDe(tenantId: string, campaignId: string): Promise<{ motif: MotifDePause | null; jusqua: Date | null } | null> {
+    const res = await this.pool.query<{ pause_reason: string | null; paused_until: Date | null }>(
+      `select pause_reason, paused_until from campaigns where id = $1 and tenant_id = $2`,
+      [campaignId, tenantId],
+    );
+    const r = res.rows[0];
+    if (!r) return null;
+    return { motif: MOTIFS_DE_PAUSE.find((m) => m === r.pause_reason) ?? null, jusqua: r.paused_until };
   }
 
   /** Les noms (le numéro à défaut) des premiers destinataires en attente : de quoi vérifier une cible d'un coup d'œil. */

@@ -68,7 +68,7 @@ describe('les outils MCP, aux règles du répertoire de Claude', () => {
 
   it('le texte du webhook d’action, rendu en français et décrit en anglais, cite les mêmes repères', () => {
     // Deux textes tenus alignés à la main : celui que set_agent_action REND (français) et celui de sa description.
-    const reperes = (t: string) => [...t.matchAll(/agent\.action|list_webhook_endpoints|create_webhook_endpoint|PATCH \/v1\/webhooks\/\{id\}|fields/g)]
+    const reperes = (t: string) => [...t.matchAll(/agent\.action|list_webhook_endpoints|update_webhook_endpoint|create_webhook_endpoint|PATCH \/v1\/webhooks\/\{id\}|fields/g)]
       .map((m) => m[0]).sort();
     expect(new Set(reperes(ACTION_WEBHOOK_EN))).toEqual(new Set(reperes(ACTION_WEBHOOK)));
     expect(reperes(ACTION_WEBHOOK).length).toBeGreaterThan(3);

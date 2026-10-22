@@ -174,8 +174,8 @@ function McpInner({ session }: { session: Session | null }) {
       <Section titre={t('Ce qu’il ne fait pas', 'What it does not do')}>
         <Liste>
           <li>
-            <strong className="text-ink-900">{t('Pas de campagne.', 'No campaigns.')}</strong>{' '}
-            {t('Il envoie un modèle à une personne à la fois, connecté en votre nom ; il ne lance pas d’envoi de masse.', 'It sends a template to one person at a time, signed in as you; it does not launch a mass send.')}
+            <strong className="text-ink-900">{t('Pas de campagne sans votre oui.', 'No campaign without your yes.')}</strong>{' '}
+            {t('En Pro, il prépare une campagne et vous en montre le récapitulatif ; il ne la lance qu’avec le code de ce récapitulatif, après votre oui. Hors du Pro, il envoie un modèle à une personne à la fois.', 'On Pro, it prepares a campaign and shows you its summary; it only launches it with the code of that summary, after your yes. Outside Pro, it sends a template to one person at a time.')}
           </li>
           <li>
             <strong className="text-ink-900">{t('Hors de la fenêtre de 24 h, seul un modèle approuvé part.', 'Outside the 24 h window, only an approved template goes out.')}</strong>{' '}

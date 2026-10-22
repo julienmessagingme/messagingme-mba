@@ -7,6 +7,8 @@ import type { Emission } from '../src/emails-produit/emission';
 import { PgCreditStore } from '../src/agent/credits.pg';
 import { CLES_TRANSFERT, modeleDe } from '../src/emails-produit/catalogue';
 import { rendre } from '../src/emails-produit/rendu';
+import { PgEmailsProduitStore } from '../src/emails-produit/store.pg';
+import type { Pool } from 'pg';
 import { DROITS } from '../src/offres/offres';
 
 /**
@@ -306,6 +308,12 @@ describe('la conversation passée à l’équipe', () => {
     expect(m.textes.fr.corps).toMatch(/Claude/);
     expect(m.textes.en.corps).toMatch(/Claude/);
     expect(m.textes.fr.bouton?.lien).toBe('{{lien_offre}}');
+    // Le nom d'un contact peut être son numéro masqué : on ne le fait pas recopier. Et la règle des 24 heures ne vaut que
+    // pour une réponse par l'API (Claude, l'application) : depuis l'application WhatsApp Business, elle ne s'applique pas.
+    for (const corps of [m.textes.fr.corps, m.textes.en.corps]) {
+      expect(corps).not.toMatch(/réponds à \{\{contact\}\}|reply to \{\{contact\}\}/);
+      expect(corps).not.toMatch(/WhatsApp n’accepte plus|WhatsApp only accepts/);
+    }
   });
 
   it('une offre illisible garde l’e-mail d’aujourd’hui, avec le lien vers l’Inbox', async () => {
@@ -319,6 +327,17 @@ describe('la conversation passée à l’équipe', () => {
     const au = prevenir(contexte(), PLAFOND_TRANSFERTS_JOUR, false);
     await au.p('t1', '33612345678');
     expect(au.e.emissions).toHaveLength(0);
+  });
+
+  it('🔴 et le compte du jour lit bien les DEUX clés : ce que la requête envoie à la base', async () => {
+    // Le test ci-dessus donne un compte tout fait : il resterait vert si la requête ne comptait plus qu'une clé. Celui-ci
+    // lit les paramètres que le VRAI dépôt envoie (le test d'intégration, en CI, les exécute contre Postgres).
+    const requetes: Array<{ sql: string; params: unknown[] }> = [];
+    const pool = { query: async (sql: string, params: unknown[]) => { requetes.push({ sql, params }); return { rows: [{ n: 3 }] }; } } as unknown as Pool;
+    expect(await new PgEmailsProduitStore(pool).transfertsDuJour('t1')).toBe(3);
+    expect(requetes).toHaveLength(1);
+    expect(requetes[0]!.sql).toMatch(/cle = any\(\$2::text\[\]\)/);
+    expect(requetes[0]!.params).toEqual(['t1', ['transfert_equipe', 'transfert_equipe_free']]);
   });
 
   it('🔴 au-delà de dix passages dans la journée, plus aucun e-mail (décision du 2026-10-14)', async () => {

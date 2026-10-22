@@ -21,9 +21,29 @@ function deps(o: {
   prise?: 'pris' | 'refuse';
   remise?: 'app_workflow' | 'mba' | 'aucun_numero' | Error;
   connue?: boolean;
+  /** Le contact a dit STOP, ou il est bloqué. */
+  desabonne?: boolean;
+  bloque?: boolean;
+  /** Le mode du répondeur (un agent IA par défaut), l'agent de Meta allumé ou non, et les fonctions de l'offre. */
+  mode?: string;
+  mbaAllume?: boolean;
+  fonctions?: string[];
 } = {}) {
   const appels: Appel[] = [];
   const d = {
+    estDesabonne: async (t: string, waId: string) => t === T && waId === WA && o.desabonne === true,
+    contacts: { isBlockedByWaId: async (t: string, waId: string) => t === T && waId === WA && o.bloque === true },
+    agentIa: {
+      repondeur: {
+        reglages: {
+          get: async () => ({
+            repondeurMode: o.mode ?? 'agent', mbaEnabled: o.mbaAllume ?? true, repondeurAgentId: 'agent-1',
+            repondeurWorkflowId: 'scenario-1', repondeurAdresseId: 'adresse-1', repondeurDelaiScenarioS: 86_400,
+          }),
+        },
+      },
+    },
+    offres: { offreDe: async () => ({ droits: { fonctions: new Set(o.fonctions ?? ['inbox', 'scenarios', 'agent_meta']) } }) },
     inbox: {
       getConversationContext: async (id: string, tenantId: string) =>
         (o.connue ?? true) && id === CONV && tenantId === T ? { waId: WA, lastInboundAt: null, windowOpen: true } : null,
@@ -80,6 +100,42 @@ describe('control_conversation : prendre et rendre la main sur un fil', () => {
     for (const remise of ['aucun_numero' as const, new Error('Meta a refusé l’ajout à la liste')]) {
       const { d } = deps({ remise });
       await expect(outil.executer(d, T, { conversation_id: CONV, action: 'hand_back' }, MOI)).rejects.toThrow(RefusOutil);
+    }
+  });
+
+  it('🔴 hand_back ne rend pas la main sur un contact qui a dit STOP, ni sur un contact bloqué : aucun geste, un refus qui le dit', async () => {
+    // « Rendre la main » de la console confie à l'agent de Meta sans la garde du consentement : l'outil la pose.
+    for (const cas of [{ desabonne: true, motif: /STOP/ }, { bloque: true, motif: /bloqué/ }]) {
+      for (const personne of [MOI, null]) {
+        const { d, appels } = deps(cas);
+        await expect(outil.executer(d, T, { conversation_id: CONV, action: 'hand_back' }, personne)).rejects.toThrow(cas.motif);
+        expect(appels).toHaveLength(0);
+      }
+    }
+  });
+
+  it('take_over reste ouvert sur ce contact : prendre le fil n’écrit rien', async () => {
+    const { d, appels } = deps({ desabonne: true, bloque: true });
+    expect(await outil.executer(d, T, { conversation_id: CONV, action: 'take_over' }, MOI)).toEqual({ conversation_id: CONV, handled_by: 'app_human' });
+    expect(appels.map((a) => a.geste)).toEqual(['prendre']);
+  });
+
+  it('🔴 hand_back sans répondeur automatique (mode « équipe », ou un répondeur que l’offre éteint) est refusé : aucun robot ne reprendrait le fil', async () => {
+    const sansRobot = [
+      { mode: 'equipe' },
+      // Un scénario hors de l'offre se lit « équipe » (`sousLOffre`), comme le contrôle du fil le lit.
+      { mode: 'scenario', fonctions: ['inbox'] },
+      { mode: 'mba', mbaAllume: false },
+    ];
+    for (const o of sansRobot) {
+      const { d, appels } = deps(o);
+      await expect(outil.executer(d, T, { conversation_id: CONV, action: 'hand_back' }, MOI), o.mode).rejects.toThrow(/set_default_responder/);
+      expect(appels, o.mode).toHaveLength(0);
+    }
+    for (const mode of ['agent', 'scenario', 'mba', 'application']) {
+      const { d, appels } = deps({ mode });
+      await outil.executer(d, T, { conversation_id: CONV, action: 'hand_back' }, MOI);
+      expect(appels.map((a) => a.geste), mode).toEqual(['rendre']);
     }
   });
 

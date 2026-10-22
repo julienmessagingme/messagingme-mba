@@ -21,6 +21,7 @@ import type { PlafondPartage } from '../auth/plafond-partage';
 import { RefusOutil, dateAvecFuseau, entierBorne, texteObligatoire, valeurOuRefus } from './saisie';
 import { decoderCurseur, encoderCurseur, idPublic, type DepotConversationsV1 } from '../api/conversations-v1';
 import type { ControleDuFil, IssueRendreLaMain } from '../inbox/fil';
+import { modeEffectif, sousLOffre } from '../repondeur/mode';
 import { OUTILS_AGENT, signataire, type DepsAgentMcp } from './outils-agent';
 import { estUuid } from '../http/scope';
 import { OUTILS_OFFRE, type DepsOffreMcp } from './outils-offre';
@@ -93,6 +94,8 @@ export interface DepsMcp extends DepsRepondre, DepsChampsMcp {
      * personne. `false` : aucune fiche vivante de ce nom dans l'espace.
      */
     setBlocked(tenantId: string, contactId: string, bloque: boolean, parUserId: string | null): Promise<boolean>;
+    /** Le contact de ce fil est-il bloqué ? `control_conversation` ne rend pas la main sur lui. */
+    isBlockedByWaId(tenantId: string, waId: string): Promise<boolean>;
     /** La dernière analyse et son résumé pour une page de fiches, en une requête filtrée sur l'espace. */
     analysesEtResumes(tenantId: string, contactIds: readonly string[]): Promise<Map<string, AnalyseEtResume>>;
   };
@@ -688,8 +691,9 @@ export const OUTILS: OutilMcp[] = [
     description:
       'Sends a text message in a conversation, ONLY while the 24-hour customer service window is open (the contact '
       + 'wrote recently). Outside the window, the call is refused: WhatsApp then requires an approved template, which '
-      + 'this tool does not send. Sending TAKES OVER the conversation: the scenario stops advancing on this contact '
-      + 'until an operator hands it back.',
+      + 'this tool does not send. Sending TAKES OVER the conversation: no scenario, AI agent or Meta Business Agent '
+      + 'answers this contact until it is handed back (control_conversation, hand_back) or the workspace\'s takeover '
+      + 'delay runs out.',
     // Le monde ouvert : un message part chez une personne, et ne se reprend pas. Destructrice : l'envoi PREND le fil,
     // le scénario cesse d'avancer, ce qui n'est pas un simple ajout.
     annotations: { title: 'Reply in the 24-hour window', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -825,9 +829,10 @@ export const OUTILS: OutilMcp[] = [
       + 'the thread, nothing is written to the contact, and no scenario, AI agent or Meta Business Agent answers it until '
       + 'it is handed back or the workspace\'s takeover delay runs out. hand_back: the workspace\'s automatic responder (a '
       + 'scenario, the AI agent or the Meta Business Agent) takes the thread again and answers the contact\'s NEXT '
-      + 'message, not the ones already received. reply_in_open_window and send_message take over by themselves: call '
-      + 'hand_back once the reply is done if the responder should answer again. handled_by tells who holds the thread '
-      + 'afterwards.',
+      + 'message, not the ones already received. hand_back is refused for a contact who said STOP or is blocked, and '
+      + 'when nobody answers automatically (responder mode "equipe": set_default_responder first). reply_in_open_window '
+      + 'and send_message take over by themselves: call hand_back once the reply is done if the responder should answer '
+      + 'again. handled_by tells who holds the thread afterwards.',
     // Destructrice : elle REMPLACE qui tient le fil. Idempotente : rejouer le même geste laisse le même détenteur. Monde
     // ouvert : le geste peut retirer le contact de la liste de l'agent de Meta, ou l'y remettre, chez Meta.
     annotations: { title: 'Take over or hand back a conversation', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
@@ -850,12 +855,32 @@ export const OUTILS: OutilMcp[] = [
       // Le même auteur qu'`assign_conversation` : la personne du jeton OAuth, sinon un agent tiers derrière une clé.
       const par = personne ? { collaborateur: personne.userId } : parCause('agent tiers (MCP)');
       if (action === 'take_over') {
-        // La console rend 409 sur ce refus de Meta : rien n'est écrit, et écrire au contact prend le fil à coup sûr.
+        // La console rend 409 sur ce refus de Meta : rien n'est écrit. Écrire au contact prendrait le fil, mais c'est un
+        // message qui part : à la personne d'en décider, le refus ne le conseille pas.
         if ((await deps.fil.reprendreLaMain(tenantId, ctx.waId, par)) === 'refuse') {
-          throw new RefusOutil('Meta n’a pas cédé la conversation : son agent peut encore répondre. Écrire au contact '
-            + '(reply_in_open_window) prend le fil à coup sûr.');
+          throw new RefusOutil('Meta n’a pas cédé la conversation : son agent peut encore répondre, et rien n’a changé de '
+            + 'notre côté. Réessayez dans un instant ; si la personne veut répondre au contact maintenant, sa réponse '
+            + '(reply_in_open_window) prendra aussi la conversation.');
         }
         return { conversation_id: id, handled_by: 'app_human' };
+      }
+      // 🔴 « Rendre la main » de la console confie à l'agent de Meta sans la garde du consentement : un geste humain,
+      // délibéré (`rendreLaMain`, `src/inbox/fil.ts`). Cet outil s'ouvre aussi derrière une clé d'API : un contact qui a
+      // dit STOP, ou bloqué, n'est rendu à aucun robot, comme dans toute remise automatique.
+      if (await deps.estDesabonne(tenantId, ctx.waId)) {
+        throw new RefusOutil('ce contact a demandé à ne plus recevoir de messages (STOP) : aucun robot ne reprend sa '
+          + 'conversation, elle reste à l’équipe');
+      }
+      if (await deps.contacts.isBlockedByWaId(tenantId, ctx.waId)) {
+        throw new RefusOutil('ce contact est bloqué : aucun robot ne reprend sa conversation, elle reste à l’équipe. Le '
+          + 'débloquer (block_contact, blocked false) se fait d’abord, si c’est la décision de la personne');
+      }
+      // Le mode « équipe » (lu sous l'offre, comme le fait le contrôle du fil) : aucun répondeur automatique, le fil
+      // rendu irait aux robots et le prochain message reviendrait à l'équipe. Rien à rendre.
+      const reglage = sousLOffre(await deps.agentIa.repondeur.reglages.get(tenantId), (await deps.offres.offreDe(tenantId)).droits.fonctions);
+      if (modeEffectif(reglage) === 'equipe') {
+        throw new RefusOutil('aucun répondeur automatique dans cet espace (mode « équipe ») : personne ne reprendrait la '
+          + 'conversation. set_default_responder choisit d’abord qui répond au client');
       }
       let detenteur: IssueRendreLaMain;
       try {

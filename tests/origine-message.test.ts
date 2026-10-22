@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import type { Pool } from 'pg';
-import { ORIGINE_EFFECTIVE_SQL, THEME_DE_ORIGINE, DETAIL_IA, ORIGINES, BASCULE_ORIGINE } from '../src/inbox/origine';
+import { ORIGINE_EFFECTIVE_SQL, THEME_DE_ORIGINE, DETAIL_IA, ORIGINES, BASCULE_ORIGINE, type OrigineMessage } from '../src/inbox/origine';
 import { PgInboxStore } from '../src/inbox/store.pg';
 
 /** Fake pool : capture les requêtes, rend une conversation pour l'upsert par wa_id. */
@@ -101,6 +101,24 @@ describe('origine d’un message de service', () => {
       await new PgInboxStore(pool).recordOutbound('conv-1', 'réponse d’un agent tiers', 'wamid-3', 'mcp', 'text', null, null, null);
       expect(origineEcrite(requetes)).toBe('mcp');
       expect(origineEcrite(requetes)).not.toBe('scenario');
+    });
+
+    it('🔴 une réponse de Claude signée d’une personne clôt l’escalade comme celle de l’Inbox ; une clé d’API ou un robot, non', async () => {
+      // Lu dans ce qui PART vers la base (le paramètre qui pilote `escaladee_le` et le délai de reprise), pas dans la
+      // fonction : sans lui, une Free qui répond par Claude restait escaladée pour toujours (constat du 2026-10-22).
+      const motif = /escaladee_le = case when \$(\d+)::boolean then null/;
+      const drapeau = async (origine: OrigineMessage, auteur: string | null): Promise<unknown> => {
+        const { pool, requetes } = faussePool();
+        await new PgInboxStore(pool).recordOutbound('conv-1', 'bonjour', 'wamid-9', origine, 'text', null, null, auteur);
+        const q = requetes.find((r) => motif.test(r.sql));
+        expect(q, 'la requête qui clôt l’escalade').toBeDefined();
+        return q!.params[Number(q!.sql.match(motif)![1]) - 1];
+      };
+      expect(await drapeau('humain', 'user-7')).toBe(true);
+      expect(await drapeau('mcp', 'user-7')).toBe(true);
+      expect(await drapeau('mcp', null)).toBe(false);
+      expect(await drapeau('ia', null)).toBe(false);
+      expect(await drapeau('api', null)).toBe(false);
     });
 
     it('🔴 l’envoi de l’AGENT IA déclare « ia », et pas l’origine de ses voisins', () => {

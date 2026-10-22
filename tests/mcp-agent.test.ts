@@ -20,7 +20,7 @@ import type { DepsAgentMcp } from '../src/mcp/outils-agent';
 import { MESSAGE_OPERATIONS_LOURDES } from '../src/auth/plafond-partage';
 import type { AgentComplet, AgentResume, PatchAgent } from '../src/agent/agent-store';
 import { ficheVide, fichePatchSchema } from '../src/agent/fiche';
-import { saisieDeCreation, saisieDeModification } from '../src/agent/gestion';
+import { MENTIONS_IA, langueDeLaMention, saisieDeCreation, saisieDeModification } from '../src/agent/gestion';
 import { CreditInsuffisantPourCle } from '../src/agent/provisionner-cle';
 import {
   saisieDeFiche, saisieDeListeDeFiches, saisieDeSite, saisieDeSuppression, saisieDeTexteDocument,
@@ -164,12 +164,14 @@ interface Options {
   repondeurAgentId?: string | null;
   outilsPoses?: OutilComplet[];
   fiches?: FicheConnaissance[];
+  /** La mention d'IA de l'agent : la phrase française relue par défaut. */
+  mentionIa?: string;
 }
 
 function monter(o: Options & { envoyerModele?: DepsMcp['envoyerModele']; usage?: GardeUsageMemoire } = {}) {
   let agent: AgentComplet = {
     id: AG, label: 'Conseiller', status: o.statut ?? 'draft',
-    mentionIa: 'Vous échangez avec un assistant automatique.', modele: 'modele-config',
+    mentionIa: o.mentionIa ?? 'Vous échangez avec un assistant automatique.', modele: 'modele-config',
     maxTours: 8, maxAppelsOutils: 12, budgetMicroEur: 30_000, inactiviteMinutes: 30,
     contactInconnu: 'lecture_seule', contenu: FICHE_COMPLETE, ficheVersion: 4,
   };
@@ -420,6 +422,7 @@ function monter(o: Options & { envoyerModele?: DepsMcp['envoyerModele']; usage?:
       applyEditsMany: async () => { throw new Error('applyEditsMany ne devrait pas être appelée'); },
       findByPhone: async () => null,
       setBlocked: async () => { throw new Error('setBlocked ne devrait pas être appelée'); },
+      isBlockedByWaId: async () => false,
       analysesEtResumes: async () => new Map(),
     },
     listerMembres: async () => [],
@@ -617,6 +620,23 @@ describe('les outils de l’agent appellent les fonctions de la console, dans l�
       expect(refus.texte, String(langue)).toMatch(/^mention_ia_langue/);
     }
     expect(cap.patches).toHaveLength(1);
+    await server.close();
+  });
+
+  it('🔴 une mention d’IA écrite dans la console se lit « personnalisee », et une autre modification la garde telle quelle', async () => {
+    const PERSO = 'Je suis l’assistant de la boutique, un conseiller prend le relais sur demande.';
+    expect(langueDeLaMention(PERSO)).toBe('personnalisee');
+    expect(langueDeLaMention('')).toBe('personnalisee');
+    expect(langueDeLaMention(` ${MENTIONS_IA.en} `)).toBe('en');
+    expect(langueDeLaMention(MENTIONS_IA.fr)).toBe('fr');
+    const { server, cap } = monter({ mentionIa: PERSO });
+    const lu = await appeler(server, JETON.brut, 'get_agent', { agent_id: AG });
+    expect(lu.json().agent).toMatchObject({ mention_ia: 'personnalisee' });
+    const r = await appeler(server, JETON.brut, 'update_agent', { agent_id: AG, ton: 'Chaleureux.', fiche_version: 4 });
+    expect(r.isError, r.texte).toBe(false);
+    expect(cap.patches).toHaveLength(1);
+    expect(cap.patches[0]!.patch).not.toHaveProperty('mentionIa');
+    expect(r.json().agent).toMatchObject({ mention_ia: 'personnalisee' });
     await server.close();
   });
 

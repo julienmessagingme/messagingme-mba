@@ -8,6 +8,16 @@ export const ORIGINES = ['humain', 'scenario', 'ia', 'mba', 'campagne', 'mcp', '
 export type OrigineMessage = (typeof ORIGINES)[number];
 
 /**
+ * Une réponse qui, pour le fil, vaut celle de l'équipe : elle clôt l'escalade (le client attendait un humain, il l'a eu)
+ * et relance le délai de reprise (`recordOutbound`). L'Inbox, et une réponse de Claude signée d'une personne (un jeton
+ * OAuth : `sender_user_id`) : c'est elle qui répond, par Claude, et la Free n'a pas d'autre Inbox. Une clé d'API (un
+ * agent tiers, sans personne) reste un automate. L'origine en base, elle, ne change pas : `mcp` reste une IA à l'écran.
+ */
+export function vautReponseDeLEquipe(origine: OrigineMessage, senderUserId: string | null): boolean {
+  return origine === 'humain' || (origine === 'mcp' && senderUserId !== null);
+}
+
+/**
  * Le moment où la colonne a commencé à être remplie. Il borne la dérivation ci-dessous : un chemin d'écriture
  * qui oublierait de poser son origine ressort en « indeterminee » au lieu d'être compté comme du scripté.
  */

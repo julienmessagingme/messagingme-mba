@@ -1,7 +1,7 @@
 import type { Pool } from 'pg';
 import type { InboxStore, InboundMessage } from '../webhooks/inbound';
 import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
-import type { OrigineMessage } from './origine';
+import { vautReponseDeLEquipe, type OrigineMessage } from './origine';
 import { visibiliteSql, voitTout, type ActeurConversation } from './assignment';
 import { MEDIA_EXPIRE_SQL } from './media-entrant';
 import { dureeConservationSql } from './retention';
@@ -2022,7 +2022,7 @@ export class PgInboxStore implements InboxStore {
          update conversations set last_message_at = now(), last_preview = $2, last_direction = 'out',
            control_changed_at = case when $11::boolean and control_owner = 'app_human'
                                      then now() else control_changed_at end,
-           -- La première réponse humaine clôt l'escalade ; un automate ne la clôt pas.
+           -- La première réponse de l'équipe clôt l'escalade ; un automate ne la clôt pas.
            escaladee_le = case when $11::boolean then null else escaladee_le end,
            analysis_status = case when analysis_status in ('done', 'failed', 'hors_offre') then 'pending' else analysis_status end
          where id = $1 and exists (select 1 from inserted)
@@ -2031,7 +2031,9 @@ export class PgInboxStore implements InboxStore {
        select exists (select 1 from inserted)
               or exists (select 1 from conversation_messages
                          where meta_message_id = $3 and conversation_id = $1 and direction = 'out') as recorded`,
-      [conversationId, body, messageId, type, templateCategory, templateName, senderUserId, channel, origine, redactionOrigine, origine === 'humain'],
+      // Une réponse de Claude signée d'une personne compte comme celle de l'Inbox (`vautReponseDeLEquipe`).
+      [conversationId, body, messageId, type, templateCategory, templateName, senderUserId, channel, origine, redactionOrigine,
+       vautReponseDeLEquipe(origine, senderUserId)],
     );
     // Un identifiant déjà porté par un AUTRE fil n'est pas un rejeu réussi.
     if (resultat.rows[0]?.recorded !== true) throw new Error('message sortant non journalisé dans cette conversation');

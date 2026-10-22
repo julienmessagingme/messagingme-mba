@@ -1740,17 +1740,19 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   L'écran le dit quand la liste est vide, plutôt que de laisser croire à une panne.
 - ✅ **Le constat ne décide rien, c'est vous qui décidez** : l'analyse signale, elle ne bloque
   jamais personne. Le blocage est un geste humain, pris depuis la **fiche du contact**, sous le
-  consentement (même famille de question : qu'a-t-on le droit d'envoyer à ce contact). Une
-  confirmation est demandée au blocage seulement, débloquer ne fait que remettre les choses en
-  place.
+  consentement (même famille de question : qu'a-t-on le droit d'envoyer à ce contact), ou demandé
+  à Claude par une personne connectée (`block_contact`). Une confirmation est demandée au blocage
+  seulement, débloquer ne fait que remettre les choses en place.
 - ✅ **Ce que le blocage arrête** : plus **aucun** envoi vers ce contact (il est écarté à la
   source des campagnes, et les automations sont coupées à leur point d'entrée), et sa
   conversation disparaît de l'Inbox. ⚠️ **Ce qu'il n'arrête pas** : ses messages entrants
   continuent d'être **enregistrés**. Faire disparaître ce qu'il envoie ferait aussi disparaître
   une résiliation ou une menace juridique sans que personne ne le sache. Ce qui s'arrête, c'est
   ce qui PART.
-- ✅ **Écran « Contacts bloqués » dans Paramètres** : c'est la **seule** porte de sortie. Un
-  contact bloqué n'apparaît plus nulle part ailleurs, il serait donc introuvable sans cet écran.
+- ✅ **Écran « Contacts bloqués » dans Paramètres** : c'est la **seule** porte de sortie de la
+  console. Un contact bloqué n'apparaît plus nulle part ailleurs, il serait donc introuvable sans
+  cet écran. Depuis Claude, `get_contact` et `search_contacts` disent s'il est bloqué, et
+  `block_contact` le débloque.
   La section se masque quand il n'y a personne, mais une erreur de lecture s'affiche : « je n'ai
   pas pu lire la liste » n'est pas « il n'y a personne dedans ».
 - ✅ **Le blocage n'entache pas l'après** : rien n'est marqué comme déclenché sur un contact
@@ -4801,8 +4803,9 @@ fonctions de la console, avec les mêmes contrôles : l'agent se retrouve à l'i
 - ✅ **Les opérations lourdes de Claude comptent dans le compteur des opérations lourdes de la console** (essai, ajout,
   import et suppression de connaissance, lecture d'un site, paiement) : une rafale de Claude ne contourne pas la limite
   par minute de l'espace.
-- ✅ **Ce que Claude ne règle pas** : les plafonds de coût d'un agent, sa mention d'IA, l'autonomie sur une action
-  irréversible, l'envoi d'un bloc, les connecteurs. Ils restent des gestes de la console.
+- ✅ **Ce que Claude ne règle pas** : les plafonds de coût d'un agent, sa mention d'IA en texte libre (il choisit
+  entre les deux phrases relues, en français ou en anglais), l'autonomie sur une action irréversible, l'envoi d'un bloc,
+  les connecteurs. Ils restent des gestes de la console.
 - ⚠️ **Activer un agent ne le fait pas répondre** : il parle dans le bloc Agent IA d'un scénario publié, à construire
   dans la console, ou une fois choisi pour répondre au client (par Claude, ou sur l'Accueil, dans « Qui répond au
   client ») : il répond alors à tout message que personne ne tient, et l'agent de Meta, s'il est allumé, reste en veille.

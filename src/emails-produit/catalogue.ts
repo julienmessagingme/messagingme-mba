@@ -493,17 +493,17 @@ export const CATALOGUE = [
       fr: {
         sujet: 'Une conversation attend votre réponse : {{contact}}',
         corps: 'Bonjour,\n\nLa conversation avec {{contact}} vient d’être confiée à l’équipe de l’espace {{espace}} : le '
-          + 'contact attend une réponse.\n\nRépondez-lui depuis Claude, en lui demandant « réponds à {{contact}} », ou depuis '
-          + 'votre application, librement jusqu’au {{fin_fenetre}}. Passé ce délai, WhatsApp n’accepte plus qu’un modèle '
-          + 'validé.\n\nL’Inbox de la console, pour répondre à plusieurs, fait partie de l’offre Pro.',
+          + 'contact attend une réponse.\n\nRépondez-lui depuis Claude, en lui demandant les conversations qui attendent une '
+          + 'réponse, ou depuis votre application. Par l’un ou l’autre, la réponse est libre jusqu’au {{fin_fenetre}} ; '
+          + 'ensuite, il faut un modèle validé.\n\nL’Inbox de la console, pour répondre à plusieurs, fait partie de l’offre Pro.',
         bouton: { libelle: 'Voir l’offre Pro', lien: '{{lien_offre}}' },
       },
       en: {
         sujet: 'A conversation is waiting for your reply: {{contact}}',
         corps: 'Hello,\n\nThe conversation with {{contact}} has just been handed to the {{espace}} workspace team: the contact '
-          + 'is waiting for a reply.\n\nReply from Claude, by asking it to “reply to {{contact}}”, or from your application, '
-          + 'freely until {{fin_fenetre}}. After that, WhatsApp only accepts an approved template.\n\nThe console Inbox, to '
-          + 'reply as a team, is part of the Pro plan.',
+          + 'is waiting for a reply.\n\nReply from Claude, by asking it for the conversations waiting for a reply, or from '
+          + 'your application. Either way, the reply is free until {{fin_fenetre}}; after that, an approved template is '
+          + 'needed.\n\nThe console Inbox, to reply as a team, is part of the Pro plan.',
         bouton: { libelle: 'See the Pro plan', lien: '{{lien_offre}}' },
       },
     },

@@ -61,6 +61,17 @@ describe.skipIf(!url)('PgConfirmations (Postgres)', () => {
     expect(await campagnes.desabonnesParmiLesDestinataires(autreTenant, campaignId)).toBe(0);
   });
 
+  it('le motif et l’échéance d’une pause (prepare_resume), lus dans l’espace seulement', async () => {
+    const enPause = (await pool.query<{ id: string }>(
+      `insert into campaigns (tenant_id, phone_number_id, name, category, template_name, template_language, status, pause_reason, paused_until)
+       values ($1, 'pn-conf', 'en pause', 'utility', 'retard_livraison', 'fr', 'paused', 'debit', '2027-10-30T08:15:00Z') returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    expect(await campagnes.pauseDe(tenantId, enPause)).toEqual({ motif: 'debit', jusqua: new Date('2027-10-30T08:15:00Z') });
+    expect(await campagnes.pauseDe(tenantId, campaignId)).toEqual({ motif: null, jusqua: null });
+    expect(await campagnes.pauseDe(autreTenant, enPause)).toBeNull();
+  });
+
   it('🔴 la campagne d’un autre espace ne reçoit pas de code', async () => {
     expect(await confirmations.poser(autreTenant, campaignId, 'etat')).toBeNull();
     expect(await confirmations.existe(autreTenant, campaignId)).toBe(false);
