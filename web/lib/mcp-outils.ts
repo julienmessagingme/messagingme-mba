@@ -81,6 +81,8 @@ const TEXTES_MCP = {
   list_webhook_endpoints: ['Les adresses de webhooks sortants, leurs types d’événements et leur état, et la limite de l’offre.', 'The outgoing webhook endpoints, their event types and status, and the plan limit.'],
   get_webhook_deliveries: ['Le journal d’une adresse : chaque envoi, son statut, la réponse de l’application et le corps envoyé.', 'An endpoint’s log: each delivery, its status, the app’s answer and the body sent.'],
   replay_webhook_delivery: ['Rejouer un envoi terminé : même corps, même identifiant d’événement.', 'Replay a finished delivery: same body, same event id.'],
+  update_webhook_endpoint: ['Modifier une adresse : ses types d’événements, sa pause, ou un nouveau secret, montré une fois.', 'Edit an endpoint: its event types, a pause, or a new secret, shown once.'],
+  delete_webhook_endpoint: ['Supprimer une adresse et son journal ; pour changer d’URL, la supprimer puis la recréer.', 'Delete an endpoint and its log; to change its URL, delete it and create it again.'],
   send_test_event: ['Envoyer tout de suite un événement d’essai signé à une adresse, et lire ce que l’application a répondu.', 'Send a signed test event to an address right away, and read what the app answered.'],
 } satisfies Record<NomOutilMcp, readonly [string, string]>;
 

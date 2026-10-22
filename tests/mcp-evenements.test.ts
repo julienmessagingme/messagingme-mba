@@ -132,3 +132,102 @@ describe('la liste, le journal et le rejeu depuis Claude (lot 13, domaine 4)', (
       .rejects.toThrow(/rien à rejouer/);
   });
 });
+
+/**
+ * MODIFIER ET SUPPRIMER UNE ADRESSE DEPUIS CLAUDE (plan `docs/superpowers/plans/2026-10-22-mcp-marche-arriere.md`,
+ * tâche 2) : la Free n'a qu'une adresse et plus de console, donc sans ces deux outils, le développeur qui passe de son
+ * tunnel d'essai à la production restait coincé. La MÊME gestion que la console (`modifierAdresse`, `tournerSecret`,
+ * `supprimerAdresse`) ; ce fichier tient ce que les outils ajoutent : la saisie, l'ordre, la trace.
+ */
+describe('modifier et supprimer une adresse depuis Claude (marche arrière, tâche 2)', () => {
+  type Patch = { description?: string; types?: readonly string[]; active?: boolean };
+  function avecAdresse(o: { limite?: number | null; tournee?: boolean; existe?: boolean } = {}) {
+    const { d, audit } = deps({ limite: o.limite });
+    const ecrits: Patch[] = [];
+    const tournes: string[] = [];
+    const supprimes: string[] = [];
+    const avant: AdresseVue = {
+      id: A, url: 'https://essai.ngrok.app/hook', description: '', types: ['message.received'], active: false, creeLe: '2026-10-08T10:00:00.000Z',
+      ancienSecretJusqua: null, derniereLivraisonLe: null, enReessai: 0, echecs: 0,
+    };
+    const existe = (t: string, id: string) => (o.existe ?? true) && t === T && id === A;
+    d.evenements.gestion.adresses = {
+      ...d.evenements.gestion.adresses,
+      lire: async (t, id) => (existe(t, id) ? avant : null),
+      modifier: async (t, id, p) => {
+        if (!existe(t, id)) return null;
+        ecrits.push(p);
+        return { ...avant, ...p, types: p.types ? [...p.types] : avant.types };
+      },
+      tourner: async (t, id) => { if (!existe(t, id) || o.tournee === false) return false; tournes.push(id); return true; },
+      supprimer: async (t, id) => { if (!existe(t, id)) return false; supprimes.push(id); return true; },
+    };
+    d.evenements.gestion.chiffrer = (c) => `c:${c}`;
+    return { d, audit, ecrits, tournes, supprimes };
+  }
+
+  it('🔴 les deux exigent une personne, dans toutes les offres : une clé d’API ne les voit pas', () => {
+    for (const nom of ['update_webhook_endpoint', 'delete_webhook_endpoint']) {
+      expect(outil(nom).exigePersonne).toBe(true);
+      expect(outil(nom).fonction).toBeNull();
+    }
+    const parCle = outilsPour({ scopes: ['mcp:read', 'mcp:write'], personne: null } as never).map((o) => o.nom);
+    expect(parCle).not.toContain('update_webhook_endpoint');
+    expect(parCle).not.toContain('delete_webhook_endpoint');
+  });
+
+  it('modifier passe par la gestion de la console, et la trace signe la personne', async () => {
+    const { d, audit, ecrits } = avecAdresse();
+    const r = await outil('update_webhook_endpoint').executer(d, T, { adresse_id: A, types: ['message.received', 'agent.action'], active: true }, { userId: 'u1' });
+    expect(ecrits).toEqual([{ types: ['message.received', 'agent.action'], active: true }]);
+    expect(r).toMatchObject({ adresse: { id: A, active: true, types: ['message.received', 'agent.action'] } });
+    expect(audit).toEqual([{ action: 'evenements.adresse_modifiee', userId: 'u1', detail: { active: true, types: ['message.received', 'agent.action'], via: 'mcp' } }]);
+  });
+
+  it('🔴 le nouveau secret n’est rendu qu’une fois, avec la fin de validité de l’ancien, et jamais dans la trace', async () => {
+    const { d, audit, ecrits, tournes } = avecAdresse();
+    const r = await outil('update_webhook_endpoint').executer(d, T, { adresse_id: A, rotate_secret: true }, { userId: 'u1' }) as { secret: string; ancien_secret_valable_jusqua: string };
+    expect(ecrits).toEqual([]);
+    expect(tournes).toEqual([A]);
+    expect(r.secret).toMatch(/^whsec_/);
+    expect(Date.parse(r.ancien_secret_valable_jusqua)).toBeGreaterThan(Date.now());
+    expect(audit).toEqual([{ action: 'evenements.secret_tourne', userId: 'u1', detail: { ancienJusqua: r.ancien_secret_valable_jusqua, via: 'mcp' } }]);
+    expect(JSON.stringify(audit)).not.toContain(r.secret.slice(6));
+  });
+
+  it('🔴 un secret qui ne tourne pas APRÈS une modification le dit : la modification, elle, est faite', async () => {
+    const { d, ecrits } = avecAdresse({ tournee: false });
+    await expect(outil('update_webhook_endpoint').executer(d, T, { adresse_id: A, description: 'Production', rotate_secret: true }, { userId: 'u1' }))
+      .rejects.toThrow(/modification est enregistrée/);
+    expect(ecrits).toEqual([{ description: 'Production' }]);
+  });
+
+  it('réactiver au-delà de la limite de l’offre garde la phrase de la gestion', async () => {
+    const { d, ecrits } = avecAdresse({ limite: 1 });
+    await expect(outil('update_webhook_endpoint').executer(d, T, { adresse_id: A, active: true }, { userId: 'u1' }))
+      .rejects.toThrow(/Limite de votre offre atteinte : 1 adresse de webhook sortant/);
+    expect(ecrits).toEqual([]);
+  });
+
+  it('🔴 l’URL ne se modifie pas : refusée, avec le chemin (supprimer puis recréer) ; une saisie vide aussi', async () => {
+    for (const saisie of [{ adresse_id: A, url: 'https://app.client.fr/hook' }, { adresse_id: A }]) {
+      const { d, ecrits, tournes } = avecAdresse();
+      await expect(outil('update_webhook_endpoint').executer(d, T, saisie, { userId: 'u1' })).rejects.toBeInstanceOf(RefusOutil);
+      expect(ecrits).toEqual([]);
+      expect(tournes).toEqual([]);
+    }
+    const { d } = avecAdresse();
+    await expect(outil('update_webhook_endpoint').executer(d, T, { adresse_id: A, url: 'https://app.client.fr/hook' }, { userId: 'u1' }))
+      .rejects.toThrow(/delete_webhook_endpoint/);
+  });
+
+  it('supprimer passe par la gestion, signé de la personne ; une adresse inconnue est un refus lisible', async () => {
+    const { d, audit, supprimes } = avecAdresse();
+    expect(await outil('delete_webhook_endpoint').executer(d, T, { adresse_id: A }, { userId: 'u1' })).toEqual({ supprimee: true, adresse_id: A });
+    expect(supprimes).toEqual([A]);
+    expect(audit).toEqual([{ action: 'evenements.adresse_supprimee', userId: 'u1', detail: { via: 'mcp' } }]);
+    const autre = avecAdresse({ existe: false });
+    await expect(outil('delete_webhook_endpoint').executer(autre.d, T, { adresse_id: A }, { userId: 'u1' })).rejects.toThrow(/Adresse introuvable/);
+    expect(autre.audit).toEqual([]);
+  });
+});

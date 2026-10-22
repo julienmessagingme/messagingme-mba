@@ -826,6 +826,10 @@ describe('serveur MCP : cohérence du catalogue', () => {
       send_test_event: [true, false, true],
       // Lot 13, domaine 4 : l'envoi repart vers l'application, avec le même identifiant d'événement.
       replay_webhook_delivery: [true, true, true],
+      // La marche arrière (2026-10-22) : chaque rotation tire un nouveau secret ; supprimer deux fois ne supprime rien de
+      // plus ; rien ne part chez un tiers.
+      update_webhook_endpoint: [true, false, false],
+      delete_webhook_endpoint: [true, true, false],
       // Lot 13, domaine 3 : un modèle de plus chez Meta à chaque appel, qui y reste.
       create_template: [true, false, true],
       // Livraison B : un message part chez une personne ; la même clé d'idempotence ne renvoie rien ; le fil n'est pas pris.

@@ -4,7 +4,9 @@ import { RefusOutil, entierBorne, valeurOuRefus } from './saisie';
 import { MESSAGE_OPERATIONS_LOURDES } from '../auth/plafond-partage';
 import type { AuditSink } from '../audit/journal';
 import { TYPES_ABONNABLES, TYPES_DECOCHES_PAR_DEFAUT } from '../evenements/types';
-import { creerAdresse, envoyerEssai, lireJournal, rejouerEnvoi, type DepsGestionEvenements } from '../evenements/gestion';
+import {
+  creerAdresse, envoyerEssai, lireJournal, modifierAdresse, rejouerEnvoi, supprimerAdresse, tournerSecret, type DepsGestionEvenements,
+} from '../evenements/gestion';
 import { deliveryV1, webhookV1 } from '../http/v1-webhooks';
 
 /**
@@ -170,6 +172,101 @@ export const OUTILS_EVENEMENTS: OutilMcp[] = [
         tenantId, { userId: personne?.userId ?? null, email: null }, 'evenements.envoi_rejoue', { kind: 'envoi_evenements', id }, { via: 'mcp' },
       );
       return { rejoue: true };
+    },
+  },
+  /*
+   * La marche arrière (plan du 2026-10-22, tâche 2) : modifier et supprimer une adresse, comme `PATCH`, `rotate-secret` et
+   * `DELETE /v1/webhooks/{id}`. La Free n'a qu'une adresse et plus de console : sans eux, passer de l'adresse d'un
+   * tunnel d'essai à celle de la production était impossible depuis Claude. La même trace que les routes, `via: 'mcp'`.
+   */
+  {
+    ...ficheOutilMcp('update_webhook_endpoint'),
+    fonction: null,
+    description:
+      'Edits an outgoing webhook endpoint (list_webhook_endpoints gives its id): its event types, its description, a pause '
+      + '(active false: it receives nothing, and the events of the pause are not sent later) or a reactivation (active '
+      + 'true, refused beyond the plan\'s limit of active endpoints), and rotate_secret true for a new signing secret, '
+      + 'shown ONLY ONCE in this result: put it at once in the application\'s environment variable, the previous secret '
+      + 'keeps signing until previous_secret_valid_until (24 hours). If the workspace\'s responder is the application '
+      + '(set_default_responder), a paused endpoint sends the customers\' messages to the team. The URL does not change: '
+      + 'to move an endpoint, delete_webhook_endpoint then create_webhook_endpoint, which gives a new secret.',
+    // Une adresse de plus n'est pas créée, mais chaque `rotate_secret` en tire un nouveau : pas idempotente. Rien ne part
+    // chez un tiers. Destructrice pour la règle du répertoire de Claude.
+    annotations: { title: 'Edit an outgoing webhook', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    entree: {
+      type: 'object',
+      properties: {
+        adresse_id: { type: 'string', format: 'uuid', minLength: 1, maxLength: 100, description: 'The endpoint id (list_webhook_endpoints).' },
+        types: {
+          type: 'array', minItems: 1, maxItems: TYPES_ABONNABLES.length, items: { type: 'string', enum: [...TYPES_ABONNABLES] },
+          description: 'The events to receive, each one once; they REPLACE the current ones.',
+        },
+        description: { type: 'string', maxLength: 200, description: 'A readable name in the console.' },
+        active: { type: 'boolean', description: 'false pauses the endpoint, true reactivates it.' },
+        rotate_secret: { type: 'boolean', description: 'true: a new signing secret, shown once in the result.' },
+      },
+      required: ['adresse_id'],
+      additionalProperties: false,
+    },
+    async executer(deps: DepsMcp, tenantId, args, personne) {
+      if (args.url !== undefined) {
+        throw new RefusOutil('l’adresse d’un webhook ne se modifie pas : supprimez-la (delete_webhook_endpoint) puis recréez-la '
+          + '(create_webhook_endpoint), qui rend un nouveau secret');
+      }
+      const id = typeof args.adresse_id === 'string' ? args.adresse_id : '';
+      // Seuls les champs donnés partent à la gestion, qui refuse toute autre clé (`saisieModification`, stricte).
+      const patch = Object.fromEntries((['types', 'description', 'active'] as const).filter((k) => args[k] !== undefined).map((k) => [k, args[k]]));
+      const tourner = args.rotate_secret === true;
+      if (Object.keys(patch).length === 0 && !tourner) throw new RefusOutil('rien à modifier : types, description, active ou rotate_secret');
+      const g = deps.evenements.gestion;
+      const auteur = { userId: personne?.userId ?? null, email: null };
+      const cible = { kind: 'adresse_evenements', id };
+      // La modification AVANT la rotation : un refus de la modification (la limite de l'offre) ne doit pas laisser derrière
+      // lui un secret neuf que personne n'aurait vu.
+      let adresse = Object.keys(patch).length > 0 ? valeurOuRefus(await modifierAdresse(g, tenantId, id, patch)) : null;
+      if (adresse !== null) {
+        await deps.evenements.audit(tenantId, auteur, 'evenements.adresse_modifiee', cible, { active: adresse.active, types: adresse.types, via: 'mcp' });
+      }
+      if (!tourner) return { adresse: webhookV1(adresse!) };
+      const r = await tournerSecret(g, tenantId, id);
+      if (!r.ok) {
+        throw new RefusOutil(adresse === null ? r.erreur : `la modification est enregistrée, mais le secret n’a pas tourné : ${r.erreur}`);
+      }
+      await deps.evenements.audit(tenantId, auteur, 'evenements.secret_tourne', cible, { ancienJusqua: r.valeur.ancienJusqua, via: 'mcp' });
+      adresse ??= await g.adresses.lire(tenantId, id);
+      return {
+        ...(adresse ? { adresse: webhookV1(adresse) } : {}),
+        secret: r.valeur.secret,
+        ancien_secret_valable_jusqua: r.valeur.ancienJusqua,
+        a_faire: 'Remplacer le secret dans la variable d’environnement de l’application (par exemple MESSAGINGME_WEBHOOK_SECRET) avant cette date.',
+      };
+    },
+  },
+  {
+    ...ficheOutilMcp('delete_webhook_endpoint'),
+    fonction: null,
+    description:
+      'Deletes an outgoing webhook endpoint and its log: Messaging Me stops sending it events at once, deliveries being '
+      + 'retried included. If the workspace\'s responder is the application (set_default_responder), the customers\' '
+      + 'messages then go to the team. To move an endpoint to another URL: delete it, then create_webhook_endpoint (a new '
+      + 'secret). To stop it for a while, pause it instead (update_webhook_endpoint, active false).',
+    // Rejouer la suppression ne supprime rien de plus. Rien ne part chez un tiers.
+    annotations: { title: 'Delete an outgoing webhook', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    entree: {
+      type: 'object',
+      properties: {
+        adresse_id: { type: 'string', format: 'uuid', minLength: 1, maxLength: 100, description: 'The endpoint id (list_webhook_endpoints).' },
+      },
+      required: ['adresse_id'],
+      additionalProperties: false,
+    },
+    async executer(deps: DepsMcp, tenantId, args, personne) {
+      const id = typeof args.adresse_id === 'string' ? args.adresse_id : '';
+      valeurOuRefus(await supprimerAdresse(deps.evenements.gestion, tenantId, id));
+      await deps.evenements.audit(
+        tenantId, { userId: personne?.userId ?? null, email: null }, 'evenements.adresse_supprimee', { kind: 'adresse_evenements', id }, { via: 'mcp' },
+      );
+      return { supprimee: true, adresse_id: id };
     },
   },
 ];

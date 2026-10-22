@@ -4940,6 +4940,8 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 | list_webhook_endpoints | mcp:read connexion OAuth requise | Les adresses de webhooks sortants, leurs types d’événements et leur état, et la limite de l’offre. |
 | get_webhook_deliveries | mcp:read connexion OAuth requise | Le journal d’une adresse : chaque envoi, son statut, la réponse de l’application et le corps envoyé. |
 | replay_webhook_delivery | mcp:write connexion OAuth requise | Rejouer un envoi terminé : même corps, même identifiant d’événement. |
+| update_webhook_endpoint | mcp:write connexion OAuth requise | Modifier une adresse : ses types d’événements, sa pause, ou un nouveau secret, montré une fois. |
+| delete_webhook_endpoint | mcp:write connexion OAuth requise | Supprimer une adresse et son journal ; pour changer d’URL, la supprimer puis la recréer. |
 | send_test_event | mcp:write connexion OAuth requise | Envoyer tout de suite un événement d’essai signé à une adresse, et lire ce que l’application a répondu. |
 
 ## Ce qu’il ne fait pas

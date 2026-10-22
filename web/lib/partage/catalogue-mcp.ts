@@ -59,6 +59,9 @@ export const CATALOGUE_MCP = {
   list_webhook_endpoints: { scope: 'mcp:read', exigePersonne: true },
   get_webhook_deliveries: { scope: 'mcp:read', exigePersonne: true },
   replay_webhook_delivery: { scope: 'mcp:write', exigePersonne: true },
+  /** Modifier et supprimer une adresse (2026-10-22) : la Free n'a qu'une adresse, et plus de console pour la changer. */
+  update_webhook_endpoint: { scope: 'mcp:write', exigePersonne: true },
+  delete_webhook_endpoint: { scope: 'mcp:write', exigePersonne: true },
   list_templates: { scope: 'mcp:read' },
   get_template_status: { scope: 'mcp:read' },
   /**

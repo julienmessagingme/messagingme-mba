@@ -4939,6 +4939,8 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 | list_webhook_endpoints | mcp:read OAuth connection required | The outgoing webhook endpoints, their event types and status, and the plan limit. |
 | get_webhook_deliveries | mcp:read OAuth connection required | An endpoint’s log: each delivery, its status, the app’s answer and the body sent. |
 | replay_webhook_delivery | mcp:write OAuth connection required | Replay a finished delivery: same body, same event id. |
+| update_webhook_endpoint | mcp:write OAuth connection required | Edit an endpoint: its event types, a pause, or a new secret, shown once. |
+| delete_webhook_endpoint | mcp:write OAuth connection required | Delete an endpoint and its log; to change its URL, delete it and create it again. |
 | send_test_event | mcp:write OAuth connection required | Send a signed test event to an address right away, and read what the app answered. |
 
 ## What it does not do

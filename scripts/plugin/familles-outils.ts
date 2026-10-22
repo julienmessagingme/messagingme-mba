@@ -30,6 +30,6 @@ export const FAMILLES_OUTILS: ReadonlyArray<{ readonly titre: string; readonly o
   },
   { titre: 'Chat bubble', outils: ['list_widgets', 'create_widget', 'update_widget'] },
   { titre: 'Shopify store', outils: ['connect_shopify', 'set_shopify_message', 'get_shopify_state', 'preview_shopify_customers', 'import_shopify_customers', 'disconnect_shopify'] },
-  { titre: 'Webhooks', outils: ['create_webhook_endpoint', 'list_webhook_endpoints', 'send_test_event', 'get_webhook_deliveries', 'replay_webhook_delivery'] },
+  { titre: 'Webhooks', outils: ['create_webhook_endpoint', 'list_webhook_endpoints', 'update_webhook_endpoint', 'delete_webhook_endpoint', 'send_test_event', 'get_webhook_deliveries', 'replay_webhook_delivery'] },
   { titre: 'Statistics', outils: ['get_message_stats', 'get_campaign_stats', 'get_ai_stats'] },
 ];
