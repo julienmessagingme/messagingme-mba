@@ -91,3 +91,16 @@ export function numeroFourniAGarder(o: {
   if (compteVivant && o.compte!.numero === o.fourni.numero) return true;
   return (o.filiereDuLien === 'application' || compteVivant) && o.codeCapte;
 }
+
+/**
+ * Le crédit offert au premier numéro, servi à la LECTURE de l'état de connexion dès qu'un compte de l'application y est
+ * relié (essai réel du 2026-10-22) : la page bascule sur « connecté » dès que l'état le dit, avant que le bloc du QR code
+ * ne lise « relié », et l'attente de Claude ne lit que l'état. L'offre est idempotente (une fois par espace, jamais deux
+ * fois pour un même téléphone) et `offrir` ne lève jamais. Rend l'état tel quel.
+ */
+export async function servirLeCreditSiRelie<E extends { application?: { statut: StatutCompte } }>(
+  etat: E, tenantId: string, offrir: (tenantId: string) => Promise<void>,
+): Promise<E> {
+  if (etat.application?.statut === 'relie') await offrir(tenantId);
+  return etat;
+}

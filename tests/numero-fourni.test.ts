@@ -59,6 +59,8 @@ function monter(o: {
   pro?: boolean;
   /** Le compte de l'application WhatsApp Business de l'espace (filière application, 2026-10-22). */
   compteApplication?: { numero: string; statut: 'en_attente' | 'relie' };
+  /** Les offres de crédit servies (filière application). */
+  offres?: string[];
 } = {}) {
   const cap = {
     attribues: 0, rendus: 0, remplaces: 0, gardes: 0, alertesReserve: [] as number[], bloques: [] as string[],
@@ -126,6 +128,7 @@ function monter(o: {
     pro: { vivant: async () => o.pro ?? false },
     application: o.compteApplication ? {
       ...aucunCompteApplication,
+      offrirCredit: async (t: string) => { o.offres?.push(t); },
       comptes: {
         ...aucunCompteApplication.comptes,
         parEspace: async (t: string) => ({
@@ -382,6 +385,16 @@ describe('remplacer et abandonner', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ rendu: true });
     expect([cap.rendus, cap.gardes, cap.bloques]).toEqual([0, 1, ['441235619343']]);
+    await server.close();
+  });
+
+  it('🔴 essai réel : la lecture de l’état qui voit un compte de l’application relié sert le crédit offert', async () => {
+    const offres: string[] = [];
+    const { server } = monter({ compteApplication: { numero: '441235619343', statut: 'relie' }, offres });
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/connexion-numero', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().etat.connecte).toEqual({ chiffres: '441235619343', aActiver: false });
+    expect(offres).toEqual(['t1']);
     await server.close();
   });
 

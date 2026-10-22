@@ -11,7 +11,7 @@ import type { PgAbonnementsNumeroStore } from '../stripe/abonnements.pg';
 import type { RetourAbonnement } from '../stripe/abonnement';
 import { corpsDuRefus, type Issue } from '../lib/issue';
 import { programmerLaFinDuNumero } from '../numero/fin-abonnement';
-import { numeroFourniAGarder, qrApplication, relierApplication, type DepsConnexionApplication } from '../application/connexion';
+import { numeroFourniAGarder, qrApplication, relierApplication, servirLeCreditSiRelie, type DepsConnexionApplication } from '../application/connexion';
 
 /**
  * LE NUMÉRO FOURNI CÔTÉ CLIENT (lot 3b, spec `docs/superpowers/specs/2026-10-05-numero-fourni-design.md`).
@@ -250,7 +250,9 @@ export function registerNumeroFourni(
   // Où en est la connexion du numéro (lot 3c) : la page `/brancher` la relit, et l'outil d'attente de Claude Code lit la
   // MÊME chose (`lireEtatConnexion`). Lecture seule, hors plafond coûteux.
   app.get('/tenants/:tenantId/connexion-numero', opts, async (req, reply) => {
-    const etat = await lireEtatConnexion(deps, espaceVerifie(req));
+    const tenant = espaceVerifie(req);
+    // Le crédit offert d'un compte de l'application relié se sert ici, où la page passe forcément (essai réel).
+    const etat = await servirLeCreditSiRelie(await lireEtatConnexion(deps, tenant), tenant, (t) => deps.application.offrirCredit(t));
     return reply.code(200).send({ etat, empreinte: empreinteEtat(etat) });
   });
 

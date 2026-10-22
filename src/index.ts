@@ -103,7 +103,7 @@ import { PgChannelsMePostStore } from './channels-me/post-store.pg';
 import { ChannelsMeClient } from './channels-me/client';
 import { PgWidgetStore } from './widgets/store.pg';
 import { qrSvg } from './widgets/qr';
-import type { DepsConnexionApplication } from './application/connexion';
+import { servirLeCreditSiRelie, type DepsConnexionApplication } from './application/connexion';
 import { conflitDansLEspace } from './widgets/phrases';
 import { gestionDesWidgetsEnBase, type DepsWidgets } from './widgets/gestion';
 import { etatDuScenario } from './workflow/store.pg';
@@ -3076,7 +3076,11 @@ async function main(): Promise<void> {
         // `/brancher` de la console, et la MÊME lecture de l'état que cette page.
         numero: {
           signerLien: (l) => signLienNumero(l, config.AUTH_SECRET),
-          etat: (tenant) => lireEtatConnexion({ numeros: numerosFournis, numeroConnecte, abonnements: abonnementsNumero, pro: abonnementsOffre, application: connexionApplication }, tenant),
+          // Le crédit offert d'un compte de l'application relié se sert à cette lecture aussi : l'attente de Claude ne lit qu'elle.
+          etat: async (tenant) => servirLeCreditSiRelie(
+            await lireEtatConnexion({ numeros: numerosFournis, numeroConnecte, abonnements: abonnementsNumero, pro: abonnementsOffre, application: connexionApplication }, tenant),
+            tenant, (t) => connexionApplication.offrirCredit(t),
+          ),
           urlConsole: config.APP_URL,
           attendre: (ms) => new Promise((r) => { setTimeout(r, ms); }),
           maintenant: () => Date.now(),

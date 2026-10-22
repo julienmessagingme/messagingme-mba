@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import { signLienNumero, verifyLienNumero } from '../src/auth/token';
 import { empreinteEtat, lireEtatConnexion, type EtatConnexion } from '../src/otp/etat-connexion';
-import { numeroFourniAGarder, qrApplication, relierApplication, type DepsConnexionApplication } from '../src/application/connexion';
+import { numeroFourniAGarder, qrApplication, relierApplication, servirLeCreditSiRelie, type DepsConnexionApplication } from '../src/application/connexion';
 import type { CompteApplication, StatutCompte } from '../src/application/comptes';
 import type { ClientApplication } from '../src/application/client';
 import { OUTILS, type DepsMcp, type OutilMcp } from '../src/mcp/outils';
@@ -16,6 +16,7 @@ const T = 'bbbbbbbb-0000-4000-8000-000000000002';
 const COMPTE = 'aaaaaaaa-0000-4000-8000-000000000001';
 const SECRET = randomBytes(32).toString('hex');
 
+const VIDE_ETAT: EtatConnexion = { fourni: null, code: null, connecte: null, abonnement: null, inclusDansLePro: false };
 const compte = (statut: StatutCompte, numero = '447700900000'): CompteApplication => ({
   id: COMPTE, tenantId: T, numero, jid: null, statut, fourniId: null, relieLe: null, dernierMessageLe: null, statutChangeLe: new Date(0),
 });
@@ -85,6 +86,20 @@ function banc(o: { compte?: CompteApplication | null; fourni?: { id: string; num
   };
   return { d, traces };
 }
+
+describe('le crédit offert, servi à la lecture de l’état (essai réel du 2026-10-22)', () => {
+  // La page bascule sur « connecté » dès que l'état dit relié, et le bloc du QR code disparaît avant de lire « relié » ;
+  // l'attente de Claude ne lit que l'état. L'offre se sert donc là où les deux passent : la lecture de l'état.
+  it('🔴 un compte relié se voit servir le crédit offert ; un compte en attente, et la filière API, non', async () => {
+    const offerts: string[] = [];
+    const offrir = async (t: string) => { offerts.push(t); };
+    const relie: EtatConnexion = { ...VIDE_ETAT, connecte: { chiffres: '447700900000', aActiver: false }, application: { statut: 'relie', numero: '447700900000' } };
+    expect(await servirLeCreditSiRelie(relie, T, offrir)).toBe(relie);
+    await servirLeCreditSiRelie({ ...VIDE_ETAT, application: { statut: 'en_attente', numero: '447700900000' } }, T, offrir);
+    await servirLeCreditSiRelie({ ...VIDE_ETAT, connecte: { chiffres: '33612345678', aActiver: false } }, T, offrir);
+    expect(offerts).toEqual([T]);
+  });
+});
 
 describe('relier depuis la page du lien', () => {
   it('le numéro de l’utilisateur, préparé par Claude : la session s’ouvre, le QR code suit', async () => {
