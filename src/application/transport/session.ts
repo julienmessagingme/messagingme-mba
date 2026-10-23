@@ -4,9 +4,11 @@
 // conversations individuelles, l'envoi d'un texte. Les types de Baileys ne sortent pas de ce dossier.
 import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, normalizeMessageContent, type proto, type WAMessage, type WASocket } from '@whiskeysockets/baileys';
 import type { Pool } from 'pg';
+import type { Verification } from '../interne';
 import { estIndividuel, type TypeMessageApplication } from '../message';
 import { codeDeconnexion } from './connexion';
 import { correspondancesPostgres, effacerEtatAuth, etatAuthPostgres, type Correspondances } from './etat-auth';
+import { resoudreDestinataire } from './resolution';
 
 export type CauseFermeture = 'reprise' | 'banni' | 'deconnecte';
 
@@ -42,6 +44,8 @@ export interface RappelsSession {
 export interface Session {
   /** Envoie un texte ; rend l'identifiant du message. */
   envoyer(destinataire: string, texte: string): Promise<string>;
+  /** Le numéro est-il sur WhatsApp ? Retient au passage son identifiant masqué, pour un premier message (`resolution.ts`). */
+  verifier(numero: string): Promise<Verification>;
   /** Ferme la socket sans toucher à la session côté WhatsApp (sommeil, arrêt du service). */
   fermer(): void;
   /** Retire l'appareil lié côté WhatsApp, puis efface l'état : un nouvel appairage sera nécessaire. */
@@ -180,7 +184,7 @@ export function optionsDuSocket(memoire: Pick<MemoireDesEnvois, 'retrouver'>) {
 
 /**
  * L'ADRESSE D'UNE RÉPONSE (essai réel du 2026-10-22) : l'identifiant masqué du contact quand il nous a écrit depuis lui,
- * sinon son numéro. WhatsApp adresse la plupart des conversations par identifiant masqué : une réponse envoyée au numéro
+ * ou qu'une vérification avant un premier message l'a appris (`resolution.ts`), sinon son numéro. WhatsApp adresse la plupart des conversations par identifiant masqué : une réponse envoyée au numéro
  * arrivait sur l'ordinateur du contact et restait « En attente de ce message » sur son mobile ; la même, adressée à son
  * identifiant masqué, est arrivée sur les deux (mesuré sur newCompany). La conversation garde le numéro pour clé.
  */
@@ -257,6 +261,12 @@ export async function ouvrirSession(
 
   return {
     envoyer: envoyeur(sock, envois, (destinataire) => adresseDeReponse(destinataire, correspondances, sock.user?.lid)),
+    async verifier(numero) {
+      if (!(await resoudreDestinataire(sock, correspondances, numero)).present) return { present: false, adresse: null };
+      // L'adresse que prendra l'envoi qui suit, calculée comme lui : c'est ce qu'un « En attente » sur le mobile interroge.
+      const adresse = await adresseDeReponse(`${numero}@s.whatsapp.net`, correspondances, sock.user?.lid);
+      return { present: true, adresse: adresse.endsWith('@lid') ? 'lid' : 'numero' };
+    },
     fermer() {
       // end() ferme la socket sans détruire la session côté WhatsApp, contrairement à logout().
       sock.end(undefined);

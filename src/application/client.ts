@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { signRequest } from '../lib/signature';
 import { STATUTS_COMPTE, type StatutCompte } from './comptes';
-import { PREFIXE } from './interne';
+import { PREFIXE, type Verification } from './interne';
 
 /**
  * LE CLIENT DU SERVICE DE CONNEXIONS (plan 2026-10-22, tâche 3), pour l'API et le worker. Chaque appel est signé
@@ -16,6 +16,8 @@ export interface ClientApplication {
   relier(compteId: string): Promise<Resultat>;
   qr(compteId: string): Promise<Resultat<{ qr: string | null; ouverte: boolean; statut: StatutCompte | null }>>;
   envoyer(compteId: string, destinataire: string, texte: string): Promise<Resultat<{ messageId: string }>>;
+  /** Le numéro (chiffres seuls) est-il sur WhatsApp ? Le service retient son identifiant masqué pour l'envoi qui suit. */
+  verifier(compteId: string, numero: string): Promise<Resultat<Verification>>;
   sommeil(compteId: string): Promise<Resultat>;
   retirer(compteId: string): Promise<Resultat>;
 }
@@ -31,6 +33,7 @@ export interface OptionsClient {
 const refusLu = z.object({ raison: z.enum(['non_relie', 'statut', 'compte_inconnu']) });
 const qrLu = z.object({ qr: z.string().nullable(), ouverte: z.boolean(), statut: z.enum(STATUTS_COMPTE).nullable() });
 const envoiLu = z.object({ messageId: z.string().min(1) });
+const verificationLue = z.object({ present: z.boolean(), adresse: z.enum(['lid', 'numero']).nullable() });
 
 export function creerClientApplication(o: OptionsClient): ClientApplication {
   const f = o.fetch ?? fetch;
@@ -84,6 +87,12 @@ export function creerClientApplication(o: OptionsClient): ClientApplication {
       if (!r.ok) return r;
       const lu = envoiLu.safeParse(r.json);
       return lu.success ? { ok: true, messageId: lu.data.messageId } : { ok: false, raison: 'refuse' };
+    },
+    async verifier(id, numero) {
+      const r = await appeler('POST', `${PREFIXE}/${encodeURIComponent(id)}/verifier`, { numero });
+      if (!r.ok) return r;
+      const lu = verificationLue.safeParse(r.json);
+      return lu.success ? { ok: true, ...lu.data } : { ok: false, raison: 'refuse' };
     },
   };
 }

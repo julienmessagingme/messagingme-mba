@@ -71,6 +71,7 @@ function banc(o: { compte?: CompteApplication | null; fourni?: { id: string; num
     relier: async (id) => { traces.push(`relier:${id}`); return { ok: true }; },
     qr: async () => ({ ok: true, qr: o.qr ?? 'QR-TEXTE', ouverte: false, statut: 'en_attente' }),
     envoyer: async () => ({ ok: false, raison: 'refuse' }),
+    verifier: async () => ({ ok: true, present: true, adresse: 'lid' }),
     sommeil: async () => ({ ok: true }), retirer: async () => ({ ok: true }),
     ...o.client,
   };

@@ -110,11 +110,14 @@ export async function etatAuthPostgres(pool: Pool, compteId: string, cle: Buffer
   };
 }
 
-/** Le numero d'un contact masque (`…@lid`), appris de ses messages recus (`completerNumero`, `./session.ts`). */
+/**
+ * Le numero d'un contact masque (`…@lid`), appris de ses messages recus (`completerNumero`, `./session.ts`) ou d'une
+ * verification avant un premier message (`resoudreDestinataire`, `./resolution.ts`).
+ */
 export interface Correspondances {
   retenir(lid: string, numero: string): Promise<void>;
   numeroDe(lid: string): Promise<string | null>;
-  /** L'identifiant masque d'un numero, quand le contact nous a ecrit depuis lui (`adresseDeReponse`, `./session.ts`). */
+  /** L'identifiant masque d'un numero, quand le contact nous a ecrit depuis lui ou qu'une verification l'a appris (`adresseDeReponse`). */
   lidDe(numero: string): Promise<string | null>;
 }
 

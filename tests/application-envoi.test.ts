@@ -24,7 +24,7 @@ const compte = (statut: StatutCompte): CompteApplication => ({
 function client(envois: string[], issue: Awaited<ReturnType<ClientApplication['envoyer']>> = { ok: true, messageId: 'WA9' }): ClientApplication {
   const non = async () => ({ ok: false as const, raison: 'refuse' as const });
   return {
-    relier: non, sommeil: non, retirer: non, qr: non,
+    relier: non, sommeil: non, retirer: non, qr: non, verifier: non,
     async envoyer(id, dest, texte) { envois.push(`${id}:${dest}:${texte}`); return issue; },
   };
 }

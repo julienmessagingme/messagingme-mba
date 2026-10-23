@@ -21,6 +21,11 @@ const sessions: GestionnaireSessions = {
     appels.push(`envoyer:${id}:${dest}:${texte}`);
     return 'WA-42';
   },
+  async verifier(id, numero) {
+    if (numero === '33600000000') throw new ErreurApplication('non_relie', 'non relié');
+    appels.push(`verifier:${id}:${numero}`);
+    return numero === '33699999999' ? { present: false, adresse: null } : { present: true, adresse: 'lid' };
+  },
   async sommeil(id) { appels.push(`sommeil:${id}`); },
   async retirer(id) { appels.push(`retirer:${id}`); },
   arreter() {},
@@ -57,6 +62,16 @@ describe('le client et les routes du service de connexions', () => {
 
   it('un compte non relié rend un refus lisible, pas une exception', async () => {
     expect(await client().envoyer(COMPTE, 'x@s.whatsapp.net', 'refuse')).toEqual({ ok: false, raison: 'non_relie' });
+  });
+
+  it('🔴 vérifie un numéro avant un premier message : présent, absent, mal formé, compte non relié', async () => {
+    expect(await client().verifier(COMPTE, '33612345678')).toEqual({ ok: true, present: true, adresse: 'lid' });
+    expect(appels).toContain(`verifier:${COMPTE}:33612345678`);
+    expect(await client().verifier(COMPTE, '33699999999')).toEqual({ ok: true, present: false, adresse: null });
+    // Un numéro mal formé est refusé par la route (400) avant d'atteindre la session.
+    expect(await client().verifier(COMPTE, '+33 6 12')).toEqual({ ok: false, raison: 'refuse' });
+    expect(appels.some((a) => a.includes('+33'))).toBe(false);
+    expect(await client().verifier(COMPTE, '33600000000')).toEqual({ ok: false, raison: 'non_relie' });
   });
 
   it('relier, sommeil, retirer, et le QR code', async () => {

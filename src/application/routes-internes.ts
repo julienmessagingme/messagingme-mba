@@ -17,6 +17,17 @@ const corpsEnvoi = z.object({
   destinataire: z.string().min(3).max(120),
   texte: z.string().min(1).max(4096),
 });
+const corpsVerification = z.object({ numero: z.string().regex(/^[0-9]{8,15}$/) });
+
+/** Le corps brut lu en JSON puis validé, ou `null` (400). */
+function lire<T>(corps: unknown, schema: z.ZodType<T>): T | null {
+  try {
+    const lu = schema.safeParse(JSON.parse((corps as Buffer).toString('utf8')));
+    return lu.success ? lu.data : null;
+  } catch {
+    return null;
+  }
+}
 
 export interface DepsRoutesApplication {
   sessions: GestionnaireSessions;
@@ -63,17 +74,22 @@ export function enregistrerRoutesApplication(app: FastifyInstance, d: DepsRoutes
     portee.get(`${PREFIXE}/:id/qr`, async (req) => d.sessions.qr((req.params as { id: string }).id));
 
     portee.post(`${PREFIXE}/:id/envoyer`, async (req, reply) => {
-      let json: unknown;
+      const corps = lire(req.body, corpsEnvoi);
+      if (!corps) return reply.code(400).send({ error: 'corps invalide' });
       try {
-        json = JSON.parse((req.body as Buffer).toString('utf8'));
-      } catch {
-        return reply.code(400).send({ error: 'corps illisible' });
-      }
-      const corps = corpsEnvoi.safeParse(json);
-      if (!corps.success) return reply.code(400).send({ error: 'corps invalide' });
-      try {
-        const messageId = await d.sessions.envoyer((req.params as { id: string }).id, corps.data.destinataire, corps.data.texte);
+        const messageId = await d.sessions.envoyer((req.params as { id: string }).id, corps.destinataire, corps.texte);
         return { messageId };
+      } catch (err) {
+        const r = refus(err);
+        return reply.code(r.code).send(r.corps);
+      }
+    });
+
+    portee.post(`${PREFIXE}/:id/verifier`, async (req, reply) => {
+      const corps = lire(req.body, corpsVerification);
+      if (!corps) return reply.code(400).send({ error: 'corps invalide' });
+      try {
+        return await d.sessions.verifier((req.params as { id: string }).id, corps.numero);
       } catch (err) {
         const r = refus(err);
         return reply.code(r.code).send(r.corps);

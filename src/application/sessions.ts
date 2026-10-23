@@ -1,7 +1,7 @@
 import { DisconnectReason } from '@whiskeysockets/baileys';
 import type { CompteApplication, ComptesApplication, StatutCompte } from './comptes';
 import { reprendAuDemarrage } from './comptes';
-import { ErreurApplication } from './interne';
+import { ErreurApplication, type Verification } from './interne';
 import { delaiBackoff } from './transport/connexion';
 import type { CauseFermeture, MessageApplication, RappelsSession, Session } from './transport/session';
 
@@ -41,6 +41,8 @@ export interface GestionnaireSessions {
   relier(compteId: string): Promise<void>;
   qr(compteId: string): Promise<{ qr: string | null; ouverte: boolean; statut: StatutCompte | null }>;
   envoyer(compteId: string, destinataire: string, texte: string): Promise<string>;
+  /** Le numéro est-il sur WhatsApp ? Avant un premier message, pour retenir son identifiant masqué. */
+  verifier(compteId: string, numero: string): Promise<Verification>;
   sommeil(compteId: string): Promise<void>;
   retirer(compteId: string): Promise<void>;
   arreter(): void;
@@ -168,6 +170,12 @@ export function creerGestionnaireSessions(d: DepsSessions): GestionnaireSessions
       // L'activité compte dans les deux sens pour la mise en sommeil. Un échec ici ne fait pas croire à un envoi perdu.
       await d.comptes.toucher(compteId, new Date()).catch((err: unknown) => console.error(`application ${compteId} : activité non notée`, err));
       return id;
+    },
+    async verifier(compteId, numero) {
+      // Une question à WhatsApp n'est pas une activité du compte : elle ne retarde pas sa mise en sommeil.
+      const e = entrees.get(compteId);
+      if (!e?.ouverte || !e.session) throw new ErreurApplication('non_relie', `compte ${compteId} non relié`);
+      return e.session.verifier(numero);
     },
     async sommeil(compteId) {
       const e = entrees.get(compteId);

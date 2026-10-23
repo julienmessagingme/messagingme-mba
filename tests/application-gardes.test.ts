@@ -18,7 +18,7 @@ const compte = (id: string, statut: StatutCompte = 'relie'): CompteApplication =
 
 function client(sommeils: string[], issue: Awaited<ReturnType<ClientApplication['sommeil']>> = { ok: true }): ClientApplication {
   const non = async () => ({ ok: false as const, raison: 'refuse' as const });
-  return { relier: non, qr: non, envoyer: non, retirer: non, sommeil: async (id) => { sommeils.push(id); return issue; } };
+  return { relier: non, qr: non, envoyer: non, verifier: non, retirer: non, sommeil: async (id) => { sommeils.push(id); return issue; } };
 }
 
 describe('la mise en sommeil', () => {

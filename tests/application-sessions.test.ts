@@ -32,13 +32,14 @@ function fauxComptes(liste: CompteApplication[]): ComptesApplication & { touches
 
 /** Un faux transport : chaque ouverture garde ses rappels, pour jouer QR, ouverture, messages et fermetures. */
 function fauxTransport() {
-  const ouvertures: Array<{ compteId: string; rappels: RappelsSession; session: Session & { fermee: boolean; retiree: boolean; envois: string[] } }> = [];
+  const ouvertures: Array<{ compteId: string; rappels: RappelsSession; session: Session & { fermee: boolean; retiree: boolean; envois: string[]; verifies: string[] } }> = [];
   return {
     ouvertures,
     async ouvrir(c: CompteApplication, rappels: RappelsSession) {
       const session = {
-        fermee: false, retiree: false, envois: [] as string[],
+        fermee: false, retiree: false, envois: [] as string[], verifies: [] as string[],
         async envoyer(dest: string, texte: string) { this.envois.push(`${dest}:${texte}`); return 'WA-' + this.envois.length; },
+        async verifier(numero: string) { this.verifies.push(numero); return numero === '33699999999' ? { present: false, adresse: null } : { present: true, adresse: 'lid' as const }; },
         fermer() { this.fermee = true; },
         async retirer() { this.retiree = true; },
       };
@@ -180,6 +181,17 @@ describe('le gestionnaire des sessions', () => {
     await transport.derniere('c1').rappels.ouverte('x@s.whatsapp.net');
     expect(await g.envoyer('c1', '33612345678@s.whatsapp.net', 'Bonjour')).toBe('WA-1');
     await expect(g.envoyer('c4', 'x@s.whatsapp.net', 'Bonjour')).rejects.toThrow(ErreurApplication);
+  });
+
+  it('vérifier un numéro passe par la session ouverte, sans compter comme une activité ; sans session, un refus lisible', async () => {
+    await g.reprendre();
+    await expect(g.verifier('c1', '33612345678')).rejects.toThrow(ErreurApplication);
+    await transport.derniere('c1').rappels.ouverte('x@s.whatsapp.net');
+    expect(await g.verifier('c1', '33612345678')).toEqual({ present: true, adresse: 'lid' });
+    expect(await g.verifier('c1', '33699999999')).toEqual({ present: false, adresse: null });
+    expect(transport.derniere('c1').session.verifies).toEqual(['33612345678', '33699999999']);
+    expect(comptes.touches).toEqual([]);
+    await expect(g.verifier('c4', '33612345678')).rejects.toThrow(ErreurApplication);
   });
 
   it('un envoi touche le compte, comme un message reçu : la mise en sommeil compte l’activité dans les deux sens', async () => {

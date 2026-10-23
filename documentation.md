@@ -345,7 +345,8 @@ du compte (`deMoi`) est une réponse humaine qui prend le fil. Ses identifiants 
 (`meta_message_id` est unique dans toute la base). L'API et le worker parlent au service par des routes internes signées
 (`x-mm-service-signature`, `src/application/client.ts`) et ne chargent pas Baileys. La filière d'un espace se lit par
 `filiereDe` : un numéro de Meta connecté prime. 🔴 **Une réponse part à l'IDENTIFIANT MASQUÉ du contact** quand il nous a
-écrit depuis lui (`adresseDeReponse`, `src/application/transport/session.ts` ; la correspondance `lid-du-numero` s'écrit
+écrit depuis lui, ou qu'une vérification avant un premier message l'a appris (`verifier`, `onWhatsApp`, retenu seulement
+sous le numéro que WhatsApp confirme, `src/application/transport/resolution.ts`) (`adresseDeReponse`, `src/application/transport/session.ts` ; la correspondance `lid-du-numero` s'écrit
 avec `numero-du-lid`) : adressée à son numéro, elle restait « En attente de ce message » sur son mobile et s'affichait sur
 son ordinateur. La conversation garde le numéro pour clé. 🔴 **Le socket a un `getMessage`** sur une mémoire des 500
 derniers envois PAR COMPTE (`memoiresDesComptes`, qui survit aux reconnexions) : sans lui, Baileys ne renvoie rien à
