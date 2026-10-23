@@ -514,7 +514,7 @@ export const mcpEtiquettesInertes: Pick<DepsMcp, 'etiquettes'> = {
  * L'outil a son propre fichier, `tests/mcp-control-conversation.test.ts`.
  */
 export const mcpFilInerte: Pick<DepsMcp, 'fil'> = {
-  fil: { reprendreLaMain: neDevraitPasEtreAppelee('fil.reprendreLaMain'), rendreLaMain: neDevraitPasEtreAppelee('fil.rendreLaMain') },
+  fil: { reprendreLaMain: neDevraitPasEtreAppelee('fil.reprendreLaMain'), rendreLaMainSousConsentement: neDevraitPasEtreAppelee('fil.rendreLaMainSousConsentement') },
 };
 
 /**

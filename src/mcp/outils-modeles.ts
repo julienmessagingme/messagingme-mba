@@ -47,14 +47,20 @@ async function oublierLaListe(deps: DepsMcp, tenantId: string): Promise<void> {
  * rapide » et « lien » sans variable (`schemaModeleMeta`) : le bouton Flow d'un modèle, que la console sait garder, et le
  * lien dont une variable vient d'un scénario ou de Shopify (son panier) disparaîtraient en silence. Jugé sur le modèle tel
  * que Meta le rend, lu une fois par `modifierUnModele` (jamais le cache d'une minute de `lister`). Nos liens tracés
- * (`/r/<code>/{{1}}`, sous n'importe quel nom passé de l'API, `codeDuLienTrace`) se retracent à la correction : ils passent.
+ * (`/r/<code>/{{1}}`, sous tout hôte, `codeDuLienTrace`) se retracent à la correction : ils passent, mais seulement si
+ * leur code est l'un des liens tracés confirmés de CE modèle (`nosCodes`) : une adresse du client de la même forme reste
+ * un lien à variable (relecture du lot 4).
  */
-function ceQueCeFormatPerdrait(existant: TemplateSummary): string | null {
+function ceQueCeFormatPerdrait(existant: TemplateSummary, nosCodes: ReadonlySet<string>): string | null {
   if (existant.buttons?.some((b) => b.type === 'FLOW')) {
     return 'ce modèle porte un bouton Flow, que ce format ne sait pas renvoyer : la correction le supprimerait. Il ne se '
       + 'corrige pas depuis Claude';
   }
-  if (existant.buttons?.some((b) => b.type === 'URL' && /\{\{\s*\d+\s*\}\}/.test(b.url ?? '') && codeDuLienTrace(b.url ?? '') === null)) {
+  const estLUnDesNotres = (url: string): boolean => {
+    const code = codeDuLienTrace(url);
+    return code !== null && nosCodes.has(code);
+  };
+  if (existant.buttons?.some((b) => b.type === 'URL' && /\{\{\s*\d+\s*\}\}/.test(b.url ?? '') && !estLUnDesNotres(b.url ?? ''))) {
     return 'ce modèle porte un bouton de lien qui prend une variable ({{1}}), que ce format ne sait pas renvoyer : la '
       + 'correction le changerait, et les envois qui la remplissent échoueraient. Il ne se corrige pas depuis Claude';
   }
@@ -263,8 +269,8 @@ export const OUTILS_MODELES: OutilMcp[] = [
   },
   /*
    * La marche arrière (plan du 2026-10-22, tâche 3) : corriger un modèle refusé sous le même nom, et supprimer un modèle,
-   * par l'édition et la suppression de l'écran Modèles (`modifierUnModele`, `supprimerUnModele`), sans garde de plus. La
-   * Free n'a plus cet écran. Les règles de Meta citées sont celles de sa page « Template management » (lue le 2026-10-22).
+   * par l'édition et la suppression de l'écran Modèles (`modifierUnModele`, `supprimerUnModele`). Une garde de plus pour
+   * la correction : ce que son format perdrait (`ceQueCeFormatPerdrait`, lots 3 et 4). La Free n'a plus cet écran. Les règles de Meta citées sont celles de sa page « Template management » (lue le 2026-10-22).
    */
   {
     ...ficheOutilMcp('update_template'),
@@ -305,8 +311,12 @@ export const OUTILS_MODELES: OutilMcp[] = [
       }
       await plafondCouteux(deps, tenantId);
       const { name, language, ...champs } = input;
+      // Les liens tracés confirmés de cette langue du modèle : seuls leurs codes sont « les nôtres » (`ceQueCeFormatPerdrait`).
+      const nosCodes = new Set((await deps.modeles.modeles.tracking.liens.listByTemplates(tenantId, [name]))
+        .filter((l) => l.templateLanguage === language).map((l) => l.code));
       await ouRefusDeMeta(async () => {
-        const issue = await modifierUnModele(deps.modeles.modeles, tenantId, name, language, champs, undefined, ceQueCeFormatPerdrait);
+        const issue = await modifierUnModele(deps.modeles.modeles, tenantId, name, language, champs, undefined,
+          (existant) => ceQueCeFormatPerdrait(existant, nosCodes));
         if ('refus' in issue) throw new RefusOutil(phraseDuRefus(issue.refus));
       });
       await oublierLaListe(deps, tenantId);

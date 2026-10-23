@@ -292,3 +292,24 @@ phrase).
 vérifiée dans les deux sens. Pas de câblage partagé touché, aucune migration ; la console (`web/`) se publie au push,
 un texte et un avertissement sans route neuve. **Déploiement** : API et workers, avec l'accord de Julien. **Essai
 réel** : `hand_back` en mode « équipe » sur un contact bloqué, et l'infobulle de l'écran Modèles.
+
+## Suite : les jaunes de la relecture du lot 4 (2026-10-23, lot 5)
+
+La relecture du lot 4 a laissé neuf jaunes (`todo.md`). Julien demande de commencer par la double lecture du mode.
+
+1. **`hand_back` ne confie jamais un contact STOP ou bloqué à l'agent de Meta**, même si le mode passe à `mba` entre la
+   lecture de l'outil et celle du fil : `rendreLaMainSousConsentement` (`src/inbox/fil.ts`) fait jouer la garde de
+   `confier` (`contact_muet`) sur le mode qu'il relit lui-même, et l'outil refuse ce retour. Le bouton de la console
+   garde `rendreLaMain`. Tenu dans le vrai contrôle du fil (`tests/repondeur-modes.test.ts`).
+2. **La rotation du secret** : l'audit raté ne fait plus échouer l'outil (journal en erreur), le secret neuf est rendu.
+3. **Nos liens tracés** : un lien de la forme `/r/<code>/{{1}}` ne passe que si son code est l'un des liens tracés
+   confirmés de cette langue du modèle.
+4. **Les textes** : `features.md` (édition et duplication des modèles, et l'empreinte des deux fiches qui citent la
+   section), l'infobulle et le refus de l'édition (un composant inconnu), le `a_savoir` (« de lui-même »), les
+   commentaires (la garde des robots, `machineSeTaitParWaId` ; « sans garde de plus »).
+
+**Méthode de livraison** : en direct, dans une copie à part de `main`, puis une relecture indépendante ; chaque garde
+vérifiée dans les deux sens. Pas de câblage partagé (le fil passe entier aux outils), aucune migration. La console
+(`web/`) se publie au push, un texte. Les deux fiches ne changent que d'empreinte, leur page publique est identique
+(`vitrine:aide` vérifié). **Déploiement** : API et workers, avec l'accord de Julien. **Essai réel** : `hand_back` en
+mode « équipe » sur un contact bloqué (la phrase dit « de lui-même »), et sous l'agent le refus.

@@ -340,7 +340,7 @@ export async function modifierUnModele(
   if (!existing) return { refus: { statut: 404, error: 'template introuvable' } };
   if (!existing.id) return { refus: { statut: 422, error: 'id du template indisponible' } };
   if (!existing.editable) {
-    return { refus: { statut: 422, error: existing.isCarousel ? 'édition d\'un carousel non supportée' : 'édition non supportée : ce template a un composant que l\'édition ne sait pas refaire (un en-tête image, vidéo ou document, ou un bouton téléphone, code à copier, appel ou catalogue), qui serait perdu' } };
+    return { refus: { statut: 422, error: existing.isCarousel ? 'édition d\'un carousel non supportée' : 'édition non supportée : ce template a un composant que l\'édition ne sait pas refaire (un en-tête image, vidéo ou document, un bouton téléphone, code à copier, appel ou catalogue, ou un composant qu\'elle ne connaît pas, comme une offre limitée dans le temps), qui serait perdu' } };
   }
   const refusAppelant = refusDeLAppelant?.(existing) ?? null;
   if (refusAppelant !== null) return { refus: { statut: 422, error: refusAppelant } };

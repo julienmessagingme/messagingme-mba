@@ -1,7 +1,7 @@
 ---
 ecran: templates
 source_section: Templates WhatsApp (menu Contenu)
-source_empreinte: 171721
+source_empreinte: fbcd42
 publique: oui
 rubrique: parler-aux-clients
 rang: 3

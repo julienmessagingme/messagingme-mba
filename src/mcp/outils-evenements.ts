@@ -235,10 +235,15 @@ export const OUTILS_EVENEMENTS: OutilMcp[] = [
       if (!r.ok) {
         throw new RefusOutil(adresse === null ? r.erreur : `la modification est enregistrée, mais le secret n’a pas tourné : ${r.erreur}`);
       }
-      await deps.evenements.audit(tenantId, auteur, 'evenements.secret_tourne', cible, { ancienJusqua: r.valeur.ancienJusqua, via: 'mcp' });
+      // 🔴 La rotation est faite : plus rien ne fait échouer l'outil, le secret neuf n'est montré qu'ici, une seule fois.
+      // Un audit raté est journalisé en erreur (la trace manque, le secret ne se perd pas).
+      try {
+        await deps.evenements.audit(tenantId, auteur, 'evenements.secret_tourne', cible, { ancienJusqua: r.valeur.ancienJusqua, via: 'mcp' });
+      } catch (err) {
+        journaliser('error', 'mcp_webhook_audit_rotation_impossible', { tenantId, id, erreur: err instanceof Error ? err.message : String(err) });
+      }
       // Relue APRÈS la rotation : la vue de la modification, d'avant, n'aurait pas la fin de validité de l'ancien secret
-      // (vu à l'essai réel du 2026-10-23, `previousSecretValidUntil` nul). 🔴 Une relecture ratée ne fait pas échouer
-      // l'outil : le secret neuf n'est montré qu'ici, une seule fois, et la rotation est faite. On rend la vue d'avant.
+      // (vu à l'essai réel du 2026-10-23, `previousSecretValidUntil` nul). Une relecture ratée rend la vue d'avant.
       try {
         adresse = (await g.adresses.lire(tenantId, id)) ?? adresse;
       } catch (err) {

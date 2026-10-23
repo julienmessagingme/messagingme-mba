@@ -286,6 +286,13 @@ export interface ControleDuFil {
    */
   rendreLaMain(tenantId: string, waId: string, par: AuteurDuChangement): Promise<IssueRendreLaMain>;
   /**
+   * « Rendre la main » d'un geste qui peut venir d'une machine (l'outil MCP `control_conversation`, ouvert derrière une
+   * clé d'API) : le même geste, mais un contact qui a dit STOP ou qui est bloqué n'est jamais confié à l'agent de Meta
+   * (`contact_muet`, rien n'est écrit). La garde joue sur le mode relu au moment de confier, pas sur une lecture de
+   * l'appelant faite avant (relecture du lot 4 de la marche arrière : le mode pouvait passer à `mba` entre les deux).
+   */
+  rendreLaMainSousConsentement(tenantId: string, waId: string, par: AuteurDuChangement): Promise<IssueRendreLaMain | 'contact_muet'>;
+  /**
    * Fin de parcours (chaîne finie, question expirée, réponse à côté ; échec d'un geste du relais de l'agent de
    * Meta) : `app_human` en attente, puis remise à l'accusé de notre dernier envoi, ou tout de suite si rien n'est en
    * vol. Seulement depuis `app_workflow`. Lève si Meta refuse l'ajout à la liste ; le fil reste `app_human`, le
@@ -451,15 +458,21 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
    * suivant). Si nous tenions en fait le fil, le prochain message du client arrive chez nous (`messages`), et la
    * remise « personne ne suit » rejoue le `release` et prévient l'agent.
    */
-  const confier = async (tenantId: string, waId: string, o: { automatique: boolean; faireDeLaPlace: boolean }): Promise<IssueConfier> => {
+  const confier = async (
+    tenantId: string,
+    waId: string,
+    o: { automatique: boolean; faireDeLaPlace: boolean; consentement?: boolean },
+  ): Promise<IssueConfier> => {
     if (!(await mbaAllume(tenantId))) return { sorte: 'agent_eteint' };
     if (o.automatique && await depot.estConversationDeTest(tenantId, waId)) {
       // eslint-disable-next-line no-console
       console.log(`remise à l’agent de Meta ignorée pour ${waId} : conversation de TEST, le fil reste à l’app`);
       return { sorte: 'conversation_de_test' };
     }
-    // Un contact désabonné ou bloqué n'est jamais confié par une machine : l'agent lui parlerait.
-    if (o.automatique && ((await deps.consentement.estDesabonne(tenantId, waId)) || (await deps.consentement.estBloque(tenantId, waId)))) {
+    // Un contact désabonné ou bloqué n'est jamais confié par une machine : l'agent lui parlerait. Ni par un geste qui
+    // peut venir d'une machine (`consentement`, l'outil MCP), même délibéré.
+    if ((o.automatique || o.consentement === true)
+      && ((await deps.consentement.estDesabonne(tenantId, waId)) || (await deps.consentement.estBloque(tenantId, waId)))) {
       return { sorte: 'contact_muet' };
     }
     const numero = await deps.numeros.getTenantPhoneNumberId(tenantId);
@@ -511,6 +524,36 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
     await depot.setControlOwner(tenantId, waId, 'mba', { par: CAUSES.finDeParcours, only: ['app_human'], effacerEscalade: true });
   };
 
+  /**
+   * « Rendre la main ». `consentement` : la garde STOP ou bloqué joue au moment de confier à l'agent de Meta, sur le mode
+   * relu ICI ; sans elle (le bouton de la console, geste humain délibéré), elle ne joue pas.
+   */
+  const rendre = async (
+    tenantId: string,
+    waId: string,
+    par: AuteurDuChangement,
+    consentement: boolean,
+  ): Promise<IssueRendreLaMain | 'contact_muet'> => {
+    // Les trois écritures clôturent l'escalade : c'est le même geste délibéré quelle que soit la valeur écrite.
+    // Sur un fil que notre colonne donne déjà à l'agent, le geste reste un rendu : la frise le dit comme tel
+    // (`rendAgentDeMeta`), et pas comme une prise, que la seule lecture des colonnes y aurait vue.
+    if ((await depot.getControlOwner(tenantId, waId)) === 'mba') {
+      await depot.setControlOwner(tenantId, waId, 'app_workflow', { par, effacerEscalade: true, rendAgentDeMeta: true });
+      return 'app_workflow';
+    }
+    // Éteint, ou allumé en veille (RC6) : le fil revient aux robots, et le prochain message relance le répondeur du mode.
+    if (!leMbaRepond(await reglagesDe(tenantId))) {
+      await depot.setControlOwner(tenantId, waId, 'app_workflow', { par, effacerEscalade: true });
+      return 'app_workflow';
+    }
+    // Geste humain : un fil de test se confie aussi (règle 5).
+    const issue = await confier(tenantId, waId, { automatique: false, faireDeLaPlace: true, consentement });
+    if (issue.sorte === 'contact_muet') return 'contact_muet';
+    if (issue.sorte !== 'confie') return 'aucun_numero';
+    await depot.setControlOwner(tenantId, waId, 'mba', { par, effacerEscalade: true });
+    return 'mba';
+  };
+
   return {
     async prisEnEcrivant(tenantId, waId, par) {
       await depot.setControlOwner(tenantId, waId, 'app_human', { par });
@@ -536,23 +579,13 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
     },
 
     async rendreLaMain(tenantId, waId, par) {
-      // Les trois écritures clôturent l'escalade : c'est le même geste délibéré quelle que soit la valeur écrite.
-      // Sur un fil que notre colonne donne déjà à l'agent, le geste reste un rendu : la frise le dit comme tel
-      // (`rendAgentDeMeta`), et pas comme une prise, que la seule lecture des colonnes y aurait vue.
-      if ((await depot.getControlOwner(tenantId, waId)) === 'mba') {
-        await depot.setControlOwner(tenantId, waId, 'app_workflow', { par, effacerEscalade: true, rendAgentDeMeta: true });
-        return 'app_workflow';
-      }
-      // Éteint, ou allumé en veille (RC6) : le fil revient aux robots, et le prochain message relance le répondeur du mode.
-      if (!leMbaRepond(await reglagesDe(tenantId))) {
-        await depot.setControlOwner(tenantId, waId, 'app_workflow', { par, effacerEscalade: true });
-        return 'app_workflow';
-      }
-      // Geste humain : un fil de test se confie aussi (règle 5).
-      if ((await confier(tenantId, waId, { automatique: false, faireDeLaPlace: true })).sorte !== 'confie') return 'aucun_numero';
-      await depot.setControlOwner(tenantId, waId, 'mba', { par, effacerEscalade: true });
-      return 'mba';
+      const issue = await rendre(tenantId, waId, par, false);
+      // Sans la garde du consentement, `confier` ne rend jamais `contact_muet`.
+      if (issue === 'contact_muet') throw new Error('rendreLaMain : contact_muet sans garde du consentement');
+      return issue;
     },
+
+    rendreLaMainSousConsentement: (tenantId, waId, par) => rendre(tenantId, waId, par, true),
 
     async rendreApresParcours(tenantId, waId) {
       // L'état d'attente est `app_human` : `mba` mentirait tant que Meta n'a pas confirmé, et `app_workflow` est la

@@ -3319,14 +3319,16 @@ l'activer, et d'ouvrir une recharge du crédit.
   l'agent de Meta sans la garde du consentement, et l'outil s'ouvre derrière une clé d'API). En mode « équipe » (lu
   sous l'offre, `sousLOffre`, comme le contrôle du fil), il la rend, pour tout contact, et le DIT (`repondeur`,
   `a_savoir`, qui nomme aussi le STOP ou le blocage) : le geste sort la conversation d'« À traiter » et rend un
-  parcours qui attendait le contact, seul moyen d'une Free sans Inbox. Aucun robot n'y reçoit le contact :
-  `rendreLaMain` lit le même mode et ne confie rien à l'agent de Meta hors du mode `mba`, et la garde à l'envoi
-  (`estDesabonne`, STOP ou bloqué) tient les autres.
+  parcours qui attendait le contact, seul moyen d'une Free sans Inbox. Aucun robot n'y reçoit le contact : l'outil
+  passe par `rendreLaMainSousConsentement`, qui refuse de confier un contact STOP ou bloqué à l'agent de Meta
+  (`contact_muet`, rien n'est écrit) sur le mode qu'il relit LUI-MÊME au moment de confier (un mode passé à `mba`
+  après la lecture de l'outil ne passe donc pas), et les robots relisent STOP ou bloqué avant d'écrire
+  (`machineSeTaitParWaId`). Le bouton de la console garde `rendreLaMain`, sans cette garde : un geste humain délibéré.
   `prepare_resume` rend le motif de la pause et sa phrase (`pauseDe`, lu hors de l'empreinte du code, et
   `messageDePause`), et refuse une pause qu'un autre geste lève (numéro délié, abonnement impayé). `update_template`
-  refuse un bouton Flow ou un lien qui prend une variable sans être l'un de nos liens tracés (`/r/<code>/{{1}}`, sous
-  n'importe quel nom passé de l'API, `codeDuLienTrace`, qui se retrace à la correction) : le format de Meta de l'outil
-  ne les renvoie pas. Ce refus est jugé dans `modifierUnModele` (`refusDeLAppelant`), sur le modèle qu'elle lit chez
+  refuse un bouton Flow ou un lien qui prend une variable sans être l'un de nos liens tracés (`/r/<code>/{{1}}` sous
+  tout hôte, `codeDuLienTrace`, dont le code est l'un des liens tracés confirmés de cette langue du modèle, et qui se
+  retrace à la correction) : le format de Meta de l'outil ne les renvoie pas. Ce refus est jugé dans `modifierUnModele` (`refusDeLAppelant`), sur le modèle qu'elle lit chez
   Meta, jamais dans le cache d'une minute de la liste, et en une seule lecture ; la console n'en passe pas. Un bouton
   que la lecture ne relit pas (téléphone, code à copier, appel, catalogue) rend le modèle non éditable pour tous
   (`isSimpleEditable`), et le résumé le dit (`boutonsNonRelus`) pour que la duplication de la console le signale.

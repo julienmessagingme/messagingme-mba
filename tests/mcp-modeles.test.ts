@@ -27,6 +27,8 @@ function deps(o: {
   listeEnCache?: TemplateSummary[];
   /** L'oubli de la liste en cache échoue (la base ne répond pas). */
   oubliEchoue?: boolean;
+  /** Les liens tracés confirmés du modèle en base (`tracked_links`) : leurs codes sont « les nôtres ». */
+  liensDuModele?: Array<{ code: string; templateLanguage: string }>;
 } = {}) {
   const editions: Array<{ id: string; input: Record<string, unknown> }> = [];
   const suppressions: string[] = [];
@@ -55,7 +57,7 @@ function deps(o: {
     champsDeclares: async () => [],
     tracking: {
       allocate: async () => { throw new Error('aucun lien tracé dans ces modèles'); },
-      liens: { confirm: async () => {}, deconfirmer: async () => {}, listByTemplates: async () => [] },
+      liens: { confirm: async () => {}, deconfirmer: async () => {}, listByTemplates: async () => (o.liensDuModele ?? []).map((l, i) => ({ ...l, templateName: 'commande_prete', cardIndex: null, buttonIndex: i, destination: 'https://boutique.example', avecJeton: true })) },
       lienDe: (code: string) => `https://api.exemple.test/r/${code}`,
       destinations: async () => new Map<string, string>(),
     },
@@ -137,16 +139,26 @@ describe('corriger et supprimer un modèle depuis Claude (marche arrière, tâch
     await expect(outil('update_template').executer(panier.d, T, { template: CORRIGE }, MOI)).rejects.toThrow(/prend une variable/);
     expect(panier.editions).toEqual([]);
     // Un lien tracé par nous (`/r/<code>/{{1}}`) se retrace à la correction : rien à refuser.
-    const trace = deps({ resume: { buttons: [{ type: 'URL', text: 'Voir', url: 'https://api.exemple.test/r/abcdefgh2345/{{1}}' }] } });
+    const trace = deps({ resume: { buttons: [{ type: 'URL', text: 'Voir', url: 'https://api.exemple.test/r/abcdefgh2345/{{1}}' }] }, liensDuModele: [{ code: 'abcdefgh2345', templateLanguage: 'fr' }] });
     await outil('update_template').executer(trace.d, T, { template: CORRIGE }, MOI);
     expect(trace.editions).toHaveLength(1);
   });
 
   it('🔴 un lien tracé soumis sous un ancien nom de l’API reste l’un des nôtres : la correction passe (lot 4)', async () => {
     // Un modèle soumis quand l'API répondait sous `mba.` : son lien n'a pas l'hôte d'aujourd'hui (`lienDe`).
-    const ancien = deps({ resume: { buttons: [{ type: 'URL', text: 'Voir', url: 'https://mba.messagingme.app/r/abcdefgh2345/{{1}}' }] } });
+    const ancien = deps({ resume: { buttons: [{ type: 'URL', text: 'Voir', url: 'https://mba.messagingme.app/r/abcdefgh2345/{{1}}' }] }, liensDuModele: [{ code: 'abcdefgh2345', templateLanguage: 'fr' }] });
     await outil('update_template').executer(ancien.d, T, { template: CORRIGE }, MOI);
     expect(ancien.editions).toHaveLength(1);
+  });
+
+  it('🔴 une adresse du client qui a la forme d’un lien tracé, sans en être un de CE modèle, reste un lien à variable (lot 5)', async () => {
+    const url = 'https://boutique.example/r/abcdefgh2345/{{1}}';
+    // Aucun lien tracé en base pour ce modèle, puis un lien tracé d'une AUTRE langue : refusé les deux fois.
+    for (const liensDuModele of [[], [{ code: 'abcdefgh2345', templateLanguage: 'en' }]]) {
+      const client = deps({ resume: { buttons: [{ type: 'URL', text: 'Mon panier', url }] }, liensDuModele });
+      await expect(outil('update_template').executer(client.d, T, { template: CORRIGE }, MOI)).rejects.toThrow(/prend une variable/);
+      expect(client.editions).toEqual([]);
+    }
   });
 
   it('🔴 le modèle se lit UNE fois chez Meta pour une correction (lot 4)', async () => {

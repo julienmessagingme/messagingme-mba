@@ -235,6 +235,9 @@ describe('modifier et supprimer une adresse depuis Claude (marche arrière, tâc
         // La base décroche juste après la rotation.
         lire: async (t, id) => { if (tournee) throw new Error('connexion perdue'); return lireAvant(t, id); },
       };
+      // L'audit aussi, qui passe entre la rotation et la relecture (relecture du lot 4, lot 5).
+      const auditAvant = d.evenements.audit;
+      d.evenements.audit = async (...a: Parameters<typeof auditAvant>) => { if (tournee) throw new Error('connexion perdue'); return auditAvant(...a); };
       const r = await outil('update_webhook_endpoint').executer(d, T, saisie, { userId: 'u1' }) as { secret?: string };
       expect(tournee).toBe(true);
       expect(typeof r.secret, JSON.stringify(saisie)).toBe('string');

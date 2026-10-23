@@ -616,7 +616,8 @@ En haut de l'onglet **Historique** d'une fiche contact, deux chiffres face à fa
 - ✅ **Dupliquer un template** (2026-08-17) : l'action **« Dupliquer »** ouvre l'écran de création DÉJÀ REMPLI
   avec le contenu du template choisi, sous un nom libre suffixé `_copie`. Rien n'est envoyé à Meta tant qu'on
   n'a pas cliqué sur « Créer le template », et un bandeau le dit : c'est une COPIE en préparation, l'original
-  n'est jamais modifié ni renvoyé en validation.
+  n'est jamais modifié ni renvoyé en validation. Le bandeau dit aussi ce qui n'a pas pu être recopié : le visuel
+  d'en-tête (à redéposer), et un bouton téléphone, code à copier, appel ou catalogue, qui apparaît en réponse rapide.
 - ✅ **En-tête média** : l'image **ou la vidéo** uploadée s'affiche pour de vrai dans l'aperçu WhatsApp (plus
   juste une icône).
 - ✅ **L'aperçu porte le NOM DE L'ENTREPRISE** (2026-08-21) : l'en-tête de la miniature WhatsApp affiche le
@@ -651,9 +652,11 @@ En haut de l'onglet **Historique** d'une fiche contact, deux chiffres face à fa
   (image, texte, boutons) façon WhatsApp, au lieu d'un simple encadré. Une carte sans image visible, une carte
   vidéo, ou une image devenue injoignable sont annoncées telles quelles, jamais une vignette cassée.
 - ✅ **Édition** (templates simples) : corps / boutons / catégorie. Avertissement « repasse en validation Meta ».
-  **Bloquée** si le template a un **en-tête média** (image ou vidéo : Meta le supprimerait) ou s'il s'agit d'un
-  **carousel**, ou s'il est utilisé par une **campagne active** (garde-fou anti envoi cassé). Un **pied de
-  page** ou un **en-tête texte** n'empêchent pas l'édition. Nom et langue non modifiables (immuables chez Meta).
+  **Bloquée** si le template a un **en-tête média** (image ou vidéo : Meta le supprimerait), un **bouton
+  téléphone, code à copier, appel ou catalogue** (l'édition le remplacerait par une réponse rapide), un élément
+  que la console ne connaît pas (une offre limitée dans le temps), s'il s'agit d'un **carousel**, ou s'il est
+  utilisé par une **campagne active** (garde-fou anti envoi cassé). Un **pied de page** ou un **en-tête texte**
+  n'empêchent pas l'édition. Nom et langue non modifiables (immuables chez Meta).
   Les boutons « Lien » restent suivis après une édition, et un lien déjà envoyé continue de fonctionner, vers
   l'adresse à jour. Si WhatsApp refuse l'édition, le template en service reste tel qu'il était.
 - ✅ **Pas d'édition tant que Meta n'a pas tranché** : un template encore en attente de validation n'est pas

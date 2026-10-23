@@ -205,6 +205,26 @@ describe('🔴 le MBA allumé en veille ne reçoit RIEN tout seul (remise, « Re
     expect(sweep.etat(W)?.owner).toBe('mba');
     expect(sweep.appels).toContain(`ajout:${W}`);
   });
+
+  it('🔴 « Rendre la main » sous consentement (l’outil MCP) ne confie JAMAIS un contact STOP ou bloqué à l’agent de Meta (lot 5)', async () => {
+    // Le mode est relu par le fil au moment de confier : l'outil a pu lire « équipe » juste avant que l'espace passe à `mba`.
+    for (const cas of [{ desabonnes: [W] }, { bloques: [W] }]) {
+      const b = bancDuFil({ ...cas, mode: 'mba', mbaEnabled: true, conversations: { [W]: { owner: 'app_human', changedAt: null } } });
+      expect(await b.fil.rendreLaMainSousConsentement(T, W, { collaborateur: 'u1' })).toBe('contact_muet');
+      expect(b.appels, 'ni liste, ni release').toEqual([]);
+      expect(b.etat(W)?.owner, 'rien n’est écrit').toBe('app_human');
+      // Le bouton de la console, geste humain délibéré, garde son comportement : il confie.
+      const console = bancDuFil({ ...cas, mode: 'mba', mbaEnabled: true, conversations: { [W]: { owner: 'app_human', changedAt: null } } });
+      expect(await console.fil.rendreLaMain(T, W, { collaborateur: 'u1' })).toBe('mba');
+    }
+    // En mode « équipe », rien à confier : le geste rend le fil aux robots, qui relisent STOP ou bloqué avant d'écrire.
+    const equipe = bancDuFil({ desabonnes: [W], mode: 'equipe', mbaEnabled: true, conversations: { [W]: { owner: 'app_human', changedAt: null } } });
+    expect(await equipe.fil.rendreLaMainSousConsentement(T, W, { collaborateur: 'u1' })).toBe('app_workflow');
+    expect(equipe.appels).toEqual([]);
+    // Un contact ni STOP ni bloqué, en mode `mba` : confié comme par la console.
+    const libreMba = bancDuFil({ mode: 'mba', mbaEnabled: true, conversations: { [W]: { owner: 'app_human', changedAt: null } } });
+    expect(await libreMba.fil.rendreLaMainSousConsentement(T, W, { collaborateur: 'u1' })).toBe('mba');
+  });
 });
 
 const n = (id: string, type: string, data: Record<string, unknown> = {}) =>

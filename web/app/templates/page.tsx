@@ -256,7 +256,7 @@ function TemplatesInner({ session }: { session: Session }) {
                     <td className="px-4 py-2.5 text-right">
                       <div className="flex items-center justify-end gap-3 text-xs">
                         {tpl.editable === false ? (
-                          <span className="text-ink-500" title={tpl.isCarousel ? t('Un carousel ne se modifie pas ici.', 'A carousel cannot be edited here.') : t('Modification impossible ici : un en-tête image, vidéo ou document, ou un bouton téléphone, code à copier, appel ou catalogue serait perdu.', 'Cannot be edited here: an image, video or document header, or a phone, copy code, call or catalog button would be lost.')}>{t('Modifier', 'Edit')}</span>
+                          <span className="text-ink-500" title={tpl.isCarousel ? t('Un carousel ne se modifie pas ici.', 'A carousel cannot be edited here.') : t('Modification impossible ici : un en-tête image, vidéo ou document, un bouton téléphone, code à copier, appel ou catalogue, ou un élément que la console ne connaît pas (une offre limitée dans le temps…) serait perdu.', 'Cannot be edited here: an image, video or document header, a phone, copy code, call or catalog button, or an element the console does not know (a limited-time offer…) would be lost.')}>{t('Modifier', 'Edit')}</span>
                         ) : (
                           <button onClick={() => setEditing(tpl)} className="font-medium text-brand-600 hover:text-brand-700">{t('Modifier', 'Edit')}</button>
                         )}

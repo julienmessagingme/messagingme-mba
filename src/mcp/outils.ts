@@ -108,7 +108,7 @@ export interface DepsMcp extends DepsRepondre, DepsChampsMcp {
    * La main du fil (`control_conversation`) : les deux boutons du fil de la console, le MÊME contrôle
    * (`src/inbox/fil.ts`). L'outil n'y ajoute que la garde d'espace et des refus lisibles là où la console rend un 409.
    */
-  fil: Pick<ControleDuFil, 'reprendreLaMain' | 'rendreLaMain'>;
+  fil: Pick<ControleDuFil, 'reprendreLaMain' | 'rendreLaMainSousConsentement'>;
   /** Membres de l'espace, pour qu'un agent puisse confier une conversation à quelqu'un de nommé. */
   listerMembres(tenantId: string): Promise<Array<{ id: string; name: string | null; email: string; role: string }>>;
   /**
@@ -879,9 +879,11 @@ export const OUTILS: OutilMcp[] = [
       // 🔴 « Rendre la main » de la console confie à l'agent de Meta sans la garde du consentement : un geste humain,
       // délibéré (`rendreLaMain`, `src/inbox/fil.ts`). Cet outil s'ouvre aussi derrière une clé d'API : un contact qui a
       // dit STOP, ou bloqué, n'est rendu à aucun robot, comme dans toute remise automatique. En mode « équipe » (lot 4,
-      // décision de Julien), il n'y a aucun robot à qui le rendre : `rendreLaMain` lit le même mode et n'y confie rien à
-      // l'agent de Meta, et la garde à l'envoi (`estDesabonne`, STOP ou bloqué) tient tous les autres. Le geste sort
-      // alors la conversation d'« À traiter », seul moyen d'une Free.
+      // décision de Julien), il n'y a aucun robot à qui le rendre, et le geste sort la conversation d'« À traiter »,
+      // seul moyen d'une Free. Deux gardes tiennent le reste : `rendreLaMainSousConsentement` refuse de confier un tel
+      // contact à l'agent de Meta sur le mode qu'il relit lui-même (si le mode passe à `mba` après la lecture d'ici,
+      // lot 5), et les robots relisent STOP ou bloqué avant d'écrire (`machineSeTaitParWaId`). Le `estDesabonne` d'ici ne
+      // lit que le STOP, d'où la lecture du blocage à côté.
       const stop = await deps.estDesabonne(tenantId, ctx.waId);
       if (stop && !sansRepondeur) {
         throw new RefusOutil('ce contact a demandé à ne plus recevoir de messages (STOP) : aucun robot ne reprendra sa '
@@ -892,13 +894,18 @@ export const OUTILS: OutilMcp[] = [
         throw new RefusOutil('ce contact est bloqué : aucun robot ne reprendra sa conversation. Une personne connectée peut '
           + 'le débloquer d’abord (block_contact, blocked false), si c’est sa décision');
       }
-      let detenteur: IssueRendreLaMain;
+      let detenteur: IssueRendreLaMain | 'contact_muet';
       try {
-        detenteur = await deps.fil.rendreLaMain(tenantId, ctx.waId, par);
+        detenteur = await deps.fil.rendreLaMainSousConsentement(tenantId, ctx.waId, par);
       } catch (err) {
         // Comme la route de la console : Meta a refusé de reprendre le contact, et notre état n'a pas bougé.
         console.error(`mcp: control_conversation, Meta n’a pas repris la conversation (${tenantId}/${id}):`, err instanceof Error ? err.message : err);
         throw new RefusOutil('Meta n’a pas repris la conversation : elle reste à l’équipe, réessayez dans un instant.');
+      }
+      if (detenteur === 'contact_muet') {
+        // Le répondeur de l'espace est devenu l'agent de Meta entre la lecture d'ici et celle du fil : rien n'a changé.
+        throw new RefusOutil('ce contact a dit STOP ou est bloqué, et le répondeur de l’espace vient de passer à l’agent '
+          + 'de Meta : la conversation ne lui est pas confiée, rien n’a changé.');
       }
       if (detenteur === 'aucun_numero') {
         throw new RefusOutil('Aucun numéro WhatsApp n’est connecté : l’agent de Meta ne peut pas reprendre la conversation, '
@@ -906,8 +913,8 @@ export const OUTILS: OutilMcp[] = [
       }
       if (!sansRepondeur) return { conversation_id: id, handled_by: detenteur };
       const contact = stop
-        ? ' Ce contact a dit STOP : aucun robot ne lui écrit, quel que soit le répondeur.'
-        : bloque ? ' Ce contact est bloqué : aucun robot ne lui écrit, quel que soit le répondeur.' : '';
+        ? ' Ce contact a dit STOP : aucun robot ne lui écrit de lui-même, quel que soit le répondeur.'
+        : bloque ? ' Ce contact est bloqué : aucun robot ne lui écrit de lui-même, quel que soit le répondeur.' : '';
       return {
         conversation_id: id,
         handled_by: detenteur,

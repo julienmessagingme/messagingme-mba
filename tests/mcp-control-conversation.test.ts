@@ -19,7 +19,7 @@ type Appel = { geste: 'prendre' | 'rendre'; tenantId: string; waId: string; par:
 
 function deps(o: {
   prise?: 'pris' | 'refuse';
-  remise?: 'app_workflow' | 'mba' | 'aucun_numero' | Error;
+  remise?: 'app_workflow' | 'mba' | 'aucun_numero' | 'contact_muet' | Error;
   connue?: boolean;
   /** Le contact a dit STOP, ou il est bloqué. */
   desabonne?: boolean;
@@ -53,7 +53,7 @@ function deps(o: {
         appels.push({ geste: 'prendre', tenantId, waId, par });
         return o.prise ?? 'pris';
       },
-      rendreLaMain: async (tenantId: string, waId: string, par: AuteurDuChangement) => {
+      rendreLaMainSousConsentement: async (tenantId: string, waId: string, par: AuteurDuChangement) => {
         appels.push({ geste: 'rendre', tenantId, waId, par });
         if (o.remise instanceof Error) throw o.remise;
         return o.remise ?? 'app_workflow';
@@ -78,7 +78,7 @@ describe('control_conversation : prendre et rendre la main sur un fil', () => {
     expect(r).toEqual({ conversation_id: CONV, handled_by: 'app_human' });
   });
 
-  it('hand_back passe par rendreLaMain et rend qui tient le fil désormais', async () => {
+  it('hand_back passe par rendreLaMainSousConsentement (jamais le geste sans garde de la console) et rend qui tient le fil', async () => {
     const { d, appels } = deps({ remise: 'mba' });
     const r = await outil.executer(d, T, { conversation_id: CONV, action: 'hand_back' }, MOI);
     expect(appels).toEqual([{ geste: 'rendre', tenantId: T, waId: WA, par: { collaborateur: MOI.userId } }]);
@@ -124,12 +124,23 @@ describe('control_conversation : prendre et rendre la main sur un fil', () => {
         expect(appels.map((a) => a.geste)).toEqual(['rendre']);
         expect(r.repondeur).toBe('equipe');
         expect(r.a_savoir).toMatch(cas.motif);
+        // La console peut encore le confier à la main : la phrase ne promet que l'absence de robot DE LUI-MÊME (lot 5).
+        expect(r.a_savoir).toMatch(/aucun robot ne lui écrit de lui-même/);
       }
     }
     // Un contact ni STOP ni bloqué : la phrase n'en dit rien.
     const { d } = deps({ mode: 'equipe' });
     const r = await outil.executer(d, T, { conversation_id: CONV, action: 'hand_back' }, MOI) as { a_savoir?: string };
     expect(r.a_savoir).not.toMatch(/STOP|bloqué/);
+  });
+
+  it('🔴 si le fil refuse de confier le contact à l’agent de Meta (STOP ou bloqué, mode passé à `mba` entre-temps), un refus qui le dit (lot 5)', async () => {
+    // L'outil a lu « équipe », le fil relit `mba` : sa garde du consentement joue, rien n'est écrit.
+    for (const personne of [MOI, null]) {
+      const { d, appels } = deps({ desabonne: true, mode: 'equipe', remise: 'contact_muet' });
+      await expect(outil.executer(d, T, { conversation_id: CONV, action: 'hand_back' }, personne)).rejects.toThrow(/ne lui est pas confiée/);
+      expect(appels.map((a) => a.geste)).toEqual(['rendre']);
+    }
   });
 
   it('take_over reste ouvert sur ce contact : prendre le fil n’écrit rien', async () => {
