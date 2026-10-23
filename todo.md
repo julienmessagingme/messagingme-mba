@@ -102,6 +102,24 @@ Meta délié, finitions de l'adressage masqué, mise en file retentée, e-mail d
 - Mineurs : l'empreinte d'état a changé une fois pour tous les états au déploiement du lot 1 ; quelques textes disent
   encore la filière avant la connexion de Meta ; une demande de renvoi d'un de NOS appareils liés secondaires repart sans
   enveloppe pour un message adressé à `@lid` (limite de Baileys 6.7.23, `messages-send.js`).
+## 🟡 Shopify : ce qui attend après les conceptions du 2026-10-23
+
+Conceptions : `docs/superpowers/specs/2026-10-23-shopify-numero-qr-design.md` (le produit, d'abord) et
+`docs/superpowers/specs/2026-10-23-vitrine-shopify-design.md` (la page, qui attend le produit). Retenu par Julien le
+2026-10-23 pour plus tard :
+
+- **Une app publique sur l'App Store de Shopify** : l'installation en un clic, contre les cinq minutes du Dev Dashboard
+  aujourd'hui. C'est le vrai levier face à l'app WhatsApp gratuite de Meta et à Kanal, et un gros chantier (revue de
+  Shopify, demandes RGPD, facturation).
+- **Un outil de lecture des commandes pour l'agent IA** : il répond aujourd'hui à « où est ma commande ? » d'après sa base
+  de connaissance et passe la main pour un colis précis ; avec l'état réel de la commande et son suivi, il répondrait
+  vraiment.
+- **L'essai de la bulle WhatsApp sur un thème Shopify** (la balise collée dans le thème de la boutique de test, visible et
+  cliquable sur un téléphone) : la carte « bulle » de la page Boutiques Shopify n'apparaît qu'après.
+- **Remplacer un numéro relié par QR code par un numéro fourni** : `relierApplication` et `preparer` refusent un espace
+  déjà relié (`deja_relie`), donc un marchand qui a relié le numéro de sa boutique ne peut pas passer à un numéro fourni
+  pour le protéger (sort des conversations, des fiches, du cache `@lid` et du crédit offert à décider).
+
 ## 🟡 Shopify depuis la console : ce que les relectures laissent (2026-10-22)
 
 Plan : `docs/superpowers/plans/2026-10-22-shopify-console.md`.
