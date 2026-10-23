@@ -1722,6 +1722,11 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   conversation masquée) ; `conversation_analysis.abusive` est un CONSTAT posé par l'analyse, qui ne déclenche
   rien. Les mélanger laisserait un modèle bloquer des clients tout seul. Les messages d'un contact bloqué
   restent ENREGISTRÉS : filtrer à la réception ferait disparaître une résiliation ou une menace juridique.
+  🔴 **Le blocage se relit juste avant chaque envoi d'un robot, pas seulement à son entrée** : la garde que relisent
+  la réponse d'un agent IA (`run-turn`), les envois d'un parcours (l'exécuteur) et les gestes d'envoi de l'agent est
+  `machineSeTaitParWaId` (STOP ou bloqué), sous le nom de dépendance `estDesabonne`. Lue seulement à l'entrée, un
+  contact bloqué pendant une session d'agent recevait ses réponses jusqu'à la fin de la session (essai réel du
+  2026-10-23). `tests/blocage-robots.test.ts` tient la lecture et ses trois câblages.
 
 **Campagnes**
 

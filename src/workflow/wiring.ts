@@ -531,11 +531,12 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     setOptIn: async (tenant, waId, value) => { await contactStore.setOptInByWaId(tenant, waId, value, 'scenario', 'scenario'); },
     /**
      * 🔴 La garde d'opt-out des envois d'un parcours (scénario, automation, outils d'agent qui passent par
-     * `apply`) : sans elle, un contact qui a écrit STOP recevrait encore leurs messages. La réponse d'un agent
-     * IA ne passe pas par ici (`envoyerTexteAgent`) : elle a sa propre garde dans `src/agent/run-turn.ts`,
-     * branchée sur le même dépôt depuis `src/worker.ts`.
+     * `apply`) : sans elle, un contact qui a écrit STOP recevrait encore leurs messages. Elle lit aussi le blocage
+     * (`machineSeTaitParWaId`) : un parcours en cours écrivait encore à un contact bloqué après son entrée. La réponse
+     * d'un agent IA ne passe pas par ici (`envoyerTexteAgent`) : elle a sa propre garde dans `src/agent/run-turn.ts`,
+     * branchée sur la même lecture depuis `src/worker.ts`.
      */
-    estDesabonne: (tenant, waId) => contactStore.estDesabonneParWaId(tenant, waId),
+    estDesabonne: (tenant, waId) => contactStore.machineSeTaitParWaId(tenant, waId),
     // Le numéro délié, vérifié avant les effets d'un parcours qui enverra par WhatsApp (cf. `runFrom`) : même
     // garde que le point de passage des envois, sur le même numéro. DRY_RUN : rien ne part, rien à refuser.
     verifierNumeroWhatsApp: async (tenant) => {

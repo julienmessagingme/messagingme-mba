@@ -66,7 +66,8 @@ export interface RunTurnDeps {
    * 🔴 Ce contact a-t-il demandé à ne plus rien recevoir ? La réponse de l'agent ne passe pas par
    * `WorkflowExecutor.apply` mais par `deps.envoyer` : elle a donc sa propre garde. Lue au rang des plafonds,
    * avant le modèle, pour ne pas payer un appel dont on jetterait la réponse. Requise : les tests déclarent
-   * `jamaisDesabonne` (`tests/consentement.ts`) au lieu de l'omettre.
+   * `jamaisDesabonne` (`tests/consentement.ts`) au lieu de l'omettre. Le câblage y lit aussi le blocage
+   * (`machineSeTaitParWaId`) : un contact bloqué pendant une session ne reçoit plus les réponses de l'agent.
    */
   estDesabonne(tenantId: string, waId: string): Promise<boolean>;
   /**

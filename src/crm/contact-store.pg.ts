@@ -815,6 +815,16 @@ export class PgContactStore implements ContactStore {
   }
 
   /**
+   * 🔴 Une machine doit-elle se taire devant ce contact ? Il a dit STOP, ou il a été bloqué : la garde que relisent les
+   * robots juste avant d'écrire (la réponse d'un agent IA, les envois d'un parcours, les gestes d'envoi de l'agent).
+   * Le blocage n'était relu qu'à l'ENTRÉE d'un robot : un contact bloqué pendant une session d'agent recevait encore ses
+   * réponses jusqu'à la fin de la session (essai réel du 2026-10-23). Les deux lectures d'origine, telles quelles.
+   */
+  async machineSeTaitParWaId(tenantId: string, waId: string): Promise<boolean> {
+    return (await this.estDesabonneParWaId(tenantId, waId)) || (await this.isBlockedByWaId(tenantId, waId));
+  }
+
+  /**
    * La réclamation du départ du scénario répondeur pour ce contact (RC6, `src/repondeur/scenario.ts`) : pose
    * `repondeur_scenario_le` à maintenant SI le dernier départ date d'au moins `delaiS` secondes (ou n'a jamais eu lieu),
    * et dit si elle l'a fait. 🔴 UNE seule instruction gardée, et c'est toute la garde de la course : deux entrants

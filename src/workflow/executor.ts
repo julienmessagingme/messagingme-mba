@@ -170,7 +170,8 @@ export interface WorkflowExecutorDeps {
    * 🔴 C'est la garde d'opt-out des envois qui passent par cet exécuteur (scénario, automation). L'agent IA
    * répond sans passer par `apply` et porte sa propre garde (`src/agent/run-turn.ts`) ; la campagne et l'API
    * publique filtrent en amont (`optInAllows`). Requise : optionnelle, un câblage qui l'oublie compilerait et
-   * écrirait au contact qui a répondu STOP. Les tests passent `jamaisDesabonne` (`tests/consentement.ts`).
+   * écrirait au contact qui a répondu STOP. Les tests passent `jamaisDesabonne` (`tests/consentement.ts`). Le câblage
+   * y lit aussi le blocage (`machineSeTaitParWaId`) : un contact bloqué se tait comme un STOP, parcours en cours compris.
    */
   estDesabonne(tenantId: string, waId: string): Promise<boolean>;
   /**

@@ -1953,7 +1953,8 @@ export async function demarrerWorker(): Promise<void> {
       envoyerDepuisAgent: (t, waId, input) => workflowExecutor.envoyerBlocDepuisAgent(t, waId, input),
       lancer: (demande) => lancements.lancer(demande),
       fenetreOuverte: async (t, waId) => (await inboxStore.getWindowOpenByWaIds(t, [waId])).get(waId) === true,
-      estDesabonne: (t, waId) => contactStore.estDesabonneParWaId(t, waId),
+      // STOP ou bloqué : la même lecture que la réponse de l'agent et les envois d'un parcours (`machineSeTaitParWaId`).
+      estDesabonne: (t, waId) => contactStore.machineSeTaitParWaId(t, waId),
       offres,
       sessions: agentSessions,
       parcours: { clore: (t, runId) => runStore.setStateSiVivant(t, runId, { currentNode: null, status: 'done' }) },
@@ -2089,10 +2090,12 @@ export async function demarrerWorker(): Promise<void> {
       estRepondeur: async (t, workflowId) => (await workflowStore.designation(workflowId, t))?.systeme === 'repondeur',
       /**
        * 🔴 La garde d'opt-out de l'agent IA : sa réponse part par `envoyerTexteAgent`, qui appelle
-       * `client.sendText` directement, sans passer par `WorkflowExecutor.apply`. Même dépendance que l'exécuteur
-       * de scénario, sur le même dépôt : deux lectures du même fait finiraient par diverger.
+       * `client.sendText` directement, sans passer par `WorkflowExecutor.apply`. Même lecture que l'exécuteur
+       * de scénario, sur le même dépôt : deux lectures du même fait finiraient par diverger. Elle lit le STOP ET le
+       * blocage (`machineSeTaitParWaId`) : un contact bloqué pendant une session recevait encore les réponses de
+       * l'agent jusqu'à sa fin (essai réel du 2026-10-23).
        */
-      estDesabonne: (t, waId) => contactStore.estDesabonneParWaId(t, waId),
+      estDesabonne: (t, waId) => contactStore.machineSeTaitParWaId(t, waId),
       // 🔴 Lot 4 : un numéro délié ou suspendu ne paie pas un tour dont la réponse ne partirait pas.
       numeroBloque: numeroBloqueDeLEspace,
       envoyer: (t, waId, texte) => envoyerTexteAgent(t, waId, texte),

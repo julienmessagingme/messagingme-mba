@@ -26,7 +26,10 @@ export interface DepsGestesEnvoiAgent {
   }): Promise<StartOutcome | null>;
   /** La fenêtre de 24 h est-elle ouverte ? La preuve que la politique `selon_preuve` lit. */
   fenetreOuverte(tenantId: string, waId: string): Promise<boolean>;
-  /** 🔴 Le contact a-t-il demandé à ne plus rien recevoir ? Requise, comme partout où l'on écrit à un contact. */
+  /**
+   * 🔴 Le contact a-t-il demandé à ne plus rien recevoir, ou a-t-il été bloqué ? Requise, comme partout où l'on écrit à
+   * un contact ; le câblage lit les deux (`machineSeTaitParWaId`).
+   */
   estDesabonne(tenantId: string, waId: string): Promise<boolean>;
   /**
    * L'offre de l'espace (lot 6, B2a, décision de Julien) : sans `scenarios`, les deux outils refusent avant tout geste,
