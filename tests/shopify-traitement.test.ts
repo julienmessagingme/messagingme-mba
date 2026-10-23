@@ -187,6 +187,24 @@ describe('les paniers (lot 2) : noter, fermer, sans ordre entre sujets', () => {
     expect(journal.envois).toEqual([]);
   });
 
+  it('🔴 une adresse ou un client qui n’est pas un objet (essai réel du 2026-10-23) : le panier se note quand même, avec le téléphone de l’acheteur, et la FORME reçue se trace sans aucune valeur', async () => {
+    const espion = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      for (const forme of [[], ['Paris'], 'rue inconnue', 0]) {
+        const { deps, journal } = monter({ messages: [PANIER] });
+        const corps = checkout({ phone: '+33612345678', shipping_address: forme, billing_address: forme, customer: forme });
+        expect(await traiterWebhookShopify(deps, AFFIRMEE, 'checkouts/create', corps)).toEqual({ statut: 200 });
+        expect(journal.paniers, JSON.stringify(forme)).toEqual([{ jeton: 'jeton-du-checkout', telephone: '+33612345678', nom: null, lien: 'https://b.myshopify.com/1/checkouts/ac/x/recover?key=k' }]);
+      }
+      const traces = espion.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('shopify_forme_inattendue'));
+      expect(traces.map((l) => JSON.parse(l) as { champ: string; forme: string }).filter((o) => o.champ === 'shipping_address').map((o) => o.forme))
+        .toEqual(['liste(0)', 'liste(1) de string', 'string', 'number']);
+      for (const valeur of ['Paris', 'rue inconnue']) expect(traces.join('\n')).not.toContain(valeur);
+    } finally {
+      espion.mockRestore();
+    }
+  });
+
   it('le numéro de l’acheteur passe avant celui de la livraison (un cadeau ne relance pas son destinataire)', async () => {
     const { deps, journal } = monter({ messages: [PANIER] });
     await traiterWebhookShopify(deps, AFFIRMEE, 'checkouts/update', checkout({ billing_address: { first_name: 'Julien', phone: '+33612345678', country_code: 'FR' } }));

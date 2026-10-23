@@ -44,7 +44,16 @@ export function estDonneeShopify(v: unknown): v is DonneeShopify {
 }
 
 const texte = z.string().nullish();
-const adresse = z.object({ first_name: texte, phone: texte, country_code: texte }).nullish();
+/** Un objet JSON au sens strict : ni `null`, ni une liste. */
+export const estObjetSimple = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+/**
+ * 🔴 Une adresse ou un client que Shopify n'envoie PAS comme un objet se lit comme ABSENT (essai réel du 2026-10-23 : quatre
+ * corps de checkout refusés sur `shipping_address : invalid_type (attendu object)`). Refusé, ce champ faisait rejeter
+ * TOUT le corps, téléphone compris : le panier n'était jamais noté et sa relance ne partait jamais. Ce que le connecteur
+ * lit dedans (prénom, téléphone, pays) est facultatif ; la forme reçue se journalise (`shopify_forme_inattendue`).
+ */
+const objetOuAbsent = <T extends z.ZodType>(schema: T) => z.preprocess((v) => (v === undefined || v === null || estObjetSimple(v) ? v : null), schema);
+const adresse = objetOuAbsent(z.object({ first_name: texte, phone: texte, country_code: texte }).nullish());
 const idShopify = z.number().int().positive();
 
 export const schemaCommande = z.object({
@@ -54,7 +63,7 @@ export const schemaCommande = z.object({
   order_status_url: texte,
   customer_locale: texte,
   phone: texte,
-  customer: z.object({ id: idShopify.nullish(), phone: texte, first_name: texte }).nullish(),
+  customer: objetOuAbsent(z.object({ id: idShopify.nullish(), phone: texte, first_name: texte }).nullish()),
   shipping_address: adresse,
   billing_address: adresse,
   total_price: texte,
@@ -84,7 +93,7 @@ export const schemaCheckout = z.object({
   completed_at: texte,
   abandoned_checkout_url: texte,
   phone: texte,
-  customer: z.object({ phone: texte, first_name: texte }).nullish(),
+  customer: objetOuAbsent(z.object({ phone: texte, first_name: texte }).nullish()),
   shipping_address: adresse,
   billing_address: adresse,
 });

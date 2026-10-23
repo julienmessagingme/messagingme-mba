@@ -7,7 +7,7 @@ import type { Emission } from '../emails-produit/emission';
 import {
   DONNEES_PAR_EVENEMENT, donneesDeCommande, donneesDExpedition, schemaCommande, schemaDemandeDonnees,
   schemaEffacementClient, schemaExpedition, telephoneDeCommande, telephoneDExpedition, telephoneE164,
-  numeroDeCommandeDExpedition, prenomDeCheckout, schemaCheckout, telephoneDeCheckout, valeurDeVariable,
+  estObjetSimple, numeroDeCommandeDExpedition, prenomDeCheckout, schemaCheckout, telephoneDeCheckout, valeurDeVariable,
   type DonneeShopify, type EvenementShopify,
 } from './donnees';
 import { envoyerShopify, type EnvoyerPublic, type IssueEnvoi } from './envoi';
@@ -171,7 +171,34 @@ async function fermerSiPanier(deps: DepsTraitementShopify, b: BoutiqueRecue, jet
  * Un checkout : payé, il ferme le panier ; sinon il le note, avec le téléphone saisi, le prénom et le lien de reprise.
  * Sans téléphone, rien ne se garde (le suivant en portera peut-être un).
  */
+/**
+ * La FORME d'une valeur, jamais son contenu : son type, la longueur d'une liste et le type de son premier élément, les
+ * noms des champs d'un objet. Un corps de Shopify porte le nom, le téléphone et l'adresse d'un client.
+ */
+export function formeDe(v: unknown): string {
+  if (v === null) return 'null';
+  if (Array.isArray(v)) {
+    const premier = v[0];
+    const detail = v.length === 0 ? '' : ` de ${estObjetSimple(premier) ? `objet {${Object.keys(premier).slice(0, 12).join(', ')}}` : typeof premier}`;
+    return `liste(${v.length})${detail}`;
+  }
+  if (estObjetSimple(v)) return `objet {${Object.keys(v).slice(0, 12).join(', ')}}`;
+  return typeof v;
+}
+
+/** Une adresse ou un client reçu sous une autre forme qu'un objet : lu comme absent (`objetOuAbsent`), et tracé ici. */
+function signalerFormesInattendues(b: BoutiqueRecue, sujet: string, corps: unknown): void {
+  if (!estObjetSimple(corps)) return;
+  for (const champ of ['shipping_address', 'billing_address', 'customer'] as const) {
+    const v = corps[champ];
+    if (v !== undefined && v !== null && !estObjetSimple(v)) {
+      journaliser('info', 'shopify_forme_inattendue', { tenantId: b.tenantId, sujet, champ, forme: formeDe(v) });
+    }
+  }
+}
+
 async function noterCheckout(deps: DepsTraitementShopify, b: BoutiqueRecue, sujet: string, corps: unknown): Promise<ReponseTraitement> {
+  signalerFormesInattendues(b, sujet, corps);
   const c = schemaCheckout.safeParse(corps);
   if (!c.success) return illisible(b, sujet, c.error);
   if (c.data.completed_at) {
