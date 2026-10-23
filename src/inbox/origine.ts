@@ -12,16 +12,23 @@ export type OrigineMessage = (typeof ORIGINES)[number];
  * et relance le délai de reprise (`recordOutbound`). L'Inbox, et une réponse de Claude signée d'une personne (un jeton
  * OAuth : `sender_user_id`) : c'est elle qui répond, par Claude, et la Free n'a pas d'autre Inbox. Une clé d'API (un
  * agent tiers, sans personne) reste un automate. L'origine en base, elle, ne change pas : `mcp` reste une IA à l'écran.
- * Une réaction n'est pas une réponse, comme à l'entrant. ⚠️ L'hypothèse : un jeton OAuth, c'est une personne qui a
- * autorisé Claude et qui lit ; une routine qui tournerait seule avec son jeton serait comptée comme elle.
- * `REPONSE_DE_L_EQUIPE_SQL` dit la même chose en SQL, pour les statistiques : les deux se tiennent alignés.
+ * Une réaction n'est jamais une réponse, comme à l'entrant, qu'elle vienne de Claude ou d'un humain (un 👍 posé depuis
+ * l'application WhatsApp Business revient en écho `humain`, décision de Julien du 2026-10-23). ⚠️ L'hypothèse : un jeton
+ * OAuth, c'est une personne qui a autorisé Claude et qui lit ; une routine qui tournerait seule avec son jeton serait
+ * comptée comme elle. `REPONSE_DE_L_EQUIPE_SQL` dit la même chose en SQL, pour les statistiques : les deux se tiennent
+ * alignés.
  */
 export function vautReponseDeLEquipe(origine: OrigineMessage, senderUserId: string | null, type: string): boolean {
-  return origine === 'humain' || (origine === 'mcp' && senderUserId !== null && type !== 'reaction');
+  return type !== 'reaction' && (origine === 'humain' || (origine === 'mcp' && senderUserId !== null));
 }
 
-/** `vautReponseDeLEquipe` en SQL, alias `m` = `conversation_messages` : ce que les statistiques comptent comme réponse. */
-export const REPONSE_DE_L_EQUIPE_SQL = `(m.origin = 'humain' or (m.origin = 'mcp' and m.sender_user_id is not null and m.type is distinct from 'reaction'))`;
+/**
+ * `vautReponseDeLEquipe` en SQL, alias `m` = `conversation_messages` : ce que les statistiques comptent comme réponse.
+ * ⚠️ Limite connue (décision de Julien du 2026-10-23) : supprimer le compte d'un collaborateur met son `sender_user_id`
+ * à null (0017), et ses réponses par Claude (`mcp`) cessent d'en être une après coup ; celles de l'Inbox (`humain`)
+ * restent comptées, à un « ancien collaborateur ».
+ */
+export const REPONSE_DE_L_EQUIPE_SQL = `(m.type is distinct from 'reaction' and (m.origin = 'humain' or (m.origin = 'mcp' and m.sender_user_id is not null)))`;
 
 /**
  * Le moment où la colonne a commencé à être remplie. Il borne la dérivation ci-dessous : un chemin d'écriture

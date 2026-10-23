@@ -268,3 +268,27 @@ traiter en un lot relu.
 les deux sens. Le câblage partagé (`src/index.ts`, une ligne pour le cache) s'annonce aux sessions voisines. Aucune
 migration. **Déploiement** : API et workers, avec l'accord de Julien. **Essai réel** : `list_templates` juste après une
 correction, et `hand_back` en mode « équipe ».
+
+## Suite : les jaunes de la relecture du lot 3 (2026-10-23, lot 4)
+
+La relecture du lot 3 a laissé douze jaunes (`todo.md`). Julien en a tranché quatre le même jour : le point 12
+(accepter), le point 9 (exclure la réaction pour tous), le point 3 (l'écrire comme limite) et le point 11 (garder la
+phrase).
+
+1. **`update_template`** reconnaît nos liens tracés quel que soit l'hôte (`codeDuLienTrace`), et ses deux gardes (bouton
+   Flow, lien à variable) passent dans `modifierUnModele`, sur le modèle qu'il lit déjà chez Meta : une seule lecture
+   (point 7), par un refus propre à l'appelant, la console gardant son comportement.
+2. **L'écran Modèles** : l'infobulle du « Modifier » grisé dit ce qui bloque vraiment, et « Dupliquer » prévient quand le
+   modèle a un élément que la console ne recopie pas tel quel.
+3. **Une réaction n'est jamais une réponse de l'équipe**, qu'elle vienne de Claude ou d'un humain (escalade et
+   statistiques) ; un test d'intégration prouve le fragment SQL en base.
+4. **`hand_back` en mode « équipe »** est accepté pour un contact STOP ou bloqué (aucun robot ne lui écrit, la garde à
+   l'envoi le tient) ; son `a_savoir` le dit, et nomme `set_default_responder` comme un geste d'une personne connectée.
+5. **`update_webhook_endpoint`** : une relecture ratée après la rotation ne perd pas le secret neuf.
+6. **Les textes** : l'oubli de la liste ne vaut que dans une copie de l'API (et la console ne l'oublie pas) ; la
+   suppression du compte d'un collaborateur qui répondait par Claude, limite écrite ; les phrases devenues fausses.
+
+**Méthode de livraison** : en direct, dans une copie à part de `main`, puis une relecture indépendante ; chaque garde
+vérifiée dans les deux sens. Pas de câblage partagé touché, aucune migration ; la console (`web/`) se publie au push,
+un texte et un avertissement sans route neuve. **Déploiement** : API et workers, avec l'accord de Julien. **Essai
+réel** : `hand_back` en mode « équipe » sur un contact bloqué, et l'infobulle de l'écran Modèles.

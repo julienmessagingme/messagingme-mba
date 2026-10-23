@@ -184,7 +184,18 @@ describe.skipIf(!url)('les demandes du Quantitatif > Performance', () => {
     expect(ds[0]!.closeLe!.getTime() - ds[0]!.debutLe.getTime()).toBe(9 * 60_000);
   });
 
-  it('🔴 la réponse d’un assistant MCP, de l’API ou d’une campagne ne compte pas ; celle d’un collaborateur, si', async () => {
+  it('🔴 une réponse de Claude signée d’une personne (OAuth) compte, à son nom ; une réaction, jamais (lot 4)', async () => {
+    const c = await conversation();
+    await escalader(c.waId);
+    // Un 👍 de Claude au nom de Jean, puis un 👍 de Marie (l'écho de l'application WhatsApp Business) : aucune réponse.
+    await inbox.recordOutbound(c.id, '👍', null, 'mcp', 'reaction', null, null, jean);
+    await inbox.recordOutbound(c.id, '👍', null, 'humain', 'reaction', null, null, marie);
+    expect(de(await lire(), c.id)[0]!.reponduLe).toBeNull();
+    await inbox.recordOutbound(c.id, 'je regarde votre commande', null, 'mcp', 'text', null, null, jean);
+    expect(de(await lire(), c.id)[0]!.repondant).toEqual({ genre: 'collaborateur', userId: jean, nom: 'Jean' });
+  });
+
+  it('🔴 la réponse d’un assistant MCP derrière une clé, de l’API ou d’une campagne ne compte pas ; celle d’un collaborateur, si', async () => {
     const c = await conversation();
     await escalader(c.waId);
     await inbox.recordOutbound(c.id, 'réponse de l’assistant', null, 'mcp');

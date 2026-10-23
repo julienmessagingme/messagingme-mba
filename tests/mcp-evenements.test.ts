@@ -223,6 +223,24 @@ describe('modifier et supprimer une adresse depuis Claude (marche arrière, tâc
     expect(r.adresse.previousSecretValidUntil).toBe(jusqua);
   });
 
+  it('🔴 une relecture ratée après la rotation rend quand même le secret neuf, montré une seule fois (lot 4)', async () => {
+    for (const saisie of [{ adresse_id: A, description: 'Production', rotate_secret: true }, { adresse_id: A, rotate_secret: true }]) {
+      const { d } = avecAdresse();
+      const lireAvant = d.evenements.gestion.adresses.lire;
+      let tournee = false;
+      const tournerAvant = d.evenements.gestion.adresses.tourner;
+      d.evenements.gestion.adresses = {
+        ...d.evenements.gestion.adresses,
+        tourner: async (...a: Parameters<typeof tournerAvant>) => { tournee = true; return tournerAvant(...a); },
+        // La base décroche juste après la rotation.
+        lire: async (t, id) => { if (tournee) throw new Error('connexion perdue'); return lireAvant(t, id); },
+      };
+      const r = await outil('update_webhook_endpoint').executer(d, T, saisie, { userId: 'u1' }) as { secret?: string };
+      expect(tournee).toBe(true);
+      expect(typeof r.secret, JSON.stringify(saisie)).toBe('string');
+    }
+  });
+
   it('réactiver au-delà de la limite de l’offre garde la phrase de la gestion', async () => {
     const { d, ecrits } = avecAdresse({ limite: 1 });
     await expect(outil('update_webhook_endpoint').executer(d, T, { adresse_id: A, active: true }, { userId: 'u1' }))

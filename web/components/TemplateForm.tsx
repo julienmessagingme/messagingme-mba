@@ -366,6 +366,11 @@ export function TemplateForm({ tenantId, onCreated, initial, duplique, colonneEt
               {t('Le visuel d’en-tête n’a pas pu être recopié : Meta ne rend pas le fichier d’origine. Redéposez-le ci-dessous.', 'The header media could not be copied: Meta does not return the original file. Upload it again below.')}
             </p>
           )}
+          {initial.boutonsNonRelus && (
+            <p className="mt-1 font-medium" data-testid="template-duplication-boutons">
+              {t('Un bouton téléphone, code à copier, appel ou catalogue n’a pas pu être recopié tel quel : il apparaît ci-dessous comme une réponse rapide. Vérifiez les boutons avant de créer le template.', 'A phone, copy code, call or catalog button could not be copied as is: it appears below as a quick reply. Check the buttons before creating the template.')}
+            </p>
+          )}
         </div>
       )}
       {!isEdit && (

@@ -118,6 +118,8 @@ describe('origine d’un message de service', () => {
       expect(await drapeau('mcp', 'user-7')).toBe(true);
       // Une réaction (👍) envoyée par Claude n'est pas une réponse : elle ne lève pas l'escalade (lot 3).
       expect(await drapeau('mcp', 'user-7', 'reaction')).toBe(false);
+      // Ni celle d'un humain, l'écho d'un 👍 posé depuis l'application WhatsApp Business (lot 4).
+      expect(await drapeau('humain', 'user-7', 'reaction')).toBe(false);
       expect(await drapeau('mcp', null)).toBe(false);
       expect(await drapeau('ia', null)).toBe(false);
       expect(await drapeau('api', null)).toBe(false);

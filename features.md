@@ -4913,11 +4913,12 @@ chemin pour elle. Chacun devient un outil, qui appelle la fonction du bouton de 
 - **La main du fil** (`control_conversation`) : la prendre sans écrire au contact, ou la rendre au répondeur
   automatique (agent IA, agent de Meta, scénario), qui répond au message SUIVANT du contact. Une réponse de Claude
   prend le fil : sans ce geste, l'agent IA d'une Free se taisait jusqu'au délai de reprise. Toutes les offres, et aussi
-  derrière une clé d'API, comme la réponse. La main n'est jamais rendue pour un contact qui a dit STOP ou qui est
-  bloqué. Quand personne ne répond automatiquement (« équipe »), la rendre sort la conversation d'« À traiter », et le
-  résultat dit qu'aucun répondeur ne prendra le message suivant. Et une réponse de Claude faite par une personne
+  derrière une clé d'API, comme la réponse. La main n'est jamais rendue à un robot pour un contact qui a dit STOP ou
+  qui est bloqué. Quand personne ne répond automatiquement (« équipe »), la rendre sort la conversation d'« À traiter »,
+  pour tout contact, et le résultat dit qu'aucun répondeur ne prendra le message suivant. Et une réponse de Claude faite par une personne
   connectée vaut celle de l'Inbox : la conversation sort d'« À traiter », le répondeur la reprend après le délai, comme
-  après une réponse de l'équipe, et les statistiques la comptent comme une réponse (une réaction 👍, non).
+  après une réponse de l'équipe, et les statistiques la comptent comme une réponse. Une réaction 👍 n'en est jamais une,
+  qu'elle vienne de Claude ou de l'équipe.
 - **Le webhook de l'application** (`update_webhook_endpoint`, `delete_webhook_endpoint`) : ses types d'événements, sa
   pause, un nouveau secret (montré une fois, l'ancien signe encore 24 h), sa suppression avec son journal. Changer
   d'adresse reste « supprimer puis recréer », comme dans la console ; si l'adresse répondait aux clients, la
@@ -4930,7 +4931,8 @@ chemin pour elle. Chacun devient un outil, qui appelle la fonction du bouton de 
   campagne active l'utilise ; le nom d'un modèle approuvé supprimé reste bloqué 30 jours chez Meta). Un modèle à
   bouton Flow, ou à lien qui prend une variable (le panier d'un message Shopify), ne se corrige pas depuis Claude : la
   correction perdrait ou changerait le bouton. Un bouton téléphone, « code à copier », appel ou catalogue rend le
-  modèle non éditable, dans la console aussi. La liste des modèles montre tout de suite ce que Claude a changé.
+  modèle non éditable, dans la console aussi. La liste des modèles montre aussitôt ce que Claude a changé ; un
+  changement fait dans la console peut y mettre jusqu'à une minute.
 - **Le blocage d'un contact** (`block_contact`) : comme la fiche, plus rien ne lui part et aucun robot ne prend sa
   conversation, ses messages restent enregistrés. `get_contact` et `search_contacts` disent s'il est bloqué : c'est là
   que Claude le retrouve pour le débloquer.

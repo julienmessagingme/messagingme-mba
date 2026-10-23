@@ -73,6 +73,9 @@ export interface TemplateSummary {
   footer?: string;
   /** Boutons top-level (pour pré-remplir l'édition). undefined si aucun. */
   buttons?: TemplateButton[];
+  /** true si l'un d'eux n'est pas relu tel qu'il est (téléphone, code à copier, appel, catalogue) : `buttons` le montre
+   *  en réponse rapide, à sa place (l'ordre compte pour l'envoi). La duplication de la console le dit. Absent sinon. */
+  boutonsNonRelus?: true;
   /** Exemples de variables du BODY (pour pré-remplir l'édition). undefined si aucun. */
   example?: string[];
   /** true si le template est un CAROUSEL (édition non supportée : header_handle non récupérable). */
@@ -212,6 +215,18 @@ function carouselOf(components: unknown): { cards: OutboundCarouselCard[] } | un
 /** Les seuls boutons que `buttonsOf` relit tels qu'ils sont, donc qu'une édition sait renvoyer à Meta. */
 const BOUTONS_RELUS: ReadonlySet<string> = new Set(['QUICK_REPLY', 'URL', 'FLOW']);
 
+/** Ce composant BUTTONS porte-t-il un bouton que `buttonsOf` ne relit pas tel qu'il est (il le montre en réponse rapide) ? */
+function porteUnBoutonNonRelu(comp: { buttons?: unknown }): boolean {
+  const boutons = Array.isArray(comp.buttons) ? comp.buttons as Array<{ type?: string }> : [];
+  return boutons.some((b) => !BOUTONS_RELUS.has(b?.type ?? ''));
+}
+
+/** Un bouton top-level non relu (`porteUnBoutonNonRelu`) : la duplication de la console le dit (`boutonsNonRelus`). */
+function aDesBoutonsNonRelus(components: unknown): boolean {
+  return Array.isArray(components)
+    && components.some((c) => (c as { type?: string })?.type === 'BUTTONS' && porteUnBoutonNonRelu(c as { buttons?: unknown }));
+}
+
 /**
  * Éditable en place = on sait regénérer tous ses composants à l'identique (Meta les remplace tous à l'édition) :
  * BODY, BUTTONS, FOOTER et un HEADER texte. Pas un HEADER média (header_handle non récupérable) ni un CAROUSEL, ni un
@@ -225,8 +240,7 @@ function isSimpleEditable(components: unknown): boolean {
     const comp = c as { type?: string; format?: string; buttons?: unknown };
     if (comp?.type === 'BODY') hasBody = true;
     else if (comp?.type === 'BUTTONS') {
-      const boutons = Array.isArray(comp.buttons) ? comp.buttons as Array<{ type?: string }> : [];
-      if (boutons.some((b) => !BOUTONS_RELUS.has(b?.type ?? ''))) return false;
+      if (porteUnBoutonNonRelu(comp)) return false;
     } else if (comp?.type === 'FOOTER') continue;
     else if (comp?.type === 'HEADER' && comp.format === 'TEXT') continue;
     else return false; // HEADER média, CAROUSEL, ou composant inconnu -> non éditable
@@ -318,6 +332,7 @@ export function resumeDuModele(t: ModeleBrut): TemplateSummary {
     ...(!carousel && headerMediaUrlOf(t.components) !== undefined ? { headerMediaUrl: headerMediaUrlOf(t.components) } : {}),
     ...(footerOf(t.components) !== undefined ? { footer: footerOf(t.components) } : {}),
     ...(buttonsOf(t.components) ? { buttons: buttonsOf(t.components) } : {}),
+    ...(aDesBoutonsNonRelus(t.components) ? { boutonsNonRelus: true as const } : {}),
     ...(exampleOf(t.components) ? { example: exampleOf(t.components) } : {}),
     isCarousel: carousel !== undefined,
     ...(carousel ? { carousel } : {}),

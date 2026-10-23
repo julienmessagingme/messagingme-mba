@@ -1863,9 +1863,11 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
     introuvable dans l'espace, c'est un ancien collaborateur (la règle du journal, ci-dessus).
   - **Réponse** : le premier message `direction = 'out'` de l'équipe (`REPONSE_DE_L_EQUIPE_SQL`, le pendant SQL de
     `vautReponseDeLEquipe` : `origin = 'humain'`, écrit dans l'Inbox, texte, modèle ou RCS, ou `origin = 'mcp'` avec un
-    `sender_user_id`, Claude au nom d'une personne, réaction exclue) entre le début et la fin, attribué à son
-    `sender_user_id`. Ni l'API, ni un assistant MCP derrière une clé, ni une campagne, ni un robot. La lecture rend
-    aussi la DERNIÈRE réponse avant la fin.
+    `sender_user_id`, Claude au nom d'une personne ; une réaction n'en est jamais une, de Claude comme d'un humain)
+    entre le début et la fin, attribué à son `sender_user_id`. Ni l'API, ni un assistant MCP derrière une clé, ni une
+    campagne, ni un robot. La lecture rend aussi la DERNIÈRE réponse avant la fin. ⚠️ Limite connue : supprimer le
+    compte d'un collaborateur met son `sender_user_id` à null (0017) ; ses réponses de l'Inbox restent comptées (à un
+    ancien collaborateur), ses réponses par Claude cessent d'en être une, après coup.
   - **Durées** : en heures d'ouverture de l'espace (`tempsOuvre`, `src/lib/heures-ouvrees.ts` : jours civils du
     fuseau, ouvertures murales converties en instants, donc juste au changement d'heure). Un espace sans aucun
     créneau exploitable (`horairesExploitables`) est compté en temps brut, et la réponse le dit (`mode: 'brut'`).
@@ -3309,16 +3311,22 @@ l'activer, et d'ouvrir une recharge du crédit.
   🔴 **Les gardes que la console laisse à un geste humain, l'outil les pose** (lot 2, les jaunes de la relecture) :
   `control_conversation` ne rend pas la main sur un contact qui a dit STOP ou qui est bloqué (`rendreLaMain` confie à
   l'agent de Meta sans la garde du consentement, et l'outil s'ouvre derrière une clé d'API). En mode « équipe » (lu
-  sous l'offre, `sousLOffre`, comme le contrôle du fil), il la rend quand même et le DIT (`repondeur`, `a_savoir`) : le
-  geste sort la conversation d'« À traiter » et rend un parcours qui attendait le contact, seul moyen d'une Free sans
-  Inbox (lot 3 ; le lot 2 le refusait).
+  sous l'offre, `sousLOffre`, comme le contrôle du fil), il la rend, pour tout contact, et le DIT (`repondeur`,
+  `a_savoir`, qui nomme aussi le STOP ou le blocage) : le geste sort la conversation d'« À traiter » et rend un
+  parcours qui attendait le contact, seul moyen d'une Free sans Inbox. Aucun robot n'y reçoit le contact :
+  `rendreLaMain` lit le même mode et ne confie rien à l'agent de Meta hors du mode `mba`, et la garde à l'envoi
+  (`estDesabonne`, STOP ou bloqué) tient les autres.
   `prepare_resume` rend le motif de la pause et sa phrase (`pauseDe`, lu hors de l'empreinte du code, et
   `messageDePause`), et refuse une pause qu'un autre geste lève (numéro délié, abonnement impayé). `update_template`
-  relit le modèle chez Meta (`listerModeles`, pas le cache d'une minute) et refuse un bouton Flow ou un lien qui prend
-  une variable sans être l'un de nos liens tracés (`/r/<code>/{{1}}`, qui se retrace à la correction) : le format de
-  Meta de l'outil ne les renvoie pas. Un bouton que la lecture ne relit pas (téléphone, code à copier, appel,
-  catalogue) rend le modèle non éditable pour tous (`isSimpleEditable`). Après une création, une correction ou une
-  suppression par Claude, la liste en cache s'oublie (`DepsModelesMcp.oublier`).
+  refuse un bouton Flow ou un lien qui prend une variable sans être l'un de nos liens tracés (`/r/<code>/{{1}}`, sous
+  n'importe quel nom passé de l'API, `codeDuLienTrace`, qui se retrace à la correction) : le format de Meta de l'outil
+  ne les renvoie pas. Ce refus est jugé dans `modifierUnModele` (`refusDeLAppelant`), sur le modèle qu'elle lit chez
+  Meta, jamais dans le cache d'une minute de la liste, et en une seule lecture ; la console n'en passe pas. Un bouton
+  que la lecture ne relit pas (téléphone, code à copier, appel, catalogue) rend le modèle non éditable pour tous
+  (`isSimpleEditable`), et le résumé le dit (`boutonsNonRelus`) pour que la duplication de la console le signale.
+  Après une création, une correction ou une suppression par Claude, la liste en cache s'oublie
+  (`DepsModelesMcp.oublier`). ⚠️ Ce cache vit dans UNE copie de l'API : avec plusieurs copies, une autre montre
+  l'ancien état jusqu'à une minute, et un changement fait dans l'écran Modèles ne l'oublie pas.
 - **`buy_credit` annonce le montant HORS TAXE** de l'offre : la taxe est calculée par Stripe Tax sur la page de
   paiement, selon le pays et le numéro de TVA saisis, donc aucun TTC n'est connu avant le paiement. Seul le webhook
   signé crédite.

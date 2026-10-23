@@ -32,8 +32,10 @@ function deps(o: {
   const suppressions: string[] = [];
   let lourds = 0;
   let oublis = 0;
+  let lectures = 0;
   const client = {
-    list: async () => [{ ...RESUME, ...o.resume }],
+    // Chaque lecture de la liste COMPLÈTE chez Meta (des pages entières pour un gros compte).
+    list: async () => { lectures += 1; return [{ ...RESUME, ...o.resume }]; },
     update: async (id: string, input: Record<string, unknown>) => {
       if (o.echecMeta) throw o.echecMeta;
       editions.push({ id, input });
@@ -63,7 +65,7 @@ function deps(o: {
     modeles: { modeles: gestion, lister: async () => o.listeEnCache ?? client.list(), oublier: async () => { oublis += 1; if (o.oubliEchoue) throw new Error('base injoignable'); } },
     couteux: { consommer: async () => { lourds += 1; return { accepte: o.lourdAccepte ?? true, attenteMs: 2000 }; } },
   } as unknown as DepsMcp;
-  return { d, editions, suppressions, lourds: () => lourds, oublis: () => oublis };
+  return { d, editions, suppressions, lourds: () => lourds, oublis: () => oublis, lectures: () => lectures };
 }
 
 const CORRIGE = {
@@ -135,9 +137,23 @@ describe('corriger et supprimer un modèle depuis Claude (marche arrière, tâch
     await expect(outil('update_template').executer(panier.d, T, { template: CORRIGE }, MOI)).rejects.toThrow(/prend une variable/);
     expect(panier.editions).toEqual([]);
     // Un lien tracé par nous (`/r/<code>/{{1}}`) se retrace à la correction : rien à refuser.
-    const trace = deps({ resume: { buttons: [{ type: 'URL', text: 'Voir', url: 'https://api.exemple.test/r/abc123/{{1}}' }] } });
+    const trace = deps({ resume: { buttons: [{ type: 'URL', text: 'Voir', url: 'https://api.exemple.test/r/abcdefgh2345/{{1}}' }] } });
     await outil('update_template').executer(trace.d, T, { template: CORRIGE }, MOI);
     expect(trace.editions).toHaveLength(1);
+  });
+
+  it('🔴 un lien tracé soumis sous un ancien nom de l’API reste l’un des nôtres : la correction passe (lot 4)', async () => {
+    // Un modèle soumis quand l'API répondait sous `mba.` : son lien n'a pas l'hôte d'aujourd'hui (`lienDe`).
+    const ancien = deps({ resume: { buttons: [{ type: 'URL', text: 'Voir', url: 'https://mba.messagingme.app/r/abcdefgh2345/{{1}}' }] } });
+    await outil('update_template').executer(ancien.d, T, { template: CORRIGE }, MOI);
+    expect(ancien.editions).toHaveLength(1);
+  });
+
+  it('🔴 le modèle se lit UNE fois chez Meta pour une correction (lot 4)', async () => {
+    const { d, editions, lectures } = deps();
+    await outil('update_template').executer(d, T, { template: CORRIGE }, MOI);
+    expect(editions).toHaveLength(1);
+    expect(lectures()).toBe(1);
   });
 
   it('la liste en cache s’oublie après une correction et une suppression : list_templates montre le nouvel état', async () => {

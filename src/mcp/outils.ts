@@ -835,9 +835,9 @@ export const OUTILS: OutilMcp[] = [
       + 'the thread, nothing is written to the contact, and no scenario, AI agent or Meta Business Agent answers it until '
       + 'it is handed back or the workspace\'s takeover delay runs out. hand_back: the workspace\'s automatic responder (a '
       + 'scenario, the AI agent or the Meta Business Agent) takes the thread again and answers the contact\'s NEXT '
-      + 'message, not the ones already received. hand_back is refused for a contact who said STOP or is blocked. When '
-      + 'nobody answers automatically (responder mode "equipe"), hand_back still takes the conversation out of "To '
-      + 'handle", and the result says that no responder will answer (repondeur, a_savoir). reply_in_open_window '
+      + 'message, not the ones already received. hand_back is refused for a contact who said STOP or is blocked, except '
+      + 'when nobody answers automatically (responder mode "equipe"): there, hand_back takes the conversation out of "To '
+      + 'handle" for any contact, and the result says that no responder will answer (repondeur, a_savoir). reply_in_open_window '
       + 'and send_message take over by themselves: call hand_back once the reply is done if the responder should answer '
       + 'again. handled_by tells who holds the thread afterwards.',
     // Destructrice : elle REMPLACE qui tient le fil. Idempotente : rejouer le même geste laisse le même détenteur. Monde
@@ -871,22 +871,27 @@ export const OUTILS: OutilMcp[] = [
         }
         return { conversation_id: id, handled_by: 'app_human' };
       }
-      // 🔴 « Rendre la main » de la console confie à l'agent de Meta sans la garde du consentement : un geste humain,
-      // délibéré (`rendreLaMain`, `src/inbox/fil.ts`). Cet outil s'ouvre aussi derrière une clé d'API : un contact qui a
-      // dit STOP, ou bloqué, n'est rendu à aucun robot, comme dans toute remise automatique.
-      if (await deps.estDesabonne(tenantId, ctx.waId)) {
-        throw new RefusOutil('ce contact a demandé à ne plus recevoir de messages (STOP) : aucun robot ne reprendra sa '
-          + 'conversation');
-      }
-      if (await deps.contacts.isBlockedByWaId(tenantId, ctx.waId)) {
-        throw new RefusOutil('ce contact est bloqué : aucun robot ne reprendra sa conversation. Une personne connectée peut '
-          + 'le débloquer d’abord (block_contact, blocked false), si c’est sa décision');
-      }
       // Le mode « équipe » (lu sous l'offre, comme le fait le contrôle du fil) : aucun répondeur automatique. Le geste
       // reste utile (il sort la conversation d'« À traiter », et rend un parcours qui attendait le contact), mais aucun
       // robot ne répondra au message suivant : le résultat le dit plutôt que de laisser croire le contraire.
       const reglage = sousLOffre(await deps.agentIa.repondeur.reglages.get(tenantId), (await deps.offres.offreDe(tenantId)).droits.fonctions);
       const sansRepondeur = modeEffectif(reglage) === 'equipe';
+      // 🔴 « Rendre la main » de la console confie à l'agent de Meta sans la garde du consentement : un geste humain,
+      // délibéré (`rendreLaMain`, `src/inbox/fil.ts`). Cet outil s'ouvre aussi derrière une clé d'API : un contact qui a
+      // dit STOP, ou bloqué, n'est rendu à aucun robot, comme dans toute remise automatique. En mode « équipe » (lot 4,
+      // décision de Julien), il n'y a aucun robot à qui le rendre : `rendreLaMain` lit le même mode et n'y confie rien à
+      // l'agent de Meta, et la garde à l'envoi (`estDesabonne`, STOP ou bloqué) tient tous les autres. Le geste sort
+      // alors la conversation d'« À traiter », seul moyen d'une Free.
+      const stop = await deps.estDesabonne(tenantId, ctx.waId);
+      if (stop && !sansRepondeur) {
+        throw new RefusOutil('ce contact a demandé à ne plus recevoir de messages (STOP) : aucun robot ne reprendra sa '
+          + 'conversation');
+      }
+      const bloque = !stop && await deps.contacts.isBlockedByWaId(tenantId, ctx.waId);
+      if (bloque && !sansRepondeur) {
+        throw new RefusOutil('ce contact est bloqué : aucun robot ne reprendra sa conversation. Une personne connectée peut '
+          + 'le débloquer d’abord (block_contact, blocked false), si c’est sa décision');
+      }
       let detenteur: IssueRendreLaMain;
       try {
         detenteur = await deps.fil.rendreLaMain(tenantId, ctx.waId, par);
@@ -900,13 +905,16 @@ export const OUTILS: OutilMcp[] = [
           + 'elle reste à l’équipe.');
       }
       if (!sansRepondeur) return { conversation_id: id, handled_by: detenteur };
+      const contact = stop
+        ? ' Ce contact a dit STOP : aucun robot ne lui écrit, quel que soit le répondeur.'
+        : bloque ? ' Ce contact est bloqué : aucun robot ne lui écrit, quel que soit le répondeur.' : '';
       return {
         conversation_id: id,
         handled_by: detenteur,
         repondeur: 'equipe',
         a_savoir: 'Aucun répondeur automatique dans cet espace (mode « équipe ») : la conversation sort d’« À traiter », '
-          + 'mais personne ne répondra seul au prochain message du contact, qui reviendra à l’équipe. set_default_responder '
-          + 'choisit qui répond.',
+          + 'mais personne ne répondra seul au prochain message du contact, qui reviendra à l’équipe. Une personne '
+          + `connectée choisit qui répond (set_default_responder).${contact}`,
       };
     },
   },

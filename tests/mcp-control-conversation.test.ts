@@ -114,6 +114,24 @@ describe('control_conversation : prendre et rendre la main sur un fil', () => {
     }
   });
 
+  it('🔴 en mode « équipe », hand_back se fait pour un contact STOP ou bloqué, et le résultat le dit (lot 4)', async () => {
+    // Aucun robot à qui le rendre : le geste sort la conversation d'« À traiter », seul moyen d'une Free (décision de
+    // Julien du 2026-10-23). La garde à l'envoi (STOP ou bloqué) tient les robots, quel que soit le répondeur.
+    for (const cas of [{ desabonne: true, motif: /a dit STOP/ }, { bloque: true, motif: /est bloqué/ }]) {
+      for (const personne of [MOI, null]) {
+        const { d, appels } = deps({ ...cas, mode: 'equipe' });
+        const r = await outil.executer(d, T, { conversation_id: CONV, action: 'hand_back' }, personne) as { repondeur?: string; a_savoir?: string };
+        expect(appels.map((a) => a.geste)).toEqual(['rendre']);
+        expect(r.repondeur).toBe('equipe');
+        expect(r.a_savoir).toMatch(cas.motif);
+      }
+    }
+    // Un contact ni STOP ni bloqué : la phrase n'en dit rien.
+    const { d } = deps({ mode: 'equipe' });
+    const r = await outil.executer(d, T, { conversation_id: CONV, action: 'hand_back' }, MOI) as { a_savoir?: string };
+    expect(r.a_savoir).not.toMatch(/STOP|bloqué/);
+  });
+
   it('take_over reste ouvert sur ce contact : prendre le fil n’écrit rien', async () => {
     const { d, appels } = deps({ desabonne: true, bloque: true });
     expect(await outil.executer(d, T, { conversation_id: CONV, action: 'take_over' }, MOI)).toEqual({ conversation_id: CONV, handled_by: 'app_human' });
@@ -135,6 +153,8 @@ describe('control_conversation : prendre et rendre la main sur un fil', () => {
       expect(appels.map((a) => a.geste), o.mode).toEqual(['rendre']);
       expect(r.repondeur, o.mode).toBe('equipe');
       expect(r.a_savoir, o.mode).toMatch(/set_default_responder/);
+      // `set_default_responder` exige une personne : derrière une clé d'API, la phrase ne promet pas un geste impossible.
+      expect(r.a_savoir, o.mode).toMatch(/Une personne connectée choisit qui répond/);
     }
     for (const mode of ['agent', 'scenario', 'mba', 'application']) {
       const { d, appels } = deps({ mode });

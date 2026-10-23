@@ -37,6 +37,9 @@ export interface TemplateSummary {
   footer?: string;
   /** Boutons top-level (pré-remplissage de l'édition). */
   buttons?: TemplateButtonInput[];
+  /** true = un bouton n'est pas relu tel qu'il est (téléphone, code à copier, appel, catalogue) : `buttons` le montre en
+   *  réponse rapide. La duplication le dit. */
+  boutonsNonRelus?: boolean;
   /** Exemples de variables du BODY (pré-remplissage). */
   example?: string[];
   /** true = carousel : édition non supportée, et non proposé à l'envoi manuel depuis l'inbox.
@@ -45,7 +48,8 @@ export interface TemplateSummary {
   /** Cartes du carousel relues chez Meta (image, texte, boutons), pour l'aperçu. Absent hors carousel.
    *  ⚠️ `mediaUrl` porte une expiration : à consommer à l'affichage, jamais à mettre en cache. */
   carousel?: { cards: Array<{ mediaUrl?: string; mediaFormat?: 'IMAGE' | 'VIDEO'; body?: string; buttons?: TemplateButtonInput[] }> };
-  /** true = template limité à BODY(+BUTTONS) : seul cas éditable sans perte (header/footer/carousel bloqués). */
+  /** true = l'édition ne perd rien (`isSimpleEditable` côté serveur) : un en-tête média, un carousel ou un bouton
+   *  téléphone, code à copier, appel ou catalogue la bloquent ; un pied de page et un en-tête texte, non. */
   editable?: boolean;
   /** Durée de validité lue chez Meta, en secondes. Absente : jamais réglée, ou effacée par un reclassement. */
   ttlSecondes?: number;

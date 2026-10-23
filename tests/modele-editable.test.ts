@@ -22,4 +22,12 @@ describe('l’éditabilité d’un modèle et ses boutons', () => {
       expect(modele([{ type: 'QUICK_REPLY', text: 'Oui' }, { type, text: 'Appeler' }]).editable, String(type)).toBe(false);
     }
   });
+
+  it('le résumé le dit (`boutonsNonRelus`), pour que la duplication de la console le signale ; absent sinon (lot 4)', () => {
+    const avecTelephone = modele([{ type: 'QUICK_REPLY', text: 'Oui' }, { type: 'PHONE_NUMBER', text: 'Appeler', phone_number: '+33600000000' }]);
+    expect(avecTelephone.boutonsNonRelus).toBe(true);
+    // Il reste à sa place, en réponse rapide : l'ordre des boutons compte pour l'envoi.
+    expect(avecTelephone.buttons).toEqual([{ type: 'QUICK_REPLY', text: 'Oui' }, { type: 'QUICK_REPLY', text: 'Appeler' }]);
+    expect(modele([{ type: 'QUICK_REPLY', text: 'Oui' }, { type: 'URL', text: 'Voir', url: 'https://a.example' }])).not.toHaveProperty('boutonsNonRelus');
+  });
 });

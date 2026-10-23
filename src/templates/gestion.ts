@@ -315,7 +315,11 @@ export async function listerModeles(deps: DepsGestionModeles, tenant: string): P
 
 const EDITABLE_STATUSES = new Set(['APPROVED', 'REJECTED', 'PAUSED']);
 
-/** Édition complète d'une langue, avec garde des campagnes et compensation des liens suivis. */
+/**
+ * Édition complète d'une langue, avec garde des campagnes et compensation des liens suivis. `refusDeLAppelant` juge le
+ * modèle tel que Meta le rend, lu ici une fois : un format qui ne sait pas tout renvoyer y refuse ce qu'il perdrait
+ * (l'outil `update_template`), la console n'en passe pas.
+ */
 export async function modifierUnModele(
   deps: DepsGestionModeles,
   tenant: string,
@@ -323,6 +327,7 @@ export async function modifierUnModele(
   language: string,
   fields: ChampsModele,
   paramHints?: IndicesModele,
+  refusDeLAppelant?: (existant: TemplateSummary) => string | null,
 ): Promise<IssueModificationModele> {
   if (fields.carousel) return { refus: { statut: 422, error: 'édition d\'un carousel non supportée' } };
   const refusChamps = await refusDesChamps(deps, tenant, fields);
@@ -337,6 +342,8 @@ export async function modifierUnModele(
   if (!existing.editable) {
     return { refus: { statut: 422, error: existing.isCarousel ? 'édition d\'un carousel non supportée' : 'édition non supportée : ce template a un composant que l\'édition ne sait pas refaire (un en-tête image, vidéo ou document, ou un bouton téléphone, code à copier, appel ou catalogue), qui serait perdu' } };
   }
+  const refusAppelant = refusDeLAppelant?.(existing) ?? null;
+  if (refusAppelant !== null) return { refus: { statut: 422, error: refusAppelant } };
   if (!EDITABLE_STATUSES.has(existing.status)) {
     return { refus: { statut: 409, error: `template non éditable (statut ${existing.status}) : seuls APPROVED/REJECTED/PAUSED le sont` } };
   }

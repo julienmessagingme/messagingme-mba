@@ -19,7 +19,7 @@ const TEMPLATE = {
   editable: true,
 };
 
-async function ouvrir(page: import('@playwright/test').Page, appels: { method: string; url: string; body: unknown }[]) {
+async function ouvrir(page: import('@playwright/test').Page, appels: { method: string; url: string; body: unknown }[], modele: Record<string, unknown> = TEMPLATE) {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
   await page.route('**/api/backend/**', async (route) => {
     const req = route.request();
@@ -28,7 +28,7 @@ async function ouvrir(page: import('@playwright/test').Page, appels: { method: s
     if (req.method() !== 'GET') appels.push({ method: req.method(), url, body: req.postDataJSON() ?? null });
     if (req.method() === 'POST' && url.includes('/templates')) return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ name: 'promo_ete_copie', language: 'fr', status: 'PENDING' }) });
     if (url.includes('/templates/hints')) return json({ hints: [] });
-    if (url.includes('/templates')) return json({ templates: [TEMPLATE] });
+    if (url.includes('/templates')) return json({ templates: [modele] });
     if (url.includes('/flows')) return json({ flows: [] });
     if (url.includes('/user-fields')) return json({ fields: [] });
     if (url.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
@@ -51,6 +51,15 @@ test.describe('dupliquer un template', () => {
 
     // Le bandeau dit que rien n'est encore parti chez Meta.
     await expect(page.getByTestId('template-duplication-bandeau')).toContainText('Créer le template');
+    // Rien à signaler sur les boutons d'un modèle qui n'en a pas d'illisible.
+    await expect(page.getByTestId('template-duplication-boutons')).toHaveCount(0);
+  });
+
+  test('un bouton téléphone, que la lecture montre en réponse rapide, est signalé dans le bandeau (lot 4)', async ({ page }) => {
+    // `boutonsNonRelus` : le serveur l'a relu en réponse rapide, à sa place ; la copie ne doit pas passer pour conforme.
+    await ouvrir(page, [], { ...TEMPLATE, editable: false, buttons: [{ type: 'QUICK_REPLY', text: 'Nous appeler' }], boutonsNonRelus: true });
+    await page.getByTestId('template-dupliquer-promo_ete').click();
+    await expect(page.getByTestId('template-duplication-boutons')).toContainText('réponse rapide');
   });
 
   test('🔴 l’envoi CRÉE (POST) et ne modifie jamais le template d’origine', async ({ page }) => {

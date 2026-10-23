@@ -15,6 +15,9 @@ describe('vautReponseDeLEquipe et son pendant SQL', () => {
     expect(vautReponseDeLEquipe('humain', 'u1', 'text')).toBe(true);
     expect(vautReponseDeLEquipe('mcp', 'u1', 'text')).toBe(true);
     expect(vautReponseDeLEquipe('mcp', 'u1', 'reaction')).toBe(false);
+    // Un 👍 posé par un humain (l'écho de l'application WhatsApp Business) non plus (lot 4, décision de Julien).
+    expect(vautReponseDeLEquipe('humain', 'u1', 'reaction')).toBe(false);
+    expect(vautReponseDeLEquipe('humain', null, 'reaction')).toBe(false);
     expect(vautReponseDeLEquipe('mcp', null, 'text')).toBe(false);
     for (const robot of ['ia', 'mba', 'scenario', 'campagne', 'api'] as const) expect(vautReponseDeLEquipe(robot, 'u1', 'text'), robot).toBe(false);
   });
@@ -22,7 +25,8 @@ describe('vautReponseDeLEquipe et son pendant SQL', () => {
   it('le fragment SQL dit la même chose : la même origine, la personne, et la réaction exclue', () => {
     expect(REPONSE_DE_L_EQUIPE_SQL).toContain("m.origin = 'humain'");
     expect(REPONSE_DE_L_EQUIPE_SQL).toContain("m.origin = 'mcp' and m.sender_user_id is not null");
-    expect(REPONSE_DE_L_EQUIPE_SQL).toContain("m.type is distinct from 'reaction'");
+    // La réaction exclue AVANT l'origine : pour l'humain aussi, pas seulement pour Claude.
+    expect(REPONSE_DE_L_EQUIPE_SQL).toMatch(/^\(m\.type is distinct from 'reaction' and \(/);
   });
 
   it('🔴 les statistiques lisent CE fragment aux trois endroits : ce qui part vers la base', async () => {

@@ -8,6 +8,7 @@ import {
   creerAdresse, envoyerEssai, lireJournal, modifierAdresse, rejouerEnvoi, supprimerAdresse, tournerSecret, type DepsGestionEvenements,
 } from '../evenements/gestion';
 import { deliveryV1, webhookV1 } from '../http/v1-webhooks';
+import { journaliser } from '../lib/journal';
 
 /**
  * LES WEBHOOKS SORTANTS DEPUIS CLAUDE CODE (lot 12, livraison A, décision de Julien du 2026-10-08 : la console, plus un
@@ -236,8 +237,13 @@ export const OUTILS_EVENEMENTS: OutilMcp[] = [
       }
       await deps.evenements.audit(tenantId, auteur, 'evenements.secret_tourne', cible, { ancienJusqua: r.valeur.ancienJusqua, via: 'mcp' });
       // Relue APRÈS la rotation : la vue de la modification, d'avant, n'aurait pas la fin de validité de l'ancien secret
-      // (vu à l'essai réel du 2026-10-23, `previousSecretValidUntil` nul).
-      adresse = (await g.adresses.lire(tenantId, id)) ?? adresse;
+      // (vu à l'essai réel du 2026-10-23, `previousSecretValidUntil` nul). 🔴 Une relecture ratée ne fait pas échouer
+      // l'outil : le secret neuf n'est montré qu'ici, une seule fois, et la rotation est faite. On rend la vue d'avant.
+      try {
+        adresse = (await g.adresses.lire(tenantId, id)) ?? adresse;
+      } catch (err) {
+        journaliser('warn', 'mcp_webhook_relecture_apres_rotation', { tenantId, id, erreur: err instanceof Error ? err.message : String(err) });
+      }
       return {
         ...(adresse ? { adresse: webhookV1(adresse) } : {}),
         secret: r.valeur.secret,

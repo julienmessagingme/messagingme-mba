@@ -8,15 +8,17 @@ import { journaliser } from '../lib/journal';
 import { messageDeForme } from '../api/forme';
 import { BORNES_MODELE, schemaModeleMeta, versModeleConsole } from '../api/modele-meta';
 import { creerModeleDepuisMeta, estNomDeModele, refusDeMeta, statutsDuModele, type DepsCreationModele } from '../api/creer-modele';
-import { listerModeles, modifierUnModele, supprimerUnModele, type RefusGestionModele } from '../templates/gestion';
+import { modifierUnModele, supprimerUnModele, type RefusGestionModele } from '../templates/gestion';
+import { codeDuLienTrace } from '../links/rewrite';
 import type { TemplateSummary } from '../meta/templates';
 import { LOURDE, plafondCouteux } from './outils-agent';
 
 /**
  * LES MODÈLES DEPUIS CLAUDE (lot 13, domaine 3, spec § 5) : créer un modèle au format de Meta, suivre sa validation,
  * lister ceux de l'espace, et en envoyer un à UN contact (livraison B, par le cœur de `POST /v1/sends`). Les MÊMES fonctions que `POST /v1/templates` et `GET /v1/templates/{name}`
- * (`src/api/creer-modele.ts`), elles-mêmes passées par la création de l'écran Modèles : aucun contrôle propre ici.
- * Ouverts à toutes les offres, comme l'écran Modèles.
+ * (`src/api/creer-modele.ts`), elles-mêmes passées par la création de l'écran Modèles. Un seul contrôle propre ici :
+ * la correction refuse ce que son format perdrait (`ceQueCeFormatPerdrait`). Ouverts à toutes les offres, comme l'écran
+ * Modèles.
  */
 export interface DepsModelesMcp extends DepsCreationModele {
   /** Les modèles du compte WhatsApp de l'espace, la MÊME lecture (en cache une minute) que le catalogue `/v1/templates`. */
@@ -28,7 +30,9 @@ export interface DepsModelesMcp extends DepsCreationModele {
 /**
  * Après un changement fait par Claude, la liste en cache (une minute) montrerait l'ancien état, et Claude croirait le geste
  * raté (vu à l'essai réel du 2026-10-23 : un modèle supprimé encore listé « approuvé »). Un raté de l'oubli ne fait rien
- * échouer : la liste se rafraîchit au plus une minute plus tard, et le journal le dit.
+ * échouer : la liste se rafraîchit au plus une minute plus tard, et le journal le dit. ⚠️ Le cache vit dans UNE copie de
+ * l'API (`cacheCourt`) : avec plusieurs copies, une autre peut montrer l'ancien état jusqu'à une minute ; un changement fait
+ * dans l'écran Modèles ne l'oublie pas non plus.
  */
 async function oublierLaListe(deps: DepsMcp, tenantId: string): Promise<void> {
   try {
@@ -36,6 +40,25 @@ async function oublierLaListe(deps: DepsMcp, tenantId: string): Promise<void> {
   } catch (err) {
     journaliser('warn', 'mcp_modeles_liste_non_oubliee', { tenantId, erreur: err instanceof Error ? err.message : String(err) });
   }
+}
+
+/**
+ * 🔴 Une correction par `update_template` REMPLACE les composants, et son format ne porte que des boutons « réponse
+ * rapide » et « lien » sans variable (`schemaModeleMeta`) : le bouton Flow d'un modèle, que la console sait garder, et le
+ * lien dont une variable vient d'un scénario ou de Shopify (son panier) disparaîtraient en silence. Jugé sur le modèle tel
+ * que Meta le rend, lu une fois par `modifierUnModele` (jamais le cache d'une minute de `lister`). Nos liens tracés
+ * (`/r/<code>/{{1}}`, sous n'importe quel nom passé de l'API, `codeDuLienTrace`) se retracent à la correction : ils passent.
+ */
+function ceQueCeFormatPerdrait(existant: TemplateSummary): string | null {
+  if (existant.buttons?.some((b) => b.type === 'FLOW')) {
+    return 'ce modèle porte un bouton Flow, que ce format ne sait pas renvoyer : la correction le supprimerait. Il ne se '
+      + 'corrige pas depuis Claude';
+  }
+  if (existant.buttons?.some((b) => b.type === 'URL' && /\{\{\s*\d+\s*\}\}/.test(b.url ?? '') && codeDuLienTrace(b.url ?? '') === null)) {
+    return 'ce modèle porte un bouton de lien qui prend une variable ({{1}}), que ce format ne sait pas renvoyer : la '
+      + 'correction le changerait, et les envois qui la remplissent échoueraient. Il ne se corrige pas depuis Claude';
+  }
+  return null;
 }
 
 /** Une erreur de l'envoi (`{ error, code }`), lue pour la rendre à Claude telle que l'API la rend. */
@@ -283,22 +306,7 @@ export const OUTILS_MODELES: OutilMcp[] = [
       await plafondCouteux(deps, tenantId);
       const { name, language, ...champs } = input;
       await ouRefusDeMeta(async () => {
-        // 🔴 Les composants REMPLACENT ceux d'avant, et ce format ne porte que des boutons « réponse rapide » et « lien »
-        // sans variable (`schemaModeleMeta`) : le bouton Flow d'un modèle, que la console sait garder, et le lien dont une
-        // variable vient d'un scénario ou de Shopify (son panier) disparaîtraient en silence. Relu chez Meta, pas dans le
-        // cache d'une minute de `lister`. Nos liens tracés (`/r/<code>/{{1}}`) se retracent à la correction : ils passent.
-        const actuel = (await listerModeles(deps.modeles.modeles, tenantId)).find((t) => t.name === name && t.language === language);
-        if (actuel?.buttons?.some((b) => b.type === 'FLOW')) {
-          throw new RefusOutil('ce modèle porte un bouton Flow, que ce format ne sait pas renvoyer : la correction le '
-            + 'supprimerait. Il ne se corrige pas depuis Claude');
-        }
-        const trace = deps.modeles.modeles.tracking.lienDe('_', false).slice(0, -1);
-        if (actuel?.buttons?.some((b) => b.type === 'URL' && /\{\{\s*\d+\s*\}\}/.test(b.url ?? '') && !(b.url ?? '').startsWith(trace))) {
-          throw new RefusOutil('ce modèle porte un bouton de lien qui prend une variable ({{1}}), que ce format ne sait pas '
-            + 'renvoyer : la correction le changerait, et les envois qui la remplissent échoueraient. Il ne se corrige pas '
-            + 'depuis Claude');
-        }
-        const issue = await modifierUnModele(deps.modeles.modeles, tenantId, name, language, champs);
+        const issue = await modifierUnModele(deps.modeles.modeles, tenantId, name, language, champs, undefined, ceQueCeFormatPerdrait);
         if ('refus' in issue) throw new RefusOutil(phraseDuRefus(issue.refus));
       });
       await oublierLaListe(deps, tenantId);

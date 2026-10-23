@@ -1,40 +1,35 @@
 # todo.md : backlog
 
-## 🟡 La marche arrière MCP : les jaunes de la relecture du lot 3 (2026-10-23)
+## 🟡 La marche arrière MCP : les jaunes de la relecture du lot 4 (2026-10-23)
 
 Relecture sans rouge ; ces points attendent le lot suivant (plan `docs/superpowers/plans/2026-10-22-mcp-marche-arriere.md`).
 
-1. **Un lien tracé sous un ancien nom est refusé à tort par `update_template`** (`src/mcp/outils-modeles.ts`) : la garde
-   compare au préfixe de `lienDe` (l'hôte d'aujourd'hui). Passer par `codeDuLienTrace` (`src/links/rewrite.ts`), qui
-   accepte tout hôte ; la fixture du test prend alors un code de 12 caractères de l'alphabet.
-2. **L'infobulle du « Modifier » grisé de l'écran Modèles** (`web/app/templates/page.tsx`) parle encore du pied de page
-   (éditable) et pas des boutons qui bloquent désormais : l'aligner sur le refus de `src/templates/gestion.ts`. Voisin :
-   « Dupliquer » relit les boutons par `buttonsOf`, et un bouton téléphone y devient une réponse rapide sans rien dire.
-3. **Supprimer le compte d'un collaborateur qui répondait par Claude change les statistiques après coup** :
-   `sender_user_id` passe à null (0017), sa réponse `mcp` sort de `REPONSE_DE_L_EQUIPE_SQL` et la demande repasse en
-   « résolue sans réponse ». Figer à l'écriture, ou l'écrire comme limite connue.
-4. **Aucun test d'intégration de `REPONSE_DE_L_EQUIPE_SQL`** : dans `tests/integration/performance.integration.test.ts`,
-   une réponse `mcp` signée compte (répondant nommé), la même en réaction non ; renommer le cas « assistant MCP » existant
-   en « derrière une clé ».
-5. **`update_webhook_endpoint`** : si la relecture de l'adresse lève après une rotation réussie, l'outil échoue et le
-   secret neuf, montré une seule fois, est perdu. Un `try/catch` qui garde l'adresse d'avant en repli.
-6. **L'oubli de la liste des modèles ne vaut que dans UNE copie de l'API** (`cacheCourt` est par process) : avec
-   plusieurs copies (Scaleway), une autre copie montre l'ancien état jusqu'à une minute. Nuancer `features.md` et le
-   commentaire de `oublierLaListe` ; les routes Modèles de la console n'oublient pas non plus cette liste.
-7. **`update_template` lit deux fois la liste complète chez Meta** (la garde, puis `modifierUnModele`) : poser les gardes
-   dans `modifierUnModele` sur `existing`, une seule lecture (la règle du lien tracé passe alors par `codeDuLienTrace`).
-8. **Le `a_savoir` de `hand_back` en mode « équipe » renvoie à `set_default_responder`**, qui exige une personne : le
-   dire (« une personne connectée »), comme pour `block_contact`.
-9. **Une réaction n'est exclue des réponses que pour l'origine `mcp`** : une réaction `humain` (l'écho de la filière
-   application enregistre le type du message, `src/application/entrant.ts`) compte encore. L'exclure aussi, ou corriger
-   la phrase « une réaction n'est jamais une réponse » (test et `documentation.md`).
-10. **Textes** : `documentation.md` dit « `listerModeles`, pas le cache » alors qu'il y a deux fonctions de ce nom
-    (préciser `src/templates/gestion.ts`) et garde un « (lot 3 ; le lot 2 le refusait) » qui raconte ;
-    `src/mcp/outils-modeles.ts` affirme « aucun contrôle propre ici », devenu faux.
-11. **Les e-mails de transfert donnent une date limite puis disent qu'elle ne vaut pas pour la filière application** :
-    choisir le texte selon la filière de l'espace (`src/emails-produit/alertes.ts` la connaît). Mineur.
-12. **À trancher avec Julien : `hand_back` reste refusé pour un contact STOP ou bloqué même en mode « équipe »**, où aucun
-    robot ne lui parlerait ; or sortir d'« À traiter » est le seul moyen d'une Free.
+1. **Le mode est lu deux fois par `hand_back`** (`src/mcp/outils.ts`, puis `rendreLaMain` dans `src/inbox/fil.ts`) : si
+   le répondeur passe à `mba` entre les deux (un `set_default_responder` en parallèle, un passage en Pro, un repli du
+   cache d'offre), un contact STOP ou bloqué accepté en mode « équipe » est confié à l'agent de Meta SANS la garde du
+   consentement (`automatique: false`), et l'agent de Meta peut lui répondre. Fenêtre de quelques allers-retours en
+   base. Correctif : une option de `rendreLaMain` qui fait jouer à `confier` la garde STOP ou bloqué, avec un retour que
+   l'outil refuse, testée dans `fil.ts`.
+2. **La rotation du secret d'un webhook peut encore perdre le secret neuf** : l'audit `evenements.secret_tourne` passe
+   entre la rotation et la relecture protégée, et `auditStore.record` lève sur une panne de base. Le mettre dans le même
+   `try` (journal en `warn`), et faire lever le faux audit dans le test.
+3. **Commentaire périmé** dans `src/mcp/outils-modeles.ts` (le bloc de `update_template` et `delete_template` dit
+   encore « sans garde de plus »).
+4. **`codeDuLienTrace` accepte tout hôte** : une adresse du client de la forme `https://x/r/<12 caractères>/{{1}}`
+   passerait pour l'un de nos liens. Improbable ; le texte dit « sous n'importe quel nom passé de l'API », c'est tout
+   hôte. Resserrement possible : comparer le code aux `tracked_links` du modèle.
+5. **`features.md` ne suit pas l'écran Modèles** : la duplication ne dit pas son nouvel avertissement, l'édition ne
+   cite pas les boutons qui la bloquent. Section citée par une fiche d'aide publique : empreinte, `vitrine:aide` et
+   version `en/` dans le même commit.
+6. **L'infobulle du « Modifier » grisé** et le refus de `gestion.ts` ne nomment pas un modèle sans corps ou à composant
+   inconnu (une offre limitée dans le temps), aussi non éditable. Mineur.
+7. **Le `a_savoir` de `hand_back` promet un peu trop** (« aucun robot ne lui écrit, quel que soit le répondeur ») :
+   « Rendre la main » de la console en mode `mba` confie sans la garde du consentement, et un contact peut rester sur
+   la liste de l'agent après un retrait refusé. Écrire « de lui-même ».
+8. **Le commentaire de `hand_back` nomme la mauvaise garde** : le `estDesabonne` du MCP ne lit que le STOP ; la garde
+   des robots (STOP ou bloqué) est `machineSeTaitParWaId`.
+9. Rien à faire sauf avec le point 1 : le test du mode « équipe » a un faux `rendreLaMain` ; l'invariant « rien n'est
+   confié hors du mode `mba` » est tenu par `tests/repondeur-modes.test.ts`.
 
 ## 🟡 Les limites d'une conversation d'agent : les jaunes de la relecture (2026-10-23)
 
