@@ -70,9 +70,13 @@ Plan soldé : `docs/superpowers/plans/2026-10-23-recharges-jaunes.md`.
 Plan soldé : `docs/superpowers/plans/2026-10-23-filiere-application-jaunes.md` (parcours gelé, deux filières, numéro de
 Meta délié, finitions de l'adressage masqué, mise en file retentée, e-mail d'appairage, balayage du sommeil, code mort).
 
-- **Un message reçu pendant un arrêt du service arrive en retard** : mesuré le 2026-10-23, livré environ 8 minutes après
-  la reprise, avec le message suivant du même contact. À remesurer sans message suivant (arrive-t-il seul, et quand ?),
-  puis décider s'il faut le dire au client.
+- **Un message reçu pendant un arrêt du service n'arrive qu'à la remise en ligne du téléphone de l'entreprise** (essai 152,
+  2026-10-23) : service arrêté de 19 h 08 à 19 h 10, message envoyé à 19 h 09, compte reconnecté à 19 h 10 min 59 s ; rien
+  en 36 minutes alors que le message était sur le téléphone ; arrivé en base à 19 h 46 min 45 s, quand ce téléphone a été
+  ouvert, et l'agent a répondu 3 s après. Le matin, il était arrivé avec le message suivant du contact. Le service écarte
+  sans trace un message qu'il ne sait pas lire (`versMessageApplication` rend `null` sans contenu) : journaliser ces
+  arrivées vides (sans contenu ni numéro) pour savoir ce que WhatsApp remet à la reconnexion, puis décider avec Julien
+  entre le dire au client (« gardez le téléphone allumé ») et corriger.
 - **La suppression d'un espace ne retire pas l'appareil lié** : la session continue, et ses messages finissent en file
   d'erreurs jusqu'au redémarrage du service. Appeler `retirer` du service à la suppression.
 - **Un message tapé sur le téléphone : la prise de main se perd si elle échoue puis que le job est rejoué** (« déjà
