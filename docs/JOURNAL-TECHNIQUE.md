@@ -25,6 +25,9 @@
   pendant le délai l'annule), qui échouent sur l'ancien code ; `tests/mesure-taches.test.ts` avance jusqu'aux décalages
   au lieu de 0 ms. La preuve réelle est le prochain redémarrage : `pool_attentes` du worker principal sans attente
   dans sa première minute. Si l'alerte revient, la cause est ailleurs (démarrage de pg-boss, `queue.work`).
+- **Prouvé au redémarrage du déploiement** (worker principal seul, `d4bb094a`, 15:36:27 UTC) : 81 prises de connexion
+  dans sa première minute, AUCUNE en attente (126 ms au pire), contre 80 prises dont 26 en attente (518 ms) au
+  redémarrage de 15:07. Les journaux montrent l'étalement : suivi des pubs à +14 s, rétention à +51 s.
 
 ## 2026-10-23 : les jaunes des recharges, et les limites d'une conversation d'agent réglées depuis Claude
 
