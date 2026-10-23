@@ -60,8 +60,18 @@ describe('la relance d’un panier réclamé', () => {
     expect(journal.issues).toEqual([['jeton-1', 'envoye']]);
   });
 
-  it('un prénom absent alors que le modèle le demande : rien ne part, l’issue le dit', async () => {
-    const { deps, journal } = monter([panier({ nom: null })]);
+  it('🔴 un prénom absent (facultatif chez Shopify) : la relance part avec son mot de secours, dans la langue du modèle', async () => {
+    const fr = monter([panier({ nom: null })]);
+    await relancerPaniers(fr.deps);
+    expect(fr.journal.issues).toEqual([['jeton-1', 'envoye']]);
+    expect(fr.journal.envois[0]!.corps).toMatchObject({ recipients: [{ variables: { first_name: 'à vous' } }] });
+    const en = monter([panier({ nom: null, langue: 'en_US' })]);
+    await relancerPaniers(en.deps);
+    expect(en.journal.envois[0]!.corps).toMatchObject({ recipients: [{ variables: { first_name: 'there' } }] });
+  });
+
+  it('une autre donnée absente (le lien du panier) alors que le modèle la demande : rien ne part, l’issue le dit', async () => {
+    const { deps, journal } = monter([panier({ lien: '' })]);
     await relancerPaniers(deps);
     expect(journal.envois).toEqual([]);
     expect(journal.issues).toEqual([['jeton-1', 'donnee_manquante']]);

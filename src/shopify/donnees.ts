@@ -18,7 +18,7 @@ import { VALEUR_VARIABLE_MAX } from '../api/variables';
 
 // La liste des événements, des données et de ce que chacun sait remplir vit dans le module que la console partage
 // (l'assistant propose ses textes et ses repères depuis la même source) : un seul endroit à changer.
-import { DONNEES_PAR_EVENEMENT, DONNEES_SHOPIFY, EVENEMENTS_SHOPIFY, type DonneeShopify, type EvenementShopify } from '../../web/lib/partage/shopify-messages';
+import { DONNEES_PAR_EVENEMENT, DONNEES_SHOPIFY, EVENEMENTS_SHOPIFY, prenomDeSecours, type DonneeShopify, type EvenementShopify } from '../../web/lib/partage/shopify-messages';
 export { DONNEES_PAR_EVENEMENT, DONNEES_SHOPIFY, EVENEMENTS_SHOPIFY, type DonneeShopify, type EvenementShopify };
 
 /**
@@ -35,6 +35,14 @@ export const CATEGORIES_ADMISES: Readonly<Record<EvenementShopify, ReadonlyArray
 export const EVENEMENTS_DISPONIBLES: readonly EvenementShopify[] = ['order_paid', 'order_fulfilled', 'checkout_abandoned'];
 
 export { DELAI_PANIER_DEFAUT, DELAI_PANIER_MAX, DELAI_PANIER_MIN } from '../../web/lib/partage/shopify-messages';
+
+/**
+ * Les valeurs d'un envoi, le prénom absent remplacé par son mot de secours dans la langue du modèle : le prénom est
+ * facultatif chez Shopify, et sans lui le message ne partait pas. Les autres données manquantes restent manquantes.
+ */
+export function avecPrenomDeSecours(valeurs: Partial<Record<DonneeShopify, string>>, langue: string): Partial<Record<DonneeShopify, string>> {
+  return valeurs.first_name ? valeurs : { ...valeurs, first_name: prenomDeSecours(langue) };
+}
 
 export function estEvenementShopify(v: unknown): v is EvenementShopify {
   return typeof v === 'string' && (EVENEMENTS_SHOPIFY as readonly string[]).includes(v);
@@ -114,7 +122,20 @@ export function telephoneDeCheckout(c: CheckoutShopify, paysBoutique: string | n
 
 /** Le prénom d'un checkout, rangé avec le panier : la relance part longtemps après le webhook. */
 export function prenomDeCheckout(c: CheckoutShopify): string | null {
-  return valeurDeVariable(c.shipping_address?.first_name ?? c.billing_address?.first_name ?? c.customer?.first_name);
+  return premierPrenom(c.shipping_address?.first_name, c.billing_address?.first_name, c.customer?.first_name);
+}
+
+/**
+ * Le premier prénom NON VIDE : `??` s'arrêtait sur `""`, et un prénom vide dans l'adresse de livraison masquait celui de
+ * la facturation ou du client (relecture du 2026-10-23 : avec le prénom de secours, on aurait écrit « Bonjour à vous »
+ * alors qu'on avait le prénom).
+ */
+function premierPrenom(...candidats: Array<string | null | undefined>): string | null {
+  for (const c of candidats) {
+    const v = valeurDeVariable(c);
+    if (v !== null) return v;
+  }
+  return null;
 }
 
 const clientRgpd = z.object({ id: idShopify.nullish(), email: texte, phone: texte }).nullish();
@@ -153,7 +174,7 @@ export function numeroDeCommandeDExpedition(nom: string): string {
 
 export function donneesDeCommande(c: CommandeShopify): Partial<Record<DonneeShopify, string>> {
   return sansVides({
-    first_name: c.shipping_address?.first_name ?? c.billing_address?.first_name ?? c.customer?.first_name,
+    first_name: premierPrenom(c.shipping_address?.first_name, c.billing_address?.first_name, c.customer?.first_name),
     order_number: c.name,
     order_total: montantAffiche(c),
     order_status_url: c.order_status_url,

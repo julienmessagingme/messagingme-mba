@@ -95,9 +95,9 @@ Plan : `docs/superpowers/plans/2026-10-22-shopify-console.md`.
   « Messaging Me essai sans CLI », à supprimer ensuite avec les apps du lot 0).
 - **La carte n'arrête pas un message seul** : seul « Couper » arrête tout ; un message arrêté depuis Claude Code se
   reprend par l'assistant (nouveau modèle chez Meta).
-- **Le prénom est FACULTATIF dans le paiement Shopify** (essai réel du 2026-10-23) : une relance dont le texte porte
-  `{prénom}` ne part pas (`donnee_manquante`) pour un panier sans prénom, et elle est alors consommée. Proposé à Julien :
-  un texte proposé sans prénom, et un mot neutre en secours (« à vous », « there ») quand un marchand le garde. À trancher.
+- **Le prénom de secours** (2026-10-23) : toute langue autre que le français reçoit « there » (un modèle espagnol écrirait
+  « Hola there ») ; et Claude Code n'en est pas prévenu (description de `set_shopify_message`, skill `shopify` du plugin :
+  le dire coûte `doc:md` et une montée du plugin). Un texte « Cher {prénom} » donnerait « Cher à vous ».
 - **Shopify réutilise le même paiement pendant des jours** pour un même navigateur (mesuré : un paiement créé le 21,
   repris le 23) : un client qui abandonne de nouveau dans la semaine n'a pas de seconde relance (une par jeton).
 - **Une adresse incomplète n'est pas transmise par Shopify** (essai réel du 2026-10-23 : pays des États-Unis sans État) :

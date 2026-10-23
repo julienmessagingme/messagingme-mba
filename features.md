@@ -2404,6 +2404,9 @@ aussi tout faire depuis la console, sans Claude Code (2026-10-22, voir la carte 
   après la dernière modification du panier (1 h par défaut, de 15 min à 72 h). Rien ne part si une commande en est née
   entre-temps, même non payée. Elle exige que le marchand ait affirmé le consentement de ses clients. Les paniers en
   attente ne se gardent qu'une semaine, et seulement quand la relance est branchée.
+- **Le prénom absent** (2026-10-23) : il est facultatif au paiement de Shopify. Un message qui le demande sans l'avoir
+  part quand même, le prénom remplacé par « à vous » (« there » en anglais) : « Bonjour à vous ». Le texte que
+  l'assistant propose pour la relance n'en porte pas (« Bonjour, vous avez laissé des articles… »).
 - **L'import des clients abonnés** (2026-10-22) : depuis Claude Code ou la carte, le marchand importe les clients de sa boutique
   abonnés au marketing (e-mail ou SMS) qui ont un téléphone. Claude compte d'abord (abonnés, déjà présents, nouveaux,
   places libres de l'offre) avant que le marchand choisisse combien en importer, les plus récents d'abord ; au-delà des places

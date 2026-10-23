@@ -2,7 +2,7 @@ import { journaliser } from '../lib/journal';
 import { texteDe } from '../lib/erreur';
 import { MAX_OPT_IN_SOURCE } from '../api/contacts-upsert';
 import { envoyerShopify, type EnvoyerPublic, type IssueEnvoi } from './envoi';
-import type { DonneeShopify } from './donnees';
+import { avecPrenomDeSecours } from './donnees';
 import type { PgShopifyStore } from './store.pg';
 import { moisDeParis } from '../offres/compteurs';
 import type { Emission } from '../emails-produit/emission';
@@ -47,7 +47,9 @@ export async function relancerPaniers(deps: DepsRelance, limite = PANIERS_PAR_PA
   for (const p of paniers) {
     let issue: IssueRelance | 'en_cours';
     try {
-      const valeurs: Partial<Record<DonneeShopify, string>> = { checkout_url: p.lien, ...(p.nom ? { first_name: p.nom } : {}) };
+      // Un prénom absent prend son mot de secours (facultatif chez Shopify). Le lien ne manque pas (la réclamation l'exige) ;
+      // la garde des données manquantes reste pour un modèle qui en demanderait une autre.
+      const valeurs = avecPrenomDeSecours({ ...(p.lien ? { checkout_url: p.lien } : {}), ...(p.nom ? { first_name: p.nom } : {}) }, p.langue);
       // Relu juste avant l'envoi : une commande a pu fermer le panier depuis sa réclamation (relecture du lot 2).
       if (!(await deps.store.panierOuvert(p.tenantId, p.jeton))) issue = 'ferme';
       else if (p.variables.some((v) => valeurs[v] === undefined)) issue = 'donnee_manquante';

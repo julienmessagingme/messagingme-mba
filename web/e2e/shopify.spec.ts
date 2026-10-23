@@ -86,9 +86,11 @@ test.describe('Paramètres > Intégrations > Shopify : la carte de la console', 
     await expect(page.getByTestId('integration-shopify-message-checkout_abandoned')).toContainText('pas encore réglé');
     await page.getByTestId('integration-shopify-regler-checkout_abandoned').click();
     const assistant = page.getByTestId('shopify-assistant');
-    await expect(assistant.getByTestId('shopify-assistant-texte')).toHaveValue(/\{prénom\}.*\n.*\{lien du panier\}/);
+    // Le texte proposé de la relance n'a pas de prénom (facultatif chez Shopify, décision du 2026-10-23).
+    await expect(assistant.getByTestId('shopify-assistant-texte')).toHaveValue(/^Bonjour, vous avez laissé.*\n.*\{lien du panier\}/);
     // L'aperçu WhatsApp montre les valeurs d'exemple, et le pied STOP de la relance.
-    await expect(assistant).toContainText('Bonjour Camille');
+    await expect(assistant).toContainText('Il vous attend ici : https://ma-boutique.myshopify.com/checkouts/recover');
+    await expect(assistant.getByTestId('shopify-assistant-prenom-secours')).toHaveCount(0);
     await expect(assistant).toContainText('Répondez STOP pour ne plus recevoir ces messages');
     await assistant.getByTestId('shopify-assistant-suivant').click();
     await assistant.getByTestId('shopify-delai-15').click();
@@ -100,7 +102,7 @@ test.describe('Paramètres > Intégrations > Shopify : la carte de la console', 
     await expect.poll(() => trace.preparations.length).toBe(1);
     expect(trace.preparations[0]).toEqual({
       evenement: 'checkout_abandoned', langue: 'fr', delaiMinutes: 15, consentementAffirme: true,
-      texte: 'Bonjour {{first_name}}, vous avez laissé des articles dans votre panier.\nIl vous attend ici : {{checkout_url}}\nÀ très vite !',
+      texte: 'Bonjour, vous avez laissé des articles dans votre panier.\nIl vous attend ici : {{checkout_url}}\nÀ très vite !',
     });
     await expect(page.getByTestId('integration-shopify-message')).toContainText('Envoyé à Meta');
   });
@@ -125,6 +127,8 @@ test.describe('Paramètres > Intégrations > Shopify : la carte de la console', 
     const assistant = page.getByTestId('shopify-assistant');
     // Le texte du modèle en place, relu chez Meta, avec les repères du marchand.
     await expect(assistant.getByTestId('shopify-assistant-texte')).toHaveValue('Bonjour {prénom}, votre commande {numéro de commande} est bien payée. Merci !');
+    // Un texte avec le prénom : l'assistant dit ce que le message écrit quand Shopify ne l'a pas.
+    await expect(assistant.getByTestId('shopify-assistant-prenom-secours')).toContainText('à vous');
     await assistant.getByTestId('shopify-assistant-suivant').click();
     await assistant.getByTestId('shopify-assistant-consentement').check();
     await assistant.getByTestId('shopify-assistant-envoyer').click();

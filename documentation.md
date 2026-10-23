@@ -2366,6 +2366,10 @@ dans `PgShopifyStore`. Le jeton rendu n'est ni gardé ni renouvelé : les webhoo
   les heures, six fois, puis s'abandonne (`shopify_modele_oubli_abandonne`). ⚠️ **Limite assumée** : un scénario, un
   étage de repli de campagne ou un appel `/v1` qui enverrait un modèle de l'assistant par son nom n'est pas gardé ;
   la fiche d'aide dit de ne pas les réutiliser hors de la boutique ;
+- **le prénom de secours** (2026-10-23, `avecPrenomDeSecours`) : le prénom est facultatif au paiement de Shopify ; un
+  envoi (relance comme message de commande) qui demande `first_name` sans l'avoir le remplace par `PRENOM_DE_SECOURS`
+  (« à vous », « there », selon la langue du modèle, la règle du pied), au lieu de finir en `donnee_manquante` (relance
+  consommée). Les autres données manquantes, elles, bloquent toujours l'envoi ;
 - **les textes, les données et leurs libellés** vivent dans `web/lib/partage/shopify-messages.ts`, que le serveur
   importe (`src/shopify/donnees.ts`, `preparation.ts`) : l'aperçu de l'assistant et le modèle créé chez Meta disent la
   même chose. La carte écrit les repères `{prénom}` et les convertit en `{{first_name}}` (`web/lib/shopify-assistant.ts`).

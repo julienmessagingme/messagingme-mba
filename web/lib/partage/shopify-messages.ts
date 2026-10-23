@@ -66,9 +66,11 @@ export const TEXTES_PROPOSES: Readonly<Record<EvenementShopify, Readonly<Record<
     fr: 'Bonjour {{first_name}}, votre commande {{order_number}} est en route avec {{carrier}}.\nSuivez votre colis : {{tracking_url}}\nÀ très vite !',
     en: 'Hello {{first_name}}, your order {{order_number}} is on its way with {{carrier}}.\nTrack your parcel: {{tracking_url}}\nSee you soon!',
   },
+  // Sans prénom (décision de Julien, 2026-10-23) : il est FACULTATIF au paiement de Shopify, et un panier abandonné ne
+  // l'a souvent pas encore. Un marchand qui l'ajoute reçoit le mot de secours (`PRENOM_DE_SECOURS`) quand il manque.
   checkout_abandoned: {
-    fr: 'Bonjour {{first_name}}, vous avez laissé des articles dans votre panier.\nIl vous attend ici : {{checkout_url}}\nÀ très vite !',
-    en: 'Hello {{first_name}}, you left items in your cart.\nIt is waiting for you here: {{checkout_url}}\nSee you soon!',
+    fr: 'Bonjour, vous avez laissé des articles dans votre panier.\nIl vous attend ici : {{checkout_url}}\nÀ très vite !',
+    en: 'Hello, you left items in your cart.\nIt is waiting for you here: {{checkout_url}}\nSee you soon!',
   },
 };
 
@@ -83,6 +85,14 @@ export const PIED_STOP: Readonly<Record<'fr' | 'en', string>> = {
 
 /** La langue du pied : le français pour une langue française, l'anglais sinon (une seule règle, console et serveur). */
 export const langueDuPied = (langue: string): 'fr' | 'en' => (langue.toLowerCase().startsWith('fr') ? 'fr' : 'en');
+
+/**
+ * Le prénom de secours (décision de Julien, 2026-10-23) : le prénom est FACULTATIF au paiement de Shopify, et un message
+ * qui le demande sans l'avoir ne partait pas (`donnee_manquante`), relance consommée comprise (essai réel du jour). À sa
+ * place : « Bonjour à vous », « Hello there ». Même règle de langue que le pied.
+ */
+export const PRENOM_DE_SECOURS: Readonly<Record<'fr' | 'en', string>> = { fr: 'à vous', en: 'there' };
+export const prenomDeSecours = (langue: string): string => PRENOM_DE_SECOURS[langueDuPied(langue)];
 
 /** Le délai d'une relance de panier, en minutes (décision de Julien : 1 h par défaut, de 15 min à 72 h). */
 export const DELAI_PANIER_MIN = 15;

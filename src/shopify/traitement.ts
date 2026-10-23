@@ -7,7 +7,7 @@ import type { Emission } from '../emails-produit/emission';
 import {
   DONNEES_PAR_EVENEMENT, donneesDeCommande, donneesDExpedition, schemaCommande, schemaDemandeDonnees,
   schemaEffacementClient, schemaExpedition, telephoneDeCommande, telephoneDExpedition, telephoneE164,
-  estObjetSimple, numeroDeCommandeDExpedition, prenomDeCheckout, schemaCheckout, telephoneDeCheckout, valeurDeVariable,
+  avecPrenomDeSecours, estObjetSimple, numeroDeCommandeDExpedition, prenomDeCheckout, schemaCheckout, telephoneDeCheckout, valeurDeVariable,
   type DonneeShopify, type EvenementShopify,
 } from './donnees';
 import { envoyerShopify, type EnvoyerPublic, type IssueEnvoi } from './envoi';
@@ -255,13 +255,15 @@ async function servir(deps: DepsTraitementShopify, b: BoutiqueRecue, s: Service)
   if (resa === 'en_cours') return REESSAYER;
   try {
     let issue: IssueEvenement | 'en_cours';
-    const manque = m.variables.some((v) => s.valeurs[v] === undefined);
+    // Un prénom absent prend son mot de secours (facultatif chez Shopify) ; les autres données manquent vraiment.
+    const valeurs = avecPrenomDeSecours(s.valeurs, m.langue);
+    const manque = m.variables.some((v) => valeurs[v] === undefined);
     if (s.telephone === null) issue = 'sans_telephone';
     else if (manque || m.variables.some((v) => !DONNEES_PAR_EVENEMENT[s.evenement].includes(v))) issue = 'donnee_manquante';
     else {
       issue = await envoyerShopify(deps.envoyer, {
         tenantId: b.tenantId, cle, nomLigne: `Shopify · ${LIBELLE[s.evenement]} · ${s.numero}`,
-        modele: m.modele, langue: m.langue, variables: m.variables, valeurs: s.valeurs, telephone: s.telephone,
+        modele: m.modele, langue: m.langue, variables: m.variables, valeurs, telephone: s.telephone,
         // Bornée comme toute source de consentement (`MAX_OPT_IN_SOURCE`) : trop longue, le destinataire serait écarté.
         sourceConsentement: b.consentementAffirme ? `shopify:${b.domaine}`.slice(0, MAX_OPT_IN_SOURCE) : null,
       });

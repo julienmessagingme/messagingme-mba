@@ -11,7 +11,7 @@ import { listTemplates } from '@/lib/api';
 import { preparerMessageShopify, reglerMessageShopify, type EtatShopifyVue } from '@/lib/api-shopify';
 import {
   DELAI_PANIER_DEFAUT, DELAI_PANIER_MAX, DELAI_PANIER_MIN, DELAIS_PROPOSES, DONNEES_PAR_EVENEMENT, LIBELLES_EVENEMENTS, PIED_STOP,
-  langueDuPied, type EvenementShopify,
+  langueDuPied, prenomDeSecours, type EvenementShopify,
 } from '@/lib/partage/shopify-messages';
 import {
   apercuAffiche, delaiEnClair, etatDuMessage, repere, texteDuModele, textePropose, versTexteServeur,
@@ -242,6 +242,14 @@ export function ShopifyAssistant({ tenantId, evenement, vue, onClose, onFini }: 
                     'A new text creates a new template at Meta, usually approved within minutes: the current message goes out meanwhile, and the old template, if it was created here, is then deleted. Changing only the delay or the checkbox applies right away.',
                   )}
               </p>
+              {conversion.ok && conversion.texte.includes('{{first_name}}') && (
+                <p className="text-ink-500" data-testid="shopify-assistant-prenom-secours">
+                  {t(
+                    `Le prénom est facultatif chez Shopify : quand le client ne l’a pas donné, le message dit « ${prenomDeSecours(langue)} » à sa place.`,
+                    `The first name is optional on Shopify: when the customer did not give it, the message says “${prenomDeSecours(langue)}” instead.`,
+                  )}
+                </p>
+              )}
               {relance && (
                 <p className="text-ink-500">
                   {t(

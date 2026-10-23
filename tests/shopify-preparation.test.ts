@@ -105,8 +105,8 @@ describe('préparer un message', () => {
     }, 'u1');
     expect(r).toEqual({ ok: true, valeur: { etat: 'en_validation', modele: `shopify_checkout_abandoned_${MAINTENANT.toString(36)}` } });
     expect(journal.affirmations).toEqual(['u1']);
-    expect(journal.modeles[0]).toMatchObject({ category: 'MARKETING', language: 'fr', footer: PIED_STOP.fr, example: ['Camille', 'https://ma-boutique.myshopify.com/checkouts/recover'] });
-    expect(journal.attentes).toEqual([{ evenement: 'checkout_abandoned', modele: `shopify_checkout_abandoned_${MAINTENANT.toString(36)}`, langue: 'fr', variables: ['first_name', 'checkout_url'], delaiMinutes: 15, par: 'u1' }]);
+    expect(journal.modeles[0]).toMatchObject({ category: 'MARKETING', language: 'fr', footer: PIED_STOP.fr, example: ['https://ma-boutique.myshopify.com/checkouts/recover'] });
+    expect(journal.attentes).toEqual([{ evenement: 'checkout_abandoned', modele: `shopify_checkout_abandoned_${MAINTENANT.toString(36)}`, langue: 'fr', variables: ['checkout_url'], delaiMinutes: 15, par: 'u1' }]);
     // 🔴 Le message actif n'est pas touché : il part jusqu'à l'approbation du nouveau.
     expect(journal.branches).toEqual([]);
   });
@@ -122,7 +122,7 @@ describe('préparer un message', () => {
     const { deps, journal } = monter({ boutique: AFFIRMEE, creation: { ok: true, statut: 'approved', categorie: 'marketing' } });
     const r = await preparerMessage(deps, T, { evenement: 'checkout_abandoned', texte: TEXTES_PROPOSES.checkout_abandoned.fr, langue: 'fr', delaiMinutes: 30 }, 'u1');
     expect(r).toMatchObject({ ok: true, valeur: { etat: 'actif' } });
-    expect(journal.branches).toMatchObject([{ evenement: 'checkout_abandoned', actif: true, variables: ['first_name', 'checkout_url'] }]);
+    expect(journal.branches).toMatchObject([{ evenement: 'checkout_abandoned', actif: true, variables: ['checkout_url'] }]);
     expect(journal.delais).toEqual([30]);
     expect(journal.attentes).toEqual([]);
     // Le dernier geste gagne : une attente plus ancienne de l'événement ne s'activera pas par-dessus.

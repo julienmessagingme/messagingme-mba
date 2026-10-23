@@ -124,6 +124,19 @@ describe('une commande payée', () => {
     expect(enCours.journal.envois).toEqual([]);
   });
 
+  it('🔴 une commande sans prénom (facultatif chez Shopify) part avec son mot de secours, au lieu de ne pas partir', async () => {
+    const { deps, journal } = monter();
+    await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande({ customer: { id: 77, phone: null, first_name: null }, shipping_address: { first_name: null, phone: '+33633921577', country_code: 'FR' } }));
+    expect(journal.issues).toEqual([['shopify:b.myshopify.com:orders/paid:1002', 'envoye']]);
+    expect(journal.envois[0]).toMatchObject({ corps: { recipients: [{ variables: { first_name: 'à vous' } }] } });
+  });
+
+  it('🔴 un prénom vide dans l’adresse de livraison ne masque pas le vrai prénom de la facturation ou du client', async () => {
+    const { deps, journal } = monter();
+    await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande({ shipping_address: { first_name: '  ', phone: '+33633921577', country_code: 'FR' }, billing_address: { first_name: 'Camille', phone: null, country_code: 'FR' } }));
+    expect(journal.envois[0]).toMatchObject({ corps: { recipients: [{ variables: { first_name: 'Camille' } }] } });
+  });
+
   it('sans téléphone ou avec une donnée manquante : l’issue est inscrite, rien ne part', async () => {
     const sansTel = monter();
     await traiterWebhookShopify(sansTel.deps, BOUTIQUE, 'orders/paid', commande({ shipping_address: null, customer: null }));

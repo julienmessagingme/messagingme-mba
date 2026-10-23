@@ -1,7 +1,7 @@
 ---
 ecran: parametres
 source_section: Boutique Shopify : les messages de commande sur WhatsApp (Claude Code ou console, 2026-10-21)
-source_empreinte: 085246
+source_empreinte: 133fdb
 ---
 # Brancher ma boutique Shopify
 
@@ -57,6 +57,11 @@ relance sur WhatsApp, avec le lien qui rouvre son panier, au délai que vous cho
 message marketing : elle ne s'active qu'une fois que vous avez affirmé le consentement de vos clients, et elle porte en bas
 la mention « Répondez STOP pour ne plus recevoir ces messages ». La carte
 Shopify compte les relances parties, les paniers devenus une commande à temps, et ceux en attente.
+
+**Le prénom est facultatif chez Shopify** : beaucoup de clients ne le donnent pas, surtout avant d'abandonner leur panier.
+Un message qui contient le prénom part quand même, avec « à vous » à sa place (« Bonjour à vous » ; « there » pour un
+modèle en anglais). C'est pourquoi le texte
+proposé pour la relance commence simplement par « Bonjour, ».
 
 **Importer vos clients** : « Importer » sur la carte, ou demandez-le à Claude. Seuls ceux qui ont accepté votre marketing
 (e-mail ou SMS) et ont un téléphone sont concernés. Ils sont comptés d'abord, avec les places que votre offre
