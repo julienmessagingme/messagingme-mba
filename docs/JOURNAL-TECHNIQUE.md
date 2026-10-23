@@ -5,6 +5,31 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-23 : la marche arrière des outils MCP, lot 4 (les jaunes de la relecture du lot 3)
+
+Le lot 4 (`f541083c`) traite les douze jaunes de la relecture du lot 3, dont quatre tranchés par Julien le même jour.
+Une relecture indépendante, sans rouge (neuf jaunes au `todo.md`), 16 mutations prouvées dans les deux sens, l'e2e du
+bandeau de duplication prouvé sur une console mutée puis restaurée, CI racine et console vertes job par job.
+
+- **`update_template`** : ses refus (bouton Flow, lien à variable qui n'est pas l'un de nos liens tracés) passent dans
+  `modifierUnModele` (`refusDeLAppelant`), sur le modèle qu'elle lit déjà chez Meta : une seule lecture au lieu de deux,
+  et nos liens tracés reconnus sous tout hôte (`codeDuLienTrace`). La console n'en passe pas.
+- **Une réaction n'est jamais une réponse de l'équipe**, de Claude comme d'un humain (décision de Julien) ; un test
+  d'intégration prouve `REPONSE_DE_L_EQUIPE_SQL` en base.
+- **`hand_back` en mode « équipe »** est accepté pour un contact STOP ou bloqué (décision de Julien), et le dit.
+- **La suppression du compte d'un collaborateur** qui répondait par Claude reste une limite écrite, sans migration
+  (décision de Julien) ; la phrase des e-mails de transfert reste telle quelle (décision de Julien).
+- **Écran Modèles** : l'infobulle du « Modifier » grisé dit ce qui bloque, et la duplication signale un bouton non
+  recopié tel quel (`TemplateSummary.boutonsNonRelus`).
+- ⚠️ **Deux réponses de Julien se sont croisées** (« déploie `f541083c` » ici, « les deux ensemble » à la session
+  Shopify) : tranché en un seul déploiement à `17b2da2a`, mené par la session Shopify après l'essai 152, rien relancé
+  pendant l'essai. Quand deux sessions demandent le même déploiement, on pose la question avant tout `up`.
+- **Essai réel** le même jour (essai 148, `docs/prive/ESSAIS-REELS.md`) : contact bloqué, `hand_back` accepté en mode
+  « équipe » avec sa phrase, refusé sous l'agent ; l'espace remis. L'écran attend un modèle à bouton téléphone, que
+  seul le WhatsApp Manager sait créer.
+- ⚠️ **Une liste de fichiers calculée pendant qu'une suite reconstruit l'index de la copie est fausse** (3 731
+  fichiers au lieu de 21) : la comparaison à la base attend la fin du `git add`.
+
 ## 2026-10-23 : la marche arrière des outils MCP, lot 3 (les jaunes du lot 2 et de l'essai réel)
 
 Le lot 3 de la marche arrière (`cbaa0ae5`, plan `docs/superpowers/plans/2026-10-22-mcp-marche-arriere.md`) traite les
