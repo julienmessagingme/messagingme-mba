@@ -5,6 +5,40 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-22 et 23 : la filière application WhatsApp Business (lot 1), son essai réel, et les recharges de 5 et 10 €
+
+Plan : `docs/superpowers/plans/2026-10-22-filiere-application-lot-1.md`, correctifs de l'essai :
+`2026-10-22-filiere-application-correctifs-essai.md`, recharges : `2026-10-22-recharges-5-10-et-free.md`.
+
+- **Migration 0247** (`comptes_application`, `comptes_application_auth`), poussée seule et appliquée avant le code qui la
+  lit (main portait déjà la lecture sur le chemin des réponses), relue en base point par point : colonnes, sept plus quatre
+  contraintes sous leur nom, clés étrangères en cascade et `set null`, index partiel `where statut <> all(banni, retire)`.
+- **Le lot 1** (tâches 2 à 7, puis trois rouges de sa relecture : la filière lue avant un numéro de Meta relié, un numéro
+  fourni porteur d'un compte rendu à la réserve, un compte réveillé qui se rendormait) déployé à `c1b88b56`, la console
+  ensuite (`4771c437`). Le secret du service posé par Julien, le service ouvert.
+- **L'essai réel** sur l'espace « newCompany » (numéro fourni +44 1555 479304 ajouté dans l'application d'un vrai
+  téléphone) a trouvé quatre défauts, tous corrigés le soir même :
+  1. le crédit offert ne se servait jamais : la page passe à « connecté » avant que la relecture ne voie « relié », et
+     l'attente de Claude ne lit que l'état. Il se sert à la lecture de l'état (`servirLeCreditSiRelie`, `894bcfa1`) ;
+  2. l'agent ne répondait qu'au premier message : la réception n'avançait aucun parcours (`7e42c74b`) ;
+  3. ses réponses restaient « En attente de ce message » sur le mobile du client et s'affichaient sur son ordinateur.
+     `getMessage` (`7e42c74b`, mémoire par compte `32a2032f`) n'a pas suffi ; un message de test adressé à l'identifiant
+     masqué du contact est arrivé sur les deux appareils, d'où `adresseDeReponse` (`8e9b3d8d`). Le même déploiement a
+     fait cesser une boucle de « Bad MAC » (environ 11 par minute depuis 18 h 50) sur les messages du téléphone du compte ;
+  4. `libsignal` écrivait les sessions, clés privées comprises, dans les journaux du conteneur (`7e42c74b`).
+  Le 23 au matin, tout passe : réponses en clair sur le mobile, prise de main depuis le téléphone (l'agent se retire),
+  et un message envoyé pendant un arrêt du service livré à la reprise, avec environ 8 minutes de retard (arrivé avec le
+  message suivant ; à remesurer, `todo.md`).
+- **Les recharges de 5 et 10 € par Claude, la Free à 100 % de commission** (`54058bc3`, décisions de Julien) ; les deux
+  prix Stripe posés dans `.env.prod` (lus chez Stripe : hors taxe, en euros, paiement unique). Le test de 0222 a montré
+  qu'à 100 % la Free aurait coupé ses conversations environ 25 % plus tôt : Julien a décidé qu'il n'y a plus de budget par
+  conversation par défaut. **Migration 0248** (défaut à 100 000 000 micro-euros, les 9 agents restés à 70 000 rangés),
+  appliquée avant le `up` sans transaction longue ni verrou sur `agents`, relue en base.
+- **Next.js 15.5.28** (`ce8830e7`) : deux avis publiés le jour même (GHSA-2464-fhr4-w9xw, critique, et
+  GHSA-p3m5-59mp-jv5r) rendaient le job `securite` rouge pour tout le monde.
+- Relevé en passant : deux codes promo Stripe actifs à 100 %, sur tous les produits et sans limite d'utilisations
+  (ENGAGE100, VERIF100) ; Julien les restreint.
+
 ## 2026-10-22 (nuit) : la marche arrière des outils MCP, lots 1 et 2
 
 Plan : `docs/superpowers/plans/2026-10-22-mcp-marche-arriere.md`. Il part d'une analyse des outils MCP demandée par

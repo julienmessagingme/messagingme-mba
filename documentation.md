@@ -333,6 +333,25 @@ numéro et le compte LUS par `/health_status`, les gardes de `linkTenant`, puis 
 destinations existantes (`Config360dialogClient.poserWebhook`). Le numéro affiché, qu'aucune route ne rend avec la clé,
 est facultatif.
 
+**La filière application : un compte de l'application WhatsApp Business relié comme appareil lié, et une autre porte vers
+la même ingestion.** Le service `mba-application` (`src/application/service.ts`, un seul exemplaire : deux copies
+ouvriraient deux fois la même session) tient une session Baileys 6.7.23 par compte relié (`comptes_application`,
+migration 0247 ; son état chiffré dans `comptes_application_auth`, AAD = compte, catégorie, clé) et verse chaque message
+d'une conversation individuelle dans la file `application-entrant` (groupe = l'espace). Le worker le traite par
+`traiterEntrantApplication` (`src/application/entrant.ts`) : l'ingestion commune (`processInbound` : fiche, STOP,
+écriture, détenteur), puis l'AVANCE du parcours en attente (`processWorkflowAdvance`, la même `avanceDesParcours` que la
+réception de Meta : un agent IA qui converse est un parcours en attente), puis la remise. Un message tapé sur le téléphone
+du compte (`deMoi`) est une réponse humaine qui prend le fil. Ses identifiants sont `app:<compte>:<id>`
+(`meta_message_id` est unique dans toute la base). L'API et le worker parlent au service par des routes internes signées
+(`x-mm-service-signature`, `src/application/client.ts`) et ne chargent pas Baileys. La filière d'un espace se lit par
+`filiereDe` : un numéro de Meta connecté prime. 🔴 **Une réponse part à l'IDENTIFIANT MASQUÉ du contact** quand il nous a
+écrit depuis lui (`adresseDeReponse`, `src/application/transport/session.ts` ; la correspondance `lid-du-numero` s'écrit
+avec `numero-du-lid`) : adressée à son numéro, elle restait « En attente de ce message » sur son mobile et s'affichait sur
+son ordinateur. La conversation garde le numéro pour clé. 🔴 **Le socket a un `getMessage`** sur une mémoire des 500
+derniers envois PAR COMPTE (`memoiresDesComptes`, qui survit aux reconnexions) : sans lui, Baileys ne renvoie rien à
+l'appareil qui demande un renvoi. Les quatre messages de `libsignal` qui portent une session, clés privées comprises,
+s'écrivent sans elle (`taireLesClesDeSignal`, tenu par un test qui lit la bibliothèque installée).
+
 
 ```
 Meta -> POST /webhooks/meta (mba-api)

@@ -4781,6 +4781,28 @@ ensuite sur une page publique qui invite à retourner dans Claude. ⚠️ Révoq
 (« Applications autorisées ») ne coupe pas un lien déjà donné : il sert jusqu'à son heure, ou jusqu'à la connexion du
 numéro.
 
+### Relier l'application WhatsApp Business depuis Claude (filière application, 2026-10-22)
+
+- ✅ **LIVE, éprouvée par un essai réel les 22 et 23 octobre.** **À quoi ça sert.** Un développeur qui n'a pas de compte
+  Meta Business relie le compte WhatsApp Business de son téléphone, comme un appareil lié, par un QR code. Claude pose
+  d'abord la question « Avez-vous un compte Meta Business ? » ; sans réponse sûre, il propose cette filière et la dit en
+  une phrase : ce n'est pas l'API officielle, et WhatsApp peut couper un numéro.
+- ✅ **Relier** : `start_whatsapp_connection` avec la filière « application », pour un numéro que nous fournissons
+  (recommandé pour un essai) ou le sien. Le lien ouvre la page de connexion, qui montre le QR code à scanner depuis
+  l'application (« Appareils liés ») ; Claude suit par `watch_whatsapp_connection` et annonce le compte relié. Le crédit
+  offert au premier numéro arrive dès que le compte est relié, une fois par espace et jamais deux fois pour un numéro.
+- ✅ **Ce qui marche** : les messages reçus entrent dans les conversations ; l'agent IA répond à chaque message, et ses
+  réponses s'affichent sur tous les appareils du client, mobile compris ; Claude lit et répond avec les mêmes outils ;
+  une réponse tapée sur le téléphone du compte est une prise de main, l'agent se retire, et `control_conversation` la
+  lui rend.
+- ✅ **Ce qui veille** : un numéro coupé par WhatsApp, ou un appareil retiré depuis le téléphone, arrête tout et prévient
+  les administrateurs par e-mail ; sans message pendant 30 jours, la connexion se met en sommeil, et un nouveau lien la
+  réveille ; un message reçu pendant une coupure du service n'est pas perdu (mesuré : livré à la reprise, avec quelques
+  minutes de retard).
+- Limites : ni modèles, ni campagnes, ni agent de Meta, qui passent par l'API de Meta ; l'offre Pro est refusée sur cette
+  filière (le passage à l'API d'abord) ; les groupes sont ignorés. Un numéro de Meta connecté prime : l'espace passe alors
+  sur l'API.
+
 ### Construire un agent IA depuis Claude (2026-10-04)
 
 **À quoi ça sert.** La personne décrit à Claude son activité, son site, le ton voulu et quand passer la main à

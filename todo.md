@@ -23,10 +23,15 @@ micro-euros), et aucun écran ni outil ne l'expose. Ses deux voisins, `maxTours`
 - **Un espace dont le numéro de Meta est délié puis passé à l'application** : `getTenantPhoneNumberId` ne filtre pas
   `delie_le`, donc `numeroBloqueDeLEspace` peut rendre `true` et l'agent se taire (remise et tour). `numeroBloque` doit
   rendre `false` quand la filière est `application`.
-- **Le service ne déchiffre plus les messages du téléphone du compte** sur newCompany depuis 16 h 50 UTC le 2026-10-22
-  (« Bad MAC », « No matching sessions », environ 11 par minute, `fromMe` depuis l'identifiant masqué du compte) : la
-  prise de main depuis ce téléphone n'arriverait pas en base. À mesurer après le déploiement des correctifs, puis
-  relier par un nouveau QR code si cela persiste, et chercher la cause (adressage par identifiant masqué de Baileys 6.7).
+- **Un message reçu pendant un arrêt du service arrive en retard** : mesuré le 2026-10-23, livré environ 8 minutes après
+  la reprise, avec le message suivant du même contact. À remesurer sans message suivant (arrive-t-il seul, et quand ?),
+  puis décider s'il faut le dire au client.
+- **Les jaunes de la relecture de l'adressage masqué** (`8e9b3d8d`) : la correspondance inverse peut manquer pour un
+  contact déjà connu (`retenir` s'arrête quand le sens direct est en mémoire) ; une correspondance inverse périmée n'est
+  jamais retirée (`lidDe` doit vérifier que les deux sens concordent) ; le numéro du contact est en clair dans la clé de
+  ligne `lid-du-numero` (un HMAC sous la clé du compte) ; si `creds.me.lid` manque, Baileys 6.7.23 lève à tout envoi vers
+  `@lid` (adresser au numéro dans ce cas) ; une demande de renvoi d'un de nos appareils liés secondaires repart sans
+  enveloppe (limite de Baileys).
 
 ## 🟡 Les jaunes de la relecture des recharges de 5 et 10 € (2026-10-22)
 
