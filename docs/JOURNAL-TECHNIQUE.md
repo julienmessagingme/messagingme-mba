@@ -5,6 +5,26 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-23 : l'essai réel de la marche arrière, et le blocage qui ne tenait pas en cours de session
+
+L'essai réel à deux des lots 1 et 2 de la marche arrière des outils MCP (`docs/prive/ESSAIS-REELS.md`, essai 148), sur
+l'espace « Messaging Me demo » avec le seul numéro de Julien : la main rendue après une réponse de Claude, le modèle créé,
+corrigé et supprimé, le webhook modifié (deux signatures valides pendant les 24 h du nouveau secret), la campagne
+programmée puis déprogrammée, la mention anglaise (sur l'agent « Vélo Rapide », l'agent de démo portant une phrase
+libre), l'e-mail de la Free, la réponse de Claude qui sort une escalade d'« À traiter ». Tout a tenu, sauf un défaut
+antérieur aux deux lots.
+
+- **Un contact bloqué PENDANT une session d'agent recevait encore ses réponses**, jusqu'à la fin de la session (30
+  minutes d'inactivité). Le blocage n'était relu qu'à l'ENTRÉE d'un robot (la remise du fil, l'automation, la
+  publicité) ; la garde que relisent les robots juste avant d'écrire (`estDesabonne` du tour d'agent, de l'exécuteur et
+  des gestes d'envoi de l'agent) ne lisait que le STOP. Corrigé à `7925abc4` : `machineSeTaitParWaId` (STOP ou bloqué)
+  sur les trois câblages, tenu par `tests/blocage-robots.test.ts` (quatre mutations vérifiées dans les deux sens).
+  Déployé le même matin, par un seul `up` mené par la session Shopify avec son lot (sa refonte non relue supprime des
+  modèles chez Meta : sa mise en ligne lui revenait). Rejoué avec Julien à 09:25 : bloqué en pleine session, son message
+  est enregistré et l'agent se tait.
+- **Deux jaunes relevés** : `list_templates` montre l'ancien état pendant la minute de son cache après une correction ou
+  une suppression, et le résultat de `rotate_secret` rend `previousSecretValidUntil` nul dans sa vue de l'adresse.
+
 ## 2026-10-22 et 23 : la filière application WhatsApp Business (lot 1), son essai réel, et les recharges de 5 et 10 €
 
 Plan : `docs/superpowers/plans/2026-10-22-filiere-application-lot-1.md`, correctifs de l'essai :
