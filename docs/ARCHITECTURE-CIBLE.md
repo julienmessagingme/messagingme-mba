@@ -996,8 +996,8 @@ geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose bu
   numéros à plein débit tiennent les 2 minutes de Julien (p95 de 86 s à 16, 285 s à 20, 596 s à 24) ; avec un index
   partiel sur `conversations.release_mba_apres_message`, 24 tiennent à 33 s, limite non atteinte. Une panne du worker de
   10 minutes avec 6 numéros : 13 148 accusés en attente, rattrapés en 9 minutes (capacité d'environ 45 par seconde sans
-  l'index), les entrants retardés de la seule panne. Reste : poser l'index en production (`todo.md`), puis rejouer
-  l'épreuve `accuses` au-dessus de 24 numéros pour trouver la nouvelle limite.
+  l'index), les entrants retardés de la seule panne. L'index est en production depuis le 2026-10-17 (migration
+  0242) ; reste à rejouer l'épreuve `accuses` au-dessus de 24 numéros pour trouver la nouvelle limite.
 - **Le banc des accusés avec de VRAIS messages** (point P1 de l'audit du 2026-10-17, `docs/prive/`) : des campagnes
   semées dont les accusés `sent`, `delivered` et `read` désignent des messages qui existent, pour que chaque accusé
   fasse son vrai travail (livraison, tarif, mesure par bloc, signaux). Le banc du 14 octobre envoyait des identifiants
@@ -1005,6 +1005,14 @@ geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose bu
   trancher : combien de numéros peuvent envoyer à plein débit en même temps (80 messages par minute chacun, soit
   environ 4 accusés par seconde) avant que la file prenne du retard, et en combien de temps elle résorbe la rafale que
   Meta renvoie après une indisponibilité de notre côté.
+- **Une médiathèque froide s'ouvre sans faire attendre le pool de l'API** (alerte « base saturée (api) » du
+  2026-10-23 : à l'ouverture de la console, 147 prises de connexion en une minute, dont 45 en attente, au pire
+  264 ms ; les images de `/m/` sont lues en entier dans la base, et chacune tenait une connexion jusqu'à 500 ms à
+  travers Internet). Sur la cible, dans un espace de test : téléverser au moins trente images neuves (jamais servies,
+  donc absentes du cache de Cloudflare), ouvrir la médiathèque, puis lire pour cette minute `pool_attentes` (au nom de
+  la copie d'API, `API_COPIE`) et `http_latences` (`GET /m/:fichier`). Preuve attendue : aucune attente de pool, et
+  `/m/:fichier` en dizaines de millisecondes. Sinon, le lot « les fichiers sortent de Postgres » (§6) passe AVANT
+  l'ouverture du site.
 
 **Les deux workers**
 - Tuer le worker d'analyse ne ralentit ni les entrants ni les campagnes.
