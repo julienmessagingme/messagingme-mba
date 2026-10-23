@@ -96,9 +96,12 @@ export interface DepsEntrantApplication {
 export async function traiterEntrantApplication(job: JobEntrant, deps: DepsEntrantApplication): Promise<void> {
   const m = versInboundMessage(job);
   if (!m) return;
-  if ((await deps.filiere(job.tenantId)) === 'api') {
+  // Seul un espace de la filière application traite ce que sa session reçoit : un espace passé à l'API de Meta, ou dont
+  // le compte est retiré (une session dont le retrait a échoué peut recevoir encore), l'ignore (relecture de ada66bb9).
+  const filiere = await deps.filiere(job.tenantId);
+  if (filiere !== 'application') {
     // eslint-disable-next-line no-console
-    console.warn(`application-entrant : l'espace ${job.tenantId} est sur l'API de Meta, message ${m.messageId} du compte ${job.compteId} ignoré`);
+    console.warn(`application-entrant : l'espace ${job.tenantId} est sur la filière ${filiere ?? 'aucune'}, message ${m.messageId} du compte ${job.compteId} ignoré`);
     return;
   }
   if (await deps.dejaRecu(job.tenantId, m.messageId)) return;

@@ -16,7 +16,7 @@ import type { AgentSession, AgentSessionStatus, AgentSessionStore } from '../src
 import type { AgentTurnJob } from '../src/agent/turn-job';
 import { runTurn, type RunTurnDeps } from '../src/agent/run-turn';
 import { processRemiseMbaEntrant } from '../src/webhooks/remise-mba-entrant';
-import { processWorkflowAdvance } from '../src/webhooks/workflow-advance';
+import { avanceDuParcours, processWorkflowAdvance } from '../src/webhooks/workflow-advance';
 import { requalifierLesStandby } from '../src/webhooks/standby-hors-liste';
 import { runControlSweep } from '../src/inbox/control-sweep';
 import { modeEffectif, standbyPourNous } from '../src/repondeur/mode';
@@ -358,17 +358,17 @@ function bout() {
   /**
    * Un job de webhook, dans l'ordre du handler : l'avance des parcours, puis la remise de ce qu'aucun n'a pris
    * (`src/webhooks/handler.ts`). `dejaVus` : ce que Meta avait déjà livré. L'avance passe par la vraie porte
-   * (`processWorkflowAdvance`, qui lit le TYPE du message) et par le câblage du worker, recopié ici parce que
-   * `src/worker.ts` ne se monte pas : sa source est relue plus bas.
+   * (`processWorkflowAdvance`, qui lit le TYPE du message) et par l'avance que le worker câble (`avanceDuParcours`),
+   * montée ici avec le vrai contrôle du fil parce que `src/worker.ts` ne se monte pas : sa source est relue plus bas.
    */
   const job = async (messages: MessageDuLot[], dejaVus: ReadonlySet<string> = new Set()) => {
     const entrants = await entrantsDe(LOT(messages));
     const pris = await processWorkflowAdvance(entrants, {
-      advance: async (t, w, id, bp, entrant) => {
-        const enAttente = await mo.runs.findWaitingByWaId(t, w);
-        await executor.advance(t, w, id, bp, 'whatsapp', entrant);
-        return enAttente !== null;
-      },
+      advance: avanceDuParcours({
+        trouverEnAttente: (t, w) => mo.runs.findWaitingByWaId(t, w),
+        peutAgir: (t, w) => b.fil.peutAgir(t, w),
+        avancer: (t, w, id, bp, entrant) => executor.advance(t, w, id, bp, 'whatsapp', entrant),
+      }),
     });
     await processRemiseMbaEntrant(entrants, { remettre: b.fil.remettreSiPersonneNeSuit }, pris, new Set(), dejaVus);
   };

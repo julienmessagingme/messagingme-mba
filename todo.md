@@ -27,6 +27,16 @@ Meta délié, finitions de l'adressage masqué, mise en file retentée, e-mail d
 - **Le numéro déclaré n'est jamais comparé au `jid`** à la liaison : un compte en attente réserve un numéro sans
   échéance, `numero_pris` le révèle, et deux espaces peuvent viser le même téléphone.
 - **`/envoyer` est rejouable 60 s** depuis le réseau privé (la signature n'a pas de nonce retenu).
+- **`confier` à l'agent de Meta ne vérifie pas que le numéro est délié** (`src/inbox/fil.ts`) : un espace en mode
+  `mba` sur l'API, qui délie son numéro puis relie l'application, verrait l'agent de Meta sollicité sur l'ancien numéro à
+  chaque message (le lot des jaunes a retiré le blocage qui l'en empêchait par accident ; le balayage le faisait déjà).
+  Aucun espace dans ce cas le 2026-10-23 (lu en base). Que `confier` refuse un numéro délié ou suspendu.
+- **Sur la filière application, aucune garde ne voit la suspension d'un numéro fourni** (`creerLectureSuspension` ne lit
+  que `phone_numbers`).
+- **Pendant une mise en file retentée** (1 puis 3 s), un message suivant peut passer devant : l'ordre d'arrivée dans la
+  file n'est plus celui de WhatsApp. Accepté face à la perte.
+- **Les lignes inverses en clair de 8e9b3d8d ne sont plus lues** : jusqu'au prochain message du contact, une réponse
+  part au numéro. Accepté (espaces de test seulement), la ligne se réécrit au message suivant.
 - Mineurs : l'empreinte d'état a changé une fois pour tous les états au déploiement du lot 1 ; quelques textes disent
   encore la filière avant la connexion de Meta ; une demande de renvoi d'un de NOS appareils liés secondaires repart sans
   enveloppe pour un message adressé à `@lid` (limite de Baileys 6.7.23, `messages-send.js`).

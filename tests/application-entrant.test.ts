@@ -153,7 +153,7 @@ describe('le job de la file, côté worker', () => {
   });
 });
 
-function banc(o: { enAttente?: boolean; filiere?: 'api' | 'application' } = {}) {
+function banc(o: { enAttente?: boolean; filiere?: 'api' | 'application' | null } = {}) {
   const traces: string[] = [];
   const enregistres = new Set<string>();
   const deps: DepsEntrantApplication = {
@@ -176,7 +176,7 @@ function banc(o: { enAttente?: boolean; filiere?: 'api' | 'application' } = {}) 
     },
     remise: { remettre: async (_t, waId, contenu, e) => { traces.push(`remise:${waId}:${contenu}:${e.messageDeclencheur}:${e.redelivre}`); } },
     avance: { advance: async (_t, waId, id) => { traces.push(`avance:${waId}:${id}`); return o.enAttente ?? false; } },
-    filiere: async () => o.filiere ?? 'application',
+    filiere: async () => (o.filiere === undefined ? 'application' : o.filiere),
     priseDeMain: async (_t, waId) => { traces.push(`main:${waId}`); },
   };
   return { traces, deps };
@@ -211,6 +211,12 @@ describe('traiter un message reçu', () => {
     const { traces, deps } = banc({ filiere: 'api' });
     await traiterEntrantApplication(job(), deps);
     await traiterEntrantApplication(job({ deMoi: true }), deps);
+    expect(traces).toEqual([]);
+  });
+
+  it('un espace sans filière (son compte retiré) ignore aussi ce qu’une session restée ouverte reçoit', async () => {
+    const { traces, deps } = banc({ filiere: null });
+    await traiterEntrantApplication(job(), deps);
     expect(traces).toEqual([]);
   });
 
